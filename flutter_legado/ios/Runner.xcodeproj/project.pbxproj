@@ -16,6 +16,85 @@
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		384E7CD32C0400318E89BFE2 /* LauncherIconBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = B913AF9475EAC9655614311C /* LauncherIconBridge.swift */; };
+		B2ACAC0042E2BC7926C99CD4 /* launcher1_1024.png in Resources */ = {isa = PBXBuildFile; fileRef = 7BAB4A4D1CD3F940069B0A75 /* launcher1_1024.png */; };
+		FA16819C46823F639C6A607E /* launcher1_120.png in Resources */ = {isa = PBXBuildFile; fileRef = 1C159E149943F8A9E70B90F1 /* launcher1_120.png */; };
+		B7DE86D81233AE41EF05E5A6 /* launcher1_152.png in Resources */ = {isa = PBXBuildFile; fileRef = D38979F30C59A29DA303E4A6 /* launcher1_152.png */; };
+		326C7B542DCEE493F26DBC6F /* launcher1_167.png in Resources */ = {isa = PBXBuildFile; fileRef = 1CE278445F1024AD83146D22 /* launcher1_167.png */; };
+		E503C43C11687DF6CE314970 /* launcher1_180.png in Resources */ = {isa = PBXBuildFile; fileRef = 286522074AB2811C06A6EA8B /* launcher1_180.png */; };
+		8801515774EFAF49AE5A12F7 /* launcher1_20.png in Resources */ = {isa = PBXBuildFile; fileRef = 4ED3BF6D134631EA022B1E44 /* launcher1_20.png */; };
+		57D7724F868ADE97478C1ED7 /* launcher1_29.png in Resources */ = {isa = PBXBuildFile; fileRef = 701D10D07691A0B132899350 /* launcher1_29.png */; };
+		F7462DF5F3E5F69C932A1114 /* launcher1_40.png in Resources */ = {isa = PBXBuildFile; fileRef = 77296C7F62C4A39A907D76C6 /* launcher1_40.png */; };
+		361C69E4D077B369DC069557 /* launcher1_58.png in Resources */ = {isa = PBXBuildFile; fileRef = 84877DC9501B3F1E4393F57B /* launcher1_58.png */; };
+		4637A4802B53F7DDDF714AE4 /* launcher1_60.png in Resources */ = {isa = PBXBuildFile; fileRef = FABA6284BBDDC4717FFF4C20 /* launcher1_60.png */; };
+		B570AF86E36C8416B9688292 /* launcher1_76.png in Resources */ = {isa = PBXBuildFile; fileRef = 99FEB937D5435A7A6FBEA3E2 /* launcher1_76.png */; };
+		AD8FBFE193F19074CB989202 /* launcher1_80.png in Resources */ = {isa = PBXBuildFile; fileRef = 243184EC82545EACD35C82B7 /* launcher1_80.png */; };
+		AECFBDE0B695963932931F12 /* launcher1_87.png in Resources */ = {isa = PBXBuildFile; fileRef = 989C63C10D8B9C6EBE192713 /* launcher1_87.png */; };
+		DDB6533BBC64604791457C9B /* launcher2_1024.png in Resources */ = {isa = PBXBuildFile; fileRef = 892CA667B7315CF02BAE5037 /* launcher2_1024.png */; };
+		14D8E62E4C85A2604E983606 /* launcher2_120.png in Resources */ = {isa = PBXBuildFile; fileRef = B870F7180C3A5542132E2FC4 /* launcher2_120.png */; };
+		F808578539891D2319B7C429 /* launcher2_152.png in Resources */ = {isa = PBXBuildFile; fileRef = 2B2BABAAC111229DD60CFECF /* launcher2_152.png */; };
+		BBCA58503061367CF3B9A635 /* launcher2_167.png in Resources */ = {isa = PBXBuildFile; fileRef = 6E8873DE01F7E66BA1890022 /* launcher2_167.png */; };
+		3CC2C1C3601FFA76340847E9 /* launcher2_180.png in Resources */ = {isa = PBXBuildFile; fileRef = 6E528B6BFF2D1EEDAC0F0CE6 /* launcher2_180.png */; };
+		C627757610854BCADAA43207 /* launcher2_20.png in Resources */ = {isa = PBXBuildFile; fileRef = 1F37C277FC73EBE78C0B1239 /* launcher2_20.png */; };
+		29809B2B7D5D34596C0B228B /* launcher2_29.png in Resources */ = {isa = PBXBuildFile; fileRef = 3063F2C91F1770074750338F /* launcher2_29.png */; };
+		06EBD7E1430DC438932EBBC9 /* launcher2_40.png in Resources */ = {isa = PBXBuildFile; fileRef = 2A677D939DD6C1DC075A3497 /* launcher2_40.png */; };
+		9D5A698A5AD7094AB5F186A1 /* launcher2_58.png in Resources */ = {isa = PBXBuildFile; fileRef = A6970481867D1EC8CE8E4CD8 /* launcher2_58.png */; };
+		3F80148D8B5D143A86CBA387 /* launcher2_60.png in Resources */ = {isa = PBXBuildFile; fileRef = 75BA16F13C7E63EFB33CB7B2 /* launcher2_60.png */; };
+		2ED076AA158012147F8A8265 /* launcher2_76.png in Resources */ = {isa = PBXBuildFile; fileRef = 582F52CE61F41F7C86D7F0DB /* launcher2_76.png */; };
+		9172189CF1930026B5EFB8F2 /* launcher2_80.png in Resources */ = {isa = PBXBuildFile; fileRef = DB1158462EE6FACA79D86058 /* launcher2_80.png */; };
+		E0F4A0DBF808061BFC171E88 /* launcher2_87.png in Resources */ = {isa = PBXBuildFile; fileRef = E5111109F293176EE17D3858 /* launcher2_87.png */; };
+		C2AE524C25E35D67176EE7E8 /* launcher3_1024.png in Resources */ = {isa = PBXBuildFile; fileRef = 3B371863253A561E99AB6A8E /* launcher3_1024.png */; };
+		7ADAD28DF59F4A854B15B088 /* launcher3_120.png in Resources */ = {isa = PBXBuildFile; fileRef = 1EA97F40BB9505E90BD2323B /* launcher3_120.png */; };
+		9CBF145F52026F0B916B7B8A /* launcher3_152.png in Resources */ = {isa = PBXBuildFile; fileRef = 37A07D90F8CA26701044EDE4 /* launcher3_152.png */; };
+		A3A2BD63F3ED1D02721F583A /* launcher3_167.png in Resources */ = {isa = PBXBuildFile; fileRef = 3864A75EDE80A12F0C65B852 /* launcher3_167.png */; };
+		3FAB34DD438E97FEFD68B742 /* launcher3_180.png in Resources */ = {isa = PBXBuildFile; fileRef = 2E6513208D46265069B9E071 /* launcher3_180.png */; };
+		A303BEEEBBB5BEA57E53DE03 /* launcher3_20.png in Resources */ = {isa = PBXBuildFile; fileRef = CEF4D10FC99C1E89EE82FA3D /* launcher3_20.png */; };
+		62D054C2B275407D98BBCFDD /* launcher3_29.png in Resources */ = {isa = PBXBuildFile; fileRef = 2484A4DA9995A377C24C053B /* launcher3_29.png */; };
+		E1BC64E8351CC64285FBB8AD /* launcher3_40.png in Resources */ = {isa = PBXBuildFile; fileRef = E62EFD929A5668FA33129DE9 /* launcher3_40.png */; };
+		2112678262B698BF0F6354F3 /* launcher3_58.png in Resources */ = {isa = PBXBuildFile; fileRef = 2C8D47CCD3868A30F901FB2F /* launcher3_58.png */; };
+		4A1233B0C2F7C28B65DD3892 /* launcher3_60.png in Resources */ = {isa = PBXBuildFile; fileRef = 98DBF1BC6860735030628D43 /* launcher3_60.png */; };
+		91F1C7ABE4275C2C67F196B3 /* launcher3_76.png in Resources */ = {isa = PBXBuildFile; fileRef = E4690C6D4609CA92DCC14E9E /* launcher3_76.png */; };
+		3BCCCB1A64353A09293600E3 /* launcher3_80.png in Resources */ = {isa = PBXBuildFile; fileRef = 41E57CA414FEFCC9E4DE0FC3 /* launcher3_80.png */; };
+		3090BB15EEE4DB01C2A637D6 /* launcher3_87.png in Resources */ = {isa = PBXBuildFile; fileRef = 6659F091F0E29E9BAD4710F5 /* launcher3_87.png */; };
+		D3151C9754762B70C60B5C09 /* launcher4_1024.png in Resources */ = {isa = PBXBuildFile; fileRef = CF59BB909253F990942EAB20 /* launcher4_1024.png */; };
+		0BFCA29CD38D48AC6FAA98D5 /* launcher4_120.png in Resources */ = {isa = PBXBuildFile; fileRef = 971C5B8C9966B557822B3305 /* launcher4_120.png */; };
+		C77D244784BC8BCA6DB3B01F /* launcher4_152.png in Resources */ = {isa = PBXBuildFile; fileRef = AEF36B370E70617B26AF9956 /* launcher4_152.png */; };
+		5FA0E8296495E71216D2D585 /* launcher4_167.png in Resources */ = {isa = PBXBuildFile; fileRef = 478F8E13020870F5C87CE723 /* launcher4_167.png */; };
+		96F37DE30BD47A2FFDFDD172 /* launcher4_180.png in Resources */ = {isa = PBXBuildFile; fileRef = 455305046ABA4E223B0A2404 /* launcher4_180.png */; };
+		30F9856448ADDF68134B663A /* launcher4_20.png in Resources */ = {isa = PBXBuildFile; fileRef = 9B4607B578306FD052EF75FE /* launcher4_20.png */; };
+		D70913C1BA106AF7EFA0E46E /* launcher4_29.png in Resources */ = {isa = PBXBuildFile; fileRef = 6FE86AF3823B17D8FB67CEE3 /* launcher4_29.png */; };
+		A504873FBAD7E0E51AD9C749 /* launcher4_40.png in Resources */ = {isa = PBXBuildFile; fileRef = 84B5A6CCC948602A445F8A4C /* launcher4_40.png */; };
+		6BFC9F08F51A60A84ADB5307 /* launcher4_58.png in Resources */ = {isa = PBXBuildFile; fileRef = 43F5D835E59C1DC5F89F7D63 /* launcher4_58.png */; };
+		7B4A3423AF99FDE55947E339 /* launcher4_60.png in Resources */ = {isa = PBXBuildFile; fileRef = 40B29904F65FA69B95F5079D /* launcher4_60.png */; };
+		F5C44A1592E65CA26CF1D1D4 /* launcher4_76.png in Resources */ = {isa = PBXBuildFile; fileRef = A219E35332F790FB0476E572 /* launcher4_76.png */; };
+		3A67AF519DEB98C196BC4271 /* launcher4_80.png in Resources */ = {isa = PBXBuildFile; fileRef = 50A696AB816D7CD5968BC665 /* launcher4_80.png */; };
+		A52D6DA3882E82FB25A98E90 /* launcher4_87.png in Resources */ = {isa = PBXBuildFile; fileRef = 10E0D13B12280C2CF0907812 /* launcher4_87.png */; };
+		25B2995F413B0727CA8C4A44 /* launcher5_1024.png in Resources */ = {isa = PBXBuildFile; fileRef = 8DC8CC3F486CBAF9798BAC47 /* launcher5_1024.png */; };
+		3413A47AC680E9CD4AD9AD33 /* launcher5_120.png in Resources */ = {isa = PBXBuildFile; fileRef = 0FFD8E5A1794BA8DEAC95389 /* launcher5_120.png */; };
+		030220439638625621D48E00 /* launcher5_152.png in Resources */ = {isa = PBXBuildFile; fileRef = E5605AA32C578C31CC097D2C /* launcher5_152.png */; };
+		B7222FCEBFD3645AA8E532AD /* launcher5_167.png in Resources */ = {isa = PBXBuildFile; fileRef = 93D4461DDB2238D2A27AE678 /* launcher5_167.png */; };
+		5BF6ADCD59E1E959188337C5 /* launcher5_180.png in Resources */ = {isa = PBXBuildFile; fileRef = 418DDB2A84DD4497E530DF5D /* launcher5_180.png */; };
+		C698F14AC18856818B3711E9 /* launcher5_20.png in Resources */ = {isa = PBXBuildFile; fileRef = 9DAE484121FA3BBD3D2B58F0 /* launcher5_20.png */; };
+		A423A612D4F8C02E761CA53F /* launcher5_29.png in Resources */ = {isa = PBXBuildFile; fileRef = E697609B1CE5E488BB111210 /* launcher5_29.png */; };
+		D88CC6B350526497029AFA0F /* launcher5_40.png in Resources */ = {isa = PBXBuildFile; fileRef = 45EDEC7B5946752A87F32501 /* launcher5_40.png */; };
+		DAC4F7D723E3A0A4E69BA59F /* launcher5_58.png in Resources */ = {isa = PBXBuildFile; fileRef = A432A0AB3C879D98ABAA95BD /* launcher5_58.png */; };
+		AE979CA5697264A49BC91BF3 /* launcher5_60.png in Resources */ = {isa = PBXBuildFile; fileRef = C7FD45A2BC10AED9D17B6E59 /* launcher5_60.png */; };
+		DF642DE3DFBAFB505A075F12 /* launcher5_76.png in Resources */ = {isa = PBXBuildFile; fileRef = 34B3B872CE69596BD87A84DC /* launcher5_76.png */; };
+		2A5D7054AFA1E426B25893BE /* launcher5_80.png in Resources */ = {isa = PBXBuildFile; fileRef = 1073D4AFC1C73330BF10F694 /* launcher5_80.png */; };
+		018FC9A6A04E4814B3A1B305 /* launcher5_87.png in Resources */ = {isa = PBXBuildFile; fileRef = CCFF87F82237C22DABED8CCA /* launcher5_87.png */; };
+		D298C8DBC2378DB006E107C1 /* launcher6_1024.png in Resources */ = {isa = PBXBuildFile; fileRef = 9CC3BE97A8D3AA18EEC7EF43 /* launcher6_1024.png */; };
+		2B30F8E5569DBDCDC9A9354B /* launcher6_120.png in Resources */ = {isa = PBXBuildFile; fileRef = 0784E0D4D14A16BB700178EC /* launcher6_120.png */; };
+		7FC8D050C516BB9D2E436597 /* launcher6_152.png in Resources */ = {isa = PBXBuildFile; fileRef = B7AE0AAF8E5E1712ECD85765 /* launcher6_152.png */; };
+		69A598E2A6AAF02558E69525 /* launcher6_167.png in Resources */ = {isa = PBXBuildFile; fileRef = 3AD0C61A625F8E650F11B57E /* launcher6_167.png */; };
+		2A2CE8FAC4A480D8ED4AEF41 /* launcher6_180.png in Resources */ = {isa = PBXBuildFile; fileRef = 60C3D673F7C21BA08871D2B3 /* launcher6_180.png */; };
+		FE8C163C29A5F6D4BA2AF03B /* launcher6_20.png in Resources */ = {isa = PBXBuildFile; fileRef = FA0AC0689ACFAF4F678CA0C6 /* launcher6_20.png */; };
+		DE9DD14403875DC1E826027B /* launcher6_29.png in Resources */ = {isa = PBXBuildFile; fileRef = 4DCDDB830803F4D22F43851B /* launcher6_29.png */; };
+		02269A227289783B78EC824E /* launcher6_40.png in Resources */ = {isa = PBXBuildFile; fileRef = D4735201896F786E8B8550B1 /* launcher6_40.png */; };
+		B6340EE393FE959AB30A1944 /* launcher6_58.png in Resources */ = {isa = PBXBuildFile; fileRef = E150ACF54D3247A89014B9CF /* launcher6_58.png */; };
+		B7D728F97E6CE3115412D2A4 /* launcher6_60.png in Resources */ = {isa = PBXBuildFile; fileRef = 2FA4160D433E64E1488C1C1C /* launcher6_60.png */; };
+		C23B940B68EC35AEE475A0CD /* launcher6_76.png in Resources */ = {isa = PBXBuildFile; fileRef = BB0A7E2B0222E3C5E8C7E392 /* launcher6_76.png */; };
+		D59C40CC27F8677B927087CB /* launcher6_80.png in Resources */ = {isa = PBXBuildFile; fileRef = C640743DFB6772695A5A0A5D /* launcher6_80.png */; };
+		A7E298FF18C5DC721D002F39 /* launcher6_87.png in Resources */ = {isa = PBXBuildFile; fileRef = 4F85C36F70AE054306C6C74A /* launcher6_87.png */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -59,6 +138,85 @@
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		B913AF9475EAC9655614311C /* LauncherIconBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LauncherIconBridge.swift; sourceTree = "<group>"; };
+		7BAB4A4D1CD3F940069B0A75 /* launcher1_1024.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher1_1024.png; path = AlternateIcons/launcher1_1024.png; sourceTree = "<group>"; };
+		1C159E149943F8A9E70B90F1 /* launcher1_120.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher1_120.png; path = AlternateIcons/launcher1_120.png; sourceTree = "<group>"; };
+		D38979F30C59A29DA303E4A6 /* launcher1_152.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher1_152.png; path = AlternateIcons/launcher1_152.png; sourceTree = "<group>"; };
+		1CE278445F1024AD83146D22 /* launcher1_167.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher1_167.png; path = AlternateIcons/launcher1_167.png; sourceTree = "<group>"; };
+		286522074AB2811C06A6EA8B /* launcher1_180.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher1_180.png; path = AlternateIcons/launcher1_180.png; sourceTree = "<group>"; };
+		4ED3BF6D134631EA022B1E44 /* launcher1_20.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher1_20.png; path = AlternateIcons/launcher1_20.png; sourceTree = "<group>"; };
+		701D10D07691A0B132899350 /* launcher1_29.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher1_29.png; path = AlternateIcons/launcher1_29.png; sourceTree = "<group>"; };
+		77296C7F62C4A39A907D76C6 /* launcher1_40.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher1_40.png; path = AlternateIcons/launcher1_40.png; sourceTree = "<group>"; };
+		84877DC9501B3F1E4393F57B /* launcher1_58.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher1_58.png; path = AlternateIcons/launcher1_58.png; sourceTree = "<group>"; };
+		FABA6284BBDDC4717FFF4C20 /* launcher1_60.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher1_60.png; path = AlternateIcons/launcher1_60.png; sourceTree = "<group>"; };
+		99FEB937D5435A7A6FBEA3E2 /* launcher1_76.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher1_76.png; path = AlternateIcons/launcher1_76.png; sourceTree = "<group>"; };
+		243184EC82545EACD35C82B7 /* launcher1_80.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher1_80.png; path = AlternateIcons/launcher1_80.png; sourceTree = "<group>"; };
+		989C63C10D8B9C6EBE192713 /* launcher1_87.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher1_87.png; path = AlternateIcons/launcher1_87.png; sourceTree = "<group>"; };
+		892CA667B7315CF02BAE5037 /* launcher2_1024.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher2_1024.png; path = AlternateIcons/launcher2_1024.png; sourceTree = "<group>"; };
+		B870F7180C3A5542132E2FC4 /* launcher2_120.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher2_120.png; path = AlternateIcons/launcher2_120.png; sourceTree = "<group>"; };
+		2B2BABAAC111229DD60CFECF /* launcher2_152.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher2_152.png; path = AlternateIcons/launcher2_152.png; sourceTree = "<group>"; };
+		6E8873DE01F7E66BA1890022 /* launcher2_167.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher2_167.png; path = AlternateIcons/launcher2_167.png; sourceTree = "<group>"; };
+		6E528B6BFF2D1EEDAC0F0CE6 /* launcher2_180.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher2_180.png; path = AlternateIcons/launcher2_180.png; sourceTree = "<group>"; };
+		1F37C277FC73EBE78C0B1239 /* launcher2_20.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher2_20.png; path = AlternateIcons/launcher2_20.png; sourceTree = "<group>"; };
+		3063F2C91F1770074750338F /* launcher2_29.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher2_29.png; path = AlternateIcons/launcher2_29.png; sourceTree = "<group>"; };
+		2A677D939DD6C1DC075A3497 /* launcher2_40.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher2_40.png; path = AlternateIcons/launcher2_40.png; sourceTree = "<group>"; };
+		A6970481867D1EC8CE8E4CD8 /* launcher2_58.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher2_58.png; path = AlternateIcons/launcher2_58.png; sourceTree = "<group>"; };
+		75BA16F13C7E63EFB33CB7B2 /* launcher2_60.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher2_60.png; path = AlternateIcons/launcher2_60.png; sourceTree = "<group>"; };
+		582F52CE61F41F7C86D7F0DB /* launcher2_76.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher2_76.png; path = AlternateIcons/launcher2_76.png; sourceTree = "<group>"; };
+		DB1158462EE6FACA79D86058 /* launcher2_80.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher2_80.png; path = AlternateIcons/launcher2_80.png; sourceTree = "<group>"; };
+		E5111109F293176EE17D3858 /* launcher2_87.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher2_87.png; path = AlternateIcons/launcher2_87.png; sourceTree = "<group>"; };
+		3B371863253A561E99AB6A8E /* launcher3_1024.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher3_1024.png; path = AlternateIcons/launcher3_1024.png; sourceTree = "<group>"; };
+		1EA97F40BB9505E90BD2323B /* launcher3_120.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher3_120.png; path = AlternateIcons/launcher3_120.png; sourceTree = "<group>"; };
+		37A07D90F8CA26701044EDE4 /* launcher3_152.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher3_152.png; path = AlternateIcons/launcher3_152.png; sourceTree = "<group>"; };
+		3864A75EDE80A12F0C65B852 /* launcher3_167.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher3_167.png; path = AlternateIcons/launcher3_167.png; sourceTree = "<group>"; };
+		2E6513208D46265069B9E071 /* launcher3_180.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher3_180.png; path = AlternateIcons/launcher3_180.png; sourceTree = "<group>"; };
+		CEF4D10FC99C1E89EE82FA3D /* launcher3_20.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher3_20.png; path = AlternateIcons/launcher3_20.png; sourceTree = "<group>"; };
+		2484A4DA9995A377C24C053B /* launcher3_29.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher3_29.png; path = AlternateIcons/launcher3_29.png; sourceTree = "<group>"; };
+		E62EFD929A5668FA33129DE9 /* launcher3_40.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher3_40.png; path = AlternateIcons/launcher3_40.png; sourceTree = "<group>"; };
+		2C8D47CCD3868A30F901FB2F /* launcher3_58.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher3_58.png; path = AlternateIcons/launcher3_58.png; sourceTree = "<group>"; };
+		98DBF1BC6860735030628D43 /* launcher3_60.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher3_60.png; path = AlternateIcons/launcher3_60.png; sourceTree = "<group>"; };
+		E4690C6D4609CA92DCC14E9E /* launcher3_76.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher3_76.png; path = AlternateIcons/launcher3_76.png; sourceTree = "<group>"; };
+		41E57CA414FEFCC9E4DE0FC3 /* launcher3_80.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher3_80.png; path = AlternateIcons/launcher3_80.png; sourceTree = "<group>"; };
+		6659F091F0E29E9BAD4710F5 /* launcher3_87.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher3_87.png; path = AlternateIcons/launcher3_87.png; sourceTree = "<group>"; };
+		CF59BB909253F990942EAB20 /* launcher4_1024.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher4_1024.png; path = AlternateIcons/launcher4_1024.png; sourceTree = "<group>"; };
+		971C5B8C9966B557822B3305 /* launcher4_120.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher4_120.png; path = AlternateIcons/launcher4_120.png; sourceTree = "<group>"; };
+		AEF36B370E70617B26AF9956 /* launcher4_152.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher4_152.png; path = AlternateIcons/launcher4_152.png; sourceTree = "<group>"; };
+		478F8E13020870F5C87CE723 /* launcher4_167.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher4_167.png; path = AlternateIcons/launcher4_167.png; sourceTree = "<group>"; };
+		455305046ABA4E223B0A2404 /* launcher4_180.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher4_180.png; path = AlternateIcons/launcher4_180.png; sourceTree = "<group>"; };
+		9B4607B578306FD052EF75FE /* launcher4_20.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher4_20.png; path = AlternateIcons/launcher4_20.png; sourceTree = "<group>"; };
+		6FE86AF3823B17D8FB67CEE3 /* launcher4_29.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher4_29.png; path = AlternateIcons/launcher4_29.png; sourceTree = "<group>"; };
+		84B5A6CCC948602A445F8A4C /* launcher4_40.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher4_40.png; path = AlternateIcons/launcher4_40.png; sourceTree = "<group>"; };
+		43F5D835E59C1DC5F89F7D63 /* launcher4_58.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher4_58.png; path = AlternateIcons/launcher4_58.png; sourceTree = "<group>"; };
+		40B29904F65FA69B95F5079D /* launcher4_60.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher4_60.png; path = AlternateIcons/launcher4_60.png; sourceTree = "<group>"; };
+		A219E35332F790FB0476E572 /* launcher4_76.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher4_76.png; path = AlternateIcons/launcher4_76.png; sourceTree = "<group>"; };
+		50A696AB816D7CD5968BC665 /* launcher4_80.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher4_80.png; path = AlternateIcons/launcher4_80.png; sourceTree = "<group>"; };
+		10E0D13B12280C2CF0907812 /* launcher4_87.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher4_87.png; path = AlternateIcons/launcher4_87.png; sourceTree = "<group>"; };
+		8DC8CC3F486CBAF9798BAC47 /* launcher5_1024.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher5_1024.png; path = AlternateIcons/launcher5_1024.png; sourceTree = "<group>"; };
+		0FFD8E5A1794BA8DEAC95389 /* launcher5_120.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher5_120.png; path = AlternateIcons/launcher5_120.png; sourceTree = "<group>"; };
+		E5605AA32C578C31CC097D2C /* launcher5_152.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher5_152.png; path = AlternateIcons/launcher5_152.png; sourceTree = "<group>"; };
+		93D4461DDB2238D2A27AE678 /* launcher5_167.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher5_167.png; path = AlternateIcons/launcher5_167.png; sourceTree = "<group>"; };
+		418DDB2A84DD4497E530DF5D /* launcher5_180.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher5_180.png; path = AlternateIcons/launcher5_180.png; sourceTree = "<group>"; };
+		9DAE484121FA3BBD3D2B58F0 /* launcher5_20.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher5_20.png; path = AlternateIcons/launcher5_20.png; sourceTree = "<group>"; };
+		E697609B1CE5E488BB111210 /* launcher5_29.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher5_29.png; path = AlternateIcons/launcher5_29.png; sourceTree = "<group>"; };
+		45EDEC7B5946752A87F32501 /* launcher5_40.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher5_40.png; path = AlternateIcons/launcher5_40.png; sourceTree = "<group>"; };
+		A432A0AB3C879D98ABAA95BD /* launcher5_58.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher5_58.png; path = AlternateIcons/launcher5_58.png; sourceTree = "<group>"; };
+		C7FD45A2BC10AED9D17B6E59 /* launcher5_60.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher5_60.png; path = AlternateIcons/launcher5_60.png; sourceTree = "<group>"; };
+		34B3B872CE69596BD87A84DC /* launcher5_76.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher5_76.png; path = AlternateIcons/launcher5_76.png; sourceTree = "<group>"; };
+		1073D4AFC1C73330BF10F694 /* launcher5_80.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher5_80.png; path = AlternateIcons/launcher5_80.png; sourceTree = "<group>"; };
+		CCFF87F82237C22DABED8CCA /* launcher5_87.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher5_87.png; path = AlternateIcons/launcher5_87.png; sourceTree = "<group>"; };
+		9CC3BE97A8D3AA18EEC7EF43 /* launcher6_1024.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher6_1024.png; path = AlternateIcons/launcher6_1024.png; sourceTree = "<group>"; };
+		0784E0D4D14A16BB700178EC /* launcher6_120.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher6_120.png; path = AlternateIcons/launcher6_120.png; sourceTree = "<group>"; };
+		B7AE0AAF8E5E1712ECD85765 /* launcher6_152.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher6_152.png; path = AlternateIcons/launcher6_152.png; sourceTree = "<group>"; };
+		3AD0C61A625F8E650F11B57E /* launcher6_167.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher6_167.png; path = AlternateIcons/launcher6_167.png; sourceTree = "<group>"; };
+		60C3D673F7C21BA08871D2B3 /* launcher6_180.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher6_180.png; path = AlternateIcons/launcher6_180.png; sourceTree = "<group>"; };
+		FA0AC0689ACFAF4F678CA0C6 /* launcher6_20.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher6_20.png; path = AlternateIcons/launcher6_20.png; sourceTree = "<group>"; };
+		4DCDDB830803F4D22F43851B /* launcher6_29.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher6_29.png; path = AlternateIcons/launcher6_29.png; sourceTree = "<group>"; };
+		D4735201896F786E8B8550B1 /* launcher6_40.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher6_40.png; path = AlternateIcons/launcher6_40.png; sourceTree = "<group>"; };
+		E150ACF54D3247A89014B9CF /* launcher6_58.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher6_58.png; path = AlternateIcons/launcher6_58.png; sourceTree = "<group>"; };
+		2FA4160D433E64E1488C1C1C /* launcher6_60.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher6_60.png; path = AlternateIcons/launcher6_60.png; sourceTree = "<group>"; };
+		BB0A7E2B0222E3C5E8C7E392 /* launcher6_76.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher6_76.png; path = AlternateIcons/launcher6_76.png; sourceTree = "<group>"; };
+		C640743DFB6772695A5A0A5D /* launcher6_80.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher6_80.png; path = AlternateIcons/launcher6_80.png; sourceTree = "<group>"; };
+		4F85C36F70AE054306C6C74A /* launcher6_87.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = launcher6_87.png; path = AlternateIcons/launcher6_87.png; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -121,10 +279,97 @@
 				1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */,
 				74858FAE1ED2DC5600515810 /* AppDelegate.swift */,
 			7485A0BA2F0A0000000000A1 /* NowPlayingBridge.swift */,
+				B913AF9475EAC9655614311C /* LauncherIconBridge.swift */,
+				B31455AD76E1FF1CD7B41B96 /* AlternateIcons */,
 				7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */,
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		B31455AD76E1FF1CD7B41B96 /* AlternateIcons */ = {
+			isa = PBXGroup;
+			children = (
+				7BAB4A4D1CD3F940069B0A75 /* launcher1_1024.png */,
+				1C159E149943F8A9E70B90F1 /* launcher1_120.png */,
+				D38979F30C59A29DA303E4A6 /* launcher1_152.png */,
+				1CE278445F1024AD83146D22 /* launcher1_167.png */,
+				286522074AB2811C06A6EA8B /* launcher1_180.png */,
+				4ED3BF6D134631EA022B1E44 /* launcher1_20.png */,
+				701D10D07691A0B132899350 /* launcher1_29.png */,
+				77296C7F62C4A39A907D76C6 /* launcher1_40.png */,
+				84877DC9501B3F1E4393F57B /* launcher1_58.png */,
+				FABA6284BBDDC4717FFF4C20 /* launcher1_60.png */,
+				99FEB937D5435A7A6FBEA3E2 /* launcher1_76.png */,
+				243184EC82545EACD35C82B7 /* launcher1_80.png */,
+				989C63C10D8B9C6EBE192713 /* launcher1_87.png */,
+				892CA667B7315CF02BAE5037 /* launcher2_1024.png */,
+				B870F7180C3A5542132E2FC4 /* launcher2_120.png */,
+				2B2BABAAC111229DD60CFECF /* launcher2_152.png */,
+				6E8873DE01F7E66BA1890022 /* launcher2_167.png */,
+				6E528B6BFF2D1EEDAC0F0CE6 /* launcher2_180.png */,
+				1F37C277FC73EBE78C0B1239 /* launcher2_20.png */,
+				3063F2C91F1770074750338F /* launcher2_29.png */,
+				2A677D939DD6C1DC075A3497 /* launcher2_40.png */,
+				A6970481867D1EC8CE8E4CD8 /* launcher2_58.png */,
+				75BA16F13C7E63EFB33CB7B2 /* launcher2_60.png */,
+				582F52CE61F41F7C86D7F0DB /* launcher2_76.png */,
+				DB1158462EE6FACA79D86058 /* launcher2_80.png */,
+				E5111109F293176EE17D3858 /* launcher2_87.png */,
+				3B371863253A561E99AB6A8E /* launcher3_1024.png */,
+				1EA97F40BB9505E90BD2323B /* launcher3_120.png */,
+				37A07D90F8CA26701044EDE4 /* launcher3_152.png */,
+				3864A75EDE80A12F0C65B852 /* launcher3_167.png */,
+				2E6513208D46265069B9E071 /* launcher3_180.png */,
+				CEF4D10FC99C1E89EE82FA3D /* launcher3_20.png */,
+				2484A4DA9995A377C24C053B /* launcher3_29.png */,
+				E62EFD929A5668FA33129DE9 /* launcher3_40.png */,
+				2C8D47CCD3868A30F901FB2F /* launcher3_58.png */,
+				98DBF1BC6860735030628D43 /* launcher3_60.png */,
+				E4690C6D4609CA92DCC14E9E /* launcher3_76.png */,
+				41E57CA414FEFCC9E4DE0FC3 /* launcher3_80.png */,
+				6659F091F0E29E9BAD4710F5 /* launcher3_87.png */,
+				CF59BB909253F990942EAB20 /* launcher4_1024.png */,
+				971C5B8C9966B557822B3305 /* launcher4_120.png */,
+				AEF36B370E70617B26AF9956 /* launcher4_152.png */,
+				478F8E13020870F5C87CE723 /* launcher4_167.png */,
+				455305046ABA4E223B0A2404 /* launcher4_180.png */,
+				9B4607B578306FD052EF75FE /* launcher4_20.png */,
+				6FE86AF3823B17D8FB67CEE3 /* launcher4_29.png */,
+				84B5A6CCC948602A445F8A4C /* launcher4_40.png */,
+				43F5D835E59C1DC5F89F7D63 /* launcher4_58.png */,
+				40B29904F65FA69B95F5079D /* launcher4_60.png */,
+				A219E35332F790FB0476E572 /* launcher4_76.png */,
+				50A696AB816D7CD5968BC665 /* launcher4_80.png */,
+				10E0D13B12280C2CF0907812 /* launcher4_87.png */,
+				8DC8CC3F486CBAF9798BAC47 /* launcher5_1024.png */,
+				0FFD8E5A1794BA8DEAC95389 /* launcher5_120.png */,
+				E5605AA32C578C31CC097D2C /* launcher5_152.png */,
+				93D4461DDB2238D2A27AE678 /* launcher5_167.png */,
+				418DDB2A84DD4497E530DF5D /* launcher5_180.png */,
+				9DAE484121FA3BBD3D2B58F0 /* launcher5_20.png */,
+				E697609B1CE5E488BB111210 /* launcher5_29.png */,
+				45EDEC7B5946752A87F32501 /* launcher5_40.png */,
+				A432A0AB3C879D98ABAA95BD /* launcher5_58.png */,
+				C7FD45A2BC10AED9D17B6E59 /* launcher5_60.png */,
+				34B3B872CE69596BD87A84DC /* launcher5_76.png */,
+				1073D4AFC1C73330BF10F694 /* launcher5_80.png */,
+				CCFF87F82237C22DABED8CCA /* launcher5_87.png */,
+				9CC3BE97A8D3AA18EEC7EF43 /* launcher6_1024.png */,
+				0784E0D4D14A16BB700178EC /* launcher6_120.png */,
+				B7AE0AAF8E5E1712ECD85765 /* launcher6_152.png */,
+				3AD0C61A625F8E650F11B57E /* launcher6_167.png */,
+				60C3D673F7C21BA08871D2B3 /* launcher6_180.png */,
+				FA0AC0689ACFAF4F678CA0C6 /* launcher6_20.png */,
+				4DCDDB830803F4D22F43851B /* launcher6_29.png */,
+				D4735201896F786E8B8550B1 /* launcher6_40.png */,
+				E150ACF54D3247A89014B9CF /* launcher6_58.png */,
+				2FA4160D433E64E1488C1C1C /* launcher6_60.png */,
+				BB0A7E2B0222E3C5E8C7E392 /* launcher6_76.png */,
+				C640743DFB6772695A5A0A5D /* launcher6_80.png */,
+				4F85C36F70AE054306C6C74A /* launcher6_87.png */,
+			);
+			path = AlternateIcons;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -222,6 +467,84 @@
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
+				B2ACAC0042E2BC7926C99CD4 /* launcher1_1024.png in Resources */,
+				FA16819C46823F639C6A607E /* launcher1_120.png in Resources */,
+				B7DE86D81233AE41EF05E5A6 /* launcher1_152.png in Resources */,
+				326C7B542DCEE493F26DBC6F /* launcher1_167.png in Resources */,
+				E503C43C11687DF6CE314970 /* launcher1_180.png in Resources */,
+				8801515774EFAF49AE5A12F7 /* launcher1_20.png in Resources */,
+				57D7724F868ADE97478C1ED7 /* launcher1_29.png in Resources */,
+				F7462DF5F3E5F69C932A1114 /* launcher1_40.png in Resources */,
+				361C69E4D077B369DC069557 /* launcher1_58.png in Resources */,
+				4637A4802B53F7DDDF714AE4 /* launcher1_60.png in Resources */,
+				B570AF86E36C8416B9688292 /* launcher1_76.png in Resources */,
+				AD8FBFE193F19074CB989202 /* launcher1_80.png in Resources */,
+				AECFBDE0B695963932931F12 /* launcher1_87.png in Resources */,
+				DDB6533BBC64604791457C9B /* launcher2_1024.png in Resources */,
+				14D8E62E4C85A2604E983606 /* launcher2_120.png in Resources */,
+				F808578539891D2319B7C429 /* launcher2_152.png in Resources */,
+				BBCA58503061367CF3B9A635 /* launcher2_167.png in Resources */,
+				3CC2C1C3601FFA76340847E9 /* launcher2_180.png in Resources */,
+				C627757610854BCADAA43207 /* launcher2_20.png in Resources */,
+				29809B2B7D5D34596C0B228B /* launcher2_29.png in Resources */,
+				06EBD7E1430DC438932EBBC9 /* launcher2_40.png in Resources */,
+				9D5A698A5AD7094AB5F186A1 /* launcher2_58.png in Resources */,
+				3F80148D8B5D143A86CBA387 /* launcher2_60.png in Resources */,
+				2ED076AA158012147F8A8265 /* launcher2_76.png in Resources */,
+				9172189CF1930026B5EFB8F2 /* launcher2_80.png in Resources */,
+				E0F4A0DBF808061BFC171E88 /* launcher2_87.png in Resources */,
+				C2AE524C25E35D67176EE7E8 /* launcher3_1024.png in Resources */,
+				7ADAD28DF59F4A854B15B088 /* launcher3_120.png in Resources */,
+				9CBF145F52026F0B916B7B8A /* launcher3_152.png in Resources */,
+				A3A2BD63F3ED1D02721F583A /* launcher3_167.png in Resources */,
+				3FAB34DD438E97FEFD68B742 /* launcher3_180.png in Resources */,
+				A303BEEEBBB5BEA57E53DE03 /* launcher3_20.png in Resources */,
+				62D054C2B275407D98BBCFDD /* launcher3_29.png in Resources */,
+				E1BC64E8351CC64285FBB8AD /* launcher3_40.png in Resources */,
+				2112678262B698BF0F6354F3 /* launcher3_58.png in Resources */,
+				4A1233B0C2F7C28B65DD3892 /* launcher3_60.png in Resources */,
+				91F1C7ABE4275C2C67F196B3 /* launcher3_76.png in Resources */,
+				3BCCCB1A64353A09293600E3 /* launcher3_80.png in Resources */,
+				3090BB15EEE4DB01C2A637D6 /* launcher3_87.png in Resources */,
+				D3151C9754762B70C60B5C09 /* launcher4_1024.png in Resources */,
+				0BFCA29CD38D48AC6FAA98D5 /* launcher4_120.png in Resources */,
+				C77D244784BC8BCA6DB3B01F /* launcher4_152.png in Resources */,
+				5FA0E8296495E71216D2D585 /* launcher4_167.png in Resources */,
+				96F37DE30BD47A2FFDFDD172 /* launcher4_180.png in Resources */,
+				30F9856448ADDF68134B663A /* launcher4_20.png in Resources */,
+				D70913C1BA106AF7EFA0E46E /* launcher4_29.png in Resources */,
+				A504873FBAD7E0E51AD9C749 /* launcher4_40.png in Resources */,
+				6BFC9F08F51A60A84ADB5307 /* launcher4_58.png in Resources */,
+				7B4A3423AF99FDE55947E339 /* launcher4_60.png in Resources */,
+				F5C44A1592E65CA26CF1D1D4 /* launcher4_76.png in Resources */,
+				3A67AF519DEB98C196BC4271 /* launcher4_80.png in Resources */,
+				A52D6DA3882E82FB25A98E90 /* launcher4_87.png in Resources */,
+				25B2995F413B0727CA8C4A44 /* launcher5_1024.png in Resources */,
+				3413A47AC680E9CD4AD9AD33 /* launcher5_120.png in Resources */,
+				030220439638625621D48E00 /* launcher5_152.png in Resources */,
+				B7222FCEBFD3645AA8E532AD /* launcher5_167.png in Resources */,
+				5BF6ADCD59E1E959188337C5 /* launcher5_180.png in Resources */,
+				C698F14AC18856818B3711E9 /* launcher5_20.png in Resources */,
+				A423A612D4F8C02E761CA53F /* launcher5_29.png in Resources */,
+				D88CC6B350526497029AFA0F /* launcher5_40.png in Resources */,
+				DAC4F7D723E3A0A4E69BA59F /* launcher5_58.png in Resources */,
+				AE979CA5697264A49BC91BF3 /* launcher5_60.png in Resources */,
+				DF642DE3DFBAFB505A075F12 /* launcher5_76.png in Resources */,
+				2A5D7054AFA1E426B25893BE /* launcher5_80.png in Resources */,
+				018FC9A6A04E4814B3A1B305 /* launcher5_87.png in Resources */,
+				D298C8DBC2378DB006E107C1 /* launcher6_1024.png in Resources */,
+				2B30F8E5569DBDCDC9A9354B /* launcher6_120.png in Resources */,
+				7FC8D050C516BB9D2E436597 /* launcher6_152.png in Resources */,
+				69A598E2A6AAF02558E69525 /* launcher6_167.png in Resources */,
+				2A2CE8FAC4A480D8ED4AEF41 /* launcher6_180.png in Resources */,
+				FE8C163C29A5F6D4BA2AF03B /* launcher6_20.png in Resources */,
+				DE9DD14403875DC1E826027B /* launcher6_29.png in Resources */,
+				02269A227289783B78EC824E /* launcher6_40.png in Resources */,
+				B6340EE393FE959AB30A1944 /* launcher6_58.png in Resources */,
+				B7D728F97E6CE3115412D2A4 /* launcher6_60.png in Resources */,
+				C23B940B68EC35AEE475A0CD /* launcher6_76.png in Resources */,
+				D59C40CC27F8677B927087CB /* launcher6_80.png in Resources */,
+				A7E298FF18C5DC721D002F39 /* launcher6_87.png in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -278,6 +601,7 @@
 			7485A0BA2F0A0000000000B2 /* NowPlayingBridge.swift in Sources */,
 				1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */,
 				7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */,
+				384E7CD32C0400318E89BFE2 /* LauncherIconBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -72,6 +72,93 @@
             </intent-filter>
         </activity>
 
+        <!-- 图标变体（对齐原版 Launcher1~6：默认禁用，LauncherIconBridge
+             经 setComponentEnabledSetting 切换哪个可见以更换桌面图标） -->
+        <activity
+            android:name=".Launcher1"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/launcher1"
+            android:theme="@style/LaunchTheme">
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".Launcher2"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/launcher2"
+            android:theme="@style/LaunchTheme">
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".Launcher3"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/launcher3"
+            android:theme="@style/LaunchTheme">
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".Launcher4"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/launcher4"
+            android:theme="@style/LaunchTheme">
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".Launcher5"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/launcher5"
+            android:theme="@style/LaunchTheme">
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".Launcher6"
+            android:enabled="false"
+            android:exported="true"
+            android:icon="@mipmap/launcher6"
+            android:theme="@style/LaunchTheme">
+            <meta-data
+                android:name="io.flutter.embedding.android.NormalTheme"
+                android:resource="@style/NormalTheme" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
         <!-- P1-16：定时任务 JobService（对齐原版 AutoTaskJobService） -->
         <service
             android:name=".AutoTaskJobService"

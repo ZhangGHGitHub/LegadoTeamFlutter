@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用图标变体所需颜色（对齐原版 colors_material_design.md_yellow_600 / md_grey_50） -->
+<resources>
+    <color name="md_yellow_600">#FDD835</color>
+    <color name="md_grey_50">#FAFAFA</color>
+</resources>

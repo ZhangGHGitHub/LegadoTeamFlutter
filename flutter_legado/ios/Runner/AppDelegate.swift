@@ -29,5 +29,9 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "NowPlayingBridge") {
       NowPlayingBridge.shared.attach(messenger: registrar.messenger())
     }
+    // 运行时更换桌面图标（对齐原版 change_icon；iOS setAlternateIconName）
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "LauncherIconBridge") {
+      LauncherIconBridge.shared.attach(messenger: registrar.messenger())
+    }
   }
 }

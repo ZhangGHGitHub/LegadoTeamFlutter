@@ -12,7 +12,8 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+// open：供图标变体桩类 Launcher1~6 继承（对齐原版 WelcomeActivity ×6 子类机制）
+open class MainActivity : FlutterActivity() {
 
     private val webViewBridge = WebViewBridge()
     private val brightnessBridge = BrightnessBridge()
@@ -45,6 +46,7 @@ class MainActivity : FlutterActivity() {
         private const val CHANNEL_SYSTEM_BAR = "legado/system_bar"
         private const val CHANNEL_DEVICE_ID = "legado/device_id"
         private const val CHANNEL_COOKIE = "legado/cookie"
+        private const val CHANNEL_LAUNCHER_ICON = LauncherIconBridge.CHANNEL
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -142,6 +144,12 @@ class MainActivity : FlutterActivity() {
                     }
                     else -> result.notImplemented()
                 }
+            }
+
+        // 更换桌面启动图标（对齐原版 LauncherIconHelp.changeIcon）
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_LAUNCHER_ICON)
+            .setMethodCallHandler { call, result ->
+                LauncherIconBridge.handleMethodCall(call, result, this)
             }
     }
 

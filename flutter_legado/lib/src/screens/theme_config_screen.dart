@@ -22,6 +22,7 @@ import '../providers/theme/system_bar_notifier.dart';
 import '../providers/theme/theme_colors_notifier.dart';
 import '../providers/theme/theme_notifier.dart';
 import '../routes.dart';
+import '../services/launcher_icon_service.dart';
 import '../services/settings_service.dart';
 import '../theme/md3_colors.dart';
 import '../widgets/ios_widgets.dart';
@@ -164,13 +165,16 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   ),
                   // === 通用（对齐原版顶部未分组项；主题模式仅在「我的」枢纽）===
                   IosGroup(children: [
-                    IosListTile(
-                      title: '切换图标',
-                      subtitle: _androidOnly,
-                      value: _launcherIconLabels[
-                          _launcherIcons.indexOf(_launcherIcon).clamp(0, 6)],
-                      onTap: _showLauncherIconPicker,
-                    ),
+                    // 更换桌面图标（对齐原版 change_icon；Android/iOS 支持，
+                    // Windows 等桌面端无运行时换图标能力时整项隐藏）
+                    if (LauncherIconService.isSupported)
+                      IosListTile(
+                        title: '切换图标',
+                        subtitle: '更换桌面显示的应用图标',
+                        value: _launcherIconLabels[
+                            _launcherIcons.indexOf(_launcherIcon).clamp(0, 6)],
+                        onTap: _showLauncherIconPicker,
+                      ),
                     IosListTile(
                       title: '启动界面样式',
                       subtitle: '设定显示时间，更改背景图片，是否显示文字等',
@@ -469,6 +473,17 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     if (selected == null || !mounted) return;
     setState(() => _launcherIcon = selected);
     await _settings.setStringPref(PrefKeys.launcherIcon, selected);
+    // 下发原生侧实际切换（Android setComponentEnabledSetting /
+    // iOS setAlternateIconName）；失败时提示，不阻断偏好保存
+    final ok = await LauncherIconService.setIcon(selected);
+    if (!mounted) return;
+    if (ok) {
+      if (LauncherIconService.isIos) {
+        _toast('图标已切换，重启应用后生效');
+      }
+    } else {
+      _toast('当前平台或系统版本不支持更换图标');
+    }
   }
 
   /// 封面设置（对齐原版 pref_config_cover 布尔项；封面规则依赖书源引擎，
