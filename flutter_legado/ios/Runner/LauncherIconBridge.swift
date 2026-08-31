@@ -33,10 +33,17 @@ import UIKit
       // CFBundleAlternateIcons 声明 launcher1~6（setAlternateIconName 的前提）。
       // （UIKit 无公开的同步查询 API；set 的 completion 在模拟器上不回调，
       // 故门禁不用 set。）
-      let dict = Bundle.main.infoDictionary ?? [:]
-      let alt = (dict["CFBundleAlternateIcons"] as? [String: Any]) ?? [:]
-      let names = (1...6).map { "launcher\($0)" }
-      result(["canSet": names.allSatisfy { alt.keys.contains($0) }])
+      let bundle = Bundle.main
+      let dict = bundle.infoDictionary ?? [:]
+      // [AnyHashable: Any] 是 NSDictionary 的保底桥接类型（[String: Any]
+      // 强转存在失败风险）；altKeys/bundlePath 为 CI 诊断证据字段。
+      let altNS = (dict["CFBundleAlternateIcons"] as? [AnyHashable: Any]) ?? [:]
+      let names = ["launcher1", "launcher2", "launcher3", "launcher4", "launcher5", "launcher6"]
+      result([
+        "canSet": names.allSatisfy { altNS[$0] != nil },
+        "altKeys": altNS.keys.map { "\($0)" }.sorted(),
+        "bundlePath": bundle.bundlePath,
+      ])
       return
     }
     guard call.method == "set" else {

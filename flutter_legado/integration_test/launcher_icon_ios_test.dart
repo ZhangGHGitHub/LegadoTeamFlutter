@@ -7,8 +7,8 @@
 // 回归门禁（断言，CI 必须通过）：
 //   - status 方法可达 → AppDelegate 通道接线完好
 //     （MissingPluginException = 接线断裂）；
-//   - canSetApplicationIconsNamed(launcher1~6) == true → Info.plist
-//     CFBundleAlternateIcons 声明与 AlternateIcons 资源完整。
+//   - canSet == true → Bundle.main 的 Info.plist CFBundleAlternateIcons
+//     声明 launcher1~6（setAlternateIconName 的前提）。
 //
 // 仅取证（不断言，平台行为随版本/模拟器而异）：
 //   - 真实 set icon1：iOS 模拟器的 setAlternateIconName completion
@@ -59,12 +59,20 @@ void main() {
       reason: 'status 通道应可达；实际异常: $statusError'
           '（MissingPluginException = AppDelegate 接线断裂）',
     );
-    final canSet = (statusResult as Map?)?['canSet'];
+    final statusMap = (statusResult as Map?) ?? <Object?, Object?>{};
+    // 诊断证据：altKeys = CFBundleAlternateIcons 实际可见键；bundlePath =
+    // 原生侧读取的 bundle 路径（CI 失败时用于定位 plist 缺失来源）。
+    debugPrint(
+      '[LauncherIconTest] 证据 → altKeys=${statusMap['altKeys']}'
+      ' bundlePath=${statusMap['bundlePath']}',
+    );
+    final canSet = statusMap['canSet'];
     expect(
       canSet,
       true,
       reason: 'Info.plist CFBundleAlternateIcons 应声明 launcher1~6；'
-          'canSet=false 表示声明或 AlternateIcons 资源缺失',
+          'canSet=false 且 altKeys=[] → 该 bundle 的 plist 缺声明；'
+          'altKeys 有值但 canSet=false → 键名不匹配',
     );
 
     // ── 2) 仅取证：真实 set icon1（模拟器 completion 不回调 → 超时守护，不断言）──
