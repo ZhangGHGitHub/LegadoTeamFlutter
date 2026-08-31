@@ -41,15 +41,17 @@ void main() {
     final channel = const MethodChannel('legado/launcher_icon');
 
     // ── 1) 回归门禁：status（原生同步应答，无 UIKit 异步）──
-    Map<String, Object?>? status;
+    // invokeMethod 不指定泛型 T（避免按赋值目标推断为 Map<String, Object?>
+    // 而平台实际返回 _Map<Object?, Object?> 导致 cast 失败），改动态取值。
+    Object? statusResult;
     Object? statusError;
     try {
-      status = await channel.invokeMethod('status');
+      statusResult = await channel.invokeMethod<dynamic>('status');
     } catch (e) {
       statusError = e;
     }
     debugPrint(
-      '[LauncherIconTest] status → ${statusError == null ? 'OK: $status' : 'FAILED: $statusError'}',
+      '[LauncherIconTest] status → ${statusError == null ? 'OK: $statusResult' : 'FAILED: $statusError'}',
     );
     expect(
       statusError,
@@ -57,8 +59,9 @@ void main() {
       reason: 'status 通道应可达；实际异常: $statusError'
           '（MissingPluginException = AppDelegate 接线断裂）',
     );
+    final canSet = (statusResult as Map?)?['canSet'];
     expect(
-      status?['canSet'],
+      canSet,
       true,
       reason: 'Info.plist CFBundleAlternateIcons 应声明 launcher1~6；'
           'canSet=false 表示声明或 AlternateIcons 资源缺失',
