@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/search/search_notifier.dart';
+import '../utils/error_message.dart';
 
 /// 搜索范围筛选面板（书源单选）
 ///
@@ -69,7 +70,7 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
     } catch (e) {
       if (mounted) {
         setState(() {
-          _error = e.toString();
+          _error = errorMessage(e);
           _loading = false;
         });
       }

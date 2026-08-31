@@ -8,6 +8,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../widgets/empty_state.dart';
 import '../widgets/loading_indicator.dart';
+import '../utils/error_message.dart';
 
 /// 文件管理页面
 ///
@@ -70,7 +71,7 @@ class _FileManageScreenState extends State<FileManageScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = errorMessage(e);
       });
     }
   }
@@ -97,7 +98,7 @@ class _FileManageScreenState extends State<FileManageScreen> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _error = e.toString();
+        _error = errorMessage(e);
       });
     }
   }

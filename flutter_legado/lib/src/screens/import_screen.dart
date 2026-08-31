@@ -13,6 +13,7 @@ import '../providers/providers.dart';
 import '../routes.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/loading_indicator.dart';
+import '../utils/error_message.dart';
 import 'archive_import_dialog.dart';
 
 /// 支持的导入格式（azw3/azw 为 KF8 MOBI，Rust LocalBook 已支持）
@@ -98,7 +99,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = errorMessage(e);
         _loading = false;
       });
     }
@@ -140,7 +141,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = errorMessage(e);
         _loading = false;
       });
     }
@@ -228,7 +229,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
           await notifier.importLocalBook(path);
           _outcomes.add(_ImportOutcome(name: name, success: true));
         } catch (e) {
-          _outcomes.add(_ImportOutcome(name: name, success: false, error: e.toString()));
+          _outcomes.add(_ImportOutcome(name: name, success: false, error: errorMessage(e)));
         }
       }
       if (mounted) {

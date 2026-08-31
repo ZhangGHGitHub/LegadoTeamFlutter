@@ -14,6 +14,7 @@ import '../utils/book_open_utils.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
+import '../utils/error_message.dart';
 
 /// 阅读记录页（对齐原版 `ReadRecordActivity`）
 ///
@@ -455,7 +456,7 @@ class _HeatmapSectionState extends ConsumerState<_HeatmapSection> {
       }
       setState(() => _dailySeconds = map);
     } catch (e) {
-      if (mounted) setState(() => _error = e.toString());
+      if (mounted) setState(() => _error = errorMessage(e));
     }
   }
 

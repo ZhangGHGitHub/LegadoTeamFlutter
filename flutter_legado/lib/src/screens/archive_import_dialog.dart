@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../services/book_api.dart';
+import '../utils/error_message.dart';
 
 /// 支持的编码列表（用于 TXT 子文件编码选择）
 const _supportedEncodings = [
@@ -121,7 +122,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = errorMessage(e);
         _loading = false;
       });
     }

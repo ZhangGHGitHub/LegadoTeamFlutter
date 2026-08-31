@@ -24,6 +24,7 @@ import '../widgets/error_view.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/rss_group_manage_dialog.dart';
+import '../utils/error_message.dart';
 import 'rss_source_edit_screen.dart';
 import 'rss_source_import_confirm_screen.dart';
 
@@ -90,7 +91,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = errorMessage(e);
         _loading = false;
       });
     }

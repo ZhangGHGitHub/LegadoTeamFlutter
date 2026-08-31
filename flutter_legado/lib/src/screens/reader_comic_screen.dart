@@ -13,6 +13,7 @@ import '../providers/providers.dart';
 import '../services/book_api.dart';
 import '../services/system_brightness.dart';
 import '../utils/comic_image_utils.dart';
+import '../utils/error_message.dart';
 import '../utils/manga_epaper.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/error_view.dart';
@@ -282,7 +283,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        // BridgeError 无自定义 toString()，裸显会显示 "Instance of 'BridgeError'"
+        _error = errorMessage(e);
         _loading = false;
       });
     }
@@ -365,7 +367,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        // BridgeError 无自定义 toString()，裸显会显示 "Instance of 'BridgeError'"
+        _error = errorMessage(e);
         _loading = false;
       });
     }

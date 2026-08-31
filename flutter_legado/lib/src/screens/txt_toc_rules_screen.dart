@@ -8,6 +8,7 @@ import '../providers/txt_toc_rules/txt_toc_rules_notifier.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
+import '../utils/error_message.dart';
 
 /// TXT 目录规则管理页面
 ///
@@ -324,7 +325,7 @@ It was a dark and stormy night.''';
           .toList();
       return _TestResult(matches: matches);
     } catch (e) {
-      return _TestResult(matches: const [], error: e.toString());
+      return _TestResult(matches: const [], error: errorMessage(e));
     }
   }
 }

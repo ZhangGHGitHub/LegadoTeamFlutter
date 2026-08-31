@@ -5,6 +5,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../services/book_api.dart';
+import '../../utils/error_message.dart';
 
 /// 段评详情条目（对齐原版 ReviewRuleParser.DetailItem）
 class ReviewDetailItem {
@@ -205,7 +206,7 @@ class _ReviewDetailSheetState extends State<ReviewDetailSheet> {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        if (!append) _error = e.toString();
+        if (!append) _error = errorMessage(e);
       });
     }
   }

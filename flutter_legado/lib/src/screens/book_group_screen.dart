@@ -12,6 +12,7 @@ import '../widgets/book_cover.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/loading_indicator.dart';
+import '../utils/error_message.dart';
 
 /// 分组排序方式
 enum _GroupSort { order, name, bookCount }
@@ -54,7 +55,7 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = errorMessage(e);
         _loading = false;
       });
     }

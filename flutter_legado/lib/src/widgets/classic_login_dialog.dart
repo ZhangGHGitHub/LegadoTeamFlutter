@@ -8,6 +8,7 @@ import '../models/models.dart';
 import '../routes.dart';
 import '../services/book_api.dart';
 import '../services/platform_bridge_service.dart';
+import '../utils/error_message.dart';
 
 /// 经典 loginUi 表单登录对话框（对标 Kotlin `SourceLoginDialog`）
 ///
@@ -186,7 +187,7 @@ class ClassicLoginDialogState extends State<ClassicLoginDialog> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _loadError = e.toString();
+        _loadError = errorMessage(e);
         _loading = false;
       });
     }

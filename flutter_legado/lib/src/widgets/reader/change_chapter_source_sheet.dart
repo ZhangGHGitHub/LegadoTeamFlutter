@@ -7,6 +7,7 @@ import '../../models/source_match.dart';
 import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../services/book_api.dart';
+import '../../utils/error_message.dart';
 
 /// 单章换源（对标原版 `ChangeChapterSourceDialog`）
 ///
@@ -100,7 +101,7 @@ class _ChangeChapterSourceSheetState
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = errorMessage(e);
         _loading = false;
       });
     }

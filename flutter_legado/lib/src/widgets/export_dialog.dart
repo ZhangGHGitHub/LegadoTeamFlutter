@@ -7,6 +7,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../models/models.dart';
 import '../services/export_service.dart';
 import '../services/book_api.dart';
+import '../utils/error_message.dart';
 
 /// 导出对话框
 ///
@@ -604,7 +605,7 @@ class _ExportDialogState extends State<ExportDialog> {
         Navigator.pop(context, result);
       }
     } catch (e) {
-      _showError(e.toString());
+      _showError(errorMessage(e));
     }
   }
 

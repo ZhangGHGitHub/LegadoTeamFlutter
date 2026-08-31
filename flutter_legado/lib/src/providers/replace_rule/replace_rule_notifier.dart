@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../bridge/ffi.dart';
 import '../../models/models.dart';
 import '../providers.dart';
+import '../../utils/error_message.dart';
 import 'replace_rule_state.dart';
 
 export 'replace_rule_state.dart';
@@ -33,7 +34,7 @@ class ReplaceRuleNotifier extends Notifier<ReplaceRuleState> {
       if (e is BridgeError) {
         state = state.copyWith(error: e.message);
       } else {
-        state = state.copyWith(error: e.toString());
+        state = state.copyWith(error: errorMessage(e));
       }
     } finally {
       state = state.copyWith(loading: false);

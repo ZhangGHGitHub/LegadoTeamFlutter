@@ -9,6 +9,7 @@ import '../providers/providers.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
+import '../utils/error_message.dart';
 
 /// RSS 收藏页面
 ///
@@ -52,7 +53,7 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = errorMessage(e);
         _loading = false;
       });
     }
