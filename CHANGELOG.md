@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.140] - 2026-08-31
+
+### Fixed
+- [UI] iOS 换图标 OSStatus -54 第三轮根因（2.0.139 CI 失败暴露）：actool 判定 6 个 launcher appiconset 各含 2 个「unassigned children」图像——手写的 Contents.json 含 legacy iPhone 20x20@1x / 40x40@1x 槽位，Xcode 16 的 app icon 模型已不识别（主图标 AppIcon.appiconset 无此两槽、编译干净且在 car 中），整组拒编入 Assets.car（设备 car 仅含 AppIcon + LaunchImage，187KB），真机 CFBundleIconName 解析必然再报 -54。修复：6 个 launcher Contents.json 全部对齐 AppIcon.appiconset 标准 19 槽位（移除 2 个 legacy iPhone 1x 槽；补 iPad 20x20@1x/2x 与 83.5x83.5@2x 槽），并从 git 历史恢复此前误删的 launcherN_167.png（iPad 83.5@2x = 167px）
+- [UI] CI 新增 actool 警告门禁：设备构建日志出现「unassigned children」即失败——槽位模型错配在构建期直接暴露，不再流入真机验收
+
+### Test
+- flutter analyze 无问题；iOS Build CI：Contents.json 文件名核查 + actool unassigned children 警告门禁 + Assets.car 6 appiconset 名校验 + 集成测试 altIconNames 门禁
+- 版本 2.0.140+141
+
+- Contributor: Qoder + UI
+
 ## [2.0.139] - 2026-08-31
 
 ### Fixed

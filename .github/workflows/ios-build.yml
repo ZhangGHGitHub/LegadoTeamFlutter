@@ -134,6 +134,20 @@ jobs:
           done
           [ "$FAIL" -eq 0 ] || exit 1
 
+      # actool 若判定 appiconset 含未分配槽位图像（如 legacy iPhone 1x 槽），
+      # 会整组拒编入 Assets.car——2.0.139 CI 失败根因。此处直接门禁该警告，
+      # 确保任何槽位模型错配在构建期即暴露，不流入真机验收。
+      - name: Verify no unassigned appiconset warnings in actool log
+        run: |
+          set -euxo pipefail
+          LOG=flutter_legado/ios_device_build.log
+          if grep -q "unassigned children" "$LOG"; then
+            echo "::error::actool 报告 appiconset 存在未分配槽位图像——变体图标不会被编入 Assets.car，真机换图标将报 OSStatus -54"
+            grep -n "unassigned children" "$LOG" | head -10
+            exit 1
+          fi
+          echo "actool 无 unassigned children 警告（appiconset 槽位结构合法）"
+
       - name: Verify alternate icon appiconsets in Assets.car
         run: |
           set -euxo pipefail
