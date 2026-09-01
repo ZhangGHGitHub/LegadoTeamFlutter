@@ -28,25 +28,19 @@ import UIKit
 
   private func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
     if call.method == "status" {
-      // 同步应答（Bundle/文件读取 + UIImage 资源查找，无 UIKit 异步）：集成测试回归门禁。
-      // canSet = 已安装 bundle 磁盘 Info.plist 声明 launcher1~6
+      // 同步应答（Bundle/文件读取，无 UIKit 异步）：集成测试回归门禁。
+      // canSet = 已安装 bundle 磁盘 Info.plist 的 CFBundleAlternateIcons 声明 launcher1~6
       // （setAlternateIconName 的直接前提；UIKit 无公开同步查询 API，
       // set 的 completion 在模拟器上不回调，故门禁不用 set）。
-      // assetCount = 78 个尺寸图标经 UIImage(named:) 的可解析数量——
-      // 与 setAlternateIconName 解析 CFBundleIconFiles 名称同一条查找路径
-      // （无扩展名条目按 Assets.car imageset 名解析），模拟器上可断言，
-      // 是「真机 -54（imageset 缺失）」的直接回归门禁。
+      // altIconNames = 各条目「键=CFBundleIconName」对：系统按 Assets.car 中
+      // appiconset 名（launcher1.appiconset…）解析图标——与主图标
+      // AppIcon.appiconset 同一条已验证可用的解析路径；值不等于键、或
+      // appiconset 未编入资产目录，真机 setAlternateIconName 将失败（-54）。
       let bundle = Bundle.main
       let names = ["launcher1", "launcher2", "launcher3", "launcher4", "launcher5", "launcher6"]
-      let sizes = ["20", "29", "40", "58", "60", "76", "80", "87", "120", "152", "167", "180", "1024"]
-      var assetCount = 0
-      for name in names {
-        for size in sizes where UIImage(named: "\(name)_\(size)") != nil {
-          assetCount += 1
-        }
-      }
       // 证据 A：磁盘 Info.plist（安装副本的真实状态）——直接读原始字节并解析。
       var diskAltKeys: [String] = []
+      var altIconNames: [String] = []
       var diskBytes = -1
       if let p = bundle.path(forResource: "Info", ofType: "plist"),
          let data = FileManager.default.contents(atPath: p) {
@@ -58,6 +52,16 @@ import UIKit
            let icons = d["CFBundleIcons"] as? [AnyHashable: Any],
            let alt = icons["CFBundleAlternateIcons"] as? [AnyHashable: Any] {
           diskAltKeys = alt.keys.map { "\($0)" }.sorted()
+          // 每个条目的 CFBundleIconName 必须等于键名（appiconset 名），否则真机解析失败。
+          var pairs: [String] = []
+          for (key, entry) in alt {
+            if let e = entry as? [AnyHashable: Any], let n = iconName(e) {
+              pairs.append("\(key)=\(n)")
+            } else {
+              pairs.append("\(key)=<none>")
+            }
+          }
+          altIconNames = pairs.sorted()
         }
       }
       // 证据 B：infoDictionary（Foundation 运行时读取）——保留为诊断字段。
@@ -66,7 +70,7 @@ import UIKit
       let altNS = (iconsNS["CFBundleAlternateIcons"] as? [AnyHashable: Any]) ?? [:]
       result([
         "canSet": names.allSatisfy { diskAltKeys.contains($0) },
-        "assetCount": assetCount,
+        "altIconNames": altIconNames,
         "diskAltKeys": diskAltKeys,
         "diskBytes": diskBytes,
         "infoDictKeyCount": dict.count,
@@ -97,6 +101,15 @@ import UIKit
         })
       }
     }
+  }
+
+  /// 从 CFBundleAlternateIcons 条目提取 CFBundleIconName（String 或 [String]）。
+  private func iconName(_ entry: [AnyHashable: Any]) -> String? {
+    if let s = entry["CFBundleIconName"] as? String { return s }
+    if let a = entry["CFBundleIconName"] as? [Any] {
+      return a.map { "\($0)" }.joined(separator: ",")
+    }
+    return nil
   }
 
   private func reply(_ result: @escaping FlutterResult, _ error: Error?) {

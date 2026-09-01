@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.139] - 2026-08-31
+
+### Fixed
+- [UI] iOS 真机换图标仍报「the operation couldn't be completed.(osstatuserror-54.)」（2.0.138 真机复测）：根因——无扩展名 CFBundleIconFiles 条目并非 Assets.car imageset 名的解析路径，78 个 imageset 全部编入 car 后 setAlternateIconName 在真机依旧失败（Carbon fNotFoundErr = -54）。切换 Apple 现代范式：6 个变体图标收敛为 launcher1.appiconset…launcher6.appiconset（各含标准槽位 Contents.json，与主图标 AppIcon.appiconset 同构），Info.plist CFBundleAlternateIcons 条目由 CFBundleIconFiles 数组改为 CFBundleIconName（值 = appiconset 名）——与主图标同一条已验证可用的解析路径；删除 78 个 per-size imageset
+- [UI] 换图标回归门禁相应调整：LauncherIconBridge status 移除 assetCount UIImage 探针（该查找路径不覆盖 CFBundleIconName 解析），新增 altIconNames 结构探针（各条目「键=CFBundleIconName」对，自磁盘 Info.plist 解析）；集成测试断言改为 altIconNames == [launcher1=launcher1 … launcher6=launcher6]；CI Assets.car 静态校验改查 6 个 appiconset 名（AppIcon 标定双编码探针 + 尺寸回退），新增 Contents.json 文件名确定性核查步骤
+
+### Test
+- flutter analyze 无问题；iOS Build CI：appiconset 文件名核查 + Assets.car 6 名校验 + 集成测试 altIconNames 门禁（拦截「声明缺失/appiconset 未编入 → 真机 -54」回归）
+- 版本 2.0.139+140
+
+- Contributor: Qoder + UI
+
 ## [2.0.138] - 2026-08-31
 
 ### Fixed

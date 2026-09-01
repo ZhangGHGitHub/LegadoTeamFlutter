@@ -1,0 +1,26 @@
+{
+  "images" : [
+    { "size": "20x20", "idiom": "iphone", "filename": "launcher2_20.png", "scale": "1x" },
+    { "size": "20x20", "idiom": "iphone", "filename": "launcher2_40.png", "scale": "2x" },
+    { "size": "20x20", "idiom": "iphone", "filename": "launcher2_60.png", "scale": "3x" },
+    { "size": "29x29", "idiom": "iphone", "filename": "launcher2_29.png", "scale": "1x" },
+    { "size": "29x29", "idiom": "iphone", "filename": "launcher2_58.png", "scale": "2x" },
+    { "size": "29x29", "idiom": "iphone", "filename": "launcher2_87.png", "scale": "3x" },
+    { "size": "40x40", "idiom": "iphone", "filename": "launcher2_40.png", "scale": "1x" },
+    { "size": "40x40", "idiom": "iphone", "filename": "launcher2_80.png", "scale": "2x" },
+    { "size": "40x40", "idiom": "iphone", "filename": "launcher2_120.png", "scale": "3x" },
+    { "size": "60x60", "idiom": "iphone", "filename": "launcher2_120.png", "scale": "2x" },
+    { "size": "60x60", "idiom": "iphone", "filename": "launcher2_180.png", "scale": "3x" },
+    { "size": "29x29", "idiom": "ipad", "filename": "launcher2_29.png", "scale": "1x" },
+    { "size": "29x29", "idiom": "ipad", "filename": "launcher2_58.png", "scale": "2x" },
+    { "size": "40x40", "idiom": "ipad", "filename": "launcher2_40.png", "scale": "1x" },
+    { "size": "40x40", "idiom": "ipad", "filename": "launcher2_80.png", "scale": "2x" },
+    { "size": "76x76", "idiom": "ipad", "filename": "launcher2_76.png", "scale": "1x" },
+    { "size": "76x76", "idiom": "ipad", "filename": "launcher2_152.png", "scale": "2x" },
+    { "size": "1024x1024", "idiom": "ios-marketing", "filename": "launcher2_1024.png", "scale": "1x" }
+  ],
+  "info" : {
+    "author": "xcode",
+    "version": 1
+  }
+}
