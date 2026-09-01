@@ -24,6 +24,14 @@ import UIKit
 ///   校验 bundle 根散文件可解析性（"" / @2x / @3x 任一存在）。
 ///   universal app 的 76x76 变体只有 iPad idiom 散文件，iPhone 下
 ///   legacy 路径缺口是 -54 的最后具体嫌疑（CI 侧已补非 ipad 散文件）。
+///
+/// 第七轮（真机实证：声明✓/car 6/6/散文件12/12 仍 -54 → H2 证伪）增强：
+/// - status 增加 carReadable——用常规 imageset（probe_image）做
+///   UIImage(named:) 读取探针。car 由 Xcode 16.4/SDK 18 actool 编译，
+///   本地取证发现其内无 PNG 签名（图像记录为非 PNG 编码）；若本系统
+///   （iOS 17.5）读不了该 car，则 CFBundleIconName→car 的变体校验必然
+///   fNotFoundErr（-54），与散文件是否齐全无关（H3 判定探针）。
+/// - reply 错误回传增加 userInfo 全量 + underlyingError 转储。
 @objc class LauncherIconBridge: NSObject {
   static let shared = LauncherIconBridge()
 
@@ -113,6 +121,13 @@ import UIKit
             carFound.append(name)
           }
         }
+        // 第七轮 H3 判定探针：本系统能否真正从 Assets.car 读图像。
+        // carHasAllLaunchers 只证明 appiconset 名在字节流里出现；但
+        // Xcode 16.4/SDK 18 actool 编出的 car 内无 PNG 签名（非 PNG 编码），
+        // iOS 17.5 的 LaunchServices/UIKit 可能解不开图像记录——那 CFBundleIconName
+        // →car 的变体校验必然 fNotFoundErr(-54)，与散文件是否齐全无关。
+        // UIImage(named:) 走同一 car 读取路径，nil 即 H3 成立。
+        let carReadable = UIImage(named: "probe_image") != nil
         // infoDictionary（Foundation 运行时读取）——保留为诊断字段。
         let dict = bundle.infoDictionary ?? [:]
         let iconsNS = (dict["CFBundleIcons"] as? [AnyHashable: Any]) ?? [:]
@@ -125,6 +140,7 @@ import UIKit
           "systemVersion": sysVer,
           "supportsAlt": supportsAlt,
           "carHasAllLaunchers": carFound,
+          "carReadable": carReadable,
           "looseIcons": "\(looseResolved)/\(looseTotal)",
           "infoDictKeyCount": dict.count,
           "hasBundleId": dict["CFBundleIdentifier"] != nil,
@@ -210,6 +226,17 @@ import UIKit
       "domain": nsError.domain,
       "code": nsError.code,
     ]
+    // 第七轮取证：userInfo 全量 + underlyingError 转储。通用 OSStatus 错误
+    // 通常无附加信息，但 UIKit 若挂了 NSRecoverySuggestion / 底层错误
+    // （例如真正的查找失败来源），一次回报即可见。
+    for (k, v) in nsError.userInfo {
+      details["userInfo.\(k)"] = "\(v)"
+    }
+    if let u = nsError.userInfo[NSUnderlyingErrorKey] as? Error {
+      let un = u as NSError
+      details["underlyingDomain"] = un.domain
+      details["underlyingCode"] = un.code
+    }
     if let note = note { details["note"] = note }
     result(FlutterError(code: "LAUNCHER_ICON_ERROR", message: error.localizedDescription, details: details))
   }

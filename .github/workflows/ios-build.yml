@@ -219,7 +219,14 @@ jobs:
       # 修复：打包前为每个 launcher 补 76x76@1x/@2x 非 ipad 散文件（源图取
       # appiconset 内 ipad 槽位），使 CFBundleIconFiles 全部条目在 iPhone 可解析，
       # 同时保留 iPad 支持。car 现代路径（CFBundleIconName）不受影响。
-      - name: Inject iPhone-resolvable 76x76 loose icon files
+      # 第七轮（真机实证：散文件12/12 仍 -54 → H2 legacy 缺口证伪）：
+      # car 由 Xcode 16.4/SDK 18 actool 编译，本地取证发现其内无 PNG 签名
+      # （图像记录为非 PNG 编码）——iOS 17.5 LaunchServices 若解不开该 car，
+      # CFBundleIconName→car 的变体校验必然 fNotFoundErr（-54），与散文件无关。
+      # 本批：① Assets.xcassets 新增常规 imageset probe_image（第七轮 H3 判定
+      # 探针，app 内 UIImage(named:) 读取验证）；② 顺手补齐 60x60 @3x 散文件
+      # （此前 bundle 根只有 @2x，缩放完整性缺口一并关闭）。
+      - name: Inject iPhone-resolvable loose icon files (76x76 + 60x60@3x)
         run: |
           set -euxo pipefail
           APP=flutter_legado/build/ios/iphoneos/Runner.app
@@ -227,9 +234,12 @@ jobs:
           for N in 1 2 3 4 5 6; do
             cp "$ASSETS/launcher${N}.appiconset/launcher${N}_76.png"  "$APP/launcher${N}76x76@1x.png"
             cp "$ASSETS/launcher${N}.appiconset/launcher${N}_152.png" "$APP/launcher${N}76x76@2x.png"
+            cp "$ASSETS/launcher${N}.appiconset/launcher${N}_180.png" "$APP/launcher${N}60x60@3x.png"
           done
+          # 主图标 60x60 @3x（bundle 根原只有 AppIcon60x60@2x.png）
+          cp "$ASSETS/AppIcon.appiconset/Icon-App-60x60@3x.png" "$APP/AppIcon60x60@3x.png"
           echo "== 注入后 bundle 根散文件 =="
-          ls -l "$APP"/launcher*76x76*.png
+          ls -l "$APP"/launcher*{60x60,76x76}*.png "$APP"/AppIcon*.png
 
       - name: Package unsigned IPA
         working-directory: flutter_legado/build/ios/iphoneos

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.145] - 2026-08-31
+
+### Fixed
+- [UI] iOS 换图标 OSStatus -54 第七轮（用户实证：第六轮构建真机自检 声明✓/car 6/6/散文件12/12 全过仍 -54 → H2 legacy 缺口假设证伪，非完整根因）。本地取证新发现：CI Assets.car（854KB）内无任何 PNG/JPEG 签名——Xcode 16.4/SDK 18 actool 的图像记录采用非 PNG 编码；若 iOS 17.5 LaunchServices 解不开该 car，CFBundleIconName→car 的变体校验必然 fNotFoundErr（-54），与散文件是否齐全无关（H3 升为首要嫌疑）。本批落地 H3 判定探针：Assets.xcassets 新增常规 imageset `probe_image`，bridge status 用 `UIImage(named:)` 走同一 car 读取路径验证——真机报「car可读✗」即坐实 H3（需换兼容工具链重编资产）；「car可读✓」则排除 car 编码问题，转向旁载签名/LS 注册方向
+- [UI] bridge 错误回传增强：reply 增加 NSError userInfo 全量 + underlyingError 转储（通用 OSStatus 错误通常无附加信息，若 UIKit 挂了 NSRecoverySuggestion/底层错误则一次回报即可见）
+- [UI] CI 注入步补齐 60x60 @3x 散文件（launcher1~6 + 主图标 AppIcon60x60@3x，源图取 appiconset 内 180px 槽位）——此前 bundle 根只有 @2x，缩放完整性缺口一并关闭
+
+### Test
+- flutter analyze 无问题；iOS Build CI：注入步扩展（+7 个 @3x 散文件），既有 car 6/6 校验与集成测试门禁不变
+- 版本 2.0.145+146
+
+- Contributor: Qoder + UI
+
 ## [2.0.144] - 2026-08-31
 
 ### Fixed

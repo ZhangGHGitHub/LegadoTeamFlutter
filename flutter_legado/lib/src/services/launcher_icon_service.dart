@@ -37,10 +37,10 @@ class LauncherIconService {
   static bool get isIos => defaultTargetPlatform == TargetPlatform.iOS;
 
   /// 取真机自检（仅 iOS）：系统版本 / plist 声明 / car 变体资产 /
-  /// legacy 散文件可解析性。
+  /// legacy 散文件可解析性 / car 图像可读性。
   ///
-  /// 用于失败时一次性回报取证（-54 第六轮：universal app 的 CFBundleIconFiles
-  /// legacy 路径缺口——76x76 只有 iPad idiom 散文件，iPhone 下不可解析）。
+  /// 用于失败时一次性回报取证（-54 第七轮：散文件 12/12 仍 -54，H2 证伪；
+  /// carReadable 探针判定 Xcode 16.4 car 编码是否被本系统读取——H3）。
   static Future<String> _diagnostics() async {
     try {
       final res = await _channel
@@ -52,8 +52,10 @@ class LauncherIconService {
         final car = res['carHasAllLaunchers'];
         final carCount = (car is List) ? car.length : 0;
         final loose = res['looseIcons'] ?? '?';
+        final readable = res['carReadable'];
         return 'iOS $ver / 声明${canSet == true ? '✓' : '✗'} / '
-            'car $carCount/6 / 散文件$loose';
+            'car $carCount/6 / 散文件$loose / '
+            'car可读${readable == true ? '✓' : '✗'}';
       }
     } catch (_) {
       // 自检通道异常不影响主流程
