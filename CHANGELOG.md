@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.141] - 2026-08-31
+
+### Fixed
+- [UI] iOS 换图标 OSStatus -54 第四轮根因（2.0.140 CI 实证：槽位结构已对齐仍 0/6 appiconset 入 car，car 恒为 AppIcon + LaunchImage）：actool 默认只把 `--app-icon` 指定的主 appiconset 编入 Assets.car，变体 appiconset 被静默跳过——除非 Runner.xcodeproj 构建设置声明 `ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES`（launcher1~6）+ `ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES`。修复：Runner target 三个构建配置（Debug/Release/Profile）补齐这两项设置，与业界标准实现互证（expo-quick-actions 插件、ente/vellum 量产应用同款接线）；Info.plist CFBundleIconName 声明结构本就正确、无需改动
+- [UI] CI 注释措辞更正：actool「unassigned children」警告门禁是 appiconset 编入 car 的必要非充分条件（批次 22），本批次根因为缺构建设置
+
+### Test
+- flutter analyze 无问题；iOS Build CI：Contents.json 文件名核查 + actool unassigned children 警告门禁 + Assets.car 6 appiconset 名校验（本次预期 6/6）+ 集成测试 altIconNames 门禁
+- 版本 2.0.141+142
+
+- Contributor: Qoder + UI
+
 ## [2.0.140] - 2026-08-31
 
 ### Fixed

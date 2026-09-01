@@ -115,8 +115,12 @@ jobs:
       # CFBundleIconName 声明变体图标，系统按 Assets.car 中 appiconset 名
       # （launcher1.appiconset…）解析——与主图标 AppIcon.appiconset 同一条
       # 已验证可用的解析路径（无扩展名 CFBundleIconFiles 条目不走该路径，
-      # 2.0.138 真机复测 -54 已证）。appiconset 未编入目录或文件名错配时
+      # 2.0.138 真机复测 -54 已证）。appiconset 未编入 car 或文件名错配时
       # setAlternateIconName 真机失败（Carbon fNotFoundErr = -54）。
+      # actool 默认只把 --app-icon 指定的主 appiconset 编入 Assets.car，变体
+      # appiconset 会被静默跳过（2.0.140 CI 实证：槽位结构合法仍 0/6）；
+      # Runner.xcodeproj 须声明 ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES +
+      # INCLUDE_ALL_APPICON_ASSETS=YES（业界标准接线，expo-quick-actions 同款）。
       # 模拟器集成测试断言 altIconNames == launcher1~6（已安装 plist 声明结构）；
       # 此处先做确定性文件名核查，再对设备构建 Assets.car 做静态校验。
       # Xcode 16.4 的 car 名称表并非总是可按纯 ASCII grep，故先用 AppIcon（主图标，
@@ -134,8 +138,10 @@ jobs:
           done
           [ "$FAIL" -eq 0 ] || exit 1
 
-      # actool 若判定 appiconset 含未分配槽位图像（如 legacy iPhone 1x 槽），
-      # 会整组拒编入 Assets.car——2.0.139 CI 失败根因。此处直接门禁该警告，
+      # appiconset 槽位结构合法是编入 car 的必要（非充分）条件：actool 判定
+      # 含未分配槽位图像（如 legacy iPhone 1x 槽）时会告警并跳过对应图像/整组
+      # （2.0.139 CI 失败暴露了该缺陷；仅修复槽位仍不够，还须下方注释的
+      # ALTERNATE_APPICON_NAMES 构建设置）。此处直接门禁该警告，
       # 确保任何槽位模型错配在构建期即暴露，不流入真机验收。
       - name: Verify no unassigned appiconset warnings in actool log
         run: |

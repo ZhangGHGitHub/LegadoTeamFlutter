@@ -85,3 +85,4 @@
 修订：Qoder UI ｜ 2026-08-31（iOS 换图标真机 -54 修复批次 20，2.0.138）
 修订：Qoder UI ｜ 2026-08-31（iOS 换图标 CFBundleIconName/appiconset 范式切换批次 21，2.0.139）
 修订：Qoder UI ｜ 2026-08-31（iOS 换图标 appiconset 槽位对齐 actool 拒编修复批次 22，2.0.140）
+修订：Qoder UI ｜ 2026-08-31（iOS 换图标 ALTERNATE_APPICON_NAMES/INCLUDE_ALL_APPICON_ASSETS 构建设置补齐批次 23，2.0.141）
