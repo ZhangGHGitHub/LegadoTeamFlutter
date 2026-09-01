@@ -78,7 +78,7 @@ import UIKit
           }
         }
         // 第五轮真机自检：系统版本 / 平台能力 / car 内变体资产。
-        let sysVer = UIDevice.currentSystemVersion
+        let sysVer = UIDevice.current.systemVersion
         let supportsAlt = UIApplication.shared.supportsAlternateIcons
         var carFound: [String] = []
         if let carPath = bundle.path(forResource: "Assets", ofType: "car"),
@@ -163,8 +163,8 @@ import UIKit
   /// ASCII 子串字节级扫描（Assets.car 为二进制，NSString 式检索不可靠）。
   private static func containsASCII(_ data: Data, _ needle: String) -> Bool {
     guard let nd = needle.data(using: .utf8), !nd.isEmpty else { return false }
-    let n = nd as [UInt8]
-    let h = data as [UInt8]
+    let n = Array(nd)
+    let h = Array(data)
     guard n.count <= h.count else { return false }
     for i in 0...(h.count - n.count) where h[i] == n[0] {
       var ok = true
