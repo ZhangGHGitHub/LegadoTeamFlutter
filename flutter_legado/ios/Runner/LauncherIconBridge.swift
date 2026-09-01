@@ -28,12 +28,23 @@ import UIKit
 
   private func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
     if call.method == "status" {
-      // 同步应答（纯 Bundle/文件读取，无 UIKit 异步）：集成测试回归门禁。
+      // 同步应答（Bundle/文件读取 + UIImage 资源查找，无 UIKit 异步）：集成测试回归门禁。
       // canSet = 已安装 bundle 磁盘 Info.plist 声明 launcher1~6
       // （setAlternateIconName 的直接前提；UIKit 无公开同步查询 API，
       // set 的 completion 在模拟器上不回调，故门禁不用 set）。
+      // assetCount = 78 个尺寸图标经 UIImage(named:) 的可解析数量——
+      // 与 setAlternateIconName 解析 CFBundleIconFiles 名称同一条查找路径
+      // （无扩展名条目按 Assets.car imageset 名解析），模拟器上可断言，
+      // 是「真机 -54（imageset 缺失）」的直接回归门禁。
       let bundle = Bundle.main
       let names = ["launcher1", "launcher2", "launcher3", "launcher4", "launcher5", "launcher6"]
+      let sizes = ["20", "29", "40", "58", "60", "76", "80", "87", "120", "152", "167", "180", "1024"]
+      var assetCount = 0
+      for name in names {
+        for size in sizes where UIImage(named: "\(name)_\(size)") != nil {
+          assetCount += 1
+        }
+      }
       // 证据 A：磁盘 Info.plist（安装副本的真实状态）——直接读原始字节并解析。
       var diskAltKeys: [String] = []
       var diskBytes = -1
@@ -55,6 +66,7 @@ import UIKit
       let altNS = (iconsNS["CFBundleAlternateIcons"] as? [AnyHashable: Any]) ?? [:]
       result([
         "canSet": names.allSatisfy { diskAltKeys.contains($0) },
+        "assetCount": assetCount,
         "diskAltKeys": diskAltKeys,
         "diskBytes": diskBytes,
         "infoDictKeyCount": dict.count,

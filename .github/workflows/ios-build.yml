@@ -111,6 +111,25 @@ jobs:
             exit 1
           fi
 
+      # 防「真机换图标 OSStatus -54」回归：Info.plist CFBundleIconFiles 无扩展名
+      # 条目由系统按 Assets.car imageset 名解析——任一 imageset 未编入编译后的
+      # 目录，真机即解析失败（Carbon fNotFoundErr = -54）。模拟器集成测试的
+      # assetCount 门禁覆盖运行时查找；此处对设备构建 Assets.car 做静态全量校验。
+      - name: Verify alternate icon imagesets in Assets.car
+        run: |
+          set -euxo pipefail
+          CAR=flutter_legado/build/ios/iphoneos/Runner.app/Assets.car
+          ls -lh "$CAR"
+          FOUND=0
+          for I in 1 2 3 4 5 6; do
+            for S in 20 29 40 58 60 76 80 87 120 152 167 180 1024; do
+              N="launcher${I}_${S}"
+              if strings "$CAR" | grep -q "$N"; then FOUND=$((FOUND+1)); else echo "missing: $N"; fi
+            done
+          done
+          echo "imagesets found in Assets.car: $FOUND/78"
+          [ "$FOUND" -eq 78 ] || { echo "::error::Assets.car 缺少变体图标 imageset——真机换图标将报 OSStatus -54"; exit 1; }
+
       - name: Package unsigned IPA
         working-directory: flutter_legado/build/ios/iphoneos
         run: |

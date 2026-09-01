@@ -8,7 +8,10 @@
 //   - status 方法可达 → AppDelegate 通道接线完好
 //     （MissingPluginException = 接线断裂）；
 //   - canSet == true → 已安装 bundle 磁盘 Info.plist 的 CFBundleAlternateIcons
-//     声明 launcher1~6（setAlternateIconName 的前提）。
+//     声明 launcher1~6（setAlternateIconName 的前提）；
+//   - assetCount == 78 → Assets.car 含 6×13 个变体图标 imageset
+//     （UIImage(named:) 与 setAlternateIconName 同一条名称解析路径；
+//     imageset 缺失时真机报 OSStatus -54，此断言在模拟器上即可拦截）。
 //
 // 仅取证（不断言，平台行为随版本/模拟器而异）：
 //   - 真实 set icon1：iOS 模拟器的 setAlternateIconName completion
@@ -67,6 +70,7 @@ void main() {
     debugPrint(
       '[LauncherIconTest] 证据 → diskAltKeys=${statusMap['diskAltKeys']}'
       ' diskBytes=${statusMap['diskBytes']}'
+      ' assetCount=${statusMap['assetCount']}'
       ' infoDictKeyCount=${statusMap['infoDictKeyCount']}'
       ' hasBundleId=${statusMap['hasBundleId']}'
       ' altKeys=${statusMap['altKeys']}'
@@ -79,6 +83,19 @@ void main() {
       reason: '已安装 bundle 磁盘 Info.plist CFBundleAlternateIcons 应声明 launcher1~6；'
           'diskAltKeys=[] → 安装副本 plist 缺声明（构建/安装链路问题）；'
           'diskAltKeys 有值但 canSet=false → 键名不匹配',
+    );
+
+    // ── 1b) 回归门禁：assetCount == 78（Assets.car imageset 完整性）──
+    // setAlternateIconName 按 CFBundleIconFiles 无扩展名条目解析图标，
+    // 解析路径 = Assets.car imageset 名；UIImage(named:) 走同一条查找。
+    // 模拟器上即可断言 → 真机 -54（imageset 缺失/未编入）的回归门禁。
+    final assetCount = statusMap['assetCount'];
+    expect(
+      assetCount,
+      78,
+      reason: 'Assets.car 应含 6×13=78 个变体图标 imageset；'
+          'assetCount=$assetCount → 部分/全部未编入 Assets.car，'
+          '真机 setAlternateIconName 将报 OSStatus -54（名称解析失败）',
     );
 
     // ── 2) 仅取证：真实 set icon1（模拟器 completion 不回调 → 超时守护，不断言）──

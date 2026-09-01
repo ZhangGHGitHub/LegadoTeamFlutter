@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.138] - 2026-08-31
+
+### Fixed
+- [UI] iOS 真机换图标报「the operation couldn't be completed.(osstatuserror-54.)」（用户真机报告）：根因——Info.plist CFBundleIconFiles 为无扩展名条目（launcher1_20…launcher6_1024），系统按 Assets.car imageset 名解析；而 78 张变体 PNG 原是带 .png 扩展名的 bundle 根目录散文件、资产目录中不存在对应 imageset，真机名称解析失败（Carbon fNotFoundErr = -54）。按 Apple 官方范式将 78 张全部迁入 Assets.xcassets per-size imageset（launcher1_20.imageset…launcher6_1024.imageset + Contents.json），pbxproj 移除散文件引用（320 行纯删除）
+- [UI] 换图标回归门禁加固：LauncherIconBridge status 新增 assetCount 探针（UIImage(named:) 可解析的 78 个名称计数——与 setAlternateIconName 同一条查找路径，模拟器即可断言）；集成测试新增断言 assetCount == 78；CI 新增设备 Assets.car 全量校验步骤（78 个 imageset 名逐一检查）
+
+### Test
+- flutter analyze 无问题；iOS Build CI：Assets.car imageset 全量校验 + 集成测试 assetCount 门禁（拦截「imageset 未编入 → 真机 -54」回归）
+- 版本 2.0.138+139
+
+- Contributor: Qoder + UI
+
 ## [2.0.137] - 2026-08-31
 
 ### Fixed

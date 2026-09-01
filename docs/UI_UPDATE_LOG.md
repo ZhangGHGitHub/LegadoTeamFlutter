@@ -31,6 +31,7 @@
 | 17 | 2.0.132 | 热力图时长模式 + 应用图标 | 热力图升级双模式（按时长 = readRecordDailyList Rust 契约 / 按本数）；应用图标替换为参考仓库 legado 图标（Android 自适应全套 + Windows ico） |
 | 18 | 2.0.135 | 图标三端同步原版 | 用户指令「不要猫咪图标，同步原版图标」：Android 复用原版 app/ 资产逐字节拷贝；iOS AppIcon 由原版自适应矢量渲染（自研渲染器新增线性渐变 + 双圆心圆弧采样）；Windows ico 同步重生成 |
 | 19 | 2.0.136 | 切换图标功能 | 对齐原版 change_icon + 用户指令「还需要支持 iOS 换图标」：主题设置页新增入口，7 选项点选即应用——Android setComponentEnabledSetting 切换 Launcher1~6（API 26+），iOS setAlternateIconName（重启后生效），Windows 整项隐藏；原版 7 图标全同步（Android 资产逐字节复用 / iOS 渲染 78 张 PNG 入 Info.plist CFBundleAlternateIcons） |
+| 20 | 2.0.138 | iOS 换图标真机 -54 修复 | 用户真机报「osstatuserror-54」：CFBundleIconFiles 无扩展名条目由系统按 Assets.car imageset 名解析，原 PNG 为 bundle 根散文件、无 imageset → 78 张全量迁入 Assets.xcassets per-size imageset（Apple 官方范式）+ pbxproj 清理；门禁加固（集成测试 assetCount==78 断言 + CI Assets.car 全量校验） |
 
 > 附：治理提交「重构红线口径修订」（未经允许禁止新增原版不存在的功能，授权除外）随 2.0.124 批次落地。
 
@@ -81,3 +82,4 @@
 编写者：Qoder UI ｜ 2026-08-29
 修订：Qoder UI ｜ 2026-08-31（iOS 应用图标待办销账，2.0.134）
 修订：Qoder UI ｜ 2026-08-31（切换图标功能批次 19，2.0.136）
+修订：Qoder UI ｜ 2026-08-31（iOS 换图标真机 -54 修复批次 20，2.0.138）
