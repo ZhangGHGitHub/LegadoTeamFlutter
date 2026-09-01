@@ -187,29 +187,6 @@ jobs:
           name: ios-device-assets-car
           path: flutter_legado/build/ios/iphoneos/Runner.app/Assets.car
 
-      # 导出最终设备 Info.plist 工件（「最终包图标声明」链接的永久门禁）：
-      # 第四轮 -54 取证证明 CI 构建产物本身完整（car 6/6 appiconset +
-      # CFBundleIconName 声明 + Xcode 自动注入的 bundle 根散文件双路径），
-      # 真机失败复发时可直接比对最终 plist，无需下载解包 IPA。
-      - name: Export device Info.plist (icon section)
-        if: always()
-        continue-on-error: true
-        run: |
-          set -euo pipefail
-          PL=flutter_legado/build/ios/iphoneos/Runner.app/Info.plist
-          OUT=flutter_legado/build/ios/device-plist
-          mkdir -p "$OUT"
-          cp "$PL" "$OUT/Info.plist"
-          python3 -c 'import plistlib,json,sys; d=plistlib.load(open(sys.argv[1],"rb")); print(json.dumps({k:v for k,v in d.items() if "Icon" in k}, indent=2))' "$PL" > "$OUT/icon-section.json"
-
-      - name: Upload device Info.plist
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: ios-device-info-plist
-          path: flutter_legado/build/ios/device-plist/
-
       # 第六轮（-54 复发，iOS 17.5 真机）：universal app 的 legacy 图标路径缺口。
       # Xcode 只把 CFBundleIconFiles 中 76x76 尺寸的变体编为 iPad idiom 散文件
       # （launcherN76x76@2x~ipad.png），iPhone idiom 下该 base name 解析不到任何
@@ -240,6 +217,85 @@ jobs:
           cp "$ASSETS/AppIcon.appiconset/Icon-App-60x60@3x.png" "$APP/AppIcon60x60@3x.png"
           echo "== 注入后 bundle 根散文件 =="
           ls -l "$APP"/launcher*{60x60,76x76}*.png "$APP"/AppIcon*.png
+
+      # 第八轮（真机实证：散文件12/12 仍 -54 → H2 legacy 缺口证伪；GitHub 调研）：
+      # 社区实证结构（tastelessjolt/flutter_dynamic_icon 123★、chandrabezzo fork、
+      # capacitor/expo legacy 路径）为纯 legacy——CFBundleIconFiles + bundle 根散文件，
+      # 完全不出现 CFBundleIconName。本 app 是结构性离群者：Xcode 为每个备选自动生成
+      # 双路径（现代 CFBundleIconName→car + legacy CFBundleIconFiles），LaunchServices
+      # 若优先按现代路径解析、而 iOS 17.5 解不开 Xcode 16.4/SDK 18 编的 car →
+      # fNotFoundErr (-54)，与散文件是否齐全无关。
+      # 修复：打包前从所有 CFBundleAlternateIcons 条目剥离 CFBundleIconName（CFBundleIcons
+      # 与 ~ipad 两节），强制走与社区实证结构一致的纯 legacy 解析路径；散文件 12/12 已
+      # 注入（下方门禁保证可解析）。主图标不受影响。
+      - name: Strip CFBundleIconName from alternate icons (force legacy path)
+        run: |
+          set -euo pipefail
+          APP=flutter_legado/build/ios/iphoneos/Runner.app
+          # 门禁：打包前 12 个 base name 散文件必须全部可解析（纯 legacy 路径前提）
+          for N in 1 2 3 4 5 6; do
+            for B in "launcher${N}60x60@2x" "launcher${N}60x60@3x" "launcher${N}76x76@1x" "launcher${N}76x76@2x"; do
+              [ -f "$APP/$B.png" ] || { echo "::error::missing $B.png (legacy 散文件不齐)"; exit 1; }
+            done
+          done
+          python3 - "$APP/Info.plist" <<'PY'
+          import plistlib, sys
+          p = sys.argv[1]
+          with open(p, "rb") as f:
+              d = plistlib.load(f)
+          stripped = 0
+          for section in ("CFBundleIcons", "CFBundleIcons~ipad"):
+              icons = d.get(section)
+              if not isinstance(icons, dict):
+                  continue
+              alt = icons.get("CFBundleAlternateIcons")
+              if not isinstance(alt, dict):
+                  continue
+              for name, entry in alt.items():
+                  if isinstance(entry, dict) and "CFBundleIconName" in entry:
+                      del entry["CFBundleIconName"]
+                      stripped += 1
+          with open(p, "wb") as f:
+              plistlib.dump(d, f)
+          print(f"stripped CFBundleIconName from {stripped} alternate entries (expected 12)")
+          assert stripped >= 6, f"expected at least 6 (primary section), got {stripped}"
+          if stripped != 12:
+              print(f"::warning::expected 12 (6 alternates x 2 sections), got {stripped}")
+          PY
+          # 验证：最终 plist 备选条目无 CFBundleIconName 残留，legacy 键完整
+          python3 - "$APP/Info.plist" <<'PY'
+          import plistlib, sys
+          d = plistlib.load(open(sys.argv[1], "rb"))
+          for section in ("CFBundleIcons", "CFBundleIcons~ipad"):
+              alt = (d.get(section) or {}).get("CFBundleAlternateIcons") or {}
+              for name in sorted(alt):
+                  e = alt[name]
+                  print(f"{section}/{name}: iconFiles={e.get('CFBundleIconFiles')} iconName={'MISSING' if 'CFBundleIconName' not in e else e['CFBundleIconName']}")
+          PY
+
+      # 导出最终设备 Info.plist 工件（「最终包图标声明」链接的永久门禁）：
+      # 第四轮 -54 取证证明 CI 构建产物本身完整（car 6/6 appiconset +
+      # CFBundleIconName 声明 + Xcode 自动注入的 bundle 根散文件双路径），
+      # 真机失败复发时可直接比对最终 plist，无需下载解包 IPA。
+      # 第八轮：移至剥离步之后——工件反映「最终包图标声明」（剥离后状态）。
+      - name: Export device Info.plist (icon section)
+        if: always()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          PL=flutter_legado/build/ios/iphoneos/Runner.app/Info.plist
+          OUT=flutter_legado/build/ios/device-plist
+          mkdir -p "$OUT"
+          cp "$PL" "$OUT/Info.plist"
+          python3 -c 'import plistlib,json,sys; d=plistlib.load(open(sys.argv[1],"rb")); print(json.dumps({k:v for k,v in d.items() if "Icon" in k}, indent=2))' "$PL" > "$OUT/icon-section.json"
+
+      - name: Upload device Info.plist
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-device-info-plist
+          path: flutter_legado/build/ios/device-plist/
 
       - name: Package unsigned IPA
         working-directory: flutter_legado/build/ios/iphoneos

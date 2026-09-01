@@ -32,6 +32,14 @@ import UIKit
 ///   （iOS 17.5）读不了该 car，则 CFBundleIconName→car 的变体校验必然
 ///   fNotFoundErr（-54），与散文件是否齐全无关（H3 判定探针）。
 /// - reply 错误回传增加 userInfo 全量 + underlyingError 转储。
+///
+/// 第八轮（GitHub 调研：社区实证结构为纯 legacy——无 CFBundleIconName）增强：
+/// - CI 打包前从所有 CFBundleAlternateIcons 条目剥离 CFBundleIconName，强制走
+///   纯 legacy 解析路径（CFBundleIconFiles + bundle 根散文件），与
+///   tastelessjolt/flutter_dynamic_icon 等社区实证应用结构对齐；
+/// - status 增加 altModernDecl——仍携带 CFBundleIconName 的备选条目数
+///   （剥离后应为 0；>0 说明所装构建未经剥离步，用于归属判定）。
+///   set 路径功能不变。
 @objc class LauncherIconBridge: NSObject {
   static let shared = LauncherIconBridge()
 
@@ -69,6 +77,9 @@ import UIKit
         var diskAltKeys: [String] = []
         var altIconNames: [String] = []
         var diskBytes = -1
+        // 第八轮自检：备选条目中仍携带 CFBundleIconName 的计数。
+        // CI 剥离后应为 0；>0 说明所装构建未经剥离步（归属判定）。
+        var altModern = -1
         // 第六轮自检：legacy 路径（CFBundleIconFiles）散文件可解析性。
         // Xcode 只为 universal app 的 76x76 变体编 iPad idiom 散文件，iPhone
         // idiom 下 base name 可能解析不到任何文件 → LaunchServices 校验/回退
@@ -85,6 +96,7 @@ import UIKit
              let icons = d["CFBundleIcons"] as? [AnyHashable: Any],
              let alt = icons["CFBundleAlternateIcons"] as? [AnyHashable: Any] {
             diskAltKeys = alt.keys.map { "\($0)" }.sorted()
+            altModern = alt.values.filter { ($0 as? [AnyHashable: Any])?["CFBundleIconName"] != nil }.count
             // 每个条目的 CFBundleIconName 必须等于键名（appiconset 名），否则真机解析失败。
             var pairs: [String] = []
             let fm = FileManager.default
@@ -141,6 +153,7 @@ import UIKit
           "supportsAlt": supportsAlt,
           "carHasAllLaunchers": carFound,
           "carReadable": carReadable,
+          "altModernDecl": altModern,
           "looseIcons": "\(looseResolved)/\(looseTotal)",
           "infoDictKeyCount": dict.count,
           "hasBundleId": dict["CFBundleIdentifier"] != nil,

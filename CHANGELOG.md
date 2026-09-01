@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.146] - 2026-08-31
+
+### Fixed
+- [UI] iOS 换图标 OSStatus -54 第八轮（GitHub 调研：社区实证结构为纯 legacy——完全不出现 CFBundleIconName）。tastelessjolt/flutter_dynamic_icon（123★）、chandrabezzo fork、capacitor/expo legacy 路径均以 `CFBundleIcons.CFBundleAlternateIcons.<name>.CFBundleIconFiles` + bundle 根散文件声明备选图标，无一使用 CFBundleIconName；本 app 是结构性离群者——Xcode 为每个备选自动生成双路径（现代 CFBundleIconName→car + legacy CFBundleIconFiles，第六轮设备 plist 实证），LaunchServices 若优先按现代路径解析、而 iOS 17.5 解不开 Xcode 16.4/SDK 18 编的 car → fNotFoundErr（-54），与散文件是否齐全无关（第七轮实证：散文件 12/12 仍 -54）。修复：CI 打包前用 plistlib 从所有 CFBundleAlternateIcons 条目剥离 CFBundleIconName（CFBundleIcons 与 ~ipad 两节），强制走与社区实证结构一致的纯 legacy 解析路径；散文件 12/12 已由前置步注入（新增门禁保证打包前可解析）。主图标不受影响
+- [UI] CI Info.plist 导出门禁移至剥离步之后——工件 `ios-device-info-plist` 现反映最终包图标声明（剥离后状态）
+- [UI] bridge 自检增强：status 增加 altModernDecl（仍携带 CFBundleIconName 的备选条目数，剥离后应为 0）；Dart 侧诊断行追加「现代声明 N」——-54 复发时一次回报即可归属剥离步是否执行
+
+### Test
+- flutter analyze 无问题；iOS Build CI：新增剥离步（12 文件门禁 + plistlib 剥离 + 验证输出），导出/上传门禁后移，既有 car 6/6 与集成测试门禁不变
+- 版本 2.0.146+147
+
+- Contributor: Qoder + UI
+
 ## [2.0.145] - 2026-08-31
 
 ### Fixed
