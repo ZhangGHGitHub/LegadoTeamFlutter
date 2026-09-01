@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.142] - 2026-08-31
+
+### Changed
+- [Tool] iOS Build CI 新增 Info.plist 导出门禁：最终设备 Info.plist（二进制定 + 图标段 JSON）作为工件 `ios-device-info-plist` 上传——第四轮 -54 取证证明构建产物本身完整（Assets.car 6/6 appiconset、CFBundleIconName 声明齐全、Xcode 自动注入 bundle 根散文件 + CFBundleIconFiles 双路径），后续真机失败复发时可直接比对最终包声明，无需下载解包 IPA
+
+### Test
+- 版本 2.0.142+143
+
+- Contributor: Qoder + UI
+
 ## [2.0.141] - 2026-08-31
 
 ### Fixed

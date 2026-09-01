@@ -187,6 +187,29 @@ jobs:
           name: ios-device-assets-car
           path: flutter_legado/build/ios/iphoneos/Runner.app/Assets.car
 
+      # 导出最终设备 Info.plist 工件（「最终包图标声明」链接的永久门禁）：
+      # 第四轮 -54 取证证明 CI 构建产物本身完整（car 6/6 appiconset +
+      # CFBundleIconName 声明 + Xcode 自动注入的 bundle 根散文件双路径），
+      # 真机失败复发时可直接比对最终 plist，无需下载解包 IPA。
+      - name: Export device Info.plist (icon section)
+        if: always()
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          PL=flutter_legado/build/ios/iphoneos/Runner.app/Info.plist
+          OUT=flutter_legado/build/ios/device-plist
+          mkdir -p "$OUT"
+          cp "$PL" "$OUT/Info.plist"
+          python3 -c 'import plistlib,json,sys; d=plistlib.load(open(sys.argv[1],"rb")); print(json.dumps({k:v for k,v in d.items() if "Icon" in k}, indent=2))' "$PL" > "$OUT/icon-section.json"
+
+      - name: Upload device Info.plist
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-device-info-plist
+          path: flutter_legado/build/ios/device-plist/
+
       - name: Package unsigned IPA
         working-directory: flutter_legado/build/ios/iphoneos
         run: |
