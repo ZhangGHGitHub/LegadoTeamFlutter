@@ -24,12 +24,16 @@ class ImportResult {
   /// 错误信息列表
   final List<String> errors;
 
+  /// 单位名（如「书源」「替换规则」），用于汇总文案
+  final String unit;
+
   const ImportResult({
     required this.total,
     required this.success,
     required this.failed,
     required this.skipped,
     required this.errors,
+    this.unit = '书源',
   });
 
   /// 是否有错误
@@ -41,7 +45,7 @@ class ImportResult {
     if (success > 0) parts.add('成功 $success');
     if (failed > 0) parts.add('失败 $failed');
     if (skipped > 0) parts.add('跳过 $skipped');
-    return '共 $total 个书源：${parts.join('，')}';
+    return '共 $total 个$unit：${parts.join('，')}';
   }
 }
 
@@ -168,8 +172,11 @@ class SourceImportService {
 
   /// 从 JSON 字符串导入书源
   ///
-  /// 支持单个书源对象或书源数组。
-  Future<ImportResult> importFromJson(String jsonStr) async {
+  /// 支持单个书源对象或书源数组。[unit] 用于结果汇总文案（默认「书源」）。
+  Future<ImportResult> importFromJson(
+    String jsonStr, {
+    String unit = '书源',
+  }) async {
     final errors = <String>[];
     var total = 0;
     var success = 0;
@@ -191,6 +198,7 @@ class SourceImportService {
           failed: 0,
           skipped: 0,
           errors: ['无效的 JSON 格式：期望数组或对象'],
+          unit: unit,
         );
       }
 
@@ -231,6 +239,7 @@ class SourceImportService {
         failed: 0,
         skipped: 0,
         errors: ['JSON 解析错误：${e.message}'],
+        unit: unit,
       );
     }
 
@@ -240,11 +249,15 @@ class SourceImportService {
       failed: failed,
       skipped: skipped,
       errors: errors,
+      unit: unit,
     );
   }
 
   /// 从 URL 导入书源
-  Future<ImportResult> importFromUrl(String url) async {
+  Future<ImportResult> importFromUrl(
+    String url, {
+    String unit = '书源',
+  }) async {
     try {
       final response = await bridgeHttpGet(
         _api,
@@ -259,10 +272,11 @@ class SourceImportService {
           failed: 0,
           skipped: 0,
           errors: ['HTTP 请求失败：状态码 ${response.statusCode}'],
+          unit: unit,
         );
       }
 
-      return await importFromJson(response.body);
+      return await importFromJson(response.body, unit: unit);
     } on TimeoutException catch (e) {
       return ImportResult(
         total: 0,
@@ -270,6 +284,7 @@ class SourceImportService {
         failed: 0,
         skipped: 0,
         errors: ['网络请求超时：$e'],
+        unit: unit,
       );
     } catch (e) {
       return ImportResult(
@@ -278,12 +293,16 @@ class SourceImportService {
         failed: 0,
         skipped: 0,
         errors: ['从 URL 导入失败：$e'],
+        unit: unit,
       );
     }
   }
 
   /// 从文件导入书源
-  Future<ImportResult> importFromFile(String filePath) async {
+  Future<ImportResult> importFromFile(
+    String filePath, {
+    String unit = '书源',
+  }) async {
     try {
       final file = File(filePath);
       if (!await file.exists()) {
@@ -293,11 +312,12 @@ class SourceImportService {
           failed: 0,
           skipped: 0,
           errors: ['文件不存在：$filePath'],
+          unit: unit,
         );
       }
 
       final content = await file.readAsString(encoding: utf8);
-      return await importFromJson(content);
+      return await importFromJson(content, unit: unit);
     } catch (e) {
       return ImportResult(
         total: 0,
@@ -305,6 +325,7 @@ class SourceImportService {
         failed: 0,
         skipped: 0,
         errors: ['读取文件失败：$e'],
+        unit: unit,
       );
     }
   }

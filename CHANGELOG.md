@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.147] - 2026-09-02
+
+### Changed
+- [UI] 关联导入页重做为原版逐类确认页（用户反馈「和原版差异太大」，旧版为单一通用预览列表）：对齐原版 BaseAssociationViewModel.importJson 流程——JSON 字段自动识别 7 类内容（书源/RSS/替换规则/主题配置/HTTP TTS/字典规则/TXT 目录规则）；每行 = 勾选框 + 名称(+分组后缀) + 新/更新/已存在状态标签 + 「打开」入口，状态判定逐类对齐原版（书源按 URL+lastUpdateTime、替换规则按名匹配任字段不同即更新、字典规则无更新概念）；底部 全选(n/m)|取消|确认(n)，确认数随勾选联动；视觉风格遵循 MD3
+- [UI] ImportResult 汇总单位按类型区分（新增可选 unit 字段）：此前各类型导入完成汇总均显示「共 N 个书源」，现按实际类型正确显示（如「共 2 个替换规则：成功 2」）
+
+### Test
+- flutter analyze 无问题；flutter test 仅余 1 个既有 FFI 运行时失败（后端轨 SEARCH_PARITY_S0 审计范围，与本批无关）
+- E2E（emulator-5556）：书源导入全流程（新 → 确认(2) → 「共 2 个书源：成功 2」→ 再导入显已存在/未勾选/确认(0) 禁用）+ 替换规则导入全流程（标题 导入替换规则、分组后缀 (测试组)、新/勾选、结果汇总单位正确）
+- 两级冒烟：5556 PASSED（exit 0，7/7 含版本一致 2.0.147）；5558 -CheckUI -SkipBuild PASSED（exit 0，7/7：版本一致 + 进程存活 + 无崩溃 + 书架 UI 元素）
+- 版本 2.0.147+148
+
+- Contributor: Qoder + UI
+
 ## [2.0.146] - 2026-08-31
 
 ### Fixed
