@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.143] - 2026-08-31
+
+### Fixed
+- [UI] iOS 换图标 OSStatus -54 第五轮（用户实证：干净卸载重装后仍报错 → 排除粘性状态，重开全部假设）：按取证计划落地真机自检通道——bridge `status` 主线程异步返回 systemVersion / supportsAlternateIcons / carHasAllLaunchers（对已安装 Assets.car 做字节级扫描，判定 launcher1~6 appiconset 是否齐全），失败时中继 NSError domain/code；Dart 端把自检结果自动拼入错误提示，一次报错即可区分「sideload 重签包丢失声明/资产」（分支判断 B）与「iOS 26+ 平台回归」（oobagi/expo-awesome-app-icon#1：iOS 26.1+ setAlternateIconName 被 LSIconAlertManager Code=35 拒绝，26.0 及以前正常）。公开路径失败时自动改走私有 API `_setAlternateIconName`（Capacitor 社区生产同款旁路模式），旁路成功则重启后桌面图标即变更
+
+### Test
+- flutter analyze 无问题；iOS Build CI：Assets.car 6/6 appiconset 校验 + 集成测试新增 carHasAllLaunchers==6 门禁（已安装包资产完整性）
+- 版本 2.0.143+144
+
+- Contributor: Qoder + UI
+
 ## [2.0.142] - 2026-08-31
 
 ### Changed

@@ -7,10 +7,24 @@ import UIKit
 /// CFBundleIcons/CFBundleAlternateIcons 声明的变体间切换；传 nil
 /// 恢复默认图标。系统限制：每次启动仅可切换一次，且下次启动生效
 /// （由 Dart 侧提示）。
+///
+/// 第五轮（-54 复发）增强：
+/// - status 增加真机自检：systemVersion / supportsAlt /
+///   carHasAllLaunchers（Assets.car 字节级扫描 launcher1~6 名）——
+///   区分「旁载签名后落盘 bundle 丢失声明/资产」（唯一未验证环节）
+///   与「iOS 26+ 系统回归」（capacitor-community/app-icon#73：
+///   iOS 26.1+ 公开 API 回归，LSIconAlertManager Code=35）；
+/// - 公开路径失败后尝试私有 API _setAlternateIconName 一次
+///   （capacitor 量产模式，绕过 iOS 26 alert 路径）；
+/// - 错误回传 domain/code（FlutterError.details），Dart 侧附带
+///   自检结果一次性回报。
 @objc class LauncherIconBridge: NSObject {
   static let shared = LauncherIconBridge()
 
   private var channel: FlutterMethodChannel?
+
+  /// Info.plist CFBundleAlternateIcons 声明的变体名（= Assets.car appiconset 名）
+  static let launcherNames = ["launcher1", "launcher2", "launcher3", "launcher4", "launcher5", "launcher6"]
 
   private override init() {
     super.init()
@@ -28,56 +42,69 @@ import UIKit
 
   private func handle(call: FlutterMethodCall, result: @escaping FlutterResult) {
     if call.method == "status" {
-      // 同步应答（Bundle/文件读取，无 UIKit 异步）：集成测试回归门禁。
-      // canSet = 已安装 bundle 磁盘 Info.plist 的 CFBundleAlternateIcons 声明 launcher1~6
-      // （setAlternateIconName 的直接前提；UIKit 无公开同步查询 API，
-      // set 的 completion 在模拟器上不回调，故门禁不用 set）。
-      // altIconNames = 各条目「键=CFBundleIconName」对：系统按 Assets.car 中
-      // appiconset 名（launcher1.appiconset…）解析图标——与主图标
-      // AppIcon.appiconset 同一条已验证可用的解析路径；值不等于键、或
-      // appiconset 未编入资产目录，真机 setAlternateIconName 将失败（-54）。
-      let bundle = Bundle.main
-      let names = ["launcher1", "launcher2", "launcher3", "launcher4", "launcher5", "launcher6"]
-      // 证据 A：磁盘 Info.plist（安装副本的真实状态）——直接读原始字节并解析。
-      var diskAltKeys: [String] = []
-      var altIconNames: [String] = []
-      var diskBytes = -1
-      if let p = bundle.path(forResource: "Info", ofType: "plist"),
-         let data = FileManager.default.contents(atPath: p) {
-        diskBytes = data.count
-        // PropertyListSerialization 可解析文本与二进制（bplist00）两种格式。
-        // Apple 标准结构：CFBundleAlternateIcons 嵌套在 CFBundleIcons 之内。
-        if let obj = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
-           let d = obj as? [AnyHashable: Any],
-           let icons = d["CFBundleIcons"] as? [AnyHashable: Any],
-           let alt = icons["CFBundleAlternateIcons"] as? [AnyHashable: Any] {
-          diskAltKeys = alt.keys.map { "\($0)" }.sorted()
-          // 每个条目的 CFBundleIconName 必须等于键名（appiconset 名），否则真机解析失败。
-          var pairs: [String] = []
-          for (key, entry) in alt {
-            if let e = entry as? [AnyHashable: Any], let n = iconName(e) {
-              pairs.append("\(key)=\(n)")
-            } else {
-              pairs.append("\(key)=<none>")
+      // 异步应答（UIKit 读取须主线程）：集成测试回归门禁。
+      // canSet = 已安装 bundle 磁盘 Info.plist 的 CFBundleAlternateIcons
+      // 声明 launcher1~6（setAlternateIconName 的直接前提；UIKit 无公开
+      // 同步查询 API，set 的 completion 在模拟器上不回调，故门禁不用 set）。
+      // carHasAllLaunchers = Assets.car 字节级扫描变体 appiconset 名——
+      // 验证「变体资产真实存在于已安装 bundle」（第五轮：旁载签名链路
+      // 是唯一未取证的环节，CI 产物完整性已在第四轮证实）。
+      DispatchQueue.main.async {
+        let names = Self.launcherNames
+        let bundle = Bundle.main
+        var diskAltKeys: [String] = []
+        var altIconNames: [String] = []
+        var diskBytes = -1
+        if let p = bundle.path(forResource: "Info", ofType: "plist"),
+           let data = FileManager.default.contents(atPath: p) {
+          diskBytes = data.count
+          // PropertyListSerialization 可解析文本与二进制（bplist00）两种格式。
+          // Apple 标准结构：CFBundleAlternateIcons 嵌套在 CFBundleIcons 之内。
+          if let obj = try? PropertyListSerialization.propertyList(from: data, options: [], format: nil),
+             let d = obj as? [AnyHashable: Any],
+             let icons = d["CFBundleIcons"] as? [AnyHashable: Any],
+             let alt = icons["CFBundleAlternateIcons"] as? [AnyHashable: Any] {
+            diskAltKeys = alt.keys.map { "\($0)" }.sorted()
+            // 每个条目的 CFBundleIconName 必须等于键名（appiconset 名），否则真机解析失败。
+            var pairs: [String] = []
+            for (key, entry) in alt {
+              if let e = entry as? [AnyHashable: Any], let n = self.iconName(e) {
+                pairs.append("\(key)=\(n)")
+              } else {
+                pairs.append("\(key)=<none>")
+              }
             }
+            altIconNames = pairs.sorted()
           }
-          altIconNames = pairs.sorted()
         }
+        // 第五轮真机自检：系统版本 / 平台能力 / car 内变体资产。
+        let sysVer = UIDevice.currentSystemVersion
+        let supportsAlt = UIApplication.shared.supportsAlternateIcons
+        var carFound: [String] = []
+        if let carPath = bundle.path(forResource: "Assets", ofType: "car"),
+           let carData = FileManager.default.contents(atPath: carPath) {
+          for name in names where Self.containsASCII(carData, name) {
+            carFound.append(name)
+          }
+        }
+        // infoDictionary（Foundation 运行时读取）——保留为诊断字段。
+        let dict = bundle.infoDictionary ?? [:]
+        let iconsNS = (dict["CFBundleIcons"] as? [AnyHashable: Any]) ?? [:]
+        let altNS = (iconsNS["CFBundleAlternateIcons"] as? [AnyHashable: Any]) ?? [:]
+        result([
+          "canSet": names.allSatisfy { diskAltKeys.contains($0) },
+          "altIconNames": altIconNames,
+          "diskAltKeys": diskAltKeys,
+          "diskBytes": diskBytes,
+          "systemVersion": sysVer,
+          "supportsAlt": supportsAlt,
+          "carHasAllLaunchers": carFound,
+          "infoDictKeyCount": dict.count,
+          "hasBundleId": dict["CFBundleIdentifier"] != nil,
+          "altKeys": altNS.keys.map { "\($0)" }.sorted(),
+          "bundlePath": bundle.bundlePath,
+        ])
       }
-      // 证据 B：infoDictionary（Foundation 运行时读取）——保留为诊断字段。
-      let dict = bundle.infoDictionary ?? [:]
-      let iconsNS = (dict["CFBundleIcons"] as? [AnyHashable: Any]) ?? [:]
-      let altNS = (iconsNS["CFBundleAlternateIcons"] as? [AnyHashable: Any]) ?? [:]
-      result([
-        "canSet": names.allSatisfy { diskAltKeys.contains($0) },
-        "altIconNames": altIconNames,
-        "diskAltKeys": diskAltKeys,
-        "diskBytes": diskBytes,
-        "infoDictKeyCount": dict.count,
-        "hasBundleId": dict["CFBundleIdentifier"] != nil,
-        "altKeys": altNS.keys.map { "\($0)" }.sorted(),
-        "bundlePath": bundle.bundlePath,
-      ])
       return
     }
     guard call.method == "set" else {
@@ -88,19 +115,40 @@ import UIKit
     let icon = args["icon"] as? String ?? "iconMain"
     // UIKit 须在主线程调用；method channel 回调运行在后台平台线程
     DispatchQueue.main.async {
-      if icon == "iconMain" {
-        // 传 nil 恢复默认图标
-        UIApplication.shared.setAlternateIconName(nil, completionHandler: { error in
-          self.reply(result, error)
-        })
-      } else {
-        // icon1~icon6 -> launcher1~launcher6（Info.plist CFBundleAlternateIcons 键）
-        let name = "launcher" + icon.replacingOccurrences(of: "icon", with: "")
-        UIApplication.shared.setAlternateIconName(name, completionHandler: { error in
-          self.reply(result, error)
-        })
+      // 平台能力预检（比 -54 更明确的失败原因）
+      guard UIApplication.shared.supportsAlternateIcons else {
+        self.reply(result, NSError(domain: "LauncherIconBridge", code: -1, userInfo: [NSLocalizedDescriptionKey: "系统不支持备选图标（supportsAlternateIcons=false）"]))
+        return
       }
+      let name: String? = icon == "iconMain" ? nil : ("launcher" + icon.replacingOccurrences(of: "icon", with: ""))
+      UIApplication.shared.setAlternateIconName(name, completionHandler: { error in
+        if let error = error {
+          // 公开路径失败 → 尝试私有 API 旁路一次（iOS 26 alert 路径回归绕行）
+          self.tryPrivateSet(name: name, result: result, publicError: error)
+        } else {
+          result(nil)
+        }
+      })
     }
+  }
+
+  /// 私有 API 旁路：_setAlternateIconName:completionHandler:
+  /// （capacitor-community/app-icon 量产模式，iOS 26 alert 路径回归绕行）。
+  /// selector 不存在（系统已移除）时按公开路径错误原样回报。
+  /// 私有 completion 的 NSError 语义不明确（capacitor 生产实践为忽略），
+  /// 故采用 fire-and-forget：触发后统一回报公开路径错误并注明旁路已尝试——
+  /// 若重启后桌面图标已变更，即为旁路生效。
+  private func tryPrivateSet(name: String?, result: @escaping FlutterResult, publicError: Error) {
+    let sel = NSSelectorFromString("_setAlternateIconName:completionHandler:")
+    guard UIApplication.shared.responds(to: sel) else {
+      reply(result, publicError)
+      return
+    }
+    typealias PrivateSetFn = @convention(c) (NSObject, Selector, NSString?, @escaping (NSError) -> Void) -> Void
+    let imp = UIApplication.shared.method(for: sel)
+    let fn = unsafeBitCast(imp, to: PrivateSetFn.self)
+    fn(UIApplication.shared, sel, name as NSString?, { _ in })
+    reply(result, publicError, note: "已尝试私有 API 旁路，重启后若桌面图标已变更即为旁路生效")
   }
 
   /// 从 CFBundleAlternateIcons 条目提取 CFBundleIconName（String 或 [String]）。
@@ -112,11 +160,30 @@ import UIKit
     return nil
   }
 
-  private func reply(_ result: @escaping FlutterResult, _ error: Error?) {
-    if let error = error {
-      result(FlutterError(code: "LAUNCHER_ICON_ERROR", message: error.localizedDescription, details: nil))
-    } else {
-      result(nil)
+  /// ASCII 子串字节级扫描（Assets.car 为二进制，NSString 式检索不可靠）。
+  private static func containsASCII(_ data: Data, _ needle: String) -> Bool {
+    guard let nd = needle.data(using: .utf8), !nd.isEmpty else { return false }
+    let n = nd as [UInt8]
+    let h = data as [UInt8]
+    guard n.count <= h.count else { return false }
+    for i in 0...(h.count - n.count) where h[i] == n[0] {
+      var ok = true
+      for j in 1..<n.count where h[i + j] != n[j] {
+        ok = false
+        break
+      }
+      if ok { return true }
     }
+    return false
+  }
+
+  private func reply(_ result: @escaping FlutterResult, _ error: Error, note: String? = nil) {
+    let nsError = error as NSError
+    var details: [String: Any] = [
+      "domain": nsError.domain,
+      "code": nsError.code,
+    ]
+    if let note = note { details["note"] = note }
+    result(FlutterError(code: "LAUNCHER_ICON_ERROR", message: error.localizedDescription, details: details))
   }
 }

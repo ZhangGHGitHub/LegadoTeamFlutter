@@ -13,7 +13,10 @@
 //     → 已安装 plist 的 CFBundleAlternateIcons 各条目 CFBundleIconName
 //     与键名一致（appiconset 名）；系统按 Assets.car appiconset 名解析，
 //     与主图标 AppIcon.appiconset 同一条路径——UIImage(named:) 探针
-//     不覆盖该路径（2.0.138 真机 -54 已证），故直接断言声明结构。
+//     不覆盖该路径（2.0.138 真机 -54 已证），故直接断言声明结构；
+//   - carHasAllLaunchers == [launcher1…6] → 已安装 Assets.car 字节级含
+//     全部变体 appiconset 名（第五轮：变体资产真实入包门禁，与 CI
+//     静态 car 校验互证）。
 //
 // 仅取证（不断言，平台行为随版本/模拟器而异）：
 //   - 真实 set icon1：iOS 模拟器的 setAlternateIconName completion
@@ -45,7 +48,7 @@ void main() {
 
     final channel = const MethodChannel('legado/launcher_icon');
 
-    // ── 1) 回归门禁：status（原生同步应答，无 UIKit 异步）──
+    // ── 1) 回归门禁：status（原生主线程异步应答，UIKit 读取需主线程）──
     // invokeMethod 不指定泛型 T（避免按赋值目标推断为 Map<String, Object?>
     // 而平台实际返回 _Map<Object?, Object?> 导致 cast 失败），改动态取值。
     Object? statusResult;
@@ -78,6 +81,13 @@ void main() {
       ' altKeys=${statusMap['altKeys']}'
       ' bundlePath=${statusMap['bundlePath']}',
     );
+    // 第五轮真机自检字段（iOS 版本 / 平台能力 / car 变体资产）：
+    // CI 失败时用于区分「安装副本缺资产」与「系统回归」。
+    debugPrint(
+      '[LauncherIconTest] 自检 → systemVersion=${statusMap['systemVersion']}'
+      ' supportsAlt=${statusMap['supportsAlt']}'
+      ' carHasAllLaunchers=${statusMap['carHasAllLaunchers']}',
+    );
     final canSet = statusMap['canSet'];
     expect(
       canSet,
@@ -107,6 +117,17 @@ void main() {
       reason: 'CFBundleAlternateIcons 各条目 CFBundleIconName 应与键名一致'
           '（appiconset 名）；实际=$altIconNames → 声明缺失或值不匹配，'
           '真机 setAlternateIconName 将报 OSStatus -54',
+    );
+
+    // ── 1c) 回归门禁：carHasAllLaunchers（变体资产真实入包）──
+    // Assets.car 字节级扫描 launcher1~6 appiconset 名——声明齐全但资产
+    // 未编入 car，真机同样 -54；与 CI 静态 car 校验构成双门禁。
+    final carNames = statusMap['carHasAllLaunchers'];
+    expect(
+      (carNames is List) ? carNames.length : 0,
+      6,
+      reason: '已安装 Assets.car 应含 launcher1~6 全部 appiconset；'
+          '实际=$carNames → 变体资产未入包（actool/构建设置回归）',
     );
 
     // ── 2) 仅取证：真实 set icon1（模拟器 completion 不回调 → 超时守护，不断言）──
