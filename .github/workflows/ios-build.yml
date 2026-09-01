@@ -210,6 +210,27 @@ jobs:
           name: ios-device-info-plist
           path: flutter_legado/build/ios/device-plist/
 
+      # 第六轮（-54 复发，iOS 17.5 真机）：universal app 的 legacy 图标路径缺口。
+      # Xcode 只把 CFBundleIconFiles 中 76x76 尺寸的变体编为 iPad idiom 散文件
+      # （launcherN76x76@2x~ipad.png），iPhone idiom 下该 base name 解析不到任何
+      # 文件；若 LaunchServices 校验/回退 legacy 路径，每个变体图标注册即失效
+      # → setAlternateIconName 报 Carbon fNotFoundErr（-54）。标准 capacitor/expo
+      # 应用是纯 iPhone target、无 76x76 iPad 尺寸，故不存在此错位。
+      # 修复：打包前为每个 launcher 补 76x76@1x/@2x 非 ipad 散文件（源图取
+      # appiconset 内 ipad 槽位），使 CFBundleIconFiles 全部条目在 iPhone 可解析，
+      # 同时保留 iPad 支持。car 现代路径（CFBundleIconName）不受影响。
+      - name: Inject iPhone-resolvable 76x76 loose icon files
+        run: |
+          set -euxo pipefail
+          APP=flutter_legado/build/ios/iphoneos/Runner.app
+          ASSETS=flutter_legado/ios/Runner/Assets.xcassets
+          for N in 1 2 3 4 5 6; do
+            cp "$ASSETS/launcher${N}.appiconset/launcher${N}_76.png"  "$APP/launcher${N}76x76@1x.png"
+            cp "$ASSETS/launcher${N}.appiconset/launcher${N}_152.png" "$APP/launcher${N}76x76@2x.png"
+          done
+          echo "== 注入后 bundle 根散文件 =="
+          ls -l "$APP"/launcher*76x76*.png
+
       - name: Package unsigned IPA
         working-directory: flutter_legado/build/ios/iphoneos
         run: |

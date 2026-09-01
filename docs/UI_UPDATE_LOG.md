@@ -88,3 +88,4 @@
 修订：Qoder UI ｜ 2026-08-31（iOS 换图标 ALTERNATE_APPICON_NAMES/INCLUDE_ALL_APPICON_ASSETS 构建设置补齐批次 23，2.0.141）
 修订：Qoder UI ｜ 2026-08-31（iOS 换图标 -54 第四轮取证 + CI Info.plist 门禁批次 24，2.0.142）
 修订：Qoder UI ｜ 2026-08-31（iOS 换图标 -54 第五轮真机自检 + 私有 API 旁路批次 25，2.0.143）
+修订：Qoder UI ｜ 2026-08-31（iOS 换图标 -54 第六轮 legacy 路径散文件补齐 + looseIcons 自检批次 26，2.0.144）

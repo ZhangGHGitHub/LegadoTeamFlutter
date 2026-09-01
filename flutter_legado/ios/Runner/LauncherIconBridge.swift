@@ -18,6 +18,12 @@ import UIKit
 ///   （capacitor 量产模式，绕过 iOS 26 alert 路径）；
 /// - 错误回传 domain/code（FlutterError.details），Dart 侧附带
 ///   自检结果一次性回报。
+///
+/// 第六轮（-54 仍复发，iOS 17.5 真机、声明✓/car 6/6）增强：
+/// - status 增加 looseIcons 字段——逐 CFBundleIconFiles base name
+///   校验 bundle 根散文件可解析性（"" / @2x / @3x 任一存在）。
+///   universal app 的 76x76 变体只有 iPad idiom 散文件，iPhone 下
+///   legacy 路径缺口是 -54 的最后具体嫌疑（CI 侧已补非 ipad 散文件）。
 @objc class LauncherIconBridge: NSObject {
   static let shared = LauncherIconBridge()
 
@@ -55,6 +61,12 @@ import UIKit
         var diskAltKeys: [String] = []
         var altIconNames: [String] = []
         var diskBytes = -1
+        // 第六轮自检：legacy 路径（CFBundleIconFiles）散文件可解析性。
+        // Xcode 只为 universal app 的 76x76 变体编 iPad idiom 散文件，iPhone
+        // idiom 下 base name 可能解析不到任何文件 → LaunchServices 校验/回退
+        // legacy 路径时 setAlternateIconName 报 -54（fNotFoundErr）。
+        var looseResolved = 0
+        var looseTotal = 0
         if let p = bundle.path(forResource: "Info", ofType: "plist"),
            let data = FileManager.default.contents(atPath: p) {
           diskBytes = data.count
@@ -67,11 +79,25 @@ import UIKit
             diskAltKeys = alt.keys.map { "\($0)" }.sorted()
             // 每个条目的 CFBundleIconName 必须等于键名（appiconset 名），否则真机解析失败。
             var pairs: [String] = []
+            let fm = FileManager.default
+            let root = bundle.bundlePath as NSString
             for (key, entry) in alt {
               if let e = entry as? [AnyHashable: Any], let n = self.iconName(e) {
                 pairs.append("\(key)=\(n)")
               } else {
                 pairs.append("\(key)=<none>")
+              }
+              // 逐 base name 校验 bundle 根散文件（"" / @2x / @3x 任一存在即算可解析）。
+              if let e = entry as? [AnyHashable: Any], let files = e["CFBundleIconFiles"] as? [Any] {
+                for f in files {
+                  looseTotal += 1
+                  let base = "\(f)"
+                  for suffix in ["", "@2x", "@3x"] where
+                    fm.fileExists(atPath: root.appendingPathComponent("\(base)\(suffix).png")) {
+                    looseResolved += 1
+                    break
+                  }
+                }
               }
             }
             altIconNames = pairs.sorted()
@@ -99,6 +125,7 @@ import UIKit
           "systemVersion": sysVer,
           "supportsAlt": supportsAlt,
           "carHasAllLaunchers": carFound,
+          "looseIcons": "\(looseResolved)/\(looseTotal)",
           "infoDictKeyCount": dict.count,
           "hasBundleId": dict["CFBundleIdentifier"] != nil,
           "altKeys": altNS.keys.map { "\($0)" }.sorted(),

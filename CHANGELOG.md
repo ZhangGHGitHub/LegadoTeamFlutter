@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.144] - 2026-08-31
+
+### Fixed
+- [UI] iOS 换图标 OSStatus -54 第六轮（用户实证：iOS 17.5 真机，声明✓/car 6/6、私有 API 旁路亦不生效 → 排除平台回归与旁载损坏；唯一剩余可具体验证的差异 = legacy 路径）：Xcode 只为 universal app 把 CFBundleIconFiles 的 76x76 变体编为 iPad idiom 散文件（launcherN76x76@2x~ipad.png），iPhone idiom 下该 base name 解析不到任何文件；LaunchServices 校验/回退 legacy 路径时每个变体图标注册即失效 → Carbon fNotFoundErr（-54）。标准 capacitor/expo 应用为纯 iPhone target、无此尺寸槽位，故不触发。修复：CI 打包前新增注入步，为每个 launcher 补 76x76@1x/@2x 非 ipad 散文件（源图取 appiconset 内 ipad 槽位），使 CFBundleIconFiles 全部条目在 iPhone 可解析且保留 iPad 支持
+- [UI] bridge 自检增强：status 新增 looseIcons 字段——逐 CFBundleIconFiles base name 校验 bundle 根散文件可解析性（""/@2x/@3x 任一存在即算）；Dart 侧错误诊断行追加「散文件 X/Y」，若本修复无效可凭真机取证直接判定 legacy 路径是否已补齐
+
+### Test
+- flutter analyze 无问题；iOS Build CI：新增注入步（12 个散文件）+ 既有 car 6/6 校验与集成测试门禁不变
+- 版本 2.0.144+145
+
+- Contributor: Qoder + UI
+
 ## [2.0.143] - 2026-08-31
 
 ### Fixed
