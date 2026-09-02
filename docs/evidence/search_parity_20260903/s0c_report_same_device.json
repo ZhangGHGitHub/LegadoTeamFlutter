@@ -1,0 +1,212 @@
+{
+  "date": "2026-09-03",
+  "device": "emulator-5556(单机双包串行)",
+  "keyword": "s0e",
+  "fixture": "scripts/s0c_server.py v4(class.规则语法 + loginCheckJs 返回式 + 4s 间隔延迟 + s1 final 不计时)",
+  "expected": {
+    "set": [
+      "书甲",
+      "书乙",
+      "书丙",
+      "书丁",
+      "书戊"
+    ],
+    "excluded": "s5 loginCheckJs 失败源、s6 空结果源"
+  },
+  "original": {
+    "app": "com.legado.app.release 3.26082623",
+    "ui_results_in_order": [
+      "书甲",
+      "书乙",
+      "书丙",
+      "书戊",
+      "书丁"
+    ],
+    "server_per_source": {
+      "0": {
+        "requests": 1,
+        "results": [
+          "done"
+        ]
+      },
+      "2": {
+        "requests": 1,
+        "results": [
+          "done"
+        ]
+      },
+      "5": {
+        "requests": 1,
+        "results": [
+          "done"
+        ]
+      },
+      "4": {
+        "requests": 1,
+        "results": [
+          "done"
+        ]
+      },
+      "1": {
+        "requests": 2,
+        "results": [
+          "redirected",
+          "done"
+        ]
+      },
+      "6": {
+        "requests": 1,
+        "results": [
+          "done"
+        ]
+      },
+      "3": {
+        "requests": 1,
+        "results": [
+          "done"
+        ]
+      }
+    },
+    "note": "聚合=完成序;原版并发约5-6,s3 等待槽位导致其完成(20s)晚于 s4(18s)"
+  },
+  "refactored": {
+    "app": "io.legado.flutter_legado",
+    "ui_results_in_order": [
+      "书甲",
+      "书乙",
+      "书丙",
+      "书丁",
+      "书戊"
+    ],
+    "server_per_source": {
+      "1": {
+        "requests": 2,
+        "results": [
+          "redirected",
+          "done"
+        ]
+      },
+      "6": {
+        "requests": 1,
+        "results": [
+          "done"
+        ]
+      },
+      "4": {
+        "requests": 1,
+        "results": [
+          "done"
+        ]
+      },
+      "2": {
+        "requests": 1,
+        "results": [
+          "done"
+        ]
+      },
+      "0": {
+        "requests": 1,
+        "results": [
+          "done"
+        ]
+      },
+      "3": {
+        "requests": 1,
+        "results": [
+          "done"
+        ]
+      },
+      "5": {
+        "requests": 1,
+        "results": [
+          "done"
+        ]
+      }
+    },
+    "note": "全 7 源并发派发;第 1 页完成(26s)后自动发起第 2 页(对齐原版多页语义),逐源计数按第 1 页窗口截取"
+  },
+  "parity": {
+    "original_set_match": true,
+    "refactored_set_match": true,
+    "per_source_requests_identical": true,
+    "all_sources_terminal_done_both": true,
+    "order_identical": false,
+    "order_root_cause": "两端均按完成序聚合;原版搜索并发约5-6(第7源等槽位)vs 重构端32并发,源数>并发时完成序必然分化;与解析/聚合正确性无关",
+    "per_source_outcomes": {
+      "original": {
+        "0": [
+          "done"
+        ],
+        "1": [
+          "redirected",
+          "done"
+        ],
+        "2": [
+          "done"
+        ],
+        "3": [
+          "done"
+        ],
+        "4": [
+          "done"
+        ],
+        "5": [
+          "done"
+        ],
+        "6": [
+          "done"
+        ]
+      },
+      "refactored": {
+        "0": [
+          "done"
+        ],
+        "1": [
+          "redirected",
+          "done"
+        ],
+        "2": [
+          "done"
+        ],
+        "3": [
+          "done"
+        ],
+        "4": [
+          "done"
+        ],
+        "5": [
+          "done"
+        ],
+        "6": [
+          "done"
+        ]
+      }
+    }
+  },
+  "findings": [
+    {
+      "id": "F1",
+      "level": "P1",
+      "title": "loginCheckJs 语义分叉",
+      "detail": "原版 WebBook.kt:78 要求 evalJS 返回值可强转 StrResponse;重构 js_executor.execute_login_check_js 按布尔谓词判定。谓词式写法(如 result.code()==200)重构端通过、原版端整源失败(本轮实测书甲丢失)。夹具已改返回式双端兼容;重构侧对齐待办。"
+    },
+    {
+      "id": "F2",
+      "level": "P2",
+      "title": "搜索并发策略差异",
+      "detail": "原版并发~5-6,重构端32;源数大于并发时完成序聚合必然不同。非缺陷,parity 对比以集合级+逐源证据为准。"
+    },
+    {
+      "id": "F3",
+      "level": "P2",
+      "title": "夹具双端兼容修正",
+      "detail": "原版解析器不支持纯 CSS 选择器(.book-item),改 legado 经典 class.x@attr 语法后双端均可解析;2s 延迟间隔在模拟器抖动下顺序漂移,改 4s;s1 302 final 响应不再计延迟。"
+    },
+    {
+      "id": "F4",
+      "level": "P2",
+      "title": "reverse 僵死误诊修正",
+      "detail": "本轮实证:夹具服务器随驱动脚本崩溃被连带杀死后,表现与「adb reverse 静默僵死」完全一致(connection reset/零请求)。5558 三轮攻坚的部分证据可能同因;单机双包拓扑不再依赖 reverse 长时间存活。"
+    }
+  ]
+}

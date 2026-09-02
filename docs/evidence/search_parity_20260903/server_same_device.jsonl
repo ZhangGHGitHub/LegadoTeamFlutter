@@ -1,0 +1,21 @@
+{"ts": 1788378336.586, "kind": "server_start", "port": 8091, "mode": "s0c"}
+{"ts": 1788378359.795, "kind": "sources_json"}
+{"ts": 1788378379.11, "kind": "marker", "name": "ORIG_SUBMIT"}
+{"ts": 1788378379.755, "kind": "search_start", "id": "81208-1788378379.755", "src": 0, "kw": "s0e", "path": "/s0c/s0/search"}
+{"ts": 1788378379.822, "kind": "search_start", "id": "83928-1788378379.822", "src": 2, "kw": "s0e", "path": "/s0c/s2/detail"}
+{"ts": 1788378379.822, "kind": "search_start", "id": "84948-1788378379.822", "src": 5, "kw": "s0e", "path": "/s0c/s5/search"}
+{"ts": 1788378379.827, "kind": "search_start", "id": "84972-1788378379.827", "src": 4, "kw": "s0e", "path": "/s0c/s4/search"}
+{"ts": 1788378379.828, "kind": "search_start", "id": "87264-1788378379.828", "src": 1, "kw": "s0e", "path": "/s0c/s1/start"}
+{"ts": 1788378381.756, "kind": "search_end", "id": "81208-1788378379.755", "src": 0, "elapsed": 2.001, "result": "done"}
+{"ts": 1788378381.759, "kind": "search_start", "id": "81208-1788378381.759", "src": 6, "kw": "s0e", "path": "/s0c/s6/search"}
+{"ts": 1788378385.829, "kind": "search_end", "id": "87264-1788378379.828", "src": 1, "note": "redirect", "elapsed": 6.001, "result": "redirected"}
+{"ts": 1788378385.83, "kind": "search_start", "id": "87264-1788378385.83", "src": 1, "kw": "s0e", "path": "/s0c/s1/final"}
+{"ts": 1788378385.83, "kind": "search_end", "id": "87264-1788378385.83", "src": 1, "elapsed": 0.0, "result": "done"}
+{"ts": 1788378385.831, "kind": "search_start", "id": "87264-1788378385.831", "src": 3, "kw": "s0e", "path": "/s0c/s3/list"}
+{"ts": 1788378389.823, "kind": "search_end", "id": "83928-1788378379.822", "src": 2, "elapsed": 10.001, "result": "done"}
+{"ts": 1788378397.827, "kind": "search_end", "id": "84972-1788378379.827", "src": 4, "elapsed": 18.001, "result": "done"}
+{"ts": 1788378399.832, "kind": "search_end", "id": "87264-1788378385.831", "src": 3, "elapsed": 14.001, "result": "done"}
+{"ts": 1788378401.823, "kind": "search_end", "id": "84948-1788378379.822", "src": 5, "elapsed": 22.001, "result": "done"}
+{"ts": 1788378407.76, "kind": "search_end", "id": "81208-1788378381.759", "src": 6, "elapsed": 26.001, "result": "done"}
+{"ts": 1788378421.772, "kind": "sources_json"}
+{"ts": 1788378443.961, "kind": "marker", "name": "END"}

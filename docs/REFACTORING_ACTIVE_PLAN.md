@@ -177,13 +177,13 @@
 
 **进度更新（2026-08-29）**：按 `SEARCH_PARITY_REMEDIATION_PLAN_20260828.md` §8 执行。
 - ✅ **已完成**：离线原版响应夹具（S0-B，`511a0bb52`，七场景+主执行器消费测试）；统一单源执行器收敛（S0-E，`4330acaf9`，loginCheckJs/pattern 直连/空列表回退/bookUrl 回退/去重键/非 2xx 六项对齐）；会话级取消收尾（P0-3，`c5f82a854`+`91e40dfad`，双机实机 e2e 7/7，verdict 归档）；G4 修复（`bb521c366`）。
-- ⛔ **未完成（标记）**：**S0-C 原版端终态证据采集**——5558(LDPlayer) 环境阻断（adb reverse 数分钟内静默僵死、设备→主机直达被防火墙拦截、原版 release 无 run-as、debug 变体缺 mavenLocal 构件），已三轮攻坚未闭环；续作三路径与实测窗口数据见该计划 §8.8。S0-C 未闭合前 P0-2 S0 与 P0-1.4 保持 DEFERRED。
+- ✅→**S0-C 双包基线：已闭合（2026-09-03）**——5558→5556：实测双包均装于 emulator-5556，改单机双包串行拓扑绕开 5558 网络阻断；原版端"分组列表不含 S0C"实为列表未滚动（ASCII 序排在中文分组后），圈定后 7 夹具源 26s 终态；"reverse 僵死"部分为误诊（夹具服务器随驱动脚本崩溃被连带杀死，connection reset 症状相同，服务器独立进程后未复现）。夹具修正三处（原版不认纯 CSS 选择器改 class. 语法、2s→4s 延迟间隔防抖动、s1 302 final 不计时）。终态对比：**集合级 parity 双端 5/5 一致**（s5 loginCheckJs 失败/s6 空结果正确排除、s1 重定向、s2/s3 pattern 两分支、s4 空列表详情回退全命中），第 1 页逐源请求与结果完全一致；顺序分化（原版 甲乙丙戊丁 vs 重构 甲乙丙丁戊）根因=并发策略差异（原版约 5-6 并发 vs 重构 32，均按完成序聚合），非解析缺陷。详见 `SEARCH_PARITY_S0C_CLOSURE_20260903.md`。**P0-2 S0 与 P0-1.4 解除 DEFERRED**；新增待办 F1：loginCheckJs 语义对齐（原版 WebBook.kt:78 要求 evalJS 返回 StrResponse 本身，重构 js_executor 按布尔谓词判定，谓词式写法两端行为相反，P1）。
 - ✅ **阶段三已完成（2026-08-29）**：过滤/持久化一致性——precision filter 解析期对齐原版（`837516a08`，precision_filter_match 三字段或语义 + parse_search_response_ex，应用点=列表循环/pattern 直连/空列表回退，FFI 签名零变更经配置读取，p3f_tests 5 项；workspace 2479/0）。聚合一致性此前已由 fix34 批次对齐。
 - ✅ **上游安卓源码同步完成（2026-08-29）**：upstream(LegadoTeam/legado) 506 提交(#397→#1072,v3.26.082823,cronet 152.0.7977.54) 已合入集成分支 `integration/upstream-3.26.082823`（合并提交 `6314f5b215`,161 冲突全部取上游版——本地安卓侧=#543 纯快照无本地修改需保留,README 取双轨版）。门禁：`assembleRelease -Pksp.incremental=false` BUILD SUCCESSFUL（R8 处理新 htmlunit MethodHandle;debug 变体 D8 在 minSdk 23 下无法 dex 新 htmlunit,上游 CI 亦仅构建 release）;`testAppReleaseUnitTest` 1809 中 1807 通过（2 个符号链接测试为 Windows 环境差异,上游 CI 为 Linux）;flutter_legado/rust 零触及。**合回 master 待 UI 轨提交其 49 个未提交文件后执行**（当前 checkout/merge 均会覆盖其 WIP,按协作规则避让）。
 - ✅ **体检缺陷修复跟进（2026-08-29 续）**：REFACTOR_DEFECT_AUDIT 18 项中已闭环 9 项（§一.2 前台服务 `405e82a413`、§二.5 Custom JS `bde0dddfa2`、§二.6 PROPFIND `de4a69d3ea`、§三.10 CI 补强 `8ac2410a0c`、§三.12 热点锁、§三.14 缓存容量、§四.15 .gitignore、§五 口径 2 项）+ 上游 506 提交同步（集成分支待 UI 轨 WIP 提交后合回 master）。**仍开放**：§一.1 v7a（决策已登记：发布矩阵剔除 v7a JS）、§二.4 cmap（下一批次）、§二.7/§二.8（REST 通道产品决策）、§三.9、§四.16、S0-C 原版端（环境）、S0-D。
 ✅ **体检缺陷修复跟进（2026-08-29 续2）**：§一.1 v7a 决策=保留降级 v7a（原版支持 ARM32,剔除会断装;后续可评估 boa 补齐）;§二.7 REST 删除=对齐原版(原版无 REST 层,数据直查 DB;REST 属新增功能违反重构红线,整批删除约 150 行);§三.10 CI 补强已提交。
 - ✅ **体检修复跟进决策（2026-08-29 用户确认）**：v7a=保留降级(原版支持 ARM32,不剔除);§二.7 REST 死路径=整批删除(原版无 REST 层,红线对齐);§一.1 v7a=保留降级(原版支持 ARM32);S0-C 原版端=LDPlayer 桥接模式浏览器可达但搜索不调度夹具源(千真实源阻塞遍历),需 debug 原版 run-as 或禁用真实源。
-- ▶️ **剩余**：仅性能剖析（S0-D）——关闭条件依赖双包同基线分段计时，受 S0-C 原版端环境阻断约束，待环境问题解决后执行（分段计时探针 LEGADO_SEARCH_PHASE_TIMING 已存在）。
+- ▶️ **剩余（2026-09-03 更新）**：S0-D 性能剖析——环境依赖已随 S0-C 闭合解除（双包同机可跑同基线），可独立排期（分段计时探针 LEGADO_SEARCH_PHASE_TIMING 已存在）；F1 loginCheckJs 语义对齐（P1，rust/legado-ffi/src/js_executor.rs，对齐原版"evalJS 返回值须可强转 StrResponse + 错误路径 code!=500 放行"语义，见 `SEARCH_PARITY_S0C_CLOSURE_20260903.md` §3.1）。
 
 
 ## 四、文档治理
@@ -204,6 +204,7 @@
 新增计划、报告、交接文档必须放在 `docs/`；历史材料只允许放在 `docs/过期文档/`，不得再创建新的日期版计划散落在根目录。
 
 编写者：Codex ｜ 2026-08-19
+修订：Qoder ｜ 2026-09-03（S0-C 双包基线闭合：5556 单机双包拓扑、夹具 class. 语法/loginCheckJs 返回式/4s 延迟修正、集合级 parity 双端 5/5 一致、逐源证据归档；P0-2 S0 与 P0-1.4 解除 DEFERRED；新增 F1 loginCheckJs 语义对齐 P1 待办；据 SEARCH_PARITY_S0C_CLOSURE_20260903.md）
 修订：主代理 ｜ 2026-08-20（P0-1 关闭；P0-2 merge-tree 预检与进度记录）
 修订：主代理 ｜ 2026-08-22（P0-2 合流关闭：合并提交 81ad6e220、codegen 同步、门禁与冒烟基线更新）
 修订：主代理 ｜ 2026-08-22（P3-1 关闭：入口接入 `961a2d353`，独立复验通过）
