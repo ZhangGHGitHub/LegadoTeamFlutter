@@ -29,12 +29,17 @@ jobs:
       - name: Cargo test
         working-directory: rust
         run: cargo test --workspace
-      - name: Cargo test
-        working-directory: rust
-        run: cargo test --workspace
       - name: Cargo test (quickjs)
         working-directory: rust
         run: cargo test -p legado-js --features quickjs
       - name: Cargo test legado-ffi full (quickjs)
         working-directory: rust
         run: cargo test -p legado-ffi --features quickjs
+      # [体检 N7] 依赖漏洞门禁：RustSec Advisory Database 扫描
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: Cargo audit (RustSec advisories)
+        working-directory: rust
+        run: cargo audit

@@ -175,6 +175,16 @@
 
 - **P3-6 搜索速度与结果一致性修复**（开放，2026-08-28）：源码审查确认 Flutter 主搜索走 `run_multi_stream -> search_single_source`，未复用较完整的规则搜索实现，导致登录检查、详情页回退、书源上下文 JS、单源去重等原版语义存在分叉；同时存在取消残留任务、入口语义不统一和 `originOrder=0` 风险。先完成离线原版响应夹具、QuickJS 产物 feature 核验和双包同库基线，再按“统一单源执行器 → 会话级取消 → 过滤/聚合/持久化一致性 → 性能剖析”实施。详细验收矩阵、依赖顺序与非目标见 `SEARCH_PARITY_REMEDIATION_PLAN_20260828.md`。本项未实施，不得以已有审计文档或当前未提交代码宣称已关闭。
 
+**整合审计 Rust 后端批次处置（2026-09-03，据 `REFACTOR_CONSOLIDATED_AUDIT_20260903.md` §八）**：UI/Android 侧（N1 manifest、N3 Web 服务决策簇、N6 生成代码）由 UI 轨负责；Rust 后端项全部处置并提交：
+- ✅ **误报更正三处**：D4（JS 源 precision filter）与 D3（一次性入口落库）核实已由 `133914f0f1`（08-29）修复；§二.4（字体反爬 cmap）核实真实现自 `20bee32d1c`（08-07）即完整落地 `legado-js/host_api/query_ttf.rs`+`font_api.rs`（cmap 0/4/6 + glyf 轮廓签名 + java.replaceFont，对齐原版 QueryTTF.java 0/4/6——原版 Java 无 format 12）并接入 quickjs。整合报告第三轮核对把 legado-core 同名死桩误判为活实现。
+- ✅ **core 死桩删除**（`9f58655`）：`legado-core/src/query_ttf.rs` 零消费方且连续误导两轮审计，删除；N2 `do_custom_js` 假成功改显式拒绝（`92c171182c`），server REST run_task 测试同步诚实化（该 REST 层属 §二.7 已决策删除簇）。
+- ✅ **D4 回归单测**（`25c9e2a03a`）：quickjs `d4_js_precision_tests`——mainJs 静态夹具两书，precision=true 仅命中条目通过，防对齐回退。
+- ✅ **§三.9 内存限制测试**（同上）：`#[cfg_attr(windows, ignore)]`——Windows 仍跳过（进程级崩溃），Linux CI 恢复沙箱安全线回归防护。
+- ✅ **N7 cargo audit**（rust-ci.yml）：RustSec Advisory 扫描阻塞门禁 + 清理重复 test 步骤。
+- ✅ **连带修复**（`b60efc101c`）：legado-net custom_hosts e2e 在有系统代理环境下 502（代理架空 hosts 直连语义）→ `LegadoClientConfig` 新增 `no_proxy` 开关 + e2e 测试启用；TEST_LOCK 中毒级联拖垮同模块 5 测试 → 9 处改 `into_inner()` 中毒恢复（§三.12 惯例）；web_book 两个失效站点诊断测试补 `#[ignore]`（同文件惯例）。
+- ✅ **N5 评估登记**：source_checker.rs:511 / reader.rs:307 两处简化点均为设计内（有注释自述、无生产正确性影响），维持登记不修改，详见整合报告 §五.N5。
+- 门禁：fmt 0 diff、clippy 双段 0 warning、`cargo test --workspace` 全绿（2237 passed / 51 ignored）、`legado-js quickjs` 513/0、`legado-ffi quickjs` 396/0（siluke 时序敏感测试在负载下偶发抖动，单跑/复跑通过，属环境基线非本轮回归）。
+
 **进度更新（2026-08-29）**：按 `SEARCH_PARITY_REMEDIATION_PLAN_20260828.md` §8 执行。
 - ✅ **已完成**：离线原版响应夹具（S0-B，`511a0bb52`，七场景+主执行器消费测试）；统一单源执行器收敛（S0-E，`4330acaf9`，loginCheckJs/pattern 直连/空列表回退/bookUrl 回退/去重键/非 2xx 六项对齐）；会话级取消收尾（P0-3，`c5f82a854`+`91e40dfad`，双机实机 e2e 7/7，verdict 归档）；G4 修复（`bb521c366`）。
 - ✅→**S0-C 双包基线：已闭合（2026-09-03）**——5558→5556：实测双包均装于 emulator-5556，改单机双包串行拓扑绕开 5558 网络阻断；原版端"分组列表不含 S0C"实为列表未滚动（ASCII 序排在中文分组后），圈定后 7 夹具源 26s 终态；"reverse 僵死"部分为误诊（夹具服务器随驱动脚本崩溃被连带杀死，connection reset 症状相同，服务器独立进程后未复现）。夹具修正三处（原版不认纯 CSS 选择器改 class. 语法、2s→4s 延迟间隔防抖动、s1 302 final 不计时）。终态对比：**集合级 parity 双端 5/5 一致**（s5 loginCheckJs 失败/s6 空结果正确排除、s1 重定向、s2/s3 pattern 两分支、s4 空列表详情回退全命中），第 1 页逐源请求与结果完全一致；顺序分化（原版 甲乙丙戊丁 vs 重构 甲乙丙丁戊）根因=并发策略差异（原版约 5-6 并发 vs 重构 32，均按完成序聚合），非解析缺陷。详见 `SEARCH_PARITY_S0C_CLOSURE_20260903.md`。**P0-2 S0 与 P0-1.4 解除 DEFERRED**；新增待办 F1：loginCheckJs 语义对齐（原版 WebBook.kt:78 要求 evalJS 返回 StrResponse 本身，重构 js_executor 按布尔谓词判定，谓词式写法两端行为相反，P1）。
@@ -204,6 +214,7 @@
 新增计划、报告、交接文档必须放在 `docs/`；历史材料只允许放在 `docs/过期文档/`，不得再创建新的日期版计划散落在根目录。
 
 编写者：Codex ｜ 2026-08-19
+修订：Qoder + Bridge ｜ 2026-09-03（整合审计 Rust 后端批次处置：D3/D4/§二.4 三处误报核实更正（均在基线前已修）+ core query_ttf 死桩删除 + N2 假成功拒绝化 + D4 quickjs 回归单测 + §三.9 内存测试 Linux 启用 + N7 cargo audit + N5 评估登记 + 连带修复 hosts 代理架空/TEST_LOCK 中毒级联/失效站点诊断补 ignore；据 REFACTOR_CONSOLIDATED_AUDIT_20260903.md，UI 侧 N1/N3/N6 由 UI 轨在途）
 修订：Qoder ｜ 2026-09-03（S0-C 双包基线闭合：5556 单机双包拓扑、夹具 class. 语法/loginCheckJs 返回式/4s 延迟修正、集合级 parity 双端 5/5 一致、逐源证据归档；P0-2 S0 与 P0-1.4 解除 DEFERRED；新增 F1 loginCheckJs 语义对齐 P1 待办；据 SEARCH_PARITY_S0C_CLOSURE_20260903.md）
 修订：主代理 ｜ 2026-08-20（P0-1 关闭；P0-2 merge-tree 预检与进度记录）
 修订：主代理 ｜ 2026-08-22（P0-2 合流关闭：合并提交 81ad6e220、codegen 同步、门禁与冒烟基线更新）

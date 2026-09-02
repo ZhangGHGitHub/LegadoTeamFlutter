@@ -24,7 +24,7 @@
 
 1. **主线完成度扎实**：原版 20 个 UI 功能域在 Flutter 侧几乎全覆盖；搜索/换源 parity 战役（P3-6）核心语义已全部落地（S0-B/S0-E/阶段三/P0-3 收尾），主搜索链路与原版逐环节对齐；唯一遗留 S0-C 原版端证据采集受环境阻断（LDPlayer + 盲操作约束，三条续作路径已登记于专项计划 §8.6/§8.8）。
 2. **修复战役有效但有 1 例虚假闭环**：上两轮 24 项中约 13 项真实闭环、3 项按决策闭环；§一.2 前台服务台账声称已闭环，实测发现服务类已实现但 **manifest 未注册——引入比原缺陷更严重的新 P0（N1，播放即崩）**。
-3. **剩余确凿缺口**：Web 服务功能域未接线（N3）、字体反爬 cmap 空壳（§二.4）、JS 源绕过精准搜索（D4）、REST 死降级路径（§二.7）及配套双 DB 潜伏（§二.8）。
+3. **剩余确凿缺口（09-03 修订）**：Web 服务功能域未接线（N3）与配套双 DB 潜伏（§二.8）、REST 死降级路径（§二.7）为仅存决策簇缺口；原列的字体反爬 cmap 空壳（§二.4）与 JS 源绕过精准搜索（D4）经核实**已在基线前修复**（详见 §三 P1#4 与 §四 D3/D4 更正）。
 4. **工程卫生明显改善**：.gitignore/CI fmt+quickjs clippy/引擎缓存容量/热点锁中毒恢复均已落地；剩余为 golden 测试 0、超长文件、生成代码漂移、cargo audit。
 
 ---
@@ -43,7 +43,7 @@
 
 | # | 条目 | 原始证据 | 最终状态 | 修复证据 |
 |---|---|---|---|---|
-| 4 | 书源字体反爬 cmap 解析空壳（正文乱码） | `query_ttf.rs:62` 自注"简化实现：构建基本的 ASCII 映射" | ❌ **未修**（登记下一批次） | — |
+| 4 | 书源字体反爬 cmap 解析空壳（正文乱码） | `query_ttf.rs:62` 自注"简化实现：构建基本的 ASCII 映射" | ✅ **已修（09-03 核实更正）**：真实实现在 `legado-js/src/host_api/query_ttf.rs` + `font_api.rs`（cmap format 0/4/6 + glyf 轮廓签名双字体反查，对齐原版 QueryTTF.java，`20bee32d1c` 08-07 即已落地并接入 `java.replaceFont`）——本报告此前的"未修"判定误将 `legado-core` 同名**死桩**当成了活实现（原版 Java 实际也无 format 12，报告"format 4/12"表述有误）。core 死桩已于 09-03 删除，杜绝三度误导 | `20bee32d1c` + 09-03 批次 |
 | 5 | AutoTask Custom JS 假成功 | `auto_task.rs` do_custom_js"验证脚本非空即视为成功" | ✅ **已修**：FFI `execute_task` 截获 Custom 动作走 `execute_auto_task_js` 真实求值（QuickJS 引擎缓存 + Response/Jsoup 桥）；调度器已接真实路径（`auto_task_scheduler.dart:273`）；残留死代码见 §五 N2 | `bde0dddfa2` |
 | 6 | WebDAV PROPFIND 字符串 split 解析脆弱（静默变空） | `remote_book.rs:219` `split("<D:response>")` | ✅ **已修**：改为本地名大小写不敏感扫描（`split_blocks_ci`/`find_tag_value_ci`），`D:`/`d:`/无前缀/自定义前缀全兼容，legado-net 232/0 | `de4a69d3ea` |
 | 7 | AutoTask REST 降级死路径 + 静默吞错 | `auto_task_notifier.dart:41` 指 `127.0.0.1:8080`，`serverStart` 零调用方；连接错误吞成空列表 | ❌ **未实施**（决策"删除 REST 对齐原版"已登记）；并入功能域缺口 §五 N3 一并处理 | `8ecfc47c65`（仅登记） |
@@ -53,7 +53,7 @@
 
 | # | 条目 | 原始证据 | 最终状态 | 修复证据 |
 |---|---|---|---|---|
-| 9 | JS 引擎内存限制测试 Windows skip（沙箱安全线无回归防护） | `engine.rs:961` `#[ignore = "...ACCESS_VIOLATION on Windows"]` | ❌ 未修（建议 CI Linux runner 启用） | — |
+| 9 | JS 引擎内存限制测试 Windows skip（沙箱安全线无回归防护） | `engine.rs:961` `#[ignore = "...ACCESS_VIOLATION on Windows"]` | ✅ **已修（09-03）**：改 `#[cfg_attr(windows, ignore)]`——Windows 仍跳过（超限分配为进程级崩溃不可恢复），Linux CI 正常执行回归防护 | 09-03 批次 |
 | 10 | CI 盲区：clippy 从未 lint quickjs 路径、无 fmt、verify 只查 debug 双 ABI | rust-ci/flutter-ci | ✅ **大部分已修**：`cargo fmt --all --check`、`cargo clippy -p legado-js -p legado-ffi --features quickjs -- -D warnings`、flutter-ci verify 扩展 release+armv7（带告警）、全量 fmt 前置 141 文件、test.yml 按「安卓源码不上传」调整触发策略；仅缺 `cargo audit`（见 §五 N7） | `8ac2410a0c` + `4518c0df71` |
 | 11 | 网络链路 e2e 语义靠模拟器冒烟（12 项 #[ignore] 需网络） | reader.rs/search.rs/image_api.rs | 信息项（理由成立） | — |
 | 12 | 生产路径 `lock().unwrap()` 中毒级联 | 81 处 | 🟡 部分修复：82→77；`CURRENT_SEARCH_SESSION` 等热点锁已改中毒恢复（`into_inner`） | `e41dbd5554` |
@@ -94,8 +94,8 @@
 |---|---|---|
 | D1【P1】换源分组分隔符缺 `;`/`；`，`;`分隔组的书源被 Dart 预过滤整源丢弃 | `change_source_notifier.dart:84` `[,，]`、`change_source_screen.dart:121` `split(',')`；Rust 侧 `source_group_contains` 四分隔符齐全但被架空 | ✅ **已修**：两处均改为 `RegExp(r'[,;，；]')`。主搜索侧 `_splitGroupRegex` 一直完整——解释了"搜索正常、换源变少"的不对称 |
 | D2【P1】换源剔除"无详情页 URL"候选（原版回退 baseUrl 照常入列表） | `source_switch.rs` search_for_switch `filter(!book_url.is_empty())`（Task #21） | ✅ **已修（对齐原版）**：不再过滤，空 URL 候选保留展示、切换时 `switch_book_source` 兜底报错（注释引 BookList.kt:281-284） |
-| D3【P2】一次性入口 `search_books`/`multi_source_search` 不落库，换源 DB 缓存偏少 | 仅 `run_multi_stream` 有 `persist_search_books`（search.rs:619-621）；原版两入口最终都落库 | ❌ 未修（当前 UI 仅用流式主路径，无实际影响；或文档钉死仅流式入口为生产路径） |
-| D4【P2】JS 书源绕过 precision filter | `search.rs:1041` 提前 return `search_js_source`；原版 filter 传入 `JsSourceBook.searchAwait`（WebBook.kt:47） | ❌ 未修 → 并入 §五 N4（精准搜索开启时 JS 源多出未过滤行） |
+| D3【P2】一次性入口 `search_books`/`multi_source_search` 不落库，换源 DB 缓存偏少 | 仅 `run_multi_stream` 有 `persist_search_books`（search.rs:619-621）；原版两入口最终都落库 | ✅ **已修（09-03 核实更正）**：`133914f0f1`（08-29）已为一次性入口补 `persist_search_books`（本报告第三轮核对误报为未修） | `133914f0f1` |
+| D4【P2】JS 书源绕过 precision filter | `search.rs:1041` 提前 return `search_js_source`；原版 filter 传入 `JsSourceBook.searchAwait`（WebBook.kt:47） | ✅ **已修（09-03 核实更正）**：`133914f0f1`（08-29）已在 JS 分支应用 `precision_filter_match` retain（本报告第三轮核对误报为未修）；09-03 补 quickjs 回归单测 `d4_js_precision_tests` | `133914f0f1` + 09-03 批次 |
 | D5【P3】换源筛选框 `sourceName\|\|bookName` 比原版仅 name 更宽 | change_source_screen.dart:478-486 | ❌ 未修（方向=更多，低优先） |
 | D6【P3】同名归一化（剥首尾括号/作者规范化）比原版字面全等更宽 | source_matcher.rs:178-215；DB 路径传 `format_book_name` | ❌ 未修（方向=更多，低优先） |
 
@@ -119,6 +119,7 @@
 ### N2【P3】旧假成功桩残留为可回潮死代码
 
 `legado-core/src/auto_task.rs:199-205` `do_custom_js` 仍被 `AutoTaskRunner::execute`（auto_task.rs:134）引用。当前生产入口（auto_task_api.rs:92）已截获 Custom，但未来任何直接调 `AutoTaskRunner::execute` 的新代码会重新踩中假成功。建议删除该分支或改为返回明确错误。
+**→ 已修（09-03）**：`do_custom_js` 改为显式拒绝（`"Custom JS must be executed via autoTaskExecute (QuickJS)"`），测试改为断言拒绝（`test_runner_custom_js_rejected`）。
 
 ### N3【P1】Web 服务功能域未接线
 
@@ -131,11 +132,15 @@
 - `legado-net/src/source_checker.rs:511`：书源调试"简化实现：提取第一个 href 链接作为章节 URL"——只影响调试信息精度，评估对齐；
 - `legado-ffi/src/api/reader.rs:307`：getChapterUrl 简化（返回章节 URL 供 Dart 处理）——注释自述设计内，建议在 STUB 台账补登记。
 
+**→ 评估结论（09-03）**：两处均为设计内简化、有注释自述、无生产正确性影响，维持登记不修改（source_checker 仅影响书源调试面板的验证信息精度；reader.rs 为 UI 层职责边界内的正常分工）。后续若书源调试实测暴露章节定位不准，再单列对齐批次。
+
 ### N6【P2·卫生】38 个未提交改动，其中 13 个生成代码
 
-`models/*.freezed.dart`、`*.g.dart` 等 13 个生成文件 + 2 screens + services/providers 处于已修改未提交状态——codegen 漂移或在途批次。生成代码漂移会让"干净树编译失败"（G4 `bb521c366` 已发生过一次）重演，本批次完成后须成组提交。
+`models/*.freezed.dart`、`*.g.dart` 等 13 个生成文件 + 2 screens + services/providers 处于已修改未提交状态——codegen 漂移或在途批次。生成代码漂移会让"干净树编译失败"（G4 `bb521c366` 已发生过一次）重演，本批次完成后须成组提交。（09-03 注：属 UI 轨在途 WIP，由 UI 轨成组提交）
 
 ### N7【P3】rust-ci 仍缺 `cargo audit`（依赖漏洞门禁）
+
+**→ 已修（09-03）**：rust-ci.yml 新增 `taiki-e/install-action` 安装 cargo-audit + `cargo audit` 步骤（RustSec Advisory 扫描，阻塞式门禁）；顺带清理了重复的 "Cargo test" 步骤。
 
 ---
 
@@ -162,6 +167,8 @@
 ---
 
 ## 八、改进方案与执行计划
+
+> **Rust 后端批次处置进度（2026-09-03）**：本报告所列 Rust 后端项已全部处置——批次 3 三项（N4/D4 证实 08-29 已修并补回归单测、D3 证实已修、§二.4 证实真实现已在 legado-js 并删除 core 死桩）；批次 4 中 Rust 项（§三.9 内存测试 Linux 启用、N2 死桩拒绝化、N5 评估登记、N7 cargo audit）已完成。剩余项归属：N1（Android manifest，UI 轨）、N3/§二.7/§二.8（Web 服务决策簇，UI 轨 + 设计）、N6（UI 轨在途 WIP）、批次 5（长期项）。核实中更正了本报告第三轮核对的三处误报（§二.4、D3、D4 均在基线提交之前已修复，证据 `20bee32d1c`/`133914f0f1`）。
 
 ### 批次 1（P0·发版阻断，改动极小）
 
