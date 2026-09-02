@@ -1,5 +1,7 @@
 # 搜索/换源结果数量与原版差异——深度对比审查报告（只读审计）
 
+> **[2026-09-03 整合注记]** 本报告已整合至 `REFACTOR_CONSOLIDATED_AUDIT_20260903.md` 并由其替代；D1-D6 最新状态以整合报告 §四.2 为准。文中编号引用继续有效。
+
 > 审计日期：2026-08-29
 > 审计性质：只读，未改动任何代码
 > 对比对象：重构轨 `rust/legado-ffi` + `flutter_legado` vs 原版 `app/src/main/java/io/legado/app`
