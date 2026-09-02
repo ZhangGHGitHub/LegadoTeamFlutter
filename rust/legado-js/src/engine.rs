@@ -959,7 +959,13 @@ mod quickjs_tests {
     }
 
     #[test]
-    #[ignore = "QuickJS memory limit test causes ACCESS_VIOLATION on Windows"]
+    // [体检 §三.9] 内存限制沙箱安全线测试：Windows 下 QuickJS 超限分配触发
+    // ACCESS_VIOLATION（进程级崩溃，无法在测试进程内恢复），仅 Windows 跳过；
+    // Linux（CI rust-ci runner）正常执行回归防护。
+    #[cfg_attr(
+        windows,
+        ignore = "QuickJS memory limit test causes ACCESS_VIOLATION on Windows"
+    )]
     fn test_sandbox_memory_limit() {
         // 极小内存限制（512KB）应导致大脚本分配失败
         let config = SandboxConfig::strict().with_memory_limit(512 * 1024);

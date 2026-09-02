@@ -4406,3 +4406,42 @@ mod p3f_tests {
         assert!(results.is_empty());
     }
 }
+
+// ─── [审计 D4 | WebBook.kt:47] JS 书源 precision filter 回归测试 ─────────────
+//
+// mainJs 静态返回两本书（仅书名含关键词的条目命中），无需网络：
+// precision=true 时 JS 源结果同样受三字段"或"语义约束，不得绕过。
+#[cfg(all(test, feature = "quickjs"))]
+mod d4_js_precision_tests {
+    use super::*;
+    use legado_net::LegadoClientConfig;
+
+    #[tokio::test]
+    async fn test_search_single_source_js_precision_filter() {
+        let src = BookSource {
+            book_source_url: "http://js.test/source".to_string(),
+            book_source_name: "JS测试源".to_string(),
+            main_js: Some(
+                "function search(key, page){ return JSON.stringify([\
+                 {name:'斗破苍穹', author:'天蚕土豆', kind:'玄幻', bookUrl:'http://js.test/1'},\
+                 {name:'遮天', author:'辰东', kind:'玄幻', bookUrl:'http://js.test/2'}]); }"
+                    .to_string(),
+            ),
+            ..BookSource::default()
+        };
+        let client = LegadoClient::new(LegadoClientConfig::default()).unwrap();
+
+        // precision=true：书2（遮天/辰东/玄幻 均不含"斗破"）应被过滤
+        let on = search_single_source(&client, &src, "斗破", 1, true)
+            .await
+            .unwrap();
+        assert_eq!(on.len(), 1, "precision=true 应过滤 JS 源未命中条目");
+        assert_eq!(on[0].book_name, "斗破苍穹");
+
+        // precision=false：两条全通过
+        let off = search_single_source(&client, &src, "斗破", 1, false)
+            .await
+            .unwrap();
+        assert_eq!(off.len(), 2);
+    }
+}
