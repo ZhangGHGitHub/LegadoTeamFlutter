@@ -182,7 +182,7 @@ jobs:
       - name: Upload device Assets.car
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-device-assets-car
           path: flutter_legado/build/ios/iphoneos/Runner.app/Assets.car
@@ -292,7 +292,7 @@ jobs:
       - name: Upload device Info.plist
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-device-info-plist
           path: flutter_legado/build/ios/device-plist/
@@ -307,7 +307,7 @@ jobs:
 
       - name: Upload device build log (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-device-build-log
           path: flutter_legado/ios_device_build.log
@@ -315,7 +315,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Upload unsigned IPA
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: legado-ios-unsigned-ipa
           path: flutter_legado/build/ios/iphoneos/app-unsigned.ipa
@@ -373,7 +373,7 @@ jobs:
 
       - name: Upload simulator Runner.app (on failure)
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-sim-runner-app
           path: flutter_legado/build/ios/iphonesimulator/Runner.app
@@ -406,7 +406,7 @@ jobs:
           fi
 
       - name: Upload smoke evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ios-smoke-evidence
           path: |
