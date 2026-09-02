@@ -45,7 +45,6 @@ pub mod login_ui_v2;
 pub mod manga_state;
 pub mod models;
 pub mod passphrase;
-pub mod query_ttf;
 pub mod read_aloud;
 pub mod read_state;
 pub mod reader_state;
