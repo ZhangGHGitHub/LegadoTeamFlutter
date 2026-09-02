@@ -1,0 +1,97 @@
+# 探针 App（probe_icon）构建流水线：产出未签名 IPA，供用户用「同一工具」在「同一设备」旁载。
+#
+# 目的：决定性隔离——判定旁载语境下任意 app 能否切换桌面图标。
+# 结构与主 app 的差异（刻意做减法）：
+#   - 仅 1 个备选图标 probe（非 6 个）；
+#   - 纯 legacy 声明：CFBundleIconFiles + bundle 根散文件，无 CFBundleIconName；
+#   - 极小体量（无 Rust FFI / 无复杂 UI）。
+name: Probe Icon Build
+
+on:
+  push:
+    paths:
+      - 'probe_icon/**'
+      - '.github/workflows/probe-icon-build.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: probe-icon-build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    env:
+      FLUTTER_VERSION: '3.44.8'
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+          channel: stable
+          cache: true
+
+      - name: Flutter pub get
+        working-directory: probe_icon
+        run: flutter pub get
+
+      - name: Build iOS (device, no codesign)
+        working-directory: probe_icon
+        run: |
+          flutter build ios --release --no-codesign --verbose 2>&1 | tee probe_build.log
+          ls -la build/ios/iphoneos/Runner.app | head
+
+      # 注入纯 legacy 散文件到 bundle 根（probe60x60 @2x/@3x）。
+      # 社区实证结构：CFBundleIconFiles 指向的图像须以散文件形式落在 .app 根。
+      - name: Inject loose icon files at bundle root
+        run: |
+          APP=probe_icon/build/ios/iphoneos/Runner.app
+          SRC=probe_icon/ios/Runner/probe_loose
+          cp "$SRC/probe60x60@2x.png" "$APP/probe60x60@2x.png"
+          cp "$SRC/probe60x60@3x.png" "$APP/probe60x60@3x.png"
+          echo "--- bundle root loose files ---"
+          ls -la "$APP"/probe60x60*.png
+
+      # 校验落盘结构：Info.plist 含 CFBundleIcons.probe（CFBundleIconFiles），且无 CFBundleIconName。
+      - name: Verify pure-legacy structure in built app
+        run: |
+          PL=probe_icon/build/ios/iphoneos/Runner.app/Info.plist
+          echo "--- Info.plist icon section ---"
+          /usr/libexec/PlistBuddy -c "Print :CFBundleIcons" "$PL" || true
+          python3 - "$PL" <<'PY'
+import plistlib, sys
+p = sys.argv[1]
+with open(p, 'rb') as f:
+    d = plistlib.load(f)
+alt = (d.get('CFBundleIcons') or {}).get('CFBundleAlternateIcons', {})
+assert alt, 'CFBundleAlternateIcons 缺失'
+probe = alt.get('probe')
+assert probe and 'CFBundleIconFiles' in probe, 'probe 条目缺 CFBundleIconFiles'
+assert 'CFBundleIconName' not in probe, 'probe 不应含 CFBundleIconName（须纯 legacy）'
+print('OK: probe =', probe)
+PY
+
+      - name: Package unsigned IPA
+        working-directory: probe_icon/build/ios/iphoneos
+        run: |
+          mkdir -p Payload
+          rm -rf Payload/Runner.app
+          cp -r Runner.app Payload/
+          zip -qry app-unsigned.ipa Payload
+          ls -la app-unsigned.ipa
+
+      - name: Upload build log (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-build-log
+          path: probe_icon/probe_build.log
+
+      - name: Upload unsigned IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-ios-unsigned-ipa
+          path: probe_icon/build/ios/iphoneos/app-unsigned.ipa
