@@ -89,7 +89,17 @@ class LauncherIconService {
       final msg = e.message ?? '原生侧拒绝切换图标';
       final d = (e.details is Map) ? e.details as Map : <String, Object?>{};
       debugPrint('[LauncherIcon] PlatformException: ${e.code} $msg details=$d');
-      // iOS 失败时附带真机自检，一次回报即可定位（旁载 bundle vs 系统回归）
+      // iOS -54（fNotFoundErr）：最小探针 App（单备选/纯 legacy/iPhone-only/仅公开 API）
+      // 同设备同工具实测仍 -54，决定性坐实——旁载安装下 LaunchServices 未注册
+      // 图标元数据（iconsDictionary 为空），setAlternateIconName 必然失败。
+      // 与 App 结构无关、代码层无法修复；给用户一句清楚的话而非原始 OSStatus。
+      if (isIos && (d['code'] as num?)?.toInt() == -54) {
+        return const LauncherIconResult(
+          ok: false,
+          message: '当前安装方式不支持切换图标（仅 App Store / 企业签名安装可用）',
+        );
+      }
+      // iOS 其他失败：附带真机自检，一次回报即可定位（旁载 bundle vs 系统回归）
       final extra = isIos ? ' | ${await _diagnostics()}' : '';
       final note = d['note'] is String ? ' | ${d['note']}' : '';
       return LauncherIconResult(
