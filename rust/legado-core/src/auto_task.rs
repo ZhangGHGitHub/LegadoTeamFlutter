@@ -200,8 +200,13 @@ impl AutoTaskRunner {
         if js.trim().is_empty() {
             return (false, "Custom JS script is empty".to_string());
         }
-        // 简化实现：验证脚本非空即视为成功
-        (true, format!("Custom JS executed ({} chars)", js.len()))
+        // [体检 N2] 防回归拒绝：Custom 真实执行在 FFI auto_task_api.rs 截获后走
+        // js_executor::execute_auto_task_js（QuickJS 求值）。此分支仅为 TaskAction
+        // 枚举完备性保留，直接执行会假成功误导调用方，故显式报错。
+        (
+            false,
+            "Custom JS must be executed via autoTaskExecute (QuickJS)".to_string(),
+        )
     }
 }
 
@@ -1282,10 +1287,13 @@ mod tests {
     }
 
     #[test]
-    fn test_runner_custom_js_success() {
+    fn test_runner_custom_js_rejected() {
+        // [体检 N2] core 侧执行器拒绝 Custom（防假成功回归），真实执行在
+        // FFI auto_task_api 截获后走 QuickJS 求值
         let p = TaskProtocol::custom("var x = 1;");
         let result = AutoTaskRunner::execute(&p);
-        assert!(result.success);
+        assert!(!result.success);
+        assert!(result.message.contains("autoTaskExecute"));
     }
 
     #[test]

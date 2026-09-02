@@ -451,8 +451,14 @@ mod tests {
 
         assert_eq!(resp.status(), StatusCode::OK);
         let json = body_json(resp).await;
-        assert_eq!(json["success"], true);
+        // [体检 N2] core 执行器对 Custom 显式拒绝（真实执行在 FFI QuickJS 路径，
+        // 见 auto_task_api.rs 截获逻辑）；REST 降级路径预期收到拒绝而非假成功。
+        assert_eq!(json["success"], false);
         assert_eq!(json["task_id"], "t4");
+        assert!(json["message"]
+            .as_str()
+            .unwrap()
+            .contains("autoTaskExecute"));
     }
 
     #[tokio::test]
