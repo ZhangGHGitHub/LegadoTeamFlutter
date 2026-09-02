@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:share_plus/share_plus.dart';
 
+import '../bridge/ffi.dart' show BridgeError;
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
@@ -459,6 +460,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
     var successCount = 0;
     final failures = <String>[];
+    // 失败原因显式化（体检 §三.13）：rust 侧对不支持的 MOBI 变体返回明确文案
+    // （如「不支持 LZMA 压缩格式」「该 MOBI 文件已加密」），须透传给用户；
+    // 详情最多展示 3 条，避免 SnackBar 溢出
+    final failureDetails = <String>[];
     for (final file in result.files) {
       final path = file.path;
       if (path == null) {
@@ -468,8 +473,12 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       try {
         await notifier.importLocalBook(path);
         successCount++;
-      } catch (_) {
+      } catch (e) {
         failures.add(file.name);
+        if (failureDetails.length < 3) {
+          final msg = e is BridgeError ? e.message : '$e';
+          failureDetails.add('${file.name}：$msg');
+        }
       }
     }
 
@@ -479,7 +488,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final messages = <String>[];
     if (successCount > 0) messages.add('已导入 $successCount 本书籍');
     if (failures.isNotEmpty) {
-      messages.add('${failures.length} 本导入失败：${failures.join('、')}');
+      final detail = failureDetails.join('；');
+      final more = failures.length > failureDetails.length
+          ? ' 等 ${failures.length} 本'
+          : '';
+      messages.add('导入失败：$detail$more');
     }
     if (messages.isEmpty) return;
     messenger.showSnackBar(

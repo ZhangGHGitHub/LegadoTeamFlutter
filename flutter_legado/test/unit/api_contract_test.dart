@@ -20,11 +20,11 @@ void main() {
     'BookApi',
   );
   final rNames = _extractMethods(
-    _read('lib/src/services/rust_api.dart'),
+    _readWithParts('lib/src/services/rust_api.dart'),
     'RustApi',
   );
   final mNames = _extractMethods(
-    _read('lib/src/services/mock_book_api.dart'),
+    _readWithParts('lib/src/services/mock_book_api.dart'),
     'MockBookApi',
   );
 
@@ -280,6 +280,20 @@ class _AppRow {
 // ---------- 解析工具（行扫描，不依赖正则） ----------
 
 String _read(String p) => File(p).readAsStringSync();
+
+/// 读取主文件并拼接其 part 文件内容（体检 §三.16 超长文件拆分后，
+/// 类成员方法分布在分域 part 文件中；契约门禁按文本逐行提取，拼接后语义不变）
+String _readWithParts(String p) {
+  final src = File(p).readAsStringSync();
+  final buf = StringBuffer(src);
+  final partRe = RegExp("^part '([^']+)';", multiLine: true);
+  final baseDir = p.substring(0, p.lastIndexOf('/') + 1);
+  for (final m in partRe.allMatches(src)) {
+    buf.write('\n');
+    buf.write(File('$baseDir${m.group(1)}').readAsStringSync());
+  }
+  return buf.toString();
+}
 
 bool _isIdentChar(int c) {
   return (c >= 65 && c <= 90) ||

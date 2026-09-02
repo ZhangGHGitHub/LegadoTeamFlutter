@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.150] - 2026-09-03
+
+### Fixed
+- [UI] 【体检 §三.13】本地导入失败原因显式化：bookshelf 导入循环原 `catch(_)` 丢弃 rust 侧返回的明确文案（如「不支持 LZMA 压缩格式 (compression=17481)」「该 MOBI 文件已加密」），提示只剩文件名；现透传失败原因至 SnackBar（详情最多 3 条防溢出，其余以「等 N 本」汇总）
+
+### Changed
+- [UI] 【体检 §三.16】超长文件拆分（方法原样搬移、零行为变更）：7 个超 1400 行业务文件按域拆为 part 文件——rust_api.dart（2957→主文件+mixin 组合 8 part：RustApiDecode/RustApiSources/RustApiSearchRss/RustApiReaderData/RustApiDiscoveryCache/RustApiMediaFormat/RustApiSyncTools/RustApiContentExt，成员合集实现 BookApi）、mock_book_api.dart（2655→同构 8 part）、book_info_screen.dart（2165→extension 3 part）、source_screen.dart（1733→3 part）、reader_config_panel.dart（1694→2 part）、source_edit_screen.dart（1634→4 part）、search_screen.dart（1558→3 part）；生命周期（initState/dispose/build）留在主类，extension 承载其余方法（同 library 私有成员可访问；ref 为 protected 成员经 ignore_for_file 声明语义安全）；API 契约门禁测试改为拼接 part 文件提取方法集，BookApi ⊆ RustApi/MockBookApi 校验语义不变
+- [UI] 体检遗留项核对结论：§三.16 golden 快照基线为「决策闭环」项——md3_acceptance_matrix_test 头部已记录决策（跨平台 Windows/Linux 字体渲染差异使 golden 二进制基线脆弱，以渲染矩阵 + 模拟器 -CheckUI 替代），不重开；§三.13 本批落地；§六 AGENTS.md 冒烟端口口径（5556/5558）与脚本默认值、验收流程一致，维持不动
+
+### Test
+- flutter analyze 无问题；flutter test 1312 过（唯一失败为既有 FFI 运行时测试，后端轨范围）；api_contract_test 契约门禁全过
+- 两级冒烟：5556 -CheckPlayback PASSED（8/8）；5558 -CheckUI -SkipBuild PASSED（7/7）
+- 版本 2.0.150+151
+
+- Contributor: Qoder + UI
+
 ## [2.0.149] - 2026-09-03
 
 ### Fixed
