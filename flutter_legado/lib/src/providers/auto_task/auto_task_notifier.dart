@@ -1,10 +1,7 @@
-import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide ChangeNotifierProvider;
-import 'package:http/http.dart' as http;
 
 import '../../services/book_api.dart';
 import '../providers.dart';
@@ -15,143 +12,70 @@ export 'auto_task_state.dart';
 /// 定时任务 Rust API 注入点
 ///
 /// 生产环境由 [bookApiProvider] 提供；对齐旧 AutoTaskProvider 命名参数 `rustApi`
-/// 的可空语义，测试可覆盖为 null 以验证纯 REST 降级 / FFI 缺失分支。
+/// 的可空语义，测试可覆盖为 null 以验证 FFI 缺失分支（错误可见）。
 final autoTaskRustApiProvider =
     Provider<BookApi?>((ref) => ref.read(bookApiProvider));
 
-/// 定时任务 REST 降级所用 HTTP 客户端注入点
-///
-/// 默认创建真实 http.Client，并在 Provider 释放时关闭（对齐旧实现 dispose）。
-/// 测试可覆盖为 MockClient。
-final autoTaskHttpClientProvider = Provider<http.Client>((ref) {
-  final client = http.Client();
-  ref.onDispose(client.close);
-  return client;
-});
-
 /// 定时任务 Riverpod Notifier
 ///
-/// 优先通过 Rust FFI 调用 auto_task_api，FFI 失败时降级到 legado-server REST API：
-/// - GET    /api/auto-tasks         — 列表
-/// - POST   /api/auto-tasks         — 创建
-/// - PUT    /api/auto-tasks/:id     — 更新
-/// - DELETE /api/auto-tasks/:id     — 删除
-/// - POST   /api/auto-tasks/:id/run — 立即执行（FFI 优先）
+/// 数据面纯走 Rust FFI（autoTaskListRules / autoTaskCreateRule 等）。
+///
+/// [体检 §二.7 | 2026-09-03] 原 REST 降级路径已删除：legado-server 进程内从未
+/// 启动，REST 指向 127.0.0.1:8080 永远连接失败，且连接类错误被吞成空列表
+/// （UI 无感静默失败）。对齐原版"无 Web 服务则纯本地 FFI"的口径，FFI 失败
+/// 一律写入 error 状态由 UI 呈现。
 class AutoTaskNotifier extends Notifier<AutoTaskState> {
-  static const String _baseUrl = 'http://127.0.0.1:8080/api/auto-tasks';
-  static const Duration _timeout = Duration(seconds: 5);
-
   @override
   AutoTaskState build() {
     // 原 AutoTaskProvider 不在构造时自动加载，由页面 initState 触发 loadTasks()
     return const AutoTaskState();
   }
 
-  /// Rust API（可空，null 表示无 FFI，仅走 REST 降级）
+  /// Rust API（可空，null 表示 FFI 不可用）
   BookApi? get _rustApi => ref.read(autoTaskRustApiProvider);
-
-  /// REST 降级所用 HTTP 客户端
-  http.Client get _client => ref.read(autoTaskHttpClientProvider);
 
   /// 加载所有定时任务
   ///
-  /// [silent] 为 true 时不触发 loading 状态（用于增删改后的静默刷新）。
-  /// 优先通过 Rust FFI 读取本地数据库，失败时降级到 REST API。
+  /// [silent] 为 true 时不触发 loading 状态（用于增删改后的静默刷新）；
+  /// 成功时清除上次错误，失败时错误可见。
   Future<void> loadTasks({bool silent = false}) async {
     if (!silent) {
       state = state.copyWith(isLoading: true, error: null);
     }
-
-    // FFI 优先路径
     final rustApi = _rustApi;
-    if (rustApi != null) {
-      try {
-        final rules = await rustApi.autoTaskListRules();
-        state = state.copyWith(
-          tasks: rules.map((r) => AutoTask.fromJson(r)).toList(),
-          error: null,
-          isLoading: false,
-        );
-        return;
-      } catch (_) {
-        // FFI 失败，降级到 REST
-      }
-    }
-
-    // REST 降级路径
-    try {
-      final response =
-          await _client.get(Uri.parse(_baseUrl)).timeout(_timeout);
-      if (response.statusCode == 200) {
-        state = state.copyWith(
-          tasks: _parseTaskList(response.body),
-          error: null,
-          isLoading: false,
-        );
-      } else {
-        state = state.copyWith(
-          tasks: [],
-          error: '加载任务失败: HTTP ${response.statusCode}',
-          isLoading: false,
-        );
-      }
-    } catch (e) {
-      // 服务端未运行或网络不可达时，回退为空列表
+    if (rustApi == null) {
       state = state.copyWith(
         tasks: [],
-        error: _isConnectionError(e) ? null : '加载任务失败: $e',
+        error: 'FFI 不可用，无法加载定时任务',
+        isLoading: false,
+      );
+      return;
+    }
+    try {
+      final rules = await rustApi.autoTaskListRules();
+      state = state.copyWith(
+        tasks: rules.map((r) => AutoTask.fromJson(r)).toList(),
+        error: null,
+        isLoading: false,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        tasks: [],
+        error: '加载任务失败: $e',
         isLoading: false,
       );
     }
   }
 
-  /// 解析任务列表响应
-  ///
-  /// 服务端返回 `{ "tasks": [...], "total": n }`，兼容直接返回数组的情况。
-  List<AutoTask> _parseTaskList(String body) {
-    final decoded = jsonDecode(body);
-    List<dynamic> list;
-    if (decoded is Map && decoded['tasks'] is List) {
-      list = decoded['tasks'] as List;
-    } else if (decoded is List) {
-      list = decoded;
-    } else {
-      list = const [];
-    }
-    return list
-        .whereType<Map<String, dynamic>>()
-        .map(AutoTask.fromJson)
-        .toList();
-  }
-
   /// 创建新任务
-  ///
-  /// 优先通过 Rust FFI 写入本地数据库，失败时降级到 REST API。
   Future<void> createTask(AutoTask task) async {
-    // FFI 优先路径
     final rustApi = _rustApi;
-    if (rustApi != null) {
-      try {
-        await rustApi.autoTaskCreateRule(ruleJson: jsonEncode(task.toJson()));
-        await loadTasks(silent: true);
-        return;
-      } catch (_) {
-        // FFI 失败，降级到 REST
-      }
+    if (rustApi == null) {
+      state = state.copyWith(error: 'FFI 不可用，无法创建任务');
+      return;
     }
-
-    // REST 降级路径
     try {
-      final response = await _client
-          .post(
-            Uri.parse(_baseUrl),
-            headers: const {'Content-Type': 'application/json'},
-            body: jsonEncode(task.toJson()),
-          )
-          .timeout(_timeout);
-      if (response.statusCode != 200 && response.statusCode != 201) {
-        throw HttpException('HTTP ${response.statusCode}');
-      }
+      await rustApi.autoTaskCreateRule(ruleJson: jsonEncode(task.toJson()));
       await loadTasks(silent: true);
     } catch (e) {
       state = state.copyWith(error: '创建任务失败: $e');
@@ -162,35 +86,18 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
   ///
   /// 适用于书籍更新任务等 script 为复杂 JSON action 的任务：
   /// 不能经 [AutoTask] 模型中转（会按 taskType 重新生成占位脚本，
-  /// 丢失指向具体书籍的 refreshToc action）。优先 FFI，降级 REST。
+  /// 丢失指向具体书籍的 refreshToc action）。
   ///
   /// [fix Task#45 | 2026-08-09] 返回 bool：成功 true / 任何失败 false，
   /// 供调用方按结果提示并决定是否重同步调度器 — Qoder
   Future<bool> createTaskRaw(String ruleJson) async {
-    // FFI 优先路径
     final rustApi = _rustApi;
-    if (rustApi != null) {
-      try {
-        await rustApi.autoTaskCreateRule(ruleJson: ruleJson);
-        await loadTasks(silent: true);
-        return true;
-      } catch (_) {
-        // FFI 失败，降级到 REST
-      }
+    if (rustApi == null) {
+      state = state.copyWith(error: 'FFI 不可用，无法创建任务');
+      return false;
     }
-
-    // REST 降级路径
     try {
-      final response = await _client
-          .post(
-            Uri.parse(_baseUrl),
-            headers: const {'Content-Type': 'application/json'},
-            body: ruleJson,
-          )
-          .timeout(_timeout);
-      if (response.statusCode != 200 && response.statusCode != 201) {
-        throw HttpException('HTTP ${response.statusCode}');
-      }
+      await rustApi.autoTaskCreateRule(ruleJson: ruleJson);
       await loadTasks(silent: true);
       return true;
     } catch (e) {
@@ -202,7 +109,7 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
   /// 更新任务（保留原始规则 JSON；Task #39 §5.11-2）
   ///
   /// 与 [createTaskRaw] 同理，保存时仅回写调用方修改过的字段，
-  /// script 等其余字段原样保留。优先 FFI，降级 REST。
+  /// script 等其余字段原样保留。
   ///
   /// [fix Task#45 | 2026-08-09] 返回 bool：成功 true / 任何失败 false；
   /// jsonDecode 挪入 try/catch（Med3）：解码失败或 id 缺失时写 error
@@ -220,30 +127,13 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
       state = state.copyWith(error: '更新任务失败: 缺少任务 id');
       return false;
     }
-    // FFI 优先路径
     final rustApi = _rustApi;
-    if (rustApi != null) {
-      try {
-        await rustApi.autoTaskUpdateRule(ruleJson: ruleJson);
-        await loadTasks(silent: true);
-        return true;
-      } catch (_) {
-        // FFI 失败，降级到 REST
-      }
+    if (rustApi == null) {
+      state = state.copyWith(error: 'FFI 不可用，无法更新任务');
+      return false;
     }
-
-    // REST 降级路径
     try {
-      final response = await _client
-          .put(
-            Uri.parse('$_baseUrl/$id'),
-            headers: const {'Content-Type': 'application/json'},
-            body: ruleJson,
-          )
-          .timeout(_timeout);
-      if (response.statusCode != 200) {
-        throw HttpException('HTTP ${response.statusCode}');
-      }
+      await rustApi.autoTaskUpdateRule(ruleJson: ruleJson);
       await loadTasks(silent: true);
       return true;
     } catch (e) {
@@ -254,9 +144,8 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
 
   /// 切换任务启用状态
   ///
-  /// 乐观更新，失败时回滚。优先 FFI，降级 REST。
+  /// 乐观更新，失败时回滚。
   Future<void> toggleTask(String id, bool enabled) async {
-    // 乐观更新，失败时回滚
     final previous = state.tasks;
     state = state.copyWith(
       tasks: state.tasks.map((t) {
@@ -265,33 +154,16 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
       }).toList(),
     );
 
-    // FFI 优先路径
     final rustApi = _rustApi;
-    if (rustApi != null) {
-      try {
-        final task = state.tasks.firstWhere((t) => t.id == id);
-        await rustApi.autoTaskUpdateRule(
-          ruleJson: jsonEncode(task.toJson()),
-        );
-        await loadTasks(silent: true);
-        return;
-      } catch (_) {
-        // FFI 失败，降级到 REST
-      }
+    if (rustApi == null) {
+      state = state.copyWith(tasks: previous, error: 'FFI 不可用，无法更新任务');
+      return;
     }
-
-    // REST 降级路径
     try {
-      final response = await _client
-          .put(
-            Uri.parse('$_baseUrl/$id'),
-            headers: const {'Content-Type': 'application/json'},
-            body: jsonEncode({'enable': enabled}),
-          )
-          .timeout(_timeout);
-      if (response.statusCode != 200) {
-        throw HttpException('HTTP ${response.statusCode}');
-      }
+      final task = state.tasks.firstWhere((t) => t.id == id);
+      await rustApi.autoTaskUpdateRule(
+        ruleJson: jsonEncode(task.toJson()),
+      );
       await loadTasks(silent: true);
     } catch (e) {
       state = state.copyWith(tasks: previous, error: '更新任务失败: $e');
@@ -299,80 +171,50 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
   }
 
   /// 删除任务
-  ///
-  /// 优先通过 Rust FFI 删除，失败时降级到 REST API。
   Future<void> deleteTask(String id) async {
-    // FFI 优先路径
     final rustApi = _rustApi;
-    if (rustApi != null) {
-      try {
-        await rustApi.autoTaskDeleteRule(id: id);
-        await loadTasks(silent: true);
-        return;
-      } catch (_) {
-        // FFI 失败，降级到 REST
-      }
+    if (rustApi == null) {
+      state = state.copyWith(error: 'FFI 不可用，无法删除任务');
+      return;
     }
-
-    // REST 降级路径
     try {
-      final response =
-          await _client.delete(Uri.parse('$_baseUrl/$id')).timeout(_timeout);
-      if (response.statusCode != 200) {
-        throw HttpException('HTTP ${response.statusCode}');
-      }
+      await rustApi.autoTaskDeleteRule(id: id);
       await loadTasks(silent: true);
     } catch (e) {
       state = state.copyWith(error: '删除任务失败: $e');
     }
   }
 
-  /// 立即运行任务
-  ///
-  /// 优先通过 Rust FFI 执行（autoTaskExecuteWithId），失败时降级到 REST。
+  /// 立即运行任务（FFI autoTaskExecuteWithId）
   Future<void> runNow(String id) async {
-    // 尝试 FFI 路径
     final rustApi = _rustApi;
-    if (rustApi != null) {
-      try {
-        final task = state.tasks.where((t) => t.id == id).firstOrNull;
-        final protocolJson = jsonEncode({
-          'action': task?.taskType ?? 'noop',
-          'taskId': id,
-        });
-        final result = await rustApi.autoTaskExecuteWithId(
-          protocolJson: protocolJson,
-          taskId: id,
-        );
-        // FFI 执行成功，更新本地状态
-        final success = result['success'] as bool? ?? false;
-        state = state.copyWith(
-          tasks: state.tasks.map((t) {
-            if (t.id == id) {
-              return t.copyWith(
-                lastRunAt: _formatNow(),
-                lastResult: success ? '成功' : '失败',
-              );
-            }
-            return t;
-          }).toList(),
-        );
-        return;
-      } catch (_) {
-        // FFI 失败，降级到 REST
-      }
+    if (rustApi == null) {
+      state = state.copyWith(error: 'FFI 不可用，无法运行任务');
+      return;
     }
-
-    // REST 降级路径
     try {
-      final response = await _client
-          .post(Uri.parse('$_baseUrl/$id/run'))
-          .timeout(_timeout);
-      if (response.statusCode != 200) {
-        throw HttpException('HTTP ${response.statusCode}');
-      }
-      // 服务端会更新 lastRunAt / lastResult，重新拉取以同步状态
-      await loadTasks(silent: true);
+      final task = state.tasks.where((t) => t.id == id).firstOrNull;
+      final protocolJson = jsonEncode({
+        'action': task?.taskType ?? 'noop',
+        'taskId': id,
+      });
+      final result = await rustApi.autoTaskExecuteWithId(
+        protocolJson: protocolJson,
+        taskId: id,
+      );
+      // FFI 执行成功，更新本地状态
+      final success = result['success'] as bool? ?? false;
+      state = state.copyWith(
+        tasks: state.tasks.map((t) {
+          if (t.id == id) {
+            return t.copyWith(
+              lastRunAt: _formatNow(),
+              lastResult: success ? '成功' : '失败',
+            );
+          }
+          return t;
+        }).toList(),
+      );
     } catch (e) {
       state = state.copyWith(error: '运行任务失败: $e');
     }
@@ -528,13 +370,6 @@ class AutoTaskNotifier extends Notifier<AutoTaskState> {
     } catch (_) {
       return null;
     }
-  }
-
-  /// 判断是否为连接类错误（服务端未运行 / 网络不可达）
-  bool _isConnectionError(Object e) {
-    return e is SocketException ||
-        e is HttpException ||
-        e is TimeoutException;
   }
 }
 

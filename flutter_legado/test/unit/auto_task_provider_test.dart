@@ -2,17 +2,18 @@
 ///
 /// 覆盖：
 /// - AutoTask 模型：fromJson/toJson/copyWith/taskTypeLabel/_defaultScript
-/// - AutoTaskNotifier：loadTasks/createTask/toggleTask/deleteTask/runNow
+/// - AutoTaskNotifier：loadTasks/createTask/toggleTask/deleteTask/runNow（纯 FFI）
 /// - FFI 方法：buildBookUpdateTask/updateCronBatch/normalizeScript 等
+///
+/// [体检 §二.7] REST 降级路径已删除（legado-server 未接线，指向 127.0.0.1:8080
+/// 永远失败且错误被吞），Notifier 为纯 FFI + 失败可见；FFI 缺失（rustApi=null）
+/// 分支断言错误可见。
 library;
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
-import 'package:http/http.dart' as http;
-import 'package:http/testing.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:flutter_legado/src/providers/auto_task/auto_task_notifier.dart';
@@ -36,20 +37,18 @@ void main() {
     );
   }
 
-  /// 构建仅 REST 降级路径的容器（rustApi 覆盖为 null，对齐旧 `AutoTaskProvider(client:)`）
-  ProviderContainer restContainer(http.Client client) {
+  /// FFI 缺失分支容器（rustApi 覆盖为 null，对齐生产 FFI 初始化失败场景）
+  ProviderContainer nullApiContainer() {
     final c = ProviderContainer(overrides: [
-      autoTaskHttpClientProvider.overrideWithValue(client),
       autoTaskRustApiProvider.overrideWithValue(null),
     ]);
     addTearDown(c.dispose);
     return c;
   }
 
-  /// 构建带 FFI（rustApi）的容器（对齐旧 `AutoTaskProvider(client:, rustApi:)`）
-  ProviderContainer ffiContainer(http.Client client, MockRustApi rustApi) {
+  /// FFI 容器（MockRustApi 打桩）
+  ProviderContainer ffiContainer(MockRustApi rustApi) {
     final c = ProviderContainer(overrides: [
-      autoTaskHttpClientProvider.overrideWithValue(client),
       autoTaskRustApiProvider.overrideWithValue(rustApi),
     ]);
     addTearDown(c.dispose);
@@ -62,7 +61,7 @@ void main() {
       c.read(autoTaskNotifierProvider.notifier);
 
   // ═══════════════════════════════════════════════════════════
-  // AutoTask 模型测试（纯逻辑，不涉及 HTTP）
+  // AutoTask 模型测试（纯逻辑）
   // ═══════════════════════════════════════════════════════════
 
   group('AutoTask 模型', () {
@@ -146,13 +145,12 @@ void main() {
   });
 
   // ═══════════════════════════════════════════════════════════
-  // AutoTaskNotifier 测试
+  // AutoTaskNotifier 测试（纯 FFI + 失败可见）
   // ═══════════════════════════════════════════════════════════
 
   group('AutoTaskNotifier 初始状态', () {
     test('初始任务列表为空', () {
-      final client = MockClient((_) async => http.Response(jsonEncode({'tasks': []}), 200));
-      final c = restContainer(client);
+      final c = ffiContainer(MockRustApi());
       expect(readState(c).tasks, isEmpty);
       expect(readState(c).isLoading, isFalse);
       expect(readState(c).error, isNull);
@@ -160,14 +158,11 @@ void main() {
   });
 
   group('AutoTaskNotifier loadTasks', () {
-    test('成功加载任务列表（tasks 包裹格式）', () async {
-      final client = MockClient((request) async {
-        return http.Response(
-          jsonEncode(makeTaskList(count: 2)),
-          200,
-        );
-      });
-      final c = restContainer(client);
+    test('FFI 成功加载任务列表', () async {
+      final mockApi = MockRustApi();
+      when(() => mockApi.autoTaskListRules())
+          .thenAnswer((_) async => makeTaskList(count: 2));
+      final c = ffiContainer(mockApi);
 
       await readNotifier(c).loadTasks();
 
@@ -177,41 +172,29 @@ void main() {
       expect(readState(c).error, isNull);
     });
 
-    test('成功加载任务列表（直接数组格式）', () async {
-      final client = MockClient((_) async {
-        return http.Response(jsonEncode([
-          {'id': '1', 'name': 'TaskA', 'cron': ''},
-        ]), 200);
-      });
-      final c = restContainer(client);
-
-      await readNotifier(c).loadTasks();
-      expect(readState(c).tasks.length, equals(1));
-    });
-
-    test('HTTP 非 200 时设置错误', () async {
-      final client = MockClient((_) async => http.Response('Not Found', 404));
-      final c = restContainer(client);
+    test('FFI 失败时错误可见', () async {
+      final mockApi = MockRustApi();
+      when(() => mockApi.autoTaskListRules())
+          .thenThrow(Exception('FFI list failed'));
+      final c = ffiContainer(mockApi);
 
       await readNotifier(c).loadTasks();
       expect(readState(c).tasks, isEmpty);
-      expect(readState(c).error, contains('404'));
+      expect(readState(c).error, contains('加载任务失败'));
     });
 
-    test('连接失败时回退为空列表且不报错', () async {
-      final client = MockClient((_) async {
-        throw const SocketException('Connection refused');
-      });
-      final c = restContainer(client);
+    test('FFI 缺失（rustApi=null）时错误可见', () async {
+      final c = nullApiContainer();
 
       await readNotifier(c).loadTasks();
       expect(readState(c).tasks, isEmpty);
-      expect(readState(c).error, isNull);
+      expect(readState(c).error, contains('FFI 不可用'));
     });
 
     test('silent 模式不触发 loading 状态', () async {
-      final client = MockClient((_) async => http.Response('[]', 200));
-      final c = restContainer(client);
+      final mockApi = MockRustApi();
+      when(() => mockApi.autoTaskListRules()).thenAnswer((_) async => []);
+      final c = ffiContainer(mockApi);
       var sawLoading = false;
       c.listen(autoTaskNotifierProvider, (prev, next) {
         if (next.isLoading) sawLoading = true;
@@ -223,54 +206,20 @@ void main() {
   });
 
   group('AutoTaskNotifier createTask', () {
-    test('创建时 POST body 保留 script', () async {
-      const bookScript =
-          '({"type":"refreshToc","bookUrl":"http://book/1","generatedBy":"bookUpdate"})';
-      String? postedBody;
-      final client = MockClient((request) async {
-        if (request.method == 'POST') {
-          postedBody = request.body;
-          return http.Response('', 201);
-        }
-        return http.Response(jsonEncode([
-          {
-            'id': '1',
-            'name': 'Book Task',
-            'comment': 'refreshToc',
-            'cron': '0 */6 * * *',
-            'script': bookScript,
-          },
-        ]), 200);
-      });
-      final c = restContainer(client);
-
-      final task = AutoTask.fromJson({
-        'id': '1',
-        'name': 'Book Task',
-        'comment': 'refreshToc',
-        'cron': '0 */6 * * *',
-        'script': bookScript,
-      });
-      await readNotifier(c).createTask(task);
-
-      expect(postedBody, isNotNull);
-      final body = jsonDecode(postedBody!) as Map<String, dynamic>;
-      expect(body['script'], equals(bookScript));
-      expect(readState(c).error, isNull);
-    });
-
     test('创建成功后静默刷新', () async {
-      var requestCount = 0;
-      final client = MockClient((request) async {
-        requestCount++;
-        if (request.method == 'POST') {
-          return http.Response('', 201);
-        }
-        // After POST, loadTasks(silent) does GET - return same list
-        if (requestCount == 1) return http.Response('', 201);
-        return http.Response(jsonEncode([{'id': '1', 'name': 'New Task', 'cron': ''}]), 200);
-      });
-      final c = restContainer(client);
+      final mockApi = MockRustApi();
+      when(() => mockApi.autoTaskCreateRule(ruleJson: any(named: 'ruleJson')))
+          .thenAnswer((_) async => 'ok');
+      when(() => mockApi.autoTaskListRules()).thenAnswer((_) async => [
+            {
+              'id': '1',
+              'name': 'New Task',
+              'comment': 'backup',
+              'cron': '',
+              'script': 'backup()',
+            },
+          ]);
+      final c = ffiContainer(mockApi);
 
       const task = AutoTask(id: '1', name: 'New Task', taskType: 'backup', cron: '');
       await readNotifier(c).createTask(task);
@@ -280,8 +229,10 @@ void main() {
     });
 
     test('创建失败时设置错误', () async {
-      final client = MockClient((_) async => http.Response('Error', 500));
-      final c = restContainer(client);
+      final mockApi = MockRustApi();
+      when(() => mockApi.autoTaskCreateRule(ruleJson: any(named: 'ruleJson')))
+          .thenThrow(Exception('FFI create failed'));
+      final c = ffiContainer(mockApi);
 
       const task = AutoTask(id: '1', name: 'Fail', taskType: '', cron: '');
       await readNotifier(c).createTask(task);
@@ -292,13 +243,13 @@ void main() {
 
   group('AutoTaskNotifier toggleTask', () {
     test('乐观更新成功后刷新', () async {
-      final client = MockClient((request) async {
-        if (request.method == 'GET') {
-          return http.Response(jsonEncode(makeTaskList()), 200);
-        }
-        return http.Response('', 200);
-      });
-      final c = restContainer(client);
+      final mockApi = MockRustApi();
+      // idStart='' 使 id 为 '1'/'2'（FFI 路径按 id firstWhere 定位任务）
+      when(() => mockApi.autoTaskListRules())
+          .thenAnswer((_) async => makeTaskList(idStart: ''));
+      when(() => mockApi.autoTaskUpdateRule(ruleJson: any(named: 'ruleJson')))
+          .thenAnswer((_) async => {});
+      final c = ffiContainer(mockApi);
       await readNotifier(c).loadTasks();
 
       await readNotifier(c).toggleTask('1', false);
@@ -306,13 +257,12 @@ void main() {
     });
 
     test('更新失败时回滚', () async {
-      final client = MockClient((request) async {
-        if (request.method == 'GET') {
-          return http.Response(jsonEncode(makeTaskList()), 200);
-        }
-        throw Exception('Network error');
-      });
-      final c = restContainer(client);
+      final mockApi = MockRustApi();
+      when(() => mockApi.autoTaskListRules())
+          .thenAnswer((_) async => makeTaskList(idStart: ''));
+      when(() => mockApi.autoTaskUpdateRule(ruleJson: any(named: 'ruleJson')))
+          .thenThrow(Exception('FFI update failed'));
+      final c = ffiContainer(mockApi);
       await readNotifier(c).loadTasks();
 
       await readNotifier(c).toggleTask('1', false);
@@ -324,22 +274,21 @@ void main() {
 
   group('AutoTaskNotifier deleteTask', () {
     test('删除成功后刷新', () async {
-      final client = MockClient((request) async {
-        if (request.method == 'DELETE') return http.Response('', 200);
-        return http.Response('[]', 200);
-      });
-      final c = restContainer(client);
+      final mockApi = MockRustApi();
+      when(() => mockApi.autoTaskDeleteRule(id: any(named: 'id')))
+          .thenAnswer((_) async => {});
+      when(() => mockApi.autoTaskListRules()).thenAnswer((_) async => []);
+      final c = ffiContainer(mockApi);
 
       await readNotifier(c).deleteTask('1');
       expect(readState(c).error, isNull);
     });
 
     test('删除失败时设置错误', () async {
-      final client = MockClient((request) async {
-        if (request.method == 'DELETE') return http.Response('Error', 500);
-        return http.Response('[]', 200);
-      });
-      final c = restContainer(client);
+      final mockApi = MockRustApi();
+      when(() => mockApi.autoTaskDeleteRule(id: any(named: 'id')))
+          .thenThrow(Exception('FFI delete failed'));
+      final c = ffiContainer(mockApi);
 
       await readNotifier(c).deleteTask('1');
       expect(readState(c).error, contains('删除任务失败'));
@@ -347,36 +296,38 @@ void main() {
   });
 
   group('AutoTaskNotifier runNow', () {
-    test('REST 路径运行成功后刷新', () async {
-      final client = MockClient((request) async {
-        if (request.method == 'POST') return http.Response('', 200);
-        return http.Response('[]', 200);
-      });
-      final c = restContainer(client);
-
-      await readNotifier(c).runNow('1');
-      expect(readState(c).error, isNull);
-    });
-
     test('FFI 执行成功更新本地状态', () async {
-      final client = MockClient((_) async {
-        return http.Response(jsonEncode({'tasks': [{'id': 't1', 'name': 'Task', 'taskType': 'backup', 'cron': ''}], 'total': 1}), 200);
-      });
       final mockApi = MockRustApi();
-      final c = ffiContainer(client, mockApi);
-      // autoTaskListRules 未打桩 → 抛出 → 降级 REST 拉取到 t1
-      await readNotifier(c).loadTasks();
-
+      when(() => mockApi.autoTaskListRules()).thenAnswer((_) async => [
+            {'id': 't1', 'name': 'Task', 'taskType': 'backup', 'cron': ''},
+          ]);
       when(() => mockApi.autoTaskExecuteWithId(
             protocolJson: any(named: 'protocolJson'),
             taskId: any(named: 'taskId'),
           )).thenAnswer((_) async => {'success': true});
+      final c = ffiContainer(mockApi);
+      await readNotifier(c).loadTasks();
 
       await readNotifier(c).runNow('t1');
 
-      // Verify the update happened
       expect(readState(c).tasks.length, equals(1));
-      expect(readState(c).tasks.first.lastResult, isNotNull); // Check not null
+      expect(readState(c).tasks.first.lastResult, equals('成功'));
+    });
+
+    test('FFI 执行失败时错误可见', () async {
+      final mockApi = MockRustApi();
+      when(() => mockApi.autoTaskListRules()).thenAnswer((_) async => [
+            {'id': 't1', 'name': 'Task', 'taskType': 'backup', 'cron': ''},
+          ]);
+      when(() => mockApi.autoTaskExecuteWithId(
+            protocolJson: any(named: 'protocolJson'),
+            taskId: any(named: 'taskId'),
+          )).thenThrow(Exception('FFI execute failed'));
+      final c = ffiContainer(mockApi);
+      await readNotifier(c).loadTasks();
+
+      await readNotifier(c).runNow('t1');
+      expect(readState(c).error, contains('运行任务失败'));
     });
   });
 
@@ -386,8 +337,7 @@ void main() {
 
     setUp(() {
       mockApi = MockRustApi();
-      final client = MockClient((_) async => http.Response('[]', 200));
-      container = ffiContainer(client, mockApi);
+      container = ffiContainer(mockApi);
     });
 
     test('buildBookUpdateTask 成功', () async {
@@ -407,9 +357,7 @@ void main() {
     });
 
     test('buildBookUpdateTask 无 rustApi 返回 null', () async {
-      final noApiContainer =
-          restContainer(MockClient((_) async => http.Response('[]', 200)));
-      final result = await readNotifier(noApiContainer).buildBookUpdateTask(
+      final result = await readNotifier(nullApiContainer()).buildBookUpdateTask(
         bookUrl: '', bookName: '', bookAuthor: '', name: '',
       );
       expect(result, isNull);
@@ -450,29 +398,18 @@ void main() {
           '"bookAuthor":"作者A","generatedBy":"bookUpdate"})';
       final expected = {'id': 'book_update:abc', 'name': '更新', 'script': bookScript};
 
+      // list 失败 → 退化为 state.tasks 序列化（fromJson 保留 script）
       when(() => mockApi.autoTaskListRules()).thenThrow(Exception('FFI list failed'));
-
-      final client = MockClient((request) async {
-        if (request.method == 'GET') {
-          // content-type application/json → Response 用 utf8 编码 body
-          // （无头时默认 latin1，中文会抛 ArgumentError）
-          return http.Response(jsonEncode([
-            {
-              'id': 'book_update:abc',
-              'name': '更新',
-              'comment': 'refreshToc',
-              'cron': '0 */6 * * *',
-              'script': bookScript,
-            },
-          ]), 200, headers: {'content-type': 'application/json'});
-        }
-        return http.Response('[]', 200, headers: {'content-type': 'application/json'});
+      final c = ffiContainer(mockApi);
+      final seeded = AutoTask.fromJson({
+        'id': 'book_update:abc',
+        'name': '更新',
+        'comment': 'refreshToc',
+        'cron': '0 */6 * * *',
+        'script': bookScript,
       });
-      final c = ffiContainer(client, mockApi);
-
-      // 经 REST 降级加载，fromJson 应保留 script
-      await readNotifier(c).loadTasks();
-      expect(readState(c).tasks.first.script, equals(bookScript));
+      readNotifier(c).state =
+          readNotifier(c).state.copyWith(tasks: [seeded]);
 
       when(() => mockApi.autoTaskFindBookUpdateTask(
             tasksJson: any(named: 'tasksJson'),

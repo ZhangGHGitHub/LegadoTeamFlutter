@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.149] - 2026-09-03
+
+### Fixed
+- [UI] 【体检 N1/P0】听书前台服务未注册 manifest——播放即崩（虚假闭环）：PlaybackForegroundService 类已实现但 main/debug/profile 三个 AndroidManifest 均无该 service 声明，MediaSessionBridge 播放态变化无条件 startForegroundService，Android 8+ 上指向未注册组件抛 IllegalStateException，一点开听书即崩溃（比修复前"后台被冻结"更严重）。修复：main manifest 注册 service（mediaPlayback 类型、exported=false）+ 补 FOREGROUND_SERVICE_MEDIA_PLAYBACK 权限（Android 14 要求）；冒烟脚本新增 -CheckPlayback（am start-foreground-service 直接拉起 + dumpsys ServiceRecord + 退后台 5s 存活 + 崩溃检查），自动化防回归该崩溃机制
+- [UI] 【体检 §二.7+§三.17】删除 AutoTask REST 死降级路径：legado-server 进程内从未启动，REST 指向 127.0.0.1:8080 永远连接失败，且连接类错误被吞成空列表（UI 静默无感）。auto_task_notifier 改纯 FFI + 失败可见（FFI 失败/缺失一律写入 error 状态由 UI 呈现），顺带消除 UI 层直连网络的先例（package:http）；单元测试同步重写（25 用例：FFI 成功/失败可见/FFI 缺失可见/乐观回滚）
+
+### Test
+- flutter analyze 无问题；flutter test 1312 过（唯一失败为既有 FFI 运行时测试，后端轨范围）
+- 两级冒烟：5556 -CheckPlayback PASSED（前台服务启动 + ServiceRecord 确认 + 退后台存活，8 步含播放门禁）；5558 -CheckUI -SkipBuild PASSED（7/7）
+- 版本 2.0.149+150
+
+- Contributor: Qoder + UI
+
 ## [2.0.148] - 2026-09-03
 
 ### Changed

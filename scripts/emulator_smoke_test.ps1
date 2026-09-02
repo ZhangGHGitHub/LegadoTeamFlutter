@@ -7,6 +7,7 @@
 #   .\scripts\emulator_smoke_test.ps1 -Device emulator-5558   # 用户验收机
 #   .\scripts\emulator_smoke_test.ps1 -SkipBuild              # 复用已有 APK
 #   .\scripts\emulator_smoke_test.ps1 -CheckUI                 # 追加 UI 元素检查
+#   .\scripts\emulator_smoke_test.ps1 -CheckPlayback           # 追加听书前台服务检查
 # 退出码：0=通过 1=失败（可用于 CI/子代理验收门禁）
 # 编写者：Reasonix ｜ 2026-08-10
 # ============================================================
@@ -14,6 +15,7 @@ param(
   [string]$Device = "emulator-5556",
   [switch]$SkipBuild,
   [switch]$CheckUI,
+  [switch]$CheckPlayback,
   # 默认相对仓库根目录 flutter_legado/；可用 -FlutterDir 或环境变量 LEGADO_FLUTTER_DIR 覆盖
   [string]$FlutterDir = "",
   # 注意：与 android/app/build.gradle.kts 的 applicationId 保持同步
@@ -163,6 +165,35 @@ if ($CheckUI) {
   }
   if ($found.Count -ge 2) { Pass "UI 主界面渲染正常（检测到：$($found -join '/')）" }
   else { Fail "UI 主界面元素未检出（检测到：$($found -join '/')）" }
+}
+
+# ---- 7.5（可选）听书前台服务检查（体检 N1：虚假闭环教训）----
+# 说明：真机听书全链路（TTS 合成、退后台 60s 续播）仍需人工验收；本步骤自动化
+# 防回归 N1 的崩溃机制——startForegroundService 指向未注册组件播放即崩：
+#   ① am start-foreground-service 直接拉起（未注册会抛 IllegalStateException）；
+#   ② dumpsys activity services 确认 ServiceRecord；③ ≥10s 后进程存活且无
+#   FATAL；④ HOME 退后台 5s 再查；⑤ am stopservice 清理
+# 注：本 ROM 的 dumpsys package 不枚举 manifest 声明，注册与否以"能否成功启动"
+# 为准（功能等价判定）
+if ($CheckPlayback) {
+  $svc = "$Package/io.legado.flutter.PlaybackForegroundService"
+  & $adb -s $Device shell am start-foreground-service -n $svc --es state playing 2>&1 | Out-Null
+  Start-Sleep -Seconds 10
+  $svcCrash = & $adb -s $Device logcat -d -t 200 2>&1 |
+    Select-String "IllegalStateException|FATAL EXCEPTION|E/flutter" | Select-Object -Last 3
+  $svcPid = (& $adb -s $Device shell pidof $Package 2>$null).Trim()
+  $svcRec = & $adb -s $Device shell "dumpsys activity services $Package" 2>$null |
+    Select-String "PlaybackForegroundService" | Select-Object -First 1
+  if ($svcCrash -or -not ($svcPid -match '^\d+') -or -not $svcRec) {
+    Fail "听书前台服务启动失败/未注册（IllegalStateException=N1 回归）：$($svcCrash -join ' | ')"
+  } else {
+    & $adb -s $Device shell input keyevent KEYCODE_HOME 2>$null | Out-Null
+    Start-Sleep -Seconds 5
+    $bgPid = (& $adb -s $Device shell pidof $Package 2>$null).Trim()
+    if ($bgPid -match '^\d+') { Pass "前台服务已注册可启动 + 退后台 5s 存活（播放链路冒烟）" }
+    else { Fail "前台服务运行中退后台进程被杀" }
+  }
+  & $adb -s $Device shell am stopservice -n $svc 2>&1 | Out-Null
 }
 
 # ---- 汇总 ----
