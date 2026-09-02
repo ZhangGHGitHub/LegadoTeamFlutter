@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.148] - 2026-09-03
+
+### Changed
+- [UI] 关联导入由全屏页面改为弹出式确认对话框（用户要求对齐原版呈现方式，视觉按 MD3 目标风格）：原版经 DialogFragment 在当前页面上方弹出（dialog_recycler_view），现以 showDialog 居中卡片呈现——surfaceContainerHigh 底、28 圆角（继承全局 dialogTheme）、暗色遮罩、宽近全宽（桌面限宽 640）、高度随内容自适应（上限 85% 屏高）；头部 标题 + 自定义分组 + ⋮ 菜单（bookSource 六项）+ 重置，扫码移至空闲态地址栏后缀图标；底部 全选（n/m）| 取消 | 确认（n，FilledButton 胶囊，0 勾选禁用），导入完成汇总确定后连动关闭对话框（对齐原版 importSelect 后 dismiss）；状态文案统一为 新增/更新/已存在，状态色改用 colorScheme 角色（新增 tertiary / 更新 secondary / 已存在 onSurfaceVariant）；删除旧全屏 AssociationScreen 与 association 路由，deep_link_service / source_screen 两处入口改调 showAssociationImportDialog
+- [UI] 修复勾选回弹隐患：freezed 的 items getter 每次访问都新建 EqualUnmodifiableListView 包装，旧实现按列表 identity 判定「列表未变」永远不成立，导致任何重建都会重置勾选（点选即回弹）；改为按 state 对象 identity 判定，并新增对话框渲染 + 勾选持久 widget test 回归守护
+
+### Test
+- flutter analyze 无问题；flutter test 1314 过（唯一失败为既有 FFI 运行时测试，后端轨范围）
+- E2E（emulator-5556，adb reverse 隧道供包）：书源深链弹窗自动加载 → 取消/恢复勾选不回弹 → 确认（2）→「共 2 个书源：成功 2」→ 确定后自动关闭 → 重复导入显已存在/未勾选/确认（0）禁用 → 全选再导入成功；替换规则深链（标题/分组后缀/新增）→「共 2 个替换规则：成功 2」
+- 两级冒烟：5556 PASSED（7/7）；5558 -CheckUI -SkipBuild PASSED（7/7）
+- 版本 2.0.148+149
+
+- Contributor: Qoder + UI
+
 ## [2.0.147] - 2026-09-02
 
 ### Changed

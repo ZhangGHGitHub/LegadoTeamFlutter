@@ -5,8 +5,7 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../providers/association/association_state.dart';
-import '../routes.dart';
+import '../screens/association_import_dialog.dart';
 import '../utils/legado_deep_link.dart';
 
 /// 监听 Android `legado://` / `yuedu://` 深链并导航到关联导入页
@@ -89,22 +88,10 @@ class DeepLinkService {
 
     final type = parsed?.importType;
     final src = parsed?.srcUrl ?? '';
-    final args = <String, dynamic>{
-      'url': src,
-      'raw': url,
-      if (type != null) 'type': _typeName(type),
-      'autoLoad': type != null && src.isNotEmpty,
-    };
-    nav.pushNamed(AppRoutes.association, arguments: args);
+    showAssociationImportDialog(
+      nav.context,
+      url: src.isEmpty ? null : src,
+      type: type,
+    );
   }
-
-  static String _typeName(ImportType type) => switch (type) {
-        ImportType.bookSource => 'bookSource',
-        ImportType.rssSource => 'rssSource',
-        ImportType.replaceRule => 'replaceRule',
-        ImportType.theme => 'theme',
-        ImportType.httpTts => 'httpTts',
-        ImportType.dictRule => 'dictRule',
-        ImportType.txtTocRule => 'txtTocRule',
-      };
 }

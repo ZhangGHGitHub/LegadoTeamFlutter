@@ -12,7 +12,6 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
-import '../providers/association/association_state.dart';
 import '../providers/search/search_notifier.dart';
 import '../providers/source/source_notifier.dart';
 import '../providers/source_check/check_source_notifier.dart';
@@ -28,6 +27,7 @@ import '../widgets/book_source_group_manage_dialog.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 import '../widgets/confirm_dialog.dart';
+import 'association_import_dialog.dart';
 import 'source_edit_screen.dart';
 import 'js_source_edit_screen.dart';
 import 'source_import_confirm_screen.dart';
@@ -1552,23 +1552,11 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
 
     if (trimmed.startsWith('legado://') || trimmed.startsWith('yuedu://')) {
       final parsed = LegadoDeepLink.tryParse(trimmed);
-      await Navigator.of(context).pushNamed(
-        AppRoutes.association,
-        arguments: <String, dynamic>{
-          'raw': trimmed,
-          'url': parsed?.srcUrl ?? '',
-          if (parsed?.importType != null)
-            'type': switch (parsed!.importType!) {
-              ImportType.bookSource => 'bookSource',
-              ImportType.rssSource => 'rssSource',
-              ImportType.replaceRule => 'replaceRule',
-              ImportType.theme => 'theme',
-              ImportType.httpTts => 'httpTts',
-              ImportType.dictRule => 'dictRule',
-              ImportType.txtTocRule => 'txtTocRule',
-            },
-          'autoLoad': parsed?.importType != null,
-        },
+      final srcUrl = parsed?.srcUrl;
+      await showAssociationImportDialog(
+        context,
+        url: (srcUrl == null || srcUrl.isEmpty) ? null : srcUrl,
+        type: parsed?.importType,
       );
       return;
     }

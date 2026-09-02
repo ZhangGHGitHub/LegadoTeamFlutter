@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'models/models.dart';
 import 'screens/about_screen.dart';
 import 'screens/app_log_screen.dart';
-import 'screens/association_screen.dart';
 import 'screens/browser_screen.dart';
 import 'screens/dict_screen.dart';
 import 'screens/audio_screen.dart';
@@ -79,7 +78,6 @@ class AppRoutes {
   static const bookmarks = '/bookmarks';
   static const replaceRules = '/replace_rules';
   static const autoTasks = '/auto_tasks';
-  static const association = '/association';
   static const sourceDebug = '/sources/debug';
   static const rssSourceEdit = '/rss/edit';
   static const readAloudConfig = '/read_aloud_config';
@@ -249,7 +247,6 @@ class AppRoutes {
           }
           return const AutoTaskScreen();
         },
-        association: (_) => const AssociationScreen(),
         sourceDebug: (context) {
           final args = ModalRoute.of(context)?.settings.arguments;
           final sourceUrl = args is String ? args : null;

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -13,34 +14,48 @@ import '../providers/providers.dart';
 import '../routes.dart';
 import '../services/source_import_service.dart';
 import '../widgets/custom_group_dialog.dart';
-import '../widgets/legado_app_bar.dart';
 
-/// 统一关联导入页面（对标原版 OnLineImportActivity + 各 ImportXxxDialog）
+/// 关联导入弹出式确认对话框（对标原版各 ImportXxxDialog，视觉遵循 MD3）
 ///
-/// 原版无手动向导：所有导入都从管理页菜单 / 深度链接 / 扫码进入，
-/// 按路径类型弹出对应的确认对话框。本页面统一承载该流程：
-/// - 空闲态：输入内容地址（URL / 文件 / 剪贴板），类型由内容自动识别
-/// - 加载态：居中进度指示
-/// - 错误态：消息 + 重试（对应原版 tvMsg）
-/// - 就绪态：逐条勾选确认（新增/更新/已存在状态标签 + 打开查看 JSON），
-///   底部 全选|取消全选（n/m）/ 取消 / 确认，导入完成后弹出结果对话框
-class AssociationScreen extends ConsumerStatefulWidget {
-  const AssociationScreen({super.key});
-
-  @override
-  ConsumerState<AssociationScreen> createState() => _AssociationScreenState();
+/// 原版经 showDialogFragment 在当前页面之上弹出确认框（dialog_recycler_view）：
+/// - 头部：标题 + 自定义源分组 / ⋮ 菜单（bookSource）
+/// - 主体：逐条勾选确认（新增/更新/已存在状态标签 + 打开查看 JSON）
+/// - 底部：全选（n/m）| 取消 | 确认（n），导入完成后关闭对话框
+Future<void> showAssociationImportDialog(
+  BuildContext context, {
+  String? url,
+  ImportType? type,
+}) {
+  return showDialog<void>(
+    context: context,
+    builder: (_) => AssociationImportDialog(url: url, type: type),
+  );
 }
 
-class _AssociationScreenState extends ConsumerState<AssociationScreen> {
+class AssociationImportDialog extends ConsumerStatefulWidget {
+  const AssociationImportDialog({super.key, this.url, this.type});
+
+  /// 预填内容地址（非空时打开即自动拉取解析）
+  final String? url;
+
+  /// 深度链接指定的类型提示
+  final ImportType? type;
+
+  @override
+  ConsumerState<AssociationImportDialog> createState() =>
+      _AssociationImportDialogState();
+}
+
+class _AssociationImportDialogState
+    extends ConsumerState<AssociationImportDialog> {
   final _urlController = TextEditingController();
-  bool _bootstrapped = false;
 
   /// 最近一次加载动作（错误态重试复用）
   Future<void> Function()? _lastLoad;
 
   // ===== 选择状态（对应原版 selectStatus）=====
   List<bool> _selected = [];
-  List<AssociationItem>? _selectionFor;
+  AssociationState? _selectionFor;
 
   // bookSource / replaceRule 菜单选项（对应 import_source.xml / import_replace.xml）
   bool _keepName = false;
@@ -59,38 +74,19 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
   bool _importing = false;
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (_bootstrapped) return;
-    _bootstrapped = true;
-    final args = ModalRoute.of(context)?.settings.arguments;
-    if (args is Map) {
-      final url = args['url'];
-      if (url is String && url.isNotEmpty) {
-        _urlController.text = url;
-        final type = _parseType(args['type']);
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!mounted) return;
-          ref.read(associationNotifierProvider.notifier).bootstrapFromDeepLink(
-                type: type,
-                srcUrl: url,
-              );
-        });
-      }
+  void initState() {
+    super.initState();
+    final url = widget.url;
+    if (url != null && url.isNotEmpty) {
+      _urlController.text = url;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(associationNotifierProvider.notifier).bootstrapFromDeepLink(
+              type: widget.type,
+              srcUrl: url,
+            );
+      });
     }
-  }
-
-  ImportType? _parseType(Object? name) {
-    return switch (name) {
-      'bookSource' => ImportType.bookSource,
-      'rssSource' => ImportType.rssSource,
-      'replaceRule' => ImportType.replaceRule,
-      'theme' => ImportType.theme,
-      'httpTts' => ImportType.httpTts,
-      'dictRule' => ImportType.dictRule,
-      'txtTocRule' => ImportType.txtTocRule,
-      _ => null,
-    };
   }
 
   @override
@@ -100,11 +96,15 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
   }
 
   /// 选择状态与条目列表同步（原版默认：新增/更新选中，已存在不选；none 全选）
-  void _syncSelection(List<AssociationItem> items) {
-    if (identical(_selectionFor, items)) return;
-    _selectionFor = items;
+  ///
+  /// 注意：必须以 state 对象为基准判定（freezed 的 items getter 每次访问
+  /// 都会新建 EqualUnmodifiableListView 包装，按列表 identity 比较永远不等，
+  /// 会导致每次重建都重置勾选、点选即回弹）
+  void _syncSelection(AssociationState state) {
+    if (identical(_selectionFor, state)) return;
+    _selectionFor = state;
     _selected = [
-      for (final item in items) item.status != ImportItemStatus.exists,
+      for (final item in state.items) item.status != ImportItemStatus.exists,
     ];
   }
 
@@ -334,7 +334,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
     return out;
   }
 
-  /// 导入结果对话框（对应原版 finallyDialog）：确认后关闭本页面
+  /// 导入结果对话框（对应原版 finallyDialog）：确认后关闭本对话框
   void _showResultDialog(ImportResult result) {
     final contentChildren = <Widget>[
       Text(result.summary),
@@ -378,21 +378,78 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(associationNotifierProvider);
-    _syncSelection(state.items);
+    _syncSelection(state);
     final colorScheme = Theme.of(context).colorScheme;
+    final size = MediaQuery.sizeOf(context);
+    final hairline = colorScheme.outlineVariant.withValues(alpha: 0.6);
 
-    return Scaffold(
-      appBar: LegadoAppBar(
-        title: Text(state.title),
-        actions: [
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: ConstrainedBox(
+        // 宽近全宽（对齐原版 MATCH_PARENT），桌面端限宽；高不超过 85% 屏高
+        constraints: BoxConstraints(
+          maxWidth: min(size.width - 48, 640),
+          maxHeight: size.height * 0.85,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildHeader(state, colorScheme),
+            Divider(height: 1, thickness: 0.5, color: hairline),
+            Flexible(
+              child: switch (state.phase) {
+                AssociationPhase.idle => _buildIdle(),
+                AssociationPhase.loading => const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: CircularProgressIndicator(),
+                    ),
+                  ),
+                AssociationPhase.error => _buildError(state.error!),
+                AssociationPhase.ready => ListView.separated(
+                    shrinkWrap: true,
+                    padding: const EdgeInsets.symmetric(vertical: 8),
+                    itemCount: state.items.length,
+                    separatorBuilder: (_, _) => Divider(
+                        height: 1,
+                        indent: 16,
+                        thickness: 0.5,
+                        color: hairline),
+                    itemBuilder: (context, index) =>
+                        _buildItem(state, index),
+                  ),
+              },
+            ),
+            if (state.phase == AssociationPhase.ready) ...[
+              Divider(height: 1, thickness: 0.5, color: hairline),
+              _buildFooter(state),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 头部（对应原版 toolbar：标题 + 自定义源分组 + ⋮ 菜单；扫码/重置为本轨手动入口）
+  Widget _buildHeader(AssociationState state, ColorScheme colorScheme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 8, 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              state.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+          ),
           // 自定义分组（bookSource / replaceRule，对标原版 menu_new_group）
           if (state.phase == AssociationPhase.ready &&
               (state.type == ImportType.bookSource ||
                   state.type == ImportType.replaceRule))
             TextButton(
-              style: TextButton.styleFrom(
-                foregroundColor: colorScheme.onPrimary,
-              ),
               onPressed: _showCustomGroupDialog,
               child: Text(_groupName == null
                   ? '自定义分组'
@@ -438,21 +495,6 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
               ],
             ),
           IconButton(
-            icon: const Icon(Symbols.qr_code_scanner_rounded),
-            tooltip: '扫码导入',
-            onPressed: () async {
-              final navigator = Navigator.of(context);
-              // [fix Task#24 | 2026-08-08] 去掉 <String> 泛型，避免 routes 表
-              // MaterialPageRoute<dynamic> 运行时强转崩溃 — Qoder
-              final raw = await navigator.pushNamed(AppRoutes.qrcode);
-              final result = raw is String ? raw : null;
-              if (result != null && result.isNotEmpty) {
-                _urlController.text = result;
-                await _loadFromInput();
-              }
-            },
-          ),
-          IconButton(
             icon: const Icon(Symbols.refresh_rounded),
             tooltip: '重置',
             onPressed: () {
@@ -463,29 +505,13 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
           ),
         ],
       ),
-      body: switch (state.phase) {
-        AssociationPhase.idle => _buildIdle(),
-        AssociationPhase.loading => const Center(
-              child: CircularProgressIndicator(),
-            ),
-        AssociationPhase.error => _buildError(state.error!),
-        AssociationPhase.ready => ListView.separated(
-          itemCount: state.items.length,
-          separatorBuilder: (_, _) =>
-              const Divider(height: 1, indent: 16),
-          itemBuilder: (context, index) => _buildItem(state, index),
-        ),
-      },
-      bottomNavigationBar: state.phase == AssociationPhase.ready
-          ? _buildFooter(state, colorScheme)
-          : null,
     );
   }
 
   /// 空闲态：输入内容地址 + 文件 / 剪贴板入口（类型由内容自动识别）
   Widget _buildIdle() {
-    return Padding(
-      padding: const EdgeInsets.all(16),
+    return SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -495,6 +521,22 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
               prefixIcon: const Icon(Symbols.link_rounded),
               labelText: '内容地址',
               hintText: 'https://example.com/sources.json',
+              // 扫码导入（对应原版管理页扫码入口；本轨手动路径保留）
+              suffixIcon: IconButton(
+                icon: const Icon(Symbols.qr_code_scanner_rounded),
+                tooltip: '扫码导入',
+                onPressed: () async {
+                  final navigator = Navigator.of(context);
+                  // [fix Task#24 | 2026-08-08] 去掉 <String> 泛型，避免 routes 表
+                  // MaterialPageRoute<dynamic> 运行时强转崩溃 — Qoder
+                  final raw = await navigator.pushNamed(AppRoutes.qrcode);
+                  final result = raw is String ? raw : null;
+                  if (result != null && result.isNotEmpty) {
+                    _urlController.text = result;
+                    await _loadFromInput();
+                  }
+                },
+              ),
             ),
           ),
           const SizedBox(height: 12),
@@ -517,10 +559,13 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          FilledButton(
-            onPressed: _loadFromInput,
-            child: const Text('加载'),
+          const SizedBox(height: 16),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton(
+              onPressed: _loadFromInput,
+              child: const Text('加载'),
+            ),
           ),
           const SizedBox(height: 16),
           Text(
@@ -571,13 +616,11 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
     final item = state.items[index];
     final colorScheme = Theme.of(context).colorScheme;
 
+    // 状态色取 colorScheme 角色（M3 token）：新增 tertiary / 更新 secondary / 已存在 onSurfaceVariant
     final (label, color) = switch (item.status) {
-      ImportItemStatus.isNew =>
-        ('新', AppColorsExt.importNew(colorScheme)),
-      ImportItemStatus.isUpdate =>
-        ('更新', AppColorsExt.importUpdate(colorScheme)),
-      ImportItemStatus.exists =>
-        ('已存在', colorScheme.onSurfaceVariant),
+      ImportItemStatus.isNew => ('新增', colorScheme.tertiary),
+      ImportItemStatus.isUpdate => ('更新', colorScheme.secondary),
+      ImportItemStatus.exists => ('已存在', colorScheme.onSurfaceVariant),
       ImportItemStatus.none => ('', Colors.transparent),
     };
 
@@ -593,7 +636,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
     return InkWell(
       onTap: () => setState(() => _selected[index] = !_selected[index]),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         child: Row(
           children: [
             Checkbox(
@@ -609,7 +652,7 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
                     title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 16),
+                    style: Theme.of(context).textTheme.bodyLarge,
                   ),
                   if (showComment && comment != null)
                     Padding(
@@ -647,7 +690,10 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 8),
                 child: Text(
                   label,
-                  style: TextStyle(fontSize: 13, color: color),
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelMedium
+                      ?.copyWith(color: color),
                 ),
               ),
             TextButton(
@@ -661,78 +707,63 @@ class _AssociationScreenState extends ConsumerState<AssociationScreen> {
   }
 
   /// 底部操作区（对标 dialog_recycler_view：footerLeft / cancel / ok）
-  Widget _buildFooter(AssociationState state, ColorScheme colorScheme) {
-    return Container(
-      decoration: BoxDecoration(
-        color: colorScheme.surface,
-        border: Border(
-          top: BorderSide(
-            color: colorScheme.outlineVariant.withValues(alpha: 0.6),
-            width: 0.5,
-          ),
-        ),
-      ),
-      child: SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: Row(
-            children: [
-              Expanded(
-                flex: 2,
-                child: TextButton(
-                  onPressed: () {
-                    final selectAll = _isSelectAll;
-                    setState(() {
-                      for (var i = 0; i < _selected.length; i++) {
-                        _selected[i] = !selectAll;
-                      }
-                    });
-                  },
-                  child: Text(
-                    _isSelectAll
-                        ? '取消全选（$_selectCount/${state.items.length}）'
-                        : '全选（$_selectCount/${state.items.length}）',
-                  ),
-                ),
+  Widget _buildFooter(AssociationState state) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(8, 8, 24, 16),
+      child: Row(
+        children: [
+          // 全选可压缩（计数大时如「全选（419/947）」仍不溢出）
+          Flexible(
+            child: TextButton(
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                visualDensity: VisualDensity.compact,
               ),
-              TextButton(
-                onPressed: _importing
+              onPressed: () {
+                final selectAll = _isSelectAll;
+                setState(() {
+                  for (var i = 0; i < _selected.length; i++) {
+                    _selected[i] = !selectAll;
+                  }
+                });
+              },
+              child: Text(
+                _isSelectAll
+                    ? '取消全选（$_selectCount/${state.items.length}）'
+                    : '全选（$_selectCount/${state.items.length}）',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          TextButton(
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              visualDensity: VisualDensity.compact,
+            ),
+            onPressed:
+                _importing ? null : () => Navigator.of(context).pop(),
+            child: const Text('取消'),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+            ),
+            onPressed:
+                _importing || _selectCount == 0
                     ? null
-                    : () => Navigator.of(context).pop(),
-                child: const Text('取消'),
-              ),
-              const SizedBox(width: 8),
-              FilledButton(
-                onPressed:
-                    _importing || _selectCount == 0
-                        ? null
-                        : () => _confirmImport(state),
-                child: _importing
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : Text('确认（$_selectCount）'),
-              ),
-            ],
+                    : () => _confirmImport(state),
+            child: _importing
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text('确认（$_selectCount）'),
           ),
-        ),
+        ],
       ),
     );
   }
-}
-
-/// 导入状态标签配色（亮暗自适应；与书源导入确认页一致）
-abstract final class AppColorsExt {
-  static Color importNew(ColorScheme scheme) =>
-      scheme.brightness == Brightness.dark
-          ? const Color(0xFF4CD964)
-          : const Color(0xFF34C759);
-
-  static Color importUpdate(ColorScheme scheme) =>
-      scheme.brightness == Brightness.dark
-          ? const Color(0xFFFFC069)
-          : const Color(0xFFFF9500);
 }

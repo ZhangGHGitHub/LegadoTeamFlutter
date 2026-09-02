@@ -33,6 +33,7 @@
 | 19 | 2.0.136 | 切换图标功能 | 对齐原版 change_icon + 用户指令「还需要支持 iOS 换图标」：主题设置页新增入口，7 选项点选即应用——Android setComponentEnabledSetting 切换 Launcher1~6（API 26+），iOS setAlternateIconName（重启后生效），Windows 整项隐藏；原版 7 图标全同步（Android 资产逐字节复用 / iOS 渲染 78 张 PNG 入 Info.plist CFBundleAlternateIcons） |
 | 20 | 2.0.138 | iOS 换图标真机 -54 修复 | 用户真机报「osstatuserror-54」：CFBundleIconFiles 无扩展名条目由系统按 Assets.car imageset 名解析，原 PNG 为 bundle 根散文件、无 imageset → 78 张全量迁入 Assets.xcassets per-size imageset（Apple 官方范式）+ pbxproj 清理；门禁加固（集成测试 assetCount==78 断言 + CI Assets.car 全量校验） |
 | 29 | 2.0.147 | 关联导入页重做 | 对齐原版逐类确认页：JSON 字段自动识别 7 类（书源/RSS/替换规则/主题/HTTP TTS/字典/TXT 目录），每行 = 勾选 + 名称(+分组后缀) + 新/更新/已存在状态 + 「打开」入口，底部 全选(n/m)|取消|确认(n)，状态判定逐类对齐原版；ImportResult 汇总单位按类型区分；视觉风格遵循 MD3 |
+| 30 | 2.0.148 | 关联导入改弹出式对话框 | 用户要求对齐原版呈现：全屏页改 showDialog 居中弹出卡片（surfaceContainerHigh/28 圆角/暗遮罩/宽近全宽/高度随内容 85% 封顶），头部 标题+自定义分组+⋮+重置、底部 全选(n/m)|取消|确认(n)，扫码移入空闲态地址栏；状态色改 colorScheme 角色；修复 freezed items 包装导致勾选回弹的隐患（按 state 身份判定）+ 新增渲染/勾选持久 widget test |
 
 > 附：治理提交「重构红线口径修订」（未经允许禁止新增原版不存在的功能，授权除外）随 2.0.124 批次落地。
 
@@ -93,3 +94,4 @@
 修订：Qoder UI ｜ 2026-08-31（iOS 换图标 -54 第七轮 H3 判定探针 carReadable + 错误全量转储 + 60x60@3x 散文件补齐批次 27，2.0.145）
 修订：Qoder UI ｜ 2026-08-31（iOS 换图标 -54 第八轮 CFBundleIconName 剥离强制纯 legacy 路径 + altModernDecl 自检批次 28，2.0.146）
 修订：Qoder UI ｜ 2026-09-02（关联导入页重做为原版逐类确认页批次 29，2.0.147）
+修订：Qoder UI ｜ 2026-09-03（关联导入改弹出式确认对话框批次 30，2.0.148）
