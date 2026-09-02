@@ -56,6 +56,10 @@ pub struct LegadoClientConfig {
     pub proxies: Option<Vec<ProxyConfig>>,
     /// SSL/TLS 配置（如设置则覆盖 `accept_invalid_certs`）
     pub ssl: Option<SslConfig>,
+    /// 强制直连（禁用系统/环境代理）。默认 false 沿用 reqwest 系统代理探测；
+    /// 自定义 hosts 覆盖语义（§2.20.3）要求命中域名直连目标 IP，使用方
+    /// （如 hosts e2e 测试）应置 true 防止系统代理架空 hosts 解析。
+    pub no_proxy: bool,
 }
 
 impl Default for LegadoClientConfig {
@@ -72,6 +76,7 @@ impl Default for LegadoClientConfig {
             user_agents: None,
             proxies: None,
             ssl: None,
+            no_proxy: false,
         }
     }
 }
@@ -140,6 +145,9 @@ impl LegadoClient {
         if let Some(ref proxy_cfg) = config.proxy {
             let proxy = crate::proxy::to_reqwest_proxy(proxy_cfg)?;
             builder = builder.proxy(proxy);
+        } else if config.no_proxy {
+            // 强制直连：屏蔽系统/环境代理探测，保证 hosts 覆盖直连语义
+            builder = builder.no_proxy();
         }
 
         // 自定义 hosts DNS 覆盖（契约 §2.20.3，Task #73）：

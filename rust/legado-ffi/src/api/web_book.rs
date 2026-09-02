@@ -3173,7 +3173,10 @@ mod tests {
     }
 
     /// 77读书网 搜索诊断（2026-08-17）：站点返回 47KB 含结果，规则 class.BOX@tr!0 解析为 0
+    // 依赖外部源站在线状态（2026-09-03 实测站点返回空页），与同文件其他
+    // 外部源站诊断一致不入 CI 门禁，手工诊断时 --ignored 运行
     #[test]
+    #[ignore = "外部源站网络诊断，非确定性 CI 测试"]
     fn test_77shuku_search_diag() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -3796,7 +3799,10 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     }
 
     /// 书书小说 allInOne `$1/$2` 目录回归（G8）
+    // 依赖外部源站在线状态（2026-09-03 实测请求超时），与同文件其他外部源站
+    // 诊断一致不入 CI 门禁，手工诊断时 --ignored 运行
     #[test]
+    #[ignore = "外部源站网络诊断，非确定性 CI 测试"]
     fn test_shushu_all_in_one_toc_diag() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),

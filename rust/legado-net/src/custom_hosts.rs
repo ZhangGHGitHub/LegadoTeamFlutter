@@ -195,7 +195,7 @@ mod tests {
     /// 单 IP 字符串值解析
     #[test]
     fn test_parse_single_ip() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         apply_custom_hosts(r#"{"a.example.com": "1.2.3.4"}"#).unwrap();
         assert_eq!(
             lookup_ips("a.example.com"),
@@ -209,7 +209,7 @@ mod tests {
     /// IP 数组值解析（对齐原版 parseIpsFromList）
     #[test]
     fn test_parse_ip_array() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         apply_custom_hosts(r#"{"b.example.com": ["1.1.1.1", "2.2.2.2"]}"#).unwrap();
         let ips = lookup_ips("b.example.com").unwrap();
         assert_eq!(ips.len(), 2);
@@ -219,7 +219,7 @@ mod tests {
     /// 逗号分隔多 IP 字符串（对齐原版 parseIpsFromString）
     #[test]
     fn test_parse_comma_separated_string() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         apply_custom_hosts(r#"{"c.example.com": "1.1.1.1, 2.2.2.2"}"#).unwrap();
         assert_eq!(lookup_ips("c.example.com").unwrap().len(), 2);
         clear_custom_hosts();
@@ -228,7 +228,7 @@ mod tests {
     /// 非法输入：非 JSON / 非对象 → Internal 错误
     #[test]
     fn test_parse_invalid_json() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         assert!(apply_custom_hosts("not json").is_err());
         assert!(apply_custom_hosts(r#"["a.com"]"#).is_err()); // 数组非对象
         assert!(apply_custom_hosts(r#""1.2.3.4""#).is_err()); // 字符串非对象
@@ -238,7 +238,7 @@ mod tests {
     /// 非法 IP 值：该域名不纳入映射（等同未命中回落系统 DNS）
     #[test]
     fn test_parse_invalid_ip_skipped() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         apply_custom_hosts(r#"{"d.example.com": "not-an-ip", "e.example.com": 42}"#).unwrap();
         assert!(lookup_ips("d.example.com").is_none());
         assert!(lookup_ips("e.example.com").is_none());
@@ -249,7 +249,7 @@ mod tests {
     /// 清除语义：空串 / 空对象均清空映射
     #[test]
     fn test_clear_semantics() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         apply_custom_hosts(r#"{"f.example.com": "9.9.9.9"}"#).unwrap();
         assert!(lookup_ips("f.example.com").is_some());
 
@@ -265,7 +265,7 @@ mod tests {
     /// 映射覆盖后 resolver 命中（不依赖系统 DNS）
     #[test]
     fn test_lookup_hit_and_miss() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         apply_custom_hosts(r#"{"hit.example.com": "127.0.0.1"}"#).unwrap();
         assert!(lookup_ips("hit.example.com").is_some());
         // 未命中返回 None（resolver 内部回落系统 DNS）
@@ -276,7 +276,7 @@ mod tests {
     /// 端到端：hosts 映射命中后请求打到映射 IP 的本地服务器
     #[tokio::test]
     async fn test_e2e_hosts_override_hit() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
 
         // 启动一次性本地 HTTP 服务器
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -301,8 +301,13 @@ mod tests {
         // 映射一个不存在的域名到 127.0.0.1
         apply_custom_hosts(r#"{"hosts-e2e.test": "127.0.0.1"}"#).unwrap();
 
-        let client =
-            crate::client::LegadoClient::new(crate::client::LegadoClientConfig::default()).unwrap();
+        // no_proxy=true：hosts 覆盖的直连语义不应被系统代理架空
+        //（缺省配置下系统代理会代理无法解析的假域名返回 502，2026-09-03 实测）
+        let config = crate::client::LegadoClientConfig {
+            no_proxy: true,
+            ..crate::client::LegadoClientConfig::default()
+        };
+        let client = crate::client::LegadoClient::new(config).unwrap();
         let resp = client
             .get(&format!("http://hosts-e2e.test:{}/", addr.port()), None)
             .await
@@ -316,7 +321,7 @@ mod tests {
     /// 端到端：未命中域名回落系统 DNS（localhost 由系统解析）
     #[tokio::test]
     async fn test_e2e_fallback_system_dns() {
-        let _g = TEST_LOCK.lock().unwrap();
+        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         clear_custom_hosts();
 
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
