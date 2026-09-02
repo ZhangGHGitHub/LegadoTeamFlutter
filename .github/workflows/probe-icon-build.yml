@@ -61,18 +61,7 @@ jobs:
           PL=probe_icon/build/ios/iphoneos/Runner.app/Info.plist
           echo "--- Info.plist icon section ---"
           /usr/libexec/PlistBuddy -c "Print :CFBundleIcons" "$PL" || true
-          python3 - "$PL" <<'PY'
-import plistlib, sys
-p = sys.argv[1]
-with open(p, 'rb') as f:
-    d = plistlib.load(f)
-alt = (d.get('CFBundleIcons') or {}).get('CFBundleAlternateIcons', {})
-assert alt, 'CFBundleAlternateIcons 缺失'
-probe = alt.get('probe')
-assert probe and 'CFBundleIconFiles' in probe, 'probe 条目缺 CFBundleIconFiles'
-assert 'CFBundleIconName' not in probe, 'probe 不应含 CFBundleIconName（须纯 legacy）'
-print('OK: probe =', probe)
-PY
+          python3 probe_icon/verify_plist.py "$PL"
 
       - name: Package unsigned IPA
         working-directory: probe_icon/build/ios/iphoneos
