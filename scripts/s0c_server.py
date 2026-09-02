@@ -57,7 +57,10 @@ def html_detail(name: str, author: str) -> bytes:
 HTML_EMPTY = b'<html><body><p>not found</p></body></html>'
 
 # 场景表:路径前缀 / 延迟 / 响应构造
-DELAY = {i: 1.0 * (2 * i + 2) for i in range(7)}  # 2,4,6,8,10,12,14
+# 延迟 4s 间隔递增(2,6,10,14,18,22,26):模拟器并发下完成序对抖动敏感,
+# 2026-09-03 实测 2s 间隔两轮顺序漂移(丙丁乙戊/甲丙丁戊乙),拉开到 4s 后
+# 到达序=稳定序=甲乙丙丁戊;s1 的 302 final 响应不计时(否则乙再吃一次延迟)。
+DELAY = {0: 2.0, 1: 6.0, 2: 10.0, 3: 14.0, 4: 18.0, 5: 22.0, 6: 26.0}
 
 
 URL_HOST = '127.0.0.1'
@@ -72,31 +75,39 @@ def build_sources(port: int) -> list[dict]:
             'bookSourceType': 0,
             'enabled': True,
             'searchUrl': f'http://{URL_HOST}:{port}/s0c/s{i}/{path}?kw={{{{key}}}}',
+            # 规则用 legado 经典语法（class.x@attr/@text）：原版 Kotlin 解析器
+            # 不认纯 CSS ".book-item" 形式（2026-09-03 实测原版端 0 解析结果），
+            # class./tag./id. 语法双端（Kotlin/Rust）均支持。
             'ruleSearch': {
-                'bookList': '.book-item',
-                'name': '.name',
-                'author': '.author',
-                'bookUrl': '.name@href',
+                'bookList': 'class.book-item',
+                'name': 'class.name@text',
+                'author': 'class.author@text',
+                'bookUrl': 'class.name@href',
             },
         }
         base.update(extra)
         return base
 
     return [
-        s(0, 'search', loginCheckJs='result.code() == 200'),
+        # loginCheckJs 用双端兼容的返回式写法：原版 WebBook.kt 要求 evalJS
+        # 返回值可强转 StrResponse（谓词式 result.code()==200 在原版必失败，
+        # 2026-09-03 实测书甲被丢；重构 Rust 侧为谓词语义——该分叉已登记台账）
+        s(0, 'search', loginCheckJs='if (result.code() == 200) { result } else { null }'),
         s(1, 'start'),
         s(2, 'detail',
           bookUrlPattern=r'^http://127\.0\.0\.1:\d+/s0c/s2/detail\?kw=.+$',
-          ruleBookInfo={'name': '.title', 'author': '.author'}),
+          ruleBookInfo={'name': 'class.title@text', 'author': 'class.author@text'}),
         s(3, 'list',
           bookUrlPattern=r'^https://never\.match/\d+$'),
         s(4, 'search',
-          ruleSearch={'bookList': '.none', 'name': '.name', 'author': '.author', 'bookUrl': '.name@href'},
-          ruleBookInfo={'name': '.title', 'author': '.author'}),
+          ruleSearch={'bookList': 'class.none', 'name': 'class.name@text',
+                      'author': 'class.author@text', 'bookUrl': 'class.name@href'},
+          ruleBookInfo={'name': 'class.title@text', 'author': 'class.author@text'}),
         s(5, 'search', loginCheckJs='false'),
         s(6, 'search',
-          ruleSearch={'bookList': '.none', 'name': '.name', 'author': '.author', 'bookUrl': '.name@href'},
-          ruleBookInfo={'name': '.title', 'author': '.author'}),
+          ruleSearch={'bookList': 'class.none', 'name': 'class.name@text',
+                      'author': 'class.author@text', 'bookUrl': 'class.name@href'},
+          ruleBookInfo={'name': 'class.title@text', 'author': 'class.author@text'}),
     ]
 
 
@@ -128,7 +139,9 @@ class Handler(BaseHTTPRequestHandler):
             i = int(seg[2][1:])
             req_id = f'{threading.get_ident()}-{round(t0, 3)}'
             log_event('search_start', id=req_id, src=i, kw=kw, path=path)
-            time.sleep(DELAY[i])
+            # s1 的 302 final 落地请求不计时,保证乙的到达序只含一次延迟
+            if not (i == 1 and len(seg) >= 4 and seg[3] == 'final'):
+                time.sleep(DELAY[i])
             if self._client_gone():
                 log_event('search_end', id=req_id, src=i,
                           elapsed=round(time.time() - t0, 3), result='aborted')
