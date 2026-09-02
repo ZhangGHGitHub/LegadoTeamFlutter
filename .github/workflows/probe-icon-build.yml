@@ -41,8 +41,11 @@ jobs:
       - name: Build iOS (device, no codesign)
         working-directory: probe_icon
         run: |
+          # pipefail：让 flutter build 的失败退出码不被 tee/head 管道掩盖。
+          set -o pipefail
           flutter build ios --release --no-codesign --verbose 2>&1 | tee probe_build.log
-          ls -la build/ios/iphoneos/Runner.app | head
+          echo "--- Runner.app ---"
+          ls -la build/ios/iphoneos/Runner.app
 
       # 注入纯 legacy 散文件到 bundle 根（probe60x60 @2x/@3x）。
       # 社区实证结构：CFBundleIconFiles 指向的图像须以散文件形式落在 .app 根。

@@ -39,7 +39,7 @@ import UIKit
            let d = obj as? [AnyHashable: Any],
            let icons = d["CFBundleIcons"] as? [AnyHashable: Any],
            let alt = icons["CFBundleAlternateIcons"] as? [AnyHashable: Any] {
-          diskHasProbe = alt.keys.contains(self.probeName)
+          diskHasProbe = alt.keys.contains(Self.probeName)
         }
         // bundle 根散文件：probe60x60 @2x / @3x（纯 legacy 路径的落盘图像）。
         for suffix in ["@2x", "@3x"] where fm.fileExists(atPath: root.appendingPathComponent("probe60x60\(suffix).png")) {
