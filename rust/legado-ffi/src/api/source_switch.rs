@@ -359,10 +359,9 @@ pub async fn run_change_source_stream<F>(
     // 流内后置增强（不阻塞首批到达——所有搜索批次已先行推送）：
     // enrich 开启时对累积候选执行详情/目录/试读字数，再推最终重排快照
     let enriched = if options.needs_enrichment() {
-        match enrich_switch_candidates_async(&sources, accumulated, &options).await {
-            Ok(c) => c,
-            Err(_) => Vec::new(),
-        }
+        enrich_switch_candidates_async(&sources, accumulated, &options)
+            .await
+            .unwrap_or_default()
     } else {
         accumulated
     };
