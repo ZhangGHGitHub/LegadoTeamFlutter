@@ -8,6 +8,24 @@
 
 ---
 
+## 〇、执行状态（2026-09-03，Rust 轨收口）
+
+> 核实结论：R1/R2/R3 在基线代码中**全部属实**（逐条对照 source_switch.rs/reader.rs/web_book.rs 确认）；U1 属 UI 侧。
+
+| 项 | 状态 | 交付 |
+|---|---|---|
+| 批次 1 T1+T2（R1/R2 止血） | ✅ **已修** | 提交 `3a78afc049`：switch 接入 get_book_info_with_existing（canReName=false 门控）→ 真实 tocUrl 取目录 → 失败即失败保留旧源；章节转换保留 variable/is_volume 解析值；BookSourceFetcher 加默认退化方法（零 Mock 影响）；mock 单测 2 项（目录页独立源主路径 / 失败保留旧源） |
+| 批次 2 T3（book 级变量导出） | ✅ **已修** | `WebBookInfo.variable`（serde additive）+ parse_book_info_from_body 尾部 `export_variables_json` 导出（与目录解析同一机制）；单测 test_parse_book_info_exports_put_variables |
+| 批次 2 T4（内容链变量注入） | ✅ **已修** | `get_content` 章节 URL 的 AnalyzeUrl 变量表取自章节 variable（此前恒空表）；reader/audio 链路 `merge_variables_json(book, chapter)`（章节同名键优先，对齐原版 chapter → book 级联）合并进 WebChapter；helper `chapter_url_variables`/`merge_variables_json`（web_book.rs，含单测） |
+| 批次 2 T5（候选透传与合并） | ✅ **已修** | `SearchResult`/`AnnotatedCandidate`/`SearchCandidate`/`SourceMatch` 加 `variable`（serde additive）；元素级解析导出 + `result_to_search_book` 落库 + JS 源 JSON 透传；`searchSource` matches 与读库路径均带出；`switchSource` 内按 searchBooks 行 (new_book_url, origin) 取候选变量 ⊕ 详情导出变量合并（详情页后写入者优先）→ `book.variable`；扩展 mock 单测断言合并语义 |
+| 契约（T3/T5） | ✅ **已冻结并落地** | `API_CONTRACT.md` 变更记录 2026-09-03 条 + §2.4 注记（零签名变更，全部 additive 字段） |
+| 批次 3 T6（换源搜索流式化） | ⏸ **未实施（UI 侧）** | 跨轨：Rust StreamSink 改造须与 Dart 逐源渐显（change_source_notifier/screen）成对交付；本次仅做 Rust 轨，按用户指令 T6 留给 UI 轨批次，契约注记已为流式化预留说明空间。U1 卡顿缓解可先用「换源高级选项默认关 loadInfo/loadToc/loadWordCount」降低首批延迟（UI 侧可独立操作） |
+| U1（UI 侧体验） | ➡️ 移交 UI 轨 | 不在本任务书 Rust 轨范围 |
+
+验证：cargo fmt 0 diff / clippy 双段 0 warning / `cargo test --workspace` 全绿 / quickjs 两段门禁 / mock 变量链单测 6 项 + 换源链单测 4 项。
+
+---
+
 ## 一、问题与根因（均已定位，带证据）
 
 用户实测：① 换源界面卡；② 换源后大部分源不可用（正文错误 / 获取不到目录）。
