@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.152] - 2026-09-03
+
+### Changed
+- [UI] 应用内「关于」页更新日志（assets/updateLog.md）补充 Flutter 轨近五个批次（2.0.147~2.0.151）的用户可见更新：换源搜索等待反馈、本地导入失败原因显示、听书崩溃修复、定时任务错误提示、关联导入弹出式重做与逐类确认等；此前该文件停留在原版轨道 2026/08/04 的内容
+
+### Test
+- flutter analyze 无问题；flutter test 1312 过（唯一失败为既有 FFI 运行时测试，后端轨范围）
+- 两级冒烟：5556 -CheckPlayback PASSED（8/8）；5558 -CheckUI -SkipBuild PASSED（7/7）
+- 版本 2.0.152+153
+
+- Contributor: Qoder + UI
+
 ## [2.0.151] - 2026-09-03
 
 ### Fixed
