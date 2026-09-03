@@ -17,7 +17,6 @@ import '../providers/source/source_notifier.dart';
 import '../providers/source_check/check_source_notifier.dart';
 import '../routes.dart';
 import '../services/source_import_service.dart' show SourcePreview;
-import '../theme/app_colors.dart';
 import '../utils/legado_deep_link.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';

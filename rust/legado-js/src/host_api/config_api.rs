@@ -3,6 +3,11 @@
 //! 对应 Kotlin 端 `JsExtensions` 中的 getReadBookConfig / getThemeConfig / getThemeMode /
 //! getWebViewUA / androidId 等配置相关方法。
 //! 在 Rust 侧返回合理的默认值。
+//!
+//! UI_MD3_ALIGNMENT_PLAN.md Batch 0（R1/R2）：主题透传进程级注入
+//! （同 `device_id` 模式）：Flutter 侧 `RustApi.init` 经 FFI 注入当前
+//! 调色板主题色 + 主题模式，JS 书源 `getThemeConfig/getThemeMode`
+//! 即可感知界面实际主题；未注入时回退 MD3 wh 调色板默认值。
 
 /// 获取阅读配置（返回默认 JSON）
 ///
@@ -40,16 +45,22 @@ pub fn get_read_book_config() -> String {
 /// 获取主题配置（返回默认 JSON）
 ///
 /// 对应 Kotlin: `getThemeConfig()` -> GSON.toJson(ThemeConfig.getDurConfig(appCtx))
+/// R1（UI_MD3_ALIGNMENT_PLAN.md Batch 0）：默认值对齐 MD3 wh 调色板亮色
+///（primary #FF5C5C5C / background #FFF8F8F8，见 md3_colors.dart wh.light）；
+/// Flutter 注入后优先返回注入值（见 `set_injected_theme_config`）。
 pub fn get_theme_config() -> String {
+    if let Some(injected) = injected_theme_config() {
+        return injected;
+    }
     serde_json::json!({
         "themeName": "默认",
         "isNightTheme": false,
-        "primaryColor": "#FF4CAF50",
-        "accentColor": "#FFFF5722",
-        "backgroundColor": "#FFFFFFFF",
-        "bottomBackground": "#FFF5F5F5",
-        "statusBarColor": "#FF4CAF50",
-        "navigationBarColor": "#FFFFFFFF"
+        "primaryColor": "#FF5C5C5C",
+        "accentColor": "#FF5F5E5E",
+        "backgroundColor": "#FFF8F8F8",
+        "bottomBackground": "#FFF1EDEC",
+        "statusBarColor": "#FF5C5C5C",
+        "navigationBarColor": "#FFF8F8F8"
     })
     .to_string()
 }
@@ -57,9 +68,67 @@ pub fn get_theme_config() -> String {
 /// 获取主题模式
 ///
 /// 对应 Kotlin: `getThemeMode()` -> AppConfig.themeMode ?: "0"
+/// R2（UI_MD3_ALIGNMENT_PLAN.md Batch 0）：Flutter 侧 `setThemeMode` 时经
+/// `set_injected_theme_mode` 注入（"0"=跟随系统 / "1"=亮色 / "2"=暗色，
+/// 对齐 Kotlin themeMode "0/1/2"）；未注入回退 "light"。
 /// 返回 "light" / "dark" / "auto"
 pub fn get_theme_mode() -> String {
-    "light".to_string()
+    match injected_theme_mode().as_deref() {
+        Some("1") => "light".to_string(),
+        Some("2") => "dark".to_string(),
+        Some("0") | None => "light".to_string(),
+        Some(other) => other.to_string(),
+    }
+}
+
+/// 注入主题配置 JSON（Flutter 启动/切换调色板时经 FFI 调用）
+///
+/// 入参为 `get_theme_config` 同形 JSON 字符串；空串不覆盖。
+pub fn set_injected_theme_config(json: &str) {
+    let json = json.trim().to_string();
+    if json.is_empty() {
+        return;
+    }
+    *theme_config_store().write().unwrap_or_else(|p| p.into_inner()) = Some(json);
+}
+
+/// 注入主题模式（Flutter `setThemeMode` 时经 FFI 调用）
+///
+/// 取值对齐 Kotlin themeMode："0"=跟随系统 / "1"=亮色 / "2"=暗色。
+pub fn set_injected_theme_mode(mode: &str) {
+    let mode = mode.trim().to_string();
+    if mode.is_empty() {
+        return;
+    }
+    *theme_mode_store().write().unwrap_or_else(|p| p.into_inner()) = Some(mode);
+}
+
+/// 读取已注入的主题配置 JSON（无注入时返回空）
+fn injected_theme_config() -> Option<String> {
+    theme_config_store()
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+}
+
+/// 读取已注入的主题模式（无注入时返回空）
+fn injected_theme_mode() -> Option<String> {
+    theme_mode_store()
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+}
+
+fn theme_config_store() -> &'static std::sync::RwLock<Option<String>> {
+    static STORE: std::sync::OnceLock<std::sync::RwLock<Option<String>>> =
+        std::sync::OnceLock::new();
+    STORE.get_or_init(|| std::sync::RwLock::new(None))
+}
+
+fn theme_mode_store() -> &'static std::sync::RwLock<Option<String>> {
+    static STORE: std::sync::OnceLock<std::sync::RwLock<Option<String>>> =
+        std::sync::OnceLock::new();
+    STORE.get_or_init(|| std::sync::RwLock::new(None))
 }
 
 /// 获取 WebView User-Agent
@@ -114,11 +183,31 @@ mod tests {
         let config = get_theme_config();
         let parsed: serde_json::Value = serde_json::from_str(&config).unwrap();
         assert_eq!(parsed["isNightTheme"], false);
+        // R1：默认值对齐 MD3 wh 调色板亮色（见 md3_colors.dart wh.light）
+        assert_eq!(parsed["primaryColor"], "#FF5C5C5C");
+        assert_eq!(parsed["backgroundColor"], "#FFF8F8F8");
     }
 
     #[test]
     fn test_get_theme_mode() {
         assert_eq!(get_theme_mode(), "light");
+    }
+
+    #[test]
+    fn test_injected_theme_mode_mapping() {
+        set_injected_theme_mode("2");
+        assert_eq!(get_theme_mode(), "dark");
+        set_injected_theme_mode("1");
+        assert_eq!(get_theme_mode(), "light");
+        set_injected_theme_mode("0");
+        assert_eq!(get_theme_mode(), "light");
+    }
+
+    #[test]
+    fn test_injected_theme_config_passthrough() {
+        let custom = r#"{"themeName":"自定义","isNightTheme":true}"#;
+        set_injected_theme_config(custom);
+        assert_eq!(get_theme_config(), custom);
     }
 
     #[test]

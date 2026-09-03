@@ -459,16 +459,11 @@ class _SourceImportConfirmScreenState
 }
 
 /// 导入状态标签配色（亮暗自适应）
+/// [UI_MD3_ALIGNMENT_PLAN.md Batch B B5] 新增=primary、更新=tertiary，亮暗自适应
 abstract final class AppColorsExt {
-  static Color importNew(ColorScheme scheme) =>
-      scheme.brightness == Brightness.dark
-          ? const Color(0xFF4CD964)
-          : const Color(0xFF34C759);
+  static Color importNew(ColorScheme scheme) => scheme.primary;
 
-  static Color importUpdate(ColorScheme scheme) =>
-      scheme.brightness == Brightness.dark
-          ? const Color(0xFFFFC069)
-          : const Color(0xFFFF9500);
+  static Color importUpdate(ColorScheme scheme) => scheme.tertiary;
 }
 
 

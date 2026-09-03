@@ -258,7 +258,8 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     return Scaffold(
-      backgroundColor: const Color(0xFFF2F2F7),
+      // [UI_MD3_ALIGNMENT_PLAN.md Batch B B4] 分组背景走 tonal
+      backgroundColor: cs.surfaceContainerLow,
       appBar: LegadoAppBar(
         title: Text(
           _openedSourceUrl == null || _openedSourceUrl!.isEmpty
@@ -305,13 +306,14 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
               children: [
                 if (_error != null)
                   Material(
-                    color: const Color(0xFFFFEBEE),
+                    // [UI_MD3_ALIGNMENT_PLAN.md Batch B B4] 错误底走 tonal
+                    color: cs.errorContainer,
                     child: Padding(
                       padding: const EdgeInsets.all(12),
                       child: Text(
                         '加载已有脚本失败，已回退模板：$_error',
-                        style: const TextStyle(
-                          color: Color(0xFFC62828),
+                        style: TextStyle(
+                          color: cs.onErrorContainer,
                           fontSize: 13,
                         ),
                       ),
@@ -319,7 +321,8 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                   ),
                 if (_syntaxBanner != null)
                   Material(
-                    color: const Color(0xFFFFF8E1),
+                    // [UI_MD3_ALIGNMENT_PLAN.md Batch B B4] 警告底走 tonal
+                    color: cs.tertiaryContainer,
                     child: InkWell(
                       onTap: _jumpToSyntaxLine,
                       child: Padding(
@@ -329,17 +332,17 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                         ),
                         child: Row(
                           children: [
-                            const Icon(
+                            Icon(
                               Symbols.warning_amber_rounded,
                               size: 18,
-                              color: Color(0xFFF9A825),
+                              color: cs.onTertiaryContainer,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 _syntaxBanner!,
-                                style: const TextStyle(
-                                  color: Color(0xFF6D4C41),
+                                style: TextStyle(
+                                  color: cs.onTertiaryContainer,
                                   fontSize: 13,
                                 ),
                               ),
@@ -378,11 +381,12 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                         expands: true,
                         keyboardType: TextInputType.multiline,
                         textAlignVertical: TextAlignVertical.top,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontFamily: 'monospace',
                           fontSize: 13,
                           height: 1.35,
-                          color: Color(0xFF1C1C1E),
+                          // [UI_MD3_ALIGNMENT_PLAN.md Batch B B4] 编辑文字走 tonal
+                          color: cs.onSurface,
                         ),
                         decoration: const InputDecoration(
                           border: InputBorder.none,

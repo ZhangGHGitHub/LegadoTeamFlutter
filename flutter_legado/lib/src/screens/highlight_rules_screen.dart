@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../providers/highlight_rules/highlight_rules_notifier.dart';
-import '../theme/app_colors.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/loading_indicator.dart';
 
@@ -264,17 +263,20 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
   // 高亮颜色（ARGB int，写入 style JSON 的 textColor 通道）
   late int _color;
 
-  /// 预设高亮色（iOS 系统色，对标原版 HighlightColors 预设集）
-  static const List<Color> _presetColors = [
-    AppColors.iosYellowLight,
-    AppColors.iosGreenLight,
-    AppColors.iosTealLight,
-    AppColors.iosBlueLight,
-    AppColors.iosPurpleLight,
-    AppColors.iosPinkLight,
-    AppColors.iosRedLight,
-    AppColors.iosOrangeLight,
-  ];
+  /// 预设高亮色（M3 语义色板，对标原版 HighlightColors 预设集）
+  ///
+  /// [UI_MD3_ALIGNMENT_PLAN.md Batch B B7] 由 iOS 静态命名色改为随主题
+  /// 亮暗自适应的 8 色：4 container + 3 fixedDim + error，供色板与默认色共用
+  static List<Color> _presetColors(ColorScheme cs) => [
+        cs.primaryContainer,
+        cs.secondaryContainer,
+        cs.tertiaryContainer,
+        cs.errorContainer,
+        cs.primaryFixedDim,
+        cs.secondaryFixedDim,
+        cs.tertiaryFixedDim,
+        cs.inversePrimary,
+      ];
 
   @override
   void initState() {
@@ -286,7 +288,9 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     _isRegex = rule?.isRegex ?? false;
     _applyToTitle = rule?.applyToTitle ?? false;
     // [审计修复 §4.1] style 非法时模型层回退 null，此处取默认色 — Qoder
-    _color = rule?.styleTextColor ?? AppColors.iosYellowLight.toARGB32();
+    // [UI_MD3_ALIGNMENT_PLAN.md Batch B B7] 默认色延后至 build 由主题派生
+    //（initState 无 context），0 表未初始化
+    _color = rule?.styleTextColor ?? 0;
   }
 
   @override
@@ -335,6 +339,9 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
+    // [UI_MD3_ALIGNMENT_PLAN.md Batch B B7] 默认高亮色由当前主题派生
+    final presetColors = _presetColors(cs);
+    if (_color == 0) _color = presetColors.first.toARGB32();
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -401,7 +408,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
             const SizedBox(height: 8),
             Row(
               children: [
-                for (final color in _presetColors)
+                for (final color in presetColors)
                   Padding(
                     padding: const EdgeInsets.only(right: 10),
                     child: GestureDetector(

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:device_info_plus/device_info_plus.dart';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated_io.dart'
@@ -12,9 +12,11 @@ import 'package:path_provider/path_provider.dart';
 
 import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
+import '../theme/md3_colors.dart';
 import 'book_api.dart';
 import 'cover_decode_loader.dart';
 import 'platform_bridge_service.dart';
+import 'settings_service.dart';
 
 part 'rust_api_decode.part.dart';
 part 'rust_api_sources.part.dart';
@@ -65,6 +67,10 @@ class RustApi
     // 对齐原版 AppConst.androidId = Settings.Secure.ANDROID_ID）
     await _injectDeviceId();
 
+    // [UI_MD3_ALIGNMENT_PLAN.md Batch 0 R1/R2] 注入当前调色板主题色 +
+    // 主题模式，JS 书源 getThemeConfig()/getThemeMode() 即可感知界面实际主题
+    await _injectThemeConfig();
+
     _initialized = true;
   }
 
@@ -96,12 +102,48 @@ class RustApi
     }
   }
 
+  /// 注入当前调色板主题色 + 主题模式（UI_MD3_ALIGNMENT_PLAN.md Batch 0 R1/R2）
+  ///
+  /// 主题配置取当前 paletteId 的亮色 role（primary/secondary/surface/
+  /// surfaceContainer），主题模式按 Kotlin "0/1/2"（跟随系统/亮/暗）注入；
+  /// 失败仅记日志，不阻断初始化（Rust 侧回退 wh 默认值）。
+  Future<void> _injectThemeConfig() async {
+    try {
+      final settings = SettingsService();
+      final palette = Md3Palettes.byId(await settings.getPaletteId());
+      final roles = palette.light;
+      String hex(int argb) =>
+          '#${argb.toRadixString(16).padLeft(8, '0').toUpperCase()}';
+      final themeJson = jsonEncode({
+        'themeName': palette.label,
+        'isNightTheme': false,
+        'primaryColor': hex(roles.primary),
+        'accentColor': hex(roles.secondary),
+        'backgroundColor': hex(roles.surface),
+        'bottomBackground': hex(roles.surfaceContainer),
+        'statusBarColor': hex(roles.primary),
+        'navigationBarColor': hex(roles.surface),
+      });
+      await bridge.setThemeConfig(themeJson: themeJson);
+      final mode = await settings.getThemeMode();
+      final modeValue = switch (mode) {
+        ThemeMode.light => '1',
+        ThemeMode.dark => '2',
+        ThemeMode.system => '0',
+      };
+      await bridge.setThemeMode(mode: modeValue);
+      debugPrint(
+          '[RustApi] 主题注入完成（palette=${palette.id} mode=$modeValue）');
+    } catch (e) {
+      debugPrint('[RustApi] 主题注入失败，Rust 侧回退 wh 默认值：$e');
+    }
+  }
+
   /// 设置 TTS 音频缓存目录（应用初始化时调用）— QoderCN
   ///
   /// Rust 默认落系统临时目录（Android 可能不可写），改指向应用支持目录
   /// 下的 tts_cache 子目录；取不到路径时保留默认并仅记日志，不阻断初始化。
-  Future<void> _initTtsCacheDir() async {
-    try {
+  Future<void> _initTtsCacheDir() async {    try {
       final base = await getApplicationSupportDirectory();
       final dir = Directory('${base.path}${Platform.pathSeparator}tts_cache');
       if (!dir.existsSync()) {

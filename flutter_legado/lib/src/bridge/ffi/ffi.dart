@@ -17,6 +17,21 @@ Future<void> init() => RustLib.instance.api.crateFfiFfiInit();
 Future<void> setDeviceId({required String deviceId}) =>
     RustLib.instance.api.crateFfiFfiSetDeviceId(deviceId: deviceId);
 
+/// 注入主题配置 JSON（UI_MD3_ALIGNMENT_PLAN.md Batch 0 R1）
+///
+/// Flutter 侧启动/切换调色板时调用，入参与
+/// `legado_js::host_api::config_api::get_theme_config` 同形；
+/// JS 书源 `getThemeConfig()` 优先返回注入值。
+Future<void> setThemeConfig({required String themeJson}) =>
+    RustLib.instance.api.crateFfiFfiSetThemeConfig(themeJson: themeJson);
+
+/// 注入主题模式（UI_MD3_ALIGNMENT_PLAN.md Batch 0 R2）
+///
+/// 取值对齐 Kotlin themeMode："0"=跟随系统 / "1"=亮色 / "2"=暗色；
+/// Flutter 侧 `setThemeMode` 时调用，JS 书源 `getThemeMode()` 感知。
+Future<void> setThemeMode({required String mode}) =>
+    RustLib.instance.api.crateFfiFfiSetThemeMode(mode: mode);
+
 /// 获取版本号
 Future<String> version() => RustLib.instance.api.crateFfiFfiVersion();
 

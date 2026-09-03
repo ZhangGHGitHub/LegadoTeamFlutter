@@ -661,9 +661,10 @@ extension _SourceBuilders on _SourceScreenState {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
+                        // [UI_MD3_ALIGNMENT_PLAN.md Batch B B3] 状态语义走 tonal
                         color: checkMessage.ok
-                            ? AppColors.iosGreenLight
-                            : AppColors.iosRedLight,
+                            ? colorScheme.primary
+                            : colorScheme.error,
                       ),
                     ),
                 ],
@@ -677,8 +678,9 @@ extension _SourceBuilders on _SourceScreenState {
                   source.enabled ? 'ON' : 'OFF',
                   style: TextStyle(
                     fontSize: 12,
+                    // [UI_MD3_ALIGNMENT_PLAN.md Batch B B3] 状态语义走 tonal
                     color: source.enabled
-                        ? AppColors.iosGreenLight
+                        ? colorScheme.primary
                         : colorScheme.onSurfaceVariant,
                   ),
                 ),
@@ -731,10 +733,11 @@ extension _SourceBuilders on _SourceScreenState {
                         width: 8,
                         height: 8,
                         // 发现启用=系统绿；有发现但未启用=系统红
+                        // [UI_MD3_ALIGNMENT_PLAN.md Batch B B3] 状态语义走 tonal
                         decoration: BoxDecoration(
                           color: source.enabledExplore
-                              ? AppColors.iosGreenLight
-                              : AppColors.iosRedLight,
+                              ? colorScheme.primary
+                              : colorScheme.error,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -811,9 +814,10 @@ extension _SourceBuilders on _SourceScreenState {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         fontSize: 12,
+                        // [UI_MD3_ALIGNMENT_PLAN.md Batch B B3] 状态语义走 tonal
                         color: checkMessage.ok
-                            ? AppColors.iosGreenLight
-                            : AppColors.iosRedLight,
+                            ? colorScheme.primary
+                            : colorScheme.error,
                       ),
                     ),
                 ],
@@ -827,8 +831,9 @@ extension _SourceBuilders on _SourceScreenState {
                   source.enabled ? 'ON' : 'OFF',
                   style: TextStyle(
                     fontSize: 12,
+                    // [UI_MD3_ALIGNMENT_PLAN.md Batch B B3] 状态语义走 tonal
                     color: source.enabled
-                        ? AppColors.iosGreenLight
+                        ? colorScheme.primary
                         : colorScheme.onSurfaceVariant,
                   ),
                 ),
@@ -874,9 +879,10 @@ extension _SourceBuilders on _SourceScreenState {
                       width: 8,
                       height: 8,
                       decoration: BoxDecoration(
+                        // [UI_MD3_ALIGNMENT_PLAN.md Batch B B3] 状态语义走 tonal
                         color: source.enabledExplore
-                            ? AppColors.iosGreenLight
-                            : AppColors.iosRedLight,
+                            ? colorScheme.primary
+                            : colorScheme.error,
                         shape: BoxShape.circle,
                       ),
                     ),

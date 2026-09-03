@@ -100,6 +100,23 @@ pub mod ffi {
         legado_js::host_api::device_id::set_device_id(&device_id);
     }
 
+    /// 注入主题配置 JSON（UI_MD3_ALIGNMENT_PLAN.md Batch 0 R1）
+    ///
+    /// Flutter 侧启动/切换调色板时调用，入参与
+    /// `legado_js::host_api::config_api::get_theme_config` 同形；
+    /// JS 书源 `getThemeConfig()` 优先返回注入值。
+    pub fn set_theme_config(theme_json: String) {
+        legado_js::host_api::config_api::set_injected_theme_config(&theme_json);
+    }
+
+    /// 注入主题模式（UI_MD3_ALIGNMENT_PLAN.md Batch 0 R2）
+    ///
+    /// 取值对齐 Kotlin themeMode："0"=跟随系统 / "1"=亮色 / "2"=暗色；
+    /// Flutter 侧 `setThemeMode` 时调用，JS 书源 `getThemeMode()` 感知。
+    pub fn set_theme_mode(mode: String) {
+        legado_js::host_api::config_api::set_injected_theme_mode(&mode);
+    }
+
     /// 获取版本号
     pub fn version() -> String {
         env!("CARGO_PKG_VERSION").to_string()

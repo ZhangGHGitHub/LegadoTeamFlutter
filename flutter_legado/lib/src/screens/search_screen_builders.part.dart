@@ -422,7 +422,8 @@ extension _SearchBuilders on _SearchScreenState {
                       width: 10,
                       height: 10,
                       decoration: BoxDecoration(
-                        color: const Color(0xFFFF9800),
+                        // [UI_MD3_ALIGNMENT_PLAN.md Batch B B6] 阅读记录点走 tonal
+                        color: colorScheme.tertiary,
                         shape: BoxShape.circle,
                         border: Border.all(
                           color: colorScheme.surface,
@@ -446,8 +447,9 @@ extension _SearchBuilders on _SearchScreenState {
                         Container(
                           width: 8,
                           height: 8,
-                          decoration: const BoxDecoration(
-                            color: Color(0xFF43A047), // md_green_600
+                          decoration: BoxDecoration(
+                            // [UI_MD3_ALIGNMENT_PLAN.md Batch B B6] 在架点走 tonal
+                            color: colorScheme.primary,
                             shape: BoxShape.circle,
                           ),
                         ),

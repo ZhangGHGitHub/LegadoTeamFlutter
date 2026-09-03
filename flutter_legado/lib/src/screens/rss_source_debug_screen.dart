@@ -296,18 +296,17 @@ enum _DebugLogLevel {
   }
 
   /// 文字颜色
+  ///
+  /// [UI_MD3_ALIGNMENT_PLAN.md Batch B B2] 状态语义色走 tonal role：
+  /// 成功=primary、警告=tertiary、错误=error，亮暗自适应
   Color color(ThemeData theme) {
     switch (this) {
       case _DebugLogLevel.info:
         return theme.colorScheme.onSurface;
       case _DebugLogLevel.success:
-        return theme.brightness == Brightness.dark
-            ? Colors.green.shade300
-            : Colors.green.shade800;
+        return theme.colorScheme.primary;
       case _DebugLogLevel.warn:
-        return theme.brightness == Brightness.dark
-            ? Colors.orange.shade300
-            : Colors.orange.shade800;
+        return theme.colorScheme.tertiary;
       case _DebugLogLevel.error:
         return theme.colorScheme.error;
     }
@@ -319,9 +318,9 @@ enum _DebugLogLevel {
       case _DebugLogLevel.info:
         return theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3);
       case _DebugLogLevel.success:
-        return Colors.green.withValues(alpha: 0.12);
+        return theme.colorScheme.primaryContainer.withValues(alpha: 0.4);
       case _DebugLogLevel.warn:
-        return Colors.orange.withValues(alpha: 0.12);
+        return theme.colorScheme.tertiaryContainer.withValues(alpha: 0.4);
       case _DebugLogLevel.error:
         return theme.colorScheme.errorContainer.withValues(alpha: 0.4);
     }
@@ -330,17 +329,17 @@ enum _DebugLogLevel {
   /// 过滤芯片选中颜色
   ///
   /// [审计修复 §3.2] 作为选中背景与白色标签搭配，按亮暗选 shade 保证对比度 — Qoder
+  /// [UI_MD3_ALIGNMENT_PLAN.md Batch B B2] 改走 tonal container role
   Color chipColor(ThemeData theme) {
-    final isDark = theme.brightness == Brightness.dark;
     switch (this) {
       case _DebugLogLevel.info:
-        return isDark ? Colors.blueGrey.shade400 : Colors.blueGrey.shade600;
+        return theme.colorScheme.outline;
       case _DebugLogLevel.success:
-        return isDark ? Colors.green.shade600 : Colors.green.shade700;
+        return theme.colorScheme.primary;
       case _DebugLogLevel.warn:
-        return isDark ? Colors.orange.shade700 : Colors.orange.shade800;
+        return theme.colorScheme.tertiary;
       case _DebugLogLevel.error:
-        return isDark ? Colors.red.shade600 : Colors.red.shade700;
+        return theme.colorScheme.error;
     }
   }
 }

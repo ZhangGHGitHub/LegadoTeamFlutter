@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.155] - 2026-09-04
+
+### Changed
+- [UI] MD3 对齐 Phase 0+B0+Batch A/B 落地（UI_MD3_ALIGNMENT_PLAN.md v1.1）：换源屏评分色/书源调试双屏状态语义色/书源列表状态点/JS 源编辑错误警告底/导入确认状态标签/搜索结果圆点/缓存下载完成态/帮助 Markdown 弱文本分隔线/取色器黑白/高亮预设色板共 11 组硬编码迁 tonal role；二维码黑白登记为扫码语义例外；`cupertino_icons` 保留（沉浸域仍引用）
+- [Rust+UI] 主题透传 R1/R2：`config_api::get_theme_config` 默认值对齐 MD3 wh（primary #FF5C5C5C/background #FFF8F8F8）+ 新增 `set_theme_config/set_theme_mode` 进程注入 FFI（契约 §1.6.1 补登记）；Flutter `RustApi.init` 注入当前 palette 亮色 role 与主题模式（0/1/2），JS 书源 `getThemeConfig()/getThemeMode()` 可感知界面实际主题
+- [Docs] 新增 `docs/UI_MD3_ALIGNMENT_AUDIT.md`（Phase 0 精确待改清单：主题资源零差异无需追新，A1 样板 + B1-B10 增量；沉浸域/Cupertino/`surfaceVariant` 明确不改）
+
+### Test
+- flutter analyze 无问题；flutter test 1313 全过；md3_palette 32 全过；cargo test -p legado-js（config_api 7 项）全过
+- 版本 2.0.155+156
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.154] - 2026-09-04
 
 ### Added

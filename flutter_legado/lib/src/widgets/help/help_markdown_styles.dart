@@ -1,20 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
-/// 帮助 Markdown 分隔线色（对标 `md_light_dividers` / `md_dark_dividers`）
+/// 帮助 Markdown 分隔线色
+/// [UI_MD3_ALIGNMENT_PLAN.md Batch B B9] 走 tonal outlineVariant
 Color helpMarkdownDividerColor(ThemeData theme) {
-  return theme.brightness == Brightness.dark
-      ? const Color(0x1FFFFFFF)
-      : const Color(0x1F000000);
+  return theme.colorScheme.outlineVariant;
 }
 
 /// 帮助 Markdown 样式（对标 Android HelpMarkwonTheme + secondaryText）
 MarkdownStyleSheet helpMarkdownStyleSheet(ThemeData theme) {
   final cs = theme.colorScheme;
-  final isDark = theme.brightness == Brightness.dark;
-  // 对齐 colors.xml secondaryText
-  final bodyColor =
-      isDark ? const Color(0xB3FFFFFF) : const Color(0x8A000000);
+  // [UI_MD3_ALIGNMENT_PLAN.md Batch B B9] 正文走 tonal onSurfaceVariant
+  final bodyColor = cs.onSurfaceVariant;
   final accent = cs.primary;
   final breakColor = helpMarkdownDividerColor(theme);
   final codeBg = Color.alphaBlend(

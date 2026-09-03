@@ -85,6 +85,8 @@ class _QrShareDialog extends StatelessWidget {
         version: QrVersions.auto,
         errorCorrectionLevel: QrErrorCorrectLevel.L,
         gapless: true,
+        // [UI_MD3_ALIGNMENT_PLAN.md Batch B B10 例外] 二维码黑白为扫码语义色
+        //（扫码器要求黑 on 白对比），不随 tonal，刻意保留硬编码
         // ignore: deprecated_member_use
         color: const Color(0xFF000000),
         // ignore: deprecated_member_use
@@ -130,6 +132,7 @@ class _QrShareDialog extends StatelessWidget {
           data: payload,
           version: QrVersions.auto,
           errorCorrectionLevel: QrErrorCorrectLevel.L,
+          // [UI_MD3_ALIGNMENT_PLAN.md Batch B B10 例外] 同上，扫码语义白底
           backgroundColor: Colors.white,
         ),
       ),

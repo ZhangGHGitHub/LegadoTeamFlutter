@@ -172,7 +172,8 @@ class _CacheDownloadScreenState extends ConsumerState<CacheDownloadScreen> {
     final progress = task.total > 0 ? task.completed / task.total : 0.0;
     final color = switch (task.status) {
       'running' => cs.primary,
-      'completed' => Colors.green,
+      // [UI_MD3_ALIGNMENT_PLAN.md Batch B B8] 完成态走 tonal
+      'completed' => cs.tertiary,
       'cancelled' => cs.onSurfaceVariant,
       'failed' => cs.error,
       _ => cs.outline,

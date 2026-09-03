@@ -105,6 +105,16 @@
 
 > 其余新增 FFI 仍遵循 `Result<_, BridgeError>` 铁律；本表仅销记历史非 Result 面，**不扩范围**。
 
+### 1.6.1 进程注入型 FFI（void，不经 BookApi，MD3 对齐 2026-09-04）
+
+以下 3 个 `ffi.rs` 导出为 Flutter→Rust 单向进程级注入（返回 void，经 `bridge.*` 直调，不进 `BookApi` 抽象层与方法计数）：
+
+| FFI 函数 | 入参 | 说明 |
+|----------|------|------|
+| `set_device_id` | device_id（Android ID / iOS IDFV） | 历史既有（本书山正文 X-Device-Id 校验），本次补登记 |
+| `set_theme_config` | theme_json（`get_theme_config` 同形 JSON） | Batch 0 R1：启动/切换调色板时注入当前 palette 亮色 role，JS `getThemeConfig()` 优先返回注入值，未注入回退 wh 默认 |
+| `set_theme_mode` | mode（"0"=跟随系统/"1"=亮/"2"=暗，对齐 Kotlin themeMode） | Batch 0 R2：`setThemeMode` 时注入，JS `getThemeMode()` 映射为 light/dark，未注入回退 light |
+
 ### 1.7 BookApi / FFI 命名等价表（F3-10，2026-08-14）
 
 以下 12 对 Dart `BookApi` 方法名与契约/FFI 登记名不一致，语义等价，计数时勿重复：

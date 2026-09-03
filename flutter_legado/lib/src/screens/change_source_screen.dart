@@ -840,8 +840,10 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
     final score = item.bookScore;
     final goodActive = score > 0;
     final badActive = score < 0;
-    const goodColor = Color(0xFFFF5252); // Material Red A200
-    const badColor = Color(0xFF448AFF); // Material Blue A200
+    // [UI_MD3_ALIGNMENT_PLAN.md Batch A A1] 评分指示色走 tonal role：
+    // 赞成=error 系（醒目警示）、反对=tertiary 系（次级），亮暗自适应
+    final goodColor = colorScheme.error;
+    final badColor = colorScheme.tertiary;
 
     return InkWell(
       onTap: isCurrent || state.isApplying ? null : () => _applySource(item),
