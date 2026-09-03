@@ -53,7 +53,7 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 - **提交信息必须遵循约定式提交（Conventional Commits）**：`<类型>[作用域]: <中文描述>`，类型用 `fix`/`feat`/`docs`/`refactor`/`test`/`chore` 等英文小写，作用域用 `ui`/`rust`/`tool`（替代旧式 `[UI]`/`[Rust]`/`[Tool]` 前缀，如 `fix(ui): ...`、`fix(rust): ...`）；`fix` 必须在正文说明根因、脚注关联 `Fixes #编号`；描述 ≤72 字符、正文行 ≤100 字符、不得混用类型、不得用模糊描述；详细规则见 `.qoder/rules/legado-dev-conventions.md`「Git 提交规范」章节
 - 分支策略：`feature/rust-*` 与 `feature/ui-*` 独立开发，集成使用 `integration/*` 分支；仅从当前 HEAD 创建规范分支，不得改动已提交历史
 - 署名规范：UI 层代码署名「— 子代理名称 + UI」，Bridge 层代码署名「— 子代理名称 + Bridge」，文档末尾附编写者署名与日期
-- 批次修复按 pubspec 版本 patch 递增（如 2.0.0+2 → 2.0.1+3），每批同步更新 CHANGELOG，记录版本号与贡献者；版本号记录于 CHANGELOG 与提交正文，commit subject 不带版本号
+- 批次修复按 pubspec 版本 patch 递增（如 2.0.0+2 → 2.0.1+3），每批同步更新 CHANGELOG 与应用内更新日志 `flutter_legado/assets/updateLog.md`（关于页展示，仅记录用户可见变化，按日期条目格式），记录版本号与贡献者；版本号记录于 CHANGELOG 与提交正文，commit subject 不带版本号
 - 进度文档（docs/ 下）须与 git 提交记录保持同步，任务编号不得重叠
 
 ## 验证与交付流程
@@ -81,4 +81,5 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 
 编写者：Qoder ｜ 2026-08-10
 修订：Reasonix ｜ 2026-08-10（更新上游版本基准 3.26081008、计划文档引用、app 文件数；精简技能同步说明）
+修订：Qoder UI ｜ 2026-09-03（更新日志义务补全：应用内 assets/updateLog.md 纳入每批同步范围，杜绝仅更 CHANGELOG 的遗漏）
 

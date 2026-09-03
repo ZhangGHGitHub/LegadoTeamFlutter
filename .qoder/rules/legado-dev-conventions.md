@@ -136,7 +136,7 @@ Fixes #239
 
 ### 7. 与版本/CHANGELOG 联动
 
-- 批次修复按 pubspec 版本 patch 递增（如 2.0.90+92 → 2.0.91+93），每批同步更新 CHANGELOG，记录版本号与贡献者。
+- 批次修复按 pubspec 版本 patch 递增（如 2.0.90+92 → 2.0.91+93），每批同步更新 CHANGELOG 与应用内更新日志 `flutter_legado/assets/updateLog.md`（关于页展示，仅记录用户可见变化，按日期条目格式），记录版本号与贡献者。
 - 提交说明末尾保留署名（如 `— DeepSeek Harness + Bridge`）。
 
 ## 💻 Windows编码问题处理
