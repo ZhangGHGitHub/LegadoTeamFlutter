@@ -22,6 +22,10 @@ class ChangeSourceState with _$ChangeSourceState {
 
     /// 正在应用切换的书源 URL（null 表示无切换进行中）
     String? applyingUrl,
+
+    /// 本轮搜索的书源数量（仅 isLoading 时非 null；体检 U1 等待反馈，
+    /// T6 流式 API 落地前暂以「源数量+时长」替代逐源 x/y 进度）
+    int? searchingCount,
   }) = _ChangeSourceState;
 }
 

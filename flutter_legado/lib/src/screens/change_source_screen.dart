@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
@@ -727,7 +729,12 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
 
   Widget _buildBody(ChangeSourceState state, List<SourceMatch> results) {
     if (state.isLoading && results.isEmpty) {
-      return const LoadingIndicator(message: '正在搜索可替换书源...');
+      // 体检 U1：Rust 换源搜索为一次性阻塞调用，流式 API（T6）落地前
+      // 以「源数量 + 已等待时长」告知仍在进行，替代无反馈转圈
+      return LoadingIndicator(
+        message: null,
+        subMessage: _SearchWaitMessage(count: state.searchingCount),
+      );
     }
     if (state.error != null && results.isEmpty) {
       return ErrorView(
@@ -777,7 +784,9 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
-              '找到 ${results.length} 个匹配书源',
+              state.isLoading
+                  ? '已找到 ${results.length} 个匹配书源，搜索中…'
+                  : '找到 ${results.length} 个匹配书源',
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -959,6 +968,52 @@ class _MenuRowStatic extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [Icon(icon, size: 20), const SizedBox(width: 12), Text(label)],
+    );
+  }
+}
+
+
+/// 搜索等待反馈文本（体检 U1 · T6 流式化前的过渡方案）
+///
+/// Rust 换源搜索为一次性阻塞调用（流式 API 落地前无逐源 x/y 进度），
+/// 以「参与搜索的源数量 + 已等待时长」告知仍在进行，避免无反馈转圈。
+class _SearchWaitMessage extends StatefulWidget {
+  final int? count;
+
+  const _SearchWaitMessage({this.count});
+
+  @override
+  State<_SearchWaitMessage> createState() => _SearchWaitMessageState();
+}
+
+class _SearchWaitMessageState extends State<_SearchWaitMessage> {
+  Timer? _timer;
+  int _seconds = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) setState(() => _seconds++);
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final count = widget.count;
+    final sourceText = (count == null || count <= 0) ? '' : ' $count 个书源';
+    return Text(
+      '正在搜索$sourceText… 已等待 $_seconds 秒',
+      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
     );
   }
 }

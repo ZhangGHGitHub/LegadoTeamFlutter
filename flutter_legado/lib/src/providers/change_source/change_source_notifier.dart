@@ -39,7 +39,7 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
     bool forceRefresh = false,
   }) async {
     if (state.isLoading) return;
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, error: null, searchingCount: null);
     try {
       List<String>? sourceUrls;
       if (group.isNotEmpty) {
@@ -59,10 +59,26 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
             .toList();
         if (sourceUrls.isEmpty) {
           // 所选分组无启用书源：直接空结果（不误搜全部）
-          state = state.copyWith(results: [], isLoading: false);
+          state = state.copyWith(
+            results: [],
+            isLoading: false,
+            searchingCount: null,
+          );
           return;
         }
       }
+      // 体检 U1：Rust 换源搜索为一次性阻塞调用（T6 流式 API 落地前无逐源
+      // 进度），先取得本轮参与搜索的源数量供 UI 展示等待反馈
+      var searchingCount = sourceUrls?.length ?? 0;
+      if (sourceUrls == null) {
+        try {
+          searchingCount =
+              (await ref.read(bookApiProvider).getEnabledBookSources()).length;
+        } catch (_) {
+          searchingCount = 0;
+        }
+      }
+      state = state.copyWith(searchingCount: searchingCount);
       final api = ref.read(bookApiProvider);
       final raw = sourceUrls == null
           ? await api.searchSource(
@@ -83,9 +99,17 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
               forceRefresh: forceRefresh,
             );
       final matches = raw.map(SourceMatch.fromJson).toList();
-      state = state.copyWith(results: matches, isLoading: false);
+      state = state.copyWith(
+        results: matches,
+        isLoading: false,
+        searchingCount: null,
+      );
     } catch (e) {
-      state = state.copyWith(error: _mapError(e), isLoading: false);
+      state = state.copyWith(
+        error: _mapError(e),
+        isLoading: false,
+        searchingCount: null,
+      );
     }
   }
 

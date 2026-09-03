@@ -10,7 +10,10 @@ import 'md3_loading_indicator.dart';
 class LoadingIndicator extends StatelessWidget {
   final String? message;
 
-  const LoadingIndicator({super.key, this.message});
+  /// 消息行下方的自定义子内容（如等待时长计时文本），可选
+  final Widget? subMessage;
+
+  const LoadingIndicator({super.key, this.message, this.subMessage});
 
   @override
   Widget build(BuildContext context) {
@@ -28,6 +31,10 @@ class LoadingIndicator extends StatelessWidget {
                     color: colorScheme.onSurfaceVariant,
                   ),
             ),
+          ],
+          if (subMessage != null) ...[
+            const SizedBox(height: 8),
+            subMessage!,
           ],
         ],
       ),

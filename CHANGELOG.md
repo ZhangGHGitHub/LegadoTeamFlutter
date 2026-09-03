@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.151] - 2026-09-03
+
+### Fixed
+- [UI] 【换源任务书 U1·UI 侧过渡修复】换源搜索等待反馈：Rust 换源搜索为一次性阻塞调用（数百源 × 60s/源全跑完才返回），此前 UI 仅无反馈转圈。现于 ChangeSourceState 新增 searchingCount（本轮参与搜索的源数量，分组搜索取分组源数、全量取启用源数），等待页显示「正在搜索 N 个书源… 已等待 X 秒」计时文本（LoadingIndicator 新增可选 subMessage 槽，附加式参数不影响既有调用方）；有结果增量加载时计数行改「已找到 N 个匹配书源，搜索中…」。此为 T6 流式 API（逐源渐显 + x/y 进度，对齐原版 _changeSourceProgress）落地前的过渡方案，届时替换
+- [UI] 换源任务书四根因核实结论（仅核实，Rust 侧未动）：R1/R2 与文档一致（source_switch.rs:307 直接以 new_book_url 取目录、:325/:338 章节变量写死 false/None），R3/U1 属实——修复均待 Rust 轨批次 1/2/3
+
+### Test
+- flutter analyze 无问题；flutter test 1312 过（唯一失败为既有 FFI 运行时测试，后端轨范围）；change_source_screen_test 6 用例全过
+- 两级冒烟：5556 -CheckPlayback PASSED（8/8）；5558 -CheckUI -SkipBuild PASSED（7/7）
+- 版本 2.0.151+152
+
+- Contributor: Qoder + UI
+
 ## [2.0.150] - 2026-09-03
 
 ### Fixed

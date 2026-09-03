@@ -36,6 +36,7 @@
 | 30 | 2.0.148 | 关联导入改弹出式对话框 | 用户要求对齐原版呈现：全屏页改 showDialog 居中弹出卡片（surfaceContainerHigh/28 圆角/暗遮罩/宽近全宽/高度随内容 85% 封顶），头部 标题+自定义分组+⋮+重置、底部 全选(n/m)|取消|确认(n)，扫码移入空闲态地址栏；状态色改 colorScheme 角色；修复 freezed items 包装导致勾选回弹的隐患（按 state 身份判定）+ 新增渲染/勾选持久 widget test |
 | 31 | 2.0.149 | 听书前台服务修复 + AutoTask 纯 FFI | 【体检 N1/P0】manifest 注册 PlaybackForegroundService（mediaPlayback 类型）+ FOREGROUND_SERVICE_MEDIA_PLAYBACK 权限，修复播放即崩；冒烟脚本新增 -CheckPlayback 门禁；【§二.7】删除 AutoTask REST 死降级（127.0.0.1:8080 永远失败且错误被吞）改纯 FFI + 失败可见，消除 UI 层 package:http 直连 |
 | 32 | 2.0.150 | 超长文件拆分 + 导入失败原因显式化 | 【§三.16】7 个超 1400 行业务文件按域拆为 part 文件（rust_api/mock_book_api 用 mixin 组合、5 个屏用 extension，方法原样搬移零行为变更，契约门禁改为拼接 part 提取）；【§三.13】本地导入失败透传 rust 明确文案（LZMA/加密 MOBI 等）；核对结论：golden 基线为决策闭环项（渲染矩阵替代）不重开 |
+| 33 | 2.0.151 | 换源搜索等待反馈（U1 UI 侧过渡） | 换源任务书四根因核实（R1/R2/R3/U1 属实，Rust 侧未动）；U1 UI 侧过渡修复：ChangeSourceState.searchingCount + 等待页「正在搜索 N 个书源… 已等待 X 秒」计时（LoadingIndicator 新增 subMessage 槽），增量加载行「已找到 N 个匹配书源，搜索中…」；T6 流式 API（逐源 x/y 进度）落地后替换 |
 
 > 附：治理提交「重构红线口径修订」（未经允许禁止新增原版不存在的功能，授权除外）随 2.0.124 批次落地。
 
@@ -99,3 +100,4 @@
 修订：Qoder UI ｜ 2026-09-03（关联导入改弹出式确认对话框批次 30，2.0.148）
 修订：Qoder UI ｜ 2026-09-03（听书前台服务 N1 修复 + AutoTask 纯 FFI 化批次 31，2.0.149）
 修订：Qoder UI ｜ 2026-09-03（超长文件拆分 + 导入失败原因显式化批次 32，2.0.150）
+修订：Qoder UI ｜ 2026-09-03（换源搜索等待反馈 U1 UI 侧过渡批次 33，2.0.151）

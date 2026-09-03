@@ -28,6 +28,10 @@ mixin _$ChangeSourceState {
   /// 正在应用切换的书源 URL（null 表示无切换进行中）
   String? get applyingUrl => throw _privateConstructorUsedError;
 
+  /// 本轮搜索的书源数量（仅 isLoading 时非 null；体检 U1 等待反馈，
+  /// T6 流式 API 落地前暂以「源数量+时长」替代逐源 x/y 进度）
+  int? get searchingCount => throw _privateConstructorUsedError;
+
   @JsonKey(ignore: true)
   $ChangeSourceStateCopyWith<ChangeSourceState> get copyWith =>
       throw _privateConstructorUsedError;
@@ -43,7 +47,8 @@ abstract class $ChangeSourceStateCopyWith<$Res> {
       {List<SourceMatch> results,
       bool isLoading,
       String? error,
-      String? applyingUrl});
+      String? applyingUrl,
+      int? searchingCount});
 }
 
 /// @nodoc
@@ -63,6 +68,7 @@ class _$ChangeSourceStateCopyWithImpl<$Res, $Val extends ChangeSourceState>
     Object? isLoading = null,
     Object? error = freezed,
     Object? applyingUrl = freezed,
+    Object? searchingCount = freezed,
   }) {
     return _then(_value.copyWith(
       results: null == results
@@ -81,6 +87,10 @@ class _$ChangeSourceStateCopyWithImpl<$Res, $Val extends ChangeSourceState>
           ? _value.applyingUrl
           : applyingUrl // ignore: cast_nullable_to_non_nullable
               as String?,
+      searchingCount: freezed == searchingCount
+          ? _value.searchingCount
+          : searchingCount // ignore: cast_nullable_to_non_nullable
+              as int?,
     ) as $Val);
   }
 }
@@ -97,7 +107,8 @@ abstract class _$$ChangeSourceStateImplCopyWith<$Res>
       {List<SourceMatch> results,
       bool isLoading,
       String? error,
-      String? applyingUrl});
+      String? applyingUrl,
+      int? searchingCount});
 }
 
 /// @nodoc
@@ -115,6 +126,7 @@ class __$$ChangeSourceStateImplCopyWithImpl<$Res>
     Object? isLoading = null,
     Object? error = freezed,
     Object? applyingUrl = freezed,
+    Object? searchingCount = freezed,
   }) {
     return _then(_$ChangeSourceStateImpl(
       results: null == results
@@ -133,6 +145,10 @@ class __$$ChangeSourceStateImplCopyWithImpl<$Res>
           ? _value.applyingUrl
           : applyingUrl // ignore: cast_nullable_to_non_nullable
               as String?,
+      searchingCount: freezed == searchingCount
+          ? _value.searchingCount
+          : searchingCount // ignore: cast_nullable_to_non_nullable
+              as int?,
     ));
   }
 }
@@ -144,7 +160,8 @@ class _$ChangeSourceStateImpl implements _ChangeSourceState {
       {final List<SourceMatch> results = const [],
       this.isLoading = false,
       this.error,
-      this.applyingUrl})
+      this.applyingUrl,
+      this.searchingCount})
       : _results = results;
 
   /// 匹配到的候选书源列表（Rust 已按评分降序排序，UI 直接渲染）
@@ -172,9 +189,14 @@ class _$ChangeSourceStateImpl implements _ChangeSourceState {
   @override
   final String? applyingUrl;
 
+  /// 本轮搜索的书源数量（仅 isLoading 时非 null；体检 U1 等待反馈，
+  /// T6 流式 API 落地前暂以「源数量+时长」替代逐源 x/y 进度）
+  @override
+  final int? searchingCount;
+
   @override
   String toString() {
-    return 'ChangeSourceState(results: $results, isLoading: $isLoading, error: $error, applyingUrl: $applyingUrl)';
+    return 'ChangeSourceState(results: $results, isLoading: $isLoading, error: $error, applyingUrl: $applyingUrl, searchingCount: $searchingCount)';
   }
 
   @override
@@ -187,7 +209,9 @@ class _$ChangeSourceStateImpl implements _ChangeSourceState {
                 other.isLoading == isLoading) &&
             (identical(other.error, error) || other.error == error) &&
             (identical(other.applyingUrl, applyingUrl) ||
-                other.applyingUrl == applyingUrl));
+                other.applyingUrl == applyingUrl) &&
+            (identical(other.searchingCount, searchingCount) ||
+                other.searchingCount == searchingCount));
   }
 
   @override
@@ -196,7 +220,8 @@ class _$ChangeSourceStateImpl implements _ChangeSourceState {
       const DeepCollectionEquality().hash(_results),
       isLoading,
       error,
-      applyingUrl);
+      applyingUrl,
+      searchingCount);
 
   @JsonKey(ignore: true)
   @override
@@ -211,7 +236,8 @@ abstract class _ChangeSourceState implements ChangeSourceState {
       {final List<SourceMatch> results,
       final bool isLoading,
       final String? error,
-      final String? applyingUrl}) = _$ChangeSourceStateImpl;
+      final String? applyingUrl,
+      final int? searchingCount}) = _$ChangeSourceStateImpl;
 
   @override
 
@@ -229,6 +255,11 @@ abstract class _ChangeSourceState implements ChangeSourceState {
 
   /// 正在应用切换的书源 URL（null 表示无切换进行中）
   String? get applyingUrl;
+  @override
+
+  /// 本轮搜索的书源数量（仅 isLoading 时非 null；体检 U1 等待反馈，
+  /// T6 流式 API 落地前暂以「源数量+时长」替代逐源 x/y 进度）
+  int? get searchingCount;
   @override
   @JsonKey(ignore: true)
   _$$ChangeSourceStateImplCopyWith<_$ChangeSourceStateImpl> get copyWith =>
