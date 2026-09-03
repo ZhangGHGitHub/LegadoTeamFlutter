@@ -430,6 +430,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             toc_url,
             word_count,
             kind,
+            variable: None,
         })
     }
 

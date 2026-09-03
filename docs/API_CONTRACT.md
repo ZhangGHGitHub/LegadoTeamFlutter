@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-09-03 | **换源执行链与变量链对齐**（换源修复任务书 T2/T3/T4/T5，加法式）：`searchSource` 返回 `matches[]` 项新增可选 `variable`（搜索期级联变量，对齐 SearchBook.toBook 复制语义）；`webbookInfo` 返回 JSON 新增可选 `variable`（bookInfo 规则求值 `@put`/`putVariable` 级联导出，无专用规则字段）；搜索结果项与 `searchBooks` 持久化启用 `variable` 透传（元素级导出）；`switchSource` 签名不变、行为对齐原版 getToc（详情解析→真实 tocUrl 取目录→失败即失败保留旧源；book.variable=候选与详情页变量合并、详情页优先；章节落库保留 variable/isVolume）。§2.4/§2.17 方法数不变 |
 | 2026-08-29 | **热力图每日时长聚合契约**（U 侧 UI_MD3_PLAN 登记）：加法式——`readRecordDailyList(int year)`（§2.12 阅读记录组，返回 `[{date, seconds}]` 日期升序）；`putReadRecord` 写路径增量累加当日 readRecordDaily（新 readRecordDaily 表：date TEXT PK + durationSeconds，增量 > 0 入账，本地时区）。§2.12 方法数 5→**6**，附录合计 267→**268**，BookApi 口径 264→**265** |
 | 2026-08-25 | **P3-5 换源页 parity**：加法式——`updateSearchBookScore` / `deleteSearchBook`（§2.4 搜索组，对标原版 SourceConfig 书维度评分与换源长按删除）；`searchSource` 返回 `matches[]` 项新增 `book_score`（-1/0/1）。§2.4 方法数 14→**16**，附录合计 265→**267**，BookApi 口径 262→**264** |
 | 2026-08-24 | **搜索 parity 批次B FFI 冻结**：breaking——`searchMultiStream` Rust 签名 `ffi::search_multi_stream` 新增 `page: i32` 入参（页码透传，双轨评审记录：两轨均归我方 + 用户已批准批次B范围）；加法式——`pauseSearch()` / `resumeSearch()`（软暂停门控，SEARCH_PAUSED，仅拦未派发书源）+ 批次事件 `has_more` 字段（累积非空判定）。§2.4 方法数 12→14，附录合计 263→**265**，BookApi 口径 260→**262** |
@@ -219,6 +220,12 @@
 | `deleteCoverRule()` | 无 | `Future<bool>` | 删除用户封面规则配置（对齐原版 `BookCover.delCoverRule`）：清空 coverRules；随后 `getCoverRule` 回退默认。F4 |
 
 > ⚠️ `searchSource`：Rust 返回 `SourceSwitchResponse { book_name, author, matches[] }`，Dart 侧提取 `matches` 字段。
+>
+> ℹ️ **换源变量链与执行链对齐（2026-09-03，换源修复任务书 T2/T3/T4/T5，均为加法式）**：
+> ① `searchSource` 返回的 `matches[]` 项新增可选字段 `variable`（string，JSON 对象文本；搜索期 `@put`/`putVariable` 级联变量，对齐原版 `SearchBook.toBook()` 复制 variable 语义）；`loadInfo` 开启时 enrich 阶段将详情页导出变量合并入候选 `variable`（详情页后写入者优先）。
+> ② `webbookInfo` 返回 JSON 新增可选字段 `variable`（bookInfo 规则求值期间 `@put`/JS `putVariable` 级联导出，与目录解析同一机制；原版无专用 variable 规则字段）。
+> ③ `search_books`/`searchSingleSource`/`searchMulti*` 的结果项与 `searchBooks` 表持久化新增/启用 `variable` 透传（元素级解析导出，additive）。
+> ④ `switchSource` 签名不变，行为对齐原版 `ChangeBookSourceViewModel.getToc`：先经新源详情解析（canReName=false 保留既有书名/作者，cover/intro/kind/lastChapter/wordCount 按非空更新），以解析出的**真实 tocUrl**（ruleBookInfo.tocUrl，可与详情页不同）取目录；详情或目录任一步失败 → 换源整体失败并保留旧源（单事务回滚，禁止拿 new_book_url 硬闯目录）；`book.variable` = 候选搜索期变量（searchBooks 行）与详情页导出变量合并（详情页后写入者优先，对齐原版覆盖语义）；章节落库保留解析值（`variable`/`isVolume`）。
 >
 > ℹ️ `searchSource` 分组/书源范围过滤（留项#12，Task #131 闭合）：Rust 侧 `ffi::source_switch_search(book_name, author, source_urls_json)` 新增第三个参数 `source_urls_json`（JSON 字符串数组；空串/空数组/缺省=搜全部启用源，语义与 `search_books` 的 `source_urls_json` 完全一致，复用 `search::load_search_sources` 过滤逻辑）。C ABI `ffi_source_switch_search` 同步加参。Dart 侧 `searchSource` 新增可选命名参数 `sourceUrls`，由 `rust_api` 编码为 `sourceUrlsJson` 传入；换源页按 `AppConfig.searchGroup` 内存过滤出该分组源 URL 列表后传入。冻结契约返回结构不变，本变更为加法式新增。
 >

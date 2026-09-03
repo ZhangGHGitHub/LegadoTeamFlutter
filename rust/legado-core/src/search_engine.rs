@@ -230,6 +230,7 @@ mod tests {
 
     fn make_candidate(name: &str, author: &str, source_url: &str) -> SearchCandidate {
         SearchCandidate {
+            variable: None,
             source_url: source_url.to_string(),
             source_name: format!("源_{source_url}"),
             book_url: format!("{source_url}/book/{name}"),

@@ -88,6 +88,11 @@ pub struct WebBookInfo {
     /// 分类（kind 原始字符串，对标 Kotlin Book.kind）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub kind: Option<String>,
+    /// 规则变量 JSON（换源 T3，2026-09-03）：bookInfo 规则求值期间的
+    /// `@put`/JS `putVariable` 级联导出（对齐 AnalyzeRule.putVariable →
+    /// Book.putVariable；原版无专用 variable 规则字段，与目录解析同一机制）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variable: Option<String>,
 }
 
 // ─── Fetcher trait ────────────────────────────────────────────────────────────
@@ -491,6 +496,7 @@ impl WebBookInfo {
             toc_url: toc_url.into(),
             word_count: None,
             kind: None,
+            variable: None,
         }
     }
 }
@@ -674,6 +680,7 @@ mod tests {
             toc_url: "https://example.com/book/10/toc".to_string(),
             word_count: None,
             kind: None,
+            variable: None,
         };
         let json = serde_json::to_string(&info).unwrap();
         let de: WebBookInfo = serde_json::from_str(&json).unwrap();

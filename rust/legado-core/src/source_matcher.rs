@@ -42,6 +42,10 @@ pub struct SourceMatch {
     /// 用户评分（-1 踩 / 0 无 / 1 赞，对标原版 SourceConfig 书维度评分）
     #[serde(default, rename = "book_score")]
     pub book_score: i32,
+    /// 规则变量 JSON（换源 T5，2026-09-03，additive）：搜索期级联变量，
+    /// 对齐原版 SearchBook.toBook() 复制 variable（SearchBook.kt:134）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variable: Option<String>,
 }
 
 fn default_neg_one() -> i32 {
@@ -80,6 +84,9 @@ pub struct SearchCandidate {
     /// 用户评分（-1/0/1）
     #[serde(default)]
     pub book_score: i32,
+    /// 规则变量 JSON（换源 T5，2026-09-03，additive）：搜索期级联变量
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variable: Option<String>,
 }
 
 /// 书源匹配器
@@ -144,6 +151,7 @@ impl SourceMatcher {
             respond_time: c.respond_time,
             origin_order: c.origin_order,
             book_score: c.book_score,
+            variable: c.variable,
         }
     }
 
@@ -320,6 +328,7 @@ mod tests {
     fn test_rank_candidates() {
         let candidates = vec![
             SearchCandidate {
+                variable: None,
                 source_url: "s1".into(),
                 source_name: "源1".into(),
                 book_url: "b1".into(),
@@ -334,6 +343,7 @@ mod tests {
                 book_score: 0,
             },
             SearchCandidate {
+                variable: None,
                 source_url: "s2".into(),
                 source_name: "源2".into(),
                 book_url: "b2".into(),
@@ -371,6 +381,7 @@ mod tests {
             respond_time: -1,
             origin_order: 0,
             book_score: 0,
+            variable: None,
         };
         assert!(SourceMatcher::is_good_match(&good));
 
@@ -383,6 +394,7 @@ mod tests {
 
     fn candidate(source_url: &str, book_name: &str, author: &str) -> SearchCandidate {
         SearchCandidate {
+            variable: None,
             source_url: source_url.into(),
             source_name: format!("源-{source_url}"),
             book_url: format!("{source_url}/book"),

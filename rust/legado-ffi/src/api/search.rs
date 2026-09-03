@@ -151,6 +151,11 @@ pub struct SearchResult {
         rename = "readRecordAuthor"
     )]
     pub read_record_author: Option<String>,
+    /// 规则变量 JSON（换源 T5，2026-09-03）：搜索元素级解析期间 `@put`/
+    /// `putVariable` 级联导出，随候选进入换源（对齐原版 SearchBook.toBook
+    /// 复制 variable 语义，SearchBook.kt:134）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variable: Option<String>,
 }
 
 // ─── WebSourceSearcher ────────────────────────────────────────────────────────
@@ -196,6 +201,7 @@ impl legado_core::SourceSearcher for WebSourceSearcher {
                     respond_time: -1,
                     origin_order: source.custom_order,
                     book_score: 0,
+                    variable: r.variable,
                 })
                 .collect(),
             Err(_) => Vec::new(),
@@ -422,6 +428,7 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
                 relevance_score: 0.0,
                 has_read_record: has_record,
                 read_record_author: record_author,
+                variable: c.variable,
             }
         })
         .collect();
@@ -841,7 +848,8 @@ pub(crate) fn result_to_search_book(r: SearchResult) -> CoreSearchBook {
         latest_chapter_title: r.latest_chapter,
         toc_url: String::new(),
         time: chrono_now_ms(),
-        variable: None,
+        // [T5] 搜索期级联变量随 SearchBook 落库（换源读库路径复用）
+        variable: r.variable,
         // [P0-2 S4] 透传真实书源排序（原恒写 0，违反数据契约约束 #4）
         origin_order: r.origin_order,
         chapter_word_count_text: None,
@@ -1001,6 +1009,9 @@ struct AnnotatedCandidate {
         rename = "readRecordAuthor"
     )]
     pub read_record_author: Option<String>,
+    /// 规则变量 JSON（换源 T5 透传，additive）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub variable: Option<String>,
 }
 
 // ─── 内部实现 ─────────────────────────────────────────────────────────────────
@@ -1439,6 +1450,10 @@ fn parse_search_response_ex(
             Some(field_str(7))
         };
 
+        // [T5 | SearchBook.kt:134] 元素级 @put/putVariable 级联导出（字段规则
+        // 求值完成后统一收集，随候选进入换源；对齐原版 SearchModel 落库语义）
+        let variable = item_analyzer.export_variables_json();
+
         results.push(SearchResult {
             source_url: source.book_source_url.clone(),
             source_name: source.book_source_name.clone(),
@@ -1456,6 +1471,7 @@ fn parse_search_response_ex(
             // 阅读记录标识由搜索完成后统一批量附加（见 annotate_results）
             has_read_record: false,
             read_record_author: None,
+            variable,
         });
     }
 
@@ -1506,6 +1522,7 @@ fn web_info_to_search_result(
         origin_order: source.custom_order,
         has_read_record: false,
         read_record_author: None,
+        variable: info.variable,
     }
 }
 
@@ -1558,6 +1575,7 @@ mod p0_2_s2_tests {
             origin_order: 0,
             has_read_record: false,
             read_record_author: None,
+            variable: None,
         }
     }
 
@@ -1668,6 +1686,7 @@ mod s0e_tests {
             origin_order: 0,
             has_read_record: false,
             read_record_author: None,
+            variable: None,
         }
     }
 
@@ -1960,6 +1979,12 @@ async fn search_js_source(
                 book_type: book_type_of_source(source.book_source_type),
                 // [P0-2 S4 | BookList.kt:215] originOrder = source.customOrder（真实书源排序，非默认 0）
                 origin_order: source.custom_order,
+                // [T5] JS 源返回 JSON 可携带 variable（JS 源搜索期变量）
+                variable: v
+                    .get("variable")
+                    .and_then(|x| x.as_str())
+                    .filter(|x| !x.is_empty())
+                    .map(|x| x.to_string()),
                 // 阅读记录标识由搜索完成后统一批量附加（见 annotate_results）
                 has_read_record: false,
                 read_record_author: None,
@@ -2052,6 +2077,7 @@ mod tests {
             origin_order: 5,
             has_read_record: false,
             read_record_author: None,
+            variable: None,
         };
         let core = result_to_search_book(r);
         assert_eq!(core.origin_order, 5);
@@ -2333,6 +2359,7 @@ mod tests {
                         book_name: format!("书{name}"),
                         author: "作者".into(),
                         book_url: format!("{url}/book/1"),
+                        variable: None,
                         latest_chapter: None,
                         intro: None,
                         cover_url: None,
@@ -3202,6 +3229,7 @@ mod tests {
             origin_order: 0,
             has_read_record: false,
             read_record_author: None,
+            variable: None,
         }
     }
 
@@ -3376,6 +3404,7 @@ mod tests {
             origin_order: 0,
             has_read_record: false,
             read_record_author: None,
+            variable: None,
         }
     }
 

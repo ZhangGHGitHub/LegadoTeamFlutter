@@ -555,13 +555,25 @@ fn fetch_chapter_content_inner(
     })?
     .ok_or_else(|| LegadoError::Database(format!("书源不存在: {source_url}")))?;
 
+    // [T4 | RuleDataInterface] 内容链变量注入：book.variable ⊕ chapter.variable
+    //（章节同名键优先，对齐原版 getVariable chapter → book 级联）。合并结果随
+    // WebChapter 进入 get_content 的 AnalyzeUrl 变量表与解析上下文种子——
+    // 此前内容链仅携带章节变量（R3），token/host 类书级变量在正文链全丢。
+    let book_variable: Option<String> = with_database(|db| {
+        Ok(BookRepository::new(db.connection())
+            .find_by_url(book_url)?
+            .and_then(|b| b.variable))
+    })?;
+    let merged_variable =
+        super::web_book::merge_variables_json(book_variable.as_deref(), chapter_variable);
+
     let web_chapter = WebChapter {
         index: chapter_index,
         title: chapter_title.to_string(),
         url: chapter_url.to_string(),
         is_vip: false,
         is_volume: false,
-        variable: chapter_variable.map(|s| s.to_string()),
+        variable: merged_variable,
     };
 
     let engine = super::web_book::build_engine()?;

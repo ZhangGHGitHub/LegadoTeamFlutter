@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.153] - 2026-09-03
+
+### Fixed
+- [Rust] 【换源任务书·批次 1 T1/T2】换源执行链对齐原版 getToc（3a78afc049）：此前换源后直接以 new_book_url（搜索结果 URL）硬闯目录，详情页 tocUrl 规则指向不同目录页时取不到目录；现先经新源详情解析（canReName=false 保留既有书名/作者，cover/intro/kind/lastChapter/wordCount 按非空更新），再以 ruleBookInfo 解析出的真实 tocUrl 取目录；详情或目录任一步失败即换源整体失败并保留旧源（单事务回滚）；章节落库保留解析的 variable/isVolume（此前写死 false/None）
+- [Rust] 【换源任务书·批次 2 T3/T4/T5】变量链端到端补齐：搜索期元素级 `@put`/`putVariable` 级联导出随 SearchResult 落 searchBooks 行；换源时按 (new_book_url, origin) 从 searchBooks 取候选变量，与详情页导出变量合并（详情页后写入者优先，对齐原版 AnalyzeRule.putVariable 同名键覆盖语义）→ book.variable；正文链 reader/audio 按 book⊕chapter 合并（章节优先）注入 get_content URL 变量表（此前恒空表）。searchSource/switchSource/webbookInfo 零签名变更，全部加法式字段
+- [Test] FFI 流测试环境性失败永久修复：本机代理生效时假源端口请求经代理返回 HTTP 502（而非连接拒绝），按 S0-E 对齐（非 2xx 响应体仍进入解析）得空列表、批次无 error 字段；测试改断言共同不变量（恰好一个批次/正常结束/无结果），不再断言 error 字段本身
+
+### Test
+- cargo fmt 0 diff / clippy 0 warning / cargo test --workspace 全绿 / quickjs 两段门禁通过
+- flutter analyze 无问题；flutter test 1313 全过
+- 版本 2.0.153+154
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.152] - 2026-09-03
 
 ### Changed

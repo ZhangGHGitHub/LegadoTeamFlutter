@@ -595,6 +595,10 @@ impl RealBookSourceFetcher {
             toc_url,
             word_count,
             kind,
+            // [T3 | AnalyzeRule.putVariable] bookInfo 规则求值期间 @put/JS
+            // putVariable 级联导出（与目录解析 web_book.rs 同一手法），随
+            // WebBookInfo 返回供换源合并进 book.variable
+            variable: analyzer.export_variables_json(),
         }
     }
 }
@@ -882,9 +886,12 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         //    如七猫 qmGetUrl 生成 https://.../chapter/content?id=...,
         //    {"method":"GET","headers":{...}}：必须经 AnalyzeUrl 解析出
         //    url/method/headers，直接 GET 会把 ,{json} 拼进请求 → 正文失败）
-        let analyze_chapter =
-            legado_parser::AnalyzeUrl::parse(&chapter.url, &std::collections::HashMap::new(), 1)
-                .map_err(|e| LegadoError::Internal(format!("章节 URL 解析失败: {e}")))?;
+        //    [T4 | AnalyzeUrl.kt:412-413] 变量表取自章节 variable（reader/audio
+        //    链路已合并 book 级变量，章节优先）——空表会使 {{token}} 类变量
+        //    无法展开，是换源后正文错误的内容链根因（R3）
+        let url_vars = chapter_url_variables(chapter.variable.as_deref());
+        let analyze_chapter = legado_parser::AnalyzeUrl::parse(&chapter.url, &url_vars, 1)
+            .map_err(|e| LegadoError::Internal(format!("章节 URL 解析失败: {e}")))?;
         let mut body = self
             .fetch_url(&analyze_chapter, source_headers.as_ref())
             .await?;
@@ -1760,6 +1767,48 @@ fn sniff_source_regex_url(body: &str, source_regex: &str) -> Option<String> {
 }
 
 /// 构建 WebBookEngine（使用真实 HTTP + 规则解析实现）
+/// [T4 | RuleDataInterface/AnalyzeRule.putVariable] 变量表合并：`overlay`
+/// （章节级）同名键覆盖 `base`（书级），对齐原版 getVariable 的
+/// chapter → book 级联优先级。两侧均空/均非 JSON 对象 → None。
+pub(crate) fn merge_variables_json(base: Option<&str>, overlay: Option<&str>) -> Option<String> {
+    let mut map = serde_json::Map::new();
+    for src in [base, overlay] {
+        if let Some(s) = src.map(str::trim).filter(|v| !v.is_empty()) {
+            if let Ok(serde_json::Value::Object(m)) = serde_json::from_str::<serde_json::Value>(s) {
+                for (k, v) in m {
+                    map.insert(k, v);
+                }
+            }
+        }
+    }
+    if map.is_empty() {
+        None
+    } else {
+        Some(serde_json::Value::Object(map).to_string())
+    }
+}
+
+/// [T4 | AnalyzeUrl.kt:412-413] 章节 variable JSON → AnalyzeUrl 变量表
+/// （值统一字符串化；非 JSON 对象容忍为空表）。章节 URL 模板/请求选项中的
+/// `{{key}}` 取自该表，空表会使翻页 token 类变量无法展开。
+pub(crate) fn chapter_url_variables(
+    variable: Option<&str>,
+) -> std::collections::HashMap<String, String> {
+    let mut map = std::collections::HashMap::new();
+    if let Some(s) = variable.map(str::trim).filter(|v| !v.is_empty()) {
+        if let Ok(serde_json::Value::Object(m)) = serde_json::from_str::<serde_json::Value>(s) {
+            for (k, v) in m {
+                let val = match v {
+                    serde_json::Value::String(t) => t,
+                    other => other.to_string(),
+                };
+                map.insert(k, val);
+            }
+        }
+    }
+    map
+}
+
 pub fn build_engine() -> LegadoResult<WebBookEngine<RealBookSourceFetcher>> {
     Ok(WebBookEngine::new(RealBookSourceFetcher::new()?))
 }
@@ -2516,6 +2565,9 @@ pub fn webbook_info(source_json: &str, book_url: &str) -> LegadoResult<String> {
             toc_url: js_info.toc_url.unwrap_or_else(|| book_url.to_string()),
             word_count: js_info.word_count,
             kind: js_info.kind,
+            // JS 源 marshalled 详情暂不携带 variable（marshaller 未透出），
+            // 换源变量以搜索候选与规则源详情导出为准
+            variable: None,
         };
         return serde_json::to_string(&info).map_err(LegadoError::Serialization);
     }
@@ -4100,6 +4152,76 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
         let chapter_json = serde_json::to_string(&WebChapter::new(0, "第一章", "")).unwrap();
         let err = webbook_content(&make_source_json(), &chapter_json).unwrap_err();
         assert!(err.to_string().contains("章节URL不能为空"));
+    }
+
+    // ─── [T3/T4/T5 换源变量链] 单测（2026-09-03）──────────────────────────
+
+    /// T4：章节 variable JSON → AnalyzeUrl 变量表（值字符串化、坏输入容忍）
+    #[test]
+    fn test_chapter_url_variables() {
+        let vars = chapter_url_variables(Some(r#"{"token":"abc","n":3}"#));
+        assert_eq!(vars.get("token").map(String::as_str), Some("abc"));
+        assert_eq!(vars.get("n").map(String::as_str), Some("3"));
+        assert!(chapter_url_variables(Some("not-json")).is_empty());
+        assert!(chapter_url_variables(Some("  ")).is_empty());
+        assert!(chapter_url_variables(None).is_empty());
+    }
+
+    /// T4：变量合并——overlay（章节级）同名键覆盖 base（书级），均空 → None
+    #[test]
+    fn test_merge_variables_json_overlay_wins() {
+        let base = r#"{"a":"1","b":"old"}"#;
+        let overlay = r#"{"b":"new","c":true}"#;
+        let merged = merge_variables_json(Some(base), Some(overlay)).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&merged).unwrap();
+        assert_eq!(v["a"], serde_json::json!("1"));
+        assert_eq!(v["b"], serde_json::json!("new"));
+        assert_eq!(v["c"], serde_json::json!(true));
+        assert_eq!(merge_variables_json(None, None), None);
+        assert_eq!(merge_variables_json(Some("not-json"), None), None);
+        assert_eq!(
+            merge_variables_json(Some(base), None).as_deref(),
+            Some(base)
+        );
+    }
+
+    /// T3：bookInfo 规则求值期间的 @put 级联导出为 WebBookInfo.variable
+    #[test]
+    fn test_parse_book_info_exports_put_variables() {
+        use legado_core::models::rule::BookInfoRule;
+        let source = BookSource {
+            book_source_url: "https://example.com".to_string(),
+            rule_book_info: Some(BookInfoRule {
+                name: Some("class.name".to_string()),
+                intro: Some("class.intro".to_string()),
+                // intro 主规则求值后同元素上的 @put：token ← class.token 文本
+                ..BookInfoRule::default()
+            }),
+            ..BookSource::default()
+        };
+        let body = "<html><body><div class='name'>解析书名</div><div class='intro'>简介</div><div class='token'>abc123</div></body></html>";
+        // @put 挂在 intro 规则上：intro 主规则取文本，put 子规则 class.token
+        // 对同一分析器内容求值（整 body），写入变量表
+        let source = BookSource {
+            rule_book_info: Some(BookInfoRule {
+                name: Some("class.name".to_string()),
+                intro: Some("class.intro@put:{token:class.token}".to_string()),
+                ..BookInfoRule::default()
+            }),
+            ..source
+        };
+        let info = RealBookSourceFetcher::parse_book_info_from_body(
+            &source,
+            body.to_string(),
+            "https://example.com/book/1",
+            "https://example.com/book/1",
+            false,
+            "旧名",
+            "旧作者",
+        );
+        let variable = info.variable.expect("@put 变量应被导出");
+        let v: serde_json::Value = serde_json::from_str(&variable).unwrap();
+        assert_eq!(v["token"], serde_json::json!("abc123"));
     }
 
     // ─── B1-B3 规则路径增强测试 ───────────────────────────────

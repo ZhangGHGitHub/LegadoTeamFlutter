@@ -278,8 +278,12 @@ void main() {
       expect(batch['source_url'], fakeUrl);
       expect(batch['is_last'], true);
       expect(batch['finished_count'], 1);
-      expect((batch['books'] as List), isEmpty, reason: '拒绝端口应无结果');
-      expect(batch['error'], isNotNull, reason: '连接失败应以 error 字段回推批次');
+      expect((batch['books'] as List), isEmpty, reason: '拒连/代理 502 页都应无结果');
+      // [环境差异，两种均为正确行为] 无本地代理（http_proxy 未生效）时请求直连
+      // 127.0.0.1:9 → 连接拒绝 → search_single_source Err → 批次带 error 字段；
+      // 代理生效时请求经代理返回 HTTP 502，按 S0-E 对齐（非 2xx 响应体仍进入
+      // 解析，通常得空列表）→ Ok(空列表) → 批次无 error 字段。故不断言 error
+      // 字段本身，只断言共同不变量：恰好一个批次、正常结束、无结果。
     });
   });
 }

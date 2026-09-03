@@ -203,13 +203,25 @@ pub fn get_audio_chapter_media(
     })?
     .ok_or_else(|| LegadoError::Database(format!("书源不存在: {source_url}")))?;
 
+    // [T4 | RuleDataInterface] 听书链同步内容链变量合并：book.variable ⊕
+    // chapter.variable（章节优先），保证 token/host 类书级变量可达正文请求
+    let book_variable: Option<String> = with_database(|db| {
+        Ok(BookRepository::new(db.connection())
+            .find_by_url(book_url)?
+            .and_then(|b| b.variable))
+    })?;
+    let merged_variable = super::web_book::merge_variables_json(
+        book_variable.as_deref(),
+        chapter.variable.as_deref(),
+    );
+
     let web_chapter = WebChapter {
         index: chapter.index,
         title: chapter.title.clone(),
         url: chapter.url.clone(),
         is_vip: chapter.is_vip,
         is_volume: chapter.is_volume,
-        variable: chapter.variable.clone(),
+        variable: merged_variable,
     };
 
     let engine = super::web_book::build_engine()?;

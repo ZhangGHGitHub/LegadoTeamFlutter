@@ -213,6 +213,8 @@ fn try_load_change_source_from_db(
             respond_time: b.respond_time,
             origin_order: b.origin_order,
             book_score: b.book_score,
+            // [T5] 读库路径：searchBooks 行的搜索期级联变量
+            variable: b.variable,
         })
         .collect();
 
@@ -285,6 +287,28 @@ pub fn switch_book_source(
     switch_book_source_with(&fetcher, book_url, new_source_url, new_book_url)
 }
 
+/// [T5] 变量合并：候选搜索期变量（searchBooks 行）为先，详情页导出变量
+/// 后写入者优先（对齐原版 AnalyzeRule.putVariable 同名键覆盖语义）。
+/// 两侧均空/均非 JSON 对象 → None。
+pub(crate) fn merge_variables(initial: Option<&str>, detail: Option<&str>) -> Option<String> {
+    let mut map = serde_json::Map::new();
+    for (label, src) in [("initial", initial), ("detail", detail)] {
+        let _ = label;
+        if let Some(s) = src.map(str::trim).filter(|v| !v.is_empty()) {
+            if let Ok(serde_json::Value::Object(m)) = serde_json::from_str::<serde_json::Value>(s) {
+                for (k, v) in m {
+                    map.insert(k, v);
+                }
+            }
+        }
+    }
+    if map.is_empty() {
+        None
+    } else {
+        Some(serde_json::Value::Object(map).to_string())
+    }
+}
+
 /// 换源核心（fetcher 注入，便于单测以 Mock 验证 T2 执行链）
 ///
 /// [T2 | ChangeBookSourceViewModel.kt:718-731 getToc] 对齐原版换源执行链：
@@ -331,6 +355,16 @@ fn switch_book_source_with<F: BookSourceFetcher>(
         Ok((book, source))
     })?;
 
+    // [T5] 候选搜索期变量：searchBooks 行按 (new_book_url, origin=new_source_url)
+    // 命中时取 variable（对齐原版 SearchBook.toBook() 复制 variable 进入换源）
+    let candidate_variable: Option<String> = with_database(|db| {
+        let repo = legado_db::SearchBookRepository::new(db.connection());
+        match repo.find_by_book_url(new_book_url)? {
+            Some(row) if row.origin == new_source_url => Ok(row.variable),
+            _ => Ok(None),
+        }
+    })?;
+
     // 2a. [T2] 新源详情解析（canReName=false：保留既有书名/作者，对齐原版
     //     changeSource getBookInfoAwait 门控；cover/intro/kind/lastChapter/
     //     wordCount 在 parse 内按解析值更新，tocUrl 为真实目录页）
@@ -345,6 +379,10 @@ fn switch_book_source_with<F: BookSourceFetcher>(
             source.book_source_name
         ))
     })?;
+
+    // [T5] book.variable = 候选搜索期变量 ⊕ 详情页导出变量（详情页后写入
+    //      者优先，对齐原版覆盖语义）；旧源旧值不再残留（R1 清单项）
+    book.variable = merge_variables(candidate_variable.as_deref(), info.variable.as_deref());
 
     // 2b. [T2] 用解析出的真实 tocUrl 抓取新目录（目录页可与详情页不同，
     //     如「详情页=books/1、目录页=/book/1/chapters」的源）
@@ -540,6 +578,8 @@ async fn search_for_switch(
             respond_time: -1,
             origin_order: source.custom_order,
             book_score: 0,
+            // [T5] 网络路径：元素级解析导出的搜索期级联变量
+            variable: r.variable,
         })
         .collect();
     Ok(candidates)
@@ -1190,6 +1230,18 @@ mod tests {
                 book_source_name: "新源".to_string(),
                 ..BookSource::default()
             })?;
+            // [T5] 搜索期候选行（searchBooks），携带搜索期级联变量
+            legado_db::SearchBookRepository::new(db.connection()).insert(
+                &legado_core::models::SearchBook {
+                    book_url: new_detail.to_string(),
+                    origin: new_source.to_string(),
+                    origin_name: "新源".to_string(),
+                    name: "旧源书名".to_string(),
+                    toc_url: new_detail.to_string(),
+                    variable: Some(r#"{"token":"c456","sid":"s1"}"#.to_string()),
+                    ..Default::default()
+                },
+            )?;
             Ok(())
         })
         .expect("初始数据写入失败");
@@ -1202,6 +1254,8 @@ mod tests {
                 intro: Some("新简介".to_string()),
                 categories: vec![],
                 last_chapter: Some("大结局".to_string()),
+                // [T5] 详情页导出变量（@put 级联）：token 覆盖候选值
+                variable: Some(r#"{"token":"d123"}"#.to_string()),
                 book_url: new_detail.to_string(),
                 toc_url: new_toc.to_string(),
                 word_count: Some("123456".to_string()),
@@ -1234,6 +1288,12 @@ mod tests {
         assert_eq!(book.author, "旧作者");
         assert_eq!(book.origin, new_source);
         assert_eq!(book.latest_chapter_title.as_deref(), Some("大结局"));
+        // [T5] book.variable = 候选变量 ⊕ 详情导出变量（详情页后写入者优先），
+        // 旧源旧值不再残留（R1）
+        let book_var: serde_json::Value =
+            serde_json::from_str(book.variable.as_deref().expect("book.variable 应有值")).unwrap();
+        assert_eq!(book_var["token"], serde_json::json!("d123"));
+        assert_eq!(book_var["sid"], serde_json::json!("s1"));
 
         // T1：章节 variable/is_volume 保留解析值
         with_database(|db| {
@@ -1253,6 +1313,8 @@ mod tests {
         with_database(|db| {
             let _ = BookRepository::new(db.connection()).delete(old_url);
             let _ = BookSourceRepository::new(db.connection()).delete(new_source);
+            let _ = legado_db::SearchBookRepository::new(db.connection())
+                .delete_by_book_url(new_detail);
             Ok(())
         })
         .ok();
