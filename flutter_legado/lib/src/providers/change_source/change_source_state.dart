@@ -26,6 +26,12 @@ class ChangeSourceState with _$ChangeSourceState {
     /// 本轮搜索的书源数量（仅 isLoading 时非 null；体检 U1 等待反馈，
     /// T6 流式 API 落地前暂以「源数量+时长」替代逐源 x/y 进度）
     int? searchingCount,
+
+    /// 已完成书源数（T6 流式：批次 finished_count，搜索中非 null）
+    int? progressFinished,
+
+    /// 参与搜索的书源总数（T6 流式：批次 total_count，权威值来自 Rust）
+    int? progressTotal,
   }) = _ChangeSourceState;
 }
 

@@ -162,6 +162,76 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
     return all;
   }
 
+  /// T6 Mock：模拟逐源完成的渐进推送（对齐 Rust `ChangeSourceBatch` 批次字段；
+  /// `matches` 为累积候选全量快照——与 [searchSource] 同源数据按到达顺序累积）
+  @override
+  Stream<Map<String, dynamic>> searchSourceStream(
+    String bookName,
+    String author, {
+    List<String>? sourceUrls,
+    bool loadInfo = false,
+    bool loadToc = false,
+    bool loadWordCount = false,
+    bool forceRefresh = false,
+  }) async* {
+    // forceRefresh 仅真实后端消费；Mock 忽略
+    // ignore: unused_local_variable
+    final _ = forceRefresh;
+    const srcNames = ['消消乐听书', '笔趣阁', '起点中文网'];
+    const srcUrls = [
+      'https://www.kaixin7days.com',
+      'https://www.biquge.com.cn',
+      'https://www.qidian.com',
+    ];
+    // 与 searchSource 同源的候选全集（snake_case，score 降序）
+    final all = List.generate(
+      3,
+      (i) => {
+        'source_url': srcUrls[i],
+        'source_name': srcNames[i],
+        'book_url': 'mock://switch/$bookName/$i',
+        'book_name': bookName,
+        'author': author,
+        'latest_chapter': '最新章节${i + 1}',
+        'word_count': '${100 + i * 50}万字',
+        'score': 90.0 - i * 10,
+      },
+    );
+    // sourceUrls 过滤语义（与 searchSource 一致）
+    final pool = (sourceUrls != null && sourceUrls.isNotEmpty)
+        ? all.where((m) => sourceUrls.contains(m['source_url'])).toList()
+        : all;
+    if (pool.isEmpty) {
+      yield {
+        'source_index': 0,
+        'source_url': '',
+        'source_name': '',
+        'error': null,
+        'finished_count': 0,
+        'total_count': 0,
+        'is_last': true,
+        'matches': <Map<String, dynamic>>[],
+      };
+      return;
+    }
+    // 模拟逐源完成：每轮追加一个候选（累积快照），末批 is_last
+    var accumulated = <Map<String, dynamic>>[];
+    for (var i = 0; i < pool.length; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 120));
+      accumulated = [...accumulated, pool[i]];
+      yield {
+        'source_index': i,
+        'source_url': pool[i]['source_url'],
+        'source_name': pool[i]['source_name'],
+        'error': null,
+        'finished_count': i + 1,
+        'total_count': pool.length,
+        'is_last': i == pool.length - 1,
+        'matches': accumulated,
+      };
+    }
+  }
+
   @override
   Future<List<Map<String, dynamic>>> searchCover(String bookName) async {
     // 模拟网络延迟

@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-09-03 | **换源搜索流式化 FFI 冻结**（换源修复任务书批次 3 / T6，加法式）：`searchSourceStream`（§2.4 换源搜索流：Rust 侧 `ffi::source_switch_search_stream(book_name, author, source_urls_json, options_json, sink: StreamSink<String>)`，逐源完成即推一批次——进度 `finished_count`/`total_count` + 当前已过滤评分排序候选全量快照 `matches[]`；DB 复用路径单批推送；enrich 流内后置不阻塞首批到达）。旧 `searchSource` 保留兼容。§2.4 方法数 16→**17**，附录合计 268→**269**，BookApi 口径 265→**266** |
 | 2026-09-03 | **换源执行链与变量链对齐**（换源修复任务书 T2/T3/T4/T5，加法式）：`searchSource` 返回 `matches[]` 项新增可选 `variable`（搜索期级联变量，对齐 SearchBook.toBook 复制语义）；`webbookInfo` 返回 JSON 新增可选 `variable`（bookInfo 规则求值 `@put`/`putVariable` 级联导出，无专用规则字段）；搜索结果项与 `searchBooks` 持久化启用 `variable` 透传（元素级导出）；`switchSource` 签名不变、行为对齐原版 getToc（详情解析→真实 tocUrl 取目录→失败即失败保留旧源；book.variable=候选与详情页变量合并、详情页优先；章节落库保留 variable/isVolume）。§2.4/§2.17 方法数不变 |
 | 2026-08-29 | **热力图每日时长聚合契约**（U 侧 UI_MD3_PLAN 登记）：加法式——`readRecordDailyList(int year)`（§2.12 阅读记录组，返回 `[{date, seconds}]` 日期升序）；`putReadRecord` 写路径增量累加当日 readRecordDaily（新 readRecordDaily 表：date TEXT PK + durationSeconds，增量 > 0 入账，本地时区）。§2.12 方法数 5→**6**，附录合计 267→**268**，BookApi 口径 264→**265** |
 | 2026-08-25 | **P3-5 换源页 parity**：加法式——`updateSearchBookScore` / `deleteSearchBook`（§2.4 搜索组，对标原版 SourceConfig 书维度评分与换源长按删除）；`searchSource` 返回 `matches[]` 项新增 `book_score`（-1/0/1）。§2.4 方法数 14→**16**，附录合计 265→**267**，BookApi 口径 262→**264** |
@@ -128,7 +129,7 @@
 ## 2. 方法清单
 
 > 共 **41 个方法模块**（§2.1–§2.43，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
-> BookApi 接口当前共 **265 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
+> BookApi 接口当前共 **266 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
 > 附录 §2.1–§2.43 行合计 **268** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
@@ -198,7 +199,7 @@
 >
 > ℹ️ **BackstageWebView DOM 通道（SOURCE_DIFF P1）**：Rust 侧 `ffi::webview_request_stream / webview_submit / webview_cancel / webview_pending`（核心 `legado-core/src/webview_channel.rs`）。Flutter `WebViewBridgeListener` 订阅后，`@webjs` / 正文 `contentRule.webJs` / `java.webView*` 经真实 WebView 执行并回传；无订阅者时回退无头 QuickJS 或历史桥接载荷（`interceptResult`）。默认超时 60s，规则级 Mode.WebJs 10s。**Android**：`PlatformBridgeService`→原生 `legado/webview.backstageEval`：`cacheFirst`→`WebSettings.LOAD_CACHE_ELSE_NETWORK`；`isRule`+html 时注入 `java`/`source`/`cache` JavascriptInterface（变量读写与精简同步 API；ajax 等网络类仍建议无头宿主）。非 Android 回退 `webview_flutter`（无 cacheMode）。加法式新增。
 
-### 2.4 搜索操作（16 个方法）
+### 2.4 搜索操作（17 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -210,6 +211,7 @@
 | `pauseSearch()` | 无 | `Future<void>` | 暂停流式搜索（软挂起：未派发书源挂起、已派发任务继续完成；状态/进度保留，可 resume。G-B-04，对齐原版 workingState 门控语义 SearchModel.kt L45/L98/L227-233） |
 | `resumeSearch()` | 无 | `Future<void>` | 恢复已暂停的流式搜索（G-B-04） |
 | `searchSource(String bookName, String author, {List<String>? sourceUrls, bool loadInfo = false, bool loadToc = false, bool loadWordCount = false, bool forceRefresh = false})` | bookName, author, sourceUrls(可选), loadInfo, loadToc, loadWordCount, forceRefresh | `Future<List<Map<String, dynamic>>>` | 搜索可替换的书源 ⚠️ 双兼容点（留项#12/Task #131：`sourceUrls` 为加法式新增可选参数，null/空=搜全部启用源；`forceRefresh` 默认 false 优先复用 searchBooks） |
+| `searchSourceStream(String bookName, String author, {List<String>? sourceUrls, bool loadInfo = false, bool loadToc = false, bool loadWordCount = false, bool forceRefresh = false})` | bookName, author, sourceUrls(可选), loadInfo, loadToc, loadWordCount, forceRefresh | `Stream<Map<String, dynamic>>` | 换源搜索流式（Task #156 / T6）：逐源完成即推一批次事件，首批候选 <5s 到达（500+ 源规模验收线）；批次事件含 `source_index` / `source_url` / `source_name` / `error?` / `finished_count` / `total_count` / `is_last` / `matches[]`（`matches` = 当前已过滤评分排序候选**全量快照**，Rust 侧维持过滤/排序、UI 仅替换展示）；DB 复用路径（forceRefresh=false 且库有数据）推单批即结束；enrich 开启时搜索阶段结束后再推一批 enriched+重排快照（不阻塞首批到达）。旧 `searchSource` 保留兼容 |
 | `searchCover(String bookName)` | bookName | `Future<List<Map<String, dynamic>>>` | 搜索书籍封面候选列表：复用多书源搜索提取封面 URL，每项字段 `url` / `width` / `height`（未知尺寸填 0），无候选返回空列表 |
 | `switchSource(String bookUrl, String newSourceUrl, String newBookUrl)` | bookUrl, newSourceUrl, newBookUrl | `Future<String>` | 切换书源 |
 | `updateSearchBookScore(String bookUrl, int score)` | bookUrl, score（-1/0/1） | `Future<void>` | 更新换源列表项用户评分（对标原版 `SourceConfig.setBookScore`，持久化 `searchBooks.bookScore` 并同步书源聚合分） |
@@ -234,6 +236,8 @@
 > ℹ️ `searchSource` 换源高级选项（审计 F2-2，**加法式新增**）：Rust 侧 `ffi::source_switch_search` 第四参 `options_json` 为 JSON 对象 `{loadInfo,loadToc,loadWordCount}`；Dart `searchSource` 三命名参数编码传入。空串/缺省时 Rust 回退读取 config `changeSourceLoadInfo`/`changeSourceLoadToc`/`changeSourceLoadWordCount`（键名对齐原版 AppConfig）。`loadInfo` 触发详情页补全；`loadToc`/`loadWordCount` 触发目录抓取；`loadWordCount` 另试读末章正文计字数并按原版 `wordCountComparator` 排序。返回 `matches[]` 项新增可选字段 `chapter_word_count_text` / `chapter_word_count` / `respond_time` / `origin_order` / `book_score`（snake_case，用户评分 -1/0/1，对标原版 SearchBook.bookScore）。
 
 > ℹ️ `searchSource` 复用搜索缓存（**加法式**，`forceRefresh`）：对齐原版 `ChangeBookSourceViewModel` 先 `getDbSearchBooks` 再条件 `startSearch`。搜索流式/一次性结果写入 `searchBooks` 表；换源默认读库复用（`forceRefresh=false`），「刷新列表」等传 `forceRefresh=true` 才强制全量网络重搜。Dart `searchSource` / 换源页进入默认不二次搜索。
+>
+> ℹ️ **换源搜索流式化（Task #156 / T6，加法式）**：Rust 侧 `ffi::source_switch_search_stream(book_name, author, source_urls_json, options_json, sink: StreamSink<String>)`（frb 生成 Dart `Stream<String>`），驱动复用 `search::drive_source_batches`（并发 32、单源超时 60s、逐源隔离，与主搜索同构）。每完成一个书源推送一个 `ChangeSourceBatch` JSON：`source_index` / `source_url` / `source_name` / `error?` / `finished_count` / `total_count` / `is_last` / `matches[]`——**`matches` 为当前累积候选经同名过滤（+可选作者校验）与评分排序后的全量快照**（逐源增量过滤 ≡ 批量过滤，元素级判定），Rust 侧维持过滤/排序职责、UI 仅按批替换展示。单源错误以 `error` 字段随该批次推送（不中断流）；全部完成后：① `options.needs_enrichment()` 时**流内后置 enrich**——对累积候选补详情/目录后推最后一批 enriched+重排快照（首批到达不受阻塞，对齐任务书「enrich 改流内后置或仅对展示项懒加载」）；② `persist_switch_matches` 落库最终排序结果。DB 复用路径（forceRefresh=false 且 searchBooks 有数据）：读库评分排序后推**单批**（`finished_count=total_count=1`、`is_last=true`）即结束，不发起网络搜索；forceRefresh=true 先清库再全量重搜。旧 `searchSource`（一次性）保留兼容，两 API 共享同一执行链与落库语义。
 >
 > ℹ️ `searchMultiStream`：Rust 侧 `ffi::search_multi_stream(query, source_urls_json, page, sink: StreamSink<String>)`（frb 生成 Dart `Stream<String>`），每完成一个书源推送一个 `SearchSourceBatch` JSON：`source_index` / `source_url` / `source_name` / `books[]` / `error?` / `finished_count` / `total_count` / `is_last` / `has_more`（累积值：任一已推送批次非空即 true，对齐原版 SearchModel `hasMore = hasMore || items.isNotEmpty()` 语义）。**批次B breaking 变更**（双轨评审记录：本重构 Rust/Flutter 两轨均归我方所有 + 用户已批准批次B范围）：签名新增 `page: i32` 入参——页码透传至 `build_search_url_with_setup` 第三参及 JS 书源 `orch.search`（原硬编码 page=1），Dart 侧同关键词翻页传 `searchPage++`、新关键词重置为 1。加法式新增：`pauseSearch()` / `resumeSearch()`——Rust 侧 `SEARCH_PAUSED` 门控位于单源派发前（信号量 permit 后、search_one 前；已派发任务继续完成、未派发书源挂起，状态/进度全部保留），新搜索开始时自动解除暂停。冻结契约 `searchMulti` / `cancelSearch` 保持不变。
 >
@@ -851,7 +855,7 @@
 | 1 | 初始化/版本 | 2 |
 | 2 | 书架操作 | 10 |
 | 3 | 书源操作 | 32 |
-| 4 | 搜索操作 | 16 |
+| 4 | 搜索操作 | 17 |
 | 5 | RSS 源操作 | 11 |
 | 6 | 本地书籍操作 | 4 |
 | 7 | 书签操作 | 7 |
@@ -889,11 +893,11 @@
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 5 |
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 8 |
-| | **合计（§2.1–§2.43 附录行合计）** | **268** |
+| | **合计（§2.1–§2.43 附录行合计）** | **269** |
 
 > 口径说明（2026-08-15，`test/unit/api_contract_test.dart` 程序化计数校准，取代人工统计）：
-> - 附录行合计 **268** = §2.x 实际方法行总数；其中与 BookApi 同名 254、§1.7 命名等价对的 FFI 登记名 8
+> - 附录行合计 **269** = §2.x 实际方法行总数；其中与 BookApi 同名 255、§1.7 命名等价对的 FFI 登记名 8
 >   （对应 7 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
 >   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
-> - BookApi 代码计数 **265** = 254 同名行 + 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
+> - BookApi 代码计数 **266** = 255 同名行 + 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。

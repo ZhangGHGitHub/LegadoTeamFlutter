@@ -1009,6 +1009,30 @@ pub mod ffi {
         to_json(&resp)
     }
 
+    /// 换源搜索流式（T6 / 契约 §2.4 `searchSourceStream`）
+    ///
+    /// 每完成一个书源推送一批次事件（JSON 字符串）：`matches` = 当前已过滤评分候选
+    /// **全量快照**，进度由 finished_count/total_count 承载；DB 复用路径推单批即结束；
+    /// enrich 开启时搜索阶段结束后再推一批 enriched+重排快照（不阻塞首批到达）。
+    /// 旧 [`source_switch_search`] 保留兼容（共享执行链）。
+    pub async fn source_switch_search_stream(
+        book_name: String,
+        author: String,
+        source_urls_json: String,
+        options_json: String,
+        sink: StreamSink<String>,
+    ) -> Result<(), BridgeError> {
+        crate::api::source_switch::run_change_source_stream(
+            book_name,
+            author,
+            source_urls_json,
+            options_json,
+            |batch| sink.add(batch).map_err(|e| e.to_string()),
+        )
+        .await;
+        Ok(())
+    }
+
     /// 切换到新书源（返回更新后的书籍 JSON）
     ///
     /// `book_url` — 当前书籍的 bookUrl

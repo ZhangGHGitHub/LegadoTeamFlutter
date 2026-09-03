@@ -649,13 +649,16 @@ pub async fn run_multi_stream<F>(
 }
 
 /// 单源搜索完成结果（驱动器回调载荷）
-pub(crate) struct SourceBatchOutcome {
+///
+/// `T` — 单源搜索输出元素类型：search.rs 用 `SearchResult`；换源流式驱动器
+/// （source_switch.rs T6）复用同一派发/超时/取消门控机制，以 `SearchCandidate` 为元素。
+pub(crate) struct SourceBatchOutcome<T> {
     /// 书源在请求列表中的索引
     pub index: usize,
     pub source_url: String,
     pub source_name: String,
     /// 该源搜索结果（失败/超时/panic 均为 Err，不阻断其他源）
-    pub result: LegadoResult<Vec<SearchResult>>,
+    pub result: LegadoResult<Vec<T>>,
     pub finished_count: usize,
     pub total_count: usize,
     pub is_last: bool,
@@ -683,7 +686,7 @@ async fn wait_cancelled(cancel: &Arc<AtomicBool>) {
     }
 }
 
-pub(crate) async fn drive_source_batches<F, Fut, G>(
+pub(crate) async fn drive_source_batches<F, Fut, T, G>(
     sources: Vec<BookSource>,
     concurrency: usize,
     per_source_timeout: Duration,
@@ -693,8 +696,9 @@ pub(crate) async fn drive_source_batches<F, Fut, G>(
     mut on_source: G,
 ) where
     F: Fn(BookSource) -> Fut + Send + Sync + 'static,
-    Fut: std::future::Future<Output = LegadoResult<Vec<SearchResult>>> + Send + 'static,
-    G: FnMut(SourceBatchOutcome) -> Result<(), String>,
+    Fut: std::future::Future<Output = LegadoResult<Vec<T>>> + Send + 'static,
+    T: Send + 'static,
+    G: FnMut(SourceBatchOutcome<T>) -> Result<(), String>,
 {
     use futures::FutureExt;
     use std::panic::AssertUnwindSafe;
@@ -1636,6 +1640,8 @@ mod p0_2_s2_tests {
 #[cfg(test)]
 mod s0e_tests {
     use super::*;
+    // 仅 quickjs 门控测试使用（默认 cargo test 无该 feature，不门控会报未使用导入）
+    #[cfg(feature = "quickjs")]
     use crate::api::web_book::RealBookSourceFetcher;
     use legado_core::models::rule::{BookInfoRule, SearchRule};
 
@@ -2474,7 +2480,7 @@ mod tests {
                 &sa.cancel,
                 &sa.paused,
                 search_one_a,
-                |_o| {
+                |_o: SourceBatchOutcome<SearchResult>| {
                     a_delivered_c.fetch_add(1, Ordering::SeqCst);
                     Ok(())
                 },
@@ -2525,7 +2531,8 @@ mod tests {
                 &session_b.cancel,
                 &session_b.paused,
                 search_one_b,
-                |_o| Ok(()),
+                // T 由 on_source 闭包标注固定（泛型驱动器推断需要）
+                |_o: SourceBatchOutcome<SearchResult>| Ok(()),
             )
             .await;
         });
@@ -2593,7 +2600,7 @@ mod tests {
                 &sc.cancel,
                 &sc.paused,
                 search_one,
-                |_o| {
+                |_o: SourceBatchOutcome<SearchResult>| {
                     delivered_c.fetch_add(1, Ordering::SeqCst);
                     Ok(())
                 },
@@ -2662,7 +2669,7 @@ mod tests {
             &cancel,
             &paused,
             search_one,
-            move |_o| {
+            move |_o: SourceBatchOutcome<SearchResult>| {
                 delivered_c.fetch_add(1, Ordering::SeqCst);
                 Err("sink 已关闭".into()) // 第 1 个批次交付后立即 sink 关闭
             },
@@ -3196,7 +3203,7 @@ mod tests {
                 .await
                 .map_err(|e| LegadoError::Internal(e.to_string()))?
             },
-            |outcome| {
+            |outcome: SourceBatchOutcome<SearchResult>| {
                 batch_errors.push(outcome.result.is_err());
                 Ok(())
             },

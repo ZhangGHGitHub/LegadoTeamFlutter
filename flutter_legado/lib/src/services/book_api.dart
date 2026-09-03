@@ -291,6 +291,22 @@ abstract class BookApi {
     bool forceRefresh = false,
   });
 
+  /// 换源搜索流式版（T6 / 契约 §2.4 `searchSourceStream`）
+  ///
+  /// 每完成一个书源推送一批次 Map，字段：`source_index` / `source_url` /
+  /// `source_name` / `error`(String?) / `finished_count` / `total_count` /
+  /// `is_last` / `matches`（当前已过滤评分候选全量快照）。
+  /// DB 复用推单批即结束；enrich 开启时末批为增强后重排快照。
+  Stream<Map<String, dynamic>> searchSourceStream(
+    String bookName,
+    String author, {
+    List<String>? sourceUrls,
+    bool loadInfo = false,
+    bool loadToc = false,
+    bool loadWordCount = false,
+    bool forceRefresh = false,
+  });
+
   /// 搜索书籍封面候选列表
   ///
   /// 按书名搜索网络封面候选（API_CONTRACT.md §3 需求 3，用于 `change_cover_screen`）。

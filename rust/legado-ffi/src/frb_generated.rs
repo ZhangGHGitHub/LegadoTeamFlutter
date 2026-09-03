@@ -37,7 +37,7 @@ flutter_rust_bridge::frb_generated_boilerplate!(
     default_rust_auto_opaque = RustAutoOpaqueMoi,
 );
 pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_VERSION: &str = "2.11.1";
-pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = 1958057933;
+pub(crate) const FLUTTER_RUST_BRIDGE_CODEGEN_CONTENT_HASH: i32 = -2007339931;
 
 // Section: executor
 
@@ -7698,6 +7698,56 @@ fn wire__crate__ffi__ffi__source_switch_search_impl(
         },
     )
 }
+fn wire__crate__ffi__ffi__source_switch_search_stream_impl(
+    port_: flutter_rust_bridge::for_generated::MessagePort,
+    ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
+    rust_vec_len_: i32,
+    data_len_: i32,
+) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
+        flutter_rust_bridge::for_generated::TaskInfo {
+            debug_name: "source_switch_search_stream",
+            port: Some(port_),
+            mode: flutter_rust_bridge::for_generated::FfiCallMode::Normal,
+        },
+        move || {
+            let message = unsafe {
+                flutter_rust_bridge::for_generated::Dart2RustMessageSse::from_wire(
+                    ptr_,
+                    rust_vec_len_,
+                    data_len_,
+                )
+            };
+            let mut deserializer =
+                flutter_rust_bridge::for_generated::SseDeserializer::new(message);
+            let api_book_name = <String>::sse_decode(&mut deserializer);
+            let api_author = <String>::sse_decode(&mut deserializer);
+            let api_source_urls_json = <String>::sse_decode(&mut deserializer);
+            let api_options_json = <String>::sse_decode(&mut deserializer);
+            let api_sink =
+                <StreamSink<String, flutter_rust_bridge::for_generated::SseCodec>>::sse_decode(
+                    &mut deserializer,
+                );
+            deserializer.end();
+            move |context| async move {
+                transform_result_sse::<_, crate::ffi::BridgeError>(
+                    (move || async move {
+                        let output_ok = crate::ffi::ffi::source_switch_search_stream(
+                            api_book_name,
+                            api_author,
+                            api_source_urls_json,
+                            api_options_json,
+                            api_sink,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
+            }
+        },
+    )
+}
 fn wire__crate__ffi__ffi__source_update_impl(
     port_: flutter_rust_bridge::for_generated::MessagePort,
     ptr_: flutter_rust_bridge::for_generated::PlatformGeneralizedUint8ListPtr,
@@ -9204,43 +9254,49 @@ fn pde_ffi_dispatcher_primary_impl(
         220 => wire__crate__ffi__ffi__source_put_login_info_impl(port, ptr, rust_vec_len, data_len),
         221 => wire__crate__ffi__ffi__source_switch_apply_impl(port, ptr, rust_vec_len, data_len),
         222 => wire__crate__ffi__ffi__source_switch_search_impl(port, ptr, rust_vec_len, data_len),
-        223 => wire__crate__ffi__ffi__source_update_impl(port, ptr, rust_vec_len, data_len),
-        224 => wire__crate__ffi__ffi__tts_set_cache_dir_impl(port, ptr, rust_vec_len, data_len),
-        225 => wire__crate__ffi__ffi__tts_speak_impl(port, ptr, rust_vec_len, data_len),
-        226 => wire__crate__ffi__ffi__txt_search_impl(port, ptr, rust_vec_len, data_len),
-        227 => wire__crate__ffi__ffi__txt_search_count_impl(port, ptr, rust_vec_len, data_len),
-        228 => wire__crate__ffi__ffi__txt_search_in_chapter_impl(port, ptr, rust_vec_len, data_len),
-        229 => wire__crate__ffi__ffi__txt_search_regex_impl(port, ptr, rust_vec_len, data_len),
-        230 => {
-            wire__crate__ffi__ffi__update_search_book_score_impl(port, ptr, rust_vec_len, data_len)
-        }
-        231 => wire__crate__ffi__ffi__verification_cancel_impl(port, ptr, rust_vec_len, data_len),
-        232 => wire__crate__ffi__ffi__verification_pending_impl(port, ptr, rust_vec_len, data_len),
-        233 => wire__crate__ffi__ffi__verification_request_stream_impl(
+        223 => wire__crate__ffi__ffi__source_switch_search_stream_impl(
             port,
             ptr,
             rust_vec_len,
             data_len,
         ),
-        234 => wire__crate__ffi__ffi__verification_submit_impl(port, ptr, rust_vec_len, data_len),
-        235 => wire__crate__ffi__ffi__version_impl(port, ptr, rust_vec_len, data_len),
-        236 => wire__crate__ffi__ffi__webbook_chapters_impl(port, ptr, rust_vec_len, data_len),
-        237 => wire__crate__ffi__ffi__webbook_content_impl(port, ptr, rust_vec_len, data_len),
-        238 => wire__crate__ffi__ffi__webbook_info_impl(port, ptr, rust_vec_len, data_len),
-        239 => wire__crate__ffi__ffi__webbook_search_impl(port, ptr, rust_vec_len, data_len),
-        240 => wire__crate__ffi__ffi__webdav_delete_impl(port, ptr, rust_vec_len, data_len),
-        241 => wire__crate__ffi__ffi__webdav_download_impl(port, ptr, rust_vec_len, data_len),
-        242 => wire__crate__ffi__ffi__webdav_download_file_impl(port, ptr, rust_vec_len, data_len),
-        243 => wire__crate__ffi__ffi__webdav_full_sync_impl(port, ptr, rust_vec_len, data_len),
-        244 => wire__crate__ffi__ffi__webdav_list_dir_impl(port, ptr, rust_vec_len, data_len),
-        245 => wire__crate__ffi__ffi__webdav_upload_impl(port, ptr, rust_vec_len, data_len),
-        246 => wire__crate__ffi__ffi__webdav_upload_file_impl(port, ptr, rust_vec_len, data_len),
-        247 => wire__crate__ffi__ffi__webview_cancel_impl(port, ptr, rust_vec_len, data_len),
-        248 => wire__crate__ffi__ffi__webview_pending_impl(port, ptr, rust_vec_len, data_len),
-        249 => {
+        224 => wire__crate__ffi__ffi__source_update_impl(port, ptr, rust_vec_len, data_len),
+        225 => wire__crate__ffi__ffi__tts_set_cache_dir_impl(port, ptr, rust_vec_len, data_len),
+        226 => wire__crate__ffi__ffi__tts_speak_impl(port, ptr, rust_vec_len, data_len),
+        227 => wire__crate__ffi__ffi__txt_search_impl(port, ptr, rust_vec_len, data_len),
+        228 => wire__crate__ffi__ffi__txt_search_count_impl(port, ptr, rust_vec_len, data_len),
+        229 => wire__crate__ffi__ffi__txt_search_in_chapter_impl(port, ptr, rust_vec_len, data_len),
+        230 => wire__crate__ffi__ffi__txt_search_regex_impl(port, ptr, rust_vec_len, data_len),
+        231 => {
+            wire__crate__ffi__ffi__update_search_book_score_impl(port, ptr, rust_vec_len, data_len)
+        }
+        232 => wire__crate__ffi__ffi__verification_cancel_impl(port, ptr, rust_vec_len, data_len),
+        233 => wire__crate__ffi__ffi__verification_pending_impl(port, ptr, rust_vec_len, data_len),
+        234 => wire__crate__ffi__ffi__verification_request_stream_impl(
+            port,
+            ptr,
+            rust_vec_len,
+            data_len,
+        ),
+        235 => wire__crate__ffi__ffi__verification_submit_impl(port, ptr, rust_vec_len, data_len),
+        236 => wire__crate__ffi__ffi__version_impl(port, ptr, rust_vec_len, data_len),
+        237 => wire__crate__ffi__ffi__webbook_chapters_impl(port, ptr, rust_vec_len, data_len),
+        238 => wire__crate__ffi__ffi__webbook_content_impl(port, ptr, rust_vec_len, data_len),
+        239 => wire__crate__ffi__ffi__webbook_info_impl(port, ptr, rust_vec_len, data_len),
+        240 => wire__crate__ffi__ffi__webbook_search_impl(port, ptr, rust_vec_len, data_len),
+        241 => wire__crate__ffi__ffi__webdav_delete_impl(port, ptr, rust_vec_len, data_len),
+        242 => wire__crate__ffi__ffi__webdav_download_impl(port, ptr, rust_vec_len, data_len),
+        243 => wire__crate__ffi__ffi__webdav_download_file_impl(port, ptr, rust_vec_len, data_len),
+        244 => wire__crate__ffi__ffi__webdav_full_sync_impl(port, ptr, rust_vec_len, data_len),
+        245 => wire__crate__ffi__ffi__webdav_list_dir_impl(port, ptr, rust_vec_len, data_len),
+        246 => wire__crate__ffi__ffi__webdav_upload_impl(port, ptr, rust_vec_len, data_len),
+        247 => wire__crate__ffi__ffi__webdav_upload_file_impl(port, ptr, rust_vec_len, data_len),
+        248 => wire__crate__ffi__ffi__webview_cancel_impl(port, ptr, rust_vec_len, data_len),
+        249 => wire__crate__ffi__ffi__webview_pending_impl(port, ptr, rust_vec_len, data_len),
+        250 => {
             wire__crate__ffi__ffi__webview_request_stream_impl(port, ptr, rust_vec_len, data_len)
         }
-        250 => wire__crate__ffi__ffi__webview_submit_impl(port, ptr, rust_vec_len, data_len),
+        251 => wire__crate__ffi__ffi__webview_submit_impl(port, ptr, rust_vec_len, data_len),
         _ => unreachable!(),
     }
 }

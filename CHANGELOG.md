@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.154] - 2026-09-04
+
+### Added
+- [Rust+UI] 【换源任务书·批次 3 T6】换源搜索流式化交付（任务书唯一 ⏸ 项收口）：Rust 新增 `run_change_source_stream`（每完成一源推一批次：候选全量快照 + finished_count/total_count 进度 + 单源 error 不中断流；DB 复用路径单批即结束；enrich 开启时流内后置增强不阻塞首批）+ `drive_source_batches` 泛型化复用；FFI 经 StreamSink 绑定（`searchSourceStream`，契约 §2.4）+ FRB 重生成；Dart 新增 BookApi.searchSourceStream 服务层 + ChangeSourceNotifier 逐批替换展示（x/y 进度驱动）+ 换源页面逐源渐显与「已找到 N 个匹配书源（x/y 源完成），搜索中…」进度文案（U1 过渡反馈的永久替代，对齐原版 _changeSourceProgress）。5556 实测 1024 源规模首候选 ≤2s（<5s 验收标准）、x/y 准确（y=1024）、渐显 13→151
+- [UI] 换源页首次自动搜索等待高级选项加载完成（对齐原版搜索前同步读 AppConfig）：此前 `_loadAdvancedOptions` 与首轮 `_search` 竞态，首轮用未恢复的默认开关值；现 initState 持有加载 Future，首轮搜索内部 await 后再执行
+
+### Test
+- cargo test --workspace 全绿 / flutter analyze 无问题；flutter test 1313 全过（含 change_source 单元/widget 23 项；4 个 mocktail 桩按 T6 签名补齐 named 参数）
+- 两级冒烟：5556 PASSED；5558 -SkipBuild PASSED
+- 版本 2.0.154+155
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.153] - 2026-09-03
 
 ### Fixed

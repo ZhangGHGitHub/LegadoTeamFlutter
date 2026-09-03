@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -13,22 +14,29 @@ export 'change_source_state.dart';
 /// 换源页 Riverpod Notifier
 ///
 /// 职责严格限定（对齐 UI_RESTRUCTURE_PLAN.md §0.2 铁律）：
-/// - 调用 BookApi.searchSource → 接收 Rust 已评分排序的候选列表 → 更新 immutable State
+/// - 调用 BookApi.searchSourceStream → 逐批接收 Rust 已评分排序的候选快照 → 更新 immutable State
 /// - 调用 BookApi.switchSource 完成书源切换并回写 Rust
 /// - 管理 UI 状态（loading/error/results/applying 四态）
 /// - 禁止包含匹配/评分/排序逻辑（由 Rust SourceMatcher 完成）
 class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
+  /// 搜索序列号：仅最新一轮的批次允许更新状态（seq guard，与
+  /// SearchNotifier._searchSeq 同构；旧流丢弃即触发 Rust 侧 sink 关闭取消）
+  int _searchSeq = 0;
+
   @override
   ChangeSourceState build() => const ChangeSourceState();
 
-  /// 搜索可替换书源
+  /// 搜索可替换书源（T6 流式：逐源渐进渲染）
   ///
-  /// Rust 返回已按评分降序的候选列表，Dart 侧仅做反序列化，不重排。
+  /// 消费 [BookApi.searchSourceStream] 的逐源批次：每批 `matches` 为当前已
+  /// 过滤评分候选的**全量快照**，直接替换展示；`finished_count`/`total_count`
+  /// 驱动 x/y 进度文案。单源失败仅 AppLog 留痕（对齐 SearchNotifier），
+  /// 末批错误且无结果时才置 error 态。
   ///
-  /// [UI-fix v2.0.3 | 2026-08-06] 留项#12（Task #131）：新增 [group] 参数，
-  /// 非空时用 getEnabledBookSources() 内存过滤出该分组源 URL 列表传给
-  /// searchSource（对齐原版 AppConfig.searchGroup 分组搜索）；
-  /// 分组下无启用源时直接返回空结果，不误搜全部 — Qoder
+  /// [UI-fix v2.0.3 | 2026-08-06] 留项#12（Task #131）：[group] 参数非空时
+  /// 用 getEnabledBookSources() 内存过滤出该分组源 URL 列表传给流式搜索
+  /// （对齐原版 AppConfig.searchGroup 分组搜索）；分组下无启用源时直接
+  /// 返回空结果，不误搜全部 — Qoder
   Future<void> search(
     String bookName,
     String author, {
@@ -39,7 +47,14 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
     bool forceRefresh = false,
   }) async {
     if (state.isLoading) return;
-    state = state.copyWith(isLoading: true, error: null, searchingCount: null);
+    final seq = ++_searchSeq;
+    state = state.copyWith(
+      isLoading: true,
+      error: null,
+      searchingCount: null,
+      progressFinished: null,
+      progressTotal: null,
+    );
     try {
       List<String>? sourceUrls;
       if (group.isNotEmpty) {
@@ -67,8 +82,9 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
           return;
         }
       }
-      // 体检 U1：Rust 换源搜索为一次性阻塞调用（T6 流式 API 落地前无逐源
-      // 进度），先取得本轮参与搜索的源数量供 UI 展示等待反馈
+      if (seq != _searchSeq) return;
+      // 先取得本轮参与搜索的源数量供 UI 展示等待反馈（T6：进度 x/y 的 y
+      // 权威值改由批次 total_count 提供，此计数仅作流启动前的占位）
       var searchingCount = sourceUrls?.length ?? 0;
       if (sourceUrls == null) {
         try {
@@ -79,36 +95,60 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
         }
       }
       state = state.copyWith(searchingCount: searchingCount);
-      final api = ref.read(bookApiProvider);
-      final raw = sourceUrls == null
-          ? await api.searchSource(
-              bookName,
-              author,
-              loadInfo: loadInfo,
-              loadToc: loadToc,
-              loadWordCount: loadWordCount,
-              forceRefresh: forceRefresh,
-            )
-          : await api.searchSource(
-              bookName,
-              author,
-              sourceUrls: sourceUrls,
-              loadInfo: loadInfo,
-              loadToc: loadToc,
-              loadWordCount: loadWordCount,
-              forceRefresh: forceRefresh,
-            );
-      final matches = raw.map(SourceMatch.fromJson).toList();
+
+      // T6：逐源流式消费——每批快照直接替换展示，不重排（评分排序由 Rust
+      // SourceMatcher + rank_candidates_with_options 完成）
+      String? terminalError;
+      await for (final batch in ref.read(bookApiProvider).searchSourceStream(
+            bookName,
+            author,
+            sourceUrls: sourceUrls,
+            loadInfo: loadInfo,
+            loadToc: loadToc,
+            loadWordCount: loadWordCount,
+            forceRefresh: forceRefresh,
+          )) {
+        if (seq != _searchSeq) return;
+        final batchError = batch['error'] as String?;
+        if (batchError != null && batchError.isNotEmpty) {
+          // 单源失败静默不弹 UI、仅 AppLog 留痕（对齐 SearchNotifier 批次
+          // error 处理）；末批错误记为终态错误，无结果时展示
+          unawaited(ref.read(bookApiProvider).appLogPush(
+                level: 'message',
+                message:
+                    '换源搜索出错\n${(batch['source_name'] as String?) ?? '未知书源'}: $batchError',
+              ).catchError((_) {}));
+          if (batch['is_last'] == true) terminalError = batchError;
+        }
+        final matches = ((batch['matches'] as List<dynamic>?) ?? const [])
+            .whereType<Map<String, dynamic>>()
+            .map(SourceMatch.fromJson)
+            .toList();
+        state = state.copyWith(
+          results: matches,
+          progressFinished: (batch['finished_count'] as int?) ?? 0,
+          progressTotal:
+              (batch['total_count'] as int?) ?? searchingCount,
+        );
+      }
+      if (seq != _searchSeq) return;
       state = state.copyWith(
-        results: matches,
+        error: (terminalError != null && state.results.isEmpty)
+            ? terminalError
+            : null,
         isLoading: false,
         searchingCount: null,
+        progressFinished: null,
+        progressTotal: null,
       );
     } catch (e) {
+      if (seq != _searchSeq) return;
       state = state.copyWith(
         error: _mapError(e),
         isLoading: false,
         searchingCount: null,
+        progressFinished: null,
+        progressTotal: null,
       );
     }
   }

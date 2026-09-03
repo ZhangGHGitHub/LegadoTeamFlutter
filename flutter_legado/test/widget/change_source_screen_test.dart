@@ -48,6 +48,37 @@ void main() {
     'book_score': bookScore,
   };
 
+  /// T6 流式批次（契约 §2.4：matches 全量快照 + x/y 进度）
+  Map<String, dynamic> makeBatch({
+    required List<Map<String, dynamic>> matches,
+    int finished = 1,
+    int total = 1,
+  }) => {
+    'source_index': 0,
+    'source_url': '',
+    'source_name': '',
+    'error': null,
+    'finished_count': finished,
+    'total_count': total,
+    'is_last': true,
+    'matches': matches,
+  };
+
+  /// stub searchSourceStream（named 参数全 any，匹配 notifier 的实际调用）
+  void stubSearchStream(Stream<Map<String, dynamic>> stream) {
+    when(
+      () => mockApi.searchSourceStream(
+        any(),
+        any(),
+        sourceUrls: any(named: 'sourceUrls'),
+        loadInfo: any(named: 'loadInfo'),
+        loadToc: any(named: 'loadToc'),
+        loadWordCount: any(named: 'loadWordCount'),
+        forceRefresh: any(named: 'forceRefresh'),
+      ),
+    ).thenAnswer((_) => stream);
+  }
+
   Widget wrap(Widget child) {
     return UncontrolledProviderScope(
       container: container,
@@ -59,18 +90,8 @@ void main() {
     WidgetTester tester, {
     String currentSourceUrl = 'https://a.com',
   }) async {
-    when(
-      () => mockApi.searchSource(
-        any(),
-        any(),
-        sourceUrls: any(named: 'sourceUrls'),
-        loadInfo: any(named: 'loadInfo'),
-        loadToc: any(named: 'loadToc'),
-        loadWordCount: any(named: 'loadWordCount'),
-        forceRefresh: any(named: 'forceRefresh'),
-      ),
-    ).thenAnswer(
-      (_) async => [
+    stubSearchStream(Stream.value(makeBatch(
+      matches: [
         rawMatch(
           sourceUrl: 'https://a.com',
           sourceName: 'A源',
@@ -82,7 +103,9 @@ void main() {
           bookUrl: 'https://b.com/book',
         ),
       ],
-    );
+      finished: 2,
+      total: 2,
+    )));
 
     await tester.pumpWidget(
       wrap(
@@ -155,18 +178,8 @@ void main() {
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      when(
-        () => mockApi.searchSource(
-          any(),
-          any(),
-          sourceUrls: any(named: 'sourceUrls'),
-          loadInfo: any(named: 'loadInfo'),
-          loadToc: any(named: 'loadToc'),
-          loadWordCount: any(named: 'loadWordCount'),
-          forceRefresh: any(named: 'forceRefresh'),
-        ),
-      ).thenAnswer(
-        (_) async => List.generate(
+      stubSearchStream(Stream.value(makeBatch(
+        matches: List.generate(
           30,
           (i) => rawMatch(
             sourceUrl: 'https://src$i.com',
@@ -174,7 +187,9 @@ void main() {
             bookUrl: 'https://src$i.com/book',
           ),
         ),
-      );
+        finished: 30,
+        total: 30,
+      )));
 
       await tester.pumpWidget(
         wrap(

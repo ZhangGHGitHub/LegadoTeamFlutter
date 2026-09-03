@@ -132,6 +132,40 @@ mixin RustApiSearchRss on RustApiDecode implements BookApi {
     return list.map((e) => (e as Map).cast<String, dynamic>()).toList();
   }
 
+  /// 换源搜索流式版（T6 / 契约 §2.4 `searchSourceStream`）
+  ///
+  /// 每完成一个书源推送一批次 Map，字段：`source_index` / `source_url` /
+  /// `source_name` / `error`（单源失败）/ `finished_count` / `total_count` /
+  /// `is_last` / `matches`（当前已过滤评分候选**全量快照**——UI 直接替换展示）。
+  /// DB 复用路径推单批即结束；enrich 开启时末批为增强后重排快照。
+  /// [BookApi.searchSource] 保留为非流式兼容路径。 — Qoder UI
+  @override
+  Stream<Map<String, dynamic>> searchSourceStream(
+    String bookName,
+    String author, {
+    List<String>? sourceUrls,
+    bool loadInfo = false,
+    bool loadToc = false,
+    bool loadWordCount = false,
+    bool forceRefresh = false,
+  }) {
+    final urlsJson = sourceUrls != null ? jsonEncode(sourceUrls) : '[]';
+    final optionsJson = jsonEncode({
+      'loadInfo': loadInfo,
+      'loadToc': loadToc,
+      'loadWordCount': loadWordCount,
+      'forceRefresh': forceRefresh,
+    });
+    return bridge
+        .sourceSwitchSearchStream(
+          bookName: bookName,
+          author: author,
+          sourceUrlsJson: urlsJson,
+          optionsJson: optionsJson,
+        )
+        .map((batch) => _decodeMap(batch, 'searchSourceStream'));
+  }
+
   /// 搜索书籍封面候选列表
   ///
   /// Rust 侧复用多书源搜索提取封面 URL，返回 JSON 数组，

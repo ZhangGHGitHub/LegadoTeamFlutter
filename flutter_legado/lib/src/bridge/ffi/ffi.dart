@@ -742,6 +742,24 @@ Future<String> sourceSwitchSearch({
   optionsJson: optionsJson,
 );
 
+/// 换源搜索流式（T6 / 契约 §2.4 `searchSourceStream`）
+///
+/// 每完成一个书源推送一批次事件（JSON 字符串）：`matches` = 当前已过滤评分候选
+/// **全量快照**，进度由 finished_count/total_count 承载；DB 复用路径推单批即结束；
+/// enrich 开启时搜索阶段结束后再推一批 enriched+重排快照（不阻塞首批到达）。
+/// 旧 [`source_switch_search`] 保留兼容（共享执行链）。
+Stream<String> sourceSwitchSearchStream({
+  required String bookName,
+  required String author,
+  required String sourceUrlsJson,
+  required String optionsJson,
+}) => RustLib.instance.api.crateFfiFfiSourceSwitchSearchStream(
+  bookName: bookName,
+  author: author,
+  sourceUrlsJson: sourceUrlsJson,
+  optionsJson: optionsJson,
+);
+
 /// 切换到新书源（返回更新后的书籍 JSON）
 ///
 /// `book_url` — 当前书籍的 bookUrl
@@ -1058,7 +1076,7 @@ Future<String> readRecordList() =>
 
 /// 添加/更新阅读记录，返回阅读时长
 ///
-/// [体检 P3-6 阶段四] api 层同步累加当日 readRecordDaily（热力图"每日时长"数据源）。
+/// [热力图每日时长契约] api 层同步累加当日 readRecordDaily（热力图"每日时长"数据源）。
 Future<PlatformInt64> readRecordUpsert({
   required String bookName,
   required PlatformInt64 readTime,

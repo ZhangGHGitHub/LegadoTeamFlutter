@@ -155,6 +155,248 @@ pub fn search_alternative_sources(
     })
 }
 
+/// 换源搜索流批次事件（契约 §2.4 `searchSourceStream`）
+///
+/// `matches` 为**当前已过滤评分候选的全量快照**——Rust 侧维持过滤/排序，UI 仅替换展示；
+/// 单源失败经 `error` 字段承载，不中断流。
+#[derive(Debug, Clone, Serialize)]
+pub struct ChangeSourceBatch {
+    /// 刚完成书源的索引（0-based；DB 复用 / enrich 终批为 0）
+    pub source_index: usize,
+    pub source_url: String,
+    pub source_name: String,
+    /// 该源搜索失败时的错误信息（成功为 None）
+    pub error: Option<String>,
+    /// 已完成书源数量
+    pub finished_count: usize,
+    /// 本次搜索书源总数
+    pub total_count: usize,
+    /// 是否为最后一个批次（finished_count == total_count）
+    pub is_last: bool,
+    /// 当前已过滤评分候选全量快照（同名过滤(+可选作者校验) + 评分排序）
+    pub matches: Vec<SourceMatch>,
+}
+
+/// 推送一个换源流批次事件；返回 `Err`（sink 关闭）时由调用方决定终止
+fn push_change_source_batch(
+    on_batch: &mut impl FnMut(String) -> Result<(), String>,
+    batch: ChangeSourceBatch,
+) -> Result<(), String> {
+    let json = serde_json::to_string(&batch).map_err(|e| e.to_string())?;
+    on_batch(json)
+}
+
+/// 换源搜索流式驱动器（T6 / 契约 §2.4 `searchSourceStream`）
+///
+/// 每完成一个书源推送一批次事件（`on_batch` 接收批次 JSON 字符串）：
+/// - `matches` = 累积候选经同名过滤(+可选作者校验)与评分排序后的**全量快照**——
+///   逐源增量过滤 ≡ 批量过滤（[`SourceMatcher::filter_for_change`] 为元素级判定）；
+/// - 进度由 `finished_count`/`total_count` 承载；单源失败推带 `error` 字段的批次，不中断流；
+/// - DB 复用路径（forceRefresh=false 且 searchBooks 有数据）推单批即结束，无网络请求；
+/// - 全部书源完成后：enrich 开启时执行流内后置增强（详情/目录/试读字数）并再推一批
+///   enriched+重排快照——**不阻塞首批到达**（所有搜索批次已先行推送）；
+///   最终候选落库 searchBooks（对齐原版 searchSuccess → insert）。
+///
+/// `on_batch` 返回 `Err`（sink 关闭 / 流取消）→ 驱动器置位取消并 abort 在飞任务，结束流。
+pub async fn run_change_source_stream<F>(
+    book_name: String,
+    author: String,
+    source_urls_json: String,
+    options_json: String,
+    mut on_batch: F,
+) where
+    F: FnMut(String) -> Result<(), String>,
+{
+    use std::sync::atomic::AtomicBool;
+    use std::sync::Arc;
+
+    let options = resolve_switch_options(&options_json);
+
+    // 对齐原版 ChangeBookSourceViewModel.searchDataFlow：先 getDbSearchBooks，
+    // 非空直接展示（单批推送即结束）；仅空列表或强制刷新才全量搜索
+    if !options.force_refresh {
+        if let Some(matches) = try_load_change_source_from_db(&book_name, &author, &options) {
+            // 早期批次：sink 关闭无在飞任务可 abort，忽略推送结果
+            let _ = push_change_source_batch(
+                &mut on_batch,
+                ChangeSourceBatch {
+                    source_index: 0,
+                    source_url: String::new(),
+                    source_name: String::new(),
+                    error: None,
+                    finished_count: 1,
+                    total_count: 1,
+                    is_last: true,
+                    matches,
+                },
+            );
+            return;
+        }
+    } else {
+        // 强制刷新：清掉该书旧 searchBooks，避免与新结果混杂
+        clear_search_books_for_change(&book_name, &author);
+    }
+
+    let sources = match resolve_switch_sources(&source_urls_json) {
+        Ok(s) => s,
+        Err(e) => {
+            let _ = push_change_source_batch(
+                &mut on_batch,
+                ChangeSourceBatch {
+                    source_index: 0,
+                    source_url: String::new(),
+                    source_name: String::new(),
+                    error: Some(e.to_string()),
+                    finished_count: 0,
+                    total_count: 0,
+                    is_last: true,
+                    matches: Vec::new(),
+                },
+            );
+            return;
+        }
+    };
+
+    if sources.is_empty() {
+        let _ = push_change_source_batch(
+            &mut on_batch,
+            ChangeSourceBatch {
+                source_index: 0,
+                source_url: String::new(),
+                source_name: String::new(),
+                error: None,
+                finished_count: 0,
+                total_count: 0,
+                is_last: true,
+                matches: Vec::new(),
+            },
+        );
+        return;
+    }
+
+    let client = match crate::http_state::shared_client() {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = push_change_source_batch(
+                &mut on_batch,
+                ChangeSourceBatch {
+                    source_index: 0,
+                    source_url: String::new(),
+                    source_name: String::new(),
+                    error: Some(e.to_string()),
+                    finished_count: 0,
+                    total_count: sources.len(),
+                    is_last: true,
+                    matches: Vec::new(),
+                },
+            );
+            return;
+        }
+    };
+
+    // 与批量路径同口径：原版 AppConfig.changeSourceCheckAuthor（读取失败按关闭）
+    let check_author = crate::api::config_api::get_config("changeSourceCheckAuthor")
+        .map(|v| v.trim() == "true")
+        .unwrap_or(false);
+
+    // 会话级门控标志：sink 关闭 → 驱动器置位取消并 abort 在飞任务（复用 P0-3 驱动机制）
+    let cancel = Arc::new(AtomicBool::new(false));
+    let paused = Arc::new(AtomicBool::new(false));
+
+    // 累积过滤后候选（逐源增量过滤 ≡ 批量过滤，元素级判定）
+    let mut accumulated: Vec<SearchCandidate> = Vec::new();
+
+    // search_one 闭包为 move（'static），需预克隆；on_source 闭包借用 book_name/author/options
+    let client_for_search = client.clone();
+    let book_name_for_search = book_name.clone();
+
+    crate::api::search::drive_source_batches(
+        sources.clone(),
+        crate::api::search::SEARCH_CONCURRENCY,
+        crate::api::search::SWITCH_SOURCE_TIMEOUT,
+        &cancel,
+        &paused,
+        move |source: BookSource| {
+            let client = client_for_search.clone();
+            let keyword = book_name_for_search.clone();
+            async move { search_for_switch(&client, &source, &keyword).await }
+        },
+        |outcome| {
+            // 该源候选增量过滤（同名 + 可选作者校验）并累积
+            if let Ok(items) = &outcome.result {
+                accumulated.extend(SourceMatcher::filter_for_change(
+                    items.clone(),
+                    &book_name,
+                    &author,
+                    check_author,
+                ));
+            }
+            // 重排快照：当前已过滤评分候选全量集
+            let matches = SourceMatcher::rank_candidates_with_options(
+                accumulated.clone(),
+                &book_name,
+                &author,
+                options.load_word_count,
+            );
+            // sink 关闭（Err）→ 传播给驱动器，置位取消并 abort 在飞任务
+            push_change_source_batch(
+                &mut on_batch,
+                ChangeSourceBatch {
+                    source_index: outcome.index,
+                    source_url: outcome.source_url,
+                    source_name: outcome.source_name,
+                    error: outcome.result.err().map(|e| e.to_string()),
+                    finished_count: outcome.finished_count,
+                    total_count: outcome.total_count,
+                    is_last: outcome.is_last,
+                    matches,
+                },
+            )
+        },
+    )
+    .await;
+
+    // 流内后置增强（不阻塞首批到达——所有搜索批次已先行推送）：
+    // enrich 开启时对累积候选执行详情/目录/试读字数，再推最终重排快照
+    let enriched = if options.needs_enrichment() {
+        match enrich_switch_candidates_async(&sources, accumulated, &options).await {
+            Ok(c) => c,
+            Err(_) => Vec::new(),
+        }
+    } else {
+        accumulated
+    };
+
+    let final_matches = SourceMatcher::rank_candidates_with_options(
+        enriched,
+        &book_name,
+        &author,
+        options.load_word_count,
+    );
+
+    // 终批仅在 enrich 开启时推送（enriched+重排快照）；未开启时最后一搜索批次即最终态
+    if options.needs_enrichment() {
+        let total = sources.len();
+        // 终批推送失败（sink 已关闭）不影响最终候选落库
+        let _ = push_change_source_batch(
+            &mut on_batch,
+            ChangeSourceBatch {
+                source_index: 0,
+                source_url: String::new(),
+                source_name: String::new(),
+                error: None,
+                finished_count: total,
+                total_count: total,
+                is_last: true,
+                matches: final_matches.clone(),
+            },
+        );
+    }
+
+    // 最终候选落库 searchBooks（对齐原版 searchSuccess → insert；供下次读库路径复用）
+    persist_switch_matches(&final_matches);
+}
+
 /// 从 searchBooks 表加载换源候选（对齐 getDbSearchBooks）
 ///
 /// 有结果时返回 Some；无结果/DB 未初始化/读失败返回 None（回退网络搜索）。
@@ -608,7 +850,20 @@ pub(crate) fn resolve_switch_options(options_json: &str) -> SwitchSearchOptions 
 }
 
 /// 按开关加载详情/目录/试读字数（对齐 ChangeBookSourceViewModel.loadBookInfo/Toc/WordCount）
+///
+/// T6：拆为原生 async 核心 [`enrich_switch_candidates_async`] + 本同步包装——
+/// 批量路径（`search_alternative_sources`，同步上下文）保留 block_on 驱动；
+/// 流式驱动器在 async 上下文中直接 await 核心，**不得嵌套 block_on**。
 fn enrich_switch_candidates(
+    sources: &[BookSource],
+    candidates: Vec<SearchCandidate>,
+    options: &SwitchSearchOptions,
+) -> LegadoResult<Vec<SearchCandidate>> {
+    runtime::block_on(enrich_switch_candidates_async(sources, candidates, options))
+}
+
+/// 流内后置增强核心（T6）：原生 async，逐候选 spawn、孤儿（书源不在列表中）直通
+async fn enrich_switch_candidates_async(
     sources: &[BookSource],
     candidates: Vec<SearchCandidate>,
     options: &SwitchSearchOptions,
@@ -620,27 +875,25 @@ fn enrich_switch_candidates(
         .map(|s| (s.book_source_url.clone(), s.clone()))
         .collect();
 
-    runtime::block_on(async {
-        let mut handles = Vec::new();
-        let mut orphans = Vec::new();
-        for candidate in candidates {
-            let Some(source) = source_map.get(&candidate.source_url).cloned() else {
-                orphans.push(candidate);
-                continue;
-            };
-            let opts = options.clone();
-            handles.push(tokio::spawn(async move {
-                enrich_one_switch_candidate(&source, candidate, &opts).await
-            }));
+    let mut handles = Vec::new();
+    let mut orphans = Vec::new();
+    for candidate in candidates {
+        let Some(source) = source_map.get(&candidate.source_url).cloned() else {
+            orphans.push(candidate);
+            continue;
+        };
+        let opts = options.clone();
+        handles.push(tokio::spawn(async move {
+            enrich_one_switch_candidate(&source, candidate, &opts).await
+        }));
+    }
+    let mut out = orphans;
+    for handle in handles {
+        if let Ok(c) = handle.await {
+            out.push(c);
         }
-        let mut out = orphans;
-        for handle in handles {
-            if let Ok(c) = handle.await {
-                out.push(c);
-            }
-        }
-        Ok::<_, LegadoError>(out)
-    })
+    }
+    Ok(out)
 }
 
 async fn enrich_one_switch_candidate(

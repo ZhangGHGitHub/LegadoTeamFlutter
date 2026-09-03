@@ -19,8 +19,8 @@
 | 批次 2 T4（内容链变量注入） | ✅ **已修** | `get_content` 章节 URL 的 AnalyzeUrl 变量表取自章节 variable（此前恒空表）；reader/audio 链路 `merge_variables_json(book, chapter)`（章节同名键优先，对齐原版 chapter → book 级联）合并进 WebChapter；helper `chapter_url_variables`/`merge_variables_json`（web_book.rs，含单测） |
 | 批次 2 T5（候选透传与合并） | ✅ **已修** | `SearchResult`/`AnnotatedCandidate`/`SearchCandidate`/`SourceMatch` 加 `variable`（serde additive）；元素级解析导出 + `result_to_search_book` 落库 + JS 源 JSON 透传；`searchSource` matches 与读库路径均带出；`switchSource` 内按 searchBooks 行 (new_book_url, origin) 取候选变量 ⊕ 详情导出变量合并（详情页后写入者优先）→ `book.variable`；扩展 mock 单测断言合并语义 |
 | 契约（T3/T5） | ✅ **已冻结并落地** | `API_CONTRACT.md` 变更记录 2026-09-03 条 + §2.4 注记（零签名变更，全部 additive 字段） |
-| 批次 3 T6（换源搜索流式化） | ⏸ **未实施（UI 侧）** | 跨轨：Rust StreamSink 改造须与 Dart 逐源渐显（change_source_notifier/screen）成对交付；本次仅做 Rust 轨，按用户指令 T6 留给 UI 轨批次，契约注记已为流式化预留说明空间。U1 卡顿缓解可先用「换源高级选项默认关 loadInfo/loadToc/loadWordCount」降低首批延迟（UI 侧可独立操作） |
-| U1（UI 侧体验） | ➡️ 移交 UI 轨 | 不在本任务书 Rust 轨范围 |
+| 批次 3 T6（换源搜索流式化） | ✅ **已交付（2026-09-04，UI 轨批次）** | 跨轨成对交付：Rust `run_change_source_stream`（逐源批次：候选全量快照 + finished/total 进度 + 单源 error 不中断；DB 复用单批结束；enrich 流内后置不阻塞首批）+ `drive_source_batches` 泛型化；FFI StreamSink 绑定 `searchSourceStream`（契约 §2.4）+ FRB 重生成；Dart BookApi.searchSourceStream + ChangeSourceNotifier 逐批替换 + 换源页逐源渐显与 x/y 进度文案（U1 过渡反馈的永久替代）；附带修复首轮搜索与高级选项加载竞态（首轮等待恢复完成，对齐原版同步读 AppConfig）。5556 实测 1024 源首候选 ≤2s（<5s ✓）、x/y 准确、渐显 13→151；版本 2.0.154+155 |
+| U1（UI 侧体验） | ✅ **已收口（被 T6 永久替代）** | 过渡反馈（c589e350b3，2.0.151「源数量 + 已等待时长」）已被 T6 流式逐源渐显 + x/y 进度替代；首候选前短暂等待窗口仍保留该文案 |
 
 验证：cargo fmt 0 diff / clippy 双段 0 warning / `cargo test --workspace` 全绿 / quickjs 两段门禁 / mock 变量链单测 6 项 + 换源链单测 4 项。
 

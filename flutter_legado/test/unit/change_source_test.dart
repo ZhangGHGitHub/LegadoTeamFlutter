@@ -102,6 +102,37 @@ void main() {
       'score': score,
     };
 
+    /// 构造一个 T6 流式批次（契约 §2.4：matches 全量快照 + x/y 进度）
+    Map<String, dynamic> makeBatch({
+      required List<Map<String, dynamic>> matches,
+      int finished = 1,
+      int total = 1,
+    }) => {
+      'source_index': 0,
+      'source_url': '',
+      'source_name': '',
+      'error': null,
+      'finished_count': finished,
+      'total_count': total,
+      'is_last': true,
+      'matches': matches,
+    };
+
+    /// stub searchSourceStream（named 参数全 any，匹配 notifier 的实际调用）
+    void stubSearchStream(Stream<Map<String, dynamic>> stream) {
+      when(
+        () => mockApi.searchSourceStream(
+          any(),
+          any(),
+          sourceUrls: any(named: 'sourceUrls'),
+          loadInfo: any(named: 'loadInfo'),
+          loadToc: any(named: 'loadToc'),
+          loadWordCount: any(named: 'loadWordCount'),
+          forceRefresh: any(named: 'forceRefresh'),
+        ),
+      ).thenAnswer((_) => stream);
+    }
+
     test('初始状态为空', () {
       final state = readState();
       expect(state.results, isEmpty);
@@ -112,13 +143,24 @@ void main() {
       expect(state.isApplying, isFalse);
     });
 
-    test('search 经 BookApi.searchSource 解析为 SourceMatch 列表', () async {
-      when(() => mockApi.searchSource(any(), any())).thenAnswer(
-        (_) async => [
-          rawMatch('https://a.com', 'A源', 90),
-          rawMatch('https://b.com', 'B源', 70),
-        ],
-      );
+    test('search 经 BookApi.searchSourceStream 逐批解析为 SourceMatch 列表',
+        () async {
+      // T6：逐源批次——首批仅 A 源命中，末批双源全量快照（直接替换展示）
+      stubSearchStream(Stream.fromIterable([
+        makeBatch(
+          matches: [rawMatch('https://a.com', 'A源', 90)],
+          finished: 1,
+          total: 2,
+        ),
+        makeBatch(
+          matches: [
+            rawMatch('https://a.com', 'A源', 90),
+            rawMatch('https://b.com', 'B源', 70),
+          ],
+          finished: 2,
+          total: 2,
+        ),
+      ]));
 
       await readNotifier().search('斗破苍穹', '天蚕土豆');
 
@@ -129,7 +171,19 @@ void main() {
       expect(state.results.first.sourceUrl, equals('https://a.com'));
       expect(state.results.first.sourceName, equals('A源'));
       expect(state.results.first.score, equals(90));
-      verify(() => mockApi.searchSource('斗破苍穹', '天蚕土豆')).called(1);
+      // mocktail 调用匹配为严格相等：notifier 实际传齐 5 个 named 参数，
+      // verify/stub 必须逐一列出（与 stubSearchStream 同口径）
+      verify(
+        () => mockApi.searchSourceStream(
+          '斗破苍穹',
+          '天蚕土豆',
+          sourceUrls: any(named: 'sourceUrls'),
+          loadInfo: any(named: 'loadInfo'),
+          loadToc: any(named: 'loadToc'),
+          loadWordCount: any(named: 'loadWordCount'),
+          forceRefresh: any(named: 'forceRefresh'),
+        ),
+      ).called(1);
     });
     test('分组搜索：分号/全角逗号组名的源不被 Dart 预过滤剔除（审计 D1）', () async {
       when(() => mockApi.getEnabledBookSources()).thenAnswer(
@@ -146,22 +200,20 @@ void main() {
           ),
         ],
       );
-      when(
-        () => mockApi.searchSource(
-          any(),
-          any(),
-          sourceUrls: any(named: 'sourceUrls'),
-        ),
-      ).thenAnswer((_) async => []);
+      stubSearchStream(Stream.value(makeBatch(matches: [])));
 
       await readNotifier().search('斗破苍穹', '天蚕土豆', group: '玄幻');
 
       final captured =
           verify(
-            () => mockApi.searchSource(
+            () => mockApi.searchSourceStream(
               any(),
               any(),
               sourceUrls: captureAny(named: 'sourceUrls'),
+              loadInfo: any(named: 'loadInfo'),
+              loadToc: any(named: 'loadToc'),
+              loadWordCount: any(named: 'loadWordCount'),
+              forceRefresh: any(named: 'forceRefresh'),
             ),
           ).captured.single as List<String>;
       // 分号（;）与全角逗号（，）分组的源都必须进入 sourceUrls
@@ -170,12 +222,14 @@ void main() {
 
     test('search 保持 Rust 返回顺序（不在 Dart 侧重排）', () async {
       // Rust 已按评分降序；此处故意返回升序，验证 Notifier 不重排
-      when(() => mockApi.searchSource(any(), any())).thenAnswer(
-        (_) async => [
+      stubSearchStream(Stream.value(makeBatch(
+        matches: [
           rawMatch('https://low.com', '低分源', 30),
           rawMatch('https://high.com', '高分源', 95),
         ],
-      );
+        finished: 2,
+        total: 2,
+      )));
 
       await readNotifier().search('斗破苍穹', '天蚕土豆');
 
@@ -185,7 +239,15 @@ void main() {
 
     test('search 异常时记录 error 并清除加载态', () async {
       when(
-        () => mockApi.searchSource(any(), any()),
+        () => mockApi.searchSourceStream(
+          any(),
+          any(),
+          sourceUrls: any(named: 'sourceUrls'),
+          loadInfo: any(named: 'loadInfo'),
+          loadToc: any(named: 'loadToc'),
+          loadWordCount: any(named: 'loadWordCount'),
+          forceRefresh: any(named: 'forceRefresh'),
+        ),
       ).thenThrow(Exception('网络错误'));
 
       await readNotifier().search('斗破苍穹', '天蚕土豆');
@@ -198,10 +260,24 @@ void main() {
 
     test('search 进行中时重复调用被忽略', () async {
       var callCount = 0;
-      when(() => mockApi.searchSource(any(), any())).thenAnswer((_) async {
+      when(
+        () => mockApi.searchSourceStream(
+          any(),
+          any(),
+          sourceUrls: any(named: 'sourceUrls'),
+          loadInfo: any(named: 'loadInfo'),
+          loadToc: any(named: 'loadToc'),
+          loadWordCount: any(named: 'loadWordCount'),
+          forceRefresh: any(named: 'forceRefresh'),
+        ),
+      ).thenAnswer((_) {
         callCount++;
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-        return [rawMatch('https://a.com', 'A源', 90)];
+        // searchSourceStream 直接返回 Stream（非 Future），延迟发射保持
+        // 「搜索进行中」窗口，验证 isLoading 守卫拒绝并发调用
+        return Stream.fromFuture(
+          Future<void>.delayed(const Duration(milliseconds: 20))
+              .then((_) => makeBatch(matches: [rawMatch('https://a.com', 'A源', 90)])),
+        );
       });
 
       final f1 = readNotifier().search('斗破苍穹', '天蚕土豆');
@@ -294,9 +370,9 @@ void main() {
       when(
         () => mockApi.updateSearchBookScore(any(), any()),
       ).thenAnswer((_) async {});
-      when(
-        () => mockApi.searchSource(any(), any()),
-      ).thenAnswer((_) async => [rawMatch('https://a.com', 'A源', 90)]);
+      stubSearchStream(Stream.value(
+        makeBatch(matches: [rawMatch('https://a.com', 'A源', 90)]),
+      ));
 
       await readNotifier().search('斗破苍穹', '天蚕土豆');
       final bookUrl = readState().results.first.bookUrl;
@@ -308,12 +384,14 @@ void main() {
     });
 
     test('moveToTop / moveToBottom 本地重排', () async {
-      when(() => mockApi.searchSource(any(), any())).thenAnswer(
-        (_) async => [
+      stubSearchStream(Stream.value(makeBatch(
+        matches: [
           rawMatch('https://a.com', 'A源', 90),
           rawMatch('https://b.com', 'B源', 70),
         ],
-      );
+        finished: 2,
+        total: 2,
+      )));
       await readNotifier().search('斗破苍穹', '天蚕土豆');
 
       final bUrl = readState().results.last.bookUrl;
@@ -326,12 +404,14 @@ void main() {
 
     test('deleteSearchBookItem 移除列表项', () async {
       when(() => mockApi.deleteSearchBook(any())).thenAnswer((_) async {});
-      when(() => mockApi.searchSource(any(), any())).thenAnswer(
-        (_) async => [
+      stubSearchStream(Stream.value(makeBatch(
+        matches: [
           rawMatch('https://a.com', 'A源', 90),
           rawMatch('https://b.com', 'B源', 70),
         ],
-      );
+        finished: 2,
+        total: 2,
+      )));
       await readNotifier().search('斗破苍穹', '天蚕土豆');
 
       final removed = await readNotifier().deleteSearchBookItem(

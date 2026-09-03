@@ -74,11 +74,16 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
   String _searchGroup = '';
   List<String> _groups = const [];
 
+  /// 高级选项加载 Future：首次自动搜索须等其完成（对齐原版
+  /// ChangeBookSourceViewModel 搜索前同步读取 AppConfig，避免首轮搜索
+  /// 使用未恢复的默认开关值）
+  Future<void>? _advancedOptionsLoaded;
+
   @override
   void initState() {
     super.initState();
-    _loadAdvancedOptions();
-    // 进入页面自动搜索一次
+    _advancedOptionsLoaded = _loadAdvancedOptions();
+    // 进入页面自动搜索一次（_search 内部等待高级选项加载完成）
     WidgetsBinding.instance.addPostFrameCallback((_) => _search());
   }
 
@@ -149,6 +154,13 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
   /// [forceRefresh] false（进入页默认）：优先复用搜索阶段写入的 searchBooks
   /// （对齐原版 getDbSearchBooks）；true（刷新列表）：强制网络重搜。
   Future<void> _search({bool forceRefresh = false}) async {
+    // 首次搜索等待高级选项加载完成（后续手动刷新无需再等）
+    final pending = _advancedOptionsLoaded;
+    if (pending != null) {
+      _advancedOptionsLoaded = null;
+      await pending;
+      if (!mounted) return;
+    }
     await ref
         .read(changeSourceNotifierProvider.notifier)
         .search(
@@ -729,8 +741,8 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
 
   Widget _buildBody(ChangeSourceState state, List<SourceMatch> results) {
     if (state.isLoading && results.isEmpty) {
-      // 体检 U1：Rust 换源搜索为一次性阻塞调用，流式 API（T6）落地前
-      // 以「源数量 + 已等待时长」告知仍在进行，替代无反馈转圈
+      // T6 流式：首个候选批次到达前的等待窗口仍以「源数量 + 已等待时长」
+      // 告知仍在进行（T6 后首候选通常 <5s，此窗口很短）
       return LoadingIndicator(
         message: null,
         subMessage: _SearchWaitMessage(count: state.searchingCount),
@@ -785,7 +797,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
               state.isLoading
-                  ? '已找到 ${results.length} 个匹配书源，搜索中…'
+                  ? _loadingProgressLabel(results.length, state)
                   : '找到 ${results.length} 个匹配书源',
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -805,6 +817,16 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
         ],
       ),
     );
+  }
+
+  /// T6 流式进度文案：批次 finished_count/total_count → 「x/y 源完成」
+  String _loadingProgressLabel(int resultCount, ChangeSourceState state) {
+    final x = state.progressFinished;
+    final y = state.progressTotal;
+    if (x != null && y != null && y > 0) {
+      return '已找到 $resultCount 个匹配书源（$x/$y 源完成），搜索中…';
+    }
+    return '已找到 $resultCount 个匹配书源，搜索中…';
   }
 
   Widget _buildResultTile(

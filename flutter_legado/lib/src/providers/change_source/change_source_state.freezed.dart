@@ -32,6 +32,12 @@ mixin _$ChangeSourceState {
   /// T6 流式 API 落地前暂以「源数量+时长」替代逐源 x/y 进度）
   int? get searchingCount => throw _privateConstructorUsedError;
 
+  /// 已完成书源数（T6 流式：批次 finished_count，搜索中非 null）
+  int? get progressFinished => throw _privateConstructorUsedError;
+
+  /// 参与搜索的书源总数（T6 流式：批次 total_count，权威值来自 Rust）
+  int? get progressTotal => throw _privateConstructorUsedError;
+
   @JsonKey(ignore: true)
   $ChangeSourceStateCopyWith<ChangeSourceState> get copyWith =>
       throw _privateConstructorUsedError;
@@ -48,7 +54,9 @@ abstract class $ChangeSourceStateCopyWith<$Res> {
       bool isLoading,
       String? error,
       String? applyingUrl,
-      int? searchingCount});
+      int? searchingCount,
+      int? progressFinished,
+      int? progressTotal});
 }
 
 /// @nodoc
@@ -69,6 +77,8 @@ class _$ChangeSourceStateCopyWithImpl<$Res, $Val extends ChangeSourceState>
     Object? error = freezed,
     Object? applyingUrl = freezed,
     Object? searchingCount = freezed,
+    Object? progressFinished = freezed,
+    Object? progressTotal = freezed,
   }) {
     return _then(_value.copyWith(
       results: null == results
@@ -91,6 +101,14 @@ class _$ChangeSourceStateCopyWithImpl<$Res, $Val extends ChangeSourceState>
           ? _value.searchingCount
           : searchingCount // ignore: cast_nullable_to_non_nullable
               as int?,
+      progressFinished: freezed == progressFinished
+          ? _value.progressFinished
+          : progressFinished // ignore: cast_nullable_to_non_nullable
+              as int?,
+      progressTotal: freezed == progressTotal
+          ? _value.progressTotal
+          : progressTotal // ignore: cast_nullable_to_non_nullable
+              as int?,
     ) as $Val);
   }
 }
@@ -108,7 +126,9 @@ abstract class _$$ChangeSourceStateImplCopyWith<$Res>
       bool isLoading,
       String? error,
       String? applyingUrl,
-      int? searchingCount});
+      int? searchingCount,
+      int? progressFinished,
+      int? progressTotal});
 }
 
 /// @nodoc
@@ -127,6 +147,8 @@ class __$$ChangeSourceStateImplCopyWithImpl<$Res>
     Object? error = freezed,
     Object? applyingUrl = freezed,
     Object? searchingCount = freezed,
+    Object? progressFinished = freezed,
+    Object? progressTotal = freezed,
   }) {
     return _then(_$ChangeSourceStateImpl(
       results: null == results
@@ -149,6 +171,14 @@ class __$$ChangeSourceStateImplCopyWithImpl<$Res>
           ? _value.searchingCount
           : searchingCount // ignore: cast_nullable_to_non_nullable
               as int?,
+      progressFinished: freezed == progressFinished
+          ? _value.progressFinished
+          : progressFinished // ignore: cast_nullable_to_non_nullable
+              as int?,
+      progressTotal: freezed == progressTotal
+          ? _value.progressTotal
+          : progressTotal // ignore: cast_nullable_to_non_nullable
+              as int?,
     ));
   }
 }
@@ -161,7 +191,9 @@ class _$ChangeSourceStateImpl implements _ChangeSourceState {
       this.isLoading = false,
       this.error,
       this.applyingUrl,
-      this.searchingCount})
+      this.searchingCount,
+      this.progressFinished,
+      this.progressTotal})
       : _results = results;
 
   /// 匹配到的候选书源列表（Rust 已按评分降序排序，UI 直接渲染）
@@ -194,9 +226,17 @@ class _$ChangeSourceStateImpl implements _ChangeSourceState {
   @override
   final int? searchingCount;
 
+  /// 已完成书源数（T6 流式：批次 finished_count，搜索中非 null）
+  @override
+  final int? progressFinished;
+
+  /// 参与搜索的书源总数（T6 流式：批次 total_count，权威值来自 Rust）
+  @override
+  final int? progressTotal;
+
   @override
   String toString() {
-    return 'ChangeSourceState(results: $results, isLoading: $isLoading, error: $error, applyingUrl: $applyingUrl, searchingCount: $searchingCount)';
+    return 'ChangeSourceState(results: $results, isLoading: $isLoading, error: $error, applyingUrl: $applyingUrl, searchingCount: $searchingCount, progressFinished: $progressFinished, progressTotal: $progressTotal)';
   }
 
   @override
@@ -211,7 +251,11 @@ class _$ChangeSourceStateImpl implements _ChangeSourceState {
             (identical(other.applyingUrl, applyingUrl) ||
                 other.applyingUrl == applyingUrl) &&
             (identical(other.searchingCount, searchingCount) ||
-                other.searchingCount == searchingCount));
+                other.searchingCount == searchingCount) &&
+            (identical(other.progressFinished, progressFinished) ||
+                other.progressFinished == progressFinished) &&
+            (identical(other.progressTotal, progressTotal) ||
+                other.progressTotal == progressTotal));
   }
 
   @override
@@ -221,7 +265,9 @@ class _$ChangeSourceStateImpl implements _ChangeSourceState {
       isLoading,
       error,
       applyingUrl,
-      searchingCount);
+      searchingCount,
+      progressFinished,
+      progressTotal);
 
   @JsonKey(ignore: true)
   @override
@@ -237,7 +283,9 @@ abstract class _ChangeSourceState implements ChangeSourceState {
       final bool isLoading,
       final String? error,
       final String? applyingUrl,
-      final int? searchingCount}) = _$ChangeSourceStateImpl;
+      final int? searchingCount,
+      final int? progressFinished,
+      final int? progressTotal}) = _$ChangeSourceStateImpl;
 
   @override
 
@@ -260,6 +308,14 @@ abstract class _ChangeSourceState implements ChangeSourceState {
   /// 本轮搜索的书源数量（仅 isLoading 时非 null；体检 U1 等待反馈，
   /// T6 流式 API 落地前暂以「源数量+时长」替代逐源 x/y 进度）
   int? get searchingCount;
+  @override
+
+  /// 已完成书源数（T6 流式：批次 finished_count，搜索中非 null）
+  int? get progressFinished;
+  @override
+
+  /// 参与搜索的书源总数（T6 流式：批次 total_count，权威值来自 Rust）
+  int? get progressTotal;
   @override
   @JsonKey(ignore: true)
   _$$ChangeSourceStateImplCopyWith<_$ChangeSourceStateImpl> get copyWith =>
