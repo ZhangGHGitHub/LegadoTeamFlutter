@@ -127,6 +127,26 @@ pub trait BookSourceFetcher: Send + Sync {
     async fn get_book_info(&self, source: &BookSource, book_url: &str)
         -> LegadoResult<WebBookInfo>;
 
+    /// 带既有书籍上下文的详情获取（换源 T2，2026-09-03）
+    ///
+    /// - `can_re_name`: 是否允许重命名（原版 changeSource 的 getBookInfoAwait
+    ///   传 false → 保留既有书名/作者，仅其余字段更新）
+    /// - `existing_name` / `existing_author`: 既有书名/作者（重命名门控基准）
+    ///
+    /// 默认实现退化为无上下文 [`BookSourceFetcher::get_book_info`]（Mock 等
+    /// 实现无需感知）；真实实现覆盖以保留 canReName 门控语义。
+    async fn get_book_info_with_existing(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        can_re_name: bool,
+        existing_name: &str,
+        existing_author: &str,
+    ) -> LegadoResult<WebBookInfo> {
+        let _ = (can_re_name, existing_name, existing_author);
+        self.get_book_info(source, book_url).await
+    }
+
     /// 获取章节列表
     ///
     /// - `source`: 书源配置
@@ -333,6 +353,34 @@ impl<F: BookSourceFetcher> WebBookEngine<F> {
             ));
         }
         self.fetcher.get_book_info(source, book_url).await
+    }
+
+    /// 带既有书籍上下文的详情获取（换源 T2，2026-09-03）
+    ///
+    /// 委托 fetcher 的 [`BookSourceFetcher::get_book_info_with_existing`]，
+    /// 保留既有书名/作者与 canReName 门控语义（对齐原版 changeSource getToc）。
+    pub async fn get_book_info_with_existing(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        can_re_name: bool,
+        existing_name: &str,
+        existing_author: &str,
+    ) -> LegadoResult<WebBookInfo> {
+        if book_url.is_empty() {
+            return Err(LegadoError::Parser(
+                "书籍详情页地址为空，无法获取详情（该书源搜索/发现规则未解析出详情链接）".into(),
+            ));
+        }
+        self.fetcher
+            .get_book_info_with_existing(
+                source,
+                book_url,
+                can_re_name,
+                existing_name,
+                existing_author,
+            )
+            .await
     }
 
     /// 获取章节列表

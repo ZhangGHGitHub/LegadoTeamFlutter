@@ -9,7 +9,7 @@ use futures::stream::{self, StreamExt};
 
 use legado_core::models::{BookChapter, BookSource};
 use legado_core::source_matcher::{SearchCandidate, SourceMatch, SourceMatcher};
-use legado_core::web_book::WebChapter;
+use legado_core::web_book::{BookSourceFetcher, WebChapter};
 use legado_core::{LegadoError, LegadoResult};
 use legado_net::LegadoClient;
 
@@ -263,7 +263,37 @@ fn clear_search_books_for_change(book_name: &str, author: &str) {
 /// bookUrl 下的旧章节与旧缓存正文，并用 new_book_url 从新源重新抓取目录、以
 /// 稳定的原 bookUrl 落库。避免旧实现「先改 book_url 再按新值 update」命中 0 行
 /// 回退 insert 导致的僵尸记录与章节孤儿；同时清缓存避免跨源正文串本。
+/// 切换到新书源
+///
+/// `book_url` — 当前书籍的 bookUrl（稳定主键，换源后保持不变）
+/// `new_source_url` — 新书源的 URL
+/// `new_book_url` — 新书源中该书籍的详情页 URL
+///
+/// 返回更新后的书籍信息（JSON）。
+///
+/// Task #16 P0（方案 A，对齐 Android 原版）：**bookUrl 作为稳定主键，换源时不
+/// 变更 bookUrl**。仅更新书源相关字段（origin/originName/tocUrl），随后清除该
+/// bookUrl 下的旧章节与旧缓存正文，并用 new_book_url 从新源重新抓取目录、以
+/// 稳定的原 bookUrl 落库。避免旧实现「先改 book_url 再按新值 update」命中 0 行
+/// 回退 insert 导致的僵尸记录与章节孤儿；同时清缓存避免跨源正文串本。
 pub fn switch_book_source(
+    book_url: &str,
+    new_source_url: &str,
+    new_book_url: &str,
+) -> LegadoResult<String> {
+    let fetcher = super::web_book::RealBookSourceFetcher::new()?;
+    switch_book_source_with(&fetcher, book_url, new_source_url, new_book_url)
+}
+
+/// 换源核心（fetcher 注入，便于单测以 Mock 验证 T2 执行链）
+///
+/// [T2 | ChangeBookSourceViewModel.kt:718-731 getToc] 对齐原版换源执行链：
+/// **先 `getBookInfoAwait`（canReName=false，保留既有书名/作者）解析真实
+/// tocUrl（ruleBookInfo.tocUrl 的目录页可与详情页不同），再用它取目录**；
+/// 详情或目录任一步失败 → 整个换源失败返回可读错误（含书源名），单事务
+/// 未提交即保留旧源。禁止拿 new_book_url 硬闯目录。
+fn switch_book_source_with<F: BookSourceFetcher>(
+    fetcher: &F,
     book_url: &str,
     new_source_url: &str,
     new_book_url: &str,
@@ -273,8 +303,8 @@ pub fn switch_book_source(
     use legado_db::BookRepository;
 
     // Task #21 修复：换源目标详情页 URL 为空时提前返回可读错误。
-    // 否则空 URL 会传入 WebBookEngine::get_chapters（步骤 2），触发解析器
-    // 抛出令人困惑的 "bookUrl不能为空"（web_book.rs get_chapters 空值校验）。
+    // 否则空 URL 会传入 get_chapters（步骤 2b），触发解析器抛出令人困惑的
+    // "bookUrl不能为空"（web_book.rs get_chapters 空值校验）。
     // 空 book_url 通常源于书源 ruleSearch.bookUrl 未解析出详情页 URL 的候选，
     // 此处兜底防御，主过滤在 search_for_switch（不让空候选进入换源列表）。
     if new_book_url.trim().is_empty() {
@@ -301,10 +331,37 @@ pub fn switch_book_source(
         Ok((book, source))
     })?;
 
-    // 2. 用 new_book_url（新源详情页）从新书源抓取章节列表
-    let engine = super::web_book::build_engine()?;
+    // 2a. [T2] 新源详情解析（canReName=false：保留既有书名/作者，对齐原版
+    //     changeSource getBookInfoAwait 门控；cover/intro/kind/lastChapter/
+    //     wordCount 在 parse 内按解析值更新，tocUrl 为真实目录页）
+    let info = runtime::block_on(async {
+        fetcher
+            .get_book_info_with_existing(&source, new_book_url, false, &book.name, &book.author)
+            .await
+    })
+    .map_err(|e| {
+        LegadoError::Parser(format!(
+            "换源失败：新源「{}」详情页解析失败，已保留原书源与目录: {e}",
+            source.book_source_name
+        ))
+    })?;
+
+    // 2b. [T2] 用解析出的真实 tocUrl 抓取新目录（目录页可与详情页不同，
+    //     如「详情页=books/1、目录页=/book/1/chapters」的源）
+    let toc_url = if info.toc_url.trim().is_empty() {
+        new_book_url.to_string()
+    } else {
+        info.toc_url.clone()
+    };
     let web_chapters: Vec<WebChapter> =
-        runtime::block_on(async { engine.get_chapters(&source, new_book_url).await })?;
+        runtime::block_on(async { fetcher.get_chapters(&source, &toc_url).await }).map_err(
+            |e| {
+                LegadoError::Parser(format!(
+                    "换源失败：新源「{}」目录获取失败，已保留原书源与目录: {e}",
+                    source.book_source_name
+                ))
+            },
+        )?;
 
     // Task #21 修复：空结果保护。新书源未解析到任何章节时（get_chapters 返回
     //    Ok(vec![]) 而非错误），直接返回可读错误，且不改动任何库记录
@@ -317,12 +374,14 @@ pub fn switch_book_source(
     }
 
     // 3. 转换为 BookChapter，base_url/book_url 均落稳定的原 bookUrl
+    //    [T1] 保留解析值 variable/is_volume：章节级 @put 变量（翻页 token 类）
+    //    与卷章标记是正文请求/去重的前置输入，写死 None/false 会导致换源后正文错误
     let book_chapters: Vec<BookChapter> = web_chapters
         .iter()
         .map(|wc| BookChapter {
             url: wc.url.clone(),
             title: wc.title.clone(),
-            is_volume: false,
+            is_volume: wc.is_volume,
             base_url: book_url.to_string(),
             book_url: book_url.to_string(),
             index: wc.index,
@@ -335,7 +394,7 @@ pub fn switch_book_source(
             end: None,
             start_fragment_id: None,
             end_fragment_id: None,
-            variable: None,
+            variable: wc.variable.clone(),
             img_url: None,
         })
         .collect();
@@ -351,8 +410,28 @@ pub fn switch_book_source(
     // 仅更新书源相关字段；bookUrl 不变 → update 的 WHERE 命中原行（稳定主键）
     book.origin = new_source_url.to_string();
     book.origin_name = source.book_source_name.clone();
-    // tocUrl 指向新源详情页，供后续刷新目录定位（bookUrl 仍为旧源 URL）
-    book.toc_url = new_book_url.to_string();
+    // [T2] tocUrl = 详情解析出的真实目录页（原写死详情页 URL，使「目录独立页」
+    //      源后续刷新目录/正文定位全错）
+    book.toc_url = toc_url;
+    // [T2] 详情字段按 parse 门控结果更新（name/author 已含 canReName 门控；
+    //      Option 字段仅在解析出值时覆盖，避免新源缺字段抹掉既有信息）
+    book.name = info.name;
+    book.author = info.author;
+    if info.cover_url.is_some() {
+        book.cover_url = info.cover_url;
+    }
+    if info.intro.is_some() {
+        book.intro = info.intro;
+    }
+    if info.kind.is_some() {
+        book.kind = info.kind;
+    }
+    if info.last_chapter.is_some() {
+        book.latest_chapter_title = info.last_chapter;
+    }
+    if info.word_count.is_some() {
+        book.word_count = info.word_count;
+    }
     // 标记需要重新获取章节列表
     book.last_check_time = 0;
     book.last_check_count = 0;
@@ -999,6 +1078,258 @@ mod tests {
         with_database(|db| {
             let repo = BookRepository::new(db.connection());
             repo.delete(old_url)
+        })
+        .ok();
+    }
+
+    // ─── [T2 | ChangeBookSourceViewModel.kt:718-731] 换源执行链 mock 单测 ─────
+
+    /// 换源链 mock：详情/目录按序注入，记录 get_chapters 实际收到的 URL
+    struct SwitchMockFetcher {
+        info: LegadoResult<legado_core::web_book::WebBookInfo>,
+        chapters: LegadoResult<Vec<WebChapter>>,
+        /// 记录每次 get_chapters 调用的 book_url 入参
+        chapters_requested: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl BookSourceFetcher for SwitchMockFetcher {
+        async fn search(
+            &self,
+            _source: &BookSource,
+            _query: &str,
+            _page: i32,
+        ) -> LegadoResult<Vec<legado_core::web_book::WebSearchResult>> {
+            Err(LegadoError::Internal("mock: search unused".into()))
+        }
+
+        async fn get_book_info(
+            &self,
+            _source: &BookSource,
+            _book_url: &str,
+        ) -> LegadoResult<legado_core::web_book::WebBookInfo> {
+            self.get_book_info_with_existing(_source, _book_url, true, "", "")
+                .await
+        }
+
+        async fn get_book_info_with_existing(
+            &self,
+            _source: &BookSource,
+            _book_url: &str,
+            can_re_name: bool,
+            existing_name: &str,
+            existing_author: &str,
+        ) -> LegadoResult<legado_core::web_book::WebBookInfo> {
+            // 模拟 Real fetcher parse 的 B2.1 重命名门控：can_re_name=false 且
+            // 既有值非空时保留既有书名/作者
+            match &self.info {
+                Ok(info) => {
+                    let mut info = info.clone();
+                    if !can_re_name && !existing_name.is_empty() {
+                        info.name = existing_name.to_string();
+                    }
+                    if !can_re_name && !existing_author.is_empty() {
+                        info.author = existing_author.to_string();
+                    }
+                    Ok(info)
+                }
+                Err(e) => Err(LegadoError::Internal(e.to_string())),
+            }
+        }
+
+        async fn get_chapters(
+            &self,
+            _source: &BookSource,
+            book_url: &str,
+        ) -> LegadoResult<Vec<WebChapter>> {
+            self.chapters_requested
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(book_url.to_string());
+            match &self.chapters {
+                Ok(list) => Ok(list.clone()),
+                Err(e) => Err(LegadoError::Internal(e.to_string())),
+            }
+        }
+
+        async fn get_content(
+            &self,
+            _source: &BookSource,
+            _chapter: &WebChapter,
+        ) -> LegadoResult<String> {
+            Err(LegadoError::Internal("mock: content unused".into()))
+        }
+    }
+
+    /// T2 主路径：详情解析出的 tocUrl（目录页≠详情页）用于取目录并落库；
+    /// 书名/作者保留既有值（canReName=false）；章节 variable/is_volume 保留解析值
+    #[test]
+    fn test_switch_uses_parsed_toc_url_and_preserves_parsed_values() {
+        use crate::db_state::with_database;
+        use legado_core::models::{Book, BookSource};
+        use legado_core::web_book::WebBookInfo;
+        use legado_db::repository::Repository;
+        use legado_db::{BookChapterRepository, BookRepository, BookSourceRepository};
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let old_url = "https://t2-old.example.com/book/1";
+        let new_source = "https://t2-new.example.com";
+        let new_detail = "https://t2-new.example.com/book/1";
+        let new_toc = "https://t2-new.example.com/book/1/chapters";
+
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: old_url.to_string(),
+                origin: "https://t2-old.example.com".to_string(),
+                origin_name: "旧源".to_string(),
+                name: "旧源书名".to_string(),
+                author: "旧作者".to_string(),
+                ..Book::default()
+            })?;
+            BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: new_source.to_string(),
+                book_source_name: "新源".to_string(),
+                ..BookSource::default()
+            })?;
+            Ok(())
+        })
+        .expect("初始数据写入失败");
+
+        let mock = SwitchMockFetcher {
+            info: Ok(WebBookInfo {
+                name: "新源解析名".to_string(),
+                author: "新源解析作者".to_string(),
+                cover_url: Some("https://t2-new.example.com/cover.jpg".to_string()),
+                intro: Some("新简介".to_string()),
+                categories: vec![],
+                last_chapter: Some("大结局".to_string()),
+                book_url: new_detail.to_string(),
+                toc_url: new_toc.to_string(),
+                word_count: Some("123456".to_string()),
+                kind: Some("玄幻".to_string()),
+            }),
+            chapters: Ok(vec![WebChapter {
+                index: 0,
+                title: "第一卷 第一章".to_string(),
+                url: format!("{new_toc}/c1"),
+                is_vip: false,
+                is_volume: true,
+                variable: Some(r#"{"token":"abc123"}"#.to_string()),
+            }]),
+            chapters_requested: std::sync::Mutex::new(Vec::new()),
+        };
+
+        let resp =
+            switch_book_source_with(&mock, old_url, new_source, new_detail).expect("换源应成功");
+        let book: Book = serde_json::from_str(&resp).unwrap();
+
+        // 2a/2b：取目录用的是详情解析出的 toc_url，而非详情页 URL
+        assert_eq!(
+            mock.chapters_requested.lock().unwrap().as_slice(),
+            [new_toc],
+            "get_chapters 应收到解析后的目录页 URL"
+        );
+        assert_eq!(book.toc_url, new_toc, "toc_url 应为解析后目录页");
+        // canReName=false：保留既有书名/作者；其余字段按解析值更新
+        assert_eq!(book.name, "旧源书名");
+        assert_eq!(book.author, "旧作者");
+        assert_eq!(book.origin, new_source);
+        assert_eq!(book.latest_chapter_title.as_deref(), Some("大结局"));
+
+        // T1：章节 variable/is_volume 保留解析值
+        with_database(|db| {
+            let repo = BookChapterRepository::new(db.connection());
+            let chapters = repo.find_by_book_url(old_url).expect("章节查询失败");
+            assert_eq!(chapters.len(), 1);
+            assert_eq!(
+                chapters[0].variable.as_deref(),
+                Some(r#"{"token":"abc123"}"#)
+            );
+            assert!(chapters[0].is_volume, "卷章标记应保留解析值");
+            Ok(())
+        })
+        .expect("章节断言失败");
+
+        // 收尾清理
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete(old_url);
+            let _ = BookSourceRepository::new(db.connection()).delete(new_source);
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// T2 失败语义：详情解析失败 → 整个换源失败，旧源/旧目录/旧章节原样保留
+    #[test]
+    fn test_switch_fails_and_keeps_old_source_when_info_fails() {
+        use crate::db_state::with_database;
+        use legado_core::models::{Book, BookSource};
+        use legado_db::repository::Repository;
+        use legado_db::{BookChapterRepository, BookRepository, BookSourceRepository};
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let old_url = "https://t2f-old.example.com/book/1";
+        let new_source = "https://t2f-new.example.com";
+        let new_detail = "https://t2f-new.example.com/book/1";
+
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            repo.insert(&Book {
+                book_url: old_url.to_string(),
+                origin: "https://t2f-old.example.com".to_string(),
+                origin_name: "旧源".to_string(),
+                name: "旧源书名".to_string(),
+                toc_url: "https://t2f-old.example.com/toc".to_string(),
+                ..Book::default()
+            })?;
+            BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: new_source.to_string(),
+                book_source_name: "新源".to_string(),
+                ..BookSource::default()
+            })?;
+            Ok(())
+        })
+        .expect("初始数据写入失败");
+
+        let mock = SwitchMockFetcher {
+            info: Err(LegadoError::Internal("详情页 403".into())),
+            chapters: Ok(vec![WebChapter {
+                index: 0,
+                title: "不应被使用".to_string(),
+                url: "https://t2f-new.example.com/c1".to_string(),
+                is_vip: false,
+                is_volume: false,
+                variable: None,
+            }]),
+            chapters_requested: std::sync::Mutex::new(Vec::new()),
+        };
+
+        let err = switch_book_source_with(&mock, old_url, new_source, new_detail)
+            .expect_err("详情失败应导致换源失败");
+        assert!(err.to_string().contains("新源"), "错误应含书源名: {err}");
+        assert!(
+            mock.chapters_requested.lock().unwrap().is_empty(),
+            "详情失败后不得再用 new_book_url 硬闯目录"
+        );
+
+        // 旧源/旧目录/旧章节原样保留（单事务未提交）
+        with_database(|db| {
+            let book = BookRepository::new(db.connection())
+                .find_by_url(old_url)?
+                .expect("书籍应存在");
+            assert_eq!(book.origin, "https://t2f-old.example.com");
+            assert_eq!(book.toc_url, "https://t2f-old.example.com/toc");
+            assert_eq!(
+                BookChapterRepository::new(db.connection()).count_by_book_url(old_url)?,
+                0
+            );
+            Ok(())
+        })
+        .expect("保留旧源断言失败");
+
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete(old_url);
+            let _ = BookSourceRepository::new(db.connection()).delete(new_source);
+            Ok(())
         })
         .ok();
     }

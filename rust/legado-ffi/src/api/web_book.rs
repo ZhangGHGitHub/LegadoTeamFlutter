@@ -802,6 +802,24 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         source: &BookSource,
         book_url: &str,
     ) -> LegadoResult<WebBookInfo> {
+        self.get_book_info_with_existing(source, book_url, true, "", "")
+            .await
+    }
+
+    /// 带既有书籍上下文的详情获取（换源 T2，2026-09-03）
+    ///
+    /// `can_re_name` / `existing_name` / `existing_author` 透传给
+    /// [`Self::parse_book_info_from_body`] 的 B2.1 双条件重命名门控：
+    /// 原版 changeSource 的 getBookInfoAwait 传 canReName=false → 保留既有
+    /// 书名/作者，仅 cover/intro/kind/lastChapter/wordCount 等按解析值更新。
+    async fn get_book_info_with_existing(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        can_re_name: bool,
+        existing_name: &str,
+        existing_author: &str,
+    ) -> LegadoResult<WebBookInfo> {
         acquire_source_rate_limit(source).await;
         let source_headers = Self::parse_source_headers(source);
 
@@ -827,9 +845,18 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         // 1.5 loginCheckJs 登录检测
         Self::execute_login_check(source, &body, book_url, 200)?;
 
-        // 2. 使用 bookInfo 规则解析（无状态上下文无已有书名，canReName=true、existing 为空）
+        // 2. 使用 bookInfo 规则解析（canReName/existing 由调用方决定：
+        //    无状态入口传 true/空 → 解析值直接生效；换源传 false/既有值 → 门控）
         let t_parse = std::time::Instant::now();
-        let info = Self::parse_book_info_from_body(source, body, book_url, book_url, true, "", "");
+        let info = Self::parse_book_info_from_body(
+            source,
+            body,
+            book_url,
+            book_url,
+            can_re_name,
+            existing_name,
+            existing_author,
+        );
         eprintln!(
             "[web_book] get_book_info parse in {:?} name={}",
             t_parse.elapsed(),
