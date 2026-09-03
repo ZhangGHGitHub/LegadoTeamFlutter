@@ -8,10 +8,10 @@ legado-core = { path = "../legado-core" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 zip = "2"
-quick-xml = "0.37"
+quick-xml = "0.42"
 encoding_rs = "0.8"
 regex = "1"
-lopdf = "0.34"
+lopdf = "0.42"
 # PDF 导出：纯 Rust 实现（printpdf + rusttype），支持 Android 交叉编译
 # images feature：启用 genpdf 的图片嵌入能力（图片书/漫画 PDF 导出）
 genpdf = { version = "0.2", features = ["images"] }

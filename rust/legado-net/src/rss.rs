@@ -67,7 +67,7 @@ fn parse_rss(xml: &str) -> LegadoResult<RssFeed> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
-                let tag_name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                let tag_name = e.local_name().as_ref().to_string();
                 current_tag = tag_name.clone();
                 current_text.clear();
 
@@ -88,7 +88,7 @@ fn parse_rss(xml: &str) -> LegadoResult<RssFeed> {
                 }
             }
             Ok(Event::End(ref e)) => {
-                let tag_name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                let tag_name = e.local_name().as_ref().to_string();
 
                 if tag_name == "item" {
                     articles.push(RssArticle {
@@ -149,23 +149,20 @@ fn parse_rss(xml: &str) -> LegadoResult<RssFeed> {
             }
             Ok(Event::Empty(ref e)) => {
                 // 处理自闭合标签，如 <enclosure url="..." />
-                let tag_name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                let tag_name = e.local_name().as_ref().to_string();
                 if tag_name == "enclosure" && in_item {
                     for attr in e.attributes().flatten() {
-                        if attr.key.local_name().as_ref() == b"url" {
-                            item_image_url = Some(String::from_utf8_lossy(&attr.value).to_string());
+                        if attr.key.as_ref() == "url" {
+                            item_image_url = Some(attr.value.to_string());
                         }
                     }
                 }
             }
             Ok(Event::Text(ref e)) => {
-                if let Ok(text) = e.unescape() {
-                    current_text.push_str(&text);
-                }
+                current_text.push_str(e.as_ref());
             }
             Ok(Event::CData(ref e)) => {
-                let text = String::from_utf8_lossy(e.as_ref()).to_string();
-                current_text.push_str(&text);
+                current_text.push_str(e.as_ref());
             }
             Ok(Event::Eof) => break,
             Err(e) => {
@@ -213,7 +210,7 @@ fn parse_atom(xml: &str) -> LegadoResult<RssFeed> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
-                let tag_name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                let tag_name = e.local_name().as_ref().to_string();
                 current_tag = tag_name.clone();
                 current_text.clear();
 
@@ -236,7 +233,7 @@ fn parse_atom(xml: &str) -> LegadoResult<RssFeed> {
                 }
             }
             Ok(Event::End(ref e)) => {
-                let tag_name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                let tag_name = e.local_name().as_ref().to_string();
 
                 if tag_name == "entry" {
                     articles.push(RssArticle {
@@ -291,16 +288,16 @@ fn parse_atom(xml: &str) -> LegadoResult<RssFeed> {
                 current_text.clear();
             }
             Ok(Event::Empty(ref e)) => {
-                let tag_name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                let tag_name = e.local_name().as_ref().to_string();
                 if tag_name == "link" {
                     let mut href = String::new();
                     let mut rel = String::new();
                     let mut link_type = String::new();
                     for attr in e.attributes().flatten() {
-                        match attr.key.local_name().as_ref() {
-                            b"href" => href = String::from_utf8_lossy(&attr.value).to_string(),
-                            b"rel" => rel = String::from_utf8_lossy(&attr.value).to_string(),
-                            b"type" => link_type = String::from_utf8_lossy(&attr.value).to_string(),
+                        match attr.key.as_ref() {
+                            "href" => href = attr.value.to_string(),
+                            "rel" => rel = attr.value.to_string(),
+                            "type" => link_type = attr.value.to_string(),
                             _ => {}
                         }
                     }
@@ -321,8 +318,8 @@ fn parse_atom(xml: &str) -> LegadoResult<RssFeed> {
                     }
                 } else if tag_name == "category" && in_entry {
                     for attr in e.attributes().flatten() {
-                        if attr.key.local_name().as_ref() == b"term" {
-                            let term = String::from_utf8_lossy(&attr.value).to_string();
+                        if attr.key.as_ref() == "term" {
+                            let term = attr.value.to_string();
                             if !term.is_empty() {
                                 entry_categories.push(term);
                             }
@@ -331,13 +328,10 @@ fn parse_atom(xml: &str) -> LegadoResult<RssFeed> {
                 }
             }
             Ok(Event::Text(ref e)) => {
-                if let Ok(text) = e.unescape() {
-                    current_text.push_str(&text);
-                }
+                current_text.push_str(e.as_ref());
             }
             Ok(Event::CData(ref e)) => {
-                let text = String::from_utf8_lossy(e.as_ref()).to_string();
-                current_text.push_str(&text);
+                current_text.push_str(e.as_ref());
             }
             Ok(Event::Eof) => break,
             Err(e) => {

@@ -297,9 +297,7 @@ impl WebDavClient {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) => {
-                    let local = std::str::from_utf8(e.local_name().as_ref())
-                        .unwrap_or("")
-                        .to_string();
+                    let local = e.local_name().as_ref().to_string();
                     tag_local.clone_from(&local);
                     match local.as_str() {
                         "response" => {
@@ -316,16 +314,14 @@ impl WebDavClient {
                     }
                 }
                 Ok(Event::Empty(ref e)) => {
-                    let local = std::str::from_utf8(e.local_name().as_ref())
-                        .unwrap_or("")
-                        .to_string();
+                    let local = e.local_name().as_ref().to_string();
                     if local == "collection" && in_prop {
                         current_is_dir = true;
                     }
                 }
                 Ok(Event::Text(ref e)) => {
                     if !tag_local.is_empty() && in_response {
-                        let text = e.unescape().unwrap_or_default().to_string();
+                        let text = e.as_ref().to_string();
                         match tag_local.as_str() {
                             "href" => current_href = Some(text),
                             "displayname" if in_prop => current_displayname = Some(text),
@@ -340,9 +336,7 @@ impl WebDavClient {
                     }
                 }
                 Ok(Event::End(ref e)) => {
-                    let local = std::str::from_utf8(e.local_name().as_ref())
-                        .unwrap_or("")
-                        .to_string();
+                    let local = e.local_name().as_ref().to_string();
                     match local.as_str() {
                         "response" if in_response => {
                             let href = current_href.clone().unwrap_or_default();

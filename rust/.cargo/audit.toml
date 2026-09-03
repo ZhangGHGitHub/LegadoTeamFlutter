@@ -1,0 +1,17 @@
+# cargo audit 项目级配置（cargo-audit ≥0.22；旧 .cargo-auditignore 机制已废弃）
+#
+# [advisories].ignore 仅登记「无可用升级路径」的 RustSec 公告，逐条附评估结论。
+# 可升级的漏洞一律直接升级，不得进入本清单（2026-09-03 CI audit 门禁修复批次）。
+
+[advisories]
+# RUSTSEC-2026-0187 — lopdf 深度嵌套 PDF 对象栈溢出（severity high）
+#   豁免对象：lopdf 0.26.0，仅由 genpdf 0.2.0（crates.io 最新版，无新版本可升）
+#   及其依赖 printpdf 0.3.4 引入；我方直接依赖 lopdf 已升至 0.42.0（修复版本）。
+#   风险接受理由：genpdf/printpdf 仅用于 PDF 导出渲染路径，输入为应用自身生成的
+#   文档对象，不解析外部不可信 PDF。P2 跟进：待 genpdf 上游发布或评估替代实现后移除本条。
+# RUSTSEC-2023-0071 — rsa Marvin Attack 时序侧信道（severity medium）
+#   豁免对象：rsa 0.9.10，官方公告明确「无已修复版本可升级」。
+#   风险接受理由：rsa 由 legado-js quickjs feature 引入，用途为书源内容加解密
+#   （对齐原版 java.* 加密桥），非身份认证/密钥托管场景；Marvin Attack 需对进程
+#   做物理级时序采样方可恢复密钥，与本应用威胁模型不匹配。P2 跟进：上游发布修复版后升级移除本条。
+ignore = ["RUSTSEC-2026-0187", "RUSTSEC-2023-0071"]

@@ -143,11 +143,11 @@ fn parse_container_xml(xml: &str) -> LegadoResult<String> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Empty(ref e)) | Ok(Event::Start(ref e))
-                if e.local_name().as_ref() == b"rootfile" =>
+                if e.local_name().as_ref() == "rootfile" =>
             {
                 for attr in e.attributes().flatten() {
-                    if attr.key.as_ref() == b"full-path" {
-                        return Ok(String::from_utf8_lossy(&attr.value).to_string());
+                    if attr.key.as_ref() == "full-path" {
+                        return Ok(attr.value.to_string());
                     }
                 }
             }
@@ -180,7 +180,7 @@ fn parse_opf_xml(xml: &str, base_path: String) -> LegadoResult<OpfData> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
-                let local = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                let local = e.local_name().as_ref().to_string();
                 match local.as_str() {
                     "metadata" => in_metadata = true,
                     "manifest" => in_manifest = true,
@@ -188,9 +188,8 @@ fn parse_opf_xml(xml: &str, base_path: String) -> LegadoResult<OpfData> {
                         in_spine = true;
                         // 获取 toc 属性（EPUB2 NCX 引用）
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"toc" {
-                                data.toc_id =
-                                    Some(String::from_utf8_lossy(&attr.value).to_string());
+                            if attr.key.as_ref() == "toc" {
+                                data.toc_id = Some(attr.value.to_string());
                             }
                         }
                     }
@@ -202,18 +201,16 @@ fn parse_opf_xml(xml: &str, base_path: String) -> LegadoResult<OpfData> {
                 }
             }
             Ok(Event::Empty(ref e)) => {
-                let local = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                let local = e.local_name().as_ref().to_string();
                 if in_manifest && local == "item" {
                     let mut id = String::new();
                     let mut href = String::new();
                     let mut media_type = String::new();
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
-                            b"id" => id = String::from_utf8_lossy(&attr.value).to_string(),
-                            b"href" => href = String::from_utf8_lossy(&attr.value).to_string(),
-                            b"media-type" => {
-                                media_type = String::from_utf8_lossy(&attr.value).to_string()
-                            }
+                            "id" => id = attr.value.to_string(),
+                            "href" => href = attr.value.to_string(),
+                            "media-type" => media_type = attr.value.to_string(),
                             _ => {}
                         }
                     }
@@ -222,9 +219,8 @@ fn parse_opf_xml(xml: &str, base_path: String) -> LegadoResult<OpfData> {
                     }
                 } else if in_spine && local == "itemref" {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"idref" {
-                            data.spine
-                                .push(String::from_utf8_lossy(&attr.value).to_string());
+                        if attr.key.as_ref() == "idref" {
+                            data.spine.push(attr.value.to_string());
                         }
                     }
                 } else if in_metadata && local == "meta" {
@@ -233,10 +229,8 @@ fn parse_opf_xml(xml: &str, base_path: String) -> LegadoResult<OpfData> {
                     let mut content_attr = String::new();
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
-                            b"name" => name_attr = String::from_utf8_lossy(&attr.value).to_string(),
-                            b"content" => {
-                                content_attr = String::from_utf8_lossy(&attr.value).to_string()
-                            }
+                            "name" => name_attr = attr.value.to_string(),
+                            "content" => content_attr = attr.value.to_string(),
                             _ => {}
                         }
                     }
@@ -247,11 +241,11 @@ fn parse_opf_xml(xml: &str, base_path: String) -> LegadoResult<OpfData> {
             }
             Ok(Event::Text(ref e)) => {
                 if current_tag.is_some() {
-                    text_buf.push_str(&e.unescape().unwrap_or_default());
+                    text_buf.push_str(e.as_ref());
                 }
             }
             Ok(Event::End(ref e)) => {
-                let local = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                let local = e.local_name().as_ref().to_string();
                 if in_metadata {
                     if let Some(ref tag) = current_tag {
                         match tag.as_str() {
@@ -315,7 +309,7 @@ fn parse_ncx_xml(xml: &str) -> LegadoResult<HashMap<String, String>> {
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(ref e)) => {
-                let local = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                let local = e.local_name().as_ref().to_string();
                 if local == "navLabel" {
                     in_nav_label = true;
                 } else if in_nav_label && local == "text" {
@@ -324,20 +318,20 @@ fn parse_ncx_xml(xml: &str) -> LegadoResult<HashMap<String, String>> {
                 }
             }
             Ok(Event::Text(ref e)) if in_text => {
-                current_title.push_str(&e.unescape().unwrap_or_default());
+                current_title.push_str(e.as_ref());
             }
             Ok(Event::Empty(ref e)) => {
-                let local = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                let local = e.local_name().as_ref().to_string();
                 if local == "content" {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"src" {
-                            current_src = Some(String::from_utf8_lossy(&attr.value).to_string());
+                        if attr.key.as_ref() == "src" {
+                            current_src = Some(attr.value.to_string());
                         }
                     }
                 }
             }
             Ok(Event::End(ref e)) => {
-                let local = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                let local = e.local_name().as_ref().to_string();
                 if local == "text" {
                     in_text = false;
                 } else if local == "navLabel" {

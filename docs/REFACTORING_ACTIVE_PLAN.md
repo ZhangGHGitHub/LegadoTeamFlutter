@@ -181,6 +181,7 @@
 - ✅ **D4 回归单测**（`25c9e2a03a`）：quickjs `d4_js_precision_tests`——mainJs 静态夹具两书，precision=true 仅命中条目通过，防对齐回退。
 - ✅ **§三.9 内存限制测试**（同上）：`#[cfg_attr(windows, ignore)]`——Windows 仍跳过（进程级崩溃），Linux CI 恢复沙箱安全线回归防护。
 - ✅ **N7 cargo audit**（rust-ci.yml）：RustSec Advisory 扫描阻塞门禁 + 清理重复 test 步骤。
+  - ✅ **N7 门禁首跑修复（2026-09-03）**：门禁首次运行暴露 6 漏洞（本地此前从未装过 cargo-audit，门禁上线后未在本机执行过）→ h2 lock 升至 0.4.19、quick-xml 0.37→0.42（epub/rss/webdav 三处 API 迁移）、lopdf 直接依赖 →0.42；余 2 项无升级路径按风险接受登记于 `rust/.cargo/audit.toml`（v0.22 起取代 .cargo-auditignore）：lopdf 0.26 被 genpdf 0.2.0/printpdf 锁死（上游无新版）、rsa RUSTSEC-2023-0071 官方无修复版，评估结论与 P2 跟进见该文件注释。
 - ✅ **连带修复**（`b60efc101c`）：legado-net custom_hosts e2e 在有系统代理环境下 502（代理架空 hosts 直连语义）→ `LegadoClientConfig` 新增 `no_proxy` 开关 + e2e 测试启用；TEST_LOCK 中毒级联拖垮同模块 5 测试 → 9 处改 `into_inner()` 中毒恢复（§三.12 惯例）；web_book 两个失效站点诊断测试补 `#[ignore]`（同文件惯例）。
 - ✅ **N5 评估登记**：source_checker.rs:511 / reader.rs:307 两处简化点均为设计内（有注释自述、无生产正确性影响），维持登记不修改，详见整合报告 §五.N5。
 - 门禁：fmt 0 diff、clippy 双段 0 warning、`cargo test --workspace` 全绿（2237 passed / 51 ignored）、`legado-js quickjs` 513/0、`legado-ffi quickjs` 396/0（siluke 时序敏感测试在负载下偶发抖动，单跑/复跑通过，属环境基线非本轮回归）。
