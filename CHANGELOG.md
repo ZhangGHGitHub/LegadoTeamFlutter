@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.160] - 2026-09-04
+
+### Fixed
+- [UI] 订阅页顶部 4 图标（阅读记录/收藏/分组/管理）浅底看不清：Symbols 描边版对比度不足，改 filled 填充版 + onSurface 显式色（模拟器实机确认）
+
+### Test
+- flutter analyze 无问题；rss 相关 12 项全过
+- 版本 2.0.160+161
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.159] - 2026-09-04
 
 ### Fixed

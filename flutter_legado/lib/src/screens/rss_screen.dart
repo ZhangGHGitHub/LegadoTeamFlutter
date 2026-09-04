@@ -131,8 +131,14 @@ class _RssScreenState extends ConsumerState<RssScreen> {
         actions: [
           // 安卓原版顶栏 4 个功能入口：阅读记录/收藏/分组/订阅源管理
           // （原版 menu_read_record 打开阅读记录对话框，非独立页面）
+          // [FIX 2026-09-04] 顶栏图标用 filled 填充版 + onSurface 显式色：
+          // Symbols 描边版在浅底上对比度不足，用户报“顶部看不清楚”
           IconButton(
-            icon: const Icon(Symbols.history_rounded),
+            icon: Icon(
+              Symbols.history_rounded,
+              fill: 1,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
             tooltip: '阅读记录',
             onPressed: () => showDialog<void>(
               context: context,
@@ -140,14 +146,22 @@ class _RssScreenState extends ConsumerState<RssScreen> {
             ),
           ),
           IconButton(
-            icon: const Icon(Symbols.star_rounded),
+            icon: Icon(
+              Symbols.star_rounded,
+              fill: 1,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
             tooltip: '收藏',
             onPressed: () => Navigator.pushNamed(context, AppRoutes.rssFavorites),
           ),
           // 分组筛选：对齐原版 RssFragment 的分组菜单（ic_groups 图标，linkedSetOf 保序聚合）
           PopupMenuButton<String?>(
             tooltip: '分组',
-            icon: const Icon(Symbols.groups_rounded),
+            icon: Icon(
+              Symbols.groups_rounded,
+              fill: 1,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
             onSelected: (group) => notifier.setGroup(group),
             itemBuilder: (context) => [
               const PopupMenuItem<String?>(
@@ -164,7 +178,11 @@ class _RssScreenState extends ConsumerState<RssScreen> {
           // 原版 menu_rss_config：齿轮图标即订阅源管理入口，
           // 返回后刷新源列表
           IconButton(
-            icon: const Icon(Symbols.settings_rounded),
+            icon: Icon(
+              Symbols.settings_rounded,
+              fill: 1,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
             tooltip: '订阅源管理',
             onPressed: () async {
               await Navigator.pushNamed(context, AppRoutes.rssSourceManage);
