@@ -332,7 +332,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
             Text(
               '${_currentIndex + 1}/${_history.length}',
               style: theme.textTheme.labelSmall?.copyWith(
-                color: theme.colorScheme.outline,
+                // [FIX 2026-09-04] 正文次要文字走 onSurfaceVariant（outline 仅用于边框/装饰图标）
+                color: theme.colorScheme.onSurfaceVariant,
               ),
             ),
         ],
@@ -397,7 +398,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
                   url,
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontFamily: 'monospace',
-                    color: theme.colorScheme.outline,
+                    // [FIX 2026-09-04] 正文次要文字走 onSurfaceVariant（outline 仅用于边框/装饰图标）
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
@@ -414,7 +416,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
         Text(
           '复制脚本 → 在外部浏览器控制台（F12）执行 → 将结果粘贴到下方',
           style: theme.textTheme.bodySmall?.copyWith(
-            color: theme.colorScheme.outline,
+            // [FIX 2026-09-04] 正文次要文字走 onSurfaceVariant（outline 仅用于边框/装饰图标）
+            color: theme.colorScheme.onSurfaceVariant,
           ),
         ),
         const SizedBox(height: 8),

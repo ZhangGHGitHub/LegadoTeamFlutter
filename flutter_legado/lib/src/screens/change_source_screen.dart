@@ -912,7 +912,8 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
                     Text(
                       item.wordCount!,
                       style: textTheme.bodySmall?.copyWith(
-                        color: colorScheme.outline,
+                        // [FIX 2026-09-04] 正文次要文字走 onSurfaceVariant（outline 仅用于边框/装饰图标）
+                        color: colorScheme.onSurfaceVariant,
                       ),
                     ),
                   if (_loadWordCount &&
@@ -921,14 +922,16 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
                     Text(
                       item.chapterWordCountText!,
                       style: textTheme.bodySmall?.copyWith(
-                        color: colorScheme.outline,
+                        // [FIX 2026-09-04] 正文次要文字走 onSurfaceVariant（outline 仅用于边框/装饰图标）
+                        color: colorScheme.onSurfaceVariant,
                       ),
                     ),
                   if (_loadWordCount && item.respondTime >= 0)
                     Text(
                       '耗时 ${item.respondTime}ms',
                       style: textTheme.labelSmall?.copyWith(
-                        color: colorScheme.outline,
+                        // [FIX 2026-09-04] 正文次要文字走 onSurfaceVariant（outline 仅用于边框/装饰图标）
+                        color: colorScheme.onSurfaceVariant,
                       ),
                     ),
                 ],

@@ -245,7 +245,8 @@ class _BookmarkTile extends StatelessWidget {
                     child: Text(
                       bookmark.bookName,
                       style: theme.textTheme.bodySmall?.copyWith(
-                        color: theme.colorScheme.outline,
+                        // [FIX 2026-09-04] 正文次要文字走 onSurfaceVariant（outline 仅用于边框/装饰图标）
+                        color: theme.colorScheme.onSurfaceVariant,
                       ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
@@ -254,7 +255,8 @@ class _BookmarkTile extends StatelessWidget {
                   Text(
                     '第 ${bookmark.chapterIndex + 1} 章',
                     style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.outline,
+                      // [FIX 2026-09-04] 正文次要文字走 onSurfaceVariant（outline 仅用于边框/装饰图标）
+                      color: theme.colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],

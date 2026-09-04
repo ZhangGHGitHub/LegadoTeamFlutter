@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.158] - 2026-09-04
+
+### Fixed
+- [UI] 正文次要文字对比度修复：书签书名/章节、浏览器历史计数/URL/说明、换源字数/耗时、替换规则预览共 9 处 Text 误用 `outline`（边框装饰色，对比度不足）改为 `onSurfaceVariant`；图标/边框装饰类 outline 保留
+
+### Test
+- flutter analyze 无问题；change_source/source_card 11 项全过
+- 版本 2.0.158+159
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.157] - 2026-09-04
 
 ### Changed
