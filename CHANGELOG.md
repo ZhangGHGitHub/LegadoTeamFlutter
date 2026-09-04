@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.159] - 2026-09-04
+
+### Fixed
+- [UI] 暗色下发现页顶部 FilterChip（“全部”/分组）黑字看不清：L1 新增 chipTheme 未声明 label 色，未选中态回退黑色（对比度仅 1.1）；现 label 走 onSurfaceVariant、选中走 onSecondaryContainer；新增订阅/发现亮暗 4 场景对比度审计测试（contrast_audit_test，低对比即失败）回归守护
+
+### Test
+- flutter analyze 无问题；contrast_audit 4 全过（21 文本零低对比）
+- 版本 2.0.159+160
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.158] - 2026-09-04
 
 ### Fixed

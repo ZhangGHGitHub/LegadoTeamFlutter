@@ -461,11 +461,16 @@ class AppTheme {
 
       // Chip 主题 —— M3 默认（选中态 secondaryContainer 落地）
       // [LAYOUT_MOTION_AUDIT L1] 新增：此前完全无 chip 主题
+      // [FIX 2026-09-04] label 色显式声明：未选中 onSurfaceVariant，
+      // 选中 onSecondaryContainer。否则 FilterChip 未选中态回退黑色，
+      // 暗色下对比度仅 1.1（发现页顶部“全部”看不清实锤）
       chipTheme: ChipThemeData(
         backgroundColor: colorScheme.surfaceContainerLow,
         selectedColor: colorScheme.secondaryContainer,
         secondarySelectedColor: colorScheme.secondaryContainer,
-        labelStyle: AppTypography.lightTextTheme.labelLarge,
+        labelStyle: AppTypography.lightTextTheme.labelLarge?.copyWith(
+          color: colorScheme.onSurfaceVariant,
+        ),
         secondaryLabelStyle: AppTypography.lightTextTheme.labelLarge?.copyWith(
           color: colorScheme.onSecondaryContainer,
         ),
