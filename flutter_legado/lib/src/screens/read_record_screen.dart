@@ -108,7 +108,8 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
       body: Column(
         children: [
           _buildTotalHeader(context, state),
-          const Divider(height: 1),
+          // [LAYOUT_PLAN P3] 分隔线走 tonal 舍 outlineVariant（对齐 file_manage/offline_cache 样板）
+          const Divider(height: 1, indent: 16, endIndent: 16),
           Expanded(child: _buildBody(context, state)),
         ],
       ),
@@ -171,8 +172,15 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     return RefreshIndicator(
       onRefresh: () => ref.read(readRecordNotifierProvider.notifier).load(),
       child: ListView.separated(
+        // [LAYOUT_PLAN P3] 页面水平边距 16dp；纵向留白 8dp
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         itemCount: state.records.length + 1,
-        separatorBuilder: (_, _) => const Divider(height: 1, indent: 16),
+        separatorBuilder: (_, _) => const Divider(
+          height: 1,
+          // [LAYOUT_PLAN P3] 分隔线走 tonal 舍 outlineVariant（对齐 file_manage/offline_cache 样板）
+          indent: 16,
+          endIndent: 16,
+        ),
         itemBuilder: (context, index) {
           // [阅读热力图] 默认收起的可选区块（用户授权新增，AGENTS 红线
           // 2026-08-29 口径）：时长模式 = readRecordDailyList（Rust 契约

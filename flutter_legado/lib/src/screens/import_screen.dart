@@ -303,7 +303,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       height: 48,
       child: ListView(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        // [LAYOUT_PLAN P3] 页面水平边距统一 16dp（全局标尺）
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         children: [
           for (final fmt in _allBrowsableFormats)
             Padding(
@@ -331,6 +332,7 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
   Widget _buildBreadcrumb() {
     return Container(
       width: double.infinity,
+      // [LAYOUT_PLAN P3] 页面水平边距统一 16dp（全局标尺）
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
       child: Row(
@@ -377,6 +379,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       );
     }
     return ListView(
+      // [LAYOUT_PLAN P3] 页面水平边距统一 16dp；纵向留白 8dp（全局标尺，对齐导入确认页）
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       children: [
         for (final dir in _dirs) _buildDirTile(dir),
         for (final file in _visibleFiles) _buildFileTile(file),
@@ -386,7 +390,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
 
   Widget _buildRootPicker() {
     return ListView(
-      padding: const EdgeInsets.all(12),
+      // [LAYOUT_PLAN P3] 页面水平边距统一 16dp（全局标尺）
+      padding: const EdgeInsets.all(16),
       children: [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -394,7 +399,16 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
         ),
         for (final root in _roots)
           Card(
+            // [LAYOUT_PLAN P3] 分组卡圆角 16dp（全局标尺）
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
             child: ListTile(
+              // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 8,
+                vertical: 12,
+              ),
               leading: const Icon(Symbols.storage_rounded),
               title: Text(_displayName(root.path)),
               subtitle: Text(root.path, maxLines: 1, overflow: TextOverflow.ellipsis),
@@ -407,6 +421,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
 
   Widget _buildDirTile(Directory dir) {
     return ListTile(
+      // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8（外层 ListView 保证页面水平边距 16dp）
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       leading: Icon(Symbols.folder_rounded, color: Theme.of(context).colorScheme.primary),
       title: Text(_displayName(dir.path)),
             onTap: () => _enterDir(dir),
@@ -424,13 +440,23 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
         builder: (context, snap) {
           final size = snap.data?.size ?? 0;
           return ListTile(
+            // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8（外层 ListView 纵向留白 8dp）
+            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
             leading: Icon(Symbols.folder_zip_rounded, color: Theme.of(context).colorScheme.secondary),
             title: Text(
               _displayName(path),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
+              // [LAYOUT_PLAN P3] 列表行标题走 titleSmall
+              style: Theme.of(context).textTheme.titleSmall,
             ),
-            subtitle: Text('${ext.toUpperCase()} · ${_formatSize(size)}'),
+            subtitle: Text(
+              '${ext.toUpperCase()} · ${_formatSize(size)}',
+              // [LAYOUT_PLAN P3] 元信息走 labelSmall + onSurfaceVariant
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
                         onTap: () => _openArchiveImport(path),
           );
         },
@@ -443,6 +469,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       builder: (context, snap) {
         final size = snap.data?.size ?? 0;
         return ListTile(
+          // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8（外层 ListView 纵向留白 8dp）
+          contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
           leading: Checkbox(
             value: selected,
             onChanged: (_) => _toggleFile(path),
@@ -451,12 +479,19 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
             _displayName(path),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
-              color: selected ? Theme.of(context).colorScheme.primary : null,
-            ),
+            // [LAYOUT_PLAN P3] 列表行标题走 titleSmall
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.normal,
+                  color: selected ? Theme.of(context).colorScheme.primary : null,
+                ),
           ),
-          subtitle: Text('${ext.toUpperCase()} · ${_formatSize(size)}'),
+          subtitle: Text(
+            '${ext.toUpperCase()} · ${_formatSize(size)}',
+            // [LAYOUT_PLAN P3] 元信息走 labelSmall + onSurfaceVariant
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
+          ),
           trailing: Icon(_iconForFormat(ext), size: 20),
           onTap: () => _toggleFile(path),
         );
@@ -537,7 +572,8 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.all(12),
+        // [LAYOUT_PLAN P3] 底部操作区水平边距 16dp（全局标尺）
+        padding: const EdgeInsets.all(16),
         child: FilledButton.icon(
           onPressed: count == 0 ? null : _startImport,
           icon: const Icon(Symbols.download_rounded),

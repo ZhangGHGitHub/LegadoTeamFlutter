@@ -281,7 +281,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   Widget _buildAddressBar(ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+      // [LAYOUT_PLAN P3] 页面水平边距统一 16dp（全局标尺）
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
       child: Row(
         children: [
           Expanded(
@@ -314,7 +315,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
 
   Widget _buildToolbar(ThemeData theme) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      // [LAYOUT_PLAN P3] 页面水平边距统一 16dp（全局标尺）
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         children: [
           IconButton(
@@ -365,10 +367,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final url = _currentUrl!;
     final uri = Uri.tryParse(url);
     return ListView(
+      // [LAYOUT_PLAN P3] 页面水平边距统一 16dp（全局标尺）
       padding: const EdgeInsets.all(16),
       children: [
         // 当前页面信息
         Card(
+          // [LAYOUT_PLAN P3] 分组卡圆角 16dp；卡内统一 16dp
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(

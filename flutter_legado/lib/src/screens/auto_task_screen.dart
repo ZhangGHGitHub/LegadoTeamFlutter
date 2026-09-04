@@ -253,8 +253,15 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           return RefreshIndicator(
             onRefresh: () => notifier.loadTasks(),
             child: ListView.separated(
+              // [LAYOUT_PLAN P3] 页面水平边距 16dp；纵向留白 8dp
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               itemCount: state.tasks.length,
-              separatorBuilder: (_, index) => const Divider(height: 1),
+              // [LAYOUT_PLAN P3] 分隔线走 tonal 舍 outlineVariant（对齐 file_manage/offline_cache 样板）
+              separatorBuilder: (_, index) => Divider(
+                height: 1,
+                indent: 16,
+                endIndent: 16,
+              ),
               itemBuilder: (context, index) {
                 final task = state.tasks[index];
                 return _buildTaskTile(context, notifier, task);
@@ -288,8 +295,14 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
     }
 
     return ListTile(
+      // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8
+      contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
       leading: Icon(icon, color: Theme.of(context).colorScheme.primary),
-      title: Text(task.name),
+      title: Text(
+        task.name,
+        // [LAYOUT_PLAN P3] 列表行标题走 titleSmall
+        style: Theme.of(context).textTheme.titleSmall,
+      ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -300,14 +313,16 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                   color: Theme.of(context).colorScheme.onSurfaceVariant),
               const SizedBox(width: 4),
               Text('cron: ${task.cron}',
-                  style: TextStyle(fontSize: 12,
+                  // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: Theme.of(context).colorScheme.onSurfaceVariant)),
             ],
           ),
           if (task.lastRunAt != null) ...[
             const SizedBox(height: 2),
             Text('上次运行: ${task.lastRunAt} · ${task.lastResult ?? "未知"}',
-                style: TextStyle(fontSize: 12,
+                // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Theme.of(context).colorScheme.onSurfaceVariant)),
           ],
         ],
@@ -332,6 +347,11 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
+          // [LAYOUT_PLAN P3] Dialog 容器 surfaceContainer 圆角 28dp（全局标尺，对齐 dialogTheme）
+          backgroundColor: Theme.of(ctx).colorScheme.surfaceContainer,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
           title: const Text('添加定时任务'),
           content: SingleChildScrollView(
             child: Column(
@@ -423,6 +443,9 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
+              // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8
+              contentPadding:
+                  const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               leading: const Icon(Symbols.play_arrow_rounded),
               title: const Text('立即运行'),
               subtitle: Text(task.name),
@@ -436,6 +459,9 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
             ),
             // P2-7：调试（对标原版 AutoTaskDebugActivity）
             ListTile(
+              // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8
+              contentPadding:
+                  const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               leading: const Icon(Symbols.bug_report_rounded),
               title: const Text('调试'),
               subtitle: const Text('执行并查看结果日志'),
@@ -445,6 +471,9 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
               },
             ),
             ListTile(
+              // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8
+              contentPadding:
+                  const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               leading: const Icon(Symbols.edit_rounded),
               title: const Text('编辑任务'),
               onTap: () {
@@ -453,6 +482,9 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
               },
             ),
             ListTile(
+              // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8
+              contentPadding:
+                  const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
               leading: Icon(Symbols.delete_rounded, color: Theme.of(context).colorScheme.error),
               title: Text('删除任务',
                   style: TextStyle(color: Theme.of(context).colorScheme.error)),
@@ -485,6 +517,11 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
+          // [LAYOUT_PLAN P3] Dialog 容器 surfaceContainer 圆角 28dp（全局标尺，对齐 dialogTheme）
+          backgroundColor: Theme.of(ctx).colorScheme.surfaceContainer,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(28),
+          ),
           title: const Text('编辑定时任务'),
           content: SingleChildScrollView(
             child: Column(
@@ -597,6 +634,11 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
+        // [LAYOUT_PLAN P3] Dialog 容器 surfaceContainer 圆角 28dp（全局标尺，对齐 dialogTheme）
+        backgroundColor: Theme.of(dialogContext).colorScheme.surfaceContainer,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(28),
+        ),
         title: const Text('导入线上任务'),
         content: TextField(
           controller: ctrl,

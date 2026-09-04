@@ -369,9 +369,14 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
               : RefreshIndicator(
                   onRefresh: () async => _refresh(),
                   child: ListView.separated(
+                    // [LAYOUT_PLAN P3] 页面水平边距16dp（行内 ListTile 默认 horizontal16）
+                    padding: const EdgeInsets.symmetric(vertical: 8),
                     itemCount: _entries.length,
                     separatorBuilder: (_, _) => Divider(
                       height: 1,
+                      // [LAYOUT_PLAN P3] 分隔线走 tonal 舍 outlineVariant
+                      indent: 16,
+                      endIndent: 16,
                       color: cs.outlineVariant.withValues(alpha: 0.3),
                     ),
                     itemBuilder: (context, index) =>
@@ -388,11 +393,15 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
         children: [
           Icon(Symbols.cloud_off_rounded, size: 64, color: cs.outlineVariant),
           const SizedBox(height: 12),
-          const Text('书架暂无书籍'),
+          // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
+          Text('书架暂无书籍', style: Theme.of(context).textTheme.titleSmall),
           const SizedBox(height: 4),
           Text(
             '在书架添加书籍后，可在此缓存离线阅读',
-            style: TextStyle(color: cs.onSurfaceVariant, fontSize: 13),
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: cs.onSurfaceVariant),
           ),
         ],
       ),
@@ -421,11 +430,14 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
       onTap: () => _openBook(book),
       // 三行布局（书名/作者/进度），必须 isThreeLine 否则 subtitle 被钳到单行
       isThreeLine: true,
+      // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8
+      contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
       title: Text(
         book.name,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 15),
+        // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
+        style: Theme.of(context).textTheme.titleSmall,
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -435,14 +447,21 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
             book.author.isEmpty ? '作者未知' : book.author,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 13, color: cs.onSurfaceVariant),
+            // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
+            style: Theme.of(context)
+                .textTheme
+                .bodySmall
+                ?.copyWith(color: cs.onSurfaceVariant),
           ),
           const SizedBox(height: 2),
           Text(
             progressText,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+            // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale + 状态色走 tonal
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: entry.task != null ? cs.primary : cs.onSurfaceVariant,
+                ),
           ),
         ],
       ),

@@ -456,6 +456,7 @@ class _VideoScreenState extends State<VideoScreen> {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
+                // [LAYOUT_PLAN P3] 沉浸域仅顶栏动作行规范：动作顺序上一集/下一集/设置/全屏（本体不动）
                 actions: [
                   if (widget.book != null && _chapters.isNotEmpty) ...[
                     IconButton(

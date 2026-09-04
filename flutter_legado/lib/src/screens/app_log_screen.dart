@@ -57,6 +57,11 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // [LAYOUT_PLAN P3] Dialog 容器 surfaceContainer 圆角 28dp（全局标尺，对齐 dialogTheme）
+        backgroundColor: Theme.of(ctx).colorScheme.surfaceContainer,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(28),
+        ),
         title: Text(all ? '清空全部日志' : '清空当前级别日志'),
         content: Text(all ? '将清空 message/crash/http 全部级别日志，确定吗？' : '确定清空当前级别的日志吗？'),
         actions: [
@@ -182,19 +187,22 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      // [LAYOUT_PLAN P3] 页面水平边距 12→16（全局标尺）
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       itemCount: state.logs.length,
       itemBuilder: (context, index) {
         final entry = state.logs[index];
         return Container(
-          margin: const EdgeInsets.only(bottom: 4),
+          // [LAYOUT_PLAN P3] 日志卡 margin bottom4→8、圆角 6→8（全局标尺方向收敛）
+          margin: const EdgeInsets.only(bottom: 8),
           decoration: BoxDecoration(
             color: theme.colorScheme.surfaceContainerHighest.withValues(
               alpha: 0.3,
             ),
-            borderRadius: BorderRadius.circular(6),
+            borderRadius: BorderRadius.circular(8),
           ),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8 方向收敛（原 10/6）
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

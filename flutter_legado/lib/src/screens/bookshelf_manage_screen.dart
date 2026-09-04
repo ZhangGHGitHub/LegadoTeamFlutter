@@ -69,6 +69,8 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
 
   Future<void> _confirmDelete(BookshelfManageState state) async {
     final count = state.selectedUrls.length;
+    // [LAYOUT_PLAN P3] 状态色走 tonal
+    final cs = Theme.of(context).colorScheme;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -82,7 +84,8 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
+              backgroundColor: cs.errorContainer,
+              foregroundColor: cs.onErrorContainer,
             ),
             child: const Text('删除'),
           ),
@@ -439,7 +442,8 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      // [LAYOUT_PLAN P3] 页面水平边距16dp
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       itemCount: books.length,
       itemBuilder: (context, index) => _buildItem(theme, state, books[index]),
     );
@@ -454,14 +458,15 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
   ) {
     final selected = state.selectedUrls.contains(book.bookUrl);
     final cs = theme.colorScheme;
+    // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
     final infoStyle = theme.textTheme.bodySmall?.copyWith(
-      fontSize: 12,
       color: cs.onSurfaceVariant,
     );
     // [UI-fix 2026-08-13] 勾选「点击书名打开书籍信息」时，信息列点击进详情、
     // 仅 Checkbox 负责多选；避免外层 InkWell 抢走书名点击 — Auto
+    // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8 + M3 Type Scale + 状态色走 tonal
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       child: Row(
         children: [
           Checkbox(
@@ -485,11 +490,9 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
                     book.name.isEmpty ? '未命名书籍' : book.name,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 15,
-                      color: _openInfoByTitle
-                          ? Theme.of(context).colorScheme.primary
-                          : cs.onSurface,
+                    // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      color: _openInfoByTitle ? cs.primary : cs.onSurface,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -541,6 +544,8 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
 
   /// 单本删除（对标原版 item 内 tv_delete）
   Future<void> _confirmDeleteSingle(Book book) async {
+    // [LAYOUT_PLAN P3] 状态色走 tonal
+    final cs = Theme.of(context).colorScheme;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
@@ -554,7 +559,8 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
             style: FilledButton.styleFrom(
-              backgroundColor: Theme.of(context).colorScheme.error,
+              backgroundColor: cs.errorContainer,
+              foregroundColor: cs.onErrorContainer,
             ),
             child: const Text('删除'),
           ),
@@ -580,8 +586,9 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     final allSelected =
         state.books.isNotEmpty && state.selectedUrls.length == state.books.length;
     return SafeArea(
+      // [LAYOUT_PLAN P3] SelectionBottomBar：页面水平边距16dp + 字级走 M3 Type Scale
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        padding: const EdgeInsets.fromLTRB(16, 6, 16, 6),
         child: Row(
           children: [
             // 全选复选框 + 已选数（对标 cbSelectedAll + tv_selected）
@@ -592,6 +599,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
             ),
             Text(
               '已选 ${state.selectedUrls.length} 本',
+              // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
               style: theme.textTheme.bodySmall,
             ),
             const Spacer(),

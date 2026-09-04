@@ -112,7 +112,8 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
         builder: (_, controller) => Column(
           children: [
             Padding(
-              padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
+              // [LAYOUT_PLAN P3] Sheet 内水平边距 20→16（全局标尺）
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
               child: Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
@@ -124,7 +125,8 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
             Expanded(
               child: SingleChildScrollView(
                 controller: controller,
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 24),
+                // [LAYOUT_PLAN P3] Sheet 内水平边距 20→16（全局标尺）
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                 child: Text(body),
               ),
             ),
@@ -195,9 +197,11 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
       appBar: LegadoAppBar(title: const Text('关于')),
       body: IosGroupedBody(
         child: ListView(
+          // [LAYOUT_PLAN P3] 底部 bottom32 保留；列表水平边距走 IosGroupedBody 16dp
           padding: const EdgeInsets.only(bottom: 32),
           children: [
             IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
+              // [LAYOUT_PLAN P3] 分组行走 IosListTile 规范（扁平分组，行内边距由 ListTile 承担）
               children: [
                 IosListTile(
                   title: '开发人员',
@@ -226,6 +230,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
             ),
             const IosSectionHeader('其他'),
             IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
+              // [LAYOUT_PLAN P3] 分组行走 IosListTile 规范（扁平分组，行内边距由 ListTile 承担）
               children: [
                 IosListTile(
                   title: '崩溃日志',

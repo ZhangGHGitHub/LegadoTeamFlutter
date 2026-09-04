@@ -384,6 +384,11 @@ class _AssociationImportDialogState
     final hairline = colorScheme.outlineVariant.withValues(alpha: 0.6);
 
     return Dialog(
+      // [LAYOUT_PLAN P3] Dialog 容器 surfaceContainer 圆角 28dp（全局标尺，对齐 dialogTheme）
+      backgroundColor: colorScheme.surfaceContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(28),
+      ),
       insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
       child: ConstrainedBox(
         // 宽近全宽（对齐原版 MATCH_PARENT），桌面端限宽；高不超过 85% 屏高
@@ -409,6 +414,7 @@ class _AssociationImportDialogState
                 AssociationPhase.error => _buildError(state.error!),
                 AssociationPhase.ready => ListView.separated(
                     shrinkWrap: true,
+                    // [LAYOUT_PLAN P3] 列表纵向留白 8dp；行 horizontal8 见 _buildItem
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     itemCount: state.items.length,
                     separatorBuilder: (_, _) => Divider(
@@ -434,7 +440,8 @@ class _AssociationImportDialogState
   /// 头部（对应原版 toolbar：标题 + 自定义源分组 + ⋮ 菜单；扫码/重置为本轨手动入口）
   Widget _buildHeader(AssociationState state, ColorScheme colorScheme) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 8, 8),
+      // [LAYOUT_PLAN P3] Dialog 内水平边距统一 16dp（全局标尺，右 8 留给动作区）
+      padding: const EdgeInsets.fromLTRB(16, 20, 8, 8),
       child: Row(
         children: [
           Expanded(
@@ -460,6 +467,7 @@ class _AssociationImportDialogState
               state.type == ImportType.bookSource)
             PopupMenuButton<String>(
               tooltip: '更多选项',
+              // [LAYOUT_PLAN P3] 菜单在顶栏下方展开，不覆盖顶栏（对齐 P2 规范）
               position: PopupMenuPosition.under,
               onSelected: _handleMenu,
               itemBuilder: (_) => [
@@ -511,7 +519,8 @@ class _AssociationImportDialogState
   /// 空闲态：输入内容地址 + 文件 / 剪贴板入口（类型由内容自动识别）
   Widget _buildIdle() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+      // [LAYOUT_PLAN P3] Dialog 内水平边距统一 16dp（全局标尺）
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -636,7 +645,8 @@ class _AssociationImportDialogState
     return InkWell(
       onTap: () => setState(() => _selected[index] = !_selected[index]),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8（全局行规范）
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         child: Row(
           children: [
             Checkbox(
@@ -709,7 +719,8 @@ class _AssociationImportDialogState
   /// 底部操作区（对标 dialog_recycler_view：footerLeft / cancel / ok）
   Widget _buildFooter(AssociationState state) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 24, 16),
+      // [LAYOUT_PLAN P3] 底部操作区水平边距 16dp（全局标尺）
+      padding: const EdgeInsets.fromLTRB(8, 8, 16, 16),
       child: Row(
         children: [
           // 全选可压缩（计数大时如「全选（419/947）」仍不溢出）

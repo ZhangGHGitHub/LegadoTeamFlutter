@@ -130,7 +130,8 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
               color: theme.colorScheme.surfaceContainerHighest
                   .withValues(alpha: 0.45),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+                // [LAYOUT_PLAN P3] 页面水平边距16dp
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                 child: Row(
                   children: [
                     IconButton(
@@ -186,12 +187,20 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                         )
                       : ListView.separated(
                           itemCount: state.visibleItems.length,
-                          separatorBuilder: (_, _) => const Divider(height: 1),
+                          separatorBuilder: (_, _) => Divider(
+                            height: 1,
+                            // [LAYOUT_PLAN P3] 分隔线走 tonal 舍 outlineVariant
+                            indent: 16,
+                            endIndent: 16,
+                          ),
                           itemBuilder: (context, index) {
                             final item = state.visibleItems[index];
                             final selected =
                                 state.selectedPaths.contains(item.relativePath);
                             return ListTile(
+                              // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8
+                              contentPadding: const EdgeInsets.symmetric(
+                                  vertical: 12, horizontal: 8),
                               leading: Icon(
                                 item.isDir
                                     ? Symbols.folder_rounded
@@ -200,10 +209,24 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                                     ? theme.colorScheme.primary
                                     : null,
                               ),
-                              title: Text(item.filename),
+                              // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
+                              title: Text(
+                                item.filename,
+                                style: theme.textTheme.titleSmall,
+                              ),
                               subtitle: item.isDir
-                                  ? const Text('文件夹')
-                                  : Text(_formatSize(item.size)),
+                                  ? Text(
+                                      '文件夹',
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    )
+                                  : Text(
+                                      _formatSize(item.size),
+                                      style: theme.textTheme.bodySmall?.copyWith(
+                                        color: theme.colorScheme.onSurfaceVariant,
+                                      ),
+                                    ),
                               trailing: item.isDir
                                   ? null
                                   : item.isOnBookShelf
@@ -229,8 +252,9 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                         ),
             ),
             SafeArea(
+              // [LAYOUT_PLAN P3] SelectionBottomBar：页面水平边距16dp
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
                 child: Row(
                   children: [
                     TextButton(

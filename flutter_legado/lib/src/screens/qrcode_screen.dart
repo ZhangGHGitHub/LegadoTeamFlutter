@@ -145,6 +145,7 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
     return Scaffold(
       appBar: LegadoAppBar(title: const Text('扫码导入')),
       body: ListView(
+        // [LAYOUT_PLAN P3] 页面水平边距统一 16dp（全局标尺）
         padding: const EdgeInsets.all(16),
         children: [
           _buildScannerArea(theme),
@@ -185,7 +186,8 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
   Widget _buildScannerArea(ThemeData theme) {
     if (_cameraSupported && _scannerController != null) {
       return ClipRRect(
-        borderRadius: BorderRadius.circular(12),
+        // [LAYOUT_PLAN P3] 分组卡圆角 16dp（全局标尺）
+        borderRadius: BorderRadius.circular(16),
         child: SizedBox(
           height: 240,
           child: MobileScanner(
@@ -206,7 +208,8 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
       height: 200,
       decoration: BoxDecoration(
         color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(12),
+        // [LAYOUT_PLAN P3] 分组卡圆角 16dp（全局标尺）
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -264,6 +267,10 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
   Widget _buildResultCard(ThemeData theme, String content) {
     final type = _detectType(content);
     return Card(
+      // [LAYOUT_PLAN P3] 分组卡圆角 16dp；卡内统一 16dp
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(

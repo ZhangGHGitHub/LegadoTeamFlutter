@@ -266,7 +266,8 @@ class _FileManageScreenState extends State<FileManageScreen> {
       height: 40,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        // [LAYOUT_PLAN P3] 页面水平边距16dp
+        padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: _subDocs.length + 1,
         separatorBuilder: (_, _) => Icon(Symbols.chevron_right_rounded,
             size: 18, color: cs.onSurfaceVariant),
@@ -309,7 +310,12 @@ class _FileManageScreenState extends State<FileManageScreen> {
 
     return ListView.separated(
       itemCount: files.length + (atRoot ? 0 : 1),
-      separatorBuilder: (_, _) => const Divider(height: 1, indent: 56),
+      separatorBuilder: (_, _) => const Divider(
+        height: 1,
+        // [LAYOUT_PLAN P3] 分隔线走 tonal 舍 outlineVariant
+        indent: 16,
+        endIndent: 16,
+      ),
       itemBuilder: (context, index) {
         // 非根目录首项为「..」（对标 dirParent 项）
         if (!atRoot && index == 0) {
@@ -323,6 +329,9 @@ class _FileManageScreenState extends State<FileManageScreen> {
         final isDir = FileSystemEntity.isDirectorySync(entity.path);
         final name = _baseName(entity.path);
         return ListTile(
+          // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           leading: Icon(
             isDir ? Symbols.folder_rounded : Symbols.insert_drive_file_rounded,
             color: isDir ? cs.primary : cs.onSurfaceVariant,
@@ -331,12 +340,15 @@ class _FileManageScreenState extends State<FileManageScreen> {
             name,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
+            // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
+            style: Theme.of(context).textTheme.titleSmall,
           ),
           subtitle: isDir
               ? null
               : Text(
                   _formatSize(entity),
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
                 ),

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.163] - 2026-09-04
+
+### Changed
+- [UI] 布局规划 P3 设置系与通用重排：书架管理/分组/离线缓存/缓存设置/远程书籍/文件管理行规范；自动任务/阅读记录/关于/日志/WebDAV 行规范与 Dialog 容器；导入/关联导入/浏览器/二维码行规范；音视频仅顶栏（沉浸本体不动）
+
+### Test
+- flutter analyze 无问题；flutter test 1321 全过
+- 版本 2.0.163+164
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.162] - 2026-09-04
 
 ### Changed

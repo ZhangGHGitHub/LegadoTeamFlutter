@@ -327,6 +327,11 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
   Widget build(BuildContext context) {
     final fileName = widget.archivePath.split(Platform.pathSeparator).last;
     return AlertDialog(
+      // [LAYOUT_PLAN P3] Dialog 容器 surfaceContainer 圆角 28dp（全局标尺，对齐 dialogTheme）
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(28),
+      ),
       title: Text(
         '压缩包导入',
         style: Theme.of(context).textTheme.titleMedium,
@@ -349,10 +354,10 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
             if (_isRar) ...[
               TextField(
                 controller: _passwordController,
+                // [LAYOUT_PLAN P3] 输入框走 inputDecorationTheme（不显式 border）
                 decoration: const InputDecoration(
                   hintText: 'RAR 密码（可选）',
                   isDense: true,
-                  border: OutlineInputBorder(),
                 ),
                 obscureText: true,
               ),
@@ -438,6 +443,11 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
           final isTxt = name.toLowerCase().endsWith('.txt');
           final detectedEnc = _detectedEncodings[name];
           return CheckboxListTile(
+            // [LAYOUT_PLAN P3] 组内行 vertical12/horizontal8（全局行规范）
+            contentPadding: const EdgeInsets.symmetric(
+              horizontal: 8,
+              vertical: 12,
+            ),
             value: isSelected,
             onChanged: (v) {
               setState(() {
@@ -474,10 +484,10 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
         Expanded(
           child: DropdownButtonFormField<String>(
             initialValue: _selectedEncoding,
+            // [LAYOUT_PLAN P3] 输入框走 inputDecorationTheme（不显式 border）
             decoration: const InputDecoration(
               labelText: 'TXT 编码',
               isDense: true,
-              border: OutlineInputBorder(),
             ),
             items: _supportedEncodings
                 .map((enc) => DropdownMenuItem(value: enc, child: Text(enc)))

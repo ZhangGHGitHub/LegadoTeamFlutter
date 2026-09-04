@@ -206,8 +206,13 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
 
   void _showError(String msg) {
     if (!mounted) return;
+    // [LAYOUT_PLAN P3] 状态色走 tonal
+    final cs = Theme.of(context).colorScheme;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg), backgroundColor: Theme.of(context).colorScheme.error),
+      SnackBar(
+        content: Text(msg, style: TextStyle(color: cs.onErrorContainer)),
+        backgroundColor: cs.errorContainer,
+      ),
     );
   }
 
@@ -276,7 +281,8 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
     // 手动排序模式下支持拖拽
     if (_sort == _GroupSort.order) {
       return ReorderableListView.builder(
-        padding: const EdgeInsets.only(bottom: 88),
+        // [LAYOUT_PLAN P3] 页面水平边距16dp
+        padding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
         itemCount: groups.length,
         onReorderItem: (oldIndex, newIndex) {
           final list = [...groups];
@@ -288,7 +294,8 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
       );
     }
     return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 88),
+      // [LAYOUT_PLAN P3] 页面水平边距16dp
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 88),
       itemCount: groups.length,
       itemBuilder: (context, index) => _buildGroupTile(groups[index], draggable: false),
     );
@@ -296,10 +303,15 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
 
   Widget _buildGroupTile(BookGroup group, {required bool draggable}) {
     final count = _bookCountOf(group.groupId);
+    final cs = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    // [LAYOUT_PLAN P3] 分组卡圆角16dp + 组内行 vertical12/horizontal8 + 字级走 M3 Type Scale
     return Card(
       key: ValueKey(group.groupId),
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      margin: const EdgeInsets.symmetric(vertical: 4),
       child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         leading: draggable
             ? ReorderableDragStartListener(
                 index: _sortedGroups.indexOf(group),
@@ -313,12 +325,15 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
             : BookCover(coverUrl: group.cover, width: 40, height: 54, borderRadius: 4),
         title: Text(
           group.groupName,
-          style: TextStyle(
-            fontWeight: FontWeight.w600,
-            color: group.show ? null : Theme.of(context).colorScheme.onSurfaceVariant,
+          // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale
+          style: textTheme.titleSmall?.copyWith(
+            color: group.show ? null : cs.onSurfaceVariant,
           ),
         ),
-        subtitle: Text('$count 本书'),
+        subtitle: Text(
+          '$count 本书',
+          style: textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+        ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

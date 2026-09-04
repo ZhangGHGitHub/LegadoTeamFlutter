@@ -229,6 +229,8 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
           _buildTimerButton(),
           IconButton(
             icon: const Icon(Symbols.settings_rounded),
+            // [LAYOUT_PLAN P3] 沉浸域仅顶栏动作行规范：补 tooltip（本体不动）
+            tooltip: '设置',
             onPressed: () => setState(() => _showSettings = !_showSettings),
           ),
           // [UI-fix v2.0.2 | 2026-08-06] 听书溢出菜单（对标原版 audio_play.xml：
@@ -237,6 +239,8 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
           // P0-2：片头/wakelock/缓存目录(SAF)/缓存范围已诚实接通。
           PopupMenuButton<String>(
             tooltip: '更多',
+            // [LAYOUT_PLAN P3] 沉浸域仅顶栏动作行规范：菜单在顶栏下方展开（本体不动）
+            position: PopupMenuPosition.under,
             onSelected: _handleOverflowMenu,
             itemBuilder: (_) => [
               const PopupMenuItem(value: 'changeSource', child: Text('换源')),

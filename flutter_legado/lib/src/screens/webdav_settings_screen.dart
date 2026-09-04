@@ -112,6 +112,11 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     final result = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
+        // [LAYOUT_PLAN P3] Dialog 容器 surfaceContainer 圆角 28dp（全局标尺，对齐 dialogTheme）
+        backgroundColor: Theme.of(ctx).colorScheme.surfaceContainer,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(28),
+        ),
         title: Text(title),
         content: TextField(
           controller: controller,
@@ -318,6 +323,11 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       context: context,
       barrierDismissible: false,
       builder: (ctx) => AlertDialog(
+        // [LAYOUT_PLAN P3] Dialog 容器 surfaceContainer 圆角 28dp（全局标尺，对齐 dialogTheme）
+        backgroundColor: Theme.of(ctx).colorScheme.surfaceContainer,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(28),
+        ),
         content: Row(
           children: [
             const CircularProgressIndicator(),
@@ -384,7 +394,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         ],
       ),
       body: IosGroupedBody(
+        // [LAYOUT_PLAN P3] 列表边距 16dp 走 IosGroupedBody（全局标尺）
         child: ListView(
+          // [LAYOUT_PLAN P3] 底部 bottom32 保留
           padding: const EdgeInsets.only(bottom: 32),
           children: [
             const IosSectionHeader('WebDav 设置'),
@@ -440,12 +452,20 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                   ),
                 ),
                 SwitchListTile(
+                  // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                   title: const Text('同步书籍进度'),
                   subtitle: const Text('在多设备间同步书籍阅读进度'),
                   value: syncState.syncBookProgress,
                   onChanged: (v) => notifier.setSyncBookProgress(v),
                 ),
                 SwitchListTile(
+                  // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                   title: const Text('同步书籍进度增强'),
                   subtitle: const Text('同步更详细的阅读进度信息'),
                   value: syncState.syncBookProgressPlus,
@@ -486,6 +506,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                   onTap: _busy ? null : _showRestoreIgnore,
                 ),
                 SwitchListTile(
+                  // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                   title: const Text('仅保留最新备份'),
                   subtitle: const Text('本地备份仅保留最新备份文件'),
                   value: _onlyLatestBackup,
@@ -495,6 +519,10 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                   },
                 ),
                 SwitchListTile(
+                  // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
+                  dense: true,
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                   title: const Text('自动检查新备份'),
                   subtitle: const Text(
                     '打开软件时检查是否有新备份，有新备份时提示是否更新',
