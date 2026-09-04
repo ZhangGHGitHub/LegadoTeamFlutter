@@ -483,6 +483,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                   config: _advConfig,
                   readBodyToLh: cfg.readBodyToLh,
                 ),
+              // [LAYOUT_PLAN P4] 全局页胶囊：showControls 条件挂载保持不变；
+              // 进度指示 220ms 透明度动效缺口：胶囊随菜单同挂载/卸载，进场已由
+              // 顶/底栏 slide+fade 覆盖，独立 fade 待后续统一补（登记缺口，不大改）。
+              // [LAYOUT_PLAN P4] 搜索 pill 缺口：底栏全文搜索为 mini FAB（非 pill
+              // 形态），pill 化待设计收敛，暂不改结构。
               // 全局页码指示器（跨章节连续分页已注册时显示）
               if (state.showControls && state.totalPages > 0 && !imageDominant)
                 Positioned(

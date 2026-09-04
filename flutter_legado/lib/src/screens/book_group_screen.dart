@@ -320,9 +320,18 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
                   width: 40,
                   height: 54,
                   borderRadius: 4,
+                  // [LAYOUT_PLAN P4] 补 heroTag（分组以 groupId 唯一，避免列表重复 tag）
+                  heroTag: 'book-cover:group:${group.groupId}',
                 ),
               )
-            : BookCover(coverUrl: group.cover, width: 40, height: 54, borderRadius: 4),
+            : BookCover(
+                coverUrl: group.cover,
+                width: 40,
+                height: 54,
+                borderRadius: 4,
+                // [LAYOUT_PLAN P4] 补 heroTag（分组以 groupId 唯一，避免列表重复 tag）
+                heroTag: 'book-cover:group:${group.groupId}',
+              ),
         title: Text(
           group.groupName,
           // [LAYOUT_PLAN P3] 列表行字级走 M3 Type Scale

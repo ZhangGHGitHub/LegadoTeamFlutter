@@ -81,12 +81,20 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
   /// 已加载章级开关的复合键（bookUrl#chapterIndex，换书/换章后重新加载）
   String? _flagsLoadedKey;
 
+  // [LAYOUT_PLAN P4] 顶栏进场动效开关：挂载后下一帧置 true，驱动
+  // AnimatedOpacity + AnimatedSlide（220ms，对标 anim_readbook_top）。
+  bool _entered = false;
+
   @override
   void initState() {
     super.initState();
     // 预载 WebDAV 配置，使溢出菜单能即时决定 get/cover_progress 显隐
     Future.microtask(
         () => ref.read(syncNotifierProvider.notifier).loadConfig());
+    // [LAYOUT_PLAN P4] 触发顶栏 slide+fade 进场（保持 showControls 条件挂载逻辑不变）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _entered = true);
+    });
   }
 
   /// 加载章级开关与替换规则计数（书籍/章节变化时调用）
@@ -1080,7 +1088,15 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
       top: 0,
       left: 0,
       right: 0,
-      child: Material(
+      // [LAYOUT_PLAN P4] 菜单 slide+fade 进场（220ms，对标 anim_readbook_top
+      // 200ms 上滑入场；showControls 条件挂载逻辑保持不变，动画仅装饰）。
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 220),
+        opacity: _entered ? 1.0 : 0.0,
+        child: AnimatedSlide(
+          duration: const Duration(milliseconds: 220),
+          offset: _entered ? Offset.zero : const Offset(0, -0.12),
+          child: Material(
         color: followColor ?? Theme.of(context).colorScheme.surface,
         // iOS 风格：无阴影 + hairline 底边
         elevation: 0,
@@ -1454,6 +1470,8 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
                   ),
               ],
             ),
+          ),
+        ),
           ),
         ),
       ),

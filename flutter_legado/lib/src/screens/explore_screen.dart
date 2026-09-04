@@ -33,7 +33,7 @@ import '../widgets/explore_kind_layout.dart';
 import '../widgets/explore_page_control.dart';
 import '../widgets/error_view.dart';
 import '../widgets/ios_widgets.dart';
-import '../widgets/loading_indicator.dart';
+import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 
 class ExploreScreen extends ConsumerStatefulWidget {
   /// 收起已展开分类信号（主页双击底栏发现项时自增，对标原版 compressExplore）
@@ -169,7 +169,13 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
 
   Widget _buildBody(ExploreState state, bool isTablet) {
     if (state.isLoading) {
-      return const LoadingIndicator();
+      // [LAYOUT_PLAN P4] 首屏 Skeleton 接线：列表骨架替代整页 LoadingIndicator
+      // （shimmer 1200ms 已在 skeleton.dart 实现）
+      return ListView.builder(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        itemCount: 8,
+        itemBuilder: (_, _) => const ListSkeletonItem(),
+      );
     }
 
     if (state.error != null) {

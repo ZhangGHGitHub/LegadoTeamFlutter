@@ -21,6 +21,24 @@ class _LegadoAndroidTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
+    // [LAYOUT_PLAN P4] 按路由名分档：阅读器 fade（无 slide），详情 fade，其余 slide+fade。
+    // [LAYOUT_PLAN P4] predictiveBack 门控不做（需路由级 PredictiveBackPageTransitionsBuilder 登记，此处仅主题 builder 分档）。
+    final name = ModalRoute.of(context)?.settings.name;
+    // [LAYOUT_PLAN P4] 阅读器（文本/漫画）：fade 全程淡入淡出，无 slide，目标 600ms
+    //（总时长由路由 transitionDuration 决定，此处 Interval(0, 1) 铺满全程）。
+    if (name == '/reader' || name == '/reader-comic') {
+      final fade = Tween<double>(begin: 0, end: 1).animate(
+        CurvedAnimation(parent: animation, curve: const Interval(0, 1)),
+      );
+      return FadeTransition(opacity: fade, child: child);
+    }
+    // [LAYOUT_PLAN P4] 详情页：fade 无 slide，目标 300ms（同上，总时长由路由决定）。
+    if (name == '/book_info') {
+      final fade = Tween<double>(begin: 0, end: 1).animate(
+        CurvedAnimation(parent: animation, curve: const Interval(0, 1)),
+      );
+      return FadeTransition(opacity: fade, child: child);
+    }
     final slide = Tween<Offset>(
       begin: const Offset(1, 0),
       end: Offset.zero,

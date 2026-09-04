@@ -244,11 +244,13 @@ extension _SearchBuilders on _SearchScreenState {
     }
 
     if (state.isLoading && !state.hasResults) {
-      // 渐进搜索：尚无结果时显示加载态（带 x/y 进度，对齐原版 searchProgress）
-      return LoadingIndicator(
-        message: state.totalCount > 0
-            ? '${AppStrings.searching} ${state.searchedCount}/${state.totalCount}'
-            : AppStrings.searching,
+      // 渐进搜索：尚无结果时显示加载态（对齐原版 searchProgress）
+      // [LAYOUT_PLAN P4] 首屏 Skeleton 接线：列表骨架替代整页 LoadingIndicator
+      // （shimmer 1200ms 已在 skeleton.dart 实现）；x/y 进度由顶部统计行保留
+      return ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: 8,
+        itemBuilder: (_, _) => const ListSkeletonItem(),
       );
     }
 

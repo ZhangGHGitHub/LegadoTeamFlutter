@@ -5,6 +5,8 @@ import '../services/crash_log_service.dart';
 
 /// 崩溃日志弹窗组件
 ///
+/// [LAYOUT_PLAN P4] 走主题默认 dialogTheme（28dp extraLarge），不逐个定制。
+///
 /// 应用启动时检测到上次运行存在崩溃记录时弹出，
 /// 展示崩溃时间与错误摘要，支持展开完整堆栈信息。
 class CrashLogDialog extends StatefulWidget {

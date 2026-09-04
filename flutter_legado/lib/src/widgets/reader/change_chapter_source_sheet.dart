@@ -29,6 +29,10 @@ Future<void> showChangeChapterSourceSheet(
     isScrollControlled: true,
     useSafeArea: true,
     showDragHandle: true,
+    // [LAYOUT_PLAN P4] 换源 Sheet 圆角确认 28dp（走 M3 Expressive 顶角）。
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+    ),
     builder: (ctx) => _ChangeChapterSourceSheet(
       bookUrl: bookUrl,
       bookName: bookName,

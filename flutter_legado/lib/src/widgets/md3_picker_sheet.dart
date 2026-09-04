@@ -18,6 +18,8 @@ Future<int?> showMd3WheelPickerSheet({
   bool showCancel = true,
 }) {
   var picked = initialIndex.clamp(0, itemCount - 1);
+  // [LAYOUT_PLAN P4] M3 滚轮 Sheet 走全局 bottomSheetTheme（28dp 顶角），
+  // 此处不设 shape，确认走主题默认。
   return showModalBottomSheet<int>(
     context: context,
     builder: (sheetContext) {

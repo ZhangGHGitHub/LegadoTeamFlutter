@@ -24,7 +24,7 @@ import '../widgets/book_list_item.dart';
 import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
-import '../widgets/loading_indicator.dart';
+import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 
 /// 书架页面（Riverpod ConsumerStatefulWidget）
 ///
@@ -212,7 +212,26 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final state = ref.watch(bookshelfNotifierProvider);
 
     if (state.isLoading && state.books.isEmpty) {
-      return LoadingIndicator(message: AppStrings.loadingBookshelf);
+      // [LAYOUT_PLAN P4] 首屏 Skeleton 接线：按当前视图模式渲染网格/列表骨架
+      // （shimmer 1200ms 已在 skeleton.dart 实现），替代整页 LoadingIndicator
+      if (state.isGridView) {
+        return GridView.builder(
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 3,
+            mainAxisSpacing: 8,
+            crossAxisSpacing: 8,
+            childAspectRatio: 5 / 7,
+          ),
+          itemCount: 6,
+          itemBuilder: (_, _) => const GridSkeletonItem(),
+        );
+      }
+      return ListView.builder(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        itemCount: 8,
+        itemBuilder: (_, _) => const ListSkeletonItem(),
+      );
     }
 
     if (state.error != null && state.books.isEmpty) {

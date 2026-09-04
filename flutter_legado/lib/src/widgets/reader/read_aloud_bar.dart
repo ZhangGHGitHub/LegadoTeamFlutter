@@ -74,6 +74,9 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
   /// 段落进度订阅的 Notifier 引用（dispose 时安全注销，避免 dispose 期读 ref）
   AudioNotifier? _paragraphSubNotifier;
 
+  // [LAYOUT_PLAN P4] 朗读条显隐 fade（180ms）：挂载后下一帧置 true。
+  bool _entered = false;
+
   @override
   void initState() {
     super.initState();
@@ -83,6 +86,10 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
     final notifier = ref.read(audioNotifierProvider.notifier);
     _paragraphSubNotifier = notifier;
     notifier.addListener(_onParagraphChanged);
+    // [LAYOUT_PLAN P4] 触发朗读条 fade 进场（替代底栏时的显隐逻辑不变）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _entered = true);
+    });
   }
 
   @override
@@ -338,26 +345,31 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
       bottom: 0,
       left: 0,
       right: 0,
-      child: Material(
-        color: theme.colorScheme.surface,
-        // 与 ReaderBottomBar 一致：无阴影 + hairline 顶边
-        elevation: 0,
-        shape: Border(
-          top: BorderSide(
-            color: theme.dividerTheme.color ?? theme.dividerColor,
-            width: 0.0,
+      // [LAYOUT_PLAN P4] 朗读条显隐 fade（180ms；替代底栏时的挂载逻辑不变）。
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 180),
+        opacity: _entered ? 1.0 : 0.0,
+        child: Material(
+          color: theme.colorScheme.surface,
+          // 与 ReaderBottomBar 一致：无阴影 + hairline 顶边
+          elevation: 0,
+          shape: Border(
+            top: BorderSide(
+              color: theme.dividerTheme.color ?? theme.dividerColor,
+              width: 0.0,
+            ),
           ),
-        ),
-        child: SafeArea(
-          top: false,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildHeader(context, audio, notifier, theme),
-              _buildTransport(context, audio, notifier, theme),
-              _buildSpeedRow(context, audio, notifier),
-              _buildBottomActions(context, audio),
-            ],
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildHeader(context, audio, notifier, theme),
+                _buildTransport(context, audio, notifier, theme),
+                _buildSpeedRow(context, audio, notifier),
+                _buildBottomActions(context, audio),
+              ],
+            ),
           ),
         ),
       ),

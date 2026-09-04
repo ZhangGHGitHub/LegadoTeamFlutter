@@ -17,6 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/search/search_notifier.dart';
+import 'package:flutter_legado/src/widgets/skeleton.dart';
 import 'package:flutter_legado/src/screens/search_screen.dart';
 
 import '../mocks/mocks.dart';
@@ -167,8 +168,9 @@ void main() {
       unawaited(container.read(searchNotifierProvider.notifier).search('xyz'));
       await tester.pump();
       await tester.pump();
-      // search() 同步清空 results → 旧列表销毁，显示加载态
-      expect(find.byType(ListView), findsNothing);
+      // search() 同步清空 results → 旧列表销毁，显示骨架加载态
+      // [LAYOUT_PLAN P4] 首屏 loading 已改为 Skeleton 骨架列表（非空白）
+      expect(find.byType(ListSkeletonItem), findsWidgets);
 
       // 新关键词首批结果到达 → ListView 重建，必须从顶部开始
       c2.add(makeBatch(makeBooks(40, prefix: '新书')));

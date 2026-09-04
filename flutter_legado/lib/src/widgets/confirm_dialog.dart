@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 /// 确认对话框快捷方法
+///
+/// [LAYOUT_PLAN P4] 走主题默认 dialogTheme（28dp extraLarge），不逐个定制。
 Future<bool> showConfirmDialog(
   BuildContext context, {
   required String title,

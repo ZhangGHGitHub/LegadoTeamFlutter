@@ -160,6 +160,8 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
           width: 90,
           height: 130,
           borderRadius: 8,
+          // [LAYOUT_PLAN P4] 补 heroTag（book-cover: + bookUrl，与详情页同 tag）
+          heroTag: 'book-cover:${widget.book.bookUrl}',
         ),
         const SizedBox(width: 16),
         Expanded(

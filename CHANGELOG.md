@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.164] - 2026-09-04
+
+### Changed
+- [UI] 布局规划 P4 动效全补：转场分档（阅读 fade/详情 fade 300/其余 slide+fade，predictiveBack 登记）；Hero tag 统一 book-cover 全链路 + flightShuttle 统一进 BookCover；首屏 Skeleton 接线（书架/发现/搜索/详情等）；新建 ContainedLoadingIndicator；裸 RefreshIndicator 统一 M3；空态收敛；阅读器菜单 slide+fade + 朗读 fade + Sheet 28dp 对齐；search_scroll 测试同步 Skeleton 断言
+
+### Test
+- flutter analyze 无问题；flutter test 1321 全过
+- 版本 2.0.164+165
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.163] - 2026-09-04
 
 ### Changed

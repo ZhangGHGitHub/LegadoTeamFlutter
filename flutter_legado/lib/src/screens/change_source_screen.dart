@@ -11,6 +11,7 @@ import '../bridge/ffi.dart' show BridgeError;
 import '../providers/change_source/change_source_notifier.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
+import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4] 下拉 M3 化
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 
@@ -787,7 +788,8 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
         ),
       );
     }
-    return RefreshIndicator(
+    // [LAYOUT_PLAN P4] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
+    return CustomRefreshIndicator(
       onRefresh: () => _search(forceRefresh: true),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

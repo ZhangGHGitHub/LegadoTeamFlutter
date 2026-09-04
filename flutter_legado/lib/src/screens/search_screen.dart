@@ -16,7 +16,7 @@ import '../routes.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
-import '../widgets/loading_indicator.dart';
+import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 import '../widgets/md3_animated_text_line.dart';
 part 'search_screen_helpers.part.dart';
 part 'search_screen_builders.part.dart';

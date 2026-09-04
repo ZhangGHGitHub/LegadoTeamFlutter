@@ -13,6 +13,7 @@ import '../providers/rss_history/rss_history_notifier.dart';
 import '../routes.dart';
 import '../utils/responsive.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4] 下拉 M3 化
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
@@ -212,7 +213,8 @@ class _RssScreenState extends ConsumerState<RssScreen> {
               ? '当前没有订阅源！'
               : (displaySources.isEmpty ? '当前分组暂无订阅源' : null);
 
-          return RefreshIndicator(
+          // [LAYOUT_PLAN P4] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
+          return CustomRefreshIndicator(
             onRefresh: () => notifier.loadSources(),
             child: LayoutBuilder(
               builder: (context, constraints) {

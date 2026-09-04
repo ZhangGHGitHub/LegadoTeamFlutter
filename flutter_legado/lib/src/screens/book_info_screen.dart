@@ -31,7 +31,7 @@ import '../utils/source_login_entry.dart';
 import '../utils/source_login_prompt.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/error_view.dart';
-import '../widgets/loading_indicator.dart';
+import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 import '../widgets/list_footer.dart';
 part 'book_info_screen_load.part.dart';
 part 'book_info_screen_builders.part.dart';
@@ -262,7 +262,13 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         ],
       ),
       body: _pageLoading
-          ? const LoadingIndicator(message: '加载书籍信息...')
+          // [LAYOUT_PLAN P4] 首屏 Skeleton 接线：详情骨架替代整页 LoadingIndicator
+          // （shimmer 1200ms 已在 skeleton.dart 实现）
+          ? ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: 4,
+              itemBuilder: (_, _) => const ListSkeletonItem(),
+            )
           : _loadError != null && _loadedBook == null
               ? ErrorView(
                   message: _loadError!,

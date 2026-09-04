@@ -14,8 +14,9 @@ Future<void> showDictDialog(BuildContext context, {required String word}) {
     context: context,
     isScrollControlled: true,
     useSafeArea: true,
+    // [LAYOUT_PLAN P4] 对话框 Sheet 半径对齐 Expressive 28dp（原 16dp）。
     shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
     ),
     builder: (_) => DictDialog(word: word),
   );

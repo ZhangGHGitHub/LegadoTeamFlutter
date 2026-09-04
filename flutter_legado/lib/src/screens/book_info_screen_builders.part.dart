@@ -584,13 +584,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
             // 对齐原版 ivCover 点击换封面 / 长按预览大图 — Cursor UI
             onTap: () => _openChangeCover(book),
             onLongPress: () => _previewCover(book),
-            // [LAYOUT_MOTION_AUDIT L3] Hero 加 flightShuttleBuilder 做圆角 4→12 过渡
-            // BookCover 内置 Hero 不暴露 flightShuttle，故此处外层 Hero 接管过渡
-            //（内层 heroTag 置空避免嵌套 Hero 同名），tag 统一 book-cover:
-            //（HapeLee BookCoverSharedElement 同义键，M1）
+            // [LAYOUT_PLAN P4] 外层 Hero 接管过渡，flightShuttle 走全局 coverFlightShuttleBuilder
+            //（BookCover 内置 Hero 无 flightShuttle，内层 heroTag 置空防嵌套），tag 统一 book-cover:
             child: Hero(
               tag: 'book-cover:${book.bookUrl}',
-              flightShuttleBuilder: _coverFlightShuttle,
+              flightShuttleBuilder: coverFlightShuttleBuilder,
               child: BookCover(
                 coverUrl: book.customCoverUrl ?? book.coverUrl,
                 width: 110,
@@ -602,32 +600,6 @@ extension _BookInfoBuilders on _BookInfoScreenState {
           ),
         ),
       ),
-    );
-  }
-
-  /// [LAYOUT_MOTION_AUDIT L3] 封面 Hero 过渡：圆角 4→12 插值 morph
-  Widget _coverFlightShuttle(
-    BuildContext flightContext,
-    Animation<double> animation,
-    HeroFlightDirection flightDirection,
-    BuildContext fromHeroContext,
-    BuildContext toHeroContext,
-  ) {
-    final toHero = toHeroContext.widget as Hero;
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, child) {
-        final t = flightDirection == HeroFlightDirection.push
-            ? animation.value
-            : 1.0 - animation.value;
-        // [LAYOUT_MOTION_AUDIT L3] 圆角 4→12 过渡
-        final radius = 4.0 + (12.0 - 4.0) * t;
-        return ClipRRect(
-          borderRadius: BorderRadius.circular(radius),
-          child: child,
-        );
-      },
-      child: toHero.child,
     );
   }
 

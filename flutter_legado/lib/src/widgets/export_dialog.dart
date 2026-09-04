@@ -11,6 +11,8 @@ import '../utils/error_message.dart';
 
 /// 导出对话框
 ///
+/// [LAYOUT_PLAN P4] 走主题默认 dialogTheme（28dp extraLarge），不逐个定制。
+///
 /// 提供完整的导出配置界面，包括：
 /// - 格式选择器（RadioGroup: TXT/EPUB/HTML）
 /// - 字符集选择器（DropdownButton: UTF-8/GBK/Big5）

@@ -104,7 +104,12 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
         width: width,
         height: height,
         fit: BoxFit.cover,
-        errorBuilder: (_, _, _) => const BookCover(width: 240, height: 320),
+        // [LAYOUT_PLAN P4] 补 heroTag（book-cover: + bookUrl，与详情页同 tag）
+        errorBuilder: (_, _, _) => BookCover(
+          width: 240,
+          height: 320,
+          heroTag: 'book-cover:${widget.effectiveBookUrl}',
+        ),
       );
     }
     return CachedNetworkImage(
@@ -116,7 +121,12 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
       memCacheWidth: ((width ?? 120) *
               (MediaQuery.maybeOf(context)?.devicePixelRatio ?? 1.0))
           .round(),
-      errorWidget: (_, _, _) => const BookCover(width: 240, height: 320),
+      errorWidget: (_, _, _) => BookCover(
+        // [LAYOUT_PLAN P4] 补 heroTag（book-cover: + bookUrl，与详情页同 tag）
+        width: 240,
+        height: 320,
+        heroTag: 'book-cover:${widget.effectiveBookUrl}',
+      ),
       placeholder: (_, _) => Container(
         width: width,
         height: height,
@@ -203,9 +213,14 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
             ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: (previewUrl != null && previewUrl.isNotEmpty)
-                  ? _coverImage(previewUrl, width: 120, height: 160)
-                  : const BookCover(width: 120, height: 160),
+            child: (previewUrl != null && previewUrl.isNotEmpty)
+                ? _coverImage(previewUrl, width: 120, height: 160)
+                // [LAYOUT_PLAN P4] 补 heroTag（book-cover: + bookUrl，与详情页同 tag）
+                : BookCover(
+                    width: 120,
+                    height: 160,
+                    heroTag: 'book-cover:${widget.effectiveBookUrl}',
+                  ),
             ),
           ),
           const SizedBox(width: 16),

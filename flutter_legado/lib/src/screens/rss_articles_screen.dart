@@ -9,6 +9,7 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/rss/rss_notifier.dart';
 import '../providers/rss_history/rss_history_notifier.dart';
+import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4] 下拉 M3 化
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
@@ -106,7 +107,8 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
             );
           }
 
-          return RefreshIndicator(
+          // [LAYOUT_PLAN P4] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
+          return CustomRefreshIndicator(
             onRefresh: () => notifier.refreshArticles(),
             child: _articleStyle == 0
                 ? ListView.separated(

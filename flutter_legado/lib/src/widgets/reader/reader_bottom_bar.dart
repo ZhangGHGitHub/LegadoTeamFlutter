@@ -75,10 +75,18 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
   bool _autoBrightness = false;
   double _brightness = 0.5;
 
+  // [LAYOUT_PLAN P4] 底栏进场动效开关：挂载后下一帧置 true，驱动
+  // AnimatedOpacity + AnimatedSlide（180ms，对标 anim_readbook_bottom）。
+  bool _entered = false;
+
   @override
   void initState() {
     super.initState();
     unawaited(_loadBrightness());
+    // [LAYOUT_PLAN P4] 触发底栏 slide+fade 进场（保持 showControls 条件挂载逻辑不变）。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _entered = true);
+    });
   }
 
   Future<void> _loadBrightness() async {
@@ -140,10 +148,18 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
       bottom: 0,
       left: 0,
       right: 0,
+      // [LAYOUT_PLAN P4] 菜单 slide+fade 进场（180ms，对标 anim_readbook_bottom
+      // 150ms 下滑入场；showControls 条件挂载逻辑保持不变，动画仅装饰）。
       // [UI-fix v2.0.4 | 2026-08-08] 悬浮按钮行（对标原版 ll_floating_button：
       // fabSearch 居左 / fabNightTheme 居右；原版另有 fabAutoPage/fabReplaceRule，
       // 自动翻页由 reader_screen `_syncAutoTimer` 驱动；替换规则入口在溢出菜单）— Qoder
-      child: Column(
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 180),
+        opacity: _entered ? 1.0 : 0.0,
+        child: AnimatedSlide(
+          duration: const Duration(milliseconds: 180),
+          offset: _entered ? Offset.zero : const Offset(0, 0.12),
+          child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -363,13 +379,15 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
                 ],
               ),
               const SizedBox(height: 8),
-            ],
+                    ],
+                  ),
+                ),
               ),
             ),
           ),
-        ),
-          ),
         ],
+          ),
+        ),
       ),
     );
     return bar;

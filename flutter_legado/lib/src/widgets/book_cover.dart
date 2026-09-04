@@ -67,6 +67,7 @@ class BookCover extends ConsumerWidget {
     );
     final tag = heroTag;
     if (tag != null && tag.isNotEmpty) {
+      // [LAYOUT_PLAN P4] 内置 Hero 保持无 flightShuttle（防与外层 Hero 嵌套）。
       cover = Hero(tag: tag, child: cover);
     }
     return cover;
@@ -81,6 +82,33 @@ class BookCover extends ConsumerWidget {
       height: height,
     );
   }
+}
+
+/// [LAYOUT_PLAN P4] 封面 Hero 过渡：圆角 4→12 插值 morph（由详情页外层 Hero 调用，
+/// BookCover 内置 Hero 不用，避免嵌套）。
+Widget coverFlightShuttleBuilder(
+  BuildContext flightContext,
+  Animation<double> animation,
+  HeroFlightDirection flightDirection,
+  BuildContext fromHeroContext,
+  BuildContext toHeroContext,
+) {
+  final toHero = toHeroContext.widget as Hero;
+  return AnimatedBuilder(
+    animation: animation,
+    builder: (context, child) {
+      final t = flightDirection == HeroFlightDirection.push
+          ? animation.value
+          : 1.0 - animation.value;
+      // [LAYOUT_PLAN P4] 圆角 4→12 过渡
+      final radius = 4.0 + (12.0 - 4.0) * t;
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: child,
+      );
+    },
+    child: toHero.child,
+  );
 }
 
 class _CoverImage extends ConsumerStatefulWidget {
