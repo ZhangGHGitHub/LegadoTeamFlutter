@@ -211,8 +211,9 @@ class _RssScreenState extends ConsumerState<RssScreen> {
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: columns,
                         childAspectRatio: aspectRatio,
-                        crossAxisSpacing: 8,
-                        mainAxisSpacing: 8,
+                        // [LAYOUT_MOTION_AUDIT L3] 网格间距统一 12dp
+                        crossAxisSpacing: 12,
+                        mainAxisSpacing: 12,
                       ),
                       itemCount: displaySources.length + 1,
                       itemBuilder: (context, index) {

@@ -564,6 +564,8 @@ extension _BookInfoBuilders on _BookInfoScreenState {
           hasScrollBody: false,
           child: Container(color: cs.surface),
         ),
+        // [LAYOUT_MOTION_AUDIT L3] 底部避让 88dp（FAB）+ 120dp：内容尾部留白防遮挡
+        const SliverToBoxAdapter(child: SizedBox(height: 88 + 120)),
       ],
     );
   }
@@ -582,18 +584,50 @@ extension _BookInfoBuilders on _BookInfoScreenState {
             // 对齐原版 ivCover 点击换封面 / 长按预览大图 — Cursor UI
             onTap: () => _openChangeCover(book),
             onLongPress: () => _previewCover(book),
-            child: BookCover(
-              coverUrl: book.customCoverUrl ?? book.coverUrl,
-              width: 110,
-              height: 160,
-              borderRadius: 10,
-              sourceOrigin: book.origin,
-              // Hero 封面过渡目的端（书架列表项同名 tag）
-              heroTag: 'cover:${book.bookUrl}',
+            // [LAYOUT_MOTION_AUDIT L3] Hero 加 flightShuttleBuilder 做圆角 4→12 过渡
+            // BookCover 内置 Hero 不暴露 flightShuttle，故此处外层 Hero 接管过渡
+            //（内层 heroTag 置空避免嵌套 Hero 同名），tag 统一 book-cover:
+            //（HapeLee BookCoverSharedElement 同义键，M1）
+            child: Hero(
+              tag: 'book-cover:${book.bookUrl}',
+              flightShuttleBuilder: _coverFlightShuttle,
+              child: BookCover(
+                coverUrl: book.customCoverUrl ?? book.coverUrl,
+                width: 110,
+                height: 160,
+                borderRadius: 10,
+                sourceOrigin: book.origin,
+              ),
             ),
           ),
         ),
       ),
+    );
+  }
+
+  /// [LAYOUT_MOTION_AUDIT L3] 封面 Hero 过渡：圆角 4→12 插值 morph
+  Widget _coverFlightShuttle(
+    BuildContext flightContext,
+    Animation<double> animation,
+    HeroFlightDirection flightDirection,
+    BuildContext fromHeroContext,
+    BuildContext toHeroContext,
+  ) {
+    final toHero = toHeroContext.widget as Hero;
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, child) {
+        final t = flightDirection == HeroFlightDirection.push
+            ? animation.value
+            : 1.0 - animation.value;
+        // [LAYOUT_MOTION_AUDIT L3] 圆角 4→12 过渡
+        final radius = 4.0 + (12.0 - 4.0) * t;
+        return ClipRRect(
+          borderRadius: BorderRadius.circular(radius),
+          child: child,
+        );
+      },
+      child: toHero.child,
     );
   }
 
@@ -617,7 +651,8 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         // iOS sheet 风格大圆角顶部
         borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      padding: const EdgeInsets.fromLTRB(18, 12, 18, 8),
+      // [LAYOUT_MOTION_AUDIT L3] 内容边距 18→16（全局水平边距统一 16dp）
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Column(
         children: [
           // 书名行可搜索（对齐原版 tvName 点击/长按 → SearchActivity）
@@ -1027,6 +1062,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                   onPressed: () =>
                       _openReader(context, book, book.durChapterIndex),
                   style: FilledButton.styleFrom(
+                    // [LAYOUT_MOTION_AUDIT L3] FAB 背景 primaryContainer 前景 primary
+                    backgroundColor: cs.primaryContainer,
+                    foregroundColor: cs.primary,
                     textStyle: const TextStyle(fontSize: 15),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(12),

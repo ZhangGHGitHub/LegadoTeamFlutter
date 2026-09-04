@@ -54,7 +54,8 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   /// 平板双栏：右栏当前选中的发现分类（null 时右栏显示占位提示）
   ExploreShowArgs? _selectedCategory;
 
-  static const _kExpandDuration = Duration(milliseconds: 250);
+  /// [LAYOUT_MOTION_AUDIT L3] 展开动画 300ms + easeOutCubic（M3 emphasized）
+  static const _kExpandDuration = Duration(milliseconds: 300);
 
   @override
   void dispose() {
@@ -86,86 +87,79 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
         return Scaffold(
           appBar: LegadoAppBar(
             titleSpacing: 8,
-            // iOS 顶栏嵌入式搜索：克制圆角、系统灰底
-            title: SizedBox(
-              height: 36,
-              child: TextField(
-                controller: _searchController,
-                style: TextStyle(color: colorScheme.onSurface),
-                decoration: InputDecoration(
-                  hintText: '筛选发现源',
-                  hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
-                  filled: true,
-                  fillColor:
-                      colorScheme.onSurfaceVariant.withValues(alpha: 0.12),
-                  contentPadding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-                  prefixIcon: Icon(
-                    Symbols.search_rounded,
-                    size: 20,
-                    color: colorScheme.onSurfaceVariant,
+            // [LAYOUT_MOTION_AUDIT L3] 顶栏筛选框走 M3 SearchBar 标准
+            // （替代旧 36dp 自定义 TextField：容器色/圆角/字级走 searchBarTheme）
+            title: SearchBar(
+              controller: _searchController,
+              hintText: '筛选发现源',
+              constraints: const BoxConstraints(minHeight: 40),
+              elevation: const WidgetStatePropertyAll(0),
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 12),
+              ),
+              leading: Icon(
+                Symbols.search_rounded,
+                size: 20,
+                color: colorScheme.onSurfaceVariant,
+              ),
+              trailing: [
+                if (_searchController.text.isNotEmpty)
+                  IconButton(
+                    icon: Icon(
+                      Symbols.close_rounded,
+                      size: 18,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                    onPressed: () {
+                      _searchController.clear();
+                      ref.read(exploreNotifierProvider.notifier).clearSearch();
+                    },
                   ),
-                  prefixIconConstraints: const BoxConstraints(
-                    minWidth: 36,
-                    minHeight: 36,
-                  ),
-                  suffixIcon: _searchController.text.isNotEmpty
-                      ? IconButton(
-                          icon: Icon(
-                            Symbols.close_rounded,
-                            size: 18,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
-                          onPressed: () {
-                            _searchController.clear();
+              ],
+              onChanged: _onSearchChanged,
+            ),
+            bottom: PreferredSize(
+              // [LAYOUT_MOTION_AUDIT L3] 分组筛选走 M3 FilterChip 标准横滑条
+              // （替代旧 PopupMenu：全部/各分组一目了然，对标原版分组语义）
+              preferredSize: const Size.fromHeight(48),
+              child: SizedBox(
+                height: 48,
+                child: ListView(
+                  scrollDirection: Axis.horizontal,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: FilterChip(
+                        label: const Text('全部'),
+                        selected: state.selectedGroup.isEmpty,
+                        onSelected: (_) {
+                          ref
+                              .read(exploreNotifierProvider.notifier)
+                              .selectGroup('');
+                          setState(() => _selectedCategory = null);
+                        },
+                      ),
+                    ),
+                    for (final group in state.groups)
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: FilterChip(
+                          label: Text(group),
+                          selected: state.selectedGroup == group,
+                          onSelected: (_) {
                             ref
                                 .read(exploreNotifierProvider.notifier)
-                                .clearSearch();
+                                .selectGroup(group);
+                            setState(() => _selectedCategory = null);
                           },
-                        )
-                      : null,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide.none,
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(
-                      color: colorScheme.primary.withValues(alpha: 0.45),
-                      width: 1,
-                    ),
-                  ),
+                        ),
+                      ),
+                  ],
                 ),
-                onChanged: _onSearchChanged,
               ),
             ),
-            actions: [
-              PopupMenuButton<String>(
-                tooltip: '分组',
-                icon: const Icon(Symbols.groups_rounded),
-                onSelected: (group) {
-                  ref.read(exploreNotifierProvider.notifier).selectGroup(group);
-                  setState(() => _selectedCategory = null);
-                },
-                itemBuilder: (context) => [
-                  CheckedPopupMenuItem<String>(
-                    value: '',
-                    checked: state.selectedGroup.isEmpty,
-                    child: const Text('全部'),
-                  ),
-                  for (final group in state.groups)
-                    CheckedPopupMenuItem<String>(
-                      value: group,
-                      checked: state.selectedGroup == group,
-                      child: Text(group),
-                    ),
-                ],
-              ),
-            ],
           ),
           body: _buildBody(state, isTablet),
         );
@@ -441,7 +435,8 @@ class _SourceItemState extends ConsumerState<_SourceItem>
     );
     _expandAnimation = CurvedAnimation(
       parent: _expandController,
-      curve: Curves.easeInOut,
+      // [LAYOUT_MOTION_AUDIT L3] emphasized：easeInOut → easeOutCubic
+      curve: Curves.easeOutCubic,
     );
     widget.collapseSignal?.addListener(_onCollapseSignal);
   }
@@ -485,7 +480,8 @@ class _SourceItemState extends ConsumerState<_SourceItem>
                 onTap: _toggleExpand,
                 onLongPress: _showItemMenu,
                 child: ConstrainedBox(
-                  constraints: const BoxConstraints(minHeight: 44),
+                  // [LAYOUT_MOTION_AUDIT L3] 分组头行高对齐 M3 ListItem 单行 56
+                  constraints: const BoxConstraints(minHeight: 56),
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Row(
@@ -503,7 +499,8 @@ class _SourceItemState extends ConsumerState<_SourceItem>
                         AnimatedRotation(
                           turns: _expanded ? 0.25 : 0,
                           duration: widget.expandDuration,
-                          curve: Curves.easeInOut,
+                          // [LAYOUT_MOTION_AUDIT L3] emphasized 曲线
+                          curve: Curves.easeOutCubic,
                           child: Icon(
                             Symbols.chevron_right_rounded,
                             size: 20,

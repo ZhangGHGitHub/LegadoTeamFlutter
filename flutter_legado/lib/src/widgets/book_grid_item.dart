@@ -20,7 +20,8 @@ class BookGridItem extends StatelessWidget {
   /// 书源 origin（封面 coverDecodeJs）
   final String? sourceOrigin;
 
-  /// Hero 过渡标签（书架↔详情封面过渡，约定 `cover:<book url>`）
+  /// Hero 过渡标签（书架↔详情封面过渡，约定 `book-cover:<book url>`，
+  /// HapeLee BookCoverSharedElement 同义键，M1）
   final String? heroTag;
 
   /// 未读章节数（>0 时显示右上角角标）

@@ -835,6 +835,10 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
     ChangeSourceState state,
   ) {
     final colorScheme = Theme.of(context).colorScheme;
+    // [LAYOUT_MOTION_AUDIT L3] 结果行字级走 M3 Type Scale（源名 titleSmall→
+    // 最新章节/字数 bodySmall→耗时 labelSmall，对齐 HapeLee ChangeSourceSheet
+    // 信息层级：源名→最新章节→字数→耗时，保持现有字段仅调间距字级）
+    final textTheme = Theme.of(context).textTheme;
     final isCurrent = item.sourceUrl == widget.effectiveCurrentSourceUrl;
     final isApplying = state.applyingUrl == item.sourceUrl;
     final score = item.bookScore;
@@ -849,13 +853,17 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
       onTap: isCurrent || state.isApplying ? null : () => _applySource(item),
       onLongPress: () => _showItemActions(item),
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        // [LAYOUT_MOTION_AUDIT L3] 行内边距对齐 vertical12 + horizontal8
+        padding: const EdgeInsets.fromLTRB(8, 12, 8, 12),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
+                // [LAYOUT_MOTION_AUDIT L3] 行内层级间距 4dp（对齐
+                // ChangeSourceSheet supportingContent spacedBy 4dp）
+                spacing: 4,
                 children: [
                   Row(
                     children: [
@@ -864,7 +872,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
                           item.sourceName.isEmpty ? '未知书源' : item.sourceName,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
+                          style: textTheme.titleSmall?.copyWith(
                             fontWeight: FontWeight.w600,
                             color: isCurrent ? colorScheme.primary : null,
                           ),
@@ -898,13 +906,12 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
                       '最新：${item.latestChapter}',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 12),
+                      style: textTheme.bodySmall,
                     ),
                   if (item.wordCount != null && item.wordCount!.isNotEmpty)
                     Text(
                       item.wordCount!,
-                      style: TextStyle(
-                        fontSize: 12,
+                      style: textTheme.bodySmall?.copyWith(
                         color: colorScheme.outline,
                       ),
                     ),
@@ -913,16 +920,14 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen> {
                       item.chapterWordCountText!.isNotEmpty)
                     Text(
                       item.chapterWordCountText!,
-                      style: TextStyle(
-                        fontSize: 12,
+                      style: textTheme.bodySmall?.copyWith(
                         color: colorScheme.outline,
                       ),
                     ),
                   if (_loadWordCount && item.respondTime >= 0)
                     Text(
                       '耗时 ${item.respondTime}ms',
-                      style: TextStyle(
-                        fontSize: 11,
+                      style: textTheme.labelSmall?.copyWith(
                         color: colorScheme.outline,
                       ),
                     ),

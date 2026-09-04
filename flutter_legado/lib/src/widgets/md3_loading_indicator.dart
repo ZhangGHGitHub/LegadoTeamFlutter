@@ -62,26 +62,29 @@ class _Md3LoadingIndicatorState extends State<Md3LoadingIndicator>
     return Semantics(
       label: widget.semanticsLabel,
       child: ExcludeSemantics(
-        child: SizedBox(
-          width: widget.size,
-          height: widget.size,
-          child: reduceMotion
-              ? CustomPaint(
-                  painter: _StaticArcPainter(
-                    color: color,
-                    strokeWidth: strokeWidth,
-                  ),
-                )
-              : AnimatedBuilder(
-                  animation: _controller,
-                  builder: (context, _) => CustomPaint(
-                    painter: _WavyRingPainter(
-                      progress: _controller.value,
+        // [LAYOUT_MOTION_AUDIT M2] 常驻波环加 RepaintBoundary 隔离重绘（耗电）
+        child: RepaintBoundary(
+          child: SizedBox(
+            width: widget.size,
+            height: widget.size,
+            child: reduceMotion
+                ? CustomPaint(
+                    painter: _StaticArcPainter(
                       color: color,
                       strokeWidth: strokeWidth,
                     ),
+                  )
+                : AnimatedBuilder(
+                    animation: _controller,
+                    builder: (context, _) => CustomPaint(
+                      painter: _WavyRingPainter(
+                        progress: _controller.value,
+                        color: color,
+                        strokeWidth: strokeWidth,
+                      ),
+                    ),
                   ),
-                ),
+          ),
         ),
       ),
     );

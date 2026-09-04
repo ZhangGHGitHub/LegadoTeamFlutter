@@ -75,76 +75,62 @@ extension _SearchBuilders on _SearchScreenState {
   PreferredSizeWidget _buildAppBar(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return LegadoAppBar(
-      title: Container(
-        height: 36,
-        margin: const EdgeInsets.symmetric(vertical: 4),
-        child: TextField(
-          controller: _searchController,
-          focusNode: _focusNode,
-          // 对标原版 SearchActivity：进入即聚焦弹出键盘
-          autofocus: true,
-          // [UI-fix v2.0.11 | 2026-08-10] 文字垂直裁切修复：isDense 压缩
-          // 行高、textAlignVertical 垂直居中，suffixIcon 收敛到 32x32 约束，
-          // 避免默认 IconButton 48px 高度撑破 36px 容器导致文字显示不全 — Reasonix
-          textAlignVertical: TextAlignVertical.center,
-          decoration: InputDecoration(
-            isDense: true,
-            hintText: AppStrings.searchBookHint,
-            // 安卓端 bg_searchview: 35dp圆角胶囊形、半透明填充、0.5dp描边
-            filled: true,
-            fillColor: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-            contentPadding:
-                const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-            prefixIcon: const Icon(Symbols.search_rounded, size: 20),
-            suffixIcon: _searchController.text.isNotEmpty
-                ? IconButton(
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                        minWidth: 32, minHeight: 32),
-                    icon: const Icon(Symbols.close_rounded, size: 20),
-                    onPressed: () {
-                      _searchController.clear();
-                      ref.read(searchNotifierProvider.notifier).clearResults();
-                    },
-                  )
-                : null,
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(35),
-              borderSide: BorderSide.none,
-            ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(35),
-              borderSide: BorderSide(
-                color: colorScheme.surfaceContainerHighest,
-                width: 0.5,
-              ),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(35),
-              borderSide: BorderSide(
-                color: colorScheme.primary.withValues(alpha: 0.5),
-                width: 0.5,
-              ),
-            ),
+      // [LAYOUT_MOTION_AUDIT L3] 顶栏 TextField 胶囊改为 SearchBar 标准
+      //（圆角 32dp + surfaceContainerLow）
+      title: SearchBar(
+        controller: _searchController,
+        focusNode: _focusNode,
+        // [LAYOUT_MOTION_AUDIT L3] 进入 autofocus
+        autoFocus: true,
+        hintText: AppStrings.searchBookHint,
+        // [LAYOUT_MOTION_AUDIT L3] SearchBar 标准：圆角 32dp
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(32),
           ),
-          textInputAction: TextInputAction.search,
-          onSubmitted: (value) {
-            // 对标原版 onQueryTextSubmit → clearFocus
-            FocusScope.of(context).unfocus();
-            ref.read(searchNotifierProvider.notifier).search(value);
-          },
-          // 实时驱动联想过滤（对标原版 SearchActivity.upHistory）
-          onChanged: (value) {
-            final notifier = ref.read(searchNotifierProvider.notifier);
-            // 对标原版 onQueryTextChange → viewModel.stop() + 隐藏 FAB
-            if (ref.read(searchNotifierProvider).isLoading) {
-              notifier.stop();
-            }
-            notifier.setInput(value);
-            setState(() {}); // 刷新清除按钮显隐
-            _updateInputHelpVisibility();
-          },
         ),
+        // [LAYOUT_MOTION_AUDIT L3] SearchBar 标准：surfaceContainerLow
+        backgroundColor: WidgetStatePropertyAll(
+          colorScheme.surfaceContainerLow,
+        ),
+        // [LAYOUT_MOTION_AUDIT L3] 顶栏紧凑约束：宽撑满 + 高 40（原 36 胶囊）
+        constraints: const BoxConstraints(minHeight: 40, maxHeight: 40),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 12),
+        ),
+        leading: const Icon(Symbols.search_rounded, size: 20),
+        trailing: _searchController.text.isNotEmpty
+            ? [
+                IconButton(
+                  padding: EdgeInsets.zero,
+                  constraints:
+                      const BoxConstraints(minWidth: 32, minHeight: 32),
+                  icon: const Icon(Symbols.close_rounded, size: 20),
+                  onPressed: () {
+                    _searchController.clear();
+                    ref.read(searchNotifierProvider.notifier).clearResults();
+                  },
+                ),
+              ]
+            : null,
+        textInputAction: TextInputAction.search,
+        onSubmitted: (value) {
+          // [LAYOUT_MOTION_AUDIT L3] 提交时清焦点藏键盘
+          _focusNode.unfocus();
+          FocusScope.of(context).unfocus();
+          ref.read(searchNotifierProvider.notifier).search(value);
+        },
+        // 实时驱动联想过滤（对标原版 SearchActivity.upHistory）
+        onChanged: (value) {
+          final notifier = ref.read(searchNotifierProvider.notifier);
+          // 对标原版 onQueryTextChange → viewModel.stop() + 隐藏 FAB
+          if (ref.read(searchNotifierProvider).isLoading) {
+            notifier.stop();
+          }
+          notifier.setInput(value);
+          setState(() {}); // 刷新清除按钮显隐
+          _updateInputHelpVisibility();
+        },
       ),
       actions: [
         // 安卓原版：右侧「>」图标提交搜索
@@ -154,6 +140,8 @@ extension _SearchBuilders on _SearchScreenState {
           onPressed: () {
             final text = _searchController.text.trim();
             if (text.isNotEmpty) {
+              // [LAYOUT_MOTION_AUDIT L3] 提交时清焦点藏键盘
+              _focusNode.unfocus();
               FocusScope.of(context).unfocus();
               ref.read(searchNotifierProvider.notifier).search(text);
             }
@@ -412,6 +400,8 @@ extension _SearchBuilders on _SearchScreenState {
                   height: 110,
                   borderRadius: 10,
                   sourceOrigin: book.origin,
+                  // [LAYOUT_MOTION_AUDIT M1] 搜索结果封面补 Hero（进详情过渡）
+                  heroTag: 'book-cover:${book.bookUrl}',
                 ),
                 // 原版 SearchAdapter L122：橙点（阅读记录）与绿点（在架）互斥
                 if (_showReadRecord && !inShelf && result.hasReadRecord)
@@ -893,6 +883,8 @@ extension _SearchBuilders on _SearchScreenState {
                   height: 56,
                   borderRadius: 6,
                   sourceOrigin: book.origin,
+                  // [LAYOUT_MOTION_AUDIT M1] 同源书封面补 Hero（进详情过渡）
+                  heroTag: 'book-cover:${book.bookUrl}',
                 ),
                 const SizedBox(width: 8),
                 Expanded(

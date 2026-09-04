@@ -44,7 +44,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 返回键双击退出判定窗口（对标原版 EXIT_INTERVAL = 2000ms）
   static const _exitInterval = Duration(seconds: 2);
 
-  final PageController _pageController = PageController();
+  /// [LAYOUT_MOTION_AUDIT L3] IndexedStack 当前索引。
+  /// 禁滑动切页（HapeLee IndexedStack 语义），切页一律经 setState 切索引。
+  int _stackIndex = 0;
 
   /// 当前逻辑 Tab（Tab 显隐变化时据此重新定位索引）
   _HomeTab _currentTab = _HomeTab.bookshelf;
@@ -67,7 +69,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   void dispose() {
-    _pageController.dispose();
     _bookshelfScrollTopSignal.dispose();
     _exploreCollapseSignal.dispose();
     super.dispose();
@@ -111,7 +112,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _lastTapIndex = index;
     if (index != currentIndex) {
       // 对标原版 setCurrentItem(position, false)：无过渡动画
-      _pageController.jumpToPage(index);
+      // [LAYOUT_MOTION_AUDIT L3] IndexedStack 直接切索引（禁滑动切页）
+      setState(() => _stackIndex = index);
+      _onPageChanged(tabs, index);
     }
   }
 
@@ -135,9 +138,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// 返回键两段式处理（对标 MainActivity.onBackPressedDispatcher）
-  Future<void> _handleBack() async {
+  Future<void> _handleBack(List<_HomeTab> tabs) async {
     if (_currentTab != _HomeTab.bookshelf) {
-      _pageController.jumpToPage(0);
+      // [LAYOUT_MOTION_AUDIT L3] IndexedStack 回书架
+      final index = tabs.indexOf(_HomeTab.bookshelf);
+      setState(() => _stackIndex = index >= 0 ? index : 0);
+      _onPageChanged(tabs, _stackIndex);
       return;
     }
     final now = DateTime.now();
@@ -235,9 +241,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       if (targetIndex >= 0 && _currentTab == _HomeTab.bookshelf) {
         _defaultHomePageApplied = true;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted && _pageController.hasClients) {
-            _pageController.jumpToPage(targetIndex);
-          }
+          if (!mounted) return;
+          // [LAYOUT_MOTION_AUDIT L3] IndexedStack 直接切索引
+          setState(() => _stackIndex = targetIndex);
+          _onPageChanged(_visibleTabs(next), targetIndex);
         });
       }
     });
@@ -247,15 +254,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       _currentTab = _HomeTab.bookshelf;
       currentIndex = 0;
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted && _pageController.hasClients) {
-          _pageController.jumpToPage(0);
-        }
+        if (!mounted) return;
+        // [LAYOUT_MOTION_AUDIT L3] IndexedStack 直接切索引
+        setState(() => _stackIndex = 0);
       });
     }
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop) _handleBack();
+        if (!didPop) _handleBack(tabs);
       },
       child: Scaffold(
         // 沉浸式状态栏开启时顶栏延伸至状态栏区域（对标原版 fullScreen +
@@ -263,9 +270,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         body: SafeArea(
           top: !ref.watch(systemBarProvider.select((s) => s.transparentStatusBar)),
           bottom: false,
-          child: PageView(
-            controller: _pageController,
-            onPageChanged: (index) => _onPageChanged(tabs, index),
+          // [LAYOUT_MOTION_AUDIT L3] 禁滑动切页（HapeLee IndexedStack 语义）；
+          // 切页经底栏 _onDestinationSelected，保留懒构建（未访问 Tab 占位）。
+          // 平板预留：≥600dp 切 NavigationRail + ExtendedFAB（HapeLee
+          // WideNavigationRail，接口 Responsive.useNavigationRail 已定义，
+          // 本轮仅预留不断口，Rail 组件延后 M 批）。
+          child: IndexedStack(
+            index: currentIndex,
             children: [for (final tab in tabs) _pageOf(tab)],
           ),
         ),

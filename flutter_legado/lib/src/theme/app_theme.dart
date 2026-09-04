@@ -4,6 +4,44 @@ import 'package:flutter/services.dart';
 import 'app_typography.dart';
 import 'md3_colors.dart';
 
+/// Android 页面转场（对齐 HapeLee MainActivity NavDisplay 参数）
+///
+/// HapeLee：push slide 480ms FastOutSlowIn + fade 360ms；
+/// pop slide（-1/4 宽）+ scaleOut 0.8 + fade。
+/// Flutter 主题 builder 复用路由默认 300ms 总时长，内部按比例切分
+/// （slide 全程，fade 前 3/4），近似原生节奏。
+class _LegadoAndroidTransitionsBuilder extends PageTransitionsBuilder {
+  const _LegadoAndroidTransitionsBuilder();
+
+  @override
+  Widget buildTransitions<T>(
+    PageRoute<T> route,
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    final slide = Tween<Offset>(
+      begin: const Offset(1, 0),
+      end: Offset.zero,
+    ).chain(CurveTween(curve: Curves.fastOutSlowIn)).animate(animation);
+    final fade = Tween<double>(begin: 0, end: 1).animate(
+      CurvedAnimation(parent: animation, curve: const Interval(0, 0.75)),
+    );
+    // pop 时次级动画做 scale 0.8 + fade（近似 Compose scaleOut+fadeOut）
+    final scale = Tween<double>(begin: 1, end: 0.8)
+        .chain(CurveTween(curve: Curves.fastOutSlowIn))
+        .animate(secondaryAnimation);
+    return SlideTransition(
+      position: slide,
+      child: FadeTransition(
+        opacity: fade,
+        child: ScaleTransition(scale: scale, child: child),
+      ),
+    );
+  }
+}
+
 /// 应用主题定义（Material Design 3 Expressive）
 ///
 /// 集中管理按调色板装配的 light/dark ThemeData（UI_MD3_PLAN.md Batch 0）：
@@ -169,6 +207,15 @@ class AppTheme {
       scaffoldBackgroundColor: scaffoldBackground,
       dividerColor: separator,
       splashFactory: InkSparkle.splashFactory,
+
+      // 页面转场 —— M3 标准（对齐 HapeLee MainActivity NavDisplay）
+      // Android：push slide480ms FastOutSlowIn + fade360ms LinearOutSlowIn；
+      // pop slide + scale0.8 + fade。iOS/桌面走各平台默认。
+      pageTransitionsTheme: const PageTransitionsTheme(
+        builders: <TargetPlatform, PageTransitionsBuilder>{
+          TargetPlatform.android: _LegadoAndroidTransitionsBuilder(),
+        },
+      ),
 
       // AppBar 主题 —— 标准 M3：surface 底 + onSurface 前景，滚动时 tonal 抬升
       appBarTheme: AppBarTheme(

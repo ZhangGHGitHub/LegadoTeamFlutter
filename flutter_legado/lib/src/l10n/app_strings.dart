@@ -28,6 +28,9 @@ class AppStrings {
   static String get error => _get('错误', 'Error');
   static String get noData => _get('暂无数据', 'No data');
   static String get retry => _get('重试', 'Retry');
+
+  /// 加载失败（对齐 HapeLee LoadMoreFooter error 态，M2）
+  static String get loadFailed => _get('加载失败', 'Load failed');
   // 对齐原版 R.string.double_click_exit
   static String get doubleClickExit => _get('再按一次退出程序', 'Press again to exit');
 

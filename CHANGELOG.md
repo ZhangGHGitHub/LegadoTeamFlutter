@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.157] - 2026-09-04
+
+### Changed
+- [UI] 布局动效 L3 主框架+五大页：主框架 PageView 改 IndexedStack 禁滑动切页（HapeLee 语义，底栏切页/双击/返回逻辑保留，home_navigation 测试同步）；书架网格封面 84 宽 aspect5/7 圆角 4dp + 间距 8dp + 边距 top8/horizontal4 + TabBar 标准化；详情边距 18→16 + Hero 圆角过渡 + FAB primaryContainer + 底部避让；搜索 SearchBar 化 + autofocus + 提交藏键盘；发现 SearchBar + FilterChip + 展开 300ms；RSS 间距 12dp；目录行 vertical12；换源行字级 token 化；平板 Rail 预留接口
+- [UI] 布局动效 M1 转场 Hero：PageTransitionsTheme 全站统一（Android slide+fade/pop scale0.8，iOS/桌面走默认）；Hero tag 统一 book-cover:（书架/列表/搜索/发现/详情全链路）+ flightShuttle 圆角过渡
+- [UI] 布局动效 M2 加载空态：新增 Skeleton shimmer（1200ms + Highest→High，网格/列表两型）；LoadMore 三态 footer（loading/error/end，24px）；空态加 isLoading 分支 + message 限宽 240dp；波浪加载器加 RepaintBoundary
+
+### Test
+- flutter analyze 无问题；flutter test 1313 全过（含 bookshelf 比例/导航同步更新）
+- 版本 2.0.157+158
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.156] - 2026-09-04
 
 ### Changed

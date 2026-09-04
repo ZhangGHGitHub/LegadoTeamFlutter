@@ -46,7 +46,8 @@ class BookListItem extends StatelessWidget {
               borderRadius: 4,
               sourceOrigin: book.origin,
               // Hero 封面过渡（书架↔详情，key=book url）
-              heroTag: 'cover:${book.bookUrl}',
+              // [LAYOUT_MOTION_AUDIT M1] tag 统一 book-cover:（HapeLee 同义键）
+              heroTag: 'book-cover:${book.bookUrl}',
             ),
             const SizedBox(width: 10),
             Expanded(

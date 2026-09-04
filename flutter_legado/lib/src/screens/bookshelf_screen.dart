@@ -127,7 +127,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final state = ref.watch(bookshelfNotifierProvider);
     return LegadoAppBar(
       title: state.hasGroupTabs
-          ? _buildGroupTabBar(state)
+          ? _buildGroupTabBar(context, state)
           : Text(AppStrings.bookshelf),
       actions: _buildAppBarActions(context, ref),
     );
@@ -135,13 +135,35 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   /// 分组 TabBar（对标原版 BookshelfFragment1：可滚动 TabLayout 嵌入
   /// Toolbar 内容区，与右侧菜单图标同一行）
-  Widget _buildGroupTabBar(BookshelfState state) {
+  Widget _buildGroupTabBar(BuildContext context, BookshelfState state) {
     final controller = _ensureTabController(state.groups.length);
     _syncTabControllerIndex(state.selectedGroupIndex);
+    final colorScheme = Theme.of(context).colorScheme;
+    // [LAYOUT_MOTION_AUDIT L3] Tab 文案走 labelLargeEmphasized（M3 labelLarge + Medium 强调）
+    final labelStyle = Theme.of(context)
+        .textTheme
+        .labelLarge
+        ?.copyWith(fontWeight: FontWeight.w500);
     return TabBar(
       controller: controller,
       isScrollable: true, // 原版 tabMode = MODE_SCROLLABLE
       tabAlignment: TabAlignment.start,
+      // [LAYOUT_MOTION_AUDIT L3] edgePadding 0（Flutter 侧等价 padding 置零）
+      padding: EdgeInsets.zero,
+      // [LAYOUT_MOTION_AUDIT L3] minTabWidth 0（Flutter 侧等价 labelPadding 置零）
+      labelPadding: EdgeInsets.zero,
+      // [LAYOUT_MOTION_AUDIT L3] 无分割线
+      dividerColor: Colors.transparent,
+      // [LAYOUT_MOTION_AUDIT L3] 无分割线
+      dividerHeight: 0,
+      // [LAYOUT_MOTION_AUDIT L3] 选中走 primary
+      labelColor: colorScheme.primary,
+      // [LAYOUT_MOTION_AUDIT L3] 未选中走 onSurfaceVariant
+      unselectedLabelColor: colorScheme.onSurfaceVariant,
+      // [LAYOUT_MOTION_AUDIT L3] labelLargeEmphasized
+      labelStyle: labelStyle,
+      // [LAYOUT_MOTION_AUDIT L3] labelLargeEmphasized
+      unselectedLabelStyle: labelStyle,
       // [MD3 Batch 2] 前景走全局 tabBarTheme（onSurface/onSurfaceVariant +
       // primary 指示器），与 M3 AppBar surface 背景配对，不再硬编码白色
       tabs: state.groups.map((g) => Tab(text: g.groupName)).toList(),
@@ -219,7 +241,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           LegadoTabRootHeaderSliver(
             large: !state.hasGroupTabs,
             title: state.hasGroupTabs
-                ? _buildGroupTabBar(state)
+                ? _buildGroupTabBar(context, state)
                 : Text(AppStrings.bookshelf),
             actions: _buildAppBarActions(context, ref),
           ),
@@ -327,20 +349,37 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     return SliverLayoutBuilder(
       builder: (context, constraints) {
         final columns = Responsive.gridColumnsForWidth(constraints.crossAxisExtent);
-        final aspectRatio =
-            Responsive.bookGridChildAspectRatio(constraints.crossAxisExtent);
+        // [LAYOUT_MOTION_AUDIT L3] 单元格 aspect 5:7（封面宽 84 时内容高≈宽*7/5）
+        const aspectRatio = 5 / 7;
+        // [LAYOUT_MOTION_AUDIT L3] 网格封面宽 84：单元格内水平居中限宽，
+        // Padding 保持 tight 约束（BookGridItem 内 Expanded 可用）
+        final cellWidth =
+            (constraints.crossAxisExtent - 8 - (columns - 1) * 8) / columns;
+        // [LAYOUT_MOTION_AUDIT L3] 网格封面宽 84：超宽单元格两侧留白居中
+        final coverSidePad =
+            ((cellWidth - 84) / 2).clamp(0.0, double.infinity).toDouble();
         return SliverPadding(
-          padding: const EdgeInsets.all(12),
+          // [LAYOUT_MOTION_AUDIT L3] 内容边距 top8 + horizontal4
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
           sliver: SliverGrid.builder(
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: columns,
-              mainAxisSpacing: 12,
-              crossAxisSpacing: 12,
+              // [LAYOUT_MOTION_AUDIT L3] 网格间距 8dp
+              mainAxisSpacing: 8,
+              // [LAYOUT_MOTION_AUDIT L3] 网格间距 8dp
+              crossAxisSpacing: 8,
               childAspectRatio: aspectRatio,
             ),
             itemCount: books.length,
             itemBuilder: (context, index) {
-              return _buildGridItem(context, ref, books[index]);
+              return Padding(
+                padding: EdgeInsets.symmetric(horizontal: coverSidePad),
+                // [LAYOUT_MOTION_AUDIT L3] 封面圆角 4dp
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: _buildGridItem(context, ref, books[index]),
+                ),
+              );
             },
           ),
         );
@@ -380,7 +419,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       coverUrl: book.customCoverUrl ?? book.coverUrl,
       sourceOrigin: book.origin,
       // Hero 封面过渡（书架↔详情，key=book url）
-      heroTag: 'cover:${book.bookUrl}',
+      // [LAYOUT_MOTION_AUDIT M1] tag 统一 book-cover:（HapeLee 同义键）
+      heroTag: 'book-cover:${book.bookUrl}',
       unreadNum: unreadChapterNum(book),
       progress: bookReadProgress(book),
       onTap: () => _openBook(context, ref, book),

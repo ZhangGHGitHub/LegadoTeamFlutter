@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 
 import 'md3_animated_text_line.dart';
+import 'md3_loading_indicator.dart';
 
 /// 空状态组件
 ///
@@ -24,6 +25,10 @@ class EmptyState extends StatefulWidget {
   /// 颜文字彩蛋模式（点击切换颜文字；对齐参考仓库 EmptyMessage）
   final bool kaomoji;
 
+  /// 加载中时显示 Contained 指示器代替空态（对齐 HapeLee EmptyMessage
+  /// isLoading 分支，M2）
+  final bool isLoading;
+
   const EmptyState({
     super.key,
     required this.icon,
@@ -32,6 +37,7 @@ class EmptyState extends StatefulWidget {
     this.action,
     this.simple = false,
     this.kaomoji = false,
+    this.isLoading = false,
   });
 
   @override
@@ -57,6 +63,11 @@ class _EmptyStateState extends State<EmptyState> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
+    // 加载中：Contained 指示器（HapeLee isLoading 分支）
+    if (widget.isLoading) {
+      return const Center(child: Md3LoadingIndicator());
+    }
+
     // 安卓原版范式：纯居中灰字（对标 Android 空状态 TextView）
     if (widget.simple) {
       return Center(
@@ -74,60 +85,62 @@ class _EmptyStateState extends State<EmptyState> {
     }
 
     // 颜文字彩蛋模式（用户授权）：点击换颜文字 + 提示文字翻滚
+    // [LAYOUT_MOTION_AUDIT M2] message 约束最大宽 240dp（HapeLee widthIn）
     if (widget.kaomoji) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              InkWell(
-                borderRadius: BorderRadius.circular(12),
-                onTap: () => setState(() {
-                  // 池内随机换一个（与当前不同）
-                  var next = _face;
-                  while (next == _face) {
-                    next = _faces[Random().nextInt(_faces.length)];
-                  }
-                  _face = next;
-                }),
-                child: Padding(
-                  padding: const EdgeInsets.all(8),
-                  child: Md3AnimatedTextLine(
-                    text: _face,
-                    style: TextStyle(
-                      fontSize: 32,
-                      color: colorScheme.onSurfaceVariant,
+          padding: const EdgeInsets.all(16),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 240),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () => setState(() {
+                    // 池内随机换一个（与当前不同）
+                    var next = _face;
+                    while (next == _face) {
+                      next = _faces[Random().nextInt(_faces.length)];
+                    }
+                    _face = next;
+                  }),
+                  child: Padding(
+                    padding: const EdgeInsets.all(8),
+                    child: Md3AnimatedTextLine(
+                      text: _face,
+                      style: TextStyle(
+                        fontSize: 32,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              Md3AnimatedTextLine(
-                text: widget.title,
-                maxLines: 2,
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
-                      fontWeight: FontWeight.w500,
-                    ),
-              ),
-              if (widget.subtitle != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  widget.subtitle!,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant.withValues(
-                          alpha: 0.7,
-                        ),
+                const SizedBox(height: 12),
+                Md3AnimatedTextLine(
+                  text: widget.title,
+                  maxLines: 2,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                        fontWeight: FontWeight.w500,
                       ),
                 ),
+                if (widget.subtitle != null) ...[
+                  Text(
+                    widget.subtitle!,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: colorScheme.onSurfaceVariant.withValues(
+                            alpha: 0.7,
+                          ),
+                        ),
+                  ),
+                ],
+                if (widget.action != null) ...[
+                  widget.action!,
+                ],
               ],
-              if (widget.action != null) ...[
-                const SizedBox(height: 24),
-                widget.action!,
-              ],
-            ],
+            ),
           ),
         ),
       );

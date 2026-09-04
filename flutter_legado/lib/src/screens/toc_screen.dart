@@ -667,6 +667,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
     return ListTile(
       dense: true,
       selected: isCurrent,
+      // [LAYOUT_MOTION_AUDIT L3] 章节行内边距对齐 vertical12 + horizontal8
+      //（单行 dense 默认高 48，内容+24 未超限，itemExtent 48 保持有效）
+      contentPadding:
+          const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
       title: Text(
         chapter.title,
         maxLines: 1,

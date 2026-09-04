@@ -365,6 +365,8 @@ class _BookItem extends ConsumerWidget {
                 width: 45,
                 height: 60,
                 sourceOrigin: book.origin,
+                // [LAYOUT_MOTION_AUDIT M1] 发现结果封面补 Hero（进详情过渡）
+                heroTag: 'book-cover:${book.bookUrl}',
               ),
               const SizedBox(width: 12),
               Expanded(

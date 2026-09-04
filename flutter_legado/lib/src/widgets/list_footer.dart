@@ -27,6 +27,7 @@ class ListBottomLineFooter extends StatelessWidget {
 }
 
 /// 列表底部加载中指示器（对标 Android LoadMoreView.startLoad）
+/// [LAYOUT_MOTION_AUDIT M2] 24px spinner（M3 规格，原 20px）
 class ListLoadMoreFooter extends StatelessWidget {
   const ListLoadMoreFooter({super.key});
 
@@ -36,12 +37,92 @@ class ListLoadMoreFooter extends StatelessWidget {
       padding: EdgeInsets.symmetric(vertical: 16),
       child: Center(
         child: SizedBox(
-          width: 20,
-          height: 20,
+          width: 24,
+          height: 24,
           child: CircularProgressIndicator(strokeWidth: 2),
         ),
       ),
     );
+  }
+}
+
+/// 列表底部三态 footer（对齐 HapeLee LoadMoreFooter）
+///
+/// loading：指示器 + 加载中（bodySmall outline）；
+/// error：errorContainer 卡 + 重试；
+/// end：surfaceContainer 卡（复用 ListBottomLineFooter 文案）。
+/// [LAYOUT_MOTION_AUDIT M2] 新增。
+enum ListFooterState { loading, error, end }
+
+class ListMoreFooter extends StatelessWidget {
+  final ListFooterState state;
+  final String? loadingText;
+  final VoidCallback? onRetry;
+
+  const ListMoreFooter({
+    super.key,
+    required this.state,
+    this.loadingText,
+    this.onRetry,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    switch (state) {
+      case ListFooterState.loading:
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Center(
+            child: Column(
+              children: [
+                const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  loadingText ?? AppStrings.loading,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.outline,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      case ListFooterState.error:
+        return Padding(
+          padding: const EdgeInsets.all(16),
+          child: Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: cs.errorContainer.withValues(alpha: 0.6),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.error_outline_rounded, color: cs.error),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    AppStrings.loadFailed,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: cs.onErrorContainer,
+                    ),
+                  ),
+                ),
+                if (onRetry != null)
+                  TextButton(onPressed: onRetry, child: const Text('重试')),
+              ],
+            ),
+          ),
+        );
+      case ListFooterState.end:
+        return const ListBottomLineFooter();
+    }
   }
 }
 
