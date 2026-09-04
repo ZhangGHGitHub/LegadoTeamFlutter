@@ -163,12 +163,15 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
                     ],
                   ),
                 )
+              // [LAYOUT_PLAN P1] 本页无开关行（SwitchListTile），无需 showChevron；
+              // 引擎行无箭头（仅编辑/删除动作）；卡片分组间距 12dp
               : ListView.builder(
                   padding: const EdgeInsets.all(16),
                   itemCount: _engines.length,
                   itemBuilder: (context, index) {
                     final engine = _engines[index];
                     return Card(
+                      // [LAYOUT_PLAN P1] 分组间距 12dp
                       margin: const EdgeInsets.only(bottom: 12),
                       child: ListTile(
                         leading: CircleAvatar(
@@ -176,11 +179,19 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
                           child: Icon(Symbols.record_voice_over_rounded,
                               color: theme.colorScheme.onPrimaryContainer),
                         ),
-                        title: Text(engine.name),
+                        title: Text(
+                          engine.name,
+                          // [LAYOUT_PLAN P1] 列表行字级走 M3 Type Scale
+                          style: theme.textTheme.titleMedium,
+                        ),
                         subtitle: Text(
                           engine.url,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
+                          // [LAYOUT_PLAN P1] 列表行字级走 M3 Type Scale
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                          ),
                         ),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,

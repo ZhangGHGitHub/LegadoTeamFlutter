@@ -82,49 +82,67 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
       body: Form(
         key: _formKey,
         child: ListView(
+          // [LAYOUT_PLAN P1] 页面水平边距统一 16dp（全局标尺）
           padding: const EdgeInsets.all(16),
           children: [
-            _buildHeader(context),
-            const SizedBox(height: 16),
-            TextFormField(
-              controller: _nameCtrl,
-              decoration: const InputDecoration(
-                labelText: '书名',
-                border: OutlineInputBorder(),
+            // [LAYOUT_PLAN P1] 头部信息进 Card 分组（对标 BookInfo Header 卡）
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: _buildHeader(context),
               ),
-              textInputAction: TextInputAction.next,
-              validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? '书名不能为空' : null,
             ),
             const SizedBox(height: 12),
-            TextFormField(
-              controller: _authorCtrl,
-              decoration: const InputDecoration(
-                labelText: '作者',
-                border: OutlineInputBorder(),
+            // [LAYOUT_PLAN P1] 表单字段进 Card 分组（卡内 16dp）
+            Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  children: [
+                    TextFormField(
+                      controller: _nameCtrl,
+                      decoration: const InputDecoration(
+                        labelText: '书名',
+                        border: OutlineInputBorder(),
+                      ),
+                      textInputAction: TextInputAction.next,
+                      validator: (v) => (v == null || v.trim().isEmpty)
+                          ? '书名不能为空'
+                          : null,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _authorCtrl,
+                      decoration: const InputDecoration(
+                        labelText: '作者',
+                        border: OutlineInputBorder(),
+                      ),
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _coverCtrl,
+                      decoration: const InputDecoration(
+                        labelText: '封面地址',
+                        hintText: '输入封面图片 URL',
+                        border: OutlineInputBorder(),
+                      ),
+                      textInputAction: TextInputAction.next,
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      controller: _introCtrl,
+                      decoration: const InputDecoration(
+                        labelText: '简介',
+                        alignLabelWithHint: true,
+                        border: OutlineInputBorder(),
+                      ),
+                      minLines: 4,
+                      maxLines: 10,
+                    ),
+                  ],
+                ),
               ),
-              textInputAction: TextInputAction.next,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _coverCtrl,
-              decoration: const InputDecoration(
-                labelText: '封面地址',
-                hintText: '输入封面图片 URL',
-                border: OutlineInputBorder(),
-              ),
-              textInputAction: TextInputAction.next,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _introCtrl,
-              decoration: const InputDecoration(
-                labelText: '简介',
-                alignLabelWithHint: true,
-                border: OutlineInputBorder(),
-              ),
-              minLines: 4,
-              maxLines: 10,
             ),
           ],
         ),

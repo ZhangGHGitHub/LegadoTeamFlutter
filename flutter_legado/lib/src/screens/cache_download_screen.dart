@@ -138,6 +138,8 @@ class _CacheDownloadScreenState extends ConsumerState<CacheDownloadScreen> {
               : RefreshIndicator(
                   onRefresh: () async => _refresh(),
                   child: ListView.separated(
+                    // [LAYOUT_PLAN P1] 列表边距统一 horizontal16（全局标尺）
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
                     itemCount: _tasks.length,
                     separatorBuilder: (_, _) => Divider(
                         height: 1,
@@ -187,7 +189,8 @@ class _CacheDownloadScreenState extends ConsumerState<CacheDownloadScreen> {
         task.bookUrl,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontSize: 14),
+        // [LAYOUT_PLAN P1] 标题字级走 titleSmall
+        style: Theme.of(context).textTheme.titleSmall,
       ),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -202,7 +205,10 @@ class _CacheDownloadScreenState extends ConsumerState<CacheDownloadScreen> {
           Text(
             '${task.statusLabel} · ${task.completed}/${task.total}'
             '${task.failed > 0 ? ' · 失败 ${task.failed}' : ''}',
-            style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+            // [LAYOUT_PLAN P1] 元信息字级走 labelSmall
+            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: cs.onSurfaceVariant,
+                ),
           ),
         ],
       ),

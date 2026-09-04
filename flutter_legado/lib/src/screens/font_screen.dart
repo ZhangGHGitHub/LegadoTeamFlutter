@@ -221,13 +221,14 @@ class _FontScreenState extends State<FontScreen> {
   }
 
   Widget _buildSectionHeader(ThemeData theme, String title) {
+    // [LAYOUT_PLAN P1] 分组标题走 IosSectionHeader 规范
+    //（labelMedium/onSurfaceVariant，padding 16,24,16,8）
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
       child: Text(
         title,
-        style: theme.textTheme.titleSmall?.copyWith(
-          color: theme.colorScheme.primary,
-          fontWeight: FontWeight.w600,
+        style: theme.textTheme.labelMedium?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
         ),
       ),
     );

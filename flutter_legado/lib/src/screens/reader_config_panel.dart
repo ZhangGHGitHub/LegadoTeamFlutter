@@ -155,6 +155,20 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
     setState(() {});
   }
 
+  /// [LAYOUT_PLAN P1] 配置分组卡片：圆角 16dp + 卡内 16dp，
+  /// 组内行统一 vertical12/horizontal8（见 builders part）。
+  Card _groupCard(Widget child) {
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: child,
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     // [UI-fix v2.0.4 | 2026-08-08] 区块过滤模式：仅渲染指定区块 — Qoder
@@ -186,48 +200,68 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
         children = [
           Text('高级阅读设置', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 8),
-          _buildFlipMode(),
-          const Divider(),
-          _buildAutoPageTurn(),
-          const Divider(),
-          _buildTapZones(),
-          const Divider(),
-          _buildParagraphSpacing(),
-          const Divider(),
-          _buildTypography(),
-          const Divider(),
-          ListTile(
-            leading: const Icon(Icons.crop_free),
-            title: const Text('页面边距'),
-            subtitle: const Text('页眉 / 正文 / 页脚四向边距'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => ReaderPaddingConfigSheet.show(
-              context,
-              config: _config.copy(),
-              onChanged: (cfg) {
-                _config = cfg.copy();
-                _commit();
-              },
+          // [LAYOUT_PLAN P1] 配置分组走 Card 分组（圆角 16dp，见 _groupCard）
+          _groupCard(_buildFlipMode()),
+          const SizedBox(height: 12),
+          // [LAYOUT_PLAN P1] 配置分组走 Card 分组（圆角 16dp）
+          _groupCard(_buildAutoPageTurn()),
+          const SizedBox(height: 12),
+          // [LAYOUT_PLAN P1] 配置分组走 Card 分组（圆角 16dp）
+          _groupCard(_buildTapZones()),
+          const SizedBox(height: 12),
+          // [LAYOUT_PLAN P1] 配置分组走 Card 分组（圆角 16dp）
+          _groupCard(_buildParagraphSpacing()),
+          const SizedBox(height: 12),
+          // [LAYOUT_PLAN P1] 配置分组走 Card 分组（圆角 16dp）
+          _groupCard(_buildTypography()),
+          const SizedBox(height: 12),
+          // [LAYOUT_PLAN P1] 跳转行两人一组进 Card 分组（圆角 16dp）
+          _groupCard(
+            Column(
+              children: [
+                ListTile(
+                  // [LAYOUT_PLAN P1] 组内行 vertical12/horizontal8
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  leading: const Icon(Icons.crop_free),
+                  title: const Text('页面边距'),
+                  subtitle: const Text('页眉 / 正文 / 页脚四向边距'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => ReaderPaddingConfigSheet.show(
+                    context,
+                    config: _config.copy(),
+                    onChanged: (cfg) {
+                      _config = cfg.copy();
+                      _commit();
+                    },
+                  ),
+                ),
+                ListTile(
+                  // [LAYOUT_PLAN P1] 组内行 vertical12/horizontal8
+                  contentPadding:
+                      const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                  leading: const Icon(Icons.info_outline),
+                  title: const Text('阅读提示信息'),
+                  subtitle: const Text('页眉页脚提示项与标题样式'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => ReaderTipConfigSheet.show(
+                    context,
+                    config: _config.copy(),
+                    onChanged: (cfg) {
+                      _config = cfg.copy();
+                      _commit();
+                    },
+                  ),
+                ),
+              ],
             ),
           ),
-          ListTile(
-            leading: const Icon(Icons.info_outline),
-            title: const Text('阅读提示信息'),
-            subtitle: const Text('页眉页脚提示项与标题样式'),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => ReaderTipConfigSheet.show(
-              context,
-              config: _config.copy(),
-              onChanged: (cfg) {
-                _config = cfg.copy();
-                _commit();
-              },
-            ),
-          ),
-          const Divider(),
-          _buildMoreConfig(),
-          const Divider(),
-          _buildBrightnessControl(),
+          const SizedBox(height: 12),
+          // [LAYOUT_PLAN P1] 配置分组走 Card 分组（圆角 16dp）
+          _groupCard(_buildMoreConfig()),
+          const SizedBox(height: 12),
+          // [LAYOUT_PLAN P1] 配置分组走 Card 分组（圆角 16dp）
+          _groupCard(_buildBrightnessControl()),
         ];
         break;
     }

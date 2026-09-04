@@ -9,8 +9,9 @@ part of 'reader_config_panel.dart';
 extension _ReaderConfigBuilders on _ReaderConfigPanelState {
 
   Widget _sectionTitle(String title, IconData icon) {
+    // [LAYOUT_PLAN P1] 组内标题行 vertical12/horizontal8（全局行规范）
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
       child: Row(
         children: [
           Icon(icon, size: 18, color: Theme.of(context).colorScheme.primary),
@@ -55,9 +56,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionTitle('自动翻页', Icons.timer_outlined),
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('启用自动翻页'),
           value: _config.autoPageTurn,
           onChanged: (v) {
@@ -132,8 +135,9 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
   }
 
   Widget _tapZoneRow(String label, TapAction current, ValueChanged<TapAction> onPick) {
+    // [LAYOUT_PLAN P1] 组内行 vertical12/horizontal8
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
       child: Row(
         children: [
           SizedBox(width: 72, child: Text(label, style: Theme.of(context).textTheme.bodyMedium)),
@@ -203,7 +207,9 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         // 字体选择：跳转字体管理页，返回后触发阅读器重新加载字体
         ListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          // [LAYOUT_PLAN P1] 组内行 vertical12/horizontal8
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           leading: const Icon(Icons.font_download_outlined, size: 20),
           title: const Text('阅读字体'),
           subtitle: Text(_fontLabel),
@@ -321,9 +327,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         ),
         const SizedBox(height: 4),
         // 两端对齐（对标原版 MoreConfig textFullJustify）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('两端对齐'),
           subtitle: const Text('正文行尾对齐（末行除外）'),
           value: _config.textFullJustify,
@@ -375,9 +383,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           );
         }),
         // 隐藏状态栏（原版第 3 项：SystemUiMode 移除顶部 overlay）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('隐藏状态栏'),
           subtitle: const Text('阅读时隐藏系统状态栏'),
           value: _config.hideStatusBar,
@@ -387,9 +397,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           },
         ),
         // 隐藏导航栏（原版第 4 项：SystemUiMode 移除底部 overlay）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('隐藏导航栏'),
           subtitle: const Text('阅读时隐藏系统导航栏'),
           value: _config.hideNavigationBar,
@@ -415,9 +427,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           );
         }),
         // 自动换源（原版 autoChangeSource：章节加载失败自动切换书源）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('自动换源'),
           subtitle: const Text('章节加载失败时自动切换书源'),
           value: _config.autoChangeSource,
@@ -427,9 +441,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           },
         ),
         // 长按选择文本（原版 selectText：长按正文选区面板启停）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('长按选择文本'),
           subtitle: const Text('长按正文段落弹出选择面板'),
           value: _config.selectText,
@@ -439,9 +455,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           },
         ),
         // 显示亮度控件（原版 showBrightnessView：底栏亮度行显隐）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('显示亮度控件'),
           subtitle: const Text('底栏显示亮度调节滑条'),
           value: _config.showBrightnessView,
@@ -451,9 +469,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           },
         ),
         // 滚动翻页无动画（原版 noAnimScrollPage：程序化翻页去除动画）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('滚动翻页无动画'),
           subtitle: const Text('点击/自动翻页直接切换不带动画'),
           value: _config.noAnimScrollPage,
@@ -463,9 +483,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           },
         ),
         // 显示标题附加区（原版 showReadTitleAddition：顶栏书名后追加章名）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('显示标题附加区'),
           subtitle: const Text('顶栏书名后显示当前章名'),
           value: _config.showReadTitleAddition,
@@ -476,9 +498,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         ),
         // 工具栏跟随页面（原版 readBarStyleFollowPage：顶/底栏背景与文字色
         // 跟随当前阅读页配色，对标 ReadMenu immersiveMenu）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('工具栏跟随页面'),
           subtitle: const Text('顶/底栏配色跟随阅读页背景'),
           value: _config.readBarStyleFollowPage,
@@ -491,9 +515,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
         // pref_config_read.xml 项序与文案补齐，平台受限项以副标题
         // 灰字诚实标注（不引入新依赖）— Qoder
         // 扩展到刘海（原版 readBodyToLh；仅 Android 生效）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('扩展到刘海'),
           subtitle: const Text('正文延伸到刘海区域（仅 Android 生效）'),
           value: _config.readBodyToLh,
@@ -503,9 +529,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           },
         ),
         // 填充刘海区域（原版 paddingDisplayCutouts；仅 Android 生效）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('填充刘海区域'),
           subtitle: const Text('页面边距避开刘海区域（仅 Android 生效）'),
           value: _config.paddingDisplayCutouts,
@@ -533,9 +561,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           );
         }),
         // 使用自定义中文分行（原版 useZhLayout；关闭后走朴素按宽断行）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('使用自定义中文分行'),
           subtitle: const Text('开启后启用中文避头尾与更优断行'),
           value: _config.useZhLayout,
@@ -545,9 +575,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           },
         ),
         // 段首标点悬挂（原版 hangingPunctuation；已接入排版引擎）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('段首标点悬挂'),
           subtitle: const Text('段首引号等标点悬挂于缩进内，使正文首字与其他段落对齐'),
           value: _config.hangingPunctuation,
@@ -557,9 +589,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           },
         ),
         // 鼠标滚轮翻页（原版 mouseWheelPage；桌面端真实生效）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('鼠标滚轮翻页'),
           subtitle: const Text('分页模式下滚轮上下滚动翻页'),
           value: _config.mouseWheelPage,
@@ -569,9 +603,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           },
         ),
         // 音量键翻页（原版 volumeKeyPage；桌面端无音量键事件）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('音量键翻页'),
           subtitle: const Text('仅 Android 生效'),
           value: _config.volumeKeyPage,
@@ -581,9 +617,11 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           },
         ),
         // 朗读时音量键翻页（原版 volumeKeyPageOnPlay；仅 Android 生效）
+        // [LAYOUT_PLAN P1] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
         SwitchListTile(
           dense: true,
-          contentPadding: EdgeInsets.zero,
+          contentPadding:
+              const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
           title: const Text('朗读时音量键翻页'),
           subtitle: const Text('仅 Android 生效'),
           value: _config.volumeKeyPageOnPlay,
@@ -700,7 +738,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        // [LAYOUT_PLAN P1] 组内行 vertical12/horizontal8
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
         child: Row(
           children: [
             Expanded(

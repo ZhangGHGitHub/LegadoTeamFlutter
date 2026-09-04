@@ -567,6 +567,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
           ),
         ],
         // AppBar 内 TabBar 显式指定前景色，避免白底白字（项目规范）
+        // [LAYOUT_PLAN P1] Tab 标准化：无分割线 + labelLargeEmphasized
         bottom: TabBar(
           controller: _tabController,
           // 全局 tabBarTheme 设了 TabAlignment.start，非 scrollable TabBar
@@ -575,6 +576,14 @@ class _TocScreenState extends ConsumerState<TocScreen>
           labelColor: cs.primary,
           unselectedLabelColor: cs.onSurfaceVariant,
           indicatorColor: cs.primary,
+          dividerColor: Colors.transparent,
+          labelStyle: Theme.of(context).textTheme.labelLarge?.copyWith(
+                fontWeight: FontWeight.w500,
+              ),
+          unselectedLabelStyle:
+              Theme.of(context).textTheme.labelLarge?.copyWith(
+                    fontWeight: FontWeight.w500,
+                  ),
           tabs: const [
             Tab(text: '目录'),
             Tab(text: '书签'),

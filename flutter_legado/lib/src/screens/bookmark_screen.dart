@@ -207,13 +207,15 @@ class _BookmarkTile extends StatelessWidget {
         '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      // [LAYOUT_PLAN P1] 卡片边距统一 horizontal16（全局标尺），纵向 4 保留密度
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: InkWell(
         onTap: onTap,
         onLongPress: onDelete,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(12),
+          // [LAYOUT_PLAN P1] 卡内统一 16dp
+          padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

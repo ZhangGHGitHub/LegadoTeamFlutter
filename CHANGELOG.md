@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.161] - 2026-09-04
+
+### Changed
+- [UI] 布局规划 P1 主链二三级重排：书籍信息编辑头部进 Card 分组 + 表单 16dp；换封面网格 token 对齐；目录书签/标注 Tab 行规范；书签/缓存下载行规范；阅读配置面板分组卡 16dp + 组内行规范；字体分组标题走 IosSectionHeader；高亮/朗读开关行规范；搜书正文结果行规范
+
+### Test
+- flutter analyze 无问题；flutter test 1321 全过
+- 版本 2.0.161+162
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.160] - 2026-09-04
 
 ### Fixed

@@ -167,7 +167,16 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
       body: ListView(
         padding: const EdgeInsets.only(bottom: 24),
         children: [
-          _buildPreview(theme, previewUrl),
+          // [LAYOUT_PLAN P1] 预览区进 Card 分组（卡内 16dp）
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: _buildPreviewBody(theme, previewUrl),
+              ),
+            ),
+          ),
           _buildSearchBar(theme, coverState),
           _buildSectionHeader(theme, '网络封面'),
           _buildCandidateGrid(theme, coverState),
@@ -176,12 +185,10 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
     );
   }
 
-  Widget _buildPreview(ThemeData theme, String? previewUrl) {
+  Widget _buildPreviewBody(ThemeData theme, String? previewUrl) {
     final colorScheme = theme.colorScheme;
     final isSelected = _selectedUrl != null;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-      child: Row(
+    return Row(
         children: [
           AnimatedContainer(
             duration: const Duration(milliseconds: 200),
@@ -242,26 +249,41 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
             ),
           ),
         ],
-      ),
-    );
+      );
   }
 
   Widget _buildSearchBar(ThemeData theme, ChangeCoverState coverState) {
+    final colorScheme = theme.colorScheme;
+    // [LAYOUT_PLAN P1] 搜索框走 SearchBar 标准（32dp + surfaceContainerLow）
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-      child: TextField(
+      child: SearchBar(
         controller: _searchController,
-        decoration: InputDecoration(
-          hintText: '输入书名搜索封面',
-          prefixIcon: const Icon(Symbols.search_rounded),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(24),
+        hintText: '输入书名搜索封面',
+        constraints: const BoxConstraints(minHeight: 40),
+        elevation: const WidgetStatePropertyAll(0),
+        backgroundColor: WidgetStatePropertyAll(
+          colorScheme.surfaceContainerLow,
+        ),
+        shape: WidgetStatePropertyAll(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(32),
           ),
-          suffixIcon: IconButton(
+        ),
+        padding: const WidgetStatePropertyAll(
+          EdgeInsets.symmetric(horizontal: 12),
+        ),
+        leading: Icon(
+          Symbols.search_rounded,
+          size: 20,
+          color: colorScheme.onSurfaceVariant,
+        ),
+        trailing: [
+          IconButton(
             icon: const Icon(Symbols.refresh_rounded),
             onPressed: coverState.isSearching ? null : _searchCovers,
           ),
-        ),
+        ],
         onSubmitted: (_) => _searchCovers(),
       ),
     );
@@ -308,8 +330,9 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
         gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
           maxCrossAxisExtent: 120,
           mainAxisExtent: 160,
-          crossAxisSpacing: 12,
-          mainAxisSpacing: 12,
+          // [LAYOUT_PLAN P1] 网格间距统一 8dp（全局标尺）
+          crossAxisSpacing: 8,
+          mainAxisSpacing: 8,
         ),
         itemCount: coverState.candidates.length,
         itemBuilder: (context, index) {

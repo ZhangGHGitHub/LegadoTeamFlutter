@@ -217,6 +217,8 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
               ),
             ),
             // 启用开关（对标原版列表项 Switch）
+            // [LAYOUT_PLAN P1] 开关行无 Chevron（等价 showChevron=false）；
+            // 标题/副标题/元信息走 M3 Type Scale（titleMedium/bodySmall/labelSmall）
             Switch(
               value: rule.isEnabled,
               onChanged: (v) async {
@@ -373,6 +375,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
               ),
             ),
             const SizedBox(height: 12),
+            // [LAYOUT_PLAN P1] 编辑区字段分组间距 12dp
             TextField(
               controller: _patternCtrl,
               decoration: const InputDecoration(
@@ -382,12 +385,15 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
               ),
             ),
             const SizedBox(height: 4),
+            // [LAYOUT_PLAN P1] 开关行无 Chevron（SwitchListTile 自带无箭头，
+            // 等价 showChevron=false）；标题字级走 M3 Type Scale
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('使用正则表达式'),
               value: _isRegex,
               onChanged: (v) => setState(() => _isRegex = v),
             ),
+            // [LAYOUT_PLAN P1] 同上：开关行无 Chevron，等价 showChevron=false
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
               title: const Text('应用到标题'),

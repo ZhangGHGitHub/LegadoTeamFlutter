@@ -62,7 +62,6 @@ class SearchContentScreen extends ConsumerStatefulWidget {
 
 class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
   final TextEditingController _controller = TextEditingController();
-  final FocusNode _focusNode = FocusNode();
 
   List<_ContentMatch> _results = [];
   List<String> _history = [];
@@ -95,7 +94,6 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
   void dispose() {
     _generation++; // 使所有进行中的搜索失效
     _controller.dispose();
-    _focusNode.dispose();
     super.dispose();
   }
 
@@ -124,7 +122,8 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
       _scannedChapters = 0;
       _totalChapters = 0;
     });
-    _focusNode.unfocus();
+    // [LAYOUT_PLAN P1] 提交藏键盘（SearchBar 无 focusNode，走 scope）
+    FocusScope.of(context).unfocus();
 
     // 记录搜索历史
     api.addSearchKeyword(query, widget.effectiveBookName).catchError((_) {});
@@ -226,29 +225,48 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
           preferredSize: const Size.fromHeight(56),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            child: TextField(
+            // [LAYOUT_PLAN P1] 搜索框走 SearchBar 标准（32dp + surfaceContainerLow）
+            child: SearchBar(
               controller: _controller,
-              focusNode: _focusNode,
-              autofocus: true,
-              textInputAction: TextInputAction.search,
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: '在《${widget.effectiveBookName}》中搜索...',
-                prefixIcon: const Icon(Symbols.search_rounded, size: 20),
-                suffixIcon: _controller.text.isEmpty
-                    ? null
-                    : IconButton(
-                        icon: const Icon(Symbols.close_rounded, size: 18),
-                        onPressed: () {
-                          _controller.clear();
-                          setState(() {
-                            _query = '';
-                            _results = [];
-                          });
-                        },
-                      ),
-                border: const OutlineInputBorder(),
+              hintText: '在《${widget.effectiveBookName}》中搜索...',
+              // 原 TextField autofocus 语义保留：进页自动聚焦
+              autoFocus: true,
+              constraints: const BoxConstraints(minHeight: 40),
+              elevation: const WidgetStatePropertyAll(0),
+              backgroundColor: WidgetStatePropertyAll(
+                Theme.of(context).colorScheme.surfaceContainerLow,
               ),
+              shape: WidgetStatePropertyAll(
+                RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(32),
+                ),
+              ),
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 12),
+              ),
+              leading: Icon(
+                Symbols.search_rounded,
+                size: 20,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+              trailing: [
+                if (_controller.text.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Symbols.close_rounded, size: 18),
+                    onPressed: () {
+                      _controller.clear();
+                      setState(() {
+                        _query = '';
+                        _results = [];
+                      });
+                    },
+                  ),
+                if (_searching)
+                  IconButton(
+                    icon: const Icon(Symbols.close_rounded, size: 18),
+                    onPressed: _cancelSearch,
+                  ),
+              ],
               onChanged: (_) => setState(() {}),
               onSubmitted: _search,
             ),
@@ -314,17 +332,24 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
   }
 
   Widget _buildResultTile(_ContentMatch match) {
+    final theme = Theme.of(context);
     return ListTile(
+      // [LAYOUT_PLAN P1] 结果行字级走 M3 Type Scale
       title: Text(
         match.chapterTitle,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: const TextStyle(fontWeight: FontWeight.w600),
+        style: theme.textTheme.titleSmall?.copyWith(
+          fontWeight: FontWeight.w600,
+        ),
       ),
       subtitle: Text.rich(
         _highlight(match.snippet, _query),
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
+        style: theme.textTheme.bodySmall?.copyWith(
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
       ),
       onTap: () => _jumpToResult(match),
     );
