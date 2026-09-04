@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.166] - 2026-09-05
+
+### Fixed
+- [UI] 进书籍转场卡顿与封面闪占位：根因一为 Hero 飞行内容取详情页新封面实例，异步解析期闪默认占位图——改取出发侧已加载封面（push=书架图 / pop=详情图，对齐参考仓 sharedBounds 同图语义）；根因二为详情背景虚化层全尺寸解码+25σ 模糊转场期掉帧——虚化源降采样 1/3 屏宽（σ25 下视觉无差）并加 RepaintBoundary
+
+### Test
+- flutter analyze 无问题；flutter test 1321 全过
+- 版本 2.0.166+167
+
+- Contributor: Qoder UI
+
 ## [2.0.165] - 2026-09-05
 
 ### Changed

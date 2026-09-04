@@ -78,6 +78,15 @@
 - **冒烟**：`emulator_smoke_test.ps1 -Device emulator-5556 -CheckUI` 通过（8/8：构建 267.3MB、安装、版本一致 2.0.165、进程存活、无崩溃、UI 主界面元素齐全）。
 - 版本 2.0.165+166；CHANGELOG 与 assets/updateLog.md 双同步；台账与本规划文档「实施状态」节已补登记。
 
+### 5.4 追加修复：进书籍转场卡顿与封面闪占位（用户验收反馈，v2.0.166+167）
+
+用户反馈进入书籍动画卡顿、与目标风格不一致。对照参考仓 MainNavGraph（BookInfo entry = 条件 fadeIn 300，封面走 sharedBounds 同图飞行）定位两处根因并修复：
+
+1. **飞行封面闪默认占位图**：本地 Hero 飞行内容取 `toHero.child`（详情页新建 BookCover 实例），该实例经 `resolvePatchedSourceJson` 异步解析，期间显示默认封面——飞行中真实封面闪成默认图。修复：`coverFlightShuttleBuilder` 改取 `fromHero.child`（push=书架已渲染图 / pop=详情已渲染图，飞行层不在路由子树内，内置 Hero 不生效），对齐参考仓「同图飞行」语义。
+2. **背景虚化层转场期掉帧**：详情背景为全尺寸封面解码 + 25σ ImageFiltered 模糊，转场每帧合成开销大。修复：虚化源降采样 1/3 屏宽（σ25 下视觉无差，clamp 120–480px）+ RepaintBoundary 隔离重绘。
+
+门禁：flutter analyze 0 issues；flutter test 1321 全过。转场分档本身（详情 fade 300）与参考仓一致，无需调整。
+
 ---
 
 编写者：Qoder UI ｜ 2026-09-05

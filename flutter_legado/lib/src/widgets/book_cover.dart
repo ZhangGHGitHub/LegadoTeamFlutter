@@ -86,6 +86,9 @@ class BookCover extends ConsumerWidget {
 
 /// [LAYOUT_PLAN P4] 封面 Hero 过渡：圆角 4→12 插值 morph（由详情页外层 Hero 调用，
 /// BookCover 内置 Hero 不用，避免嵌套）。
+/// [UI-fix v2.0.166] 飞行内容取出发侧已加载封面（push=书架已渲染图 / pop=详情
+/// 已渲染图）：目标侧新实例在异步解析期会闪默认占位封面（对齐参考仓
+/// sharedBounds「同图飞行」语义）；飞行层不在路由子树内，出发侧内置 Hero 不生效。
 Widget coverFlightShuttleBuilder(
   BuildContext flightContext,
   Animation<double> animation,
@@ -93,7 +96,7 @@ Widget coverFlightShuttleBuilder(
   BuildContext fromHeroContext,
   BuildContext toHeroContext,
 ) {
-  final toHero = toHeroContext.widget as Hero;
+  final fromHero = fromHeroContext.widget as Hero;
   return AnimatedBuilder(
     animation: animation,
     builder: (context, child) {
@@ -107,7 +110,7 @@ Widget coverFlightShuttleBuilder(
         child: child,
       );
     },
-    child: toHero.child,
+    child: fromHero.child,
   );
 }
 

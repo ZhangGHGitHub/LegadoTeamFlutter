@@ -14,15 +14,25 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final cs = Theme.of(context).colorScheme;
     final coverUrl = book.customCoverUrl ?? book.coverUrl;
     final hasCover = coverUrl != null && coverUrl.isNotEmpty;
+    // [UI-fix v2.0.166] 虚化源降采样：σ25 下 1/3 屏宽与全尺寸视觉无差，
+    // 解码+滤波开销降一个量级（进详情转场掉帧根因之一）
+    final blurWidth =
+        (MediaQuery.sizeOf(context).width / 3).round().clamp(120, 480);
     return Stack(
       fit: StackFit.expand,
       children: [
         // [UI-fix v2.0.3 | 2026-08-06] 封面高斯虚化作背景层（sigma 25），
         // 营造 iOS 沉浸景深；无封面降级纯色背景不加模糊 — Qoder
         if (hasCover)
-          ImageFiltered(
-            imageFilter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-            child: CachedNetworkImage(imageUrl: coverUrl, fit: BoxFit.cover),
+          RepaintBoundary(
+            child: ImageFiltered(
+              imageFilter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+              child: CachedNetworkImage(
+                imageUrl: coverUrl,
+                fit: BoxFit.cover,
+                memCacheWidth: blurWidth,
+              ),
+            ),
           )
         else
           ColoredBox(color: cs.surfaceContainerHighest),
