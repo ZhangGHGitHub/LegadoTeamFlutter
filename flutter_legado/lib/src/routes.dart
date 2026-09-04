@@ -374,20 +374,23 @@ class AppRoutes {
   // [UI-fix v2.0.167] 转场时长分档（对齐参考仓 NavDisplay：默认 700ms 交叉
   // 淡入淡出 / BookInfo 条件 300ms / ReadBook 600ms）。MaterialPageRoute 硬编码
   // 300ms 不可配，routes: map 写法无法分档——故改走 onGenerateRoute + 子类覆盖。
+  /// Android 转场时长分档；非 Android 返回 null（维持平台默认 300ms）。
+  @visibleForTesting
+  static Duration? tieredTransitionDurationFor(String? name) {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return null;
+    return switch (name) {
+      reader || readerComic => const Duration(milliseconds: 600),
+      bookInfo => const Duration(milliseconds: 300),
+      _ => const Duration(milliseconds: 700),
+    };
+  }
+
   static Route<dynamic> generateRoute(RouteSettings settings) {
     final builder = routes[settings.name] ?? (_) => const HomeScreen();
-    Duration? duration;
-    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
-      duration = switch (settings.name) {
-        reader || readerComic => const Duration(milliseconds: 600),
-        bookInfo => const Duration(milliseconds: 300),
-        _ => const Duration(milliseconds: 700),
-      };
-    }
     return _TieredRoute<void>(
       builder: builder,
       settings: settings,
-      duration: duration,
+      duration: tieredTransitionDurationFor(settings.name),
     );
   }
 }
