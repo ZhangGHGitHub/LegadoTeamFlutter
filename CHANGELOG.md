@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.167] - 2026-09-05
+
+### Fixed
+- [UI] 全站转场对齐参考仓库源：拉取 navigation3 1.1.7 NavDisplay.android.kt 证实参考版所有转场均为「进页淡入 + 被覆盖页同步淡出」的交叉淡入淡出（默认 700ms、书籍详情条件 300ms、阅读器 600ms，缓动 FastOutSlowIn），此前标尺的 slide480+fade360 / pop scale0.8 与库源不符——重写主题转场 builder 为统一 crossfade，被覆盖页不再保持不透明缩放 0.8（消除进书籍时的叠影感）
+- [UI] 转场时长分档真正生效：MaterialApp 由 routes map 切换 onGenerateRoute（MaterialPageRoute 硬编码 300ms 不可配），Android 按路由名注册时长（默认 700/详情 300/阅读 600），iOS/桌面维持平台默认 300ms 不变
+
+### Test
+- flutter analyze 无问题；flutter test 1321 全过
+- 版本 2.0.167+168
+
+- Contributor: Qoder UI
+
 ## [2.0.166] - 2026-09-05
 
 ### Fixed

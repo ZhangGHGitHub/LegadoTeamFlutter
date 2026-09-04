@@ -4,12 +4,14 @@ import 'package:flutter/services.dart';
 import 'app_typography.dart';
 import 'md3_colors.dart';
 
-/// Android 页面转场（对齐 HapeLee MainActivity NavDisplay 参数）
+/// Android 页面转场（对齐 HapeLee MainActivity NavDisplay 实际行为）
 ///
-/// HapeLee：push slide 480ms FastOutSlowIn + fade 360ms；
-/// pop slide（-1/4 宽）+ scaleOut 0.8 + fade。
-/// Flutter 主题 builder 复用路由默认 300ms 总时长，内部按比例切分
-/// （slide 全程，fade 前 3/4），近似原生节奏。
+/// 参考仓库源核实（navigation3 1.1.7 NavDisplay.android.kt）：所有转场均为
+/// 「进页 fade in + 被覆盖页同步 fade out」的交叉淡入淡出——默认 700ms，
+/// BookInfo 条件 300ms、ReadBook 600ms（时长分档在 routes.dart 注册）；
+/// 缓动对齐 Compose tween 默认 FastOutSlowIn；scale 仅预测式返回手势使用。
+/// [UI-fix v2.0.167] 原 slide480+fade360 / pop scale0.8 标尺与参考仓库源不符，
+/// 按主源修正为统一 crossfade（pop 时主/次动画自然反转，无需单独分支）。
 class _LegadoAndroidTransitionsBuilder extends PageTransitionsBuilder {
   const _LegadoAndroidTransitionsBuilder();
 
@@ -21,40 +23,19 @@ class _LegadoAndroidTransitionsBuilder extends PageTransitionsBuilder {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    // [LAYOUT_PLAN P4] 按路由名分档：阅读器 fade（无 slide），详情 fade，其余 slide+fade。
-    // [LAYOUT_PLAN P4] predictiveBack 门控不做（需路由级 PredictiveBackPageTransitionsBuilder 登记，此处仅主题 builder 分档）。
-    final name = ModalRoute.of(context)?.settings.name;
-    // [LAYOUT_PLAN P4] 阅读器（文本/漫画）：fade 全程淡入淡出，无 slide，目标 600ms
-    //（总时长由路由 transitionDuration 决定，此处 Interval(0, 1) 铺满全程）。
-    if (name == '/reader' || name == '/reader-comic') {
-      final fade = Tween<double>(begin: 0, end: 1).animate(
-        CurvedAnimation(parent: animation, curve: const Interval(0, 1)),
-      );
-      return FadeTransition(opacity: fade, child: child);
-    }
-    // [LAYOUT_PLAN P4] 详情页：fade 无 slide，目标 300ms（同上，总时长由路由决定）。
-    if (name == '/book_info') {
-      final fade = Tween<double>(begin: 0, end: 1).animate(
-        CurvedAnimation(parent: animation, curve: const Interval(0, 1)),
-      );
-      return FadeTransition(opacity: fade, child: child);
-    }
-    final slide = Tween<Offset>(
-      begin: const Offset(1, 0),
-      end: Offset.zero,
-    ).chain(CurveTween(curve: Curves.fastOutSlowIn)).animate(animation);
+    // 进页：本路由 primary 0→1 淡入；被覆盖：secondary 0→1 → 本路由 1→0 淡出。
+    // pop 时两个动画反向播放，天然得到「本路由淡出 + 底页淡入」。
     final fade = Tween<double>(begin: 0, end: 1).animate(
-      CurvedAnimation(parent: animation, curve: const Interval(0, 0.75)),
+      CurvedAnimation(parent: animation, curve: Curves.fastOutSlowIn),
     );
-    // pop 时次级动画做 scale 0.8 + fade（近似 Compose scaleOut+fadeOut）
-    final scale = Tween<double>(begin: 1, end: 0.8)
-        .chain(CurveTween(curve: Curves.fastOutSlowIn))
-        .animate(secondaryAnimation);
-    return SlideTransition(
-      position: slide,
+    final fadeBelow = Tween<double>(begin: 1, end: 0).animate(
+      CurvedAnimation(parent: secondaryAnimation, curve: Curves.fastOutSlowIn),
+    );
+    return FadeTransition(
+      opacity: fade,
       child: FadeTransition(
-        opacity: fade,
-        child: ScaleTransition(scale: scale, child: child),
+        opacity: fadeBelow,
+        child: child,
       ),
     );
   }
@@ -226,9 +207,9 @@ class AppTheme {
       dividerColor: separator,
       splashFactory: InkSparkle.splashFactory,
 
-      // 页面转场 —— M3 标准（对齐 HapeLee MainActivity NavDisplay）
-      // Android：push slide480ms FastOutSlowIn + fade360ms LinearOutSlowIn；
-      // pop slide + scale0.8 + fade。iOS/桌面走各平台默认。
+      // 页面转场 —— 全站 crossfade（对齐参考仓 NavDisplay 实际行为）
+      // [UI-fix v2.0.167] 进页淡入 + 被覆盖页同步淡出；时长分档（默认 700/
+      // 详情 300/阅读 600）在 routes.dart 注册；iOS/桌面走各平台默认。
       pageTransitionsTheme: const PageTransitionsTheme(
         builders: <TargetPlatform, PageTransitionsBuilder>{
           TargetPlatform.android: _LegadoAndroidTransitionsBuilder(),

@@ -140,7 +140,9 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
         );
       },
       initialRoute: widget.initialRoute,
-      routes: AppRoutes.routes,
+      // [UI-fix v2.0.167] routes map → onGenerateRoute：命名路由统经
+      // AppRoutes.generateRoute 构建，Android 上按分档覆盖转场时长
+      onGenerateRoute: AppRoutes.generateRoute,
     );
   }
 

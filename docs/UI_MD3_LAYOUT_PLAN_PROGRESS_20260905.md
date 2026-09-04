@@ -87,6 +87,21 @@
 
 门禁：flutter analyze 0 issues；flutter test 1321 全过。转场分档本身（详情 fade 300）与参考仓一致，无需调整。
 
+### 5.5 二次修正：全站转场形态对齐参考仓库源（用户双包对比反馈，v2.0.167+168）
+
+用户在模拟器双包对比（参考版 v.s. 重构版）反馈打开书籍动画仍不一致。追根到**库主源**：拉取参考仓所用 navigation3 1.1.7 的 `NavDisplay.android.kt`（Google Maven sources jar）证实——
+
+- 参考版**所有**转场均为「进页 fadeIn + 被覆盖页同步 fadeOut」的交叉淡入淡出：NavDisplay 默认 `DEFAULT_TRANSITION_DURATION_MILLISECOND = 700`；BookInfo entry 条件 300ms、ReadBook entry 600ms；缓动为 Compose `tween` 默认 FastOutSlowIn；scaleOut(0.7) 仅出现在 predictivePop（预测式返回手势）。
+- **此前 AUDIT 标尺「push slide480+fade360 / pop scale0.8」与库源不符**（疑为对 AnimatedContent 默认形态的误读），P4 据此实现的滑移+缩放即用户感知差异的来源：进书籍时被覆盖的书架页保持不透明并缩放 0.8，与淡入中的详情页形成叠影。
+
+修正三处：
+
+1. `app_theme.dart`：重写 `_LegadoAndroidTransitionsBuilder` 为统一 crossfade（本路由 primary 淡入 + secondary 驱动底页淡出，pop 自然反转），缓动 fastOutSlowIn，删除 slide/scale 分支。
+2. `routes.dart`：新增 `generateRoute` + `_TieredRoute`（覆盖 MaterialPageRoute 硬编码的 300ms），Android 按路由名注册时长——默认 700 / `/book_info` 300 / `/reader`、`/reader-comic` 600；iOS/桌面维持默认 300ms 不参与分档。
+3. `app.dart`：MaterialApp 由 `routes:` map 切换 `onGenerateRoute:`（map 写法所有命名路由均 300ms，原 P4 注释中的 600/480 时长从未真正生效）。
+
+门禁：flutter analyze 0 issues；flutter test 1321 全过。遗留登记：预测式返回手势 scale 弹性（predictivePop）仍不做，维持既有登记口径。
+
 ---
 
 编写者：Qoder UI ｜ 2026-09-05
