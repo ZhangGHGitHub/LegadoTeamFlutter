@@ -233,6 +233,8 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     // [UI-fix v2.0.2 | 2026-08-06] 批量模式下禁用拖拽排序，行点击切换选中 — Qoder
     if (_batchMode) {
       return ListView.builder(
+        // [LAYOUT_PLAN P2] 列表纵向留白 8dp，横向由卡片 margin 统一 16dp
+        padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: rules.length,
         itemBuilder: (context, index) {
           final rule = rules[index];
@@ -254,6 +256,8 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
       );
     }
     return ReorderableListView.builder(
+      // [LAYOUT_PLAN P2] 列表纵向留白 8dp，横向由卡片 margin 统一 16dp
+      padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: rules.length,
       onReorderItem: (oldIndex, newIndex) {
         // 简单的排序处理
@@ -664,11 +668,12 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme（不显式 border）；
+                // 字段分组间距 12dp
                 TextField(
                   controller: nameCtrl,
                   decoration: const InputDecoration(
                     labelText: '规则名称',
-                    border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -676,7 +681,6 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                   controller: groupCtrl,
                   decoration: const InputDecoration(
                     labelText: '分组',
-                    border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -685,10 +689,11 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                   decoration: const InputDecoration(
                     labelText: '匹配模式',
                     hintText: '正则表达式或文本',
-                    border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
+                // [LAYOUT_PLAN P2] 开关行无 Chevron（SwitchListTile 自带无箭头，
+                // 等价 showChevron=false）；标题字级走 M3 Type Scale
                 SwitchListTile(
                   title: const Text('正则表达式'),
                   value: isRegex,
@@ -700,10 +705,10 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                   controller: replacementCtrl,
                   decoration: const InputDecoration(
                     labelText: '替换为',
-                    border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
+                // [LAYOUT_PLAN P2] 开关行无 Chevron，等价 showChevron=false
                 SwitchListTile(
                   title: const Text('作用于标题'),
                   value: scopeTitle,
@@ -723,7 +728,6 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                   decoration: const InputDecoration(
                     labelText: '作用范围',
                     hintText: '留空或 global 为全局，输入书名为特定书籍',
-                    border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -732,7 +736,6 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                   decoration: const InputDecoration(
                     labelText: '排除范围',
                     hintText: '输入书名，多个用逗号分隔',
-                    border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -740,11 +743,11 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                   controller: timeoutCtrl,
                   decoration: const InputDecoration(
                     labelText: '超时时间（毫秒）',
-                    border: OutlineInputBorder(),
                   ),
                   keyboardType: TextInputType.number,
                 ),
                 const SizedBox(height: 12),
+                // [LAYOUT_PLAN P2] 开关行无 Chevron，等价 showChevron=false
                 SwitchListTile(
                   title: const Text('启用'),
                   value: isEnabled,
@@ -861,13 +864,18 @@ class _ReplaceRuleTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      // [LAYOUT_PLAN P2] 分组卡圆角 16dp；边距 horizontal16（全局标尺）
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: InkWell(
         onTap: batchMode ? onSelect : onEdit,
         onLongPress: batchMode ? onSelect : onEnterBatch,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
           child: Row(
             children: [
               // [UI-fix v2.0.2 | 2026-08-06] 批量模式显示选中框，否则排序手柄 — Qoder
@@ -918,6 +926,7 @@ class _ReplaceRuleTile extends StatelessWidget {
                 ),
               ),
               // 启用开关（对标 swt_enabled）
+              // [LAYOUT_PLAN P2] 开关行无 Chevron；标题/副标题走 M3 Type Scale
               Switch(value: rule.isEnabled, onChanged: onToggle),
               if (!batchMode) ...[
                 // 编辑（对标 iv_edit）

@@ -148,16 +148,17 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
         children: [
           // 输入区域
           Padding(
-            padding: const EdgeInsets.all(16),
+            // [LAYOUT_PLAN P2] 页面水平边距 16dp；输入区纵向 12dp
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             child: Row(
               children: [
                 Expanded(
                   child: TextField(
                     controller: _sourceUrlCtrl,
+                    // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme（不显式 border）
                     decoration: const InputDecoration(
                       labelText: 'RSS 源 URL',
                       hintText: '输入要调试的 RSS 源地址',
-                      border: OutlineInputBorder(),
                       prefixIcon: Icon(Symbols.rss_feed_rounded),
                       isDense: true,
                     ),
@@ -182,7 +183,8 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
           const Divider(height: 1),
           // 日志级别过滤栏
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8（页面水平边距 16dp 由此保证）
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
             child: Row(
               children: [
                 const Icon(Symbols.filter_alt_rounded, size: 18),
@@ -225,7 +227,8 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
                   )
                 : ListView.builder(
                     controller: _logScrollCtrl,
-                    padding: const EdgeInsets.all(12),
+                    // [LAYOUT_PLAN P2] 日志区边距统一 16dp（全局标尺）
+                    padding: const EdgeInsets.all(16),
                     itemCount: filteredLogs.length,
                     itemBuilder: (context, index) {
                       final log = filteredLogs[index];
@@ -236,9 +239,10 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
                           horizontal: 8,
                           vertical: 4,
                         ),
+                        // [LAYOUT_PLAN P2] 状态色走 tonal（见 bgColor：各级别 container 底）
                         decoration: BoxDecoration(
                           color: log.level.bgColor(theme),
-                          borderRadius: BorderRadius.circular(4),
+                          borderRadius: BorderRadius.circular(8),
                         ),
                         child: SelectableText.rich(
                           TextSpan(

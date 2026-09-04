@@ -134,6 +134,7 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
     return RefreshIndicator(
       onRefresh: _load,
       child: ListView(
+        // [LAYOUT_PLAN P2] 列表纵向留白 8dp，横向由卡片 margin 统一 16dp
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [
           for (final entry in grouped.entries) ...[
@@ -150,6 +151,7 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     return Padding(
+      // [LAYOUT_PLAN P2] 分组头边距：水平 16dp 对齐页面，纵向 12/6
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
       child: Row(
         children: [
@@ -196,12 +198,17 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      // [LAYOUT_PLAN P2] 分组卡圆角 16dp；边距 horizontal16（全局标尺）
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         onTap: () => _openLink(star.link),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -234,12 +241,14 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
                       Row(
                         children: [
                           Icon(Symbols.schedule_rounded,
-                              size: 14, color: colorScheme.outline),
+                              // [LAYOUT_PLAN P2] 元信息图标走 onSurfaceVariant
+                              size: 14, color: colorScheme.onSurfaceVariant),
                           const SizedBox(width: 4),
                           Text(
                             star.pubDate!,
                             style: theme.textTheme.labelSmall?.copyWith(
-                              color: colorScheme.outline,
+                              // [LAYOUT_PLAN P2] 元信息走 labelSmall + onSurfaceVariant
+                              color: colorScheme.onSurfaceVariant,
                             ),
                           ),
                         ],

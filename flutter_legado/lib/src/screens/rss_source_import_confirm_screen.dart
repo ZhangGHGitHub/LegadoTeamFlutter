@@ -274,6 +274,8 @@ class _RssSourceImportConfirmScreenState
       body: widget.sources.isEmpty
           ? const Center(child: Text('格式错误，未解析到订阅源'))
           : ListView.separated(
+              // [LAYOUT_PLAN P2] 列表纵向留白 8dp；行 vertical12/horizontal8（见 _buildItem）
+              padding: const EdgeInsets.symmetric(vertical: 8),
               itemCount: widget.sources.length,
               separatorBuilder: (_, _) =>
                   const Divider(height: 1, indent: 16),
@@ -363,6 +365,7 @@ class _RssSourceImportConfirmScreenState
     final colorScheme = Theme.of(context).colorScheme;
 
     final (label, color) = switch (status) {
+      // [LAYOUT_PLAN P2] 状态色走 tonal：新增 primary、更新 tertiary、已有 onSurfaceVariant
       _ImportStatus.isNew => ('新增', AppColorsExt.importNew(colorScheme)),
       _ImportStatus.isUpdate =>
         ('更新', AppColorsExt.importUpdate(colorScheme)),
@@ -373,7 +376,8 @@ class _RssSourceImportConfirmScreenState
     return InkWell(
       onTap: () => setState(() => _selected[index] = !_selected[index]),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8（页面水平边距 16dp 由此保证）
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         child: Row(
           children: [
             Checkbox(
@@ -389,7 +393,8 @@ class _RssSourceImportConfirmScreenState
                     _nameOf(raw),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(fontSize: 16),
+                    // [LAYOUT_PLAN P2] 列表行标题走 titleSmall
+                    style: Theme.of(context).textTheme.titleSmall,
                   ),
                   if (_showComment &&
                       (_commentOf(raw) ?? '').trim().isNotEmpty)
@@ -401,6 +406,7 @@ class _RssSourceImportConfirmScreenState
                         overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           fontSize: 12,
+                          // [LAYOUT_PLAN P2] 次要文字走 onSurfaceVariant
                           color: colorScheme.onSurfaceVariant,
                         ),
                       ),
@@ -412,7 +418,10 @@ class _RssSourceImportConfirmScreenState
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
                 label,
-                style: TextStyle(fontSize: 13, color: color),
+                // [LAYOUT_PLAN P2] 状态标签走 labelSmall
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: color,
+                    ),
               ),
             ),
             TextButton(

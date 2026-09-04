@@ -92,6 +92,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
 
   Widget _buildSearchBar(ThemeData theme) {
     return Padding(
+      // [LAYOUT_PLAN P2] 页面水平边距 16dp；搜索行纵向 12dp
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: Row(
         children: [
@@ -102,13 +103,10 @@ class _DictScreenState extends ConsumerState<DictScreen> {
               autofocus: true,
               textInputAction: TextInputAction.search,
               onSubmitted: (_) => _search(),
-              decoration: InputDecoration(
-                prefixIcon: const Icon(Symbols.search_rounded),
+              // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme（不显式 border/radius）
+              decoration: const InputDecoration(
+                prefixIcon: Icon(Symbols.search_rounded),
                 hintText: '输入单词查询释义',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(24),
-                ),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 16),
               ),
             ),
           ),
@@ -132,6 +130,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
     final entry = state.result;
     final notFound = entry == null || entry.definitions.isEmpty;
     return ListView(
+      // [LAYOUT_PLAN P2] 页面边距统一 16dp（全局标尺）
       padding: const EdgeInsets.all(16),
       children: [
         if (!notFound)
@@ -164,6 +163,10 @@ class _DictScreenState extends ConsumerState<DictScreen> {
 
   Widget _buildResultCard(ThemeData theme, DictEntry entry) {
     return Card(
+      // [LAYOUT_PLAN P2] 分组卡圆角 16dp；卡内统一 16dp
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -192,6 +195,7 @@ class _DictScreenState extends ConsumerState<DictScreen> {
                 Container(
                   padding: const EdgeInsets.symmetric(
                       horizontal: 8, vertical: 2),
+                  // [LAYOUT_PLAN P2] 状态色走 tonal（primaryContainer/onPrimaryContainer）
                   decoration: BoxDecoration(
                     color: theme.colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(8),
@@ -228,6 +232,10 @@ class _DictScreenState extends ConsumerState<DictScreen> {
 
   Widget _buildNotFound(ThemeData theme, String word) {
     return Card(
+      // [LAYOUT_PLAN P2] 分组卡圆角 16dp；卡内统一 16dp
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -300,7 +308,9 @@ class _DictScreenState extends ConsumerState<DictScreen> {
                         final rule = rules[index];
                         return ListTile(
                           dense: true,
-                          contentPadding: EdgeInsets.zero,
+                          // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8
+                          contentPadding: const EdgeInsets.symmetric(
+                              vertical: 12, horizontal: 8),
                           title: Text(rule.name),
                           subtitle: Text(
                             rule.urlRule,
@@ -362,11 +372,12 @@ class _DictScreenState extends ConsumerState<DictScreen> {
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme（不显式 border）；
+            // 字段分组间距 12dp
             TextField(
               controller: nameCtrl,
               decoration: const InputDecoration(
                 labelText: '规则名称',
-                border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
@@ -375,7 +386,6 @@ class _DictScreenState extends ConsumerState<DictScreen> {
               decoration: const InputDecoration(
                 labelText: '查询地址',
                 hintText: '使用 {{key}} 作为单词占位符',
-                border: OutlineInputBorder(),
               ),
             ),
           ],

@@ -264,6 +264,8 @@ class _ReplaceRuleImportConfirmScreenState
       body: widget.raws.isEmpty
           ? const Center(child: Text('格式错误，未解析到替换规则'))
           : ListView.separated(
+              // [LAYOUT_PLAN P2] 列表纵向留白 8dp；行 vertical12/horizontal8（见 _buildItem）
+              padding: const EdgeInsets.symmetric(vertical: 8),
               itemCount: widget.raws.length,
               separatorBuilder: (_, _) =>
                   const Divider(height: 1, indent: 16),
@@ -348,6 +350,7 @@ class _ReplaceRuleImportConfirmScreenState
     final colorScheme = Theme.of(context).colorScheme;
 
     final (label, color) = switch (status) {
+      // [LAYOUT_PLAN P2] 状态色走 tonal：新增 primary、更新 tertiary、已有 onSurfaceVariant
       _ImportStatus.isNew => ('新增', AppColorsExt.importNew(colorScheme)),
       _ImportStatus.isUpdate =>
         ('更新', AppColorsExt.importUpdate(colorScheme)),
@@ -358,7 +361,8 @@ class _ReplaceRuleImportConfirmScreenState
     return InkWell(
       onTap: () => setState(() => _selected[index] = !_selected[index]),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8（页面水平边距 16dp 由此保证）
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         child: Row(
           children: [
             Checkbox(
@@ -371,14 +375,18 @@ class _ReplaceRuleImportConfirmScreenState
                 _displayName(index),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 16),
+                // [LAYOUT_PLAN P2] 列表行标题走 titleSmall
+                style: Theme.of(context).textTheme.titleSmall,
               ),
             ),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Text(
                 label,
-                style: TextStyle(fontSize: 13, color: color),
+                // [LAYOUT_PLAN P2] 状态标签走 labelSmall
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                      color: color,
+                    ),
               ),
             ),
             TextButton(

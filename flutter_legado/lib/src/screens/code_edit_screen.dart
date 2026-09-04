@@ -260,16 +260,20 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
               Material(
                 color: cs.surfaceContainerHighest.withValues(alpha: 0.55),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                  // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8（全局行规范）
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 12,
+                  ),
                   child: Row(
                     children: [
                       Expanded(
                         child: TextField(
                           controller: _findCtrl,
+                          // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme，不手写边框
                           decoration: const InputDecoration(
                             hintText: '查找…',
                             isDense: true,
-                            border: OutlineInputBorder(),
                           ),
                           onSubmitted: (_) => _findNext(),
                         ),
@@ -290,11 +294,13 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
               ),
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                // [LAYOUT_PLAN P2] 页面水平边距统一 16dp（全局标尺）
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: cs.surfaceContainerHighest.withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(12),
+                    // [LAYOUT_PLAN P2] 分组卡圆角统一 16dp（全局标尺）
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: TextField(
                     controller: _controller,

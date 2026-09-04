@@ -292,9 +292,11 @@ class _SourceImportConfirmScreenState
       body: widget.sources.isEmpty
           ? const Center(child: Text('格式错误，未解析到书源'))
           : ListView.separated(
+              // [LAYOUT_PLAN P2] 页面水平边距统一 16dp（全局标尺）
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               itemCount: widget.sources.length,
               separatorBuilder: (_, _) =>
-                  const Divider(height: 1, indent: 16),
+                  const Divider(height: 1, indent: 8),
               itemBuilder: (context, index) => _buildItem(index),
             ),
       // 底部操作区（对标 dialog_recycler_view：footerLeft / cancel / ok）
@@ -405,7 +407,8 @@ class _SourceImportConfirmScreenState
     return InkWell(
       onTap: () => setState(() => _selected[index] = !_selected[index]),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8（全局行规范）
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
         child: Row(
           children: [
             Checkbox(

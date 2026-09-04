@@ -186,10 +186,10 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
               children: [
                 TextField(
                   controller: _sourceUrlCtrl,
+                  // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme，不手写边框
                   decoration: const InputDecoration(
                     labelText: '书源 URL',
                     hintText: '输入要调试的书源地址',
-                    border: OutlineInputBorder(),
                     prefixIcon: Icon(Symbols.link_rounded),
                     isDense: true,
                   ),
@@ -200,10 +200,10 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
                     Expanded(
                       child: TextField(
                         controller: _keywordCtrl,
+                        // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme，不手写边框
                         decoration: const InputDecoration(
                           labelText: '搜索关键词',
                           hintText: '关键词 / URL / ++目录 / --正文',
-                          border: OutlineInputBorder(),
                           prefixIcon: Icon(Symbols.search_rounded),
                           isDense: true,
                         ),
@@ -230,7 +230,8 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
           const Divider(height: 1),
           // 日志级别过滤栏
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            // [LAYOUT_PLAN P2] 页面水平边距统一 16dp（全局标尺）
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             child: Row(
               children: [
                 const Icon(Symbols.filter_alt_rounded, size: 18),
@@ -332,8 +333,9 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
                       )
                     : ListView.builder(
                         controller: _logScrollCtrl,
+                        // [LAYOUT_PLAN P2] 页面水平边距统一 16dp（全局标尺）
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
+                          horizontal: 16,
                           vertical: 8,
                         ),
                         itemCount: filteredLogs.length,
@@ -353,8 +355,10 @@ class _SourceDebugScreenState extends ConsumerState<SourceDebugScreen> {
     return Container(
       margin: const EdgeInsets.only(bottom: 4),
       decoration: BoxDecoration(
+        // [LAYOUT_PLAN P2] 调试行状态色走 tonal container（见 bgColor）
         color: log.level.bgColor(theme),
-        borderRadius: BorderRadius.circular(6),
+        // [LAYOUT_PLAN P2] 分组卡圆角统一 16dp（全局标尺）
+        borderRadius: BorderRadius.circular(16),
         border: Border(
           left: BorderSide(
             color: log.level.color(theme),

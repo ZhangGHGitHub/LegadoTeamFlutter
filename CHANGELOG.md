@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.162] - 2026-09-04
+
+### Changed
+- [UI] 布局规划 P2 书源规则链重排：调试页输入框走主题/边距 16dp/调试行圆角 16dp；导入确认行规范；JS/代码编辑区边距圆角 16dp；登录页拆三 Card 分组；规则/RSS 调试/导入/文章/收藏/词典/TXT 目录行规范；WebView 登录菜单位置；书源分组对话框行规范
+
+### Test
+- flutter analyze 无问题；flutter test 1321 全过
+- 版本 2.0.162+163
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.161] - 2026-09-04
 
 ### Changed

@@ -193,58 +193,111 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
   Widget _buildManualTab(SourceLoginState state) {
     final theme = Theme.of(context);
     return ListView(
+      // [LAYOUT_PLAN P2] 页面水平边距统一 16dp（全局标尺）
       padding: const EdgeInsets.all(16),
       children: [
-        Text('Token（可选）', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _tokenCtrl,
-          decoration: const InputDecoration(
-            hintText: 'Bearer Token / API Key',
-            border: OutlineInputBorder(),
+        Card(
+          // [LAYOUT_PLAN P2] 字段分组进 Card（圆角 16dp，卡内 16dp）
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
           ),
-        ),
-        const SizedBox(height: 24),
-        Text('Cookies', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 8),
-        _buildKeyValueRow(
-          nameCtrl: _cookieNameCtrl,
-          valueCtrl: _cookieValueCtrl,
-          nameHint: 'name',
-          valueHint: 'value',
-          onAdd: _addCookie,
-        ),
-        ...state.cookies.indexed.map(
-          (entry) => ListTile(
-            dense: true,
-            title: Text('${entry.$2.name} = ${entry.$2.value}'),
-            trailing: IconButton(
-              icon: const Icon(Symbols.close_rounded),
-              onPressed: () => ref
-                  .read(sourceLoginNotifierProvider.notifier)
-                  .removeCookie(entry.$1),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Token（可选）', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _tokenCtrl,
+                  // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme，不手写边框
+                  decoration: const InputDecoration(
+                    hintText: 'Bearer Token / API Key',
+                  ),
+                ),
+              ],
             ),
           ),
         ),
-        const Divider(height: 32),
-        Text('Headers（可选）', style: theme.textTheme.titleSmall),
-        const SizedBox(height: 8),
-        _buildKeyValueRow(
-          nameCtrl: _headerNameCtrl,
-          valueCtrl: _headerValueCtrl,
-          nameHint: 'header name',
-          valueHint: 'header value',
-          onAdd: _addHeader,
+        const SizedBox(height: 12),
+        Card(
+          // [LAYOUT_PLAN P2] 字段分组进 Card（圆角 16dp，卡内 16dp）
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Cookies', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 8),
+                _buildKeyValueRow(
+                  nameCtrl: _cookieNameCtrl,
+                  valueCtrl: _cookieValueCtrl,
+                  nameHint: 'name',
+                  valueHint: 'value',
+                  onAdd: _addCookie,
+                ),
+                ...state.cookies.indexed.map(
+                  (entry) => ListTile(
+                    dense: true,
+                    // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8（全局行规范）
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 8,
+                    ),
+                    title: Text('${entry.$2.name} = ${entry.$2.value}'),
+                    trailing: IconButton(
+                      icon: const Icon(Symbols.close_rounded),
+                      onPressed: () => ref
+                          .read(sourceLoginNotifierProvider.notifier)
+                          .removeCookie(entry.$1),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-        ...state.headers.indexed.map(
-          (entry) => ListTile(
-            dense: true,
-            title: Text('${entry.$2.name}: ${entry.$2.value}'),
-            trailing: IconButton(
-              icon: const Icon(Symbols.close_rounded),
-              onPressed: () => ref
-                  .read(sourceLoginNotifierProvider.notifier)
-                  .removeHeader(entry.$1),
+        const SizedBox(height: 12),
+        Card(
+          // [LAYOUT_PLAN P2] 字段分组进 Card（圆角 16dp，卡内 16dp）
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Headers（可选）', style: theme.textTheme.titleSmall),
+                const SizedBox(height: 8),
+                _buildKeyValueRow(
+                  nameCtrl: _headerNameCtrl,
+                  valueCtrl: _headerValueCtrl,
+                  nameHint: 'header name',
+                  valueHint: 'header value',
+                  onAdd: _addHeader,
+                ),
+                ...state.headers.indexed.map(
+                  (entry) => ListTile(
+                    dense: true,
+                    // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8（全局行规范）
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 8,
+                    ),
+                    title: Text('${entry.$2.name}: ${entry.$2.value}'),
+                    trailing: IconButton(
+                      icon: const Icon(Symbols.close_rounded),
+                      onPressed: () => ref
+                          .read(sourceLoginNotifierProvider.notifier)
+                          .removeHeader(entry.$1),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -265,9 +318,9 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
           flex: 2,
           child: TextField(
             controller: nameCtrl,
+            // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme，不手写边框
             decoration: InputDecoration(
               hintText: nameHint,
-              border: const OutlineInputBorder(),
               isDense: true,
             ),
           ),
@@ -277,9 +330,9 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
           flex: 3,
           child: TextField(
             controller: valueCtrl,
+            // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme，不手写边框
             decoration: InputDecoration(
               hintText: valueHint,
-              border: const OutlineInputBorder(),
               isDense: true,
             ),
           ),
@@ -298,7 +351,8 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
     final url = widget.loginUrl;
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        // [LAYOUT_PLAN P2] 页面水平边距统一 16dp（全局标尺）
+        padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

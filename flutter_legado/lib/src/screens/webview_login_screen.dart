@@ -217,6 +217,8 @@ class _WebViewLoginScreenState extends State<WebViewLoginScreen> {
           ),
           PopupMenuButton<String>(
             tooltip: '更多选项',
+            // [LAYOUT_PLAN P2] 菜单在顶栏下方展开，不覆盖顶栏
+            position: PopupMenuPosition.under,
             onSelected: (value) {
               switch (value) {
                 case 'manual':

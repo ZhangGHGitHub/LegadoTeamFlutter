@@ -163,7 +163,8 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
                   ),
                 ),
                 Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                  // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8（全局行规范）
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
                   child: Row(
                     children: [
                       IconButton(
@@ -236,14 +237,7 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
                         decoration: InputDecoration(
                           labelText: _curlToAnalyze ? 'cURL 命令' : 'AnalyzeUrl',
                           alignLabelWithHint: true,
-                          filled: true,
-                          fillColor: cs.surfaceContainerHighest.withValues(
-                            alpha: 0.45,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
+                          // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme，不手写边框
                         ),
                       ),
                       const SizedBox(height: 12),
@@ -261,14 +255,7 @@ class _CurlAnalyzeUrlSheetState extends ConsumerState<CurlAnalyzeUrlSheet> {
                         decoration: InputDecoration(
                           labelText: _curlToAnalyze ? 'AnalyzeUrl' : 'cURL 命令',
                           alignLabelWithHint: true,
-                          filled: true,
-                          fillColor: cs.surfaceContainerHighest.withValues(
-                            alpha: 0.28,
-                          ),
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
+                          // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme，不手写边框
                         ),
                       ),
                       const SizedBox(height: 16),

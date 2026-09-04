@@ -208,6 +208,7 @@ class _BookSourceGroupManageDialogState
     final scheme = Theme.of(context).colorScheme;
     // iOS 风格：大圆角、轻量标题行、列表靠间距而非硬边框
     return AlertDialog(
+      // [LAYOUT_PLAN P2] 分组卡圆角统一 16dp（全局标尺）
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: Row(
         children: [
@@ -252,7 +253,11 @@ class _BookSourceGroupManageDialogState
                   final group = groups[index];
                   return ListTile(
                     dense: true,
-                    contentPadding: EdgeInsets.zero,
+                    // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8（全局行规范）
+                    contentPadding: const EdgeInsets.symmetric(
+                      vertical: 12,
+                      horizontal: 8,
+                    ),
                     title: Text(group),
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,

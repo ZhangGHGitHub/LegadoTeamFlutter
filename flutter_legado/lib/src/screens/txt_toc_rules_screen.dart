@@ -94,6 +94,7 @@ It was a dark and stormy night.''';
 
   Widget _buildList(TxtTocRulesState state) {
     return ListView.builder(
+      // [LAYOUT_PLAN P2] 列表纵向留白 8dp，横向由卡片 margin 统一 16dp
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: state.rules.length,
       itemBuilder: (context, index) {
@@ -158,11 +159,12 @@ It was a dark and stormy night.''';
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme（不显式 border）；
+              // 字段分组间距 12dp
               TextField(
                 controller: nameCtrl,
                 decoration: const InputDecoration(
                   labelText: '规则名称',
-                  border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 12),
@@ -171,7 +173,6 @@ It was a dark and stormy night.''';
                 decoration: const InputDecoration(
                   labelText: '正则表达式',
                   hintText: r'^第\s*\d+\s*章',
-                  border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 12),
@@ -179,7 +180,6 @@ It was a dark and stormy night.''';
                 controller: replacementCtrl,
                 decoration: const InputDecoration(
                   labelText: '替换为（可选）',
-                  border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 12),
@@ -187,7 +187,6 @@ It was a dark and stormy night.''';
                 controller: exampleCtrl,
                 decoration: const InputDecoration(
                   labelText: '示例文本（可选）',
-                  border: OutlineInputBorder(),
                 ),
               ),
             ],
@@ -253,9 +252,9 @@ It was a dark and stormy night.''';
                   TextField(
                     controller: textCtrl,
                     maxLines: 6,
+                    // [LAYOUT_PLAN P2] 输入框走 inputDecorationTheme（不显式 border）
                     decoration: const InputDecoration(
                       labelText: '待匹配文本',
-                      border: OutlineInputBorder(),
                     ),
                     onChanged: (_) => setState(() {}),
                   ),
@@ -359,12 +358,17 @@ class _RuleTile extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      // [LAYOUT_PLAN P2] 分组卡圆角 16dp；边距 horizontal16（全局标尺）
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+      ),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: InkWell(
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
         onTap: onEdit,
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
           child: Row(
             children: [
               Expanded(
@@ -421,6 +425,7 @@ class _RuleTile extends StatelessWidget {
                   ],
                 ),
               ),
+              // [LAYOUT_PLAN P2] 开关行无 Chevron；标题/副标题/元信息走 M3 Type Scale
               Switch(value: rule.enable, onChanged: onToggle),
             ],
           ),

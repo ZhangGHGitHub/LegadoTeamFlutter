@@ -376,6 +376,7 @@ $htmlContent
   /// 构建文章头部（标题、日期、来源、封面图）
   Widget _buildArticleHeader(ThemeData theme, ColorScheme colorScheme) {
     return Padding(
+      // [LAYOUT_PLAN P2] 页面水平边距 16dp（全局标尺）
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -427,6 +428,7 @@ $htmlContent
           if (widget.article.imageUrl != null &&
               widget.article.imageUrl!.isNotEmpty) ...[
             ClipRRect(
+              // [LAYOUT_PLAN P2] 封面圆角 12dp（内容图规格）
               borderRadius: BorderRadius.circular(12),
               child: CachedNetworkImage(
                 imageUrl: widget.article.imageUrl!,
@@ -545,6 +547,7 @@ $htmlContent
   ) {
     final plainText = _stripHtmlTags(htmlContent);
     return SingleChildScrollView(
+      // [LAYOUT_PLAN P2] 正文区边距统一 16dp（全局标尺）
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -555,6 +558,7 @@ $htmlContent
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               margin: const EdgeInsets.only(bottom: 12),
+              // [LAYOUT_PLAN P2] 提示条走 tonal（surfaceContainerHighest）
               decoration: BoxDecoration(
                 color: theme.colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),

@@ -309,7 +309,8 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                     // [UI_MD3_ALIGNMENT_PLAN.md Batch B B4] 错误底走 tonal
                     color: cs.errorContainer,
                     child: Padding(
-                      padding: const EdgeInsets.all(12),
+                      // [LAYOUT_PLAN P2] 页面水平边距统一 16dp（全局标尺）
+                      padding: const EdgeInsets.all(16),
                       child: Text(
                         '加载已有脚本失败，已回退模板：$_error',
                         style: TextStyle(
@@ -326,9 +327,10 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                     child: InkWell(
                       onTap: _jumpToSyntaxLine,
                       child: Padding(
+                        // [LAYOUT_PLAN P2] 页面水平边距统一 16dp（全局标尺）
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
+                          horizontal: 16,
+                          vertical: 12,
                         ),
                         child: Row(
                           children: [
@@ -363,7 +365,8 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                   ),
                 Expanded(
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+                    // [LAYOUT_PLAN P2] 页面水平边距统一 16dp（全局标尺）
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
                     child: DecoratedBox(
                       decoration: BoxDecoration(
                         // [MD3 Batch 4] 编辑区底色 token 化（原硬编码白色，
@@ -371,7 +374,8 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                         color: cs.surfaceContainerHighest.withValues(
                           alpha: 0.55,
                         ),
-                        borderRadius: BorderRadius.circular(12),
+                        // [LAYOUT_PLAN P2] 分组卡圆角统一 16dp（全局标尺）
+                        borderRadius: BorderRadius.circular(16),
                       ),
                       child: TextField(
                         controller: _controller,
