@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.165] - 2026-09-05
+
+### Changed
+- [UI] 布局规划收尾：P4 动效残项补全——ContainedLoadingIndicator 接线（列表 footer 加载态/空态 isLoading 分支，对齐 HapeLee LoadMoreFooter/EmptyMessage 口径）；余下 7 处裸 RefreshIndicator 统一 CustomRefreshIndicator（自动任务/缓存下载/离线缓存/阅读记录/RSS 收藏/详情/发现列表）；发现分类列表首屏接 Skeleton；RSS 文章详情自绘空态并入 EmptyState；词典查询 loading 换波浪环
+- [UI] 布局规划残页补齐——漫画阅读器顶栏动作行对齐（返回/设置补 tooltip + 图标切 Symbols 体系）；other_settings 对话框经全局 dialogTheme(surfaceContainer+28dp) 验证合规
+
+### Test
+- flutter analyze 无问题；flutter test 1321 全过
+- 版本 2.0.165+166
+
+- Contributor: Qoder UI
+
 ## [2.0.164] - 2026-09-04
 
 ### Changed

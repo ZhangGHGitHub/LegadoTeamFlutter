@@ -33,7 +33,8 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         ),
         SafeArea(
           top: false,
-          child: RefreshIndicator(
+          // [LAYOUT_PLAN P4 收尾] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
+          child: CustomRefreshIndicator(
             onRefresh: () async => _reload(),
             child: _buildBody(context, book, chapters),
           ),

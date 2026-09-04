@@ -11,6 +11,7 @@ import '../providers/read_record/read_record_notifier.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../utils/book_open_utils.dart';
+import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
@@ -169,7 +170,8 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
         title: state.searchQuery.isEmpty ? '暂无阅读记录' : '未找到匹配的记录',
       );
     }
-    return RefreshIndicator(
+    // [LAYOUT_PLAN P4 收尾] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
+    return CustomRefreshIndicator(
       onRefresh: () => ref.read(readRecordNotifierProvider.notifier).load(),
       child: ListView.separated(
         // [LAYOUT_PLAN P3] 页面水平边距 16dp；纵向留白 8dp

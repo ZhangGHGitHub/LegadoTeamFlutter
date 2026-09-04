@@ -11,6 +11,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../widgets/empty_state.dart';
 import '../widgets/open_url_confirm_dialog.dart';
 
 /// RSS 文章详情页面
@@ -469,8 +470,17 @@ $htmlContent
     String? html,
   ) {
     // 无内容时显示空状态
+    // [LAYOUT_PLAN P4 收尾] 自绘空态并入 EmptyState（保留「浏览器查看原文」动作）
     if (html == null) {
-      return _buildEmptyState(theme, colorScheme);
+      return EmptyState(
+        icon: Symbols.article_rounded,
+        title: '暂无内容',
+        action: OutlinedButton.icon(
+          onPressed: _openInBrowser,
+          icon: const Icon(Symbols.open_in_browser_rounded),
+          label: const Text('在浏览器中查看原文'),
+        ),
+      );
     }
 
     // 纯文本模式（桌面端或用户手动切换）
@@ -599,35 +609,6 @@ $htmlContent
             ),
           const SizedBox(height: 16),
         ],
-      ),
-    );
-  }
-
-  /// 构建空状态（文章无内容时显示）
-  Widget _buildEmptyState(ThemeData theme, ColorScheme colorScheme) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Symbols.article_rounded,
-                size: 64, color: colorScheme.onSurfaceVariant.withAlpha(100)),
-            const SizedBox(height: 12),
-            Text(
-              '暂无内容',
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: _openInBrowser,
-              icon: const Icon(Symbols.open_in_browser_rounded),
-              label: const Text('在浏览器中查看原文'),
-            ),
-          ],
-        ),
       ),
     );
   }

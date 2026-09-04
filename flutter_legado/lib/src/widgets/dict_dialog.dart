@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/models.dart';
 import '../providers/dict/dict_notifier.dart';
+import 'md3_loading_indicator.dart';
 
 /// 词典查询 Dialog（对标原版 `ui/dict/DictDialog`）
 ///
@@ -123,10 +124,11 @@ class _DictDialogState extends ConsumerState<DictDialog>
             ),
           const Divider(height: 1),
           Expanded(
+            // [LAYOUT_PLAN P4 收尾] dict loading 换波浪环（Md3LoadingIndicator）
             child: state.isLoading && state.result == null
-                ? const Center(child: CircularProgressIndicator())
+                ? const Center(child: Md3LoadingIndicator())
                 : _tabController == null
-                    ? const Center(child: CircularProgressIndicator())
+                    ? const Center(child: Md3LoadingIndicator())
                     : TabBarView(
                         controller: _tabController,
                         children: [

@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
+import 'package:material_symbols_icons/symbols.dart';
 import '../services/bridge_http.dart';
 
 import '../models/models.dart';
@@ -868,8 +869,11 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
             child: Row(
               children: [
                 // 返回按钮
+                // [LAYOUT_PLAN P3 补] 沉浸域仅顶栏动作行规范：补 tooltip +
+                // 图标切 Symbols 体系（对齐 legado_app_bar 返回），本体不动
                 IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  tooltip: '返回',
+                  icon: const Icon(Symbols.arrow_back_rounded, color: Colors.white),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
                 // 书名
@@ -900,7 +904,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
                     ),
                   ),
                 IconButton(
-                  icon: const Icon(Icons.tune, color: Colors.white),
+                  // [LAYOUT_PLAN P3 补] 沉浸域顶栏动作行规范：图标切 Symbols 体系
+                  icon: const Icon(Symbols.tune_rounded, color: Colors.white),
                   tooltip: '漫画设置',
                   onPressed: _openMangaConfig,
                 ),

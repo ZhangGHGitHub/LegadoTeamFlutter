@@ -18,7 +18,8 @@ import '../widgets/book_cover.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/list_footer.dart';
-import '../widgets/loading_indicator.dart';
+import '../widgets/custom_refresh_indicator.dart';
+import '../widgets/skeleton.dart';
 
 /// 登录引导错误视图（书源需登录时展示，提供「去登录」主按钮与重试）
 ///
@@ -159,7 +160,12 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
     final colorScheme = Theme.of(context).colorScheme;
 
     if (state.isLoading && state.books.isEmpty) {
-      return const LoadingIndicator();
+      // [LAYOUT_PLAN P4 收尾] 首屏 Skeleton 接线：列表骨架替代整页 LoadingIndicator
+      return ListView.builder(
+        padding: widget.padding,
+        itemCount: 8,
+        itemBuilder: (_, _) => const ListSkeletonItem(),
+      );
     }
 
     if (state.error != null && state.books.isEmpty) {
@@ -193,7 +199,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
       children: [
         TopNetworkLoadingBar(isLoading: state.isLoading && state.books.isNotEmpty),
         Expanded(
-          child: RefreshIndicator(
+          child: CustomRefreshIndicator(
             onRefresh: () =>
                 ref.read(exploreShowNotifierProvider(args).notifier).refresh(),
             child: ListView.separated(

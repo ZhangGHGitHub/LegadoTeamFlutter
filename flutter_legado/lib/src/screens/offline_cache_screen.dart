@@ -14,6 +14,7 @@ import '../providers/sync/sync_notifier.dart';
 import '../routes.dart';
 import '../services/export_service.dart';
 import '../utils/book_open_utils.dart';
+import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/export_dialog.dart';
 import '../widgets/loading_indicator.dart';
 
@@ -366,7 +367,8 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
           ? const LoadingIndicator()
           : _entries.isEmpty
               ? _buildEmpty(cs)
-              : RefreshIndicator(
+              // [LAYOUT_PLAN P4 收尾] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
+              : CustomRefreshIndicator(
                   onRefresh: () async => _refresh(),
                   child: ListView.separated(
                     // [LAYOUT_PLAN P3] 页面水平边距16dp（行内 ListTile 默认 horizontal16）

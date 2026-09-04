@@ -2,8 +2,8 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 
+import 'contained_loading_indicator.dart';
 import 'md3_animated_text_line.dart';
-import 'md3_loading_indicator.dart';
 
 /// 空状态组件
 ///
@@ -65,7 +65,7 @@ class _EmptyStateState extends State<EmptyState> {
 
     // 加载中：Contained 指示器（HapeLee isLoading 分支）
     if (widget.isLoading) {
-      return const Center(child: Md3LoadingIndicator());
+      return const Center(child: ContainedLoadingIndicator());
     }
 
     // 安卓原版范式：纯居中灰字（对标 Android 空状态 TextView）

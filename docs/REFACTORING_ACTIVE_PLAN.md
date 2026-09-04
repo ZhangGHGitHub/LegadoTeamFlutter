@@ -209,12 +209,14 @@
 | `SOURCE_DIFF_AUDIT_2026-08-13.md` | 原版源码差异证据 |
 | `SEARCH_PARITY_REMEDIATION_PLAN_20260828.md` | 搜索速度与结果一致性当前修复计划 |
 | `UI_MD3_PLAN.md` | Flutter UI 视觉迁移至 MD3 Expressive 的当前执行计划（UI 轨独立推进，不涉 Rust/FFI） |
+| `UI_MD3_LAYOUT_PLAN.md` | 分批全量二三级重排+动效全补规划（UI 轨，2026-09-04 立项，四批已交付收口） |
 | `PARSER_GAP_FIX_PROGRESS_20260815.md` | 解析 parity 交接与证据 |
 | `过期文档/README.md` | 历史文档目录和替代关系 |
 
 新增计划、报告、交接文档必须放在 `docs/`；历史材料只允许放在 `docs/过期文档/`，不得再创建新的日期版计划散落在根目录。
 
 编写者：Codex ｜ 2026-08-19
+修订：Qoder UI ｜ 2026-09-05（布局规划 P1–P4 四批全量交付并完成收尾：主链二三级/书源规则链/设置系通用约 40 页重排 + 动效全补（转场分档/Hero 全链路/Skeleton/Contained 接线/裸下拉清零 10 页/空态收敛/阅读器 chrome/Sheet 28dp）；残页 3 处闭合（explore_show 经共享列表组件、reader_comic 顶栏动作行、other_settings 三 Dialog 主题级合规验证）；搜索 pill/胶囊独立 fade/predictiveBack 按登记口径保留；版本 2.0.161–2.0.165，门禁 analyze 0 + test 1321 全过；详见 UI_MD3_LAYOUT_PLAN.md「实施状态」与 UI_MD3_LAYOUT_PLAN_PROGRESS_20260905.md）
 修订：Qoder + Bridge ｜ 2026-09-04（换源任务书 T6 流式化收口（任务书唯一 ⏸ 项销记）：Rust run_change_source_stream + StreamSink searchSourceStream（契约 §2.4）+ Dart 逐源渐显与 x/y 进度（U1 过渡反馈的永久替代）+ 首轮搜索/高级选项加载竞态修复；5556 实测 1024 源首候选 ≤2s、flutter test 1313 全过；版本 2.0.154+155；详见 TASK_HANDOFF_CHANGE_SOURCE_FIX_20260903.md §〇）
 修订：Qoder + Bridge ｜ 2026-09-03（换源修复任务书 Rust 轨批次 1/2 收口——T1+T2 换源执行链对齐原版 getToc（真实 tocUrl + 失败保留旧源 + 章节保留 variable/isVolume，3a78afc049）；T3/T4/T5 变量链整体交付（WebBookInfo/SearchResult/SearchCandidate/SourceMatch additive variable + 元素级导出落库 + get_content/reader/audio 内容链 book⊕chapter 变量合并（章节优先）+ switchSource 候选⊕详情变量合并详情页优先）；契约先行 API_CONTRACT 2026-09-03 条；T6 流式化属 UI 侧移交 UI 轨；详见 TASK_HANDOFF_CHANGE_SOURCE_FIX_20260903.md §〇）
 修订：Qoder + Bridge ｜ 2026-09-03（整合审计 Rust 后端批次处置：D3/D4/§二.4 三处误报核实更正（均在基线前已修）+ core query_ttf 死桩删除 + N2 假成功拒绝化 + D4 quickjs 回归单测 + §三.9 内存测试 Linux 启用 + N7 cargo audit + N5 评估登记 + 连带修复 hosts 代理架空/TEST_LOCK 中毒级联/失效站点诊断补 ignore；据 REFACTOR_CONSOLIDATED_AUDIT_20260903.md，UI 侧 N1/N3/N6 由 UI 轨在途）

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
@@ -131,7 +132,8 @@ class _RssFavoritesScreenState extends ConsumerState<RssFavoritesScreen> {
     }
 
     final grouped = _grouped;
-    return RefreshIndicator(
+    // [LAYOUT_PLAN P4 收尾] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
+    return CustomRefreshIndicator(
       onRefresh: _load,
       child: ListView(
         // [LAYOUT_PLAN P2] 列表纵向留白 8dp，横向由卡片 margin 统一 16dp

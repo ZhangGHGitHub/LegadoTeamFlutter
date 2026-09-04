@@ -15,6 +15,7 @@ import '../providers/providers.dart';
 import '../services/bridge_http.dart';
 import '../services/auto_task_scheduler.dart';
 import '../widgets/auto_task_debug_dialog.dart';
+import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 
@@ -250,7 +251,8 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
             );
           }
 
-          return RefreshIndicator(
+          // [LAYOUT_PLAN P4 收尾] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
+          return CustomRefreshIndicator(
             onRefresh: () => notifier.loadTasks(),
             child: ListView.separated(
               // [LAYOUT_PLAN P3] 页面水平边距 16dp；纵向留白 8dp

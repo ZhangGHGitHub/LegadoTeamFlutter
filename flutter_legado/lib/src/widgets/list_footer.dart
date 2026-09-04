@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../l10n/app_strings.dart';
+import 'contained_loading_indicator.dart';
 
 /// 列表底部「我是有底线的」提示（对标 Android LoadMoreView.noMore）
 class ListBottomLineFooter extends StatelessWidget {
@@ -27,7 +28,7 @@ class ListBottomLineFooter extends StatelessWidget {
 }
 
 /// 列表底部加载中指示器（对标 Android LoadMoreView.startLoad）
-/// [LAYOUT_MOTION_AUDIT M2] 24px spinner（M3 规格，原 20px）
+/// [LAYOUT_PLAN P4 收尾] loading 态走 Contained 指示器（对齐 HapeLee LoadMoreFooter）
 class ListLoadMoreFooter extends StatelessWidget {
   const ListLoadMoreFooter({super.key});
 
@@ -35,13 +36,7 @@ class ListLoadMoreFooter extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Padding(
       padding: EdgeInsets.symmetric(vertical: 16),
-      child: Center(
-        child: SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
-      ),
+      child: Center(child: ContainedLoadingIndicator()),
     );
   }
 }
@@ -77,11 +72,8 @@ class ListMoreFooter extends StatelessWidget {
           child: Center(
             child: Column(
               children: [
-                const SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
+                // [LAYOUT_PLAN P4 收尾] footer loading 态走 Contained 指示器
+                const ContainedLoadingIndicator(),
                 const SizedBox(height: 12),
                 Text(
                   loadingText ?? AppStrings.loading,

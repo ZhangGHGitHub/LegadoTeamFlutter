@@ -7,6 +7,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../providers/providers.dart';
+import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/loading_indicator.dart';
 
 /// 缓存下载队列页（对齐原版 CacheActivity 进度列表）
@@ -135,7 +136,8 @@ class _CacheDownloadScreenState extends ConsumerState<CacheDownloadScreen> {
           ? const LoadingIndicator()
           : _tasks.isEmpty
               ? _buildEmpty(cs)
-              : RefreshIndicator(
+              // [LAYOUT_PLAN P4 收尾] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
+              : CustomRefreshIndicator(
                   onRefresh: () async => _refresh(),
                   child: ListView.separated(
                     // [LAYOUT_PLAN P1] 列表边距统一 horizontal16（全局标尺）

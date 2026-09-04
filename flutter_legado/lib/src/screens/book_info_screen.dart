@@ -30,6 +30,7 @@ import '../utils/book_progress_utils.dart';
 import '../utils/source_login_entry.dart';
 import '../utils/source_login_prompt.dart';
 import '../widgets/book_cover.dart';
+import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4 收尾] 详情下拉 M3 化
 import '../widgets/error_view.dart';
 import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 import '../widgets/list_footer.dart';
