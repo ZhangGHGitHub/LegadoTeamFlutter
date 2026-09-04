@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../bridge/ffi.dart';
 import '../../models/models.dart';
+import '../../services/rust_api.dart';
 import '../../services/settings_service.dart';
 import '../../widgets/paragraph_layout_engine.dart';
 import '../providers.dart';
@@ -191,6 +192,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
     final clamped = size.clamp(12.0, 32.0);
     state = state.copyWith(fontSize: clamped);
     _settings.setFontSize(clamped);
+    _pushReadBookConfig();
   }
 
   /// 更新行高
@@ -200,6 +202,7 @@ class ReaderNotifier extends Notifier<ReaderState> {
     final clamped = height.clamp(1.0, 3.0);
     state = state.copyWith(lineHeight: clamped);
     _settings.setLineHeight(clamped);
+    _pushReadBookConfig();
   }
 
   /// 更新背景色（预设）
@@ -212,7 +215,17 @@ class ReaderNotifier extends Notifier<ReaderState> {
       // 下次启动按预设恢复 — Qoder
       unawaited(SharedPreferences.getInstance()
           .then((p) => p.setBool('reader_bg_use_custom', false)));
+      _pushReadBookConfig();
     }
+  }
+
+  /// 补推阅读配置注入（R 批 R4）：设置变更后同步 Rust 侧 JS 可见快照；
+  /// 仅 RustApi 支持，Mock 下为空操作；失败静默（尽力而为）。
+  void _pushReadBookConfig() {
+    try {
+      final api = ref.read(bookApiProvider);
+      if (api is RustApi) unawaited(api.refreshReadBookConfig());
+    } catch (_) {}
   }
 
   // [UI-fix v2.0.4 | 2026-08-08] 自定义背景色（界面 Sheet 长按背景圆圈

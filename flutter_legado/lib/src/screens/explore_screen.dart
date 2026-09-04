@@ -477,7 +477,7 @@ class _SourceItemState extends ConsumerState<_SourceItem>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        IosGroup(
+        IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
           children: [
             Material(
               color: Colors.transparent,

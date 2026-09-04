@@ -2,7 +2,8 @@
 //
 // 校验项（任一处漂移即 CI 失败）：
 // 1. BookApi ⊆ RustApi、BookApi ⊆ MockBookApi（名称级）
-// 2. 公共额外方法钉死：RustApi = {toString}，MockBookApi = ∅
+// 2. 公共额外方法钉死：RustApi = {toString, refreshReadBookConfig}，MockBookApi = ∅
+//    （refreshReadBookConfig 为 R 批 R4 进程注入补推入口，不经 BookApi，见契约 §1.6.1）
 // 3. 每个 BookApi 方法都在契约中登记（§2.x 直接行或 §1.7 命名等价对）
 // 4. §2.x 每节声明数 == 实际行数
 // 5. 附录与 §2.x 按标题双射镜像，合计行 = 附录各行之和
@@ -166,11 +167,12 @@ void main() {
       );
     });
 
-    test('公共额外方法钉死：RustApi={toString}，MockBookApi=∅', () {
+    test('公共额外方法钉死：RustApi={toString, refreshReadBookConfig}，MockBookApi=∅', () {
       final rExtra =
           rNames.where((n) => !n.startsWith('_') && !bSet.contains(n)).toList()
             ..sort();
       expect(rExtra, [
+        'refreshReadBookConfig',
         'toString',
       ], reason: 'RustApi 公共额外方法集合漂移（新增/删除了 BookApi 之外的公共方法）：$rExtra');
       final mExtra =

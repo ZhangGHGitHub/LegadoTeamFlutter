@@ -176,6 +176,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             children: [
               // ===== 顶部管理入口（对标 pref_main 顶层项，文案对齐 values-zh）=====
               IosGroup(
+                flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                 separatorIndent: 62,
                 children: [
                   IosListTile(
@@ -279,6 +280,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               // ===== 设置分组 =====
               const IosSectionHeader('设置'),
               IosGroup(
+                flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                 separatorIndent: 62,
                 children: [
                   IosListTile(
@@ -308,6 +310,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               // ===== 其他分组 =====
               const IosSectionHeader('其他'),
               IosGroup(
+                flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                 separatorIndent: 62,
                 children: [
                   IosListTile(

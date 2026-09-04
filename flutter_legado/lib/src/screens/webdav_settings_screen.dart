@@ -389,6 +389,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
           children: [
             const IosSectionHeader('WebDav 设置'),
             IosGroup(
+              flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
               children: [
                 IosListTile(
                   title: 'WebDAV 服务器地址',
@@ -457,6 +458,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
 
             const IosSectionHeader('备份与恢复'),
             IosGroup(
+              flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
               children: [
                 IosListTile(
                   title: '备份路径',

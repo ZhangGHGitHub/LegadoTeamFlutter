@@ -107,13 +107,20 @@
 
 ### 1.6.1 进程注入型 FFI（void，不经 BookApi，MD3 对齐 2026-09-04）
 
-以下 3 个 `ffi.rs` 导出为 Flutter→Rust 单向进程级注入（返回 void，经 `bridge.*` 直调，不进 `BookApi` 抽象层与方法计数）：
+以下 4 个 `ffi.rs` 导出为 Flutter→Rust 单向进程级注入（返回 void，经 `bridge.*` 直调，不进 `BookApi` 抽象层与方法计数）：
 
 | FFI 函数 | 入参 | 说明 |
 |----------|------|------|
 | `set_device_id` | device_id（Android ID / iOS IDFV） | 历史既有（本书山正文 X-Device-Id 校验），本次补登记 |
 | `set_theme_config` | theme_json（`get_theme_config` 同形 JSON） | Batch 0 R1：启动/切换调色板时注入当前 palette 亮色 role，JS `getThemeConfig()` 优先返回注入值，未注入回退 wh 默认 |
-| `set_theme_mode` | mode（"0"=跟随系统/"1"=亮/"2"=暗，对齐 Kotlin themeMode） | Batch 0 R2：`setThemeMode` 时注入，JS `getThemeMode()` 映射为 light/dark，未注入回退 light |
+| `set_theme_mode` | mode（"0"=跟随系统/"1"=亮/"2"=暗，对齐 Kotlin themeMode） | Batch 0 R2 + R 批 R3：`setThemeMode` 时注入，JS `getThemeMode()` 映射为 auto/light/dark（"0"→auto；未注入回退 light） |
+| `set_read_book_config` | read_json（`get_read_book_config` 同形 JSON） | R 批 R4：阅读配置变更时注入当前阅读配置，JS `getReadBookConfig()` 优先返回注入值，未注入回退硬编码默认 |
+
+> 注入键集合约定（R 批 R5 登记）：`set_theme_config` JSON 必需键 `themeName/isNightTheme/primaryColor/accentColor/backgroundColor/bottomBackground/statusBarColor/navigationBarColor`；可选透传键 `paletteId/背景图路径/blur/圆角覆写` 等（Rust 不解释，原样透传 JS）；注入为进程内存级（RwLock），重启需 Flutter 在 `RustApi.init` 重注，注入前 JS 调用拿到 wh 默认。
+>
+> `themeConfigList` 纯 Flutter 持久化（SharedPreferences），Rust 仅见合成后的单主题 JSON，不做调色板解析。
+>
+> `deleteConfig` 契约登记但 `ffi.rs` 暂无 `config_delete` 导出，布局开关恢复默认约定为 `setConfig(key,"")` 空串语义。
 
 ### 1.7 BookApi / FFI 命名等价表（F3-10，2026-08-14）
 

@@ -164,7 +164,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     onSelected: themeNotifier.setPaletteId,
                   ),
                   // === 通用（对齐原版顶部未分组项；主题模式仅在「我的」枢纽）===
-                  IosGroup(children: [
+                  IosGroup(
+                      flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
+                      children: [
                     // 更换桌面图标（对齐原版 change_icon；Android/iOS 支持，
                     // Windows 等桌面端无运行时换图标能力时整项隐藏）
                     if (LauncherIconService.isSupported)
@@ -261,7 +263,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // === 自定义主题·白天（对齐原版 day category，themeConfigList
                   // 功能完整保留——UI_MD3_PLAN.md 第九节） ===
                   const IosSectionHeader('自定义主题 · 白天'),
-                  IosGroup(children: [
+                  IosGroup(
+                      flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
+                      children: [
                     _colorTile(PrefKeys.cPrimary, '主色调', colors),
                     _colorTile(PrefKeys.cAccent, '强调色', colors),
                     _colorTile(PrefKeys.cBackground, '背景色', colors,
@@ -292,7 +296,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
 
                   // === 自定义主题·夜间（对齐原版 night category）===
                   const IosSectionHeader('自定义主题 · 夜间'),
-                  IosGroup(children: [
+                  IosGroup(
+                      flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
+                      children: [
                     _colorTile(PrefKeys.cNPrimary, '主色调', colors,
                         isNight: true),
                     _colorTile(PrefKeys.cNAccent, '强调色', colors,

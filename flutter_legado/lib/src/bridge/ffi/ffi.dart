@@ -25,12 +25,21 @@ Future<void> setDeviceId({required String deviceId}) =>
 Future<void> setThemeConfig({required String themeJson}) =>
     RustLib.instance.api.crateFfiFfiSetThemeConfig(themeJson: themeJson);
 
-/// 注入主题模式（UI_MD3_ALIGNMENT_PLAN.md Batch 0 R2）
+/// 注入主题模式（UI_MD3_ALIGNMENT_PLAN.md Batch 0 R2 + R 批 R3）
 ///
 /// 取值对齐 Kotlin themeMode："0"=跟随系统 / "1"=亮色 / "2"=暗色；
-/// Flutter 侧 `setThemeMode` 时调用，JS 书源 `getThemeMode()` 感知。
+/// Flutter 侧 `setThemeMode` 时调用，JS 书源 `getThemeMode()` 感知
+///（"0"→auto，"1"→light，"2"→dark）。
 Future<void> setThemeMode({required String mode}) =>
     RustLib.instance.api.crateFfiFfiSetThemeMode(mode: mode);
+
+/// 注入阅读配置 JSON（LAYOUT_MOTION_AUDIT R 批 R4）
+///
+/// Flutter 侧阅读配置变更时调用，入参与
+/// `legado_js::host_api::config_api::get_read_book_config` 同形；
+/// JS 书源 `getReadBookConfig()` 优先返回注入值。
+Future<void> setReadBookConfig({required String readJson}) =>
+    RustLib.instance.api.crateFfiFfiSetReadBookConfig(readJson: readJson);
 
 /// 获取版本号
 Future<String> version() => RustLib.instance.api.crateFfiFfiVersion();

@@ -231,12 +231,13 @@ class AppTheme {
       ),
 
       // 按钮主题 —— Expressive 全圆角（stadium）
+      // [LAYOUT_MOTION_AUDIT L1] M3 默认高 40dp（原 44 无原生依据）
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: colorScheme.primary,
           foregroundColor: colorScheme.onPrimary,
           elevation: 0,
-          minimumSize: const Size(64, 44),
+          minimumSize: const Size(64, 40),
           padding: const EdgeInsets.symmetric(horizontal: 24),
           textStyle: AppTypography.lightTextTheme.labelLarge,
           shape: const StadiumBorder(),
@@ -246,7 +247,7 @@ class AppTheme {
       // 填充按钮（次级）
       filledButtonTheme: FilledButtonThemeData(
         style: FilledButton.styleFrom(
-          minimumSize: const Size(64, 44),
+          minimumSize: const Size(64, 40),
           padding: const EdgeInsets.symmetric(horizontal: 24),
           textStyle: AppTypography.lightTextTheme.labelLarge,
           shape: const StadiumBorder(),
@@ -254,13 +255,14 @@ class AppTheme {
       ),
 
       // 轮廓按钮
+      // [LAYOUT_MOTION_AUDIT L1] 描边走 outline（原 outlineVariant 差一级）
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           foregroundColor: colorScheme.primary,
-          minimumSize: const Size(64, 44),
+          minimumSize: const Size(64, 40),
           padding: const EdgeInsets.symmetric(horizontal: 24),
           textStyle: AppTypography.lightTextTheme.labelLarge,
-          side: BorderSide(color: colorScheme.outlineVariant),
+          side: BorderSide(color: colorScheme.outline),
           shape: const StadiumBorder(),
         ),
       ),
@@ -314,10 +316,12 @@ class AppTheme {
         space: 1,
       ),
 
-      // FloatingActionButton 主题 —— M3 primaryContainer 容器
+      // FloatingActionButton 主题
+      // [LAYOUT_MOTION_AUDIT L1] 前景走 primary（HapeLee container=primaryContainer,
+      // content=primary，非 M3 默认 onPrimaryContainer）
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: colorScheme.primaryContainer,
-        foregroundColor: colorScheme.onPrimaryContainer,
+        foregroundColor: colorScheme.primary,
         elevation: 3,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
@@ -325,8 +329,9 @@ class AppTheme {
       ),
 
       // Dialog 主题 —— Expressive extraLarge 大圆角
+      // [LAYOUT_MOTION_AUDIT L1] 容器走 surfaceContainer（原 High 错一层）
       dialogTheme: DialogThemeData(
-        backgroundColor: colorScheme.surfaceContainerHigh,
+        backgroundColor: colorScheme.surfaceContainer,
         surfaceTintColor: Colors.transparent,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(_extraLargeRadius),
@@ -334,13 +339,16 @@ class AppTheme {
       ),
 
       // BottomSheet 主题 —— Expressive 顶部大圆角
+      // [LAYOUT_MOTION_AUDIT L1] 背景走 surfaceContainer + 抓手 onSurfaceVariant
+      //（原 Low 错一层且 showDragHandle=false 关掉抓手）
       bottomSheetTheme: BottomSheetThemeData(
-        backgroundColor: colorScheme.surfaceContainerLow,
+        backgroundColor: colorScheme.surfaceContainer,
         surfaceTintColor: Colors.transparent,
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
         ),
-        showDragHandle: false,
+        showDragHandle: true,
+        dragHandleColor: colorScheme.onSurfaceVariant,
       ),
 
       // TabBar 主题 —— M3 主色指示器
@@ -355,10 +363,12 @@ class AppTheme {
       ),
 
       // PopupMenu 主题 —— tonal 容器 + Expressive 圆角
+      // [LAYOUT_MOTION_AUDIT L1] 容器 surfaceContainerLow + elev4
+      //（原 surfaceContainer+elev3 各差一级）
       popupMenuTheme: PopupMenuThemeData(
-        color: colorScheme.surfaceContainer,
+        color: colorScheme.surfaceContainerLow,
         surfaceTintColor: Colors.transparent,
-        elevation: 3,
+        elevation: 4,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(16),
         ),
@@ -368,7 +378,7 @@ class AppTheme {
       dropdownMenuTheme: DropdownMenuThemeData(
         menuStyle: MenuStyle(
           backgroundColor: WidgetStateProperty.all(
-            colorScheme.surfaceContainer,
+            colorScheme.surfaceContainerLow,
           ),
           shape: WidgetStateProperty.all(
             RoundedRectangleBorder(
@@ -388,15 +398,126 @@ class AppTheme {
         ),
       ),
 
-      // Tooltip 主题 —— M3 反色
+      // Tooltip 主题
+      // [LAYOUT_MOTION_AUDIT L1] PlainTooltip 走 surfaceContainerLow/onSurface
+      //（原 inverseSurface 为 Flutter 单方追加，原生无依据）
       tooltipTheme: TooltipThemeData(
         decoration: BoxDecoration(
-          color: colorScheme.inverseSurface,
+          color: colorScheme.surfaceContainerLow,
           borderRadius: BorderRadius.circular(4),
         ),
         textStyle: TextStyle(
-          color: colorScheme.onInverseSurface,
+          color: colorScheme.onSurface,
           fontSize: 12,
+        ),
+      ),
+
+      // Chip 主题 —— M3 默认（选中态 secondaryContainer 落地）
+      // [LAYOUT_MOTION_AUDIT L1] 新增：此前完全无 chip 主题
+      chipTheme: ChipThemeData(
+        backgroundColor: colorScheme.surfaceContainerLow,
+        selectedColor: colorScheme.secondaryContainer,
+        secondarySelectedColor: colorScheme.secondaryContainer,
+        labelStyle: AppTypography.lightTextTheme.labelLarge,
+        secondaryLabelStyle: AppTypography.lightTextTheme.labelLarge?.copyWith(
+          color: colorScheme.onSecondaryContainer,
+        ),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+        ),
+        side: BorderSide(color: colorScheme.outline),
+      ),
+
+      // Switch 主题 —— 跟随 primary（M3 默认，显式声明防回归）
+      // [LAYOUT_MOTION_AUDIT L1] 新增
+      switchTheme: SwitchThemeData(
+        thumbColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.onPrimary;
+          }
+          return colorScheme.outline;
+        }),
+        trackColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.primary;
+          }
+          return colorScheme.surfaceContainerHighest;
+        }),
+      ),
+
+      // Checkbox 主题 —— 跟随 primary（M3 默认，显式声明）
+      // [LAYOUT_MOTION_AUDIT L1] 新增
+      checkboxTheme: CheckboxThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.primary;
+          }
+          return null;
+        }),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+
+      // Radio 主题 —— 跟随 primary（M3 默认，显式声明）
+      // [LAYOUT_MOTION_AUDIT L1] 新增
+      radioTheme: RadioThemeData(
+        fillColor: WidgetStateProperty.resolveWith((states) {
+          if (states.contains(WidgetState.selected)) {
+            return colorScheme.primary;
+          }
+          return null;
+        }),
+      ),
+
+      // Slider 主题 —— 跟随 primary（M3 默认，显式声明）
+      // [LAYOUT_MOTION_AUDIT L1] 新增
+      sliderTheme: SliderThemeData(
+        activeTrackColor: colorScheme.primary,
+        inactiveTrackColor: colorScheme.surfaceContainerHighest,
+        thumbColor: colorScheme.primary,
+        overlayColor: colorScheme.primary.withValues(alpha: 0.12),
+      ),
+
+      // IconButton 主题 —— M3 标准形状
+      // [LAYOUT_MOTION_AUDIT L1] 新增
+      iconButtonTheme: IconButtonThemeData(
+        style: IconButton.styleFrom(
+          foregroundColor: colorScheme.onSurfaceVariant,
+        ),
+      ),
+
+      // SearchBar 主题 —— 容器 surfaceContainerLow（HapeLee M3 分支）
+      // [LAYOUT_MOTION_AUDIT L1] 新增
+      searchBarTheme: SearchBarThemeData(
+        backgroundColor: WidgetStateProperty.all(
+          colorScheme.surfaceContainerLow,
+        ),
+        shape: WidgetStateProperty.all(
+          RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(32),
+          ),
+        ),
+        hintStyle: WidgetStateProperty.all(
+          AppTypography.lightTextTheme.bodyMedium?.copyWith(
+            color: colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+
+      // Menu 主题 —— MenuItem 行规（48 高 + 选中 primary）
+      // [LAYOUT_MOTION_AUDIT L1] 新增
+      menuTheme: MenuThemeData(
+        style: MenuStyle(
+          backgroundColor: WidgetStateProperty.all(
+            colorScheme.surfaceContainerLow,
+          ),
+          shape: WidgetStateProperty.all(
+            RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
         ),
       ),
     );

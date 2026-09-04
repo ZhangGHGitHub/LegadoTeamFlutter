@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.156] - 2026-09-04
+
+### Changed
+- [Rust+UI] 布局动效 R 批：`get_theme_mode` 跟随系统修正（"0"→auto，R3，需双轨评审）+ 新增 `set_read_book_config` 进程注入 FFI（R4，阅读字号/背景变更经 refreshReadBookConfig 补推，契约 §1.6.1 登记）；注入键集合/deleteConfig 空串约定/themeConfigList 链路补登记
+- [UI] 布局动效 L1 组件主题地基：Dialog→surfaceContainer、Sheet→surfaceContainer+开抓手、Menu→surfaceContainerLow+elev4、Tooltip→surfaceContainerLow、FAB 前景 primary、Outlined 描边 outline、按钮高 44→40；新增 chip/switch/checkbox/radio/slider/iconButton/searchBar/menu 主题；新增 PillDivider/SettingItemDivider + SettingCard/TextCard/OptionCard/CardTabRow + labelMediumEmphasized；TextField 维持 12 全圆角登记形态差异
+- [UI] 布局动效 L2 设置拆扁平：IosGroup 圆角 20→16（HapeLee Spliced 16）+ 新增 flat 扁平模式（透明 Material 包裹保 ink）供 9 屏迁移；IosListTile 去 32dp 图标方块改裸 Icon，值文本 primary-labelMediumEmphasized，M3 补 Chevron
+
+### Test
+- flutter analyze 无问题；cargo test -p legado-js（config_api 8 项）全过；settings/theme/explore 双栏 12 项全过
+- 版本 2.0.156+157
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.155] - 2026-09-04
 
 ### Changed

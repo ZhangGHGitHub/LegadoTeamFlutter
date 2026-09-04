@@ -40,7 +40,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
         child: ListView(
           children: [
             const IosSectionHeader('皮肤'),
-            IosGroup(
+            IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
               children: [
                 ListTile(
                   leading: Icon(
@@ -97,7 +97,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const IosSectionHeader('预览'),
-                      IosGroup(
+                      IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                         children: [
                           Padding(
                             padding: const EdgeInsets.symmetric(

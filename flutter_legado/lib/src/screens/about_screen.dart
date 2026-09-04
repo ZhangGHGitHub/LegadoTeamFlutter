@@ -197,7 +197,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
         child: ListView(
           padding: const EdgeInsets.only(bottom: 32),
           children: [
-            IosGroup(
+            IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
               children: [
                 IosListTile(
                   title: '开发人员',
@@ -225,7 +225,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
               ],
             ),
             const IosSectionHeader('其他'),
-            IosGroup(
+            IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
               children: [
                 IosListTile(
                   title: '崩溃日志',

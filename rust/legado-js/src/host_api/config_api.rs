@@ -12,7 +12,11 @@
 /// 获取阅读配置（返回默认 JSON）
 ///
 /// 对应 Kotlin: `getReadBookConfig()` -> GSON.toJson(ReadBookConfig.durConfig)
+/// R 批 R4：Flutter 注入后优先返回注入值（见 `set_injected_read_book_config`）。
 pub fn get_read_book_config() -> String {
+    if let Some(injected) = injected_read_book_config() {
+        return injected;
+    }
     serde_json::json!({
         "name": "默认",
         "bgStr": "#FFFFFF",
@@ -71,14 +75,43 @@ pub fn get_theme_config() -> String {
 /// R2（UI_MD3_ALIGNMENT_PLAN.md Batch 0）：Flutter 侧 `setThemeMode` 时经
 /// `set_injected_theme_mode` 注入（"0"=跟随系统 / "1"=亮色 / "2"=暗色，
 /// 对齐 Kotlin themeMode "0/1/2"）；未注入回退 "light"。
+/// R 批 R3：注入 "0"（跟随系统）映射为 "auto"，JS 侧可区分跟随与强制亮色。
 /// 返回 "light" / "dark" / "auto"
 pub fn get_theme_mode() -> String {
     match injected_theme_mode().as_deref() {
         Some("1") => "light".to_string(),
         Some("2") => "dark".to_string(),
-        Some("0") | None => "light".to_string(),
+        Some("0") => "auto".to_string(),
+        None => "light".to_string(),
         Some(other) => other.to_string(),
     }
+}
+
+/// 注入阅读配置 JSON（Flutter 阅读配置变更时经 FFI 调用，R 批 R4）
+///
+/// 入参为 `get_read_book_config` 同形 JSON 字符串；空串不覆盖。
+pub fn set_injected_read_book_config(json: &str) {
+    let json = json.trim().to_string();
+    if json.is_empty() {
+        return;
+    }
+    *read_book_config_store()
+        .write()
+        .unwrap_or_else(|p| p.into_inner()) = Some(json);
+}
+
+/// 读取已注入的阅读配置 JSON（无注入时返回空）
+fn injected_read_book_config() -> Option<String> {
+    read_book_config_store()
+        .read()
+        .unwrap_or_else(|p| p.into_inner())
+        .clone()
+}
+
+fn read_book_config_store() -> &'static std::sync::RwLock<Option<String>> {
+    static STORE: std::sync::OnceLock<std::sync::RwLock<Option<String>>> =
+        std::sync::OnceLock::new();
+    STORE.get_or_init(|| std::sync::RwLock::new(None))
 }
 
 /// 注入主题配置 JSON（Flutter 启动/切换调色板时经 FFI 调用）
@@ -199,8 +232,19 @@ mod tests {
         assert_eq!(get_theme_mode(), "dark");
         set_injected_theme_mode("1");
         assert_eq!(get_theme_mode(), "light");
+        // R3：注入 "0"（跟随系统）映射为 auto，JS 可区分跟随与强制亮色
         set_injected_theme_mode("0");
-        assert_eq!(get_theme_mode(), "light");
+        assert_eq!(get_theme_mode(), "auto");
+    }
+
+    #[test]
+    fn test_injected_read_book_config_passthrough() {
+        // R4：未注入回退硬编码默认；注入后优先返回注入值
+        let before = get_read_book_config();
+        assert!(before.contains("\"name\":\"默认\""));
+        let custom = "{\"name\":\"夜间\",\"bgStr\":\"#1A1A1A\"}";
+        set_injected_read_book_config(custom);
+        assert_eq!(get_read_book_config(), custom);
     }
 
     #[test]

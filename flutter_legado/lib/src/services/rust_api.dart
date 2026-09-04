@@ -71,8 +71,17 @@ class RustApi
     // 主题模式，JS 书源 getThemeConfig()/getThemeMode() 即可感知界面实际主题
     await _injectThemeConfig();
 
+    // [LAYOUT_MOTION_AUDIT R 批 R4] 注入阅读配置默认值快照，
+    // JS 书源 getReadBookConfig() 优先返回注入值（赋值前变更经 refreshReadBookConfig 补推）
+    await _injectReadBookConfig();
+
     _initialized = true;
   }
+
+  /// 刷新阅读配置注入（阅读设置变更时调用，R 批 R4）
+  ///
+  /// 与 [_injectReadBookConfig] 同形，供阅读器设置面板在字号/背景变更后补推。
+  Future<void> refreshReadBookConfig() => _injectReadBookConfig();
 
   /// 读取系统 ANDROID_ID 并注入 Rust（书山正文解密依赖设备匹配）
   Future<void> _injectDeviceId() async {
@@ -136,6 +145,63 @@ class RustApi
           '[RustApi] 主题注入完成（palette=${palette.id} mode=$modeValue）');
     } catch (e) {
       debugPrint('[RustApi] 主题注入失败，Rust 侧回退 wh 默认值：$e');
+    }
+  }
+
+  /// 注入阅读配置快照（LAYOUT_MOTION_AUDIT R 批 R4）
+  ///
+  /// 合成 `get_read_book_config` 同形 JSON（字号/行距/背景索引→bgStr/textColor），
+  /// 失败仅记日志，不阻断初始化（Rust 侧回退硬编码默认）。
+  Future<void> _injectReadBookConfig() async {
+    try {
+      final settings = SettingsService();
+      final fontSize = await settings.getFontSize();
+      final bgIndex = await settings.getBgColorIndex();
+      const bgStrs = [
+        '#FFFFFF',
+        '#CCEBCC',
+        '#D4A574',
+        '#E8E0C8',
+        '#1A1A1A',
+      ];
+      final bgStr =
+          (bgIndex >= 0 && bgIndex < bgStrs.length) ? bgStrs[bgIndex] : '#FFFFFF';
+      final isDark = bgIndex == 4;
+      String hex(Color c) =>
+          '#${c.toARGB32().toRadixString(16).padLeft(8, '0').toUpperCase()}';
+      final readJson = jsonEncode({
+        'name': '默认',
+        'bgStr': bgStr,
+        'bgType': bgIndex,
+        'textColor': isDark ? '#CCCCCC' : '#333333',
+        'textSize': fontSize.round(),
+        'lineSpacingExtra': 8,
+        'paragraphSpacing': 4,
+        'paddingTop': 16,
+        'paddingBottom': 16,
+        'paddingLeft': 16,
+        'paddingRight': 16,
+        'headerPaddingTop': 8,
+        'footerPaddingBottom': 8,
+        'letterSpacing': 0.0,
+        'textBold': 0,
+        'font': '',
+        'darkStatusIcon': !isDark,
+        'tipHeaderLeft': 'title',
+        'tipHeaderMiddle': '',
+        'tipHeaderRight': 'battery',
+        'tipFooterLeft': 'chapterTitle',
+        'tipFooterMiddle': '',
+        'tipFooterRight': 'page',
+        'tipColor': '#99999900',
+        '_bgColorHex': hex(isDark
+            ? const Color(0xFF1A1A1A)
+            : const Color(0xFFFFFFFF)),
+      });
+      await bridge.setReadBookConfig(readJson: readJson);
+      debugPrint('[RustApi] 阅读配置注入完成（bgIndex=$bgIndex）');
+    } catch (e) {
+      debugPrint('[RustApi] 阅读配置注入失败，Rust 侧回退硬编码默认：$e');
     }
   }
 

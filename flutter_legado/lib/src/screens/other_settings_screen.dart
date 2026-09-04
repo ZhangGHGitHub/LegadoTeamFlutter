@@ -201,7 +201,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
           padding: const EdgeInsets.only(bottom: 32),
           children: [
             // ===== 语言（对齐原版 language，无独立 category）=====
-            IosGroup(children: [
+            IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
+                children: [
               IosListTile(
                 icon: Symbols.language_rounded,
                 title: '语言',
@@ -212,7 +213,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
 
             // ===== 主界面 =====
             const IosSectionHeader('主界面'),
-            IosGroup(children: [
+            IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
+                children: [
               SwitchListTile(
                 title: const Text('自动刷新'),
                 subtitle: const Text('打开软件时自动更新书籍'),
@@ -261,7 +263,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
 
             // ===== 其他（顺序严格对齐 pref_config_other.xml）=====
             const IosSectionHeader('其他设置'),
-            IosGroup(children: [
+            IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
+                children: [
               IosListTile(
                 title: '设置本地密码',
                 subtitle:

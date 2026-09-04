@@ -142,7 +142,9 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
               child: ListView(
                 children: [
                   const IosSectionHeader('显示时长'),
-                  IosGroup(children: [
+                  IosGroup(
+                      flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
+                      children: [
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
                       child: Row(
@@ -188,7 +190,9 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                     ),
                   ]),
                   const IosSectionHeader('自定义'),
-                  IosGroup(children: [
+                  IosGroup(
+                      flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
+                      children: [
                     SwitchListTile.adaptive(
                       title: const Text('自定义欢迎页'),
                       subtitle: const Text('启用后可设置日/夜背景图'),
@@ -200,7 +204,9 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                     ),
                   ]),
                   const IosSectionHeader('白天'),
-                  IosGroup(children: [
+                  IosGroup(
+                      flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
+                      children: [
                     IosListTile(
                       icon: Symbols.wallpaper_rounded,
                       title: '背景图片',
@@ -227,7 +233,9 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
                     ),
                   ]),
                   const IosSectionHeader('夜间'),
-                  IosGroup(children: [
+                  IosGroup(
+                      flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
+                      children: [
                     IosListTile(
                       icon: Symbols.wallpaper_rounded,
                       title: '背景图片',
