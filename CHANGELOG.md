@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.193] - 2026-09-06
+
+### Changed
+- [UI] 一比一复刻 S7：渲染矩阵补页——书籍详情（ActionCard/折叠顶栏/取色，light/dark）与阅读器（单面板挂载路径，openBook 注入）纳入自动验收矩阵；归档：一比一复刻 S0–S7 全批完成
+
+### Test
+- flutter analyze 无问题；flutter test 1341 全过（新增 one_to_one_matrix_test 3 用例）
+- 版本 2.0.193+194
+
+- Contributor: Qoder UI
+
 ## [2.0.192] - 2026-09-05
 
 ### Changed
