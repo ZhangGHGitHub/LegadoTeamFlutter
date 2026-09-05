@@ -6,12 +6,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../l10n/app_strings.dart';
+import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../routes.dart';
 import '../widgets/navigation/app_navigation_bars.dart';
-import '../routes.dart';
-import '../widgets/navigation/app_navigation_bars.dart';
-import '../providers/bookshelf/bookshelf_notifier.dart';
-import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/bottom_bar_skin_notifier.dart';
 import '../providers/main_prefs_notifier.dart';
 import '../providers/theme/system_bar_notifier.dart';
