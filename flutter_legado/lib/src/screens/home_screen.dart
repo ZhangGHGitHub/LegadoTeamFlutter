@@ -13,7 +13,6 @@ import '../providers/bottom_bar_skin_notifier.dart';
 import '../providers/main_prefs_notifier.dart';
 import '../providers/theme/system_bar_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
-import '../services/bottom_bar_skin_service.dart';
 import 'bookshelf_screen.dart';
 import 'explore_screen.dart';
 import 'rss_screen.dart';
