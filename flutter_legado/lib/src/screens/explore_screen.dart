@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
+import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -46,6 +47,8 @@ class ExploreScreen extends ConsumerStatefulWidget {
 }
 
 class _ExploreScreenState extends ConsumerState<ExploreScreen> {
+  // [UI_SYNC_REFACTOR R3] 快速滚动条控制器
+  final ScrollController _listController = ScrollController();
   final _searchController = TextEditingController();
 
   /// 搜索防抖计时器（300ms，对标 Android SearchView onQueryTextChange）
@@ -270,7 +273,11 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
       builder: (context, constraints) {
         final horizontalPadding = isTablet ? 12.0 : 16.0;
         final sources = state.filteredBookSources;
-        return ListView.builder(
+        // [UI_SYNC_REFACTOR R3] 订阅源列表快速滚动条
+        return Md3FastScroller(
+          controller: _listController,
+          child: ListView.builder(
+          controller: _listController,
           padding: EdgeInsets.fromLTRB(
             horizontalPadding,
             8,
@@ -306,6 +313,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               ),
             );
           },
+          ),
         );
       },
     );

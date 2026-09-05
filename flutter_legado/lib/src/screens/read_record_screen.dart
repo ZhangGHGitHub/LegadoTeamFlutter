@@ -12,6 +12,7 @@ import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../utils/book_open_utils.dart';
 import '../widgets/custom_refresh_indicator.dart';
+import '../widgets/md3_fast_scroller.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
@@ -31,6 +32,8 @@ class ReadRecordScreen extends ConsumerStatefulWidget {
 }
 
 class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
+  // [UI_SYNC_REFACTOR R3] 快速滚动条控制器
+  final ScrollController _listController = ScrollController();
   final _searchController = TextEditingController();
 
   @override
@@ -171,12 +174,16 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
       );
     }
     // [LAYOUT_PLAN P4 收尾] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
+    // [UI_SYNC_REFACTOR R3] 千级记录快速滚动条
     return CustomRefreshIndicator(
       onRefresh: () => ref.read(readRecordNotifierProvider.notifier).load(),
-      child: ListView.separated(
-        // [LAYOUT_PLAN P3] 页面水平边距 16dp；纵向留白 8dp
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        itemCount: state.records.length + 1,
+      child: Md3FastScroller(
+        controller: _listController,
+        child: ListView.separated(
+          controller: _listController,
+          // [LAYOUT_PLAN P3] 页面水平边距 16dp；纵向留白 8dp
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          itemCount: state.records.length + 1,
         separatorBuilder: (_, _) => const Divider(
           height: 1,
           // [LAYOUT_PLAN P3] 分隔线走 tonal 舍 outlineVariant（对齐 file_manage/offline_cache 样板）
@@ -219,7 +226,8 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
             onClear: () => _confirmDelete(context, item),
           );
         },
-      ),
+          ),
+        ),
     );
   }
 

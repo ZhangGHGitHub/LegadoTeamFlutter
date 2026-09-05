@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.181] - 2026-09-05
+
+### Changed
+- [UI] 同步重构 R3③：阅读记录页与发现页（订阅源列表）接入快速滚动条，累计 6 屏（书源/订阅源/目录/替换规则/阅读记录/发现）
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.181+182
+
+- Contributor: Qoder UI
+
 ## [2.0.180] - 2026-09-05
 
 ### Changed
