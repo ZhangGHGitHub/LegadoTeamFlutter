@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.174] - 2026-09-05
+
+### Fixed
+- [UI] 关联导入同链接不再弹出的根因：深链去重标志 `_lastHandled` 在弹窗关闭后不清除——同一 legado:// 链接整个应用会话内只能弹一次（手动关闭/导入完成自动 pop 后再点同一链接被去重拦截，报障「无法弹出导入界面」）。修复：弹窗 Future 完成时清标志。5556 模拟器实证：同链接冷/热触发两次均正常弹出（探针 mount+build+像素卡片结构确认）
+
+### Test
+- flutter analyze 无问题；flutter test 1336 全过
+- 版本 2.0.174+175
+
+- Contributor: Qoder UI
+
 ## [2.0.173] - 2026-09-05
 
 ### Changed

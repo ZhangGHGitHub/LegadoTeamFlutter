@@ -88,10 +88,13 @@ class DeepLinkService {
 
     final type = parsed?.importType;
     final src = parsed?.srcUrl ?? '';
+    // [UI-fix v2.0.174] 同链接去重仅在弹窗存续期生效：弹窗关闭（手动关/
+    // 导入完成自动 pop）即清标志，避免同一链接再次点击永远不弹（用户报障
+    // 「关联导入无法弹出」根因之一）
     showAssociationImportDialog(
       nav.context,
       url: src.isEmpty ? null : src,
       type: type,
-    );
+    ).whenComplete(() => _lastHandled = null);
   }
 }
