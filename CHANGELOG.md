@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.172] - 2026-09-05
+
+### Changed
+- [UI] 全量同步重构 B1：字阶拉齐参考仓 miuix 压缩字阶（display32/title18/body17/label13，bodySmall 钉 12、labelLarge 钉 14，titleSmall w600）——全局观感更紧凑；书架列表行密度 vertical12（原 top/bottom 4 偏挤）
+
+### Test
+- flutter analyze 无问题；flutter test 1336 全过
+- 版本 2.0.172+173
+
+- Contributor: Qoder UI
+
 ## [2.0.171] - 2026-09-05
 
 ### Changed

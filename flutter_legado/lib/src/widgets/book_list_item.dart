@@ -36,7 +36,9 @@ class BookListItem extends StatelessWidget {
       onTap: onTap,
       onLongPress: onLongPress,
       child: Padding(
-        padding: const EdgeInsets.only(left: 8, right: 16, top: 4, bottom: 4),
+        // [UI_SYNC_REFACTOR B1] 列表行 vertical12（全局标尺，对齐参考仓
+        // 行密度；原 top/bottom 4 偏挤）
+        padding: const EdgeInsets.only(left: 8, right: 16, top: 12, bottom: 12),
         child: Row(
           children: [
             BookCover(
