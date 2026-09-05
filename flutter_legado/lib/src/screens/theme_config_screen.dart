@@ -346,6 +346,107 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     }
   }
 
+  String _styleLabel(String v) => switch (v) {
+        'none' => '关闭（内置色板）',
+        'tonalSpot' => 'Tonal Spot（默认）',
+        'neutral' => 'Neutral',
+        'vibrant' => 'Vibrant',
+        'expressive' => 'Expressive',
+        'fidelity' => 'Fidelity',
+        'content' => 'Content',
+        'rainbow' => 'Rainbow',
+        'fruitSalad' => 'Fruit Salad',
+        'monochrome' => 'Monochrome',
+        _ => v,
+      };
+
+  Future<void> _showThemeStylePicker() async {
+    final current = ref.read(uiSettingsProvider).themeStyle;
+    const options = <(String, String)>[
+      ('none', '关闭（内置色板）'),
+      ('tonalSpot', 'Tonal Spot（默认）'),
+      ('neutral', 'Neutral'),
+      ('vibrant', 'Vibrant'),
+      ('expressive', 'Expressive'),
+      ('fidelity', 'Fidelity'),
+      ('content', 'Content'),
+      ('rainbow', 'Rainbow'),
+      ('fruitSalad', 'Fruit Salad'),
+      ('monochrome', 'Monochrome'),
+    ];
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('配色风格'),
+        children: [
+          for (final (value, label) in options)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, value),
+              child: Row(
+                children: [
+                  Icon(
+                    current == value
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(label),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (selected != null) {
+      await ref.read(uiSettingsProvider.notifier).setThemeStyle(selected);
+    }
+  }
+
+  String _contrastLabel(String v) => switch (v) {
+        '0.5' => 'Medium（中）',
+        '1.0' => 'High（高）',
+        _ => 'Default（默认）',
+      };
+
+  Future<void> _showContrastPicker() async {
+    final current = ref.read(uiSettingsProvider).themeContrastLevel;
+    const options = <(String, String)>[
+      ('0.0', 'Default（默认）'),
+      ('0.5', 'Medium（中）'),
+      ('1.0', 'High（高）'),
+    ];
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('对比度'),
+        children: [
+          for (final (value, label) in options)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, value),
+              child: Row(
+                children: [
+                  Icon(
+                    current == value
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(label),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (selected != null) {
+      await ref
+          .read(uiSettingsProvider.notifier)
+          .setThemeContrastLevel(selected);
+    }
+  }
+
   String _coverBgLabel(String v) => switch (v) {
         'off' => '显示封面（不模糊）',
         'off_for_default' => '隐藏（仅默认封面档）',
@@ -545,6 +646,34 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     selectedId: themeState.paletteId,
                     onSelected: themeNotifier.setPaletteId,
                   ),
+                  // === [UI_SYNC_REFACTOR S4] 主题引擎参数化（对齐参考
+                  // ThemeEngine：paletteStyle 9 档 + 对比度 + AMOLED；
+                  // seed=自定义主色（未设时取当前内置色板锚点）） ===
+                  const IosSectionHeader('主题引擎'),
+                  IosGroup(
+                      flat: true,
+                      children: [
+                    IosListTile(
+                      title: '配色风格',
+                      subtitle: _styleLabel(ui.themeStyle),
+                      onTap: _showThemeStylePicker,
+                    ),
+                    if (ui.themeStyle != 'none')
+                      IosListTile(
+                        title: '对比度',
+                        subtitle: _contrastLabel(ui.themeContrastLevel),
+                        onTap: _showContrastPicker,
+                      ),
+                    SwitchListTile(
+                      title: const Text('AMOLED 纯黑'),
+                      subtitle: const Text('暗色模式背景纯黑（省电护屏）'),
+                      value: ui.themeAmoled,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setThemeAmoled(v),
+                    ),
+                  ]),
+
                   // === 通用（对齐原版顶部未分组项；主题模式仅在「我的」枢纽）===
                   IosGroup(
                       flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平

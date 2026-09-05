@@ -151,6 +151,15 @@ class UiSettingsState {
   /// 阅读菜单亮度竖条位置（left/right）
   final String readMenuBrightnessPos;
 
+  /// 主题引擎 paletteStyle（'none'=关闭参数化，9 档见 kPaletteStyles）
+  final String themeStyle;
+
+  /// 主题引擎对比度（'0.0'/'0.5'/'1.0'）
+  final String themeContrastLevel;
+
+  /// AMOLED 纯黑（仅暗色生效）
+  final bool themeAmoled;
+
   const UiSettingsState({
     this.topBarButtonStyle = TopBarButtonStyle.tonal,
     this.mergeTopBarActions = false,
@@ -176,6 +185,9 @@ class UiSettingsState {
     this.railExtended = false,
     this.readMenuBrightnessVertical = false,
     this.readMenuBrightnessPos = 'right',
+    this.themeStyle = 'none',
+    this.themeContrastLevel = '0.0',
+    this.themeAmoled = false,
   });
 
   UiSettingsState copyWith({
@@ -203,6 +215,9 @@ class UiSettingsState {
     bool? railExtended,
     bool? readMenuBrightnessVertical,
     String? readMenuBrightnessPos,
+    String? themeStyle,
+    String? themeContrastLevel,
+    bool? themeAmoled,
   }) {
     return UiSettingsState(
       topBarButtonStyle: topBarButtonStyle ?? this.topBarButtonStyle,
@@ -235,6 +250,9 @@ class UiSettingsState {
           readMenuBrightnessVertical ?? this.readMenuBrightnessVertical,
       readMenuBrightnessPos:
           readMenuBrightnessPos ?? this.readMenuBrightnessPos,
+      themeStyle: themeStyle ?? this.themeStyle,
+      themeContrastLevel: themeContrastLevel ?? this.themeContrastLevel,
+      themeAmoled: themeAmoled ?? this.themeAmoled,
     );
   }
 }
@@ -354,6 +372,18 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       readMenuBrightnessPos: await _settings.getStringPref(
         PrefKeys.readMenuBrightnessPos,
         defaultValue: 'right',
+      ),
+      themeStyle: await _settings.getStringPref(
+        PrefKeys.themeStyle,
+        defaultValue: 'none',
+      ),
+      themeContrastLevel: await _settings.getStringPref(
+        PrefKeys.themeContrastLevel,
+        defaultValue: '0.0',
+      ),
+      themeAmoled: await _settings.getBoolPref(
+        PrefKeys.themeAmoled,
+        defaultValue: false,
       ),
     );
     _sync();
@@ -538,6 +568,30 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     state = state.copyWith(readMenuBrightnessPos: value);
     _sync();
     await _settings.setStringPref(PrefKeys.readMenuBrightnessPos, value);
+  }
+
+  /// 主题引擎 paletteStyle
+  Future<void> setThemeStyle(String value) async {
+    if (state.themeStyle == value) return;
+    state = state.copyWith(themeStyle: value);
+    _sync();
+    await _settings.setStringPref(PrefKeys.themeStyle, value);
+  }
+
+  /// 主题引擎对比度
+  Future<void> setThemeContrastLevel(String value) async {
+    if (state.themeContrastLevel == value) return;
+    state = state.copyWith(themeContrastLevel: value);
+    _sync();
+    await _settings.setStringPref(PrefKeys.themeContrastLevel, value);
+  }
+
+  /// AMOLED 纯黑
+  Future<void> setThemeAmoled(bool value) async {
+    if (state.themeAmoled == value) return;
+    state = state.copyWith(themeAmoled: value);
+    _sync();
+    await _settings.setBoolPref(PrefKeys.themeAmoled, value);
   }
 
   /// 大屏侧栏展开态

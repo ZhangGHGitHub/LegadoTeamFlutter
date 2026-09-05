@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.190] - 2026-09-05
+
+### Changed
+- [UI] 一比一复刻 S4：主题引擎参数化——配色风格 9 档（TonalSpot/Neutral/Vibrant/Expressive/Fidelity/Content/Rainbow/FruitSalad/Monochrome，material_color_utilities Scheme* 生成明暗全角色）+ 对比度三档 + AMOLED 纯黑；seed=自定义主色（未设取当前色板锚点）；并存模型保持（动态壁纸>自定义四色>参数化>内置）；登记：Spec2025 为 Kotlin materialkolor 独有，Dart 映射 2021 spec
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.190+191
+
+- Contributor: Qoder UI
+
 ## [2.0.189] - 2026-09-05
 
 ### Changed

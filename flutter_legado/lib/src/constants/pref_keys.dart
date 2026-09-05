@@ -135,6 +135,15 @@ class PrefKeys {
   /// 大屏侧栏展开态持久化（参考仓 navExtended）
   static const railExtended = 'railExtended';
 
+  /// 主题引擎 paletteStyle（参考仓 paletteStyle，'none'=关闭参数化）
+  static const themeStyle = 'themeStyle';
+
+  /// 主题引擎对比度（参考仓 customContrast，'0.0'/'0.5'/'1.0'）
+  static const themeContrastLevel = 'themeContrastLevel';
+
+  /// AMOLED 纯黑（参考仓 pure_black/isAmoled，默认关）
+  static const themeAmoled = 'themeAmoled';
+
   /// 阅读菜单亮度竖条开关（参考仓 showBrightnessView="2" 变体，默认关）
   static const readMenuBrightnessVertical = 'readMenuBrightnessVertical';
 

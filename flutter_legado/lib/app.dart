@@ -14,6 +14,7 @@ import 'src/services/auto_task_scheduler.dart';
 import 'src/services/deep_link_service.dart';
 import 'src/services/platform_bridge_service.dart';
 import 'src/theme/app_theme.dart';
+import 'src/theme/theme_engine_parameterized.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'src/theme/md3_colors.dart';
 import 'src/utils/app_route_observer.dart';
@@ -76,6 +77,32 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     //（默认 WH；自定义 themeConfigList 4 色仍可叠加，自定义已应用色优先
     // 于内置 palette role——UI_MD3_PLAN.md 第九节并存模型） — Qoder UI
     final palette = Md3Palettes.byId(themeState.paletteId);
+    // [UI_SYNC_REFACTOR S4] 主题引擎参数化：themeStyle 非 none 时按
+    // paletteStyle/contrastLevel 从调色板锚点 seed 生成明暗两套角色
+    //（material_color_utilities Scheme* 类，对齐参考 ThemeEngine）；
+    // AMOLED 仅暗色纯黑。并存模型保持：动态壁纸 > 自定义四色 > 参数化
+    // seed > 内置色板（自定义四色仍叠加于参数化结果之上）
+    final uiTheme = ref.watch(uiSettingsProvider);
+    var effectivePalette = palette;
+    if (uiTheme.themeStyle != 'none') {
+      final seed = c(themeColors.primary) != null
+          ? c(themeColors.primary)!.toARGB32()
+          : palette.seed;
+      final contrast = double.tryParse(uiTheme.themeContrastLevel) ?? 0.0;
+      final generated = buildParameterizedRoles(
+        style: uiTheme.themeStyle,
+        seed: seed,
+        contrastLevel: contrast,
+        amoledDark: uiTheme.themeAmoled,
+      );
+      effectivePalette = Md3Palette(
+        id: '${palette.id}__param',
+        label: palette.label,
+        seed: seed,
+        light: generated.light,
+        dark: generated.dark,
+      );
+    }
 
     // P1-8：有背景图时 Scaffold 透明，露出全局壁纸层（对齐原版
     // BaseActivity.upBackgroundImage → decorView.background）
@@ -89,7 +116,7 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     final lightTheme = _withOptionalTransparentScaffold(
       AppTheme.palette(
         brightness: Brightness.light,
-        palette: palette,
+        palette: effectivePalette,
         primary: followWallpaper ? lightDynamic?.primary : c(themeColors.primary),
         accent: followWallpaper ? lightDynamic?.tertiary : c(themeColors.accent),
         background: followWallpaper ? null : c(themeColors.background),
@@ -101,7 +128,7 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     final darkTheme = _withOptionalTransparentScaffold(
       AppTheme.palette(
         brightness: Brightness.dark,
-        palette: palette,
+        palette: effectivePalette,
         primary:
             followWallpaper ? darkDynamic?.primary : c(themeColors.primaryNight),
         accent:
