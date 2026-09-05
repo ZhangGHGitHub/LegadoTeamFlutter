@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
+import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -47,6 +48,8 @@ class RssSourceManageScreen extends ConsumerStatefulWidget {
 }
 
 class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
+  // [UI_SYNC_REFACTOR R3] 快速滚动条控制器
+  final ScrollController _fsController = ScrollController();
   final _searchCtrl = TextEditingController();
 
   List<RssSource> _sources = [];
@@ -511,11 +514,16 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
       );
     }
     if (_batchMode) {
-      return ListView.separated(
-        itemCount: list.length,
-        separatorBuilder: (_, _) => const Divider(height: 1, indent: 16),
-        itemBuilder: (context, index) =>
-            _buildBatchItem(context, list[index]),
+      // [UI_SYNC_REFACTOR R3] 批量模式快速滚动条
+      return Md3FastScroller(
+        controller: _fsController,
+        child: ListView.separated(
+          controller: _fsController,
+          itemCount: list.length,
+          separatorBuilder: (_, _) => const Divider(height: 1, indent: 16),
+          itemBuilder: (context, index) =>
+              _buildBatchItem(context, list[index]),
+        ),
       );
     }
     // 非批量 + 无过滤：支持拖拽排序（对标原版 itemTouchHelper）
@@ -531,10 +539,15 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
         onReorderItem: _reorder,
       );
     }
-    return ListView.separated(
-      itemCount: list.length,
-      separatorBuilder: (_, _) => const Divider(height: 1, indent: 16),
-      itemBuilder: (context, index) => _buildSourceItem(context, list[index]),
+    // [UI_SYNC_REFACTOR R3] 过滤模式快速滚动条
+    return Md3FastScroller(
+      controller: _fsController,
+      child: ListView.separated(
+        controller: _fsController,
+        itemCount: list.length,
+        separatorBuilder: (_, _) => const Divider(height: 1, indent: 16),
+        itemBuilder: (context, index) => _buildSourceItem(context, list[index]),
+      ),
     );
   }
 

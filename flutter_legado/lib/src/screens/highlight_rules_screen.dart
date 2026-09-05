@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
+import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -29,6 +30,8 @@ class HighlightRulesScreen extends ConsumerStatefulWidget {
 }
 
 class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
+  // [UI_SYNC_REFACTOR R3] 快速滚动条控制器
+  final ScrollController _fsController = ScrollController();
   @override
   void initState() {
     super.initState();
@@ -121,21 +124,25 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
           );
         }
         // iOS grouped list：规则卡片 + hairline 分隔
-        return ListView(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-          children: [
-            Card(
-              child: Column(
-                children: [
-                  for (var i = 0; i < state.rules.length; i++) ...[
-                    if (i > 0)
-                      const Divider(height: 1, indent: 16),
-                    _buildRuleTile(context, state.rules[i], cs),
+        // [UI_SYNC_REFACTOR R3] 规则列表快速滚动条
+        return Md3FastScroller(
+          controller: _fsController,
+          child: ListView(
+            controller: _fsController,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            children: [
+              Card(
+                child: Column(
+                  children: [
+                    for (var i = 0; i < state.rules.length; i++) ...[
+                      if (i > 0) const Divider(height: 1, indent: 16),
+                      _buildRuleTile(context, state.rules[i], cs),
+                    ],
                   ],
-                ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         );
       }),
     );

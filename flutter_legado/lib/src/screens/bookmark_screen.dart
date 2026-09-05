@@ -1,6 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
+import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -16,6 +17,8 @@ class BookmarkScreen extends ConsumerStatefulWidget {
 }
 
 class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
+  // [UI_SYNC_REFACTOR R3] 快速滚动条控制器
+  final ScrollController _fsController = ScrollController();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
 
@@ -92,7 +95,11 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
   }
 
   Widget _buildBookmarkList(BuildContext context, BookmarkState state) {
-    return ListView.builder(
+    // [UI_SYNC_REFACTOR R3] 书签列表快速滚动条
+    return Md3FastScroller(
+      controller: _fsController,
+      child: ListView.builder(
+      controller: _fsController,
       itemCount: state.bookmarks.length,
       itemBuilder: (context, index) {
         final bookmark = state.bookmarks[index];
@@ -102,6 +109,7 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
           onDelete: () => _confirmDelete(context, bookmark),
         );
       },
+      ),
     );
   }
 

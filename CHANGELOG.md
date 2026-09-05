@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.182] - 2026-09-05
+
+### Changed
+- [UI] 同步重构 R3④：书签页/订阅源管理（批量+过滤两态）/高亮规则页接入快速滚动条，累计 9 屏（书源/订阅源/目录/替换规则/阅读记录/发现/书签/订阅源管理/高亮规则）
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.182+183
+
+- Contributor: Qoder UI
+
 ## [2.0.181] - 2026-09-05
 
 ### Changed
