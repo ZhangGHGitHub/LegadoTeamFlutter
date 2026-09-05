@@ -16,7 +16,6 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import '../widgets/legado_app_bar.dart';
 import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -30,6 +29,7 @@ import '../utils/responsive.dart';
 import '../utils/source_login_entry.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/explore_book_list.dart';
+import '../widgets/dynamic_search_app_bar.dart';
 import '../widgets/explore_kind_layout.dart';
 import '../widgets/explore_page_control.dart';
 import '../widgets/error_view.dart';
@@ -81,49 +81,25 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(exploreNotifierProvider);
-    final colorScheme = Theme.of(context).colorScheme;
 
     // 响应式：expanded/large（≥840dp，对齐 UI_RESTRUCTURE_PLAN.md §6.2）启用左源右内容双栏
     return LayoutBuilder(
       builder: (context, constraints) {
         final isTablet = constraints.maxWidth >= Responsive.mediumMax;
         return Scaffold(
-          appBar: LegadoAppBar(
-            titleSpacing: 8,
-            // [LAYOUT_MOTION_AUDIT L3] 顶栏筛选框走 M3 SearchBar 标准
-            // （替代旧 36dp 自定义 TextField：容器色/圆角/字级走 searchBarTheme）
-            title: SearchBar(
-              controller: _searchController,
-              hintText: '筛选发现源',
-              constraints: const BoxConstraints(minHeight: 40),
-              elevation: const WidgetStatePropertyAll(0),
-              padding: const WidgetStatePropertyAll(
-                EdgeInsets.symmetric(horizontal: 12),
-              ),
-              leading: Icon(
-                Symbols.search_rounded,
-                size: 20,
-                color: colorScheme.onSurfaceVariant,
-              ),
-              trailing: [
-                if (_searchController.text.isNotEmpty)
-                  IconButton(
-                    icon: Icon(
-                      Symbols.close_rounded,
-                      size: 18,
-                      color: colorScheme.onSurfaceVariant,
-                    ),
-                    onPressed: () {
-                      _searchController.clear();
-                      ref.read(exploreNotifierProvider.notifier).clearSearch();
-                    },
-                  ),
-              ],
-              onChanged: _onSearchChanged,
-            ),
-            bottom: PreferredSize(
-              // [LAYOUT_MOTION_AUDIT L3] 分组筛选走 M3 FilterChip 标准横滑条
-              // （替代旧 PopupMenu：全部/各分组一目了然，对标原版分组语义）
+          // [UI_SYNC_REFACTOR S1b] Dynamic 搜索行顶栏（对齐参考
+          // DynamicTopAppBar：标题+搜索切换钮+bottomContent 展开行；
+          // FilterChip 横滑条为常驻 bottom 追加）
+          appBar: DynamicSearchAppBar(
+            title: '发现',
+            searchController: _searchController,
+            searchHint: '筛选发现源',
+            onChanged: _onSearchChanged,
+            onClear: () {
+              _searchController.clear();
+              ref.read(exploreNotifierProvider.notifier).clearSearch();
+            },
+            persistentBottom: PreferredSize(
               preferredSize: const Size.fromHeight(48),
               child: SizedBox(
                 height: 48,

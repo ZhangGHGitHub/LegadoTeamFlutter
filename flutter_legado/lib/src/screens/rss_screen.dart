@@ -1,7 +1,6 @@
 ﻿import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:url_launcher/url_launcher.dart';
@@ -15,6 +14,7 @@ import '../utils/responsive.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4] 下拉 M3 化
 import '../widgets/empty_state.dart';
+import '../widgets/dynamic_search_app_bar.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 import 'rss_articles_screen.dart';
@@ -90,45 +90,19 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     final state = ref.watch(rssNotifierProvider);
     final notifier = ref.read(rssNotifierProvider.notifier);
     return Scaffold(
-      appBar: LegadoAppBar(
-        // 对标原版 view_search.xml：TitleBar 内嵌胶囊搜索框（hint「订阅」），
-        // 与右侧 4 个图标入口同行，无标题文字
-        title: SizedBox(
-          height: 36,
-          child: TextField(
-            controller: _searchController,
-            style: TextStyle(color: Theme.of(context).colorScheme.onSurface),
-            decoration: InputDecoration(
-              // 安卓原版 queryHint = 订阅
-              hintText: AppStrings.rss,
-              hintStyle: TextStyle(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
-              ),
-              filled: true,
-              fillColor: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.12),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-              prefixIcon: Icon(Symbols.search_rounded,
-                  size: 20, color: Theme.of(context).colorScheme.onSurfaceVariant),
-              suffixIcon: _searchKey.isNotEmpty
-                  ? IconButton(
-                      icon: Icon(Symbols.close_rounded,
-                          size: 18,
-                          color: Theme.of(context).colorScheme.onSurfaceVariant),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _searchKey = '');
-                      },
-                    )
-                  : null,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(35),
-                borderSide: BorderSide.none,
-              ),
-            ),
-            onChanged: (value) => setState(() => _searchKey = value),
-          ),
-        ),
+      appBar: DynamicSearchAppBar(
+        title: AppStrings.rss,
+        // [UI_SYNC_REFACTOR S1b] Dynamic 搜索行顶栏（对齐参考
+        // DynamicTopAppBar：标题+搜索切换钮+bottomContent 展开行）
+        // 原嵌入式胶囊搜索框迁至 bottomContent（appBar 由 LegadoAppBar
+        // 换 DynamicSearchAppBar，actions 原样保留）
+        searchController: _searchController,
+        searchHint: AppStrings.rss,
+        onChanged: (value) => setState(() => _searchKey = value),
+        onClear: () {
+          _searchController.clear();
+          setState(() => _searchKey = '');
+        },
         actions: [
           // 安卓原版顶栏 4 个功能入口：阅读记录/收藏/分组/订阅源管理
           // （原版 menu_read_record 打开阅读记录对话框，非独立页面）

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.185] - 2026-09-05
+
+### Changed
+- [UI] 一比一复刻 S1b：发现/订阅两页顶栏对齐参考 DynamicTopAppBar——新增 DynamicSearchAppBar 组件（标题+搜索切换钮+bottomContent AnimatedSize 展开搜索行，FilterChip 横滑条常驻追加）；原嵌入式搜索框迁至搜索行，4 个功能图标入口保留
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.185+186
+
+- Contributor: Qoder UI
+
 ## [2.0.184] - 2026-09-05
 
 ### Changed
