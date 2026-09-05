@@ -43,6 +43,7 @@ dependencies:
   app_links: ^6.0.0
   palette_generator: ^0.3.3+7
   dynamic_color: ^2.1.0
+  material_color_utilities: ^0.13.0
 
 dev_dependencies:
   flutter_test:
