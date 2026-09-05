@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.187] - 2026-09-05
+
+### Changed
+- [UI] 一比一复刻 S2-1：阅读菜单收敛为单块底部面板（ReaderMenuPanel 五分区骨架：标题胶囊行+FloatingIconRow 高频 8 位+搜索 pill+亮度行+进度滑条+工具行），替代顶栏/底栏两块分立；常挂载双向动画继承；朗读条暂与面板互斥（S2-2 并入面板路由页）
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.187+188
+
+- Contributor: Qoder UI
+
 ## [2.0.186] - 2026-09-05
 
 ### Changed

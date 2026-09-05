@@ -16,13 +16,13 @@ import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../widgets/reader/read_aloud_bar.dart';
-import '../widgets/reader/reader_bottom_bar.dart';
 import '../widgets/reader/reader_page_chrome.dart';
 import '../widgets/reader/reader_image_dominant_body.dart';
 import '../widgets/reader/reader_page_view.dart';
 import '../widgets/reader/reader_settings_sheet.dart';
 import '../widgets/reader/reader_status_strip.dart';
 import '../widgets/reader/reader_top_bar.dart';
+import '../widgets/reader/reader_menu_panel.dart';
 import '../widgets/reader/review_detail_sheet.dart';
 import '../utils/comic_image_utils.dart';
 import '../utils/source_login_prompt.dart';
@@ -514,44 +514,32 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                     ),
                   ),
                 ),
-              // [UI_SYNC_REFACTOR R2] 常挂载+双向动画（visible 驱动）
-                ReaderTopBar(
-                  visible: state.showControls,
-                  onAddBookmark: () => _addBookmark(state),
-                  // [UI-fix v2.0.4 | 2026-08-08] 顶栏对齐原版 ReadMenu：搜索/
-                  // 高级设置入口已迁出（搜索→底栏悬浮按钮，设置→底栏设置按钮），
-                  // 不再传入对应回调 — Qoder
-                  // [UI-fix v2.0.3 | 2026-08-08] 显示标题附加区/工具栏跟随页面 — Qoder
-                  showTitleAddition: _advConfig.showReadTitleAddition,
-                  styleFollowPage: _advConfig.readBarStyleFollowPage,
-                  readBodyToLh: cfg.readBodyToLh,
-                ),
-              // [UI-fix v2.0.1 | 2026-08-06] 朗读激活时以 ReadAloudBar 替代底部
-              // 功能栏（对标原版 ReadAloudDialog 覆盖 ReadMenu 底部的行为） — Qoder
+              // [UI_SYNC_REFACTOR S2-1] 单块底部面板（五分区，替代顶/底栏
+              // 两块分立；朗读态与面板互斥显示——S2-2 将朗读条并入面板路由页）
               if (aloudActive && !_aloudBarHidden)
                 ReadAloudBar(
                   onDismiss: () => setState(() => _aloudBarHidden = true),
-                  // [UI-fix v2.0.4 | 2026-08-08] 目录入口切换为独立目录页
-                  // TocScreen（对标原版 TocActivity），抽屉已删除 — Qoder
                   onOpenCatalog: () => unawaited(_openToc()),
                   onBackstage: () => Navigator.of(context).maybePop(),
                 )
               else
-                ReaderBottomBar(
+                ReaderMenuPanel(
                   visible: state.showControls,
+                  onBack: () => Navigator.of(context).maybePop(),
+                  onAddBookmark: () => _addBookmark(state),
                   onOpenCatalog: () => unawaited(_openToc()),
                   onOpenSettings: () => ReaderSettingsSheet.show(context),
                   onOpenAdvancedConfig: () => _openAdvancedConfig(context),
                   onOpenContentSearch: () => _openContentSearch(state),
                   onReadAloud: _onReadAloudTap,
+                  onToggleAutoPage: _toggleAutoPage,
+                  onOpenReplaceRules: () =>
+                      Navigator.pushNamed(context, AppRoutes.replaceRules),
                   showBrightnessView: _advConfig.showBrightnessView,
                   progressBehavior: _advConfig.progressBarBehavior,
                   onSeekPage: (page) =>
                       _pageViewKey.currentState?.goToPage(page),
                   styleFollowPage: _advConfig.readBarStyleFollowPage,
-                  onToggleAutoPage: _toggleAutoPage,
-                  onOpenReplaceRules: () =>
-                      Navigator.pushNamed(context, AppRoutes.replaceRules),
                 ),
             ],
           ),
