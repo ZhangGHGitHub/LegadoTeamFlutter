@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.179] - 2026-09-05
+
+### Changed
+- [UI] 同步重构 R3①：登录页提交 modalOverlay 遮罩（提交期间全屏防重复操作）；新增设置行分隔线开关（enableItemDivider，主题页「详情与圆角」组，行底 1dp×80dp 胶囊线默认关）
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.179+180
+
+- Contributor: Qoder UI
+
 ## [2.0.178] - 2026-09-05
 
 ### Changed

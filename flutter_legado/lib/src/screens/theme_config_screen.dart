@@ -749,6 +749,14 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                           : '跟随主题（20dp）',
                       onTap: _showCardRadiusDialog,
                     ),
+                    SwitchListTile(
+                      title: const Text('设置行分隔线'),
+                      subtitle: const Text('分组列表行底部显示短分隔线'),
+                      value: ui.enableItemDivider,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setEnableItemDivider(v),
+                    ),
                   ]),
 
                   // === [UI_SYNC_REFACTOR R1] 毛玻璃（对齐参考仓 blur 家族；

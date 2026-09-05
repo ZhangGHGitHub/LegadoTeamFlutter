@@ -117,6 +117,16 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
   Future<void> _save() async {
     final notifier = ref.read(sourceLoginNotifierProvider.notifier);
     notifier.setToken(_tokenCtrl.text.trim());
+    // [UI_SYNC_REFACTOR R3] 登录 modalOverlay（对齐参考仓 modalOverlay：
+    // 提交期间全屏遮罩防重复操作）
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const PopScope(
+        canPop: false,
+        child: Center(child: CircularProgressIndicator()),
+      ),
+    );
     try {
       await notifier.save(
         sourceUrl: widget.sourceUrl,
@@ -128,6 +138,10 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
       }
     } catch (_) {
       if (mounted) _showSnack('保存失败，请重试');
+    } finally {
+      if (mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
     }
   }
 

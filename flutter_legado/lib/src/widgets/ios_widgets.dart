@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../providers/ui_settings/ui_settings_notifier.dart';
+
 import 'setting_cards.dart';
 
 /// MD3 风格分组列表组件库（Batch 0 集中改造，UI_MD3_PLAN.md 第八节）
@@ -253,6 +255,42 @@ class IosListTile extends StatelessWidget {
       }
     }
 
+    // [UI_SYNC_REFACTOR R3] 设置行分隔线（参考仓 enableItemDivider：
+    // 行底 1dp 胶囊线，长度 80dp 缩进 16，默认关）
+    final divider = uiSettingsListenable.value.enableItemDivider
+        ? Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: leading,
+                title: Text(title, style: theme.textTheme.titleMedium),
+                subtitle: subtitle != null
+                    ? Text(
+                        subtitle!,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: scheme.onSurface.withValues(alpha: 0.7),
+                        ),
+                      )
+                    : null,
+                trailing: trailing,
+                onTap: onTap,
+              ),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 16),
+                  child: Container(
+                    width: 80,
+                    height: 1,
+                    color: scheme.outlineVariant.withValues(alpha: 0.8),
+                  ),
+                ),
+              ),
+            ],
+          )
+        : null;
+
+    if (divider != null) return divider;
     return ListTile(
       leading: leading,
       title: Text(title, style: theme.textTheme.titleMedium),

@@ -139,6 +139,9 @@ class UiSettingsState {
   /// 跟随壁纸取色（Material You 动态色，Android 12+）
   final bool wallpaperColorFollow;
 
+  /// 设置行分隔线开关
+  final bool enableItemDivider;
+
   const UiSettingsState({
     this.topBarButtonStyle = TopBarButtonStyle.tonal,
     this.mergeTopBarActions = false,
@@ -160,6 +163,7 @@ class UiSettingsState {
     this.bottomBarBlurRadius = 8,
     this.bottomBarBlurAlpha = 40,
     this.wallpaperColorFollow = false,
+    this.enableItemDivider = false,
   });
 
   UiSettingsState copyWith({
@@ -183,6 +187,7 @@ class UiSettingsState {
     int? bottomBarBlurRadius,
     int? bottomBarBlurAlpha,
     bool? wallpaperColorFollow,
+    bool? enableItemDivider,
   }) {
     return UiSettingsState(
       topBarButtonStyle: topBarButtonStyle ?? this.topBarButtonStyle,
@@ -209,6 +214,7 @@ class UiSettingsState {
       bottomBarBlurRadius: bottomBarBlurRadius ?? this.bottomBarBlurRadius,
       bottomBarBlurAlpha: bottomBarBlurAlpha ?? this.bottomBarBlurAlpha,
       wallpaperColorFollow: wallpaperColorFollow ?? this.wallpaperColorFollow,
+      enableItemDivider: enableItemDivider ?? this.enableItemDivider,
     );
   }
 }
@@ -311,6 +317,10 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       ),
       wallpaperColorFollow: await _settings.getBoolPref(
         PrefKeys.wallpaperColorFollow,
+        defaultValue: false,
+      ),
+      enableItemDivider: await _settings.getBoolPref(
+        PrefKeys.enableItemDivider,
         defaultValue: false,
       ),
     );
@@ -480,6 +490,14 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     state = state.copyWith(bottomBarBlurAlpha: v);
     _sync();
     await _settings.setIntPref(PrefKeys.bottomBarBlurAlpha, v);
+  }
+
+  /// 设置行分隔线开关
+  Future<void> setEnableItemDivider(bool value) async {
+    if (state.enableItemDivider == value) return;
+    state = state.copyWith(enableItemDivider: value);
+    _sync();
+    await _settings.setBoolPref(PrefKeys.enableItemDivider, value);
   }
 
   /// 跟随壁纸取色

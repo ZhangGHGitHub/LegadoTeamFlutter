@@ -129,6 +129,9 @@ class PrefKeys {
   /// 悬浮底栏底色透明度 0-255（参考仓 bottomBarBlurAlpha，默认 40）
   static const bottomBarBlurAlpha = 'bottomBarBlurAlpha';
 
+  /// 设置行分隔线开关（参考仓 enableItemDivider，默认关）
+  static const enableItemDivider = 'enableItemDivider';
+
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
   /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）
