@@ -62,14 +62,25 @@ enableBlur 默认关（低端机掉帧保护）；字阶全局变更以矩阵+�
 
 门禁：每批 analyze 0+test 全过（最终 1336）。冒烟与双包对比验收见进度文档回填。
 
-### 剩余登记项（B6/B7 削减部分，另行排期）
+### 剩余清单详解（R3⑥ 登记台账，2026-09-05 终版归档）
 
-- ~~blur 家族接线~~ ✅ R1 已交付（`58c1b0c209`，2.0.176：enableBlur 门控 LegadoAppBar/悬浮底栏/详情背景三处；剩余：阅读菜单模糊、SliverAppBar 滚动玻璃）
-- ~~dynamic_color 接线~~ ✅ R1 已交付（同上：DynamicColorBuilder 集成，动态 role 覆盖 primary/accent）
-- 分隔线开关（enableItemDivider 接 SettingItemDivider/PillDivider）、卡片边框覆写、containerOpacity、分组圆角开关
-- 登录 modalOverlay、FastScroll 全站 15 屏接入（idle 36×4→active 48×12 形态升级）、animateItem/animateContentSize 三件套、设置行 Semantics、渲染矩阵补页
-- 阅读菜单退出双向动画（fadeOut140+scaleOut0.88@180）、朗读胶囊 16↔48 morph、readMenuBlurMode key
-- Rail expand 持久化（简版已交付）
+> 构成：**6 项风格内容（参考仓核实）+ 1 项本地回归防护 + 1 项建议销项**。
+> 主干差异（用户双包对比可感知）已随 2.0.168–2.0.183 全部落地；以下均为默认关闭的定制开关、低频场景或工程项。
+
+| # | 项 | 来源 | 参考仓依据 | 本地现状 | 收益/建议 |
+|---|---|---|---|---|---|
+| 1 | 朗读胶囊 16↔48 morph | 风格 | ReadAloudCapsule.kt（折叠 16×8↔展开 48×28、圆角 16↔48 形变、内容 200/150ms scale0.9、surfaceContainerHigh α0.94、拖拽+位置持久化） | read_aloud_bar 为底部常规控制条，无胶囊/拖拽/记忆 | 中——听书场景可感知；工作量最大（约 1 天），新组件 |
+| 2 | FastScroll 余下屏（词典/缓存管理/阅读选书/JS预览等 3-4 屏） | 风格 | VerticalFastScroller.kt + 15 屏清单 | 已覆盖 12/15；剩余列表普遍较短，滚动条几乎不触发 | 低——纯机械接线（每屏 ~10 分钟），收益递减 |
+| 3 | containerOpacity 容器不透明度 | 风格 | 主题字段 containerOpacity=100（ThemeSettings.kt） | 背景图已有但卡片全不透明，无此设置 | 中低——仅背景图用户可感知；需打通全卡片背景 alpha 链路 |
+| 4 | 边框覆写 overrideBaseCardBorder | 风格 | baseCardBorderWidth/Color 字段核实 | 圆角覆写已交付（卡片档），描边未接 SettingCard 等组件 decoration | 低——纯装饰，参考仓默认也关 |
+| 5 | animateItem 三件套（AnimatedList/AnimatedSize/AnimatedSwitcher 等效） | 风格 | Compose animateItem/AnimatedVisibility（审计四节盘点） | 列表项删除/启停瞬变；全库零使用 | 中——操作反馈质感；需逐屏找场景，散 |
+| 6 | 设置行 Semantics 最小集 | **本地工程项（建议销项）** | 非参考仓内容（原审计"遗漏面"登记） | 设置行由 ListTile 构建——Flutter 原生语义已覆盖标题/副标题/开关态朗读 | 建议**登记销项**："ListTile 原生语义已覆盖，无额外缺口" |
+| 7 | 渲染矩阵补页（详情/阅读） | **本地回归防护** | 非风格内容——保护已交付成果的测试设施 | md3_acceptance_matrix 仅 4 页；缺改动最重的详情与阅读两屏 | 中高——纯防护价值；沿用现有矩阵骨架约半天 |
+| 8 | Rail expand 持久化 + 阅读菜单 blur 三档 + SliverAppBar 滚动玻璃 | 风格（部分原"明确不做"口径，经用户"实色版+开关预留"决策转中间态） | WideNavigationRail 记忆；ReadMenuBlurMode(None/LiquidGlass/Haze)+radius/Alpha；GlassMediumFlexibleTopAppBar collapsedFraction 色插值 | 简版侧栏（无记忆）；菜单仅 None 实色档；普通 AppBar 玻璃已接、Sliver 未接 | 低——边缘场景；blur 接通以"启用毛玻璃"开关为前提 |
+
+**建议处置**：下一批做 #7（矩阵补页，防护优先）+ #6（销项登记）+ #1（朗读胶囊，风格收尾）；#2/#3/#4/#5/#8 按用户验收反馈择机驱动或留档。
+
+---
 
 ---
 
