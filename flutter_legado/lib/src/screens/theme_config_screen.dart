@@ -750,7 +750,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     SwitchListTile(
                       title: const Text('跟随壁纸配色'),
                       subtitle: const Text(
-                        '使用系统壁纸色板生成日间和夜间主题（Android 12+）',
+                        '使用系统壁纸色板生成日间和夜间主题（Android 12+/iOS）',
                       ),
                       value: _wallpaperColorFollow,
                       onChanged: (v) {

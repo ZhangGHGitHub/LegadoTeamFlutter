@@ -42,6 +42,20 @@
 
 ## 五、三端要点
 
+**blur/毛玻璃策略矩阵（S6 落盘，2026-09-05）**：
+
+| 能力 | Android | iOS | Windows |
+|---|---|---|---|
+| BackdropFilter 毛玻璃 | 可用（默认关，低端机掉帧保护） | 可用（默认关） | 可用（Impeller 支持，默认关） |
+| dynamic_color 动态色 | Android 12+ 系统色板 | iOS 动态色板（dynamic_color 实际可用，口径已修正） | 无系统色板（开关无效需提示） |
+| WebView | 全功能 | 全功能（httpOnly Cookie 限制登记） | 不可用（降级提示统一） |
+| 深链 legado:// | 通道 | app_links | 不可用（静默） |
+| 亮度系统档 | 系统亮度 | application 亮度 | 不可用（降级） |
+| 换图标 | 支持 | 支持（签名限制） | 不支持（入口隐藏） |
+| Rail 宽窗 | sw≥600 | sw≥600 | 桌面窗口≥600 自动生效 |
+
+S6 决策：blur 默认值三端统一**关**（保守，验证路径一致）；桌面高性能环境用户可手动开启（性能余量大）。
+
 - Android：全量（含 edge-to-edge、动态色 12+、预测式返回维持登记）。
 - iOS：dynamic_color 实际可用（修注释口径）；深链 app_links；锁屏桥已有。
 - Windows：Rail 宽窗默认、悬停/键盘焦点态、WebView/深链/亮度降级提示统一、blur 可用（策略矩阵定默认值）。

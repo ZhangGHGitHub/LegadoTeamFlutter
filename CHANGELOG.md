@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.192] - 2026-09-05
+
+### Changed
+- [UI] 一比一复刻 S6：三端适配——跟随壁纸取色口径修正（iOS 动态色实际已接通，注释/描述三处同步）；blur/毛玻璃三端策略矩阵落盘（三端 BackdropFilter 均可用、默认统一关，桌面高性能环境可手动开启）
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.192+193
+
+- Contributor: Qoder UI
+
 ## [2.0.191] - 2026-09-05
 
 ### Changed

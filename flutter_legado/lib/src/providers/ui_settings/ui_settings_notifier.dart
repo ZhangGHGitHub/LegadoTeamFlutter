@@ -136,7 +136,7 @@ class UiSettingsState {
   /// 悬浮底栏底色透明度 0-255
   final int bottomBarBlurAlpha;
 
-  /// 跟随壁纸取色（Material You 动态色，Android 12+）
+  /// 跟随壁纸取色（Android 12+ Material You / iOS 动态色均接通）
   final bool wallpaperColorFollow;
 
   /// 设置行分隔线开关
