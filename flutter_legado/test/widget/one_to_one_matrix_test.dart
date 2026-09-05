@@ -84,7 +84,6 @@ void main() {
       tester.view.devicePixelRatio = 3.0;
       addTearDown(tester.view.reset);
       final mockApi = MockRustApi();
-      const book = Book(bookUrl: 'u1', name: '矩阵书', origin: '');
       const chapters = [BookChapter(title: '第一章')];
       when(() => mockApi.getChapters(any()))
           .thenAnswer((_) async => chapters);
