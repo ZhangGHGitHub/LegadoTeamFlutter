@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.173] - 2026-09-05
+
+### Changed
+- [UI] 全量同步重构 B6/B7 精简版：主题页新增「详情与圆角」组（跟随封面取色开关/封面背景三档/卡片圆角覆写 4-28dp 随主题重建生效，圆角覆写接通 app_theme 卡片档）；确认对话框按钮规范对齐参考仓（右对齐+minWidth 88+间距 12 宽扁形态）
+
+### Test
+- flutter analyze 无问题；flutter test 1336 全过
+- 版本 2.0.173+174
+
+- Contributor: Qoder UI
+
 ## [2.0.172] - 2026-09-05
 
 ### Changed

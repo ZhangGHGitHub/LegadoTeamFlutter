@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../providers/ui_settings/ui_settings_notifier.dart';
 import 'app_typography.dart';
 import 'md3_colors.dart';
 
@@ -56,7 +57,15 @@ class AppTheme {
   AppTheme._();
 
   /// Expressive 圆角：卡片 / 分组
-  static const double _cardRadius = 20.0;
+  /// [UI_SYNC_REFACTOR B6] 圆角覆写生效链（overrideBaseCardCornerRadius
+  /// 开启时取 baseCardCornerRadius；控件/弹窗档维持默认，随主题重建生效）
+  static double get _cardRadius {
+    final ui = uiSettingsListenable.value;
+    if (ui.overrideBaseCardCornerRadius) {
+      return ui.baseCardCornerRadius.toDouble();
+    }
+    return 20.0;
+  }
 
   /// 圆角：输入框 / 菜单 / 小控件
   static const double _controlRadius = 12.0;

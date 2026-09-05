@@ -108,6 +108,12 @@ class PrefKeys {
   static const bookInfoDefaultCoverBackground =
       'bookInfoDefaultCoverBackground';
 
+  /// 覆写基础卡片圆角（参考仓 overrideBaseCardCornerRadius，默认关）
+  static const overrideBaseCardCornerRadius = 'overrideBaseCardCornerRadius';
+
+  /// 基础卡片圆角值 4-28（参考仓 baseCardCornerRadius，默认 16）
+  static const baseCardCornerRadius = 'baseCardCornerRadius';
+
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
   /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）

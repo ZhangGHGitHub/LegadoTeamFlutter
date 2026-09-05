@@ -115,6 +115,12 @@ class UiSettingsState {
   /// 详情页默认封面背景三档
   final String bookInfoDefaultCoverBackground;
 
+  /// 覆写基础卡片圆角
+  final bool overrideBaseCardCornerRadius;
+
+  /// 基础卡片圆角值 4-28
+  final int baseCardCornerRadius;
+
   const UiSettingsState({
     this.topBarButtonStyle = TopBarButtonStyle.tonal,
     this.mergeTopBarActions = false,
@@ -128,6 +134,8 @@ class UiSettingsState {
     this.bookInfoFollowCoverColor = true,
     this.bookInfoNetworkCoverBackground = 'on',
     this.bookInfoDefaultCoverBackground = 'on',
+    this.overrideBaseCardCornerRadius = false,
+    this.baseCardCornerRadius = 16,
   });
 
   UiSettingsState copyWith({
@@ -143,6 +151,8 @@ class UiSettingsState {
     bool? bookInfoFollowCoverColor,
     String? bookInfoNetworkCoverBackground,
     String? bookInfoDefaultCoverBackground,
+    bool? overrideBaseCardCornerRadius,
+    int? baseCardCornerRadius,
   }) {
     return UiSettingsState(
       topBarButtonStyle: topBarButtonStyle ?? this.topBarButtonStyle,
@@ -160,6 +170,9 @@ class UiSettingsState {
           bookInfoNetworkCoverBackground ?? this.bookInfoNetworkCoverBackground,
       bookInfoDefaultCoverBackground: bookInfoDefaultCoverBackground ??
           this.bookInfoDefaultCoverBackground,
+      overrideBaseCardCornerRadius:
+          overrideBaseCardCornerRadius ?? this.overrideBaseCardCornerRadius,
+      baseCardCornerRadius: baseCardCornerRadius ?? this.baseCardCornerRadius,
     );
   }
 }
@@ -231,6 +244,14 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       bookInfoDefaultCoverBackground: await _settings.getStringPref(
         PrefKeys.bookInfoDefaultCoverBackground,
         defaultValue: 'on',
+      ),
+      overrideBaseCardCornerRadius: await _settings.getBoolPref(
+        PrefKeys.overrideBaseCardCornerRadius,
+        defaultValue: false,
+      ),
+      baseCardCornerRadius: await _settings.getIntPref(
+        PrefKeys.baseCardCornerRadius,
+        defaultValue: 16,
       ),
     );
     _sync();
@@ -338,6 +359,23 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       await _settings.setStringPref(
           PrefKeys.bookInfoNetworkCoverBackground, value);
     }
+  }
+
+  /// 圆角覆写开关
+  Future<void> setOverrideBaseCardCornerRadius(bool value) async {
+    if (state.overrideBaseCardCornerRadius == value) return;
+    state = state.copyWith(overrideBaseCardCornerRadius: value);
+    _sync();
+    await _settings.setBoolPref(PrefKeys.overrideBaseCardCornerRadius, value);
+  }
+
+  /// 基础卡片圆角值（4-28，随主题重建生效）
+  Future<void> setBaseCardCornerRadius(int value) async {
+    final v = value.clamp(4, 28);
+    if (state.baseCardCornerRadius == v) return;
+    state = state.copyWith(baseCardCornerRadius: v);
+    _sync();
+    await _settings.setIntPref(PrefKeys.baseCardCornerRadius, v);
   }
 }
 

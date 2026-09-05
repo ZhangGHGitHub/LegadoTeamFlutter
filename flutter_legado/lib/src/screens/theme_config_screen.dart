@@ -346,6 +346,104 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     }
   }
 
+  String _coverBgLabel(String v) => switch (v) {
+        'off' => '显示封面（不模糊）',
+        'off_for_default' => '隐藏（仅默认封面档）',
+        _ => '模糊显示（默认）',
+      };
+
+  Future<void> _showCoverBgPicker(bool isDefaultCover) async {
+    final uiNow = ref.read(uiSettingsProvider);
+    final current = isDefaultCover
+        ? uiNow.bookInfoDefaultCoverBackground
+        : uiNow.bookInfoNetworkCoverBackground;
+    const options = <(String, String)>[
+      ('on', '模糊显示（默认）'),
+      ('off', '显示封面（不模糊）'),
+      ('off_for_default', '隐藏'),
+    ];
+    final selected = await showDialog<String>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('封面背景'),
+        children: [
+          for (final (value, label) in options)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, value),
+              child: Row(
+                children: [
+                  Icon(
+                    current == value
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(label),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (selected != null) {
+      await ref
+          .read(uiSettingsProvider.notifier)
+          .setBookInfoCoverBackground(
+            isDefaultCover: isDefaultCover,
+            value: selected,
+          );
+    }
+  }
+
+  Future<void> _showCardRadiusDialog() async {
+    final uiNow = ref.read(uiSettingsProvider);
+    var override = uiNow.overrideBaseCardCornerRadius;
+    var radius = uiNow.baseCardCornerRadius.toDouble();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('卡片圆角'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SwitchListTile(
+                title: const Text('覆写主题圆角'),
+                value: override,
+                onChanged: (v) => setDialogState(() => override = v),
+              ),
+              Slider(
+                value: radius,
+                min: 4,
+                max: 28,
+                divisions: 12,
+                label: '${radius.round()}dp',
+                onChanged: (v) => setDialogState(() => radius = v),
+              ),
+              Text('当前 ${radius.round()}dp（随主题重建生效）'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed == true) {
+      final notifier = ref.read(uiSettingsProvider.notifier);
+      await notifier.setOverrideBaseCardCornerRadius(override);
+      await notifier.setBaseCardCornerRadius(radius.round());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeState = ref.watch(themeNotifierProvider);
@@ -536,6 +634,38 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       title: '大屏导航形态',
                       subtitle: _tabletLabel(ui.tabletInterface),
                       onTap: _showTabletModePicker,
+                    ),
+                  ]),
+
+                  // === [UI_SYNC_REFACTOR B6] 详情与圆角 ===
+                  const IosSectionHeader('详情与圆角'),
+                  IosGroup(
+                      flat: true,
+                      children: [
+                    SwitchListTile(
+                      title: const Text('跟随封面取色'),
+                      subtitle: const Text('详情页按封面主色自动换配色'),
+                      value: ui.bookInfoFollowCoverColor,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setBookInfoFollowCoverColor(v),
+                    ),
+                    IosListTile(
+                      title: '封面背景（网络封面）',
+                      subtitle: _coverBgLabel(ui.bookInfoNetworkCoverBackground),
+                      onTap: () => _showCoverBgPicker(false),
+                    ),
+                    IosListTile(
+                      title: '封面背景（默认封面）',
+                      subtitle: _coverBgLabel(ui.bookInfoDefaultCoverBackground),
+                      onTap: () => _showCoverBgPicker(true),
+                    ),
+                    IosListTile(
+                      title: '卡片圆角',
+                      subtitle: ui.overrideBaseCardCornerRadius
+                          ? '覆写中：${ui.baseCardCornerRadius}dp'
+                          : '跟随主题（20dp）',
+                      onTap: _showCardRadiusDialog,
                     ),
                   ]),
 
