@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.191] - 2026-09-05
+
+### Changed
+- [UI] 一比一复刻 S5：底部弹层统一壳升级——AppBottomSheet 消双把手（主题 showDragHandle 统一提供）、标题 titleMedium+Medium 强调（对齐参考 titleMediumEmphasized）、去标题下分隔线；文件管理长按菜单迁移示范（统一壳采用量 0→1，余 29 处散点登记渐进）
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.191+192
+
+- Contributor: Qoder UI
+
 ## [2.0.190] - 2026-09-05
 
 ### Changed

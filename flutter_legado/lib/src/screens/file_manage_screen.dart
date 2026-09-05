@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
+import '../widgets/bottom_sheet_widget.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -145,24 +146,21 @@ class _FileManageScreenState extends State<FileManageScreen> {
 
   /// 长按删除菜单（对标 popupActionMenu「删除」danger）
   Future<void> _showFileMenu(FileSystemEntity entity) async {
-    final action = await showModalBottomSheet<String>(
+    // [UI_SYNC_REFACTOR S5] 统一壳迁移示范（AppBottomSheet.show）
+    final action = await AppBottomSheet.show<String>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(Symbols.delete_rounded,
-                  color: Theme.of(ctx).colorScheme.error),
-              title: Text(
-                '删除',
-                style: TextStyle(color: Theme.of(ctx).colorScheme.error),
-              ),
-              onTap: () => Navigator.pop(ctx, 'delete'),
-            ),
-          ],
+      title: '文件操作',
+      children: [
+        ListTile(
+          leading: Icon(Symbols.delete_rounded,
+              color: Theme.of(context).colorScheme.error),
+          title: Text(
+            '删除',
+            style: TextStyle(color: Theme.of(context).colorScheme.error),
+          ),
+          onTap: () => Navigator.pop(context, 'delete'),
         ),
-      ),
+      ],
     );
     if (action != 'delete') return;
     await _confirmDelete(entity);

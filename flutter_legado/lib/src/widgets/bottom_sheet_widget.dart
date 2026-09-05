@@ -15,34 +15,24 @@ class AppBottomSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-
     return SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 拖拽指示条
-          Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: 8),
-              width: 32,
-              height: 4,
-              decoration: BoxDecoration(
-                color: colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          // 标题栏
+          // [UI_SYNC_REFACTOR S5] 标题栏（titleMedium+Medium 强调，对齐参考
+          // AppModalBottomSheet titleMediumEmphasized；把手由主题
+          // showDragHandle 统一提供，消双把手；标题下无分隔线）
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
             child: Row(
               children: [
                 Expanded(
                   child: Text(
                     title,
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                   ),
                 ),
                 // ignore: use_null_aware_elements
@@ -50,7 +40,6 @@ class AppBottomSheet extends StatelessWidget {
               ],
             ),
           ),
-          const Divider(height: 1),
           // 内容
           Flexible(
             child: SingleChildScrollView(
