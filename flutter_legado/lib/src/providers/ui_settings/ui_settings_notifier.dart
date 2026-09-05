@@ -121,6 +121,24 @@ class UiSettingsState {
   /// 基础卡片圆角值 4-28
   final int baseCardCornerRadius;
 
+  /// 启用毛玻璃（BackdropFilter，默认关）
+  final bool enableBlur;
+
+  /// 顶栏模糊半径 dp
+  final int topBarBlurRadius;
+
+  /// 顶栏底色透明度 0-255
+  final int topBarBlurAlpha;
+
+  /// 悬浮底栏模糊半径 dp
+  final int bottomBarBlurRadius;
+
+  /// 悬浮底栏底色透明度 0-255
+  final int bottomBarBlurAlpha;
+
+  /// 跟随壁纸取色（Material You 动态色，Android 12+）
+  final bool wallpaperColorFollow;
+
   const UiSettingsState({
     this.topBarButtonStyle = TopBarButtonStyle.tonal,
     this.mergeTopBarActions = false,
@@ -136,6 +154,12 @@ class UiSettingsState {
     this.bookInfoDefaultCoverBackground = 'on',
     this.overrideBaseCardCornerRadius = false,
     this.baseCardCornerRadius = 16,
+    this.enableBlur = false,
+    this.topBarBlurRadius = 24,
+    this.topBarBlurAlpha = 73,
+    this.bottomBarBlurRadius = 8,
+    this.bottomBarBlurAlpha = 40,
+    this.wallpaperColorFollow = false,
   });
 
   UiSettingsState copyWith({
@@ -153,6 +177,12 @@ class UiSettingsState {
     String? bookInfoDefaultCoverBackground,
     bool? overrideBaseCardCornerRadius,
     int? baseCardCornerRadius,
+    bool? enableBlur,
+    int? topBarBlurRadius,
+    int? topBarBlurAlpha,
+    int? bottomBarBlurRadius,
+    int? bottomBarBlurAlpha,
+    bool? wallpaperColorFollow,
   }) {
     return UiSettingsState(
       topBarButtonStyle: topBarButtonStyle ?? this.topBarButtonStyle,
@@ -173,6 +203,12 @@ class UiSettingsState {
       overrideBaseCardCornerRadius:
           overrideBaseCardCornerRadius ?? this.overrideBaseCardCornerRadius,
       baseCardCornerRadius: baseCardCornerRadius ?? this.baseCardCornerRadius,
+      enableBlur: enableBlur ?? this.enableBlur,
+      topBarBlurRadius: topBarBlurRadius ?? this.topBarBlurRadius,
+      topBarBlurAlpha: topBarBlurAlpha ?? this.topBarBlurAlpha,
+      bottomBarBlurRadius: bottomBarBlurRadius ?? this.bottomBarBlurRadius,
+      bottomBarBlurAlpha: bottomBarBlurAlpha ?? this.bottomBarBlurAlpha,
+      wallpaperColorFollow: wallpaperColorFollow ?? this.wallpaperColorFollow,
     );
   }
 }
@@ -252,6 +288,30 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       baseCardCornerRadius: await _settings.getIntPref(
         PrefKeys.baseCardCornerRadius,
         defaultValue: 16,
+      ),
+      enableBlur: await _settings.getBoolPref(
+        PrefKeys.enableBlur,
+        defaultValue: false,
+      ),
+      topBarBlurRadius: await _settings.getIntPref(
+        PrefKeys.topBarBlurRadius,
+        defaultValue: 24,
+      ),
+      topBarBlurAlpha: await _settings.getIntPref(
+        PrefKeys.topBarBlurAlpha,
+        defaultValue: 73,
+      ),
+      bottomBarBlurRadius: await _settings.getIntPref(
+        PrefKeys.bottomBarBlurRadius,
+        defaultValue: 8,
+      ),
+      bottomBarBlurAlpha: await _settings.getIntPref(
+        PrefKeys.bottomBarBlurAlpha,
+        defaultValue: 40,
+      ),
+      wallpaperColorFollow: await _settings.getBoolPref(
+        PrefKeys.wallpaperColorFollow,
+        defaultValue: false,
       ),
     );
     _sync();
@@ -376,6 +436,58 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     state = state.copyWith(baseCardCornerRadius: v);
     _sync();
     await _settings.setIntPref(PrefKeys.baseCardCornerRadius, v);
+  }
+
+  /// 启用毛玻璃
+  Future<void> setEnableBlur(bool value) async {
+    if (state.enableBlur == value) return;
+    state = state.copyWith(enableBlur: value);
+    _sync();
+    await _settings.setBoolPref(PrefKeys.enableBlur, value);
+  }
+
+  /// 顶栏模糊半径
+  Future<void> setTopBarBlurRadius(int value) async {
+    final v = value.clamp(0, 48);
+    if (state.topBarBlurRadius == v) return;
+    state = state.copyWith(topBarBlurRadius: v);
+    _sync();
+    await _settings.setIntPref(PrefKeys.topBarBlurRadius, v);
+  }
+
+  /// 顶栏底色透明度（0-255）
+  Future<void> setTopBarBlurAlpha(int value) async {
+    final v = value.clamp(0, 255);
+    if (state.topBarBlurAlpha == v) return;
+    state = state.copyWith(topBarBlurAlpha: v);
+    _sync();
+    await _settings.setIntPref(PrefKeys.topBarBlurAlpha, v);
+  }
+
+  /// 悬浮底栏模糊半径
+  Future<void> setBottomBarBlurRadius(int value) async {
+    final v = value.clamp(0, 48);
+    if (state.bottomBarBlurRadius == v) return;
+    state = state.copyWith(bottomBarBlurRadius: v);
+    _sync();
+    await _settings.setIntPref(PrefKeys.bottomBarBlurRadius, v);
+  }
+
+  /// 悬浮底栏底色透明度（0-255）
+  Future<void> setBottomBarBlurAlpha(int value) async {
+    final v = value.clamp(0, 255);
+    if (state.bottomBarBlurAlpha == v) return;
+    state = state.copyWith(bottomBarBlurAlpha: v);
+    _sync();
+    await _settings.setIntPref(PrefKeys.bottomBarBlurAlpha, v);
+  }
+
+  /// 跟随壁纸取色
+  Future<void> setWallpaperColorFollow(bool value) async {
+    if (state.wallpaperColorFollow == value) return;
+    state = state.copyWith(wallpaperColorFollow: value);
+    _sync();
+    await _settings.setBoolPref(PrefKeys.wallpaperColorFollow, value);
   }
 }
 

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.176] - 2026-09-05
+
+### Changed
+- [UI] 同步重构 R1：毛玻璃家族接线——主题页新增「毛玻璃」组（启用开关+顶栏/悬浮底栏模糊半径与底色透明度调参，关时灰显）；enableBlur 开启后 LegadoAppBar（BackdropFilter+topBarBlurAlpha 半透明底）、悬浮底栏、详情页背景三档 on 模式三处生效，关闭维持实色回退（登记：阅读菜单模糊与 SliverAppBar 滚动玻璃后续批）
+- [UI] 同步重构 R1：跟随壁纸取色真实生效——app.dart 集成 DynamicColorBuilder（Material You），wallpaperColorFollow 开启且系统提供动态色板时 primary/accent 取动态 role，其余沿用并存模型；主题页开关同步 uiSettings
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.176+177
+
+- Contributor: Qoder UI
+
 ## [2.0.175] - 2026-09-05
 
 ### Fixed

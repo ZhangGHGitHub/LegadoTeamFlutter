@@ -444,6 +444,84 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     }
   }
 
+  Future<void> _showBlurRadiusDialog({
+    required String title,
+    required int currentRadius,
+    required int currentAlpha,
+    required ValueChanged<int> onRadius,
+    required ValueChanged<int> onAlpha,
+  }) async {
+    var radius = currentRadius.toDouble();
+    var alpha = currentAlpha.toDouble();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(title),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('模糊半径 ${radius.round()}dp'),
+              Slider(
+                value: radius,
+                min: 0,
+                max: 48,
+                divisions: 12,
+                onChanged: (v) => setDialogState(() => radius = v),
+              ),
+              Text('底色透明度 ${alpha.round()}/255'),
+              Slider(
+                value: alpha,
+                min: 0,
+                max: 255,
+                divisions: 51,
+                onChanged: (v) => setDialogState(() => alpha = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed == true) {
+      onRadius(radius.round());
+      onAlpha(alpha.round());
+    }
+  }
+
+  Future<void> _showTopBarBlurDialog() async {
+    final uiNow = ref.read(uiSettingsProvider);
+    final notifier = ref.read(uiSettingsProvider.notifier);
+    await _showBlurRadiusDialog(
+      title: '顶栏模糊',
+      currentRadius: uiNow.topBarBlurRadius,
+      currentAlpha: uiNow.topBarBlurAlpha,
+      onRadius: notifier.setTopBarBlurRadius,
+      onAlpha: notifier.setTopBarBlurAlpha,
+    );
+  }
+
+  Future<void> _showBottomBarBlurDialog() async {
+    final uiNow = ref.read(uiSettingsProvider);
+    final notifier = ref.read(uiSettingsProvider.notifier);
+    await _showBlurRadiusDialog(
+      title: '悬浮底栏模糊',
+      currentRadius: uiNow.bottomBarBlurRadius,
+      currentAlpha: uiNow.bottomBarBlurAlpha,
+      onRadius: notifier.setBottomBarBlurRadius,
+      onAlpha: notifier.setBottomBarBlurAlpha,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeState = ref.watch(themeNotifierProvider);
@@ -549,6 +627,10 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       onChanged: (v) {
                         setState(() => _wallpaperColorFollow = v);
                         _settings.setBoolPref(PrefKeys.wallpaperColorFollow, v);
+                        // [UI_SYNC_REFACTOR R1] 同步 uiSettings（dynamic_color 接线读取）
+                        ref
+                            .read(uiSettingsProvider.notifier)
+                            .setWallpaperColorFollow(v);
                       },
                     ),
                     if (_wallpaperColorFollow)
@@ -666,6 +748,37 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                           ? '覆写中：${ui.baseCardCornerRadius}dp'
                           : '跟随主题（20dp）',
                       onTap: _showCardRadiusDialog,
+                    ),
+                  ]),
+
+                  // === [UI_SYNC_REFACTOR R1] 毛玻璃（对齐参考仓 blur 家族；
+                  // 默认关——低端机掉帧保护，开启后顶栏/悬浮底栏/详情背景生效） ===
+                  const IosSectionHeader('毛玻璃'),
+                  IosGroup(
+                      flat: true,
+                      children: [
+                    SwitchListTile(
+                      title: const Text('启用毛玻璃'),
+                      subtitle: const Text('低端设备开启可能掉帧'),
+                      value: ui.enableBlur,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setEnableBlur(v),
+                    ),
+                    IosListTile(
+                      title: '顶栏模糊',
+                      subtitle: ui.enableBlur
+                          ? '半径 ${ui.topBarBlurRadius}dp · 底色 ${ui.topBarBlurAlpha}/255'
+                          : '需先启用毛玻璃',
+                      onTap: ui.enableBlur ? _showTopBarBlurDialog : null,
+                    ),
+                    IosListTile(
+                      title: '悬浮底栏模糊',
+                      subtitle: ui.enableBlur
+                          ? '半径 ${ui.bottomBarBlurRadius}dp · 底色 ${ui.bottomBarBlurAlpha}/255'
+                          : '需先启用毛玻璃',
+                      onTap:
+                          ui.enableBlur ? _showBottomBarBlurDialog : null,
                     ),
                   ]),
 

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -544,14 +545,18 @@ class _FloatingBottomBarState extends State<_FloatingBottomBar> {
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    return SafeArea(
-      top: false,
-      child: Container(
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-        height: 64,
-        padding: const EdgeInsets.all(4),
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerHighest.withValues(alpha: 0.85),
+    // [UI_SYNC_REFACTOR R1] 毛玻璃：enableBlur 开启时半透明底（blurAlpha/255）
+    // + BackdropFilter（blurRadius）；关闭维持实色 α0.85
+    final ui = uiSettingsListenable.value;
+    final useBlur = ui.enableBlur;
+    final capsule = Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+      height: 64,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerHighest.withValues(
+          alpha: useBlur ? ui.bottomBarBlurAlpha / 255 : 0.85,
+        ),
           borderRadius: BorderRadius.circular(32),
           boxShadow: [
             BoxShadow(
@@ -603,7 +608,22 @@ class _FloatingBottomBarState extends State<_FloatingBottomBar> {
               ),
           ],
         ),
-      ),
-    );
+      );
+      if (useBlur) {
+        return SafeArea(
+          top: false,
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(32),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: ui.bottomBarBlurRadius.toDouble(),
+                sigmaY: ui.bottomBarBlurRadius.toDouble(),
+              ),
+              child: capsule,
+            ),
+          ),
+        );
+      }
+      return SafeArea(top: false, child: capsule);
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter/services.dart';
@@ -160,6 +162,12 @@ class LegadoAppBar extends StatelessWidget implements PreferredSizeWidget {
         if (ui.topBarOpacity < 100 && bg != Colors.transparent) {
           bg = bg.withValues(alpha: ui.topBarOpacity / 100);
         }
+        // [UI_SYNC_REFACTOR R1] 毛玻璃：enableBlur 开启且非透明背景时，
+        // 半透明底（topBarBlurAlpha/255）+ BackdropFilter（topBarBlurRadius）
+        final useBlur = ui.enableBlur && bg != Colors.transparent;
+        if (useBlur) {
+          bg = bg.withValues(alpha: ui.topBarBlurAlpha / 255);
+        }
         final isLight =
             ThemeData.estimateBrightnessForColor(bg) == Brightness.light;
         final effectiveOverlay = systemOverlayStyle ??
@@ -170,7 +178,7 @@ class LegadoAppBar extends StatelessWidget implements PreferredSizeWidget {
               statusBarBrightness: isLight ? Brightness.light : Brightness.dark,
             );
 
-        return AppBar(
+        Widget bar = AppBar(
           leading: _buildLeading(context, style: style, merge: merge),
           automaticallyImplyLeading: false,
           title: _safeTitle(title),
@@ -204,6 +212,19 @@ class LegadoAppBar extends StatelessWidget implements PreferredSizeWidget {
           systemOverlayStyle: effectiveOverlay,
           forceMaterialTransparency: forceMaterialTransparency ?? false,
         );
+        // [UI_SYNC_REFACTOR R1] 毛玻璃包裹（实色半透明底 + 背后内容模糊）
+        if (useBlur) {
+          bar = ClipRect(
+            child: BackdropFilter(
+              filter: ImageFilter.blur(
+                sigmaX: ui.topBarBlurRadius.toDouble(),
+                sigmaY: ui.topBarBlurRadius.toDouble(),
+              ),
+              child: bar,
+            ),
+          );
+        }
+        return bar;
       },
     );
   }

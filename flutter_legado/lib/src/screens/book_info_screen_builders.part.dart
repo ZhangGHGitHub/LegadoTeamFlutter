@@ -31,7 +31,8 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final seedOverlay = seed == null
         ? cs.secondaryContainer
         : Color.lerp(cs.secondaryContainer, seed, 0.42)!;
-    final useBlur = mode == 'on' && hasCover;
+    // [UI_SYNC_REFACTOR R1] enableBlur 关闭时 on 档退化为不模糊显示（对齐参考仓全局开关语义）
+    final useBlur = mode == 'on' && hasCover && ui.enableBlur;
     final showBackdrop = !(mode == 'off_for_default' && isDefaultCover);
 
     final Widget backdrop = !showBackdrop

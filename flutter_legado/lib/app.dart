@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import 'src/providers/providers.dart';
+import 'src/providers/ui_settings/ui_settings_notifier.dart';
 import 'src/providers/theme/theme_colors_notifier.dart';
 import 'src/providers/theme/theme_notifier.dart';
 import 'src/routes.dart';
@@ -13,6 +14,7 @@ import 'src/services/auto_task_scheduler.dart';
 import 'src/services/deep_link_service.dart';
 import 'src/services/platform_bridge_service.dart';
 import 'src/theme/app_theme.dart';
+import 'package:dynamic_color/dynamic_color.dart';
 import 'src/theme/md3_colors.dart';
 import 'src/utils/app_route_observer.dart';
 import 'src/utils/app_scroll_behavior.dart';
@@ -77,14 +79,22 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
 
     // P1-8：有背景图时 Scaffold 透明，露出全局壁纸层（对齐原版
     // BaseActivity.upBackgroundImage → decorView.background）
+    // [UI_SYNC_REFACTOR R1] 跟随壁纸取色（Material You）：开关开启且系统
+    // 提供动态色板时，primary/accent 取动态色 role，其余 role 沿用内置
+    // palette；关闭或无动态色板时维持原并存模型（自定义四色 > palette）
+    return DynamicColorBuilder(
+      builder: (lightDynamic, darkDynamic) {
+        final uiSettings = ref.watch(uiSettingsProvider);
+    final followWallpaper = uiSettings.wallpaperColorFollow;
     final lightTheme = _withOptionalTransparentScaffold(
       AppTheme.palette(
         brightness: Brightness.light,
         palette: palette,
-        primary: c(themeColors.primary),
-        accent: c(themeColors.accent),
-        background: c(themeColors.background),
-        bottomBackground: c(themeColors.bottomBackground),
+        primary: followWallpaper ? lightDynamic?.primary : c(themeColors.primary),
+        accent: followWallpaper ? lightDynamic?.tertiary : c(themeColors.accent),
+        background: followWallpaper ? null : c(themeColors.background),
+        bottomBackground:
+            followWallpaper ? null : c(themeColors.bottomBackground),
       ),
       themeColors.bgImage,
     );
@@ -92,10 +102,13 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
       AppTheme.palette(
         brightness: Brightness.dark,
         palette: palette,
-        primary: c(themeColors.primaryNight),
-        accent: c(themeColors.accentNight),
-        background: c(themeColors.backgroundNight),
-        bottomBackground: c(themeColors.bottomBackgroundNight),
+        primary:
+            followWallpaper ? darkDynamic?.primary : c(themeColors.primaryNight),
+        accent:
+            followWallpaper ? darkDynamic?.tertiary : c(themeColors.accentNight),
+        background: followWallpaper ? null : c(themeColors.backgroundNight),
+        bottomBackground:
+            followWallpaper ? null : c(themeColors.bottomBackgroundNight),
       ),
       themeColors.bgImageNight,
     );
@@ -143,6 +156,8 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
       // [UI-fix v2.0.167] routes map → onGenerateRoute：命名路由统经
       // AppRoutes.generateRoute 构建，Android 上按分档覆盖转场时长
       onGenerateRoute: AppRoutes.generateRoute,
+        );
+      },
     );
   }
 

@@ -114,6 +114,21 @@ class PrefKeys {
   /// 基础卡片圆角值 4-28（参考仓 baseCardCornerRadius，默认 16）
   static const baseCardCornerRadius = 'baseCardCornerRadius';
 
+  /// 启用毛玻璃（参考仓 enableBlur，默认关——低端机掉帧保护）
+  static const enableBlur = 'enableBlur';
+
+  /// 顶栏模糊半径 dp（参考仓 topBarBlurRadius，默认 24）
+  static const topBarBlurRadius = 'topBarBlurRadius';
+
+  /// 顶栏模糊底色透明度 0-255（参考仓 topBarBlurAlpha，默认 73）
+  static const topBarBlurAlpha = 'topBarBlurAlpha';
+
+  /// 悬浮底栏模糊半径 dp（参考仓 bottomBarBlurRadius，默认 8）
+  static const bottomBarBlurRadius = 'bottomBarBlurRadius';
+
+  /// 悬浮底栏底色透明度 0-255（参考仓 bottomBarBlurAlpha，默认 40）
+  static const bottomBarBlurAlpha = 'bottomBarBlurAlpha';
+
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
   /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）
