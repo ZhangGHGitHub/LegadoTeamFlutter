@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
+import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:path_provider/path_provider.dart';
@@ -32,6 +33,8 @@ class BookshelfManageScreen extends ConsumerStatefulWidget {
 }
 
 class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
+  // [UI_SYNC_REFACTOR R3] 快速滚动条控制器
+  final ScrollController _fsController = ScrollController();
   /// 顶栏搜索框（对标原版 activity_arrange_book.xml 的 view_search）
   final _searchCtrl = TextEditingController();
   String _filter = '';
@@ -441,11 +444,16 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
         subtitle: '试试其他关键词',
       );
     }
-    return ListView.builder(
+    // [UI_SYNC_REFACTOR R3] 管理列表快速滚动条
+    return Md3FastScroller(
+      controller: _fsController,
+      child: ListView.builder(
+      controller: _fsController,
       // [LAYOUT_PLAN P3] 页面水平边距16dp
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
       itemCount: books.length,
       itemBuilder: (context, index) => _buildItem(theme, state, books[index]),
+      ),
     );
   }
 

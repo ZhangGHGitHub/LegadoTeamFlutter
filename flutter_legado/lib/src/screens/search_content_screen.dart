@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
+import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../l10n/app_strings.dart';
@@ -61,6 +62,8 @@ class SearchContentScreen extends ConsumerStatefulWidget {
 }
 
 class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
+  // [UI_SYNC_REFACTOR R3] 快速滚动条控制器
+  final ScrollController _fsController = ScrollController();
   final TextEditingController _controller = TextEditingController();
 
   List<_ContentMatch> _results = [];
@@ -322,9 +325,14 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
           ),
         ),
         Expanded(
-          child: ListView.builder(
-            itemCount: _results.length,
-            itemBuilder: (context, i) => _buildResultTile(_results[i]),
+          // [UI_SYNC_REFACTOR R3] 结果列表快速滚动条
+          child: Md3FastScroller(
+            controller: _fsController,
+            child: ListView.builder(
+              controller: _fsController,
+              itemCount: _results.length,
+              itemBuilder: (context, i) => _buildResultTile(_results[i]),
+            ),
           ),
         ),
       ],

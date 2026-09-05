@@ -1,6 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
+import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
@@ -25,6 +26,8 @@ class TxtTocRulesScreen extends ConsumerStatefulWidget {
 }
 
 class _TxtTocRulesScreenState extends ConsumerState<TxtTocRulesScreen> {
+  // [UI_SYNC_REFACTOR R3] 快速滚动条控制器
+  final ScrollController _fsController = ScrollController();
   static const _sampleText = '''第一章 初入江湖
 少年站在山门前，望着云雾缭绕的主峰。
 第2章 拜师学艺
@@ -93,7 +96,11 @@ It was a dark and stormy night.''';
   }
 
   Widget _buildList(TxtTocRulesState state) {
-    return ListView.builder(
+    // [UI_SYNC_REFACTOR R3] 规则列表快速滚动条
+    return Md3FastScroller(
+      controller: _fsController,
+      child: ListView.builder(
+      controller: _fsController,
       // [LAYOUT_PLAN P2] 列表纵向留白 8dp，横向由卡片 margin 统一 16dp
       padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: state.rules.length,
@@ -108,6 +115,7 @@ It was a dark and stormy night.''';
           onTest: () => _showTestDialog(rule),
         );
       },
+      ),
     );
   }
 

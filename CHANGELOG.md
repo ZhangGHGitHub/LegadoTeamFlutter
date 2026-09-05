@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.183] - 2026-09-05
+
+### Changed
+- [UI] 同步重构 R3⑤：书架管理/搜书内文/TXT 目录规则三屏接入快速滚动条，累计 12 屏
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.183+184
+
+- Contributor: Qoder UI
+
 ## [2.0.182] - 2026-09-05
 
 ### Changed
