@@ -6,7 +6,6 @@ import 'dart:ui' show ImageFilter;
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
-import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -20,6 +19,10 @@ import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../providers/sync/sync_notifier.dart';
 import '../routes.dart';
+import '../providers/ui_settings/ui_settings_notifier.dart';
+import '../widgets/legado_app_bar.dart';
+import '../widgets/top_bar_button.dart';
+import '../services/cover_palette_service.dart';
 import '../services/book_api.dart';
 import '../services/cache_service.dart';
 import '../services/platform_bridge_service.dart';
@@ -60,6 +63,11 @@ class BookInfoScreen extends ConsumerStatefulWidget {
 
 class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   final ScrollController _scrollController = ScrollController();
+  /// [UI_SYNC_REFACTOR B4] 顶栏折叠进度（对齐参考仓 collapsedFraction：
+  /// 封面区滚动归一化，驱动透明→玻璃色插值）
+  final ValueNotifier<double> _topCollapse = ValueNotifier<double>(0);
+  /// [UI_SYNC_REFACTOR B4] 封面取色 seed（null=未取/关闭开关）
+  Color? _coverSeed;
   bool _isLoading = false;
   /// 整页首屏：仅在连 Book 壳都没有时显示（对齐原版先 post bookData）
   bool _pageLoading = true;
@@ -90,178 +98,244 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
     _loadData();
     _loadDeleteBookAlert();
     PlatformBridgeService.refreshSignal.addListener(_onBridgeRefresh);
+    // [UI_SYNC_REFACTOR B4] 封面区滚动 → 顶栏折叠进度（对齐参考仓
+    // exitUntilCollapsed 的 collapsedFraction，120px 归一区间）
+    _scrollController.addListener(() {
+      final offset = _scrollController.hasClients
+          ? _scrollController.offset
+          : 0.0;
+      final fraction = (offset / 120).clamp(0.0, 1.0);
+      if ((fraction - _topCollapse.value).abs() > 0.01) {
+        _topCollapse.value = fraction;
+      }
+    });
+    if (_loadedBook != null) {
+      unawaited(_extractCoverSeed(_loadedBook!));
+    }
   }
 
   @override
   void dispose() {
     PlatformBridgeService.refreshSignal.removeListener(_onBridgeRefresh);
     _scrollController.dispose();
+    _topCollapse.dispose();
     super.dispose();
+  }
+
+  /// [UI_SYNC_REFACTOR B4] 封面取色（跟随封面换肤开关开启时生效）
+  Future<void> _extractCoverSeed(Book book) async {
+    final ui = uiSettingsListenable.value;
+    if (!ui.bookInfoFollowCoverColor) return;
+    final coverUrl = book.customCoverUrl ?? book.coverUrl;
+    if (coverUrl == null || coverUrl.isEmpty) return;
+    final seed = await CoverPaletteService.extractSeed(coverUrl);
+    if (!mounted) return;
+    setState(() => _coverSeed = seed);
+  }
+
+
+  /// [UI_SYNC_REFACTOR B4] ExtendedFAB（对齐参考仓 primaryContainer
+  /// 「开始阅读」；原底部操作条保留加书架/阅读入口）
+  Widget _buildReadFab() {
+    final book = _loadedBook;
+    if (book == null) return const SizedBox.shrink();
+    final isReading = book.durChapterIndex > 0;
+    return FloatingActionButton.extended(
+      icon: const Icon(Symbols.menu_book_rounded),
+      label: Text(isReading ? '继续阅读' : '开始阅读'),
+      onPressed: () => _openReader(context, book, book.durChapterIndex),
+    );
+  }
+
+  /// [UI_SYNC_REFACTOR B4] 顶栏 actions（原 appBar actions 原样迁移，
+  /// 由折叠 SliverAppBar 经 TopBarActionStyler 统一注入样式）
+  List<Widget> _buildTopBarActions() {
+    return [
+      // 编辑：仅在架书籍显示（对标原版 editMenuItem.isVisible = inBookshelf）
+      if (_inBookshelf)
+        IconButton(
+          icon: const Icon(Symbols.edit_rounded),
+          tooltip: '编辑书籍信息',
+          onPressed: () async {
+            try {
+              final book = _loadedBook;
+              if (book == null) return;
+              if (!mounted) return;
+              // [fix Task#24 | 2026-08-08] 去掉 <bool> 泛型，避免 routes 表
+              // MaterialPageRoute<dynamic> 运行时强转崩溃 — Qoder
+              final saved = await Navigator.pushNamed(
+                context,
+                AppRoutes.editBookInfo,
+                arguments: book,
+              );
+              // 编辑保存成功后重新加载书籍信息
+              if (saved == true && mounted) {
+                _reload();
+              }
+            } catch (e) {
+              // [审计修复 §4.1] 不再静默吞异常，向用户提示 — Qoder
+              debugPrint('编辑书籍信息失败: $e');
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')),
+                );
+              }
+            }
+          },
+        ),
+      IconButton(
+        icon: const Icon(Symbols.ios_share_rounded),
+        tooltip: '分享',
+        onPressed: () async {
+          try {
+            final book = _loadedBook;
+            if (book == null) return;
+            // 对齐原版 menu_share_it：bookUrl#bookJson + SourceCallBack
+            // — Cursor UI
+            final shareStr =
+                '${book.bookUrl}#${jsonEncode(book.toJson())}';
+            final api = ref.read(bookApiProvider);
+            final r = await api.sourceCallBackBtn(
+              event: 'clickShareBook',
+              bookUrl: book.bookUrl,
+              bookType: book.bookType,
+              result: shareStr,
+            );
+            final invoked = r['invoked'] == true;
+            final jsTrue = r['jsTrue'] == true;
+            if (!invoked || !jsTrue) {
+              await Share.share(shareStr);
+            }
+          } catch (e) {
+            // [审计修复 §4.1] 不再静默吞异常，向用户提示 — Qoder
+            debugPrint('分享书籍失败: $e');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')),
+              );
+            }
+          }
+        },
+      ),
+      if (_bookSource?.customButton == true)
+        IconButton(
+          icon: const Icon(Symbols.extension_rounded),
+          tooltip: '自定义',
+          onPressed: _onCustomButton,
+        ),
+      // 安卓原版三点菜单；P2-2 自定义按钮已接通 callBackBtn 中途 UI 桥
+      PopupMenuButton<String>(
+        tooltip: '更多',
+        onSelected: _handleMenu,
+        itemBuilder: (_) {
+          final book = _loadedBook;
+          final source = _bookSource;
+          final hasSource = source != null;
+          final isLocal = book != null && !_isOnlineBook(book);
+          final isLocalTxt = book != null && _isLocalTxt(book);
+          final hasLogin = (source?.loginUrl ?? '').isNotEmpty;
+          final canUpd = book?.canUpdate ?? true;
+          return [
+            if (source?.customButton == true)
+              const PopupMenuItem(value: 'customBtn', child: Text('自定义')),
+            if (isLocal)
+              const PopupMenuItem(value: 'upload', child: Text('上传至远程')),
+            const PopupMenuItem(value: 'refresh', child: Text('刷新')),
+            // 创建书籍更新任务（在架 + 书源 + 非本地 + 允许更新；
+            // [Task #39 §5.11-2] 已接通 AutoTaskScreen 编辑/创建流程）
+            if (_inBookshelf && hasSource && !isLocal && canUpd)
+              const PopupMenuItem(
+                value: 'updateTask',
+                child: Text('创建书籍更新任务'),
+              ),
+            // 登录（书源支持登录时）
+            if (hasLogin)
+              const PopupMenuItem(value: 'login', child: Text('登录')),
+            const PopupMenuItem(value: 'top', child: Text('置顶')),
+            // 设置源变量（Task #63 冻结 / #64-65 实现，§5.11-3 已接通 setSourceVariable）/
+            // 设置书籍变量
+            //（[Task #39 §5.11-4] 已接通变量对话框 + updateBook 保存）
+            if (hasSource)
+              const PopupMenuItem(
+                value: 'sourceVariable',
+                child: Text('设置源变量'),
+              ),
+            if (hasSource)
+              const PopupMenuItem(
+                value: 'bookVariable',
+                child: Text('设置书籍变量'),
+              ),
+            const PopupMenuItem(
+                value: 'copyBookUrl', child: Text('拷贝书籍URL')),
+            const PopupMenuItem(
+                value: 'copyTocUrl', child: Text('拷贝目录URL')),
+            // 允许更新（书源存在；勾选态）
+            if (hasSource)
+              CheckedPopupMenuItem(
+                value: 'canUpdate',
+                checked: book?.canUpdate ?? true,
+                child: const Text('允许更新'),
+              ),
+            // 拆分长章节（仅本地 txt；勾选态）
+            if (isLocalTxt)
+              CheckedPopupMenuItem(
+                value: 'splitLongChapter',
+                // isLocalTxt 已隐含 book != null（由 isLocal 推导），book 已提升为非空
+                checked: book.readConfig?.splitLongChapter ?? true,
+                child: const Text('拆分长章节'),
+              ),
+            // [UI-fix v2.0.3 | 2026-08-08] 删除提醒接通本地持久化
+            // （对齐原版 LocalConfig.deleteBookAlert） — Qoder
+            CheckedPopupMenuItem(
+              value: 'deleteAlert',
+              checked: _deleteBookAlert,
+              child: const Text('删除提醒'),
+            ),
+            const PopupMenuItem(
+                value: 'clearCache', child: Text('清理缓存')),
+            const PopupMenuItem(
+                value: 'cacheDownloads', child: Text('缓存下载队列')),
+            const PopupMenuItem(value: 'log', child: Text('日志')),
+          ];
+        },
+      ),
+    ];
   }
 
   @override
   Widget build(BuildContext context) {
-    // 对标原版 activity_book_info.xml：封面背景 + 半透明遮罩 + 深色 TitleBar
-    return Scaffold(
-      extendBodyBehindAppBar: true,
-      appBar: LegadoAppBar(
-        title: const Text('书籍信息'),
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        // [审计修复 §3.3] 改用 Theme Token（沉浸式封面背景上仍为白色系） — Qoder
-        foregroundColor: Theme.of(context).colorScheme.onPrimary,
-        actions: [
-          // 编辑：仅在架书籍显示（对标原版 editMenuItem.isVisible = inBookshelf）
-          if (_inBookshelf)
-            IconButton(
-              icon: const Icon(Symbols.edit_rounded),
-              tooltip: '编辑书籍信息',
-              onPressed: () async {
-                try {
-                  final book = _loadedBook;
-                  if (book == null) return;
-                  if (!context.mounted) return;
-                  // [fix Task#24 | 2026-08-08] 去掉 <bool> 泛型，避免 routes 表
-                  // MaterialPageRoute<dynamic> 运行时强转崩溃 — Qoder
-                  final saved = await Navigator.pushNamed(
-                    context,
-                    AppRoutes.editBookInfo,
-                    arguments: book,
-                  );
-                  // 编辑保存成功后重新加载书籍信息
-                  if (saved == true && mounted) {
-                    _reload();
-                  }
-                } catch (e) {
-                  // [审计修复 §4.1] 不再静默吞异常，向用户提示 — Qoder
-                  debugPrint('编辑书籍信息失败: $e');
-                  if (context.mounted) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')),
-                    );
-                  }
-                }
-              },
-            ),
-          IconButton(
-            icon: const Icon(Symbols.ios_share_rounded),
-            tooltip: '分享',
-            onPressed: () async {
-              try {
-                final book = _loadedBook;
-                if (book == null) return;
-                // 对齐原版 menu_share_it：bookUrl#bookJson + SourceCallBack
-                // — Cursor UI
-                final shareStr =
-                    '${book.bookUrl}#${jsonEncode(book.toJson())}';
-                final api = ref.read(bookApiProvider);
-                final r = await api.sourceCallBackBtn(
-                  event: 'clickShareBook',
-                  bookUrl: book.bookUrl,
-                  bookType: book.bookType,
-                  result: shareStr,
-                );
-                final invoked = r['invoked'] == true;
-                final jsTrue = r['jsTrue'] == true;
-                if (!invoked || !jsTrue) {
-                  await Share.share(shareStr);
-                }
-              } catch (e) {
-                // [审计修复 §4.1] 不再静默吞异常，向用户提示 — Qoder
-                debugPrint('分享书籍失败: $e');
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')),
-                  );
-                }
-              }
-            },
-          ),
-          if (_bookSource?.customButton == true)
-            IconButton(
-              icon: const Icon(Symbols.extension_rounded),
-              tooltip: '自定义',
-              onPressed: _onCustomButton,
-            ),
-          // 安卓原版三点菜单；P2-2 自定义按钮已接通 callBackBtn 中途 UI 桥
-          PopupMenuButton<String>(
-            tooltip: '更多',
-            onSelected: _handleMenu,
-            itemBuilder: (_) {
-              final book = _loadedBook;
-              final source = _bookSource;
-              final hasSource = source != null;
-              final isLocal = book != null && !_isOnlineBook(book);
-              final isLocalTxt = book != null && _isLocalTxt(book);
-              final hasLogin = (source?.loginUrl ?? '').isNotEmpty;
-              final canUpd = book?.canUpdate ?? true;
-              return [
-                if (source?.customButton == true)
-                  const PopupMenuItem(value: 'customBtn', child: Text('自定义')),
-                if (isLocal)
-                  const PopupMenuItem(value: 'upload', child: Text('上传至远程')),
-                const PopupMenuItem(value: 'refresh', child: Text('刷新')),
-                // 创建书籍更新任务（在架 + 书源 + 非本地 + 允许更新；
-                // [Task #39 §5.11-2] 已接通 AutoTaskScreen 编辑/创建流程）
-                if (_inBookshelf && hasSource && !isLocal && canUpd)
-                  const PopupMenuItem(
-                    value: 'updateTask',
-                    child: Text('创建书籍更新任务'),
-                  ),
-                // 登录（书源支持登录时）
-                if (hasLogin)
-                  const PopupMenuItem(value: 'login', child: Text('登录')),
-                const PopupMenuItem(value: 'top', child: Text('置顶')),
-                // 设置源变量（Task #63 冻结 / #64-65 实现，§5.11-3 已接通 setSourceVariable）/
-                // 设置书籍变量
-                //（[Task #39 §5.11-4] 已接通变量对话框 + updateBook 保存）
-                if (hasSource)
-                  const PopupMenuItem(
-                    value: 'sourceVariable',
-                    child: Text('设置源变量'),
-                  ),
-                if (hasSource)
-                  const PopupMenuItem(
-                    value: 'bookVariable',
-                    child: Text('设置书籍变量'),
-                  ),
-                const PopupMenuItem(
-                    value: 'copyBookUrl', child: Text('拷贝书籍URL')),
-                const PopupMenuItem(
-                    value: 'copyTocUrl', child: Text('拷贝目录URL')),
-                // 允许更新（书源存在；勾选态）
-                if (hasSource)
-                  CheckedPopupMenuItem(
-                    value: 'canUpdate',
-                    checked: book?.canUpdate ?? true,
-                    child: const Text('允许更新'),
-                  ),
-                // 拆分长章节（仅本地 txt；勾选态）
-                if (isLocalTxt)
-                  CheckedPopupMenuItem(
-                    value: 'splitLongChapter',
-                    // isLocalTxt 已隐含 book != null（由 isLocal 推导），book 已提升为非空
-                    checked: book.readConfig?.splitLongChapter ?? true,
-                    child: const Text('拆分长章节'),
-                  ),
-                // [UI-fix v2.0.3 | 2026-08-08] 删除提醒接通本地持久化
-                // （对齐原版 LocalConfig.deleteBookAlert） — Qoder
-                CheckedPopupMenuItem(
-                  value: 'deleteAlert',
-                  checked: _deleteBookAlert,
-                  child: const Text('删除提醒'),
-                ),
-                const PopupMenuItem(
-                    value: 'clearCache', child: Text('清理缓存')),
-                const PopupMenuItem(
-                    value: 'cacheDownloads', child: Text('缓存下载队列')),
-                const PopupMenuItem(value: 'log', child: Text('日志')),
-              ];
-            },
-          ),
-        ],
-      ),
+    // 对标原版 activity_book_info.xml：封面背景 + 渐变遮罩 + 折叠 TitleBar
+    // [UI_SYNC_REFACTOR B4] 封面取色换肤：ColorScheme 400ms 渐变
+    //（对齐参考仓 rememberBookInfoColorTheme tween(400, FastOutSlowIn)；
+    // bookInfoFollowCoverColor 开关关闭或未取到 seed 时保持原配色）
+    final baseTheme = Theme.of(context);
+    final seed = _coverSeed;
+    final followCover =
+        uiSettingsListenable.value.bookInfoFollowCoverColor;
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0, end: followCover && seed != null ? 1 : 0),
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.fastOutSlowIn,
+      builder: (context, t, child) {
+        var scheme = baseTheme.colorScheme;
+        if (seed != null && t > 0) {
+          final target = ColorScheme.fromSeed(
+            seedColor: seed,
+            brightness: baseTheme.colorScheme.brightness,
+          );
+          scheme = ColorScheme.lerp(scheme, target, t);
+        }
+        return Theme(
+          data: baseTheme.copyWith(colorScheme: scheme),
+          child: child!,
+        );
+      },
+      child: Scaffold(
+        // [UI_SYNC_REFACTOR B4] appBar → 折叠 SliverAppBar（入 body 首位
+        // sliver，collapsedFraction 驱动透明→surfaceContainer 插值）
+        floatingActionButton: _pageLoading || _loadedBook == null
+            ? null
+            : _buildReadFab(),
       body: _pageLoading
           // [LAYOUT_PLAN P4] 首屏 Skeleton 接线：详情骨架替代整页 LoadingIndicator
           // （shimmer 1200ms 已在 skeleton.dart 实现）
@@ -278,7 +352,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               : _loadedBook == null
                   ? const ErrorView(message: '书籍不存在')
                   : _buildPage(context, _loadedBook!, _chapters),
-      bottomNavigationBar: _buildBottomBar(),
-    );
+        bottomNavigationBar: _buildBottomBar(),
+        ),
+      );
   }
 }

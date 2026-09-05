@@ -106,6 +106,15 @@ class UiSettingsState {
   /// 平板/大屏导航形态
   final TabletInterfaceMode tabletInterface;
 
+  /// 详情页跟随封面取色换肤
+  final bool bookInfoFollowCoverColor;
+
+  /// 详情页网络封面背景三档：off/off_for_default/on
+  final String bookInfoNetworkCoverBackground;
+
+  /// 详情页默认封面背景三档
+  final String bookInfoDefaultCoverBackground;
+
   const UiSettingsState({
     this.topBarButtonStyle = TopBarButtonStyle.tonal,
     this.mergeTopBarActions = false,
@@ -116,6 +125,9 @@ class UiSettingsState {
     this.useFloatingBottomBar = false,
     this.showBottomView = true,
     this.tabletInterface = TabletInterfaceMode.auto,
+    this.bookInfoFollowCoverColor = true,
+    this.bookInfoNetworkCoverBackground = 'on',
+    this.bookInfoDefaultCoverBackground = 'on',
   });
 
   UiSettingsState copyWith({
@@ -128,6 +140,9 @@ class UiSettingsState {
     bool? useFloatingBottomBar,
     bool? showBottomView,
     TabletInterfaceMode? tabletInterface,
+    bool? bookInfoFollowCoverColor,
+    String? bookInfoNetworkCoverBackground,
+    String? bookInfoDefaultCoverBackground,
   }) {
     return UiSettingsState(
       topBarButtonStyle: topBarButtonStyle ?? this.topBarButtonStyle,
@@ -139,6 +154,12 @@ class UiSettingsState {
       useFloatingBottomBar: useFloatingBottomBar ?? this.useFloatingBottomBar,
       showBottomView: showBottomView ?? this.showBottomView,
       tabletInterface: tabletInterface ?? this.tabletInterface,
+      bookInfoFollowCoverColor:
+          bookInfoFollowCoverColor ?? this.bookInfoFollowCoverColor,
+      bookInfoNetworkCoverBackground:
+          bookInfoNetworkCoverBackground ?? this.bookInfoNetworkCoverBackground,
+      bookInfoDefaultCoverBackground: bookInfoDefaultCoverBackground ??
+          this.bookInfoDefaultCoverBackground,
     );
   }
 }
@@ -198,6 +219,18 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       ),
       tabletInterface: TabletInterfaceMode.fromName(
         await _settings.getStringPref(PrefKeys.tabletInterface),
+      ),
+      bookInfoFollowCoverColor: await _settings.getBoolPref(
+        PrefKeys.bookInfoFollowCoverColor,
+        defaultValue: true,
+      ),
+      bookInfoNetworkCoverBackground: await _settings.getStringPref(
+        PrefKeys.bookInfoNetworkCoverBackground,
+        defaultValue: 'on',
+      ),
+      bookInfoDefaultCoverBackground: await _settings.getStringPref(
+        PrefKeys.bookInfoDefaultCoverBackground,
+        defaultValue: 'on',
       ),
     );
     _sync();
@@ -277,6 +310,34 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     state = state.copyWith(tabletInterface: mode);
     _sync();
     await _settings.setStringPref(PrefKeys.tabletInterface, mode.name);
+  }
+
+  /// 详情页跟随封面取色
+  Future<void> setBookInfoFollowCoverColor(bool value) async {
+    if (state.bookInfoFollowCoverColor == value) return;
+    state = state.copyWith(bookInfoFollowCoverColor: value);
+    _sync();
+    await _settings.setBoolPref(PrefKeys.bookInfoFollowCoverColor, value);
+  }
+
+  /// 详情页背景三档（网络封面/默认封面共用三值：off/off_for_default/on）
+  Future<void> setBookInfoCoverBackground({
+    required bool isDefaultCover,
+    required String value,
+  }) async {
+    if (isDefaultCover) {
+      if (state.bookInfoDefaultCoverBackground == value) return;
+      state = state.copyWith(bookInfoDefaultCoverBackground: value);
+      _sync();
+      await _settings.setStringPref(
+          PrefKeys.bookInfoDefaultCoverBackground, value);
+    } else {
+      if (state.bookInfoNetworkCoverBackground == value) return;
+      state = state.copyWith(bookInfoNetworkCoverBackground: value);
+      _sync();
+      await _settings.setStringPref(
+          PrefKeys.bookInfoNetworkCoverBackground, value);
+    }
   }
 }
 

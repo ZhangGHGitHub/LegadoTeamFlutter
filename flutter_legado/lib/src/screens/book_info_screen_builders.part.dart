@@ -9,38 +9,103 @@ part of 'book_info_screen.dart';
 
 extension _BookInfoBuilders on _BookInfoScreenState {
 
-  /// 页面主体：封面高斯虚化背景（iOS 沉浸深度）+ 半透明 scrim —— 内容叠层
+  /// 页面主体：封面背景三档（off/off_for_default/on）+ seed 渐变 —— 内容叠层
+  /// [UI_SYNC_REFACTOR B4] 对齐参考仓 BookInfoBackdrop：
+  /// - on=480dp 顶部封面 + blur24 + seedOverlay(lerp(secondaryContainer,seed,0.42) α0.34)；
+  /// - off=显示封面不模糊 + seed 叠加；off_for_default=全部隐藏（纯 surface）；
+  /// - 垂直渐变 stops 0/0.2/0.4/0.6/0.8/1 → surface 全覆盖；切换 Crossfade 800ms。
   Widget _buildPage(BuildContext context, Book book, List<BookChapter> chapters) {
     final cs = Theme.of(context).colorScheme;
     final coverUrl = book.customCoverUrl ?? book.coverUrl;
     final hasCover = coverUrl != null && coverUrl.isNotEmpty;
-    // [UI-fix v2.0.166] 虚化源降采样：σ25 下 1/3 屏宽与全尺寸视觉无差，
+    final isDefaultCover = !hasCover;
+    final ui = uiSettingsListenable.value;
+    final mode = isDefaultCover
+        ? ui.bookInfoDefaultCoverBackground
+        : ui.bookInfoNetworkCoverBackground;
+    // [UI-fix v2.0.166] 虚化源降采样：σ24 下 1/3 屏宽与全尺寸视觉无差，
     // 解码+滤波开销降一个量级（进详情转场掉帧根因之一）
     final blurWidth =
         (MediaQuery.sizeOf(context).width / 3).round().clamp(120, 480);
+    final seed = _coverSeed;
+    final seedOverlay = seed == null
+        ? cs.secondaryContainer
+        : Color.lerp(cs.secondaryContainer, seed, 0.42)!;
+    final useBlur = mode == 'on' && hasCover;
+    final showBackdrop = !(mode == 'off_for_default' && isDefaultCover);
+
+    final Widget backdrop = !showBackdrop
+        ? ColoredBox(color: cs.surface)
+        : Stack(
+            children: [
+              if (hasCover)
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: 480,
+                  child: RepaintBoundary(
+                    child: useBlur
+                        ? ImageFiltered(
+                            imageFilter: ImageFilter.blur(
+                              sigmaX: 24,
+                              sigmaY: 24,
+                            ),
+                            child: CachedNetworkImage(
+                              imageUrl: coverUrl,
+                              fit: BoxFit.cover,
+                              memCacheWidth: blurWidth,
+                            ),
+                          )
+                        : CachedNetworkImage(
+                            imageUrl: coverUrl,
+                            fit: BoxFit.cover,
+                            memCacheWidth: blurWidth,
+                          ),
+                  ),
+                )
+              else
+                ColoredBox(color: cs.surfaceContainerHighest),
+              if (hasCover)
+                Positioned.fill(
+                  child: ColoredBox(
+                    color: seedOverlay.withValues(alpha: 0.34),
+                  ),
+                ),
+            ],
+          );
+
+    // 垂直渐变（对齐参考仓 colorStops：透明→seed 微染→surface 全覆盖）
+    final gradient = DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          stops: const [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+          colors: [
+            cs.surface.withValues(alpha: 0),
+            seedOverlay.withValues(alpha: 0.10),
+            seedOverlay.withValues(alpha: 0.18),
+            cs.surface.withValues(alpha: 0.85),
+            cs.surface,
+            cs.surface,
+          ],
+        ),
+      ),
+    );
+
     return Stack(
       fit: StackFit.expand,
       children: [
-        // [UI-fix v2.0.3 | 2026-08-06] 封面高斯虚化作背景层（sigma 25），
-        // 营造 iOS 沉浸景深；无封面降级纯色背景不加模糊 — Qoder
-        if (hasCover)
-          RepaintBoundary(
-            child: ImageFiltered(
-              imageFilter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-              child: CachedNetworkImage(
-                imageUrl: coverUrl,
-                fit: BoxFit.cover,
-                memCacheWidth: blurWidth,
-              ),
-            ),
-          )
-        else
-          ColoredBox(color: cs.surfaceContainerHighest),
-        // [审计修复 §3.3] scrim 叠层改用 colorScheme.scrim Token，
-        // 透明度对齐原版 vw_bg #50000000（虚化后仍保留以保标题/封面可读） — Qoder
-        ColoredBox(
-          color: cs.scrim.withValues(alpha: 0x50 / 0xFF),
+        // 背景层：封面/档位/seed 变化时 Crossfade 800（对齐参考仓 tween(800)）
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 800),
+          child: KeyedSubtree(
+            key: ValueKey('$coverUrl|$mode|${seed?.toARGB32()}'),
+            child: backdrop,
+          ),
         ),
+        Positioned.fill(child: gradient),
         SafeArea(
           top: false,
           // [LAYOUT_PLAN P4 收尾] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
@@ -564,6 +629,65 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     return CustomScrollView(
       controller: _scrollController,
       slivers: [
+        // [UI_SYNC_REFACTOR B4] 折叠顶栏（对标参考仓 BookInfoTransparentTopAppBar
+        // 双态：顶部全透明 / 下滑 surfaceContainer 玻璃色；collapsedFraction 由
+        // 滚动监听驱动，actions 经 TopBarActionStyler 统一注入样式）
+        ValueListenableBuilder<double>(
+          valueListenable: _topCollapse,
+          builder: (context, t, _) {
+            final topStyle =
+                uiSettingsListenable.value.topBarButtonStyle;
+            final topMerge =
+                uiSettingsListenable.value.mergeTopBarActions;
+            final barColor = Color.lerp(
+              Colors.transparent,
+              cs.surfaceContainer,
+              t,
+            );
+            final fg = Color.lerp(cs.onPrimary, cs.onSurface, t);
+            return SliverAppBar(
+              pinned: true,
+              automaticallyImplyLeading: false,
+              backgroundColor: barColor,
+              elevation: 0,
+              scrolledUnderElevation: 0,
+              surfaceTintColor: Colors.transparent,
+              foregroundColor: fg,
+              iconTheme: IconThemeData(color: fg),
+              leading: LegadoAppBar.shouldShowBack(context)
+                  ? TopBarActionStyler.styleActions(
+                      context,
+                      [
+                        IconButton(
+                          icon: const Icon(Symbols.arrow_back_rounded),
+                          tooltip: MaterialLocalizations.of(context)
+                              .backButtonTooltip,
+                          onPressed: () => Navigator.maybePop(context),
+                        ),
+                      ],
+                      style: t < 0.5
+                          ? TopBarButtonStyle.glass
+                          : topStyle,
+                      merge: false,
+                    ).first
+                  : null,
+              // 折叠后展示书名（对齐参考仓 TransparentTopAppBar title=书名）
+              title: t > 0.5
+                  ? Text(
+                      book.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  : null,
+              actions: TopBarActionStyler.styleActions(
+                context,
+                _buildTopBarActions(),
+                style: topStyle,
+                merge: topMerge,
+              ),
+            );
+          },
+        ),
         // 封面卡（对标原版 ArcView + CardView 110x160 居中）
         SliverToBoxAdapter(child: _buildHeader(context, book)),
         // 信息面板：书名/字数标签/摘要行/简介（对标原版 ll_info）

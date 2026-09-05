@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.170] - 2026-09-05
+
+### Changed
+- [UI] 全量同步重构 B4（布局优先批次三）：书籍详情页重塑对齐参考仓——封面取色换肤（palette_generator 提 seed，ColorScheme 400ms 渐变，跟随封面开关）；折叠顶栏（顶部全透明→下滑 surfaceContainer 玻璃色，折叠后显示书名，actions 经 5 档样式注入）；背景三档 off/off_for_default/on（480dp 封面+blur24+seedOverlay+垂直渐变 stops 0/0.2/0.4/0.6/0.8/1，切换 Crossfade 800ms）；新增 ExtendedFAB 开始/继续阅读（底部操作条保留加书架/阅读）
+
+### Test
+- flutter analyze 无问题；flutter test 1336 全过（coverage 测试点击定位改 FAB 实例）
+- 版本 2.0.170+171
+
+- Contributor: Qoder UI
+
 ## [2.0.169] - 2026-09-05
 
 ### Changed

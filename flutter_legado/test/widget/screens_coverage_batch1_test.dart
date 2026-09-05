@@ -367,7 +367,7 @@ void main() {
             .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('开始阅读'));
+        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('开始阅读')));
         await tester.pumpAndSettle();
 
         expect(pushed, contains(AppRoutes.audio));
@@ -383,7 +383,7 @@ void main() {
             .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('开始阅读'));
+        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('开始阅读')));
         await tester.pumpAndSettle();
 
         expect(pushed, contains(AppRoutes.readerComic));
@@ -398,7 +398,7 @@ void main() {
             .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('开始阅读'));
+        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('开始阅读')));
         await tester.pumpAndSettle();
 
         expect(pushed, contains(AppRoutes.reader));
@@ -412,7 +412,7 @@ void main() {
             .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('开始阅读'));
+        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('开始阅读')));
         await tester.pumpAndSettle();
 
         expect(pushed, contains(AppRoutes.video));
@@ -442,7 +442,7 @@ void main() {
             .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.text('开始阅读'));
+        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('开始阅读')));
         await tester.pumpAndSettle();
 
         // 类型位补全（64）→ 图片源分流到漫画页

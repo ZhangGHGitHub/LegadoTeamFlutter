@@ -75,6 +75,10 @@ extension _BookInfoLoad on _BookInfoScreenState {
               book != null && chapters.isEmpty && _isOnlineBook(book);
         });
       }
+      // [UI_SYNC_REFACTOR B4] 封面取色（跟随封面换肤）
+      if (book != null) {
+        unawaited(_extractCoverSeed(book));
+      }
       debugPrint(
         '[BookInfo] 首屏就绪 ${sw.elapsedMilliseconds}ms '
         'name=${book?.name} chapters=${chapters.length} tocLoading=$_tocLoading',
@@ -139,6 +143,7 @@ extension _BookInfoLoad on _BookInfoScreenState {
                   );
                   b = _mergeWebInfo(b, infoJson);
                   if (mounted) setState(() => _loadedBook = b);
+                  unawaited(_extractCoverSeed(b));
                 } catch (e) {
                   debugPrint(
                     'webbookInfo 补全失败，降级用原书籍继续: ${_errMsg(e)}',
@@ -186,6 +191,7 @@ extension _BookInfoLoad on _BookInfoScreenState {
             _networkLoading = false;
           });
         }
+        unawaited(_extractCoverSeed(b));
       } else if (mounted) {
         setState(() {
           _tocLoading = false;

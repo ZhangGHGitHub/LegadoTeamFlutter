@@ -97,6 +97,17 @@ class PrefKeys {
   /// 平板/大屏导航形态：auto/always/landscape/off（参考仓默认 auto）
   static const tabletInterface = 'tabletInterface';
 
+  /// 详情页跟随封面取色换肤（参考仓 bookInfoFollowCoverColor，默认开）
+  static const bookInfoFollowCoverColor = 'bookInfoFollowCoverColor';
+
+  /// 详情页网络封面背景三档：off/off_for_default/on（参考仓默认 on）
+  static const bookInfoNetworkCoverBackground =
+      'bookInfoNetworkCoverBackground';
+
+  /// 详情页默认封面背景三档（参考仓默认 on）
+  static const bookInfoDefaultCoverBackground =
+      'bookInfoDefaultCoverBackground';
+
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
   /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）
