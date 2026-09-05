@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.196] - 2026-09-06
+
+### Changed
+- [UI] 一比一复刻 T1：订阅页对齐参考 RssScreen——网格改 Adaptive 72dp 小瓦片（48dp 图标+labelMedium 2 行名居中，120dp 行高防溢出）+ 头部双卡（规则订阅|收藏，surfaceContainer 16dp 圆角，span 全宽，收藏入口自顶栏迁入）；空态改 sliver 尾部布局
+
+### Test
+- flutter analyze 无问题；flutter test 1341 全过（contrast_audit 同步过）
+- 版本 2.0.196+197
+
+- Contributor: Qoder UI
+
 ## [2.0.194] - 2026-09-06
 
 ### Fixed

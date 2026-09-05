@@ -1,4 +1,5 @@
-﻿import 'package:cached_network_image/cached_network_image.dart';
+import 'dart:async';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -10,7 +11,6 @@ import '../models/models.dart';
 import '../providers/rss/rss_notifier.dart';
 import '../providers/rss_history/rss_history_notifier.dart';
 import '../routes.dart';
-import '../utils/responsive.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4] 下拉 M3 化
 import '../widgets/empty_state.dart';
@@ -193,47 +193,66 @@ class _RssScreenState extends ConsumerState<RssScreen> {
               : (displaySources.isEmpty ? '当前分组暂无订阅源' : null);
 
           // [LAYOUT_PLAN P4] 下拉 M3 化：裸 RefreshIndicator → CustomRefreshIndicator
+          // [UI_SYNC_REFACTOR T1] 一比一对齐参考 RssScreen：头部双卡
+          //（规则订阅|收藏，span 全宽）+ Adaptive 72dp 小瓦片网格
           return CustomRefreshIndicator(
             onRefresh: () => notifier.loadSources(),
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                final columns =
-                    Responsive.rssGridColumnsForWidth(constraints.maxWidth);
-                final aspectRatio =
-                    Responsive.rssGridChildAspectRatio(constraints.maxWidth);
-                return Stack(
-                  children: [
-                    GridView.builder(
-                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 20),
-                      // 空态也允许下拉刷新（AlwaysScrollable）
-                      physics: const AlwaysScrollableScrollPhysics(),
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: columns,
-                        childAspectRatio: aspectRatio,
-                        // [LAYOUT_MOTION_AUDIT L3] 网格间距统一 12dp
-                        crossAxisSpacing: 12,
-                        mainAxisSpacing: 12,
-                      ),
-                      itemCount: displaySources.length + 1,
-                      itemBuilder: (context, index) {
-                        if (index == 0) return _buildRuleSubEntry(context);
-                        final source = displaySources[index - 1];
-                        return _buildSourceItem(context, source);
-                      },
-                    ),
-                    if (emptyMsg != null)
-                      Positioned.fill(
-                        child: IgnorePointer(
-                          child: EmptyState(
-                            icon: Symbols.rss_feed_rounded,
-                            title: emptyMsg,
-                            simple: true,
-                          ),
+            child: CustomScrollView(
+              // 空态也允许下拉刷新（AlwaysScrollable）
+              physics: const AlwaysScrollableScrollPhysics(),
+              slivers: [
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                    child: Row(
+                      children: [
+                        _buildEntryCard(
+                          context,
+                          Icons.subscriptions,
+                          '规则订阅',
+                          () => Navigator.pushNamed(
+                              context, AppRoutes.ruleSub),
                         ),
+                        const SizedBox(width: 12),
+                        _buildEntryCard(
+                          context,
+                          Icons.star,
+                          '收藏',
+                          () => Navigator.pushNamed(
+                              context, AppRoutes.rssFavorites),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                SliverGrid(
+                  gridDelegate:
+                      const SliverGridDelegateWithMaxCrossAxisExtent(
+                    maxCrossAxisExtent: 72,
+                    mainAxisExtent: 120,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                  ),
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final source = displaySources[index];
+                      return _buildSourceItem(context, source);
+                    },
+                    childCount: displaySources.length,
+                  ),
+                ),
+                if (emptyMsg != null)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 48),
+                      child: EmptyState(
+                        icon: Symbols.rss_feed_rounded,
+                        title: emptyMsg,
+                        simple: true,
                       ),
-                  ],
-                );
-              },
+                    ),
+                  ),
+              ],
             ),
           );
         },
@@ -269,146 +288,91 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     await launchUrl(uri, mode: LaunchMode.externalApplication);
   }
 
-  /// 「规则订阅」入口格（对标原版 RssFragment header：图标 + 文字，
-  /// 点击进入 RuleSubActivity 对应页）
-  Widget _buildRuleSubEntry(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    return RepaintBoundary(
-      child: InkWell(
-        key: const ValueKey('rule_sub_entry'),
-        onTap: () => Navigator.pushNamed(context, AppRoutes.ruleSub),
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: EdgeInsets.all(
-            Responsive.isCompact(MediaQuery.sizeOf(context).width) ? 12 : 16,
-          ),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.10),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
+  /// [UI_SYNC_REFACTOR T1] 头部双卡（对齐参考 GlassCard 双卡：规则订阅|收藏，
+  /// surfaceContainer 底 16dp 圆角、12dp padding、24dp 图标+强调文案居中）
+  Widget _buildEntryCard(
+    BuildContext context,
+    IconData icon,
+    String label,
+    VoidCallback onTap,
+  ) {
+    final cs = Theme.of(context).colorScheme;
+    return Expanded(
+      child: Material(
+        color: cs.surfaceContainer,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(icon, size: 24, color: cs.onSurface),
+                const SizedBox(width: 12),
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                 ),
-                child: Container(
-                  width: 50,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: colorScheme.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Icon(
-                    Symbols.subscriptions_rounded,
-                    size: 26,
-                    color: colorScheme.primary,
-                  ),
-                ),
-              ),
-              // 间距收紧至 8：为字体放大场景预留两行文本空间，
-              // 避免入口格内容溢出网格单元
-              const SizedBox(height: 8),
-              Text(
-                '规则订阅',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodySmall?.copyWith(
-                  fontSize: 13,
-                  color: colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
     );
   }
 
-  /// 安卓端 item_rss.xml 样式：居中图标(50x50 圆角12dp) + 名称(13sp 居中 最多2行)
+  /// [UI_SYNC_REFACTOR T1] 72dp 小瓦片（对齐参考 RssSourceGridItem：
+  /// 48dp 图标 + 8dp + labelMedium 2 行名居中，无卡底，长按删除确认）
   Widget _buildSourceItem(BuildContext context, RssSource source) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-
-    // 稳定 ValueKey（sourceUrl）+ RepaintBoundary 隔离网格项重绘区域
-    final item = InkWell(
+    final cs = Theme.of(context).colorScheme;
+    final hasIcon =
+        source.sourceIcon != null && source.sourceIcon!.trim().isNotEmpty;
+    return InkWell(
       key: ValueKey(source.sourceUrl),
-      onTap: () => _openRss(source),
+      borderRadius: BorderRadius.circular(16),
+      onTap: () => unawaited(_openRss(source)),
       onLongPress: () => _confirmDeleteSource(source),
-      borderRadius: BorderRadius.circular(8),
       child: Padding(
-        // 安卓端 item 内边距 16dp；窄屏缩至 12dp 防溢出
-        padding: EdgeInsets.all(
-          Responsive.isCompact(MediaQuery.sizeOf(context).width) ? 12 : 16,
-        ),
+        padding: const EdgeInsets.all(8),
         child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // 图标：50x50 圆角12dp（安卓端 FilletImageView radius=12dp）
-            // iOS 风格：圆角图标 + 柔和阴影，类似主屏 App 图标
-            DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                boxShadow: [
-                  BoxShadow(
-                    color: Theme.of(context).colorScheme.shadow.withValues(alpha: 0.10),
-                    blurRadius: 6,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(12),
-                child: source.sourceIcon.isNotEmpty
-                    ? CachedNetworkImage(
-                        imageUrl: source.sourceIcon,
-                        width: 50,
-                        height: 50,
-                        fit: BoxFit.cover,
-                        // 限制解码宽度为图标实际显示像素宽度（50），避免大图解码
-                        memCacheWidth: (50 *
-                                (MediaQuery.maybeOf(context)?.devicePixelRatio ??
-                                    1.0))
-                            .round(),
-                        placeholder: (_, _) => _buildPlaceholderIcon(
-                            context, source, colorScheme),
-                        errorWidget: (_, _, _) => _buildPlaceholderIcon(
-                            context, source, colorScheme),
-                      )
-                    : _buildPlaceholderIcon(context, source, colorScheme),
-              ),
+            SizedBox(
+              width: 48,
+              height: 48,
+              child: hasIcon
+                  ? CachedNetworkImage(
+                      imageUrl: source.sourceIcon!,
+                      fit: BoxFit.cover,
+                      memCacheWidth: 48 * 3,
+                      errorWidget: (_, _, _) =>
+                          _buildPlaceholderIcon(context, source, cs),
+                    )
+                  : _buildPlaceholderIcon(context, source, cs),
             ),
-            // 名称：安卓端 marginTop=16dp, 13sp, secondaryText, 居中, 最多2行
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
             Text(
               source.sourceName,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               textAlign: TextAlign.center,
-              style: theme.textTheme.bodySmall?.copyWith(
-                fontSize: 13,
-                color: colorScheme.onSurfaceVariant,
-              ),
+              style: Theme.of(context).textTheme.labelMedium,
             ),
           ],
         ),
       ),
     );
-    return RepaintBoundary(child: item);
   }
 
   /// 占位图标：显示源名称首字母（iOS 风格柔和填充底）
   Widget _buildPlaceholderIcon(
       BuildContext context, RssSource source, ColorScheme colorScheme) {
     return Container(
-      width: 50,
-      height: 50,
+      width: 48,
+      height: 48,
       decoration: BoxDecoration(
         color: colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(12),
@@ -425,6 +389,8 @@ class _RssScreenState extends ConsumerState<RssScreen> {
       ),
     );
   }
+
+  /// 占位图标：显示源名称首字母（iOS 风格柔和填充底）
 }
 
 /// 阅读记录对话框（对标原版 ReadRecordDialog：
