@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.180] - 2026-09-05
+
+### Changed
+- [UI] 同步重构 R3②：目录页（千级章节列表）与替换规则页（批量模式）接入快速滚动条（新双态形态），合计接入 4 屏（书源/订阅源原有）
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.180+181
+
+- Contributor: Qoder UI
+
 ## [2.0.179] - 2026-09-05
 
 ### Changed

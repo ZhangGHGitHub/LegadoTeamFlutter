@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/md3_fast_scroller.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -633,7 +634,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
     if (entries.isEmpty) {
       return const Center(child: Text('未找到匹配的章节'));
     }
-    return ListView.builder(
+    // [UI_SYNC_REFACTOR R3] 千级章节列表快速滚动条（对齐原版 FastScroller）
+    return Md3FastScroller(
+      controller: _tocScrollController,
+      child: ListView.builder(
       controller: _tocScrollController,
       itemExtent: _chapterRowExtent,
       itemCount: entries.length,
@@ -643,6 +647,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
             ? _buildVolumeRow(context, chapter)
             : _buildChapterRow(context, chapter);
       },
+      ),
     );
   }
 

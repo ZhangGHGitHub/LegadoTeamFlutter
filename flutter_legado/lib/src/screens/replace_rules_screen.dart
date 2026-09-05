@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/md3_fast_scroller.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -44,6 +45,8 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
   // [UI-fix v2.0.2 | 2026-08-06] 批量模式（对标原版 replace_rule_sel.xml：
   // 启用选中/禁用选中/置顶/置底/导出选中） — Qoder
   bool _batchMode = false;
+  // [UI_SYNC_REFACTOR R3] 快速滚动条控制器
+  final ScrollController _ruleListController = ScrollController();
   final Set<int> _selected = {};
 
   @override
@@ -232,7 +235,11 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
   ) {
     // [UI-fix v2.0.2 | 2026-08-06] 批量模式下禁用拖拽排序，行点击切换选中 — Qoder
     if (_batchMode) {
-      return ListView.builder(
+      // [UI_SYNC_REFACTOR R3] 快速滚动条（批量模式长列表）
+      return Md3FastScroller(
+        controller: _ruleListController,
+        child: ListView.builder(
+          controller: _ruleListController,
         // [LAYOUT_PLAN P2] 列表纵向留白 8dp，横向由卡片 margin 统一 16dp
         padding: const EdgeInsets.symmetric(vertical: 8),
         itemCount: rules.length,
@@ -253,6 +260,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
             onMoveDown: () => provider.moveDown(index),
           );
         },
+        ),
       );
     }
     return ReorderableListView.builder(
