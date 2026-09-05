@@ -158,15 +158,31 @@ class IosGroup extends StatelessWidget {
         ),
       );
     }
+    // [UI_SYNC_REFACTOR T2] 对齐参考 SplicedColumnGroup：16dp 玻璃分组卡
+    //（surfaceContainer 底）+ 组内 spacedBy 2 + 每行 4dp surfaceContainerLow
+    // 小卡底（SettingCard 等效）
     return Padding(
       padding: margin,
-      child: Card(
-        shape: RoundedRectangleBorder(
+      child: Container(
+        decoration: BoxDecoration(
+          color: theme.colorScheme.surfaceContainer,
           borderRadius: BorderRadius.circular(16),
         ),
+        clipBehavior: Clip.antiAlias,
+        padding: const EdgeInsets.all(4),
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: rows,
+          children: [
+            for (var i = 0; i < children.length; i++) ...[
+              Material(
+                color: theme.colorScheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(4),
+                clipBehavior: Clip.antiAlias,
+                child: children[i],
+              ),
+              if (i != children.length - 1) const SizedBox(height: 2),
+            ],
+          ],
         ),
       ),
     );

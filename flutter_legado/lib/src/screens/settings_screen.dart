@@ -176,7 +176,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             children: [
               // ===== 顶部管理入口（对标 pref_main 顶层项，文案对齐 values-zh）=====
               IosGroup(
-                flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                 separatorIndent: 62,
                 children: [
                   IosListTile(
@@ -222,6 +221,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     title: '字典规则',
                     subtitle: '配置字典规则',
                     onTap: () => Navigator.pushNamed(context, AppRoutes.dict),
+                  ),
+                  IosListTile(
+                    icon: Icons.sell_rounded,
+                    title: '高亮标注',
+                    subtitle: '自动高亮标注规则',
+                    onTap: () =>
+                        Navigator.pushNamed(context, AppRoutes.highlightRules),
+                  ),
+                  IosListTile(
+                    icon: Icons.sell_rounded,
+                    title: '高亮标注',
+                    subtitle: '自动高亮标注规则',
+                    onTap: () =>
+                        Navigator.pushNamed(context, AppRoutes.highlightRules),
                   ),
                   IosListTile(
                     icon: Symbols.brightness_6_rounded,
@@ -280,7 +293,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               // ===== 设置分组 =====
               const IosSectionHeader('设置'),
               IosGroup(
-                flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                 separatorIndent: 62,
                 children: [
                   IosListTile(
@@ -310,7 +322,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               // ===== 其他分组 =====
               const IosSectionHeader('其他'),
               IosGroup(
-                flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                 separatorIndent: 62,
                 children: [
                   IosListTile(

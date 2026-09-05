@@ -71,9 +71,11 @@ void main() {
 
       expect(find.text('我的'), findsWidgets,
           reason: 'SliverAppBar.large 展开大标题与折叠工具栏标题同时存在');
+      // [UI_SYNC_REFACTOR T2] 分组卡化后列表变高，「设置」组头在视口外
+      //（懒构建未挂载），先滚动再断言
+      await dragTo(tester, '备份与恢复');
       expect(find.text('设置', skipOffstage: false), findsOneWidget);
 
-      await dragTo(tester, '备份与恢复');
       await tester.pumpAndSettle();
       expect(find.text('备份与恢复'), findsOneWidget);
 

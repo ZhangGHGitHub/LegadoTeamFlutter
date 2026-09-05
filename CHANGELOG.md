@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.197] - 2026-09-06
+
+### Changed
+- [UI] 一比一复刻 T2：我的页分组卡反转（对齐参考 SplicedColumnGroup）——全部 IosGroup 由拆扁平恢复为 16dp 分组卡（surfaceContainer 底+组内 2dp 间距+每行 4dp surfaceContainerLow 小卡，行卡 Material 化消 ink 断言）；新增「高亮标注」条目入规则组；登记：组序完全对齐参考待后续微调（本地独有条目归位）
+
+### Test
+- flutter analyze 无问题；flutter test 1341 全过（settings_test 滚动断言适配分组卡变高）
+- 版本 2.0.197+198
+
+- Contributor: Qoder UI
+
 ## [2.0.196] - 2026-09-06
 
 ### Changed
