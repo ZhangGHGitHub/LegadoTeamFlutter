@@ -21,6 +21,7 @@ import '../providers/providers.dart';
 import '../providers/theme/system_bar_notifier.dart';
 import '../providers/theme/theme_colors_notifier.dart';
 import '../providers/theme/theme_notifier.dart';
+import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../routes.dart';
 import '../services/launcher_icon_service.dart';
 import '../services/settings_service.dart';
@@ -141,11 +142,96 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       ..showSnackBar(SnackBar(content: Text(message)));
   }
 
+  // ===== [UI_SYNC_REFACTOR B2] 顶栏与布局开关 =====
+
+  String _topBarStyleLabel(TopBarButtonStyle s) => switch (s) {
+        TopBarButtonStyle.plain => '平面',
+        TopBarButtonStyle.tonal => 'Tonal（默认）',
+        TopBarButtonStyle.outlined => '描边',
+        TopBarButtonStyle.glass => '玻璃',
+        TopBarButtonStyle.liquidGlass => '液态玻璃',
+      };
+
+  Future<void> _showTopBarStylePicker() async {
+    final current = ref.read(uiSettingsProvider).topBarButtonStyle;
+    final selected = await showDialog<TopBarButtonStyle>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('顶栏按钮样式'),
+        children: [
+          for (final s in TopBarButtonStyle.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, s),
+              child: Row(
+                children: [
+                  Icon(
+                    current == s
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(_topBarStyleLabel(s)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (selected != null) {
+      await ref
+          .read(uiSettingsProvider.notifier)
+          .setTopBarButtonStyle(selected);
+    }
+  }
+
+  Future<void> _showTopBarOpacityDialog() async {
+    var value = ref.read(uiSettingsProvider).topBarOpacity.toDouble();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('顶栏不透明度'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Slider(
+                value: value,
+                min: 0,
+                max: 100,
+                divisions: 20,
+                label: '${value.round()}%',
+                onChanged: (v) => setDialogState(() => value = v),
+              ),
+              Text('当前 ${value.round()}%'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed == true) {
+      await ref
+          .read(uiSettingsProvider.notifier)
+          .setTopBarOpacity(value.round());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeState = ref.watch(themeNotifierProvider);
     final themeNotifier = ref.read(themeNotifierProvider.notifier);
     final colors = ref.watch(themeColorsProvider);
+    final ui = ref.watch(uiSettingsProvider);
 
     return Scaffold(
       appBar: LegadoAppBar(title: const Text('主题设置')),
@@ -258,6 +344,40 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                               PrefKeys.wallpaperColorAutoUpdate, v);
                         },
                       ),
+                  ]),
+
+                  // === [UI_SYNC_REFACTOR B2] 顶栏与布局（对齐参考仓
+                  // ThemeConfig 顶栏组；设置经 uiSettings 即时全局生效） ===
+                  const IosSectionHeader('顶栏与布局'),
+                  IosGroup(
+                      flat: true,
+                      children: [
+                    IosListTile(
+                      title: '顶栏按钮样式',
+                      subtitle: _topBarStyleLabel(ui.topBarButtonStyle),
+                      onTap: _showTopBarStylePicker,
+                    ),
+                    SwitchListTile(
+                      title: const Text('合并顶栏按钮'),
+                      subtitle: const Text('顶栏按钮收进胶囊容器'),
+                      value: ui.mergeTopBarActions,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setMergeTopBarActions(v),
+                    ),
+                    SwitchListTile(
+                      title: const Text('大顶栏形态'),
+                      subtitle: const Text('书架/我的等根页使用可折叠大标题'),
+                      value: ui.useFlexibleTopAppBar,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setUseFlexibleTopAppBar(v),
+                    ),
+                    IosListTile(
+                      title: '顶栏不透明度',
+                      subtitle: '当前 ${ui.topBarOpacity}%',
+                      onTap: _showTopBarOpacityDialog,
+                    ),
                   ]),
 
                   // === 自定义主题·白天（对齐原版 day category，themeConfigList

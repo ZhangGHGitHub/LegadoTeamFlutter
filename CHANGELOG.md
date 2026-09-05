@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.168] - 2026-09-05
+
+### Changed
+- [UI] 全量同步重构 B0+B2（布局优先批次一）：顶栏按钮体系对齐参考仓 5 档规格（plain 40dp/图标24、tonal/outlined/glass/liquidGlass 36dp/图标20，默认 tonal；outlined 1dp 描边；glass 为实色回退）；merge 顶栏按钮并入胶囊容器+1dp 分隔线；书架大标题下新增 Dynamic 搜索行（进场展开动画，搜索入口由图标迁至搜索行）；顶栏不透明度设置；大顶栏形态开关；滚动色插值经 surfaceTint→surfaceContainer 等效
+- [UI] 新增 UI 布局设置通道（uiSettingsListenable 全局监听，组件零 Riverpod 依赖，58+ 使用点与既有测试兼容）；新增 palette_generator/dynamic_color 依赖（详情取色/动态取色后续批使用）；计划文档落盘 docs/UI_SYNC_REFACTOR_PLAN_20260905.md（含 81 屏覆盖矩阵）
+
+### Test
+- flutter analyze 无问题；flutter test 1333 全过（新增 top_bar_button_test 7 断言）
+- 版本 2.0.168+169
+
+- Contributor: Qoder UI
+
 ## [2.0.167] - 2026-09-05
 
 ### Fixed

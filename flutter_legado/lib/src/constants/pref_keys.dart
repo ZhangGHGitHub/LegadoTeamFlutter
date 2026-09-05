@@ -67,6 +67,21 @@ class PrefKeys {
   /// 夜间导航栏透明（仅 Android 生效，默认 false）
   static const transparentNavBarNight = 'transparentNavBarNight';
 
+  // ===== UI 布局同步重构开关族（UI_SYNC_REFACTOR_PLAN_20260905.md，
+  // key 名对齐参考仓 PreferKey，经 SharedPreferences 透存，Rust 不解释）=====
+
+  /// 顶栏按钮样式：plain/tonal/outlined/glass/liquidGlass（参考仓默认 tonal）
+  static const topBarButtonStyle = 'topBarButtonStyle';
+
+  /// 顶栏按钮合并进胶囊容器（参考仓 mergeTopBarActions，默认 false）
+  static const mergeTopBarActions = 'mergeTopBarActions';
+
+  /// 使用 MediumFlexible 大顶栏形态（参考仓 useFlexibleTopAppBar，默认 true）
+  static const useFlexibleTopAppBar = 'useFlexibleTopAppBar';
+
+  /// 顶栏不透明度 0-100（参考仓 topBarOpacity，默认 100）
+  static const topBarOpacity = 'topBarOpacity';
+
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
   /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）

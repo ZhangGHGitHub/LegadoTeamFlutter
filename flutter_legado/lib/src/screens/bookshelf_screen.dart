@@ -172,11 +172,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   List<Widget> _buildAppBarActions(BuildContext context, WidgetRef ref) {
     return [
-      IconButton(
-        icon: const Icon(Symbols.search_rounded),
-        tooltip: AppStrings.search,
-        onPressed: () => Navigator.pushNamed(context, AppRoutes.search),
-      ),
+      // [UI_SYNC_REFACTOR B2] 搜索入口迁至 Dynamic 搜索行（bottomContent）
       // 原版 main_bookshelf.xml 无常驻视图切换按钮，网格/列表切换在溢出菜单「书架布局」
       PopupMenuButton<String>(
         onSelected: (value) => _handleMenuAction(context, ref, value),
@@ -263,6 +259,12 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
                 ? _buildGroupTabBar(context, state)
                 : Text(AppStrings.bookshelf),
             actions: _buildAppBarActions(context, ref),
+            // [UI_SYNC_REFACTOR B2] Dynamic 搜索行（对齐参考仓 topBar
+            // bottomContent）：大标题下常驻搜索胶囊，进场展开动画
+            bottom: const PreferredSize(
+              preferredSize: Size.fromHeight(52),
+              child: _ShelfSearchRow(),
+            ),
           ),
           if (state.showStats) _buildStatsSliver(context, state),
           if (state.showRecentReading) _buildRecentReadingSliver(context, ref, state),
@@ -1043,6 +1045,82 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     ref.read(bookshelfNotifierProvider.notifier).refresh();
     messenger.showSnackBar(
       SnackBar(content: Text('书单导入完成：成功 $ok，跳过 $skip，失败 $fail')),
+    );
+  }
+}
+
+/// [UI_SYNC_REFACTOR B2] Dynamic 搜索行（对齐参考仓 DynamicTopAppBar
+/// bottomContent）：大标题下常驻搜索胶囊（32dp 标准形态 + surfaceContainerLow），
+/// 进场 SizeTransition+FadeTransition 展开动画；点击进搜索页。
+class _ShelfSearchRow extends StatefulWidget {
+  const _ShelfSearchRow();
+
+  @override
+  State<_ShelfSearchRow> createState() => _ShelfSearchRowState();
+}
+
+class _ShelfSearchRowState extends State<_ShelfSearchRow>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 250),
+  )..forward();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final reveal = CurvedAnimation(
+      parent: _controller,
+      curve: Curves.fastOutSlowIn,
+    );
+    return SizeTransition(
+      sizeFactor: reveal,
+      alignment: Alignment.topCenter,
+      child: FadeTransition(
+        opacity: reveal,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+          child: Material(
+            color: cs.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(32),
+            child: InkWell(
+              borderRadius: BorderRadius.circular(32),
+              onTap: () => Navigator.of(context).pushNamed(AppRoutes.search),
+              child: SizedBox(
+                height: 40,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: [
+                      Icon(
+                        Symbols.search_rounded,
+                        size: 20,
+                        color: cs.onSurfaceVariant,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          AppStrings.searchBookHint,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodyMedium
+                              ?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

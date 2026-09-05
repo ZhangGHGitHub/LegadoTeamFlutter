@@ -1,7 +1,7 @@
 name: flutter_legado
 description: "Legado - A reading app powered by Rust + Flutter"
 publish_to: 'none'
-version: 2.0.167+168
+version: 2.0.168+169
 
 environment:
   sdk: '>=3.8.0 <4.0.0'
@@ -41,6 +41,8 @@ dependencies:
   screen_brightness: ^2.0.0
   flutter_local_notifications: ^18.0.0
   app_links: ^6.0.0
+  palette_generator: ^0.3.3+7
+  dynamic_color: ^2.1.0
 
 dev_dependencies:
   flutter_test:
