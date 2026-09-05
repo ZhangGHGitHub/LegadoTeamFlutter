@@ -216,6 +216,7 @@
 新增计划、报告、交接文档必须放在 `docs/`；历史材料只允许放在 `docs/过期文档/`，不得再创建新的日期版计划散落在根目录。
 
 编写者：Codex ｜ 2026-08-19
+修订：Qoder UI ｜ 2026-09-05（全量同步重构当日交付：布局优先六批 B0+B2/B3/B4/B5/B1/B6+B7——顶栏 5 档按钮+merge 胶囊+Dynamic 搜索行、底栏三态+悬浮 64dp 胶囊+Rail 简版、详情取色换肤 400ms+折叠顶栏+背景三档+ExtendedFAB、阅读菜单 scale0.88+搜索 pill+r32、miuix 字阶拉齐+书架行 vertical12、详情与圆角开关组+对话框按钮规范；版本 2.0.168–2.0.173，门禁 analyze 0+test 1336 全过；剩余 blur 家族/dynamic_color/FastScroll 全站/朗读胶囊 morph 等登记于 UI_SYNC_REFACTOR_PLAN_20260905.md §七）
 修订：Qoder UI ｜ 2026-09-05（布局规划 P1–P4 四批全量交付并完成收尾：主链二三级/书源规则链/设置系通用约 40 页重排 + 动效全补（转场分档/Hero 全链路/Skeleton/Contained 接线/裸下拉清零 10 页/空态收敛/阅读器 chrome/Sheet 28dp）；残页 3 处闭合（explore_show 经共享列表组件、reader_comic 顶栏动作行、other_settings 三 Dialog 主题级合规验证）；搜索 pill/胶囊独立 fade/predictiveBack 按登记口径保留；版本 2.0.161–2.0.165，门禁 analyze 0 + test 1321 全过；详见 UI_MD3_LAYOUT_PLAN.md「实施状态」与 UI_MD3_LAYOUT_PLAN_PROGRESS_20260905.md）
 修订：Qoder + Bridge ｜ 2026-09-04（换源任务书 T6 流式化收口（任务书唯一 ⏸ 项销记）：Rust run_change_source_stream + StreamSink searchSourceStream（契约 §2.4）+ Dart 逐源渐显与 x/y 进度（U1 过渡反馈的永久替代）+ 首轮搜索/高级选项加载竞态修复；5556 实测 1024 源首候选 ≤2s、flutter test 1313 全过；版本 2.0.154+155；详见 TASK_HANDOFF_CHANGE_SOURCE_FIX_20260903.md §〇）
 修订：Qoder + Bridge ｜ 2026-09-03（换源修复任务书 Rust 轨批次 1/2 收口——T1+T2 换源执行链对齐原版 getToc（真实 tocUrl + 失败保留旧源 + 章节保留 variable/isVolume，3a78afc049）；T3/T4/T5 变量链整体交付（WebBookInfo/SearchResult/SearchCandidate/SourceMatch additive variable + 元素级导出落库 + get_content/reader/audio 内容链 book⊕chapter 变量合并（章节优先）+ switchSource 候选⊕详情变量合并详情页优先）；契约先行 API_CONTRACT 2026-09-03 条；T6 流式化属 UI 侧移交 UI 轨；详见 TASK_HANDOFF_CHANGE_SOURCE_FIX_20260903.md §〇）

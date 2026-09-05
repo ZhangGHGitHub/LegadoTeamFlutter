@@ -46,4 +46,28 @@ enableBlur 默认关（低端机掉帧保护）；字阶全局变更以矩阵+�
 
 ---
 
+## 七、实施状态（2026-09-05 当日交付）
+
+| 批次 | 提交 | 版本 | 内容 |
+|---|---|---|---|
+| B0+B2 顶栏 | `c47a1e6383` | 2.0.168+169 | 5 档按钮+merge 胶囊+Dynamic 搜索行+布局开关族地基（uiSettingsListenable） |
+| B3 底栏 | `5545a4abac` | 2.0.169+170 | label 三档+透明度+悬浮 64dp 胶囊+Rail 简版+五开关 |
+| B4 详情 | `f6abc28489` | 2.0.170+171 | 取色换肤 400ms+折叠顶栏+背景三档+ExtendedFAB |
+| B5 阅读菜单 | `5970caaebc` | 2.0.171+172 | scale0.88 动画+搜索 pill+标题胶囊+r32 停靠 |
+| B1 字阶密度 | `22e6cbcf67` | 2.0.172+173 | miuix 字阶 15 槽+书架行 vertical12 |
+| B6/B7 精简版 | `998488ee15` | 2.0.173+174 | 详情与圆角开关组+圆角覆写（卡片档）+对话框按钮规范 |
+
+门禁：每批 analyze 0+test 全过（最终 1336）。冒烟与双包对比验收见进度文档回填。
+
+### 剩余登记项（B6/B7 削减部分，另行排期）
+
+- blur 家族接线（enableBlur+BackdropFilter 于顶/底栏/阅读菜单/详情背景；实色版已按参考仓 noBlur 回退就位）
+- dynamic_color 接线（跟随壁纸取色真实生效——需与调色板/自定义四色并存模型整合，防破坏 B0 口径）
+- 分隔线开关（enableItemDivider 接 SettingItemDivider/PillDivider）、卡片边框覆写、containerOpacity、分组圆角开关
+- 登录 modalOverlay、FastScroll 全站 15 屏接入（idle 36×4→active 48×12 形态升级）、animateItem/animateContentSize 三件套、设置行 Semantics、渲染矩阵补页
+- 阅读菜单退出双向动画（fadeOut140+scaleOut0.88@180）、朗读胶囊 16↔48 morph、readMenuBlurMode key
+- Rail expand 持久化（简版已交付）
+
+---
+
 编写者：Qoder UI ｜ 2026-09-05
