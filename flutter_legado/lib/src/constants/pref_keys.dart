@@ -135,6 +135,12 @@ class PrefKeys {
   /// 大屏侧栏展开态持久化（参考仓 navExtended）
   static const railExtended = 'railExtended';
 
+  /// 阅读菜单亮度竖条开关（参考仓 showBrightnessView="2" 变体，默认关）
+  static const readMenuBrightnessVertical = 'readMenuBrightnessVertical';
+
+  /// 阅读菜单亮度竖条位置：left/right（参考仓 brightnessVwPos）
+  static const readMenuBrightnessPos = 'readMenuBrightnessVwPos';
+
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
   /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）

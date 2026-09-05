@@ -145,6 +145,12 @@ class UiSettingsState {
   /// 大屏侧栏展开态（持久化）
   final bool railExtended;
 
+  /// 阅读菜单亮度竖条开关
+  final bool readMenuBrightnessVertical;
+
+  /// 阅读菜单亮度竖条位置（left/right）
+  final String readMenuBrightnessPos;
+
   const UiSettingsState({
     this.topBarButtonStyle = TopBarButtonStyle.tonal,
     this.mergeTopBarActions = false,
@@ -168,6 +174,8 @@ class UiSettingsState {
     this.wallpaperColorFollow = false,
     this.enableItemDivider = false,
     this.railExtended = false,
+    this.readMenuBrightnessVertical = false,
+    this.readMenuBrightnessPos = 'right',
   });
 
   UiSettingsState copyWith({
@@ -193,6 +201,8 @@ class UiSettingsState {
     bool? wallpaperColorFollow,
     bool? enableItemDivider,
     bool? railExtended,
+    bool? readMenuBrightnessVertical,
+    String? readMenuBrightnessPos,
   }) {
     return UiSettingsState(
       topBarButtonStyle: topBarButtonStyle ?? this.topBarButtonStyle,
@@ -221,6 +231,10 @@ class UiSettingsState {
       wallpaperColorFollow: wallpaperColorFollow ?? this.wallpaperColorFollow,
       enableItemDivider: enableItemDivider ?? this.enableItemDivider,
       railExtended: railExtended ?? this.railExtended,
+      readMenuBrightnessVertical:
+          readMenuBrightnessVertical ?? this.readMenuBrightnessVertical,
+      readMenuBrightnessPos:
+          readMenuBrightnessPos ?? this.readMenuBrightnessPos,
     );
   }
 }
@@ -332,6 +346,14 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       railExtended: await _settings.getBoolPref(
         PrefKeys.railExtended,
         defaultValue: false,
+      ),
+      readMenuBrightnessVertical: await _settings.getBoolPref(
+        PrefKeys.readMenuBrightnessVertical,
+        defaultValue: false,
+      ),
+      readMenuBrightnessPos: await _settings.getStringPref(
+        PrefKeys.readMenuBrightnessPos,
+        defaultValue: 'right',
       ),
     );
     _sync();
@@ -500,6 +522,22 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     state = state.copyWith(bottomBarBlurAlpha: v);
     _sync();
     await _settings.setIntPref(PrefKeys.bottomBarBlurAlpha, v);
+  }
+
+  /// 阅读菜单亮度竖条开关
+  Future<void> setReadMenuBrightnessVertical(bool value) async {
+    if (state.readMenuBrightnessVertical == value) return;
+    state = state.copyWith(readMenuBrightnessVertical: value);
+    _sync();
+    await _settings.setBoolPref(PrefKeys.readMenuBrightnessVertical, value);
+  }
+
+  /// 阅读菜单亮度竖条位置
+  Future<void> setReadMenuBrightnessPos(String value) async {
+    if (state.readMenuBrightnessPos == value) return;
+    state = state.copyWith(readMenuBrightnessPos: value);
+    _sync();
+    await _settings.setStringPref(PrefKeys.readMenuBrightnessPos, value);
   }
 
   /// 大屏侧栏展开态

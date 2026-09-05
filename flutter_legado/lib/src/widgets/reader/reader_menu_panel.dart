@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -8,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../models/models.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../providers/theme/theme_notifier.dart';
+import '../../providers/ui_settings/ui_settings_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
 import '../../services/system_brightness.dart';
@@ -123,7 +125,14 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     final foreground = widget.styleFollowPage ? state.textColor : null;
     final adv = ref.watch(readerAdvConfigProvider);
     final autoPageActive = adv?.autoPageTurn ?? false;
-    final barColor = followColor ?? cs.surface;
+    var barColor = followColor ?? cs.surface;
+    // [UI_SYNC_REFACTOR S2-2] 表面 Haze 档（实色等效）：enableBlur 时
+    // 半透明底（α 85/255，参考 readMenuBlurAlpha 默认）+ BackdropFilter(24)
+    final ui = uiSettingsListenable.value;
+    final useSurfaceBlur = ui.enableBlur && followColor == null;
+    if (useSurfaceBlur) {
+      barColor = barColor.withValues(alpha: 85 / 255);
+    }
 
     return Positioned(
       bottom: 0,
@@ -156,30 +165,97 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             ),
           );
         },
-        child: Material(
-          color: barColor,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
-          child: SafeArea(
-            top: false,
-            child: IconTheme(
-              data: IconThemeData(color: foreground),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _buildTitleRow(context, book, chapter, foreground),
-                  _buildIconRow(context, foreground, autoPageActive),
-                  _buildSearchRow(context, foreground),
-                  _buildBrightnessRow(context, foreground),
-                  _buildProgressRow(context, notifier, state, foreground),
-                  _buildToolRow(context, foreground),
-                ],
-              ),
-            ),
+        child: useSurfaceBlur
+            ? ClipRRect(
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(32)),
+                child: BackdropFilter(
+                  filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                  child: _panelSurface(context, barColor, foreground, book,
+                      chapter, notifier, state, autoPageActive),
+                ),
+              )
+            : _panelSurface(
+                context, barColor, foreground, book, chapter, notifier,
+                state, autoPageActive),
+      ),
+    );
+  }
+
+  Widget _panelSurface(
+    BuildContext context,
+    Color barColor,
+    Color? foreground,
+    Book? book,
+    BookChapter? chapter,
+    ReaderNotifier notifier,
+    ReaderState state,
+    bool autoPageActive,
+  ) {
+    // [UI_SYNC_REFACTOR S2-2] 亮度竖条（对齐参考 brightnessVwPos 左右双位；
+    // readMenuBrightnessVertical 开关，横行同步隐藏）
+    final cs = Theme.of(context).colorScheme;
+    final ui = uiSettingsListenable.value;
+    final verticalBrightness =
+        _brightnessSupported && ui.readMenuBrightnessVertical;
+    final barOnLeft = ui.readMenuBrightnessPos == 'left';
+
+    Widget surface = Material(
+      color: barColor,
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
+      child: SafeArea(
+        top: false,
+        child: IconTheme(
+          data: IconThemeData(color: foreground),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildTitleRow(context, book, chapter, foreground),
+              _buildIconRow(context, foreground, autoPageActive),
+              _buildSearchRow(context, foreground),
+              if (!verticalBrightness) _buildBrightnessRow(context, foreground),
+              _buildProgressRow(context, notifier, state, foreground),
+              _buildToolRow(context, foreground),
+            ],
           ),
         ),
       ),
     );
+
+    if (verticalBrightness) {
+      surface = Stack(
+        children: [
+          surface,
+          Positioned(
+            bottom: 24,
+            left: barOnLeft ? 6 : null,
+            right: barOnLeft ? null : 6,
+            child: Container(
+              width: 40,
+              height: 168,
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest.withValues(alpha: 0.7),
+                borderRadius: BorderRadius.circular(40),
+              ),
+              child: RotatedBox(
+                quarterTurns: barOnLeft ? 3 : 1,
+                child: Slider(
+                  value: _brightness,
+                  onChanged: _autoBrightness
+                      ? null
+                      : (v) {
+                          setState(() => _brightness = v);
+                          unawaited(SystemBrightness.setBrightness(v));
+                        },
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    return surface;
   }
 
   // ── 分区 1：标题胶囊行 ──

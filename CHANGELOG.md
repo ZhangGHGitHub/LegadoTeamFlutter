@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.188] - 2026-09-05
+
+### Changed
+- [UI] 一比一复刻 S2-2：阅读菜单表面 Haze 档（enableBlur 时半透明底 α85/255+BackdropFilter 24）；亮度竖条左右双位（readMenuBrightnessVertical/Pos 开关，横行联动隐藏）；登记：More 长尾项（目录刷新等）维持原入口不迁伪功能
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.188+189
+
+- Contributor: Qoder UI
+
 ## [2.0.187] - 2026-09-05
 
 ### Changed
