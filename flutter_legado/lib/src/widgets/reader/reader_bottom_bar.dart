@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../l10n/app_strings.dart';
 import '../../providers/audio/audio_notifier.dart';
 import '../../providers/reader/reader_notifier.dart';
-import 'reader_menu_transition.dart';
 import '../../providers/theme/theme_notifier.dart';
 import '../../screens/reader_config_panel.dart';
 import '../../services/system_brightness.dart';
@@ -65,18 +64,46 @@ class ReaderBottomBar extends ConsumerStatefulWidget {
     this.styleFollowPage = false,
     this.onToggleAutoPage,
     this.onOpenReplaceRules,
+    this.visible = true,
   });
+
+  /// [UI_SYNC_REFACTOR R2] 显隐状态（常挂载+控制器双向动画）
+  final bool visible;
 
   @override
   ConsumerState<ReaderBottomBar> createState() => _ReaderBottomBarState();
 }
 
-class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
+class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar>
+    with SingleTickerProviderStateMixin {
+  // [UI_SYNC_REFACTOR R2] 进 220ms（fadeIn180 内含）/ 出 180ms
+  late final AnimationController _menuController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+    reverseDuration: const Duration(milliseconds: 180),
+    value: widget.visible ? 1 : 0,
+  );
   bool _brightnessSupported = false;
   bool _autoBrightness = false;
   double _brightness = 0.5;
 
   // AnimatedOpacity + AnimatedSlide（180ms，对标 anim_readbook_bottom）。
+
+  @override
+  void didUpdateWidget(covariant ReaderBottomBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.visible != widget.visible) {
+      widget.visible
+          ? _menuController.forward()
+          : _menuController.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _menuController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -149,10 +176,35 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
       // [UI-fix v2.0.4 | 2026-08-08] 悬浮按钮行（对标原版 ll_floating_button：
       // fabSearch 居左 / fabNightTheme 居右；原版另有 fabAutoPage/fabReplaceRule，
       // 自动翻页由 reader_screen `_syncAutoTimer` 驱动；替换规则入口在溢出菜单）— Qoder
-      // [UI_SYNC_REFACTOR B5] 菜单进场统一 scale0.88+fade（fadeIn180/
-      // scaleIn0.88@220，对齐参考仓 ReadBookRouteScreen）
-      child: ReaderMenuTransition(
-          child: Column(
+      // [UI_SYNC_REFACTOR R2] 双向动画（hidden 时零尺寸省绘制）
+      child: AnimatedBuilder(
+        animation: _menuController,
+        builder: (context, child) {
+          final v = _menuController.value;
+          if (v == 0) return const SizedBox.shrink();
+          final fade = Tween<double>(begin: 0, end: 1).animate(
+            CurvedAnimation(
+              parent: _menuController,
+              curve: const Interval(0, 0.82, curve: Curves.easeOut),
+            ),
+          );
+          final scale = Tween<double>(begin: 0.88, end: 1.0).animate(
+            CurvedAnimation(
+                parent: _menuController, curve: Curves.fastOutSlowIn),
+          );
+          return IgnorePointer(
+            ignoring: !widget.visible,
+            child: FadeTransition(
+              opacity: fade,
+              child: ScaleTransition(
+                scale: scale,
+                alignment: Alignment.bottomCenter,
+                child: child!,
+              ),
+            ),
+          );
+        },
+        child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [

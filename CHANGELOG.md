@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.178] - 2026-09-05
+
+### Changed
+- [UI] 同步重构 R2②：阅读菜单退出双向动画——顶/底栏改常挂载+控制器双向（进 fadeIn180+scaleIn0.88@220 / 出 fadeOut140+scaleOut0.88@180，hidden 时零尺寸省绘制+IgnorePointer），弹出与收起均有形变过渡（原退出为瞬时卸载）
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.178+179
+
+- Contributor: Qoder UI
+
 ## [2.0.177] - 2026-09-05
 
 ### Changed

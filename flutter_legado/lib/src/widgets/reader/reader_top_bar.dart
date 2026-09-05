@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import 'reader_menu_transition.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -50,19 +49,31 @@ class ReaderTopBar extends ConsumerStatefulWidget {
   /// 正文延伸至状态栏（readBodyToLh）；为 true 时顶栏须显式避让系统栏
   final bool readBodyToLh;
 
+  /// [UI_SYNC_REFACTOR R2] 显隐状态（常挂载+控制器双向动画）
+  final bool visible;
+
   const ReaderTopBar({
     super.key,
     required this.onAddBookmark,
     this.showTitleAddition = true,
     this.styleFollowPage = false,
     this.readBodyToLh = true,
+    this.visible = true,
   });
 
   @override
   ConsumerState<ReaderTopBar> createState() => _ReaderTopBarState();
 }
 
-class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
+class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
+    with SingleTickerProviderStateMixin {
+  // [UI_SYNC_REFACTOR R2] 进 220ms（fadeIn180 内含）/ 出 180ms
+  late final AnimationController _menuController = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 220),
+    reverseDuration: const Duration(milliseconds: 180),
+    value: widget.visible ? 1 : 0,
+  );
   // [UI-fix v2.0.4 | 2026-08-08] EPUB delTag 位标（对齐 Kotlin Book.hTag=2、
   // Book.rubyTag=4，经 ReadConfig.delTag 位运算持久化） — Qoder
   static const int _hTag = 2;
@@ -84,6 +95,22 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
   String? _flagsLoadedKey;
 
   // [LAYOUT_PLAN P4] 顶栏进场动效开关：挂载后下一帧置 true，驱动
+
+  @override
+  void didUpdateWidget(covariant ReaderTopBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.visible != widget.visible) {
+      widget.visible
+          ? _menuController.forward()
+          : _menuController.reverse();
+    }
+  }
+
+  @override
+  void dispose() {
+    _menuController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -1087,8 +1114,36 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
       // [LAYOUT_PLAN P4] 菜单 slide+fade 进场（220ms，对标 anim_readbook_top
       // 200ms 上滑入场；showControls 条件挂载逻辑保持不变，动画仅装饰）。
       // [UI_SYNC_REFACTOR B5] 菜单进场统一 scale0.88+fade（对齐参考仓）
-      child: ReaderMenuTransition(
-          child: Material(
+      // [UI_SYNC_REFACTOR R2] 双向动画：进 fadeIn180+scaleIn0.88@220 /
+      // 出 fadeOut140+scaleOut0.88@180（常挂载，hidden 时零尺寸省绘制）
+      child: AnimatedBuilder(
+        animation: _menuController,
+        builder: (context, child) {
+          final v = _menuController.value;
+          if (v == 0) return const SizedBox.shrink();
+          final fade = Tween<double>(begin: 0, end: 1).animate(
+            CurvedAnimation(
+              parent: _menuController,
+              curve: const Interval(0, 0.82, curve: Curves.easeOut),
+            ),
+          );
+          final scale = Tween<double>(begin: 0.88, end: 1.0).animate(
+            CurvedAnimation(
+                parent: _menuController, curve: Curves.fastOutSlowIn),
+          );
+          return IgnorePointer(
+            ignoring: !widget.visible,
+            child: FadeTransition(
+              opacity: fade,
+              child: ScaleTransition(
+                scale: scale,
+                alignment: Alignment.topCenter,
+                child: child!,
+              ),
+            ),
+          );
+        },
+        child: Material(
         color: followColor ?? Theme.of(context).colorScheme.surface,
         // [UI_SYNC_REFACTOR B5] 停靠形态底部圆角 32（对齐参考仓菜单容器）
         elevation: 0,

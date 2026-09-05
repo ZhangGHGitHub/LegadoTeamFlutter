@@ -514,8 +514,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                     ),
                   ),
                 ),
-              if (state.showControls)
+              // [UI_SYNC_REFACTOR R2] 常挂载+双向动画（visible 驱动）
                 ReaderTopBar(
+                  visible: state.showControls,
                   onAddBookmark: () => _addBookmark(state),
                   // [UI-fix v2.0.4 | 2026-08-08] 顶栏对齐原版 ReadMenu：搜索/
                   // 高级设置入口已迁出（搜索→底栏悬浮按钮，设置→底栏设置按钮），
@@ -535,8 +536,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                   onOpenCatalog: () => unawaited(_openToc()),
                   onBackstage: () => Navigator.of(context).maybePop(),
                 )
-              else if (state.showControls)
+              else
                 ReaderBottomBar(
+                  visible: state.showControls,
                   onOpenCatalog: () => unawaited(_openToc()),
                   onOpenSettings: () => ReaderSettingsSheet.show(context),
                   onOpenAdvancedConfig: () => _openAdvancedConfig(context),
