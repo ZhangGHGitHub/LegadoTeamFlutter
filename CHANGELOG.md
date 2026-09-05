@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.169] - 2026-09-05
+
+### Changed
+- [UI] 全量同步重构 B3（布局优先批次二）：底栏与导航对齐参考仓——label 三档显示（仅选中/常显/纯图标）、底栏不透明度 0-100、悬浮底栏（64dp Stadium 胶囊、按压缩放+图标 1→1.2+选中 64×32 胶囊，实色版）、大屏导航形态三档（自动 sw≥600/始终/仅横屏/关闭）切 NavigationRail 简版、底栏显隐开关；主题页新增「底栏与导航」开关组
+
+### Test
+- flutter analyze 无问题；flutter test 1336 全过（新增 ui_settings_test）
+- 版本 2.0.169+170
+
+- Contributor: Qoder UI
+
 ## [2.0.168] - 2026-09-05
 
 ### Changed

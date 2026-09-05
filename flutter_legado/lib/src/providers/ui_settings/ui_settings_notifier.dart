@@ -34,6 +34,49 @@ enum TopBarButtonStyle {
   }
 }
 
+/// 底栏 label 显示档位（对齐参考仓 labelVisibilityMode）
+enum BottomBarLabelMode {
+  /// 仅选中显示 label（参考仓 "auto" 默认）
+  auto,
+
+  /// 全部常显（"labeled"）
+  labeled,
+
+  /// 纯图标（"unlabeled"）
+  unlabeled;
+
+  /// 从持久化字符串解析（未知值回退 [auto]）
+  static BottomBarLabelMode fromName(String? name) {
+    for (final m in BottomBarLabelMode.values) {
+      if (m.name == name) return m;
+    }
+    return BottomBarLabelMode.auto;
+  }
+}
+
+/// 平板/大屏导航形态（对齐参考仓 tabletInterface）
+enum TabletInterfaceMode {
+  /// 自动：sw≥600 启用 Rail（"auto" 默认）
+  auto,
+
+  /// 始终启用 Rail（"always"）
+  always,
+
+  /// 仅横屏启用（"landscape"）
+  landscape,
+
+  /// 不启用（"off"）
+  off;
+
+  /// 从持久化字符串解析（未知值回退 [auto]）
+  static TabletInterfaceMode fromName(String? name) {
+    for (final m in TabletInterfaceMode.values) {
+      if (m.name == name) return m;
+    }
+    return TabletInterfaceMode.auto;
+  }
+}
+
 /// UI 布局设置状态（不可变；字段按批次增量扩展）
 class UiSettingsState {
   /// 顶栏按钮样式档位
@@ -48,11 +91,31 @@ class UiSettingsState {
   /// 顶栏不透明度 0-100
   final int topBarOpacity;
 
+  /// 底栏 label 显示档位
+  final BottomBarLabelMode labelVisibilityMode;
+
+  /// 底栏不透明度 0-100
+  final int bottomBarOpacity;
+
+  /// 悬浮底栏（64dp 胶囊形态，参考仓默认关）
+  final bool useFloatingBottomBar;
+
+  /// 显示底栏（参考仓 showBottomView）
+  final bool showBottomView;
+
+  /// 平板/大屏导航形态
+  final TabletInterfaceMode tabletInterface;
+
   const UiSettingsState({
     this.topBarButtonStyle = TopBarButtonStyle.tonal,
     this.mergeTopBarActions = false,
     this.useFlexibleTopAppBar = true,
     this.topBarOpacity = 100,
+    this.labelVisibilityMode = BottomBarLabelMode.auto,
+    this.bottomBarOpacity = 100,
+    this.useFloatingBottomBar = false,
+    this.showBottomView = true,
+    this.tabletInterface = TabletInterfaceMode.auto,
   });
 
   UiSettingsState copyWith({
@@ -60,12 +123,22 @@ class UiSettingsState {
     bool? mergeTopBarActions,
     bool? useFlexibleTopAppBar,
     int? topBarOpacity,
+    BottomBarLabelMode? labelVisibilityMode,
+    int? bottomBarOpacity,
+    bool? useFloatingBottomBar,
+    bool? showBottomView,
+    TabletInterfaceMode? tabletInterface,
   }) {
     return UiSettingsState(
       topBarButtonStyle: topBarButtonStyle ?? this.topBarButtonStyle,
       mergeTopBarActions: mergeTopBarActions ?? this.mergeTopBarActions,
       useFlexibleTopAppBar: useFlexibleTopAppBar ?? this.useFlexibleTopAppBar,
       topBarOpacity: topBarOpacity ?? this.topBarOpacity,
+      labelVisibilityMode: labelVisibilityMode ?? this.labelVisibilityMode,
+      bottomBarOpacity: bottomBarOpacity ?? this.bottomBarOpacity,
+      useFloatingBottomBar: useFloatingBottomBar ?? this.useFloatingBottomBar,
+      showBottomView: showBottomView ?? this.showBottomView,
+      tabletInterface: tabletInterface ?? this.tabletInterface,
     );
   }
 }
@@ -108,6 +181,24 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
         PrefKeys.topBarOpacity,
         defaultValue: 100,
       ).then(_clampOpacity),
+      labelVisibilityMode: BottomBarLabelMode.fromName(
+        await _settings.getStringPref(PrefKeys.labelVisibilityMode),
+      ),
+      bottomBarOpacity: await _settings.getIntPref(
+        PrefKeys.bottomBarOpacity,
+        defaultValue: 100,
+      ).then(_clampOpacity),
+      useFloatingBottomBar: await _settings.getBoolPref(
+        PrefKeys.useFloatingBottomBar,
+        defaultValue: false,
+      ),
+      showBottomView: await _settings.getBoolPref(
+        PrefKeys.showBottomView,
+        defaultValue: true,
+      ),
+      tabletInterface: TabletInterfaceMode.fromName(
+        await _settings.getStringPref(PrefKeys.tabletInterface),
+      ),
     );
     _sync();
   }
@@ -145,6 +236,47 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     state = state.copyWith(topBarOpacity: v);
     _sync();
     await _settings.setIntPref(PrefKeys.topBarOpacity, v);
+  }
+
+  /// 底栏 label 显示档位
+  Future<void> setLabelVisibilityMode(BottomBarLabelMode mode) async {
+    if (state.labelVisibilityMode == mode) return;
+    state = state.copyWith(labelVisibilityMode: mode);
+    _sync();
+    await _settings.setStringPref(PrefKeys.labelVisibilityMode, mode.name);
+  }
+
+  /// 底栏不透明度（0-100）
+  Future<void> setBottomBarOpacity(int value) async {
+    final v = _clampOpacity(value);
+    if (state.bottomBarOpacity == v) return;
+    state = state.copyWith(bottomBarOpacity: v);
+    _sync();
+    await _settings.setIntPref(PrefKeys.bottomBarOpacity, v);
+  }
+
+  /// 悬浮底栏开关
+  Future<void> setUseFloatingBottomBar(bool value) async {
+    if (state.useFloatingBottomBar == value) return;
+    state = state.copyWith(useFloatingBottomBar: value);
+    _sync();
+    await _settings.setBoolPref(PrefKeys.useFloatingBottomBar, value);
+  }
+
+  /// 显示底栏开关
+  Future<void> setShowBottomView(bool value) async {
+    if (state.showBottomView == value) return;
+    state = state.copyWith(showBottomView: value);
+    _sync();
+    await _settings.setBoolPref(PrefKeys.showBottomView, value);
+  }
+
+  /// 平板/大屏导航形态
+  Future<void> setTabletInterface(TabletInterfaceMode mode) async {
+    if (state.tabletInterface == mode) return;
+    state = state.copyWith(tabletInterface: mode);
+    _sync();
+    await _settings.setStringPref(PrefKeys.tabletInterface, mode.name);
   }
 }
 

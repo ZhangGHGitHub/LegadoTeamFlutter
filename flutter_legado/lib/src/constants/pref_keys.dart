@@ -82,6 +82,21 @@ class PrefKeys {
   /// 顶栏不透明度 0-100（参考仓 topBarOpacity，默认 100）
   static const topBarOpacity = 'topBarOpacity';
 
+  /// 底栏 label 显示档位：auto/labeled/unlabeled（参考仓默认 auto）
+  static const labelVisibilityMode = 'labelVisibilityMode';
+
+  /// 底栏不透明度 0-100（参考仓 bottomBarOpacity，默认 100）
+  static const bottomBarOpacity = 'bottomBarOpacity';
+
+  /// 悬浮底栏（参考仓 useFloatingBottomBar，默认关）
+  static const useFloatingBottomBar = 'useFloatingBottomBar';
+
+  /// 显示底栏（参考仓 showBottomView，默认开）
+  static const showBottomView = 'showBottomView';
+
+  /// 平板/大屏导航形态：auto/always/landscape/off（参考仓默认 auto）
+  static const tabletInterface = 'tabletInterface';
+
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
   /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）

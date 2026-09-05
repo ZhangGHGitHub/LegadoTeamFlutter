@@ -226,6 +226,126 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     }
   }
 
+  String _labelModeLabel(BottomBarLabelMode m) => switch (m) {
+        BottomBarLabelMode.auto => '仅选中显示（默认）',
+        BottomBarLabelMode.labeled => '全部常显',
+        BottomBarLabelMode.unlabeled => '纯图标',
+      };
+
+  Future<void> _showLabelModePicker() async {
+    final current = ref.read(uiSettingsProvider).labelVisibilityMode;
+    final selected = await showDialog<BottomBarLabelMode>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('底栏文字'),
+        children: [
+          for (final m in BottomBarLabelMode.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, m),
+              child: Row(
+                children: [
+                  Icon(
+                    current == m
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(_labelModeLabel(m)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (selected != null) {
+      await ref
+          .read(uiSettingsProvider.notifier)
+          .setLabelVisibilityMode(selected);
+    }
+  }
+
+  Future<void> _showBottomBarOpacityDialog() async {
+    var value = ref.read(uiSettingsProvider).bottomBarOpacity.toDouble();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: const Text('底栏不透明度'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Slider(
+                value: value,
+                min: 0,
+                max: 100,
+                divisions: 20,
+                label: '${value.round()}%',
+                onChanged: (v) => setDialogState(() => value = v),
+              ),
+              Text('当前 ${value.round()}%'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (confirmed == true) {
+      await ref
+          .read(uiSettingsProvider.notifier)
+          .setBottomBarOpacity(value.round());
+    }
+  }
+
+  String _tabletLabel(TabletInterfaceMode m) => switch (m) {
+        TabletInterfaceMode.auto => '自动（宽屏 ≥600dp）',
+        TabletInterfaceMode.always => '始终启用侧栏',
+        TabletInterfaceMode.landscape => '仅横屏启用',
+        TabletInterfaceMode.off => '不启用',
+      };
+
+  Future<void> _showTabletModePicker() async {
+    final current = ref.read(uiSettingsProvider).tabletInterface;
+    final selected = await showDialog<TabletInterfaceMode>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('大屏导航形态'),
+        children: [
+          for (final m in TabletInterfaceMode.values)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, m),
+              child: Row(
+                children: [
+                  Icon(
+                    current == m
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(_tabletLabel(m)),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (selected != null) {
+      await ref
+          .read(uiSettingsProvider.notifier)
+          .setTabletInterface(selected);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeState = ref.watch(themeNotifierProvider);
@@ -377,6 +497,45 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       title: '顶栏不透明度',
                       subtitle: '当前 ${ui.topBarOpacity}%',
                       onTap: _showTopBarOpacityDialog,
+                    ),
+                  ]),
+
+                  // === [UI_SYNC_REFACTOR B3] 底栏与导航（对齐参考仓
+                  // MainNavigationSettingsSheet；设置即时全局生效） ===
+                  const IosSectionHeader('底栏与导航'),
+                  IosGroup(
+                      flat: true,
+                      children: [
+                    SwitchListTile(
+                      title: const Text('显示底栏'),
+                      subtitle: const Text('隐藏后仅侧栏/手势切页'),
+                      value: ui.showBottomView,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setShowBottomView(v),
+                    ),
+                    SwitchListTile(
+                      title: const Text('悬浮底栏'),
+                      subtitle: const Text('64dp 胶囊悬浮形态（ Experimental）'),
+                      value: ui.useFloatingBottomBar,
+                      onChanged: (v) => ref
+                          .read(uiSettingsProvider.notifier)
+                          .setUseFloatingBottomBar(v),
+                    ),
+                    IosListTile(
+                      title: '底栏文字',
+                      subtitle: _labelModeLabel(ui.labelVisibilityMode),
+                      onTap: _showLabelModePicker,
+                    ),
+                    IosListTile(
+                      title: '底栏不透明度',
+                      subtitle: '当前 ${ui.bottomBarOpacity}%',
+                      onTap: _showBottomBarOpacityDialog,
+                    ),
+                    IosListTile(
+                      title: '大屏导航形态',
+                      subtitle: _tabletLabel(ui.tabletInterface),
+                      onTap: _showTabletModePicker,
                     ),
                   ]),
 
