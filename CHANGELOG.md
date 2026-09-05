@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.177] - 2026-09-05
+
+### Changed
+- [UI] 同步重构 R2-①：FastScroll 滑块形态对齐参考仓——idle 36×4 outlineVariant@0.8 → 激活 48×12 primary，250ms AnimatedContainer 形变；滚动/拖拽激活保持 3s 后渐隐 250ms；书源/订阅源两处自动升级
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.177+178
+
+- Contributor: Qoder UI
+
 ## [2.0.176] - 2026-09-05
 
 ### Changed
