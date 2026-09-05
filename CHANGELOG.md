@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.189] - 2026-09-05
+
+### Changed
+- [UI] 一比一复刻 S3：详情页 ActionCard 行（加入书架/目录/分组/换源/阅读记录 5 卡，对齐参考 BookInfoActions）；Characters/RelatedBooks 区块骨架就位（用户授权纳入，后端数据链调研已登记——接通前空数据隐藏）
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.189+190
+
+- Contributor: Qoder UI
+
 ## [2.0.188] - 2026-09-05
 
 ### Changed

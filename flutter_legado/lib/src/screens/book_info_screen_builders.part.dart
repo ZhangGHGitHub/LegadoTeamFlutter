@@ -691,6 +691,14 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         ),
         // 封面卡（对标原版 ArcView + CardView 110x160 居中）
         SliverToBoxAdapter(child: _buildHeader(context, book)),
+        // [UI_SYNC_REFACTOR S3] ActionCard 行（对齐参考 BookInfoActions：
+        // 加入书架/目录/分组/换源/阅读记录 5 卡，全部原版功能）
+        SliverToBoxAdapter(child: _buildActionCards(context, book)),
+        // [UI_SYNC_REFACTOR S3] Characters/RelatedBooks 区块骨架（已授权；
+        // 数据链需后端调研——见 UI_ONE_TO_ONE_CLONE_PLAN_20260905.md §〇，
+        // 无数据时整段隐藏=缺省降级）
+        ..._buildCharactersSection(context, book),
+        ..._buildRelatedBooksSection(context, book),
         // 信息面板：书名/字数标签/摘要行/简介（对标原版 ll_info）
         SliverToBoxAdapter(
           child: _buildSummaryPanel(context, book, chapters),
@@ -737,6 +745,115 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         ),
       ),
     );
+  }
+
+  /// [UI_SYNC_REFACTOR S3] ActionCard 行（对齐参考 BookInfoActions 5 卡）
+  Widget _buildActionCards(BuildContext context, Book book) {
+    final cs = Theme.of(context).colorScheme;
+    Widget card(IconData icon, String label, VoidCallback onTap) {
+      return Expanded(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 22, color: cs.primary),
+                const SizedBox(height: 4),
+                Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                        color: cs.onSurfaceVariant,
+                      ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            card(
+              _inBookshelf
+                  ? Symbols.playlist_remove_rounded
+                  : Symbols.playlist_add_rounded,
+              _inBookshelf ? '移出书架' : '加入书架',
+              () => _toggleShelf(book),
+            ),
+            card(Symbols.format_list_bulleted_rounded, '目录',
+                _openTocScreen),
+            card(Symbols.folder_copy_rounded, '分组', _showChangeGroup),
+            card(Symbols.swap_horiz_rounded, '换源',
+                () => _showChangeSourceDialog(book)),
+            card(Symbols.history_rounded, '阅读记录',
+                () => Navigator.pushNamed(context, AppRoutes.readRecord)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// [UI_SYNC_REFACTOR S3] Characters 区块骨架（已授权；数据链后端调研中，
+  /// 无数据隐藏=缺省降级）
+  List<Widget> _buildCharactersSection(BuildContext context, Book book) {
+    // 数据源（参考 BookInfoViewModel.characters）后端调研登记：
+    // UI_ONE_TO_ONE_CLONE_PLAN_20260905.md §〇；接通前恒为空
+    const List<({String name, String role})> characters = [];
+    if (characters.isEmpty) return const [];
+    return [
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Text('角色',
+              style: Theme.of(context).textTheme.titleMedium),
+        ),
+      ),
+      SliverToBoxAdapter(
+        child: SizedBox(
+          height: 120,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: [
+              for (final c in characters)
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Chip(label: Text(c.name)),
+                ),
+            ],
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /// [UI_SYNC_REFACTOR S3] RelatedBooks 区块骨架（同上，后端调研中）
+  List<Widget> _buildRelatedBooksSection(BuildContext context, Book book) {
+    const List<Book> relatedBooks = [];
+    if (relatedBooks.isEmpty) return const [];
+    return [
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Text('相关书籍',
+              style: Theme.of(context).textTheme.titleMedium),
+        ),
+      ),
+    ];
   }
 
   /// 信息面板（对标原版 ll_info：书名 18sp 居中 + 标签栏 + 摘要行 + 简介）

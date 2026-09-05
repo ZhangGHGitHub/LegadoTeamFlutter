@@ -8,6 +8,8 @@
 
 **2026-09-05 用户授权**：纳入参考仓独有功能——① AI 摘要/改写（按钮位先落，功能链路需 AI 服务后端，独立排期）；② 角色卡 Characters 区块；③ 相关书 RelatedBooks 区块。后两项需 Rust/书源规则数据链支持：**先调研参考 ViewModel 数据源 → API_CONTRACT 契约先行 → Rust 轨独立排期；UI 先交付区块骨架 + 数据缺省降级（无数据隐藏）**。
 
+**后端数据链调研登记（S3，2026-09-05）**：参考 Characters/RelatedBooks 数据出自 BookInfoViewModel 的 state.characters/knowledgeEntries/relatedBooks——来源为书源规则的角色分析管线（参考独有 rule 语义），本地 Rust webBook 解析链暂无对应字段。接通路径：API_CONTRACT 新增 getBookCharacters/getRelatedBooks FFI（依赖书源规则扩展）→ Rust 轨排期；UI 骨架已就位（_buildCharactersSection/_buildRelatedBooksSection，空数据隐藏），接通时替换常量列表为 state 数据即可。
+
 ## 一、原则
 
 功能面保持原版对齐基线不动；一比一复制的是**布局/IA/动效/主题引擎**；本地既有功能全集保留。**不复制**：Miuix 引擎、liquid glass（SDK 限定，实色等效）、依赖参考私有组件族的实现（等效重写）。
