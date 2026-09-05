@@ -92,6 +92,11 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
           // FilterChip 横滑条为常驻 bottom 追加）
           appBar: DynamicSearchAppBar(
             title: '发现',
+            // [UI_SYNC_REFACTOR S1b 修正] 对齐参考 ListScaffold：subtitle=
+            // 当前分组、搜索行默认收起（切换钮展开）、分组筛选走下拉菜单
+            //（非常驻 FilterChip 横条）
+            subtitle: state.selectedGroup.isEmpty ? '全部' : state.selectedGroup,
+            initialExpanded: false,
             searchController: _searchController,
             searchHint: '筛选发现源',
             onChanged: _onSearchChanged,
@@ -99,46 +104,24 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               _searchController.clear();
               ref.read(exploreNotifierProvider.notifier).clearSearch();
             },
-            persistentBottom: PreferredSize(
-              preferredSize: const Size.fromHeight(48),
-              child: SizedBox(
-                height: 48,
-                child: ListView(
-                  scrollDirection: Axis.horizontal,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  children: [
-                    Padding(
-                      padding: const EdgeInsets.only(right: 8),
-                      child: FilterChip(
-                        label: const Text('全部'),
-                        selected: state.selectedGroup.isEmpty,
-                        onSelected: (_) {
-                          ref
-                              .read(exploreNotifierProvider.notifier)
-                              .selectGroup('');
-                          setState(() => _selectedCategory = null);
-                        },
-                      ),
-                    ),
-                    for (final group in state.groups)
-                      Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: FilterChip(
-                          label: Text(group),
-                          selected: state.selectedGroup == group,
-                          onSelected: (_) {
-                            ref
-                                .read(exploreNotifierProvider.notifier)
-                                .selectGroup(group);
-                            setState(() => _selectedCategory = null);
-                          },
-                        ),
-                      ),
-                  ],
-                ),
+            actions: [
+              PopupMenuButton<String>(
+                tooltip: '分组筛选',
+                icon: const Icon(Symbols.folder_copy_rounded),
+                onSelected: (group) {
+                  ref.read(exploreNotifierProvider.notifier).selectGroup(group);
+                  setState(() => _selectedCategory = null);
+                },
+                itemBuilder: (_) => [
+                  const PopupMenuItem<String>(
+                    value: '',
+                    child: Text('全部'),
+                  ),
+                  for (final group in state.groups)
+                    PopupMenuItem<String>(value: group, child: Text(group)),
+                ],
               ),
-            ),
+            ],
           ),
           body: _buildBody(state, isTablet),
         );

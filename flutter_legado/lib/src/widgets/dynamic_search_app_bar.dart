@@ -11,6 +11,9 @@ import 'legado_app_bar.dart';
 /// 搜索行默认展开（原版对齐口径：发现/订阅搜索为主入口），可收起让位标题。
 class DynamicSearchAppBar extends StatefulWidget implements PreferredSizeWidget {
   final String title;
+
+  /// 副标题（对齐参考 DynamicTopAppBar subtitle：发现/订阅显示当前分组名）
+  final String? subtitle;
   final List<Widget>? actions;
   final TextEditingController searchController;
   final String searchHint;
@@ -24,6 +27,7 @@ class DynamicSearchAppBar extends StatefulWidget implements PreferredSizeWidget 
   const DynamicSearchAppBar({
     super.key,
     required this.title,
+    this.subtitle,
     required this.searchController,
     required this.searchHint,
     required this.onChanged,
@@ -87,7 +91,22 @@ class _DynamicSearchAppBarState extends State<DynamicSearchAppBar> {
     );
 
     return LegadoAppBar(
-      title: Text(widget.title),
+      title: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(widget.title),
+          if (widget.subtitle != null)
+            Text(
+              widget.subtitle!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+        ],
+      ),
       actions: [
         // [UI_SYNC_REFACTOR S1b] 搜索切换钮（对齐参考 onSearchToggle）
         IconButton(

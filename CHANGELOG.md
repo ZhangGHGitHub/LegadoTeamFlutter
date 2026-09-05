@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.194] - 2026-09-06
+
+### Fixed
+- [UI] 发现/订阅页对齐参考 ListScaffold（用户双包对比反馈）：搜索行默认收起（标题态+切换钮展开，原为常驻展开）；发现页分组筛选由常驻 FilterChip 横滑条改下拉菜单（对齐 RoundDropdownMenu，横条删除）；两页标题下增 subtitle（当前分组名/全部）
+
+### Test
+- flutter analyze 无问题；flutter test 1341 全过
+- 版本 2.0.194+195
+
+- Contributor: Qoder UI
+
 ## [2.0.193] - 2026-09-06
 
 ### Changed

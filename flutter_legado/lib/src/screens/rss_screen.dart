@@ -92,6 +92,11 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     return Scaffold(
       appBar: DynamicSearchAppBar(
         title: AppStrings.rss,
+        // [UI_SYNC_REFACTOR S1b 修正] subtitle=当前分组；搜索行默认收起
+        subtitle: (state.selectedGroup?.isEmpty ?? true)
+            ? '全部'
+            : state.selectedGroup,
+        initialExpanded: false,
         // [UI_SYNC_REFACTOR S1b] Dynamic 搜索行顶栏（对齐参考
         // DynamicTopAppBar：标题+搜索切换钮+bottomContent 展开行）
         // 原嵌入式胶囊搜索框迁至 bottomContent（appBar 由 LegadoAppBar
