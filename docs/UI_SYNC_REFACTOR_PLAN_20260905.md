@@ -56,13 +56,14 @@ enableBlur 默认关（低端机掉帧保护）；字阶全局变更以矩阵+�
 | B5 阅读菜单 | `5970caaebc` | 2.0.171+172 | scale0.88 动画+搜索 pill+标题胶囊+r32 停靠 |
 | B1 字阶密度 | `22e6cbcf67` | 2.0.172+173 | miuix 字阶 15 槽+书架行 vertical12 |
 | B6/B7 精简版 | `998488ee15` | 2.0.173+174 | 详情与圆角开关组+圆角覆写（卡片档）+对话框按钮规范 |
+| R1 毛玻璃+动态取色 | `58c1b0c209` | 2.0.176+177 | blur 家族接线（三处 BackdropFilter）+ DynamicColorBuilder 跟随壁纸真实生效 |
 
 门禁：每批 analyze 0+test 全过（最终 1336）。冒烟与双包对比验收见进度文档回填。
 
 ### 剩余登记项（B6/B7 削减部分，另行排期）
 
-- blur 家族接线（enableBlur+BackdropFilter 于顶/底栏/阅读菜单/详情背景；实色版已按参考仓 noBlur 回退就位）
-- dynamic_color 接线（跟随壁纸取色真实生效——需与调色板/自定义四色并存模型整合，防破坏 B0 口径）
+- ~~blur 家族接线~~ ✅ R1 已交付（`58c1b0c209`，2.0.176：enableBlur 门控 LegadoAppBar/悬浮底栏/详情背景三处；剩余：阅读菜单模糊、SliverAppBar 滚动玻璃）
+- ~~dynamic_color 接线~~ ✅ R1 已交付（同上：DynamicColorBuilder 集成，动态 role 覆盖 primary/accent）
 - 分隔线开关（enableItemDivider 接 SettingItemDivider/PillDivider）、卡片边框覆写、containerOpacity、分组圆角开关
 - 登录 modalOverlay、FastScroll 全站 15 屏接入（idle 36×4→active 48×12 形态升级）、animateItem/animateContentSize 三件套、设置行 Semantics、渲染矩阵补页
 - 阅读菜单退出双向动画（fadeOut140+scaleOut0.88@180）、朗读胶囊 16↔48 morph、readMenuBlurMode key
