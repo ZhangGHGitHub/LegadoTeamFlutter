@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.175] - 2026-09-05
+
+### Fixed
+- [UI] 书架搜索入口找回：B2 曾把搜索图标迁往 Dynamic 搜索行并移除原图标，用户报障「搜索框/按钮消失」——恢复顶栏搜索图标（原版 main_bookshelf.xml 对齐红线）并与搜索行双入口并存；新增书架搜索行回归守护（无分组/分组两形态断言行常驻+图标在位）
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过（新增 bookshelf_search_row_test 2 断言组）
+- 版本 2.0.175+176
+
+- Contributor: Qoder UI
+
 ## [2.0.174] - 2026-09-05
 
 ### Fixed

@@ -172,7 +172,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   List<Widget> _buildAppBarActions(BuildContext context, WidgetRef ref) {
     return [
-      // [UI_SYNC_REFACTOR B2] 搜索入口迁至 Dynamic 搜索行（bottomContent）
+      // [UI-fix v2.0.175] 恢复搜索图标（原版 main_bookshelf.xml actionbar
+      // 自带搜索项，红线对齐；Dynamic 搜索行双入口并存——用户报障找不到搜索）
+      IconButton(
+        icon: const Icon(Symbols.search_rounded),
+        tooltip: AppStrings.search,
+        onPressed: () => Navigator.pushNamed(context, AppRoutes.search),
+      ),
       // 原版 main_bookshelf.xml 无常驻视图切换按钮，网格/列表切换在溢出菜单「书架布局」
       PopupMenuButton<String>(
         onSelected: (value) => _handleMenuAction(context, ref, value),
