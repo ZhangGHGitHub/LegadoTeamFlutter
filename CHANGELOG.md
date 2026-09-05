@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.184] - 2026-09-05
+
+### Changed
+- [UI] 一比一复刻 S1a：主页恢复滑动切页——拉参考源码核实 MainScreen 为 HorizontalPager(userScrollEnabled=true)，早前审计 IndexedStack 口径系误读（原版本就是 ViewPager 滑动）；PageView+KeepAlive 等效 beyondViewportPageCount，底栏跳页/返回回架/默认首页全部同步
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过（home_navigation_test 口径同步）
+- 版本 2.0.184+185
+
+- Contributor: Qoder UI
+
 ## [2.0.183] - 2026-09-05
 
 ### Changed

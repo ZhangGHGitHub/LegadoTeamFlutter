@@ -15,7 +15,7 @@ import 'package:flutter_legado/src/screens/settings_screen.dart';
 import '../mocks/mocks.dart';
 
 /// 主框架导航对齐验证（对标原版 MainActivity：
-/// IndexedStack（禁滑动切页，HapeLee 语义）+ BottomNavigationView 并存、
+/// PageView 滑动切页（对齐参考 HorizontalPager）+ BottomNavigationView 并存、
 /// 双击回顶、返回键两段式）
 void main() {
   setUpAll(registerFallbacks);
@@ -43,18 +43,20 @@ void main() {
   int navBarIndex(WidgetTester tester) =>
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex;
 
-  testWidgets('初始结构：IndexedStack + 底栏并存，书架为首页', (tester) async {
+  testWidgets('初始结构：PageView 滑动切页 + 底栏并存，书架为首页', (tester) async {
     await pumpHome(tester, MockRustApi());
 
-    // [LAYOUT_MOTION_AUDIT L3] PageView 已替换为 IndexedStack（禁滑动切页）
-    expect(find.byType(IndexedStack), findsOneWidget);
+    // [UI_SYNC_REFACTOR S1] 恢复 PageView 滑动切页（2026-09-05 拉参考源码
+    // 核实 HorizontalPager userScrollEnabled=true，早前 IndexedStack 口径系误读；
+    // 原版本就是 ViewPager 滑动）
+    expect(find.byType(PageView), findsOneWidget);
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(navBarIndex(tester), 0);
     // 书架页为当前展示页面
     expect(find.byType(BookshelfScreen), findsOneWidget);
   });
 
-  testWidgets('底栏切页到发现页，选中态同步（禁滑动切页）', (tester) async {
+  testWidgets('底栏切页到发现页，选中态同步（滑动切页）', (tester) async {
     await pumpHome(tester, MockRustApi());
 
     // [LAYOUT_MOTION_AUDIT L3] 滑动切页已禁用，切页唯一入口为底栏点击

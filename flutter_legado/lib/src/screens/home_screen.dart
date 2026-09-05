@@ -49,6 +49,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// [LAYOUT_MOTION_AUDIT L3] IndexedStack 当前索引。
   /// 禁滑动切页（HapeLee IndexedStack 语义），切页一律经 setState 切索引。
   int _stackIndex = 0;
+  // [UI_SYNC_REFACTOR S1] 滑动切页控制器（对齐参考 MainScreen
+  // HorizontalPager userScrollEnabled=true；2026-09-05 拉源码核实，
+  // 早前审计 IndexedStack 口径系误读——原版本就是 ViewPager 滑动）
+  final PageController _pageController = PageController();
 
   /// 当前逻辑 Tab（Tab 显隐变化时据此重新定位索引）
   _HomeTab _currentTab = _HomeTab.bookshelf;
@@ -71,6 +75,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   @override
   void dispose() {
+    _pageController.dispose();
     _bookshelfScrollTopSignal.dispose();
     _exploreCollapseSignal.dispose();
     super.dispose();
@@ -114,8 +119,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _lastTapIndex = index;
     if (index != currentIndex) {
       // 对标原版 setCurrentItem(position, false)：无过渡动画
-      // [LAYOUT_MOTION_AUDIT L3] IndexedStack 直接切索引（禁滑动切页）
+      // [UI_SYNC_REFACTOR S1] PageView 跳页（滑动切页开启，同参考 HorizontalPager）
       setState(() => _stackIndex = index);
+      _pageController.jumpToPage(index);
       _onPageChanged(tabs, index);
     }
   }
@@ -145,6 +151,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       // [LAYOUT_MOTION_AUDIT L3] IndexedStack 回书架
       final index = tabs.indexOf(_HomeTab.bookshelf);
       setState(() => _stackIndex = index >= 0 ? index : 0);
+      _pageController.jumpToPage(_stackIndex);
       _onPageChanged(tabs, _stackIndex);
       return;
     }
@@ -246,6 +253,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           if (!mounted) return;
           // [LAYOUT_MOTION_AUDIT L3] IndexedStack 直接切索引
           setState(() => _stackIndex = targetIndex);
+          _pageController.jumpToPage(targetIndex);
           _onPageChanged(_visibleTabs(next), targetIndex);
         });
       }
@@ -259,6 +267,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         if (!mounted) return;
         // [LAYOUT_MOTION_AUDIT L3] IndexedStack 直接切索引
         setState(() => _stackIndex = 0);
+        _pageController.jumpToPage(0);
       });
     }
     return PopScope(
@@ -274,9 +283,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             constraints.maxWidth,
             MediaQuery.of(context).orientation,
           );
-          final pageArea = IndexedStack(
-            index: currentIndex,
-            children: [for (final tab in tabs) _pageOf(tab)],
+          final pageArea = PageView(
+            controller: _pageController,
+            // [UI_SYNC_REFACTOR S1] 滑动切页（对齐参考 HorizontalPager
+            // userScrollEnabled=true；allowImplicitScrolling≈预载相邻页）
+            physics: const ClampingScrollPhysics(),
+            allowImplicitScrolling: true,
+            onPageChanged: (index) => _onPageChanged(tabs, index),
+            children: [
+              for (final tab in tabs) _KeepAlivePage(child: _pageOf(tab)),
+            ],
           );
           return Scaffold(
             // 沉浸式状态栏开启时顶栏延伸至状态栏区域（对标原版 fullScreen +
@@ -625,5 +641,29 @@ class _FloatingBottomBarState extends State<_FloatingBottomBar> {
         );
       }
       return SafeArea(top: false, child: capsule);
+  }
+}
+
+
+/// [UI_SYNC_REFACTOR S1] 页保活（对齐参考 HorizontalPager
+/// beyondViewportPageCount=4：全部页常驻不销毁，懒构建语义保留）
+class _KeepAlivePage extends StatefulWidget {
+  final Widget child;
+
+  const _KeepAlivePage({required this.child});
+
+  @override
+  State<_KeepAlivePage> createState() => _KeepAlivePageState();
+}
+
+class _KeepAlivePageState extends State<_KeepAlivePage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    return widget.child;
   }
 }
