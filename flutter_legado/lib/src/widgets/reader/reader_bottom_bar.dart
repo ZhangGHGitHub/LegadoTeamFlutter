@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../l10n/app_strings.dart';
 import '../../providers/audio/audio_notifier.dart';
 import '../../providers/reader/reader_notifier.dart';
+import 'reader_menu_transition.dart';
 import '../../providers/theme/theme_notifier.dart';
 import '../../screens/reader_config_panel.dart';
 import '../../services/system_brightness.dart';
@@ -75,18 +76,13 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
   bool _autoBrightness = false;
   double _brightness = 0.5;
 
-  // [LAYOUT_PLAN P4] 底栏进场动效开关：挂载后下一帧置 true，驱动
   // AnimatedOpacity + AnimatedSlide（180ms，对标 anim_readbook_bottom）。
-  bool _entered = false;
 
   @override
   void initState() {
     super.initState();
     unawaited(_loadBrightness());
     // [LAYOUT_PLAN P4] 触发底栏 slide+fade 进场（保持 showControls 条件挂载逻辑不变）。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _entered = true);
-    });
   }
 
   Future<void> _loadBrightness() async {
@@ -153,12 +149,9 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
       // [UI-fix v2.0.4 | 2026-08-08] 悬浮按钮行（对标原版 ll_floating_button：
       // fabSearch 居左 / fabNightTheme 居右；原版另有 fabAutoPage/fabReplaceRule，
       // 自动翻页由 reader_screen `_syncAutoTimer` 驱动；替换规则入口在溢出菜单）— Qoder
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 180),
-        opacity: _entered ? 1.0 : 0.0,
-        child: AnimatedSlide(
-          duration: const Duration(milliseconds: 180),
-          offset: _entered ? Offset.zero : const Offset(0, 0.12),
+      // [UI_SYNC_REFACTOR B5] 菜单进场统一 scale0.88+fade（fadeIn180/
+      // scaleIn0.88@220，对齐参考仓 ReadBookRouteScreen）
+      child: ReaderMenuTransition(
           child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -167,13 +160,9 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Row(
               children: [
-                FloatingActionButton(
-                  mini: true,
-                  heroTag: null,
-                  tooltip: '全文搜索',
-                  onPressed: widget.onOpenContentSearch,
-                  child: const Icon(Icons.search),
-                ),
+                // [UI_SYNC_REFACTOR B5] 全文搜索 pill（40dp 高 r16，
+                // 对齐参考仓 SearchPillSurface，替换 mini FAB）
+                _SearchPill(onTap: widget.onOpenContentSearch),
                 const Spacer(),
                 FloatingActionButton(
                   mini: true,
@@ -231,17 +220,10 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
           ),
           Material(
         color: followColor ?? Theme.of(context).colorScheme.surface,
-        // iOS 风格：无阴影 + hairline 顶边
+        // [UI_SYNC_REFACTOR B5] 停靠形态顶部圆角 32（对齐参考仓
+        // readMenuBottomCornerRadius 32；原 hairline 顶边 0 宽无视觉回归）
         elevation: 0,
-        shape: Border(
-          top: BorderSide(
-            color: widget.styleFollowPage
-                ? state.textColor.withValues(alpha: 0.2)
-                : (Theme.of(context).dividerTheme.color ??
-                    Theme.of(context).dividerColor),
-            width: 0.0,
-          ),
-        ),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
         child: SafeArea(
           top: false,
           child: IconTheme(
@@ -386,8 +368,7 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
             ),
           ),
         ],
-          ),
-        ),
+      ),
       ),
     );
     return bar;
@@ -424,6 +405,45 @@ class _ReaderBottomBarState extends ConsumerState<ReaderBottomBar> {
                   ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+
+/// [UI_SYNC_REFACTOR B5] 全文搜索 pill（高 40dp 圆角 16 水平 padding 12，
+/// 对齐参考仓 SearchPillSurface；替换原 mini FAB 形态）
+class _SearchPill extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _SearchPill({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: cs.surfaceContainerHighest.withValues(alpha: 0.6),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.search, size: 16, color: cs.onSurfaceVariant),
+              const SizedBox(width: 6),
+              Text(
+                '全文搜索',
+                style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+              ),
+            ],
+          ),
         ),
       ),
     );

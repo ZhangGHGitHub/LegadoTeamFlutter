@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.171] - 2026-09-05
+
+### Changed
+- [UI] 全量同步重构 B5（布局优先批次四）：阅读器菜单对齐参考仓——菜单进出场动画统一（fadeIn180+scaleIn0.88@220，替换旧 slide+fade 组合）；全文搜索 mini FAB 升级为 40dp r16 搜索 pill；顶栏书名改标题胶囊（Stadium 16/4）；顶/底栏停靠圆角 32（对齐 readMenuBottomCornerRadius）
+
+### Test
+- flutter analyze 无问题；flutter test 1336 全过
+- 版本 2.0.171+172
+
+- Contributor: Qoder UI
+
 ## [2.0.170] - 2026-09-05
 
 ### Changed

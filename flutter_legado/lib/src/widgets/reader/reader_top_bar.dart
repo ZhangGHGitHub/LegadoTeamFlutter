@@ -1,6 +1,8 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+
+import 'reader_menu_transition.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -82,8 +84,6 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
   String? _flagsLoadedKey;
 
   // [LAYOUT_PLAN P4] 顶栏进场动效开关：挂载后下一帧置 true，驱动
-  // AnimatedOpacity + AnimatedSlide（220ms，对标 anim_readbook_top）。
-  bool _entered = false;
 
   @override
   void initState() {
@@ -91,10 +91,6 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
     // 预载 WebDAV 配置，使溢出菜单能即时决定 get/cover_progress 显隐
     Future.microtask(
         () => ref.read(syncNotifierProvider.notifier).loadConfig());
-    // [LAYOUT_PLAN P4] 触发顶栏 slide+fade 进场（保持 showControls 条件挂载逻辑不变）。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _entered = true);
-    });
   }
 
   /// 加载章级开关与替换规则计数（书籍/章节变化时调用）
@@ -1090,25 +1086,13 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
       right: 0,
       // [LAYOUT_PLAN P4] 菜单 slide+fade 进场（220ms，对标 anim_readbook_top
       // 200ms 上滑入场；showControls 条件挂载逻辑保持不变，动画仅装饰）。
-      child: AnimatedOpacity(
-        duration: const Duration(milliseconds: 220),
-        opacity: _entered ? 1.0 : 0.0,
-        child: AnimatedSlide(
-          duration: const Duration(milliseconds: 220),
-          offset: _entered ? Offset.zero : const Offset(0, -0.12),
+      // [UI_SYNC_REFACTOR B5] 菜单进场统一 scale0.88+fade（对齐参考仓）
+      child: ReaderMenuTransition(
           child: Material(
         color: followColor ?? Theme.of(context).colorScheme.surface,
-        // iOS 风格：无阴影 + hairline 底边
+        // [UI_SYNC_REFACTOR B5] 停靠形态底部圆角 32（对齐参考仓菜单容器）
         elevation: 0,
-        shape: Border(
-          bottom: BorderSide(
-            color: widget.styleFollowPage
-                ? state.textColor.withValues(alpha: 0.2)
-                : (Theme.of(context).dividerTheme.color ??
-                    Theme.of(context).dividerColor),
-            width: 0.0,
-          ),
-        ),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(32)),
         child: SafeArea(
           bottom: false,
           // edge-to-edge 下 padding.top 可能为 0，须保底 viewPadding.top
@@ -1133,14 +1117,33 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
                         onPressed: () => Navigator.of(context).pop(),
                       ),
                       Expanded(
-                        child: Text(
-                          book?.name ?? '',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleMedium
-                              ?.copyWith(color: foreground),
+                        // [UI_SYNC_REFACTOR B5] 标题胶囊（对齐参考仓
+                        // MenuTitleBar readMenuTopBarTitleCapsule）
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: (followColor ??
+                                      Theme.of(context)
+                                          .colorScheme
+                                          .surfaceContainerHighest)
+                                  .withValues(alpha: 0.5),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: Text(
+                              book?.name ?? '',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(color: foreground),
+                            ),
+                          ),
                         ),
                       ),
                       // 阅读进度百分比
@@ -1472,7 +1475,6 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar> {
             ),
           ),
         ),
-          ),
         ),
       ),
     );
