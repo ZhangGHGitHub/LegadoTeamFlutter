@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -8,6 +7,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../l10n/app_strings.dart';
+import '../routes.dart';
+import '../widgets/navigation/app_navigation_bars.dart';
+import '../routes.dart';
+import '../widgets/navigation/app_navigation_bars.dart';
+import '../providers/bookshelf/bookshelf_notifier.dart';
+import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/bottom_bar_skin_notifier.dart';
 import '../providers/main_prefs_notifier.dart';
 import '../providers/theme/system_bar_notifier.dart';
@@ -172,43 +177,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       );
   }
 
-  /// 构建底栏项（皮肤图优先；无皮肤时用 Material Symbols 默认 glyph，
-  /// 选中态 FILL=1——UI_MD3_PLAN.md Batch 1）
-  NavigationDestination _destination(
-    BuildContext context,
-    IconData symbol,
-    String label, {
-    String? skinSlot,
-    String activeSkin = '',
-  }) {
-    Widget fallbackIcon({required bool selected}) {
-      return Icon(symbol, size: 24, fill: selected ? 1 : 0);
-    }
-
-    if (activeSkin.isEmpty || skinSlot == null) {
-      return NavigationDestination(
-        icon: fallbackIcon(selected: false),
-        selectedIcon: fallbackIcon(selected: true),
-        label: label,
-      );
-    }
-
-    return NavigationDestination(
-      icon: _SkinIcon(
-        skin: activeSkin,
-        slot: skinSlot,
-        selected: false,
-        fallback: fallbackIcon(selected: false),
-      ),
-      selectedIcon: _SkinIcon(
-        skin: activeSkin,
-        slot: skinSlot,
-        selected: true,
-        fallback: fallbackIcon(selected: true),
-      ),
-      label: label,
-    );
-  }
 
   /// 逻辑 Tab → 页面内容（未访问过的 Tab 用占位以保留懒构建语义）
   Widget _pageOf(_HomeTab tab) {
@@ -329,6 +297,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     );
   }
 
+  /// 导航项规格（三态底栏统一消费源）
+  List<AppNavSpec> _specsFor(List<_HomeTab> tabs) => [
+        for (final tab in tabs)
+          switch (tab) {
+            _HomeTab.bookshelf => AppNavSpec(
+                symbol: Symbols.menu_book_rounded,
+                label: AppStrings.bookshelf,
+                skinSlot: 'bookshelf',
+              ),
+            _HomeTab.explore => AppNavSpec(
+                symbol: Symbols.explore_rounded,
+                label: AppStrings.discover,
+                skinSlot: 'home',
+              ),
+            _HomeTab.rss => AppNavSpec(
+                symbol: Symbols.feed_rounded,
+                label: AppStrings.rss,
+                skinSlot: 'notes',
+              ),
+            _HomeTab.my => AppNavSpec(
+                symbol: Symbols.person_rounded,
+                label: AppStrings.my,
+                skinSlot: 'settings',
+              ),
+          },
+      ];
+
   /// Rail 激活判定（对齐参考仓 tabletInterface：auto/always/landscape/off）
   bool _railActive(UiSettingsState ui, double width, Orientation orientation) {
     switch (ui.tabletInterface) {
@@ -343,44 +338,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  /// 平板 Rail（简版：系统图标；皮肤图标消费留在标准/悬浮底栏）
+  /// 平板侧栏（组件化：皮肤图标+头部搜索钮+书架分组菜单+expand 持久化）
   Widget _buildRail(UiSettingsState ui, List<_HomeTab> tabs, int currentIndex) {
-    Widget railIcon(IconData symbol, {required bool selected}) {
-      return Icon(symbol, size: 24, fill: selected ? 1 : 0);
-    }
-
-    return NavigationRail(
-      selectedIndex: currentIndex,
-      onDestinationSelected: (index) =>
-          _onDestinationSelected(tabs, index),
-      labelType: NavigationRailLabelType.all,
-      leading: const SizedBox(height: 8),
-      destinations: [
-        for (final tab in tabs)
-          switch (tab) {
-            _HomeTab.bookshelf => NavigationRailDestination(
-                icon: railIcon(Symbols.menu_book_rounded, selected: false),
-                selectedIcon: railIcon(Symbols.menu_book_rounded, selected: true),
-                label: Text(AppStrings.bookshelf),
-              ),
-            _HomeTab.explore => NavigationRailDestination(
-                icon: railIcon(Symbols.explore_rounded, selected: false),
-                selectedIcon:
-                    railIcon(Symbols.explore_rounded, selected: true),
-                label: Text(AppStrings.discover),
-              ),
-            _HomeTab.rss => NavigationRailDestination(
-                icon: railIcon(Symbols.feed_rounded, selected: false),
-                selectedIcon: railIcon(Symbols.feed_rounded, selected: true),
-                label: Text(AppStrings.rss),
-              ),
-            _HomeTab.my => NavigationRailDestination(
-                icon: railIcon(Symbols.person_rounded, selected: false),
-                selectedIcon: railIcon(Symbols.person_rounded, selected: true),
-                label: Text(AppStrings.my),
-              ),
-          },
+    final bookshelf = ref.watch(bookshelfNotifierProvider);
+    return AppRailBar(
+      specs: _specsFor(tabs),
+      currentIndex: currentIndex,
+      activeSkin: ref.watch(bottomBarSkinProvider.select((s) => s.active)),
+      extended: ui.railExtended,
+      onSelect: (index) => _onDestinationSelected(tabs, index),
+      onToggleExtended: () => ref
+          .read(uiSettingsProvider.notifier)
+          .setRailExtended(!ui.railExtended),
+      onSearch: () => Navigator.of(context).pushNamed(AppRoutes.search),
+      groups: [
+        for (final g in bookshelf.groups) g.groupName,
       ],
+      selectedGroupIndex: bookshelf.selectedGroupIndex,
+      onGroupSelected: (index) =>
+          ref.read(bookshelfNotifierProvider.notifier).selectGroup(index),
     );
   }
 
@@ -394,255 +370,35 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   ) {
     if (!ui.showBottomView) return null;
     if (ui.useFloatingBottomBar) {
-      return _FloatingBottomBar(
-        specs: [
-          for (final tab in tabs)
-            switch (tab) {
-              _HomeTab.bookshelf => (
-                  symbol: Symbols.menu_book_rounded,
-                  label: AppStrings.bookshelf,
-                  skinSlot: 'bookshelf',
-                ),
-              _HomeTab.explore => (
-                  symbol: Symbols.explore_rounded,
-                  label: AppStrings.discover,
-                  skinSlot: 'home',
-                ),
-              _HomeTab.rss => (
-                  symbol: Symbols.feed_rounded,
-                  label: AppStrings.rss,
-                  skinSlot: 'notes',
-                ),
-              _HomeTab.my => (
-                  symbol: Symbols.person_rounded,
-                  label: AppStrings.my,
-                  skinSlot: 'settings',
-                ),
-            },
-        ],
+      return AppFloatingBottomBar(
+        specs: _specsFor(tabs),
         currentIndex: currentIndex,
         activeSkin: activeSkin,
         onSelect: (index) => _onDestinationSelected(tabs, index),
+        useBlur: ui.enableBlur,
+        blurRadius: ui.bottomBarBlurRadius,
+        blurAlpha: ui.bottomBarBlurAlpha,
       );
     }
-    return Opacity(
-      opacity: ui.bottomBarOpacity / 100,
-      child: NavigationBar(
-        // [UI_SYNC_REFACTOR B3] label 三档（auto=仅选中/labeled=常显/unlabeled=纯图标）
-        labelBehavior: switch (ui.labelVisibilityMode) {
-          BottomBarLabelMode.auto =>
-            NavigationDestinationLabelBehavior.onlyShowSelected,
-          BottomBarLabelMode.labeled =>
-            NavigationDestinationLabelBehavior.alwaysShow,
-          BottomBarLabelMode.unlabeled =>
-            NavigationDestinationLabelBehavior.alwaysHide,
-        },
-        selectedIndex: currentIndex,
-        onDestinationSelected: (index) => _onDestinationSelected(tabs, index),
-        destinations: [
-          for (final tab in tabs)
-            switch (tab) {
-              _HomeTab.bookshelf => _destination(
-                  context,
-                  Symbols.menu_book_rounded,
-                  AppStrings.bookshelf,
-                  skinSlot: 'bookshelf',
-                  activeSkin: activeSkin,
-                ),
-              _HomeTab.explore => _destination(
-                  context,
-                  Symbols.explore_rounded,
-                  AppStrings.discover,
-                  skinSlot: 'home',
-                  activeSkin: activeSkin,
-                ),
-              _HomeTab.rss => _destination(
-                  context,
-                  Symbols.feed_rounded,
-                  AppStrings.rss,
-                  skinSlot: 'notes',
-                  activeSkin: activeSkin,
-                ),
-              _HomeTab.my => _destination(
-                  context,
-                  Symbols.person_rounded,
-                  AppStrings.my,
-                  skinSlot: 'settings',
-                  activeSkin: activeSkin,
-                ),
-            },
-        ],
-      ),
-    );
-  }
-}
-
-/// 底栏皮肤图标（缺图回退系统 SVG）
-class _SkinIcon extends StatelessWidget {
-  const _SkinIcon({
-    required this.skin,
-    required this.slot,
-    required this.selected,
-    required this.fallback,
-  });
-
-  final String skin;
-  final String slot;
-  final bool selected;
-  final Widget fallback;
-
-  @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<BottomBarSkinIcons>(
-      future: BottomBarSkinService.instance.iconsForSlot(skin, slot),
-      builder: (context, snap) {
-        final icons = snap.data;
-        final path = selected
-            ? (icons?.selected ?? icons?.normal)
-            : (icons?.normal ?? icons?.selected);
-        if (path == null) return fallback;
-        final child = Image.file(
-          File(path),
-          width: 24,
-          height: 24,
-          fit: BoxFit.contain,
-          errorBuilder: (_, error, stack) => fallback,
-        );
-        if (selected || icons?.normal != null) return child;
-        // 无 normal 时对 selected 图降透明（对齐原版 alpha=102）
-        return Opacity(opacity: 0.4, child: child);
+    return AppShortNavigationBar(
+      specs: _specsFor(tabs),
+      currentIndex: currentIndex,
+      activeSkin: activeSkin,
+      labelBehavior: switch (ui.labelVisibilityMode) {
+        BottomBarLabelMode.auto =>
+          NavigationDestinationLabelBehavior.onlyShowSelected,
+        BottomBarLabelMode.labeled =>
+          NavigationDestinationLabelBehavior.alwaysShow,
+        BottomBarLabelMode.unlabeled =>
+          NavigationDestinationLabelBehavior.alwaysHide,
       },
+      opacity: ui.bottomBarOpacity / 100,
+      onSelect: (index) => _onDestinationSelected(tabs, index),
     );
   }
 }
 
-/// [UI_SYNC_REFACTOR B3] 悬浮底栏（对齐参考仓 FloatingBottomBar，实色版）
-///
-/// 64dp 高 Stadium 胶囊、内边距 4dp、水平 margin 16dp + 底部 12dp+safeArea；
-/// 底色 surfaceContainerHighest α0.85（enableBlur 接通后可切 BackdropFilter）；
-/// 按压 scale 反馈（≈lerp(1, 1+16/width)）+ 图标 1→1.2；选中项 64×32 r16
-/// 胶囊（secondaryContainer），对齐参考仓自定义图标选中胶囊。
-class _FloatingBottomBar extends StatefulWidget {
-  final List<({IconData symbol, String label, String? skinSlot})> specs;
-  final int currentIndex;
-  final String activeSkin;
-  final ValueChanged<int> onSelect;
 
-  const _FloatingBottomBar({
-    required this.specs,
-    required this.currentIndex,
-    required this.activeSkin,
-    required this.onSelect,
-  });
-
-  @override
-  State<_FloatingBottomBar> createState() => _FloatingBottomBarState();
-}
-
-class _FloatingBottomBarState extends State<_FloatingBottomBar> {
-  int _pressedIndex = -1;
-
-  Widget _icon(int index, {required bool selected}) {
-    final spec = widget.specs[index];
-    Widget fallback({required bool sel}) =>
-        Icon(spec.symbol, size: 24, fill: sel ? 1 : 0);
-    if (widget.activeSkin.isEmpty || spec.skinSlot == null) {
-      return fallback(sel: selected);
-    }
-    return _SkinIcon(
-      skin: widget.activeSkin,
-      slot: spec.skinSlot!,
-      selected: selected,
-      fallback: fallback(sel: selected),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    // [UI_SYNC_REFACTOR R1] 毛玻璃：enableBlur 开启时半透明底（blurAlpha/255）
-    // + BackdropFilter（blurRadius）；关闭维持实色 α0.85
-    final ui = uiSettingsListenable.value;
-    final useBlur = ui.enableBlur;
-    final capsule = Container(
-      margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-      height: 64,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerHighest.withValues(
-          alpha: useBlur ? ui.bottomBarBlurAlpha / 255 : 0.85,
-        ),
-          borderRadius: BorderRadius.circular(32),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.1),
-              blurRadius: 12,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            for (var i = 0; i < widget.specs.length; i++)
-              Expanded(
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onTapDown: (_) => setState(() => _pressedIndex = i),
-                  onTapCancel: () => setState(() => _pressedIndex = -1),
-                  onTapUp: (_) {
-                    setState(() => _pressedIndex = -1);
-                    widget.onSelect(i);
-                  },
-                  child: Center(
-                    child: AnimatedScale(
-                      scale: _pressedIndex == i ? 1.08 : 1.0,
-                      duration: const Duration(milliseconds: 120),
-                      curve: Curves.fastOutSlowIn,
-                      child: AnimatedContainer(
-                        duration: const Duration(milliseconds: 200),
-                        curve: Curves.fastOutSlowIn,
-                        width: widget.currentIndex == i ? 64 : 48,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: widget.currentIndex == i
-                              ? cs.secondaryContainer
-                              : Colors.transparent,
-                          borderRadius: BorderRadius.circular(16),
-                        ),
-                        alignment: Alignment.center,
-                        child: AnimatedScale(
-                          scale: widget.currentIndex == i ? 1.2 : 1.0,
-                          duration: const Duration(milliseconds: 200),
-                          curve: Curves.fastOutSlowIn,
-                          child: _icon(i, selected: widget.currentIndex == i),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-          ],
-        ),
-      );
-      if (useBlur) {
-        return SafeArea(
-          top: false,
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(32),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: ui.bottomBarBlurRadius.toDouble(),
-                sigmaY: ui.bottomBarBlurRadius.toDouble(),
-              ),
-              child: capsule,
-            ),
-          ),
-        );
-      }
-      return SafeArea(top: false, child: capsule);
-  }
-}
 
 
 /// [UI_SYNC_REFACTOR S1] 页保活（对齐参考 HorizontalPager

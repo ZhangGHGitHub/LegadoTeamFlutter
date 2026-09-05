@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.186] - 2026-09-05
+
+### Changed
+- [UI] 一比一复刻 S1c：主框架导航组件化——ShortNavigationBar/悬浮胶囊/Rail 三态抽为 app_navigation_bars 组件族（皮肤图标三态统一消费，原 home_screen 私有件公共化）；Rail 对齐参考三件——头部搜索钮、书架分组菜单（参考 Rail 项长按菜单的入口钮等效，交互差异登记）、expand 展开态持久化（railExtended 开关键）
+
+### Test
+- flutter analyze 无问题；flutter test 1338 全过
+- 版本 2.0.186+187
+
+- Contributor: Qoder UI
+
 ## [2.0.185] - 2026-09-05
 
 ### Changed

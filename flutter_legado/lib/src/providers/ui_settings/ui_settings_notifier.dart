@@ -142,6 +142,9 @@ class UiSettingsState {
   /// 设置行分隔线开关
   final bool enableItemDivider;
 
+  /// 大屏侧栏展开态（持久化）
+  final bool railExtended;
+
   const UiSettingsState({
     this.topBarButtonStyle = TopBarButtonStyle.tonal,
     this.mergeTopBarActions = false,
@@ -164,6 +167,7 @@ class UiSettingsState {
     this.bottomBarBlurAlpha = 40,
     this.wallpaperColorFollow = false,
     this.enableItemDivider = false,
+    this.railExtended = false,
   });
 
   UiSettingsState copyWith({
@@ -188,6 +192,7 @@ class UiSettingsState {
     int? bottomBarBlurAlpha,
     bool? wallpaperColorFollow,
     bool? enableItemDivider,
+    bool? railExtended,
   }) {
     return UiSettingsState(
       topBarButtonStyle: topBarButtonStyle ?? this.topBarButtonStyle,
@@ -215,6 +220,7 @@ class UiSettingsState {
       bottomBarBlurAlpha: bottomBarBlurAlpha ?? this.bottomBarBlurAlpha,
       wallpaperColorFollow: wallpaperColorFollow ?? this.wallpaperColorFollow,
       enableItemDivider: enableItemDivider ?? this.enableItemDivider,
+      railExtended: railExtended ?? this.railExtended,
     );
   }
 }
@@ -321,6 +327,10 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
       ),
       enableItemDivider: await _settings.getBoolPref(
         PrefKeys.enableItemDivider,
+        defaultValue: false,
+      ),
+      railExtended: await _settings.getBoolPref(
+        PrefKeys.railExtended,
         defaultValue: false,
       ),
     );
@@ -490,6 +500,14 @@ class UiSettingsNotifier extends Notifier<UiSettingsState> {
     state = state.copyWith(bottomBarBlurAlpha: v);
     _sync();
     await _settings.setIntPref(PrefKeys.bottomBarBlurAlpha, v);
+  }
+
+  /// 大屏侧栏展开态
+  Future<void> setRailExtended(bool value) async {
+    if (state.railExtended == value) return;
+    state = state.copyWith(railExtended: value);
+    _sync();
+    await _settings.setBoolPref(PrefKeys.railExtended, value);
   }
 
   /// 设置行分隔线开关

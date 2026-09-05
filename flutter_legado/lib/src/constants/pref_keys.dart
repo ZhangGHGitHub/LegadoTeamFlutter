@@ -132,6 +132,9 @@ class PrefKeys {
   /// 设置行分隔线开关（参考仓 enableItemDivider，默认关）
   static const enableItemDivider = 'enableItemDivider';
 
+  /// 大屏侧栏展开态持久化（参考仓 navExtended）
+  static const railExtended = 'railExtended';
+
   // ===== 欢迎页样式（pref_config_welcome.xml / WelcomeConfigFragment）=====
 
   /// 欢迎页显示时长（毫秒，原版默认 500，范围 0~800）
