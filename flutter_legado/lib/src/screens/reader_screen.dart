@@ -21,7 +21,6 @@ import '../widgets/reader/reader_image_dominant_body.dart';
 import '../widgets/reader/reader_page_view.dart';
 import '../widgets/reader/reader_settings_sheet.dart';
 import '../widgets/reader/reader_status_strip.dart';
-import '../widgets/reader/reader_top_bar.dart';
 import '../widgets/reader/reader_menu_panel.dart';
 import '../widgets/reader/review_detail_sheet.dart';
 import '../utils/comic_image_utils.dart';
