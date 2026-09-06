@@ -124,18 +124,24 @@ class ReaderNotifier extends Notifier<ReaderState> {
     await _saveProgress();
   }
 
-  /// 进入上一章
+  /// 进入上一章（[UI_SYNC_REFACTOR T3 修] 跳到上一章最后一页：
+  /// currentChapterPos=-1 为哨兵值，ReaderPageView 分页完成后跳末页）
   Future<void> prevChapter() async {
     if (!state.hasPreviousChapter) return;
     await _saveProgress();
     state = state.copyWith(
       currentChapterIndex: state.currentChapterIndex - 1,
-      currentChapterPos: 0,
+      currentChapterPos: -1,
       isLoading: true,
     );
     await _loadChapterContent();
     state = state.copyWith(isLoading: false);
     await _saveProgress();
+  }
+
+  /// [UI_SYNC_REFACTOR T3 修] 消费 -1 哨兵后重置（防后续重分页再次跳末页）
+  void resetChapterPos() {
+    state = state.copyWith(currentChapterPos: 0);
   }
 
   /// 跳转到指定章节

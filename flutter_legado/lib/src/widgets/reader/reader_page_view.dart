@@ -541,16 +541,27 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     _paginatedDoublePage = doublePage;
     _paginatedUseZhLayout = widget.useZhLayout;
     _paginatedHangingPunctuation = widget.hangingPunctuation;
-    _currentPageIndex = 0;
+    // [UI_SYNC_REFACTOR T3 修] 分页后按 currentChapterPos 定位：
+    // -1 = 哨兵跳末页（prevChapter 场景）；其他值 = 跳到对应页
+    final notifier = ref.read(readerNotifierProvider.notifier);
+    final chapterPos = ref.read(readerNotifierProvider).currentChapterPos;
+    if (chapterPos == -1 && _paginatedPages.isNotEmpty) {
+      // 哨兵：跳到本章最后一页
+      _currentPageIndex = _paginatedPages.length - 1;
+      Future(() => notifier.resetChapterPos());
+    } else if (chapterPos > 0 && chapterPos < _paginatedPages.length) {
+      _currentPageIndex = chapterPos;
+    } else {
+      _currentPageIndex = 0;
+    }
 
     // 跨章节分页：注册本章页数到全局分页器
     // 注：本方法在 build 阶段调用，不可同步修改 provider（会触发
     // "modify a provider while the widget tree was building" 断言），延迟到下一帧
-    final notifier = ref.read(readerNotifierProvider.notifier);
     Future(() => notifier.updateChapterPageCount(chapterIndex, pages.length));
 
     if (_pageController.hasClients) {
-      _pageController.jumpToPage(0);
+      _pageController.jumpToPage(_currentPageIndex);
     }
   }
 
