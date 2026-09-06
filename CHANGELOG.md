@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.214] - 2026-09-08
+
+### Changed
+- [UI] 正文长按菜单按用户裁决 A 对齐参考版浮窗：长按段落在按压点浮出工具条（复制/分享/浏览器/朗读/书签/更多），点击浮条外收起；「更多」打开保留的段落选区面板（替换/高亮/词典/搜正文/精细选区等增强动作不丢失）
+- 实现说明：SelectionArea 在阅读器 PageView 手势栈下长按不触发（探针实证父级赢得竞技场），故采用长按点 Overlay 浮条方案，行为确定
+
+### Test
+- 新增 reader_selection_toolbar_test（浮条出现+动作项）；flutter analyze 无问题；flutter test 1349 全过；5556 实机验证浮窗形态
+- 版本 2.0.214+215
+
+- Contributor: Qoder UI
+
 ## [2.0.213] - 2026-09-08
 
 ### Changed

@@ -388,34 +388,44 @@ class ReaderTextContent extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: lineWidgets,
           );
-          widgets.add(
-            GestureDetector(
-              onLongPress: (paraText.trim().isEmpty || !selectText)
-                  ? null
-                  : () => TextSelectionPanel.show(
-                      context,
-                      text: paraText,
-                      chapterPos: para.startIndex,
+          // [UI_SYNC_REFACTOR S6 | 2026-09-08] 长按交互改造（用户裁决 A：
+          // 对齐参考版浮窗）：长按段落于按压点浮出工具条（复制/分享/浏览器/
+          // 朗读/书签/更多）；「更多」打开保留的段落面板（替换/高亮/词典/
+          // 搜正文/精细选区增强动作不丢失）。
+          // 注：SelectionArea 在阅读器 PageView 手势栈下长按不触发
+          // （组件测试正常/真机不触发，探针实证父级赢得竞技场），故采用
+          // 长按点 Overlay 浮条方案，形态对齐且行为确定 — Qoder
+          Widget paragraphContent = reviewCount > 0
+              ? Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(child: paragraphBody),
+                    ReviewColumnBadge(
+                      count: reviewCount,
+                      onTap: onReviewTap == null
+                          ? null
+                          : () => onReviewTap!(
+                              para.chapterParagraphIndex,
+                              reviewCount,
+                            ),
                     ),
-              child: reviewCount > 0
-                  ? Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Expanded(child: paragraphBody),
-                        ReviewColumnBadge(
-                          count: reviewCount,
-                          onTap: onReviewTap == null
-                              ? null
-                              : () => onReviewTap!(
-                                  para.chapterParagraphIndex,
-                                  reviewCount,
-                                ),
-                        ),
-                      ],
-                    )
-                  : paragraphBody,
-            ),
-          );
+                  ],
+                )
+              : paragraphBody;
+          if (selectText && paraText.trim().isNotEmpty) {
+            paragraphContent = GestureDetector(
+              onLongPressStart: (details) {
+                ReaderSelectionToolbar.show(
+                  context,
+                  anchor: details.globalPosition,
+                  text: paraText,
+                  chapterPos: para.startIndex,
+                );
+              },
+              child: paragraphContent,
+            );
+          }
+          widgets.add(paragraphContent);
         }
 
         return Column(

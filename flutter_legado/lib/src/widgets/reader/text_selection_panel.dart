@@ -11,6 +11,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -530,5 +531,206 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
     } catch (e) {
       _toast('分享失败：$e');
     }
+  }
+}
+
+/// 正文长按浮出工具条（对齐参考版浮窗形态）
+///
+/// [UI_SYNC_REFACTOR S6 | 2026-09-08] 用户裁决 A（对齐参考版浮窗）：
+/// 长按段落于按压点浮出工具条（复制/分享/浏览器/朗读/书签/更多）。
+/// 「更多」打开保留的段落面板（替换/高亮/词典/搜正文/精细选区等增强
+/// 动作不丢失）。注：SelectionArea 在阅读器 PageView 手势栈下长按
+/// 不触发（探针实证），故用长按点 Overlay 浮条，行为确定 — Qoder
+class ReaderSelectionToolbar extends ConsumerWidget {
+  /// 按压点全局坐标（工具条锚点）
+  final Offset anchor;
+
+  /// 段落全文（动作作用文本）
+  final String text;
+
+  /// 选区起始段内位置（书签/朗读定位用，与段落面板同语义）
+  final int chapterPos;
+
+  final VoidCallback onDismiss;
+
+  const ReaderSelectionToolbar({
+    super.key,
+    required this.anchor,
+    required this.text,
+    required this.chapterPos,
+    required this.onDismiss,
+  });
+
+  /// 浮出：全屏点击屏障 + 锚点工具条（点屏/执行动作即收起）
+  static void show(
+    BuildContext context, {
+    required Offset anchor,
+    required String text,
+    required int chapterPos,
+  }) {
+    final overlay = Overlay.of(context, rootOverlay: true);
+    late OverlayEntry entry;
+    var dismissed = false;
+    void dismiss() {
+      if (dismissed) return;
+      dismissed = true;
+      entry.remove();
+    }
+
+    entry = OverlayEntry(
+      builder: (_) => Stack(
+        children: [
+          // 点击屏障：任意点按收起浮条
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: dismiss,
+              child: const SizedBox.expand(),
+            ),
+          ),
+          Positioned(
+            left: (anchor.dx - 150).clamp(12.0,
+                MediaQuery.of(context).size.width - 342),
+            top: (anchor.dy - 64).clamp(12.0, double.infinity),
+            child: Material(
+              elevation: 6,
+              borderRadius: BorderRadius.circular(12),
+              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+              child: ReaderSelectionToolbar(
+                anchor: anchor,
+                text: text,
+                chapterPos: chapterPos,
+                onDismiss: dismiss,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    overlay.insert(entry);
+  }
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final actions = [
+      (Icons.copy_outlined, '复制', () async {
+        await Clipboard.setData(ClipboardData(text: text));
+        onDismiss();
+        if (context.mounted) {
+          ScaffoldMessenger.of(context)
+            ..hideCurrentSnackBar()
+            ..showSnackBar(const SnackBar(content: Text('已复制到剪贴板')));
+        }
+      }),
+      (Icons.share_outlined, '分享', () async {
+        onDismiss();
+        try {
+          await Share.share(text);
+        } catch (_) {}
+      }),
+      (Icons.open_in_browser_outlined, '浏览器', () async {
+        onDismiss();
+        final navigator = Navigator.of(context, rootNavigator: true);
+        if (RegExp(r'^https?://\S+$').hasMatch(text)) {
+          navigator.pushNamed(AppRoutes.browser, arguments: text);
+          return;
+        }
+        final uri = Uri.https('www.bing.com', '/search', {'q': text});
+        try {
+          if (!await launchUrl(uri, mode: LaunchMode.externalApplication)) {
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('无法打开浏览器')));
+            }
+          }
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text('打开浏览器失败：\$e')));
+          }
+        }
+      }),
+      (Icons.record_voice_over_outlined, '朗读', () {
+        final state = ref.read(readerNotifierProvider);
+        final book = state.currentBook;
+        onDismiss();
+        if (book == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('无法启动朗读：未打开书籍')));
+          return;
+        }
+        unawaited(ref.read(audioNotifierProvider.notifier).startReadAloud(
+          bookUrl: book.bookUrl,
+          bookName: book.name,
+          chapterIndex: state.currentChapterIndex,
+          startChapterPos: chapterPos,
+          startParagraphText: text,
+        ));
+      }),
+      (Icons.bookmark_border, '书签', () async {
+        final state = ref.read(readerNotifierProvider);
+        final book = state.currentBook;
+        onDismiss();
+        if (book == null) {
+          ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('无法添加书签：未打开书籍')));
+          return;
+        }
+        try {
+          await ref.read(bookmarkNotifierProvider.notifier).addBookmark(
+                bookName: book.name,
+                bookAuthor: book.author,
+                chapterIndex: state.currentChapterIndex,
+                chapterPos: chapterPos,
+                chapterName: state.currentChapter?.title ?? '',
+                bookText: text,
+                content: text,
+              );
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('已添加书签')));
+          }
+        } catch (e) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context)
+                .showSnackBar(SnackBar(content: Text('添加书签失败：\$e')));
+          }
+        }
+      }),
+      (Icons.settings_rounded, '更多', () {
+        onDismiss();
+        final navigator = Navigator.of(context, rootNavigator: true);
+        TextSelectionPanel.show(
+          navigator.context,
+          text: text,
+          chapterPos: chapterPos,
+        );
+      }),
+    ];
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var i = 0; i < actions.length; i++) ...[
+          if (i > 0)
+            SizedBox(
+              height: 24,
+              child: VerticalDivider(
+                  width: 1, color: Theme.of(context).colorScheme.outlineVariant),
+            ),
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: actions[i].$3,
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Text(
+                actions[i].$2,
+                style: Theme.of(context).textTheme.bodyMedium,
+              ),
+            ),
+          ),
+        ],
+      ],
+    );
   }
 }
