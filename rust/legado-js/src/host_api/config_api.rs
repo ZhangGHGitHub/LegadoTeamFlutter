@@ -122,7 +122,9 @@ pub fn set_injected_theme_config(json: &str) {
     if json.is_empty() {
         return;
     }
-    *theme_config_store().write().unwrap_or_else(|p| p.into_inner()) = Some(json);
+    *theme_config_store()
+        .write()
+        .unwrap_or_else(|p| p.into_inner()) = Some(json);
 }
 
 /// 注入主题模式（Flutter `setThemeMode` 时经 FFI 调用）
@@ -133,7 +135,9 @@ pub fn set_injected_theme_mode(mode: &str) {
     if mode.is_empty() {
         return;
     }
-    *theme_mode_store().write().unwrap_or_else(|p| p.into_inner()) = Some(mode);
+    *theme_mode_store()
+        .write()
+        .unwrap_or_else(|p| p.into_inner()) = Some(mode);
 }
 
 /// 读取已注入的主题配置 JSON（无注入时返回空）
