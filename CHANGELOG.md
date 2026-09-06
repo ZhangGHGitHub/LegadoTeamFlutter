@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.202] - 2026-09-06
+
+### Fixed
+- [UI] 阅读菜单 FloatingIconRow 溢出——图标 8→5（目录/朗读/自动翻页/替换/界面，对齐参考 iconItemsPerRow=5），修 RIGHT OVERFLOWED BY 40 PIXELS；书签/日夜/更多设置保留在 More 溢出菜单
+- [UI] 正文右边距安全余量 4→8dp（letterSpacing 0.1em × CJK 每行 ~15 字 ≈ 27px 额外宽度）
+- [UI] 阅读弹层双横杠全面修复——config_panel/padding_config/tip_config/read_aloud_bar/review_detail_sheet 五处补 showDragHandle:false
+- [UI] 阅读排版默认值对齐参考——行距 1.6→1.67、段距 12→2dp、字距 0→0.1em
+
+### Test
+- flutter analyze 无问题；flutter test 1341 全过
+- 版本 2.0.202+203
+
+- Contributor: Qoder UI
+
 ## [2.0.201] - 2026-09-06
 
 ### Fixed

@@ -8,7 +8,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../../models/models.dart';
 import '../../providers/reader/reader_notifier.dart';
-import '../../providers/theme/theme_notifier.dart';
 import '../../providers/ui_settings/ui_settings_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
@@ -345,26 +344,15 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     final cs = Theme.of(context).colorScheme;
     IconData autoIcon() =>
         autoPageActive ? Icons.pause : Icons.auto_stories_outlined;
+    // [UI_SYNC_REFACTOR S2 修正] 图标 8→5（对齐参考 iconItemsPerRow=5，
+    // 修 RIGHT OVERFLOWED BY 40 PIXELS）
     final items = <(IconData, String, VoidCallback)>[
-      (Symbols.bookmark_add_rounded, '添加书签', widget.onAddBookmark),
       (Symbols.auto_stories_rounded, '目录', widget.onOpenCatalog),
-      (Symbols.sunny_rounded, '日/夜切换', () {
-        final isNight = Theme.of(context).brightness == Brightness.dark;
-        unawaited(ref
-            .read(themeNotifierProvider.notifier)
-            .toggleDayNight(isNight: isNight));
-        ref
-            .read(readerNotifierProvider.notifier)
-            .updateBackgroundColor(
-              isNight ? ReaderBackground.white : ReaderBackground.dark,
-            );
-      }),
+      (Symbols.headphones_rounded, '朗读', widget.onReadAloud),
       (autoIcon(), autoPageActive ? '停止自动翻页' : '自动翻页',
           widget.onToggleAutoPage),
-      (Symbols.find_replace_rounded, '替换规则', widget.onOpenReplaceRules),
-      (Symbols.settings_rounded, '界面设置', widget.onOpenSettings),
-      (Symbols.tune_rounded, '更多设置', widget.onOpenAdvancedConfig),
-      (Symbols.headphones_rounded, '朗读', widget.onReadAloud),
+      (Symbols.find_replace_rounded, '替换', widget.onOpenReplaceRules),
+      (Symbols.settings_rounded, '界面', widget.onOpenSettings),
     ];
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
