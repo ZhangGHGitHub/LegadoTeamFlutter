@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.213] - 2026-09-08
+
+### Changed
+- [UI] 目录页头部对齐参考版：章名大标题 + 「当前章 / 总章数」进度行（此前为书名；总章数优先取实际加载章节数）
+- RSS 源瓦片导航复核：https 源经内置浏览器正常打开 ✅，自定义 scheme 源给出失败反馈（上批），行为符合设计
+
+### Test
+- flutter analyze 无问题；flutter test 1348 全过；5556 实机截图验证目录头部
+- 版本 2.0.213+214
+
+- Contributor: Qoder UI
+
 ## [2.0.212] - 2026-09-08
 
 ### Changed

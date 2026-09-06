@@ -545,6 +545,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
+    // [UI_SYNC_REFACTOR S5 修 | 2026-09-08] 头部对齐参考版：章名大标题 +
+    // 「N / M」进度行（此前为书名；底部信息条保留）— Qoder
+    final currentChapterTitle =
+        _book.durChapterTitle?.isNotEmpty == true ? _book.durChapterTitle! : '';
     return Scaffold(
       appBar: LegadoAppBar(
         title: _searching
@@ -557,7 +561,25 @@ class _TocScreenState extends ConsumerState<TocScreen>
                 ),
                 onChanged: _onSearchChanged,
               )
-            : Text(_book.name.isNotEmpty ? _book.name : '目录'),
+            : currentChapterTitle.isNotEmpty
+                ? Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        currentChapterTitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        '${_book.durChapterIndex + 1} / ${_chapters.isNotEmpty ? _chapters.length : (_book.totalChapterNum > 0 ? _book.totalChapterNum : 0)}',
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            ),
+                      ),
+                    ],
+                  )
+                : Text(_book.name.isNotEmpty ? _book.name : '目录'),
         actions: [
           IconButton(
             icon: Icon(_searching ? Symbols.close_rounded : Symbols.search_rounded),
