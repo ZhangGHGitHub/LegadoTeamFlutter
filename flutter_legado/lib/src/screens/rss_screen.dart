@@ -329,8 +329,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
   /// 48dp 图标 + 8dp + labelMedium 2 行名居中，无卡底，长按删除确认）
   Widget _buildSourceItem(BuildContext context, RssSource source) {
     final cs = Theme.of(context).colorScheme;
-    final hasIcon =
-        source.sourceIcon != null && source.sourceIcon!.trim().isNotEmpty;
+    final hasIcon = source.sourceIcon.trim().isNotEmpty;
     return InkWell(
       key: ValueKey(source.sourceUrl),
       borderRadius: BorderRadius.circular(16),
@@ -345,7 +344,7 @@ class _RssScreenState extends ConsumerState<RssScreen> {
               height: 48,
               child: hasIcon
                   ? CachedNetworkImage(
-                      imageUrl: source.sourceIcon!,
+                      imageUrl: source.sourceIcon,
                       fit: BoxFit.cover,
                       memCacheWidth: 48 * 3,
                       errorWidget: (_, _, _) =>
