@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.204] - 2026-09-06
+
+### Fixed
+- [UI] 正文行尾吞字根治——排版引擎测量与渲染同源：整段 TextPainter.layout + getBoxesForSelection 逐字盒宽（替换逐字单独测量），并合并 DefaultTextStyle 与 textScaler 与渲染侧同参；ZhLayout 压缩标点行（"。"等按原版语义允许超宽、渲染端无字形压缩）新增行宽安全网重排。探针实证：无安全网时压缩行宽 60 > 可用宽 50（超一个字宽被 ClipRect 裁掉），8dp/5% 余量只缓解不根治
+- [UI] 正文行宽恢复满宽——去掉分页宽 ×0.95 缩减；双页模式左右边距不对称时改取两栏较小栏宽（修右栏越界）
+- [UI] 章节切换翻页动画修复（覆盖模式）——此前切章经 isLoading 整树换 LoadingIndicator 致 AnimatedSwitcher 卸载重挂、过渡永不触发；改为加载中保留上一章渲染（冻结帧不重分页），键改（章索引,屏索引）复合键修方向判定（此前只含章内页索引，跨章页索引相同不触发、变小判反）
+- [UI] 两端对齐可用宽改用实际布局约束（此前硬编码屏宽-40，自定义页面边距时对齐目标与渲染约束错位）
+
+### Test
+- flutter analyze 无问题；flutter test 1346 全过（新增 line_overflow_guard_test 5 项：压缩行/多宽度扫描/textScaler/无损/朴素分支）
+- 版本 2.0.204+205
+
+- Contributor: Qoder UI
+
 ## [2.0.202] - 2026-09-06
 
 ### Fixed

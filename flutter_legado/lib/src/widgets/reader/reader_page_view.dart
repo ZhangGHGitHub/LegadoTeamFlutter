@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -192,8 +193,15 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 覆盖翻页：当前显示的章节索引（用于 AnimatedSwitcher 触发过渡）
   int _coverChapterIndex = 0;
 
+  /// 覆盖翻页：当前显示的屏索引（与章索引组成复合键判定翻页方向）
+  int _coverScreenIndex = 0;
+
   /// 覆盖翻页：是否为前进方向（决定动画方向和层叠顺序）
   bool _coverForward = true;
+
+  /// 当前分页数据对应的章节标题（与 _paginatedChapterIndex 同帧写入，
+  /// 章节切换加载中冻结渲染时标题与正文保持同章，避免新标题配旧正文）
+  String? _paginatedChapterTitle;
 
   /// 当前页索引
   int get currentPageIndex => _currentPageIndex;
@@ -268,8 +276,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     if (ref.read(readerNotifierProvider).pageTurnMode == PageTurnMode.scroll) {
       if (_scrollController.hasClients) {
         final pos = _scrollController.position;
-        if (pos.hasViewportDimension &&
-            pos.pixels >= pos.maxScrollExtent - 1) {
+        if (pos.hasViewportDimension && pos.pixels >= pos.maxScrollExtent - 1) {
           notifier.nextChapter();
         } else {
           _scrollByViewport(true);
@@ -298,8 +305,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     if (ref.read(readerNotifierProvider).pageTurnMode == PageTurnMode.scroll) {
       if (_scrollController.hasClients) {
         final pos = _scrollController.position;
-        if (pos.hasViewportDimension &&
-            pos.pixels <= pos.minScrollExtent + 1) {
+        if (pos.hasViewportDimension && pos.pixels <= pos.minScrollExtent + 1) {
           notifier.prevChapter();
         } else {
           _scrollByViewport(false);
@@ -347,9 +353,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
           final file = File(parts[1]);
           if (await file.exists()) {
             final loader = FontLoader(parts[0])
-              ..addFont(
-                file.readAsBytes().then((b) => b.buffer.asByteData()),
-              );
+              ..addFont(file.readAsBytes().then((b) => b.buffer.asByteData()));
             await loader.load();
           }
         }
@@ -412,14 +416,17 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final screenSize = MediaQuery.of(context).size;
     final doublePage = switch (widget.doubleHorizontalPage) {
       1 => state.pageTurnMode != PageTurnMode.scroll,
-      2 => screenSize.width > screenSize.height &&
-          state.pageTurnMode != PageTurnMode.scroll,
-      3 => (screenSize.width > screenSize.height || screenSize.width >= 700) &&
-          state.pageTurnMode != PageTurnMode.scroll,
+      2 =>
+        screenSize.width > screenSize.height &&
+            state.pageTurnMode != PageTurnMode.scroll,
+      3 =>
+        (screenSize.width > screenSize.height || screenSize.width >= 700) &&
+            state.pageTurnMode != PageTurnMode.scroll,
       _ => false,
     };
 
-    final needRepaginate = content.isNotEmpty &&
+    final needRepaginate =
+        content.isNotEmpty &&
         (content != _paginatedContent ||
             chapterIndex != _paginatedChapterIndex ||
             fontSize != _paginatedFontSize ||
@@ -440,11 +447,18 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     if (!needRepaginate) return;
 
     // 计算可用尺寸（减去配置的页面边距）
-    // 双页模式：每栏可用宽 =（屏宽 - 左右边距 - 16 栏间隙）/ 2
-    //（渲染侧左栏右间隙 8 + 右栏左间隙 8，与分页宽严格一致）
+    // [UI_SYNC_REFACTOR S4 修 | 2026-09-06] 去掉 ×0.95 缩减：测量已与渲染
+    // 同源同参（整段 TextPainter 盒宽 + DefaultTextStyle + textScaler），
+    // 且 _breakLines 末端有行宽安全网兜底，此前 5% 缩减只白白损失行宽。
+    // 双页模式：每栏可用宽 =（屏宽 - 左右边距 - 16 栏间隙）/ 2，取两栏
+    // 较小值——渲染侧左栏扣 marginLeft+8、右栏扣 marginRight+8，左右
+    // 边距不对称时取小者才保证两栏都不越界 — Qoder
     final availableWidth = doublePage
-        ? (screenSize.width - widget.marginLeft - widget.marginRight - 16) / 2 * 0.95
-        : (screenSize.width - widget.marginLeft - widget.marginRight) * 0.95;
+        ? math.min(
+            screenSize.width / 2 - widget.marginLeft - 8,
+            screenSize.width / 2 - widget.marginRight - 8,
+          )
+        : screenSize.width - widget.marginLeft - widget.marginRight;
     // [UI-fix v2.0.4 | 2026-08-08] 分页可用高度与渲染容器严格一致：
     // 渲染侧（ReaderTypographicPage）Column = 首页标题块 +
     // Expanded(正文) + 页码指示（top 8 + 11 号文字）；此前用固定
@@ -456,12 +470,19 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // 避免字体度量差异引入像素级偏差）
     final baseStyle = DefaultTextStyle.of(context).style;
     final chrome = widget.pageChrome;
-    final headerBlock = ReaderPageLayoutMetrics.headerBlockHeight(context, chrome);
-    final footerBlock = ReaderPageLayoutMetrics.footerBlockHeight(context, chrome);
+    final headerBlock = ReaderPageLayoutMetrics.headerBlockHeight(
+      context,
+      chrome,
+    );
+    final footerBlock = ReaderPageLayoutMetrics.footerBlockHeight(
+      context,
+      chrome,
+    );
     // 预留 4px 保险余量：TextPainter 测量与 Text 实际渲染存在亚像素差
     //（基线/字距舍入），满页正文底部 RenderFlex 溢出 3px（书山等长正文
     // 复现）— 2026-08-17
-    final availableHeight = screenSize.height -
+    final availableHeight =
+        screenSize.height -
         statusBarTop -
         sysPadding.bottom -
         headerBlock -
@@ -480,15 +501,18 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         final titlePainter = TextPainter(
           text: TextSpan(
             text: chapterTitle,
-            style: baseStyle.merge(TextStyle(
-              fontSize: fontSize + chrome.titleSize,
-              fontWeight: FontWeight.bold,
-            )),
+            style: baseStyle.merge(
+              TextStyle(
+                fontSize: fontSize + chrome.titleSize,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
           ),
           textDirection: TextDirection.ltr,
           textScaler: textScaler,
         )..layout(maxWidth: availableWidth);
-        firstPageHeight = availableHeight -
+        firstPageHeight =
+            availableHeight -
             titlePainter.height -
             chrome.titleTopSpacing -
             chrome.titleBottomSpacing;
@@ -517,16 +541,25 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       useZhLayout: widget.useZhLayout,
       // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂接入排版引擎 — Reasonix
       hangingPunctuation: widget.hangingPunctuation,
+      // [UI_SYNC_REFACTOR S4 修 | 2026-09-06] 测量与渲染同参：渲染侧 Text
+      // 继承 DefaultTextStyle 并应用系统文字缩放，测量侧同参注入 — Qoder
+      baseStyle: baseStyle,
+      textScaler: textScaler,
     );
 
     final engine = ParagraphLayoutEngine(config: config, context: context);
     // [UI-fix v2.0.4 | 2026-08-08] 首页容量单独下发（扣标题块）— Qoder
-    final pages = engine.paginateChapter(content, availableWidth, availableHeight,
-        firstPageHeight: firstPageHeight);
+    final pages = engine.paginateChapter(
+      content,
+      availableWidth,
+      availableHeight,
+      firstPageHeight: firstPageHeight,
+    );
 
     _paginatedPages = pages;
     _paginatedContent = content;
     _paginatedChapterIndex = chapterIndex;
+    _paginatedChapterTitle = state.currentChapter?.title;
     _paginatedFontSize = fontSize;
     _paginatedLineHeight = lineHeight;
     _paginatedParagraphSpacing = spacing;
@@ -576,15 +609,27 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final state = ref.watch(readerNotifierProvider);
     final notifier = ref.read(readerNotifierProvider.notifier);
 
-    if (state.isLoading) {
+    // [UI_SYNC_REFACTOR S4 修 | 2026-09-06] 章节切换加载中：保留上一章
+    // 既有分页渲染（跳过重分页）——此前直接整树换成 LoadingIndicator，
+    // cover 模式 AnimatedSwitcher 子树被卸载，加载完重新挂载时已无旧
+    // child，过渡动画永不触发（章节切换翻页动画失效根因）。冻结期间
+    // 键以 _paginatedChapterIndex 为章标识保持不变，加载完成重分页后
+    // 键变化恰好触发一次"旧页 → 新页"过渡。首次打开（无既有分页）
+    // 仍显示加载指示。
+    if (state.isLoading && _paginatedPages.isEmpty) {
       return LoadingIndicator(message: AppStrings.loadingChapter);
+    }
+    if (state.isLoading && state.error == null) {
+      // 冻结帧：不重分页、不响应排版参数变化（加载完成后统一重算）
+      return _buildContent(context, state, repaginate: false);
     }
 
     if (state.error != null) {
       final book = state.currentBook;
       // [fix Task#24 | 2026-08-08] 正文/章节加载失败（如「正文为空」，多由换源
       // 匹配错书导致）时，除「重试」外引导用户「换源」逃离坏书源（对齐原版）— Qoder
-      final isOnline = book != null &&
+      final isOnline =
+          book != null &&
           book.origin != BookType.localTag &&
           !book.origin.startsWith(BookType.webDavTag);
       return ErrorView(
@@ -596,18 +641,29 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         },
         onSecondaryAction: isOnline
             ? () => Navigator.pushNamed(
-                  context,
-                  AppRoutes.changeSource,
-                  arguments: book,
-                )
+                context,
+                AppRoutes.changeSource,
+                arguments: book,
+              )
             : null,
         secondaryActionLabel: '换源',
         secondaryActionIcon: Icons.swap_horiz,
       );
     }
 
-    // 排版引擎：检测是否需要重新分页
-    _paginateIfNeeded(context, state);
+    return _buildContent(context, state, repaginate: true);
+  }
+
+  /// 组装正文内容（ [_paginateIfNeeded] 的触发时机集中在此）
+  Widget _buildContent(
+    BuildContext context,
+    ReaderState state, {
+    required bool repaginate,
+  }) {
+    if (repaginate) {
+      // 排版引擎：检测是否需要重新分页
+      _paginateIfNeeded(context, state);
+    }
 
     final Widget content;
     switch (state.pageTurnMode) {
@@ -733,7 +789,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       readBodyToLh: widget.readBodyToLh,
     );
     if (top <= 0) return child;
-    return Padding(padding: EdgeInsets.only(top: top), child: child);
+    return Padding(
+      padding: EdgeInsets.only(top: top),
+      child: child,
+    );
   }
 
   Widget _buildScrollContent(ReaderState state) {
@@ -873,7 +932,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                   double value = 1.0;
                   if (_pageController.hasClients &&
                       _pageController.position.hasContentDimensions) {
-                    value = (_pageController.page ??
+                    value =
+                        (_pageController.page ??
                             _pageController.initialPage.toDouble()) -
                         index;
                     value = (1 - value.abs().clamp(0.0, 1.0));
@@ -898,8 +958,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                                   begin: Alignment.centerRight,
                                   end: Alignment.centerLeft,
                                   colors: [
-                                    Colors.black
-                                        .withValues(alpha: 0.12 * (1.0 - value)),
+                                    Colors.black.withValues(
+                                      alpha: 0.12 * (1.0 - value),
+                                    ),
                                     Colors.transparent,
                                   ],
                                 ),
@@ -950,12 +1011,24 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// - 后退（上一页）：当前页向右滑出，露出下方的新页
   /// 动画时长 300ms，线性曲线（对齐安卓基准）
   Widget _buildCoverContent(ReaderState state) {
-    // [UI-fix v2.0.5 | 2026-08-10] 双页模式：覆盖翻页按整屏动画（屏索引）— Reasonix
-    final targetIndex = _isDoublePage ? _currentPageIndex ~/ 2 : _currentPageIndex;
-    // 检测翻页方向
-    if (targetIndex != _coverChapterIndex) {
-      _coverForward = targetIndex > _coverChapterIndex;
-      _coverChapterIndex = targetIndex;
+    // [UI_SYNC_REFACTOR S4 修 | 2026-09-06] 复合键（章索引, 屏索引）：
+    // 此前键只含章内页索引——跨章后页索引相同（如都在第 0 页）键不变，
+    // AnimatedSwitcher 不触发过渡（章节切换动画失效）；页索引变小
+    // （下一章第 0 页）还会把方向判反成后退。键以 _paginatedChapterIndex
+    // （与当前分页数据同源）为章标识：章节切换加载中的冻结帧键不变，
+    // 加载完成重分页后键变化恰好触发一次过渡，方向按章号比较 — Qoder
+    final chapterIndex = _paginatedChapterIndex;
+    final screenIndex = _isDoublePage
+        ? _currentPageIndex ~/ 2
+        : _currentPageIndex;
+    final targetKey = ValueKey<String>('c${chapterIndex}_p$screenIndex');
+    if (chapterIndex != _coverChapterIndex) {
+      _coverForward = chapterIndex > _coverChapterIndex;
+      _coverChapterIndex = chapterIndex;
+      _coverScreenIndex = screenIndex;
+    } else if (screenIndex != _coverScreenIndex) {
+      _coverForward = screenIndex > _coverScreenIndex;
+      _coverScreenIndex = screenIndex;
     }
     final forward = _coverForward;
 
@@ -976,7 +1049,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
           );
         },
         transitionBuilder: (child, animation) {
-          final isEntering = child.key == ValueKey<int>(targetIndex);
+          final isEntering = child.key == targetKey;
           final bool slides;
           if (forward) {
             slides = isEntering;
@@ -1018,8 +1091,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                                   ? Alignment.centerLeft
                                   : Alignment.centerRight,
                               colors: [
-                                Colors.black
-                                    .withValues(alpha: 0.2 * (1 - animation.value)),
+                                Colors.black.withValues(
+                                  alpha: 0.2 * (1 - animation.value),
+                                ),
                                 Colors.transparent,
                               ],
                             ),
@@ -1034,10 +1108,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
           );
         },
         child: KeyedSubtree(
-          key: ValueKey<int>(targetIndex),
+          key: targetKey,
           child: _isDoublePage
-              ? _buildSpread(state, targetIndex)
-              : _buildTypographicPage(state, targetIndex),
+              ? _buildSpread(state, screenIndex)
+              : _buildTypographicPage(state, _currentPageIndex),
         ),
       ),
     );
@@ -1055,18 +1129,22 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final safeIndex = _paginatedPages.isEmpty
         ? 0
         : pageIndex.clamp(0, _paginatedPages.length - 1);
-    final pageInfo = _paginatedPages.isEmpty ? null : _paginatedPages[safeIndex];
+    final pageInfo = _paginatedPages.isEmpty
+        ? null
+        : _paginatedPages[safeIndex];
 
     // 计算全局页索引（章起始全局索引 + 章内页索引）
     final notifier = ref.read(readerNotifierProvider.notifier);
-    final chapterStart = notifier.paginator.globalIndexForChapterStart(state.currentChapterIndex);
+    final chapterStart = notifier.paginator.globalIndexForChapterStart(
+      state.currentChapterIndex,
+    );
     final globalIndex = chapterStart >= 0 ? chapterStart + safeIndex : null;
 
     return ReaderTypographicPage(
       pageInfo: pageInfo,
       pageIndex: safeIndex,
       totalPages: _paginatedPages.length,
-      chapterTitle: state.currentChapter?.title,
+      chapterTitle: _paginatedChapterTitle ?? state.currentChapter?.title,
       pageChrome: widget.pageChrome,
       tipContext: _buildTipContext(
         state,
@@ -1116,7 +1194,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   ) {
     return ReaderTipContext(
       bookName: state.currentBook?.name ?? '',
-      chapterTitle: state.currentChapter?.title ?? '',
+      // [UI_SYNC_REFACTOR S4 修] 章题取分页同源快照（加载冻结帧不串章）— Qoder
+      chapterTitle: _paginatedChapterTitle ?? state.currentChapter?.title ?? '',
       pageIndex: pageIndex,
       totalPages: totalPages,
       globalPageIndex: globalIndex,

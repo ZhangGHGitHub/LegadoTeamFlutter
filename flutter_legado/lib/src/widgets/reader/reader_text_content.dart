@@ -68,8 +68,10 @@ class ReaderTypographicPage extends StatelessWidget {
     required this.textColor,
     this.globalPageIndex,
     this.globalTotalPages,
-    this.contentPadding =
-        const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+    this.contentPadding = const EdgeInsets.symmetric(
+      horizontal: 20,
+      vertical: 24,
+    ),
     this.pageChrome = const ReaderPageChromeConfig(),
     this.tipContext = const ReaderTipContext(pageIndex: 0, totalPages: 1),
     this.selectText = true,
@@ -90,7 +92,9 @@ class ReaderTypographicPage extends StatelessWidget {
         child: Text(
           AppStrings.noContent,
           style: TextStyle(
-              fontSize: fontSize, color: textColor.withValues(alpha: 0.5)),
+            fontSize: fontSize,
+            color: textColor.withValues(alpha: 0.5),
+          ),
         ),
       );
     }
@@ -98,7 +102,8 @@ class ReaderTypographicPage extends StatelessWidget {
     final chrome = pageChrome;
     final showHeader = chrome.showPageHeader && chrome.hasHeaderTips;
     final showFooter = chrome.showPageFooter && chrome.hasFooterTips;
-    final showTitle = pageIndex == 0 &&
+    final showTitle =
+        pageIndex == 0 &&
         chapterTitle != null &&
         chrome.titleMode.clamp(0, 2) != 2;
     final titleAlign = switch (chrome.titleMode.clamp(0, 2)) {
@@ -275,56 +280,81 @@ class ReaderTextContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final widgets = <Widget>[];
-    final availableWidth = MediaQuery.of(context).size.width - 40;
+    // [UI_SYNC_REFACTOR S4 修 | 2026-09-06] 两端对齐的可用宽改用实际布局
+    // 约束——此前硬编码屏宽-40，自定义页面边距（contentPadding ≠ 20×2）
+    // 时对齐目标宽与渲染约束错位，拉伸后行宽超约束被裁（行尾吞字）— Qoder
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final widgets = <Widget>[];
+        final availableWidth = constraints.maxWidth;
 
-    for (var paraIdx = 0; paraIdx < pageInfo.paragraphs.length; paraIdx++) {
-      final para = pageInfo.paragraphs[paraIdx];
+        for (var paraIdx = 0; paraIdx < pageInfo.paragraphs.length; paraIdx++) {
+          final para = pageInfo.paragraphs[paraIdx];
 
-      // 段落间距（非第一段时添加）
-      if (paraIdx > 0 && lineHeight > 0) {
-        widgets.add(SizedBox(height: paragraphSpacing));
-      }
-
-      // 逐行渲染
-      final lineWidgets = <Widget>[];
-      for (var lineIdx = 0; lineIdx < para.lines.length; lineIdx++) {
-        final line = para.lines[lineIdx];
-        final text = line.words.join('');
-        final isLastLine = lineIdx == para.lines.length - 1;
-        final isSingleLine = para.lines.length == 1;
-
-        // 两端对齐：非最后一行且非单行时分配额外字间距
-        double extraLetterSpacing = 0.0;
-        // [UI-fix v2.0.2 | 2026-08-06] 关闭两端对齐时不再拉伸字距
-        // （对标 MoreConfig textFullJustify 开关） — Qoder
-        final shouldJustify = justify && !isLastLine && !isSingleLine;
-        if (shouldJustify && line.width > 0) {
-          if (line.width < availableWidth) {
-            final gapCount = line.words.length - 1;
-            if (gapCount > 0) {
-              extraLetterSpacing = (availableWidth - line.width) / gapCount;
-              // 限制最大字间距避免过度拉伸
-              extraLetterSpacing =
-                  extraLetterSpacing.clamp(0.0, fontSize * 0.5);
-            }
+          // 段落间距（非第一段时添加）
+          if (paraIdx > 0 && lineHeight > 0) {
+            widgets.add(SizedBox(height: paragraphSpacing));
           }
-        }
 
-        lineWidgets.add(
-          SizedBox(
-            height: fontSize * lineHeight,
-            // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂行：放宽宽度约束至
-            // availableWidth + hangingWidth 避免裁剪，行起点左移 hangingWidth
-            // 使起始引号悬挂进缩进区（对齐原版 TextLine.hangingPunctuation
-            // 语义）— Reasonix
-            child: line.hangingWidth > 0
-                ? OverflowBox(
-                    alignment: Alignment.centerLeft,
-                    maxWidth: availableWidth + line.hangingWidth,
-                    child: Transform.translate(
-                      offset: Offset(-line.hangingWidth, 0),
-                      child: Text(
+          // 逐行渲染
+          final lineWidgets = <Widget>[];
+          for (var lineIdx = 0; lineIdx < para.lines.length; lineIdx++) {
+            final line = para.lines[lineIdx];
+            final text = line.words.join('');
+            final isLastLine = lineIdx == para.lines.length - 1;
+            final isSingleLine = para.lines.length == 1;
+
+            // 两端对齐：非最后一行且非单行时分配额外字间距
+            double extraLetterSpacing = 0.0;
+            // [UI-fix v2.0.2 | 2026-08-06] 关闭两端对齐时不再拉伸字距
+            // （对标 MoreConfig textFullJustify 开关） — Qoder
+            final shouldJustify = justify && !isLastLine && !isSingleLine;
+            if (shouldJustify && line.width > 0) {
+              if (line.width < availableWidth) {
+                final gapCount = line.words.length - 1;
+                if (gapCount > 0) {
+                  extraLetterSpacing = (availableWidth - line.width) / gapCount;
+                  // 限制最大字间距避免过度拉伸
+                  extraLetterSpacing = extraLetterSpacing.clamp(
+                    0.0,
+                    fontSize * 0.5,
+                  );
+                }
+              }
+            }
+
+            lineWidgets.add(
+              SizedBox(
+                height: fontSize * lineHeight,
+                // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂行：放宽宽度约束至
+                // availableWidth + hangingWidth 避免裁剪，行起点左移 hangingWidth
+                // 使起始引号悬挂进缩进区（对齐原版 TextLine.hangingPunctuation
+                // 语义）— Reasonix
+                child: line.hangingWidth > 0
+                    ? OverflowBox(
+                        alignment: Alignment.centerLeft,
+                        maxWidth: availableWidth + line.hangingWidth,
+                        child: Transform.translate(
+                          offset: Offset(-line.hangingWidth, 0),
+                          child: Text(
+                            text,
+                            style: TextStyle(
+                              fontSize: fontSize,
+                              height: lineHeight,
+                              color: textColor,
+                              fontFamily: fontFamily,
+                              fontWeight: fontWeight,
+                              letterSpacing:
+                                  (letterSpacing + extraLetterSpacing) != 0
+                                  ? letterSpacing + extraLetterSpacing
+                                  : null,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.clip,
+                          ),
+                        ),
+                      )
+                    : Text(
                         text,
                         style: TextStyle(
                           fontSize: fontSize,
@@ -334,79 +364,65 @@ class ReaderTextContent extends StatelessWidget {
                           fontWeight: fontWeight,
                           letterSpacing:
                               (letterSpacing + extraLetterSpacing) != 0
-                                  ? letterSpacing + extraLetterSpacing
-                                  : null,
+                              ? letterSpacing + extraLetterSpacing
+                              : null,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.clip,
                       ),
+              ),
+            );
+          }
+
+          // [UI-fix v2.0.1 | 2026-08-06] 段落级长按入口：弹出选区操作面板
+          // （对齐原版 ReadView.onLongPress → showTextActionMenu；P0-1 审计修复）
+          // [UI-fix v2.0.3 | 2026-08-08] selectText 关闭时移除长按入口 — Qoder
+          final paraText = para.lines.map((l) => l.words.join('')).join();
+          final reviewCount =
+              (para.isParagraphEnd &&
+                  para.chapterParagraphIndex > 0 &&
+                  reviewCounts != null)
+              ? (reviewCounts![para.chapterParagraphIndex] ?? 0)
+              : 0;
+          final paragraphBody = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: lineWidgets,
+          );
+          widgets.add(
+            GestureDetector(
+              onLongPress: (paraText.trim().isEmpty || !selectText)
+                  ? null
+                  : () => TextSelectionPanel.show(
+                      context,
+                      text: paraText,
+                      chapterPos: para.startIndex,
                     ),
-                  )
-                : Text(
-                    text,
-                    style: TextStyle(
-                      fontSize: fontSize,
-                      height: lineHeight,
-                      color: textColor,
-                      fontFamily: fontFamily,
-                      fontWeight: fontWeight,
-                      letterSpacing: (letterSpacing + extraLetterSpacing) != 0
-                          ? letterSpacing + extraLetterSpacing
-                          : null,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.clip,
-                  ),
-          ),
+              child: reviewCount > 0
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(child: paragraphBody),
+                        ReviewColumnBadge(
+                          count: reviewCount,
+                          onTap: onReviewTap == null
+                              ? null
+                              : () => onReviewTap!(
+                                  para.chapterParagraphIndex,
+                                  reviewCount,
+                                ),
+                        ),
+                      ],
+                    )
+                  : paragraphBody,
+            ),
+          );
+        }
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: widgets,
         );
-      }
-
-      // [UI-fix v2.0.1 | 2026-08-06] 段落级长按入口：弹出选区操作面板
-      // （对齐原版 ReadView.onLongPress → showTextActionMenu；P0-1 审计修复）
-      // [UI-fix v2.0.3 | 2026-08-08] selectText 关闭时移除长按入口 — Qoder
-      final paraText = para.lines.map((l) => l.words.join('')).join();
-      final reviewCount = (para.isParagraphEnd &&
-              para.chapterParagraphIndex > 0 &&
-              reviewCounts != null)
-          ? (reviewCounts![para.chapterParagraphIndex] ?? 0)
-          : 0;
-      final paragraphBody = Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: lineWidgets,
-      );
-      widgets.add(
-        GestureDetector(
-          onLongPress: (paraText.trim().isEmpty || !selectText)
-              ? null
-              : () => TextSelectionPanel.show(
-                    context,
-                    text: paraText,
-                    chapterPos: para.startIndex,
-                  ),
-          child: reviewCount > 0
-              ? Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(child: paragraphBody),
-                    ReviewColumnBadge(
-                      count: reviewCount,
-                      onTap: onReviewTap == null
-                          ? null
-                          : () => onReviewTap!(
-                                para.chapterParagraphIndex,
-                                reviewCount,
-                              ),
-                    ),
-                  ],
-                )
-              : paragraphBody,
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: widgets,
+      },
     );
   }
 }

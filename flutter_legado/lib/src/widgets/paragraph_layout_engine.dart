@@ -1,5 +1,5 @@
 /// 段落布局引擎
-/// 
+///
 /// 移植自 Kotlin TextChapterLayout.kt (1363 行) 和 HangingPunctuationRule.kt
 /// 实现核心功能:
 /// - 段落分页算法
@@ -10,37 +10,74 @@
 library;
 
 import 'package:flutter/material.dart';
+
 import 'zh_layout.dart';
 
 /// 中文标点悬挂规则
-/// 
+///
 /// 移植自 HangingPunctuationRule.kt
 class ChinesePunctuationRule {
   /// 不能出现在行首的标点
   static const Set<String> beginningPunctuation = {
-    '，', '、', '。', '？', '！', '…', '〃', '』', '「」', '」', ',', "'", '"', ')', '〕', '】', '}', '〉', '》',
+    '，',
+    '、',
+    '。',
+    '？',
+    '！',
+    '…',
+    '〃',
+    '』',
+    '「」',
+    '」',
+    ',',
+    "'",
+    '"',
+    ')',
+    '〕',
+    '】',
+    '}',
+    '〉',
+    '》',
   };
 
-  /// 不能出现在行末的标点  
+  /// 不能出现在行末的标点
   static const Set<String> endingPunctuation = {
-    '（', '〔', '「', '《', '『', '【', '｛', '〈', '(', '[', '{', '‹', '<', '', "'", '"', '•',
+    '（',
+    '〔',
+    '「',
+    '《',
+    '『',
+    '【',
+    '｛',
+    '〈',
+    '(',
+    '[',
+    '{',
+    '‹',
+    '<',
+    '',
+    "'",
+    '"',
+    '•',
   };
 
   /// 检查字符是否为行首标点
-  static bool isBeginningPunctuation(String char) => beginningPunctuation.contains(char);
+  static bool isBeginningPunctuation(String char) =>
+      beginningPunctuation.contains(char);
 
   /// 检查字符是否为行末标点
-  static bool isEndingPunctuation(String char) => endingPunctuation.contains(char);
+  static bool isEndingPunctuation(String char) =>
+      endingPunctuation.contains(char);
 
   /// 获取合适的行首替代字符
   static String getFirstCharOnLine(String line) {
     if (line.isEmpty) return '';
-    
+
     final firstChar = line[0];
     if (!isBeginningPunctuation(firstChar)) {
       return line; // 第一个字符可以放在行首
     }
-    
+
     // 找到第一个非行首标点的位置
     for (int i = 0; i < line.length; i++) {
       if (!isBeginningPunctuation(line[i])) {
@@ -53,12 +90,12 @@ class ChinesePunctuationRule {
   /// 获取合适的行末替代字符
   static String getLastCharOnLine(String line) {
     if (line.isEmpty) return '';
-    
+
     final lastChar = line[line.length - 1];
     if (!isEndingPunctuation(lastChar)) {
       return line; // 最后一个字符可以放在行末
     }
-    
+
     // 找到最后一个非行末标点的位置
     for (int i = line.length - 1; i >= 0; i--) {
       if (!isEndingPunctuation(line[i])) {
@@ -74,9 +111,7 @@ class ChinesePunctuationRule {
   // 场景，跳过检查）— Reasonix
 
   /// 段首可悬挂的起始引号字符
-  static const Set<String> hangingChars = {
-    '"', '“', '‘', '「', '『', '﹁', '﹃',
-  };
+  static const Set<String> hangingChars = {'"', '“', '‘', '「', '『', '﹁', '﹃'};
 
   /// 判断段首是否应悬挂（缩进空格 + 起始引号）
   static bool shouldHang(String text, int indentCount) {
@@ -121,6 +156,13 @@ class ParagraphConfig {
   // hangingPunctuation：段首引号悬挂进缩进区，默认 false 对齐原版）— Reasonix
   final bool hangingPunctuation;
 
+  // [UI_SYNC_REFACTOR S4 修 | 2026-09-06] 渲染同参测量：渲染侧 Text 继承
+  // DefaultTextStyle（主题字体回退链）并应用 MediaQuery 文字缩放，测量侧
+  // TextPainter 此前两者皆缺 → 系统字体缩放/主题字体下测量偏窄 → 行尾吞字。
+  // 由分页调用点注入（引擎不依赖 context，测试可空缺=不缩放不合并）— Qoder
+  final TextStyle? baseStyle;
+  final TextScaler? textScaler;
+
   const ParagraphConfig({
     this.fontSize = 16.0,
     this.lineHeight = 1.6,
@@ -135,6 +177,8 @@ class ParagraphConfig {
     this.fontWeight,
     this.useZhLayout = true,
     this.hangingPunctuation = false,
+    this.baseStyle,
+    this.textScaler,
   });
 
   ParagraphConfig copyWith({
@@ -151,6 +195,8 @@ class ParagraphConfig {
     FontWeight? fontWeight,
     bool? useZhLayout,
     bool? hangingPunctuation,
+    TextStyle? baseStyle,
+    TextScaler? textScaler,
   }) {
     return ParagraphConfig(
       fontSize: fontSize ?? this.fontSize,
@@ -166,6 +212,8 @@ class ParagraphConfig {
       fontWeight: fontWeight ?? this.fontWeight,
       useZhLayout: useZhLayout ?? this.useZhLayout,
       hangingPunctuation: hangingPunctuation ?? this.hangingPunctuation,
+      baseStyle: baseStyle ?? this.baseStyle,
+      textScaler: textScaler ?? this.textScaler,
     );
   }
 }
@@ -223,10 +271,7 @@ class PageInfo {
   final List<ParagraphInfo> paragraphs;
   final double totalHeight;
 
-  const PageInfo({
-    required this.paragraphs,
-    required this.totalHeight,
-  });
+  const PageInfo({required this.paragraphs, required this.totalHeight});
 }
 
 /// 字符宽度缓存
@@ -300,7 +345,7 @@ class CharWidthCache {
 }
 
 /// 段落布局引擎
-/// 
+///
 /// 核心排版逻辑，负责将文本分段、分行、分页
 class ParagraphLayoutEngine {
   final ParagraphConfig config;
@@ -309,19 +354,20 @@ class ParagraphLayoutEngine {
   /// 字符宽度缓存（移植自 TextMeasure.kt 三级缓存）
   final CharWidthCache _charWidthCache = CharWidthCache();
 
-  ParagraphLayoutEngine({
-    required this.config,
-    required this.context,
-  });
+  ParagraphLayoutEngine({required this.config, required this.context});
 
   /// 获取字符宽度缓存（供测试使用）
   CharWidthCache get charWidthCache => _charWidthCache;
 
   /// 排版整个章节内容（仅返回最后一页，保留兼容）
-  /// 
+  ///
   /// 参考 ReadBook.kt 的三章预加载策略
   /// 移植自 TextChapterLayout.kt getTextChapter 方法
-  PageInfo layoutChapter(String content, double availableWidth, double pageHeight) {
+  PageInfo layoutChapter(
+    String content,
+    double availableWidth,
+    double pageHeight,
+  ) {
     final pages = paginateChapter(content, availableWidth, pageHeight);
     if (pages.isEmpty) return const PageInfo(paragraphs: [], totalHeight: 0);
     return pages.last;
@@ -336,8 +382,12 @@ class ParagraphLayoutEngine {
   /// [UI-fix v2.0.4 | 2026-08-08] 新增 [firstPageHeight]：首页可用高度
   /// （渲染侧首页预留章节标题块，容量小于后续页；不传则与
   /// pageHeight 一致），修复满页正文首页底部 RenderFlex 溢出 — Qoder
-  List<PageInfo> paginateChapter(String content, double availableWidth, double pageHeight,
-      {double? firstPageHeight}) {
+  List<PageInfo> paginateChapter(
+    String content,
+    double availableWidth,
+    double pageHeight, {
+    double? firstPageHeight,
+  }) {
     final paragraphs = _splitParagraphs(content);
     if (paragraphs.isEmpty) return [];
 
@@ -355,16 +405,24 @@ class ParagraphLayoutEngine {
       final chapterParaIndex = i + 1; // 1-based，对齐原版段评 paraIndex
 
       // 段落间距（对应 Kotlin durY += textHeight * paragraphSpacing / 10f）
-      double spacingHeight = currentPageParagraphs.isNotEmpty ? config.paragraphSpacing : 0.0;
+      double spacingHeight = currentPageParagraphs.isNotEmpty
+          ? config.paragraphSpacing
+          : 0.0;
 
       // 单段超出其起始页容量时，按行拆分到多页（当前页已有内容则
       // 段落从下一页起排，按整页容量判断）
-      final startCapacity =
-          currentPageParagraphs.isEmpty ? capacityFor(pages.length) : pageHeight;
+      final startCapacity = currentPageParagraphs.isEmpty
+          ? capacityFor(pages.length)
+          : pageHeight;
       if (paraInfo.totalHeight > startCapacity) {
         // 先把之前累积的段落存为一页
         if (currentPageParagraphs.isNotEmpty) {
-          pages.add(PageInfo(paragraphs: List.from(currentPageParagraphs), totalHeight: currentHeight));
+          pages.add(
+            PageInfo(
+              paragraphs: List.from(currentPageParagraphs),
+              totalHeight: currentHeight,
+            ),
+          );
           currentPageParagraphs = [];
           currentHeight = 0.0;
         }
@@ -393,7 +451,12 @@ class ParagraphLayoutEngine {
           (currentHeight + spacingHeight + tagged.totalHeight >
               capacityFor(pages.length))) {
         // 当前页已满，保存并开始新页
-        pages.add(PageInfo(paragraphs: List.from(currentPageParagraphs), totalHeight: currentHeight));
+        pages.add(
+          PageInfo(
+            paragraphs: List.from(currentPageParagraphs),
+            totalHeight: currentHeight,
+          ),
+        );
         currentPageParagraphs = [tagged];
         currentHeight = tagged.totalHeight;
       } else {
@@ -404,7 +467,9 @@ class ParagraphLayoutEngine {
 
     // 最后一页
     if (currentPageParagraphs.isNotEmpty) {
-      pages.add(PageInfo(paragraphs: currentPageParagraphs, totalHeight: currentHeight));
+      pages.add(
+        PageInfo(paragraphs: currentPageParagraphs, totalHeight: currentHeight),
+      );
     }
 
     return pages;
@@ -415,32 +480,41 @@ class ParagraphLayoutEngine {
   /// 对应 Kotlin TextChapterLayout 中单段超长时的逐行分页逻辑；
   /// [UI-fix v2.0.4 | 2026-08-08] 支持首张子页按 [firstPageCapacity]
   /// 限容（落在章首页时预留标题块高度）— Qoder
-  List<PageInfo> _splitTallParagraph(ParagraphInfo paraInfo, double pageHeight,
-      {double? firstPageCapacity, int chapterParagraphIndex = 0}) {
+  List<PageInfo> _splitTallParagraph(
+    ParagraphInfo paraInfo,
+    double pageHeight, {
+    double? firstPageCapacity,
+    int chapterParagraphIndex = 0,
+  }) {
     final pages = <PageInfo>[];
     final textHeight = config.fontSize * config.lineHeight;
 
     var lineIdx = 0;
     var subPageNo = 0;
     while (lineIdx < paraInfo.lines.length) {
-      final capacity =
-          subPageNo == 0 ? (firstPageCapacity ?? pageHeight) : pageHeight;
+      final capacity = subPageNo == 0
+          ? (firstPageCapacity ?? pageHeight)
+          : pageHeight;
       final linesPerPage = (capacity / textHeight).floor().clamp(1, 9999);
       final endIdx = (lineIdx + linesPerPage).clamp(0, paraInfo.lines.length);
       final pageLines = paraInfo.lines.sublist(lineIdx, endIdx);
       final height = pageLines.length * textHeight;
       final isLast = endIdx >= paraInfo.lines.length;
-      pages.add(PageInfo(
-        paragraphs: [ParagraphInfo(
-          lines: pageLines,
+      pages.add(
+        PageInfo(
+          paragraphs: [
+            ParagraphInfo(
+              lines: pageLines,
+              totalHeight: height,
+              startIndex: pageLines.isNotEmpty ? pageLines.first.startIndex : 0,
+              endIndex: pageLines.isNotEmpty ? pageLines.last.endIndex : 0,
+              chapterParagraphIndex: chapterParagraphIndex,
+              isParagraphEnd: isLast,
+            ),
+          ],
           totalHeight: height,
-          startIndex: pageLines.isNotEmpty ? pageLines.first.startIndex : 0,
-          endIndex: pageLines.isNotEmpty ? pageLines.last.endIndex : 0,
-          chapterParagraphIndex: chapterParagraphIndex,
-          isParagraphEnd: isLast,
-        )],
-        totalHeight: height,
-      ));
+        ),
+      );
       lineIdx = endIdx;
       subPageNo++;
     }
@@ -474,30 +548,43 @@ class ParagraphLayoutEngine {
   /// 移植自 TextChapterLayout.kt setTypeText：
   /// - 首行缩进（对应 Kotlin paragraphIndent + indentCharWidth）
   /// - 行高计算（对应 Kotlin textHeight * lineSpacingExtra）
-  ParagraphInfo _layoutParagraph(String paragraph, double availableWidth, {bool isFirst = false}) {
+  ParagraphInfo _layoutParagraph(
+    String paragraph,
+    double availableWidth, {
+    bool isFirst = false,
+  }) {
     final trimmedPara = paragraph.trim();
     if (trimmedPara.isEmpty) {
-      return const ParagraphInfo(lines: [], totalHeight: 0, startIndex: 0, endIndex: 0);
+      return const ParagraphInfo(
+        lines: [],
+        totalHeight: 0,
+        startIndex: 0,
+        endIndex: 0,
+      );
     }
-    
+
     // 处理首行缩进（对应 Kotlin paragraphIndent）
     // indent > 0 时，在文本前添加全角空格作为缩进
     String processableText = trimmedPara;
-    
+
     if (config.indent > 0) {
       // [UI-fix v2.0.4 | 2026-08-08] 缩进改按字符数档位生成全角空格
       // （对应原版 ReadBookConfig.paragraphIndent "　".repeat(index)） — Qoder
       final indentChars = '\u3000' * config.indentCount;
       processableText = '$indentChars$trimmedPara';
     }
-    
+
     // 使用 ZhLayout 中文断行引擎进行分行
     // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂：段首 = 缩进全角空格 +
     // 起始引号时，首行可用宽 + 缩进宽度（标点悬挂进缩进区，对齐原版
     // HangingPunctuationRule + ZhLayout.hangingWidth 语义）— Reasonix
-    final hangingWidth = config.hangingPunctuation &&
+    final hangingWidth =
+        config.hangingPunctuation &&
             config.indent > 0 &&
-            ChinesePunctuationRule.shouldHang(processableText, config.indentCount)
+            ChinesePunctuationRule.shouldHang(
+              processableText,
+              config.indentCount,
+            )
         ? config.indent
         : 0.0;
     final lines = _breakLines(
@@ -505,11 +592,11 @@ class ParagraphLayoutEngine {
       availableWidth,
       hangingWidth: hangingWidth,
     );
-    
+
     // 计算总高度（对应 Kotlin durY += textHeight * lineSpacingExtra）
     final textHeight = config.fontSize * config.lineHeight;
     final totalHeight = lines.isEmpty ? 0.0 : lines.length * textHeight;
-    
+
     return ParagraphInfo(
       lines: lines,
       totalHeight: totalHeight,
@@ -521,8 +608,10 @@ class ParagraphLayoutEngine {
   /// 分行算法（使用 ZhLayout 中文断行引擎）
   ///
   /// 移植自 TextChapterLayout.kt 第 940-948 行：
-  /// 1. 测量每个字符宽度
-  /// 2. 使用 ZhLayout 进行中文标点感知断行
+  /// 1. 测量每个字符宽度（整段同源测量，见 [_measureCharWidths]）
+  /// 2. 使用 ZhLayout 进行中文标点感知断行（useZhLayout=true）
+  ///    或朴素按宽断行（useZhLayout=false）
+  /// 3. 行宽安全网：超宽行把行尾字符下移（见 [_guardLineOverflow]）
   ///
   /// [UI-fix v2.0.5 | 2026-08-10] `hangingWidth` > 0 时首行可用宽上限
   /// 增加该宽度（段首标点悬挂）— Reasonix
@@ -543,22 +632,44 @@ class ParagraphLayoutEngine {
 
     // [UI-fix v2.0.5 | 2026-08-10] useZhLayout=false：朴素按宽断行
     //（无中文避头尾，对齐原版 useZhLayout=false 走 StaticLayout 语义）— Reasonix
-    if (!config.useZhLayout) {
-      final plainLines = <LineInfo>[];
-      final textHeight = config.fontSize * config.lineHeight;
-      var lineStartIdx = 0;
-      var lineWidth = 0.0;
-      void flushLine(int endIdx) {
-        final lineWords = words.sublist(lineStartIdx, endIdx);
-        var startOffset = 0;
-        for (var i = 0; i < lineStartIdx && i < words.length; i++) {
-          startOffset += words[i].length;
-        }
-        var endOffset = startOffset;
-        for (var i = lineStartIdx; i < endIdx && i < words.length; i++) {
-          endOffset += words[i].length;
-        }
-        plainLines.add(LineInfo(
+    final lines = config.useZhLayout
+        ? _breakZhLayout(words, widths, availableWidth, hangingWidth)
+        : _breakPlain(words, widths, availableWidth, hangingWidth);
+
+    // 步骤6：行宽安全网（ZhLayout 压缩模式行宽可超限，渲染端无字形压缩
+    // 能力，超宽行必须重排否则行尾被 ClipRect 裁掉）
+    return _guardLineOverflow(
+      text,
+      widthsArray,
+      lines,
+      availableWidth,
+      hangingWidth: hangingWidth,
+    );
+  }
+
+  /// 朴素按宽断行（useZhLayout=false，对齐原版 StaticLayout 语义）
+  List<LineInfo> _breakPlain(
+    List<String> words,
+    List<double> widths,
+    double availableWidth,
+    double hangingWidth,
+  ) {
+    final plainLines = <LineInfo>[];
+    final textHeight = config.fontSize * config.lineHeight;
+    var lineStartIdx = 0;
+    var lineWidth = 0.0;
+    void flushLine(int endIdx) {
+      final lineWords = words.sublist(lineStartIdx, endIdx);
+      var startOffset = 0;
+      for (var i = 0; i < lineStartIdx && i < words.length; i++) {
+        startOffset += words[i].length;
+      }
+      var endOffset = startOffset;
+      for (var i = lineStartIdx; i < endIdx && i < words.length; i++) {
+        endOffset += words[i].length;
+      }
+      plainLines.add(
+        LineInfo(
           words: lineWords,
           width: lineWidth,
           height: textHeight,
@@ -566,28 +677,39 @@ class ParagraphLayoutEngine {
           endIndex: endOffset,
           // 悬挂仅作用于首行（行起点索引 0）
           hangingWidth: lineStartIdx == 0 ? hangingWidth : 0,
-        ));
-      }
-      for (var i = 0; i < words.length; i++) {
-        final w = widths[i];
-        final limit = lineStartIdx == 0 ? availableWidth + hangingWidth : availableWidth;
-        if (i > lineStartIdx && lineWidth + w > limit) {
-          flushLine(i);
-          lineStartIdx = i;
-          lineWidth = 0.0;
-        }
-        lineWidth += w;
-      }
-      if (lineStartIdx < words.length) {
-        flushLine(words.length);
-      }
-      return plainLines;
+        ),
+      );
     }
 
-    // 步骤3：计算中文字符参考宽度（对应 Kotlin cnCharWidthCache）
+    for (var i = 0; i < words.length; i++) {
+      final w = widths[i];
+      final limit = lineStartIdx == 0
+          ? availableWidth + hangingWidth
+          : availableWidth;
+      if (i > lineStartIdx && lineWidth + w > limit) {
+        flushLine(i);
+        lineStartIdx = i;
+        lineWidth = 0.0;
+      }
+      lineWidth += w;
+    }
+    if (lineStartIdx < words.length) {
+      flushLine(words.length);
+    }
+    return plainLines;
+  }
+
+  /// ZhLayout 中文避头尾断行（useZhLayout=true）
+  List<LineInfo> _breakZhLayout(
+    List<String> words,
+    List<double> widths,
+    double availableWidth,
+    double hangingWidth,
+  ) {
+    // 中文字符参考宽度（对应 Kotlin cnCharWidthCache）
     final cnCharWidth = _measureSingleChar('我');
 
-    // 步骤4：使用 ZhLayout 断行（对应 Kotlin ZhLayout(text, textPaint, visibleWidth, words, widths, indentSize)）
+    // 对应 Kotlin ZhLayout(text, textPaint, visibleWidth, words, widths, indentSize)
     final layout = ZhLayout.compute(
       words: words,
       widths: widths,
@@ -599,7 +721,7 @@ class ParagraphLayoutEngine {
       hangingWidth: hangingWidth,
     );
 
-    // 步骤5：根据断行结果构建 LineInfo 列表
+    // 根据断行结果构建 LineInfo 列表
     final lines = <LineInfo>[];
     final textHeight = config.fontSize * config.lineHeight;
 
@@ -624,66 +746,190 @@ class ParagraphLayoutEngine {
         endOffset += words[i].length;
       }
 
-      lines.add(LineInfo(
-        words: lineWords,
-        width: lineWidth,
-        height: textHeight,
-        startIndex: startOffset,
-        endIndex: endOffset,
-        // 悬挂仅作用于首行
-        hangingWidth: lineIndex == 0 ? hangingWidth : 0,
-      ));
+      lines.add(
+        LineInfo(
+          words: lineWords,
+          width: lineWidth,
+          height: textHeight,
+          startIndex: startOffset,
+          endIndex: endOffset,
+          // 悬挂仅作用于首行
+          hangingWidth: lineIndex == 0 ? hangingWidth : 0,
+        ),
+      );
     }
 
     return lines;
   }
 
-  /// 测量每个字符的宽度（带缓存）
+  /// 行宽安全网：超宽行把行尾字符下移到下一行（2026-09-06 吞字根治）
   ///
-  /// 移植自 TextMeasure.kt measureTextSplit：
-  /// 1. 先查缓存（ASCII 数组 / CJK 通用宽度 / Map）
-  /// 2. 未命中则使用 TextPainter 测量并写入缓存
+  /// 背景：ZhLayout 压缩模式（cps1/2/3）按原版语义允许行宽超出可用宽
+  /// （原版在绘制层压缩标点字形兜底），但 Flutter 渲染端是
+  /// Text(maxLines:1, overflow: clip) 自然宽度渲染，无法压缩字形，
+  /// 超宽即被 ClipRect 裁掉行尾——"正文右边吞字"的结构性根因之一，
+  /// 加分页余量无法根治（大字号时压缩超宽量大于余量总量）。
+  ///
+  /// 处理：用与渲染同源的实测宽度（整段逐字盒宽之和）逐行校验，超宽行
+  /// 从行尾回退分割点（避头尾尽力保持：下一行行首不落禁首标点、上一行
+  /// 行末不落禁末标点），溢出字符并入下一行重新校验，直至全部合规。
+  List<LineInfo> _guardLineOverflow(
+    String text,
+    List<double> widths,
+    List<LineInfo> lines,
+    double availableWidth, {
+    double hangingWidth = 0,
+  }) {
+    if (lines.isEmpty) return lines;
+    final textHeight = config.fontSize * config.lineHeight;
+    final guarded = <LineInfo>[];
+    var carried = -1; // 上一行溢出字符的起点偏移（-1 = 无溢出）
+    for (var li = 0; li < lines.length; li++) {
+      final line = lines[li];
+      final start = carried >= 0 ? carried : line.startIndex;
+      final end = line.endIndex;
+      if (end <= start) {
+        carried = -1;
+        continue;
+      }
+      // 首行保留悬挂宽限（行起点左移悬挂进缩进区，渲染侧同步放宽）
+      final limit = li == 0 ? availableWidth + hangingWidth : availableWidth;
+      var fitEnd = start;
+      var w = 0.0;
+      for (var i = start; i < end; i++) {
+        w += widths[i];
+        if (w > limit) break;
+        fitEnd = i + 1;
+      }
+      if (fitEnd >= end) {
+        // 本行（含并入的溢出字符）宽度合规
+        guarded.add(
+          _buildGuardedLine(
+            text,
+            widths,
+            start,
+            end,
+            textHeight,
+            hangingWidth: li == 0 ? hangingWidth : 0,
+          ),
+        );
+        carried = -1;
+        continue;
+      }
+      if (fitEnd <= start) fitEnd = start + 1; // 单字超宽：保底放一个字
+      // 避头尾回退：下一行行首不得为禁首标点、本行行末不得为禁末标点
+      while (fitEnd > start + 1 &&
+          fitEnd < end &&
+          (ChinesePunctuationRule.isBeginningPunctuation(text[fitEnd]) ||
+              ChinesePunctuationRule.isEndingPunctuation(text[fitEnd - 1]))) {
+        fitEnd--;
+      }
+      guarded.add(
+        _buildGuardedLine(
+          text,
+          widths,
+          start,
+          fitEnd,
+          textHeight,
+          hangingWidth: li == 0 ? hangingWidth : 0,
+        ),
+      );
+      carried = fitEnd;
+    }
+    // 末行溢出的收尾行（可能仍超宽，继续按限宽切分）
+    while (carried >= 0 && carried < text.length) {
+      var fitEnd = carried;
+      var w = 0.0;
+      for (var i = carried; i < text.length; i++) {
+        w += widths[i];
+        if (w > availableWidth) break;
+        fitEnd = i + 1;
+      }
+      if (fitEnd <= carried) fitEnd = carried + 1;
+      while (fitEnd > carried + 1 &&
+          fitEnd < text.length &&
+          (ChinesePunctuationRule.isBeginningPunctuation(text[fitEnd]) ||
+              ChinesePunctuationRule.isEndingPunctuation(text[fitEnd - 1]))) {
+        fitEnd--;
+      }
+      guarded.add(_buildGuardedLine(text, widths, carried, fitEnd, textHeight));
+      carried = fitEnd >= text.length ? -1 : fitEnd;
+    }
+    return guarded;
+  }
+
+  /// 按文本偏移区间构建行信息（安全网重排后的行，宽度用实测盒宽之和）
+  LineInfo _buildGuardedLine(
+    String text,
+    List<double> widths,
+    int start,
+    int end,
+    double textHeight, {
+    double hangingWidth = 0,
+  }) {
+    final (lineWords, _) = TextMeasure.splitByWidths(
+      text.substring(start, end),
+      widths.sublist(start, end),
+    );
+    var w = 0.0;
+    for (var i = start; i < end; i++) {
+      w += widths[i];
+    }
+    return LineInfo(
+      words: lineWords,
+      width: w,
+      height: textHeight,
+      startIndex: start,
+      endIndex: end,
+      hangingWidth: hangingWidth,
+    );
+  }
+
+  /// 测量每个字符的宽度（整段同源测量，无逐字缓存）
+  ///
+  /// [UI_SYNC_REFACTOR S4 修 | 2026-09-06] 重写测量路径——旧路径逐字符
+  /// 单独建 TextPainter 测宽（三级缓存按码点复用）：单字测量游离于多字符
+  /// 塑形上下文之外，与 Text widget 整行渲染存在不可消除的系统差，累计
+  /// 偏差导致行尾吞字（8dp/5% 余量只缓解不根治）。新路径：整段一次
+  /// TextPainter.layout + getBoxesForSelection 提取每字实际盒宽——测量与
+  /// 渲染同一文字引擎、同一塑形上下文；并合并 DefaultTextStyle（主题
+  /// 字体回退链）与 textScaler（系统文字缩放），与渲染侧 Text 完全同参。
   List<double> _measureCharWidths(String text, double maxWidth) {
     final widths = List<double>.filled(text.length, 0.0);
-    // [UI-fix v2.0.2 | 2026-08-06] 测量样式同步字距/字体配置 — Qoder
-    // [UI-fix v2.0.4 | 2026-08-08] 测量样式同步字重（textBold） — Qoder
-    final style = TextStyle(
-      fontSize: config.fontSize,
-      letterSpacing: config.letterSpacing != 0 ? config.letterSpacing : null,
-      fontFamily: config.fontFamily,
-      fontWeight: config.fontWeight,
+    if (text.isEmpty) return widths;
+
+    // 与渲染侧 Text 同参：DefaultTextStyle（主题字体/回退链）打底，
+    // 渲染 override（字号/字距/字体/字重）覆盖其上
+    final style = (config.baseStyle ?? const TextStyle()).merge(
+      TextStyle(
+        fontSize: config.fontSize,
+        letterSpacing: config.letterSpacing != 0 ? config.letterSpacing : null,
+        fontFamily: config.fontFamily,
+        fontWeight: config.fontWeight,
+      ),
     );
 
-    // 确保中文通用宽度已初始化
-    if (_charWidthCache.chineseCommonWidth <= 0) {
-      _charWidthCache.chineseCommonWidth = _measureSingleChar('一');
-    }
+    final painter = TextPainter(
+      text: TextSpan(text: text, style: style),
+      textDirection: TextDirection.ltr,
+      textScaler: config.textScaler ?? TextScaler.noScaling,
+    );
+    painter.layout(maxWidth: maxWidth);
 
     for (var i = 0; i < text.length; i++) {
-      final codePoint = text.codeUnitAt(i);
-      final cached = _charWidthCache.measureCodePoint(codePoint);
-      if (cached >= 0) {
-        widths[i] = cached;
+      final boxes = painter.getBoxesForSelection(
+        TextSelection(baseOffset: i, extentOffset: i + 1),
+      );
+      if (boxes.isNotEmpty) {
+        final box = boxes.first;
+        widths[i] = box.right - box.left;
       } else {
-        // 缓存未命中，使用 TextPainter 精确测量
-        _charWidthCache.missCount++;
-        final painter = TextPainter(
-          text: TextSpan(text: text[i], style: style),
-          textDirection: TextDirection.ltr,
-        );
-        painter.layout(maxWidth: maxWidth);
-        final w = painter.width;
-        painter.dispose();
-        widths[i] = w;
-        _charWidthCache.putCodePoint(codePoint, w);
+        // 零宽字符/组合字符 fallback：沿用前一字符宽度。保持 >0 避免
+        // splitByWidths 产生零宽簇（行索引与文本偏移的对应依赖逐字簇）
+        widths[i] = i > 0 ? widths[i - 1] : config.fontSize * 0.5;
       }
     }
-    // [UI_SYNC_REFACTOR S4 修] 每字宽度 × 1.02 安全系数：TextPainter 单字
-    // 测量含尾部字距但 Text 多字渲染末字不计 → 累计差导致断行偏多 →
-    // 末字被吞。2% 缩放随字号安全递增。
-    for (var i = 0; i < widths.length; i++) {
-      if (widths[i] > 0) widths[i] *= 1.02;
-    }
+    painter.dispose();
     return widths;
   }
 
@@ -694,17 +940,23 @@ class ParagraphLayoutEngine {
     final painter = TextPainter(
       // [UI-fix v2.0.2 | 2026-08-06] 单字宽度测量同步字距/字体配置 — Qoder
       // [UI-fix v2.0.4 | 2026-08-08] 同步字重（textBold） — Qoder
+      // [UI_SYNC_REFACTOR S4 修 | 2026-09-06] 同步 DefaultTextStyle 与
+      // textScaler（与 _measureCharWidths / 渲染侧同参）— Qoder
       text: TextSpan(
         text: char,
-        style: TextStyle(
-          fontSize: config.fontSize,
-          letterSpacing:
-              config.letterSpacing != 0 ? config.letterSpacing : null,
-          fontFamily: config.fontFamily,
-          fontWeight: config.fontWeight,
+        style: (config.baseStyle ?? const TextStyle()).merge(
+          TextStyle(
+            fontSize: config.fontSize,
+            letterSpacing: config.letterSpacing != 0
+                ? config.letterSpacing
+                : null,
+            fontFamily: config.fontFamily,
+            fontWeight: config.fontWeight,
+          ),
         ),
       ),
       textDirection: TextDirection.ltr,
+      textScaler: config.textScaler ?? TextScaler.noScaling,
     );
     painter.layout();
     final w = painter.width;
@@ -748,7 +1000,8 @@ class ParagraphLayoutEngine {
               final isLastLine = lineIdx == para.lines.length - 1;
               final isSingleLine = para.lines.length == 1;
               // 两端对齐：非最后一行且非单行
-              final shouldJustify = config.justify && !isLastLine && !isSingleLine;
+              final shouldJustify =
+                  config.justify && !isLastLine && !isSingleLine;
               return _LineWidget(
                 line: line,
                 config: config,
@@ -783,10 +1036,7 @@ class _PageLayoutDelegate extends MultiChildLayoutDelegate {
     for (final paragraph in pageInfo.paragraphs) {
       for (var lineIdx = 0; lineIdx < paragraph.lines.length; lineIdx++) {
         final line = paragraph.lines[lineIdx];
-        layoutChild(
-          line,
-          BoxConstraints.loose(Size(maxWidth, line.height)),
-        );
+        layoutChild(line, BoxConstraints.loose(Size(maxWidth, line.height)));
 
         // 对齐策略（对应 Kotlin addCharsToLineFirst/Middle/Natural）
         double xOffset = 0.0;
@@ -847,9 +1097,7 @@ class _LineWidget extends StatelessWidget {
 
     return Container(
       height: line.height,
-      decoration: BoxDecoration(
-        color: config.backgroundColor,
-      ),
+      decoration: BoxDecoration(color: config.backgroundColor),
       child: Text(
         text,
         style: TextStyle(
@@ -858,11 +1106,12 @@ class _LineWidget extends StatelessWidget {
           height: config.lineHeight,
           fontFamily: config.fontFamily,
           // [UI-fix v2.0.2 | 2026-08-06] 渲染字距 = 配置基础字距 + 两端对齐额外字距 — Qoder
-          letterSpacing: (config.letterSpacing +
-                  (extraLetterSpacing > 0 ? extraLetterSpacing : 0)) !=
-              0
+          letterSpacing:
+              (config.letterSpacing +
+                      (extraLetterSpacing > 0 ? extraLetterSpacing : 0)) !=
+                  0
               ? config.letterSpacing +
-                  (extraLetterSpacing > 0 ? extraLetterSpacing : 0)
+                    (extraLetterSpacing > 0 ? extraLetterSpacing : 0)
               : null,
         ),
       ),
@@ -883,13 +1132,11 @@ class ChapterPageInfo {
   /// 该章节的总页数
   final int pageCount;
 
-  const ChapterPageInfo({
-    required this.chapterIndex,
-    required this.pageCount,
-  });
+  const ChapterPageInfo({required this.chapterIndex, required this.pageCount});
 
   @override
-  String toString() => 'ChapterPageInfo(chapter: $chapterIndex, pages: $pageCount)';
+  String toString() =>
+      'ChapterPageInfo(chapter: $chapterIndex, pages: $pageCount)';
 }
 
 /// 跨章节连续分页器

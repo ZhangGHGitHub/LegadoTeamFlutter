@@ -95,6 +95,14 @@ S6 决策：blur 默认值三端统一**关**（保守，验证路径一致）�
 1. **prevChapter 跳末页后点右翻变回退**：prevChapter 设 currentChapterPos=-1 哨兵跳末页 ✅，但跳完后点右侧翻页 → nextPageOrChapter 判定 _currentPageIndex+1 >= pages.length → nextChapter() → 回到原章。用户感知为"点右变成回退"。修复方案：prevChapter 跳末页后应进入"跨章过渡态"——此时点右 = 回到 prevChapter 前的章（即前进方向），需在 ReaderPageView 维护 crossChapterDirection 标志。
 2. **换源失败不回退**：change_source_screen 选新源后如果加载失败，缺少回退到原章节的逻辑。需在 changeSource 回调中 catch 失败 → notifier 恢复原 chapterIndex/chapterPos。
 
+## 五·八、正文吞字/章节切换动画/设置弹层三问题（2026-09-06）
+
+| 问题 | 状态 | 说明 |
+|---|---|---|
+| A 正文右边吞字 | ✅ 已修（2.0.204+205） | 结构性根因两条：① ZhLayout 压缩模式（cps1/2/3）按原版语义允许行宽超出可用宽（原版绘制层压缩标点兜底），Flutter 渲染端 Text(maxLines:1, clip) 自然渲染无字形压缩 → 双标点行尾必被裁（探针实证：可用宽 50 时压缩行宽 60），8dp/5% 余量大字号下必被击穿；② 测量侧逐字单独建 TextPainter（未合并 DefaultTextStyle、未应用 textScaler）与渲染侧存在系统差。修复：整段 TextPainter.layout + getBoxesForSelection 同源测量 + DefaultTextStyle/textScaler 同参注入（ParagraphConfig.baseStyle/textScaler）+ _guardLineOverflow 行宽安全网（超宽行避头尾回退下移重排）；去掉分页宽 ×0.95 恢复满宽；双页不对称边距取两栏较小宽；两端对齐可用宽改实际布局约束（去屏宽-40 硬编码）。回归测试 line_overflow_guard_test 5 项。任务书原定"getLineBoundary 整段分行"方向未采用：会废弃对标原版的 useZhLayout/避头尾/悬挂特性（违反原版对齐红线），同源测量+安全网以更小改动达成同一目标（分页与渲染同引擎） |
+| B 章节切换翻页动画不生效 | ✅ 已修（2.0.204+205） | 根因：切章经 isLoading 时 build 整树换 LoadingIndicator → cover 模式 AnimatedSwitcher 子树卸载重挂，过渡永不触发（与 T2/S2 菜单改造无关）；叠加键缺陷：键只含章内页索引，跨章页索引相同不触发、变小判反方向。修复：加载中保留上一章渲染冻结帧（跳过重分页，章题用分页同源快照 _paginatedChapterTitle），键改（章索引,屏索引）复合键、方向按章号比较 |
+| C 设置弹层布局与参考版不一致 | ⏸ 待参考截图 | 需参考版设置弹层截图逐项比对后定位差异（上一会话已声明阻塞） |
+
 ## 六、门禁
 
 每批 analyze 0+test 全过+版本递增+CHANGELOG/updateLog 双同步+独立 commit；S7 统一验收（5556 冒烟+双包对比+5558 用户验收）。
