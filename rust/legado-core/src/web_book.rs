@@ -152,6 +152,35 @@ pub trait BookSourceFetcher: Send + Sync {
         self.get_book_info(source, book_url).await
     }
 
+    /// 带变量表的详情获取（换源变量链 R1，2026-09-06）
+    ///
+    /// 原版 `WebBook.getBookInfoAwait` 的详情请求 AnalyzeUrl 以 `ruleData = book`
+    /// 构建（WebBook.kt:225-231），bookUrl 中的 `{{key}}` 模板与 `,{json}` 请求
+    /// 选项用 book.variable（换源时=候选搜索期变量）展开。此前换源详情请求
+    /// 变量表恒空，变量依赖源会请求到错误地址（目录/正文错书的链路根因之一）。
+    ///
+    /// 默认实现忽略变量表退化为 [`Self::get_book_info_with_existing`]（Mock 等
+    /// 实现无需感知）；真实实现覆盖以传入变量。
+    async fn get_book_info_with_existing_and_vars(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        can_re_name: bool,
+        existing_name: &str,
+        existing_author: &str,
+        variables: &std::collections::HashMap<String, String>,
+    ) -> LegadoResult<WebBookInfo> {
+        let _ = variables;
+        self.get_book_info_with_existing(
+            source,
+            book_url,
+            can_re_name,
+            existing_name,
+            existing_author,
+        )
+        .await
+    }
+
     /// 获取章节列表
     ///
     /// - `source`: 书源配置
@@ -161,6 +190,22 @@ pub trait BookSourceFetcher: Send + Sync {
         source: &BookSource,
         book_url: &str,
     ) -> LegadoResult<Vec<WebChapter>>;
+
+    /// 带变量表的目录获取（换源变量链 R1，2026-09-06）
+    ///
+    /// 原版 `WebBook.getChapterListAwait` 的目录请求 AnalyzeUrl 同样以
+    /// `ruleData = book` 构建（WebBook.kt:312-318），tocUrl 模板用 book.variable
+    /// （候选 ⊕ 详情导出合并值）展开。默认实现忽略变量表退化为
+    /// [`Self::get_chapters`]；真实实现覆盖以传入变量。
+    async fn get_chapters_with_vars(
+        &self,
+        source: &BookSource,
+        toc_url: &str,
+        variables: &std::collections::HashMap<String, String>,
+    ) -> LegadoResult<Vec<WebChapter>> {
+        let _ = variables;
+        self.get_chapters(source, toc_url).await
+    }
 
     /// 获取章节正文内容
     ///

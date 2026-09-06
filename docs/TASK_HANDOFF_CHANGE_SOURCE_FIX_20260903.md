@@ -24,6 +24,8 @@
 
 验证：cargo fmt 0 diff / clippy 双段 0 warning / `cargo test --workspace` 全绿 / quickjs 两段门禁 / mock 变量链单测 6 项 + 换源链单测 4 项。
 
+**R1 变量链追加修复（2026-09-06，用户实测「换源结果内容错书」反馈）**：复审确认 T3/T5 链路两处缺口——① `persist_switch_matches` 落库 `..SearchBook::default()` 丢 `variable` 字段，而 `switch_book_source` 按 (new_book_url, origin) 回查 searchBooks 取候选变量（FFI 签名无 variable 入参），网络/读库两条路径的候选搜索期变量双双丢失；② 换源详情/目录请求 AnalyzeUrl 变量表恒空——原版两处均以 `ruleData=book` 构建（WebBook.kt:225-231/312-318），bookUrl/tocUrl 的 `{{key}}` 模板与 `,{json}` 请求选项无法用候选/合并变量展开 → 变量依赖源请求打错地址（内容错书链路根因）。修复：persist 带 variable；`BookSourceFetcher` 新增 `get_book_info_with_existing_and_vars`/`get_chapters_with_vars` 默认退化方法（Mock 零感知），RealBookSourceFetcher 覆盖并贯通 get_chapters_with_hints 内部 4 处 AnalyzeUrl；switch 详情请求传候选变量、目录请求传候选⊕详情导出合并值（复用 chapter_url_variables）。零 FFI 签名变更。新增 mock 断言：详情请求=候选变量、目录请求=合并变量（详情优先）+ persist 变量落库回归。
+
 ---
 
 ## 一、问题与根因（均已定位，带证据）

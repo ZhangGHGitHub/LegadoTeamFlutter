@@ -609,9 +609,21 @@ fn switch_book_source_with<F: BookSourceFetcher>(
     // 2a. [T2] 新源详情解析（canReName=false：保留既有书名/作者，对齐原版
     //     changeSource getBookInfoAwait 门控；cover/intro/kind/lastChapter/
     //     wordCount 在 parse 内按解析值更新，tocUrl 为真实目录页）
+    //     [R1 修复 2026-09-06] 详情请求带候选搜索期变量表：原版
+    //     getBookInfoAwait 的 AnalyzeUrl 以 ruleData=book 构建（WebBook.kt:225-231，
+    //     book.variable=候选变量），bookUrl 的 {{key}} 模板与 ,{json} 请求选项
+    //     用其展开；此前恒空表 → 变量依赖源详情请求打错地址。
+    let detail_vars = super::web_book::chapter_url_variables(candidate_variable.as_deref());
     let info = runtime::block_on(async {
         fetcher
-            .get_book_info_with_existing(&source, new_book_url, false, &book.name, &book.author)
+            .get_book_info_with_existing_and_vars(
+                &source,
+                new_book_url,
+                false,
+                &book.name,
+                &book.author,
+                &detail_vars,
+            )
             .await
     })
     .map_err(|e| {
@@ -632,15 +644,21 @@ fn switch_book_source_with<F: BookSourceFetcher>(
     } else {
         info.toc_url.clone()
     };
-    let web_chapters: Vec<WebChapter> =
-        runtime::block_on(async { fetcher.get_chapters(&source, &toc_url).await }).map_err(
-            |e| {
-                LegadoError::Parser(format!(
-                    "换源失败：新源「{}」目录获取失败，已保留原书源与目录: {e}",
-                    source.book_source_name
-                ))
-            },
-        )?;
+    let web_chapters: Vec<WebChapter> = runtime::block_on(async {
+        // [R1 修复 2026-09-06] 目录请求带合并后 book.variable（候选 ⊕ 详情导出）：
+        // 原版 getChapterListAwait 的 AnalyzeUrl 以 ruleData=book 构建
+        // （WebBook.kt:312-318）；此前恒空表 → 变量依赖源目录请求打错地址。
+        let toc_vars = super::web_book::chapter_url_variables(book.variable.as_deref());
+        fetcher
+            .get_chapters_with_vars(&source, &toc_url, &toc_vars)
+            .await
+    })
+    .map_err(|e| {
+        LegadoError::Parser(format!(
+            "换源失败：新源「{}」目录获取失败，已保留原书源与目录: {e}",
+            source.book_source_name
+        ))
+    })?;
 
     // Task #21 修复：空结果保护。新书源未解析到任何章节时（get_chapters 返回
     //    Ok(vec![]) 而非错误），直接返回可读错误，且不改动任何库记录
@@ -1021,6 +1039,12 @@ fn persist_switch_matches(matches: &[SourceMatch]) {
             chapter_word_count: m.chapter_word_count,
             respond_time: m.respond_time,
             book_score: m.book_score,
+            // [R1 修复 2026-09-06] 落库必须带候选搜索期变量：switch_book_source
+            // 按 (new_book_url, origin) 回查 searchBooks 取候选变量（对齐原版
+            // SearchBook.toBook() 复制 variable），此前 `..default()` 丢字段导致
+            // 网络路径与读库路径的候选变量双双丢失，变量依赖源换源后目录/正文
+            // 请求打错地址（内容错书的链路根因）
+            variable: m.variable.clone(),
             ..SearchBook::default()
         })
         .collect();
@@ -1382,6 +1406,10 @@ mod tests {
         chapters: LegadoResult<Vec<WebChapter>>,
         /// 记录每次 get_chapters 调用的 book_url 入参
         chapters_requested: std::sync::Mutex<Vec<String>>,
+        /// [R1 变量链] 记录每次详情请求收到的变量表
+        detail_vars_requested: std::sync::Mutex<Vec<std::collections::HashMap<String, String>>>,
+        /// [R1 变量链] 记录每次目录请求收到的变量表
+        toc_vars_requested: std::sync::Mutex<Vec<std::collections::HashMap<String, String>>>,
     }
 
     impl BookSourceFetcher for SwitchMockFetcher {
@@ -1441,6 +1469,44 @@ mod tests {
                 Ok(list) => Ok(list.clone()),
                 Err(e) => Err(LegadoError::Internal(e.to_string())),
             }
+        }
+
+        /// [R1 变量链] 记录详情请求变量表后委托既有门控行为
+        async fn get_book_info_with_existing_and_vars(
+            &self,
+            source: &BookSource,
+            book_url: &str,
+            can_re_name: bool,
+            existing_name: &str,
+            existing_author: &str,
+            variables: &std::collections::HashMap<String, String>,
+        ) -> LegadoResult<legado_core::web_book::WebBookInfo> {
+            self.detail_vars_requested
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(variables.clone());
+            self.get_book_info_with_existing(
+                source,
+                book_url,
+                can_re_name,
+                existing_name,
+                existing_author,
+            )
+            .await
+        }
+
+        /// [R1 变量链] 记录目录请求变量表后委托既有行为
+        async fn get_chapters_with_vars(
+            &self,
+            source: &BookSource,
+            toc_url: &str,
+            variables: &std::collections::HashMap<String, String>,
+        ) -> LegadoResult<Vec<WebChapter>> {
+            self.toc_vars_requested
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(variables.clone());
+            self.get_chapters(source, toc_url).await
         }
 
         async fn get_content(
@@ -1522,6 +1588,8 @@ mod tests {
                 variable: Some(r#"{"token":"abc123"}"#.to_string()),
             }]),
             chapters_requested: std::sync::Mutex::new(Vec::new()),
+            detail_vars_requested: std::sync::Mutex::new(Vec::new()),
+            toc_vars_requested: std::sync::Mutex::new(Vec::new()),
         };
 
         let resp =
@@ -1546,6 +1614,24 @@ mod tests {
             serde_json::from_str(book.variable.as_deref().expect("book.variable 应有值")).unwrap();
         assert_eq!(book_var["token"], serde_json::json!("d123"));
         assert_eq!(book_var["sid"], serde_json::json!("s1"));
+        // [R1 变量链 2026-09-06] 详情请求变量表=候选搜索期变量（对齐原版
+        // getBookInfoAwait ruleData=book）；目录请求变量表=候选⊕详情导出合并值
+        assert_eq!(
+            mock.detail_vars_requested.lock().unwrap().as_slice(),
+            [std::collections::HashMap::from([
+                ("token".to_string(), "c456".to_string()),
+                ("sid".to_string(), "s1".to_string()),
+            ])],
+            "详情请求应携带候选搜索期变量"
+        );
+        assert_eq!(
+            mock.toc_vars_requested.lock().unwrap().as_slice(),
+            [std::collections::HashMap::from([
+                ("token".to_string(), "d123".to_string()),
+                ("sid".to_string(), "s1".to_string()),
+            ])],
+            "目录请求应携带候选⊕详情导出合并变量（详情页优先）"
+        );
 
         // T1：章节 variable/is_volume 保留解析值
         with_database(|db| {
@@ -1567,6 +1653,71 @@ mod tests {
             let _ = BookSourceRepository::new(db.connection()).delete(new_source);
             let _ = legado_db::SearchBookRepository::new(db.connection())
                 .delete_by_book_url(new_detail);
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [R1 变量链 2026-09-06] persist_switch_matches 落库必须携带候选搜索期变量：
+    /// switch_book_source 按 (new_book_url, origin) 回查 searchBooks 取候选变量
+    /// （对齐原版 SearchBook.toBook() 复制 variable），此前 `..SearchBook::default()`
+    /// 丢字段导致网络/读库两条路径的候选变量双双丢失。
+    #[test]
+    fn test_persist_switch_matches_keeps_candidate_variable() {
+        use crate::db_state::with_database;
+        use legado_core::source_matcher::SourceMatch;
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://r1-persist.example.com/book/1";
+        let origin = "https://r1-persist.example.com";
+
+        // searchBooks.origin 外键引用 book_sources，须先建源
+        with_database(|db| {
+            use legado_core::models::BookSource;
+            use legado_db::repository::Repository;
+            Ok(
+                legado_db::BookSourceRepository::new(db.connection()).insert(&BookSource {
+                    book_source_url: origin.to_string(),
+                    book_source_name: "变量源".to_string(),
+                    ..BookSource::default()
+                })?,
+            )
+        })
+        .expect("建源失败");
+
+        persist_switch_matches(&[SourceMatch {
+            source_url: origin.to_string(),
+            source_name: "变量源".to_string(),
+            book_url: book_url.to_string(),
+            book_name: "变量书".to_string(),
+            author: "作者".to_string(),
+            latest_chapter: None,
+            word_count: None,
+            score: 100.0,
+            chapter_word_count_text: None,
+            chapter_word_count: -1,
+            respond_time: -1,
+            origin_order: 0,
+            book_score: 0,
+            variable: Some(r#"{"token":"tk-1"}"#.to_string()),
+        }]);
+
+        let row = with_database(|db| {
+            Ok(legado_db::SearchBookRepository::new(db.connection()).find_by_book_url(book_url)?)
+        })
+        .expect("查询失败")
+        .expect("searchBooks 行应存在");
+        assert_eq!(
+            row.variable.as_deref(),
+            Some(r#"{"token":"tk-1"}"#),
+            "落库行必须保留候选搜索期变量"
+        );
+        assert_eq!(row.origin, origin, "switch 回查需按 origin 匹配候选");
+
+        // 收尾清理，避免污染共享测试库
+        with_database(|db| {
+            let _ =
+                legado_db::SearchBookRepository::new(db.connection()).delete_by_book_url(book_url);
             Ok(())
         })
         .ok();
@@ -1615,6 +1766,8 @@ mod tests {
                 variable: None,
             }]),
             chapters_requested: std::sync::Mutex::new(Vec::new()),
+            detail_vars_requested: std::sync::Mutex::new(Vec::new()),
+            toc_vars_requested: std::sync::Mutex::new(Vec::new()),
         };
 
         let err = switch_book_source_with(&mock, old_url, new_source, new_detail)

@@ -824,6 +824,31 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         existing_name: &str,
         existing_author: &str,
     ) -> LegadoResult<WebBookInfo> {
+        self.get_book_info_with_existing_and_vars(
+            source,
+            book_url,
+            can_re_name,
+            existing_name,
+            existing_author,
+            &std::collections::HashMap::new(),
+        )
+        .await
+    }
+
+    /// 带变量表的详情获取（换源变量链 R1，2026-09-06）
+    ///
+    /// 对齐原版 getBookInfoAwait：详情请求 AnalyzeUrl 以 `ruleData = book`
+    /// 构建（WebBook.kt:225-231），bookUrl 的 `{{key}}` 模板与 `,{json}` 请求
+    /// 选项用 book.variable 展开。换源调用方传入候选搜索期变量。
+    async fn get_book_info_with_existing_and_vars(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        can_re_name: bool,
+        existing_name: &str,
+        existing_author: &str,
+        variables: &std::collections::HashMap<String, String>,
+    ) -> LegadoResult<WebBookInfo> {
         acquire_source_rate_limit(source).await;
         let source_headers = Self::parse_source_headers(source);
 
@@ -834,9 +859,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         //    AnalyzeUrl 解析出 url/method/headers 再请求，直接 GET 会把 ,{json} 拼进请求
         //    → HTTP 401/404（2026-08-15 用户反馈七猫目录/正文获取不到）
         let t_fetch = std::time::Instant::now();
-        let analyze_book =
-            legado_parser::AnalyzeUrl::parse(book_url, &std::collections::HashMap::new(), 1)
-                .map_err(|e| LegadoError::Internal(format!("bookUrl 解析失败: {e}")))?;
+        let analyze_book = legado_parser::AnalyzeUrl::parse(book_url, variables, 1)
+            .map_err(|e| LegadoError::Internal(format!("bookUrl 解析失败: {e}")))?;
         let body = self
             .fetch_url(&analyze_book, source_headers.as_ref())
             .await?;
@@ -875,6 +899,18 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         book_url: &str,
     ) -> LegadoResult<Vec<WebChapter>> {
         self.get_chapters_with_hints(source, book_url, None, None)
+            .await
+    }
+
+    /// 带变量表的目录获取（换源变量链 R1，2026-09-06）：转发带变量核心，
+    /// 对齐原版 getChapterListAwait 的 AnalyzeUrl ruleData=book 变量展开
+    async fn get_chapters_with_vars(
+        &self,
+        source: &BookSource,
+        toc_url: &str,
+        variables: &std::collections::HashMap<String, String>,
+    ) -> LegadoResult<Vec<WebChapter>> {
+        self.get_chapters_with_hints_and_vars(source, toc_url, None, None, variables)
             .await
     }
 
@@ -1038,6 +1074,29 @@ impl RealBookSourceFetcher {
         known_toc_url: Option<&str>,
         book_name_hint: Option<&str>,
     ) -> LegadoResult<Vec<WebChapter>> {
+        self.get_chapters_with_hints_and_vars(
+            source,
+            book_url,
+            known_toc_url,
+            book_name_hint,
+            &std::collections::HashMap::new(),
+        )
+        .await
+    }
+
+    /// 带变量表的目录获取核心（换源变量链 R1，2026-09-06）
+    ///
+    /// 对齐原版 getChapterListAwait：目录/详情请求 AnalyzeUrl 以 `ruleData = book`
+    /// 构建（WebBook.kt:312-318），tocUrl/bookUrl 的 `{{key}}` 模板与 `,{json}`
+    /// 请求选项用 book.variable（换源时=候选 ⊕ 详情导出合并值）展开。
+    async fn get_chapters_with_hints_and_vars(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        known_toc_url: Option<&str>,
+        book_name_hint: Option<&str>,
+        variables: &std::collections::HashMap<String, String>,
+    ) -> LegadoResult<Vec<WebChapter>> {
         acquire_source_rate_limit(source).await;
         let source_headers = Self::parse_source_headers(source);
         // 书山聚合等聚合源详情/目录 `<js>` 脚本依赖 jsLib 函数（getServerHost 等）
@@ -1074,12 +1133,8 @@ impl RealBookSourceFetcher {
             );
             if toc_url == book_url {
                 // bookUrl 同样可能带「url,{json}」请求选项（七猫），经 AnalyzeUrl 解析
-                let analyze_book = legado_parser::AnalyzeUrl::parse(
-                    book_url,
-                    &std::collections::HashMap::new(),
-                    1,
-                )
-                .map_err(|e| LegadoError::Internal(format!("bookUrl 解析失败: {e}")))?;
+                let analyze_book = legado_parser::AnalyzeUrl::parse(book_url, variables, 1)
+                    .map_err(|e| LegadoError::Internal(format!("bookUrl 解析失败: {e}")))?;
                 let info_body = self
                     .fetch_url(&analyze_book, source_headers.as_ref())
                     .await?;
@@ -1109,12 +1164,8 @@ impl RealBookSourceFetcher {
                 // {"method":"GET","headers":{...}}）：必须经 AnalyzeUrl 解析出
                 // url/method/headers 再请求，直接 GET 会把 ,{json} 拼进请求
                 // → 目录接口 404/错误 → 「共 0 章」（2026-08-15 用户反馈）
-                let analyze_toc = legado_parser::AnalyzeUrl::parse(
-                    &toc_url,
-                    &std::collections::HashMap::new(),
-                    1,
-                )
-                .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
+                let analyze_toc = legado_parser::AnalyzeUrl::parse(&toc_url, variables, 1)
+                    .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
                 let body = self
                     .fetch_url(&analyze_toc, source_headers.as_ref())
                     .await?;
@@ -1124,9 +1175,8 @@ impl RealBookSourceFetcher {
             // 1. 先获取详情页以确定 toc_url
             //    （bookUrl 可能带「url,{json}」请求选项，七猫发现列表 qmGetUrl 生成；
             //    经 AnalyzeUrl 解析出 url/method/headers 再请求，直接 GET 会 401/404）
-            let analyze_book =
-                legado_parser::AnalyzeUrl::parse(book_url, &std::collections::HashMap::new(), 1)
-                    .map_err(|e| LegadoError::Internal(format!("bookUrl 解析失败: {e}")))?;
+            let analyze_book = legado_parser::AnalyzeUrl::parse(book_url, variables, 1)
+                .map_err(|e| LegadoError::Internal(format!("bookUrl 解析失败: {e}")))?;
             let info_body = self
                 .fetch_url(&analyze_book, source_headers.as_ref())
                 .await?;
@@ -1187,12 +1237,8 @@ impl RealBookSourceFetcher {
             } else {
                 // 同 known-tocUrl 路径：tocUrl 可能带「url,{json}」请求选项（七猫），
                 // 经 AnalyzeUrl 解析出 url/method/headers 再请求
-                let analyze_toc = legado_parser::AnalyzeUrl::parse(
-                    &toc_url,
-                    &std::collections::HashMap::new(),
-                    1,
-                )
-                .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
+                let analyze_toc = legado_parser::AnalyzeUrl::parse(&toc_url, variables, 1)
+                    .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
                 self.fetch_url(&analyze_toc, source_headers.as_ref())
                     .await?
             };
