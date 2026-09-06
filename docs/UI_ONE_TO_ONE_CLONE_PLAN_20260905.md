@@ -90,6 +90,11 @@ S6 决策：blur 默认值三端统一**关**（保守，验证路径一致）�
 
 三工作流全绿。登记遗留：Sheet 壳余 28 处渐进迁移；朗读并入面板路由页；Characters/RelatedBooks 数据链接通（等 Rust 契约）；Spec2025 Dart 无实现；组序微调；书架分组 HorizontalPager。
 
+## 五·七、阅读导航 bug 登记（2026-09-06，待修）
+
+1. **prevChapter 跳末页后点右翻变回退**：prevChapter 设 currentChapterPos=-1 哨兵跳末页 ✅，但跳完后点右侧翻页 → nextPageOrChapter 判定 _currentPageIndex+1 >= pages.length → nextChapter() → 回到原章。用户感知为"点右变成回退"。修复方案：prevChapter 跳末页后应进入"跨章过渡态"——此时点右 = 回到 prevChapter 前的章（即前进方向），需在 ReaderPageView 维护 crossChapterDirection 标志。
+2. **换源失败不回退**：change_source_screen 选新源后如果加载失败，缺少回退到原章节的逻辑。需在 changeSource 回调中 catch 失败 → notifier 恢复原 chapterIndex/chapterPos。
+
 ## 六、门禁
 
 每批 analyze 0+test 全过+版本递增+CHANGELOG/updateLog 双同步+独立 commit；S7 统一验收（5556 冒烟+双包对比+5558 用户验收）。
