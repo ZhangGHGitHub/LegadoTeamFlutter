@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.207] - 2026-09-08
+
+### Fixed
+- [UI] 我的页「高亮标注」条目重复出现两次——settings_screen 移除重复 tile
+- [UI] 订阅源瓦片点击无反应——默认源「小说拾遗」URL 为自定义 scheme（snssdk1128://），无应用可处理时 launchUrl 异常被静默吞掉，现失败弹出「无法打开链接」SnackBar 反馈
+- [UI] 目录页书签空态对齐参考版颜文字彩蛋（(╮_╰) 暂无书签，授权口径内）
+
+### Changed
+- 差异清单勘误：朗读语速「跟随系统/手动」为设计内显式切换按钮（对标原版 cbTtsFollowSystem），撤回此前误判疑点；docs/UI_SCREEN_DIFF_INVENTORY_20260907.md 修复状态同步
+
+### Test
+- flutter analyze 无问题；flutter test 1347 全过
+- 版本 2.0.207+208
+
+- Contributor: Qoder UI
+
 ## [2.0.206] - 2026-09-06
 
 ### Fixed

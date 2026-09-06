@@ -230,13 +230,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         Navigator.pushNamed(context, AppRoutes.highlightRules),
                   ),
                   IosListTile(
-                    icon: Icons.sell_rounded,
-                    title: '高亮标注',
-                    subtitle: '自动高亮标注规则',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.highlightRules),
-                  ),
-                  IosListTile(
                     icon: Symbols.brightness_6_rounded,
                     title: '主题模式',
                     subtitle: '选择主题模式',

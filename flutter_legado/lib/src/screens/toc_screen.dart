@@ -821,12 +821,19 @@ class _TocScreenState extends ConsumerState<TocScreen>
                 b.content.toLowerCase().contains(query))
             .toList();
     if (bookmarks.isEmpty) {
+      // [UI_SYNC_REFACTOR S5 修 | 2026-09-07] 空态对齐参考版颜文字彩蛋
+      // （(╮_╰) 暂无书签；颜文字空态为已授权口径）— Qoder
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Symbols.bookmark_border_rounded,
-                size: 64, color: Theme.of(context).colorScheme.outline),
+            Text(
+              '(╮_╰)',
+              style: TextStyle(
+                fontSize: 40,
+                color: Theme.of(context).colorScheme.outline,
+              ),
+            ),
             const SizedBox(height: 16),
             Text(query.isEmpty ? '暂无书签' : '未找到匹配的书签'),
           ],

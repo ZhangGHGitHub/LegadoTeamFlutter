@@ -285,7 +285,18 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     }
     final uri = Uri.tryParse(url);
     if (uri == null) return;
-    await launchUrl(uri, mode: LaunchMode.externalApplication);
+    try {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } catch (e) {
+      // [UI_SYNC_REFACTOR S5 修 | 2026-09-07] 自定义 scheme（如 snssdk1128://）
+      // 无应用处理时 launchUrl 抛异常，此前被 unawaited 吞掉表现为"点了没反应"，
+      // 现给出失败反馈 — Qoder
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('无法打开链接：$url')),
+        );
+      }
+    }
   }
 
   /// [UI_SYNC_REFACTOR T1] 头部双卡（对齐参考 GlassCard 双卡：规则订阅|收藏，
