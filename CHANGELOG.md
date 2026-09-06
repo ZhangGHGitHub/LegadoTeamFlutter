@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.209] - 2026-09-08
+
+### Changed
+- [UI] 我的页新增「缓存管理」入口（对齐参考版其它组；页面复用既有离线缓存页，此前入口仅在书架菜单）
+- 差异清单勘误两项：书架菜单「导出书单/导入书单/日志」经复核**均已实现**（批四误读）；缓存管理页**已存在**（原评估"缺整页"系漏查离线缓存入口），真实差距仅我的页入口（本批闭环）
+
+### Test
+- flutter analyze 无问题；flutter test 1347 全过
+- 版本 2.0.209+210
+
+- Contributor: Qoder UI
+
 ## [2.0.208] - 2026-09-08
 
 ### Changed

@@ -331,6 +331,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.readRecord),
                   ),
+                  // [UI_SYNC_REFACTOR S5 修 | 2026-09-08] 补「缓存管理」入口
+                  //（对齐参考版我的页其它组；页面复用既有离线缓存页
+                  // OfflineCacheScreen，此前入口仅在书架菜单「离线缓存」）— Qoder
+                  IosListTile(
+                    icon: Symbols.download_rounded,
+                    title: '缓存管理',
+                    subtitle: '书籍下载任务与缓存进度',
+                    onTap: () =>
+                        Navigator.pushNamed(context, AppRoutes.offlineCache),
+                  ),
                   IosListTile(
                     icon: Symbols.folder_rounded,
                     title: '文件管理',
