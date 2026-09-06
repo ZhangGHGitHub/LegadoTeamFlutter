@@ -26,6 +26,8 @@
 
 **R1 变量链追加修复（2026-09-06，用户实测「换源结果内容错书」反馈）**：复审确认 T3/T5 链路两处缺口——① `persist_switch_matches` 落库 `..SearchBook::default()` 丢 `variable` 字段，而 `switch_book_source` 按 (new_book_url, origin) 回查 searchBooks 取候选变量（FFI 签名无 variable 入参），网络/读库两条路径的候选搜索期变量双双丢失；② 换源详情/目录请求 AnalyzeUrl 变量表恒空——原版两处均以 `ruleData=book` 构建（WebBook.kt:225-231/312-318），bookUrl/tocUrl 的 `{{key}}` 模板与 `,{json}` 请求选项无法用候选/合并变量展开 → 变量依赖源请求打错地址（内容错书链路根因）。修复：persist 带 variable；`BookSourceFetcher` 新增 `get_book_info_with_existing_and_vars`/`get_chapters_with_vars` 默认退化方法（Mock 零感知），RealBookSourceFetcher 覆盖并贯通 get_chapters_with_hints 内部 4 处 AnalyzeUrl；switch 详情请求传候选变量、目录请求传候选⊕详情导出合并值（复用 chapter_url_variables）。零 FFI 签名变更。新增 mock 断言：详情请求=候选变量、目录请求=合并变量（详情优先）+ persist 变量落库回归。
 
+**R1 变量链模拟器 E2E 实证（2026-09-06，emulator-5556）**：夹具 `scripts/r1v_switch_server.py`（普通链 R1VA + 变量链 R1VB：搜索期 `@put` 导出 svid → bookUrl 模板 `detail?vid={{svid}}`；详情期 `@put` 导出 tok → tocUrl 模板 `toc?tok={{tok}}`；服务端强校验缺变量即 400）。同机对照两次实测（修复前 .so vs 重建后 .so）：修复前——搜索期变量已落库但请求 `/r1vb/detail?vid=`（空表未展开）→ 目录 0 章 →「新书源未解析到任何章节」换源失败，复现用户报障；修复后——`/r1vb/detail?vid=VID123`（候选变量贯通）、`/r1vb/toc?tok=TK777`（合并变量贯通）、`/r1vb/content?i=0&tok=TK777` 全命中零拒绝，换源成功且阅读正文渲染正确。**注意**：冒烟脚本 verify 只校验 FRB codegen hash，Rust 内部逻辑变更不会触发 `.so` 重建（本次 stale .so 蒙混过关）——改 Rust 后须手动跑 `rust\scripts\build-android.ps1` 再打 APK（已知门禁盲点，待单列修复）。驱动脚本 `r1v_switch_e2e.py` 的 uiautomator 文本匹配在 2.0.203（MD3）不可用，本次按截图定坐标人工驱动，脚本保留供后续适配。
+
 ---
 
 ## 一、问题与根因（均已定位，带证据）

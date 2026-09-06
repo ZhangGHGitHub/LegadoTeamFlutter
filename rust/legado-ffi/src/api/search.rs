@@ -4441,6 +4441,51 @@ mod p3f_tests {
         let results = parse_with(true, "雪中悍刀行");
         assert!(results.is_empty());
     }
+
+    /// [R1 变量链复现 2026-09-06] 元素级 @put 导出在换源搜索路径（precision=false、
+    /// 关键词=书名）下与主搜索路径（precision=true、关键词=短词）结果应一致：
+    /// kind 与 variable 均须导出（换源候选变量依赖此导出）。
+    #[test]
+    fn test_r1v_switch_search_element_variable_export() {
+        let list_html = r#"<html><body><div class="book-item">
+<a class="name" href="/r1vb/detail?vid={{svid}}">R1换源验证书</a>
+<span class="author">R1作者</span>
+<span class="kind">玄幻</span>
+<span class="vid">VID123</span></div></body></html>"#;
+        let source = BookSource {
+            book_source_url: "http://127.0.0.1:8092/r1v/home/b".to_string(),
+            book_source_name: "R1VB".to_string(),
+            search_url: Some("http://127.0.0.1:8092/r1vb/search?kw={{key}}".to_string()),
+            rule_search: Some(SearchRule {
+                book_list: Some("class.book-item".to_string()),
+                name: Some("class.name@text".to_string()),
+                author: Some("class.author@text".to_string()),
+                kind: Some("class.kind@text@put:{svid:class.vid@text}".to_string()),
+                book_url: Some("class.name@href".to_string()),
+                ..SearchRule::default()
+            }),
+            ..BookSource::default()
+        };
+        let base = "http://127.0.0.1:8092/r1vb/search?kw=R1";
+        for (label, precision, key) in [("主搜索", true, "R1"), ("换源搜索", false, "R1换源验证书")]
+        {
+            let results =
+                parse_search_response_ex(list_html, base, &source, precision, key).unwrap();
+            assert_eq!(results.len(), 1, "{label}: 应解析出 1 条");
+            println!(
+                "{label}: kind={:?} variable={:?} book_url={}",
+                results[0].kind, results[0].variable, results[0].book_url
+            );
+            assert!(
+                results[0]
+                    .variable
+                    .as_deref()
+                    .unwrap_or("")
+                    .contains("VID123"),
+                "{label}: 元素级变量应导出 svid"
+            );
+        }
+    }
 }
 
 // ─── [审计 D4 | WebBook.kt:47] JS 书源 precision filter 回归测试 ─────────────
