@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.208] - 2026-09-08
+
+### Changed
+- [UI] 搜索结果页新增多源实时进度胶囊「结果 N · 进度 X/Y」（对齐参考版，数据复用既有 searchedCount/totalCount，搜索后常驻）
+- [UI] 目录页新增 FAB 展开菜单（对齐参考版）：定位至当前阅读 / 移至顶部 / 移至底部 / 一键缓存（自当前章到末章入队，复用 cacheDownloadStart）；仅目录 Tab 显示
+
+### Test
+- 5556 实测：搜索胶囊（结果 1 · 进度 2/2）、FAB 四项展开、一键缓存 SnackBar 入队均通过
+- flutter analyze 无问题；flutter test 1347 全过
+- 版本 2.0.208+209
+
+- Contributor: Qoder UI
+
 ## [2.0.207] - 2026-09-08
 
 ### Fixed

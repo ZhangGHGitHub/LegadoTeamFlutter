@@ -236,6 +236,30 @@ class _SearchScreenState
                 value: state.searchedCount / state.totalCount,
                 minHeight: 2,
               ),
+            // [UI_SYNC_REFACTOR S5 修 | 2026-09-08] 结果/进度胶囊（对齐参考版
+            // 「结果 N · 进度 X/Y」）：多源搜索的实时反馈，搜索后常驻 — Qoder
+            if (state.totalCount > 0)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color:
+                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '结果 ${state.results.length} · '
+                      '进度 ${state.searchedCount}/${state.totalCount}',
+                      style: Theme.of(context).textTheme.labelMedium,
+                    ),
+                  ),
+                ),
+              ),
             Expanded(child: _buildBody(context, state)),
           ],
         ),

@@ -66,6 +66,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// 加载字数开关（本地持久化，对齐原版 AppConfig.tocCountWords）
   bool _loadWordCount = true;
 
+  /// 目录 FAB 展开菜单显隐（定位/顶部/底部/一键缓存，对齐参考版）— 2026-09-08
+  bool _jumpMenuOpen = false;
+
   /// 当前书籍（菜单勾选项更新后刷新，如 useReplaceRule/splitLongChapter）
   late Book _book;
 
@@ -603,7 +606,96 @@ class _TocScreenState extends ConsumerState<TocScreen>
       // 底部操作栏仅目录 Tab 显示（对齐原版 ll_chapter_base_info 属于 ChapterListFragment）
       bottomNavigationBar:
           _tabController.index == 0 ? _buildChapterInfoBar(context) : null,
+      // [UI_SYNC_REFACTOR S5 修 | 2026-09-08] 目录 FAB 展开菜单（对齐参考版）：
+      // 定位至当前阅读 / 移至顶部 / 移至底部 / 一键缓存（自当前章入队）。
+      // 仅目录 Tab 显示；AnimatedBuilder 保证切页签时显隐即时刷新 — Qoder
+      floatingActionButton: AnimatedBuilder(
+        animation: _tabController,
+        builder: (context, _) =>
+            _tabController.index == 0 ? _buildJumpFab(context) : const SizedBox.shrink(),
+      ),
     );
+  }
+
+  /// 目录 FAB：点击展开四项快捷操作（对齐参考版展开式菜单形态）
+  Widget _buildJumpFab(BuildContext context) {
+    final actions = [
+      (Icons.my_location_rounded, '定位至当前阅读', _locateCurrentChapter),
+      (Icons.vertical_align_top_rounded, '移至顶部', _scrollTocTop),
+      (Icons.vertical_align_bottom_rounded, '移至底部', _scrollTocBottom),
+      (Icons.cloud_download_rounded, '一键缓存', _cacheFromCurrent),
+    ];
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (_jumpMenuOpen)
+          for (final (icon, label, onTap) in actions)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: FilledButton.tonalIcon(
+                onPressed: () {
+                  setState(() => _jumpMenuOpen = false);
+                  onTap();
+                },
+                icon: Icon(icon, size: 20),
+                label: Text(label),
+              ),
+            ),
+        FloatingActionButton(
+          onPressed: () => setState(() => _jumpMenuOpen = !_jumpMenuOpen),
+          child: Icon(_jumpMenuOpen
+              ? Icons.close_rounded
+              : Icons.menu_open_rounded),
+        ),
+      ],
+    );
+  }
+
+  /// 定位至当前阅读（复用进入目录时的定位逻辑）
+  void _locateCurrentChapter() => _scrollToChapter(_book.durChapterIndex);
+
+  void _scrollTocTop() {
+    if (!_tocScrollController.hasClients) return;
+    _tocScrollController.animateTo(
+      0,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
+  void _scrollTocBottom() {
+    if (!_tocScrollController.hasClients) return;
+    _tocScrollController.animateTo(
+      _tocScrollController.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeOut,
+    );
+  }
+
+  /// 一键缓存：自当前章到末章加入下载队列（对齐原版 download_after 语义）
+  Future<void> _cacheFromCurrent() async {
+    final total = _book.totalChapterNum;
+    final start = _book.durChapterIndex;
+    if (total <= 0 || start > total - 1) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('无可缓存的章节')),
+      );
+      return;
+    }
+    try {
+      await ref
+          .read(bookApiProvider)
+          .cacheDownloadStart(_book.bookUrl, start, total - 1);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('已从当前章加入缓存队列')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('缓存启动失败：$e')),
+      );
+    }
   }
 
   // ===== 目录 Tab =====
