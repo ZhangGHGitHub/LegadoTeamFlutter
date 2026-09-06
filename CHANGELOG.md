@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.199] - 2026-09-06
+
+### Fixed
+- [UI] 问题1：正文右边距裁切——分页宽度计算加 4dp 安全余量（TextPainter 分页与实际渲染存在微差，防最后一字符被右边裁掉）
+- [UI] 问题2：阅读设置弹层双横杠——ReaderSettingsSheet.show 传 showDragHandle:false 消主题抓手叠加
+- [UI] 问题3：阅读排版默认值对齐参考仓——行距 1.6→1.67（对齐 lineSpacingExtra=12dp）、段距 12→2dp（对齐 paragraphSpacing=2dp）、字距 0→0.1em（对齐 letterSpacing=0.1f）；涉及 settings_service/reader_config_panel/reader_page_view 三处
+
+### Test
+- flutter analyze 无问题；flutter test 1341 全过
+- 版本 2.0.199+200
+
+- Contributor: Qoder UI
+
 ## [2.0.198] - 2026-09-06
 
 ### Changed

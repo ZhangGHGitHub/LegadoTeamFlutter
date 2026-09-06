@@ -99,7 +99,7 @@ class ReaderPageView extends ConsumerStatefulWidget {
   const ReaderPageView({
     super.key,
     required this.paragraphSpacing,
-    this.letterSpacing = 0.0,
+    this.letterSpacing = 0.1,
     this.paragraphIndent = 2,
     this.textFullJustify = true,
     this.marginTop = 24,
@@ -443,8 +443,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // 双页模式：每栏可用宽 =（屏宽 - 左右边距 - 16 栏间隙）/ 2
     //（渲染侧左栏右间隙 8 + 右栏左间隙 8，与分页宽严格一致）
     final availableWidth = doublePage
-        ? (screenSize.width - widget.marginLeft - widget.marginRight - 16) / 2
-        : screenSize.width - widget.marginLeft - widget.marginRight;
+        ? (screenSize.width - widget.marginLeft - widget.marginRight - 16) / 2 - 4
+        : screenSize.width - widget.marginLeft - widget.marginRight - 4;
     // [UI-fix v2.0.4 | 2026-08-08] 分页可用高度与渲染容器严格一致：
     // 渲染侧（ReaderTypographicPage）Column = 首页标题块 +
     // Expanded(正文) + 页码指示（top 8 + 11 号文字）；此前用固定

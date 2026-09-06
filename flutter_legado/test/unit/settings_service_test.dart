@@ -32,8 +32,8 @@ void main() {
   });
 
   group('SettingsService 行距', () {
-    test('默认行距为 1.6', () async {
-      expect(await service.getLineHeight(), equals(1.6));
+    test('默认行距为 1.67', () async {
+      expect(await service.getLineHeight(), equals(1.67));
     });
 
     test('设置并读取行距', () async {

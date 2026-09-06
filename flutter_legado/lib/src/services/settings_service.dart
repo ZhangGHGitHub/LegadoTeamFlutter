@@ -57,10 +57,10 @@ class SettingsService {
   Future<double> getLineHeight() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getDouble(_keyLineHeight) ?? 1.6;
+      return prefs.getDouble(_keyLineHeight) ?? 1.67;
     } catch (e) {
       debugPrint('SettingsService.getLineHeight 异常: $e');
-      return 1.6;
+      return 1.67;
     }
   }
 

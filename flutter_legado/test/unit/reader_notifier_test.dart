@@ -97,7 +97,7 @@ void main() {
       container.read(readerNotifierProvider);
       await pumpInit();
       expect(readState().fontSize, equals(18.0));
-      expect(readState().lineHeight, equals(1.6));
+      expect(readState().lineHeight, equals(1.67));
       expect(readState().backgroundColor, equals(ReaderBackground.white));
       // 默认翻页模式为 cover（对齐 Android 原版）
       expect(readState().pageTurnMode, equals(PageTurnMode.cover));

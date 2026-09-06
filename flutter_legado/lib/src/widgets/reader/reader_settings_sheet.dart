@@ -31,6 +31,7 @@ class ReaderSettingsSheet extends ConsumerStatefulWidget {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
+      showDragHandle: false,
       builder: (_) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: 0.72,
