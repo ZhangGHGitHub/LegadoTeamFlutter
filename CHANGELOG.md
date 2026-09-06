@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.212] - 2026-09-08
+
+### Changed
+- [UI] 新增「设置主页」（集中化分组入口，对齐参考版设置主页结构）：外观/高级/阅读界面/备份与恢复/缓存管理/书源管理/定时任务/字体管理/关于 九组直达（封面设置/AI 设置/翻译设置随对应功能批次补位）
+- [UI] 我的页重排：原「备份与恢复/主题设置/其他设置」三入口收敛为单一「设置」入口进设置主页（对齐参考版我的页「设置」项）
+
+### Test
+- settings_test 更新集中化两级导航用例；flutter analyze 无问题；flutter test 1348 全过
+- 版本 2.0.212+213
+
+- Contributor: Qoder UI
+
 ## [2.0.211] - 2026-09-08
 
 ### Changed

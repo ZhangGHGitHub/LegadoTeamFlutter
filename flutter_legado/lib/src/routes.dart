@@ -38,6 +38,7 @@ import 'screens/rss_source_manage_screen.dart';
 import 'screens/rss_screen.dart';
 import 'screens/rule_sub_screen.dart';
 import 'screens/search_screen.dart';
+import 'screens/settings_home_screen.dart';
 import 'screens/settings_screen.dart';
 import 'screens/source_screen.dart';
 import 'screens/source_edit_screen.dart';
@@ -64,6 +65,8 @@ class AppRoutes {
   static const exploreShow = '/explore_show';
   static const settings = '/settings';
   static const otherSettings = '/other_settings';
+  // [UI_SYNC_REFACTOR S6 | 2026-09-08] 设置主页（集中化分组入口）— Qoder
+  static const settingsHome = '/settings_home';
   static const cacheSettings = '/cache_settings';
   static const cacheDownloads = '/cache_downloads';
   // [UI-fix v2.0.17 | 2026-08-11] 离线缓存页（对齐原版 CacheActivity 书籍列表）— Reasonix
@@ -163,6 +166,7 @@ class AppRoutes {
           return ExploreShowScreen(args: exploreArgs);
         },
         settings: (_) => const SettingsScreen(),
+        settingsHome: (_) => const SettingsHomeScreen(),
         otherSettings: (_) => const OtherSettingsScreen(),
         cacheSettings: (_) => const CacheSettingsScreen(),
         cacheDownloads: (_) => const CacheDownloadScreen(),

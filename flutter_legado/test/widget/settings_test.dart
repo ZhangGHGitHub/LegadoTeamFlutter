@@ -14,6 +14,7 @@ import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/theme/theme_notifier.dart';
 import 'package:flutter_legado/src/routes.dart';
 import 'package:flutter_legado/src/screens/other_settings_screen.dart';
+import 'package:flutter_legado/src/screens/settings_home_screen.dart';
 import 'package:flutter_legado/src/screens/settings_screen.dart';
 import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
 
@@ -71,18 +72,14 @@ void main() {
 
       expect(find.text('我的'), findsWidgets,
           reason: 'SliverAppBar.large 展开大标题与折叠工具栏标题同时存在');
-      // [UI_SYNC_REFACTOR T2] 分组卡化后列表变高，「设置」组头在视口外
-      //（懒构建未挂载），先滚动再断言
-      await dragTo(tester, '备份与恢复');
-      expect(find.text('设置', skipOffstage: false), findsOneWidget);
-
-      await tester.pumpAndSettle();
-      expect(find.text('备份与恢复'), findsOneWidget);
-
-      await dragTo(tester, '主题设置');
-      await tester.pumpAndSettle();
-      expect(find.text('主题设置'), findsOneWidget);
-      expect(find.text('其他设置'), findsOneWidget);
+      // [UI_SYNC_REFACTOR S6 | 2026-09-08] 设置主页集中化：我的页原
+      // 备份与恢复/主题设置/其他设置三 tile 收敛为单一「设置」入口
+      //（组头「设置」+ 入口 tile 同文案，skipOffstage 计 2）— Qoder
+      await dragTo(tester, '设置');
+      expect(
+          find.text('设置', skipOffstage: false), findsNWidgets(2));
+      expect(find.text('备份与恢复'), findsNothing);
+      expect(find.text('主题设置'), findsNothing);
 
       // 已删除创意项
       expect(find.text('导出日志'), findsNothing);
@@ -130,18 +127,26 @@ void main() {
       expect(find.text('深色'), findsOneWidget);
     });
 
-    testWidgets('点击备份与恢复进入全页 WebDAV/备份设置', (tester) async {
+    testWidgets('经设置主页进入备份与恢复全页 WebDAV/备份设置', (tester) async {
       await tester.pumpWidget(wrap(
         const SettingsScreen(),
         routes: {
+          AppRoutes.settingsHome: (_) => const SettingsHomeScreen(),
           AppRoutes.webdavSettings: (_) => const WebDavSettingsScreen(),
         },
       ));
       await tester.pumpAndSettle();
 
-      await dragTo(tester, '备份与恢复');
+      // 我的页「设置」→ 设置主页「备份与恢复」（集中化两级导航）
+      await dragTo(tester, '设置');
       await tester.drag(find.byType(ListView), const Offset(0, 140));
       await tester.pumpAndSettle();
+      await tester.tap(find.text('设置').last);
+      await tester.pumpAndSettle();
+
+      await tester.dragUntilVisible(
+          find.text('备份与恢复'), find.byType(CustomScrollView).first,
+          const Offset(0, -80));
       await tester.tap(find.text('备份与恢复'));
       await tester.pumpAndSettle();
 

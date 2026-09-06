@@ -288,26 +288,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               IosGroup(
                 separatorIndent: 62,
                 children: [
+                  // [UI_SYNC_REFACTOR S6 | 2026-09-08] 设置主页集中化：我的页
+                  // 原备份与恢复/主题设置/其他设置三 tile 收敛为单一「设置」
+                  // 入口（对齐参考版我的页「设置」项；各页经设置主页分组到达）
+                  // — Qoder
                   IosListTile(
-                    icon: Symbols.backup_rounded,
-                    title: '备份与恢复',
-                    subtitle: 'WebDav 设置/导入旧版本数据',
+                    icon: Symbols.settings_rounded,
+                    title: '设置',
+                    subtitle: '外观 / 高级 / 阅读界面 / 备份 / 缓存',
                     onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.webdavSettings),
-                  ),
-                  IosListTile(
-                    icon: Symbols.palette_rounded,
-                    title: '主题设置',
-                    subtitle: '与界面/颜色相关的一些设置',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.themeConfig),
-                  ),
-                  IosListTile(
-                    icon: Symbols.tune_rounded,
-                    title: '其他设置',
-                    subtitle: '与功能相关的一些设置',
-                    onTap: () =>
-                        Navigator.pushNamed(context, AppRoutes.otherSettings),
+                        Navigator.pushNamed(context, AppRoutes.settingsHome),
                   ),
                 ],
               ),
