@@ -53,6 +53,12 @@ class BookshelfState with _$BookshelfState {
 
     /// 当前选中的分组 Tab 索引（对标原版 AppConfig.saveTabPosition）
     @Default(0) int selectedGroupIndex,
+
+    /// [UI_SYNC_REFACTOR T3] 批量选择模式（对齐参考 SelectionBottomBar 态）
+    @Default(false) bool isBatchMode,
+
+    /// 批量选中的书籍 URL 集合
+    @Default({}) Set<String> selectedUrls,
   }) = _BookshelfState;
 }
 

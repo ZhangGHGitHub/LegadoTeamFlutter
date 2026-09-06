@@ -191,6 +191,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           const PopupMenuItem(value: 'add_url', child: Text('添加网址')),
           const PopupMenuDivider(),
           PopupMenuItem(value: 'manage', child: Text(AppStrings.manageBookshelf)),
+          PopupMenuItem(value: 'select_mode', child: Text('选择模式')),
           const PopupMenuItem(value: 'offline_cache', child: Text('离线缓存')),
           PopupMenuItem(value: 'groups', child: Text('分组管理')),
           const PopupMenuItem(value: 'layout', child: Text('书架布局')),
@@ -259,6 +260,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         slivers: [
           // [MD3 LargeTitle] 可折叠头部：无分组=SliverAppBar.large（跳顶时
           // 随滚动自然复位）；有分组=pinned TabBar 头（原版嵌入结构）
+          // [UI_SYNC_REFACTOR T3] 批量模式悬浮摘要卡
+          if (state.isBatchMode)
+            SliverToBoxAdapter(
+              child: _buildBatchSummaryCard(context, ref, state),
+            ),
           LegadoTabRootHeaderSliver(
             large: !state.hasGroupTabs,
             title: state.hasGroupTabs
@@ -281,6 +287,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             _buildGridSliver(context, ref, state.currentGroupBooks)
           else
             _buildReorderableSliver(context, ref, state),
+          // [UI_SYNC_REFACTOR T3] 底部批量工具条（batch 模式且选中时显示）
+          if (state.isBatchMode && state.selectedUrls.isNotEmpty)
+            SliverToBoxAdapter(
+              child: _buildBatchBottomBar(context, ref, state),
+            ),
         ],
       ),
     );
@@ -427,6 +438,18 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       },
       itemBuilder: (context, index) {
         final book = shelfBooks[index];
+        // [UI_SYNC_REFACTOR T3] 批量模式点击 = 切换选中
+        final batch = ref.watch(bookshelfNotifierProvider
+            .select((s) => s.isBatchMode));
+        if (batch) {
+          return BookListItem(
+            key: ValueKey(book.bookUrl),
+            book: book,
+            onTap: () => ref
+                .read(bookshelfNotifierProvider.notifier)
+                .toggleSelect(book.bookUrl),
+          );
+        }
         return BookListItem(
           key: ValueKey(book.bookUrl),
           book: book,
@@ -439,6 +462,12 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   }
 
   Widget _buildGridItem(BuildContext context, WidgetRef ref, Book book) {
+    // [UI_SYNC_REFACTOR T3] 批量模式点击 = 切换选中
+    final batch = ref.watch(bookshelfNotifierProvider
+        .select((s) => s.isBatchMode));
+    if (batch) {
+      return _buildBatchGridItem(context, ref, book);
+    }
     // 稳定 ValueKey（bookUrl）避免数据变化时整网格重建；RepaintBoundary 隔离重绘区域
     final item = BookGridItem(
       key: ValueKey(book.bookUrl),
@@ -665,6 +694,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       case 'add_url':
         // [UI-fix v2.0.2 | 2026-08-06] 添加网址接通 WebBook 入库链路（对标原版 addBookByUrl） — Qoder
         _showAddByUrlDialog();
+      case 'select_mode':
+        ref.read(bookshelfNotifierProvider.notifier).toggleBatchMode();
+        break;
       case 'manage':
         // 进入书架管理页（对标原版 BookshelfManageActivity）
         Navigator.pushNamed(context, AppRoutes.bookshelfManage);
@@ -1052,6 +1084,150 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     messenger.showSnackBar(
       SnackBar(content: Text('书单导入完成：成功 $ok，跳过 $skip，失败 $fail')),
     );
+  }
+
+  /// [UI_SYNC_REFACTOR T3] 批量模式网格瓦片（选中高亮 + 勾选角标）
+  Widget _buildBatchGridItem(BuildContext context, WidgetRef ref, Book book) {
+    final selected = ref.watch(bookshelfNotifierProvider
+        .select((s) => s.selectedUrls.contains(book.bookUrl)));
+    final cs = Theme.of(context).colorScheme;
+    return GestureDetector(
+      onTap: () => ref
+          .read(bookshelfNotifierProvider.notifier)
+          .toggleSelect(book.bookUrl),
+      child: Container(
+        decoration: selected
+            ? BoxDecoration(
+                color: cs.secondaryContainer.withValues(alpha: 0.3),
+                borderRadius: BorderRadius.circular(4),
+              )
+            : null,
+        child: Stack(
+          children: [
+            Padding(
+              padding: EdgeInsets.zero,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: BookGridItem(
+                  key: ValueKey(book.bookUrl),
+                  title: book.name,
+                  coverUrl: book.customCoverUrl ?? book.coverUrl,
+                  unreadNum: 0,
+                  sourceOrigin: book.origin,
+                ),
+              ),
+            ),
+            if (selected)
+              Positioned(
+                right: 4,
+                top: 4,
+                child: Icon(
+                  Symbols.check_circle_rounded,
+                  size: 22,
+                  color: cs.primary,
+                  fill: 1,
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// [UI_SYNC_REFACTOR T3] 顶部悬浮摘要卡（对齐参考 TopFloatingStickyItem）
+  Widget _buildBatchSummaryCard(
+      BuildContext context, WidgetRef ref, BookshelfState state) {
+    final cs = Theme.of(context).colorScheme;
+    return Positioned(
+      top: 0,
+      left: 16,
+      right: 16,
+      child: Material(
+        color: cs.surfaceContainer,
+        borderRadius: BorderRadius.circular(32),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.close, size: 20),
+                tooltip: '退出选择',
+                onPressed: () => ref
+                    .read(bookshelfNotifierProvider.notifier)
+                    .toggleBatchMode(),
+              ),
+              Text(
+                '已选 ${state.selectedUrls.length}',
+                style: Theme.of(context)
+                    .textTheme
+                    .labelSmall
+                    ?.copyWith(fontWeight: FontWeight.w600),
+              ),
+              Text(
+                ' · 总 ${state.currentGroupBooks.length}',
+                style: Theme.of(context).textTheme.labelSmall,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// [UI_SYNC_REFACTOR T3] 底部批量工具条（对齐参考 SelectionBottomBar）
+  Widget _buildBatchBottomBar(
+      BuildContext context, WidgetRef ref, BookshelfState state) {
+    final cs = Theme.of(context).colorScheme;
+    final count = state.selectedUrls.length;
+    if (count == 0) return const SizedBox.shrink();
+    return SafeArea(
+      top: false,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        decoration: BoxDecoration(
+          color: cs.surfaceContainer,
+          borderRadius: BorderRadius.circular(32),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.select_all),
+              tooltip: '全选',
+              onPressed: () =>
+                  ref.read(bookshelfNotifierProvider.notifier).selectAll(),
+            ),
+            IconButton(
+              icon: const Icon(Icons.flip_rounded),
+              tooltip: '反选',
+              onPressed: () => ref
+                  .read(bookshelfNotifierProvider.notifier)
+                  .invertSelection(),
+            ),
+            IconButton(
+              icon: const Icon(Icons.download_rounded),
+              tooltip: '批量下载',
+              onPressed: count > 0
+                  ? () => _showSnack('批量下载 $count 本（对标原版批量下载）')
+                  : null,
+            ),
+            IconButton(
+              icon: const Icon(Icons.drive_file_move_rounded),
+              tooltip: '移动分组',
+              onPressed: count > 0
+                  ? () => _showSnack('移动分组 $count 本（对标原版 GroupSelectSheet）')
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showSnack(String msg) {
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(msg)));
   }
 }
 

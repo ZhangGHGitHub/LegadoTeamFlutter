@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.198] - 2026-09-06
+
+### Changed
+- [UI] 一比一复刻 T3：书架批量态搬入主书架——溢出菜单新增「选择模式」入口（toggleBatchMode）；批量模式下网格点击=切换选中（选中高亮+勾选角标）、列表同理；顶部悬浮摘要卡（已选 n·总 m+退出）；底部批量工具条（全选/反选/批量下载/移动分组）；独立管理页保留
+- [UI] 修复 md3_animated_text_line `?currentChild` null-aware 元素语法（build_runner 解析不兼容，改 if-null 等效写法再恢复并确认 analyzer 支持）
+
+### Test
+- flutter analyze 无问题；flutter test 1341 全过
+- 版本 2.0.198+199
+
+- Contributor: Qoder UI
+
 ## [2.0.197] - 2026-09-06
 
 ### Changed

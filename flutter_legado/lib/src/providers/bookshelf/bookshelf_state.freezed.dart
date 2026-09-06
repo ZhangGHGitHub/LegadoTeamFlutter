@@ -43,6 +43,12 @@ mixin _$BookshelfState {
   /// 当前选中的分组 Tab 索引（对标原版 AppConfig.saveTabPosition）
   int get selectedGroupIndex => throw _privateConstructorUsedError;
 
+  /// [UI_SYNC_REFACTOR T3] 批量选择模式（对齐参考 SelectionBottomBar 态）
+  bool get isBatchMode => throw _privateConstructorUsedError;
+
+  /// 批量选中的书籍 URL 集合
+  Set<String> get selectedUrls => throw _privateConstructorUsedError;
+
   @JsonKey(ignore: true)
   $BookshelfStateCopyWith<BookshelfState> get copyWith =>
       throw _privateConstructorUsedError;
@@ -63,7 +69,9 @@ abstract class $BookshelfStateCopyWith<$Res> {
       bool showRecentReading,
       bool showStats,
       List<BookGroup> groups,
-      int selectedGroupIndex});
+      int selectedGroupIndex,
+      bool isBatchMode,
+      Set<String> selectedUrls});
 }
 
 /// @nodoc
@@ -88,6 +96,8 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
     Object? showStats = null,
     Object? groups = null,
     Object? selectedGroupIndex = null,
+    Object? isBatchMode = null,
+    Object? selectedUrls = null,
   }) {
     return _then(_value.copyWith(
       books: null == books
@@ -126,6 +136,14 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
           ? _value.selectedGroupIndex
           : selectedGroupIndex // ignore: cast_nullable_to_non_nullable
               as int,
+      isBatchMode: null == isBatchMode
+          ? _value.isBatchMode
+          : isBatchMode // ignore: cast_nullable_to_non_nullable
+              as bool,
+      selectedUrls: null == selectedUrls
+          ? _value.selectedUrls
+          : selectedUrls // ignore: cast_nullable_to_non_nullable
+              as Set<String>,
     ) as $Val);
   }
 }
@@ -147,7 +165,9 @@ abstract class _$$BookshelfStateImplCopyWith<$Res>
       bool showRecentReading,
       bool showStats,
       List<BookGroup> groups,
-      int selectedGroupIndex});
+      int selectedGroupIndex,
+      bool isBatchMode,
+      Set<String> selectedUrls});
 }
 
 /// @nodoc
@@ -170,6 +190,8 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
     Object? showStats = null,
     Object? groups = null,
     Object? selectedGroupIndex = null,
+    Object? isBatchMode = null,
+    Object? selectedUrls = null,
   }) {
     return _then(_$BookshelfStateImpl(
       books: null == books
@@ -208,6 +230,14 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
           ? _value.selectedGroupIndex
           : selectedGroupIndex // ignore: cast_nullable_to_non_nullable
               as int,
+      isBatchMode: null == isBatchMode
+          ? _value.isBatchMode
+          : isBatchMode // ignore: cast_nullable_to_non_nullable
+              as bool,
+      selectedUrls: null == selectedUrls
+          ? _value._selectedUrls
+          : selectedUrls // ignore: cast_nullable_to_non_nullable
+              as Set<String>,
     ));
   }
 }
@@ -224,9 +254,12 @@ class _$BookshelfStateImpl implements _BookshelfState {
       this.showRecentReading = true,
       this.showStats = true,
       final List<BookGroup> groups = const [],
-      this.selectedGroupIndex = 0})
+      this.selectedGroupIndex = 0,
+      this.isBatchMode = false,
+      final Set<String> selectedUrls = const {}})
       : _books = books,
-        _groups = groups;
+        _groups = groups,
+        _selectedUrls = selectedUrls;
 
   /// Rust 返回的书籍列表（已排序，UI 层不做排序）
   final List<Book> _books;
@@ -286,9 +319,26 @@ class _$BookshelfStateImpl implements _BookshelfState {
   @JsonKey()
   final int selectedGroupIndex;
 
+  /// [UI_SYNC_REFACTOR T3] 批量选择模式（对齐参考 SelectionBottomBar 态）
+  @override
+  @JsonKey()
+  final bool isBatchMode;
+
+  /// 批量选中的书籍 URL 集合
+  final Set<String> _selectedUrls;
+
+  /// 批量选中的书籍 URL 集合
+  @override
+  @JsonKey()
+  Set<String> get selectedUrls {
+    if (_selectedUrls is EqualUnmodifiableSetView) return _selectedUrls;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableSetView(_selectedUrls);
+  }
+
   @override
   String toString() {
-    return 'BookshelfState(books: $books, isLoading: $isLoading, error: $error, isGridView: $isGridView, groupMode: $groupMode, showRecentReading: $showRecentReading, showStats: $showStats, groups: $groups, selectedGroupIndex: $selectedGroupIndex)';
+    return 'BookshelfState(books: $books, isLoading: $isLoading, error: $error, isGridView: $isGridView, groupMode: $groupMode, showRecentReading: $showRecentReading, showStats: $showStats, groups: $groups, selectedGroupIndex: $selectedGroupIndex, isBatchMode: $isBatchMode, selectedUrls: $selectedUrls)';
   }
 
   @override
@@ -310,7 +360,11 @@ class _$BookshelfStateImpl implements _BookshelfState {
                 other.showStats == showStats) &&
             const DeepCollectionEquality().equals(other._groups, _groups) &&
             (identical(other.selectedGroupIndex, selectedGroupIndex) ||
-                other.selectedGroupIndex == selectedGroupIndex));
+                other.selectedGroupIndex == selectedGroupIndex) &&
+            (identical(other.isBatchMode, isBatchMode) ||
+                other.isBatchMode == isBatchMode) &&
+            const DeepCollectionEquality()
+                .equals(other._selectedUrls, _selectedUrls));
   }
 
   @override
@@ -324,7 +378,9 @@ class _$BookshelfStateImpl implements _BookshelfState {
       showRecentReading,
       showStats,
       const DeepCollectionEquality().hash(_groups),
-      selectedGroupIndex);
+      selectedGroupIndex,
+      isBatchMode,
+      const DeepCollectionEquality().hash(_selectedUrls));
 
   @JsonKey(ignore: true)
   @override
@@ -344,7 +400,9 @@ abstract class _BookshelfState implements BookshelfState {
       final bool showRecentReading,
       final bool showStats,
       final List<BookGroup> groups,
-      final int selectedGroupIndex}) = _$BookshelfStateImpl;
+      final int selectedGroupIndex,
+      final bool isBatchMode,
+      final Set<String> selectedUrls}) = _$BookshelfStateImpl;
 
   @override
 
@@ -382,6 +440,14 @@ abstract class _BookshelfState implements BookshelfState {
 
   /// 当前选中的分组 Tab 索引（对标原版 AppConfig.saveTabPosition）
   int get selectedGroupIndex;
+  @override
+
+  /// [UI_SYNC_REFACTOR T3] 批量选择模式（对齐参考 SelectionBottomBar 态）
+  bool get isBatchMode;
+  @override
+
+  /// 批量选中的书籍 URL 集合
+  Set<String> get selectedUrls;
   @override
   @JsonKey(ignore: true)
   _$$BookshelfStateImplCopyWith<_$BookshelfStateImpl> get copyWith =>

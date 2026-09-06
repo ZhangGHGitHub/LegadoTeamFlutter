@@ -143,6 +143,37 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   }
 
   /// 设置分组模式
+  // [UI_SYNC_REFACTOR T3] 批量选择（对齐参考 SelectionBottomBar 态）
+  void toggleBatchMode() {
+    state = state.copyWith(
+      isBatchMode: !state.isBatchMode,
+      selectedUrls: {},
+    );
+  }
+
+  void toggleSelect(String bookUrl) {
+    final urls = {...state.selectedUrls};
+    urls.contains(bookUrl) ? urls.remove(bookUrl) : urls.add(bookUrl);
+    state = state.copyWith(selectedUrls: urls);
+  }
+
+  void selectAll() {
+    state = state.copyWith(
+      selectedUrls: {for (final b in state.currentGroupBooks) b.bookUrl},
+    );
+  }
+
+  void invertSelection() {
+    final all = {for (final b in state.currentGroupBooks) b.bookUrl};
+    state = state.copyWith(
+      selectedUrls: all.difference(state.selectedUrls),
+    );
+  }
+
+  void clearSelection() {
+    state = state.copyWith(selectedUrls: {});
+  }
+
   void setGroupMode(GroupMode mode) {
     state = state.copyWith(groupMode: mode);
   }
