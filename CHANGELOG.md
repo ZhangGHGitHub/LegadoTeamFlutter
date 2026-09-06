@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.205] - 2026-09-06
+
+### Changed
+- [UI] 阅读界面弹层一比一对齐参考版四页签结构——头部圆形返回按钮 + 「阅读界面」标题；底部页签 全局/菜单/信息/更多；全局页 = 字号步进器（- 值 +）+ 独立 Tt 字体小卡、背景卡（长按自定义 + 月亮夜间切换 + 自定义/预设 chips 主色描边选中）、翻页动画行（当前值 + 独立图标小卡）；菜单页 = 自动翻页/点击区域/亮度控制；信息页 = 阅读提示信息；更多页 = 行距/字重/字体字距缩进段距/更多配置/页面边距/共用布局
+
+### Test
+- flutter analyze 无问题；flutter test 1347 全过（新增 reader_settings_sheet_test 四页签结构回归）；5556 模拟器实测弹层截图比对参考版通过
+- 版本 2.0.205+206
+
+- Contributor: Qoder UI
+
 ## [2.0.204] - 2026-09-06
 
 ### Fixed

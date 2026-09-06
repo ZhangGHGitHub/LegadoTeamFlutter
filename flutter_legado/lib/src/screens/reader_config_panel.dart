@@ -48,7 +48,10 @@ enum TapAction {
 
 /// 面板可单独展示的区块（界面 Sheet 的「边距/信息」按钮对标原版
 /// ReadStyleDialog 的 showPaddingConfig / TipConfigDialog 独立弹层）
-enum ReaderConfigSection { all, margins, statusBar }
+///
+/// [UI_SYNC_REFACTOR S5 修 | 2026-09-06] 新增 menu/more：阅读界面弹层
+/// 四页签（全局/菜单/信息/更多）的「菜单」「更多」页嵌入复用 — Qoder
+enum ReaderConfigSection { all, margins, statusBar, menu, more }
 
 /// 阅读器高级配置面板
 ///
@@ -197,6 +200,46 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
           ),
         ];
         break;
+      case ReaderConfigSection.menu:
+        // [UI_SYNC_REFACTOR S5 修] 阅读界面弹层「菜单」页 — Qoder
+        children = [
+          _groupCard(_buildAutoPageTurn()),
+          const SizedBox(height: 12),
+          _groupCard(_buildTapZones()),
+          const SizedBox(height: 12),
+          _groupCard(_buildBrightnessControl()),
+        ];
+        break;
+      case ReaderConfigSection.more:
+        // [UI_SYNC_REFACTOR S5 修] 阅读界面弹层「更多」页（排版与
+        // 更多配置 + 页面边距入口）— Qoder
+        children = [
+          _groupCard(_buildTypography()),
+          const SizedBox(height: 12),
+          _groupCard(_buildParagraphSpacing()),
+          const SizedBox(height: 12),
+          _groupCard(_buildMoreConfig()),
+          const SizedBox(height: 12),
+          _groupCard(
+            ListTile(
+              contentPadding:
+                  const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+              leading: const Icon(Icons.crop_free),
+              title: const Text('页面边距'),
+              subtitle: const Text('页眉 / 正文 / 页脚四向边距'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => ReaderPaddingConfigSheet.show(
+                context,
+                config: _config.copy(),
+                onChanged: (cfg) {
+                  _config = cfg.copy();
+                  _commit();
+                },
+              ),
+            ),
+          ),
+        ];
+        break;
       case ReaderConfigSection.all:
         children = [
           Text('高级阅读设置', style: Theme.of(context).textTheme.titleMedium),
@@ -274,17 +317,24 @@ class _ReaderConfigPanelState extends ConsumerState<ReaderConfigPanel> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.onSurfaceVariant.withValues(alpha: 0.4),
-                  borderRadius: BorderRadius.circular(2),
+            // [UI_SYNC_REFACTOR S5 修] 把手仅独立弹层（all）展示，
+            // 嵌入阅读界面弹层页签时不重复显示 — Qoder
+            if (widget.section == ReaderConfigSection.all) ...[
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context)
+                        .colorScheme
+                        .onSurfaceVariant
+                        .withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 12),
+              const SizedBox(height: 12),
+            ],
             ...children,
           ],
         ),
