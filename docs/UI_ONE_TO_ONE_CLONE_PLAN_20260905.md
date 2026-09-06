@@ -78,6 +78,18 @@ S6 决策：blur 默认值三端统一**关**（保守，验证路径一致）�
 
 登记遗留：Sheet 壳余下 29 处散点渐进迁移；朗读并入面板路由页（S2-3 候选）；Characters/RelatedBooks 数据链接通（等 Rust 契约）；Spec2025 Dart 无实现（映射 2021）。
 
+## 五·六、T 批实施状态（2026-09-06 收口）
+
+| 批次 | 提交 | 版本 | 内容 |
+|---|---|---|---|
+| T1 订阅页瓦片+双卡 | fa6f079883 | 2.0.196 | Adaptive 72dp 瓦片+头部双卡 |
+| S1b 修正 | e65381b0e3 | 2.0.195 | 发现/订阅顶栏对齐 ListScaffold |
+| T2 我的页分组卡 | c8c6260aaf | 2.0.197 | SplicedColumnGroup 反转+高亮标注入口 |
+| T3 书架批量态 | 906537e899 | 2.0.198 | 选择模式+悬浮摘要+SelectionBottomBar |
+| CI 修复 | aa6144480e | 2.0.197 | rss_screen null 断言清理版补提 |
+
+三工作流全绿。登记遗留：Sheet 壳余 28 处渐进迁移；朗读并入面板路由页；Characters/RelatedBooks 数据链接通（等 Rust 契约）；Spec2025 Dart 无实现；组序微调；书架分组 HorizontalPager。
+
 ## 六、门禁
 
 每批 analyze 0+test 全过+版本递增+CHANGELOG/updateLog 双同步+独立 commit；S7 统一验收（5556 冒烟+双包对比+5558 用户验收）。
