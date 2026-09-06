@@ -27,7 +27,8 @@ class ReaderPaddingConfigSheet extends ConsumerStatefulWidget {
     required ReaderAdvancedConfig config,
     ValueChanged<ReaderAdvancedConfig>? onChanged,
   }) {
-    return showModalBottomSheet<void>(
+    return showModalBottomSheet<void>(      showDragHandle: false,
+
       context: context,
       isScrollControlled: true,
       builder: (_) => DraggableScrollableSheet(

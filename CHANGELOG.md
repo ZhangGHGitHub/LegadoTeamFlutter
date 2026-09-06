@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.201] - 2026-09-06
+
+### Fixed
+- [UI] 阅读设置弹层双横杠全面修复——reader_config_panel/reader_padding_config_sheet/reader_tip_config_sheet/read_aloud_bar/review_detail_sheet 五处补 showDragHandle:false；IosGroup 分组卡行底 Material 化消 ink 断言；正文右边距安全余量 4→8dp（letterSpacing 0.1em × CJK 每行 ~15 字 ≈ 27px 额外宽度）
+- [UI] 阅读排版默认值对齐参考——行距 1.6→1.67、段距 12→2dp、字距 0→0.1em
+
+### Test
+- flutter analyze 无问题；flutter test 1341 全过
+- 版本 2.0.201+202
+
+- Contributor: Qoder UI
+
 ## [2.0.199] - 2026-09-06
 
 ### Fixed

@@ -108,8 +108,10 @@ class ReviewDetailSheet extends StatefulWidget {
     Map<String, dynamic>? bookJson,
     Map<String, dynamic>? chapterJson,
   }) {
-    return showModalBottomSheet<void>(
-      context: context,
+    return showModalBottomSheet<
+      XXDRAGXX<void>(
+      context:
+      showDragHandle: false, context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (_) => ReviewDetailSheet(

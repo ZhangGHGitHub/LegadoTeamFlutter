@@ -84,7 +84,8 @@ class ReaderConfigPanel extends ConsumerStatefulWidget {
     ValueChanged<ReaderAdvancedConfig>? onChanged,
     ReaderConfigSection section = ReaderConfigSection.all,
   }) {
-    return showModalBottomSheet<void>(
+    return showModalBottomSheet<void>(      showDragHandle: false,
+
       context: context,
       isScrollControlled: true,
       builder: (_) => DraggableScrollableSheet(
