@@ -479,11 +479,14 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
     );
   }
 
-  /// 预设背景 chip（选中加主色描边 + 底部对勾，对齐参考版）
+  /// 预设背景 chip（颜色预览卡：chip 底色即背景色，对齐参考版；
+  /// 选中加主色描边 + 底部对勾）
   Widget _bgPresetChip(ReaderState state, ReaderNotifier notifier, int index) {
     final color = ReaderBackground.presets[index];
     final label = ReaderBackground.labels[index];
     final isSelected = state.backgroundColor == color;
+    final onColor =
+        color.computeLuminance() > 0.5 ? Colors.black87 : Colors.white70;
     return GestureDetector(
       onLongPress: () =>
           _showCustomColorDialog(context, null, notifier, state),
@@ -494,13 +497,25 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
         margin: const EdgeInsets.only(right: 10),
         padding: const EdgeInsets.symmetric(vertical: 6),
         alignment: Alignment.center,
-        decoration: _bgChipDecoration(selected: isSelected),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          color: color,
+          border: Border.all(
+            color: isSelected
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.outlineVariant,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
               label,
-              style: Theme.of(context).textTheme.labelMedium,
+              style: Theme.of(context)
+                  .textTheme
+                  .labelMedium
+                  ?.copyWith(color: onColor),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),

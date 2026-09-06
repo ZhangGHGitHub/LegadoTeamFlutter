@@ -222,8 +222,11 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // 索引驱动（屏 = 内容页 / 2）— Reasonix
     final screen = _isDoublePage ? index ~/ 2 : index;
     if (_pageController.hasClients) {
-      if (widget.noAnimScroll) {
-        _pageController.jumpToPage(screen);
+      if (widget.noAnimScroll || _pageController.positions.length != 1) {
+        // [UI_SYNC_REFACTOR S5 修] 章节过渡期双 Pager 短暂挂载于同一
+        // 控制器（AnimatedSwitcher 旧子树未卸载），jumpToPage/
+        // animateToPage 的 position.single 断言会崩，降级为直跳最新挂载 — Qoder
+        _jumpLatestScreen(screen);
       } else {
         _pageController.animateToPage(
           screen,
@@ -236,6 +239,15 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     }
     // 同步全局页索引
     ref.read(readerNotifierProvider.notifier).updatePosition(index);
+  }
+
+  /// 直跳最新挂载 Pager 的指定屏（避开 position.single 断言）
+  void _jumpLatestScreen(int screen) {
+    final positions = _pageController.positions;
+    if (positions.isEmpty) return;
+    final pos = positions.last;
+    if (!pos.hasViewportDimension || pos.viewportDimension <= 0) return;
+    pos.jumpTo(screen * pos.viewportDimension);
   }
 
   /// 滚动模式：按一屏高度滚动（前进/后退，动画随 noAnimScrollPage）
@@ -594,12 +606,15 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     Future(() => notifier.updateChapterPageCount(chapterIndex, pages.length));
 
     if (_pageController.hasClients) {
-      // [UI_SYNC_REFACTOR T3 修] postFrameCallback 等 PageView 重建后再跳页，
-      // 避免 PageView 未更新 page count 时 jumpToPage 失效
+      // [UI_SYNC_REFACTOR S5 修] postFrameCallback 等 PageView 重建后再跳页，
+      // 避免 PageView 未更新 page count 时 jumpToPage 失效；跳转走
+      // _jumpLatestScreen：章节过渡期双 Pager 短暂挂载时跳最新挂载的
+      // （新章 Pager），并修双页模式屏索引换算（屏 = 内容页 / 2）— Qoder
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_pageController.hasClients) {
-          _pageController.jumpToPage(_currentPageIndex);
-        }
+        if (!_pageController.hasClients) return;
+        _jumpLatestScreen(
+          _isDoublePage ? _currentPageIndex ~/ 2 : _currentPageIndex,
+        );
       });
     }
   }
@@ -879,24 +894,69 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     );
   }
 
+  /// 章节切换过渡包装（滑动/仿真模式）
+  ///
+  /// [UI_SYNC_REFACTOR S5 修 | 2026-09-06] 此前滑动/仿真模式切章为
+  /// PageView 瞬跳（重分页后 jumpToPage 无过渡），用户感知"切章无翻页
+  /// 动画"（cover 模式已在上一批修复并录屏实证）。此处按章索引作键的
+  /// AnimatedSwitcher：仅切章触发整屏滑动过渡（方向按章号比较），章内
+  /// 翻页由 PageView 自身处理不受影响 — Qoder
+  Widget _chapterSwitchWrap(Widget child) {
+    final chapterIndex = _paginatedChapterIndex;
+    if (chapterIndex != _coverChapterIndex) {
+      _coverForward = chapterIndex > _coverChapterIndex;
+      _coverChapterIndex = chapterIndex;
+    }
+    final forward = _coverForward;
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 300),
+      switchInCurve: Curves.easeInOut,
+      switchOutCurve: Curves.easeInOut,
+      // 层叠策略：前进时新章在上滑入，后退时旧章在上滑出
+      layoutBuilder: (currentChild, previousChildren) {
+        return Stack(
+          children: [
+            ...previousChildren,
+            // ignore: use_null_aware_elements
+            if (currentChild != null) currentChild,
+          ],
+        );
+      },
+      transitionBuilder: (child, animation) {
+        final isEntering = child.key == ValueKey<int>(chapterIndex);
+        final bool slides = forward ? isEntering : !isEntering;
+        if (!slides) return child;
+        final begin = forward ? const Offset(1.0, 0.0) : Offset.zero;
+        final end = forward ? Offset.zero : const Offset(1.0, 0.0);
+        return SlideTransition(
+          position: Tween<Offset>(begin: begin, end: end).animate(animation),
+          child: child,
+        );
+      },
+      child: KeyedSubtree(key: ValueKey<int>(chapterIndex), child: child),
+    );
+  }
+
   Widget _buildSlideContent(ReaderState state) {
     final notifier = ref.read(readerNotifierProvider.notifier);
-    return _contentViewport(
-      context,
-      PageView.builder(
-        controller: _pageController,
-        itemCount: _isDoublePage
-            ? (_paginatedPages.length + 1) ~/ 2
-            : (_paginatedPages.isNotEmpty ? _paginatedPages.length : 1),
-        onPageChanged: (index) {
-          // [UI-fix v2.0.5 | 2026-08-10] 双页模式：屏索引 → 内容页索引 — Reasonix
-          final page = _isDoublePage ? index * 2 : index;
-          setState(() => _currentPageIndex = page);
-          notifier.updatePosition(page);
-        },
-        itemBuilder: (context, index) => _isDoublePage
-            ? _buildSpread(state, index)
-            : _buildTypographicPage(state, index),
+    return _chapterSwitchWrap(
+      _contentViewport(
+        context,
+        PageView.builder(
+          controller: _pageController,
+          itemCount: _isDoublePage
+              ? (_paginatedPages.length + 1) ~/ 2
+              : (_paginatedPages.isNotEmpty ? _paginatedPages.length : 1),
+          onPageChanged: (index) {
+            // [UI-fix v2.0.5 | 2026-08-10] 双页模式：屏索引 → 内容页索引 — Reasonix
+            final page = _isDoublePage ? index * 2 : index;
+            setState(() => _currentPageIndex = page);
+            notifier.updatePosition(page);
+          },
+          itemBuilder: (context, index) => _isDoublePage
+              ? _buildSpread(state, index)
+              : _buildTypographicPage(state, index),
+        ),
       ),
     );
   }
@@ -904,78 +964,81 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   Widget _buildSimulateContent(ReaderState state) {
     final notifier = ref.read(readerNotifierProvider.notifier);
     // 仿真翻页：PageView + 翻页阴影 + 缩放动画效果
-    return _contentViewport(
-      context,
-      Stack(
-        children: [
-          PageView.builder(
-            controller: _pageController,
-            itemCount: _isDoublePage
-                ? (_paginatedPages.length + 1) ~/ 2
-                : (_paginatedPages.isNotEmpty ? _paginatedPages.length : 1),
-            pageSnapping: true,
-            onPageChanged: (index) {
-              // [UI-fix v2.0.5 | 2026-08-10] 双页模式：屏索引 → 内容页索引 — Reasonix
-              final page = _isDoublePage ? index * 2 : index;
-              setState(() => _currentPageIndex = page);
-              notifier.updatePosition(page);
-            },
-            itemBuilder: (context, index) {
-              // [UI-fix v2.0.5 | 2026-08-10] 双页模式：双栏整屏渲染
-              //（缩放/阴影动画不适用于整屏双栏，降级为 slide 语义）— Reasonix
-              if (_isDoublePage) {
-                return _buildSpread(state, index);
-              }
-              return AnimatedBuilder(
-                animation: _pageController,
-                builder: (context, child) {
-                  double value = 1.0;
-                  if (_pageController.hasClients &&
-                      _pageController.position.hasContentDimensions) {
-                    value =
-                        (_pageController.page ??
-                            _pageController.initialPage.toDouble()) -
-                        index;
-                    value = (1 - value.abs().clamp(0.0, 1.0));
-                  }
-                  return Stack(
-                    children: [
-                      // 页面内容（带缩放和透明度动画）
-                      Transform.scale(
-                        scale: 0.96 + (0.04 * value),
-                        child: Opacity(
-                          opacity: 0.75 + (0.25 * value),
-                          child: child,
+    // [UI_SYNC_REFACTOR S5 修] 切章过渡同滑动模式（章内翻页不变）— Qoder
+    return _chapterSwitchWrap(
+      _contentViewport(
+        context,
+        Stack(
+          children: [
+            PageView.builder(
+              controller: _pageController,
+              itemCount: _isDoublePage
+                  ? (_paginatedPages.length + 1) ~/ 2
+                  : (_paginatedPages.isNotEmpty ? _paginatedPages.length : 1),
+              pageSnapping: true,
+              onPageChanged: (index) {
+                // [UI-fix v2.0.5 | 2026-08-10] 双页模式：屏索引 → 内容页索引 — Reasonix
+                final page = _isDoublePage ? index * 2 : index;
+                setState(() => _currentPageIndex = page);
+                notifier.updatePosition(page);
+              },
+              itemBuilder: (context, index) {
+                // [UI-fix v2.0.5 | 2026-08-10] 双页模式：双栏整屏渲染
+                //（缩放/阴影动画不适用于整屏双栏，降级为 slide 语义）— Reasonix
+                if (_isDoublePage) {
+                  return _buildSpread(state, index);
+                }
+                return AnimatedBuilder(
+                  animation: _pageController,
+                  builder: (context, child) {
+                    double value = 1.0;
+                    if (_pageController.hasClients &&
+                        _pageController.position.hasContentDimensions) {
+                      value =
+                          (_pageController.page ??
+                              _pageController.initialPage.toDouble()) -
+                          index;
+                      value = (1 - value.abs().clamp(0.0, 1.0));
+                    }
+                    return Stack(
+                      children: [
+                        // 页面内容（带缩放和透明度动画）
+                        Transform.scale(
+                          scale: 0.96 + (0.04 * value),
+                          child: Opacity(
+                            opacity: 0.75 + (0.25 * value),
+                            child: child,
+                          ),
                         ),
-                      ),
-                      // 翻页阴影效果
-                      if (value < 1.0)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.centerRight,
-                                  end: Alignment.centerLeft,
-                                  colors: [
-                                    Colors.black.withValues(
-                                      alpha: 0.12 * (1.0 - value),
-                                    ),
-                                    Colors.transparent,
-                                  ],
+                        // 翻页阴影效果
+                        if (value < 1.0)
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment.centerRight,
+                                    end: Alignment.centerLeft,
+                                    colors: [
+                                      Colors.black.withValues(
+                                        alpha: 0.12 * (1.0 - value),
+                                      ),
+                                      Colors.transparent,
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
                           ),
-                        ),
-                    ],
-                  );
-                },
-                child: _buildTypographicPage(state, index),
-              );
-            },
-          ),
-        ],
+                      ],
+                    );
+                  },
+                  child: _buildTypographicPage(state, index),
+                );
+              },
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.206] - 2026-09-06
+
+### Fixed
+- [UI] 滑动/仿真模式切章无过渡动画——此前仅 cover 模式有章节过渡，滑动/仿真为 PageView 瞬跳；补章节级 AnimatedSwitcher 整屏滑动过渡（方向按章号比较），章内翻页不受影响；章节过渡期新旧 Pager 短暂双挂载同一控制器，jumpToPage/animateToPage 的 position.single 断言会崩，程序化翻页改走 _jumpLatestScreen 直跳最新挂载（顺带修双页模式 postFrame 跳页的屏索引换算）
+- [UI] 阅读界面弹层背景 chips 改为颜色预览卡（chip 底色即背景色，对齐参考版实拍）
+
+### Test
+- 5556 录屏/连拍实证：cover 切章滑入正常（上一批修复生效）、滑动模式上一章/下一章过渡生效且方向正确（326 末页 ↔ 327 首页）
+- flutter analyze 无问题；flutter test 1347 全过；版本 2.0.206+207
+
+- Contributor: Qoder UI
+
 ## [2.0.205] - 2026-09-06
 
 ### Changed
