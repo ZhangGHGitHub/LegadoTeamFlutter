@@ -678,6 +678,12 @@ class ParagraphLayoutEngine {
         _charWidthCache.putCodePoint(codePoint, w);
       }
     }
+    // [UI_SYNC_REFACTOR S4 修] 每字宽度 × 1.02 安全系数：TextPainter 单字
+    // 测量含尾部字距但 Text 多字渲染末字不计 → 累计差导致断行偏多 →
+    // 末字被吞。2% 缩放随字号安全递增。
+    for (var i = 0; i < widths.length; i++) {
+      if (widths[i] > 0) widths[i] *= 1.02;
+    }
     return widths;
   }
 
