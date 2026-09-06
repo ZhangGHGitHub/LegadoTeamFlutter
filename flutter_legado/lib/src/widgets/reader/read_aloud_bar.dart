@@ -187,10 +187,9 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
 
   /// 定时停止选择面板（预设时长 + 自定义 + 按章停 + 取消）
   void _showTimerPicker(AudioState audio) {
-    showModalBottomSheet<
-      XXDRAGXX<void>(
-      context:
-      showDragHandle: false, context,
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: false,
       builder: (sheetContext) {
         return SafeArea(
           child: Column(
