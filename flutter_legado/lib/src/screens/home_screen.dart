@@ -15,6 +15,7 @@ import '../providers/theme/system_bar_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import 'bookshelf_screen.dart';
 import 'explore_screen.dart';
+import 'home_tab_screen.dart';
 import 'rss_screen.dart';
 import 'settings_screen.dart';
 
@@ -37,7 +38,8 @@ class HomeScreen extends ConsumerStatefulWidget {
 }
 
 /// 首页逻辑 Tab（与底栏索引解耦，便于按偏好动态显隐）
-enum _HomeTab { bookshelf, explore, rss, my }
+/// [UI_SYNC_REFACTOR S6 | 2026-09-08] 新增 home 首页页签（对齐参考版首页）— Qoder
+enum _HomeTab { home, bookshelf, explore, rss, my }
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 底栏双击判定窗口（对标原版 bookshelfReselected/exploreReselected 300ms）
@@ -52,13 +54,16 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   // [UI_SYNC_REFACTOR S1] 滑动切页控制器（对齐参考 MainScreen
   // HorizontalPager userScrollEnabled=true；2026-09-05 拉源码核实，
   // 早前审计 IndexedStack 口径系误读——原版本就是 ViewPager 滑动）
-  final PageController _pageController = PageController();
+  // [UI_SYNC_REFACTOR S6 | 2026-09-08] 首页页签恒为索引 0，书架恒为索引 1
+  //（默认主页=书架，与既有默认主页偏好语义一致）；默认主页跳转逻辑不变 — Qoder
+  final PageController _pageController = PageController(initialPage: 1);
 
   /// 当前逻辑 Tab（Tab 显隐变化时据此重新定位索引）
   _HomeTab _currentTab = _HomeTab.bookshelf;
 
   /// 已访问过的 Tab 集合（首屏默认访问书架）— 保留懒构建语义
-  final Set<_HomeTab> _visitedTabs = {_HomeTab.bookshelf};
+  /// [UI_SYNC_REFACTOR S6] 首页页签相邻预载，一并加入初始集 — Qoder
+  final Set<_HomeTab> _visitedTabs = {_HomeTab.home, _HomeTab.bookshelf};
 
   /// 书架页回滚顶部信号（双击书架底栏项时自增）
   final ValueNotifier<int> _bookshelfScrollTopSignal = ValueNotifier(0);
@@ -82,7 +87,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   /// 按主界面偏好计算可见 Tab 列表（对标原版 showDiscovery/showRSS 显隐）
+  /// [UI_SYNC_REFACTOR S6 | 2026-09-08] 新增首页页签（最近阅读+统计+目标表盘，
+  /// 对齐参考版首页；恒显示，模块管理登记后续批次）— Qoder
   List<_HomeTab> _visibleTabs(MainPrefsState prefs) => [
+        _HomeTab.home,
         _HomeTab.bookshelf,
         if (prefs.showDiscovery) _HomeTab.explore,
         if (prefs.showRss) _HomeTab.rss,
@@ -90,8 +98,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       ];
 
   /// 默认首页偏好值 → 逻辑 Tab（对标原版 defaultHomePage 数组值）
+  /// [UI_SYNC_REFACTOR S6 | 2026-09-08] 新增首页页签后补 'home' 映射 — Qoder
   _HomeTab _tabOfHomePage(String value) {
     switch (value) {
+      case 'home':
+        return _HomeTab.home;
       case 'explore':
         return _HomeTab.explore;
       case 'rss':
@@ -176,6 +187,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   /// 逻辑 Tab → 页面内容（未访问过的 Tab 用占位以保留懒构建语义）
   Widget _pageOf(_HomeTab tab) {
     switch (tab) {
+      case _HomeTab.home:
+        return _visitedTabs.contains(tab)
+            ? const HomeTabScreen()
+            : const SizedBox.shrink();
       case _HomeTab.bookshelf:
         return BookshelfScreen(scrollTopSignal: _bookshelfScrollTopSignal);
       case _HomeTab.explore:
@@ -296,6 +311,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   List<AppNavSpec> _specsFor(List<_HomeTab> tabs) => [
         for (final tab in tabs)
           switch (tab) {
+            // [UI_SYNC_REFACTOR S6] 首页页签底栏项（新皮肤槽位，无皮肤回退 symbol）
+            _HomeTab.home => AppNavSpec(
+                symbol: Symbols.home_rounded,
+                label: '首页',
+                skinSlot: 'home_page',
+              ),
             _HomeTab.bookshelf => AppNavSpec(
                 symbol: Symbols.menu_book_rounded,
                 label: AppStrings.bookshelf,

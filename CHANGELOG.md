@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.210] - 2026-09-08
+
+### Changed
+- [UI] 新增「首页」页签（对齐参考版五页签结构）：最近阅读卡（封面/进度，点击续读）+ 累计阅读统计双卡（本数/总时长）+ 今日阅读目标半圆表盘（目标分钟可编辑，默认 30 分钟，数据源 readRecordDailyList）
+- [UI] 其他设置「默认主页」新增「首页」选项（默认仍为书架，语义不变）
+- 首页模块管理（自定义集/书源模块）为参考版深功能，登记后续批次
+
+### Test
+- home_navigation_test 更新为五页签结构并新增首页页签用例；md3 验收矩阵底栏项数 2~5
+- flutter analyze 无问题；flutter test 1348 全过
+- 版本 2.0.210+211
+
+- Contributor: Qoder UI
+
 ## [2.0.209] - 2026-09-08
 
 ### Changed

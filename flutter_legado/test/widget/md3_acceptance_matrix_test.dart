@@ -199,10 +199,11 @@ void main() {
         find.byType(NavigationBar),
       );
       expect(bar.size.height, greaterThanOrEqualTo(48.0));
-      // 每个目的地宽度均分 4 tab，≥ 48dp
+      // 每个目的地宽度均分，≥ 48dp
+      //（[UI_SYNC_REFACTOR S6] 首页页签插入后 5 tab，与参考版页签数一致）
       final destinations = find.byType(NavigationDestination);
       final count = destinations.evaluate().length;
-      expect(count, inInclusiveRange(2, 4));
+      expect(count, inInclusiveRange(2, 5));
       for (var i = 0; i < count; i++) {
         final box = tester.renderObject<RenderBox>(destinations.at(i));
         expect(box.size.width, greaterThanOrEqualTo(48.0),

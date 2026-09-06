@@ -542,8 +542,11 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
   }
 
   /// 默认首页值 → 展示文案（对齐原版 default_home_page 数组）
+  /// [UI_SYNC_REFACTOR S6 | 2026-09-08] 新增首页页签后补 'home' 选项 — Qoder
   String _homePageLabel(String value) {
     switch (value) {
+      case 'home':
+        return '首页';
       case 'explore':
         return '发现';
       case 'rss':
@@ -561,6 +564,7 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     MainPrefsNotifier notifier,
   ) async {
     const options = [
+      ('home', '首页'),
       ('bookshelf', '书架'),
       ('explore', '发现'),
       ('rss', '订阅'),
