@@ -789,10 +789,21 @@ class _TocScreenState extends ConsumerState<TocScreen>
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // [UI_SYNC_REFACTOR S5 修 | 2026-09-08] 字数改胶囊 chip（对齐参考版
+          // 「2553字」形态：surfaceContainerHighest 圆角底）— Qoder
           if (showWordCount) ...[
-            Text(
-              '$wordCount 字',
-              style: TextStyle(fontSize: 12, color: cs.onSurfaceVariant),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: cs.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                '$wordCount 字',
+                style: TextStyle(
+                    fontSize: 11, color: cs.onSurfaceVariant),
+              ),
             ),
             const SizedBox(width: 8),
           ],

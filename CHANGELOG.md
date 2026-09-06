@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.211] - 2026-09-08
+
+### Changed
+- [UI] 搜索历史改整行卡形态（对齐参考版：行左关键词、行右 × 单删、点击行搜索，替代原流式 chip）
+- [UI] 目录页章节字数改胶囊 chip（对齐参考版「2553字」形态）
+
+### Test
+- flutter analyze 无问题；flutter test 1348 全过
+- 版本 2.0.211+212
+
+- Contributor: Qoder UI
+
 ## [2.0.210] - 2026-09-08
 
 ### Changed

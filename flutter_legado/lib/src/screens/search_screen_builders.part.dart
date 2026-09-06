@@ -826,24 +826,69 @@ extension _SearchBuilders on _SearchScreenState {
                             ),
                           ),
                         )
-                      : Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
+                      : Column(
+                          // [UI_SYNC_REFACTOR S5 修 | 2026-09-08] 历史形态对齐
+                          // 参考版整行卡（行左关键词、行右 × 单删，点击行搜索），
+                          // 替换原流式 chip；原长按删除语义由 × 承担 — Qoder
                           children: suggestions.map((keyword) {
-                            return GestureDetector(
-                              onLongPress: () async {
-                                await ref
-                                    .read(searchNotifierProvider.notifier)
-                                    .deleteHistoryItem(keyword);
-                                if (!context.mounted) return;
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  SnackBar(content: Text('已删除「$keyword」')),
-                                );
-                              },
-                              child: ActionChip(
-                                label: Text(keyword),
-                                onPressed: () => _onHistoryChipTapped(
-                                    context, keyword, shelfBooks),
+                            final theme = Theme.of(context);
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 10),
+                              child: Material(
+                                color: theme.colorScheme.surfaceContainerHigh,
+                                borderRadius: BorderRadius.circular(14),
+                                child: InkWell(
+                                  borderRadius: BorderRadius.circular(14),
+                                  onTap: () => _onHistoryChipTapped(
+                                      context, keyword, shelfBooks),
+                                  child: Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 16,
+                                      vertical: 14,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Text(
+                                            keyword,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: theme.textTheme.bodyMedium,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        InkWell(
+                                          borderRadius:
+                                              BorderRadius.circular(999),
+                                          onTap: () async {
+                                            await ref
+                                                .read(searchNotifierProvider
+                                                    .notifier)
+                                                .deleteHistoryItem(keyword);
+                                            if (!context.mounted) return;
+                                            ScaffoldMessenger.of(context)
+                                                .showSnackBar(
+                                              SnackBar(
+                                                  content:
+                                                      Text('已删除「$keyword」')),
+                                            );
+                                          },
+                                          child: Padding(
+                                            padding: const EdgeInsets.all(6),
+                                            child: Icon(
+                                              Symbols.close_rounded,
+                                              size: 18,
+                                              color: theme
+                                                  .colorScheme
+                                                  .onSurfaceVariant,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
                               ),
                             );
                           }).toList(),
