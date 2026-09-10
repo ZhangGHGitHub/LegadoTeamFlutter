@@ -547,7 +547,7 @@ extension _SourceBuilders on _SourceScreenState {
             final source = row.source!;
             return state.batchMode
                 ? _buildBatchSourceItem(context, source, state)
-                : _buildSourceItem(context, source);
+                : _buildSourceItem(context, source, state);
           },
         ),
       );
@@ -563,7 +563,7 @@ extension _SourceBuilders on _SourceScreenState {
           final source = sources[index];
           return state.batchMode
               ? _buildBatchSourceItem(context, source, state)
-              : _buildSourceItem(context, source);
+              : _buildSourceItem(context, source, state);
         },
       ),
     );
@@ -587,9 +587,14 @@ extension _SourceBuilders on _SourceScreenState {
     );
   }
 
-  /// 书源列表项（对标原版 item_book_source.xml：源名 16sp + 发现绿点 +
-  /// Switch + 编辑图标 + 更多图标，无头像/分组副标题）
-  Widget _buildSourceItem(BuildContext context, BookSource source) {
+  /// 书源列表项（对标原版 item_book_source.xml：勾选框+源名 16sp + Switch +
+  /// 编辑图标 + 更多图标（含发现状态角标），无头像/分组副标题）
+  ///
+  /// [C1 形态对齐 | Qoder UI] 行内复选框常显（对齐原版 cb_book_source：复选框与
+  /// 源名同排、始终可见，勾选即多选；未在批量模式时自动进入），并移除我方自创的
+  /// 「ON/OFF」文字（原版无此控件，启用态由开关呈现）。
+  Widget _buildSourceItem(
+      BuildContext context, BookSource source, SourceState state) {
     final colorScheme = Theme.of(context).colorScheme;
     final hasExplore =
         source.exploreUrl != null && source.exploreUrl!.isNotEmpty;
@@ -616,9 +621,20 @@ extension _SourceBuilders on _SourceScreenState {
         // 对齐原版 item_book_source 行高（137px ≈ 68.5dp）：
         // padding 14dp×2 + 内容（开关/图标按钮 ~40dp），
         // 行高由内容自然撑起
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        padding: const EdgeInsets.only(left: 4, right: 16, top: 14, bottom: 14),
         child: Row(
           children: [
+            // 行内复选框（对齐原版 cb_book_source，勾选态与批量栏计数联动）
+            Checkbox(
+              value: state.isSelected(source.bookSourceUrl),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+              onChanged: (_) {
+                final notifier = ref.read(sourceNotifierProvider.notifier);
+                if (!state.batchMode) notifier.enterBatchMode();
+                notifier.toggleSelection(source.bookSourceUrl);
+              },
+            ),
             // 源名（对标原版 cb_book_source 文本 16sp）+ 分组标签
             //（对齐原版行内分组标注，如「懒人听书app本地源（同人） (同人书源)」）
             // + 校验消息副标题
@@ -670,30 +686,16 @@ extension _SourceBuilders on _SourceScreenState {
                 ],
               ),
             ),
-            // 启用开关（对标 swt_enabled + 原版行内 ON 文字）
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  source.enabled ? 'ON' : 'OFF',
-                  style: TextStyle(
-                    fontSize: 12,
-                    // [UI_MD3_ALIGNMENT_PLAN.md Batch B B3] 状态语义走 tonal
-                    color: source.enabled
-                        ? colorScheme.primary
-                        : colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                Switch(
-                  value: source.enabled,
-                  // 压缩触控/视觉高度（对齐原版 ThemeSwitch 行高 ~36.5dp，
-                  // 避免 Material 默认 48dp 把整行撑高）
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  onChanged: (_) => ref
-                      .read(sourceNotifierProvider.notifier)
-                      .toggleSource(source.bookSourceUrl),
-                ),
-              ],
+            // [C1 形态对齐 | Qoder UI] 启用开关（对标原版 swt_enabled）；
+            // 原版无行内 ON/OFF 文字（我方自创项，已移除，启用态由开关呈现）
+            Switch(
+              value: source.enabled,
+              // 压缩触控/视觉高度（对齐原版 ThemeSwitch 行高 ~36.5dp，
+              // 避免 Material 默认 48dp 把整行撑高）
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onChanged: (_) => ref
+                  .read(sourceNotifierProvider.notifier)
+                  .toggleSource(source.bookSourceUrl),
             ),
             // 编辑图标（对标 iv_edit）
             IconButton(
@@ -823,30 +825,16 @@ extension _SourceBuilders on _SourceScreenState {
                 ],
               ),
             ),
-            // 启用开关（对标 swt_enabled + 原版行内 ON 文字）
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  source.enabled ? 'ON' : 'OFF',
-                  style: TextStyle(
-                    fontSize: 12,
-                    // [UI_MD3_ALIGNMENT_PLAN.md Batch B B3] 状态语义走 tonal
-                    color: source.enabled
-                        ? colorScheme.primary
-                        : colorScheme.onSurfaceVariant,
-                  ),
-                ),
-                Switch(
-                  value: source.enabled,
-                  // 压缩触控/视觉高度（对齐原版 ThemeSwitch 行高 ~36.5dp，
-                  // 避免 Material 默认 48dp 把整行撑高）
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  onChanged: (_) => ref
-                      .read(sourceNotifierProvider.notifier)
-                      .toggleSource(source.bookSourceUrl),
-                ),
-              ],
+            // [C1 形态对齐 | Qoder UI] 启用开关（对标原版 swt_enabled）；
+            // 原版无行内 ON/OFF 文字（我方自创项，已移除，启用态由开关呈现）
+            Switch(
+              value: source.enabled,
+              // 压缩触控/视觉高度（对齐原版 ThemeSwitch 行高 ~36.5dp，
+              // 避免 Material 默认 48dp 把整行撑高）
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onChanged: (_) => ref
+                  .read(sourceNotifierProvider.notifier)
+                  .toggleSource(source.bookSourceUrl),
             ),
             // 编辑图标（对标 iv_edit）
             IconButton(
