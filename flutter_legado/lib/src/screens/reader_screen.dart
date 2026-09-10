@@ -59,28 +59,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   /// （收起后朗读继续，再次点击底栏朗读按钮重新展开） — Qoder
   bool _aloudBarHidden = false;
 
-  /// 书源显示名（用户反馈④：阅读页头部展示书源名徽标）
-  String _sourceName = '';
-  String? _sourceResolvedFor;
-
-  /// 解析当前书 origin 对应的书源显示名（异步一次；失败静默）
-  Future<void> _resolveSourceName(String origin, String bookUrl) async {
-    if (_sourceResolvedFor == bookUrl) return;
-    _sourceResolvedFor = bookUrl;
-    try {
-      final sources = await ref.read(bookApiProvider).getBookSources();
-      final norm = origin.trim().replaceAll(RegExp(r'/+$'), '');
-      for (final src in sources) {
-        if (src.bookSourceUrl == norm || src.bookSourceUrl == origin) {
-          if (!mounted) return;
-          setState(() => _sourceName = src.bookSourceName);
-          return;
-        }
-      }
-    } catch (_) {
-      // 书源查询失败不阻断阅读
-    }
-  }
 
   /// 段评摘要（P2-9 ruleReview；禁止接本地 CommentService）
   Map<int, int> _reviewCounts = {};
@@ -392,16 +370,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(readerNotifierProvider);
-    // 书源名解析触发（每本书一次）
-    final bookForSource = state.currentBook;
-    if (bookForSource != null && _sourceResolvedFor != bookForSource.bookUrl) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          unawaited(_resolveSourceName(
-              bookForSource.origin, bookForSource.bookUrl));
-        }
-      });
-    }
     final notifier = ref.read(readerNotifierProvider.notifier);
     // 朗读控制条显隐依赖全局朗读状态（朗读进行中时替代底部功能栏）
     final audio = ref.watch(audioNotifierProvider);
@@ -475,13 +443,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 // 阅读页头部补章节链接与书源名（书名在菜单顶栏）— Qoder
                 // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 书源名优先取 Book.originName
                 //（同步可靠），解析结果作兜底 — Qoder
-                sourceName: (state.currentBook?.originName ?? '').isNotEmpty
-                    ? state.currentBook!.originName
-                    : _sourceName,
-                chapterUrl: state.chapters.isNotEmpty &&
-                        state.currentChapterIndex < state.chapters.length
-                    ? state.chapters[state.currentChapterIndex].url
-                    : '',
                 // [UI-fix v2.0.4 | 2026-08-08] 共享配置源：面板/界面 Sheet 的
                 // 修改统一推送 readerAdvConfigProvider，watch 触发重建并同步
                 // _advConfig（Stack 子级按序求值，后续 ReaderStatusStrip 等

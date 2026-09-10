@@ -62,9 +62,6 @@ class ReaderPageView extends ConsumerStatefulWidget {
   /// 长按选择文本开关（对标原版 selectText，关闭后长按不弹选区面板）
   final bool selectText;
 
-  /// 书源显示名与当前章链接（用户反馈④：阅读页头部展示）
-  final String sourceName;
-  final String chapterUrl;
 
   /// 滚动翻页无动画（对标原版 noAnimScrollPage：程序化翻页去除动画）
   final bool noAnimScroll;
@@ -114,8 +111,6 @@ class ReaderPageView extends ConsumerStatefulWidget {
     this.pageChrome = const ReaderPageChromeConfig(),
     this.readBodyToLh = true,
     this.selectText = true,
-    this.sourceName = '',
-    this.chapterUrl = '',
     this.noAnimScroll = false,
     this.textBold = 0,
     this.customTextColor = 0,
@@ -970,12 +965,18 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                 ],
         );
       },
+      // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 双向轮播（对齐原版
+      // SlidePageDelegate：前进时新页自右进+旧页同时左移，后退时旧页右移+
+      // 上页同时自左进）——此前只动进入侧、另一侧静止，章节边界观感与
+      // 页内滑动不一致（用户反馈：几乎所有翻页动画都有问题）— Qoder
       transitionBuilder: (child, animation) {
         final isEntering = child.key == ValueKey<int>(chapterIndex);
-        final bool slides = forward ? isEntering : !isEntering;
-        if (!slides) return child;
-        final begin = forward ? const Offset(1.0, 0.0) : Offset.zero;
-        final end = forward ? Offset.zero : const Offset(1.0, 0.0);
+        final begin = forward
+            ? (isEntering ? const Offset(1.0, 0.0) : Offset.zero)
+            : (isEntering ? const Offset(-1.0, 0.0) : Offset.zero);
+        final end = forward
+            ? (isEntering ? Offset.zero : const Offset(-1.0, 0.0))
+            : (isEntering ? Offset.zero : const Offset(1.0, 0.0));
         return SlideTransition(
           position: Tween<Offset>(begin: begin, end: end).animate(animation),
           child: child,
@@ -1270,8 +1271,6 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       pageIndex: safeIndex,
       totalPages: _paginatedPages.length,
       chapterTitle: _paginatedChapterTitle ?? state.currentChapter?.title,
-      sourceName: widget.sourceName,
-      chapterUrl: widget.chapterUrl,
       pageChrome: widget.pageChrome,
       tipContext: _buildTipContext(
         state,

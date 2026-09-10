@@ -162,7 +162,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 顶栏置屏幕顶部（用户
             // 反馈①：此前误置于底部面板首行；对齐原版布局——← 居左，
             // 换源/刷新/缓存/更多 居右）— Qoder
-            _buildTopBar(context, barColor, book, notifier),
+            _buildTopBar(context, barColor, book, chapter, notifier),
             const Spacer(),
             useSurfaceBlur
                 ? ClipRRect(
@@ -285,102 +285,171 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     BuildContext context,
     Color barColor,
     Book? book,
+    BookChapter? chapter,
     ReaderNotifier notifier,
   ) {
+    // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 用户反馈②：头部信息（章节名/
+    // 章节链接/书源名）应在顶栏菜单中而非正文——工具行下方补信息块
+    //（章名+书源徽标 / 章节链接），对齐参考版顶栏布局 — Qoder
+    final sourceName = book?.originName ?? '';
+    final chapterUrl = chapter?.url ?? '';
     return Material(
       color: barColor,
       child: SafeArea(
         bottom: false,
-        child: SizedBox(
-          height: 48,
-          child: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Symbols.arrow_back_rounded),
-                tooltip: '退出阅读',
-                onPressed: widget.onBack,
-              ),
-              // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 顶栏补书名
-              //（用户反馈④：缺少章节名称/链接/书源名，书名行内显示）— Qoder
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4),
-                  child: Text(
-                    book?.name ?? '',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.titleMedium,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              height: 48,
+              child: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Symbols.arrow_back_rounded),
+                    tooltip: '退出阅读',
+                    onPressed: widget.onBack,
                   ),
-                ),
-              ),
-              IconButton(
-                icon: const Icon(Symbols.swap_horiz_rounded),
-                tooltip: '换源',
-                onPressed: book == null
-                    ? null
-                    : () => Navigator.pushNamed(
-                        context,
-                        AppRoutes.changeSource,
-                        arguments: book,
+                  Expanded(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        book?.name ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
                       ),
-              ),
-              IconButton(
-                icon: const Icon(Symbols.refresh_rounded),
-                tooltip: '刷新正文',
-                onPressed: () => unawaited(notifier.reloadChapterContent()),
-              ),
-              IconButton(
-                icon: const Icon(Symbols.download_rounded),
-                tooltip: '缓存当前章',
-                onPressed: book == null
-                    ? null
-                    : () async {
-                        final idx = ref
-                            .read(readerNotifierProvider)
-                            .currentChapterIndex;
-                        try {
-                          await ref
-                              .read(bookApiProvider)
-                              .cacheDownloadStart(book.bookUrl, idx, idx);
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('当前章已加入缓存队列')),
-                          );
-                        } catch (e) {
-                          if (!context.mounted) return;
-                          ScaffoldMessenger.of(
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Symbols.swap_horiz_rounded),
+                    tooltip: '换源',
+                    onPressed: book == null
+                        ? null
+                        : () => Navigator.pushNamed(
                             context,
-                          ).showSnackBar(SnackBar(content: Text('缓存失败：$e')));
-                        }
-                      },
-              ),
-              PopupMenuButton<String>(
-                tooltip: '更多',
-                position: PopupMenuPosition.under,
-                onSelected: (value) {
-                  switch (value) {
-                    case 'addBookmark':
-                      widget.onAddBookmark();
-                    case 'highlightRule':
-                      Navigator.pushNamed(context, AppRoutes.highlightRules);
-                    case 'replace':
-                      widget.onOpenReplaceRules();
-                    case 'settings':
-                      widget.onOpenSettings();
-                    case 'toc':
-                      widget.onOpenCatalog();
-                  }
-                },
-                itemBuilder: (_) => const [
-                  PopupMenuItem(value: 'addBookmark', child: Text('添加书签')),
-                  PopupMenuItem(value: 'highlightRule', child: Text('高亮规则')),
-                  PopupMenuItem(value: 'replace', child: Text('替换规则')),
-                  PopupMenuItem(value: 'toc', child: Text('查看目录')),
-                  PopupMenuItem(value: 'settings', child: Text('界面设置')),
+                            AppRoutes.changeSource,
+                            arguments: book,
+                          ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Symbols.refresh_rounded),
+                    tooltip: '刷新正文',
+                    onPressed: () => unawaited(notifier.reloadChapterContent()),
+                  ),
+                  IconButton(
+                    icon: const Icon(Symbols.download_rounded),
+                    tooltip: '缓存当前章',
+                    onPressed: book == null
+                        ? null
+                        : () async {
+                            final idx = ref
+                                .read(readerNotifierProvider)
+                                .currentChapterIndex;
+                            try {
+                              await ref
+                                  .read(bookApiProvider)
+                                  .cacheDownloadStart(book.bookUrl, idx, idx);
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(content: Text('当前章已加入缓存队列')),
+                              );
+                            } catch (e) {
+                              if (!context.mounted) return;
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('缓存失败：$e')),
+                              );
+                            }
+                          },
+                  ),
+                  PopupMenuButton<String>(
+                    tooltip: '更多',
+                    position: PopupMenuPosition.under,
+                    onSelected: (value) {
+                      switch (value) {
+                        case 'addBookmark':
+                          widget.onAddBookmark();
+                        case 'highlightRule':
+                          Navigator.pushNamed(
+                            context,
+                            AppRoutes.highlightRules,
+                          );
+                        case 'replace':
+                          widget.onOpenReplaceRules();
+                        case 'settings':
+                          widget.onOpenSettings();
+                        case 'toc':
+                          widget.onOpenCatalog();
+                      }
+                    },
+                    itemBuilder: (_) => const [
+                      PopupMenuItem(value: 'addBookmark', child: Text('添加书签')),
+                      PopupMenuItem(
+                        value: 'highlightRule',
+                        child: Text('高亮规则'),
+                      ),
+                      PopupMenuItem(value: 'replace', child: Text('替换规则')),
+                      PopupMenuItem(value: 'toc', child: Text('查看目录')),
+                      PopupMenuItem(value: 'settings', child: Text('界面设置')),
+                    ],
+                  ),
                 ],
               ),
-            ],
-          ),
+            ),
+            if (chapter != null || sourceName.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            chapter?.title ?? '',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.titleSmall,
+                          ),
+                        ),
+                        if (sourceName.isNotEmpty)
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary,
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              sourceName,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.onPrimary,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    if (chapterUrl.isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          chapterUrl,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+          ],
         ),
       ),
     );

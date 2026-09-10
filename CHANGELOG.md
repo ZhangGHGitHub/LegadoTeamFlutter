@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.220] - 2026-09-08
+
+### Fixed
+- [UI] 翻页动画语义对齐原版源码（用户反馈①）：核对上游 `legado-upstream` 的 `SlidePageDelegate`（滑动=双向轮播：前进新页自右进+旧页同时左移；后退旧页右移+上页自左进）——我方滑动/仿真模式的章节过渡此前只动进入侧、另一侧静止，章节边界观感与页内滑动不一致；现改**双向轮播**，章节边界与页内翻页动画连续一致。覆盖模式维持原版 CoverPageDelegate 语义（新页右进覆盖旧页/后退旧页右移露出新页）
+
+### Changed
+- [UI] 头部信息移入**顶栏菜单**（用户反馈②）：章节名+书源徽标+章节链接现显示于菜单顶部工具行下方（章名+徽标同排、链接第二行，书源名取 Book.originName）；**正文页移除**头部信息块（含此前章首页大标题附加与章中页紧凑头部），恢复原生正文排版
+
+### Test
+- flutter analyze 无问题；flutter test 1349 全过；5556 实机确认顶栏菜单三行信息块与正文干净回退；版本 2.0.220+221
+
+- Contributor: Qoder UI
+
 ## [2.0.219] - 2026-09-08
 
 ### Fixed
