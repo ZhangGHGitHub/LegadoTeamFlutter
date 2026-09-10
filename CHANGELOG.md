@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.215] - 2026-09-08
+
+### Changed
+- [UI] 阅读菜单底部面板按参考版重排（用户截图对照）：行序=标题行→亮度条→章节滑条（两侧箭头，替换上/下一章文字钮）→**可横滑五项目标行**
+  - 第 1 页：章节梗概 / AI 改写 / 全文搜索 / 自动翻页 / 目录（对齐参考版）
+  - 第 2 页：朗读 / 界面 / 替换 / 更多（保留功能入口）
+  - 章节梗概与 AI 改写为已授权 AI 占位按钮（占位弹层说明服务后接通）
+  - 移除旧的「图标行 + 全文搜索 pill + 底部文字行」三块冗余结构
+
+### Test
+- flutter analyze 无问题；flutter test 1349 全过；5556 实机 uiautomator 转储确认新面板文本项；版本 2.0.215+216
+
+- Contributor: Qoder UI
+
 ## [2.0.214] - 2026-09-08
 
 ### Changed

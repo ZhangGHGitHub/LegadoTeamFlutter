@@ -69,6 +69,9 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     value: widget.visible ? 1 : 0,
   );
 
+  /// 五项行动作行分页控制器（对齐参考版可横滑两页）
+  final PageController _actionPageController = PageController();
+
   // 亮度（自旧 ReaderBottomBar 迁移）
   bool _brightnessSupported = false;
   bool _autoBrightness = false;
@@ -107,6 +110,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
   @override
   void dispose() {
     _menuController.dispose();
+    _actionPageController.dispose();
     super.dispose();
   }
 
@@ -211,11 +215,13 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _buildTitleRow(context, book, chapter, foreground),
-              _buildIconRow(context, foreground, autoPageActive),
-              _buildSearchRow(context, foreground),
+              // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 面板行序对齐参考版：
+              // 亮度条 → 章节滑条（两侧箭头）→ 可横滑五项行
+              //（章节梗概/AI改写/全文搜索/自动翻页/目录 ‖ 朗读/界面/替换/更多）
+              // 替换原「图标行+全文搜索pill+底部文字行」三块 — Qoder
               if (!verticalBrightness) _buildBrightnessRow(context, foreground),
               _buildProgressRow(context, notifier, state, foreground),
-              _buildToolRow(context, foreground),
+              _buildActionPages(context, foreground, autoPageActive),
             ],
           ),
         ),
@@ -338,78 +344,102 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     );
   }
 
-  // ── 分区 2：FloatingIconRow（高频 8 位）──
-  Widget _buildIconRow(BuildContext context, Color? foreground,
+  // ── 分区：可横滑五项行动作行（对齐参考版：图标+标签，两页）──
+  //
+  // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 对齐参考版主菜单：
+  // 第1页 章节梗概/AI改写/全文搜索/自动翻页/目录；
+  // 第2页 朗读/界面/替换/更多（参考版第2页为 朗读/设置，我方补替换与
+  // 更多以保留功能入口）。章节梗概/AI改写为已授权 AI 占位按钮 — Qoder
+  Widget _buildActionPages(BuildContext context, Color? foreground,
       bool autoPageActive) {
     final cs = Theme.of(context).colorScheme;
-    IconData autoIcon() =>
-        autoPageActive ? Icons.pause : Icons.auto_stories_outlined;
-    // [UI_SYNC_REFACTOR S2 修正] 图标 8→5（对齐参考 iconItemsPerRow=5，
-    // 修 RIGHT OVERFLOWED BY 40 PIXELS）
-    final items = <(IconData, String, VoidCallback)>[
-      (Symbols.auto_stories_rounded, '目录', widget.onOpenCatalog),
-      (Symbols.headphones_rounded, '朗读', widget.onReadAloud),
-      (autoIcon(), autoPageActive ? '停止自动翻页' : '自动翻页',
-          widget.onToggleAutoPage),
-      (Symbols.find_replace_rounded, '替换', widget.onOpenReplaceRules),
-      (Symbols.settings_rounded, '界面', widget.onOpenSettings),
-    ];
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          for (final (icon, tip, onTap) in items)
-            IconButton(
-              icon: Icon(icon,
-                  size: 22,
-                  color: autoPageActive && tip == '自动翻页'
-                      ? cs.primary
-                      : foreground),
-              tooltip: tip,
-              onPressed: onTap,
+    Widget item(IconData icon, String label, VoidCallback onTap,
+        {bool active = false}) {
+      final color = active ? cs.primary : (foreground ?? cs.onSurfaceVariant);
+      return Expanded(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 24, color: color),
+                const SizedBox(height: 6),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelMedium
+                      ?.copyWith(color: color),
+                ),
+              ],
             ),
+          ),
+        ),
+      );
+    }
+
+    final page1 = <Widget>[
+      item(Symbols.auto_awesome_rounded, '章节梗概',
+          () => _showAiPlaceholder(context, '章节梗概')),
+      item(Symbols.edit_note_rounded, 'AI 改写',
+          () => _showAiPlaceholder(context, 'AI 改写')),
+      item(Symbols.search_rounded, '全文搜索', widget.onOpenContentSearch),
+      item(
+        autoPageActive ? Icons.pause : Icons.auto_stories_outlined,
+        autoPageActive ? '停止翻页' : '自动翻页',
+        widget.onToggleAutoPage,
+        active: autoPageActive,
+      ),
+      item(Symbols.format_list_bulleted_rounded, '目录', widget.onOpenCatalog),
+    ];
+    final page2 = <Widget>[
+      item(Symbols.headphones_rounded, '朗读', widget.onReadAloud),
+      item(Symbols.style_rounded, '界面', widget.onOpenSettings),
+      item(Symbols.find_replace_rounded, '替换', widget.onOpenReplaceRules),
+      item(Symbols.tune_rounded, '更多', widget.onOpenAdvancedConfig),
+    ];
+    return SizedBox(
+      height: 76,
+      child: PageView(
+        controller: _actionPageController,
+        children: [
+          Row(children: page1),
+          Row(children: page2),
         ],
       ),
     );
   }
 
-  // ── 分区 3：搜索 pill 行 ──
-  Widget _buildSearchRow(BuildContext context, Color? foreground) {
-    final cs = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-      child: Row(
-        children: [
-          // [UI_SYNC_REFACTOR S2] 搜索 pill（40dp r16，对齐 SearchPillSurface）
-          Material(
-            color: cs.surfaceContainerHighest.withValues(alpha: 0.6),
-            borderRadius: BorderRadius.circular(16),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(16),
-              onTap: widget.onOpenContentSearch,
-              child: Container(
-                height: 40,
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.search,
-                        size: 16, color: cs.onSurfaceVariant),
-                    const SizedBox(width: 6),
-                    Text(
-                      '全文搜索',
-                      style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                            color: cs.onSurfaceVariant,
-                          ),
+  /// AI 占位弹层（章节梗概/AI 改写）：按钮占位先行（AGENTS 授权口径），
+  /// 服务后端独立立项；形态对齐参考版弹层（把手 + 标题 + 状态说明）
+  void _showAiPlaceholder(BuildContext context, String title) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: Theme.of(ctx).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              Text(
+                'AI 服务未配置：按钮占位已就绪，服务后端独立立项后接通。',
+                style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
                     ),
-                  ],
-                ),
               ),
-            ),
+            ],
           ),
-          const Spacer(),
-        ],
+        ),
       ),
     );
   }
@@ -464,11 +494,13 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(
         children: [
-          TextButton(
+          // [UI_SYNC_REFACTOR S6 修] 两侧改箭头图标（对齐参考版滑条形）— Qoder
+          IconButton(
+            icon: const Icon(Icons.chevron_left_rounded),
+            tooltip: AppStrings.previousChapter,
             onPressed: state.hasPreviousChapter
                 ? () => notifier.prevChapter()
                 : null,
-            child: Text(AppStrings.previousChapter),
           ),
           Expanded(
             child: usePageSeek
@@ -494,42 +526,15 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                     onChanged: (value) => notifier.goToChapter(value.toInt()),
                   ),
           ),
-          TextButton(
+          IconButton(
+            icon: const Icon(Icons.chevron_right_rounded),
+            tooltip: AppStrings.nextChapter,
             onPressed:
                 state.hasNextChapter ? () => notifier.nextChapter() : null,
-            child: Text(AppStrings.nextChapter),
           ),
         ],
       ),
     );
   }
 
-  // ── 分区 6：工具行 ──
-  Widget _buildToolRow(BuildContext context, Color? foreground) {
-    Widget action(IconData icon, String label, VoidCallback onTap) {
-      return Expanded(
-        child: TextButton.icon(
-          onPressed: onTap,
-          icon: Icon(icon, size: 20),
-          label: Text(
-            label,
-            style: Theme.of(context).textTheme.labelMedium,
-          ),
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
-      child: Row(
-        children: [
-          action(Symbols.format_list_bulleted_rounded, '目录',
-              widget.onOpenCatalog),
-          action(Symbols.headphones_rounded, '朗读', widget.onReadAloud),
-          action(Symbols.style_rounded, '界面', widget.onOpenSettings),
-          action(Symbols.tune_rounded, '更多', widget.onOpenAdvancedConfig),
-        ],
-      ),
-    );
-  }
 }
