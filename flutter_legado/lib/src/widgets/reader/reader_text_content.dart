@@ -209,6 +209,69 @@ class ReaderTypographicPage extends StatelessWidget {
                         ],
                       ),
                     ),
+                  // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 用户反馈②：头部信息
+                  // 补齐——此前仅章首页有（大标题+徽标+链接），章中间无任何
+                  // 头部信息；非首页补紧凑两行头部（章名+书源徽标 / 章节链接）
+                  // — Qoder
+                  if (!showTitle && (chapterTitle != null || sourceName.isNotEmpty))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  chapterTitle ?? '',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    fontSize: fontSize * 0.85,
+                                    fontWeight: FontWeight.w600,
+                                    color: textColor.withValues(alpha: 0.85),
+                                  ),
+                                ),
+                              ),
+                              if (sourceName.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color:
+                                        Theme.of(context).colorScheme.primary,
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    sourceName,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onPrimary,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                          if (chapterUrl.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 2),
+                              child: Text(
+                                chapterUrl,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  color: textColor.withValues(alpha: 0.5),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   Expanded(
                     child: ClipRect(
                       // 防分页测量与渲染亚像素差导致的行溢出条纹

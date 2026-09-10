@@ -473,7 +473,11 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 key: _pageViewKey,
                 // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 用户反馈④：
                 // 阅读页头部补章节链接与书源名（书名在菜单顶栏）— Qoder
-                sourceName: _sourceName,
+                // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 书源名优先取 Book.originName
+                //（同步可靠），解析结果作兜底 — Qoder
+                sourceName: (state.currentBook?.originName ?? '').isNotEmpty
+                    ? state.currentBook!.originName
+                    : _sourceName,
                 chapterUrl: state.chapters.isNotEmpty &&
                         state.currentChapterIndex < state.chapters.length
                     ? state.chapters[state.currentChapterIndex].url

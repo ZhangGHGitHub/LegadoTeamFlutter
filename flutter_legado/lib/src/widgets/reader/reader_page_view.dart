@@ -952,14 +952,22 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
           : const Duration(milliseconds: 300),
       switchInCurve: Curves.easeInOut,
       switchOutCurve: Curves.easeInOut,
-      // 层叠策略：前进时新章在上滑入，后退时旧章在上滑出
+      // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 方向感知层叠（用户反馈①：
+      // 返回动画异常）——此前写死「新页在上」：后退时旧页滑出动画被上层
+      // 静止新页遮挡，观感为瞬间切换；后退改旧页在上（抽离效果可见）— Qoder
       layoutBuilder: (currentChild, previousChildren) {
         return Stack(
-          children: [
-            ...previousChildren,
-            // ignore: use_null_aware_elements
-            if (currentChild != null) currentChild,
-          ],
+          children: forward
+              ? [
+                  ...previousChildren,
+                  // ignore: use_null_aware_elements
+                  if (currentChild != null) currentChild,
+                ]
+              : [
+                  // ignore: use_null_aware_elements
+                  if (currentChild != null) currentChild,
+                  ...previousChildren,
+                ],
         );
       },
       transitionBuilder: (child, animation) {
@@ -1148,13 +1156,21 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         switchInCurve: Curves.linear,
         switchOutCurve: Curves.linear,
         // 层叠策略：前进时新页在上（覆盖效果），后退时旧页在上（抽离效果）
+        // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 依 direction 实际翻转层叠，
+        // 此前注释声明了抽离效果但实现未翻转 → 后退动画被静止新页遮挡 — Qoder
         layoutBuilder: (currentChild, previousChildren) {
           return Stack(
-            children: [
-              ...previousChildren,
-              // ignore: use_null_aware_elements
-              if (currentChild != null) currentChild,
-            ],
+            children: forward
+                ? [
+                    ...previousChildren,
+                    // ignore: use_null_aware_elements
+                    if (currentChild != null) currentChild,
+                  ]
+                : [
+                    // ignore: use_null_aware_elements
+                    if (currentChild != null) currentChild,
+                    ...previousChildren,
+                  ],
           );
         },
         transitionBuilder: (child, animation) {
