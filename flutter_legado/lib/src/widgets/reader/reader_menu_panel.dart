@@ -446,10 +446,86 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                           ),
                         ),
                       ),
+                    // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 用户反馈②：
+                    // 顶栏信息下方补五个圆形浮动快捷钮
+                    //（搜索/目录/朗读/设置/换源）— Qoder
+                    const SizedBox(height: 10),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        _shortcutButton(
+                          context,
+                          Symbols.search_rounded,
+                          '搜索',
+                          widget.onOpenContentSearch,
+                        ),
+                        _shortcutButton(
+                          context,
+                          Symbols.format_list_bulleted_rounded,
+                          '目录',
+                          widget.onOpenCatalog,
+                        ),
+                        _shortcutButton(
+                          context,
+                          Symbols.headphones_rounded,
+                          '朗读',
+                          widget.onReadAloud,
+                        ),
+                        _shortcutButton(
+                          context,
+                          Symbols.settings_rounded,
+                          '设置',
+                          widget.onOpenSettings,
+                        ),
+                        _shortcutButton(
+                          context,
+                          Symbols.swap_horiz_rounded,
+                          '换源',
+                          book == null
+                              ? null
+                              : () => Navigator.pushNamed(
+                                  context,
+                                  AppRoutes.changeSource,
+                                  arguments: book,
+                                ),
+                        ),
+                      ],
+                    ),
                   ],
                 ),
               ),
           ],
+        ),
+      ),
+    );
+  }
+
+  /// 圆形浮动快捷钮（顶栏信息下方五项：搜索/目录/朗读/设置/换源）
+  Widget _shortcutButton(
+    BuildContext context,
+    IconData icon,
+    String tip,
+    VoidCallback? onTap,
+  ) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: cs.surfaceContainerHighest.withValues(alpha: 0.7),
+      shape: const CircleBorder(),
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        splashFactory: NoSplash.splashFactory,
+        highlightColor: Colors.transparent,
+        onTap: onTap,
+        child: SizedBox(
+          width: 44,
+          height: 44,
+          child: Icon(
+            icon,
+            size: 20,
+            color: onTap == null
+                ? cs.onSurface.withValues(alpha: 0.35)
+                : cs.onSurface,
+          ),
         ),
       ),
     );

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.221] - 2026-09-08
+
+### Changed
+- [UI] **翻页动画层整体重构**（用户反馈①"深度按原版与重构版源码重构每一个翻页动画"）：移植重构版翻页系统（`Projects/legado_flutter/lib/features/reader/turn/`，7 文件入仓 `lib/src/widgets/reader/turn/`）—— 页面快照缓存（RepaintBoundary.toImage 双缓冲 prev/cur/next）+ 拖拽/结算控制器（数学对齐 Jingshiro PageDelegate.startScroll）+ 覆绘制画笔（Slide/Cover/Simulation 三画笔逐行对应原版五委托 onDraw 变换：滑动双向轮播、覆盖裁剪推进+右侧 30px 阴影、仿真卷曲 cornerXY 数学）。滑动/仿真/覆盖/无动画四模式统一走 `ReaderTurnView`；滚动模式保留原纵向实现。旧动画层（PageView + AnimatedSwitcher 章节过渡 + 控制器重建补丁）整体移除
+- [UI] 顶栏信息下方新增**五个圆形浮动快捷钮**：搜索 / 目录 / 朗读 / 设置 / 换源（对齐参考版浮动图标，用户反馈②）
+
+### Test
+- flutter analyze 无问题；flutter test 1349 全过；5556 实机：滑动拖动/右缘点击/左缘后退/跨章边界均通过（9/9→下一章 1/9），仿真模式切换无异常、无 flutter 异常日志；版本 2.0.221+222
+
+- Contributor: Qoder UI
+
 ## [2.0.220] - 2026-09-08
 
 ### Fixed
