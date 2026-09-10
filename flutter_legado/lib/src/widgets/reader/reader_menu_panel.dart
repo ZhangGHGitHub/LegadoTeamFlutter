@@ -300,7 +300,19 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                 tooltip: '退出阅读',
                 onPressed: widget.onBack,
               ),
-              const Spacer(),
+              // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 顶栏补书名
+              //（用户反馈④：缺少章节名称/链接/书源名，书名行内显示）— Qoder
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Text(
+                    book?.name ?? '',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ),
               IconButton(
                 icon: const Icon(Symbols.swap_horiz_rounded),
                 tooltip: '换源',
@@ -564,14 +576,27 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       ),
       overlayShape: SliderComponentShape.noOverlay,
     );
+    // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 圆形章节钮去掉水波纹/按压高亮
+    //（用户反馈②：圆形箭头内阴影 → 即 IconButton 默认 ink/overlay）— Qoder
     Widget navButton(IconData icon, String tip, VoidCallback? onTap) {
+      final enabled = onTap != null;
+      final color = enabled
+          ? (foreground ?? cs.onSurface)
+          : (foreground ?? cs.onSurface).withValues(alpha: 0.35);
       return Material(
         color: cs.surfaceContainerHighest.withValues(alpha: 0.6),
         shape: const CircleBorder(),
-        child: IconButton(
-          icon: Icon(icon, size: 20, color: foreground ?? cs.onSurface),
-          tooltip: tip,
-          onPressed: onTap,
+        child: InkWell(
+          customBorder: const CircleBorder(),
+          splashFactory: NoSplash.splashFactory,
+          highlightColor: Colors.transparent,
+          hoverColor: Colors.transparent,
+          onTap: onTap,
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Icon(icon, size: 20, color: color),
+          ),
         ),
       );
     }

@@ -62,6 +62,10 @@ class ReaderPageView extends ConsumerStatefulWidget {
   /// 长按选择文本开关（对标原版 selectText，关闭后长按不弹选区面板）
   final bool selectText;
 
+  /// 书源显示名与当前章链接（用户反馈④：阅读页头部展示）
+  final String sourceName;
+  final String chapterUrl;
+
   /// 滚动翻页无动画（对标原版 noAnimScrollPage：程序化翻页去除动画）
   final bool noAnimScroll;
 
@@ -110,6 +114,8 @@ class ReaderPageView extends ConsumerStatefulWidget {
     this.pageChrome = const ReaderPageChromeConfig(),
     this.readBodyToLh = true,
     this.selectText = true,
+    this.sourceName = '',
+    this.chapterUrl = '',
     this.noAnimScroll = false,
     this.textBold = 0,
     this.customTextColor = 0,
@@ -126,7 +132,11 @@ class ReaderPageView extends ConsumerStatefulWidget {
 }
 
 class ReaderPageViewState extends ConsumerState<ReaderPageView> {
-  final PageController _pageController = PageController();
+  /// [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 切章时重建：旧控制器随出栈 Pager
+  /// 过渡后销毁；新控制器以目标页为 initialPage——修复「上一章切换动画」
+  /// 新章首帧先显示旧页码内容、postFrame 才跳目标页造成的可见闪跳 — Qoder
+  PageController _pageController = PageController();
+  PageController? _retiredPageController;
 
   /// [UI-fix v2.0.3 | 2026-08-08] 滚动模式控制器（支撑滚动模式下的
   //  程序化翻页：点击区域/自动翻页/无动画翻页均按屏滚动）— Qoder
@@ -139,6 +149,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
   /// 分页对应的章节索引（用于检测章节切换后重新分页）
   int _paginatedChapterIndex = -1;
+
+  /// 本次分页前的上一章索引（切章判定用；-1 表示首次分页）
+  int? _paginatedChapterIndexBefore;
 
   /// 分页对应的字号（设置变化时重新分页）
   double _paginatedFontSize = -1;
@@ -390,6 +403,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   @override
   void dispose() {
     _pageController.dispose();
+    _retiredPageController?.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -574,7 +588,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
     _paginatedPages = pages;
     _paginatedContent = content;
+    final prevChapterIndex = _paginatedChapterIndex;
     _paginatedChapterIndex = chapterIndex;
+    _paginatedChapterIndexBefore = prevChapterIndex;
     _paginatedChapterTitle = state.currentChapter?.title;
     _paginatedFontSize = fontSize;
     _paginatedLineHeight = lineHeight;
@@ -604,23 +620,39 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       _currentPageIndex = 0;
     }
 
+    // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 切章：重建控制器并以「已解析的
+    // 目标页」为 initialPage——新章首帧即正确页（含 prevChapter 哨兵末页），
+    // 消除「上一章切换」先显示旧页码再跳页的闪跳；旧控制器随出栈 Pager
+    // 过渡（300ms）后销毁 — Qoder
+    if (_paginatedChapterIndexBefore != null &&
+        _paginatedChapterIndexBefore != chapterIndex) {
+      final targetScreen =
+          _isDoublePage ? _currentPageIndex ~/ 2 : _currentPageIndex;
+      final retired = _pageController;
+      _pageController = PageController(initialPage: targetScreen);
+      _retiredPageController?.dispose();
+      _retiredPageController = retired;
+      Future.delayed(const Duration(milliseconds: 600), () {
+        if (_retiredPageController == retired) {
+          retired.dispose();
+          _retiredPageController = null;
+        }
+      });
+    }
+
     // 跨章节分页：注册本章页数到全局分页器
     // 注：本方法在 build 阶段调用，不可同步修改 provider（会触发
     // "modify a provider while the widget tree was building" 断言），延迟到下一帧
     Future(() => notifier.updateChapterPageCount(chapterIndex, pages.length));
 
-    if (_pageController.hasClients) {
-      // [UI_SYNC_REFACTOR S5 修] postFrameCallback 等 PageView 重建后再跳页，
-      // 避免 PageView 未更新 page count 时 jumpToPage 失效；跳转走
-      // _jumpLatestScreen：章节过渡期双 Pager 短暂挂载时跳最新挂载的
-      // （新章 Pager），并修双页模式屏索引换算（屏 = 内容页 / 2）— Qoder
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_pageController.hasClients) return;
-        _jumpLatestScreen(
-          _isDoublePage ? _currentPageIndex ~/ 2 : _currentPageIndex,
-        );
-      });
-    }
+    // [UI_SYNC_REFACTOR S6 修] 跳页恒调度（新控制器在 build 后才挂载，
+    // 调用点 hasClients 恒 false；回调内自带守卫）— Qoder
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_pageController.hasClients) return;
+      _jumpLatestScreen(
+        _isDoublePage ? _currentPageIndex ~/ 2 : _currentPageIndex,
+      );
+    });
   }
 
   @override
@@ -1222,6 +1254,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       pageIndex: safeIndex,
       totalPages: _paginatedPages.length,
       chapterTitle: _paginatedChapterTitle ?? state.currentChapter?.title,
+      sourceName: widget.sourceName,
+      chapterUrl: widget.chapterUrl,
       pageChrome: widget.pageChrome,
       tipContext: _buildTipContext(
         state,

@@ -20,6 +20,10 @@ class ReaderTypographicPage extends StatelessWidget {
   final int pageIndex;
   final int totalPages;
   final String? chapterTitle;
+
+  /// 书源显示名（首屏头部徽标）与当前章链接（首屏头部第二行）
+  final String sourceName;
+  final String chapterUrl;
   final double fontSize;
   final double lineHeight;
   final double paragraphSpacing;
@@ -61,6 +65,8 @@ class ReaderTypographicPage extends StatelessWidget {
     required this.pageIndex,
     required this.totalPages,
     required this.chapterTitle,
+    this.sourceName = '',
+    this.chapterUrl = '',
     required this.fontSize,
     required this.lineHeight,
     required this.paragraphSpacing,
@@ -144,19 +150,63 @@ class ReaderTypographicPage extends StatelessWidget {
                         top: chrome.titleTopSpacing.toDouble(),
                         bottom: chrome.titleBottomSpacing.toDouble(),
                       ),
-                      child: Align(
-                        alignment: titleAlign == TextAlign.center
-                            ? Alignment.center
-                            : Alignment.centerLeft,
-                        child: Text(
-                          chapterTitle!,
-                          textAlign: titleAlign,
-                          style: TextStyle(
-                            fontSize: fontSize + chrome.titleSize,
-                            fontWeight: FontWeight.bold,
-                            color: textColor,
+                      // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 首屏头部补齐
+                      //（用户反馈④）：章名 + 书源名徽标 + 章节链接行 — Qoder
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  chapterTitle!,
+                                  textAlign: titleAlign,
+                                  style: TextStyle(
+                                    fontSize: fontSize + chrome.titleSize,
+                                    fontWeight: FontWeight.bold,
+                                    color: textColor,
+                                  ),
+                                ),
+                              ),
+                              if (sourceName.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primary,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: Text(
+                                    sourceName,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .onPrimary,
+                                    ),
+                                  ),
+                                ),
+                            ],
                           ),
-                        ),
+                          if (chapterUrl.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Text(
+                                chapterUrl,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: textColor.withValues(alpha: 0.55),
+                                ),
+                              ),
+                            ),
+                        ],
                       ),
                     ),
                   Expanded(

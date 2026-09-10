@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.218] - 2026-09-08
+
+### Fixed
+- [UI] 上一章切换动画闪跳根治（用户反馈③）：根因=PageView 共享控制器跨章残留旧页码，新章首帧显示旧页码内容、postFrame 才跳目标页；改为**切章时重建控制器并以已解析目标页为 initialPage**（含 prevChapter 哨兵末页），新章首帧即正确页；旧控制器随出栈 Pager 过渡后销毁；顺带修复重建插入点早于页码解析导致的「上一章停在第 1 页」回归
+- [UI] 圆形章节钮去掉按压水波纹/高亮（用户反馈②：圆形箭头内阴影）
+
+### Changed
+- [UI] 阅读菜单顶栏补**书名**（用户反馈④）；阅读页首屏头部补**章节链接行**与**书源名徽标**（章名+徽标同排、链接第二行，对齐参照态）
+
+### Test
+- flutter analyze 无问题；flutter test 1349 全过；5556 实机：上一章直落末页 9/9、首屏头部三件套可见、圆形钮无墨迹；版本 2.0.218+219
+
+- Contributor: Qoder UI
+
 ## [2.0.217] - 2026-09-08
 
 ### Changed
