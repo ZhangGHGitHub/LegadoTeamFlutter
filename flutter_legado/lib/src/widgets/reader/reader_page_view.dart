@@ -11,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../l10n/app_strings.dart';
 import '../../models/models.dart';
+import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
@@ -128,6 +129,18 @@ class ReaderPageView extends ConsumerStatefulWidget {
 }
 
 class ReaderPageViewState extends ConsumerState<ReaderPageView> {
+
+  /// 相邻章预载预览页（章边界动画与承接显示；[UI_SYNC_REFACTOR S6 修]）
+  Widget? _nextChapterPreview;
+  Widget? _prevChapterPreview;
+  bool _preloadingNext = false;
+  bool _preloadingPrev = false;
+
+  /// 最近一次分页参数（预载复用同参，保证排版一致）
+  ParagraphConfig? _lastPaginatedConfig;
+  double _lastAvailableWidth = 0;
+  double _lastAvailableHeight = 0;
+  double? _lastFirstPageHeight;
 
   /// 重构版翻页视图状态（程序化动画翻页入口）
   final GlobalKey<ReaderTurnViewState> _turnViewKey =
@@ -539,6 +552,19 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       textScaler: textScaler,
     );
 
+    // 记录分页参数与章变更（相邻章预载复用同参 / 清旧预览）
+    final chapterChanged = _paginatedChapterIndex != chapterIndex;
+    _lastPaginatedConfig = config;
+    _lastAvailableWidth = availableWidth;
+    _lastAvailableHeight = availableHeight;
+    _lastFirstPageHeight = firstPageHeight;
+    if (chapterChanged) {
+      _nextChapterPreview = null;
+      _prevChapterPreview = null;
+      _preloadingNext = false;
+      _preloadingPrev = false;
+    }
+
     final engine = ParagraphLayoutEngine(config: config, context: context);
     // [UI-fix v2.0.4 | 2026-08-08] 首页容量单独下发（扣标题块）— Qoder
     final pages = engine.paginateChapter(
@@ -584,6 +610,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     // 注：本方法在 build 阶段调用，不可同步修改 provider（会触发
     // "modify a provider while the widget tree was building" 断言），延迟到下一帧
     Future(() => notifier.updateChapterPageCount(chapterIndex, pages.length));
+
+    // 章边界预载（页末预载下一章首屏 / 页首预载上一章末屏）
+    _maybePreloadAdjacent(state);
 
   }
 
@@ -770,6 +799,120 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     );
   }
 
+  /// 章边界预载触发：末屏预载下一章首屏、首屏预载上一章末屏
+  void _maybePreloadAdjacent(ReaderState state) {
+    if (_paginatedPages.isEmpty || state.currentBook == null) return;
+    final screenIndex =
+        _isDoublePage ? _currentPageIndex ~/ 2 : _currentPageIndex;
+    final screenCount = _isDoublePage
+        ? (_paginatedPages.length + 1) ~/ 2
+        : _paginatedPages.length;
+    final atLast = screenIndex >= screenCount - 1;
+    final atFirst = _currentPageIndex <= 0;
+    if (atLast && state.hasNextChapter && _nextChapterPreview == null) {
+      unawaited(_preloadAdjacent(state, 1));
+    }
+    if (atFirst && state.hasPreviousChapter && _prevChapterPreview == null) {
+      unawaited(_preloadAdjacent(state, -1));
+    }
+  }
+
+  /// 预载相邻章边界页（下一章首屏 / 上一章末屏），供章边界动画与承接
+  Future<void> _preloadAdjacent(ReaderState state, int delta) async {
+    if (delta > 0) {
+      if (_preloadingNext) return;
+      _preloadingNext = true;
+    } else {
+      if (_preloadingPrev) return;
+      _preloadingPrev = true;
+    }
+    final book = state.currentBook;
+    final baseChapter = state.currentChapterIndex;
+    final target = baseChapter + delta;
+    final cfg = _lastPaginatedConfig;
+    try {
+      if (book == null || cfg == null) return;
+      if (target < 0 || target >= state.chapters.length) return;
+      final content = await ref
+          .read(bookApiProvider)
+          .getChapterContent(book.bookUrl, target);
+      if (!mounted) return;
+      // 发起后章节已切换则作废
+      if (ref.read(readerNotifierProvider).currentChapterIndex !=
+          baseChapter) {
+        return;
+      }
+      if (content.trim().isEmpty) return;
+      final engine = ParagraphLayoutEngine(config: cfg, context: context);
+      final pages = engine.paginateChapter(
+        content,
+        _lastAvailableWidth,
+        _lastAvailableHeight,
+        firstPageHeight: _lastFirstPageHeight,
+      );
+      if (pages.isEmpty) return;
+      final info = delta > 0 ? pages.first : pages.last;
+      final pageIndex = delta > 0 ? 0 : pages.length - 1;
+      final title = state.chapters[target].title;
+      final page = _buildPreviewPage(
+          state, info, pageIndex, pages.length, title);
+      if (!mounted) return;
+      setState(() {
+        if (delta > 0) {
+          _nextChapterPreview = page;
+        } else {
+          _prevChapterPreview = page;
+        }
+      });
+    } catch (_) {
+      // 预载失败静默：章边界退化为瞬时填充
+    } finally {
+      if (delta > 0) {
+        _preloadingNext = false;
+      } else {
+        _preloadingPrev = false;
+      }
+    }
+  }
+
+  /// 相邻章预览页构建（与 _buildTypographicPage 同参；selectText 关闭）
+  Widget _buildPreviewPage(ReaderState state, PageInfo info, int pageIndex,
+      int totalPages, String title) {
+    final page = ReaderTypographicPage(
+      pageInfo: info,
+      pageIndex: pageIndex,
+      totalPages: totalPages,
+      chapterTitle: title,
+      pageChrome: widget.pageChrome,
+      tipContext: _buildTipContext(state, pageIndex, totalPages, null),
+      fontSize: state.fontSize,
+      lineHeight: state.lineHeight,
+      paragraphSpacing: widget.paragraphSpacing,
+      backgroundColor: state.backgroundColor,
+      textColor: _resolveTextColor(state),
+      letterSpacing: widget.letterSpacing * state.fontSize,
+      fontFamily: _fontFamily,
+      justify: widget.textFullJustify,
+      fontWeight: _fontWeightFor(widget.textBold),
+      selectText: false,
+      contentPadding: EdgeInsets.only(
+        left: widget.marginLeft,
+        right: widget.marginRight,
+        top: widget.marginTop,
+        bottom: widget.marginBottom,
+      ),
+    );
+    if (!_isDoublePage) return page;
+    // 双页模式：预览按首屏双栏形态
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: page),
+        const Expanded(child: SizedBox.shrink()),
+      ],
+    );
+  }
+
   /// 重构版翻页视图（滑动/仿真/覆盖/无动画统一入口）
   Widget _buildTurnContent(ReaderState state) {
     final notifier = ref.read(readerNotifierProvider.notifier);
@@ -794,6 +937,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
           setState(() => _currentPageIndex = page);
           notifier.updatePosition(page);
         },
+        chapterPrevPage: _prevChapterPreview,
+        chapterNextPage: _nextChapterPreview,
         onTurnChapterPrev: notifier.prevChapter,
         onTurnChapterNext: notifier.nextChapter,
         hasChapterPrev: state.hasPreviousChapter,

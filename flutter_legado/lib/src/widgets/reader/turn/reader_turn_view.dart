@@ -1,9 +1,12 @@
+import 'dart:ui' as ui;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
 import '../../../providers/reader/reader_state.dart';
 import 'page_direction.dart';
+import 'page_snapshot.dart';
 import 'page_snapshot_cache.dart';
 import 'page_turn_controller.dart';
 import 'painters/cover_page_painter.dart';
@@ -25,6 +28,8 @@ class ReaderTurnView extends StatefulWidget {
     required this.hasChapterNext,
     this.overlay,
     this.backPageColor = const Color(0xFFECECEC),
+    this.chapterPrevPage,
+    this.chapterNextPage,
   });
 
   final PageTurnMode mode;
@@ -43,6 +48,12 @@ class ReaderTurnView extends StatefulWidget {
   /// Simulation back-of-page fill (Jingshiro bgMeanColor).
   final Color backPageColor;
 
+  /// 相邻章边界页预览（父级预载：下一章首屏 / 上一章末屏），
+  /// 用于章边界turn的动画与承接显示（[UI_SYNC_REFACTOR S6 修 | 2026-09-08]
+  /// 用户反馈：章末翻页无动画直接闪现 → 章边界参与快照与画笔）— Qoder
+  final Widget? chapterPrevPage;
+  final Widget? chapterNextPage;
+
   @override
   State<ReaderTurnView> createState() => ReaderTurnViewState();
 }
@@ -54,6 +65,16 @@ class ReaderTurnViewState extends State<ReaderTurnView>
   final GlobalKey _prevBoundaryKey = GlobalKey();
   final GlobalKey _curBoundaryKey = GlobalKey();
   final GlobalKey _nextBoundaryKey = GlobalKey();
+  final GlobalKey _chapPrevBoundaryKey = GlobalKey();
+  final GlobalKey _chapNextBoundaryKey = GlobalKey();
+
+  /// 章边界页快照（父级预载页抓取）
+  ui.Image? _chapPrevImg;
+  ui.Image? _chapNextImg;
+
+  /// 章边界 turn 进行中/承接中（遮罩保留至父级章节落地）
+  bool _chapterTurning = false;
+  PageTurnDirection _chapterTurnDir = PageTurnDirection.none;
 
   bool _overlayVisible = false;
   int _warmGeneration = 0;
@@ -65,6 +86,19 @@ class ReaderTurnViewState extends State<ReaderTurnView>
 
   bool get _captureHasPrev => widget.pageIndex > 0;
   bool get _captureHasNext => widget.pageIndex < widget.pageCount - 1;
+
+  /// 有效邻页快照：章内邻页优先，章边界回退到预载的相邻章页
+  ui.Image? get _effPrev {
+    if (_captureHasPrev) return _cache.display?.prev;
+    if (widget.hasChapterPrev) return _chapPrevImg;
+    return null;
+  }
+
+  ui.Image? get _effNext {
+    if (_captureHasNext) return _cache.display?.next;
+    if (widget.hasChapterNext) return _chapNextImg;
+    return null;
+  }
 
   PageTurnSettleStyle get _settleStyle {
     switch (widget.mode) {
@@ -90,6 +124,20 @@ class ReaderTurnViewState extends State<ReaderTurnView>
   @override
   void didUpdateWidget(covariant ReaderTurnView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    final chapterLanded = oldWidget.pageIndex != widget.pageIndex ||
+        oldWidget.pageCount != widget.pageCount ||
+        oldWidget.chapterPrevPage != widget.chapterPrevPage ||
+        oldWidget.chapterNextPage != widget.chapterNextPage;
+    if (chapterLanded && _chapterTurning) {
+      // 父级章节已落地：退出承接态、收起遮罩
+      setState(() {
+        _chapterTurning = false;
+        _chapterTurnDir = PageTurnDirection.none;
+        _overlayVisible = false;
+      });
+      _scheduleWarmSnapshots();
+      return;
+    }
     if (oldWidget.pageIndex != widget.pageIndex ||
         oldWidget.pageCount != widget.pageCount ||
         oldWidget.mode != widget.mode ||
@@ -103,6 +151,8 @@ class ReaderTurnViewState extends State<ReaderTurnView>
     _controller.removeListener(_onControllerTick);
     _controller.dispose();
     _cache.invalidate();
+    _chapPrevImg?.dispose();
+    _chapNextImg?.dispose();
     super.dispose();
   }
 
@@ -130,6 +180,7 @@ class ReaderTurnViewState extends State<ReaderTurnView>
         hasPrev: _captureHasPrev,
         hasNext: _captureHasNext,
       );
+      await _captureChapterBoundaries(dpr);
       if (mounted && ok && gen == _warmGeneration) {
         setState(() {});
       }
@@ -141,7 +192,7 @@ class ReaderTurnViewState extends State<ReaderTurnView>
     await SchedulerBinding.instance.endOfFrame;
     if (!mounted) return false;
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    return _cache.refresh(
+    final ok = await _cache.refresh(
       prevKey: _prevBoundaryKey,
       curKey: _curBoundaryKey,
       nextKey: _nextBoundaryKey,
@@ -149,6 +200,26 @@ class ReaderTurnViewState extends State<ReaderTurnView>
       hasPrev: _captureHasPrev,
       hasNext: _captureHasNext,
     );
+    await _captureChapterBoundaries(dpr);
+    return ok;
+  }
+
+  /// 抓取相邻章预载页快照（章边界动画与承接用）
+  Future<void> _captureChapterBoundaries(double dpr) async {
+    if (widget.chapterPrevPage != null) {
+      final img = await captureBoundary(_chapPrevBoundaryKey, pixelRatio: dpr);
+      if (img != null && mounted) {
+        _chapPrevImg?.dispose();
+        _chapPrevImg = img;
+      }
+    }
+    if (widget.chapterNextPage != null) {
+      final img = await captureBoundary(_chapNextBoundaryKey, pixelRatio: dpr);
+      if (img != null && mounted) {
+        _chapNextImg?.dispose();
+        _chapNextImg = img;
+      }
+    }
   }
 
   /// Programmatic turn used by tap zones / volume keys / auto-read.
@@ -162,14 +233,18 @@ class ReaderTurnViewState extends State<ReaderTurnView>
       return;
     }
 
-    // Chapter edge without neighbor bitmap → instant fill (no empty overlay).
+    // 章边界：有预载相邻章快照则照常动画；缺失才瞬时填充
     if (dir == PageTurnDirection.prev && !_captureHasPrev) {
-      _applyCompleted(dir);
-      return;
+      if (_chapPrevImg == null) {
+        _applyCompleted(dir);
+        return;
+      }
     }
     if (dir == PageTurnDirection.next && !_captureHasNext) {
-      _applyCompleted(dir);
-      return;
+      if (_chapNextImg == null) {
+        _applyCompleted(dir);
+        return;
+      }
     }
 
     final ready = await _ensureCacheReady();
@@ -191,7 +266,7 @@ class ReaderTurnViewState extends State<ReaderTurnView>
       onCompleted: _applyCompleted,
       settleStyle: _settleStyle,
     );
-    if (mounted) {
+    if (mounted && !_chapterTurning) {
       setState(() => _overlayVisible = false);
       _scheduleWarmSnapshots();
     }
@@ -202,12 +277,21 @@ class ReaderTurnViewState extends State<ReaderTurnView>
       if (widget.pageIndex > 0) {
         widget.onPageChanged(widget.pageIndex - 1);
       } else if (widget.hasChapterPrev) {
+        // 章边界：进入承接态（遮罩保留至父级章节落地，防闪现）
+        setState(() {
+          _chapterTurning = true;
+          _chapterTurnDir = dir;
+        });
         widget.onTurnChapterPrev();
       }
     } else if (dir == PageTurnDirection.next) {
       if (widget.pageIndex < widget.pageCount - 1) {
         widget.onPageChanged(widget.pageIndex + 1);
       } else if (widget.hasChapterNext) {
+        setState(() {
+          _chapterTurning = true;
+          _chapterTurnDir = dir;
+        });
         widget.onTurnChapterNext();
       }
     }
@@ -254,12 +338,9 @@ class ReaderTurnViewState extends State<ReaderTurnView>
               widget.hasChapterNext);
 
       // Neighbor page bitmap required for in-chapter anim; chapter edge → instant.
-      final needsPrevBmp = dir == PageTurnDirection.prev && _captureHasPrev;
-      final needsNextBmp = dir == PageTurnDirection.next && _captureHasNext;
-      final bmpOk =
-          _cache.hasCur &&
-          (!needsPrevBmp || _cache.display?.prev != null) &&
-          (!needsNextBmp || _cache.display?.next != null);
+      final bmpOk = _cache.hasCur &&
+          (dir != PageTurnDirection.prev || _effPrev != null) &&
+          (dir != PageTurnDirection.next || _effNext != null);
 
       if (canAnimate && bmpOk) {
         setState(() => _overlayVisible = true);
@@ -335,7 +416,7 @@ class ReaderTurnViewState extends State<ReaderTurnView>
       onCompleted: _applyCompleted,
       settleStyle: _settleStyle,
     );
-    if (mounted) {
+    if (mounted && !_chapterTurning) {
       setState(() => _overlayVisible = false);
       _scheduleWarmSnapshots();
     }
@@ -349,8 +430,8 @@ class ReaderTurnViewState extends State<ReaderTurnView>
       case PageTurnMode.slide:
         return SlidePagePainter(
           cur: snap?.cur,
-          prev: snap?.prev,
-          next: snap?.next,
+          prev: _effPrev,
+          next: _effNext,
           direction: c.direction,
           touchX: c.touchX,
           startX: c.startX,
@@ -360,8 +441,8 @@ class ReaderTurnViewState extends State<ReaderTurnView>
       case PageTurnMode.cover:
         return CoverPagePainter(
           cur: snap?.cur,
-          prev: snap?.prev,
-          next: snap?.next,
+          prev: _effPrev,
+          next: _effNext,
           direction: c.direction,
           touchX: c.touchX,
           startX: c.startX,
@@ -372,8 +453,8 @@ class ReaderTurnViewState extends State<ReaderTurnView>
       case PageTurnMode.simulate:
         return SimulationCurlPainter(
           cur: snap?.cur,
-          prev: snap?.prev,
-          next: snap?.next,
+          prev: _effPrev,
+          next: _effNext,
           direction: c.direction,
           touchX: c.touchX,
           touchY: c.touchY,
@@ -400,6 +481,16 @@ class ReaderTurnViewState extends State<ReaderTurnView>
       child: ColoredBox(
         color: widget.backPageColor,
         child: SizedBox.expand(child: widget.buildPage(index)),
+      ),
+    );
+  }
+
+  Widget _boundaryWidget(GlobalKey key, Widget child) {
+    return RepaintBoundary(
+      key: key,
+      child: ColoredBox(
+        color: widget.backPageColor,
+        child: SizedBox.expand(child: child),
       ),
     );
   }
@@ -448,11 +539,25 @@ class ReaderTurnViewState extends State<ReaderTurnView>
                       _boundaryPage(_prevBoundaryKey, prevIndex),
                       _boundaryPage(_curBoundaryKey, pageIndex),
                       _boundaryPage(_nextBoundaryKey, nextIndex),
+                      if (widget.chapterPrevPage != null)
+                        _boundaryWidget(
+                            _chapPrevBoundaryKey, widget.chapterPrevPage!),
+                      if (widget.chapterNextPage != null)
+                        _boundaryWidget(
+                            _chapNextBoundaryKey, widget.chapterNextPage!),
                     ],
                   ),
                 ),
               ),
-              if (!_overlayVisible || keepLiveUnderlay)
+              if (_chapterTurning)
+                // 承接态：直接显示相邻章预载页（新章落地前无闪现）
+                ColoredBox(
+                  color: widget.backPageColor,
+                  child: _chapterTurnDir == PageTurnDirection.next
+                      ? (widget.chapterNextPage ?? const SizedBox.shrink())
+                      : (widget.chapterPrevPage ?? const SizedBox.shrink()),
+                )
+              else if (!_overlayVisible || keepLiveUnderlay)
                 _livePage(pageIndex)
               else
                 ColoredBox(color: widget.backPageColor),
