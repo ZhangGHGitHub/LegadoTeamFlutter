@@ -90,13 +90,17 @@ class ReaderTurnViewState extends State<ReaderTurnView>
   /// 有效邻页快照：章内邻页优先，章边界回退到预载的相邻章页
   ui.Image? get _effPrev {
     if (_captureHasPrev) return _cache.display?.prev;
-    if (widget.hasChapterPrev) return _chapPrevImg;
+    if (widget.hasChapterPrev && widget.chapterPrevPage != null) {
+      return _chapPrevImg;
+    }
     return null;
   }
 
   ui.Image? get _effNext {
     if (_captureHasNext) return _cache.display?.next;
-    if (widget.hasChapterNext) return _chapNextImg;
+    if (widget.hasChapterNext && widget.chapterNextPage != null) {
+      return _chapNextImg;
+    }
     return null;
   }
 
@@ -138,10 +142,23 @@ class ReaderTurnViewState extends State<ReaderTurnView>
       _scheduleWarmSnapshots();
       return;
     }
+    // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 相邻章预览变更即作废其位图
+    //（防旧章残留位图被当作"下一章"滑入 → 用户可见"闪现正文内容"），
+    // 并立即重新抓取新预览 — Qoder
+    if (oldWidget.chapterNextPage != widget.chapterNextPage) {
+      _chapNextImg?.dispose();
+      _chapNextImg = null;
+    }
+    if (oldWidget.chapterPrevPage != widget.chapterPrevPage) {
+      _chapPrevImg?.dispose();
+      _chapPrevImg = null;
+    }
     if (oldWidget.pageIndex != widget.pageIndex ||
         oldWidget.pageCount != widget.pageCount ||
         oldWidget.mode != widget.mode ||
-        oldWidget.backPageColor != widget.backPageColor) {
+        oldWidget.backPageColor != widget.backPageColor ||
+        oldWidget.chapterNextPage != widget.chapterNextPage ||
+        oldWidget.chapterPrevPage != widget.chapterPrevPage) {
       _scheduleWarmSnapshots();
     }
   }

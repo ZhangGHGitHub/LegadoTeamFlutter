@@ -136,11 +136,13 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   bool _preloadingNext = false;
   bool _preloadingPrev = false;
 
-  /// 最近一次分页参数（预载复用同参，保证排版一致）
-  ParagraphConfig? _lastPaginatedConfig;
-  double _lastAvailableWidth = 0;
-  double _lastAvailableHeight = 0;
-  double? _lastFirstPageHeight;
+
+  /// 最近一次分页参数（相邻章预载复用同参；翻页回调触发预载时也需读取）
+  ParagraphConfig? _pagedConfig;
+  // ignore: prefer_final_fields
+  double _pagedWidth = 0;
+  // ignore: prefer_final_fields
+  double _pagedHeight = 0;
 
   /// 重构版翻页视图状态（程序化动画翻页入口）
   final GlobalKey<ReaderTurnViewState> _turnViewKey =
@@ -232,6 +234,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   void _navigateToPage(int index) {
     setState(() => _currentPageIndex = index);
     ref.read(readerNotifierProvider.notifier).updatePosition(index);
+    // 跳页同样驱动相邻章预载
+    _maybePreloadAdjacent(ref.read(readerNotifierProvider));
   }
 
   /// 滚动模式：按一屏高度滚动（前进/后退，动画随 noAnimScrollPage）
@@ -496,37 +500,16 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         widget.marginBottom -
         4.0;
 
-    // 首页标题块高度（与渲染侧 pageIndex==0 分支同参：标题按
-    // availableWidth 换行实测 + 20 底部间距）
-    var firstPageHeight = availableHeight;
+    // 首页标题块高度（与渲染侧 pageIndex==0 分支同参）
+    // [UI_SYNC_REFACTOR S6 修] 抽为 _computeFirstPageHeight：相邻章预载需按
+    // 「目标章标题」计算首页容量（与落地实际分页一致，防切换重排闪动）— Qoder
     final chapterTitle = state.currentChapter?.title;
-    if (chapterTitle != null) {
-      final showTitle = chrome.titleMode.clamp(0, 2) != 2;
-      if (showTitle) {
-        final titlePainter = TextPainter(
-          text: TextSpan(
-            text: chapterTitle,
-            style: baseStyle.merge(
-              TextStyle(
-                fontSize: fontSize + chrome.titleSize,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-          textDirection: TextDirection.ltr,
-          textScaler: textScaler,
-        )..layout(maxWidth: availableWidth);
-        firstPageHeight =
-            availableHeight -
-            titlePainter.height -
-            chrome.titleTopSpacing -
-            chrome.titleBottomSpacing;
-        titlePainter.dispose();
-      }
-      // 极端小窗口兼底：首页至少容纳一行正文
-      final minHeight = fontSize * lineHeight;
-      if (firstPageHeight < minHeight) firstPageHeight = minHeight;
-    }
+    final firstPageHeight = _computeFirstPageHeight(
+      state,
+      availableHeight,
+      availableWidth,
+      chapterTitle,
+    );
 
     final config = ParagraphConfig(
       fontSize: fontSize,
@@ -552,12 +535,12 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       textScaler: textScaler,
     );
 
-    // 记录分页参数与章变更（相邻章预载复用同参 / 清旧预览）
+    // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 记录分页参数（相邻章预载复用
+    // 同参）并在章变更时清相邻章预览（防旧章预览/位图残留）— Qoder
     final chapterChanged = _paginatedChapterIndex != chapterIndex;
-    _lastPaginatedConfig = config;
-    _lastAvailableWidth = availableWidth;
-    _lastAvailableHeight = availableHeight;
-    _lastFirstPageHeight = firstPageHeight;
+    _pagedConfig = config;
+    _pagedWidth = availableWidth;
+    _pagedHeight = availableHeight;
     if (chapterChanged) {
       _nextChapterPreview = null;
       _prevChapterPreview = null;
@@ -612,7 +595,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     Future(() => notifier.updateChapterPageCount(chapterIndex, pages.length));
 
     // 章边界预载（页末预载下一章首屏 / 页首预载上一章末屏）
-    _maybePreloadAdjacent(state);
+    _maybePreloadAdjacent(state, eager: true);
 
   }
 
@@ -799,16 +782,57 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     );
   }
 
+  /// 首页可用高度（扣标题块；与渲染侧 pageIndex==0 同参）
+  double _computeFirstPageHeight(
+    ReaderState state,
+    double availableHeight,
+    double availableWidth,
+    String? chapterTitle,
+  ) {
+    var firstPageHeight = availableHeight;
+    if (chapterTitle == null) return firstPageHeight;
+    final chrome = widget.pageChrome;
+    final showTitle = chrome.titleMode.clamp(0, 2) != 2;
+    if (showTitle) {
+      final textScaler = MediaQuery.textScalerOf(context);
+      final baseStyle = DefaultTextStyle.of(context).style;
+      final titlePainter = TextPainter(
+        text: TextSpan(
+          text: chapterTitle,
+          style: baseStyle.merge(
+            TextStyle(
+              fontSize: state.fontSize + chrome.titleSize,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+        textScaler: textScaler,
+      )..layout(maxWidth: availableWidth);
+      firstPageHeight = availableHeight -
+          titlePainter.height -
+          chrome.titleTopSpacing -
+          chrome.titleBottomSpacing;
+      titlePainter.dispose();
+    }
+    // 极端小窗口兼底：首页至少容纳一行正文
+    final minHeight = state.fontSize * state.lineHeight;
+    if (firstPageHeight < minHeight) firstPageHeight = minHeight;
+    return firstPageHeight;
+  }
+
   /// 章边界预载触发：末屏预载下一章首屏、首屏预载上一章末屏
-  void _maybePreloadAdjacent(ReaderState state) {
+  void _maybePreloadAdjacent(ReaderState state, {bool eager = false}) {
     if (_paginatedPages.isEmpty || state.currentBook == null) return;
     final screenIndex =
         _isDoublePage ? _currentPageIndex ~/ 2 : _currentPageIndex;
     final screenCount = _isDoublePage
         ? (_paginatedPages.length + 1) ~/ 2
         : _paginatedPages.length;
-    final atLast = screenIndex >= screenCount - 1;
-    final atFirst = _currentPageIndex <= 0;
+    // 提前一屏预载（异步加载留出时间窗）；eager=分页即预载两侧邻章
+    //（对齐原版三章窗口：章节打开即后台准备相邻章，章末翻页才来得及动画）
+    final atLast = eager || screenIndex >= screenCount - 2;
+    final atFirst = eager || screenIndex <= 1;
     if (atLast && state.hasNextChapter && _nextChapterPreview == null) {
       unawaited(_preloadAdjacent(state, 1));
     }
@@ -829,28 +853,44 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final book = state.currentBook;
     final baseChapter = state.currentChapterIndex;
     final target = baseChapter + delta;
-    final cfg = _lastPaginatedConfig;
+    final config = _pagedConfig;
+    final availableWidth = _pagedWidth;
+    final availableHeight = _pagedHeight;
     try {
-      if (book == null || cfg == null) return;
+      if (book == null || config == null) return;
       if (target < 0 || target >= state.chapters.length) return;
+      // [UI_SYNC_REFACTOR S6 修] 必须用 getChapterContentFull（缓存+网络合并，
+      // 与阅读器章节加载同链路）——getChapterContent 仅读本地缓存不取网，
+      // 预载会挂住（真机探针实证：PRELOAD start 后无任何返回）— Qoder
       final content = await ref
           .read(bookApiProvider)
-          .getChapterContent(book.bookUrl, target);
+          .getChapterContentFull(book.bookUrl, target);
       if (!mounted) return;
       // 发起后章节已切换则作废
       if (ref.read(readerNotifierProvider).currentChapterIndex !=
           baseChapter) {
         return;
       }
-      if (content.trim().isEmpty) return;
-      final engine = ParagraphLayoutEngine(config: cfg, context: context);
+      if (content.trim().isEmpty) {
+        return;
+      }
+      final engine = ParagraphLayoutEngine(config: config, context: context);
+      // 按「目标章标题」计算首页容量，与落地实际分页严格同参
+      final previewFirstPageHeight = _computeFirstPageHeight(
+        state,
+        availableHeight,
+        availableWidth,
+        state.chapters[target].title,
+      );
       final pages = engine.paginateChapter(
         content,
-        _lastAvailableWidth,
-        _lastAvailableHeight,
-        firstPageHeight: _lastFirstPageHeight,
+        availableWidth,
+        availableHeight,
+        firstPageHeight: previewFirstPageHeight,
       );
-      if (pages.isEmpty) return;
+      if (pages.isEmpty) {
+        return;
+      }
       final info = delta > 0 ? pages.first : pages.last;
       final pageIndex = delta > 0 ? 0 : pages.length - 1;
       final title = state.chapters[target].title;
@@ -936,6 +976,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
           final page = _isDoublePage ? i * 2 : i;
           setState(() => _currentPageIndex = page);
           notifier.updatePosition(page);
+          // 翻页不触发重分页 → 此处驱动相邻章预载（原仅分页触发导致章末无预载）
+          _maybePreloadAdjacent(ref.read(readerNotifierProvider));
         },
         chapterPrevPage: _prevChapterPreview,
         chapterNextPage: _nextChapterPreview,
