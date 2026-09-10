@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.229] - 2026-09-11
+
+### Changed
+- [UI] 搜索正文页补「替换 / 正则」搜索选项（差异清单 C4，原版对齐）：源码核实修正了差异清单原登记项——原版 `SearchContentActivity` 的 `content_search` 菜单只有「替换 / 正则」两项，**没有**范围开关（原版固定搜索当前书全文），参考版的「仅本书」chip 与重构版三项范围菜单均属各自特有形态，按重构红线不新增范围控制。本次按原版补两项：顶栏「搜索选项」溢出菜单——「替换」切换正文口径（开=应用替换净化 `getChapterContent`，关=原始正文 `getChapterContentRaw`，默认关与 Android 默认一致）、「正则」按 RegExp 匹配（非法表达式静默空结果，对齐原版语义）；命中区间抽为纯函数 `findContentHits` 供搜索与高亮共用
+
+### Test
+- 主代理自实现并复核：flutter analyze 无问题；flutter test 1362 全过（含新增 `search_content_hits_test` 7 用例：普通/正则/大小写/限流/非法正则/空关键词）；5556 实机 A/B 验证——正则开时关键词 `Q+` 命中 1 处（正则匹配 `QQ`）、关闭后同关键词「未找到」且切换即按新选项重搜，非按钮区域不再透传；版本 2.0.229+230
+
+- Contributor: Qoder UI
+
 ## [2.0.228] - 2026-09-11
 
 ### Fixed

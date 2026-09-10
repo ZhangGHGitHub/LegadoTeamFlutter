@@ -11,7 +11,7 @@
 |---|---|---|
 | A1 搜索顶栏三钮（⚙/定位/筛选） | 原版 `ui/book/search/SearchActivity.kt`；重构版 `features/search/search_page.dart` L545-590 | 原版与重构版**均无三钮**，能力全在 ⋮ 溢出菜单（精准搜索/搜索范围/全部书源/书源管理）；三钮为闭源参考版特有、语义无源可依 → **不实施**（我方已有等价 ⋮ 菜单，原版对齐优先） |
 | A2 换源形态 | 原版 `ui/book/changesource/ChangeBookSourceDialog.kt`（`BaseDialogFragment(R.layout.dialog_book_change_source)`），布局含 `refresh_progress_bar`（搜索进度）+ `recycler_view`（源卡）+ `ll_bottom_bar`（dur/top/bottom） | **确认原版即弹层**且与参考版截图形态一致 → **实施为弹层**（保留我方换源变量链逻辑不动），见批 E |
-| A3 替换编辑器 | 原版 `ui/replace/edit/ReplaceEditActivity.kt` + `activity_replace_edit.xml` | **确认原版即整页**（规则列表=ReplaceRuleActivity）→ 我方弹窗表单改为**整页编辑器**（字段全覆盖已有），列入编辑器批 |
+| A3 替换编辑器 | 原版 `ui/replace/edit/ReplaceEditActivity.kt` + `activity_replace_edit.xml` | **确认原版即整页**（规则列表=ReplaceRuleActivity）→ 我方弹窗表单改为**整页编辑器**；**0911 逐控件核实原版字段清单**：名称/分组/匹配规则（含「使用正则」勾选 + 帮助图标）/替换为/作用范围三勾选（标题·书源·正文）/特定范围/排除范围/**超时**/**预览输入→预览输出**；顶栏菜单=全屏编辑(code)/保存/**复制规则**/**粘贴规则**。我方现弹窗已覆盖 名称/分组/正则/替换为/标题·正文 scope/特定范围，**缺**：书源 scope、超时、预览输入输出、复制/粘贴规则、全屏编辑 |
 | A4 发现页（卡片底/顶栏⋮/二级页 3 列 chips） | 原版 `ui/book/explore/ExploreShowActivity.kt` + `ExploreShowAdapter.kt`；重构版 `features/explore/explore_list_page.dart`、`explore_tab_page.dart` | 基准齐备 → 随发现页批实施（批 D） |
 
 ## B. 中优功能对齐
@@ -28,15 +28,15 @@
 | 项 | 基准（可移植实现） | 方案要点 | 估算 |
 |---|---|---|---|
 | C1 书源管理复选框批量+状态点+类型注记 | 重构版 `features/sources/sources_page.dart` | 行首加 `Checkbox`（批量模式与现有底部条联动）；行尾状态绿点（可用/失效，取源可用性字段）；源名后类型注记（文本/音频/视频/图片） | 1 天 |
-| C2 字典规则管理列表 | 重构版 `features/my/dict_rule_page.dart` | 我方字典规则直达查询页 → 顶部补「规则」入口，列表行=词典源（百度汉语/海词英文形态）+开关+编辑+删除+FAB；**前置**：核实词典源数据来源（`book_api` 无 dictRule 接口 → 若需 FFI 新接口，先契约冻结） | 1.5 天（含契约） |
+| C2 字典规则管理列表 | 重构版 `features/my/dict_rule_page.dart` | 我方字典规则直达查询页 → 顶部补「规则」入口，列表行=词典源（百度汉语/海词英文形态）+开关+编辑+删除+FAB；**前置已核实（0911）**：`book_api` 仅有 `dictLookup(word)`，**无任何 dictRule CRUD 接口**（Rust ffi.rs 亦无 `dict_rule*`），DB 虽有 `dictRules` 表但无读写通路 → 本项必须先走**契约冻结 + Rust 侧 CRUD FFI**（§2.x 新增 4-5 方法）再由 UI 接入，属跨轨批次，不可只改 UI | 1.5 天（含契约，跨轨） |
 | C3 字体 Tt 行内面板（正文字体/正文字距/标题字体 + 斜体/字重/简繁） | 原版 `ui/book/read/config/ReadStyleDialog.kt` + `ui/font/FontSelectDialog.kt` | 阅读界面弹层新增「字体」页签：正文字体（跳字体页）、字距滑条（已有）、标题字体/字距（`PageChrome` 已有 titleSize 可扩展）、斜体开关（新增 TextStyle.fontStyle 透传，测量同源已支持） | 1.5 天 |
-| C4 全文搜索「仅本书」开关 | 重构版 `features/reader/search_content_page.dart` | `search_content_screen.dart` 顶栏加 `FilterChip('仅本书')`，关闭时走多书搜索范围（复用 `AppRoutes.search` 能力或后端范围参数） | 0.5 天 |
+| C4 ~~全文搜索「仅本书」开关~~ → **替换/正则开关（原版对齐）** | 原版 `legado-upstream` `res/menu/content_search.xml` + `SearchContentViewModel.searchPosition` | **0911 源码核实修正**：原版搜索内容页菜单只有「替换 / 正则」两项，**无范围开关**（原版固定搜当前书全文）；参考版「仅本书」chip 与重构版三项范围菜单（仅本书/本书+缓存/本书+网络）均为各自特有形态，按重构红线不新增。→ 已改做原版确有的两项：顶栏溢出菜单加「替换」（切换正文是否应用替换净化）与「正则」（关键词按 RegExp 匹配，非法表达式静默空结果，对齐原版语义） | 0.5 天（已完成） |
 | C5 阅读记录按天分组+成就卡 | 重构版 `features/my/read_record_page.dart` | 现有每日时长数据（`readRecordDailyList`）已在 → 顶部成就卡（已读 N 本/总时长）+ 今天/昨天分组折叠，热力图保留 | 1 天 |
-| C6 设置·外观预览模型 | 重构版 `features/settings/theme_config_page.dart` | 主题设置页顶部加手机预览 mock（底色/文字色/强调色实时联动） | 0.5 天 |
+| C6 设置·外观预览模型 | 重构版 `features/settings/theme_config_page.dart` | 主题设置页顶部加手机预览 mock（底色/文字色/强调色实时联动） | 0.5 天（**0911 已完成**：`_ThemePreviewCard` 用当前 ColorScheme 绘制迷你手机——顶栏=primary/底色=surface/文字条=onSurface/卡片=secondaryContainer，附当前配色名（内置中文名或「自定义配色」）） |
 | C7 备份「测试配置」行 | 重构版 `features/my/webdav_config_dialog.dart` | WebDAV 页加「测试配置」行：对服务器地址做一次 Dart 侧 PROPFIND/HEAD 探测并回显结果（纯 Dart，无 FFI） | 0.5 天 |
 | C8 发现源二级页 3 列 chips | 同 A4 | 与 A4 合并实施 | — |
 | C9 书源编辑器帮助体系 | 重构版 `features/sources/source_editor_page.dart`、`rule_sub_page.dart`、`rule_complete.dart` | 编辑器顶部 ? 入口弹「规则语法帮助」弹层（阅读3.0规则说明/@规则语法/jsLib 链接，内容静态） | 0.5 天 |
-| C10 自动翻页运行时面板 | 重构版 `features/reader/auto_read_panel.dart` | 菜单「自动翻页」点击后浮出运行时面板（速度 stepper+停止+设置），与现有配置卡并存（参考版语义） | 0.5 天 |
+| C10 自动翻页运行时面板 | 重构版 `features/reader/auto_read_panel.dart` | 菜单「自动翻页」点击后浮出运行时面板（速度 stepper+停止+设置），与现有配置卡并存（参考版语义） | 0.5 天（**0911 已完成**：新 `auto_turn_panel.dart` 浮条，翻页中且菜单收起时浮于正文底部——间隔 ±5 秒步进（夹 3~120 秒）+ 目录/停止/设置；运行时开关沿用既有 `_toggleAutoPage`） |
 
 合计约 **8.5 天**；建议拆两批（C1-C5 / C6-C10），每批独立提交。
 
@@ -61,10 +61,10 @@
 | 批次 | 内容 | 状态 |
 |---|---|---|
 | 批 A | 源码核实 4 项（结论见上表） | ✅ **已完成**（A1 不实施；A2/A3/A4 决策落地） |
-| 批 B | 书籍详情页形态对齐（B1） | 🚧 实施中（full-stack-engineer 子代理） |
-| 批 C-I | 体验增强：C5 阅读记录按天视图 | 🚧 实施中（子代理并行） |
-| 批 C-II | C1 书源管理复选框批量 / C2 字典规则管理 / C3 字体行内面板 / C4 仅本书开关 | 待派发 |
-| 批 D | C6 外观预览 / C9 编辑器帮助（已完成²）/ C10 自动翻页面板 / A4 发现页 / A3 替换编辑器整页 | 待派发 |
+| 批 B | 书籍详情页形态对齐（B1） | ✅ **已完成**（2.0.226，full-stack-engineer 子代理交付 + 主代理实机验收） |
+| 批 C-I | 体验增强：C5 阅读记录按天视图 | ✅ **已完成**（2.0.227，主代理实现 + 实机验收；连带根治每日时长单位 1000 倍 bug，2.0.228） |
+| 批 C-II | C1 书源管理复选框批量 / C2 字典规则管理（**阻塞：无 dictRule FFI，需契约冻结**） / C3 字体行内面板 / C4 替换+正则开关（原版对齐） | 🚧 C1/C3 已派发（子代理并行）；C4 ✅ 已完成 |
+| 批 D | C6 外观预览 / C9 编辑器帮助（已完成²）/ C10 自动翻页面板 / A4 发现页 / A3 替换编辑器整页 | 🚧 C6 ✅ 已完成、C10 ✅ 已完成（待统一实机验收）；A4/A3 待派发 |
 | 批 E | A2 换源弹层化（含 R1 E2E 回归） | 待派发 |
 | 取证尾巴 | 参考侧截图补采 | 待模拟器稳定 |
 
