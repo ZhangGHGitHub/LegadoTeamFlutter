@@ -1,8 +1,10 @@
-﻿import 'dart:convert';
+﻿import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -25,6 +27,11 @@ import '../widgets/ios_widgets.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 import '../widgets/restore_ignore_dialog.dart';
+
+/// WebDAV 连接测试状态（差异清单 C7「测试配置」行）
+///
+/// — full-stack-engineer + UI ｜ 2026-09-10
+enum _WebDavTestStatus { notTested, testing, success, failed }
 
 /// 备份与恢复（对齐 BackupConfigFragment + pref_config_backup.xml）
 ///
@@ -58,6 +65,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   bool _onlyLatestBackup = true;
   bool _autoCheckNewBackup = true;
   bool _busy = false;
+
+  /// 「测试配置」行连接测试状态（差异清单 C7）
+  _WebDavTestStatus _testStatus = _WebDavTestStatus.notTested;
 
   @override
   void initState() {
@@ -353,6 +363,106 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     }
   }
 
+  // ===== 测试配置（差异清单 C7：参考版有「测试配置」行，我方新增） =====
+
+  /// 对当前已填写的 WebDAV 配置发起一次连通性探测（纯客户端行为，不落库）
+  ///
+  /// 判定：PROPFIND（Depth: 0）+ 已填账号密码 Basic Auth，5 秒超时；
+  /// 200/207 → 成功；401/403 → 认证失败；其他非 2xx/异常/超时 → 失败。
+  /// 测试期间该行禁用防重入；结果以 SnackBar 呈现并更新行尾状态。
+  /// — full-stack-engineer + UI ｜ 2026-09-10
+  Future<void> _testWebDavConnection() async {
+    if (_testStatus == _WebDavTestStatus.testing) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final url = _url.trim();
+    if (url.isEmpty) {
+      messenger.showSnackBar(
+        const SnackBar(content: Text('请先填写服务器地址')),
+      );
+      return;
+    }
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('服务器地址需要以 http(s):// 开头'),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _testStatus = _WebDavTestStatus.testing);
+    final client = http.Client();
+    try {
+      final request = http.Request('PROPFIND', Uri.parse(url));
+      // Basic Auth 使用已填账号/密码（均为空时不带 Authorization 头，避免误触发 401）
+      if (_user.isNotEmpty || _pass.isNotEmpty) {
+        request.headers['Authorization'] = 'Basic '
+            '${base64Encode(utf8.encode('$_user:$_pass'))}';
+      }
+      request.headers['Depth'] = '0';
+      final streamed = await client.send(request).timeout(const Duration(seconds: 5));
+      final response = await http.Response.fromStream(streamed);
+      // 探测期间已离开页面则不再更新 UI（client 由 finally 关闭）
+      if (!mounted) return;
+      final code = response.statusCode;
+      final ok = code == 200 || code == 207;
+      setState(() {
+        _testStatus =
+            ok ? _WebDavTestStatus.success : _WebDavTestStatus.failed;
+      });
+      if (ok) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('连接成功')),
+        );
+      } else if (code == 401 || code == 403) {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('认证失败，请检查账号/密码')),
+        );
+      } else {
+        messenger.showSnackBar(
+          SnackBar(content: Text('连接失败（HTTP $code）')),
+        );
+      }
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() => _testStatus = _WebDavTestStatus.failed);
+      messenger.showSnackBar(
+        const SnackBar(content: Text('连接超时（5 秒内未响应）')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _testStatus = _WebDavTestStatus.failed);
+      messenger.showSnackBar(
+        SnackBar(content: Text('连接失败：${_summarizeProbeError(e)}')),
+      );
+    } finally {
+      client.close();
+    }
+  }
+
+  /// 探测失败原因摘要（限 40 字符，防 SnackBar 溢出）
+  String _summarizeProbeError(Object e) {
+    final raw = e.toString().split('\n').first;
+    return raw.length > 40 ? '${raw.substring(0, 40)}…' : raw;
+  }
+
+  /// 「测试配置」行尾状态标签
+  ///
+  /// 颜色：成功=主题 primary、失败=主题 error、其余=正文色
+  Widget _buildTestStatusLabel() {
+    final theme = Theme.of(context);
+    final (label, color) = switch (_testStatus) {
+      _WebDavTestStatus.notTested => ('未测试', null),
+      _WebDavTestStatus.testing => ('测试中…', null),
+      _WebDavTestStatus.success => ('✓ 连接成功', theme.colorScheme.primary),
+      _WebDavTestStatus.failed => ('✗ 失败', theme.colorScheme.error),
+    };
+    return Text(
+      label,
+      style: theme.textTheme.labelMedium?.copyWith(color: color),
+    );
+  }
+
   void _showHelp() {
     showHelp(context, HelpAssets.webDavHelp);
   }
@@ -450,6 +560,16 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                     initial: _device,
                     onSaved: (v) => _device = v,
                   ),
+                ),
+                // 差异清单 C7：参考版有「测试配置」行 → 连通性+认证探测（纯客户端）
+                IosListTile(
+                  title: '测试配置',
+                  subtitle: '连接测试服务器地址与账号',
+                  trailing: _buildTestStatusLabel(),
+                  // 测试期间禁用防重入
+                  onTap: _testStatus == _WebDavTestStatus.testing
+                      ? null
+                      : _testWebDavConnection,
                 ),
                 SwitchListTile(
                   // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron

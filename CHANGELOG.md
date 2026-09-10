@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.225] - 2026-09-10
+
+### Added
+- [UI] 备份与恢复页新增「测试配置」行（差异清单登记项 C7，子代理 full-stack-engineer 实现）：点击对当前 WebDAV 配置发起连通性探测——PROPFIND(Depth:0) + 已填账号密码 Basic Auth，5s 超时；200/207 成功、401/403 提示认证失败、其他非 2xx/超时给出原因摘要；行尾状态（未测试/测试中/✓连接成功/✗失败），测试期间防重入；纯客户端探测不落库、不改既有保存/同步逻辑
+
+### Test
+- 主代理独立复核：flutter analyze 无问题；flutter test 1352 全过（含子代理新增 2 用例）；实机（emulator-5554）验证：行渲染正确、空地址提示「请先填写服务器地址」、非 http 提示「需要以 http(s):// 开头」两分支均通过；版本 2.0.225+226
+
+- Contributor: full-stack-engineer + UI（主代理 Qoder UI 审核）
+
 ## [2.0.224] - 2026-09-09
 
 ### Added
