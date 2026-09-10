@@ -1,6 +1,7 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/md3_heatmap_calendar.dart';
+import 'read_record_daily_view.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -36,11 +37,33 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
   final ScrollController _listController = ScrollController();
   final _searchController = TextEditingController();
 
+  /// 列表视图模式（0=按书 现状，1=按天 差异清单 C5）
+  int _viewMode = 0;
+
+  /// 每日时长数据（readRecordDailyList 既有契约；null=未加载）
+  List<Map<String, dynamic>>? _daily;
+
+  /// 加载每日时长（按天视图数据源；失败保持 null 走空态）
+  Future<void> _loadDailyForView() async {
+    try {
+      final list = await ref
+          .read(bookApiProvider)
+          .readRecordDailyList(DateTime.now().year);
+      if (!mounted) return;
+      setState(() => _daily = list);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _daily = const []);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(readRecordNotifierProvider.notifier).load();
+      // 按天视图数据（懒加载一次；切到按天时立即可用）
+      _loadDailyForView();
     });
   }
 
@@ -111,46 +134,40 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
       ),
       body: Column(
         children: [
-          _buildTotalHeader(context, state),
-          // [LAYOUT_PLAN P3] 分隔线走 tonal 舍 outlineVariant（对齐 file_manage/offline_cache 样板）
-          const Divider(height: 1, indent: 16, endIndent: 16),
-          Expanded(child: _buildBody(context, state)),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTotalHeader(BuildContext context, ReadRecordState state) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '全部阅读时长',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                        color: colorScheme.onSurface,
-                      ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  formatDuring(state.totalReadTimeMs),
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                      ),
-                ),
-              ],
-            ),
-          ),
-          TextButton(
-            onPressed: state.records.isEmpty && state.totalReadTimeMs == 0
+          // 差异清单 C5：累计成就卡（已读 N 本 / 累计 X）+ 清空入口
+          ReadAchievementCard(
+            readBooks: state.records.where((r) => r.readTime > 0).length,
+            totalDurationText: formatDuring(state.totalReadTimeMs),
+            onClearAll: state.records.isEmpty && state.totalReadTimeMs == 0
                 ? null
                 : () => _confirmClearAll(context),
-            child: const Text('清空'),
+          ),
+          // 视图切换（按书=现状 / 按天=时间线）
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('按书')),
+                  ButtonSegment(value: 1, label: Text('按天')),
+                ],
+                selected: {_viewMode},
+                onSelectionChanged: (sel) =>
+                    setState(() => _viewMode = sel.first),
+              ),
+            ),
+          ),
+          // [LAYOUT_PLAN P3] 分隔线走 tonal 舍 outlineVariant（对齐 file_manage/offline_cache 样板）
+          const Divider(height: 1, indent: 16, endIndent: 16),
+          Expanded(
+            child: _viewMode == 1
+                ? ReadRecordDailyView(
+                    daily: _daily,
+                    formatSeconds: (sec) => formatDuring(sec * 1000),
+                    onRetry: _loadDailyForView,
+                  )
+                : _buildBody(context, state),
           ),
         ],
       ),
