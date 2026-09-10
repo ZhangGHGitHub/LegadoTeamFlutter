@@ -16,6 +16,7 @@ import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../widgets/reader/read_aloud_bar.dart';
+import '../widgets/reader/auto_turn_panel.dart';
 import '../widgets/reader/reader_page_chrome.dart';
 import '../widgets/reader/reader_image_dominant_body.dart';
 import '../widgets/reader/reader_page_view.dart';
@@ -518,6 +519,30 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                     ),
                   ),
                 ),
+              // [C10 对齐 | Qoder UI] 自动翻页运行时浮条：翻页进行中、菜单未展开
+              //（朗读浮条为底部另一占用方，互斥显示）时浮于正文底部，支持速度
+              // 步进与 目录/停止/设置 快捷操作（对齐参考版「即开即调」形态）
+              if (_advConfig.autoPageTurn &&
+                  !state.showControls &&
+                  !aloudActive)
+                Positioned(
+                  bottom: 24,
+                  left: 0,
+                  right: 0,
+                  child: Center(
+                    // 浮条自身消费点击：避免点在标签/空白处透传到正文显隐手势
+                    child: GestureDetector(
+                      onTap: () {},
+                      child: AutoTurnPanel(
+                        intervalSeconds: _advConfig.autoPageTurnInterval,
+                        onIntervalChanged: _setAutoPageInterval,
+                        onStop: _toggleAutoPage,
+                        onOpenCatalog: () => unawaited(_openToc()),
+                        onOpenSettings: () => ReaderSettingsSheet.show(context),
+                      ),
+                    ),
+                  ),
+                ),
               // [UI_SYNC_REFACTOR S2-1] 单块底部面板（五分区，替代顶/底栏
               // 两块分立；朗读态与面板互斥显示——S2-2 将朗读条并入面板路由页）
               if (aloudActive && !_aloudBarHidden)
@@ -626,6 +651,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     unawaited(_advConfig.save());
     ref.read(readerAdvConfigProvider.notifier).apply(_advConfig.copy());
     _syncAutoTimer();
+    if (mounted) setState(() {});
+  }
+
+  /// 调整自动翻页间隔（运行时浮条速度步进；范围与定时器 clamp(3,120) 一致）
+  void _setAutoPageInterval(double seconds) {
+    _advConfig = _advConfig.copy()
+      ..autoPageTurnInterval = seconds.clamp(3, 120);
+    unawaited(_advConfig.save());
+    ref.read(readerAdvConfigProvider.notifier).apply(_advConfig.copy());
+    _syncAutoTimer(); // 间隔变更需重建定时器周期
     if (mounted) setState(() {});
   }
 
