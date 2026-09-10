@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.224] - 2026-09-09
+
+### Added
+- [UI] JS 书源编辑器新增「规则语法帮助」入口与帮助弹层（差异清单登记项 C9，子代理 full-stack-engineer 实现）：顶栏 ? 钮 → 底部弹层（壳沿用阅读提示信息规范：把手+DraggableScrollableSheet），三块静态速查——阅读 3.0 源规则说明（搜索/发现/详情/目录/正文各一句 + Wiki 链接可点、失败降级复制）/ @规则语法（@css:/@json:/@js:/@XPath: + ||/&&/%%/## 组合符 + 行内示例）/ jsLib 与内置变量（java.ajax、book、baseUrl 等）；内容全为编译期常量，零网络、零新依赖
+
+### Test
+- 主代理独立复核：flutter analyze 无问题；flutter test 1350 全过（含子代理新增 source_rule_help_sheet_test）；5556 实机验证顶栏钮与弹层三块渲染；版本 2.0.224+225
+
+- Contributor: full-stack-engineer + UI（主代理 Qoder UI 审核）
+
 ## [2.0.223] - 2026-09-08
 
 ### Fixed

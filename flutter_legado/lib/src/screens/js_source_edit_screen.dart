@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/source/source_notifier.dart';
+import '../widgets/source_rule_help_sheet.dart';
 import 'code_edit_screen.dart';
 import 'curl_analyze_url_sheet.dart';
 import 'source_debug_screen.dart';
@@ -161,6 +162,12 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  /// 打开规则语法帮助弹层（静态速查，对齐原版内建帮助体系）
+  /// — full-stack-engineer + UI | 2026-09-09
+  void _openRuleHelp() {
+    unawaited(SourceRuleHelpSheet.show(context));
+  }
+
   Future<void> _openCodeEdit() async {
     final result = await CodeEditScreen.openExtended(
       context,
@@ -286,6 +293,11 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
             tooltip: '调试',
             onPressed: _saving ? null : () => _save(openDebug: true),
             icon: const Icon(Symbols.bug_report_rounded),
+          ),
+          IconButton(
+            tooltip: '规则语法帮助',
+            onPressed: _loading || _saving ? null : _openRuleHelp,
+            icon: const Icon(Symbols.help_outline_rounded),
           ),
           TextButton(
             onPressed: _saving ? null : () => _save(),
