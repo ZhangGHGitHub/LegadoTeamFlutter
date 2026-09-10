@@ -3,11 +3,17 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
 import 'reader_tip_config_sheet.dart';
+
+part 'reader_settings_sheet_font_panel.part.dart';
+// ↑ [C3 形态对齐 | full-stack-engineer + UI] Tt 行内字体面板 part（参照
+// reader_config_panel 既有 part 拆法）：与主文件同 library，可共享私有成员。
 
 /// 阅读界面设置弹层（「界面」面板）
 ///
@@ -51,6 +57,10 @@ class ReaderSettingsSheet extends ConsumerStatefulWidget {
 class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
   /// 当前页签（0全局 1菜单 2信息 3更多，对齐参考版页签顺序）
   int _tab = 0;
+
+  /// [C3 形态对齐 | full-stack-engineer + UI] Tt 行内字体面板展开态
+  /// （对标参考版「Tt 入口行内展开」形态：不再跳转整页字体管理）
+  bool _fontPanelOpen = false;
 
   static const _tabLabels = ['全局', '菜单', '信息', '更多'];
 
@@ -246,6 +256,19 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
             ],
           ),
         ),
+        // [C3 形态对齐 | full-stack-engineer + UI] Tt 展开后行内字体面板
+        // （正文选择/字距/缩进/字重/简繁，对齐参考版行内形态）
+        if (_fontPanelOpen) ...[
+          const SizedBox(height: 12),
+          ReaderFontPanel(
+            config: adv.copy(),
+            onChanged: _commitAdv, // 面板行内修改统一经 _commitAdv 持久化
+            onReload: () {
+              // 简繁转换等需重载正文（对标原版 postEvent UP_CONFIG[5]）
+              unawaited(notifier.reloadChapterContent());
+            },
+          ),
+        ],
         const SizedBox(height: 12),
         _buildBackgroundCard(state, notifier, adv),
         const SizedBox(height: 12),
@@ -354,18 +377,16 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
     );
   }
 
-  /// Tt 字体入口小卡（跳转字体管理页）
+  /// Tt 字体入口小卡
+  ///
+  /// [C3 形态对齐 | full-stack-engineer + UI] 由「跳转整页字体管理」改为
+  /// 「行内展开字体面板」（对齐参考版形态：页签内正文字体/字距/标题字体
+  /// + 斜体开关/字重/选择字体/简繁转换）。字体选择整页链路不丢失：
+  /// 面板内「选择字体」行仍跳转 AppRoutes.fonts（FontScreen）。
   Widget _buildFontEntryCard(BuildContext context) {
+    final selected = _fontPanelOpen;
     return _panelCard(
-      onTap: () async {
-        await Navigator.pushNamed(context, AppRoutes.fonts);
-        if (!mounted) return;
-        // 返回后推送共享配置触发阅读器重建（重读字体配置）
-        _commitAdv(
-          (ref.read(readerAdvConfigProvider) ?? ReaderAdvancedConfig())
-              .copy(),
-        );
-      },
+      onTap: () => setState(() => _fontPanelOpen = !selected),
       child: SizedBox(
         width: 56,
         child: Center(
@@ -374,7 +395,13 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
             style: Theme.of(context)
                 .textTheme
                 .titleMedium
-                ?.copyWith(fontWeight: FontWeight.w700),
+                ?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  // 展开态主色高亮（对标参考版行内面板选中态）
+                  color: selected
+                      ? Theme.of(context).colorScheme.primary
+                      : null,
+                ),
           ),
         ),
       ),

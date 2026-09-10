@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.233] - 2026-09-11
+
+### Changed
+- [UI] 阅读界面「Tt」入口由跳转整页字体管理改为行内字体面板（差异清单 C3，子代理 full-stack-engineer 交付 + 主代理审核）：点 Tt 小卡在设置弹层内直接展开面板——正文字体（「选择字体」仍进既有字体管理页，链路不丢失）/ 正文字距滑条（em -0.5~1.0，对齐原版 `(p-50)/100` 语义）/ 首行缩进（按我方字段 0-3 档）/ 标题字体（原版 #1072 titleFont，我方暂无配置字段，禁用行诚实标注「跟随正文」）/ 字重（中·粗·细，对齐原版 TextFontWeightConverter）/ 简繁转换（0 关闭/1 繁→简/2 简→繁，接既有 FFI `setChineseConvertType`，变更后重载正文对齐原版 UP_CONFIG[5]）；全部控件经既有 `_commitAdv` 持久化并推送共享配置，未新增数据链。**「斜体」按红线不放入**：源码核实开源版全仓无斜体配置字段（为参考版自有增强）
+
+### Test
+- 子代理自测：flutter analyze 无问题、flutter test 全绿；主代理独立复核：analyze 无问题 + flutter test 1370 全过（含子代理新增 `reader_font_panel_test` 2 用例，断言「斜体」不存在以防回潮）；5556 实机——Tt 点按展开面板，「字体/选择字体/正文字体：默认字体/正文字距 0.00/首行缩进：二字符/标题字体：跟随正文/字重/简繁转换」齐备，再点收起；版本 2.0.233+234
+
+- Contributor: full-stack-engineer + UI（主代理 Qoder UI 审核）
+
+
 ## [2.0.232] - 2026-09-11
 
 ### Changed
