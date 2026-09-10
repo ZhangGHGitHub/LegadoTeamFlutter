@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.216] - 2026-09-08
+
+### Changed
+- [UI] 阅读菜单顶栏按参考版改造（用户反馈②）：移除书名/章名胶囊，改为 返回/换源/刷新正文/缓存当前章/更多 五钮（对齐参考版顶栏构成）
+- [UI] 阅读菜单章节滑条行对齐参考版（用户反馈③）：两端改**圆形按钮+上下双箭头**（章节上/下调整语义，避免左右箭头被读作翻页）；滑条改 M3 手柄样式（圆角矩钮）+ divisions 点刻轨道
+
+### Test
+- flutter analyze 无问题；flutter test 1349 全过；5556 实机截图确认顶栏五钮/圆形上下钮/M3 点刻滑条；版本 2.0.216+217
+
+- Contributor: Qoder UI
+
 ## [2.0.215] - 2026-09-08
 
 ### Changed

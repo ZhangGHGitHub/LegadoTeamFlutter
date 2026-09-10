@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../models/models.dart';
+import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../providers/ui_settings/ui_settings_notifier.dart';
 import '../../routes.dart';
@@ -214,7 +215,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildTitleRow(context, book, chapter, foreground),
+              _buildTitleRow(context, book, chapter, foreground, notifier),
               // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 面板行序对齐参考版：
               // 亮度条 → 章节滑条（两侧箭头）→ 可横滑五项行
               //（章节梗概/AI改写/全文搜索/自动翻页/目录 ‖ 朗读/界面/替换/更多）
@@ -263,10 +264,13 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     return surface;
   }
 
-  // ── 分区 1：标题胶囊行 ──
+  // ── 分区 1：顶栏（对齐参考版：← / 换源 / 刷新 / 下载 / ⋮）──
+  //
+  // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 用户反馈②：顶栏按参考版改造——
+  // 移除书名/章名胶囊（章名在正文区与页脚已有呈现），改为参考版五钮
+  //（返回/换源/刷新正文/下载当前章/更多溢出）— Qoder
   Widget _buildTitleRow(BuildContext context, Book? book,
-      BookChapter? chapter, Color? foreground) {
-    final cs = Theme.of(context).colorScheme;
+      BookChapter? chapter, Color? foreground, ReaderNotifier notifier) {
     return SizedBox(
       height: 48,
       child: Row(
@@ -276,44 +280,48 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             tooltip: '退出阅读',
             onPressed: widget.onBack,
           ),
-          Expanded(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Text(
-                book?.name ?? '',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context)
-                    .textTheme
-                    .titleMedium
-                    ?.copyWith(color: foreground),
-              ),
-            ),
+          const Spacer(),
+          IconButton(
+            icon: const Icon(Symbols.swap_horiz_rounded),
+            tooltip: '换源',
+            onPressed: book == null
+                ? null
+                : () => Navigator.pushNamed(
+                      context,
+                      AppRoutes.changeSource,
+                      arguments: book,
+                    ),
           ),
-          // 章节名（点击进目录）
-          Flexible(
-            child: GestureDetector(
-              onTap: widget.onOpenCatalog,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: Text(
-                  chapter?.title ?? '',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color:
-                            foreground ?? cs.onSurfaceVariant,
-                      ),
-                ),
-              ),
-            ),
+          IconButton(
+            icon: const Icon(Symbols.refresh_rounded),
+            tooltip: '刷新正文',
+            onPressed: () => unawaited(notifier.reloadChapterContent()),
           ),
-          // More 溢出（高频项子集；长尾项 S2-2 迁移）
+          IconButton(
+            icon: const Icon(Symbols.download_rounded),
+            tooltip: '缓存当前章',
+            onPressed: book == null
+                ? null
+                : () async {
+                    final idx = ref
+                        .read(readerNotifierProvider)
+                        .currentChapterIndex;
+                    try {
+                      await ref
+                          .read(bookApiProvider)
+                          .cacheDownloadStart(book.bookUrl, idx, idx);
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('当前章已加入缓存队列')),
+                      );
+                    } catch (e) {
+                      if (!context.mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('缓存失败：$e')),
+                      );
+                    }
+                  },
+          ),
           PopupMenuButton<String>(
             tooltip: '更多',
             position: PopupMenuPosition.under,
@@ -490,47 +498,78 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
         widget.onSeekPage != null;
     final currentPage =
         state.currentChapterPos.clamp(0, chapterPageCount > 0 ? chapterPageCount - 1 : 0);
+    // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 滑条行对齐参考版（用户反馈③）：
+    // ①两端为圆形箭头钮（章节上/下调整语义，禁用态变浅）；
+    // ②滑条用 M3 手柄样式（圆角矩钮）+ divisions 点刻轨（参考版分段点刻轨道）
+    //   ——此前左右尖角箭头易被读作翻页，改为圆形按钮并统一视觉 — Qoder
+    final cs = Theme.of(context).colorScheme;
+    final sliderTheme = SliderTheme.of(context).copyWith(
+      trackHeight: 8,
+      year2023: false,
+      thumbColor: foreground ?? cs.onSurface,
+      activeTrackColor: (foreground ?? cs.onSurface).withValues(alpha: 0.25),
+      inactiveTrackColor: (foreground ?? cs.onSurface).withValues(alpha: 0.12),
+      disabledActiveTrackColor:
+          (foreground ?? cs.onSurface).withValues(alpha: 0.15),
+      disabledInactiveTrackColor:
+          (foreground ?? cs.onSurface).withValues(alpha: 0.08),
+      activeTickMarkColor: Colors.transparent,
+      inactiveTickMarkColor: (foreground ?? cs.onSurface).withValues(alpha: 0.35),
+      overlayShape: SliderComponentShape.noOverlay,
+    );
+    Widget navButton(IconData icon, String tip, VoidCallback? onTap) {
+      return Material(
+        color: cs.surfaceContainerHighest.withValues(alpha: 0.6),
+        shape: const CircleBorder(),
+        child: IconButton(
+          icon: Icon(icon, size: 20, color: foreground ?? cs.onSurface),
+          tooltip: tip,
+          onPressed: onTap,
+        ),
+      );
+    }
+
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       child: Row(
         children: [
-          // [UI_SYNC_REFACTOR S6 修] 两侧改箭头图标（对齐参考版滑条形）— Qoder
-          IconButton(
-            icon: const Icon(Icons.chevron_left_rounded),
-            tooltip: AppStrings.previousChapter,
-            onPressed: state.hasPreviousChapter
-                ? () => notifier.prevChapter()
-                : null,
+          navButton(
+            Icons.keyboard_double_arrow_up_rounded,
+            AppStrings.previousChapter,
+            state.hasPreviousChapter ? () => notifier.prevChapter() : null,
           ),
           Expanded(
-            child: usePageSeek
-                ? Slider(
-                    value: currentPage.toDouble(),
-                    min: 0,
-                    max: (chapterPageCount - 1).toDouble(),
-                    divisions: chapterPageCount - 1,
-                    label: '${currentPage + 1}/$chapterPageCount',
-                    onChanged: (value) => widget.onSeekPage!(value.toInt()),
-                  )
-                : Slider(
-                    value: state.chapters.isNotEmpty
-                        ? state.currentChapterIndex.toDouble()
-                        : 0,
-                    min: 0,
-                    max: state.chapters.length > 1
-                        ? (state.chapters.length - 1).toDouble()
-                        : 1,
-                    divisions: state.chapters.length > 1
-                        ? state.chapters.length - 1
-                        : null,
-                    onChanged: (value) => notifier.goToChapter(value.toInt()),
-                  ),
+            child: SliderTheme(
+              data: sliderTheme,
+              child: usePageSeek
+                  ? Slider(
+                      value: currentPage.toDouble(),
+                      min: 0,
+                      max: (chapterPageCount - 1).toDouble(),
+                      divisions: chapterPageCount - 1,
+                      label: '${currentPage + 1}/$chapterPageCount',
+                      onChanged: (value) => widget.onSeekPage!(value.toInt()),
+                    )
+                  : Slider(
+                      value: state.chapters.isNotEmpty
+                          ? state.currentChapterIndex.toDouble()
+                          : 0,
+                      min: 0,
+                      max: state.chapters.length > 1
+                          ? (state.chapters.length - 1).toDouble()
+                          : 1,
+                      divisions: state.chapters.length > 1
+                          ? state.chapters.length - 1
+                          : null,
+                      onChanged: (value) =>
+                          notifier.goToChapter(value.toInt()),
+                    ),
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right_rounded),
-            tooltip: AppStrings.nextChapter,
-            onPressed:
-                state.hasNextChapter ? () => notifier.nextChapter() : null,
+          navButton(
+            Icons.keyboard_double_arrow_down_rounded,
+            AppStrings.nextChapter,
+            state.hasNextChapter ? () => notifier.nextChapter() : null,
           ),
         ],
       ),
