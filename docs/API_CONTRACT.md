@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-09-11 | **readRecordDaily 单位归一（修复，非签名变更）**：2026-08-29 上线的写路径把毫秒增量写进契约声明为秒的 `durationSeconds` 列，当日聚合值放大 1000 倍（热力图时长配色全天饱和、首页今日目标表盘恒满、按天视图显示「75天」级时长）。写路径改按整秒差值入账（`read_time/1000 − old_read_time/1000`，不因频繁小增量截断丢秒）；新增 DB v107 迁移把存量行整除 1000 归一（`Migration106To107`，user_version 门禁保证仅执行一次，SCHEMA_VERSION 106→**107**）。FFI 签名与 §2.12 方法数不变 |
 | 2026-09-03 | **换源搜索流式化 FFI 冻结**（换源修复任务书批次 3 / T6，加法式）：`searchSourceStream`（§2.4 换源搜索流：Rust 侧 `ffi::source_switch_search_stream(book_name, author, source_urls_json, options_json, sink: StreamSink<String>)`，逐源完成即推一批次——进度 `finished_count`/`total_count` + 当前已过滤评分排序候选全量快照 `matches[]`；DB 复用路径单批推送；enrich 流内后置不阻塞首批到达）。旧 `searchSource` 保留兼容。§2.4 方法数 16→**17**，附录合计 268→**269**，BookApi 口径 265→**266** |
 | 2026-09-03 | **换源执行链与变量链对齐**（换源修复任务书 T2/T3/T4/T5，加法式）：`searchSource` 返回 `matches[]` 项新增可选 `variable`（搜索期级联变量，对齐 SearchBook.toBook 复制语义）；`webbookInfo` 返回 JSON 新增可选 `variable`（bookInfo 规则求值 `@put`/`putVariable` 级联导出，无专用规则字段）；搜索结果项与 `searchBooks` 持久化启用 `variable` 透传（元素级导出）；`switchSource` 签名不变、行为对齐原版 getToc（详情解析→真实 tocUrl 取目录→失败即失败保留旧源；book.variable=候选与详情页变量合并、详情页优先；章节落库保留 variable/isVolume）。§2.4/§2.17 方法数不变 |
 | 2026-08-29 | **热力图每日时长聚合契约**（U 侧 UI_MD3_PLAN 登记）：加法式——`readRecordDailyList(int year)`（§2.12 阅读记录组，返回 `[{date, seconds}]` 日期升序）；`putReadRecord` 写路径增量累加当日 readRecordDaily（新 readRecordDaily 表：date TEXT PK + durationSeconds，增量 > 0 入账，本地时区）。§2.12 方法数 5→**6**，附录合计 267→**268**，BookApi 口径 264→**265** |
@@ -353,11 +354,11 @@
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
 | `getReadRecords()` | 无 | `Future<List<ReadRecord>>` | 获取所有阅读记录 |
-| `putReadRecord(ReadRecord record)` | record: ReadRecord 对象 | `Future<void>` | 更新阅读记录；**（热力图每日时长契约，2026-08-29）**写路径同步累加当日 readRecordDaily（增量 = 新 readTime − 旧 readTime，仅增量 > 0 入账，本地时区 YYYY-MM-DD） |
+| `putReadRecord(ReadRecord record)` | record: ReadRecord 对象 | `Future<void>` | 更新阅读记录；**（热力图每日时长契约，2026-08-29；单位口径 2026-09-11 修复）**写路径同步累加当日 readRecordDaily（增量 = 新 readTime − 旧 readTime，**按整秒差值入账**——readTime 为毫秒、readRecordDaily 为秒，仅增量 > 0 时累加，本地时区 YYYY-MM-DD） |
 | `deleteReadRecord(String bookName)` | bookName | `Future<void>` | 删除阅读记录 |
 | `clearReadRecords()` | 无 | `Future<void>` | 清空阅读记录 |
 | `recordReadingTime(String bookName, int seconds)` | bookName, seconds | `Future<void>` | 记录阅读时长（对齐原版 ReadRecord，非统计子系统） |
-| `readRecordDailyList(int year)` | year：年份 | `Future<List<Map<String, dynamic>>>`（`[{date, seconds}]`，日期升序） | **新增（热力图每日时长契约，2026-08-29，U 侧 UI_MD3_PLAN 登记）**：按年查询每日阅读秒数（readRecordDaily 表：`date TEXT PK` + `durationSeconds INTEGER`，懒建表无迁移）；由 `putReadRecord` 写路径自动累加，UI 轨热力图「每日时长」配色模式数据源 |
+| `readRecordDailyList(int year)` | year：年份 | `Future<List<Map<String, dynamic>>>`（`[{date, seconds}]`，日期升序） | **新增（热力图每日时长契约，2026-08-29，U 侧 UI_MD3_PLAN 登记；单位归一 2026-09-11）**：按年查询每日阅读秒数（readRecordDaily 表：`date TEXT PK` + `durationSeconds INTEGER`）；由 `putReadRecord` 写路径自动累加，UI 轨热力图「每日时长」配色模式数据源。存量毫秒值经 DB v107 迁移归一为秒（见更新记录） |
 
 ### 2.13 RSS 收藏操作（4 个方法）
 
@@ -798,7 +799,7 @@
 | `txtSearch` / `txtSearchRegex` / `txtSearchInChapter` / `txtSearchCount`（新增，Task #98 缺口#4） | 见 §2.40 方法清单 | 本地 TXT 全文搜索接入 frb 主链路：既有 C ABI 4 函数的 frb 暴露（包装 legado-book TxtSearch 引擎，纯文本/正则/章节内搜索 + 匹配计数，返回裸 JSON Array），供搜索页内“搜本地书正文”场景调用，UI 由 UI 轨后续接入 | 2026-08-05 | ✅ 已完成 |
 | `setChineseConvertType` / `getChineseConvertType`（新增，Task #100） | 见 §2.9 方法清单 | 繁简转换 FFI 透传：reader.rs 硬编码 `chinese_convert: None` 改为读取持久化配置（键 `chineseConverterType`，0/1/2 → None/t2s/s2t），新增 set/get 接口；章节标题在展示路径补齐 t2s/s2t（对齐 Kotlin getDisplayTitle）；阅读器样式面板控件由 UI 轨接入 | 2026-08-05 | ✅ 已完成 |
 | `ttsSpeak` / `ttsSetCacheDir`（新增，Task #113 缺口②） | 见 §2.42 方法清单 | TTS 真实合成管线：url 模板替换（speakText/speakSpeed）→ HTTP 拉取音频二进制（legado-net 新增 get_raw）→ Content-Type 校验 → MD5 命名本地缓存（命中免请求）；请 UI 轨将 `audioSpeak`（§2.26）的 `http.get` 探活 fallback 改接 `ttsSpeak`，音频播放器播放返回的 `audioPath` | 2026-08-06 | ✅ 已完成 |
-| `readRecordDailyList`（新增，热力图「每日时长」） | `int year` | `Future<List<Map<String, dynamic>>>`（`[{date, seconds}]` 日期升序；写路径 `putReadRecord` 自动累加当日增量，见 §2.12） | 2026-08-29 | ✅ 已完成 |
+| `readRecordDailyList`（新增，热力图「每日时长」） | `int year` | `Future<List<Map<String, dynamic>>>`（`[{date, seconds}]` 日期升序；写路径 `putReadRecord` 自动累加当日增量，见 §2.12） | 2026-08-29 | ✅ 已完成（单位归一 2026-09-11：存量毫秒经 v107 迁移归一为秒） |
 
 #### 待 UI 封装清单（2026-08-06 审计：7 个 bridge 绑定已实现未被 UI 层封装）
 

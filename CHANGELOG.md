@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.228] - 2026-09-11
+
+### Fixed
+- [Rust] 修复阅读统计「每日时长」放大 1000 倍（差异清单 C5 验收时发现，追溯到 2026-08-29 引入的写路径）：根因 = `upsert_read_record` 把毫秒增量写进契约声明为秒的 `readRecordDaily.durationSeconds` 列，用户可见面为热力图「每日时长」配色全天饱和、首页今日目标表盘恒满、按天视图显示「75天17小时」级时长。修复：写路径改按整秒差值入账（`read_time/1000 − old_read_time/1000`，避免频繁小增量被反复截断丢秒）；新增 DB v107 迁移 `Migration106To107` 把存量行整除 1000 归一（user_version 门禁保证仅执行一次，SCHEMA_VERSION 106→107，懒建表缺失时跳过）；契约 `docs/API_CONTRACT.md` §2.12 与更新记录、重构计划 P3-7 同步登记
+
+### Test
+- Rust 门禁：`cargo test -p legado-db` 301 项全过（含新增 `daily_seconds_v107` 归一/幂等/懒建表跳过 2 用例）、`cargo test -p legado-ffi` read_record 8 项全过（每日聚合用例改为断言整秒入账）、`cargo fmt --check` 与 `cargo clippy` 零告警
+- 实机（5556，`.so` 经 build-android.ps1 release 重建）：①归一——迁移后 user_version=107，2026-09-06 行 6,541,627→6,541（按天视图读作 1小时49分钟）；②写入端到端——阅读约 51 秒后当日行 +51 秒，与该书 readTime 增量 51,772ms 的整秒差值精确吻合；版本 2.0.228+229
+
+- Contributor: Qoder + Bridge
+
 ## [2.0.227] - 2026-09-11
 
 ### Added

@@ -175,6 +175,9 @@
 
 - **P3-6 搜索速度与结果一致性修复**（开放，2026-08-28）：源码审查确认 Flutter 主搜索走 `run_multi_stream -> search_single_source`，未复用较完整的规则搜索实现，导致登录检查、详情页回退、书源上下文 JS、单源去重等原版语义存在分叉；同时存在取消残留任务、入口语义不统一和 `originOrder=0` 风险。先完成离线原版响应夹具、QuickJS 产物 feature 核验和双包同库基线，再按“统一单源执行器 → 会话级取消 → 过滤/聚合/持久化一致性 → 性能剖析”实施。详细验收矩阵、依赖顺序与非目标见 `SEARCH_PARITY_REMEDIATION_PLAN_20260828.md`。本项未实施，不得以已有审计文档或当前未提交代码宣称已关闭。
 
+- **P3-7 readRecordDaily 单位放大 1000 倍**（已关闭 2026-09-11）：核实差异清单 C5（阅读记录按天视图）实测时发现——2026-08-29 上线的写路径（`upsert_read_record`，契约 `cb078cdd7e`）把毫秒增量写进契约声明为秒的 `durationSeconds` 列，当日聚合值放大 1000 倍，用户可见面为：热力图「每日时长」配色全天饱和、首页今日目标表盘恒满、按天视图显示「75天17小时」级时长（实机读数 2026-09-06 = 6,541,627）。处置：写路径改按整秒差值入账（`read_time/1000 − old/1000`，避免频繁小增量被反复截断丢秒）；新增 DB v107 迁移 `Migration106To107` 归一存量行（user_version 门禁保证仅一次，SCHEMA_VERSION 106→107）；契约 §2.12 与更新记录同步。**根因备注**：修复只能走 DB 迁移而非 UI 层除法兜底——旧写路径无时间戳可判新旧，且热力图/表盘为既有消费方，Dart 侧除 1000 会与修好后的新数据冲突。
+  - **关闭记录（2026-09-11）**：实机证据双段——①归一：v107 迁移后 user_version=107、2026-09-06 行 6,541,627→6,541（1小时49分钟，按天视图读数一致）；②写路径：阅读约 51 秒后当日行 +51 秒，与书 readTime 增量 51,772ms 的整秒差值精确吻合。Rust 测试：legado-db 301 项（含 `daily_seconds_v107` 2 项：归一/幂等 + 懒建表跳过）、legado-ffi read_record 8 项全绿；fmt/clippy 零告警。
+
 **整合审计 Rust 后端批次处置（2026-09-03，据 `REFACTOR_CONSOLIDATED_AUDIT_20260903.md` §八）**：UI/Android 侧（N1 manifest、N3 Web 服务决策簇、N6 生成代码）由 UI 轨负责；Rust 后端项全部处置并提交：
 - ✅ **误报更正三处**：D4（JS 源 precision filter）与 D3（一次性入口落库）核实已由 `133914f0f1`（08-29）修复；§二.4（字体反爬 cmap）核实真实现自 `20bee32d1c`（08-07）即完整落地 `legado-js/host_api/query_ttf.rs`+`font_api.rs`（cmap 0/4/6 + glyf 轮廓签名 + java.replaceFont，对齐原版 QueryTTF.java 0/4/6——原版 Java 无 format 12）并接入 quickjs。整合报告第三轮核对把 legado-core 同名死桩误判为活实现。
 - ✅ **core 死桩删除**（`9f58655`）：`legado-core/src/query_ttf.rs` 零消费方且连续误导两轮审计，删除；N2 `do_custom_js` 假成功改显式拒绝（`92c171182c`），server REST run_task 测试同步诚实化（该 REST 层属 §二.7 已决策删除簇）。
@@ -231,6 +234,7 @@
 修订：主代理 ｜ 2026-08-25（P3-4 关闭：批次 A `6e04cda43`（版本 2.0.105+109）；P3-5 关闭：批次 B 提交（版本 2.0.106+110），独立复验通过）
 修订：主代理 ｜ 2026-08-25（P3-4 第二阶段关闭：双根因批次 C `83ff6a8a8`（版本 2.0.107+111）——debug .so + CoverDecodeLoader 整表注册表；冒烟脚本补 UTF-8 BOM（PS5.1 GBK 解码根因）；两级模拟器验证 5556/5558 全 PASSED）
 修订：Codex ｜ 2026-08-28（P3-6 开放：搜索主路径与原版深度源码审查，专项修复计划和验收矩阵登记）
+修订：主代理 ｜ 2026-09-11（P3-7 关闭：readRecordDaily 单位 1000 倍放大根治——写路径按秒入账 + DB v107 存量归一迁移；实机双段证据与 Rust 测试见条目）
 修订：Qoder UI ｜ 2026-08-28（治理步骤：UI 开发规范由 apple-ui-designer 技能切换为 Material Design 3 官方指南，AGENTS/design_system/本档三处同步，据 UI_MD3_PLAN.md 第十四节独立 commit；P3-6 搜索 parity 修复仍由后端轨并行推进，互不干扰）
 修订：Qoder + Bridge ｜ 2026-08-31（iOS 轨 P2-C 完成：NowPlayingBridge.swift 锁屏控制/远程命令对齐 MediaSessionBridge 协议，中断映射焦点事件，三轮 Swift 编译修正后 iOS Build 全绿；会话各批次汇报汇总落盘 docs/SESSION_REPORTS_20260829-31.md；P2 剩自动任务降级与真机走查，P3 三端收敛待启动；版本 2.0.131+132）
 修订：Qoder + Bridge ｜ 2026-08-30（iOS 轨 P2-B 完成：登录 Cookie iOS 捕获（document.cookie，httpOnly 局限注明）+ 后台听书基础（UIBackgroundModes audio + AVAudioSession playback/spokenAudio）；saf 与 backstageEval 两项销记（既有实现已覆盖）；三工作流全绿；P2-C 待启动：audio_service 锁屏控制/自动任务降级/真机走查；版本 2.0.130+132）

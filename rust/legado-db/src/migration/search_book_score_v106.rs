@@ -57,7 +57,7 @@ mod tests {
         schema::init_schema(&conn).unwrap();
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(&conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(&conn).unwrap(), 106);
+        assert_eq!(MigrationRegistry::current_version(&conn).unwrap(), 107);
         let count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM pragma_table_info('searchBooks') WHERE name = 'bookScore'",

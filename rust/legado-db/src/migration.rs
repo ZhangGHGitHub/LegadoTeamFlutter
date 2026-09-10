@@ -5,6 +5,7 @@
 //! - `MigrationRegistry` 注册表管理所有版本间的迁移
 //! - 使用 SQLite `user_version` PRAGMA 追踪当前版本
 
+pub mod daily_seconds_v107;
 pub mod migrations;
 pub mod room_align_v105;
 pub mod schema_align_v104;
@@ -63,6 +64,7 @@ impl MigrationRegistry {
         self.register(Box::new(schema_align_v104::Migration103To104));
         self.register(Box::new(room_align_v105::Migration104To105));
         self.register(Box::new(search_book_score_v106::Migration105To106));
+        self.register(Box::new(daily_seconds_v107::Migration106To107));
     }
 
     /// 注册单个迁移
@@ -297,7 +299,7 @@ mod tests {
     fn test_migration_registry_list() {
         let registry = MigrationRegistry::new();
         let list = registry.list_migrations();
-        assert_eq!(list.len(), 16);
+        assert_eq!(list.len(), 17);
         assert_eq!(list[0].0, 90);
         assert_eq!(list[0].1, 91);
     }
@@ -413,7 +415,7 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
         let version = MigrationRegistry::current_version(conn).unwrap();
-        assert_eq!(version, 106);
+        assert_eq!(version, 107);
         assert!(table_exists(conn, "auto_task_rules").unwrap());
         assert!(column_exists(conn, "book_sources", "mainJs"));
         assert!(table_exists(conn, "dictRules").unwrap());

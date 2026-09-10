@@ -23,7 +23,9 @@ use legado_core::{LegadoError, LegadoResult};
 /// - v105：D1 — ruleSubs/dictRules/keyboardAssists 对齐 Room 表名列名
 ///   （Migration104To105；清理 snake_case 旧表残留）
 /// - v106：searchBooks 补 `bookScore` 列（换源页用户评分 -1/0/1，Migration105To106）
-pub const SCHEMA_VERSION: u32 = 106;
+/// - v107：readRecordDaily 单位归一（存量毫秒 → 秒，Migration106To107；修复
+///   2026-08-29 写路径把毫秒增量写入秒列导致的 1000 倍放大）
+pub const SCHEMA_VERSION: u32 = 107;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
