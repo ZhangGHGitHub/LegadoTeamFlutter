@@ -5,33 +5,14 @@
 > **口径**：功能基准=`legado-upstream`（原版 Android 源码，路径 `D:\OH-WorkSpace\LegadoTeam\legado-upstream`）；实现/架构基准=`Projects/legado_flutter`（重构版工程）；视觉基准=参考版 kazusa 实机截图（差异清单内）。
 > **红线提醒**：未经授权禁止新增原版不存在功能；FFI/接口变更须先冻结 `docs/API_CONTRACT.md`。
 
-## A. 待语义核实类（先核实、后实施，避免盲改）
+## A. 待语义核实类 → **核实结论（2026-09-11 完成，源码为准）**
 
-### A1. 搜索顶栏三钮（筛选 / 定位 / 设置）
-- **现状**：我方顶栏=←+胶囊输入条+前进→+⋮；参考版=←+⚙+定位+筛选（实心）。语义未知，此前按审计纪律未改。
-- **核实基准**：重构版 `Projects/legado_flutter/lib/features/search/search_page.dart`（顶栏构成与三钮动作）；原点击对应原版 `ui/book/search/SearchActivity.kt` 菜单项（精准搜索/显示搜索记录/书源管理/分组或书源/日志）。
-- **建议方案**：维持我方 ⋮ 菜单承载原版菜单项；在 ⋮ 左侧**新增筛选图标钮**，复用现有"分组或书源"范围菜单（`search_screen_scope_sheet.part.dart`），图标换 `filter_alt`；⚙/定位若核实为书源管理/书源定位语义，则分别映射 `AppRoutes.sources` 与"定位当前书源"（现有 scope 内能力）。
-- **风险**：低（纯 UI）；勿动既有 ⋮ 行为。
-- **估算**：0.5 天。**建议**：核实后并入下一体验增强批。
-
-### A2. 换源形态（底部弹层 vs 整页）
-- **现状**：我方=整页（书名头+搜索/刷新/⋮+空态+FAB+底部源 URL 条）；参考版=底部弹层（把手+图标行+筛选输入+搜索进度条+源卡列表）。
-- **核实基准**：原版 `ui/book/changesource/ChangeBookSourceDialog.kt`（原版即为 **Dialog/弹层**语义 + `ChangeBookSourceAdapter.kt` 源卡行）。
-- **建议方案**：按原版语义将 `change_source_screen.dart` 改为 `showModalBottomSheet` 形态或保留整页但补齐：筛选输入、搜索进度（`searchedCount/totalCount` 已有同款数据）、源卡三项信息（作者/最新章节/字数chip）、当前源高亮、图钉置顶、暂停。**注意**：换源变量链与 persist 逻辑（3 号提交 30edc8527d）不得动，仅改外壳与信息密度。
-- **风险**：中（涉及换源链路 UI 重组，需回归换源 E2E 夹具测试）。
-- **估算**：1.5 天。**建议**：独立小批，实施前跑一遍 R1 换源 E2E。
-
-### A3. 替换净化编辑器（弹窗 → 整页）
-- **现状**：我方=弹窗表单；参考版=整页编辑器（含作用域 chips/正则/范围 + 保存 FAB）。
-- **核实基准**：原版替换规则编辑 UI（`data/entities/ReplaceRule.kt` 字段全集；编辑入口在 `ui/replace/` 下 dialog 或 `ReplaceRuleController` 关联页——实施前打开确认弹窗/整页归属）。
-- **建议方案**：若原版亦为弹窗 → 维持现状仅补齐字段呈现（作用域 chips 化）；若原版为整页 → 新建 `replace_rule_edit_screen.dart` 整页（复用现有字段与保存逻辑，弹窗保留为快捷编辑）。
-- **风险**：低（字段已全）。**估算**：1 天。**建议**：随 A4 同批。
-
-### A4. 发现页：行卡片底 + 顶栏 ⋮；发现源二级页 3 列 chips
-- **现状**：我方=无卡片底平铺行 + 文件夹图标；二级页=源名下拉+分类 chips+通栏瓦片。参考版=卡片底行 + ⋮；二级页=排行榜通栏+3 列 chips（巅峰榜/出版榜…）+热门标签。
-- **核实基准**：重构版 `features/explore/explore_list_page.dart`、`explore_tab_page.dart`；原版 `ui/book/explore/ExploreShowActivity.kt`。
-- **建议方案**：行加圆角卡底（`surfaceContainer` 16dp，沿用 T1 订阅页瓦片规范）；顶栏文件夹图标旁补 ⋮（菜单项按原版 ExploreShowActivity 菜单）；二级页子分类从通栏瓦片改 3 列 chips 网格（`Wrap`/`GridView.count(crossAxisCount:3)`）。
-- **风险**：低。**估算**：1 天。**建议**：并入发现页批次。
+| 项 | 核实依据（源码） | 结论与决策 |
+|---|---|---|
+| A1 搜索顶栏三钮（⚙/定位/筛选） | 原版 `ui/book/search/SearchActivity.kt`；重构版 `features/search/search_page.dart` L545-590 | 原版与重构版**均无三钮**，能力全在 ⋮ 溢出菜单（精准搜索/搜索范围/全部书源/书源管理）；三钮为闭源参考版特有、语义无源可依 → **不实施**（我方已有等价 ⋮ 菜单，原版对齐优先） |
+| A2 换源形态 | 原版 `ui/book/changesource/ChangeBookSourceDialog.kt`（`BaseDialogFragment(R.layout.dialog_book_change_source)`），布局含 `refresh_progress_bar`（搜索进度）+ `recycler_view`（源卡）+ `ll_bottom_bar`（dur/top/bottom） | **确认原版即弹层**且与参考版截图形态一致 → **实施为弹层**（保留我方换源变量链逻辑不动），见批 E |
+| A3 替换编辑器 | 原版 `ui/replace/edit/ReplaceEditActivity.kt` + `activity_replace_edit.xml` | **确认原版即整页**（规则列表=ReplaceRuleActivity）→ 我方弹窗表单改为**整页编辑器**（字段全覆盖已有），列入编辑器批 |
+| A4 发现页（卡片底/顶栏⋮/二级页 3 列 chips） | 原版 `ui/book/explore/ExploreShowActivity.kt` + `ExploreShowAdapter.kt`；重构版 `features/explore/explore_list_page.dart`、`explore_tab_page.dart` | 基准齐备 → 随发现页批实施（批 D） |
 
 ## B. 中优功能对齐
 
@@ -75,14 +56,16 @@
 - **若未来解禁的建议路径**：①数据模型=`自定义集(名称/排序/包含的模块列表)` + `模块(源URL/入口标题/图标/参数)`，Rust 侧新增两张表与 CRUD FFI（**契约先行**：`docs/API_CONTRACT.md` 增补 `homeModuleList/Upsert/Delete`）；②UI=首页齿轮入口→管理页（列表+新建表单+源模块浏览页）；③联动=首页按集渲染模块卡（点击跳发现源对应入口）。
 - **估算**：**3~5 天**（含 Rust 轨契约与实现），建议独立立项、不并入 UI 批次。
 
-## F. 建议排期
+## F. 排期与实施状态（2026-09-11 更新）
 
-| 批次 | 内容 | 前置 | 估算 |
-|---|---|---|---|
-| 批 A（核实前置） | A1 搜索三钮语义、A2/A3 原版弹窗归属核实（只读源码，产出结论） | 无 | 0.5 天 |
-| 批 B（详情页对齐） | B1 | 批 A 结论 | 2 天 |
-| 批 C（体验增强 I） | C1/C2/C3/C4/C5 | C2 契约冻结 | 5.5 天 |
-| 批 D（体验增强 II） | C6/C7/C9/C10 + A4 发现页 | — | 2.5 天 |
-| 批 E（换源外壳） | A2（含 R1 E2E 回归） | 批 A 结论 | 1.5 天 |
-| 取证尾巴 | D 表 | 模拟器稳定 | 0.5 天 |
-| 搁置解禁 | E（独立立项） | **用户授权** | 3~5 天 |
+| 批次 | 内容 | 状态 |
+|---|---|---|
+| 批 A | 源码核实 4 项（结论见上表） | ✅ **已完成**（A1 不实施；A2/A3/A4 决策落地） |
+| 批 B | 书籍详情页形态对齐（B1） | 🚧 实施中（full-stack-engineer 子代理） |
+| 批 C-I | 体验增强：C5 阅读记录按天视图 | 🚧 实施中（子代理并行） |
+| 批 C-II | C1 书源管理复选框批量 / C2 字典规则管理 / C3 字体行内面板 / C4 仅本书开关 | 待派发 |
+| 批 D | C6 外观预览 / C9 编辑器帮助（已完成²）/ C10 自动翻页面板 / A4 发现页 / A3 替换编辑器整页 | 待派发 |
+| 批 E | A2 换源弹层化（含 R1 E2E 回归） | 待派发 |
+| 取证尾巴 | 参考侧截图补采 | 待模拟器稳定 |
+
+注²：C9 编辑器帮助（2.0.224）、C7 备份测试配置行（2.0.225）已于 2026-09-09/10 完成。
