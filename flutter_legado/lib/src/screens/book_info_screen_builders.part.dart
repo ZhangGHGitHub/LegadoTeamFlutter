@@ -297,6 +297,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         // WebDav PUT 本地书籍文件 → book.origin = webDavTag+putUrl → update） — Qoder
         await _uploadToRemote();
         break;
+      case 'group':
+        // [B1 形态对齐 | full-stack-engineer + UI]「分组」由操作宫格收纳进
+        // 顶栏 ⋮ 菜单，复用既有 _showChangeGroup（行为不变）
+        await _showChangeGroup();
+        break;
       default:
         _todo(value);
         break;
@@ -689,20 +694,19 @@ extension _BookInfoBuilders on _BookInfoScreenState {
             );
           },
         ),
-        // 封面卡（对标原版 ArcView + CardView 110x160 居中）
-        SliverToBoxAdapter(child: _buildHeader(context, book)),
-        // [UI_SYNC_REFACTOR S3] ActionCard 行（对齐参考 BookInfoActions：
-        // 加入书架/目录/分组/换源/阅读记录 5 卡，全部原版功能）
-        SliverToBoxAdapter(child: _buildActionCards(context, book)),
+        // 头部两栏（B1：封面左置 96×128 + 信息右置 + 标签行 + 三行强调排版）
+        SliverToBoxAdapter(child: _buildHeader(context, book, chapters)),
         // [UI_SYNC_REFACTOR S3] Characters/RelatedBooks 区块骨架（已授权；
         // 数据链需后端调研——见 UI_ONE_TO_ONE_CLONE_PLAN_20260905.md §〇，
         // 无数据时整段隐藏=缺省降级）
         ..._buildCharactersSection(context, book),
         ..._buildRelatedBooksSection(context, book),
-        // 信息面板：书名/字数标签/摘要行/简介（对标原版 ll_info）
+        // 信息面板：分组/目录行 + 简介（书名/标签/作者/来源/三行已上移头部两栏区）
         SliverToBoxAdapter(
           child: _buildSummaryPanel(context, book, chapters),
         ),
+        // 操作宫格（B1：四宫格，参考版排布在简介之前；「分组」收进 ⋮ 菜单）
+        SliverToBoxAdapter(child: _buildActionCards(context, book)),
         // 底部续铺纯色：内容不足一屏时填满剩余视口，避免透出封面虚化层
         SliverFillRemaining(
           hasScrollBody: false,
@@ -714,40 +718,256 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     );
   }
 
-  /// 顶部封面区（对标原版 ArcView + CardView：110x160 封面居中 + elevation 8）
-  Widget _buildHeader(BuildContext context, Book book) {
+  /// 顶部头部区（B1 形态对齐：参考版「封面左置 + 信息右置」两栏）
+  /// - 左：96×128 圆角 12 封面卡（点击换封面 / 长按预览大图行为不变）
+  /// - 右：信息列（书名 titleLarge 加粗 / 作者 / 来源=书源名，交互行为不变）
+  /// - 下：标签行（分类 chip + 字数 chip，沿用既有数据字段与点击搜索链路）
+  /// - 下：在读 / 最新 / 共N章 三行强调排版（数据复用页面现有 state）
+  /// — full-stack-engineer + UI
+  Widget _buildHeader(
+      BuildContext context, Book book, List<BookChapter> chapters) {
     final topPadding = MediaQuery.paddingOf(context).top + kToolbarHeight + 8;
+    final cs = Theme.of(context).colorScheme;
+    final ts = Theme.of(context).textTheme;
+    final wordCount = (book.wordCount ?? '').trim();
+    final kinds = _buildKindLabels(book);
     return Padding(
       padding: EdgeInsets.only(top: topPadding, bottom: 12),
-      child: Center(
-        child: Material(
-          elevation: 8,
-          color: Colors.transparent,
-          borderRadius: BorderRadius.circular(10),
-          child: GestureDetector(
-            // 对齐原版 ivCover 点击换封面 / 长按预览大图 — Cursor UI
-            onTap: () => _openChangeCover(book),
-            onLongPress: () => _previewCover(book),
-            // [LAYOUT_PLAN P4] 外层 Hero 接管过渡，flightShuttle 走全局 coverFlightShuttleBuilder
-            //（BookCover 内置 Hero 无 flightShuttle，内层 heroTag 置空防嵌套），tag 统一 book-cover:
-            child: Hero(
-              tag: 'book-cover:${book.bookUrl}',
-              flightShuttleBuilder: coverFlightShuttleBuilder,
-              child: BookCover(
-                coverUrl: book.customCoverUrl ?? book.coverUrl,
-                width: 110,
-                height: 160,
-                borderRadius: 10,
-                sourceOrigin: book.origin,
-              ),
+      child: Column(
+        children: [
+          // 两栏：封面左置 + 右侧信息列
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Material(
+                  elevation: 8,
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(12),
+                  child: GestureDetector(
+                    // 对齐原版 ivCover 点击换封面 / 长按预览大图 — Cursor UI
+                    onTap: () => _openChangeCover(book),
+                    onLongPress: () => _previewCover(book),
+                    // [LAYOUT_PLAN P4] 外层 Hero 接管过渡，flightShuttle 走全局
+                    // coverFlightShuttleBuilder（内层 heroTag 置空防嵌套），
+                    // tag 统一 book-cover:
+                    child: Hero(
+                      tag: 'book-cover:${book.bookUrl}',
+                      flightShuttleBuilder: coverFlightShuttleBuilder,
+                      child: BookCover(
+                        coverUrl: book.customCoverUrl ?? book.coverUrl,
+                        width: 96,
+                        height: 128,
+                        borderRadius: 12,
+                        sourceOrigin: book.origin,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 书名（对齐原版 tvName 点击/长按 → SearchActivity）
+                      GestureDetector(
+                        onTap: () => _openSearch(
+                            book.name, event: 'clickBookName'),
+                        onLongPress: () => _sourceCallBackSearch(
+                            'longClickBookName', book.name),
+                        child: Text(
+                          book.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: ts.titleLarge?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: cs.onSurface,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      // 作者（点击 → 搜索作者；长按 → JS 回调，行为不变）
+                      GestureDetector(
+                        onTap: () => _openSearch(book.author,
+                            event: 'clickAuthor'),
+                        onLongPress: () => _sourceCallBackSearch(
+                            'longClickAuthor', book.author),
+                        behavior: HitTestBehavior.opaque,
+                        child: Text(
+                          book.author.isNotEmpty ? book.author : '未知作者',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: ts.bodyMedium
+                              ?.copyWith(color: cs.onSurfaceVariant),
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      // 来源=书源名（点击 → 编辑书源；「换源」小按钮，行为不变）
+                      Row(
+                        children: [
+                          Icon(Symbols.language_rounded,
+                              size: 16, color: cs.onSurfaceVariant),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: _isOnlineBook(book)
+                                  ? () => _openSourceEdit(book)
+                                  : null,
+                              behavior: HitTestBehavior.opaque,
+                              child: Text(
+                                '来源：${book.originName.isNotEmpty ? book.originName : book.origin}',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: ts.bodyMedium?.copyWith(
+                                    color: cs.onSurfaceVariant),
+                              ),
+                            ),
+                          ),
+                          _smallAction(context, '换源',
+                              () => _showChangeSourceDialog(book)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
-        ),
+          // 标签行（对标 lb_kind + 字数标签 tv_word_count，左对齐跟随两栏区）
+          if (wordCount.isNotEmpty || kinds.isNotEmpty)
+            Padding(
+              padding:
+                  const EdgeInsets.only(left: 16, right: 16, top: 10),
+              child: Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  for (final kind in kinds)
+                    GestureDetector(
+                      // 对齐原版 lbKind 点击 → SearchActivity.start(source, kind)
+                      // — Cursor UI
+                      onTap: () => _openSearch(
+                        kind,
+                        sourceUrl: book.origin,
+                        event: 'clickBookLabel',
+                      ),
+                      onLongPress: () => _sourceCallBackLabel(
+                        'longClickBookLabel',
+                        kind,
+                      ),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: cs.secondaryContainer
+                              .withValues(alpha: 0.6),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          kind,
+                          style: TextStyle(
+                              fontSize: 11, color: cs.onSurface),
+                        ),
+                      ),
+                    ),
+                  if (wordCount.isNotEmpty)
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: cs.errorContainer,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        wordCount,
+                        style: TextStyle(
+                            fontSize: 11, color: cs.onErrorContainer),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          // 在读 / 最新 / 共N章 三行强调排版（数据复用页面现有 state）
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            child: Column(
+              children: [
+                _chapterStatRow(context, '在读', _readStatText(book)),
+                _chapterStatRow(context, '最新', _latestStatText(book, chapters)),
+                _chapterStatRow(
+                    context, '目录', _totalStatText(book, chapters)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  /// [UI_SYNC_REFACTOR S3] ActionCard 行（对齐参考 BookInfoActions 5 卡）
+  /// 三行强调排版的一行：左侧标签次要色 + 右侧数值加粗强调
+  /// — full-stack-engineer + UI
+  Widget _chapterStatRow(
+      BuildContext context, String label, String value) {
+    final cs = Theme.of(context).colorScheme;
+    final ts = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 36,
+            child: Text(
+              label,
+              style: ts.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: ts.bodyLarge?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: cs.onSurface,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 「在读」行文本：book.durChapterTitle 非空优先，未读显示「未开始」
+  /// — full-stack-engineer + UI
+  String _readStatText(Book book) {
+    final title = (book.durChapterTitle ?? '').trim();
+    return title.isNotEmpty ? title : '未开始';
+  }
+
+  /// 「最新」行文本：实际章节末章优先，回落 book.latestChapterTitle
+  /// — full-stack-engineer + UI
+  String _latestStatText(Book book, List<BookChapter> chapters) {
+    final last = chapters.lastOrNull?.title.trim() ?? '';
+    if (last.isNotEmpty) return last;
+    final stored = (book.latestChapterTitle ?? '').trim();
+    return stored.isNotEmpty ? stored : '暂无';
+  }
+
+  /// 「共N章」行文本：book.totalChapterNum 优先，回落实际章节数
+  /// — full-stack-engineer + UI
+  String _totalStatText(Book book, List<BookChapter> chapters) {
+    final total = book.totalChapterNum > 0
+        ? book.totalChapterNum
+        : chapters.length;
+    return total > 0 ? '共 $total 章' : '暂无章节';
+  }
+
+  /// 操作宫格（B1 形态对齐：参考版四宫格构成）
+  /// - 四格：加入书架/移出书架（切换）/ 目录 / 换源 / 阅读记录（全部现有能力）
+  /// - 「分组」收纳至顶栏 ⋮ 溢出菜单（_handleMenu 'group' → _showChangeGroup），
+  ///   功能不丢失；原版四宫格无对应格，按任务书取舍说明执行
+  /// — full-stack-engineer + UI
   Widget _buildActionCards(BuildContext context, Book book) {
     final cs = Theme.of(context).colorScheme;
     Widget card(IconData icon, String label, VoidCallback onTap) {
@@ -796,7 +1016,6 @@ extension _BookInfoBuilders on _BookInfoScreenState {
             ),
             card(Symbols.format_list_bulleted_rounded, '目录',
                 _openTocScreen),
-            card(Symbols.folder_copy_rounded, '分组', _showChangeGroup),
             card(Symbols.swap_horiz_rounded, '换源',
                 () => _showChangeSourceDialog(book)),
             card(Symbols.history_rounded, '阅读记录',
@@ -856,20 +1075,15 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     ];
   }
 
-  /// 信息面板（对标原版 ll_info：书名 18sp 居中 + 标签栏 + 摘要行 + 简介）
+  /// 信息面板（对标原版 ll_info 下半区：分组/目录行 + 简介；
+  /// 书名/标签/作者/来源/最新三行已上移 _buildHeader 两栏区，B1 形态对齐）
+  /// — full-stack-engineer + UI
   Widget _buildSummaryPanel(
       BuildContext context, Book book, List<BookChapter> chapters) {
     final cs = Theme.of(context).colorScheme;
     final isWebFile = _isWebFileBook(book);
-    final latest = isWebFile
-        ? '最新：下载中...'
-        : ((book.latestChapterTitle ?? '').isNotEmpty
-            ? '最新：${book.latestChapterTitle}'
-            : '共 ${book.totalChapterNum} 章');
     // 对齐原版 upLoading：加载中 / 失败 / 章节名 + 已读进度 — Cursor UI
     final tocTitle = _buildTocSummaryText(book, chapters);
-    final wordCount = (book.wordCount ?? '').trim();
-    final kinds = _buildKindLabels(book);
     return Container(
       decoration: BoxDecoration(
         color: cs.surface,
@@ -880,106 +1094,6 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Column(
         children: [
-          // 书名行可搜索（对齐原版 tvName 点击/长按 → SearchActivity）
-          Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: GestureDetector(
-              onTap: () => _openSearch(book.name, event: 'clickBookName'),
-              onLongPress: () => _sourceCallBackSearch(
-                'longClickBookName',
-                book.name,
-              ),
-              child: Text(
-                book.name,
-                maxLines: 2,
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: -0.3,
-                  height: 1.15,
-                  color: cs.onSurface,
-                ),
-              ),
-            ),
-          ),
-          // 标签栏（对标 lb_kind + 字数标签 tv_word_count）
-          // [UI-fix v2.0.6 | 2026-08-08] 补齐字数标签（红色胶囊置于分类标签前，
-          // 对齐原版 711万字 醒目标签） — Qoder
-          if (wordCount.isNotEmpty || kinds.isNotEmpty) ...[
-            const SizedBox(height: 6),
-            Wrap(
-              alignment: WrapAlignment.center,
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                if (wordCount.isNotEmpty)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: cs.errorContainer,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      wordCount,
-                      style: TextStyle(
-                          fontSize: 11, color: cs.onErrorContainer),
-                    ),
-                  ),
-                for (final kind in kinds)
-                  GestureDetector(
-                    // 对齐原版 lbKind 点击 → SearchActivity.start(source, kind)
-                    // — Cursor UI
-                    onTap: () => _openSearch(
-                      kind,
-                      sourceUrl: book.origin,
-                      event: 'clickBookLabel',
-                    ),
-                    onLongPress: () => _sourceCallBackLabel(
-                      'longClickBookLabel',
-                      kind,
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: cs.secondaryContainer.withValues(alpha: 0.6),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        kind,
-                        style: TextStyle(fontSize: 11, color: cs.onSurface),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ],
-          const SizedBox(height: 8),
-          // 作者行（对标 ic_author + tv_author；点击/长按 → 搜索作者）
-          _summaryRow(
-            context,
-            Symbols.person_rounded,
-            book.author.isNotEmpty ? book.author : '未知作者',
-            onTap: () => _openSearch(book.author, event: 'clickAuthor'),
-            onLongPress: () => _sourceCallBackSearch(
-              'longClickAuthor',
-              book.author,
-            ),
-          ),
-          // 来源行（对标 ic_web + tv_origin + tv_change_source；点击 → 编辑书源）
-          _summaryRow(
-            context,
-            Symbols.language_rounded,
-            '来源：${book.originName.isNotEmpty ? book.originName : book.origin}',
-            onTap: _isOnlineBook(book) ? () => _openSourceEdit(book) : null,
-            action: _smallAction(
-                context, '换源', () => _showChangeSourceDialog(book)),
-          ),
-          // 最新行（对标 ic_book_last + tv_lasted）
-          _summaryRow(context, Symbols.menu_book_rounded, latest),
           // 分组行（对标 ic_groups + tv_group + tv_change_group）
           // [UI-fix v2.0.6 | 2026-08-08] 按钮文案「换组」→「设置分组」对齐原版
           // change_group="Group settings"（点击设置该书所属分组，行为不变） — Qoder
@@ -1251,60 +1365,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     );
   }
 
-  /// 底部操作条（对标原版 fl_action：tv_shelf 加书架/移出书架 + tv_read 阅读，
-  /// 各 weight 1、高 48、radius 8、15sp）
-  Widget _buildBottomBar() {
-    final book = _loadedBook;
-    if (book == null) return const SizedBox.shrink();
-    final cs = Theme.of(context).colorScheme;
-    return SafeArea(
-      top: false,
-      child: Container(
-        color: cs.surfaceContainer,
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        child: Row(
-          children: [
-            Expanded(
-              child: SizedBox(
-                height: 48,
-                child: FilledButton.tonal(
-                  onPressed: () => _toggleShelf(book),
-                  style: FilledButton.styleFrom(
-                    textStyle: const TextStyle(fontSize: 15),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(_inBookshelf ? '移出书架' : '加入书架'),
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: SizedBox(
-                height: 48,
-                child: FilledButton(
-                  onPressed: () =>
-                      _openReader(context, book, book.durChapterIndex),
-                  style: FilledButton.styleFrom(
-                    // [LAYOUT_MOTION_AUDIT L3] FAB 背景 primaryContainer 前景 primary
-                    backgroundColor: cs.primaryContainer,
-                    foregroundColor: cs.primary,
-                    textStyle: const TextStyle(fontSize: 15),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child:
-                      Text(book.durChapterIndex > 0 ? '继续阅读' : '开始阅读'),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  // [B1 形态对齐 | full-stack-engineer + UI] 底部固定双按钮栏（加书架/阅读）已移除：
+  // 阅读入口改右下浮动胶囊（_buildReadFab）；加书架/移出书架入口保留在四宫格第一格
+  //（_buildActionCards），功能不丢失（原版 fl_action 双钮为参考版已替换形态）。
 
   /// 更新目录（对标原版 refreshToc；从底部按钮迁入溢出菜单）
   Future<void> _refreshToc() async {

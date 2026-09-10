@@ -202,8 +202,15 @@ void main() {
       // 目录行对齐原版：显示当前章节名（durChapterIndex=0 → 第一章）+「查看目录」按钮
       expect(tocRow, findsWidgets);
       expect(find.text('查看目录'), findsOneWidget);
-      // 详情页不再内嵌完整章节列表（第二章仅存在于独立目录页）
-      expect(find.textContaining('第二章 发展'), findsNothing);
+      // [B1 形态对齐] 头部新增「在读/最新/共N章」三行：末章标题出现在「最新」行，
+      // 原「第二章仅存在于独立目录页」断言改为「不再内嵌完整章节列表」（不渲染
+      // 整章列表，仅最新行显示末章标题）
+      final list = find.descendant(
+        of: find.byType(CustomScrollView),
+        matching: find.byType(ListView),
+      );
+      expect(list, findsNothing);
+      expect(find.textContaining('第二章 发展'), findsWidgets);
     });
 
     // 对齐原版 resolveBookInfoReadProgress：目录行附加「已读: X%」— Cursor UI
@@ -367,7 +374,7 @@ void main() {
             .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('开始阅读')));
+        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('阅读')));
         await tester.pumpAndSettle();
 
         expect(pushed, contains(AppRoutes.audio));
@@ -383,7 +390,7 @@ void main() {
             .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('开始阅读')));
+        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('阅读')));
         await tester.pumpAndSettle();
 
         expect(pushed, contains(AppRoutes.readerComic));
@@ -398,7 +405,7 @@ void main() {
             .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('开始阅读')));
+        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('阅读')));
         await tester.pumpAndSettle();
 
         expect(pushed, contains(AppRoutes.reader));
@@ -412,7 +419,7 @@ void main() {
             .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('开始阅读')));
+        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('阅读')));
         await tester.pumpAndSettle();
 
         expect(pushed, contains(AppRoutes.video));
@@ -442,7 +449,7 @@ void main() {
             .pumpWidget(wrapWithRoutes(const BookInfoScreen(book: book)));
         await tester.pumpAndSettle();
 
-        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('开始阅读')));
+        await tester.tap(find.descendant(of: find.byType(FloatingActionButton), matching: find.text('阅读')));
         await tester.pumpAndSettle();
 
         // 类型位补全（64）→ 图片源分流到漫画页

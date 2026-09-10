@@ -134,15 +134,16 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   }
 
 
-  /// [UI_SYNC_REFACTOR B4] ExtendedFAB（对齐参考仓 primaryContainer
-  /// 「开始阅读」；原底部操作条保留加书架/阅读入口）
+  /// [B1 形态对齐 | full-stack-engineer + UI] 右下浮动「阅读」胶囊
+  ///（替代原底部固定双按钮栏；阅读跳转链路 _openReader 行为不变，
+  /// 加书架/移出书架入口保留在四宫格第一格）
   Widget _buildReadFab() {
     final book = _loadedBook;
     if (book == null) return const SizedBox.shrink();
     final isReading = book.durChapterIndex > 0;
     return FloatingActionButton.extended(
       icon: const Icon(Symbols.menu_book_rounded),
-      label: Text(isReading ? '继续阅读' : '开始阅读'),
+      label: Text(isReading ? '继续阅读' : '阅读'),
       onPressed: () => _openReader(context, book, book.durChapterIndex),
     );
   }
@@ -241,6 +242,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             if (isLocal)
               const PopupMenuItem(value: 'upload', child: Text('上传至远程')),
             const PopupMenuItem(value: 'refresh', child: Text('刷新')),
+            // [B1 形态对齐 | full-stack-engineer + UI]「分组」由操作宫格收纳进 ⋮ 菜单
+            const PopupMenuItem(value: 'group', child: Text('设置分组')),
             // 创建书籍更新任务（在架 + 书源 + 非本地 + 允许更新；
             // [Task #39 §5.11-2] 已接通 AutoTaskScreen 编辑/创建流程）
             if (_inBookshelf && hasSource && !isLocal && canUpd)
@@ -352,7 +355,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
               : _loadedBook == null
                   ? const ErrorView(message: '书籍不存在')
                   : _buildPage(context, _loadedBook!, _chapters),
-        bottomNavigationBar: _buildBottomBar(),
+        // [B1 形态对齐 | full-stack-engineer + UI] 底部固定双按钮栏已移除：
+        // 阅读入口改右下浮动胶囊（floatingActionButton 在位），
+        // 加书架/移出书架入口保留在四宫格第一格，功能不丢失
         ),
       );
   }
