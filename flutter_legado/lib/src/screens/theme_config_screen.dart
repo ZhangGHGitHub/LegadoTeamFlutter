@@ -409,6 +409,15 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         _ => 'Default（默认）',
       };
 
+  /// 预览卡片的配色名（C6）：自定义主色已生效时标「自定义配色」，
+  /// 否则取内置调色板中文名（对齐 app.dart 的自定义色优先口径）
+  String _previewPaletteLabel(ThemeState themeState, ThemeColorsState colors) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final customPrimary = isDark ? colors.primaryNight : colors.primary;
+    if (customPrimary != null) return '自定义配色';
+    return Md3Palettes.byId(themeState.paletteId).label;
+  }
+
   Future<void> _showContrastPicker() async {
     final current = ref.read(uiSettingsProvider).themeContrastLevel;
     const options = <(String, String)>[
@@ -638,6 +647,13 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
               child: ListView(
                 padding: const EdgeInsets.only(bottom: 32),
                 children: [
+                  // === [C6 形态对齐 | Qoder UI] 外观预览模型（对齐参考版
+                  // 「外观」页顶部手机预览：底色/文字色/强调色随当前主题即时联动，
+                  // 主题切换后本页重建即刷新，无需额外监听） ===
+                  _ThemePreviewCard(
+                    colorScheme: Theme.of(context).colorScheme,
+                    paletteLabel: _previewPaletteLabel(themeState, colors),
+                  ),
                   // === 内置主题（UI_MD3_PLAN.md Batch 1：12 套 MD3 preset
                   // 选择器，paletteId 持久化；与下方自定义主题并存，自定义
                   // 已应用 4 色优先——第九节并存模型） ===
@@ -1904,6 +1920,152 @@ class _CoverRuleConfigDialogState extends State<_CoverRuleConfigDialog> {
               : const Text('确定'),
         ),
       ],
+    );
+  }
+}
+
+/// 外观预览模型（C6 形态对齐参考版「外观」页顶部手机预览）
+///
+/// 迷你手机用当前 [ColorScheme] 绘制：底色 = surface、标题行 = primary、
+/// 文字条 = onSurface、卡片 = surfaceContainerHighest、强调件 = primary。
+/// 主题切换/配色调整后本页重建即刷新，无需额外监听。
+class _ThemePreviewCard extends StatelessWidget {
+  final ColorScheme colorScheme;
+
+  /// 当前生效配色名（内置调色板中文名或「自定义配色」）
+  final String paletteLabel;
+
+  const _ThemePreviewCard({
+    required this.colorScheme,
+    required this.paletteLabel,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    // 文字条：用 onSurface / onSurfaceVariant 压暗，模拟正文与次要文字
+    Widget bar(double width, {Color? color, double height = 4}) => Container(
+          width: width,
+          height: height,
+          decoration: BoxDecoration(
+            color: color ?? cs.onSurface.withValues(alpha: 0.55),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        );
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Card(
+        elevation: 0,
+        color: cs.surfaceContainerLow,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              // 迷你手机（宽 88×高 148）
+              Container(
+                width: 88,
+                height: 148,
+                decoration: BoxDecoration(
+                  color: cs.surface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: cs.outlineVariant),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(11),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // 顶栏（primary 底）
+                      Container(
+                        height: 22,
+                        color: cs.primary,
+                        alignment: Alignment.centerLeft,
+                        padding: const EdgeInsets.symmetric(horizontal: 6),
+                        child: Container(
+                          width: 34,
+                          height: 4,
+                          decoration: BoxDecoration(
+                            color: cs.onPrimary,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Container(
+                          color: cs.surface,
+                          padding: const EdgeInsets.all(6),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // 卡片块（secondaryContainer 底 + 两条文字）
+                              Container(
+                                padding: const EdgeInsets.all(6),
+                                decoration: BoxDecoration(
+                                  color: cs.secondaryContainer,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    bar(52, color: cs.onSecondaryContainer),
+                                    const SizedBox(height: 4),
+                                    bar(38,
+                                        color: cs.onSecondaryContainer
+                                            .withValues(alpha: 0.6)),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+                              bar(60),
+                              const SizedBox(height: 4),
+                              bar(46, color: cs.onSurfaceVariant),
+                              const Spacer(),
+                              // 强调件（primary 胶囊）
+                              Container(
+                                width: 46,
+                                height: 12,
+                                decoration: BoxDecoration(
+                                  color: cs.primary,
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('外观预览', style: textTheme.titleSmall),
+                    const SizedBox(height: 6),
+                    Text(
+                      '当前：$paletteLabel',
+                      style: textTheme.bodyMedium
+                          ?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '切换主题或调色板后，此预览与全局界面同步更新',
+                      style: textTheme.labelSmall
+                          ?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

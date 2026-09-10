@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.230] - 2026-09-11
+
+### Added
+- [UI] 主题设置页新增「外观预览」模型（差异清单 C6，形态对齐参考版「外观」页顶部手机预览）：用当前 ColorScheme 绘制迷你手机——顶栏 = primary、底色 = surface、文字条 = onSurface/onSurfaceVariant、卡片 = secondaryContainer、强调件 = primary 胶囊；右侧标注当前配色名（内置调色板中文名，自定义主色生效时标「自定义配色」，口径同 app.dart 自定义色优先）。主题/调色板切换后本页重建即刷新，无需额外监听
+
+### Test
+- 主代理自实现并复核：flutter analyze 无问题；flutter test 1362 全过（本项无新增用例，控件为纯展示）；5556 实机验证：外观页顶部显示「外观预览 / 当前：柠檬 / 切换主题或调色板后，此预览与全局界面同步更新」，其下内置主题网格正常；版本 2.0.230+231
+
+- Contributor: Qoder UI
+
 ## [2.0.229] - 2026-09-11
 
 ### Changed
