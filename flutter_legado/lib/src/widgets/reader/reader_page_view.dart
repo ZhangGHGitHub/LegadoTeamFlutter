@@ -199,6 +199,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   /// 覆盖翻页：是否为前进方向（决定动画方向和层叠顺序）
   bool _coverForward = true;
 
+  /// 章节直跳（滑条跨多章）时瞬时切换：避免拖动过程中每个刻度都触发
+  /// 300ms 整章过渡动画形成级联闪烁（用户反馈③：章节直接换页动画）— 2026-09-08
+  bool _coverInstantSwap = false;
+
   /// 当前分页数据对应的章节标题（与 _paginatedChapterIndex 同帧写入，
   /// 章节切换加载中冻结渲染时标题与正文保持同章，避免新标题配旧正文）
   String? _paginatedChapterTitle;
@@ -905,11 +909,15 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final chapterIndex = _paginatedChapterIndex;
     if (chapterIndex != _coverChapterIndex) {
       _coverForward = chapterIndex > _coverChapterIndex;
+      // 跨多章直跳（滑条拖动）→ 瞬时切换，避免动画级联闪烁
+      _coverInstantSwap = (chapterIndex - _coverChapterIndex).abs() > 1;
       _coverChapterIndex = chapterIndex;
     }
     final forward = _coverForward;
     return AnimatedSwitcher(
-      duration: const Duration(milliseconds: 300),
+      duration: _coverInstantSwap
+          ? Duration.zero
+          : const Duration(milliseconds: 300),
       switchInCurve: Curves.easeInOut,
       switchOutCurve: Curves.easeInOut,
       // 层叠策略：前进时新章在上滑入，后退时旧章在上滑出
@@ -1087,18 +1095,24 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final targetKey = ValueKey<String>('c${chapterIndex}_p$screenIndex');
     if (chapterIndex != _coverChapterIndex) {
       _coverForward = chapterIndex > _coverChapterIndex;
+      // 跨多章直跳（滑条拖动/章节跳转）→ 瞬时切换，避免动画级联
+      _coverInstantSwap = (chapterIndex - _coverChapterIndex).abs() > 1;
       _coverChapterIndex = chapterIndex;
       _coverScreenIndex = screenIndex;
     } else if (screenIndex != _coverScreenIndex) {
       _coverForward = screenIndex > _coverScreenIndex;
       _coverScreenIndex = screenIndex;
+      _coverInstantSwap = false;
     }
     final forward = _coverForward;
 
     return _contentViewport(
       context,
       AnimatedSwitcher(
-        duration: const Duration(milliseconds: 300),
+        // 直跳（跨多章）瞬时切换；相邻章/翻页保留 300ms 过渡
+        duration: _coverInstantSwap
+            ? Duration.zero
+            : const Duration(milliseconds: 300),
         switchInCurve: Curves.linear,
         switchOutCurve: Curves.linear,
         // 层叠策略：前进时新页在上（覆盖效果），后退时旧页在上（抽离效果）

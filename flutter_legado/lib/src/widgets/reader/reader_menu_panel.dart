@@ -120,7 +120,8 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     final state = ref.watch(readerNotifierProvider);
     final notifier = ref.read(readerNotifierProvider.notifier);
     final book = state.currentBook;
-    final chapter = (state.chapters.isNotEmpty &&
+    final chapter =
+        (state.chapters.isNotEmpty &&
             state.currentChapterIndex < state.chapters.length)
         ? state.chapters[state.currentChapterIndex]
         : null;
@@ -138,10 +139,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       barColor = barColor.withValues(alpha: 85 / 255);
     }
 
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
+    return Positioned.fill(
       child: AnimatedBuilder(
         animation: _menuController,
         builder: (context, child) {
@@ -153,35 +151,50 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
               curve: const Interval(0, 0.82, curve: Curves.easeOut),
             ),
           );
-          final scale = Tween<double>(begin: 0.88, end: 1.0).animate(
-            CurvedAnimation(
-                parent: _menuController, curve: Curves.fastOutSlowIn),
-          );
           return IgnorePointer(
             ignoring: !widget.visible,
-            child: FadeTransition(
-              opacity: fade,
-              child: ScaleTransition(
-                scale: scale,
-                alignment: Alignment.bottomCenter,
-                child: child!,
-              ),
-            ),
+            child: FadeTransition(opacity: fade, child: child!),
           );
         },
-        child: useSurfaceBlur
-            ? ClipRRect(
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(32)),
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
-                  child: _panelSurface(context, barColor, foreground, book,
-                      chapter, notifier, state, autoPageActive),
-                ),
-              )
-            : _panelSurface(
-                context, barColor, foreground, book, chapter, notifier,
-                state, autoPageActive),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 顶栏置屏幕顶部（用户
+            // 反馈①：此前误置于底部面板首行；对齐原版布局——← 居左，
+            // 换源/刷新/缓存/更多 居右）— Qoder
+            _buildTopBar(context, barColor, book, notifier),
+            const Spacer(),
+            useSurfaceBlur
+                ? ClipRRect(
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(32),
+                    ),
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+                      child: _panelSurface(
+                        context,
+                        barColor,
+                        foreground,
+                        book,
+                        chapter,
+                        notifier,
+                        state,
+                        autoPageActive,
+                      ),
+                    ),
+                  )
+                : _panelSurface(
+                    context,
+                    barColor,
+                    foreground,
+                    book,
+                    chapter,
+                    notifier,
+                    state,
+                    autoPageActive,
+                  ),
+          ],
+        ),
       ),
     );
   }
@@ -215,7 +228,6 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              _buildTitleRow(context, book, chapter, foreground, notifier),
               // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 面板行序对齐参考版：
               // 亮度条 → 章节滑条（两侧箭头）→ 可横滑五项行
               //（章节梗概/AI改写/全文搜索/自动翻页/目录 ‖ 朗读/界面/替换/更多）
@@ -264,90 +276,100 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     return surface;
   }
 
-  // ── 分区 1：顶栏（对齐参考版：← / 换源 / 刷新 / 下载 / ⋮）──
+  // ── 分区 1：屏幕顶部工具栏（对齐原版：← 居左；⇄ ↻ ⬇ ⋮ 居右）──
   //
   // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 用户反馈②：顶栏按参考版改造——
   // 移除书名/章名胶囊（章名在正文区与页脚已有呈现），改为参考版五钮
   //（返回/换源/刷新正文/下载当前章/更多溢出）— Qoder
-  Widget _buildTitleRow(BuildContext context, Book? book,
-      BookChapter? chapter, Color? foreground, ReaderNotifier notifier) {
-    return SizedBox(
-      height: 48,
-      child: Row(
-        children: [
-          IconButton(
-            icon: const Icon(Symbols.arrow_back_rounded),
-            tooltip: '退出阅读',
-            onPressed: widget.onBack,
-          ),
-          const Spacer(),
-          IconButton(
-            icon: const Icon(Symbols.swap_horiz_rounded),
-            tooltip: '换源',
-            onPressed: book == null
-                ? null
-                : () => Navigator.pushNamed(
-                      context,
-                      AppRoutes.changeSource,
-                      arguments: book,
-                    ),
-          ),
-          IconButton(
-            icon: const Icon(Symbols.refresh_rounded),
-            tooltip: '刷新正文',
-            onPressed: () => unawaited(notifier.reloadChapterContent()),
-          ),
-          IconButton(
-            icon: const Icon(Symbols.download_rounded),
-            tooltip: '缓存当前章',
-            onPressed: book == null
-                ? null
-                : () async {
-                    final idx = ref
-                        .read(readerNotifierProvider)
-                        .currentChapterIndex;
-                    try {
-                      await ref
-                          .read(bookApiProvider)
-                          .cacheDownloadStart(book.bookUrl, idx, idx);
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('当前章已加入缓存队列')),
-                      );
-                    } catch (e) {
-                      if (!context.mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('缓存失败：$e')),
-                      );
-                    }
-                  },
-          ),
-          PopupMenuButton<String>(
-            tooltip: '更多',
-            position: PopupMenuPosition.under,
-            onSelected: (value) {
-              switch (value) {
-                case 'addBookmark':
-                  widget.onAddBookmark();
-                case 'highlightRule':
-                  Navigator.pushNamed(context, AppRoutes.highlightRules);
-                case 'replace':
-                  widget.onOpenReplaceRules();
-                case 'settings':
-                  widget.onOpenSettings();
-                case 'toc':
-                  widget.onOpenCatalog();
-              }
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(value: 'addBookmark', child: Text('添加书签')),
-              PopupMenuItem(value: 'highlightRule', child: Text('高亮规则')),
-              PopupMenuItem(value: 'replace', child: Text('替换规则')),
-              PopupMenuItem(value: 'toc', child: Text('查看目录')),
-              PopupMenuItem(value: 'settings', child: Text('界面设置')),
+  Widget _buildTopBar(
+    BuildContext context,
+    Color barColor,
+    Book? book,
+    ReaderNotifier notifier,
+  ) {
+    return Material(
+      color: barColor,
+      child: SafeArea(
+        bottom: false,
+        child: SizedBox(
+          height: 48,
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Symbols.arrow_back_rounded),
+                tooltip: '退出阅读',
+                onPressed: widget.onBack,
+              ),
+              const Spacer(),
+              IconButton(
+                icon: const Icon(Symbols.swap_horiz_rounded),
+                tooltip: '换源',
+                onPressed: book == null
+                    ? null
+                    : () => Navigator.pushNamed(
+                        context,
+                        AppRoutes.changeSource,
+                        arguments: book,
+                      ),
+              ),
+              IconButton(
+                icon: const Icon(Symbols.refresh_rounded),
+                tooltip: '刷新正文',
+                onPressed: () => unawaited(notifier.reloadChapterContent()),
+              ),
+              IconButton(
+                icon: const Icon(Symbols.download_rounded),
+                tooltip: '缓存当前章',
+                onPressed: book == null
+                    ? null
+                    : () async {
+                        final idx = ref
+                            .read(readerNotifierProvider)
+                            .currentChapterIndex;
+                        try {
+                          await ref
+                              .read(bookApiProvider)
+                              .cacheDownloadStart(book.bookUrl, idx, idx);
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('当前章已加入缓存队列')),
+                          );
+                        } catch (e) {
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(
+                            context,
+                          ).showSnackBar(SnackBar(content: Text('缓存失败：$e')));
+                        }
+                      },
+              ),
+              PopupMenuButton<String>(
+                tooltip: '更多',
+                position: PopupMenuPosition.under,
+                onSelected: (value) {
+                  switch (value) {
+                    case 'addBookmark':
+                      widget.onAddBookmark();
+                    case 'highlightRule':
+                      Navigator.pushNamed(context, AppRoutes.highlightRules);
+                    case 'replace':
+                      widget.onOpenReplaceRules();
+                    case 'settings':
+                      widget.onOpenSettings();
+                    case 'toc':
+                      widget.onOpenCatalog();
+                  }
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(value: 'addBookmark', child: Text('添加书签')),
+                  PopupMenuItem(value: 'highlightRule', child: Text('高亮规则')),
+                  PopupMenuItem(value: 'replace', child: Text('替换规则')),
+                  PopupMenuItem(value: 'toc', child: Text('查看目录')),
+                  PopupMenuItem(value: 'settings', child: Text('界面设置')),
+                ],
+              ),
             ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -358,11 +380,18 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
   // 第1页 章节梗概/AI改写/全文搜索/自动翻页/目录；
   // 第2页 朗读/界面/替换/更多（参考版第2页为 朗读/设置，我方补替换与
   // 更多以保留功能入口）。章节梗概/AI改写为已授权 AI 占位按钮 — Qoder
-  Widget _buildActionPages(BuildContext context, Color? foreground,
-      bool autoPageActive) {
+  Widget _buildActionPages(
+    BuildContext context,
+    Color? foreground,
+    bool autoPageActive,
+  ) {
     final cs = Theme.of(context).colorScheme;
-    Widget item(IconData icon, String label, VoidCallback onTap,
-        {bool active = false}) {
+    Widget item(
+      IconData icon,
+      String label,
+      VoidCallback onTap, {
+      bool active = false,
+    }) {
       final color = active ? cs.primary : (foreground ?? cs.onSurfaceVariant);
       return Expanded(
         child: InkWell(
@@ -379,10 +408,9 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                   label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context)
-                      .textTheme
-                      .labelMedium
-                      ?.copyWith(color: color),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.labelMedium?.copyWith(color: color),
                 ),
               ],
             ),
@@ -392,10 +420,16 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     }
 
     final page1 = <Widget>[
-      item(Symbols.auto_awesome_rounded, '章节梗概',
-          () => _showAiPlaceholder(context, '章节梗概')),
-      item(Symbols.edit_note_rounded, 'AI 改写',
-          () => _showAiPlaceholder(context, 'AI 改写')),
+      item(
+        Symbols.auto_awesome_rounded,
+        '章节梗概',
+        () => _showAiPlaceholder(context, '章节梗概'),
+      ),
+      item(
+        Symbols.edit_note_rounded,
+        'AI 改写',
+        () => _showAiPlaceholder(context, 'AI 改写'),
+      ),
       item(Symbols.search_rounded, '全文搜索', widget.onOpenContentSearch),
       item(
         autoPageActive ? Icons.pause : Icons.auto_stories_outlined,
@@ -442,8 +476,8 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
               Text(
                 'AI 服务未配置：按钮占位已就绪，服务后端独立立项后接通。',
                 style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                      color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                    ),
+                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),
@@ -462,9 +496,11 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       child: Row(
         children: [
           IconButton(
-            icon: Icon(_autoBrightness
-                ? Icons.brightness_auto
-                : Icons.brightness_auto_outlined),
+            icon: Icon(
+              _autoBrightness
+                  ? Icons.brightness_auto
+                  : Icons.brightness_auto_outlined,
+            ),
             tooltip: _autoBrightness ? '关闭自动亮度' : '自动亮度',
             onPressed: () async {
               await SystemBrightness.setAutoBrightness(!_autoBrightness);
@@ -489,15 +525,22 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
 
   // ── 分区 5：进度滑条行（page=调章内页 / chapter=调章节）──
   Widget _buildProgressRow(
-      BuildContext context, ReaderNotifier notifier, ReaderState state,
-      Color? foreground) {
-    final chapterPageCount =
-        notifier.paginator.pageCountForChapter(state.currentChapterIndex);
-    final usePageSeek = widget.progressBehavior == 'page' &&
+    BuildContext context,
+    ReaderNotifier notifier,
+    ReaderState state,
+    Color? foreground,
+  ) {
+    final chapterPageCount = notifier.paginator.pageCountForChapter(
+      state.currentChapterIndex,
+    );
+    final usePageSeek =
+        widget.progressBehavior == 'page' &&
         chapterPageCount > 1 &&
         widget.onSeekPage != null;
-    final currentPage =
-        state.currentChapterPos.clamp(0, chapterPageCount > 0 ? chapterPageCount - 1 : 0);
+    final currentPage = state.currentChapterPos.clamp(
+      0,
+      chapterPageCount > 0 ? chapterPageCount - 1 : 0,
+    );
     // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 滑条行对齐参考版（用户反馈③）：
     // ①两端为圆形箭头钮（章节上/下调整语义，禁用态变浅）；
     // ②滑条用 M3 手柄样式（圆角矩钮）+ divisions 点刻轨（参考版分段点刻轨道）
@@ -509,12 +552,16 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       thumbColor: foreground ?? cs.onSurface,
       activeTrackColor: (foreground ?? cs.onSurface).withValues(alpha: 0.25),
       inactiveTrackColor: (foreground ?? cs.onSurface).withValues(alpha: 0.12),
-      disabledActiveTrackColor:
-          (foreground ?? cs.onSurface).withValues(alpha: 0.15),
-      disabledInactiveTrackColor:
-          (foreground ?? cs.onSurface).withValues(alpha: 0.08),
+      disabledActiveTrackColor: (foreground ?? cs.onSurface).withValues(
+        alpha: 0.15,
+      ),
+      disabledInactiveTrackColor: (foreground ?? cs.onSurface).withValues(
+        alpha: 0.08,
+      ),
       activeTickMarkColor: Colors.transparent,
-      inactiveTickMarkColor: (foreground ?? cs.onSurface).withValues(alpha: 0.35),
+      inactiveTickMarkColor: (foreground ?? cs.onSurface).withValues(
+        alpha: 0.35,
+      ),
       overlayShape: SliderComponentShape.noOverlay,
     );
     Widget navButton(IconData icon, String tip, VoidCallback? onTap) {
@@ -534,7 +581,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       child: Row(
         children: [
           navButton(
-            Icons.keyboard_double_arrow_up_rounded,
+            Icons.chevron_left_rounded,
             AppStrings.previousChapter,
             state.hasPreviousChapter ? () => notifier.prevChapter() : null,
           ),
@@ -561,13 +608,12 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                       divisions: state.chapters.length > 1
                           ? state.chapters.length - 1
                           : null,
-                      onChanged: (value) =>
-                          notifier.goToChapter(value.toInt()),
+                      onChanged: (value) => notifier.goToChapter(value.toInt()),
                     ),
             ),
           ),
           navButton(
-            Icons.keyboard_double_arrow_down_rounded,
+            Icons.chevron_right_rounded,
             AppStrings.nextChapter,
             state.hasNextChapter ? () => notifier.nextChapter() : null,
           ),
@@ -575,5 +621,4 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       ),
     );
   }
-
 }
