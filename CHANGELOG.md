@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.234] - 2026-09-11
+
+### Changed
+- [UI] 书源管理行恢复启用状态文字标签（差异清单 C1，**双基准口径修订**）：用户明确差异清单功能基准**同时参考原版与参考版**。驱动参考版实机取证（`io.legato.kazusa` 书源管理列表）确认其 Switch 自带「开启」文案；原版仅有 Switch 无文字。按双基准取参考版形态、文案本地化为中文——行内恢复「开启/关闭」标签（替换 2.0.232 中按单一原版口径移除的英文 ON/OFF），复选框常显与行尾发现状态角标维持不变
+
+### Test
+- 主代理自实现并复核：flutter analyze 无问题；flutter test 1372 全过；5556 实机验证——书源管理列表 7 行语义树均为「源名（分组） 开启」，开关与复选框数量不变（7/7）；版本 2.0.234+235
+
+- Contributor: Qoder UI
+
+
 ## [2.0.233] - 2026-09-11
 
 ### Changed

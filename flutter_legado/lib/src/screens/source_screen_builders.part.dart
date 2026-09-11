@@ -686,8 +686,19 @@ extension _SourceBuilders on _SourceScreenState {
                 ],
               ),
             ),
-            // [C1 形态对齐 | Qoder UI] 启用开关（对标原版 swt_enabled）；
-            // 原版无行内 ON/OFF 文字（我方自创项，已移除，启用态由开关呈现）
+            // [C1 双基准对齐 | Qoder UI] 启用状态标签 + 开关：参考版为 Switch
+            // 自带「开启」文案（实机 dump 实证），原版仅有 Switch；取参考版形态、
+            // 文案本地化为中文（开启/关闭），替代我方旧有的英文 ON/OFF
+            Text(
+              source.enabled ? '开启' : '关闭',
+              style: TextStyle(
+                fontSize: 12,
+                // [UI_MD3_ALIGNMENT_PLAN.md Batch B B3] 状态语义走 tonal
+                color: source.enabled
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant,
+              ),
+            ),
             Switch(
               value: source.enabled,
               // 压缩触控/视觉高度（对齐原版 ThemeSwitch 行高 ~36.5dp，
@@ -825,8 +836,19 @@ extension _SourceBuilders on _SourceScreenState {
                 ],
               ),
             ),
-            // [C1 形态对齐 | Qoder UI] 启用开关（对标原版 swt_enabled）；
-            // 原版无行内 ON/OFF 文字（我方自创项，已移除，启用态由开关呈现）
+            // [C1 双基准对齐 | Qoder UI] 启用状态标签 + 开关：参考版为 Switch
+            // 自带「开启」文案（实机 dump 实证），原版仅有 Switch；取参考版形态、
+            // 文案本地化为中文（开启/关闭），替代我方旧有的英文 ON/OFF
+            Text(
+              source.enabled ? '开启' : '关闭',
+              style: TextStyle(
+                fontSize: 12,
+                // [UI_MD3_ALIGNMENT_PLAN.md Batch B B3] 状态语义走 tonal
+                color: source.enabled
+                    ? colorScheme.primary
+                    : colorScheme.onSurfaceVariant,
+              ),
+            ),
             Switch(
               value: source.enabled,
               // 压缩触控/视觉高度（对齐原版 ThemeSwitch 行高 ~36.5dp，

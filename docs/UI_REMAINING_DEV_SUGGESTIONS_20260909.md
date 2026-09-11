@@ -2,7 +2,9 @@
 
 > 编写：Qoder UI ｜ 2026-09-09
 >
-> **口径**：功能基准=`legado-upstream`（原版 Android 源码，路径 `D:\OH-WorkSpace\LegadoTeam\legado-upstream`）；实现/架构基准=`Projects/legado_flutter`（重构版工程）；视觉基准=参考版 kazusa 实机截图（差异清单内）。
+> **口径（2026-09-11 用户修订）**：功能基准 = **原版 + 参考版双基准**——原版 `legado-upstream`（Android 源码，路径 `D:\OH-WorkSpace\LegadoTeam\legado-upstream`，检出版本 v3.26.082823/上游 #1072）与参考版 `io.legato.kazusa`（实机可驱动取证）**同等有效**：某项只要在原版**或**参考版存在，即属「应有能力」，不得以「另一侧没有」为由不做；仅当两侧都无、或语义无法取证时才登记 不实施/待核实。实现/架构基准=`Projects/legado_flutter`（重构版工程）。
+>
+> **据此重开项（2026-09-11）**：A1 搜索顶栏三钮（参考版有，重新评估）、C1 状态文字标签（参考版 Switch 自带「开启」，已补）、C4 搜索范围（参考版「仅本书」+ 重构版三档，已补）、C3 斜体（参考版有，已补）。
 > **红线提醒**：未经授权禁止新增原版不存在功能；FFI/接口变更须先冻结 `docs/API_CONTRACT.md`。
 
 ## A. 待语义核实类 → **核实结论（2026-09-11 完成，源码为准）**
