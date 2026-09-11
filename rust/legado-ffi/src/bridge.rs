@@ -1005,7 +1005,12 @@ pub unsafe extern "C" fn ffi_replace_rule_add(
         let p = c_char_to_str(pattern)?;
         let r = c_char_to_str(replacement)?;
         let s = c_char_to_str(scope)?;
-        crate::api::replace_rule_api::add_replace_rule(n, p, r, is_regex, s)
+        // [A3 写链路补齐 | 2026-09-11] C-ABI 签名冻结，新增可选参一律 None
+        // （缺省=旧行为：无分组/scopeTitle=false/scopeContent=true/
+        // 不排除/timeout=3000ms）
+        crate::api::replace_rule_api::add_replace_rule(
+            n, p, r, is_regex, s, None, None, None, None, None,
+        )
     }))
 }
 
@@ -1023,7 +1028,11 @@ pub unsafe extern "C" fn ffi_replace_rule_update(
         let n = c_char_to_str(name)?;
         let p = c_char_to_str(pattern)?;
         let r = c_char_to_str(replacement)?;
-        crate::api::replace_rule_api::update_replace_rule(rule_id, n, p, r, is_regex, is_enabled)?;
+        // [A3 写链路补齐 | 2026-09-11] C-ABI 签名冻结，新增可选参一律 None
+        // （保留既有值，向后兼容）
+        crate::api::replace_rule_api::update_replace_rule(
+            rule_id, n, p, r, is_regex, is_enabled, None, None, None, None, None,
+        )?;
         Ok::<_, LegadoError>("ok".to_string())
     }))
 }

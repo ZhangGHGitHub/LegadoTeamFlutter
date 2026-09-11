@@ -113,6 +113,11 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
   }
 
   /// 添加替换规则
+  ///
+  /// [A3 写链路补齐 | 2026-09-11] FFI 加法式扩参后，分组/作用范围
+  /// （标题·正文）/排除范围/超时随对象全字段落库（缺省语义由 Rust 侧
+  /// 兜底：group=null、scopeTitle=false、scopeContent=true、
+  /// excludeScope=null、timeoutMillisecond=3000）。
   @override
   Future<ReplaceRule> addReplaceRule(ReplaceRule rule) async {
     final id = await bridge.replaceRuleAdd(
@@ -121,11 +126,22 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
       replacement: rule.replacement,
       isRegex: rule.isRegex,
       scope: rule.scope ?? '',
+      group: rule.group,
+      scopeTitle: rule.scopeTitle,
+      scopeContent: rule.scopeContent,
+      excludeScope: rule.excludeScope,
+      timeoutMillisecond: rule.timeoutMillisecond,
     );
     return rule.copyWith(id: id);
   }
 
   /// 更新替换规则
+  ///
+  /// [A3 写链路补齐 | 2026-09-11] 与 add 相同的全字段透传。
+  /// 调用方约定传「完整对象」（读自 API 后 copyWith），故 group/
+  /// excludeScope 为 null 即表示「该规则无此字段」，统一以空串透传
+  /// → Rust 侧按「清除该字段」处理（与 MockBookApi 整对象替换语义一致；
+  /// Rust 侧 None=保留既有值 仅服务 C-ABI 等旧调用方）。
   @override
   Future<void> updateReplaceRule(ReplaceRule rule) => bridge.replaceRuleUpdate(
     ruleId: rule.id,
@@ -134,6 +150,11 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
     replacement: rule.replacement,
     isRegex: rule.isRegex,
     isEnabled: rule.isEnabled,
+    group: rule.group ?? '',
+    scopeTitle: rule.scopeTitle,
+    scopeContent: rule.scopeContent,
+    excludeScope: rule.excludeScope ?? '',
+    timeoutMillisecond: rule.timeoutMillisecond,
   );
 
   /// 删除替换规则

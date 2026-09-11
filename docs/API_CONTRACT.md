@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-09-11 | **替换规则写接口加法式扩参（A3 存量阻塞项，跨轨批次）**：FFI `replaceRuleAdd` / `replaceRuleUpdate`（§2.8 替换规则操作）新增 5 个可选参 `group: Option<String>` / `scopeTitle: Option<bool>` / `scopeContent: Option<bool>` / `excludeScope: Option<String>` / `timeoutMillisecond: Option<i64>`。缺省语义：add 未提供=旧行为（group=null / scopeTitle=false / scopeContent=true / excludeScope=null / timeout=3000ms）；update 未提供=保留既有值，提供空串=清除该字段。存储与读链路（replace_rules 表 upsert + `content_processor` 按 scope/scopeTitle/scopeContent/excludeScope 应用）早已存在，本次补齐写侧使 分组/作用范围/排除范围/超时 真正落库；BookApi 签名不变（仍传 ReplaceRule 对象，UI 层零改动），§2.8 方法数 6 不变、附录合计不变。**A3 阻塞项状态：①「FFI 写接口窄」已解除（写链路已补齐）；② scopeSource、③ @js: 预览仍受阻** |
 | 2026-09-11 | **readRecordDaily 单位归一（修复，非签名变更）**：2026-08-29 上线的写路径把毫秒增量写进契约声明为秒的 `durationSeconds` 列，当日聚合值放大 1000 倍（热力图时长配色全天饱和、首页今日目标表盘恒满、按天视图显示「75天」级时长）。写路径改按整秒差值入账（`read_time/1000 − old_read_time/1000`，不因频繁小增量截断丢秒）；新增 DB v107 迁移把存量行整除 1000 归一（`Migration106To107`，user_version 门禁保证仅执行一次，SCHEMA_VERSION 106→**107**）。FFI 签名与 §2.12 方法数不变 |
 | 2026-09-03 | **换源搜索流式化 FFI 冻结**（换源修复任务书批次 3 / T6，加法式）：`searchSourceStream`（§2.4 换源搜索流：Rust 侧 `ffi::source_switch_search_stream(book_name, author, source_urls_json, options_json, sink: StreamSink<String>)`，逐源完成即推一批次——进度 `finished_count`/`total_count` + 当前已过滤评分排序候选全量快照 `matches[]`；DB 复用路径单批推送；enrich 流内后置不阻塞首批到达）。旧 `searchSource` 保留兼容。§2.4 方法数 16→**17**，附录合计 268→**269**，BookApi 口径 265→**266** |
 | 2026-09-03 | **换源执行链与变量链对齐**（换源修复任务书 T2/T3/T4/T5，加法式）：`searchSource` 返回 `matches[]` 项新增可选 `variable`（搜索期级联变量，对齐 SearchBook.toBook 复制语义）；`webbookInfo` 返回 JSON 新增可选 `variable`（bookInfo 规则求值 `@put`/`putVariable` 级联导出，无专用规则字段）；搜索结果项与 `searchBooks` 持久化启用 `variable` 透传（元素级导出）；`switchSource` 签名不变、行为对齐原版 getToc（详情解析→真实 tocUrl 取目录→失败即失败保留旧源；book.variable=候选与详情页变量合并、详情页优先；章节落库保留 variable/isVolume）。§2.4/§2.17 方法数不变 |
@@ -306,8 +307,8 @@
 |------|------|------|------|
 | `getReplaceRules()` | 无 | `Future<List<ReplaceRule>>` | 获取所有替换规则 |
 | `getEnabledReplaceRules()` | 无 | `Future<List<ReplaceRule>>` | 获取启用的替换规则 |
-| `addReplaceRule(ReplaceRule rule)` | rule: ReplaceRule 对象 | `Future<ReplaceRule>` | 添加替换规则 |
-| `updateReplaceRule(ReplaceRule rule)` | rule: ReplaceRule 对象 | `Future<void>` | 更新替换规则 |
+| `addReplaceRule(ReplaceRule rule)` | rule: ReplaceRule 对象 | `Future<ReplaceRule>` | 添加替换规则。**2026-09-11 加法式扩参（A3 写链路补齐）**：FFI `replaceRuleAdd` 新增可选参 `group` / `scopeTitle` / `scopeContent` / `excludeScope` / `timeoutMillisecond`（缺省=旧行为：group=null、scopeTitle=false、scopeContent=true、excludeScope=null、timeoutMillisecond=3000）；BookApi 签名不变（仍传 ReplaceRule 对象，UI 层零改动） |
+| `updateReplaceRule(ReplaceRule rule)` | rule: ReplaceRule 对象 | `Future<void>` | 更新替换规则。**2026-09-11 加法式扩参（A3 写链路补齐）**：FFI `replaceRuleUpdate` 新增可选参 `group` / `scopeTitle` / `scopeContent` / `excludeScope` / `timeoutMillisecond`（未提供=保留既有值；提供空串=清除该字段）；`isEnabled` 维持既有参。BookApi 签名不变 |
 | `deleteReplaceRule(int id)` | id | `Future<void>` | 删除替换规则 |
 | `setReplaceRuleEnabled(int id, bool enabled)` | id, enabled | `Future<void>` | 启用/禁用替换规则 |
 

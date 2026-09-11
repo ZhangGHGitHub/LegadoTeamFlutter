@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.241] - 2026-09-11
+
+### Fixed
+- [Rust] 替换规则写链路补齐（A3 存量阻塞项，跨轨批次，子代理 full-stack-engineer 交付 + 主代理复验）：`replaceRuleAdd` / `replaceRuleUpdate` 加法式扩参 `group` / `scopeTitle` / `scopeContent` / `excludeScope` / `timeoutMillisecond`（add 缺省=旧行为；update 未提供=保留既有值、传空串=清除 group/excludeScope），使编辑页的 **分组 / 标题·正文作用范围 / 排除范围 / 超时** 真正落库（此前仅 UI 可编辑、保存静默丢弃）。存储与读/应用链路（`replace_rules` upsert + `content_processor` 的 ScopeMode/is_excluded）本就完备，本次只补写侧；C-ABI 签名兼容冻结（新增可选参一律传 `None`）；编辑页「超时」由只读改可编辑（空/非法输入回退 3000ms）
+
+### Test
+- 子代理自测与主代理独立复跑一致：`cargo fmt --all -- --check` 通过、`cargo test -p legado-ffi replace_rule` **10/10**（含新增 add/update 带 group/scope/timeout 落库用例）、`flutter analyze` 无问题、`flutter test` **1400 全过**；`.so` 已按 `rust\scriptsuild-android.ps1 -Mode release` 重建（aarch64/x86_64，21:26/21:27），设备实测不再跑旧二进制
+- 生成物说明：`frb_generated.*` 经官方 `flutter_legado\scripts\generate-bridge.ps1` 重生成；**FRB 内容哈希只按函数名计算**（主代理查上游 codegen 源码确认：`generate_content_hash` 仅哈希 `namespaced_name_rust_style` 列表，源码内仍留 `TODO can compute hash for more things`），故纯加法扩参哈希不变（-56430457）属预期，非手改产物
+- 仍受阻（不在本批）：`scopeSource`（书源作用范围）Dart/Rust/DB/FFI 全链路缺失；`@js:` 替换预览 Pure 侧无引擎。版本 2.0.241+242
+
+- Contributor: full-stack-engineer + Bridge（主代理 Qoder UI 审核）
+
+
 ## [2.0.240] - 2026-09-11
 
 ### Added

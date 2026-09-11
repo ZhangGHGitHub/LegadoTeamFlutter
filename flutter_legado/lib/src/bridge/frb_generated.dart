@@ -593,6 +593,11 @@ abstract class RustLibApi extends BaseApi {
     required String replacement,
     required bool isRegex,
     required String scope,
+    String? group,
+    bool? scopeTitle,
+    bool? scopeContent,
+    String? excludeScope,
+    PlatformInt64? timeoutMillisecond,
   });
 
   Future<void> crateFfiFfiReplaceRuleDelete({required PlatformInt64 ruleId});
@@ -613,6 +618,11 @@ abstract class RustLibApi extends BaseApi {
     required String replacement,
     required bool isRegex,
     required bool isEnabled,
+    String? group,
+    bool? scopeTitle,
+    bool? scopeContent,
+    String? excludeScope,
+    PlatformInt64? timeoutMillisecond,
   });
 
   Future<String> crateFfiFfiReviewGetDetail({
@@ -5630,6 +5640,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String replacement,
     required bool isRegex,
     required String scope,
+    String? group,
+    bool? scopeTitle,
+    bool? scopeContent,
+    String? excludeScope,
+    PlatformInt64? timeoutMillisecond,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -5640,6 +5655,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(replacement, serializer);
           sse_encode_bool(isRegex, serializer);
           sse_encode_String(scope, serializer);
+          sse_encode_opt_String(group, serializer);
+          sse_encode_opt_box_autoadd_bool(scopeTitle, serializer);
+          sse_encode_opt_box_autoadd_bool(scopeContent, serializer);
+          sse_encode_opt_String(excludeScope, serializer);
+          sse_encode_opt_box_autoadd_i_64(timeoutMillisecond, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -5652,7 +5672,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateFfiFfiReplaceRuleAddConstMeta,
-        argValues: [name, pattern, replacement, isRegex, scope],
+        argValues: [
+          name,
+          pattern,
+          replacement,
+          isRegex,
+          scope,
+          group,
+          scopeTitle,
+          scopeContent,
+          excludeScope,
+          timeoutMillisecond,
+        ],
         apiImpl: this,
       ),
     );
@@ -5660,7 +5691,18 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateFfiFfiReplaceRuleAddConstMeta => const TaskConstMeta(
     debugName: "replace_rule_add",
-    argNames: ["name", "pattern", "replacement", "isRegex", "scope"],
+    argNames: [
+      "name",
+      "pattern",
+      "replacement",
+      "isRegex",
+      "scope",
+      "group",
+      "scopeTitle",
+      "scopeContent",
+      "excludeScope",
+      "timeoutMillisecond",
+    ],
   );
 
   @override
@@ -5791,6 +5833,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String replacement,
     required bool isRegex,
     required bool isEnabled,
+    String? group,
+    bool? scopeTitle,
+    bool? scopeContent,
+    String? excludeScope,
+    PlatformInt64? timeoutMillisecond,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -5802,6 +5849,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(replacement, serializer);
           sse_encode_bool(isRegex, serializer);
           sse_encode_bool(isEnabled, serializer);
+          sse_encode_opt_String(group, serializer);
+          sse_encode_opt_box_autoadd_bool(scopeTitle, serializer);
+          sse_encode_opt_box_autoadd_bool(scopeContent, serializer);
+          sse_encode_opt_String(excludeScope, serializer);
+          sse_encode_opt_box_autoadd_i_64(timeoutMillisecond, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -5814,7 +5866,19 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateFfiFfiReplaceRuleUpdateConstMeta,
-        argValues: [ruleId, name, pattern, replacement, isRegex, isEnabled],
+        argValues: [
+          ruleId,
+          name,
+          pattern,
+          replacement,
+          isRegex,
+          isEnabled,
+          group,
+          scopeTitle,
+          scopeContent,
+          excludeScope,
+          timeoutMillisecond,
+        ],
         apiImpl: this,
       ),
     );
@@ -5830,6 +5894,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           "replacement",
           "isRegex",
           "isEnabled",
+          "group",
+          "scopeTitle",
+          "scopeContent",
+          "excludeScope",
+          "timeoutMillisecond",
         ],
       );
 
@@ -9162,9 +9231,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  bool dco_decode_box_autoadd_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw as bool;
+  }
+
+  @protected
   int dco_decode_box_autoadd_i_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw as int;
+  }
+
+  @protected
+  PlatformInt64 dco_decode_box_autoadd_i_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return dco_decode_i_64(raw);
   }
 
   @protected
@@ -9207,9 +9288,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  bool? dco_decode_opt_box_autoadd_bool(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_bool(raw);
+  }
+
+  @protected
   int? dco_decode_opt_box_autoadd_i_32(dynamic raw) {
     // Codec=Dco (DartCObject based), see doc to use other codecs
     return raw == null ? null : dco_decode_box_autoadd_i_32(raw);
+  }
+
+  @protected
+  PlatformInt64? dco_decode_opt_box_autoadd_i_64(dynamic raw) {
+    // Codec=Dco (DartCObject based), see doc to use other codecs
+    return raw == null ? null : dco_decode_box_autoadd_i_64(raw);
   }
 
   @protected
@@ -9259,9 +9352,21 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  bool sse_decode_box_autoadd_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_bool(deserializer));
+  }
+
+  @protected
   int sse_decode_box_autoadd_i_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     return (sse_decode_i_32(deserializer));
+  }
+
+  @protected
+  PlatformInt64 sse_decode_box_autoadd_i_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    return (sse_decode_i_64(deserializer));
   }
 
   @protected
@@ -9308,11 +9413,33 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  bool? sse_decode_opt_box_autoadd_bool(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_bool(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
   int? sse_decode_opt_box_autoadd_i_32(SseDeserializer deserializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     if (sse_decode_bool(deserializer)) {
       return (sse_decode_box_autoadd_i_32(deserializer));
+    } else {
+      return null;
+    }
+  }
+
+  @protected
+  PlatformInt64? sse_decode_opt_box_autoadd_i_64(SseDeserializer deserializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    if (sse_decode_bool(deserializer)) {
+      return (sse_decode_box_autoadd_i_64(deserializer));
     } else {
       return null;
     }
@@ -9374,9 +9501,24 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_box_autoadd_bool(bool self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_bool(self, serializer);
+  }
+
+  @protected
   void sse_encode_box_autoadd_i_32(int self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
     sse_encode_i_32(self, serializer);
+  }
+
+  @protected
+  void sse_encode_box_autoadd_i_64(
+    PlatformInt64 self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    sse_encode_i_64(self, serializer);
   }
 
   @protected
@@ -9424,12 +9566,35 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
   }
 
   @protected
+  void sse_encode_opt_box_autoadd_bool(bool? self, SseSerializer serializer) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_bool(self, serializer);
+    }
+  }
+
+  @protected
   void sse_encode_opt_box_autoadd_i_32(int? self, SseSerializer serializer) {
     // Codec=Sse (Serialization based), see doc to use other codecs
 
     sse_encode_bool(self != null, serializer);
     if (self != null) {
       sse_encode_box_autoadd_i_32(self, serializer);
+    }
+  }
+
+  @protected
+  void sse_encode_opt_box_autoadd_i_64(
+    PlatformInt64? self,
+    SseSerializer serializer,
+  ) {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+
+    sse_encode_bool(self != null, serializer);
+    if (self != null) {
+      sse_encode_box_autoadd_i_64(self, serializer);
     }
   }
 

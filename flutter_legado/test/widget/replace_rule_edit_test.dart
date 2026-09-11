@@ -20,6 +20,7 @@ import 'package:mocktail/mocktail.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/providers/replace_rule/replace_rule_notifier.dart';
 import 'package:flutter_legado/src/screens/replace_rule_edit_screen.dart';
 
 import '../mocks/mocks.dart';
@@ -145,9 +146,9 @@ void main() {
       expect(find.text('正文'), findsOneWidget);
       // 分组下拉默认「（无分组）」
       expect(find.text('（无分组）'), findsOneWidget);
-      // 超时只读标注（受阻项诚实提示）
+      // 超时诚实标注（[A3 写链路补齐 2026-09-11] 超时已可编辑并随保存落库）
       expect(
-        find.text('当前 FFI 写接口暂不支持修改超时，默认 3000 毫秒'),
+        find.text('匹配/替换执行超时，空或非法输入回退 3000 毫秒'),
         findsOneWidget,
       );
       // ⋮ 菜单项（对标原版 menu：全屏编辑/复制规则/粘贴规则）
@@ -174,7 +175,9 @@ void main() {
       await tester.enterText(byLabel('预览输入'), 'AAAA广告');
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('保存'));
+      // 「保存」按 FilledButton 语义节点点击（槽位包裹后 Text 零宽，
+      // find.text('保存') 会触发 would-not-hit-test 告警）
+      await tester.tap(find.byWidgetPredicate((w) => w is FilledButton));
       await tester.pumpAndSettle();
 
       final captured =
@@ -194,13 +197,72 @@ void main() {
       expect(find.text('打开'), findsOneWidget);
     });
 
+    // [A3 写链路补齐 | 2026-09-11] 分组/标题·正文范围/排除范围/超时
+    // 保存落库后经 notifier（load → getReplaceRules）读回与输入一致
+    testWidgets('保存后全字段经 notifier 读回与输入一致（写链路落库）',
+        (tester) async {
+      // 内存「数据库」：add 存对象、get 回读，模拟 Rust 侧 add 全字段
+      // 持久化 + get 回读链路
+      final stored = <ReplaceRule>[];
+      when(() => mockApi.addReplaceRule(any())).thenAnswer((inv) async {
+        final r = (inv.positionalArguments[0] as ReplaceRule).copyWith(id: 9);
+        stored.add(r);
+        return r;
+      });
+      when(() => mockApi.getReplaceRules())
+          .thenAnswer((_) async => List.of(stored));
+
+      await pumpEdit(tester);
+
+      // 匹配规则为必填（对标原版 checkValid：pattern 为空拦截保存），
+      // 先填合法值，保存才会真正走 add 写链路
+      await tester.enterText(byLabel('匹配规则'), '广告');
+      // 分组：下拉选「自定义…」并输入组名
+      await tester.tap(find.text('（无分组）'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('自定义…'));
+      await tester.pumpAndSettle();
+      await tester.enterText(byLabel('输入分组名'), '净化组_9');
+      // 作用范围：勾选「标题」（树序 Checkbox：0 正则 / 1 标题 / 2 书源(禁用) / 3 正文）
+      await tester.tap(find.byType(Checkbox).at(1));
+      // 排除范围 / 超时：直接输入
+      await tester.enterText(byLabel('排除范围'), '排除书_9');
+      await tester.enterText(byLabel('超时时间（毫秒）'), '4321');
+      await tester.pumpAndSettle();
+
+      // 顶栏「保存」是文字 FilledButton：经 TopBarActionStyler 36dp 槽位
+      // 包裹后，内部 Text 被挤压为零宽（hit-test 中心落在按钮 padding 上，
+      // find.text('保存') 会触发 would-not-hit-test 告警）。按按钮语义节点
+      // 定位点击，稳定命中且无告警
+      await tester.tap(find.byWidgetPredicate((w) => w is FilledButton));
+      await tester.pumpAndSettle();
+
+      // 经 notifier 读回：宿主页取同一 ProviderScope 容器，load() 走
+      // getReplaceRules 重读数据层（等价于落库后重新读库）
+      final container = ProviderScope.containerOf(
+        tester.element(find.byKey(const Key('openBtn'))),
+      );
+      await container.read(replaceRuleNotifierProvider.notifier).load();
+      final saved = container
+          .read(replaceRuleNotifierProvider)
+          .rules
+          .singleWhere((r) => r.id == 9);
+      expect(saved.group, '净化组_9');
+      expect(saved.scopeTitle, isTrue);
+      expect(saved.scopeContent, isTrue);
+      expect(saved.excludeScope, '排除书_9');
+      expect(saved.timeoutMillisecond, 4321);
+    });
+
     testWidgets('正则模式下非法正则拦截保存', (tester) async {
       await pumpEdit(tester);
 
       await tester.enterText(byLabel('匹配规则'), '(');
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('保存'));
+      // 「保存」按 FilledButton 语义节点点击（槽位包裹后 Text 零宽，
+      // find.text('保存') 会触发 would-not-hit-test 告警）
+      await tester.tap(find.byWidgetPredicate((w) => w is FilledButton));
       await tester.pumpAndSettle();
 
       expect(find.text('正则语法错误或不支持'), findsOneWidget);
@@ -212,7 +274,9 @@ void main() {
     testWidgets('匹配规则为空时拦截保存', (tester) async {
       await pumpEdit(tester);
 
-      await tester.tap(find.text('保存'));
+      // 「保存」按 FilledButton 语义节点点击（槽位包裹后 Text 零宽，
+      // find.text('保存') 会触发 would-not-hit-test 告警）
+      await tester.tap(find.byWidgetPredicate((w) => w is FilledButton));
       await tester.pumpAndSettle();
 
       expect(find.text('匹配规则不能为空'), findsOneWidget);
@@ -263,7 +327,9 @@ void main() {
       expect(checks[1].value, isTrue, reason: 'scopeTitle=true 勾选');
       expect(checks[3].value, isFalse, reason: 'scopeContent=false 未勾选');
       // 保存走 update 链路
-      await tester.tap(find.text('保存'));
+      // 「保存」按 FilledButton 语义节点点击（槽位包裹后 Text 零宽，
+      // find.text('保存') 会触发 would-not-hit-test 告警）
+      await tester.tap(find.byWidgetPredicate((w) => w is FilledButton));
       await tester.pumpAndSettle();
       final captured =
           verify(() => mockApi.updateReplaceRule(captureAny())).captured.single
@@ -272,7 +338,8 @@ void main() {
       expect(captured.name, '去广告');
       expect(captured.scopeTitle, isTrue);
       expect(captured.scopeContent, isFalse);
-      expect(captured.timeoutMillisecond, 5000); // 保留原值（写接口不支持覆盖）
+      // [A3 写链路补齐 2026-09-11] 回填值随表单解析落库（写接口已支持覆盖）
+      expect(captured.timeoutMillisecond, 5000);
     });
 
     testWidgets('新建时 pattern 预填（阅读器选中文本入口）', (tester) async {

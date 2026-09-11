@@ -5061,6 +5061,11 @@ fn wire__crate__ffi__ffi__replace_rule_add_impl(
             let api_replacement = <String>::sse_decode(&mut deserializer);
             let api_is_regex = <bool>::sse_decode(&mut deserializer);
             let api_scope = <String>::sse_decode(&mut deserializer);
+            let api_group = <Option<String>>::sse_decode(&mut deserializer);
+            let api_scope_title = <Option<bool>>::sse_decode(&mut deserializer);
+            let api_scope_content = <Option<bool>>::sse_decode(&mut deserializer);
+            let api_exclude_scope = <Option<String>>::sse_decode(&mut deserializer);
+            let api_timeout_millisecond = <Option<i64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, crate::ffi::BridgeError>((move || {
@@ -5070,6 +5075,11 @@ fn wire__crate__ffi__ffi__replace_rule_add_impl(
                         api_replacement,
                         api_is_regex,
                         api_scope,
+                        api_group,
+                        api_scope_title,
+                        api_scope_content,
+                        api_exclude_scope,
+                        api_timeout_millisecond,
                     )?;
                     Ok(output_ok)
                 })())
@@ -5237,6 +5247,11 @@ fn wire__crate__ffi__ffi__replace_rule_update_impl(
             let api_replacement = <String>::sse_decode(&mut deserializer);
             let api_is_regex = <bool>::sse_decode(&mut deserializer);
             let api_is_enabled = <bool>::sse_decode(&mut deserializer);
+            let api_group = <Option<String>>::sse_decode(&mut deserializer);
+            let api_scope_title = <Option<bool>>::sse_decode(&mut deserializer);
+            let api_scope_content = <Option<bool>>::sse_decode(&mut deserializer);
+            let api_exclude_scope = <Option<String>>::sse_decode(&mut deserializer);
+            let api_timeout_millisecond = <Option<i64>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, crate::ffi::BridgeError>((move || {
@@ -5247,6 +5262,11 @@ fn wire__crate__ffi__ffi__replace_rule_update_impl(
                         api_replacement,
                         api_is_regex,
                         api_is_enabled,
+                        api_group,
+                        api_scope_title,
+                        api_scope_content,
+                        api_exclude_scope,
+                        api_timeout_millisecond,
                     )?;
                     Ok(output_ok)
                 })())
@@ -8965,11 +8985,33 @@ impl SseDecode for Option<String> {
     }
 }
 
+impl SseDecode for Option<bool> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<bool>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
 impl SseDecode for Option<i32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
         if (<bool>::sse_decode(deserializer)) {
             return Some(<i32>::sse_decode(deserializer));
+        } else {
+            return None;
+        }
+    }
+}
+
+impl SseDecode for Option<i64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_decode(deserializer: &mut flutter_rust_bridge::for_generated::SseDeserializer) -> Self {
+        if (<bool>::sse_decode(deserializer)) {
+            return Some(<i64>::sse_decode(deserializer));
         } else {
             return None;
         }
@@ -9512,12 +9554,32 @@ impl SseEncode for Option<String> {
     }
 }
 
+impl SseEncode for Option<bool> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <bool>::sse_encode(value, serializer);
+        }
+    }
+}
+
 impl SseEncode for Option<i32> {
     // Codec=Sse (Serialization based), see doc to use other codecs
     fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
         <bool>::sse_encode(self.is_some(), serializer);
         if let Some(value) = self {
             <i32>::sse_encode(value, serializer);
+        }
+    }
+}
+
+impl SseEncode for Option<i64> {
+    // Codec=Sse (Serialization based), see doc to use other codecs
+    fn sse_encode(self, serializer: &mut flutter_rust_bridge::for_generated::SseSerializer) {
+        <bool>::sse_encode(self.is_some(), serializer);
+        if let Some(value) = self {
+            <i64>::sse_encode(value, serializer);
         }
     }
 }

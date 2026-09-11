@@ -124,8 +124,8 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
     _isRegex = r?.isRegex ?? true;
     _scopeTitle = r?.scopeTitle ?? false;
     _scopeContent = r?.scopeContent ?? true;
-    // [A3 形态对齐 | full-stack-engineer + UI] 超时只读回填（FFI 写接口
-    // 暂不支持写 timeoutMillisecond，输入框禁用并诚实标注，见 _buildTimeoutField）
+    // [A3 写链路补齐 | 2026-09-11] 超时回填（FFI 写接口已支持
+    // timeoutMillisecond，输入框可编辑，见 _buildTimeoutField）
     _timeoutCtrl.text = (r?.timeoutMillisecond ?? 3000).toString();
     WidgetsBinding.instance.addPostFrameCallback((_) => _runPreview());
   }
@@ -182,9 +182,16 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
       scope: _scopeCtrl.text.isEmpty ? null : _scopeCtrl.text,
       excludeScope:
           _excludeScopeCtrl.text.isEmpty ? null : _excludeScopeCtrl.text,
-      // 超时/书源 scope 当前 FFI 写接口不支持，保留原值不覆盖
-      timeoutMillisecond: base.timeoutMillisecond,
+      // [A3 写链路补齐 | 2026-09-11] 超时随表单落库（FFI 写接口已支持
+      // timeoutMillisecond）；空/非法输入回退默认 3000（与 Rust 侧缺省一致）
+      timeoutMillisecond: _parseTimeout(),
     );
+  }
+
+  /// 解析超时输入框（空或非法回退 3000，对标 Rust 侧默认 timeout_millisecond）
+  int _parseTimeout() {
+    final v = int.tryParse(_timeoutCtrl.text.trim());
+    return (v == null || v <= 0) ? 3000 : v;
   }
 
   // ===== [A3 形态对齐 | full-stack-engineer + UI] 保存 =====
@@ -600,7 +607,8 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
             focusNode: _excludeScopeFocus,
           ),
           const SizedBox(height: 16),
-          // 8. 超时（对标 et_timeout；FFI 写接口暂不支持，禁用 + 诚实标注）
+          // 8. 超时（对标 et_timeout；[A3 写链路补齐 2026-09-11] 可编辑，
+          // 空/非法回退 3000ms）
           _buildTimeoutField(),
           const SizedBox(height: 16),
           // 9. 预览输入 → 预览输出（对标 et_preview_input / et_preview_output，
@@ -722,10 +730,9 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
     );
   }
 
-  /// 超时（对标 et_timeout；只读 + 诚实标注：
-  /// [A3 受阻项 | full-stack-engineer + UI] 模型已有 timeoutMillisecond
-  /// 且列表读取链路存在，但 FFI add/update 写接口暂不携带该字段，
-  /// 修改无法持久化，故禁用输入并标注）
+  /// 超时（对标 et_timeout；可编辑：
+  /// [A3 写链路补齐 | 2026-09-11] FFI add/update 已支持 timeoutMillisecond，
+  /// 输入随保存落库；空/非法输入回退默认 3000 毫秒）
   Widget _buildTimeoutField() {
     final theme = Theme.of(context);
     return Column(
@@ -733,18 +740,16 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
       children: [
         TextField(
           controller: _timeoutCtrl,
-          readOnly: true,
           keyboardType: const TextInputType.numberWithOptions(
             signed: true,
           ),
-          decoration: InputDecoration(
+          decoration: const InputDecoration(
             labelText: '超时时间（毫秒）',
-            suffixText: '只读',
           ),
         ),
         const SizedBox(height: 4),
         Text(
-          '当前 FFI 写接口暂不支持修改超时，默认 3000 毫秒',
+          '匹配/替换执行超时，空或非法输入回退 3000 毫秒',
           style: theme.textTheme.labelSmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),

@@ -1046,21 +1046,38 @@ Future<String> replaceRuleList() =>
     RustLib.instance.api.crateFfiFfiReplaceRuleList();
 
 /// 添加替换规则，返回规则 id
+///
+/// [A3 写链路补齐 | 2026-09-11 加法式扩参] 后 5 个可选参缺省=旧行为：
+/// group=None / scopeTitle=false / scopeContent=true / excludeScope=None /
+/// timeoutMillisecond=3000
 Future<PlatformInt64> replaceRuleAdd({
   required String name,
   required String pattern,
   required String replacement,
   required bool isRegex,
   required String scope,
+  String? group,
+  bool? scopeTitle,
+  bool? scopeContent,
+  String? excludeScope,
+  PlatformInt64? timeoutMillisecond,
 }) => RustLib.instance.api.crateFfiFfiReplaceRuleAdd(
   name: name,
   pattern: pattern,
   replacement: replacement,
   isRegex: isRegex,
   scope: scope,
+  group: group,
+  scopeTitle: scopeTitle,
+  scopeContent: scopeContent,
+  excludeScope: excludeScope,
+  timeoutMillisecond: timeoutMillisecond,
 );
 
 /// 更新替换规则
+///
+/// [A3 写链路补齐 | 2026-09-11 加法式扩参] 后 5 个可选参 None=保留既有值
+/// （向后兼容）；group/excludeScope 传 Some("")=清除该字段
 Future<void> replaceRuleUpdate({
   required PlatformInt64 ruleId,
   required String name,
@@ -1068,6 +1085,11 @@ Future<void> replaceRuleUpdate({
   required String replacement,
   required bool isRegex,
   required bool isEnabled,
+  String? group,
+  bool? scopeTitle,
+  bool? scopeContent,
+  String? excludeScope,
+  PlatformInt64? timeoutMillisecond,
 }) => RustLib.instance.api.crateFfiFfiReplaceRuleUpdate(
   ruleId: ruleId,
   name: name,
@@ -1075,6 +1097,11 @@ Future<void> replaceRuleUpdate({
   replacement: replacement,
   isRegex: isRegex,
   isEnabled: isEnabled,
+  group: group,
+  scopeTitle: scopeTitle,
+  scopeContent: scopeContent,
+  excludeScope: excludeScope,
+  timeoutMillisecond: timeoutMillisecond,
 );
 
 /// 删除替换规则

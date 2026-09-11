@@ -1405,12 +1405,21 @@ pub mod ffi {
     }
 
     /// 添加替换规则，返回规则 id
+    ///
+    /// [A3 写链路补齐 | 2026-09-11 加法式扩参] 后 5 个可选参缺省=旧行为：
+    /// group=None / scopeTitle=false / scopeContent=true / excludeScope=None /
+    /// timeoutMillisecond=3000
     pub fn replace_rule_add(
         name: String,
         pattern: String,
         replacement: String,
         is_regex: bool,
         scope: String,
+        group: Option<String>,
+        scope_title: Option<bool>,
+        scope_content: Option<bool>,
+        exclude_scope: Option<String>,
+        timeout_millisecond: Option<i64>,
     ) -> Result<i64, BridgeError> {
         let id = crate::api::replace_rule_api::add_replace_rule(
             &name,
@@ -1418,11 +1427,19 @@ pub mod ffi {
             &replacement,
             is_regex,
             &scope,
+            group.as_deref(),
+            scope_title,
+            scope_content,
+            exclude_scope.as_deref(),
+            timeout_millisecond,
         )?;
         Ok(id)
     }
 
     /// 更新替换规则
+    ///
+    /// [A3 写链路补齐 | 2026-09-11 加法式扩参] 后 5 个可选参 None=保留既有值
+    /// （向后兼容）；group/excludeScope 传 Some("")=清除该字段
     pub fn replace_rule_update(
         rule_id: i64,
         name: String,
@@ -1430,6 +1447,11 @@ pub mod ffi {
         replacement: String,
         is_regex: bool,
         is_enabled: bool,
+        group: Option<String>,
+        scope_title: Option<bool>,
+        scope_content: Option<bool>,
+        exclude_scope: Option<String>,
+        timeout_millisecond: Option<i64>,
     ) -> Result<(), BridgeError> {
         crate::api::replace_rule_api::update_replace_rule(
             rule_id,
@@ -1438,6 +1460,11 @@ pub mod ffi {
             &replacement,
             is_regex,
             is_enabled,
+            group.as_deref(),
+            scope_title,
+            scope_content,
+            exclude_scope.as_deref(),
+            timeout_millisecond,
         )?;
         Ok(())
     }
