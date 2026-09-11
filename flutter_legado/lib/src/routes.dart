@@ -32,6 +32,7 @@ import 'screens/reader_screen.dart';
 import 'screens/reader_comic_screen.dart';
 import 'screens/remote_book_screen.dart';
 import 'screens/replace_rules_screen.dart';
+import 'screens/replace_rule_edit_screen.dart';
 import 'screens/rss_favorites_screen.dart';
 import 'screens/rss_source_debug_screen.dart';
 import 'screens/rss_source_manage_screen.dart';
@@ -81,6 +82,8 @@ class AppRoutes {
   static const readRecord = '/read_record';
   static const bookmarks = '/bookmarks';
   static const replaceRules = '/replace_rules';
+  // [A3 形态对齐 | full-stack-engineer + UI] 替换规则整页编辑器
+  static const replaceRuleEdit = '/replace_rule_edit';
   static const autoTasks = '/auto_tasks';
   static const sourceDebug = '/sources/debug';
   static const rssSourceEdit = '/rss/edit';
@@ -233,6 +236,16 @@ class AppRoutes {
           final args = ModalRoute.of(context)?.settings.arguments;
           final pattern = args is String ? args : null;
           return ReplaceRulesScreen(initialPattern: pattern);
+        },
+        replaceRuleEdit: (context) {
+          // [A3 形态对齐 | full-stack-engineer + UI] 替换规则整页编辑器：
+          // 路由参数 ReplaceRule（编辑既有规则）或 String（新建时
+          // pattern 预填，对标原版 startIntent pattern 预填语义）
+          final args = ModalRoute.of(context)?.settings.arguments;
+          return ReplaceRuleEditScreen(
+            rule: args is ReplaceRule ? args : null,
+            prefillPattern: args is String ? args : null,
+          );
         },
         autoTasks: (context) {
           // [UI-fix v2.0.3 | 2026-08-09] 支持按任务编辑/预建新建路由参数

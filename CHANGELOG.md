@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.237] - 2026-09-11
+
+### Changed
+- [UI] 替换净化规则编辑器由弹窗改为整页（差异清单 A3，子代理 full-stack-engineer 交付 + 主代理审核）：字段顺序对齐原版 `ReplaceEditActivity` / `activity_replace_edit.xml`——规则名称 → 分组（下拉 + 自定义）→ 匹配规则（含「使用正则表达式」勾选 + 帮助图标，复用 regexHelp 帮助弹层）→ 替换为 → 作用范围三勾选（标题 · 书源 · 正文）→ 特定范围 → 排除范围 → 超时 → 预览输入 → 预览输出；顶栏 = 醒目「保存」+ ⋮ 菜单（全屏编辑 / 复制规则 / 粘贴规则，走系统剪贴板 JSON）；预览 250ms 防抖，正则按 `replaceAllMapped` 手动展开 `$$`/`$&`/`$1-9`/`${name}` 对齐 Java `Matcher.replaceAll` 语义，`@js:` 规则诚实提示 Pure 侧无 JS 引擎；列表行编辑 / FAB 新增 / 正则预填入口统一走新页（路由 `/replace_rule_edit`），旧弹窗表单删除
+
+### Test
+- 子代理自测：`flutter analyze` No issues、`flutter test` 1385 全过；主代理独立复跑结果一致（含新增编辑页 12 用例、入口页重写 4 用例）
+- **存量阻塞项（如实登记，非本批引入）**：① FFI 写接口窄——`replaceRuleAdd` 只写 name/pattern/replacement/isRegex/scope、`replaceRuleUpdate` 追加 isEnabled，故 分组 / 标题·正文作用范围 / 排除范围 / 超时 的编辑**保存后不落库**（旧弹窗同样如此；Rust 侧读与应用链路 `content_processor` 齐全，仅写签名窄）→ 待跨轨补齐；② `scopeSource`（书源作用范围）在 Dart/Rust/DB/FFI 全链路缺失 → 编辑页以禁用行 +「暂不支持」诚实标注；③ `@js:` 替换预览 Pure 侧无引擎，输出区提示不可用
+
+- Contributor: full-stack-engineer + UI（主代理 Qoder UI 审核）
+
+
 ## [2.0.236] - 2026-09-11
 
 ### Added
