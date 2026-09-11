@@ -119,274 +119,272 @@ class AppRoutes {
   // rssArticles 和 rssArticleDetail 通过 Navigator.push 传参，不在此注册
 
   static Map<String, WidgetBuilder> get routes => {
-      home: (_) => const HomeScreen(),
-        reader: (_) => const ReaderScreen(),
-        readerComic: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          final bookUrl = args is String ? args : (args is Map ? (args['bookUrl'] as String? ?? '') : '');
-          return ReaderComicScreen(bookUrl: bookUrl);
-        },
-        search: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          String? initialQuery;
-          List<String>? sourceUrls;
-          List<String>? initialGroups;
-          if (args is String) {
-            initialQuery = args;
-          } else if (args is Map) {
-            if (args['query'] is String) {
-              initialQuery = args['query'] as String;
-            }
-            // 发现页「搜索」入口：预选指定书源（发现页修复 R2）
-            if (args['sourceUrl'] is String) {
-              sourceUrls = [args['sourceUrl'] as String];
-            } else if (args['sourceUrls'] is List) {
-              sourceUrls =
-                  (args['sourceUrls'] as List).whereType<String>().toList();
-            }
-            // 路由 groups 参数：预选搜索分组（对齐原版 receiptIntent searchScope）
-            if (args['groups'] is List) {
-              initialGroups =
-                  (args['groups'] as List).whereType<String>().toList();
-            }
-          }
-          return SearchScreen(
-            initialQuery: initialQuery,
-            initialSourceUrls: sourceUrls,
-            initialGroups: initialGroups,
-          );
-        },
-        sources: (_) => const SourceScreen(),
-        sourceEdit: (context) {
-          // 发现页编辑入口传入完整 BookSource 对象；未传入则新建
-          //（此前忽略 arguments → 打开空表单，「编辑页没有书源信息」根因）
-          final args = ModalRoute.of(context)?.settings.arguments;
-          return SourceEditScreen(source: args is BookSource ? args : null);
-        },
-        exploreShow: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          final exploreArgs = args is ExploreShowArgs ? args : null;
-          return ExploreShowScreen(args: exploreArgs);
-        },
-        settings: (_) => const SettingsScreen(),
-        settingsHome: (_) => const SettingsHomeScreen(),
-        otherSettings: (_) => const OtherSettingsScreen(),
-        cacheSettings: (_) => const CacheSettingsScreen(),
-        cacheDownloads: (_) => const CacheDownloadScreen(),
-        offlineCache: (_) => const OfflineCacheScreen(),
-        rss: (_) => const RssScreen(),
-        ruleSub: (_) => const RuleSubScreen(),
-        audio: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          // 路由参数规范化：优先接收 Book 对象
-          if (args is Book) {
-            return AudioScreen(book: args);
-          }
-          // 向后兼容：支持 Map<String, String> 传参
-          if (args is Map<String, String>) {
-            return AudioScreen(
-              bookUrl: args['bookUrl'] ?? '',
-              bookName: args['bookName'] ?? '',
-            );
-          }
-          return const AudioScreen();
-        },
-        bookInfo: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          // 路由参数规范化：优先接收 Book 对象
-          if (args is Book) {
-            return BookInfoScreen(book: args);
-          }
-          // 向后兼容：支持 String(bookUrl) 传参
-          final bookUrl = args is String ? args : '';
-          return BookInfoScreen(bookUrl: bookUrl);
-        },
-        editBookInfo: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          // 路由参数规范化：接收 Book 对象
-          if (args is Book) {
-            return EditBookInfoScreen(book: args);
-          }
-          // 缺少书籍对象时回退到首页，避免崩溃
-          return const HomeScreen();
-        },
-        changeSource: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          // 路由参数规范化：优先接收 Book 对象
-          if (args is Book) {
-            return ChangeSourceScreen(book: args);
-          }
-          // 向后兼容：支持 Map<String, String> 传参
-          if (args is Map<String, String>) {
-            return ChangeSourceScreen(
-              bookUrl: args['bookUrl'] ?? '',
-              bookName: args['bookName'] ?? '',
-              author: args['author'] ?? '',
-              currentSourceUrl: args['currentSourceUrl'] ?? '',
-            );
-          }
-          return const ChangeSourceScreen();
-        },
-        readingStats: (_) => const ReadRecordScreen(),
-        readRecord: (_) => const ReadRecordScreen(),
-        bookmarks: (_) => const BookmarkScreen(),
-        replaceRules: (context) {
-          // [UI-fix v2.0.2 | 2026-08-06] 支持 String 路由参数：阅读器长按
-          // 选中文本作为新规则 pattern 预填 — Qoder
-          final args = ModalRoute.of(context)?.settings.arguments;
-          final pattern = args is String ? args : null;
-          return ReplaceRulesScreen(initialPattern: pattern);
-        },
-        replaceRuleEdit: (context) {
-          // [A3 形态对齐 | full-stack-engineer + UI] 替换规则整页编辑器：
-          // 路由参数 ReplaceRule（编辑既有规则）或 String（新建时
-          // pattern 预填，对标原版 startIntent pattern 预填语义）
-          final args = ModalRoute.of(context)?.settings.arguments;
-          return ReplaceRuleEditScreen(
-            rule: args is ReplaceRule ? args : null,
-            prefillPattern: args is String ? args : null,
-          );
-        },
-        autoTasks: (context) {
-          // [UI-fix v2.0.3 | 2026-08-09] 支持按任务编辑/预建新建路由参数
-          //（Task #39 §5.11-2）：Map<String,dynamic>
-          // {'editTaskId': String} 或 {'newTask': Map<String,dynamic>}，
-          // is Map 运行时兼容判定 — Qoder
-          final args = ModalRoute.of(context)?.settings.arguments;
-          if (args is Map) {
-            final editId = args['editTaskId'];
-            final newTask = args['newTask'];
-            return AutoTaskScreen(
-              initialEditTaskId: editId is String ? editId : null,
-              initialNewTask: newTask is Map
-                  ? Map<String, dynamic>.from(newTask)
-                  : null,
-            );
-          }
-          return const AutoTaskScreen();
-        },
-        sourceDebug: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          final sourceUrl = args is String ? args : null;
-          return SourceDebugScreen(sourceUrl: sourceUrl);
-        },
-        rssSourceEdit: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          final source = args is RssSource ? args : null;
-          return RssSourceEditScreen(source: source);
-        },
-        readAloudConfig: (_) => const ReadAloudConfigScreen(),
-        themeConfig: (_) => const ThemeConfigScreen(),
-        bottomBarSkin: (_) => const BottomBarSkinScreen(),
-        importBooks: (_) => const ImportScreen(),
-        remoteBooks: (_) => const RemoteBookScreen(),
-        bookGroups: (_) => const BookGroupScreen(),
-        bookshelfManage: (_) => const BookshelfManageScreen(),
-        searchContent: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          // 路由参数规范化：优先接收 Book 对象
-          if (args is Book) {
-            return SearchContentScreen(book: args);
-          }
-          // [UI-fix v2.0.2 | 2026-08-06] 支持 Map 传参 {book, query}：
-          // 阅读器长按选中文本作为初始查询词 — Qoder
-          if (args is Map && args['book'] is Book) {
-            final query = args['query'];
-            return SearchContentScreen(
-              book: args['book'] as Book,
-              initialQuery: query is String ? query : null,
-            );
-          }
-          // 向后兼容：支持 Map<String, String> 传参
-          if (args is Map<String, String>) {
-            return SearchContentScreen(
-              bookUrl: args['bookUrl'] ?? '',
-              bookName: args['bookName'] ?? '',
-            );
-          }
-          return const SearchContentScreen();
-        },
-        about: (_) => const AboutScreen(),
-        // [UI-fix v2.0.3 | 2026-08-08] 独立目录页（对齐原版 TocActivity）：
-        // 优先接收 Book 对象，兼容 Map 传参（is Map 运行时判定规范） — Qoder
-        toc: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          if (args is Book) {
-            return TocScreen(book: args);
-          }
-          if (args is Map && args['book'] is Book) {
-            return TocScreen(book: args['book'] as Book);
-          }
-          // 缺少书籍对象时回退到首页，避免崩溃
-          return const HomeScreen();
-        },
-        appLog: (_) => const AppLogScreen(),
-        rssSourceManage: (_) => const RssSourceManageScreen(),
-        rssFavorites: (_) => const RssFavoritesScreen(),
-        rssSourceDebug: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          final sourceUrl = args is String ? args : null;
-          return RssSourceDebugScreen(sourceUrl: sourceUrl);
-        },
-        changeCover: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          // 路由参数规范化：优先接收 Book 对象
-          if (args is Book) {
-            return ChangeCoverScreen(book: args);
-          }
-          // 向后兼容：支持 Map<String, String> 传参
-          if (args is Map<String, String>) {
-            return ChangeCoverScreen(
-              bookUrl: args['bookUrl'] ?? '',
-              bookName: args['bookName'] ?? '',
-              currentCover: args['coverUrl'],
-            );
-          }
-          return const ChangeCoverScreen();
-        },
-        txtTocRules: (_) => const TxtTocRulesScreen(),
-        dict: (_) => const DictScreen(),
-        fonts: (_) => const FontScreen(),
-        highlightRules: (_) => const HighlightRulesScreen(),
-        fileManage: (_) => const FileManageScreen(),
-        qrcode: (_) => const QrcodeScreen(),
-        welcome: (_) => const WelcomeScreen(),
-        welcomeConfig: (_) => const WelcomeConfigScreen(),
-        browser: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          // 平台桥接分发携带 url/html/title（Task #114）— QoderCN
-          // 路由参数统一 is Map 运行时兼容判定（Map<String,dynamic> 规范）
-          if (args is Map) {
-            return BrowserScreen(
-              initialUrl: args['url']?.toString(),
-              initialHtml: args['html']?.toString(),
-              title: args['title']?.toString(),
-            );
-          }
-          final url = args is String ? args : null;
-          return BrowserScreen(initialUrl: url);
-        },
-        video: (context) {
-          final args = ModalRoute.of(context)?.settings.arguments;
-          if (args is Map<String, String>) {
-            return VideoScreen(
-              videoUrl: args['videoUrl'] ?? '',
-              title: args['title'] ?? '视频播放',
-            );
-          }
-          // [UI-fix v2.0.12] 视频源书籍：章节列表 + 当前章播放（对齐原版
-          // VideoPlayerActivity 接收 bookUrl 语义）— Reasonix
-          if (args is Book) {
-            return VideoScreen(
-              videoUrl: '',
-              title: args.name,
-              book: args,
-            );
-          }
-          return const VideoScreen(videoUrl: '');
-        },
-        webdavSettings: (_) => const WebDavSettingsScreen(),
-      };
+    home: (_) => const HomeScreen(),
+    reader: (_) => const ReaderScreen(),
+    readerComic: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      final bookUrl = args is String
+          ? args
+          : (args is Map ? (args['bookUrl'] as String? ?? '') : '');
+      return ReaderComicScreen(bookUrl: bookUrl);
+    },
+    search: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      String? initialQuery;
+      List<String>? sourceUrls;
+      List<String>? initialGroups;
+      if (args is String) {
+        initialQuery = args;
+      } else if (args is Map) {
+        if (args['query'] is String) {
+          initialQuery = args['query'] as String;
+        }
+        // 发现页「搜索」入口：预选指定书源（发现页修复 R2）
+        if (args['sourceUrl'] is String) {
+          sourceUrls = [args['sourceUrl'] as String];
+        } else if (args['sourceUrls'] is List) {
+          sourceUrls = (args['sourceUrls'] as List)
+              .whereType<String>()
+              .toList();
+        }
+        // 路由 groups 参数：预选搜索分组（对齐原版 receiptIntent searchScope）
+        if (args['groups'] is List) {
+          initialGroups = (args['groups'] as List).whereType<String>().toList();
+        }
+      }
+      return SearchScreen(
+        initialQuery: initialQuery,
+        initialSourceUrls: sourceUrls,
+        initialGroups: initialGroups,
+      );
+    },
+    sources: (_) => const SourceScreen(),
+    sourceEdit: (context) {
+      // 发现页编辑入口传入完整 BookSource 对象；未传入则新建
+      //（此前忽略 arguments → 打开空表单，「编辑页没有书源信息」根因）
+      final args = ModalRoute.of(context)?.settings.arguments;
+      return SourceEditScreen(source: args is BookSource ? args : null);
+    },
+    exploreShow: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      final exploreArgs = args is ExploreShowArgs ? args : null;
+      return ExploreShowScreen(args: exploreArgs);
+    },
+    settings: (_) => const SettingsScreen(),
+    settingsHome: (_) => const SettingsHomeScreen(),
+    otherSettings: (_) => const OtherSettingsScreen(),
+    cacheSettings: (_) => const CacheSettingsScreen(),
+    cacheDownloads: (_) => const CacheDownloadScreen(),
+    offlineCache: (_) => const OfflineCacheScreen(),
+    rss: (_) => const RssScreen(),
+    ruleSub: (_) => const RuleSubScreen(),
+    audio: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      // 路由参数规范化：优先接收 Book 对象
+      if (args is Book) {
+        return AudioScreen(book: args);
+      }
+      // 向后兼容：支持 Map<String, String> 传参
+      if (args is Map<String, String>) {
+        return AudioScreen(
+          bookUrl: args['bookUrl'] ?? '',
+          bookName: args['bookName'] ?? '',
+        );
+      }
+      return const AudioScreen();
+    },
+    bookInfo: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      // 路由参数规范化：优先接收 Book 对象
+      if (args is Book) {
+        return BookInfoScreen(book: args);
+      }
+      // 向后兼容：支持 String(bookUrl) 传参
+      final bookUrl = args is String ? args : '';
+      return BookInfoScreen(bookUrl: bookUrl);
+    },
+    editBookInfo: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      // 路由参数规范化：接收 Book 对象
+      if (args is Book) {
+        return EditBookInfoScreen(book: args);
+      }
+      // 缺少书籍对象时回退到首页，避免崩溃
+      return const HomeScreen();
+    },
+    changeSource: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      // 路由参数规范化：优先接收 Book 对象
+      if (args is Book) {
+        return ChangeSourceScreen(book: args);
+      }
+      // 向后兼容：支持 Map<String, String> 传参
+      if (args is Map<String, String>) {
+        return ChangeSourceScreen(
+          bookUrl: args['bookUrl'] ?? '',
+          bookName: args['bookName'] ?? '',
+          author: args['author'] ?? '',
+          currentSourceUrl: args['currentSourceUrl'] ?? '',
+        );
+      }
+      return const ChangeSourceScreen();
+    },
+    readingStats: (_) => const ReadRecordScreen(),
+    readRecord: (_) => const ReadRecordScreen(),
+    bookmarks: (_) => const BookmarkScreen(),
+    replaceRules: (context) {
+      // [UI-fix v2.0.2 | 2026-08-06] 支持 String 路由参数：阅读器长按
+      // 选中文本作为新规则 pattern 预填 — Qoder
+      final args = ModalRoute.of(context)?.settings.arguments;
+      final pattern = args is String ? args : null;
+      return ReplaceRulesScreen(initialPattern: pattern);
+    },
+    replaceRuleEdit: (context) {
+      // [A3 形态对齐 | full-stack-engineer + UI] 替换规则整页编辑器：
+      // 路由参数 ReplaceRule（编辑既有规则）或 String（新建时
+      // pattern 预填，对标原版 startIntent pattern 预填语义）
+      final args = ModalRoute.of(context)?.settings.arguments;
+      return ReplaceRuleEditScreen(
+        rule: args is ReplaceRule ? args : null,
+        prefillPattern: args is String ? args : null,
+      );
+    },
+    autoTasks: (context) {
+      // [UI-fix v2.0.3 | 2026-08-09] 支持按任务编辑/预建新建路由参数
+      //（Task #39 §5.11-2）：Map<String,dynamic>
+      // {'editTaskId': String} 或 {'newTask': Map<String,dynamic>}，
+      // is Map 运行时兼容判定 — Qoder
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map) {
+        final editId = args['editTaskId'];
+        final newTask = args['newTask'];
+        return AutoTaskScreen(
+          initialEditTaskId: editId is String ? editId : null,
+          initialNewTask: newTask is Map
+              ? Map<String, dynamic>.from(newTask)
+              : null,
+        );
+      }
+      return const AutoTaskScreen();
+    },
+    sourceDebug: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      final sourceUrl = args is String ? args : null;
+      return SourceDebugScreen(sourceUrl: sourceUrl);
+    },
+    rssSourceEdit: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      final source = args is RssSource ? args : null;
+      return RssSourceEditScreen(source: source);
+    },
+    readAloudConfig: (_) => const ReadAloudConfigScreen(),
+    themeConfig: (_) => const ThemeConfigScreen(),
+    bottomBarSkin: (_) => const BottomBarSkinScreen(),
+    importBooks: (_) => const ImportScreen(),
+    remoteBooks: (_) => const RemoteBookScreen(),
+    bookGroups: (_) => const BookGroupScreen(),
+    bookshelfManage: (_) => const BookshelfManageScreen(),
+    searchContent: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      // 路由参数规范化：优先接收 Book 对象
+      if (args is Book) {
+        return SearchContentScreen(book: args);
+      }
+      // [UI-fix v2.0.2 | 2026-08-06] 支持 Map 传参 {book, query}：
+      // 阅读器长按选中文本作为初始查询词 — Qoder
+      if (args is Map && args['book'] is Book) {
+        final query = args['query'];
+        return SearchContentScreen(
+          book: args['book'] as Book,
+          initialQuery: query is String ? query : null,
+        );
+      }
+      // 向后兼容：支持 Map<String, String> 传参
+      if (args is Map<String, String>) {
+        return SearchContentScreen(
+          bookUrl: args['bookUrl'] ?? '',
+          bookName: args['bookName'] ?? '',
+        );
+      }
+      return const SearchContentScreen();
+    },
+    about: (_) => const AboutScreen(),
+    // [UI-fix v2.0.3 | 2026-08-08] 独立目录页（对齐原版 TocActivity）：
+    // 优先接收 Book 对象，兼容 Map 传参（is Map 运行时判定规范） — Qoder
+    toc: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Book) {
+        return TocScreen(book: args);
+      }
+      if (args is Map && args['book'] is Book) {
+        return TocScreen(book: args['book'] as Book);
+      }
+      // 缺少书籍对象时回退到首页，避免崩溃
+      return const HomeScreen();
+    },
+    appLog: (_) => const AppLogScreen(),
+    rssSourceManage: (_) => const RssSourceManageScreen(),
+    rssFavorites: (_) => const RssFavoritesScreen(),
+    rssSourceDebug: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      final sourceUrl = args is String ? args : null;
+      return RssSourceDebugScreen(sourceUrl: sourceUrl);
+    },
+    changeCover: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      // 路由参数规范化：优先接收 Book 对象
+      if (args is Book) {
+        return ChangeCoverScreen(book: args);
+      }
+      // 向后兼容：支持 Map<String, String> 传参
+      if (args is Map<String, String>) {
+        return ChangeCoverScreen(
+          bookUrl: args['bookUrl'] ?? '',
+          bookName: args['bookName'] ?? '',
+          currentCover: args['coverUrl'],
+        );
+      }
+      return const ChangeCoverScreen();
+    },
+    txtTocRules: (_) => const TxtTocRulesScreen(),
+    dict: (_) => const DictScreen(),
+    fonts: (_) => const FontScreen(),
+    highlightRules: (_) => const HighlightRulesScreen(),
+    fileManage: (_) => const FileManageScreen(),
+    qrcode: (_) => const QrcodeScreen(),
+    welcome: (_) => const WelcomeScreen(),
+    welcomeConfig: (_) => const WelcomeConfigScreen(),
+    browser: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      // 平台桥接分发携带 url/html/title（Task #114）— QoderCN
+      // 路由参数统一 is Map 运行时兼容判定（Map<String,dynamic> 规范）
+      if (args is Map) {
+        return BrowserScreen(
+          initialUrl: args['url']?.toString(),
+          initialHtml: args['html']?.toString(),
+          title: args['title']?.toString(),
+        );
+      }
+      final url = args is String ? args : null;
+      return BrowserScreen(initialUrl: url);
+    },
+    video: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      if (args is Map<String, String>) {
+        return VideoScreen(
+          videoUrl: args['videoUrl'] ?? '',
+          title: args['title'] ?? '视频播放',
+        );
+      }
+      // [UI-fix v2.0.12] 视频源书籍：章节列表 + 当前章播放（对齐原版
+      // VideoPlayerActivity 接收 bookUrl 语义）— Reasonix
+      if (args is Book) {
+        return VideoScreen(videoUrl: '', title: args.name, book: args);
+      }
+      return const VideoScreen(videoUrl: '');
+    },
+    webdavSettings: (_) => const WebDavSettingsScreen(),
+  };
 
   // [UI-fix v2.0.167] 转场时长分档（对齐参考仓 NavDisplay：默认 700ms 交叉
   // 淡入淡出 / BookInfo 条件 300ms / ReadBook 600ms）。MaterialPageRoute 硬编码
@@ -403,6 +401,16 @@ class AppRoutes {
   }
 
   static Route<dynamic> generateRoute(RouteSettings settings) {
+    // [A2 形态对齐 | full-stack-engineer + UI] 换源页改用「底部弹层」形态
+    // （对标原版 ChangeBookSourceDialog BaseDialogFragment + 参考版 kazusa
+    // 底部弹层实机截图）：非不透明路由承载——半透明遮罩压住前页、面板自底部
+    // 滑入；5 处调用方仍走 pushNamed 并回收新 bookUrl 路由结果，不改。
+    if (settings.name == changeSource) {
+      return _ChangeSourceSheetRoute(
+        builder: routes[changeSource]!,
+        settings: settings,
+      );
+    }
     final builder = routes[settings.name] ?? (_) => const HomeScreen();
     return _TieredRoute<void>(
       builder: builder,
@@ -410,6 +418,46 @@ class AppRoutes {
       duration: tieredTransitionDurationFor(settings.name),
     );
   }
+}
+
+/// [A2 形态对齐 | full-stack-engineer + UI] 换源底部弹层路由：
+/// - 非不透明（opaque: false）+ black54 屏障：前页保持可见并被半透明遮罩压暗
+///   （Material 3 模态浮层遮罩规范值）
+/// - 内容自底部上滑入场（bottom sheet 滑入/滑出，easeOutCubic/easeInCubic）
+/// - 关闭语义对齐原版 DialogFragment dismiss：点遮罩 / 下滑面板 / 系统返回键
+///   均 pop 本路由；路由结果回传新 bookUrl（调用方 is String 判定不变）
+class _ChangeSourceSheetRoute extends PageRouteBuilder<dynamic> {
+  _ChangeSourceSheetRoute({
+    required WidgetBuilder builder,
+    required super.settings,
+  }) : super(
+         // pageBuilder 为三参 RoutePageBuilder（context, animation, page），
+         // 仅取 context 构建页面（转场由 transitionsBuilder 驱动）
+         pageBuilder: (context, _, _) => builder(context),
+         opaque: false,
+         // 遮罩压暗视觉由 barrierColor 承担（M3 模态浮层遮罩规范值）；
+         // 页内全屏命中层实现「点遮罩关闭」
+         barrierColor: Colors.black54,
+         transitionDuration: const Duration(milliseconds: 300),
+         reverseTransitionDuration: const Duration(milliseconds: 250),
+         // [A2 形态对齐 | full-stack-engineer + UI] 面板自底部上滑入场；
+         // 反向（关闭）整块内容下滑出屏 + 屏障淡出——同时承接「下滑松手
+         // 关闭」的收尾动画（页面侧拖拽位移保持冻结，与反向滑出视觉叠加）
+         transitionsBuilder: (context, animation, secondaryAnimation, child) {
+           final curved = CurvedAnimation(
+             parent: animation,
+             curve: Curves.easeOutCubic,
+             reverseCurve: Curves.easeInCubic,
+           );
+           return SlideTransition(
+             position: Tween<Offset>(
+               begin: const Offset(0, 1),
+               end: Offset.zero,
+             ).animate(curved),
+             child: child,
+           );
+         },
+       );
 }
 
 /// 转场时长可覆盖的 MaterialPageRoute（[UI-fix v2.0.167]，配合主题层

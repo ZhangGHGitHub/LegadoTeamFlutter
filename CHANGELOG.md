@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.239] - 2026-09-11
+
+### Changed
+- [UI] 换源界面由「整页」改「底部弹层」（差异清单 A2，子代理 full-stack-engineer 交付 + 复核，主代理复验）：`AppRoutes.changeSource` 改由新增的 `_ChangeSourceSheetRoute`（非不透明 + black54 遮罩 + 底部滑入/滑出转场）承载，**5 处调用方零改动**（阅读器顶栏/菜单/翻页区、听书页、书籍详情）；弹层形态对齐双基准——85% 高面板 + 圆角 16 + 32×4 把手、点遮罩/下滑（阈值 160px 或甩速 800px/s，未达阈值弹性回位）/系统返回均可关闭；原版 `tool_bar`/`refresh_progress_bar`/`recycler_view`/`ll_bottom_bar` 四区与参考版源卡（当前源 chip + 勾标高亮）对应保留
+
+### Test
+- 子代理两轮均在限内自测：`flutter analyze` No issues、`flutter test` 1395 全过（换源屏 12 例，含 A2 形态 4 例：非不透明路由、把手+85% 几何、点遮罩关闭、下滑超阈值关闭/未达阈值回弹）；主代理独立复跑一致，并额外核对 `routes.dart` 变更性质——路由键 53→55（新增两条属弹层路由），**无键丢失**，非空白差异仅 8 行（其余为 8sp→4sp 缩进重排）
+- R1 能力零回归（子代理逐项给出 file:line）：流式搜索进度、变量链 applySource→newBookUrl→pop、👍/👎 评分、长按菜单（置顶/置底/编辑/禁用/删除）、底部栏（当前源点按滚动定位 + 滚顶/滚底）、筛选输入、下拉刷新与滚动加载、高级选项全链
+- 设备侧待验（如实登记）：拖拽手感与滑出收尾动画、black54 遮罩观感、前页在非不透明路由下保持可见的转场效果 —— widget 测试只覆盖几何与关闭逻辑。版本 2.0.239+240
+
+- Contributor: full-stack-engineer + UI（主代理 Qoder UI 审核）
+
+
 ## [2.0.238] - 2026-09-11
 
 ### Changed

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/routes.dart';
 import 'package:flutter_legado/src/screens/change_source_screen.dart';
 
 import '../mocks/mocks.dart';
@@ -86,26 +87,83 @@ void main() {
     );
   }
 
+  /// [A2 形态对齐] 将换源页作为真实 push 路由推入（home → 换源），
+  /// 使 Navigator.pop 有可出栈的路由，用于验证「点遮罩 / 下滑关闭」
+  Future<void> pumpChangeSourceAsRoute(
+    WidgetTester tester, {
+    String currentSourceUrl = 'https://a.com',
+  }) async {
+    stubSearchStream(
+      Stream.value(
+        makeBatch(
+          matches: [
+            rawMatch(
+              sourceUrl: 'https://a.com',
+              sourceName: 'A源',
+              bookUrl: 'https://a.com/book',
+            ),
+            rawMatch(
+              sourceUrl: 'https://b.com',
+              sourceName: 'B源',
+              bookUrl: 'https://b.com/book',
+            ),
+          ],
+          finished: 2,
+          total: 2,
+        ),
+      ),
+    );
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: MaterialApp(
+          initialRoute: '/home',
+          onGenerateRoute: (settings) {
+            if (settings.name == '/home') {
+              return MaterialPageRoute<void>(
+                builder: (_) => const Text('HOME_PAGE'),
+              );
+            }
+            return MaterialPageRoute<void>(
+              builder: (_) => ChangeSourceScreen(
+                bookName: '斗破苍穹',
+                author: '天蚕土豆',
+                currentSourceUrl: currentSourceUrl,
+              ),
+            );
+          },
+        ),
+      ),
+    );
+    final navState = tester.state<NavigatorState>(find.byType(Navigator));
+    navState.pushNamed('/change_source');
+    await tester.pumpAndSettle();
+  }
+
   Future<void> pumpChangeSource(
     WidgetTester tester, {
     String currentSourceUrl = 'https://a.com',
   }) async {
-    stubSearchStream(Stream.value(makeBatch(
-      matches: [
-        rawMatch(
-          sourceUrl: 'https://a.com',
-          sourceName: 'A源',
-          bookUrl: 'https://a.com/book',
+    stubSearchStream(
+      Stream.value(
+        makeBatch(
+          matches: [
+            rawMatch(
+              sourceUrl: 'https://a.com',
+              sourceName: 'A源',
+              bookUrl: 'https://a.com/book',
+            ),
+            rawMatch(
+              sourceUrl: 'https://b.com',
+              sourceName: 'B源',
+              bookUrl: 'https://b.com/book',
+            ),
+          ],
+          finished: 2,
+          total: 2,
         ),
-        rawMatch(
-          sourceUrl: 'https://b.com',
-          sourceName: 'B源',
-          bookUrl: 'https://b.com/book',
-        ),
-      ],
-      finished: 2,
-      total: 2,
-    )));
+      ),
+    );
 
     await tester.pumpWidget(
       wrap(
@@ -120,6 +178,23 @@ void main() {
   }
 
   group('ChangeSourceScreen', () {
+    // [A2 形态对齐] 路由承载弹层：换源路由须为非不透明路由（底部弹层）
+    test('generateRoute 换源路由为非不透明底部弹层路由', () {
+      final route = AppRoutes.generateRoute(
+        const RouteSettings(name: AppRoutes.changeSource),
+      );
+      // 非不透明（opaque: false）→ 前页保持可见，由屏障压暗
+      expect(route, isA<PageRoute>());
+      expect((route as PageRoute).opaque, isFalse);
+    });
+
+    test('generateRoute 其余路由仍为普通整页路由', () {
+      final route = AppRoutes.generateRoute(
+        const RouteSettings(name: AppRoutes.bookInfo),
+      ) as PageRoute;
+      expect(route.opaque, isTrue);
+    });
+
     testWidgets('顶栏显示书名 title 与作者 subtitle', (tester) async {
       await pumpChangeSource(tester);
 
@@ -172,24 +247,112 @@ void main() {
       expect(find.byTooltip('滚到底部'), findsOneWidget);
     });
 
+    testWidgets('[A2] 底部弹层形态：把手 + 面板位于底部 85% 区域', (tester) async {
+      await pumpChangeSource(tester);
+
+      // 把手：32×4 圆角条
+      final handle = find.byWidgetPredicate(
+        (w) =>
+            w is Container &&
+            w.constraints ==
+                const BoxConstraints.tightFor(width: 32, height: 4),
+      );
+      expect(handle, findsOneWidget);
+
+      // 面板（拖拽区 GestureDetector）贴底：顶边 ≈ 屏高 15%、占满宽度
+      final panel = find.byWidgetPredicate(
+        (w) => w is GestureDetector && w.onVerticalDragStart != null,
+      );
+      expect(panel, findsOneWidget);
+      final rect = tester.getRect(panel);
+      expect(
+        rect.top,
+        closeTo(MediaQuery.sizeOf(tester.element(panel)).height * 0.15, 1),
+      );
+      expect(
+        rect.width,
+        closeTo(MediaQuery.sizeOf(tester.element(panel)).width, 1),
+      );
+
+      // 面板内仍为既有功能布局（顶栏标题 + 列表）
+      expect(find.text('斗破苍穹'), findsOneWidget);
+      expect(find.byType(ListView), findsOneWidget);
+    });
+
+    testWidgets('[A2] 点遮罩关闭弹层（pop 路由，回到前页）', (tester) async {
+      await pumpChangeSourceAsRoute(tester);
+      expect(find.text('A源'), findsWidgets);
+
+      // 遮罩区 = 屏幕顶部 15%（面板占 85%），点按顶部区域
+      await tester.tapAt(const Offset(400, 30));
+      await tester.pumpAndSettle();
+
+      expect(find.text('HOME_PAGE'), findsOneWidget);
+      expect(find.text('A源'), findsNothing);
+    });
+
+    testWidgets('[A2] 下滑把手超阈值关闭弹层', (tester) async {
+      await pumpChangeSourceAsRoute(tester);
+      expect(find.text('A源'), findsWidgets);
+
+      // 面板拖拽区（带 onVerticalDragStart 的 GestureDetector）
+      final panel = find.byWidgetPredicate(
+        (w) => w is GestureDetector && w.onVerticalDragStart != null,
+      );
+      expect(panel, findsOneWidget);
+      final rect = tester.getRect(panel);
+      // 从把手/顶栏区（非列表滚动区）下滑 400px > 阈值 160px
+      await tester.dragFrom(
+        Offset(rect.center.dx, rect.top + 30),
+        const Offset(0, 400),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('HOME_PAGE'), findsOneWidget);
+      expect(find.text('A源'), findsNothing);
+    });
+
+    testWidgets('[A2] 下滑未达阈值回弹不关闭', (tester) async {
+      await pumpChangeSourceAsRoute(tester);
+      expect(find.text('A源'), findsWidgets);
+
+      final panel = find.byWidgetPredicate(
+        (w) => w is GestureDetector && w.onVerticalDragStart != null,
+      );
+      final rect = tester.getRect(panel);
+      await tester.dragFrom(
+        Offset(rect.center.dx, rect.top + 30),
+        const Offset(0, 60),
+      );
+      await tester.pumpAndSettle();
+
+      // 未达阈值：仍停留在换源弹层，回弹回位
+      expect(find.text('HOME_PAGE'), findsNothing);
+      expect(find.text('A源'), findsWidgets);
+    });
+
     testWidgets('底栏滚顶按钮可点击', (tester) async {
       tester.view.physicalSize = const Size(400, 320);
       tester.view.devicePixelRatio = 1.0;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
 
-      stubSearchStream(Stream.value(makeBatch(
-        matches: List.generate(
-          30,
-          (i) => rawMatch(
-            sourceUrl: 'https://src$i.com',
-            sourceName: '源$i',
-            bookUrl: 'https://src$i.com/book',
+      stubSearchStream(
+        Stream.value(
+          makeBatch(
+            matches: List.generate(
+              30,
+              (i) => rawMatch(
+                sourceUrl: 'https://src$i.com',
+                sourceName: '源$i',
+                bookUrl: 'https://src$i.com/book',
+              ),
+            ),
+            finished: 30,
+            total: 30,
           ),
         ),
-        finished: 30,
-        total: 30,
-      )));
+      );
 
       await tester.pumpWidget(
         wrap(
