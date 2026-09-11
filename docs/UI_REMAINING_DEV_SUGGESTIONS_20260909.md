@@ -11,9 +11,9 @@
 
 | 项 | 核实依据（源码） | 结论与决策 |
 |---|---|---|
-| A1 搜索顶栏三钮（⚙/定位/筛选） | 原版 `ui/book/search/SearchActivity.kt`；重构版 `features/search/search_page.dart` L545-590 | 原版与重构版**均无三钮**，能力全在 ⋮ 溢出菜单（精准搜索/搜索范围/全部书源/书源管理）；三钮为闭源参考版特有、语义无源可依 → **不实施**（我方已有等价 ⋮ 菜单，原版对齐优先） |
+| A1 搜索顶栏三钮（⚙/定位/筛选） | 原版 `ui/book/search/SearchActivity.kt`；重构版 `features/search/search_page.dart` L545-590 | 原版与重构版**均无三钮**，能力全在 ⋮ 溢出菜单（精准搜索/搜索范围/全部书源/书源管理）；三钮为闭源参考版特有、语义无源可依 → ~~不实施~~ **重开（2026-09-11 双基准口径修订）**：参考版有该三钮即属应有能力，待语义取证（参考版为 Compose 界面合成点击不响应，需从 APK 资源/截图取证）后实施；我方等价能力在 ⋮ 菜单中，实施时不得丢失 |
 | A2 换源形态 | 原版 `ui/book/changesource/ChangeBookSourceDialog.kt`（`BaseDialogFragment(R.layout.dialog_book_change_source)`），布局含 `refresh_progress_bar`（搜索进度）+ `recycler_view`（源卡）+ `ll_bottom_bar`（dur/top/bottom） | **确认原版即弹层**且与参考版截图形态一致 → **实施为弹层**（保留我方换源变量链逻辑不动），见批 E |
-| A3 替换编辑器 | 原版 `ui/replace/edit/ReplaceEditActivity.kt` + `activity_replace_edit.xml` | **确认原版即整页**（规则列表=ReplaceRuleActivity）→ 我方弹窗表单改为**整页编辑器**；**0911 逐控件核实原版字段清单**：名称/分组/匹配规则（含「使用正则」勾选 + 帮助图标）/替换为/作用范围三勾选（标题·书源·正文）/特定范围/排除范围/**超时**/**预览输入→预览输出**；顶栏菜单=全屏编辑(code)/保存/**复制规则**/**粘贴规则**。我方现弹窗已覆盖 名称/分组/正则/替换为/标题·正文 scope/特定范围，**缺**：书源 scope、超时、预览输入输出、复制/粘贴规则、全屏编辑 |
+| A3 替换编辑器（**已实施 2.0.237**） | 原版 `ui/replace/edit/ReplaceEditActivity.kt` + `activity_replace_edit.xml` | **确认原版即整页**（规则列表=ReplaceRuleActivity）→ 我方弹窗表单改为**整页编辑器**；**0911 逐控件核实原版字段清单**：名称/分组/匹配规则（含「使用正则」勾选 + 帮助图标）/替换为/作用范围三勾选（标题·书源·正文）/特定范围/排除范围/**超时**/**预览输入→预览输出**；顶栏菜单=全屏编辑(code)/保存/**复制规则**/**粘贴规则**。我方现弹窗已覆盖 名称/分组/正则/替换为/标题·正文 scope/特定范围，**缺**：书源 scope、超时、预览输入输出、复制/粘贴规则、全屏编辑 | **实施结果（2026-09-11，子代理交付 + 主代理复验）**：整页编辑器落地（名称/分组/匹配规则+正则勾选+帮助/替换为/作用范围三勾选/特定范围/排除范围/超时/预览输入输出；顶栏 保存 + ⋮（全屏编辑/复制/粘贴规则）；路由 `/replace_rule_edit`）。**两类存量阻塞项**：① **FFI 写接口窄**——`replaceRuleAdd` 写 name/pattern/replacement/isRegex/scope、`replaceRuleUpdate` 追加 isEnabled，故 分组/标题·正文范围/排除范围/超时 **保存不落库**（Rust `content_processor` 读与应用链路完备，仅写签名窄）→ 待契约加法式扩参（跨轨批次）；② `scopeSource`（书源作用范围）Dart/Rust/DB/FFI 全链路缺失；③ `@js:` 预览 Pure 侧无 JS 引擎（输出区提示不可用）。
 | A4 发现页（卡片底/顶栏⋮/二级页 3 列 chips） | 原版 `ui/book/explore/ExploreShowActivity.kt` + `ExploreShowAdapter.kt`；重构版 `features/explore/explore_list_page.dart`、`explore_tab_page.dart` | 基准齐备 → 随发现页批实施（批 D） |
 
 ## B. 中优功能对齐
