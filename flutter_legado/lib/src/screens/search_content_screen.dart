@@ -35,6 +35,16 @@ class _SearchContentOptions {
 
   /// 关键词是否按正则解释（原版 regexReplace，默认 false）
   static bool useRegex = false;
+
+  /// 搜索范围（[C4 双基准对齐] 取重构版 `SearchContentPrefsPort` 三档语义）：
+  /// - [scopeCurrent]：仅当前章；
+  /// - [scopeCached]：本书已缓存章节（+当前章，参考版「仅本书」范围语义）；
+  /// - [scopeNetwork]：本书全部章节（未缓存的联网抓取，我方原有行为=默认）。
+  static String scope = scopeNetwork;
+
+  static const scopeCurrent = 'current';
+  static const scopeCached = 'current_and_cached';
+  static const scopeNetwork = 'current_and_network';
 }
 
 /// 在正文中定位命中区间（搜索与高亮共用，纯函数便于单测）
@@ -204,9 +214,34 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
           return;
         }
       }
+      // 搜索范围准备：仅当前章 → 取阅读器当前章索引；
+      // 本书已缓存 → 取该书的已缓存章节 URL 集合（cacheListCachedChapterUrls）
+      final scope = _SearchContentOptions.scope;
+      final currentIndex = ref.read(readerNotifierProvider).currentChapterIndex;
+      Set<String>? cachedUrls;
+      if (scope == _SearchContentOptions.scopeCached) {
+        try {
+          cachedUrls = (await api.listCachedChapterUrls(widget.effectiveBookUrl))
+              .toSet();
+        } catch (_) {
+          cachedUrls = <String>{};
+        }
+      }
+      if (gen != _generation || !mounted) return;
+
       for (var i = 0; i < chapters.length; i++) {
         if (gen != _generation) return; // 已被新搜索/退出取消
         final chapter = chapters[i];
+        // 范围过滤（对齐重构版 search_content_page 的 i != durChapterIndex
+        // continue / 已缓存判定语义）
+        if (scope == _SearchContentOptions.scopeCurrent && i != currentIndex) {
+          continue;
+        }
+        if (scope == _SearchContentOptions.scopeCached &&
+            i != currentIndex &&
+            !(cachedUrls?.contains(chapter.url) ?? false)) {
+          continue;
+        }
         try {
           // [C4 对齐 | Qoder UI] 正文口径随「替换」开关切换（对齐原版
           // ContentProcessor.getContent(useReplace = replaceEnabled)）：
@@ -316,10 +351,22 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
             tooltip: '搜索选项',
             onSelected: (v) {
               setState(() {
-                if (v == 'replace') {
-                  _SearchContentOptions.useReplace = !_SearchContentOptions.useReplace;
-                } else {
-                  _SearchContentOptions.useRegex = !_SearchContentOptions.useRegex;
+                switch (v) {
+                  case 'replace':
+                    _SearchContentOptions.useReplace =
+                        !_SearchContentOptions.useReplace;
+                  case 'regex':
+                    _SearchContentOptions.useRegex =
+                        !_SearchContentOptions.useRegex;
+                  case 'scope_current':
+                    _SearchContentOptions.scope =
+                        _SearchContentOptions.scopeCurrent;
+                  case 'scope_cached':
+                    _SearchContentOptions.scope =
+                        _SearchContentOptions.scopeCached;
+                  case 'scope_network':
+                    _SearchContentOptions.scope =
+                        _SearchContentOptions.scopeNetwork;
                 }
               });
               // 已有结果时立即按新选项重搜（旧搜索经 _generation 作废）
@@ -335,6 +382,27 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
                 value: 'regex',
                 checked: _SearchContentOptions.useRegex,
                 child: const Text('正则'),
+              ),
+              const PopupMenuDivider(),
+              // [C4 双基准对齐] 搜索范围三档：语义取重构版 SearchContentPrefsPort
+              //（仅当前章 / 本书已缓存 / 本书含网络），参考版「仅本书」对应已缓存档
+              CheckedPopupMenuItem(
+                value: 'scope_current',
+                checked: _SearchContentOptions.scope ==
+                    _SearchContentOptions.scopeCurrent,
+                child: const Text('仅当前章'),
+              ),
+              CheckedPopupMenuItem(
+                value: 'scope_cached',
+                checked: _SearchContentOptions.scope ==
+                    _SearchContentOptions.scopeCached,
+                child: const Text('仅本书（已缓存）'),
+              ),
+              CheckedPopupMenuItem(
+                value: 'scope_network',
+                checked: _SearchContentOptions.scope ==
+                    _SearchContentOptions.scopeNetwork,
+                child: const Text('本书 + 网络'),
               ),
             ],
           ),

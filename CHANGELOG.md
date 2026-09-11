@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.235] - 2026-09-11
+
+### Added
+- [UI] 搜索正文新增「搜索范围」三档（差异清单 C4 **双基准回补**）：参考版有「仅本书」chip、重构版 `SearchContentPrefsPort` 有完整三档语义 → 搜索选项菜单在「替换/正则」下新增分隔与三档范围——**仅当前章**（只搜阅读器当前章）/ **仅本书（已缓存）**（当前章 + 已缓存章节，对齐参考版「仅本书」范围）/ **本书 + 网络**（未缓存章节联网抓取，默认档=我方原有行为不变）。切换范围即按新选项重搜；已缓存章节集合经既有 `listCachedChapterUrls` 取得，未新增 FFI
+
+### Test
+- 主代理自实现并复核：flutter analyze 无问题；flutter test 1372 全过；5556 实机 A/B——阅读器跳到第1章后选「仅当前章」搜 `QQ` → 「未找到」（第1章无此词）；切「本书 + 网络」→ 「共 1 处匹配」，切换即时重搜生效；版本 2.0.235+236
+
+- Contributor: Qoder UI
+
+
 ## [2.0.234] - 2026-09-11
 
 ### Changed
