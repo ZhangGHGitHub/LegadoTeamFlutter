@@ -51,9 +51,8 @@ void main() {
       expect(find.text('正文字距'), findsOneWidget);
       expect(find.text('首行缩进'), findsOneWidget);
       expect(find.text('标题字体'), findsOneWidget);
-      // [C3 核实结论] 「斜体」不在原版（开源版无斜体配置字段，为参考版自有
-      // 增强），按重构红线不放入面板 —— 断言其不存在，防后续误加
-      expect(find.text('斜体'), findsNothing);
+      // [C3 双基准对齐] 斜体开关按「原版 + 参考版」双基准补齐（参考版面板含此项）
+      expect(find.text('斜体'), findsOneWidget);
       expect(find.text('字重'), findsOneWidget);
       expect(find.text('简繁转换'), findsOneWidget);
 
@@ -125,7 +124,15 @@ void main() {
       expect(await mockApi.getChineseConvertType(), 2);
       expect(reloadCount, 1);
 
-      // ④ 「选择字体」跳转字体管理路由（AppRoutes.fonts → FontScreen）
+      // ④ 斜体开关（双基准补齐）→ 持久化 reader_adv_italic
+      // 前序 save() 已写过该键（默认 false），此处验证开关可置真
+      expect(prefs.getBool('reader_adv_italic'), isFalse);
+      await tester.tap(find.text('斜体').last);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(prefs.getBool('reader_adv_italic'), isTrue);
+
+      // ⑤ 「选择字体」跳转字体管理路由（AppRoutes.fonts → FontScreen）
       await tester.tap(find.text('选择字体').last);
       await tester.pumpAndSettle();
       expect(find.text('字体管理'), findsWidgets);

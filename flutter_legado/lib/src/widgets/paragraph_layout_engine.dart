@@ -148,6 +148,10 @@ class ParagraphConfig {
   final int indentCount;
   final FontWeight? fontWeight;
 
+  // [C3 斜体 | Qoder UI] 文字斜体（参考版行内面板「斜体」开关；与 fontWeight
+  // 同样注入测量与渲染两侧，保持测量/渲染同源同参）
+  final FontStyle? fontStyle;
+
   // [UI-fix v2.0.5 | 2026-08-10] 自定义中文分行开关（对标原版 useZhLayout：
   // true=ZhLayout 中文避头尾断行；false=朴素按宽断行）— Reasonix
   final bool useZhLayout;
@@ -175,6 +179,7 @@ class ParagraphConfig {
     this.fontFamily,
     this.indentCount = 2,
     this.fontWeight,
+    this.fontStyle,
     this.useZhLayout = true,
     this.hangingPunctuation = false,
     this.baseStyle,
@@ -193,6 +198,7 @@ class ParagraphConfig {
     String? fontFamily,
     int? indentCount,
     FontWeight? fontWeight,
+    FontStyle? fontStyle,
     bool? useZhLayout,
     bool? hangingPunctuation,
     TextStyle? baseStyle,
@@ -210,6 +216,7 @@ class ParagraphConfig {
       fontFamily: fontFamily ?? this.fontFamily,
       indentCount: indentCount ?? this.indentCount,
       fontWeight: fontWeight ?? this.fontWeight,
+      fontStyle: fontStyle ?? this.fontStyle,
       useZhLayout: useZhLayout ?? this.useZhLayout,
       hangingPunctuation: hangingPunctuation ?? this.hangingPunctuation,
       baseStyle: baseStyle ?? this.baseStyle,
@@ -906,6 +913,7 @@ class ParagraphLayoutEngine {
         letterSpacing: config.letterSpacing != 0 ? config.letterSpacing : null,
         fontFamily: config.fontFamily,
         fontWeight: config.fontWeight,
+        fontStyle: config.fontStyle,
       ),
     );
 
@@ -952,6 +960,7 @@ class ParagraphLayoutEngine {
                 : null,
             fontFamily: config.fontFamily,
             fontWeight: config.fontWeight,
+        fontStyle: config.fontStyle,
           ),
         ),
       ),

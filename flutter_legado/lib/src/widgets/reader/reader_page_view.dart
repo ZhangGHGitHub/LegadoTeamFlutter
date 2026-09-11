@@ -73,6 +73,10 @@ class ReaderPageView extends ConsumerStatefulWidget {
   /// 文字字重（0中/1粗/2细，对标原版 textBold）
   final int textBold;
 
+  /// [C3 斜体 | Qoder UI] 正文斜体（参考版行内字体面板「斜体」开关；
+  /// 与 textBold 同链路：参与分页测量与渲染，保持同源同参）
+  final bool italic;
+
   /// 自定义文字颜色（ARGB，0=跟随背景自动，对标原版自定义配色）
   final int customTextColor;
 
@@ -115,6 +119,7 @@ class ReaderPageView extends ConsumerStatefulWidget {
     this.selectText = true,
     this.noAnimScroll = false,
     this.textBold = 0,
+    this.italic = false,
     this.customTextColor = 0,
     this.mouseWheelPage = true,
     this.doubleHorizontalPage = 0,
@@ -175,6 +180,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   // [UI-fix v2.0.4 | 2026-08-08] 缩进改 int 档位；新增字重缓存键 — Qoder
   int _paginatedIndent = -1;
   int _paginatedTextBold = -1;
+  bool _paginatedItalic = false;
   bool _paginatedJustify = true;
   String? _paginatedFontFamily;
 
@@ -403,6 +409,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     final letterSpacing = widget.letterSpacing * fontSize;
     final indent = widget.paragraphIndent;
     final textBold = widget.textBold;
+    final italic = widget.italic;
     final justify = widget.textFullJustify;
     final fontFamily = _fontFamily;
     // [UI-fix v2.0.3 | 2026-08-06] 页面边距变化同样触发重新分页 — Qoder
@@ -444,6 +451,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
             letterSpacing != _paginatedLetterSpacing ||
             indent != _paginatedIndent ||
             textBold != _paginatedTextBold ||
+            italic != _paginatedItalic ||
             justify != _paginatedJustify ||
             fontFamily != _paginatedFontFamily ||
             margins != _paginatedMargins ||
@@ -520,6 +528,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       indent: indent > 0 ? fontSize * indent : 0,
       indentCount: indent,
       fontWeight: _fontWeightFor(textBold),
+      fontStyle: _fontStyleFor(italic),
       justify: justify,
       textColor: _resolveTextColor(state),
       backgroundColor: state.backgroundColor,
@@ -567,6 +576,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     _paginatedLetterSpacing = letterSpacing;
     _paginatedIndent = indent;
     _paginatedTextBold = textBold;
+    _paginatedItalic = italic;
     _paginatedJustify = justify;
     _paginatedFontFamily = fontFamily;
     _paginatedMargins = margins;
@@ -739,6 +749,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
   /// textBold 档位 → FontWeight（0中/1粗/2细，对标原版
   /// TextFontWeightConverter 的 normal/bold/light）
+  /// [C3 斜体 | Qoder UI] 斜体样式映射（测量/渲染同源调用）
+  FontStyle? _fontStyleFor(bool italic) =>
+      italic ? FontStyle.italic : null;
+
   FontWeight? _fontWeightFor(int bold) {
     switch (bold) {
       case 1:
@@ -934,6 +948,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       fontFamily: _fontFamily,
       justify: widget.textFullJustify,
       fontWeight: _fontWeightFor(widget.textBold),
+      fontStyle: _fontStyleFor(widget.italic),
       selectText: false,
       contentPadding: EdgeInsets.only(
         left: widget.marginLeft,
@@ -1033,6 +1048,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                   letterSpacing: widget.letterSpacing * state.fontSize,
                   fontFamily: _fontFamily,
                   fontWeight: _fontWeightFor(widget.textBold),
+      fontStyle: _fontStyleFor(widget.italic),
                   justify: widget.textFullJustify,
                   // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入长按选择 — Qoder
                   selectText: widget.selectText,
@@ -1050,6 +1066,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                 letterSpacing: widget.letterSpacing * state.fontSize,
                 fontFamily: _fontFamily,
                 fontWeight: _fontWeightFor(widget.textBold),
+      fontStyle: _fontStyleFor(widget.italic),
                 // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入滚动回退渲染 — Qoder
                 selectText: widget.selectText,
               )
@@ -1119,6 +1136,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       fontFamily: _fontFamily,
       justify: widget.textFullJustify,
       fontWeight: _fontWeightFor(widget.textBold),
+      fontStyle: _fontStyleFor(widget.italic),
       // [UI-fix v2.0.3 | 2026-08-08] selectText 开关接入分页页正文渲染 — Qoder
       selectText: widget.selectText,
       // [UI-fix v2.0.3 | 2026-08-06] 分页页内容边距接配置 — Qoder

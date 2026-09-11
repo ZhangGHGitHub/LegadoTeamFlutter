@@ -49,6 +49,9 @@ class ReaderTypographicPage extends StatelessWidget {
   final bool justify;
   final FontWeight? fontWeight;
 
+  // [C3 斜体 | Qoder UI] 正文斜体（与 fontWeight 同链路透传，测量/渲染同参）
+  final FontStyle? fontStyle;
+
   // [UI-fix v2.0.59 | 2026-08-14] 页眉/页脚提示与标题样式 — Cursor UI
   final ReaderPageChromeConfig pageChrome;
   final ReaderTipContext tipContext;
@@ -80,6 +83,7 @@ class ReaderTypographicPage extends StatelessWidget {
     this.fontFamily,
     this.justify = true,
     this.fontWeight,
+    this.fontStyle,
     this.reviewCounts,
     this.onReviewTap,
   });
@@ -174,6 +178,7 @@ class ReaderTypographicPage extends StatelessWidget {
                         fontFamily: fontFamily,
                         justify: justify,
                         fontWeight: fontWeight,
+                        fontStyle: fontStyle,
                         reviewCounts: reviewCounts,
                         onReviewTap: onReviewTap,
                       ),
@@ -257,6 +262,9 @@ class ReaderTextContent extends StatelessWidget {
   // null=正常字重）— Qoder
   final FontWeight? fontWeight;
 
+  // [C3 斜体 | Qoder UI] 正文斜体（与 fontWeight 同链路透传，测量/渲染同参）
+  final FontStyle? fontStyle;
+
   /// 段评摘要：段落索引 → 评论数（P2-9 ruleReview）
   final Map<int, int>? reviewCounts;
 
@@ -275,6 +283,7 @@ class ReaderTextContent extends StatelessWidget {
     this.justify = true,
     this.selectText = true,
     this.fontWeight,
+    this.fontStyle,
     this.reviewCounts,
     this.onReviewTap,
   });
@@ -345,6 +354,7 @@ class ReaderTextContent extends StatelessWidget {
                               color: textColor,
                               fontFamily: fontFamily,
                               fontWeight: fontWeight,
+                              fontStyle: fontStyle,
                               letterSpacing:
                                   (letterSpacing + extraLetterSpacing) != 0
                                   ? letterSpacing + extraLetterSpacing
@@ -363,6 +373,7 @@ class ReaderTextContent extends StatelessWidget {
                           color: textColor,
                           fontFamily: fontFamily,
                           fontWeight: fontWeight,
+                          fontStyle: fontStyle,
                           letterSpacing:
                               (letterSpacing + extraLetterSpacing) != 0
                               ? letterSpacing + extraLetterSpacing
@@ -456,6 +467,9 @@ class ReaderParagraphs extends StatelessWidget {
   // [UI-fix v2.0.4 | 2026-08-08] 文字字重（对标原版 textBold）— Qoder
   final FontWeight? fontWeight;
 
+  // [C3 斜体 | Qoder UI] 正文斜体（与 fontWeight 同链路透传，测量/渲染同参）
+  final FontStyle? fontStyle;
+
   const ReaderParagraphs({
     super.key,
     required this.content,
@@ -467,6 +481,7 @@ class ReaderParagraphs extends StatelessWidget {
     this.fontFamily,
     this.selectText = true,
     this.fontWeight,
+    this.fontStyle,
   });
 
   @override
@@ -493,6 +508,7 @@ class ReaderParagraphs extends StatelessWidget {
                   fontFamily: fontFamily,
                   // [UI-fix v2.0.4 | 2026-08-08] 字重接线 — Qoder
                   fontWeight: fontWeight,
+                  fontStyle: fontStyle,
                   letterSpacing: letterSpacing != 0 ? letterSpacing : null,
                 ),
               ),

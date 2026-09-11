@@ -35,6 +35,10 @@ class ReaderAdvancedConfig {
   // 暂无日夜双配置体系，仅持久化）、自定义文字颜色（长按背景圆圈弹出的
   // 自定义配色，ARGB 存储，0=跟随背景自动） — Qoder
   int textBold;
+
+  // [C3 斜体 | Qoder UI] 正文斜体（参考版行内字体面板「斜体」开关；原版无此配置，
+  // 按双基准口径（原版 + 参考版）补齐）
+  bool italic;
   bool shareLayout;
   int customTextColor;
 
@@ -166,6 +170,7 @@ class ReaderAdvancedConfig {
     this.paragraphIndent = 2,
     this.textFullJustify = true,
     this.textBold = 0,
+    this.italic = false,
     this.shareLayout = false,
     this.customTextColor = 0,
     this.pageMarginTop = 24,
@@ -329,6 +334,8 @@ class ReaderAdvancedConfig {
               prefs.getInt('textBold') ??
               0)
           .clamp(0, 2),
+      // [C3 斜体 | Qoder UI] 斜体（参考版行内面板开关；双基准补齐）
+      italic: prefs.getBool('${_prefix}italic') ?? false,
       shareLayout: shareLayout,
       customTextColor: prefs.getInt('${_prefix}custom_text_color') ?? 0,
       pageMarginTop: layoutDouble('margin_top', 24).clamp(0.0, 400.0),
@@ -480,6 +487,7 @@ class ReaderAdvancedConfig {
     await prefs.setBool('autoChangeSource', autoChangeSource);
     await prefs.setBool('selectText', selectText);
     await prefs.setBool('showBrightnessView', showBrightnessView);
+    await prefs.setBool('${_prefix}italic', italic);
     await prefs.setBool('showReadTitleAddition', showReadTitleAddition);
     await prefs.setBool('readBarStyleFollowPage', readBarStyleFollowPage);
     // [UI-fix v2.0.4 | 2026-08-08] 界面面板 + 第②批 MoreConfig 项持久化
@@ -512,6 +520,7 @@ class ReaderAdvancedConfig {
         paragraphIndent: paragraphIndent,
         textFullJustify: textFullJustify,
         textBold: textBold,
+        italic: italic,
         shareLayout: shareLayout,
         customTextColor: customTextColor,
         pageMarginTop: pageMarginTop,

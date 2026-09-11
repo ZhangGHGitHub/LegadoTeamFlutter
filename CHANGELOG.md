@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.236] - 2026-09-11
+
+### Added
+- [UI] 正文斜体开关（差异清单 C3 **双基准回补**）：参考版行内字体面板含「斜体」（原版开源代码全仓无斜体配置字段）→ 按双基准补齐。新增 `ReaderAdvancedConfig.italic`（键 `reader_adv_italic`，默认关）并在排版承重链上贯通：`ParagraphConfig.fontStyle` 与既有 `fontWeight` 同路注入**测量与渲染两侧**（`_fontStyleFor` 同源调用、分页重排判定纳入 italic），保证分页测量与渲染同参不漂移；Tt 行内面板新增「斜体」开关行
+
+### Test
+- 主代理自实现并复核：flutter analyze 无问题；flutter test 1372 全过（新增 `reader_italic_style_test` 2 用例：ParagraphConfig 携带/复制 fontStyle、正文渲染 TextStyle 落地 fontStyle；面板用例扩展斜体持久化断言）；5556 实机——面板出现「斜体」开关，开启后 `reader_adv_italic=true` 落盘、再关回落 false；版本 2.0.236+237
+
+- Contributor: Qoder UI
+
+
 ## [2.0.235] - 2026-09-11
 
 ### Added

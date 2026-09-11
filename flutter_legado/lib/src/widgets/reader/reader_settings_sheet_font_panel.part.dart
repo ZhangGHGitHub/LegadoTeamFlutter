@@ -304,11 +304,23 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
             value: '跟随正文',
             disabled: true,
           ),
-          // ===== 斜体：不实施（重构红线）=====
-          // [C3 核实结论] 参考版行内面板含「斜体」开关，但开源版源码与
-          // ReadBookConfig 全仓无斜体配置字段（参考版自有增强）。按项目红线
-          // （禁止新增原版不存在功能）不放入面板；若后续原版对齐放开，
-          // 需新增配置字段并贯通分页/渲染参数（见 docs 建议文档受阻项登记）。
+          // ===== 斜体开关 =====
+          // [C3 双基准对齐 | Qoder UI] 参考版行内面板含「斜体」开关（原版无此项
+          // —— 开源版全仓无斜体配置字段）。按项目双基准口径（原版 + 参考版）补齐：
+          // 新增 ReaderAdvancedConfig.italic，并贯通分页测量与渲染两侧
+          //（ParagraphConfig.fontStyle → 测量/渲染同源同参，避免分页偏差）。
+          SwitchListTile(
+            dense: true,
+            contentPadding: EdgeInsets.zero,
+            title: const Text('斜体'),
+            subtitle: const Text('正文以斜体显示（测量与渲染同参）'),
+            value: _config.italic,
+            onChanged: (v) {
+              _config.italic = v;
+              _commit();
+              setState(() {});
+            },
+          ),
           // ===== 字重（对标原版 TextFontWeightConverter：0中/1粗/2细，
           // 既有字段 ReaderAdvancedConfig.textBold） =====
           Row(

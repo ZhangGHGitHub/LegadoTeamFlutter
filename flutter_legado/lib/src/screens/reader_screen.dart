@@ -469,6 +469,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                 // [UI-fix v2.0.4 | 2026-08-08] 界面面板字重/自定义文字色与
                 // MoreConfig 第②批鼠标滚轮翻页接入内容区 — Qoder
                 textBold: _advConfig.textBold,
+                // [C3 斜体 | Qoder UI] 斜体透传（参考版行内面板开关）
+                italic: _advConfig.italic,
                 customTextColor: _advConfig.customTextColor,
                 mouseWheelPage: _advConfig.mouseWheelPage,
                 // [UI-fix v2.0.5 | 2026-08-10] 双页模式档位透传（对标原版
