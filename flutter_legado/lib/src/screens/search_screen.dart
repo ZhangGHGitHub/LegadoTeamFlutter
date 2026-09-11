@@ -70,6 +70,10 @@ class _SearchScreenState
   // 标识读过的书籍（对标原版 AppConfig.showSearchReadRecord）
   bool _showReadRecord = false;
   static const _prefsShowReadRecord = 'showSearchReadRecord';
+  // [A1 形态对齐 | full-stack-engineer + UI] 搜索结果过滤屏蔽词（对标原版
+  // PreferKey.searchResultFilter：每行一个普通文本，匹配书名/作者/分类标签，
+  // 忽略英文大小写）。空串 = 过滤关闭；非空 = 过滤开启（顶栏实心绿）。
+  String _resultFilter = '';
   // 输入帮助层显隐（对标原版 ll_input_help / setOnQueryTextFocusChangeListener）
   bool _showInputHelp = true;
   // 空结果智能引导弹窗：每次搜索最多弹一次
@@ -131,6 +135,16 @@ class _SearchScreenState
       final precision = raw == 'true';
       setState(() => _precision = precision);
       ref.read(searchNotifierProvider.notifier).setPrecision(precision);
+    });
+    // [A1 形态对齐 | full-stack-engineer + UI] 恢复搜索结果过滤屏蔽词
+    //（对齐原版 PreferKey.searchResultFilter，经 bookApiProvider 持久化）
+    ref.read(bookApiProvider).getConfig('searchResultFilter').then((raw) {
+      if (!mounted) return;
+      final filter = (raw ?? '').trim();
+      // 仅当与初始值不同才 setState，避免无谓重建
+      if (_resultFilter != filter) {
+        setState(() => _resultFilter = filter);
+      }
     });
     // 预载溢出菜单动态分组条目所需书源列表（对标原版 onMenuOpened 实时查询）— Cursor UI
     _refreshMenuSources();

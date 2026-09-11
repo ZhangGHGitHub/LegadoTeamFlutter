@@ -147,6 +147,33 @@ extension _SearchBuilders on _SearchScreenState {
             }
           },
         ),
+        // [A1 形态对齐 | full-stack-engineer + UI] 参考版顶栏三钮形态（取证映射）：
+        // 设置⚙ / 定位 / 筛选（实心绿）。每钮接到既有能力，与 ⋮ 菜单对应项
+        // 合并同一实现，避免两套代码；⋮ 菜单保留全量不丢能力。
+        // ① 设置⚙（Filled.Settings）→ 书源管理（原版 menu_source_manage）
+        IconButton(
+          icon: const Icon(Symbols.settings_rounded),
+          tooltip: '书源管理',
+          onPressed: _openSourceManage,
+        ),
+        // ② 定位（Filled.LocationSearching）→ 搜索范围（原版 menu_search_scope，
+        // 多分组/书源：dex topScopeName/topScopeFlag 定位顶栏范围态）
+        IconButton(
+          icon: const Icon(Symbols.travel_explore_rounded),
+          tooltip: '搜索范围',
+          onPressed: () => _showSearchScopeDialog(),
+        ),
+        // ③ 筛选（Filled.Tune，实心绿两态）→ 搜索结果过滤（原版
+        // menu_search_result_filter，屏蔽词排除；实心绿 = 过滤已开启）
+        IconButton(
+          tooltip: _resultFilterWords.isEmpty
+              ? '搜索结果过滤'
+              : '搜索结果过滤（已开启）',
+          onPressed: () => _showResultFilterDialog(),
+          icon: _resultFilterWords.isEmpty
+              ? const Icon(Symbols.tune_rounded)
+              : _buildFilterActiveIcon(),
+        ),
         // 安卓原版：三点菜单（book_search.xml：精准搜索/显示搜索记录/书源管理/分组或书源/日志）
         // 显式中文 tooltip：原版无 tooltip 时系统默认提示 Show menu（长按被误读为
         // "shou menu"），此处对齐用户预期显示「更多选项」— Cursor UI
@@ -179,14 +206,17 @@ extension _SearchBuilders on _SearchScreenState {
                 });
                 break;
               case 'sources':
-                // 返回书源管理页后刷新动态分组条目（原版每次打开实时查询）— Cursor UI
-                Navigator.pushNamed(context, '/sources')
-                    .whenComplete(_refreshMenuSources);
+                // [A1 形态对齐] 与顶栏「设置⚙」共享同一实现（不丢能力、避免两套代码）
+                _openSourceManage();
                 break;
               case 'scope':
                 // 搜索范围底部对话框（对齐原版 SearchScopeDialog：rb_group CheckBox
                 // 多选 / rb_source RadioButton 单选 + 名称过滤，全部书源/取消/确定）— Cursor UI
                 _showSearchScopeDialog();
+                break;
+              case 'filter':
+                // [A1 形态对齐 | full-stack-engineer + UI] 与顶栏「筛选」共享同一实现
+                _showResultFilterDialog();
                 break;
               case '__all_sources__':
                 // 动态分组条目：清空范围=全部书源（原版 menu_1 → update("")）— Cursor UI
@@ -230,7 +260,10 @@ extension _SearchBuilders on _SearchScreenState {
     // 精准搜索丢弃 other 桶），展示层直接消费 state.results，
     // 避免 build 时全量分桶导致精准搜索卡顿
     // [UI-fix v2.0.10 | 2026-08-10] — Reasonix
-    final results = state.results;
+    // [A1 形态对齐 | full-stack-engineer + UI] 搜索结果过滤（对齐原版
+    // filterSearchResults：屏蔽词每行一个，匹配书名/作者/分类标签，忽略英文
+    // 大小写）。展示层在已分桶结果之上做排除过滤，空词表 = 不过滤（原样返回）。
+    final results = _filterSearchResults(state.results);
 
     // [批次B G-B-05] 书架实时数据（对标原版 appDb.bookDao.flowAll 响应式流）：
     // 在此 watch，进入搜索页即加载书架；增删/刷新时输入帮助层「书架」节与
@@ -265,7 +298,10 @@ extension _SearchBuilders on _SearchScreenState {
       );
     }
 
-    if (state.isEmpty || (_precision && results.isEmpty)) {
+    // [A1 形态对齐 | full-stack-engineer + UI] 空态判定收敛：无原始结果 /
+    // 被精准搜索隐藏 / 被结果过滤隐藏 三者统一——已完成搜索且过滤后列表为空
+    // 即显示空态（对齐原版 filterSearchResults 全量屏蔽后的空列表表现）
+    if (results.isEmpty && !state.isLoading && state.keyword.isNotEmpty) {
       // [颜文字彩蛋] 搜索无结果空态（用户授权新增，对齐参考 EmptyMessage）
       return EmptyState(
         icon: Symbols.search_off_rounded,
@@ -590,6 +626,9 @@ extension _SearchBuilders on _SearchScreenState {
         checked: _showReadRecord,
         child: const Text('标识读过的书籍'),
       ),
+      // [A1 形态对齐 | full-stack-engineer + UI] 补齐原版第 3 项「搜索结果过滤」
+      //（原版 book_search.xml 六项全保留；与顶栏「筛选」共享同一实现）
+      const PopupMenuItem(value: 'filter', child: Text('搜索结果过滤')),
       const PopupMenuItem(value: 'sources', child: Text('书源管理')),
       const PopupMenuItem(value: 'scope', child: Text('分组或书源')),
     ];
@@ -651,6 +690,110 @@ extension _SearchBuilders on _SearchScreenState {
     if (st.keyword.isNotEmpty) {
       ref.read(searchNotifierProvider.notifier).search(st.keyword);
     }
+  }
+
+  // ===== [A1 形态对齐 | full-stack-engineer + UI] 顶栏三钮共享实现 =====
+
+  /// 打开书源管理页，返回后刷新动态分组条目（原版每次打开实时查询）。
+  /// 顶栏「设置⚙」与 ⋮ 菜单「书源管理」共用此实现。
+  void _openSourceManage() {
+    Navigator.pushNamed(context, '/sources').whenComplete(_refreshMenuSources);
+  }
+
+  /// 解析屏蔽词表（对齐原版 filterSearchResults 词解析：
+  /// 每行一个普通文本，trim、忽略空行、去重、小写化以便忽略大小写匹配）
+  List<String> get _resultFilterWords {
+    final set = <String>{};
+    for (final line in _resultFilter.split(RegExp(r'[\r\n]+'))) {
+      final word = line.trim().toLowerCase();
+      if (word.isNotEmpty) set.add(word);
+    }
+    return set.toList();
+  }
+
+  /// 搜索结果过滤（对齐原版 SearchActivity.filterSearchResults）：
+  /// 命中任一屏蔽词（书名/作者/分类标签，忽略英文大小写）即排除该书；
+  /// 屏蔽词表为空时原样返回（= 过滤关闭）。
+  List<SearchResult> _filterSearchResults(List<SearchResult> results) {
+    final words = _resultFilterWords;
+    if (words.isEmpty) return results;
+    return results
+        .where((r) {
+          final book = r.book;
+          return !words.any((w) =>
+              book.name.toLowerCase().contains(w) ||
+              book.author.toLowerCase().contains(w) ||
+              (book.kind ?? '').toLowerCase().contains(w));
+        })
+        .toList();
+  }
+
+  /// 筛选钮「实心绿」开态图标（参考版实心绿 = 结果过滤已开启）：
+  /// 绿色实心圆底 + 白色 Tune 图标；关闭态用常规 [Symbols.tune_rounded]。
+  Widget _buildFilterActiveIcon() {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: const BoxDecoration(
+        color: Color(0xFF43A047),
+        shape: BoxShape.circle,
+      ),
+      child: const Icon(Symbols.tune_rounded, size: 18, color: Colors.white),
+    );
+  }
+
+  /// 搜索结果过滤编辑对话框（对齐原版 showSearchResultFilterDialog：
+  /// 多行编辑，每行一个屏蔽词，确定后持久化至 PreferKey.searchResultFilter
+  /// 并即时过滤当前结果）— [A1 形态对齐 | full-stack-engineer + UI]
+  Future<void> _showResultFilterDialog() async {
+    final controller = TextEditingController(text: _resultFilter);
+    // 光标置于末尾（对齐原版 editView.setSelection(end)）
+    controller.selection = TextSelection.collapsed(offset: _resultFilter.length);
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('搜索结果屏蔽词'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              '每行一个普通文本，匹配书名、作者或分类标签，忽略英文字母大小写',
+              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              minLines: 4,
+              maxLines: 8,
+              autofocus: true,
+              decoration: const InputDecoration(
+                hintText: '屏蔽词（每行一个）',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (confirmed != true || !mounted) return;
+    final filter = controller.text.trim();
+    setState(() => _resultFilter = filter);
+    // 持久化（对齐原版 putPrefString(PreferKey.searchResultFilter, filter)）
+    ref.read(bookApiProvider).setConfig('searchResultFilter', filter);
+    // 屏蔽词变更不改搜索范围、无需重搜：_buildBody 依据新屏蔽词表即时重过滤
+    // 既有结果（对齐原版 adapter.setItems 对现有结果重过滤，非重新搜索）
   }
 
   /// 搜索范围底部对话框（对齐原版 SearchScopeDialog：分组多选 / 书源单选，

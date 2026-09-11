@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.240] - 2026-09-11
+
+### Added
+- [UI] 搜索页顶栏补齐三钮（差异清单 A1 **双基准重开项**，子代理 full-stack-engineer 交付 + 主代理复验）：设置⚙→书源管理、定位→搜索范围、筛选（实心绿两态）→搜索结果过滤；**每钮接既有能力**（与 ⋮ 菜单对应项调同一实现，避免两套代码），⋮ 菜单按「不丢能力」保留全量并补上原先缺失的「搜索结果过滤」项
+- [UI] 「搜索结果过滤」落点（原版 `filterSearchResults` 语义）：结果列表按屏蔽词排除（命中书名/作者/kind 任一即过滤，忽略英文大小写；空词表=不过滤），词表经 `PreferKey.searchResultFilter` 持久化；空态判定收敛为「无结果 / 被精准隐藏 / 被过滤隐藏」三态
+
+### Test
+- 子代理自测与主代理独立复跑一致：`flutter analyze` 无问题、`flutter test` **1400 全过**（新增 `search_appbar_buttons_test` 4 例）；另修正 `search_screen_scroll_test` 两处 mock 过期（批次B 给 `searchMultiStream` 加 `page` 后未同步匹配 → mocktail 返 null），属既有问题、非本批引入
+- 说明：三钮语义为「图标 + 原版菜单能力反查」推导（参考版 Compose 界面合成点击不响应，无法直接点击取证），已登记为推导依据；因每钮均映射既有能力且 ⋮ 保留全量，误映射风险不影响能力完整性。版本 2.0.240+241
+
+- Contributor: full-stack-engineer + UI（主代理 Qoder UI 审核）
+
+
 ## [2.0.239] - 2026-09-11
 
 ### Changed

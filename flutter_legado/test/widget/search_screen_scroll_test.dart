@@ -101,8 +101,13 @@ void main() {
         '流式增量批次不拉回滚动位置（回归：强制回顶无法滚动）',
         (tester) async {
       final events = StreamController<Map<String, dynamic>>();
+      // [A1 形态对齐 | full-stack-engineer] searchMultiStream 契约已含 page 参数
+      // （批次B G-B-01 翻页）；mock 须显式匹配 page，否则 mocktail 返回 null
+      // 触发「Null is not a subtype of Stream」，结果无法落地（既有 mock 过期）
       when(() => mockApi.searchMultiStream(
-              any(), sourceUrls: any(named: 'sourceUrls')))
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => events.stream);
 
       await tester.pumpWidget(wrap(SearchScreen(initialQuery: 'abc')));
@@ -136,8 +141,13 @@ void main() {
       final c1 = StreamController<Map<String, dynamic>>();
       final c2 = StreamController<Map<String, dynamic>>();
       var first = true;
+      // [A1 形态对齐 | full-stack-engineer] searchMultiStream 契约已含 page 参数
+      // （批次B G-B-01 翻页）；mock 须显式匹配 page，否则 mocktail 返回 null
+      // 触发「Null is not a subtype of Stream」，结果无法落地（既有 mock 过期）
       when(() => mockApi.searchMultiStream(
-              any(), sourceUrls: any(named: 'sourceUrls')))
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) {
         if (first) {
           first = false;
