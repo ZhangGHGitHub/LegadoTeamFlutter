@@ -14,7 +14,7 @@
 | A1 搜索顶栏三钮（⚙/定位/筛选） | 原版 `ui/book/search/SearchActivity.kt`；重构版 `features/search/search_page.dart` L545-590 | 原版与重构版**均无三钮**，能力全在 ⋮ 溢出菜单（精准搜索/搜索范围/全部书源/书源管理）；三钮为闭源参考版特有、语义无源可依 → ~~不实施~~ **重开（2026-09-11 双基准口径修订）**：参考版有该三钮即属应有能力，待语义取证（参考版为 Compose 界面合成点击不响应，需从 APK 资源/截图取证）后实施；我方等价能力在 ⋮ 菜单中，实施时不得丢失 |
 | A2 换源形态 | 原版 `ui/book/changesource/ChangeBookSourceDialog.kt`（`BaseDialogFragment(R.layout.dialog_book_change_source)`），布局含 `refresh_progress_bar`（搜索进度）+ `recycler_view`（源卡）+ `ll_bottom_bar`（dur/top/bottom） | **确认原版即弹层**且与参考版截图形态一致 → **实施为弹层**（保留我方换源变量链逻辑不动），见批 E |
 | A3 替换编辑器（**已实施 2.0.237**） | 原版 `ui/replace/edit/ReplaceEditActivity.kt` + `activity_replace_edit.xml` | **确认原版即整页**（规则列表=ReplaceRuleActivity）→ 我方弹窗表单改为**整页编辑器**；**0911 逐控件核实原版字段清单**：名称/分组/匹配规则（含「使用正则」勾选 + 帮助图标）/替换为/作用范围三勾选（标题·书源·正文）/特定范围/排除范围/**超时**/**预览输入→预览输出**；顶栏菜单=全屏编辑(code)/保存/**复制规则**/**粘贴规则**。我方现弹窗已覆盖 名称/分组/正则/替换为/标题·正文 scope/特定范围，**缺**：书源 scope、超时、预览输入输出、复制/粘贴规则、全屏编辑 | **实施结果（2026-09-11，子代理交付 + 主代理复验）**：整页编辑器落地（名称/分组/匹配规则+正则勾选+帮助/替换为/作用范围三勾选/特定范围/排除范围/超时/预览输入输出；顶栏 保存 + ⋮（全屏编辑/复制/粘贴规则）；路由 `/replace_rule_edit`）。**两类存量阻塞项**：① **FFI 写接口窄**——`replaceRuleAdd` 写 name/pattern/replacement/isRegex/scope、`replaceRuleUpdate` 追加 isEnabled，故 分组/标题·正文范围/排除范围/超时 **保存不落库**（Rust `content_processor` 读与应用链路完备，仅写签名窄）→ 待契约加法式扩参（跨轨批次）；② `scopeSource`（书源作用范围）Dart/Rust/DB/FFI 全链路缺失；③ `@js:` 预览 Pure 侧无 JS 引擎（输出区提示不可用）。
-| A4 发现页（卡片底/顶栏⋮/二级页 3 列 chips） | 原版 `ui/book/explore/ExploreShowActivity.kt` + `ExploreShowAdapter.kt`；重构版 `features/explore/explore_list_page.dart`、`explore_tab_page.dart` | 基准齐备 → 随发现页批实施（批 D） |
+| A4 发现页（卡片底/顶栏⋮/二级页 3 列 chips） | 原版 `ui/main/explore/ExploreAdapter.kt` + `item_find_book.xml` + `main_explore.xml`（主代理 0911 核实：顶栏 ⋮ 内含 `menu_group` 分组筛选）；重构版 `features/explore/explore_tab_page.dart`（GridView 3 列 + `groupExploreSections` 分节） | **已实施（2.0.238，子代理交付 + 主代理复验）**：行卡片底（圆角 12 + onSurface 10%）、顶栏文件夹图标无损收编为 ⋮（分组筛选项）、展开区改分节 3 列 chips（内存态覆写 basis=1/3，控件项与通栏项保留原宽度），点击链路不变 | 已完成 |
 
 ## B. 中优功能对齐
 
@@ -36,7 +36,7 @@
 | C5 阅读记录按天分组+成就卡 | 重构版 `features/my/read_record_page.dart` | 现有每日时长数据（`readRecordDailyList`）已在 → 顶部成就卡（已读 N 本/总时长）+ 今天/昨天分组折叠，热力图保留 | 1 天 |
 | C6 设置·外观预览模型 | 重构版 `features/settings/theme_config_page.dart` | 主题设置页顶部加手机预览 mock（底色/文字色/强调色实时联动） | 0.5 天（**0911 已完成**：`_ThemePreviewCard` 用当前 ColorScheme 绘制迷你手机——顶栏=primary/底色=surface/文字条=onSurface/卡片=secondaryContainer，附当前配色名（内置中文名或「自定义配色」）） |
 | C7 备份「测试配置」行 | 重构版 `features/my/webdav_config_dialog.dart` | WebDAV 页加「测试配置」行：对服务器地址做一次 Dart 侧 PROPFIND/HEAD 探测并回显结果（纯 Dart，无 FFI） | 0.5 天 |
-| C8 发现源二级页 3 列 chips | 同 A4 | 与 A4 合并实施 | — |
+| C8 发现源二级页 3 列 chips | 同 A4 | 与 A4 合并实施 | ✅ 已完成（2.0.238，随 A4 同批） |
 | C9 书源编辑器帮助体系 | 重构版 `features/sources/source_editor_page.dart`、`rule_sub_page.dart`、`rule_complete.dart` | 编辑器顶部 ? 入口弹「规则语法帮助」弹层（阅读3.0规则说明/@规则语法/jsLib 链接，内容静态） | 0.5 天 |
 | C10 自动翻页运行时面板 | 重构版 `features/reader/auto_read_panel.dart` | 菜单「自动翻页」点击后浮出运行时面板（速度 stepper+停止+设置），与现有配置卡并存（参考版语义） | 0.5 天（**0911 已完成**：新 `auto_turn_panel.dart` 浮条，翻页中且菜单收起时浮于正文底部——间隔 ±5 秒步进（夹 3~120 秒）+ 目录/停止/设置；运行时开关沿用既有 `_toggleAutoPage`） |
 
@@ -66,7 +66,7 @@
 | 批 B | 书籍详情页形态对齐（B1） | ✅ **已完成**（2.0.226，full-stack-engineer 子代理交付 + 主代理实机验收） |
 | 批 C-I | 体验增强：C5 阅读记录按天视图 | ✅ **已完成**（2.0.227，主代理实现 + 实机验收；连带根治每日时长单位 1000 倍 bug，2.0.228） |
 | 批 C-II | C1 书源管理复选框批量 / C2 字典规则管理（**阻塞：无 dictRule FFI，需契约冻结**） / C3 字体行内面板 / C4 替换+正则开关（原版对齐） | ✅ **C1（2.0.232）/ C3（2.0.233）/ C4（2.0.229）已完成并实机验收**；C2 阻塞待跨轨契约（子代理通道本轮两次后端超时，C1 转主代理兜底） |
-| 批 D | C6 外观预览 / C9 编辑器帮助（已完成²）/ C10 自动翻页面板 / A4 发现页 / A3 替换编辑器整页 | 🚧 C6 ✅ 已完成、C10 ✅ 已完成（待统一实机验收）；A4/A3 待派发 |
+| 批 D | C6 外观预览 / C9 编辑器帮助（已完成²）/ C10 自动翻页面板 / A4 发现页 / A3 替换编辑器整页 | ✅ **全部完成**：C6(2.0.230)/C10(2.0.231)/A4+C8(2.0.238)/A3(2.0.237)；A3 存量阻塞项（FFI 写接口窄、scopeSource 缺失、@js: 预览）待跨轨批次 |
 | 批 E | A2 换源弹层化（含 R1 E2E 回归） | 待派发 |
 | 取证尾巴 | 参考侧截图补采 | 待模拟器稳定 |
 

@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.238] - 2026-09-11
+
+### Changed
+- [UI] 发现页形态对齐（差异清单 A4 + C8，子代理 full-stack-engineer 交付 + 主代理复验）：①主页签顶栏文件夹图标经核实其唯一功能=分组筛选（与原版 `main_explore.xml` 的 `menu_group` 语义等价）→ **无损收编进 ⋮ 菜单**，顶栏形态改「搜索 + ⋮」对齐双基准；②源行改**卡片底**（圆角 12 + onSurface 10% 浅填充，对齐原版 `bg_find_book_group`），行 = 源名 + 旋转 chevron；③展开区子项排布改**分节 3 列 chips**（按空 URL 头项分节，对齐重构版 `groupExploreSections`；URL 类 chip 内存态覆写 `layoutFlexBasisPercent=1/3`，`basis≥1` 通栏项与 toggle/select/button/text 控件项保留原宽度与行为），点击进书单链路不变
+
+### Test
+- 子代理自测：analyze No issues、flutter test 1389 全过（新增 `explore_screen_c8_test` 4 用例：分节 3 列网格/chip 宽度/3 行顶对齐、⋮ 收编、卡片底样式、点击链路）；主代理独立复跑一致（analyze 无问题、1389 全过）
+- 说明：原版为纯数据驱动 Flexbox（无硬编码 3 列），「3 列」形态取自参考版 → 按双基准取参考版形态，同时保留原版数据驱动逃生门（通栏/控件项不受影响）。版本 2.0.238+239
+
+- Contributor: full-stack-engineer + UI（主代理 Qoder UI 审核）
+
+
 ## [2.0.237] - 2026-09-11
 
 ### Changed

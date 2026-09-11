@@ -33,8 +33,11 @@ import '../widgets/dynamic_search_app_bar.dart';
 import '../widgets/explore_kind_layout.dart';
 import '../widgets/explore_page_control.dart';
 import '../widgets/error_view.dart';
-import '../widgets/ios_widgets.dart';
 import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
+
+// [A4 形态对齐 | full-stack-engineer + UI] C8 展开区 3 列 chips 分区网格
+// （分组标题 + 固定 3 列 URL chips；chip 引擎仍复用 ExploreKindLayout）
+part 'explore_screen_c8.part.dart';
 
 class ExploreScreen extends ConsumerStatefulWidget {
   /// 收起已展开分类信号（主页双击底栏发现项时自增，对标原版 compressExplore）
@@ -105,9 +108,12 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
               ref.read(exploreNotifierProvider.notifier).clearSearch();
             },
             actions: [
+              // [A4 形态对齐 | full-stack-engineer + UI] 顶栏 ⋮ 更多菜单
+              // （对齐参考版/原版顶栏形态：搜索 + ⋮；原版 main_explore.xml 的
+              //  menu_group 分组子菜单并入此处，文件夹图标能力无损收编）
               PopupMenuButton<String>(
-                tooltip: '分组筛选',
-                icon: const Icon(Symbols.folder_copy_rounded),
+                tooltip: '更多',
+                icon: const Icon(Symbols.more_vert_rounded),
                 onSelected: (group) {
                   ref.read(exploreNotifierProvider.notifier).selectGroup(group);
                   setState(() => _selectedCategory = null);
@@ -395,6 +401,11 @@ class _SourceItem extends ConsumerStatefulWidget {
 
 class _SourceItemState extends ConsumerState<_SourceItem>
     with SingleTickerProviderStateMixin {
+  // [A4 形态对齐 | full-stack-engineer + UI] 卡片底行容器圆角
+  // （对标原版 item_find_book.xml 的 bg_find_book_group：圆角 + 浅填充；
+  //  色值沿用本页 chips 既有 token onSurface 10%）
+  static const _kCardRadius = 12.0;
+
   bool _expanded = false;
   late final AnimationController _expandController;
   late final Animation<double> _expandAnimation;
@@ -442,61 +453,67 @@ class _SourceItemState extends ConsumerState<_SourceItem>
     final colorScheme = theme.colorScheme;
     final bookName = widget.source.bookSourceName;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
+    // [A4 形态对齐 | full-stack-engineer + UI] 行改卡片底（对标原版
+    // item_find_book.xml 的 bg_find_book_group 圆角卡片；色值沿用本页
+    // chips 既有 token onSurface 10%），行 = 源名 + 右侧 chevron
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          color: colorScheme.onSurface.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(_kCardRadius),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: _toggleExpand,
-                onLongPress: _showItemMenu,
-                child: ConstrainedBox(
-                  // [LAYOUT_MOTION_AUDIT L3] 分组头行高对齐 M3 ListItem 单行 56
-                  constraints: const BoxConstraints(minHeight: 56),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Text(
-                            bookName,
-                            style: theme.textTheme.titleMedium?.copyWith(
-                              color: colorScheme.onSurface,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+            InkWell(
+              onTap: _toggleExpand,
+              onLongPress: _showItemMenu,
+              child: ConstrainedBox(
+                // [LAYOUT_MOTION_AUDIT L3] 分组头行高对齐 M3 ListItem 单行 56
+                constraints: const BoxConstraints(minHeight: 56),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          bookName,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            color: colorScheme.onSurface,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        AnimatedRotation(
-                          turns: _expanded ? 0.25 : 0,
-                          duration: widget.expandDuration,
-                          // [LAYOUT_MOTION_AUDIT L3] emphasized 曲线
-                          curve: Curves.easeOutCubic,
-                          child: Icon(
-                            Symbols.chevron_right_rounded,
-                            size: 20,
-                            color: colorScheme.onSurfaceVariant,
-                          ),
+                      ),
+                      AnimatedRotation(
+                        turns: _expanded ? 0.25 : 0,
+                        duration: widget.expandDuration,
+                        // [LAYOUT_MOTION_AUDIT L3] emphasized 曲线
+                        curve: Curves.easeOutCubic,
+                        child: Icon(
+                          Symbols.chevron_right_rounded,
+                          size: 20,
+                          color: colorScheme.onSurfaceVariant,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
               ),
             ),
+            SizeTransition(
+              sizeFactor: _expandAnimation,
+              alignment: Alignment.topCenter,
+              child: FadeTransition(
+                opacity: _expandAnimation,
+                child: _buildCategoryList(theme, colorScheme),
+              ),
+            ),
           ],
         ),
-        SizeTransition(
-          sizeFactor: _expandAnimation,
-          alignment: Alignment.topCenter,
-          child: FadeTransition(
-            opacity: _expandAnimation,
-            child: _buildCategoryList(theme, colorScheme),
-          ),
-        ),
-      ],
+      ),
     );
   }
 
@@ -599,7 +616,10 @@ class _SourceItemState extends ConsumerState<_SourceItem>
 
     return Padding(
       padding: const EdgeInsets.only(top: 8),
-      child: ExploreKindLayout(
+      // [A4 形态对齐 | full-stack-engineer + UI] C8：展开区改 3 列 chips
+      // 分区网格（分组标题通栏 + URL 项固定 3 列；控件保留数据驱动宽度；
+      // 点击链路 onCategoryTap → _openExploreShow 不变）
+      child: _ExploreSectionedChips(
         sourceUrl: sourceUrl,
         sourceJson: jsonEncode(widget.source.toJson()),
         categories: categories,
