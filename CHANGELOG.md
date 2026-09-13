@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.244] - 2026-09-13
+
+### Fixed
+- [UI] 发现页展开区真机恒为零高（设备验收新发现，P1；两处叠加，均与 Rust FFI 无关——USE_MOCK 无 Rust 包仍复现）：① **分节注册丢失**——`_groupExploreC8Sections` 的 else 分支在「首项即非标题项」时只创建分节对象、从不 `sections.add` → 整节被丢弃，sections=[] → 展开区 Column 零高（此 bug 出自 2.0.238 的 C8 实现，widget 测试因直接注入最终 state 未覆盖注册路径而漏网）；② **真机空 `type`**——Rust 纯文本 `::` 解析用 `ExploreCategory::default()` 使 `type=""`，Dart 侧 `?? 'url'` 只兜 null 不兜空串，而分节头判定与 3 列强制都以 `type=='url'` 为门 → chips 退化通栏、分节头不识别（mock 路径省略 type 走构造默认值，故测试全绿而真机异常）。修复：① else 分支补 `sections.add`；② notifier 数据唯一入口加 `_normalizeExploreCategoryTypes` 把空 `type` 归一为 `url`（不改落库源数据，控件项不受影响）；临时诊断探针全部移除
+
+### Test
+- 子代理自测与主代理独立复跑一致：`flutter analyze` 无问题、`flutter test` **1416 全过**（新增 `explore_expand_height_test`：以**真机 FFI 形态**（空 type）走真实 notifier 装配路径断言 chips 实高非零 + type 归一——修复了「mock 直接注入 state 测不出」的覆盖缺口）
+- 设备复验（MuMu Test 实例，正式非 mock 构建 v2.0.243，smoke 7/7）：展开源卡后 dump 证实 3 列 chips + 通栏分节头渲染（玄幻小说通栏 + 都市/仙侠/修真 各 3 列），零高与全宽行均消除；遗留：Rust `explore.rs` 纯文本分支宜显式置 `type="url"` 从源头根治（登记到下一 Rust 批）。版本 2.0.244+245
+
+- Contributor: full-stack-engineer + UI + QA（主代理 Qoder UI 审核）
+
+
 ## [2.0.243] - 2026-09-13
 
 ### Fixed

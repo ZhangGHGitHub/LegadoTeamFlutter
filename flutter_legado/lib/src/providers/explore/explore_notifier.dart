@@ -98,10 +98,18 @@ class ExploreNotifier extends Notifier<ExploreState> {
     );
     try {
       final api = ref.read(bookApiProvider);
-      final categories = await api.exploreParseUrl(
+      final rawCategories = await api.exploreParseUrl(
         exploreUrl,
         sourceJson: jsonEncode(source.toJson()),
       );
+      // [C8 真机 P1 | full-stack-engineer] 真机 FFI 纯文本 :: 解析返回
+      // type=""（Rust 侧 ..ExploreCategory::default() 得空串，且
+      // skip_serializing_if 仅省略 "url"，故空串被原样下发）。UI 侧分节/
+      // 3 列 chips 均以 type=='url' 判定，空 type 会全部落入通栏行，
+      // 展开区退化为全宽行（真机缺陷）。纯文本分类本质即 URL 项（等价
+      // Android ExploreKind），此处（UI 唯一数据入口）统一把空 type
+      // 规整为 'url'，不改落库源数据。
+      final categories = _normalizeExploreCategoryTypes(rawCategories);
       await _initExploreInfoMapDefaults(api, source.bookSourceUrl, categories);
       state = state.copyWith(
         categoriesCache: {...state.categoriesCache, url: categories},
@@ -123,6 +131,30 @@ class ExploreNotifier extends Notifier<ExploreState> {
         loadingCategories: {...state.loadingCategories}..remove(url),
       );
     }
+  }
+
+  /// [C8 真机 P1] 空 type 归一化为 'url'（真机 FFI 纯文本 :: 解析补偿，
+  /// 详见 [loadCategories] 注释）。控件项（toggle/select/button/text）
+  /// type 恒非空，不受影响；仅纯文本 URL 项（type=""）被规整。
+  List<ExploreCategory> _normalizeExploreCategoryTypes(
+    List<ExploreCategory> categories,
+  ) {
+    return [
+      for (final c in categories)
+        if (c.type.isEmpty)
+          ExploreCategory(
+            title: c.title,
+            url: c.url,
+            type: 'url',
+            action: c.action,
+            chars: c.chars,
+            defaultValue: c.defaultValue,
+            viewName: c.viewName,
+            style: c.style,
+          )
+        else
+          c,
+    ];
   }
 
   /// 强制刷新书源发现分类（对标 Android refreshExplore + clearExploreKindsCache）

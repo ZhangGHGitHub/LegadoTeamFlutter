@@ -24,6 +24,9 @@ class _ExploreC8Section {
 /// 按参考版 groupExploreSections 规则分节：
 /// 无 URL 的 url 型项作为分节标题；其后的项归属该节，
 /// 直到下一个标题；控件项（toggle/select/button/text）不作标题。
+/// 首项非标题（无空 URL 头项）时，首个非标题项开启一个无标题分节并
+/// 注册进结果；否则这些项会落在未注册的临时分节里被整体丢弃，
+/// 导致展开区分区网格零高（真机 P1 缺陷根因，已修）。
 List<_ExploreC8Section> _groupExploreC8Sections(List<ExploreCategory> categories) {
   final sections = <_ExploreC8Section>[];
   _ExploreC8Section? current;
@@ -33,7 +36,12 @@ List<_ExploreC8Section> _groupExploreC8Sections(List<ExploreCategory> categories
       current = _ExploreC8Section(header: c);
       sections.add(current);
     } else {
-      current ??= _ExploreC8Section();
+      // 首项即 URL/控件项（无空 URL 标题头）时，新分节必须注册进 sections，
+      // 否则整节被丢弃 → 展开区分区网格零高（真机 P1 缺陷根因）
+      if (current == null) {
+        current = _ExploreC8Section();
+        sections.add(current);
+      }
       current.items.add(c);
     }
   }
