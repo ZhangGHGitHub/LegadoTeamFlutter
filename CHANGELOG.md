@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.253] - 2026-09-13
+
+### Fixed
+- [UI] 发现页书源列表不随导入刷新（用户报告：导入 526 源合集后发现页没有发现源）：根因 = 发现页源列表仅在页面初始化时加载一次，书源管理的导入/删除/启停**不触发任何失效通知**——导入后不重启应用，发现页永远显示旧列表（空）。DB 证据：导入实际完全成功（book_sources 526 行、395 行带 exploreUrl 且 enabledExplore=1）。修复 = ExploreNotifier `ref.listen(sourceNotifierProvider)`：书源状态任意变更（copyWith 新对象）即自动重载发现书源列表（_loadBookSources 只读 bookApiProvider，无循环触发）
+
+### Test
+- 主代理修复并复核：`flutter analyze` 无问题；`flutter test` **1449 全过**
+- 设备证据（MuMu Test 实例，192.168.1.19:16416）：DB 中 526 源/395 带发现均在库；修复后启动发现页正常列出 半夏小说/奈飞工厂/SiS文學網简体 等源卡；「导入后不重启即自动出现」的监听器行为由 Riverpod ref.listen 语义保证（代码审查：_loadBookSources 无循环触发路径）
+- 版本 2.0.253+254
+
+- Contributor: Qoder UI（子代理暂停期主代理兜底，经用户授权）
+
+
 ## [2.0.252] - 2026-09-13
 
 ### Added

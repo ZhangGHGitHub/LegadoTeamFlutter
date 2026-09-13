@@ -7,6 +7,7 @@ import '../../bridge/ffi.dart';
 import '../../models/models.dart';
 import '../../services/book_api.dart';
 import '../providers.dart';
+import '../source/source_notifier.dart';
 import 'explore_state.dart';
 
 export 'explore_state.dart';
@@ -25,6 +26,14 @@ class ExploreNotifier extends Notifier<ExploreState> {
   ExploreState build() {
     // 延迟到 build() 返回后执行（state 初始化完成后才能访问）
     Future.microtask(_loadBookSources);
+
+    // [发现页刷新修复 | Qoder UI] 书源库变化（导入/删除/启停等任意
+    // SourceState 变更）时自动重载发现书源列表——修复「书源管理导入后
+    // 发现页不刷新、需重启应用才显示」的问题。_loadBookSources 只读
+    // bookApiProvider，不触碰 sourceNotifierProvider，无循环触发。
+    ref.listen(sourceNotifierProvider, (_, _) {
+      Future.microtask(_loadBookSources);
+    });
     return const ExploreState();
   }
 
