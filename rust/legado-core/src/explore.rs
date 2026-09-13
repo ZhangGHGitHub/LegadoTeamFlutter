@@ -173,6 +173,10 @@ pub fn parse_explore_url(explore_url: &str) -> Vec<ExploreCategory> {
                     categories.push(ExploreCategory {
                         title,
                         url: if url.is_empty() { None } else { Some(url) },
+                        // 纯文本分支默认控件类型为 url（对标 ExploreKind 默认值）。
+                        // 显式置 "url" 而非靠 `..Default::default()` 的 ""，否则序列化时
+                        // `type: ""` 会被下发（is_default_type 仅跳过 "url"，不跳过空串）。
+                        r#type: "url".to_string(),
                         ..ExploreCategory::default()
                     });
                 }
@@ -181,6 +185,7 @@ pub fn parse_explore_url(explore_url: &str) -> Vec<ExploreCategory> {
                 categories.push(ExploreCategory {
                     title: part.to_string(),
                     url: None,
+                    r#type: "url".to_string(),
                     ..ExploreCategory::default()
                 });
             }
@@ -208,6 +213,32 @@ mod tests {
         );
         assert_eq!(result[1].title, "都市");
         assert_eq!(result[1].url, Some("https://example.com/dushi".to_string()));
+    }
+
+    /// 纯文本 `::` 分支的控件类型须为 "url"（而非 `Default::default()` 的 ""），
+    /// 序列化时 `type` 被 skip 而非下发空串 — 空 type 根治
+    #[test]
+    fn test_parse_explore_url_text_type_defaults_to_url() {
+        let input = "玄幻::https://example.com/xuanhuan\n仅标题";
+        let result = parse_explore_url(input);
+        assert_eq!(result.len(), 2);
+        for cat in &result {
+            assert_eq!(
+                cat.r#type, "url",
+                "纯文本分类 type 应为默认 \"url\"，实际: {:?}",
+                cat.r#type
+            );
+        }
+        // 序列化不应再下发空 type（is_default_type 跳过 "url"）
+        let json = serde_json::to_string(&result).unwrap();
+        assert!(
+            !json.contains("\"type\":\"\""),
+            "序列化不得下发空 type: {json}"
+        );
+        assert!(
+            !json.contains("\"type\""),
+            "type==url 应被 skip，不应出现在 JSON: {json}"
+        );
     }
 
     #[test]

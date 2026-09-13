@@ -181,6 +181,92 @@ impl<'a> DictRuleRepository<'a> {
             .collect();
         Ok(rows)
     }
+
+    /// 全量列出（`ORDER BY sortNumber, id`，稳定排序，供管理页列表）
+    pub fn list_all_ordered(&self) -> LegadoResult<Vec<DictRule>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, name, urlRule, showRule, enabled, sortNumber
+                 FROM dictRules ORDER BY sortNumber ASC, id ASC",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+
+        let rows = stmt
+            .query_map([], row_to_dict_rule)
+            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// 按名称查询（name 为 UNIQUE 列）
+    pub fn find_by_name(&self, name: &str) -> LegadoResult<Option<DictRule>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT id, name, urlRule, showRule, enabled, sortNumber
+                 FROM dictRules WHERE name = ?1",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+
+        let result = stmt
+            .query_row(params![name], row_to_dict_rule)
+            .optional()
+            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?;
+        Ok(result)
+    }
+
+    /// 按名称 upsert 词典规则（对标 Kotlin `DictRuleDao.insert` 的 `onConflict=REPLACE`）
+    ///
+    /// 同名规则存在则整体覆盖其 urlRule/showRule/enabled/sortNumber（保留原 id），
+    /// 不存在则插入新记录。返回规则 ID。供导入（import）REPLACE-by-name 语义使用。
+    pub fn upsert_by_name(&self, rule: &DictRule) -> LegadoResult<i64> {
+        match self.find_by_name(&rule.name)? {
+            Some(existing) => {
+                self.conn
+                    .execute(
+                        "UPDATE dictRules
+                         SET urlRule = ?1, showRule = ?2, enabled = ?3, sortNumber = ?4
+                         WHERE id = ?5",
+                        params![
+                            rule.url_rule,
+                            rule.show_rule,
+                            rule.is_enabled as i32,
+                            rule.sort_order,
+                            existing.id
+                        ],
+                    )
+                    .map_err(|e| LegadoError::Database(format!("更新词典规则失败: {e}")))?;
+                Ok(existing.id)
+            }
+            None => self.insert_record(rule),
+        }
+    }
+
+    /// 按给定 ID 顺序重编号 `sortNumber`（0..n），对标 Kotlin `upSortNumber`
+    ///
+    /// `ids` 为拖拽/排序后的完整 ID 序列（管理页传入全量有序列表）。
+    /// 事务内逐行写 `sortNumber = 序号` 保证原子性；未包含的 ID 不受影响。
+    pub fn reorder(&self, ids: &[i64]) -> LegadoResult<()> {
+        let tx = self
+            .conn
+            .unchecked_transaction()
+            .map_err(|e| LegadoError::Database(format!("开启事务失败: {e}")))?;
+
+        for (idx, id) in ids.iter().enumerate() {
+            self.conn
+                .execute(
+                    "UPDATE dictRules SET sortNumber = ?1 WHERE id = ?2",
+                    params![idx as i32, id],
+                )
+                .map_err(|e| LegadoError::Database(format!("重排词典规则失败: {e}")))?;
+        }
+
+        tx.commit()
+            .map_err(|e| LegadoError::Database(format!("提交事务失败: {e}")))?;
+        Ok(())
+    }
 }
 
 fn row_to_dict_rule(row: &rusqlite::Row<'_>) -> rusqlite::Result<DictRule> {
@@ -361,6 +447,71 @@ mod tests {
         let again = repo.seed_default_rules().unwrap();
         assert_eq!(again, 0);
         assert_eq!(repo.find_all().unwrap().len(), 5);
+    }
+
+    #[test]
+    fn test_reorder() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = DictRuleRepository::new(db.connection());
+        let a = repo.insert("A", "http://a.com", "ra").unwrap();
+        let b = repo.insert("B", "http://b.com", "rb").unwrap();
+        let c = repo.insert("C", "http://c.com", "rc").unwrap();
+
+        // 插入序 A(0) B(1) C(2)，重排为 C→B→A
+        repo.reorder(&[c, b, a]).unwrap();
+
+        let all = repo.list_all_ordered().unwrap();
+        assert_eq!(all.len(), 3);
+        assert_eq!(all[0].name, "C");
+        assert_eq!(all[1].name, "B");
+        assert_eq!(all[2].name, "A");
+        assert_eq!(all[0].sort_order, 0);
+        assert_eq!(all[1].sort_order, 1);
+        assert_eq!(all[2].sort_order, 2);
+
+        // 子集重排：仅包含 A，A 应被重编号为 0
+        repo.reorder(&[a]).unwrap();
+        let a_rule = repo.find_by_id(a).unwrap().unwrap();
+        assert_eq!(a_rule.sort_order, 0);
+    }
+
+    #[test]
+    fn test_upsert_by_name() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = DictRuleRepository::new(db.connection());
+
+        // 首次：插入新记录
+        let id1 = repo
+            .upsert_by_name(&DictRule {
+                id: 0,
+                name: "同名".into(),
+                url_rule: "http://old.com".into(),
+                show_rule: "old".into(),
+                is_enabled: false,
+                sort_order: 3,
+            })
+            .unwrap();
+        assert!(id1 > 0);
+
+        // 同名再次 upsert：覆盖字段、保留原 id
+        let id2 = repo
+            .upsert_by_name(&DictRule {
+                id: 0,
+                name: "同名".into(),
+                url_rule: "http://new.com".into(),
+                show_rule: "new".into(),
+                is_enabled: true,
+                sort_order: 7,
+            })
+            .unwrap();
+        assert_eq!(id1, id2, "REPLACE by name 应保留原 id");
+
+        let rule = repo.find_by_id(id1).unwrap().unwrap();
+        assert_eq!(rule.url_rule, "http://new.com");
+        assert_eq!(rule.show_rule, "new");
+        assert!(rule.is_enabled);
+        assert_eq!(rule.sort_order, 7);
+        assert_eq!(repo.find_all().unwrap().len(), 1, "REPLACE 不应产生重复行");
     }
 
     #[test]

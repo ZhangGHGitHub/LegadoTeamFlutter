@@ -147,9 +147,9 @@
 
 ## 2. 方法清单
 
-> 共 **41 个方法模块**（§2.1–§2.43，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
-> BookApi 接口当前共 **266 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
-> 附录 §2.1–§2.43 行合计 **268** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
+> 共 **42 个方法模块**（§2.1–§2.45，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
+> BookApi 接口当前共 **273 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
+> 附录 §2.x 行合计 **276** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -765,10 +765,28 @@
 
 ---
 
+### 2.45 字典规则操作（dict_rule FFI，7 个方法）
+
+> [C2 批1 | 2026-09-13] 加法式新增（不改既有签名/行为）：字典规则 CRUD / 重排 / 导入经 frb 主链路（`ffi.rs` → `dict_api.rs`）暴露。
+> 数据源 `dictRules` 表（`name` UNIQUE，按 `sortNumber` 排序）；`dictRuleList` 空表先注入原版默认 5 源（与 `dictLookup` 同 seed 语义）。
+> 复杂类型以 JSON String 跨 FFI（§1.3）；`dictRuleReorder` / `dictRuleImport` 返回处理条数；解析/抓取失败返回**明确错误**（导入为显式动作，非静默跳过）。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `dictRuleList()` | 无 | `Future<List<Map<String, dynamic>>>` | 列出全部字典规则（`ORDER BY sortNumber, id`）；空表先 seed 原版默认 5 源；每行 `{id, name, urlRule, showRule, enabled, sortNumber}` |
+| `dictRuleAdd({required String name, required String urlRule, required String showRule})` | name / urlRule / showRule | `Future<int>` | 新增规则（enabled=1, sortNumber=0），返回新 ID；name 重复返回错误（UNIQUE 约束） |
+| `dictRuleUpdate({required int id, required String name, required String urlRule, required String showRule})` | id / name / urlRule / showRule | `Future<bool>` | 按 id 更新规则（name/urlRule/showRule），返回是否实际更新 |
+| `dictRuleDelete(int id)` | id | `Future<bool>` | 按 id 删除规则，返回是否实际删除 |
+| `dictRuleSetEnabled({required int id, required bool enabled})` | id / enabled | `Future<bool>` | 按 id 启用/禁用规则，返回是否实际更新 |
+| `dictRuleReorder(String idsJson)` | idsJson（JSON 数组 `[3,1,2]`） | `Future<int>` | 按给定 ID 顺序重编号 sortNumber=0..n（对标原版 upSortNumber），返回重排条数 |
+| `dictRuleImport({required String jsonOrUrl, required String kind})` | jsonOrUrl / kind（text \| url） | `Future<int>` | 导入 GSON 数组/单对象规则（REPLACE by name：同名覆盖保留 id，异名插入）；kind=text 为 JSON 文本，kind=url 先经既有抓取链路取 body 再解析；返回导入条数 |
+
+---
+
 ### 2.44 数据层实现备注（不涉契约签名）
 
 > 本节登记数据层内部实现变更预告，均不改变任何契约签名，仅供 Rust 轨实施与双轨知会。
-> 本节不含方法，不计入模块数与附录统计（模块仍为 43 个，§2.1–§2.43）。
+> 本节不含方法，不计入方法模块数与附录统计（方法模块为 42 个，§2.1–§2.45，编号跳过 2.24/2.27）。
 >
 > ℹ️ **BookRepository::insert 级联删除隐患（第三批后置项，Task #63）**：`BookRepository::insert` 当前走
 > INSERT OR REPLACE，存在外键级联删除隐患；将在本批改为 upsert 链路（内部实现变更，不涉契约签名，不改任何 FFI 行为）。
@@ -912,11 +930,12 @@
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 5 |
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 8 |
-| | **合计（§2.1–§2.43 附录行合计）** | **269** |
+| 44 | 字典规则操作 | 7 |
+| | **合计（§2.x 附录行合计）** | **276** |
 
-> 口径说明（2026-08-15，`test/unit/api_contract_test.dart` 程序化计数校准，取代人工统计）：
-> - 附录行合计 **269** = §2.x 实际方法行总数；其中与 BookApi 同名 255、§1.7 命名等价对的 FFI 登记名 8
+> 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法，取代人工统计）：
+> - 附录行合计 **276** = §2.x 实际方法行总数；其中与 BookApi 同名 262（255 + 字典规则 7）、§1.7 命名等价对的 FFI 登记名 8
 >   （对应 7 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
 >   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
-> - BookApi 代码计数 **266** = 255 同名行 + 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
+> - BookApi 代码计数 **273** = 262 同名行（255 + 字典规则 7）+ 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。

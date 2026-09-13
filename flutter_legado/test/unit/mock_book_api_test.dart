@@ -589,4 +589,142 @@ void main() {
       expect(map['items'], isA<List>());
     });
   });
+
+  group('字典规则操作（契约 §2.45）', () {
+    test('list 空表 seed 原版默认 5 源（sortNumber 升序）', () async {
+      final list = await api.dictRuleList();
+      expect(list.length, 5);
+      expect(
+        list.map((r) => r['name']).toList(),
+        ['海词中文', '海词英文', '有道', '哔哩', '百度汉语'],
+      );
+    });
+
+    test('add → update → setEnabled → reorder → delete 全链路往返', () async {
+      // add（enabled=true, sortNumber=0）
+      final idA = await api.dictRuleAdd(
+        name: '测试源A',
+        urlRule: 'http://a.com/{{key}}',
+        showRule: 'json.data',
+      );
+      final idB = await api.dictRuleAdd(
+        name: '测试源B',
+        urlRule: 'http://b.com/{{key}}',
+        showRule: '',
+      );
+      expect(idA, greaterThan(5));
+      expect(idB, idA + 1);
+
+      var list = await api.dictRuleList();
+      expect(list.length, 7);
+
+      // name 重复 → 错误（对标原版 name 主键）
+      expect(
+        () => api.dictRuleAdd(name: '海词中文', urlRule: '', showRule: ''),
+        throwsA(isA<Exception>()),
+      );
+
+      // update（改 name/urlRule/showRule；不存在返回 false）
+      expect(
+        await api.dictRuleUpdate(
+          id: idA,
+          name: '测试源A2',
+          urlRule: 'http://a2.com',
+          showRule: 'x://y',
+        ),
+        isTrue,
+      );
+      expect(
+        await api.dictRuleUpdate(
+          id: 99999,
+          name: 'X',
+          urlRule: '',
+          showRule: '',
+        ),
+        isFalse,
+      );
+      list = await api.dictRuleList();
+      final updated = list.firstWhere((r) => r['id'] == idA);
+      expect(updated['name'], '测试源A2');
+      expect(updated['urlRule'], 'http://a2.com');
+
+      // setEnabled（禁用；不存在返回 false）
+      expect(await api.dictRuleSetEnabled(id: idA, enabled: false), isTrue);
+      expect(await api.dictRuleSetEnabled(id: 99999, enabled: true), isFalse);
+      list = await api.dictRuleList();
+      expect(list.firstWhere((r) => r['id'] == idA)['enabled'], isFalse);
+
+      // reorder（全量重编号：[idB, idA, 默认 5 源 id] → 新顺序与 sortNumber 生效）
+      final allIds = (await api.dictRuleList()).map((r) => r['id'] as int).toList();
+      final defaultIds = allIds.where((i) => i <= 5).toList(); // 默认 5 源
+      final newOrder = [idB, idA, ...defaultIds];
+      expect(await api.dictRuleReorder(jsonEncode(newOrder)), 7);
+      list = await api.dictRuleList();
+      expect(list.map((r) => r['id']).toList(), newOrder);
+      expect(list.first['sortNumber'], 0);
+      expect(list.last['sortNumber'], 6);
+
+      // reorder 非法 JSON → 明确错误
+      expect(() => api.dictRuleReorder('not a json array'),
+          throwsA(isA<Exception>()));
+      expect(() => api.dictRuleReorder('{"a":1}'), throwsA(isA<Exception>()));
+
+      // delete（不存在返回 false）
+      expect(await api.dictRuleDelete(idA), isTrue);
+      expect(await api.dictRuleDelete(99999), isFalse);
+      list = await api.dictRuleList();
+      expect(list.length, 6);
+      expect(list.where((r) => r['id'] == idA), isEmpty);
+    });
+
+    test('import REPLACE by name：异名插入 / 同名覆盖保留 id / 单对象',
+        () async {
+      final json1 =
+          '[{"name":"导入A","urlRule":"http://a","showRule":"sa"},'
+          '{"name":"导入B","urlRule":"http://b","showRule":"sb"}]';
+      expect(await api.dictRuleImport(jsonOrUrl: json1, kind: 'text'), 2);
+      final list = await api.dictRuleList();
+      final idA = list.firstWhere((r) => r['name'] == '导入A')['id'] as int;
+
+      // 二次导入：A/B 同名覆盖（A 的 urlRule 变化、id 保留），C 新名插入
+      final json2 =
+          '[{"name":"导入A","urlRule":"http://a2","showRule":"sa2"},'
+          '{"name":"导入B","urlRule":"http://b2","showRule":"sb2"},'
+          '{"name":"导入C","urlRule":"http://c","showRule":"sc"}]';
+      expect(await api.dictRuleImport(jsonOrUrl: json2, kind: 'text'), 3);
+      var after = await api.dictRuleList();
+      final a = after.firstWhere((r) => r['name'] == '导入A');
+      expect(a['id'], idA, reason: 'REPLACE by name 应保留原 id');
+      expect(a['urlRule'], 'http://a2');
+      expect(after.length, 8); // 默认 5 + A + B + C
+
+      // 单对象导入（GSON 缺省 enabled=true / sortNumber=0）
+      expect(
+        await api.dictRuleImport(
+          jsonOrUrl: '{"name":"导入D","urlRule":"http://d","showRule":"sd"}',
+          kind: 'text',
+        ),
+        1,
+      );
+      after = await api.dictRuleList();
+      final d = after.firstWhere((r) => r['name'] == '导入D');
+      expect(d['enabled'], isTrue);
+      expect(d['sortNumber'], 0);
+      expect(after.length, 9);
+
+      // 非法 JSON / 空内容 / URL 导入 → 明确错误（mock 无网络）
+      expect(
+        () => api.dictRuleImport(jsonOrUrl: 'not json', kind: 'text'),
+        throwsA(isA<Exception>()),
+      );
+      expect(
+        () => api.dictRuleImport(jsonOrUrl: '', kind: 'text'),
+        throwsA(isA<Exception>()),
+      );
+      expect(
+        () => api.dictRuleImport(jsonOrUrl: 'https://x.com/rules.json', kind: 'url'),
+        throwsA(isA<Exception>()),
+      );
+    });
+  });
 }

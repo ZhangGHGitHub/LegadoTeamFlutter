@@ -1013,6 +1013,55 @@ pub mod ffi {
         to_json(&entry)
     }
 
+    /// 列出全部字典规则（空表先注入默认 5 源，DictRule 数组 JSON，按 sortNumber,id 升序）
+    pub fn dict_rule_list() -> Result<String, BridgeError> {
+        let rules = crate::api::dict_api::dict_rule_list()?;
+        to_json(&rules)
+    }
+
+    /// 新增字典规则（enabled=1, sortNumber=0），返回规则 ID
+    pub fn dict_rule_add(
+        name: String,
+        url_rule: String,
+        show_rule: String,
+    ) -> Result<i64, BridgeError> {
+        Ok(crate::api::dict_api::dict_rule_add(
+            &name, &url_rule, &show_rule,
+        )?)
+    }
+
+    /// 更新字典规则（按 id），返回是否实际更新
+    pub fn dict_rule_update(
+        id: i64,
+        name: String,
+        url_rule: String,
+        show_rule: String,
+    ) -> Result<bool, BridgeError> {
+        Ok(crate::api::dict_api::dict_rule_update(
+            id, &name, &url_rule, &show_rule,
+        )?)
+    }
+
+    /// 删除字典规则（按 id），返回是否实际删除
+    pub fn dict_rule_delete(id: i64) -> Result<bool, BridgeError> {
+        Ok(crate::api::dict_api::dict_rule_delete(id)?)
+    }
+
+    /// 设置字典规则启用/禁用（按 id），返回是否实际更新
+    pub fn dict_rule_set_enabled(id: i64, enabled: bool) -> Result<bool, BridgeError> {
+        Ok(crate::api::dict_api::dict_rule_set_enabled(id, enabled)?)
+    }
+
+    /// 按给定 ID 顺序重编号 sortNumber（0..n），返回重排条数
+    pub fn dict_rule_reorder(ids_json: String) -> Result<i32, BridgeError> {
+        Ok(crate::api::dict_api::dict_rule_reorder(&ids_json)?)
+    }
+
+    /// 导入字典规则（GSON 数组/单对象，REPLACE by name），返回导入条数
+    pub fn dict_rule_import(json_or_url: String, kind: String) -> Result<i32, BridgeError> {
+        Ok(crate::api::dict_api::dict_rule_import(&json_or_url, &kind)?)
+    }
+
     // ─── 换源 ───────────────────────────────────────────────
 
     /// 搜索可替换的书源（返回 JSON 格式的匹配结果列表）

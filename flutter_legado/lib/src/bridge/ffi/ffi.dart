@@ -748,6 +748,57 @@ Future<String> searchHistoryByPrefix({
 Future<String> dictLookup({required String word}) =>
     RustLib.instance.api.crateFfiFfiDictLookup(word: word);
 
+/// 列出全部字典规则（空表先注入默认 5 源，DictRule 数组 JSON，按 sortNumber,id 升序）
+Future<String> dictRuleList() => RustLib.instance.api.crateFfiFfiDictRuleList();
+
+/// 新增字典规则（enabled=1, sortNumber=0），返回规则 ID
+Future<PlatformInt64> dictRuleAdd({
+  required String name,
+  required String urlRule,
+  required String showRule,
+}) => RustLib.instance.api.crateFfiFfiDictRuleAdd(
+  name: name,
+  urlRule: urlRule,
+  showRule: showRule,
+);
+
+/// 更新字典规则（按 id），返回是否实际更新
+Future<bool> dictRuleUpdate({
+  required PlatformInt64 id,
+  required String name,
+  required String urlRule,
+  required String showRule,
+}) => RustLib.instance.api.crateFfiFfiDictRuleUpdate(
+  id: id,
+  name: name,
+  urlRule: urlRule,
+  showRule: showRule,
+);
+
+/// 删除字典规则（按 id），返回是否实际删除
+Future<bool> dictRuleDelete({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateFfiFfiDictRuleDelete(id: id);
+
+/// 设置字典规则启用/禁用（按 id），返回是否实际更新
+Future<bool> dictRuleSetEnabled({
+  required PlatformInt64 id,
+  required bool enabled,
+}) => RustLib.instance.api.crateFfiFfiDictRuleSetEnabled(
+  id: id,
+  enabled: enabled,
+);
+
+/// 按给定 ID 顺序重编号 sortNumber（0..n），返回重排条数
+Future<int> dictRuleReorder({required String idsJson}) =>
+    RustLib.instance.api.crateFfiFfiDictRuleReorder(idsJson: idsJson);
+
+/// 导入字典规则（GSON 数组/单对象，REPLACE by name），返回导入条数
+Future<int> dictRuleImport({required String jsonOrUrl, required String kind}) =>
+    RustLib.instance.api.crateFfiFfiDictRuleImport(
+      jsonOrUrl: jsonOrUrl,
+      kind: kind,
+    );
+
 /// 搜索可替换的书源（返回 JSON 格式的匹配结果列表）
 ///
 /// `book_name` — 当前书籍名称

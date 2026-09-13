@@ -366,6 +366,52 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
     return _decodeMap(json, 'dictLookup');
   }
 
+  // ========== 字典规则操作（dict_rule FFI，契约 §2.45） ==========
+
+  @override
+  Future<List<Map<String, dynamic>>> dictRuleList() async {
+    final json = await bridge.dictRuleList();
+    return _decodeList(json, 'dictRuleList').cast<Map<String, dynamic>>();
+  }
+
+  @override
+  Future<int> dictRuleAdd({
+    required String name,
+    required String urlRule,
+    required String showRule,
+  }) =>
+      bridge.dictRuleAdd(name: name, urlRule: urlRule, showRule: showRule);
+
+  @override
+  Future<bool> dictRuleUpdate({
+    required int id,
+    required String name,
+    required String urlRule,
+    required String showRule,
+  }) =>
+      bridge.dictRuleUpdate(
+        id: id,
+        name: name,
+        urlRule: urlRule,
+        showRule: showRule,
+      );
+
+  @override
+  Future<bool> dictRuleDelete(int id) =>
+      bridge.dictRuleDelete(id: id);
+
+  @override
+  Future<bool> dictRuleSetEnabled({required int id, required bool enabled}) =>
+      bridge.dictRuleSetEnabled(id: id, enabled: enabled);
+
+  @override
+  Future<int> dictRuleReorder(String idsJson) =>
+      bridge.dictRuleReorder(idsJson: idsJson);
+
+  @override
+  Future<int> dictRuleImport({required String jsonOrUrl, required String kind}) =>
+      bridge.dictRuleImport(jsonOrUrl: jsonOrUrl, kind: kind);
+
   // ========== 应用日志（appLog FFI） ==========
   // [审计修复 §1.2] 接通契约 §2.38 appLog* 五方法（frb 绑定已生成） — QoderCN
 

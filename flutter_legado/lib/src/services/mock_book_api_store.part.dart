@@ -15,6 +15,8 @@ mixin MockBookApiStore {
   final List<ReadRecord> _readRecords = [];
   final List<RssStar> _rssStars = [];
   final List<HttpTts> _httpTtsList = [];
+  // 字典规则内存态（契约 §2.45：dictRule* 七方法；REPLACE by name 语义）
+  final List<Map<String, dynamic>> _dictRules = [];
   final Map<String, String> _configs = {};
   final Map<String, List<BookChapter>> _chaptersCache = {};
   final Map<String, Map<int, String>> _contentCache = {};
@@ -23,6 +25,9 @@ mixin MockBookApiStore {
   final Map<String, String> _mockLoginHeader = {};
 
   int _nextId = 1;
+
+  /// 字典规则自增 ID（独立于 `_nextId`，避免与其他 mock 实体串号）
+  int _nextDictRuleId = 1;
 
 
   /// 初始化 Mock 数据
@@ -233,6 +238,59 @@ mixin MockBookApiStore {
     _bookGroups.add(
       BookGroup(groupId: 1, groupName: '科幻', order: 0, show: true),
     );
+
+    // ── 字典规则（对标 Rust seed_default_rules：表为空时注入原版默认 5 源）──
+    // 名称/排序/启用态与 rust/assets/defaultData/dictRules.json 对齐；
+    // JS 重量级规则的 urlRule/showRule 以短占位代替（mock 不执行查询链路，
+    // dictLookup 走静态 _mockDict，规则内容仅供 CRUD/排序/导入语义演示）。
+    _seedDefaultDictRules();
+  }
+
+  /// 注入原版默认 5 个字典源（海词中文 / 海词英文 / 有道 / 哔哩 / 百度汉语）
+  void _seedDefaultDictRules() {
+    final defaults = [
+      {
+        'name': '海词中文',
+        'urlRule': 'https://hanyu.dict.cn/{{key}}',
+        'showRule': '#cy',
+        'enabled': true,
+        'sortNumber': 0,
+      },
+      {
+        'name': '海词英文',
+        'urlRule': 'https://apii.dict.cn/mini.php?q={{key}}',
+        'showRule': 'tag.body@all',
+        'enabled': true,
+        'sortNumber': 1,
+      },
+      {
+        'name': '有道',
+        'urlRule': 'https://m.youdao.com/translate（POST inputtext={{key}}）',
+        'showRule': '（@js 占位）',
+        'enabled': true,
+        'sortNumber': 2,
+      },
+      {
+        'name': '哔哩',
+        'urlRule': 'https://search.bilibili.com/all?keyword={{key}}',
+        'showRule': '.search-page@all（@js 占位）',
+        'enabled': true,
+        'sortNumber': 3,
+      },
+      {
+        'name': '百度汉语',
+        'urlRule': 'data:;base64,{{java.base64Encode(key)}},{"type":"bd"}',
+        'showRule': '（@js 占位）',
+        'enabled': true,
+        'sortNumber': 4,
+      },
+    ];
+    for (final rule in defaults) {
+      _dictRules.add({
+        'id': _nextDictRuleId++,
+        ...rule,
+      });
+    }
   }
 
   static const _mockChapterTitles = [

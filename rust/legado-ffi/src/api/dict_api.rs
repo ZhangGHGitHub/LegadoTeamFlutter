@@ -53,7 +53,7 @@ use std::time::Duration;
 use regex::Regex;
 use serde::Serialize;
 
-use legado_core::LegadoResult;
+use legado_core::{LegadoError, LegadoResult};
 use legado_db::{DictRule, DictRuleRepository};
 use legado_parser::{AnalyzeRule, AnalyzeUrl, JsExecutor, RequestMethod};
 
@@ -123,6 +123,189 @@ pub fn dict_lookup(word: &str) -> LegadoResult<DictEntry> {
         phonetic: String::new(),
         definitions,
     })
+}
+
+// ─── 字典规则管理（API_CONTRACT.md §2.45）─────────────────────────────
+//
+// 供管理页（CRUD/启停/排序/导入）使用，直接改变 dict_lookup 的查询行为：
+// 启停/排序改变「哪些规则执行、以何序执行」，增删/导入改变规则集合。
+// 对标 Kotlin `DictRuleViewModel`（upSortNumber/enableSelection/
+// disableSelection/importDefault）+ `ImportDictRuleDialog`（GSON 数组/
+// 单对象，REPLACE by name）。
+
+/// 字典规则 DTO（序列化字段对齐契约 §2.45：camelCase）
+#[derive(Debug, Clone, Serialize)]
+pub struct DictRuleDto {
+    pub id: i64,
+    pub name: String,
+    #[serde(rename = "urlRule")]
+    pub url_rule: String,
+    #[serde(rename = "showRule")]
+    pub show_rule: String,
+    pub enabled: bool,
+    #[serde(rename = "sortNumber")]
+    pub sort_number: i32,
+}
+
+impl From<&DictRule> for DictRuleDto {
+    fn from(r: &DictRule) -> Self {
+        Self {
+            id: r.id,
+            name: r.name.clone(),
+            url_rule: r.url_rule.clone(),
+            show_rule: r.show_rule.clone(),
+            enabled: r.is_enabled,
+            sort_number: r.sort_order,
+        }
+    }
+}
+
+/// 列出全部字典规则（空表先注入原版默认 5 源，`ORDER BY sortNumber, id`）
+pub fn dict_rule_list() -> LegadoResult<Vec<DictRuleDto>> {
+    with_database(|db| {
+        let repo = DictRuleRepository::new(db.connection());
+        // 表为空时注入原版默认 5 源（对标 dict_lookup 的 seed 行为）
+        repo.seed_default_rules()?;
+        let rules = repo.list_all_ordered()?;
+        Ok(rules.iter().map(DictRuleDto::from).collect::<Vec<_>>())
+    })
+}
+
+/// 新增一条字典规则（enabled=1, sortNumber=0）
+///
+/// name 重复时因 UNIQUE 约束返回错误（对标原版 name 主键语义）。
+pub fn dict_rule_add(name: &str, url_rule: &str, show_rule: &str) -> LegadoResult<i64> {
+    with_database(|db| {
+        let repo = DictRuleRepository::new(db.connection());
+        repo.insert(name, url_rule, show_rule)
+    })
+}
+
+/// 更新字典规则（按 id，改 name/urlRule/showRule）
+pub fn dict_rule_update(
+    id: i64,
+    name: &str,
+    url_rule: &str,
+    show_rule: &str,
+) -> LegadoResult<bool> {
+    with_database(|db| {
+        let repo = DictRuleRepository::new(db.connection());
+        repo.update(id, name, url_rule, show_rule)
+    })
+}
+
+/// 删除字典规则（按 id）
+pub fn dict_rule_delete(id: i64) -> LegadoResult<bool> {
+    with_database(|db| {
+        let repo = DictRuleRepository::new(db.connection());
+        repo.delete(id)
+    })
+}
+
+/// 设置字典规则启用/禁用（按 id）
+pub fn dict_rule_set_enabled(id: i64, enabled: bool) -> LegadoResult<bool> {
+    with_database(|db| {
+        let repo = DictRuleRepository::new(db.connection());
+        repo.set_enabled(id, enabled)
+    })
+}
+
+/// 按给定 ID 顺序重编号 sortNumber（0..n，对标 upSortNumber）
+///
+/// `ids_json` 为 JSON 数组（如 `[3,1,2]`），表示拖拽后的完整有序 ID 列表。
+pub fn dict_rule_reorder(ids_json: &str) -> LegadoResult<i32> {
+    let ids: Vec<i64> = serde_json::from_str(ids_json)
+        .map_err(|e| LegadoError::Database(format!("解析 reorder IDs 失败: {e}")))?;
+    with_database(|db| {
+        let repo = DictRuleRepository::new(db.connection());
+        repo.reorder(&ids)?;
+        Ok(ids.len() as i32)
+    })
+}
+
+/// 导入字典规则（GSON 数组/单对象，REPLACE by name），返回导入条数
+///
+/// `kind` = "text"：`json_or_url` 为 JSON 文本（数组或单对象）；
+/// `kind` = "url"：`json_or_url` 为 URL，先用既有抓取链路取 body 再解析。
+/// 对标 Kotlin `ImportDictRuleDialog`（REPLACE by name）；解析/抓取失败
+/// **返回明确错误**（导入是显式动作，与 dict_lookup 的静默跳过不同）。
+pub fn dict_rule_import(json_or_url: &str, kind: &str) -> LegadoResult<i32> {
+    let body = match kind {
+        "url" => fetch_url_body(json_or_url)?,
+        _ => json_or_url.to_string(),
+    };
+
+    let rules = parse_import_rules(&body)?;
+
+    let count = with_database(|db| {
+        let repo = DictRuleRepository::new(db.connection());
+        for rule in &rules {
+            // REPLACE by name：同名覆盖（保留 id），异名插入
+            repo.upsert_by_name(rule)?;
+        }
+        Ok(rules.len() as i32)
+    })?;
+
+    Ok(count)
+}
+
+/// 抓取 URL body（对齐 dict_lookup 的 AnalyzeUrl 用法，复用 fetch_body）
+fn fetch_url_body(url: &str) -> LegadoResult<String> {
+    if url.trim().is_empty() {
+        return Err(LegadoError::Database("导入 URL 为空".to_string()));
+    }
+    // 纯 URL（非规则模板）：构建单变量请求走既有取体链路
+    let analyze_url = AnalyzeUrl::parse(url, &HashMap::new(), 1)
+        .map_err(|e| LegadoError::Database(format!("解析导入 URL 失败: {e}")))?;
+    let body = crate::runtime::block_on(async {
+        match tokio::time::timeout(
+            Duration::from_secs(DICT_RULE_TIMEOUT_SECS),
+            fetch_body(&analyze_url),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_) => Err(format!("抓取超时（>{DICT_RULE_TIMEOUT_SECS}s）: {url}")),
+        }
+    })
+    .map_err(|e| LegadoError::Database(e))?;
+    Ok(body)
+}
+
+/// 解析导入 JSON（数组或单对象）为规则列表
+///
+/// 字段对齐原版 `DictRule`（name/urlRule/showRule/enabled/sortNumber），
+/// 缺省 enabled=true、sortNumber=0（GSON 语义）。
+fn parse_import_rules(body: &str) -> LegadoResult<Vec<DictRule>> {
+    let trimmed = body.trim();
+    if trimmed.is_empty() {
+        return Err(LegadoError::Database("导入内容为空".to_string()));
+    }
+
+    // 复用原版模型（serde 字段名 camelCase 对齐 GSON）
+    type LegacyRule = legado_core::models::DictRule;
+
+    let legacy: Vec<LegacyRule> = if trimmed.starts_with('[') {
+        serde_json::from_str(trimmed)
+            .map_err(|e| LegadoError::Database(format!("解析导入 JSON 数组失败: {e}")))?
+    } else {
+        let single: LegacyRule = serde_json::from_str(trimmed)
+            .map_err(|e| LegadoError::Database(format!("解析导入 JSON 单对象失败: {e}")))?;
+        vec![single]
+    };
+
+    Ok(legacy
+        .into_iter()
+        .filter(|r| !r.name.trim().is_empty())
+        .map(|m| DictRule {
+            id: 0,
+            name: m.name.trim().to_string(),
+            url_rule: m.url_rule,
+            show_rule: m.show_rule,
+            is_enabled: m.enabled,
+            sort_order: m.sort_number,
+        })
+        .collect())
 }
 
 /// 执行单条字典规则查询（对标 Kotlin `DictRule.search`）
@@ -580,5 +763,148 @@ mod tests {
         assert!(!text.contains('<'));
         assert!(!text.contains("script"));
         assert!(text.contains("尾部"));
+    }
+
+    // ─── 导入解析（纯函数，无需 DB）────────────────────────────────────────
+
+    /// 导入解析：GSON 数组（enabled/sortNumber 缺省对齐 GSON 语义）
+    #[test]
+    fn test_import_parse_rules_array() {
+        let json = r#"[{"name":"A","urlRule":"http://a","showRule":"sa","enabled":true,"sortNumber":0},{"name":"B","urlRule":"http://b","showRule":"sb"}]"#;
+        let rules = parse_import_rules(json).unwrap();
+        assert_eq!(rules.len(), 2);
+        assert_eq!(rules[0].name, "A");
+        assert_eq!(rules[0].url_rule, "http://a");
+        assert!(rules[0].is_enabled);
+        // B 缺省 enabled（GSON 默认 true）与 sortNumber（默认 0）
+        assert!(rules[1].is_enabled);
+        assert_eq!(rules[1].sort_order, 0);
+    }
+
+    /// 导入解析：单对象（非数组）
+    #[test]
+    fn test_import_parse_rules_single() {
+        let json = r#"{"name":"X","urlRule":"http://x","showRule":"sx"}"#;
+        let rules = parse_import_rules(json).unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].name, "X");
+        assert!(rules[0].is_enabled);
+    }
+
+    /// 导入解析：错误与过滤（空/非法 JSON、空 name 过滤）
+    #[test]
+    fn test_import_parse_rules_errors_and_filter() {
+        assert!(parse_import_rules("").is_err());
+        assert!(parse_import_rules("   ").is_err());
+        assert!(parse_import_rules("not json").is_err());
+        assert!(parse_import_rules(r#"[{"name":"A" broken"#).is_err());
+        // 空 name 条目被过滤，其余保留
+        let rules = parse_import_rules(r#"[{"name":"","urlRule":"x"},{"name":"B","urlRule":"y"}]"#)
+            .unwrap();
+        assert_eq!(rules.len(), 1);
+        assert_eq!(rules[0].name, "B");
+    }
+
+    // ─── CRUD 全流程（经 API 层，DB 隔离）────────────────────────────────
+
+    /// add → list → update → set_enabled → reorder → delete 全链路
+    #[test]
+    fn test_dict_rule_crud_flow() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_dict_rules();
+
+        // add（enabled=1, sortNumber=0）
+        let id = dict_rule_add("自定义源", "http://x.com/{{key}}", "json.data").unwrap();
+        assert!(id > 0);
+
+        // list（表非空，不再 seed 默认 5 源）
+        let list = dict_rule_list().unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].name, "自定义源");
+        assert_eq!(list[0].sort_number, 0);
+
+        // update（改 name/urlRule/showRule）
+        assert!(dict_rule_update(id, "自定义源2", "http://y.com/{{key}}", "xpath://x").unwrap());
+        let list = dict_rule_list().unwrap();
+        assert_eq!(list[0].name, "自定义源2");
+        assert_eq!(list[0].url_rule, "http://y.com/{{key}}");
+
+        // set_enabled（禁用）
+        assert!(dict_rule_set_enabled(id, false).unwrap());
+        let list = dict_rule_list().unwrap();
+        assert!(!list[0].enabled);
+
+        // reorder（多规则重编号）
+        let id2 = dict_rule_add("源B", "http://b.com", "").unwrap();
+        let id3 = dict_rule_add("源C", "http://c.com", "").unwrap();
+        // 新顺序：[id3, id, id2]
+        let count = dict_rule_reorder(&format!("[{id3},{id},{id2}]")).unwrap();
+        assert_eq!(count, 3);
+        let list = dict_rule_list().unwrap();
+        assert_eq!(list.len(), 3);
+        // ORDER BY sortNumber,id → id3(0), id(1), id2(2)
+        assert_eq!(list[0].id, id3);
+        assert_eq!(list[0].sort_number, 0);
+        assert_eq!(list[1].id, id);
+        assert_eq!(list[1].sort_number, 1);
+        assert_eq!(list[2].id, id2);
+        assert_eq!(list[2].sort_number, 2);
+
+        // delete
+        assert!(dict_rule_delete(id).unwrap());
+        assert!(!dict_rule_delete(999_999).unwrap()); // 不存在 → false
+        let list = dict_rule_list().unwrap();
+        assert_eq!(list.len(), 2);
+        assert!(!list.iter().any(|r| r.id == id));
+
+        clear_dict_rules();
+    }
+
+    /// 导入 REPLACE by name：异名插入、同名覆盖（保留 id、条数稳定）
+    #[test]
+    fn test_dict_rule_import_upsert_by_name() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_dict_rules();
+
+        // 首次导入：数组两条（新名插入）
+        let json1 = r#"[{"name":"导入源A","urlRule":"http://a","showRule":"sa"},{"name":"导入源B","urlRule":"http://b","showRule":"sb"}]"#;
+        assert_eq!(dict_rule_import(json1, "text").unwrap(), 2);
+        let list = dict_rule_list().unwrap();
+        let id_a = list.iter().find(|r| r.name == "导入源A").unwrap().id;
+
+        // 二次导入：A 同名覆盖（urlRule 变化，id 保留），B 同名覆盖，加一条新名
+        let json2 = r#"[{"name":"导入源A","urlRule":"http://a2","showRule":"sa2"},{"name":"导入源B","urlRule":"http://b2","showRule":"sb2"},{"name":"导入源C","urlRule":"http://c","showRule":"sc"}]"#;
+        assert_eq!(dict_rule_import(json2, "text").unwrap(), 3);
+        let list = dict_rule_list().unwrap();
+        assert_eq!(list.len(), 3);
+        let a = list.iter().find(|r| r.name == "导入源A").unwrap();
+        assert_eq!(a.id, id_a, "REPLACE by name 应保留原 id");
+        assert_eq!(a.url_rule, "http://a2", "同名应覆盖 urlRule");
+
+        // 单对象导入
+        assert_eq!(
+            dict_rule_import(
+                r#"{"name":"导入源D","urlRule":"http://d","showRule":"sd"}"#,
+                "text"
+            )
+            .unwrap(),
+            1
+        );
+        assert_eq!(dict_rule_list().unwrap().len(), 4);
+
+        // 导入失败 → 明确错误（非法 JSON）
+        assert!(dict_rule_import("not json", "text").is_err());
+
+        clear_dict_rules();
+    }
+
+    /// reorder 非法 JSON → 明确错误
+    #[test]
+    fn test_dict_rule_reorder_bad_json() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_dict_rules();
+        assert!(dict_rule_reorder("not a json array").is_err());
+        assert!(dict_rule_reorder(r#"{"a":1}"#).is_err());
+        clear_dict_rules();
     }
 }

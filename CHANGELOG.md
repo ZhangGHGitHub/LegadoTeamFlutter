@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.245] - 2026-09-13
+
+### Added
+- [Rust] 字典规则 FFI 全链路（差异清单 C2 批1，跨轨，子代理 full-stack-engineer 交付 + 主代理复验）：契约新增 **§2.45 字典规则操作（7 方法，加法式）**——`dictRuleList`（空表自动 seed 原版 5 默认源，`ORDER BY sortNumber,id`）/ `dictRuleAdd`（name 重复报错）/ `dictRuleUpdate` / `dictRuleDelete` / `dictRuleSetEnabled` / `dictRuleReorder`（按序重编号，对标原版 upSortNumber）/ `dictRuleImport`（text/url 双通道，GSON 数组/单对象，REPLACE by name，返回导入条数）；附录合计 269→276、BookApi 口径 266→273。**管理页 UI 为批2，本批无用户可见界面变化**
+- [Rust] 顺带根治发现页空 `type` 源头：`explore.rs` 纯文本 `::` 解析分支显式置 `type="url"`（2.0.244 已在 Dart 数据入口归一补偿，本次从源头消除空串下发），补单测
+
+### Test
+- 子代理自测与主代理独立复跑一致：`cargo fmt --check` 通过、`cargo test -p legado-db dict_rule` **12/12**（新增 reorder/upsert_by_name 用例）、`cargo test -p legado-ffi dict` **13/13**（7 FFI + 导入解析/REPLACE 语义/坏 JSON 用例）、`cargo test -p legado-core parse_explore_url` 10/10、`flutter analyze` 无问题、`flutter test` **1419 全过**（含 mock 往返 3 例 + `api_contract_test` 7 项程序化契约校验）
+- `.so` 已按 `build-android.ps1 -Mode release` 重建（aarch64/x86_64，15:28/15:29），`dict_rule_*` 7 符号双 ABI 验证在位。版本 2.0.245+246
+
+- Contributor: full-stack-engineer + Bridge（主代理 Qoder UI 审核）
+
+
 ## [2.0.244] - 2026-09-13
 
 ### Fixed

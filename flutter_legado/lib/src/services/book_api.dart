@@ -590,6 +590,46 @@ abstract class BookApi {
   /// 未收录词返回空 `definitions`（非异常）；查询异常抛出经 bridge 映射为 [BridgeError]。
   Future<Map<String, dynamic>> dictLookup(String word);
 
+  // ========== 字典规则操作（dict_rule FFI，契约 §2.45） ==========
+
+  /// 列出全部字典规则（契约 §2.45，`ORDER BY sortNumber, id`）
+  ///
+  /// 空表先注入原版默认 5 源（海词中文/海词英文/有道/哔哩/百度汉语）。
+  /// 返回每行 `{id, name, urlRule, showRule, enabled, sortNumber}`。
+  Future<List<Map<String, dynamic>>> dictRuleList();
+
+  /// 新增字典规则（enabled=1, sortNumber=0），返回新 ID；name 重复抛错
+  Future<int> dictRuleAdd({
+    required String name,
+    required String urlRule,
+    required String showRule,
+  });
+
+  /// 按 id 更新字典规则（name/urlRule/showRule），返回是否实际更新
+  Future<bool> dictRuleUpdate({
+    required int id,
+    required String name,
+    required String urlRule,
+    required String showRule,
+  });
+
+  /// 按 id 删除字典规则，返回是否实际删除
+  Future<bool> dictRuleDelete(int id);
+
+  /// 按 id 启用/禁用字典规则，返回是否实际更新
+  Future<bool> dictRuleSetEnabled({required int id, required bool enabled});
+
+  /// 按给定 ID 顺序重编号 sortNumber（0..n，对标原版 upSortNumber），返回重排条数
+  ///
+  /// [idsJson] 为 JSON 数组（如 `[3,1,2]`），表示拖拽后的完整有序 ID 列表。
+  Future<int> dictRuleReorder(String idsJson);
+
+  /// 导入字典规则（GSON 数组/单对象，REPLACE by name），返回导入条数
+  ///
+  /// [kind] = `text`：[jsonOrUrl] 为 JSON 文本（数组或单对象）；
+  /// [kind] = `url`：[jsonOrUrl] 为 URL，先经既有抓取链路取 body 再解析。
+  Future<int> dictRuleImport({required String jsonOrUrl, required String kind});
+
   // ========== 备份操作 ==========
 
   /// 备份数据
