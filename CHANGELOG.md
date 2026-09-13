@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.248] - 2026-09-13
+
+### Fixed
+- [Rust] 修复 `legado-js` config_api 三测的全局状态并行污染偶发失败（存量 CI flake，与本会话 scopeSource 批无关、复现于全量并行跑）：根因 = `test_injected_*` 三个写入类测试结束后**不恢复**进程级 `OnceLock<RwLock<Option<String>>>` 注入态（read_book_config/theme_config/theme_mode），并行交错时读取类测试（期望「未注入」默认语义）取到别人的注入值。修复（**纯测试改动 +69/-0，产品代码零改动**）：`StoreGuard` 快照-恢复守卫（Drop 实现，panic 路径同样恢复）+ `STORE_TEST_LOCK` 仅对 5 个触碰全局态的测试互斥（其余 231 个照常并行），从构造上消除交错；未用 `--test-threads=1` 掩盖、未删除/弱化断言
+
+### Test
+- 子代理自测与主代理独立复跑一致：`cargo test -p legado-js` **连跑 5 次 + 8/16 线程压力各一次全绿**（236/236）；其它 host_api 同类隐患已排查登记（`variable_store.rs` 全量 clear 与并行 set/get 存在中危交错窗口，建议后续修；device_id/global_headers/cookie_store/concurrency 为低危残留态）
+
+- Contributor: full-stack-engineer + Bridge（主代理 Qoder UI 复核）
+
+
 ## [2.0.247] - 2026-09-13
 
 ### Added

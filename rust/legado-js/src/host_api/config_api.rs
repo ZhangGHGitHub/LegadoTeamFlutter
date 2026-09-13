@@ -207,8 +207,64 @@ pub fn get_android_id() -> String {
 mod tests {
     use super::*;
 
+    /// 全局态快照-恢复守卫（仅测试用）
+    ///
+    /// 构造时快照 store 当前值（含 `None`），`Drop` 时恢复原值——panic 路径
+    /// 同样经 `Drop` 恢复。用于消除 cargo 默认多线程并行跑测时，注入类测试
+    /// 与读取类测试对进程级全局注入态（read_book_config / theme_config /
+    /// theme_mode 三个 `OnceLock<RwLock<Option<String>>>`）的交叉污染：
+    /// 读取类测试先 `set(None)` 保证「未注入」语义；写入类测试结束（含
+    /// panic）后自动恢复原值，不向后续测试泄漏状态。
+    struct StoreGuard {
+        store: &'static std::sync::RwLock<Option<String>>,
+        previous: Option<String>,
+    }
+
+    impl StoreGuard {
+        fn new(store: &'static std::sync::RwLock<Option<String>>) -> Self {
+            let previous = store
+                .read()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone();
+            Self { store, previous }
+        }
+
+        /// 显式设置 store 值（传 `None` 表示「未注入」）
+        fn set(&self, value: Option<String>) {
+            *self
+                .store
+                .write()
+                .unwrap_or_else(|p| p.into_inner()) = value;
+        }
+    }
+
+    impl Drop for StoreGuard {
+        fn drop(&mut self) {
+            *self
+                .store
+                .write()
+                .unwrap_or_else(|p| p.into_inner()) = self.previous.clone();
+        }
+    }
+
+    /// 测试间互斥锁：仅串行化「触碰全局注入态的 5 个测试」，其余测试仍
+    /// 照常并行。避免写入类测试与读取类测试真正并发交错（如读取测试
+    /// `set(None)` 与后续读取之间被写入测试插入注入值）。
+    static STORE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// 获取测试互斥锁（panic 时经 Drop 自动释放，不会永久卡死后续测试）
+    fn lock_stores() -> std::sync::MutexGuard<'static, ()> {
+        STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+    }
+
     #[test]
     fn test_get_read_book_config_is_valid_json() {
+        let _lock = lock_stores();
+        // 先清注入态（守卫 Drop 时恢复原值），保证「未注入」语义不被并行测试污染
+        let guard = StoreGuard::new(read_book_config_store());
+        guard.set(None);
         let config = get_read_book_config();
         let parsed: serde_json::Value = serde_json::from_str(&config).unwrap();
         assert_eq!(parsed["textSize"], 18);
@@ -217,6 +273,9 @@ mod tests {
 
     #[test]
     fn test_get_theme_config_is_valid_json() {
+        let _lock = lock_stores();
+        let guard = StoreGuard::new(theme_config_store());
+        guard.set(None);
         let config = get_theme_config();
         let parsed: serde_json::Value = serde_json::from_str(&config).unwrap();
         assert_eq!(parsed["isNightTheme"], false);
@@ -227,11 +286,17 @@ mod tests {
 
     #[test]
     fn test_get_theme_mode() {
+        let _lock = lock_stores();
+        let guard = StoreGuard::new(theme_mode_store());
+        guard.set(None);
         assert_eq!(get_theme_mode(), "light");
     }
 
     #[test]
     fn test_injected_theme_mode_mapping() {
+        let _lock = lock_stores();
+        // 守卫快照原值，测试结束（含 panic）恢复，避免泄漏给并行测试
+        let _guard = StoreGuard::new(theme_mode_store());
         set_injected_theme_mode("2");
         assert_eq!(get_theme_mode(), "dark");
         set_injected_theme_mode("1");
@@ -243,6 +308,8 @@ mod tests {
 
     #[test]
     fn test_injected_read_book_config_passthrough() {
+        let _lock = lock_stores();
+        let _guard = StoreGuard::new(read_book_config_store());
         // R4：未注入回退硬编码默认；注入后优先返回注入值
         let before = get_read_book_config();
         assert!(before.contains("\"name\":\"默认\""));
@@ -253,6 +320,8 @@ mod tests {
 
     #[test]
     fn test_injected_theme_config_passthrough() {
+        let _lock = lock_stores();
+        let _guard = StoreGuard::new(theme_config_store());
         let custom = r#"{"themeName":"自定义","isNightTheme":true}"#;
         set_injected_theme_config(custom);
         assert_eq!(get_theme_config(), custom);
