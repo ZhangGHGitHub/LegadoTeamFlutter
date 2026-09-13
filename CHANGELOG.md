@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.250] - 2026-09-13
+
+### Added
+- [Rust] 替换规则编辑器 `@js:` 预览补齐（用户裁决立项，跨轨，子代理 full-stack-engineer 交付 + 主代理复验）：契约 §2.8 新增 `previewReplaceRule(ruleJson, sampleContent)`（方法数 7→**8**，附录 277→**278**，BookApi 口径 274→**275**）——把样例文本送进 Rust **真实替换管线**（正则优先/fancy-regex 回退、`@js:` 走 QuickJS、逐规则超时），对齐原版 ReplacePreview 的 Rhino 语义；**规则级错误返回 `⚠️ ` 前缀说明文本不上抛**（预览 UX 直接可显示）
+- [UI] 编辑器预览改为单一语义源：`_runPreview` 改调 FFI 真实管线（保留 250ms 防抖与首帧预览），**删除 Dart 轻量近似**（`_expandGroups` 与字面/正则/`@js:` 不可用降级提示全部移除）——预览结果与真实替换完全一致
+
+### Test
+- Rust：`preview_replace_rule` 五类 19 个单测（正则/字面/@js:/超时/非法 JSON），quickjs feature 开关双侧验证
+- 设备 E2E（MuMu Test 实例，QA 代理，截图 `.tmp/e2e/`）：①`@js:` 真实执行——规则 `hello`→`@js:'<b>'+result+'</b>'`、输入 `hello`、输出 `<b>hello</b>`；②正则组展开——`([A-Z]+)([0-9]+)`→`$2-$1`、输入 `ABC123`、输出 `123-ABC`；③非法正则 `[` → 输出 `⚠️ Invalid regex pattern: [`；④`@js:` 规则成功保存进列表并启用；logcat 无应用侧错误（SIGSEGV 均为 uiautomator 工具自身）
+- 主代理独立复跑：`flutter analyze` 无问题、`flutter test` **1446 全过**、`cargo test -p legado-ffi replace_rule` 19/19、`api_contract_test` 7/7；`.so` 重建（19:08/19:09 双 ABI，verifyRustFfiLibs 哈希 -734354461 通过）。**遗留**：armeabi-v7a 的 `.so` 未重建（不在 requiredAbis，真机 v7a 需时再跑）。版本 2.0.250+251
+
+- Contributor: full-stack-engineer + Bridge + QA（主代理 Qoder UI 审核）
+
+
 ## [2.0.249] - 2026-09-13
 
 ### Added

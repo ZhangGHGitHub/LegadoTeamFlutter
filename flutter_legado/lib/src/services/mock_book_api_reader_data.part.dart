@@ -102,6 +102,19 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
     return sourceJson;
   }
 
+  /// [替换规则预览 | 2026-09-13] 替换规则编辑器预览（确定性 Mock，供测试）
+  ///
+  /// Mock 不实现真实替换引擎：固定返回 `[mock预览] ` + [sampleContent]，
+  /// 并累计调用计数（`previewReplaceRuleCalls`）供测试断言。
+  @override
+  Future<String> previewReplaceRule(
+    String ruleJson,
+    String sampleContent,
+  ) async {
+    _previewReplaceRuleCalls++;
+    return '[mock预览] $sampleContent';
+  }
+
   // ========== 阅读器操作 ==========
 
   @override

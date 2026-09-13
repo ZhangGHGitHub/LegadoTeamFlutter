@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:material_symbols_icons/symbols.dart';
 
 import '../models/models.dart';
+import '../providers/providers.dart';
 import '../providers/replace_rule/replace_rule_notifier.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
@@ -93,6 +94,8 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
 
   // 预览防抖（对标原版 PREVIEW_DEBOUNCE_MILLIS = 250ms）
   Timer? _previewJob;
+  // [替换规则预览 | 2026-09-13] FFI 预览调用为异步，序号防旧结果乱序覆盖
+  int _previewSeq = 0;
   String? _previewError;
 
   bool get _isEdit => widget.rule != null;
@@ -385,102 +388,34 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
     _previewJob = Timer(const Duration(milliseconds: 250), _runPreview);
   }
 
-  /// 计算预览输出（纯 Dart 轻量近似，不依赖 FFI/Rust 引擎）：
-  /// - 输入或匹配规则为空 → 原样输出
-  /// - 非正则 → 字面量替换
-  /// - 正则 → 内置 RegExp 替换；替换串以 `@js:` 开头时 JS 语义不可用，
-  ///   输出区显示诚实提示（原版由 Rhino 引擎执行 JS，Pure 侧暂无该能力）
-  void _runPreview() {
+  /// 执行预览（[替换规则预览 | 2026-09-13] 单一语义源 = FFI 真实替换管线，
+  /// 契约 §2.8 `previewReplaceRule`）：
+  /// 对当前表单组装的单条规则在示例文本上执行真实替换管线
+  /// （正则 regex 优先 / fancy-regex 回退、字面量、`@js:` QuickJS 执行 +
+  /// 逐规则超时）；成功=输出区显示替换后文本；规则级错误（非法正则 /
+  /// `@js:` JS 异常 / 执行超时）=输出区原样显示 `⚠️ ` 前缀错误文本
+  /// （不上抛异常）；空输入/空匹配规则 → 原样输出（维持原展示样式）。
+  void _runPreview() async {
     final sample = _previewInputCtrl.text;
     final pattern = _patternCtrl.text;
     if (sample.isEmpty || pattern.isEmpty) {
       _updatePreview(sample, null);
       return;
     }
-    final replacement = _replacementCtrl.text;
+    // 防抖已取消上一轮定时器（_schedulePreview）；FFI 调用为异步，
+    // 再加序号防乱序：仅最新一轮结果允许回写输出区
+    final seq = ++_previewSeq;
+    final ruleJson = jsonEncode(_currentRule().toJson());
     try {
-      if (!_isRegex) {
-        // 非正则：字面量替换（对标原版 String.replace）
-        _updatePreview(sample.replaceAll(pattern, replacement), null);
-      } else if (replacement.startsWith('@js:')) {
-        _updatePreview(sample, 'JS 替换预览不可用（Pure 侧暂无 JS 引擎）');
-      } else {
-        // 正则：对标原版 java.util.regex.Matcher.replaceAll(replacement)，
-        // 支持 $& / $1..$9 / ${name} 组引用；Dart 的 replaceAll(RegExp,String)
-        // 为字面替换不展开组引用，故用 replaceAllMapped + 手动展开
-        final re = RegExp(pattern);
-        final out = sample.replaceAllMapped(re, (m) => _expandGroups(m, replacement));
-        _updatePreview(out, null);
-      }
+      final output =
+          await ref.read(bookApiProvider).previewReplaceRule(ruleJson, sample);
+      if (seq != _previewSeq || !mounted) return;
+      _updatePreview(output, null);
     } catch (_) {
-      _updatePreview(sample, '正则语法错误或不支持');
+      // 非法输入（JSON 解析失败）MAY Err（自产 JSON 实际不会触发，兜底展示）
+      if (seq != _previewSeq || !mounted) return;
+      _updatePreview(sample, '预览执行失败（输入不合法）');
     }
-  }
-
-  /// 展开替换串中的组引用（对标 Java Matcher.replaceAll 的 $ 语义）：
-  /// `$$` → 字面 `$`；`$&` → 整个匹配；`$1`..`$9` → 编号捕获组；
-  /// `${name}` → 命名捕获组；未命中/越界的组引用置空（未命中组
-  /// 在 Java 中同样替换为空串）
-  String _expandGroups(Match m, String replacement) {
-    final buf = StringBuffer();
-    var i = 0;
-    while (i < replacement.length) {
-      final ch = replacement[i];
-      if (ch != r'$') {
-        buf.write(ch);
-        i++;
-        continue;
-      }
-      final next = i + 1 < replacement.length ? replacement[i + 1] : null;
-      if (next == null) {
-        // 结尾孤立的 $
-        buf.write(r'$');
-        i++;
-        continue;
-      }
-      if (next == r'$') {
-        buf.write(r'$');
-        i += 2;
-        continue;
-      }
-      if (next == '&') {
-        buf.write(m[0] ?? '');
-        i += 2;
-        continue;
-      }
-      if (next == '{') {
-        // 命名组 ${name}（Match 接口无命名组方法，按运行时类型
-        // 走 RegExpMatch.namedGroup；组不存在时 Java 亦替换为空串）
-        final end = replacement.indexOf('}', i + 2);
-        if (end > i + 2) {
-          final name = replacement.substring(i + 2, end);
-          String? g;
-          try {
-            g = (m as RegExpMatch).namedGroup(name);
-          } catch (_) {
-            g = null; // 组名不存在/未命中 → 空串
-          }
-          buf.write(g ?? '');
-          i = end + 1;
-          continue;
-        }
-        // 无闭合 }，按字面处理
-        buf.write(ch);
-        i++;
-        continue;
-      }
-      // 编号捕获组 $1..$9（原版仅支持单位编号）
-      final digit = next.codeUnitAt(0) - 48;
-      if (digit >= 0 && digit <= 9) {
-        buf.write(m[digit] ?? '');
-        i += 2;
-        continue;
-      }
-      // 其他 $x 保留字面
-      buf.write(ch);
-      i++;
-    }
-    return buf.toString();
   }
 
   void _updatePreview(String output, String? error) {

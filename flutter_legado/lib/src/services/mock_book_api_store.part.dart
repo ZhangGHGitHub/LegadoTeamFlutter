@@ -35,6 +35,12 @@ mixin MockBookApiStore {
   /// [书源作用域 | 2026-09-13] `applyReplaceRulesToSource` 调用次数（测试断言用）
   int get applyReplaceRulesToSourceCalls => _applyReplaceRulesToSourceCalls;
 
+  // [替换规则预览 | 2026-09-13] previewReplaceRule 调用计数（测试断言用）
+  int _previewReplaceRuleCalls = 0;
+
+  /// [替换规则预览 | 2026-09-13] `previewReplaceRule` 调用次数（测试断言用）
+  int get previewReplaceRuleCalls => _previewReplaceRuleCalls;
+
 
   /// 初始化 Mock 数据
   ///

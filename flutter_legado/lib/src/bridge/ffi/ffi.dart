@@ -1198,6 +1198,21 @@ Future<String> applyReplaceRulesToSource({
   sourceUrl: sourceUrl,
 );
 
+/// 替换规则编辑器预览：对单条规则执行真实替换管线（契约 §2.8 `previewReplaceRule`）
+///
+/// [替换规则预览 | 2026-09-13] `rule_json` = 单条 ReplaceRule 的 JSON
+/// （Dart 侧 `ReplaceRule.toJson()` 产物，camelCase 字段）；`sample` =
+/// 预览输入文本。成功=返回替换后文本；规则级错误（非法正则 / `@js:`
+/// JS 异常 / 执行超时）=返回 `⚠️ ` 前缀错误文本（不上抛，供预览区直接展示）；
+/// 非法输入（JSON 解析失败）上抛 `BridgeError`。
+Future<String> replaceRulePreview({
+  required String ruleJson,
+  required String sample,
+}) => RustLib.instance.api.crateFfiFfiReplaceRulePreview(
+  ruleJson: ruleJson,
+  sample: sample,
+);
+
 /// 获取所有阅读记录（JSON 数组）
 Future<String> readRecordList() =>
     RustLib.instance.api.crateFfiFfiReadRecordList();

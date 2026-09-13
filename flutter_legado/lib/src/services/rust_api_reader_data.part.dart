@@ -192,6 +192,18 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
     sourceUrl: sourceUrl,
   );
 
+  /// 替换规则编辑器预览：对单条规则在示例文本上执行真实替换管线（契约 §2.8 `previewReplaceRule`）
+  ///
+  /// [替换规则预览 | 2026-09-13] 透传 FFI：成功=返回替换后文本；
+  /// 规则级错误（非法正则 / `@js:` JS 异常 / 执行超时）=返回 `⚠️ ` 前缀
+  /// 错误文本（不上抛 FFI）；非法输入（JSON 解析失败）MAY Err。
+  @override
+  Future<String> previewReplaceRule(String ruleJson, String sampleContent) =>
+      bridge.replaceRulePreview(
+        ruleJson: ruleJson,
+        sample: sampleContent,
+      );
+
   // ========== 阅读器操作 ==========
 
   /// 获取书籍的章节列表

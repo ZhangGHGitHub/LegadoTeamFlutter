@@ -541,6 +541,47 @@ fn apply_rule_with_timeout(
     }
 }
 
+/// 预览单条替换规则（带超时保护，**上抛**规则级错误）
+///
+/// 替换规则编辑器预览专用（契约 §2.8 `previewReplaceRule`，2026-09-13）：
+/// 与 [`apply_rule_with_timeout`] 同样在独立线程执行 [`apply_single_rule`] +
+/// `recv_timeout` 超时保护，但**不吞错**——正则编译失败 / `@js:` JS 异常 /
+/// 超时均以 `Err(说明)` 上抛，由调用方拼 `⚠️ ` 前缀文本展示于预览区。
+///
+/// - 空 `pattern` → `Ok(原文)`（与 `run_replace_rules` 的空 pattern 跳过语义一致）；
+/// - 超时 → `Err("规则执行超时（Nms）…")`（后台线程无法强杀，返回后其结果丢弃）。
+///
+/// 仅新增（2026-09-13 预览批次）；既有管线函数签名零改动。
+pub fn preview_single_rule(
+    content: &str,
+    rule: &ReplaceRuleEntry,
+    js_executor: &Option<Arc<dyn ReplaceJsExecutor>>,
+) -> Result<String, String> {
+    if rule.pattern.is_empty() {
+        return Ok(content.to_string());
+    }
+    let timeout_ms = rule.valid_timeout_millisecond() as u64;
+    let content_owned = content.to_string();
+    let rule_owned = rule.clone();
+    let js_owned = js_executor.clone();
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        let replaced = apply_single_rule(&content_owned, &rule_owned, js_owned.as_deref());
+        let _ = tx.send(replaced);
+    });
+    match rx.recv_timeout(Duration::from_millis(timeout_ms)) {
+        // 替换成功
+        Ok(Ok(new_content)) => Ok(new_content),
+        // 规则执行出错（正则语法错误 / JS 执行失败）→ 上抛供预览展示
+        Ok(Err(e)) => Err(e),
+        // 超时 → 上抛超时说明（对齐 Kotlin 超时保护，但预览需要可见反馈）
+        Err(_timeout) => Err(format!(
+            "规则执行超时（{}ms），已跳过该规则",
+            rule.valid_timeout_millisecond()
+        )),
+    }
+}
+
 /// 应用单条替换规则
 ///
 /// - 非正则规则：字面量替换（与 Kotlin `mContent.replace(pattern, replacement)` 一致）；

@@ -8,7 +8,9 @@
 // - 正则语法校验拦截
 // - 编辑模式回填已有规则
 // - 复制规则 JSON / 粘贴规则填充表单（剪贴板通道 mock）
-// - 预览防抖计算（非正则字面替换）
+// - 预览防抖计算（[替换规则预览 | 2026-09-13] 单一语义源 = FFI
+//   previewReplaceRule 真实替换管线，mock 返回值回写输出区；
+//   规则级错误 `⚠️ ` 前缀文本原样展示于输出区）
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -422,8 +424,27 @@ void main() {
       expect(find.text('剪贴板内容不是有效的替换规则 JSON'), findsOneWidget);
     });
 
-    testWidgets('预览：非正则模式字面替换（250ms 防抖后输出）',
+    // [替换规则预览 | 2026-09-13] 预览单一语义源 = FFI previewReplaceRule：
+    // 原 Dart 纯近似分支（字面/正则 + _expandGroups 组展开）已删除，
+    // 以下为「输入 → 250ms 防抖 → 输出区显示 FFI（mock）结果」用例
+    testWidgets('预览：输入 → 防抖 → 输出区显示 FFI 结果（非正则字面替换）',
         (tester) async {
+      // mock FFI 真实管线返回值（非正则字面替换语义：作用于
+      // positionalArguments[1] = 预览输入文本，模拟 Rust 侧替换结果）；
+      // 同时在 thenAnswer 闭包内捕获入参（对齐 scope_source_test 的
+      // payload 捕获模式，直接断言 FFI 单一语义源收到的规则/样本）
+      Map<String, dynamic>? previewRule;
+      String? previewSample;
+      when(() => mockApi.previewReplaceRule(any(), any())).thenAnswer(
+        (inv) async {
+          previewRule =
+              jsonDecode(inv.positionalArguments[0] as String)
+                  as Map<String, dynamic>;
+          previewSample = inv.positionalArguments[1] as String;
+          return (inv.positionalArguments[1] as String)
+              .replaceAll('广告', '【广告】');
+        },
+      );
       await pumpEdit(tester);
 
       // 取消「使用正则表达式」勾选（树序首个 Checkbox）→ 字面替换
@@ -438,13 +459,21 @@ void main() {
 
       final outputField = tester.widget<TextField>(byLabel('预览输出'));
       expect(outputField.controller?.text, 'AAAA【广告】');
+      // 断言 FFI 单一语义源被调用（ruleJson 携带表单当前规则）
+      expect(previewSample, 'AAAA广告');
+      expect(previewRule?['pattern'], '广告');
+      expect(previewRule?['replacement'], '【广告】');
+      expect(previewRule?['isRegex'], false);
     });
 
-    testWidgets('预览：正则模式替换（含捕获组引用）', (tester) async {
+    testWidgets('预览：@js: 规则输出区显示 FFI 结果（含 ⚠️ 错误原样展示）',
+        (tester) async {
       await pumpEdit(tester);
 
-      // 捕获组引用：$1 展开为第 1 个捕获组（对标 Java Matcher.replaceAll
-      // 的组语义；Dart replaceAll 为字面替换，由 _expandGroups 手动展开）
+      // 捕获组引用：$1 展开为第 1 个捕获组（Rust 侧真实替换管线语义）
+      when(() => mockApi.previewReplaceRule(any(), any())).thenAnswer(
+        (inv) async => 'abc[123]def[456]',
+      );
       await tester.enterText(byLabel('匹配规则'), r'(\d+)');
       await tester.enterText(byLabel('替换为'), r'[$1]');
       await tester.enterText(byLabel('预览输入'), 'abc123def456');
@@ -452,6 +481,21 @@ void main() {
 
       final outputField = tester.widget<TextField>(byLabel('预览输出'));
       expect(outputField.controller?.text, 'abc[123]def[456]');
+
+      // @js: 规则 + 规则级错误（非法正则/JS 异常/超时）：FFI 返回
+      // `⚠️ ` 前缀错误文本，输出区原样展示（不上抛异常、不降级为「不可用」）
+      when(() => mockApi.previewReplaceRule(any(), any())).thenAnswer(
+        (inv) async =>
+            '⚠️ 规则执行超时（50ms），已跳过该规则',
+      );
+      await tester.enterText(byLabel('替换为'), r"@js:'x'");
+      await tester.pump(const Duration(milliseconds: 300));
+
+      final outputField2 = tester.widget<TextField>(byLabel('预览输出'));
+      expect(
+        outputField2.controller?.text,
+        '⚠️ 规则执行超时（50ms），已跳过该规则',
+      );
     });
   });
 }

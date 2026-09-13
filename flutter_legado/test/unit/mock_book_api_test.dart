@@ -727,4 +727,20 @@ void main() {
       );
     });
   });
+
+  group('替换规则预览（契约 §2.8 previewReplaceRule，[替换规则预览 | 2026-09-13]）',
+      () {
+    test('previewReplaceRule 确定性返回 [mock预览] + 输入并累计调用计数',
+        () async {
+      const ruleJson =
+          '{"name":"去广告","pattern":"广告","replacement":"【广告】","isRegex":false}';
+      final out = await api.previewReplaceRule(ruleJson, 'AAAA广告');
+      expect(out, '[mock预览] AAAA广告');
+      expect(api.previewReplaceRuleCalls, 1);
+
+      // 空输入同样确定性返回（前缀 + 空串）
+      expect(await api.previewReplaceRule(ruleJson, ''), '[mock预览] ');
+      expect(api.previewReplaceRuleCalls, 2);
+    });
+  });
 }

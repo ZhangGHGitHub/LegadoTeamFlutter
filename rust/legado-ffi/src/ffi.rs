@@ -1564,6 +1564,19 @@ pub mod ffi {
         )
     }
 
+    /// 替换规则编辑器预览：对单条规则执行真实替换管线（契约 §2.8 `previewReplaceRule`）
+    ///
+    /// [替换规则预览 | 2026-09-13] `rule_json` = 单条 ReplaceRule 的 JSON
+    /// （Dart 侧 `ReplaceRule.toJson()` 产物，camelCase 字段）；`sample` =
+    /// 预览输入文本。成功=返回替换后文本；规则级错误（非法正则 / `@js:`
+    /// JS 异常 / 执行超时）=返回 `⚠️ ` 前缀错误文本（不上抛，供预览区直接展示）；
+    /// 非法输入（JSON 解析失败）上抛 `BridgeError`。
+    pub fn replace_rule_preview(rule_json: String, sample: String) -> Result<String, BridgeError> {
+        Ok(crate::api::replace_rule_api::preview_replace_rule(
+            &rule_json, &sample,
+        )?)
+    }
+
     // ─── 阅读记录 ─────────────────────────────────────
 
     /// 获取所有阅读记录（JSON 数组）

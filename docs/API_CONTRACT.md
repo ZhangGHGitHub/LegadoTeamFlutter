@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-09-13 | **替换规则预览 `@js:` 补齐（跨轨批次）**：§2.8 加法式新增方法 `previewReplaceRule(ruleJson, sampleContent) → Future<String>`（替换规则编辑器预览：对单条规则在示例文本上执行真实替换管线——正则（regex 优先 / fancy-regex 回退）/ 字面量 / `@js:` QuickJS 执行 + 逐规则超时；成功=返回替换后文本；规则级错误（非法正则 / `@js:` JS 异常 / 执行超时）=返回 `⚠️ ` 前缀错误文本（可直接展示于预览区，不上抛异常）；非法输入（JSON 解析失败）MAY Err）；§2.8 方法数 7→**8**，附录合计 277→**278**，BookApi 口径 274→**275** |
 | 2026-09-13 | **替换规则书源作用域（scopeSource）全链路加法式（跨轨批次，对齐原版 `ReplaceRule.scopeSource`）**：① 契约——FFI `replaceRuleAdd` / `replaceRuleUpdate`（§2.8）各新增末尾可选参 `scopeSource: Option<bool>`（add 缺省=false 对齐原版；update 未提供=保留既有值）；`replaceRuleList` / `replaceRuleEnabled` 返回 JSON 项自动新增 `scopeSource`（缺省 false，旧调用方零破坏）；§2.8 **新增方法** `applyReplaceRulesToSource(sourceJson, sourceName, sourceUrl) → Future<String>`（书源导入时替换：仅取 isEnabled && scopeSource && pattern 非空规则，scope/excludeScope 按「源名称或 URL」contains 忽略大小写匹配——与标题/正文上下文的「书名/书籍来源」匹配是两套独立上下文，不复用 ScopeContext；正则带超时、`@js:` 复用正文管线、非正则按字面量替换；未命中=原样返回，规则级错误不上抛 FFI、保留原文不阻断导入）；§2.8 方法数 6→**7**，附录合计 276→**277**，BookApi 口径 273→**274**；② DB——`replace_rules` 表新增 `scopeSource INTEGER NOT NULL DEFAULT 0` 列，DB v108 迁移预告（SCHEMA_VERSION 107→**108**，幂等：user_version 门禁 + table_info 缺列检测，down 不可回滚），并纳入 `repair_legacy_columns` 防「版本已到 108 但缺列」历史坑 |
 | 2026-09-11 | **替换规则写接口加法式扩参（A3 存量阻塞项，跨轨批次）**：FFI `replaceRuleAdd` / `replaceRuleUpdate`（§2.8 替换规则操作）新增 5 个可选参 `group: Option<String>` / `scopeTitle: Option<bool>` / `scopeContent: Option<bool>` / `excludeScope: Option<String>` / `timeoutMillisecond: Option<i64>`。缺省语义：add 未提供=旧行为（group=null / scopeTitle=false / scopeContent=true / excludeScope=null / timeout=3000ms）；update 未提供=保留既有值，提供空串=清除该字段。存储与读链路（replace_rules 表 upsert + `content_processor` 按 scope/scopeTitle/scopeContent/excludeScope 应用）早已存在，本次补齐写侧使 分组/作用范围/排除范围/超时 真正落库；BookApi 签名不变（仍传 ReplaceRule 对象，UI 层零改动），§2.8 方法数 6 不变、附录合计不变。**A3 阻塞项状态：①「FFI 写接口窄」已解除（写链路已补齐）；② scopeSource、③ @js: 预览仍受阻** |
 | 2026-09-11 | **readRecordDaily 单位归一（修复，非签名变更）**：2026-08-29 上线的写路径把毫秒增量写进契约声明为秒的 `durationSeconds` 列，当日聚合值放大 1000 倍（热力图时长配色全天饱和、首页今日目标表盘恒满、按天视图显示「75天」级时长）。写路径改按整秒差值入账（`read_time/1000 − old_read_time/1000`，不因频繁小增量截断丢秒）；新增 DB v107 迁移把存量行整除 1000 归一（`Migration106To107`，user_version 门禁保证仅执行一次，SCHEMA_VERSION 106→**107**）。FFI 签名与 §2.12 方法数不变 |
@@ -149,8 +150,8 @@
 ## 2. 方法清单
 
 > 共 **42 个方法模块**（§2.1–§2.45，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
-> BookApi 接口当前共 **274 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
-> 附录 §2.x 行合计 **277** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
+> BookApi 接口当前共 **275 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
+> 附录 §2.x 行合计 **278** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -302,7 +303,7 @@
 | `deleteBookmark(int id)` | id | `Future<void>` | 删除书签 |
 | `searchBookmarks(String keyword)` | keyword | `Future<List<Bookmark>>` | 搜索书签 |
 
-### 2.8 替换规则操作（7 个方法）
+### 2.8 替换规则操作（8 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -313,6 +314,7 @@
 | `deleteReplaceRule(int id)` | id | `Future<void>` | 删除替换规则 |
 | `setReplaceRuleEnabled(int id, bool enabled)` | id, enabled | `Future<void>` | 启用/禁用替换规则 |
 | `applyReplaceRulesToSource(String sourceJson, String sourceName, String sourceUrl)` | sourceJson: 单个书源对象 JSON 字符串；sourceName / sourceUrl: 该源 `bookSourceName` / `bookSourceUrl`（scope 匹配依据） | `Future<String>` | **2026-09-13 加法式新增（书源导入时替换，对齐原版 `ReplaceRuleDao.findEnabledBySourceScope` + `BookSourceImport` 逐源判定）**：仅取 `isEnabled && scopeSource && pattern 非空` 的启用规则，`scope`/`excludeScope` 按「源名称或 URL」contains（忽略大小写）匹配——独立源上下文（**不复用标题/正文的 ScopeContext，语义红线：source 上下文的 scope 匹配对象是源名/源 URL，不是书名/书籍来源**）；正则带逐规则超时、`@js:` 复用正文管线、非正则按字面量替换；**未命中=原样返回原文，任何规则级错误（编译失败/超时/@js: 异常/DB 未就绪）不上抛 FFI、保留原文不阻断导入**。Dart 侧由 `SourceImportService.importFromJson` 统一入口对数组逐项调用（逐项而非整数组，因 scope 匹配按单源） |
+| `previewReplaceRule(String ruleJson, String sampleContent)` | ruleJson: 单条 `ReplaceRule` 模型 JSON（camelCase 字段，Dart 侧 `ReplaceRule.toJson()` 产物）；sampleContent: 预览输入文本 | `Future<String>` | **2026-09-13 加法式新增（替换规则编辑器预览，`@js:` 补齐）**：对单条规则在示例文本上执行真实替换管线（正则编译 regex 优先 / fancy-regex 回退、`@js:` 走 QuickJS 执行器、逐规则超时保护）；成功=返回替换后文本；规则级错误（非法正则 / `@js:` JS 异常 / 执行超时）=返回 `⚠️ ` 前缀错误文本（可直接展示于预览区，不上抛异常）；非法输入（JSON 解析失败）MAY Err。编辑器预览改由本方法单一语义源承接（原 Dart 侧纯 Dart 近似分支删除，`@js:` 不再降级为「不可用」提示） |
 
 ### 2.9 阅读器操作（12 个方法）
 
@@ -898,7 +900,7 @@
 | 5 | RSS 源操作 | 11 |
 | 6 | 本地书籍操作 | 4 |
 | 7 | 书签操作 | 7 |
-| 8 | 替换规则操作 | 7 |
+| 8 | 替换规则操作 | 8 |
 | 9 | 阅读器操作 | 12 |
 | 10 | 配置操作 | 4 |
 | 11 | 备份操作 | 3 |
@@ -933,11 +935,11 @@
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 8 |
 | 44 | 字典规则操作 | 7 |
-| | **合计（§2.x 附录行合计）** | **277** |
+| | **合计（§2.x 附录行合计）** | **278** |
 
-> 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`，取代人工统计）：
-> - 附录行合计 **277** = §2.x 实际方法行总数；其中与 BookApi 同名 263（255 + 字典规则 7 + 书源作用域 1）、§1.7 命名等价对的 FFI 登记名 8
+> 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`，取代人工统计）：
+> - 附录行合计 **278** = §2.x 实际方法行总数；其中与 BookApi 同名 264（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1）、§1.7 命名等价对的 FFI 登记名 8
 >   （对应 7 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
 >   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
-> - BookApi 代码计数 **274** = 263 同名行（255 + 字典规则 7 + 书源作用域 1）+ 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
+> - BookApi 代码计数 **275** = 264 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1）+ 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。
