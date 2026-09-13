@@ -243,7 +243,28 @@ class _SearchScreenState
       child: Scaffold(
         appBar: _buildAppBar(context),
         body: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // [搜索页对齐 | Qoder UI] 大标题「搜索」+ 全宽输入条
+            //（对齐参考版：输入条在 body 顶部，顶栏仅动作钮）
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '搜索',
+                    style: Theme.of(context)
+                        .textTheme
+                        .headlineMedium
+                        ?.copyWith(fontWeight: FontWeight.w700),
+                  ),
+                  const SizedBox(height: 12),
+                  _buildSearchField(context),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
             // 顶部进度条（对齐原版 refresh_progress_bar，2dp）
             if (state.isLoading && state.totalCount > 0)
               LinearProgressIndicator(

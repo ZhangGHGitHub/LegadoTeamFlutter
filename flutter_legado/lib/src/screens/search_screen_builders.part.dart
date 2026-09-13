@@ -72,103 +72,113 @@ extension _SearchBuilders on _SearchScreenState {
     return false;
   }
 
-  PreferredSizeWidget _buildAppBar(BuildContext context) {
-    final colorScheme = Theme.of(context).colorScheme;
-    return LegadoAppBar(
-      // [LAYOUT_MOTION_AUDIT L3] 顶栏 TextField 胶囊改为 SearchBar 标准
-      //（圆角 32dp + surfaceContainerLow）
-      title: SearchBar(
-        controller: _searchController,
-        focusNode: _focusNode,
-        // [LAYOUT_MOTION_AUDIT L3] 进入 autofocus
-        autoFocus: true,
-        hintText: AppStrings.searchBookHint,
-        // [LAYOUT_MOTION_AUDIT L3] SearchBar 标准：圆角 32dp
-        shape: WidgetStatePropertyAll(
-          RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(32),
-          ),
-        ),
-        // [LAYOUT_MOTION_AUDIT L3] SearchBar 标准：surfaceContainerLow
-        backgroundColor: WidgetStatePropertyAll(
-          colorScheme.surfaceContainerLow,
-        ),
-        // [LAYOUT_MOTION_AUDIT L3] 顶栏紧凑约束：宽撑满 + 高 40（原 36 胶囊）
-        // [搜索页溢出修复 | Qoder UI] minWidth 0：M3 SearchBar 默认 minWidth 360
-        // 会在窄屏 + 多顶栏按钮时撑爆 AppBar（溢出红条），显式放开下限让其
-        // 随 AppBar 中槽收缩
-        constraints: const BoxConstraints(minHeight: 40, maxHeight: 40, minWidth: 0),
-        padding: const WidgetStatePropertyAll(
-          EdgeInsets.symmetric(horizontal: 12),
-        ),
-        leading: const Icon(Symbols.search_rounded, size: 20),
-        trailing: _searchController.text.isNotEmpty
-            ? [
-                IconButton(
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 32, minHeight: 32),
-                  icon: const Icon(Symbols.close_rounded, size: 20),
-                  onPressed: () {
-                    _searchController.clear();
-                    ref.read(searchNotifierProvider.notifier).clearResults();
-                  },
-                ),
-              ]
-            : null,
-        textInputAction: TextInputAction.search,
-        onSubmitted: (value) {
-          // [LAYOUT_MOTION_AUDIT L3] 提交时清焦点藏键盘
-          _focusNode.unfocus();
-          FocusScope.of(context).unfocus();
-          ref.read(searchNotifierProvider.notifier).search(value);
-        },
-        // 实时驱动联想过滤（对标原版 SearchActivity.upHistory）
-        onChanged: (value) {
-          final notifier = ref.read(searchNotifierProvider.notifier);
-          // 对标原版 onQueryTextChange → viewModel.stop() + 隐藏 FAB
-          if (ref.read(searchNotifierProvider).isLoading) {
-            notifier.stop();
-          }
-          notifier.setInput(value);
-          setState(() {}); // 刷新清除按钮显隐
-          _updateInputHelpVisibility();
-        },
+  /// [搜索页对齐 | Qoder UI] 圆形 tonal 动作钮（对齐参考版顶栏圆形按钮形态）
+  Widget _circleAction(
+    BuildContext context, {
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback onTap,
+    bool active = false,
+  }) {
+    return IconButton(
+      tooltip: tooltip,
+      onPressed: onTap,
+      icon: Icon(icon),
+      style: IconButton.styleFrom(
+        backgroundColor: active
+            ? Theme.of(context).colorScheme.primary
+            : Theme.of(context).colorScheme.surfaceContainerHighest,
+        foregroundColor: active
+            ? Theme.of(context).colorScheme.onPrimary
+            : Theme.of(context).colorScheme.onSurfaceVariant,
       ),
+    );
+  }
+
+  /// [搜索页对齐 | Qoder UI] 输入条（原顶栏胶囊整体迁移至 body 顶部：
+  /// 对齐参考版「大标题 + 全宽输入条」形态；constraints.minWidth 0 防窄屏溢出）
+  Widget _buildSearchField(BuildContext context) {
+    final colorScheme = Theme.of(context).colorScheme;
+    return SearchBar(
+      controller: _searchController,
+      focusNode: _focusNode,
+      autoFocus: true,
+      hintText: AppStrings.searchBookHint,
+      shape: WidgetStatePropertyAll(
+        RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+      ),
+      backgroundColor: WidgetStatePropertyAll(
+        colorScheme.surfaceContainerLow,
+      ),
+      constraints: const BoxConstraints(minHeight: 40, maxHeight: 40),
+      padding: const WidgetStatePropertyAll(
+        EdgeInsets.symmetric(horizontal: 12),
+      ),
+      leading: const Icon(Symbols.search_rounded, size: 20),
+      trailing: _searchController.text.isNotEmpty
+          ? [
+              IconButton(
+                padding: EdgeInsets.zero,
+                constraints:
+                    const BoxConstraints(minWidth: 32, minHeight: 32),
+                icon: const Icon(Symbols.close_rounded, size: 20),
+                onPressed: () {
+                  _searchController.clear();
+                  ref.read(searchNotifierProvider.notifier).clearResults();
+                },
+              ),
+            ]
+          : null,
+      textInputAction: TextInputAction.search,
+      onSubmitted: (value) {
+        _focusNode.unfocus();
+        FocusScope.of(context).unfocus();
+        ref.read(searchNotifierProvider.notifier).search(value);
+      },
+      onChanged: (value) {
+        final notifier = ref.read(searchNotifierProvider.notifier);
+        if (ref.read(searchNotifierProvider).isLoading) {
+          notifier.stop();
+        }
+        notifier.setInput(value);
+        setState(() {});
+        _updateInputHelpVisibility();
+      },
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(BuildContext context) {
+    // [搜索页对齐 | Qoder UI] 参考版形态：顶栏仅圆形动作钮（无输入条——
+    // 输入条移入 body 大标题下方），大标题「搜索」入 body
+    return LegadoAppBar(
+      title: const SizedBox.shrink(),
       actions: [
-        // [搜索页溢出修复 | Qoder UI] 原「>」提交钮移除：提交能力由键盘
-        // 搜索 IME 动作（textInputAction.search + onSubmitted）覆盖，
-        // 为 360dp 屏顶栏（返回+胶囊+5 个动作钮）腾出宽度
-        // [A1 形态对齐 | full-stack-engineer + UI] 参考版顶栏三钮形态（取证映射）：
-        // 设置⚙ / 定位 / 筛选（实心绿）。每钮接到既有能力，与 ⋮ 菜单对应项
-        // 合并同一实现，避免两套代码；⋮ 菜单保留全量不丢能力。
-        // ① 设置⚙（Filled.Settings）→ 书源管理（原版 menu_source_manage）
-        IconButton(
-          icon: const Icon(Symbols.settings_rounded),
+        // ① 设置⚙ → 书源管理（原版 menu_source_manage）
+        _circleAction(
+          context,
+          icon: Symbols.settings_rounded,
           tooltip: '书源管理',
-          onPressed: _openSourceManage,
+          onTap: _openSourceManage,
         ),
-        // ② 定位（Filled.LocationSearching）→ 搜索范围（原版 menu_search_scope，
-        // 多分组/书源：dex topScopeName/topScopeFlag 定位顶栏范围态）
-        IconButton(
-          icon: const Icon(Symbols.travel_explore_rounded),
+        // ② 定位（Filled.LocationSearching）→ 搜索范围（原版 menu_search_scope）
+        _circleAction(
+          context,
+          icon: Symbols.travel_explore_rounded,
           tooltip: '搜索范围',
-          onPressed: () => _showSearchScopeDialog(),
+          onTap: _showSearchScopeDialog,
         ),
-        // ③ 筛选（Filled.Tune，实心绿两态）→ 搜索结果过滤（原版
-        // menu_search_result_filter，屏蔽词排除；实心绿 = 过滤已开启）
-        IconButton(
+        // ③ 筛选（Filled.Tune，实心=已开启）→ 搜索结果过滤
+        _circleAction(
+          context,
+          icon: _resultFilterWords.isEmpty
+              ? Symbols.tune_rounded
+              : Symbols.filter_alt_rounded,
           tooltip: _resultFilterWords.isEmpty
               ? '搜索结果过滤'
               : '搜索结果过滤（已开启）',
-          onPressed: () => _showResultFilterDialog(),
-          icon: _resultFilterWords.isEmpty
-              ? const Icon(Symbols.tune_rounded)
-              : _buildFilterActiveIcon(),
+          active: _resultFilterWords.isNotEmpty,
+          onTap: _showResultFilterDialog,
         ),
-        // 安卓原版：三点菜单（book_search.xml：精准搜索/显示搜索记录/书源管理/分组或书源/日志）
-        // 显式中文 tooltip：原版无 tooltip 时系统默认提示 Show menu（长按被误读为
-        // "shou menu"），此处对齐用户预期显示「更多选项」— Cursor UI
         PopupMenuButton<String>(
           key: _menuButtonKey,
           tooltip: '更多选项',
@@ -718,19 +728,6 @@ extension _SearchBuilders on _SearchScreenState {
               (book.kind ?? '').toLowerCase().contains(w));
         })
         .toList();
-  }
-
-  /// 筛选钮「实心绿」开态图标（参考版实心绿 = 结果过滤已开启）：
-  /// 绿色实心圆底 + 白色 Tune 图标；关闭态用常规 [Symbols.tune_rounded]。
-  Widget _buildFilterActiveIcon() {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: const BoxDecoration(
-        color: Color(0xFF43A047),
-        shape: BoxShape.circle,
-      ),
-      child: const Icon(Symbols.tune_rounded, size: 18, color: Colors.white),
-    );
   }
 
   /// 搜索结果过滤编辑对话框（对齐原版 showSearchResultFilterDialog：

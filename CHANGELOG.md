@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.255] - 2026-09-14
+
+### Changed
+- [UI] 搜索页整体布局对齐参考版（差异清单登记项，主代理兜底实现）：**输入条从顶栏移入 body**——顶栏仅保留 ← + 圆形动作钮（⚙ 书源管理 / 🌐 定位 / ☰ 筛选〔实心=已开启〕/ ⋮ 全量菜单），body 顶部新增大标题「搜索」（headlineMedium 加粗）+ 全宽输入条；结果/历史/空态逻辑不变。此项同步解决了 A1 三钮加入后顶栏 7 元素在 360dp 屏的拥挤与 SearchBar minWidth 360 溢出问题（输入条入 body 后顶栏无宽度压力）
+
+### Test
+- 主代理实现并复核：`flutter analyze` 无问题；`flutter test` **1451 全过**；`search_screen_scroll_test` 的 readPixels 改为读取结果 ListView 自身控制器（原按类型取首个 Scrollable 在新布局下误读其他滚动视图），2 例滚顶回归通过
+- 说明：输入条全宽后不再有 minWidth 溢出问题（此前 2.0.254 的 minWidth 0 修复为过渡方案）。版本 2.0.255+256
+
+- Contributor: Qoder UI（子代理暂停期主代理兜底，经用户授权）
+
+
 ## [2.0.254] - 2026-09-14
 
 ### Fixed

@@ -82,8 +82,19 @@ void main() {
   /// 读取结果列表当前滚动偏移（逻辑像素）。
   /// 树中存在多个 Scrollable（如输入帮助层内部），取首个——即结果列表
   /// （diag6 实测：其 maxExtent ≈ 40 项 × 122px，与结果列表吻合）。
-  double readPixels(WidgetTester tester) =>
-      tester.stateList<ScrollableState>(find.byType(Scrollable)).first.position.pixels;
+  /// [搜索页对齐 | Qoder UI] 取结果列表（ListView）自身的滚动位置：
+  /// 树中存在多个 Scrollable（SearchBar 内部/输入帮助层等），
+  /// 按类型取首个会误读其他滚动视图（2.0.254 输入条移入 body 后实测踩坑）
+  double readPixels(WidgetTester tester) {
+    final listViews = tester.widgetList<ListView>(find.byType(ListView));
+    for (final lv in listViews) {
+      final controller = lv.controller;
+      if (controller != null && controller.hasClients) {
+        return controller.position.pixels;
+      }
+    }
+    return 0;
+  }
 
   /// 下滑直到滚动偏移达到 [target]：每次手势向上拖 200px，
   /// 实际滚动量由视口决定（实测约 130px/次），循环自校正，至多 60 次。
