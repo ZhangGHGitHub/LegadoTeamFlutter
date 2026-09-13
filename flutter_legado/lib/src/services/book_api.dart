@@ -491,6 +491,19 @@ abstract class BookApi {
   /// 启用/禁用替换规则
   Future<void> setReplaceRuleEnabled(int id, bool enabled);
 
+  /// 书源导入时应用「书源作用域」替换规则（契约 §2.8 `applyReplaceRulesToSource`）
+  ///
+  /// [书源作用域 | 2026-09-13] 对整源 [sourceJson] 应用
+  /// `isEnabled && scopeSource && pattern 非空` 且 scope/excludeScope
+  /// 按 [sourceName]/[sourceUrl]（忽略大小写）匹配的规则；
+  /// 未命中返回原文；任何规则级/DB 错误均原样返回输入 JSON（不上抛），
+  /// 保证导入流程不中断。
+  Future<String> applyReplaceRulesToSource(
+    String sourceJson,
+    String sourceName,
+    String sourceUrl,
+  );
+
   // ========== 阅读器操作 ==========
 
   /// 获取书籍的章节列表

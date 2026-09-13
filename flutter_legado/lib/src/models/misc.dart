@@ -136,6 +136,9 @@ class ReplaceRule with _$ReplaceRule {
     String? scope,
     @Default(false) @JsonKey(name: 'scopeTitle') bool scopeTitle,
     @Default(true) @JsonKey(name: 'scopeContent') bool scopeContent,
+    /// 书源作用域开关（对齐原版 `ReplaceRule.scopeSource`，默认 false）：
+    /// 书源导入时按源名/源 URL 匹配 scope 后对整源 JSON 应用替换
+    @Default(false) @JsonKey(name: 'scopeSource') bool scopeSource,
     @JsonKey(name: 'excludeScope') String? excludeScope,
     @Default(true) @JsonKey(name: 'isEnabled') bool isEnabled,
     @Default(true) @JsonKey(name: 'isRegex') bool isRegex,

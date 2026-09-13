@@ -132,7 +132,6 @@ void main() {
         '匹配规则',
         '使用正则表达式',
         '替换为',
-        '书源（暂不支持）',
         '特定范围',
         '排除范围',
         '超时时间（毫秒）',
@@ -141,8 +140,9 @@ void main() {
       ]) {
         expect(find.text(label), findsOneWidget, reason: '缺少字段：$label');
       }
-      // 作用范围三勾选（书源禁用）
+      // 作用范围三勾选（[书源作用域 | 2026-09-13] 书源已打通，不再是禁用行）
       expect(find.text('标题'), findsOneWidget);
+      expect(find.text('书源'), findsOneWidget);
       expect(find.text('正文'), findsOneWidget);
       // 分组下拉默认「（无分组）」
       expect(find.text('（无分组）'), findsOneWidget);

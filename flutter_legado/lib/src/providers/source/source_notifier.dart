@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -5,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../bridge/ffi.dart';
 import '../../models/models.dart';
 import '../../services/backup_service.dart';
+import '../../services/book_api.dart' show BookApi;
 import '../../services/source_import_service.dart';
 import '../providers.dart';
 import 'source_state.dart';
@@ -131,12 +134,54 @@ class SourceNotifier extends Notifier<SourceState> {
     state = state.copyWith(loading: true, error: null);
     try {
       final api = ref.read(bookApiProvider);
-      await api.importBookSources(jsonContent);
+      // [书源作用域 | 2026-09-13] 该入口为原始 JSON 直传（绕过 SourceImportService），
+      // 同样须在交 importBookSources 前对每项应用「书源作用域」替换规则；
+      // 解析/替换失败保持原文，绝不中断导入
+      final payload = await _applySourceReplaceRules(api, jsonContent);
+      await api.importBookSources(payload);
       // 重新加载书源列表
       final sources = await api.getBookSources();
       state = state.copyWith(sources: sources, loading: false);
     } catch (e) {
       state = state.copyWith(error: _mapError(e), loading: false);
+    }
+  }
+
+  /// [书源作用域 | 2026-09-13] 对原始 JSON 逐项应用「书源作用域」替换规则
+  ///
+  /// 解析为数组/单对象后，对每项 JSON 字符串调用
+  /// `applyReplaceRulesToSource`（按源名称/源 URL 匹配 scope）；
+  /// 任何解析或替换失败 → 整体保持输入原文（不中断导入）。
+  Future<String> _applySourceReplaceRules(
+    BookApi api,
+    String jsonContent,
+  ) async {
+    try {
+      final decoded = jsonDecode(jsonContent);
+      final List<dynamic> items =
+          decoded is List
+              ? decoded
+              : (decoded is Map<String, dynamic> ? [decoded] : <dynamic>[]);
+      if (items.isEmpty) return jsonContent;
+      final processed = <String>[];
+      for (final item in items) {
+        if (item is! Map<String, dynamic>) {
+          // 项形态不符 → 保持整体原文（与 importBookSources 宽松解析一致）
+          return jsonContent;
+        }
+        final json = jsonEncode(item);
+        processed.add(
+          await api.applyReplaceRulesToSource(
+            json,
+            (item['bookSourceName'] as String?) ?? '',
+            (item['bookSourceUrl'] as String?) ?? '',
+          ),
+        );
+      }
+      return '[${processed.join(',')}]';
+    } catch (_) {
+      // 解析/替换失败保持原文（不中断导入）
+      return jsonContent;
     }
   }
 

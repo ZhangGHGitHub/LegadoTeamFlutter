@@ -87,6 +87,21 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
     }
   }
 
+  /// [书源作用域 | 2026-09-13] 书源导入时应用「书源作用域」替换规则
+  ///
+  /// Mock 不实现真实替换引擎，原样返回输入 [sourceJson]
+  /// （对齐契约「任何错误均原样返回、不中断导入」的保守语义），
+  /// 并累计调用计数（`applyReplaceRulesToSourceCalls`）供测试断言。
+  @override
+  Future<String> applyReplaceRulesToSource(
+    String sourceJson,
+    String sourceName,
+    String sourceUrl,
+  ) async {
+    _applyReplaceRulesToSourceCalls++;
+    return sourceJson;
+  }
+
   // ========== 阅读器操作 ==========
 
   @override

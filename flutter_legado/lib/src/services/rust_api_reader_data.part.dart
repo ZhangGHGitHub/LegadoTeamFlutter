@@ -115,9 +115,10 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
   /// 添加替换规则
   ///
   /// [A3 写链路补齐 | 2026-09-11] FFI 加法式扩参后，分组/作用范围
-  /// （标题·正文）/排除范围/超时随对象全字段落库（缺省语义由 Rust 侧
-  /// 兜底：group=null、scopeTitle=false、scopeContent=true、
-  /// excludeScope=null、timeoutMillisecond=3000）。
+  /// （标题·正文·书源作用域）/排除范围/超时随对象全字段落库
+  /// （缺省语义由 Rust 侧兜底：group=null、scopeTitle=false、
+  /// scopeContent=true、scopeSource=false、excludeScope=null、
+  /// timeoutMillisecond=3000）。
   @override
   Future<ReplaceRule> addReplaceRule(ReplaceRule rule) async {
     final id = await bridge.replaceRuleAdd(
@@ -131,6 +132,8 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
       scopeContent: rule.scopeContent,
       excludeScope: rule.excludeScope,
       timeoutMillisecond: rule.timeoutMillisecond,
+      // [书源作用域 | 2026-09-13] 全字段透传；Rust 侧 None→false（对齐原版默认 0）
+      scopeSource: rule.scopeSource,
     );
     return rule.copyWith(id: id);
   }
@@ -142,6 +145,9 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
   /// excludeScope 为 null 即表示「该规则无此字段」，统一以空串透传
   /// → Rust 侧按「清除该字段」处理（与 MockBookApi 整对象替换语义一致；
   /// Rust 侧 None=保留既有值 仅服务 C-ABI 等旧调用方）。
+  ///
+  /// [书源作用域 | 2026-09-13] 新增 scopeSource 全字段透传；
+  /// Rust 侧 None=保留既有值，Some(b)=覆盖。
   @override
   Future<void> updateReplaceRule(ReplaceRule rule) => bridge.replaceRuleUpdate(
     ruleId: rule.id,
@@ -155,6 +161,8 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
     scopeContent: rule.scopeContent,
     excludeScope: rule.excludeScope ?? '',
     timeoutMillisecond: rule.timeoutMillisecond,
+    // [书源作用域 | 2026-09-13] 全字段透传；Rust 侧 None=保留既有值
+    scopeSource: rule.scopeSource,
   );
 
   /// 删除替换规则
@@ -166,6 +174,23 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
   @override
   Future<void> setReplaceRuleEnabled(int id, bool enabled) =>
       bridge.replaceRuleSetEnabled(ruleId: id, enabled: enabled);
+
+  /// 书源导入时应用「书源作用域」替换规则（契约 §2.8 `applyReplaceRulesToSource`）
+  ///
+  /// [书源作用域 | 2026-09-13] 透传 FFI：对整源 JSON 应用
+  /// `isEnabled && scopeSource && pattern 非空` 且 scope/excludeScope
+  /// 按源名称/源 URL（忽略大小写）匹配的规则；未命中返回原文；
+  /// 任何规则级/DB 错误均原样返回输入 JSON（不上抛 FFI），保证导入不中断。
+  @override
+  Future<String> applyReplaceRulesToSource(
+    String sourceJson,
+    String sourceName,
+    String sourceUrl,
+  ) => bridge.applyReplaceRulesToSource(
+    sourceJson: sourceJson,
+    sourceName: sourceName,
+    sourceUrl: sourceUrl,
+  );
 
   // ========== 阅读器操作 ==========
 

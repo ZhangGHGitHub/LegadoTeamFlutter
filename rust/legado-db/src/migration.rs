@@ -9,6 +9,7 @@ pub mod daily_seconds_v107;
 pub mod migrations;
 pub mod room_align_v105;
 pub mod schema_align_v104;
+pub mod scope_source_v108;
 pub mod search_book_score_v106;
 
 use rusqlite::Connection;
@@ -65,6 +66,7 @@ impl MigrationRegistry {
         self.register(Box::new(room_align_v105::Migration104To105));
         self.register(Box::new(search_book_score_v106::Migration105To106));
         self.register(Box::new(daily_seconds_v107::Migration106To107));
+        self.register(Box::new(scope_source_v108::Migration107To108));
     }
 
     /// 注册单个迁移
@@ -299,7 +301,7 @@ mod tests {
     fn test_migration_registry_list() {
         let registry = MigrationRegistry::new();
         let list = registry.list_migrations();
-        assert_eq!(list.len(), 17);
+        assert_eq!(list.len(), 18);
         assert_eq!(list[0].0, 90);
         assert_eq!(list[0].1, 91);
     }
@@ -415,13 +417,14 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
         let version = MigrationRegistry::current_version(conn).unwrap();
-        assert_eq!(version, 107);
+        assert_eq!(version, 108);
         assert!(table_exists(conn, "auto_task_rules").unwrap());
         assert!(column_exists(conn, "book_sources", "mainJs"));
         assert!(table_exists(conn, "dictRules").unwrap());
         assert!(table_exists(conn, "keyboardAssists").unwrap());
         assert!(table_exists(conn, "ruleSubs").unwrap());
         assert!(column_exists(conn, "searchBooks", "bookScore"));
+        assert!(column_exists(conn, "replace_rules", "scopeSource"));
     }
 
     #[test]

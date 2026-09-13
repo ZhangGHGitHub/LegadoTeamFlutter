@@ -21,8 +21,9 @@ impl<'a> ReplaceRuleRepository<'a> {
             .execute(
                 "INSERT INTO replace_rules
                  (name, \"group\", pattern, replacement, scope, scopeTitle, scopeContent,
-                  excludeScope, isEnabled, isRegex, timeoutMillisecond, sortOrder)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                  excludeScope, isEnabled, isRegex, timeoutMillisecond, sortOrder,
+                  scopeSource)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 params![
                     rule.name,
                     rule.group,
@@ -36,6 +37,7 @@ impl<'a> ReplaceRuleRepository<'a> {
                     rule.is_regex,
                     rule.timeout_millisecond,
                     rule.order,
+                    rule.scope_source,
                 ],
             )
             .map_err(|e| LegadoError::Database(format!("插入替换规则失败: {e}")))?;
@@ -48,8 +50,8 @@ impl<'a> ReplaceRuleRepository<'a> {
             .execute(
                 "UPDATE replace_rules SET name=?1, \"group\"=?2, pattern=?3, replacement=?4,
                  scope=?5, scopeTitle=?6, scopeContent=?7, excludeScope=?8, isEnabled=?9,
-                 isRegex=?10, timeoutMillisecond=?11, sortOrder=?12
-                 WHERE id=?13",
+                 isRegex=?10, timeoutMillisecond=?11, sortOrder=?12, scopeSource=?13
+                 WHERE id=?14",
                 params![
                     rule.name,
                     rule.group,
@@ -63,6 +65,7 @@ impl<'a> ReplaceRuleRepository<'a> {
                     rule.is_regex,
                     rule.timeout_millisecond,
                     rule.order,
+                    rule.scope_source,
                     rule.id,
                 ],
             )
@@ -84,7 +87,8 @@ impl<'a> ReplaceRuleRepository<'a> {
             .conn
             .prepare(
                 "SELECT id, name, \"group\", pattern, replacement, scope, scopeTitle,
-                        scopeContent, excludeScope, isEnabled, isRegex, timeoutMillisecond, sortOrder
+                        scopeContent, excludeScope, isEnabled, isRegex, timeoutMillisecond,
+                        sortOrder, scopeSource
                  FROM replace_rules ORDER BY sortOrder ASC",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
@@ -103,7 +107,8 @@ impl<'a> ReplaceRuleRepository<'a> {
             .conn
             .prepare(
                 "SELECT id, name, \"group\", pattern, replacement, scope, scopeTitle,
-                        scopeContent, excludeScope, isEnabled, isRegex, timeoutMillisecond, sortOrder
+                        scopeContent, excludeScope, isEnabled, isRegex, timeoutMillisecond,
+                        sortOrder, scopeSource
                  FROM replace_rules WHERE isEnabled = 1
                  ORDER BY sortOrder ASC",
             )
@@ -123,7 +128,8 @@ impl<'a> ReplaceRuleRepository<'a> {
             .conn
             .prepare(
                 "SELECT id, name, \"group\", pattern, replacement, scope, scopeTitle,
-                        scopeContent, excludeScope, isEnabled, isRegex, timeoutMillisecond, sortOrder
+                        scopeContent, excludeScope, isEnabled, isRegex, timeoutMillisecond,
+                        sortOrder, scopeSource
                  FROM replace_rules WHERE scope = ?1
                  ORDER BY sortOrder ASC",
             )
@@ -215,6 +221,7 @@ fn row_to_replace_rule(row: &rusqlite::Row<'_>) -> rusqlite::Result<ReplaceRule>
         is_regex: row.get(10)?,
         timeout_millisecond: row.get(11)?,
         order: row.get(12)?,
+        scope_source: row.get(13)?,
     })
 }
 
@@ -242,6 +249,40 @@ mod tests {
         let all = repo.find_all().unwrap();
         assert_eq!(all.len(), 2);
         assert!(all[0].id > 0);
+    }
+
+    #[test]
+    fn test_insert_and_update_scope_source() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReplaceRuleRepository::new(db.connection());
+        let mut rule = make_rule("ss", "a", "b", false);
+        rule.scope_source = true;
+        let id = repo.insert(&rule).unwrap();
+
+        // 写入 scopeSource=true 可读出
+        let all = repo.find_all().unwrap();
+        assert!(
+            all.iter().find(|r| r.id == id).unwrap().scope_source,
+            "scopeSource=true 应落库并读出"
+        );
+
+        // 未设置 scopeSource 的插入按列默认值 false 读出
+        repo.insert(&make_rule("ss2", "c", "d", false)).unwrap();
+        let all = repo.find_all().unwrap();
+        assert!(
+            !all.iter().find(|r| r.name == "ss2").unwrap().scope_source,
+            "未指定 scopeSource 应取列默认值 false"
+        );
+
+        // 更新可回切
+        rule.id = id;
+        rule.scope_source = false;
+        repo.update(&rule).unwrap();
+        let all = repo.find_all().unwrap();
+        assert!(
+            !all.iter().find(|r| r.id == id).unwrap().scope_source,
+            "update 应覆盖 scopeSource"
+        );
     }
 
     #[test]

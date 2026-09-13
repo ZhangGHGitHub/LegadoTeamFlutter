@@ -576,6 +576,11 @@ mixin _$ReplaceRule {
   bool get scopeTitle => throw _privateConstructorUsedError;
   @JsonKey(name: 'scopeContent')
   bool get scopeContent => throw _privateConstructorUsedError;
+
+  /// 书源作用域开关（对齐原版 `ReplaceRule.scopeSource`，默认 false）：
+  /// 书源导入时按源名/源 URL 匹配 scope 后对整源 JSON 应用替换
+  @JsonKey(name: 'scopeSource')
+  bool get scopeSource => throw _privateConstructorUsedError;
   @JsonKey(name: 'excludeScope')
   String? get excludeScope => throw _privateConstructorUsedError;
   @JsonKey(name: 'isEnabled')
@@ -608,6 +613,7 @@ abstract class $ReplaceRuleCopyWith<$Res> {
       String? scope,
       @JsonKey(name: 'scopeTitle') bool scopeTitle,
       @JsonKey(name: 'scopeContent') bool scopeContent,
+      @JsonKey(name: 'scopeSource') bool scopeSource,
       @JsonKey(name: 'excludeScope') String? excludeScope,
       @JsonKey(name: 'isEnabled') bool isEnabled,
       @JsonKey(name: 'isRegex') bool isRegex,
@@ -636,6 +642,7 @@ class _$ReplaceRuleCopyWithImpl<$Res, $Val extends ReplaceRule>
     Object? scope = freezed,
     Object? scopeTitle = null,
     Object? scopeContent = null,
+    Object? scopeSource = null,
     Object? excludeScope = freezed,
     Object? isEnabled = null,
     Object? isRegex = null,
@@ -674,6 +681,10 @@ class _$ReplaceRuleCopyWithImpl<$Res, $Val extends ReplaceRule>
       scopeContent: null == scopeContent
           ? _value.scopeContent
           : scopeContent // ignore: cast_nullable_to_non_nullable
+              as bool,
+      scopeSource: null == scopeSource
+          ? _value.scopeSource
+          : scopeSource // ignore: cast_nullable_to_non_nullable
               as bool,
       excludeScope: freezed == excludeScope
           ? _value.excludeScope
@@ -716,6 +727,7 @@ abstract class _$$ReplaceRuleImplCopyWith<$Res>
       String? scope,
       @JsonKey(name: 'scopeTitle') bool scopeTitle,
       @JsonKey(name: 'scopeContent') bool scopeContent,
+      @JsonKey(name: 'scopeSource') bool scopeSource,
       @JsonKey(name: 'excludeScope') String? excludeScope,
       @JsonKey(name: 'isEnabled') bool isEnabled,
       @JsonKey(name: 'isRegex') bool isRegex,
@@ -742,6 +754,7 @@ class __$$ReplaceRuleImplCopyWithImpl<$Res>
     Object? scope = freezed,
     Object? scopeTitle = null,
     Object? scopeContent = null,
+    Object? scopeSource = null,
     Object? excludeScope = freezed,
     Object? isEnabled = null,
     Object? isRegex = null,
@@ -781,6 +794,10 @@ class __$$ReplaceRuleImplCopyWithImpl<$Res>
           ? _value.scopeContent
           : scopeContent // ignore: cast_nullable_to_non_nullable
               as bool,
+      scopeSource: null == scopeSource
+          ? _value.scopeSource
+          : scopeSource // ignore: cast_nullable_to_non_nullable
+              as bool,
       excludeScope: freezed == excludeScope
           ? _value.excludeScope
           : excludeScope // ignore: cast_nullable_to_non_nullable
@@ -817,6 +834,7 @@ class _$ReplaceRuleImpl implements _ReplaceRule {
       this.scope,
       @JsonKey(name: 'scopeTitle') this.scopeTitle = false,
       @JsonKey(name: 'scopeContent') this.scopeContent = true,
+      @JsonKey(name: 'scopeSource') this.scopeSource = false,
       @JsonKey(name: 'excludeScope') this.excludeScope,
       @JsonKey(name: 'isEnabled') this.isEnabled = true,
       @JsonKey(name: 'isRegex') this.isRegex = true,
@@ -848,6 +866,12 @@ class _$ReplaceRuleImpl implements _ReplaceRule {
   @override
   @JsonKey(name: 'scopeContent')
   final bool scopeContent;
+
+  /// 书源作用域开关（对齐原版 `ReplaceRule.scopeSource`，默认 false）：
+  /// 书源导入时按源名/源 URL 匹配 scope 后对整源 JSON 应用替换
+  @override
+  @JsonKey(name: 'scopeSource')
+  final bool scopeSource;
   @override
   @JsonKey(name: 'excludeScope')
   final String? excludeScope;
@@ -866,7 +890,7 @@ class _$ReplaceRuleImpl implements _ReplaceRule {
 
   @override
   String toString() {
-    return 'ReplaceRule(id: $id, name: $name, group: $group, pattern: $pattern, replacement: $replacement, scope: $scope, scopeTitle: $scopeTitle, scopeContent: $scopeContent, excludeScope: $excludeScope, isEnabled: $isEnabled, isRegex: $isRegex, timeoutMillisecond: $timeoutMillisecond, order: $order)';
+    return 'ReplaceRule(id: $id, name: $name, group: $group, pattern: $pattern, replacement: $replacement, scope: $scope, scopeTitle: $scopeTitle, scopeContent: $scopeContent, scopeSource: $scopeSource, excludeScope: $excludeScope, isEnabled: $isEnabled, isRegex: $isRegex, timeoutMillisecond: $timeoutMillisecond, order: $order)';
   }
 
   @override
@@ -885,6 +909,8 @@ class _$ReplaceRuleImpl implements _ReplaceRule {
                 other.scopeTitle == scopeTitle) &&
             (identical(other.scopeContent, scopeContent) ||
                 other.scopeContent == scopeContent) &&
+            (identical(other.scopeSource, scopeSource) ||
+                other.scopeSource == scopeSource) &&
             (identical(other.excludeScope, excludeScope) ||
                 other.excludeScope == excludeScope) &&
             (identical(other.isEnabled, isEnabled) ||
@@ -907,6 +933,7 @@ class _$ReplaceRuleImpl implements _ReplaceRule {
       scope,
       scopeTitle,
       scopeContent,
+      scopeSource,
       excludeScope,
       isEnabled,
       isRegex,
@@ -937,6 +964,7 @@ abstract class _ReplaceRule implements ReplaceRule {
       final String? scope,
       @JsonKey(name: 'scopeTitle') final bool scopeTitle,
       @JsonKey(name: 'scopeContent') final bool scopeContent,
+      @JsonKey(name: 'scopeSource') final bool scopeSource,
       @JsonKey(name: 'excludeScope') final String? excludeScope,
       @JsonKey(name: 'isEnabled') final bool isEnabled,
       @JsonKey(name: 'isRegex') final bool isRegex,
@@ -964,6 +992,12 @@ abstract class _ReplaceRule implements ReplaceRule {
   @override
   @JsonKey(name: 'scopeContent')
   bool get scopeContent;
+  @override
+
+  /// 书源作用域开关（对齐原版 `ReplaceRule.scopeSource`，默认 false）：
+  /// 书源导入时按源名/源 URL 匹配 scope 后对整源 JSON 应用替换
+  @JsonKey(name: 'scopeSource')
+  bool get scopeSource;
   @override
   @JsonKey(name: 'excludeScope')
   String? get excludeScope;

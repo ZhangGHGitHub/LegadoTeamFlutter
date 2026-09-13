@@ -11,7 +11,8 @@
 // 下打开整页编辑器，断言：
 // 1. 布局无 RenderFlex 溢出异常（修复前此处捕获
 //    「A RenderFlex overflowed by N pixels to the right」）；
-// 2. 三勾选与禁用标注全部在位（换行后仍完整呈现）；
+// 2. 三勾选全部在位（换行后仍完整呈现；「书源」已于 2026-09-13 由
+//    禁用标注改为可读写勾选，见 [书源作用域]）；
 // 3. 勾选交互正常（默认勾选的「正文」点击后取消）。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -73,8 +74,10 @@ void main() {
           reason: '360dp + 字体放大 1.3 下不应出现布局溢出');
 
       // ② 三勾选全部在位（Wrap 换行后仍完整呈现，不裁切）
+      // [书源作用域 | 2026-09-13] 「书源」勾选已由禁用标注解除，
+      // 标签由「书源（暂不支持）」改为「书源」（可读写并随保存落库）
       expect(find.text('标题'), findsOneWidget);
-      expect(find.text('书源（暂不支持）'), findsOneWidget);
+      expect(find.text('书源'), findsOneWidget);
       expect(find.text('正文'), findsOneWidget);
 
       // ③ 仍可交互：「正文」勾选（默认 true）点击后取消。

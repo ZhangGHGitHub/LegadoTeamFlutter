@@ -88,6 +88,8 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
   bool _isRegex = true;
   bool _scopeTitle = false;
   bool _scopeContent = true;
+  // [书源作用域 | 2026-09-13] 书源作用域勾选（对齐原版 cb_scope_source）
+  bool _scopeSource = false;
 
   // 预览防抖（对标原版 PREVIEW_DEBOUNCE_MILLIS = 250ms）
   Timer? _previewJob;
@@ -124,6 +126,8 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
     _isRegex = r?.isRegex ?? true;
     _scopeTitle = r?.scopeTitle ?? false;
     _scopeContent = r?.scopeContent ?? true;
+    // [书源作用域 | 2026-09-13] 书源作用域回填（对齐原版 scopeSource）
+    _scopeSource = r?.scopeSource ?? false;
     // [A3 写链路补齐 | 2026-09-11] 超时回填（FFI 写接口已支持
     // timeoutMillisecond，输入框可编辑，见 _buildTimeoutField）
     _timeoutCtrl.text = (r?.timeoutMillisecond ?? 3000).toString();
@@ -179,6 +183,8 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
       replacement: _replacementCtrl.text,
       scopeTitle: _scopeTitle,
       scopeContent: _scopeContent,
+      // [书源作用域 | 2026-09-13] 书源作用域随表单落库（对齐原版 scopeSource）
+      scopeSource: _scopeSource,
       scope: _scopeCtrl.text.isEmpty ? null : _scopeCtrl.text,
       excludeScope:
           _excludeScopeCtrl.text.isEmpty ? null : _excludeScopeCtrl.text,
@@ -688,10 +694,9 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
   /// 作用范围三勾选（对标原版 cb_scope_title / cb_scope_source /
   /// cb_scope_content）
   ///
-  /// [A3 受阻项 | full-stack-engineer + UI] 书源 scope（scopeSource）：
-  /// 我方 Dart 模型 `ReplaceRule` 与 Rust 模型/DB 均无该字段（FFI 读写链路
-  /// 缺失），此处以禁用行 + 诚实标注呈现（保留原版三勾选形态），
-  /// 待 Rust 轨扩展 FFI 契约后接入。
+  /// [书源作用域 | 2026-09-13] 书源 scope（scopeSource）已打通全链路：
+  /// Dart 模型 `ReplaceRule`、Rust 模型/DB v108 与 FFI 读写均支持该字段，
+  /// 「书源」勾选可正常读写并随保存落库（此前为禁用行 + 诚实标注的受阻项）。
   Widget _buildScopeCheckboxes() {
     final theme = Theme.of(context);
     return Column(
@@ -712,11 +717,13 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
               value: _scopeTitle,
               onChanged: (v) => setState(() => _scopeTitle = v ?? false),
             ),
-            // 书源 scope：字段受阻（模型/FFI 无 scopeSource），禁用 + 标注
+            // [书源作用域 | 2026-09-13] 书源作用域（scopeSource）全链路已打通：
+            // 模型/DB v108/FFI 均支持，勾选可读写并随保存落库
+            //（此前为字段受阻的禁用行 + 标注）
             _ScopeCheckbox(
-              label: '书源（暂不支持）',
-              value: false,
-              enabled: false,
+              label: '书源',
+              value: _scopeSource,
+              onChanged: (v) => setState(() => _scopeSource = v ?? false),
             ),
             _ScopeCheckbox(
               label: '正文',
@@ -847,13 +854,11 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
 class _ScopeCheckbox extends StatelessWidget {
   final String label;
   final bool value;
-  final bool enabled;
   final ValueChanged<bool?>? onChanged;
 
   const _ScopeCheckbox({
     required this.label,
     required this.value,
-    this.enabled = true,
     this.onChanged,
   });
 
@@ -865,15 +870,13 @@ class _ScopeCheckbox extends StatelessWidget {
       children: [
         Checkbox(
           value: value,
-          onChanged: enabled ? onChanged : null,
+          onChanged: onChanged,
           materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
         Text(
           label,
           style: theme.textTheme.bodyMedium?.copyWith(
-            color: enabled
-                ? theme.colorScheme.onSurface
-                : theme.colorScheme.outline,
+            color: theme.colorScheme.onSurface,
           ),
         ),
       ],

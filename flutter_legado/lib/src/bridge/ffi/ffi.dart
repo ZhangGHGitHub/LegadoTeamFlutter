@@ -1101,6 +1101,9 @@ Future<String> replaceRuleList() =>
 /// [A3 写链路补齐 | 2026-09-11 加法式扩参] 后 5 个可选参缺省=旧行为：
 /// group=None / scopeTitle=false / scopeContent=true / excludeScope=None /
 /// timeoutMillisecond=3000
+///
+/// [书源作用域 | 2026-09-13 加法式扩参] 末尾第 6 个可选参：
+/// scopeSource=None→false（对齐原版默认 0）
 Future<PlatformInt64> replaceRuleAdd({
   required String name,
   required String pattern,
@@ -1112,6 +1115,7 @@ Future<PlatformInt64> replaceRuleAdd({
   bool? scopeContent,
   String? excludeScope,
   PlatformInt64? timeoutMillisecond,
+  bool? scopeSource,
 }) => RustLib.instance.api.crateFfiFfiReplaceRuleAdd(
   name: name,
   pattern: pattern,
@@ -1123,12 +1127,16 @@ Future<PlatformInt64> replaceRuleAdd({
   scopeContent: scopeContent,
   excludeScope: excludeScope,
   timeoutMillisecond: timeoutMillisecond,
+  scopeSource: scopeSource,
 );
 
 /// 更新替换规则
 ///
 /// [A3 写链路补齐 | 2026-09-11 加法式扩参] 后 5 个可选参 None=保留既有值
 /// （向后兼容）；group/excludeScope 传 Some("")=清除该字段
+///
+/// [书源作用域 | 2026-09-13 加法式扩参] 末尾第 6 个可选参：
+/// scopeSource=None→保留既有值；Some(b)=覆盖
 Future<void> replaceRuleUpdate({
   required PlatformInt64 ruleId,
   required String name,
@@ -1141,6 +1149,7 @@ Future<void> replaceRuleUpdate({
   bool? scopeContent,
   String? excludeScope,
   PlatformInt64? timeoutMillisecond,
+  bool? scopeSource,
 }) => RustLib.instance.api.crateFfiFfiReplaceRuleUpdate(
   ruleId: ruleId,
   name: name,
@@ -1153,6 +1162,7 @@ Future<void> replaceRuleUpdate({
   scopeContent: scopeContent,
   excludeScope: excludeScope,
   timeoutMillisecond: timeoutMillisecond,
+  scopeSource: scopeSource,
 );
 
 /// 删除替换规则
@@ -1170,6 +1180,22 @@ Future<void> replaceRuleSetEnabled({
 }) => RustLib.instance.api.crateFfiFfiReplaceRuleSetEnabled(
   ruleId: ruleId,
   enabled: enabled,
+);
+
+/// 书源导入时应用「书源作用域」替换规则（契约 §2.8 `applyReplaceRulesToSource`）
+///
+/// 对整源 JSON 应用 `isEnabled && scopeSource && pattern 非空` 且
+/// scope/excludeScope 按源名称/源 URL（忽略大小写）匹配的规则；
+/// 未命中返回原文；任何规则级/DB 错误均原样返回输入 JSON（不上抛 FFI），
+/// 保证导入流程不中断。
+Future<String> applyReplaceRulesToSource({
+  required String sourceJson,
+  required String sourceName,
+  required String sourceUrl,
+}) => RustLib.instance.api.crateFfiFfiApplyReplaceRulesToSource(
+  sourceJson: sourceJson,
+  sourceName: sourceName,
+  sourceUrl: sourceUrl,
 );
 
 /// 获取所有阅读记录（JSON 数组）

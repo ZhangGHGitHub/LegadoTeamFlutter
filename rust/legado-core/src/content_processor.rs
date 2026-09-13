@@ -59,6 +59,30 @@ impl ScopeContext {
     }
 }
 
+/// 源作用域上下文（源名称 + 源 URL），书源导入场景的 scope/excludeScope 匹配依据
+///
+/// 对应原版 `ReplaceRuleDao.findEnabledBySourceScope` + `BookSourceImport` 逐源判定：
+/// scope/excludeScope 按 **源名称或源 URL** 子串匹配（忽略大小写）。
+///
+/// **语义红线：独立上下文，不复用 [`ScopeContext`]**——书籍/标题/正文上下文的
+/// 匹配对象是书名/书籍来源（`book_origin`），复用会把 `book_origin` 误读为源名。
+#[derive(Debug, Clone, Default)]
+pub struct SourceScopeContext {
+    /// 源名称（bookSourceName）
+    pub source_name: String,
+    /// 源 URL（bookSourceUrl）
+    pub source_url: String,
+}
+
+impl SourceScopeContext {
+    pub fn new(source_name: impl Into<String>, source_url: impl Into<String>) -> Self {
+        Self {
+            source_name: source_name.into(),
+            source_url: source_url.into(),
+        }
+    }
+}
+
 /// 作用域模式：标题规则 / 正文规则
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ScopeMode {
@@ -353,6 +377,82 @@ pub fn filter_title_rules<'a>(
         .collect()
 }
 
+/// 按源作用域过滤规则（对应 Kotlin `ReplaceRuleDao.findEnabledBySourceScope`）
+///
+/// 仅 `scope_source = true` 的规则通过；scope/excludeScope 按「源名称或源 URL」
+/// 子串匹配（忽略大小写，独立源上下文）。
+pub fn filter_source_rules<'a>(
+    rules: &'a [ReplaceRuleEntry],
+    ctx: &SourceScopeContext,
+) -> Vec<&'a ReplaceRuleEntry> {
+    rules
+        .iter()
+        .filter(|r| source_scope_allows(r, ctx))
+        .collect()
+}
+
+/// 应用源作用域替换规则（书源导入时对整源 JSON 顺序替换）
+///
+/// 对应原版 `BookSourceImport`：仅应用 `isEnabled && scopeSource && pattern 非空`
+/// 的规则；`@js:` 复用正文管线（`js_executor` 为 `None` 时 `@js:` 规则被安全跳过）。
+/// 未命中返回原文；单条规则的超时/执行错误由 [`apply_rule_with_timeout`] 保留原文
+/// 处理，不中断导入流程。
+pub fn apply_source_replace_rules(
+    source_json: &str,
+    rules: &[ReplaceRuleEntry],
+    source_name: &str,
+    source_url: &str,
+    js_executor: Option<Arc<dyn ReplaceJsExecutor>>,
+) -> String {
+    let ctx = SourceScopeContext::new(source_name, source_url);
+    let mut result = source_json.to_string();
+    for rule in rules {
+        if rule.pattern.is_empty() || !source_scope_allows(rule, &ctx) {
+            continue;
+        }
+        result = apply_rule_with_timeout(&result, rule, &js_executor);
+    }
+    result
+}
+
+/// 规则源作用域判定（enabled + scopeSource + 源上下文 scope/excludeScope）
+fn source_scope_allows(rule: &ReplaceRuleEntry, ctx: &SourceScopeContext) -> bool {
+    if !rule.is_enabled || !rule.scope_source {
+        return false;
+    }
+    if !source_scope_matches(rule.scope.as_deref(), ctx) {
+        return false;
+    }
+    if source_is_excluded(rule.exclude_scope.as_deref(), ctx) {
+        return false;
+    }
+    true
+}
+
+/// 源上下文 scope 匹配：None/空 = 全局生效；否则源名称或源 URL 忽略大小写 contains 命中
+fn source_scope_matches(scope: Option<&str>, ctx: &SourceScopeContext) -> bool {
+    match scope {
+        None | Some("") => true,
+        Some(s) => source_context_contains(s, ctx),
+    }
+}
+
+/// 源上下文 excludeScope 排除判定：源名称或源 URL 忽略大小写 contains 命中 → 规则不生效
+fn source_is_excluded(exclude_scope: Option<&str>, ctx: &SourceScopeContext) -> bool {
+    match exclude_scope {
+        None | Some("") => false,
+        Some(s) => source_context_contains(s, ctx),
+    }
+}
+
+/// 源上下文子串匹配（忽略大小写）：needle 为 scope/excludeScope 项，
+/// 命中源名称或源 URL 任一即视为匹配（对齐原版 `contains(case-insensitive)` 语义）
+fn source_context_contains(needle: &str, ctx: &SourceScopeContext) -> bool {
+    let needle = needle.to_lowercase();
+    ctx.source_name.to_lowercase().contains(&needle)
+        || ctx.source_url.to_lowercase().contains(&needle)
+}
+
 /// 规则作用域判定（enabled + scopeTitle/scopeContent + scope + excludeScope）
 fn scope_allows(rule: &ReplaceRuleEntry, mode: ScopeMode, ctx: Option<&ScopeContext>) -> bool {
     if !rule.is_enabled {
@@ -630,6 +730,8 @@ pub struct ReplaceRuleEntry {
     pub scope_title: bool,
     /// 是否作用于正文
     pub scope_content: bool,
+    /// 是否作用于书源（书源导入时按源名/源 URL 匹配 scope 应用，默认 false）
+    pub scope_source: bool,
     /// 排除范围（包含 书名/书源 时规则不生效）
     pub exclude_scope: Option<String>,
     /// 是否启用
@@ -649,6 +751,7 @@ impl Default for ReplaceRuleEntry {
             scope: None,
             scope_title: false,
             scope_content: true,
+            scope_source: false,
             exclude_scope: None,
             is_enabled: true,
             is_regex: false,
@@ -667,6 +770,7 @@ impl ReplaceRuleEntry {
             scope: rule.scope.clone(),
             scope_title: rule.scope_title,
             scope_content: rule.scope_content,
+            scope_source: rule.scope_source,
             exclude_scope: rule.exclude_scope.clone(),
             is_enabled: rule.is_enabled,
             is_regex: rule.is_regex,
@@ -1426,5 +1530,152 @@ mod tests {
         ];
         let ctx = ScopeContext::new("任意", "任意");
         assert_eq!(filter_content_rules(&rules, &ctx).len(), 2);
+    }
+
+    // ─── 源作用域（scopeSource）测试 ───────────────────────
+
+    fn source_rule(pattern: &str, replacement: &str, scope: Option<&str>) -> ReplaceRuleEntry {
+        ReplaceRuleEntry {
+            pattern: pattern.to_string(),
+            replacement: replacement.to_string(),
+            scope_source: true,
+            scope: scope.map(|s| s.to_string()),
+            ..ReplaceRuleEntry::default()
+        }
+    }
+
+    #[test]
+    fn test_apply_source_rules_scope_matches_source_name() {
+        let json = r#"{"bookSourceName":"起点","ruleSearch":{"searchUrl":"/?key={{key}}"}}"#;
+        // scope 命中源名称（忽略大小写）→ 整源 JSON 被替换
+        let rules = vec![source_rule("起点", "起点读书", Some("起点"))];
+        let result =
+            apply_source_replace_rules(json, &rules, "起点", "https://www.qidian.com", None);
+        assert!(result.contains("起点读书"));
+    }
+
+    #[test]
+    fn test_apply_source_rules_scope_matches_source_url() {
+        let json = r#"{"bookSourceUrl":"https://www.example.com"}"#;
+        // scope 命中源 URL（忽略大小写）→ 替换生效
+        let rules = vec![source_rule(
+            "example.com",
+            "example.org",
+            Some("EXAMPLE.COM"),
+        )];
+        let result =
+            apply_source_replace_rules(json, &rules, "某源", "https://www.example.com", None);
+        assert!(result.contains("example.org"));
+    }
+
+    #[test]
+    fn test_apply_source_rules_no_hit_returns_original() {
+        let json = r#"{"bookSourceName":"笔趣阁","ruleContent":"@js:1"}"#;
+        // scope 与源名/源 URL 均不匹配 → 原样返回
+        let rules = vec![source_rule("笔趣阁", "Biquge", Some("其他源"))];
+        let result = apply_source_replace_rules(json, &rules, "笔趣阁", "https://bqg.com", None);
+        assert_eq!(result, json);
+    }
+
+    #[test]
+    fn test_apply_source_rules_scope_source_flag_required() {
+        let json = r#"{"bookSourceName":"某源"}"#;
+        // 未开启 scopeSource 的规则不生效
+        let mut off = source_rule("某源", "X", None);
+        off.scope_source = false;
+        assert_eq!(
+            apply_source_replace_rules(json, &[off], "某源", "u", None),
+            json
+        );
+
+        // 未启用的规则不生效
+        let mut disabled = source_rule("某源", "X", None);
+        disabled.is_enabled = false;
+        assert_eq!(
+            apply_source_replace_rules(json, &[disabled], "某源", "u", None),
+            json
+        );
+
+        // pattern 为空的规则跳过
+        let mut empty_pattern = source_rule("", "X", None);
+        empty_pattern.scope_source = true;
+        assert_eq!(
+            apply_source_replace_rules(json, &[empty_pattern], "某源", "u", None),
+            json
+        );
+    }
+
+    #[test]
+    fn test_apply_source_rules_exclude_scope() {
+        let json = r#"{"bookSourceName":"排除源"}"#;
+        let mut rule = source_rule("排除源", "X", None);
+        rule.exclude_scope = Some("排除源".to_string());
+        assert_eq!(
+            apply_source_replace_rules(json, &[rule], "排除源", "u", None),
+            json,
+            "excludeScope 命中源名时规则不生效"
+        );
+    }
+
+    #[test]
+    fn test_apply_source_rules_error_returns_original() {
+        let json = r#"{"ruleSearch":"x123y"}"#;
+        // 病态正则（编译失败）→ 保留原文不中断导入
+        let mut bad = source_rule(r"[(bad", "X", None);
+        bad.is_regex = true;
+        let result = apply_source_replace_rules(json, &[bad.clone()], "源", "u", None);
+        assert_eq!(result, json);
+
+        // 病态规则不影响后续正常规则
+        let ok = source_rule("123", "NUM", None);
+        let result = apply_source_replace_rules(json, &[bad, ok], "源", "u", None);
+        assert!(result.contains("xNUMy"));
+    }
+
+    #[test]
+    fn test_apply_source_rules_js_without_executor_skipped() {
+        let json = r#"{"ruleContent":"abc"}"#;
+        let mut rule = source_rule("abc", "@js:fail", None);
+        rule.is_regex = true;
+        // 无 JS 执行器：@js: 规则安全跳过（与正文管线一致）
+        let result = apply_source_replace_rules(json, &[rule], "源", "u", None);
+        assert_eq!(result, json);
+    }
+
+    #[test]
+    fn test_apply_source_rules_js_with_executor() {
+        let json = r#"{"ruleContent":"abc"}"#;
+        let mut rule = source_rule("abc", "@js:upper", None);
+        rule.is_regex = true;
+        let result = apply_source_replace_rules(json, &[rule], "源", "u", mock_js());
+        assert!(result.contains("ABC"), "@js: 表达式应经执行器求值");
+    }
+
+    #[test]
+    fn test_filter_source_rules() {
+        let rules = vec![
+            ReplaceRuleEntry {
+                name: "源规则".to_string(),
+                scope_source: true,
+                scope: Some("目标源".to_string()),
+                ..ReplaceRuleEntry::default()
+            },
+            ReplaceRuleEntry {
+                name: "正文规则".to_string(),
+                scope_source: false,
+                scope_content: true,
+                ..ReplaceRuleEntry::default()
+            },
+            ReplaceRuleEntry {
+                name: "已禁用源规则".to_string(),
+                scope_source: true,
+                is_enabled: false,
+                ..ReplaceRuleEntry::default()
+            },
+        ];
+        let ctx = SourceScopeContext::new("目标源", "https://t.com");
+        let filtered = filter_source_rules(&rules, &ctx);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].name, "源规则");
     }
 }

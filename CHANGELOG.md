@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.247] - 2026-09-13
+
+### Added
+- [Rust] 替换规则「书源作用范围」scopeSource 全链路（A3 最后一个字段受阻项解除，跨轨，子代理 full-stack-engineer 交付 + 主代理复验；对齐原版 `ReplaceRule.kt:47 scopeSource`）：① DB v108 迁移 `replace_rules` 加列 `scopeSource INTEGER NOT NULL DEFAULT 0`（幂等 + 纳入 repair_legacy_columns）；② core 新增**独立 `SourceScopeContext`**（源语境匹配对象=书源名/URL，不复用书名语境的 ScopeContext——语义红线）+ `source_scope_allows/matches/is_excluded`；③ FFI `replaceRuleAdd/Update` 加第 6 个可选参（add 缺省 false / update 未提供=保留）、读 JSON 自动带出、**新增 `applyReplaceRulesToSource(sourceJson, sourceName, sourceUrl)`**（书源导入期替换：启用且 scopeSource 且 pattern 非空的规则按 scope/excludeScope contains 匹配后逐条应用；**规则级失败保留原文不中断导入**，对齐原版 replacementError 语义）；契约 §2.8 方法数 6→**7**、附录 276→**277**、BookApi 口径 273→**274**
+- [UI] 替换规则编辑页「书源」勾选解除禁用（随保存落库）；导入钩子覆盖全部四个入口（importFromJson/Url/File 经 SourceImportService 统一挂、importSources 旁路入口单独挂），无命中原样返回
+
+### Test
+- 子代理自测与主代理独立复跑一致：`cargo fmt --check` 通过、`cargo test -p legado-db scope_source` **5/5**（迁移/幂等/repair）、`-p legado-core` **792 全过**（含源作用域匹配/排除/失败保留原文用例）、`-p legado-ffi` **348 全过**、`flutter analyze` 无问题、`flutter test` **1441 全过**、`api_contract_test` 7/7
+- 设备 E2E（MuMu Test 实例，DB 级证据）：v108 已执行（user_version=108、列在位）；造 scopeSource 规则（scope=起点）→ 导入「起点文学」书源 → ruleBookInfo 被替换（命中）、「阅文集团」书源保持原文（未命中）、两次导入均完整落库不中断
+- 附带发现（如实登记）：`legado-js` config_api 三测在**全量并行**时存在全局主题状态跨测污染的偶发失败（`set_injected_theme_mode` 全局态），隔离/当前复跑均绿——存量潜在 flake，与本批无关，登记待修。版本 2.0.247+248
+
+- Contributor: full-stack-engineer + Bridge + QA（主代理 Qoder UI 审核）
+
+
 ## [2.0.246] - 2026-09-13
 
 ### Added

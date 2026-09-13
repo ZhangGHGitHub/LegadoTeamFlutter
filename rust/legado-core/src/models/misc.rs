@@ -85,6 +85,10 @@ pub struct ReplaceRule {
     pub scope_title: bool,
     #[serde(default = "default_true", rename = "scopeContent")]
     pub scope_content: bool,
+    /// 书源作用域开关（对齐原版 `ReplaceRule.scopeSource` 独立列，默认 false）：
+    /// 书源导入时按源名/源 URL 匹配 scope 后对整源 JSON 应用替换
+    #[serde(default, rename = "scopeSource")]
+    pub scope_source: bool,
     #[serde(skip_serializing_if = "Option::is_none", rename = "excludeScope")]
     pub exclude_scope: Option<String>,
     #[serde(default = "default_true", rename = "isEnabled")]
@@ -108,6 +112,7 @@ impl Default for ReplaceRule {
             scope: None,
             scope_title: false,
             scope_content: true,
+            scope_source: false,
             exclude_scope: None,
             is_enabled: true,
             is_regex: true,
@@ -136,6 +141,7 @@ mod tests {
         assert!(rule.is_regex);
         assert!(rule.scope_content);
         assert!(!rule.scope_title);
+        assert!(!rule.scope_source);
         assert_eq!(rule.timeout_millisecond, 3000);
         assert_eq!(rule.id, 0);
     }
@@ -161,6 +167,7 @@ mod tests {
             pattern: "hello".to_string(),
             replacement: "world".to_string(),
             is_regex: false,
+            scope_source: true,
             ..ReplaceRule::default()
         };
         let json = serde_json::to_string(&rule).unwrap();
@@ -170,6 +177,7 @@ mod tests {
         assert_eq!(de.pattern, "hello");
         assert_eq!(de.replacement, "world");
         assert!(!de.is_regex);
+        assert!(de.scope_source, "scopeSource 应随 JSON 往返保留");
     }
 
     #[test]

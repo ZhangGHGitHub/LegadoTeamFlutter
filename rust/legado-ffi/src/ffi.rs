@@ -1458,6 +1458,9 @@ pub mod ffi {
     /// [A3 写链路补齐 | 2026-09-11 加法式扩参] 后 5 个可选参缺省=旧行为：
     /// group=None / scopeTitle=false / scopeContent=true / excludeScope=None /
     /// timeoutMillisecond=3000
+    ///
+    /// [书源作用域 | 2026-09-13 加法式扩参] 末尾第 6 个可选参：
+    /// scopeSource=None→false（对齐原版默认 0）
     pub fn replace_rule_add(
         name: String,
         pattern: String,
@@ -1469,6 +1472,7 @@ pub mod ffi {
         scope_content: Option<bool>,
         exclude_scope: Option<String>,
         timeout_millisecond: Option<i64>,
+        scope_source: Option<bool>,
     ) -> Result<i64, BridgeError> {
         let id = crate::api::replace_rule_api::add_replace_rule(
             &name,
@@ -1481,6 +1485,7 @@ pub mod ffi {
             scope_content,
             exclude_scope.as_deref(),
             timeout_millisecond,
+            scope_source,
         )?;
         Ok(id)
     }
@@ -1489,6 +1494,9 @@ pub mod ffi {
     ///
     /// [A3 写链路补齐 | 2026-09-11 加法式扩参] 后 5 个可选参 None=保留既有值
     /// （向后兼容）；group/excludeScope 传 Some("")=清除该字段
+    ///
+    /// [书源作用域 | 2026-09-13 加法式扩参] 末尾第 6 个可选参：
+    /// scopeSource=None→保留既有值；Some(b)=覆盖
     pub fn replace_rule_update(
         rule_id: i64,
         name: String,
@@ -1501,6 +1509,7 @@ pub mod ffi {
         scope_content: Option<bool>,
         exclude_scope: Option<String>,
         timeout_millisecond: Option<i64>,
+        scope_source: Option<bool>,
     ) -> Result<(), BridgeError> {
         crate::api::replace_rule_api::update_replace_rule(
             rule_id,
@@ -1514,6 +1523,7 @@ pub mod ffi {
             scope_content,
             exclude_scope.as_deref(),
             timeout_millisecond,
+            scope_source,
         )?;
         Ok(())
     }
@@ -1534,6 +1544,24 @@ pub mod ffi {
     pub fn replace_rule_set_enabled(rule_id: i64, enabled: bool) -> Result<(), BridgeError> {
         crate::api::replace_rule_api::set_rule_enabled(rule_id, enabled)?;
         Ok(())
+    }
+
+    /// 书源导入时应用「书源作用域」替换规则（契约 §2.8 `applyReplaceRulesToSource`）
+    ///
+    /// 对整源 JSON 应用 `isEnabled && scopeSource && pattern 非空` 且
+    /// scope/excludeScope 按源名称/源 URL（忽略大小写）匹配的规则；
+    /// 未命中返回原文；任何规则级/DB 错误均原样返回输入 JSON（不上抛 FFI），
+    /// 保证导入流程不中断。
+    pub fn apply_replace_rules_to_source(
+        source_json: String,
+        source_name: String,
+        source_url: String,
+    ) -> String {
+        crate::api::replace_rule_api::apply_replace_rules_to_source(
+            &source_json,
+            &source_name,
+            &source_url,
+        )
     }
 
     // ─── 阅读记录 ─────────────────────────────────────

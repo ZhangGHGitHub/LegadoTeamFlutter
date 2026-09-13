@@ -29,6 +29,12 @@ mixin MockBookApiStore {
   /// 字典规则自增 ID（独立于 `_nextId`，避免与其他 mock 实体串号）
   int _nextDictRuleId = 1;
 
+  // [书源作用域 | 2026-09-13] applyReplaceRulesToSource 调用计数（测试断言用）
+  int _applyReplaceRulesToSourceCalls = 0;
+
+  /// [书源作用域 | 2026-09-13] `applyReplaceRulesToSource` 调用次数（测试断言用）
+  int get applyReplaceRulesToSourceCalls => _applyReplaceRulesToSourceCalls;
+
 
   /// 初始化 Mock 数据
   ///

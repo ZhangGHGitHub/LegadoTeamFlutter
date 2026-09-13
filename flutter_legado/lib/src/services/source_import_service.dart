@@ -222,7 +222,15 @@ class SourceImportService {
 
         try {
           final json = jsonEncode(item);
-          await _api.importBookSources('[$json]');
+          // [书源作用域 | 2026-09-13] 导入时先应用「书源作用域」替换规则：
+          // 按源名称/源 URL 匹配 scope 后对整源 JSON 应用替换；
+          // 应用失败保持原文，绝不中断导入（对齐原版语义）
+          final applied = await _applySourceReplaceRules(
+            json,
+            (item['bookSourceName'] as String?) ?? '',
+            (item['bookSourceUrl'] as String?) ?? '',
+          );
+          await _api.importBookSources('[$applied]');
           success++;
         } catch (e) {
           failed++;
@@ -327,6 +335,30 @@ class SourceImportService {
         errors: ['读取文件失败：$e'],
         unit: unit,
       );
+    }
+  }
+
+  /// [书源作用域 | 2026-09-13] 导入前对整源 JSON 应用「书源作用域」替换规则
+  ///
+  /// 契约 §2.8 `applyReplaceRulesToSource`：`isEnabled && scopeSource &&
+  /// pattern 非空` 且 scope/excludeScope 按源名称/源 URL（忽略大小写）
+  /// 匹配的规则生效；未命中返回原文。
+  /// 本方法对「调用本身抛异常」（如 FFI 未就绪/环境不支持）做兜底：
+  /// 保持原文并继续导入，绝不因替换失败中断导入流程。
+  Future<String> _applySourceReplaceRules(
+    String sourceJson,
+    String sourceName,
+    String sourceUrl,
+  ) async {
+    try {
+      return await _api.applyReplaceRulesToSource(
+        sourceJson,
+        sourceName,
+        sourceUrl,
+      );
+    } catch (_) {
+      // 替换失败保持原文（对齐原版语义：不中断导入）
+      return sourceJson;
     }
   }
 
