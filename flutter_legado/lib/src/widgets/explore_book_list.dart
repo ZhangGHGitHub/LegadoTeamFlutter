@@ -98,10 +98,18 @@ class ExploreBookList extends ConsumerStatefulWidget {
   final ExploreShowArgs args;
   final EdgeInsets padding;
 
+  /// [A1 对齐 | Qoder UI] 本地关键字筛选（匹配书名/作者，忽略大小写；空=不过滤）
+  final String filterKeyword;
+
+  /// [A1 对齐 | Qoder UI] 紧凑密度（参考版 ☰ 列表切换语义；false=舒适）
+  final bool compact;
+
   const ExploreBookList({
     super.key,
     required this.args,
     this.padding = EdgeInsets.zero,
+    this.filterKeyword = '',
+    this.compact = false,
   });
 
   @override
@@ -194,6 +202,25 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
       );
     }
 
+    // [A1 对齐 | Qoder UI] 关键字筛选（匹配书名/作者，忽略大小写）
+    final keyword = widget.filterKeyword.trim().toLowerCase();
+    final visibleBooks = keyword.isEmpty
+        ? state.books
+        : state.books
+            .where(
+              (b) =>
+                  b.name.toLowerCase().contains(keyword) ||
+                  b.author.toLowerCase().contains(keyword),
+            )
+            .toList();
+    if (visibleBooks.isEmpty) {
+      return EmptyState(
+        icon: Symbols.filter_alt_rounded,
+        title: '筛选后无匹配书籍',
+        subtitle: '已加载的书籍中没有匹配「${widget.filterKeyword}」',
+      );
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -205,7 +232,7 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
             child: ListView.separated(
               controller: _scrollController,
               padding: widget.padding,
-              itemCount: state.books.length + 2,
+              itemCount: visibleBooks.length + 2,
               separatorBuilder: (context, index) {
                 if (index == 0 || index >= state.books.length) {
                   return const SizedBox.shrink();
@@ -220,17 +247,18 @@ class _ExploreBookListState extends ConsumerState<ExploreBookList> {
                 if (index == 0) {
                   return _buildLoadPreviousIndicator(state, colorScheme);
                 }
-                if (index == state.books.length + 1) {
+                if (index == visibleBooks.length + 1) {
                   return _buildLoadMoreIndicator(args, state, colorScheme);
                 }
 
-                final book = state.books[index - 1];
+                final book = visibleBooks[index - 1];
                 final dedupeKey =
                     exploreBookDedupeKey(book, listIndex: index - 1);
                 return RepaintBoundary(
                   child: _BookItem(
                     key: ValueKey(dedupeKey),
                     book: book,
+                    compact: widget.compact,
                     onTap: () => _showBookInfo(book),
                   ),
                 );
@@ -330,7 +358,15 @@ class _BookItem extends ConsumerWidget {
   final SearchBook book;
   final VoidCallback onTap;
 
-  const _BookItem({super.key, required this.book, required this.onTap});
+  /// [A1 对齐 | Qoder UI] 紧凑密度：封面缩小 + 简介单行
+  final bool compact;
+
+  const _BookItem({
+    super.key,
+    required this.book,
+    required this.onTap,
+    this.compact = false,
+  });
 
   /// 是否已在书架（对齐原版 ExploreShowViewModel.isInBookShelf 三元匹配：
   /// 「名-作者」/「名」（作者空退化）/「bookUrl」）— 发现页修复 R5
@@ -368,8 +404,8 @@ class _BookItem extends ConsumerWidget {
             children: [
               BookCover(
                 coverUrl: book.coverUrl,
-                width: 45,
-                height: 60,
+                width: compact ? 36 : 45,
+                height: compact ? 48 : 60,
                 sourceOrigin: book.origin,
                 // [LAYOUT_MOTION_AUDIT M1] 发现结果封面补 Hero（进详情过渡）
                 heroTag: 'book-cover:${book.bookUrl}',
@@ -436,7 +472,7 @@ class _BookItem extends ConsumerWidget {
                           color: colorScheme.onSurfaceVariant
                               .withValues(alpha: 0.65),
                         ),
-                        maxLines: 2,
+                        maxLines: compact ? 1 : 2,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ],
