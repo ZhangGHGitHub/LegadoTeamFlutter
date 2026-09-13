@@ -94,7 +94,10 @@ extension _SearchBuilders on _SearchScreenState {
           colorScheme.surfaceContainerLow,
         ),
         // [LAYOUT_MOTION_AUDIT L3] 顶栏紧凑约束：宽撑满 + 高 40（原 36 胶囊）
-        constraints: const BoxConstraints(minHeight: 40, maxHeight: 40),
+        // [搜索页溢出修复 | Qoder UI] minWidth 0：M3 SearchBar 默认 minWidth 360
+        // 会在窄屏 + 多顶栏按钮时撑爆 AppBar（溢出红条），显式放开下限让其
+        // 随 AppBar 中槽收缩
+        constraints: const BoxConstraints(minHeight: 40, maxHeight: 40, minWidth: 0),
         padding: const WidgetStatePropertyAll(
           EdgeInsets.symmetric(horizontal: 12),
         ),
@@ -133,20 +136,9 @@ extension _SearchBuilders on _SearchScreenState {
         },
       ),
       actions: [
-        // 安卓原版：右侧「>」图标提交搜索
-        IconButton(
-          icon: const Icon(Symbols.arrow_forward_rounded),
-          tooltip: AppStrings.search,
-          onPressed: () {
-            final text = _searchController.text.trim();
-            if (text.isNotEmpty) {
-              // [LAYOUT_MOTION_AUDIT L3] 提交时清焦点藏键盘
-              _focusNode.unfocus();
-              FocusScope.of(context).unfocus();
-              ref.read(searchNotifierProvider.notifier).search(text);
-            }
-          },
-        ),
+        // [搜索页溢出修复 | Qoder UI] 原「>」提交钮移除：提交能力由键盘
+        // 搜索 IME 动作（textInputAction.search + onSubmitted）覆盖，
+        // 为 360dp 屏顶栏（返回+胶囊+5 个动作钮）腾出宽度
         // [A1 形态对齐 | full-stack-engineer + UI] 参考版顶栏三钮形态（取证映射）：
         // 设置⚙ / 定位 / 筛选（实心绿）。每钮接到既有能力，与 ⋮ 菜单对应项
         // 合并同一实现，避免两套代码；⋮ 菜单保留全量不丢能力。

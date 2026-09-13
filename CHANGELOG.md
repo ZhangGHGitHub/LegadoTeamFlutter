@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.254] - 2026-09-14
+
+### Fixed
+- [UI] 搜索页顶栏溢出导致无法输入（用户实测报告，Test 实例 360dp 屏）：A1 三钮加入后顶栏共 7 元素（返回+胶囊+→+⚙+定位+筛选+⋮），而 M3 SearchBar 默认 **minWidth 360**——胶囊在 AppBar 中槽内无法收缩、内部行溢出 4px（红条），输入区被压没。修复：SearchBar `constraints.minWidth = 0` 允许随中槽收缩；移除冗余「→ 提交」钮（提交能力由键盘搜索 IME 动作覆盖，能力零丢失），为胶囊腾出宽度
+
+### Test
+- 主代理修复并复核：`flutter analyze` 无问题；`flutter test` **1451 全过**（新增 `search_appbar_overflow_test` 2 例：360dp 下顶栏无溢出 + 输入/IME 提交不抛异常）。版本 2.0.254+255
+
+- Contributor: Qoder UI（子代理暂停期主代理兜底，经用户授权）
+
+
 ## [2.0.253] - 2026-09-13
 
 ### Fixed
