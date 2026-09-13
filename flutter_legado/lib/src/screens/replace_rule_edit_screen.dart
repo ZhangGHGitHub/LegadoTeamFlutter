@@ -697,21 +697,27 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
+        // [D2 缺陷修复 | full-stack-engineer + UI] 原 Row 固定宽度在 360dp
+        // 机型 + 系统字体放大时右溢出（调试黄纹）：「书源（暂不支持）」
+        // 长标签使三勾选总宽超出可用宽度，Row 无法收缩。改用 Wrap 按
+        // 可用空间重排——宽屏仍单行呈现（形态不变），窄屏自动换行，
+        // 不裁切不缩放。回归测试见
+        // test/widget/replace_rule_scope_overflow_regress_test.dart。
+        Wrap(
+          spacing: 16,
+          runSpacing: 4,
           children: [
             _ScopeCheckbox(
               label: '标题',
               value: _scopeTitle,
               onChanged: (v) => setState(() => _scopeTitle = v ?? false),
             ),
-            const SizedBox(width: 16),
             // 书源 scope：字段受阻（模型/FFI 无 scopeSource），禁用 + 标注
             _ScopeCheckbox(
               label: '书源（暂不支持）',
               value: false,
               enabled: false,
             ),
-            const SizedBox(width: 16),
             _ScopeCheckbox(
               label: '正文',
               value: _scopeContent,

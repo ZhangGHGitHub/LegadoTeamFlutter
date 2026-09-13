@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.243] - 2026-09-13
+
+### Fixed
+- [UI] 搜索页红屏锁死（设备验收 D1，P1）：根因 = 搜索结果过滤对话框把 `TextEditingController` 建在 `showDialog` 外并在 future 完成时 dispose，而弹层退出动画期间子树仍挂载（OverlayEntry maintainState），期间重建使 TextField 向已 dispose 的 controller 注册监听 → 异常打断 overlay 子树 unmount、残留 FocusInheritedScope 依赖 → 递归去活时 `'_dependents.isEmpty'` 断言失败（framework.dart:6268），debug 整页红屏。修复：控制器生命周期收敛进有状态弹层 `_ResultFilterDialog`（随 State 建/销），返回值改 `showDialog<String>`；新增回归测试（单轮/确定路径/三轮「筛选→取消→⋮」连做），设备连做 3 次无红屏
+- [UI] 替换规则编辑器「作用范围」行窄屏右溢 18px（设备验收 D2）：三勾选由固定 `Row` 改 `Wrap`（宽屏单行形态不变，窄屏自动换行），新增窄屏+字体放大无溢出断言
+
+### Test
+- 子代理自测与主代理独立复跑一致：`flutter analyze` 无问题、`flutter test` **1415 全过**（新增 D1 回归 3 例 + D2 回归 1 例）
+- 设备复验（MuMu 127.0.0.1:16384，QA 代理执行）：D1 原复现步骤连做 3 次无红屏（截图取证）；D2 黄纹消失、三勾选完整可交互；A2 换源弹层形态与三种关闭方式复核通过。发现页「展开区零高」经 mock 隔离实验（USE_MOCK 无 Rust 包仍复现）确认与 FFI 无关，属布局/动画层独立缺陷另批修复。版本 2.0.243+244
+
+- Contributor: full-stack-engineer + UI + QA（主代理 Qoder UI 审核）
+
+
 ## [2.0.242] - 2026-09-11
 
 ### Added

@@ -744,51 +744,24 @@ extension _SearchBuilders on _SearchScreenState {
   /// 搜索结果过滤编辑对话框（对齐原版 showSearchResultFilterDialog：
   /// 多行编辑，每行一个屏蔽词，确定后持久化至 PreferKey.searchResultFilter
   /// 并即时过滤当前结果）— [A1 形态对齐 | full-stack-engineer + UI]
+  ///
+  /// [D1 缺陷修复 | full-stack-engineer + UI] 控制器移入有状态对话框
+  /// [_ResultFilterDialog]，生命周期与弹层子树严格一致：
+  /// 旧实现把 controller 建在 showDialog 外、在 future 完成时 dispose，
+  /// 但弹层退出动画期间子树仍挂载（OverlayEntry maintainState），
+  /// 期间任何对弹层子树的重建都会让 TextField 向已 dispose 的
+  /// controller 注册监听 → 「A TextEditingController was used after
+  /// being disposed」；异常打断 overlay 子树 unmount，残留
+  /// _FocusInheritedScope 依赖 → 弹层子树递归去活时
+  /// InheritedElement.debugDeactivated 断言 `'_dependents.isEmpty'`
+  /// 失败（framework.dart:6268）→ debug 整页红屏、UI 锁死。
   Future<void> _showResultFilterDialog() async {
-    final controller = TextEditingController(text: _resultFilter);
-    // 光标置于末尾（对齐原版 editView.setSelection(end)）
-    controller.selection = TextSelection.collapsed(offset: _resultFilter.length);
-    final confirmed = await showDialog<bool>(
+    // 弹层返回确认后的屏蔽词文本；取消返回 null（不改动既有屏蔽词表）
+    final filter = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('搜索结果屏蔽词'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(
-              '每行一个普通文本，匹配书名、作者或分类标签，忽略英文字母大小写',
-              style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                  ),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              minLines: 4,
-              maxLines: 8,
-              autofocus: true,
-              decoration: const InputDecoration(
-                hintText: '屏蔽词（每行一个）',
-                border: OutlineInputBorder(),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('取消'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
+      builder: (ctx) => _ResultFilterDialog(initialFilter: _resultFilter),
     );
-    controller.dispose();
-    if (confirmed != true || !mounted) return;
-    final filter = controller.text.trim();
+    if (filter == null || !mounted) return;
     setState(() => _resultFilter = filter);
     // 持久化（对齐原版 putPrefString(PreferKey.searchResultFilter, filter)）
     ref.read(bookApiProvider).setConfig('searchResultFilter', filter);
@@ -1212,5 +1185,92 @@ extension _SearchBuilders on _SearchScreenState {
       return '指定书源';
     }
     return '';
+  }
+}
+
+/// 搜索结果过滤编辑对话框（有状态，控制器生命周期与弹层子树严格一致）
+///
+/// [D1 缺陷修复 | full-stack-engineer + UI] 旧实现把 [TextEditingController]
+/// 建在 showDialog 外、future 完成时即 dispose，但弹层退出动画期间子树仍
+/// 挂载（DialogRoute 的 OverlayEntry maintainState=true），子树重建会让
+/// TextField 向已 dispose 的 controller 注册监听（"used after being
+/// disposed"），异常打断 overlay 子树 unmount 后残留 _FocusInheritedScope
+/// 依赖，弹层去活时触发 InheritedElement 断言 `'_dependents.isEmpty'`
+/// 红屏锁死。控制器随本 State 创建/销毁后即无该时序缺口。
+///
+/// 形态对齐原版 showSearchResultFilterDialog：多行编辑（每行一个屏蔽词），
+/// 确定时以 pop 结果返回确认文本（取消返回 null，调用方不改动屏蔽词表）。
+class _ResultFilterDialog extends StatefulWidget {
+  /// 进入编辑的既有屏蔽词表（每行一个）
+  final String initialFilter;
+
+  const _ResultFilterDialog({required this.initialFilter});
+
+  @override
+  State<_ResultFilterDialog> createState() => _ResultFilterDialogState();
+}
+
+class _ResultFilterDialogState extends State<_ResultFilterDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialFilter);
+    // 光标置于末尾（对齐原版 editView.setSelection(end)）
+    _controller.selection =
+        TextSelection.collapsed(offset: widget.initialFilter.length);
+  }
+
+  @override
+  void dispose() {
+    // 与弹层子树同步销毁：子树 unmount 后 controller 随 State 一并 dispose，
+    // 期间不再存在「已 dispose 但仍在树上」的窗口
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return AlertDialog(
+      title: const Text('搜索结果屏蔽词'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '每行一个普通文本，匹配书名、作者或分类标签，忽略英文字母大小写',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            // Key 供回归测试无歧义定位弹层输入框（页面内另有顶栏搜索框）
+            key: const Key('resultFilterDialogInput'),
+            controller: _controller,
+            minLines: 4,
+            maxLines: 8,
+            autofocus: true,
+            decoration: const InputDecoration(
+              hintText: '屏蔽词（每行一个）',
+              border: OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          // 取消：返回 null（调用方保持既有屏蔽词表不变）
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        TextButton(
+          // 确定：返回 trim 后文本（空串 = 清空屏蔽词表）
+          onPressed: () =>
+              Navigator.pop(context, _controller.text.trim()),
+          child: const Text('确定'),
+        ),
+      ],
+    );
   }
 }
