@@ -9,6 +9,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../bridge/ffi.dart';
 import '../providers/dict/dict_notifier.dart' show kDefaultDictRulesAsset;
 import '../providers/providers.dart';
+import '../routes.dart' show AppRoutes;
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/help/help_assets.dart';
@@ -32,10 +33,13 @@ import '../widgets/loading_indicator.dart';
 ///   批量启用/禁用/删除（对标 SelectActionBar menu_enable_selection /
 ///   menu_disable_selection / 主操作 delete，删除带确认框对标原版 alert）；
 /// - 拖拽排序（对标 ItemTouchCallback + upSortNumber）→ dictRuleReorder；
-/// - 菜单 = 新增 / 本地导入 / 在线导入 / 导入默认 / 帮助
+/// - 菜单 = 新增 / 本地导入 / 扫码导入 / 在线导入 / 导入默认 / 帮助
 ///   （对标 R.menu.dict_rule：menu_add / menu_import_local /
-///   menu_import_onLine / menu_import_default / menu_help）；
-///   原版 menu_import_qr（扫码导入）依赖相机权限链路，本批不做（登记待办）；
+///   menu_import_qr / menu_import_onLine / menu_import_default /
+///   menu_help）；
+///   menu_import_qr（扫码导入）复用既有 QrcodeScreen 扫码链路
+///   （routes 表 AppRoutes.qrcode，移动端相机 / 桌面与测试降级手动输入），
+///   扫码原始内容按 kind='text' 走 dictRuleImport（与本地导入同语义）；
 /// - 「导入默认」：原版走 assets/defaultData/dictRules.json 的
 ///   importDefaultDictRules（按 name REPLACE 写入 5 默认源）；本批以
 ///   dictRuleImport(kind:'text', payload=内置 dictRules.json) 实现同语义
@@ -375,6 +379,8 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
         _showRuleEditor();
       case 'importLocal':
         _showImportLocalDialog();
+      case 'importQr':
+        _importFromQr();
       case 'importOnline':
         _showImportOnlineDialog();
       case 'importDefault':
@@ -399,6 +405,35 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
     );
     final payload = text ?? '';
     if (payload.isEmpty) return;
+    setState(() => _busy = true);
+    try {
+      final n = await ref
+          .read(bookApiProvider)
+          .dictRuleImport(jsonOrUrl: payload, kind: 'text');
+      await _load();
+      _snack('已导入 $n 条字典规则');
+    } catch (e) {
+      _snack('导入失败：${_errMsg(e)}');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 扫码导入（对标 menu_import_qr：原版扫码/粘贴内容后走本地导入同链路）
+  ///
+  /// 复用既有 QrcodeScreen（routes 表 AppRoutes.qrcode：移动端相机实时扫码，
+  /// 桌面端/测试环境降级手动输入），扫码原始内容按 kind='text' 走
+  /// dictRuleImport，与本地导入（粘贴 JSON 文本）同语义；
+  /// 取消（pop null）或空内容仅提示不导入。
+  Future<void> _importFromQr() async {
+    final navigator = Navigator.of(context);
+    final raw = await navigator.pushNamed(AppRoutes.qrcode);
+    final payload = raw is String ? raw.trim() : '';
+    if (!mounted) return;
+    if (payload.isEmpty) {
+      _snack('未获取到扫码内容');
+      return;
+    }
     setState(() => _busy = true);
     try {
       final n = await ref
@@ -490,8 +525,9 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
     return LegadoAppBar(
       title: const Text('字典规则管理'),
       actions: [
-        // 对标 R.menu.dict_rule（menu_add/menu_import_local/menu_import_onLine/
-        // menu_import_default/menu_help；menu_import_qr 扫码导入不做，登记待办）
+        // 对标 R.menu.dict_rule（menu_add/menu_import_local/menu_import_qr/
+        // menu_import_onLine/menu_import_default/menu_help；
+        // menu_import_qr 复用 QrcodeScreen 扫码链路，见 _importFromQr）
         PopupMenuButton<String>(
           tooltip: '更多操作',
           icon: const Icon(Symbols.more_vert_rounded),
@@ -499,6 +535,7 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
           itemBuilder: (_) => const [
             PopupMenuItem(value: 'add', child: Text('新增规则')),
             PopupMenuItem(value: 'importLocal', child: Text('本地导入')),
+            PopupMenuItem(value: 'importQr', child: Text('扫码导入')),
             PopupMenuItem(value: 'importOnline', child: Text('在线导入')),
             PopupMenuItem(value: 'importDefault', child: Text('导入默认')),
             PopupMenuItem(value: 'help', child: Text('帮助')),

@@ -7,6 +7,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/routes.dart' show AppRoutes;
 import 'package:flutter_legado/src/screens/dict_rule_screen.dart';
 
 import '../mocks/mocks.dart';
@@ -280,5 +281,103 @@ void main() {
       expect(captured.single as String, contains('海词中文'));
       expect(find.text('已导入 5 条默认字典规则'), findsOneWidget);
     });
+
+    testWidgets('菜单「扫码导入」：桩路由返回内容时按 kind=text 调用 dictRuleImport',
+        (tester) async {
+      const qrPayload =
+          '[{"name":"扫码词典","urlRule":"https://qr.example.com/dict?q={{key}}","showRule":""}]';
+      when(() => mockApi.dictRuleList())
+          .thenAnswer((_) async => sampleRows());
+      when(() => mockApi.dictRuleImport(
+            jsonOrUrl: qrPayload,
+            kind: 'text',
+          ))
+          .thenAnswer((_) async => 1);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: const DictRuleScreen(),
+            // 桩路由：替代真实 QrcodeScreen，首帧后 pop 固定扫码内容
+            routes: {
+              AppRoutes.qrcode: (_) =>
+                  const _StubQrcodePage(result: qrPayload),
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // 打开右上角菜单，确认「扫码导入」在位
+      await tester.tap(find.byTooltip('更多操作'));
+      await tester.pumpAndSettle();
+      expect(find.text('扫码导入'), findsOneWidget);
+
+      // 触发扫码导入：桩路由 pop 固定内容 → 按 kind='text' 导入
+      await tester.tap(find.text('扫码导入'));
+      await tester.pumpAndSettle();
+
+      verify(() => mockApi.dictRuleImport(
+            jsonOrUrl: qrPayload,
+            kind: 'text',
+          ))
+          .called(1);
+      expect(find.text('已导入 1 条字典规则'), findsOneWidget);
+    });
+
+    testWidgets('菜单「扫码导入」：取消（pop null）不调用导入且提示',
+        (tester) async {
+      when(() => mockApi.dictRuleList())
+          .thenAnswer((_) async => sampleRows());
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: const DictRuleScreen(),
+            // 桩路由：模拟扫码页取消（pop 无值 → null）
+            routes: {
+              AppRoutes.qrcode: (_) => const _StubQrcodePage(),
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byTooltip('更多操作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('扫码导入'));
+      await tester.pumpAndSettle();
+
+      verifyNever(() => mockApi.dictRuleImport(
+            jsonOrUrl: any(named: 'jsonOrUrl'),
+            kind: any(named: 'kind'),
+          ));
+      expect(find.text('未获取到扫码内容'), findsOneWidget);
+    });
   });
+}
+
+/// 桩扫码页：首帧后自动 pop [result]（result 为 null 时模拟取消）
+class _StubQrcodePage extends StatefulWidget {
+  const _StubQrcodePage({this.result});
+
+  final String? result;
+
+  @override
+  State<_StubQrcodePage> createState() => _StubQrcodePageState();
+}
+
+class _StubQrcodePageState extends State<_StubQrcodePage> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) Navigator.of(context).pop(widget.result);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox();
 }

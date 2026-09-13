@@ -1045,6 +1045,14 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
                     fontSize: state.fontSize + 4,
                     fontWeight: FontWeight.bold,
                     color: textColor,
+                    // [A4 滚动模式标题字体 | full-stack-engineer] 标题
+                    // fontFamily 接 effectiveTitleFontFamily 单源（与
+                    // 分页模式渲染侧同参；空=跟随正文字体）。滚动模式
+                    // 不分页、无测量侧，故仅渲染侧取值。
+                    fontFamily: effectiveTitleFontFamily(
+                      widget.pageChrome,
+                      _fontFamily,
+                    ),
                   ),
                 ),
               ),

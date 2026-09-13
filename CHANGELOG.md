@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.249] - 2026-09-13
+
+### Added
+- [UI] 字典规则管理新增「扫码导入」（尾巴清扫批①）：复用既有 QrcodeScreen 扫码链路（书源导入同款），扫码内容走 `dictRuleImport(kind:'text')` 同语义；原版 `menu_import_qr` 对齐，待办注释销记
+- [UI] 滚动模式标题块接入标题字体（尾巴清扫批②）：C3 标题字体此前仅翻页/排版模式生效，现滚动模式标题块同样经 `effectiveTitleFontFamily` 单源取值（滚动不分页仅渲染侧，无测量同参问题）
+
+### Fixed
+- [Rust] `legado-js` variable_store 测试并行交错（尾巴清扫批③，照 2.0.248 config_api 的 StoreGuard 模式）：`test_clear_variables` 全量清空与并行 set/get 的中危交错窗口消除，产品代码零改动
+
+### Test
+- 主代理独立复跑：`flutter analyze` 无问题、`flutter test` **1446 全过**（新增 dict 扫码 2 例 + 滚动标题 2 例）、`cargo test -p legado-js` **236/236**、fmt 通过
+- 说明：任务①部分实现系上一会话中断代理已完成、本批复验确认；`reader_page_view.dart:616` build 期 `Timer.run` 导致测试 pending-timer 残留为**既有**行为，测试内以追加 pump 规避，产品侧根治登记另批。版本 2.0.249+250
+
+- Contributor: full-stack-engineer + UI + Bridge（主代理 Qoder UI 复核）
+
+
 ## [2.0.248] - 2026-09-13
 
 ### Fixed
