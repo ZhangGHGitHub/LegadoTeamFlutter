@@ -49,12 +49,23 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     expect(find.text('自动翻页'), findsWidgets);
 
-    // 页签切换 → 更多页（行距/字重/共用布局）
+    // [更多全高形态 | Qoder UI] 点「更多」页签 → 全高独立弹层覆盖打开
+    //（把手 + 居中标题「更多」，无底部页签栏——对齐参考版形态）
     await tester.tap(find.text('更多'));
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 300));
+    // 页签与弹层标题同名各一处
+    expect(find.text('更多'), findsNWidgets(2));
+    // 弹层内容（原页签内容整体迁移）
     expect(find.text('行距'), findsOneWidget);
     expect(find.text('字重'), findsOneWidget);
     expect(find.text('共用布局'), findsOneWidget);
+    // 全高几何：弹层高度 ≈ 屏高 92%
+    final sheetHeight = tester
+        .getTopLeft(find.byWidget(
+          tester.widgetList(find.text('行距')).first,
+        ))
+        .dy;
+    expect(sheetHeight, greaterThan(100));
   });
 }

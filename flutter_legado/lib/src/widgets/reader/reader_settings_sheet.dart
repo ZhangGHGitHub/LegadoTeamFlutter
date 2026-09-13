@@ -131,7 +131,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
           children: [
             _buildHeader(context),
             const SizedBox(height: 16),
-            _buildTabBar(context),
+            _buildTabBar(context, state, notifier, adv),
             const SizedBox(height: 16),
             switch (_tab) {
               0 => _buildGlobalTab(state, notifier, adv),
@@ -144,7 +144,9 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                   config: adv.copy(),
                   onChanged: _commitAdv,
                 ),
-              _ => _buildMoreTab(state, notifier, adv),
+              // 「更多」页签改为打开全高独立弹层（见 _openMoreSheet），
+              // 页签态本身不再内嵌内容
+              _ => const SizedBox.shrink(),
             },
           ],
         ),
@@ -186,39 +188,110 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
     );
   }
 
-  // ===== 底部页签：全局 / 菜单 / 信息 / 更多 =====
+  // ===== 底部页签：全局 / 菜单 / 信息 / 更多（更多=打开全高独立弹层） =====
 
-  Widget _buildTabBar(BuildContext context) {
+  Widget _buildTabBar(
+    BuildContext context,
+    ReaderState state,
+    ReaderNotifier notifier,
+    ReaderAdvancedConfig adv,
+  ) {
+    Widget tabItem(int i, {VoidCallback? onTap}) {
+      final selected = onTap == null && _tab == i;
+      return Expanded(
+        child: InkWell(
+          borderRadius: BorderRadius.circular(999),
+          onTap: onTap ?? () => setState(() => _tab = i),
+          child: Container(
+            height: 42,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(999),
+              color: selected
+                  ? Theme.of(context).colorScheme.primary
+                  : Colors.transparent,
+            ),
+            child: Text(
+              _tabLabels[i],
+              style: Theme.of(context).textTheme.labelLarge?.copyWith(
+                    color: selected
+                        ? Theme.of(context).colorScheme.onPrimary
+                        : Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+            ),
+          ),
+        ),
+      );
+    }
+
     return Row(
       children: [
-        for (var i = 0; i < _tabLabels.length; i++) ...[
-          if (i > 0) const SizedBox(width: 8),
-          Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(999),
-              onTap: () => setState(() => _tab = i),
+        tabItem(0),
+        const SizedBox(width: 8),
+        tabItem(1),
+        const SizedBox(width: 8),
+        tabItem(2),
+        const SizedBox(width: 8),
+        // [更多全高形态 | Qoder UI] 参考版「更多」页签为全高独立弹层
+        //（把手+居中标题、无底部页签栏）：点按以全高弹层覆盖打开
+        tabItem(3, onTap: () => _openMoreSheet(state, notifier, adv)),
+      ],
+    );
+  }
+
+  /// [更多全高形态 | Qoder UI] 「更多」全高独立弹层（对齐参考版形态：
+  /// 把手 + 居中标题、无底部页签栏；关闭后回到页签弹层）
+  void _openMoreSheet(
+    ReaderState state,
+    ReaderNotifier notifier,
+    ReaderAdvancedConfig adv,
+  ) {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.of(sheetContext).size.height * 0.92,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const SizedBox(height: 10),
+            Center(
               child: Container(
-                height: 42,
-                alignment: Alignment.center,
+                width: 32,
+                height: 4,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(999),
-                  color: _tab == i
-                      ? Theme.of(context).colorScheme.primary
-                      : Colors.transparent,
-                ),
-                child: Text(
-                  _tabLabels[i],
-                  style: Theme.of(context).textTheme.labelLarge?.copyWith(
-                        color: _tab == i
-                            ? Theme.of(context).colorScheme.onPrimary
-                            : Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .onSurfaceVariant
+                      .withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(2),
                 ),
               ),
             ),
-          ),
-        ],
-      ],
+            const SizedBox(height: 10),
+            Text(
+              '更多',
+              textAlign: TextAlign.center,
+              style: Theme.of(context)
+                  .textTheme
+                  .titleMedium
+                  ?.copyWith(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 8),
+            const Divider(height: 1),
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                child: _buildMoreSheetContent(state, notifier, adv),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -587,9 +660,10 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
     );
   }
 
-  // ===== 更多页：行距 / 字重 / 排版与更多配置 / 共用布局 =====
+  // ===== 更多弹层内容：行距 / 字重 / 排版与更多配置 / 共用布局 =====
+  //（原「更多」页签内容整体迁移至全高弹层）
 
-  Widget _buildMoreTab(
+  Widget _buildMoreSheetContent(
     ReaderState state,
     ReaderNotifier notifier,
     ReaderAdvancedConfig adv,
