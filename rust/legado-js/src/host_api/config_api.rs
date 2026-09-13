@@ -222,28 +222,19 @@ mod tests {
 
     impl StoreGuard {
         fn new(store: &'static std::sync::RwLock<Option<String>>) -> Self {
-            let previous = store
-                .read()
-                .unwrap_or_else(|p| p.into_inner())
-                .clone();
+            let previous = store.read().unwrap_or_else(|p| p.into_inner()).clone();
             Self { store, previous }
         }
 
         /// 显式设置 store 值（传 `None` 表示「未注入」）
         fn set(&self, value: Option<String>) {
-            *self
-                .store
-                .write()
-                .unwrap_or_else(|p| p.into_inner()) = value;
+            *self.store.write().unwrap_or_else(|p| p.into_inner()) = value;
         }
     }
 
     impl Drop for StoreGuard {
         fn drop(&mut self) {
-            *self
-                .store
-                .write()
-                .unwrap_or_else(|p| p.into_inner()) = self.previous.clone();
+            *self.store.write().unwrap_or_else(|p| p.into_inner()) = self.previous.clone();
         }
     }
 
@@ -254,9 +245,7 @@ mod tests {
 
     /// 获取测试互斥锁（panic 时经 Drop 自动释放，不会永久卡死后续测试）
     fn lock_stores() -> std::sync::MutexGuard<'static, ()> {
-        STORE_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|p| p.into_inner())
+        STORE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner())
     }
 
     #[test]
