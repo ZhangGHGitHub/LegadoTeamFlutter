@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.246] - 2026-09-13
+
+### Added
+- [UI] 新增「字典规则管理」页（差异清单 C2 批2，子代理 full-stack-engineer 交付 + 主代理复验；对齐原版 `DictRuleActivity`）：列表行=规则名 + 启停开关（副行 urlRule）+ 行点编辑弹层（名称/urlRule/showRule，名称必填校验）；长按多选批量 启用/禁用/删除（删除带确认）；拖拽排序（dictRuleReorder 重编号）；FAB 新增；菜单=新增/本地导入（粘贴 JSON）/在线导入（URL）/导入默认（内置 dictRules.json 走 REPLACE 语义）；入口=字典查询页 AppBar「规则管理」+ 设置页同级 tile。启停/排序即时影响词典查询（查询消费启用规则）
+- 说明：扫码导入未实现（依赖相机权限链路，登记待办）；本地导入由选文件收敛为粘贴 JSON（功能等价，规避文件选择器平台链路）
+
+### Test
+- 子代理自测与主代理独立复跑一致：`flutter analyze` 无问题、`flutter test` **1427 全过**（新增 `dict_rule_screen_test` 8 例：列表渲染/启停/空态/错误态/FAB 必填校验/批量禁用/批量删除带确认/导入默认）
+- 设备 E2E（MuMu Test 实例，QA 代理执行）：5 条默认词典源列表 ✓、禁用后查询正常 ✓、拖拽排序退出重进保持 ✓、新建/删除（含确认文案）✓、应用进程全程 0 FATAL/0 E/flutter（crash buffer 仅 uiautomator 工具自身 SIGSEGV，MuMu 已知现象）、冒烟 **7/7 PASSED**。版本 2.0.246+247
+
+- Contributor: full-stack-engineer + UI + QA（主代理 Qoder UI 审核）
+
+
 ## [2.0.245] - 2026-09-13
 
 ### Added

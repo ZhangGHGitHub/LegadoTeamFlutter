@@ -5,6 +5,7 @@ import 'models/models.dart';
 import 'screens/about_screen.dart';
 import 'screens/app_log_screen.dart';
 import 'screens/browser_screen.dart';
+import 'screens/dict_rule_screen.dart';
 import 'screens/dict_screen.dart';
 import 'screens/audio_screen.dart';
 import 'screens/auto_task_screen.dart';
@@ -107,6 +108,8 @@ class AppRoutes {
   static const changeCover = '/change_cover';
   static const txtTocRules = '/txt_toc_rules';
   static const dict = '/dict';
+  // [C2 批2 | full-stack-engineer + UI] 字典规则管理页（对齐原版 DictRuleActivity）
+  static const dictRule = '/dict_rule';
   static const fonts = '/fonts';
   static const highlightRules = '/highlight_rules';
   static const fileManage = '/file_manage';
@@ -348,6 +351,8 @@ class AppRoutes {
     },
     txtTocRules: (_) => const TxtTocRulesScreen(),
     dict: (_) => const DictScreen(),
+    // [C2 批2 | full-stack-engineer + UI] 字典规则管理页
+    dictRule: (_) => const DictRuleScreen(),
     // [C3 标题字体] 标题字体入口经 arguments 传 'title'（默认 'body' 保持
     // 既有调用方兼容）— full-stack-engineer
     fonts: (context) {

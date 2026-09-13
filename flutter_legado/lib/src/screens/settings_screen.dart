@@ -222,6 +222,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     subtitle: '配置字典规则',
                     onTap: () => Navigator.pushNamed(context, AppRoutes.dict),
                   ),
+                  // [C2 批2 | full-stack-engineer + UI] 字典规则管理页入口
+                  // （对齐原版 DictRuleActivity；「字典规则」仍进查询页）
+                  IosListTile(
+                    icon: Symbols.manage_search_rounded,
+                    title: '规则管理',
+                    subtitle: '管理字典规则（增删改、启停、排序、导入）',
+                    onTap: () =>
+                        Navigator.pushNamed(context, AppRoutes.dictRule),
+                  ),
                   IosListTile(
                     icon: Icons.sell_rounded,
                     title: '高亮标注',

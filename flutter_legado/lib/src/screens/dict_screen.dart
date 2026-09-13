@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../models/models.dart';
 import '../providers/dict/dict_notifier.dart';
+import '../routes.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 
@@ -77,6 +78,14 @@ class _DictScreenState extends ConsumerState<DictScreen> {
             icon: const Icon(Symbols.rule_folder_rounded),
             tooltip: '词典规则管理',
             onPressed: _showRuleManager,
+          ),
+          // [C2 批2 | full-stack-engineer + UI] 字典规则管理页入口
+          // （对齐原版 DictRuleActivity；既有「词典规则管理」弹窗保留）
+          IconButton(
+            icon: const Icon(Symbols.manage_search_rounded),
+            tooltip: '规则管理',
+            onPressed: () =>
+                Navigator.of(context).pushNamed(AppRoutes.dictRule),
           ),
         ],
       ),
