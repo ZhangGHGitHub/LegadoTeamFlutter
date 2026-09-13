@@ -160,6 +160,13 @@ class ReaderTypographicPage extends StatelessWidget {
                             fontSize: fontSize + chrome.titleSize,
                             fontWeight: FontWeight.bold,
                             color: textColor,
+                            // [C3 标题字体] 与测量侧同参（effectiveTitleFontFamily
+                            // 单源）；同时修复既有偏差：空=跟随正文字体，标题
+                            // 随自定义正文自定义字体生效 — full-stack-engineer
+                            fontFamily: effectiveTitleFontFamily(
+                              chrome,
+                              fontFamily,
+                            ),
                           ),
                         ),
                       ),

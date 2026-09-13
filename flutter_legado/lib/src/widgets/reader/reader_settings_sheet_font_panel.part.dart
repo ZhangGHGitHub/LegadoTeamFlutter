@@ -19,8 +19,11 @@
 // - 参考版（io.legato.kazusa）Tt 行内面板另含「斜体开关」与「标题字体」页签：
 //   · 斜体：开源版全仓无斜体配置字段（参考版自有增强），按重构红线**不放入
 //     面板**（不新增原版不存在的功能）；
-//   · 标题字体：对应原版 #1072 titleFont，我方暂无对应配置字段 →
-//     以禁用行诚实标注「跟随正文」，登记为受阻项（不新增数据链）。
+//   · 标题字体：对应原版 #1072 titleFont（空值=跟随正文字体）。我方已有
+//     纯 Dart 配置字段 ReaderAdvancedConfig.titleFont（键名 titleFont，
+//     不涉 Rust/FFI 变更——Rust 阅读配置本就无字体键，此前「Rust 配置
+//     font 未拆分」的注释有误，2026-09-13 核实更正），行跳转
+//     FontScreen(target: 'title')（[C3 标题字体 | full-stack-engineer + UI]）。
 
 // 注：part 文件不得携带 import（依赖主文件 library 级 imports：
 // material / shared_preferences / routes / providers / reader_config_panel）。
@@ -65,6 +68,10 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
   /// 读取方式对标 reader_config_panel._loadFontLabel）
   String _fontLabel = '默认字体';
 
+  /// 当前标题字体显示名（与 FontScreen titleFont 键同步；
+  /// 空=「跟随正文」，[C3 标题字体]）
+  String _titleFontLabel = '跟随正文';
+
   /// 简繁转换类型（0=不转换 1=繁转简 2=简转繁，
   /// 对标原版 AppConfig.chineseConverterType / FFI setChineseConvertType）
   int _convertType = 0;
@@ -74,6 +81,7 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
     super.initState();
     _config = widget.config.copy();
     unawaited(_loadFontLabel());
+    unawaited(_loadTitleFontLabel());
     unawaited(_loadConvertType());
   }
 
@@ -95,6 +103,19 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
       setState(() => _fontLabel = family.replaceFirst('Custom_', ''));
     } catch (_) {
       // 读取失败保持默认字体标签
+    }
+  }
+
+  /// 从 SharedPreferences 读取当前标题字体显示名（空=「跟随正文」）
+  Future<void> _loadTitleFontLabel() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final family = prefs.getString('titleFont') ?? '';
+      if (!mounted) return;
+      setState(() => _titleFontLabel =
+          family.isEmpty ? '跟随正文' : family.replaceFirst('Custom_', ''));
+    } catch (_) {
+      // 读取失败保持跟随正文标签
     }
   }
 
@@ -295,14 +316,25 @@ class _ReaderFontPanelState extends ConsumerState<ReaderFontPanel> {
             ),
           ),
           // ===== 标题字体（对标原版 #1072 titleFont：空值=跟随正文字体） =====
-          // [受阻项 | C3] 我方暂无独立标题字体配置字段（ReaderAdvancedConfig
-          // 无 titleFont；Rust 阅读配置 'font' 亦未分正文/标题），按任务约束
-          // 不新增数据链，仅保留跟随语义的诚实标注行。
+          // [C3 标题字体 | full-stack-engineer + UI] 我方已有纯 Dart 配置字段
+          // ReaderAdvancedConfig.titleFont（不涉 Rust/FFI），行跳转
+          // FontScreen(target: 'title')；返回后重读标签并通知主 Sheet 推送
+          // 共享配置（ReaderPageView 重读字体并触发重分页）
           _row(
             title: '标题字体',
-            subtitle: '独立标题字体设置未支持（待配置字段/FFI 对齐后开放）',
-            value: '跟随正文',
-            disabled: true,
+            subtitle: '章节标题独立字体',
+            value: _titleFontLabel,
+            leading: Icons.title_outlined,
+            onTap: () async {
+              await Navigator.pushNamed(
+                context,
+                AppRoutes.fonts,
+                arguments: 'title',
+              );
+              if (!mounted) return;
+              await _loadTitleFontLabel();
+              _commit();
+            },
           ),
           // ===== 斜体开关 =====
           // [C3 双基准对齐 | Qoder UI] 参考版行内面板含「斜体」开关（原版无此项

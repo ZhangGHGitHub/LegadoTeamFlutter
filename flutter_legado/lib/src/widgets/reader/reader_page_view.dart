@@ -360,15 +360,26 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     try {
       final prefs = await SharedPreferences.getInstance();
       final family = prefs.getString('reader_font_family');
+      // [C3 标题字体] 标题字体（空=跟随正文）：非空且不同于正文时，其
+      // Custom_ 字体文件也需注册，否则标题回退默认字体 — full-stack-engineer
+      final titleFamily = prefs.getString('titleFont') ?? '';
+      final customFamilies = <String>{
+        if (family != null && family.startsWith('Custom_')) family,
+        if (titleFamily.isNotEmpty &&
+            titleFamily.startsWith('Custom_') &&
+            titleFamily != family) titleFamily,
+      };
       // 自定义字体（Custom_* 前缀）应用重启后需重新加载字体文件
-      if (family != null && family.startsWith('Custom_')) {
+      if (customFamilies.isNotEmpty) {
         final customRaw = prefs.getStringList('reader_custom_fonts') ?? [];
         for (final entry in customRaw) {
           final parts = entry.split('|');
-          if (parts.length != 2 || parts[0] != family) continue;
+          if (parts.length != 2) continue;
+          final name = parts[0];
+          if (!customFamilies.contains(name)) continue;
           final file = File(parts[1]);
           if (await file.exists()) {
-            final loader = FontLoader(parts[0])
+            final loader = FontLoader(name)
               ..addFont(file.readAsBytes().then((b) => b.buffer.asByteData()));
             await loader.load();
           }
@@ -810,6 +821,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     if (showTitle) {
       final textScaler = MediaQuery.textScalerOf(context);
       final baseStyle = DefaultTextStyle.of(context).style;
+      // [C3 标题字体] 标题 fontFamily 与渲染侧同参（effectiveTitleFontFamily
+      // 单源，空=跟随正文），不同参会首页标题行分页错位 — full-stack-engineer
       final titlePainter = TextPainter(
         text: TextSpan(
           text: chapterTitle,
@@ -817,6 +830,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
             TextStyle(
               fontSize: state.fontSize + chrome.titleSize,
               fontWeight: FontWeight.bold,
+              fontFamily: effectiveTitleFontFamily(chrome, _fontFamily),
             ),
           ),
         ),

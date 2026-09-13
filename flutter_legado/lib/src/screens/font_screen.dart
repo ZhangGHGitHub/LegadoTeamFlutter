@@ -13,7 +13,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// 功能：显示当前阅读字体、切换系统字体、导入自定义 .ttf/.otf 字体、实时预览。
 /// 自定义字体通过 [FontLoader] 动态加载，字体文件复制到应用文档目录持久化。
 class FontScreen extends StatefulWidget {
-  const FontScreen({super.key});
+  /// 字体设置目标：`body` = 正文字体（既有 `reader_font_family` 链路，
+  /// 默认值保持既有调用方兼容）；`title` = 标题字体（原版 #1072 titleFont，
+  /// 空值=跟随正文，写 `titleFont` 键）— full-stack-engineer
+  final String target;
+
+  const FontScreen({super.key, this.target = 'body'});
 
   @override
   State<FontScreen> createState() => _FontScreenState();
@@ -21,7 +26,13 @@ class FontScreen extends StatefulWidget {
 
 class _FontScreenState extends State<FontScreen> {
   static const _keyFontFamily = 'reader_font_family';
+  // [C3 标题字体] 标题字体键（与 ReaderAdvancedConfig.titleFont 同源）
+  static const _keyTitleFont = 'titleFont';
   static const _keyCustomFonts = 'reader_custom_fonts'; // [{family, path}]
+
+  /// 当前 target 对应的字体家族键（body=既有链路，title=titleFont）
+  String get _familyKey =>
+      widget.target == 'title' ? _keyTitleFont : _keyFontFamily;
 
   /// 内置/系统字体候选列表
   static const List<_FontOption> _systemFonts = [
@@ -56,7 +67,7 @@ class _FontScreenState extends State<FontScreen> {
 
   Future<void> _load() async {
     final prefs = await SharedPreferences.getInstance();
-    final family = prefs.getString(_keyFontFamily);
+    final family = prefs.getString(_familyKey);
     final customRaw = prefs.getStringList(_keyCustomFonts) ?? [];
     final customs = <_FontOption>[];
     for (final entry in customRaw) {
@@ -88,9 +99,14 @@ class _FontScreenState extends State<FontScreen> {
   Future<void> _selectFont(String? family) async {
     final prefs = await SharedPreferences.getInstance();
     if (family == null) {
-      await prefs.remove(_keyFontFamily);
+      if (widget.target == 'title') {
+        // 标题字体：默认字体=空值，语义为跟随正文（对齐原版 titleFont）
+        await prefs.setString(_keyTitleFont, '');
+      } else {
+        await prefs.remove(_keyFontFamily);
+      }
     } else {
-      await prefs.setString(_keyFontFamily, family);
+      await prefs.setString(_familyKey, family);
     }
     if (mounted) setState(() => _currentFamily = family);
   }
@@ -135,7 +151,7 @@ class _FontScreenState extends State<FontScreen> {
           _currentFamily = family;
         });
       }
-      await prefs.setString(_keyFontFamily, family);
+      await prefs.setString(_familyKey, family);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('已导入字体「$name」')),
@@ -153,11 +169,17 @@ class _FontScreenState extends State<FontScreen> {
   }
 
   String get _currentLabel {
-    if (_currentFamily == null) return '默认字体';
-    for (final f in [..._systemFonts, ..._customFonts]) {
-      if (f.family == _currentFamily) return f.label;
+    final family = _currentFamily;
+    if (widget.target == 'title') {
+      // 标题字体：null/空 = 跟随正文（对齐原版 titleFont 语义）
+      if (family == null || family.isEmpty) return '跟随正文';
+    } else if (family == null) {
+      return '默认字体';
     }
-    return _currentFamily!;
+    for (final f in [..._systemFonts, ..._customFonts]) {
+      if (f.family == family) return f.label;
+    }
+    return family;
   }
 
   @override
@@ -165,7 +187,7 @@ class _FontScreenState extends State<FontScreen> {
     final theme = Theme.of(context);
     return Scaffold(
       appBar: LegadoAppBar(
-        title: const Text('字体管理'),
+        title: Text(widget.target == 'title' ? '标题字体' : '字体管理'),
         actions: [
           IconButton(
             icon: _importing
@@ -185,8 +207,12 @@ class _FontScreenState extends State<FontScreen> {
           // ===== 当前字体 + 预览 =====
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
-            child: Text('当前字体：$_currentLabel',
-                style: theme.textTheme.titleMedium),
+            child: Text(
+              widget.target == 'title'
+                  ? '当前标题字体：$_currentLabel'
+                  : '当前字体：$_currentLabel',
+              style: theme.textTheme.titleMedium,
+            ),
           ),
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

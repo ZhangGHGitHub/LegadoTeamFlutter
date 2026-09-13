@@ -31,6 +31,19 @@ double readerOverlayStatusBarInset(
   return readerSystemStatusBarInset(context);
 }
 
+/// 标题字体生效家族（空=跟随正文字体，对齐原版 ReadBookConfig.titleFont）。
+///
+/// 测量/渲染同参的单源：测量侧（ReaderPageView._computeFirstPageHeight）
+/// 与渲染侧（ReaderTypographicPage 首屏标题块）必须都经此取标题 fontFamily，
+/// 不同参会导致首页标题行分页错位。
+///
+/// [bodyFontFamily] 为正文字体家族（可为 null=默认字体）。
+String? effectiveTitleFontFamily(
+  ReaderPageChromeConfig chrome,
+  String? bodyFontFamily,
+) =>
+    chrome.titleFont.isNotEmpty ? chrome.titleFont : bodyFontFamily;
+
 /// 阅读页页眉/页脚与标题样式（对标原版 ReadBookConfig + ReadTipConfig）
 class ReaderPageChromeConfig {
   final int headerMode;
@@ -60,6 +73,9 @@ class ReaderPageChromeConfig {
   final int titleTopSpacing;
   final int titleBottomSpacing;
 
+  /// 标题字体（空=跟随正文字体，对齐原版 ReadBookConfig.titleFont）
+  final String titleFont;
+
   const ReaderPageChromeConfig({
     this.headerMode = 0,
     this.footerMode = 0,
@@ -84,6 +100,7 @@ class ReaderPageChromeConfig {
     this.titleSize = 0,
     this.titleTopSpacing = 0,
     this.titleBottomSpacing = 0,
+    this.titleFont = '',
   });
 
   factory ReaderPageChromeConfig.fromAdvanced(ReaderAdvancedConfig c) {
@@ -111,6 +128,7 @@ class ReaderPageChromeConfig {
       titleSize: c.titleSize,
       titleTopSpacing: c.titleTopSpacing,
       titleBottomSpacing: c.titleBottomSpacing,
+      titleFont: c.titleFont,
     );
   }
 
@@ -121,7 +139,8 @@ class ReaderPageChromeConfig {
       '${showHeaderLine}_${showFooterLine}_'
       '${tipHeaderLeft}_${tipHeaderMiddle}_${tipHeaderRight}_'
       '${tipFooterLeft}_${tipFooterMiddle}_${tipFooterRight}_'
-      '${titleMode}_${titleSize}_${titleTopSpacing}_$titleBottomSpacing';
+      '${titleMode}_${titleSize}_${titleTopSpacing}_$titleBottomSpacing'
+      '_$titleFont';
 
   bool get showPageHeader {
     switch (headerMode.clamp(0, 2)) {

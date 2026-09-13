@@ -348,7 +348,12 @@ class AppRoutes {
     },
     txtTocRules: (_) => const TxtTocRulesScreen(),
     dict: (_) => const DictScreen(),
-    fonts: (_) => const FontScreen(),
+    // [C3 标题字体] 标题字体入口经 arguments 传 'title'（默认 'body' 保持
+    // 既有调用方兼容）— full-stack-engineer
+    fonts: (context) {
+      final args = ModalRoute.of(context)?.settings.arguments;
+      return FontScreen(target: args is String ? args : 'body');
+    },
     highlightRules: (_) => const HighlightRulesScreen(),
     fileManage: (_) => const FileManageScreen(),
     qrcode: (_) => const QrcodeScreen(),

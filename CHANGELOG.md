@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.242] - 2026-09-11
+
+### Added
+- [UI] 阅读器支持独立「标题字体」（差异清单 C3 收尾，子代理 full-stack-engineer 交付 + 主代理复验）：对齐原版 #1072 `ReadBookConfig.titleFont`（空=跟随正文字体）——`ReaderAdvancedConfig` 加 `titleFont`（键 `titleFont`，与 titleMode/titleSize 同族无前缀）；`PageChrome` 加字段并入 `layoutKey`（变化自动触发重分页）；**测量与渲染同参**：单源函数 `effectiveTitleFontFamily`（reader_page_chrome.dart，生效值=titleFont 非空 ? titleFont : 正文字体）同时注入首屏容量测量（`_computeFirstPageHeight` 标题 TextPainter）与标题渲染 TextStyle；`_refreshFontFamily` 扩展注册标题自定义字体（FontLoader，失败兜底保持）；字体面板「标题字体」行由禁用占位改为可点行（显示字体名/「跟随正文」），`FontScreen` 加 `target` 参数（title/body，默认 body 调用方零改动）
+
+### Test
+- 子代理自测与主代理独立复跑一致：`flutter analyze` 无问题、`flutter test` **1411 全过**（新增 `reader_title_font_test` 11 例：持久化三链、测量/渲染同参断言、面板行与路由参数、layoutKey 驱动）
+- 顺带修复既有偏差：此前标题不随自定义正文字体（titleFont 空时现在跟随正文字体，用户可感知，测试覆盖）；**滚动模式未接**（`_buildScrollContent` 标题块不在本批范围，仅翻页/排版模式生效——如实登记）；真机字形效果待设备验收。版本 2.0.242+243
+
+- Contributor: full-stack-engineer + UI（主代理 Qoder UI 审核）
+
+
 ## [2.0.241] - 2026-09-11
 
 ### Fixed

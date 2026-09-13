@@ -77,6 +77,9 @@ class ReaderAdvancedConfig {
   int titleTopSpacing;
   int titleBottomSpacing;
 
+  /// 标题字体（空=跟随正文字体，对齐原版 ReadBookConfig.titleFont）
+  String titleFont;
+
   // 状态栏提示栏
   bool showBattery;
   bool showTime;
@@ -199,6 +202,7 @@ class ReaderAdvancedConfig {
     this.titleSize = 0,
     this.titleTopSpacing = 0,
     this.titleBottomSpacing = 0,
+    this.titleFont = '',
     this.showBattery = true,
     this.showTime = true,
     this.showProgress = true,
@@ -372,6 +376,7 @@ class ReaderAdvancedConfig {
       titleSize: (prefs.getInt('titleSize') ?? 0).clamp(0, 20),
       titleTopSpacing: (prefs.getInt('titleTopSpacing') ?? 0).clamp(0, 100),
       titleBottomSpacing: (prefs.getInt('titleBottomSpacing') ?? 0).clamp(0, 100),
+      titleFont: prefs.getString('titleFont') ?? '',
       showBattery: prefs.getBool('${_prefix}show_battery') ?? true,
       showTime: prefs.getBool('${_prefix}show_time') ?? true,
       showProgress: prefs.getBool('${_prefix}show_progress') ?? true,
@@ -471,6 +476,7 @@ class ReaderAdvancedConfig {
     await prefs.setInt('titleSize', titleSize);
     await prefs.setInt('titleTopSpacing', titleTopSpacing);
     await prefs.setInt('titleBottomSpacing', titleBottomSpacing);
+    await prefs.setString('titleFont', titleFont);
     await prefs.setBool('${_prefix}show_battery', showBattery);
     await prefs.setBool('${_prefix}show_time', showTime);
     await prefs.setBool('${_prefix}show_progress', showProgress);
@@ -549,6 +555,7 @@ class ReaderAdvancedConfig {
         titleSize: titleSize,
         titleTopSpacing: titleTopSpacing,
         titleBottomSpacing: titleBottomSpacing,
+        titleFont: titleFont,
         showBattery: showBattery,
         showTime: showTime,
         showProgress: showProgress,
