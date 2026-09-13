@@ -32,10 +32,39 @@ pub fn get_runtime() -> &'static Runtime {
             // 下排队 ~20s，排队时间计入单源 30s 超时 → 79 个 HTTP <1s 完成的源被误判超时。
             // 64 ≥ 2×并发上限（32 URL 构建 + 32 解析），保证搜索负载下无排队积压。
             .max_blocking_threads(64)
+            // runtime 全部线程（worker + blocking 池，二者均走 after_start 回调）降权
+            .on_thread_start(lower_thread_priority)
             .build()
             .expect("Failed to create tokio runtime")
     })
 }
+
+/// runtime 线程 OS 优先级降权（Unix: nice 19，其余平台 no-op）
+///
+/// **背景（2026-09-14 搜索起步卡顿取证）**：多源流式搜索（SEARCH_CONCURRENCY=32 +
+/// blocking 池 64）在低核数设备（MuMu Test 实例 guest 仅 1 核）上把核吃满
+/// （top 实测应用进程 84→100%），Flutter UI 线程与之公平竞争仅分到 ~3% CPU →
+/// 起步阶段整页掉帧。对齐 Android 原版平台行为：原版后台协程运行在 Android
+/// 后台 cgroup（低优调度），UI 线程（top-app cgroup）始终优先。
+///
+/// **机制**：nice 19 把 runtime 线程的 CFS 权重压到 UI 线程的 ~1/68，UI 有帧
+/// 需渲染时立即抢占；UI 空闲时 runtime 线程仍吃满核，吞吐不受损（搜索 CPU
+/// 总量不变，仅调度顺序让路）。tokio `on_thread_start` 对 worker 与
+/// spawn_blocking 线程都会触发（tokio 1.52 pool.rs:504 同走 after_start），
+/// 故一处挂钩全覆盖。提升 nice 值无需特权，Android/Linux 均允许。
+///
+/// `PRIO_PROCESS, 0` 作用于**调用线程自身**（Linux 任务级），在线程入口调用
+/// 即只降该线程。
+#[cfg(any(target_os = "android", target_os = "linux"))]
+fn lower_thread_priority() {
+    unsafe {
+        // PRIO_PROCESS + who=0 = 当前线程（Linux 按任务调度）；提升 nice 无需特权
+        libc::setpriority(libc::PRIO_PROCESS, 0, 19);
+    }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "linux")))]
+fn lower_thread_priority() {}
 
 /// 在 FFI 中执行异步任务（阻塞等待结果）
 ///

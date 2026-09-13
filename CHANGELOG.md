@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.256] - 2026-09-14
+
+### Fixed
+- [Rust] 多源搜索起步阶段 UI 卡顿（用户实测报告，MuMu 1 核实例取证）：搜索触发后应用进程吃满全核（top 实测 84→100%，整机 0% idle），32 路并发派发 + blocking 池 64 线程与 Flutter UI 线程公平竞争，单核下 UI 线程仅分到 ~3% CPU → 整页掉帧。修复 = runtime 全部线程（worker + spawn_blocking 池，经 tokio `on_thread_start` 统一挂钩）在 Android/Linux 上降权至 nice 19，对齐 Android 原版平台行为（后台协程运行在低优 cgroup）；UI 线程立即抢占，runtime 线程在 UI 空闲时仍吃满核，搜索吞吐不受损。搜索并发数（32，2026-08-25 实证对齐原版有效并发）保持不变
+
+### Test
+- 实机 A/B 取证：修复前搜索期应用进程 CPU 84→100% 持续风暴；修复后同场景 40~72%，526 源全量搜索 33s 收敛（此前 57s），worker 线程 `ps -T` 实测 NI=19。`cargo check` 通过；`flutter analyze` 无问题。版本 2.0.256+257
+
+- Contributor: Qoder UI（子代理暂停期主代理兜底，经用户授权）
+
 ## [2.0.255] - 2026-09-14
 
 ### Changed

@@ -1933,6 +1933,7 @@ dependencies = [
  "legado-net",
  "legado-parser",
  "legado-server",
+ "libc",
  "log",
  "r2d2",
  "r2d2_sqlite",

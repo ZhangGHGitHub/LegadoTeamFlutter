@@ -30,6 +30,10 @@ flutter_rust_bridge = "=2.11.1"
 [dev-dependencies]
 encoding_rs = "0.8"
 
+# Unix 平台线程降权（nice 19）：修复多源搜索 CPU 风暴饿死 Flutter UI 线程
+[target.'cfg(any(target_os = "android", target_os = "linux"))'.dependencies]
+libc = "0.2"
+
 [features]
 default = []
 quickjs = ["legado-js/quickjs"]
