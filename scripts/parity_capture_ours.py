@@ -2,10 +2,11 @@
 """parity_capture_ours.py — 1:1 界面对比「我方」批量截图采集（batch 1，16 屏）。
 
 目的：
-  在装有我方 io.legado.flutter_legado v2.0.256 的 Android 设备上，自动导航采集
-  batch 1 的 16 屏截图，供与参考侧 docs/parity_shots/ref_20260913/ 做 1:1 对比。
+  在装有我方 io.legado.flutter_legado（期望版本动态读取自 flutter_legado/pubspec.yaml）
+  的 Android 设备上，自动导航采集 batch 1 的 16 屏截图，
+  供与参考侧 docs/parity_shots/ref_20260913/ 做 1:1 对比。
   每屏流程：导航 → uiautomator dump 文本断言（content-desc/text 关键词命中）→
-  截图落盘 docs/parity_shots/ours_2.0.256/<NN>_<english_short_name>.png →
+  截图落盘 docs/parity_shots/ours_<version>/<NN>_<english_short_name>.png →
   标准输出打印 [OK/FAIL] <screen> <keyword> <file>。
   文件名与参考侧一一对应（参考侧为 <NN>_<name>.png + .xml 配对，本脚本只出 PNG）。
 
@@ -19,14 +20,18 @@
   - MSYS/Git Bash 路径转换问题：本地落盘一律用 Windows 绝对路径，截图用
     exec-out screencap 二进制直写（不经 shell 重定向）
   - 开跑前 am force-stop + 冷启动 + 等待 8s，并经 dumpsys 校验
-    versionName=2.0.256（不符则整体中止）
+    versionName 与 pubspec.yaml 版本一致（不符则整体中止）
 
 用法：
   python scripts/parity_capture_ours.py                      # 全 16 屏
   python scripts/parity_capture_ours.py --only 01,03,06      # 只跑指定屏（07 含 07b）
   python scripts/parity_capture_ours.py --device 127.0.0.1:16416
-  python scripts/parity_capture_ours.py --out docs/parity_shots/ours_2.0.256
+  python scripts/parity_capture_ours.py --out docs/parity_shots/ours_<version>
 退出码：0 = 全部 OK；1 = 存在失败/跳过屏。
+
+期望版本不再硬编码：运行时从 flutter_legado/pubspec.yaml 的 `version:` 行动态读取
+（取 `+` 前主版本号），设备 versionName 需与之匹配；读取失败时回退到
+FALLBACK_EXPECT_VERSION（需随版本手工更新，仅作兜底）。
 """
 from __future__ import annotations
 
@@ -42,12 +47,37 @@ from pathlib import Path
 # ===== 常量 =====
 PKG = "io.legado.flutter_legado"
 ACT = f"{PKG}/io.legado.flutter.MainActivity"
-EXPECT_VERSION = "2.0.256"
 ROOT = Path(__file__).resolve().parent.parent
+# 期望版本：优先动态读取 flutter_legado/pubspec.yaml 的 version: 行（取 `+` 前主版本号），
+# 升级版本后无需手改本脚本；动态读取失败时回退到此兜底常量（需随版本手工更新）。
+FALLBACK_EXPECT_VERSION = "2.0.260"
+PUBSPEC = ROOT / "flutter_legado" / "pubspec.yaml"
+
+
+def read_expect_version() -> str:
+    """从 pubspec.yaml 的 `version:` 行读取版本号（取 `+` 前部分，如 2.0.260+261 → 2.0.260）。
+
+    读取/解析失败时回退 FALLBACK_EXPECT_VERSION 并告警，不中止运行。
+    """
+    try:
+        text = PUBSPEC.read_text(encoding="utf-8")
+    except OSError as e:
+        print(f"[parity] 警告：无法读取 {PUBSPEC}（{e}），回退兜底版本 {FALLBACK_EXPECT_VERSION}",
+              file=sys.stderr, flush=True)
+        return FALLBACK_EXPECT_VERSION
+    m = re.search(r"(?m)^\s*version\s*:\s*[\"']?([^\"'\s]+)", text)
+    if not m:
+        print(f"[parity] 警告：{PUBSPEC} 中未找到 version: 行，回退兜底版本 {FALLBACK_EXPECT_VERSION}",
+              file=sys.stderr, flush=True)
+        return FALLBACK_EXPECT_VERSION
+    return m.group(1).split("+", 1)[0]  # 去掉 build 号（+261）
+
+
+EXPECT_VERSION = read_expect_version()
 OUT_DIR = ROOT / "docs" / "parity_shots" / f"ours_{EXPECT_VERSION}"
 TMP_UI = Path(os.environ.get("TEMP", "/tmp")) / f"parity_ui_{os.getpid()}.xml"
 REMOTE_UI = "/sdcard/.parity_ui.xml"
-DEFAULT_DEVICE = "192.168.1.19:16416"
+DEFAULT_DEVICE = "192.168.1.19:5555"
 
 # 设备分辨率 1080x1920@480dpi（探测确认的坐标基准）
 W, H = 1080, 1920
@@ -57,7 +87,7 @@ TAB_HOME, TAB_SHELF, TAB_DISCOVER, TAB_SUB, TAB_MINE = (
 # 书架页
 BTN_SHELF_SEARCH = (882, 168)     # 顶栏 搜索 圆形钮
 BTN_SHELF_MENU = (1014, 168)      # 顶栏 Show menu（⋮）
-CARD_BOOK = (540, 942)            # 书卡（斗罗大陆）
+CARD_BOOK = (279, 1208)           # 书卡（斗罗大陆；2.0.260 实测 bounds[36,1148,522,1268] 中心）
 MENU_ITEM_SELECT = (804, 1008)    # 溢出菜单「选择模式」
 # 搜索页
 CHIP_HISTORY = (540, 807)         # 搜索历史 chip（斗罗大陆）
