@@ -129,8 +129,74 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       title: state.hasGroupTabs
           ? _buildGroupTabBar(context, state)
           : Text(AppStrings.bookshelf),
-      actions: _buildAppBarActions(context, ref),
+      // [UI-fix 2.0.258] 选择模式下空态/加载态顶栏同样切换为批量动作集
+      actions: state.isBatchMode
+          ? _buildBatchAppBarActions(context, ref)
+          : _buildAppBarActions(context, ref),
     );
+  }
+
+  /// [UI-fix 2.0.258] 选择模式顶栏动作集（全选/反选/删除/取消，对标原版
+  /// selectMode 顶栏切换语义）：进入选择模式后顶栏由「搜索+溢出菜单」
+  /// 切换为批量操作；tooltip 会暴露为 Android 无障碍 content-desc，
+  /// 保证 uiautomator dump 可检索到 全选/反选/删除/取消 关键词。
+  List<Widget> _buildBatchAppBarActions(BuildContext context, WidgetRef ref) {
+    final notifier = ref.read(bookshelfNotifierProvider.notifier);
+    return [
+      IconButton(
+        icon: const Icon(Icons.select_all),
+        tooltip: '全选',
+        onPressed: notifier.selectAll,
+      ),
+      IconButton(
+        icon: const Icon(Icons.flip_rounded),
+        tooltip: '反选',
+        onPressed: notifier.invertSelection,
+      ),
+      IconButton(
+        icon: const Icon(Icons.delete_rounded),
+        tooltip: '删除',
+        onPressed: () => _confirmDeleteSelected(context, ref),
+      ),
+      IconButton(
+        icon: const Icon(Icons.close_rounded),
+        tooltip: '取消',
+        onPressed: notifier.toggleBatchMode,
+      ),
+    ];
+  }
+
+  /// [UI-fix 2.0.258] 选择模式删除确认（对齐原版批量删除前二次确认，
+  /// 防误删；确认后逐本删除并退出选择模式）
+  Future<void> _confirmDeleteSelected(
+      BuildContext context, WidgetRef ref) async {
+    final state = ref.read(bookshelfNotifierProvider);
+    final count = state.selectedUrls.length;
+    if (count == 0) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('删除书籍'),
+        content: Text('确定删除选中的 $count 本书籍吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('删除'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    await ref.read(bookshelfNotifierProvider.notifier).deleteSelectedBooks();
+    if (!context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('已删除 $count 本书籍')));
   }
 
   /// 分组 TabBar（对标原版 BookshelfFragment1：可滚动 TabLayout 嵌入
@@ -247,6 +313,22 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     }
 
     if (state.isEmpty) {
+      // [UI-fix 2.0.258] 选择模式 + 空书架（对齐参考版 05 截图：
+      // 空态上方仍呈现「已选0本 · 共0本」胶囊）
+      if (state.isBatchMode) {
+        return Column(
+          children: [
+            _buildBatchSummaryCard(context, ref, state),
+            Expanded(
+              child: EmptyState(
+                icon: Symbols.library_books_rounded,
+                title: AppStrings.emptyBookshelf,
+                simple: true,
+              ),
+            ),
+          ],
+        );
+      }
       // 安卓原版：纯居中灰字空状态
       return EmptyState(
         icon: Symbols.library_books_rounded,
@@ -262,17 +344,15 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         slivers: [
           // [MD3 LargeTitle] 可折叠头部：无分组=SliverAppBar.large（跳顶时
           // 随滚动自然复位）；有分组=pinned TabBar 头（原版嵌入结构）
-          // [UI_SYNC_REFACTOR T3] 批量模式悬浮摘要卡
-          if (state.isBatchMode)
-            SliverToBoxAdapter(
-              child: _buildBatchSummaryCard(context, ref, state),
-            ),
           LegadoTabRootHeaderSliver(
             large: !state.hasGroupTabs,
             title: state.hasGroupTabs
                 ? _buildGroupTabBar(context, state)
                 : Text(AppStrings.bookshelf),
-            actions: _buildAppBarActions(context, ref),
+            // [UI-fix 2.0.258] 选择模式顶栏切换为批量动作集（全选/反选/删除/取消）
+            actions: state.isBatchMode
+                ? _buildBatchAppBarActions(context, ref)
+                : _buildAppBarActions(context, ref),
             // [UI_SYNC_REFACTOR B2] Dynamic 搜索行（对齐参考仓 topBar
             // bottomContent）：大标题下常驻搜索胶囊，进场展开动画
             bottom: const PreferredSize(
@@ -280,6 +360,12 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
               child: _ShelfSearchRow(),
             ),
           ),
+          // [UI-fix 2.0.258] 批量模式摘要卡位于头部之后（对齐参考版：
+          // 标题/Tab →「已选N本 · 共M本」胶囊 → 书列表）
+          if (state.isBatchMode)
+            SliverToBoxAdapter(
+              child: _buildBatchSummaryCard(context, ref, state),
+            ),
           if (state.showStats) _buildStatsSliver(context, state),
           if (state.showRecentReading) _buildRecentReadingSliver(context, ref, state),
           // 分组模式：渲染分组头 + 分组内容
@@ -444,13 +530,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         final batch = ref.watch(bookshelfNotifierProvider
             .select((s) => s.isBatchMode));
         if (batch) {
-          return BookListItem(
-            key: ValueKey(book.bookUrl),
-            book: book,
-            onTap: () => ref
-                .read(bookshelfNotifierProvider.notifier)
-                .toggleSelect(book.bookUrl),
-          );
+          // [UI-fix 2.0.258] 列表勾选态：选中高亮 + 尾部对勾，点按切换
+          final selected = ref.watch(bookshelfNotifierProvider
+              .select((s) => s.selectedUrls.contains(book.bookUrl)));
+          return _buildBatchListItem(context, ref, book, selected);
         }
         return BookListItem(
           key: ValueKey(book.bookUrl),
@@ -673,6 +756,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       itemCount: books.length,
       itemBuilder: (context, index) {
         final book = books[index];
+        // [UI-fix 2.0.258] 选择模式下分组列表同样走勾选态（与主列表一致）
+        final batch = ref.watch(bookshelfNotifierProvider
+            .select((s) => s.isBatchMode));
+        if (batch) {
+          final selected = ref.watch(bookshelfNotifierProvider
+              .select((s) => s.selectedUrls.contains(book.bookUrl)));
+          return _buildBatchListItem(context, ref, book, selected);
+        }
         return BookListItem(
           key: ValueKey(book.bookUrl),
           book: book,
@@ -1136,40 +1227,82 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     );
   }
 
-  /// [UI_SYNC_REFACTOR T3] 顶部悬浮摘要卡（对齐参考 TopFloatingStickyItem）
+  /// [UI-fix 2.0.258] 选择模式列表行（勾选态）：选中高亮 + 尾部对勾，
+  /// 点按切换选中；文案对齐参考版「已选N本 · 共M本」胶囊口径
+  Widget _buildBatchListItem(
+      BuildContext context, WidgetRef ref, Book book, bool selected) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: selected
+          ? cs.secondaryContainer.withValues(alpha: 0.3)
+          : cs.surface,
+      child: Row(
+        children: [
+          Expanded(
+            child: BookListItem(
+              key: ValueKey(book.bookUrl),
+              book: book,
+              onTap: () => ref
+                  .read(bookshelfNotifierProvider.notifier)
+                  .toggleSelect(book.bookUrl),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.only(right: 16),
+            child: Icon(
+              selected
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              size: 22,
+              color: selected ? cs.primary : cs.onSurfaceVariant,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 选择模式「已选N本 · 共M本」胶囊（对齐参考版 05 截图：× 退出钮 + 计数）
+  ///
+  /// [UI-fix 2.0.258] 根因修复：此前本卡构建为 `Positioned` 子树却挂在
+  /// SliverToBoxAdapter（非 Stack 父级）下，布局期抛异常（debug 报
+  /// "A Positioned widget must be wrapped with its parent"，release
+  /// 帧渲染中断），导致选择模式整屏灰白空白（台账 1-5 P0）。
+  /// 现改为常规 Center 布局，不再依赖 Stack 定位。
   Widget _buildBatchSummaryCard(
       BuildContext context, WidgetRef ref, BookshelfState state) {
     final cs = Theme.of(context).colorScheme;
-    return Positioned(
-      top: 0,
-      left: 16,
-      right: 16,
-      child: Material(
-        color: cs.surfaceContainer,
-        borderRadius: BorderRadius.circular(32),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-          child: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.close, size: 20),
-                tooltip: '退出选择',
-                onPressed: () => ref
-                    .read(bookshelfNotifierProvider.notifier)
-                    .toggleBatchMode(),
-              ),
-              Text(
-                '已选 ${state.selectedUrls.length}',
-                style: Theme.of(context)
-                    .textTheme
-                    .labelSmall
-                    ?.copyWith(fontWeight: FontWeight.w600),
-              ),
-              Text(
-                ' · 总 ${state.currentGroupBooks.length}',
-                style: Theme.of(context).textTheme.labelSmall,
-              ),
-            ],
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 8),
+        child: Material(
+          color: cs.surfaceContainer,
+          borderRadius: BorderRadius.circular(32),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.close, size: 20),
+                  tooltip: '退出选择',
+                  onPressed: () => ref
+                      .read(bookshelfNotifierProvider.notifier)
+                      .toggleBatchMode(),
+                ),
+                Text(
+                  '已选 ${state.selectedUrls.length} 本',
+                  style: Theme.of(context)
+                      .textTheme
+                      .labelSmall
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  ' · 共 ${state.currentGroupBooks.length} 本',
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ],
+            ),
           ),
         ),
       ),

@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.258] - 2026-09-14
+
+### Fixed
+- [UI] 书架「选择模式」进入后整屏灰白空白（台账 SCREEN_1TO1_PARITY_LEDGER 1-5 P0，用户可见功能不可用，MuMu 实机复拍两次复现：菜单→选择模式后无顶栏/无全选·删除·取消操作项/无书列表，仅剩底部导航，uiautomator dump 无任何选择态关键词）。根因=批量摘要卡 `_buildBatchSummaryCard` 被构建为 `Positioned` 子树却挂在 `SliverToBoxAdapter`（非 Stack 父级）下，进入选择模式（isBatchMode=true）后布局期抛异常（debug 报 "A Positioned widget must be wrapped with its parent"，release 帧渲染中断）→ body 整屏空白。修复=①摘要卡改常规 Center 布局（对齐参考版 05 截图「已选N本 · 共M本」胶囊：×退出钮+计数，位置移至头部之后）；②选择模式顶栏由「搜索+溢出菜单」切换为批量动作集（全选/反选/删除/取消，tooltip 暴露为 content-desc 保证 dump 可检索）；③列表/分组列表/网格行均呈现勾选态（选中高亮+对勾，点按切换）；④删除动作经确认对话框后逐本 `deleteBook`（对齐 BookshelfManageNotifier 方案），成功后同步列表并重拉数据源、清空选中并退出选择模式。空书架+选择模式仍呈现胶囊（对齐参考版 05 空态截图）。剩余能力（批量下载/移动分组 目前为 SnackBar 占位、批量缓存/批量换源等）登记不实现
+
+### Test
+- 实机验证：MuMu Test 实例（192.168.1.19:16416）安装 release 2.0.258+259，书架→溢出菜单→选择模式，屏幕呈现顶栏批量动作集（全选/反选/删除/取消）+「已选N本 · 共M本」胶囊+书列表勾选态，uiautomator dump 含 全选/反选/删除/取消/已选 关键词；`flutter analyze` 无问题；`flutter test` 全过。截图 docs/parity_shots/ours_2.0.258/05_bookshelf_select_mode.png
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.257] - 2026-09-14
 
 ### Fixed

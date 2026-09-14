@@ -276,6 +276,96 @@ void main() {
     });
   });
 
+  group('BookshelfNotifier 批量选择（选择模式）', () {
+    setUp(() {
+      when(() => mockApi.getBooks()).thenAnswer((_) async => testBooks);
+      container.read(bookshelfNotifierProvider);
+    });
+
+    test('toggleBatchMode 进入/退出选择模式并清空选中', () async {
+      await pumpInit();
+      expect(readState().isBatchMode, isFalse);
+
+      readNotifier().toggleBatchMode();
+      expect(readState().isBatchMode, isTrue);
+      expect(readState().selectedUrls, isEmpty);
+
+      readNotifier().toggleBatchMode();
+      expect(readState().isBatchMode, isFalse);
+    });
+
+    test('toggleSelect 切换单本选中', () async {
+      await pumpInit();
+      readNotifier().toggleBatchMode();
+
+      readNotifier().toggleSelect('book://1');
+      expect(readState().selectedUrls, contains('book://1'));
+
+      readNotifier().toggleSelect('book://1');
+      expect(readState().selectedUrls, isNot(contains('book://1')));
+    });
+
+    test('selectAll / invertSelection / clearSelection 语义', () async {
+      await pumpInit();
+      readNotifier().toggleBatchMode();
+
+      readNotifier().selectAll();
+      expect(readState().selectedUrls, hasLength(testBooks.length));
+
+      readNotifier().invertSelection();
+      expect(readState().selectedUrls, isEmpty);
+
+      readNotifier().selectAll();
+      readNotifier().clearSelection();
+      expect(readState().selectedUrls, isEmpty);
+    });
+
+    test('deleteSelectedBooks 逐本删除并退出选择模式', () async {
+      await pumpInit();
+      readNotifier().toggleBatchMode();
+      readNotifier().toggleSelect('book://1');
+      readNotifier().toggleSelect('book://2');
+
+      when(() => mockApi.deleteBook('book://1')).thenAnswer((_) async {});
+      when(() => mockApi.deleteBook('book://2')).thenAnswer((_) async {});
+      // 删除后重拉的数据源（仅剩 book://3）
+      when(() => mockApi.getBooks())
+          .thenAnswer((_) async => [testBooks[2]]);
+
+      await readNotifier().deleteSelectedBooks();
+
+      verify(() => mockApi.deleteBook('book://1')).called(1);
+      verify(() => mockApi.deleteBook('book://2')).called(1);
+      expect(readState().isBatchMode, isFalse);
+      expect(readState().selectedUrls, isEmpty);
+      expect(readState().books.map((b) => b.bookUrl), contains('book://3'));
+    });
+
+    test('deleteSelectedBooks 无选中时不触发删除', () async {
+      await pumpInit();
+      readNotifier().toggleBatchMode();
+
+      await readNotifier().deleteSelectedBooks();
+
+      verifyNever(() => mockApi.deleteBook(any()));
+      expect(readState().isBatchMode, isTrue);
+      expect(readState().books, hasLength(testBooks.length));
+    });
+
+    test('deleteSelectedBooks 失败时记录 error', () async {
+      await pumpInit();
+      readNotifier().toggleBatchMode();
+      readNotifier().toggleSelect('book://1');
+
+      when(() => mockApi.deleteBook('book://1'))
+          .thenThrow(const BridgeError(message: '删除失败'));
+
+      await readNotifier().deleteSelectedBooks();
+
+      expect(readState().error, equals('删除失败'));
+    });
+  });
+
   group('BookshelfNotifier 分组展示', () {
     setUp(() {
       when(() => mockApi.getBooks()).thenAnswer((_) async => testBooks);

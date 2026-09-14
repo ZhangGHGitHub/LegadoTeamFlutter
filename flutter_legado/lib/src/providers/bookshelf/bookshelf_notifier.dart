@@ -174,6 +174,31 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     state = state.copyWith(selectedUrls: {});
   }
 
+  /// 批量删除已勾选书籍（选择模式顶栏「删除」动作）
+  ///
+  /// [UI-fix 2.0.258] 逐本调用 `BookApi.deleteBook`（对齐
+  /// BookshelfManageNotifier.removeSelected 方案）；成功后先同步 UI 列表
+  /// 再重拉数据源保证与 Rust 一致；删除后清空选中并退出选择模式
+  /// （对标原版批量操作完成即退出选择态）。
+  Future<void> deleteSelectedBooks() async {
+    final urls = state.selectedUrls.toList();
+    if (urls.isEmpty) return;
+    try {
+      final api = ref.read(bookApiProvider);
+      for (final url in urls) {
+        await api.deleteBook(url);
+      }
+      state = state.copyWith(
+        books: state.books.where((b) => !urls.contains(b.bookUrl)).toList(),
+        isBatchMode: false,
+        selectedUrls: {},
+      );
+      await _loadBooks();
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e));
+    }
+  }
+
   void setGroupMode(GroupMode mode) {
     state = state.copyWith(groupMode: mode);
   }
