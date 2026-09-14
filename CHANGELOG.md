@@ -7,8 +7,12 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - [UI] 书架「选择模式」进入后整屏灰白空白（台账 SCREEN_1TO1_PARITY_LEDGER 1-5 P0，用户可见功能不可用，MuMu 实机复拍两次复现：菜单→选择模式后无顶栏/无全选·删除·取消操作项/无书列表，仅剩底部导航，uiautomator dump 无任何选择态关键词）。根因=批量摘要卡 `_buildBatchSummaryCard` 被构建为 `Positioned` 子树却挂在 `SliverToBoxAdapter`（非 Stack 父级）下，进入选择模式（isBatchMode=true）后布局期抛异常（debug 报 "A Positioned widget must be wrapped with its parent"，release 帧渲染中断）→ body 整屏空白。修复=①摘要卡改常规 Center 布局（对齐参考版 05 截图「已选N本 · 共M本」胶囊：×退出钮+计数，位置移至头部之后）；②选择模式顶栏由「搜索+溢出菜单」切换为批量动作集（全选/反选/删除/取消，tooltip 暴露为 content-desc 保证 dump 可检索）；③列表/分组列表/网格行均呈现勾选态（选中高亮+对勾，点按切换）；④删除动作经确认对话框后逐本 `deleteBook`（对齐 BookshelfManageNotifier 方案），成功后同步列表并重拉数据源、清空选中并退出选择模式。空书架+选择模式仍呈现胶囊（对齐参考版 05 空态截图）。剩余能力（批量下载/移动分组 目前为 SnackBar 占位、批量缓存/批量换源等）登记不实现
 
+### Fixed（补充修正）
+- [UI] 2.0.258 复审缺陷补修：选择模式下书架**书卡列表/网格分支仍不渲染**（书卡区灰色空区、无封面/书名/勾选态）。根因=`SliverReorderableList` 惰性 `itemBuilder` 要求每个 item 必带 `Key`（`reorderable_list.dart` 断言 `child.key != null`），而批量态 `_buildBatchListItem` 返回**无 key 的 `Material`** → 进入选择模式该 item 构建期抛异常、整行不渲染（正常态 `BookListItem` 自带 `ValueKey` 故不受影响）。修复=`_buildBatchListItem` 外层 `Material` 补 `key: ValueKey(book.bookUrl)`；新增真实 widget 测试 `bookshelf_batch_mode_test`（pump 真实 `BookshelfScreen` 复现并锁定勾选态）
+
 ### Test
 - 实机验证：MuMu Test 实例（192.168.1.19:16416）安装 release 2.0.258+259，书架→溢出菜单→选择模式，屏幕呈现顶栏批量动作集（全选/反选/删除/取消）+「已选N本 · 共M本」胶囊+书列表勾选态，uiautomator dump 含 全选/反选/删除/取消/已选 关键词；`flutter analyze` 无问题；`flutter test` 全过。截图 docs/parity_shots/ours_2.0.258/05_bookshelf_select_mode.png
+- 复审补修后复验：选择模式书卡行完整渲染（dump 中「斗罗大陆」命中 最近阅读行 + 书卡行 2 处，书卡行 bounds y>1100），点按书卡切换勾选、胶囊数字随之变化；`flutter analyze` 无问题；`flutter test` 全过（含新增 2 例选择模式书卡渲染/勾选测试）
 
 - Contributor: 全栈工程师子代理
 

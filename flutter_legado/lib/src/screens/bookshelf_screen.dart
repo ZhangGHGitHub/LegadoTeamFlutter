@@ -1229,10 +1229,18 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   /// [UI-fix 2.0.258] 选择模式列表行（勾选态）：选中高亮 + 尾部对勾，
   /// 点按切换选中；文案对齐参考版「已选N本 · 共M本」胶囊口径
+  ///
+  /// [UI-fix 2.0.258 修正] 根因：`SliverReorderableList` 的惰性 `itemBuilder`
+  /// 要求返回的每个 item 必须携带 `Key`（reorderable_list.dart 断言
+  /// `child.key != null`，否则该 item 构建期抛异常、整行不渲染）。正常态
+  /// 分支返回 `BookListItem(key: ValueKey(bookUrl))` 天然满足；而批量态此前
+  /// 返回无 key 的 `Material`，导致选择模式下书卡列表整块空白（台账 1-5 P0
+  /// 复审缺陷）。现给外层 `Material` 补上稳定 `ValueKey(bookUrl)` 修复。
   Widget _buildBatchListItem(
       BuildContext context, WidgetRef ref, Book book, bool selected) {
     final cs = Theme.of(context).colorScheme;
     return Material(
+      key: ValueKey(book.bookUrl),
       color: selected
           ? cs.secondaryContainer.withValues(alpha: 0.3)
           : cs.surface,
