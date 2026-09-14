@@ -44,7 +44,7 @@ class _SearchScopeSheetState extends ConsumerState<_SearchScopeSheet> {
     super.dispose();
   }
 
-  /// 全部不重复分组名（与 _SearchScreenState._extractGroups 同逻辑：
+  /// 全部不重复分组名（对标原版 BookSourceDao.dealGroups：
   /// splitGroupRegex 拆分 + 首现序去重）
   List<String> get _groups {
     final set = <String>{};
@@ -91,6 +91,119 @@ class _SearchScopeSheetState extends ConsumerState<_SearchScopeSheet> {
   void _onAllSources() {
     ref.read(searchNotifierProvider.notifier).clearAllFilter();
     Navigator.of(context).pop();
+  }
+
+  /// [1-6 ①] 范围快捷：分组点按（点已选=取消、点未选=单选替换，
+  /// 与原 ⋮ 'group:X' 语义一致）；同步分组多选节状态防止两节漂移
+  void _onQuickGroupTapped(String group) {
+    final notifier = ref.read(searchNotifierProvider.notifier);
+    final st = ref.read(searchNotifierProvider);
+    if (st.selectedGroups.contains(group)) {
+      notifier.toggleGroup(group);
+    } else {
+      notifier.selectGroupExclusive(group);
+    }
+    _checkedGroups = {...ref.read(searchNotifierProvider).selectedGroups};
+    setState(() {});
+  }
+
+  /// [1-6 ①] 当前书源快捷：点按清除书源范围（对齐原 ⋮ '__current_source__'）
+  void _onQuickCurrentSourceTapped() {
+    ref.read(searchNotifierProvider.notifier).clearSourceFilter();
+    _selectedUrl = null;
+    setState(() {});
+  }
+
+  /// [1-6 ①] 全部书源快捷：清空全部范围（对齐原 ⋮ '__all_sources__'；
+  /// 与底栏「全部书源」同语义但不关闭弹层，由 changed 检测统一重搜）
+  void _onQuickAllSourcesTapped() {
+    ref.read(searchNotifierProvider.notifier).clearAllFilter();
+    _checkedGroups = {};
+    _selectedUrl = null;
+    setState(() {});
+  }
+
+  /// 当前选中书源名（快捷节展示用；多源取首名）
+  String _quickCurrentSourceName(Set<String> urls) {
+    for (final s in widget.sources) {
+      if (urls.contains(s.bookSourceUrl)) return s.bookSourceName;
+    }
+    return '当前书源';
+  }
+
+  /// [1-6 ①] 范围快捷节（原 ⋮ 动态范围项并入 ◯ 弹层）：
+  /// 当前书源（有书源范围时显示，勾选=点按清除）/ 全部书源 / 各分组
+  ///（勾选=已选）；重搜由 _showSearchScopeDialog 的 changed 检测统一触发
+  Widget _buildScopeQuickSection(ColorScheme scheme) {
+    final st = ref.read(searchNotifierProvider);
+    final rows = <Widget>[
+      if (st.selectedSourceUrls.isNotEmpty)
+        _quickRow(
+          scheme,
+          label: _quickCurrentSourceName(st.selectedSourceUrls),
+          checked: true,
+          onTap: _onQuickCurrentSourceTapped,
+        ),
+      _quickRow(
+        scheme,
+        label: '全部书源',
+        checked: st.selectedGroups.isEmpty && st.selectedSourceUrls.isEmpty,
+        onTap: _onQuickAllSourcesTapped,
+      ),
+      for (final g in _groups)
+        _quickRow(
+          scheme,
+          label: g,
+          checked: st.selectedGroups.contains(g),
+          onTap: () => _onQuickGroupTapped(g),
+        ),
+    ];
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+      child: Container(
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.25),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(children: rows),
+      ),
+    );
+  }
+
+  /// 快捷节行：左勾选圈 + 名称（点按触发对应范围动作）
+  Widget _quickRow(
+    ColorScheme scheme, {
+    required String label,
+    required bool checked,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Icon(
+              checked ? Symbols.check_rounded : Symbols.circle_rounded,
+              size: 18,
+              color: checked ? scheme.primary : scheme.onSurfaceVariant,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 14,
+                  color: scheme.onSurface,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   /// 分段按钮（MD3 SegmentedButton 视觉：选中 secondaryContainer 底 +
@@ -140,6 +253,9 @@ class _SearchScopeSheetState extends ConsumerState<_SearchScopeSheet> {
             ),
           ),
         ),
+        // [1-6 ①] 范围快捷节（原 ⋮ 动态范围项：当前书源/全部书源/各分组并入 ◯ 弹层）
+        _buildScopeQuickSection(scheme),
+        const SizedBox(height: 12),
         // 分段切换（原版 rg_scope：rb_group / rb_source）
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 20),

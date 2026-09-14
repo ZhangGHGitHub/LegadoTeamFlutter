@@ -90,13 +90,16 @@ extension _SearchBuilders on _SearchScreenState {
             : Theme.of(context).colorScheme.surfaceContainerHighest,
         foregroundColor: active
             ? Theme.of(context).colorScheme.onPrimary
-            : Theme.of(context).colorScheme.onSurfaceVariant,
+            : Theme.of(context).colorScheme.onSurface,
       ),
     );
   }
 
   /// [搜索页对齐 | Qoder UI] 输入条（原顶栏胶囊整体迁移至 body 顶部：
   /// 对齐参考版「大标题 + 全宽输入条」形态；constraints.minWidth 0 防窄屏溢出）
+  ///
+  /// [1-6 ②] 参考版量测：紧凑胶囊高 ≈56dp、hint ≈16sp、灰蓝底走主题槽
+  /// surfaceContainerHigh（无阴影，SearchBar 默认即扁平）、两端全圆（Stadium）
   Widget _buildSearchField(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     return SearchBar(
@@ -104,17 +107,25 @@ extension _SearchBuilders on _SearchScreenState {
       focusNode: _focusNode,
       autoFocus: true,
       hintText: AppStrings.searchBookHint,
-      shape: WidgetStatePropertyAll(
-        RoundedRectangleBorder(borderRadius: BorderRadius.circular(32)),
+      textStyle: const WidgetStatePropertyAll(TextStyle(fontSize: 16)),
+      hintStyle: WidgetStatePropertyAll(
+        TextStyle(fontSize: 16, color: colorScheme.onSurfaceVariant),
       ),
+      shape: const WidgetStatePropertyAll(StadiumBorder()),
+      // [1-6 ②] 无阴影（SearchBar 默认 elevation 6 会投影，参考版为扁平胶囊）
+      elevation: const WidgetStatePropertyAll(0.0),
       backgroundColor: WidgetStatePropertyAll(
-        colorScheme.surfaceContainerLow,
+        colorScheme.surfaceContainerHigh,
       ),
-      constraints: const BoxConstraints(minHeight: 40, maxHeight: 40),
+      constraints: const BoxConstraints(minHeight: 56, maxHeight: 56),
       padding: const WidgetStatePropertyAll(
-        EdgeInsets.symmetric(horizontal: 12),
+        EdgeInsets.symmetric(horizontal: 16),
       ),
-      leading: const Icon(Symbols.search_rounded, size: 20),
+      leading: Icon(
+        Symbols.search_rounded,
+        size: 20,
+        color: colorScheme.onSurfaceVariant,
+      ),
       trailing: _searchController.text.isNotEmpty
           ? [
               IconButton(
@@ -148,112 +159,109 @@ extension _SearchBuilders on _SearchScreenState {
   }
 
   PreferredSizeWidget _buildAppBar(BuildContext context) {
-    // [搜索页对齐 | Qoder UI] 参考版形态：顶栏仅圆形动作钮（无输入条——
-    // 输入条移入 body 大标题下方），大标题「搜索」入 body
+    // [1-6 ①] 参考版形态：顶栏仅 3 个圆形动作钮（⚙/◯/≡）。
+    // 原第 4 钮 ⋮（2.0.255 迁入）移除，其菜单项按语义并入三钮入口（映射见台账 1-6）：
+    //   精准搜索/标识读过的书籍/日志/书源管理 → ⚙ 设置弹层
+    //   分组或书源/当前书源/全部书源/分组:X → ◯ 搜索范围弹层
+    //   搜索结果过滤 → ≡ 筛选弹层
     return LegadoAppBar(
       title: const SizedBox.shrink(),
       actions: [
-        // ① 设置⚙ → 书源管理（原版 menu_source_manage）
-        _circleAction(
-          context,
-          icon: Symbols.settings_rounded,
-          tooltip: '书源管理',
-          onTap: _openSourceManage,
+        // ① 设置⚙ → 设置弹层（书源管理/精准搜索/标识读过的书籍/日志，
+        // 原 ⋮ 静态项并入；锚定 ⚙ 钮下方，替代原 _menuButtonKey 定位）
+        // 图标对齐参考版：齿轮（Settings，非默认 ⋮），实心深色（onSurface）
+        PopupMenuButton<String>(
+          key: _menuButtonKey,
+          tooltip: '设置',
+          icon: Icon(
+            Symbols.settings_rounded,
+            color: Theme.of(context).colorScheme.onSurface,
+          ),
+          onSelected: _onSettingsMenuSelected,
+          itemBuilder: (_) => _buildSettingsMenuItems(),
         ),
-        // ② 定位（Filled.LocationSearching）→ 搜索范围（原版 menu_search_scope）
+        // ② 定位（center_focus_weak：十字刻线空心圆，对齐参考版 ◯ 形态）
+        // → 搜索范围弹层（原 ⋮ 范围项并入；
+        // 弹层内分组/书源选择 + 当前书源/全部书源/分组 快捷切换）
         _circleAction(
           context,
-          icon: Symbols.travel_explore_rounded,
+          icon: Symbols.center_focus_weak_rounded,
           tooltip: '搜索范围',
           onTap: _showSearchScopeDialog,
         ),
-        // ③ 筛选（Filled.Tune，实心=已开启）→ 搜索结果过滤
+        // ③ 筛选（filter_list：三段递减横线，对齐参考版 ≡ 形态；
+        // 已开启态主色底区分）→ 搜索结果过滤（原 ⋮「搜索结果过滤」项
+        // 即本钮直达，映射闭环）
         _circleAction(
           context,
-          icon: _resultFilterWords.isEmpty
-              ? Symbols.tune_rounded
-              : Symbols.filter_alt_rounded,
+          icon: Symbols.filter_list_rounded,
           tooltip: _resultFilterWords.isEmpty
               ? '搜索结果过滤'
               : '搜索结果过滤（已开启）',
           active: _resultFilterWords.isNotEmpty,
           onTap: _showResultFilterDialog,
         ),
-        PopupMenuButton<String>(
-          key: _menuButtonKey,
-          tooltip: '更多选项',
-          onSelected: (value) {
-            switch (value) {
-              case 'precision':
-                // [UI-fix v2.0.10 | 2026-08-10] 切换联动 notifier（other 桶
-                // 保留策略）并重搜（对齐原版 SearchActivity 切换后重新搜索）— Reasonix
-                setState(() => _precision = !_precision);
-                ref
-                    .read(searchNotifierProvider.notifier)
-                    .setPrecision(_precision);
-                // 持久化精准搜索偏好（对齐原版 PreferKey.precisionSearch）— Cursor UI
-                ref
-                    .read(bookApiProvider)
-                    .setConfig('precisionSearch', _precision ? 'true' : 'false');
-                final kw = ref.read(searchNotifierProvider).keyword;
-                if (kw.isNotEmpty) {
-                  ref.read(searchNotifierProvider.notifier).search(kw);
-                }
-                break;
-              case 'readRecord':
-                // P1-3：对标原版「标识读过的书籍」（show_search_read_record）
-                setState(() => _showReadRecord = !_showReadRecord);
-                SharedPreferences.getInstance().then((prefs) {
-                  prefs.setBool(_SearchScreenState._prefsShowReadRecord, _showReadRecord);
-                });
-                break;
-              case 'sources':
-                // [A1 形态对齐] 与顶栏「设置⚙」共享同一实现（不丢能力、避免两套代码）
-                _openSourceManage();
-                break;
-              case 'scope':
-                // 搜索范围底部对话框（对齐原版 SearchScopeDialog：rb_group CheckBox
-                // 多选 / rb_source RadioButton 单选 + 名称过滤，全部书源/取消/确定）— Cursor UI
-                _showSearchScopeDialog();
-                break;
-              case 'filter':
-                // [A1 形态对齐 | full-stack-engineer + UI] 与顶栏「筛选」共享同一实现
-                _showResultFilterDialog();
-                break;
-              case '__all_sources__':
-                // 动态分组条目：清空范围=全部书源（原版 menu_1 → update("")）— Cursor UI
-                ref.read(searchNotifierProvider.notifier).clearAllFilter();
-                _autoResearchAfterScopeChange();
-                break;
-              case '__current_source__':
-                // 动态分组条目：当前书源范围，点按清除（原版 remove → ""）— Cursor UI
-                ref.read(searchNotifierProvider.notifier).clearSourceFilter();
-                _autoResearchAfterScopeChange();
-                break;
-              case 'log':
-                // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版 menu_log → AppLogDialog） — Qoder
-                Navigator.pushNamed(context, AppRoutes.appLog);
-                break;
-              default:
-                // 动态分组条目 'group:X'：点已选=取消（原版 remove(title)）、
-                // 点未选=单选替换（原版 update(title)）— Cursor UI
-                if (value.startsWith('group:')) {
-                  final group = value.substring('group:'.length);
-                  final st = ref.read(searchNotifierProvider);
-                  final notifier = ref.read(searchNotifierProvider.notifier);
-                  if (st.selectedGroups.contains(group)) {
-                    notifier.toggleGroup(group);
-                  } else {
-                    notifier.selectGroupExclusive(group);
-                  }
-                  _autoResearchAfterScopeChange();
-                }
-            }
-          },
-          itemBuilder: (_) => _buildOverflowMenuItems(),
-        ),
       ],
     );
+  }
+
+  /// [1-6 ①] ⚙ 设置弹层项（原 ⋮ 菜单「设置类」静态项并入；
+  /// 动态范围项归 ◯ 弹层，见 [_SearchScopeSheet] 范围快捷节）
+  List<PopupMenuEntry<String>> _buildSettingsMenuItems() {
+    return [
+      CheckedPopupMenuItem(
+        value: 'precision',
+        checked: _precision,
+        child: const Text('精准搜索'),
+      ),
+      // 对标原版 show_search_read_record：「标识读过的书籍」
+      CheckedPopupMenuItem(
+        value: 'readRecord',
+        checked: _showReadRecord,
+        child: const Text('标识读过的书籍'),
+      ),
+      const PopupMenuItem(value: 'sources', child: Text('书源管理')),
+      // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen
+      //（对标原版 menu_log → AppLogDialog） — Qoder
+      const PopupMenuItem(value: 'log', child: Text('日志')),
+    ];
+  }
+
+  /// [1-6 ①] ⚙ 设置弹层选中分发（逻辑与原 ⋮ onSelected 对应分支一致）
+  void _onSettingsMenuSelected(String value) {
+    switch (value) {
+      case 'precision':
+        // [UI-fix v2.0.10 | 2026-08-10] 切换联动 notifier（other 桶
+        // 保留策略）并重搜（对齐原版 SearchActivity 切换后重新搜索）— Reasonix
+        setState(() => _precision = !_precision);
+        ref.read(searchNotifierProvider.notifier).setPrecision(_precision);
+        // 持久化精准搜索偏好（对齐原版 PreferKey.precisionSearch）— Cursor UI
+        ref
+            .read(bookApiProvider)
+            .setConfig('precisionSearch', _precision ? 'true' : 'false');
+        final kw = ref.read(searchNotifierProvider).keyword;
+        if (kw.isNotEmpty) {
+          ref.read(searchNotifierProvider.notifier).search(kw);
+        }
+        break;
+      case 'readRecord':
+        // P1-3：对标原版「标识读过的书籍」（show_search_read_record）
+        setState(() => _showReadRecord = !_showReadRecord);
+        SharedPreferences.getInstance().then((prefs) {
+          prefs.setBool(_SearchScreenState._prefsShowReadRecord,
+              _showReadRecord);
+        });
+        break;
+      case 'sources':
+        // 与顶栏「设置⚙」直达语义一致（原 ⋮ 项并入后仍保留直达）
+        _openSourceManage();
+        break;
+      case 'log':
+        // [UI-fix v2.0.1 | 2026-08-06] 日志菜单接通 AppLogScreen（对标原版
+        // menu_log → AppLogDialog） — Qoder
+        Navigator.pushNamed(context, AppRoutes.appLog);
+        break;
+    }
   }
 
   Widget _buildBody(BuildContext context, SearchState state) {
@@ -606,100 +614,12 @@ extension _SearchBuilders on _SearchScreenState {
     return RepaintBoundary(child: tile);
   }
 
-  /// 溢出菜单条目：5 静态条目 + 动态分组节（对齐原版 onMenuOpened L121-157）
-  ///
-  /// 动态节顺序与原版一致：当前书源（若有，带勾选，点按清空）→ 全部书源
-  ///（无范围时带勾选）→ 全部分组连续排列（已选带勾选/未选无勾选）。
-  /// 原版每次打开菜单重建本节；此处用预载的 [_menuSources] 缓存
-  ///（进入时预载、返回书源管理页后刷新）。
-  /// 自愈：范围非空但已无有效勾选时对标原版 !hasChecked 分支，
-  /// 延迟清空为全部书源（searchScope.update("")）。— Cursor UI
-  List<PopupMenuEntry<String>> _buildOverflowMenuItems() {
-    final state = ref.read(searchNotifierProvider);
-    final items = <PopupMenuEntry<String>>[
-      CheckedPopupMenuItem(
-        value: 'precision',
-        checked: _precision,
-        child: const Text('精准搜索'),
-      ),
-      // 对标原版 show_search_read_record：「标识读过的书籍」
-      CheckedPopupMenuItem(
-        value: 'readRecord',
-        checked: _showReadRecord,
-        child: const Text('标识读过的书籍'),
-      ),
-      // [A1 形态对齐 | full-stack-engineer + UI] 补齐原版第 3 项「搜索结果过滤」
-      //（原版 book_search.xml 六项全保留；与顶栏「筛选」共享同一实现）
-      const PopupMenuItem(value: 'filter', child: Text('搜索结果过滤')),
-      const PopupMenuItem(value: 'sources', child: Text('书源管理')),
-      const PopupMenuItem(value: 'scope', child: Text('分组或书源')),
-    ];
-    // 动态分组节（原版 onMenuOpened L121-157）
-    final sources = _menuSources ?? const <BookSource>[];
-    final enabledGroups = _extractGroups(sources);
-    if (state.selectedSourceUrls.isNotEmpty) {
-      items.add(
-        CheckedPopupMenuItem(
-          value: '__current_source__',
-          checked: true,
-          child: Text(_sourceNameOf(sources, state.selectedSourceUrls)),
-        ),
-      );
-    }
-    items.add(
-      CheckedPopupMenuItem(
-        value: '__all_sources__',
-        checked: state.selectedGroups.isEmpty &&
-            state.selectedSourceUrls.isEmpty,
-        child: const Text('全部书源'),
-      ),
-    );
-    for (final group in enabledGroups) {
-      items.add(
-        CheckedPopupMenuItem(
-          value: 'group:$group',
-          checked: state.selectedGroups.contains(group),
-          child: Text(group),
-        ),
-      );
-    }
-    // 自愈（原版 !hasChecked：范围指向已失效分组 → searchScope.update("")）
-    final hasChecked = state.selectedSourceUrls.isNotEmpty ||
-        state.selectedGroups.isEmpty ||
-        enabledGroups.any(state.selectedGroups.contains);
-    if (!hasChecked) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          ref.read(searchNotifierProvider.notifier).clearAllFilter();
-        }
-      });
-    }
-    items.add(const PopupMenuItem(value: 'log', child: Text('日志')));
-    return items;
-  }
-
-  /// 当前选中书源名称（动态菜单条目展示用）
-  String _sourceNameOf(List<BookSource> sources, Set<String> urls) {
-    for (final s in sources) {
-      if (urls.contains(s.bookSourceUrl)) return s.bookSourceName;
-    }
-    return '书源';
-  }
-
-  /// 范围变更后自动重搜（对齐原版 stateLiveData 观察者重搜）
-  void _autoResearchAfterScopeChange() {
-    final st = ref.read(searchNotifierProvider);
-    if (st.keyword.isNotEmpty) {
-      ref.read(searchNotifierProvider.notifier).search(st.keyword);
-    }
-  }
-
   // ===== [A1 形态对齐 | full-stack-engineer + UI] 顶栏三钮共享实现 =====
 
-  /// 打开书源管理页，返回后刷新动态分组条目（原版每次打开实时查询）。
-  /// 顶栏「设置⚙」与 ⋮ 菜单「书源管理」共用此实现。
+  /// 打开书源管理页（顶栏「设置⚙」弹层「书源管理」项入口）。
+  /// 范围弹层打开时自行实时拉取书源（_showSearchScopeDialog），无需缓存。
   void _openSourceManage() {
-    Navigator.pushNamed(context, '/sources').whenComplete(_refreshMenuSources);
+    Navigator.pushNamed(context, '/sources');
   }
 
   /// 解析屏蔽词表（对齐原版 filterSearchResults 词解析：
@@ -799,26 +719,6 @@ extension _SearchBuilders on _SearchScreenState {
     }
   }
 
-  /// 从书源列表提取全部不重复分组名
-  ///
-  /// 对标原版 BookSourceDao.dealGroups：按 AppPattern.splitGroupRegex
-  ///（[,;，；]）拆分、去重。原版最终按 cnCompare（ICU 简体中文序）排序；
-  /// Flutter 轨无拼音 Collator，采用首现序（与 book_source_group_manage_dialog
-  /// 聚合惯例一致）。
-  List<String> _extractGroups(List<BookSource> sources) {
-    final groupSet = <String>{};
-    for (final source in sources) {
-      final group = source.bookSourceGroup;
-      if (group != null && group.isNotEmpty) {
-        final parts = group.split(_splitGroupRegex).map((g) => g.trim());
-        for (final g in parts) {
-          if (g.isNotEmpty) groupSet.add(g);
-        }
-      }
-    }
-    return groupSet.toList();
-  }
-
   /// 集合相等比较（元素无序）
   static bool _setEquals(Set<String> a, Set<String> b) {
     if (a.length != b.length) return false;
@@ -897,6 +797,15 @@ extension _SearchBuilders on _SearchScreenState {
                     padding: const EdgeInsets.only(top: 16),
                     child: Row(
                       children: [
+                        // [1-6 ③] 参考版：「搜索历史」标题前缀 history（时钟形）图标
+                        Icon(
+                          Symbols.history_rounded,
+                          size: 18,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .onSurfaceVariant,
+                        ),
+                        const SizedBox(width: 6),
                         Text(
                           AppStrings.searchHistory,
                           style: Theme.of(context)

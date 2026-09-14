@@ -58,7 +58,8 @@ void main() {
   testWidgets('360dp 下顶栏不溢出、输入条在位且可输入', (tester) async {
     await pumpAt360(tester);
     // 布局溢出（RenderFlex overflow）会以异常形式被框架捕获：
-    // 断言无异常即断言顶栏（返回+胶囊+5 动作钮）在 360dp 下放得下
+    // 断言无异常即断言顶栏（返回+3 动作钮，[1-6 ①] 2.0.259 4→3）
+    // 与 body 顶部输入条在 360dp 下放得下
     expect(tester.takeException(), isNull);
     // 输入条可输入
     await tester.enterText(find.byType(TextField).first, '斗罗大陆');

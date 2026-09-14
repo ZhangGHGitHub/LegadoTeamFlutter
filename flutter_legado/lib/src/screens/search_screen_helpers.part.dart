@@ -10,17 +10,6 @@ part of 'search_screen.dart';
 
 extension _SearchHelpers on _SearchScreenState {
 
-  /// 刷新溢出菜单用的书源缓存（加载失败时动态分组条目隐藏，静态条目不受影响）
-  Future<void> _refreshMenuSources() async {
-    try {
-      final list = await ref.read(bookApiProvider).getEnabledBookSources();
-      if (!mounted) return;
-      setState(() => _menuSources = list);
-    } catch (_) {
-      // 静默：菜单仍显示静态条目
-    }
-  }
-
   /// 聚焦变化时更新输入帮助层显隐
   void _onFocusChanged() => _updateInputHelpVisibility();
 

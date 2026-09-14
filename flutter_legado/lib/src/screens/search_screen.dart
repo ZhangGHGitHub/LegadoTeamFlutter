@@ -79,11 +79,9 @@ class _SearchScreenState
   // 空结果智能引导弹窗：每次搜索最多弹一次
   int _searchSessionId = 0;
   int _emptyDialogShownForSession = -1;
-  // [UI-fix v2.0.3 | 2026-08-07] 锚定菜单定位键：分组 PopupMenu 锚定三点按钮下方 — Qoder
+  // [UI-fix v2.0.3 | 2026-08-07] 锚定菜单定位键：分组 PopupMenu 锚定按钮下方 — Qoder
+  // [1-6 ①] 2.0.259 ⋮ 溢出菜单移除后，该键由 ⚙ 设置弹层 PopupMenuButton 复用（锚定 ⚙ 钮下方）
   final _menuButtonKey = GlobalKey();
-  // 溢出菜单动态分组条目的书源缓存（对标原版 onMenuOpened 每次打开实时查询；
-  // 进入时预载，返回书源管理页后刷新）— Cursor UI
-  List<BookSource>? _menuSources;
 
   @override
   void initState() {
@@ -146,8 +144,6 @@ class _SearchScreenState
         setState(() => _resultFilter = filter);
       }
     });
-    // 预载溢出菜单动态分组条目所需书源列表（对标原版 onMenuOpened 实时查询）— Cursor UI
-    _refreshMenuSources();
   }
 
   @override

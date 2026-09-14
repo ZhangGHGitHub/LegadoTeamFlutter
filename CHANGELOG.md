@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.259] - 2026-09-14
+
+### Fixed
+- [UI] 首页 1:1 对齐（台账 SCREEN_1TO1_PARITY_LEDGER 1-2，基准 docs/parity_shots/ref_20260914/01_home_page.png）：①「首页」大标题移至动作钮行下方独立一行（fontSize 28）；②统计双卡图标统一主题 primary 色（复核已对齐，无改动）；③目标卡编辑入口由行内铅笔改为白底圆形悬浮钮（pencil 图标 40×40 圆形 Material），目标卡图标统一靶形 radar_rounded；④卡片圆角 20→24 对齐参考版；⑤⋮「首页组件」入口属模块管理域，用户裁决暂不实施，仅保留台账登记
+- [UI] 搜索页 1:1 对齐（台账 1-6，基准 docs/parity_shots/ref_20260914/06_search.png）：①顶栏 4 钮 → 3 钮（⚙ 设置 / ◯ 搜索范围 / ≡ 结果过滤），移除 ⋮ 溢出菜单并将菜单项按语义并入三钮（精准搜索/标识读过的书籍/书源管理/日志 → ⚙ 设置弹层；当前书源/全部书源/分组:X → ◯ 范围弹层新增快捷节，点按即切范围并重搜；原 ⋮ 静态项「搜索结果过滤/分组或书源」与 ≡/◯ 直按钮重复，不再单列）；②输入条改紧凑胶囊（高 56dp、hint 16sp、灰蓝底走主题槽 surfaceContainerHigh、无阴影、两端全圆）；③「搜索历史」标题行补时钟形（history）前缀图标；④历史 chip 与空态不改（待参考有数据态补采后再比，保留台账登记）
+
+### Test
+- 实机验证：MuMu Test 实例（192.168.1.19:16416）安装 release 2.0.259+260，截图 docs/parity_shots/ours_2.0.259/01_home_page.png、06_search.png（与 ref_20260914 逐屏比对通过）；`flutter analyze` 无问题；`flutter test` 全过（1459 例）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.258] - 2026-09-14
 
 ### Fixed

@@ -186,10 +186,11 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         children: [
+          // [1-2 ①] 参考版层级：动作钮行在上（右对齐），大标题独占下一行（左对齐、更大）。
+          // 参考版该行另有 ⋮（「首页组件」入口，属模块管理域，用户裁决暂不实施，仅保留台账登记）
           Row(
+            mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              Text('首页', style: Theme.of(context).textTheme.headlineMedium),
-              const Spacer(),
               IconButton(
                 tooltip: '其他设置',
                 icon: const Icon(Icons.settings_rounded),
@@ -198,7 +199,16 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
+          Text(
+            '首页',
+            // 参考版量测：标题字高 77px ≈ 28sp（现 headlineMedium 24sp → 放大至 28）
+            style: Theme.of(context)
+                .textTheme
+                .headlineMedium
+                ?.copyWith(fontSize: 28),
+          ),
+          const SizedBox(height: 16),
           // ===== 最近阅读卡 =====
           if (recent != null)
             _HomeCard(
@@ -317,16 +327,14 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
               children: [
                 Row(
                   children: [
-                    Icon(Symbols.av_timer_rounded, color: cs.primary),
+                    // [1-2 ③] 参考版目标图标=同心圆靶形（radar），替换时钟形
+                    Icon(Symbols.radar_rounded, color: cs.primary),
                     const SizedBox(width: 10),
                     Text('今日阅读目标',
                         style: Theme.of(context).textTheme.titleMedium),
                     const Spacer(),
-                    IconButton(
-                      tooltip: '编辑目标',
-                      icon: const Icon(Icons.edit_rounded, size: 20),
-                      onPressed: _editGoal,
-                    ),
+                    // [1-2 ③] 参考版编辑钮=白底圆形浮钮（表面色+投影），替换裸图标
+                    _GoalEditFab(onTap: _editGoal),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -414,7 +422,7 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
   }
 }
 
-/// 首页卡片基座（圆角 20 + surfaceContainerLow，与阅读界面弹层卡一致）
+/// 首页卡片基座（圆角 24 + surfaceContainerLow，与阅读界面弹层卡一致）
 class _HomeCard extends StatelessWidget {
   final Widget child;
   final VoidCallback? onTap;
@@ -426,13 +434,41 @@ class _HomeCard extends StatelessWidget {
     return Card(
       elevation: 0,
       color: Theme.of(context).colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: child,
+        ),
+      ),
+    );
+  }
+}
+
+/// [1-2 ③] 目标卡编辑钮：白底圆形浮钮（参考版量测 ≈40dp 表面色圆 + 投影，
+/// 图标 onSurface；替换原裸 IconButton）
+class _GoalEditFab extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _GoalEditFab({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return Material(
+      color: cs.surface,
+      elevation: 2,
+      shape: const CircleBorder(),
+      child: SizedBox(
+        width: 40,
+        height: 40,
+        child: IconButton(
+          tooltip: '编辑目标',
+          icon: const Icon(Icons.edit_rounded, size: 20),
+          color: cs.onSurface,
+          onPressed: onTap,
         ),
       ),
     );

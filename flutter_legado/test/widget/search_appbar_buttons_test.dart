@@ -1,11 +1,13 @@
 // [A1 形态对齐 | full-stack-engineer + UI] 搜索页顶栏三钮 + 结果过滤回归测试
 //
 // 覆盖：
-// 1. 顶栏三钮（书源管理 / 搜索范围 / 搜索结果过滤）+ ⋮ 菜单「更多选项」均在位；
+// 1. [1-6 ①] 顶栏 3 钮（⚙ 设置 / ◯ 搜索范围 / ≡ 搜索结果过滤）均在位，
+//    原第 4 钮 ⋮「更多选项」已移除（其项按语义并入三钮入口）；
 // 2. 结果过滤关闭态：按钮 tooltip 为「搜索结果过滤」，未过滤结果全量展示；
 // 3. 结果过滤开启态（config searchResultFilter 非空）：命中屏蔽词的结果被
 //    展示层过滤隐藏，按钮 tooltip 变为「搜索结果过滤（已开启）」；
-// 4. ⋮ 菜单补齐「搜索结果过滤」项（原版六项不丢能力）。
+// 4. [1-6 ①] ⚙ 设置弹层承载原 ⋮「设置类」项（精准搜索/标识读过的书籍/
+//    书源管理/日志），功能可达性不丢。
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -79,7 +81,7 @@ void main() {
           .toList();
 
   group('搜索页顶栏三钮（A1 形态对齐）', () {
-    testWidgets('顶栏三钮 + ⋮ 菜单均在位', (tester) async {
+    testWidgets('顶栏三钮（设置/范围/过滤）均在位，⋮ 已移除', (tester) async {
       final events = StreamController<Map<String, dynamic>>();
       // [A1 形态对齐] searchMultiStream 契约含 page 参数（批次B G-B-01 翻页），
       // mock 须显式匹配 page，否则 mocktail 返回 null → 搜索报错、结果不落地
@@ -92,12 +94,12 @@ void main() {
       await tester.pumpWidget(wrap(const SearchScreen()));
       await tester.pump();
 
-      // 三钮 tooltip 均在顶栏
-      expect(find.byTooltip('书源管理'), findsOneWidget);
+      // [1-6 ①] 三钮 tooltip 均在顶栏（⚙ 设置 / ◯ 搜索范围 / ≡ 搜索结果过滤）
+      expect(find.byTooltip('设置'), findsOneWidget);
       expect(find.byTooltip('搜索范围'), findsOneWidget);
       expect(find.byTooltip('搜索结果过滤'), findsOneWidget);
-      // ⋮ 菜单保留
-      expect(find.byTooltip('更多选项'), findsOneWidget);
+      // 原第 4 钮 ⋮「更多选项」已移除
+      expect(find.byTooltip('更多选项'), findsNothing);
 
       events.close();
     });
@@ -154,7 +156,7 @@ void main() {
       events.close();
     });
 
-    testWidgets('⋮ 菜单补齐「搜索结果过滤」项', (tester) async {
+    testWidgets('⚙ 设置弹层承载原 ⋮ 设置类项（功能可达性不丢）', (tester) async {
       final events = StreamController<Map<String, dynamic>>();
       when(() => mockApi.searchMultiStream(
               any(),
@@ -165,16 +167,18 @@ void main() {
       await tester.pumpWidget(wrap(const SearchScreen()));
       await tester.pump();
 
-      // 打开 ⋮ 菜单
-      await tester.tap(find.byTooltip('更多选项'));
+      // [1-6 ①] 打开 ⚙ 设置弹层（原 ⋮「设置类」项并入）
+      await tester.tap(find.byTooltip('设置'));
       await tester.pumpAndSettle();
-      expect(find.text('搜索结果过滤'), findsOneWidget);
-      // 原版六项（静态）仍在
+      // 设置类四项仍在（精准搜索/标识读过的书籍/书源管理/日志）
       expect(find.text('精准搜索'), findsOneWidget);
       expect(find.text('标识读过的书籍'), findsOneWidget);
       expect(find.text('书源管理'), findsOneWidget);
-      expect(find.text('分组或书源'), findsOneWidget);
       expect(find.text('日志'), findsOneWidget);
+      // 「搜索结果过滤」已并入 ≡ 直达钮，不再列于设置弹层
+      expect(find.text('搜索结果过滤'), findsNothing);
+      // 「分组或书源」已并入 ◯ 弹层，不再列于设置弹层
+      expect(find.text('分组或书源'), findsNothing);
 
       events.close();
     });

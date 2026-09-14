@@ -2,15 +2,18 @@
 //
 // 缺陷 D1（P1，设备验收批，复现 2/2）：
 // 书架 → 搜索页 → 点顶栏「搜索结果过滤」筛选钮 → 对话框点「取消」
-// → 随即点 ⋮ 菜单 → 整页红屏 `'_dependents.isEmpty': is not true.`
+// → 随即开顶栏菜单 → 整页红屏 `'_dependents.isEmpty': is not true.`
 // （framework.dart InheritedElement.debugDeactivated），UI 锁死。
-// 对照路径（不经过滤弹层直接开 ⋮）正常。
+// 对照路径（不经过滤弹层直接开菜单）正常。
+//
+// [1-6 ①] 2.0.259 顶栏 4→3 钮后，复现路径中的「开菜单」由原 ⋮ 溢出菜单
+// 改为 ⚙ 设置弹层（同 PopupMenuButton 机制，红屏风险同类，回归仍有效）。
 //
 // 本测试按原复现步骤执行顺序操作，断言：
 // 1. 过滤对话框正常弹出（屏蔽词编辑框在位）；
 // 2. 点「取消」后对话框关闭；
-// 3. 随后打开 ⋮ 菜单无异常（tester.takeException() 为空），菜单项在位；
-// 4. 连续三轮「开过滤 → 取消 → 开 ⋮」不再触发红屏断言。
+// 3. 随后打开 ⚙ 设置弹层无异常（tester.takeException() 为空），菜单项在位；
+// 4. 连续三轮「开过滤 → 取消 → 开 ⚙」不再触发红屏断言。
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -55,27 +58,30 @@ void main() {
     );
   }
 
-  /// 打开 ⋮ 菜单并断言其正常展开（无红屏异常、静态条目在位）
-  Future<void> expectOverflowMenuOpen(WidgetTester tester) async {
-    await tester.tap(find.byTooltip('更多选项'));
+  /// 打开 ⚙ 设置弹层并断言其正常展开（无红屏异常、设置类条目在位）
+  ///
+  /// [1-6 ①] 原 ⋮ 溢出菜单已移除，设置类项（精准搜索/标识读过的书籍/
+  /// 书源管理/日志）并入 ⚙ 弹层，「搜索结果过滤」改由 ≡ 直达钮承担。
+  Future<void> expectSettingsMenuOpen(WidgetTester tester) async {
+    await tester.tap(find.byTooltip('设置'));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull,
-        reason: '打开 ⋮ 菜单不应抛框架断言（红屏）');
+        reason: '打开 ⚙ 设置弹层不应抛框架断言（红屏）');
     expect(find.text('精准搜索'), findsOneWidget);
-    expect(find.text('搜索结果过滤'), findsOneWidget);
     expect(find.text('书源管理'), findsOneWidget);
+    expect(find.text('日志'), findsOneWidget);
   }
 
-  /// 关闭 ⋮ 菜单：点按菜单外区域（菜单锚定顶栏右侧向下展开，
-  /// 测试默认画布 800x600，左下角远离菜单）
-  Future<void> closeOverflowMenu(WidgetTester tester) async {
+  /// 关闭 ⚙ 设置弹层：点按弹层外区域（弹层锚定顶栏左侧 ⚙ 钮下方展开，
+  /// 测试默认画布 800x600，左下角远离弹层）
+  Future<void> closeSettingsMenu(WidgetTester tester) async {
     await tester.tapAt(const Offset(40, 560));
     await tester.pumpAndSettle();
-    expect(find.text('精准搜索'), findsNothing, reason: '菜单应已关闭');
+    expect(find.text('精准搜索'), findsNothing, reason: '弹层应已关闭');
   }
 
-  group('D1 回归：过滤对话框取消后随即开 ⋮ 菜单', () {
-    testWidgets('单轮：筛选 → 取消 → ⋮ 菜单无红屏', (tester) async {
+  group('D1 回归：过滤对话框取消后随即开 ⚙ 设置弹层', () {
+    testWidgets('单轮：筛选 → 取消 → ⚙ 弹层无红屏', (tester) async {
       await tester.pumpWidget(wrap(const SearchScreen()));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
@@ -91,11 +97,11 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('搜索结果屏蔽词'), findsNothing);
 
-      // ③ 随即点 ⋮ → 不应红屏
-      await expectOverflowMenuOpen(tester);
+      // ③ 随即开 ⚙ 设置弹层 → 不应红屏
+      await expectSettingsMenuOpen(tester);
 
-      // 关闭菜单，页面可继续交互（再开一次过滤弹层验证未锁死）
-      await closeOverflowMenu(tester);
+      // 关闭弹层，页面可继续交互（再开一次过滤弹层验证未锁死）
+      await closeSettingsMenu(tester);
       await tester.tap(find.byTooltip('搜索结果过滤'));
       await tester.pumpAndSettle();
       expect(find.text('搜索结果屏蔽词'), findsOneWidget);
@@ -123,12 +129,12 @@ void main() {
       verify(() => mockApi.setConfig('searchResultFilter', '广告'))
           .called(1);
 
-      // 按钮进入「已开启」态，且随后开 ⋮ 菜单仍无红屏
+      // 按钮进入「已开启」态，且随后开 ⚙ 设置弹层仍无红屏
       expect(find.byTooltip('搜索结果过滤（已开启）'), findsOneWidget);
-      await expectOverflowMenuOpen(tester);
+      await expectSettingsMenuOpen(tester);
     });
 
-    testWidgets('三轮连做：筛选 → 取消 → ⋮ 均无红屏', (tester) async {
+    testWidgets('三轮连做：筛选 → 取消 → ⚙ 均无红屏', (tester) async {
       await tester.pumpWidget(wrap(const SearchScreen()));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 400));
@@ -144,12 +150,12 @@ void main() {
         expect(find.text('搜索结果屏蔽词'), findsNothing,
             reason: '第 ${i + 1} 轮取消后弹层应关闭');
 
-        await expectOverflowMenuOpen(tester);
+        await expectSettingsMenuOpen(tester);
         expect(tester.takeException(), isNull,
-            reason: '第 ${i + 1} 轮 ⋮ 菜单不应触发红屏断言');
+            reason: '第 ${i + 1} 轮 ⚙ 弹层不应触发红屏断言');
 
-        // 关菜单（点按菜单外区域，对齐设备「点遮罩关闭」路径）
-        await closeOverflowMenu(tester);
+        // 关弹层（点按弹层外区域，对齐设备「点遮罩关闭」路径）
+        await closeSettingsMenu(tester);
       }
       expect(tester.takeException(), isNull, reason: '三轮后页面不应有异常');
     });
