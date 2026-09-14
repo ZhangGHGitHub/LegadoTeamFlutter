@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.257] - 2026-09-14
+
+### Fixed
+- [UI] 书架溢出菜单「导出书单/导入书单/日志」三项首屏不可见（台账 SCREEN_1TO1_PARITY_LEDGER 1-4② 登记 P1「功能缺失待核实」，核实结论=**功能与入口均已存在**，v2.0.2 起三项菜单项与处理逻辑齐备：导出书单=书架 JSON 数组（name/author/intro）导出分享、导入书单=URL/JSON 数组/txt/json 文件导入并经 preciseSearch 逐本入库、日志=跳 AppLogScreen（对标原版 menu_log → AppLogDialog）；缺失表象根因=菜单 14 项 + 4 条分割线超出 360×640dp 屏溢出菜单可视高度，三项被挤到滚动区外，1:1 首屏截图比对误判为缺失。修复=菜单重排对齐参考版顺序：首屏 11 项=添加远程书籍/添加本地/更新目录/书架布局/分组管理/添加网址/选择模式/书架管理/导出书单/导入书单/日志（对齐参考版 03_bookshelf_overflow_menu.png 顺序，并含参考版特有「选择模式」项），我方特有项（离线缓存/不分组/按来源分组/按分组显示/书源管理，双基准任一侧存在即保留）移至分隔线后第二屏。菜单图标/分体卡形态（1-4①）另行登记，本任务不做
+
+### Test
+- 实机验证：MuMu Test 实例（192.168.1.19:16416）安装 release 2.0.257+258 冷启动，uiautomator dump 验证书架溢出菜单首屏文本含「导出书单」「导入书单」「日志」；`flutter analyze` 无问题；`flutter test` 全过。版本 2.0.257+258
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.256] - 2026-09-14
 
 ### Fixed

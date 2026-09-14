@@ -183,27 +183,29 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       PopupMenuButton<String>(
         onSelected: (value) => _handleMenuAction(context, ref, value),
         itemBuilder: (_) => [
-          // 对齐安卓原版 main_bookshelf.xml 溢出菜单
-          PopupMenuItem(value: 'update_all', child: Text(AppStrings.updateAll)),
-          const PopupMenuDivider(),
-          PopupMenuItem(value: 'import', child: Text(AppStrings.addLocalBook)),
+          // [UI-parity 2.0.257] 首屏 11 项对齐参考版书架溢出菜单顺序
+          // （添加远程书籍/添加本地/更新目录/书架布局/分组管理/添加网址/
+          // 选择模式/书架管理/导出书单/导入书单/日志），使「导出书单/导入
+          // 书单/日志」首屏可见（此前 14 项+4 分割线把三项挤到滚动区外，
+          // 台账 1-4② 误判为功能缺失）
           const PopupMenuItem(value: 'remote', child: Text('添加远程书籍')),
-          const PopupMenuItem(value: 'add_url', child: Text('添加网址')),
-          const PopupMenuDivider(),
-          PopupMenuItem(value: 'manage', child: Text(AppStrings.manageBookshelf)),
-          PopupMenuItem(value: 'select_mode', child: Text('选择模式')),
-          const PopupMenuItem(value: 'offline_cache', child: Text('离线缓存')),
-          PopupMenuItem(value: 'groups', child: Text('分组管理')),
+          PopupMenuItem(value: 'import', child: Text(AppStrings.addLocalBook)),
+          PopupMenuItem(value: 'update_all', child: Text(AppStrings.updateAll)),
           const PopupMenuItem(value: 'layout', child: Text('书架布局')),
-          const PopupMenuDivider(),
-          // 分组展示模式切换（Flutter 扩展）
-          PopupMenuItem(value: 'group_none', child: _buildGroupModeItem(ref, GroupMode.none, '不分组')),
-          PopupMenuItem(value: 'group_source', child: _buildGroupModeItem(ref, GroupMode.bySource, '按来源分组')),
-          PopupMenuItem(value: 'group_group', child: _buildGroupModeItem(ref, GroupMode.byGroup, '按分组显示')),
-          const PopupMenuDivider(),
+          PopupMenuItem(value: 'groups', child: Text('分组管理')),
+          const PopupMenuItem(value: 'add_url', child: Text('添加网址')),
+          PopupMenuItem(value: 'select_mode', child: Text('选择模式')),
+          PopupMenuItem(value: 'manage', child: Text(AppStrings.manageBookshelf)),
           const PopupMenuItem(value: 'export_list', child: Text('导出书单')),
           const PopupMenuItem(value: 'import_list', child: Text('导入书单')),
           const PopupMenuItem(value: 'log', child: Text('日志')),
+          const PopupMenuDivider(),
+          // 我方特有项（双基准原则保留不删）：离线缓存（对应原版
+          // menu_download 缓存/导出）+ 分组展示模式 + 书源管理
+          const PopupMenuItem(value: 'offline_cache', child: Text('离线缓存')),
+          PopupMenuItem(value: 'group_none', child: _buildGroupModeItem(ref, GroupMode.none, '不分组')),
+          PopupMenuItem(value: 'group_source', child: _buildGroupModeItem(ref, GroupMode.bySource, '按来源分组')),
+          PopupMenuItem(value: 'group_group', child: _buildGroupModeItem(ref, GroupMode.byGroup, '按分组显示')),
           const PopupMenuDivider(),
           PopupMenuItem(value: 'sources', child: Text(AppStrings.sourceManagement)),
         ],
