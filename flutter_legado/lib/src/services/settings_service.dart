@@ -19,8 +19,6 @@ class SettingsService {
   // SharedPreferences 本地持久化，非 Rust FFI，免 API_CONTRACT 变更） — Qoder UI
   static const _keyPaletteId = 'app_palette_id';
   static const _keyLocale = 'app_locale';
-  static const _keyShowBookshelfRecentReading = 'bookshelf_show_recent_reading';
-  static const _keyShowBookshelfStats = 'bookshelf_show_stats';
   static const _keyBookshelfTabPosition = 'bookshelf_tab_position';
   static const _keyBookshelfLayout = 'bookshelf_layout'; // true=网格 false=列表
   // [UI-fix v2.0.3 | 2026-08-08] 删除提醒/目录页加载字数开关（对齐原版
@@ -240,48 +238,6 @@ class SettingsService {
       await prefs.setString(_keyPaletteId, value);
     } catch (e) {
       debugPrint('SettingsService.setPaletteId 异常: $e');
-    }
-  }
-
-  // ===== 书架偏好：显示最近阅读 =====
-
-  Future<bool> getShowBookshelfRecentReading() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(_keyShowBookshelfRecentReading) ?? true;
-    } catch (e) {
-      debugPrint('SettingsService.getShowBookshelfRecentReading 异常: $e');
-      return true;
-    }
-  }
-
-  Future<void> setShowBookshelfRecentReading(bool value) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_keyShowBookshelfRecentReading, value);
-    } catch (e) {
-      debugPrint('SettingsService.setShowBookshelfRecentReading 异常: $e');
-    }
-  }
-
-  // ===== 书架偏好：显示阅读统计 =====
-
-  Future<bool> getShowBookshelfStats() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool(_keyShowBookshelfStats) ?? true;
-    } catch (e) {
-      debugPrint('SettingsService.getShowBookshelfStats 异常: $e');
-      return true;
-    }
-  }
-
-  Future<void> setShowBookshelfStats(bool value) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool(_keyShowBookshelfStats, value);
-    } catch (e) {
-      debugPrint('SettingsService.setShowBookshelfStats 异常: $e');
     }
   }
 

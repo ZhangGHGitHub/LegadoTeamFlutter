@@ -31,12 +31,6 @@ mixin _$BookshelfState {
   /// 展示层：分组显示模式
   GroupMode get groupMode => throw _privateConstructorUsedError;
 
-  /// 用户偏好：是否显示最近阅读区域
-  bool get showRecentReading => throw _privateConstructorUsedError;
-
-  /// 用户偏好：是否显示阅读统计
-  bool get showStats => throw _privateConstructorUsedError;
-
   /// 书籍分组列表（对标原版 BookGroup，顶栏 Tab 数据源）
   List<BookGroup> get groups => throw _privateConstructorUsedError;
 
@@ -66,8 +60,6 @@ abstract class $BookshelfStateCopyWith<$Res> {
       String? error,
       bool isGridView,
       GroupMode groupMode,
-      bool showRecentReading,
-      bool showStats,
       List<BookGroup> groups,
       int selectedGroupIndex,
       bool isBatchMode,
@@ -92,8 +84,6 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
     Object? error = freezed,
     Object? isGridView = null,
     Object? groupMode = null,
-    Object? showRecentReading = null,
-    Object? showStats = null,
     Object? groups = null,
     Object? selectedGroupIndex = null,
     Object? isBatchMode = null,
@@ -120,14 +110,6 @@ class _$BookshelfStateCopyWithImpl<$Res, $Val extends BookshelfState>
           ? _value.groupMode
           : groupMode // ignore: cast_nullable_to_non_nullable
               as GroupMode,
-      showRecentReading: null == showRecentReading
-          ? _value.showRecentReading
-          : showRecentReading // ignore: cast_nullable_to_non_nullable
-              as bool,
-      showStats: null == showStats
-          ? _value.showStats
-          : showStats // ignore: cast_nullable_to_non_nullable
-              as bool,
       groups: null == groups
           ? _value.groups
           : groups // ignore: cast_nullable_to_non_nullable
@@ -162,8 +144,6 @@ abstract class _$$BookshelfStateImplCopyWith<$Res>
       String? error,
       bool isGridView,
       GroupMode groupMode,
-      bool showRecentReading,
-      bool showStats,
       List<BookGroup> groups,
       int selectedGroupIndex,
       bool isBatchMode,
@@ -186,8 +166,6 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
     Object? error = freezed,
     Object? isGridView = null,
     Object? groupMode = null,
-    Object? showRecentReading = null,
-    Object? showStats = null,
     Object? groups = null,
     Object? selectedGroupIndex = null,
     Object? isBatchMode = null,
@@ -214,14 +192,6 @@ class __$$BookshelfStateImplCopyWithImpl<$Res>
           ? _value.groupMode
           : groupMode // ignore: cast_nullable_to_non_nullable
               as GroupMode,
-      showRecentReading: null == showRecentReading
-          ? _value.showRecentReading
-          : showRecentReading // ignore: cast_nullable_to_non_nullable
-              as bool,
-      showStats: null == showStats
-          ? _value.showStats
-          : showStats // ignore: cast_nullable_to_non_nullable
-              as bool,
       groups: null == groups
           ? _value._groups
           : groups // ignore: cast_nullable_to_non_nullable
@@ -251,8 +221,6 @@ class _$BookshelfStateImpl implements _BookshelfState {
       this.error,
       this.isGridView = false,
       this.groupMode = GroupMode.none,
-      this.showRecentReading = true,
-      this.showStats = true,
       final List<BookGroup> groups = const [],
       this.selectedGroupIndex = 0,
       this.isBatchMode = false,
@@ -292,16 +260,6 @@ class _$BookshelfStateImpl implements _BookshelfState {
   @JsonKey()
   final GroupMode groupMode;
 
-  /// 用户偏好：是否显示最近阅读区域
-  @override
-  @JsonKey()
-  final bool showRecentReading;
-
-  /// 用户偏好：是否显示阅读统计
-  @override
-  @JsonKey()
-  final bool showStats;
-
   /// 书籍分组列表（对标原版 BookGroup，顶栏 Tab 数据源）
   final List<BookGroup> _groups;
 
@@ -338,7 +296,7 @@ class _$BookshelfStateImpl implements _BookshelfState {
 
   @override
   String toString() {
-    return 'BookshelfState(books: $books, isLoading: $isLoading, error: $error, isGridView: $isGridView, groupMode: $groupMode, showRecentReading: $showRecentReading, showStats: $showStats, groups: $groups, selectedGroupIndex: $selectedGroupIndex, isBatchMode: $isBatchMode, selectedUrls: $selectedUrls)';
+    return 'BookshelfState(books: $books, isLoading: $isLoading, error: $error, isGridView: $isGridView, groupMode: $groupMode, groups: $groups, selectedGroupIndex: $selectedGroupIndex, isBatchMode: $isBatchMode, selectedUrls: $selectedUrls)';
   }
 
   @override
@@ -354,10 +312,6 @@ class _$BookshelfStateImpl implements _BookshelfState {
                 other.isGridView == isGridView) &&
             (identical(other.groupMode, groupMode) ||
                 other.groupMode == groupMode) &&
-            (identical(other.showRecentReading, showRecentReading) ||
-                other.showRecentReading == showRecentReading) &&
-            (identical(other.showStats, showStats) ||
-                other.showStats == showStats) &&
             const DeepCollectionEquality().equals(other._groups, _groups) &&
             (identical(other.selectedGroupIndex, selectedGroupIndex) ||
                 other.selectedGroupIndex == selectedGroupIndex) &&
@@ -375,8 +329,6 @@ class _$BookshelfStateImpl implements _BookshelfState {
       error,
       isGridView,
       groupMode,
-      showRecentReading,
-      showStats,
       const DeepCollectionEquality().hash(_groups),
       selectedGroupIndex,
       isBatchMode,
@@ -397,8 +349,6 @@ abstract class _BookshelfState implements BookshelfState {
       final String? error,
       final bool isGridView,
       final GroupMode groupMode,
-      final bool showRecentReading,
-      final bool showStats,
       final List<BookGroup> groups,
       final int selectedGroupIndex,
       final bool isBatchMode,
@@ -424,14 +374,6 @@ abstract class _BookshelfState implements BookshelfState {
 
   /// 展示层：分组显示模式
   GroupMode get groupMode;
-  @override
-
-  /// 用户偏好：是否显示最近阅读区域
-  bool get showRecentReading;
-  @override
-
-  /// 用户偏好：是否显示阅读统计
-  bool get showStats;
   @override
 
   /// 书籍分组列表（对标原版 BookGroup，顶栏 Tab 数据源）

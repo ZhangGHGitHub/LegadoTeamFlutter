@@ -65,7 +65,8 @@ class BookGridItem extends StatelessWidget {
             onLongPress: onCoverLongPress,
             child: DecoratedBox(
               decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(10),
+                // [骨架对齐 2.0.260 | 台账 1-3] 封面卡片圆角 12（对齐参考 03b）
+                borderRadius: BorderRadius.circular(12),
                 boxShadow: [
                   BoxShadow(
                     // [审计修复 §3.3] 阴影改用 colorScheme.shadow Token — Qoder
@@ -76,7 +77,8 @@ class BookGridItem extends StatelessWidget {
                 ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(10),
+                // [骨架对齐 2.0.260 | 台账 1-3] 与外层卡片圆角 12 保持一致（对齐参考 03b）
+                borderRadius: BorderRadius.circular(12),
                 child: LayoutBuilder(
                 builder: (context, constraints) {
                   return Stack(

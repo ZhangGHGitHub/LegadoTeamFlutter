@@ -44,34 +44,10 @@ void main() {
     });
   });
 
-  group('Responsive 网格列数（多尺寸验证）', () {
-    test('<600dp → 3 列（对齐原版 bookshelfLayout 默认列数）', () {
-      expect(Responsive.gridColumnsForWidth(320), equals(3));
-      expect(Responsive.gridColumnsForWidth(399), equals(3));
-      expect(Responsive.gridColumnsForWidth(400), equals(3));
-      expect(Responsive.gridColumnsForWidth(599), equals(3));
-    });
-
-    test('[600, 1200)dp → 4 列', () {
-      expect(Responsive.gridColumnsForWidth(600), equals(4));
-      expect(Responsive.gridColumnsForWidth(840), equals(4));
-      expect(Responsive.gridColumnsForWidth(1199), equals(4));
-    });
-
-    test('>=1200dp → 6 列', () {
-      expect(Responsive.gridColumnsForWidth(1200), equals(6));
-      expect(Responsive.gridColumnsForWidth(1920), equals(6));
-    });
-  });
+  // [红线清理 2.0.260 | 台账 1-3] 书架网格固定 2 列（对齐参考 03b），
+  // 原按宽度分档列数/宽高比函数与对应用例已移除
 
   group('Responsive 网格宽高比', () {
-    test('书架：手机竖卡 0.65 / 平板桌面横卡 0.75', () {
-      expect(Responsive.bookGridChildAspectRatio(360), equals(0.65));
-      expect(Responsive.bookGridChildAspectRatio(599), equals(0.65));
-      expect(Responsive.bookGridChildAspectRatio(600), equals(0.75));
-      expect(Responsive.bookGridChildAspectRatio(1200), equals(0.75));
-    });
-
     test('RSS：手机竖卡 0.62 / 平板桌面 0.75', () {
       expect(Responsive.rssGridChildAspectRatio(360), equals(0.62));
       expect(Responsive.rssGridChildAspectRatio(600), equals(0.75));

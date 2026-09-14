@@ -30,16 +30,11 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     return const BookshelfState();
   }
 
-  /// 加载持久化的书架偏好设置
+  /// 加载持久化的书架偏好设置（网格/列表布局）
+  // [红线清理 2.0.260 | 台账 1-3] 统计行/最近阅读行移除后，偏好仅剩布局
   Future<void> _loadSettings() async {
-    final showRecentReading = await _settings.getShowBookshelfRecentReading();
-    final showStats = await _settings.getShowBookshelfStats();
     final isGridView = await _settings.getBookshelfLayout();
-    state = state.copyWith(
-      showRecentReading: showRecentReading,
-      showStats: showStats,
-      isGridView: isGridView,
-    );
+    state = state.copyWith(isGridView: isGridView);
   }
 
   /// 调用 Rust API 获取书籍列表
@@ -229,20 +224,6 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
       state = state.copyWith(error: _mapError(e));
       await _loadBooks();
     }
-  }
-
-  /// 切换「显示最近阅读」偏好
-  Future<void> toggleShowRecentReading() async {
-    final newValue = !state.showRecentReading;
-    state = state.copyWith(showRecentReading: newValue);
-    await _settings.setShowBookshelfRecentReading(newValue);
-  }
-
-  /// 切换「显示阅读统计」偏好
-  Future<void> toggleShowStats() async {
-    final newValue = !state.showStats;
-    state = state.copyWith(showStats: newValue);
-    await _settings.setShowBookshelfStats(newValue);
   }
 
   // ===== 内部工具 =====

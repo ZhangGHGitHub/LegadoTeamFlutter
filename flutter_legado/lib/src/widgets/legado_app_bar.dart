@@ -253,17 +253,26 @@ SystemUiOverlayStyle _legadoSystemOverlay(BuildContext context) {
 
 /// LargeTitle 子树字阶覆写（P1：对齐参考风格 24dp）
 ///
-/// Flutter 的 SliverAppBar.large 展开态硬编码取 textTheme.headlineMedium
-/// （28dp），参考仓库 Compose M3 LargeTopAppBar 为 headlineSmall（24dp）。
+/// Flutter 的 SliverAppBar.large 展开态硬编码取 textTheme.headlineMedium，
+/// 本项目 miuix 压缩字阶（B1）中 headlineMedium=24dp，参考仓库 Compose M3
+/// LargeTopAppBar 为 headlineSmall（压缩字阶 20dp）。
 /// 此处以子树级 Theme 把 headlineMedium 映射为 headlineSmall——仅影响
 /// 头部 sliver 内部（工具栏走 titleLarge 不受影响），展开/折叠动画完整。
-Widget _largeTitleThemeOverride(BuildContext context, Widget child) {
+/// [fontSize] 指定时改以 headlineMedium 为底放大到该字号（首页大标题 28sp
+/// 先例；书架 2.0.260 骨架对齐参考截图量测 28sp）。
+Widget _largeTitleThemeOverride(
+  BuildContext context,
+  Widget child, {
+  double? fontSize,
+}) {
   final theme = Theme.of(context);
+  final base = fontSize == null
+      ? theme.textTheme.headlineSmall
+      : theme.textTheme.headlineMedium?.copyWith(fontSize: fontSize);
   return Theme(
     data: theme.copyWith(
       textTheme: theme.textTheme.copyWith(
-        headlineMedium: theme.textTheme.headlineSmall
-            ?.apply(color: theme.colorScheme.onSurface),
+        headlineMedium: base?.apply(color: theme.colorScheme.onSurface),
       ),
     ),
     child: child,
@@ -312,6 +321,26 @@ class LegadoTabRootHeaderSliver extends StatefulWidget {
   /// 顶栏 bottomContent（对齐参考仓 DynamicTopAppBar 搜索行；pinned 常驻）
   final PreferredSizeWidget? bottom;
 
+  /// 展开大标题字号（可选）。指定时以 headlineMedium 为底放大到该字号，
+  /// 并显式传入 SliverAppBar.titleTextStyle（SDK 解析序 titleTextStyle →
+  /// appBarTheme.titleTextStyle → config.headlineMedium，全局 AppBarTheme
+  /// 的 titleLarge 18sp 会短路后两者，不显式传则字号不生效）；不指定
+  /// 保持原行为（headlineMedium→headlineSmall 子树覆写）。
+  /// [骨架对齐 2.0.260 | 台账 1-3] 书架参考截图大标题 28sp（与首页先例一致）。
+  final double? largeTitleFontSize;
+
+  /// 展开态头部总高（可选）。SDK large 变体语义：显式传入值被**原样使用**
+  ///（delegate maxExtent = topPadding + 该值，不额外加 bottom 高；bottom 高
+  /// 仅默认分支 null 时经 112 + bottomHeight 计入），即「状态栏
+  /// （topPadding）之外的头部总高」，**须包含 bottom（TabBar）高**；
+  /// 若 topPadding + 该值 < minExtent（topPadding + 64 + bottom 高），
+  /// delegate 钳制 maxExtent = minExtent，标题带归零、大标题不渲染。
+  /// [骨架对齐 2.0.260 | 台账 1-3] 参考 03b 量测：状态栏 24 + 顶行 64 +
+  /// 标题区 44 + TabBar 56 = 188dp（tab 下划线底 551px@3x）；Scaffold
+  /// 无 AppBar 的 body 内 topPadding = 24dp，故传 164（64 + 44 + 56）
+  /// 收敛默认节距差。
+  final double? expandedHeight;
+
   const LegadoTabRootHeaderSliver({
     super.key,
     required this.title,
@@ -319,6 +348,8 @@ class LegadoTabRootHeaderSliver extends StatefulWidget {
     required this.large,
     this.titleSpacing,
     this.bottom,
+    this.largeTitleFontSize,
+    this.expandedHeight,
   });
 
   @override
@@ -340,7 +371,20 @@ class _LegadoTabRootHeaderSliverState extends State<LegadoTabRootHeaderSliver>
       merge: ui.mergeTopBarActions,
     );
     if (widget.large && ui.useFlexibleTopAppBar) {
-      // [P1] headlineMedium→headlineSmall 子树覆写：展开大标题 28→24dp
+      // [P1] headlineMedium→headlineSmall 子树覆写；largeTitleFontSize
+      // 指定时改以 headlineMedium 为底放大（书架 28sp 先例）
+      final theme = Theme.of(context);
+      // [骨架对齐 2.0.260 | 台账 1-3] 展开态大标题字号：SDK 解析序
+      // titleTextStyle ?? appBarTheme.titleTextStyle ?? config.headlineMedium——
+      // 全局 AppBarTheme.titleTextStyle（titleLarge 18sp）会短路 config 的
+      // headlineMedium，故需经 SliverAppBar.titleTextStyle 显式传入才能生效
+      // （折叠态工具栏标题同步采用该字号，28sp 在 56dp 工具栏内可容纳）
+      final TextStyle? largeTitleStyle = widget.largeTitleFontSize == null
+          ? null
+          : theme.textTheme.headlineMedium?.copyWith(
+              fontSize: widget.largeTitleFontSize,
+              color: theme.colorScheme.onSurface,
+            );
       return _largeTitleThemeOverride(
         context,
         SliverAppBar.large(
@@ -351,7 +395,11 @@ class _LegadoTabRootHeaderSliverState extends State<LegadoTabRootHeaderSliver>
           bottom: widget.bottom,
           surfaceTintColor: cs.surfaceContainer,
           systemOverlayStyle: overlay,
+          // [骨架对齐 2.0.260 | 台账 1-3] 可选收敛展开态高度（默认 152dp）
+          expandedHeight: widget.expandedHeight,
+          titleTextStyle: largeTitleStyle,
         ),
+        fontSize: widget.largeTitleFontSize,
       );
     }
     return SliverAppBar(

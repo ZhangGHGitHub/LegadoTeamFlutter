@@ -79,6 +79,12 @@ void main() {
 
   testWidgets('选择模式下网格视图书卡同样渲染且可勾选', (tester) async {
     SharedPreferences.setMockInitialValues({});
+    // [骨架对齐 2.0.260 | 台账 1-3] 2 列大封面网格在 800 宽视口下单格
+    // 高 ~535px（5:7），首排卡书名落在默认 600px 视口之外导致点按落空。
+    // 加高测试视口适配新骨架几何（断言本身不变）。
+    tester.view.physicalSize = const Size(800 * 3, 1000 * 3);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
     final container = await pumpShelf(tester);
     addTearDown(container.dispose);
     await tester.pump();

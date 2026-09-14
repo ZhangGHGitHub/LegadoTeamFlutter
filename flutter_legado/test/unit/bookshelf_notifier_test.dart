@@ -72,8 +72,6 @@ void main() {
 
       expect(readState().isGridView, isFalse);
       expect(readState().groupMode, equals(GroupMode.none));
-      expect(readState().showRecentReading, isTrue);
-      expect(readState().showStats, isTrue);
     });
 
     test('加载失败时设置 error', () async {
@@ -499,33 +497,4 @@ void main() {
     });
   });
 
-  group('BookshelfNotifier 用户偏好', () {
-    setUp(() {
-      when(() => mockApi.getBooks()).thenAnswer((_) async => testBooks);
-      container.read(bookshelfNotifierProvider);
-    });
-
-    test('toggleShowRecentReading 切换并持久化', () async {
-      await pumpInit();
-      expect(readState().showRecentReading, isTrue);
-
-      await readNotifier().toggleShowRecentReading();
-      expect(readState().showRecentReading, isFalse);
-
-      // 验证持久化
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getBool('bookshelf_show_recent_reading'), isFalse);
-    });
-
-    test('toggleShowStats 切换并持久化', () async {
-      await pumpInit();
-      expect(readState().showStats, isTrue);
-
-      await readNotifier().toggleShowStats();
-      expect(readState().showStats, isFalse);
-
-      final prefs = await SharedPreferences.getInstance();
-      expect(prefs.getBool('bookshelf_show_stats'), isFalse);
-    });
-  });
 }

@@ -35,22 +35,8 @@ class Responsive {
 
   // ===== 网格列数计算 =====
 
-  /// 根据可用宽度计算书架网格列数
-  ///
-  /// <600dp → 3 列（对齐原版 bookshelfLayout 默认 3 列）/
-  /// 600-1200dp → 4 列 / >1200dp → 6 列
-  static int gridColumnsForWidth(double width) {
-    if (width < compactMax) return 3;
-    if (width < expandedMax) return 4;
-    return 6;
-  }
-
-  /// 书架网格子项宽高比
-  ///
-  /// 手机竖卡（0.65），平板/桌面横卡（0.75），参考安卓原版
-  static double bookGridChildAspectRatio(double width) {
-    return width < compactMax ? 0.65 : 0.75;
-  }
+  // [红线清理 2.0.260 | 台账 1-3] 书架网格固定 2 列（对齐参考 03b），
+  // 原按宽度分档的 gridColumnsForWidth/bookGridChildAspectRatio 已移除
 
   /// RSS 源网格子项宽高比（保持安卓端 item_rss.xml 竖卡比例）
   static double rssGridChildAspectRatio(double width) {

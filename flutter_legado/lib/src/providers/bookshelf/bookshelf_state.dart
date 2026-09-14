@@ -23,7 +23,6 @@ class BookGroupId {
 /// - [books]：Rust API 返回的原始数据（已排序），Notifier 不做任何业务处理
 /// - [isLoading] / [error]：API 调用状态
 /// - [isGridView] / [groupMode]：展示层变换，仅改变呈现形式
-/// - [showRecentReading] / [showStats]：用户偏好开关，持久化到 SharedPreferences
 @freezed
 class BookshelfState with _$BookshelfState {
   const factory BookshelfState({
@@ -41,12 +40,6 @@ class BookshelfState with _$BookshelfState {
 
     /// 展示层：分组显示模式
     @Default(GroupMode.none) GroupMode groupMode,
-
-    /// 用户偏好：是否显示最近阅读区域
-    @Default(true) bool showRecentReading,
-
-    /// 用户偏好：是否显示阅读统计
-    @Default(true) bool showStats,
 
     /// 书籍分组列表（对标原版 BookGroup，顶栏 Tab 数据源）
     @Default([]) List<BookGroup> groups,

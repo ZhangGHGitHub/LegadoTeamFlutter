@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.260] - 2026-09-14
+
+### Fixed
+- [UI] 书架页布局骨架对齐参考版（台账 SCREEN_1TO1_PARITY_LEDGER 1-3，基准 docs/parity_shots/ref_20260914/03b_bookshelf_with_books.png / 03_bookshelf.png）：①布局骨架=可折叠大标题「书架」（28sp：`LegadoTabRootHeaderSliver` 新增加性参数 `largeTitleFontSize: 28`，显式传入 `SliverAppBar.titleTextStyle`——SDK 解析序 `titleTextStyle ?? appBarTheme.titleTextStyle ?? config.headlineMedium`，全局 AppBarTheme 的 titleLarge 18sp 短路子树字阶覆写，标题实际渲染 18sp 偏小；参考 03b 截图量测字身 66px@480dpi≈28sp，与首页 2.0.259 大标题先例一致；另 `expandedHeight: 164`（SDK large 变体对显式 expandedHeight 原样使用、不再加 bottom 高，语义为「状态栏之外头部总高（含 TabBar 56）」=顶行 64+标题区 44+TabBar 56，加状态栏 24 共 188dp，对齐参考下划线底 551px@3x；显式值小于 minExtent 144dp 时会被 delegate 钳制致标题带归零——初版误传 108 经实机复验发现后修正）收敛 M3 large 默认节距差。两参数均默认不启用，仅书架传入，共享组件其他调用方行为不变）→ 常驻分组 tab 行（tab 数据来自既有分组；无分组数据时回落单一「全部」tab；选中态=primary 字色+下划线；切换 tab 经 `selectGroup` 真正过滤列表并持久化位置）→ 2 列大封面网格（卡片=封面（圆角 12）+居中书名，子项 5/7 比例，间距 12；原按宽度 3/4/6 分档列数不再采用）；②页内全宽搜索行移除，搜索入口收敛为顶栏 🔍 图标（沿用既有路由 AppRoutes.search，⋮ 溢出菜单项集不变）；③空态对齐参考版：大标题+「全部」tab+居中颜文字彩蛋（`EmptyState(kaomoji)`，既有用户授权功能，2026-08-29 口径）；④选择模式/批量操作、网格/列表切换、分组逻辑、卡片长按菜单全部保持可用，`_buildBatchListItem` 的 `ValueKey` 修复（2.0.258 P0）不回退；批量态网格卡圆角统一 12
+- [UI] **红线清理**（2026-08-29 用户修订授权口径：无授权记录的功能须清理）：移除书架页「统计行（N 本书 · N 在读）」与「最近阅读行」。证据检索结论=①原版安卓 `AppConfig.showBookshelfStats` 默认 **false**（统计行在原版默认隐藏），本移植版将其改为默认常显属未对齐偏差；②docs/ 与 git 提交历史中未发现用户对常显这两行的授权记录（0907 盘点「结构基本一致」为审计员判断，非用户授权，已被 0914 重采样基准取代）。连带死代码清理：`BookshelfState.showStats`/`showRecentReading` 字段（含 freezed 重生成）、`BookshelfNotifier.toggleShowStats`/`toggleShowRecentReading`、`SettingsService` 的 `get/setShowBookshelfStats`/`get/setShowBookshelfRecentReading` 与 2 个 SharedPreferences key、`Responsive.gridColumnsForWidth`/`bookGridChildAspectRatio`（书架网格已固定 2 列）。另：99+ 未读徽标与阅读进度条不再渲染于书架卡片（参考版 03b 无此二者，以参考版为准）；未读/阅读状态能力保留——封面长按 → 书籍信息页「在读」行仍可达（登记项）
+### Test
+- `flutter analyze` 无问题；`flutter test` 全过（含选择模式回归 `bookshelf_batch_mode_test`；受影响用例改写：搜索入口守护改顶栏图标断言、网格响应式用例改固定 2 列断言、统计/最近阅读相关用例随死代码移除）
+
+### Real device
+- MuMu Test 实例（192.168.1.19:16416）安装 release 2.0.260+261：截图 docs/parity_shots/ours_2.0.260/03_bookshelf.png（有书态，书架现有 1 本斗罗大陆）与 05_bookshelf_select_mode.png（选择模式复验）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.259] - 2026-09-14
 
 ### Fixed

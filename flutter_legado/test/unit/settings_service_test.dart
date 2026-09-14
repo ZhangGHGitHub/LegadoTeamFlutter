@@ -138,25 +138,8 @@ void main() {
     });
   });
 
-  group('SettingsService 书架偏好', () {
-    test('默认显示最近阅读', () async {
-      expect(await service.getShowBookshelfRecentReading(), isTrue);
-    });
-
-    test('设置隐藏最近阅读', () async {
-      await service.setShowBookshelfRecentReading(false);
-      expect(await service.getShowBookshelfRecentReading(), isFalse);
-    });
-
-    test('默认显示统计', () async {
-      expect(await service.getShowBookshelfStats(), isTrue);
-    });
-
-    test('设置隐藏统计', () async {
-      await service.setShowBookshelfStats(false);
-      expect(await service.getShowBookshelfStats(), isFalse);
-    });
-  });
+  // [红线清理 2.0.260 | 台账 1-3] 书架统计/最近阅读开关测试随 SettingsService
+  // 对应方法一并移除（功能已清理，原版该开关默认关闭）
 
   group('SettingsService 语言设置', () {
     test('默认语言为 system', () async {
