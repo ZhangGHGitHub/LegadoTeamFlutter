@@ -109,6 +109,18 @@ READER_CENTER = (540, 960)       # 中心点（唤出/收起菜单）
 READER_MENU_ROW = {              # 菜单底部快捷行 y=1806
     "章节梗概": (108, 1806), "全文搜索": (540, 1806),
     "自动翻页": (756, 1806), "目录": (972, 1806)}
+# 长按浮条（text_selection_panel.dart ReaderSelectionToolbar 的 6 按钮，
+# uiautomator content-desc 实证：复制/分享/浏览器/朗读/书签/更多 均可见）。
+# 主特征取前 5 个：实测菜单态 dump 无这 5 词（只有「更多」重叠），
+# 故「更多」不作主特征，防菜单+选中错态误判。
+LONGPRESS_TOOLBAR_KWS = ("复制", "分享", "浏览器", "朗读", "书签")
+# 「仍在阅读器」特征：正文行以 content-desc 暴露（如「唐三道…」）；
+# 浮条态不显示页码指示（「章」/「1/8」仅在菜单态出现），故改用正文词。
+LONGPRESS_READER_KWS = ("唐三", "斗罗大陆")
+# 长按探点：正文中部 3 行（任务指定坐标），依次试直到 dump 命中浮条
+LONGPRESS_PROBES = ((540, 700), (540, 1000), (540, 1300))
+# 12 屏 3 探点全不命中时的连拍兜底标记（main 汇总时汇报）
+_LP12_BURST = False
 
 
 def resolve_adb() -> str:
@@ -554,16 +566,44 @@ def nav_11() -> None:
 
 
 def nav_12() -> None:
-    """长按浮条：干净进入阅读器 → 确保自动翻页已停止 → 长按正文段落。
+    """长按浮条：干净进入阅读器 → 停止运行中的自动翻页 → 正文中部 3 探点依次长按。
 
-    长按后浮条（复制/分享/浏览器/朗读/书签/更多）须保持到截图完成；
-    截图后按返回会直接退出阅读器，故取消选中交由下一屏冷启动兜底
-    （选中态为会话态，force-stop 即清除，无持久化泄漏）。
+    探点协议（每点）：`input swipe x y x y 950`（同点 950ms，超 Flutter 500ms
+    长按阈值触发 onLongPressStart → ReaderSelectionToolbar 浮条）→ sleep 1.5s → dump：
+      - 命中浮条按钮词（复制/分享/浏览器/朗读/书签，content-desc 实证）
+        且命中正文词（唐三/斗罗大陆，证明仍在阅读器）→ 立即停止探测返回，
+        由 run_screen 截图存 12_reader_longpress.png；
+      - 未命中则试下一探点（浮条若已弹出则全屏屏障拦截后续长按，
+        旧浮条保持，连拍兜底时画面即真实状态）。
+    3 点全不命中：首探点长按后 0.5/1.5/3s 连拍 3 张存
+    12_reader_longpress_t1/t2/t3.png 供人工目视，并置 _LP12_BURST 汇报；
+    run_screen 断言随后失败 → 12_reader_longpress.png 不覆盖（保留旧图）。
+    浮条为会话态（force-stop 即清除），截图后无需复位，冷启动兜底。
     """
+    global _LP12_BURST
+    _LP12_BURST = False
     _to_reader()
     _ensure_auto_flip_off()
-    swipe(540, 600, 540, 600, 900)  # 长按正文段落（同点 900ms，实测浮条出现）
-    wait(2)
+    for i, (x, y) in enumerate(LONGPRESS_PROBES, 1):
+        swipe(x, y, x, y, 950)  # 同点 950ms 长按
+        wait(1.5)
+        d = dump()
+        tb = has_kw(d, LONGPRESS_TOOLBAR_KWS)
+        rd = has_kw(d, LONGPRESS_READER_KWS)
+        if tb and rd:
+            rec(f"  [12] 探点 {i} ({x},{y}) 命中：浮条「{tb}」+ 阅读器「{rd}」")
+            return
+        rec(f"  [12] 探点 {i} ({x},{y}) 未命中（浮条={tb or '-'}，阅读器={rd or '-'}）")
+    # 3 点全不命中：连拍兜底（长按后 0.5/1.5/3s 各一张）
+    bx, by = LONGPRESS_PROBES[0]
+    swipe(bx, by, bx, by, 950)
+    for delay, tag in ((0.5, "t1"), (1.5, "t2"), (3.0, "t3")):
+        wait(delay)
+        f = screenshot(f"12_reader_longpress_{tag}.png")
+        rec(f"  [12] 连拍 {tag}（长按后 +{delay}s）落盘：{f.name}（{f.stat().st_size}B）")
+    _LP12_BURST = True
+    rec("  [12] 3 探点 dump 均未命中浮条：已连拍 t1/t2/t3 供目视；"
+        "12_reader_longpress.png 将保留旧图不覆盖")
 
 
 def nav_13() -> None:
@@ -661,10 +701,13 @@ SCREENS: list[tuple[str, str, str, tuple[str, ...], tuple[str, ...],
      ("退出阅读", "自动翻页", "停止翻页"), None),
     ("10", "reader",           nav_10,        ("唐门", "斗罗大陆", "唐三"), (), (), None),
     ("11", "reader_menu",      nav_11,        ("全文搜索", "自动翻页", "退出阅读"), (), (), None),
-    # 长按浮条按钮（text_selection_panel.dart 实证：复制/分享/浏览器/朗读/书签/更多）
-    # AND 条件：浮条关键词 + 阅读器特征（章/页码 1/8），排除误存非阅读页
+    # 长按浮条（text_selection_panel.dart ReaderSelectionToolbar，uiautomator
+    # content-desc 实证 6 按钮：复制/分享/浏览器/朗读/书签/更多）：
+    # 主特征取浮条特有的 5 词（实测菜单态 dump 无这 5 词；「更多」与菜单重叠故剔除），
+    # AND 条件为正文词（唐三/斗罗大陆；浮条态不显示页码，旧「章/1/8」必失败），
+    # 双条件同中才判定浮条态在屏，防菜单+选中错态误存
     ("12", "reader_longpress", nav_12,
-     ("复制", "分享", "朗读", "浏览器", "书签", "更多"), ("章", "1/8"), (), None),
+     LONGPRESS_TOOLBAR_KWS, LONGPRESS_READER_KWS, (), None),
     # 13 搜索内容页（全文搜索路由：标题「搜索正文」+ 搜索选项/搜索历史）；
     # 负向排除阅读器菜单/自动翻页特征（防误存发现页/订阅页/阅读器）
     ("13", "search_content",   nav_13,
@@ -764,6 +807,9 @@ def main() -> int:
         rec("失败/跳过清单：")
         for r in fail:
             rec(f"  - {r.num}_{r.name}：{r.reason}")
+    if _LP12_BURST:
+        rec("注：12 屏 3 探点 dump 均未命中浮条，已改连拍存 "
+            "12_reader_longpress_t1/t2/t3.png（请目视确认浮条是否实际弹出）")
     rec(f"截图目录：{OUT_DIR}")
     return 1 if fail else 0
 

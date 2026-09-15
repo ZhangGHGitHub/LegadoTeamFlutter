@@ -23,6 +23,6 @@
 | 10b_reader_doupo_content | 10b_reader_doupo_content.png | —（缺失） | — | — | — |
 | 10c_reader_alt | 10c_reader_alt.png | —（缺失） | — | — | — |
 | 11_reader_menu | 11_reader_menu.png | —（缺失） | — | — | — |
-| 12_reader_longpress | 12_reader_longpress.png | 12_reader_longpress.png | 12_reader_longpress_pair.png | 88.98% | 一致 |
+| 12_reader_longpress | 12_reader_longpress.png | 12_reader_longpress.png | 12_reader_longpress_pair.png | 91.92% | 一致 |
 | 13_search_content | 13_search_content.png | 13_search_content.png | 13_search_content_pair.png | 5.45% | 一致 |
 | 16_auto_flip | 16_auto_flip.png | 16_auto_flip.png | 16_auto_flip_pair.png | 90.81% | 一致 |
