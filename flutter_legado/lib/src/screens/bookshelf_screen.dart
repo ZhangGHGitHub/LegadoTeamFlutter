@@ -237,8 +237,11 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       controller: controller,
       isScrollable: true, // 原版 tabMode = MODE_SCROLLABLE
       tabAlignment: TabAlignment.start,
-      // [LAYOUT_MOTION_AUDIT L3] edgePadding 0（Flutter 侧等价 padding 置零）
-      padding: EdgeInsets.zero,
+      // [parity fix 2.0.264 补修 | 台账 1-3] tab 行左缘 20dp：参考 03b 首
+      // tab 墨迹 x≈59px@3x≈20dp（复审量测），此前 edgePadding 0 钉屏左缘
+      // （实测 x≈2px）贴死；可滚动 TabBar 下 padding 仅作用于首尾两 tab
+      // 边缘，故只加 left 不影响尾 tab
+      padding: const EdgeInsets.only(left: 20),
       // [LAYOUT_MOTION_AUDIT L3] minTabWidth 0（Flutter 侧等价 labelPadding 置零）
       labelPadding: EdgeInsets.zero,
       // [LAYOUT_MOTION_AUDIT L3] 无分割线
@@ -449,17 +452,23 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       // [LAYOUT_PLAN P4] 首屏 Skeleton 接线：按当前视图模式渲染网格/列表骨架
       // （shimmer 1200ms 已在 skeleton.dart 实现），替代整页 LoadingIndicator
       if (state.isGridView) {
-        // [parity fix 2.0.264 | 台账 1-3] 骨架与正式 3 列大封面网格同构
-        return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(22, 8, 22, 8),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 3,
-            mainAxisSpacing: 20,
-            crossAxisSpacing: 20,
-            childAspectRatio: 5 / 7,
-          ),
-          itemCount: 6,
-          itemBuilder: (_, _) => const GridSkeletonItem(),
+        // [parity fix 2.0.264 补修 | 台账 1-3] 骨架与正式 3 列大封面网格同构
+        // （cell aspect 同按实际宽计算，封面 5:7 不被压方形）
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            return GridView.builder(
+              padding: const EdgeInsets.fromLTRB(22, 8, 22, 8),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 3,
+                mainAxisSpacing: 20,
+                crossAxisSpacing: 20,
+                childAspectRatio:
+                    _bookshelfGridCellAspectRatio(constraints.maxWidth - 44),
+              ),
+              itemCount: 6,
+              itemBuilder: (_, _) => const GridSkeletonItem(),
+            );
+          },
         );
       }
       return ListView.builder(
@@ -524,32 +533,41 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
     return CustomRefreshIndicator(
       onRefresh: () => ref.read(bookshelfNotifierProvider.notifier).refresh(),
-      child: CustomScrollView(
-        controller: _scrollController,
-        slivers: [
-          // [骨架对齐 2.0.260 | 台账 1-3] 头部 = 可折叠大标题「书架」 +
-          // 常驻分组 tab 行（bottom，对齐参考 03b 截图）；搜索入口收敛为
-          // 顶栏 🔍 图标（_buildAppBarActions），页内全宽搜索条移除
-          _buildHeaderSliver(context, ref, state),
-          // [UI-fix 2.0.258] 批量模式摘要卡位于头部之后（对齐参考版：
-          // 标题/Tab →「已选N本 · 共M本」胶囊 → 书列表）
-          if (state.isBatchMode)
-            SliverToBoxAdapter(
-              child: _buildBatchSummaryCard(context, ref, state),
-            ),
-          // 分组模式：渲染分组头 + 分组内容
-          if (state.groupMode != GroupMode.none)
-            ..._buildGroupedSlivers(context, ref, state)
-          else if (state.isGridView)
-            _buildGridSliver(context, ref, state.currentGroupBooks)
-          else
-            _buildReorderableSliver(context, ref, state),
-          // [UI_SYNC_REFACTOR T3] 底部批量工具条（batch 模式且选中时显示）
-          if (state.isBatchMode && state.selectedUrls.isNotEmpty)
-            SliverToBoxAdapter(
-              child: _buildBatchBottomBar(context, ref, state),
-            ),
-        ],
+      // [parity fix 2.0.264 补修 | 台账 1-3] LayoutBuilder 取视口实际宽度
+      // 传给网格 sliver（SDK 无 SliverPadding.builder，box 层取宽后按
+      // cellW×7/5+40 动态计算 cell aspect，封面恢复精确 5:7）
+      child: LayoutBuilder(
+        builder: (layoutContext, layoutConstraints) {
+          final viewportWidth = layoutConstraints.maxWidth;
+          return CustomScrollView(
+            controller: _scrollController,
+            slivers: [
+              // [骨架对齐 2.0.260 | 台账 1-3] 头部 = 可折叠大标题「书架」 +
+              // 常驻分组 tab 行（bottom，对齐参考 03b 截图）；搜索入口收敛为
+              // 顶栏 🔍 图标（_buildAppBarActions），页内全宽搜索条移除
+              _buildHeaderSliver(context, ref, state),
+              // [UI-fix 2.0.258] 批量模式摘要卡位于头部之后（对齐参考版：
+              // 标题/Tab →「已选N本 · 共M本」胶囊 → 书列表）
+              if (state.isBatchMode)
+                SliverToBoxAdapter(
+                  child: _buildBatchSummaryCard(context, ref, state),
+                ),
+              // 分组模式：渲染分组头 + 分组内容
+              if (state.groupMode != GroupMode.none)
+                ..._buildGroupedSlivers(context, ref, state, viewportWidth)
+              else if (state.isGridView)
+                _buildGridSliver(
+                    context, ref, state.currentGroupBooks, viewportWidth)
+              else
+                _buildReorderableSliver(context, ref, state),
+              // [UI_SYNC_REFACTOR T3] 底部批量工具条（batch 模式且选中时显示）
+              if (state.isBatchMode && state.selectedUrls.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _buildBatchBottomBar(context, ref, state),
+                ),
+            ],
+          );
+        },
       ),
     );
   }
@@ -592,27 +610,47 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     );
   }
 
-  Widget _buildGridSliver(BuildContext context, WidgetRef ref, List<Book> books) {
+  Widget _buildGridSliver(
+      BuildContext context, WidgetRef ref, List<Book> books, double viewportWidth) {
     // [parity fix 2.0.264 | 台账 1-3] 3 列固定卡宽网格（对齐参考 03b 量测：
-    // 卡宽≈屏宽 27%/列间距 20/左右边距 22；卡片=大封面+居中标题，封面比例
-    // 与圆角 12 不变；书少时右侧格子自然留空，不撑满/居中放大——此前 2 列
-    // （卡宽≈44%）系参考误读，0915 用户实测指出后修正）
+    // 卡宽≈屏宽 27%/列间距 20/左右边距 22；卡片=大封面+居中标题；书少时
+    // 右侧格子自然留空，不撑满/居中放大——此前 2 列（卡宽≈44%）系参考误读，
+    // 0915 用户实测指出后修正）
+    // [parity fix 2.0.264 补修 | 台账 1-3] cell 宽高比不再固定 5/7：固定值
+    // 把「封面 5:7 + 标题行 40dp」整格按 5:7 定高，BookGridItem 的 Expanded
+    // 封面被标题行挤占后实测压成 ≈1:0.97 方形（复审指出）。viewportWidth
+    // 由上层 LayoutBuilder 取视口实际宽度传入（SDK 无 SliverPadding.builder，
+    // 改在 box 层取宽），按 cellH = cellW×7/5 + 40 计算 cell aspect，封面
+    // 恢复精确 5:7。
+    final available = viewportWidth - 44; // 扣除左右 padding 22×2
     return SliverPadding(
       // 内容边距：左右 22（参考边距 22px）+ 上下 8
       padding: const EdgeInsets.fromLTRB(22, 8, 22, 8),
       sliver: SliverGrid.builder(
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 3,
           // 网格间距 20dp（参考卡列间距 20px）
           mainAxisSpacing: 20,
           crossAxisSpacing: 20,
-          // [LAYOUT_MOTION_AUDIT L3] 单元格 aspect 5:7（≈1:1.4 封面比例不变）
-          childAspectRatio: 5 / 7,
+          childAspectRatio: _bookshelfGridCellAspectRatio(available),
         ),
         itemCount: books.length,
-        itemBuilder: (context, index) => _buildGridItem(context, ref, books[index]),
+        itemBuilder: (context, index) =>
+            _buildGridItem(context, ref, books[index]),
       ),
     );
+  }
+
+  /// [parity fix 2.0.264 补修 | 台账 1-3] 书架 3 列大封面网格 cell 宽高比：
+  /// cell = 封面（精确 5:7）+ 书名行 40dp（BookGridItem：Expanded 封面 +
+  /// SizedBox(height:40) 标题）。[availableWidth] 为扣除左右 padding 22×2
+  /// 后的网格内容宽。360dp 屏：cellW=92dp → cellH=168.8dp → 0.5450（而非
+  /// 固定 0.714，后者令封面被压成方形）。
+  double _bookshelfGridCellAspectRatio(double availableWidth) {
+    const crossSpacing = 20.0;
+    const titleHeight = 40.0;
+    final cellWidth = (availableWidth - 2 * crossSpacing) / 3;
+    return cellWidth / (cellWidth * 7 / 5 + titleHeight);
   }
 
   Widget _buildReorderableSliver(BuildContext context, WidgetRef ref, BookshelfState state) {
@@ -790,7 +828,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   // ===== 分组展示 =====
 
   /// 构建分组 slivers：每组一个头部 + 网格/列表
-  List<Widget> _buildGroupedSlivers(BuildContext context, WidgetRef ref, BookshelfState state) {
+  /// [viewportWidth] 视口实际宽度（[parity fix 2.0.264 补修] 网格 cell
+  /// aspect 动态计算用，经上层 LayoutBuilder 传入）
+  List<Widget> _buildGroupedSlivers(
+      BuildContext context, WidgetRef ref, BookshelfState state, double viewportWidth) {
     final groups = state.groupedBooks;
     final slivers = <Widget>[];
     for (final entry in groups.entries) {
@@ -830,7 +871,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       );
       // 分组内容
       if (state.isGridView) {
-        slivers.add(_buildGridSliver(context, ref, entry.value));
+        slivers.add(_buildGridSliver(context, ref, entry.value, viewportWidth));
       } else {
         slivers.add(_buildListSliver(context, ref, entry.value));
       }

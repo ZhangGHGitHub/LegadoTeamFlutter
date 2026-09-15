@@ -6,12 +6,15 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - [UI] 书架封面网格列数 2→3 修正（台账 SCREEN_1TO1_PARITY_LEDGER 1-3「0915 修正」注记，用户实测 + 主代理度量确认：参考 03b 实为 3 列固定卡宽——卡宽≈屏宽 27%/列间距 20/左右边距 22，仅 2 本书时第三格留空；我方 2 列卡宽≈44% 致封面过大、不像目标风格）。`bookshelf_screen.dart` 只动网格参数：正式网格与加载骨架 `crossAxisCount 2→3`、`mainAxisSpacing/crossAxisSpacing 12→20`、左右 padding 12→22（上下 8 不变）；封面比例 5:7（≈1:1.4）/圆角 12/书名居中字号/选择模式勾选态/长按菜单均不变；书少时右格自然留空（与参考一致，不撑满/不居中放大）。回归套件 `bookshelf_grid_responsive_test.dart` 断言同步 2→3（并锁间距 20）
+- [UI]（补修，复审 d005c46802 未通过，版本保持 2.0.264+265 不递增）①封面压方修正：网格 cell 固定 `childAspectRatio` 5/7 把「封面 5:7 + 书名行 40dp」整格定高，`BookGridItem` 的 Expanded 封面被标题行挤占后实测压成 ≈1:0.97 方形（270 宽×262 高；要求 5:7 即 270 宽应≈378 高）。改由上层 `LayoutBuilder` 取视口实际宽动态计算（SDK 3.44 无 `SliverPadding.builder`，box 层取宽）：`cellW=(W−44−40)/3`、`cellH=cellW×7/5+40`、`aspect=cellW/cellH`（360dp→0.5450），封面恢复精确 5:7（360dp：92×128.8dp），加载骨架网格同式同构 ②分组 tab 行加左缘 20dp：此前 `TabBar` padding 0 贴死屏左缘（「全部」左起 x≈2px、下划线 x=0 起），参考 03b 量测首 tab 墨迹 x≈59px@3x≈20dp；改 `TabBar(padding: EdgeInsets.only(left: 20))`，可滚动 TabBar 下 padding 仅作用于首尾两 tab 边缘（首 tab 左 20dp、末 tab 右 0），中间 tab 顺排不变 ③网格左右 padding 锁 22dp：自检③单卡墨迹跨度 26%~30%（1080px 屏 279~324px）——22dp→294px（27.2%）落区间，30dp→≈25.4% 出区间，故保持 22dp；卡左起 68px 小于参考换算≈90px，登记为已知微差（边距协同以自检③红线为准）。回归套件 `bookshelf_grid_responsive_test.dart`（cell aspect 三档按同式 `closeTo(…,1e-6)`）与 `bookshelf_tab_alignment_test.dart`（首 tab 左缘 `inInclusiveRange(19,24)`）断言同步补修
 
 ### Test
 - `flutter analyze` 无问题；`flutter test` 全过
+- （补修复跑）`flutter analyze`（flutter_legado 域）0 问题；`flutter test` 全过（1449 例，含上述两回归套件补修断言）
 
 ### Real device
 - release 2.0.264+265 APK 装 MuMu（192.168.1.19:5555）复验：截图 docs/parity_shots/ours_2.0.264/03_bookshelf.png（程序化断言：单卡封面行墨迹横向跨度占比落于 26%~30% 区间，对齐参考卡宽≈27%）
+- （补修）release 2.0.264+265 APK 重装 MuMu 并**重采** docs/parity_shots/ours_2.0.264/03_bookshelf.png（覆盖同路径）；三项程序化自检全部达标：①封面高宽比 1.441（≥1.35 ✓，名义 5:7=1.4，含阴影/圆角抗锯齿外扩）②tab 文字左缘 40px@720p（=20dp，≥15px ✓；1080p 等效 ≈60px，与参考 ≈59px 一致）③单卡墨迹跨度 26.1%（26%~30% ✓）；采集环境注记：Test 实例（192.168.1.19:5555）本轮 ADB 桥接失效（实例 ADB 未启用且 manager 无法重连），改在实例 0（127.0.0.1:16384，720×1280@320dpi=360dp，与 1080×1920@480dpi 同 360dp 布局基准）重装 2.0.264 重采；该实例书架仅 R1 换源验证书 1 本（网格右两格留空符合规格），采前经 ⋮ 菜单「布局设置」由列表切回网格态
 
 - Contributor: 全栈工程师子代理
 
