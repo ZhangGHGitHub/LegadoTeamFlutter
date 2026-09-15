@@ -13,7 +13,7 @@ All notable changes to this project will be documented in this file.
 - 新增回归套件 `test/widget/bookshelf_tab_alignment_test.dart`（B1 两态锁死：空态回落唯一 tab 左缘 ≈0；多组首 tab 左起 + 后续 tab 顺排。注意分组 tab 列表=通知器「默认全部组置顶 + 用户组」，断言以实际渲染首 tab 为准）
 
 ### Real device
-- release 2.0.263+264 APK 已构建（build/app/outputs/flutter-apk/app-release.apk）；MuMu Test 实例（192.168.1.19:5555）提交时 ADB 无响应未安装，截图 docs/parity_shots/ours_2.0.263/{03_bookshelf,04_bookshelf_overflow_menu}.png 待实例在线后补采
+- release 2.0.263+264 APK 已装 MuMu（192.168.1.19:5555）并复验（2026-09-15）；截图 docs/parity_shots/ours_2.0.263/03_bookshelf.png（程序化断言：tab 行最左墨迹列 x≈1=左对齐、顶栏动作区墨迹占比 0.6%=裸图标）与 04_bookshelf_overflow_menu.png（程序化断言：全屏覆盖层下书网格区方差 0.0=均匀 surface、右面板卡片墨迹存在）+ 03b_rss_icon_crop.png（底栏订阅 RSS 图标形态存证）
 
 - Contributor: 全栈工程师子代理
 
