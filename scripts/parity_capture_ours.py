@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""parity_capture_ours.py — 1:1 界面对比「我方」批量截图采集（batch 1，16 屏）。
+"""parity_capture_ours.py — 1:1 界面对比「我方」批量截图采集（批 1 16 屏 + 批 2 10 屏）。
 
 目的：
   在装有我方 io.legado.flutter_legado（期望版本动态读取自 flutter_legado/pubspec.yaml）
@@ -23,11 +23,16 @@
     versionName 与 pubspec.yaml 版本一致（不符则整体中止）
 
 用法：
-  python scripts/parity_capture_ours.py                      # 全 16 屏
-  python scripts/parity_capture_ours.py --only 01,03,06      # 只跑指定屏（07 含 07b）
+  python scripts/parity_capture_ours.py                      # 批 1 16 屏 + 批 2 10 屏
+  python scripts/parity_capture_ours.py --only 01,03,06      # 批 1 屏编号（07 含 07b）
+  python scripts/parity_capture_ours.py --only 01_discover,08_source_manage
+                                                             # 批 2 屏全名 key（可与批 1 混用）
   python scripts/parity_capture_ours.py --device 127.0.0.1:16416
   python scripts/parity_capture_ours.py --out docs/parity_shots/ours_<version>
 退出码：0 = 全部 OK；1 = 存在失败/跳过屏。
+批 2（发现与源管理）屏 key：01_discover / 02_discover_overflow / 03_discover_expand /
+06_booklist / 07_source_switch / 08_source_manage / 09_source_editor /
+10_replace_rule_edit / 11_rss_source / 12_web_service（即输出文件名 <key>.png）。
 
 期望版本不再硬编码：运行时从 flutter_legado/pubspec.yaml 的 `version:` 行动态读取
 （取 `+` 前主版本号），设备 versionName 需与之匹配；读取失败时回退到
@@ -109,6 +114,21 @@ READER_CENTER = (540, 960)       # 中心点（唤出/收起菜单）
 READER_MENU_ROW = {              # 菜单底部快捷行 y=1806
     "章节梗概": (108, 1806), "全文搜索": (540, 1806),
     "自动翻页": (756, 1806), "目录": (972, 1806)}
+# 发现页顶栏（批 2 用：⋮ 更多菜单 + 源卡/展开区/书单定位）
+BTN_DISCOVER_MENU = (1014, 168)      # 发现页顶栏 ⋮（更多，tooltip「更多」）
+DISCOVER_TILE_1 = (270, 420)         # 发现页第一源卡兜底中心（顶部为第一张源卡）
+DISCOVER_CHIP_1 = (180, 720)         # 展开区分节首个 chip 兜底（3 列 chips 网格）
+# 书源管理 /sources（我的页「书源管理」入口进入；顶栏内嵌「搜索书源」框）
+SRC_FIRST_ROW = (540, 360)           # 第一行源卡兜底中心（顶栏搜索框之下）
+# 设置/我的 页条目兜底（dump 命中时优先点 dump 节点中心）
+TILE_REPLACE_PURIFY = (540, 900)     # 「替换净化」条目兜底
+BTN_REPLACE_ADD = (1044, 168)        # 替换规则页顶栏最右「新增」(add) 按钮兜底
+# 订阅页 RSS 源瓦片兜底（头部双卡「规则订阅|收藏」之下的 72dp 小瓦片网格首格）
+RSS_TILE_1 = (144, 560)
+# 详情页「换源」钮兜底（详情页按钮行：换源/加入书架/查看目录/继续阅读）
+BTN_CHANGE_SOURCE = (108, 1500)
+
+
 # 长按浮条（text_selection_panel.dart ReaderSelectionToolbar 的 6 按钮，
 # uiautomator content-desc 实证：复制/分享/浏览器/朗读/书签/更多 均可见）。
 # 主特征取前 5 个：实测菜单态 dump 无这 5 词（只有「更多」重叠），
@@ -674,6 +694,235 @@ def reset_after_16() -> None:
     wait(2)
 
 
+# ===== 批 2 导航函数（发现与源管理；编号 01/02/03/06-12 与批 1 数字同号，
+#      以 key=<编号>_<短名> 独立注册表 SCREENS_B2 区分，--only 用全名） =====
+def _to_mine() -> None:
+    """冷启动 → 底部「我的」tab（设置页：书源管理/替换净化/Web 服务/MCP 服务）。
+
+    冷启会恢复上次路由（可能是 /sources 等二级页，无底栏 → 点 tab 坐标会
+    落到内容行上）。主壳 PopScope(canPop=false)，BACK 对主壳无副作用，
+    故先 BACK 弹回主壳再点 tab；仍不在设置页则再 BACK + 点按一轮，
+    最多 3 轮。注意：KeepAlive 页保留滚动位置，设置列表可能停在下方
+    → 点 tab 后先滚回列表顶再校验（在顶时下滑为无害空操作）。
+    校验用多行标记 OR：滚顶后「定时任务/书源管理/TXT 目录规则」必可见。"""
+    cold_start()
+    markers = ("定时任务", "书源管理", "TXT 目录规则")
+    for i in range(3):
+        keyevent("4")
+        wait(1)
+        tap(*TAB_MINE)
+        wait(2)
+        for _ in range(3):  # 列表滚到顶
+            swipe(W // 2, 500, W // 2, 1400, 350)
+            wait(1)
+        x = dump("to_mine")
+        blob = " ".join(t + " " + d for t, d, _b in nodes(x))
+        if any(m in blob for m in markers):
+            return
+        rec(f"  [b2] to_mine 第 {i + 1} 轮未落到设置页，BACK + 重点")
+
+
+def _first_content_row(y_lo: int, y_hi: int, exclude: tuple[str, ...],
+                       label: str) -> None:
+    """在 [y_lo, y_hi] 纵带内找首个非排除词内容行并点其中心；未命中回退坐标。"""
+    x = dump(label)
+    cands = []
+    for t, d, b in nodes(x):
+        s = (t or d).strip()
+        if not s or not (y_lo <= b[1] <= y_hi):
+            continue
+        if any(k in s for k in exclude):
+            continue
+        cands.append(((b[1], b[0]), center_of(b)))
+    if cands:
+        cands.sort()
+        _fb, xy = cands[0]
+        tap(*xy)
+        rec(f"  [b2] {label}：dump 命中首个内容行，点 {xy}")
+    else:
+        fb = SRC_FIRST_ROW
+        tap(*fb)
+        rec(f"  [b2] {label}：dump 未命中，回退坐标 {fb}")
+
+
+def nav_b2_01() -> None:
+    """01_discover 发现页：冷启动 → 底部「发现」tab（源名瓦片/分组 chip）。
+
+    冷启落点是上次持久化 tab；个别情况下首次点按未生效（页面仍在原 tab），
+    故点按后 dump 校验顶栏标题「发现」，未切换则补点一次。"""
+    cold_start()
+    tap(*TAB_DISCOVER)
+    wait(3)
+    switched = any("发现" in (t + " " + d) for t, d, _b in nodes(dump("01_discover")))
+    if not switched:
+        tap(*TAB_DISCOVER)
+        wait(3)
+
+
+def nav_b2_02() -> None:
+    """02_discover_overflow 发现页溢出菜单：发现页 → 顶栏 ⋮（更多）→ 分组菜单。"""
+    cold_start()
+    tap(*TAB_DISCOVER)
+    wait(3)
+    locate_or_fallback(r"更多", BTN_DISCOVER_MENU, "发现顶栏 ⋮（更多）")
+    wait(2)
+
+
+def nav_b2_03() -> None:
+    """03_discover_expand 发现源展开区：发现页 → 点第一张源卡 → 展开分类 chips。"""
+    cold_start()
+    tap(*TAB_DISCOVER)
+    wait(3)
+    # 第一张源卡 = 顶栏之下首个内容行（排除顶栏词/空态词），未命中回退坐标
+    x = dump("03_discover_expand")
+    cands = []
+    for t, d, b in nodes(x):
+        s = (t or d).strip()
+        if not s or not (240 <= b[1] <= 1600):
+            continue
+        if any(k in s for k in ("发现", "全部", "筛选发现源", "更多",
+                                "当前没有发现源", "加载中")):
+            continue
+        cands.append(((b[1], b[0]), center_of(b)))
+    if cands:
+        cands.sort()
+        _fb, xy = cands[0]
+        tap(*xy)
+        rec(f"  [b2] 03 第一源卡：dump 命中，点 {xy}")
+    else:
+        tap(*DISCOVER_TILE_1)
+        rec(f"  [b2] 03 第一源卡：dump 未命中，回退坐标 {DISCOVER_TILE_1}")
+    wait(3)
+
+
+def nav_b2_06() -> None:
+    """06_booklist 分类书单页：发现页 → 展开第一源卡 → 点首个分类 chip。
+    展开后源卡标题行仍在最上（再点会收起），故取「标题行之下」首个内容行
+    作为首个 chip/分节标题，点之进入书单。"""
+    nav_b2_03()
+    x = dump("06_booklist")
+    rows = []
+    for t, d, b in nodes(x):
+        s = (t or d).strip()
+        if not s or not (240 <= b[1] <= 1700):
+            continue
+        if any(k in s for k in ("发现", "全部", "筛选发现源", "更多",
+                                "当前没有发现源")):
+            continue
+        rows.append(((b[1], b[0]), b))
+    rows.sort(key=lambda c: c[0])
+    if len(rows) >= 2:
+        header_y1 = rows[0][1][3]
+        for _k, b in rows[1:]:
+            if b[1] > header_y1:  # 源卡标题行之下首个内容行 = 首个 chip/分节
+                xy = center_of(b)
+                tap(*xy)
+                rec(f"  [b2] 06 首个分类 chip：dump 命中（标题行之下），点 {xy}")
+                wait(4)
+                return
+    tap(*DISCOVER_CHIP_1)
+    rec(f"  [b2] 06 首个分类 chip：dump 未命中，回退坐标 {DISCOVER_CHIP_1}")
+    wait(4)
+
+
+def nav_b2_07() -> None:
+    """07_source_switch 换源弹层：搜索路径进详情页 → 点「换源」（底部弹层）。"""
+    _search_to_book_detail()
+    locate_or_fallback(r"换源", BTN_CHANGE_SOURCE, "详情页「换源」")
+    wait(4)
+
+
+def nav_b2_08() -> None:
+    """08_source_manage 书源管理：我的页 → 「书源管理」条目 → /sources。
+
+    行节点 text 为「标题\\n副标题」合并串（实测 2.0.264：「书源管理
+    \\n新建、导入、编辑或管理书源」），故按 text 首行匹配；未命中先
+    滚到列表顶再试一次（顶态行中心实测 (540,648)），最后才回退坐标。"""
+    _to_mine()
+    label = "我的页「书源管理」条目"
+    xy = None
+    for attempt in range(2):
+        for t, d, b in nodes(dump(label)):
+            s = (t or d).strip()
+            if (s or "").split("\n")[0] == "书源管理":
+                xy = center_of(b)
+                break
+        if xy:
+            break
+        swipe(W // 2, 500, W // 2, 1400, 350)  # 列表滚到顶
+        wait(1)
+    if xy is None:
+        xy = (540, 648)  # 顶态实测「书源管理」行 y[540,756] 中心
+        rec(f"  [b2] {label}：dump 未命中，回退坐标 {xy}")
+    tap(*xy)
+    rec(f"  [b2] {label}：点 {xy}")
+    wait(4)
+
+
+def nav_b2_09() -> None:
+    """09_source_editor 书源编辑器：书源管理 → 点第一个源卡 → 编辑器。"""
+    nav_b2_08()
+    _first_content_row(240, 1700,
+                       ("搜索书源", "已启用", "启用发现", "启用所选",
+                        "新建书源", "暂无书源", "导入"),
+                       "09 书源管理首个源卡")
+    wait(4)
+
+
+def nav_b2_10() -> None:
+    """10_replace_rule_edit 替换净化编辑器：我的页 → 「替换净化」→ 新增规则。"""
+    _to_mine()
+    locate_or_fallback(r"替换净化", TILE_REPLACE_PURIFY, "我的页「替换净化」条目")
+    wait(3)
+    # 顶栏最右新增按钮无 tooltip（add 图标），dump 难命中，直接兜底坐标
+    tap(*BTN_REPLACE_ADD)
+    rec(f"  [b2] 10 新增规则按钮：点兜底坐标 {BTN_REPLACE_ADD}")
+    wait(3)
+
+
+def nav_b2_11() -> None:
+    """11_rss_source RSS 源二级页：底部「订阅」tab → 点第一个 RSS 源瓦片。"""
+    cold_start()
+    tap(*TAB_SUB)
+    wait(3)
+    x = dump("11_rss_source")
+    cands = []
+    for t, d, b in nodes(x):
+        s = (t or d).strip()
+        if not s or not (300 <= b[1] <= 1700):
+            continue
+        if any(k in s for k in ("订阅", "规则订阅", "收藏", "删除 RSS 源",
+                                "当前没有订阅源", "暂无订阅源", "加载")):
+            continue
+        cands.append(((b[1], b[0]), center_of(b)))
+    if cands:
+        cands.sort()
+        _fb, xy = cands[0]
+        tap(*xy)
+        rec(f"  [b2] 11 首个 RSS 源瓦片：dump 命中，点 {xy}")
+    else:
+        tap(*RSS_TILE_1)
+        rec(f"  [b2] 11 首个 RSS 源瓦片：dump 未命中，回退坐标 {RSS_TILE_1}")
+    wait(4)
+
+
+def nav_b2_12() -> None:
+    """12_web_service Web 服务开启态：我的页（设置页含「Web 服务」开关行）。
+
+    「Web 服务」行在设置列表第 9 位，_to_mine 滚顶后不可见 → 上滑
+    1-2 屏使其露出（逐次 dump 校验，命中即停，防滑过头）。"""
+    _to_mine()
+    label = "设置页「Web 服务」行"
+    x = dump(label)
+    if not any("Web 服务" in (t + " " + d) for t, d, _b in nodes(x)):
+        for _ in range(2):
+            swipe(W // 2, 1400, W // 2, 500, 350)  # 列表下滑
+            wait(1)
+            x = dump(label)
+            if any("Web 服务" in (t + " " + d) for t, d, _b in nodes(x)):
+                break
+
+
 # ===== 屏幕登记表（顺序执行，状态链式推进） =====
 # (编号, 英文短名, 导航函数, 主关键词(OR), 附加关键词(OR, 与主构成 AND),
 #  负向关键词(任一命中即错态), 截图后复位钩子(仅 16))
@@ -734,22 +983,92 @@ SCREEN_FILE = {
     "15": "15_chapter_jump.png", "16": "16_auto_flip.png",
 }
 
+# ===== 批 2 登记表（发现与源管理，10 屏；key=<编号>_<短名> 即输出文件名） =====
+# 元组结构与批 1 一致，但「编号」字段与批 1 数字同号（01/02/03/06-12），
+# 靠 key=编号_短名 与 SCREEN_FILE 文件名区分（01_discover.png ≠ 01_home_page.png）。
+# 断言关键词取自对应屏源码实证（见 docs/parity_shots 批 2 任务书与读码注释）。
+SCREENS_B2: list[tuple[str, str, str, tuple[str, ...], tuple[str, ...],
+                       tuple[str, ...], "callable | None"]] = [
+    # 01 发现页：源名瓦片（批 1 16 屏负向词实证为发现/订阅瓦片名）AND 顶栏特征
+    ("01", "discover",        nav_b2_01,
+     ("半夏小说", "奈飞工厂", "小说拾遗", "Meow云"),
+     ("发现", "筛选发现源"), (), None),
+    # 02 发现页溢出菜单：⋮ 点开分组菜单（「全部」+ 分组名，数据相关），
+    # 主特征用菜单常驻项「全部」（顶栏副标题未选分组时也是「全部」，
+    # 故再 AND 「筛选发现源」证明仍在发现页顶栏语境）
+    ("02", "discover_overflow", nav_b2_02,
+     ("全部",), ("筛选发现源",), (), None),
+    # 03 发现源展开区：点第一源卡后，源卡名仍在 + 展开区 chip/分节标题出现。
+    # chip 文案随源数据（如「玄幻/排行榜」），故 AND 条件留空，
+    # 仅凭「点开后源卡仍在发现页」+ 截图人工核对（错态会落在源卡收起/其他页，
+    # 由 01/06 屏交叉兜底）
+    ("03", "discover_expand",  nav_b2_03,
+     ("半夏小说", "奈飞工厂", "小说拾遗", "Meow云"),
+     ("发现",), (), None),
+    # 06 分类书单页（explore_show）：顶栏 4 个独有 tooltip（筛选/切换密度/
+    # 加入书架/页码「第 N 页」）为屏独有特征；AND 内容态（暂无书籍/加载失败/页码）
+    ("06", "booklist",         nav_b2_06,
+     ("加入书架", "切换为紧凑", "切换为舒适", "筛选"),
+     ("第", "暂无书籍", "加载失败"), (), None),
+    # 07 换源弹层（change_source 底部面板）：顶栏「重新搜索/搜索筛选」为弹层独有；
+    # AND 书名/结果/空态文案（未找到可替换的书源 亦算，任务要求空态照拍）
+    ("07", "source_switch",    nav_b2_07,
+     ("重新搜索", "搜索筛选"),
+     ("斗罗大陆", "找到", "未找到可替换的书源", "匹配书源"), (), None),
+    # 08 书源管理（/sources）：顶栏搜索行可折叠（收起态无「搜索书源」hint，
+    # 实测 2.0.264 常为收起态）→ 主词用顶栏常驻「更多选项」或展开态 hint；
+    # AND 源行状态词（开启/已启用/启用发现）或空态（任务：列表与启用开关类）
+    ("08", "source_manage",    nav_b2_08,
+     ("更多选项", "搜索书源"),
+     ("已启用", "启用发现", "暂无书源", "新建书源", "开启"), (), None),
+    # 09 书源编辑器（SourceEditScreen）：必填字段「源 URL」「源名称」为屏独有
+    ("09", "source_editor",    nav_b2_09,
+     ("源 URL", "源名称"),
+     ("启用", "保存", "分组"), (), None),
+    # 10 替换净化编辑器（ReplaceRuleEditScreen）：「使用正则表达式」勾选行为
+    # 编辑器独有（列表页规则副标题只含「正则:」，勿把「正则」当主词误命中列表页）
+    ("10", "replace_rule_edit", nav_b2_10,
+     ("使用正则表达式",),
+     ("保存", "复制规则", "粘贴规则", "分组"), (), None),
+    # 11 RSS 源二级页（rss_articles）：顶栏「刷新」钮为文章页独有（RSS 列表页
+    # 无刷新钮，实测仅下拉手势）；「暂无文章/下拉刷新获取最新内容」为文章页
+    # 空态文案。文章已加载时仅有卡片内容（动态），本组关键词不命中会 FAIL 跳过
+    ("11", "rss_source",       nav_b2_11,
+     ("暂无文章", "加载文章", "刷新"),
+     ("刷新", "下拉刷新获取最新内容"), (), None),
+    # 12 Web 服务开启态（我的/设置页「Web 服务」开关行）：
+    # 开启时行下展开 URL + 「拷贝 URL/浏览器打开」按钮，关闭时副标题
+    # 「用浏览器写源或看书」；AND 以上任一证明停在设置页且行可见
+    ("12", "web_service",      nav_b2_12,
+     ("Web 服务",),
+     ("MCP 服务", "端口", "URL", "用浏览器写源或看书"), (), None),
+]
+
 
 def main() -> int:
-    # global 声明必须在函数内首次使用 DEV/OUT_DIR（argparse default 引用 OUT_DIR）之前，
-    # 否则 SyntaxError: name 'OUT_DIR' is used prior to global declaration
-    global DEV, OUT_DIR
-    ap = argparse.ArgumentParser(description="我方 1:1 对比批量截图采集（batch 1）")
+    # global 声明必须在函数内首次使用 DEV/OUT_DIR/EXPECT_VERSION 之前，
+    # 否则 SyntaxError: name used prior to global declaration
+    global DEV, OUT_DIR, EXPECT_VERSION
+    ap = argparse.ArgumentParser(
+        description="我方 1:1 对比批量截图采集（批 1 16 屏 + 批 2 10 屏）")
     ap.add_argument("--device", default=DEFAULT_DEVICE,
                     help=f"adb 设备（默认 {DEFAULT_DEVICE}）")
     ap.add_argument("--only", default="",
-                    help="只跑指定屏编号，逗号分隔，如 --only 01,03,06（07 会同时跑 07/07b）")
-    ap.add_argument("--out", default=str(OUT_DIR),
-                    help=f"截图输出目录（默认 {OUT_DIR}）")
+                    help="只跑指定屏，逗号分隔：批 1 用编号（01,03,06，07 含 07/07b），"
+                         "批 2 用全名（01_discover,08_source_manage），可混用")
+    ap.add_argument("--expect-version", default="",
+                    help="覆盖期望 versionName（默认动态读 pubspec.yaml）；"
+                         "设备 APK 落后于 pubspec 版本号时用于固定版本校验，避免整体中止")
+    ap.add_argument("--out", default="",
+                    help="截图输出目录（默认 docs/parity_shots/ours_<期望版本>）")
     args = ap.parse_args()
 
     DEV = args.device
-    OUT_DIR = Path(args.out)
+    if args.expect_version:
+        EXPECT_VERSION = args.expect_version
+        rec(f"版本校验固定为 {EXPECT_VERSION}（--expect-version 覆盖 pubspec 动态值）")
+    OUT_DIR = (Path(args.out) if args.out
+               else ROOT / "docs" / "parity_shots" / f"ours_{EXPECT_VERSION}")
     if not OUT_DIR.is_absolute():
         OUT_DIR = ROOT / OUT_DIR
 
@@ -763,11 +1082,20 @@ def main() -> int:
             if tok == "07":
                 want.add("07b")  # 07 屏含双态：完成态(07) + 搜索中态(07b)
 
+    # 批 1/批 2 编号数字重叠（01/02/03/06-12），按 key 归属拆分：
+    # 批 1 用纯数字编号（01..16/07b），批 2 用全名 key（01_discover 等）
+    B1_NUMS = {s[0] for s in SCREENS}
+    B2_KEYS = {f"{n}_{m}" for n, m, *_ in SCREENS_B2}
+    want_b1 = {t for t in want if t in B1_NUMS}
+    want_b2 = {t for t in want if t in B2_KEYS}
+
     rec(f"设备：{DEV}；adb：{ADB}")
     if not want:
-        rec("目标：全 16 屏")
+        rec("目标：批 1 全 16 屏 + 批 2 全 10 屏")
     else:
-        rec(f"目标：--only {','.join(sorted(want))}")
+        rec(f"目标：--only {','.join(sorted(want))}"
+            f"（批 1：{','.join(sorted(want_b1)) or '无'}；"
+            f"批 2：{','.join(sorted(want_b2)) or '无'}）")
 
     # 设备可达性
     r = sh("shell", "echo", "parity-ping")
@@ -778,13 +1106,15 @@ def main() -> int:
     # 版本校验
     ver = check_version()
     if ver != EXPECT_VERSION:
-        rec(f"版本校验失败：versionName={ver or '未知'}（期望 {EXPECT_VERSION}），整体中止")
+        rec(f"版本校验失败：versionName={ver or '未知'}（期望 {EXPECT_VERSION}），整体中止"
+            f"；设备 APK 落后于 pubspec 时可加 --expect-version {ver or '?'} 重试")
         return 1
     rec(f"版本校验通过：{PKG} versionName={ver}")
 
     results: list[ScreenResult] = []
+    # 注意：条件用 want（任意批被指定）而非 want_b1——只想跑批 2 时批 1 须全跳过
     for num, name, nav, kws, and_kws, neg_kws, post in SCREENS:
-        if want and num not in want:
+        if want and num not in want_b1:
             continue
         try:
             res = run_screen(num, name, nav, kws, SCREEN_FILE[num],
@@ -792,6 +1122,22 @@ def main() -> int:
         except Exception as e:  # 双保险：单屏任何异常都不中断
             res = ScreenResult(num, name, False, "/".join(kws),
                                SCREEN_FILE[num], f"未捕获异常：{type(e).__name__}: {e}")
+            res.log()
+        results.append(res)
+
+    # 批 2（发现与源管理）：文件名 = key.png（01_discover.png 等），
+    # 与批 1 同目录不同名，互不覆盖
+    for num, name, nav, kws, and_kws, neg_kws, post in SCREENS_B2:
+        key = f"{num}_{name}"
+        if want and key not in want_b2:
+            continue
+        fname = f"{key}.png"
+        try:
+            res = run_screen(num, name, nav, kws, fname,
+                             and_kws=and_kws, neg_kws=neg_kws, post=post)
+        except Exception as e:
+            res = ScreenResult(num, name, False, "/".join(kws),
+                               fname, f"未捕获异常：{type(e).__name__}: {e}")
             res.log()
         results.append(res)
         # 注：每屏导航自带冷启动（_to_shelf/cold_start），会话态（选择模式等）天然隔离；
