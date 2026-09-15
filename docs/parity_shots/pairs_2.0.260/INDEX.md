@@ -17,12 +17,12 @@
 | 06_search | 06_search.png | —（缺失） | — | — | — |
 | 07_search_results | 07_search_results.png | 07_search_results.png | 07_search_results_pair.png | 18.51% | 一致 |
 | 07b_search_results_loading | —（缺失） | 07b_search_results_loading.png | — | — | — |
-| 08_book_info | 08_book_info.png | 08_book_info.png | 08_book_info_pair.png | 56.51% | 一致 |
-| 09_toc | 09_toc.png | 09_toc.png | 09_toc_pair.png | 17.34% | 一致 |
+| 08_book_info | 08_book_info.png | 08_book_info.png | 08_book_info_pair.png | 57.83% | 一致 |
+| 09_toc | 09_toc.png | 09_toc.png | 09_toc_pair.png | 14.11% | 一致 |
 | 10_reader | 10_reader.png | —（缺失） | — | — | — |
 | 10b_reader_doupo_content | 10b_reader_doupo_content.png | —（缺失） | — | — | — |
 | 10c_reader_alt | 10c_reader_alt.png | —（缺失） | — | — | — |
 | 11_reader_menu | 11_reader_menu.png | —（缺失） | — | — | — |
-| 12_reader_longpress | 12_reader_longpress.png | 12_reader_longpress.png | 12_reader_longpress_pair.png | 87.92% | 一致 |
-| 13_search_content | 13_search_content.png | 13_search_content.png | 13_search_content_pair.png | 7.49% | 一致 |
-| 16_auto_flip | 16_auto_flip.png | 16_auto_flip.png | 16_auto_flip_pair.png | 76.60% | 一致 |
+| 12_reader_longpress | 12_reader_longpress.png | 12_reader_longpress.png | 12_reader_longpress_pair.png | 88.98% | 一致 |
+| 13_search_content | 13_search_content.png | 13_search_content.png | 13_search_content_pair.png | 5.45% | 一致 |
+| 16_auto_flip | 16_auto_flip.png | 16_auto_flip.png | 16_auto_flip_pair.png | 90.81% | 一致 |

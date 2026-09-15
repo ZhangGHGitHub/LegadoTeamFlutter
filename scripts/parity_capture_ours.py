@@ -92,6 +92,11 @@ MENU_ITEM_SELECT = (804, 1008)    # 溢出菜单「选择模式」
 # 搜索页
 CHIP_HISTORY = (540, 807)         # 搜索历史 chip（斗罗大陆）
 INPUT_BAR = (540, 444)            # 输入条（body 顶部）
+# 搜索页历史区实为整行条目（2.0.260 实测 bounds）：
+#   「玄幻」[48,768,1032,942]；「斗罗大陆」[48,972,1032,1146] → 中心 (540,1059)。
+# 点历史行即触发该关键词搜索（无需再点输入条/回车）。
+HIST_ROW_BOOK = (540, 1059)      # 搜索历史行「斗罗大陆」中心
+RESULT_ITEM_1 = (540, 780)       # 搜索结果第 1 行（标题+作者行）中心兜底坐标
 # 书详情页
 BTN_VIEW_TOC = (917, 1500)       # 查看目录
 BTN_READ = (887, 1788)           # 阅读
@@ -277,30 +282,60 @@ class ScreenResult:
         print(line, flush=True)
 
 
+def _debug_nodes(x: str, n: int = 5) -> str:
+    """取前 n 个带 text/desc 的节点，供断言失败时人工定位（打印用）。"""
+    out = []
+    for t, d, _b in nodes(x):
+        if t or d:
+            out.append(f"t={t!r} d={d!r}" if t else f"d={d!r}")
+            if len(out) >= n:
+                break
+    return " | ".join(out) if out else "(dump 无文本节点)"
+
+
 def run_screen(num: str, name: str, navigate: callable, kws: tuple[str, ...],
-               filename: str) -> ScreenResult:
-    """navigate() 完成导航 → dump 断言（失败重试 1 次，2s 刷新）→ 截图。"""
+               filename: str, and_kws: tuple[str, ...] = (),
+               neg_kws: tuple[str, ...] = (),
+               post: callable | None = None) -> ScreenResult:
+    """navigate() 完成导航 → dump 断言（失败重试 1 次，2s 刷新）→ 截图 → post 复位。
+
+    断言语义（收紧后，防错态误存）：
+      - kws（OR，主特征）必须命中其一；
+      - and_kws（OR，附加特征）非空时须再命中其一（与 kws 构成 AND）；
+      - neg_kws 任一命中即判错态（如自动翻页控制条/退出阅读等阅读器特征）。
+    断言失败时**不再保存截图**（保留旧图，避免错态覆盖正图），
+    并打印 dump 前 5 个文本节点辅助定位。
+    """
     try:
         navigate()
         x = dump()
         hit = has_kw(x, kws)
-        if not hit:
+        and_hit = has_kw(x, and_kws) if and_kws else True
+        neg_hit = has_kw(x, neg_kws) if neg_kws else ""
+        if not (hit and and_hit) or neg_hit:
             wait(2)
             x = dump()
             hit = has_kw(x, kws)
-        if not hit:
-            # 断言失败仍留档截图（便于事后人工排查），但标记 FAIL
-            try:
-                f = screenshot(filename)
-            except Exception:
-                f = Path(filename)
-            r = ScreenResult(num, name, False, "/".join(kws), f.name,
-                             "dump 断言未命中关键词（重试 1 次后仍失败）")
+            and_hit = has_kw(x, and_kws) if and_kws else True
+            neg_hit = has_kw(x, neg_kws) if neg_kws else ""
+        if not (hit and and_hit) or neg_hit:
+            parts = []
+            if not hit:
+                parts.append(f"未命中主关键词 {kws}")
+            if not and_hit:
+                parts.append(f"未命中附加关键词 {and_kws}")
+            if neg_hit:
+                parts.append(f"命中负向关键词 {neg_hit}（错态特征）")
+            r = ScreenResult(num, name, False, "/".join(kws), Path(filename).name,
+                             "；".join(parts) + "；保留旧图不覆盖")
             r.log()
+            rec(f"  [debug] 前 5 个文本节点：{_debug_nodes(x)}")
             return r
         f = screenshot(filename)
         r = ScreenResult(num, name, True, hit, f.name)
         r.log()
+        if post is not None:
+            post()
         return r
     except Exception as e:  # 任何异常不中断整体运行
         r = ScreenResult(num, name, False, "/".join(kws), filename,
@@ -417,19 +452,91 @@ def _to_reader_menu() -> None:
     wait(2)
 
 
-def nav_08() -> None:
-    """书详情：从书架点书卡（瀚海书阁源，目录可正常加载）。"""
+def _to_reader() -> None:
+    """干净进入阅读器：冷启动 → 书架 → 点书卡（继续最近阅读）。"""
     _to_shelf()
     tap(*CARD_BOOK)
+    wait(6)
+
+
+def _ensure_auto_flip_off() -> None:
+    """若自动翻页控制条在跑（自动翻页设置持久化，冷启后仍会运行）则先停止，
+    避免污染后续屏（12 长按 / 13 全文搜索 等均要求干净阅读态）。"""
+    x = dump()
+    if has_kw(x, ("自动翻页", "停止自动翻页")):
+        xy = None
+        for _t, d, b in nodes(x):
+            if "停止自动翻页" in d or "停止翻页" in d:
+                xy = center_of(b)
+                break
+        if xy is None:
+            xy = (823, 1776)  # 控制条「停止自动翻页」钮实测中心
+        tap(*xy)
+        wait(2)
+        rec(f"  [reset] 检测到自动翻页运行中，已点停止 {xy}")
+
+
+def _search_to_book_detail() -> None:
+    """搜索路径进书籍详情页（08 专用）：
+    书架 → 搜索页 → 点搜索历史行「斗罗大陆」（点行即触发搜索）→
+    等结果出现（最多 40s）→ 点第一个搜索结果行 → 详情页。
+    注意：书架卡点按是「继续阅读」语义（直达阅读器），详情页必须走搜索路径。
+    """
+    _to_shelf()
+    tap(*BTN_SHELF_SEARCH)
+    wait(3)
+    # 点历史行：dump 优先定位 desc 恰为「斗罗大陆」的整行条目，未命中回退坐标
+    x = dump()
+    xy = None
+    for _t, d, b in nodes(x):
+        if d.strip() == "斗罗大陆":
+            xy = center_of(b)
+            break
+    if xy is not None:
+        tap(*xy)
+        rec(f"  [08] 搜索历史行「斗罗大陆」：dump 命中，点 {xy}")
+    else:
+        tap(*HIST_ROW_BOOK)
+        rec(f"  [08] 搜索历史行「斗罗大陆」：dump 未命中，回退坐标 {HIST_ROW_BOOK}")
+    wait(3)
+    # 等结果出现：完成态（加载下一页）/进行中（停止搜索）/书架结果行（书名+作者）
+    if not _poll(("加载下一页", "停止搜索", "唐家三少"), 40):
+        raise RuntimeError("搜索 40s 未出现结果特征，无法进入详情页")
+    # 点第一个搜索结果行（标题+作者同一行的节点），未命中回退坐标
+    x = dump()
+    xy = None
+    for _t, d, b in nodes(x):
+        if "斗罗大陆" in d and "唐家三少" in d and b[1] < 960:
+            xy = center_of(b)
+            break
+    if xy is not None:
+        tap(*xy)
+        rec(f"  [08] 首个搜索结果行：dump 命中，点 {xy}")
+    else:
+        tap(*RESULT_ITEM_1)
+        rec(f"  [08] 首个搜索结果行：dump 未命中，回退坐标 {RESULT_ITEM_1}")
+    wait(5)
+
+
+def nav_08() -> None:
+    """书详情：搜索路径（历史行触发搜索 → 首个结果行 → 详情页）。
+
+    书架卡点按是「继续阅读」语义，直达阅读器，必然采成阅读态；
+    详情页（封面大图/书名/作者/来源徽标/换源/目录/继续阅读）必须走搜索路径。
+    """
+    _search_to_book_detail()
+
+
+def _detail_to_toc() -> None:
+    """详情页 → 点「查看目录」进目录页（09 专用，复用 08 的搜索进详情路径）。"""
+    _search_to_book_detail()
+    locate_or_fallback(r"查看目录", BTN_VIEW_TOC, "详情页「查看目录」")
     wait(4)
 
 
 def nav_09() -> None:
-    _to_shelf()
-    tap(*CARD_BOOK)
-    wait(4)
-    locate_or_fallback(r"查看目录", BTN_VIEW_TOC, "详情页「查看目录」")
-    wait(4)
+    """目录页：详情页 → 查看目录。断言须命中「书签」页签 + 章节/跳转特征。"""
+    _detail_to_toc()
 
 
 def nav_10() -> None:
@@ -447,20 +554,24 @@ def nav_11() -> None:
 
 
 def nav_12() -> None:
-    _to_shelf()
-    tap(*CARD_BOOK)
-    wait(4)
-    tap(*BTN_VIEW_TOC)
-    wait(4)
-    tap(*TOC_CHAP_0)
-    wait(6)
-    swipe(READER_CENTER[0], READER_CENTER[1],
-          READER_CENTER[0], READER_CENTER[1], 800)  # 长按（同点 800ms）
+    """长按浮条：干净进入阅读器 → 确保自动翻页已停止 → 长按正文段落。
+
+    长按后浮条（复制/分享/浏览器/朗读/书签/更多）须保持到截图完成；
+    截图后按返回会直接退出阅读器，故取消选中交由下一屏冷启动兜底
+    （选中态为会话态，force-stop 即清除，无持久化泄漏）。
+    """
+    _to_reader()
+    _ensure_auto_flip_off()
+    swipe(540, 600, 540, 600, 900)  # 长按正文段落（同点 900ms，实测浮条出现）
     wait(2)
 
 
 def nav_13() -> None:
-    _to_reader_menu()
+    """搜索内容页（全文搜索）：干净进入阅读器 → 唤菜单 → 菜单底部「全文搜索」。"""
+    _to_reader()
+    _ensure_auto_flip_off()
+    tap(*READER_CENTER)
+    wait(2)
     locate_or_fallback(r"全文搜索", READER_MENU_ROW["全文搜索"], "菜单「全文搜索」")
     wait(3)
 
@@ -487,36 +598,86 @@ def nav_15() -> None:
 
 
 def nav_16() -> None:
-    """自动翻页开启态：阅读器菜单 → 点 自动翻页（切换为 停止翻页）。"""
-    _to_reader_menu()
-    locate_or_fallback(r"自动翻页|停止翻页", READER_MENU_ROW["自动翻页"], "菜单「自动翻页」")
+    """自动翻页开启态：干净进阅读器 → 停掉可能残留的自动翻页 →
+    唤菜单 → 点「自动翻页」启动 → 收菜单露出底部控制条
+    （自动翻页/10秒/减慢/加快/停止自动翻页/阅读设置）。"""
+    _to_reader()
+    _ensure_auto_flip_off()
+    tap(*READER_CENTER)
+    wait(2)
+    locate_or_fallback(r"自动翻页", READER_MENU_ROW["自动翻页"], "菜单「自动翻页」")
+    wait(2)
+    tap(*READER_CENTER)  # 收起菜单，露出自动翻页控制条
+    wait(2)
+
+
+def reset_after_16() -> None:
+    """16 截图后复位：停止自动翻页（设置持久化，冷启后仍会运行并泄漏到后续屏）
+    → 唤菜单 → 退出阅读。保证后续屏/下次运行不残留自动翻页态。"""
+    x = dump()
+    if has_kw(x, ("停止自动翻页", "自动翻页")):
+        xy = None
+        for _t, d, b in nodes(x):
+            if "停止自动翻页" in d or "停止翻页" in d:
+                xy = center_of(b)
+                break
+        if xy is None:
+            xy = (823, 1776)
+        tap(*xy)
+        wait(2)
+        rec(f"  [reset] 16 后停止自动翻页 {xy}")
+    else:
+        rec("  [reset] 16 后未发现自动翻页控制条（已处于停止态）")
+    tap(*READER_CENTER)
+    wait(2)
+    locate_or_fallback(r"退出阅读", (72, 144), "菜单「退出阅读」")
     wait(2)
 
 
 # ===== 屏幕登记表（顺序执行，状态链式推进） =====
-# (编号, 英文短名, 导航函数, 断言关键词, 是否双态)
-SCREENS: list[tuple[str, str, str, callable, tuple[str, ...]]] = [
-    ("01", "home_page",        nav_01,        ("最近", "累计阅读", "统计")),
-    ("02", "bottom_nav",       nav_02,        ("Tab 1 of 5", "首页")),
-    ("03", "bookshelf",        nav_03,        ("斗罗大陆",)),
-    ("04", "bookshelf_overflow_menu", nav_04, ("选择模式", "书架管理", "分组管理")),
-    ("05", "bookshelf_select_mode",   nav_05, ("全选", "删除", "取消")),
-    ("06", "search",           nav_06,        ("搜索历史", "清空")),
+# (编号, 英文短名, 导航函数, 主关键词(OR), 附加关键词(OR, 与主构成 AND),
+#  负向关键词(任一命中即错态), 截图后复位钩子(仅 16))
+SCREENS: list[tuple[str, str, str, tuple[str, ...], tuple[str, ...],
+                    tuple[str, ...], "callable | None"]] = [
+    ("01", "home_page",        nav_01,        ("最近", "累计阅读", "统计"), (), (), None),
+    ("02", "bottom_nav",       nav_02,        ("Tab 1 of 5", "首页"), (), (), None),
+    ("03", "bookshelf",        nav_03,        ("斗罗大陆",), (), (), None),
+    ("04", "bookshelf_overflow_menu", nav_04, ("选择模式", "书架管理", "分组管理"), (), (), None),
+    ("05", "bookshelf_select_mode",   nav_05, ("全选", "删除", "取消"), (), (), None),
+    ("06", "search",           nav_06,        ("搜索历史", "清空"), (), (), None),
     # 07 = 完成态（任务屏 07 文件名）；07b = 搜索中态（补拍，07b 前缀）
-    ("07",  "search_results",           nav_07_done,      ("加载下一页",)),
-    ("07b", "search_results_loading",  nav_07_searching, ("进度", "停止搜索")),
-    ("08", "book_info",        nav_08,        ("换源", "阅读", "查看目录")),
-    ("09", "toc",              nav_09,        ("引子", "跳转顶部")),
-    ("10", "reader",           nav_10,        ("唐门", "斗罗大陆", "唐三")),
-    ("11", "reader_menu",      nav_11,        ("全文搜索", "自动翻页", "退出阅读")),
+    ("07",  "search_results",           nav_07_done,      ("加载下一页",), (), (), None),
+    ("07b", "search_results_loading",  nav_07_searching, ("进度", "停止搜索"), (), (), None),
+    # 08 详情页：必须走搜索路径（书架卡点按是继续阅读语义，会进阅读器）。
+    # 主特征取详情页独有元素（换源/加入书架/查看目录/继续阅读），
+    # 负向排除阅读器特征（退出阅读顶栏、自动翻页控制条），防误存阅读态
+    ("08", "book_info",        nav_08,
+     ("换源", "加入书架", "查看目录", "继续阅读"), (),
+     ("退出阅读", "自动翻页", "停止翻页"), None),
+    # 09 目录页：「书签」页签 + 章节列表特征（目录页签/跳转顶部/引子）AND 断言，
+    # 负向排除自动翻页运行态
+    ("09", "toc",              nav_09,
+     ("书签",), ("目录", "跳转顶部", "引子"),
+     ("退出阅读", "自动翻页", "停止翻页"), None),
+    ("10", "reader",           nav_10,        ("唐门", "斗罗大陆", "唐三"), (), (), None),
+    ("11", "reader_menu",      nav_11,        ("全文搜索", "自动翻页", "退出阅读"), (), (), None),
     # 长按浮条按钮（text_selection_panel.dart 实证：复制/分享/浏览器/朗读/书签/更多）
-    ("12", "reader_longpress", nav_12,        ("复制", "分享", "朗读", "浏览器", "书签", "更多")),
-    ("13", "search_content",   nav_13,        ("搜索正文", "搜索选项", "搜索历史")),
-    ("14", "bookmark_toc",     nav_14,        ("暂无书签", "书签", "标注")),
-    ("15", "chapter_jump",     nav_15,        ("定位至当前阅读", "移至顶部", "一键缓存")),
-    # 必须命中「停止翻页」才证明已切换为开启态（按钮标签 自动翻页→停止翻页，
-    # 二者互斥；若点空仍显示 自动翻页 则断言失败并记录原因）
-    ("16", "auto_flip",        nav_16,        ("停止翻页",)),
+    # AND 条件：浮条关键词 + 阅读器特征（章/页码 1/8），排除误存非阅读页
+    ("12", "reader_longpress", nav_12,
+     ("复制", "分享", "朗读", "浏览器", "书签", "更多"), ("章", "1/8"), (), None),
+    # 13 搜索内容页（全文搜索路由：标题「搜索正文」+ 搜索选项/搜索历史）；
+    # 负向排除阅读器菜单/自动翻页特征（防误存发现页/订阅页/阅读器）
+    ("13", "search_content",   nav_13,
+     ("搜索正文", "搜索选项", "搜索历史"), (),
+     ("退出阅读", "自动翻页", "停止翻页"), None),
+    ("14", "bookmark_toc",     nav_14,        ("暂无书签", "书签", "标注"), (), (), None),
+    ("15", "chapter_jump",     nav_15,        ("定位至当前阅读", "移至顶部", "一键缓存"), (), (), None),
+    # 16 自动翻页：断言收起菜单后的底部控制条（自动翻页 + 秒/停止 组合特征，
+    # 证明运行态）；负向排除发现/订阅瓦片（本系列曾误存订阅页）。
+    # 截图后复位：停止自动翻页 + 退出阅读（设置持久化，不复位会泄漏到后续屏）
+    ("16", "auto_flip",        nav_16,
+     ("自动翻页",), ("秒", "停止"),
+     ("半夏小说", "奈飞工厂", "小说拾遗", "Meow云", "规则订阅"), reset_after_16),
 ]
 SCREEN_FILE = {
     "01": "01_home_page.png", "02": "02_bottom_nav.png",
@@ -579,18 +740,20 @@ def main() -> int:
     rec(f"版本校验通过：{PKG} versionName={ver}")
 
     results: list[ScreenResult] = []
-    for num, name, nav, kws in SCREENS:
+    for num, name, nav, kws, and_kws, neg_kws, post in SCREENS:
         if want and num not in want:
             continue
         try:
-            res = run_screen(num, name, nav, kws, SCREEN_FILE[num])
+            res = run_screen(num, name, nav, kws, SCREEN_FILE[num],
+                             and_kws=and_kws, neg_kws=neg_kws, post=post)
         except Exception as e:  # 双保险：单屏任何异常都不中断
             res = ScreenResult(num, name, False, "/".join(kws),
                                SCREEN_FILE[num], f"未捕获异常：{type(e).__name__}: {e}")
             res.log()
         results.append(res)
-        # 注：每屏导航自带冷启动（_to_shelf/cold_start），状态天然隔离，
-        # 选择模式(05)/自动翻页(16) 的污染不会带到下一屏，无需额外复位
+        # 注：每屏导航自带冷启动（_to_shelf/cold_start），会话态（选择模式等）天然隔离；
+        # 但自动翻页是持久化设置，force-stop 后仍会运行，故 16 屏截图后
+        # 经 post 钩子（reset_after_16）显式停止并退出阅读器，防止泄漏到后续屏/次次运行
 
     # 汇总
     ok = [r for r in results if r.ok]
