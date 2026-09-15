@@ -32,7 +32,8 @@ import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 /// Notifier 在 build() 时自动加载数据，无需 initState。
 /// [骨架对齐 2.0.260 | 台账 1-3] 布局骨架（对齐参考 03/03b 截图）：
 /// 可折叠大标题「书架」→ 常驻分组 tab 行（无分组数据时回落单一「全部」
-/// tab）→ 2 列大封面网格（卡片=封面+居中书名）。搜索入口收敛为顶栏
+/// tab）→ 3 列大封面网格（卡片=封面+居中书名，[parity fix 2.0.264] 列数
+/// 2→3 修正）。搜索入口收敛为顶栏
 /// 🔍 图标；页内全宽搜索条与统计/最近阅读行已按红线清理移除。
 class BookshelfScreen extends ConsumerStatefulWidget {
   /// 回滚顶部信号（主页双击底栏书架项时自增，对标原版 gotoTop）
@@ -448,13 +449,13 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       // [LAYOUT_PLAN P4] 首屏 Skeleton 接线：按当前视图模式渲染网格/列表骨架
       // （shimmer 1200ms 已在 skeleton.dart 实现），替代整页 LoadingIndicator
       if (state.isGridView) {
-        // [骨架对齐 2.0.260] 骨架与正式 2 列大封面网格同构
+        // [parity fix 2.0.264 | 台账 1-3] 骨架与正式 3 列大封面网格同构
         return GridView.builder(
-          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          padding: const EdgeInsets.fromLTRB(22, 8, 22, 8),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisSpacing: 12,
-            crossAxisSpacing: 12,
+            crossAxisCount: 3,
+            mainAxisSpacing: 20,
+            crossAxisSpacing: 20,
             childAspectRatio: 5 / 7,
           ),
           itemCount: 6,
@@ -592,19 +593,20 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   }
 
   Widget _buildGridSliver(BuildContext context, WidgetRef ref, List<Book> books) {
-    // [骨架对齐 2.0.260 | 台账 1-3] 2 列大封面网格（对齐参考 03b 截图：
-    // 卡片=大封面+居中标题，无未读徽标/进度条；原响应式 3/4/6 列与
-    // 84 封面限宽移除，红线清理）
+    // [parity fix 2.0.264 | 台账 1-3] 3 列固定卡宽网格（对齐参考 03b 量测：
+    // 卡宽≈屏宽 27%/列间距 20/左右边距 22；卡片=大封面+居中标题，封面比例
+    // 与圆角 12 不变；书少时右侧格子自然留空，不撑满/居中放大——此前 2 列
+    // （卡宽≈44%）系参考误读，0915 用户实测指出后修正）
     return SliverPadding(
-      // 内容边距：左右 12 + 上下 8（对齐参考目测间距）
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      // 内容边距：左右 22（参考边距 22px）+ 上下 8
+      padding: const EdgeInsets.fromLTRB(22, 8, 22, 8),
       sliver: SliverGrid.builder(
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          // 网格间距 12dp（大封面骨架）
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          // [LAYOUT_MOTION_AUDIT L3] 单元格 aspect 5:7（HapeLee 封面比例）
+          crossAxisCount: 3,
+          // 网格间距 20dp（参考卡列间距 20px）
+          mainAxisSpacing: 20,
+          crossAxisSpacing: 20,
+          // [LAYOUT_MOTION_AUDIT L3] 单元格 aspect 5:7（≈1:1.4 封面比例不变）
           childAspectRatio: 5 / 7,
         ),
         itemCount: books.length,

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.264] - 2026-09-15
+
+### Fixed
+- [UI] 书架封面网格列数 2→3 修正（台账 SCREEN_1TO1_PARITY_LEDGER 1-3「0915 修正」注记，用户实测 + 主代理度量确认：参考 03b 实为 3 列固定卡宽——卡宽≈屏宽 27%/列间距 20/左右边距 22，仅 2 本书时第三格留空；我方 2 列卡宽≈44% 致封面过大、不像目标风格）。`bookshelf_screen.dart` 只动网格参数：正式网格与加载骨架 `crossAxisCount 2→3`、`mainAxisSpacing/crossAxisSpacing 12→20`、左右 padding 12→22（上下 8 不变）；封面比例 5:7（≈1:1.4）/圆角 12/书名居中字号/选择模式勾选态/长按菜单均不变；书少时右格自然留空（与参考一致，不撑满/不居中放大）。回归套件 `bookshelf_grid_responsive_test.dart` 断言同步 2→3（并锁间距 20）
+
+### Test
+- `flutter analyze` 无问题；`flutter test` 全过
+
+### Real device
+- release 2.0.264+265 APK 装 MuMu（192.168.1.19:5555）复验：截图 docs/parity_shots/ours_2.0.264/03_bookshelf.png（程序化断言：单卡封面行墨迹横向跨度占比落于 26%~30% 区间，对齐参考卡宽≈27%）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.263] - 2026-09-15
 
 ### Fixed
