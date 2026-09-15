@@ -341,6 +341,10 @@ class LegadoTabRootHeaderSliver extends StatefulWidget {
   /// 收敛默认节距差。
   final double? expandedHeight;
 
+  /// 覆盖全局顶栏按钮样式（null = 跟随主题设置 topBarButtonStyle）。
+  /// [parity C3 B5] 书架头部按参考锁定裸图标（plain），不经全局档位。
+  final TopBarButtonStyle? actionsStyle;
+
   const LegadoTabRootHeaderSliver({
     super.key,
     required this.title,
@@ -350,6 +354,7 @@ class LegadoTabRootHeaderSliver extends StatefulWidget {
     this.bottom,
     this.largeTitleFontSize,
     this.expandedHeight,
+    this.actionsStyle,
   });
 
   @override
@@ -367,7 +372,9 @@ class _LegadoTabRootHeaderSliverState extends State<LegadoTabRootHeaderSliver>
     final styledActions = TopBarActionStyler.styleActions(
       context,
       widget.actions,
-      style: ui.topBarButtonStyle,
+      // [parity C3 B5] 页面可锁定按钮样式（书架=plain 裸图标，对齐参考
+      // 03/03b/05 顶栏）；未指定时跟随全局 topBarButtonStyle 设置
+      style: widget.actionsStyle ?? ui.topBarButtonStyle,
       merge: ui.mergeTopBarActions,
     );
     if (widget.large && ui.useFlexibleTopAppBar) {

@@ -328,7 +328,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 skinSlot: 'home',
               ),
             _HomeTab.rss => AppNavSpec(
-                symbol: Symbols.feed_rounded,
+                // [parity C3 B5] 订阅页签图标改 RSS 选形：参考底栏第 4 项
+                // 为经典 RSS（左下圆点 + 双弧，量测 ref 01 底栏），原
+                // feed_rounded 为报纸/文档版式（参考判为「文档图标」），
+                // 改 rss_feed_rounded 对齐
+                symbol: Symbols.rss_feed_rounded,
                 label: AppStrings.rss,
                 skinSlot: 'notes',
               ),

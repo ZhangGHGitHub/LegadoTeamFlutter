@@ -15,6 +15,8 @@ import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
+import '../providers/ui_settings/ui_settings_notifier.dart'
+    show TopBarButtonStyle;
 import '../routes.dart';
 import '../utils/book_open_utils.dart';
 import '../widgets/book_grid_item.dart';
@@ -136,6 +138,8 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       actions: state.isBatchMode
           ? _buildBatchAppBarActions(context, ref)
           : _buildAppBarActions(context, ref),
+      // [parity C3 B5] 与头部 sliver 同锁：书架顶栏裸图标（参考 03/03b）
+      actionsStyle: TopBarButtonStyle.plain,
     );
   }
 
@@ -220,7 +224,15 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         .textTheme
         .labelLarge
         ?.copyWith(fontWeight: FontWeight.w500);
-    return TabBar(
+    // [parity C3 B1] 分组 tab 单组左对齐：根因——SliverAppBar.large 的 bottom 槽
+    // 以「松约束」下发，M3 可滚动 TabBar 在松约束下收缩为内容宽度并被父级
+    // 居中（单组「全部」时整行偏右，多组时首 tab 同样不贴左）。包一层
+    // SizedBox(width: double.infinity) 把 TabBar 撑满 bottom 槽宽度后，
+    // isScrollable + TabAlignment.start 才能真正把首 tab 钉在左缘。
+    // 注意：不能用 SizedBox.expand（高度被放大到 bottom 槽全高，tab 行爆高）。
+    return SizedBox(
+      width: double.infinity,
+      child: TabBar(
       controller: controller,
       isScrollable: true, // 原版 tabMode = MODE_SCROLLABLE
       tabAlignment: TabAlignment.start,
@@ -244,6 +256,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       // primary 指示器），与 M3 AppBar surface 背景配对，不再硬编码白色
       // [骨架对齐 2.0.260] 选中 tab = primary 字色 + 短下划线（对齐参考 03b）
       tabs: groups.map((g) => Tab(text: g.groupName)).toList(),
+      ),
     );
   }
 
@@ -256,39 +269,177 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         tooltip: AppStrings.search,
         onPressed: () => Navigator.pushNamed(context, AppRoutes.search),
       ),
-      // 原版 main_bookshelf.xml 无常驻视图切换按钮，网格/列表切换在溢出菜单「书架布局」
-      PopupMenuButton<String>(
-        onSelected: (value) => _handleMenuAction(context, ref, value),
-        itemBuilder: (_) => [
-          // [UI-parity 2.0.257] 首屏 11 项对齐参考版书架溢出菜单顺序
-          // （添加远程书籍/添加本地/更新目录/书架布局/分组管理/添加网址/
-          // 选择模式/书架管理/导出书单/导入书单/日志），使「导出书单/导入
-          // 书单/日志」首屏可见（此前 14 项+4 分割线把三项挤到滚动区外，
-          // 台账 1-4② 误判为功能缺失）
-          const PopupMenuItem(value: 'remote', child: Text('添加远程书籍')),
-          PopupMenuItem(value: 'import', child: Text(AppStrings.addLocalBook)),
-          PopupMenuItem(value: 'update_all', child: Text(AppStrings.updateAll)),
-          const PopupMenuItem(value: 'layout', child: Text('书架布局')),
-          PopupMenuItem(value: 'groups', child: Text('分组管理')),
-          const PopupMenuItem(value: 'add_url', child: Text('添加网址')),
-          PopupMenuItem(value: 'select_mode', child: Text('选择模式')),
-          PopupMenuItem(value: 'manage', child: Text(AppStrings.manageBookshelf)),
-          const PopupMenuItem(value: 'export_list', child: Text('导出书单')),
-          const PopupMenuItem(value: 'import_list', child: Text('导入书单')),
-          const PopupMenuItem(value: 'log', child: Text('日志')),
-          const PopupMenuDivider(),
-          // 我方特有项（双基准原则保留不删）：离线缓存（对应原版
-          // menu_download 缓存/导出）+ 分组展示模式 + 书源管理
-          const PopupMenuItem(value: 'offline_cache', child: Text('离线缓存')),
-          PopupMenuItem(value: 'group_none', child: _buildGroupModeItem(ref, GroupMode.none, '不分组')),
-          PopupMenuItem(value: 'group_source', child: _buildGroupModeItem(ref, GroupMode.bySource, '按来源分组')),
-          PopupMenuItem(value: 'group_group', child: _buildGroupModeItem(ref, GroupMode.byGroup, '按分组显示')),
-          const PopupMenuDivider(),
-          PopupMenuItem(value: 'sources', child: Text(AppStrings.sourceManagement)),
-        ],
+      // 原版 main_bookshelf.xml 无常驻视图切换按钮，网格/列表切换在溢出菜单「布局设置」
+      // [parity C3 B2] 触发钮为裸 ⋮ 图标（对齐参考 03b 顶栏 ⋮ 位置，无圆底）；
+      // 菜单本体由自绘「图标+分体圆角卡」页面承接（_showCardMenu），
+      // 替换原 PopupMenuButton 下拉形态（台账 1-4①：参考每项带图标+分体圆角卡）
+      IconButton(
+        icon: const Icon(Symbols.more_vert_rounded),
+        tooltip: '更多',
+        onPressed: () => _showCardMenu(context, ref),
       ),
     ];
   }
+
+  // ===== [parity C3 B2] 自绘「图标+分体圆角卡」溢出菜单 =====
+  //
+  // 量测自参考 04 截图（1080×1920 @3x → 360×640dp）：
+  // · 全屏覆盖层 = 最浅 surface（≈(248,249,255) → surfaceContainerLowest），
+  //   完全遮住书架内容（参考左区 95% 为纯色，无内容透出）；
+  // · 右侧竖板：x 181..343dp（宽 162dp，右缘离屏 17dp），全高，
+  //   色 ≈(242,243,249) → surfaceContainerLow，右缘 7dp 落影；
+  // · 卡：144×48dp，色 = 覆盖层同色（分体观感），圆角 8dp（实测 6.7dp，
+  //   抗锯齿偏低，取设计值 8），卡间 8dp 露出竖板色形成「分体」；
+  // · 卡内：24dp 图标（onSurface）距卡左 15dp；标签 14sp onSurface 距卡左
+  //   49dp 起（4 字 ≈55dp）；首卡顶 ≈88dp（顶栏 56 + tab 行 32 下方）。
+  // 首屏 11 项顺序与功能项不动（台账 1-4），我方特有项保留（双基准原则）。
+
+  List<_CardMenuItem> _cardMenuItems(WidgetRef ref) {
+    final state = ref.read(bookshelfNotifierProvider);
+    return [
+      // [UI-parity 2.0.257] 首屏 11 项对齐参考版书架溢出菜单顺序
+      // （远程书籍/添加本地/更新目录/布局设置/分组管理/添加网址/
+      // 选择模式/书架管理/导出书单/导入书单/日志），使「导出书单/导入
+      // 书单/日志」首屏可见（此前 14 项+4 分割线把三项挤到滚动区外，
+      // 台账 1-4② 误判为功能缺失）
+      // [parity C3 B3] 文案对齐参考版：「添加远程书籍」→「远程书籍」、
+      // 「书架布局」→「布局设置」
+      _CardMenuItem('remote', '远程书籍', Symbols.cloud_rounded),
+      _CardMenuItem('import', AppStrings.addLocalBook, Symbols.folder_open_rounded),
+      _CardMenuItem('update_all', AppStrings.updateAll, Symbols.sync_rounded),
+      _CardMenuItem('layout', '布局设置', Symbols.grid_view_rounded),
+      _CardMenuItem('groups', '分组管理', Symbols.folder_rounded),
+      _CardMenuItem('add_url', '添加网址', Symbols.link_rounded),
+      _CardMenuItem('select_mode', '选择模式', Symbols.checklist_rounded),
+      _CardMenuItem('manage', AppStrings.manageBookshelf, Symbols.tune_rounded),
+      _CardMenuItem('export_list', '导出书单', Icons.file_upload_outlined),
+      _CardMenuItem('import_list', '导入书单', Icons.file_download_outlined),
+      _CardMenuItem('log', '日志', Symbols.receipt_long_rounded),
+      // 我方特有项（双基准原则保留不删）：离线缓存（对应原版
+      // menu_download 缓存/导出）+ 分组展示模式 + 书源管理
+      _CardMenuItem('offline_cache', '离线缓存', Symbols.wifi_off_rounded),
+      // 分组模式三项：图标列用单选钮勾选态（对标原 _buildGroupModeItem 语义）
+      _CardMenuItem(
+          'group_none', '不分组',
+          _radioIcon(state.groupMode == GroupMode.none)),
+      _CardMenuItem(
+          'group_source', '按来源分组',
+          _radioIcon(state.groupMode == GroupMode.bySource)),
+      _CardMenuItem(
+          'group_group', '按分组显示',
+          _radioIcon(state.groupMode == GroupMode.byGroup)),
+      _CardMenuItem('sources', AppStrings.sourceManagement, Symbols.database_rounded),
+    ];
+  }
+
+  /// 打开自绘卡菜单页（全屏 route）；返回被点选 action 后统一分发
+  Future<void> _showCardMenu(BuildContext context, WidgetRef ref) async {
+    final action = await Navigator.push<String>(
+      context,
+      _CardMenuRoute(_buildCardMenuPage(context, ref)),
+    );
+    if (action == null || !context.mounted) return;
+    _handleMenuAction(context, ref, action);
+  }
+
+  /// 菜单页：全屏浅色覆盖 + 右侧竖板 + 分体圆角卡列表（可滚动）
+  Widget _buildCardMenuPage(BuildContext context, WidgetRef ref) {
+    final colorScheme = Theme.of(context).colorScheme;
+    final items = _cardMenuItems(ref);
+    final card = colorScheme.surfaceContainerLowest; // 卡/覆盖层 ≈(248,249,255)
+    final panel = colorScheme.surfaceContainerLow; // 竖板 ≈(242,243,249)
+    final onSurface = colorScheme.onSurface;
+
+    Widget buildCard(int index, _CardMenuItem item) {
+      // 首卡顶 32dp：参考 04 首卡顶 88dp 含状态栏 24 + 顶栏 56 之上的余量，
+      // 自绘菜单页不重绘顶栏，取 32dp 使首卡视觉位置贴近参考
+      final isSectionBreak = _isSectionBreak(items, index);
+      return Padding(
+        padding: EdgeInsets.only(
+          top: index == 0 ? 32 : (isSectionBreak ? 16 : 8),
+        ),
+        child: Material(
+          color: card,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => Navigator.pop(context, item.action),
+            child: SizedBox(
+              height: 48,
+              child: Row(
+                children: [
+                  // 图标列：距卡左 15dp、宽 24dp（量测 15..33dp）
+                  Padding(
+                    padding: const EdgeInsets.only(left: 15),
+                    child: Icon(item.icon, size: 24, color: onSurface),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      item.label,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: onSurface,
+                        fontWeight: FontWeight.w400,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Material(
+      color: card, // 全屏覆盖层（不透明，遮住书架内容）
+      child: Stack(
+        children: [
+          // 点覆盖层（竖板以外）关闭
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: () => Navigator.pop(context),
+            ),
+          ),
+          // 右侧竖板：宽 162dp、全高、右缘离屏 17dp、右缘落影
+          Align(
+            alignment: Alignment.centerRight,
+            child: Container(
+              width: 162,
+              margin: const EdgeInsets.only(right: 17),
+              decoration: BoxDecoration(
+                color: panel,
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x141B1E22),
+                    blurRadius: 12,
+                    offset: Offset(4, 0),
+                  ),
+                ],
+              ),
+              child: ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 9),
+                itemCount: items.length,
+                itemBuilder: (_, i) => buildCard(i, items[i]),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 分组模式项的单选钮图标（checked=当前选中模式）
+  static IconData _radioIcon(bool checked) =>
+      checked ? Symbols.radio_button_checked_rounded : Symbols.radio_button_unchecked_rounded;
+
+  /// 原分割线位置（首屏 11 项后 / 分组模式三项后）→ 卡间 16dp 加宽
+  /// （卡片分体形态下以间距替代 PopupMenuDivider）
+  static bool _isSectionBreak(List<_CardMenuItem> items, int index) =>
+      index == 12 || index == 16;
 
   Widget _buildBody(BuildContext context, WidgetRef ref) {
     final state = ref.watch(bookshelfNotifierProvider);
@@ -433,6 +584,10 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         preferredSize: const Size.fromHeight(kToolbarHeight),
         child: _buildGroupTabBar(context, state),
       ),
+      // [parity C3 B5] 书架顶栏钮按参考锁裸图标（03/03b 顶栏 🔍/⋮ 无
+      // 圆底；选择模式 05 批量钮同为裸图标），不随全局 topBarButtonStyle
+      // 档位（全局档位仍作用于搜索等圆底屏）
+      actionsStyle: TopBarButtonStyle.plain,
     );
   }
 
@@ -631,21 +786,6 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   }
 
   // ===== 分组展示 =====
-
-  /// 分组模式菜单项（带勾选标记）
-  Widget _buildGroupModeItem(WidgetRef ref, GroupMode mode, String label) {
-    final current = ref.read(bookshelfNotifierProvider).groupMode;
-    return Row(
-      children: [
-        Icon(
-          current == mode ? Symbols.radio_button_checked_rounded : Symbols.radio_button_unchecked_rounded,
-          size: 20,
-        ),
-        const SizedBox(width: 12),
-        Text(label),
-      ],
-    );
-  }
 
   /// 构建分组 slivers：每组一个头部 + 网格/列表
   List<Widget> _buildGroupedSlivers(BuildContext context, WidgetRef ref, BookshelfState state) {
@@ -1318,5 +1458,42 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(msg)));
+  }
+}
+
+/// [parity C3 B2] 自绘卡菜单条目（action + 文案 + 图标）
+class _CardMenuItem {
+  final String action;
+  final String label;
+  final IconData icon;
+
+  const _CardMenuItem(this.action, this.label, this.icon);
+}
+
+/// [parity C3 B2] 菜单页路由：整页从右侧轻微滑入（Offset 0.15，非整屏
+/// 横滑，贴合「菜单浮层」语义），opaque 遮住书架内容
+class _CardMenuRoute extends PageRouteBuilder<String> {
+  _CardMenuRoute(Widget page)
+      : super(
+          opaque: true,
+          transitionDuration: const Duration(milliseconds: 200),
+          reverseTransitionDuration: const Duration(milliseconds: 150),
+          pageBuilder: (_, _, _) => page,
+        );
+
+  @override
+  Widget buildTransitions(
+    BuildContext context,
+    Animation<double> animation,
+    Animation<double> secondaryAnimation,
+    Widget child,
+  ) {
+    return SlideTransition(
+      position: Tween<Offset>(
+        begin: const Offset(0.15, 0),
+        end: Offset.zero,
+      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
+      child: child,
+    );
   }
 }

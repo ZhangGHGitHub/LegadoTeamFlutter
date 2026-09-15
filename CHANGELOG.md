@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.263] - 2026-09-15
+
+### Fixed
+- [UI] 书架与全局图标 1:1 对齐（C3，台账 SCREEN_1TO1_PARITY_LEDGER 1-3/1-4，基准 docs/parity_shots/ref_20260914/03_bookshelf*.png / 04）：
+  - B1 分组 tab 左对齐：根因为 `SliverAppBar.large` 的 bottom 槽以松约束下发，M3 可滚动 TabBar 收缩为内容宽度并被父级居中（单组「全部」整行居中偏右、多组首 tab 同样不贴左）。改以 `SizedBox(width: double.infinity)` 撑满 bottom 槽 + `isScrollable` + `TabAlignment.start` 把首 tab 钉左（`SizedBox.expand` 会致 tab 行爆高，禁用）
+  - B2 书架溢出菜单改参考「每项图标 + 分体圆角卡」形态（量测自参考 04：全屏最浅 surface 覆盖层 + 右侧 162dp 竖板 + 144×48dp 圆角 8 卡、卡间 8dp 露竖板色、24dp 图标距卡左 15dp）；自绘菜单页整页从右轻微滑入，触发钮改裸 ⋮（无圆底）。首屏 11 项顺序与功能项集不动，我方特有项（离线缓存/分组模式三选/书源管理）按双基准原则保留；原 PopupMenuButton 下拉形态与 `_buildGroupModeItem` 移除，分组三选改卡内单选钮图标
+  - B3 菜单文案对齐参考：「添加远程书籍」→「远程书籍」、「书架布局」→「布局设置」
+  - B5 底栏订阅页签图标 `feed_rounded`（报纸/文档版式）→ `rss_feed_rounded`（经典 RSS：左下圆点 + 双弧，对齐参考底栏第 4 项）；顶栏钮裸图标——`LegadoTabRootHeaderSliver` 新增 `actionsStyle` 覆写参（null=跟随全局 topBarButtonStyle 档位），书架顶栏与批量模式钮锁 `TopBarButtonStyle.plain`（对齐参考 03/03b/05 无圆底；搜索等圆底屏不受影响）
+- 新增回归套件 `test/widget/bookshelf_tab_alignment_test.dart`（B1 两态锁死：空态回落唯一 tab 左缘 ≈0；多组首 tab 左起 + 后续 tab 顺排。注意分组 tab 列表=通知器「默认全部组置顶 + 用户组」，断言以实际渲染首 tab 为准）
+
+### Real device
+- release 2.0.263+264 APK 已构建（build/app/outputs/flutter-apk/app-release.apk）；MuMu Test 实例（192.168.1.19:5555）提交时 ADB 无响应未安装，截图 docs/parity_shots/ours_2.0.263/{03_bookshelf,04_bookshelf_overflow_menu}.png 待实例在线后补采
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.262] - 2026-09-15
 
 ### Fixed
