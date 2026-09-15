@@ -1,7 +1,8 @@
 // 发现页 A4/C8 形态对齐 widget 测试
 //
 // [A4 形态对齐 | full-stack-engineer + UI]
-// - A4（发现主页签）：行改卡片底（圆角 + onSurface 10% 填充）、
+// - A4（发现主页签）：行形态经 B2-C1 2-1 由卡片底（onSurface 10% 圆角）
+//   改参考版单列列表行（前置图标槽 + 源名 + 右箭头，无卡片底）；
 //   顶栏文件夹图标收编为 ⋮ 更多菜单（分组筛选能力无损）
 // - C8（发现源二级展开区）：子项改 3 列 chips 分区网格
 //   （空 URL 头项 → 通栏分节标题；非通栏 URL 项 → 固定 3 列；
@@ -182,26 +183,52 @@ void main() {
     expect(find.text('默认分组'), findsOneWidget);
   });
 
-  testWidgets('A4：书源行卡片底（onSurface 10% 圆角容器）', (tester) async {
+  // [B2-C1 2-1 | full-stack-engineer + UI] 回归断言同步：行形态由卡片底
+  // 改参考版单列列表行（前置图标槽 + 源名 + 右箭头，无卡片底）
+  testWidgets(
+      'B2-C1 2-1：书源行 = 前置图标槽 + 源名 + 右箭头（无卡片底）',
+      (tester) async {
     tester.view.physicalSize = const Size(400, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
 
     await expandSource(tester, '发现源C8');
 
-    final card = tester.widget<Container>(
+    // 行结构 = 前置图标槽 + 12dp 间距 + 源名 + 行尾右箭头（无卡片底：
+    // 源名祖先链不再有任何 Container，卡片底已移除）
+    expect(
       find.ancestor(
         of: find.text('发现源C8'),
         matching: find.byType(Container),
-      ).last,
+      ),
+      findsNothing,
+      reason: '行形态无卡片底，源名上方不应再有卡片 Container',
     );
-    final deco = card.decoration! as BoxDecoration;
-    expect(deco.borderRadius,
-        const BorderRadius.all(Radius.circular(12)));
-    // 卡片底色应为 onSurface 10% 填充（alpha ≈ 0.10，.a 为 0.0–1.0 比例）
-    expect(deco.color!.a, closeTo(0.10, 0.01),
-        reason: '卡片底色应为 onSurface 10% 填充，'
-            '实际 alpha=${deco.color!.a}');
+
+    final row = tester.widget<Row>(
+      find.ancestor(
+        of: find.text('发现源C8'),
+        matching: find.byType(Row),
+      ).first,
+    );
+    final slotWidget = row.children.first;
+    expect(slotWidget, isA<Container>(), reason: '行首子项应为前置图标槽');
+    final slot = slotWidget as Container;
+    expect(slot.constraints, const BoxConstraints.tightFor(width: 24, height: 24),
+        reason: '前置图标槽应为 24x24');
+    final deco = slot.decoration! as BoxDecoration;
+    expect(deco.borderRadius, const BorderRadius.all(Radius.circular(6)));
+    expect(deco.color!.a, closeTo(0.06, 0.01),
+        reason: '图标槽底应为 onSurface 6% 填充，实际 alpha=${deco.color!.a}');
+    // 槽内 16dp book 占位图标（BookSource 无图标字段，favicon 数据不可取）
+    expect(slot.child, isA<Icon>());
+    expect((slot.child! as Icon).icon, Symbols.book_rounded);
+    expect((slot.child! as Icon).size, 16);
+
+    // 槽位后 12dp 间距，行尾 chevron_right_rounded 存在
+    expect(row.children[1], isA<SizedBox>());
+    expect((row.children[1] as SizedBox).width, 12);
+    expect(find.byIcon(Symbols.chevron_right_rounded), findsOneWidget);
   });
 
   testWidgets('C8：chips 点击链路不变（点进发现书单页，参数正确）',

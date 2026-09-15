@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.265] - 2026-09-15
+
+### Fixed
+- [UI] 发现页源卡改参考版单列列表行形态（B2-C1 2-1 P1，台账 2-1，基准 docs/parity_shots/ref_batch2/01_discover.png）：移除卡片底（页背景直落），行 = 前置 24dp 圆角图标位 + 源名 + 右侧 chevron（展开旋转 0.25 圈不变）；行高 56，行内水平 padding 16→10dp（列表页另 16dp 页边距，合计 26dp 对标原版 16+10）。`explore_screen.dart` 仅改 `_SourceItemState.build` 行渲染，展开/长按六项菜单/分组筛选/搜索机制不变。参考版行内前置 24dp 圆角图标（ref 01/03 全分辨率像素核验为源 favicon 图）——我方 BookSource 模型无图标字段（favicon 数据不可取），前置位以中性占位图标渲染（book_rounded、onSurface 6% 圆角底），登记台账数据差异
+- [UI] 书单页细差（B2-C1 2-5，基准 ref_batch2/06_booklist.png / 08_booklist_books.png）：①筛选漏斗按开启态着色——默认态改深色中性漏斗（`filter_alt` + onSurface，对齐参考顶栏像素核验：深色 onSurface、无 off 斜杠；原为浅灰 `filter_alt_off_rounded`），开启态保持实心 + 主题色（`filter_alt_rounded` + primary，不变）；②卡片评分/热度行——SearchBook 模型无 score/heat 字段（notifier/API 检索确认数据不可取，任务条件「若数据可取」不成立），无代码改动，登记台账数据差异
+- [台账] 展开区 chips 型源复核（B2-C1 2-3，基准 ref_b2_map/03_discover_expand.png + ref_20260913/12_discover_expanded_3col_chips.png）：同型源形态一致（分区标题 + 3 列 chips 网格，C8 已闭环）；参考版 chip 选中态 accent 为源主题色（像素核验绿色 ≈(122,221,138)），我方中性灰底（onSurface 10%/14%）——差异属源数据类型（主题色 BookSource 不可取），登记台账数据差异，不改代码
+
+### Test
+- `flutter analyze` 无问题；`flutter test` 全过（1449 例；回归套件 `explore_screen_c8_test.dart` A4 卡片底用例同步为新行形态断言：源名祖先链无卡片 Container + 行首 24x24 图标槽（onSurface 6% 圆角 6 底、16dp book_rounded 占位、后随 12dp 间距）+ 行尾 chevron）
+
+### Real device
+- release 2.0.265+266 APK 装 MuMu（192.168.1.19:5555，adb D:/leidian/LDPlayer9/adb.exe），versionName=2.0.265 校验通过；`scripts/parity_capture_ours.py --only 01_discover,03_discover_expand,06_booklist` 3/3 屏 OK，截图 docs/parity_shots/ours_2.0.265/{01_discover,03_discover_expand,06_booklist}.png（对照 ref_batch2/01、03、06 与 ref_20260913/12）
+- 像素点检：①01 首源行前置图标槽底色 (235,235,235)（=onSurface 6% 落于 248 页背景）+ 16dp book 占位墨迹 (68,71,72) + 行尾 chevron 墨迹存在，行外页背景 248 直落（无卡片底）✓ ②06 顶栏漏斗默认态深色中性墨迹存在（filter_alt，无 off 斜杠）✓
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.264] - 2026-09-15
 
 ### Fixed

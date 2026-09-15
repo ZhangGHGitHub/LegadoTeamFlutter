@@ -8,7 +8,7 @@
 /// 4. 一键安装/卸载书源（CRUD 操作）
 /// 5. 点击分类进入发现书籍列表（对标 ExploreShowActivity）
 ///
-/// 视觉：iOS inset grouped list + 顶栏嵌入式搜索 — Composer + UI
+/// 视觉：参考版单列列表行（图标 + 源名 + 右箭头）+ 顶栏嵌入式搜索 — Composer + UI
 library;
 
 import 'dart:async';
@@ -367,7 +367,7 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
   }
 }
 
-/// 书源列表项：iOS 分组卡片标题行 + 展开分类 inset list
+/// 书源列表项：参考版单列行（前置图标 + 源名 + 右箭头）+ 展开分类分区 chips
 class _SourceItem extends ConsumerStatefulWidget {
   final BookSource source;
   final VoidCallback onEdit;
@@ -401,10 +401,10 @@ class _SourceItem extends ConsumerStatefulWidget {
 
 class _SourceItemState extends ConsumerState<_SourceItem>
     with SingleTickerProviderStateMixin {
-  // [A4 形态对齐 | full-stack-engineer + UI] 卡片底行容器圆角
-  // （对标原版 item_find_book.xml 的 bg_find_book_group：圆角 + 浅填充；
-  //  色值沿用本页 chips 既有 token onSurface 10%）
-  static const _kCardRadius = 12.0;
+  // [B2-C1 2-1 | full-stack-engineer + UI] 参考版行内边距 10dp
+  // （对标原版 item_find_book.xml ll_title 10dp 内边距；列表页另有 16dp
+  //  页边距，合计 26dp 与原版 16+10 一致）
+  static const _kRowHPadding = 10.0;
 
   bool _expanded = false;
   late final AnimationController _expandController;
@@ -453,66 +453,79 @@ class _SourceItemState extends ConsumerState<_SourceItem>
     final colorScheme = theme.colorScheme;
     final bookName = widget.source.bookSourceName;
 
-    // [A4 形态对齐 | full-stack-engineer + UI] 行改卡片底（对标原版
-    // item_find_book.xml 的 bg_find_book_group 圆角卡片；色值沿用本页
-    // chips 既有 token onSurface 10%），行 = 源名 + 右侧 chevron
+    // [B2-C1 2-1 | full-stack-engineer + UI] 发现页源卡改参考版单列列表行
+    // 形态：无卡片底（页背景），行 = 前置图标 + 源名 + 右侧 chevron（参考版
+    // ref_batch2 01/03 全分辨率像素核验：每行前置 24dp 圆角图标 + 源名 +
+    // 右箭头）。BookSource 模型无图标字段（favicon 数据不可取），前置位以
+    // 中性占位图标渲染，差异登记台账。展开/长按菜单/分组筛选机制保持不变。
     return Material(
       color: Colors.transparent,
-      child: Container(
-        decoration: BoxDecoration(
-          color: colorScheme.onSurface.withValues(alpha: 0.10),
-          borderRadius: BorderRadius.circular(_kCardRadius),
-        ),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            InkWell(
-              onTap: _toggleExpand,
-              onLongPress: _showItemMenu,
-              child: ConstrainedBox(
-                // [LAYOUT_MOTION_AUDIT L3] 分组头行高对齐 M3 ListItem 单行 56
-                constraints: const BoxConstraints(minHeight: 56),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          bookName,
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            color: colorScheme.onSurface,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          InkWell(
+            onTap: _toggleExpand,
+            onLongPress: _showItemMenu,
+            child: ConstrainedBox(
+              // [LAYOUT_MOTION_AUDIT L3] 分组头行高对齐 M3 ListItem 单行 56
+              constraints: const BoxConstraints(minHeight: 56),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: _kRowHPadding),
+                child: Row(
+                  children: [
+                    // [B2-C1 2-1] 前置图标槽：参考版行内 24dp 圆角图标位
+                    // （源 favicon 数据不可取 → 中性占位，台账登记数据差异）
+                    Container(
+                      width: 24,
+                      height: 24,
+                      decoration: BoxDecoration(
+                        color: colorScheme.onSurface.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(6),
                       ),
-                      AnimatedRotation(
-                        turns: _expanded ? 0.25 : 0,
-                        duration: widget.expandDuration,
-                        // [LAYOUT_MOTION_AUDIT L3] emphasized 曲线
-                        curve: Curves.easeOutCubic,
-                        child: Icon(
-                          Symbols.chevron_right_rounded,
-                          size: 20,
-                          color: colorScheme.onSurfaceVariant,
-                        ),
+                      alignment: Alignment.center,
+                      child: Icon(
+                        Symbols.book_rounded,
+                        size: 16,
+                        color: colorScheme.onSurfaceVariant,
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        bookName,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          color: colorScheme.onSurface,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    AnimatedRotation(
+                      turns: _expanded ? 0.25 : 0,
+                      duration: widget.expandDuration,
+                      // [LAYOUT_MOTION_AUDIT L3] emphasized 曲线
+                      curve: Curves.easeOutCubic,
+                      child: Icon(
+                        Symbols.chevron_right_rounded,
+                        size: 20,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
-            SizeTransition(
-              sizeFactor: _expandAnimation,
-              alignment: Alignment.topCenter,
-              child: FadeTransition(
-                opacity: _expandAnimation,
-                child: _buildCategoryList(theme, colorScheme),
-              ),
+          ),
+          SizeTransition(
+            sizeFactor: _expandAnimation,
+            alignment: Alignment.topCenter,
+            child: FadeTransition(
+              opacity: _expandAnimation,
+              child: _buildCategoryList(theme, colorScheme),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

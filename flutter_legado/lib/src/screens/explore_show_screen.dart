@@ -132,8 +132,9 @@ class _ExploreShowScreenState extends ConsumerState<ExploreShowScreen> {
       appBar: LegadoAppBar(
         title: Text(title),
         actions: [
-          // [A1 对齐 | Qoder UI] 筛选漏斗（参考版实心=已开启态）：
-          // 本地关键字筛选（匹配书名/作者，作用于已加载列表）
+          // [B2-C1 2-5 | full-stack-engineer + UI] 筛选漏斗按开启态着色
+          // （默认非实心色）：默认态 = 深色中性漏斗（对齐参考版 06 顶栏
+          // 像素核验：深色 onSurface、无 off 斜杠），开启态 = 实心 + 主题色
           IconButton(
             tooltip: _filterKeyword.isEmpty
                 ? '筛选'
@@ -141,10 +142,10 @@ class _ExploreShowScreenState extends ConsumerState<ExploreShowScreen> {
             onPressed: _showFilterDialog,
             icon: Icon(
               _filterKeyword.isEmpty
-                  ? Symbols.filter_alt_off_rounded
+                  ? Symbols.filter_alt
                   : Symbols.filter_alt_rounded,
               color: _filterKeyword.isEmpty
-                  ? null
+                  ? Theme.of(context).colorScheme.onSurface
                   : Theme.of(context).colorScheme.primary,
             ),
           ),
