@@ -134,16 +134,19 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   }
 
 
-  /// [B1 形态对齐 | full-stack-engineer + UI] 右下浮动「阅读」胶囊
-  ///（替代原底部固定双按钮栏；阅读跳转链路 _openReader 行为不变，
-  /// 加书架/移出书架入口保留在四宫格第一格）
+  /// [PARITY C1 D3] 右下绿色「阅读」胶囊 FAB（对齐参考 08 量化：
+  /// 约 101×55dp 绿底 (175,242,196) / 深绿字 (11,81,48)，右 18dp / 底 17dp；
+  /// 标签固定「阅读」（原「继续阅读」文案移除，参考即固定「阅读」）；
+  /// 阅读跳转链路 _openReader 行为不变，续读位置仍取 durChapterIndex，
+  /// 加书架/移出书架入口保留在操作区第一卡）
   Widget _buildReadFab() {
     final book = _loadedBook;
     if (book == null) return const SizedBox.shrink();
-    final isReading = book.durChapterIndex > 0;
     return FloatingActionButton.extended(
+      backgroundColor: const Color(0xFFAFF2C4),
+      foregroundColor: const Color(0xFF0B5130),
       icon: const Icon(Symbols.menu_book_rounded),
-      label: Text(isReading ? '继续阅读' : '阅读'),
+      label: const Text('阅读'),
       onPressed: () => _openReader(context, book, book.durChapterIndex),
     );
   }
@@ -339,6 +342,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
         floatingActionButton: _pageLoading || _loadedBook == null
             ? null
             : _buildReadFab(),
+        // [PARITY C1 D3] FAB 定位对齐参考 08 量化：右下角（slot 默认边距
+        // 16dp ≈ 参考右 18dp / 底 17dp，误差 <2dp 在容差内）
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       body: _pageLoading
           // [LAYOUT_PLAN P4] 首屏 Skeleton 接线：详情骨架替代整页 LoadingIndicator
           // （shimmer 1200ms 已在 skeleton.dart 实现）

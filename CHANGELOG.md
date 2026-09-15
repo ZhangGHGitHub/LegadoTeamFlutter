@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.261] - 2026-09-15
+
+### Fixed
+- [UI] 搜索结果页 1:1 对齐（台账 SCREEN_1TO1_PARITY_LEDGER 1-7，基准 docs/parity_shots/ref_20260914/07_search_results.png）：①移除结果胶囊下「搜索: N」重复文本行（「结果 N · 进度 x/y」胶囊已含两信息；加载中悬浮 x/y 卡为原版行为保留）；②【P1】空数据防「NaN : NaN」：作者/最新章节/字数（含 kind 标签）为空串或 "NaN"（书源规则未返回数值时 JS 侧可能字符串化出 "NaN"，Rust 侧 word_count 为 Option<String>）一律视为无数据，不渲染副标题行与标签；③「暂无专辑」「暂无简介」占位——确认代码中不存在（简介为空时 `_buildIntro` 直接返回 SizedBox，无占位文本），与参考版一致，无改动；④结果项右侧书源名徽标改为来源数数字角标（灰底圆角盒、顶对齐、单源显示 1，对齐参考 143/13/8 量化形态）；⑤红线：封面音频播放钮/右下播放浮钮——代码中不存在，docs/ 与 git 历史检索均无授权证据，按红线规则不新增
+- [UI] 书内内容搜索页 1:1 对齐（台账 1-13，基准 docs/parity_shots/ref_20260914/13_search_content.png）：①标题「搜索正文」→「搜索内容」；②新增「仅本书」深色胶囊（72×39dp、深色实底白字、置于历史行右侧，复用既有范围三档逻辑：与 ⋮ 菜单「仅本书（已缓存）」共享同一进程内静态选择，点击切换 仅本书⇄本书+网络 范围并立即重搜，默认选中样式对齐参考）；③搜索框 hint 改为「搜索...」
+- [UI] 书籍详情页 1:1 对齐（台账 1-8，基准 docs/parity_shots/ref_20260914/08_book_info.png）：①【P1】操作区改 4 图标卡一行（已在书架/查看目录/书源/阅读记录；卡 52×69dp、间距 32dp、图标上标签下；书架卡为状态切换：在架显示「已在书架」点按移出、不在架显示「加书架」点按加入）；「设置分组」行内小按钮移除，并入次级入口=顶栏 ⋮ 溢出菜单「设置分组」（_showChangeGroup 行为不变，功能不丢失）；②封面放大至参考比例（自 ref 08 量化：约占屏宽 1/3=120dp、高 260dp）；③右下「继续阅读」改绿色「阅读」胶囊 FAB（约 101×55dp，绿底 (175,242,196)/深绿字 (11,81,48)，右 18dp/底 17dp；标签固定「阅读」，阅读跳转与续读位置取 durChapterIndex 行为不变）；④章节信息行改单行「共 N 章｜未读/已读」（总章数取 book.totalChapterNum 缺失时回落目录长度，状态词绿色强调，无章节显示「暂无章节」）；⑤红线：流派标签云——代码中不存在，docs/ 与 git 历史检索均无授权证据，按红线规则不新增
+
+### Test
+- `flutter analyze` 无问题；`flutter test` 全过
+
+### Real device
+- MuMu Test 实例（192.168.1.19:5555）安装 release 2.0.261+262：截图 docs/parity_shots/ours_2.0.261/07_search_results.png、13_search_content.png、08_book_info.png（与 ref_20260914 对应屏比对）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.260] - 2026-09-14
 
 ### Fixed

@@ -200,17 +200,20 @@ void main() {
       await tester.pumpAndSettle();
 
       // 目录行对齐原版：显示当前章节名（durChapterIndex=0 → 第一章）+「查看目录」按钮
+      // [PARITY C1 D2] 操作区四图标卡亦含「查看目录」卡（卡 + 目录行各一，共 2 处）
       expect(tocRow, findsWidgets);
-      expect(find.text('查看目录'), findsOneWidget);
-      // [B1 形态对齐] 头部新增「在读/最新/共N章」三行：末章标题出现在「最新」行，
-      // 原「第二章仅存在于独立目录页」断言改为「不再内嵌完整章节列表」（不渲染
-      // 整章列表，仅最新行显示末章标题）
+      expect(find.text('查看目录'), findsWidgets);
+      // [PARITY C1 D4] 原「在读/最新/目录」三行（末章标题在「最新」行）改为
+      // 单行「共 N 章｜未读/已读」：不再渲染末章标题「第二章 发展」，
+      // 改为断言 D4 单行（totalChapterNum 缺省回落目录长度 2、
+      // durChapterIndex=0 → 未读），且仍不内嵌完整章节列表
       final list = find.descendant(
         of: find.byType(CustomScrollView),
         matching: find.byType(ListView),
       );
       expect(list, findsNothing);
-      expect(find.textContaining('第二章 发展'), findsWidgets);
+      expect(find.textContaining('第二章 发展'), findsNothing);
+      expect(find.textContaining('共 2 章'), findsWidgets);
     });
 
     // 对齐原版 resolveBookInfoReadProgress：目录行附加「已读: X%」— Cursor UI
@@ -252,13 +255,15 @@ void main() {
       await tester.pumpWidget(wrap(const BookInfoScreen(book: book)));
       await tester.pumpAndSettle();
 
+      // [PARITY C1 D2] 「查看目录」现为 2 处（操作区图标卡 + 目录行按钮，
+      // 同一 _openTocScreen 处理器，空目录均弹「目录为空」），取首个
       await tester.dragUntilVisible(
-        find.text('查看目录'),
+        find.text('查看目录').first,
         find.byType(CustomScrollView),
         const Offset(0, -300),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('查看目录'));
+      await tester.tap(find.text('查看目录').first);
       await tester.pumpAndSettle();
       expect(find.text('目录为空'), findsOneWidget);
     });

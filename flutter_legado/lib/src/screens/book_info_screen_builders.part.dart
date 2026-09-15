@@ -694,8 +694,12 @@ extension _BookInfoBuilders on _BookInfoScreenState {
             );
           },
         ),
-        // 头部两栏（B1：封面左置 96×128 + 信息右置 + 标签行 + 三行强调排版）
+        // 头部两栏（封面左置 120×260（D1）+ 信息右置 + 标签行 + 章节信息单行）
         SliverToBoxAdapter(child: _buildHeader(context, book, chapters)),
+        // 操作宫格（B1：四宫格，参考版排布在简介之前；「分组」收进 ⋮ 菜单）
+        // [PARITY C1 D2] 排布修正：卡片行紧随头部两栏（与参考 08 一致，
+        // 首屏可见）；原置于简介面板之后导致长简介把卡片推出视口
+        SliverToBoxAdapter(child: _buildActionCards(context, book)),
         // [UI_SYNC_REFACTOR S3] Characters/RelatedBooks 区块骨架（已授权；
         // 数据链需后端调研——见 UI_ONE_TO_ONE_CLONE_PLAN_20260905.md §〇，
         // 无数据时整段隐藏=缺省降级）
@@ -705,8 +709,6 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         SliverToBoxAdapter(
           child: _buildSummaryPanel(context, book, chapters),
         ),
-        // 操作宫格（B1：四宫格，参考版排布在简介之前；「分组」收进 ⋮ 菜单）
-        SliverToBoxAdapter(child: _buildActionCards(context, book)),
         // 底部续铺纯色：内容不足一屏时填满剩余视口，避免透出封面虚化层
         SliverFillRemaining(
           hasScrollBody: false,
@@ -757,8 +759,10 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                       flightShuttleBuilder: coverFlightShuttleBuilder,
                       child: BookCover(
                         coverUrl: book.customCoverUrl ?? book.coverUrl,
-                        width: 96,
-                        height: 128,
+                        // [PARITY C1 D1] 封面放大至参考比例（自 ref 08 量化：
+                        // 约占屏宽 1/3=120dp、高约 260dp）
+                        width: 120,
+                        height: 260,
                         borderRadius: 12,
                         sourceOrigin: book.origin,
                       ),
@@ -888,103 +892,75 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                 ],
               ),
             ),
-          // 在读 / 最新 / 共N章 三行强调排版（数据复用页面现有 state）
+          // [PARITY C1 D4] 章节信息单行「共 N 章｜未读/已读」（对齐参考 08；
+          // 替代原「在读/最新/目录」三行，数据复用页面现有 state；
+          // 已读判定：有阅读进度 durChapterIndex > 0，与阅读 FAB 同语义）
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-            child: Column(
-              children: [
-                _chapterStatRow(context, '在读', _readStatText(book)),
-                _chapterStatRow(context, '最新', _latestStatText(book, chapters)),
-                _chapterStatRow(
-                    context, '目录', _totalStatText(book, chapters)),
-              ],
-            ),
+            child: _buildChapterStatLine(context, book, chapters),
           ),
         ],
       ),
     );
   }
 
-  /// 三行强调排版的一行：左侧标签次要色 + 右侧数值加粗强调
-  /// — full-stack-engineer + UI
-  Widget _chapterStatRow(
-      BuildContext context, String label, String value) {
+  /// [PARITY C1 D4] 章节信息单行：「共 N 章｜未读/已读」（对齐参考 08；
+  /// 替代原「在读/最新/目录」三行强调排版）。
+  /// 章数取 book.totalChapterNum 优先、回落实际章节数；
+  /// 状态：有阅读进度（durChapterIndex > 0）为「已读」，否则「未读」。
+  Widget _buildChapterStatLine(
+      BuildContext context, Book book, List<BookChapter> chapters) {
     final cs = Theme.of(context).colorScheme;
     final ts = Theme.of(context).textTheme;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
+    final chapterTotal =
+        book.totalChapterNum > 0 ? book.totalChapterNum : chapters.length;
+    if (chapterTotal <= 0) {
+      return Text('暂无章节',
+          style: ts.bodyLarge?.copyWith(color: cs.onSurfaceVariant));
+    }
+    final readState = book.durChapterIndex > 0 ? '已读' : '未读';
+    return Text.rich(
+      TextSpan(
         children: [
-          SizedBox(
-            width: 36,
-            child: Text(
-              label,
-              style: ts.bodySmall?.copyWith(color: cs.onSurfaceVariant),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              value,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: ts.bodyLarge?.copyWith(
-                fontWeight: FontWeight.w600,
-                color: cs.onSurface,
-              ),
-            ),
+          TextSpan(text: '共 $chapterTotal 章｜'),
+          // 状态词绿色强调（参考 08 状态词绿调）
+          TextSpan(
+            text: readState,
+            style: const TextStyle(color: Color(0xFF4CAF50)),
           ),
         ],
       ),
+      style: ts.bodyLarge
+          ?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface),
     );
   }
 
-  /// 「在读」行文本：book.durChapterTitle 非空优先，未读显示「未开始」
-  /// — full-stack-engineer + UI
-  String _readStatText(Book book) {
-    final title = (book.durChapterTitle ?? '').trim();
-    return title.isNotEmpty ? title : '未开始';
-  }
-
-  /// 「最新」行文本：实际章节末章优先，回落 book.latestChapterTitle
-  /// — full-stack-engineer + UI
-  String _latestStatText(Book book, List<BookChapter> chapters) {
-    final last = chapters.lastOrNull?.title.trim() ?? '';
-    if (last.isNotEmpty) return last;
-    final stored = (book.latestChapterTitle ?? '').trim();
-    return stored.isNotEmpty ? stored : '暂无';
-  }
-
-  /// 「共N章」行文本：book.totalChapterNum 优先，回落实际章节数
-  /// — full-stack-engineer + UI
-  String _totalStatText(Book book, List<BookChapter> chapters) {
-    final total = book.totalChapterNum > 0
-        ? book.totalChapterNum
-        : chapters.length;
-    return total > 0 ? '共 $total 章' : '暂无章节';
-  }
-
-  /// 操作宫格（B1 形态对齐：参考版四宫格构成）
-  /// - 四格：加入书架/移出书架（切换）/ 目录 / 换源 / 阅读记录（全部现有能力）
-  /// - 「分组」收纳至顶栏 ⋮ 溢出菜单（_handleMenu 'group' → _showChangeGroup），
-  ///   功能不丢失；原版四宫格无对应格，按任务书取舍说明执行
-  /// — full-stack-engineer + UI
+  /// 操作区四图标卡一行（[PARITY C1 D2]，对齐参考 08 量化：
+  /// 卡 52×69dp、间距 32dp、surfaceContainerLow 底、图标上/标签下）
+  /// - 四卡：已在书架/加书架（切换，_toggleShelf）/ 查看目录 / 书源（换源）/
+  ///   阅读记录（全部现有能力，行为不变）
+  /// - 「设置分组」不占卡位，并入次级入口：顶栏 ⋮ 溢出菜单
+  ///   （_handleMenu 'group' → _showChangeGroup），功能不丢失
   Widget _buildActionCards(BuildContext context, Book book) {
     final cs = Theme.of(context).colorScheme;
     Widget card(IconData icon, String label, VoidCallback onTap) {
-      return Expanded(
-        child: InkWell(
+      return SizedBox(
+        width: 52,
+        height: 69,
+        child: Material(
+          color: cs.surfaceContainerLow,
           borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 10),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: onTap,
             child: Column(
-              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon, size: 22, color: cs.primary),
-                const SizedBox(height: 4),
+                Icon(icon, size: 20, color: cs.primary),
+                const SizedBox(height: 6),
                 Text(
                   label,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
                         color: cs.onSurfaceVariant,
                       ),
                   maxLines: 1,
@@ -999,29 +975,25 @@ extension _BookInfoBuilders on _BookInfoScreenState {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        decoration: BoxDecoration(
-          color: cs.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Row(
-          children: [
-            card(
-              _inBookshelf
-                  ? Symbols.playlist_remove_rounded
-                  : Symbols.playlist_add_rounded,
-              _inBookshelf ? '移出书架' : '加入书架',
-              () => _toggleShelf(book),
-            ),
-            card(Symbols.format_list_bulleted_rounded, '目录',
-                _openTocScreen),
-            card(Symbols.swap_horiz_rounded, '换源',
-                () => _showChangeSourceDialog(book)),
-            card(Symbols.history_rounded, '阅读记录',
-                () => Navigator.pushNamed(context, AppRoutes.readRecord)),
-          ],
-        ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          card(
+            _inBookshelf
+                ? Symbols.playlist_remove_rounded
+                : Symbols.playlist_add_rounded,
+            _inBookshelf ? '已在书架' : '加书架',
+            () => _toggleShelf(book),
+          ),
+          const SizedBox(width: 32),
+          card(Symbols.format_list_bulleted_rounded, '查看目录', _openTocScreen),
+          const SizedBox(width: 32),
+          card(Symbols.swap_horiz_rounded, '书源',
+              () => _showChangeSourceDialog(book)),
+          const SizedBox(width: 32),
+          card(Symbols.history_rounded, '阅读记录',
+              () => Navigator.pushNamed(context, AppRoutes.readRecord)),
+        ],
       ),
     );
   }
@@ -1094,11 +1066,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Column(
         children: [
-          // 分组行（对标 ic_groups + tv_group + tv_change_group）
-          // [UI-fix v2.0.6 | 2026-08-08] 按钮文案「换组」→「设置分组」对齐原版
-          // change_group="Group settings"（点击设置该书所属分组，行为不变） — Qoder
-          _summaryRow(context, Symbols.groups_rounded, _groupText(book),
-              action: _smallAction(context, '设置分组', _showChangeGroup)),
+          // 分组行（对标 ic_groups + tv_group，展示该书所属分组）
+          // [PARITY C1 D2] 行内「设置分组」小按钮已移除，并入次级入口：
+          // 顶栏 ⋮ 溢出菜单「设置分组」（_handleMenu 'group' → _showChangeGroup，
+          // 行为不变，功能不丢失）
+          _summaryRow(context, Symbols.groups_rounded, _groupText(book)),
           // 目录行（webFile 书隐藏，对齐原版 ll_toc.gone() — Cursor UI）
           if (!isWebFile)
             _summaryRow(

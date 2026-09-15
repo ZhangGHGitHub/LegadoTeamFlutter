@@ -8,6 +8,14 @@ part of 'search_screen.dart';
 // 本文件所有方法均运行于 State 自身（this），受保护访问语义安全。
 // ignore_for_file: invalid_use_of_protected_member
 
+/// [PARITY C1 S2] 空数据判定：空串或 "NaN"（书源规则未返回数值时
+/// JS 侧可能字符串化出 "NaN"）均视为无数据，副标题行/标签不渲染
+bool _isMeaningfulText(String? value) {
+  final v = value?.trim() ?? '';
+  if (v.isEmpty) return false;
+  return v.toUpperCase() != 'NaN';
+}
+
 extension _SearchBuilders on _SearchScreenState {
 
   /// 搜索中停止 FAB + 浮动 x/y（对齐原版 fb_start_stop + tv_search_progress）
@@ -327,62 +335,52 @@ extension _SearchBuilders on _SearchScreenState {
 
     return Column(
       children: [
-        // 结果统计
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              // [翻滚数字] 结果计数变化时向上翻滚（参考 AnimatedTextLine）
-              Md3AnimatedTextLine(
-                text: '${AppStrings.search}: ${results.length}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              // 渐进搜索进度（对齐原版 x/y；搜索中且已有结果时展示）
-              if (state.isLoading && state.totalCount > 0)
-                Padding(
-                  padding: const EdgeInsets.only(left: 8),
-                  child: Md3AnimatedTextLine(
-                    text: '${state.searchedCount}/${state.totalCount}',
-                    style: Theme.of(context).textTheme.bodySmall,
+        // [PARITY C1 S1] 「搜索: N」/「x/y」文本行已移除：
+        // 「结果 N · 进度 x/y」由上方胶囊统一展示；
+        // 无过滤 chips 时整行不渲染（对齐参考结果区无统计行）
+        if (state.selectedGroups.isNotEmpty ||
+            state.selectedSourceUrls.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                const Spacer(),
+                if (state.selectedGroups.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ActionChip(
+                      avatar: const Icon(Symbols.folder_rounded, size: 16),
+                      // 展示实际分组名（粘性可见），点击清除并重搜
+                      label: Text(state.selectedGroups.length == 1
+                          ? state.selectedGroups.first
+                          : '${state.selectedGroups.length} 分组'),
+                      onPressed: () {
+                        final kw = state.keyword;
+                        ref
+                            .read(searchNotifierProvider.notifier)
+                            .clearGroupFilter();
+                        if (kw.isNotEmpty) {
+                          ref.read(searchNotifierProvider.notifier).search(kw);
+                        }
+                      },
+                    ),
                   ),
-                ),
-              const Spacer(),
-              if (state.selectedGroups.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ActionChip(
-                    avatar: const Icon(Symbols.folder_rounded, size: 16),
-                    // 展示实际分组名（粘性可见），点击清除并重搜
-                    label: Text(state.selectedGroups.length == 1
-                        ? state.selectedGroups.first
-                        : '${state.selectedGroups.length} 分组'),
+                if (state.selectedSourceUrls.isNotEmpty)
+                  ActionChip(
+                    avatar: const Icon(Symbols.filter_list_rounded, size: 16),
+                    label: Text('${state.selectedSourceUrls.length} '
+                        '${AppStrings.sources}'),
                     onPressed: () {
                       final kw = state.keyword;
                       ref
                           .read(searchNotifierProvider.notifier)
-                          .clearGroupFilter();
+                          .clearSourceFilter();
                       if (kw.isNotEmpty) {
                         ref.read(searchNotifierProvider.notifier).search(kw);
                       }
                     },
                   ),
-                ),
-              if (state.selectedSourceUrls.isNotEmpty)
-                ActionChip(
-                  avatar: const Icon(Symbols.filter_list_rounded, size: 16),
-                  label: Text(
-                      '${state.selectedSourceUrls.length} ${AppStrings.sources}'),
-                  onPressed: () {
-                    final kw = state.keyword;
-                    ref
-                        .read(searchNotifierProvider.notifier)
-                        .clearSourceFilter();
-                    if (kw.isNotEmpty) {
-                      ref.read(searchNotifierProvider.notifier).search(kw);
-                    }
-                  },
-                ),
-            ],
+              ],
           ),
         ),
         // 结果列表
@@ -418,12 +416,13 @@ extension _SearchBuilders on _SearchScreenState {
     final colorScheme = theme.colorScheme;
     final infoStyle = theme.textTheme.bodySmall?.copyWith(fontSize: 12);
     // 分类/字数标签（对标原版 ll_kind LabelsBar：wordCount 置顶 + kind 逗号/换行拆分）
+    // [PARITY C1 S2] 空数据防 NaN：规则返回 "NaN" 视为无数据，不渲染标签
     final kindLabels = <String>[
-      if ((book.wordCount ?? '').isNotEmpty) book.wordCount!,
+      if (_isMeaningfulText(book.wordCount)) book.wordCount!,
       ...?book.kind
-          ?.split(RegExp('[,，\\n]'))
+          ?.split(RegExp('[,，\n]'))
           .map((s) => s.trim())
-          .where((s) => s.isNotEmpty),
+          .where((s) => _isMeaningfulText(s)),
     ];
     // 稳定 ValueKey（来源+书址）避免结果列表整表重建；RepaintBoundary 隔离重绘区域
     final tile = InkWell(
@@ -504,46 +503,32 @@ extension _SearchBuilders on _SearchScreenState {
                           ),
                         ),
                       ),
-                      // 同源数徽标（对齐参考仓库 TextCard + AnimatedTextLine：
-                      // surfaceContainer 底 + 4dp 圆角中性角标，聚合搜索流式
-                      // 返回时数字向上翻滚 +1；单源显示书源名便于辨认）
+                      // [PARITY C1 S4] 来源数数字角标（对齐参考 143/13/8：
+                      // 灰底圆角盒常驻右对齐顶对齐，聚合搜索流式返回时
+                      // 数字向上翻滚 +1；单源也显示 1，不再显示书源名）
                       Container(
                         margin: const EdgeInsets.only(left: 8),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 4, vertical: 2),
+                            horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
                           color: colorScheme.surfaceContainer,
                           borderRadius: BorderRadius.circular(4),
                         ),
-                        child: result.originsCount > 1
-                            ? Md3AnimatedTextLine(
-                                text: '${result.originsCount}',
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelSmall
-                                    ?.copyWith(
-                                      color: colorScheme.onSurface,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                              )
-                            : Text(
-                                result.sourceName.isNotEmpty
-                                    ? result.sourceName
-                                    : '1',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelSmall
-                                    ?.copyWith(
-                                      color: colorScheme.onSurfaceVariant,
-                                    ),
+                        child: Md3AnimatedTextLine(
+                          text: '${result.originsCount}',
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelSmall
+                              ?.copyWith(
+                                color: colorScheme.onSurfaceVariant,
+                                fontWeight: FontWeight.w500,
                               ),
+                        ),
                       ),
                     ],
                   ),
-                  // 作者行（对标 tv_author 12sp）
-                  if (book.author.isNotEmpty)
+                  // 作者行（对标 tv_author 12sp；[PARITY C1 S2] NaN 视为无数据）
+                  if (_isMeaningfulText(book.author))
                     Padding(
                       padding: const EdgeInsets.only(top: 3),
                       child: Text(
@@ -580,8 +565,8 @@ extension _SearchBuilders on _SearchScreenState {
                         ],
                       ),
                     ),
-                  // 最新章节行（对标 tv_lasted 12sp）
-                  if ((book.latestChapterTitle ?? '').isNotEmpty)
+                  // 最新章节行（对标 tv_lasted 12sp；[PARITY C1 S2] NaN 视为无数据）
+                  if (_isMeaningfulText(book.latestChapterTitle))
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(

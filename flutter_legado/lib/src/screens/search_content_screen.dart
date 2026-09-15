@@ -341,7 +341,8 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: LegadoAppBar(
-        title: Text('搜索正文', style: Theme.of(context).textTheme.titleMedium),
+        // [PARITY C1-C1] 标题对齐参考「搜索内容」
+        title: Text('搜索内容', style: Theme.of(context).textTheme.titleMedium),
         actions: [
           if (_searching)
             IconButton(icon: const Icon(Symbols.close_rounded), onPressed: _cancelSearch),
@@ -414,7 +415,8 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
             // [LAYOUT_PLAN P1] 搜索框走 SearchBar 标准（32dp + surfaceContainerLow）
             child: SearchBar(
               controller: _controller,
-              hintText: '在《${widget.effectiveBookName}》中搜索...',
+              // [PARITY C1-C3] hint 对齐参考「搜索...」
+              hintText: '搜索...',
               // 原 TextField autofocus 语义保留：进页自动聚焦
               autoFocus: true,
               constraints: const BoxConstraints(minHeight: 40),
@@ -566,6 +568,13 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
               onPressed: _clearHistory,
               child: Text(AppStrings.clearHistory),
             ),
+            // [PARITY C1-C2] 「清空」居中：两侧 Spacer 均分（参考 13 清空
+            // 位于屏中、右侧为「仅本书」胶囊）
+            const Spacer(),
+            // 「仅本书」深色胶囊（复用范围三档 scope_cached 逻辑；
+            // 参考 13：72×39dp 深色实底白字，右侧 18dp 边距，
+            // 选中=深色实底，未选=同尺寸描边态，点击切换范围并重搜）
+            _buildScopeChip(),
           ],
         ),
         const SizedBox(height: 8),
@@ -585,6 +594,52 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
           ],
         ),
       ],
+    );
+  }
+
+  /// [PARITY C1-C2] 「仅本书」范围胶囊（参考 13 量化：72×39dp 深色实底，
+  /// 右侧 18dp 边距）：复用范围三档 [C4 双基准对齐] 的 scope_cached 档，
+  /// 与 ⋮ 菜单「仅本书（已缓存）」项共享同一静态选择，点击切换并重搜
+  Widget _buildScopeChip() {
+    final selected =
+        _SearchContentOptions.scope == _SearchContentOptions.scopeCached;
+    // 参考 13 深色实底（(82,96,112)）+ 白字；未选=同尺寸描边态
+    final fill = Color(0xFF526070);
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(19),
+        onTap: () {
+          setState(() {
+            _SearchContentOptions.scope = selected
+                ? _SearchContentOptions.scopeNetwork
+                : _SearchContentOptions.scopeCached;
+          });
+          // 已有结果时立即按新范围重搜（与 ⋮ 菜单选项同语义）
+          if (_query.isNotEmpty) unawaited(_search(_query));
+        },
+        child: SizedBox(
+          width: 72,
+          height: 39,
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: selected ? fill : Colors.transparent,
+              borderRadius: BorderRadius.circular(19),
+              border: selected
+                  ? null
+                  : Border.all(color: fill, width: 1),
+            ),
+            child: Text(
+              '仅本书',
+              style: TextStyle(
+                fontSize: 14,
+                color: selected ? Colors.white : fill,
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 

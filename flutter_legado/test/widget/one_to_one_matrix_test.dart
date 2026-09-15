@@ -73,8 +73,9 @@ void main() {
         await tester.pumpAndSettle();
 
         // ActionCard 行关键入口可见（S3 骨架在位）
-        expect(find.text('目录'), findsWidgets);
-        expect(find.text('换源'), findsWidgets);
+        // [PARITY C1 D2] 四图标卡标签：已在书架/查看目录/书源/阅读记录
+        expect(find.text('查看目录'), findsWidgets);
+        expect(find.text('书源'), findsWidgets);
         expect(tester.takeException(), isNull);
       });
     }
