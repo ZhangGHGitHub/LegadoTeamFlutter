@@ -1,8 +1,10 @@
 // 书源编辑页 widget 测试
 //
 // 验证 Phase 5.1 书源编辑表单（对标 Android BookSourceEditActivity）：
-// - 8 个 Tab：基本/搜索/发现/详情/目录/正文/段评/调试（对齐原版 source_tab_* 短标签）
-// - 发现/详情/评论 Tab 的字段与开关可见
+// - [B2-C2 2-8] 扁平单列结构（对齐参考版 ref 09）：设置段 + 7 个规则
+//   分组段（基本信息/搜索规则/发现规则/详情规则/目录规则/正文规则/
+//   段评规则）同列顺序展开，无 Tab 页签与字段导航条
+// - 各分组的字段与设置开关可见
 // - 必填校验（书源名称/URL）与保存创建
 // - 编辑模式回填发现/详情/评论规则
 import 'package:flutter/material.dart';
@@ -62,37 +64,40 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  group('SourceEditScreen 多 Tab 结构', () {
-    testWidgets('新建模式渲染 7 个规则 Tab（对齐原版，调试为顶栏菜单）', (tester) async {
+  group('SourceEditScreen 扁平单列结构', () {
+    testWidgets('新建模式渲染 7 个规则分组段（扁平单列，调试为顶栏菜单）',
+        (tester) async {
+      // 加高可视区域，确保单滚动列内全部分组段标题完整构建
+      await tester.binding.setSurfaceSize(const Size(800, 8000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       await pumpEdit(tester);
 
       expect(find.text('新建书源'), findsOneWidget);
-      final tabBar = find.byType(TabBar);
-      expect(tabBar, findsOneWidget);
-      for (final label in const [
-        '基本',
-        '搜索',
-        '发现',
-        '详情',
-        '目录',
-        '正文',
-        '段评',
+      // [B2-C2 2-8] 取消 Tab 页签：7 个规则分组段以标题 Text 同列顺序展开
+      for (final title in const [
+        '基本信息',
+        '搜索规则',
+        '发现规则',
+        '详情规则',
+        '目录规则',
+        '正文规则',
+        '段评规则',
       ]) {
         expect(
-          find.descendant(of: tabBar, matching: find.text(label)),
+          find.text(title),
           findsOneWidget,
-          reason: 'TabBar 应包含「$label」',
+          reason: '应包含「$title」分组段',
         );
       }
     });
 
-    testWidgets('顶部设置面板展示开关，各 Tab 展示对应字段', (tester) async {
-      // 加高可视区域，确保各 Tab 列表字段完整构建
-      await tester.binding.setSurfaceSize(const Size(800, 3000));
+    testWidgets('顶部设置段展示开关，各分组展示对应字段', (tester) async {
+      // 加高可视区域，确保单滚动列内各分组字段完整构建
+      await tester.binding.setSurfaceSize(const Size(800, 8000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await pumpEdit(tester);
 
-      // 设置面板默认收起（优先展示表单字段）；展开后可见开关
+      // 设置段默认收起（优先展示表单字段）；展开后可见开关
       expect(find.text('设置'), findsOneWidget);
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
@@ -100,27 +105,13 @@ void main() {
       expect(find.text('事件监听'), findsOneWidget);
       expect(find.text('定制按钮'), findsOneWidget);
 
-      // 发现规则（Tab 标签与设置面板复选框同名，需限定 TabBar 内点击）
-      await tester.tap(
-        find.descendant(of: find.byType(TabBar), matching: find.text('发现')),
-      );
-      await tester.pumpAndSettle();
-      expect(find.widgetWithText(TextFormField, '发现地址规则（url）'), findsOneWidget);
-
-      // 详情规则
-      await tester.tap(
-        find.descendant(of: find.byType(TabBar), matching: find.text('详情')),
-      );
-      await tester.pumpAndSettle();
-      expect(find.widgetWithText(TextFormField, '目录 URL 规则（tocUrl）'), findsOneWidget);
-      expect(find.widgetWithText(TextFormField, '允许修改书名作者（canReName）'), findsOneWidget);
-
-      // 段评规则
-      await tester.tap(
-        find.descendant(of: find.byType(TabBar), matching: find.text('段评')),
-      );
-      await tester.pumpAndSettle();
-      expect(find.widgetWithText(TextFormField, '段评统计 URL（reviewSummaryUrl）'), findsOneWidget);
+      // [B2-C2 2-8] 扁平单列：各分组字段同列共存，无需切 Tab，直接断言。
+      // 标签已上移为常显 Text，字段改以 ValueKey('sf_<field.key>') 稳定定位。
+      expect(find.byKey(const ValueKey('sf_exploreUrl')), findsOneWidget);
+      expect(find.byKey(const ValueKey('sf_i_tocUrl')), findsOneWidget);
+      expect(find.byKey(const ValueKey('sf_i_canReName')), findsOneWidget);
+      expect(find.byKey(const ValueKey('sf_r_reviewSummaryUrl')),
+          findsOneWidget);
     });
   });
 
@@ -142,12 +133,13 @@ void main() {
       ).thenAnswer((inv) async => inv.positionalArguments[0] as BookSource);
       await pumpEdit(tester);
 
+      // 标签已上移为常显 Text，字段改以 ValueKey('sf_<field.key>') 稳定定位。
       await tester.enterText(
-        find.widgetWithText(TextFormField, '源名称（sourceName） *'),
+        find.byKey(const ValueKey('sf_bookSourceName')),
         '测试书源',
       );
       await tester.enterText(
-        find.widgetWithText(TextFormField, '源 URL（sourceUrl） *'),
+        find.byKey(const ValueKey('sf_bookSourceUrl')),
         'https://test.com',
       );
       await tester.tap(find.byTooltip('保存'));
@@ -166,8 +158,8 @@ void main() {
 
   group('SourceEditScreen 编辑模式回填', () {
     testWidgets('回填发现/详情/评论规则字段与开关', (tester) async {
-      // 加高可视区域，确保各 Tab 列表字段完整构建
-      await tester.binding.setSurfaceSize(const Size(800, 3000));
+      // 加高可视区域，确保单滚动列内全部分组字段（含末段段评）完整构建
+      await tester.binding.setSurfaceSize(const Size(800, 8000));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       const source = BookSource(
         bookSourceUrl: 'https://edit.com',
@@ -188,30 +180,14 @@ void main() {
       // 基本信息回填
       expect(find.text('可编辑源'), findsOneWidget);
 
-      // 发现规则回填
-      await tester.tap(
-        find.descendant(of: find.byType(TabBar), matching: find.text('发现')),
-      );
-      await tester.pumpAndSettle();
+      // [B2-C2 2-8] 扁平单列：发现/详情/段评规则字段同列共存，直接断言回填
       expect(find.text('分类::https://edit.com/sort'), findsOneWidget);
       expect(find.text('.explore-list'), findsOneWidget);
-
-      // 详情规则回填
-      await tester.tap(
-        find.descendant(of: find.byType(TabBar), matching: find.text('详情')),
-      );
-      await tester.pumpAndSettle();
       expect(find.text('.init'), findsOneWidget);
       expect(find.text('.toc'), findsOneWidget);
-
-      // 段评规则回填（URL）
-      await tester.tap(
-        find.descendant(of: find.byType(TabBar), matching: find.text('段评')),
-      );
-      await tester.pumpAndSettle();
       expect(find.text('.review-summary'), findsOneWidget);
-      // 段评开关已迁至顶部设置面板（CheckboxListTile）并回填为开启；
-      // 面板默认收起，先展开再断言
+      // 段评开关在顶部设置段（CheckboxListTile）并回填为开启；
+      // 段默认收起，先展开再断言
       await tester.tap(find.text('设置'));
       await tester.pumpAndSettle();
       final reviewCheck = tester.widget<CheckboxListTile>(

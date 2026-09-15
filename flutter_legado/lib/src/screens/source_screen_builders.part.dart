@@ -624,17 +624,6 @@ extension _SourceBuilders on _SourceScreenState {
         padding: const EdgeInsets.only(left: 4, right: 16, top: 14, bottom: 14),
         child: Row(
           children: [
-            // 行内复选框（对齐原版 cb_book_source，勾选态与批量栏计数联动）
-            Checkbox(
-              value: state.isSelected(source.bookSourceUrl),
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              visualDensity: VisualDensity.compact,
-              onChanged: (_) {
-                final notifier = ref.read(sourceNotifierProvider.notifier);
-                if (!state.batchMode) notifier.enterBatchMode();
-                notifier.toggleSelection(source.bookSourceUrl);
-              },
-            ),
             // 源名（对标原版 cb_book_source 文本 16sp）+ 分组标签
             //（对齐原版行内分组标注，如「懒人听书app本地源（同人） (同人书源)」）
             // + 校验消息副标题
@@ -698,6 +687,18 @@ extension _SourceBuilders on _SourceScreenState {
                     ? colorScheme.primary
                     : colorScheme.onSurfaceVariant,
               ),
+            ),
+            // [B2-C2 2-7 | 全栈工程师] 行右勾选圈（ref 08 行右控制簇
+            // 「勾选圈+开关」顺序；勾选态与批量栏计数联动，保留开关/⋮）
+            Checkbox(
+              value: state.isSelected(source.bookSourceUrl),
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+              onChanged: (_) {
+                final notifier = ref.read(sourceNotifierProvider.notifier);
+                if (!state.batchMode) notifier.enterBatchMode();
+                notifier.toggleSelection(source.bookSourceUrl);
+              },
             ),
             Switch(
               value: source.enabled,
@@ -784,12 +785,6 @@ extension _SourceBuilders on _SourceScreenState {
         padding: const EdgeInsets.only(left: 4, right: 8, top: 4, bottom: 4),
         child: Row(
           children: [
-            Checkbox(
-              value: selected,
-              onChanged: (_) => ref
-                  .read(sourceNotifierProvider.notifier)
-                  .toggleSelection(source.bookSourceUrl),
-            ),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -848,6 +843,16 @@ extension _SourceBuilders on _SourceScreenState {
                     ? colorScheme.primary
                     : colorScheme.onSurfaceVariant,
               ),
+            ),
+            // [B2-C2 2-7 | 全栈工程师] 批量行勾选圈与常规行同位（行右控制簇
+            // 「勾选圈+开关」顺序，保留开关/⋮）
+            Checkbox(
+              value: selected,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+              onChanged: (_) => ref
+                  .read(sourceNotifierProvider.notifier)
+                  .toggleSelection(source.bookSourceUrl),
             ),
             Switch(
               value: source.enabled,

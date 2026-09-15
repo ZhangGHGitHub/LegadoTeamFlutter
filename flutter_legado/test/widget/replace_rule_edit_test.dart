@@ -225,8 +225,11 @@ void main() {
       await tester.tap(find.text('自定义…'));
       await tester.pumpAndSettle();
       await tester.enterText(byLabel('输入分组名'), '净化组_9');
-      // 作用范围：勾选「标题」（树序 Checkbox：0 正则 / 1 标题 / 2 书源(禁用) / 3 正文）
-      await tester.tap(find.byType(Checkbox).at(1));
+      // 作用范围：选「标题」（[B2-C2 2-9] 范围改 chips，按标签定位 chip）
+      await tester.tap(find.byWidgetPredicate(
+          (w) => w is FilterChip &&
+              w.label is Text &&
+              (w.label as Text).data == '标题'));
       // 排除范围 / 超时：直接输入
       await tester.enterText(byLabel('排除范围'), '排除书_9');
       await tester.enterText(byLabel('超时时间（毫秒）'), '4321');
@@ -321,13 +324,32 @@ void main() {
       expect(timeoutField.controller?.text, '5000');
       // 分组回填（「净化」为现有规则分组，命中下拉项）
       expect(find.text('净化'), findsWidgets);
-      // 勾选状态回填（树序：使用正则表达式/标题/书源(禁用恒 false)/正文）
+      // 勾选状态回填（[B2-C2 2-9] 范围改 chips：树内仅剩「使用正则表达式」
+      // 一个 Checkbox，范围三态改查 FilterChip.selected）
       final checks =
           tester.widgetList<Checkbox>(find.byType(Checkbox)).toList();
-      expect(checks, hasLength(4));
+      expect(checks, hasLength(1));
       expect(checks[0].value, isFalse, reason: 'isRegex=false 未勾选');
-      expect(checks[1].value, isTrue, reason: 'scopeTitle=true 勾选');
-      expect(checks[3].value, isFalse, reason: 'scopeContent=false 未勾选');
+      expect(
+        tester
+            .widget<FilterChip>(find.byWidgetPredicate(
+                (w) => w is FilterChip &&
+                    w.label is Text &&
+                    (w.label as Text).data == '标题'))
+            .selected,
+        isTrue,
+        reason: 'scopeTitle=true 选中',
+      );
+      expect(
+        tester
+            .widget<FilterChip>(find.byWidgetPredicate(
+                (w) => w is FilterChip &&
+                    w.label is Text &&
+                    (w.label as Text).data == '正文'))
+            .selected,
+        isFalse,
+        reason: 'scopeContent=false 未选中',
+      );
       // 保存走 update 链路
       // 「保存」按 FilledButton 语义节点点击（槽位包裹后 Text 零宽，
       // find.text('保存') 会触发 would-not-hit-test 告警）
@@ -447,7 +469,8 @@ void main() {
       );
       await pumpEdit(tester);
 
-      // 取消「使用正则表达式」勾选（树序首个 Checkbox）→ 字面替换
+      // 取消「使用正则表达式」勾选（[B2-C2 2-9] 范围改 chips 后，
+      // 树内唯一 Checkbox 即正则勾选）→ 字面替换
       await tester.tap(find.byType(Checkbox).first);
       await tester.pump();
 

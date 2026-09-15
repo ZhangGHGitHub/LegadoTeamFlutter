@@ -10,6 +10,7 @@ import '../routes.dart';
 import '../services/auto_task_scheduler.dart';
 import '../providers/providers.dart';
 import '../providers/theme/theme_notifier.dart';
+import '../theme/app_colors.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
@@ -156,6 +157,87 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  /// [B2-C2 2-10 | 全栈工程师] Web 服务大卡（图标 + 绿 accent）
+  ///
+  /// 对齐 ref 12 原版「我的」页 Web 服务大卡形态：48dp 圆角图标槽
+  /// （language 图标）+ 标题/状态副题 + 右端 Switch（busy 时 spinner）；
+  /// 开启态卡片描边与图标槽转绿（iOS 系统绿语义色）。
+  Widget _buildWebServiceCard(BuildContext context) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    final green = theme.brightness == Brightness.dark
+        ? AppColors.iosGreenDark
+        : AppColors.iosGreenLight;
+    final enabled = _webService;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: enabled ? green.withValues(alpha: 0.6) : cs.outlineVariant,
+          width: enabled ? 1.5 : 0.5,
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            Container(
+              width: 48,
+              height: 48,
+              decoration: BoxDecoration(
+                color: enabled
+                    ? green.withValues(alpha: 0.15)
+                    : cs.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(
+                Symbols.language_rounded,
+                size: 28,
+                color: enabled ? green : cs.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Web 服务',
+                    style: theme.textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    enabled && _webServiceStatus.isNotEmpty
+                        ? _webServiceStatus
+                        : '用浏览器写源或看书',
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            _webServiceBusy
+                ? const SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Switch(
+                    value: _webService,
+                    onChanged: _toggleWebService,
+                  ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeNotifierProvider).themeMode;
@@ -245,28 +327,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     value: _themeModeLabel(themeMode),
                     onTap: () => _showThemePicker(context),
                   ),
-                  SwitchListTile(
-                    secondary: _webServiceBusy
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Icon(
-                            Symbols.language_rounded,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurfaceVariant,
-                          ),
-                    title: const Text('Web 服务'),
-                    subtitle: Text(
-                      _webService && _webServiceStatus.isNotEmpty
-                          ? _webServiceStatus
-                          : '用浏览器写源或看书',
-                    ),
-                    value: _webService,
-                    onChanged: _webServiceBusy ? null : _toggleWebService,
-                  ),
+                ],
+              ),
+
+              // [B2-C2 2-10 | 全栈工程师] Web 服务卡片化：图标+绿 accent 独立大卡
+              //（对齐 ref 12「大卡带图标/绿acc」；_toggleWebService 语义不变）
+              _buildWebServiceCard(context),
+
+              IosGroup(
+                separatorIndent: 62,
+                children: [
                   SwitchListTile(
                     secondary: _mcpServiceBusy
                         ? const SizedBox(

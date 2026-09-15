@@ -491,8 +491,22 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
             onChanged: (_) => _schedulePreview(),
             focusNode: _patternFocus,
           ),
-          // 3.1 使用正则表达式勾选 + 帮助图标（对标 cb_use_regex + iv_help）
-          const SizedBox(height: 8),
+          const SizedBox(height: 16),
+          // 4. 替换为（对标 et_replace_to）
+          _buildTextField(
+            _replacementCtrl,
+            label: '替换为',
+            onChanged: (_) => _schedulePreview(),
+            focusNode: _replacementFocus,
+          ),
+          const SizedBox(height: 16),
+          // 5. 作用范围 chips（对标 cb_scope_title / cb_scope_source /
+          // cb_scope_content；[B2-C2 2-9] 扁平化对齐参考版 ref 10：勾选改
+          // 为 chips 形态（标题/书源/正文），顺序紧随「替换为」
+          _buildScopeChips(),
+          const SizedBox(height: 16),
+          // 5.1 使用正则表达式勾选 + 帮助图标（对标 cb_use_regex + iv_help；
+          // [B2-C2 2-9] 按 ref 10 顺序移到作用范围 chips 之后）
           Row(
             children: [
               // Checkbox + 标签（本 SDK Checkbox 无 child/tooltip 参数，
@@ -519,18 +533,6 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          // 4. 替换为（对标 et_replace_to）
-          _buildTextField(
-            _replacementCtrl,
-            label: '替换为',
-            onChanged: (_) => _schedulePreview(),
-            focusNode: _replacementFocus,
-          ),
-          const SizedBox(height: 16),
-          // 5. 作用范围三勾选（对标 cb_scope_title / cb_scope_source /
-          // cb_scope_content；书源 scope 受阻见 _buildScopeCheckboxes）
-          _buildScopeCheckboxes(),
           const SizedBox(height: 16),
           // 6. 特定范围（对标 et_scope）
           _buildTextField(
@@ -626,50 +628,43 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
     );
   }
 
-  /// 作用范围三勾选（对标原版 cb_scope_title / cb_scope_source /
+  /// 作用范围 chips（对标原版 cb_scope_title / cb_scope_source /
   /// cb_scope_content）
   ///
+  /// [B2-C2 2-9 | 全栈工程师] 扁平化对齐参考版 ref 10：三个范围由「勾选框
+  /// + 文字」改为 chips（标题/书源/正文），多选互不排斥，点击切换选中态。
   /// [书源作用域 | 2026-09-13] 书源 scope（scopeSource）已打通全链路：
   /// Dart 模型 `ReplaceRule`、Rust 模型/DB v108 与 FFI 读写均支持该字段，
-  /// 「书源」勾选可正常读写并随保存落库（此前为禁用行 + 诚实标注的受阻项）。
-  Widget _buildScopeCheckboxes() {
+  /// 「书源」可正常读写并随保存落库（此前为禁用行 + 诚实标注的受阻项）。
+  Widget _buildScopeChips() {
     final theme = Theme.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // [D2 缺陷修复 | full-stack-engineer + UI] 原 Row 固定宽度在 360dp
-        // 机型 + 系统字体放大时右溢出（调试黄纹）：「书源（暂不支持）」
-        // 长标签使三勾选总宽超出可用宽度，Row 无法收缩。改用 Wrap 按
-        // 可用空间重排——宽屏仍单行呈现（形态不变），窄屏自动换行，
-        // 不裁切不缩放。回归测试见
-        // test/widget/replace_rule_scope_overflow_regress_test.dart。
         Wrap(
-          spacing: 16,
+          spacing: 8,
           runSpacing: 4,
           children: [
-            _ScopeCheckbox(
+            _ScopeChip(
               label: '标题',
-              value: _scopeTitle,
-              onChanged: (v) => setState(() => _scopeTitle = v ?? false),
+              selected: _scopeTitle,
+              onSelected: (v) => setState(() => _scopeTitle = v),
             ),
-            // [书源作用域 | 2026-09-13] 书源作用域（scopeSource）全链路已打通：
-            // 模型/DB v108/FFI 均支持，勾选可读写并随保存落库
-            //（此前为字段受阻的禁用行 + 标注）
-            _ScopeCheckbox(
+            _ScopeChip(
               label: '书源',
-              value: _scopeSource,
-              onChanged: (v) => setState(() => _scopeSource = v ?? false),
+              selected: _scopeSource,
+              onSelected: (v) => setState(() => _scopeSource = v),
             ),
-            _ScopeCheckbox(
+            _ScopeChip(
               label: '正文',
-              value: _scopeContent,
-              onChanged: (v) => setState(() => _scopeContent = v ?? true),
+              selected: _scopeContent,
+              onSelected: (v) => setState(() => _scopeContent = v),
             ),
           ],
         ),
         const SizedBox(height: 4),
         Text(
-          '勾选规则生效的内容范围；未勾选范围不受该规则影响',
+          '点选规则生效的内容范围；未选范围不受该规则影响',
           style: theme.textTheme.labelSmall?.copyWith(
             color: theme.colorScheme.onSurfaceVariant,
           ),
@@ -785,36 +780,26 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
   }
 }
 
-/// 作用范围勾选（Checkbox + 标签；[A3 形态对齐 | full-stack-engineer + UI]）
-class _ScopeCheckbox extends StatelessWidget {
+/// 作用范围 chip（[B2-C2 2-9 | 全栈工程师] 对齐参考版 ref 10：
+/// 范围三态由勾选框改 chips，FilterChip 承载多选互斥语义与选中态）
+class _ScopeChip extends StatelessWidget {
   final String label;
-  final bool value;
-  final ValueChanged<bool?>? onChanged;
+  final bool selected;
+  final ValueChanged<bool> onSelected;
 
-  const _ScopeCheckbox({
+  const _ScopeChip({
     required this.label,
-    required this.value,
-    this.onChanged,
+    required this.selected,
+    required this.onSelected,
   });
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Checkbox(
-          value: value,
-          onChanged: onChanged,
-          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-        ),
-        Text(
-          label,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            color: theme.colorScheme.onSurface,
-          ),
-        ),
-      ],
+    return FilterChip(
+      label: Text(label),
+      selected: selected,
+      onSelected: onSelected,
+      showCheckmark: false,
     );
   }
 }

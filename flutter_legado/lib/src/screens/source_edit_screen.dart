@@ -33,10 +33,13 @@ part 'source_edit_screen_dialogs.part.dart';
 
 /// 书源编辑页面
 ///
-/// 对标 Android `BookSourceEditActivity`，采用多 Tab 表单编辑书源的全部规则：
-/// 基本信息 / 搜索规则 / 发现规则 / 详情规则 / 目录规则 / 内容规则 / 评论规则 / 测试。
-/// 表单字段以数据驱动方式定义（[_Field] 列表），controller 按 key 惰性创建，
-/// 与原版基于 `EditEntity` 列表的配置化编辑思路一致。
+/// 对标 Android `BookSourceEditActivity`，编辑书源的全部规则：
+/// 设置 + 基本信息 / 搜索规则 / 发现规则 / 详情规则 / 目录规则 / 正文规则 /
+/// 段评规则。
+/// [B2-C2 2-8 | 全栈工程师] 表单改为扁平单列结构（对齐参考版 ref 09）：
+/// 设置段与 7 大规则分组在同一滚动列内顺序展开，取消 Tab 页签与字段导航条；
+/// 字段顺序与分组沿用原数据驱动定义（[_Field] 列表），controller 按 key
+/// 惰性创建，与原版基于 `EditEntity` 列表的配置化编辑思路一致。
 class SourceEditScreen extends ConsumerStatefulWidget {
   /// 书源 URL（编辑模式），null 表示新建
   final String? sourceUrl;
@@ -78,33 +81,13 @@ class _Field {
   });
 }
 
-class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
-    with SingleTickerProviderStateMixin {
+class _SourceEditScreenState extends ConsumerState<SourceEditScreen> {
   final _formKey = GlobalKey<FormState>();
   bool _saving = false;
 
-  /// Tab 控制器（对齐原版 TabLayout：设置卡片在 Tab 上方，字段导航条在下方）
-  late final TabController _tabController = TabController(
-    length: 7,
-    vsync: this,
-  )..addListener(() {
-      if (_tabController.indexIsChanging) return;
-      if (_lastFieldNavTab != _tabController.index) {
-        setState(() {
-          _lastFieldNavTab = _tabController.index;
-          // 切换主 Tab 后字段导航条选中回到该 Tab 首字段
-          _selectedNavField = null;
-        });
-      }
-    });
-
-  /// 字段导航条当前 Tab（跟随主 Tab 切换）
-  int _lastFieldNavTab = 0;
-
-  /// 字段导航条当前选中字段（对齐原版 field_nav 选中项主色指示线）
-  String? _selectedNavField;
-
-  /// 字段 GlobalKey（字段导航条跳转定位）
+  // [B2-C2 2-8 | 全栈工程师] 扁平单列后取消 TabController/字段导航条
+  // （原 _tabController/_lastFieldNavTab/_selectedNavField 一并移除），
+  // 字段 GlobalKey 仍保留供焦点定位/校验滚动使用。
   final Map<String, GlobalKey> _fieldKeys = {};
 
   /// 首次帮助已展示标志（对标原版 LocalConfig.ruleHelpVersionIsLast）
@@ -146,12 +129,9 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
   FocusNode _focus(String key) => _focusNodes.putIfAbsent(
     key,
     () => FocusNode()..addListener(() {
+      // [B2-C2 2-8] 扁平化后无字段导航条，仅记录焦点字段 key
       if (_focusNodes[key]?.hasFocus == true) {
         _focusedFieldKey = key;
-        // 字段获得焦点时同步字段导航条选中（高亮指示线跟随）
-        if (_selectedNavField != key) {
-          if (mounted) setState(() => _selectedNavField = key);
-        }
       }
     }),
   );
@@ -301,7 +281,7 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
 
   @override
   void dispose() {
-    _tabController.dispose();
+    // [B2-C2 2-8] TabController 已随扁平化移除，无需 dispose
     for (final controller in _ctrls.values) {
       controller.dispose();
     }
@@ -358,51 +338,22 @@ class _SourceEditScreenState extends ConsumerState<SourceEditScreen>
           ),
         ],
       ),
+      // [B2-C2 2-8 | 全栈工程师] 表单扁平单列（对齐参考版 ref 09）：
+      // 设置段 + 7 大规则分组在同一滚动列内顺序展开，取消 Tab 页签与字段
+      // 导航条；字段顺序沿用原各 Tab 内的数据驱动定义
       body: Form(
         key: _formKey,
-        child: Column(
+        child: ListView(
+          padding: const EdgeInsets.only(bottom: 24),
           children: [
-            // 对齐原版布局顺序：设置卡片 → Tab 栏 → 字段导航条 → 表单
-            _buildSettingsPanel(),
-            // 对齐原版 tab_layout：高度 36dp + 滚动页签 + 主色指示线
-            SizedBox(
-              height: 36,
-              child: TabBar(
-                controller: _tabController,
-                isScrollable: true,
-                labelPadding: const EdgeInsets.symmetric(horizontal: 12),
-                labelStyle: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-                unselectedLabelStyle: const TextStyle(fontSize: 14),
-                // 页签文案对齐原版 source_tab_* 短标签
-                tabs: const [
-                  Tab(text: '基本'),
-                  Tab(text: '搜索'),
-                  Tab(text: '发现'),
-                  Tab(text: '详情'),
-                  Tab(text: '目录'),
-                  Tab(text: '正文'),
-                  Tab(text: '段评'),
-                ],
-              ),
-            ),
-            _buildFieldNav(),
-            Expanded(
-              child: TabBarView(
-                controller: _tabController,
-                children: [
-                  _buildFormTab(_basicFields),
-                  _buildFormTab(_searchFields),
-                  _buildFormTab(_exploreFields),
-                  _buildFormTab(_infoFields),
-                  _buildFormTab(_tocFields),
-                  _buildFormTab(_contentFields),
-                  _buildFormTab(_reviewFields),
-                ],
-              ),
-            ),
+            _buildSettingsSection(),
+            _buildFormSection('基本信息', _basicFields),
+            _buildFormSection('搜索规则', _searchFields),
+            _buildFormSection('发现规则', _exploreFields),
+            _buildFormSection('详情规则', _infoFields),
+            _buildFormSection('目录规则', _tocFields),
+            _buildFormSection('正文规则', _contentFields),
+            _buildFormSection('段评规则', _reviewFields),
           ],
         ),
       ),

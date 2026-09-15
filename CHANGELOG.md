@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.266] - 2026-09-16
+
+### Fixed
+- [UI] 书源管理页对齐参考版（B2-C2 2-7 P2，台账 2-7，基准 docs/parity_shots/ref_batch2/08_source_manage.png）：①顶栏补**常显搜索框**（此前仅标题+排序+⋮，与参考「常显搜索框+☰」不符）；②行右控制簇补**勾选圈**——常规行与批量模式行均在开关左侧插入紧凑 Checkbox（批量行此前 leading 位勾选圈移除，与常规行同位右置），保留原有开关与 ⋮ 菜单顺序不变。`source_screen_builders.part.dart` 仅改行渲染（`_buildSourceItem`/`_buildBatchSourceItem`），选中态/批量操作/开关语义不变
+- [UI] 书源编辑器表单扁平单列化（B2-C2 2-8 P2，基准 ref_batch2/09_source_editor.png）：移除「字段/规则」Tab 导航与 TabBar 分组卡，改为扁平单列——顶部「设置」段（可收起 CheckboxListTile 组）+ 七段平铺（基本信息/搜索规则/发现规则/详情规则/目录规则/正文规则/段评规则，段标题 13sp primary 加粗），字段定义、顺序与回填/保存链路零行为变更（`source_edit_screen.dart` + `source_edit_screen_builders.part.dart`）
+- [UI] 替换净化编辑器扁平化（B2-C2 2-9 P2，基准 ref_batch2/10_replace_rule_edit.png）：表单改扁平单列，字段顺序对齐参考——名称/分组/匹配规则/替换为/作用范围/正则/特定范围/排除范围/超时/预览；「标题/书源/正文」作用范围由三个 Checkbox 改 **FilterChip 平铺 chips**（未选范围提示行保留）；「使用正则表达式」保留 Checkbox + 帮助按钮。`replace_rule_edit_screen.dart` 仅改表单布局与范围控件，规则数据链路不变
+- [UI] Web 服务卡片化（B2-C2 2-10 P3，基准 ref_batch2/12_web_service.png，台账「参考大卡带图标/绿acc，我方扁平」）：我的页「Web 服务」由 SwitchListTile 行改为**独立大卡**——48dp 圆角图标槽（language 图标）+ 标题/状态副题 + 右端 Switch（busy 时 spinner）；开启态卡片描边与图标槽转绿（iOS 系统绿 AppColors.iosGreen，亮/暗双值），MCP 服务行独立成组保持原位。`settings_screen.dart` 新增 `_buildWebServiceCard`，`_toggleWebService` 启停/状态/持久化语义不变
+- [台账] 2-2 发现溢出菜单由主代理修正采集断言后重采，本批不动代码
+
+### Test
+- `flutter analyze` 无问题；`flutter test` 全过（1449 例；回归套件同步：`replace_rule_edit_test.dart`/`replace_rule_scope_overflow_regress_test.dart` 范围控件断言 Checkbox→FilterChip（含 360dp+字体放大溢出回归），`source_edit_test.dart` 断言由 Tab 切换改为扁平段标题直查 + 800x8000 加高面全字段直断）
+
+### Real device
+- release 2.0.266+267 APK 装 MuMu（192.168.1.19:5555，adb D:/leidian/LDPlayer9/adb.exe），versionName=2.0.266 校验通过；`scripts/parity_capture_ours.py --only 07_source_switch,08_source_manage,09_source_editor,10_replace_rule_edit,12_web_service` 5/5 屏 OK，截图 docs/parity_shots/ours_2.0.266/{07_source_switch,08_source_manage,09_source_editor,10_replace_rule_edit,12_web_service}.png（对照 ref_batch2/07、08、09、10、12，07 为回归屏）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.265] - 2026-09-15
 
 ### Fixed
