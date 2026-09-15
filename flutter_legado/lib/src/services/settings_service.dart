@@ -34,10 +34,10 @@ class SettingsService {
   Future<double> getFontSize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getDouble(_keyFontSize) ?? 18.0;
+      return prefs.getDouble(_keyFontSize) ?? 20.0;
     } catch (e) {
       debugPrint('SettingsService.getFontSize 异常: $e');
-      return 18.0;
+      return 20.0;
     }
   }
 
@@ -55,10 +55,10 @@ class SettingsService {
   Future<double> getLineHeight() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getDouble(_keyLineHeight) ?? 1.67;
+      return prefs.getDouble(_keyLineHeight) ?? 1.7;
     } catch (e) {
       debugPrint('SettingsService.getLineHeight 异常: $e');
-      return 1.67;
+      return 1.7;
     }
   }
 

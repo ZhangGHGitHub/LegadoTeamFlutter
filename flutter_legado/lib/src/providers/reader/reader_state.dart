@@ -119,10 +119,13 @@ class ReaderState with _$ReaderState {
     // ===== 阅读设置 =====
 
     /// 字体大小
-    @Default(18.0) double fontSize,
+    /// [C2 R1] 默认字号对齐参考（参考 ~20-22sp/行 ~14 字；原版 ReadBookConfig
+    /// textSize=20sp）：18.0 → 20.0
+    @Default(20.0) double fontSize,
 
     /// 行高倍数
-    @Default(1.6) double lineHeight,
+    /// [C2 R2] 默认行距对齐参考（参考 ~1.7，原版 lineSpacingExtra=12）：1.6 → 1.7
+    @Default(1.7) double lineHeight,
 
     /// 背景色
     @Default(ReaderBackground.white) Color backgroundColor,

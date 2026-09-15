@@ -93,7 +93,8 @@ class ReaderPageChromeConfig {
     this.tipHeaderLeft = 2,
     this.tipHeaderMiddle = 0,
     this.tipHeaderRight = 3,
-    this.tipFooterLeft = 1,
+    // [C2 R5] 底栏左侧默认显示书名（tip 7），对齐参考
+    this.tipFooterLeft = 7,
     this.tipFooterMiddle = 0,
     this.tipFooterRight = 6,
     this.titleMode = 0,

@@ -15,8 +15,9 @@ void main() {
   });
 
   group('SettingsService 字体大小', () {
-    test('默认字体大小为 18.0', () async {
-      expect(await service.getFontSize(), equals(18.0));
+    // [PARITY C2 R1] 默认字号对齐参考（~20-22sp/行），默认档 18→20
+    test('默认字体大小为 20.0', () async {
+      expect(await service.getFontSize(), equals(20.0));
     });
 
     test('设置并读取字体大小', () async {
@@ -32,8 +33,9 @@ void main() {
   });
 
   group('SettingsService 行距', () {
-    test('默认行距为 1.67', () async {
-      expect(await service.getLineHeight(), equals(1.67));
+    // [PARITY C2 R2] 默认行距对齐参考（~1.7），默认档 1.67→1.7
+    test('默认行距为 1.7', () async {
+      expect(await service.getLineHeight(), equals(1.7));
     });
 
     test('设置并读取行距', () async {

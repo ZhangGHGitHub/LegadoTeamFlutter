@@ -195,7 +195,9 @@ class ReaderAdvancedConfig {
     this.tipHeaderLeft = 2,
     this.tipHeaderMiddle = 0,
     this.tipHeaderRight = 3,
-    this.tipFooterLeft = 1,
+    // [C2 R5] 底栏左侧语义对齐参考：参考底栏左显示书名（斗罗大陆），
+    // 我方原为章节名（截断）。tipFooterLeft 由 1(章节名) 改 7(书名)。
+    this.tipFooterLeft = 7,
     this.tipFooterMiddle = 0,
     this.tipFooterRight = 6,
     this.titleMode = 0,
@@ -203,10 +205,12 @@ class ReaderAdvancedConfig {
     this.titleTopSpacing = 0,
     this.titleBottomSpacing = 0,
     this.titleFont = '',
-    this.showBattery = true,
-    this.showTime = true,
-    this.showProgress = true,
-    this.showChapterName = true,
+    // [C2 R4] 顶部「时间+章节名+进度」状态行默认关闭（参考该态无此信息行；
+    // 头部信息开关默认关，用户可在「阅读提示信息」面板手动开启）
+    this.showBattery = false,
+    this.showTime = false,
+    this.showProgress = false,
+    this.showChapterName = false,
     this.flipMode = FlipMode.slide,
     this.screenOrientation = 0,
     this.keepLight = 0,
@@ -216,7 +220,9 @@ class ReaderAdvancedConfig {
     this.noAnimScrollPage = false,
     this.autoChangeSource = true,
     this.selectText = true,
-    this.showBrightnessView = true,
+    // [PARITY C2 M5] 参考阅读器菜单该态未见亮度条：默认关闭菜单内亮度行，
+    // 亮度控件改为用户按需开启（设置开关保留），对齐参考紧凑浮层形态。
+    this.showBrightnessView = false,
     this.showReadTitleAddition = true,
     this.readBarStyleFollowPage = false,
     this.volumeKeyPage = true,
@@ -369,7 +375,8 @@ class ReaderAdvancedConfig {
       tipHeaderLeft: prefs.getInt('tipHeaderLeft') ?? 2,
       tipHeaderMiddle: prefs.getInt('tipHeaderMiddle') ?? 0,
       tipHeaderRight: prefs.getInt('tipHeaderRight') ?? 3,
-      tipFooterLeft: prefs.getInt('tipFooterLeft') ?? 1,
+      // [C2 R5] load 缺省对齐构造器默认（7=书名）
+      tipFooterLeft: prefs.getInt('tipFooterLeft') ?? 7,
       tipFooterMiddle: prefs.getInt('tipFooterMiddle') ?? 0,
       tipFooterRight: prefs.getInt('tipFooterRight') ?? 6,
       titleMode: (prefs.getInt('titleMode') ?? 0).clamp(0, 2),
@@ -377,10 +384,11 @@ class ReaderAdvancedConfig {
       titleTopSpacing: (prefs.getInt('titleTopSpacing') ?? 0).clamp(0, 100),
       titleBottomSpacing: (prefs.getInt('titleBottomSpacing') ?? 0).clamp(0, 100),
       titleFont: prefs.getString('titleFont') ?? '',
-      showBattery: prefs.getBool('${_prefix}show_battery') ?? true,
-      showTime: prefs.getBool('${_prefix}show_time') ?? true,
-      showProgress: prefs.getBool('${_prefix}show_progress') ?? true,
-      showChapterName: prefs.getBool('${_prefix}show_chapter_name') ?? true,
+      // [C2 R4] 状态行四开关 load 缺省对齐构造器默认（关闭），参考该态无此信息行
+      showBattery: prefs.getBool('${_prefix}show_battery') ?? false,
+      showTime: prefs.getBool('${_prefix}show_time') ?? false,
+      showProgress: prefs.getBool('${_prefix}show_progress') ?? false,
+      showChapterName: prefs.getBool('${_prefix}show_chapter_name') ?? false,
       flipMode: FlipMode.fromIndex(
         layoutInt('flip_mode', FlipMode.slide.index),
       ),
@@ -396,7 +404,8 @@ class ReaderAdvancedConfig {
       noAnimScrollPage: prefs.getBool('noAnimScrollPage') ?? false,
       autoChangeSource: prefs.getBool('autoChangeSource') ?? true,
       selectText: prefs.getBool('selectText') ?? true,
-      showBrightnessView: prefs.getBool('showBrightnessView') ?? true,
+      // [PARITY C2 M5] load 缺省对齐构造器默认（关闭），参考菜单该态无亮度条。
+      showBrightnessView: prefs.getBool('showBrightnessView') ?? false,
       showReadTitleAddition: prefs.getBool('showReadTitleAddition') ?? true,
       readBarStyleFollowPage: prefs.getBool('readBarStyleFollowPage') ?? false,
       // [UI-fix v2.0.4 | 2026-08-08] 第②批 MoreConfig 项读取（键名=原版键，

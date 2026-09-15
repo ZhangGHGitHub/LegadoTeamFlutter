@@ -266,27 +266,27 @@ void main() {
   });
 
   group('ReaderStatusStrip（Phase 2.4/2.6 状态栏）', () {
-    testWidgets('默认配置渲染电量图标与进度', (tester) async {
+    // [PARITY C2 R4] 状态行四开关默认关闭（参考无顶状态行）：默认配置不渲染内容，
+    // 电量/进度等改为「开启开关才渲染」。
+    testWidgets('默认配置（全关）不渲染内容', (tester) async {
       await tester.pumpWidget(wrapStack(
         ReaderStatusStrip(config: ReaderAdvancedConfig()),
       ));
       await tester.pump();
 
-      expect(find.byIcon(Icons.battery_std), findsOneWidget);
-      expect(find.text('0.0%'), findsOneWidget);
+      expect(find.byIcon(Icons.battery_std), findsNothing);
     });
 
-    testWidgets('全部关闭时不渲染内容', (tester) async {
+    testWidgets('开启电量+进度开关时渲染电量图标与进度', (tester) async {
       final config = ReaderAdvancedConfig(
-        showBattery: false,
-        showTime: false,
-        showProgress: false,
-        showChapterName: false,
+        showBattery: true,
+        showProgress: true,
       );
       await tester.pumpWidget(wrapStack(ReaderStatusStrip(config: config)));
       await tester.pump();
 
-      expect(find.byIcon(Icons.battery_std), findsNothing);
+      expect(find.byIcon(Icons.battery_std), findsOneWidget);
+      expect(find.text('0.0%'), findsOneWidget);
     });
   });
 }

@@ -22,15 +22,16 @@ import '../utils/book_open_utils.dart';
 /// 独立目录页（对齐原版 TocActivity + ChapterListFragment/BookmarkFragment/HighlightFragment）
 ///
 /// [UI-fix v2.0.3 | 2026-08-08] 模块 D：新建独立目录页 — Qoder
-/// - 三 Tab：目录 / 书签 / 标注（对齐原版 TabFragmentPageAdapter）
-/// - 目录 Tab：卷分组样式、当前章节高亮 + 自动定位、章节字数（受「加载字数」开关控制）、
-///   底部当前章节信息条 + 跳转顶部/底部
+/// - 三 Tab：目录 / 书签 / 标注（对齐原版 TabFragmentPageAdapter；
+///   [PARITY C2 T1] 参考版仅 2 项，「标注」为功能超集，登记保留）
+/// - 目录 Tab：卷分组样式、当前章节淡蓝底高亮（[PARITY C2 T5]）+ 自动定位、
+///   章节字数胶囊（[PARITY C2 T2]，受「加载字数」开关控制）
+///   [PARITY C2 T4] 底部当前章节信息条 + 跳转顶/底已移除（跳转能力保留于目录 FAB）
 /// - 书签/标注 Tab：数据经 BookApi（bookmarkNotifier / highlightListByBook）
 /// - 溢出菜单对齐 book_toc.xml 顺序与条件显隐（随 Tab 切换，对齐 TocActivity.onMenuOpened）
 /// - 返回值：选中章节 index（int），供调用方走现有阅读跳转链路
-/// - 章节缓存状态云图标：经 BookApi.listCachedChapterUrls（Rust
-///   cache_list_cached_chapter_urls FFI）查询 cached_chapters 已缓存 chapter_url
-///   集合，据此为每章渲染实心/空心云（[UI-fix v2.0.6 | 2026-08-08] Task #22）
+/// - [PARITY C2 T2] 章节缓存状态云图标已移除（缓存能力保留于目录 FAB「一键缓存」，
+///   原经 BookApi.listCachedChapterUrls 渲染实心/空心云，[UI-fix v2.0.6] Task #22）
 class TocScreen extends ConsumerStatefulWidget {
   /// 书籍对象（路由参数规范化：优先使用 Book 对象）
   final Book book;
@@ -80,14 +81,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
   bool _chaptersLoading = true;
   String? _chaptersError;
 
-  /// 已缓存章节的 chapter_url 集合（目录页云图标缓存态，
-  /// 经 BookApi.listCachedChapterUrls）
-  Set<String> _cachedChapterUrls = {};
-
-  /// 缓存态轮询定时器（页面可见期间每 2s 轻量查询，实现云图标实时刷新；
-  /// 对齐原版 EventBus.SAVE_CONTENT 实时语义）
-  /// [UI-fix v2.0.16 | 2026-08-10] 下载进行中目录页图标即时变实心 — Reasonix
-  Timer? _cachePollTimer;
+  /// [PARITY C2 T2] 原「已缓存章节集合 + 缓存态轮询定时器」随章节行云图标
+  /// 移除而删除（缓存能力保留于目录 FAB「一键缓存」，缓存轮询不再驱动行内展示）。
   /// 标注列表（BookHighlight JSON 解析后的 Map，经 BookApi.highlightListByBook）
   List<Map<String, dynamic>> _highlights = [];
   bool _highlightsLoading = true;
@@ -105,13 +100,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
     _initBookshelfState();
     _loadSettings();
     _loadHighlights();
-    // 在线书启动缓存态轮询（本地 SQLite 轻量查询；页面销毁自动停止）
-    if (_book.origin != BookType.localTag) {
-      _cachePollTimer = Timer.periodic(
-        const Duration(seconds: 2),
-        (_) => _refreshCachedUrls(),
-      );
-    }
+    // [PARITY C2 T2] 缓存态轮询随章节行云图标移除而删除（缓存能力见 FAB「一键缓存」）。
     // 书签按书名+作者加载（对齐原版 bookmarkDao.getByBook，规避同名书混入，
     // 契约 §2.7 getBookmarksByBook，台账 §5.14-2，Task #65）
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -150,7 +139,6 @@ class _TocScreenState extends ConsumerState<TocScreen>
 
   @override
   void dispose() {
-    _cachePollTimer?.cancel();
     appRouteObserver.unsubscribe(this);
     _debounce?.cancel();
     _tabController.dispose();
@@ -159,26 +147,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
     super.dispose();
   }
 
-  /// 缓存态轮询刷新（轻量查询；列表变化才 setState，避免无谓重建）
-  Future<void> _refreshCachedUrls() async {
-    try {
-      final api = ref.read(bookApiProvider);
-      final cached =
-          (await api.listCachedChapterUrls(_book.bookUrl)).toSet();
-      if (!mounted) return;
-      if (cached.length != _cachedChapterUrls.length ||
-          !cached.containsAll(_cachedChapterUrls)) {
-        setState(() => _cachedChapterUrls = cached);
-      }
-    } catch (_) {
-      // 查询失败静默（保持旧状态，下一轮重试）
-    }
-  }
-
   /// [UI-fix v2.0.7 | 2026-08-09] Task #26：页面重现（从阅读器返回）时刷新。
   /// 对齐原版 ChapterListFragment 经 EventBus.SAVE_CONTENT 增量刷新语义：
-  /// 阅读过程写入 cached_chapters 的章节云图标应变实心，同时同步书籍
-  /// 进度（durChapterIndex/Title）使当前章对勾与底部信息条不陈旧。
+  /// 同步书籍进度（durChapterIndex/Title）使当前章高亮与标题不陈旧。
+  /// [PARITY C2 T2] 原「缓存云图标刷新」随云图标移除而删，现仅刷新书籍进度。
   @override
   void didPopNext() {
     _refreshOnReshow();
@@ -187,14 +159,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
   Future<void> _refreshOnReshow() async {
     try {
       final api = ref.read(bookApiProvider);
-      final cached =
-          (await api.listCachedChapterUrls(_book.bookUrl)).toSet();
       final fresh = await api.getBook(_book.bookUrl);
       if (!mounted) return;
-      setState(() {
-        _cachedChapterUrls = cached;
-        if (fresh != null) _book = fresh;
-      });
+      if (fresh != null) setState(() => _book = fresh);
     } catch (_) {
       // 刷新失败不阻断展示，保持旧状态
     }
@@ -229,16 +196,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
         }
       }
       if (!mounted) return;
-      // [UI-fix v2.0.6 | 2026-08-08] Task #22：加载已缓存章节 url 集合，供每章
-      // 渲染云图标；查询失败不阻断目录展示（降级为全部未缓存态）
-      Set<String> cached = {};
-      try {
-        cached = (await api.listCachedChapterUrls(_book.bookUrl)).toSet();
-      } catch (_) {}
-      if (!mounted) return;
+      // [PARITY C2 T2] 原「加载已缓存章节 url 供云图标渲染」随云图标移除而删除。
       setState(() {
         _chapters = chapters;
-        _cachedChapterUrls = cached;
         _chaptersLoading = false;
       });
       // 初次进入自动滚动定位当前章节（按 index 估算偏移）
@@ -545,10 +505,12 @@ class _TocScreenState extends ConsumerState<TocScreen>
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    // [UI_SYNC_REFACTOR S5 修 | 2026-09-08] 头部对齐参考版：章名大标题 +
-    // 「N / M」进度行（此前为书名；底部信息条保留）— Qoder
+    // [PARITY C2 T3] 头部对齐参考版：章名大标题与「N / M」页码同行（参考为
+    // 「章节名 + 页码」整体大标题，与右侧 🔍/⋮ 分离；此前为两行 Column 堆叠）。
     final currentChapterTitle =
         _book.durChapterTitle?.isNotEmpty == true ? _book.durChapterTitle! : '';
+    final chapterProgressText =
+        '${_book.durChapterIndex + 1} / ${_chapters.isNotEmpty ? _chapters.length : (_book.totalChapterNum > 0 ? _book.totalChapterNum : 0)}';
     return Scaffold(
       appBar: LegadoAppBar(
         title: _searching
@@ -562,20 +524,27 @@ class _TocScreenState extends ConsumerState<TocScreen>
                 onChanged: _onSearchChanged,
               )
             : currentChapterTitle.isNotEmpty
-                ? Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                // [PARITY C2 T3] 章名（主标题）+ 页码（小字）同行，整体作为
+                // AppBar 标题区，与右侧 🔍/⋮ 动作分离（对齐参考大标题形态）。
+                ? Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Text(
-                        currentChapterTitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      Flexible(
+                        child: Text(
+                          currentChapterTitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
+                      const SizedBox(width: 8),
                       Text(
-                        '${_book.durChapterIndex + 1} / ${_chapters.isNotEmpty ? _chapters.length : (_book.totalChapterNum > 0 ? _book.totalChapterNum : 0)}',
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                              color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            ),
+                        chapterProgressText,
+                        style:
+                            Theme.of(context).textTheme.labelSmall?.copyWith(
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onSurfaceVariant,
+                                ),
                       ),
                     ],
                   )
@@ -625,9 +594,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
           _buildHighlightTab(context),
         ],
       ),
-      // 底部操作栏仅目录 Tab 显示（对齐原版 ll_chapter_base_info 属于 ChapterListFragment）
-      bottomNavigationBar:
-          _tabController.index == 0 ? _buildChapterInfoBar(context) : null,
+      // [PARITY C2 T4] 目录底栏「页码 + ↑↓」条已移除（参考无）：跳转顶部/底部与
+      // 定位当前章能力保留于下方目录 FAB 展开菜单（_buildJumpFab）。
       // [UI_SYNC_REFACTOR S5 修 | 2026-09-08] 目录 FAB 展开菜单（对齐参考版）：
       // 定位至当前阅读 / 移至顶部 / 移至底部 / 一键缓存（自当前章入队）。
       // 仅目录 Tab 显示；AnimatedBuilder 保证切页签时显隐即时刷新 — Qoder
@@ -784,8 +752,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
     );
   }
 
-  /// 章节行：当前章节高亮；右侧缓存状态云图标 + 可选字数（受「加载字数」开关控制）
-  /// [UI-fix v2.0.6 | 2026-08-08] Task #22：新增缓存状态云图标（对齐原版 iv_toc_cache） — Qoder
+  /// 章节行：当前章节淡蓝底高亮（[PARITY C2 T5]）；右侧字数胶囊（[PARITY C2 T2]）
+  /// [PARITY C2 T2] 移除行内缓存状态云图标：参考版章节行右侧仅「字数胶囊」，
+  /// 缓存状态自章节行省略（缓存能力保留于目录 FAB「一键缓存」，缓存轮询不变）。
+  /// [PARITY C2 T5] 当前章高亮由「选中加粗+主题色」改为参考版淡蓝整行底。
   Widget _buildChapterRow(BuildContext context, BookChapter chapter) {
     final cs = Theme.of(context).colorScheme;
     final isCurrent = chapter.index == _book.durChapterIndex;
@@ -794,7 +764,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
         _loadWordCount && wordCount != null && wordCount.isNotEmpty;
     return ListTile(
       dense: true,
-      selected: isCurrent,
+      // [PARITY C2 T5] 参考版当前章为淡蓝整行底（量化 ref≈(238,243,253)）：
+      // 用 primary 低透明度铺底替代默认 selected 主题色，文字保持常规色。
+      tileColor: isCurrent ? cs.primary.withValues(alpha: 0.10) : null,
       // [LAYOUT_MOTION_AUDIT L3] 章节行内边距对齐 vertical12 + horizontal8
       //（单行 dense 默认高 48，内容+24 未超限，itemExtent 48 保持有效）
       contentPadding:
@@ -803,18 +775,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
         chapter.title,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontWeight: isCurrent ? FontWeight.bold : FontWeight.normal,
-          color: isCurrent ? cs.primary : null,
-        ),
       ),
-      trailing: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // [UI_SYNC_REFACTOR S5 修 | 2026-09-08] 字数改胶囊 chip（对齐参考版
-          // 「2553字」形态：surfaceContainerHighest 圆角底）— Qoder
-          if (showWordCount) ...[
-            Container(
+      // [PARITY C2 T2] 右侧仅保留字数胶囊（缓存云图标已移除，见函数头注）。
+      trailing: showWordCount
+          ? Container(
               padding:
                   const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
@@ -823,91 +787,17 @@ class _TocScreenState extends ConsumerState<TocScreen>
               ),
               child: Text(
                 '$wordCount 字',
-                style: TextStyle(
-                    fontSize: 11, color: cs.onSurfaceVariant),
+                style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
               ),
-            ),
-            const SizedBox(width: 8),
-          ],
-          _cacheStatusIcon(context, chapter, isCurrent),
-        ],
-      ),
+            )
+          : null,
       // 返回选中章节 index，由调用方走现有阅读跳转链路（对齐原版 openChapter setResult）
       onTap: () => Navigator.of(context).pop(chapter.index),
     );
   }
 
-  /// 章节缓存状态图标（对齐原版 item_chapter_list 的 iv_toc_cache）：
-  /// 当前阅读章 → 对勾高亮；已缓存 → 实心云；未缓存 → 空心云
-  /// [UI-fix v2.0.6 | 2026-08-08] Task #22 — Qoder
-  Widget _cacheStatusIcon(
-      BuildContext context, BookChapter chapter, bool isCurrent) {
-    final cs = Theme.of(context).colorScheme;
-    if (isCurrent) {
-      return Icon(Symbols.check_rounded, size: 18, color: cs.primary);
-    }
-    final cached = _cachedChapterUrls.contains(chapter.url);
-    return Icon(
-      cached ? Symbols.cloud_done_rounded : Symbols.cloud_rounded,
-      size: 18,
-      color: cached ? cs.primary : cs.onSurfaceVariant,
-    );
-  }
-
-  /// 底部操作栏：当前章节名（居左）+ 跳转顶部/底部（居右）
-  /// 对齐原版 fragment_chapter_list 的 ll_chapter_base_info
-  Widget _buildChapterInfoBar(BuildContext context) {
-    final cs = Theme.of(context).colorScheme;
-    final title = _book.durChapterTitle ?? '';
-    final info =
-        '$title(${_book.durChapterIndex + 1}/${_chapters.length})';
-    return SafeArea(
-      top: false,
-      child: Container(
-        color: cs.surfaceContainer,
-        padding: const EdgeInsets.symmetric(horizontal: 12),
-        height: 48,
-        child: Row(
-          children: [
-            Expanded(
-              child: InkWell(
-                // 点击当前章节信息条重新定位（对齐原版 tvCurrentChapterInfo 点击）
-                onTap: () => _scrollToChapter(_book.durChapterIndex),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    info,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(fontSize: 13, color: cs.onSurface),
-                  ),
-                ),
-              ),
-            ),
-            IconButton(
-              icon: const Icon(Symbols.vertical_align_top_rounded),
-              tooltip: '跳转顶部',
-              onPressed: () {
-                if (_tocScrollController.hasClients) {
-                  _tocScrollController.jumpTo(0);
-                }
-              },
-            ),
-            IconButton(
-              icon: const Icon(Symbols.vertical_align_bottom_rounded),
-              tooltip: '跳转底部',
-              onPressed: () {
-                if (_tocScrollController.hasClients) {
-                  _tocScrollController.jumpTo(
-                      _tocScrollController.position.maxScrollExtent);
-                }
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
+  // [PARITY C2 T4] 原「目录底栏：当前章节名 + 跳转顶部/底部」已移除（参考无底栏）；
+  // 跳转顶部/底部与定位当前章能力保留于目录 FAB 展开菜单（_buildJumpFab）。
 
   // ===== 书签 Tab（对齐原版 BookmarkFragment，样式复用 bookmark_screen） =====
 

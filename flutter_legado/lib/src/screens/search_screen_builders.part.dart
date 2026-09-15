@@ -8,12 +8,21 @@ part of 'search_screen.dart';
 // 本文件所有方法均运行于 State 自身（this），受保护访问语义安全。
 // ignore_for_file: invalid_use_of_protected_member
 
-/// [PARITY C1 S2] 空数据判定：空串或 "NaN"（书源规则未返回数值时
-/// JS 侧可能字符串化出 "NaN"）均视为无数据，副标题行/标签不渲染
+/// [C2 N1] 是否残留未渲染的书源模板变量（`{{...}}` 或 `{$...}` 占位，
+/// 如 ngmlc 源 kind 规则 `{{$.categoryInfoV4##...}}` 未命中时残留的
+/// `{{$categoryInfoV4}}`）。合法正文/标签不含此类占位，命中即脏数据。
+bool _hasUnrenderedTemplate(String v) =>
+    RegExp(r'\{\{.*?\}\}|\{\$[^}]*\}').hasMatch(v);
+
+/// [PARITY C1 S2 / C2 N1] 空数据判定：空串、"NaN"（书源规则未返回数值时
+/// JS 侧可能字符串化出 "NaN"）或未渲染书源模板串（`{{...}}`/`{$...}` 占位）
+/// 均视为无数据，副标题行/标签/简介不渲染
 bool _isMeaningfulText(String? value) {
   final v = value?.trim() ?? '';
   if (v.isEmpty) return false;
-  return v.toUpperCase() != 'NaN';
+  if (v.toUpperCase() == 'NaN') return false;
+  // [C2 N1] 未渲染书源模板变量残留视为脏数据，不渲染
+  return !_hasUnrenderedTemplate(v);
 }
 
 extension _SearchBuilders on _SearchScreenState {
@@ -577,7 +586,8 @@ extension _SearchBuilders on _SearchScreenState {
                       ),
                     ),
                   // 简介（对标 tv_introduce 12sp 最多 3 行）
-                  if (book.intro != null && book.intro!.isNotEmpty)
+                  // [C2 N1] 未渲染书源模板串（如 `{{$categoryInfoV4}}`）不渲染
+                  if (_isMeaningfulText(book.intro))
                     Padding(
                       padding: const EdgeInsets.only(top: 6),
                       child: Text(
