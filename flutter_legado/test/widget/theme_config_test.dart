@@ -33,8 +33,23 @@ void main() {
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
-    // 内置主题网格置顶：默认 WH 选中（12 套，纯白在列）
+    // [B3-C1 A2/A3] 预览卡下方新增配色轮卡（含长按提示）与「主题导出/导入」区
+    expect(find.text('配色轮'), findsOneWidget);
+    expect(find.text('长按配色轮自定义配色'), findsOneWidget);
+    await tester
+        .dragUntilVisible(find.text('导出主题'), find.byType(ListView),
+            const Offset(0, -120));
+    await tester.pumpAndSettle();
+    expect(find.text('导出主题'), findsOneWidget);
+    expect(find.text('导入主题'), findsOneWidget);
+
+    // 内置主题网格（[B3-C1 A6] 分区卡：位于预览卡/配色轮/导出导入区下方，
+    // 惰性列表需滚动到可见区再断言）：默认 WH 选中（12 套，纯白在列）
     expect(find.text('内置主题'), findsOneWidget);
+    await tester
+        .dragUntilVisible(find.text('纯白'), find.byType(ListView),
+            const Offset(0, -120));
+    await tester.pumpAndSettle();
     expect(find.text('纯白'), findsOneWidget);
     expect(find.text('小春'), findsOneWidget);
     expect(find.text('墨水'), findsOneWidget);
@@ -64,6 +79,12 @@ void main() {
 
     // 默认调色板为 WH（纯白）
     expect(container.read(themeNotifierProvider).paletteId, equals('wh'));
+
+    // [B3-C1 A6] 网格位于预览卡/配色轮/导出导入区下方，先滚动到可见区
+    await tester
+        .dragUntilVisible(find.text('小春'), find.byType(ListView),
+            const Offset(0, -120));
+    await tester.pumpAndSettle();
 
     // 点按「小春」（koharu）→ paletteId 更新并持久化
     await tester.tap(find.text('小春'));

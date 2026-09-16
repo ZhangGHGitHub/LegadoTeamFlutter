@@ -6,6 +6,7 @@
 // Android 专属项持久化并以灰字"仅 Android 生效"标注；
 // 视觉保持 iOS 分组卡片风格（IosGroup/IosListTile） — Qoder
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
@@ -654,9 +655,47 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     colorScheme: Theme.of(context).colorScheme,
                     paletteLabel: _previewPaletteLabel(themeState, colors),
                   ),
+                  // === [B3-C1 A2 | 全栈工程师 + UI] 配色轮卡（对齐 ref 04 中部：
+                  // 彩虹环 + 「长按配色轮自定义配色」提示）。自由自定义配色（HSV
+                  // 任意取色）未实现 → 轮盘仅视觉呈现 + 长按打开现有预设主色调
+                  // 选择器（真实可用能力），能力缺口登记台账，不做伪功能；
+                  // 卡底/文字走主题槽位，环心为当前 primary（深浅两态自动渲染） ===
+                  _ColorWheelCard(
+                    onLongPress: () {
+                      final isDarkNow = Theme.of(context).brightness ==
+                          Brightness.dark;
+                      _showColorPicker(
+                        isDarkNow ? PrefKeys.cNPrimary : PrefKeys.cPrimary,
+                        isDarkNow ? '夜间主色调' : '主色调',
+                        isNight: isDarkNow,
+                        isBackground: false,
+                      );
+                    },
+                  ),
+                  // === [B3-C1 A3 | 全栈工程师 + UI] 导出/导入主题（先 grep 确认
+                  // 无文件级导入导出能力，最小实现：导出当前配色 JSON / 导入应用；
+                  // 复用 ThemeColorsNotifier.applyColors + ThemeNotifier，
+                  // 全部经主题槽位，无硬编码色值） ===
+                  const IosSectionHeader('主题导出/导入'),
+                  IosGroup(
+                      children: [
+                    IosListTile(
+                      icon: Symbols.ios_share_rounded,
+                      title: '导出主题',
+                      subtitle: '将当前配色导出为 JSON 文件',
+                      onTap: _exportTheme,
+                    ),
+                    IosListTile(
+                      icon: Symbols.download_rounded,
+                      title: '导入主题',
+                      subtitle: '导入主题 JSON 文件并应用',
+                      onTap: _importTheme,
+                    ),
+                  ]),
                   // === 内置主题（UI_MD3_PLAN.md Batch 1：12 套 MD3 preset
                   // 选择器，paletteId 持久化；与下方自定义主题并存，自定义
                   // 已应用 4 色优先——第九节并存模型） ===
+                  // [B3-C1 A6] 分区卡结构：分区标题 + 12 色卡网格保留，A4/A5 不动
                   const IosSectionHeader('内置主题'),
                   _BuiltinPaletteGrid(
                     selectedId: themeState.paletteId,
@@ -665,9 +704,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // === [UI_SYNC_REFACTOR S4] 主题引擎参数化（对齐参考
                   // ThemeEngine：paletteStyle 9 档 + 对比度 + AMOLED；
                   // seed=自定义主色（未设时取当前内置色板锚点）） ===
+                  // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   const IosSectionHeader('主题引擎'),
                   IosGroup(
-                      flat: true,
                       children: [
                     IosListTile(
                       title: '配色风格',
@@ -691,8 +730,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   ]),
 
                   // === 通用（对齐原版顶部未分组项；主题模式仅在「我的」枢纽）===
+                  // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
-                      flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                       children: [
                     // 更换桌面图标（对齐原版 change_icon；Android/iOS 支持，
                     // Windows 等桌面端无运行时换图标能力时整项隐藏）
@@ -794,8 +833,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // === [UI_SYNC_REFACTOR B2] 顶栏与布局（对齐参考仓
                   // ThemeConfig 顶栏组；设置经 uiSettings 即时全局生效） ===
                   const IosSectionHeader('顶栏与布局'),
+                  // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
-                      flat: true,
                       children: [
                     IosListTile(
                       title: '顶栏按钮样式',
@@ -828,8 +867,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // === [UI_SYNC_REFACTOR B3] 底栏与导航（对齐参考仓
                   // MainNavigationSettingsSheet；设置即时全局生效） ===
                   const IosSectionHeader('底栏与导航'),
+                  // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
-                      flat: true,
                       children: [
                     SwitchListTile(
                       title: const Text('显示底栏'),
@@ -866,8 +905,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
 
                   // === [UI_SYNC_REFACTOR B6] 详情与圆角 ===
                   const IosSectionHeader('详情与圆角'),
+                  // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
-                      flat: true,
                       children: [
                     SwitchListTile(
                       title: const Text('跟随封面取色'),
@@ -907,8 +946,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // === [UI_SYNC_REFACTOR R1] 毛玻璃（对齐参考仓 blur 家族；
                   // 默认关——低端机掉帧保护，开启后顶栏/悬浮底栏/详情背景生效） ===
                   const IosSectionHeader('毛玻璃'),
+                  // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
-                      flat: true,
                       children: [
                     SwitchListTile(
                       title: const Text('启用毛玻璃'),
@@ -938,8 +977,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // === 自定义主题·白天（对齐原版 day category，themeConfigList
                   // 功能完整保留——UI_MD3_PLAN.md 第九节） ===
                   const IosSectionHeader('自定义主题 · 白天'),
+                  // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
-                      flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                       children: [
                     _colorTile(PrefKeys.cPrimary, '主色调', colors),
                     _colorTile(PrefKeys.cAccent, '强调色', colors),
@@ -971,8 +1010,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
 
                   // === 自定义主题·夜间（对齐原版 night category）===
                   const IosSectionHeader('自定义主题 · 夜间'),
+                  // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
-                      flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                       children: [
                     _colorTile(PrefKeys.cNPrimary, '主色调', colors,
                         isNight: true),
@@ -1396,6 +1435,129 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     });
     await _settings.setStringPref(_themeListKey, jsonEncode(list));
     _toast('已保存主题「$name」');
+  }
+
+  // ===== [B3-C1 A3 | 全栈工程师 + UI] 导出/导入主题（文件级最小实现） =====
+  // grep 结论：既有能力仅有 SharedPreferences 内 themeConfigList 保存/应用
+  // 与 association 关联导入（数据级），无文件级导入导出 → 此处最小实现：
+  // 导出当前配色 JSON / 导入应用。颜色值全部来自主题槽位
+  // （ThemeColorsState 的 ARGB int + paletteId + themeMode），无硬编码色值。
+
+  /// ThemeMode → JSON 名称
+  static String _themeModeName(ThemeMode mode) => switch (mode) {
+        ThemeMode.light => 'light',
+        ThemeMode.dark => 'dark',
+        _ => 'system',
+      };
+
+  /// 导出当前配色为 JSON 文件（paletteId + 主题模式 + 日/夜 4 色组）
+  Future<void> _exportTheme() async {
+    final colors = ref.read(themeColorsProvider);
+    final themeState = ref.read(themeNotifierProvider);
+    final payload = <String, dynamic>{
+      'app': 'legado',
+      'type': 'theme',
+      'version': 1,
+      'paletteId': themeState.paletteId,
+      'themeMode': _themeModeName(themeState.themeMode),
+      'day': <String, int?>{
+        'primary': colors.primary,
+        'accent': colors.accent,
+        'background': colors.background,
+        'bottomBackground': colors.bottomBackground,
+      },
+      'night': <String, int?>{
+        'primary': colors.primaryNight,
+        'accent': colors.accentNight,
+        'background': colors.backgroundNight,
+        'bottomBackground': colors.bottomBackgroundNight,
+      },
+    };
+    final path = await FilePicker.platform.saveFile(
+      dialogTitle: '导出主题',
+      fileName: 'legado_theme.json',
+    );
+    if (path == null || !mounted) return;
+    try {
+      await File(path).writeAsString(
+        const JsonEncoder.withIndent('  ').convert(payload),
+      );
+      _toast('主题已导出');
+    } catch (e) {
+      debugPrint('ThemeConfigScreen._exportTheme 写入异常: $e');
+      if (mounted) _toast('导出失败：$e');
+    }
+  }
+
+  /// 导入主题 JSON 并应用（日/夜颜色组 + paletteId + 主题模式）
+  Future<void> _importTheme() async {
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: '导入主题',
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+    );
+    final path = result?.files.single.path;
+    if (path == null || !mounted) return;
+    dynamic decoded;
+    try {
+      decoded = jsonDecode(await File(path).readAsString());
+    } catch (e) {
+      debugPrint('ThemeConfigScreen._importTheme 解析异常: $e');
+      _toast('导入失败：主题文件格式不正确');
+      return;
+    }
+    if (decoded is! Map<String, dynamic>) {
+      _toast('导入失败：主题文件格式不正确');
+      return;
+    }
+
+    final notifier = ref.read(themeColorsProvider.notifier);
+    // 日/夜颜色组：缺省组整组恢复默认（null 清除），保证导入结果确定
+    final dayMap = decoded['day'] is Map<String, dynamic>
+        ? (decoded['day'] as Map<String, dynamic>)
+        : const <String, dynamic>{};
+    final nightMap = decoded['night'] is Map<String, dynamic>
+        ? (decoded['night'] as Map<String, dynamic>)
+        : const <String, dynamic>{};
+    int? intOf(Map<String, dynamic> m, String k) {
+      final v = m[k];
+      return v is int ? v : (v is num ? v.toInt() : null);
+    }
+
+    await notifier.applyColors({
+      PrefKeys.cPrimary: intOf(dayMap, 'primary'),
+      PrefKeys.cAccent: intOf(dayMap, 'accent'),
+      PrefKeys.cBackground: intOf(dayMap, 'background'),
+      PrefKeys.cBBackground: intOf(dayMap, 'bottomBackground'),
+      PrefKeys.cNPrimary: intOf(nightMap, 'primary'),
+      PrefKeys.cNAccent: intOf(nightMap, 'accent'),
+      PrefKeys.cNBackground: intOf(nightMap, 'background'),
+      PrefKeys.cNBBackground: intOf(nightMap, 'bottomBackground'),
+    });
+
+    // paletteId（未知 id 经 Md3Palettes.byId 回退默认 WH，安全）
+    final paletteId = decoded['paletteId'];
+    if (paletteId is String && paletteId.isNotEmpty) {
+      await ref.read(themeNotifierProvider.notifier).setPaletteId(paletteId);
+    }
+    // 主题模式（未知值忽略）
+    switch (decoded['themeMode']) {
+      case 'light':
+        await ref.read(themeNotifierProvider.notifier).setThemeMode(
+              ThemeMode.light,
+            );
+      case 'dark':
+        await ref.read(themeNotifierProvider.notifier).setThemeMode(
+              ThemeMode.dark,
+            );
+      case 'system':
+        await ref.read(themeNotifierProvider.notifier).setThemeMode(
+              ThemeMode.system,
+            );
+      default:
+        break;
+    }
+    if (mounted) _toast('主题已导入');
   }
 
   /// 背景图片选择/删除（对齐原版 backgroundImage；经 ThemeColorsNotifier
@@ -2235,4 +2397,130 @@ class _PaletteDots extends StatelessWidget {
       ),
     );
   }
+}
+
+/// [B3-C1 A2] 配色轮卡（对齐 ref 04 中部配色轮区）
+///
+/// 配色轮环（12 段当前主题色调 SweepGradient，全部取自 ColorScheme 主题
+/// 槽位，禁硬编码色值，深浅两态随主题自动渲染）+「长按配色轮自定义配色」
+/// 提示；环心为当前 primary。自由取色（HSV 任意自定义配色）能力未实现
+/// ——缺口登记台账；长按经 [onLongPress] 接现有预设主色调选择器
+/// （真实能力，非伪功能）。
+class _ColorWheelCard extends StatelessWidget {
+  /// 长按动作（接预设主色调选择器）
+  final VoidCallback onLongPress;
+
+  const _ColorWheelCard({required this.onLongPress});
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    // 环上 12 段色相全部来自主题槽位（primary/secondary/tertiary 及
+    // container 系 + 中性槽），深浅两态自动跟随
+    final tones = [
+      cs.primary,
+      cs.primaryContainer,
+      cs.secondary,
+      cs.secondaryContainer,
+      cs.tertiary,
+      cs.tertiaryContainer,
+      cs.error,
+      cs.errorContainer,
+      cs.surfaceContainerHighest,
+      cs.outline,
+      cs.onSurfaceVariant,
+      cs.surface,
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: Card(
+        elevation: 0,
+        color: cs.surfaceContainerLow,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+          child: Row(
+            children: [
+              GestureDetector(
+                onLongPress: onLongPress,
+                child: CustomPaint(
+                  size: const Size(84, 84),
+                  painter: _ColorWheelPainter(tones: tones, primary: cs.primary),
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('配色轮', style: textTheme.titleSmall),
+                    const SizedBox(height: 6),
+                    Text(
+                      '长按配色轮自定义配色',
+                      style: textTheme.bodyMedium
+                          ?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '长按可快速切换主色调（预设色板）',
+                      style: textTheme.labelSmall
+                          ?.copyWith(color: cs.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 配色轮绘制：12 段主题色调 SweepGradient 环 + 环心当前 primary
+class _ColorWheelPainter extends CustomPainter {
+  /// 环上 12 段色调（主题槽位，顺序即轮上顺序）
+  final List<Color> tones;
+
+  /// 环心色（当前生效 primary）
+  final Color primary;
+
+  _ColorWheelPainter({required this.tones, required this.primary});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = size.center(Offset.zero);
+    final radius = size.width / 2;
+    final strokeWidth = size.width * 0.16;
+    final ringRadius = radius - strokeWidth / 2 - 1;
+
+    // 12 段色调首尾相接成环（13 锚点）
+    final n = tones.length;
+    final colors = [...tones, tones.first];
+    final stops = List<double>.generate(n + 1, (i) => i / n);
+    final ringPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = strokeWidth
+      ..shader = SweepGradient(
+        colors: colors,
+        stops: stops,
+      ).createShader(Rect.fromCircle(center: center, radius: radius));
+    canvas.drawCircle(center, ringRadius, ringPaint);
+    ringPaint.shader?.dispose();
+
+    // 环心：当前 primary（主题槽位）
+    canvas.drawCircle(
+      center,
+      ringRadius - strokeWidth / 2,
+      Paint()..color = primary,
+    );
+  }
+
+  @override
+  bool shouldRepaint(_ColorWheelPainter oldDelegate) =>
+      oldDelegate.primary != primary ||
+      oldDelegate.tones.length != tones.length ||
+      List.generate(tones.length, (i) => oldDelegate.tones[i] != tones[i])
+          .any((d) => d);
 }

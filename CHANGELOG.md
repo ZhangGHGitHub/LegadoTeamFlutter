@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.267] - 2026-09-16
+
+### Fixed
+- [UI] 外观页分区卡片化（B3-C1 A6 P2，台账 3-4，基准 docs/parity_shots/ref_batch3/04_appearance.png + 04_appearance_dark.png）：页内 8 组（主题引擎/通用/顶栏与布局/底栏与导航/详情与圆角/毛玻璃/自定义主题·白天/自定义主题·夜间）由 IosGroup 扁平行式罗列改**每区独立圆角卡**（surfaceContainer 16dp 卡底 + 行内 4dp surfaceContainerLow 子卡）；12 色卡网格与主题模式区按用户口径不变（勿动）
+- [UI] 外观页新增「配色轮」卡（B3-C1 A2 P2）：84dp 环 12 段取当前主题 ColorScheme 色调槽位（primary/secondary/tertiary/error 及其 container + outline/onSurfaceVariant/surface 等，**无硬编码色值**，深浅两态自动渲染）+「长按配色轮自定义配色」提示；长按接现有预设主色调选择器（按当前亮暗态接白天/夜间 primary，真实可用能力）。自由自定义配色（HSV 取色）代码库无实现 → **台账登记能力缺口，不做伪功能**
+- [UI] 外观页新增「主题导出/导入」（B3-C1 A3 P2；grep 确认代码库无文件级主题导入导出能力 → **最小实现**）：导出=当前配色（paletteId + themeMode + day/night 各 4 色组）经 FilePicker 存 JSON；导入=JSON 回读经 `ThemeColorsNotifier.applyColors` + `ThemeNotifier`（paletteId/themeMode）一键应用，类型安全解析（int/num 显式转型）+ 失败 toast，全程走主题槽位
+- [UI] 外观预览卡（B3-C1 A1 P2）核实为既有实现（C6 批已上线）→ 保留不动
+- [台账] M4 标签规则：grep 原版 app/+modules/ 与 flutter_legado/lib 零命中 → 定案=登记缺口不新建；N6 Tt 字体页：docs/ 与 git 历史无用户授权记录 → 登记**待裁决项**（勿删勿改，交主代理裁决）
+
+### Test
+- `flutter analyze` 无问题；`flutter test` 全过（1449 例；回归套件同步：`theme_config_test.dart` 两用例因新增配色轮卡+导出/导入区下移 12 色卡网格（惰性列表），断言/点按前先 `dragUntilVisible` 滚到可见区，并新增配色轮卡（含长按提示）与导出/导入行断言）
+
+### Real device
+- release 2.0.267+268 APK 装 MuMu（192.168.1.19:5555，adb D:/leidian/LDPlayer9/adb.exe），versionName=2.0.267 校验通过；`scripts/parity_capture_ours.py --only 04_appearance` + `--only 04_appearance_dark` 2/2 屏 OK，截图 docs/parity_shots/ours_2.0.267/{04_appearance,04_appearance_dark}.png（深色像素门控灰度均值 34.2 < 90 ✓ 采集后恢复「跟随系统」）；配色值对齐属阶段 D 本批不做
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.266] - 2026-09-16
 
 ### Fixed
