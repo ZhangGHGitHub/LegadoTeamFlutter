@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.269] - 2026-09-17
+
+### Fixed
+- [UI] 外观页移除「外观预览」区块（**用户裁决，B3-C1 同源误判产物**，台账 3-4/A1）：外观页（主题设置页）顶部「外观预览」模型区块（手机模型缩略图 + 当前色卡名 + 联动说明）经用户裁决**一并移除**——溯源确认该区块系 C6 批次低优增强建议产物（引入提交 b03c2ba444「主题设置页新增外观预览模型」2.0.230+231，建议项出自批 D `204dd81e20` C6 行），**无独立用户授权记录**，与「配色轮」（2.0.268 移除的 B3-C1 A2 误判证据产物）同类；删除 `_ThemePreviewCard` 与 `_previewPaletteLabel` 及列表首项挂点，**其余区块不动**（主题设置通用项 / 内置主题 12 色卡网格 / 主题导出导入 / 主题模式入口均保留）
+
+### Test
+- `flutter analyze` 无问题；`flutter test` 全过（回归套件同步：`theme_config_test.dart` 删除预览卡相关断言/注释，新增「外观预览」负向断言 `findsNothing`，「导出主题/导入主题/内置主题」正向断言保留）
+
+### Real device
+- release 2.0.269+270 APK 装 MuMu（192.168.1.19:5555，adb D:/leidian/LDPlayer9/adb.exe），versionName=2.0.269 校验通过；截图 docs/parity_shots/ours_2.0.269/04_appearance.png（dump 断言：外观页「外观预览」=0 且「内置主题/导出主题」在；截图上部程序化抽验无手机模型剪影特征）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.268] - 2026-09-17
 
 ### Fixed
