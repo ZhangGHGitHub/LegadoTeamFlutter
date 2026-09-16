@@ -22,7 +22,7 @@ mixin _$ThemeState {
   /// 字体缩放原始值（0 = 跟随系统；8~16 → 0.8x~1.6x）
   int get fontScaleRaw => throw _privateConstructorUsedError;
 
-  /// 内置 MD3 调色板 id（Md3Palettes.byId 消费；未知值回退 WH）
+  /// 内置 MD3 调色板 id（Md3Palettes.byId 消费；未知值回退默认 def）
   String get paletteId => throw _privateConstructorUsedError;
 
   @JsonKey(ignore: true)
@@ -122,7 +122,7 @@ class _$ThemeStateImpl implements _ThemeState {
   const _$ThemeStateImpl(
       {this.themeMode = ThemeMode.system,
       this.fontScaleRaw = 0,
-      this.paletteId = 'wh'});
+      this.paletteId = 'def'});
 
   /// 主题模式（亮/暗/跟随系统）
   @override
@@ -134,7 +134,7 @@ class _$ThemeStateImpl implements _ThemeState {
   @JsonKey()
   final int fontScaleRaw;
 
-  /// 内置 MD3 调色板 id（Md3Palettes.byId 消费；未知值回退 WH）
+  /// 内置 MD3 调色板 id（Md3Palettes.byId 消费；未知值回退默认 def）
   @override
   @JsonKey()
   final String paletteId;
@@ -184,7 +184,7 @@ abstract class _ThemeState implements ThemeState {
   int get fontScaleRaw;
   @override
 
-  /// 内置 MD3 调色板 id（Md3Palettes.byId 消费；未知值回退 WH）
+  /// 内置 MD3 调色板 id（Md3Palettes.byId 消费；未知值回退默认 def）
   String get paletteId;
   @override
   @JsonKey(ignore: true)

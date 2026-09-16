@@ -221,7 +221,7 @@ class SettingsService {
 
   // ===== 内置 MD3 调色板 =====
 
-  /// 内置 MD3 调色板 id（对应 [Md3Palettes] 的 id；未知值由 byId 回退 WH）
+  /// 内置 MD3 调色板 id（对应 [Md3Palettes] 的 id；未知值由 byId 回退默认 def）
   Future<String> getPaletteId() async {
     try {
       final prefs = await SharedPreferences.getInstance();

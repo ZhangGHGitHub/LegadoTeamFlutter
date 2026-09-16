@@ -186,9 +186,9 @@ void main() {
   });
 
   group('ThemeNotifier 内置 MD3 调色板（UI_MD3_PLAN.md Batch 0）', () {
-    test('默认调色板为 wh', () {
+    test('默认调色板为 def「默认」（阶段D 2.0.270 起）', () {
       createContainer();
-      expect(readState().paletteId, equals('wh'));
+      expect(readState().paletteId, equals('def'));
     });
 
     test('build 自动读取已保存的调色板 id', () async {
@@ -210,13 +210,14 @@ void main() {
       await pumpInit();
       var notified = 0;
       container.listen(themeNotifierProvider, (_, _) => notified++);
-      await readNotifier().setPaletteId('wh');
+      // 默认值为 def「默认」，相同值写入不通知
+      await readNotifier().setPaletteId('def');
       expect(notified, equals(0));
     });
 
     test('加载完成前设置调色板：以用户操作为准，不被旧持久化值覆盖', () async {
       // 回归：ThemeNotifier.build() 经微任务异步加载，若加载 await 序列
-      // 完成晚于用户 setPaletteId，旧持久化值（默认 wh）曾把新状态覆盖回。
+      // 完成晚于用户 setPaletteId，旧持久化值（默认 def）曾把新状态覆盖回。
       createContainer();
       container.read(themeNotifierProvider); // 触发 build()，调度加载微任务
       await readNotifier().setPaletteId('koharu');

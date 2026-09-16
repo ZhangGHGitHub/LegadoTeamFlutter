@@ -45,8 +45,10 @@ class _LegadoAndroidTransitionsBuilder extends PageTransitionsBuilder {
 /// 应用主题定义（Material Design 3 Expressive）
 ///
 /// 集中管理按调色板装配的 light/dark ThemeData（UI_MD3_PLAN.md Batch 0）：
-/// - 12 套内置 MD3 tonal 调色板（[Md3Palettes]，默认 WH）+ 用户自定义 4 色
-///   （themeConfigList 功能完整保留，自定义已应用颜色优先于内置 palette role）
+/// - 13 套内置 MD3 tonal 调色板（[Md3Palettes]，默认 def「默认」，
+///   阶段D 2.0.270 对齐 kazusa 源码色值；WH 纯白等 12 套保留可切换）
+///   + 用户自定义 4 色（themeConfigList 功能完整保留，
+///   自定义已应用颜色优先于内置 palette role）
 /// - Expressive 大圆角经 component theme 显式落地：卡片 20 / 控件 12 /
 ///   弹窗与底板 28（M3 shape scale 无单一 preset，见计划第七节映射）
 /// - Tonal Surface 层次：surfaceContainerLow/Medium/High + 低 elevation
@@ -73,15 +75,17 @@ class AppTheme {
   /// 圆角：弹窗 / 底部抽屉（M3 extraLarge 28）
   static const double _extraLargeRadius = 28.0;
 
-  /// 亮色主题（默认调色板 WH）
+  /// 亮色主题（默认调色板 def「默认」，阶段D 2.0.270 对齐 kazusa
+  /// 「默认」源码色值；原 WH 回退路径语义保留——未知 paletteId 仍由
+  /// Md3Palettes.byId 回退，未设自定义色时全量使用内置 palette role）
   static ThemeData get light =>
-      palette(brightness: Brightness.light, palette: Md3Palettes.wh);
+      palette(brightness: Brightness.light, palette: Md3Palettes.def);
 
-  /// 暗色主题（默认调色板 WH）
+  /// 暗色主题（默认调色板 def「默认」，暗色锚定 kazusa「黑白」套）
   static ThemeData get dark =>
-      palette(brightness: Brightness.dark, palette: Md3Palettes.wh);
+      palette(brightness: Brightness.dark, palette: Md3Palettes.def);
 
-  /// 亮色主题（支持用户自定义颜色，null 项回退内置默认）
+  /// 亮色主题（支持用户自定义颜色，null 项回退内置默认 def）
   static ThemeData lightCustom({
     Color? primary,
     Color? accent,
@@ -90,7 +94,7 @@ class AppTheme {
   }) {
     return palette(
       brightness: Brightness.light,
-      palette: Md3Palettes.wh,
+      palette: Md3Palettes.def,
       primary: primary,
       accent: accent,
       background: background,
@@ -98,7 +102,7 @@ class AppTheme {
     );
   }
 
-  /// 暗色主题（支持用户自定义颜色，null 项回退内置默认）
+  /// 暗色主题（支持用户自定义颜色，null 项回退内置默认 def）
   static ThemeData darkCustom({
     Color? primary,
     Color? accent,
@@ -107,7 +111,7 @@ class AppTheme {
   }) {
     return palette(
       brightness: Brightness.dark,
-      palette: Md3Palettes.wh,
+      palette: Md3Palettes.def,
       primary: primary,
       accent: accent,
       background: background,

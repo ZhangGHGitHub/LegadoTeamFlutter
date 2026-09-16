@@ -46,7 +46,7 @@ void main() {
     expect(find.text('外观预览'), findsNothing);
 
     // 内置主题网格（[B3-C1 A6] 分区卡：位于导出导入区下方，
-    // 惰性列表需滚动到可见区再断言）：默认 WH 选中（12 套，纯白在列）
+    // 惰性列表需滚动到可见区再断言）：默认 def「默认」选中（13 套）
     expect(find.text('内置主题'), findsOneWidget);
     await tester
         .dragUntilVisible(find.text('纯白'), find.byType(ListView),
@@ -79,8 +79,8 @@ void main() {
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
-    // 默认调色板为 WH（纯白）
-    expect(container.read(themeNotifierProvider).paletteId, equals('wh'));
+    // 默认调色板为 def「默认」（阶段D 2.0.270 起；纯白等 12 套保留可切换）
+    expect(container.read(themeNotifierProvider).paletteId, equals('def'));
 
     // [B3-C1 A6] 网格位于导出导入区下方，先滚动到可见区
     await tester

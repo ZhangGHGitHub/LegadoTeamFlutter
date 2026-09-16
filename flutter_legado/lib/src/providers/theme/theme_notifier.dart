@@ -81,7 +81,7 @@ class ThemeNotifier extends Notifier<ThemeState> {
   }
 
   /// 设置内置 MD3 调色板（UI_MD3_PLAN.md Batch 0：全局实时生效 + 持久化；
-  /// 未知 id 由 Md3Palettes.byId 回退 WH，不写入非法值）
+  /// 未知 id 由 Md3Palettes.byId 回退默认 def，不写入非法值）
   Future<void> setPaletteId(String id) async {
     if (state.paletteId == id) return;
     _mutationGeneration++;

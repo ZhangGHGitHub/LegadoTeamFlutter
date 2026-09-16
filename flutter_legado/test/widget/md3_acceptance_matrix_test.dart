@@ -221,7 +221,7 @@ void main() {
       addTearDown(tester.view.reset);
       await tester.pumpWidget(buildApp('wh', ThemeMode.light));
       await tester.pumpAndSettle();
-      // 12 套调色板的中文标签均可被语义化查找
+      // 13 套调色板的中文标签均可被语义化查找
       for (final p in Md3Palettes.all) {
         expect(find.text(p.label), findsWidgets, reason: '${p.id} 标签缺失');
       }

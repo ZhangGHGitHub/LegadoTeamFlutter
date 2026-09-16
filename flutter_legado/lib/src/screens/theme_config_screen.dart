@@ -664,10 +664,10 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       onTap: _importTheme,
                     ),
                   ]),
-                  // === 内置主题（UI_MD3_PLAN.md Batch 1：12 套 MD3 preset
+                  // === 内置主题（UI_MD3_PLAN.md Batch 1：13 套 MD3 preset
                   // 选择器，paletteId 持久化；与下方自定义主题并存，自定义
                   // 已应用 4 色优先——第九节并存模型） ===
-                  // [B3-C1 A6] 分区卡结构：分区标题 + 12 色卡网格保留，A4/A5 不动
+                  // [B3-C1 A6] 分区卡结构：分区标题 + 13 色卡网格保留，A4/A5 不动
                   const IosSectionHeader('内置主题'),
                   _BuiltinPaletteGrid(
                     selectedId: themeState.paletteId,
@@ -1507,7 +1507,7 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       PrefKeys.cNBBackground: intOf(nightMap, 'bottomBackground'),
     });
 
-    // paletteId（未知 id 经 Md3Palettes.byId 回退默认 WH，安全）
+    // paletteId（未知 id 经 Md3Palettes.byId 回退默认 def，安全）
     final paletteId = decoded['paletteId'];
     if (paletteId is String && paletteId.isNotEmpty) {
       await ref.read(themeNotifierProvider.notifier).setPaletteId(paletteId);
@@ -2058,7 +2058,8 @@ class _CoverRuleConfigDialogState extends State<_CoverRuleConfigDialog> {
   }
 }
 
-/// 内置 MD3 调色板选择网格（UI_MD3_PLAN.md Batch 1「内置 12 主题」区）
+/// 内置 MD3 调色板选择网格（UI_MD3_PLAN.md Batch 1「内置 13 主题」区，
+/// 阶段D 2.0.270 起 13 套：def「默认」为默认选中，wh 纯白等 12 套保留）
 ///
 /// 每张卡片左半为亮色预览、右半为暗色预览（tonal 配对），底部显示
 /// 中文主题名；选中项描边 + 调色板主色对勾。点按经 [ThemeNotifier]

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.270] - 2026-09-17
+
+### Fixed
+- [UI] 阶段 D 最终对齐：默认主题对齐 kazusa「默认」调色板（目标色值取 kazusa `themeConfig.json` 源码原文，零采样；台账阶段 D 0917 裁决④）：新增第 13 套内置 MD3 调色板 `def`「默认」（完整 47 槽位 Md3Roles）——亮色锚点 primary `#795548` / accent→secondary `#E53935` / backgroundColor→surface `#F5F5F5` / bottomBackground→surfaceContainer `#EEEEEE`；暗色按「黑白」套（`#303030/#E0E0E0/#424242/#424242`）锚点推导：surface `#424242` / surfaceContainerLowest `#343434` / primary `#D9CFCE` / secondary `#E2C7C4` / primaryContainer `#5F443E`；`Md3Palettes` 默认切 `def`（`defaultId='def'`，`all` 列尾追加，`byId` 未知 id 回退 def 语义保留）；`app_theme.dart` light/dark/lightCustom/darkCustom 四处 `Md3Palettes.wh` 引用改 `def`；「纯白」等原 12 套原值全部保留可切换（wh 仍在列首）
+
+### Test
+- `flutter analyze` 无问题（0）；`flutter test` 全过（1452 例；回归套件同步：`md3_palette_test.dart` 12→13 套计数/默认 id 断言改 def/新增 def 锚点色值断言/WCAG 全矩阵 13×亮暗，`theme_config_test.dart`+`theme_provider_test.dart`+`settings_service_test.dart` 默认调色板断言 wh→def（「相同值不触发通知」用例同步改设 def），`md3_acceptance_matrix_test.dart` 注释同步；13 色卡网格：4 列布局第 13 格（def）自然换行至第 4 行，无溢出）
+
+### Real device
+- release 2.0.270+271 APK 装 MuMu（192.168.1.19:5555，adb D:/leidian/LDPlayer9/adb.exe），versionName=2.0.270 校验通过；`scripts/parity_capture_ours.py --only 01_mine,04_appearance` 2/2 屏 OK，截图 docs/parity_shots/ours_2.0.270/{01_mine,04_appearance}.png（04 手动滚动定位 def 色卡完整入镜，卡片 2px 选中描边目检 #795548）；程序化色值核验（PIL，按通道容差命中像素取均值）：04_appearance 主色 #795548±12 命中 6,817px 均值 **#795549**（偏差 1）、accent #E53935±12 命中 1,084px 均值 **#E53935**（偏差 0）、页面背景 #F5F5F5±6 命中 1,276,749px（66.4%）均值 **#F5F5F4**（偏差 1）、底栏 #EEEEEE±6 均值 #F0F0F0（偏差 2）、暗面色块 #424242±6 命中 18,886px 均值 **#424242**（偏差 0）；01_mine 页面背景 #F5F5F5±6 命中 1,656,085px（80%）均值 **#F2F2F2**（偏差 3，整页含卡片区混色）、底栏 #EEEEEE±6 均值 #F0F0F0（偏差 2）（我的页无大面积主色区域，属既有底栏选中色 onSurface 设计，主色核验以 04 为准）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.269] - 2026-09-17
 
 ### Fixed

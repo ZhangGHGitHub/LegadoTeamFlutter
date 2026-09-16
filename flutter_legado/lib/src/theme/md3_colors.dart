@@ -131,7 +131,8 @@ class Md3Palette {
   });
 }
 
-/// 12 套内置 MD3 调色板（UI_MD3_PLAN.md 第三节：默认 WH）
+/// 13 套内置 MD3 调色板（阶段D 2.0.270 起默认 def「默认」，对齐 kazusa
+/// 「默认」调色板源码色值；原 12 套含 WH 纯白保留可切换）
 abstract final class Md3Palettes {
   static const wh = Md3Palette(
     id: 'wh',
@@ -1383,10 +1384,126 @@ abstract final class Md3Palettes {
     ),
   );
 
-  /// 默认调色板（UI_MD3_PLAN.md 第十六节：WH）
-  static const String defaultId = 'wh';
+  // [阶段D 2.0.270] 默认调色板「默认」：对齐 kazusa「默认」调色板源码色值
+  // （APK defaultData/themeConfig.json 原文，零采样）：
+  //   亮色：primary #795548 / accent #E53935 / background #F5F5F5 /
+  //         bottomBackground #EEEEEE
+  //   暗色（kazusa「黑白」套）：primary #303030 / accent #E0E0E0 /
+  //         background #424242 / bottomBackground #424242
+  // 锚点映射（MD3 语义）：accent → secondary 槽（本库自定义主题链
+  // accent→secondary/surfaceTint，legacy colorAccent 同槽）；
+  // background → surface；bottomBackground → surfaceContainer（app_theme
+  // tabBarBg 槽）；tertiary 取 primary 同族暖金棕（无参考槽位，推导值）。
+  // 暗色「黑白」accent #E0E0E0 明度≈surface 同调（黑白套本无对比强调色），
+  // 暗色 secondary 按 M3 tonal 语义取 primary 同族 #D9CFCE 保持整套协调。
+  static const def = Md3Palette(
+    id: 'def',
+    label: '默认',
+    seed: 0xFF795548,
+    light: Md3Roles(
+      primary: 0xFF795548,
+      onPrimary: 0xFFFFFFFF,
+      primaryContainer: 0xFFFADAD3,
+      onPrimaryContainer: 0xFF4A1E15,
+      secondary: 0xFFE53935,
+      onSecondary: 0xFFFFFFFF,
+      secondaryContainer: 0xFFFFDAD6,
+      onSecondaryContainer: 0xFF410002,
+      tertiary: 0xFF7A5A28,
+      onTertiary: 0xFFFFFFFF,
+      tertiaryContainer: 0xFFFFE0B8,
+      onTertiaryContainer: 0xFF583D11,
+      error: 0xFFBA1A1A,
+      onError: 0xFFFFFFFF,
+      errorContainer: 0xFFFFDAD6,
+      onErrorContainer: 0xFF93000A,
+      background: 0xFFF5F5F5,
+      onBackground: 0xFF1D1D1D,
+      surface: 0xFFF5F5F5,
+      onSurface: 0xFF1D1D1D,
+      surfaceVariant: 0xFFEAD7D2,
+      onSurfaceVariant: 0xFF53433E,
+      outline: 0xFF87736D,
+      outlineVariant: 0xFFD8C4BE,
+      scrim: 0xFF000000,
+      inverseSurface: 0xFF333131,
+      inverseOnSurface: 0xFFF6F1F0,
+      inversePrimary: 0xFFFFB4A8,
+      primaryFixed: 0xFFFADAD3,
+      onPrimaryFixed: 0xFF37130A,
+      primaryFixedDim: 0xFFFFB4A8,
+      onPrimaryFixedVariant: 0xFF7A1F13,
+      secondaryFixed: 0xFFFFDAD6,
+      onSecondaryFixed: 0xFF410002,
+      secondaryFixedDim: 0xFFFFB4AB,
+      onSecondaryFixedVariant: 0xFF7F0003,
+      tertiaryFixed: 0xFFFFE0B8,
+      onTertiaryFixed: 0xFF372700,
+      tertiaryFixedDim: 0xFFF0C98D,
+      onTertiaryFixedVariant: 0xFF684613,
+      surfaceDim: 0xFFE6D5D0,
+      surfaceBright: 0xFFF5F5F5,
+      surfaceContainerLowest: 0xFFFFFFFF,
+      surfaceContainerLow: 0xFFF0F0F0,
+      surfaceContainer: 0xFFEEEEEE,
+      surfaceContainerHigh: 0xFFE8E8E8,
+      surfaceContainerHighest: 0xFFE2E2E2,
+    ),
+    dark: Md3Roles(
+      primary: 0xFFD9CFCE,
+      onPrimary: 0xFF47312C,
+      primaryContainer: 0xFF5F443E,
+      onPrimaryContainer: 0xFFFADAD3,
+      secondary: 0xFFE2C7C4,
+      onSecondary: 0xFF562018,
+      secondaryContainer: 0xFF803A32,
+      onSecondaryContainer: 0xFFFFDAD6,
+      tertiary: 0xFFEFBC8D,
+      onTertiary: 0xFF482D00,
+      tertiaryContainer: 0xFF684613,
+      onTertiaryContainer: 0xFFFFE0B8,
+      error: 0xFFFFB4AB,
+      onError: 0xFF690005,
+      errorContainer: 0xFF93000A,
+      onErrorContainer: 0xFFFFDAD6,
+      background: 0xFF424242,
+      onBackground: 0xFFEDE6E4,
+      surface: 0xFF424242,
+      onSurface: 0xFFEDE6E4,
+      surfaceVariant: 0xFF53433E,
+      onSurfaceVariant: 0xFFD8C4BE,
+      outline: 0xFFA08C87,
+      outlineVariant: 0xFF53433E,
+      scrim: 0xFF000000,
+      inverseSurface: 0xFFEDE6E4,
+      inverseOnSurface: 0xFF333131,
+      inversePrimary: 0xFF795548,
+      primaryFixed: 0xFFFADAD3,
+      onPrimaryFixed: 0xFF37130A,
+      primaryFixedDim: 0xFFFFB4A8,
+      onPrimaryFixedVariant: 0xFF7A1F13,
+      secondaryFixed: 0xFFFFDAD6,
+      onSecondaryFixed: 0xFF410002,
+      secondaryFixedDim: 0xFFFFB4AB,
+      onSecondaryFixedVariant: 0xFF7F0003,
+      tertiaryFixed: 0xFFFFE0B8,
+      onTertiaryFixed: 0xFF372700,
+      tertiaryFixedDim: 0xFFF0C98D,
+      onTertiaryFixedVariant: 0xFF684613,
+      surfaceDim: 0xFF424242,
+      surfaceBright: 0xFF6A6A6A,
+      surfaceContainerLowest: 0xFF343434,
+      surfaceContainerLow: 0xFF4A4A4A,
+      surfaceContainer: 0xFF4E4E4E,
+      surfaceContainerHigh: 0xFF595959,
+      surfaceContainerHighest: 0xFF646464,
+    ),
+  );
 
-  /// 全部内置调色板（顺序即主题选择器展示顺序）
+  /// 默认调色板（阶段D 2.0.270 起为「默认」def；原 WH 纯白保留可切换）
+  static const String defaultId = 'def';
+
+  /// 全部内置调色板（顺序即主题选择器展示顺序；def 为第 13 套）
   static const List<Md3Palette> all = [
     wh,
     gr,
@@ -1400,11 +1517,12 @@ abstract final class Md3Palettes {
     mujika,
     elink,
     transparent,
+    def,
   ];
 
-  /// 按 id 取调色板；未知 id 回退默认 WH（回滚路径，UI_MD3_PLAN.md 第九节）
+  /// 按 id 取调色板；未知 id 回退默认 def（回滚路径，UI_MD3_PLAN.md 第九节）
   static Md3Palette byId(String id) =>
-      all.firstWhere((p) => p.id == id, orElse: () => wh);
+      all.firstWhere((p) => p.id == id, orElse: () => def);
 }
 
 /// ColorScheme 构建：跳过 background/onBackground/surfaceVariant 三个

@@ -1,4 +1,4 @@
-// MD3 调色板数据校验 + 12×亮暗全矩阵 WCAG AA 对比度自动化（UI_MD3_PLAN.md 第十三节）
+// MD3 调色板数据校验 + 13×亮暗全矩阵 WCAG AA 对比度自动化（UI_MD3_PLAN.md 第十三节）
 //
 // md3_colors.dart 由 tool/gen_md3_colors.py 从参考仓库
 // HapeLee/legado-with-MD3@6dc297221a22e532354810fb2804592dd08e5a9d
@@ -28,25 +28,27 @@ double contrastRatio(Color a, Color b) {
 
 void main() {
   group('Md3Palettes 数据完整性', () {
-    test('共 12 套内置调色板，id 唯一且非空', () {
-      expect(Md3Palettes.all.length, 12);
+    test('共 13 套内置调色板，id 唯一且非空', () {
+      expect(Md3Palettes.all.length, 13);
       final ids = Md3Palettes.all.map((p) => p.id).toSet();
-      expect(ids.length, 12);
+      expect(ids.length, 13);
       for (final p in Md3Palettes.all) {
         expect(p.id, isNotEmpty);
         expect(p.label, isNotEmpty);
       }
     });
 
-    test('默认调色板为 WH（UI_MD3_PLAN.md 第十六节）', () {
-      expect(Md3Palettes.defaultId, 'wh');
+    test('默认调色板为 def「默认」（阶段D 2.0.270 起，对齐 kazusa）', () {
+      expect(Md3Palettes.defaultId, 'def');
+      expect(Md3Palettes.byId('def').id, 'def');
+      expect(Md3Palettes.def.label, '默认');
+      // 原 12 套（wh 纯白等）保留可切换，wh 仍在列首
       expect(Md3Palettes.all.first.id, 'wh');
-      expect(Md3Palettes.byId('wh').id, 'wh');
     });
 
-    test('未知 id 回退默认 WH（第九节回滚路径）', () {
-      expect(Md3Palettes.byId('not_exists').id, 'wh');
-      expect(Md3Palettes.byId('').id, 'wh');
+    test('未知 id 回退默认 def（UI_MD3_PLAN.md 第九节回滚路径）', () {
+      expect(Md3Palettes.byId('not_exists').id, 'def');
+      expect(Md3Palettes.byId('').id, 'def');
     });
 
     test('seed 锚点 = 参考仓库亮色 colorPrimary', () {
@@ -54,6 +56,8 @@ void main() {
       expect(Md3Palettes.gr.seed, 0xFF4C662B);
       expect(Md3Palettes.koharu.seed, 0xFF8F4A4D);
       expect(Md3Palettes.sora.seed, 0xFF3B608F);
+      // def「默认」：kazusa 默认套亮色 primary（阶段D 2.0.270）
+      expect(Md3Palettes.def.seed, 0xFF795548);
       for (final p in Md3Palettes.all) {
         expect(p.seed, p.light.primary);
       }
@@ -75,6 +79,19 @@ void main() {
       expect(Md3Palettes.sora.dark.surface, 0xFF111318);
     });
 
+    test('def「默认」锚点 = kazusa 默认/黑白 调色板源码色值（阶段D 2.0.270）', () {
+      // 亮色「默认」：primary #795548 / accent→secondary #E53935 /
+      // backgroundColor→surface #F5F5F5 / bottomBackground→surfaceContainer #EEEEEE
+      expect(Md3Palettes.def.light.primary, 0xFF795548);
+      expect(Md3Palettes.def.light.secondary, 0xFFE53935);
+      expect(Md3Palettes.def.light.surface, 0xFFF5F5F5);
+      expect(Md3Palettes.def.light.surfaceContainer, 0xFFEEEEEE);
+      // 暗色「黑白」：backgroundColor/bottomBackground #424242 → surface（推导链
+      // 下 surfaceContainerLowest 同系 #343434）
+      expect(Md3Palettes.def.dark.surface, 0xFF424242);
+      expect(Md3Palettes.def.dark.surfaceContainerLowest, 0xFF343434);
+    });
+
     test('各套亮/暗 primary 可辨（elink 墨水屏锚点为纯黑，登记例外）', () {
       for (final p in Md3Palettes.all) {
         // 亮暗 primary 不同（transparent 表面全透明，锚点恒黑，豁免）
@@ -86,13 +103,13 @@ void main() {
           );
         }
       }
-      // 10 套彩色主题亮色 primary 互不相同（防复制粘贴串色）；
+      // 11 套彩色主题亮色 primary 互不相同（防复制粘贴串色）；
       // elink（墨水屏）锚点即纯黑 #000000，与 transparent 相同，豁免。
       final colorful = Md3Palettes.all
           .where((p) => p.id != 'elink' && p.id != 'transparent')
           .map((p) => p.light.primary)
           .toSet();
-      expect(colorful.length, 10);
+      expect(colorful.length, 11);
     });
   });
 
@@ -128,9 +145,9 @@ void main() {
     });
   });
 
-  group('12×亮暗 WCAG AA 对比度全矩阵', () {
+  group('13×亮暗 WCAG AA 对比度全矩阵', () {
     // transparent 主题表面为全透明（配合背景图使用），对比度无意义，豁免；
-    // 其余 11 套 × 亮/暗 = 22 个组合全量断言。
+    // 其余 12 套 × 亮/暗 = 24 个组合全量断言。
     final opaque = Md3Palettes.all.where((p) => p.id != 'transparent');
 
     /// 正文文本对（AA 4.5:1）
@@ -240,7 +257,7 @@ void main() {
       }
     });
 
-    test('其余 10 套 onSecondaryContainer ≥ AA 4.5', () {
+    test('其余 11 套 onSecondaryContainer ≥ AA 4.5', () {
       final others = opaque.where((p) => p.id != 'elink');
       for (final p in others) {
         for (final mode in [md3LightScheme, md3DarkScheme]) {

@@ -74,8 +74,8 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     Color? c(int? argb) => argb != null ? Color(argb) : null;
 
     // [MD3 Batch 0 | 2026-08-28] 按 paletteId 装配内置 MD3 调色板
-    //（默认 WH；自定义 themeConfigList 4 色仍可叠加，自定义已应用色优先
-    // 于内置 palette role——UI_MD3_PLAN.md 第九节并存模型） — Qoder UI
+    //（阶段D 2.0.270 起默认 def「默认」；自定义 themeConfigList 4 色仍可叠加，
+    // 自定义已应用色优先于内置 palette role——UI_MD3_PLAN.md 第九节并存模型）
     final palette = Md3Palettes.byId(themeState.paletteId);
     // [UI_SYNC_REFACTOR S4] 主题引擎参数化：themeStyle 非 none 时按
     // paletteStyle/contrastLevel 从调色板锚点 seed 生成明暗两套角色

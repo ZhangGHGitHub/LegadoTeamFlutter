@@ -247,8 +247,8 @@ void main() {
   });
 
   group('SettingsService 内置 MD3 调色板（UI_MD3_PLAN.md Batch 0）', () {
-    test('默认调色板为 wh', () async {
-      expect(await service.getPaletteId(), equals('wh'));
+    test('默认调色板为 def「默认」（阶段D 2.0.270 起）', () async {
+      expect(await service.getPaletteId(), equals('def'));
     });
 
     test('设置并读取调色板 id', () async {
