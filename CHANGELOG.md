@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.268] - 2026-09-17
+
+### Fixed
+- [UI] 外观页移除「配色轮」卡（**移除未授权新增区块（用户裁决）**，台账 3-4）：B3-C1（2.0.267）基于误判证据新增的 12 段色环卡（含「长按配色轮自定义配色」提示与长按入口）经用户裁决移除——kazusa 源码 `resources.arsc` 证实无「配色轮/外观预览/内置主题」字样，非参考版能力；删除 `_ColorWheelCard`/`_ColorWheelPainter` 与视图挂点，**既有预设主色调选择器本体（`_showColorPicker`，日/夜主色调色卡行在用）与「主题导出/导入」区保留不动**（kazusa 有同类能力，裁决保留）；「外观预览」卡按裁决**保留待溯源**（C6 批次产物，溯源结论见台账 3-4，未删除）
+
+### Test
+- `flutter analyze` 无问题；`flutter test` 全过（回归套件同步：`theme_config_test.dart` 删除配色轮卡断言（`配色轮`/`长按配色轮自定义配色`），改为 `配色轮` 负向断言 `findsNothing`，导出/导入断言保留）
+
+### Real device
+- release 2.0.268+269 APK 装 MuMu（192.168.1.19:5555，adb D:/leidian/LDPlayer9/adb.exe），versionName=2.0.268 校验通过；`scripts/parity_capture_ours.py --only 04_appearance` 1/1 屏 OK，截图 docs/parity_shots/ours_2.0.268/04_appearance.png（dump 断言：「配色轮」不在、「主题模式」在/页面特征词命中，其余区块完好）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.267] - 2026-09-16
 
 ### Fixed
