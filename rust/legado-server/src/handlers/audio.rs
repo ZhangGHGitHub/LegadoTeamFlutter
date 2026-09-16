@@ -343,6 +343,7 @@ pub async fn get_chapter_media(
         is_vip: chapter.is_vip,
         is_volume: chapter.is_volume,
         variable: chapter.variable.clone(),
+        word_count: None,
     };
 
     let engine = crate::handlers::web_book::build_engine();

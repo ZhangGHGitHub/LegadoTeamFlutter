@@ -1296,6 +1296,11 @@ impl RealBookSourceFetcher {
             .unwrap_or("");
         let vip_rule = toc_rule.and_then(|r| r.is_vip.as_deref()).unwrap_or("");
         let volume_rule = toc_rule.and_then(|r| r.is_volume.as_deref()).unwrap_or("");
+        // N5: 字数提取（对标原版 BookChapterList: updateTime 规则 info → AppPattern.wordCountRegex）
+        let update_time_rule = toc_rule
+            .and_then(|r| r.update_time.as_deref())
+            .unwrap_or("");
+        let word_count_re = word_count_regex();
 
         // 对齐原版 BookChapterList：单一 AnalyzeRule + setContent(item) 循环，
         // 复用 stringRuleCache / JsExecutor，避免每章新建解析器（数百章时差一个数量级）。
@@ -1338,6 +1343,16 @@ impl RealBookSourceFetcher {
                 v == "true" || v == "1"
             };
 
+            // N5: 字数（updateTime 规则 info → 正则提取，对标原版 BookChapterList）
+            let word_count = if update_time_rule.is_empty() {
+                None
+            } else {
+                let info = elem_analyzer.get_string(update_time_rule).unwrap_or_default();
+                word_count_re
+                    .captures(&info)
+                    .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
+            };
+
             // B3.3 空 URL 回退 + 绝对化（对标 Kotlin BookChapterList）
             //    - 卷章 url 空：用 `title + index` 替代（合成唯一标识，不绝对化）
             //    - 普通章 url 空：回退 baseUrl（目录页 url）
@@ -1363,6 +1378,7 @@ impl RealBookSourceFetcher {
                 is_vip,
                 is_volume,
                 variable,
+                word_count,
             });
         }
         eprintln!(
@@ -1447,6 +1463,16 @@ impl RealBookSourceFetcher {
                             let v = elem_analyzer.get_string(volume_rule).unwrap_or_default();
                             v == "true" || v == "1"
                         };
+                        // N5: 字数（同主循环，updateTime 规则 info → 正则提取）
+                        let word_count = if update_time_rule.is_empty() {
+                            None
+                        } else {
+                            let info =
+                                elem_analyzer.get_string(update_time_rule).unwrap_or_default();
+                            word_count_re
+                                .captures(&info)
+                                .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
+                        };
                         let index = start_idx + i;
                         let url = if raw_url_probe.is_empty() {
                             if is_volume {
@@ -1464,6 +1490,7 @@ impl RealBookSourceFetcher {
                             is_vip,
                             is_volume,
                             variable: elem_analyzer.export_variables_json(),
+                            word_count,
                         });
                     }
                     let more = page_analyzer
@@ -1484,6 +1511,7 @@ impl RealBookSourceFetcher {
                 let url_r = url_rule.to_string();
                 let vip_r = vip_rule.to_string();
                 let volume_r = volume_rule.to_string();
+                let update_time_r = update_time_rule.to_string();
                 let client = self.client.clone();
 
                 let futs: Vec<_> = next_urls
@@ -1497,6 +1525,7 @@ impl RealBookSourceFetcher {
                         let url_r = url_r.clone();
                         let vip_r = vip_r.clone();
                         let volume_r = volume_r.clone();
+                        let update_time_r = update_time_r.clone();
                         let client = client.clone();
                         async move {
                             let body = {
@@ -1555,6 +1584,15 @@ impl RealBookSourceFetcher {
                                     let v = elem.get_string(&volume_r).unwrap_or_default();
                                     v == "true" || v == "1"
                                 };
+                                // N5: 字数（updateTime 规则 info → 正则提取）
+                                let word_count = if update_time_r.is_empty() {
+                                    None
+                                } else {
+                                    let info = elem.get_string(&update_time_r).unwrap_or_default();
+                                    word_count_re
+                                        .captures(&info)
+                                        .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
+                                };
                                 let url = if raw.is_empty() {
                                     if is_volume {
                                         format!("{}{}", title, i)
@@ -1571,6 +1609,7 @@ impl RealBookSourceFetcher {
                                     is_vip,
                                     is_volume,
                                     variable: elem.export_variables_json(),
+                                    word_count,
                                 });
                             }
                             Ok::<_, LegadoError>(page_chs)
@@ -2467,6 +2506,17 @@ pub(crate) fn convert_js_search_results(
         .collect()
 }
 
+/// N5: 章节字数正则（对标原版 `AppPattern.wordCountRegex`：
+/// `(?:^|字数[：:、]?\s*|\s+)([0-9万千百\.]{1,6}字)`，取第 1 捕获组）
+fn word_count_regex() -> &'static regex::Regex {
+    use std::sync::OnceLock;
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        regex::Regex::new(r"(?:^|字数[：:、]?|\s+)([0-9万千百.]{1,6}字)")
+            .expect("wordCountRegex")
+    })
+}
+
 /// 将 JS 编排器章节列表（serde_json::Value）转换为 WebChapter 列表
 fn convert_js_chapters(values: Vec<serde_json::Value>) -> Vec<WebChapter> {
     values
@@ -2500,6 +2550,12 @@ fn convert_js_chapters(values: Vec<serde_json::Value>) -> Vec<WebChapter> {
                 variable: v
                     .get("variable")
                     .and_then(|x| x.as_str())
+                    .map(|s| s.to_string()),
+                // N5: JS 书源章节可携带 wordCount 键
+                word_count: v
+                    .get("wordCount")
+                    .and_then(|x| x.as_str())
+                    .filter(|s| !s.is_empty())
                     .map(|s| s.to_string()),
             }
         })
@@ -5055,6 +5111,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             is_vip: false,
             is_volume: false,
             variable: None,
+            word_count: None,
         };
         let content = webbook_content(json, &serde_json::to_string(&chapter).unwrap())
             .expect("webbook_content");
@@ -5099,5 +5156,31 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             None,
         );
         assert_eq!(out, "https://cdn.example.com/v.mp4");
+    }
+
+    // N5: 字数正则（对标原版 AppPattern.wordCountRegex）
+    #[test]
+    fn word_count_regex_extraction() {
+        let re = super::word_count_regex();
+        // 纯前缀 / 字数前缀（含全半角冒号顿号）/ 空白前缀
+        assert_eq!(
+            re.captures("2510字").and_then(|c| c.get(1)).map(|m| m.as_str()),
+            Some("2510字")
+        );
+        assert_eq!(
+            re.captures("字数：2510字").and_then(|c| c.get(1)).map(|m| m.as_str()),
+            Some("2510字")
+        );
+        assert_eq!(
+            re.captures("字数: 3.2万字").and_then(|c| c.get(1)).map(|m| m.as_str()),
+            Some("3.2万字")
+        );
+        assert_eq!(
+            re.captures(" 1200字").and_then(|c| c.get(1)).map(|m| m.as_str()),
+            Some("1200字")
+        );
+        // 无字数文本不匹配
+        assert!(re.captures("2026-01-01").is_none());
+        assert!(re.captures("").is_none());
     }
 }

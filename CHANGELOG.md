@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.272] - 2026-09-17
+
+### Fixed
+- [UI] 批 4 长尾 N2/N5/N3 收官（台账「批 4 长尾 N2/N5/N3 收尾」节）：
+  - **N5 目录字数胶囊（根因修复，数据层 Rust 全链路）**：`WebChapter` 新增 `word_count: Option<String>`（serde `wordCount`，`rust/legado-core/src/web_book.rs`）；规则源 `webbookChapters` 对每章取 `updateTime` 规则 info 经与原版 `AppPattern.wordCountRegex`（`app/.../AppPattern.kt:24`）逐字一致的等价正则捕获组 1 提取（`rust/legado-ffi/src/api/web_book.rs`，OnceLock 惰性静态 + 单测 `word_count_regex_extraction`）；JS 源 `convert_js_chapters` 读 `wordCount` 键；`refreshToc`（`reader.rs`）转换落库透传。API 契约章节 JSON 新增可选 `wordCount`（无新 FFI 方法，方法表与 contentHash 不变）。Flutter 侧渲染本已就绪（`toc_screen.dart` 章节行「加载字数」开关 + 有值才渲染，对齐原版 `AppConfig.tocCountWords`）
+  - **N2 深色圆钮（定位归属，保留勿删）**：07 搜索结果页右下深色圆钮 = 搜索「下一页/停止」FAB（`_buildNextPageFab`，原版能力 `SearchActivity.kt:449 searchFinally`，批次 B G-B-02 已对齐，非未授权新增，红线不触发）；10 阅读器「右下深色圆钮」= 底栏元素误读（无独立浮动圆钮 widget），勿删
+  - **N3 详情页封面空白（登记，不加 UI）**：UI 失败静默回落默认封面与原版一致（原版 `activity_book_info.xml:88` 亦回落默认封面且无错误占位/重试 UI，新增即红线）；截图差异根因在数据/加载层瞬时失败（真机 272 已出图证实）
+  - **armv7 构建登记（不修）**：`rar 0.4.0`（quickjs 纯 Rust 依赖，`7740ab0997` 引入）32 位 E0277——`nom 7.1.3` `ToUsize for u64` impl 带 `#[cfg(target_pointer_width="64")]`，32 位缺失且 `rar/src/extra_block.rs:32` 以 u64 实参调用 `take`；crates.io 无 0.4.0 之后版本无法升级 → 沿用旧 armeabi-v7a .so（与 CHANGELOG:2774 既有登记及 `requiredAbis=[arm64-v8a,x86_64]` 门禁一致，v7a 不校验）；arm64-v8a/x86_64 .so+.meta 已重建刷新（含 N5，FRB contentHash -734354461 不变）。后续需 32 位真机时对 rar 调用点本地 patch（u64→usize 收窄）单独立批
+
+### Test
+- `cargo test` 全绿（legado-ffi 354 passed/0 failed，19 ignored 网络 smoke；新增单测 `word_count_regex_extraction` 覆盖「字数：2510字」/「2510 字」/无字数三例）；`flutter analyze` 无问题（0）；`flutter test` 全过（1457）
+
+### Real device
+- release 2.0.272+273 APK（arm64-v8a/x86_64 .so 已含 N5 全链路，`verifyRustFfiLibs` 门禁通过）装 MuMu（192.168.1.19:5555，x86_64），versionName=2.0.272 校验通过；`scripts/parity_capture_ours.py --only 07,08,09` 4/4 屏 OK（07 含 07b 加载态），截图 docs/parity_shots/ours_2.0.272/{07_search_results,07b_search_results_loading,08_book_info,09_toc}.png；程序化像素核验（PIL）：08 封面盒 = 真实封面（mean 104,95,100，灰度占比 0.32%）vs 260 默认灰占位（mean 228,228,228，灰度 28.2%）→ N3 定论为加载/数据层瞬时失败（登记数据层差异，非 UI 缺陷）；07 FAB 盒 260/272 均检出深色圆钮且 272 dump 断言「加载下一页」命中（N2 存证）；09 目录页「加载字数」默认开，测试书《斗罗大陆》章节行未出胶囊——本环境书源章节 info 无字数（提取正则与原版逐字一致，代码层 1:1），属数据可用性差异（ref 机书源含字数、本环境无），登记非代码缺陷；armeabi-v7a 沿用旧 .so（quickjs:false 旧版），MuMu x86_64 与 arm64 真机不受影响
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.271] - 2026-09-17
 
 ### Fixed

@@ -222,6 +222,7 @@ pub fn get_audio_chapter_media(
         is_vip: chapter.is_vip,
         is_volume: chapter.is_volume,
         variable: merged_variable,
+        word_count: None,
     };
 
     let engine = super::web_book::build_engine()?;

@@ -61,6 +61,10 @@ pub struct WebChapter {
     /// 规则变量 JSON（对齐 BookChapter.variable；@put 写入）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variable: Option<String>,
+    /// 章节字数（对齐 BookChapter.wordCount；规则源由 updateTime 规则 info 经
+    /// AppPattern.wordCountRegex 等价正则提取，N5；JS 源读 wordCount 键）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub word_count: Option<String>,
 }
 
 /// 书籍详情
@@ -519,6 +523,7 @@ impl WebChapter {
             is_vip: false,
             is_volume: false,
             variable: None,
+            word_count: None,
         }
     }
 }

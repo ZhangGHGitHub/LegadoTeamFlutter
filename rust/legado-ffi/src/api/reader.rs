@@ -430,7 +430,8 @@ pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterList
             is_pay: false,
             resource_url: None,
             tag: None,
-            word_count: None,
+            // N5: 字数透传（WebChapter.word_count 来自 updateTime 规则/JS 源）
+            word_count: wc.word_count.clone(),
             start: None,
             end: None,
             start_fragment_id: None,
@@ -574,6 +575,7 @@ fn fetch_chapter_content_inner(
         is_vip: false,
         is_volume: false,
         variable: merged_variable,
+        word_count: None,
     };
 
     let engine = super::web_book::build_engine()?;

@@ -516,6 +516,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 is_vip,
                 is_volume: false,
                 variable: None,
+                word_count: None,
             });
         }
 

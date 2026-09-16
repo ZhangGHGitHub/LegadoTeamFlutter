@@ -993,6 +993,7 @@ async fn apply_word_count_sample(
         is_vip: chapter.is_vip,
         is_volume: chapter.is_volume,
         variable: chapter.variable.clone(),
+        word_count: None,
     };
     let (count, text) = match engine.get_content(source, &web_ch).await {
         Ok(content) => {
@@ -1586,6 +1587,7 @@ mod tests {
                 is_vip: false,
                 is_volume: true,
                 variable: Some(r#"{"token":"abc123"}"#.to_string()),
+                word_count: None,
             }]),
             chapters_requested: std::sync::Mutex::new(Vec::new()),
             detail_vars_requested: std::sync::Mutex::new(Vec::new()),
@@ -1764,6 +1766,7 @@ mod tests {
                 is_vip: false,
                 is_volume: false,
                 variable: None,
+                word_count: None,
             }]),
             chapters_requested: std::sync::Mutex::new(Vec::new()),
             detail_vars_requested: std::sync::Mutex::new(Vec::new()),

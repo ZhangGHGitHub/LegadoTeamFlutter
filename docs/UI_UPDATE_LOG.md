@@ -37,6 +37,7 @@
 | 31 | 2.0.149 | 听书前台服务修复 + AutoTask 纯 FFI | 【体检 N1/P0】manifest 注册 PlaybackForegroundService（mediaPlayback 类型）+ FOREGROUND_SERVICE_MEDIA_PLAYBACK 权限，修复播放即崩；冒烟脚本新增 -CheckPlayback 门禁；【§二.7】删除 AutoTask REST 死降级（127.0.0.1:8080 永远失败且错误被吞）改纯 FFI + 失败可见，消除 UI 层 package:http 直连 |
 | 32 | 2.0.150 | 超长文件拆分 + 导入失败原因显式化 | 【§三.16】7 个超 1400 行业务文件按域拆为 part 文件（rust_api/mock_book_api 用 mixin 组合、5 个屏用 extension，方法原样搬移零行为变更，契约门禁改为拼接 part 提取）；【§三.13】本地导入失败透传 rust 明确文案（LZMA/加密 MOBI 等）；核对结论：golden 基线为决策闭环项（渲染矩阵替代）不重开 |
 | 33 | 2.0.151 | 换源搜索等待反馈（U1 UI 侧过渡） | 换源任务书四根因核实（R1/R2/R3/U1 属实，Rust 侧未动）；U1 UI 侧过渡修复：ChangeSourceState.searchingCount + 等待页「正在搜索 N 个书源… 已等待 X 秒」计时（LoadingIndicator 新增 subMessage 槽），增量加载行「已找到 N 个匹配书源，搜索中…」；T6 流式 API（逐源 x/y 进度）落地后替换 |
+| 34 | 2.0.272 | 1:1 对齐长尾 N2/N5/N3 | N5 目录字数胶囊根因修复（数据层）：Rust 章节 JSON 新增可选 `wordCount`——规则源 `updateTime` 规则 info 经等价正则（对齐原版 `AppPattern.wordCountRegex`）提取、JS 源读 `wordCount` 键、`refreshToc` 透传落库；目录胶囊「有值才渲染」行为不变（受本地「加载字数」开关控制，对齐原版 `AppConfig.tocCountWords`）；N2 定位定论（07 搜索右下深色圆钮 = 搜索「下一页/停止」FAB，原版 `searchFinally` 能力保留+台账注明；10 阅读器 = 底栏元素误读勿删，配色域并入批 3 主题槽位）；N3 详情页封面空白 = 数据/加载层差异登记（我方与原版失败均静默回落默认封面、无错误/重试 UI，不新增 UI，红线不触发） |
 
 > 附：治理提交「重构红线口径修订」（未经允许禁止新增原版不存在的功能，授权除外）随 2.0.124 批次落地。
 
@@ -101,3 +102,4 @@
 修订：Qoder UI ｜ 2026-09-03（听书前台服务 N1 修复 + AutoTask 纯 FFI 化批次 31，2.0.149）
 修订：Qoder UI ｜ 2026-09-03（超长文件拆分 + 导入失败原因显式化批次 32，2.0.150）
 修订：Qoder UI ｜ 2026-09-03（换源搜索等待反馈 U1 UI 侧过渡批次 33，2.0.151）
+修订：全栈工程师 ｜ 2026-09-17（1:1 对齐长尾 N2/N5/N3 收尾批次 34，2.0.272：N5 字数胶囊 Rust 全链路修复、N2/N3 定位定论+台账登记，详见 docs/SCREEN_1TO1_PARITY_LEDGER_20260914.md「批 4 长尾 N2/N5/N3 收尾」节）

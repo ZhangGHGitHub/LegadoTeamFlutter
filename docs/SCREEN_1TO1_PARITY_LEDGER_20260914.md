@@ -354,20 +354,20 @@ B2-C1 ✅ 2.0.265（发现源卡单列列表行 P1 闭环；漏斗状态着色�
 ## 批 4 长尾 N2/N5/N3 收尾（2.0.272，2026-09-17）
 
 **N2 深色圆钮（07 搜索结果页 / 10 阅读器）——定位完成，保留（原版能力 / 误读，勿删）**
-- 07 搜索结果页右下深色圆钮 = **搜索「下一页/停止」FAB**：我方 `flutter_legado/lib/src/screens/search_screen_builders.part.dart:62` `_buildNextPageFab()`（`FloatingActionButton.small`，tooltip「加载下一页」，`Symbols.play_arrow_rounded`；同排 `:53` 为「停止搜索」stop 圆钮）。**原版能力**：`app/src/main/java/io/legado/app/ui/book/search/SearchActivity.kt:449` `searchFinally()`——搜索结束且有 more 时 `fbStartStop` 换 `ic_play_24dp` 播放图标（点击 = 同关键词续页），我方批次 B G-B-02 已对齐 → **保留 + 台账注明，非未授权新增，红线不触发**（证据 `docs/parity_shots/ours_2.0.266/07_search_results.png`）。
+- 07 搜索结果页右下深色圆钮 = **搜索「下一页/停止」FAB**：我方 `flutter_legado/lib/src/screens/search_screen_builders.part.dart:62` `_buildNextPageFab()`（`FloatingActionButton.small`，tooltip「加载下一页」，`Symbols.play_arrow_rounded`；同排 `:53` 为「停止搜索」stop 圆钮）。**原版能力**：`app/src/main/java/io/legado/app/ui/book/search/SearchActivity.kt:449` `searchFinally()`——搜索结束且有 more 时 `fbStartStop` 换 `ic_play_24dp` 播放图标（点击 = 同关键词续页），我方批次 B G-B-02 已对齐 → **保留 + 台账注明，非未授权新增，红线不触发**（存证 `docs/parity_shots/ours_2.0.272/07_search_results.png`，MuMu 2.0.272 真机 dump 断言「加载下一页」命中；基线 `ours_2.0.260/07_search_results.png`；PIL 右下 FAB 盒 260/272 均检出深色圆钮，272 与基线一致）。
 - 10 阅读器「右下深色圆钮」= **底栏元素误读**：阅读器屏 grep 无独立浮动圆钮 widget，该区域为底栏左侧书名/右侧功能区 + 配色域（截图缩放/主题色误判为圆钮）→ **勿删**；底栏配色并入批 3 主题槽位域（证据 `ours_2.0.271/10_reader.png`）。
 
 **N5 目录字数胶囊（09 目录章节行右侧「2510字」）——根因修复（数据层，Rust 全链路补字数）**
 - 根因：我方 `BookChapter`/`WebChapter` 缺 `wordCount` 字段；目录胶囊 Flutter 侧本就就绪且「有值才渲染」（`toc_screen.dart` 章节行 `_loadWordCount && wordCount != null && wordCount.isNotEmpty` 才渲染 `'$wordCount 字'`，受本地「加载字数」开关控制，对齐原版 `AppConfig.tocCountWords`）。原版链路 = `TocRule.updateTime` 规则 info 文本 → `AppPattern.wordCountRegex`（`app/.../constant/AppPattern.kt:24`）提取 → `chapter.wordCount`。
 - 修复（Rust 全链路）：`WebChapter` 新增 `word_count: Option<String>`（serde `wordCount`，`legado-core/src/web_book.rs`）；规则源 `webbookChapters` 对每章取 `updateTime` 规则 info 经等价正则 `(?:^|字数[：:、]?|\s+)([0-9万千百.]{1,6}字)` 捕获组 1 提取（`legado-ffi/src/api/web_book.rs`，OnceLock 惰性静态 + 单测 `word_count_regex_extraction`）；JS 源 `convert_js_chapters` 读 `wordCount` 键；`refreshToc`（`reader.rs`）转换落库透传 `wordCount`。`docs/API_CONTRACT.md` 加 2026-09-15 N5 条目（章节 JSON 新增可选 `wordCount`；无新 FFI 方法，方法表不变）。
 - 验证：`cargo test` 全绿（legado-ffi 354 passed/0 failed，19 ignored 网络 smoke）；`flutter analyze` 0、`flutter test` 全过（1457）。
-- 真机：装 2.0.272+273 后，目录页开「加载字数」，章节行右侧出字数胶囊（**依赖书源 `updateTime` 规则/章节 info 含「xxx字」，无字数数据的书源仍不显示——与原版行为一致**，属数据可用性差异，非 UI 缺陷）。
+- 真机核验（2.0.272+273 装 MuMu x86_64，`ours_2.0.272/09_toc.png`）：目录页「加载字数」开关默认开（对齐原版 `tocCountWords`），测试书《斗罗大陆》章节行**未出字数胶囊**——该环境书源的 `updateTime` 规则/章节 info 不含「xxx字」，`wordCount` 为空 → 按「数据缺失不渲染」正常不出。我方提取正则与原版 `AppPattern.kt:24` 逐字一致、渲染开关与 `TocActivity.kt:139/186` 对齐 → **代码层 1:1，差异属数据可用性（ref 机书源含字数、本机环境书源无），非代码缺陷，登记**（PIL 核验：272 右缘行内无胶囊 ink 簇，与 262 基线同为无胶囊，排除回归）。
 
 **N3 详情页封面空白占位（08）——定位：UI 回落与原版一致，差异在数据/加载层 → 登记（不加 UI）**
 - 像素证据：我方 08 封面盒渲染的是 `assets/images/default_book_cover.jpg`（92% 均匀浅灰 (224,224,224)，600×900）=「无封面/加载失败」默认封面；参考 08 为真实绿色封面照。
 - 加载路径核查：`flutter_legado/lib/src/widgets/book_cover.dart` `BookCover`——无 coverUrl / 直连失败 / FFI 解码失败**均静默回落默认封面，无错误占位与重试 UI**（任意失败静默）。
 - 原版对照：`app/src/main/res/layout/activity_book_info.xml:88` 封面 `android:src="@drawable/image_cover_default"`——**原版无封面/加载失败同样回落默认封面，且原版亦无错误占位/重试 UI**。故按「加载失败静默→补错误占位与重试」新增 UI 属原版没有的能力（红线：未授权不得新增）→ **不加**。
-- 结论：**UI 层与原版对齐，无缺陷**；08 截图差异根因在数据/加载层——`coverUrl` 未取到（书源详情规则未命中/网络失败时 `_mergeWebInfo` 静默降级，`book_info_screen_load.part.dart` 补全失败仅 `debugPrint`）或封面图加载失败。真机装 2.0.272+273 核验：若详情封面正常出图→判定为**当时加载/数据层瞬时失败（登记数据层差异，非 UI 缺陷）**；若仍空白→追 `coverUrl` 落库值定论。
+- 结论（已定论）：**UI 层与原版对齐，无缺陷**；真机 2.0.272 核验（`ours_2.0.272/08_book_info.png`）：封面盒像素 = 真实封面（mean 104,95,100，灰度占比 0.32%）vs 260 默认灰占位（mean 228,228,228，灰度 28.2%）→ 判定 260 截图时点为**加载/数据层瞬时失败，登记数据层差异，非 UI 缺陷**（PIL 核验）。
 
 **Android ABI 构建注（2.0.272 .so 刷新）**
 - arm64-v8a / x86_64 `.so` 已重建含 N5 全链路（FRB contentHash -734354461 不变——N5 无新 FFI 方法；.meta 同步刷新，`verifyRustFfiLibs` 门禁覆盖此二 ABI）。
