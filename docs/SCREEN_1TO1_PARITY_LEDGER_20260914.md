@@ -372,3 +372,7 @@ B2-C1 ✅ 2.0.265（发现源卡单列列表行 P1 闭环；漏斗状态着色�
 **Android ABI 构建注（2.0.272 .so 刷新）**
 - arm64-v8a / x86_64 `.so` 已重建含 N5 全链路（FRB contentHash -734354461 不变——N5 无新 FFI 方法；.meta 同步刷新，`verifyRustFfiLibs` 门禁覆盖此二 ABI）。
 - **armeabi-v7a 沿用旧 .so（登记）**：armv7 交叉编译在 `rar 0.4.0`（2026-08-06 `7740ab0997` 引入的 quickjs 纯 Rust 依赖）处 E0277——`nom 7.1.3` 的 `ToUsize for u64` impl 带 `#[cfg(target_pointer_width="64")]`（`nom-7.1.3/src/traits.rs:1262`），32 位下缺失，`rar/src/extra_block.rs:32` `take(size-1)`（u64 实参）无法满足 `C: ToUsize`；crates.io 核实 `rar` 无 0.4.0 之后版本，无法升级修复。与 CHANGELOG:2774 既有登记（「armv7 so 交叉编译失败，模拟器 x86_64/真机 arm64 不受影响」）及 `requiredAbis = [arm64-v8a, x86_64]`（`flutter_legado/android/app/build.gradle.kts:74`，门禁不校验 v7a）一致；v7a 现挂 .so 为 8 月前 quickjs:false 旧版（缺 get7zStringContent 等 8/6 后全部 Rust 能力，meta quickjs:false 可证）。MuMu x86_64 与 arm64 真机不受影响，本批不动 v7a；后续若需 32 位真机，需对 rar 调用点做本地 patch（u64→usize 收窄）单独立批。
+
+### 重开项（0917 核图，视觉通道恢复后）
+- **R-NaN【P1 重开】C1 批 NaN 守卫未生效**：2.0.272 实测（`ours_2.0.272/07_search_results.png`，07:30 本批产出 + 设备版号核验）结果项仍渲染「NaN : NaN」副标题/chips 与「暂无专辑/暂无简介」占位 → C1 声称的修复未覆盖该数据路径或占位来源另有其处（C1 曾称"占位代码不存在"——与实测矛盾）；**重开修复**。
+- **R-N2【结论修正】深色圆钮 = ▶ 播放按钮**（截图清晰显示 play 三角），**非"N2 代理声称的加载下一页 FAB"** → N2 归属结论作废重查：音频/朗读入口在搜索结果页的授权依据（原版搜索结果项无播放钮）→ 无授权则红线候选；同时 N2 代理的 N5/N3 结论已核（N5=Rust 补 wordCount 真能力 ✓ 保留；N3=静默回落与原版一致 + 272 封面实测为真实封面 ✓ 保留）。
