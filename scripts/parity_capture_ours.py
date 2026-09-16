@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""parity_capture_ours.py — 1:1 界面对比「我方」批量截图采集（批 1 16 屏 + 批 2 10 屏）。
+"""parity_capture_ours.py — 1:1 界面对比「我方」批量截图采集
+（批 1 16 屏 + 批 2 10 屏 + 批 3 11 屏）。
 
 目的：
   在装有我方 io.legado.flutter_legado（期望版本动态读取自 flutter_legado/pubspec.yaml）
@@ -23,16 +24,21 @@
     versionName 与 pubspec.yaml 版本一致（不符则整体中止）
 
 用法：
-  python scripts/parity_capture_ours.py                      # 批 1 16 屏 + 批 2 10 屏
+  python scripts/parity_capture_ours.py                      # 批 1 16 屏 + 批 2 10 屏 + 批 3 11 屏
   python scripts/parity_capture_ours.py --only 01,03,06      # 批 1 屏编号（07 含 07b）
   python scripts/parity_capture_ours.py --only 01_discover,08_source_manage
                                                              # 批 2 屏全名 key（可与批 1 混用）
+  python scripts/parity_capture_ours.py --only 01_mine,04_appearance
+                                                             # 批 3 屏全名 key（可与批 1/2 混用）
   python scripts/parity_capture_ours.py --device 127.0.0.1:16416
   python scripts/parity_capture_ours.py --out docs/parity_shots/ours_<version>
 退出码：0 = 全部 OK；1 = 存在失败/跳过屏。
 批 2（发现与源管理）屏 key：01_discover / 02_discover_overflow / 03_discover_expand /
 06_booklist / 07_source_switch / 08_source_manage / 09_source_editor /
 10_replace_rule_edit / 11_rss_source / 12_web_service（即输出文件名 <key>.png）。
+批 3（我的与设置）屏 key：01_mine / 02_read_record / 03_settings / 04_appearance /
+05_theme / 06_backup / 07_font / 08_tts / 09_group_mgmt / 10_auto_task /
+11_highlight（即输出文件名 <key>.png）。
 
 期望版本不再硬编码：运行时从 flutter_legado/pubspec.yaml 的 `version:` 行动态读取
 （取 `+` 前主版本号），设备 versionName 需与之匹配；读取失败时回退到
@@ -127,6 +133,15 @@ BTN_REPLACE_ADD = (1044, 168)        # 替换规则页顶栏最右「新增」(a
 RSS_TILE_1 = (144, 560)
 # 详情页「换源」钮兜底（详情页按钮行：换源/加入书架/查看目录/继续阅读）
 BTN_CHANGE_SOURCE = (108, 1500)
+# 批 3（我的与设置）兜底坐标
+MENU_ITEM_GROUPS = (786, 1008)      # 书架卡菜单「分组管理」第 5 卡中心（144x48dp 卡、88dp 起算，@3x 推算）
+READER_TTS_BTN = (405, 1830)        # 阅读器底栏四钮（目录/朗读/界面/设置）第 2 钮兜底
+READER_TTS_SETTINGS = (405, 1806)   # 朗读控制条底行四钮（目录/朗读设置/语速/转后台）第 2 钮兜底
+# 设置主页第 1 卡「外观」中心兜底：SliverAppBar.large 112dp=336px + 上 padding
+# 8dp=24px → 卡顶 360px，卡高约 134px（14dp 垂直 padding ×2 + 双行文本）→ 中心 ≈430
+SETTINGS_APPEARANCE_FALLBACK = (540, 430)
+# 我的页「设置」行兜底（第 2 组中段，@3x 经验值）
+MINE_SETTINGS_ROW = (540, 1500)
 
 
 # 长按浮条（text_selection_panel.dart ReaderSelectionToolbar 的 6 按钮，
@@ -696,30 +711,52 @@ def reset_after_16() -> None:
 
 # ===== 批 2 导航函数（发现与源管理；编号 01/02/03/06-12 与批 1 数字同号，
 #      以 key=<编号>_<短名> 独立注册表 SCREENS_B2 区分，--only 用全名） =====
+def _tap_mine_tab() -> None:
+    """点底部「我的」tab：dump 定位底栏（y>1600）内 text/desc 含「我的」的
+    节点并点其中心，未命中回退 TAB_MINE 坐标。
+
+    背景：底栏有 5 tab（首页/书架/发现/订阅/我的，我的 cx≈972）与
+    4 tab（书架/发现/我的/订阅，我的 cx≈675）两种排布，固定坐标 TAB_MINE
+    在 4 tab 布局下会误点「订阅」→ _to_mine 时好时坏。dump 定位对布局鲁棒。"""
+    x = dump("tap_mine_tab")
+    for t, d, b in nodes(x):
+        s = (t or d).strip()
+        if "我的" in s and b[1] > 1600:
+            tap(*center_of(b))
+            rec(f"  [b3] 底栏「我的」tab：dump 命中，点 {center_of(b)}")
+            return
+    tap(*TAB_MINE)
+    rec(f"  [b3] 底栏「我的」tab：dump 未命中，回退坐标 {TAB_MINE}")
+
+
 def _to_mine() -> None:
     """冷启动 → 底部「我的」tab（设置页：书源管理/替换净化/Web 服务/MCP 服务）。
 
     冷启会恢复上次路由（可能是 /sources 等二级页，无底栏 → 点 tab 坐标会
     落到内容行上）。主壳 PopScope(canPop=false)，BACK 对主壳无副作用，
-    故先 BACK 弹回主壳再点 tab；仍不在设置页则再 BACK + 点按一轮，
-    最多 3 轮。注意：KeepAlive 页保留滚动位置，设置列表可能停在下方
-    → 点 tab 后先滚回列表顶再校验（在顶时下滑为无害空操作）。
-    校验用多行标记 OR：滚顶后「定时任务/书源管理/TXT 目录规则」必可见。"""
+    故先 BACK 弹回主壳再用 dump 定位点「我的」tab；仍不在则再 BACK + 重点，
+    最多 3 轮。点 tab 后先上滑滚回列表顶再校验（在顶时上滑为无害空操作）。
+    校验用「我的」页列表独有行「书源管理」（书架/首页/发现均无此词，
+    顶态必可见）；3 轮均未落则 raise（防下游屏在错页上空滚/误点）。
+
+    滚顶关键：KeepAlive 列表恢复在**底部**（书签/阅读记录/…/退出），列表高约
+    3900px，仅 3 次上滑（900px/次）爬不到顶。改用 8 次手指下扫（500→1400，
+    朝顶滚；顶边界空滚无害、不会像底部过扫那样 fling 切 tab）确保从任意位置
+    到顶。"""
     cold_start()
-    markers = ("定时任务", "书源管理", "TXT 目录规则")
     for i in range(3):
         keyevent("4")
         wait(1)
-        tap(*TAB_MINE)
+        _tap_mine_tab()
         wait(2)
-        for _ in range(3):  # 列表滚到顶
+        for _ in range(8):  # 列表滚到顶（KeepAlive 可能恢复在底部，需多次）
             swipe(W // 2, 500, W // 2, 1400, 350)
             wait(1)
         x = dump("to_mine")
-        blob = " ".join(t + " " + d for t, d, _b in nodes(x))
-        if any(m in blob for m in markers):
+        if has_kw(x, ("书源管理",)):
             return
-        rec(f"  [b2] to_mine 第 {i + 1} 轮未落到设置页，BACK + 重点")
+        rec(f"  [b3] to_mine 第 {i + 1} 轮未落到「我的」页，BACK + 重点")
+    raise RuntimeError("to_mine：3 轮未落到「我的」页（缺「书源管理」行）")
 
 
 def _first_content_row(y_lo: int, y_hi: int, exclude: tuple[str, ...],
@@ -923,6 +960,339 @@ def nav_b2_12() -> None:
                 break
 
 
+# ===== 批 3 导航函数（我的与设置；入口均经读码实证，路径以实际 dump 为准） =====
+# 约定：列表行 dump 文本为「标题\n副标题」合并串（&#10; unesc 为 \n），
+# 故按 text 首行【精确】匹配定位（防前缀误命中，如「定时任务」vs「运行定时任务」）；
+# 我的页 _to_mine 滚顶后部分行（设置/书签/阅读记录/缓存管理 等第 2 组）在屏外，
+# 需上滑（列表下滑）逐轮 dump 校验后再点。
+def tap_first_line_row(first_line: str, label: str,
+                       fallback_xy: tuple[int, int],
+                       up_rounds: int = 0, down_rounds: int = 0) -> None:
+    """按 text 首行精确匹配点列表行；未命中则滚动列表逐轮重试，最后兜底坐标。"""
+    xy = None
+    total = up_rounds + down_rounds
+    for rnd in range(total + 1):
+        for t, d, b in nodes(dump(label)):
+            s = (t or d).strip()
+            if s.split("\n")[0] == first_line:
+                xy = center_of(b)
+                break
+        if xy or rnd == total:
+            break
+        if rnd < up_rounds:
+            swipe(W // 2, 500, W // 2, 1400, 350)   # 列表滚到顶
+        elif up_rounds == 0:
+            swipe(W // 2, 1400, W // 2, 500, 350)   # 无滚顶轮：首轮起即下滑
+        else:
+            swipe(W // 2, 1400, W // 2, 500, 350)   # 滚顶轮后转下滑（露出下方行）
+        wait(1)
+    if xy is None:
+        xy = fallback_xy
+        rec(f"  [b3] {label}：dump 未命中，回退坐标 {xy}")
+    tap(*xy)
+    rec(f"  [b3] {label}：点 {xy}")
+
+
+def _mine_row_xy(first_line: str, label: str,
+                 up_rounds: int = 0, down_rounds: int = 0,
+                 multi_line: bool = False) -> tuple[int, int] | None:
+    """我的页列表行定位（不点击）：text 首行精确匹配，未命中则滚动逐轮重试。
+
+    multi_line=True 时只匹配带副标题的多行节点（列表行「标题\\n副标题」），
+    避开同名 section 头（如「设置」组头也是单行 text='设置'，点了无效）。
+    滚动策略：先滚顶 up_rounds 轮归位，再逐轮下滑（每轮后 dump 校验），
+    兼容 KeepAlive 列表任意初始位置（顶部/中段/底部）。"""
+    for _ in range(up_rounds):
+        swipe(W // 2, 500, W // 2, 1400, 350)   # 列表滚到顶
+        wait(1)
+    xy = None
+    for rnd in range(down_rounds + 1):
+        for t, d, b in nodes(dump(label)):
+            s = (t or d).strip()
+            if s.split("\n")[0] != first_line:
+                continue
+            if multi_line and "\n" not in s:
+                continue   # 只认带副标题的行节点，跳过 section 头
+            xy = center_of(b)
+            break
+        if xy or rnd == down_rounds:
+            break
+        swipe(W // 2, 1400, W // 2, 500, 350)   # 列表下滑（露出下方行）
+        wait(1)
+    if xy is None:
+        rec(f"  [b3] {label}：dump 未命中")
+    return xy
+
+
+def _mine_top_sig(x: str) -> str:
+    """我的页列表顶行签名（首个主列行 text 首行），用于判空滚（下滑后签名不变=空滚）。"""
+    for t, d, b in nodes(x):
+        s = (t or d).strip()
+        if not s:
+            continue
+        if 400 <= (b[0] + b[2]) // 2 <= 700 and 300 < b[1] < 1680:
+            return s.split("\n")[0]
+    return ""
+
+
+def _swipe_down_mine(label: str) -> bool:
+    """我的页下滑并确保列表实际移动；空滚则换更强参数重试。
+    返回 True=有前进，False=仍空滚（调用方应重新 _to_mine 复位）。"""
+    before = _mine_top_sig(dump(label + "_pre"))
+    # 递增强度：(末 y, 时长 ms)——距离越大/时长越短 fling 越强
+    for y2, ms in ((500, 400), (400, 300), (300, 250)):
+        swipe(W // 2, 1400, W // 2, y2, ms)
+        wait(1)
+        after = _mine_top_sig(dump(label + "_post"))
+        if after != before:
+            return True
+    return False
+
+
+def _settings_row_xy(max_rounds: int = 6) -> tuple[int, int] | None:
+    """我的页「设置」行（带副标题多行节点）鲁棒定位。
+
+    本模拟器 input swipe 非确定（偶发空滚 / fling 过冲切书架 tab），故不靠
+    固定下滑轮数，改为逐轮「dump 判态 + 下滑 + 再判态」闭环，最多 max_rounds：
+      - 命中「设置」多行节点 → 返回；
+      - 切到书架（书架特征词）→ 重新 _to_mine 复位（回我的页顶态）；
+      - 下滑空滚（顶行签名不变）→ 重新 _to_mine 复位（换干净顶态再来）。
+    只认 multi_line（带副标题）节点，防误点同名单行组头 IosSectionHeader('设置')。"""
+    shelf_mk = ("全部", "斗破苍穹", "斗罗大陆")
+    for rnd in range(max_rounds):
+        x = dump("settings_row_xy")
+        xy = _mine_row_xy("设置", "我的页「设置」行",
+                          up_rounds=0, down_rounds=0, multi_line=True)
+        if xy:
+            return xy
+        if has_kw(x, shelf_mk):
+            rec(f"  [b3] 设置行定位第 {rnd + 1} 轮：已切书架 tab，复位我的页")
+            _to_mine()
+            continue
+        if not _swipe_down_mine(f"settings_row_{rnd}"):
+            rec(f"  [b3] 设置行定位第 {rnd + 1} 轮：下滑空滚，复位我的页")
+            _to_mine()
+    rec("  [b3] 我的页「设置」行：多轮定位未命中")
+    return None
+
+
+def _to_settings_home() -> None:
+    """我的页 → 第 2 组「设置」行 → 设置主页（SettingsHomeScreen，标题「设置」）。
+
+    「设置」行在中段：_to_mine 滚顶后需恰好 1 次下滑才露出（第 2 次下滑滚出、
+    第 4 次下滑切书架 tab），故 _settings_row_xy 限定最多 2 次下滑逐轮 dump。
+    只匹配带副标题的多行节点，防误点同名单行组头 IosSectionHeader('设置')。"""
+    _to_mine()
+    xy = _settings_row_xy()
+    if xy is None:
+        # 盲点兜底易误触「退出」行（弹「确定退出阅读吗」），按任务要求记 FAIL 留主代理
+        raise RuntimeError("我的页「设置」行 dump 未命中（顶态 + 2 次下滑均未定位）")
+    tap(*xy)
+    rec(f"  [b3] 我的页「设置」行：点 {xy}")
+    wait(4)
+    # 校验确已进设置主页（9 卡首页含「外观」）；未落则区分两种错态重试：
+    #  a) 仍停我的页（点中不可点的组头/误点）→ 直接重定位重点，不 BACK（根 tab BACK 会退后台）
+    #  b) 误落二级页（或切到书架等）→ 重新 _to_settings_home 前置（_to_mine 会 BACK 回主壳）
+    chk = dump("settings_home_check")
+    if not has_kw(chk, ("外观", "备份与恢复", "字体管理")):
+        # 仅认「我的」页列表独有行（书源管理/替换净化/高亮标注/MCP 服务），
+        # 不用「首页」（底栏 tab 名，各主 tab 均有，过滚切到书架时会误判）
+        still_mine = has_kw(chk, ("书源管理", "替换净化", "高亮标注", "MCP 服务"))
+        rec(f"  [b3] 点「设置」后未落设置主页（still_mine={bool(still_mine)}），重试")
+        if still_mine:
+            # 仍停我的页（疑点中组头或行被滚出）→ 重新定位重点
+            xy2 = _settings_row_xy()
+        else:
+            # 误落他页（含被过滚切到书架）→ 重新回我的页并滚顶
+            _to_mine()
+            xy2 = _settings_row_xy()
+        if xy2 is None:
+            raise RuntimeError("我的页「设置」行重试仍未命中")
+        tap(*xy2)
+        rec(f"  [b3] 我的页「设置」行（重试）：点 {xy2}")
+        wait(4)
+
+
+def _to_theme_page() -> None:
+    """设置主页 → 「外观」行 → 主题设置页（ThemeConfigScreen，即「外观」页，
+    顶部预览卡 + 内置 12 色卡网格 + 主题引擎/通用/顶栏与布局）。
+
+    每轮先 dump 判态：已在主题页（主题设置/内置主题/主题引擎/AMOLED 纯黑）
+    直接返回；在设置主页（备份与恢复/字体管理/缓存管理 卡）则定位点「外观」
+    卡；落他处（如误点「高级」）则 BACK 后重新进设置主页，最多 3 轮。
+    设主「外观」是第 1 卡（顶栏下方首卡），常显，无需滚动。"""
+    theme_mk = ("主题设置", "内置主题", "主题引擎", "AMOLED 纯黑")
+    home_mk = ("备份与恢复", "字体管理", "缓存管理", "书源管理")
+    _to_settings_home()
+    for attempt in range(3):
+        x = dump("04_appearance")
+        if has_kw(x, theme_mk):
+            rec(f"  [b3] 04 已在主题页（第 {attempt + 1} 轮）")
+            return
+        if has_kw(x, home_mk):
+            xy = None
+            for t, d, b in nodes(x):
+                s = (t or d).strip()
+                if s.split("\n")[0] == "外观":
+                    xy = center_of(b)
+                    break
+            if xy is None:
+                xy = SETTINGS_APPEARANCE_FALLBACK
+                rec(f"  [b3] 设置主页「外观」卡：dump 未命中，回退坐标 {xy}")
+            tap(*xy)
+            rec(f"  [b3] 设置主页「外观」卡：点 {xy}")
+            wait(4)
+            if has_kw(dump("04_appearance_after"), theme_mk):
+                return
+            rec(f"  [b3] 04 点「外观」后未落主题页（第 {attempt + 1} 轮），BACK 重试")
+            keyevent("4")   # 误落相邻二级页：BACK 回设置主页
+            wait(1)
+            continue
+        # 落他处：BACK 一层后重新走设置主页链路
+        rec(f"  [b3] 04 未落设主/主题页（第 {attempt + 1} 轮），BACK 重进设置主页")
+        keyevent("4")
+        wait(1)
+        _to_settings_home()
+    rec("  [b3] 04 三轮未落主题页，回退坐标强点")
+    _to_settings_home()
+    tap(*SETTINGS_APPEARANCE_FALLBACK)
+    wait(4)
+
+
+def nav_b3_01() -> None:
+    """01_mine 我的页：冷启动 → 底部「我的」tab（设置列表，顶部管理入口组）。"""
+    _to_mine()
+
+
+def nav_b3_02() -> None:
+    """02_read_record 阅读记录：我的页 → 「阅读记录」行（「其他」组，底部区，
+    需滚顶归位后下滑露出）→ ReadRecordScreen。未命中记 FAIL（防误触「退出」）。"""
+    _to_mine()
+    xy = _mine_row_xy("阅读记录", "我的页「阅读记录」行",
+                      up_rounds=3, down_rounds=5, multi_line=True)
+    if xy is None:
+        raise RuntimeError("我的页「阅读记录」行 dump 未命中")
+    tap(*xy)
+    rec(f"  [b3] 我的页「阅读记录」行：点 {xy}")
+    wait(4)
+
+
+def nav_b3_03() -> None:
+    """03_settings 设置主页：我的页 → 「设置」行（外观/高级/阅读界面/备份与恢复/…）。"""
+    _to_settings_home()
+
+
+def nav_b3_04() -> None:
+    """04_appearance 设置·外观：设置主页 → 「外观」→ 主题设置页顶部
+    （预览卡 + 内置主题 12 色卡 + 主题引擎）。"""
+    _to_theme_page()
+
+
+def nav_b3_05() -> None:
+    """05_theme 主题设置 12 色卡：同 04 页（外观即主题设置，色卡网格在页内
+    「内置主题」节）→ 下滑使 12 张色卡（纯白/森绿/柠檬…）完整入镜；
+    不点色卡（选中会改持久化主题，污染后续屏），只滚动定位。"""
+    _to_theme_page()
+    swipe(W // 2, 900, W // 2, 480, 350)
+    wait(2)
+
+
+def nav_b3_06() -> None:
+    """06_backup 备份与恢复：设置主页 → 「备份与恢复」行 → WebDavSettingsScreen。"""
+    _to_settings_home()
+    tap_first_line_row("备份与恢复", "设置主页「备份与恢复」行", (540, 880))
+    wait(4)
+
+
+def nav_b3_07() -> None:
+    """07_font 字体（Tt 入口）：设置主页 → 「字体管理」行（第 8 卡，在 9 卡
+    滚动列表底部区，需下滑露出）→ FontScreen（我方 Tt 字体入口页；等价于
+    阅读器设置面板 Tt 卡「选择字体」整页链路）。"""
+    _to_settings_home()
+    tap_first_line_row("字体管理", "设置主页「字体管理」行", (540, 1120),
+                       down_rounds=3)
+    wait(4)
+
+
+def nav_b3_08() -> None:
+    """08_tts 朗读（引擎页）：干净进阅读器 → 底栏「朗读」钮启动朗读 →
+    朗读控制条 → 条内「朗读设置」→ ReadAloudConfigScreen（标题「朗读引擎」，
+    添加引擎/引擎列表）。未配置 TTS 引擎时控制条可能不出现 → 断言失败
+    记 FAIL 留主代理，不卡死。"""
+    _to_reader()
+    _ensure_auto_flip_off()
+    x = dump("08_tts")
+    xy = None
+    for t, d, b in nodes(x):
+        if (t or d).strip() == "朗读" and b[1] > 1600:  # 底栏区朗读钮
+            xy = center_of(b)
+            break
+    if xy is None:
+        xy = READER_TTS_BTN
+        rec(f"  [b3] 08 底栏「朗读」钮：dump 未命中，回退坐标 {xy}")
+    tap(*xy)
+    rec(f"  [b3] 08 底栏「朗读」钮：点 {xy}")
+    if not _poll(("朗读设置", "语速", "转后台"), 20):
+        raise RuntimeError("朗读控制条 20s 未出现（疑似无 TTS 引擎或朗读未启动）")
+    x = dump("08_tts_settings")
+    xy = None
+    for t, d, b in nodes(x):
+        if (t or d).strip() == "朗读设置":
+            xy = center_of(b)
+            break
+    if xy is None:
+        xy = READER_TTS_SETTINGS
+        rec(f"  [b3] 08 条内「朗读设置」：dump 未命中，回退坐标 {xy}")
+    tap(*xy)
+    rec(f"  [b3] 08 条内「朗读设置」：点 {xy}")
+    wait(4)
+
+
+def nav_b3_09() -> None:
+    """09_group_mgmt 分组管理：书架顶栏 ⋮ 卡菜单 → 「分组管理」项。"""
+    _to_shelf()
+    locate_or_fallback(r"更多|菜单|menu|overflow", BTN_SHELF_MENU, "书架顶栏 ⋮")
+    wait(2)
+    x = dump("09_group_mgmt")
+    xy = None
+    for t, d, b in nodes(x):
+        if (t or d).strip() == "分组管理":
+            xy = center_of(b)
+            break
+    if xy is None:
+        xy = MENU_ITEM_GROUPS
+        rec(f"  [b3] 09 卡菜单「分组管理」：dump 未命中，回退坐标 {xy}")
+    tap(*xy)
+    rec(f"  [b3] 09 卡菜单「分组管理」：点 {xy}")
+    wait(4)
+
+
+def nav_b3_10() -> None:
+    """10_auto_task 定时任务：我的页 → 「定时任务」行（顶部组第 2 行，滚顶可见；
+    首行精确匹配防误点开关行「运行定时任务」，multi_line 防误点组头）。"""
+    _to_mine()
+    xy = _mine_row_xy("定时任务", "我的页「定时任务」行",
+                      up_rounds=3, down_rounds=1, multi_line=True)
+    if xy is None:
+        raise RuntimeError("我的页「定时任务」行 dump 未命中")
+    tap(*xy)
+    rec(f"  [b3] 我的页「定时任务」行：点 {xy}")
+    wait(4)
+
+
+def nav_b3_11() -> None:
+    """11_highlight 高亮标注：我的页 → 「高亮标注」行（顶部组第 8 行，
+    滚顶后下滑露出）→ HighlightRulesScreen（标题「高亮规则」）。"""
+    _to_mine()
+    xy = _mine_row_xy("高亮标注", "我的页「高亮标注」行",
+                      up_rounds=3, down_rounds=2, multi_line=True)
+    if xy is None:
+        raise RuntimeError("我的页「高亮标注」行 dump 未命中")
+    tap(*xy)
+    rec(f"  [b3] 我的页「高亮标注」行：点 {xy}")
+    wait(4)
+
+
 # ===== 屏幕登记表（顺序执行，状态链式推进） =====
 # (编号, 英文短名, 导航函数, 主关键词(OR), 附加关键词(OR, 与主构成 AND),
 #  负向关键词(任一命中即错态), 截图后复位钩子(仅 16))
@@ -1044,18 +1414,104 @@ SCREENS_B2: list[tuple[str, str, str, tuple[str, ...], tuple[str, ...],
      ("MCP 服务", "端口", "URL", "用浏览器写源或看书"), (), None),
 ]
 
+# ===== 批 3 登记表（我的与设置，11 屏；key=<编号>_<短名> 即输出文件名） =====
+# 断言关键词取自各屏源码实证（settings_screen/settings_home_screen/theme_config/
+# read_record/auto_task/book_group/font/read_aloud_config/highlight_rules/
+# webdav_settings/书架卡菜单），遵循批 2 教训：主特征取屏独有元素。
+SCREENS_B3: list[tuple[str, str, str, tuple[str, ...], tuple[str, ...],
+                       tuple[str, ...], "callable | None"]] = [
+    # 01 我的页（settings_screen，AppStrings.my「我的」tab）：Web 服务卡 /
+    # MCP 服务行 / 高亮标注 / 主题模式 / 书源管理 行均为本页独有（设置主页
+    # 与二级页无这些行）。不设 AND：KeepAlive 列表滚动位置不定，顶部组行
+    # （书源管理/定时任务）可能滚出屏外，主特征命中即判本页
+    ("01", "mine",             nav_b3_01,
+     ("Web 服务", "MCP 服务", "高亮标注", "主题模式", "书源管理"),
+     (),
+     ("选择模式", "退出阅读"), None),
+    # 02 阅读记录（read_record_screen）：有记录态首行「阅读热力图」为屏独有
+    # （展开卡「近一年每日阅读情况」），空态「暂无阅读记录」；AND 负向
+    # 排除仍在我的页（书源管理行可见）
+    ("02", "read_record",      nav_b3_02,
+     ("阅读热力图", "暂无阅读记录", "未找到匹配的记录", "斗罗大陆"),
+     (),
+     ("书源管理", "替换净化"), None),
+    # 03 设置主页（settings_home_screen，标题「设置」）：9 卡滚动列表，顶态
+    # 可见前 5 卡（外观/高级/阅读界面/备份与恢复/缓存管理）。断言只用顶态
+    # 可见且本页独有的词（我的页无「外观/高级/阅读界面/备份与恢复」行，
+    # 但「书源管理/定时任务/缓存管理」行与我的页重名，不可作特征）；
+    # 字体管理/关于 在第 8/9 卡（顶态屏外），不作 AND。负向取我的页顶组
+    # 独有行「主题模式/MCP 服务」（设主无此二行）
+    ("03", "settings",         nav_b3_03,
+     ("外观", "高级", "阅读界面", "备份与恢复"),
+     ("备份与恢复",),
+     ("主题模式", "MCP 服务"), None),
+    # 04 设置·外观（theme_config_screen「主题设置」页顶部）：内置 12 色卡
+    # 网格 + 「主题引擎/AMOLED 纯黑/配色风格」节为屏独有；AND 「主题」
+    # 字样（顶栏标题「主题设置」）
+    ("04", "appearance",       nav_b3_04,
+     ("内置主题", "主题引擎", "AMOLED 纯黑", "配色风格"),
+     ("主题",),
+     ("退出阅读", "自动翻页"), None),
+    # 05 主题设置 12 色卡（同 04 页，下滑至色卡网格入镜）：色卡中文名
+    # （md3_colors 12 套 label：纯白/森绿/柠檬/小春/优香/菲比/穹/八月/
+    # 卡洛塔/姆吉卡/墨水/透明）任一命中即判色卡在屏；AND 「内置主题」节头
+    ("05", "theme",            nav_b3_05,
+     ("纯白", "森绿", "柠檬", "小春", "优香", "菲比", "穹", "八月",
+      "卡洛塔", "姆吉卡", "墨水", "透明"),
+     ("内置主题", "主题"),
+     ("退出阅读",), None),
+    # 06 备份与恢复（webdav_settings_screen，标题「备份与恢复」）：
+    # WebDAV 服务器地址/账号/密码行 + 备份/恢复按钮为屏独有
+    ("06", "backup",           nav_b3_06,
+     ("WebDAV 服务器地址", "WebDAV 账号", "WebDAV 密码"),
+     ("备份", "恢复"),
+     (), None),
+    # 07 字体（font_screen「字体管理」，Tt 入口整页链路）：「系统字体」
+    # 节头 + 「阅读字体预览 Aa 汉」行为屏独有；AND 「字体」字样
+    # （标题/当前字体/选择字体）
+    ("07", "font",             nav_b3_07,
+     ("系统字体", "阅读字体预览", "当前字体", "自定义字体"),
+     ("字体",),
+     ("退出阅读",), None),
+    # 08 朗读（read_aloud_config_screen「朗读引擎」）：顶栏标题 +
+    # 「添加引擎」FAB/「暂无朗读引擎」空态为屏独有；AND 「引擎」字样
+    ("08", "tts",              nav_b3_08,
+     ("朗读引擎", "添加引擎", "暂无朗读引擎", "管理 HTTP TTS 朗读引擎"),
+     ("引擎",),
+     (), None),
+    # 09 分组管理（book_group_screen）：顶栏「分组管理」标题 +
+    # 「新建分组」FAB tooltip/「还没有分组」空态为屏独有
+    ("09", "group_mgmt",       nav_b3_09,
+     ("分组管理", "新建分组", "还没有分组", "创建第一个分组"),
+     ("分组",),
+     ("选择模式",), None),
+    # 10 定时任务（auto_task_screen）：顶栏「定时任务」标题常驻；
+    # 有任务态「立即运行/编辑任务/调试」行或 cron 行，空态「暂无定时任务」
+    ("10", "auto_task",        nav_b3_10,
+     ("暂无定时任务", "立即运行", "编辑任务", "cron", "调试"),
+     ("任务",),
+     (), None),
+    # 11 高亮标注（highlight_rules_screen「高亮规则」）：顶栏标题 +
+    # 「暂无高亮规则/新增自动高亮规则」空态、规则卡「使用正则表达式」
+    # 为屏独有（替换净化编辑器亦含「使用正则表达式」，故 AND 标注/高亮）
+    ("11", "highlight",        nav_b3_11,
+     ("高亮规则", "暂无高亮规则", "使用正则表达式", "新增自动高亮规则"),
+     ("标注", "高亮"),
+     ("书源管理",), None),
+]
+
 
 def main() -> int:
     # global 声明必须在函数内首次使用 DEV/OUT_DIR/EXPECT_VERSION 之前，
     # 否则 SyntaxError: name used prior to global declaration
     global DEV, OUT_DIR, EXPECT_VERSION
     ap = argparse.ArgumentParser(
-        description="我方 1:1 对比批量截图采集（批 1 16 屏 + 批 2 10 屏）")
+        description="我方 1:1 对比批量截图采集（批 1 16 屏 + 批 2 10 屏 + 批 3 11 屏）")
     ap.add_argument("--device", default=DEFAULT_DEVICE,
                     help=f"adb 设备（默认 {DEFAULT_DEVICE}）")
     ap.add_argument("--only", default="",
                     help="只跑指定屏，逗号分隔：批 1 用编号（01,03,06，07 含 07/07b），"
-                         "批 2 用全名（01_discover,08_source_manage），可混用")
+                         "批 2/批 3 用全名 key（01_discover,08_source_manage,01_mine,04_appearance），可混用")
     ap.add_argument("--expect-version", default="",
                     help="覆盖期望 versionName（默认动态读 pubspec.yaml）；"
                          "设备 APK 落后于 pubspec 版本号时用于固定版本校验，避免整体中止")
@@ -1082,20 +1538,24 @@ def main() -> int:
             if tok == "07":
                 want.add("07b")  # 07 屏含双态：完成态(07) + 搜索中态(07b)
 
-    # 批 1/批 2 编号数字重叠（01/02/03/06-12），按 key 归属拆分：
-    # 批 1 用纯数字编号（01..16/07b），批 2 用全名 key（01_discover 等）
+    # 批 1/批 2/批 3 编号数字重叠（01/02/03/06-12 等），按 key 归属拆分：
+    # 批 1 用纯数字编号（01..16/07b），批 2/批 3 用全名 key
+    # （01_discover / 01_mine 等，短名互不冲突）
     B1_NUMS = {s[0] for s in SCREENS}
     B2_KEYS = {f"{n}_{m}" for n, m, *_ in SCREENS_B2}
+    B3_KEYS = {f"{n}_{m}" for n, m, *_ in SCREENS_B3}
     want_b1 = {t for t in want if t in B1_NUMS}
     want_b2 = {t for t in want if t in B2_KEYS}
+    want_b3 = {t for t in want if t in B3_KEYS}
 
     rec(f"设备：{DEV}；adb：{ADB}")
     if not want:
-        rec("目标：批 1 全 16 屏 + 批 2 全 10 屏")
+        rec("目标：批 1 全 16 屏 + 批 2 全 10 屏 + 批 3 全 11 屏")
     else:
         rec(f"目标：--only {','.join(sorted(want))}"
             f"（批 1：{','.join(sorted(want_b1)) or '无'}；"
-            f"批 2：{','.join(sorted(want_b2)) or '无'}）")
+            f"批 2：{','.join(sorted(want_b2)) or '无'}；"
+            f"批 3：{','.join(sorted(want_b3)) or '无'}）")
 
     # 设备可达性
     r = sh("shell", "echo", "parity-ping")
@@ -1143,6 +1603,22 @@ def main() -> int:
         # 注：每屏导航自带冷启动（_to_shelf/cold_start），会话态（选择模式等）天然隔离；
         # 但自动翻页是持久化设置，force-stop 后仍会运行，故 16 屏截图后
         # 经 post 钩子（reset_after_16）显式停止并退出阅读器，防止泄漏到后续屏/次次运行
+
+    # 批 3（我的与设置）：文件名 = key.png（01_mine.png 等），
+    # 与批 1/批 2 同目录不同名，互不覆盖
+    for num, name, nav, kws, and_kws, neg_kws, post in SCREENS_B3:
+        key = f"{num}_{name}"
+        if want and key not in want_b3:
+            continue
+        fname = f"{key}.png"
+        try:
+            res = run_screen(num, name, nav, kws, fname,
+                             and_kws=and_kws, neg_kws=neg_kws, post=post)
+        except Exception as e:
+            res = ScreenResult(num, name, False, "/".join(kws),
+                               fname, f"未捕获异常：{type(e).__name__}: {e}")
+            res.log()
+        results.append(res)
 
     # 汇总
     ok = [r for r in results if r.ok]
