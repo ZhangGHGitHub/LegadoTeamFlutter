@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.273] - 2026-09-17
+
+### Fixed
+- [UI] 台账 0917 核图重开两项闭环（R-NaN P1 修复 + R-N2 证据核验保留），版本 2.0.272+273 → 2.0.273+274：
+  - **R-NaN 搜索结果「NaN : NaN」/「暂无专辑/暂无简介」占位（P1，数据源清洗 + 渲染守卫双层修复）**：书源 JS 规则求值产出 NaN 数值（如缺失字段 `parseInt`/算术）时引擎字符串化为 `"NaN"`，`normalize_js_rule_result` 原只滤空串/null/undefined 直接放行写进 author/kind/wordCount/intro，JS 侧字符串拼接再产出「NaN : NaN」；`word_count_format` 非数字原样透传使 "NaN" 渲进字数 chip；C1 的 UI 守卫只拦整串精确 "NaN"，拼接形与占位串全部漏判（2.0.272 核图实锤）。修复三层：① `rust/legado-parser/src/analyze_rule.rs` `normalize_js_rule_result` 新增 "NaN" 判据归一为空（引擎出口 NaN 数值与 JS 字符串字面量 "NaN" 不可区分，而作者/分类/字数/简介字段不存在合法 "NaN" 值，一并视为无数据）；② `rust/legado-ffi/src/api/search.rs` `word_count_format` "NaN"（大小写不敏感）返回 None（覆盖搜索解析/webbook 信息/发现页三调用点）；③ `flutter_legado/.../search_screen_builders.part.dart` `_isMeaningfulText` 渲染守卫补全：NaN 拼接形（`_isNanJoined`，按分隔符切段后全部为 NaN 即判脏）+ 第三方书源占位串 `{'暂无专辑','暂无简介'}`（全仓 grep Rust+Dart 证实我方代码无生成处：「暂无专辑」仓库任何代码/数据文件均无来源，「暂无简介」仅见第三方书源 JSON 的 JS 规则回退文案 `ci.description || '暂无简介'` 与原版 strings.xml 详情页专用键——来源不可控，按任务裁决在渲染层过滤并注释，不渲染整行/标签=与空数据同语义，不做 UI 隐藏兜底）。③ 守卫实现缺陷复修（2.0.273 初装真机 dump 实锤「NaN : NaN」仍渲染）：原判据 `v.toUpperCase() == 'NaN'` 恒为 false（`'NaN'.toUpperCase()` 得全大写 `'NAN'`，混合大小写比较永不等），精确 "NaN" 与拼接形双双漏判 → 改与全大写 `'NAN'` 比（`_isMeaningfulText` 与 `_isNanJoined` 两处），独立判据脚本 18 例全过
+  - **R-N2 结果页右下 ▶ 按钮（结论修正 → 证据核验保留，零代码改动）**：重查实锤搜索屏唯一播放图标 widget 即 `_buildNextPageFab`（`Symbols.play_arrow_rounded`，tooltip「加载下一页」，调用 `loadNextPage()`），搜索屏**无**音频/朗读/TTS 入口（search_screen* 全文件 grep 验证）。授权证据：① 原版 Compose `SearchScreen.kt:391-401` 页面级 FAB 在「非搜索且 hasMore」态即显示同款 `PlayArrow` 图标（点击 → `SearchIntent.LoadMore` 同关键词续载，搜索中显 `Stop`；旧版 `SearchActivity.searchFinally` 同换 `ic_play_24dp`）——▶ 为原版「继续加载下一页」按钮非播放按钮，原版搜索结果项本身亦无播放钮（与截图核点一致）；② git `71b46ad009` 批次 B G-B-02「FAB 三态（停止/播放/下一页）」已对齐原版并验证；③ CHANGELOG 2.0.272 N2 行已登记「保留勿删」。0917「结论作废」按上述证据翻案，保留；原版可达朗读路径未动
+
+### Test
+- `cargo test` 全绿（legado-parser+legado-ffi(quickjs)：421 passed/0 failed，29 ignored 网络 smoke；初跑 `test_shushan_real_toc_repro` 真网 repro 瞬时网络失败，单测重跑通过，与本次改动无关）；`flutter analyze` 无问题（0）；`flutter test` 全过（1457）
+
+### Real device
+- 2.0.273+274 装 MuMu x86_64（192.168.1.19:5555），采集脚本版本校验通过（versionName=2.0.273），重采 `docs/parity_shots/ours_2.0.273/07_search_results.png` + `07b_search_results_loading.png`（2026-09-17 07:56 产出）。uiautomator dump（`.tmp/parity_273_07_dump2.xml`）断言：「NaN」命中 **0**（修前同位置 4 处）、`暂无专辑|暂无简介` 命中 **0**、`加载下一页` 命中 **1**（授权 FAB，R-N2 证据保留项）；结果项 content-desc 现渲染 `玄幻/1`、`尧人/玄幻奇幻`、`炒麦片/…` 干净文案。注：截图中保留的右下 ▶ 为原版同款「加载下一页」FAB（`Symbols.play_arrow_rounded`，`SearchScreen.kt:391-401` 对齐，非音频/TTS 入口；原版搜索结果项本身无播放钮，我方一致）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.272] - 2026-09-17
 
 ### Fixed

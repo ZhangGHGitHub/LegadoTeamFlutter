@@ -1612,7 +1612,18 @@ enum JsChainStep<'a> {
 /// - 其余 → 单元素列表（对象/数组已在引擎层 JSON.stringify）
 fn normalize_js_rule_result(result: String) -> Vec<String> {
     let trimmed = result.trim();
-    if trimmed.is_empty() || trimmed == "null" || trimmed == "undefined" {
+    // [R-NaN 数据源清洗 | 2026-09-17] JS 求值结果为 NaN 数值时（书源规则
+    // parseInt/算术对缺失字段产出 NaN，引擎字符串化为 "NaN"），与 null/undefined
+    // 同为「无数据」：原样写进 author/kind/wordCount/intro 等字段 → 搜索结果
+    // 渲染「NaN」/拼接出「NaN : NaN」（2.0.272 核图实锤，C1 UI 守卫只拦整串
+    // 精确 "NaN"，拼接形漏判）。JS NaN 数值对任何书籍字段均无意义，归一为空。
+    // 注意：JS 字符串字面量 "NaN"（源规则显式输出）与 NaN 数值在引擎出口
+    // 不可区分，一并视为无数据（作者/分类/字数/简介字段不存在合法 "NaN" 值）。
+    if trimmed.is_empty()
+        || trimmed == "null"
+        || trimmed == "undefined"
+        || trimmed == "NaN"
+    {
         Vec::new()
     } else {
         vec![result]

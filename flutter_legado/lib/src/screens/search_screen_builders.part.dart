@@ -14,13 +14,49 @@ part of 'search_screen.dart';
 bool _hasUnrenderedTemplate(String v) =>
     RegExp(r'\{\{.*?\}\}|\{\$[^}]*\}').hasMatch(v);
 
-/// [PARITY C1 S2 / C2 N1] 空数据判定：空串、"NaN"（书源规则未返回数值时
-/// JS 侧可能字符串化出 "NaN"）或未渲染书源模板串（`{{...}}`/`{$...}` 占位）
-/// 均视为无数据，副标题行/标签/简介不渲染
+/// [R-NaN | 2026-09-17] 第三方书源占位串（来源不可控：书源 JS 规则
+/// `x || '暂无简介'` 式回退文案 / 搜索结果页页面文案；全仓 grep（Rust+Dart）
+/// 证实我方代码无生成处——「暂无专辑」在仓库任何代码/数据文件均无来源，
+/// 「暂无简介」仅见于第三方书源 JSON 的 JS 规则文本与原版 strings.xml
+/// 详情页专用键）。按任务裁决：来源不可控 → 渲染层过滤并注释，
+/// 不做 UI 隐藏兜底（不渲染整行/标签，与空数据同语义）。
+const Set<String> _placeholderTexts = {'暂无专辑', '暂无简介'};
+
+/// [R-NaN] NaN 拼接形判定（如 "NaN : NaN"、"NaN,NaN"）：
+/// 按常见分隔符切分后，非空片段**全部**为 NaN（忽略大小写）即纯脏数据——
+/// 书源 JS 规则把缺失数值（引擎字符串化为 "NaN"）以分隔符拼接进
+/// kind 字段的产物（C1 守卫只拦整串精确 "NaN"，拼接形漏判 → 2.0.272 核图
+/// 「NaN : NaN」实锤）。片段含任何非 NaN 内容则放行（保守，不误杀）。
+bool _isNanJoined(String v) {
+  final parts = v
+      .split(RegExp(r'[\s:：,，;；、/|+&·~\-_]+'))
+      .map((p) => p.trim())
+      .where((p) => p.isNotEmpty)
+      .toList();
+  if (parts.isEmpty) return false;
+  // 注意：toUpperCase 产物为全大写 'NAN'（非 'NaN'），判据必须与 'NAN' 比
+  return parts.every((p) => p.toUpperCase() == 'NAN');
+}
+
+/// [PARITY C1 S2 / C2 N1 / R-NaN] 空数据判定：空串、"NaN"（书源规则未返回
+/// 数值时 JS 侧字符串化）或其拼接形（"NaN : NaN"）、第三方占位串
+/// （暂无专辑/暂无简介）、未渲染书源模板串（`{{...}}`/`{$...}` 占位）
+/// 均视为无数据，副标题行/标签/简介不渲染。
+///
+/// 数据源头已同步清洗（Rust `normalize_js_rule_result` 拒收 JS NaN、
+/// `word_count_format` 拒收 "NaN"）；本守卫为渲染层兜底——
+/// 第三方书源 JS **字符串**拼接产物（如规则显式产出 "NaN : NaN"）与
+/// 占位文案不经 Rust 清洗，仍可能到达 UI。
 bool _isMeaningfulText(String? value) {
   final v = value?.trim() ?? '';
   if (v.isEmpty) return false;
-  if (v.toUpperCase() == 'NaN') return false;
+  // [R-NaN 2.0.273 核图复修] 原判据 `v.toUpperCase() == 'NaN'` 恒为 false
+  //（'NaN'.toUpperCase()=='NAN' 混合大小写永不相等）——精确 "NaN" 与拼接形
+  // 双双漏判，2.0.273 真机 dump 实锤仍渲染。改与全大写 'NAN' 比。
+  if (v.toUpperCase() == 'NAN') return false;
+  if (_isNanJoined(v)) return false;
+  // [R-NaN] 第三方书源占位串（见 _placeholderTexts 注释），不渲染
+  if (_placeholderTexts.contains(v)) return false;
   // [C2 N1] 未渲染书源模板变量残留视为脏数据，不渲染
   return !_hasUnrenderedTemplate(v);
 }

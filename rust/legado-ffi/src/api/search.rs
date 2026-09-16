@@ -1844,6 +1844,12 @@ pub(crate) fn word_count_format(raw: &str) -> Option<String> {
     if t.is_empty() {
         return None;
     }
+    // [R-NaN 数据源清洗 | 2026-09-17] "NaN"（书源字数规则缺失数值时 JS 侧
+    // 字符串化产物，或页面文案）非合法字数文本：原版非数字原样透传会把
+    // "NaN" 渲染进标签，此处视为无数据。
+    if t.eq_ignore_ascii_case("NaN") {
+        return None;
+    }
     match t.parse::<i64>() {
         Ok(n) if n > 10000 => {
             let v = n as f64 / 10000.0;
