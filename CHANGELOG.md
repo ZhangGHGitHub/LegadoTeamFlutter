@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.271] - 2026-09-17
+
+### Fixed
+- [UI] 台账 N4 闭环——设备旧偏好覆盖新默认值（一次性偏好迁移）：C2 批（2.0.262）将阅读器两项默认值改新（R4 顶部「时间/章节名/进度」状态行四开关由默认开改默认关；R5 底栏左侧 tipFooterLeft 由 1=章节名改 7=书名），已安装设备上存量旧值导致新默认永不生效（需手动进设置改）。新增一次性迁移（`ReaderAdvancedConfig.load()` 首读处）：新存储标记键 `settingsMigrated_v271`，标记缺失时执行——状态行四键（`reader_adv_show_battery/show_time/show_progress/show_chapter_name`）存量 == 旧默认 true → 置 false；`tipFooterLeft` 存量 == 旧默认 1 → 置 7；随后置标记（幂等，后续启动不覆盖用户手动修改）；存量值 != 旧默认（用户曾手动改过）→ 不动仅打标记；键缺失（未存过）→ load 缺省即新默认无需写入。用户可见：升级后首次进阅读器自动应用新默认显示，手动改过的设置保持原样
+
+### Test
+- `flutter analyze` 无问题（0）；`flutter test` 全过（新增 `test/unit/reader_pref_migration_test.dart` 迁移单测 5 例：存量=旧默认→迁移为新默认并置标记 / 存量=自定义值→不动仅置标记 / 已置标记→幂等不改写 / 全新安装→新默认生效并置标记 / 重复 load→迁移仅执行一次）
+
+### Real device
+- release 2.0.271+272 APK 装 MuMu（192.168.1.19:5555，该设备恰好存有旧值，天然验证环境），versionName=2.0.271 校验通过；冷启进阅读器 → dump/截图断言顶部状态行不出现、底栏左侧显示书名（截图 docs/parity_shots/ours_2.0.271/10_reader.png，`scripts/parity_capture_ours.py --only 10_reader` 采集）；台账 N4 行闭环登记（注「一次性迁移方案」）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.270] - 2026-09-17
 
 ### Fixed

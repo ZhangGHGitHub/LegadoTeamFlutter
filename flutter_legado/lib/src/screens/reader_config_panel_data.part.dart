@@ -305,6 +305,40 @@ class ReaderAdvancedConfig {
       await prefs.setBool(migratedKey, true);
     }
 
+    // [N4 偏好迁移 | 2.0.271 | 子代理] 一次性默认值迁移（幂等）：
+    // C2 批（2.0.262）将两项默认值改新——R4 顶部「时间/章节名/进度」状态行
+    // 四开关由默认开改默认关；R5 底栏左侧 tipFooterLeft 由 1(章节名) 改
+    // 7(书名)。已安装设备上存有旧值时新默认永不生效（需手动改设置）。
+    // 迁移语义：
+    //   1. 仅当迁移标记 settingsMigrated_v271 缺失时执行（一次性）；
+    //   2. 存量值 == 旧默认 → 改写为新默认（视为"从未手动修改"）：
+    //      状态行四键 reader_adv_show_* 存量 true（旧默认开）→ 置 false；
+    //      tipFooterLeft 存量 1（旧默认=章节名）→ 置 7（书名）；
+    //   3. 存量值 != 旧默认（用户曾手动改过，如状态行已手动关、
+    //      tipFooterLeft 已选其他项）→ 不动，尊重显式选择；
+    //   4. 键缺失（未存过）→ load 缺省即新默认，无需写入。
+    // 迁移完成后置标记，后续启动/读取不再覆盖用户手动修改。
+    const c2DefaultsMigratedKey = 'settingsMigrated_v271';
+    if (!(prefs.getBool(c2DefaultsMigratedKey) ?? false)) {
+      const statusRowKeys = <String>[
+        '${_prefix}show_battery',
+        '${_prefix}show_time',
+        '${_prefix}show_progress',
+        '${_prefix}show_chapter_name',
+      ];
+      for (final key in statusRowKeys) {
+        // 旧默认=true（开）；存量 true 视为未手动修改 → 改新默认 false（关）
+        if (prefs.getBool(key) == true) {
+          await prefs.setBool(key, false);
+        }
+      }
+      // tipFooterLeft 旧默认=1（章节名）；存量 1 视为未手动修改 → 改 7（书名）
+      if (prefs.getInt('tipFooterLeft') == 1) {
+        await prefs.setInt('tipFooterLeft', 7);
+      }
+      await prefs.setBool(c2DefaultsMigratedKey, true);
+    }
+
     // F6：布局字段优先读日夜/共用桶，缺省回退 reader_adv_ 旧键（迁移）
     double layoutDouble(String key, double def) =>
         (prefs.getDouble('$lp$key') ?? prefs.getDouble('$_prefix$key') ?? def)
