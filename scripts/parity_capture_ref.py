@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
-"""parity_capture_ref.py — 1:1 界面对比「参考版 kazusa」批 3 设置域自动截图采集。
+"""parity_capture_ref.py — 1:1 界面对比「参考版 kazusa」批 3 设置域 +
+批 4 长尾深页自动截图采集。
 
 目的：
-  在装有参考版 io.legato.kazusa 的设备上，自动导航采集批 3「设置域」9 屏截图，
-  供与我方 docs/parity_shots/ours_<version>/ 做 1:1 对比。
+  在装有参考版 io.legato.kazusa 的设备上，自动导航采集批 3「设置域」9 屏 +
+  批 4 长尾深页 4 屏截图，供与我方 docs/parity_shots/ours_<version>/ 做 1:1 对比。
   每屏流程：导航 → uiautomator dump 文本断言（屏独有元素关键词命中）→
-  截图落盘 docs/parity_shots/ref_batch3/<NN>_<english_short_name>.png →
-  标准输出打印 [OK/FAIL] <screen> <keyword> <file>。
+  批 3 截图落盘 docs/parity_shots/ref_batch3/<key>.png、
+  批 4 截图落盘 docs/parity_shots/ref_batch4/<key>.png →
+  标准输出打印 [OK/FAIL] <screen> <keyword> <file>（批 4 skip 屏打印 [SKIP]）。
 
 设计原则（风格对齐 .tmp/ui/uiutil.py 与 scripts/parity_capture_ours.py）：
   - 纯 adb + uiautomator dump + input tap/swipe/keyevent 驱动，无 Appium 依赖
@@ -24,12 +26,13 @@
     exec-out screencap 二进制直写（不经 shell 重定向）
 
 用法：
-  python scripts/parity_capture_ref.py                      # 全 9 屏 + 明暗最佳努力屏
+  python scripts/parity_capture_ref.py                      # 全 9 屏 + 明暗最佳努力屏 + 批 4 4 屏
   python scripts/parity_capture_ref.py --only 02_read_record,03_settings
   python scripts/parity_capture_ref.py --only 05_theme_dark  # 单屏
+  python scripts/parity_capture_ref.py --only 02_dict_rule --no-dark   # 批 4 单屏
   python scripts/parity_capture_ref.py --out docs/parity_shots/ref_batch3
   python scripts/parity_capture_ref.py --device 192.168.1.19:5555
-退出码：0 = 全部 OK；1 = 存在失败/跳过屏。
+退出码：0 = 全部 OK；1 = 存在失败/跳过屏（skip-by-archive 屏不计失败）。
 
 屏清单（输出文件名 <key>.png，key 即 --only 用屏名）：
   02_read_record   阅读记录   —— 我的页→「阅读记录」
@@ -41,6 +44,12 @@
   08_tts           朗读       —— 设置域找「朗读」（阅读界面/高级，最佳努力）
   10_auto_task     定时任务   —— 我的页→「定时任务」
   11_highlight     高亮/书签  —— 我的页→「高亮标注」
+  批 4 长尾深页（落 ref_batch4/，--only 用同名 key）：
+  01_txt_toc_rule  TXT 目录规则 —— 我的页→「TXT 目录规则」
+  02_dict_rule     字典规则     —— 我的页→「字典规则」
+  03_file_manage   文件管理     —— 我的页→「文件管理」
+  04_about         关于页       —— skip-by-archive（已有 ref_20260913/02* 归档，不重采）
+  05_home_module   首页模块管理 —— [用户裁决暂不实施，两侧均不采，仅注释登记]
   最佳努力（--only 可单独指定，主跑自动追加）：
   04_appearance_dark / 05_theme_dark —— 我的页「主题模式」切深色后重拍，拍完切回；
                                         找不到明暗切换则跳过并汇报
@@ -208,10 +217,14 @@ def has_kw(x: str, kws: tuple[str, ...]) -> str:
     return ""
 
 
-def screenshot(name: str) -> Path:
-    """exec-out screencap -p 二进制直写本地（不经 shell 重定向，规避 MSYS 问题）。"""
-    OUT_DIR.mkdir(parents=True, exist_ok=True)
-    p = OUT_DIR / name
+def screenshot(name: str, out_dir: Path | None = None) -> Path:
+    """exec-out screencap -p 二进制直写本地（不经 shell 重定向，规避 MSYS 问题）。
+
+    out_dir=None 时用全局 OUT_DIR（批 3 行为不变）；批 4 屏传入 OUT_DIR_B4
+    （docs/parity_shots/ref_batch4/，自动建）。"""
+    out = out_dir or OUT_DIR
+    out.mkdir(parents=True, exist_ok=True)
+    p = out / name
     r = sh("exec-out", "screencap", "-p", binary=True)
     data = r.stdout or b""
     if not data or len(data) < 10_000:
@@ -532,6 +545,43 @@ def nav_11_highlight() -> None:
         raise RuntimeError("未找到「高亮标注」或「书签」行")
 
 
+# ===== 批 4 导航函数（长尾深页；入口全在我的页，沿用既有
+# go_mine + tap_row 上滑定位 + 首行精确匹配机制，我的页列表较长） =====
+# 我的页行特征（防「点未生效仍停我的页」错态误存）：TXT 目录规则/字典规则
+# 页是行进入的二级页，我的页顶组行不应再出现，故入批 4 屏负向词组
+MINE_PAGE_ROW_KWS = ("书源管理", "替换净化", "书签", "阅读记录")
+
+
+def nav_b4_01_txt_toc_rule() -> None:
+    """01_txt_toc_rule TXT 目录规则：我的页 → 「TXT 目录规则」行
+    （我的页列表较长：tap_row 复位到顶后上滑逐轮首行精确匹配定位）。"""
+    go_mine()
+    verify_page(MINE_PAGE_KWS, "进TXT目录规则前(我的页)")
+    xy = tap_row("TXT 目录规则", "我的页「TXT 目录规则」行", max_swipes=4)
+    if xy is None:
+        raise RuntimeError("未找到「TXT 目录规则」行")
+
+
+def nav_b4_02_dict_rule() -> None:
+    """02_dict_rule 字典规则：我的页 → 「字典规则」行（首行精确匹配，
+    防误配「标签规则/字典规则管理」等同前缀行）。"""
+    go_mine()
+    verify_page(MINE_PAGE_KWS, "进字典规则前(我的页)")
+    xy = tap_row("字典规则", "我的页「字典规则」行", max_swipes=4)
+    if xy is None:
+        raise RuntimeError("未找到「字典规则」行")
+
+
+def nav_b4_03_file_manage() -> None:
+    """03_file_manage 文件管理：我的页 → 「文件管理」行（我的页下段行，
+    需更多上滑轮次；tap_row 自带端点/甩过保护）。"""
+    go_mine()
+    verify_page(MINE_PAGE_KWS, "进文件管理前(我的页)")
+    xy = tap_row("文件管理", "我的页「文件管理」行", max_swipes=5)
+    if xy is None:
+        raise RuntimeError("未找到「文件管理」行")
+
+
 # ===== 明暗切换（最佳努力：04_appearance_dark / 05_theme_dark） =====
 DARK_MODE_KWS = ("深色", "暗色", "夜间", "黑夜", "Dark")
 LIGHT_MODE_KWS = ("浅色", "亮色", "日间", "白天", "跟随系统", "Light")
@@ -631,7 +681,8 @@ def _debug_nodes(x: str, n: int = 8) -> str:
 
 def run_screen(key: str, navigate, kws: tuple[str, ...],
                and_kws: tuple[str, ...] = (),
-               neg_kws: tuple[str, ...] = ()) -> ScreenResult:
+               neg_kws: tuple[str, ...] = (),
+               out_dir: Path | None = None) -> ScreenResult:
     """navigate() 完成导航 → dump 断言（失败重试 1 次，2s 刷新）→ 截图。
 
     断言语义（防错态误存）：
@@ -639,6 +690,7 @@ def run_screen(key: str, navigate, kws: tuple[str, ...],
       - and_kws（OR，附加特征）非空时须再命中其一（与 kws 构成 AND）；
       - neg_kws 任一命中即判错态。
     断言失败时**不落盘**（保留旧图，避免错态覆盖正图），并打印 dump 前 8 个文本节点。
+    out_dir=None 时截图落全局 OUT_DIR（批 3 行为不变）；批 4 屏传入 OUT_DIR_B4。
     """
     fname = f"{key}.png"
     try:
@@ -666,7 +718,7 @@ def run_screen(key: str, navigate, kws: tuple[str, ...],
             r.log()
             rec(f"  [debug] 前 8 个文本节点：{_debug_nodes(x, 8)}")
             return r
-        f = screenshot(fname)
+        f = screenshot(fname, out_dir=out_dir)
         r = ScreenResult(key, True, hit, f.name)
         r.log()
         return r
@@ -722,17 +774,57 @@ SCREENS_DARK: list[tuple[str, "callable", tuple[str, ...], tuple[str, ...],
       "卡洛塔", "姆吉卡", "墨水", "透明"), (), ()),
 ]
 
+# ===== 批 4 登记表（长尾深页，4 屏；key=<编号>_<短名> 即输出文件名，
+# 落 OUT_DIR_B4 = docs/parity_shots/ref_batch4/，与批 3 目录分离） =====
+# 元组第 6 位 skip_reason：非空则本屏跳过（打印 [SKIP]，不计失败）——
+# 04_about 已有归档 docs/parity_shots/ref_20260913/02_about_page.png/.xml
+# （含 02b 变体），按任务裁决标注 skip-by-archive 不再重采。
+# [2.0.270 批 4 用户裁决] 05_home_module（首页模块管理）暂不实施：两侧均不采，
+# 仅在此注释登记（不进登记表，不会被执行）。
+SCREENS_B4: list[tuple[str, "callable", tuple[str, ...], tuple[str, ...],
+                       tuple[str, ...], str]] = [
+    # 01 TXT 目录规则（我的页「TXT 目录规则」行 → 二级页）：
+    # 主词「目录规则/TXT」（任务断言词，行进入后页标题/行残留均可命中）+
+    # 屏内元素「正则/暂无/规则」；负向取我的页顶组行（二级页不应出现），
+    # 防「点未生效仍停我的页」错态误存
+    ("01_txt_toc_rule", nav_b4_01_txt_toc_rule,
+     ("目录规则", "TXT", "正则", "暂无", "规则"),
+     ("目录规则", "TXT"),
+     MINE_PAGE_ROW_KWS, ""),
+    # 02 字典规则（我的页「字典规则」行 → 字典二级页）：
+    # 主词「字典/规则/暂无」；负向同上防停我的页
+    ("02_dict_rule", nav_b4_02_dict_rule,
+     ("字典", "规则", "暂无", "查询"),
+     ("字典",),
+     MINE_PAGE_ROW_KWS, ""),
+    # 03 文件管理（我的页「文件管理」行 → 文件管理页）：
+    # 主词「文件/目录/私有」（任务断言词）+ root 面包屑；负向防停我的页
+    ("03_file_manage", nav_b4_03_file_manage,
+     ("文件", "目录", "私有", "root", "筛选"),
+     ("文件", "目录", "私有"),
+     MINE_PAGE_ROW_KWS, ""),
+    # 04 关于页：skip-by-archive——参考侧 2026-09-13 已采关于页
+    # （ref_20260913/02_about_page.png/.xml + 02b），不再重采；
+    # nav=None 占位，执行器见 skip_reason 直接 [SKIP] 返回，不计失败
+    ("04_about", None,
+     ("版本",), ("版本",), (),
+     "skip-by-archive：已有归档 docs/parity_shots/ref_20260913/02_about_page.png"),
+]
+
 
 def main() -> int:
-    global DEV, OUT_DIR
+    global DEV, OUT_DIR, OUT_DIR_B4
     ap = argparse.ArgumentParser(
-        description="参考版 kazusa 批 3 设置域批量截图采集（9 屏 + 明暗最佳努力屏）")
+        description="参考版 kazusa 批 3 设置域（9 屏 + 明暗最佳努力屏）+ "
+                    "批 4 长尾深页 4 屏批量截图采集")
     ap.add_argument("--device", default=DEFAULT_DEVICE,
                     help=f"adb 设备（默认 {DEFAULT_DEVICE}）")
     ap.add_argument("--only", default="",
-                    help="只跑指定屏，逗号分隔（屏名 key，如 02_read_record,03_settings）")
+                    help="只跑指定屏，逗号分隔（屏名 key，如 02_read_record,03_settings,"
+                         "02_dict_rule，批 1/3/4 可混用）")
     ap.add_argument("--out", default="",
-                    help="截图输出目录（默认 docs/parity_shots/ref_batch3）")
+                    help="截图输出目录（默认：批 3 docs/parity_shots/ref_batch3、"
+                         "批 4 docs/parity_shots/ref_batch4；指定时两批均落此目录）")
     ap.add_argument("--no-dark", action="store_true",
                     help="跳过明暗最佳努力屏（04_appearance_dark/05_theme_dark）")
     args = ap.parse_args()
@@ -742,6 +834,11 @@ def main() -> int:
                else ROOT / "docs" / "parity_shots" / "ref_batch3")
     if not OUT_DIR.is_absolute():
         OUT_DIR = ROOT / OUT_DIR
+    # 批 4 独立输出目录（ref_batch4/）；--out 显式指定时与批 3 同目录
+    OUT_DIR_B4 = (Path(args.out) if args.out
+                  else ROOT / "docs" / "parity_shots" / "ref_batch4")
+    if not OUT_DIR_B4.is_absolute():
+        OUT_DIR_B4 = ROOT / OUT_DIR_B4
 
     want = set()
     if args.only:
@@ -749,17 +846,18 @@ def main() -> int:
             tok = tok.strip()
             if tok:
                 want.add(tok)
-    all_keys = {s[0] for s in SCREENS} | {s[0] for s in SCREENS_DARK}
+    all_keys = ({s[0] for s in SCREENS} | {s[0] for s in SCREENS_DARK}
+                | {s[0] for s in SCREENS_B4})
     unknown = want - all_keys
     if unknown:
         rec(f"警告：--only 含未知屏名 {sorted(unknown)}（有效：{sorted(all_keys)}）")
 
     rec(f"设备：{DEV}；adb：{ADB}")
-    rec(f"输出目录：{OUT_DIR}")
+    rec(f"输出目录：批 3 {OUT_DIR}；批 4 {OUT_DIR_B4}")
     if want:
         rec(f"目标：--only {','.join(sorted(want))}")
     else:
-        rec(f"目标：全 9 屏{' + 明暗最佳努力屏' if not args.no_dark else ''}")
+        rec(f"目标：全 9 屏 + 批 4 4 屏{' + 明暗最佳努力屏' if not args.no_dark else ''}")
 
     if not ensure_device():
         rec("设备不可达，整体中止（exit 1）")
@@ -784,6 +882,24 @@ def main() -> int:
     if not args.no_dark and (not want or (want & {s[0] for s in SCREENS_DARK})):
         _run(SCREENS_DARK, (want & {s[0] for s in SCREENS_DARK}) or None)
 
+    # 批 4（长尾深页）：截图落 OUT_DIR_B4；skip_reason 非空的屏打印
+    # [SKIP]（skip-by-archive 等）不导航、不计失败；[SKIP] 屏不进 results，
+    # 避免把退出码拖成 1
+    for key, nav, kws, and_kws, neg_kws, skip_reason in SCREENS_B4:
+        if want and key not in want:
+            continue
+        if skip_reason:
+            rec(f"[SKIP] {key} {skip_reason}")
+            continue
+        try:
+            res = run_screen(key, nav, kws, and_kws=and_kws, neg_kws=neg_kws,
+                             out_dir=OUT_DIR_B4)
+        except Exception as e:
+            res = ScreenResult(key, False, "/".join(kws), f"{key}.png",
+                               f"未捕获异常：{type(e).__name__}: {e}")
+            res.log()
+        results.append(res)
+
     ok = [r for r in results if r.ok]
     fail = [r for r in results if not r.ok]
     rec("=" * 60)
@@ -792,7 +908,7 @@ def main() -> int:
         rec("失败/跳过清单：")
         for r in fail:
             rec(f"  - {r.key}：{r.reason}")
-    rec(f"截图目录：{OUT_DIR}")
+    rec(f"截图目录：批 3 {OUT_DIR}；批 4 {OUT_DIR_B4}")
     return 1 if fail else 0
 
 

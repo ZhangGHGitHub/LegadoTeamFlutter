@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """parity_capture_ours.py — 1:1 界面对比「我方」批量截图采集
-（批 1 16 屏 + 批 2 10 屏 + 批 3 11 屏）。
+（批 1 16 屏 + 批 2 10 屏 + 批 3 11 屏 + 批 4 长尾深页 4 屏）。
 
 目的：
   在装有我方 io.legado.flutter_legado（期望版本动态读取自 flutter_legado/pubspec.yaml）
@@ -24,12 +24,14 @@
     versionName 与 pubspec.yaml 版本一致（不符则整体中止）
 
 用法：
-  python scripts/parity_capture_ours.py                      # 批 1 16 屏 + 批 2 10 屏 + 批 3 11 屏
+  python scripts/parity_capture_ours.py                      # 批 1 16 屏 + 批 2 10 屏 + 批 3 11 屏 + 批 4 4 屏
   python scripts/parity_capture_ours.py --only 01,03,06      # 批 1 屏编号（07 含 07b）
   python scripts/parity_capture_ours.py --only 01_discover,08_source_manage
                                                              # 批 2 屏全名 key（可与批 1 混用）
   python scripts/parity_capture_ours.py --only 01_mine,04_appearance
                                                              # 批 3 屏全名 key（可与批 1/2 混用）
+  python scripts/parity_capture_ours.py --only 01_txt_toc_rule,02_dict_rule
+                                                             # 批 4 屏全名 key（可与批 1/2/3 混用）
   python scripts/parity_capture_ours.py --device 127.0.0.1:16416
   python scripts/parity_capture_ours.py --out docs/parity_shots/ours_<version>
 退出码：0 = 全部 OK；1 = 存在失败/跳过屏。
@@ -1537,6 +1539,97 @@ def nav_b3_11() -> None:
     wait(4)
 
 
+# ===== 批 4 导航函数（长尾深页，入口全在我的页；沿用批 3 的
+# _to_mine / _mine_row_xy / _swipe_down_mine 机制） =====
+# [2.0.270 批 4 用户裁决] 05_home_module（首页模块管理）暂不实施：两侧均不采，
+# 仅在此注释登记（不进 SCREENS_B4，不会被执行）。
+
+
+def _mine_deep_row_xy(first_line: str, label: str,
+                      max_rounds: int = 6,
+                      multi_line: bool = False) -> tuple[int, int] | None:
+    """我的页深行（「其他」组下段：文件管理/关于等）鲁棒定位（不点击）。
+
+    模拟器 input swipe 非确定（偶发空滚 / fling 过冲切书架 tab），沿用
+    _settings_row_xy 的「dump 判态 + 下滑 + 再判态」闭环（批 1-3 逻辑不动，
+    批 4 深行自配一份）：
+      - 首行精确匹配（multi_line 只认带副标题行）命中 → 返回；
+      - 切到书架（书架特征词）→ 重新 _to_mine 复位（回我的页顶态）；
+      - 下滑空滚（顶行签名不变）→ 重新 _to_mine 复位。"""
+    shelf_mk = ("全部", "斗破苍穹", "斗罗大陆")
+    for rnd in range(max_rounds):
+        x = dump(f"b4_deep_row_{rnd}")
+        xy = _mine_row_xy(first_line, label,
+                          up_rounds=0, down_rounds=0, multi_line=multi_line)
+        if xy:
+            return xy
+        if has_kw(x, shelf_mk):
+            rec(f"  [b4] {label} 第 {rnd + 1} 轮：已切书架 tab，复位我的页")
+            _to_mine()
+            continue
+        if not _swipe_down_mine(f"b4_deep_{rnd}"):
+            rec(f"  [b4] {label} 第 {rnd + 1} 轮：下滑空滚，复位我的页")
+            _to_mine()
+    rec(f"  [b4] {label}：多轮定位未命中")
+    return None
+
+
+def nav_b4_01() -> None:
+    """01_txt_toc_rule TXT 目录规则：我的页 → 「TXT 目录规则」行（顶部组第 4 行，
+    滚顶后可见）→ TxtTocRulesScreen（标题「TXT 目录规则」，空态「暂无目录规则」，
+    工具条「导入默认/添加规则」）。multi_line 防误点单行组头。"""
+    _to_mine()
+    xy = _mine_row_xy("TXT 目录规则", "我的页「TXT 目录规则」行",
+                      up_rounds=3, down_rounds=1, multi_line=True)
+    if xy is None:
+        raise RuntimeError("我的页「TXT 目录规则」行 dump 未命中")
+    tap(*xy)
+    rec(f"  [b4] 我的页「TXT 目录规则」行：点 {xy}")
+    wait(4)
+
+
+def nav_b4_02() -> None:
+    """02_dict_rule 字典规则：我的页 → 「字典规则」行（顶部组第 6 行，滚顶后
+    可见）→ DictScreen（字典查询页，标题「字典查询」）。下方「规则管理」行
+    副标题也含「字典规则」且去的是字典规则管理页，首行精确匹配防误点。"""
+    _to_mine()
+    xy = _mine_row_xy("字典规则", "我的页「字典规则」行",
+                      up_rounds=3, down_rounds=1, multi_line=True)
+    if xy is None:
+        raise RuntimeError("我的页「字典规则」行 dump 未命中")
+    tap(*xy)
+    rec(f"  [b4] 我的页「字典规则」行：点 {xy}")
+    wait(4)
+
+
+def nav_b4_03() -> None:
+    """03_file_manage 文件管理：我的页 → 「文件管理」行（「其他」组下段，
+    滚顶后需多次下滑）→ FileManageScreen（顶栏筛选框 hint「筛选 · 文件管理」
+    + root 面包屑）。深行走 _mine_deep_row_xy（空滚/切书架自动复位）。"""
+    _to_mine()
+    xy = _mine_deep_row_xy("文件管理", "我的页「文件管理」行",
+                           max_rounds=6, multi_line=True)
+    if xy is None:
+        raise RuntimeError("我的页「文件管理」行 dump 未命中（深行多轮定位失败）")
+    tap(*xy)
+    rec(f"  [b4] 我的页「文件管理」行：点 {xy}")
+    wait(4)
+
+
+def nav_b4_04() -> None:
+    """04_about 关于页：我的页 → 「关于」行（「其他」组末行、「退出」之前，
+    单行节点无副标题）→ AboutScreen（标题「关于」，「更新日志」行副标题含
+    「版本 <v>」）。深行走 _mine_deep_row_xy；未命中 raise 记 FAIL（盲点
+    兜底易误触「退出」行，按任务要求不落盘）。"""
+    _to_mine()
+    xy = _mine_deep_row_xy("关于", "我的页「关于」行", max_rounds=6)
+    if xy is None:
+        raise RuntimeError("我的页「关于」行 dump 未命中（深行多轮定位失败）")
+    tap(*xy)
+    rec(f"  [b4] 我的页「关于」行：点 {xy}")
+    wait(4)
+
+
 # ===== 屏幕登记表（顺序执行，状态链式推进） =====
 # (编号, 英文短名, 导航函数, 主关键词(OR), 附加关键词(OR, 与主构成 AND),
 #  负向关键词(任一命中即错态), 截图后复位钩子(仅 16))
@@ -1761,18 +1854,58 @@ SCREENS_B3: list[tuple[str, str, str, tuple[str, ...], tuple[str, ...],
      ("书源管理",), None),
 ]
 
+# ===== 批 4 登记表（长尾深页，4 屏；key=<编号>_<短名> 即输出文件名） =====
+# 入口全在「我的」页，断言关键词取自各屏源码实证（txt_toc_rules_screen /
+# dict_screen / file_manage_screen / about_screen），遵循批 2/3 教训：
+# 主特征取屏独有元素；AND 词组覆盖任务指定断言词（目录规则/TXT、字典、
+# 文件/目录/私有、版本）。
+# [2.0.270 批 4 用户裁决] 05_home_module（首页模块管理）暂不实施：两侧均不采，
+# 仅在此注释登记（不进登记表，不会被执行）。
+SCREENS_B4: list[tuple[str, str, str, tuple[str, ...], tuple[str, ...],
+                       tuple[str, ...], "callable | None"]] = [
+    # 01 TXT 目录规则（txt_toc_rules_screen，标题「TXT 目录规则」）：
+    # 工具条「导入默认/添加规则」tooltip + 空态「暂无目录规则/正则规则」为屏独有
+    ("01", "txt_toc_rule",     nav_b4_01,
+     ("TXT 目录规则", "暂无目录规则", "导入默认", "添加规则", "正则"),
+     ("目录规则", "TXT"),
+     ("退出阅读", "自动翻页"), None),
+    # 02 字典规则（我的页「字典规则」行 → dict_screen 字典查询页，
+    # 标题「字典查询」）：「输入单词开始查询」空态 + 「在线词典」节 +
+    # 「词典规则管理」入口为屏独有（字典规则管理页无「查询」按钮/在线词典节）
+    ("02", "dict_rule",        nav_b4_02,
+     ("字典查询", "输入单词开始查询", "在线词典", "词典规则", "暂无词典规则"),
+     ("字典",),
+     ("退出阅读", "自动翻页"), None),
+    # 03 文件管理（file_manage_screen）：顶栏筛选框 hint「筛选 · 文件管理」
+    # + root 面包屑 + 空态「当前目录为空」为屏独有；AND 任务词 文件/目录/私有
+    # （私有文件夹行/文案证明停在文件管理语境）
+    ("03", "file_manage",      nav_b4_03,
+     ("筛选 · 文件管理", "root", "当前目录为空", "加载文件"),
+     ("文件", "目录", "私有"),
+     ("退出阅读", "自动翻页"), None),
+    # 04 关于页（about_screen，标题「关于」）：「更新日志」行副标题含
+    # 「版本 <v>」为任务断言词；「开发人员/检查更新/开源许可/免责声明」
+    # 为屏独有行
+    ("04", "about",            nav_b4_04,
+     ("关于", "开发人员", "更新日志", "检查更新", "开源许可", "免责声明"),
+     ("版本",),
+     ("退出阅读", "自动翻页"), None),
+]
+
 
 def main() -> int:
     # global 声明必须在函数内首次使用 DEV/OUT_DIR/EXPECT_VERSION 之前，
     # 否则 SyntaxError: name used prior to global declaration
     global DEV, OUT_DIR, EXPECT_VERSION
     ap = argparse.ArgumentParser(
-        description="我方 1:1 对比批量截图采集（批 1 16 屏 + 批 2 10 屏 + 批 3 11 屏）")
+        description="我方 1:1 对比批量截图采集（批 1 16 屏 + 批 2 10 屏 + "
+                    "批 3 11 屏 + 批 4 长尾深页 4 屏）")
     ap.add_argument("--device", default=DEFAULT_DEVICE,
                     help=f"adb 设备（默认 {DEFAULT_DEVICE}）")
     ap.add_argument("--only", default="",
                     help="只跑指定屏，逗号分隔：批 1 用编号（01,03,06，07 含 07/07b），"
-                         "批 2/批 3 用全名 key（01_discover,08_source_manage,01_mine,04_appearance），可混用")
+                         "批 2/批 3/批 4 用全名 key（01_discover,08_source_manage,"
+                         "01_mine,04_appearance,01_txt_toc_rule），可混用")
     ap.add_argument("--expect-version", default="",
                     help="覆盖期望 versionName（默认动态读 pubspec.yaml）；"
                          "设备 APK 落后于 pubspec 版本号时用于固定版本校验，避免整体中止")
@@ -1805,18 +1938,21 @@ def main() -> int:
     B1_NUMS = {s[0] for s in SCREENS}
     B2_KEYS = {f"{n}_{m}" for n, m, *_ in SCREENS_B2}
     B3_KEYS = {f"{n}_{m}" for n, m, *_ in SCREENS_B3}
+    B4_KEYS = {f"{n}_{m}" for n, m, *_ in SCREENS_B4}
     want_b1 = {t for t in want if t in B1_NUMS}
     want_b2 = {t for t in want if t in B2_KEYS}
     want_b3 = {t for t in want if t in B3_KEYS}
+    want_b4 = {t for t in want if t in B4_KEYS}
 
     rec(f"设备：{DEV}；adb：{ADB}")
     if not want:
-        rec("目标：批 1 全 16 屏 + 批 2 全 10 屏 + 批 3 全 11 屏")
+        rec("目标：批 1 全 16 屏 + 批 2 全 10 屏 + 批 3 全 11 屏 + 批 4 全 4 屏")
     else:
         rec(f"目标：--only {','.join(sorted(want))}"
             f"（批 1：{','.join(sorted(want_b1)) or '无'}；"
             f"批 2：{','.join(sorted(want_b2)) or '无'}；"
-            f"批 3：{','.join(sorted(want_b3)) or '无'}）")
+            f"批 3：{','.join(sorted(want_b3)) or '无'}；"
+            f"批 4：{','.join(sorted(want_b4)) or '无'}）")
 
     # 设备可达性
     r = sh("shell", "echo", "parity-ping")
@@ -1870,6 +2006,22 @@ def main() -> int:
     for num, name, nav, kws, and_kws, neg_kws, post in SCREENS_B3:
         key = f"{num}_{name}"
         if want and key not in want_b3:
+            continue
+        fname = f"{key}.png"
+        try:
+            res = run_screen(num, name, nav, kws, fname,
+                             and_kws=and_kws, neg_kws=neg_kws, post=post)
+        except Exception as e:
+            res = ScreenResult(num, name, False, "/".join(kws),
+                               fname, f"未捕获异常：{type(e).__name__}: {e}")
+            res.log()
+        results.append(res)
+
+    # 批 4（长尾深页）：文件名 = key.png（01_txt_toc_rule.png 等），
+    # 与批 1-3 同目录不同名，互不覆盖；每屏导航自带 _to_mine 冷启动复位
+    for num, name, nav, kws, and_kws, neg_kws, post in SCREENS_B4:
+        key = f"{num}_{name}"
+        if want and key not in want_b4:
             continue
         fname = f"{key}.png"
         try:
