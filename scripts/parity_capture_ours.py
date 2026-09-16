@@ -37,8 +37,9 @@
 06_booklist / 07_source_switch / 08_source_manage / 09_source_editor /
 10_replace_rule_edit / 11_rss_source / 12_web_service（即输出文件名 <key>.png）。
 批 3（我的与设置）屏 key：01_mine / 02_read_record / 03_settings / 04_appearance /
-05_theme / 06_backup / 07_font / 08_tts / 09_group_mgmt / 10_auto_task /
-11_highlight（即输出文件名 <key>.png）。
+04_appearance_dark（深色态外观页，含像素断言与主题恢复）/ 05_theme /
+06_backup / 07_font / 08_tts / 09_group_mgmt / 10_auto_task / 11_highlight
+（即输出文件名 <key>.png）。
 
 期望版本不再硬编码：运行时从 flutter_legado/pubspec.yaml 的 `version:` 行动态读取
 （取 `+` 前主版本号），设备 versionName 需与之匹配；读取失败时回退到
@@ -1159,6 +1160,249 @@ def _to_theme_page() -> None:
     wait(4)
 
 
+# ===== 04_appearance_dark 深色态采集（批 3 配色比对前置，2.0.266 实测探针） =====
+# 实测结论（192.168.1.19:5555 / 2.0.266）：
+#   - 主题模式行在我的页（settings_screen），content-desc 为三行合并串
+#     「主题模式\n选择主题模式\n<浅色|深色|跟随系统>」；点行开底部弹层
+#     （选择主题模式 头 + 跟随系统/浅色/深色 3 个 ListTile，y≥1392），
+#     选中即全局实时生效并持久化（ThemeNotifier.setThemeMode）。
+#   - 外观页（theme_config_screen「主题设置」）本身**无**主题模式控件，
+#     其 dump 关键词为 主题设置/内置主题/主题引擎（任务断言词「主题模式」
+#     保留在关键词组内：命中即通过，未命中时以页面真实特征词兜底）。
+#   - 深色态外观页灰度均值实测 52.3（阈值 <90 判暗）；恢复「跟随系统」后
+#     主题模式行 value 回到「跟随系统」。
+DARK_MEAN_THRESHOLD = 90          # 像素断言：灰度均值 < 90 才算暗色
+SHEET_OPTION_Y_MIN = 1000        # 主题模式底部弹层 tile 纵带（实测 y≥1116 起）
+SHEET_DARK_FALLBACK = (540, 1812)      # 弹层「深色」tile 实测中心
+SHEET_SYSTEM_FALLBACK = (540, 1476)    # 弹层「跟随系统」tile 实测中心
+APPEARANCE_CARD_FALLBACK = (540, 651)  # 设置主页「外观」卡实测中心（2.0.266）
+
+
+def _mine_row_down_xy(first_line: str, label: str, max_rounds: int = 5,
+                      fallback_xy: tuple[int, int] | None = None) -> tuple[int, int]:
+    """我的页 top 态起，≤max_rounds 次下滑找 text 首行精确匹配的多行行节点。
+
+    专为 04_appearance_dark 的「主题模式/设置」行设计（top 态屏外，需上滑
+    ≤5 次露出；任务约束①）：每轮 dump 校验，命中即返回中心；未命中时按
+    顶/底标志位决定下滑还是回滚（防过滚后继续下滑永远找不着）。"""
+    past_mk = ("阅读记录", "书签", "退出")  # 过滚标志（已滚到「其他」组）
+    for rnd in range(max_rounds + 1):
+        xy = _mine_row_xy(first_line, label, up_rounds=0, down_rounds=0,
+                          multi_line=True)
+        if xy:
+            return xy
+        if rnd == max_rounds:
+            break
+        x = dump(label + f"_r{rnd}")
+        if has_kw(x, past_mk):
+            swipe(W // 2, 500, W // 2, 1400, 350)   # 过滚 → 回滚
+            rec(f"  [b3-d] {label}：第 {rnd + 1} 轮过滚（见 {past_mk}），回滚")
+        else:
+            swipe(W // 2, 1400, W // 2, 500, 350)   # top/中段 → 下滑露出下方行
+        wait(1)
+    if fallback_xy is not None:
+        rec(f"  [b3-d] {label}：{max_rounds} 次下滑未命中，回退坐标 {fallback_xy}")
+        return fallback_xy
+    raise RuntimeError(f"{label}：{max_rounds} 次下滑未命中（顶/底标志位闭环失效）")
+
+
+def _tap_sheet_option(label: str, fallback_xy: tuple[int, int]) -> None:
+    """主题模式底部弹层内点指定选项 tile（跟随系统/浅色/深色）。
+
+    弹层 tile 纵带实测 y≥1392（SHEET_OPTION_Y_MIN=1000 之上为 Scrim/背景），
+    只认纵带内 text/desc 恰为 label 的节点，防背景行 value 标签同名误命中；
+    未命中回退实测坐标。"""
+    x = dump(f"sheet_{label}")
+    cands = []
+    for t, d, b in nodes(x):
+        s = (t or d).strip()
+        if s == label and b[1] >= SHEET_OPTION_Y_MIN:
+            cands.append(((b[1], b[0]), center_of(b)))
+    if cands:
+        cands.sort()
+        _fb, xy = cands[0]
+        tap(*xy)
+        rec(f"  [b3-d] 弹层「{label}」：dump 命中，点 {xy}")
+        return
+    tap(*fallback_xy)
+    rec(f"  [b3-d] 弹层「{label}」：dump 未命中，回退坐标 {fallback_xy}")
+
+
+def _gray_mean(data: bytes) -> float:
+    """PIL 灰度均值（0~255）。Pillow 缺失时 raise（任务要求 PIL 读图）。"""
+    import io
+    from PIL import Image, ImageStat
+    st = ImageStat.Stat(Image.open(io.BytesIO(data)).convert("L"))
+    return float(st.mean[0])
+
+
+def _screenshot_bytes() -> bytes:
+    """exec-out screencap 内存直取（像素断言不落盘）；失败退化为 pull 读回。"""
+    r = sh("exec-out", "screencap", "-p", binary=True)
+    data = r.stdout or b""
+    if data and len(data) >= 10_000:
+        return data
+    shell("screencap", "-p", "/sdcard/.parity_shot.png")
+    TMP_SHOT = Path(os.environ.get("TEMP", "/tmp")) / f"parity_shot_{os.getpid()}.png"
+    sh("pull", "/sdcard/.parity_shot.png", str(TMP_SHOT))
+    if not TMP_SHOT.exists():
+        raise RuntimeError("截图失败（exec-out 与 pull 均失败）")
+    return TMP_SHOT.read_bytes()
+
+
+def _theme_row_values(x: str) -> list[str]:
+    """取 dump 中「主题模式」行节点末行（value：浅色/深色/跟随系统）。"""
+    return [s.split("\n")[-1] for s in
+            ((t or d).strip() for t, d, _b in nodes(x))
+            if s and s.split("\n")[0] == "主题模式"]
+
+
+def _switch_theme_dark() -> None:
+    """我的页 → 主题模式行（≤5 轮）→ 底部弹层点「深色」→ 校验行 value 已切。
+
+    冷启动由调用方保证（_to_mine 已含 force-stop + 滚顶校验「书源管理」）。
+    点「深色」后校验失败（行 value 未变「深色」）时：打印当前 dump 文本
+    节点（任务约束②）→ 先恢复「跟随系统」（主题可能已实际切深）再 raise，
+    绝不把应用留在深色态（任务约束④），绝不带病截图。"""
+    xy = _mine_row_down_xy("主题模式", "我的页「主题模式」行", max_rounds=5)
+    tap(*xy)
+    rec(f"  [b3-d] 我的页「主题模式」行：点 {xy}（开底部弹层）")
+    wait(2)
+    _tap_sheet_option("深色", SHEET_DARK_FALLBACK)
+    wait(1.5)   # 任务指定 sleep 1.5：主题全局实时生效 + 弹层收起
+    x = dump("after_dark")
+    vals = _theme_row_values(x)
+    if "深色" not in vals:
+        rec(f"  [b3-d] 点「深色」后主题模式行 value 未变深色（当前={vals}），"
+            f"前 5 个文本节点：{_debug_nodes(x)}")
+        _restore_theme_system()
+        raise RuntimeError("切深色失败：主题模式行 value 未变「深色」（已恢复跟随系统）")
+    rec(f"  [b3-d] 主题模式行 value 已切「深色」")
+
+
+def _restore_theme_system() -> None:
+    """恢复「跟随系统」：BACK 回我的页 → 主题模式行（≤5 轮）→ 弹层点「跟随系统」。
+
+    必须在深色截图后执行（任务约束④：不得让应用停在深色态）。弹层未收起
+    时先点 Scrim 区（y=150，实测弹层顶 1116 之上无交互节点）收起。BACK 对
+    主壳无副作用（_to_mine 已验证）。恢复后校验行 value == 「跟随系统」，
+    未恢复则 raise（由 run_screen 捕获记 FAIL，主代理可见）。幂等：
+    已是「跟随系统」时直接返回（供异常路径反复调用）。"""
+    if "跟随系统" in _theme_row_values(dump("restore_chk")):
+        rec("  [b3-d] 恢复校验：主题模式行已是「跟随系统」（幂等跳过）")
+        return
+    x = dump("restore_state")
+    if has_kw(x, ("选择主题模式",)):        # 弹层还开着：先收起再走全链路
+        tap(540, 150)
+        wait(1)
+    keyevent("4")
+    wait(1)
+    keyevent("4")
+    wait(1)
+    if not has_kw(dump("restore_chk2"), ("主题模式", "书源管理", "MCP 服务")):
+        keyevent("4")                        # 仍非我的页（如设置主页）：再 BACK
+        wait(1)
+    xy = _mine_row_down_xy("主题模式", "恢复「主题模式」行", max_rounds=5)
+    tap(*xy)
+    rec(f"  [b3-d] 恢复：主题模式行点 {xy}（重开底部弹层）")
+    wait(2)
+    _tap_sheet_option("跟随系统", SHEET_SYSTEM_FALLBACK)
+    wait(1.5)
+    x = dump("after_restore")
+    vals = _theme_row_values(x)
+    if "跟随系统" not in vals:
+        rec(f"  [b3-d] 恢复未生效（当前={vals}），force-stop + 冷启后重试一次")
+        cold_start()
+        _to_mine()
+        _restore_theme_system()
+        return
+    rec("  [b3-d] 已恢复「跟随系统」（主题模式行 value 校验通过）")
+
+
+def _assert_appearance_page(tag: str) -> str:
+    """外观页断言（任务指定：dump 含「主题模式」；该词实际只在我的页，
+    故以 OR 关键词组兜底——任务词 + 外观页真实特征词，命中其一即通过）。"""
+    kws = ("主题模式", "主题设置", "内置主题", "主题引擎")
+    x = dump(tag)
+    if has_kw(x, kws):
+        return x
+    wait(2)
+    x = dump(tag + "_retry")
+    if has_kw(x, kws):
+        return x
+    rec(f"  [b3-d] 外观页断言未命中 {kws}，前 5 个文本节点：{_debug_nodes(x)}")
+    raise RuntimeError(f"外观页断言失败：dump 未命中 {kws}")
+
+
+def nav_b3_04d() -> None:
+    """04_appearance_dark 深色态外观页（批 3 配色比对前置）。
+
+    流程（任务指定；实机探针 2.0.266 修正了控件位置——「深色」切换实际在
+    我的页主题模式底部弹层，外观页本身无主题模式控件，故先切深色再进
+    外观页）：
+      冷启动 → 我的 tab（_to_mine 滚顶）→ 主题模式行（≤5 次下滑）→
+      弹层点「深色」→ sleep 1.5 → 我的页找「设置」行（首行匹配、只认
+      多行节点，勿全行锚定；≤5 次下滑）→ 设置主页点「外观」卡 →
+      外观页断言（dump 含「主题模式」或页面特征词）。
+    断言通过后应用**留在深色外观页**：run_screen 随后标准截图落盘
+    04_appearance_dark.png，post 钩子 _post_04d 做像素断言（PIL 灰度
+    均值 <90 才算暗色，否则删图不落盘记 FAIL）并恢复「跟随系统」。
+    nav 自身异常（切深色后中途失败）先恢复再抛出（任务约束④：不得
+    让应用停在深色态）；run_screen 断言/截图失败不经 nav，由主流程
+    汇报后人工兜底恢复。"""
+    _to_mine()
+    _switch_theme_dark()
+    try:
+        # 我的页（当前滚动位）→ 「设置」行（首行匹配多行节点，≤5 次下滑）
+        xy = _mine_row_down_xy("设置", "我的页「设置」行", max_rounds=5)
+        tap(*xy)
+        rec(f"  [b3-d] 我的页「设置」行：点 {xy}")
+        wait(4)
+        # 设置主页 → 「外观」卡（dump 首行匹配，未命中回退 2.0.266 实测坐标）
+        x = dump("04d_appearance_card")
+        xy = None
+        for t, d, b in nodes(x):
+            s = (t or d).strip()
+            if s.split("\n")[0] == "外观":
+                xy = center_of(b)
+                break
+        if xy is None:
+            xy = APPEARANCE_CARD_FALLBACK
+            rec(f"  [b3-d] 设置主页「外观」卡：dump 未命中，回退坐标 {xy}")
+        tap(*xy)
+        rec(f"  [b3-d] 设置主页「外观」卡：点 {xy}")
+        wait(4)
+        _assert_appearance_page("04d_appearance")
+    except Exception:
+        # 切深色后中途失败：先恢复跟随系统再抛出（约束④）
+        _restore_theme_system()
+        raise
+
+
+def _post_04d() -> None:
+    """04_appearance_dark 截图后钩子：像素断言（未暗删图不落盘）→ 恢复跟随系统。
+
+    run_screen 已把深色态截图落盘为 04_appearance_dark.png（此刻应用仍在
+    深色外观页）；读回落盘文件算 PIL 灰度均值：
+      - <90：判暗色，保留图 → 执行恢复「跟随系统」（约束④）；
+      - ≥90：深色未生效/点错 → 删除落盘文件（不落盘）+ 打印当前 dump
+        文本节点（约束②定位用）→ 执行恢复 → raise 记 FAIL。
+    恢复无论断言结果如何都执行（约束④：不得让应用停在深色态）。"""
+    p = OUT_DIR / "04_appearance_dark.png"
+    mean = _gray_mean(p.read_bytes())
+    rec(f"  [b3-d] 像素断言：灰度均值 {mean:.1f}（阈值 <{DARK_MEAN_THRESHOLD}）")
+    if mean >= DARK_MEAN_THRESHOLD:
+        p.unlink()
+        rec(f"  [b3-d] 未达暗色（均值 {mean:.1f} ≥ {DARK_MEAN_THRESHOLD}）："
+            f"已删除 {p.name} 不落盘；当前 dump 前 5 个文本节点："
+            f"{_debug_nodes(dump('04d_dark_fail'))}")
+        _restore_theme_system()
+        raise RuntimeError(
+            f"像素断言失败：灰度均值 {mean:.1f} ≥ {DARK_MEAN_THRESHOLD}，"
+            f"深色未生效（已删图不落盘，已恢复跟随系统）")
+    _restore_theme_system()
+
+
 def nav_b3_01() -> None:
     """01_mine 我的页：冷启动 → 底部「我的」tab（设置列表，顶部管理入口组）。"""
     _to_mine()
@@ -1452,6 +1696,17 @@ SCREENS_B3: list[tuple[str, str, str, tuple[str, ...], tuple[str, ...],
      ("内置主题", "主题引擎", "AMOLED 纯黑", "配色风格"),
      ("主题",),
      ("退出阅读", "自动翻页"), None),
+    # 04d 深色态外观页（批 3 配色比对前置）：先在我的页主题模式弹层切
+    # 「深色」再进外观页，nav 断言通过后停留在深色外观页；run_screen 标准
+    # 截图后由 post 钩子 _post_04d 做像素断言（PIL 灰度均值 <90 判暗，
+    # 否则删图不落盘）并恢复「跟随系统」（nav 自身异常也会先恢复）。
+    # 断言 OR 词组含任务指定词「主题模式」+ 外观页真实特征词（深色态外观页
+    # dump 命中「主题设置/内置主题」；「主题模式」兜底误落我的页时命中）；
+    # AND 「主题」字样外观页顶栏恒含
+    ("04", "appearance_dark",  nav_b3_04d,
+     ("主题模式", "主题设置", "内置主题", "主题引擎"),
+     ("主题",),
+     ("退出阅读", "自动翻页"), _post_04d),
     # 05 主题设置 12 色卡（同 04 页，下滑至色卡网格入镜）：色卡中文名
     # （md3_colors 12 套 label：纯白/森绿/柠檬/小春/优香/菲比/穹/八月/
     # 卡洛塔/姆吉卡/墨水/透明）任一命中即判色卡在屏；AND 「内置主题」节头
