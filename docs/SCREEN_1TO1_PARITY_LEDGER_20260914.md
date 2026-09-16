@@ -333,7 +333,7 @@ B2-C1 ✅ 2.0.265（发现源卡单列列表行 P1 闭环；漏斗状态着色�
 
 | # | 屏 | 采集 | 结论 |
 |---|---|---|---|
-| 4-1 | TXT 目录规则 | 双侧 ✓（ours_2.0.270/01、ref_batch4/01） | 已配对（见 pairs_b4 差异率）；细节核验待视觉通道 |
+| 4-1 | TXT 目录规则 | 双侧 ✓ | **逐项细列（视觉通道恢复后，11.88%）**：①标题层级：参考=左对齐大标题（动作钮上行独立），我方=顶栏内居中标题 → P2；②新建入口：参考=右下**黄色 + FAB**，我方=顶栏圆形 + 钮 → P2；③卡片动作集：参考=开关+**铅笔**+垃圾桶图标，我方=开关+「测试/删除」文字钮（无铅笔）→ P2；④副标题语义：参考=**匹配示例文本**（「第一章 假装…」），我方=**完整正则源码** → P2（语义差异，建议对齐为示例预览）；⑤卡片形态：参考=独立分体卡（大间距圆角），我方=连体紧凑卡 → P2；⑥我方多「已禁用」灰 chip（参考以开关表状态）→ P3；⑦我方顶栏多 ?/↺ 两圆钮（登记，疑原版能力）→ P3 |
 | 4-2 | 字典规则 | 双侧 ✓（ours 02：字典查询页=词典规则管理/规则管理/查询/输入单词查询/未收录跳在线词典） | 双方能力对应；细则待比 |
 | 4-3 | 文件管理 | 双侧 ✓（ours 03 与 ref 03 **dump 文案逐字一致**：转到上一层级 / 筛选 • 文件管理 / root / cache / files） | **判一致 ✅** |
 | 4-4 | 关于页 | 复用 ref_20260913/02* 归档 + ours_2.0.270/04 | 已配对 |
@@ -350,3 +350,25 @@ B2-C1 ✅ 2.0.265（发现源卡单列列表行 P1 闭环；漏斗状态着色�
 - **真机验证**：MuMu 192.168.1.19:5555（该设备恰好存有旧值，天然验证环境）装 release 2.0.271+272，冷启进阅读器 → dump/截图断言顶部状态行不出现、底栏左侧显示书名；截图 `docs/parity_shots/ours_2.0.271/10_reader.png`（`scripts/parity_capture_ours.py --only 10_reader` 采集）。
 - **版本**：2.0.270+271 → 2.0.271+272；双日志同步（CHANGELOG [2.0.271] + updateLog，用户可见描述=「阅读界面默认显示优化生效（升级后自动应用）」）。
 - **签名**：全栈工程师子代理，2026-09-17。
+
+## 批 4 长尾 N2/N5/N3 收尾（2.0.272，2026-09-17）
+
+**N2 深色圆钮（07 搜索结果页 / 10 阅读器）——定位完成，保留（原版能力 / 误读，勿删）**
+- 07 搜索结果页右下深色圆钮 = **搜索「下一页/停止」FAB**：我方 `flutter_legado/lib/src/screens/search_screen_builders.part.dart:62` `_buildNextPageFab()`（`FloatingActionButton.small`，tooltip「加载下一页」，`Symbols.play_arrow_rounded`；同排 `:53` 为「停止搜索」stop 圆钮）。**原版能力**：`app/src/main/java/io/legado/app/ui/book/search/SearchActivity.kt:449` `searchFinally()`——搜索结束且有 more 时 `fbStartStop` 换 `ic_play_24dp` 播放图标（点击 = 同关键词续页），我方批次 B G-B-02 已对齐 → **保留 + 台账注明，非未授权新增，红线不触发**（证据 `docs/parity_shots/ours_2.0.266/07_search_results.png`）。
+- 10 阅读器「右下深色圆钮」= **底栏元素误读**：阅读器屏 grep 无独立浮动圆钮 widget，该区域为底栏左侧书名/右侧功能区 + 配色域（截图缩放/主题色误判为圆钮）→ **勿删**；底栏配色并入批 3 主题槽位域（证据 `ours_2.0.271/10_reader.png`）。
+
+**N5 目录字数胶囊（09 目录章节行右侧「2510字」）——根因修复（数据层，Rust 全链路补字数）**
+- 根因：我方 `BookChapter`/`WebChapter` 缺 `wordCount` 字段；目录胶囊 Flutter 侧本就就绪且「有值才渲染」（`toc_screen.dart` 章节行 `_loadWordCount && wordCount != null && wordCount.isNotEmpty` 才渲染 `'$wordCount 字'`，受本地「加载字数」开关控制，对齐原版 `AppConfig.tocCountWords`）。原版链路 = `TocRule.updateTime` 规则 info 文本 → `AppPattern.wordCountRegex`（`app/.../constant/AppPattern.kt:24`）提取 → `chapter.wordCount`。
+- 修复（Rust 全链路）：`WebChapter` 新增 `word_count: Option<String>`（serde `wordCount`，`legado-core/src/web_book.rs`）；规则源 `webbookChapters` 对每章取 `updateTime` 规则 info 经等价正则 `(?:^|字数[：:、]?|\s+)([0-9万千百.]{1,6}字)` 捕获组 1 提取（`legado-ffi/src/api/web_book.rs`，OnceLock 惰性静态 + 单测 `word_count_regex_extraction`）；JS 源 `convert_js_chapters` 读 `wordCount` 键；`refreshToc`（`reader.rs`）转换落库透传 `wordCount`。`docs/API_CONTRACT.md` 加 2026-09-15 N5 条目（章节 JSON 新增可选 `wordCount`；无新 FFI 方法，方法表不变）。
+- 验证：`cargo test` 全绿（legado-ffi 354 passed/0 failed，19 ignored 网络 smoke）；`flutter analyze` 0、`flutter test` 全过（1457）。
+- 真机：装 2.0.272+273 后，目录页开「加载字数」，章节行右侧出字数胶囊（**依赖书源 `updateTime` 规则/章节 info 含「xxx字」，无字数数据的书源仍不显示——与原版行为一致**，属数据可用性差异，非 UI 缺陷）。
+
+**N3 详情页封面空白占位（08）——定位：UI 回落与原版一致，差异在数据/加载层 → 登记（不加 UI）**
+- 像素证据：我方 08 封面盒渲染的是 `assets/images/default_book_cover.jpg`（92% 均匀浅灰 (224,224,224)，600×900）=「无封面/加载失败」默认封面；参考 08 为真实绿色封面照。
+- 加载路径核查：`flutter_legado/lib/src/widgets/book_cover.dart` `BookCover`——无 coverUrl / 直连失败 / FFI 解码失败**均静默回落默认封面，无错误占位与重试 UI**（任意失败静默）。
+- 原版对照：`app/src/main/res/layout/activity_book_info.xml:88` 封面 `android:src="@drawable/image_cover_default"`——**原版无封面/加载失败同样回落默认封面，且原版亦无错误占位/重试 UI**。故按「加载失败静默→补错误占位与重试」新增 UI 属原版没有的能力（红线：未授权不得新增）→ **不加**。
+- 结论：**UI 层与原版对齐，无缺陷**；08 截图差异根因在数据/加载层——`coverUrl` 未取到（书源详情规则未命中/网络失败时 `_mergeWebInfo` 静默降级，`book_info_screen_load.part.dart` 补全失败仅 `debugPrint`）或封面图加载失败。真机装 2.0.272+273 核验：若详情封面正常出图→判定为**当时加载/数据层瞬时失败（登记数据层差异，非 UI 缺陷）**；若仍空白→追 `coverUrl` 落库值定论。
+
+**Android ABI 构建注（2.0.272 .so 刷新）**
+- arm64-v8a / x86_64 `.so` 已重建含 N5 全链路（FRB contentHash -734354461 不变——N5 无新 FFI 方法；.meta 同步刷新，`verifyRustFfiLibs` 门禁覆盖此二 ABI）。
+- **armeabi-v7a 沿用旧 .so（登记）**：armv7 交叉编译在 `rar 0.4.0`（2026-08-06 `7740ab0997` 引入的 quickjs 纯 Rust 依赖）处 E0277——`nom 7.1.3` 的 `ToUsize for u64` impl 带 `#[cfg(target_pointer_width="64")]`（`nom-7.1.3/src/traits.rs:1262`），32 位下缺失，`rar/src/extra_block.rs:32` `take(size-1)`（u64 实参）无法满足 `C: ToUsize`；crates.io 核实 `rar` 无 0.4.0 之后版本，无法升级修复。与 CHANGELOG:2774 既有登记（「armv7 so 交叉编译失败，模拟器 x86_64/真机 arm64 不受影响」）及 `requiredAbis = [arm64-v8a, x86_64]`（`flutter_legado/android/app/build.gradle.kts:74`，门禁不校验 v7a）一致；v7a 现挂 .so 为 8 月前 quickjs:false 旧版（缺 get7zStringContent 等 8/6 后全部 Rust 能力，meta quickjs:false 可证）。MuMu x86_64 与 arm64 真机不受影响，本批不动 v7a；后续若需 32 位真机，需对 rar 调用点做本地 patch（u64→usize 收窄）单独立批。
