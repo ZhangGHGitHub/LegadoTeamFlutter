@@ -771,8 +771,16 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final topPadding = MediaQuery.paddingOf(context).top + kToolbarHeight + 8;
     final cs = Theme.of(context).colorScheme;
     final ts = Theme.of(context).textTheme;
-    final wordCount = (book.wordCount ?? '').trim();
+    // [U9 | 台账 0917 批二] wordCount 不再用于头部标签行（已并入 U5 聚合行
+    // 统一 isMeaningfulText 守卫渲染），此处仅保留分类标签
     final kinds = _buildKindLabels(book);
+    // [U6 | 台账 0917 批二] 双（深+浅）柔阴影：去掉信息列浅底卡后，书名/作者/
+    // 书源直排于 hero（参考 08 无卡底），此阴影保证任意（亮/暗）封面 hero 下
+    // 深色文字对比可读（深色阴影压亮底、浅色光晕托暗底）
+    final heroTextShadows = const [
+      Shadow(color: Color(0x59000000), blurRadius: 4, offset: Offset(0, 1)),
+      Shadow(color: Color(0x80FFFFFF), blurRadius: 8),
+    ];
     return Padding(
       padding: EdgeInsets.only(top: topPadding, bottom: 12),
       child: Column(
@@ -821,16 +829,13 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                 const SizedBox(width: 17),
                 Expanded(
                   child: Container(
-                    // [U3 | 台账 0917] 淡色护底：信息列压在封面虚化区，
-                    // 深色封面时作者灰字对比不足被「吞」——垫一层半透明
-                    // surface 底保证任何封面下可读（参考版浅色 hero 下
-                    // 近不可见，不改变参考观感）
+                    // [U6 | 台账 0917 批二] 去掉淡色护底卡：信息列（书名/作者/
+                    // 书源）透明直排于 hero（对齐参考 08，其标题块无卡底，PIL
+                    // 实测标题区背景=hero 透传 117-176 渐变，非浅底卡）。对比度
+                    // 改由文字双（深+浅）柔阴影 heroTextShadows 保证，任意封面
+                    // （亮/暗）hero 下均可读
                     padding: const EdgeInsets.symmetric(
                         horizontal: 10, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: cs.surface.withValues(alpha: 0.5),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -853,6 +858,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                               height: 1.35,
                               fontWeight: FontWeight.w700,
                               color: cs.onSurface,
+                              shadows: heroTextShadows,
                             ),
                           ),
                         ),
@@ -869,9 +875,12 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             // [U3 | 台账 0917] 中等可读灰（ref PIL 实测
-                            // 14-16sp）；onSurfaceVariant 全不透明 + 护底
-                            style: ts.bodyMedium
-                                ?.copyWith(color: cs.onSurfaceVariant),
+                            // 14-16sp）；[U6] 去护底卡后对比度由
+                            // heroTextShadows 双柔阴影保证
+                            style: ts.bodyMedium?.copyWith(
+                              color: cs.onSurfaceVariant,
+                              shadows: heroTextShadows,
+                            ),
                           ),
                         ),
                         const SizedBox(height: 4),
@@ -892,7 +901,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: ts.bodyMedium?.copyWith(
-                                      color: cs.onSurfaceVariant),
+                                    color: cs.onSurfaceVariant,
+                                    shadows: heroTextShadows,
+                                  ),
                                 ),
                               ),
                             ),
@@ -907,63 +918,19 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                 ],
               ),
             ),
-          // 标签行（对标 lb_kind + 字数标签 tv_word_count，左对齐跟随两栏区）
-          // [U4 | 台账 0917] 字数 chip 经 isMeaningfulText 守卫（模板残留/
-          // NaN 不渲染）；[U2] 左距 16→13 随封面左缘对齐
-          if (isMeaningfulText(wordCount) || kinds.isNotEmpty)
+          // 标签行（对标 lb_kind，左对齐跟随两栏区）
+          // [U9 | 台账 0917 批二] 形态对齐参考 08：「🏷️ 标签1, 标签2…」
+          // 逗号连排单/多行换行（替代原逐 tag 竖排 chip）；每个标签独立
+          // 点击（原版 lbKind → SearchActivity）/ 长按（JS 回调）行为不变；
+          // 字数移入 U5 聚合行渲染（isMeaningfulText 守卫不重复）
+          if (kinds.isNotEmpty)
             Padding(
-              padding:
-                  const EdgeInsets.only(left: 13, right: 16, top: 10),
-              child: Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: [
-                  for (final kind in kinds)
-                    GestureDetector(
-                      // 对齐原版 lbKind 点击 → SearchActivity.start(source, kind)
-                      // — Cursor UI
-                      onTap: () => _openSearch(
-                        kind,
-                        sourceUrl: book.origin,
-                        event: 'clickBookLabel',
-                      ),
-                      onLongPress: () => _sourceCallBackLabel(
-                        'longClickBookLabel',
-                        kind,
-                      ),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: cs.secondaryContainer
-                              .withValues(alpha: 0.6),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          kind,
-                          style: TextStyle(
-                              fontSize: 11, color: cs.onSurface),
-                        ),
-                      ),
-                    ),
-                  // [U4 | 台账 0917] 字数脏数据（模板残留/NaN）不渲染
-                  if (isMeaningfulText(wordCount))
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: cs.errorContainer,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Text(
-                        wordCount,
-                        style: TextStyle(
-                            fontSize: 11, color: cs.onErrorContainer),
-                      ),
-                    ),
-                ],
-              ),
+              padding: const EdgeInsets.only(left: 13, right: 16, top: 10),
+              child: _buildTagLine(context, book, kinds),
             ),
+          // [U9 | 台账 0917 批二] 在读/最新两行（参考 08「在读·第1章…」、
+          // 「最新·第712章…」块，置于「共 N 章」行上方；缺数据不渲染）
+          ..._buildReadLatestLines(context, book, chapters),
           // [PARITY C1 D4] 章节信息单行「共 N 章｜未读/已读」（对齐参考 08；
           // 替代原「在读/最新/目录」三行强调排版，数据复用页面现有 state；
           // 已读判定：有阅读进度 durChapterIndex > 0，与阅读 FAB 同语义）
@@ -1068,6 +1035,91 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     );
   }
 
+  /// [U9 | 台账 0917 批二] 标签行：「🏷️ 标签1, 标签2…」逗号连排自动换行
+  /// （对齐参考 08 形态，替代原竖排 chip：去 chip 底色改纯文本内联连排，
+  /// 超宽自动换行为多行）。每个标签独立挂 点击（对齐原版 lbKind →
+  /// SearchActivity.start(source, kind)）与长按（JS 回调）手势，行为与原
+  /// chip 行一致；本 SDK 无 TapAndHoldGestureRecognizer，故用「纯文本内联 +
+  /// 逐 tag GestureDetector」等价实现（TextSpan 单 recognizer 无法双挂）
+  Widget _buildTagLine(BuildContext context, Book book, List<String> kinds) {
+    final cs = Theme.of(context).colorScheme;
+    final labelStyle = TextStyle(fontSize: 11, color: cs.onSurfaceVariant);
+    return Wrap(
+      spacing: 0,
+      runSpacing: 2,
+      children: [
+        Text('🏷️ ', style: labelStyle),
+        for (var i = 0; i < kinds.length; i++) ...[
+          GestureDetector(
+            onTap: () => _openSearch(
+              kinds[i],
+              sourceUrl: book.origin,
+              event: 'clickBookLabel',
+            ),
+            onLongPress: () => _sourceCallBackLabel(
+              'longClickBookLabel',
+              kinds[i],
+            ),
+            child: Text(kinds[i], style: labelStyle),
+          ),
+          if (i < kinds.length - 1) Text(', ', style: labelStyle),
+        ],
+      ],
+    );
+  }
+
+  /// [U9 | 台账 0917 批二] 在读/最新两行（参考 08「在读·第1章…」、
+  /// 「最新·第712章…」，置于「共 N 章」行上方；缺数据不渲染该行）：
+  /// - 在读行 = 阅读记录进度 durChapterIndex（1 基章节序）→ 实际章节标题
+  ///   （目录未加载/越界时降级为不带章节名，不显示脏索引）
+  /// - 最新行 = info 的 latestChapterTitle + 总章数（totalChapterNum 优先，
+  ///   回落实际章节数）；完结态（分类标签含 已完结/完本/已完本，与 U5
+  ///   聚合行同源）追加「（全书完）」后缀
+  List<Widget> _buildReadLatestLines(
+      BuildContext context, Book book, List<BookChapter> chapters) {
+    final cs = Theme.of(context).colorScheme;
+    final ts = Theme.of(context).textTheme;
+    Widget line(String text) => Padding(
+          padding: const EdgeInsets.only(left: 13, top: 6),
+          child: Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: ts.bodyMedium?.copyWith(
+              fontSize: 12,
+              color: cs.onSurfaceVariant,
+            ),
+          ),
+        );
+    final lines = <Widget>[];
+    // 在读行（阅读记录：durChapterIndex 为 1 基章节序）
+    final durIdx = book.durChapterIndex;
+    if (durIdx > 0) {
+      var title = '';
+      if (durIdx <= chapters.length) {
+        title = chapters[durIdx - 1].title.trim();
+      }
+      lines.add(
+        line('在读·第$durIdx章${title.isEmpty ? '' : ' $title'}'),
+      );
+    }
+    // 最新行（info：latestChapterTitle + 总章数 + 完结态）
+    final latest = (book.latestChapterTitle ?? '').trim();
+    if (isMeaningfulText(latest)) {
+      final chapterTotal =
+          book.totalChapterNum > 0 ? book.totalChapterNum : chapters.length;
+      var text =
+          '最新·${chapterTotal > 0 ? '第$chapterTotal章 ' : ''}$latest';
+      final finished = (book.kind ?? '')
+          .split(',')
+          .map((e) => e.trim())
+          .any((e) => e == '已完结' || e == '完本' || e == '已完本');
+      if (finished) text = '$text（全书完）';
+      lines.add(line(text));
+    }
+    return lines;
+  }
+
   /// 操作区四图标卡一行（[PARITY C1 D2]，对齐参考 08 量化：
   /// 卡 52×69dp、间距 32dp、surfaceContainerLow 底、图标上/标签下）
   /// - 四卡：已在书架/加书架（切换，_toggleShelf）/ 查看目录 / 书源（换源）/
@@ -1082,9 +1134,12 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         height: 69,
         child: Material(
           color: cs.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(12),
+          // [U8 | 台账 0917 批二] 圆角 12→10：ref 08 PIL 实测卡 192×182px
+          // 圆角 ≈35px，radius/卡宽 ≈0.18；我方 52dp 卡按同比例 ≈9.4dp
+          // 取 10（参考偏方、圆角小，原 12 偏圆）
+          borderRadius: BorderRadius.circular(10),
           child: InkWell(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             onTap: onTap,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,

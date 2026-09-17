@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.278] - 2026-09-17
+
+### Fixed
+- [UI] 书籍详情页用户实测反馈批二四项修复（台账 08「用户实测反馈批二 0917」U6-U9，版本 2.0.277+278 → 2.0.278+279，基准 `ref_20260914/08_book_info.png`）：
+  - **U7【P1·先调查】信息聚合行缺项根因 + 进入刷新对齐**：链路对比——原版 `BookInfoViewModel.upBook()` 进入即先 `bookData.postValue(DB缓存)` 上屏，`tocUrl 为空 && 非本地` 时 `loadBookInfo`（`WebBook.getBookInfo` → `BookInfo.analyzeBookInfo` 覆盖式写 name/author/kind(逗号连)/wordCount/latestChapterTitle/coverUrl/tocUrl），菜单刷新恒 `loadBookInfo`；我方旧实现详情页进入**从不调用 bookInfo 刷新**（`_mergeWebInfo` 仅补空不覆盖，in-shelf 且章节已缓存时门控 `chapters.isEmpty` 不成立直接跳过）→ 评分/分类/完结态/字数停留 DB 陈旧值。修：`book_info_screen_load.part.dart` 新增「章节已缓存的在线书」后台 `webbookInfo` 刷新分支——更新式合并（`refresh:true`：刷新非空值覆盖陈旧字段，空值不覆盖）+ in-shelf `api.updateBook` 落库 + 不阻塞首屏（DB 缓存已上屏，后台完成后 setState）；`_mergeWebInfo` 增 `refresh` 更新式合并分支
+  - **U6【P1】标题块透明化**：书名/作者/书源背后浅底卡（上批 U3 折衷产物 `surface.withValues(alpha:0.5)` 圆角 10 Container）移除，信息列透明直排于 hero；对比度改由双（深 `0x59000000` blur4 + 浅 `0x80FFFFFF` blur8）柔阴影 `heroTextShadows` 保证（深色阴影压亮底、浅色光晕托暗底，任意封面 hero 下可读；参考 08 标题区 PIL 实测背景=hero 透传 117-176 渐变非卡底）
+  - **U9【P1】在读/最新章节块 + 标签行形态**：头部补「在读·第X章 章节名」（阅读记录 `durChapterIndex` 1 基→实际章节标题，目录未载/越界降级不带章名）与「最新·第N章 章节名（全书完）」（info `latestChapterTitle` + `totalChapterNum` 优先，完结态命中 已完结/完本/已完本 追加后缀；缺数据不渲染），置于「共 N 章」行上方；标签行由逐 tag 竖排 chip 改「🏷️ 前缀 + 逗号连排单/多行」纯文本内联（超宽自动换行，逐 tag 点击搜索/长按 JS 回调行为不变；SDK 无 TapAndHoldGestureRecognizer，用 Wrap+逐 tag GestureDetector 等价实现）
+  - **U8【P2】4 图标卡圆角收敛**：ref 08 PIL 实测卡 226×209px，左上角最小二乘拟合 R≈45px（radius/卡宽 ≈0.20）；我方 52dp 卡（156×208px）圆角 12→10dp（30px，R/W=0.192，与参考差 4%）
+
+### Test
+- `flutter analyze` 无问题（0）；`flutter test` 全过（1465）
+
+### Real device
+- 2.0.278+279 release APK 装 MuMu（192.168.1.19:5555），versionName=2.0.278 校验通过；`scripts/parity_capture_ours.py --only 08 --out docs/parity_shots/ours_2.0.278`，像素断言：①U6 标题块区 x=700 纵扫 y280-620 RGB≈65-75 平滑 hero 渐变、无浅色卡带（透传）②U8 图标卡圆角实测 30/156=0.192≈ref 0.20 ③U9 dump 命中「在读·第1章 引子 穿越的唐家三少」「最新·第51章 已完结」「共 51 章｜已读」「51章 · 142.20万字」（书源无 kind 数据，🏷️ 行按缺省省略规则正确不渲染）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.277] - 2026-09-17
 
 ### Fixed

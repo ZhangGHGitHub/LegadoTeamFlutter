@@ -192,6 +192,45 @@ extension _BookInfoLoad on _BookInfoScreenState {
           });
         }
         unawaited(_extractCoverSeed(b));
+      } else if (book != null &&
+          chapters.isNotEmpty &&
+          _isOnlineBook(book) &&
+          source != null) {
+        // ===== [U7 | 台账 0917 批二] 章节已缓存：进入即后台刷新 bookInfo =====
+        // 对齐原版进入刷新语义（upBook/刷新）：更新式合并——刷新非空值覆盖陈旧
+        // 字段（kind 评分/分类/完结态、字数、最新章、封面、简介），刷新值为空
+        // 时保留原值（不用空覆盖）；不阻塞首屏（DB 缓存已上屏），刷新回写后
+        // 聚合行「评分 · 分类 · N章 · 字数 · 完结态」完整渲染（缺项由聚合行省略）；
+        // 失败则保留现有字段，不影响已上屏内容。
+        var b = book;
+        final sourceJson = jsonEncode(source.toJson());
+        if (mounted) setState(() => _networkLoading = true);
+        try {
+          final tInfo = Stopwatch()..start();
+          final infoJson = await api.webbookInfo(sourceJson, b.bookUrl);
+          debugPrint(
+            '[BookInfo] U7 后台 info 刷新 ${tInfo.elapsedMilliseconds}ms',
+          );
+          b = _mergeWebInfo(b, infoJson, refresh: true);
+          // 已入库书：刷新字段回写 DB（对标原版 bookDao.replace / inBookshelf
+          // update）；未入库仅展示不落库（对齐原版 loadChapter !inBookshelf）
+          if (inShelf) {
+            try {
+              await api.updateBook(b);
+            } catch (e) {
+              debugPrint('U7 刷新落库失败: $e');
+            }
+          }
+        } catch (e) {
+          debugPrint('U7 后台 info 刷新失败，保留现有字段: ${_errMsg(e)}');
+        }
+        if (mounted) {
+          setState(() {
+            _loadedBook = b;
+            _networkLoading = false;
+          });
+        }
+        unawaited(_extractCoverSeed(b));
       } else if (mounted) {
         setState(() {
           _tocLoading = false;
@@ -293,13 +332,38 @@ extension _BookInfoLoad on _BookInfoScreenState {
   }
 
   /// 合并 webbookInfo 返回的详情到 book（WebBookInfo 为 snake_case，需手动映射，
-  /// 不能直接 Book.fromJson 否则 cover_url/toc_url 等丢失）；仅补全当前缺失字段。
-  Book _mergeWebInfo(Book book, String infoJson) {
+  /// 不能直接 Book.fromJson 否则 cover_url/toc_url 等丢失）。
+  /// - refresh=false（默认）：仅补全当前缺失字段（首屏补全语义）。
+  /// - refresh=true（[U7] 进入刷新）：更新式合并——刷新非空值覆盖现有字段
+  ///   （对齐原版 analyzeBookInfo 覆盖语义，刷新 kind 评分/分类/完结态、字数、
+  ///   最新章等陈旧值）；刷新值为空时保留现有值（不用空覆盖）。
+  Book _mergeWebInfo(Book book, String infoJson, {bool refresh = false}) {
     final decoded = jsonDecode(infoJson);
     if (decoded is! Map) return book;
     String? pick(String key) {
       final v = decoded[key];
       return (v is String && v.isNotEmpty) ? v : null;
+    }
+
+    if (refresh) {
+      final freshCover = pick('cover_url');
+      final freshIntro = pick('intro');
+      final freshWord = pick('word_count');
+      final freshLast = pick('last_chapter');
+      final freshKind = pick('kind');
+      final freshToc = pick('toc_url');
+      final freshName = pick('name');
+      final freshAuthor = pick('author');
+      return book.copyWith(
+        coverUrl: freshCover ?? book.coverUrl,
+        intro: freshIntro ?? book.intro,
+        tocUrl: freshToc ?? book.tocUrl,
+        wordCount: freshWord ?? book.wordCount,
+        latestChapterTitle: freshLast ?? book.latestChapterTitle,
+        kind: freshKind ?? book.kind,
+        name: freshName ?? book.name,
+        author: freshAuthor ?? book.author,
+      );
     }
 
     final hasCover = book.coverUrl != null && book.coverUrl!.isNotEmpty;
