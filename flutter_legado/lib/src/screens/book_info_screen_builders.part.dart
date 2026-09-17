@@ -804,9 +804,13 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     // [U6 | 台账 0917 批二] 双（深+浅）柔阴影：去掉信息列浅底卡后，书名/作者/
     // 书源直排于 hero（参考 08 无卡底），此阴影保证任意（亮/暗）封面 hero 下
     // 深色文字对比可读（深色阴影压亮底、浅色光晕托暗底）
+    // [F1 | 台账 0917 08 批] 强化为「深色文字 + 白色柔光」保底组合：
+    // 深阴影 α0.55/blur6 压亮底、白光晕 α0.7/blur14 托暗底——暗色 hero 上
+    // 白晕在深色文字外围形成亮环，保证任何封面下文字可读（像素断言
+    // 对比度 ≥4.5:1 或 ΔL≥60）
     final heroTextShadows = const [
-      Shadow(color: Color(0x59000000), blurRadius: 4, offset: Offset(0, 1)),
-      Shadow(color: Color(0x80FFFFFF), blurRadius: 8),
+      Shadow(color: Color(0x8C000000), blurRadius: 6, offset: Offset(0, 1.5)),
+      Shadow(color: Color(0xB3FFFFFF), blurRadius: 14),
     ];
     // [U10 | 台账 0917 批三] 版块重排后头部以两栏收尾，底距 12→4：
     // 与 ① 聚合行 top 8 合成 12dp 间隙（原 12dp 底距随移出的版块移除）
@@ -882,8 +886,10 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                             // 墨高 65px≈22sp（任务估 28sp 为缩略预览误估，
                             // 以 PIL 量化为准）；主题 titleLarge=18sp 偏小，
                             // 此处显式定 22sp w700 onSurface 高对比
+                            // [F2 | 台账 0917 08 批] 复测 ref 08 书名墨高
+                            // 70px≈23.3sp → 24sp（22sp 偏小一档）
                             style: ts.titleLarge?.copyWith(
-                              fontSize: 22,
+                              fontSize: 24,
                               height: 1.35,
                               fontWeight: FontWeight.w700,
                               color: cs.onSurface,
@@ -906,8 +912,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                             // [U3 | 台账 0917] 中等可读灰（ref PIL 实测
                             // 14-16sp）；[U6] 去护底卡后对比度由
                             // heroTextShadows 双柔阴影保证
+                            // [F1 | 台账 0917 08 批] 过淡灰 onSurfaceVariant
+                            // （wcag 2.08-3.36 <4.5）改完全不透明 onSurface +
+                            // 强化白柔光阴影，任意 hero 下可读
                             style: ts.bodyMedium?.copyWith(
-                              color: cs.onSurfaceVariant,
+                              color: cs.onSurface,
                               shadows: heroTextShadows,
                             ),
                           ),
@@ -916,8 +925,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                         // 来源=书源名（点击 → 编辑书源；「换源」小按钮，行为不变）
                         Row(
                           children: [
+                            // [F1 | 台账 0917 08 批] 图标随文字改 onSurface 高对比
                             Icon(Symbols.language_rounded,
-                                size: 16, color: cs.onSurfaceVariant),
+                                size: 14, color: cs.onSurface),
                             const SizedBox(width: 6),
                             Expanded(
                               child: GestureDetector(
@@ -929,8 +939,13 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                                   '来源：${book.originName.isNotEmpty ? book.originName : book.origin}',
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
+                                  // [F1 | 台账 0917 08 批] onSurfaceVariant
+                                  // → onSurface 高对比 + 白柔光阴影；
+                                  // [F2] ref 08 来源行墨高 32px≈10.7sp → 11sp
+                                  // （原 14sp 偏大一档）
                                   style: ts.bodyMedium?.copyWith(
-                                    color: cs.onSurfaceVariant,
+                                    fontSize: 11,
+                                    color: cs.onSurface,
                                     shadows: heroTextShadows,
                                   ),
                                 ),
@@ -978,8 +993,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
           ),
         ],
       ),
+      // [F2 | 台账 0917 08 批] ref 08 共N章行墨高 39px≈13sp（与在读/最新
+      // 同档 13sp）→ 16sp bodyLarge 偏大，显式定 13sp（保留 w600 强调）
       style: ts.bodyLarge
-          ?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface),
+          ?.copyWith(fontSize: 13, fontWeight: FontWeight.w600,
+              color: cs.onSurface),
     );
   }
 
@@ -1029,12 +1047,14 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     if (items.isEmpty) return const SizedBox.shrink();
     // ref 08 量化：12sp 灰（PIL 实测墨色 62-70 灰阶≈onSurfaceVariant）、
     // 左 22dp（x=66px @3x）、距章节行 8dp
+    // [F1 | 台账 0917 08 批] 面板区聚合行 onSurfaceVariant（wcag 2.08）改
+    // onSurface 高对比（像素断言 ≥4.5:1）；[F2] ref 墨高 38px≈12.7sp → 13sp
     return Padding(
       padding: const EdgeInsets.only(left: 22, top: 8),
       child: Text(
         items.join(' · '),
-        style: ts.bodyMedium
-            ?.copyWith(fontSize: 12, color: cs.onSurfaceVariant),
+        style:
+            ts.bodyMedium?.copyWith(fontSize: 13, color: cs.onSurface),
       ),
     );
   }
@@ -1084,6 +1104,8 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       BuildContext context, Book book, List<BookChapter> chapters) {
     final cs = Theme.of(context).colorScheme;
     final ts = Theme.of(context).textTheme;
+    // [F1 | 台账 0917 08 批] 在读/最新行 onSurfaceVariant（wcag 2.79-2.92）
+    // 改 onSurface 高对比；[F2] ref 墨高 39px≈13sp → 13sp（原 12sp 偏小）
     Widget line(String text) => Padding(
           padding: const EdgeInsets.only(left: 13, top: 6),
           child: Text(
@@ -1091,8 +1113,8 @@ extension _BookInfoBuilders on _BookInfoScreenState {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: ts.bodyMedium?.copyWith(
-              fontSize: 12,
-              color: cs.onSurfaceVariant,
+              fontSize: 13,
+              color: cs.onSurface,
             ),
           ),
         );
@@ -1173,8 +1195,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                 const SizedBox(height: 6),
                 Text(
                   label,
+                  // [F1 | 台账 0917 08 批] 四按钮标签在面板区（非 hero）：
+                  // onSurfaceVariant（wcag 2.79）改 onSurface 高对比；字号
+                  // 11sp 与 ref 34px≈11.3sp 已对齐，保持不变
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: cs.onSurfaceVariant,
+                        color: cs.onSurface,
                       ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,

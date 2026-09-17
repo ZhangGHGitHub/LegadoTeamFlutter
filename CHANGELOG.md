@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.281] - 2026-09-17
+
+### Fixed
+- [UI] 详情页字体/字号/对比度对齐参考 08（台账 08「用户实测反馈批五 0917」F1/F2，版本 2.0.280+281 → 2.0.281+282，基准 `ref_20260914/08_book_info.png`）：
+  - **F1【P1·首要】文字对比度——部分文字不可见**：根因 = 2.0.280 的 `onSurfaceVariant`（亮色主题 L≈71）在任何 hero 图上对比度不足（实测旧截图：作者行 wcag 2.15/ΔL54、来源行 wcag 1.65/ΔL41、四按钮标签 wcag 2.76/ΔL57、在读行 wcag 2.89、最新行 wcag 3.01、共N章 wcag 3.33，均 <4.5 近乎不可见）。修：hero 区六行（书名/作者/来源/聚合行/在读行/最新行）文字色全部改**完全不透明 `cs.onSurface` 高对比色**，并加强 `heroTextShadows` 双阴影兜底（深色投影 `0x8C000000` blur6 off(0,1.5) + 白色柔光 `0xB3FFFFFF` blur14）——任何 hero 图上至少一条阴影路径保证可读；四按钮标签 `onSurfaceVariant`→`onSurface`
+  - **F2 字号阶梯量化对齐**（参考图 1080px=360dp@3x，sp=墨高px÷3，CJK 墨高≈0.85-0.9em 标定）：书名 22→**24sp w700**（我方 68px vs 参考 70px≈23.3sp）、作者 13→**14sp**（43px vs 41px≈13.7sp）、来源 12→**11sp**（30px vs 32px≈10.7sp，图标 16→14）、聚合行 12→**13sp**（37px vs 38px≈12.7sp）、在读行 12→**13sp**（37px vs 39px≈13sp）、最新行 12→**13sp**（37px vs 39px≈13sp）、四按钮标签 12→**11sp**（31px vs 34px≈11.3sp）、共N章 16→**13sp w600**（34px vs 39px≈13sp）；改后截图像素实测各级墨高与参考偏差 ≤5px（≈1.7sp），七档全部落位
+
+### Test
+- `flutter analyze` 无问题（0）；`flutter test` 全过（1468）
+
+### Real device
+- 2.0.281+282 release APK 装 MuMu（192.168.1.19:5555），versionName=2.0.281（versionCode=282）校验通过；`scripts/parity_capture_ours.py --only 08 --out docs/parity_shots/ours_2.0.281` OK（`08_book_info.png` + `_dump_08_final.xml` 1/1）；**八区文字对比度像素断言全 PASS**（判据 wcag≥4.5 或 ΔL≥60）：hero 三行（bg L107-117 深底，ink L27）书名 y635-702 ΔL81、作者 y743-786 ΔL80、来源 y824-854 ΔL90（ΔL 判据达标，叠加白柔光兜底）；panel 五行（ink L27）聚合行 y1032-1068 bg L188 wcag 6.03 ΔL161、四按钮标签 y1243-1273 bg L242 wcag 7.72 ΔL215（修复前 2.76）、在读行 y1350-1386 bg L236 wcag 7.53 ΔL209（修复前 2.89）、最新行 y1425-1461 bg L246 wcag 7.84 ΔL219（修复前 3.01）、共N章 y1520-1553 bg L248 wcag 7.91 ΔL221（修复前 3.33）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.280] - 2026-09-17
 
 ### Fixed
