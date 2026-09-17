@@ -1048,7 +1048,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
   Widget _buildTagLine(BuildContext context, Book book, List<String> kinds) {
     final cs = Theme.of(context).colorScheme;
     final labelStyle = TextStyle(fontSize: 11, color: cs.onSurfaceVariant);
-    return Wrap(
+    final wrap = Wrap(
       spacing: 0,
       runSpacing: 2,
       children: [
@@ -1070,6 +1070,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         ],
       ],
     );
+    return wrap;
   }
 
   /// [U9 | 台账 0917 批二] 在读/最新两行（参考 08「在读·第1章…」、
@@ -1108,16 +1109,36 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       );
     }
     // 最新行（info：latestChapterTitle + 总章数 + 完结态）
-    final latest = (book.latestChapterTitle ?? '').trim();
-    if (isMeaningfulText(latest)) {
+    // [E5 | 台账 0917 反馈批四] 部分书源的 latestChapterTitle 字段返回的是完结
+    // 状态词（如「已完结」而非章节标题，参考版实测「最新·第51章 已完结」缺
+    // 章节名），此时回落目录末章真实标题（与在读行同源 chapters 列表）并追加
+    // 「（全书完）」；数据缺（字段为空）保持现状不渲染（D4 单行口径，不造占位），
+    // 状态词且目录无标题数据时保持原值（不丢行）。
+    final latestStatusRe =
+        RegExp(r'^(已完结|完本|已完本|连载中|暂停更新|停更|断更)$');
+    final latestRaw = (book.latestChapterTitle ?? '').trim();
+    var latestTitle = latestRaw;
+    var finished = (book.kind ?? '')
+        .split(',')
+        .map((e) => e.trim())
+        .any((e) => e == '已完结' || e == '完本' || e == '已完本');
+    if (latestStatusRe.hasMatch(latestTitle)) {
+      final tocTotal =
+          book.totalChapterNum > 0 ? book.totalChapterNum : chapters.length;
+      final tocIdx = tocTotal > 0 ? tocTotal - 1 : chapters.length - 1;
+      if (tocIdx >= 0 && tocIdx < chapters.length) {
+        final tocTitle = chapters[tocIdx].title.trim();
+        if (isMeaningfulText(tocTitle)) {
+          latestTitle = tocTitle;
+          finished = true;
+        }
+      }
+    }
+    if (isMeaningfulText(latestTitle)) {
       final chapterTotal =
           book.totalChapterNum > 0 ? book.totalChapterNum : chapters.length;
       var text =
-          '最新·${chapterTotal > 0 ? '第$chapterTotal章 ' : ''}$latest';
-      final finished = (book.kind ?? '')
-          .split(',')
-          .map((e) => e.trim())
-          .any((e) => e == '已完结' || e == '完本' || e == '已完本');
+          '最新·${chapterTotal > 0 ? '第$chapterTotal章 ' : ''}$latestTitle';
       if (finished) text = '$text（全书完）';
       lines.add(line(text));
     }

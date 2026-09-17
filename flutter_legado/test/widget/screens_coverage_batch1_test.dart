@@ -392,6 +392,100 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    // [U13 | 台账 0917 反馈批四] 标签行横排连排回归守卫：2.0.279 用户实测
+    // 「每个标签独占一行竖排」（根因见 2.0.280 台账行——该截图为旧构建产物，
+    // 当前代码即 U9「🏷️ 前缀 + 逗号连排 Wrap 横向自动换行」形态）。断言：
+    // 全部标签在屏（勿丢数据）+ 相邻标签同行（|Δy|≤2，验收 |Δy|≤20）+
+    // 标签总行数 ≤2（横排自动换行，竖排=9 行必失败）
+    testWidgets('U13 标签行横排连排：标签同行非竖排且无数据丢失', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      const tagBook = Book(
+        bookUrl: 'https://src.com/book/tags',
+        name: '标签书',
+        author: '作者',
+        origin: 'https://src.com',
+        originName: '测试源',
+        kind: '奇幻,武侠,历史,都市,科幻,悬疑,游戏,其他,言情',
+        totalChapterNum: 51,
+      );
+      when(() => mockApi.getBook(any())).thenAnswer((_) async => tagBook);
+      when(() => mockApi.getChapters(any())).thenAnswer((_) async => const []);
+      when(() => mockApi.getBookGroups()).thenAnswer((_) async => const []);
+      when(() => mockApi.getBookSources()).thenAnswer((_) async => const []);
+
+      await tester.pumpWidget(wrap(const BookInfoScreen(book: tagBook)));
+      await tester.pumpAndSettle();
+
+      const tags = [
+        '奇幻', '武侠', '历史', '都市', '科幻',
+        '悬疑', '游戏', '其他', '言情',
+      ];
+      // 勿丢数据：9 个标签 + 🏷️ 前缀全部渲染
+      expect(find.text('🏷️ '), findsOneWidget);
+      for (final t in tags) {
+        expect(find.text(t), findsOneWidget, reason: '标签 $t 缺失');
+      }
+      // 横排连排：「奇幻」「武侠」同行（|Δy|≤2，严于验收 |Δy|≤20）
+      final yA = tester.getTopLeft(find.text('奇幻')).dy;
+      final yB = tester.getTopLeft(find.text('武侠')).dy;
+      expect((yA - yB).abs(), lessThanOrEqualTo(2),
+          reason: '相邻标签必须同行（横排连排，非竖排）');
+      // 非竖排：全部标签占据的不同行数 ≤2（超宽自动换行），竖排=9 行
+      final ys = tags
+          .map((t) => tester.getTopLeft(find.text(t)).dy)
+          .toSet();
+      expect(ys.length, lessThanOrEqualTo(2),
+          reason: '标签应横向自动换行（≤2 行），不应每标签独占一行竖排');
+      expect(tester.takeException(), isNull);
+    });
+
+    // [E5 | 台账 0917 反馈批四] 最新行补章节名：部分书源 latestChapterTitle
+    // 返回状态词（如「已完结」，参考实测「最新·第51章 已完结」缺章节名），
+    // 回落目录末章真实标题（与在读行同源），状态词隐含完结追加「（全书完）」；
+    // 目录无标题数据时保持现状（不丢行、不造占位）
+    testWidgets('E5 最新行：状态词回落目录末章标题并追加（全书完）',
+        (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      const e5Book = Book(
+        bookUrl: 'https://src.com/book/e5',
+        name: 'E5书',
+        author: '作者',
+        origin: 'https://src.com',
+        originName: '测试源',
+        kind: '奇幻,武侠,历史,都市,科幻,悬疑,游戏,其他,言情',
+        totalChapterNum: 51,
+        latestChapterTitle: '已完结', // 状态词而非章节标题
+      );
+      when(() => mockApi.getBook(any())).thenAnswer((_) async => e5Book);
+      when(() => mockApi.getChapters(any())).thenAnswer(
+          (_) async => List.generate(
+                51,
+                (i) => BookChapter(
+                    bookUrl: 'https://src.com/book/e5',
+                    index: i,
+                    title: i == 50 ? '第五十一章 大结局' : '第${i + 1}章'),
+              ));
+      when(() => mockApi.getBookGroups()).thenAnswer((_) async => const []);
+      when(() => mockApi.getBookSources()).thenAnswer((_) async => const []);
+
+      await tester.pumpWidget(wrap(const BookInfoScreen(book: e5Book)));
+      await tester.pumpAndSettle();
+
+      // 最新行 = 「最新·第51章 第五十一章 大结局（全书完）」：补章节标题，
+      // 状态词不再充当章节名
+      expect(
+          find.textContaining('最新·第51章 第五十一章 大结局（全书完）'),
+          findsOneWidget);
+      expect(find.textContaining('最新·第51章 已完结'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
     // [UI-fix v2.0.11 | 2026-08-10] 按书籍类型分流阅读器（对齐原版
     // BookInfoActivity.startReadActivity：audio→/audio、image→/reader-comic、
     // 文本→/reader）；bookType 为位标记（text=8/audio=32/image=64）— Reasonix
