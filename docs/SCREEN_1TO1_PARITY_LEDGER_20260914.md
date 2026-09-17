@@ -419,3 +419,18 @@ B2-C1 ✅ 2.0.265（发现源卡单列列表行 P1 闭环；漏斗状态着色�
 - **01 发现页=高度一致 ✅**（差异 4.75%，仅状态[参考空态/我方有源]与各自调色板；单列行形态/图标槽/chevron 全同；源 favicon 为已登记数据差异）。
 - **08 详情页定稿（2.0.275 复采复核）**：**D5 hero 沉浸背景 / D8 chips 2 枚 / D9 真实封面 —— 均已解决 ✅**（D5 系主代理基于 2.0.261 旧图误判"缺失"，实测现版已有封面模糊放大头图，与参考同构）。**剩余真项 4 条**：D6【P2】「共 712 章｜已读」居中 → 参考为信息流内左对齐；D7【P3】我方多「分组: 无」与「目录: 第X章 已读1%」两行（参考无，核实是否原版能力）；D10【P3】顶栏三钮（✏️/分享/⋮）参考=hero 上**裸图标**，我方=带圆形容器底；D11【P3】我方 ⋮ 钮带红色小角标（来源待查，参考无）。
 - **装置注记**：「Everything up-to-date」异常提示复现 1 次（本地实际领先）——推送核验一律以 `git rev-parse` 比对为准。
+
+## 详情页精修尾批闭环（2.0.276）
+
+**任务**（2026-09-17，版本 2.0.275+276 → 2.0.276+277，基准 `ref_20260914/08_book_info.png`）：08 详情页第二轮巡检剩余真项 D6/D7/D10 修复 + D11 溯源定性。文件 `flutter_legado/lib/src/screens/book_info_screen_builders.part.dart`。
+
+**逐项处置**：
+- **D6【P2】「共 N 章」行左对齐 ✅**：信息流外层 `Column` 默认 `crossAxisAlignment.center`，标签行/「共 N 章」行各自收缩后居中（2.0.275 实测整行居中）→ 改 `CrossAxisAlignment.start`，各子行自带 16dp 左内边距，与封面左缘（16dp）同列起排，对齐参考 08。真机断言：行左缘 x≈48px（=16dp @480dpi），绿状态词「已读」RGB(76,175,80) 在行内 x≈290-420 命中（若居中应 x≈354 起排，实锤改左对齐）
+- **D7【P3】分组/目录两行溯源保留（原版能力，非多余行）✅**：upstream `activity_book_info.xml` 确有「分组」行（`tv_group` + strings `group_s`「分组：%s」）与「目录」行（`tv_toc` + `toc_s`）→ 行保留不删；空分组文案由写死「无」改对齐原版 strings：网络书 `no_group`「未分组」、本地书 `local_no_group`「本地未分组」（`_groupText` 按 `_isOnlineBook` 分支）
+- **D10【P3】顶栏三钮改裸图标 ✅**：详情页动作区（铅笔/分享/⋮）原 tonal 圆钮（圆形容器底）→ 强制 `TopBarButtonStyle.plain`（复用书架页 plain 机制，仅详情页）并单独注入 `onSurface` 前景（顶栏透明期默认 `onPrimary` 近白在浅色 hero 上不可见）；leading 返回钮保留 glass 圆底（参考同款）。真机断言：顶栏右区（分享 x828-936 / ⋮ x960-1068）亮色像素占比 0%、区均 (150,108,113)=hero 封面暖暗渗透，无圆形容器底
+- **D11【P3】「⋮ 红点角标」溯源定性：非 Badge 误挂，零代码改动 ✅**：①代码全库核查——book_info 屏/顶栏按钮体系（`TopBarActionStyler` 5 档仅 outlineVariant/surfaceContainer* 中性色）/系统栏服务均无饱和红，`BadgeWidget` 全库未接线；②真机像素取证：红区 RGB≈(173,62,67) 深红位于状态栏+顶栏右上，色相与同屏封面盒均值 (113,108,107)、顶栏带 (120,107,112) 一致 = 测试书红调封面经 edge-to-edge 透明状态栏+透明 SliverAppBar 渗透；③upstream 源码同款设计（`bg_book` 全屏 centerCrop + `vw_bg` #50000000 黑 31% 覆盖 + 透明 TitleBar，`BookInfoActivity` `BookCover.loadBlur` 渲染模糊封面至 `bg_book`）；④参考版同机各屏顶栏带亦暖暗 (127,92,80)，参考 08 topred=0 仅因其封面非红调。**结论：原版能力（封面色渗透），无可移除代码**，按 2.0.268/269「未授权区块移除」同类格式登记定性
+- **屏 11 菜单采集修复（`scripts/parity_capture_ours.py`）✅**：原 `_to_reader_menu` 盲点一次 READER_CENTER 即结束，2.0.275 真机采成收起态（屏 11 FAIL 保留旧图）→ 改 dump 驱动：先探测菜单是否已在屏（进阅读器后可能自动展开，本批即此路径），否则按 `READER_MENU_PROBES`（中心 960 → 下 1400 → 上 600，≤3 次）逐点 tap 后 dump 断言 `READER_MENU_KWS`（「退出阅读/全文搜索」），仍未命中打印文本节点供定位
+
+**验证**：`flutter analyze` 0 问题；`flutter test` 1457 全过；`python -m py_compile scripts/parity_capture_ours.py` OK；2.0.276+277 release APK 装 LDPlayer9（192.168.1.19:5555，versionName=2.0.276 校验通过）；`scripts/parity_capture_ours.py --only 08,11` 2/2 屏 OK（`docs/parity_shots/ours_2.0.276/08_book_info.png` + `11_reader_menu.png`）。**并排目检**：本环境无图像输入通道，四条像素断言（D6 行左缘/D10 顶栏右区无圆底/D11 红区色相/屏 11 dump 菜单特征「退出阅读/全文搜索/自动翻页/目录」）以 PIL 数值闭环，目视并排比对留待视觉通道恢复后复核。
+
+- 签名：全栈工程师子代理，2026-09-17（版本 2.0.276+277）

@@ -124,6 +124,12 @@ READER_CENTER = (540, 960)       # 中心点（唤出/收起菜单）
 READER_MENU_ROW = {              # 菜单底部快捷行 y=1806
     "章节梗概": (108, 1806), "全文搜索": (540, 1806),
     "自动翻页": (756, 1806), "目录": (972, 1806)}
+# [2.0.276 | 屏 11 唤菜单修复] 菜单态 dump 特征：顶栏「退出阅读」/
+# 底栏快捷行「全文搜索」任一命中即认菜单已展开。原实现只盲点一次
+# READER_CENTER 便结束，2.0.275 真机采成收起态（屏 11 FAIL 保留旧图）。
+READER_MENU_KWS = ("退出阅读", "全文搜索")
+# 唤菜单探点序列（任务书指定：中心 960 → 下方 1400 → 上方 600，≤3 次）
+READER_MENU_PROBES = ((540, 960), (540, 1400), (540, 600))
 # 发现页顶栏（批 2 用：⋮ 更多菜单 + 源卡/展开区/书单定位）
 BTN_DISCOVER_MENU = (1014, 168)      # 发现页顶栏 ⋮（更多，tooltip「更多」）
 DISCOVER_TILE_1 = (270, 420)         # 发现页第一源卡兜底中心（顶部为第一张源卡）
@@ -501,6 +507,15 @@ def nav_07_done() -> None:
 
 
 def _to_reader_menu() -> None:
+    """进入阅读器并唤出菜单（11 屏专用）。
+
+    [2.0.276 修复] 原实现只盲点一次 READER_CENTER (540,960) 便结束，
+    2.0.275 真机该点未唤出菜单（屏 11 断言未命中、FAIL 保留旧图）。
+    改为 dump 驱动：先探测菜单是否已在屏（进阅读器后可能已自动展开），
+    否则按 READER_MENU_PROBES（960→1400→600，≤3 次）逐点 tap 后
+    dump 断言菜单特征「退出阅读/全文搜索」；三次仍未命中则打印文本节点
+    供定位（后续由 run_screen 统一记 FAIL，不落盘）。
+    """
     _to_shelf()
     tap(*CARD_BOOK)
     wait(4)
@@ -508,8 +523,21 @@ def _to_reader_menu() -> None:
     wait(4)
     tap(*TOC_CHAP_0)
     wait(6)
-    tap(*READER_CENTER)
-    wait(2)
+    x = dump("11 菜单探测")
+    hit = has_kw(x, READER_MENU_KWS)
+    if hit:
+        rec(f"  [11] 进阅读器后菜单已在屏：dump 命中「{hit}」，跳过唤出点按")
+        return
+    for i, (px, py) in enumerate(READER_MENU_PROBES, 1):
+        tap(px, py)
+        wait(2)
+        x = dump(f"11 唤菜单#{i}")
+        hit = has_kw(x, READER_MENU_KWS)
+        if hit:
+            rec(f"  [11] 唤菜单成功：点 ({px},{py}) 第 {i} 次，dump 命中「{hit}」")
+            return
+        rec(f"  [11] 唤菜单第 {i} 次 ({px},{py}) 未命中菜单特征，继续重试")
+    rec(f"  [11] 三次唤菜单均未命中；前 8 文本节点：{_debug_nodes(x, 8)}")
 
 
 def _to_reader() -> None:

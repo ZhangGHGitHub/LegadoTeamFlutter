@@ -651,6 +651,13 @@ extension _BookInfoBuilders on _BookInfoScreenState {
               t,
             );
             final fg = Color.lerp(cs.onPrimary, cs.onSurface, t);
+            // [PARITY C1 D10] 三钮裸图标：参考 08 顶栏铅笔/分享/⋮ 为 hero 图上
+            // 的裸图标（无圆形容器底，深色描边）；我方原为 tonal 圆钮
+            // （surfaceContainerHigh 底）。→ 动作区强制 plain（复用书架页
+            // actionsStyle: plain 机制，仅本详情页），并单独注入 onSurface
+            // 前景：顶栏透明期 foregroundColor=onPrimary（近白）在浅色 hero
+            // 上不可见，参考为深色图标。leading 返回钮仍走 glass 圆底（参考同）。
+            final actionsFg = cs.onSurface;
             return SliverAppBar(
               pinned: true,
               automaticallyImplyLeading: false,
@@ -660,6 +667,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
               surfaceTintColor: Colors.transparent,
               foregroundColor: fg,
               iconTheme: IconThemeData(color: fg),
+              actionsIconTheme: IconThemeData(color: actionsFg),
               leading: LegadoAppBar.shouldShowBack(context)
                   ? TopBarActionStyler.styleActions(
                       context,
@@ -685,10 +693,12 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                       overflow: TextOverflow.ellipsis,
                     )
                   : null,
+              // [PARITY C1 D10] 动作三钮固定 plain（参考=裸图标）；merge 仍随
+              // 用户设置（与书架页 plain 机制一致）
               actions: TopBarActionStyler.styleActions(
                 context,
                 _buildTopBarActions(),
-                style: topStyle,
+                style: TopBarButtonStyle.plain,
                 merge: topMerge,
               ),
             );
@@ -736,6 +746,10 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     return Padding(
       padding: EdgeInsets.only(top: topPadding, bottom: 12),
       child: Column(
+        // [PARITY C1 D6] 信息流左对齐（参考 08：标签行/「共 N 章」行均随
+        // 封面左缘起排）；Column 默认 center 使标签行与章节行各自收缩后
+        // 居中（2.0.275 实测「共 712 章｜已读」整行居中）→ 改 start。
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 两栏：封面左置 + 右侧信息列
           Padding(
@@ -1145,13 +1159,16 @@ extension _BookInfoBuilders on _BookInfoScreenState {
   }
 
   /// 分组显示文本（对标原版 tv_group；book.group 为位掩码）
+  /// [PARITY C1 D7] 无分组文案对齐原版 strings：网络书 no_group=「未分组」、
+  /// 本地书 local_no_group=「本地未分组」（原实现写死「无」，与原版不一致）
   String _groupText(Book book) {
     final groups = ref.read(bookshelfNotifierProvider).groups;
     final names = groups
         .where((g) => g.groupId > 0 && (book.group & g.groupId) != 0)
         .map((g) => g.groupName)
         .toList();
-    return '分组：${names.isEmpty ? '无' : names.join('，')}';
+    if (names.isNotEmpty) return '分组：${names.join('，')}';
+    return '分组：${_isOnlineBook(book) ? '未分组' : '本地未分组'}';
   }
 
   /// 目录行摘要（对齐原版 upLoading + resolveBookInfoReadProgress）— Cursor UI

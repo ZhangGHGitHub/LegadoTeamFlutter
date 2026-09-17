@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.276] - 2026-09-17
+
+### Fixed
+- [UI] 详情页精修尾批四项（台账 08 详情页 D6/D7/D10 修复 + D11 溯源定性，版本 2.0.275+276 → 2.0.276+277，基准 `ref_20260914/08_book_info.png`）：
+  - **D6【P2】「共 N 章」行左对齐**：信息流 `Column` 默认 `center` 使标签行/章节统计行各自收缩后居中（2.0.275 实测「共 712 章｜已读」整行居中）→ 外层 `Column` 改 `crossAxisAlignment: CrossAxisAlignment.start`，各子行自带 16dp 左内边距，与封面左缘起排对齐参考
+  - **D7【P3】分组文案对齐原版（溯源保留，非多余行）**：原版 `activity_book_info.xml` 确有「分组」行（`tv_group` + strings `group_s`「分组：%s」）与「目录：第X章 · 已读N%」行（`tv_toc` + `toc_s`），均为原版能力 → 行保留；空分组文案由写死「无」改对齐原版 strings：网络书 `no_group`「未分组」、本地书 `local_no_group`「本地未分组」
+  - **D10【P3】顶栏三钮改裸图标**：参考 08 顶栏铅笔/分享/⋮ 为 hero 图上的裸图标（无圆形容器底、深色描边），我方原为 tonal 圆钮 → 详情页动作区强制 `TopBarButtonStyle.plain`（复用书架页 plain 机制，仅本详情页）并单独注入 `onSurface` 前景（顶栏透明期 `onPrimary` 近白在浅色 hero 上不可见）；leading 返回钮保留 glass 圆底（参考同）
+  - **D11【P3】「⋮ 红点角标」溯源定性——非 Badge，零代码改动**：全库核查 book_info 屏/顶栏按钮体系（`TopBarActionStyler` 5 档色板仅 outlineVariant/surfaceContainer* 中性色）/系统栏服务均无饱和红、`BadgeWidget` 全库未接线。真机像素取证：红区（RGB≈(173,62,67) 深红）位于状态栏+顶栏右上，其色相与同屏封面盒均值（(113,108,107) vs 顶栏带 (120,107,112)）一致 = 测试书红调封面经 edge-to-edge 透明状态栏+透明 SliverAppBar 渗透（原版同款设计：`activity_book_info.xml` `bg_book` 全屏 centerCrop + `vw_bg` #50000000 + `titleBar` 透明背景，`BookInfoActivity.showCover()` 经 `BookCover.loadBlur` 渲染模糊封面至 `bg_book`）；参考版同机各屏顶栏带亦为暖暗色调（(127,92,80)）而非亮底，参考 08 topred=0 仅因其封面非红调。**结论：原版能力（封面色渗透）而非 Badge 误挂，无可移除代码**
+  - **屏 11 菜单采集修复（`scripts/parity_capture_ours.py`）**：原 `_to_reader_menu` 盲点一次 READER_CENTER 即结束，2.0.275 真机采成收起态（屏 11 FAIL 保留旧图）→ 改 dump 驱动：先探测菜单是否已在屏（进阅读器后可能已自动展开），否则按探点序列（中心 960 → 下方 1400 → 上方 600，≤3 次）逐点 tap 后 dump 断言菜单特征「退出阅读/全文搜索」，仍未命中打印文本节点供定位
+
+### Test
+- `flutter analyze` 无问题（0）；`flutter test` 全过（1457）；`python -m py_compile scripts/parity_capture_ours.py` OK
+
+### Real device
+- 2.0.276+277 release APK 装 LDPlayer9（192.168.1.19:5555），versionName=2.0.276 校验通过；`scripts/parity_capture_ours.py --only 08,11` 2/2 屏 OK（`docs/parity_shots/ours_2.0.276/08_book_info.png` + `11_reader_menu.png`，屏 11 菜单为进阅读器后自动在屏，dump 命中「退出阅读」跳过唤出点按）。PIL 程序化断言全过：①D6「共 N 章」行左缘 x≈48px（=16dp，与封面左缘同列，绿状态词「已读」RGB(76,175,80) 在行内 x≈290-420 命中；旧 2.0.275 整行居中实锤改左对齐）②D10 顶栏右区（分享 [828..936] / ⋮ [960..1068]）亮色像素占比 0%、区均 (150,108,113)=hero 封面暖暗渗透，无圆形容器底 ③D11 红区像素色相=封面盒色相（渗透定性见上）④屏 11 dump 命中「退出阅读/全文搜索/自动翻页/目录」全菜单特征
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.275] - 2026-09-17
 
 ### Fixed
