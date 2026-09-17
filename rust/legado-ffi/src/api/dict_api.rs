@@ -268,7 +268,7 @@ fn fetch_url_body(url: &str) -> LegadoResult<String> {
             Err(_) => Err(format!("抓取超时（>{DICT_RULE_TIMEOUT_SECS}s）: {url}")),
         }
     })
-    .map_err(|e| LegadoError::Database(e))?;
+    .map_err(LegadoError::Database)?;
     Ok(body)
 }
 

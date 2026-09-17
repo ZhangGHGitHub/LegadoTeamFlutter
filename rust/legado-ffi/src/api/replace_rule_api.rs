@@ -30,6 +30,7 @@ pub fn get_replace_rules() -> LegadoResult<Vec<ReplaceRule>> {
 ///
 /// [书源作用域 | 2026-09-13 加法式扩参] 末尾第 6 个可选参数：
 /// - `scope_source`：None=false（默认不作用于书源，对齐原版 `ReplaceRule.scopeSource` 默认 0）
+#[allow(clippy::too_many_arguments)] // 书源作用域加法式扩参后参数 >7，属对外 API 表面（对齐原版字段集）
 pub fn add_replace_rule(
     name: &str,
     pattern: &str,
@@ -79,6 +80,7 @@ pub fn add_replace_rule(
 ///
 /// [书源作用域 | 2026-09-13 加法式扩参] 末尾第 6 个可选参数：
 /// - `scope_source`：None=保留既有值；Some(b)=覆盖
+#[allow(clippy::too_many_arguments)] // 同 add_replace_rule：对外 API 表面参数 >7
 pub fn update_replace_rule(
     rule_id: i64,
     name: &str,
