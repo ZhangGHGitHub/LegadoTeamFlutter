@@ -126,6 +126,10 @@ extension _SearchBuilders on _SearchScreenState {
   }
 
   /// [搜索页对齐 | Qoder UI] 圆形 tonal 动作钮（对齐参考版顶栏圆形按钮形态）
+  ///
+  /// [2.0.275 视觉精修] 非激活态底色 surfaceContainerHighest → surfaceContainerHigh
+  /// + 前景 onSurface：与全局顶栏 tonal 中性槽位（TopBarActionStyler）同槽位，
+  /// 激活态（筛选开启）保持主题色 primary 区分。
   Widget _circleAction(
     BuildContext context, {
     required IconData icon,
@@ -133,17 +137,14 @@ extension _SearchBuilders on _SearchScreenState {
     required VoidCallback onTap,
     bool active = false,
   }) {
+    final cs = Theme.of(context).colorScheme;
     return IconButton(
       tooltip: tooltip,
       onPressed: onTap,
       icon: Icon(icon),
       style: IconButton.styleFrom(
-        backgroundColor: active
-            ? Theme.of(context).colorScheme.primary
-            : Theme.of(context).colorScheme.surfaceContainerHighest,
-        foregroundColor: active
-            ? Theme.of(context).colorScheme.onPrimary
-            : Theme.of(context).colorScheme.onSurface,
+        backgroundColor: active ? cs.primary : cs.surfaceContainerHigh,
+        foregroundColor: active ? cs.onPrimary : cs.onSurfaceVariant,
       ),
     );
   }
@@ -450,8 +451,12 @@ extension _SearchBuilders on _SearchScreenState {
     );
   }
 
-  /// 搜索结果项（对标原版 item_search.xml：80x110 封面 + 书名 16sp +
-  /// 作者/最新章节 12sp + 简介 3 行 + 右上角来源徽标）
+  /// 搜索结果项（封面 74x104 5:7 圆角 10 + 书名 16sp + 作者/最新章节 12sp +
+  /// 简介 3 行 + 右上角来源徽标）
+  ///
+  /// [2.0.275 视觉精修] 封面由 80x110 缩至 74x104：参考基准图（ref_20260914
+  /// 07_search_results）封面实测 220x311px（1080 基准 480dpi → ≈73.3x103.7dp，
+  /// 比例 5:7），80x110（240x330px）偏大约 9%；74x104（222x312px）对齐参考。
   Widget _buildResultItem(
       BuildContext context, SearchResult result, Set<String> shelfKeys) {
     final book = result.book;
@@ -488,8 +493,9 @@ extension _SearchBuilders on _SearchScreenState {
               children: [
                 BookCover(
                   coverUrl: book.coverUrl,
-                  width: 80,
-                  height: 110,
+                  // [2.0.275 视觉精修] 80x110 → 74x104（对齐参考 220x311px，5:7）
+                  width: 74,
+                  height: 104,
                   borderRadius: 10,
                   sourceOrigin: book.origin,
                   // [LAYOUT_MOTION_AUDIT M1] 搜索结果封面补 Hero（进详情过渡）

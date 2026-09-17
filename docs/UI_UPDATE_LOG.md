@@ -3,7 +3,7 @@
 > 本文档汇总 `docs/UI_MD3_PLAN.md`（Material Design 3 Expressive 迁移计划）的全部执行批次与后续增强，作为 UI 轨的独立更新日志。
 > 逐条技术细节见根目录 `CHANGELOG.md` 对应版本；本文档面向「一次看全 UI 变了什么」。
 >
-> 执行者：Qoder UI ｜ 最后更新：2026-09-17（版本 2.0.274，截图一比一全程序收官）
+> 执行者：Qoder UI ｜ 最后更新：2026-09-17（版本 2.0.275，搜索结果页视觉精修三项）
 
 ---
 
@@ -39,6 +39,7 @@
 | 33 | 2.0.151 | 换源搜索等待反馈（U1 UI 侧过渡） | 换源任务书四根因核实（R1/R2/R3/U1 属实，Rust 侧未动）；U1 UI 侧过渡修复：ChangeSourceState.searchingCount + 等待页「正在搜索 N 个书源… 已等待 X 秒」计时（LoadingIndicator 新增 subMessage 槽），增量加载行「已找到 N 个匹配书源，搜索中…」；T6 流式 API（逐源 x/y 进度）落地后替换 |
 | 34 | 2.0.272 | 1:1 对齐长尾 N2/N5/N3 | N5 目录字数胶囊根因修复（数据层）：Rust 章节 JSON 新增可选 `wordCount`——规则源 `updateTime` 规则 info 经等价正则（对齐原版 `AppPattern.wordCountRegex`）提取、JS 源读 `wordCount` 键、`refreshToc` 透传落库；目录胶囊「有值才渲染」行为不变（受本地「加载字数」开关控制，对齐原版 `AppConfig.tocCountWords`）；N2 定位定论（07 搜索右下深色圆钮 = 搜索「下一页/停止」FAB，原版 `searchFinally` 能力保留+台账注明；10 阅读器 = 底栏元素误读勿删，配色域并入批 3 主题槽位）；N3 详情页封面空白 = 数据/加载层差异登记（我方与原版失败均静默回落默认封面、无错误/重试 UI，不新增 UI，红线不触发） |
 | 35 | 2.0.274 | 台账 4-1 TXT 目录规则页七项修复 + 10 屏误采根因 | ① 左对齐大标题 + 动作独立行（复用 `LegadoTabRootHeaderSliver(large)`，新增可选 `leading` 保 push 子页返回钮）；② 新建入口改右下 + FAB（着色走 `floatingActionButtonTheme` 主题槽位 primaryContainer/primary，随调色板切换，非硬编码黄）；③ 卡片动作集图标化（铅笔=编辑/垃圾桶=删除/播放=测试 + 行尾 Switch）；④ 副标题由完整正则源码改规则 `example` 示例文本（内置默认 26 条全带示例；空则回退「正则:」+截断正则，不静默留白）；⑤ 连体紧凑改独立分体卡（圆角 14/间距 12/内 padding 12）；⑥ 移除「已禁用」灰 chip（状态由 Switch 表达）；⑦ 顶栏 ?/↺ 两直钮 grep 原版 `menu/txt_toc_rule.xml` 证实非原版能力（仅 `menu_add` always、help/importDefault 等全 never）→移除直钮、能力保留入 ⋮ `PopupMenuButton`（导入默认/帮助）。采集脚本 `10_reader` 误采书架根因修复：`CARD_BOOK` 旧坐标 (279,1208) 为 2.0.260 实测，2.0.274 书架布局位移后落卡外空白（书卡实位中心 204,1034）→点按不跳转=两次误采书架根因；`nav_10` 改书架 dump 定位书卡 + 进入阅读器前 `_assert_in_reader` 断言（正文 content-desc 命中 且 无书架/查看目录/书签错态标记，失败不落盘保留旧图）+ 屏 10 登记收紧 `READER_BODY_KWS`/`READER_NEG_KWS` |
+| 36 | 2.0.275 | 搜索结果页视觉精修三项（台账 1-7 重开） | 基准 `ref_20260914/07` + 配对图：①「结果 N · 进度 x/y」胶囊居中——像素实测中心 ≈540（屏心）/539，「偏右 76%」为右缘误读，已居中零代码改动存证（浮动 x/y 卡为原版行为不动）；②结果项封面 80x110→74x104（参考实测 220x311px≈73.3x103.7dp 5:7，圆角 10 不变，占位框随动）；③顶栏圆钮 tonal 槽位 `secondaryContainer`（主题色相）→`surfaceContainerHigh`+`onSurfaceVariant` 中性容器（`top_bar_button.dart` 三处，经 `TopBarActionStyler`/`LegadoAppBar` 全站同因同改含返回钮；激活/选中态保留 primary 区分状态，搜索页 `_circleAction` 非激活底同槽位对齐）。断言口径校准：任务「封面宽 96-108px」与参考实测 220px 物理不可同时满足，按主指令「缩至参考尺寸」以 210-234px 参考带断言，留待用户复核 |
 
 > 附：治理提交「重构红线口径修订」（未经允许禁止新增原版不存在的功能，授权除外）随 2.0.124 批次落地。
 
@@ -106,3 +107,5 @@
 修订：全栈工程师 ｜ 2026-09-17（1:1 对齐长尾 N2/N5/N3 收尾批次 34，2.0.272：N5 字数胶囊 Rust 全链路修复、N2/N3 定位定论+台账登记，详见 docs/SCREEN_1TO1_PARITY_LEDGER_20260914.md「批 4 长尾 N2/N5/N3 收尾」节）
 
 修订：Qoder ｜ 2026-09-17（**截图一比一全程序批次 35，2.0.255~2.0.274**：依用户口径「视觉基准=参考版实机截图（含配色字体，废止 2026-08-05 视觉自由授权）」对全屏差异清单 43 屏完成「差异列毕→分批修复→逐屏核图验收」全流程。要点：批1 高频核心 16 屏（含选择模式 P0、搜索卡顿 nice19、书架 3 列网格与红线清理）/批2 发现与源管理 10 屏（源卡单列列表行、编辑器扁平化）/批3 我的与设置 11 屏（+外观页红线清理：移除误判产物配色轮、外观预览）/批4 长尾 6 屏（TXT 规则页全面对齐）；**阶段D 默认主题对齐 kazusa 源码调色板**（#795548/#E53935/#F5F5F5，程序化核验 Δ≤1）；尾巴 N2-N5 与 R-NaN（Rust 三层真修复）全部闭环。规范与台账：docs/SCREEN_1TO1_PARITY_{SPEC,LEDGER}_20260914.md；工具：scripts/parity_{pair,capture_ours,capture_ref}.py）
+
+修订：全栈工程师 ｜ 2026-09-17（搜索结果页视觉精修三项批次 36，2.0.275：①「结果 N · 进度 x/y」胶囊像素实测已居中（中心 ≈540=屏心，「偏右 76%」为右缘误读，零代码改动存证）；②结果项封面 80x110→74x104 对齐参考 220x311px（5:7 圆角 10）；③顶栏圆钮 tonal 槽位 secondaryContainer→surfaceContainerHigh 中性容器（top_bar_button.dart 三处经 TopBarActionStyler 全站同因同改，激活/选中态保留 primary 区分状态）。详见 CHANGELOG [2.0.275] 与 docs/SCREEN_1TO1_PARITY_LEDGER_20260914.md「搜索页视觉精修闭环（2.0.275）」节）

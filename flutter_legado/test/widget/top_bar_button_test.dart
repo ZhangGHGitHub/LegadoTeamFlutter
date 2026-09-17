@@ -50,17 +50,22 @@ void main() {
       await tester.pump();
     }
 
-    testWidgets('tonal：36dp 圆槽 + secondaryContainer 底', (tester) async {
+    testWidgets(
+        'tonal：36dp 圆槽 + surfaceContainerHigh 中性底（2.0.275 视觉精修）',
+        (tester) async {
       await pumpActions(tester, style: TopBarButtonStyle.tonal);
       final context = tester.element(find.byType(TopBarActionStyler));
       final cs = Theme.of(context).colorScheme;
       // 按底色精确定位槽位 Container
+      // [2.0.275 视觉精修] 槽位底由 secondaryContainer（主题色相）改中性
+      // surfaceContainerHigh（对齐参考基准图 ref_20260914 07 顶栏圆钮）
       final slot = tester
           .widgetList<Container>(find.byType(Container))
           .firstWhere(
             (c) =>
                 c.decoration is BoxDecoration &&
-                (c.decoration! as BoxDecoration).color == cs.secondaryContainer,
+                (c.decoration! as BoxDecoration).color ==
+                    cs.surfaceContainerHigh,
           );
       expect(slot.constraints?.maxWidth, 36);
       final deco = slot.decoration! as BoxDecoration;

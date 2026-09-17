@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.275] - 2026-09-17
+
+### Fixed
+- [UI] 搜索结果页视觉精修三项（台账 1-7 重开精修，版本 2.0.274+275 → 2.0.275+276，基准 `ref_20260914/07_search_results.png` + 配对图 `pairs_latest/07_search_results_pair.png` 左参考右我方）：
+  - **①「结果 N · 进度 x/y」胶囊居中（像素实测存证，零代码改动）**：PIL 实测（1080 基准 480dpi）——我方 done 态胶囊 x 259..820 中心 ≈540（=屏心）、搜索中态 07b 灰带 x 261..818 中心 539（偏 1px）；参考胶囊中心 ≈531-534。任务所述「偏右（实测中心≈屏宽 76%）」经像素核验为胶囊**右缘**（820/1080=75.9%），中心本已在屏心，≤40px 断言直接通过。代码本已 `Center` 包裹（`search_screen.dart`），不改码，本行即存证。加载中左上浮动 x/y 进度卡为原版行为（`_buildStopFab`），未触碰
+  - **②结果项封面 80x110 → 74x104（对齐参考 5:7）**：参考基准图封面实测 **220x311px**（=≈73.3x103.7dp @480dpi，比例 5:7），我方 80x110（=240x330px）偏大 ~9%；`_buildResultItem` 封面改 74x104（=222x312px）对齐参考，圆角 10 不变，`BookCover` 占位框随 width/height 自动缩放
+  - **③顶栏圆形动作钮底色槽位 → 中性容器（同因同改，全站）**：根因 = `top_bar_button.dart` 三处 tonal 槽位（`TopBarActionStyler._mergeDecoration`/`_ActionSlot`/`TopBarButton`）用 `secondaryContainer`+`onSecondaryContainer`（带主题色相，当前玫瑰色板下为粉色 [255,218,214]），参考顶栏圆钮为中性灰容器（≈[236,238,244]，`surfaceContainerHigh` 档）。修：三处 tonal 底改 `cs.surfaceContainerHigh` + 前景 `cs.onSurfaceVariant`（glass/liquidGlass 本为中性 `surfaceContainerHighest` α0.5 不动）。**激活/选中态保留主题色区分状态**：搜索页 `_circleAction` active=primary/onPrimary 不变，非激活底由 `surfaceContainerHighest` 对齐至同槽位 `surfaceContainerHigh`+`onSurfaceVariant`。所有屏顶栏（含返回钮）经 `TopBarActionStyler`/`LegadoAppBar` 统一着色 → 全站同因同改一次生效（书架/发现/我的/设置等同类圆钮同步），台账登记「同因同改」不再逐屏枚举。单测 `top_bar_button_test.dart` tonal 断言改 `surfaceContainerHigh`
+  - **断言口径校准（如实登记）**：任务指定断言「封面宽 96-108px」按 1080 截图 px 计即 32-36dp，与参考实测封面宽 220px（73.3dp）**物理不可同时满足**（96-108px 区间比参考更小，与「缩至参考尺寸」主指令冲突）；按主指令以参考带 210-234px 断言，冲突留待用户复核
+
+### Test
+- `flutter analyze` 无问题（0）；`flutter test` 全过（1457，tonal 中性槽位单测随断言更新）
+
+### Real device
+- 2.0.275+276 release APK 装 MuMu x86_64（192.168.1.19:5555），versionName=2.0.275 校验通过；`scripts/parity_capture_ours.py --only 07 --out docs/parity_shots/ours_2.0.275` 2/2 屏 OK（`07_search_results.png` + `07b_search_results_loading.png`）。PIL 程序化断言全过：①胶囊 done 态 x 259..821（中心 **540.0px，距屏心 0.0px**，≤40 通过）、搜索中态 x 259..821 中心 540.0 同过（「偏右 76%」右缘误读实锤）；②封面 bbox **222x312px（=74.0x104.0dp，比例 0.712≈5:7）**，宽在参考带 210-234px 内（任务 96-108px 断言带与参考实测 220px 冲突，按主指令从参考带，已如实登记）；③顶栏圆钮槽：新图四槽全部中性（⚙ 槽左上角 rgb **[232,233,222]** surfaceContainerHigh 类 / 返回钮 [117,120,109]，最大通道差 ≤11），旧 2.0.273 同位置对照 [255,218,214] 粉（secondaryContainer 玫瑰）/ 返回钮 [122,65,65]（通道差 57）——粉色槽位实锤改中性，激活态保留主题色规则不变。截图目检：本环境无图像通道，三项均以像素断言闭环，并排目视留待视觉通道恢复后复核
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.274] - 2026-09-17
 
 ### Fixed

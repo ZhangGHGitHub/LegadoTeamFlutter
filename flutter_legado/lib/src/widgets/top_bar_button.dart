@@ -7,6 +7,10 @@ import '../providers/ui_settings/ui_settings_notifier.dart';
 /// - 5 档样式：plain 40dp/图标24；tonal/outlined/glass/liquidGlass 36dp/图标20；
 ///   outlined 加 1dp outlineVariant 描边；glass/liquidGlass 为实色玻璃回退
 ///   （surfaceContainerHighest α0.5，enableBlur 接通后差异化）；
+/// - [2.0.275 视觉精修] tonal 槽位底改中性容器：surfaceContainerHigh +
+///   onSurfaceVariant 前景（对齐参考基准图 ref_20260914 07 顶栏圆钮——无主题
+///   色相的中性灰容器）；原 secondaryContainer 随主题色相（玫瑰粉/紫等）偏离
+///   参考。激活/选中态由调用方自行用主题色（primary 等）区分，不在本档位内。
 /// - [TopBarActionStyler] 可包装任意既有 action（IconButton/PopupMenuButton），
 ///   使全站顶栏按钮零逐页改动获得新样式；
 /// - merge 模式：actions 并入 Stadium 胶囊容器 + 1dp 分隔线
@@ -85,10 +89,11 @@ class TopBarActionStyler extends StatelessWidget {
           color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
         );
       case TopBarButtonStyle.tonal:
+        // [2.0.275 视觉精修] 中性容器槽位（原 secondaryContainer 带主题色相）
         return BoxDecoration(
           shape: BoxShape.rectangle,
           borderRadius: BorderRadius.circular(20),
-          color: cs.secondaryContainer,
+          color: cs.surfaceContainerHigh,
         );
     }
   }
@@ -115,9 +120,11 @@ class _ActionSlot extends StatelessWidget {
     }
     final cs = Theme.of(context).colorScheme;
     final (bg, fg, border) = switch (style) {
+      // [2.0.275 视觉精修] tonal 中性槽位：surfaceContainerHigh 底 +
+      // onSurfaceVariant 前景（激活态由调用方以主题色覆盖，见 _circleAction）
       TopBarButtonStyle.tonal => (
-        merge ? null : cs.secondaryContainer,
-        cs.onSecondaryContainer,
+        merge ? null : cs.surfaceContainerHigh,
+        cs.onSurfaceVariant,
         null,
       ),
       TopBarButtonStyle.outlined => (
@@ -185,14 +192,15 @@ class TopBarButton extends StatelessWidget {
     final size = style == TopBarButtonStyle.plain ? 40.0 : 36.0;
     final iconSize = style == TopBarButtonStyle.plain ? 24.0 : 20.0;
     final cs = Theme.of(context).colorScheme;
+    // [2.0.275 视觉精修] tonal 中性槽位（surfaceContainerHigh + onSurfaceVariant）
     final bg = switch (style) {
-      TopBarButtonStyle.tonal => cs.secondaryContainer,
+      TopBarButtonStyle.tonal => cs.surfaceContainerHigh,
       TopBarButtonStyle.glass ||
       TopBarButtonStyle.liquidGlass => cs.surfaceContainerHighest.withValues(alpha: 0.5),
       _ => Colors.transparent,
     };
     final fg = switch (style) {
-      TopBarButtonStyle.tonal => cs.onSecondaryContainer,
+      TopBarButtonStyle.tonal => cs.onSurfaceVariant,
       TopBarButtonStyle.outlined => cs.onSurfaceVariant,
       _ => cs.onSurface,
     };
