@@ -902,16 +902,47 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .await
     }
 
-    /// 带变量表的目录获取（换源变量链 R1，2026-09-06）：转发带变量核心，
-    /// 对齐原版 getChapterListAwait 的 AnalyzeUrl ruleData=book 变量展开
+    /// 带变量表的目录获取（换源变量链 R1，2026-09-06）
+    ///
+    /// [方案 A 语义修订 2026-09-17] `toc_url` 是**已解析的真实目录页 URL**
+    /// （如换源 2a 详情解析出的 toc_url；目录在详情页时可传详情 URL）：
+    /// 直接经 AnalyzeUrl 抓取该目录页（保留「url,{json}」请求选项与
+    /// `{{key}}` 变量模板展开），并对响应体跑 ruleToc；不再把入参当
+    /// book_url 经 bookUrl → init → tocUrl 重推目录地址。
+    ///
+    /// 旧实现把入参当 book_url 走详情路径：入参为目录页 URL（换源场景）时
+    /// 目录体上 ruleBookInfo.init 求值空 → tocUrl 规则重推出空值地址（如
+    /// 松鹤 all-chapter?bookId=）→ 服务端 422 → 0 章 → 换源报「新书源
+    /// 未解析到任何章节」（换源第二断点，2026-09-17 实测确证）。
     async fn get_chapters_with_vars(
         &self,
         source: &BookSource,
         toc_url: &str,
         variables: &std::collections::HashMap<String, String>,
     ) -> LegadoResult<Vec<WebChapter>> {
-        self.get_chapters_with_hints_and_vars(source, toc_url, None, None, variables)
+        self.get_chapters_from_known_toc_and_vars(source, toc_url, variables)
             .await
+    }
+
+    /// 带变量表 + 书名提示的目录获取（换源回归 P2-2，2026-09-17）
+    ///
+    /// 真实实现：hint 注入 `@js:[{title: book.name, …}]` 类 chapterList
+    /// 规则的 `book` 绑定（上游 BookChapterList.kt:196 `AnalyzeRule(book,
+    /// bookSource)` 语义）；None 退化为无 hint 行为。
+    async fn get_chapters_with_vars_and_name_hint(
+        &self,
+        source: &BookSource,
+        toc_url: &str,
+        variables: &std::collections::HashMap<String, String>,
+        book_name_hint: Option<&str>,
+    ) -> LegadoResult<Vec<WebChapter>> {
+        self.get_chapters_from_known_toc_and_vars_with_hint(
+            source,
+            toc_url,
+            variables,
+            book_name_hint,
+        )
+        .await
     }
 
     async fn get_content(&self, source: &BookSource, chapter: &WebChapter) -> LegadoResult<String> {
@@ -1109,7 +1140,6 @@ impl RealBookSourceFetcher {
             .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
         let t0 = std::time::Instant::now();
 
-        let info_rule = source.rule_book_info.as_ref();
         let mut book_name = book_name_hint.unwrap_or("").trim().to_string();
 
         // 对齐原版 WebBook.getChapterListAwait：直接使用 book.tocUrl 拉目录，
@@ -1118,104 +1148,177 @@ impl RealBookSourceFetcher {
         // tocUrl 时的默认值）不算有效目录地址——七猫等书源的 tocUrl 由详情
         // 规则（qmBookInfo）动态生成，直接当目录请求会得到详情响应而非
         // chapter-list → qmToc 无 chapter_lists → 目录空（2026-08-15 用户反馈）。
-        let (toc_url, toc_body) = if let Some(raw_toc) =
-            known_toc_url.filter(|u| !u.is_empty() && *u != book_url)
-        {
-            let toc_url = if raw_toc.starts_with("http://") || raw_toc.starts_with("https://") {
-                raw_toc.to_string()
+        //
+        // [方案 A 提取 2026-09-17] 两个分支体提取为
+        // fetch_known_toc_body / fetch_detail_and_derive_toc_body，共享尾部
+        // 提取为 parse_chapters_from_toc_body（同时供 get_chapters_with_vars
+        // 的「已知目录页」路径复用）。
+        let (toc_url, toc_body) =
+            if let Some(raw_toc) = known_toc_url.filter(|u| !u.is_empty() && *u != book_url) {
+                self.fetch_known_toc_body(
+                    source,
+                    book_url,
+                    raw_toc,
+                    variables,
+                    source_headers.as_ref(),
+                    js_lib_sanitized.as_deref(),
+                    &mut book_name,
+                    t0,
+                )
+                .await?
             } else {
-                AnalyzeUrl::get_absolute_url(book_url, raw_toc)
+                self.fetch_detail_and_derive_toc_body(
+                    source,
+                    book_url,
+                    variables,
+                    source_headers.as_ref(),
+                    js_lib_sanitized.as_deref(),
+                    &mut book_name,
+                    t0,
+                )
+                .await?
             };
-            eprintln!(
-                "[web_book] get_chapters use known tocUrl={} skip info in {:?}",
-                toc_url,
-                t0.elapsed()
-            );
-            if toc_url == book_url {
-                // bookUrl 同样可能带「url,{json}」请求选项（七猫），经 AnalyzeUrl 解析
-                let analyze_book = legado_parser::AnalyzeUrl::parse(book_url, variables, 1)
-                    .map_err(|e| LegadoError::Internal(format!("bookUrl 解析失败: {e}")))?;
-                let info_body = self
-                    .fetch_url(&analyze_book, source_headers.as_ref())
-                    .await?;
-                Self::execute_login_check(source, &info_body, book_url, 200)?;
-                if book_name.is_empty() {
-                    let info_analyzer = crate::js_executor::construct_analyzer_with_source_context(
-                        info_body.clone(),
-                        book_url.to_string(),
-                        &source.book_source_url,
-                        js_lib_sanitized.as_deref(),
-                        crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
-                    );
-                    book_name = info_rule
-                        .and_then(|r| r.name.as_deref())
-                        .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
-                        .unwrap_or_default()
-                        .lines()
-                        .map(str::trim)
-                        .find(|s| !s.is_empty())
-                        .unwrap_or("")
-                        .to_string();
-                }
-                (toc_url, info_body)
-            } else {
-                // tocUrl 可能是「url,{json}」带请求选项的格式（七猫四合一
-                // qmGetUrl 生成 https://.../chapter/chapter-list?...,
-                // {"method":"GET","headers":{...}}）：必须经 AnalyzeUrl 解析出
-                // url/method/headers 再请求，直接 GET 会把 ,{json} 拼进请求
-                // → 目录接口 404/错误 → 「共 0 章」（2026-08-15 用户反馈）
-                let analyze_toc = legado_parser::AnalyzeUrl::parse(&toc_url, variables, 1)
-                    .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
-                let body = self
-                    .fetch_url(&analyze_toc, source_headers.as_ref())
-                    .await?;
-                (toc_url, body)
-            }
+
+        self.parse_chapters_from_toc_body(
+            source,
+            source_headers.as_ref(),
+            &toc_url,
+            toc_body,
+            &book_name,
+            js_lib_sanitized.as_deref(),
+            t0,
+        )
+        .await
+    }
+
+    /// [方案 A 2026-09-17] 已知目录页路径（带变量表）：入参 `toc_url` 是
+    /// **已解析的真实目录页地址**（换源 2a 详情解析出的 toc_url；目录在
+    /// 详情页时可传详情 URL）。
+    ///
+    /// 直接经 `AnalyzeUrl::parse(toc_url, variables, 1)` 抓取该目录页
+    /// （目录地址可能带「url,{json}」请求选项与 `{{key}}` 模板，经变量表
+    /// 展开，对齐原版 getChapterListAwait），再对响应体跑 ruleToc；不抓
+    /// 详情页、不经 init → tocUrl 重推目录地址。
+    ///
+    /// 注意：`toc_url` 应为已可抓取的目录页地址（通常为绝对地址）；相对
+    /// 地址无 base URL 可解析（本路径无 book_url 入参），不支持。
+    async fn get_chapters_from_known_toc_and_vars(
+        &self,
+        source: &BookSource,
+        toc_url: &str,
+        variables: &std::collections::HashMap<String, String>,
+    ) -> LegadoResult<Vec<WebChapter>> {
+        self.get_chapters_from_known_toc_and_vars_with_hint(source, toc_url, variables, None)
+            .await
+    }
+
+    /// [P2-1/P2-2 2026-09-17] 已知目录页路径（带书名 hint）
+    ///
+    /// `book_name_hint`：None 维持原行为（`book` 绑定 name 为空）；
+    /// Some(name) 注入详情步解析出的书名（上游 BookChapterList.kt:196
+    /// `AnalyzeRule(book, bookSource)` 下 `book.name` 可用），供
+    /// `@js:[{title: book.name, url: …}]` 类 chapterList 规则读取书名，
+    /// 避免直抓目录路径下标题退化。
+    ///
+    /// P2-1：抓目录体后、解析前执行 loginCheckJs——对齐上游
+    /// WebBook.kt:346-352 顺序（get response → login check → parse；
+    /// 旧详情路径均有此步，新路径此前缺失，`login_check_js="false"` 的
+    /// 需登录源会错误地直接返回目录）。
+    async fn get_chapters_from_known_toc_and_vars_with_hint(
+        &self,
+        source: &BookSource,
+        toc_url: &str,
+        variables: &std::collections::HashMap<String, String>,
+        book_name_hint: Option<&str>,
+    ) -> LegadoResult<Vec<WebChapter>> {
+        acquire_source_rate_limit(source).await;
+        let source_headers = Self::parse_source_headers(source);
+        // 书山聚合等聚合源目录规则 `<js>` 脚本依赖 jsLib 函数（getServerHost
+        // 等），jsLib 需 sanitize（去 Rhino 特有 Packages 行）后注入。
+        let js_lib_sanitized = source
+            .js_lib
+            .as_deref()
+            .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
+        let t0 = std::time::Instant::now();
+        // P2-2：None 时 trim 后为空串（= 原 `String::new()` 行为）
+        let book_name = book_name_hint.map(str::trim).unwrap_or("").to_string();
+
+        // 目录 URL 可能是「url,{json}」带请求选项的格式（七猫四合一
+        // qmGetUrl 生成 https://.../chapter/chapter-list?...,{...}）：必须
+        // 经 AnalyzeUrl 解析出 url/method/headers 再请求，直接 GET 会把
+        // ,{json} 拼进请求 → 目录接口 404/错误响应 → 「共 0 章」。
+        let analyze_toc = legado_parser::AnalyzeUrl::parse(toc_url, variables, 1)
+            .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
+        let toc_body = self
+            .fetch_url(&analyze_toc, source_headers.as_ref())
+            .await?;
+        // P2-1：loginCheckJs 目录体登录检测（调用形态与详情路径各
+        // execute_login_check 调用点一致；LegadoResult<()> → `?`）。
+        // 无 loginCheckJs 配置时内部直接跳过，不影响既有源。
+        Self::execute_login_check(source, &toc_body, toc_url, 200)?;
+        eprintln!(
+            "[web_book] get_chapters_from_known_toc fetched {} in {:?}",
+            analyze_toc.url(),
+            t0.elapsed()
+        );
+
+        self.parse_chapters_from_toc_body(
+            source,
+            source_headers.as_ref(),
+            toc_url,
+            toc_body,
+            &book_name,
+            js_lib_sanitized.as_deref(),
+            t0,
+        )
+        .await
+    }
+
+    /// 已知目录路径抓取目录响应体（原 get_chapters_with_hints_and_vars 的
+    /// known_toc 分支，逐字迁移；`!= book_url` 守卫保留在调用点）。
+    ///
+    /// `raw_toc` 可为相对路径（相对 `book_url` 绝对化）。解析后目录地址
+    /// 等于 `book_url`（如相对路径形态）时按 bookUrl 请求选项抓取并解析
+    /// 书名；否则直接抓目录页（目录地址可能带请求选项，先经 AnalyzeUrl
+    /// 解析）。返回（最终目录地址, 目录响应体）。
+    #[allow(clippy::too_many_arguments)] // 逐字迁移原分支参数集，暂不拆结构体
+    async fn fetch_known_toc_body(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        raw_toc: &str,
+        variables: &std::collections::HashMap<String, String>,
+        source_headers: Option<&HashMap<String, String>>,
+        js_lib_sanitized: Option<&str>,
+        book_name: &mut String,
+        t0: std::time::Instant,
+    ) -> LegadoResult<(String, String)> {
+        let info_rule = source.rule_book_info.as_ref();
+        let toc_url = if raw_toc.starts_with("http://") || raw_toc.starts_with("https://") {
+            raw_toc.to_string()
         } else {
-            // 1. 先获取详情页以确定 toc_url
-            //    （bookUrl 可能带「url,{json}」请求选项，七猫发现列表 qmGetUrl 生成；
-            //    经 AnalyzeUrl 解析出 url/method/headers 再请求，直接 GET 会 401/404）
+            AnalyzeUrl::get_absolute_url(book_url, raw_toc)
+        };
+        eprintln!(
+            "[web_book] get_chapters use known tocUrl={} skip info in {:?}",
+            toc_url,
+            t0.elapsed()
+        );
+        if toc_url == book_url {
+            // bookUrl 同样可能带「url,{json}」请求选项（七猫），经 AnalyzeUrl 解析
             let analyze_book = legado_parser::AnalyzeUrl::parse(book_url, variables, 1)
                 .map_err(|e| LegadoError::Internal(format!("bookUrl 解析失败: {e}")))?;
-            let info_body = self
-                .fetch_url(&analyze_book, source_headers.as_ref())
-                .await?;
-            eprintln!("[web_book] get_chapters info_body in {:?}", t0.elapsed());
-
-            // 1.5 loginCheckJs 登录检测
+            let info_body = self.fetch_url(&analyze_book, source_headers).await?;
             Self::execute_login_check(source, &info_body, book_url, 200)?;
-
-            let mut info_analyzer = crate::js_executor::construct_analyzer_with_source_context(
-                info_body.clone(),
-                book_url.to_string(),
-                &source.book_source_url,
-                js_lib_sanitized.as_deref(),
-                crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
-            );
-
-            // 1.6 详情页 init（对齐原版 analyzeBookInfo：init 结果 setContent 后
-            // 再解析字段；书山聚合 init 把 data:URI hex detail JSON 转为
-            // /details 响应，tocUrl 规则依赖其中的 source/book_url/title）
-            if let Some(init_rule) = info_rule.and_then(|r| r.init.as_deref()) {
-                let init_rule = init_rule.trim();
-                if !init_rule.is_empty() {
-                    if let Ok(init_result) = info_analyzer.get_string(init_rule) {
-                        if !init_result.is_empty() {
-                            info_analyzer.set_element_content(init_result);
-                        }
-                    }
-                }
-            }
-
-            let raw_toc = info_rule
-                .and_then(|r| r.toc_url.as_deref())
-                .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
-                .unwrap_or_default();
-
-            // 书名（供目录规则 `<js>` 中 `book.name` 使用，对齐原版
-            // AnalyzeRule.evalJS 注入 book 绑定；51漫画等目录规则依赖）— Reasonix
             if book_name.is_empty() {
-                book_name = info_rule
+                let info_analyzer = crate::js_executor::construct_analyzer_with_source_context(
+                    info_body.clone(),
+                    book_url.to_string(),
+                    &source.book_source_url,
+                    js_lib_sanitized,
+                    crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
+                );
+                *book_name = info_rule
                     .and_then(|r| r.name.as_deref())
                     .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
                     .unwrap_or_default()
@@ -1225,26 +1328,123 @@ impl RealBookSourceFetcher {
                     .unwrap_or("")
                     .to_string();
             }
-            let toc_url = if raw_toc.is_empty() {
-                book_url.to_string()
-            } else {
-                AnalyzeUrl::get_absolute_url(book_url, &raw_toc)
-            };
+            Ok((toc_url, info_body))
+        } else {
+            // tocUrl 可能是「url,{json}」带请求选项的格式（七猫四合一
+            // qmGetUrl 生成 https://.../chapter/chapter-list?...,
+            // {"method":"GET","headers":{...}}）：必须经 AnalyzeUrl 解析出
+            // url/method/headers 再请求，直接 GET 会把 ,{json} 拼进请求
+            // → 目录接口 404/错误 → 「共 0 章」（2026-08-15 用户反馈）
+            let analyze_toc = legado_parser::AnalyzeUrl::parse(&toc_url, variables, 1)
+                .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
+            let body = self.fetch_url(&analyze_toc, source_headers).await?;
+            Ok((toc_url, body))
+        }
+    }
 
-            // 2. B3.1 tocHtml 缓存复用：当 tocUrl == bookUrl 时复用详情页响应体，避免重复请求
-            let toc_body = if toc_url == book_url {
-                info_body
-            } else {
-                // 同 known-tocUrl 路径：tocUrl 可能带「url,{json}」请求选项（七猫），
-                // 经 AnalyzeUrl 解析出 url/method/headers 再请求
-                let analyze_toc = legado_parser::AnalyzeUrl::parse(&toc_url, variables, 1)
-                    .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
-                self.fetch_url(&analyze_toc, source_headers.as_ref())
-                    .await?
-            };
-            (toc_url, toc_body)
+    /// 详情页路径抓取目录响应体（原 get_chapters_with_hints_and_vars 的
+    /// else 分支，逐字迁移）：抓详情页 → ruleBookInfo.init + tocUrl 规则
+    /// 推导目录页地址（tocUrl 规则为空时目录地址=详情页 URL 并复用详情
+    /// 响应体）。返回（最终目录地址, 目录响应体）。
+    #[allow(clippy::too_many_arguments)] // 逐字迁移原分支参数集，暂不拆结构体
+    async fn fetch_detail_and_derive_toc_body(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        variables: &std::collections::HashMap<String, String>,
+        source_headers: Option<&HashMap<String, String>>,
+        js_lib_sanitized: Option<&str>,
+        book_name: &mut String,
+        t0: std::time::Instant,
+    ) -> LegadoResult<(String, String)> {
+        let info_rule = source.rule_book_info.as_ref();
+        // 1. 先获取详情页以确定 toc_url
+        //    （bookUrl 可能带「url,{json}」请求选项，七猫发现列表 qmGetUrl 生成；
+        //    经 AnalyzeUrl 解析出 url/method/headers 再请求，直接 GET 会 401/404）
+        let analyze_book = legado_parser::AnalyzeUrl::parse(book_url, variables, 1)
+            .map_err(|e| LegadoError::Internal(format!("bookUrl 解析失败: {e}")))?;
+        let info_body = self.fetch_url(&analyze_book, source_headers).await?;
+        eprintln!("[web_book] get_chapters info_body in {:?}", t0.elapsed());
+
+        // 1.5 loginCheckJs 登录检测
+        Self::execute_login_check(source, &info_body, book_url, 200)?;
+
+        let mut info_analyzer = crate::js_executor::construct_analyzer_with_source_context(
+            info_body.clone(),
+            book_url.to_string(),
+            &source.book_source_url,
+            js_lib_sanitized,
+            crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
+        );
+
+        // 1.6 详情页 init（对齐原版 analyzeBookInfo：init 结果 setContent 后
+        // 再解析字段；书山聚合 init 把 data:URI hex detail JSON 转为
+        // /details 响应，tocUrl 规则依赖其中的 source/book_url/title）
+        if let Some(init_rule) = info_rule.and_then(|r| r.init.as_deref()) {
+            let init_rule = init_rule.trim();
+            if !init_rule.is_empty() {
+                if let Ok(init_result) = info_analyzer.get_string(init_rule) {
+                    if !init_result.is_empty() {
+                        info_analyzer.set_element_content(init_result);
+                    }
+                }
+            }
+        }
+
+        let raw_toc = info_rule
+            .and_then(|r| r.toc_url.as_deref())
+            .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
+            .unwrap_or_default();
+
+        // 书名（供目录规则 `<js>` 中 `book.name` 使用，对齐原版
+        // AnalyzeRule.evalJS 注入 book 绑定；51漫画等目录规则依赖）— Reasonix
+        if book_name.is_empty() {
+            *book_name = info_rule
+                .and_then(|r| r.name.as_deref())
+                .map(|rule| info_analyzer.get_string(rule).unwrap_or_default())
+                .unwrap_or_default()
+                .lines()
+                .map(str::trim)
+                .find(|s| !s.is_empty())
+                .unwrap_or("")
+                .to_string();
+        }
+        let toc_url = if raw_toc.is_empty() {
+            book_url.to_string()
+        } else {
+            AnalyzeUrl::get_absolute_url(book_url, &raw_toc)
         };
 
+        // 2. B3.1 tocHtml 缓存复用：当 tocUrl == bookUrl 时复用详情页响应体，避免重复请求
+        let toc_body = if toc_url == book_url {
+            info_body
+        } else {
+            // 同 known-tocUrl 路径：tocUrl 可能带「url,{json}」请求选项（七猫），
+            // 经 AnalyzeUrl 解析出 url/method/headers 再请求
+            let analyze_toc = legado_parser::AnalyzeUrl::parse(&toc_url, variables, 1)
+                .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
+            self.fetch_url(&analyze_toc, source_headers).await?
+        };
+        Ok((toc_url, toc_body))
+    }
+
+    /// 目录解析共享尾部（原 get_chapters_with_hints_and_vars 两分支之后的
+    /// 共享段，2026-09-17 方案 A 提取；同时供已知目录页路径
+    /// get_chapters_from_known_toc_and_vars 复用）：对目录页响应体跑
+    /// ruleToc（chapterList → 章节循环、nextTocUrl 分页、去重/反转、
+    /// formatJs），返回章节列表。
+    /// `t0` 为整段流程起点（含抓目录耗时），仅用于 eprintln 计时日志。
+    #[allow(clippy::too_many_arguments)] // 目录解析共享尾部参数集，暂不拆结构体
+    async fn parse_chapters_from_toc_body(
+        &self,
+        source: &BookSource,
+        source_headers: Option<&HashMap<String, String>>,
+        toc_url: &str,
+        toc_body: String,
+        book_name: &str,
+        js_lib_sanitized: Option<&str>,
+        t0: std::time::Instant,
+    ) -> LegadoResult<Vec<WebChapter>> {
         // 3. B3.4 反转标记：chapterList 规则以 "-" 前缀表示倒序，"+" 前缀仅为标记（对标 Kotlin BookChapterList）
         let toc_rule = source.rule_toc.as_ref();
         let raw_list_rule = toc_rule
@@ -1262,9 +1462,9 @@ impl RealBookSourceFetcher {
 
         let analyzer = crate::js_executor::construct_analyzer_with_source_context(
             toc_body,
-            toc_url.clone(),
+            toc_url.to_string(),
             &source.book_source_url,
-            js_lib_sanitized.as_deref(),
+            js_lib_sanitized,
             crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
         )
         .with_js_binding(
@@ -1306,9 +1506,9 @@ impl RealBookSourceFetcher {
         // 复用 stringRuleCache / JsExecutor，避免每章新建解析器（数百章时差一个数量级）。
         let mut elem_analyzer = crate::js_executor::construct_analyzer_with_source_context(
             String::new(),
-            toc_url.clone(),
+            toc_url.to_string(),
             &source.book_source_url,
-            js_lib_sanitized.as_deref(),
+            js_lib_sanitized,
             crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
         );
 
@@ -1347,7 +1547,9 @@ impl RealBookSourceFetcher {
             let word_count = if update_time_rule.is_empty() {
                 None
             } else {
-                let info = elem_analyzer.get_string(update_time_rule).unwrap_or_default();
+                let info = elem_analyzer
+                    .get_string(update_time_rule)
+                    .unwrap_or_default();
                 word_count_re
                     .captures(&info)
                     .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
@@ -1362,10 +1564,10 @@ impl RealBookSourceFetcher {
                 if is_volume {
                     format!("{}{}", title, index)
                 } else {
-                    toc_url.clone()
+                    toc_url.to_string()
                 }
             } else {
-                AnalyzeUrl::get_absolute_url(&toc_url, &raw_url)
+                AnalyzeUrl::get_absolute_url(toc_url, &raw_url)
             };
 
             // @put 变量写入章节（对齐 BookChapter.putVariable → variable JSON）
@@ -1402,7 +1604,7 @@ impl RealBookSourceFetcher {
                 .get_strings_ex(next_toc_rule, true)
                 .unwrap_or_default()
                 .into_iter()
-                .filter(|u| !u.is_empty() && u != &toc_url)
+                .filter(|u| !u.is_empty() && u != toc_url)
                 .collect();
             // 去重保序
             {
@@ -1416,18 +1618,19 @@ impl RealBookSourceFetcher {
             );
 
             if next_urls.len() == 1 {
-                let mut visited = std::collections::HashSet::new();
-                visited.insert(toc_url.clone());
+                let mut visited: std::collections::HashSet<String> =
+                    std::collections::HashSet::new();
+                visited.insert(toc_url.to_string());
                 let mut next_url = next_urls.remove(0);
                 while !next_url.is_empty() && visited.insert(next_url.clone()) {
                     let page_body = self
-                        .fetch_simple_cached(&next_url, source_headers.as_ref(), true)
+                        .fetch_simple_cached(&next_url, source_headers, true)
                         .await?;
                     let page_analyzer = crate::js_executor::construct_analyzer_with_source_context(
                         page_body,
                         next_url.clone(),
                         &source.book_source_url,
-                        js_lib_sanitized.as_deref(),
+                        js_lib_sanitized,
                         crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
                     );
                     let page_elements = if chapter_list_rule.is_empty() {
@@ -1467,8 +1670,9 @@ impl RealBookSourceFetcher {
                         let word_count = if update_time_rule.is_empty() {
                             None
                         } else {
-                            let info =
-                                elem_analyzer.get_string(update_time_rule).unwrap_or_default();
+                            let info = elem_analyzer
+                                .get_string(update_time_rule)
+                                .unwrap_or_default();
                             word_count_re
                                 .captures(&info)
                                 .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
@@ -1503,7 +1707,7 @@ impl RealBookSourceFetcher {
                 }
             } else if next_urls.len() > 1 {
                 // 并发拉页（对齐 mapAsync(threadCount)）
-                let headers = source_headers.clone();
+                let headers = source_headers;
                 let source_url = source.book_source_url.clone();
                 let js_lib = source.js_lib.clone();
                 let list_rule = chapter_list_rule.to_string();
@@ -1517,7 +1721,6 @@ impl RealBookSourceFetcher {
                 let futs: Vec<_> = next_urls
                     .into_iter()
                     .map(|page_url| {
-                        let headers = headers.clone();
                         let source_url = source_url.clone();
                         let js_lib = js_lib.clone();
                         let list_rule = list_rule.clone();
@@ -1532,7 +1735,7 @@ impl RealBookSourceFetcher {
                                 if let Some(cached) = cache_get_page_body(&page_url) {
                                     cached
                                 } else {
-                                    let response = client.get(&page_url, headers).await?;
+                                    let response = client.get(&page_url, headers.cloned()).await?;
                                     if !response.is_success() {
                                         return Err(LegadoError::Network(format!(
                                             "HTTP {} for {}",
@@ -1662,9 +1865,9 @@ impl RealBookSourceFetcher {
                 let index_json = serde_json::to_string(&(i as i32 + 1)).unwrap();
                 let mut fa = crate::js_executor::construct_analyzer_with_js_lib(
                     String::new(),
-                    toc_url.clone(),
+                    toc_url.to_string(),
                     &source.book_source_url,
-                    js_lib_sanitized.as_deref(),
+                    js_lib_sanitized,
                 );
                 fa.add_js_binding("index", &index_json);
                 fa.add_js_binding("title", &title_json);
@@ -2289,8 +2492,16 @@ fn apply_content_replace_regex(
 /// 拆分 Kotlin SourceRule 的 `##` 替换语法（对标 AnalyzeRule.makeUpRule L819-829）：
 /// `rule##replaceRegex##replacement##第四段(仅存在即置 replaceFirst=true)`。
 /// 返回（基础规则，可选替换三元组）。
+///
+/// [B/P1-1 | 台账 0917] `{{…}}` 参数内的 `##` 属于参数内层规则（上游
+/// makeUpRule 只在参数回填**之后**才 `split("##")`）：顶层拆分**跳过**落在
+/// 已闭合 `{{…}}` 跨度内的 `##` 位置（与解析器 `split_hash_replace` 共用
+/// `legado_parser::split_top_level_hash`，两入口一致）——旧的「全部 `##` 都
+/// 在跨度内才不拆」全有或全无守卫在混合形态（跨度内 + 跨度外 `##`）下
+/// 放弃整个拆分 → 半截垃圾。跨度内 `##` 随基础规则原样交给解析器，由其
+/// 模板路径完成参数回填与内层 `##` 替换。
 pub(crate) fn split_rule_replace_parts(rule: &str) -> (&str, Option<(&str, &str, bool)>) {
-    let parts: Vec<&str> = rule.split("##").collect();
+    let parts = legado_parser::split_top_level_hash(rule, usize::MAX);
     let base = parts.first().copied().unwrap_or("").trim();
     if parts.len() <= 1 {
         return (base, None);
@@ -2323,13 +2534,16 @@ pub(crate) fn eval_rule_string(
     Ok(result)
 }
 
-/// 正则替换（对标 Kotlin `AnalyzeRule.replaceRegex` L539-563）：
+/// 正则替换（对标 Kotlin `AnalyzeRule.replaceRegex` L541-565）：
 /// - replaceFirst 分支（`##match##replace##第四段`）：仅取首个匹配段文本做替换后返回
-///   （对标 `matcher.group(0).replaceFirst(regex, replacement)`，无匹配返回空串）；
+///   （对标 L548-555 `matcher.group(0).replaceFirst(regex, replacement)`）；
+///   **无匹配时上游 L553-555 返回 `""`**（`else -> ""`）——本入口与解析器
+///   `apply_hash_replace`（P1-2 收敛语义，见其注释）及锁定测试
+///   `test_apply_regex_replace_replace_first` 三方一致；
 /// - 全文替换分支：`result.replace(regex, replacement)`，replacement 支持 `$1` 捕获组引用；
 /// - 正则非法/编译失败（含病态 pattern 栈溢出防护 compile_regex_safe）时降级字面量替换
-///   （对标 Kotlin runCatching 回退 `result.replace(replaceRegex, replacement)`；
-///   replaceFirst 分支正则非法时对标原版直接返回 replacement）。
+///   （对标 L563 `result.replace(replaceRegex, replacement)`；
+///   replaceFirst 分支正则非法时对标 L557 直接返回 replacement）。
 pub(crate) fn apply_regex_replace(
     text: &str,
     pattern: &str,
@@ -2512,8 +2726,7 @@ fn word_count_regex() -> &'static regex::Regex {
     use std::sync::OnceLock;
     static RE: OnceLock<regex::Regex> = OnceLock::new();
     RE.get_or_init(|| {
-        regex::Regex::new(r"(?:^|字数[：:、]?|\s+)([0-9万千百.]{1,6}字)")
-            .expect("wordCountRegex")
+        regex::Regex::new(r"(?:^|字数[：:、]?|\s+)([0-9万千百.]{1,6}字)").expect("wordCountRegex")
     })
 }
 
@@ -4977,6 +5190,16 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     }
 
     #[test]
+    fn test_apply_regex_replace_no_match_empty_cross() {
+        // P1-2 交叉断言：与解析器 `apply_hash_replace` 的
+        // `$.v##zzz##REP###`（v="abc" → ""）语义一致——replaceFirst 无匹配
+        // 返回空串（对标 Kotlin group(0).replaceFirst 的 else 分支）。
+        assert_eq!(apply_regex_replace("abc", "zzz", "REP", true), "");
+        // 有匹配时仅取首匹配段做替换、其余丢弃（与解析器同语义）
+        assert_eq!(apply_regex_replace("abc", "b", "X", true), "X");
+    }
+
+    #[test]
     fn test_apply_regex_replace_invalid_regex_fallback() {
         // 正则非法降级字面量替换（对标 Kotlin runCatching 回退）
         assert_eq!(
@@ -5164,19 +5387,27 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
         let re = super::word_count_regex();
         // 纯前缀 / 字数前缀（含全半角冒号顿号）/ 空白前缀
         assert_eq!(
-            re.captures("2510字").and_then(|c| c.get(1)).map(|m| m.as_str()),
+            re.captures("2510字")
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str()),
             Some("2510字")
         );
         assert_eq!(
-            re.captures("字数：2510字").and_then(|c| c.get(1)).map(|m| m.as_str()),
+            re.captures("字数：2510字")
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str()),
             Some("2510字")
         );
         assert_eq!(
-            re.captures("字数: 3.2万字").and_then(|c| c.get(1)).map(|m| m.as_str()),
+            re.captures("字数: 3.2万字")
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str()),
             Some("3.2万字")
         );
         assert_eq!(
-            re.captures(" 1200字").and_then(|c| c.get(1)).map(|m| m.as_str()),
+            re.captures(" 1200字")
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str()),
             Some("1200字")
         );
         // 无字数文本不匹配

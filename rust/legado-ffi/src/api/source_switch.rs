@@ -649,8 +649,15 @@ fn switch_book_source_with<F: BookSourceFetcher>(
         // 原版 getChapterListAwait 的 AnalyzeUrl 以 ruleData=book 构建
         // （WebBook.kt:312-318）；此前恒空表 → 变量依赖源目录请求打错地址。
         let toc_vars = super::web_book::chapter_url_variables(book.variable.as_deref());
+        // P2-2（2026-09-17）：传 2a 详情解析出的书名作 hint。上游
+        // BookChapterList.kt:196 以 `AnalyzeRule(book, bookSource)` 构建
+        // 解析器，`@js:[{title: book.name, url: …}]` 类 ruleToc.chapterList
+        // 规则可读取 book.name；已知目录页直抓路径不抓详情页，无 hint 时
+        // book 绑定名为空 → 此类规则标题退化（SiS文學網简体等 4 源）。
+        // hint 为 Option：Mock 等实现走 trait 默认（退化为
+        // get_chapters_with_vars），既有签名不变。
         fetcher
-            .get_chapters_with_vars(&source, &toc_url, &toc_vars)
+            .get_chapters_with_vars_and_name_hint(&source, &toc_url, &toc_vars, Some(&info.name))
             .await
     })
     .map_err(|e| {
@@ -665,9 +672,9 @@ fn switch_book_source_with<F: BookSourceFetcher>(
     //    （保留原 origin/tocUrl 与原目录），避免把书换成「无章节」而比未换源
     //    更糟的回归。
     if web_chapters.is_empty() {
-        return Err(LegadoError::Parser(
-            "换源失败：新书源未解析到任何章节，已保留原书源与目录".into(),
-        ));
+        return Err(LegadoError::Parser(format!(
+            "换源失败：新书源未解析到任何章节（目录地址={toc_url}），已保留原书源与目录"
+        )));
     }
 
     // 3. 转换为 BookChapter，base_url/book_url 均落稳定的原 bookUrl

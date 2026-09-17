@@ -1518,7 +1518,9 @@ mod tests {
 
     #[test]
     fn test_default_trait() {
-        let parser = HtmlParser::default();
+        // 单元结构体：直接字面量构造（等价于 Default::default()，
+        // 规避 clippy default_constructed_unit_structs）
+        let parser = HtmlParser;
         let result = parser.get_text("<p>hello</p>", "p").unwrap();
         assert_eq!(result, vec!["hello"]);
     }

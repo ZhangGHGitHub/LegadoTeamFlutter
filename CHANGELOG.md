@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.284] - 2026-09-18
+
+### Fixed
+- [Rust] 修复「换源」切换到部分书源失败（界面提示「新书源未解析到任何章节」）：`ruleSearch.bookUrl` 采用多行 JS 链写法（`$.bid` ⏎ `<js>1100000000+parseInt(result)</js>` ⏎ `…intro-info?bookid={{result}}`）的书源，链末段（非 JS 段）被当作 CSS 选择器去解析上一段的文本，整条规则取空 → `web_book.rs` 空值回退成**搜索页地址**作为 bookUrl → 详情解析全空 → `tocUrl` 的 `{{$.resourceID}}` 为空 → 请求 `…all-chapter?bookId=` 返回 422 无 `rows` → 0 章。根因：规则引擎缺上游 `AnalyzeRule.SourceRule` 的模板语义。修复（版本 2.0.283+284 → 2.0.284+285）：
+  - 链内 `{{…}}` 段与单步模板改为**按模板回填后字面返回**（规则型参数 `@`/`$.`/`$[`/`//` 走单源规则，其余按 JS 表达式以**前序步结果**为 `result` 求值；回填失败即该参数为空串，对齐上游 `null -> Unit`），不再当选择器解析；含 `@js:`/`<js>` 的规则不进模板分支（JS 体内可合法出现 `{{…}}`）；单跨度 JS 表达式参数保留既有 G11「展开后按选择器/组合求值」语义
+  - `{{…}}` 参数内的 `##` 不再被顶层 `##` 拆分截断（改为 span 感知拆分），修复标签字段落库成 `{{$.categoryInfoV4` 之类半截串（9 个书源）
+  - `##re##rep###`（replaceFirst）对齐上游 `matcher.group(0).replaceFirst` 语义，且**无匹配返回空串**（上游与 FFI 入口三处口径统一）
+  - 模板段内单花括号 `{$.x}` 复用 `process_inner_rules` 回填，避免 `{{$.a}}/{$.b}` 混合模板残留字面量
+  - **第二层根因（独立缺陷）**：修复换源目录抓取的**参数语义错位**——`get_chapters_with_vars` 把「已解析好的真实目录页 URL」当详情页 URL 使用 → 在目录响应体上跑 `ruleBookInfo.init` 取空 → 重推 `tocUrl` 得 `…?bookId=`（空 bookId）→ 服务端 `ret:422` 无 `rows` → 0 章 → 报「新书源未解析到任何章节」。改为直接抓取传入的目录页并套 `ruleToc`（对齐原版 `getChapterListAwait`）；换源失败文案补上目录地址便于排查。该缺陷对换源链路 100% 触发，仅「tocUrl 规则依赖详情响应体」的源会真正失败
+  - 目录直取路径补齐 **`loginCheckJs` 检测**（对齐上游 `WebBook.kt:346-352` 的「取响应→登录检测→解析」顺序，避免 23 个配置了登录检测的源把「需要登录」误报成「未解析到章节」）与 **`book.name` 书名 hint**（对齐上游 `BookChapterList.kt:196`，避免 4 个 `ruleToc.chapterList` 依赖 `book.name` 的源章节标题退化）；trait 采用加法式默认方法，既有签名与各 Mock 零改动
+
+### Test
+- `cargo test -p legado-parser` 275 通过（新增 10+ 条 `{{…}}` 模板回归测试）；`cargo test -p legado-ffi` 356 通过 / 19 ignored（新增 `toc_no_rederive_tests` 锁「目录抓取不得把入参当详情页」）；`cargo test -p legado-core` 792 通过；`cargo test --workspace` **exit 0 零失败**；`cargo clippy -p legado-parser --all-targets` 零告警
+- 真实书源 fixture（quickjs）：bookUrl 链由「空串」→ `…intro-info?bookid=1100468021`；`get_chapters_with_vars` 章节数由 **0 → 712**
+
+### Real device
+- 2.0.284+285 release APK 装 MuMu（192.168.1.19:5555）：书籍「斗罗大陆」换源切换到「🏷松鹤庭沐·言璃」**成功**——详情页「来源」变更、「共 712 章」、最新章刷新（截图 `docs/parity_shots/tmp_songhe/v3_06_t8.png`）；落库校验 `originName=🏷松鹤庭沐·言璃`、章节表 712 行
+- 已知残留（登记 `docs/REFACTORING_ACTIVE_PLAN.md` P2-6）：换源后书籍 `bookUrl` 未随新源更新（与上游 `toBook()` 差异）→ 落库 `tocUrl` 丢 bookId；以及该源详情字段的 `java.getString` 绑定层 JSONPath 缺口（kind/字数/章名锁标记显示不全）
+
+### Review
+- 跨模块改动（legado-parser + legado-ffi）经 code-reviewer 两轮审查：首轮判定不可合入（`@js:` 体内含模板导致 JS 不执行 52 条规则/26 源；「选择器 + 跨度外 `##`」被误判为模板 21 条/20 源、其中 10 条为正文），按审查建议收敛后复审
+- 遗留项登记 `docs/REFACTORING_ACTIVE_PLAN.md` P2-6（`get_elements` 链内模板段未同步 / 非法正则回退口径三处不齐 / `{{js}}`+选择器后缀的组合语义取舍需单独评审）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.283] - 2026-09-17
 
 ### Fixed

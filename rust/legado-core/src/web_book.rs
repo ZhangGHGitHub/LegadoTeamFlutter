@@ -195,12 +195,20 @@ pub trait BookSourceFetcher: Send + Sync {
         book_url: &str,
     ) -> LegadoResult<Vec<WebChapter>>;
 
-    /// 带变量表的目录获取（换源变量链 R1，2026-09-06）
+    /// 带变量表的目录获取（换源变量链 R1，2026-09-06；语义修订 2026-09-17）
+    ///
+    /// `toc_url` 是**已解析的真实目录页 URL**（如换源 2a 详情解析出的
+    /// toc_url；目录在详情页时可传详情 URL）：实现应直接抓取该目录页并对
+    /// 响应体跑 ruleToc，**不得**把它当 book_url 走「抓详情 → init → tocUrl
+    /// 规则重推目录地址」的详情路径——目录体上 init 求值空 → tocUrl 重推出
+    /// 空值地址（如松鹤 `all-chapter?bookId=`）→ 服务端 422 → 0 章（换源
+    /// 第二断点，2026-09-17 实测确证）。
     ///
     /// 原版 `WebBook.getChapterListAwait` 的目录请求 AnalyzeUrl 同样以
-    /// `ruleData = book` 构建（WebBook.kt:312-318），tocUrl 模板用 book.variable
-    /// （候选 ⊕ 详情导出合并值）展开。默认实现忽略变量表退化为
-    /// [`Self::get_chapters`]；真实实现覆盖以传入变量。
+    /// `ruleData = book` 构建（WebBook.kt:312-318），目录地址中 `{{key}}`
+    /// 模板与 `,{json}` 请求选项用 book.variable（候选 ⊕ 详情导出合并值）
+    /// 展开。默认实现忽略变量表、以该 URL 直接请求目录退化为
+    /// [`Self::get_chapters`]（Mock 等实现无需感知）；真实实现覆盖以传入变量。
     async fn get_chapters_with_vars(
         &self,
         source: &BookSource,
@@ -209,6 +217,28 @@ pub trait BookSourceFetcher: Send + Sync {
     ) -> LegadoResult<Vec<WebChapter>> {
         let _ = variables;
         self.get_chapters(source, toc_url).await
+    }
+
+    /// 带变量表 + 书名提示的目录获取（换源回归 P2-2，2026-09-17）
+    ///
+    /// `book_name_hint` 为详情步已解析出的书名。原版 `BookChapterList.kt:196`
+    /// 以 `AnalyzeRule(book, bookSource)` 构建解析器，`book` 完整可用，
+    /// `@js:[{title: book.name, url: …}]` 类 `ruleToc.chapterList` 规则可读
+    /// `book.name`。「已知目录页」直抓路径不抓详情页，无 hint 时 `book`
+    /// 绑定名位为空 → 此类规则标题退化。
+    ///
+    /// 默认实现忽略 hint 退化为 [`Self::get_chapters_with_vars`]（Mock 等
+    /// 实现无需感知，既有签名不变）；真实实现覆盖以注入 hint。
+    async fn get_chapters_with_vars_and_name_hint(
+        &self,
+        source: &BookSource,
+        toc_url: &str,
+        variables: &std::collections::HashMap<String, String>,
+        book_name_hint: Option<&str>,
+    ) -> LegadoResult<Vec<WebChapter>> {
+        let _ = book_name_hint;
+        self.get_chapters_with_vars(source, toc_url, variables)
+            .await
     }
 
     /// 获取章节正文内容

@@ -58,3 +58,7 @@ pub mod webview_api;
 /// [S0-B] 四类离线响应夹具消费测试（仅测试编译；夹具见 tests/fixtures/search_s0/）
 #[cfg(test)]
 mod s0_fixture_tests;
+
+/// [回归 2026-09-17] get_chapters_with_vars「已解析目录页」语义（方案 A）
+#[cfg(test)]
+mod toc_no_rederive_tests;

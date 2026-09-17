@@ -35,7 +35,7 @@ pub mod rule_analyzer;
 pub mod rule_complete;
 pub mod xpath;
 
-pub use analyze_rule::{AnalyzeRule, JsExecutor, RuleType};
+pub use analyze_rule::{split_top_level_hash, AnalyzeRule, JsExecutor, RuleType};
 pub use analyze_url::{AnalyzeUrl, DataUriContent, RequestMethod, TemplateContext, UrlOption};
 pub use curl_converter::{
     analyze_url_to_curl, curl_to_analyze_url, is_curl_error, looks_like_curl, parse_curl, to_curl,

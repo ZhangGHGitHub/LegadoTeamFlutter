@@ -353,13 +353,53 @@ impl AnalyzeRule {
         }
 
         // 2) 展开 @get:{key}（对齐 makeUpRule getRuleType）
-        let rule_expanded = if compiled.has_get_marker {
+        let rule_after_get = if compiled.has_get_marker {
             self.expand_get_refs(&compiled.rule_no_put)
         } else {
             compiled.rule_no_put.clone()
         };
+        // [A | 台账 0917] 模板形态判定基于「@get 展开后、JS 展开前」的规则：
+        // JS 展开会把 `{{js}}` 参数替换掉，事后判定会漏掉已展开的模板规则。
+        // 命中时单步路径在参数回填后按字面返回（上游 Mode.Regex → else -> rule），
+        // 不再当选择器解析（拼好的 URL 被 CSS 解析 → 空）。
+        // [P0-1 | 台账 0917] 含 JS 段（`@js:` / `<js>`，大小写不敏感）的规则
+        // 永不进模板分支：JS 段代码内可合法出现 `{{…}}` 字符串字面量（书旗/
+        // 米读/红薯等 52 规则），进模板分支会被参数回填 + 整段字面返回，
+        // JS 不再执行（字段值变成 JS 源码）。`@js:` 与 `<js>` 经
+        // rule_has_js_chain 同等对待（`<js>` 前缀虽已受 split_hash_replace
+        // 保护，判定仍统一走 JS 链门）。
+        // [P0-2 | 台账 0917] 判定域为**顶层拆分后的提取核心**
+        // （split_hash_replace 跳过 `{{…}}` 跨度内的 `##`）：「选择器 + 跨度外
+        // ## 替换（替换段含 `{{`）」（`.content@p@html##…{{book.name}}…`，21
+        // 规则）按核心 `{{` 判定为否 → 走单步 + ## 替换（回填在展开期完成），
+        // 而不是在未拆分整规则上误判为模板 → 整段当选择器 → 只返回规则文本。
+        let template_shape = if rule_has_js_chain(&rule_after_get) {
+            false
+        } else {
+            let (core_for_shape, spec_for_shape) = split_hash_replace(&rule_after_get);
+            (core_for_shape.contains("{{") && single_step_template_literal(&core_for_shape))
+            // [P1-A | 台账 0917] core 含 `{{` 且存在顶层 `##` 替换规格、且首个
+            // 跨度位于 0 位（前无包装文字；`{{baseUrl}}` 这类单跨度 JS 表达式
+            // 参数会被 single_step_template_literal 判否）→ 判为模板（上游首个
+            // match 位于段首 → Mode.Regex，回填后按字面返回并应用 ## 替换）。
+            // 不影响 G11/P1-4（`{{sel()}}.item`/`||`/`%%` 无顶层 ## → spec None）
+            // 与 P0-2（`.content@p@html##…{{book.name}}…` 的 core 不含 `{{`）。
+            || spec_for_shape.is_some()
+                && double_brace_spans(core_for_shape.trim())
+                    .first()
+                    .is_some_and(|&(s, _)| s == 0)
+        };
         // 2.5) 展开规则体内 `{{js}}`（非 $）内嵌 JS
-        let rule_expanded = self.expand_js_refs(&rule_expanded)?;
+        // [A | 台账 0917] 多步 JS 链只展开 **JS 段代码内** 的 `{{js}}`
+        // （G11 语义、顶层绑定）；Extract 段的 `{{…}}` 原样保留，交由
+        // eval_js_chain_steps 逐段按模板求值（参数相对前序步结果回填——
+        // 正确绑定）。若此处整体展开，Extract 段 `{{result}}` 会被顶层
+        // 内容（如元素 JSON）替换，拼出的 URL 错。
+        let rule_expanded = if rule_after_get.contains("{{") && rule_has_js_chain(&rule_after_get) {
+            self.expand_js_refs_in_js_segments(&rule_after_get)?
+        } else {
+            self.expand_js_refs(&rule_after_get)?
+        };
         // G8：allInOne 正则 getElements 把捕获组编成 JSON 字符串数组；
         // 子规则 `$1`/`$2` 对齐 SourceRule.makeUpRule（result 为 List）回填，
         // 然后走 Mode.Regex 的 `else -> rule`（字面结果 + ## 替换）。
@@ -429,6 +469,15 @@ impl AnalyzeRule {
                 })
                 .collect();
             self.eval_js_chain_steps(&borrowed)?
+        } else if template_shape {
+            // [A | 台账 0917] 单步模板：参数回填后按字面返回
+            // （上游 makeUpRule 回填 → Mode.Regex → else -> rule）
+            let literal = self.eval_template_segment(&core_rule, &self.content)?;
+            if literal.trim().is_empty() {
+                Vec::new()
+            } else {
+                vec![literal]
+            }
         } else {
             self.get_strings_single_step(&core_rule)?
         };
@@ -589,6 +638,27 @@ impl AnalyzeRule {
                     if rule.is_empty() {
                         continue;
                     }
+                    // [A | 台账 0917] 模板段（含 `{{…}}` / `@get:`）：按模板求值——
+                    // 参数相对前序步结果（current_content）回填后整段是字面量
+                    // （上游 Mode.Regex → else -> rule），不再当选择器解析；
+                    // `##` 拆分在回填之后（eval_template_segment 内完成）。
+                    // 此前选择器解析拼好的 URL（松鹤 bookUrl 尾段）→ 空 → 全链空。
+                    // [P0-1/P1-4 | 台账 0917] 与单步判定自洽：
+                    // - 含 JS 段（`@js:`/`<js>`，正常拆分下不会出现在 Extract 段，
+                    //   此处防御）永不进模板分支；
+                    // - `{{…}}` 触发须经 single_step_template_literal 判别——
+                    //   JS 表达式参数（`{{sel()}}`）带后缀/组合符（`.item`/`||`/`%%`）
+                    //   不进模板分支（保留选择器路径），规则型参数与多跨度/包装文字
+                    //   才进（P1-3/P1-4）。
+                    if (rule.contains("{{")
+                        && !rule_has_js_chain(rule)
+                        && single_step_template_literal(rule))
+                        || rule.to_ascii_lowercase().contains("@get:")
+                    {
+                        current_content = self.eval_template_segment(rule, &current_content)?;
+                        last_is_js = false;
+                        continue;
+                    }
                     // 临时以当前 content 解析（链式：后段基于前段结果文本）
                     let mut sub = AnalyzeRule::new(current_content.clone(), self.base_url.clone());
                     self.share_variable_store_into(&mut sub);
@@ -634,6 +704,103 @@ impl AnalyzeRule {
             Ok(vec![])
         } else {
             Ok(vec![current_content])
+        }
+    }
+
+    /// [A | 台账 0917] 模板段求值（链式 Extract 步 / 单步模板字面量）：
+    /// 逐个 `{{param}}` 回填——规则型参数（上游 isRule：`@`/`$.`/`$[`/`//`）
+    /// 相对 `content`（链式：前序步结果；单步：当前内容）做单源规则回填，
+    /// JS 表达式参数以 `content` 为 result 执行 JS；回填失败/为空 → 该参数
+    /// 变空串（上游 makeUpRule `null -> Unit`）。`##` 拆分在回填**之后**
+    /// （上游 makeUpRule 顺序；`{{…}}` 内层的 `##` 属于参数内层规则）。
+    fn eval_template_segment(&self, rule: &str, content: &str) -> LegadoResult<String> {
+        // @get:{k} 通常已由 get_strings_ex 展开，此处兜底
+        let rule = self.expand_get_refs(rule);
+        let mut out = String::with_capacity(rule.len());
+        let mut i = 0usize;
+        let bytes = rule.as_bytes();
+        while i < bytes.len() {
+            if bytes[i] == b'{' && bytes.get(i + 1) == Some(&b'{') {
+                if let Some(full_len) = Self::find_double_brace_end(&rule[i..]) {
+                    let inner = &rule[i + 2..i + full_len - 2];
+                    out.push_str(&self.eval_template_param(inner, content));
+                    i += full_len;
+                    continue;
+                }
+            }
+            let ch = rule[i..].chars().next().unwrap();
+            out.push(ch);
+            i += ch.len_utf8();
+        }
+        // [P2-2 | 台账 0917] 单花括号 `{$.x}` 内嵌（与 process_inner_rules
+        // 一致）：`https://x/{{$.a}}/{$.b}` 混合模板的单花括号部分须经
+        // JSONPath 回填，否则残留字面量（`AA/{$.b}`）。双花括号已在上方
+        // 回填，此处只处理 `{$`（process_inner_rules 内部对 `{{$` 幂等）。
+        let out = if out.contains("{$") {
+            let mut sub = AnalyzeRule::new(content.to_string(), self.base_url.clone());
+            self.share_variable_store_into(&mut sub);
+            if let Some(exec) = self.js_executor() {
+                sub.set_js_executor(exec);
+            }
+            for (n, v) in &self.js_bindings {
+                sub.add_js_binding(n, v);
+            }
+            sub.process_inner_rules(&out)?
+        } else {
+            out
+        };
+        // ## 拆分在回填之后（上游 makeUpRule 顺序）
+        let (core, spec) = split_hash_replace(&out);
+        Ok(spec.map(|s| apply_hash_replace(&core, &s)).unwrap_or(core))
+    }
+
+    /// 单个 `{{param}}` 回填（见 [`Self::eval_template_segment`]）
+    fn eval_template_param(&self, expr: &str, content: &str) -> String {
+        let expr = expr.trim();
+        if expr.is_empty() {
+            return String::new();
+        }
+        if template_param_is_rule(expr) {
+            // [B | 台账 0917] 内层 `##` 属于参数内层规则
+            // （上游单源规则 splitRegex 对参数串拆分）
+            let (core, spec) = split_hash_replace(expr);
+            let mut sub = AnalyzeRule::new(content.to_string(), self.base_url.clone());
+            self.share_variable_store_into(&mut sub);
+            if let Some(exec) = self.js_executor() {
+                sub.set_js_executor(exec);
+            }
+            for (n, v) in &self.js_bindings {
+                sub.add_js_binding(n, v);
+            }
+            let vals = sub.get_strings_single_step(&core).unwrap_or_default();
+            let val = if vals.is_empty() {
+                String::new()
+            } else if vals.len() == 1 {
+                vals.into_iter().next().unwrap()
+            } else {
+                vals.join("\n")
+            };
+            return spec.map(|s| apply_hash_replace(&val, &s)).unwrap_or(val);
+        }
+        // JS 表达式参数：以 content（前序步结果 / 当前内容）为 result 执行
+        let mut sub = AnalyzeRule::new(content.to_string(), self.base_url.clone());
+        self.share_variable_store_into(&mut sub);
+        if let Some(exec) = self.js_executor() {
+            sub.set_js_executor(exec);
+        }
+        for (n, v) in &self.js_bindings {
+            sub.add_js_binding(n, v);
+        }
+        match sub.execute_js_rule(expr) {
+            Ok(vals) if !vals.is_empty() => {
+                if vals.len() == 1 {
+                    vals.into_iter().next().unwrap()
+                } else {
+                    vals.join("\n")
+                }
+            }
+            // 上游 null -> Unit：失败/为空 → 参数为空串
+            _ => String::new(),
         }
     }
 
@@ -685,6 +852,8 @@ impl AnalyzeRule {
             || rule.contains("@js:")
             || rule.contains("extract@js")
             || rule.contains("@webjs:")
+            // [A | 台账 0917] `{{…}}` 模板规则按字面回填，不是 CSS 选择器
+            || rule.contains("{{")
         {
             return None;
         }
@@ -1090,6 +1259,46 @@ impl AnalyzeRule {
             out.push(ch);
             i += ch.len_utf8();
         }
+        Ok(out)
+    }
+
+    /// [A | 台账 0917] 仅展开多步 JS 链中 **JS 段代码内** 的 `{{js}}`
+    /// （G11 语义：成功且非空替换、失败/为空保留原文；顶层绑定，复用
+    /// [`Self::expand_js_refs`]）。Extract 段的 `{{…}}` 原样保留——其模板
+    /// 求值延迟到 [`Self::eval_js_chain_steps`] 逐段进行（相对前序步结果，
+    /// 即正确绑定）；若在此整体展开，Extract 段 `{{result}}` 会被顶层
+    /// 内容（如元素 JSON）替换，拼出的 URL 错（松鹤 bookUrl 缺陷根因）。
+    fn expand_js_refs_in_js_segments(&self, rule: &str) -> LegadoResult<String> {
+        if !rule.contains("{{") {
+            return Ok(rule.to_string());
+        }
+        let re = re_js_chain();
+        let mut out = String::with_capacity(rule.len());
+        let mut last = 0usize;
+        for cap in re.captures_iter(rule) {
+            let m = cap.get(0).unwrap();
+            let full = &rule[m.start()..m.end()];
+            let js_code = cap
+                .get(2)
+                .or_else(|| cap.get(1))
+                .map(|g| g.as_str())
+                .unwrap_or("");
+            let expanded = self.expand_js_refs(js_code)?;
+            out.push_str(&rule[last..m.start()]);
+            if full.to_ascii_lowercase().starts_with("<js>") {
+                // `<js>code</js>`（大小写任意，前缀均 4 字节）：只拼接 code 段，标签保留
+                let code_start = m.start() + "<js>".len();
+                out.push_str(&rule[m.start()..code_start]);
+                out.push_str(&expanded);
+                out.push_str(&rule[code_start + js_code.len()..m.end()]);
+            } else {
+                // `@js:code`（贪婪至规则末尾，前缀 4 字节）
+                out.push_str(&full[..4]);
+                out.push_str(&expanded);
+            }
+            last = m.end();
+        }
+        out.push_str(&rule[last..]);
         Ok(out)
     }
 
@@ -1636,8 +1845,7 @@ fn normalize_js_rule_result(result: String) -> Vec<String> {
     // [U4 模板串 | 台账 0917] 未渲染模板残留（{{$.xxx}} / {$xxx}）同为脏数据
     // 归一为空。JSON 数组字面量（首字符 '['）不在此拒收，改由
     // expand_js_json_array_result 逐元素过滤（单元素残留不致整数组丢有效项）。
-    let template_residue =
-        !trimmed.starts_with('[') && contains_unrendered_template(trimmed);
+    let template_residue = !trimmed.starts_with('[') && contains_unrendered_template(trimmed);
     if trimmed.is_empty()
         || trimmed == "null"
         || trimmed == "undefined"
@@ -1933,7 +2141,14 @@ fn split_hash_replace(rule: &str) -> (String, Option<HashReplaceSpec>) {
     if trimmed.starts_with("@js:") || trimmed.starts_with("<js>") {
         return (rule.to_string(), None);
     }
-    let parts: Vec<&str> = rule.splitn(4, "##").collect();
+    // [P1-1 | 台账 0917] `{{…}}` 跨度内的 `##` 属于参数内层规则（上游
+    // SourceRule.init 的 evalPattern 把 `{{…}}` 整体当一个参数，makeUpRule
+    // 只在参数回填**之后**才 split("##")）。顶层拆分**跳过**落在已闭合
+    // `{{…}}` 跨度内的 `##` 位置（在查找循环中 continue，而非像旧版
+    // all_hashes_inside_double_brace 的全有或全无守卫那样在混合形态
+    // 「跨度内 + 跨度外 ##」下放弃整个拆分 → 半截垃圾）。与 FFI 层
+    // split_rule_replace_parts 共用 split_top_level_hash，两入口一致。
+    let parts = split_top_level_hash(rule, 4);
     let core = parts[0].to_string();
     if parts.len() == 1 {
         return (core, None);
@@ -1978,11 +2193,144 @@ fn apply_hash_replace(input: &str, spec: &HashReplaceSpec) -> String {
         return input.to_string();
     };
     if spec.replace_first {
-        re.replace(input, spec.replacement.as_str()).into_owned()
+        // [B/P1-2 | 台账 0917] 上游 replaceRegex（AnalyzeRule.kt L546-556）
+        // replaceFirst = `matcher.group(0).replaceFirst(…)`：仅首个匹配段
+        // 参与替换、其余部分丢弃（Rust `re.replace` 是「替换首个匹配但保留
+        // 其余」，会残留匹配段之后的尾巴，如 kind 标签
+        // `{{$.categoryInfoV4##re##rep###}}` 结果多出 `…78`）。
+        // **无匹配时上游返回 `""`**（L553-555 `else -> ""`），FFI
+        // apply_regex_replace 与 FFI 锁定测试（test_apply_regex_replace_replace_first）
+        // 同语义——本入口与 FFI 入口在此收敛为 `""`（此前误读为
+        // 「无匹配原文不变」，已更正）。
+        match re.find(input) {
+            Some(m) => re
+                .replace(&input[m.start()..m.end()], spec.replacement.as_str())
+                .into_owned(),
+            None => String::new(),
+        }
     } else {
         re.replace_all(input, spec.replacement.as_str())
             .into_owned()
     }
+}
+
+// ─── [A/B | 台账 0917] 链内 `{{…}}` 模板求值 ─────────────────────────────
+//
+// 上游 `AnalyzeRule.SourceRule.init`：evalPattern（`@get:{…}` / `{{…}}`）
+// 命中且位于规则前部时置 Mode.Regex，getString 走 `else -> rule`（字面返回）；
+// 参数由 makeUpRule 回填（jsRuleType：isRule 参数走单源规则，否则 evalJS，
+// 失败/为空 `null -> Unit` 即空串；getRuleType 走变量表），`##` 拆分发生在
+// 回填**之后**。Rust 侧此前把链内 `{{…}}` 段当选择器解析 → 拼好的 URL 取空。
+
+/// 规则的 `{{…}}` JS 链形态判定（对齐 JS_PATTERN 的 `(?i)<js>|@js:`）
+fn rule_has_js_chain(rule: &str) -> bool {
+    let lower = rule.to_ascii_lowercase();
+    lower.contains("<js>") || lower.contains("@js:")
+}
+
+/// 已闭合的 `{{…}}` 参数跨度（半开区间 [start, end)；未闭合尾段不算跨度）
+fn double_brace_spans(rule: &str) -> Vec<(usize, usize)> {
+    let mut spans = Vec::new();
+    let bytes = rule.as_bytes();
+    let mut i = 0usize;
+    while i + 1 < bytes.len() {
+        if bytes[i] == b'{' && bytes[i + 1] == b'{' {
+            if let Some(full_len) = AnalyzeRule::find_double_brace_end(&rule[i..]) {
+                spans.push((i, i + full_len));
+                i += full_len;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    spans
+}
+
+/// [P1-1 | 台账 0917] 顶层 `##` 拆分（跳过 `{{…}}` 跨度内的 `##` 位置）
+///
+/// 语义同 `rule.splitn(max_parts, "##")`，但落在已闭合 `{{…}}` 跨度内的
+/// `##` 不是拆分点（属于参数内层规则；上游 makeUpRule 只在参数回填之后
+/// 才 split("##")）。旧的 `all_hashes_inside_double_brace` 全有或全无守卫
+/// 在混合形态（跨度内 + 跨度外 `##`）下放弃整个拆分 → 半截垃圾；本函数
+/// 在查找循环中跳过跨度内位置，两入口（解析器 `split_hash_replace` 与
+/// FFI `split_rule_replace_parts`）共用，保证一致。
+///
+/// 无 `{{` 时退化为原生 `splitn`（零开销快路径）；`max_parts` 语义与
+/// `str::splitn` 相同（最后一部分为剩余串，`usize::MAX` = 全量 split）。
+pub fn split_top_level_hash(rule: &str, max_parts: usize) -> Vec<&str> {
+    if !rule.contains("{{") {
+        return rule.splitn(max_parts, "##").collect();
+    }
+    let spans = double_brace_spans(rule);
+    let mut parts: Vec<&str> = Vec::new();
+    let mut start = 0usize;
+    let mut count = 0usize; // 已消费的顶层 `##` 拆分点数
+    let mut from = 0usize;
+    while count + 1 < max_parts {
+        let Some(rel) = rule[from..].find("##") else {
+            break;
+        };
+        let p = from + rel;
+        if spans.iter().any(|&(s, e)| s <= p && p + 2 <= e) {
+            // 跨度内 `##`：跳过，不作拆分点（属于参数内层规则）
+            from = p + 2;
+            continue;
+        }
+        parts.push(&rule[start..p]);
+        start = p + 2;
+        from = start;
+        count += 1;
+    }
+    parts.push(&rule[start..]);
+    parts
+}
+
+/// 上游 `isRule`：`@` / `$.` / `$[` / `//` 前缀 → 单源规则回填
+fn template_param_is_rule(expr: &str) -> bool {
+    expr.starts_with('@')
+        || expr.starts_with("$.")
+        || expr.starts_with("$[")
+        || expr.starts_with("//")
+}
+
+/// [A/P1-3/P1-4 | 台账 0917] 单步模板字面量判定
+/// （作用于 **顶层拆分后的提取核心**，即 `split_hash_replace(…).0`，JS 展开前）：
+/// - 首个 `{{…}}` 跨度**之前**存在非空白包装文字（URL 模板骨架等）→ 模板；
+/// - 多跨度（跨度外仅空白/换行）→ 模板（P1-3：松鹤 kind 规则
+///   `{{$.a##…}}\n{{$.b##…}}` 若判否会落入 `detect_rule_type_for_content`
+///   把 `\d` 当正则 → 整规则编译 Err；多跨度纯模板必须识别）；
+/// - 单跨度：仅**规则型参数**（上游 isRule：`@`/`$.`/`$[`/`//` 前缀）判模板；
+///   JS 表达式参数（`{{sel()}}`）无论是否带选择器后缀/组合符
+///   （`.item` / `||` / `%%` / `&&`）均判否 → 保留 G11 旧路径（P1-4：
+///   `expand_js_refs` 成功替换后按选择器求值，`{{sel()}}.item` →
+///   `div.title.item` → `正文A`；误入模板分支会字面返回规则文本）。
+///
+/// 与 P0-1（含 JS 段规则在调用点先行排除）、P0-2（判定域=拆分后提取核心）、
+/// P1-3 自洽；判别依据只取「首个跨度**前**的包装文字」，不以尾部文字触发
+/// （否则 `{{sel()}}.item` 会被尾部后缀误判为模板 → 违反 P1-4）。
+fn single_step_template_literal(rule: &str) -> bool {
+    let t = rule.trim();
+    if !t.contains("{{") {
+        return false;
+    }
+    let spans = double_brace_spans(t);
+    if spans.is_empty() {
+        return false;
+    }
+    // 首个跨度之前存在非空白包装文字（URL 模板骨架等）→ 模板
+    let (first_s, _) = spans[0];
+    if !t[..first_s].trim().is_empty() {
+        return true;
+    }
+    // [P1-3] 多跨度（跨度外仅空白/换行）也必须判为模板，避免落入
+    // detect_rule_type_for_content 把 `\d` 当正则 → 整规则编译失败 Err
+    if spans.len() >= 2 {
+        return true;
+    }
+    // 单跨度：仅规则型参数进模板分支；JS 表达式参数保留 G11 路径（P1-4）
+    let (s, e) = spans[0];
+    let param = t[s + 2..e - 2].trim();
+    template_param_is_rule(param)
 }
 
 #[cfg(test)]
@@ -2209,6 +2557,33 @@ mod tests {
         }
     }
 
+    /// 计数 Mock JS 执行器：返回固定结果并记录调用次数
+    /// （P0-1/7b 断言「JS 步必须被执行且恰好一次」）
+    struct CountingJsExecutor {
+        result: String,
+        calls: std::sync::atomic::AtomicUsize,
+    }
+
+    impl CountingJsExecutor {
+        fn new(result: &str) -> Self {
+            Self {
+                result: result.to_string(),
+                calls: std::sync::atomic::AtomicUsize::new(0),
+            }
+        }
+
+        fn call_count(&self) -> usize {
+            self.calls.load(std::sync::atomic::Ordering::SeqCst)
+        }
+    }
+
+    impl JsExecutor for CountingJsExecutor {
+        fn execute_js(&self, _js_code: &str) -> Result<String, String> {
+            self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Ok(self.result.clone())
+        }
+    }
+
     #[test]
     fn test_js_rule_injects_bindings() {
         // 对齐原版 evalJS bindings：result/src/baseUrl 自动注入，
@@ -2420,10 +2795,7 @@ mod tests {
             expand_js_json_array_result(vec![r#"["ok","{{$.x}}"]"#.to_string()]),
             vec!["ok".to_string()]
         );
-        assert!(
-            expand_js_json_array_result(vec![r#"["{{$.x}}"]"#.to_string()])
-                .is_empty()
-        );
+        assert!(expand_js_json_array_result(vec![r#"["{{$.x}}"]"#.to_string()]).is_empty());
         assert_eq!(
             expand_js_json_array_result(vec![r#"["a","b"]"#.to_string()]),
             vec!["a".to_string(), "b".to_string()]
@@ -2856,7 +3228,6 @@ mod tests {
     /// Extract("$[*]") 对 HTML 误解析（51漫画目录回归）。
     #[test]
     fn test_get_elements_js_tag_with_jsonpath_suffix() {
-        use crate::JsExecutor;
         use std::sync::Arc;
 
         struct JsonArrayExec;
@@ -2947,5 +3318,490 @@ mod tests {
 
         assert_eq!(old_vals, vec!["斗破苍穹", "天蚕土豆", "/book/1"]);
         assert_eq!(new_vals, old_vals);
+    }
+
+    // ─── [A/B | 台账 0917] `{{…}}` 模板求值回归测试 ─────────────────────
+
+    /// (a) 松鹤 bookUrl 完整三步链：`$.bid` → `<js>` → URL 模板。
+    /// 修复前末段 `{{result}}` 被当 CSS 选择器解析 → 全链空 → B1.4 回退
+    /// baseUrl → 详情全空 → tocUrl 空 → 0 章（「新书源未解析到任何章节」）。
+    /// 修复后末段按模板回填（参数相对前序步结果），拼好的 URL 原样返回。
+    #[test]
+    fn test_template_chain_bookurl_full() {
+        use std::sync::Arc;
+        let executor = Arc::new(MockJsExecutor {
+            result: "1100468021".to_string(),
+        });
+        // 元素 JSON（search 列表元素，set_element_content 语义）：`$.bid` → 468021
+        let content = r#"{"bid":468021,"bookName":"松鹤庭沐"}"#;
+        let base_url = "https://newopensearch.reader.qq.com/wechat?keyword=测试".to_string();
+        let mut rule = AnalyzeRule::with_js_executor(String::new(), base_url, executor);
+        rule.set_element_content(content.to_string());
+
+        // (b) 首段选择器单独求值仍正确
+        assert_eq!(rule.get_string("$.bid").unwrap(), "468021");
+
+        let chain = "$.bid\n<js>1100000000+parseInt(result)</js>\nhttps://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid={{result}}";
+        let out = rule.get_string(chain).unwrap();
+        assert_eq!(
+            out, "https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468021",
+            "全链 bookUrl: {out}"
+        );
+    }
+
+    /// (c)/(e) 链末段模板单独求值：content = 前序步结果（JS 结果字符串）。
+    /// `{{1+1}}` 按 JS 表达式求值（非字面、非选择器）；回填失败 → 参数空串
+    /// （上游 makeUpRule `null -> Unit`），URL 骨架保留。
+    #[test]
+    fn test_template_url_segment_standalone() {
+        use std::sync::Arc;
+        let url_tpl = "https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=";
+        let executor = Arc::new(MockJsExecutor {
+            result: "1100468021".to_string(),
+        });
+        let rule = AnalyzeRule::with_js_executor("1100468021".to_string(), String::new(), executor);
+        let out = rule
+            .get_string(&format!("{url_tpl}{{{{result}}}}"))
+            .unwrap();
+        assert_eq!(
+            out,
+            format!("{url_tpl}1100468021"),
+            "JS 表达式参数回填: {out}"
+        );
+
+        // (e) `{{1+1}}`：JS 表达式参数被执行（mock 返回 42 证明走了 JS 路径）
+        let executor2 = Arc::new(MockJsExecutor {
+            result: "42".to_string(),
+        });
+        let rule2 =
+            AnalyzeRule::with_js_executor("1100468021".to_string(), String::new(), executor2);
+        let out2 = rule2.get_string(&format!("{url_tpl}{{{{1+1}}}}")).unwrap();
+        assert_eq!(
+            out2,
+            format!("{url_tpl}42"),
+            "JS 表达式参数应被求值: {out2}"
+        );
+
+        // 回填失败 → 参数为空串，URL 骨架保留
+        let rule3 = AnalyzeRule::with_js_executor(
+            "1100468021".to_string(),
+            String::new(),
+            Arc::new(FailingJsExecutor),
+        );
+        let out3 = rule3
+            .get_string(&format!("{url_tpl}{{{{result}}}}"))
+            .unwrap();
+        assert_eq!(out3, url_tpl, "回填失败参数应为空: {out3}");
+    }
+
+    /// (f) 反回归：纯选择器 + `@js:` 链（不含 `{{…}}`）行为不变。
+    #[test]
+    fn test_pure_selector_js_chain_unchanged() {
+        use std::sync::Arc;
+        let executor = Arc::new(MockJsExecutor {
+            result: "1100468021".to_string(),
+        });
+        let content = r#"{"bid":468021}"#;
+        let rule = AnalyzeRule::with_js_executor(content.to_string(), String::new(), executor);
+        let out = rule
+            .get_string("$.bid\n@js:1100000000+parseInt(result)")
+            .unwrap();
+        assert_eq!(out, "1100468021");
+    }
+
+    /// G11 反回归：`{{js}}` 整规则（无包装）仍走 expand_js_refs 展开后按
+    /// 选择器求值（与 test_rule_inline_js_substitution 互为补充）。
+    #[test]
+    fn test_g11_whole_rule_js_param_keeps_selector_eval() {
+        use std::sync::Arc;
+        let executor = Arc::new(MockJsExecutor {
+            result: "class.title".to_string(),
+        });
+        let rule = AnalyzeRule::with_js_executor(
+            r#"<div class="title">正文</div>"#.to_string(),
+            String::new(),
+            executor,
+        );
+        assert_eq!(rule.get_strings("{{sel()}}").unwrap(), vec!["正文"]);
+    }
+
+    /// 2.5 路由：多步 JS 链只展开 **JS 段代码内** 的 `{{js}}`（G11），
+    /// Extract 段 `{{…}}` 原样保留，交由 eval_js_chain_steps 逐段模板求值。
+    #[test]
+    fn test_expand_js_refs_in_js_segments_only() {
+        use std::sync::Arc;
+        let executor = Arc::new(MockJsExecutor {
+            result: "V".to_string(),
+        });
+        let rule = AnalyzeRule::with_js_executor("top".to_string(), String::new(), executor);
+        let out = rule
+            .expand_js_refs_in_js_segments("$.bid\n<js>{{foo()}}</js>\nhttps://x/?id={{result}}")
+            .unwrap();
+        assert_eq!(out, "$.bid\n<js>V</js>\nhttps://x/?id={{result}}");
+        // 失败 → JS 段保留原文（G11）
+        let rule2 = AnalyzeRule::with_js_executor(
+            "top".to_string(),
+            String::new(),
+            Arc::new(FailingJsExecutor),
+        );
+        let out2 = rule2
+            .expand_js_refs_in_js_segments("$.bid\n<js>{{foo()}}</js>\n{{result}}")
+            .unwrap();
+        assert_eq!(out2, "$.bid\n<js>{{foo()}}</js>\n{{result}}");
+    }
+
+    /// (B) `##` 落在 `{{…}}` 内属于参数内层规则：松鹤 kind 规则
+    /// `{{$.categoryInfoV4##\d...##$1$2###}}` 修复前被顶层 `##` 拆分截断成
+    /// `{{$.categoryInfoV4`（未闭合）→ get_string 空 → 标签字段丢失。
+    /// 修复后：参数整体回填（内层 `##re##rep###` 按上游 group(0) replaceFirst）。
+    #[test]
+    fn test_template_param_inner_hash_replace() {
+        let content = r#"{"categoryInfoV4":"12:34:56,78"}"#;
+        let rule = AnalyzeRule::new(content.to_string(), String::new());
+        let kind = rule
+            .get_string(r"{{$.categoryInfoV4##\d.*?\:(.*?)\:.*?(,|$)##$1$2###}}")
+            .unwrap();
+        assert_eq!(kind, "34,", "kind: {kind}");
+        // 无 `##` 的单个规则型参数：字面回填
+        let bare = rule.get_string("{{$.categoryInfoV4}}").unwrap();
+        assert_eq!(bare, "12:34:56,78", "bare: {bare}");
+    }
+
+    /// (P1-1) 顶层 `##` 拆分单元：split_top_level_hash 跳过 `{{…}}` 跨度内的
+    /// `##` 位置（解析器 split_hash_replace 与 FFI split_rule_replace_parts
+    /// 共用，两入口一致）。
+    #[test]
+    fn test_split_top_level_hash_unit() {
+        use super::split_top_level_hash;
+        // 无 {{ → 原生 splitn 快路径
+        assert_eq!(
+            split_top_level_hash("a##b##c##d", 4),
+            vec!["a", "b", "c", "d"]
+        );
+        assert_eq!(split_top_level_hash("a##b", 4), vec!["a", "b"]);
+        assert_eq!(
+            split_top_level_hash("$.x##re", usize::MAX),
+            vec!["$.x", "re"]
+        );
+        // 全部 ## 在跨度内 → 不拆分（松鹤 kind 规则形态）
+        assert_eq!(
+            split_top_level_hash("{{$.x##re##rep###}}", 4),
+            vec!["{{$.x##re##rep###}}"]
+        );
+        // 混合形态（P1-1）：跨度内 ## 跳过、跨度外 ## 正常拆分
+        assert_eq!(
+            split_top_level_hash("a##{{x##y}}##b", 4),
+            vec!["a", "{{x##y}}", "b"]
+        );
+        // FFI 入口（全量 split，max_parts = usize::MAX）与解析器一致
+        assert_eq!(
+            split_top_level_hash("a##{{x##y}}##b", usize::MAX),
+            vec!["a", "{{x##y}}", "b"]
+        );
+        // 未闭合 {{ 不算跨度（退化为普通 splitn）
+        assert_eq!(split_top_level_hash("{{$.x##re", 4), vec!["{{$.x", "re"]);
+        // splitn 语义：最后一段为剩余串
+        assert_eq!(
+            split_top_level_hash("a##b##c##d", 3),
+            vec!["a", "b", "c##d"]
+        );
+    }
+
+    /// (P1-1) split_hash_replace 跨度感知：全部 `##` 在跨度内 → 整规则原样、
+    /// 无替换规格；混合形态 → 跨度外拆分、跨度内随基础/参数保留。
+    #[test]
+    fn test_split_hash_replace_span_aware() {
+        let (core, spec) = super::split_hash_replace("{{$.x##re##rep###}}");
+        assert_eq!(core, "{{$.x##re##rep###}}");
+        assert!(spec.is_none());
+        // 混合形态（P1-1）：旧的「全有或全无」守卫会放弃整个拆分
+        let (core2, spec2) = super::split_hash_replace("a##{{x##y}}##b");
+        assert_eq!(core2, "a");
+        let spec2 = spec2.expect("混合形态须有替换规格（跨度内 ## 属参数内层）");
+        assert_eq!(spec2.pattern, "{{x##y}}");
+        assert_eq!(spec2.replacement, "b");
+        assert!(!spec2.replace_first);
+        // 普通 `##` 替换规则不受影响
+        let (core3, spec3) = super::split_hash_replace("$.x##re##rep");
+        assert_eq!(core3, "$.x");
+        let spec3 = spec3.expect("替换规格");
+        assert_eq!(spec3.pattern, "re");
+        assert!(!spec3.replace_first);
+    }
+
+    /// (B) 顶层 `##` 替换（跨度外）仍生效：`$.x##re##rep###` replaceFirst 走
+    /// 上游 group(0) 语义（仅首匹配段参与替换，其余丢弃）。
+    #[test]
+    fn test_hash_replace_first_group0_semantics() {
+        let content = r#"{"v":"12:34:56,78"}"#;
+        let rule = AnalyzeRule::new(content.to_string(), String::new());
+        let out = rule
+            .get_string(r#"$.v##\d.*?\:(.*?)\:.*?(,|$)##$1$2###"#)
+            .unwrap();
+        assert_eq!(out, "34,", "replaceFirst group(0) 语义: {out}");
+        // 全文替换分支（无第四段）不受影响
+        let out2 = rule.get_string(r#"$.v##[^0-9]"#).unwrap();
+        assert_eq!(out2, "12345678", "全文替换: {out2}");
+    }
+
+    // ─── [P0-1 | 台账 0917] `@js:`/`<js>` 单步体内含 `{{…}}` ─────────────────
+    // 回归：JS 步体内含 `{{…}}` 时整规则被误判为模板字面量 → JS 步未被执行、
+    // 直接回退字面结果。现在体内（`{{…}}` 展开后）必须交给 executor 执行；
+    // 体内 JSONPath 参数（`$` 起头）原样保留交由 JS 引擎，不触发顶层回填。
+
+    /// P0-1：`@js:` 单步体内含 `{{…}}` → JS 必须被执行（executor 恰好 1 次），
+    /// 结果为 executor 返回值（而非未执行的字面体）。
+    #[test]
+    fn test_atjs_step_body_with_template_executes_js() {
+        use std::sync::Arc;
+        let executor = Arc::new(CountingJsExecutor::new("JS_RAN"));
+        let rule = AnalyzeRule::with_js_executor(
+            r#"{"className":"a","bid":"b"}"#.to_string(),
+            String::new(),
+            executor.clone(),
+        );
+        let out = rule
+            .get_string("@js:\nc = \"{{$.className||$.bid}}\";\ns = c; s")
+            .unwrap();
+        assert_eq!(out, "JS_RAN", "P0-1 @js: 体内 {{…}} 须走 JS 执行: {out}");
+        assert_eq!(executor.call_count(), 1, "P0-1 executor 应恰好被调用 1 次");
+    }
+
+    /// P0-1：`<js>…</js>` 包裹体内含 `{{…}}` 同形 → JS 必须被执行（恰好 1 次）。
+    #[test]
+    fn test_js_tag_step_body_with_template_executes_js() {
+        use std::sync::Arc;
+        let executor = Arc::new(CountingJsExecutor::new("JS_RAN"));
+        let rule = AnalyzeRule::with_js_executor(
+            r#"{"className":"a"}"#.to_string(),
+            String::new(),
+            executor.clone(),
+        );
+        let out = rule
+            .get_string("<js>c = \"{{$.className}}\"; c</js>")
+            .unwrap();
+        assert_eq!(out, "JS_RAN", "P0-1 <js> 体内 {{…}} 须走 JS 执行: {out}");
+        assert_eq!(executor.call_count(), 1, "P0-1 executor 应恰好被调用 1 次");
+    }
+
+    // ─── [P0-2 | 台账 0917] 选择器 + 跨度外 `##` 替换段含 `{{…}}` ───────────
+
+    /// P0-2：`.content@p@html##…{{book.name}}…` 替换段含 JS 参数（executor 回填），
+    /// 无匹配 → 替换不生效、提取结果原样保留；回归版本曾错回整条规则
+    /// `.content@p@html` 作为结果。
+    #[test]
+    fn test_hash_replace_outside_span_with_template_param() {
+        use std::sync::Arc;
+        let executor = Arc::new(MockJsExecutor {
+            result: "松鹤庭沐".to_string(),
+        });
+        let content = "<div class=\"content\"><p>第一段正文</p>\n<p>第二段正文</p></div>";
+        let rule = AnalyzeRule::with_js_executor(content.to_string(), String::new(), executor);
+        let rule_str = ".content@p@html##.*请退出浏览器阅读模式.*|喜欢{{book.name}}.*请大家收藏{{book.name}}.*";
+        let out = rule.get_strings(rule_str).unwrap();
+        assert_eq!(
+            out,
+            vec!["<p>第一段正文</p>", "<p>第二段正文</p>"],
+            "P0-2 提取结果不得被规则字面污染: {out:?}"
+        );
+        assert_eq!(
+            rule.get_string(rule_str).unwrap(),
+            "<p>第一段正文</p>\n<p>第二段正文</p>",
+            "P0-2 get_string 合并形态"
+        );
+    }
+
+    /// P0-2：`href##(.*)##$1/?shunt={{Get('shunt')}}` → replaceFirst + JS 参数回填；
+    /// 回归版本 `href` 未被提取 → 错成 `"href/?shunt=OK"`。
+    #[test]
+    fn test_href_shunt_template_replace() {
+        use std::sync::Arc;
+        let executor = Arc::new(MockJsExecutor {
+            result: "OK".to_string(),
+        });
+        let rule = AnalyzeRule::with_js_executor(
+            "<a href=\"/comic/1/2\">章节</a>".to_string(),
+            String::new(),
+            executor,
+        );
+        let out = rule
+            .get_string("href##(.*)##$1/?shunt={{Get('shunt')}}")
+            .unwrap();
+        assert_eq!(out, "/comic/1/2/?shunt=OK", "P0-2 shunt 回填: {out}");
+    }
+
+    // ─── [P1-3 | 台账 0917] 松鹤 kind 双跨度纯模板 ───────────────────────────
+
+    /// P1-3：两个 `{{…}}` 跨度（真实换行分隔、跨度内含 `##` 内层替换）各自独立
+    /// 回填后以换行拼接，且不得 Err；回归版本在顶层 `##` 处截断成半截模板。
+    #[test]
+    fn test_songhe_kind_two_span_template() {
+        use std::sync::Arc;
+        let executor = Arc::new(MockJsExecutor {
+            result: String::new(),
+        });
+        let content = r#"{"categoryInfoV4":"12:34:56,78","updateInfo":"已更新至第100章"}"#;
+        let rule = AnalyzeRule::with_js_executor(content.to_string(), String::new(), executor);
+        let kind_rule = r"{{$.categoryInfoV4##\d.*?\:(.*?)\:.*?(,|$)##$1$2###}}".to_string()
+            + "\n"
+            + r"{{$.updateInfo##已更新至.*##连载中}}";
+        let out = rule.get_string(&kind_rule).unwrap();
+        assert_eq!(
+            out, "34,\n连载中",
+            "P1-3 kind 双跨度回填（换行分隔）: {out:?}"
+        );
+    }
+
+    // ─── [P1-4 | 台账 0917] `{{sel()}}` + 后缀/组合符保持 G11 ────────────────
+
+    /// P1-4：mock 返回 `div.title`，`{{sel()}}` 展开后接后缀/组合符仍按选择器求值：
+    /// (a) `{{sel()}}.item` → `div.title.item`（双 class）；(b) `||` 组合；
+    /// (c) `%%` 交叉合并（get_string 按换行拼接）。
+    #[test]
+    fn test_sel_template_with_suffix_and_combinators() {
+        use std::sync::Arc;
+        let html = r#"<div class="title item">正文A</div><small>小字</small>"#;
+        let rule = AnalyzeRule::with_js_executor(
+            html.to_string(),
+            String::new(),
+            Arc::new(MockJsExecutor {
+                result: "div.title".to_string(),
+            }),
+        );
+        assert_eq!(rule.get_string("{{sel()}}.item").unwrap(), "正文A");
+        let rule = AnalyzeRule::with_js_executor(
+            html.to_string(),
+            String::new(),
+            Arc::new(MockJsExecutor {
+                result: "div.title".to_string(),
+            }),
+        );
+        assert_eq!(rule.get_string("{{sel()}}||.fallback").unwrap(), "正文A");
+        let rule = AnalyzeRule::with_js_executor(
+            html.to_string(),
+            String::new(),
+            Arc::new(MockJsExecutor {
+                result: "div.title".to_string(),
+            }),
+        );
+        assert_eq!(
+            rule.get_string("{{sel()}}%%small@text").unwrap(),
+            "正文A\n小字"
+        );
+    }
+
+    // ─── [P1-A | 台账 0917] `{{JS表达式}}##pattern##replacement` 判模板 ──────
+
+    /// P1-A：首个 `{{…}}` 跨度位于 0 位且跨度外存在顶层 `##` 替换规格时
+    /// （清风小说网 `ruleBookInfo.tocUrl = {{baseUrl}}##$##1/desc.html`），
+    /// 对齐上游 AnalyzeRule.kt L699-703（首个 match 位于段首 → Mode.Regex，
+    /// makeUpRule L819-829 回填后才 split `##`）：参数回填后按字面返回并
+    /// 应用 `##` 替换，而不是走选择器路径取空（tocUrl 回退成详情页 URL）。
+    /// 反回归：`{{sel()}}.item`（无顶层 `##`）保持 G11 选择器求值 → `正文A`。
+    #[test]
+    fn test_js_param_with_top_level_hash_replace_is_template() {
+        use std::sync::Arc;
+        // 正例：清风小说网真实规则（JS 执行器注入 baseUrl 变量）
+        let rule = AnalyzeRule::with_js_executor(
+            String::new(),
+            "https://www.qingfengxs.com/".to_string(),
+            Arc::new(MockJsExecutor {
+                result: "https://www.qingfengxs.com/".to_string(),
+            }),
+        );
+        let out = rule
+            .get_strings_ex("{{baseUrl}}##$##1/desc.html", true)
+            .unwrap();
+        assert_eq!(
+            out,
+            vec!["https://www.qingfengxs.com/1/desc.html"],
+            "P1-A 顶层 ## 替换须应用而非取空: {out:?}"
+        );
+        // 反回归：G11/P1-4 不翻转——`{{sel()}}.item` 无顶层 ## 仍按选择器求值
+        let html = r#"<div class="title item">正文A</div>"#;
+        let rule = AnalyzeRule::with_js_executor(
+            html.to_string(),
+            String::new(),
+            Arc::new(MockJsExecutor {
+                result: "div.title".to_string(),
+            }),
+        );
+        assert_eq!(rule.get_string("{{sel()}}.item").unwrap(), "正文A");
+    }
+
+    // ─── [P1-2 | 台账 0917] replaceFirst 无匹配 → 空串 ──────────────────────
+
+    /// P1-2：`$.v##zzz##REP###`（v=`abc`）replaceFirst 无匹配 → `""`
+    /// （上游 group(0) replaceFirst 的 else 分支）；FFI 侧
+    /// `apply_regex_replace` 同语义（见 web_book.rs 交叉断言单测）。
+    #[test]
+    fn test_replace_first_no_match_yields_empty() {
+        let content = r#"{"v":"abc"}"#;
+        let rule = AnalyzeRule::new(content.to_string(), String::new());
+        let out = rule.get_string("$.v##zzz##REP###").unwrap();
+        assert_eq!(out, "", "P1-2 无匹配须返回空串而非原文: {out:?}");
+    }
+
+    // ─── [P1-1 | 台账 0917] 混合形态 `##` 不再产生半截垃圾 ──────────────────
+
+    /// P1-1：跨度内 `##`（参数内层替换）+ 跨度外 `##`（规则级替换/收尾）共存时，
+    /// 须正常回填、不得返回 `{{@@.mb-1@text` 之类的半截字符串。
+    #[test]
+    fn test_mixed_form_hash_replace_no_half_garbage() {
+        let content =
+            r#"<div class="mb-1">浏览：100</div><a href="/x/tag">标签</a><small>小字</small>"#;
+        let rule = AnalyzeRule::new(content.to_string(), String::new());
+        let out = rule
+            .get_strings(
+                "{{@@.mb-1@text##浏览：(.*)##$1浏览###}}\n{{@@a[href$=\"tag\"]@text%%small@text##\\[|\\]}}\n###",
+            )
+            .unwrap();
+        assert_eq!(
+            out,
+            vec!["100浏览\n标签\n小字\n"],
+            "P1-1 混合形态回填: {out:?}"
+        );
+        assert!(
+            !out.iter().any(|s| s.starts_with("{{")),
+            "P1-1 不得返回半截模板串: {out:?}"
+        );
+    }
+
+    /// P1-1：`{{…##内层##…}}` 跨度 + 跨度外 `##html##jpg` 全替换链，
+    /// 不得返回 `{{@@a.0@href` 之类的半截字符串。
+    #[test]
+    fn test_mixed_form_nested_replace_chain() {
+        let content = r#"<html><body><a href="book.html">x</a></body></html>"#;
+        let rule = AnalyzeRule::new(content.to_string(), String::new());
+        let out = rule
+            .get_strings("{{@@a.0@href##book##images/cover}}##html##jpg")
+            .unwrap();
+        assert_eq!(out, vec!["images/cover.jpg"], "P1-1 嵌套替换链: {out:?}");
+        assert!(
+            !out.iter().any(|s| s.starts_with("{{")),
+            "P1-1 不得返回半截模板串: {out:?}"
+        );
+    }
+
+    // ─── [7b | 台账 0917] coverUrl 链（末段 `@js:`）结果不变 ────────────────
+
+    /// 7b：`$.bid` → `@js:` 末段（消费前序步 `result`）→ 最终 URL 即 executor
+    /// 返回值（JS 步恰好执行 1 次）；与既有 bookUrl 链测试互证「既有链不回归」。
+    #[test]
+    fn test_cover_url_js_tail_chain_unchanged() {
+        use std::sync::Arc;
+        let cover_url =
+            "https://wfqqreader-1252317822.image.myqcloud.com/cover/468021/b_468021.jpg";
+        let executor = Arc::new(CountingJsExecutor::new(cover_url));
+        let rule = AnalyzeRule::with_js_executor(
+            r#"{"bid":"468021"}"#.to_string(),
+            String::new(),
+            executor.clone(),
+        );
+        let out = rule
+            .get_string("$.bid\n@js:\nvar s = result;\nreturn \"cover_\" + s;")
+            .unwrap();
+        assert_eq!(out, cover_url, "coverUrl 链结果不变: {out}");
+        assert_eq!(executor.call_count(), 1, "JS 步应恰好执行 1 次");
     }
 }
