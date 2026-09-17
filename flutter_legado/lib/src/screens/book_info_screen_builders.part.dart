@@ -1009,10 +1009,10 @@ extension _BookInfoBuilders on _BookInfoScreenState {
           ),
         ],
       ),
-      // [F2 | 台账 0917 08 批] ref 08 共N章行墨高 39px≈13sp（与在读/最新
-      // 同档 13sp）→ 16sp bodyLarge 偏大，显式定 13sp（保留 w600 强调）
+      // [H4 | 台账 0917 反馈批七] ref 08 共N章行墨高 35px/字宽 33px≈
+      // 12sp → 13sp 偏大，显式定 12sp（保留 w600 强调与状态词绿色）
       style: ts.bodyLarge
-          ?.copyWith(fontSize: 13, fontWeight: FontWeight.w600,
+          ?.copyWith(fontSize: 12, fontWeight: FontWeight.w600,
               color: cs.onSurface),
     );
   }
@@ -1121,15 +1121,19 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final cs = Theme.of(context).colorScheme;
     final ts = Theme.of(context).textTheme;
     // [F1 | 台账 0917 08 批] 在读/最新行 onSurfaceVariant（wcag 2.79-2.92）
-    // 改 onSurface 高对比；[F2] ref 墨高 39px≈13sp → 13sp（原 12sp 偏小）
-    Widget line(String text) => Padding(
+    // 改 onSurface 高对比；[H2/H3 | 台账 0917 反馈批七] ref 08 量化：
+    // 在读行墨高 46px/字宽 45px≈16sp 且字框 fill 0.30-0.52 为粗体 →
+    // 16sp w700；最新行墨高 40px/字宽 38px≈13sp 常规字重 → 13sp
+    Widget line(String text, {double fontSize = 13, FontWeight? weight}) =>
+        Padding(
           padding: const EdgeInsets.only(left: 13, top: 6),
           child: Text(
             text,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: ts.bodyMedium?.copyWith(
-              fontSize: 13,
+              fontSize: fontSize,
+              fontWeight: weight,
               color: cs.onSurface,
             ),
           ),
@@ -1142,8 +1146,13 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       if (durIdx <= chapters.length) {
         title = chapters[durIdx - 1].title.trim();
       }
+      // [H2 | 台账 0917 反馈批七] 在读行 16sp w700（ref 墨高 46px 粗体）
       lines.add(
-        line('在读·第$durIdx章${title.isEmpty ? '' : ' $title'}'),
+        line(
+          '在读·第$durIdx章${title.isEmpty ? '' : ' $title'}',
+          fontSize: 16,
+          weight: FontWeight.w700,
+        ),
       );
     }
     // 最新行（info：latestChapterTitle + 总章数 + 完结态）
@@ -1178,43 +1187,49 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       var text =
           '最新·${chapterTotal > 0 ? '第$chapterTotal章 ' : ''}$latestTitle';
       if (finished) text = '$text（全书完）';
-      lines.add(line(text));
+      // [H3 | 台账 0917 反馈批七] 最新行 13sp 常规字重（ref 墨高 40px）
+      lines.add(line(text, fontSize: 13));
     }
     return lines;
   }
 
-  /// 操作区四图标卡一行（[PARITY C1 D2]，对齐参考 08 量化：
-  /// 卡 52×69dp、间距 32dp、surfaceContainerLow 底、图标上/标签下）
+  /// 操作区四图标卡一行（[PARITY C1 D2]，对齐参考 08）
   /// - 四卡：已在书架/加书架（切换，_toggleShelf）/ 查看目录 / 书源（换源）/
   ///   阅读记录（全部现有能力，行为不变）
   /// - 「设置分组」不占卡位，并入次级入口：顶栏 ⋮ 溢出菜单
   ///   （_handleMenu 'group' → _showChangeGroup），功能不丢失
+  /// [H1 | 台账 0917 反馈批七] 四按钮横向拓宽（近卡片横排）：ref 08 量化
+  /// 单卡 229px≈76dp 宽 × 207px≈69dp 高、圆角 44.75px≈15dp、卡间距
+  /// 24-25px≈8dp、左右页边距 39px≈13dp、横向跨度 989px≈329.7dp →
+  /// Row + 4×Expanded 等分（卡宽 (360-26-30)/4=76dp，间距 10dp，边距
+  /// 13dp）；图标 20dp + 间距 10dp + 标签 11sp（图标/标签字号随卡宽
+  /// 比例微调，标签保持可读，与 ref 字宽 33px/墨高 34px≈11sp 一致）
   Widget _buildActionCards(BuildContext context, Book book) {
     final cs = Theme.of(context).colorScheme;
     Widget card(IconData icon, String label, VoidCallback onTap) {
+      // [H1] 宽由 Expanded 等分（≈76dp）；高 69dp 固定（ref 207px≈69dp）
       return SizedBox(
-        width: 52,
         height: 69,
         child: Material(
           color: cs.surfaceContainerLow,
-          // [U8 | 台账 0917 批二] 圆角 12→10：ref 08 PIL 实测卡 192×182px
-          // 圆角 ≈35px，radius/卡宽 ≈0.18；我方 52dp 卡按同比例 ≈9.4dp
-          // 取 10（参考偏方、圆角小，原 12 偏圆）
-          borderRadius: BorderRadius.circular(10),
+          // [H1 | 台账 0917 反馈批七] 卡宽 76dp 圆角 15dp（ref 实测
+          // 44.75px≈15dp，R/w=0.196；原 52dp 卡 10dp 圆角随卡宽放大）
+          borderRadius: BorderRadius.circular(15),
           child: InkWell(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(15),
             onTap: onTap,
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(icon, size: 20, color: cs.primary),
-                const SizedBox(height: 6),
+                const SizedBox(height: 10),
                 Text(
                   label,
                   // [F1 | 台账 0917 08 批] 四按钮标签在面板区（非 hero）：
-                  // onSurfaceVariant（wcag 2.79）改 onSurface 高对比；字号
-                  // 11sp 与 ref 34px≈11.3sp 已对齐，保持不变
+                  // onSurfaceVariant（wcag 2.79）改 onSurface 高对比；
+                  // [H1] 卡宽拓宽后标签 11sp 保持可读（ref 33px≈11sp）
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                        fontSize: 11,
                         color: cs.onSurface,
                       ),
                   maxLines: 1,
@@ -1227,26 +1242,47 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       );
     }
 
+    // [H1 | 台账 0917 反馈批七] 等分布局：左右页边距 13dp（ref 左
+    // 39px≈13dp）、卡间距 10dp（ref 24-25px≈8-8.3dp，等分布局取 10
+    // 使卡宽 (360-26-30)/4=76dp 对齐 ref 229px≈76dp，横向跨度 1002px
+    // 对齐 ref 989px，偏差 +1.3%）
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 0),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          card(
-            _inBookshelf
-                ? Symbols.playlist_remove_rounded
-                : Symbols.playlist_add_rounded,
-            _inBookshelf ? '已在书架' : '加书架',
-            () => _toggleShelf(book),
+          Expanded(
+            child: card(
+              _inBookshelf
+                  ? Symbols.playlist_remove_rounded
+                  : Symbols.playlist_add_rounded,
+              _inBookshelf ? '已在书架' : '加书架',
+              () => _toggleShelf(book),
+            ),
           ),
-          const SizedBox(width: 32),
-          card(Symbols.format_list_bulleted_rounded, '查看目录', _openTocScreen),
-          const SizedBox(width: 32),
-          card(Symbols.swap_horiz_rounded, '书源',
-              () => _showChangeSourceDialog(book)),
-          const SizedBox(width: 32),
-          card(Symbols.history_rounded, '阅读记录',
-              () => Navigator.pushNamed(context, AppRoutes.readRecord)),
+          const SizedBox(width: 10),
+          Expanded(
+            child: card(
+              Symbols.format_list_bulleted_rounded,
+              '查看目录',
+              _openTocScreen,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: card(
+              Symbols.swap_horiz_rounded,
+              '书源',
+              () => _showChangeSourceDialog(book),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: card(
+              Symbols.history_rounded,
+              '阅读记录',
+              () => Navigator.pushNamed(context, AppRoutes.readRecord),
+            ),
+          ),
         ],
       ),
     );

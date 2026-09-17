@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.283] - 2026-09-17
+
+### Fixed
+- [UI] 详情页四按钮横向拓宽 + 在读/最新/共N章行字号对齐参考 08（台账 08「用户实测反馈批七 0917」H1-H4，版本 2.0.282+283 → 2.0.283+284，基准 `ref_20260914/08_book_info.png`，PIL 量化 1080px=360dp@3x）：
+  - **H1 四按钮横向拓宽**：参考量化 单卡 229px≈76dp 宽 × 207px≈69dp 高、圆角 44.75px≈15dp（R/w=0.196）、卡间距 24-25px≈8dp、左右页边距 39px≈13dp、横向跨度 989px≈329.7dp（近卡片横排）→ 布局改 **Row + 4×Expanded 等分**（卡宽 (360-26-30)/4=76dp、间距 10dp、边距 13dp、上边距 12dp），卡高 69dp 不变、圆角 10→15dp、图标 20dp + 间距 10dp + 标签 11sp 显式（随卡宽保持可读）；横向跨度 1002px vs 参考 989px（+1.3%）
+  - **H2 在读行字号+加粗**：参考在读行墨高 46px/字宽 45px≈16sp 且字框 fill 0.30-0.52（粗体）→「在读·第X章 章节名」13sp 常规 → **16sp w700**
+  - **H3 最新行字号**：参考最新行墨高 40px/字宽 38px≈13sp 常规字重 → 13sp 维持、字重显式常规（w400）
+  - **H4 共N章行**：参考共N章行墨高 35px/字宽 33px≈12sp → 13sp → **12sp**（w600 强调与状态词绿色 0xFF4CAF50 保留，着色已一致）
+
+### Test
+- `flutter analyze` 无问题（0）；`flutter test` 全过（1468）
+
+### Real device
+- 2.0.283+284 release APK 装 MuMu（192.168.1.19:5555），versionName=2.0.283（versionCode=284）校验通过；`scripts/parity_capture_ours.py --only 08 --out docs/parity_shots/ours_2.0.283` OK（`08_book_info.png` 1/1）；**像素断言双 PASS**：四按钮横向跨度 997px vs 参考同位 976px（偏差 2.15% ≤6%；卡行带 y1113-1319 vs 参考 y1119-1324，带高 206px≈69dp 一致）；在读行墨迹高度 46px vs 参考同位 46px（比值 100% ≥90%）；另测 最新行 37px（参考 39px，同档 13sp）、共N章行「共」字宽 33px（参考 37px，12sp 档）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.282] - 2026-09-17
 
 ### Fixed
