@@ -29,6 +29,7 @@ import '../services/platform_bridge_service.dart';
 import '../services/settings_service.dart';
 import '../utils/book_info_utils.dart';
 import '../utils/book_open_utils.dart';
+import '../utils/meaningful_text_guard.dart'; // [U4 | 台账 0917] 详情页渲染层模板残留守卫
 import '../utils/book_progress_utils.dart';
 import '../utils/source_login_entry.dart';
 import '../utils/source_login_prompt.dart';
@@ -239,28 +240,32 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
           final isLocalTxt = book != null && _isLocalTxt(book);
           final hasLogin = (source?.loginUrl ?? '').isNotEmpty;
           final canUpd = book?.canUpdate ?? true;
-          return [
-            if (source?.customButton == true)
-              const PopupMenuItem(value: 'customBtn', child: Text('自定义')),
-            if (isLocal)
-              const PopupMenuItem(value: 'upload', child: Text('上传至远程')),
-            const PopupMenuItem(value: 'refresh', child: Text('刷新')),
-            // [B1 形态对齐 | full-stack-engineer + UI]「分组」由操作宫格收纳进 ⋮ 菜单
-            const PopupMenuItem(value: 'group', child: Text('设置分组')),
-            // 创建书籍更新任务（在架 + 书源 + 非本地 + 允许更新；
-            // [Task #39 §5.11-2] 已接通 AutoTaskScreen 编辑/创建流程）
-            if (_inBookshelf && hasSource && !isLocal && canUpd)
-              const PopupMenuItem(
-                value: 'updateTask',
-                child: Text('创建书籍更新任务'),
+          final cs = Theme.of(context).colorScheme;
+          // [U1 | 台账 0917] 勾选项尾部化：CheckboxListTile 式右侧 ✓
+          //（对齐参考 08 勾选项尾样式；原 CheckedPopupMenuItem 为 leading ✓）
+          PopupMenuItem<String> checkedItem(
+              String value, String label, bool checked) {
+            return PopupMenuItem<String>(
+              value: value,
+              child: Row(
+                children: [
+                  Expanded(child: Text(label)),
+                  if (checked)
+                    Icon(Symbols.check_rounded, size: 18, color: cs.primary),
+                ],
               ),
-            // 登录（书源支持登录时）
-            if (hasLogin)
-              const PopupMenuItem(value: 'login', child: Text('登录')),
-            const PopupMenuItem(value: 'top', child: Text('置顶')),
-            // 设置源变量（Task #63 冻结 / #64-65 实现，§5.11-3 已接通 setSourceVariable）/
-            // 设置书籍变量
-            //（[Task #39 §5.11-4] 已接通变量对话框 + updateBook 保存）
+            );
+          }
+
+          return [
+            // ── 前段：对齐参考 08 菜单项序（U1 | 台账 0917）──
+            // 编辑（顶栏编辑图标仅架上书显示；菜单项全量可用——能力已存在，
+            // 非功能新增；_handleMenu 'edit' 逻辑同顶栏图标）
+            const PopupMenuItem(value: 'edit', child: Text('编辑')),
+            const PopupMenuItem(value: 'refresh', child: Text('刷新')),
+            const PopupMenuItem(value: 'readRecord', child: Text('阅读记录')),
+            // 设置源变量（Task #63 冻结 / #64-65 实现，§5.11-3 已接通）/
+            // 设置书籍变量（[Task #39 §5.11-4] 已接通变量对话框 + updateBook）
             if (hasSource)
               const PopupMenuItem(
                 value: 'sourceVariable',
@@ -275,30 +280,47 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
                 value: 'copyBookUrl', child: Text('拷贝书籍URL')),
             const PopupMenuItem(
                 value: 'copyTocUrl', child: Text('拷贝目录URL')),
-            // 允许更新（书源存在；勾选态）
+            const PopupMenuItem(value: 'top', child: Text('置顶')),
+            // 允许更新（书源存在；勾选态尾部 ✓）
             if (hasSource)
-              CheckedPopupMenuItem(
-                value: 'canUpdate',
-                checked: book?.canUpdate ?? true,
-                child: const Text('允许更新'),
-              ),
-            // 拆分长章节（仅本地 txt；勾选态）
-            if (isLocalTxt)
-              CheckedPopupMenuItem(
-                value: 'splitLongChapter',
-                // isLocalTxt 已隐含 book != null（由 isLocal 推导），book 已提升为非空
-                checked: book.readConfig?.splitLongChapter ?? true,
-                child: const Text('拆分长章节'),
-              ),
-            // [UI-fix v2.0.3 | 2026-08-08] 删除提醒接通本地持久化
-            // （对齐原版 LocalConfig.deleteBookAlert） — Qoder
-            CheckedPopupMenuItem(
-              value: 'deleteAlert',
-              checked: _deleteBookAlert,
-              child: const Text('删除提醒'),
-            ),
+              checkedItem('canUpdate', '允许更新', book?.canUpdate ?? true),
+            // [UI-fix v2.0.3] 删除提醒接通本地持久化（对齐原版
+            // LocalConfig.deleteBookAlert；勾选态尾部 ✓）
+            checkedItem('deleteAlert', '删除提醒', _deleteBookAlert),
             const PopupMenuItem(
                 value: 'clearCache', child: Text('清理缓存')),
+            // ── 分隔线后：本端独有项（双基准 + 红线：功能不删除）──
+            PopupMenuItem<String>(
+              value: 'menuDivider',
+              enabled: false,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Divider(height: 1, thickness: 1, color: cs.outlineVariant),
+              ),
+            ),
+            if (source?.customButton == true)
+              const PopupMenuItem(value: 'customBtn', child: Text('自定义')),
+            if (isLocal)
+              const PopupMenuItem(value: 'upload', child: Text('上传至远程')),
+            // 创建书籍更新任务（在架 + 书源 + 非本地 + 允许更新；
+            // [Task #39 §5.11-2] 已接通 AutoTaskScreen 编辑/创建流程）
+            if (_inBookshelf && hasSource && !isLocal && canUpd)
+              const PopupMenuItem(
+                value: 'updateTask',
+                child: Text('创建书籍更新任务'),
+              ),
+            // 登录（书源支持登录时）
+            if (hasLogin)
+              const PopupMenuItem(value: 'login', child: Text('登录')),
+            // [B1 形态对齐]「分组」由操作宫格收纳进 ⋮ 菜单（复用 _showChangeGroup）
+            const PopupMenuItem(value: 'group', child: Text('设置分组')),
+            // 拆分长章节（仅本地 txt；勾选态尾部 ✓；
+            // isLocalTxt 已隐含 book != null，Dart 3 提升生效）
+            if (isLocalTxt)
+              checkedItem(
+                  'splitLongChapter',
+                  '拆分长章节',
+                  book.readConfig?.splitLongChapter ?? true),
             const PopupMenuItem(
                 value: 'cacheDownloads', child: Text('缓存下载队列')),
             const PopupMenuItem(value: 'log', child: Text('日志')),

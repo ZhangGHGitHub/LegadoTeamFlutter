@@ -170,6 +170,36 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       case 'customBtn':
         await _onCustomButton();
         break;
+      case 'edit':
+        // [U1 | 台账 0917] 菜单「编辑」项接通（逻辑同顶栏编辑图标：
+        // 编辑保存成功 reload；顶栏图标保持仅架上书显示）
+        {
+          final b = book;
+          if (b == null) break;
+          try {
+            final saved = await Navigator.pushNamed(
+              context,
+              AppRoutes.editBookInfo,
+              arguments: b,
+            );
+            if (saved == true && mounted) {
+              _reload();
+            }
+          } catch (e) {
+            debugPrint('编辑书籍信息失败: $e');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('书籍信息暂不可用，请稍后重试')),
+              );
+            }
+          }
+        }
+        break;
+      case 'readRecord':
+        // [U1 | 台账 0917] 菜单「阅读记录」项（与详情页四图标卡同入口）
+        if (!context.mounted) break;
+        await Navigator.pushNamed(context, AppRoutes.readRecord);
+        break;
       case 'refresh':
         // 对齐原版：刷新即含目录更新（在线书走 refreshToc，本地书仅重加载）
         if (book != null && _isOnlineBook(book)) {
@@ -752,15 +782,19 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 两栏：封面左置 + 右侧信息列
+          // [U2 | 台账 0917] 封面回缩至原版 XML 尺寸 110×160dp（ref 08 PIL
+          // 实测 337×469px≈112×156dp，圆角 2-3dp）；左距 13dp、与右侧
+          // 信息列间隙 17dp（PIL 实测 39-40px/52px），信息列垂直居中
+          // （参考版书名顶距封面顶 44.7dp≈160dp 封面内居中，对齐参考位置）
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 13),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 Material(
                   elevation: 8,
                   color: Colors.transparent,
-                  borderRadius: BorderRadius.circular(12),
+                  borderRadius: BorderRadius.circular(3),
                   child: GestureDetector(
                     // 对齐原版 ivCover 点击换封面 / 长按预览大图 — Cursor UI
                     onTap: () => _openChangeCover(book),
@@ -773,90 +807,113 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                       flightShuttleBuilder: coverFlightShuttleBuilder,
                       child: BookCover(
                         coverUrl: book.customCoverUrl ?? book.coverUrl,
-                        // [PARITY C1 D1] 封面放大至参考比例（自 ref 08 量化：
-                        // 约占屏宽 1/3=120dp、高约 260dp）
-                        width: 120,
-                        height: 260,
-                        borderRadius: 12,
+                        // [U2 | 台账 0917] 110×160dp 圆角 3（原版
+                        // activity_book_info.xml iv_cover 精确值 + ref PIL
+                        // 实测 112×156dp；2.0.276 的 120×260 偏大，回缩）
+                        width: 110,
+                        height: 160,
+                        borderRadius: 3,
                         sourceOrigin: book.origin,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 14),
+                const SizedBox(width: 17),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // 书名（对齐原版 tvName 点击/长按 → SearchActivity）
-                      GestureDetector(
-                        onTap: () => _openSearch(
-                            book.name, event: 'clickBookName'),
-                        onLongPress: () => _sourceCallBackSearch(
-                            'longClickBookName', book.name),
-                        child: Text(
-                          book.name,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: ts.titleLarge?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: cs.onSurface,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      // 作者（点击 → 搜索作者；长按 → JS 回调，行为不变）
-                      GestureDetector(
-                        onTap: () => _openSearch(book.author,
-                            event: 'clickAuthor'),
-                        onLongPress: () => _sourceCallBackSearch(
-                            'longClickAuthor', book.author),
-                        behavior: HitTestBehavior.opaque,
-                        child: Text(
-                          book.author.isNotEmpty ? book.author : '未知作者',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: ts.bodyMedium
-                              ?.copyWith(color: cs.onSurfaceVariant),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      // 来源=书源名（点击 → 编辑书源；「换源」小按钮，行为不变）
-                      Row(
-                        children: [
-                          Icon(Symbols.language_rounded,
-                              size: 16, color: cs.onSurfaceVariant),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: GestureDetector(
-                              onTap: _isOnlineBook(book)
-                                  ? () => _openSourceEdit(book)
-                                  : null,
-                              behavior: HitTestBehavior.opaque,
-                              child: Text(
-                                '来源：${book.originName.isNotEmpty ? book.originName : book.origin}',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: ts.bodyMedium?.copyWith(
-                                    color: cs.onSurfaceVariant),
-                              ),
+                  child: Container(
+                    // [U3 | 台账 0917] 淡色护底：信息列压在封面虚化区，
+                    // 深色封面时作者灰字对比不足被「吞」——垫一层半透明
+                    // surface 底保证任何封面下可读（参考版浅色 hero 下
+                    // 近不可见，不改变参考观感）
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: cs.surface.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // 书名（对齐原版 tvName 点击/长按 → SearchActivity）
+                        GestureDetector(
+                          onTap: () => _openSearch(
+                              book.name, event: 'clickBookName'),
+                          onLongPress: () => _sourceCallBackSearch(
+                              'longClickBookName', book.name),
+                          child: Text(
+                            book.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            // [U3 | 台账 0917] 大字深色：ref 08 PIL 实测
+                            // 墨高 65px≈22sp（任务估 28sp 为缩略预览误估，
+                            // 以 PIL 量化为准）；主题 titleLarge=18sp 偏小，
+                            // 此处显式定 22sp w700 onSurface 高对比
+                            style: ts.titleLarge?.copyWith(
+                              fontSize: 22,
+                              height: 1.35,
+                              fontWeight: FontWeight.w700,
+                              color: cs.onSurface,
                             ),
                           ),
-                          _smallAction(context, '换源',
-                              () => _showChangeSourceDialog(book)),
-                        ],
-                      ),
-                    ],
+                        ),
+                        const SizedBox(height: 6),
+                        // 作者（点击 → 搜索作者；长按 → JS 回调，行为不变）
+                        GestureDetector(
+                          onTap: () => _openSearch(book.author,
+                              event: 'clickAuthor'),
+                          onLongPress: () => _sourceCallBackSearch(
+                              'longClickAuthor', book.author),
+                          behavior: HitTestBehavior.opaque,
+                          child: Text(
+                            book.author.isNotEmpty ? book.author : '未知作者',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            // [U3 | 台账 0917] 中等可读灰（ref PIL 实测
+                            // 14-16sp）；onSurfaceVariant 全不透明 + 护底
+                            style: ts.bodyMedium
+                                ?.copyWith(color: cs.onSurfaceVariant),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        // 来源=书源名（点击 → 编辑书源；「换源」小按钮，行为不变）
+                        Row(
+                          children: [
+                            Icon(Symbols.language_rounded,
+                                size: 16, color: cs.onSurfaceVariant),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: GestureDetector(
+                                onTap: _isOnlineBook(book)
+                                    ? () => _openSourceEdit(book)
+                                    : null,
+                                behavior: HitTestBehavior.opaque,
+                                child: Text(
+                                  '来源：${book.originName.isNotEmpty ? book.originName : book.origin}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: ts.bodyMedium?.copyWith(
+                                      color: cs.onSurfaceVariant),
+                                ),
+                              ),
+                            ),
+                            _smallAction(context, '换源',
+                                () => _showChangeSourceDialog(book)),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ],
+                ],
+              ),
             ),
-          ),
           // 标签行（对标 lb_kind + 字数标签 tv_word_count，左对齐跟随两栏区）
-          if (wordCount.isNotEmpty || kinds.isNotEmpty)
+          // [U4 | 台账 0917] 字数 chip 经 isMeaningfulText 守卫（模板残留/
+          // NaN 不渲染）；[U2] 左距 16→13 随封面左缘对齐
+          if (isMeaningfulText(wordCount) || kinds.isNotEmpty)
             Padding(
               padding:
-                  const EdgeInsets.only(left: 16, right: 16, top: 10),
+                  const EdgeInsets.only(left: 13, right: 16, top: 10),
               child: Wrap(
                 spacing: 6,
                 runSpacing: 4,
@@ -889,7 +946,8 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                         ),
                       ),
                     ),
-                  if (wordCount.isNotEmpty)
+                  // [U4 | 台账 0917] 字数脏数据（模板残留/NaN）不渲染
+                  if (isMeaningfulText(wordCount))
                     Container(
                       padding: const EdgeInsets.symmetric(
                           horizontal: 8, vertical: 2),
@@ -907,12 +965,17 @@ extension _BookInfoBuilders on _BookInfoScreenState {
               ),
             ),
           // [PARITY C1 D4] 章节信息单行「共 N 章｜未读/已读」（对齐参考 08；
-          // 替代原「在读/最新/目录」三行，数据复用页面现有 state；
+          // 替代原「在读/最新/目录」三行强调排版，数据复用页面现有 state；
           // 已读判定：有阅读进度 durChapterIndex > 0，与阅读 FAB 同语义）
+          // [U2 | 台账 0917] 左距 16→13 随封面左缘对齐
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+            padding: const EdgeInsets.fromLTRB(13, 12, 16, 0),
             child: _buildChapterStatLine(context, book, chapters),
           ),
+          // [U5 | 台账 0917] 信息聚合行「评分 · 类型 · N章 · 字数 · 完结态」
+          //（对齐参考 08；封面信息区与四图标卡行之间，缺项省略，整行无
+          // 数据不渲染）
+          _buildAggregationLine(context, book, kinds, chapters),
         ],
       ),
     );
@@ -946,6 +1009,62 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       ),
       style: ts.bodyLarge
           ?.copyWith(fontWeight: FontWeight.w600, color: cs.onSurface),
+    );
+  }
+
+  /// [U5 | 台账 0917] 信息聚合行（对齐 ref 08「9.9分 · 轻小说 · 712章 ·
+  /// 298.6万字 · 已完结」）：评分 · 类型 · 章数 · 字数 · 完结态，「·」连接，
+  /// 缺项自动省略、整行无数据不渲染。
+  ///
+  /// 数据源：Book 模型无 score/status 字段——评分/完结态自分类标签解析
+  /// （形如「9.9分」「已完结」的 kind 项），类型取首个非评分/非完结态/
+  /// 非文件大小的 kind 项；章数与章节行同源（totalChapterNum 优先）；
+  /// 字数取 Rust 预格式化 wordCount（「298.6万字」形态）经
+  /// isMeaningfulText 守卫（[U4] 模板残留/NaN 不渲染）。
+  Widget _buildAggregationLine(
+      BuildContext context, Book book, List<String> kinds,
+      List<BookChapter> chapters) {
+    final cs = Theme.of(context).colorScheme;
+    final ts = Theme.of(context).textTheme;
+    String? score;
+    String? type;
+    String? status;
+    for (final kind in kinds) {
+      if (score == null && RegExp(r'^\d+(\.\d+)?\s*分$').hasMatch(kind)) {
+        score = kind;
+        continue;
+      }
+      if (status == null &&
+          RegExp(r'^(已完结|完本|已完本|连载中|暂停更新|停更|断更)$')
+              .hasMatch(kind)) {
+        status = kind;
+        continue;
+      }
+      if (type == null &&
+          // 本地书追加的文件大小项（"2.3 MB"）不是类型
+          !RegExp(r'^\d+(\.\d+)?\s*(B|KB|MB|GB)$').hasMatch(kind)) {
+        type = kind;
+      }
+    }
+    final chapterTotal =
+        book.totalChapterNum > 0 ? book.totalChapterNum : chapters.length;
+    final items = <String>[
+      ?score,
+      ?type,
+      if (chapterTotal > 0) '$chapterTotal章',
+      if (isMeaningfulText(book.wordCount)) book.wordCount!.trim(),
+      ?status,
+    ];
+    if (items.isEmpty) return const SizedBox.shrink();
+    // ref 08 量化：12sp 灰（PIL 实测墨色 62-70 灰阶≈onSurfaceVariant）、
+    // 左 22dp（x=66px @3x）、距章节行 8dp
+    return Padding(
+      padding: const EdgeInsets.only(left: 22, top: 8),
+      child: Text(
+        items.join(' · '),
+        style: ts.bodyMedium
+            ?.copyWith(fontSize: 12, color: cs.onSurfaceVariant),
+      ),
     );
   }
 
@@ -1187,6 +1306,10 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         .split(',')
         .map((e) => e.trim())
         .where((e) => e.isNotEmpty)
+        // [U4 | 台账 0917] 未渲染模板残留（{{$.xxx}}）/ NaN 脏数据视为
+        // 无数据不渲染（Rust 解析层 normalize_js_rule_result 已同源拒收，
+        // 此处为渲染层兜底：第三方书源 JS 字符串拼接产物可绕过清洗到达 UI）
+        .where(isMeaningfulText)
         .toList();
     if (!_isOnlineBook(book)) {
       try {

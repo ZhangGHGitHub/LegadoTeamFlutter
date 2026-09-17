@@ -8,11 +8,13 @@ part of 'search_screen.dart';
 // 本文件所有方法均运行于 State 自身（this），受保护访问语义安全。
 // ignore_for_file: invalid_use_of_protected_member
 
-/// [C2 N1] 是否残留未渲染的书源模板变量（`{{...}}` 或 `{$...}` 占位，
-/// 如 ngmlc 源 kind 规则 `{{$.categoryInfoV4##...}}` 未命中时残留的
-/// `{{$categoryInfoV4}}`）。合法正文/标签不含此类占位，命中即脏数据。
-bool _hasUnrenderedTemplate(String v) =>
-    RegExp(r'\{\{.*?\}\}|\{\$[^}]*\}').hasMatch(v);
+/// [C2 N1 / U4 | 台账 0917] 是否残留未渲染的书源模板变量（`{{...}}` 或
+/// `{$...}` 占位，如 ngmlc 源 kind 规则 `{{$.categoryInfoV4##...}}`
+/// 未命中时残留的 `{{$categoryInfoV4}}`；**未闭合形亦算**——书源 JS
+/// 截断可产出 `{{$.categoryInfoV4`（无闭合 `}}`），2.0.277 瀚海书阁
+/// kind 实锤）。合法正文/标签不含 `{{`/`{$` 序列，命中即脏数据。
+/// 判据与 Rust 解析层 `contains_unrendered_template` 同源。
+bool _hasUnrenderedTemplate(String v) => RegExp(r'\{\{|\{\$').hasMatch(v);
 
 /// [R-NaN | 2026-09-17] 第三方书源占位串（来源不可控：书源 JS 规则
 /// `x || '暂无简介'` 式回退文案 / 搜索结果页页面文案；全仓 grep（Rust+Dart）

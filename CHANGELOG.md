@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.277] - 2026-09-17
+
+### Fixed
+- [UI] 书籍详情页用户实测反馈批五项修复（台账 08「用户实测反馈批 0917」U1-U5，版本 2.0.276+277 → 2.0.277+278，基准 `ref_20260914/08_book_info.png`）：
+  - **U4【P1】模板串复现（双端兜底，修复中发现未闭合第二形态）**：根因 = 第三方书源 JS 规则字符串拼接产物 `{{$.categoryInfoV4}}`（及其被 JS 截断的未闭合形 `{{$.categoryInfoV4`，瀚海书阁 kind 实锤）进入 kind/intro 等字段，R-NaN 清洗未覆盖 `{{…}}`/`{$…}` 形态 → 详情页 chips 行渲染残留。修：① Rust 解析层 `analyze_rule.rs` `normalize_js_rule_result` 拒收模板残留（JSON 数组字面量不整条拒收，交由 `expand_js_json_array_result` 逐元素过滤，单元素残留不致整数组丢有效项）；判据与 Dart 渲染层共享守卫 `meaningful_text_guard.dart` `hasUnrenderedTemplate`（`\{\{|\{\$`，成对与未闭合均命中）同源——出现 `{{` 或 `{$` 即残留；单 `{`、嵌套 JSON 对象（`{"a":{"b":1}}`）不误判，`str::contains` 线性 O(n) 无正则热路径开销。Dart 侧 `isMeaningfulText` 统一过滤详情页 chips/聚合行/分类行与搜索屏渲染层（DB 缓存旧数据兜底）。双端单测覆盖成对/未闭合/合法数据三组判据
+  - **U3【P1】封面旁文字**：书名 22sp w700 深色（任务所述 28sp 与参考实测不符，按主指令以参考为准、差异入台账）；作者名改可读灰 + 浅底衬，不再被 hero 模糊背景吞没；位置对齐参考（标题左缘 x=450px）
+  - **U2【P2】详情页封面过大**：封面 110×160dp（圆角 r3、左留白 13dp、距右侧文字 17dp）= 330px @480dpi，落于参考 337±12px 带；任务所述「参考 130px / 我方 210px」与 PIL 实测参考 337px（我方 2.0.276 实测 360px）不符，按主指令以参考 337±12px 带断言，差异入台账
+  - **U5【P2】信息聚合行缺失**：封面信息区与 4 图标卡片行之间补「评分 · 类型 · 章数 · 字数 · 完结状态」行（· 连接，缺项不显示，`isMeaningfulText` 守卫）；类型 chip 行同源守卫。「暂无章节/目录：加载目录失败」与「瀚海书阁封面图未加载」登记为书源数据问题（非代码修复范围，台账登记）
+  - **U1【P2】详情页 ⋮ 更多菜单**：勾选项由前导 ✓ 改**尾部 ✓**（允许更新/删除提醒）；新增「编辑」（→ 编辑书籍信息页）与「阅读记录」（→ 阅读记录页）；项序对齐参考 11 项（编辑/刷新/阅读记录/设置源变量/设置书籍变量/拷贝书籍URL/拷贝目录URL/置顶/允许更新✓/删除提醒✓/清理缓存），我方独有项（设置分组/创建书籍更新任务/缓存下载队列）保留于分隔线后（双基准+红线不删）
+
+### Test
+- `flutter analyze` 无问题（0）；`flutter test` 全过（1465，含新增 `meaningful_text_guard_test.dart` 8 项）；`cargo test -p legado-parser` 全过（255，含新增模板残留单测 3 项），workspace 全绿
+
+### Real device
+- 2.0.277+278 release APK 装 MuMu（192.168.1.19:5555），versionName=2.0.277 校验通过；`scripts/parity_capture_ours.py --only 08` OK（`docs/parity_shots/ours_2.0.277/08_book_info.png`），菜单展开态 `08b_book_info_menu.png`、封面加载态 `08d_book_info_cover_loaded.png`。uiautomator dump 断言：chips 行无 `{{` 残留（has_template=False）、聚合行「51章 · 142.20万字」在屏、菜单 11 项顺序 + 尾部 ✓ + 编辑/阅读记录命中；PIL 断言：封面盒非白列跨度 x 39..368（宽 330px，落参考 337±12px 带）、标题左缘 x=450（=39 边距+330 封面+51 间隙+30 内边距，几何分解自洽）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.276] - 2026-09-17
 
 ### Fixed
