@@ -101,7 +101,8 @@ TAB_HOME, TAB_SHELF, TAB_DISCOVER, TAB_SUB, TAB_MINE = (
 # 书架页
 BTN_SHELF_SEARCH = (882, 168)     # 顶栏 搜索 圆形钮
 BTN_SHELF_MENU = (1014, 168)      # 顶栏 Show menu（⋮）
-CARD_BOOK = (279, 1208)           # 书卡（斗罗大陆；2.0.260 实测 bounds[36,1148,522,1268] 中心）
+CARD_BOOK = (204, 1034)           # 书卡（斗罗大陆；2.0.274 实测 bounds[66,974,342,1094] 中心，
+                                  # 2.0.260 的 (279,1208) 因布局位移落卡外，仅留作 dump 兜底）
 MENU_ITEM_SELECT = (804, 1008)    # 溢出菜单「选择模式」
 # 搜索页
 CHIP_HISTORY = (540, 807)         # 搜索历史 chip（斗罗大陆）
@@ -155,6 +156,15 @@ LONGPRESS_TOOLBAR_KWS = ("复制", "分享", "浏览器", "朗读", "书签")
 # 「仍在阅读器」特征：正文行以 content-desc 暴露（如「唐三道…」）；
 # 浮条态不显示页码指示（「章」/「1/8」仅在菜单态出现），故改用正文词。
 LONGPRESS_READER_KWS = ("唐三", "斗罗大陆")
+# [2.0.274 | 台账批 1 10 误采修复] 10 屏（阅读器收起菜单态）专用断言词组：
+# - 正文特征：正文行以 content-desc 暴露（如「唐三道…」，12 屏实证），
+#   旧登记 ("唐门","斗罗大陆","唐三") 三词 OR 过宽——书架书卡「斗罗大陆」
+#   同词命中，两次误采书架即源于此；
+# - 负向特征：书架大标题「书架」/ 详情页「查看目录」/ 目录页「书签」页签
+#   均不出现在阅读器态（收起菜单态无底栏四钮之「书签」；页码 N/M 与
+#   全局页胶囊默认不渲染——pageChrome 0 档 + showControls=false，不作特征）。
+READER_BODY_KWS = ("唐三", "斗罗大陆")
+READER_NEG_KWS = ("书架", "查看目录", "书签")
 # 长按探点：正文中部 3 行（任务指定坐标），依次试直到 dump 命中浮条
 LONGPRESS_PROBES = ((540, 700), (540, 1000), (540, 1300))
 # 12 屏 3 探点全不命中时的连拍兜底标记（main 汇总时汇报）
@@ -590,13 +600,45 @@ def nav_09() -> None:
 
 
 def nav_10() -> None:
+    """10 阅读器页：书架 → 点书卡（「继续阅读」语义，直达阅读器）。
+
+    [2.0.274 修复] 书架卡点按是「继续阅读」直达阅读器（与 08 注释一致），
+    旧流程在卡后误接详情页的「查看目录/首章」两连击——阅读器内属无效点击
+    （可能反而切换菜单态），且旧 CARD_BOOK 坐标 (279,1208) 为 2.0.260 实测，
+    2.0.274 真机书架布局位移后卡片在 [66,974,342,1094]（中心 204,1034），
+    旧坐标落卡外空白 → 点按不跳转，最终停在书架（两次误采根因）。
+    现改为 dump 定位书卡（desc「斗罗大陆」）点中心，未命中回退坐标；
+    导航末断言阅读器态（正文特征 + 无错态标记），失败 raise →
+    run_screen 记 FAIL 不落盘，防书架/目录错态存成 10_reader。
+    """
     _to_shelf()
-    tap(*CARD_BOOK)
-    wait(4)
-    tap(*BTN_VIEW_TOC)
-    wait(4)
-    tap(*TOC_CHAP_0)
+    xy = None
+    for _t, d, b in nodes(dump("10 书架")):
+        if d.strip() == "斗罗大陆":
+            xy = center_of(b)
+            break
+    if xy is not None:
+        tap(*xy)
+        rec(f"  [10] 书卡「斗罗大陆」：dump 命中，点 {xy}")
+    else:
+        tap(*CARD_BOOK)
+        rec(f"  [10] 书卡：dump 未命中，回退坐标 {CARD_BOOK}")
     wait(6)
+    _assert_in_reader("nav_10 末")
+
+
+def _assert_in_reader(where: str) -> None:
+    """[2.0.274] 阅读器态 dump 断言：正文特征（content-desc）命中 且 无
+    错态标记（书架/查看目录/书签）命中；失败 raise（run_screen 的
+    try/except 统一转 FAIL 且不保存截图，保留旧图）。"""
+    d = dump(where)
+    body = has_kw(d, READER_BODY_KWS)
+    neg = has_kw(d, READER_NEG_KWS)
+    if not body or neg:
+        raise RuntimeError(
+            f"阅读器断言失败（{where}）：正文={body or '未命中'}，"
+            f"负向={neg or '-'}；前 5 节点：{_debug_nodes(d)}")
+    rec(f"  [reader-assert] {where}：正文特征「{body}」命中，无错态标记")
 
 
 def nav_11() -> None:
@@ -1655,7 +1697,12 @@ SCREENS: list[tuple[str, str, str, tuple[str, ...], tuple[str, ...],
     ("09", "toc",              nav_09,
      ("书签",), ("目录", "跳转顶部", "引子"),
      ("退出阅读", "自动翻页", "停止翻页"), None),
-    ("10", "reader",           nav_10,        ("唐门", "斗罗大陆", "唐三"), (), (), None),
+    # 10 阅读器页（收起菜单态）：nav_10 末断言已保证阅读器态（正文特征 +
+    # 无错态标记）；采后断言主特征取正文 content-desc 词，负向排除
+    # 书架/详情/目录页标记——旧 ("唐门","斗罗大陆","唐三") 三词 OR 过宽
+    # （书架书卡「斗罗大陆」同词命中）为两次误采书架的根因
+    ("10", "reader",           nav_10,
+     READER_BODY_KWS, (), READER_NEG_KWS, None),
     ("11", "reader_menu",      nav_11,        ("全文搜索", "自动翻页", "退出阅读"), (), (), None),
     # 长按浮条（text_selection_panel.dart ReaderSelectionToolbar，uiautomator
     # content-desc 实证 6 按钮：复制/分享/浏览器/朗读/书签/更多）：
@@ -1864,9 +1911,12 @@ SCREENS_B3: list[tuple[str, str, str, tuple[str, ...], tuple[str, ...],
 SCREENS_B4: list[tuple[str, str, str, tuple[str, ...], tuple[str, ...],
                        tuple[str, ...], "callable | None"]] = [
     # 01 TXT 目录规则（txt_toc_rules_screen，标题「TXT 目录规则」）：
-    # 工具条「导入默认/添加规则」tooltip + 空态「暂无目录规则/正则规则」为屏独有
+    # [2.0.274 | 台账 4-1 ①②⑦] 顶栏重构为大标题左对齐 + ⋮ 溢出菜单，
+    # 「导入默认/添加规则」tooltip 不再出现在默认 dump（溢出/FAB），自 kws 剔除；
+    # 主特征 = 标题「TXT 目录规则」/ 空态「暂无目录规则」/ 副标题「正则:」标注
+    # （无示例规则回退形态）；AND 任务词 目录规则/TXT（标题子串必同中）
     ("01", "txt_toc_rule",     nav_b4_01,
-     ("TXT 目录规则", "暂无目录规则", "导入默认", "添加规则", "正则"),
+     ("TXT 目录规则", "暂无目录规则", "正则:"),
      ("目录规则", "TXT"),
      ("退出阅读", "自动翻页"), None),
     # 02 字典规则（我的页「字典规则」行 → dict_screen 字典查询页，

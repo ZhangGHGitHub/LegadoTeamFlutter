@@ -49,73 +49,113 @@ It was a dark and stormy night.''';
   Widget build(BuildContext context) {
     final state = ref.watch(txtTocRulesNotifierProvider);
     return Scaffold(
-      appBar: LegadoAppBar(
-        title: const Text('TXT 目录规则'),
-        actions: [
-          IconButton(
-            icon: const Icon(Symbols.help_rounded),
-            tooltip: '帮助',
-            onPressed: () => showHelp(context, HelpAssets.txtTocRuleHelp),
-          ),
-          IconButton(
-            icon: const Icon(Symbols.restore_rounded),
-            tooltip: '导入默认',
-            onPressed: () async {
-              final n = await ref
-                  .read(txtTocRulesNotifierProvider.notifier)
-                  .importDefaultRules();
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('已导入 $n 条原版默认 TXT 目录规则')),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Symbols.add_rounded),
-            tooltip: '添加规则',
-            onPressed: () => _showRuleForm(context),
-          ),
-        ],
+      // [台账 4-1 ①②⑦ | 2.0.274] 顶栏/入口重构（对齐参考 01_txt_toc_rule 截图）：
+      // ① 大标题左对齐、动作钮上行独立——复用 LegadoTabRootHeaderSliver 大标题
+      //    模式（滚动折叠为标准栏，_buildHeaderSliver）；
+      // ② 新建入口改右下 + FAB（主题槽位着色，见 floatingActionButton）；
+      // ⑦ 移除顶栏 ?/↺ 两直钮（原版 txt_toc_rule.xml 菜单仅 menu_add=always、
+      //    帮助/导入默认=never 溢出，无独立顶栏钮），原版能力经 ⋮ 溢出菜单保留
+      body: Md3FastScroller(
+        controller: _fsController,
+        child: CustomScrollView(
+          controller: _fsController,
+          slivers: [
+            _buildHeaderSliver(context),
+            if (state.isLoading)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (state.rules.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: EmptyState(
+                  icon: Symbols.format_list_numbered_rounded,
+                  title: '暂无目录规则',
+                  // [台账 4-1 ② | 2.0.274] 新建入口移至右下角 FAB
+                  subtitle: '点击右下角 + 添加识别章节标题的正则规则',
+                ),
+              )
+            else
+              // [UI_SYNC_REFACTOR R3] 规则列表（快速滚动条仍由 Md3FastScroller
+              // 经 _fsController 驱动；上下留白 8dp 与原 ListView padding 一致）
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (context, index) {
+                      final rule = state.rules[index];
+                      return _RuleTile(
+                        rule: rule,
+                        onToggle: (v) => ref
+                            .read(txtTocRulesNotifierProvider.notifier)
+                            .setEnabled(rule.id, v),
+                        onEdit: () => _showRuleForm(context, rule: rule),
+                        onDelete: () => _confirmDelete(rule),
+                        onTest: () => _showTestDialog(rule),
+                      );
+                    },
+                    childCount: state.rules.length,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
-      body: _buildBody(state),
+      // [台账 4-1 ② | 2.0.274] 新建入口：右下角 + FAB。着色走主题槽位
+      // （app_theme floatingActionButtonTheme = primaryContainer 底 / primary
+      // 前景，随调色板切换），不硬编码黄色；替代原顶栏圆形 + 钮
+      floatingActionButton: FloatingActionButton(
+        tooltip: '添加规则',
+        onPressed: () => _showRuleForm(context),
+        child: const Icon(Symbols.add_rounded),
+      ),
     );
   }
 
-  Widget _buildBody(TxtTocRulesState state) {
-    if (state.isLoading) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (state.rules.isEmpty) {
-      return const EmptyState(
-        icon: Symbols.format_list_numbered_rounded,
-        title: '暂无目录规则',
-        subtitle: '点击右上角 + 添加识别章节标题的正则规则',
-      );
-    }
-    return _buildList(state);
+  /// [台账 4-1 ①⑦ | 2.0.274] 头部 sliver：可折叠大标题「TXT 目录规则」（左对齐，
+  /// 展开 152dp，滚动折叠为标准栏）+ 返回钮（push 子页保留）+ ⋮ 溢出菜单
+  /// （导入默认/帮助，对应原版菜单 never 项；?/↺ 直钮已移除）。
+  Widget _buildHeaderSliver(BuildContext context) {
+    return LegadoTabRootHeaderSliver(
+      large: true,
+      leading: IconButton(
+        icon: const Icon(Symbols.arrow_back_rounded),
+        tooltip: '返回',
+        onPressed: () => Navigator.of(context).maybePop(),
+      ),
+      title: const Text('TXT 目录规则'),
+      actions: [
+        PopupMenuButton<String>(
+          tooltip: '更多操作',
+          icon: const Icon(Symbols.more_vert_rounded),
+          onSelected: _onMoreMenuSelected,
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'importDefault', child: Text('导入默认')),
+            PopupMenuItem(value: 'help', child: Text('帮助')),
+          ],
+        ),
+      ],
+    );
   }
 
-  Widget _buildList(TxtTocRulesState state) {
-    // [UI_SYNC_REFACTOR R3] 规则列表快速滚动条
-    return Md3FastScroller(
-      controller: _fsController,
-      child: ListView.builder(
-      controller: _fsController,
-      // [LAYOUT_PLAN P2] 列表纵向留白 8dp，横向由卡片 margin 统一 16dp
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      itemCount: state.rules.length,
-      itemBuilder: (context, index) {
-        final rule = state.rules[index];
-        return _RuleTile(
-          rule: rule,
-          onToggle: (v) =>
-              ref.read(txtTocRulesNotifierProvider.notifier).setEnabled(rule.id, v),
-          onEdit: () => _showRuleForm(context, rule: rule),
-          onDelete: () => _confirmDelete(rule),
-          onTest: () => _showTestDialog(rule),
-        );
-      },
-      ),
+  /// [台账 4-1 ⑦ | 2.0.274] ⋮ 溢出菜单：保留原版 never 项能力（导入默认/帮助）
+  void _onMoreMenuSelected(String value) {
+    switch (value) {
+      case 'help':
+        showHelp(context, HelpAssets.txtTocRuleHelp);
+      case 'importDefault':
+        _importDefault();
+    }
+  }
+
+  Future<void> _importDefault() async {
+    final n = await ref
+        .read(txtTocRulesNotifierProvider.notifier)
+        .importDefaultRules();
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已导入 $n 条原版默认 TXT 目录规则')),
     );
   }
 
@@ -346,6 +386,12 @@ class _TestResult {
 }
 
 /// 规则卡片
+///
+/// [台账 4-1 ③④⑤⑥ | 2.0.274] 对齐参考 01_txt_toc_rule 截图：
+/// ⑤ 独立分体卡（圆角 14、卡间距 12，原连体紧凑卡 vertical 4）；
+/// ③ 动作集图标化：铅笔=编辑、垃圾桶=删除（测试保留为次级文字钮）；
+/// ④ 副标题显示匹配示例文本（rule.example），缺省时回退「正则:」+ 截断正则；
+/// ⑥ 移除「已禁用」灰 chip（启用状态由开关表达，原版同语义）。
 class _RuleTile extends StatelessWidget {
   final TxtTocRule rule;
   final ValueChanged<bool> onToggle;
@@ -361,79 +407,73 @@ class _RuleTile extends StatelessWidget {
     required this.onTest,
   });
 
+  /// [台账 4-1 ④ | 2.0.274] 副标题：优先示例文本（对齐原版
+  /// TxtTocRuleAdapter 副行取 example）；无示例时回退截断正则并加
+  /// 「正则:」前缀标注（取舍说明：规则模型仅有 example/rule 两个文本源，
+  /// 示例不可得时用正则截断兜底，避免副行空白）
+  String _subtitle() {
+    final example = rule.example;
+    if (example != null && example.trim().isNotEmpty) {
+      return example;
+    }
+    final r = rule.rule;
+    return '正则:${r.length > 40 ? '${r.substring(0, 40)}…' : r}';
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     return Card(
-      // [LAYOUT_PLAN P2] 分组卡圆角 16dp；边距 horizontal16（全局标尺）
+      // [台账 4-1 ⑤ | 2.0.274] 分体卡：圆角 14dp、卡间距 vertical 12dp
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
       ),
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         onTap: onEdit,
         child: Padding(
-          // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
           child: Row(
             children: [
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        Text(
-                          rule.name.isEmpty ? '(未命名)' : rule.name,
-                          style: theme.textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        if (!rule.enable) ...[
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: colorScheme.surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              '已禁用',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: colorScheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ],
+                    Text(
+                      rule.name.isEmpty ? '(未命名)' : rule.name,
+                      style: theme.textTheme.titleSmall?.copyWith(
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      rule.rule,
+                      _subtitle(),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
                         color: colorScheme.onSurfaceVariant,
-                        fontFamily: 'monospace',
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 6),
                     Row(
                       children: [
-                        _actionChip(context, Symbols.play_arrow_rounded, '测试',
-                            onTest),
-                        const SizedBox(width: 8),
-                        _actionChip(context, Symbols.delete_outline_rounded,
+                        // [台账 4-1 ③] 图标化动作：铅笔编辑 / 垃圾桶删除 /
+                        // 测试保留为次级（图标+文字小钮）
+                        _iconAction(context, Symbols.edit_rounded, '编辑',
+                            onEdit),
+                        const SizedBox(width: 6),
+                        _iconAction(context, Symbols.delete_outline_rounded,
                             '删除', onDelete),
+                        const SizedBox(width: 6),
+                        _iconAction(context, Symbols.play_arrow_rounded,
+                            '测试', onTest),
                       ],
                     ),
                   ],
                 ),
               ),
-              // [LAYOUT_PLAN P2] 开关行无 Chevron；标题/副标题/元信息走 M3 Type Scale
               Switch(value: rule.enable, onChanged: onToggle),
             ],
           ),
@@ -442,14 +482,14 @@ class _RuleTile extends StatelessWidget {
     );
   }
 
-  Widget _actionChip(
-      BuildContext context, IconData icon, String label, VoidCallback onTap) {
+  Widget _iconAction(BuildContext context, IconData icon, String label,
+      VoidCallback onTap) {
     final colorScheme = Theme.of(context).colorScheme;
     return InkWell(
       borderRadius: BorderRadius.circular(8),
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [

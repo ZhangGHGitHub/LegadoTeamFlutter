@@ -71,7 +71,7 @@
 
 | # | 屏 | 参考截图 | 我方截图 | 状态 | 差异登记 |
 |---|---|---|---|---|---|
-| 4-1 | TXT 目录规则 | ❌待补采 | ❌待补采 | ⬜ | — |
+| 4-1 | TXT 目录规则 | ✅ ref_batch4/01_txt_toc_rule.png | ✅ **ours_2.0.274/01_txt_toc_rule.png**（2.0.274 七项修复闭环） | ✅ 2.0.274（0917） | 七项全闭环（明细见「批 4-1 闭环（2.0.274）」节）：①大标题左对齐+动作独立行 ②右下 + FAB（主题槽位着色）③卡片图标动作集（铅笔/垃圾桶/测试）④副标题=示例文本（回退「正则:」截断）⑤分体卡圆角 14/间距 12 ⑥移除「已禁用」chip ⑦?/↺ 直钮移除→⋮ 溢出（导入默认/帮助，对应原版菜单 never 项） |
 | 4-2 | 字典规则 | ❌待补采 | ❌待补采 | ⬜ | — |
 | 4-3 | 文件管理 | ❌待补采 | ❌待补采 | ⬜ | — |
 | 4-4 | 关于页 | ✅ 02/02b/02c_about_page.png | ❌待补采 | ⬜ | — |
@@ -383,3 +383,19 @@ B2-C1 ✅ 2.0.265（发现源卡单列列表行 P1 闭环；漏斗状态着色�
 
 **N4 视觉复验（0917，视觉通道恢复后）**：`ours_2.0.273/10_reader.png`（手动驱动真阅读器页）目视确认——**顶部状态行不存在**（原区域墨迹 0%）、**底栏左侧=书名「斗罗大陆」**（R5 生效）、页码 5/6 100.0% 正常 → 一次性迁移在旧值设备上真实生效 ✅ 闭环。
 **采集脚本已知弱点登记**：批 1 `10_reader` 屏 key 导航偶发落书架（断言过宽）——已两次误采书架图；后续如再采该屏需手动进入阅读器或收紧断言（脚本修复列入下批）。
+**弱点已闭环（2.0.274）**：`scripts/parity_capture_ours.py` 收紧——`nav_10` 改为书架 dump 定位书卡（desc「斗罗大陆」，实测中心 204,1034；旧固定坐标 279,1208 为 2.0.260 实测，2.0.274 书架布局位移后落卡外空白点按不跳转=两次误采书架根因，`CARD_BOOK` 常量已更新仅作 dump 兜底）；进入阅读器前 `_assert_in_reader` 断言（正文 content-desc 命中 且 无书架/查看目录/书签错态标记），失败 raise → run_screen 记 FAIL 不落盘；屏 10 登记收紧为 `READER_BODY_KWS`+`READER_NEG_KWS`（页码 N/M 与全局页胶囊默认不渲染——pageChrome 0 档+showControls=false，故不作特征）。真机重采 `ours_2.0.274/10_reader.png`=真阅读器页（正文特征「斗罗大陆」命中、负向 0），像素核验中央墨迹 10.7%（正文密集）+FAB 区 0.0%（阅读器无 FAB，与 N2 结论一致）。
+
+## 批 4-1 闭环（2.0.274，TXT 目录规则页七项修复）
+
+**逐项处置**（对齐 `docs/parity_shots/ref_batch4/01_txt_toc_rule.png`，台账 4-1 行七项）：
+- ①标题层级【P2】：顶栏内居中标题 → 左对齐大标题（复用 `LegadoTabRootHeaderSliver(large: true)`，展开 152dp，动作钮独立行；push 子页保留返回钮——该 sliver 新增 `leading` 参数，经 `TopBarActionStyler` 与 `LegadoAppBar` 同口径着色）
+- ②新建入口【P2】：顶栏圆形 + 钮 → 右下 + FAB（着色走 `floatingActionButtonTheme` 主题槽位 primaryContainer/primary，随调色板切换，非硬编码黄色）
+- ③卡片动作集【P2】：「测试/删除」文字钮 → 图标化（铅笔=编辑/垃圾桶=删除/播放=测试，图标 16 + labelMedium 标签，行尾 Switch 保留）
+- ④副标题语义【P2】：完整正则源码 → 规则 `example` 示例文本（内置默认 26 条规则全带非空 example，如「第一章 假装…」）；**取舍**：example 为空时回退「正则:」+ 截断正则（>40 字加 …）——示例不可得时保留可辨识性，不静默留白
+- ⑤卡片形态【P2】：连体紧凑 → 独立分体卡（Card 圆角 14、水平 16/垂直 6 margin 即 12px 间距、内 padding 12）
+- ⑥「已禁用」灰 chip【P3】：移除（状态由行尾 Switch 表达，与参考一致）
+- ⑦顶栏 ?/↺ 两钮【P3】：**grep 原版证实非原版能力**——`app/src/main/res/menu/txt_toc_rule.xml` 仅 `menu_add` showAsAction="always"，import_default/help/import_local/onLine/qr 全 "never"（⋮ 溢出）→ 直钮移除，能力保留入 ⋮ `PopupMenuButton`（导入默认/帮助，对齐 `dict_rule_screen.dart` 既有模式）
+
+**验证**：`flutter analyze` 0 问题；`flutter test` 1457 全过；2.0.274+275 release 装 MuMu x86_64（192.168.1.19:5555，versionName=2.0.274 校验通过）；`scripts/parity_capture_ours.py --only 01_txt_toc_rule` OK——采后 dump 断言「TXT 目录规则」/「正则:」命中、「退出阅读/自动翻页」负向 0，截图 `docs/parity_shots/ours_2.0.274/01_txt_toc_rule.png`（像素核验 FAB 区前景 2.8%=FAB 在位）。并排核图：本环境无图像通道，七项按台账已定稿描述逐项对码验证（dump/像素断言闭环），目视并排比对留待视觉通道恢复后复核。
+
+- 签名：全栈工程师子代理，2026-09-17（版本 2.0.274+275）

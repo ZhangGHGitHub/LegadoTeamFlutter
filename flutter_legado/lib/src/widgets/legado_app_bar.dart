@@ -345,6 +345,11 @@ class LegadoTabRootHeaderSliver extends StatefulWidget {
   /// [parity C3 B5] 书架头部按参考锁定裸图标（plain），不经全局档位。
   final TopBarButtonStyle? actionsStyle;
 
+  /// 工具栏 leading（返回钮等）。null = 无 leading（Tab 根页默认）。
+  /// push 子页传返回 IconButton（对齐 [LegadoAppBar] 子页语义；
+  /// [台账 4-1 ① | 2.0.274] TXT 目录规则页复用本 sliver 需保留返回入口）。
+  final Widget? leading;
+
   const LegadoTabRootHeaderSliver({
     super.key,
     required this.title,
@@ -355,6 +360,7 @@ class LegadoTabRootHeaderSliver extends StatefulWidget {
     this.largeTitleFontSize,
     this.expandedHeight,
     this.actionsStyle,
+    this.leading,
   });
 
   @override
@@ -377,6 +383,16 @@ class _LegadoTabRootHeaderSliverState extends State<LegadoTabRootHeaderSliver>
       style: widget.actionsStyle ?? ui.topBarButtonStyle,
       merge: ui.mergeTopBarActions,
     );
+    // [台账 4-1 ① | 2.0.274] leading 与 [LegadoAppBar] 一致：不经 merge
+    // 胶囊，单独注入按钮样式档位
+    final Widget? styledLeading = widget.leading == null
+        ? null
+        : TopBarActionStyler.styleActions(
+            context,
+            [widget.leading!],
+            style: widget.actionsStyle ?? ui.topBarButtonStyle,
+            merge: false,
+          ).first;
     if (widget.large && ui.useFlexibleTopAppBar) {
       // [P1] headlineMedium→headlineSmall 子树覆写；largeTitleFontSize
       // 指定时改以 headlineMedium 为底放大（书架 28sp 先例）
@@ -396,6 +412,7 @@ class _LegadoTabRootHeaderSliverState extends State<LegadoTabRootHeaderSliver>
         context,
         SliverAppBar.large(
           automaticallyImplyLeading: false,
+          leading: styledLeading,
           title: widget.title,
           actions: styledActions,
           titleSpacing: widget.titleSpacing,
@@ -412,6 +429,7 @@ class _LegadoTabRootHeaderSliverState extends State<LegadoTabRootHeaderSliver>
     return SliverAppBar(
       pinned: true,
       automaticallyImplyLeading: false,
+      leading: styledLeading,
       title: widget.title,
       actions: styledActions,
       titleSpacing: widget.titleSpacing,

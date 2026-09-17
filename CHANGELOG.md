@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.274] - 2026-09-17
+
+### Fixed
+- [UI] 台账 4-1 TXT 目录规则页七项修复（对齐 `ref_batch4/01_txt_toc_rule.png`）+ 批 1 `10_reader` 两次误采书架根因修复，版本 2.0.273+274 → 2.0.274+275：
+  - **TXT 目录规则页七项（台账 4-1 ①-⑦ 全闭环）**：①标题层级：顶栏内居中标题→左对齐大标题（复用 `LegadoTabRootHeaderSliver(large: true)` 152dp 可折叠 + 动作独立行；该 sliver 新增可选 `leading` 参数保留 push 子页返回钮，经 `TopBarActionStyler` 与 `LegadoAppBar` 同口径着色）②新建入口：顶栏圆形 + 钮→右下 + `FloatingActionButton`（着色走 `floatingActionButtonTheme` 主题槽位 primaryContainer/primary，随调色板切换，非硬编码黄色）③卡片动作集：「测试/删除」文字钮→图标化（铅笔=编辑/垃圾桶=删除/播放=测试，图标 16+label 标签，行尾 Switch 保留）④副标题语义：完整正则源码→规则 `example` 示例文本（内置默认 26 条全带非空 example，如「第一章 假装…」；**取舍**：example 为空回退「正则:」+截断正则（>40 字加 …），保留可辨识性不静默留白）⑤卡片形态：连体紧凑→独立分体卡（Card 圆角 14/水平 16 垂直 6 margin=12px 间距/内 padding 12）⑥移除「已禁用」灰 chip（状态由行尾 Switch 表达，与参考一致）⑦顶栏 ?/↺ 两直钮：grep 原版 `app/src/main/res/menu/txt_toc_rule.xml` 证实**非原版能力**（仅 `menu_add` always，import_default/help/import_local/onLine/qr 全 never 走 ⋮ 溢出）→移除直钮，能力保留入 ⋮ `PopupMenuButton`（导入默认/帮助，对齐 `dict_rule_screen.dart` 既有模式）
+  - **`10_reader` 误采书架根因修复（`scripts/parity_capture_ours.py`）**：旧固定坐标 `CARD_BOOK=(279,1208)` 为 2.0.260 实测，2.0.274 书架布局位移后书卡实位于 bounds[66,974,342,1094]（中心 204,1034），旧坐标落卡外空白→点按不跳转，最终停在书架（两次误采根因；旧断言 `("唐门","斗罗大陆","唐三")` OR 过宽，书架书卡「斗罗大陆」同词命中未拦截）。修复：`nav_10` 改书架 dump 定位书卡（desc「斗罗大陆」中心，未命中回退更新后的 `CARD_BOOK`）+ 去除误接的详情页「查看目录/首章」两连击（书卡=「继续阅读」直达阅读器，两击在阅读器内属无效点击且可能切换菜单态）；进入阅读器前 `_assert_in_reader` 断言（正文 content-desc 特征「唐三/斗罗大陆」命中 且 负向「书架/查看目录/书签」零命中——页码 N/M 与全局页胶囊默认不渲染 pageChrome 0 档+showControls=false 故不作特征），失败 raise → `run_screen` 记 FAIL 不落盘（保留旧图不覆盖）；屏 10 登记同步收紧为 `READER_BODY_KWS`+`READER_NEG_KWS`；SCREENS_B4 01 断言词随新 UI 刷新（「导入默认/添加规则」已移入 ⋮/FAB 不再进默认 dump，主特征改「TXT 目录规则/暂无目录规则/正则:」+AND「目录规则/TXT」）
+
+### Test
+- `flutter analyze` 无问题（0）；`flutter test` 全过（1457）；`python -m py_compile scripts/parity_capture_ours.py` OK
+
+### Real device
+- 2.0.274+275 release APK 装 MuMu x86_64（192.168.1.19:5555），versionName=2.0.274 校验通过；`scripts/parity_capture_ours.py --only 10,01_txt_toc_rule` 2/2 屏 OK，截图 `docs/parity_shots/ours_2.0.274/{10_reader,01_txt_toc_rule}.png`（10_reader：书卡 dump 命中点 (204,1034)，采前断言正文「斗罗大陆」命中/负向 0；01_txt_toc_rule：采后断言「TXT 目录规则/正则:」命中、负向 0）。像素核验（PIL）：10_reader 中央墨迹 10.7%（正文密集）+FAB 区 0.0%（阅读器无 FAB，与 N2 结论一致）；01_txt_toc_rule FAB 区前景 2.8%（FAB 在位）。并排核图：本环境无图像通道，七项按台账已定稿描述逐项对码验证（dump/像素断言闭环），目视并排比对留待视觉通道恢复后复核
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.273] - 2026-09-17
 
 ### Fixed
