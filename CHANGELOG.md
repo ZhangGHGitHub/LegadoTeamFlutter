@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.282] - 2026-09-17
+
+### Fixed
+- [UI] 详情页 hero 背景透明化对齐参考 08（台账 08「用户实测反馈批六 0917」G1-G5，版本 2.0.281+282 → 2.0.282+283，基准 `ref_20260914/08_book_info.png`）：
+  - **G1 hero 渐变渐隐**：hero 背景层渐变由 6 档（0/0.2/0.4/0.6/0.8/1.0）改 **5 档 0/0.2/0.35/0.48/1.0**——≤35% 封面完整（仅 seed 10-18% 微染），35%→48% `cs.surface` α0→α1 渐隐至全覆盖，48% 以下为**纯 surface 底色区**（信息 chips/四按钮/在读·最新/标签/简介不再透封面），对齐 REF「模糊封面仅占顶部约 45%（y≈870/1920 完全消失）→ 底部渐隐融入底色」；明暗双态经 `cs.surface` 槽位天然生效（暗态渐隐入暗 surface）
+  - **G2 内容区落底色**：随 G1 结构性达成——自信息 chips 起内容全部位于 48% 视口高度之下，backdrop 已是纯 `cs.surface` 底色区、图片不再透出；简介面板与 `SliverFillRemaining` 原即不透明 `cs.surface`，无代码改动
+  - **G3 hero 文字深色高对比**：三行文字（书名 24sp w700/作者/来源 11sp）保持完全不透明 `cs.onSurface`（亮态即纯黑书名，对齐 REF 实测墨 L≤27）；深阴影升为主保障 `0x99000000` blur6 off(0,1.5)，白色柔光降权至 `0x40FFFFFF` blur12 仅作暗 hero/暗色主题保险，避免强白晕冲淡深色高对比观感
+  - **G4 封面卡阴影+浅描边**：保留 `elevation 8` 阴影，补 1px `cs.outlineVariant` 浅描边（DecoratedBox），浮起观感对齐参考（REF 卡缘 1-2px 浅灰线）
+  - **G5 chips/四按钮复核**：四张 52×69 卡已是 `cs.surfaceContainerLow` + 图标 `cs.primary` + 标签 `cs.onSurface` 底色区常规样式，复核无误、无改动
+
+### Test
+- `flutter analyze` 无问题（0）；`flutter test` 全过（1468）
+
+### Real device
+- 2.0.282+283 release APK 装 MuMu（192.168.1.19:5555），versionName=2.0.282（versionCode=283）校验通过；`scripts/parity_capture_ours.py --only 08 --out docs/parity_shots/ours_2.0.282` OK（`08_book_info.png` + `_dump_08_final.xml` 1/1）；**像素断言全 PASS**：y≈55% 背景（左缘列 x4-30）L 247.0-251.0（均值 249.0）= 纯 surface 基色 (249,250,239)，偏差 0（判据 ±6）；与 y≈20% hero 图（L 均值 99.0）ΔL=150 ≥ 20（REF 同位 ΔL≈140，渐隐形状一致）；hero 三行深色墨迹：书名 y635-702 墨中位 L27/最小 L1（对局部背景 ΔL62≥60）、作者 y743-786 墨 L27（ΔL105）、来源 y824-854 墨 L4（ΔL180）——书名墨级与 REF（中位 L25/最小 L0）一致，深色高对比达标；G1 暗态经 `cs.surface` 槽位结构性满足（暗色主题渐隐入暗 surface），本次真机验证为亮态
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.281] - 2026-09-17
 
 ### Fixed

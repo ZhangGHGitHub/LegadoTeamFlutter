@@ -13,7 +13,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
   /// [UI_SYNC_REFACTOR B4] 对齐参考仓 BookInfoBackdrop：
   /// - on=480dp 顶部封面 + blur24 + seedOverlay(lerp(secondaryContainer,seed,0.42) α0.34)；
   /// - off=显示封面不模糊 + seed 叠加；off_for_default=全部隐藏（纯 surface）；
-  /// - 垂直渐变 stops 0/0.2/0.4/0.6/0.8/1 → surface 全覆盖；切换 Crossfade 800ms。
+  /// - [G1 | 台账 0917 批六] 垂直渐变 stops 0/0.2/0.35/0.48/1：35% 起→48%
+  ///   surface 渐隐至全覆盖，其下为纯 surface 底色区（明暗双态经 cs.surface 槽位）；
+  ///   切换 Crossfade 800ms。
   Widget _buildPage(BuildContext context, Book book, List<BookChapter> chapters) {
     final cs = Theme.of(context).colorScheme;
     final coverUrl = book.customCoverUrl ?? book.coverUrl;
@@ -76,18 +78,21 @@ extension _BookInfoBuilders on _BookInfoScreenState {
             ],
           );
 
-    // 垂直渐变（对齐参考仓 colorStops：透明→seed 微染→surface 全覆盖）
+    // [G1 | 台账 0917 批六] hero 底部渐隐：≤35% 封面完整（仅 seed 10-18% 微染），
+    // 35%→48% surface 由 α0 渐隐至全覆盖（亮态融入亮 surface / 暗态融入暗
+    // surface，均走 cs.surface 槽位，明暗双态天然生效），48% 以下为纯 surface
+    // 底色区——信息 chips/四按钮/在读·最新/标签/简介不再透封面，对齐 ref 08
+    // 「模糊封面仅占顶部约 45%（y≈870/1920 完全消失）」
     final gradient = DecoratedBox(
       decoration: BoxDecoration(
         gradient: LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
-          stops: const [0.0, 0.2, 0.4, 0.6, 0.8, 1.0],
+          stops: const [0.0, 0.2, 0.35, 0.48, 1.0],
           colors: [
             cs.surface.withValues(alpha: 0),
             seedOverlay.withValues(alpha: 0.10),
             seedOverlay.withValues(alpha: 0.18),
-            cs.surface.withValues(alpha: 0.85),
             cs.surface,
             cs.surface,
           ],
@@ -804,13 +809,14 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     // [U6 | 台账 0917 批二] 双（深+浅）柔阴影：去掉信息列浅底卡后，书名/作者/
     // 书源直排于 hero（参考 08 无卡底），此阴影保证任意（亮/暗）封面 hero 下
     // 深色文字对比可读（深色阴影压亮底、浅色光晕托暗底）
-    // [F1 | 台账 0917 08 批] 强化为「深色文字 + 白色柔光」保底组合：
-    // 深阴影 α0.55/blur6 压亮底、白光晕 α0.7/blur14 托暗底——暗色 hero 上
-    // 白晕在深色文字外围形成亮环，保证任何封面下文字可读（像素断言
-    // 对比度 ≥4.5:1 或 ΔL≥60）
+    // [F1 | 台账 0917 08 批] 强化为「深色文字 + 白色柔光」保底组合（历史）
+    // [G3 | 台账 0917 批六] 改「深色为主」：三行文字保持完全不透明 onSurface
+    // （亮态 hero 上即纯黑书名，对齐 ref 08 PIL 实测墨 L≤17）；深阴影升为
+    // 主保障 α0.60/blur6/offset(0,1.5) 压亮底；白色柔光降权至 α0.25/blur12
+    // 仅作暗 hero / 暗色主题保险，避免强白晕冲淡深色高对比观感
     final heroTextShadows = const [
-      Shadow(color: Color(0x8C000000), blurRadius: 6, offset: Offset(0, 1.5)),
-      Shadow(color: Color(0xB3FFFFFF), blurRadius: 14),
+      Shadow(color: Color(0x99000000), blurRadius: 6, offset: Offset(0, 1.5)),
+      Shadow(color: Color(0x40FFFFFF), blurRadius: 12),
     ];
     // [U10 | 台账 0917 批三] 版块重排后头部以两栏收尾，底距 12→4：
     // 与 ① 聚合行 top 8 合成 12dp 间隙（原 12dp 底距随移出的版块移除）
@@ -832,29 +838,39 @@ extension _BookInfoBuilders on _BookInfoScreenState {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
+                // [G4 | 台账 0917 批六] 封面卡浮起观感：阴影保留（elevation 8），
+                // 补 1px 浅描边（outlineVariant 槽位；ref 08 PIL 实测卡缘 ~1-2px
+                // 浅灰线 L≈150-154）。G1 渐隐后卡下缘落在纯 surface 底色区，
+                // 描边+阴影的浮起感清晰，对齐参考
                 Material(
                   elevation: 8,
                   color: Colors.transparent,
                   borderRadius: BorderRadius.circular(3),
-                  child: GestureDetector(
-                    // 对齐原版 ivCover 点击换封面 / 长按预览大图 — Cursor UI
-                    onTap: () => _openChangeCover(book),
-                    onLongPress: () => _previewCover(book),
-                    // [LAYOUT_PLAN P4] 外层 Hero 接管过渡，flightShuttle 走全局
-                    // coverFlightShuttleBuilder（内层 heroTag 置空防嵌套），
-                    // tag 统一 book-cover:
-                    child: Hero(
-                      tag: 'book-cover:${book.bookUrl}',
-                      flightShuttleBuilder: coverFlightShuttleBuilder,
-                      child: BookCover(
-                        coverUrl: book.customCoverUrl ?? book.coverUrl,
-                        // [U2 | 台账 0917] 110×160dp 圆角 3（原版
-                        // activity_book_info.xml iv_cover 精确值 + ref PIL
-                        // 实测 112×156dp；2.0.276 的 120×260 偏大，回缩）
-                        width: 110,
-                        height: 160,
-                        borderRadius: 3,
-                        sourceOrigin: book.origin,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(3),
+                      border: Border.all(color: cs.outlineVariant),
+                    ),
+                    child: GestureDetector(
+                      // 对齐原版 ivCover 点击换封面 / 长按预览大图 — Cursor UI
+                      onTap: () => _openChangeCover(book),
+                      onLongPress: () => _previewCover(book),
+                      // [LAYOUT_PLAN P4] 外层 Hero 接管过渡，flightShuttle 走全局
+                      // coverFlightShuttleBuilder（内层 heroTag 置空防嵌套），
+                      // tag 统一 book-cover:
+                      child: Hero(
+                        tag: 'book-cover:${book.bookUrl}',
+                        flightShuttleBuilder: coverFlightShuttleBuilder,
+                        child: BookCover(
+                          coverUrl: book.customCoverUrl ?? book.coverUrl,
+                          // [U2 | 台账 0917] 110×160dp 圆角 3（原版
+                          // activity_book_info.xml iv_cover 精确值 + ref PIL
+                          // 实测 112×156dp；2.0.276 的 120×260 偏大，回缩）
+                          width: 110,
+                          height: 160,
+                          borderRadius: 3,
+                          sourceOrigin: book.origin,
+                        ),
                       ),
                     ),
                   ),
