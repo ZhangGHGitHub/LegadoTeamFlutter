@@ -245,3 +245,5 @@
 修订：Qoder + Bridge ｜ 2026-08-29（搜索/换源 parity 审计 D1-D6 修复：分组分隔符全集/换源候选不再剔除空 bookUrl/multi_source_search 落库/JS 源 precision filter/筛选框书名口径/同名判定字面全等，据 SEARCH_CHANGE_SOURCE_PARITY_AUDIT_20260829.md，版本 2.0.127+132）
 修订：Qoder + Bridge ｜ 2026-08-29（热力图每日时长契约交付：readRecordDaily 聚合表 + readRecordDailyList FFI（API_CONTRACT §2.12）+ putReadRecord 写路径增量聚合 + Dart 三层绑定；U 侧 UI_MD3_PLAN 登记项销记）
 修订：Qoder UI ｜ 2026-08-28（MD3 UI 迁移 B0–B6 七批次完成：主题地基/12 套内置调色板/主框架/六功能域 token 收尾/验收矩阵自动化，版本 2.0.110–2.0.117，详见 UI_MD3_PLAN.md「实施状态」；遗留 LargeTitle 与 Material You 动态取色已登记，模拟器冒烟并入用户验收）
+
+修订：Qoder ｜ 2026-09-17（**截图一比一全程序收官进度回填**：依用户口径「视觉基准=参考版实机截图（含配色字体）」完成全屏差异清单批 1~4 共 43 屏的「列差异→分批修复→核图验收」全流程，交付 2.0.255~2.0.275；阶段D 配色对齐 kazusa 源码调色板（Δ≤1）；规范/台账/工具见 docs/SCREEN_1TO1_PARITY_{SPEC,LEDGER}_20260914.md 与 scripts/parity_*.py；剩余=视觉精修巡检（P3 级）+ 深色全域逐屏。与本计划内搜索一致性（P3-6/F1）等工作流相互独立）
