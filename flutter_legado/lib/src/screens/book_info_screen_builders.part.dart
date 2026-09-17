@@ -656,6 +656,12 @@ extension _BookInfoBuilders on _BookInfoScreenState {
 
   Widget _buildBody(BuildContext context, Book book, List<BookChapter> chapters) {
     final cs = Theme.of(context).colorScheme;
+    // [U10/U11/U12 | 台账 0917 批三] 版块顺序对齐参考 08：
+    // ①信息聚合行 → ②四按钮卡 → ③在读/最新/共N章三行块 → ④标签行 →
+    // ⑤简介 → ⑥分组/目录行（标签行置顶信息面板首行、分组/目录行后移至
+    // 简介之后；聚合行并入 ① 信息行只现一次，U9 在读/最新与 U5 聚合行
+    // 两处能力均保留）
+    final kinds = _buildKindLabels(book);
     // [UI-fix v2.0.6 | 2026-08-08] 移除详情页内嵌「搜索章节」框与完整章节列表，
     // 对齐原版 activity_book_info（详情页不含目录列表，目录由 tv_toc_view 跳转
     // 独立 TocActivity 查看）。详情页仅保留封面卡 + 信息面板（含目录行显示当前
@@ -734,20 +740,44 @@ extension _BookInfoBuilders on _BookInfoScreenState {
             );
           },
         ),
-        // 头部两栏（封面左置 120×260（D1）+ 信息右置 + 标签行 + 章节信息单行）
+        // 头部两栏（封面左置 110×160 + 信息右置；[U10-U12] 版块顺序重排后
+        // 头部仅保留两栏，标签行/在读最新块/聚合行按参考序独立成 sliver）
         SliverToBoxAdapter(child: _buildHeader(context, book, chapters)),
-        // 操作宫格（B1：四宫格，参考版排布在简介之前；「分组」收进 ⋮ 菜单）
-        // [PARITY C1 D2] 排布修正：卡片行紧随头部两栏（与参考 08 一致，
-        // 首屏可见）；原置于简介面板之后导致长简介把卡片推出视口
+        // [U10 | 台账 0917 批三] ① 信息聚合行「评分 · 类型 · N章 · N字 · 完结态」
+        //（U5 聚合行并入 ① 信息行位，参考 08 只现一次；缺项省略、整行无
+        // 数据不渲染，位置不变仍在头部与四按钮之间）
+        SliverToBoxAdapter(
+          child: _buildAggregationLine(context, book, kinds, chapters),
+        ),
+        // ② 操作宫格（B1：四宫格：已在书架/查看目录/书源/阅读记录；
+        // 「分组」收进 ⋮ 菜单）[PARITY C1 D2] 卡片行紧随 ① 信息行
         SliverToBoxAdapter(child: _buildActionCards(context, book)),
+        // [U10 | 台账 0917 批三] ③ 在读/最新/共N章 三行块（原置于四按钮
+        // 之前，参考 08 排在四按钮之后；U9 在读/最新行 + D4 共N章单行，
+        // 缺数据行不渲染，共N章行恒渲染）
+        SliverToBoxAdapter(
+          child: Column(
+            // 原头部 Column 为 start 对齐，此处保持逐行自带左距 13dp
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ..._buildReadLatestLines(context, book, chapters),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(13, 12, 16, 0),
+                child: _buildChapterStatLine(context, book, chapters),
+              ),
+            ],
+          ),
+        ),
         // [UI_SYNC_REFACTOR S3] Characters/RelatedBooks 区块骨架（已授权；
         // 数据链需后端调研——见 UI_ONE_TO_ONE_CLONE_PLAN_20260905.md §〇，
         // 无数据时整段隐藏=缺省降级）
         ..._buildCharactersSection(context, book),
         ..._buildRelatedBooksSection(context, book),
-        // 信息面板：分组/目录行 + 简介（书名/标签/作者/来源/三行已上移头部两栏区）
+        // ④ 标签行 → ⑤ 简介 → ⑥ 分组/目录行（[U11/U12 | 台账 0917 批三]
+        // 标签行置顶面板首行、分组/目录行后移至简介之后；书名/作者/来源
+        // 两栏区在 _buildHeader）
         SliverToBoxAdapter(
-          child: _buildSummaryPanel(context, book, chapters),
+          child: _buildSummaryPanel(context, book, chapters, kinds),
         ),
         // 底部续铺纯色：内容不足一屏时填满剩余视口，避免透出封面虚化层
         SliverFillRemaining(
@@ -761,19 +791,16 @@ extension _BookInfoBuilders on _BookInfoScreenState {
   }
 
   /// 顶部头部区（B1 形态对齐：参考版「封面左置 + 信息右置」两栏）
-  /// - 左：96×128 圆角 12 封面卡（点击换封面 / 长按预览大图行为不变）
+  /// - 左：110×160 圆角 3 封面卡（点击换封面 / 长按预览大图行为不变）
   /// - 右：信息列（书名 titleLarge 加粗 / 作者 / 来源=书源名，交互行为不变）
-  /// - 下：标签行（分类 chip + 字数 chip，沿用既有数据字段与点击搜索链路）
-  /// - 下：在读 / 最新 / 共N章 三行强调排版（数据复用页面现有 state）
+  /// - [U10-U12 | 台账 0917 批三] 标签行/在读最新块/聚合行不再置于头部，
+  ///   按参考 08 版块序独立成 sliver（_buildBody 中 ①③④ 位）
   /// — full-stack-engineer + UI
   Widget _buildHeader(
       BuildContext context, Book book, List<BookChapter> chapters) {
     final topPadding = MediaQuery.paddingOf(context).top + kToolbarHeight + 8;
     final cs = Theme.of(context).colorScheme;
     final ts = Theme.of(context).textTheme;
-    // [U9 | 台账 0917 批二] wordCount 不再用于头部标签行（已并入 U5 聚合行
-    // 统一 isMeaningfulText 守卫渲染），此处仅保留分类标签
-    final kinds = _buildKindLabels(book);
     // [U6 | 台账 0917 批二] 双（深+浅）柔阴影：去掉信息列浅底卡后，书名/作者/
     // 书源直排于 hero（参考 08 无卡底），此阴影保证任意（亮/暗）封面 hero 下
     // 深色文字对比可读（深色阴影压亮底、浅色光晕托暗底）
@@ -781,12 +808,14 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       Shadow(color: Color(0x59000000), blurRadius: 4, offset: Offset(0, 1)),
       Shadow(color: Color(0x80FFFFFF), blurRadius: 8),
     ];
+    // [U10 | 台账 0917 批三] 版块重排后头部以两栏收尾，底距 12→4：
+    // 与 ① 聚合行 top 8 合成 12dp 间隙（原 12dp 底距随移出的版块移除）
     return Padding(
-      padding: EdgeInsets.only(top: topPadding, bottom: 12),
+      padding: EdgeInsets.only(top: topPadding, bottom: 4),
       child: Column(
-        // [PARITY C1 D6] 信息流左对齐（参考 08：标签行/「共 N 章」行均随
-        // 封面左缘起排）；Column 默认 center 使标签行与章节行各自收缩后
-        // 居中（2.0.275 实测「共 712 章｜已读」整行居中）→ 改 start。
+        // [PARITY C1 D6] 信息流左对齐（参考 08：各信息行随封面左缘起排）；
+        // Column 默认 center 会使收缩行居中 → start。
+        // [U10-U12] 标签行/在读最新块/聚合行已移出头部（见 _buildBody 版块序）
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // 两栏：封面左置 + 右侧信息列
@@ -918,31 +947,6 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                 ],
               ),
             ),
-          // 标签行（对标 lb_kind，左对齐跟随两栏区）
-          // [U9 | 台账 0917 批二] 形态对齐参考 08：「🏷️ 标签1, 标签2…」
-          // 逗号连排单/多行换行（替代原逐 tag 竖排 chip）；每个标签独立
-          // 点击（原版 lbKind → SearchActivity）/ 长按（JS 回调）行为不变；
-          // 字数移入 U5 聚合行渲染（isMeaningfulText 守卫不重复）
-          if (kinds.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(left: 13, right: 16, top: 10),
-              child: _buildTagLine(context, book, kinds),
-            ),
-          // [U9 | 台账 0917 批二] 在读/最新两行（参考 08「在读·第1章…」、
-          // 「最新·第712章…」块，置于「共 N 章」行上方；缺数据不渲染）
-          ..._buildReadLatestLines(context, book, chapters),
-          // [PARITY C1 D4] 章节信息单行「共 N 章｜未读/已读」（对齐参考 08；
-          // 替代原「在读/最新/目录」三行强调排版，数据复用页面现有 state；
-          // 已读判定：有阅读进度 durChapterIndex > 0，与阅读 FAB 同语义）
-          // [U2 | 台账 0917] 左距 16→13 随封面左缘对齐
-          Padding(
-            padding: const EdgeInsets.fromLTRB(13, 12, 16, 0),
-            child: _buildChapterStatLine(context, book, chapters),
-          ),
-          // [U5 | 台账 0917] 信息聚合行「评分 · 类型 · N章 · 字数 · 完结态」
-          //（对齐参考 08；封面信息区与四图标卡行之间，缺项省略，整行无
-          // 数据不渲染）
-          _buildAggregationLine(context, book, kinds, chapters),
         ],
       ),
     );
@@ -1235,11 +1239,14 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     ];
   }
 
-  /// 信息面板（对标原版 ll_info 下半区：分组/目录行 + 简介；
-  /// 书名/标签/作者/来源/最新三行已上移 _buildHeader 两栏区，B1 形态对齐）
+  /// 信息面板（[U11/U12 | 台账 0917 批三] 版块序对齐参考 08：
+  /// ④ 标签行（置顶面板首行，surface 底保证对比）→ ⑤ 简介 →
+  /// ⑥ 分组/目录行（upstream 能力，后移至简介之后）；
+  /// 书名/作者/来源两栏区在 _buildHeader，B1 形态对齐）
   /// — full-stack-engineer + UI
   Widget _buildSummaryPanel(
-      BuildContext context, Book book, List<BookChapter> chapters) {
+      BuildContext context, Book book, List<BookChapter> chapters,
+      List<String> kinds) {
     final cs = Theme.of(context).colorScheme;
     final isWebFile = _isWebFileBook(book);
     // 对齐原版 upLoading：加载中 / 失败 / 章节名 + 已读进度 — Cursor UI
@@ -1253,13 +1260,26 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       // [LAYOUT_MOTION_AUDIT L3] 内容边距 18→16（全局水平边距统一 16dp）
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 分组行（对标 ic_groups + tv_group，展示该书所属分组）
+          // [U11 | 台账 0917 批三] ④ 标签行：由头部移入面板首行（参考 08 位于
+          // 在读/最新块之后、简介之前；「🏷️ 前缀 + 逗号连排」形态与逐 tag
+          // 点击搜索/长按 JS 回调行为不变；无 kind 不渲染）
+          if (kinds.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: _buildTagLine(context, book, kinds),
+            ),
+          // [U12 | 台账 0917 批三] ⑤ 简介（对标 tv_intro_container +
+          // tv_intro_toggle；upstream 的分组/目录行现置其后）
+          _buildIntro(context, book),
+          // [U12 | 台账 0917 批三] ⑥ 分组行（对标 ic_groups + tv_group，
+          // 展示该书所属分组；upstream 能力保留，仅位置后移）
           // [PARITY C1 D2] 行内「设置分组」小按钮已移除，并入次级入口：
           // 顶栏 ⋮ 溢出菜单「设置分组」（_handleMenu 'group' → _showChangeGroup，
           // 行为不变，功能不丢失）
           _summaryRow(context, Symbols.groups_rounded, _groupText(book)),
-          // 目录行（webFile 书隐藏，对齐原版 ll_toc.gone() — Cursor UI）
+          // ⑥ 目录行（webFile 书隐藏，对齐原版 ll_toc.gone() — Cursor UI）
           if (!isWebFile)
             _summaryRow(
               context,
@@ -1267,8 +1287,6 @@ extension _BookInfoBuilders on _BookInfoScreenState {
               '目录：$tocTitle',
               action: _smallAction(context, '查看目录', _openTocScreen),
             ),
-          // 简介（对标 tv_intro_container + tv_intro_toggle）
-          _buildIntro(context, book),
         ],
       ),
     );

@@ -322,6 +322,76 @@ void main() {
       expect(find.text('收起'), findsNothing);
     });
 
+    // [U10/U11/U12 | 台账 0917 批三] 详情页版块顺序（对齐参考 08）：
+    // ①信息聚合行 → ②四按钮 → ③在读/最新/共N章三行块 → ④标签行 →
+    // ⑤简介 → ⑥分组/目录行。以各版块文本节点 y 坐标断言纵向顺序
+    // （四按钮 y < 在读 y < 标签 y < 简介 y < 分组/目录行 y）
+    testWidgets('版块顺序：四按钮<在读/最新<标签<简介<分组/目录行',
+        (tester) async {
+      // 高视口保证全部版块同帧布局（CustomScrollView 视口外 sliver 不构建）
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 3.0;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      // 数据齐备：聚合行（评分/类型/章数/字数/完结态）+ 在读/最新/共N章 +
+      // 标签行 + 简介 + 分组/目录行 全渲染
+      const orderBook = Book(
+        bookUrl: 'https://src.com/book/order',
+        name: '序书',
+        author: '作者',
+        origin: 'https://src.com',
+        originName: '测试源',
+        kind: '9.9分,轻小说,已完结',
+        wordCount: '120万字',
+        totalChapterNum: 51,
+        durChapterIndex: 1,
+        durChapterTitle: '第一章 开端',
+        latestChapterTitle: '第五十一章 完结',
+        intro: '版块顺序验证简介正文。',
+      );
+      when(() => mockApi.getBook(any())).thenAnswer((_) async => orderBook);
+      when(() => mockApi.getChapters(any())).thenAnswer((_) async => const [
+            BookChapter(
+                bookUrl: 'https://src.com/book/order',
+                index: 0,
+                title: '第一章 开端'),
+          ]);
+      when(() => mockApi.getBookGroups()).thenAnswer((_) async => const []);
+      when(() => mockApi.getBookSources()).thenAnswer((_) async => const []);
+
+      await tester.pumpWidget(wrap(const BookInfoScreen(book: orderBook)));
+      await tester.pumpAndSettle();
+
+      // ① 聚合行在屏（并入 ① 信息行位，参考只现一次）
+      expect(find.textContaining('9.9分 · 轻小说 · 51章'), findsOneWidget);
+      // ② 四按钮（卡内「查看目录」与面板目录行按钮各一处，取更靠上者=卡）
+      final yButtons = [
+        tester.getTopLeft(find.text('查看目录').first).dy,
+        tester.getTopLeft(find.text('查看目录').last).dy,
+      ].reduce((a, b) => a < b ? a : b);
+      // ③ 在读/最新/共N章三行块（U9 能力保留，置于四按钮之后）
+      final yReading = tester
+          .getTopLeft(find.textContaining('在读·第1章')).dy;
+      expect(find.textContaining('最新·第51章'), findsOneWidget);
+      expect(find.textContaining('共 51 章'), findsOneWidget);
+      // ④ 标签行（🏷️ 前缀连排，U11 移入面板首行：在读块之后、简介之前）
+      final yTags = tester.getTopLeft(find.text('🏷️ ')).dy;
+      // ⑤ 简介 / ⑥ 分组行 / 目录行（U12：分组/目录行置简介之后）
+      // 简介经 AnimatedCrossFade 双 Text 同位（折叠/展开各一，视觉同 y），取 .first
+      final yIntro = tester
+          .getTopLeft(find.textContaining('版块顺序验证简介正文。').first)
+          .dy;
+      final yGroup = tester.getTopLeft(find.textContaining('分组：')).dy;
+      final yToc = tester.getTopLeft(find.textContaining('目录：')).dy;
+
+      expect(yButtons, lessThan(yReading)); // U10：四按钮在读块之上
+      expect(yReading, lessThan(yTags)); // U10/U11
+      expect(yTags, lessThan(yIntro)); // U11：标签行简介之前
+      expect(yIntro, lessThan(yGroup)); // U12：分组行简介之后
+      expect(yGroup, lessThan(yToc));
+      expect(tester.takeException(), isNull);
+    });
+
     // [UI-fix v2.0.11 | 2026-08-10] 按书籍类型分流阅读器（对齐原版
     // BookInfoActivity.startReadActivity：audio→/audio、image→/reader-comic、
     // 文本→/reader）；bookType 为位标记（text=8/audio=32/image=64）— Reasonix

@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.279] - 2026-09-17
+
+### Fixed
+- [UI] 书籍详情页版块顺序对齐参考 08（台账 08「用户实测反馈批三 0917」U10-U12，版本 2.0.278+279 → 2.0.279+280，基准 `ref_20260914/08_book_info.png`）。根因 = 上批 U5/U9 分别补入聚合行与在读/最新块后，各自就近插入头部/面板，版块纵向顺序与参考错位（在读/最新沉于四按钮之上、标签行沉底、分组/目录行居前）。修：`book_info_screen_builders.part.dart` 按参考重排 CustomScrollView sliver 序——①信息聚合行（并入信息行、仅现一次，U5 能力保留）→ ②四按钮卡（已在书架/查看目录/书源/阅读记录）→ ③在读/最新/共N章三行块（U9 能力保留，移至按钮下方）→ ④标签行（🏷️ 前缀逗号连排，移入信息面板首行：在读块之后、简介之前）→ ⑤简介 → ⑥分组/目录行（upstream 能力保留，后移至简介之后）；头部收敛为两栏（封面+信息列），色彩仍走 `colorScheme` 槽位无硬编码
+
+### Test
+- `flutter analyze` 无问题（0）；`flutter test` 全过（1466，含新增版块顺序 widget 测试「四按钮<在读/最新<标签<简介<分组/目录行」按 y 坐标逐项断言）
+
+### Real device
+- 2.0.279+280 release APK 装 MuMu（192.168.1.19:5555），versionName=2.0.279（versionCode=280）校验通过；`scripts/parity_capture_ours.py --only 08 --out docs/parity_shots/ours_2.0.279` OK（`08_book_info.png`）；uiautomator dump 顺序断言（content-desc 节点顶边 y，证据 `_dump_08_u10.xml`）：①聚合行 y=1020 < **②四按钮「查看目录」卡 y=1110 < ③在读 y=1335 < 最新 y=1407 < 共N章 y=1497 < ④标签行 y=1635**（满足参考序：四按钮 y < 在读 y < 标签 y；⑤简介/⑥分组目录行随节点居后）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.278] - 2026-09-17
 
 ### Fixed
