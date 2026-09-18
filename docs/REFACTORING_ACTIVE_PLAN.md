@@ -163,6 +163,10 @@
   - **验证**：`cargo test --workspace` **exit 0 零失败**（parser 282 / ffi 358 / js 236·quickjs 531 / core 792 / db 302 / book 150）；`cargo clippy --workspace -- -D warnings` exit 0；`cargo fmt --check` 0 处；实机验证见 CHANGELOG [2.0.285]。
   - **顺带修复（非 P2-6 项）**：`legado-book` TXT 搜索测试临时文件名仅用时间戳，Windows 下 SystemTime 粒度约毫秒级会撞名 → 并行用例共用文件致 `test_search_case_insensitive` 偶发失败；改为时间戳 + 进程内原子序号。
 
+- **P2-7 本批实测新发现的两条**（开放，2026-09-18）：
+  - **(a) 网阅小说书源目录解析产出垃圾**：实机发现该书源的目录被解析成 **1 章**、章节名为网页文本（`斗罗大陆,唐家三少,斗罗大陆在线阅读,斗罗大…`），落库于 `chapters`（key=该书 bookUrl）。疑似该源 `ruleToc` 与响应形态不匹配（或 tocUrl 指向了 HTML 页而非目录接口）。**观测点**：2026-09-18 10:07 MuMu 实机（`.tmp/dbsrc/q7.db`：books 行 originName=📂网阅小说、chapters 仅 1 行）；本批修复后未再复现该状态（切回松鹤庭沐已恢复 712 章）。待用该源 + 真实响应离线复现后定性。
+  - **(b) CI quickjs 步骤偶发 SIGSEGV**：提交 `54993b6246` 的 Rust CI 首跑在 `Cargo test (quickjs)` 段进程级崩溃（`signal: 11, SIGSEGV`，无断言失败、崩溃前若干 quickjs 用例皆 ok），**重跑同一 job 即通过**；本批在 `legado-js` 新增 15 条测试（分派层 8 + 绑定级 7）提高了并行内存压力。本机（Windows）连跑两次 531 全过、无法复现，判定为 Linux 运行器环境相关的 flake。建议后续：（i）为该步骤评估固定 `--test-threads` 或串行化重（内存）用例；（ii）若复现，用 `RUST_BACKTRACE=1` + 逐用例二分定位。**注意**：此前排查 §三.9「内存限制测试」时记录了 Linux CI 才跑的沙箱安全线用例，本次崩溃与该类用例的关联性未确认。
+
 ### P3：功能补齐与卫生项（2026-08-22 开启）
 
 > P0/P1/P2 工程项全部关闭后的下一批。依据：AUDIT_FIX_ASSIGNMENT §2.1 旧阻塞项经复核——ruleSub FFI 已由 Task #89 交付（契约 §2.39，7 方法），剩余缺口为 **Flutter 管理页 UI**；另两项为 P2-5 审计标记的后续卫生项。
