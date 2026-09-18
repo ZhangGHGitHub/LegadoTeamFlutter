@@ -241,6 +241,33 @@ pub trait BookSourceFetcher: Send + Sync {
             .await
     }
 
+    /// 带变量表 + 已知目录页 + 书名提示的目录获取（详情再进入/U7 刷新变量链 P2-12，2026-09-18）
+    ///
+    /// 与 [`Self::get_chapters_with_vars`] 不同：第一个 URL 参数是**书籍详情页
+    /// 取址点**（bookUrl，其 `{{key}}` 模板与 `,{json}` 请求选项经变量表展开；
+    /// 已知目录页可为相对路径，相对详情页绝对化），并携带已知目录页与书名
+    /// 提示。原版 `WebBook.getChapterListAwait` 的目录请求 AnalyzeUrl 以
+    /// `ruleData = book` 构建，目录/详情地址模板用 book.variable 展开——
+    /// 详情再进入（U7 回书架再进详情）与 U7 目录刷新须把 DB 持久化的
+    /// `books.variable` 传入，否则换源变量链（`{{svid}}`/`{{tok}}` 等）展开
+    /// 为空 → 请求到错误地址（服务端 400）。
+    ///
+    /// 默认实现退化为 [`Self::get_chapters_with_vars_and_name_hint`]（Mock 等
+    /// 实现无需感知，既有的变量表/门控委托链不变）；真实实现覆盖以实现
+    /// 「已知目录页直抓 / 详情推导目录」完整逻辑。
+    async fn get_chapters_with_hints_and_vars(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        known_toc_url: Option<&str>,
+        book_name_hint: Option<&str>,
+        variables: &std::collections::HashMap<String, String>,
+    ) -> LegadoResult<Vec<WebChapter>> {
+        let _ = known_toc_url;
+        self.get_chapters_with_vars_and_name_hint(source, book_url, variables, book_name_hint)
+            .await
+    }
+
     /// 获取章节正文内容
     ///
     /// - `source`: 书源配置
@@ -485,6 +512,43 @@ impl<F: BookSourceFetcher> WebBookEngine<F> {
         }
         let mut chapters = self.fetcher.get_chapters(source, book_url).await?;
         // 确保章节序号正确（从 0 开始递增）
+        for (i, ch) in chapters.iter_mut().enumerate() {
+            ch.index = i as i32;
+        }
+        Ok(chapters)
+    }
+
+    /// 带变量表 + 已知目录页 + 书名提示的目录获取（详情再进入/U7 刷新变量链 P2-12，2026-09-18）
+    ///
+    /// 委托 fetcher 的 [`BookSourceFetcher::get_chapters_with_hints_and_vars`]，
+    /// 章节序号语义与 [`Self::get_chapters`] 一致（从 0 重编号）。变量表为
+    /// DB `books.variable`（用户持久化值）经 `chapter_url_variables` 展开的
+    /// HashMap，使详情/目录地址的 `{{key}}` 模板与 `,{json}` 请求选项被填充
+    /// （与换源后变量链一致；DB 值 > 书源 `@put` 默认导出——用户显式设置
+    /// 优先，P1-1 同源理由）。
+    pub async fn get_chapters_with_hints_and_vars(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        known_toc_url: Option<&str>,
+        book_name_hint: Option<&str>,
+        variables: &std::collections::HashMap<String, String>,
+    ) -> LegadoResult<Vec<WebChapter>> {
+        if book_url.is_empty() {
+            return Err(LegadoError::Parser(
+                "书籍详情页地址为空，无法获取目录（该书源搜索/发现规则未解析出详情链接）".into(),
+            ));
+        }
+        let mut chapters = self
+            .fetcher
+            .get_chapters_with_hints_and_vars(
+                source,
+                book_url,
+                known_toc_url,
+                book_name_hint,
+                variables,
+            )
+            .await?;
         for (i, ch) in chapters.iter_mut().enumerate() {
             ch.index = i as i32;
         }

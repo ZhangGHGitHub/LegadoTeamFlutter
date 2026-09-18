@@ -2,6 +2,21 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.290] - 2026-09-19
+
+### Fixed
+- [Rust] **换源后重进详情/目录不再丢书籍变量**（P2-12 的 C，属历史 P0 同型残留）：换源时写入的 `books.variable` 此前只在换源那一刻生效，「返回书架→重进详情」路径未读库内变量 → 详情/正文请求发出空参（实测 `/r1vb/detail?vid=`）。现按 bookUrl / 书籍页地址双路读 DB 变量并注入详情与目录抓取（FFI 签名零变更、Dart 无需传参），实机对照：`?vid=`（空）→ `?vid=VID123`，正文 `?tok=TK777`
+- [UI] **修复启动崩溃弹窗的崩溃循环**：旧实现用 State 自身 `context` 调 `showDialog`（那时 MaterialApp 尚未构建、上方无 Navigator）→ 每次启动抛 `Null check operator used on a null value`，弹窗永不显示且 `crash_log.txt` 被反复重写。改挂全局 `navigatorKey`；并修复连带问题：冷启动 `/welcome` 闪屏的 `pushReplacementNamed` 会把首帧弹窗一并替换 → 改为等闪屏退出后再弹（`NavigatorObserver.didChangeTop`）。实机：弹窗可见、点「确定」清除日志、重启不再弹
+- [Tool] 修复换源 e2e 夹具 `scripts/r1v_switch_server.py` 的 `log_event` 参数冲突（reject 分支抛异常、400 未发出，把"错误"表现成"超时挂起"）
+
+### Test
+- `cargo test --workspace` 全绿（ffi 368 / core 795 / db 308 / parser 288 / js 242 / server 171…）；`cargo clippy --workspace -- -D warnings` exit 0；`cargo fmt --check` 0 处；`flutter analyze` 0 问题；`flutter test` **1483 全过**（含新增启动弹窗 4 条）
+
+### Real device
+- 2.0.290 release（arm64/x86_64）装 MuMu：重进详情 `?vid=VID123`（修复前为空）、正文 `tok=TK777`；崩溃弹窗可点确定并清除、重启不复现；连续换源两次主链正常
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.289] - 2026-09-18
 
 ### Fixed

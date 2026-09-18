@@ -197,7 +197,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/r1vb/detail":
             if (q.get("vid") or [""])[0] != VID:
-                log_event("reject", kind="detail", got=(q.get("vid") or [""])[0])
+                # 注：log_event(kind, **fields) 首个形参即 kind，调用处须用
+                # target= 传端点名（kind= 会与形参冲突抛 TypeError → 400 发不出）
+                log_event("reject", target="detail", got=(q.get("vid") or [""])[0])
                 self._send(400, b"vid mismatch", "text/plain")
                 return
             body = (
@@ -210,14 +212,14 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/r1vb/toc":
             if (q.get("tok") or [""])[0] != TOK:
-                log_event("reject", kind="toc", got=(q.get("tok") or [""])[0])
+                log_event("reject", target="toc", got=(q.get("tok") or [""])[0])
                 self._send(400, b"tok mismatch", "text/plain")
                 return
             self._send(200, toc_html("r1vb"), "text/html; charset=utf-8")
             return
         if path == "/r1vb/content":
             if (q.get("tok") or [""])[0] != TOK:
-                log_event("reject", kind="content", got=(q.get("tok") or [""])[0])
+                log_event("reject", target="content", got=(q.get("tok") or [""])[0])
                 self._send(400, b"tok mismatch", "text/plain")
                 return
             self._send(200, content_html(int((q.get("i") or ["0"])[0]), "R1VB"),

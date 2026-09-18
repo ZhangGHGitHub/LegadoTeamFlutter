@@ -38,22 +38,136 @@ class LegadoApp extends ConsumerStatefulWidget {
     this.lastCrashLog,
   });
 
+  /// 弹出「上次运行发生崩溃」提示弹窗（[P2-13 2026-09-18]）。
+  ///
+  /// 弹窗必须挂在 [MaterialApp.navigatorKey]（即
+  /// [PlatformBridgeService.navigatorKey]，见 [build]）的 **Navigator 自身
+  /// context** 上，而不是构建 [MaterialApp] 的 State 的 context：
+  /// 后者是 Navigator 的祖先，`showDialog` → `Navigator.of(context)` 只能
+  /// **向上** 查找，其上方没有 Navigator（Navigator 是它的后代）→
+  /// `Null check operator used on a null value`。该异常被 main.dart 注册的
+  /// `FlutterError.onError` 捕获后 `CrashLogService.logError` 重写
+  /// `crash_log.txt` 并重新置崩溃标记 → 下次启动再次弹窗再次抛异常，
+  /// 形成启动崩溃循环（crash_log.txt 每次启动都被刷新）。
+  ///
+  /// 首帧渲染完成时 [MaterialApp] 已构建、Navigator 已挂载，
+  /// `navigatorKey.currentContext` 非空，`showDialog` 自该 context 向上
+  /// 即可命中本 Navigator（与 [PlatformBridgeService] L661、
+  /// [DeepLinkService] attach 模式同源）。
+  ///
+  /// 返回是否已调度弹窗；Navigator 尚未装配（如宿主未挂
+  /// [PlatformBridgeService.navigatorKey]）时静默跳过本轮——崩溃日志
+  /// 仍留在磁盘文件中，下次启动继续提示，不丢数据、不抛异常。
+  static bool showCrashLogDialog(String crashLog) {
+    final navContext = PlatformBridgeService.navigatorKey.currentContext;
+    if (navContext == null) return false;
+    CrashLogDialog.show(navContext, crashLog);
+    return true;
+  }
+
+  /// 调度「上次崩溃」弹窗：等冷启动闪屏退出后再弹出（P2-13b）。
+  ///
+  /// 冷启动固定经闪屏路由（main.dart `initialRoute = AppRoutes.welcome`），
+  /// [WelcomeScreen] 延时后经 `pushReplacementNamed(home)` 退出闪屏——
+  /// pushReplacement 替换的是**当时栈顶路由**：若弹窗已在首帧 postFrame
+  /// 弹出（栈顶），闪屏退出时弹窗路由会被一并替换掉，用户看不到提示
+  /// （且「确定」不会被点按，crash_log 永不清除，每次启动重复提示）。
+  ///
+  /// 因此经 [TopRouteWatcher]（须已注册进
+  /// `MaterialApp(navigatorObservers:)`，见 [_LegadoAppState.build]）监听
+  /// 栈顶路由变化：确认栈顶不再是 [AppRoutes.welcome] 即弹窗。
+  /// 当前 SDK 的 `NavigatorState` 不再公开 `routes` 列表，
+  /// `NavigatorObserver.didChangeTop` 是受支持的栈顶路由观察 API。
+  /// 若 [maxFrames] 帧内未观察到「已非闪屏」（60Hz 下 90 帧≈1.5s，
+  /// 覆盖闪屏最大 800ms 延时 + 设置读取耗时；或 watcher 未注册）则
+  /// 兜底弹出——崩溃日志仍在磁盘文件中，下次启动继续提示，
+  /// 不丢数据、不抛异常。
+  ///
+  /// [isAlive] 供宿主 State 传入 `() => mounted`：State 已卸载即停止
+  /// 重试，避免对已销毁界面弹窗。
+  static void scheduleCrashLogDialog(
+    String crashLog,
+    bool Function() isAlive, {
+    TopRouteWatcher? watcher,
+    int maxFrames = 90,
+  }) {
+    final probe = watcher ?? TopRouteWatcher();
+    var shown = false;
+
+    void attempt(int frame) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!isAlive() || shown) return;
+        if (probe.didObserveTopChange &&
+            probe.topRouteName != AppRoutes.welcome) {
+          // 栈顶已确认非闪屏（含无名字路由）→ 弹出
+          shown = true;
+          showCrashLogDialog(crashLog);
+          return;
+        }
+        if (frame < maxFrames) {
+          attempt(frame + 1);
+        } else {
+          // 超时兜底：事件未观察到（如 watcher 未注册）或闪屏未退出
+          shown = true;
+          showCrashLogDialog(crashLog);
+        }
+      });
+    }
+
+    attempt(0);
+  }
+
   @override
   ConsumerState<LegadoApp> createState() => _LegadoAppState();
 }
 
+/// 栈顶路由观察器（P2-13b 崩溃弹窗调度的一次性事件源）
+///
+/// 经 `MaterialApp(navigatorObservers:)` 注册；栈顶路由变化时
+/// [didChangeTop]（当前 SDK 的 `NavigatorObserver` 受支持 API——
+/// `NavigatorState` 不再公开 `routes` 列表）更新 [topRouteName]。
+/// [didObserveTopChange] 用于区分「已观察到栈顶（无名路由为 null）」
+/// 与「尚未观察到任何栈顶变化事件」。
+class TopRouteWatcher extends NavigatorObserver {
+  /// 自注册以来是否已观察到栈顶路由变化事件
+  bool didObserveTopChange = false;
+
+  /// 最近观察到的栈顶路由名（路由无名时为 `null`）
+  String? topRouteName;
+
+  @override
+  void didChangeTop(Route<dynamic> topRoute, Route<dynamic>? previousTopRoute) {
+    didObserveTopChange = true;
+    topRouteName = topRoute.settings.name;
+  }
+}
+
 class _LegadoAppState extends ConsumerState<LegadoApp> {
+  /// [P2-13b] 崩溃弹窗调度用的栈顶路由观察器（注册进
+  /// `MaterialApp(navigatorObservers:)`，见 [build]）
+  final TopRouteWatcher _topRouteWatcher = TopRouteWatcher();
+
   @override
   void initState() {
     super.initState();
     // 系统栏样式由 [SystemBarBinder] 按偏好与主题统一驱动
     // 首帧渲染后检查上次崩溃日志并弹窗提示
+    // [P2-13 2026-09-18] 弹窗上下文改用全局 Navigator（见
+    // [showCrashLogDialog]）：本 State 自身 context 是 MaterialApp 的
+    // **祖先**，showDialog 向上找 Navigator 时其上方并无 Navigator
+    // （Navigator 是它的后代）→ 抛异常 → FlutterError.onError 重写
+    // crash_log.txt 并置崩溃标记 → 下次启动再弹再抛，形成启动崩溃循环。
+    // [P2-13b 2026-09-19] 实机验证发现冷启动闪屏 /welcome 退出时
+    // pushReplacementNamed 会连同栈顶的弹窗路由一起替换掉（弹窗一闪
+    // 即逝），故经 [scheduleCrashLogDialog] + [TopRouteWatcher]（didChangeTop
+    // 事件驱动 + 90 帧超时兜底）确认闪屏退出后再弹；watcher 已在下方
+    // MaterialApp.navigatorObservers 注册。
     if (widget.lastCrashLog != null && widget.lastCrashLog!.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) {
-          CrashLogDialog.show(context, widget.lastCrashLog!);
-        }
-      });
+      LegadoApp.scheduleCrashLogDialog(
+        widget.lastCrashLog!,
+        () => mounted,
+        watcher: _topRouteWatcher,
+      );
     }
     // [UI-fix v2.0.3 | 2026-08-08] 定时任务应用内调度器启动装配
     //（Task #146，对齐原版 App.kt 启动时 AutoTaskScheduler.refresh；
@@ -148,7 +262,10 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
       // [UI-FIX v2.0.7 | 2026-08-09] 全局路由观察器（Task #26）：目录页等
       // 「返回重现需刷新」的页面经 RouteAware 订阅，从阅读器返回时
       // 即时刷新缓存云图标/当前章节（对齐原版 SAVE_CONTENT 事件刷新）
-      navigatorObservers: [appRouteObserver],
+      // [P2-13b 2026-09-19] _topRouteWatcher：崩溃弹窗调度器（见
+      // [LegadoApp.scheduleCrashLogDialog]）监听 didChangeTop，确认冷启动
+      // 闪屏 /welcome 退出（pushReplacementNamed 换栈顶）后才弹窗
+      navigatorObservers: [appRouteObserver, _topRouteWatcher],
       debugShowCheckedModeBanner: false,
       theme: lightTheme,
       darkTheme: darkTheme,

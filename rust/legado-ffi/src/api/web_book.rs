@@ -324,13 +324,25 @@ fn lookup_book_meta_for_chapter(chapter_url: &str) -> Option<BookMeta> {
 /// 优先级：DB（用户显式设置、持久）> `@put` 导出（书源规则默认值）——
 /// 用户设置应覆盖书源默认。
 ///
+/// [P2-12] 入参为「书籍页取址点」（Dart `BookOpenUtils.bookFetchUrl` /
+/// Rust `book_page_fetch_url` 的产物：originBookUrl 优先、空回退 bookUrl）：
+/// 未换源书 = bookUrl 原样（`find_by_url` 直接命中）；换源后 = originBookUrl
+/// （稳定主键 bookUrl 仍为旧源 URL，`find_by_url` 漏查 → 按
+/// `find_by_origin_book_url` 反查补上）。
+///
 /// DB 未初始化 / 无此书行 / 值为空 → None（优雅降级：FFI 详情/目录链路
 /// 在未接库时依旧可用），调用方回退 `@put` 导出值。
 fn db_book_variable(book_url: &str) -> Option<String> {
     crate::db_state::with_database(|db| {
-        Ok(legado_db::BookRepository::new(db.connection())
-            .find_by_url(book_url)?
-            .and_then(|b| b.variable))
+        let repo = legado_db::BookRepository::new(db.connection());
+        // 两路反查：先按稳定主键 bookUrl（未换源书直接命中），再按
+        // originBookUrl（换源后书籍：Dart 取址点以 originBookUrl 优先传入，
+        // 稳定主键 bookUrl 仍为旧源 URL，单路 find_by_url 会漏查）
+        let found = match repo.find_by_url(book_url)? {
+            Some(book) => Some(book),
+            None => repo.find_by_origin_book_url(book_url)?,
+        };
+        Ok(found.and_then(|b| b.variable))
     })
     .ok()
     .flatten()
@@ -880,6 +892,29 @@ impl RealBookSourceFetcher {
             variable: analyzer.export_variables_json(),
         }
     }
+
+    /// 获取章节列表（可选传入已知 tocUrl / 书名，跳过重复拉详情页）
+    ///
+    /// 变量表为空（搜索候选预览路径不携变量）；变量链（DB `books.variable`）
+    /// 走 trait 方法 [`BookSourceFetcher::get_chapters_with_hints_and_vars`]
+    /// （P2-12，2026-09-18 自第二具体 impl 块提升为 trait 方法后，本方法
+    /// 恢复为薄委托）。
+    pub async fn get_chapters_with_hints(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        known_toc_url: Option<&str>,
+        book_name_hint: Option<&str>,
+    ) -> LegadoResult<Vec<WebChapter>> {
+        self.get_chapters_with_hints_and_vars(
+            source,
+            book_url,
+            known_toc_url,
+            book_name_hint,
+            &std::collections::HashMap::new(),
+        )
+        .await
+    }
 }
 
 impl Default for RealBookSourceFetcher {
@@ -1390,28 +1425,12 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         Ok(content)
     }
-}
 
-impl RealBookSourceFetcher {
-    /// 获取章节列表（可选传入已知 tocUrl / 书名，跳过重复拉详情页）
-    pub async fn get_chapters_with_hints(
-        &self,
-        source: &BookSource,
-        book_url: &str,
-        known_toc_url: Option<&str>,
-        book_name_hint: Option<&str>,
-    ) -> LegadoResult<Vec<WebChapter>> {
-        self.get_chapters_with_hints_and_vars(
-            source,
-            book_url,
-            known_toc_url,
-            book_name_hint,
-            &std::collections::HashMap::new(),
-        )
-        .await
-    }
-
-    /// 带变量表的目录获取核心（换源变量链 R1，2026-09-06）
+    /// 带变量表的目录获取核心（换源变量链 R1，2026-09-06；trait 提升 P2-12，2026-09-18）
+    ///
+    /// 真实实现覆盖 [`BookSourceFetcher::get_chapters_with_hints_and_vars`]
+    /// （原私有具体方法，2026-09-18 提升为 trait 方法使 `webbook_chapters`
+    /// 规则路径与 `refresh_toc` 能经泛型/引擎注入 DB `books.variable`）。
     ///
     /// 对齐原版 getChapterListAwait：目录/详情请求 AnalyzeUrl 以 `ruleData = book`
     /// 构建（WebBook.kt:312-318），tocUrl/bookUrl 的 `{{key}}` 模板与 `,{json}`
@@ -1517,7 +1536,9 @@ impl RealBookSourceFetcher {
         record_chapter_list_cache(book_url, &toc_url, &book_name, &book_author, &chapters);
         Ok(chapters)
     }
+}
 
+impl RealBookSourceFetcher {
     /// [方案 A 2026-09-17] 已知目录页路径（带变量表）：入参 `toc_url` 是
     /// **已解析的真实目录页地址**（换源 2a 详情解析出的 toc_url；目录在
     /// 详情页时可传详情 URL）。
@@ -3252,6 +3273,27 @@ pub fn webbook_search(source_json: &str, query: &str, page: i32) -> LegadoResult
     serde_json::to_string(&results).map_err(LegadoError::Serialization)
 }
 
+/// webbook_info 核心（P2-12 变量链，2026-09-18；生产入口 [`webbook_info`]
+/// 构建真实 fetcher 后委托本函数，单测可注入脚本化 fetcher）
+///
+/// 变量链：详情请求模板（bookUrl 的 `{{key}}` 与 `,{json}` 请求选项）回读
+/// DB `books.variable`（`db_book_variable` 两路查找：bookUrl →
+/// originBookUrl，兼容换源后 Dart 以 originBookUrl 作为取址点传入）。
+/// 优先级：DB 持久化值（用户显式设置，换源时候选 ⊕ 详情导出已合并落库）
+/// 覆盖书源 `@put` 默认导出——与换源链 P1-1 理由一致：用户显式值优先。
+/// 原 get_book_info 链末端即 `get_book_info_with_existing_and_vars(…, 空表)`，
+/// 故仅补变量表，其余语义（can_re_name=true / 空既有名）不变。
+async fn webbook_info_with_fetcher<F: BookSourceFetcher>(
+    source: &BookSource,
+    book_url: &str,
+    fetcher: &F,
+) -> LegadoResult<WebBookInfo> {
+    let variables = chapter_url_variables(db_book_variable(book_url).as_deref());
+    fetcher
+        .get_book_info_with_existing_and_vars(source, book_url, true, "", "", &variables)
+        .await
+}
+
 /// 获取书籍详情
 ///
 /// `source_json` — BookSource JSON 字符串
@@ -3308,10 +3350,11 @@ pub fn webbook_info(source_json: &str, book_url: &str) -> LegadoResult<String> {
         return serde_json::to_string(&info).map_err(LegadoError::Serialization);
     }
 
-    // 规则书源路径
-    let engine = build_engine()?;
+    // 规则书源路径（P2-12 变量链见 webbook_info_with_fetcher；
+    // 注：JS 书源路径（上方早退分支）marshaller 不透出 variable，维持现状）
+    let fetcher = RealBookSourceFetcher::new()?;
     let info: WebBookInfo =
-        runtime::block_on(async { engine.get_book_info(&source, book_url).await })?;
+        runtime::block_on(webbook_info_with_fetcher(&source, book_url, &fetcher))?;
     // P2-9 ②：记录 book 元信息（目录/正文阶段 `book` 绑定扩面反查用）
     record_book_meta_from_info(book_url, &info);
     serde_json::to_string(&info).map_err(LegadoError::Serialization)
@@ -3383,13 +3426,43 @@ pub fn webbook_chapters(
     }
 
     // 规则书源路径
+    // 规则书源路径（P2-12 变量链见 webbook_chapters_with_fetcher）
     let fetcher = RealBookSourceFetcher::new()?;
-    let chapters: Vec<WebChapter> = runtime::block_on(async {
-        fetcher
-            .get_chapters_with_hints(&source, book_url, known_toc_opt, name_hint_opt)
-            .await
-    })?;
+    let chapters: Vec<WebChapter> = runtime::block_on(webbook_chapters_with_fetcher(
+        &source,
+        book_url,
+        known_toc_opt,
+        name_hint_opt,
+        &fetcher,
+    ))?;
     serde_json::to_string(&chapters).map_err(LegadoError::Serialization)
+}
+
+/// webbook_chapters 核心（P2-12 变量链，2026-09-18；生产入口
+/// [`webbook_chapters`] 构建真实 fetcher 后委托本函数，单测可注入脚本化
+/// fetcher）
+///
+/// 变量链：同 webbook_info——目录/详情请求模板经 DB `books.variable`
+/// （两路查找 bookUrl → originBookUrl）展开，换源后重进详情拉目录亦带
+/// 变量（与换源后语义一致；DB 值 > `@put` 默认导出）。
+/// `get_chapters_with_hints` 即本方法空变量表特例，仅补变量表。
+async fn webbook_chapters_with_fetcher<F: BookSourceFetcher>(
+    source: &BookSource,
+    book_url: &str,
+    known_toc_url: Option<&str>,
+    book_name_hint: Option<&str>,
+    fetcher: &F,
+) -> LegadoResult<Vec<WebChapter>> {
+    let variables = chapter_url_variables(db_book_variable(book_url).as_deref());
+    fetcher
+        .get_chapters_with_hints_and_vars(
+            source,
+            book_url,
+            known_toc_url,
+            book_name_hint,
+            &variables,
+        )
+        .await
 }
 
 /// 获取章节内容
@@ -6502,5 +6575,303 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
         // 无字数文本不匹配
         assert!(re.captures("2026-01-01").is_none());
         assert!(re.captures("").is_none());
+    }
+
+    // ─── [P2-12] 换源书重进详情/目录刷新变量链回归（2026-09-18） ─────────────
+
+    /// [P2-12] 脚本化详情/目录 fetcher：捕获调用方传入的变量表，并按真实
+    /// 请求构造（`AnalyzeUrl::parse`，`{{key}}` 简单名直接经变量表解析，
+    /// 见 `replace_inner_expressions`）展开请求模板、记录最终请求 URL——
+    /// 用于断言「DB books.variable 流入了请求」（修复前变量表恒空 →
+    /// `?vid=` 空值 → 服务端 400 的回归点）
+    struct P12VarFetcher {
+        vars_received:
+            std::sync::Arc<std::sync::Mutex<Vec<std::collections::HashMap<String, String>>>>,
+        detail_urls: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+        toc_urls: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl BookSourceFetcher for P12VarFetcher {
+        async fn search(
+            &self,
+            _source: &BookSource,
+            _query: &str,
+            _page: i32,
+        ) -> LegadoResult<Vec<WebSearchResult>> {
+            Err(LegadoError::Internal("mock: search unused".into()))
+        }
+
+        async fn get_book_info(
+            &self,
+            _source: &BookSource,
+            _book_url: &str,
+        ) -> LegadoResult<WebBookInfo> {
+            Err(LegadoError::Internal("mock: get_book_info unused".into()))
+        }
+
+        async fn get_chapters(
+            &self,
+            _source: &BookSource,
+            _book_url: &str,
+        ) -> LegadoResult<Vec<WebChapter>> {
+            Err(LegadoError::Internal("mock: get_chapters unused".into()))
+        }
+
+        async fn get_content(
+            &self,
+            _source: &BookSource,
+            _chapter: &WebChapter,
+        ) -> LegadoResult<String> {
+            Err(LegadoError::Internal("mock: content unused".into()))
+        }
+
+        /// 详情变量表路径：仿真实请求构造——bookUrl 模板经变量表展开
+        async fn get_book_info_with_existing_and_vars(
+            &self,
+            _source: &BookSource,
+            book_url: &str,
+            _can_re_name: bool,
+            _existing_name: &str,
+            _existing_author: &str,
+            variables: &std::collections::HashMap<String, String>,
+        ) -> LegadoResult<WebBookInfo> {
+            self.vars_received
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(variables.clone());
+            let req = AnalyzeUrl::parse(book_url, variables, 1)
+                .map_err(|e| LegadoError::Internal(format!("详情 URL 解析失败: {e}")))?;
+            self.detail_urls
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(req.url().to_string());
+            Ok(WebBookInfo {
+                name: "R1换源验证书".to_string(),
+                author: "测试".to_string(),
+                cover_url: None,
+                intro: None,
+                categories: Vec::new(),
+                last_chapter: None,
+                book_url: book_url.to_string(),
+                toc_url: String::new(),
+                word_count: None,
+                kind: None,
+                variable: None,
+            })
+        }
+
+        /// 目录变量表路径：已知目录页（或回退详情 URL）模板经变量表展开
+        async fn get_chapters_with_hints_and_vars(
+            &self,
+            _source: &BookSource,
+            book_url: &str,
+            known_toc_url: Option<&str>,
+            _book_name_hint: Option<&str>,
+            variables: &std::collections::HashMap<String, String>,
+        ) -> LegadoResult<Vec<WebChapter>> {
+            self.vars_received
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(variables.clone());
+            let template = known_toc_url.unwrap_or(book_url);
+            let req = AnalyzeUrl::parse(template, variables, 1)
+                .map_err(|e| LegadoError::Internal(format!("目录 URL 解析失败: {e}")))?;
+            self.toc_urls
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(req.url().to_string());
+            Ok(vec![WebChapter {
+                index: 0,
+                title: "第一章".to_string(),
+                url: format!("{}/c1", req.url()),
+                is_vip: false,
+                is_volume: false,
+                variable: None,
+                word_count: None,
+            }])
+        }
+    }
+
+    /// [P2-12] 换源书「回书架 → 重进详情/刷新目录」：请求模板必须用 DB
+    /// `books.variable` 展开（回归：修复前重进/U7 路径变量表恒空 →
+    /// `{{svid}}`/`{{tok}}` 展开为空 → mock 服务端对 `?vid=`/`?tok=` 400，
+    /// 而换源主链（候选 ⊕ 详情导出）正确）
+    ///
+    /// 唯一播种点是 **DB 行**（生产数据源本身）：播种换源后书籍行
+    /// （bookUrl = 旧源稳定主键、originBookUrl = 新源取址点、variable =
+    /// 候选 ⊕ 详情导出合并持久值），请求链路的变量表不经手工注入——全部
+    /// 来自 `db_book_variable` 两路查找（bookUrl → originBookUrl）的回读。
+    #[test]
+    fn test_p212_reenter_detail_expands_db_variables() {
+        use std::sync::{Arc, Mutex};
+
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        let old_book_url = "https://old-src.example.com/r1vb/detail?vid={{svid}}";
+        let fetch_url = "https://r1vb.local/r1vb/detail?vid={{svid}}"; // originBookUrl（Dart 取址点）
+        let toc_template = "https://r1vb.local/r1vb/toc?tok={{tok}}";
+        let var_json = r#"{"svid":"VID123","tok":"TK777"}"#;
+
+        // 播种换源后书籍行（唯一播种点；originBookUrl 非空 = 已换源）
+        crate::db_state::with_database(|db| {
+            db.connection()
+                .execute(
+                    "INSERT INTO books (bookUrl, name, originBookUrl, tocUrl, variable)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![
+                        old_book_url,
+                        "R1换源验证书",
+                        fetch_url,
+                        toc_template,
+                        var_json
+                    ],
+                )
+                .map_err(|e| LegadoError::Database(e.to_string()))
+        })
+        .expect("插入换源书籍行");
+
+        // 两路反查：取址点（originBookUrl）命中 + 稳定主键（bookUrl）命中
+        assert_eq!(
+            db_book_variable(fetch_url).as_deref(),
+            Some(var_json),
+            "换源书按取址点（originBookUrl）须命中 books.variable"
+        );
+        assert_eq!(
+            db_book_variable(old_book_url).as_deref(),
+            Some(var_json),
+            "稳定主键（bookUrl）亦须命中 books.variable"
+        );
+
+        let source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": "https://r1vb.local",
+            "bookSourceName": "P12变量链测试源",
+        }))
+        .expect("source json");
+
+        let vars_received = Arc::new(Mutex::new(Vec::new()));
+        let detail_urls = Arc::new(Mutex::new(Vec::new()));
+        let toc_urls = Arc::new(Mutex::new(Vec::new()));
+        let fetcher = P12VarFetcher {
+            vars_received: Arc::clone(&vars_received),
+            detail_urls: Arc::clone(&detail_urls),
+            toc_urls: Arc::clone(&toc_urls),
+        };
+
+        // ① 重进详情（U7 取址点 = originBookUrl）：变量表来自 DB 回读
+        let info = runtime::block_on(webbook_info_with_fetcher(&source, fetch_url, &fetcher))
+            .expect("重进详情应成功");
+        assert_eq!(info.name, "R1换源验证书");
+
+        let detail = detail_urls
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        assert_eq!(
+            detail,
+            vec!["https://r1vb.local/r1vb/detail?vid=VID123".to_string()],
+            "详情请求模板应按 DB 变量展开（修复前回归：?vid= 为空）"
+        );
+        let vars = vars_received
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        assert_eq!(vars.len(), 1, "详情请求应恰好传入一次变量表");
+        assert_eq!(
+            vars[0].get("svid").map(String::as_str),
+            Some("VID123"),
+            "svid 应自 DB books.variable 回读（请求链无手工注入）"
+        );
+        assert_eq!(vars[0].get("tok").map(String::as_str), Some("TK777"));
+
+        // ② 重拉目录（已知目录页模板含 {{tok}}）
+        let chapters = runtime::block_on(webbook_chapters_with_fetcher(
+            &source,
+            fetch_url,
+            Some(toc_template),
+            Some("R1换源验证书"),
+            &fetcher,
+        ))
+        .expect("目录抓取应成功");
+        assert_eq!(chapters.len(), 1, "mock 目录应解析 1 章");
+
+        let toc = toc_urls.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        assert_eq!(
+            toc,
+            vec!["https://r1vb.local/r1vb/toc?tok=TK777".to_string()],
+            "目录请求模板应按 DB 变量展开（修复前回归：?tok= 为空）"
+        );
+
+        // 清理：共享内存库，删除本用例插入的行，防跨测试污染
+        crate::db_state::with_database(|db| {
+            db.connection()
+                .execute(
+                    "DELETE FROM books WHERE bookUrl = ?1",
+                    rusqlite::params![old_book_url],
+                )
+                .map_err(|e| LegadoError::Database(e.to_string()))
+        })
+        .expect("清理本用例插入的 books 行");
+    }
+
+    /// [P2-12] 未换源书：取址点即 bookUrl（`find_by_url` 直接命中），
+    /// 变量表同样来自 DB `books.variable` 回读（bookUrl 模板含 `{{key}}`
+    /// 的存量书籍：重进详情/目录刷新须携 DB 变量，行为与换源书一致）
+    #[test]
+    fn test_p212_unswitched_book_route_hits_by_book_url() {
+        use std::sync::{Arc, Mutex};
+
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        let book_url = "https://plain.example.com/d/42?sid={{sid}}";
+        let var_json = r#"{"sid":"S999"}"#;
+
+        crate::db_state::with_database(|db| {
+            db.connection()
+                .execute(
+                    "INSERT INTO books (bookUrl, name, variable) VALUES (?1, ?2, ?3)",
+                    rusqlite::params![book_url, "未换源变量书", var_json],
+                )
+                .map_err(|e| LegadoError::Database(e.to_string()))
+        })
+        .expect("插入未换源书籍行");
+
+        // bookUrl 路命中（originBookUrl 为空的存量书）
+        assert_eq!(db_book_variable(book_url).as_deref(), Some(var_json));
+
+        let source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": "https://plain.example.com",
+            "bookSourceName": "P12未换源测试源",
+        }))
+        .expect("source json");
+
+        let detail_urls = Arc::new(Mutex::new(Vec::new()));
+        let fetcher = P12VarFetcher {
+            vars_received: Arc::new(Mutex::new(Vec::new())),
+            detail_urls: Arc::clone(&detail_urls),
+            toc_urls: Arc::new(Mutex::new(Vec::new())),
+        };
+        let info = runtime::block_on(webbook_info_with_fetcher(&source, book_url, &fetcher))
+            .expect("未换源书重进详情应成功");
+        assert_eq!(info.name, "R1换源验证书", "mock 固定返回，仅验证链路打通");
+
+        let detail = detail_urls
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        assert_eq!(
+            detail,
+            vec!["https://plain.example.com/d/42?sid=S999".to_string()],
+            "未换源书详情模板应经 find_by_url 路命中 DB 变量展开"
+        );
+
+        crate::db_state::with_database(|db| {
+            db.connection()
+                .execute(
+                    "DELETE FROM books WHERE bookUrl = ?1",
+                    rusqlite::params![book_url],
+                )
+                .map_err(|e| LegadoError::Database(e.to_string()))
+        })
+        .expect("清理本用例插入的 books 行");
     }
 }

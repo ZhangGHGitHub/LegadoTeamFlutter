@@ -44,6 +44,40 @@ impl<'a> BookRepository<'a> {
         }
     }
 
+    /// 按 originBookUrl 反查书籍（[P2-12] 换源后变量/取址反查）
+    ///
+    /// 换源（R1）事务将当前书源详情页 URL 写入 `originBookUrl`，而稳定主键
+    /// `bookUrl` 保持旧源 URL 不变；因此换源后按「书籍页取址点」（originBookUrl
+    /// 优先、空回退 bookUrl，见 `Book::book_page_fetch_url`）直查 `find_by_url`
+    /// 会漏掉已换源书籍。本方法按 originBookUrl 反查补上这一路：详情/目录
+    /// 请求读回 DB `books.variable`（用户持久化变量）参与 `{{key}}` 模板展开
+    /// 时，先 find_by_url（未换源书）、再 find_by_origin_book_url（换源书）。
+    pub fn find_by_origin_book_url(&self, origin_book_url: &str) -> LegadoResult<Option<Book>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT bookUrl, tocUrl, origin, originName, name, author, kind, customTag,
+                        coverUrl, customCoverUrl, intro, customIntro, charset, type,
+                        \"group\", latestChapterTitle, latestChapterTime, lastCheckTime,
+                        lastCheckCount, totalChapterNum, durChapterTitle, durChapterIndex,
+                        durVolumeIndex, chapterInVolumeIndex, durChapterPos, durChapterTime,
+                        wordCount, canUpdate, \"order\", originOrder, variable, readConfig, syncTime,
+                        infoHtml, tocHtml, downloadUrls, coverOrigin, originBookUrl
+                 FROM books WHERE originBookUrl = ?1",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+
+        let mut rows = stmt
+            .query_map(params![origin_book_url], row_to_book)
+            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?;
+
+        match rows.next() {
+            Some(Ok(book)) => Ok(Some(book)),
+            Some(Err(e)) => Err(LegadoError::Database(format!("行解析失败: {e}"))),
+            None => Ok(None),
+        }
+    }
+
     /// 按名称和作者查询
     pub fn find_by_name_author(&self, name: &str, author: &str) -> LegadoResult<Option<Book>> {
         let mut stmt = self

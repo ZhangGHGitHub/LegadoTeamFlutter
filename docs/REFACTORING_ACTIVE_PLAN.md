@@ -202,10 +202,15 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **[复审新增] P1-1 首次详情解析无 DB 兜底**：`detail_book_binding` 解析期只查 meta 缓存 → 进程内对该 bookUrl 的**首次**详情解析取不到 DB 用户变量（目录/正文/第二次详情起可达）。若要让「首次打开即生效」成立需在该处补 DB 兜底（注意 `book_binding_expr(Some(meta))` 会忽略 `fallback_name`，需保留 changeSource 保名语义）。
   - **[复审新增 P3] DB 变量被清空后缓存旧值不被覆盖**（`merge_insert` 仅 Some 覆盖）→ 陈旧窗口持续到缓存淘汰。
 
-- **P2-12 本批实机验收新发现（3 条）**（开放，2026-09-19）：
+- **P2-12 本批实机验收新发现（3 条）**（**已关闭 2026-09-19**）：(C) 重进/U7 路径未展开 `books.variable` → Rust 侧按 bookUrl/书籍页地址双路读 DB 变量并注入详情/目录抓取（FFI 签名零变更）；实机前后：`/r1vb/detail?vid=`（空）→ `?vid=VID123`，正文 `/r1vb/content?i=0&tok=TK777`。(A) CrashLogDialog 启动崩溃循环 → 改挂 `navigatorKey`（+ 新发现的 A2：冷启动 `/welcome` 闪屏 `pushReplacementNamed` 会把首帧弹窗一起替换，改由 `NavigatorObserver.didChangeTop` 等闪屏退出再弹）；实机：清除后重启不再重写日志。(B) 夹具 `log_event` 参数冲突 → 修 + 自测 400 链路。门禁：`cargo test --workspace` 368/795/308/288/242… 全 0 failed、clippy/fmt 0、`flutter analyze` 0、`flutter test` 1483 全过。历史记录：
   - **(C)【优先】U7/重进详情路径未展开 `books.variable`**：实机（R1 夹具）换源 2 后 `books.variable = {"svid":"VID123","tok":"TK777"}` 已落库，但「回书架→重进详情」发出的是 `/r1vb/detail?vid=`（**空 vid**，server log ts1789755251.038）——期望 `/r1vb/detail?vid=VID123`。换源主链（候选 ⊕ 详情导出合并）已修，**重进/U7 路径疑似未读 `books.variable` 或走不同展开入口**；本次被「DB 目录缓存 + 夹具挂起」掩盖，真实源上会 400/详情失败。属历史 P0 的同型残留。
   - **(A) CrashLogDialog 启动崩溃循环（既有）**：`flutter_legado/lib/app.dart:51-56` 在 `postFrameCallback` 里 `CrashLogDialog.show(context, …)`，而 `LegadoApp` 在自身 `build()`（app.dart:143）内才构建 MaterialApp → State 的 context 无 Navigator 祖先 → `Null check operator used on a null value`（`crash_log_dialog.dart:19-25` 的 `showDialog`→`Navigator.of(context)`）。后果：崩溃日志弹窗永不显示，且 `crash_log.txt` 每次启动被重写时间戳（本会话起点即观察到 20:11/20:32 两条同栈记录）。修法：把弹窗挂到 MaterialApp 之后（如 `builder` 内的独立 Navigator/`addPostFrameCallback` 里用 `navigatorKey.currentContext`），或直接去掉该弹窗仅保留日志。
   - **(B) 夹具脚本缺陷**：`scripts/r1v_switch_server.py:200/213/221` 以 `log_event("reject", kind="detail", …)` 调用 `def log_event(kind, **fields)` → `TypeError: multiple values for argument 'kind'` → reject 分支未发 400 而是抛异常挂起（curl HTTP:000）。后果：夹具的「错误/空变量」路径表现为超时而非 400，掩盖真实错误码。修法：去掉重复的关键字实参（或把位置参数改名）。
+
+- **P2-13 本批新登记（工具与既有项）**（开放，2026-09-19）：
+  - **【工具陷阱·优先】`flutter_legado/scripts/build-apk.ps1` 的 FFI 校验只比对 FRB 生成码内容哈希**：当 Rust 改动**不改变 FFI 导出面**（本次 (C) 修复即如此）时，校验判为「in sync」并**跳过 Rust 交叉编译 → APK 打包旧 `.so`**，导致实机验证假失败/假通过（本次已因此先验到一次假失败，靠手工强制 `build-android.ps1` 才修好）。建议：校验改为「比对 Rust 源码树指纹（含 `rust/**` 内容哈希或 `cargo build -p legado-ffi` 的产物时间戳/哈希）」，或在跳过前提示「检测到 rust 改动但 FFI 面未变，需显式 `-ForceRust`」。**在该修复前，凡改 Rust 必须手工先跑 `rust/scripts/build-android.ps1`。**
+  - debug 模式既有 `RenderFlex overflow`（右溢 12px）：非本轮引入，会被全局 `FlutterError.onError` 偶尔记入 crash_log（当前设备文件内容即此）；建议单独立项。
+  - `armeabi-v7a` 的 `.so` 未随 (C) 强制重编（设备为 arm64，FFI 未变故不影响），下次全量构建会自然刷新。
 
 ### P3：功能补齐与卫生项（2026-08-22 开启）
 

@@ -410,9 +410,22 @@ fn refresh_toc_with_fetcher<F: BookSourceFetcher>(
         })
         .unwrap_or_else(|| book_url.to_string());
 
-    // 2. 使用 WebBookEngine 从网络获取章节列表
-    let mut web_chapters: Vec<WebChapter> =
-        runtime::block_on(async { engine.get_chapters(&source, &fetch_url).await })?;
+    // [P2-12 2026-09-18] 变量链：目录/详情请求模板经 DB `books.variable`
+    // （working_book.variable——preUpdateJs 钩子运行后已持久化的用户值）
+    // 展开。优先级：DB 持久化值（用户显式设置）> 书源 `@put` 默认导出，
+    // 与换源链 P1-1 理由一致（本刷新路径无 @put 再合并，仅更新目录）。
+    // 修复前两处 get_chapters 变量表恒空 → 换源后重进详情/刷新目录时
+    // `{{svid}}`/`{{tok}}` 展开为空 → 请求错误地址（服务端 400）。
+    let toc_variables = super::web_book::chapter_url_variables(
+        working_book.as_ref().and_then(|b| b.variable.as_deref()),
+    );
+
+    // 2. 使用 WebBookEngine 从网络获取章节列表（变量表见上方 P2-12 注释）
+    let mut web_chapters: Vec<WebChapter> = runtime::block_on(async {
+        engine
+            .get_chapters_with_hints_and_vars(&source, &fetch_url, None, None, &toc_variables)
+            .await
+    })?;
 
     // [P2-2 | 存量坏 tocUrl 自愈 2026-09-18] 首次抓取（通常按 tocUrl）未解析到
     // 章节（存量坏值：如换源后 tocUrl 仍指向旧源页面、页面改版后不再含目录），
@@ -427,7 +440,19 @@ fn refresh_toc_with_fetcher<F: BookSourceFetcher>(
             .map(|b| b.book_page_fetch_url().to_string())
             .filter(|u| !u.trim().is_empty() && *u != fetch_url);
         if let Some(retry_url) = retry_url {
-            match runtime::block_on(async { engine.get_chapters(&source, &retry_url).await }) {
+            // [P2-12] 重试同样携 DB 变量表（retry_url 为书籍页取址点，
+            // 可能含 {{key}} 模板）
+            match runtime::block_on(async {
+                engine
+                    .get_chapters_with_hints_and_vars(
+                        &source,
+                        &retry_url,
+                        None,
+                        None,
+                        &toc_variables,
+                    )
+                    .await
+            }) {
                 Ok(chapters) if !chapters.is_empty() => {
                     // 持久化新 tocUrl；写库失败仅记录，不影响本次刷新结果。
                     // P2-1：改用单列 update_toc_url（全行 update 会把两次网络
@@ -1212,6 +1237,142 @@ mod tests {
 
         // 收尾清理
         with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete(book_url);
+            Ok(())
+        })
+        .ok();
+    }
+
+    // ─── [P2-12] 目录刷新变量链测试（2026-09-18） ───────────────────────────
+
+    /// [P2-12] 脚本化目录 fetcher（变量表版）：捕获
+    /// `get_chapters_with_hints_and_vars` 收到的变量表并返回预置章节
+    struct ScriptedTocFetcherWithVars {
+        vars_requested:
+            std::sync::Arc<std::sync::Mutex<Vec<std::collections::HashMap<String, String>>>>,
+    }
+
+    impl BookSourceFetcher for ScriptedTocFetcherWithVars {
+        async fn search(
+            &self,
+            _source: &BookSource,
+            _query: &str,
+            _page: i32,
+        ) -> LegadoResult<Vec<legado_core::web_book::WebSearchResult>> {
+            Err(LegadoError::Internal("mock: search unused".into()))
+        }
+
+        async fn get_book_info(
+            &self,
+            _source: &BookSource,
+            _book_url: &str,
+        ) -> LegadoResult<legado_core::web_book::WebBookInfo> {
+            Err(LegadoError::Internal("mock: get_book_info unused".into()))
+        }
+
+        async fn get_chapters(
+            &self,
+            _source: &BookSource,
+            _book_url: &str,
+        ) -> LegadoResult<Vec<WebChapter>> {
+            Ok(Vec::new())
+        }
+
+        async fn get_content(
+            &self,
+            _source: &BookSource,
+            _chapter: &WebChapter,
+        ) -> LegadoResult<String> {
+            Err(LegadoError::Internal("mock: content unused".into()))
+        }
+
+        async fn get_chapters_with_hints_and_vars(
+            &self,
+            _source: &BookSource,
+            _book_url: &str,
+            known_toc_url: Option<&str>,
+            _book_name_hint: Option<&str>,
+            variables: &std::collections::HashMap<String, String>,
+        ) -> LegadoResult<Vec<WebChapter>> {
+            self.vars_requested
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(variables.clone());
+            Ok(vec![WebChapter {
+                index: 0,
+                title: "第一章".to_string(),
+                url: known_toc_url
+                    .map(|u| format!("{u}/c1"))
+                    .unwrap_or_else(|| "https://p212.example.com/c1".to_string()),
+                is_vip: false,
+                is_volume: false,
+                variable: None,
+                word_count: None,
+            }])
+        }
+    }
+
+    /// [P2-12] 刷新目录：DB `books.variable`（working_book.variable，
+    /// preUpdateJs 钩子后已持久化的用户值）必须传入 fetcher 变量表——
+    /// 修复前回归：refresh_toc 两处抓取变量表恒空 → 目录/详情模板
+    /// `{{svid}}`/`{{tok}}` 展开为空 → 请求错误地址（服务端 400）
+    #[test]
+    fn test_refresh_toc_passes_db_variables_to_fetcher() {
+        use std::sync::{Arc, Mutex};
+
+        let book_url = "https://p212.example.com/r1vb/detail?vid={{svid}}";
+        let source_url = "https://p212-src.example.com";
+        let toc_url = "https://p212.example.com/r1vb/toc?tok={{tok}}";
+        let var_json = r#"{"svid":"VID123","tok":"TK777"}"#;
+
+        let _db_guard = setup_db_and_source(source_url);
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&legado_core::models::Book {
+                book_url: book_url.to_string(),
+                origin: source_url.to_string(),
+                origin_name: "测试书源".to_string(),
+                name: "P12变量书".to_string(),
+                toc_url: toc_url.to_string(),
+                origin_book_url: book_url.to_string(),
+                variable: Some(var_json.to_string()),
+                ..legado_core::models::Book::default()
+            })?;
+            Ok(())
+        })
+        .expect("初始数据写入失败");
+
+        let vars_requested = Arc::new(Mutex::new(Vec::new()));
+        let fetcher = ScriptedTocFetcherWithVars {
+            vars_requested: Arc::clone(&vars_requested),
+        };
+        let engine = WebBookEngine::new(fetcher);
+        let resp =
+            refresh_toc_with_fetcher(book_url, source_url, &engine).expect("携变量目录刷新应成功");
+        assert_eq!(resp.total, 1, "应解析到 1 个章节");
+
+        let vars = vars_requested
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        assert_eq!(
+            vars.len(),
+            1,
+            "刷新应恰好抓取一次目录（变量表正确时无坏址重试）"
+        );
+        assert_eq!(
+            vars[0].get("svid").map(String::as_str),
+            Some("VID123"),
+            "svid 应自 DB books.variable 传入 fetcher（修复前恒空表）"
+        );
+        assert_eq!(
+            vars[0].get("tok").map(String::as_str),
+            Some("TK777"),
+            "tok 应自 DB books.variable 传入 fetcher（修复前恒空表）"
+        );
+
+        // 收尾清理，避免污染共享测试库
+        with_database(|db| {
+            let _ = BookChapterRepository::new(db.connection()).delete_by_book_url(book_url);
             let _ = BookRepository::new(db.connection()).delete(book_url);
             Ok(())
         })
