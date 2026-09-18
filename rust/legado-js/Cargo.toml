@@ -43,6 +43,9 @@ zip           = { version = "2", optional = true }
 sevenz-rust2  = { version = "0.12", optional = true }
 # 纯 Rust RAR4/RAR5 解压（含加密档案），无 C 依赖
 rar           = { version = "0.4", optional = true }
+# 纯 Rust raw-deflate 解压（P2-9 ①：java.util.zip.Inflater 语料面
+# java.inflateRawBytes 宿主桥；版本锁定 1.1.9 复用 Cargo.lock 既有传递依赖）
+flate2        = { version = "1", optional = true }
 
 # futures 流式并发（用于 ajaxAll 有界并发）
 futures       = { version = "0.3", optional = true }
@@ -77,6 +80,7 @@ quickjs = [
     "dep:zip",
     "dep:sevenz-rust2",
     "dep:rar",
+    "dep:flate2",
     "dep:futures",
     "dep:scraper",
     "dep:tokio",

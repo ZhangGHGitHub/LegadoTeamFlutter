@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.289] - 2026-09-18
+
+### Fixed
+- [Rust] **书源引擎对照审计 P2-9 ①② 落地**（对照上游 `app/.../analyzeRule/**`：20 组成对实验 14 组等价、0 处结构性偏差 → **结论：不需要大修**）：
+  - **JS 宿主方法补齐**：`java.getStringList`、`java.setContent`、`cache.putMemory/getFromMemory/deleteMemory`、`java.lang`/`java.util` 最小面、`java.delete`、`hexDecodeToByteArray`、`upLoginData`（无登录通道，no-op 降级）；并新增 **`src` 重绑定**——JS 子步里的单参 `java.*` 现按上游语义重解析**顶层原始响应体**（526 源语料反例搜索为 0）
+  - **`book` 绑定扩面**：由 `{name}` 扩为 name/author/bookUrl/tocUrl/lastChapter/variable + `getVariable`；**按 bookUrl 从 DB 读用户书籍变量**（DB 为空则回退 `@put` 导出），对齐书籍信息页「可在 js 中通过 book.getVariable 获取」的既有承诺
+  - 源级效果：艾格动漫简介由「规则失败取空」恢复完整正文；聚合书库书名/最新章恢复（**口径限定**：`book.getVariable` 走 DB 用户变量，进程内**首次详情解析**仍按缓存降级，目录/正文/第二次详情起可达；首次即生效的 DB 兜底已登记 P2-11）
+- [Rust] **P2-10（P2-8 审查剩余项）**：`refresh_toc` 存量坏 `tocUrl` 自愈（解析 0 章且取址不同 → 用书籍页重试一次，**单列 `update_toc_url` 回写**避免丢更新窗口）；服务器 `/api/toc/update` 接入单一取址点；Dart `_mergeDbBook` 改 **DB 优先**（换源事务是唯一权威写者）；Dart 取址对齐 `trim` 语义；RoomImporter 不再丢 `originBookUrl`；注释如实化（该字段有两个写者：换源事务与 preUpdateJs）；补 P1-1 回归测试（缺键/空串的 Book JSON 不得清空该列）
+- [Rust] 修复**既有 parser panic**：`rule_analyzer` 内层规则解析失败时按字节前进可能落入多字节字符中间（`not a char boundary`）；该 panic 在「聚合书库」目录规则 `${$.len}字` 上真实触发（此前测试用 ASCII 合成规则规避，已撤销）。改为字符边界安全前进 + 越界保护
+
+### Test
+- `cargo test --workspace` **2574 passed / 0 failed**（exit 0）；`cargo clippy --workspace -- -D warnings` exit 0；`cargo fmt --check` 0 处；`flutter analyze` 0 问题；`flutter test` **1479 全过**；`cargo test -p legado-ffi` 365（默认）/ 439（quickjs）
+- 新增测试：JS 宿主方法逐项断言、`book` 变量生产路径（**无手工播种**）、逐字 fixture 目录规则非 panic、`refresh_toc` 自愈只改单列、缺键不清列等
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.288] - 2026-09-18
 
 ### Fixed

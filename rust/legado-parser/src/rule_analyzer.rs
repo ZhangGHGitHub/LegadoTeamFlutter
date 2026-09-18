@@ -470,7 +470,28 @@ impl<'a> RuleAnalyzer<'a> {
                     }
                 }
             }
-            self.pos += inner.len();
+            // 失败分支：按字符边界安全前进 + 越界保护（P1-2 修复）。
+            //
+            // 原 `self.pos += inner.len()` 可能把 pos 落在多字节字符中间
+            // （聚合书库逐字规则 `${$.len}字`：内组 `{$.len}` 解析失败后
+            // pos 位于 `}` 之后即 `字` 首，+2 落在 `字`（3 字节）中间）→
+            // 下一轮 `consume_to` 的 `self.queue[self.pos..]` 切片在
+            // 非边界处 panic（本文件 L76）；frb 生成 FFI 无 catch_unwind，
+            // 跨 FFI panic 直接 abort 整个进程（轻则目录失败，重则崩溃）。
+            //
+            // 修法：目标 pos+inner.len() 若越界截断到串尾，若非字符边界
+            // 则回退到最近的字符边界（只前进不回退，保持 pos 恒在边界的
+            // 不变式）。零前进情形（pos 处为多字节字符且 +inner.len() 落
+            // 字内）不会造成死循环：此时 queue[pos] 必为多字节首字节
+            // （>0x7F），而 inner 以 `{`(0x7B) 起始，consume_to 不可能在
+            // 原 pos 再次命中——要么找到后续 `{` 严格前进，要么找不到
+            // 直接退出 while。
+            let target = self.pos.saturating_add(inner.len());
+            let mut p = target.min(self.queue.len());
+            while p > 0 && !self.queue.is_char_boundary(p) {
+                p -= 1;
+            }
+            self.pos = p;
         }
 
         if self.start_x == 0 {
@@ -603,6 +624,48 @@ mod tests {
         let mut ra = RuleAnalyzer::new("prefix{$.name}suffix", true);
         let result = ra.inner_rule("{$", 1, 1, |inner| Some(format!("[{}]", inner)));
         assert_eq!(result, "prefix[$.name]suffix");
+    }
+
+    /// P1-2：内组解析失败 + 组后紧跟多字节字符的字符边界 panic 回归
+    ///
+    /// 聚合书库逐字 fixture（jhsu_book4cc_source.json）
+    /// `ruleToc.chapterList` 的 JS 模板串 `` String(`${$.len}字`) `` 含
+    /// `{$` 字节对 → 走 `inner_rule("{$", 1, 1, …)`（execute_js_rule 在
+    /// eval 前对含 `{$` 的 JS 体调 process_inner_rules）。目录阶段 content
+    /// 是 toc 根 `{"chapter_list":[…]}`，内组 `$.len` 在根上解析为空 →
+    /// resolver 返回 None → 失败分支。原 `pos += inner.len()` 把 pos 落进
+    /// `字`（3 字节）中间 → 下一轮 `consume_to` 的 `queue[pos..]` 切片
+    /// panic（"start byte index … is not a char boundary; it is inside
+    /// '字'"）；frb FFI 无 catch_unwind → 跨 FFI 即 abort。
+    /// 修复后：按字符边界安全前进（或原地停留），剩余串无 `{$` → 返回
+    /// 空串（process_inner_rules 见空 → 原规则透传给 JS，模板串由 JS
+    /// 引擎求值，行为正确）。
+    #[test]
+    fn test_inner_rule_multibyte_after_failed_group_no_panic() {
+        // fixture 逐字内嵌片段：`{$.len}` 后紧跟多字节 `字`
+        let rule = "String(`${$.len}字`)";
+        let result = RuleAnalyzer::new(rule, true).inner_rule("{$", 1, 1, |_inner| None);
+        // 不 panic；未替换任何内组 → 空结果（上层透传原规则）
+        assert_eq!(result, String::new());
+
+        // 失败组后仍有可解析组：第一组失败（resolver 拒绝 "x"），
+        // 第二组成功 → 拼接正确、边界无漂移
+        let rule2 = "a{$.x}字{$.y}b";
+        let result2 = RuleAnalyzer::new(rule2, true).inner_rule("{$", 1, 1, |inner| {
+            (inner == "$.y").then(|| "Y".to_string())
+        });
+        assert_eq!(result2, "a{$.x}字Yb");
+
+        // 未闭合组（chomp 失败、pos 停在 `{`）+ 组内多字节字符：
+        // 失败分支 +2 不再落进字符中间，后续无 `{$` → 正常退出
+        let rule3 = "{$.x字";
+        let result3 = RuleAnalyzer::new(rule3, true).inner_rule("{$", 1, 1, |_| None);
+        assert_eq!(result3, String::new());
+
+        // 越界保护：内组在串尾失败后 +inner.len() 越界 → 截断到串尾
+        let rule4 = "x{$.z}";
+        let result4 = RuleAnalyzer::new(rule4, true).inner_rule("{$", 1, 1, |_| None);
+        assert_eq!(result4, String::new());
     }
 
     #[test]

@@ -4,6 +4,8 @@
 //! - ZIP：使用 `zip` crate 完整实现
 //! - 7z：使用 `sevenz-rust2` crate 纯 Rust 实现（需 quickjs feature）
 //! - RAR：使用 `rar` crate 纯 Rust 实现（RAR4/RAR5，含加密档案；需 quickjs feature）
+//! - raw-deflate：使用 `flate2` crate（需 quickjs feature），供
+//!   `java.util.zip.Inflater` 语料面（`java.inflateRawBytes` 宿主桥）
 
 use std::fs;
 use std::io::Read;
@@ -315,6 +317,60 @@ fn read_file_magic(path: &str) -> Result<String, String> {
         }
     }
     Ok("unknown".to_string())
+}
+
+/// `java.inflateRawBytes(data)` — raw-deflate 解压（无 zlib/gzip 头）
+///
+/// P2-9 ①：语料 `java.util.zip.Inflater` 流程（2 个源）中
+/// `new Inflater(true)` 的 `true` 即 no-wrap（raw deflate）。
+/// 先按 raw deflate 解压；未完整消费输入时再按 zlib 封装
+/// （windowBits=15，带 2 字节头 + adler32 尾）宽容重试；
+/// 均失败 → 可捕获错误（JS 侧 try/catch 降级为空串，不炸整条规则）。
+#[cfg(feature = "quickjs")]
+pub fn inflate_raw_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
+    use flate2::{Decompress, FlushDecompress, Status};
+
+    if data.is_empty() {
+        return Ok(Vec::new());
+    }
+    // 单次尝试：全新 Decompress + 逐次扩容的输出缓冲（无状态机跨调用
+    // 输出偏移语义，避免脏读）。flate2::Status：Ok/BufError = 需更多
+    // 空间继续，StreamEnd = 流完整结束（对齐 Java Inflater：解到流尾即止，
+    // 尾部多余字节忽略）。
+    fn attempt(no_wrap: bool, data: &[u8]) -> Result<Vec<u8>, String> {
+        for attempt in 0..8u32 {
+            let cap = (data.len() as u64 * 2u64.saturating_pow(attempt) + 64)
+                .clamp(1024, 64 * 1024 * 1024) as usize;
+            let mut out = vec![0u8; cap];
+            let mut d = Decompress::new(no_wrap);
+            let status = match d.decompress(data, &mut out, FlushDecompress::Finish) {
+                Ok(s) => s,
+                Err(e) => return Err(format!("inflateRawBytes: 流损坏（{e}）")),
+            };
+            if status == Status::StreamEnd {
+                out.truncate(d.total_out() as usize);
+                return Ok(out);
+            }
+            // Ok / BufError：输出缓冲不足或流未结束 → 扩容重试
+        }
+        Err(format!(
+            "inflateRawBytes: 解压未完成（{} 字节数据）",
+            data.len()
+        ))
+    }
+
+    // 1) raw deflate（Java Inflater(true) 语义）
+    if let Ok(v) = attempt(true, data) {
+        return Ok(v);
+    }
+    // 2) 宽容重试：部分数据实际是 zlib 封装（Inflater(false) 语义）
+    if let Ok(v) = attempt(false, data) {
+        return Ok(v);
+    }
+    Err(format!(
+        "inflateRawBytes: 非合法 deflate/zlib 数据（{} 字节）",
+        data.len()
+    ))
 }
 
 // ============================================================
@@ -734,5 +790,38 @@ mod tests {
 
         let _ = fs::remove_dir_all(&out);
         let _ = fs::remove_dir_all(Path::new(&seven_z_path).parent().unwrap());
+    }
+
+    /// P2-9 ①：raw-deflate 解压（Inflater(true) 语料面）+ zlib 宽容回退
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_inflate_raw_bytes() {
+        use flate2::write::{DeflateEncoder, ZlibEncoder};
+        use flate2::Compression;
+        use std::io::Write as _;
+
+        let payload = b"legado-inflate-raw-test-\xE6\x95\xB0\xE6\x8D\xAE-1234567890";
+        // raw deflate（DeflateEncoder 输出即无 zlib 头）
+        let mut raw = Vec::new();
+        {
+            let mut enc = DeflateEncoder::new(raw, Compression::fast());
+            enc.write_all(payload).unwrap();
+            raw = enc.finish().unwrap();
+        }
+        assert_eq!(inflate_raw_bytes(&raw).unwrap(), payload);
+
+        // zlib 封装数据走宽容回退路径
+        let mut zlib = Vec::new();
+        {
+            let mut enc = ZlibEncoder::new(zlib, Compression::fast());
+            enc.write_all(payload).unwrap();
+            zlib = enc.finish().unwrap();
+        }
+        assert_eq!(inflate_raw_bytes(&zlib).unwrap(), payload);
+
+        // 垃圾数据 → 可捕获错误（不 panic）
+        assert!(inflate_raw_bytes(b"not-deflate-garbage-data").is_err());
+        // 空输入 → 空输出
+        assert_eq!(inflate_raw_bytes(&[]).unwrap(), Vec::<u8>::new());
     }
 }

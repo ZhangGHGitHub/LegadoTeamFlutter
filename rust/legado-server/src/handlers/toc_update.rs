@@ -20,7 +20,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tokio::sync::Mutex;
 
-use legado_core::models::BookChapter;
+use legado_core::models::{Book, BookChapter};
 use legado_core::toc_updater::{run_batch, TocUpdateRequest, TocUpdater};
 use legado_core::web_book::WebBookEngine;
 use legado_db::repository::Repository;
@@ -88,13 +88,31 @@ struct TocUpdateOutcome {
 
 // ─── 单本更新核心逻辑 ──────────────────────────────────────────────────────────
 
+/// [P2-3] 目录抓取取址（对齐 FFI `reader.rs` `refresh_toc` 回退链）：
+/// toc_url（trim 非空）→ 书籍页取址点（`book_page_fetch_url`：originBookUrl
+/// 优先、空回退 bookUrl）→ 入参 book_url。换源书籍的稳定主键 book_url 属于
+/// 旧源地址，不得直接作为新源的详情/目录抓取地址。
+fn toc_fetch_url(book: &Book, book_url: &str) -> String {
+    let toc = book.toc_url.trim();
+    if !toc.is_empty() {
+        return toc.to_string();
+    }
+    let fetch = book.book_page_fetch_url();
+    if fetch.trim().is_empty() {
+        book_url.to_string()
+    } else {
+        fetch.to_string()
+    }
+}
+
 /// 单本目录更新（对标 Kotlin `MainViewModel.updateToc` 的单本流程）
 ///
 /// 流程：
 /// 1. 从 DB 读取书籍与书源（书源 URL 缺省时取 `book.origin`）
 /// 2. `refresh_book_info` 或 `toc_url` 为空时先请求详情页补全信息
-///    （对标 Kotlin `WebBook.getBookInfoAwait`）
-/// 3. 请求目录页解析章节列表（对标 Kotlin `WebBook.getChapterListAwait`）
+///    （对标 Kotlin `WebBook.getBookInfoAwait`；[P2-3] 详情取址走书籍页取址点）
+/// 3. 请求目录页解析章节列表（对标 Kotlin `WebBook.getChapterListAwait`；
+///    [P2-3] 取址走 `toc_fetch_url` 回退链：tocUrl → 书籍页取址点 → 入参 bookUrl）
 /// 4. 事务式落库：校验书源未变 → 删旧章节插新章节 → 更新书籍统计字段
 ///    （对标 Kotlin `appDb.runInTransaction` 中的 origin 校验与 book.sync）
 async fn update_one_toc(
@@ -129,8 +147,11 @@ async fn update_one_toc(
     // 2. 按需刷新书籍详情（仅补空字段，避免覆盖用户本地数据）
     let mut info_update: Option<(Option<String>, Option<String>, String)> = None;
     if need_info {
+        // [P2-3] 详情解析走书籍页取址点（originBookUrl 优先、空回退 bookUrl）：
+        // 换源书籍的稳定主键 book_url 属于旧源地址，直接传给新源解析器会失败
+        let detail_url = book.book_page_fetch_url();
         let info = engine
-            .get_book_info(&source, book_url)
+            .get_book_info(&source, detail_url)
             .await
             .map_err(|e| format!("获取书籍详情失败: {e}"))?;
         if book.name.trim().is_empty() && !info.name.trim().is_empty() {
@@ -155,8 +176,12 @@ async fn update_one_toc(
     }
 
     // 3. 请求目录页解析章节列表
+    // [P2-3] 单一取址点：toc_url 优先（第 2 步刷新后为最新值），空则回退书籍页
+    // 取址点（originBookUrl 优先、空回退 bookUrl）→ 入参 book_url；对齐 FFI
+    // refresh_toc 回退链，换源书籍不得以旧源稳定主键直接抓目录
+    let fetch_url = toc_fetch_url(&book, book_url);
     let web_chapters = engine
-        .get_chapters(&source, book_url)
+        .get_chapters(&source, &fetch_url)
         .await
         .map_err(|e| format!("获取目录失败: {e}"))?;
     if web_chapters.is_empty() {
@@ -422,6 +447,53 @@ mod tests {
 
     async fn body_json(body: Body) -> Value {
         serde_json::from_slice(&axum::body::to_bytes(body, usize::MAX).await.unwrap()).unwrap()
+    }
+
+    /// [P2-3] 目录取址回退链：tocUrl（trim 非空）优先 → 书籍页取址点
+    /// （originBookUrl 优先、空回退 bookUrl）→ 入参 book_url；纯空白视同空值
+    #[test]
+    fn test_toc_fetch_url_fallback_chain() {
+        let book_url = "https://p2-3.example.com/book/1";
+        let mk = |toc_url: &str, origin_book_url: &str| Book {
+            book_url: book_url.to_string(),
+            toc_url: toc_url.to_string(),
+            origin_book_url: origin_book_url.to_string(),
+            ..Book::default()
+        };
+
+        // 1) 非空 tocUrl 优先
+        assert_eq!(
+            toc_fetch_url(
+                &mk(
+                    "https://p2-3.example.com/toc",
+                    "https://p2-3.example.com/detail"
+                ),
+                book_url
+            ),
+            "https://p2-3.example.com/toc"
+        );
+        // 2) 空 tocUrl + 非空 originBookUrl → 书籍页取址点
+        assert_eq!(
+            toc_fetch_url(&mk("", "https://p2-3.example.com/detail"), book_url),
+            "https://p2-3.example.com/detail"
+        );
+        // 3) 两者皆空 → 入参 book_url
+        assert_eq!(toc_fetch_url(&mk("", ""), book_url), book_url);
+        // 4) 纯空白视同空值
+        assert_eq!(toc_fetch_url(&mk("   ", "  \t\n"), book_url), book_url);
+        // 5) 换源书：originBookUrl（新源详情页）优先于入参 book_url（旧源稳定主键）
+        assert_eq!(
+            toc_fetch_url(
+                &Book {
+                    book_url: "https://p2-3.example.com/book/1".to_string(),
+                    toc_url: String::new(),
+                    origin_book_url: "https://new-src.example.com/book/9".to_string(),
+                    ..Book::default()
+                },
+                "https://old-src.example.com/book/9"
+            ),
+            "https://new-src.example.com/book/9"
+        );
     }
 
     #[tokio::test]

@@ -211,6 +211,24 @@ impl<'a> BookRepository<'a> {
         Ok(())
     }
 
+    /// 单列更新书籍的 tocUrl（局部列更新）
+    ///
+    /// P2-1：refresh_toc 自愈回写用本方法而非全行 `update`。全行 update 会把
+    /// 两次网络抓取**之前**读取的 37 列快照整体写回：期间并发写入的进度列
+    /// （如 durChapterIndex）被旧值覆盖（丢更新窗口）；且「本来正确但一次
+    /// 瞬时解析为空」的 tocUrl 会被永久改写。单列 UPDATE 只触碰 tocUrl
+    /// （先例：update_read_config_field / update_audio_play_speed /
+    /// update_orders）。
+    pub fn update_toc_url(&self, book_url: &str, toc_url: &str) -> LegadoResult<()> {
+        self.conn
+            .execute(
+                "UPDATE books SET tocUrl = ?1 WHERE bookUrl = ?2",
+                params![toc_url, book_url],
+            )
+            .map_err(|e| LegadoError::Database(format!("更新 tocUrl 失败: {e}")))?;
+        Ok(())
+    }
+
     /// 更新书籍但保留库内原有 readConfig（对齐上游 `BookDao.updatePreservingReadConfig`）
     ///
     /// 上游事务语义：先取库内 readConfig JSON → 执行全行 update → 再写回原 JSON，
@@ -922,5 +940,46 @@ mod tests {
             2,
             "name+author 冲突预检必须保留 chapters"
         );
+    }
+
+    /// P2-1：自愈回写用单列 update_toc_url —— 只改 tocUrl，其它列
+    /// （并发写入的进度列 durChapterIndex 等）保持并发写入后的值。
+    /// 对照旧路径（全行 update 写回抓取前快照）：并发写入的 7 会被快照
+    /// 里的 0 覆盖（丢更新），本方法不会。
+    #[test]
+    fn test_update_toc_url_only_touches_toc_url() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+        let mut book = make_book("https://p21.example/b/1", "P2-1 测试书", "作者");
+        book.toc_url = "https://p21.example/toc/old".to_string();
+        book.variable = Some(r#"{"custom":"user-val"}"#.to_string());
+        repo.insert(&book).unwrap();
+
+        // 模拟「读取快照 → 两次网络抓取」期间发生的并发进度写入
+        // （如阅读进度线程写 durChapterIndex；全行 update 会把它覆盖回 0）
+        db.connection()
+            .execute(
+                "UPDATE books SET durChapterIndex = ?1 WHERE bookUrl = ?2",
+                params![7, "https://p21.example/b/1"],
+            )
+            .unwrap();
+
+        // 自愈回写：单列更新 tocUrl
+        repo.update_toc_url("https://p21.example/b/1", "https://p21.example/toc/new")
+            .unwrap();
+
+        let found = repo
+            .find_by_url("https://p21.example/b/1")
+            .unwrap()
+            .unwrap();
+        assert_eq!(found.toc_url, "https://p21.example/toc/new");
+        // 并发写入的进度列未被全行快照覆盖
+        assert_eq!(
+            found.dur_chapter_index, 7,
+            "单列更新不得覆盖并发写入的进度列"
+        );
+        // 其它列保持
+        assert_eq!(found.name, "P2-1 测试书");
+        assert_eq!(found.variable.as_deref(), Some(r#"{"custom":"user-val"}"#));
     }
 }

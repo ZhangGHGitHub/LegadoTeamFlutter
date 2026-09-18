@@ -172,7 +172,7 @@
   - **正确做法（待重做，需整体设计）**：改键必须与「所有 URL 持有者同步」一起做——至少包括：换源返回的新 URL 已在 Dart 侧被用于重开详情页（`book_info_screen_builders.part.dart:2007-2013`）✅，但**书架/其它 provider 的内存对象**、`searchBooks` 候选、以及任何按 bookUrl 索引的缓存都需一并失效/刷新；或改键时保留一份「旧键 → 新键」的别名表供过渡期查询。
   - **回退后遗留的真实危害仍在**（即当初做改键的动机）：换源后书籍仍以旧源地址为键 → 详情页 U7 后台刷新（`book_info_screen_load.part.dart:210` 的 `webbookInfo(sourceJson, b.bookUrl)`）会用旧地址 + 新源规则解析 → `tocUrl` 被重推成 `…?bookId=` 退化值并「非空即覆盖」回写。**低成本缓解（建议下一步先做）**：在该刷新合并处对 `tocUrl` 加「解析值形态校验/退化值不覆盖」守卫（只动 Dart 合并层，不动主键）。
 
-- **P2-9 书源引擎对照审计结论与待补清单**（开放，2026-09-18）：对上游 `app/.../analyzeRule/**` 做对照审计（20 组成对实验，14 组等价 / 0 处结构性偏差；526 源真实命中统计）。**结论：不需要大修**，剩余 13 项偏差均可增量修补，按命中排序：
+- **P2-9 书源引擎对照审计结论与待补清单**（**①②已关闭 2026-09-18**；其余开放）：①② 已落地——JS 宿主方法补齐（`getStringList`/`setContent`/`cache.*`/`java.lang`·`java.util` 最小面/`java.delete`/`hexDecodeToByteArray`/`upLoginData` no-op）+ `src` 重绑定（子步单参 `java.*` 重解析顶层原始响应，语料反例 0）+ `book` 绑定扩面与 `getVariable`（按 bookUrl 读 DB 用户变量，回退 `@put` 导出）；源级效果见 CHANGELOG。剩余 ③④⑤⑥~⑬ 仍开放：对上游 `app/.../analyzeRule/**` 做对照审计（20 组成对实验，14 组等价 / 0 处结构性偏差；526 源真实命中统计）。**结论：不需要大修**，剩余 13 项偏差均可增量修补，按命中排序：
   1. **JS 宿主方法缺失**（~160 处用法 / 15–20 源）：`java.getStringList` 15 处/5 源**全部无守卫**（ReferenceError 致规则失败）、`java.lang.*` 36/18、`setContent` 13/7、缓存内存三件套、`upLoginData` 7/6、`hexDecodeToByteArray` 等 → 批量注册 + 源级冒烟。
   2. **`book` 绑定缺口**（12–13 源）：我方只绑 `{name}`，上游为完整实体；`book.getVariable` 9 源（破坏性）、`book.bookUrl` 16/`author` 11/`name` 14 **静默空值** → 扩为字段子集（数据源现成）。
   3. **`java.put`（进程全局 store）↔ `@get`（analyzer 本地 store）无桥**（3 源：小米阅读/就去看网/手机小说）：手机小说 `tocUrl` 取空回退 book_url → 目录页错 → `get()` 兜底读全局 store 或流程入口 seed。
@@ -180,11 +180,27 @@
   5. **`%%` 定界**（3 实现 / ~4 源）：我方 max_len vs 上游「首列表为界」→ 改 zip 边界 + 回归断言。
   6–13（登记）：越界 `$n` 回退（0 命中）、JS 单值数组 join（`a,b` vs `a
 b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null vs undefined（守卫式等价）、`fromBookInfo` 硬编码 false（0 命中）、Rhino `Packages.*`/`android.util.Base64` 互操作（3 源，架构性限制）、`source.refreshExplore`/`variableComment`（1|1）、全局 store 生命周期（随第 3 项处理）。
-- **P2-10 P2-8 审查剩余项**（开放，2026-09-18）：P1-1 已修（写侧 `fill_origin_book_url_if_empty` + Dart 自动换源补字段 + 自愈补列），**其固化回归测试待补**（「换源后以缺 `originBookUrl` 的 Book JSON 调 `updateBook` 不得清空列」）。其余：
+- **P2-10 P2-8 审查剩余项**（**已关闭 2026-09-18**）：P1-1 固化回归测试、P2-2 存量坏 `tocUrl` 自愈（单列回写）、P2-3 server 单一取址点、P2-4 Dart DB 优先、P3-1 trim、P3-3 注释如实化、P3-4 RoomImporter 保留字段均已完成；P3-2（裸 `@attr` 多子元素语义）经只读核查后判定应统一为「遍历全部子元素 + 去重」，作为独立小项并入 P2-11。历史记录：P1-1 已修（写侧 `fill_origin_book_url_if_empty` + Dart 自动换源补字段 + 自愈补列），**其固化回归测试待补**（「换源后以缺 `originBookUrl` 的 Book JSON 调 `updateBook` 不得清空列」）。其余：
   - P2-2 存量坏 `tocUrl` 不自愈：`reader.rs` 的 `refresh_toc` 在目录为空且 `book_page_fetch_url()` 与 `toc_url` 不同时应用书籍页重试一次并回写；
   - P2-3 服务器 `/api/toc/update` 未接入单一取址点（详情改 `book_page_fetch_url()`；目录优先 `toc_url`）；
   - P2-4 `_mergeDbBook` 对该字段的优先级反了（应 DB 优先，路由只兜底）；
   - P3-1 Dart 取址未 trim（与 Rust 不一致）；P3-2 裸 `@attr` 新分支只取首个子元素（与「裸 token」分支遍历全部不一致）；P3-3 `pre_update.rs` 头注释与「仅换源写入」的描述不符（`re_get_book_native` 是第二写者）；P3-4 RoomImporter 丢弃该字段；P3-5 送审材料与实际改动集不一致（流程：diff 应含生成物与全部改动文件）。
+
+- **P2-11 本批审查剩余项**（开放，2026-09-18）：由 P2-9/P2-10 审查报告沉淀，均为「不阻塞合入、需登记或后续小修」：
+  - `cache.*` 磁盘层无宿主注入点（默认 `temp_dir`，未验证可写；写盘失败会连带清内存层，JS 侧忽略返回值）→ FFI 初始化注入应用缓存目录 + 失败保留内存层 + 设备级 put→get 冒烟；
+  - `book` 绑定为只读快照：`book.type = N`（~7 源切小说/音频/漫画模式）、`setReverseToc`（1 源）、`book.putVariable`（1 源）写入被静默丢弃；`type` 初值硬编码 0（可无损改真实值）→ 视影响面决定落存储或显式声明；
+  - 正文阶段 `book` 反查只以章节 URL 为键（两书产生相同章节 URL 时理论上串键）→ `webbook_content` 增可选 bookUrl 或复合键；
+  - `explore_api` 未套用 `src` 重绑定/`book` 绑定（链式 JS 的 src 仍为中间产物，同类残差）；
+  - `java.lang` parse 面近似（`parseInt('12abc')`→12、`Double.parseDouble('NaN')` 抛错等）、`getStringList` 细分差异（上游按 `
+` 拆分/`null` 语义/`get/isEmpty` 别名）；
+  - `archive_utils::inflate_raw_bytes` 两个 attempt 的极性注释与实现相反（功能正确）；
+  - `mergeDbBook` 的 DB 值纯空白时会压过路由有效值（与 `bookFetchUrl` 的 trim 语义不一致）；
+  - `BookMeta`/`chapter_book_cache` 容量判定 `>=` 触发整体 clear（更新已有 key 也清空）；
+  - 裸 `@attr` 多子元素语义（P3-2 移交）：应统一为「遍历全部子元素 + 去重」并修正注释；
+  - 提交卫生：`rust/legado-ffi/tmp_diag/`、根目录 `nul`、`.tmp/`、`pnpm-lock.yaml` 等未跟踪物需在入库前定策略。
+  - **[复审新增] P2-1 调用点回归测试缺口**：`test_refresh_toc_self_heals_bad_toc_url` 只能测「方法层」（变异实验：把 `update_toc_url` 换回「先 find 再全行 update」该测试仍 PASS），**调用点回退（保留方法、改回旧快照全行回写）无测试可发现**。补法（复审给的 recipe ~10 行）：在该测试的 `ScriptedTocFetcher.get_chapters` 首次抓坏 toc 时用 `with_database` 执行 `UPDATE books SET durChapterIndex=7 WHERE bookUrl=?`，刷新后断言 `dur_chapter_index == 7`。
+  - **[复审新增] P1-1 首次详情解析无 DB 兜底**：`detail_book_binding` 解析期只查 meta 缓存 → 进程内对该 bookUrl 的**首次**详情解析取不到 DB 用户变量（目录/正文/第二次详情起可达）。若要让「首次打开即生效」成立需在该处补 DB 兜底（注意 `book_binding_expr(Some(meta))` 会忽略 `fallback_name`，需保留 changeSource 保名语义）。
+  - **[复审新增 P3] DB 变量被清空后缓存旧值不被覆盖**（`merge_insert` 仅 Some 覆盖）→ 陈旧窗口持续到缓存淘汰。
 
 ### P3：功能补齐与卫生项（2026-08-22 开启）
 

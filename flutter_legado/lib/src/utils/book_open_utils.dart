@@ -245,15 +245,58 @@ class BookOpenUtils {
     return true;
   }
 
-  /// [P2-8] 「抓取书籍页」地址选择：优先 `originBookUrl`（当前书源下该书的
-  /// 详情页地址，换源事务写入；bookUrl 作为稳定主键换源后可能仍是旧源
-  /// 地址），为空时回退 `bookUrl`（未换源书籍与存量库行为不变，向后兼容）。
+  /// [P2-8 | P3-1 对齐 2026-09-18] 「抓取书籍页」地址选择：优先
+  /// `originBookUrl`（当前书源下该书的详情页地址，换源事务与 preUpdateJs
+  /// 钩子写入；bookUrl 作为稳定主键换源后可能仍是旧源地址），为空时回退
+  /// `bookUrl`（未换源书籍与存量库行为不变，向后兼容）。
+  ///
+  /// 语义与 Rust `Book::book_page_fetch_url()` 完全一致：空值判定按
+  /// **trim 后**（纯空白视同空值），返回值取字段原值（不 trim）。
   ///
   /// 详情页联网刷新（webbookInfo / webbookChapters 取址）一律经本方法取址，
   /// 保证换源后刷新用「当前书源详情页」而非「旧源地址」——台账 P2-8 根因
   /// 修复（此前用旧源地址套当前书源规则，字段解析为空/退化值写坏 tocUrl）。
-  static String bookFetchUrl(Book book) =>
-      book.originBookUrl.isNotEmpty ? book.originBookUrl : book.bookUrl;
+  static String bookFetchUrl(Book book) {
+    final origin = book.originBookUrl;
+    return origin.trim().isNotEmpty ? origin : book.bookUrl;
+  }
+
+  /// [P2-4 | 2026-09-18] DB 记录补全路由带入瘦壳书（author/tocUrl/章节数
+  /// 等）：路由非空字段优先保留（最新章标题等实时值），DB 非空字段仅填空。
+  /// 本方法为纯函数公共静态（对齐 [mergeWebInfo] 的提取模式，可单测）。
+  ///
+  /// 唯一例外是 [Book.originBookUrl] —— **DB 优先**：换源事务是该字段的
+  /// 唯一权威写者（preUpdateJs 钩子也是经 DB 写入，不写路由对象），路由
+  /// 对象可能是未携带该字段或携带旧值的陈旧内存瘦壳；若路由优先会把换源
+  /// 事务写入的「当前书源详情页地址」覆盖掉，后续详情刷新取址错误。
+  /// 路由值仅作兜底（DB 记录缺该字段且为空时）。
+  static Book mergeDbBook(Book routeBook, Book dbBook) {
+    return routeBook.copyWith(
+      coverUrl: (routeBook.coverUrl?.isNotEmpty ?? false)
+          ? routeBook.coverUrl
+          : dbBook.coverUrl,
+      intro: (routeBook.intro?.isNotEmpty ?? false)
+          ? routeBook.intro
+          : dbBook.intro,
+      tocUrl: routeBook.tocUrl.isNotEmpty ? routeBook.tocUrl : dbBook.tocUrl,
+      wordCount: (routeBook.wordCount?.isNotEmpty ?? false)
+          ? routeBook.wordCount
+          : dbBook.wordCount,
+      latestChapterTitle:
+          (routeBook.latestChapterTitle?.isNotEmpty ?? false)
+              ? routeBook.latestChapterTitle
+              : dbBook.latestChapterTitle,
+      kind: (routeBook.kind?.isNotEmpty ?? false) ? routeBook.kind : dbBook.kind,
+      author: routeBook.author.isNotEmpty ? routeBook.author : dbBook.author,
+      totalChapterNum: routeBook.totalChapterNum > 0
+          ? routeBook.totalChapterNum
+          : dbBook.totalChapterNum,
+      // [P2-4] originBookUrl 以 DB 为权威（换源事务唯一权威写者），路由值仅兜底
+      originBookUrl: dbBook.originBookUrl.isNotEmpty
+          ? dbBook.originBookUrl
+          : routeBook.originBookUrl,
+    );
+  }
 
   /// 合并 webbookInfo 返回的详情到 book（WebBookInfo 为 snake_case，需手动映射，
   /// 不能直接 Book.fromJson 否则 cover_url/toc_url 等丢失）。

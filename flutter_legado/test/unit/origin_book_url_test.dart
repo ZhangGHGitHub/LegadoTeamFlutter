@@ -79,6 +79,23 @@ void main() {
       final book = buildBook(); // originBookUrl 默认 ''
       expect(BookOpenUtils.bookFetchUrl(book), book.bookUrl);
     });
+
+    // [P3-1 | trim 对齐 2026-09-18] 空值判定按 trim 后（对齐 Rust
+    // Book::book_page_fetch_url），但返回值取字段原值（不 trim）
+    test('originBookUrl 纯空白（视同空值）→ 回退 bookUrl', () {
+      final book = buildBook(originBookUrl: '   \t\n');
+      expect(BookOpenUtils.bookFetchUrl(book), book.bookUrl);
+    });
+
+    test('带首尾空格的非空值 → 原样返回不 trim（对齐 Rust 原值返回）', () {
+      final book = buildBook(
+        originBookUrl: '  https://new.example.com/book/9  ',
+      );
+      expect(
+        BookOpenUtils.bookFetchUrl(book),
+        '  https://new.example.com/book/9  ',
+      );
+    });
   });
 
   group('BookOpenUtils.mergeWebInfo refresh=true（U7 进入刷新）', () {
@@ -158,6 +175,46 @@ void main() {
       expect(merged.latestChapterTitle, '第五百章');
       expect(merged.kind, '轻小说');
       expect(merged.tocUrl, 'https://new.example.com/book/9/chapters');
+    });
+  });
+
+  group('BookOpenUtils.mergeDbBook（未在架 DB 补全合并）', () {
+    // [P2-4 | 2026-09-18] originBookUrl 唯一例外走 DB 优先：换源事务是该
+    // 字段的权威写者，路由瘦壳可能携带换源前的陈旧值，路由优先会把换源
+    // 事务写入的「当前书源详情页地址」覆盖掉，后续详情刷新取址错误。
+    test('originBookUrl DB 优先：DB 非空覆盖路由陈旧值；其余字段仍路由非空优先',
+        () {
+      final route = buildBook(
+        originBookUrl: 'https://stale.example.com/book/1', // 路由携带陈旧值
+        author: '路由作者',
+        latestChapterTitle: '路由最新章节',
+        wordCount: '路由字数',
+      );
+      final db = buildBook(
+        originBookUrl: 'https://new.example.com/book/9', // 换源事务写入
+        author: 'DB作者',
+        latestChapterTitle: 'DB最新章节',
+        kind: 'DB分类',
+      );
+      final merged = BookOpenUtils.mergeDbBook(route, db);
+      // DB 优先：换源事务写入的当前书源详情页地址不得被路由陈旧值覆盖
+      expect(merged.originBookUrl, 'https://new.example.com/book/9');
+      // 其余字段保持「路由非空优先保留、DB 仅填空」
+      expect(merged.author, '路由作者');
+      expect(merged.latestChapterTitle, '路由最新章节');
+      expect(merged.wordCount, '路由字数');
+      expect(merged.kind, 'DB分类'); // 路由空 → DB 填空
+      // 稳定主键不被合并逻辑触碰
+      expect(merged.bookUrl, route.bookUrl);
+    });
+
+    test('originBookUrl DB 为空 → 回退路由值（未换源书籍兜底）', () {
+      final route = buildBook(
+        originBookUrl: 'https://route.example.com/book/1',
+      );
+      final db = buildBook(); // originBookUrl 默认 ''
+      final merged = BookOpenUtils.mergeDbBook(route, db);
+      expect(merged.originBookUrl, 'https://route.example.com/book/1');
     });
   });
 

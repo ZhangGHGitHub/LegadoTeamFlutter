@@ -7,6 +7,7 @@
 pub mod archive_utils;
 #[cfg(feature = "quickjs")]
 pub mod asymmetric_crypto;
+pub mod cache_store;
 pub mod chinese_utils;
 pub mod concurrency_api;
 pub mod config_api;

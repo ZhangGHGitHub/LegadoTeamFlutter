@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use legado_core::cache_book::CachedChapter;
 use legado_core::content_processor::{ContentProcessor, ProcessorConfig, ReplaceRuleEntry};
 use legado_core::models::{BookChapter, ReplaceRule};
-use legado_core::web_book::WebChapter;
+use legado_core::web_book::{BookSourceFetcher, WebBookEngine, WebChapter};
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::repository::Repository;
 use legado_db::{
@@ -345,9 +345,22 @@ pub fn chapter_to_local_info(ch: &BookChapter) -> legado_book::ChapterInfo {
 /// 流程：
 /// 1. 根据 `source_url` 从数据库查找书源配置
 /// 2. 使用 WebBookEngine 从网络获取章节列表
+///    （[P2-2] 首抓为空且书籍页取址点不同时，按取址点重试一次并持久化新 tocUrl）
 /// 3. 将 WebChapter 转换为 BookChapter 并存入数据库
 /// 4. 返回 JSON 格式的章节列表
 pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterListResponse> {
+    // 生产入口：构建真实 engine 后委托核心逻辑（fetcher 泛型化便于单测注入脚本化 fetcher）
+    let engine = super::web_book::build_engine()?;
+    refresh_toc_with_fetcher(book_url, source_url, &engine)
+}
+
+/// refresh_toc 核心逻辑（fetcher 泛型化，便于单测注入脚本化 fetcher；
+/// 生产入口 [`refresh_toc`] 构建真实 engine 后委托本函数）
+fn refresh_toc_with_fetcher<F: BookSourceFetcher>(
+    book_url: &str,
+    source_url: &str,
+    engine: &WebBookEngine<F>,
+) -> LegadoResult<ChapterListResponse> {
     // 1. 从数据库获取书源配置 + 书籍记录（书籍用于确定真实的目录抓取 URL）
     let (source, existing_book) = with_database(|db| {
         let source = BookSourceRepository::new(db.connection()).find_by_url(source_url)?;
@@ -398,9 +411,43 @@ pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterList
         .unwrap_or_else(|| book_url.to_string());
 
     // 2. 使用 WebBookEngine 从网络获取章节列表
-    let engine = super::web_book::build_engine()?;
-    let web_chapters: Vec<WebChapter> =
+    let mut web_chapters: Vec<WebChapter> =
         runtime::block_on(async { engine.get_chapters(&source, &fetch_url).await })?;
+
+    // [P2-2 | 存量坏 tocUrl 自愈 2026-09-18] 首次抓取（通常按 tocUrl）未解析到
+    // 章节（存量坏值：如换源后 tocUrl 仍指向旧源页面、页面改版后不再含目录），
+    // 且书籍页取址点（book_page_fetch_url：originBookUrl 优先、空回退 bookUrl）
+    // 与已尝试的抓取地址不同 → 按书籍页地址重试一次；成功则把新 tocUrl 持久化
+    //（对齐既有 update 语义：tocUrl 为当前书源目录页地址），后续刷新直达有效
+    // 地址。`!= fetch_url` 同时覆盖「tocUrl 为空、首抓地址已是书籍页取址点」
+    // 的情形，避免对同一地址重复抓取。
+    if web_chapters.is_empty() {
+        let retry_url = working_book
+            .as_ref()
+            .map(|b| b.book_page_fetch_url().to_string())
+            .filter(|u| !u.trim().is_empty() && *u != fetch_url);
+        if let Some(retry_url) = retry_url {
+            match runtime::block_on(async { engine.get_chapters(&source, &retry_url).await }) {
+                Ok(chapters) if !chapters.is_empty() => {
+                    // 持久化新 tocUrl；写库失败仅记录，不影响本次刷新结果。
+                    // P2-1：改用单列 update_toc_url（全行 update 会把两次网络
+                    // 抓取前读取的 37 列快照写回：期间并发写入的进度列
+                    // （durChapterIndex 等）被旧值覆盖，且「本来正确但一次
+                    // 瞬时解析为空」的 tocUrl 会被永久改写）。
+                    if let Some(b) = working_book.as_mut() {
+                        b.toc_url = retry_url.clone();
+                        let book_url_key = b.book_url.clone();
+                        let _ = with_database(|db| {
+                            legado_db::BookRepository::new(db.connection())
+                                .update_toc_url(&book_url_key, &retry_url)
+                        });
+                    }
+                    web_chapters = chapters;
+                }
+                _ => {}
+            }
+        }
+    }
 
     // Task #21 修复：空结果保护。新抓取未解析到任何章节时（get_chapters 返回
     // Ok(vec![]) 而非错误，如书源失效/页面改版），绝不清空已有目录——否则会把
@@ -990,6 +1037,185 @@ mod tests {
 
         let resp = refresh_toc(book_url, source_url).unwrap();
         assert!(resp.total >= 0);
+    }
+
+    // ─── [P2-2] 存量坏 tocUrl 自愈测试 ─────────────────────────────────────
+
+    /// [P2-2] 脚本化目录 fetcher：按 URL 返回预置章节（未命中 → 空列表），
+    /// 记录每次 get_chapters 请求 URL 供断言
+    struct ScriptedTocFetcher {
+        chapters_by_url: Vec<(String, Vec<WebChapter>)>,
+        requested: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    }
+
+    impl BookSourceFetcher for ScriptedTocFetcher {
+        async fn search(
+            &self,
+            _source: &BookSource,
+            _query: &str,
+            _page: i32,
+        ) -> LegadoResult<Vec<legado_core::web_book::WebSearchResult>> {
+            Err(LegadoError::Internal("mock: search unused".into()))
+        }
+
+        async fn get_book_info(
+            &self,
+            _source: &BookSource,
+            _book_url: &str,
+        ) -> LegadoResult<legado_core::web_book::WebBookInfo> {
+            Err(LegadoError::Internal("mock: get_book_info unused".into()))
+        }
+
+        async fn get_chapters(
+            &self,
+            _source: &BookSource,
+            book_url: &str,
+        ) -> LegadoResult<Vec<WebChapter>> {
+            self.requested
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push(book_url.to_string());
+            Ok(self
+                .chapters_by_url
+                .iter()
+                .find(|(u, _)| u == book_url)
+                .map(|(_, c)| c.clone())
+                .unwrap_or_default())
+        }
+
+        async fn get_content(
+            &self,
+            _source: &BookSource,
+            _chapter: &WebChapter,
+        ) -> LegadoResult<String> {
+            Err(LegadoError::Internal("mock: content unused".into()))
+        }
+    }
+
+    /// [P2-2] 存量坏 tocUrl 自愈：首抓按坏 tocUrl 未解析到章节 → 按书籍页
+    /// 取址点（originBookUrl）重试一次；成功则持久化新 tocUrl，后续刷新直达
+    #[test]
+    fn test_refresh_toc_self_heals_bad_toc_url() {
+        use std::sync::{Arc, Mutex};
+
+        let book_url = "https://p2-2-heal.example.com/book/1";
+        let source_url = "https://p2-2-heal-src.example.com";
+        let bad_toc = "https://p2-2-heal.example.com/old-toc";
+        let detail_url = "https://p2-2-heal-src.example.com/book/1";
+
+        let _db_guard = setup_db_and_source(source_url);
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&legado_core::models::Book {
+                book_url: book_url.to_string(),
+                origin: source_url.to_string(),
+                origin_name: "测试书源".to_string(),
+                name: "自愈书".to_string(),
+                toc_url: bad_toc.to_string(),
+                origin_book_url: detail_url.to_string(),
+                ..legado_core::models::Book::default()
+            })?;
+            Ok(())
+        })
+        .expect("初始数据写入失败");
+
+        let requested = Arc::new(Mutex::new(Vec::new()));
+        let fetcher = ScriptedTocFetcher {
+            chapters_by_url: vec![
+                (bad_toc.to_string(), vec![]),
+                (
+                    detail_url.to_string(),
+                    vec![WebChapter {
+                        index: 0,
+                        title: "第一章".to_string(),
+                        url: format!("{detail_url}/c1"),
+                        is_vip: false,
+                        is_volume: false,
+                        variable: None,
+                        word_count: None,
+                    }],
+                ),
+            ],
+            requested: Arc::clone(&requested),
+        };
+        let engine = WebBookEngine::new(fetcher);
+        let resp = refresh_toc_with_fetcher(book_url, source_url, &engine).expect("自愈刷新应成功");
+        assert_eq!(resp.total, 1, "重试后应解析到 1 个章节");
+
+        let reqs = requested.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        assert_eq!(
+            reqs,
+            vec![bad_toc.to_string(), detail_url.to_string()],
+            "应先按坏 tocUrl 抓取，再按书籍页取址点重试"
+        );
+
+        // 新 tocUrl 已持久化（对齐既有 update 语义）
+        with_database(|db| {
+            let saved = BookRepository::new(db.connection())
+                .find_by_url(book_url)?
+                .expect("书籍记录应仍存在");
+            assert_eq!(saved.toc_url, detail_url, "成功地址应持久化为新 tocUrl");
+            Ok(())
+        })
+        .expect("DB 断言失败");
+
+        // 收尾清理，避免污染共享测试库
+        with_database(|db| {
+            let _ = BookChapterRepository::new(db.connection()).delete_by_book_url(book_url);
+            let _ = BookRepository::new(db.connection()).delete(book_url);
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [P2-2] tocUrl 与 originBookUrl 均为空时，首抓地址即入参 bookUrl（书籍页
+    /// 取址点的最终回退），不存在「坏值重试」对象 → 不得重复抓取；仍为空时
+    /// 走既有空结果保护（无既有章节 → 可读错误）
+    #[test]
+    fn test_refresh_toc_no_duplicate_retry_when_toc_url_empty() {
+        use std::sync::{Arc, Mutex};
+
+        let book_url = "https://p2-2-noretry.example.com/book/1";
+        let source_url = "https://p2-2-noretry-src.example.com";
+
+        let _db_guard = setup_db_and_source(source_url);
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&legado_core::models::Book {
+                book_url: book_url.to_string(),
+                origin: source_url.to_string(),
+                origin_name: "测试书源".to_string(),
+                name: "无重试书".to_string(),
+                ..legado_core::models::Book::default()
+            })?;
+            Ok(())
+        })
+        .expect("初始数据写入失败");
+
+        let requested = Arc::new(Mutex::new(Vec::new()));
+        let fetcher = ScriptedTocFetcher {
+            chapters_by_url: vec![(book_url.to_string(), vec![])],
+            requested: Arc::clone(&requested),
+        };
+        let engine = WebBookEngine::new(fetcher);
+        let err = refresh_toc_with_fetcher(book_url, source_url, &engine)
+            .expect_err("未解析到章节且无既有目录应返回可读错误");
+        assert!(
+            err.to_string().contains("未从书源解析到任何章节"),
+            "应走既有空结果保护的可读错误文案"
+        );
+
+        let reqs = requested.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        assert_eq!(
+            reqs,
+            vec![book_url.to_string()],
+            "取址点与首抓地址相同时不得重复重试"
+        );
+
+        // 收尾清理
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete(book_url);
+            Ok(())
+        })
+        .ok();
     }
 
     // ─── fetch_chapter_content 测试 ──────────────────────────────────────────

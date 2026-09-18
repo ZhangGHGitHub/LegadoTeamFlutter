@@ -19,16 +19,18 @@
 //!   showBrowser, openUrl, getVerificationCode
 //! - 压缩解压：unzipFile, getZipStringContent, un7zFile, unrarFile, get7zStringContent, getRarStringContent
 //! - 字体 API：queryTTF, queryBase64TTF, replaceFont
-//! - 工具类：randomUUID, log, toast, longToast, toURL
+//! - 工具类：randomUUID, log, toast, longToast, toURL, upLoginData, threadSleep, inflateRawBytes
+//! - HTML 解析：getElement(s), getString, getStrings, getStringList, jsoup*, setContent
+//! - 全局缓存：cache.put/get/putMemory/getFromMemory/deleteMemory/putFile/getFile/delete
 
 #![cfg(feature = "quickjs")]
 
 use legado_core::LegadoError;
 
 use crate::host_api::{
-    archive_utils, asymmetric_crypto, chinese_utils, concurrency_api, config_api, cookie_store,
-    crypto_api, encoding, file_utils, font_api, html_format, html_parse, json_utils, misc_api,
-    network, platform, regex_utils, register::mount_dual, string_utils, symmetric_crypto,
+    archive_utils, asymmetric_crypto, cache_store, chinese_utils, concurrency_api, config_api,
+    cookie_store, crypto_api, encoding, file_utils, font_api, html_format, html_parse, json_utils,
+    misc_api, network, platform, regex_utils, register::mount_dual, string_utils, symmetric_crypto,
     time_utils, variable_store,
 };
 use crate::sandbox::SandboxConfig;
@@ -73,6 +75,8 @@ pub fn register_all_apis<'js>(
     register_misc_apis(ctx, &java, &globals)?;
     register_archive_apis(ctx, &java, &globals)?;
     register_font_apis(ctx, &java, &globals)?;
+    // 全局 cache 对象（P2-9 ① 记忆缓存三件套 + 磁盘缓存，对齐 WebCacheManager）
+    register_cache_apis(ctx, &globals)?;
 
     // 将 java 命名空间对象注册到全局
     globals
@@ -121,6 +125,15 @@ fn inject_response_bridge<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoErr
 /// - `cn.hutool.crypto.digest.DigestUtil.md5Hex`
 /// - `javax.crypto.spec.SecretKeySpec|IvParameterSpec` + `javax.crypto.Cipher`
 ///   （init/doFinal → `java.aesDecryptBytes` 字节级 AES-CBC/ECB 解密）
+///
+/// P2-9 ① 扩面（按语料实际用法）：
+/// - `java.lang.{Integer/Long/Double/Boolean}.parse*/toString`、`String.valueOf`、
+///   `Thread.sleep`（→ `java.threadSleep`）、`System.currentTimeMillis`
+///   （→ `java.currentTimeMillis`）
+/// - `java.util.{Arrays.copyOf, HashMap}`（HashMap 带 toJSON 供请求头 JSON 序列化）
+/// - `java.util.zip.{Inflater, InflaterInputStream}` + `java.io.{ByteArray
+///   InputStream, ByteArrayOutputStream}` + `java.nio.ByteBuffer.allocate(n).array()`
+///   ——`wrInflateRaw` 流委托宿主 `java.inflateRawBytes`（flate2 raw-deflate）
 #[cfg(feature = "quickjs")]
 fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError> {
     let shim = r#"
@@ -166,6 +179,13 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
     if (arguments.length === 1 && isBytes) { return JSString(String(java.bytesToStr(toJsonBytes(toU8(a0)), 'UTF-8'))); }
     return JSString(String(arguments[0]));
   }
+  // String.valueOf 静态方法（P2-9 ① java.lang 最小静态面）：
+  // 挂在 JavaString 构造器函数上，`new Packages.java.lang.String(...)` 语义不变
+  JavaString.valueOf = function (x) {
+    if (x === null) return 'null';
+    if (x === undefined) return 'undefined';
+    return String(x);
+  };
   function uuidV4() {
     var d = new Uint8Array(16);
     for (var i = 0; i < 16; i++) d[i] = Math.floor(Math.random() * 256);
@@ -174,12 +194,181 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
     for (var i = 0; i < 16; i++) h += (d[i] < 16 ? '0' : '') + d[i].toString(16);
     return h.substr(0, 8) + '-' + h.substr(8, 4) + '-' + h.substr(12, 4) + '-' + h.substr(16, 4) + '-' + h.substr(20);
   }
+  // P2-9 ① java.util 最小面（按语料实际用法）：
+  // HashMap（7 源：upLoginData/请求头/评论偏好存储）——键经 JS 对象字符串化
+  // （Java 键非 String 时行为为降级项）；toJSON 保证
+  // JSON.stringify(map)（Response 桥请求头序列化路径）输出数据对象。
+  function JSHashMap() {
+    var m = {};
+    return {
+      put: function (k, v) { var old = (k in m) ? m[k] : null; m[k] = v; return old; },
+      get: function (k) { return (k in m) ? m[k] : null; },
+      containsKey: function (k) { return k in m; },
+      containsValue: function (v) { for (var k in m) if (m[k] === v) return true; return false; },
+      remove: function (k) { if (!(k in m)) return null; var old = m[k]; delete m[k]; return old; },
+      size: function () { var n = 0; for (var k in m) n++; return n; },
+      isEmpty: function () { return this.size() === 0; },
+      clear: function () { for (var k in m) delete m[k]; },
+      keySet: function () { return Object.keys(m); },
+      values: function () { var a = []; for (var k in m) a.push(m[k]); return a; },
+      entrySet: function () {
+        var a = [];
+        for (var k in m) a.push({ getKey: function () { return k; }, getValue: function () { return m[k]; } });
+        return a;
+      },
+      toJSON: function () { return m; },
+      toString: function () { var p = []; for (var k in m) p.push(k + '=' + m[k]); return '{' + p.join(', ') + '}'; }
+    };
+  }
+  // P2-9 ① java.io / java.nio / java.util.zip 最小面（语料 wrInflateRaw 流程，2 源）
+  function JSByteArrayInputStream(bytes) {
+    var b = toU8(bytes || []);
+    return {
+      _bytes: b,
+      available: function () { return b.length; },
+      close: function () {}
+    };
+  }
+  function JSByteArrayOutputStream() {
+    var chunks = [];
+    var len = 0;
+    return {
+      write: function (b, off, count) {
+        if (arguments.length === 1 && (b instanceof Uint8Array || Array.isArray(b))) {
+          var a = toU8(b);
+          chunks.push(a); len += a.length;
+          return;
+        }
+        var c = (arguments.length === 1) ? 1 : Math.max(0, Number(count) || 0);
+        var o = Number(off) || 0;
+        var src = (b instanceof Uint8Array || Array.isArray(b)) ? toU8(b) : null;
+        var a2 = new Uint8Array(c);
+        for (var i = 0; i < c; i++) a2[i] = (src && o + i < src.length) ? (src[o + i] & 255) : (Number(b) & 255);
+        chunks.push(a2); len += c;
+      },
+      toByteArray: function () {
+        var out = new Uint8Array(len);
+        var p = 0;
+        for (var i = 0; i < chunks.length; i++) { out.set(chunks[i], p); p += chunks[i].length; }
+        return out;
+      },
+      size: function () { return len; },
+      close: function () {},
+      toString: function () { return String(java.bytesToStr(toJsonBytes(this.toByteArray()), 'UTF-8')); }
+    };
+  }
+  // Inflater(true)：true 即 no-wrap（raw deflate）。本 shim 忽略该标志——
+  // 宿主 java.inflateRawBytes 先按 raw 解压、未完整消费再按 zlib 封装宽容
+  // 重试，两个构造标志的行为都被覆盖（降级项，已文档化）。
+  function JSInflater(noWrap) {
+    return {
+      _noWrap: !!noWrap,
+      end: function () {},
+      close: function () {}
+    };
+  }
+  function JSInflaterInputStream(inStream, _inflater) {
+    // 语料面：stream.read(buffer) 填充 buffer 并返回读入字节数，EOF 返回 -1；
+    // 惰性解压——首次 read 调宿主 java.inflateRawBytes 全量解压并缓存，
+    // 之后按 8192 字节分块读出；非法数据抛可捕获错误（对齐 Java 抛
+    // DataFormatException，JS 侧 try/catch 降级）。
+    var data = null;
+    var pos = 0;
+    function ensure() {
+      if (data === null) {
+        var src = (inStream && inStream._bytes) ? inStream._bytes : toU8(inStream || []);
+        data = java.inflateRawBytes(toU8(src)) || new Uint8Array(0);
+      }
+    }
+    return {
+      read: function (buffer) {
+        ensure();
+        if (pos >= data.length) return -1;
+        var n = Math.min(8192, data.length - pos);
+        if (buffer && buffer.length >= n) {
+          for (var i = 0; i < n; i++) buffer[i] = data[pos + i];
+        }
+        pos += n;
+        return n;
+      },
+      available: function () { ensure(); return data.length - pos; },
+      close: function () {}
+    };
+  }
   globalThis.Packages = {
     java: {
-      lang: { String: JavaString },
+      // P2-9 ① java.lang 最小静态面（语料命中：Thread.sleep 8 /
+      // System.currentTimeMillis 4；parseInt 等通用面一并提供）
+      lang: {
+        String: JavaString,
+        Integer: {
+          parseInt: function (s, radix) {
+            var v = parseInt(String(s), Number(radix) || 10);
+            if (isNaN(v)) throw new Error('Integer.parseInt: 无法解析 ' + s);
+            return v;
+          },
+          toString: function (v) { return String(v); }
+        },
+        Long: {
+          parseLong: function (s) {
+            var v = parseInt(String(s), 10);
+            if (isNaN(v)) throw new Error('Long.parseLong: 无法解析 ' + s);
+            return v;
+          },
+          toString: function (v) { return String(v); }
+        },
+        Double: {
+          parseDouble: function (s) {
+            var v = Number(String(s));
+            if (isNaN(v)) throw new Error('Double.parseDouble: 无法解析 ' + s);
+            return v;
+          }
+        },
+        Boolean: {
+          // Java 语义：仅 "true"（忽略大小写）为 true
+          parseBoolean: function (s) { return String(s).trim().toLowerCase() === 'true'; },
+          toString: function (v) { return String(!!v); }
+        },
+        Thread: {
+          // 委托宿主 java.threadSleep（30s 上限，阻塞当前执行线程，
+          // 与上游 JS 线程 Thread.sleep 语义一致）
+          sleep: function (ms) { java.threadSleep(Number(ms) || 0); }
+        },
+        System: {
+          currentTimeMillis: function () { return java.currentTimeMillis(); }
+        }
+      },
       util: {
         UUID: { randomUUID: function () { return { toString: function () { return uuidV4(); } }; } },
-        Arrays: { copyOfRange: function (a, from, to) { return toU8(a).slice(from, to); } }
+        Arrays: {
+          copyOfRange: function (a, from, to) { return toU8(a).slice(from, to); },
+          // 语料 1 命中：Arrays.copyOf(input, input.length)
+          copyOf: function (a, len) {
+            var src = toU8(a);
+            var n = Math.max(0, Number(len) || 0);
+            var out = new Uint8Array(n);
+            out.set(src.subarray(0, Math.min(src.length, n)));
+            return out;
+          }
+        },
+        HashMap: JSHashMap,
+        zip: { Inflater: JSInflater, InflaterInputStream: JSInflaterInputStream }
+      },
+      io: {
+        ByteArrayInputStream: JSByteArrayInputStream,
+        ByteArrayOutputStream: JSByteArrayOutputStream
+      },
+      nio: {
+        ByteBuffer: {
+          // 语料面：ByteBuffer.allocate(n).array()（wrInflateRaw 读缓冲）
+          allocate: function (n) {
+            var len = Math.max(0, Number(n) || 0);
+            return {
+              array: function () { return new Array(len); },
+              capacity: function () { return len; }
+            };
+          }
+        }
       }
     },
     android: { util: { Base64: {
@@ -417,6 +606,35 @@ fn register_encoding_apis<'js>(
                 }
                 let bytes = encoding::base64_decode_bytes_with_flags(&s, flags.0.unwrap_or(0))
                     .map_err(|e| rquickjs::Error::FromJs {
+                        from: "String",
+                        to: "Uint8Array",
+                        message: Some(e),
+                    })?;
+                let arr: rquickjs::TypedArray<u8> = rquickjs::TypedArray::new(ctx.clone(), bytes)?;
+                arr.into_js(&ctx)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // hexDecodeToByteArray(str) -> Uint8Array（字节数组）
+    // P2-9 ①：语料 `java.hexDecodeToByteArray`（8/5），上游
+    // JsExtensions.kt:666-668 `hexDecodeToByteArray(str): ByteArray?`。
+    // 与 base64DecodeToByteArray 同一字节数组约定（空输入 → null，
+    // 非法 hex → 可捕获的 FromJs 错误，JS 侧 try/catch 降级）。
+    mount_dual(
+        java,
+        globals,
+        "hexDecodeToByteArray",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>, s: String| -> rquickjs::Result<rquickjs::Value<'js>> {
+                use rquickjs::IntoJs;
+                if s.trim().is_empty() {
+                    return Ok(rquickjs::Value::new_null(ctx.clone()));
+                }
+                let bytes =
+                    encoding::hex_decode_bytes(&s).map_err(|e| rquickjs::Error::FromJs {
                         from: "String",
                         to: "Uint8Array",
                         message: Some(e),
@@ -1223,6 +1441,69 @@ fn register_utility_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
+    // upLoginData(data?) — P2-9 ①：语料 `java.upLoginData`（7/6，
+    // 形态：upLoginData() / upLoginData(map) / upLoginData(saved)）。
+    // 上游 SourceLoginJsExtensions.kt:35-37 经 WebView 登录回调上报登录态。
+    // 本宿主无 WebView/登录回调通道：提供「注册 + 显式降级」——仅记录日志
+    // 并正常返回（永不抛异常），不中断书源脚本流程（降级项，已在交付
+    // 报告列出；若未来有登录态存储层，可在此接上真实上报）。
+    mount_dual(
+        java,
+        globals,
+        "upLoginData",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |_ctx: rquickjs::Ctx<'js>, _data: Opt<rquickjs::Value>| -> () {
+                eprintln!("[legado-js] upLoginData: 无登录回调通道，降级为 no-op");
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // threadSleep(ms) — P2-9 ①：语料 `Packages.java.lang.Thread.sleep`（8 命中）
+    // 由 Packages shim 的 lang.Thread.sleep 委托到本宿主方法。
+    // std::thread::sleep 阻塞当前执行线程（与上游 JS 线程语义一致）；
+    // 上限 30s 防止书源写死超大 sleep 卡死引擎（降级，已文档化）。
+    mount_dual(
+        java,
+        globals,
+        "threadSleep",
+        rquickjs::Function::new(ctx.clone(), |ms: i64| -> () {
+            let ms = ms.clamp(0, 30_000);
+            std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // inflateRawBytes(bytes) -> Uint8Array — P2-9 ①：语料
+    // `java.util.zip.Inflater` 流程（2 源）的 raw-deflate 解压宿主桥，
+    // Packages shim 的 util.zip.Inflater/InflaterInputStream 委托到本方法。
+    // 非法数据抛可捕获错误（JS 侧 try/catch 降级为空结果，不炸整条规则）。
+    mount_dual(
+        java,
+        globals,
+        "inflateRawBytes",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>,
+             bytes: rquickjs::TypedArray<u8>|
+             -> rquickjs::Result<rquickjs::Value<'js>> {
+                use rquickjs::IntoJs;
+                let data: Vec<u8> = bytes.as_bytes().map(|b| b.to_vec()).unwrap_or_default();
+                let out = archive_utils::inflate_raw_bytes(&data).map_err(|e| {
+                    rquickjs::Error::FromJs {
+                        from: "Uint8Array",
+                        to: "Uint8Array",
+                        message: Some(e),
+                    }
+                })?;
+                let arr: rquickjs::TypedArray<u8> = rquickjs::TypedArray::new(ctx.clone(), out)?;
+                arr.into_js(&ctx)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
     Ok(())
 }
 
@@ -1842,6 +2123,73 @@ fn register_html_parse_apis<'js>(
     )
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
+    // java.getStringList(rule, mContent?) -> 数组（多值列表，不连接）
+    // P2-9 ①：语料 `java.getStringList`（15/5），上游
+    // AnalyzeByJSoup.kt:72 / AnalyzeRule.kt:202 的 getStringList：
+    // 与 getStrings 同源（content 回退、规则类型分派、逐规则求值）但
+    // 不做换行连接，返回 List<String>。宿主面返回 JS 数组，并附加
+    // size() 方法以兼容语料中的 `list.size()` 用法（Java List 面）。
+    java.set(
+        "getStringList",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>,
+             rule: String,
+             m_content: Opt<String>|
+             -> rquickjs::Result<rquickjs::Array<'js>> {
+                let src = ctx.globals().get::<_, String>("src").unwrap_or_default();
+                let items = html_parse::get_string_list(&ctx, rule, m_content, src);
+                let arr = rquickjs::Array::new(ctx.clone())?;
+                for (i, item) in items.iter().enumerate() {
+                    arr.set(i, item.clone())?;
+                }
+                // 兼容语料 `list.size()`（Java List.size() 语义）；
+                // This 接收 this 绑定（arr.size() 零位置参数调用）
+                let size_fn = rquickjs::Function::new(
+                    ctx.clone(),
+                    |this: rquickjs::prelude::This<rquickjs::Array>| -> u32 { this.0.len() as u32 },
+                )
+                .map_err(|e| rquickjs::Error::FromJs {
+                    from: "Array",
+                    to: "Function",
+                    message: Some(e.to_string()),
+                })?;
+                arr.clone().into_object().set("size", size_fn)?;
+                Ok(arr)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // java.setContent(content, baseUrl?) — P2-9 ①：语料 `java.setContent`
+    // （13/7，形态：单参为主，含 setContent(m, baseUrl) 双参 2 例），上游
+    // AnalyzeRule.kt:101：setContent 更新分析器当前内容（mContent）。
+    // 本宿主分析器当前内容 = 全局变量 `src`（getElement/getString 等
+    // 规则链读取），故写入 globals.src；双参形式同时更新 `baseUrl`
+    // （上游无 baseUrl 参数，属兼容超集，已文档化）。
+    // 注意：不改动 `result`——上游 setContent 只动 mContent，`result`
+    // 是上一条规则的结果，语料中存在 `java.setContent(src)` 之后仍读
+    // 原 result 拼接的用法，覆盖 result 会破坏既有语义。
+    java.set(
+        "setContent",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>,
+             content: String,
+             base_url: Opt<String>|
+             -> rquickjs::Result<()> {
+                ctx.globals().set("src", content)?;
+                if let Some(b) = base_url.0 {
+                    ctx.globals().set("baseUrl", b)?;
+                }
+                Ok(())
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
     // java.jsoupAttr(html, css, attr) — org.jsoup.Jsoup 模拟层底层
     java.set(
         "jsoupAttr",
@@ -1874,6 +2222,197 @@ fn register_html_parse_apis<'js>(
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
     Ok(())
+}
+
+/// 注册全局 `cache` 对象（P2-9 ① 记忆缓存三件套 + 磁盘缓存）
+///
+/// 对齐上游 WebCacheManager（help/WebCacheManager.kt:171-206）JS 面：
+/// put / putMemory / getFromMemory / deleteMemory / get(onlyDisk) /
+/// putFile / getFile / delete。后端为 `cache_store` 模块的进程级
+/// LRU 内存 + 磁盘文件，语义对齐 CacheManager.kt:60-98：
+/// - saveTime <= 0 → 仅内存（putMemory），永久有效
+/// - saveTime > 0  → 磁盘条目 + 截止时间，读取时过期即删
+/// - putFile/getFile：磁盘裸文件，无过期
+///
+/// 值统一字符串化后存储（上游 WebCacheManager 存 String；对象值
+/// 走 JSON.stringify 为兼容超集）；缺失键返回显式 **null**
+/// （对齐 Kotlin 的 null 返回，而非 undefined）。
+#[cfg(feature = "quickjs")]
+fn register_cache_apis<'js>(
+    ctx: &rquickjs::Ctx<'js>,
+    globals: &rquickjs::Object<'js>,
+) -> Result<(), LegadoError> {
+    let cache =
+        rquickjs::Object::new(ctx.clone()).map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // put(key, value, saveTime?) -> bool
+    // saveTime<=0 语义对齐 CacheManager.kt:60-98：仅内存、无过期
+    cache
+        .set(
+            "put",
+            rquickjs::Function::new(
+                ctx.clone(),
+                |ctx: rquickjs::Ctx<'js>,
+                 key: String,
+                 value: rquickjs::Value<'js>,
+                 save_time: Opt<i64>|
+                 -> bool {
+                    let v = stringify_cache_value(&ctx, &value);
+                    cache_store::put(&key, &v, save_time.0.unwrap_or(0))
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // putMemory(key, value)
+    cache
+        .set(
+            "putMemory",
+            rquickjs::Function::new(
+                ctx.clone(),
+                |ctx: rquickjs::Ctx<'js>, key: String, value: rquickjs::Value<'js>| -> () {
+                    cache_store::put_memory(&key, &stringify_cache_value(&ctx, &value));
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // getFromMemory(key) -> String | null
+    cache
+        .set(
+            "getFromMemory",
+            rquickjs::Function::new(
+                ctx.clone(),
+                |ctx: rquickjs::Ctx<'js>, key: String| -> rquickjs::Result<rquickjs::Value<'js>> {
+                    cache_value_or_null(&ctx, cache_store::get_from_memory(&key))
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // deleteMemory(key)
+    cache
+        .set(
+            "deleteMemory",
+            rquickjs::Function::new(ctx.clone(), |_ctx: rquickjs::Ctx<'js>, key: String| -> () {
+                cache_store::delete_memory(&key);
+            })
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // get(key, onlyDisk?) -> String | null
+    cache
+        .set(
+            "get",
+            rquickjs::Function::new(
+                ctx.clone(),
+                |ctx: rquickjs::Ctx<'js>,
+                 key: String,
+                 only_disk: Opt<bool>|
+                 -> rquickjs::Result<rquickjs::Value<'js>> {
+                    cache_value_or_null(&ctx, cache_store::get(&key, only_disk.0.unwrap_or(false)))
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // putFile(key, value) -> bool（磁盘裸文件，无过期）
+    cache
+        .set(
+            "putFile",
+            rquickjs::Function::new(
+                ctx.clone(),
+                |ctx: rquickjs::Ctx<'js>, key: String, value: rquickjs::Value<'js>| -> bool {
+                    cache_store::put_file(&key, &stringify_cache_value(&ctx, &value))
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // getFile(key) -> String | null
+    cache
+        .set(
+            "getFile",
+            rquickjs::Function::new(
+                ctx.clone(),
+                |ctx: rquickjs::Ctx<'js>, key: String| -> rquickjs::Result<rquickjs::Value<'js>> {
+                    cache_value_or_null(&ctx, cache_store::get_file(&key))
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // delete(key)（磁盘条目 + 文件缓存 + 内存）
+    cache
+        .set(
+            "delete",
+            rquickjs::Function::new(ctx.clone(), |_ctx: rquickjs::Ctx<'js>, key: String| -> () {
+                cache_store::delete(&key);
+            })
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    globals
+        .set("cache", cache)
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    Ok(())
+}
+
+/// 缓存缺失键 → 显式 null（rquickjs 的 `Option` IntoJs 会把 None
+/// 转成 undefined，与 Kotlin null 语义不符，故显式构造）
+#[cfg(feature = "quickjs")]
+fn cache_value_or_null<'js>(
+    ctx: &rquickjs::Ctx<'js>,
+    v: Option<String>,
+) -> rquickjs::Result<rquickjs::Value<'js>> {
+    use rquickjs::IntoJs;
+    match v {
+        Some(s) => s.into_js(ctx),
+        None => Ok(rquickjs::Value::new_null(ctx.clone())),
+    }
+}
+
+/// 缓存值字符串化：字符串原样、数字/布尔转字面量、对象走
+/// JSON.stringify（对齐 engine.rs 的 CStr → String 容错写法）
+#[cfg(feature = "quickjs")]
+fn stringify_cache_value<'js>(ctx: &rquickjs::Ctx<'js>, v: &rquickjs::Value<'js>) -> String {
+    if v.is_string() {
+        return v
+            .as_string()
+            .map(|s| s.to_string().unwrap_or_default())
+            .unwrap_or_default();
+    }
+    if v.is_bool() {
+        return match v.as_bool() {
+            Some(true) => "true".to_string(),
+            _ => "false".to_string(),
+        };
+    }
+    if let Some(n) = v.as_int() {
+        return n.to_string();
+    }
+    if let Some(f) = v.as_float() {
+        return f.to_string();
+    }
+    if v.is_null() || v.is_undefined() {
+        return String::new();
+    }
+    match ctx.json_stringify(v.clone()) {
+        Ok(Some(js)) => js.to_string().unwrap_or_else(|_| {
+            js.to_cstring()
+                .map(|c| c.as_str().to_string())
+                .unwrap_or_default()
+        }),
+        _ => String::new(),
+    }
 }
 
 /// 注册中文工具 API
@@ -3876,5 +4415,285 @@ decryptImage(result);
             engine.eval("java.getString('$.categoryInfoV4')").unwrap(),
             "20000:小说:小说,20001:玄幻:玄幻,20003:异世大陆:异世"
         );
+    }
+
+    // ===== P2-9 ① 宿主方法补齐测试 =====
+
+    /// java.getStringList（上游 AnalyzeByJSoup.kt:72）：多值不连接，数组附 size()
+    #[test]
+    fn test_java_getstringlist_function_and_size() {
+        let engine = make_engine();
+        let result = engine
+            .eval(
+                r#"
+                src = '{"list":["a","b","c"]}';
+                var arr = java.getStringList('$.list[*]');
+                JSON.stringify({ items: arr, size: arr.size() });
+                "#,
+            )
+            .unwrap();
+        assert!(
+            result.contains("\"items\":[\"a\",\"b\",\"c\"]"),
+            "got: {result}"
+        );
+        assert!(result.contains("\"size\":3"), "got: {result}");
+        // 独立 mContent 覆盖全局 src
+        let result2 = engine
+            .eval(
+                r#"
+                JSON.stringify(java.getStringList('$.x[*]', '{"x":["p","q"]}'));
+                "#,
+            )
+            .unwrap();
+        assert!(result2.contains("[\"p\",\"q\"]"), "got: {result2}");
+    }
+
+    /// java.setContent（上游 AnalyzeRule.kt:101）：更新分析器内容（src），不动 result
+    #[test]
+    fn test_java_set_content_updates_src() {
+        let engine = make_engine();
+        let result = engine
+            .eval(
+                r#"
+                src = '{"a":"old"}';
+                var before = java.getString('$.a');
+                java.setContent('{"a":"new"}');
+                var after = java.getString('$.a');
+                java.setContent('{"b":1}', 'https://base.example/');
+                JSON.stringify({ before: before, after: after, base: String(baseUrl) });
+                "#,
+            )
+            .unwrap();
+        assert!(result.contains("\"before\":\"old\""), "got: {result}");
+        assert!(result.contains("\"after\":\"new\""), "got: {result}");
+        assert!(result.contains("https://base.example/"), "got: {result}");
+    }
+
+    /// java.hexDecodeToByteArray（上游 JsExtensions.kt:666）：十六进制 → Uint8Array
+    #[test]
+    fn test_hex_decode_to_byte_array() {
+        let engine = make_engine();
+        let result = engine
+            .eval(
+                r#"
+                var b = java.hexDecodeToByteArray('48656c6c6f');
+                JSON.stringify({
+                    len: b.length,
+                    c0: b[0],
+                    empty: java.hexDecodeToByteArray('') === null
+                });
+                "#,
+            )
+            .unwrap();
+        assert!(result.contains("\"len\":5"), "got: {result}");
+        assert!(result.contains("\"c0\":72"), "got: {result}");
+        assert!(result.contains("\"empty\":true"), "got: {result}");
+        // 非法 hex → 抛异常（可被 try/catch 捕获）
+        let threw = engine
+            .eval(
+                r#"
+                var t = false;
+                try { java.hexDecodeToByteArray('zz'); } catch (e) { t = true; }
+                t;
+                "#,
+            )
+            .unwrap();
+        assert_eq!(threw, "true");
+    }
+
+    /// java.upLoginData（上游 SourceLoginJsExtensions.kt:35）：无回调通道 → no-op 不抛
+    #[test]
+    fn test_up_login_data_noop() {
+        let engine = make_engine();
+        let result = engine
+            .eval(
+                r#"
+                var r1 = java.upLoginData();
+                var r2 = java.upLoginData({a: 'b'});
+                JSON.stringify({
+                    r1: r1 === undefined,
+                    r2: r2 === undefined,
+                    fns: typeof java.upLoginData
+                });
+                "#,
+            )
+            .unwrap();
+        assert!(result.contains("\"r1\":true"), "got: {result}");
+        assert!(result.contains("\"r2\":true"), "got: {result}");
+        assert!(result.contains("\"fns\":\"function\""), "got: {result}");
+    }
+
+    /// java.threadSleep（上游 Thread.sleep shim）：真实休眠但不阻塞 UI
+    #[test]
+    fn test_thread_sleep() {
+        let engine = make_engine();
+        let result = engine
+            .eval(
+                r#"
+                var t0 = java.currentTimeMillis();
+                java.threadSleep(30);
+                var dt = java.currentTimeMillis() - t0;
+                JSON.stringify({ ok: dt >= 25, fns: typeof java.threadSleep });
+                "#,
+            )
+            .unwrap();
+        assert!(result.contains("\"ok\":true"), "got: {result}");
+    }
+
+    /// java.inflateRawBytes（上游 zip Inflater 流宿主）+ 完整 wrInflateRaw 流程
+    #[test]
+    fn test_inflate_raw_bytes_and_zip_shim() {
+        let engine = make_engine();
+        let payload = b"01234567890123456789"; // 20 字节
+        let mut enc = flate2::write::DeflateEncoder::new(Vec::new(), flate2::Compression::fast());
+        enc.write_all(payload).unwrap();
+        let compressed = enc.finish().unwrap();
+        let bytes_js: String = compressed
+            .iter()
+            .map(|b| b.to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+
+        // 宿主直接调用
+        use std::io::Write;
+        let r1 = engine
+            .eval(&format!(
+                r#"
+                var bytes = new Uint8Array([{}]);
+                var out = java.inflateRawBytes(bytes);
+                JSON.stringify({{ len: out.length, head: out[0] }});
+                "#,
+                bytes_js
+            ))
+            .unwrap();
+        assert!(r1.contains("\"len\":20"), "got: {r1}");
+        assert!(r1.contains("\"head\":48"), "got: {r1}");
+
+        // 上游语料 wrInflateRaw 的完整 Packages 流（L6134-6148）
+        let r2 = engine
+            .eval(&format!(
+                r#"
+                var P = Packages.java;
+                var bytes = new Uint8Array([{}]);
+                var inflater = new P.util.zip.Inflater(true);
+                var bin = new P.io.ByteArrayInputStream(bytes);
+                var stream = new P.util.zip.InflaterInputStream(bin, inflater);
+                var output = new P.io.ByteArrayOutputStream();
+                var buffer = P.nio.ByteBuffer.allocate(8192).array();
+                var n;
+                var total = 0;
+                while ((n = stream.read(buffer)) !== -1) {{
+                    output.write(buffer, 0, n);
+                    total += n;
+                }}
+                var res = output.toByteArray();
+                stream.close();
+                inflater.end();
+                output.close();
+                JSON.stringify({{ total: total, len: res.length, head: res[0], tail: res[res.length - 1] }});
+                "#,
+                bytes_js
+            ))
+            .unwrap();
+        assert!(r2.contains("\"total\":20"), "got: {r2}");
+        assert!(r2.contains("\"len\":20"), "got: {r2}");
+        assert!(r2.contains("\"head\":48"), "got: {r2}");
+        assert!(r2.contains("\"tail\":57"), "got: {r2}");
+
+        // 非 deflate 数据 → 可捕获异常
+        let r3 = engine
+            .eval(
+                r#"
+                var t = false;
+                try { java.inflateRawBytes(new Uint8Array([1, 2, 3, 4])); } catch (e) { t = true; }
+                t;
+                "#,
+            )
+            .unwrap();
+        assert_eq!(r3, "true");
+    }
+
+    /// Packages shim 扩面：java.lang.* / java.util.* / java.nio / zip / io
+    #[test]
+    fn test_packages_shim_lang_util() {
+        let engine = make_engine();
+        let result = engine
+            .eval(
+                r#"
+                var P = Packages.java;
+                var map = new P.util.HashMap();
+                map.put('k', 'v');
+                map.put('k2', 2);
+                var ts = P.lang.System.currentTimeMillis();
+                var cp = P.util.Arrays.copyOf(new Uint8Array([1, 2, 3, 4, 5]), 3);
+                var threw = false;
+                try { P.lang.Integer.parseInt('abc'); } catch (e) { threw = true; }
+                JSON.stringify({
+                    mapGet: map.get('k'),
+                    mapSize: map.size(),
+                    mapJson: JSON.stringify(map),
+                    valueOf: P.lang.String.valueOf(123),
+                    parseInt: P.lang.Integer.parseInt('42'),
+                    parseLong: P.lang.Long.parseLong('99'),
+                    parseDouble: P.lang.Double.parseDouble('3.5'),
+                    parseBoolean: P.lang.Boolean.parseBoolean('TRUE'),
+                    isNow: typeof ts === 'number',
+                    cpLen: cp.length,
+                    cp0: cp[0],
+                    parseIntThrows: threw,
+                    nioLen: P.nio.ByteBuffer.allocate(4).array().length
+                });
+                "#,
+            )
+            .unwrap();
+        assert!(result.contains("\"mapGet\":\"v\""), "got: {result}");
+        assert!(result.contains("\"mapSize\":2"), "got: {result}");
+        assert!(result.contains("\"valueOf\":\"123\""), "got: {result}");
+        assert!(result.contains("\"parseInt\":42"), "got: {result}");
+        assert!(result.contains("\"parseLong\":99"), "got: {result}");
+        assert!(result.contains("\"parseDouble\":3.5"), "got: {result}");
+        assert!(result.contains("\"parseBoolean\":true"), "got: {result}");
+        assert!(result.contains("\"isNow\":true"), "got: {result}");
+        assert!(result.contains("\"cpLen\":3"), "got: {result}");
+        assert!(result.contains("\"cp0\":1"), "got: {result}");
+        assert!(result.contains("\"parseIntThrows\":true"), "got: {result}");
+        assert!(result.contains("\"nioLen\":4"), "got: {result}");
+    }
+
+    /// 全局 cache 对象（对齐 WebCacheManager）：记忆三件套 + 磁盘/文件缓存
+    #[test]
+    fn test_cache_global_roundtrip() {
+        let engine = make_engine();
+        let result = engine
+            .eval(
+                r#"
+                var K = 'p29-test-' + java.currentTimeMillis() + '-' + Math.floor(Math.random() * 1e9);
+                cache.putMemory(K, 'mem-val');
+                var m = cache.getFromMemory(K);
+                cache.put(K, 'disk-val', 3600);
+                var d = cache.get(K);
+                cache.deleteMemory(K);
+                var m2 = cache.getFromMemory(K);
+                var f = cache.getFile(K);
+                cache.putFile(K, 'file-val');
+                var f2 = cache.getFile(K);
+                cache.delete(K);
+                var d2 = cache.get(K);
+                var f3 = cache.getFile(K);
+                JSON.stringify({
+                    m: m, d: d, m2: m2, f: f, f2: f2, d2: d2, f3: f3,
+                    tPut: typeof cache.put, tGet: typeof cache.get
+                });
+                "#,
+            )
+            .unwrap();
+        assert!(result.contains("\"m\":\"mem-val\""), "got: {result}");
+        assert!(result.contains("\"d\":\"disk-val\""), "got: {result}");
+        assert!(result.contains("\"m2\":null"), "got: {result}");
+        assert!(result.contains("\"f\":null"), "got: {result}");
+        assert!(result.contains("\"f2\":\"file-val\""), "got: {result}");
+        assert!(result.contains("\"d2\":null"), "got: {result}");
+        assert!(result.contains("\"f3\":null"), "got: {result}");
+        assert!(result.contains("\"tPut\":\"function\""), "got: {result}");
     }
 }

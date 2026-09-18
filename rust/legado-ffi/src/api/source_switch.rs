@@ -2057,6 +2057,75 @@ mod tests {
         .ok();
     }
 
+    /// [P2-8 P1-1 | 回归固化 2026-09-18] 换源后以**不含 originBookUrl 键**的
+    /// Book JSON 调 update_book，DB 内该列不得被清空：`bookshelf::update_book`
+    /// 写侧防守（`fill_origin_book_url_if_empty`）必须从库内既有行补齐。
+    ///
+    /// 触发场景：Dart 侧持有换源前构造的陈旧 Book 内存对象（字段缺失/为空），
+    /// 全行 UPDATE 会把缺失键序列化为空串覆盖换源事务写入的详情页地址。
+    /// 本测试固化防守行为，防止后续重构把该分支删掉。
+    #[test]
+    fn test_update_book_missing_origin_book_url_keeps_column() {
+        use crate::db_state::with_database;
+        use legado_core::models::{Book, BookSource};
+        use legado_db::repository::Repository;
+        use legado_db::{BookRepository, BookSourceRepository};
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://p1-1-regression.example.com/book/1";
+        let source_url = "https://p1-1-regression-src.example.com";
+        let origin_detail = "https://p1-1-regression-src.example.com/book/9";
+
+        // 初始：模拟换源事务后的库内状态（originBookUrl 已由换源写入）
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: book_url.to_string(),
+                origin: source_url.to_string(),
+                origin_name: "固化源".to_string(),
+                name: "书名".to_string(),
+                author: "作者".to_string(),
+                origin_book_url: origin_detail.to_string(),
+                ..Book::default()
+            })?;
+            BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: source_url.to_string(),
+                book_source_name: "固化源".to_string(),
+                ..BookSource::default()
+            })?;
+            Ok(())
+        })
+        .expect("初始数据写入失败");
+
+        // 完全不含 originBookUrl 键的 Book JSON（Dart 陈旧内存对象形态）
+        let book_json = r#"{
+            "bookUrl": "https://p1-1-regression.example.com/book/1",
+            "name": "书名",
+            "author": "作者",
+            "type": 0
+        }"#;
+        crate::api::bookshelf::update_book(book_json).expect("update_book 应成功");
+
+        with_database(|db| {
+            let saved = BookRepository::new(db.connection())
+                .find_by_url(book_url)?
+                .expect("书籍记录应仍存在");
+            assert_eq!(
+                saved.origin_book_url, origin_detail,
+                "入参缺 originBookUrl 时不得清空换源事务写入的列，写侧防守须从库内既有行补齐"
+            );
+            Ok(())
+        })
+        .expect("DB 断言失败");
+
+        // 收尾清理，避免污染共享测试库
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete(book_url);
+            let _ = BookSourceRepository::new(db.connection()).delete(source_url);
+            Ok(())
+        })
+        .ok();
+    }
+
     /// Task #16 P0：换源完整链路集成测试（需真实网络，CI 忽略）
     ///
     /// 验证 switch_book_source 返回的 JSON 中 bookUrl 与传入的原 bookUrl 一致（稳定主键）。

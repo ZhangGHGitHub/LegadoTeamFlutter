@@ -169,6 +169,13 @@ impl RoomImporter {
 
             let book_url = obj.get("bookUrl").and_then(|v| v.as_str()).unwrap_or("");
             let toc_url = obj.get("tocUrl").and_then(|v| v.as_str()).unwrap_or("");
+            // [P3-4 | 2026-09-18] 导出/导入自环保留字段：originBookUrl（当前书源
+            // 详情页地址，换源事务与 preUpdateJs 钩子写入）；此前按字段构造遗漏
+            // 该键，自导出→导入会丢失换源写入的详情页地址（导入后回退 bookUrl）
+            let origin_book_url = obj
+                .get("originBookUrl")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let origin = obj
                 .get("origin")
                 .and_then(|v| v.as_str())
@@ -244,6 +251,7 @@ impl RoomImporter {
             let book = legado_core::models::Book {
                 book_url: book_url.to_string(),
                 toc_url: toc_url.to_string(),
+                origin_book_url: origin_book_url.to_string(),
                 origin: origin.to_string(),
                 origin_name: origin_name.to_string(),
                 name: name.to_string(),
@@ -355,6 +363,56 @@ mod tests {
             )
             .unwrap();
         assert_eq!(name, "Test Book");
+    }
+
+    /// [P3-4 | 2026-09-18] 自导出/导入闭环：导出 JSON 含 originBookUrl
+    /// （Book serde 键名）时导入不得丢失该列；缺键导入取空串（存量 JSON 兼容）
+    #[test]
+    fn test_import_books_keeps_origin_book_url() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+
+        // 含 originBookUrl（换源事务写入的当前书源详情页地址）
+        let json = r#"[
+            {
+                "bookUrl": "https://example.com/book/1",
+                "name": "Test Book",
+                "author": "Test Author",
+                "originBookUrl": "https://new-src.example.com/book/9",
+                "type": 0,
+                "group": 0
+            }
+        ]"#;
+        RoomImporter::import_books(conn, json).unwrap();
+
+        let saved: String = conn
+            .query_row(
+                "SELECT originBookUrl FROM books WHERE bookUrl = 'https://example.com/book/1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(saved, "https://new-src.example.com/book/9");
+
+        // 缺 originBookUrl 键（存量导出 JSON）→ 空串默认，不报错
+        let json_legacy = r#"[
+            {
+                "bookUrl": "https://example.com/book/legacy",
+                "name": "Legacy Book",
+                "type": 0,
+                "group": 0
+            }
+        ]"#;
+        RoomImporter::import_books(conn, json_legacy).unwrap();
+
+        let legacy: String = conn
+            .query_row(
+                "SELECT originBookUrl FROM books WHERE bookUrl = 'https://example.com/book/legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(legacy, "");
     }
 
     /// 评审 W1：重复导入同一 bookUrl 不丢目录——upsert 改走仓储后

@@ -92,7 +92,9 @@ pub struct Book {
     ///
     /// [P2-8] 换源根因修复：换源后 `book_url`（稳定主键）保持旧源地址不变，
     /// 「抓取书籍页」路径（详情刷新 / tocUrl 推导 / preUpdateJs 钩子）须用
-    /// 当前书源的详情页地址，由本字段承载；换源事务写入，为空时回退
+    /// 当前书源的详情页地址，由本字段承载；两个写者——换源事务
+    /// （`switch_book_source_with`）与 preUpdateJs 钩子 reGetBook
+    /// （`re_get_book_native`，经刷新流程落库），为空时回退
     /// `book_url`（未换源书籍与存量库向后兼容）。
     #[serde(default, rename = "originBookUrl")]
     pub origin_book_url: String,
@@ -253,9 +255,9 @@ impl Book {
         book_type::LOCAL_TAG.to_string()
     }
 
-    /// [P2-8] 抓取书籍页地址选择：优先 `origin_book_url`（当前书源详情页地址，
-    /// 换源事务写入），为空时回退 `book_url`（稳定主键；未换源书籍与存量库
-    /// 行为不变，向后兼容）。
+    /// [P2-8] 抓取书籍页地址选择：优先 `origin_book_url`（当前书源详情页地址；
+    /// 换源事务与 preUpdateJs 钩子 reGetBook 两个写者，均只写 DB 列），为空时
+    /// 回退 `book_url`（稳定主键；未换源书籍与存量库行为不变，向后兼容）。
     ///
     /// 「抓取书籍页」路径（详情刷新 / tocUrl 推导 / preUpdateJs 钩子）统一
     /// 经本方法取址，避免换源后拿旧源 bookUrl 打新源规则解析出坏值。

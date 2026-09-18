@@ -121,8 +121,10 @@ fn re_get_book_native(source: &BookSource, book: &mut Book) -> LegadoResult<()> 
 
 /// 对齐 `AnalyzeRule.refreshTocUrl`：重新拉详情写 tocUrl 等
 ///
-/// [P2-8] 取址：优先 `origin_book_url`（当前书源详情页地址，换源事务写入），
-/// 为空回退 `book_url`（稳定主键；未换源书籍与存量库行为不变）。
+/// [P2-8] 取址：优先 `origin_book_url`（当前书源详情页地址；该字段有两个
+/// 写者——换源事务（`switch_book_source_with`）与本文件 preUpdateJs 钩子
+/// reGetBook（`re_get_book_native`，经刷新流程落库），均只写 DB 列），为空
+/// 回退 `book_url`（稳定主键；未换源书籍与存量库行为不变）。
 #[cfg(feature = "quickjs")]
 fn refresh_toc_url_native(source: &BookSource, book: &mut Book) -> LegadoResult<()> {
     let engine = crate::api::web_book::build_engine()?;

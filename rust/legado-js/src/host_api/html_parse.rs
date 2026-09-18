@@ -516,6 +516,26 @@ pub fn get_strings<'js>(
     get_string(ctx, rule, m_content, src)
 }
 
+/// `java.getStringList(rule, mContent)` → 多值列表（不连接）
+///
+/// 对齐上游 `AnalyzeByJSoup.kt:72` / `AnalyzeRule.kt:202` 的
+/// `getStringList`：与 [`get_string`] 同源（content 回退、规则类型分派、
+/// 逐规则求值）但**不做换行连接**，直接返回 `Vec<String>`。
+/// 上游 JS 面返回 `List<String>`；Rust 宿主面返回 JS 数组（宿主注册处
+/// 附加 `size()` 方法以兼容语料中的 `list.size()` 用法）。
+pub fn get_string_list<'js>(
+    ctx: &Ctx<'js>,
+    rule: String,
+    m_content: Opt<String>,
+    src: String,
+) -> Vec<String> {
+    let content = match m_content.0 {
+        Some(s) if !s.is_empty() => s,
+        _ => src,
+    };
+    resolve_dispatched_strings(ctx, &content, &rule)
+}
+
 // ─── 测试 ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -570,6 +590,38 @@ mod tests {
         let s3 =
             context.with(|ctx| get_string(&ctx, "a@href".to_string(), Opt(None), html.to_string()));
         assert_eq!(s3, "/c/1");
+    }
+
+    /// P2-9 ①：`java.getStringList` 底层——多值列表（不连接，区别于 get_string）
+    #[test]
+    fn test_get_string_list_unjoined_multi_values() {
+        let (_runtime, context) = bare_ctx();
+        let json = r#"{"list": ["a", "b", "c"]}"#;
+        // JSONPath 多值 → 逐项保留（上游 AnalyzeByJSoup.getStringList 语义）
+        let v = context.with(|ctx| {
+            get_string_list(&ctx, "$.list[*]".to_string(), Opt(None), json.to_string())
+        });
+        assert_eq!(v, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        // 第二参覆盖当前 src
+        let v2 = context.with(|ctx| {
+            get_string_list(
+                &ctx,
+                "$.list[*]".to_string(),
+                Opt(Some(json.to_string())),
+                String::new(),
+            )
+        });
+        assert_eq!(v2, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        // CSS 多值 → 逐项保留（不 join）
+        let html = r#"<div><a class="x" href="/1">一</a><a class="x" href="/2">二</a></div>"#;
+        let v3 = context
+            .with(|ctx| get_string_list(&ctx, "a.x@href".to_string(), Opt(None), html.to_string()));
+        assert_eq!(v3, vec!["/1".to_string(), "/2".to_string()]);
+        // 零命中 → 空列表（不 panic）
+        let v4 = context.with(|ctx| {
+            get_string_list(&ctx, "a.miss@href".to_string(), Opt(None), html.to_string())
+        });
+        assert!(v4.is_empty());
     }
 
     /// 包子漫画正文：`java.getElements('class.comic-contain@amp-img')`

@@ -52,7 +52,7 @@ extension _BookInfoLoad on _BookInfoScreenState {
       // 带入的瘦壳（author 等字段为空）→ 直接覆盖会显示「未知作者/共 0 章」。
       // 用 dbBook 补全 widget.book 的空字段，保留路由实时字段优先。
       if (!inShelf && book != null && dbBook != null) {
-        book = _mergeDbBook(book, dbBook);
+        book = BookOpenUtils.mergeDbBook(book, dbBook);
       }
       var chapters =
           url.isEmpty ? <BookChapter>[] : await api.getChapters(url);
@@ -317,40 +317,10 @@ extension _BookInfoLoad on _BookInfoScreenState {
     return null;
   }
 
-  /// 未在架在线书：DB 记录补全路由带入瘦壳的空字段（author/tocUrl/章节数等）。
-  /// 路由实时字段（如最新章标题）优先保留；DB 非空字段仅填空。
-  Book _mergeDbBook(Book book, Book dbBook) {
-    return book.copyWith(
-      coverUrl: (book.coverUrl?.isNotEmpty ?? false)
-          ? book.coverUrl
-          : dbBook.coverUrl,
-      intro: (book.intro?.isNotEmpty ?? false)
-          ? book.intro
-          : dbBook.intro,
-      tocUrl: book.tocUrl.isNotEmpty ? book.tocUrl : dbBook.tocUrl,
-      wordCount: (book.wordCount?.isNotEmpty ?? false)
-          ? book.wordCount
-          : dbBook.wordCount,
-      latestChapterTitle:
-          (book.latestChapterTitle?.isNotEmpty ?? false)
-              ? book.latestChapterTitle
-              : dbBook.latestChapterTitle,
-      kind: (book.kind?.isNotEmpty ?? false) ? book.kind : dbBook.kind,
-      author: book.author.isNotEmpty ? book.author : dbBook.author,
-      totalChapterNum: book.totalChapterNum > 0
-          ? book.totalChapterNum
-          : dbBook.totalChapterNum,
-      // [P2-8] 当前书源详情页地址（换源事务写入）：路由瘦壳未携带时以
-      // DB 值为准，保证换源后进入详情页仍按当前书源地址刷新
-      originBookUrl: book.originBookUrl.isNotEmpty
-          ? book.originBookUrl
-          : dbBook.originBookUrl,
-    );
-  }
-
-  // [P2-8] 详情合并逻辑已移至 BookOpenUtils.mergeWebInfo（公共静态，可单测）；
-  // 换源后刷新取址统一走 BookOpenUtils.bookFetchUrl（originBookUrl 优先、
-  // 空回退 bookUrl），本 part 文件仅保留调用。
+  // [P2-8 / P2-4] 详情合并（mergeWebInfo）与 DB 补全合并（mergeDbBook）逻辑
+  // 已移至 BookOpenUtils（公共静态，可单测）；换源后刷新取址统一走
+  // BookOpenUtils.bookFetchUrl（originBookUrl 优先、空回退 bookUrl，trim 语义
+  // 对齐 Rust book_page_fetch_url），本 part 文件仅保留调用。
 
   /// 未入库在线书：仅网络取目录用于展示，不写 DB（对齐原版 loadChapter !inBookshelf）
   Future<List<BookChapter>> _fetchWebChaptersOnline(
