@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.286] - 2026-09-18
+
+### Fixed
+- [Rust] **回退 2.0.285 的「换源后书籍 URL 改为新源地址」（P2-6g）**：该改动把书籍主键迁到新源地址后，应用内多处仍持有**旧地址**（书架内存列表的 Book 对象、详情页打开时传入的 URL），而换源入口用 `find_by_url(book_url)` 查书 → 旧地址失效 → **所有书源换源都报 `Database error: 书籍不存在`**（P0 回归）。现恢复「bookUrl 保持稳定、仅改 origin/tocUrl」语义（`source_switch.rs` 回退至 `db00c2f2d4`），换源功能恢复
+- [Docs] 登记 `docs/REFACTORING_ACTIVE_PLAN.md` **P2-8**：改键的正确做法（需与所有 URL 持有者同步/别名过渡）+ 低成本缓解建议（在详情页 U7 刷新合并处对 `tocUrl` 加退化值不覆盖守卫，只动 Dart 合并层）
+
+### Test
+- `cargo test -p legado-ffi` 358 passed / 0 failed（含恢复的「章节挂原键」断言）
+
+### Real device
+- （待补：回退版实机换源复验）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.285] - 2026-09-18
 
 ### Fixed
@@ -12,7 +26,7 @@ All notable changes to this project will be documented in this file.
   - **`{{js表达式}}` + 选择器后缀/组合符按上游收窄**（G11 收窄为「整规则恰为单个 JS 表达式跨度且无包装」）；逐条核对 526 源语料 52 条候选，其中 5 条真实 `tocUrl` 规则由「取空」变为正确 URL（清风小说网/对小说-夜明空/书文小说/笔趣阁/PO18）
   - **模板命中时 JS 表达式参数不再重复执行**（副作用型参数 `java.put`/`toast` 翻倍隐患）
   - **元素解析器补 `book` 绑定**：`ruleToc.chapterName` 里的 `book.name` 可用（民间故事/涨姿势/华语中文/月亮小说/可阅文学 5 源章节名恢复）
-- [Rust] **换源后书籍 URL 改为新源地址**（对齐原版 `SearchBook.toBook()`）：此前刻意保持旧键，导致换源后详情页每次进入都用旧源地址 + 新源规则刷新 → 解析到错误页面 → `tocUrl` 被重推成退化值（`…all-chapter?bookId=`）并以「非空即覆盖」回写，kind/字数/简介等字段同样被错页解析覆盖。现于换源事务内改键（`Repository::insert` 的 (name,author) 冲突路径 `remap_book_url_preserving_chapters`），迁移 chapters/highlights/cached_chapters/download_tasks 并删旧行写新行，章节按新键重写
+- [Rust] ~~换源后书籍 URL 改为新源地址（对齐原版 `SearchBook.toBook()`）~~ **该改动已在 [2.0.286] 回退**（实机回归：主键迁移后所有换源入口报「书籍不存在」），详见下一条
 - [Tool] 测试卫生：`legado-book` TXT 搜索测试的临时文件名仅用时间戳，Windows 下 SystemTime 粒度约毫秒级会撞名，导致并行执行时共用文件（`test_search_case_insensitive` 偶发「应为 2 处实得 1 处」）；改为时间戳 + 进程内原子序号
 
 ### Test
@@ -22,7 +36,7 @@ All notable changes to this project will be documented in this file.
 
 ### Real device
 - 2.0.285+286 release APK 装 MuMu（192.168.1.19:5555）：书籍「斗罗大陆」换源切到「🏷松鹤庭沐·言璃」后，详情页聚合行恢复完整 **`9.9分 · 轻小说 · 712章 · 298.6万字 · 已完结`** + 标签行 `影视原著、学院流、穿越、升级流、热血`，**免费章不再带 🔒**（此前为 `分 · ·章 · 0.0万字 · 连载中`；截图 `docs/parity_shots/source_switch_fix_20260918/05_detail_fields_ok.png`）
-- 落库校验：书籍键迁移到**新源地址**、`tocUrl` 完整保留 bookId、712 章挂新键、旧键零残留；**再次进入详情页后 `tocUrl` 不再被覆盖**（此前后台刷新会把它写成 `…?bookId=` 退化值）
+- 落库校验（当时的改键版本）：书籍键迁移到新源地址、`tocUrl` 完整保留 bookId、712 章挂新键、旧键零残留；**再次进入详情页后 `tocUrl` 不再被覆盖**——该版本因下述回归已回退
 
 - Contributor: 全栈工程师子代理
 
