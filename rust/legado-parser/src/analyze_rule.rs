@@ -397,6 +397,14 @@ impl AnalyzeRule {
         // 内容（如元素 JSON）替换，拼出的 URL 错。
         let rule_expanded = if rule_after_get.contains("{{") && rule_has_js_chain(&rule_after_get) {
             self.expand_js_refs_in_js_segments(&rule_after_get)?
+        } else if template_shape {
+            // [P2-6d | 台账 0917] 模板命中：参数回填统一由
+            // eval_template_segment（eval_template_param）完成；顶层
+            // expand_js_refs 会对同一 JS 表达式参数**再执行一次**（此前
+            // `{{js}}后缀` 规则 JS 被调 2 次）。G11 例外（整规则恰为单个
+            // JS 表达式跨度、无包装）template_shape 判否，仍走下方展开
+            // 路径，语义不变。
+            rule_after_get.clone()
         } else {
             self.expand_js_refs(&rule_after_get)?
         };
@@ -643,16 +651,21 @@ impl AnalyzeRule {
                     // （上游 Mode.Regex → else -> rule），不再当选择器解析；
                     // `##` 拆分在回填之后（eval_template_segment 内完成）。
                     // 此前选择器解析拼好的 URL（松鹤 bookUrl 尾段）→ 空 → 全链空。
-                    // [P0-1/P1-4 | 台账 0917] 与单步判定自洽：
-                    // - 含 JS 段（`@js:`/`<js>`，正常拆分下不会出现在 Extract 段，
-                    //   此处防御）永不进模板分支；
-                    // - `{{…}}` 触发须经 single_step_template_literal 判别——
-                    //   JS 表达式参数（`{{sel()}}`）带后缀/组合符（`.item`/`||`/`%%`）
-                    //   不进模板分支（保留选择器路径），规则型参数与多跨度/包装文字
-                    //   才进（P1-3/P1-4）。
-                    if (rule.contains("{{")
+                    // [P0-1 | 台账 0917] 含 JS 段（`@js:`/`<js>`，跨度内字面量
+                    // 除外，P2-6f4；正常拆分下不会出现在 Extract 段，此处防御）
+                    // 永不进模板分支。
+                    // [P2-6f1 | 台账 0917] 判定域为**顶层拆分后的提取核心**
+                    // （split_hash_replace 跳过 `{{…}}` 跨度内的 `##`），与
+                    // get_strings_ex 单步判定（P0-2）统一：整段带 `##` 的段
+                    // （`{{a}}##re##rep`）按核心 `{{a}}` 判定，顶层 `##` 规格
+                    // 由 eval_template_segment 在回填后统一应用。
+                    // [P2-6c | 台账 0917] 单跨度 JS 表达式参数带非空后缀/组合符
+                    // （`.item`/`||`/`%%`）进模板分支（上游 Mode.Regex 字面返回），
+                    // 仅整规则无包装的单跨度（G11 例外）保留展开路径。
+                    let (core_for_template, _spec_for_template) = split_hash_replace(rule);
+                    if (core_for_template.contains("{{")
                         && !rule_has_js_chain(rule)
-                        && single_step_template_literal(rule))
+                        && single_step_template_literal(&core_for_template))
                         || rule.to_ascii_lowercase().contains("@get:")
                     {
                         current_content = self.eval_template_segment(rule, &current_content)?;
@@ -954,6 +967,14 @@ impl AnalyzeRule {
             // 链式 getElements：首段按元素规则提取，后续 JS 以拼接/单元素为 result
             let mut elems: Vec<String> = Vec::new();
             let mut pending_js: Vec<&str> = Vec::new();
+            // [P2-6a | 台账 0917] 链内模板段状态（get_strings 路径模板语义
+            // 移植到 getElements 链）：
+            // - template_ctx：下一模板段的回填内容（= 前序步结果；初始为
+            //   规则当前内容，或刚 flush 的 JS 步输出）；
+            // - js_continuation：最近一次模板段产出的 JS 可执行字面结果——
+            //   其后 JS 步以前序结果（而非元素列表）为 payload。
+            let mut template_ctx = self.content.clone();
+            let mut js_continuation: Option<String> = None;
             for step in &steps {
                 match step {
                     JsChainStep::Extract(r) => {
@@ -961,7 +982,52 @@ impl AnalyzeRule {
                         if r.is_empty() {
                             continue;
                         }
+                        // [P2-6a | 台账 0917] 链内模板段（与 eval_js_chain_steps
+                        // P0-2/P2-6f1 判定一致：判定域 = 顶层拆分后提取核心，
+                        // 含 `{{`/`@get:`）：
+                        // - 规则型参数（isRule 前缀）相对 template_ctx 单源规则回填；
+                        // - JS 表达式参数以 template_ctx（前序步结果）为 result 执行；
+                        // - 回填后整段字面（上游 Mode.Regex → else -> rule），
+                        //   其结果作为后续段前序结果；
+                        // - 含 `@js:`/`<js>`（P2-6f4 跨度感知判定）不进模板分支
+                        //   （P0-1）；
+                        // - 顶层 `##` 规格由 eval_template_segment 在回填后应用；
+                        // - 本段前累积的 JS 步先按批次语义 flush（payload = 前序
+                        //   结果/元素列表），模板段回填基准才是 JS 输出。
+                        let (core_r, _spec_r) = split_hash_replace(r);
+                        let is_template_seg = (core_r.contains("{{")
+                            && !rule_has_js_chain(r)
+                            && single_step_template_literal(&core_r))
+                            || r.to_ascii_lowercase().contains("@get:");
+                        if is_template_seg {
+                            if !pending_js.is_empty() {
+                                let payload = js_continuation.take().unwrap_or_else(|| {
+                                    if elems.len() == 1 {
+                                        elems[0].clone()
+                                    } else {
+                                        serde_json::to_string(&elems)
+                                            .unwrap_or_else(|_| elems.join("\n"))
+                                    }
+                                });
+                                let (_out, flushed_ctx) =
+                                    self.run_js_steps_threaded(payload, &pending_js)?;
+                                template_ctx = flushed_ctx;
+                                pending_js.clear();
+                            }
+                            let literal = self.eval_template_segment(r, &template_ctx)?;
+                            // 先 clone 供后续 JS 步作前序结果，再把原值 move 进元素列表
+                            js_continuation = Some(literal.clone());
+                            elems = if literal.trim().is_empty() {
+                                Vec::new()
+                            } else {
+                                vec![literal]
+                            };
+                            continue;
+                        }
+                        // 非模板段：照旧按元素规则提取；后续 JS 以元素列表为
+                        // 前序结果
                         elems = self.get_elements_single_step(r)?;
+                        js_continuation = None;
                     }
                     JsChainStep::Js(code) => pending_js.push(code),
                 }
@@ -969,26 +1035,17 @@ impl AnalyzeRule {
             if pending_js.is_empty() {
                 return Ok(elems);
             }
-            // 将元素列表交给 JS：单元素直接作 result；多元素 JSON 数组字符串
-            let result_payload = if elems.len() == 1 {
-                elems[0].clone()
-            } else {
-                serde_json::to_string(&elems).unwrap_or_else(|_| elems.join("\n"))
-            };
-            let mut current = result_payload;
-            let mut last_out = Vec::new();
-            for code in pending_js {
-                let mut sub = AnalyzeRule::new(current.clone(), self.base_url.clone());
-                self.share_variable_store_into(&mut sub);
-                if let Some(exec) = self.js_executor() {
-                    sub.set_js_executor(exec);
+            // 将元素列表交给 JS：单元素直接作 result；多元素 JSON 数组字符串；
+            // 模板段之后取其结果作为前序步结果（P2-6a）
+            let result_payload = js_continuation.take().unwrap_or_else(|| {
+                if elems.len() == 1 {
+                    elems[0].clone()
+                } else {
+                    serde_json::to_string(&elems).unwrap_or_else(|_| elems.join("\n"))
                 }
-                for (n, v) in &self.js_bindings {
-                    sub.add_js_binding(n, v);
-                }
-                last_out = sub.execute_js_rule(code)?;
-                current = last_out.first().cloned().unwrap_or_default();
-            }
+            });
+            let (last_out, _final_current) =
+                self.run_js_steps_threaded(result_payload, &pending_js)?;
             // JS 返回 JSON 数组时拆成多元素（`[result]` 包装场景）
             if last_out.len() == 1 {
                 let s = last_out[0].trim();
@@ -1008,6 +1065,30 @@ impl AnalyzeRule {
         }
 
         self.get_elements_single_step(&rule_no_put)
+    }
+
+    /// [P2-6a | 台账 0917] 链式 getElements 的 JS 步批量执行：以 `current`
+    /// 为子规则当前内容（execute_js_rule 注入 result/src），顺序执行各步，
+    /// 每步输出（首个元素）作为下一步 content。返回 (末步输出, 最终内容)。
+    fn run_js_steps_threaded(
+        &self,
+        mut current: String,
+        codes: &[&str],
+    ) -> LegadoResult<(Vec<String>, String)> {
+        let mut last_out = Vec::new();
+        for code in codes {
+            let mut sub = AnalyzeRule::new(current.clone(), self.base_url.clone());
+            self.share_variable_store_into(&mut sub);
+            if let Some(exec) = self.js_executor() {
+                sub.set_js_executor(exec);
+            }
+            for (n, v) in &self.js_bindings {
+                sub.add_js_binding(n, v);
+            }
+            last_out = sub.execute_js_rule(code)?;
+            current = last_out.first().cloned().unwrap_or_default();
+        }
+        Ok((last_out, current))
     }
 
     /// 单步 getElements（无 `@js:` 链）
@@ -2162,19 +2243,15 @@ fn split_hash_replace(rule: &str) -> (String, Option<HashReplaceSpec>) {
         if replacement.ends_with('#') {
             replacement.pop();
         }
-    } else if parts.len() == 2 {
-        // `##regex###` 写法：第二段以 ### 结尾
-        if let Some(stripped) = pattern.strip_suffix("###") {
-            return (
-                core,
-                Some(HashReplaceSpec {
-                    pattern: stripped.to_string(),
-                    replacement: String::new(),
-                    replace_first: true,
-                }),
-            );
-        }
     }
+    // [P2-6f3 | 台账 0917] 移除旧死分支「parts.len()==2 且 pattern 以 ###
+    // 结尾 → 空替换 + replaceFirst」：`###` 自身含 `##` 拆分点（仅当落在
+    // `{{…}}` 跨度内才不作顶层拆分点），而跨度内的 `###` 随段尾 `}}` 收尾
+    // 不会使第二段以 `###` 结尾——该组合在可达输入下不可达（0 真实命中）。
+    // 两段形态（`core##pat`）对齐上游 Kotlin `split("##")` size-2 语义：
+    // 整段 pattern 全文替换、replacement 为空（而非旧「空替换 replaceFirst」），
+    // 与 FFI split_rule_replace_parts（pattern/replacement/replace_first 全部
+    // 直接取 parts、无特例）一致。
     (
         core,
         Some(HashReplaceSpec {
@@ -2190,7 +2267,17 @@ fn apply_hash_replace(input: &str, spec: &HashReplaceSpec) -> String {
         return input.to_string();
     }
     let Ok(re) = regex::Regex::new(&spec.pattern) else {
-        return input.to_string();
+        // [P2-6b | 台账 0917] 非法正则回退对齐上游 + FFI 口径（此前返回原文，
+        // 与两处入口不一致）：
+        // - 上游 AnalyzeRule.replaceRegex（AnalyzeRule.kt L541-565）：正则
+        //   编译失败时 replaceFirst 分支直接 `return replacement`（L557），
+        //   全文替换分支降级为字面量字符串替换
+        //   `result.replace(replaceRegex, replacement)`（L563，非正则替换）；
+        // - FFI apply_regex_replace（web_book.rs L2566-2572）同语义。
+        if spec.replace_first {
+            return spec.replacement.clone();
+        }
+        return input.replace(&spec.pattern, &spec.replacement);
     };
     if spec.replace_first {
         // [B/P1-2 | 台账 0917] 上游 replaceRegex（AnalyzeRule.kt L546-556）
@@ -2223,9 +2310,34 @@ fn apply_hash_replace(input: &str, spec: &HashReplaceSpec) -> String {
 // 回填**之后**。Rust 侧此前把链内 `{{…}}` 段当选择器解析 → 拼好的 URL 取空。
 
 /// 规则的 `{{…}}` JS 链形态判定（对齐 JS_PATTERN 的 `(?i)<js>|@js:`）
+///
+/// [P2-6f4 | 台账 0917] 落在已闭合 `{{…}}` 跨度**内**的 `@js:` / `<js>`
+/// 字面量是 JS 表达式参数文本（模板参数内容），不是链标记——跳过跨度内
+/// 出现位置，仅跨度外出现才算含 JS 段。此前 `contains` 会把含此类字面量
+/// 的模板规则误判为 JS 链 → 永不进模板分支（P0-1 门被误触发）。
 fn rule_has_js_chain(rule: &str) -> bool {
     let lower = rule.to_ascii_lowercase();
-    lower.contains("<js>") || lower.contains("@js:")
+    if !lower.contains("<js>") && !lower.contains("@js:") {
+        return false;
+    }
+    let spans = double_brace_spans(&lower);
+    let mut from = 0usize;
+    while from < lower.len() {
+        let Some(pos) = lower[from..]
+            .match_indices("<js>")
+            .map(|(i, _)| from + i)
+            .chain(lower[from..].match_indices("@js:").map(|(i, _)| from + i))
+            .min()
+        else {
+            break;
+        };
+        // 标记起点在已闭合 {{…}} 跨度内 → 参数文本，跳过继续找
+        if !spans.iter().any(|&(s, e)| s <= pos && pos < e) {
+            return true;
+        }
+        from = pos + 2;
+    }
+    false
 }
 
 /// 已闭合的 `{{…}}` 参数跨度（半开区间 [start, end)；未闭合尾段不算跨度）
@@ -2256,8 +2368,15 @@ fn double_brace_spans(rule: &str) -> Vec<(usize, usize)> {
 /// FFI `split_rule_replace_parts`）共用，保证一致。
 ///
 /// 无 `{{` 时退化为原生 `splitn`（零开销快路径）；`max_parts` 语义与
-/// `str::splitn` 相同（最后一部分为剩余串，`usize::MAX` = 全量 split）。
+/// `str::splitn` 相同（最后一部分为剩余串，`usize::MAX` = 全量 split，
+/// `0` = 空结果，[P2-6f2 | 台账 0917] 两路径一致）。
 pub fn split_top_level_hash(rule: &str, max_parts: usize) -> Vec<&str> {
+    // [P2-6f2 | 台账 0917] `max_parts == 0` 对齐 `str::splitn(0, …)` 返回空
+    // （此前 `{{` 路径漏判：循环不执行后仍 `parts.push(&rule[start..])`
+    // 返回 `[rule]`，与无 `{{` 快路径的 `splitn(0)` 空结果不一致）。
+    if max_parts == 0 {
+        return Vec::new();
+    }
     if !rule.contains("{{") {
         return rule.splitn(max_parts, "##").collect();
     }
@@ -2293,21 +2412,27 @@ fn template_param_is_rule(expr: &str) -> bool {
         || expr.starts_with("//")
 }
 
-/// [A/P1-3/P1-4 | 台账 0917] 单步模板字面量判定
+/// [A/P1-3/P2-6c | 台账 0917] 单步模板字面量判定
 /// （作用于 **顶层拆分后的提取核心**，即 `split_hash_replace(…).0`，JS 展开前）：
 /// - 首个 `{{…}}` 跨度**之前**存在非空白包装文字（URL 模板骨架等）→ 模板；
 /// - 多跨度（跨度外仅空白/换行）→ 模板（P1-3：松鹤 kind 规则
 ///   `{{$.a##…}}\n{{$.b##…}}` 若判否会落入 `detect_rule_type_for_content`
 ///   把 `\d` 当正则 → 整规则编译 Err；多跨度纯模板必须识别）；
-/// - 单跨度：仅**规则型参数**（上游 isRule：`@`/`$.`/`$[`/`//` 前缀）判模板；
-///   JS 表达式参数（`{{sel()}}`）无论是否带选择器后缀/组合符
-///   （`.item` / `||` / `%%` / `&&`）均判否 → 保留 G11 旧路径（P1-4：
-///   `expand_js_refs` 成功替换后按选择器求值，`{{sel()}}.item` →
-///   `div.title.item` → `正文A`；误入模板分支会字面返回规则文本）。
+/// - 单跨度：
+///   - **规则型参数**（上游 isRule：`@`/`$.`/`$[`/`//` 前缀）→ 模板；
+///   - JS 表达式参数（`{{sel()}}`）：跨度位于 0 位且带**非空后缀/组合符**
+///     （`.item` / `||` / `%%` / `&&` 等）→ 模板（[P2-6c] 对齐上游
+///     `SourceRule.init`：首个 `{{` 位于段首 → Mode.Regex，makeUpRule 回填后
+///     按 `else -> rule` 字面返回；旧 G11「展开后按选择器求值」会把拼好的
+///     URL/组合符串当选择器解析 → 取空，如新龙小说 `{{baseUrl}}catalog/`、
+///     清风小说网 `{{baseUrl}}##$##1/desc.html` 类「新书源未解析到任何章节」）；
+///   - 整规则恰为该单跨度、无任何包装文字（G11 例外，如整规则 `{{sel()}}`）
+///     → 判否，保留 `expand_js_refs` 展开 + 选择器求值路径。
 ///
-/// 与 P0-1（含 JS 段规则在调用点先行排除）、P0-2（判定域=拆分后提取核心）、
-/// P1-3 自洽；判别依据只取「首个跨度**前**的包装文字」，不以尾部文字触发
-/// （否则 `{{sel()}}.item` 会被尾部后缀误判为模板 → 违反 P1-4）。
+/// 与 P0-1（含 JS 段规则在调用点先行排除，P2-6f4 跨度内字面量除外）、
+/// P0-2（判定域=拆分后提取核心）、P1-3 自洽；P1-4 的 G11 保留范围由
+/// 「单跨度 JS 表达式参数一律判否」收窄为「仅整规则无包装」一项
+/// （P2-6c 决策，526 源 52 条候选规则逐条分析无规则依赖旧 G11 后缀行为）。
 fn single_step_template_literal(rule: &str) -> bool {
     let t = rule.trim();
     if !t.contains("{{") {
@@ -2327,10 +2452,16 @@ fn single_step_template_literal(rule: &str) -> bool {
     if spans.len() >= 2 {
         return true;
     }
-    // 单跨度：仅规则型参数进模板分支；JS 表达式参数保留 G11 路径（P1-4）
+    // 单跨度：规则型参数进模板分支
     let (s, e) = spans[0];
     let param = t[s + 2..e - 2].trim();
-    template_param_is_rule(param)
+    if template_param_is_rule(param) {
+        return true;
+    }
+    // [P2-6c | 台账 0917] JS 表达式参数：跨度 0 位 + 非空后缀 → 模板
+    // （上游 Mode.Regex 字面返回）；整规则无包装（G11 例外）→ 判否，
+    // 保留 expand_js_refs 展开路径。
+    !t[e..].trim().is_empty()
 }
 
 #[cfg(test)]
@@ -2581,6 +2712,44 @@ mod tests {
         fn execute_js(&self, _js_code: &str) -> Result<String, String> {
             self.calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
             Ok(self.result.clone())
+        }
+    }
+
+    /// [P2-6a] 脚本化 Mock JS 执行器：按**用户代码尾标**（`("{key}")`，与
+    /// execute_js_rule 的 `new Function(…)(<code_json>)` 包装对应）匹配应答，
+    /// 首条命中生效；未命中返回空串。同时完整记录包装后代码（调用方可
+    /// 断言注入的 `globalThis.result` 载荷，验证模板段→JS 步的结果线程）。
+    struct ScriptedJsExecutor {
+        scripts: Vec<(String, String)>,
+        calls: std::sync::Mutex<Vec<String>>,
+    }
+
+    impl ScriptedJsExecutor {
+        fn new(scripts: Vec<(&str, &str)>) -> Self {
+            Self {
+                scripts: scripts
+                    .into_iter()
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect(),
+                calls: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    impl JsExecutor for ScriptedJsExecutor {
+        fn execute_js(&self, js_code: &str) -> Result<String, String> {
+            self.calls.lock().unwrap().push(js_code.to_string());
+            for (key, reply) in &self.scripts {
+                let suffix = format!("({})", serde_json::to_string(key).unwrap());
+                if js_code.ends_with(&suffix) {
+                    return Ok(reply.clone());
+                }
+            }
+            Ok(String::new())
         }
     }
 
@@ -3505,6 +3674,10 @@ mod tests {
             split_top_level_hash("a##b##c##d", 3),
             vec!["a", "b", "c##d"]
         );
+        // [P2-6f2 | 台账 0917] max_parts == 0 对齐 str::splitn(0, …) 返回空
+        // （{{ 路径此前漏判：循环不执行后仍返回 [rule]，与快路径不一致）
+        assert_eq!(split_top_level_hash("a##b", 0), Vec::<&str>::new());
+        assert_eq!(split_top_level_hash("{{x}}##a", 0), Vec::<&str>::new());
     }
 
     /// (P1-1) split_hash_replace 跨度感知：全部 `##` 在跨度内 → 整规则原样、
@@ -3652,11 +3825,14 @@ mod tests {
         );
     }
 
-    // ─── [P1-4 | 台账 0917] `{{sel()}}` + 后缀/组合符保持 G11 ────────────────
+    // ─── [P1-4 → P2-6c | 台账 0917] `{{sel()}}` + 后缀/组合符对齐上游字面返回 ──
 
-    /// P1-4：mock 返回 `div.title`，`{{sel()}}` 展开后接后缀/组合符仍按选择器求值：
-    /// (a) `{{sel()}}.item` → `div.title.item`（双 class）；(b) `||` 组合；
-    /// (c) `%%` 交叉合并（get_string 按换行拼接）。
+    /// [P2-6c]（取代 P1-4 旧 G11 预期）：单跨度 JS 表达式参数带后缀/组合符时，
+    /// 对齐上游 `SourceRule.init`（首个 `{{` 位于段首 → Mode.Regex）：makeUpRule
+    /// 回填后按 `else -> rule` **字面返回**（`||`/`%%`/`&&` 组合符拆分只存在于
+    /// Default/Json/XPath 分析器的 splitRule，Mode.Regex 分支不做组合符拆分）：
+    /// (a) `{{sel()}}.item` → 字面 `div.title.item`；(b) `||` 组合 → 整段字面；
+    /// (c) `%%` 交叉合并 → 整段字面（不再展开后按选择器取 `正文A`/`正文A\n小字`）。
     #[test]
     fn test_sel_template_with_suffix_and_combinators() {
         use std::sync::Arc;
@@ -3668,7 +3844,11 @@ mod tests {
                 result: "div.title".to_string(),
             }),
         );
-        assert_eq!(rule.get_string("{{sel()}}.item").unwrap(), "正文A");
+        assert_eq!(
+            rule.get_string("{{sel()}}.item").unwrap(),
+            "div.title.item",
+            "P2-6c 后缀形态字面返回"
+        );
         let rule = AnalyzeRule::with_js_executor(
             html.to_string(),
             String::new(),
@@ -3676,7 +3856,11 @@ mod tests {
                 result: "div.title".to_string(),
             }),
         );
-        assert_eq!(rule.get_string("{{sel()}}||.fallback").unwrap(), "正文A");
+        assert_eq!(
+            rule.get_string("{{sel()}}||.fallback").unwrap(),
+            "div.title||.fallback",
+            "P2-6c || 组合符不做拆分、整段字面返回"
+        );
         let rule = AnalyzeRule::with_js_executor(
             html.to_string(),
             String::new(),
@@ -3686,7 +3870,8 @@ mod tests {
         );
         assert_eq!(
             rule.get_string("{{sel()}}%%small@text").unwrap(),
-            "正文A\n小字"
+            "div.title%%small@text",
+            "P2-6c %% 组合符不做拆分、整段字面返回"
         );
     }
 
@@ -3697,7 +3882,9 @@ mod tests {
     /// 对齐上游 AnalyzeRule.kt L699-703（首个 match 位于段首 → Mode.Regex，
     /// makeUpRule L819-829 回填后才 split `##`）：参数回填后按字面返回并
     /// 应用 `##` 替换，而不是走选择器路径取空（tocUrl 回退成详情页 URL）。
-    /// 反回归：`{{sel()}}.item`（无顶层 `##`）保持 G11 选择器求值 → `正文A`。
+    /// 反回归（[P2-6c] 后收窄）：`{{sel()}}.item`（无顶层 `##`）单跨度 JS 表达式
+    /// 参数带非空后缀 → 同样进模板分支字面返回 `div.title.item`（G11 例外仅剩
+    /// 「整规则恰为单个 JS 表达式跨度、无包装」一项，见 test_g11_*）。
     #[test]
     fn test_js_param_with_top_level_hash_replace_is_template() {
         use std::sync::Arc;
@@ -3717,7 +3904,8 @@ mod tests {
             vec!["https://www.qingfengxs.com/1/desc.html"],
             "P1-A 顶层 ## 替换须应用而非取空: {out:?}"
         );
-        // 反回归：G11/P1-4 不翻转——`{{sel()}}.item` 无顶层 ## 仍按选择器求值
+        // 反回归（P2-6c 后）：`{{sel()}}.item` 无顶层 ## 亦为模板字面返回
+        // （G11 例外仅剩整规则无包装的单跨度形态，见 test_g11_*）
         let html = r#"<div class="title item">正文A</div>"#;
         let rule = AnalyzeRule::with_js_executor(
             html.to_string(),
@@ -3726,7 +3914,11 @@ mod tests {
                 result: "div.title".to_string(),
             }),
         );
-        assert_eq!(rule.get_string("{{sel()}}.item").unwrap(), "正文A");
+        assert_eq!(
+            rule.get_string("{{sel()}}.item").unwrap(),
+            "div.title.item",
+            "P2-6c 单跨度 JS 表达式参数带后缀字面返回"
+        );
     }
 
     // ─── [P1-2 | 台账 0917] replaceFirst 无匹配 → 空串 ──────────────────────
@@ -3803,5 +3995,230 @@ mod tests {
             .unwrap();
         assert_eq!(out, cover_url, "coverUrl 链结果不变: {out}");
         assert_eq!(executor.call_count(), 1, "JS 步应恰好执行 1 次");
+    }
+
+    // ─── [P2-6b | 台账 0917] 非法正则回退对齐上游 + FFI 口径 ────────────────
+
+    /// 非法正则回退三处收敛：`apply_hash_replace`（解析器入口）此前对非法
+    /// 正则返回**原文**，与上游 `AnalyzeRule.replaceRegex`（replaceFirst 分支
+    /// `return replacement`；全文替换分支降级字面量 `input.replace`）及 FFI
+    /// `apply_regex_replace` 不一致。本测试锁定三处统一口径。
+    #[test]
+    fn test_apply_hash_replace_invalid_regex_fallback() {
+        // 单测：replaceFirst → replacement；全文替换 → 字面量字符串替换
+        let spec_first = HashReplaceSpec {
+            pattern: "(".to_string(),
+            replacement: "REP".to_string(),
+            replace_first: true,
+        };
+        assert_eq!(
+            apply_hash_replace("abc(def", &spec_first),
+            "REP",
+            "非法正则 + replaceFirst 须返回 replacement（上游 L557）"
+        );
+        let spec_full = HashReplaceSpec {
+            pattern: "(".to_string(),
+            replacement: "REP".to_string(),
+            replace_first: false,
+        };
+        assert_eq!(
+            apply_hash_replace("(x)", &spec_full),
+            "REPx)",
+            "非法正则 + 全文替换 降级为字面量 str::replace（仅替换 `(`，上游 L563 / FFI）"
+        );
+
+        // e2e：`$.v##(##REP###`（len4 → replaceFirst）与 `$.v##(##REP`（len3 → 全文）
+        let rule = AnalyzeRule::new(r#"{"v":"(x)"}"#.to_string(), String::new());
+        assert_eq!(
+            rule.get_string("$.v##(##REP###").unwrap(),
+            "REP",
+            "### 收尾 → replaceFirst，非法正则回退 replacement"
+        );
+        assert_eq!(
+            rule.get_string("$.v##(##REP").unwrap(),
+            "REPx)",
+            "非 replaceFirst → 全文字面量替换（仅替换 `(`，区别于旧「返回原文」）"
+        );
+    }
+
+    // ─── [P2-6a | 台账 0917] get_elements 链内模板段 → 后续 JS 结果线程 ─────
+
+    /// 链内模板段（get_strings 模板语义移植到 getElements 链）：
+    /// `{{baseUrl}}chapters@js:result` 中模板段回填的字面结果作为后续 JS 步
+    /// 的前序结果（`globalThis.result`），而非元素列表。
+    #[test]
+    fn test_get_elements_chain_template_segment_threads_to_js() {
+        use std::sync::Arc;
+        let executor = Arc::new(ScriptedJsExecutor::new(vec![
+            ("baseUrl", "https://m.example.com/"),
+            ("result", "https://m.example.com/chapters"),
+        ]));
+        let rule = AnalyzeRule::with_js_executor(String::new(), String::new(), executor.clone());
+        let out = rule.get_elements("{{baseUrl}}chapters@js:result").unwrap();
+        assert_eq!(
+            out,
+            vec!["https://m.example.com/chapters"],
+            "模板段字面结果作为 JS 步前序结果"
+        );
+        // 模板段回填的字面结果须线程进后续 JS 步的 globalThis.result
+        let calls = executor.calls();
+        let result_call = calls
+            .iter()
+            .find(|c| c.ends_with("(\"result\")"))
+            .expect("result JS 步应被执行");
+        assert!(
+            result_call.contains("globalThis.result = \"https://m.example.com/chapters\";"),
+            "模板段结果须作为后续 JS 的 result 注入: {result_call}"
+        );
+        assert_eq!(calls.len(), 2, "baseUrl 回填 + result 步 共 2 次 JS 执行");
+    }
+
+    /// JS+模板段+JS 交错的 flush 顺序：模板段前累积的 JS 步先按批次 flush
+    /// （payload=元素列表 JSON），模板段回填基准才是 JS 输出；末段 JS 取模板
+    /// 段字面结果为前序结果。
+    #[test]
+    fn test_get_elements_chain_js_template_js_flush_order() {
+        use std::sync::Arc;
+        let executor = Arc::new(ScriptedJsExecutor::new(vec![
+            ("buildA", "A1"),
+            ("baseUrl", "https://m.example.com/"),
+            ("buildB", "B2"),
+        ]));
+        let rule = AnalyzeRule::with_js_executor(String::new(), String::new(), executor.clone());
+        let out = rule
+            .get_elements("<js>buildA</js>\n{{baseUrl}}chapters<js>buildB</js>")
+            .unwrap();
+        assert_eq!(out, vec!["B2"], "末段 JS 结果作为最终元素: {out:?}");
+        let calls = executor.calls();
+        // 模板段前的 buildA 先 flush（payload=空元素列表 JSON `[]`）
+        let a = calls
+            .iter()
+            .find(|c| c.ends_with("(\"buildA\")"))
+            .expect("buildA 步应被执行");
+        assert!(
+            a.contains("globalThis.result = \"[]\";"),
+            "模板段前 JS 步以元素列表（空 → []）为 result flush: {a}"
+        );
+        // 模板段之后 buildB 取模板字面结果
+        let b = calls
+            .iter()
+            .find(|c| c.ends_with("(\"buildB\")"))
+            .expect("buildB 步应被执行");
+        assert!(
+            b.contains("globalThis.result = \"https://m.example.com/chapters\";"),
+            "模板段字面结果须线程进 buildB 的 result: {b}"
+        );
+        assert_eq!(
+            calls.len(),
+            3,
+            "buildA / baseUrl 回填 / buildB 共 3 次 JS 执行"
+        );
+    }
+
+    // ─── [P2-6d | 台账 0917] 模板命中时 JS 表达式参数仅执行一次 ─────────────
+
+    /// 模板命中（template_shape）时跳过顶层 expand_js_refs（模板路径会再执行
+    /// 同一 JS 表达式参数），故 `{{js}}后缀` 的 JS 表达式参数**恰好执行 1 次**
+    /// （此前 2 次）。含空结果场景（JS 返回空串 → 参数回填为空，仍只 1 次）。
+    #[test]
+    fn test_template_hit_js_param_executes_once() {
+        use std::sync::Arc;
+        // 非空结果：JS 恰好 1 次
+        let executor = Arc::new(CountingJsExecutor::new("https://m.example.com/"));
+        let rule = AnalyzeRule::with_js_executor(String::new(), String::new(), executor.clone());
+        let out = rule.get_strings("{{baseUrl}}chapters").unwrap();
+        assert_eq!(
+            out,
+            vec!["https://m.example.com/chapters"],
+            "模板回填 + 后缀: {out:?}"
+        );
+        assert_eq!(
+            executor.call_count(),
+            1,
+            "P2-6d 模板命中须跳过顶层展开，JS 参数仅执行 1 次"
+        );
+        // 空结果：JS 返回空串 → 参数回填为空 → 仅剩后缀，仍恰好 1 次
+        let executor = Arc::new(CountingJsExecutor::new(""));
+        let rule = AnalyzeRule::with_js_executor(String::new(), String::new(), executor.clone());
+        let out = rule.get_strings("{{baseUrl}}chapters").unwrap();
+        assert_eq!(
+            out,
+            vec!["chapters"],
+            "空 JS 结果 → 参数为空仅剩后缀: {out:?}"
+        );
+        assert_eq!(executor.call_count(), 1, "空结果场景 JS 仍仅执行 1 次");
+    }
+
+    // ─── [P2-6c | 台账 0917] 单跨度 JS 表达式参数 + 后缀 → 模板字面返回 ─────
+
+    /// 新龙小说类 `{{baseUrl}}catalog/`（526 源 8 条 tocUrl 后缀形态）：单跨度
+    /// JS 表达式参数带非空后缀 → 对齐上游 `SourceRule.init`（首个 `{{` 位于段首
+    /// → Mode.Regex，makeUpRule 回填后 `else -> rule` 字面返回），不再展开后
+    /// 当选择器解析取空（旧 G11）。
+    #[test]
+    fn test_js_expr_single_span_with_suffix_is_template() {
+        use std::sync::Arc;
+        let rule = AnalyzeRule::with_js_executor(
+            String::new(),
+            String::new(),
+            Arc::new(MockJsExecutor {
+                result: "https://m.xlxs.com/".to_string(),
+            }),
+        );
+        let out = rule.get_strings("{{baseUrl}}catalog/").unwrap();
+        assert_eq!(
+            out,
+            vec!["https://m.xlxs.com/catalog/"],
+            "P2-6c 单跨度 JS 表达式参数带后缀须字面返回（非选择器取空）: {out:?}"
+        );
+    }
+
+    // ─── [P2-6f1 | 台账 0917] 链段模板判定域 = 顶层拆分后核心 ──────────────
+
+    /// 链段模板判定统一为**顶层拆分后提取核心**（与 P0-2 一致）：
+    /// `{{sel()}}##x##y` 整段（旧判定）会因 `##` 规格后缀判为模板，但拆分后
+    /// 核心 `{{sel()}}` 是 G11 例外（整规则恰为单个 JS 表达式跨度、无包装）
+    /// → 判否（非模板）。本测试锁定判定域边界。
+    #[test]
+    fn test_chain_template_judgment_uses_post_split_core() {
+        let whole = "{{sel()}}##x##y";
+        // 整段判定（修复前口径）：单跨度 JS 表达式参数 + 非空后缀 → 误判模板
+        assert!(
+            single_step_template_literal(whole),
+            "整段判定：后缀 ##x##y 非空 → 判模板（旧口径）"
+        );
+        // 拆分后核心判定（P2-6f1 口径）：G11 无包装单跨度 → 判否
+        let (core, spec) = split_hash_replace(whole);
+        assert_eq!(core, "{{sel()}}", "核心 = 顶层拆分后提取核心");
+        assert!(spec.is_some(), "## 规格存在");
+        assert!(
+            !single_step_template_literal(&core),
+            "核心判定：G11 无包装单跨度 → 非模板（P2-6f1）"
+        );
+    }
+
+    // ─── [P2-6f4 | 台账 0917] 已闭合 {{…}} 跨度内的 JS 标记是参数文本 ──────
+
+    /// 已闭合 `{{…}}` 跨度**内**的 `@js:`/`<js>` 是 JS 表达式参数文本（模板
+    /// 参数内容），不是链标记——`rule_has_js_chain` 须跳过跨度内出现位置，仅
+    /// 跨度外出现才算含 JS 段（P0-1 门不应被此类字面量误触发）。
+    #[test]
+    fn test_rule_has_js_chain_skips_markers_inside_spans() {
+        assert!(rule_has_js_chain("@js:code"), "顶层 @js: → JS 链");
+        assert!(rule_has_js_chain("<js>code</js>"), "顶层 <js> → JS 链");
+        assert!(rule_has_js_chain("x<JS>y</JS>"), "<js> 大小写不敏感");
+        assert!(
+            !rule_has_js_chain("{{a@js:b}}"),
+            "跨度内 @js: 是参数文本，非链标记"
+        );
+        assert!(
+            !rule_has_js_chain("{{<js>x</js>}}"),
+            "跨度内 <js> 是参数文本，非链标记"
+        );
+        assert!(rule_has_js_chain("{{a}}@js:b"), "跨度外（后）@js: → JS 链");
+        assert!(
+            rule_has_js_chain("{{a}}<js>x</js>"),
+            "跨度外（后）<js> → JS 链"
+        );
     }
 }

@@ -297,14 +297,21 @@ mod tests {
         path.to_string_lossy().to_string()
     }
 
-    /// 简单的 UUID v4 生成（仅用于测试文件名唯一性）
+    /// 简单的唯一名生成（仅用于测试文件名唯一性）
     fn uuid_v4() -> String {
+        use std::sync::atomic::{AtomicU64, Ordering};
         use std::time::{SystemTime, UNIX_EPOCH};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
         let ts = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        format!("{:x}", ts)
+        // 仅用时间戳会碰撞：Windows 的 SystemTime 粒度约毫秒级，并行用例可在
+        // 同一刻度取值 → 共用同一临时文件 → 结果互相覆盖（曾致
+        // test_search_case_insensitive 在 workspace 并行跑时偶发「应为 2 处实得
+        // 1 处」）。叠加进程内单调序号（原子）保证唯一。
+        let seq = SEQ.fetch_add(1, Ordering::Relaxed);
+        format!("{:x}_{seq:x}", ts)
     }
 
     #[test]

@@ -1510,6 +1510,14 @@ impl RealBookSourceFetcher {
             &source.book_source_url,
             js_lib_sanitized,
             crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
+        )
+        // [P2-6h] 逐章解析器补 `book` 绑定（对齐原版 BookChapterList.kt:236-245：
+        // 每章复用同一带 book 绑定的 analyzeRule）。此前只有 chapterList 层的
+        // analyzer 有该绑定，导致 ruleToc.chapterName 里 `@js:book.name` /
+        // `{{book.name}}` 取空（民间故事/涨姿势/华语中文/月亮小说/可阅文学 5 源）。
+        .with_js_binding(
+            "book",
+            &serde_json::json!({ "name": book_name }).to_string(),
         );
 
         let t_parse = std::time::Instant::now();
@@ -4323,6 +4331,44 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             ..BookSource::default()
         })
         .unwrap()
+    }
+
+    /// [P2-6h] 逐章解析器须带 `book` 绑定（对齐原版 `BookChapterList.kt:236-245`：
+    /// 每章复用同一带 `book` 绑定的 analyzeRule）。此前只有 chapterList 层的
+    /// analyzer 有该绑定 → `ruleToc.chapterName` 里的 `book.name` 取空
+    /// （民间故事/涨姿势/华语中文/月亮小说/可阅文学 5 源）。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_chapter_name_can_use_book_binding() {
+        use crate::runtime;
+        let source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": "https://book.example.com",
+            "bookSourceName": "示例源",
+            "ruleToc": {
+                "chapterList": "$.rows",
+                "chapterName": "@js:book.name + '|' + result",
+                "chapterUrl": "$.url"
+            }
+        }))
+        .expect("source json");
+        let body = r#"{"rows":[{"url":"/c/1","name":"第一章"}]}"#.to_string();
+        let fetcher = RealBookSourceFetcher::new().expect("fetcher");
+        let chapters = runtime::block_on(fetcher.parse_chapters_from_toc_body(
+            &source,
+            None,
+            "https://book.example.com/toc",
+            body,
+            "测试书名",
+            None,
+            std::time::Instant::now(),
+        ))
+        .expect("chapters");
+        assert_eq!(chapters.len(), 1);
+        assert!(
+            chapters[0].title.contains("测试书名"),
+            "chapterName 应能读到 book.name 绑定，实际标题: {}",
+            chapters[0].title
+        );
     }
 
     #[test]

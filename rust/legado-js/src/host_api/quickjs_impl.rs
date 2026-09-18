@@ -1812,28 +1812,30 @@ fn register_html_parse_apis<'js>(
     )
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
-    // java.getString(css, mContent?) -> 首条文本
+    // java.getString(rule, mContent?) -> 首条文本
+    // P2-6(e)：rule 按规则类型分派（CSS/JSONPath/XPath/Regex/@js:/@webjs:/@@），
+    // 对齐上游 AnalyzeRule.getString 语义；HTML 内容 + CSS 规则行为保持不变。
     java.set(
         "getString",
         rquickjs::Function::new(
             ctx.clone(),
             |ctx: rquickjs::Ctx<'js>, css: String, m_content: Opt<String>| -> String {
                 let src = ctx.globals().get::<_, String>("src").unwrap_or_default();
-                html_parse::get_string(css, m_content, src)
+                html_parse::get_string(&ctx, css, m_content, src)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
-    // java.getStrings(css, mContent?) -> 文本列表（换行连接）
+    // java.getStrings(rule, mContent?) -> 文本列表（换行连接）
     java.set(
         "getStrings",
         rquickjs::Function::new(
             ctx.clone(),
             |ctx: rquickjs::Ctx<'js>, css: String, m_content: Opt<String>| -> String {
                 let src = ctx.globals().get::<_, String>("src").unwrap_or_default();
-                html_parse::get_strings(css, m_content, src)
+                html_parse::get_strings(&ctx, css, m_content, src)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3718,5 +3720,161 @@ decryptImage(result);
         let result = engine.eval("queryTTF('/fonts/test.ttf')").unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed["type"], "file");
+    }
+
+    // ===== P2-6(e) java.getString 规则分派：绑定级回归测试 =====
+    // fixture 位于 workspace 内 rust/legado-ffi/（书源 + 本次 curl 生成的真实响应体）。
+
+    fn fixture_path(name: &str) -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../legado-ffi")
+            .join(name)
+    }
+
+    /// 类1：JSON 内容 + `$.a` 顶层 JSONPath 取值（数值/布尔归一为字符串）
+    #[test]
+    fn test_binding_get_string_jsonpath_top_level() {
+        let engine = make_engine();
+        engine
+            .eval(r#"globalThis.src = JSON.stringify({"a": "x", "n": 42, "b": true});"#)
+            .unwrap();
+        assert_eq!(engine.eval("java.getString('$.a')").unwrap(), "x");
+        assert_eq!(engine.eval("java.getString('$.n')").unwrap(), "42");
+        assert_eq!(engine.eval("java.getString('$.b')").unwrap(), "true");
+    }
+
+    /// 类2：JSON 内容 + 嵌套 JSONPath（`$.a.b.c` 与 `$.list[*].k` 多结果换行连接）
+    #[test]
+    fn test_binding_get_string_jsonpath_nested() {
+        let engine = make_engine();
+        engine
+            .eval(
+                r#"globalThis.src = JSON.stringify({"a": {"b": {"c": "deep"}}, "list": [{"k": "x"}, {"k": "y"}]});"#,
+            )
+            .unwrap();
+        assert_eq!(engine.eval("java.getString('$.a.b.c')").unwrap(), "deep");
+        assert_eq!(
+            engine.eval("java.getString('$.list[*].k')").unwrap(),
+            "x\ny"
+        );
+    }
+
+    /// 类3（反回归）：HTML 内容 + CSS 规则维持既有 CSS 行为，不被分派改变
+    #[test]
+    fn test_binding_get_string_html_css_unchanged() {
+        let engine = make_engine();
+        engine
+            .eval(
+                r#"globalThis.src = '<html><body><h1 class="title">书名</h1><a id="read" href="/read">读</a></body></html>';"#,
+            )
+            .unwrap();
+        assert_eq!(engine.eval("java.getString('.title')").unwrap(), "书名");
+        assert_eq!(
+            engine.eval("java.getString('#read@href')").unwrap(),
+            "/read"
+        );
+    }
+
+    /// 类4：HTML（非 JSON）内容下 `$.x` 按上游 JSONPath 无结果 → 空串，不 panic/报错
+    #[test]
+    fn test_binding_get_string_jsonpath_on_html_yields_empty() {
+        let engine = make_engine();
+        engine
+            .eval(r#"globalThis.src = '<html><body><h1 class="t">x</h1></body></html>';"#)
+            .unwrap();
+        assert_eq!(engine.eval("java.getString('$.x')").unwrap(), "");
+        // 显式 @json: 前缀在 HTML 内容下同样无结果
+        assert_eq!(engine.eval("java.getString('@json:$.x')").unwrap(), "");
+    }
+
+    /// 类5（真实源·🏷松鹤庭沐·言璃 详情）：ruleBookInfo.kind 各段不再产出 "0.0万字"
+    /// 书源 `init` 规则为 `$.data.bookInfo`，故 getString 内容即 data.bookInfo 节点。
+    #[test]
+    fn test_binding_songhe_detail_kind_no_zero_words() {
+        let raw = std::fs::read_to_string(fixture_path("tmp_songhe_detail.json"))
+            .expect("detail fixture");
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("detail json");
+        let book_info = v
+            .get("data")
+            .and_then(|d| d.get("bookInfo"))
+            .cloned()
+            .expect("data.bookInfo 节点");
+        // 生产语义：src 是内容**字符串**（执行器 prologue 注入 JSON 字面量串），
+        // 绑定层按 String 读取 → 这里注入 JSON 文本而非 JS 对象
+        let src_js = format!("globalThis.src = JSON.stringify({book_info});");
+        let engine = make_engine();
+        engine.eval(&src_js).unwrap();
+
+        // ruleBookInfo.kind 原文（{{}} 模板由 parser 层展开，此处逐段验证 JS 表达式）：
+        // {{$.userscore}}分 · {{$.subject}} · {{$.serialnum}}章 ·
+        // {{(Number(java.getString('$.contentsize'))/10000).toFixed(1)}}万字 ·
+        // {{java.getString('$.isfinish')=='true'?'已完结':'连载中'}}
+        assert_eq!(engine.eval("java.getString('$.userscore')").unwrap(), "9.9");
+        assert_eq!(
+            engine.eval("java.getString('$.subject')").unwrap(),
+            "轻小说"
+        );
+        assert_eq!(engine.eval("java.getString('$.serialnum')").unwrap(), "712");
+        // 核心修复点：修复前 java.getString 只做 CSS 解析 → 空串 → Number('')=0 → "0.0万字"
+        assert_eq!(
+            engine
+                .eval("(Number(java.getString('$.contentsize'))/10000).toFixed(1)")
+                .unwrap(),
+            "298.6"
+        );
+        assert_eq!(
+            engine
+                .eval("java.getString('$.isfinish')=='true'?'已完结':'连载中'")
+                .unwrap(),
+            "已完结"
+        );
+        assert_eq!(
+            engine
+                .eval("String(java.getString('$.tag')).replace(/\\|/g,'、')")
+                .unwrap(),
+            "影视原著、学院流、穿越、升级流、热血"
+        );
+    }
+
+    /// 类5（真实源·目录）：ruleToc.chapterName 的 🔒 前缀对免费章（isFree=true）应为空。
+    /// 上游对 isFree 布尔 true 归一为 "true"，故 712 章全部不加锁。
+    #[test]
+    fn test_binding_songhe_chapters_no_free_lock() {
+        let raw = std::fs::read_to_string(fixture_path("tmp_songhe_chapters.json"))
+            .expect("chapters fixture");
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("chapters json");
+        let rows_json = serde_json::to_string(
+            &v.get("rows")
+                .and_then(|r| r.as_array())
+                .cloned()
+                .expect("rows 数组"),
+        )
+        .unwrap();
+        let script = format!(
+            "var rows = {rows_json};\nvar locked = 0;\nfor (var i = 0; i < rows.length; i++) {{\n  globalThis.src = JSON.stringify(rows[i]);\n  var isFree = java.getString('$.isFree');\n  if (isFree !== 'true') {{ locked++; }}\n  if (i === 0) {{ globalThis.__name0 = java.getString('$.serialName'); }}\n}}\nlocked + '|' + rows.length"
+        );
+        let engine = make_engine();
+        assert_eq!(engine.eval(&script).unwrap(), "0|712");
+        assert_eq!(
+            engine.eval("globalThis.__name0").unwrap(),
+            "第1章 引子 穿越的唐家三少"
+        );
+    }
+
+    /// 类5 补充（真实源·搜索）：ruleSearch 条目字段 `$.categoryInfoV4` 直取
+    #[test]
+    fn test_binding_songhe_search_category() {
+        let raw = std::fs::read_to_string(fixture_path("tmp_songhe_search.json"))
+            .expect("search fixture");
+        let v: serde_json::Value = serde_json::from_str(&raw).expect("search json");
+        let item = &v["booklist"][0];
+        let engine = make_engine();
+        engine
+            .eval(&format!("globalThis.src = JSON.stringify({item});"))
+            .unwrap();
+        assert_eq!(
+            engine.eval("java.getString('$.categoryInfoV4')").unwrap(),
+            "20000:小说:小说,20001:玄幻:玄幻,20003:异世大陆:异世"
+        );
     }
 }
