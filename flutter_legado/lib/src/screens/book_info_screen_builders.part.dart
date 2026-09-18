@@ -1054,11 +1054,14 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     final chapterTotal =
         book.totalChapterNum > 0 ? book.totalChapterNum : chapters.length;
     final items = <String>[
-      ?score,
-      ?type,
+      // [P2-8 环境兼容] `?score` 等为 Dart 3.8 集合简写，本仓库锁定的
+      // analyzer 6.4.1（build_runner 工具链）无法解析，改写为等价 if 守卫；
+      // SDK 侧 lint use_null_aware_elements 要求改回简写，与本工具链冲突，逐行 ignore
+      if (score != null) score, // ignore: use_null_aware_elements
+      if (type != null) type, // ignore: use_null_aware_elements
       if (chapterTotal > 0) '$chapterTotal章',
       if (isMeaningfulText(book.wordCount)) book.wordCount!.trim(),
-      ?status,
+      if (status != null) status, // ignore: use_null_aware_elements
     ];
     if (items.isEmpty) return const SizedBox.shrink();
     // ref 08 量化：12sp 灰（PIL 实测墨色 62-70 灰阶≈onSurfaceVariant）、

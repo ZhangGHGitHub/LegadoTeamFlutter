@@ -67,10 +67,18 @@ fn parse_opt_i32(s: Option<&str>) -> Option<i32> {
 /// 解析 `[...]` 括号索引（规则以 `]` 结尾）
 ///
 /// 支持 `[n]`、`[n,m]`、`[!n,m]`、`[a:b]`、`[a:b:step]`、`[-1:0]` 反向。
+/// 括号内含 `=`（如 `[property="og:novel:latest_chapter_name"]`、
+/// `[href="https://…"]`、`[href*=author]`）是 CSS 属性选择器而非索引
+/// 语法：返回 None 交由下游按 CSS 选择器处理——否则属性值含 `:`
+/// （og:novel:… / https://…）会落入「a:b 区间」分支生成全选区间，
+/// 选择器退化为仅标签名（P2-7(b) 19 行 meta junk 数据）。— 2026-09-17
 fn split_bracket_index(rule: &str) -> Option<(String, DotIndex)> {
     let open = rule.rfind('[')?;
     let base = rule[..open].trim();
     let inner = rule[open + 1..rule.len() - 1].trim();
+    if inner.contains('=') {
+        return None;
+    }
     let mut exclude = false;
     let body = if let Some(b) = inner.strip_prefix('!') {
         exclude = true;
@@ -751,6 +759,21 @@ impl HtmlParser {
                 .select(&Selector::parse("body").unwrap())
                 .next()
                 .unwrap_or(root);
+            // 裸 `@attr`（如目录规则 chapterUrl="@href"，元素片段本身即 <a>）：
+            // 「当前元素」= 片段根 = body 的直接子元素。从 body 下首个带该属性
+            // 的子元素取值，无则回退 body 自身——与下方「裸 token」分支（L661 起）
+            // 及 js 桥同语义；不跨层（`<dd><a href>` 上 @href 仍为空，跨层须
+            // 显式写 `a@href`）。text/html 等模式保持原行为。— P2-7(a) 2026-09-17
+            if extract_mode == "attr" && !attr_name.is_empty() {
+                let value = elem
+                    .children()
+                    .filter_map(ElementRef::wrap)
+                    .find_map(|c| c.value().attr(&attr_name))
+                    .filter(|v| !v.is_empty())
+                    .or_else(|| elem.value().attr(&attr_name))
+                    .filter(|v| !v.is_empty());
+                return value.map(|v| vec![v.to_string()]).unwrap_or_default();
+            }
             return self
                 .extract_from_element(elem, extract_mode, &attr_name)
                 .map(|t| vec![t])
@@ -1779,5 +1802,163 @@ mod tests {
             .get_text(html, r#"[property$=book_name]@content"#)
             .unwrap();
         assert_eq!(via_at, vec!["一念永恒"], "{via_at:?}");
+    }
+
+    // ─── P2-7(a)：裸 `@attr` 取当前元素属性（网阅小说 chapterUrl="@href"）───
+
+    /// 元素片段本身即 `<a>`（逐元素目录解析的常态）：`@href` 取当前元素属性
+    #[test]
+    fn test_bare_at_attr_on_element_fragment() {
+        let p = HtmlParser::new();
+        // <a> 为片段根：@href 取当前元素属性（确诊修复点）
+        assert_eq!(
+            p.get_text(r#"<a href="/c/1.html">第1章</a>"#, "@href")
+                .unwrap(),
+            vec!["/c/1.html"]
+        );
+        // 裸 token 形态（规则写 "href"）不回归
+        assert_eq!(
+            p.get_text(r#"<a href="/c/1.html">第1章</a>"#, "href")
+                .unwrap(),
+            vec!["/c/1.html"]
+        );
+        // 边界：@attr 不跨层 —— <dd><a>… 上 @href 仍为空
+        assert!(
+            p.get_text(r#"<dd><a href="/c/1.html">第1章</a></dd>"#, "@href")
+                .unwrap()
+                .is_empty(),
+            "@href 不跨层"
+        );
+        // 跨层须显式写 a@href（既有语义不变）
+        assert_eq!(
+            p.get_text(r#"<dd><a href="/c/1.html">第1章</a></dd>"#, "a@href")
+                .unwrap(),
+            vec!["/c/1.html"]
+        );
+        // 其它属性名同语义（AO3 @value / 大人漫画 @title / 知妖 @baseUrl 形态）
+        assert_eq!(
+            p.get_text(r#"<option value="abc">T</option>"#, "@value")
+                .unwrap(),
+            vec!["abc"]
+        );
+        assert_eq!(
+            p.get_text(r#"<a title="tip" href="/x">t</a>"#, "@title")
+                .unwrap(),
+            vec!["tip"]
+        );
+        // 无此属性（子元素与 body 均无）→ 空
+        assert!(p
+            .get_text(r#"<a href="/c/1.html">第1章</a>"#, "@nonexist")
+            .unwrap()
+            .is_empty());
+        // 回退：子元素均无该属性时取 body 自身
+        assert_eq!(
+            p.get_text(r#"<body id="frag"><a>t</a></body>"#, "@id")
+                .unwrap(),
+            vec!["frag"]
+        );
+    }
+
+    /// 网阅场景复刻：688 个 `<a>` 元素逐一提取，`@href` 得 688 个互异 URL
+    /// （修复前 `@href` 取空 → 全部回退 tocUrl → 按 url 去重坍缩成 1 章）
+    #[test]
+    fn test_bare_at_attr_per_element_loop_wangyue_shape() {
+        let p = HtmlParser::new();
+        let mut urls = Vec::new();
+        for i in 0..688 {
+            let fragment = format!(
+                r#"<a href="/chapter/index3735-{i}.html" title="斗罗大陆小说 第{i}章">第{i}章</a>"#
+            );
+            urls.push(p.get_text(&fragment, "@href").unwrap());
+        }
+        assert_eq!(urls.len(), 688);
+        assert_eq!(urls[0], vec!["/chapter/index3735-0.html"]);
+        assert_eq!(urls[687], vec!["/chapter/index3735-687.html"]);
+        let mut distinct: Vec<&str> = urls.iter().map(|v| v[0].as_str()).collect();
+        distinct.sort();
+        distinct.dedup();
+        assert_eq!(distinct.len(), 688, "688 章 URL 应互异");
+    }
+
+    /// `@text`/`@html` 走 body 全文/HTML 路径（行为不变；单元素片段下「偶然正确」）
+    #[test]
+    fn test_bare_at_text_html_mode_unchanged() {
+        let p = HtmlParser::new();
+        assert_eq!(
+            p.get_text(r#"<a href="/c/1.html">第1章</a>"#, "@text")
+                .unwrap(),
+            vec!["第1章"]
+        );
+        let html_mode = p
+            .get_content(r#"<a href="/c/1.html">第1章</a>"#, "@html", "html")
+            .unwrap();
+        assert_eq!(html_mode.len(), 1);
+        assert!(html_mode[0].contains("第1章"));
+    }
+
+    // ─── P2-7(b)：值含 `:` 的 CSS 属性选择器不得误判为索引区间 ─────────────
+
+    /// 确诊规则 `meta[property="og:novel:latest_chapter_name"]@content` 精确命中
+    /// 1 条（修复前选择器退化为仅 `meta` → 命中全部 meta 行）
+    #[test]
+    fn test_attr_selector_with_colon_value_not_index() {
+        let p = HtmlParser::new();
+        const META_HTML: &str = r#"
+        <html><head>
+            <meta property="og:novel:latest_chapter_name" content="大结局，最后一个条件（全书完）">
+            <meta property="og:novel:author" content="唐家三少">
+            <meta property="og:novel:book_name" content="斗罗大陆">
+            <meta name="keywords" content="斗罗大陆,唐家三少">
+        </head><body><p>正文</p></body></html>
+        "#;
+        assert_eq!(
+            p.get_text(
+                META_HTML,
+                r#"meta[property="og:novel:latest_chapter_name"]@content"#
+            )
+            .unwrap(),
+            vec!["大结局，最后一个条件（全书完）"]
+        );
+        // 索引语法不回归：meta[0] 取第 1 个 meta
+        assert_eq!(p.get_elements(META_HTML, "meta[0]").unwrap().len(), 1);
+
+        // `[href="https://…"]@text`（值含 `:`）精确命中 1 条
+        let links = r#"
+        <html><body>
+            <a href="https://x/a.html">链接A</a>
+            <a href="https://x/b.html">链接B</a>
+        </body></html>"#;
+        assert_eq!(
+            p.get_text(links, r#"[href="https://x/a.html"]@text"#)
+                .unwrap(),
+            vec!["链接A"]
+        );
+
+        // `*=` 属性选择器精确命中（不回归）
+        let author =
+            r#"<a href="https://book15.net/author/tjs">唐家三少</a><a href="/c/1.html">其他</a>"#;
+        assert_eq!(
+            p.get_text(author, "[href*=author]@text").unwrap(),
+            vec!["唐家三少"]
+        );
+
+        // 区间 `[0:2]` 行为不变（闭区间，沿用既有语义）
+        assert_eq!(
+            p.get_text(SAMPLE_HTML, ".item[0:2]").unwrap(),
+            vec!["第一章", "第二章", "第三章"]
+        );
+    }
+
+    /// split_bracket_index 单元级回归：`=` → 属性选择器（None）；纯索引语法不变
+    #[test]
+    fn test_split_bracket_index_attr_vs_index() {
+        assert!(split_bracket_index(r#"meta[property="og:novel:latest_chapter_name"]"#).is_none());
+        assert!(split_bracket_index(r#"[href="https://x/a.html"]"#).is_none());
+        assert!(split_bracket_index("[href*=author]").is_none());
+        assert!(split_bracket_index(".item[0]").is_some());
+        assert!(split_bracket_index(".item[0,2]").is_some());
+        assert!(split_bracket_index(".item[!1]").is_some());
+        assert!(split_bracket_index(".item[0:2]").is_some());
+        assert!(split_bracket_index(".item[-1:0]").is_some());
     }
 }

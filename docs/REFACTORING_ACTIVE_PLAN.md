@@ -172,6 +172,20 @@
   - **正确做法（待重做，需整体设计）**：改键必须与「所有 URL 持有者同步」一起做——至少包括：换源返回的新 URL 已在 Dart 侧被用于重开详情页（`book_info_screen_builders.part.dart:2007-2013`）✅，但**书架/其它 provider 的内存对象**、`searchBooks` 候选、以及任何按 bookUrl 索引的缓存都需一并失效/刷新；或改键时保留一份「旧键 → 新键」的别名表供过渡期查询。
   - **回退后遗留的真实危害仍在**（即当初做改键的动机）：换源后书籍仍以旧源地址为键 → 详情页 U7 后台刷新（`book_info_screen_load.part.dart:210` 的 `webbookInfo(sourceJson, b.bookUrl)`）会用旧地址 + 新源规则解析 → `tocUrl` 被重推成 `…?bookId=` 退化值并「非空即覆盖」回写。**低成本缓解（建议下一步先做）**：在该刷新合并处对 `tocUrl` 加「解析值形态校验/退化值不覆盖」守卫（只动 Dart 合并层，不动主键）。
 
+- **P2-9 书源引擎对照审计结论与待补清单**（开放，2026-09-18）：对上游 `app/.../analyzeRule/**` 做对照审计（20 组成对实验，14 组等价 / 0 处结构性偏差；526 源真实命中统计）。**结论：不需要大修**，剩余 13 项偏差均可增量修补，按命中排序：
+  1. **JS 宿主方法缺失**（~160 处用法 / 15–20 源）：`java.getStringList` 15 处/5 源**全部无守卫**（ReferenceError 致规则失败）、`java.lang.*` 36/18、`setContent` 13/7、缓存内存三件套、`upLoginData` 7/6、`hexDecodeToByteArray` 等 → 批量注册 + 源级冒烟。
+  2. **`book` 绑定缺口**（12–13 源）：我方只绑 `{name}`，上游为完整实体；`book.getVariable` 9 源（破坏性）、`book.bookUrl` 16/`author` 11/`name` 14 **静默空值** → 扩为字段子集（数据源现成）。
+  3. **`java.put`（进程全局 store）↔ `@get`（analyzer 本地 store）无桥**（3 源：小米阅读/就去看网/手机小说）：手机小说 `tocUrl` 取空回退 book_url → 目录页错 → `get()` 兜底读全局 store 或流程入口 seed。
+  4. **`apply_put_map` 只取首值**（4 源）：`@put:{y:#t@text##ab##XY}` 全损 → 改走完整 `get_strings` 管道。
+  5. **`%%` 定界**（3 实现 / ~4 源）：我方 max_len vs 上游「首列表为界」→ 改 zip 边界 + 回归断言。
+  6–13（登记）：越界 `$n` 回退（0 命中）、JS 单值数组 join（`a,b` vs `a
+b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null vs undefined（守卫式等价）、`fromBookInfo` 硬编码 false（0 命中）、Rhino `Packages.*`/`android.util.Base64` 互操作（3 源，架构性限制）、`source.refreshExplore`/`variableComment`（1|1）、全局 store 生命周期（随第 3 项处理）。
+- **P2-10 P2-8 审查剩余项**（开放，2026-09-18）：P1-1 已修（写侧 `fill_origin_book_url_if_empty` + Dart 自动换源补字段 + 自愈补列），**其固化回归测试待补**（「换源后以缺 `originBookUrl` 的 Book JSON 调 `updateBook` 不得清空列」）。其余：
+  - P2-2 存量坏 `tocUrl` 不自愈：`reader.rs` 的 `refresh_toc` 在目录为空且 `book_page_fetch_url()` 与 `toc_url` 不同时应用书籍页重试一次并回写；
+  - P2-3 服务器 `/api/toc/update` 未接入单一取址点（详情改 `book_page_fetch_url()`；目录优先 `toc_url`）；
+  - P2-4 `_mergeDbBook` 对该字段的优先级反了（应 DB 优先，路由只兜底）；
+  - P3-1 Dart 取址未 trim（与 Rust 不一致）；P3-2 裸 `@attr` 新分支只取首个子元素（与「裸 token」分支遍历全部不一致）；P3-3 `pre_update.rs` 头注释与「仅换源写入」的描述不符（`re_get_book_native` 是第二写者）；P3-4 RoomImporter 丢弃该字段；P3-5 送审材料与实际改动集不一致（流程：diff 应含生成物与全部改动文件）。
+
 ### P3：功能补齐与卫生项（2026-08-22 开启）
 
 > P0/P1/P2 工程项全部关闭后的下一批。依据：AUDIT_FIX_ASSIGNMENT §2.1 旧阻塞项经复核——ruleSub FFI 已由 Task #89 交付（契约 §2.39，7 方法），剩余缺口为 **Flutter 管理页 UI**；另两项为 P2-5 审计标记的后续卫生项。

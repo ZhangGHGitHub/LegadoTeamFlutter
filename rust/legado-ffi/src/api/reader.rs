@@ -362,6 +362,9 @@ pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterList
     // 详情/目录页；用 bookUrl 抓取会把旧源 URL 传给新源解析器导致目录获取失败
     // （用户反馈「目录也获取不到」的根因之一）。tocUrl 为空时回退 bookUrl，
     // 对齐原版 WebBook.getChapterList 以 book.tocUrl 为目录页地址的行为。
+    // [P2-8] 回退链细化为 tocUrl → originBookUrl（当前书源详情页，换源事务
+    // 写入；tocUrl 可能已被坏值污染或为空）→ bookUrl（未换源书籍/存量库，
+    // 行为不变）。
     // 目录更新前钩子（对齐 WebBook.getChapterListAwait(runPerJs=true) → runPreUpdateJs）
     // 须在计算 fetch_url 之前执行，以便 reGetBook/refreshTocUrl/手写改 book 生效
     let mut working_book = existing_book.clone();
@@ -381,10 +384,15 @@ pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterList
             let toc = b.toc_url.trim();
             if !toc.is_empty() {
                 toc.to_string()
-            } else if !b.book_url.trim().is_empty() {
-                b.book_url.clone()
             } else {
-                book_url.to_string()
+                // [P2-8] 书籍页取址（originBookUrl 优先、空回退 bookUrl，见
+                // Book::book_page_fetch_url）；两者皆空时回退入参 book_url
+                let origin = b.book_page_fetch_url();
+                if origin.trim().is_empty() {
+                    book_url.to_string()
+                } else {
+                    origin.to_string()
+                }
             }
         })
         .unwrap_or_else(|| book_url.to_string());

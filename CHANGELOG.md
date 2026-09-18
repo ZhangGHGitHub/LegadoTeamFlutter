@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.288] - 2026-09-18
+
+### Fixed
+- [Root cause | P2-8] **从根上解决「换源后详情刷新用错地址」**：换源事务此前只更新 origin/tocUrl，`bookUrl`（稳定主键）保留旧源地址，而详情页「进入刷新」/「在线目录抓取」等「抓取书籍页」路径用「当前书源规则 + 旧地址」抓页——字段解析为空/退化值，写回即把 `tocUrl` 写坏（2.0.287 的刷新守卫是止损而非根因）。现：
+  - `Book` 新增 `originBookUrl` 字段（Rust 模型 + legacy-db 迁移 v108→v109 追加列 + Dart freezed 模型与生成产物）：换源事务写入**当前书源详情页地址**，`bookUrl` 保持稳定主键不动——所有既有 URL 持有者（书架内存对象、详情页入参、章节记录键、refreshToc 主键查询）语义不变，零改动
+  - 「抓取书籍页」取址统一走 `Book::book_page_fetch_url()`（Rust）/ `BookOpenUtils.bookFetchUrl`（Dart）：`originBookUrl` 优先、为空回退 `bookUrl`——未换源书籍与存量库行为不变（向后兼容）；接线：详情页联网刷新/在线目录（book_info_screen_load.part、toc_screen）、阅读器目录刷新（reader.rs）、pre_update（pre_update.rs）、换源事务（source_switch.rs）
+  - 2.0.287 的「刷新守卫」保留并降级为纵深防御：书籍页解析无书名时跳过本次刷新（宁保留旧值不用错页覆盖）
+- [Design] 方案 A（稳定主键 + 新地址字段）优于方案 B（别名表）：别名表需与所有 URL 持有者同步迁移、回归面大（P0 教训：2.0.285 改主键曾致全部换源「书籍不存在」回滚）；新字段为增量、向后兼容、持有者零改动
+- [Docs] 台账 P2-8 收口；`originBookUrl` 缺省空串时全路径回退 `bookUrl`，旧库/未换源书行为与 2.0.287 完全一致
+
+### Test
+- `cargo test --workspace` 0 failed（legado_core 795 / legado_db 306 / legacy-ffi 360（19 ignored）/ legado-parser 287 / legado-js 236 / legado-net 232 / 其余 crate 全绿；含新增换源测试：「换源写 originBookUrl 且 bookUrl 不变」「两次连续换源均成功且无僵尸行」「存量书（字段缺省）向后兼容」）
+- `cargo clippy --workspace -- -D warnings` 0 警告；`cargo fmt --check` 通过
+- `flutter analyze` 0 问题；`flutter test` 1475 全绿（含新增 `test/unit/origin_book_url_test.dart`：取址优先/回退、mergeWebInfo refresh 守卫不误伤/缺书名跳过、缺省序列化）
+
+### Real device
+- 2.0.288+289 release APK（release `.so` 三 ABI + `build-apk.ps1 -Release -SkipRust`，161.7MB）实机复验（MuMu `192.168.1.19:5555`，adb root，包名 `io.legado.flutter_legado`）：
+  - 冷启动自动完成 v108→v109 迁移：`PRAGMA user_version=109`，books 表新增 `originBookUrl TEXT NOT NULL DEFAULT ''`（第 37 列）；存量书行该列为空，取址路径回退 `bookUrl`，行为不变
+  - 书「斗罗大陆」（原 🏷松鹤庭沐·言璃）两次连续换源均成功：①→ 📂瀚海书阁 ②→ ⚡📂米读小说；详情页章节数/字数/最新章随新源更新（712章/298.6万字 → 51章/142.20万字 → 712章/286.6万字）
+  - 每次换源后拉库核对（`-wal`/`-shm` 一并拉取）：`bookUrl` 恒为原主键 `https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468021`；换源①后 `originBookUrl=https://www.ingml.cc/novel/1529.html`（`tocUrl` 同值）；换源②后 `originBookUrl=https://api.midureader.com/fiction/book/getDetail,{…POST…}`、`tocUrl=https://book.midureader.com/book/chapter_list/100/….txt`——完整、无退化
+  - 进入详情页一次（U7 后台刷新）后再次拉库：`tocUrl`/字数/类型/评分未损坏（与刷新前一致），`originBookUrl` 保持有效
+  - 截图 `docs/parity_shots/tmp_songhe/p8_*.png`；库快照 `.tmp/p8_db/`（`p8_before_legado.db*` 迁移前 v108 / `p8_sw1.db*` / `p8_sw2.db*` / `p8_final.db*`）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.287] - 2026-09-18
 
 ### Fixed

@@ -887,6 +887,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         bookUrl: newBookUrl,
         origin: target.sourceUrl,
         originName: target.sourceName,
+        // [P2-8 审查 P1-1] 自动换源后内存对象须带上新源详情页地址，
+        // 否则后续任意一次「保存阅读设置」会用缺该字段的 Book 覆盖 DB 列
+        originBookUrl: target.bookUrl,
       );
       final notifier = ref.read(readerNotifierProvider.notifier);
       notifier.updateCurrentBook(updated);

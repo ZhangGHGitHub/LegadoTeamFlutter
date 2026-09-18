@@ -261,9 +261,11 @@ class _TocScreenState extends ConsumerState<TocScreen>
     }
     if (source == null) return const [];
     try {
+      // [P2-8] 取址同详情页刷新：当前书源详情页（originBookUrl 优先、
+      // 空回退 bookUrl）；parseWebChapters 第二参仍为稳定主键 bookUrl
       final chJson = await api.webbookChapters(
         jsonEncode(source.toJson()),
-        _book.bookUrl,
+        BookOpenUtils.bookFetchUrl(_book),
         tocUrl: _book.tocUrl,
         bookName: _book.name,
       );

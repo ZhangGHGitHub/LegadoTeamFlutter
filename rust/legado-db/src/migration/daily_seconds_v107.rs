@@ -91,7 +91,7 @@ mod tests {
         conn2.pragma_update(None, "user_version", 106).unwrap();
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(&conn2).unwrap();
-        assert_eq!(MigrationRegistry::current_version(&conn2).unwrap(), 108);
+        assert_eq!(MigrationRegistry::current_version(&conn2).unwrap(), 109);
         assert_eq!(
             daily_rows(&conn2),
             vec![("2026-09-06".to_string(), 6541)],

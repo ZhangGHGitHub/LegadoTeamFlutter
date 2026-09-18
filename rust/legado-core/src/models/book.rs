@@ -88,6 +88,14 @@ pub struct Book {
     /// 目录页Url
     #[serde(default, rename = "tocUrl")]
     pub toc_url: String,
+    /// 当前书源下该书的详情页地址
+    ///
+    /// [P2-8] 换源根因修复：换源后 `book_url`（稳定主键）保持旧源地址不变，
+    /// 「抓取书籍页」路径（详情刷新 / tocUrl 推导 / preUpdateJs 钩子）须用
+    /// 当前书源的详情页地址，由本字段承载；换源事务写入，为空时回退
+    /// `book_url`（未换源书籍与存量库向后兼容）。
+    #[serde(default, rename = "originBookUrl")]
+    pub origin_book_url: String,
     /// 书源URL(默认BookType.local)
     #[serde(default = "Book::default_origin")]
     pub origin: String,
@@ -200,6 +208,7 @@ impl Default for Book {
         Self {
             book_url: String::new(),
             toc_url: String::new(),
+            origin_book_url: String::new(),
             origin: book_type::LOCAL_TAG.to_string(),
             origin_name: String::new(),
             name: String::new(),
@@ -243,6 +252,20 @@ impl Book {
     fn default_origin() -> String {
         book_type::LOCAL_TAG.to_string()
     }
+
+    /// [P2-8] 抓取书籍页地址选择：优先 `origin_book_url`（当前书源详情页地址，
+    /// 换源事务写入），为空时回退 `book_url`（稳定主键；未换源书籍与存量库
+    /// 行为不变，向后兼容）。
+    ///
+    /// 「抓取书籍页」路径（详情刷新 / tocUrl 推导 / preUpdateJs 钩子）统一
+    /// 经本方法取址，避免换源后拿旧源 bookUrl 打新源规则解析出坏值。
+    pub fn book_page_fetch_url(&self) -> &str {
+        if self.origin_book_url.trim().is_empty() {
+            &self.book_url
+        } else {
+            &self.origin_book_url
+        }
+    }
 }
 
 #[cfg(test)]
@@ -257,6 +280,10 @@ mod tests {
         assert!(book.can_update);
         assert!(book.name.is_empty());
         assert!(book.author.is_empty());
+        assert!(
+            book.origin_book_url.is_empty(),
+            "originBookUrl 默认应为空串"
+        );
         assert_eq!(book.total_chapter_num, 0);
     }
 
@@ -287,10 +314,57 @@ mod tests {
         let obj = json.as_object().unwrap();
         assert!(obj.contains_key("bookUrl"));
         assert!(obj.contains_key("tocUrl"));
+        assert!(obj.contains_key("originBookUrl"));
         assert!(obj.contains_key("originName"));
         assert!(obj.contains_key("type"));
         assert!(obj.contains_key("canUpdate"));
         assert!(obj.contains_key("durChapterIndex"));
+    }
+
+    /// [P2-8] originBookUrl 序列化往返；旧 JSON（无该字段）反序列化取空串，
+    /// 抓取路径回退 bookUrl，行为与换源前一致（向后兼容）
+    #[test]
+    fn test_book_origin_book_url_roundtrip_and_legacy_default() {
+        let mut book = Book::default();
+        book.book_url = "https://old.example/book".to_string();
+        book.origin_book_url = "https://new.example/book".to_string();
+        let json = serde_json::to_string(&book).unwrap();
+        assert!(json.contains("\"originBookUrl\""));
+        let de: Book = serde_json::from_str(&json).unwrap();
+        assert_eq!(de.origin_book_url, "https://new.example/book");
+
+        let legacy: Book =
+            serde_json::from_str(r#"{"bookUrl":"https://old.example/book"}"#).unwrap();
+        assert_eq!(legacy.origin_book_url, "", "旧 JSON 无该字段时应为空串");
+    }
+
+    /// [P2-8] 抓取书籍页取址：originBookUrl 非空时优先（换源后的新源详情页）；
+    /// 为空（未换源/存量库）回退稳定主键 bookUrl（向后兼容）
+    #[test]
+    fn test_book_page_fetch_url_preference() {
+        let mut book = Book::default();
+        book.book_url = "https://old.example/book/1".to_string();
+        assert_eq!(
+            book.book_page_fetch_url(),
+            "https://old.example/book/1",
+            "originBookUrl 为空应回退 bookUrl"
+        );
+
+        book.origin_book_url = "https://new.example/book/1".to_string();
+        assert_eq!(
+            book.book_page_fetch_url(),
+            "https://new.example/book/1",
+            "originBookUrl 非空应优先于 bookUrl"
+        );
+    }
+
+    /// [P2-8] 纯空白的 originBookUrl 视同空（trim 判定），回退 bookUrl
+    #[test]
+    fn test_book_page_fetch_url_blank_falls_back() {
+        let mut book = Book::default();
+        book.book_url = "https://old.example/book/1".to_string();
+        book.origin_book_url = "   ".to_string();
+        assert_eq!(book.book_page_fetch_url(), "https://old.example/book/1");
     }
 
     #[test]

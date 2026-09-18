@@ -114,17 +114,20 @@ extension _BookInfoLoad on _BookInfoScreenState {
             } else if (hasTocUrl && needInfo) {
               // 详情与目录并行（tocUrl 已知，目录不必等 info）
               final tParallel = Stopwatch()..start();
-              final infoFuture = api.webbookInfo(sourceJson, b.bookUrl);
+              // [P2-8] 取址：当前书源详情页地址（originBookUrl 优先、空回退
+              // bookUrl），避免换源后「旧源地址 + 当前书源规则」错页解析
+              final infoFuture =
+                  api.webbookInfo(sourceJson, BookOpenUtils.bookFetchUrl(b));
               final tocFuture = api.webbookChapters(
                 sourceJson,
-                b.bookUrl,
+                BookOpenUtils.bookFetchUrl(b),
                 tocUrl: b.tocUrl,
                 bookName: b.name,
               );
               final results = await Future.wait([infoFuture, tocFuture]);
               debugPrint('[BookInfo] 并行 info+toc ${tParallel.elapsedMilliseconds}ms');
               try {
-                b = _mergeWebInfo(b, results[0]);
+                b = BookOpenUtils.mergeWebInfo(b, results[0]);
               } catch (e) {
                 debugPrint('webbookInfo 补全失败: ${_errMsg(e)}');
               }
@@ -137,11 +140,14 @@ extension _BookInfoLoad on _BookInfoScreenState {
               if (needInfo) {
                 try {
                   final tInfo = Stopwatch()..start();
-                  final infoJson = await api.webbookInfo(sourceJson, b.bookUrl);
+                  final infoJson = await api.webbookInfo(
+                    sourceJson,
+                    BookOpenUtils.bookFetchUrl(b),
+                  );
                   debugPrint(
                     '[BookInfo] webbookInfo ${tInfo.elapsedMilliseconds}ms',
                   );
-                  b = _mergeWebInfo(b, infoJson);
+                  b = BookOpenUtils.mergeWebInfo(b, infoJson);
                   if (mounted) setState(() => _loadedBook = b);
                   unawaited(_extractCoverSeed(b));
                 } catch (e) {
@@ -207,11 +213,17 @@ extension _BookInfoLoad on _BookInfoScreenState {
         if (mounted) setState(() => _networkLoading = true);
         try {
           final tInfo = Stopwatch()..start();
-          final infoJson = await api.webbookInfo(sourceJson, b.bookUrl);
+          // [P2-8] 根因修复：U7 后台刷新取当前书源详情页地址（originBookUrl
+          // 优先、空回退 bookUrl），换源后不再「旧源地址 + 新源规则」错页
+          // 解析写坏 tocUrl；守卫（mergeWebInfo refresh 守卫）保留为纵深防御
+          final infoJson = await api.webbookInfo(
+            sourceJson,
+            BookOpenUtils.bookFetchUrl(b),
+          );
           debugPrint(
             '[BookInfo] U7 后台 info 刷新 ${tInfo.elapsedMilliseconds}ms',
           );
-          b = _mergeWebInfo(b, infoJson, refresh: true);
+          b = BookOpenUtils.mergeWebInfo(b, infoJson, refresh: true);
           // 已入库书：刷新字段回写 DB（对标原版 bookDao.replace / inBookshelf
           // update）；未入库仅展示不落库（对齐原版 loadChapter !inBookshelf）
           if (inShelf) {
@@ -328,77 +340,17 @@ extension _BookInfoLoad on _BookInfoScreenState {
       totalChapterNum: book.totalChapterNum > 0
           ? book.totalChapterNum
           : dbBook.totalChapterNum,
+      // [P2-8] 当前书源详情页地址（换源事务写入）：路由瘦壳未携带时以
+      // DB 值为准，保证换源后进入详情页仍按当前书源地址刷新
+      originBookUrl: book.originBookUrl.isNotEmpty
+          ? book.originBookUrl
+          : dbBook.originBookUrl,
     );
   }
 
-  /// 合并 webbookInfo 返回的详情到 book（WebBookInfo 为 snake_case，需手动映射，
-  /// 不能直接 Book.fromJson 否则 cover_url/toc_url 等丢失）。
-  /// - refresh=false（默认）：仅补全当前缺失字段（首屏补全语义）。
-  /// - refresh=true（[U7] 进入刷新）：更新式合并——刷新非空值覆盖现有字段
-  ///   （对齐原版 analyzeBookInfo 覆盖语义，刷新 kind 评分/分类/完结态、字数、
-  ///   最新章等陈旧值）；刷新值为空时保留现有值（不用空覆盖）。
-  Book _mergeWebInfo(Book book, String infoJson, {bool refresh = false}) {
-    final decoded = jsonDecode(infoJson);
-    if (decoded is! Map) return book;
-    String? pick(String key) {
-      final v = decoded[key];
-      return (v is String && v.isNotEmpty) ? v : null;
-    }
-
-    if (refresh) {
-      // [换源后刷新守卫 | 2026-09-18 | 台账 P2-8] 换源后书籍的 bookUrl 仍是**旧源地址**
-      // （主键保持稳定，这是刻意的：多处状态持有它），而上方的刷新调用用的是
-      // `webbookInfo(sourceJson, b.bookUrl)`＝「当前源规则 + 旧源地址」。当旧地址不是
-      // 新源的书籍页时，ruleBookInfo.init 取空 → 各字段解析为空，但 tocUrl 规则仍会拼出
-      // **退化但非空**的值（松鹤庭沐源实测 `…/api/book/all-chapter?bookId=`，缺 bookId），
-      // 经下面「非空即覆盖」写回后 tocUrl 被写坏 → 之后「刷新目录」失败；同一次刷新也可能
-      // 用错页结果覆盖 kind/字数/简介。
-      // 判据：正常书籍页解析必得书名（ruleBookInfo.name）；name 缺失即视为「未解析到书籍页」，
-      // 本次刷新整体跳过——宁可保留旧值，也不用错页结果覆盖。
-      final freshName = pick('name');
-      if (freshName == null) return book;
-      final freshCover = pick('cover_url');
-      final freshIntro = pick('intro');
-      final freshWord = pick('word_count');
-      final freshLast = pick('last_chapter');
-      final freshKind = pick('kind');
-      final freshToc = pick('toc_url');
-      final freshAuthor = pick('author');
-      return book.copyWith(
-        coverUrl: freshCover ?? book.coverUrl,
-        intro: freshIntro ?? book.intro,
-        tocUrl: freshToc ?? book.tocUrl,
-        wordCount: freshWord ?? book.wordCount,
-        latestChapterTitle: freshLast ?? book.latestChapterTitle,
-        kind: freshKind ?? book.kind,
-        name: freshName,
-        author: freshAuthor ?? book.author,
-      );
-    }
-
-    final hasCover = book.coverUrl != null && book.coverUrl!.isNotEmpty;
-    final hasIntro = book.intro != null && book.intro!.isNotEmpty;
-    final hasWord = book.wordCount != null && book.wordCount!.isNotEmpty;
-    final hasLast =
-        book.latestChapterTitle != null && book.latestChapterTitle!.isNotEmpty;
-    final hasKind = book.kind != null && book.kind!.isNotEmpty;
-    final tocUrl = pick('toc_url');
-    final name = pick('name');
-    final author = pick('author');
-    return book.copyWith(
-      coverUrl: hasCover ? book.coverUrl : pick('cover_url'),
-      intro: hasIntro ? book.intro : pick('intro'),
-      // [fix 2026-08-15] tocUrl 用详情解析出的权威值优先（七猫发现列表
-      // book.tocUrl 默认=bookUrl，详情 qmBookInfo 生成真实 chapter-list URL）
-      tocUrl: tocUrl ?? book.tocUrl,
-      wordCount: hasWord ? book.wordCount : pick('word_count'),
-      latestChapterTitle: hasLast ? book.latestChapterTitle : pick('last_chapter'),
-      kind: hasKind ? book.kind : pick('kind'),
-      name: book.name.isNotEmpty ? book.name : (name ?? book.name),
-      author: book.author.isNotEmpty ? book.author : (author ?? book.author),
-    );
-  }
-
+  // [P2-8] 详情合并逻辑已移至 BookOpenUtils.mergeWebInfo（公共静态，可单测）；
+  // 换源后刷新取址统一走 BookOpenUtils.bookFetchUrl（originBookUrl 优先、
+  // 空回退 bookUrl），本 part 文件仅保留调用。
 
   /// 未入库在线书：仅网络取目录用于展示，不写 DB（对齐原版 loadChapter !inBookshelf）
   Future<List<BookChapter>> _fetchWebChaptersOnline(
@@ -409,9 +361,11 @@ extension _BookInfoLoad on _BookInfoScreenState {
     final encoded = sourceJson ??
         jsonEncode((await _findSourceByOrigin(api, book.origin))?.toJson());
     if (encoded.isEmpty || encoded == 'null') return const [];
+    // [P2-8] 取址同 webbookInfo：当前书源详情页（originBookUrl 优先）；
+    // parseWebChapters 第二参仍传稳定主键 bookUrl（章节记录挂主键下）
     final chJson = await api.webbookChapters(
       encoded,
-      book.bookUrl,
+      BookOpenUtils.bookFetchUrl(book),
       tocUrl: book.tocUrl,
       bookName: book.name,
     );

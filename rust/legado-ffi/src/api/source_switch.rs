@@ -717,6 +717,11 @@ fn switch_book_source_with<F: BookSourceFetcher>(
     // [T2] tocUrl = 详情解析出的真实目录页（原写死详情页 URL，使「目录独立页」
     //      源后续刷新目录/正文定位全错）
     book.toc_url = toc_url;
+    // [P2-8] 换源根因修复：写入当前书源下该书的详情页地址（new_book_url）。
+    //    换源后 bookUrl（稳定主键）仍为旧源地址，「抓取书籍页」路径
+    //    （详情刷新 / tocUrl 推导 / preUpdateJs 钩子）优先用本字段，为空时
+    //    回退 bookUrl（未换源书籍与存量库行为不变）。
+    book.origin_book_url = new_book_url.to_string();
     // [T2] 详情字段按 parse 门控结果更新（name/author 已含 canReName 门控；
     //      Option 字段仅在解析出值时覆盖，避免新源缺字段抹掉既有信息）
     book.name = info.name;
@@ -1806,6 +1811,247 @@ mod tests {
         with_database(|db| {
             let _ = BookRepository::new(db.connection()).delete(old_url);
             let _ = BookSourceRepository::new(db.connection()).delete(new_source);
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [P2-8] 换源根因修复：换源事务必须写入当前书源详情页地址
+    /// （originBookUrl = new_book_url），且 bookUrl（稳定主键）保持不变；
+    /// 旧书（originBookUrl 为空，存量库）换源同样成功（向后兼容）。
+    /// 同时验证「按新字段抓详情」链路：详情解析出的真实 tocUrl 用于取目录。
+    #[test]
+    fn test_switch_writes_origin_book_url_and_keeps_book_url_stable() {
+        use crate::db_state::with_database;
+        use legado_core::models::{Book, BookSource};
+        use legado_core::web_book::WebBookInfo;
+        use legado_db::repository::Repository;
+        use legado_db::{BookRepository, BookSourceRepository};
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let old_url = "https://p8-old.example.com/book/1";
+        let new_source = "https://p8-new.example.com";
+        let new_detail = "https://p8-new.example.com/book/9";
+        let new_toc = "https://p8-new.example.com/book/9/chapters";
+
+        with_database(|db| {
+            // 存量书：originBookUrl 为空（未换源 / 迁移前旧库形态）
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: old_url.to_string(),
+                origin: "https://p8-old.example.com".to_string(),
+                origin_name: "旧源".to_string(),
+                name: "书名".to_string(),
+                author: "作者".to_string(),
+                ..Book::default()
+            })?;
+            BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: new_source.to_string(),
+                book_source_name: "新源".to_string(),
+                ..BookSource::default()
+            })?;
+            Ok(())
+        })
+        .expect("初始数据写入失败");
+
+        let mock = SwitchMockFetcher {
+            info: Ok(WebBookInfo {
+                name: "书名".to_string(),
+                author: "作者".to_string(),
+                cover_url: None,
+                intro: None,
+                categories: vec![],
+                last_chapter: None,
+                variable: None,
+                book_url: new_detail.to_string(),
+                // 目录页≠详情页：详情解析出的真实 tocUrl 必须被采用
+                toc_url: new_toc.to_string(),
+                word_count: None,
+                kind: None,
+            }),
+            chapters: Ok(vec![WebChapter {
+                index: 0,
+                title: "第一章".to_string(),
+                url: format!("{new_toc}/c1"),
+                is_vip: false,
+                is_volume: false,
+                variable: None,
+                word_count: None,
+            }]),
+            chapters_requested: std::sync::Mutex::new(Vec::new()),
+            detail_vars_requested: std::sync::Mutex::new(Vec::new()),
+            toc_vars_requested: std::sync::Mutex::new(Vec::new()),
+        };
+
+        let resp = switch_book_source_with(&mock, old_url, new_source, new_detail)
+            .expect("存量书（originBookUrl 为空）换源应成功");
+        let book: Book = serde_json::from_str(&resp).unwrap();
+        assert_eq!(book.book_url, old_url, "bookUrl 必须保持稳定主键不变");
+        assert_eq!(
+            book.origin_book_url, new_detail,
+            "换源后必须写入当前书源详情页地址 originBookUrl"
+        );
+        // 详情按 new_book_url 抓取并解析出真实 tocUrl，目录抓取用该 tocUrl
+        assert_eq!(book.toc_url, new_toc, "tocUrl 应为详情解析出的目录页");
+        assert_eq!(
+            mock.chapters_requested.lock().unwrap().as_slice(),
+            [new_toc],
+            "取目录应使用详情解析出的 tocUrl，而非详情页/旧 bookUrl"
+        );
+
+        // DB 行持久值与返回值一致
+        with_database(|db| {
+            let persisted = BookRepository::new(db.connection())
+                .find_by_url(old_url)?
+                .expect("原 bookUrl 记录应仍存在");
+            assert_eq!(persisted.book_url, old_url);
+            assert_eq!(
+                persisted.origin_book_url, new_detail,
+                "DB 落库 originBookUrl 必须等于新源详情页地址"
+            );
+            assert_eq!(persisted.origin, new_source);
+            assert!(
+                BookRepository::new(db.connection())
+                    .find_by_url(new_detail)?
+                    .is_none(),
+                "不应出现 new_book_url 僵尸记录"
+            );
+            Ok(())
+        })
+        .expect("DB 断言失败");
+
+        // 收尾清理
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete(old_url);
+            let _ = BookSourceRepository::new(db.connection()).delete(new_source);
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [P2-8] 回归网：连续两次换源均成功——第二次换源时 DB 行 originBookUrl
+    /// 已非空（第一次写入），执行链仍按稳定主键 bookUrl 命中并更新
+    /// originBookUrl 为第二源的详情页地址，不产生僵尸记录、不丢章节。
+    #[test]
+    fn test_two_consecutive_switches_both_succeed() {
+        use crate::db_state::with_database;
+        use legado_core::models::{Book, BookSource};
+        use legado_core::web_book::WebBookInfo;
+        use legado_db::repository::Repository;
+        use legado_db::{BookChapterRepository, BookRepository, BookSourceRepository};
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let old_url = "https://p8-2x.example.com/book/1";
+        let src_a = "https://p8-2x-a.example.com";
+        let detail_a = "https://p8-2x-a.example.com/book/7";
+        let src_b = "https://p8-2x-b.example.com";
+        let detail_b = "https://p8-2x-b.example.com/book/8";
+
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: old_url.to_string(),
+                origin: "https://p8-2x-origin.example.com".to_string(),
+                origin_name: "原源".to_string(),
+                name: "书名".to_string(),
+                author: "作者".to_string(),
+                ..Book::default()
+            })?;
+            BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: src_a.to_string(),
+                book_source_name: "源A".to_string(),
+                ..BookSource::default()
+            })?;
+            BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: src_b.to_string(),
+                book_source_name: "源B".to_string(),
+                ..BookSource::default()
+            })?;
+            Ok(())
+        })
+        .expect("初始数据写入失败");
+
+        fn switch_mock(detail: &str) -> SwitchMockFetcher {
+            SwitchMockFetcher {
+                info: Ok(WebBookInfo {
+                    name: "书名".to_string(),
+                    author: "作者".to_string(),
+                    cover_url: None,
+                    intro: None,
+                    categories: vec![],
+                    last_chapter: None,
+                    variable: None,
+                    book_url: detail.to_string(),
+                    toc_url: String::new(),
+                    word_count: None,
+                    kind: None,
+                }),
+                chapters: Ok(vec![WebChapter {
+                    index: 0,
+                    title: "第一章".to_string(),
+                    url: format!("{detail}/c1"),
+                    is_vip: false,
+                    is_volume: false,
+                    variable: None,
+                    word_count: None,
+                }]),
+                chapters_requested: std::sync::Mutex::new(Vec::new()),
+                detail_vars_requested: std::sync::Mutex::new(Vec::new()),
+                toc_vars_requested: std::sync::Mutex::new(Vec::new()),
+            }
+        }
+
+        // 第一次换源：存量书（originBookUrl 空）→ 源A
+        let mock_a = switch_mock(detail_a);
+        let r1 =
+            switch_book_source_with(&mock_a, old_url, src_a, detail_a).expect("第一次换源应成功");
+        let b1: Book = serde_json::from_str(&r1).unwrap();
+        assert_eq!(b1.book_url, old_url, "第一次换源 bookUrl 不变");
+        assert_eq!(
+            b1.origin_book_url, detail_a,
+            "第一次换源 originBookUrl=源A 详情页"
+        );
+
+        // 第二次换源：DB 行 originBookUrl 已非空（=detail_a），
+        // 执行链仍按稳定主键命中，更新为源B 详情页地址
+        let mock_b = switch_mock(detail_b);
+        let r2 =
+            switch_book_source_with(&mock_b, old_url, src_b, detail_b).expect("第二次换源应成功");
+        let b2: Book = serde_json::from_str(&r2).unwrap();
+        assert_eq!(b2.book_url, old_url, "第二次换源 bookUrl 仍不变");
+        assert_eq!(
+            b2.origin_book_url, detail_b,
+            "第二次换源 originBookUrl 应刷新为源B 详情页地址"
+        );
+
+        // DB 终态：单行、originBookUrl=detail_b、源A/B 详情页地址均无僵尸行、
+        // 章节挂在稳定主键下
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            let final_book = repo.find_by_url(old_url)?.expect("原 bookUrl 记录应仍存在");
+            assert_eq!(final_book.origin_book_url, detail_b);
+            assert_eq!(final_book.origin, src_b);
+            assert!(
+                repo.find_by_url(detail_a)?.is_none(),
+                "源A 详情页地址不应产生僵尸记录"
+            );
+            assert!(
+                repo.find_by_url(detail_b)?.is_none(),
+                "源B 详情页地址不应产生僵尸记录"
+            );
+            let chapters = BookChapterRepository::new(db.connection()).find_by_book_url(old_url)?;
+            assert_eq!(chapters.len(), 1, "第二次换源后章节应挂在稳定主键下");
+            assert_eq!(
+                chapters[0].book_url, old_url,
+                "章节 book_url 必须保持稳定主键"
+            );
+            Ok(())
+        })
+        .expect("DB 终态断言失败");
+
+        // 收尾清理
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete(old_url);
+            let _ = BookSourceRepository::new(db.connection()).delete(src_a);
+            let _ = BookSourceRepository::new(db.connection()).delete(src_b);
             Ok(())
         })
         .ok();

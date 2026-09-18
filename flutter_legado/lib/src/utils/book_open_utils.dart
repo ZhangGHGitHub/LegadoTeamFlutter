@@ -245,6 +245,79 @@ class BookOpenUtils {
     return true;
   }
 
+  /// [P2-8] 「抓取书籍页」地址选择：优先 `originBookUrl`（当前书源下该书的
+  /// 详情页地址，换源事务写入；bookUrl 作为稳定主键换源后可能仍是旧源
+  /// 地址），为空时回退 `bookUrl`（未换源书籍与存量库行为不变，向后兼容）。
+  ///
+  /// 详情页联网刷新（webbookInfo / webbookChapters 取址）一律经本方法取址，
+  /// 保证换源后刷新用「当前书源详情页」而非「旧源地址」——台账 P2-8 根因
+  /// 修复（此前用旧源地址套当前书源规则，字段解析为空/退化值写坏 tocUrl）。
+  static String bookFetchUrl(Book book) =>
+      book.originBookUrl.isNotEmpty ? book.originBookUrl : book.bookUrl;
+
+  /// 合并 webbookInfo 返回的详情到 book（WebBookInfo 为 snake_case，需手动映射，
+  /// 不能直接 Book.fromJson 否则 cover_url/toc_url 等丢失）。
+  /// - refresh=false（默认）：仅补全当前缺失字段（首屏补全语义）。
+  /// - refresh=true（U7 进入刷新）：更新式合并——刷新非空值覆盖现有字段
+  ///   （对齐原版 analyzeBookInfo 覆盖语义，刷新 kind 评分/分类/完结态、字数、
+  ///   最新章等陈旧值）；刷新值为空时保留现有值（不用空覆盖）。
+  /// - [换源后刷新守卫 | 2026-09-18 | 台账 P2-8] 根因修复后（进入刷新取址已
+  ///   走 [bookFetchUrl]，即当前书源详情页），守卫降级为纵深防御：正常书籍页
+  ///   解析必得书名（ruleBookInfo.name）；name 缺失即视为「未解析到书籍页」，
+  ///   本次刷新整体跳过——宁可保留旧值，也不用错页结果覆盖。
+  static Book mergeWebInfo(Book book, String infoJson, {bool refresh = false}) {
+    final decoded = jsonDecode(infoJson);
+    if (decoded is! Map) return book;
+    String? pick(String key) {
+      final v = decoded[key];
+      return (v is String && v.isNotEmpty) ? v : null;
+    }
+
+    if (refresh) {
+      final freshName = pick('name');
+      if (freshName == null) return book;
+      final freshCover = pick('cover_url');
+      final freshIntro = pick('intro');
+      final freshWord = pick('word_count');
+      final freshLast = pick('last_chapter');
+      final freshKind = pick('kind');
+      final freshToc = pick('toc_url');
+      final freshAuthor = pick('author');
+      return book.copyWith(
+        coverUrl: freshCover ?? book.coverUrl,
+        intro: freshIntro ?? book.intro,
+        tocUrl: freshToc ?? book.tocUrl,
+        wordCount: freshWord ?? book.wordCount,
+        latestChapterTitle: freshLast ?? book.latestChapterTitle,
+        kind: freshKind ?? book.kind,
+        name: freshName,
+        author: freshAuthor ?? book.author,
+      );
+    }
+
+    final hasCover = book.coverUrl != null && book.coverUrl!.isNotEmpty;
+    final hasIntro = book.intro != null && book.intro!.isNotEmpty;
+    final hasWord = book.wordCount != null && book.wordCount!.isNotEmpty;
+    final hasLast =
+        book.latestChapterTitle != null && book.latestChapterTitle!.isNotEmpty;
+    final hasKind = book.kind != null && book.kind!.isNotEmpty;
+    final tocUrl = pick('toc_url');
+    final name = pick('name');
+    final author = pick('author');
+    return book.copyWith(
+      coverUrl: hasCover ? book.coverUrl : pick('cover_url'),
+      intro: hasIntro ? book.intro : pick('intro'),
+      // [fix 2026-08-15] tocUrl 用详情解析出的权威值优先（七猫发现列表
+      // book.tocUrl 默认=bookUrl，详情 qmBookInfo 生成真实 chapter-list URL）
+      tocUrl: tocUrl ?? book.tocUrl,
+      wordCount: hasWord ? book.wordCount : pick('word_count'),
+      latestChapterTitle: hasLast ? book.latestChapterTitle : pick('last_chapter'),
+      kind: hasKind ? book.kind : pick('kind'),
+      name: book.name.isNotEmpty ? book.name : (name ?? book.name),
+      author: book.author.isNotEmpty ? book.author : (author ?? book.author),
+    );
+  }
+
   /// 解析 webbookChapters 返回的 WebChapter 数组（snake_case）
   static List<BookChapter> parseWebChapters(String json, String bookUrl) {
     final decoded = jsonDecode(json);

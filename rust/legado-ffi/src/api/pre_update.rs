@@ -104,7 +104,11 @@ fn re_get_book_native(source: &BookSource, book: &mut Book) -> LegadoResult<()> 
     let hit: serde_json::Value = serde_json::from_str(&hit_json)?;
     if let Some(url) = hit.get("bookUrl").and_then(|v| v.as_str()) {
         if !url.is_empty() {
-            book.book_url = url.to_string();
+            // [P2-8] 精搜命中的详情页地址写入 originBookUrl（当前书源详情页），
+            // 不再改写 book_url：bookUrl 是稳定主键（chapters/cached_chapters/
+            // download_tasks 等多处持有者依赖其不变，P0 教训 da7b0d265f），
+            // 下游「抓取书籍页」路径按 originBookUrl 优先、空则回退 bookUrl。
+            book.origin_book_url = url.to_string();
         }
     }
     if let Some(var) = hit.get("variable").and_then(|v| v.as_str()) {
@@ -116,11 +120,15 @@ fn re_get_book_native(source: &BookSource, book: &mut Book) -> LegadoResult<()> 
 }
 
 /// 对齐 `AnalyzeRule.refreshTocUrl`：重新拉详情写 tocUrl 等
+///
+/// [P2-8] 取址：优先 `origin_book_url`（当前书源详情页地址，换源事务写入），
+/// 为空回退 `book_url`（稳定主键；未换源书籍与存量库行为不变）。
 #[cfg(feature = "quickjs")]
 fn refresh_toc_url_native(source: &BookSource, book: &mut Book) -> LegadoResult<()> {
     let engine = crate::api::web_book::build_engine()?;
-    let info =
-        crate::runtime::block_on(async { engine.get_book_info(source, &book.book_url).await })?;
+    // [P2-8] 取址：优先 originBookUrl（当前书源详情页），为空回退 bookUrl
+    let fetch_url = book.book_page_fetch_url();
+    let info = crate::runtime::block_on(async { engine.get_book_info(source, fetch_url).await })?;
     apply_web_info_to_book(book, &info);
     Ok(())
 }

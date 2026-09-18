@@ -39,7 +39,12 @@ class Md3AnimatedTextLine extends StatelessWidget {
           alignment: Alignment.centerLeft,
           children: [
             ...previousChildren,
-            ?currentChild,
+            // [P2-8 环境兼容] `?currentChild` 为 Dart 3.8 集合简写，
+            // 本仓库锁定的 analyzer 6.4.1（build_runner 工具链）无法解析，
+            // 改写为等价的显式 if 守卫，语义不变；SDK 侧 lint
+            // use_null_aware_elements 要求改回简写，与本工具链冲突，逐行 ignore
+            // ignore: use_null_aware_elements
+            if (currentChild != null) currentChild,
           ],
         ),
         child: Text(

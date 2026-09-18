@@ -598,6 +598,12 @@ mixin _$Book {
   @JsonKey(name: 'syncTime')
   int get syncTime => throw _privateConstructorUsedError;
 
+  /// [P2-8] 当前书源下该书的详情页地址（换源事务写入；bookUrl 保持
+  /// 稳定主键不变，换源后可能仍是旧源地址）。为空时「抓取书籍页」
+  /// 路径回退 bookUrl（未换源书籍与存量库行为不变，向后兼容）。
+  @JsonKey(name: 'originBookUrl')
+  String get originBookUrl => throw _privateConstructorUsedError;
+
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
   $BookCopyWith<Book> get copyWith => throw _privateConstructorUsedError;
@@ -641,7 +647,8 @@ abstract class $BookCopyWith<$Res> {
       @JsonKey(name: 'originOrder') int originOrder,
       String? variable,
       @JsonKey(name: 'readConfig') ReadConfig? readConfig,
-      @JsonKey(name: 'syncTime') int syncTime});
+      @JsonKey(name: 'syncTime') int syncTime,
+      @JsonKey(name: 'originBookUrl') String originBookUrl});
 
   $ReadConfigCopyWith<$Res>? get readConfig;
 }
@@ -692,6 +699,7 @@ class _$BookCopyWithImpl<$Res, $Val extends Book>
     Object? variable = freezed,
     Object? readConfig = freezed,
     Object? syncTime = null,
+    Object? originBookUrl = null,
   }) {
     return _then(_value.copyWith(
       bookUrl: null == bookUrl
@@ -826,6 +834,10 @@ class _$BookCopyWithImpl<$Res, $Val extends Book>
           ? _value.syncTime
           : syncTime // ignore: cast_nullable_to_non_nullable
               as int,
+      originBookUrl: null == originBookUrl
+          ? _value.originBookUrl
+          : originBookUrl // ignore: cast_nullable_to_non_nullable
+              as String,
     ) as $Val);
   }
 
@@ -882,7 +894,8 @@ abstract class _$$BookImplCopyWith<$Res> implements $BookCopyWith<$Res> {
       @JsonKey(name: 'originOrder') int originOrder,
       String? variable,
       @JsonKey(name: 'readConfig') ReadConfig? readConfig,
-      @JsonKey(name: 'syncTime') int syncTime});
+      @JsonKey(name: 'syncTime') int syncTime,
+      @JsonKey(name: 'originBookUrl') String originBookUrl});
 
   @override
   $ReadConfigCopyWith<$Res>? get readConfig;
@@ -931,6 +944,7 @@ class __$$BookImplCopyWithImpl<$Res>
     Object? variable = freezed,
     Object? readConfig = freezed,
     Object? syncTime = null,
+    Object? originBookUrl = null,
   }) {
     return _then(_$BookImpl(
       bookUrl: null == bookUrl
@@ -1065,6 +1079,10 @@ class __$$BookImplCopyWithImpl<$Res>
           ? _value.syncTime
           : syncTime // ignore: cast_nullable_to_non_nullable
               as int,
+      originBookUrl: null == originBookUrl
+          ? _value.originBookUrl
+          : originBookUrl // ignore: cast_nullable_to_non_nullable
+              as String,
     ));
   }
 }
@@ -1105,7 +1123,8 @@ class _$BookImpl implements _Book {
       @JsonKey(name: 'originOrder') this.originOrder = 0,
       this.variable,
       @JsonKey(name: 'readConfig') this.readConfig,
-      @JsonKey(name: 'syncTime') this.syncTime = 0});
+      @JsonKey(name: 'syncTime') this.syncTime = 0,
+      @JsonKey(name: 'originBookUrl') this.originBookUrl = ''});
 
   factory _$BookImpl.fromJson(Map<String, dynamic> json) =>
       _$$BookImplFromJson(json);
@@ -1206,9 +1225,16 @@ class _$BookImpl implements _Book {
   @JsonKey(name: 'syncTime')
   final int syncTime;
 
+  /// [P2-8] 当前书源下该书的详情页地址（换源事务写入；bookUrl 保持
+  /// 稳定主键不变，换源后可能仍是旧源地址）。为空时「抓取书籍页」
+  /// 路径回退 bookUrl（未换源书籍与存量库行为不变，向后兼容）。
+  @override
+  @JsonKey(name: 'originBookUrl')
+  final String originBookUrl;
+
   @override
   String toString() {
-    return 'Book(bookUrl: $bookUrl, tocUrl: $tocUrl, origin: $origin, originName: $originName, name: $name, author: $author, kind: $kind, customTag: $customTag, coverUrl: $coverUrl, customCoverUrl: $customCoverUrl, intro: $intro, customIntro: $customIntro, charset: $charset, bookType: $bookType, group: $group, latestChapterTitle: $latestChapterTitle, latestChapterTime: $latestChapterTime, lastCheckTime: $lastCheckTime, lastCheckCount: $lastCheckCount, totalChapterNum: $totalChapterNum, durChapterTitle: $durChapterTitle, durChapterIndex: $durChapterIndex, durVolumeIndex: $durVolumeIndex, chapterInVolumeIndex: $chapterInVolumeIndex, durChapterPos: $durChapterPos, durChapterTime: $durChapterTime, wordCount: $wordCount, canUpdate: $canUpdate, order: $order, originOrder: $originOrder, variable: $variable, readConfig: $readConfig, syncTime: $syncTime)';
+    return 'Book(bookUrl: $bookUrl, tocUrl: $tocUrl, origin: $origin, originName: $originName, name: $name, author: $author, kind: $kind, customTag: $customTag, coverUrl: $coverUrl, customCoverUrl: $customCoverUrl, intro: $intro, customIntro: $customIntro, charset: $charset, bookType: $bookType, group: $group, latestChapterTitle: $latestChapterTitle, latestChapterTime: $latestChapterTime, lastCheckTime: $lastCheckTime, lastCheckCount: $lastCheckCount, totalChapterNum: $totalChapterNum, durChapterTitle: $durChapterTitle, durChapterIndex: $durChapterIndex, durVolumeIndex: $durVolumeIndex, chapterInVolumeIndex: $chapterInVolumeIndex, durChapterPos: $durChapterPos, durChapterTime: $durChapterTime, wordCount: $wordCount, canUpdate: $canUpdate, order: $order, originOrder: $originOrder, variable: $variable, readConfig: $readConfig, syncTime: $syncTime, originBookUrl: $originBookUrl)';
   }
 
   @override
@@ -1271,7 +1297,9 @@ class _$BookImpl implements _Book {
             (identical(other.readConfig, readConfig) ||
                 other.readConfig == readConfig) &&
             (identical(other.syncTime, syncTime) ||
-                other.syncTime == syncTime));
+                other.syncTime == syncTime) &&
+            (identical(other.originBookUrl, originBookUrl) ||
+                other.originBookUrl == originBookUrl));
   }
 
   @JsonKey(ignore: true)
@@ -1310,7 +1338,8 @@ class _$BookImpl implements _Book {
         originOrder,
         variable,
         readConfig,
-        syncTime
+        syncTime,
+        originBookUrl
       ]);
 
   @JsonKey(ignore: true)
@@ -1361,7 +1390,8 @@ abstract class _Book implements Book {
       @JsonKey(name: 'originOrder') final int originOrder,
       final String? variable,
       @JsonKey(name: 'readConfig') final ReadConfig? readConfig,
-      @JsonKey(name: 'syncTime') final int syncTime}) = _$BookImpl;
+      @JsonKey(name: 'syncTime') final int syncTime,
+      @JsonKey(name: 'originBookUrl') final String originBookUrl}) = _$BookImpl;
 
   factory _Book.fromJson(Map<String, dynamic> json) = _$BookImpl.fromJson;
 
@@ -1455,6 +1485,13 @@ abstract class _Book implements Book {
   @override
   @JsonKey(name: 'syncTime')
   int get syncTime;
+  @override
+
+  /// [P2-8] 当前书源下该书的详情页地址（换源事务写入；bookUrl 保持
+  /// 稳定主键不变，换源后可能仍是旧源地址）。为空时「抓取书籍页」
+  /// 路径回退 bookUrl（未换源书籍与存量库行为不变，向后兼容）。
+  @JsonKey(name: 'originBookUrl')
+  String get originBookUrl;
   @override
   @JsonKey(ignore: true)
   _$$BookImplCopyWith<_$BookImpl> get copyWith =>

@@ -20,13 +20,30 @@ pub fn list_books() -> LegadoResult<Vec<Book>> {
 }
 
 /// 添加一本书（JSON 序列化传入）
+/// [P2-8 写侧防守 | 2026-09-18 审查 P1-1] 全行 UPDATE 会把入参中缺失的
+/// `originBookUrl` 写成空串（Dart 侧陈旧内存对象、未回读 DB 的对象都会触发），
+/// 静默撤销换源时写入的「当前书源详情页地址」。该字段语义唯一（仅换源事务与
+/// preUpdateJs 写入），**不存在合法的清空场景**：入参为空时从库内既有行补齐。
+fn fill_origin_book_url_if_empty(repo: &BookRepository<'_>, book: &mut Book) -> LegadoResult<()> {
+    if !book.origin_book_url.trim().is_empty() {
+        return Ok(());
+    }
+    if let Some(existing) = repo.find_by_url(&book.book_url)? {
+        if !existing.origin_book_url.trim().is_empty() {
+            book.origin_book_url = existing.origin_book_url;
+        }
+    }
+    Ok(())
+}
+
 pub fn add_book(book_json: &str) -> LegadoResult<Book> {
-    let book: Book = serde_json::from_str(book_json)
+    let mut book: Book = serde_json::from_str(book_json)
         .map_err(|e| legado_core::LegadoError::Ffi(format!("Book JSON 解析失败: {e}")))?;
     with_database(|db| {
         let repo = BookRepository::new(db.connection());
         // Task#125 P0：用原地 UPDATE 语义的 upsert，避免对已存在的临时书
         // 触发 INSERT OR REPLACE 级联删除其章节目录（转正/重复加入书架时安全）
+        fill_origin_book_url_if_empty(&repo, &mut book)?; // [P2-8 P1-1]
         repo.update(&book)?;
         Ok(book)
     })
@@ -34,10 +51,11 @@ pub fn add_book(book_json: &str) -> LegadoResult<Book> {
 
 /// 更新书籍信息（JSON 序列化传入）
 pub fn update_book(book_json: &str) -> LegadoResult<()> {
-    let book: Book = serde_json::from_str(book_json)
+    let mut book: Book = serde_json::from_str(book_json)
         .map_err(|e| legado_core::LegadoError::Ffi(format!("Book JSON 解析失败: {e}")))?;
     with_database(|db| {
         let repo = BookRepository::new(db.connection());
+        fill_origin_book_url_if_empty(&repo, &mut book)?; // [P2-8 P1-1] 见上
         repo.update(&book)
     })
 }

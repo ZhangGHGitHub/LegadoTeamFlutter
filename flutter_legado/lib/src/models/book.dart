@@ -86,6 +86,10 @@ class Book with _$Book {
     String? variable,
     @JsonKey(name: 'readConfig') ReadConfig? readConfig,
     @Default(0) @JsonKey(name: 'syncTime') int syncTime,
+    /// [P2-8] 当前书源下该书的详情页地址（换源事务写入；bookUrl 保持
+    /// 稳定主键不变，换源后可能仍是旧源地址）。为空时「抓取书籍页」
+    /// 路径回退 bookUrl（未换源书籍与存量库行为不变，向后兼容）。
+    @Default('') @JsonKey(name: 'originBookUrl') String originBookUrl,
   }) = _Book;
 
   factory Book.fromJson(Map<String, dynamic> json) => _$BookFromJson(json);

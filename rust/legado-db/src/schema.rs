@@ -28,7 +28,10 @@ use legado_core::{LegadoError, LegadoResult};
 /// - v108：replace_rules 补 `scopeSource` 列（替换规则书源作用域开关，
 ///   对齐原版 `ReplaceRule.scopeSource` 独立列 defaultValue="0"，
 ///   支撑书源导入时按源作用域应用替换规则，Migration107To108）
-pub const SCHEMA_VERSION: u32 = 108;
+/// - v109：books 补 `originBookUrl` 列（P2-8 换源根因修复：当前书源下该书的
+///   详情页地址，换源事务写入；换源后 bookUrl 稳定主键保持旧源地址，
+///   「抓取书籍页」路径优先用本列，为空回退 bookUrl，Migration108To109）
+pub const SCHEMA_VERSION: u32 = 109;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -137,6 +140,7 @@ CREATE TABLE IF NOT EXISTS books (
     tocHtml TEXT DEFAULT '',
     downloadUrls TEXT DEFAULT '',
     coverOrigin TEXT DEFAULT '',
+    originBookUrl TEXT NOT NULL DEFAULT '',
     PRIMARY KEY(bookUrl)
 );
 ";
