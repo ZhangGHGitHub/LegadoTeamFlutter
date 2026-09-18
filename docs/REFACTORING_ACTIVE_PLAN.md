@@ -202,6 +202,11 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **[复审新增] P1-1 首次详情解析无 DB 兜底**：`detail_book_binding` 解析期只查 meta 缓存 → 进程内对该 bookUrl 的**首次**详情解析取不到 DB 用户变量（目录/正文/第二次详情起可达）。若要让「首次打开即生效」成立需在该处补 DB 兜底（注意 `book_binding_expr(Some(meta))` 会忽略 `fallback_name`，需保留 changeSource 保名语义）。
   - **[复审新增 P3] DB 变量被清空后缓存旧值不被覆盖**（`merge_insert` 仅 Some 覆盖）→ 陈旧窗口持续到缓存淘汰。
 
+- **P2-12 本批实机验收新发现（3 条）**（开放，2026-09-19）：
+  - **(C)【优先】U7/重进详情路径未展开 `books.variable`**：实机（R1 夹具）换源 2 后 `books.variable = {"svid":"VID123","tok":"TK777"}` 已落库，但「回书架→重进详情」发出的是 `/r1vb/detail?vid=`（**空 vid**，server log ts1789755251.038）——期望 `/r1vb/detail?vid=VID123`。换源主链（候选 ⊕ 详情导出合并）已修，**重进/U7 路径疑似未读 `books.variable` 或走不同展开入口**；本次被「DB 目录缓存 + 夹具挂起」掩盖，真实源上会 400/详情失败。属历史 P0 的同型残留。
+  - **(A) CrashLogDialog 启动崩溃循环（既有）**：`flutter_legado/lib/app.dart:51-56` 在 `postFrameCallback` 里 `CrashLogDialog.show(context, …)`，而 `LegadoApp` 在自身 `build()`（app.dart:143）内才构建 MaterialApp → State 的 context 无 Navigator 祖先 → `Null check operator used on a null value`（`crash_log_dialog.dart:19-25` 的 `showDialog`→`Navigator.of(context)`）。后果：崩溃日志弹窗永不显示，且 `crash_log.txt` 每次启动被重写时间戳（本会话起点即观察到 20:11/20:32 两条同栈记录）。修法：把弹窗挂到 MaterialApp 之后（如 `builder` 内的独立 Navigator/`addPostFrameCallback` 里用 `navigatorKey.currentContext`），或直接去掉该弹窗仅保留日志。
+  - **(B) 夹具脚本缺陷**：`scripts/r1v_switch_server.py:200/213/221` 以 `log_event("reject", kind="detail", …)` 调用 `def log_event(kind, **fields)` → `TypeError: multiple values for argument 'kind'` → reject 分支未发 400 而是抛异常挂起（curl HTTP:000）。后果：夹具的「错误/空变量」路径表现为超时而非 400，掩盖真实错误码。修法：去掉重复的关键字实参（或把位置参数改名）。
+
 ### P3：功能补齐与卫生项（2026-08-22 开启）
 
 > P0/P1/P2 工程项全部关闭后的下一批。依据：AUDIT_FIX_ASSIGNMENT §2.1 旧阻塞项经复核——ruleSub FFI 已由 Task #89 交付（契约 §2.39，7 方法），剩余缺口为 **Flutter 管理页 UI**；另两项为 P2-5 审计标记的后续卫生项。
