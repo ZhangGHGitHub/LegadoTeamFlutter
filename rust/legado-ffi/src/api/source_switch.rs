@@ -680,16 +680,14 @@ fn switch_book_source_with<F: BookSourceFetcher>(
     // 3. 转换为 BookChapter，base_url/book_url 均落稳定的原 bookUrl
     //    [T1] 保留解析值 variable/is_volume：章节级 @put 变量（翻页 token 类）
     //    与卷章标记是正文请求/去重的前置输入，写死 None/false 会导致换源后正文错误
-    //    [P2-6g] base_url/book_url 用**新源地址**：章节属于新源，旧实现写旧键
-    //    会让章节的 base 与书籍键不一致（换源后详情刷新拿旧键解析新源规则）。
     let book_chapters: Vec<BookChapter> = web_chapters
         .iter()
         .map(|wc| BookChapter {
             url: wc.url.clone(),
             title: wc.title.clone(),
             is_volume: wc.is_volume,
-            base_url: new_book_url.to_string(),
-            book_url: new_book_url.to_string(),
+            base_url: book_url.to_string(),
+            book_url: book_url.to_string(),
             index: wc.index,
             is_vip: wc.is_vip,
             is_pay: false,
@@ -705,23 +703,15 @@ fn switch_book_source_with<F: BookSourceFetcher>(
         })
         .collect();
 
-    // 4. 将书源字段更新 + 改键 + 清旧缓存/旧章节 + 写入新章节，全部包进单个 DB 事务：
+    // 4. 将书源字段更新 + 清旧缓存/旧章节 + 写入新章节，全部包进单个 DB 事务：
     //    全部成功才提交；中途失败自动回滚，保留原书源与原章节，
-    //    避免留下"无章节"状态（比未换源更糟）。
-    //    [P2-6g] 书籍键改为**新源候选地址**（对齐原版 `SearchBook.toBook()`：
-    //    bookUrl 随换源更新）。此前刻意保持旧键，导致换源后详情页每次进入都用
-    //    `book.bookUrl`（旧源地址）+ 新源规则去后台刷新（Dart
-    //    `book_info_screen_load.part.dart` 的 webbookInfo(sourceJson, b.bookUrl)）
-    //    → 解析到错误页面 → tocUrl 被重推成退化值（实测 `…all-chapter?bookId=`）
-    //    并「非空即覆盖」回写，kind/字数/简介等字段同样被错页解析覆盖。
-    //    改键迁移由 `BookRepository::insert` 的 (name,author) 冲突路径完成
-    //    （remap_book_url_preserving_chapters：迁 chapters/highlights/
-    //    cached_chapters/download_tasks + 删旧行 + 写新行），旧源章节随后按新键重写。
+    //    避免留下"无章节"状态（比未换源更糟）。bookUrl 保持稳定，仅改
+    //    origin/originName/tocUrl，update 的 WHERE 命中原行（稳定主键）。
     //    connection() 返回共享的 &Connection（r2d2 池），无法用需 &mut 的
     //    Connection::transaction()，故沿用项目既有的 unchecked_transaction()
     //    模式（见 highlight_rule_repository / book_chapter_repository）。
     //    insert_batch 内部会自开事务，此处改用 insert_batch_no_tx 避免嵌套 BEGIN。
-    book.book_url = new_book_url.to_string();
+    // 仅更新书源相关字段；bookUrl 不变 → update 的 WHERE 命中原行（稳定主键）
     book.origin = new_source_url.to_string();
     book.origin_name = source.book_source_name.clone();
     // [T2] tocUrl = 详情解析出的真实目录页（原写死详情页 URL，使「目录独立页」
@@ -755,24 +745,11 @@ fn switch_book_source_with<F: BookSourceFetcher>(
             .unchecked_transaction()
             .map_err(|e| LegadoError::Database(format!("开启换源事务失败: {e}")))?;
 
-        let book_repo = BookRepository::new(conn);
+        BookRepository::new(conn).update(&book)?;
         let cache_repo = legado_db::CacheBookRepository::new(conn);
+        cache_repo.delete_by_book(book_url)?;
         let chapter_repo = legado_db::BookChapterRepository::new(conn);
-        if book_url == new_book_url {
-            // 目标源与当前键同址（同源重解析）：原地更新即可
-            book_repo.update(&book)?;
-            cache_repo.delete_by_book(book_url)?;
-            chapter_repo.delete_by_book_url(book_url)?;
-        } else {
-            // [P2-6g] 换源改键：旧源章节先作废（新源目录不同），清两边缓存，
-            // 再由 insert 的 (name,author) 冲突路径做旧键→新键迁移
-            //（remap_book_url_preserving_chapters），最后按新键写章节。
-            chapter_repo.delete_by_book_url(book_url)?;
-            chapter_repo.delete_by_book_url(new_book_url)?;
-            cache_repo.delete_by_book(book_url)?;
-            cache_repo.delete_by_book(new_book_url)?;
-            book_repo.insert(&book)?;
-        }
+        chapter_repo.delete_by_book_url(book_url)?;
         chapter_repo.insert_batch_no_tx(&book_chapters)?;
 
         tx.commit()
@@ -1666,47 +1643,21 @@ mod tests {
         );
 
         // T1：章节 variable/is_volume 保留解析值
-        // [P2-6g] 换源后书籍键改为**新源地址**（对齐原版 SearchBook.toBook()）：
-        // 章节随新键落库、旧键无残留——否则详情页刷新会拿旧源地址按新源规则
-        // 解析（实测把 tocUrl 覆盖成 `…all-chapter?bookId=` 退化值）。
         with_database(|db| {
-            let conn = db.connection();
-            let chapters = BookChapterRepository::new(conn)
-                .find_by_book_url(new_detail)
-                .expect("章节查询失败");
+            let repo = BookChapterRepository::new(db.connection());
+            let chapters = repo.find_by_book_url(old_url).expect("章节查询失败");
             assert_eq!(chapters.len(), 1);
             assert_eq!(
                 chapters[0].variable.as_deref(),
                 Some(r#"{"token":"abc123"}"#)
             );
             assert!(chapters[0].is_volume, "卷章标记应保留解析值");
-            assert!(
-                BookChapterRepository::new(conn)
-                    .find_by_book_url(old_url)
-                    .expect("旧键章节查询失败")
-                    .is_empty(),
-                "旧键下不应残留章节"
-            );
-            let moved = BookRepository::new(conn)
-                .find_by_url(new_detail)
-                .expect("书籍查询失败")
-                .expect("换源后书籍应挂在新键下");
-            assert_eq!(moved.origin, new_source);
-            assert_eq!(moved.toc_url, new_toc, "新键行的 toc_url 应为解析后目录页");
-            assert!(
-                BookRepository::new(conn)
-                    .find_by_url(old_url)
-                    .expect("书籍查询失败")
-                    .is_none(),
-                "旧键下不应残留书籍行"
-            );
             Ok(())
         })
         .expect("章节断言失败");
 
         // 收尾清理
         with_database(|db| {
-            let _ = BookRepository::new(db.connection()).delete(new_detail);
             let _ = BookRepository::new(db.connection()).delete(old_url);
             let _ = BookSourceRepository::new(db.connection()).delete(new_source);
             let _ = legado_db::SearchBookRepository::new(db.connection())
