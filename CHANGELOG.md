@@ -12,7 +12,8 @@ All notable changes to this project will be documented in this file.
 - `flutter analyze` 0 问题（`flutter test` 由 Flutter CI 覆盖）
 
 ### Real device
-- （待补：连续两次换源 + 详情页刷新后 tocUrl 未被写坏的落库比对）
+- 2.0.287+288 release APK 装 MuMu（192.168.1.19:5555）：**连续换源可用**（A→B→C 均成功，未复现 2.0.285 的「书籍不存在」）；切到「🏷松鹤庭沐·言璃」后落库 `tocUrl = …/api/book/all-chapter?bookId=1100468021`（**完整**）、章节 712
+- **关键对照**：随后进入一次书籍详情页（即此前会把 tocUrl 写成退化值的那次后台刷新），再次拉库（连 `-wal`）比对——`tocUrl` 与章节数**均未变化**，守卫生效；截图 `docs/parity_shots/tmp_songhe/v7_02_sw1.png`、`v7_03_sw2.png`
 
 - Contributor: 全栈工程师子代理
 
