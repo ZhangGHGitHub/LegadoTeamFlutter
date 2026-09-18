@@ -346,13 +346,23 @@ extension _BookInfoLoad on _BookInfoScreenState {
     }
 
     if (refresh) {
+      // [换源后刷新守卫 | 2026-09-18 | 台账 P2-8] 换源后书籍的 bookUrl 仍是**旧源地址**
+      // （主键保持稳定，这是刻意的：多处状态持有它），而上方的刷新调用用的是
+      // `webbookInfo(sourceJson, b.bookUrl)`＝「当前源规则 + 旧源地址」。当旧地址不是
+      // 新源的书籍页时，ruleBookInfo.init 取空 → 各字段解析为空，但 tocUrl 规则仍会拼出
+      // **退化但非空**的值（松鹤庭沐源实测 `…/api/book/all-chapter?bookId=`，缺 bookId），
+      // 经下面「非空即覆盖」写回后 tocUrl 被写坏 → 之后「刷新目录」失败；同一次刷新也可能
+      // 用错页结果覆盖 kind/字数/简介。
+      // 判据：正常书籍页解析必得书名（ruleBookInfo.name）；name 缺失即视为「未解析到书籍页」，
+      // 本次刷新整体跳过——宁可保留旧值，也不用错页结果覆盖。
+      final freshName = pick('name');
+      if (freshName == null) return book;
       final freshCover = pick('cover_url');
       final freshIntro = pick('intro');
       final freshWord = pick('word_count');
       final freshLast = pick('last_chapter');
       final freshKind = pick('kind');
       final freshToc = pick('toc_url');
-      final freshName = pick('name');
       final freshAuthor = pick('author');
       return book.copyWith(
         coverUrl: freshCover ?? book.coverUrl,
@@ -361,7 +371,7 @@ extension _BookInfoLoad on _BookInfoScreenState {
         wordCount: freshWord ?? book.wordCount,
         latestChapterTitle: freshLast ?? book.latestChapterTitle,
         kind: freshKind ?? book.kind,
-        name: freshName ?? book.name,
+        name: freshName,
         author: freshAuthor ?? book.author,
       );
     }

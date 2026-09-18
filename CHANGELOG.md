@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.287] - 2026-09-18
+
+### Fixed
+- [UI] 换源后详情页后台刷新的**错页覆盖守卫**（台账 P2-8 的收敛）：换源后书籍 `bookUrl` 仍为旧源地址（主键保持稳定），而详情页刷新用「当前源规则 + 该地址」抓取；当该地址不是新源书籍页时，`ruleBookInfo.init` 取空、各字段解析为空，但 `tocUrl` 规则仍会拼出**退化但非空**的值（松鹤庭沐源实测 `…/api/book/all-chapter?bookId=`，缺 bookId），经「非空即覆盖」写回后 `tocUrl` 被写坏（后续「刷新目录」失败），kind/字数/简介也可能被错页结果覆盖。现按「正常书籍页解析必得书名」为判据：解析结果无书名即视为**未解析到书籍页**，本次刷新整体跳过（宁可保留旧值）。不改书籍主键、不改 FFI 参数语义
+- [Docs] 台账 P2-8 保留改键的完整观察与正确做法（需与所有 URL 持有者同步/别名过渡）
+
+### Test
+- `flutter analyze` 0 问题（`flutter test` 由 Flutter CI 覆盖）
+
+### Real device
+- （待补：连续两次换源 + 详情页刷新后 tocUrl 未被写坏的落库比对）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.286] - 2026-09-18
 
 ### Fixed
