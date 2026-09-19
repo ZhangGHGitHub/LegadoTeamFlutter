@@ -17,8 +17,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
+      # [2026-09-19 修] 不显式给出 packages 时，setup-android@v3 会去安装它默认列表里的
+      # `tools` 包；新版 SDK 仓库已移除该包 → `Warning: Failed to find package 'tools'`
+      # → sdkmanager exit 1 → 本作业失败，连带下游 analyze/test 作业长期被 skip（Flutter
+      # 门禁形同虚设）。runner 镜像自带 SDK + cmdline-tools，这里只需 platform-tools；
+      # NDK 由下一步 sdkmanager 显式安装。
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools'
       - name: Install Android NDK
         run: |
           sdkmanager "ndk;27.0.12077973"
