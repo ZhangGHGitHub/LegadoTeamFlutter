@@ -359,11 +359,13 @@ pub fn inflate_raw_bytes(data: &[u8]) -> Result<Vec<u8>, String> {
         ))
     }
 
-    // 1) raw deflate（Java Inflater(true) 语义）
+    // 1) zlib 封装优先：flate2 `Decompress::new(zlib_header=true)` 即 zlib 解码
+    //    （等价 Java `Inflater(false)`）；P2-11 §197：原注释极性与实现相反，已更正
     if let Ok(v) = attempt(true, data) {
         return Ok(v);
     }
-    // 2) 宽容重试：部分数据实际是 zlib 封装（Inflater(false) 语义）
+    // 2) 宽容重试：裸 deflate（`Decompress::new(false)`，等价 Java `Inflater(true)`
+    //    的 nowrap 语义）
     if let Ok(v) = attempt(false, data) {
         return Ok(v);
     }
