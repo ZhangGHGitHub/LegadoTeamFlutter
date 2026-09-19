@@ -206,17 +206,23 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
 
   - **[2026-09-19 回头关闭 4 项]** ① `explore_api` 补 `src` 重绑定/`book` 绑定（提交 `59ef15cc99`；`book` 无上下文时取 null 与上游一致，2 个 quickjs 回归测试）；② 裸 `@attr` 统一为「遍历全部子元素 + 去重」（提交 `bef51973a9`；对齐上游 `AnalyzeByJSoup.getResultLast` L270-277，parser 304 passed，4 个新单测含「与裸 token 形态一致」断言）；③ `inflate_raw_bytes` 注释极性更正（提交 `b1bf5bfdcd`，flate2 `Decompress::new(true)`=zlib，仅改注释）；④ P2-1 调用点回归测试（提交 `b1da07dce2`；含变异验证——调用点退回全行 `update` 时新断言 FAIL `left:0/right:7`）。同批版本 2.0.296+297。
   - **[2026-09-19 关闭 §201]** 提交卫生：`nul`/`.fd.xml`/`.oh.xml`/`pnpm-lock.yaml`/`core.*`/`.tmp/`/`__pycache__/`/`tmp_diag/` 已删除或补入 `.gitignore`（提交 `548bbc5004` + 本次 `tmp_diag/`）；注意原 `/tmp_*` 为**根目录锚定**，覆盖不到 `rust/**/tmp_diag/`。
-  - **仍开放（§193/§195/§196/§198/§199）**：正文阶段 `book` 反查键（章节 URL 相同理论上串键）、`java.lang` parse 近似与 `getStringList` 细分差异、`mergeDbBook` 空白值语义、`BookMeta`/`chapter_book_cache` 容量 `>=` 整体清空。
+  - **[2026-09-20 关闭 §193/§195/§196/§198/§199]**（提交 `d13d1a04e5` / `16f6e09e92` / `0fe222a3c8`，版本 2.0.297+298）：
+    - §193 正文阶段 book 反查改 **(source_url, chapter_url) 复合键**（选零契约面方案 (b)，FFI/API_CONTRACT 未动；回归 `test_chapter_book_cache_composite_key_no_cross_binding`）。
+    - §195 `java.lang` parse 对齐 JDK 严格语义（成对实验法；空/空白/非法/越界抛 NumberFormatException，Double 收 NaN/Infinity/十六进制浮点，Boolean 仅 "true" 为真）。
+    - §196 `getStringList` 逐条对齐 `AnalyzeRule.getStringList`（L202-292）+ **顺带根因修复：顶层 `return` 规则此前被静默吞空**（旧包装按顶层 Script 编译，顶层 return 语法错误；上游靠 Rhino legacy 兼容模式幸免——vendored rhino-1.7.14.jar 标准模式本机实证同错）。修法=函数体求值优先 + 表达式回退。已知边界（登记）：无 return 的表达式规则带副作用会执行两次；JS float64 使 parseLong >2^53 取最近 double。
+    - §198 Dart `mergeDbBook` 纯空白 originBookUrl 让位路由值（取 DB 原值不 trim，4 例单测）。
+    - §199 缓存改「仅新键溢出才清理」对齐 `getOrPutLimit`（更新既有键不清空，3 条回归）。
+    - 遗留登记：⑫ 类 Rhino LiveConnect 互操作维持架构限制；`RealBookSourceFetcher::new()` 内部走 shared_client()，代理环境下回环可被劫持（CI 无影响，根治需注入 no_proxy 客户端）。
 
 - **P2-12 本批实机验收新发现（3 条）**（**已关闭 2026-09-19**）：(C) 重进/U7 路径未展开 `books.variable` → Rust 侧按 bookUrl/书籍页地址双路读 DB 变量并注入详情/目录抓取（FFI 签名零变更）；实机前后：`/r1vb/detail?vid=`（空）→ `?vid=VID123`，正文 `/r1vb/content?i=0&tok=TK777`。(A) CrashLogDialog 启动崩溃循环 → 改挂 `navigatorKey`（+ 新发现的 A2：冷启动 `/welcome` 闪屏 `pushReplacementNamed` 会把首帧弹窗一起替换，改由 `NavigatorObserver.didChangeTop` 等闪屏退出再弹）；实机：清除后重启不再重写日志。(B) 夹具 `log_event` 参数冲突 → 修 + 自测 400 链路。门禁：`cargo test --workspace` 368/795/308/288/242… 全 0 failed、clippy/fmt 0、`flutter analyze` 0、`flutter test` 1483 全过。历史记录：
   - **(C)【优先】U7/重进详情路径未展开 `books.variable`**：实机（R1 夹具）换源 2 后 `books.variable = {"svid":"VID123","tok":"TK777"}` 已落库，但「回书架→重进详情」发出的是 `/r1vb/detail?vid=`（**空 vid**，server log ts1789755251.038）——期望 `/r1vb/detail?vid=VID123`。换源主链（候选 ⊕ 详情导出合并）已修，**重进/U7 路径疑似未读 `books.variable` 或走不同展开入口**；本次被「DB 目录缓存 + 夹具挂起」掩盖，真实源上会 400/详情失败。属历史 P0 的同型残留。
   - **(A) CrashLogDialog 启动崩溃循环（既有）**：`flutter_legado/lib/app.dart:51-56` 在 `postFrameCallback` 里 `CrashLogDialog.show(context, …)`，而 `LegadoApp` 在自身 `build()`（app.dart:143）内才构建 MaterialApp → State 的 context 无 Navigator 祖先 → `Null check operator used on a null value`（`crash_log_dialog.dart:19-25` 的 `showDialog`→`Navigator.of(context)`）。后果：崩溃日志弹窗永不显示，且 `crash_log.txt` 每次启动被重写时间戳（本会话起点即观察到 20:11/20:32 两条同栈记录）。修法：把弹窗挂到 MaterialApp 之后（如 `builder` 内的独立 Navigator/`addPostFrameCallback` 里用 `navigatorKey.currentContext`），或直接去掉该弹窗仅保留日志。
   - **(B) 夹具脚本缺陷**：`scripts/r1v_switch_server.py:200/213/221` 以 `log_event("reject", kind="detail", …)` 调用 `def log_event(kind, **fields)` → `TypeError: multiple values for argument 'kind'` → reject 分支未发 400 而是抛异常挂起（curl HTTP:000）。后果：夹具的「错误/空变量」路径表现为超时而非 400，掩盖真实错误码。修法：去掉重复的关键字实参（或把位置参数改名）。
 
-- **P2-13 本批新登记（工具与既有项）**（开放，2026-09-19）：
-  - **【工具陷阱·优先】`flutter_legado/scripts/build-apk.ps1` 的 FFI 校验只比对 FRB 生成码内容哈希**：当 Rust 改动**不改变 FFI 导出面**（本次 (C) 修复即如此）时，校验判为「in sync」并**跳过 Rust 交叉编译 → APK 打包旧 `.so`**，导致实机验证假失败/假通过（本次已因此先验到一次假失败，靠手工强制 `build-android.ps1` 才修好）。建议：校验改为「比对 Rust 源码树指纹（含 `rust/**` 内容哈希或 `cargo build -p legado-ffi` 的产物时间戳/哈希）」，或在跳过前提示「检测到 rust 改动但 FFI 面未变，需显式 `-ForceRust`」。**在该修复前，凡改 Rust 必须手工先跑 `rust/scripts/build-android.ps1`。**
-  - debug 模式既有 `RenderFlex overflow`（右溢 12px）：非本轮引入，会被全局 `FlutterError.onError` 偶尔记入 crash_log（当前设备文件内容即此）；建议单独立项。
-  - `armeabi-v7a` 的 `.so` 未随 (C) 强制重编（设备为 arm64，FFI 未变故不影响），下次全量构建会自然刷新。
+- **P2-13 本批新登记（工具与既有项）**（**①③已关闭 2026-09-19；② 转入执行队列第五阶段**）：
+  - **【工具陷阱·优先】已关闭（提交 `7a84235382`）**：`build-apk.ps1` 已改为按「Rust 源码树指纹」判定 `.so` 新鲜度——前置检查调 `rust/scripts/rust-fingerprint.ps1 -Check` 逐 ABI 比对 jniLibs 内 `.so` 记录的源码树指纹与当前 `rust/**`，返回 REUSE/REBUILD 决定是否重交叉编译；「FFI 导出面未变但源码已改」不再误判为 in sync。历史风险留档：旧校验只比对 FRB 生成码内容哈希，FFI 面未变的 Rust 改动会被跳过编译 → APK 打包旧 `.so`（曾致实机验证假失败/假通过，靠手工强制 `build-android.ps1` 才修正）。**"凡改 Rust 必须手工先跑 build-android.ps1"的临时纪律随之解除。**
+  - debug 模式既有 `RenderFlex overflow`（右溢 12px）：非本轮引入，会被全局 `FlutterError.onError` 偶尔记入 crash_log（当前设备文件内容即此）；已列入执行队列第五阶段（UI 剩余）处理。
+  - `armeabi-v7a` 的 `.so` 未随 (C) 强制重编（设备为 arm64，FFI 未变故不影响），下次全量构建会自然刷新——**随指纹校验落地，此情况已不可能再发生**（指纹不一致即 REBUILD）。
 
 - **P2-14 门禁口径（流程，2026-09-19）**：`cargo test --workspace` **默认不含 quickjs**，JS 宿主/门控用例不在其中。**自本批起，Rust 门禁按两档报数**：`cargo test --workspace`（无 quickjs）与 `cargo test --workspace --features legado-ffi/quickjs`；提交说明须写明口径，仅报前者会漏掉全部 JS 行为证明。
 
@@ -235,7 +241,7 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **判定方法（可复现，供后续同类排查）**：把全部流量导向死端口再跑全量档——`HTTP_PROXY=http://127.0.0.1:9 HTTPS_PROXY=… ALL_PROXY=… cargo test --workspace --no-fail-fast`，失败者即联网用例。**注意必须加 `--no-fail-fast`**：首轮未加时运行在 `legado-ffi` 处即中止，导致误判「其余 crate 全绿」。
   - **处置**：11 例统一补 `#[ignore = "requires network access"]`（沿用仓内既有 19 处同款约定），保留手工可跑：`cargo test -p legado-ffi --lib -- --ignored --exact <名> --nocapture`。改后死代理档 `legado-ffi` 0 failed（363 passed / 30 ignored），正常网全档 0 failed。
   - **方法论副产物（非 CI 风险，已登记勿误处理）**：同法筛出 `legado-net` 3 例（`test_gzip_response_decompressed` / `test_e2e_fallback_system_dns` / `test_connection_pool_reuses_keep_alive`）在死代理下失败——根因是这些用例自带 `127.0.0.1` 本地服务器，被 `HTTP_PROXY` 劫持了**回环**流量，**并非外网依赖**，故不得加 `#[ignore]`（会误删合法离线覆盖）；后续若要健壮化，应在这些用例内设 `NO_PROXY=127.0.0.1,localhost`。
-  - **后续（未做）**：把其中可离线化的用例转为录制 HTML 夹具，以恢复覆盖率。
+  - **后续（部分完成 2026-09-20，提交 `f101b8f673`）**：11 例中 **9 例已夹具化转离线**（explore 1 例现抓 `silukezw.com/list1/1.html` 存仓内夹具经回环服务器投递；s0 5 例与 toc 3 例经侦察确认本即离线，属陈旧标注直接去 ignore；s0 执行器客户端换专用 no_proxy 客户端）——默认档 ignored 30→21，恢复 9 例覆盖。余 web_book.rs 2 例因该文件在途改动避让保持 ignore，待无冲突窗口。`legado-net` 3 例回环用例另修显式 `no_proxy`（`cda70a0c54`，修"死代理排查法"误报）；`cache_store` 测试改显式注入槽消除 env 互污（`b816977643`）。
 - **P2-18 Flutter CI 门禁长期被 skip 的基建修复**（**已关闭 2026-09-19**，提交 `f97efdfcb2`）：`flutter-ci.yml` 的 `android-ffi-sync` 作业长期在 `Set up Android SDK` 一步失败（`android-actions/setup-android@v3` 默认安装列表含已被 SDK 仓库移除的 `tools` 包 → `Warning: Failed to find package 'tools'` → sdkmanager exit 1），下游 `analyze` 作业被 skip → **`flutter analyze` / `flutter test` 这两个门禁自建立起就没在 CI 跑过**（历史多次被记为"基建问题、非我方"）。修法：显式 `packages: 'platform-tools'`（runner 镜像自带 SDK/cmdline-tools，NDK 由下一步 sdkmanager 安装）。**验证**：workflow_dispatch run 35445292930 与推送 run 35445743433 两次均两作业全绿，`Flutter analyze`/`Flutter test` 步骤真实执行并通过。
 
 ### P3：功能补齐与卫生项（2026-08-22 开启）
@@ -335,5 +341,6 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
 修订：Qoder UI ｜ 2026-08-28（MD3 UI 迁移 B0–B6 七批次完成：主题地基/12 套内置调色板/主框架/六功能域 token 收尾/验收矩阵自动化，版本 2.0.110–2.0.117，详见 UI_MD3_PLAN.md「实施状态」；遗留 LargeTitle 与 Material You 动态取色已登记，模拟器冒烟并入用户验收）
 
 修订：Qoder ｜ 2026-09-17（**截图一比一全程序收官进度回填**：依用户口径「视觉基准=参考版实机截图（含配色字体）」完成全屏差异清单批 1~4 共 43 屏的「列差异→分批修复→核图验收」全流程，交付 2.0.255~2.0.275；阶段D 配色对齐 kazusa 源码调色板（Δ≤1）；规范/台账/工具见 docs/SCREEN_1TO1_PARITY_{SPEC,LEDGER}_20260914.md 与 scripts/parity_*.py；剩余=视觉精修巡检（P3 级）+ 深色全域逐屏。与本计划内搜索一致性（P3-6/F1）等工作流相互独立）
+修订：ZCode（本机 27B 通道）+ 工具链 ｜ 2026-09-20（**执行队列①②收口**：P2-11 五小项全关（d13d1a04e5/16f6e09e92/0fe222a3c8，版本 2.0.297+298）——§196 配对实验顺带挖出「顶层 return 规则被静默吞空」的引擎级根因并修复；卫生批三项（legado-net 回环免代理 cda70a0c54、cache_store 测试注入 b816977643、9 例联网用例夹具化转离线 f101b8f673，ignored 30→21）；P2-13 销记（指纹校验 7a84235382 早已落地，「凡改 Rust 必须手工 build-android.ps1」临时纪律解除）。执行队列下一阶段：③P2-16 rquickjs 升级 + P3-6 剩余面调研 → ④搜索一致性实施 → ⑤UI 剩余）
 修订：ZCode（本机 27B 通道）+ 工具链 ｜ 2026-09-19（**同批第二批收口**：P2-15 ② cache 宿主接线 + 第 3 条 overlay 收窄/陈旧让位（提交 `6d2a5c29cc`/`e5da605fd1`，版本 2.0.295+296，含设备级落盘冒烟）；**新增 P2-17**（`legado-ffi` 11 个真联网用例补 `#[ignore]`，判定法=死代理跑全量档且**必须加 `--no-fail-fast`**；附「`legado-net` 3 例系回环被代理劫持、不得误 ignore」的方法论提醒）；**新增 P2-18**（Flutter CI 的 `Set up Android SDK` 因 `tools` 包被 SDK 仓库移除而长期失败 → `analyze` 作业被 skip、Flutter 门禁从未在 CI 跑过；修为 `packages: 'platform-tools'`，两次 CI 运行两作业全绿）；P2-11 回头关闭 ①②③④ 与 §201。Rust CI 与 Flutter CI 均为绿（run 35445743451 / 35445743433）
 修订：ZCode（本机 27B 通道）+ 工具链 ｜ 2026-09-19（**P2-7 三条全部关闭**：P2-7(b)/(c) 的 CI 间歇 SIGSEGV 定为 rquickjs-sys 0.9 内置 quickjs-ng 0.8 的 `build_backtrace` 重入 OOM use-after-free（WSL gdb 实证），用例改单次巨量分配 + CI 撤销无效隔离（提交 `d689584fef`）；旧登记中「崩溃点在 `JS_SetPropertyValue`」与「并行内存压力致间歇」两处结论据此更正。**新增 P2-16**：升级 rquickjs ≥0.12 取回上游修复（生产 64MB 上限下同型崩溃理论可达，定级中高）。同批另修 CI 间歇红第二个来源：`legado-ffi` 11 个真联网用例补 `#[ignore]`（判定方法=死代理跑全量档）

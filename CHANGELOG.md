@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.297] - 2026-09-20
+
+### Fixed
+- [Rust] **修复带 `return` 的 `@js:` 列表规则被静默吞空（P2-11 ④ 顺带根因）**：此前规则代码被当顶层脚本编译，顶层 `return` 直接语法错误 → 整条规则静默变空；上游 Rhino 走 legacy 兼容模式允许顶层 `return` 所以不触发。现改为函数体求值（`return` 合法）并保留表达式式规则的回退求值。
+- [Rust] **`getStringList` 语义逐条对齐上游 `AnalyzeRule.getStringList`（P2-11 ④）**：空规则/JS 求值为 null 或异常/JS 返回标量 → `null`（此前一律空数组）；JS 字符串按 `\n` 拆分（保留尾部空串）；CSS/JSON 等零命中 → 空数组；`java.getStringList` 结果补 `size()/get(i)/isEmpty()` 三个 Java List 别名（越界按 JDK 抛错）。
+- [Rust] **`java.lang` 数值解析对齐 JDK 严格语义（P2-11 ③）**：`Long.parseLong`/`Double.parseDouble` 对空串/纯空白/非法十进制/越界按 JDK 抛错（不再宽松回退）；`Double` 接受 `NaN`/`Infinity` 与十六进制浮点；`Boolean.parseBoolean` 仅 `"true"`（忽略大小写）为真。
+- [Rust] **正文阶段 `book` 反查改 (书源， 章节) 复合键（P2-11 ①）**：两本书章节 URL 相同时不再交叉绑定；书籍/章节缓存改为"仅新键插入导致超限才清理，更新既有键不清理"（P2-11 ②，对齐上游 `getOrPutLimit` 语义），消除热路径反复整清。
+- [UI] 换源/书籍页合并时，DB 中**纯空白**的 `originBookUrl` 不再覆盖路由上的有效值（P2-11 ⑤，与取址 trim 语义一致）。
+
 ## [2.0.296] - 2026-09-19
 
 ### Fixed
