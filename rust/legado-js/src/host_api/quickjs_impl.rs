@@ -302,34 +302,95 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
     java: {
       // P2-9 ① java.lang 最小静态面（语料命中：Thread.sleep 8 /
       // System.currentTimeMillis 4；parseInt 等通用面一并提供）
+      // P2-11 §195：parse 面按 JDK 严格语义对齐（上游 Rhino LiveConnect
+      // 调真实 java.lang 类：Integer.parseInt 全串严格 / Long.parseLong
+      // 严格十进制 + long64 范围 / Double.parseDouble 接受 NaN/±Infinity/
+      // hex-float、拒空白下划线 / Boolean.parseBoolean 不 trim）
       lang: {
         String: JavaString,
         Integer: {
+          // Java Integer.parseInt：可选 +/- 号 + 全部字符为 radix 内数字，
+          // 无空白/小数点/后缀；radix 2..36 越界抛错；int32 溢出抛错
+          //（旧版用 JS parseInt 前缀语义：'12abc'→12，Java 抛错）
           parseInt: function (s, radix) {
-            var v = parseInt(String(s), Number(radix) || 10);
+            var str = String(s);
+            var r = (arguments.length >= 2) ? Number(radix) : 10;
+            if (isNaN(r) || r < 2 || r > 36) {
+              throw new Error('Integer.parseInt: 无效进制 ' + radix);
+            }
+            var m = str.match(/^([+-]?)([0-9a-zA-Z]+)$/);
+            if (!m) throw new Error('Integer.parseInt: 无法解析 ' + s);
+            var digits = m[2];
+            for (var i = 0; i < digits.length; i++) {
+              var code = digits.charCodeAt(i);
+              var val;
+              if (code >= 48 && code <= 57) val = code - 48;
+              else if (code >= 65 && code <= 90) val = code - 65 + 10;
+              else if (code >= 97 && code <= 122) val = code - 97 + 10;
+              else throw new Error('Integer.parseInt: 无法解析 ' + s);
+              if (val >= r) throw new Error('Integer.parseInt: 无法解析 ' + s);
+            }
+            var v = parseInt(str, r);
             if (isNaN(v)) throw new Error('Integer.parseInt: 无法解析 ' + s);
+            if (v < -2147483648 || v > 2147483647) {
+              throw new Error('Integer.parseInt: 溢出 ' + s);
+            }
             return v;
           },
           toString: function (v) { return String(v); }
         },
         Long: {
+          // Java Long.parseLong（1 参）：严格十进制（非 0x）+ 可选 +/- +
+          // long64 范围（字符串比较精确判定）；无空白。JS 无 int64 → 返回
+          // 最近 float64（> 2^53 的值为近似，与 Rhino LiveConnect 自动转
+          // JS number 行为一致；残余近似已登记）
           parseLong: function (s) {
-            var v = parseInt(String(s), 10);
-            if (isNaN(v)) throw new Error('Long.parseLong: 无法解析 ' + s);
-            return v;
+            var str = String(s);
+            if (!/^([+-]?[0-9]+)$/.test(str)) {
+              throw new Error('Long.parseLong: 无法解析 ' + s);
+            }
+            var mag = str.replace(/^[+-]/, '').replace(/^0+/, '');
+            if (mag === '') mag = '0';
+            var limit = (str.charAt(0) === '-') ? '9223372036854775808' : '9223372036854775807';
+            if (mag.length > limit.length || (mag.length === limit.length && mag > limit)) {
+              throw new Error('Long.parseLong: 溢出 ' + s);
+            }
+            return Number(str);
           },
           toString: function (v) { return String(v); }
         },
         Double: {
+          // Java Double.parseDouble：NaN/±Infinity（大小写敏感 token）→
+          // 值（非异常）；十进制可带单个 d/D/f/F 尾缀；hex-float
+          // 0[xX]hex[.hex][p[+-]digits] 手算（JS Number 不解析）；
+          // 拒空白/下划线/空串；十进制溢出 → ±Infinity（非异常）
           parseDouble: function (s) {
-            var v = Number(String(s));
+            var str = String(s);
+            if (str.length === 0 || /\s/.test(str) || str.indexOf('_') >= 0) {
+              throw new Error('Double.parseDouble: 无法解析 ' + s);
+            }
+            // 单个尾缀 d|D|f|F（十进制/NaN/Infinity 均适用）
+            if (/[dDfF]$/.test(str)) str = str.slice(0, -1);
+            // ±NaN token → NaN 值（Java 大小写敏感：'nan' 抛错）
+            if (/^[+-]?NaN$/.test(str)) return NaN;
+            // 十六进制浮点：值 = hexMantissa / 2^(4*小数hex位数) × 2^pExp
+            var m = str.match(/^([+-])?0[xX]([0-9a-fA-F]*)(?:\.([0-9a-fA-F]+))?(?:[pP]([+-]?[0-9]+))?$/);
+            if (m && (m[2] || m[3])) {
+              var mant = m[2] + (m[3] || '');
+              var sign = m[1] === '-' ? -1 : 1;
+              var pExp = m[4] ? parseInt(m[4], 10) : 0;
+              var fracLen = (m[3] || '').length;
+              return sign * (parseInt(mant, 16) / Math.pow(2, 4 * fracLen)) * Math.pow(2, pExp);
+            }
+            var v = Number(str);
             if (isNaN(v)) throw new Error('Double.parseDouble: 无法解析 ' + s);
             return v;
           }
         },
         Boolean: {
-          // Java 语义：仅 "true"（忽略大小写）为 true
-          parseBoolean: function (s) { return String(s).trim().toLowerCase() === 'true'; },
+          // Java 语义：仅 "true"（忽略大小写）为 true；**不 trim**
+          //（" true " → false，旧版误 trim）；null/undefined → false
+          parseBoolean: function (s) { return String(s).toLowerCase() === 'true'; },
           toString: function (v) { return String(!!v); }
         },
         Thread: {
@@ -2249,12 +2310,18 @@ fn register_html_parse_apis<'js>(
     )
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
-    // java.getStringList(rule, mContent?) -> 数组（多值列表，不连接）
-    // P2-9 ①：语料 `java.getStringList`（15/5），上游
-    // AnalyzeByJSoup.kt:72 / AnalyzeRule.kt:202 的 getStringList：
-    // 与 getStrings 同源（content 回退、规则类型分派、逐规则求值）但
-    // 不做换行连接，返回 List<String>。宿主面返回 JS 数组，并附加
-    // size() 方法以兼容语料中的 `list.size()` 用法（Java List 面）。
+    // java.getStringList(rule, mContent?) -> 数组或 null（多值列表，不连接）
+    // P2-9 ①（P2-11 ④ §196 对齐 null 语义）：语料 `java.getStringList`（15/5），
+    // 上游 AnalyzeRule.kt:202-293 getStringList：
+    // - L203 空规则 → null；L275 JS 求值错误 / null|undefined 结果 → null；
+    //   L292 JS 数字/布尔/对象（非 List）结果 → null（宿主面返回 JS null，
+    //   显式 new_null——rquickjs 的 Option 转换会给 undefined，与 Kotlin null 不符）
+    // - L276-278 JS 字符串结果按 "\n" 拆分（保留尾部空段，"" → [""]）
+    // - JS 原生数组 / JSON 数组字符串：P2-6(e) 展开（元素逐个保留）
+    // - CSS/JSONPath/XPath/Regex：List 结果，零命中 → 空数组（非 null）
+    // 数组附加 size() / get(i) / isEmpty()（Java List 面别名，兼容语料
+    // `list.size()` / `list.get(i)` / `list.isEmpty()` 用法；get(i) 越界
+    // （含负数）抛错，对齐 JDK List.get → IndexOutOfBoundsException）。
     java.set(
         "getStringList",
         rquickjs::Function::new(
@@ -2262,26 +2329,74 @@ fn register_html_parse_apis<'js>(
             |ctx: rquickjs::Ctx<'js>,
              rule: String,
              m_content: Opt<String>|
-             -> rquickjs::Result<rquickjs::Array<'js>> {
+             -> rquickjs::Result<rquickjs::Value<'js>> {
                 let src = ctx.globals().get::<_, String>("src").unwrap_or_default();
                 let items = html_parse::get_string_list(&ctx, rule, m_content, src);
-                let arr = rquickjs::Array::new(ctx.clone())?;
-                for (i, item) in items.iter().enumerate() {
-                    arr.set(i, item.clone())?;
+                match items {
+                    None => Ok(rquickjs::Value::new_null(ctx)),
+                    Some(items) => {
+                        let arr = rquickjs::Array::new(ctx.clone())?;
+                        for (i, item) in items.iter().enumerate() {
+                            arr.set(i, item.clone())?;
+                        }
+                        // 兼容语料 `list.size()`（Java List.size() 语义）；
+                        // This 接收 this 绑定（arr.size() 零位置参数调用）
+                        let size_fn = rquickjs::Function::new(
+                            ctx.clone(),
+                            |this: rquickjs::prelude::This<rquickjs::Array>| -> u32 {
+                                this.0.len() as u32
+                            },
+                        )
+                        .map_err(|e| rquickjs::Error::FromJs {
+                            from: "Array",
+                            to: "Function",
+                            message: Some(e.to_string()),
+                        })?;
+                        arr.clone().into_object().set("size", size_fn)?;
+                        // `list.get(i)`——Java List.get(i) 别名：越界（含负数）
+                        // 抛错（JDK List.get → IndexOutOfBoundsException）
+                        let get_fn = rquickjs::Function::new(
+                            ctx.clone(),
+                            |this: rquickjs::prelude::This<rquickjs::Array>,
+                             i: i64|
+                             -> rquickjs::Result<String> {
+                                let len = this.0.len();
+                                if i < 0 || (i as usize) >= len {
+                                    return Err(rquickjs::Error::FromJs {
+                                        from: "IndexOutOfBoundsException",
+                                        to: "List.get",
+                                        message: Some(format!(
+                                            "Index {i} out of bounds for length {len}"
+                                        )),
+                                    });
+                                }
+                                this.0.get(i as usize)
+                            },
+                        )
+                        .map_err(|e| rquickjs::Error::FromJs {
+                            from: "Array",
+                            to: "Function",
+                            message: Some(e.to_string()),
+                        })?;
+                        arr.clone().into_object().set("get", get_fn)?;
+                        // `list.isEmpty()`——Java List.isEmpty() 别名
+                        let is_empty_fn = rquickjs::Function::new(
+                            ctx.clone(),
+                            |this: rquickjs::prelude::This<rquickjs::Array>| -> bool {
+                                this.0.is_empty()
+                            },
+                        )
+                        .map_err(|e| rquickjs::Error::FromJs {
+                            from: "Array",
+                            to: "Function",
+                            message: Some(e.to_string()),
+                        })?;
+                        arr.clone().into_object().set("isEmpty", is_empty_fn)?;
+                        // Array → Value（rquickjs `From<Array> for Value`，
+                        // 链式 Array->Object->Value 的 into_value）
+                        Ok(arr.into())
+                    }
                 }
-                // 兼容语料 `list.size()`（Java List.size() 语义）；
-                // This 接收 this 绑定（arr.size() 零位置参数调用）
-                let size_fn = rquickjs::Function::new(
-                    ctx.clone(),
-                    |this: rquickjs::prelude::This<rquickjs::Array>| -> u32 { this.0.len() as u32 },
-                )
-                .map_err(|e| rquickjs::Error::FromJs {
-                    from: "Array",
-                    to: "Function",
-                    message: Some(e.to_string()),
-                })?;
-                arr.clone().into_object().set("size", size_fn)?;
-                Ok(arr)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -4750,6 +4865,106 @@ decryptImage(result);
         assert!(result2.contains("[\"p\",\"q\"]"), "got: {result2}");
     }
 
+    /// P2-11 ④（§196）：getStringList 细分差异对齐上游
+    /// AnalyzeRule.kt:202-293 null 语义 + \n 拆分 + get/isEmpty 别名
+    ///
+    /// 配对实验（旧实现 → 新实现，上游依据）：
+    /// - 空规则：旧 `[]` → 新 `null`（上游 L203 isNullOrEmpty → null）
+    /// - `@js: return null`：旧 `[]` → 新 `null`（L275 result == null → null）
+    /// - JS 求值异常（`missingVar`）：旧 `[]` → 新 `null`（L274-275 catch → null）
+    /// - `@js: return 42`：旧 `["42"]` → 新 `null`（L292 `42 as? List` → null）
+    /// - `@js: return "a\nb"`：旧 `["a\nb"]`（join 后单元素）→ 新 `["a","b"]`
+    ///   （L276-278 `result.split("\n")`）
+    /// - `@js: return ""`：旧 `[]` → 新 `[""]`（Kotlin `"".split("\n")` → `[""]`）
+    /// - `@js: return ["x","y"]`：旧 `["x\ny"]`（join 后单元素）→ 新 `["x","y"]`
+    ///   （P2-6(e) 展开，元素逐个保留）
+    /// - JSON 数组字符串 `JSON.stringify(["p","q"])`：`["p","q"]`（P2-6(e) 既有不变）
+    /// - CSS 零命中：`[]` 且 `isEmpty() === true`（上游 List 结果，零命中非 null）
+    /// - 新别名 `get(i)` / `isEmpty()`（Java List 面；越界 get 抛错，
+    ///   对齐 JDK List.get → IndexOutOfBoundsException）
+    #[test]
+    fn test_java_getstringlist_null_semantics_and_aliases() {
+        let engine = make_engine();
+        let result = engine
+            .eval(
+                r#"
+                var out = {};
+                out.emptyRule = java.getStringList('') === null;
+                out.jsNull = java.getStringList('@js: return null') === null;
+                out.jsErr = java.getStringList('@js: return missingVar') === null;
+                out.jsNumber = java.getStringList('@js: return 42') === null;
+                out.split = java.getStringList('@js: return "a\\nb"');
+                out.emptyStr = java.getStringList('@js: return ""');
+                out.jsArray = java.getStringList('@js: return ["x","y"]');
+                out.jsonArr = java.getStringList('@js: return JSON.stringify(["p","q"])');
+                JSON.stringify(out);
+                "#,
+            )
+            .unwrap();
+        assert!(result.contains("\"emptyRule\":true"), "got: {result}");
+        assert!(result.contains("\"jsNull\":true"), "got: {result}");
+        assert!(result.contains("\"jsErr\":true"), "got: {result}");
+        assert!(result.contains("\"jsNumber\":true"), "got: {result}");
+        assert!(result.contains("\"split\":[\"a\",\"b\"]"), "got: {result}");
+        assert!(result.contains("\"emptyStr\":[\"\"]"), "got: {result}");
+        assert!(
+            result.contains("\"jsArray\":[\"x\",\"y\"]"),
+            "got: {result}"
+        );
+        assert!(
+            result.contains("\"jsonArr\":[\"p\",\"q\"]"),
+            "got: {result}"
+        );
+
+        // get(i)/isEmpty() 别名：拆分列表 ["a","b"]
+        let result2 = engine
+            .eval(
+                r#"
+                var l = java.getStringList('@js: return "a\\nb"');
+                var oob = false; var neg = false;
+                try { l.get(2); } catch (e) { oob = true; }
+                try { l.get(-1); } catch (e) { neg = true; }
+                JSON.stringify({
+                    g0: l.get(0) === 'a',
+                    g1: l.get(1) === 'b',
+                    oob: oob, neg: neg,
+                    isEmpty: l.isEmpty(),
+                    size: l.size(),
+                    len: l.length,
+                });
+                "#,
+            )
+            .unwrap();
+        assert!(result2.contains("\"g0\":true"), "got: {result2}");
+        assert!(result2.contains("\"g1\":true"), "got: {result2}");
+        assert!(result2.contains("\"oob\":true"), "got: {result2}");
+        assert!(result2.contains("\"neg\":true"), "got: {result2}");
+        assert!(result2.contains("\"isEmpty\":false"), "got: {result2}");
+        assert!(result2.contains("\"size\":2"), "got: {result2}");
+        assert!(result2.contains("\"len\":2"), "got: {result2}");
+
+        // CSS 零命中 → 空数组（非 null），isEmpty() === true，get(0) 抛错
+        let result3 = engine
+            .eval(
+                r#"
+                var e = java.getStringList('a.miss@href', '<div></div>');
+                var threw = false;
+                try { e.get(0); } catch (err) { threw = true; }
+                JSON.stringify({
+                    isNull: e === null,
+                    isEmpty: e.isEmpty(),
+                    size: e.size(),
+                    threw: threw,
+                });
+                "#,
+            )
+            .unwrap();
+        assert!(result3.contains("\"isNull\":false"), "got: {result3}");
+        assert!(result3.contains("\"isEmpty\":true"), "got: {result3}");
+        assert!(result3.contains("\"size\":0"), "got: {result3}");
+        assert!(result3.contains("\"threw\":true"), "got: {result3}");
+    }
+
     /// java.setContent（上游 AnalyzeRule.kt:101）：更新分析器内容（src），不动 result
     #[test]
     fn test_java_set_content_updates_src() {
@@ -4960,6 +5175,119 @@ decryptImage(result);
         assert!(result.contains("\"cp0\":1"), "got: {result}");
         assert!(result.contains("\"parseIntThrows\":true"), "got: {result}");
         assert!(result.contains("\"nioLen\":4"), "got: {result}");
+    }
+
+    /// P2-11 §195：java.lang parse 近似对齐——配对实验（旧 shim 值 → JDK 严格值）
+    ///
+    /// 上游真值：Rhino LiveConnect 调真实 java.lang 方法（AnalyzeRule.kt
+    /// L895 `bindings["java"] = this`；`java.lang` 不在 JsExtensions 字段
+    /// 面 → `Packages.java` classpath 设施，P2-9 ⑫ 类；JDK javadoc 语义）：
+    /// - `Integer.parseInt("12abc")` → NumberFormatException（旧 shim 用
+    ///   JS 前缀解析 → 12）；int32 溢出抛错；radix 越界抛错
+    /// - `Long.parseLong("12abc")` → 抛错（旧 shim → 12）；"0x10" → 抛错
+    ///   （1 参仅十进制；旧 shim → 16）；long64 范围字符串精确判定
+    /// - `Double.parseDouble("NaN")` → NaN 值（旧 shim 抛错）；" 3.5" →
+    ///   抛错（JS Number 容忍前导空白，旧 shim → 3.5）；"0x1.8p1" → 3.0
+    ///   （JS Number 返回 NaN，旧 shim 抛错）；"1e400" → Infinity（非抛错）
+    /// - `Boolean.parseBoolean(" true ")` → false（Java 不 trim；旧 shim
+    ///   误 trim → true）
+    #[test]
+    fn test_packages_shim_lang_parse_strict_semantics() {
+        let engine = make_engine();
+        let result = engine
+            .eval(
+                r#"
+                var L = Packages.java.lang;
+                function thr(fn) { try { fn(); return false; } catch (e) { return true; } }
+                function val(fn) { try { return fn(); } catch (e) { return null; } }
+                JSON.stringify({
+                    // Integer.parseInt 严格全串 + int32 范围
+                    pInt12abcThrows: thr(function(){ L.Integer.parseInt('12abc'); }),
+                    pIntWsThrows: thr(function(){ L.Integer.parseInt(' 12'); }),
+                    pIntPlus: val(function(){ return L.Integer.parseInt('+42'); }),
+                    pIntHex16: val(function(){ return L.Integer.parseInt('ff', 16); }),
+                    pIntOctal8: val(function(){ return L.Integer.parseInt('17', 8); }),
+                    pIntOverflowThrows: thr(function(){ L.Integer.parseInt('2147483648'); }),
+                    pIntMinOk: val(function(){ return L.Integer.parseInt('-2147483648'); }),
+                    pIntRadixThrows: thr(function(){ L.Integer.parseInt('42', 1); }),
+                    // Long.parseLong 严格十进制 + long64 范围
+                    pLong12abcThrows: thr(function(){ L.Long.parseLong('12abc'); }),
+                    pLongHexThrows: thr(function(){ L.Long.parseLong('0x10'); }),
+                    pLongWsThrows: thr(function(){ L.Long.parseLong(' 12'); }),
+                    pLongZeroPad: val(function(){ return L.Long.parseLong('0007'); }),
+                    // long64 边界：float64 近似值（JS 无 int64；Rhino LiveConnect
+                    // 也自动把 Long 转 JS number——登记残余近似）。用引擎内 ===
+                    // 与 ±2^63 精确比较（QuickJS 的 JSON.stringify 按 15 位有效
+                    // 数字显示 2^63 → 9223372036854776000，不可用于断言原文）
+                    pLongMax: L.Long.parseLong('9223372036854775807') === 9223372036854775808,
+                    pLongOverflowThrows: thr(function(){ L.Long.parseLong('9223372036854775808'); }),
+                    pLongNegMin: L.Long.parseLong('-9223372036854775808') === -9223372036854775808,
+                    // Double.parseDouble NaN/Infinity/hex-float/空白/下划线/尾缀
+                    pdNaNIsNaN: isNaN(L.Double.parseDouble('NaN')),
+                    pdPosInf: L.Double.parseDouble('Infinity') === Infinity,
+                    pdNegInf: L.Double.parseDouble('-Infinity') === -Infinity,
+                    pdWsThrows: thr(function(){ L.Double.parseDouble(' 3.5'); }),
+                    pdUnderThrows: thr(function(){ L.Double.parseDouble('1_000'); }),
+                    pdSuffixOk: val(function(){ return L.Double.parseDouble('3.5f'); }),
+                    pdHexFloat: val(function(){ return L.Double.parseDouble('0x1.8p1'); }),
+                    pdHexNoP: val(function(){ return L.Double.parseDouble('0x10'); }),
+                    pdHexFracOnly: val(function(){ return L.Double.parseDouble('0x.8p1'); }),
+                    pdOverflowInf: L.Double.parseDouble('1e400') === Infinity,
+                    pdEmptyThrows: thr(function(){ L.Double.parseDouble(''); }),
+                    pdLowerNaNThrows: thr(function(){ L.Double.parseDouble('nan'); }),
+                    // Boolean.parseBoolean 不 trim + null → false
+                    pbTrimmedFalse: L.Boolean.parseBoolean(' true ') === false,
+                    pbUpperTrue: L.Boolean.parseBoolean('TRUE') === true,
+                    pbNullFalse: L.Boolean.parseBoolean(null) === false
+                });
+                "#,
+            )
+            .unwrap();
+        assert!(result.contains("\"pInt12abcThrows\":true"), "got: {result}");
+        assert!(result.contains("\"pIntWsThrows\":true"), "got: {result}");
+        assert!(result.contains("\"pIntPlus\":42"), "got: {result}");
+        assert!(result.contains("\"pIntHex16\":255"), "got: {result}");
+        assert!(result.contains("\"pIntOctal8\":15"), "got: {result}");
+        assert!(
+            result.contains("\"pIntOverflowThrows\":true"),
+            "got: {result}"
+        );
+        assert!(
+            result.contains("\"pIntMinOk\":-2147483648"),
+            "got: {result}"
+        );
+        assert!(result.contains("\"pIntRadixThrows\":true"), "got: {result}");
+        assert!(
+            result.contains("\"pLong12abcThrows\":true"),
+            "got: {result}"
+        );
+        assert!(result.contains("\"pLongHexThrows\":true"), "got: {result}");
+        assert!(result.contains("\"pLongWsThrows\":true"), "got: {result}");
+        assert!(result.contains("\"pLongZeroPad\":7"), "got: {result}");
+        assert!(result.contains("\"pLongMax\":true"), "got: {result}");
+        assert!(
+            result.contains("\"pLongOverflowThrows\":true"),
+            "got: {result}"
+        );
+        assert!(result.contains("\"pLongNegMin\":true"), "got: {result}");
+        assert!(result.contains("\"pdNaNIsNaN\":true"), "got: {result}");
+        assert!(result.contains("\"pdPosInf\":true"), "got: {result}");
+        assert!(result.contains("\"pdNegInf\":true"), "got: {result}");
+        assert!(result.contains("\"pdWsThrows\":true"), "got: {result}");
+        assert!(result.contains("\"pdUnderThrows\":true"), "got: {result}");
+        assert!(result.contains("\"pdSuffixOk\":3.5"), "got: {result}");
+        assert!(result.contains("\"pdHexFloat\":3"), "got: {result}");
+        assert!(result.contains("\"pdHexNoP\":16"), "got: {result}");
+        assert!(result.contains("\"pdHexFracOnly\":1"), "got: {result}");
+        assert!(result.contains("\"pdOverflowInf\":true"), "got: {result}");
+        assert!(result.contains("\"pdEmptyThrows\":true"), "got: {result}");
+        assert!(
+            result.contains("\"pdLowerNaNThrows\":true"),
+            "got: {result}"
+        );
+        assert!(result.contains("\"pbTrimmedFalse\":true"), "got: {result}");
+        assert!(result.contains("\"pbUpperTrue\":true"), "got: {result}");
+        assert!(result.contains("\"pbNullFalse\":true"), "got: {result}");
     }
 
     /// 全局 cache 对象（对齐 WebCacheManager）：记忆三件套 + 磁盘/文件缓存

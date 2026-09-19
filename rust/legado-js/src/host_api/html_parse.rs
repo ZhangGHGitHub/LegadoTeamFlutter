@@ -280,6 +280,26 @@ fn regex_extract(content: &str, rule: &str) -> Vec<String> {
     }
 }
 
+/// 嵌套 JS 求值的类型化结果（P2-11 ④ §196：`get_string_list` 的
+/// null 语义需要区分「字符串 / 数组 / 标量 / 空」——旧字符串化版本把它们
+/// 坍缩为同一字符串无法区分，上游 `AnalyzeRule.kt:275/276-278/292` 分别
+/// 对 null / String（按 `\n` 拆分）/ 非 List 类型有不同归宿）
+enum JsNestedValue {
+    /// JS null/undefined 或执行错误（上游 AnalyzeRule.kt:275
+    /// `if (result == null) return null`）
+    Null,
+    /// JS 字符串结果（上游 L276-278：`result.split("\n")`）
+    String(String),
+    /// JS 数组结果——逐元素保留（P2-6(e) 展开语义；上游 WebJs L253-254
+    /// `GSON.fromJsonArray(...).getOrNull()`）。元素经逐元素字符串化
+    /// （null/undefined → 空串、对象 → JSON.stringify，与旧 join 路径一致）
+    Array(Vec<String>),
+    /// JS 数字/布尔/对象结果——已字符串化（上游 L292
+    /// `result as? List<String>`：非 List → null；值保留供 `get_string`
+    /// 字符串化兼容路径使用）
+    Scalar(String),
+}
+
 /// 嵌套 `@js:`/`@webjs:` 求值（无头近似，对齐上游 `execute_js_rule`）
 ///
 /// 复用当前引擎全局环境（执行器 prologue 已注入 result/src/baseUrl）：
@@ -288,10 +308,24 @@ fn regex_extract(content: &str, rule: &str) -> Vec<String> {
 /// 重绑为当前内容（覆盖 mContent ≠ src 的场景）并在 finally 恢复。
 /// 执行失败/结果为 null|undefined → 空串（对齐上游 JS 规则错误吞掉 → 空）。
 ///
+/// 求值方式（P2-11 ④ 修正，对齐上游 Rhino 对书源 `@js: return ...` 的
+/// 执行语义）：规则代码先按**函数体**求值——`new Function(code)()`，
+/// 顶层 `return` 在函数体中合法（书源 `@js:` 规则惯用写法）；函数体结果
+/// 为 undefined 时回退**脚本 eval** 取表达式完成值，兼容无 `return` 的
+/// 表达式式规则（如 `@js: result.substring(0, 10)`）。旧实现直接脚本
+/// eval：顶层 `return` 是语法错误（`return not in a function`），所有
+/// `@js: return ...` 规则被静默吞成空——`get_string_list` 的字符串/数组
+/// 结果因此全部丢失（④ 配对实验暴露的既有缺陷，非本次引入）。
+///
 /// 边界：不新建独立沙箱引擎（架构改动过大）；嵌套死循环依赖外层 eval
 /// 的超时约束被杀。若 `result`/`src`/`html` 原值为字面 null，恢复时会
 /// 删除属性（读取从 null 变 undefined）——极端边界，可接受。
-fn eval_js_nested<'js>(ctx: &Ctx<'js>, content: &str, code: &str) -> String {
+///
+/// 实现：包装器返回带标签 JSON（`{"t":"n"|"s"|"a"|"o", "v":...}`），
+/// Rust 侧按标签解码为 [`JsNestedValue`]；字符串化视图对非 return 语句
+/// 规则与旧实现逐项等价（null/错误 → 空串、字符串原样、数组 `\n` 连接、
+/// 对象 JSON 串、数字/布尔 String() 化）。
+fn eval_js_nested_typed<'js>(ctx: &Ctx<'js>, content: &str, code: &str) -> JsNestedValue {
     let content_json = serde_json::to_string(content).unwrap_or_else(|_| "\"\"".to_string());
     let code_json = serde_json::to_string(code).unwrap_or_else(|_| "\"\"".to_string());
     let wrapper = format!(
@@ -304,29 +338,72 @@ fn eval_js_nested<'js>(ctx: &Ctx<'js>, content: &str, code: &str) -> String {
          globalThis.html = {content_json};\n\
          var __r;\n\
          try {{\n\
-         __r = new Function('__legadoCode', 'return eval(__legadoCode);')({code_json});\n\
+         __r = new Function('__legadoCode', 'var __v = (new Function(__legadoCode))(); if (__v !== undefined) {{ return __v; }} return eval(__legadoCode);')({code_json});\n\
          }} catch (e) {{\n\
-         return '';\n\
+         return JSON.stringify({{ t: 'n' }});\n\
          }} finally {{\n\
          if (__prevResult === null) {{ delete globalThis.result; }} else {{ globalThis.result = __prevResult; }}\n\
          if (__prevSrc === null) {{ delete globalThis.src; }} else {{ globalThis.src = __prevSrc; }}\n\
          if (__prevHtml === null) {{ delete globalThis.html; }} else {{ globalThis.html = __prevHtml; }}\n\
          }}\n\
-         if (__r === undefined || __r === null) {{ return ''; }}\n\
-         if (typeof __r === 'string') {{ return __r; }}\n\
+         if (__r === undefined || __r === null) {{ return JSON.stringify({{ t: 'n' }}); }}\n\
+         if (typeof __r === 'string') {{ return JSON.stringify({{ t: 's', v: __r }}); }}\n\
          if (Array.isArray(__r)) {{\n\
-         return __r.map(function (x) {{\n\
+         return JSON.stringify({{ t: 'a', v: __r.map(function (x) {{\n\
          if (x === null || x === undefined) {{ return ''; }}\n\
          return (typeof x === 'object') ? JSON.stringify(x) : String(x);\n\
-         }}).join('\\n');\n\
+         }}) }});\n\
          }}\n\
          if (typeof __r === 'object') {{\n\
-         try {{ return JSON.stringify(__r); }} catch (e) {{ return String(__r); }}\n\
+         var __s;\n\
+         try {{ __s = JSON.stringify(__r); }} catch (e) {{ __s = String(__r); }}\n\
+         return JSON.stringify({{ t: 'o', v: __s }});\n\
          }}\n\
-         return String(__r);\n\
+         return JSON.stringify({{ t: 'o', v: String(__r) }});\n\
          }})()"
     );
-    ctx.eval::<String, _>(wrapper.as_str()).unwrap_or_default()
+    let out = ctx.eval::<String, _>(wrapper.as_str()).unwrap_or_default();
+    let parsed: serde_json::Value = serde_json::from_str(&out).unwrap_or(serde_json::Value::Null);
+    match parsed.get("t").and_then(|t| t.as_str()) {
+        Some("s") => JsNestedValue::String(
+            parsed
+                .get("v")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+        ),
+        Some("a") => JsNestedValue::Array(
+            parsed
+                .get("v")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .map(|item| match item {
+                            serde_json::Value::String(s) => s.clone(),
+                            other => other.to_string(),
+                        })
+                        .collect()
+                })
+                .unwrap_or_default(),
+        ),
+        Some("o") => JsNestedValue::Scalar(
+            parsed
+                .get("v")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+        ),
+        _ => JsNestedValue::Null,
+    }
+}
+
+/// 字符串化视图（[`get_string`]/[`get_strings`]/[`get_element`] 等既有路径）
+fn eval_js_nested<'js>(ctx: &Ctx<'js>, content: &str, code: &str) -> String {
+    match eval_js_nested_typed(ctx, content, code) {
+        JsNestedValue::Null => String::new(),
+        JsNestedValue::String(s) | JsNestedValue::Scalar(s) => s,
+        JsNestedValue::Array(elems) => elems.join("\n"),
+    }
 }
 
 /// 按分派结果执行规则（字符串族：`get_string`/`get_strings`/`get_element` 共用）
@@ -516,24 +593,67 @@ pub fn get_strings<'js>(
     get_string(ctx, rule, m_content, src)
 }
 
-/// `java.getStringList(rule, mContent)` → 多值列表（不连接）
+/// `java.getStringList(rule, mContent)` → 多值列表（不连接，可空）
 ///
-/// 对齐上游 `AnalyzeByJSoup.kt:72` / `AnalyzeRule.kt:202` 的
-/// `getStringList`：与 [`get_string`] 同源（content 回退、规则类型分派、
-/// 逐规则求值）但**不做换行连接**，直接返回 `Vec<String>`。
-/// 上游 JS 面返回 `List<String>`；Rust 宿主面返回 JS 数组（宿主注册处
-/// 附加 `size()` 方法以兼容语料中的 `list.size()` 用法）。
+/// P2-11 ④（§196）对齐上游 `AnalyzeRule.kt:202-293` getStringList 的
+/// null 语义（JS 宿主面即 `java.getStringList` 走此路径）：
+/// - L203 `rule.isNullOrEmpty()` → null（宿主面：空规则 → None；JS
+///   绑定为 String 型，仅空串分支可达，null/undefined 规则不可达）
+/// - L275 `result == null` → null：JS 求值错误 / 结果 null|undefined → None
+/// - L276-278 `result is String` → `result.split("\n")`：JS 字符串结果
+///   按 `\n` 拆分（Kotlin split 保留尾部空段：`"a\nb\n"` → `["a","b",""]`、
+///   `""` → `[""]`）
+/// - L292 `result as? List<String>`：JS 数字/布尔/对象结果非 List → None
+/// - JS 原生数组 / JSON 数组字符串：保留 P2-6(e) 展开语义（上游 WebJs
+///   L253-254 `GSON.fromJsonArray(...).getOrNull()`），元素逐个保留
+///   （元素内含 `\n` 不被拆分）
+/// - CSS/JSONPath/XPath/Regex：结果本身即 List（上游 L257-259），不做
+///   `\n` 拆分；零命中 → 空列表（非 null，上游 `AnalyzeByJSoup.kt:76`
+///   空规则/零命中均返回空 List）
 pub fn get_string_list<'js>(
     ctx: &Ctx<'js>,
     rule: String,
     m_content: Opt<String>,
     src: String,
-) -> Vec<String> {
+) -> Option<Vec<String>> {
+    if rule.is_empty() {
+        return None; // 上游 L203 isNullOrEmpty → null（不 trim，对齐 isNullOrEmpty）
+    }
     let content = match m_content.0 {
         Some(s) if !s.is_empty() => s,
         _ => src,
     };
-    resolve_dispatched_strings(ctx, &content, &rule)
+    match dispatch_rule(&rule, &content) {
+        RuleDispatch::Js(code) | RuleDispatch::WebJs(code) => {
+            match eval_js_nested_typed(ctx, &content, &code) {
+                // L275：结果 null（错误 / null / undefined）→ null
+                JsNestedValue::Null => None,
+                // L276-278：字符串结果按 \n 拆分；JSON 数组字符串先走
+                // P2-6(e) 展开（元素逐个保留，非数组串才 \n 拆分）
+                JsNestedValue::String(s) => {
+                    if let Ok(v) = serde_json::from_str::<serde_json::Value>(&s) {
+                        if let Some(arr) = v.as_array() {
+                            return Some(
+                                arr.iter()
+                                    .map(|item| match item {
+                                        serde_json::Value::String(x) => x.clone(),
+                                        other => other.to_string(),
+                                    })
+                                    .collect(),
+                            );
+                        }
+                    }
+                    Some(s.split('\n').map(String::from).collect())
+                }
+                // P2-6(e)：JS 原生数组逐元素保留
+                JsNestedValue::Array(items) => Some(items),
+                // L292：数字/布尔/对象非 List → null
+                JsNestedValue::Scalar(_) => None,
+            }
+        }
+        // List 结果（上游 L257-259）：不做 \n 拆分，零命中 → 空列表
+        _ => Some(resolve_dispatched_strings(ctx, &content, &rule)),
+    }
 }
 
 // ─── 测试 ─────────────────────────────────────────────────────────────────────
@@ -593,6 +713,7 @@ mod tests {
     }
 
     /// P2-9 ①：`java.getStringList` 底层——多值列表（不连接，区别于 get_string）
+    /// P2-11 ④：返回值改 `Option`（JS 分支 null 语义；List 分支恒 Some）
     #[test]
     fn test_get_string_list_unjoined_multi_values() {
         let (_runtime, context) = bare_ctx();
@@ -601,7 +722,10 @@ mod tests {
         let v = context.with(|ctx| {
             get_string_list(&ctx, "$.list[*]".to_string(), Opt(None), json.to_string())
         });
-        assert_eq!(v, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        assert_eq!(
+            v,
+            Some(vec!["a".to_string(), "b".to_string(), "c".to_string()])
+        );
         // 第二参覆盖当前 src
         let v2 = context.with(|ctx| {
             get_string_list(
@@ -611,17 +735,90 @@ mod tests {
                 String::new(),
             )
         });
-        assert_eq!(v2, vec!["a".to_string(), "b".to_string(), "c".to_string()]);
+        assert_eq!(
+            v2,
+            Some(vec!["a".to_string(), "b".to_string(), "c".to_string()])
+        );
         // CSS 多值 → 逐项保留（不 join）
         let html = r#"<div><a class="x" href="/1">一</a><a class="x" href="/2">二</a></div>"#;
         let v3 = context
             .with(|ctx| get_string_list(&ctx, "a.x@href".to_string(), Opt(None), html.to_string()));
-        assert_eq!(v3, vec!["/1".to_string(), "/2".to_string()]);
-        // 零命中 → 空列表（不 panic）
+        assert_eq!(v3, Some(vec!["/1".to_string(), "/2".to_string()]));
+        // 零命中 → Some(空列表)（非 null，上游 L259 List 结果）
         let v4 = context.with(|ctx| {
             get_string_list(&ctx, "a.miss@href".to_string(), Opt(None), html.to_string())
         });
-        assert!(v4.is_empty());
+        assert_eq!(v4, Some(Vec::new()));
+    }
+
+    /// P2-11 ④（§196）：`get_string_list` null 语义 + `\n` 拆分
+    ///
+    /// 配对实验（上游依据 `AnalyzeRule.kt:202-293`；旧实现 → 新实现）：
+    /// - 空规则：旧 `[]` → 新 `None`（L203 `rule.isNullOrEmpty()` → null）
+    /// - `@js: return null`：旧 `[]` → 新 `None`（L275 `result == null`）
+    /// - `@js: return 42`：旧 `["42"]` → 新 `None`（L292 `42 as? List` → null）
+    /// - `@js: return "a\nb\n"`：旧 `["a\nb\n"]`（单元素含换行）→ 新
+    ///   `["a","b",""]`（L276-278 `result.split("\n")` 保留尾部空段）
+    /// - `@js: return ""`：旧 `[]` → 新 `[""]`（Kotlin `"".split("\n")` → `[""]`）
+    /// - `@js: return ["a\nb","c"]`：旧 `["a\nb\nc"]`（join 后单元素）→ 新
+    ///   `["a\nb","c"]`（P2-6(e) 展开逐元素保留，元素内 `\n` 不拆分）
+    /// - CSS 零命中：`Some([])`（List 分支零命中非 null，行为不变）
+    #[test]
+    fn test_get_string_list_null_semantics_and_newline_split() {
+        let (_runtime, context) = bare_ctx();
+        // L203：空规则 → None（isNullOrEmpty → null，不 trim）
+        let empty_rule =
+            context.with(|ctx| get_string_list(&ctx, String::new(), Opt(None), "x".to_string()));
+        assert_eq!(empty_rule, None);
+        // L275：JS 结果 null / 求值错误 → None
+        let js_null = context
+            .with(|ctx| get_string_list(&ctx, "@js: return null".into(), Opt(None), "x".into()));
+        assert_eq!(js_null, None);
+        let js_err = context.with(|ctx| {
+            get_string_list(&ctx, "@js: return missingVar".into(), Opt(None), "x".into())
+        });
+        assert_eq!(js_err, None);
+        // L292：JS 数字/布尔/对象结果非 List → None
+        let js_num = context
+            .with(|ctx| get_string_list(&ctx, "@js: return 42".into(), Opt(None), "x".into()));
+        assert_eq!(js_num, None);
+        let js_obj = context
+            .with(|ctx| get_string_list(&ctx, "@js: return {a:1}".into(), Opt(None), "x".into()));
+        assert_eq!(js_obj, None);
+        // L276-278：JS 字符串结果按 \n 拆分（保留尾部空段）
+        let split = context.with(|ctx| {
+            get_string_list(&ctx, "@js: return 'a\\nb\\n'".into(), Opt(None), "x".into())
+        });
+        assert_eq!(split, Some(vec!["a".into(), "b".into(), String::new()]));
+        // "" → [""]（Kotlin "".split("\n") → [""]）
+        let empty_str = context
+            .with(|ctx| get_string_list(&ctx, "@js: return ''".into(), Opt(None), "x".into()));
+        assert_eq!(empty_str, Some(vec![String::new()]));
+        // P2-6(e)：JS 原生数组逐元素保留（元素内 \n 不拆分）
+        let js_arr = context.with(|ctx| {
+            get_string_list(
+                &ctx,
+                "@js: return ['a\\nb','c']".into(),
+                Opt(None),
+                "x".into(),
+            )
+        });
+        assert_eq!(js_arr, Some(vec!["a\nb".into(), "c".into()]));
+        // P2-6(e)：JSON 数组字符串展开（上游 WebJs L253-254 GSON.fromJsonArray）保持
+        let json_arr = context.with(|ctx| {
+            get_string_list(
+                &ctx,
+                "@js: return JSON.stringify(['p','q'])".into(),
+                Opt(None),
+                "x".into(),
+            )
+        });
+        assert_eq!(json_arr, Some(vec!["p".into(), "q".into()]));
+        // CSS 零命中 → Some(空列表)（上游 L259 List 结果，零命中非 null）
+        let html = r#"<div><a class="x" href="/1">一</a></div>"#;
+        let zero = context
+            .with(|ctx| get_string_list(&ctx, "a.miss@href".into(), Opt(None), html.to_string()));
+        assert_eq!(zero, Some(Vec::new()));
     }
 
     /// 包子漫画正文：`java.getElements('class.comic-contain@amp-img')`
