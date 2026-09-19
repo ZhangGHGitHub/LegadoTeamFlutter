@@ -268,6 +268,64 @@ url
     });
   });
 
+  group('mergeDbBook（P2-11 §198 originBookUrl 空白值语义）', () {
+    test('DB 值纯空白时让位路由有效值（不压过）', () {
+      final route = const Book(
+        bookUrl: 'https://ex.com/b',
+        name: '书',
+        originBookUrl: 'https://current-source.com/page',
+      );
+      final db = const Book(
+        bookUrl: 'https://ex.com/b',
+        name: '书',
+        originBookUrl: '   \n\t  ',
+      );
+      final merged = BookOpenUtils.mergeDbBook(route, db);
+      expect(merged.originBookUrl, 'https://current-source.com/page');
+    });
+
+    test('DB 值非空白时仍覆盖路由值（DB 权威语义不变）', () {
+      final route = const Book(
+        bookUrl: 'https://ex.com/b',
+        name: '书',
+        originBookUrl: 'https://stale-route.com/page',
+      );
+      final db = const Book(
+        bookUrl: 'https://ex.com/b',
+        name: '书',
+        originBookUrl: 'https://db.com/page',
+      );
+      final merged = BookOpenUtils.mergeDbBook(route, db);
+      expect(merged.originBookUrl, 'https://db.com/page');
+    });
+
+    test('DB 值空白含非空白字符时按原值取用（不 trim 后值）', () {
+      final route = const Book(
+        bookUrl: 'https://ex.com/b',
+        name: '书',
+        originBookUrl: 'https://stale-route.com/page',
+      );
+      final db = const Book(
+        bookUrl: 'https://ex.com/b',
+        name: '书',
+        originBookUrl: '  https://db.com/page  ',
+      );
+      final merged = BookOpenUtils.mergeDbBook(route, db);
+      expect(merged.originBookUrl, '  https://db.com/page  ');
+    });
+
+    test('DB 与路由皆空时结果为空（行为不变）', () {
+      final route = const Book(bookUrl: 'https://ex.com/b', name: '书');
+      final db = const Book(
+        bookUrl: 'https://ex.com/b',
+        name: '书',
+        originBookUrl: '  ',
+      );
+      final merged = BookOpenUtils.mergeDbBook(route, db);
+      expect(merged.originBookUrl, '');
+    });
+  });
+
   group('parseComicImageUrls 复合 URL', () {
     test('双引号 src 含 JSON headers 完整抽出（不截断在第一个引号）', () {
       const html =

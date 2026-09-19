@@ -311,7 +311,9 @@ class BookOpenUtils {
           ? routeBook.totalChapterNum
           : dbBook.totalChapterNum,
       // [P2-4] originBookUrl 以 DB 为权威（换源事务唯一权威写者），路由值仅兜底
-      originBookUrl: dbBook.originBookUrl.isNotEmpty
+      // [P2-11 §198] 空值判定按 trim 后（纯空白视同空值，与 [bookFetchUrl] 口径
+      // 一致），取值仍取原值不 trim：DB 值纯空白时让位路由有效值，非空白仍覆盖
+      originBookUrl: dbBook.originBookUrl.trim().isNotEmpty
           ? dbBook.originBookUrl
           : routeBook.originBookUrl,
     );
