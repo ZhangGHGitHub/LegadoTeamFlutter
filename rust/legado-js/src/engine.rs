@@ -1014,6 +1014,17 @@ mod quickjs_tests {
     // （e1c1e416 / Fixes #1469：build_backtrace 二次 OOM 不再先行释放在途异常），
     // 原配方的进程级 SIGSEGV（WSL 5/5，find_own_property quickjs.c:5337，rax=0）
     // 应变为干净的 OOM 异常：返回 Err 且不崩进程，OOM 后引擎仍可用。
+    //
+    // [P2-16 CI 修正 2026-09-19，Rust CI run 35459493775] OOM 报错有两种合法形态，
+    // 取决于触顶发生在哪个阶段（跨环境刀锋条件，哪个阶段先 OOM 由本机余量决定）：
+    //   1) "out of memory" —— 运行期 OOM：push 分配失败时 quickjs 还能造出异常对象，
+    //      返回真正的 OOM 异常（WSL 侧实测落在此形态）；
+    //   2) 语法错误 / "syntax error" —— 编译期 OOM 退化：脚本编译（字节码生成）阶段
+    //      就把余量吃光，连错误对象都造不出来，quickjs 把失败退化成「语法错误」形态
+    //      （P2-7(b) 排查时记录过的「512KB 档消息退化为语法错误」现象；本次 CI Linux
+    //      runner 命中的即此形态——进程未崩、正常返回 Err，恰是 UAF 修复生效的表现）。
+    // 故消息断言接受两种形态；核心回归断言不变：Err + OOM 后引擎仍可用（UAF 回归本身，
+    // 旧 quickjs-ng 0.8 在此处会进程级 SIGSEGV）。
     #[test]
     fn test_sandbox_memory_limit_oom_backtrace_regression() {
         // 400KB 上限 + 十万次循环每次 push ~9KB 数组：约前 20~30 次迭代必然触顶 OOM
@@ -1026,10 +1037,14 @@ mod quickjs_tests {
             result.is_err(),
             "400KB 上限下原崩溃配方应 OOM 返回 Err，got: {result:?}"
         );
+        // 消息断言接受两种合法 OOM 形态（见上方注释）：运行期 out-of-memory，
+        // 或编译期 OOM 退化的「语法错误」（中英文错误面各一）。
         let msg = result.unwrap_err().to_string().to_lowercase();
         assert!(
-            msg.contains("out of memory"),
-            "期望 out-of-memory 错误，实际: {msg}"
+            msg.contains("out of memory")
+                || msg.contains("syntax error")
+                || msg.contains("语法错误"),
+            "期望干净的 OOM 错误（out-of-memory 或编译期 OOM 退化的语法错误），实际: {msg}"
         );
         // UAF 回归核心断言：进程未崩，OOM 之后引擎仍可正常执行
         match engine.eval("1 + 1") {
