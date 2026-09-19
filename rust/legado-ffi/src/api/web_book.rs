@@ -473,10 +473,22 @@ fn book_binding_expr(
 ///
 /// **生命周期**：进程级（`GLOBAL_VARIABLES`，进程重启即失——降级项，未做
 /// 详情期 DB 持久化；详情期写入经 [`WebBookInfo`] 合并走既有换源 DB 路径
-/// 可跨进程，见 `parse_book_info_from_body`）。**跨流程可见性**：同
-/// `bookUrl` 的详情 → 目录 → 正文 / 二次详情 / 换源各阶段，每次构造
-/// `book` 绑定都经本函数读回并合并，同一书籍流程内后续规则/请求能看到
-/// 前面阶段的写入；跨书以 `bookUrl` 隔离，不串读。**降级说明**：读取
+/// 可跨进程，见 `parse_book_info_from_body`）。
+///
+/// **可见性**（P2-15 修正，此前「同一书籍流程内后续规则/请求能看到前面
+/// 阶段的写入」表述不准确——本函数只作用于**绑定构造期**，同阶段同
+/// 字面量的规则之间不经本函数）：
+/// 1. **跨阶段（本函数职责）**：同 `bookUrl` 的详情 → 目录 → 正文 /
+///    二次详情 / 换源各阶段，每次**新构造** `book` 绑定都经本函数读回
+///    并合并，后续阶段的绑定初值含前面阶段的写入；
+/// 2. **同阶段跨规则**（P2-15，不经本函数）：同阶段规则 B 的绑定字面量
+///    是构造时点快照，规则 A 在构造后的写入不经本函数可见——由 IIFE
+///    `getVariable` 经 `__lgBookVarGet` 桥回读 store 兜底（见
+///    [`BOOK_BINDING_IIFE`] 注释），以及 `java.get`/`@get` 经
+///    `get_flow_variable` 链尾 bookVar 兜底（flow scope = 本书 bookUrl
+///    时）；
+///
+/// 跨书以 `bookUrl` 隔离，不串读。**降级说明**：读取
 /// 失败（store 异常等）三路全降级为「无 overlay」，绑定按入参初值 +
 /// meta.variable 构造，不阻断规则求值。
 fn book_write_overlays(book_url: &str) -> (HashMap<String, String>, Option<i32>, Option<bool>) {
@@ -546,7 +558,18 @@ fn merge_book_variable_json(
 /// 两个 setter 在 `b.bookUrl` 非空时经 `hb` 探测 `java.__lgBook*` 桥
 /// 写 [`variable_store`]（java-only 挂载；非 QuickJS 引擎探测为 null →
 /// 静默退化仅改本地副本，等价改造前行为，不抛错）。
-const BOOK_BINDING_IIFE: &str = r#"(function(){var _type=__TYPE__,_rev=__REVERSE_TOC__,_var=__VARIABLE__;function hb(n){try{if(typeof java!=='undefined'&&java&&typeof java[n]==='function'){return java[n];}}catch(e){}return null;}var b={name:__NAME__,author:__AUTHOR__,bookUrl:__BOOK_URL__,tocUrl:__TOC_URL__,lastChapter:__LAST__,variable:_var,totalChapterNum:__TOTAL__};b.getVariable=function(k){var m=null;try{if(b.variable){m=JSON.parse(b.variable)||{};}}catch(e){m=null;}if(!m){return '';}var v=m[k];return (v===undefined||v===null)?'':String(v);};b.putVariable=function(k,v){var m=null;try{if(b.variable){m=JSON.parse(b.variable)||{};}}catch(e){m=null;}if(m===null){m={};}var del=(v===null||v===undefined);if(del){delete m[k];}else{m[k]=(typeof v==='string')?v:JSON.stringify(v);}b.variable=JSON.stringify(m);if(b.bookUrl){var f=hb(del?'__lgBookVarDel':'__lgBookVarSet');if(f){if(del){f(b.bookUrl,k);}else{f(b.bookUrl,k,m[k]);}}}return true;};b.putCustomVariable=function(v){return b.putVariable('custom',v);};b.getCustomVariable=function(){return b.getVariable('custom');};Object.defineProperty(b,'type',{get:function(){return _type;},set:function(t){_type=t;if(b.bookUrl){var f=hb('__lgBookSetType');if(f){f(b.bookUrl,String(t));}}},configurable:true,enumerable:true});Object.defineProperty(b,'reverseToc',{get:function(){return _rev;},set:function(f){_rev=!!f;if(b.bookUrl){var h=hb('__lgBookSetReverseToc');if(h){h(b.bookUrl,String(_rev));}}},configurable:true,enumerable:true});b.setType=function(t){b.type=t;return true;};b.setReverseToc=function(f){b.reverseToc=f;return true;};return b;})()"#;
+///
+/// 【P2-15】`getVariable` 本地字面量未命中（undefined/null/''——空值语义
+/// 与 P3-a 的 `java.get` 统一：本地空串视为未命中）时，经 `hb` 探测
+/// `java.__lgBookVarGet` 桥回读 [`variable_store`] 的
+/// `bookVar::{b.bookUrl}::{k}` 兜底：同阶段其他规则在本绑定**构造后**
+/// 写入的值由此可见（闭合同阶段跨规则读路径；上游对应同书 `Book` 活
+/// 对象的 `variable` map）。**边界**：字面量 `b.variable` 本身仍是构造
+/// 期快照，不被其他规则的写入反向改写——直接读 `book.variable` 原始
+/// JSON 看不到 store 新值，仅 `getVariable`/`java.get`/`@get` 读路径
+/// 可见；桥缺失（非 QuickJS 引擎）时 `hb` 探测为 null，回退改造前
+/// 纯本地字面量行为（不抛错）。
+const BOOK_BINDING_IIFE: &str = r#"(function(){var _type=__TYPE__,_rev=__REVERSE_TOC__,_var=__VARIABLE__;function hb(n){try{if(typeof java!=='undefined'&&java&&typeof java[n]==='function'){return java[n];}}catch(e){}return null;}var b={name:__NAME__,author:__AUTHOR__,bookUrl:__BOOK_URL__,tocUrl:__TOC_URL__,lastChapter:__LAST__,variable:_var,totalChapterNum:__TOTAL__};b.getVariable=function(k){var m=null;try{if(b.variable){m=JSON.parse(b.variable)||{};}}catch(e){m=null;}if(!m){m={};}var v=m[k];if(v===undefined||v===null||v===''){if(b.bookUrl){var f=hb('__lgBookVarGet');if(f){var g=String(f(b.bookUrl,String(k)));if(g){return g;}}}return '';}return String(v);};b.putVariable=function(k,v){var m=null;try{if(b.variable){m=JSON.parse(b.variable)||{};}}catch(e){m=null;}if(m===null){m={};}var del=(v===null||v===undefined);if(del){delete m[k];}else{m[k]=(typeof v==='string')?v:JSON.stringify(v);}b.variable=JSON.stringify(m);if(b.bookUrl){var f=hb(del?'__lgBookVarDel':'__lgBookVarSet');if(f){if(del){f(b.bookUrl,k);}else{f(b.bookUrl,k,m[k]);}}}return true;};b.putCustomVariable=function(v){return b.putVariable('custom',v);};b.getCustomVariable=function(){return b.getVariable('custom');};Object.defineProperty(b,'type',{get:function(){return _type;},set:function(t){_type=t;if(b.bookUrl){var f=hb('__lgBookSetType');if(f){f(b.bookUrl,String(t));}}},configurable:true,enumerable:true});Object.defineProperty(b,'reverseToc',{get:function(){return _rev;},set:function(f){_rev=!!f;if(b.bookUrl){var h=hb('__lgBookSetReverseToc');if(h){h(b.bookUrl,String(_rev));}}},configurable:true,enumerable:true});b.setType=function(t){b.type=t;return true;};b.setReverseToc=function(f){b.reverseToc=f;return true;};return b;})()"#;
 
 fn iife_book_expr(meta: &BookMeta, book_type: i32, total_chapter_num: i32) -> String {
     let json_str = |s: &str| serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string());
@@ -5766,6 +5789,348 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
         assert_eq!(value["a"], "new");
         assert_eq!(value["b"], "2");
         assert_eq!(value["c"], "3");
+    }
+
+    // ── P2-15：`java.get`/`@get` ← `bookVar` 打通 + 同阶段跨规则可见性 ──
+
+    /// P2-15 核心回归（就去看网语料形态端到端闭环）：正文规则
+    /// `book.putVariable('序','3')` 写入 bookVar 层后，**同流程后续**
+    /// 规则（新 analyzer、同绑定表达式——绑定字面量构造于写入之前、不含
+    /// `序`，且流程内无会话层/裸键 `序`）`java.get('序')` 与规则
+    /// `@get` 读取器均读回 `'3'`。
+    ///
+    /// 前后对照（测试内以存储层为 oracle 锁定）：
+    /// - **修复前**：`get_flow_variable` 链 = 会话层 → 裸键，bookVar 层
+    ///   不可见；本夹具中会话键 `lgflow::{bookUrl}序` 与裸键 `序` 均
+    ///   不存在（测试显式断言）→ `java.get('序')` 恒空（就去看网正文
+    ///   `java.get("序")` 断链、闭环不成立的偏差形态）；
+    /// - **修复后**：链尾追加 `bookVar::{scope}::{key}` 兜底 → 读回 `'3'`。
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_p215_bookvar_closed_loop_via_java_get() {
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let book_url = "https://p215-loop.example.com/b/loop";
+        let meta = BookMeta {
+            name: "就去看网形态测试书".into(),
+            author: String::new(),
+            book_url: book_url.into(),
+            toc_url: String::new(),
+            last_chapter: String::new(),
+            variable: None,
+        };
+        // 生产入口：flow scope = 本书 bookUrl + 注册全局兜底读者
+        begin_book_flow(book_url);
+
+        // 绑定在写入**之前**构造（字面量不含「序」——模拟上一章正文规则
+        // 先构造绑定、后写入的时间序）
+        let binding = book_binding_expr(Some(&meta), "", 5, true, 8);
+
+        // 规则 A（本章正文 JS）：book.putVariable 写 bookVar 层
+        crate::js_executor::construct_analyzer_with_js_lib(
+            "<html><body>正文</body></html>".to_string(),
+            book_url.to_string(),
+            "",
+            None,
+        )
+        .with_js_binding("book", &binding)
+        .get_string("@js:book.putVariable('序','3');book.putVariable('元','meta-v');'w'")
+        .expect("规则 A 写入应可执行");
+        assert_eq!(
+            variable_store::get_variable(&variable_store::book_var_key(book_url, "序")).ok(),
+            Some(Some("3".to_string())),
+            "写入应落 bookVar 层"
+        );
+        // oracle：会话层与裸键均无「序」——修复前读链（会话→裸）在此
+        // 必然返回空；修复后只有链尾 bookVar 兜底能产出值
+        assert_eq!(
+            variable_store::get_variable("序").ok().flatten(),
+            None,
+            "裸键「序」不存在（排除裸层来源）"
+        );
+        assert_eq!(
+            variable_store::get_variable(&format!("lgflow:{book_url}\u{1}序"))
+                .ok()
+                .flatten(),
+            None,
+            "会话键「序」不存在（排除会话层来源）"
+        );
+
+        // 规则 B（同流程新 analyzer、同绑定表达式）：java.get 读回
+        let read_back = crate::js_executor::construct_analyzer_with_js_lib(
+            "<html><body>正文</body></html>".to_string(),
+            book_url.to_string(),
+            "",
+            None,
+        )
+        .with_js_binding("book", &binding)
+        .get_string("@js:java.get('序')+'|'+java.get('元')")
+        .expect("规则 B 读取应可执行");
+        assert_eq!(
+            read_back, "3|meta-v",
+            "修复后：java.get 经 bookVar 兜底读回 book.putVariable 写入（闭环）"
+        );
+        // 规则级 `@get` 读取器路径（AnalyzeRule::get 全局兜底，同一函数）
+        let rule_read = crate::js_executor::construct_analyzer_with_js_lib(
+            "<html><body>正文</body></html>".to_string(),
+            book_url.to_string(),
+            "",
+            None,
+        )
+        .get("序");
+        assert_eq!(rule_read, "3", "规则 @get 读取器应同样读回 bookVar 值");
+
+        // 收尾：清 bookVar 键 + 复位 scope（不动持久键）
+        for key in [
+            variable_store::book_var_key(book_url, "序"),
+            variable_store::book_var_key(book_url, "元"),
+        ] {
+            let _ = variable_store::remove_variable(&key);
+        }
+        variable_store::clear_flow_scope().expect("复位 flow scope");
+    }
+
+    /// P2-15 跨书隔离：两本书（两个 bookUrl）写同名 key，书 A 的
+    /// bookVar 在书 B 流程内不可见（兜底键 = 当前 flow scope，天然按
+    /// 本书 bookUrl 命名空间隔离）；切回 A 仍读 A 的值（bookVar 键属
+    /// 持久裸层，换书切 scope 不清空、也不互串）。
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_p215_bookvar_cross_book_isolation() {
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let book_a = "https://p215-xbook.example.com/b/iso-a";
+        let book_b = "https://p215-xbook.example.com/b/iso-b";
+        let meta = |url: &str| BookMeta {
+            name: "隔离测试书".into(),
+            author: String::new(),
+            book_url: url.into(),
+            toc_url: String::new(),
+            last_chapter: String::new(),
+            variable: None,
+        };
+        let binding_a = book_binding_expr(Some(&meta(book_a)), "", 5, true, 8);
+        let binding_b = book_binding_expr(Some(&meta(book_b)), "", 5, true, 8);
+
+        // 书 A 流程：写 A 的 seq
+        begin_book_flow(book_a);
+        crate::js_executor::construct_analyzer_with_js_lib(
+            "<html><body>A</body></html>".to_string(),
+            book_a.to_string(),
+            "",
+            None,
+        )
+        .with_js_binding("book", &binding_a)
+        .get_string("@js:book.putVariable('seq','a-seq');'w'")
+        .expect("书 A 写入应可执行");
+        assert_eq!(
+            crate::js_executor::construct_analyzer_with_js_lib(
+                "<html><body>A</body></html>".to_string(),
+                book_a.to_string(),
+                "",
+                None,
+            )
+            .with_js_binding("book", &binding_a)
+            .get_string("@js:java.get('seq')")
+            .expect("书 A 读回应可执行"),
+            "a-seq"
+        );
+
+        // 换书 B：A 的 bookVar 不可见；B 写自己的 seq 后只读 B 的值
+        begin_book_flow(book_b);
+        assert_eq!(
+            crate::js_executor::construct_analyzer_with_js_lib(
+                "<html><body>B</body></html>".to_string(),
+                book_b.to_string(),
+                "",
+                None,
+            )
+            .with_js_binding("book", &binding_b)
+            .get_string("@js:java.get('seq')")
+            .expect("书 B 读回应可执行"),
+            "",
+            "书 B 流程内不得读回书 A 的 bookVar（跨书隔离）"
+        );
+        crate::js_executor::construct_analyzer_with_js_lib(
+            "<html><body>B</body></html>".to_string(),
+            book_b.to_string(),
+            "",
+            None,
+        )
+        .with_js_binding("book", &binding_b)
+        .get_string("@js:book.putVariable('seq','b-seq');'w'")
+        .expect("书 B 写入应可执行");
+        assert_eq!(
+            crate::js_executor::construct_analyzer_with_js_lib(
+                "<html><body>B</body></html>".to_string(),
+                book_b.to_string(),
+                "",
+                None,
+            )
+            .with_js_binding("book", &binding_b)
+            .get_string("@js:java.get('seq')")
+            .expect("书 B 读回应可执行"),
+            "b-seq",
+            "书 B 流程内只读 B 自己的 bookVar"
+        );
+
+        // 切回 A：仍读 A 的值（持久层不互清）
+        begin_book_flow(book_a);
+        assert_eq!(
+            crate::js_executor::construct_analyzer_with_js_lib(
+                "<html><body>A</body></html>".to_string(),
+                book_a.to_string(),
+                "",
+                None,
+            )
+            .with_js_binding("book", &binding_a)
+            .get_string("@js:java.get('seq')")
+            .expect("书 A 读回应可执行"),
+            "a-seq",
+            "切回书 A 后仍读 A 的 bookVar（不互清、不串读）"
+        );
+
+        for key in [
+            variable_store::book_var_key(book_a, "seq"),
+            variable_store::book_var_key(book_b, "seq"),
+        ] {
+            let _ = variable_store::remove_variable(&key);
+        }
+        variable_store::clear_flow_scope().expect("复位 flow scope");
+    }
+
+    /// P2-15 优先级不回归：analyzer 本地变量（`AnalyzeRule::put`/
+    /// `@put` 层）压过 bookVar 兜底；本地清空后兜底可达。JS 侧
+    /// `java.get` 的 `__lgVars` 本地快照同语义（P3-a：本地空值视为
+    /// 未命中 fall through）。
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_p215_bookvar_priority_no_regression() {
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let book_url = "https://p215-prio.example.com/b/prio";
+        begin_book_flow(book_url);
+        // bookVar 层预置（等价该书前期 book.putVariable 写入）
+        variable_store::set_variable(&variable_store::book_var_key(book_url, "k"), "book-v")
+            .expect("预置 bookVar 键");
+
+        // 本地变量压过 bookVar 兜底（既有优先级不变）
+        let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
+            "<html><body>x</body></html>".to_string(),
+            book_url.to_string(),
+            "",
+            None,
+        );
+        analyzer.put("k", "local-v");
+        assert_eq!(
+            analyzer.get("k"),
+            "local-v",
+            "本地非空变量必须压过 bookVar 兜底"
+        );
+        // JS 侧同语义：__lgVars 本地快照命中（k=local-v 非空）
+        assert_eq!(
+            analyzer
+                .get_string("@js:java.get('k')")
+                .expect("JS 读取应可执行"),
+            "local-v",
+            "JS java.get 本地快照应压过 store"
+        );
+
+        // 本地清空后：兜底链落 bookVar（@get 与 java.get 同值）
+        analyzer.clear_variables();
+        assert_eq!(
+            analyzer.get("k"),
+            "book-v",
+            "本地清空后 @get 兜底应读回 bookVar 值"
+        );
+        assert_eq!(
+            analyzer
+                .get_string("@js:java.get('k')")
+                .expect("JS 读取应可执行"),
+            "book-v",
+            "本地清空后 java.get 应经 store 兜底读回 bookVar 值"
+        );
+
+        let _ = variable_store::remove_variable(&variable_store::book_var_key(book_url, "k"));
+        variable_store::clear_flow_scope().expect("复位 flow scope");
+    }
+
+    /// P2-15 同阶段跨规则：同阶段规则 B 的 `book` 绑定字面量是**构造
+    /// 时点快照**（规则 A 在构造后的 `book.putVariable` 写入不在字面量
+    /// 内），`book.getVariable` 经 `__lgBookVarGet` 桥回读 store 兜底
+    /// → 可见规则 A 的写入（对齐上游同书 `Book` 活对象语义）；未写键
+    /// 返回空串。
+    ///
+    /// **边界锁定**：字面量 `book.variable` 原样 JSON 不被反向改写
+    /// （仍为构造时点值）——store 新值只对 `getVariable`/`java.get`/
+    /// `@get` 读路径可见，直接读原始 `book.variable` 看不到（无静默
+    /// 跨值改写）。
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_p215_same_stage_cross_rule_get_variable_fallback() {
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let book_url = "https://p215-xrule.example.com/b/xrule";
+        let meta = BookMeta {
+            name: "跨规则测试书".into(),
+            author: String::new(),
+            book_url: book_url.into(),
+            toc_url: String::new(),
+            last_chapter: String::new(),
+            variable: None,
+        };
+        begin_book_flow(book_url);
+        // 绑定在**任何写入之前**构造（字面量 variable 为 null 快照）
+        let binding = book_binding_expr(Some(&meta), "", 5, true, 8);
+
+        // 规则 A：写入（IIFE 本地 m 与 store 双写；store 键为持久层）
+        crate::js_executor::construct_analyzer_with_js_lib(
+            "<html><body>x</body></html>".to_string(),
+            book_url.to_string(),
+            "",
+            None,
+        )
+        .with_js_binding("book", &binding)
+        .get_string("@js:book.putVariable('k','v-a');'w'")
+        .expect("规则 A 写入应可执行");
+
+        // 规则 B：同阶段新实例（同绑定表达式，字面量仍为构造时点快照，
+        // 不含 k）→ getVariable 经 store 兜底读回规则 A 的写入
+        let b_out = crate::js_executor::construct_analyzer_with_js_lib(
+            "<html><body>x</body></html>".to_string(),
+            book_url.to_string(),
+            "",
+            None,
+        )
+        .with_js_binding("book", &binding)
+        .get_string("@js:book.getVariable('k')+'|'+book.getVariable('missing')")
+        .expect("规则 B 读取应可执行");
+        assert_eq!(
+            b_out, "v-a|",
+            "同阶段跨规则：规则 B 经 __lgBookVarGet 兜底读回规则 A 写入；未写键空串"
+        );
+
+        // 边界锁定：原始字面量不被反向改写（构造时点 variable 为 null）
+        let literal = crate::js_executor::construct_analyzer_with_js_lib(
+            "<html><body>x</body></html>".to_string(),
+            book_url.to_string(),
+            "",
+            None,
+        )
+        .with_js_binding("book", &binding)
+        .get_string("@js:String(book.variable)")
+        .expect("字面量探测应可执行");
+        assert!(
+            !literal.contains("v-a"),
+            "字面量 book.variable 不得被 store 写入反向改写（实际 {literal}）"
+        );
+
+        let _ = variable_store::remove_variable(&variable_store::book_var_key(book_url, "k"));
+        variable_store::clear_flow_scope().expect("复位 flow scope");
     }
 
     /// P2-9 ② 详情阶段（ruleBookInfo.init）`book.getVariable` 补前/补后对比

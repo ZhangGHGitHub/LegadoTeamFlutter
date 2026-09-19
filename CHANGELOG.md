@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.293] - 2026-09-19
+
+### Fixed
+- [Rust] **打通 `java.get`/`@get` ↔ `book.putVariable`（P2-15 第 1 条）**：上一批把 `book` 的写入落到 `bookVar::{bookUrl}::{k}` 后，脚本里用 `java.get(k)`/规则 `@get:{k}` 仍读不到（三套命名空间不通）。现于 `get_flow_variable` 读链**尾部**追加 bookVar 兜底（会话层 → 裸键 → bookVar），键由**当前流程 scope**（书籍流程各入口即本书 bookUrl）构造 → 天然按书隔离、不可能跨书串读；`java.get`（解析器前言桥）与 `@get`（FFI 读者）汇聚到同一函数，单点修复覆盖两条读路径（优先级零回归，有回归测试锁定）
+  - **`book.getVariable` 同阶段跨规则可见**：IIFE 在本地字面量未命中时经新增 `__lgBookVarGet` 回读 store；`book.variable` 原始 JSON 仍是构造时点快照（该边界由 `String(book.variable)` 断言锁定）
+  - 源级效果：语料唯一的 `book.putVariable` 使用者「就去看网」（写 `序/元/除/嗅/兜/查` 后全部经 `java.get` 回读）由此**闭环**——测试以存储层为 oracle，证明取到的值只能来自新兜底
+  - 同步修正 3 处与实现不符的注释（`quickjs_impl.rs` / `web_book.rs` / `variable_store.rs`）
+
+### Test
+- 两档均 0 失败：`cargo test --workspace`（ffi 372 / js 254）与 `cargo test --workspace --features legado-ffi/quickjs`（**ffi 453 / js 562**）
+- **两档 clippy 均 exit 0**（`--workspace -- -D warnings` 与 `--workspace --features legado-ffi/quickjs -- -D warnings`——上一批漏了后者导致 CI 红，本批已固化）；`cargo fmt --check` 0
+- 新增 9 个测试：读链三层优先级/跨书隔离/无 scope 不挂兜底/桥往返/同阶段跨规则/就去看网闭环/字面量快照边界
+
+### Note
+- 残余边界（如实登记）：`pre_update` 阶段 scope 用书籍页地址（换源后与稳定 bookUrl 不一致）→ 该阶段兜底优雅 miss；bookVar 仍**仅进程级**（重启丢失）；`putVariable(k,null)` 无墓碑；两书真并行共享单 scope 槽（既有项）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.292] - 2026-09-19
 
 ### Fixed

@@ -161,10 +161,26 @@ pub fn put_flow_variable(key: &str, value: &str) -> Result<(), String> {
 
 /// 读会话变量（`java.__lgStoreGet` 桥 / 解析器 `@get` 全局兜底读者）
 ///
-/// - scope 已设置 → 先读 `lgflow::{scope}{key}`（本流程会话层），未命中
-///   回退裸键（持久层：`cache.*`/源上下文裸 `java.put` 等，上游
-///   CacheManager 语义，跨书存活——P1-1 的持久键修复同一机制）；
-/// - 无 scope → 读裸键（与 P2-9 ③ 引入前一致）。
+/// 读取优先级（**既有链路逐层不变**，bookVar 兜底仅追加于链尾）：
+/// 1. scope 已设置 → `lgflow::{scope}{key}`（本流程会话层）；
+/// 2. 未命中 → 裸键 `{key}`（持久层：`cache.*`/源上下文裸 `java.put`
+///    等，上游 CacheManager 语义，跨书存活——P1-1 的持久键修复同一机制）；
+/// 3. 【P2-15】仍未命中且 scope 已设置 → `bookVar::{scope}::{key}`
+///    （book 绑定写路径层，见下）；
+/// 4. 无 scope → 仅读裸键（与 P2-9 ③ 引入前一致，bookVar 兜底不生效）。
+///
+/// 第 3 步（P2-15 打通 `java.get`/`@get` ← `bookVar`）：`book.putVariable`
+/// 等写入落在 `bookVar::{bookUrl}::{key}` 裸键（进程级、跨书存活）。上游
+/// `AnalyzeRule.get()` 链是 `chapter → book → ruleData → source`——book
+/// 变量本就对同书 `java.get` 可见；此前本函数只有会话层与裸键两层，
+/// `bookVar` 层对 `java.get`/`@get` 完全不可见（就去看网语料：正文规则
+/// `book.putVariable("序",…)` 后 `java.get("序")` 恒空，闭环断裂）。
+/// 兜底键取**当前 flow scope**（书籍流程各入口经 `begin_book_flow` 写入，
+/// 详情/目录/正文链上 scope 即该书 bookUrl）→ 天然按本书 bookUrl 命名
+/// 空间隔离：只读本流程那本书的 bookVar，不允许跨书串读；search/explore
+/// 入口的 scope（`search:{url}`/`explore:{url}`）下从未有过
+/// `bookVar::search:{url}::` 键写入，兜底恒未命中（行为不变）；无 scope
+/// 场景不挂兜底（保持 P2-9 ③ 引入前行为）。
 ///
 /// 锁失败/未命中一律返回 None（读者闭包不向 FFI 传播错误）。
 pub fn get_flow_variable(key: &str) -> Option<String> {
@@ -173,7 +189,11 @@ pub fn get_flow_variable(key: &str) -> Option<String> {
             if let Some(v) = get_variable(&flow_key(&scope, key)).ok().flatten() {
                 return Some(v);
             }
-            get_variable(key).ok().flatten()
+            if let Some(v) = get_variable(key).ok().flatten() {
+                return Some(v);
+            }
+            // P2-15：bookVar 兜底（链尾，键 = 当前 scope 的本书 bookVar 键）
+            get_variable(&book_var_key(&scope, key)).ok().flatten()
         }
         None => get_variable(key).ok().flatten(),
     }
@@ -198,8 +218,19 @@ pub fn get_flow_variable(key: &str) -> Option<String> {
 /// 生命周期：**进程级**（应用重启即失——降级项，未直接落 DB `books.variable`；
 /// 详情解析期 FFI 会把覆盖层并入 `WebBookInfo.variable` 走既有 DB 合并路径，
 /// 见 web_book.rs `parse_book_info_from_body` 注释）。
-/// 跨流程可见性：同一 bookUrl 的详情→目录→正文链、第二次详情、换源刷新均
-/// 可见（绑定构造期重新合并）；bookUrl 命名空间隔离，跨书不串读。
+///
+/// 可见性（P2-15 修正，此前「后续规则/请求均可见」表述不准确）：
+/// - **`book` 绑定构造期**（FFI `iife_book_expr` 经
+///   `web_book::book_write_overlays` 读回合并）：同 bookUrl 的详情→目录→
+///   正文链、第二次详情、换源刷新，各阶段**新构造**的绑定初值含此前写入；
+///   但**同一次构造的绑定字面量是构造期快照**——同阶段后续规则的新
+///   IIFE 实例只看到构造时点的值，其他规则在构造后对 store 的写入不会
+///   反向改写已有字面量（P2-15 由 IIFE `getVariable` 的 `__lgBookVarGet`
+///   store 兜底补齐同阶段跨规则读路径，见 web_book.rs IIFE 注释）；
+/// - **`java.get`/`@get`**（P2-15）：经 [`get_flow_variable`] 链尾 bookVar
+///   兜底，同书同流程（flow scope = 该书 bookUrl 的详情/目录/正文链）内
+///   `book.putVariable` 写入对后续 `java.get`/`@get` 可见；
+/// - 跨书以 bookUrl 命名空间隔离，不串读。
 pub fn book_var_key(book_url: &str, key: &str) -> String {
     format!("bookVar::{book_url}::{key}")
 }
@@ -468,5 +499,82 @@ mod tests {
         );
         // 裸键：不命中 flow scope 前缀，换书清 scope 时不受影响（P1-1）
         assert!(!book_var_key(book_url, "k").starts_with(FLOW_KEY_PREFIX));
+    }
+
+    // ── P2-15：get_flow_variable 的 bookVar 链尾兜底 ─────────────────────
+
+    /// 优先级链固化：会话层（scoped）> 裸键 > bookVar（仅 scope 已设置时
+    /// 挂兜底）；逐层撤掉上层后兜底才可达，三层皆空 → None。
+    #[test]
+    fn test_p215_flow_get_bookvar_fallback_is_last_resort() {
+        let _lock = lock_variables();
+        let _guard = StoreGuard::new();
+        let book_url = "https://p215-priority.example.com/b/priority";
+        set_flow_scope(book_url).unwrap();
+        let k = "k";
+        // 三层同键、不同值（会话层经 put_flow_variable 写 scoped 键）
+        set_variable(&book_var_key(book_url, k), "bookvar-v").unwrap();
+        set_variable(k, "bare-v").unwrap();
+        put_flow_variable(k, "session-v").unwrap();
+        // 1) 会话层优先（既有行为不回归）
+        assert_eq!(get_flow_variable(k), Some("session-v".into()));
+        // 2) 撤会话层 → 裸键优先
+        let _ = remove_variable(&flow_key(book_url, k));
+        assert_eq!(get_flow_variable(k), Some("bare-v".into()));
+        // 3) 撤裸键 → bookVar 兜底可达（P2-15 新行为）
+        let _ = remove_variable(k);
+        assert_eq!(get_flow_variable(k), Some("bookvar-v".into()));
+        // 4) 三层皆空 → None
+        let _ = remove_variable(&book_var_key(book_url, k));
+        assert_eq!(get_flow_variable(k), None);
+        clear_flow_scope().unwrap();
+    }
+
+    /// 跨书隔离：bookVar 兜底键 = 当前 scope（本书 bookUrl）→ A 书的
+    /// bookVar 在 B 书流程内不可见；bookVar 键属裸键持久层，换书切
+    /// scope 不清空（A 切回后仍可读回 A 的值）。
+    #[test]
+    fn test_p215_bookvar_fallback_cross_book_isolation() {
+        let _lock = lock_variables();
+        let _guard = StoreGuard::new();
+        let book_a = "https://p215-xbook.example.com/b/a";
+        let book_b = "https://p215-xbook.example.com/b/b";
+        // 两本书各自写入同名 key（各自 bookVar 键，裸键层）
+        set_variable(&book_var_key(book_a, "seq"), "a-seq").unwrap();
+        set_variable(&book_var_key(book_b, "seq"), "b-seq").unwrap();
+        // A 书流程内：只读 A 的 bookVar
+        set_flow_scope(book_a).unwrap();
+        assert_eq!(get_flow_variable("seq"), Some("a-seq".into()));
+        // 换书 B：A 的 bookVar 不可见（scope 切走，兜底键变为 B 的键）
+        set_flow_scope(book_b).unwrap();
+        assert_eq!(get_flow_variable("seq"), Some("b-seq".into()));
+        // bookVar 键持久：切回 A 仍能读回 A 的值（跨书不串读、不互清）
+        set_flow_scope(book_a).unwrap();
+        assert_eq!(get_flow_variable("seq"), Some("a-seq".into()));
+        for key in [book_var_key(book_a, "seq"), book_var_key(book_b, "seq")] {
+            let _ = remove_variable(&key);
+        }
+        clear_flow_scope().unwrap();
+    }
+
+    /// 无 scope（未走书籍流程入口）：不挂 bookVar 兜底——仅 bookVar 键
+    /// 存在的 key 读不到（保持 P2-9 ③ 引入前行为，防止无流程上下文的
+    /// 直用引擎意外命中他书 bookVar 残留键）。
+    #[test]
+    fn test_p215_bookvar_fallback_absent_without_scope() {
+        let _lock = lock_variables();
+        let _guard = StoreGuard::new();
+        assert_eq!(current_flow_scope(), None, "前置：无 scope");
+        set_variable(
+            &book_var_key("https://p215-noscope.example.com/b/x", "k"),
+            "bv",
+        )
+        .unwrap();
+        assert_eq!(get_flow_variable("k"), None, "无 scope 不挂 bookVar 兜底");
+        // 对照：scope 设为该 bookUrl 后兜底生效
+        set_flow_scope("https://p215-noscope.example.com/b/x").unwrap();
+        assert_eq!(get_flow_variable("k"), Some("bv".into()));
+        let _ = remove_variable(&book_var_key("https://p215-noscope.example.com/b/x", "k"));
+        clear_flow_scope().unwrap();
     }
 }

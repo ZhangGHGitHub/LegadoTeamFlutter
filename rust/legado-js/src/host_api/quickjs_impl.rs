@@ -1411,9 +1411,10 @@ fn register_variable_apis<'js>(
 }
 
 /// P2-11 ①：`book` 绑定写路径宿主桥（java-only，不上裸全局）
+/// P2-15：追加读桥 `__lgBookVarGet`（同阶段跨规则可见性的读路径）
 ///
 /// FFI 侧 `web_book.rs` 的 `book` 绑定 IIFE 中，`book.putVariable` /
-/// `book.type=` / `book.setReverseToc` 等写操作经本模块 4 个桥落到
+/// `book.type=` / `book.setReverseToc` 等写操作经本模块的桥落到
 /// [`variable_store`] 的**裸键持久层**（键格式由
 /// [`variable_store::book_var_key`] / [`variable_store::book_type_key`] /
 /// [`variable_store::book_reverse_toc_key`] 构造，两侧共用防漂移）：
@@ -1423,16 +1424,31 @@ fn register_variable_apis<'js>(
 /// - `__lgBookSetType(bookUrl, typeStr)` → `bookType::{bookUrl}`
 ///   （语料 `book.type=8/32/64` 切小说/音频/漫画模式的落点）
 /// - `__lgBookSetReverseToc(bookUrl, flagStr)` → `bookReverseToc::{bookUrl}`
+/// - 【P2-15】`__lgBookVarGet(bookUrl, key)` → 读 `bookVar::{bookUrl}::{key}`，
+///   未命中返回 `""`。供 IIFE `book.getVariable` 在本地字面量（构造期
+///   快照）未命中时兜底，闭合**同阶段跨规则**读路径：同阶段规则 B 的
+///   新 IIFE 实例字面量是构造时点快照（不含规则 A 在构造后的写入），
+///   经本桥回读 store 才可见（对齐上游同书 `Book.variable` 活对象语义）。
+///   bookUrl 由 IIFE 以 `b.bookUrl`（本书）传入，跨书不串读。
 ///
 /// **生命周期**：进程级（`GLOBAL_VARIABLES`，进程重启即失——降级项，
-/// 未做 DB 持久化）；**跨流程可见性**：同 `bookUrl` 的详情 → 目录 →
-/// 正文 / 二次详情 / 换源各阶段的规则与请求，在构造 `book` 绑定时
-/// （`web_book::book_write_overlays`）读取本层并合并，因此同书后续
-/// 规则/请求能看到前面写入的值；跨书以 `bookUrl` 隔离，不串读。
+/// 未做 DB 持久化）。**可见性**（P2-15 修正，此前「同书后续规则/请求
+/// 均能看到」表述不准确——同阶段**同字面量**只含构造时点值）：
+/// 1. **绑定构造期**：同 `bookUrl` 的详情 → 目录 → 正文 / 二次详情 /
+///    换源各阶段**新构造**的绑定，经 `web_book::book_write_overlays`
+///    读回本层并合并进字面量 → 后续阶段的绑定初值含前面阶段的写入；
+/// 2. **同阶段跨规则**（P2-15）：同阶段规则 B 的新 IIFE 实例经
+///    `__lgBookVarGet` 兜底读 store，对规则 A 在构造后的写入可见；
+/// 3. **`java.get`/`@get`**（P2-15）：经 `variable_store::get_flow_variable`
+///    链尾 bookVar 兜底（flow scope = 本书 bookUrl 时），同书同流程内
+///    可见（就去看网 `book.putVariable` → `java.get` 闭环）。
+///
+/// 跨书以 `bookUrl` 隔离，不串读。
 /// **降级说明**：引擎未注入这些桥（非 QuickJS 引擎 / 旧引擎实例）时
 /// IIFE 内的探测函数 `hb` 返回 null，写操作静默退化为仅改本地副本
-/// （等价改造前行为，不抛错）；桥写入失败（store 锁异常等）同样
-/// `let _ =` 吞掉——写路径永不阻断规则求值。
+/// （等价改造前行为，不抛错）；读桥缺失时 `getVariable` 回退改造前
+/// 的纯本地字面量行为；桥写入失败（store 锁异常等）同样 `let _ =`
+/// 吞掉——写路径永不阻断规则求值。
 #[cfg(feature = "quickjs")]
 fn register_book_binding_bridges<'js>(
     ctx: &rquickjs::Ctx<'js>,
@@ -1456,6 +1472,18 @@ fn register_book_binding_bridges<'js>(
     })
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     java.set("__lgBookVarDel", var_del)
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // P2-15：读桥——IIFE `book.getVariable` 本地字面量未命中时回读本层
+    // （同阶段跨规则可见性；未命中/锁失败返回空串，不抛错）
+    let var_get = rquickjs::Function::new(ctx.clone(), |book_url: String, key: String| -> String {
+        variable_store::get_variable(&variable_store::book_var_key(&book_url, &key))
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+    })
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    java.set("__lgBookVarGet", var_get)
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
     let set_type = rquickjs::Function::new(ctx.clone(), |book_url: String, value: String| {
@@ -3464,6 +3492,91 @@ mod tests {
             "persistent",
             "换 scope 不触碰持久裸键（P1-1）"
         );
+        variable_store::clear_flow_scope().expect("清 scope");
+    }
+
+    /// P2-15：`__lgBookVarGet` 读桥闭环——`__lgBookVarSet` 写入后同
+    /// bookUrl 读回、跨 bookUrl 不串读、未写键返回空串。
+    #[test]
+    fn test_p215_book_var_get_bridge_roundtrip() {
+        use crate::host_api::variable_store;
+        let _lock = variable_store::lock_variables();
+        let _guard = variable_store::StoreGuard::new();
+        let engine = make_engine();
+        let url_a = "https://p215-bridge.example.com/b/bridge-a";
+        let url_b = "https://p215-bridge.example.com/b/bridge-b";
+        engine
+            .eval(&format!(
+                r#"java.__lgBookVarSet("{url_a}", 'k', 'v-a'); 'ok'"#
+            ))
+            .expect("__lgBookVarSet A 应执行成功");
+        assert_eq!(
+            engine
+                .eval(&format!(r#"java.__lgBookVarGet("{url_a}", 'k')"#))
+                .unwrap(),
+            "v-a",
+            "同 bookUrl 读回写入值"
+        );
+        assert_eq!(
+            engine
+                .eval(&format!(r#"java.__lgBookVarGet("{url_b}", 'k')"#))
+                .unwrap(),
+            "",
+            "跨 bookUrl 不串读"
+        );
+        assert_eq!(
+            engine
+                .eval(&format!(r#"java.__lgBookVarGet("{url_a}", 'missing')"#))
+                .unwrap(),
+            "",
+            "未写键返回空串"
+        );
+        // 删除路径（putVariable(k,null) 走 __lgBookVarDel）
+        engine
+            .eval(&format!(r#"java.__lgBookVarDel("{url_a}", 'k'); 'ok'"#))
+            .expect("__lgBookVarDel 应执行成功");
+        assert_eq!(
+            engine
+                .eval(&format!(r#"java.__lgBookVarGet("{url_a}", 'k')"#))
+                .unwrap(),
+            ""
+        );
+    }
+
+    /// P2-15：`__lgStoreGet`（解析器前导 `java.get` 的桥目标，底层
+    /// `get_flow_variable`）在 flow scope = 本书 bookUrl 时对 bookVar 层
+    /// 兜底可见——就去看网 `book.putVariable` → `java.get` 闭环的
+    /// 桥层等价测试（跨规则端到端闭环见 web_book 测试）。
+    #[test]
+    fn test_p215_store_get_falls_back_to_bookvar_in_flow() {
+        use crate::host_api::variable_store;
+        let _lock = variable_store::lock_variables();
+        let _guard = variable_store::StoreGuard::new();
+        let engine = make_engine();
+        let book_url = "https://p215-cloop.example.com/b/loop";
+        variable_store::set_flow_scope(book_url).expect("设 flow scope = bookUrl");
+        // 模拟规则 A：book.putVariable 的宿主桥写入（IIFE 内触发路径）
+        engine
+            .eval(&format!(
+                r#"java.__lgBookVarSet("{book_url}", 'seq', '7'); 'ok'"#
+            ))
+            .expect("__lgBookVarSet 应执行成功");
+        // 模拟规则 B：java.get 的前导覆盖经 __lgStoreGet 读（同流程新 eval）
+        assert_eq!(
+            engine.eval(r#"java.__lgStoreGet('seq')"#).unwrap(),
+            "7",
+            "scope 内 __lgStoreGet 应经 bookVar 兜底读回"
+        );
+        // 优先级不回归：会话层（__lgStorePut 写入的 scoped 键）仍优先于 bookVar
+        engine
+            .eval(r#"java.__lgStorePut('seq', 'session-v'); 'ok'"#)
+            .expect("__lgStorePut 应执行成功");
+        assert_eq!(
+            engine.eval(r#"java.__lgStoreGet('seq')"#).unwrap(),
+            "session-v"
+        );
+        variable_store::remove_variable(&variable_store::book_var_key(book_url, "seq"))
+            .expect("收尾清 bookVar 键");
         variable_store::clear_flow_scope().expect("清 scope");
     }
 
