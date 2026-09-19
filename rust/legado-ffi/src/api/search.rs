@@ -216,6 +216,12 @@ impl legado_core::SourceSearcher for WebSourceSearcher {
 /// `keyword` — 搜索关键词
 /// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；为空则搜索所有启用的书源
 pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<SearchResult>> {
+    // P1-2 入口收口：多源并行搜索（SEARCH_CONCURRENCY 路并发）执行 JS 搜索
+    // 规则（变量桥读写）→ 先切 flow scope。运行级键 "search"（非逐源键）：
+    // 并行各源共享同一 scope 槽，逐源 begin 会在并发中途互清前缀（比旧
+    // 全局表时代更糟）；运行级键下并发各源 begin 同键 no-op，跨源混写
+    // 与旧全局表行为一致（遗留语义），而搜索↔书籍流程互相隔离
+    crate::api::web_book::begin_book_flow("search");
     // 获取待搜索的书源
     let sources = load_search_sources(source_urls_json)?;
     if sources.is_empty() {
@@ -286,6 +292,15 @@ pub fn search_books(keyword: &str, source_urls_json: &str) -> LegadoResult<Vec<S
 /// 在指定（或全部启用）书源中以书名为关键词搜索，返回**首个**
 /// `name` 完全相等且（`author` 为空或 `author` 完全相等）的命中，
 /// 序列化为 SearchBook camelCase JSON。未命中返回错误。
+///
+/// P1-2：本入口**故意不加** `begin_book_flow`——它被 pre_update 钩子
+/// `re_get_book_native` 在书籍流程中途（flow scope 已 = book_url）调用；
+/// 此处切 scope 会中途清掉书籍流程前缀，并切断 reGetBook 精搜写入的
+/// 会话变量对后续 `refresh_toc_url_native` 详情抓取的流程内可见性。
+/// 详情抓取子流程由 `pre_update::refresh_toc_url_native` 的
+/// `begin_book_flow(book_page_fetch_url)` 收口；独立 FFI 精确搜索
+/// （非 pre_update 路径）继承调用方残留 scope，行为不劣于旧全局表时代
+/// （残留可见性一致），登记为已知残余。
 pub fn precise_search(name: &str, author: &str, source_urls_json: &str) -> LegadoResult<String> {
     let name = name.trim();
     if name.is_empty() {
@@ -344,6 +359,9 @@ pub fn precise_search(name: &str, author: &str, source_urls_json: &str) -> Legad
 ///
 /// 返回 JSON 字符串格式的搜索结果数组。
 pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<String> {
+    // P1-2 入口收口：多源并行搜索（变量桥读写）→ 先切 flow scope（运行级
+    // 键 "search"，理由同 search_books：并发各源共享 scope 槽，禁逐源 begin）
+    crate::api::web_book::begin_book_flow("search");
     // P0-3：为本次搜索创建独立会话（取代并取消上一会话），不再重置全局标志
     let session = Arc::new(SearchSession::new());
     register_current_session(&session);
@@ -560,6 +578,9 @@ pub async fn run_multi_stream<F>(
 ) where
     F: FnMut(String) -> Result<(), String>,
 {
+    // P1-2 入口收口：流式多源并行搜索（变量桥读写）→ 先切 flow scope
+    // （运行级键 "search"，理由同 search_books）
+    crate::api::web_book::begin_book_flow("search");
     // P0-3：为本次搜索创建独立会话（取代并取消上一会话），不再重置全局标志
     let session = Arc::new(SearchSession::new());
     register_current_session(&session);

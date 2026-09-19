@@ -606,6 +606,11 @@ fn switch_book_source_with<F: BookSourceFetcher>(
         }
     })?;
 
+    // P1-2 入口收口：换源执行 ruleBookInfo + 写 DB（变量桥读写）→ 先切
+    // flow scope（键 = 新源详情页 URL，与 webbook_info 同键族），防上一
+    // 流程残留 scope 串读/误清
+    crate::api::web_book::begin_book_flow(new_book_url);
+
     // 2a. [T2] 新源详情解析（canReName=false：保留既有书名/作者，对齐原版
     //     changeSource getBookInfoAwait 门控；cover/intro/kind/lastChapter/
     //     wordCount 在 parse 内按解析值更新，tocUrl 为真实目录页）

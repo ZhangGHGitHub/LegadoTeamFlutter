@@ -7,7 +7,7 @@
 //! 实现完整的搜索→详情→目录→正文链路。
 
 use std::collections::HashMap;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use legado_core::models::BookSource;
@@ -16,10 +16,11 @@ use legado_core::web_book::{
     BookSourceFetcher, WebBookEngine, WebBookInfo, WebChapter, WebSearchResult,
 };
 use legado_core::{LegadoError, LegadoResult};
+use legado_js::host_api::variable_store;
 use legado_js::js_source::js_source_book::JsSourceBookOrchestrator;
 use legado_js::JsSourceConfig;
 use legado_net::LegadoClient;
-use legado_parser::{compile_regex_safe, AnalyzeUrl, RequestMethod};
+use legado_parser::{compile_regex_safe, set_global_variable_reader, AnalyzeUrl, RequestMethod};
 
 /// 对齐原版 OkHttpUtils.ResponseBody.text：显式 charset 优先，随后 HTTP 头，最后 HTML meta。
 fn decode_web_response(
@@ -312,6 +313,78 @@ fn lookup_book_meta_for_chapter(chapter_url: &str) -> Option<BookMeta> {
         .get(chapter_url)
         .cloned()?;
     book_meta_cache().lock().ok()?.get(&book_url).cloned()
+}
+
+// ─── P2-9 ③：全局变量 store 桥接与书籍流程生命周期 ─────────────────────────────
+//
+/// 进程级幂等注册：把 parser 侧 `AnalyzeRule::get` 的全局兜底读取器
+/// （`legado_parser::set_global_variable_reader`）指向本进程的
+/// `legado_js::host_api::variable_store` 全局变量表。
+///
+/// P2-9 ③：JS 宿主 `java.put`/`java.get`/`getVariable`/`setVariable`
+/// 读写的是**进程级全局**变量表（QuickJS 宿主 API，见
+/// `quickjs_impl.rs` `register_variable_apis`），而规则 `@get:{k}`
+/// 读的是 analyzer **本地**变量（优先级 localBindings → bookName/title
+/// 特例 → variables）。两者此前无桥：「JS 写、规则读」的书源（小米阅读 /
+/// 就去看网 / 手机小说）`@get` 恒空——手机小说 `ruleBookInfo.init` 里
+/// `java.put("url", …)` 后 `tocUrl: @get:{url}` 取空 → 回退 book_url →
+/// 目录页错。
+///
+/// 设计：legado-parser 不能依赖 legado-js（循环依赖），故桥读取器由本层
+/// 注入；`AnalyzeRule::get` 仅在**本地查找全部未命中（或本地值为空）后**
+/// 才读全局 store——不改动既有优先级，全局 store 是最低优先级兜底。
+fn ensure_global_variable_bridge() {
+    // 幂等重注册（非常量 OnceLock）：生产路径每次书籍流程入口调用，
+    // 保证测试/其他注册方复位读取器后（`set_global_variable_reader(None)`）
+    // 下一个流程入口自动恢复桥——前后对照测试（P2-9 ③）依赖该语义。
+    //
+    // P1-1/P1-2：读者改 `get_flow_variable`（flow scope 会话层 → 裸键持久层，
+    // 见 variable_store 模块文档）：`@get` 兜底先读本流程命名空间
+    // （`lgflow::{scope}{key}`），未命中回退裸键（持久层，跨书存活）——
+    // 既防跨书会话串读（P1-2），又不把持久键当会话清掉（P1-1）。
+    set_global_variable_reader(Some(Arc::new(|key: &str| -> Option<String> {
+        variable_store::get_flow_variable(key)
+    })));
+}
+
+/// 书籍流程入口：设置 flow scope（P2-9 ③ 生命周期，P1-1/P1-2 修复版）
+///
+/// 底层为 `variable_store::set_flow_scope`（进程级单槽）：
+/// - scope 与当前相同 → 无操作（**同一本**书 info → toc → content 链
+///   会话变量原样携带——就去看网正文 `java.get("动")` 等快路径依赖此；
+///   `webbook_content` 无 bookUrl 入参、不触发本入口，scope 不变）；
+/// - scope 变化（换书/换源/换阶段）→ **只清旧 scope 前缀**（上一流程
+///   的会话键 `lgflow::{old}*`），再写入新 scope。
+///
+/// 流程键设计（沿用 P2-9 ③，对齐上游「变量不跨 analyzer 实例」语义）：
+/// - `webbook_search` → `search:{bookSourceUrl}`：同书源翻页搜索复用，
+///   换书源即清旧前缀；
+/// - `webbook_info` / `webbook_chapters` / 刷新目录·换源等 → `book_url`
+///   原样（换源用新源详情页 URL）：详情/目录/正文同一本书共享键。
+///
+/// **P1-1**：持久键（书源搜索期 `source.put` 的 `v_{sourceUrl}_{k}`、
+/// `source.setVariable` 的 `sourceVariable_{sourceUrl}`、登录缓存
+/// `loginHeader_*`/`userInfo_*`、`cache.*` 裸键——上游对应持久
+/// CacheManager，无「换书清空」语义）是裸键、永不命中 scope 前缀 →
+/// 换书不再误清（旧实现整表 `clear_variables()` 会连持久键一起清，
+/// 导致「搜索期源写 token → 开详情换键 → 整表清 → 详情/目录
+/// `source.getVariable()` 读空」）。
+///
+/// **P1-2**：会话键按流程命名空间隔离后，跨书源 `@get` 串读（语料：
+/// `url` 5 写 2 跨读、`bid` 4 写 2 跨读）结构性消除；单槽 scope 的
+/// 残余并发风险（两本**不同**书流程真并行时，后启动者清前者的前缀）
+/// 见交付报告「残余风险」节。
+///
+/// 降级残留风险（沿用 P2-9 ③）：未走详情/目录 FFI 直接进正文（深链）时，
+/// 正文阶段读到的仍是上一本书的全局变量；命中三源（手机小说正文规则
+/// 不用 `@get`、就去看网正文 JS 对 `java.get` 空值有 `''` 兜底分支）
+/// 均为优雅降级，不产错页。
+///
+/// `pub(crate)`：供 P1-2 入口收口的兄弟模块（`reader`/`pre_update`/
+/// `source_switch`/`search`）在跑 ruleBookInfo 的入口复用同一生命周期。
+pub(crate) fn begin_book_flow(key: &str) {
+    ensure_global_variable_bridge();
+    let _ = variable_store::set_flow_scope(key);
 }
 
 /// P1-1：按 bookUrl 读用户书籍变量（DB `books.variable`）
@@ -2540,6 +2613,7 @@ const MAX_CONTENT_PAGES: usize = 99;
 /// - 正文规则提取 + HtmlFormatter 净化管线（音视频源跳过格式化）
 /// - next_url_rule 非空时解析下一页 URL 列表（对标 Kotlin
 ///   `analyzeRule.getStringList(nextUrlRule, isUrl = true)`），并基于本页 URL 绝对化
+///
 /// 无 jsLib 版本（测试与旧调用兼容；生产正文解析走
 /// [`parse_content_page_with_js_lib`] 注入书源 jsLib）
 #[cfg(test)]
@@ -3252,6 +3326,8 @@ pub(crate) fn build_js_orchestrator(
 /// 返回 `WebSearchResult` JSON 数组字符串
 pub fn webbook_search(source_json: &str, query: &str, page: i32) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
+    // P2-9 ③：搜索流程入口（键 = 书源 URL；换源清全局变量表，防跨书污染）
+    begin_book_flow(&format!("search:{}", source.book_source_url));
 
     // JS 书源分派：spawn_blocking 避免嵌套 runtime 死锁（R1）
     if let Some(mut orchestrator) = build_js_orchestrator(&source)? {
@@ -3302,6 +3378,8 @@ async fn webbook_info_with_fetcher<F: BookSourceFetcher>(
 /// 返回 `WebBookInfo` JSON 字符串
 pub fn webbook_info(source_json: &str, book_url: &str) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
+    // P2-9 ③：详情流程入口（键 = bookUrl 原样；换书清全局变量表）
+    begin_book_flow(book_url);
 
     // JS 书源分派
     if let Some(mut orchestrator) = build_js_orchestrator(&source)? {
@@ -3373,6 +3451,9 @@ pub fn webbook_chapters(
     book_name: &str,
 ) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
+    // P2-9 ③：目录流程入口（键 = bookUrl，与详情同键 → 同书变量保留，
+    // 换书清空）
+    begin_book_flow(book_url);
     let known_toc = toc_url.trim();
     let known_toc_opt = if known_toc.is_empty() {
         None
@@ -3474,6 +3555,9 @@ async fn webbook_chapters_with_fetcher<F: BookSourceFetcher>(
 pub fn webbook_content(source_json: &str, chapter_json: &str) -> LegadoResult<String> {
     let source: BookSource = serde_json::from_str(source_json)?;
     let chapter: WebChapter = serde_json::from_str(chapter_json)?;
+    // P2-9 ③：正文无 bookUrl 入参，不触发生命周期清理（同书变量原样带到
+    // 正文阶段）；仅确保兜底读取器已注册（深链直进正文时兜底亦生效）
+    ensure_global_variable_bridge();
 
     // JS 书源分派
     if let Some(mut orchestrator) = build_js_orchestrator(&source)? {
@@ -3539,10 +3623,19 @@ pub fn webbook_content(source_json: &str, chapter_json: &str) -> LegadoResult<St
     runtime::block_on(async { engine.get_content(&source, &chapter).await })
 }
 
+/// P2-9 ③ / P2-1：全局变量 store / 桥读取器 / flow scope 的进程级状态锁——
+/// 所有读写全局变量表或流程作用域的测试（含 book 绑定走 webbook_chapters /
+/// webbook_content 的书山回归）串行执行，防并行测试互相清表。
+/// P2-1：由本文件测试模块提升至模块级（`pub(crate)`），供 reader / explore_api
+/// 等其它模块的测试模块共享同一把锁（经 `crate::api::web_book::` 路径引用）
+#[cfg(test)]
+pub(crate) static GLOBAL_STORE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use legado_core::models::book_source::book_source_type;
+    use legado_parser::AnalyzeRule;
 
     /// 书山聚合目录回归：真实书源 + 真实 data: URI bookUrl 调 webbook_chapters。
     /// 覆盖链路：data:URI hex 解码 → init 规则 java.ajax(/details)（带书源
@@ -3552,6 +3645,11 @@ mod tests {
     #[test]
     #[cfg(feature = "quickjs")]
     fn test_shushan_real_toc_repro() {
+        // webbook_chapters / webbook_content 会触发 P2-9 ③ 全局变量桥
+        // （begin_book_flow / ensure_global_variable_bridge），串行防串表
+        let _global_store_lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -3681,6 +3779,284 @@ mod tests {
                 Err(e) => panic!("[repro] 书山正文失败: {e}"),
             }
         }
+    }
+
+    /// [P2-9 ③] 端到端：全局变量 store → 桥读取器 → `AnalyzeRule::get` 兜底。
+    /// 写侧直接用 `variable_store::set_variable`（等价 JS `java.put`，不依赖
+    /// QuickJS，故本测试非 cfg(quickjs) 也跑）；读侧走真实 `AnalyzeRule::get`
+    /// 的最低优先级兜底分支：本地（localBindings / bookName·title 特例 /
+    /// variables）全部未命中才读全局 store。
+    #[test]
+    fn test_global_variable_bridge_end_to_end() {
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        variable_store::clear_variables().expect("清全局变量表");
+        // 测试卫生：复位 flow scope（读者 = get_flow_variable，残留 scope
+        // 会让本测试的裸键读走 scoped-then-bare 路径）
+        variable_store::clear_flow_scope().expect("复位 flow scope");
+        variable_store::set_variable("p29_e2e_k", "p29_e2e_v").expect("写全局变量");
+        ensure_global_variable_bridge();
+
+        let analyzer = AnalyzeRule::new(String::new(), String::new());
+        assert_eq!(
+            analyzer.get("p29_e2e_k"),
+            "p29_e2e_v",
+            "本地未命中时 get() 应兜底读全局 store（java.put 写入侧）"
+        );
+
+        // 本地非空值优先于全局 store（既有优先级不变，全局仅最低兜底）
+        analyzer.put("p29_e2e_k", "local_v");
+        assert_eq!(
+            analyzer.get("p29_e2e_k"),
+            "local_v",
+            "本地非空值必须压过全局 store"
+        );
+
+        // 生命周期：流程作用域切换清会话前缀（P1-2 语义：只清旧 scope
+        // 前缀、持久裸键存活）；此处清整表 + 复位 scope 后兜底读应落空
+        variable_store::clear_variables().expect("清全局变量表");
+        variable_store::clear_flow_scope().expect("复位 flow scope");
+        let analyzer2 = AnalyzeRule::new(String::new(), String::new());
+        assert_eq!(
+            analyzer2.get("p29_e2e_k"),
+            "",
+            "清表后全局兜底应未命中（不跨书泄漏）"
+        );
+    }
+
+    /// [P2-9 ③ / P1-2] 生命周期（flow scope 版）：`begin_book_flow` 切换
+    /// 流程作用域——同键重复进入无操作（同书 info → toc → content 链会话
+    /// 变量原样携带）；键变化只清**旧** scope 前缀（`lgflow::{旧}
+    /// *` 会话键），A 的会话键不得泄漏进 B；持久裸键（`v_*`/
+    /// `sourceVariable_*` 等）全程不受影响（P1-1）。
+    #[test]
+    fn test_begin_book_flow_lifecycle() {
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        variable_store::clear_variables().expect("清全局变量表");
+        variable_store::clear_flow_scope().expect("复位 flow scope");
+
+        // 书 A 流程（键 = bookUrl）：同书 info → toc → content 同键进入不清
+        begin_book_flow("http://a.example.com/book/1");
+        variable_store::put_flow_variable("a_k", "a_v").expect("写书 A 会话变量");
+        begin_book_flow("http://a.example.com/book/1");
+        assert_eq!(
+            variable_store::get_flow_variable("a_k"),
+            Some("a_v".to_string()),
+            "同书流程重复进入必须保留会话变量（就去看网正文快路径依赖）"
+        );
+
+        // 换书 B → scope 变化 → 只清 A 前缀，A 的会话键不得泄漏进 B
+        begin_book_flow("http://b.example.com/book/2");
+        assert_eq!(
+            variable_store::get_flow_variable("a_k"),
+            None,
+            "换书必须清旧 scope 会话前缀（防跨书污染）"
+        );
+
+        // 搜索流程（键 = search:{书源}）：同键翻页复用不清；换键即清
+        begin_book_flow("search:http://www.sjshuku.com");
+        variable_store::put_flow_variable("s_k", "s_v").expect("写搜索会话变量");
+        begin_book_flow("search:http://www.sjshuku.com");
+        assert_eq!(
+            variable_store::get_flow_variable("s_k"),
+            Some("s_v".to_string()),
+            "同搜索流程翻页必须保留会话变量"
+        );
+        begin_book_flow("search:http://other.example.com");
+        assert_eq!(
+            variable_store::get_flow_variable("s_k"),
+            None,
+            "换书源后旧搜索会话键应不可见（前缀已清）"
+        );
+
+        // 清理：还原进程级状态，避免影响其他测试
+        variable_store::clear_variables().expect("清全局变量表");
+        variable_store::clear_flow_scope().expect("复位 flow scope");
+    }
+
+    /// P1-1 验收（工单断言）：持久裸键（搜索期 `source.put` 的
+    /// `v_{sourceUrl}_{k}` 与 `source.setVariable` 的
+    /// `sourceVariable_{sourceUrl}`）经**一次换书** `begin_book_flow`
+    /// 后必须仍存；同一换书把上一流程的桥接会话键清掉（新语义）。
+    #[test]
+    fn test_p11_persistent_bare_keys_survive_book_switch() {
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        variable_store::clear_variables().expect("清全局变量表");
+        variable_store::clear_flow_scope().expect("复位 flow scope");
+
+        // 搜索期源写入的持久键（裸键，上游持久 CacheManager 语义）
+        variable_store::set_variable("v_x_k", "tok").expect("写持久键 v_x_k");
+        variable_store::set_variable("sourceVariable_x", "s").expect("写持久键 sourceVariable_x");
+
+        // 书 A 详情期桥接会话键
+        begin_book_flow("http://a.example.com/book/1");
+        variable_store::put_flow_variable("url", "aUrl").expect("写会话键 url");
+
+        // 换书（工单：one book-switch begin_book_flow）
+        begin_book_flow("http://b.example.com/book/2");
+
+        // 工单断言：两持久键仍存
+        assert_eq!(
+            variable_store::get_variable("v_x_k").expect("读 v_x_k"),
+            Some("tok".to_string()),
+            "P1-1：source.put 持久键换书后必须存活"
+        );
+        assert_eq!(
+            variable_store::get_variable("sourceVariable_x").expect("读 sourceVariable_x"),
+            Some("s".to_string()),
+            "P1-1：source.setVariable 持久键换书后必须存活"
+        );
+        // 新语义：书 A 的桥接会话键被换书清掉（scoped 前缀清，裸键无 url）
+        assert_eq!(
+            variable_store::get_flow_variable("url"),
+            None,
+            "P1-2：旧流程会话键换书后必须不可见"
+        );
+        // 兜底读者（FFI 注入的 get_flow_variable）视角同断言
+        let reader = |key: &str| variable_store::get_flow_variable(key);
+        assert_eq!(reader("v_x_k").as_deref(), Some("tok"));
+        assert_eq!(reader("url").as_deref(), None);
+
+        variable_store::clear_variables().expect("清全局变量表");
+        variable_store::clear_flow_scope().expect("复位 flow scope");
+    }
+
+    /// [P2-9 ③] 真实源离线前后对照（手机小说；夹具 `source_shoujixiaoshuo_sjshuku.json` 为真实书源表该条目逐字提取，P2-4 由未跟踪的 `.tmp/source_1270.json` 入库）。
+    ///
+    /// 真实规则 + 真实 QuickJS 执行 `init` JS（`java.put("url", 详情+href)` 后 `java.ajax`），`tocUrl: @get:{url}` 读该变量：
+    /// - 修复前（桥未注册）：`@get` 本地未命中 → tocUrl 空 → 回退 book_url（目录页错——本次要修的真实偏差）。
+    /// - 修复后（桥已注册）：`@get` 兜底读全局 store → tocUrl = JS `java.put` 写入的真实目录页 URL。
+    ///
+    /// 书籍详情页为固定夹具（不发网络请求）；`init` 内 `java.ajax` 离线失败只影响 init 结果（被 `if let Ok` 吞掉），`java.put` 在 ajax 之前已执行，桥读取不受影响。
+    #[test]
+    #[cfg(feature = "quickjs")]
+    fn test_shoujixiaoshuo_tocurl_bridge_before_after() {
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        // P2-4：夹具经 include_str! 编译期入库——干净检出必然存在（此前读
+        // 未跟踪的 .tmp/source_1270.json，缺失时 eprintln + return 静默通过）
+        let source: BookSource = serde_json::from_str(include_str!(
+            "../../tests/fixtures/source_shoujixiaoshuo_sjshuku.json"
+        ))
+        .expect("手机小说书源 JSON（夹具逐字提取，见 tests/fixtures）");
+        variable_store::clear_variables().expect("清全局变量表");
+        // 测试卫生：复位 flow scope（本测试不经 begin_book_flow，桥读者为
+        // get_flow_variable；残留 scope 会让裸键读走 scoped-then-bare 路径）
+        variable_store::clear_flow_scope().expect("复位 flow scope");
+
+        // 该源必须确属「JS 写变量 + 规则读变量」型，否则对照无意义
+        let init_js = source
+            .rule_book_info
+            .as_ref()
+            .and_then(|r| r.init.as_deref())
+            .unwrap_or("");
+        let toc_rule = source
+            .rule_book_info
+            .as_ref()
+            .and_then(|r| r.toc_url.as_deref())
+            .unwrap_or("");
+        assert!(
+            init_js.contains("java.put"),
+            "手机小说 init 规则应以 java.put 写 url 入全局 store"
+        );
+        assert!(
+            toc_rule.trim() == "@get:{url}",
+            "手机小说 tocUrl 规则应以 @get 读 url: {toc_rule:?}"
+        );
+
+        // 固定书籍详情页夹具：`.downButton` → 目标目录页（不发网络请求）
+        const BOOK_URL: &str = "http://www.sjshuku.com/book/8888/";
+        const EXPECTED_TOC: &str = "http://www.sjshuku.com/novel/6666/";
+        struct P29OfflineFetcher;
+        impl BookSourceFetcher for P29OfflineFetcher {
+            async fn search(
+                &self,
+                _source: &BookSource,
+                _query: &str,
+                _page: i32,
+            ) -> LegadoResult<Vec<WebSearchResult>> {
+                Err(LegadoError::Internal("mock: search unused".into()))
+            }
+
+            async fn get_book_info(
+                &self,
+                _source: &BookSource,
+                _book_url: &str,
+            ) -> LegadoResult<WebBookInfo> {
+                Err(LegadoError::Internal("mock: get_book_info unused".into()))
+            }
+
+            async fn get_chapters(
+                &self,
+                _source: &BookSource,
+                _book_url: &str,
+            ) -> LegadoResult<Vec<WebChapter>> {
+                Err(LegadoError::Internal("mock: get_chapters unused".into()))
+            }
+
+            async fn get_content(
+                &self,
+                _source: &BookSource,
+                _chapter: &WebChapter,
+            ) -> LegadoResult<String> {
+                Err(LegadoError::Internal("mock: content unused".into()))
+            }
+
+            /// 详情页 = 固定夹具 + 真实规则管道（QuickJS init JS + 规则解析）
+            async fn get_book_info_with_existing_and_vars(
+                &self,
+                source: &BookSource,
+                book_url: &str,
+                _can_re_name: bool,
+                _existing_name: &str,
+                _existing_author: &str,
+                _variables: &std::collections::HashMap<String, String>,
+            ) -> LegadoResult<WebBookInfo> {
+                let body = "<html><head>\
+                            <meta property=\"og:novel:book_name\" content=\"P29测试书\"/>\
+                            <meta property=\"og:novel:author\" content=\"P29作者\"/>\
+                            </head>\
+                            <body><a class=\"downButton\" href=\"/novel/6666/\">开始阅读</a></body>\
+                            </html>"
+                    .to_string();
+                Ok(RealBookSourceFetcher::parse_book_info_from_body(
+                    source, body, book_url, book_url, true, "", "",
+                ))
+            }
+        }
+        let fetcher = P29OfflineFetcher;
+
+        // ── 修复前：桥未注册（复现修复前行为）──
+        set_global_variable_reader(None);
+        variable_store::clear_variables().expect("清全局变量表");
+        let before = runtime::block_on(webbook_info_with_fetcher(&source, BOOK_URL, &fetcher))
+            .expect("详情解析应成功（修复前阶段）");
+        assert_eq!(
+            before.toc_url,
+            BOOK_URL,
+            "修复前：@get 本地未命中（桥未注册）→ tocUrl 空 → 回退 book_url（复现原偏差：目录页错）"
+        );
+
+        // ── 修复后：注册桥 → @get 兜底读全局 store ──
+        // 本测试不经 begin_book_flow：scope 为 None，桥写/读裸键（直用
+        // 引擎路径，与 P2-9 ③ 引入前一致）
+        ensure_global_variable_bridge();
+        variable_store::clear_variables().expect("清全局变量表");
+        let after = runtime::block_on(webbook_info_with_fetcher(&source, BOOK_URL, &fetcher))
+            .expect("详情解析应成功（修复后阶段）");
+        assert_eq!(
+            after.toc_url, EXPECTED_TOC,
+            "修复后：@get 应兜底读全局 store（java.put 写入值）→ 正确目录页"
+        );
+
+        variable_store::clear_variables().expect("清全局变量表");
+        variable_store::clear_flow_scope().expect("复位 flow scope");
     }
 
     #[test]
@@ -3823,6 +4199,11 @@ mod tests {
     #[test]
     #[ignore = "外部源站批量诊断，非确定性 CI 测试"]
     fn test_batch_search_scan_extended_wave2() {
+        // P2-9 ③ / P1-2：入口 begin_book_flow 切 flow scope（只清旧 scope
+        // 前缀，持久裸键不受影响），与 ③ 桥测试串行
+        let _global_store_lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -3960,6 +4341,11 @@ mod tests {
     #[test]
     #[cfg(feature = "quickjs")]
     fn test_qibuge_search_diag() {
+        // P2-1：fixture 存在时 webbook_search 会执行 begin_book_flow（切
+        // flow scope）→ 与其它 store 测试串行
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         if !qibuge_site_reachable() {
             return;
         }
@@ -4042,6 +4428,11 @@ mod tests {
     #[test]
     #[cfg(feature = "quickjs")]
     fn test_qibuge_catalog_and_content_gbk() {
+        // P2-9 ③ / P1-2：入口 begin_book_flow 切 flow scope（只清旧 scope
+        // 前缀，持久裸键不受影响），与 ③ 桥测试串行
+        let _global_store_lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         if !qibuge_site_reachable() {
             return;
         }
@@ -4677,6 +5068,11 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     #[test]
     #[cfg(feature = "quickjs")]
     fn test_jsoup_post_redirect_search_diag() {
+        // P2-1：fixture 存在时 webbook_search 会执行 begin_book_flow（切
+        // flow scope）→ 与其它 store 测试串行
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -4742,6 +5138,11 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     #[test]
     #[ignore = "外部源站网络诊断，非确定性 CI 测试"]
     fn test_shushu_all_in_one_toc_diag() {
+        // P2-9 ③ / P1-2：入口 begin_book_flow 切 flow scope（只清旧 scope
+        // 前缀，持久裸键不受影响），与 ③ 桥测试串行
+        let _global_store_lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -4824,6 +5225,11 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     #[test]
     #[ignore = "外部源站 JSONP 诊断，非确定性 CI 测试"]
     fn test_hongshu_jsonp_search_diag() {
+        // P2-9 ③ / P1-2：入口 begin_book_flow 切 flow scope（只清旧 scope
+        // 前缀，持久裸键不受影响），与 ③ 桥测试串行
+        let _global_store_lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -5485,6 +5891,11 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
 
     #[test]
     fn test_siluke_full_rules_next_toc() {
+        // P2-9 ③ / P1-2：入口 begin_book_flow 切 flow scope（只清旧 scope
+        // 前缀，持久裸键不受影响），与 ③ 桥测试串行
+        let _global_store_lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         use std::time::Instant;
         let source_json = include_str!("../../tests/fixtures/siluke_rules.json");
         let book_url = "http://www.silukezw.com/135/135188/";
@@ -5505,6 +5916,11 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
 
     #[test]
     fn test_siluke_book_info_chapters_timing_and_cache() {
+        // P2-9 ③ / P1-2：入口 begin_book_flow 切 flow scope（只清旧 scope
+        // 前缀，持久裸键不受影响），与 ③ 桥测试串行
+        let _global_store_lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         use std::time::Instant;
         let source = serde_json::json!({
             "bookSourceUrl": "http://www.silukezw.com",
@@ -5594,9 +6010,17 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
 
     #[test]
     fn test_webbook_search_empty_query_returns_error() {
+        // P2-1：webbook_search 在空关键词校验前已执行 begin_book_flow
+        // （切 flow scope，清旧前缀）→ 触碰全局 store 状态，须与其它
+        // store 测试串行；结尾复位 flow scope 防污染后续测试
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        variable_store::clear_flow_scope().expect("复位 flow scope");
         // 空关键词应返回解析错误（engine 层校验）
         let err = webbook_search(&make_source_json(), "", 1).unwrap_err();
         assert!(err.to_string().contains("搜索关键词不能为空"));
+        variable_store::clear_flow_scope().expect("复位 flow scope");
     }
 
     #[test]

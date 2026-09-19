@@ -1102,8 +1102,14 @@ impl HtmlParser {
 
         if elements_type == "%%" {
             // 交叉合并
+            // P2-9 ⑤：定界用「首列表长度」而非「各列表最大长度」——对齐上游
+            // AnalyzeByJSoup L110（`results[0].indices`）/ AnalyzeByXPath L75,L116 /
+            // AnalyzeByJSonPath（`0 until results[0].size`）：首列表更短时，截断后续
+            // 更长的列表到首列表长度（此前 max_len 会把后续列表尾部多带出来）。
+            // 首列表为空/长度为 0 时 0..0 自然空结果（经公开 API 空子规则已被丢弃，
+            // 首列表恒非空；私有路径直接传空首列表亦安全）。
             let mut merged = Vec::new();
-            let max_len = results.iter().map(|r| r.len()).max().unwrap_or(0);
+            let max_len = results[0].len();
             for i in 0..max_len {
                 for group in &results {
                     if i < group.len() {
@@ -1960,5 +1966,63 @@ mod tests {
         assert!(split_bracket_index(".item[!1]").is_some());
         assert!(split_bracket_index(".item[0:2]").is_some());
         assert!(split_bracket_index(".item[-1:0]").is_some());
+    }
+
+    /// P2-9 ⑤：`%%` 以首列表长度定界（回归）
+    ///
+    /// 上游 `AnalyzeByJSoup` 以 `results[0].indices` 为界：首列表更短时，截断
+    /// 后续更长列表到首列表长度（旧 max_len 定界会多带后续列表尾部，故
+    /// `#b(1)%%.a(2)` 我方旧为 3 元素、上游为 2 元素）。
+    #[test]
+    fn test_percent_merge_bounded_by_first_list() {
+        let parser = HtmlParser::new();
+        // `#b` 命中 1 元素、`.a` 命中 2 元素
+        let html = "<div id=\"b\">b1</div><p class=\"a\">a1</p><p class=\"a\">a2</p>";
+        let result = parser.get_text(html, "#b@text%%.a@text").unwrap();
+        assert_eq!(result, vec!["b1", "a1"]);
+    }
+
+    /// P2-9 ⑤：`%%` 四类边界，直接调 `merge_results`（公开 API 会丢弃空子规则，
+    /// 「首列表为空」仅可直接调用触达）
+    #[test]
+    fn test_percent_merge_boundaries_direct() {
+        let parser = HtmlParser::new();
+        // 示例：b=1、a=2 → 以首列表（长度 1）定界 → 2 元素
+        assert_eq!(
+            parser.merge_results(
+                vec![vec!["b1".into()], vec!["a1".into(), "a2".into()]],
+                "%%"
+            ),
+            vec!["b1".to_string(), "a1".to_string()]
+        );
+        // 首列表为空 → 0..0 → 空结果（长度为 0 的等价语义）
+        assert_eq!(
+            parser.merge_results(vec![Vec::new(), vec!["a1".into(), "a2".into()]], "%%"),
+            Vec::<String>::new()
+        );
+        // 两侧等长 → 完整交叉（4 元素，顺序 group0[0],group1[0],group0[1],group1[1]）
+        assert_eq!(
+            parser.merge_results(
+                vec![
+                    vec!["x1".into(), "x2".into()],
+                    vec!["y1".into(), "y2".into()]
+                ],
+                "%%"
+            ),
+            vec![
+                "x1".to_string(),
+                "y1".to_string(),
+                "x2".to_string(),
+                "y2".to_string()
+            ]
+        );
+        // 第二列表更短 → 以首列表（长度 2）定界，第二列表尾部不补 → 3 元素
+        assert_eq!(
+            parser.merge_results(
+                vec![vec!["x1".into(), "x2".into()], vec!["y1".into()]],
+                "%%"
+            ),
+            vec!["x1".to_string(), "y1".to_string(), "x2".to_string()]
+        );
     }
 }

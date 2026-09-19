@@ -14,6 +14,41 @@ use crate::regex_engine::RegexEngine;
 use crate::rule_analyzer::RuleAnalyzer;
 use crate::xpath::XPathParser;
 
+// ─── P2-9 ③：全局变量兜底读取器（进程级）──────────────────────────────────────
+/// 全局变量兜底读取器（进程级，由 FFI 层注册，指向 `legado-js` 的
+/// `host_api::variable_store` 全局 store）。
+///
+/// P2-9 ③：JS 宿主 `java.put`/`java.get` 读写的是**进程级全局**变量表
+/// （`legado_js::host_api::variable_store`），而规则 `@get:{k}` 读的是
+/// **analyzer 本地**变量（`AnalyzeRule::variables`）——两者此前无桥，导致
+/// 「JS 写变量、规则 `@get` 读」的书源（小米阅读 / 就去看网 / 手机小说等）
+/// `@get` 恒空（如 手机小说 `tocUrl` 回退 book_url → 错目录页）。
+///
+/// 设计：legado-parser 不能依赖 legado-js（循环依赖），故以 FFI 层注入的
+/// 进程级读取器桥接。[`AnalyzeRule::get`] 在**本地查找（localBindings →
+/// bookName/title 特例 → variables）全部失败后**才兜底读本读取器——不改动
+/// 既有优先级，全局 store 仅作最后兜底（作用域语义取舍见交付报告 ③）。
+///
+/// 用 `Mutex<Option<...>>`（而非 `OnceLock`）以便测试注入/复位；生产由
+/// FFI 层注册一次（幂等，最后一次为准）。
+///
+/// 读取器闭包类型（命中返回 `Some(value)`、未命中 `None`）抽出为别名，
+/// 避免 `Arc<dyn Fn(...) + Send + Sync>` 在静态与函数签名两处触发
+/// clippy::type_complexity。
+pub type GlobalVariableReader = Arc<dyn Fn(&str) -> Option<String> + Send + Sync>;
+
+static GLOBAL_VAR_FALLBACK: Mutex<Option<GlobalVariableReader>> = Mutex::new(None);
+
+/// 注册（或替换）全局变量兜底读取器；传 `None` 复位（测试用）。
+///
+/// 读取器签名 `Fn(&str) -> Option<String>`：命中返回 `Some(value)`，未命中返回
+/// `None`（与既有优先级一致，空值在 `get` 内仍按「未命中」处理）。
+pub fn set_global_variable_reader(reader: Option<GlobalVariableReader>) {
+    if let Ok(mut guard) = GLOBAL_VAR_FALLBACK.lock() {
+        *guard = reader;
+    }
+}
+
 /// JavaScript 执行器 trait
 ///
 /// 由调用方注入具体实现（如 legado-js 的 QuickJS 引擎），
@@ -175,6 +210,17 @@ impl AnalyzeRule {
             if let Some(v) = guard.get(key) {
                 if !v.is_empty() {
                     return v.clone();
+                }
+            }
+        }
+        // P2-9 ③：全局 store 兜底（最后 resort）——本地 localBindings /
+        // bookName·title 特例 / variables 全部未命中（或本地值为空）后，才读
+        // 进程级全局 store（JS `java.put` 写入处）。不改动既有优先级：全局
+        // store 是最低优先级兜底，本地有非空值时永不落到此。
+        if let Ok(guard) = GLOBAL_VAR_FALLBACK.lock() {
+            if let Some(reader) = guard.as_ref() {
+                if let Some(v) = reader(key) {
+                    return v;
                 }
             }
         }
@@ -1221,22 +1267,36 @@ impl AnalyzeRule {
     }
 
     /// 执行 putMap（对齐原版 `putRule`：对每个 value 再 getString 后 put）
+    ///
+    /// P2-9 ④：value 走**完整 `get_strings` 管道**（而非旧的
+    /// `get_strings_single_step` + 仅取首值）——上游 `AnalyzeRule.putRule` 的值
+    /// 走完整 `getString` 管道（含 `##` 替换 / `||` 或合并 / `%%` 交叉 /
+    /// 多值 join）。旧实现在 put 值上：
+    /// - `##` 未处理 → 裸串（`#t@text##ab##XY`）整体被当 CSS 选择器 → 取空；
+    /// - `||` / 多值 → `.next()` 只取首个，丢失后续值。
+    ///
+    /// 防递归（保留）：先 [`extract_put_rules`] 剥离 value_rule 内嵌 `@put`
+    /// （嵌套 map 忽略），使 `cleaned` 不含 `@put`；随后 `get_strings` 内部
+    /// `compile_source_rule_cached` 得到的 `put_map` 为空 → 其
+    /// [`apply_put_map`] 为 no-op，不会递归炸栈。
     fn apply_put_map(&self, put_map: &HashMap<String, String>) -> LegadoResult<()> {
         for (key, value_rule) in put_map {
-            // 直接单步求值，避免 value_rule 内嵌 @put 时递归炸栈；
-            // 常见值为 `$.chapter_id` / CSS 选择器，不含 @put。
-            let (cleaned, nested) = extract_put_rules(value_rule);
-            // 嵌套 @put 极少见；若有则先剥离再求值（嵌套 map 忽略）
-            let _ = nested;
+            // 剥离内嵌 @put（防递归）；嵌套 map 极少见，忽略。
+            let (cleaned, _nested) = extract_put_rules(value_rule);
             let val = if cleaned.trim().is_empty() {
                 String::new()
             } else {
-                // 展开已有 @get，再单步提取（不走完整 get_strings，防 put 递归）
-                let expanded = self.expand_get_refs(&cleaned);
-                self.get_strings_single_step(&expanded)?
-                    .into_iter()
-                    .next()
-                    .unwrap_or_default()
+                // 走完整管道：## 替换 / || 或合并 / %% 交叉 / 多值 均生效
+                // （cleaned 已剥 @put，管道内 put_map 为空、无递归）。
+                // 多值按上游 getString join 语义以 `\n` 连接（单值直接返回）。
+                let vals = self.get_strings(&cleaned)?;
+                if vals.is_empty() {
+                    String::new()
+                } else if vals.len() == 1 {
+                    vals.into_iter().next().unwrap()
+                } else {
+                    vals.join("\n")
+                }
             };
             self.put(key, &val);
         }
@@ -1454,13 +1514,27 @@ impl AnalyzeRule {
                 prologue.push_str(&format!("globalThis.{name} = {value};\n"));
             }
             // 对齐原版 java.put / java.get / java.setLocal（会话变量）
+            // P2-9 ③：原版 java.put 写会话变量表、@get 跨规则跨 JS/非JS 可读。
+            // 此处覆盖后的 java.put/java.get 原本只写 __lgVars（eval 内临时
+            // 对象，eval 结束即消失）→ 手机小说 init `java.put("url",…)` 的值
+            // 对后续 tocUrl `@get:{url}` 永远不可见（目录页回退 book_url 根因）。
+            // 桥接约定：引擎在 `java` 命名空间注册 `__lgStorePut`/`__lgStoreGet`
+            //（legado-js QuickJS 挂载到进程级全局变量表，见 quickjs_impl
+            // register_variable_apis）时，java.put 同步写全局表、java.get 本地
+            // 未命中兜底读全局表；未注册的引擎（无 QuickJS）行为与改动前
+            // 完全一致。
+            // P3-a：空值语义与 AnalyzeRule::get 统一——本地（variables）值为
+            // 空串视为未命中（fall through 读全局 store），与 Rust 侧
+            // `AnalyzeRule::get` 对空本地值的穿透行为一致（此前 JS 侧
+            // `v!=null` 判定把「已置空」当命中直接返回空串，与规则侧 @get
+            // 读到 store 值形成 JS/规则双轨不一致）。
             if let Ok(guard) = self.variables.lock() {
                 let vars_json = serde_json::to_string(&*guard).unwrap_or_else(|_| "{}".into());
                 prologue.push_str(&format!(
                     "if (typeof java !== 'undefined') {{\n\
                      var __lgVars = {vars_json};\n\
-                     java.put = function(k,v){{ __lgVars[k]=String(v==null?'':v); return __lgVars[k]; }};\n\
-                     java.get = function(k){{ return (__lgVars[k]!=null)?String(__lgVars[k]):''; }};\n\
+                     java.put = function(k,v){{ k=String(k); var s=String(v==null?'':v); __lgVars[k]=s; if (typeof java.__lgStorePut==='function') {{ java.__lgStorePut(k,s); }} return s; }};\n\
+                     java.get = function(k){{ k=String(k); var v=__lgVars[k]; if (v) {{ return String(v); }} if (typeof java.__lgStoreGet==='function') {{ var g=java.__lgStoreGet(k); if (g) {{ return String(g); }} }} return ''; }};\n\
                      java.setLocal = function(k,v){{ __lgVars[k]=String(v==null?'':v); return java; }};\n\
                      }}\n"
                 ));
@@ -4199,6 +4273,48 @@ mod tests {
 
     // ─── [P2-6f4 | 台账 0917] 已闭合 {{…}} 跨度内的 JS 标记是参数文本 ──────
 
+    // ─── [P2-9 ③] 全局变量兜底读取器（get 最后 resort）──────────────────────
+
+    /// 全局读取器是进程级状态：注册/复位类测试串行化，避免与同 crate 其它
+    /// 调 `get()` 的测试并发交错（读取器按 key 命中，key 用独立前缀）
+    static GLOBAL_READER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// P2-9 ③：`@get:{k}` 本地未命中 → 兜底读全局 store（FFI 层注入的
+    /// 读取器）；本地有值时优先级不变（本地恒胜）；未注册读取器时维持
+    /// 修复前行为（空串）。
+    #[test]
+    fn test_get_falls_back_to_global_reader() {
+        let _lock = GLOBAL_READER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        // 模拟 FFI 层接线：全局 store 读取器（命中 p29_global_k → 固定值）
+        set_global_variable_reader(Some(std::sync::Arc::new(|key: &str| -> Option<String> {
+            (key == "p29_global_k").then(|| "p29_global_v".to_string())
+        })));
+        struct ResetReader;
+        impl Drop for ResetReader {
+            fn drop(&mut self) {
+                set_global_variable_reader(None);
+            }
+        }
+        let _reset = ResetReader;
+
+        // 本地变量表为空 → 兜底命中全局值
+        let analyzer =
+            AnalyzeRule::new("<div>x</div>".to_string(), "http://example.com".to_string());
+        assert_eq!(analyzer.get("p29_global_k"), "p29_global_v");
+        // 读取器未提供的 key → 空串（修复前语义不变）
+        assert_eq!(analyzer.get("p29_never_exists"), "");
+        // 本地优先级不变：本地变量非空恒胜全局 store
+        analyzer.put("p29_global_k", "local_v");
+        assert_eq!(analyzer.get("p29_global_k"), "local_v");
+
+        // 复位读取器 → 本地未命中不再兜底（修复前行为）
+        set_global_variable_reader(None);
+        let analyzer2 = AnalyzeRule::new(String::new(), String::new());
+        assert_eq!(analyzer2.get("p29_global_k"), "");
+    }
+
     /// 已闭合 `{{…}}` 跨度**内**的 `@js:`/`<js>` 是 JS 表达式参数文本（模板
     /// 参数内容），不是链标记——`rule_has_js_chain` 须跳过跨度内出现位置，仅
     /// 跨度外出现才算含 JS 段（P0-1 门不应被此类字面量误触发）。
@@ -4219,6 +4335,93 @@ mod tests {
         assert!(
             rule_has_js_chain("{{a}}<js>x</js>"),
             "跨度外（后）<js> → JS 链"
+        );
+    }
+
+    // ─── [P2-9 ④] apply_put_map 走完整 get_strings 管道（##/||/%%/多值 join）───
+
+    /// P2-9 ④：`@put` 值上的 `##` 替换生效（旧实现单步不处理 `##`，裸串被当
+    /// CSS 选择器 → 变量为空；现走完整管道 `#t@text##ab##XY` → `"XY cd XY"`）。
+    #[test]
+    fn test_put_map_hash_replace_full_pipeline() {
+        let html = "<div id=\"t\">ab cd ab</div>";
+        let analyzer = AnalyzeRule::new(html.to_string(), "https://example.com".to_string());
+        let res = analyzer
+            .get_strings("@put:{y:#t@text##ab##XY}@get:{y}")
+            .unwrap();
+        assert_eq!(analyzer.get("y"), "XY cd XY", "## 替换须在 put 值上生效");
+        assert_eq!(res, vec!["XY cd XY".to_string()]);
+    }
+
+    /// P2-9 ④：`@put` 值上的 `||` 取首个非空（`#zz` 不存在 → 落到 `#a`）。
+    #[test]
+    fn test_put_map_or_first_nonempty() {
+        let html = "<div id=\"a\">hello</div>";
+        let analyzer = AnalyzeRule::new(html.to_string(), "https://example.com".to_string());
+        let res = analyzer
+            .get_strings("@put:{x:#zz@text||#a@text}@get:{x}")
+            .unwrap();
+        assert_eq!(analyzer.get("x"), "hello", "|| 须取首个非空组");
+        assert_eq!(res, vec!["hello".to_string()]);
+    }
+
+    /// P2-9 ④：`@put` 值多值按上游 join 语义以 `\n` 连接（旧 `.next()` 仅取首值）。
+    #[test]
+    fn test_put_map_multi_value_join() {
+        let html = "<p class=\"a\">a1</p><p class=\"a\">a2</p>";
+        let analyzer = AnalyzeRule::new(html.to_string(), "https://example.com".to_string());
+        let res = analyzer.get_strings("@put:{x:.a@text}@get:{x}").unwrap();
+        assert_eq!(
+            analyzer.get("x"),
+            "a1\na2",
+            "多值须按 \\n join（对齐上游 getString）"
+        );
+        assert_eq!(res, vec!["a1\na2".to_string()]);
+    }
+
+    /// P2-9 ④ / P3-b：同一规则串内**并列**（sibling）的多个 `@put` 段均被
+    /// 剥离并写入变量，`get_strings` 内部 `apply_put_map` 面对已剥离的规则为
+    /// no-op，不会递归炸栈。
+    ///
+    /// 注（P3-b 改名）：原测试名 `nested_strip` 名不副实——本规则是
+    /// `@put:{k:…}@put:{m:…}` **并列**两段，并非真嵌套 `@put:{a:@put:{b:…}}`。
+    /// 真嵌套由 [`test_put_map_true_nested_brace_leak_registered`] 锁定。
+    #[test]
+    fn test_put_map_sibling_segments_strip_no_recursion() {
+        // 并列 @put 段均被剥离，各自值 `#t@text` 正常求值
+        let html = "<div id=\"t\">val</div>";
+        let analyzer = AnalyzeRule::new(html.to_string(), "https://example.com".to_string());
+        let res = analyzer
+            .get_strings("@put:{k:#t@text}@put:{m:#t@text}@get:{m}")
+            .unwrap();
+        assert_eq!(analyzer.get("k"), "val");
+        assert_eq!(analyzer.get("m"), "val");
+        assert_eq!(res, vec!["val".to_string()]);
+    }
+
+    /// P3-b（登记已知限制）：**真嵌套** `@put:{a:@put:{b:…}}` 的现状锁定。
+    ///
+    /// 现状：剥离正则 `@put:(\{[^}]+?\})` 非贪心到**首个** `}` 为止 → 外层捕获
+    /// `{a:@put:{b:…}`（内含未闭合的内层 `{`），内层 `@put` 值丢失闭合 `}`；
+    /// `replace_all` 后主规则残留一个多余的 `}`（leak），后续 CSS/选择器解析
+    /// 失败 → 外层值恒为空串；内层 `b` 从未写入。此行为与原版
+    /// `splitPutRule` 的单层剥离一致（嵌套 map 在书源中极少见，原版同样忽略），
+    /// 故登记为已知限制而非缺陷，本测试仅锁定现状防意外变更。
+    #[test]
+    fn test_put_map_true_nested_brace_leak_registered() {
+        let html = "<div id=\"a\">va</div><div id=\"b\">vb</div>";
+        let analyzer = AnalyzeRule::new(html.to_string(), "https://example.com".to_string());
+        let res = analyzer
+            .get_strings("@put:{a:@put:{b:#b@text}}#a@text")
+            .unwrap();
+        // 外层 a：值 `@put:{b:#b@text`（丢闭合 `}`）→ 内嵌剥离失败 → 按规则求值落空
+        assert_eq!(analyzer.get("a"), "", "真嵌套外层值当前恒为空（已知限制）");
+        // 内层 b：从未被写入变量表
+        assert_eq!(analyzer.get("b"), "", "真嵌套内层键当前不写入（已知限制）");
+        // 主规则残留多余 `}`（leak）→ 选择器解析失败 → 无输出
+        assert!(
+            res.is_empty(),
+            "真嵌套主规则含 leak 大括号，解析落空: {res:?}"
         );
     }
 }

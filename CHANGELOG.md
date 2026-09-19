@@ -2,6 +2,23 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.291] - 2026-09-19
+
+### Fixed
+- [Rust] **书源脚本的跨调用变量打通（P2-9 ③）**：JS 侧的 `java.put` 此前写的是 eval 内本地快照（随调用消失），从未进入进程级变量表，导致规则 `@get:{k}` 读不到——「手机小说」「小米阅读」「就去看网」等源的 `tocUrl`/字段因此取空回退（实测手机小说目录页由 `…/book/8888/` 回退值恢复为正确的 `…/novel/6666/`）。现由 JS 前导把 `java.put` **转发**到变量表、`@get` 在既有优先级之后兜底读取；并引入 **flow-scope 作用域**（键带流程前缀）——换书只清本流程前缀，`source.put/setVariable`、登录头、`userInfo`、`cache.*` 等持久项不受影响（对齐上游 CacheManager 语义）；入口收口覆盖搜索/详情/目录/正文/阅读器刷新目录/换源/preUpdateJs 与发现页
+- [Rust] **`@put` 映射值改走完整规则管道（P2-9 ④）**：`@put:{k:…##re##rep}`、`||` 组合与多值不再被截断为首值（爱丽丝书屋/独步小说/八一中文网/晋江 等）
+- [Rust] **`%%` 组合的定界与上游对齐（P2-9 ⑤）**：CSS/JSONPath/XPath 三处由「最长列表」改为「**首个列表长度**」，后续列表多出的元素不再产生脏行
+
+### Test
+- 两档口径均 0 失败：`cargo test --workspace`（ffi 371）与 `cargo test --workspace --features legado-ffi/quickjs`（**ffi 446 / js 553**，quickjs 门控用例含本次全部行为证明）
+- `cargo clippy --workspace -- -D warnings` exit 0；`cargo fmt --check` 0 处
+- 真实源证据入仓：手机小说书源夹具移入 `rust/legado-ffi/tests/fixtures/` 并以 `include_str!` 硬依赖（缺失即编译失败，杜绝静默跳过）；新增 flow-scope 语义与「持久裸键跨换书存活」等断言
+
+### Review
+- code-reviewer 一审 `needs changes`（P1-1 整表清空会连带清掉源级变量/登录头/缓存；P1-2 兜底读取无作用域且清理只覆盖 4 个入口；P2 锁缺口/口径/夹具未入库）→ 全部修复（作用域方案 + 入口收口 + 共享测试锁 + 夹具入库）→ 待复审
+- 残留登记：完整「一进程内两本书流程真并行」需 per-execution scope ID；嵌套 `@put` 的 `}` 泄漏为已知限制（锁定测试）
+- Contributor: 全栈工程师子代理
+
 ## [2.0.290] - 2026-09-19
 
 ### Fixed

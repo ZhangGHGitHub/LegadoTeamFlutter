@@ -1375,6 +1375,35 @@ fn register_variable_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
+    // P2-9 ③：进程级全局变量表桥接。解析器 JS 前导（AnalyzeRule::execute_js_rule）
+    // 会把 java.put/java.get 覆盖为 eval 内 __lgVars 本地快照（注入的会话变量
+    // 优先）；引擎注册这两个桥接函数后，前导的 java.put 同步写全局表、java.get
+    // 本地未命中兜底读全局表（本地优先）——恢复原版「java.put → @get 跨规则
+    // 可见」的会话变量语义（手机小说 init `java.put("url",…)` 须被 tocUrl
+    // `@get:{url}` 读到，否则目录页回退 book_url）。仅挂 java 命名空间
+    //（前导统一经 `java.__lgStore*` 引用），不上全局裸名。
+    //
+    // P1-1/P1-2（P2-9 ③ 审查修复）：桥读写改走 **flow scope** 会话层
+    //（`lgflow::{scope}{key}` 命名空间，scope 由 FFI 各书籍流程入口
+    // `begin_book_flow` 设置）：换书只清旧 scope 前缀（持久裸键
+    // `v_*`/`sourceVariable_*`/登录缓存/`cache.*` 不受影响，P1-1），
+    // 跨书源/跨书会话键互不可见（P1-2）。未设 scope 的直用引擎/残留
+    // 入口回落裸键（与 P2-9 ③ 引入前一致）。裸 `put`/`get`/`setVariable`
+    // 等源上下文挂载（source.put/cache.put 等持久键写入者）保持不变。
+    let store_put = rquickjs::Function::new(ctx.clone(), |key: String, value: String| {
+        let _ = variable_store::put_flow_variable(&key, &value);
+    })
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    java.set("__lgStorePut", store_put)
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    let store_get = rquickjs::Function::new(ctx.clone(), |key: String| -> String {
+        variable_store::get_flow_variable(&key).unwrap_or_default()
+    })
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    java.set("__lgStoreGet", store_get)
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
     Ok(())
 }
 
@@ -3276,6 +3305,97 @@ mod tests {
         let engine = make_engine();
         let result = engine.eval("java.base64Encode('hello')").unwrap();
         assert_eq!(result, "aGVsbG8=");
+    }
+
+    /// [P2-9 ③] JS 侧真实闭环：真实 QuickJS 引擎执行 `java.put`（写进程级
+    /// 全局变量表 `variable_store`）→ 经 FFI 注入的全局兜底读取器，
+    /// `legado_parser::AnalyzeRule::get`（规则 `@get:{k}` 的底层）可见该值。
+    /// 即「JS 写变量、规则读变量」链路（小米阅读/就去看网/手机小说三源
+    /// 偏差的真实机制测试；端到端 FFI 对照见 web_book 手机小说测试）。
+    ///
+    /// P1-1/P1-2 后分两相：
+    /// - **裸键相**（无 flow scope）：裸 `java.put` 挂载写裸键 + 裸读者
+    ///   （P2-9 ③ 原始路径，直用引擎/无流程入口上下文）；
+    /// - **scope 相**（P1-1/P1-2）：`set_flow_scope` 后 `java.__lgStorePut`
+    ///   写 `lgflow::{scope}{key}`，FFI 实际注册的 `get_flow_variable`
+    ///   读者（scoped 层 → 裸层）对 `AnalyzeRule::get` 可见；换 scope 只
+    ///   清旧前缀、持久裸键不受影响（P1-1 验收同构）。
+    ///
+    /// P2-2：串行锁统一用 `variable_store::lock_variables()`（与 StoreGuard
+    /// 同一把；原本测试私有的 P29_LOCK 与 StoreGuard 互不互斥，已删除）。
+    #[test]
+    fn test_java_put_visible_to_analyze_rule_get() {
+        use std::sync::Arc;
+
+        use crate::host_api::variable_store;
+        use legado_parser::{set_global_variable_reader, AnalyzeRule};
+
+        // 全局状态（读取器 + 全局变量表 + flow scope）与所有其他触碰方串行
+        let _lock = variable_store::lock_variables();
+        let _guard = variable_store::StoreGuard::new();
+        struct ResetReader;
+        impl Drop for ResetReader {
+            fn drop(&mut self) {
+                set_global_variable_reader(None);
+            }
+        }
+        variable_store::clear_variables().expect("清全局变量表");
+
+        // ── 相一：裸键（无 scope）──
+        set_global_variable_reader(Some(Arc::new(|key: &str| -> Option<String> {
+            variable_store::get_variable(key).ok().flatten()
+        })));
+        let _reset = ResetReader;
+
+        // 真实 QuickJS 引擎执行真实 `java.put` 宿主方法
+        let engine = make_engine();
+        engine
+            .eval(r#"java.put('p29_js_k', 'p29_js_v')"#)
+            .expect("java.put 应执行成功");
+
+        // AnalyzeRule::get：本地未命中 → 兜底全局读取器 → 命中
+        let analyzer = AnalyzeRule::new(String::new(), String::new());
+        assert_eq!(
+            analyzer.get("p29_js_k"),
+            "p29_js_v",
+            "java.put 写入应经全局 store 桥对规则 @get 可见"
+        );
+        assert_eq!(
+            analyzer.get("p29_never_exists"),
+            "",
+            "未写入的键兜底后仍应空"
+        );
+
+        // 本地非空值优先于全局 store（既有优先级不变）
+        analyzer.put("p29_js_k", "local_v");
+        assert_eq!(analyzer.get("p29_js_k"), "local_v");
+
+        // ── 相二：flow scope（P1-1/P1-2 会话层）──
+        variable_store::set_flow_scope("p29_scope_a").expect("设 scope A");
+        set_global_variable_reader(Some(Arc::new(|key: &str| -> Option<String> {
+            variable_store::get_flow_variable(key)
+        })));
+        // 引擎内 __lgStorePut（解析器前导 java.put 的桥目标）
+        engine
+            .eval(r#"java.__lgStorePut('p29_sc_k', 'p29_sc_v')"#)
+            .expect("__lgStorePut 应执行成功");
+        // 持久裸键（模拟 source.put 搜索期写入）
+        variable_store::set_variable("v_src_k", "persistent").expect("写持久键");
+
+        assert_eq!(
+            analyzer.get("p29_sc_k"),
+            "p29_sc_v",
+            "scoped 会话键应经 get_flow_variable 兜底对规则 @get 可见"
+        );
+        // 换 scope：旧 scope 会话键清、持久裸键存活（P1-1 验收同构）
+        variable_store::set_flow_scope("p29_scope_b").expect("换 scope B");
+        assert_eq!(analyzer.get("p29_sc_k"), "", "换 scope 后会话键不可见");
+        assert_eq!(
+            analyzer.get("v_src_k"),
+            "persistent",
+            "换 scope 不触碰持久裸键（P1-1）"
+        );
+        variable_store::clear_flow_scope().expect("清 scope");
     }
 
     #[test]

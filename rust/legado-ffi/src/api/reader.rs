@@ -349,6 +349,10 @@ pub fn chapter_to_local_info(ch: &BookChapter) -> legado_book::ChapterInfo {
 /// 3. 将 WebChapter 转换为 BookChapter 并存入数据库
 /// 4. 返回 JSON 格式的章节列表
 pub fn refresh_toc(book_url: &str, source_url: &str) -> LegadoResult<ChapterListResponse> {
+    // P1-2 入口收口：本入口执行 preUpdate JS + ruleBookInfo/ruleToc（变量桥
+    // 读写）→ 先切 flow scope（键 = book_url，与 webbook_info/chapters 同键），
+    // 防上一流程的残留 scope 串读/误清
+    crate::api::web_book::begin_book_flow(book_url);
     // 生产入口：构建真实 engine 后委托核心逻辑（fetcher 泛型化便于单测注入脚本化 fetcher）
     let engine = super::web_book::build_engine()?;
     refresh_toc_with_fetcher(book_url, source_url, &engine)
@@ -1019,9 +1023,16 @@ mod tests {
 
     #[test]
     fn test_refresh_toc_source_not_found() {
+        // P2-1：refresh_toc 入口在 DB 查询前执行 begin_book_flow（切
+        // flow scope，清旧前缀）→ 触碰全局 store 状态，须与其它 store
+        // 测试串行（共享 web_book 模块级锁）；结尾复位 flow scope
+        let _lock = crate::api::web_book::GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let _db_guard = setup_db_and_source("https://other.example.com");
         let err = refresh_toc("https://x.com/book", "https://nonexistent.example.com").unwrap_err();
         assert!(err.to_string().contains("书源不存在"));
+        legado_js::host_api::variable_store::clear_flow_scope().expect("复位 flow scope");
     }
 
     /// refresh_toc 占位落库须打 NOT_SHELF，书架 list 不可见（Task#125）

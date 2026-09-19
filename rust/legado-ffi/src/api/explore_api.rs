@@ -138,6 +138,13 @@ pub fn explore_fetch_books(source_json: &str, url: &str, page: i32) -> LegadoRes
         return Err(LegadoError::Internal("发现分类 URL 为空".into()));
     }
 
+    // P1-2 入口收口：发现页执行 ruleExplore（JS 书源 orchestrator / 规则
+    // 书源 fresh_engine，变量桥读写）→ 先切 flow scope（键 =
+    // explore:{书源 URL}，与 webbook_search 的 search:{书源 URL} 同族），
+    // 防上一流程残留 scope 串读/误清。单源单流程调用（无并发各源），
+    // 逐源键安全
+    crate::api::web_book::begin_book_flow(&format!("explore:{}", source.book_source_url));
+
     // JS 书源分派：spawn_blocking 避免嵌套 runtime 死锁（R1）
     if source.is_js_source() {
         let source_clone = source.clone();
@@ -1646,6 +1653,12 @@ JSON.stringify(qtsj.concat([{title: base_url + '榜', url: '/rank'}]));
     /// 网络回归：思路客发现「玄幻」页码展开后应 HTTP 成功并解析到书名
     #[test]
     fn test_explore_fetch_siluke_xuanhuan_live() {
+        // P2-1：explore_fetch_books 入口执行 begin_book_flow（切 flow
+        // scope）→ 触碰全局 store 状态，须与其它 store 测试串行（共享
+        // web_book 模块级锁）；结尾复位 flow scope
+        let _lock = crate::api::web_book::GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
         let source = serde_json::json!({
             "bookSourceUrl": "http://www.silukezw.com",
             "bookSourceName": "思路客#2",
@@ -1705,5 +1718,6 @@ JSON.stringify(qtsj.concat([{title: base_url + '榜', url: '/rank'}]));
                 panic!("网络/解析失败（非占位符问题）: {msg}");
             }
         }
+        legado_js::host_api::variable_store::clear_flow_scope().expect("复位 flow scope");
     }
 }

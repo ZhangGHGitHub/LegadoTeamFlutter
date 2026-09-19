@@ -172,7 +172,7 @@
   - **正确做法（待重做，需整体设计）**：改键必须与「所有 URL 持有者同步」一起做——至少包括：换源返回的新 URL 已在 Dart 侧被用于重开详情页（`book_info_screen_builders.part.dart:2007-2013`）✅，但**书架/其它 provider 的内存对象**、`searchBooks` 候选、以及任何按 bookUrl 索引的缓存都需一并失效/刷新；或改键时保留一份「旧键 → 新键」的别名表供过渡期查询。
   - **回退后遗留的真实危害仍在**（即当初做改键的动机）：换源后书籍仍以旧源地址为键 → 详情页 U7 后台刷新（`book_info_screen_load.part.dart:210` 的 `webbookInfo(sourceJson, b.bookUrl)`）会用旧地址 + 新源规则解析 → `tocUrl` 被重推成 `…?bookId=` 退化值并「非空即覆盖」回写。**低成本缓解（建议下一步先做）**：在该刷新合并处对 `tocUrl` 加「解析值形态校验/退化值不覆盖」守卫（只动 Dart 合并层，不动主键）。
 
-- **P2-9 书源引擎对照审计结论与待补清单**（**①②已关闭 2026-09-18**；其余开放）：①② 已落地——JS 宿主方法补齐（`getStringList`/`setContent`/`cache.*`/`java.lang`·`java.util` 最小面/`java.delete`/`hexDecodeToByteArray`/`upLoginData` no-op）+ `src` 重绑定（子步单参 `java.*` 重解析顶层原始响应，语料反例 0）+ `book` 绑定扩面与 `getVariable`（按 bookUrl 读 DB 用户变量，回退 `@put` 导出）；源级效果见 CHANGELOG。剩余 ③④⑤⑥~⑬ 仍开放：对上游 `app/.../analyzeRule/**` 做对照审计（20 组成对实验，14 组等价 / 0 处结构性偏差；526 源真实命中统计）。**结论：不需要大修**，剩余 13 项偏差均可增量修补，按命中排序：
+- **P2-9 书源引擎对照审计结论与待补清单**（**①②③④⑤已关闭 2026-09-19**；⑥~⑬ 开放）：③④⑤ 已落地（flow-scope 化 `java.put`↔`@get` 桥 + 入口收口、`@put` 走完整管道、`%%` 首列表定界），证据见 CHANGELOG [2.0.291]；审查 P1/P2 全部修复。③ 残留（登记）：完整「一进程内两本书流程真并行」需 per-execution scope ID；`preciseSearch` 独立调用继承调用方 scope；`explore` raw-eval 按设计写裸键；server 无 JS 执行器；嵌套 `@put` 的 `}` 泄漏为已知限制。② 的首次详情 DB 兜底、② 的 `cache.*` 磁盘注入等仍见 P2-11。历史记录：①② 已落地——JS 宿主方法补齐（`getStringList`/`setContent`/`cache.*`/`java.lang`·`java.util` 最小面/`java.delete`/`hexDecodeToByteArray`/`upLoginData` no-op）+ `src` 重绑定（子步单参 `java.*` 重解析顶层原始响应，语料反例 0）+ `book` 绑定扩面与 `getVariable`（按 bookUrl 读 DB 用户变量，回退 `@put` 导出）；源级效果见 CHANGELOG。剩余 ③④⑤⑥~⑬ 仍开放：对上游 `app/.../analyzeRule/**` 做对照审计（20 组成对实验，14 组等价 / 0 处结构性偏差；526 源真实命中统计）。**结论：不需要大修**，剩余 13 项偏差均可增量修补，按命中排序：
   1. **JS 宿主方法缺失**（~160 处用法 / 15–20 源）：`java.getStringList` 15 处/5 源**全部无守卫**（ReferenceError 致规则失败）、`java.lang.*` 36/18、`setContent` 13/7、缓存内存三件套、`upLoginData` 7/6、`hexDecodeToByteArray` 等 → 批量注册 + 源级冒烟。
   2. **`book` 绑定缺口**（12–13 源）：我方只绑 `{name}`，上游为完整实体；`book.getVariable` 9 源（破坏性）、`book.bookUrl` 16/`author` 11/`name` 14 **静默空值** → 扩为字段子集（数据源现成）。
   3. **`java.put`（进程全局 store）↔ `@get`（analyzer 本地 store）无桥**（3 源：小米阅读/就去看网/手机小说）：手机小说 `tocUrl` 取空回退 book_url → 目录页错 → `get()` 兜底读全局 store 或流程入口 seed。
@@ -211,6 +211,8 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **【工具陷阱·优先】`flutter_legado/scripts/build-apk.ps1` 的 FFI 校验只比对 FRB 生成码内容哈希**：当 Rust 改动**不改变 FFI 导出面**（本次 (C) 修复即如此）时，校验判为「in sync」并**跳过 Rust 交叉编译 → APK 打包旧 `.so`**，导致实机验证假失败/假通过（本次已因此先验到一次假失败，靠手工强制 `build-android.ps1` 才修好）。建议：校验改为「比对 Rust 源码树指纹（含 `rust/**` 内容哈希或 `cargo build -p legado-ffi` 的产物时间戳/哈希）」，或在跳过前提示「检测到 rust 改动但 FFI 面未变，需显式 `-ForceRust`」。**在该修复前，凡改 Rust 必须手工先跑 `rust/scripts/build-android.ps1`。**
   - debug 模式既有 `RenderFlex overflow`（右溢 12px）：非本轮引入，会被全局 `FlutterError.onError` 偶尔记入 crash_log（当前设备文件内容即此）；建议单独立项。
   - `armeabi-v7a` 的 `.so` 未随 (C) 强制重编（设备为 arm64，FFI 未变故不影响），下次全量构建会自然刷新。
+
+- **P2-14 门禁口径（流程，2026-09-19）**：`cargo test --workspace` **默认不含 quickjs**，JS 宿主/门控用例不在其中。**自本批起，Rust 门禁按两档报数**：`cargo test --workspace`（无 quickjs）与 `cargo test --workspace --features legado-ffi/quickjs`；提交说明须写明口径，仅报前者会漏掉全部 JS 行为证明。
 
 ### P3：功能补齐与卫生项（2026-08-22 开启）
 

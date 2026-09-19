@@ -397,8 +397,12 @@ impl XPathParser {
         }
 
         if elements_type == "%%" {
+            // P2-9 ⑤：定界用「首列表长度」而非「各列表最大长度」——对齐上游
+            // AnalyzeByXPath L75,L116（`results[0].indices`）/ AnalyzeByJSoup L110 /
+            // AnalyzeByJSonPath（`0 until results[0].size`）：首列表更短时，截断后续
+            // 更长的列表到首列表长度。首列表为空/长度为 0 时 0..0 自然空结果。
             let mut merged = Vec::new();
-            let max_len = results.iter().map(|r| r.len()).max().unwrap_or(0);
+            let max_len = results[0].len();
             for i in 0..max_len {
                 for group in &results {
                     if i < group.len() {
@@ -582,5 +586,62 @@ mod tests {
             .get_string("@XPath:.//*[contains(@class, 'bookname')]/a/@href")
             .unwrap();
         assert_eq!(url, "/book/x.html");
+    }
+
+    /// P2-9 ⑤：`%%` 以首列表长度定界（回归，对齐 AnalyzeByXPath L75,L116
+    /// `results[0].indices`）：`//b` 1 元素、`//a` 2 元素 → 截断到首列表长度
+    /// → 2 元素（旧 max_len 定界会多带 `//a` 尾部，得 3 元素）。
+    #[test]
+    fn test_percent_merge_bounded_by_first_list() {
+        let parser = XPathParser::new();
+        let xml = "<root><b>b1</b><a>a1</a><a>a2</a></root>";
+        let result = parser.parse_xpath(xml, "//b%%//a").unwrap();
+        assert_eq!(result.len(), 2);
+        assert!(result[0].contains("b1"));
+        assert!(result[1].contains("a1"));
+    }
+
+    /// P2-9 ⑤：`%%` 四类边界，直接调 `merge_results`（公开 API 丢弃空子规则，
+    /// 「首列表为空」仅可直接调用触达）
+    #[test]
+    fn test_percent_merge_boundaries_direct() {
+        let parser = XPathParser::new();
+        // 示例：b=1、a=2 → 首列表定界 → 2 元素
+        assert_eq!(
+            parser.merge_results(
+                vec![vec!["b1".into()], vec!["a1".into(), "a2".into()]],
+                "%%"
+            ),
+            vec!["b1".to_string(), "a1".to_string()]
+        );
+        // 首列表为空 → 空结果
+        assert_eq!(
+            parser.merge_results(vec![Vec::new(), vec!["a1".into(), "a2".into()]], "%%"),
+            Vec::<String>::new()
+        );
+        // 两侧等长 → 完整交叉（4 元素）
+        assert_eq!(
+            parser.merge_results(
+                vec![
+                    vec!["x1".into(), "x2".into()],
+                    vec!["y1".into(), "y2".into()]
+                ],
+                "%%"
+            ),
+            vec![
+                "x1".to_string(),
+                "y1".to_string(),
+                "x2".to_string(),
+                "y2".to_string()
+            ]
+        );
+        // 第二列表更短 → 首列表定界（长度 2），第二列表尾部不补 → 3 元素
+        assert_eq!(
+            parser.merge_results(
+                vec![vec!["x1".into(), "x2".into()], vec!["y1".into()]],
+                "%%"
+            ),
+            vec!["x1".to_string(), "y1".to_string(), "x2".to_string()]
+        );
     }
 }
