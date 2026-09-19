@@ -128,7 +128,9 @@ if ($fail -gt 0) { exit 1 }
 $procLine = $null
 for ($i = 0; $i -lt 30; $i++) {
   Start-Sleep -Seconds 1
-  $appPid = (& $adb -s $Device shell pidof $Package 2>$null).Trim()
+  # [FIX 2026-09-19] pidof 无进程时输出为空，直接 .Trim() 会抛 InvalidOperation（非致命但污染日志）：
+  # 先 -join '' 归一为字符串再 Trim，保持后续 -match 判空与自恢复语义不变
+  $appPid = ((& $adb -s $Device shell pidof $Package 2>$null) -join '').Trim()
   if ($appPid -match '^\d+') {
     $procLine = (& $adb -s $Device shell "ps -A | grep $Package" 2>$null)
     if ($procLine -match $Package) { break }
