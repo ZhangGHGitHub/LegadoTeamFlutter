@@ -1652,6 +1652,7 @@ JSON.stringify(qtsj.concat([{title: base_url + '榜', url: '/rank'}]));
 
     /// 网络回归：思路客发现「玄幻」页码展开后应 HTTP 成功并解析到书名
     #[test]
+    #[ignore = "requires network access"]
     fn test_explore_fetch_siluke_xuanhuan_live() {
         // P2-1：explore_fetch_books 入口执行 begin_book_flow（切 flow
         // scope）→ 触碰全局 store 状态，须与其它 store 测试串行（共享

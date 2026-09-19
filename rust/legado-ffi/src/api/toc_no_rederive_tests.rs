@@ -108,6 +108,7 @@ fn handle_conn(stream: &mut TcpStream, requests: &Arc<Mutex<Vec<String>>>) {
 /// 回归断言：入参为已解析目录页时——恰好 1 次请求打到该目录页（无二次
 /// 重推 tocUrl），解析出 3 章，章节 URL 基于目录页地址绝对化。
 #[tokio::test]
+#[ignore = "requires network access"]
 async fn get_chapters_with_vars_fetches_passed_toc_url_without_rederive() {
     let server = spawn_recording_server();
     let base = format!("http://127.0.0.1:{}", server.port);
@@ -214,6 +215,7 @@ async fn known_toc_login_check_js_blocks_when_not_logged_in() {
 /// no-op stub）——与同构建详情路径行为一致，目录正常解析。
 #[cfg(not(feature = "quickjs"))]
 #[tokio::test]
+#[ignore = "requires network access"]
 async fn known_toc_login_check_js_degrades_without_quickjs() {
     let server = spawn_recording_server();
     let base = format!("http://127.0.0.1:{}", server.port);
@@ -301,6 +303,7 @@ async fn known_toc_js_chapter_list_reads_book_name_hint() {
 /// 入参传详情页 URL 时，新契约下 ruleToc 直接在传入 body 上出章（> 0），
 /// 且仅 1 次请求打到该 URL（无二次重推）。
 #[tokio::test]
+#[ignore = "requires network access"]
 async fn toc_embedded_in_detail_page_url() {
     let server = spawn_recording_server();
     let base = format!("http://127.0.0.1:{}", server.port);

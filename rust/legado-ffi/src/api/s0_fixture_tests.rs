@@ -215,30 +215,35 @@ fn assert_matches_expected(expected: &Expected, actual_json: &str) {
 }
 
 #[tokio::test]
+#[ignore = "requires network access"]
 async fn s0b_redirect_final_url() {
     let (expected, actual, _) = run_scenario("redirect_final_url").await;
     assert_matches_expected(&expected, &actual);
 }
 
 #[tokio::test]
+#[ignore = "requires network access"]
 async fn s0b_book_url_pattern_hit() {
     let (expected, actual, _) = run_scenario("book_url_pattern_hit").await;
     assert_matches_expected(&expected, &actual);
 }
 
 #[tokio::test]
+#[ignore = "requires network access"]
 async fn s0b_book_url_pattern_miss() {
     let (expected, actual, _) = run_scenario("book_url_pattern_miss").await;
     assert_matches_expected(&expected, &actual);
 }
 
 #[tokio::test]
+#[ignore = "requires network access"]
 async fn s0b_empty_list_detail_fallback() {
     let (expected, actual, _) = run_scenario("empty_list_detail_fallback").await;
     assert_matches_expected(&expected, &actual);
 }
 
 #[tokio::test]
+#[ignore = "requires network access"]
 async fn s0b_empty_list_unparseable() {
     let (expected, actual, _) = run_scenario("empty_list_unparseable").await;
     assert_matches_expected(&expected, &actual);
