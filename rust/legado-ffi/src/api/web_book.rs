@@ -548,6 +548,23 @@ fn merge_book_variable_json(
     serde_json::to_string(&object).ok()
 }
 
+/// [P2-15 剩项②] 换源合并点「陈旧 overlay 让位」用的 overlay 键域读取：
+/// 返回 `book_url` 的 JS 写路径 variable overlay 全量键（[`book_write_overlays`]
+/// 第 1 路）。overlay_key 解析与 [`parse_book_info_from_body`] 的读回点
+/// 同构（meta 命中且非空取 meta.book_url，否则入参）——保证读到的键域与
+/// 并入 `WebBookInfo.variable` 的 overlay 是同一份。
+///
+/// 供 `source_switch::yield_stale_overlay_to_db` 判定「哪些键属本进程 JS
+/// 写路径残留 overlay」：仅该键域内的键参与让位，候选 ⊕ 详情 `@put` 导出
+/// 的新鲜合并产物不受影响（T5 语义不变）。
+pub(crate) fn book_var_overlay_map(book_url: &str) -> HashMap<String, String> {
+    let overlay_key = lookup_book_meta_by_book_url(book_url)
+        .map(|m| m.book_url)
+        .filter(|u| !u.trim().is_empty())
+        .unwrap_or_else(|| book_url.to_string());
+    book_write_overlays(&overlay_key).0
+}
+
 /// `book` 绑定 IIFE 模板（占位符替换；占位符串在正常书名/变量值中
 /// 不可能出现，替换安全）
 ///
@@ -6772,6 +6789,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     }
 
     #[test]
+    #[ignore = "requires network access"]
     fn test_siluke_full_rules_next_toc() {
         // P2-9 ③ / P1-2：入口 begin_book_flow 切 flow scope（只清旧 scope
         // 前缀，持久裸键不受影响），与 ③ 桥测试串行
@@ -6797,6 +6815,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     }
 
     #[test]
+    #[ignore = "requires network access"]
     fn test_siluke_book_info_chapters_timing_and_cache() {
         // P2-9 ③ / P1-2：入口 begin_book_flow 切 flow scope（只清旧 scope
         // 前缀，持久裸键不受影响），与 ③ 桥测试串行

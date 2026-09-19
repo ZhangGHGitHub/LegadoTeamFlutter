@@ -109,6 +109,23 @@ fn clear_flow_prefix(scope: &str) -> Result<(), String> {
     Ok(())
 }
 
+/// [P2-15 剩项①] 清除指定 bookUrl 的 `bookType::` / `bookReverseToc::`
+/// 裸键 overlay（流程会话级：scope 切换/结束时旧书的 type/reverseToc
+/// 覆盖值失效，回落书源 `bookSourceType` 换算初值）。
+///
+/// **保留** `bookVar::{bookUrl}::` 键——P2-15 ① 语义（「下一次绑定
+/// 构造时可见」）要求 bookVar 跨流程/跨书在进程内存活；type/reverseToc
+/// 是**会话级覆盖**（对齐上游每阶段 `removeAllBookType` 重置语义），
+/// 进程级黏性会让旧书 type 覆盖跨书残留到进程重启。
+fn clear_book_type_overlays(book_url: &str) -> Result<(), String> {
+    let mut store = GLOBAL_VARIABLES
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    store.remove(&book_type_key(book_url));
+    store.remove(&book_reverse_toc_key(book_url));
+    Ok(())
+}
+
 /// 设置当前流程作用域（`begin_book_flow` 的底层实现）
 ///
 /// - scope 与当前相同 → 无操作（同一本书 info → toc → content 链不清空，
@@ -116,6 +133,10 @@ fn clear_flow_prefix(scope: &str) -> Result<(), String> {
 /// - scope 变化 → 只清**旧** scope 前缀（上一本书的会话键），再写入新
 ///   scope。裸键持久数据（`v_*`/`sourceVariable_*`/`loginHeader_*`/
 ///   `userInfo_*`/`cache.*`）不受影响（P1-1）。
+///
+/// [P2-15 剩项①] scope 变化/流程结束（[`clear_flow_scope`]）时另清旧
+/// scope 的 `bookType::`/`bookReverseToc::` 会话级 overlay（保留
+/// `bookVar::`，见 [`clear_book_type_overlays`]）。
 pub fn set_flow_scope(scope: &str) -> Result<(), String> {
     let mut cur = FLOW_SCOPE
         .lock()
@@ -123,6 +144,7 @@ pub fn set_flow_scope(scope: &str) -> Result<(), String> {
     if cur.as_deref() != Some(scope) {
         if let Some(old) = cur.take() {
             clear_flow_prefix(&old)?;
+            clear_book_type_overlays(&old)?;
         }
         *cur = Some(scope.to_string());
     }
@@ -130,6 +152,9 @@ pub fn set_flow_scope(scope: &str) -> Result<(), String> {
 }
 
 /// 清除当前 scope 前缀并把 scope 复位为 None（测试收尾/流程生命周期结束）
+///
+/// [P2-15 剩项①] 同时清当前 scope 的 `bookType::`/`bookReverseToc::`
+/// 会话级 overlay（流程结束 = 会话级 type/reverseToc 覆盖失效）。
 pub fn clear_flow_scope() -> Result<(), String> {
     let old = FLOW_SCOPE
         .lock()
@@ -137,6 +162,7 @@ pub fn clear_flow_scope() -> Result<(), String> {
         .take();
     if let Some(old) = old {
         clear_flow_prefix(&old)?;
+        clear_book_type_overlays(&old)?;
     }
     Ok(())
 }
@@ -576,5 +602,81 @@ mod tests {
         assert_eq!(get_flow_variable("k"), Some("bv".into()));
         let _ = remove_variable(&book_var_key("https://p215-noscope.example.com/b/x", "k"));
         clear_flow_scope().unwrap();
+    }
+
+    // ── P2-15 剩项①：overlay 生命周期收窄（type/reverseToc 会话级） ─────
+
+    /// [P2-15 剩项①] 换书（scope 切换）清旧书 `bookType::`/`bookReverseToc::`
+    /// 会话级 overlay，`bookVar::` 保留（P2-15 ①「下一次绑定构造时可见」
+    /// 的跨书/跨流程存活语义不回归）。
+    #[test]
+    fn test_p215_scope_switch_clears_type_overlays_keeps_bookvar() {
+        let _lock = lock_variables();
+        let _guard = StoreGuard::new();
+        let book_a = "https://p215-overlay.example.com/b/a";
+        let book_b = "https://p215-overlay.example.com/b/b";
+        set_flow_scope(book_a).unwrap();
+        // A 的会话级 overlay + bookVar（宿主桥同形写入）
+        set_variable(&book_type_key(book_a), "64").unwrap();
+        set_variable(&book_reverse_toc_key(book_a), "true").unwrap();
+        set_variable(&book_var_key(book_a, "seq"), "a-seq").unwrap();
+        // 换书 A → B：A 的 type/reverseToc overlay 被清，bookVar 保留
+        set_flow_scope(book_b).unwrap();
+        assert_eq!(
+            get_variable(&book_type_key(book_a)).unwrap(),
+            None,
+            "换书后旧书 type overlay 应失效"
+        );
+        assert_eq!(
+            get_variable(&book_reverse_toc_key(book_a)).unwrap(),
+            None,
+            "换书后旧书 reverseToc overlay 应失效"
+        );
+        assert_eq!(
+            get_variable(&book_var_key(book_a, "seq")).unwrap(),
+            Some("a-seq".into()),
+            "bookVar 跨书存活（P2-15 ① 不回归）"
+        );
+        clear_flow_scope().unwrap();
+    }
+
+    /// [P2-15 剩项①] 同 scope 重复 set = 无操作：同书 info → toc →
+    /// content 链的 type overlay 不清（快路径不回归）。
+    #[test]
+    fn test_p215_same_scope_keeps_type_overlay() {
+        let _lock = lock_variables();
+        let _guard = StoreGuard::new();
+        let book_url = "https://p215-overlay.example.com/b/same";
+        set_flow_scope(book_url).unwrap();
+        set_variable(&book_type_key(book_url), "32").unwrap();
+        set_flow_scope(book_url).unwrap();
+        assert_eq!(
+            get_variable(&book_type_key(book_url)).unwrap(),
+            Some("32".into()),
+            "同书同 scope 重设不清 type overlay"
+        );
+        clear_flow_scope().unwrap();
+    }
+
+    /// [P2-15 剩项①] `clear_flow_scope`（流程结束）同样清当前书的
+    /// type/reverseToc overlay（会话级覆盖随会话失效）；bookVar 属
+    /// 进程级持久层，不受流程结束影响。
+    #[test]
+    fn test_p215_clear_flow_scope_clears_type_overlays() {
+        let _lock = lock_variables();
+        let _guard = StoreGuard::new();
+        let book_url = "https://p215-overlay.example.com/b/end";
+        set_flow_scope(book_url).unwrap();
+        set_variable(&book_type_key(book_url), "8").unwrap();
+        set_variable(&book_reverse_toc_key(book_url), "true").unwrap();
+        set_variable(&book_var_key(book_url, "v"), "bv").unwrap();
+        clear_flow_scope().unwrap();
+        assert_eq!(get_variable(&book_type_key(book_url)).unwrap(), None);
+        assert_eq!(get_variable(&book_reverse_toc_key(book_url)).unwrap(), None);
+        assert_eq!(
+            get_variable(&book_var_key(book_url, "v")).unwrap(),
+            Some("bv".into()),
+            "流程结束不清 bookVar 持久层"
+        );
     }
 }

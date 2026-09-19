@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use std::collections::HashMap;
+
 use futures::stream::{self, StreamExt};
 
 use legado_core::models::{BookChapter, BookSource};
@@ -550,6 +552,65 @@ pub(crate) fn merge_variables(initial: Option<&str>, detail: Option<&str>) -> Op
     }
 }
 
+/// [P2-15 剩项②] 陈旧 overlay 让位：换源合并点上，对本进程 JS 写路径
+/// 残留 overlay（`super::web_book::book_var_overlay_map` 返回的键域，即
+/// `bookVar::{bookUrl}::` 持久裸层键）参与 [`merge_variables`] 合并后
+/// 的结果做保守修正——**仅**这些键在满足全部条件时用 DB 值覆盖：
+///
+/// 1. 键 ∈ overlay 键域（`overlay_keys`）——本进程 JS `book.putVariable`
+///    写路径的残留值（`GLOBAL_VARIABLES` 进程级黏性：换源/换书不清，
+///    见 P2-15 剩项① 的收窄说明）；
+/// 2. 键 ∉ 候选搜索行变量（`candidate_variable`）——候选 ⊕ 详情是 T5
+///    换源意图内的新鲜合并链，候选携带的键绝不让位（T5 候选优先不变）；
+/// 3. DB `books.variable`（`db_variable`）已有该键的值——DB 为持久权威
+///    值（用户编辑 / 既有落库），比进程级残留 overlay「更新」。
+///
+/// 其余一律不动：非 overlay 键（详情 `@put` 导出等新鲜解析产物）不
+/// 让位；DB 无该键或值相等 → 零副作用直通；`merged` 为 None → None；
+/// `merged` / 各输入非 JSON 对象 → 降级原样返回（不阻断换源）。
+///
+/// 已知降级（有意为之）：本阶段 JS 写入的同名键若同时被用户在 DB 编辑
+/// 过，也一并让位给 DB 值（DB 权威），与账本「让位给更新的 DB 值」一致。
+pub(crate) fn yield_stale_overlay_to_db(
+    merged: Option<&str>,
+    db_variable: Option<&str>,
+    candidate_variable: Option<&str>,
+    overlay_keys: &HashMap<String, String>,
+) -> Option<String> {
+    let merged_raw = merged?;
+    let Some(serde_json::Value::Object(mut map)) =
+        serde_json::from_str::<serde_json::Value>(merged_raw).ok()
+    else {
+        return Some(merged_raw.to_string());
+    };
+    let candidate_has_key = |k: &str| {
+        candidate_variable
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .map(|v| v.as_object().is_some_and(|o| o.contains_key(k)))
+            .unwrap_or(false)
+    };
+    let db_value = |k: &str| {
+        db_variable
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(s).ok())
+            .and_then(|v| v.as_object().and_then(|o| o.get(k)).cloned())
+    };
+    for k in overlay_keys.keys() {
+        if candidate_has_key(k) {
+            continue;
+        }
+        if let Some(db_v) = db_value(k) {
+            if map.get(k) != Some(&db_v) {
+                map.insert(k.clone(), db_v);
+            }
+        }
+    }
+    Some(serde_json::Value::Object(map).to_string())
+}
+
 /// 换源核心（fetcher 注入，便于单测以 Mock 验证 T2 执行链）
 ///
 /// [T2 | ChangeBookSourceViewModel.kt:718-731 getToc] 对齐原版换源执行链：
@@ -640,7 +701,18 @@ fn switch_book_source_with<F: BookSourceFetcher>(
 
     // [T5] book.variable = 候选搜索期变量 ⊕ 详情页导出变量（详情页后写入
     //      者优先，对齐原版覆盖语义）；旧源旧值不再残留（R1 清单项）
-    book.variable = merge_variables(candidate_variable.as_deref(), info.variable.as_deref());
+    // [P2-15 剩项②] 陈旧 overlay 让位：详情解析（`parse_book_info_from_body`）
+    //      已把本进程 JS 写路径残留 overlay 并入 `info.variable`，若该键域内
+    //      的键 DB `books.variable` 已有同名值（持久权威：用户编辑/既有落库）
+    //      且候选搜索行未携带 → 用 DB 值覆盖，防进程级残留 overlay 影子化
+    //      更新 DB 值（规则与降级见 [`yield_stale_overlay_to_db`]）。
+    let merged_variable = merge_variables(candidate_variable.as_deref(), info.variable.as_deref());
+    book.variable = yield_stale_overlay_to_db(
+        merged_variable.as_deref(),
+        book.variable.as_deref(),
+        candidate_variable.as_deref(),
+        &super::web_book::book_var_overlay_map(new_book_url),
+    );
 
     // 2b. [T2] 用解析出的真实 tocUrl 抓取新目录（目录页可与详情页不同，
     //     如「详情页=books/1、目录页=/book/1/chapters」的源）
@@ -1673,6 +1745,233 @@ mod tests {
             let _ = BookSourceRepository::new(db.connection()).delete(new_source);
             let _ = legado_db::SearchBookRepository::new(db.connection())
                 .delete_by_book_url(new_detail);
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [P2-15 剩项②] `yield_stale_overlay_to_db` 规则矩阵（纯函数，不触 DB）：
+    /// - overlay 键域内键 + DB 有同名不同值 → 让位 DB 值；
+    /// - DB 值与合并值相等 → 不动（零副作用）；
+    /// - DB 无该键 → 原样直通；
+    /// - 键在候选搜索行 → 绝不让位（T5 候选优先不变）；
+    /// - overlay 键域为空 → 原样直通；
+    /// - merged None → None；merged / 输入非法 JSON → 降级直通（不阻断换源）。
+    #[test]
+    fn test_p215_yield_stale_overlay_to_db_rule_matrix() {
+        let overlay = std::collections::HashMap::from([
+            ("custom".to_string(), "stale-overlay".to_string()),
+            ("page".to_string(), "stale-page".to_string()),
+        ]);
+
+        // ① 让位：DB 同名不同值 → 用 DB 值；非 overlay 键不动
+        let out = yield_stale_overlay_to_db(
+            Some(r#"{"custom":"stale-overlay","detail":"d"}"#),
+            Some(r#"{"custom":"db-value"}"#),
+            None,
+            &overlay,
+        )
+        .expect("merged 为 JSON 对象应可产出");
+        let v: serde_json::Value = serde_json::from_str(&out).expect("输出应为 JSON");
+        assert_eq!(
+            v["custom"],
+            serde_json::json!("db-value"),
+            "DB 持久权威值应覆盖陈旧 overlay"
+        );
+        assert_eq!(v["detail"], serde_json::json!("d"), "非 overlay 键不动");
+
+        // ② DB 值与合并值相等 → 不动（输出与输入语义相等）
+        let out = yield_stale_overlay_to_db(
+            Some(r#"{"custom":"db-value"}"#),
+            Some(r#"{"custom":"db-value"}"#),
+            None,
+            &overlay,
+        )
+        .expect("merged 为 JSON 对象应可产出");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&out).unwrap()["custom"],
+            serde_json::json!("db-value")
+        );
+
+        // ③ DB 无该键 → overlay 值原样保留
+        assert_eq!(
+            yield_stale_overlay_to_db(
+                Some(r#"{"custom":"stale-overlay"}"#),
+                Some(r#"{"other":"o"}"#),
+                None,
+                &overlay,
+            ),
+            Some(r#"{"custom":"stale-overlay"}"#.to_string()),
+            "DB 无同名键 → 不动"
+        );
+
+        // ④ 键在候选搜索行 → 绝不让位（即使 DB 值不同）
+        let out = yield_stale_overlay_to_db(
+            Some(r#"{"custom":"stale-overlay"}"#),
+            Some(r#"{"custom":"db-value"}"#),
+            Some(r#"{"custom":"cand"}"#),
+            &overlay,
+        )
+        .expect("merged 为 JSON 对象应可产出");
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&out).unwrap()["custom"],
+            serde_json::json!("stale-overlay"),
+            "候选携带键绝不让位（T5 候选优先）"
+        );
+
+        // ⑤ overlay 键域为空 → 原样直通
+        assert_eq!(
+            yield_stale_overlay_to_db(
+                Some(r#"{"custom":"stale-overlay"}"#),
+                Some(r#"{"custom":"db-value"}"#),
+                None,
+                &std::collections::HashMap::new(),
+            ),
+            Some(r#"{"custom":"stale-overlay"}"#.to_string()),
+            "空 overlay 键域 → 直通"
+        );
+
+        // ⑥ merged None → None
+        assert_eq!(
+            yield_stale_overlay_to_db(None, Some(r#"{"custom":"db-value"}"#), None, &overlay),
+            None,
+            "merged None → None"
+        );
+
+        // ⑦ merged 非 JSON 对象 → 降级原样返回（不阻断换源）
+        assert_eq!(
+            yield_stale_overlay_to_db(
+                Some("not-json"),
+                Some(r#"{"custom":"db-value"}"#),
+                None,
+                &overlay,
+            ),
+            Some("not-json".to_string()),
+            "非 JSON merged 降级直通"
+        );
+
+        // ⑧ DB / 候选非法 JSON → 降级不让位
+        assert_eq!(
+            yield_stale_overlay_to_db(
+                Some(r#"{"custom":"stale-overlay"}"#),
+                Some("not-json"),
+                Some("not-json"),
+                &overlay,
+            ),
+            Some(r#"{"custom":"stale-overlay"}"#.to_string()),
+            "非法 JSON 输入降级为不让位"
+        );
+    }
+
+    /// [P2-15 剩项②] 换源端到端：本进程 JS 写路径残留 overlay（bookVar 层
+    /// 预置 `custom=stale-overlay`，流程级不清——P2-15 剩项① 的 bookVar
+    /// 进程级保留语义）+ DB `books.variable` 已有同名不同值（持久权威）
+    /// 且候选搜索行未携带该键 → 换源后 `book.variable` 取 DB 值（陈旧
+    /// overlay 让位）；DB 非 overlay 键域内的键（`keep`）不并入结果
+    /// （让位仅针对 overlay 键域，非通用 DB 合并）。
+    ///
+    /// 与 web_book 的 flow-scope 相关测试持有同一把
+    /// `GLOBAL_STORE_TEST_LOCK`（换源执行链内含 `begin_book_flow` 切
+    /// scope，并行清 scope 会互串），串行执行。
+    #[test]
+    fn test_p215_switch_yields_stale_overlay_to_db_variable() {
+        use crate::api::web_book::GLOBAL_STORE_TEST_LOCK;
+        use crate::db_state::{ensure_test_db, with_database};
+        use legado_core::models::{Book, BookSource};
+        use legado_core::web_book::{WebBookInfo, WebChapter};
+        use legado_db::repository::Repository;
+        use legado_db::{BookRepository, BookSourceRepository};
+        use legado_js::host_api::variable_store;
+
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        let _db_guard = ensure_test_db();
+        let old_url = "https://p215-yield.example.com/book/1";
+        let new_source = "https://p215-yield.example.com/new";
+        let new_detail = "https://p215-yield.example.com/book/1";
+
+        // DB 预置：books.variable 已有 custom（持久权威值：用户编辑/既有落库）
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: old_url.to_string(),
+                origin: "https://p215-yield.example.com/old".to_string(),
+                origin_name: "旧源".to_string(),
+                name: "让位测试书".to_string(),
+                author: "作者".to_string(),
+                variable: Some(r#"{"custom":"db-value","keep":"k"}"#.to_string()),
+                ..Book::default()
+            })?;
+            BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: new_source.to_string(),
+                book_source_name: "新源".to_string(),
+                ..BookSource::default()
+            })?;
+            Ok(())
+        })
+        .expect("初始数据写入失败");
+
+        // 预置本进程 JS 写路径残留 overlay（bookVar 持久裸层键）
+        let overlay_key = variable_store::book_var_key(new_detail, "custom");
+        variable_store::set_variable(&overlay_key, "stale-overlay").expect("预置 bookVar overlay");
+
+        // Mock 详情导出：模拟 parse_book_info_from_body 的
+        // 「详情 @put 导出 ⊕ overlay」合并结果（custom 来自 overlay 并入）
+        let mock = SwitchMockFetcher {
+            info: Ok(WebBookInfo {
+                name: "让位测试书".to_string(),
+                author: "作者".to_string(),
+                cover_url: None,
+                intro: None,
+                categories: vec![],
+                last_chapter: None,
+                variable: Some(r#"{"detail_key":"d","custom":"stale-overlay"}"#.to_string()),
+                book_url: new_detail.to_string(),
+                toc_url: new_detail.to_string(),
+                word_count: None,
+                kind: None,
+                book_type: 0,
+            }),
+            chapters: Ok(vec![WebChapter {
+                index: 0,
+                title: "第一章".to_string(),
+                url: format!("{new_detail}/c1"),
+                is_vip: false,
+                is_volume: false,
+                variable: None,
+                word_count: None,
+            }]),
+            chapters_requested: std::sync::Mutex::new(Vec::new()),
+            detail_vars_requested: std::sync::Mutex::new(Vec::new()),
+            toc_vars_requested: std::sync::Mutex::new(Vec::new()),
+        };
+
+        let resp =
+            switch_book_source_with(&mock, old_url, new_source, new_detail).expect("换源应成功");
+        let book: Book = serde_json::from_str(&resp).expect("换源返回应可解析");
+        let book_var: serde_json::Value =
+            serde_json::from_str(book.variable.as_deref().expect("book.variable 应有值")).unwrap();
+        assert_eq!(
+            book_var["custom"],
+            serde_json::json!("db-value"),
+            "陈旧 overlay 应让位给 DB 持久权威值"
+        );
+        assert_eq!(
+            book_var["detail_key"],
+            serde_json::json!("d"),
+            "详情导出键不动"
+        );
+        assert!(
+            book_var.get("keep").is_none(),
+            "DB 非 overlay 键域内的键不并入（让位非通用 DB 合并）"
+        );
+
+        // 收尾：清 bookVar 键 + 复位 flow scope（换源链已切至 new_detail）
+        let _ = variable_store::remove_variable(&overlay_key);
+        variable_store::clear_flow_scope().expect("复位 flow scope");
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete(old_url);
+            let _ = BookSourceRepository::new(db.connection()).delete(new_source);
             Ok(())
         })
         .ok();
