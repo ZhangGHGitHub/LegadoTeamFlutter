@@ -132,7 +132,7 @@ fn refresh_toc_url_native(source: &BookSource, book: &mut Book) -> LegadoResult<
     // 与 webbook_info 的 book_url 键同族），防上一流程残留 scope 串读/误清。
     // reGetBook 钩子（re_get_book_native）经 precise_search 后落到本函数
     // 收口；precise_search 自身不加 begin（mid-flow 调用方，见其文档）。
-    crate::api::web_book::begin_book_flow(&book.book_page_fetch_url());
+    crate::api::web_book::begin_book_flow(book.book_page_fetch_url());
     let engine = crate::api::web_book::build_engine()?;
     // [P2-8] 取址：优先 originBookUrl（当前书源详情页），为空回退 bookUrl
     let fetch_url = book.book_page_fetch_url();
