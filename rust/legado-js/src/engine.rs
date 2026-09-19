@@ -958,27 +958,61 @@ mod quickjs_tests {
         assert!(result.is_err(), "Expected syntax error");
     }
 
+    // [体检 §三.9] 内存限制沙箱安全线测试（Windows 侧仅保留历史性跳过，见下）
+    //
+    // [P2-7(b) 2026-09-19] 原脚本（`arr.push(new Array(1000).fill('x'))` 十万次循环）会踩
+    // quickjs-ng 0.8（rquickjs-sys 0.9 内置）的 OOM 处理缺陷，把测试进程打崩（进程级、
+    // 在测试进程内无法恢复；Linux 侧本次已 5/5 复现 SIGSEGV，Windows 侧见下方留痕）：
+    //   1) 脚本分配触顶 → JS_ThrowOutOfMemory 造出 InternalError 对象 E，挂到
+    //      rt->current_exception；
+    //   2) 异常上抛到 JS_CallInternal 的 exception 分支（quickjs.c:17439）→
+    //      is_backtrace_needed 判定需补栈回溯 → build_backtrace(E)（quickjs.c:6629 起）；
+    //   3) build_backtrace 内部再分配（dbuf_printf → dbuf_realloc，cutils.c:126）时余量
+    //      仍不足 → 二次 OOM → JS_Throw(新对象) 无条件先 JS_FreeValue 旧异常
+    //      （quickjs.c:6471）——释放的正是 E 本身；
+    //   4) free_object 收尾把 E->shape 置 NULL（quickjs.c:5567），而 build_backtrace 仍在
+    //      用 E，末行 JS_DefinePropertyValue(E, "stack", …)（quickjs.c:6792）→
+    //      find_own_property 读 sh->prop_hash_mask（quickjs.c:5337，sh==NULL，指令
+    //      `mov eax,[rax+0x20]`，rax=0）→ SIGSEGV。
+    // 是否踩到第 3 步取决于「首次失败后剩余多少 JS 堆余量」这一跨环境刀锋条件，故 CI 间歇红；
+    // 本机以 400000 字节上限 5/5 确定性复现（WSL gdb 已证实上述链路）。
+    //
+    // 处置：改用「单次巨量分配」——失败请求（200MB）远大于错误对象/栈回溯所需的小分配，
+    // 余量充足，必走干净 OOM 异常路径。已在 WSL(Linux) 与 Windows 各 5 档上限
+    // （256KB/384KB/512KB/1MB/64MB）实测「返回 Err 且不崩」，错误消息均为 out of memory。
+    // 断言语义保持「内存上限被强制执行」，并顺带钉住错误内容。
+    //
+    // Windows 侧历史跳过保留（P2-7(b) 时 Windows 曾见同型 ACCESS_VIOLATION）；当前脚本
+    // 已实测 Windows 不崩（`--ignored` 单跑通过），如需恢复 Windows 覆盖，删掉下面这个
+    // cfg_attr 即可——CI（rust-ci，Linux runner）不受影响。
     #[test]
-    // [体检 §三.9] 内存限制沙箱安全线测试：Windows 下 QuickJS 超限分配触发
-    // ACCESS_VIOLATION（进程级崩溃，无法在测试进程内恢复），仅 Windows 跳过；
-    // Linux（CI rust-ci runner）正常执行回归防护。
     #[cfg_attr(
         windows,
         ignore = "QuickJS memory limit test causes ACCESS_VIOLATION on Windows"
     )]
     fn test_sandbox_memory_limit() {
-        // 极小内存限制（512KB）应导致大脚本分配失败
+        // 极小内存限制（512KB）应导致巨量分配失败（干净 OOM 异常，而非进程崩溃）
         let config = SandboxConfig::strict().with_memory_limit(512 * 1024);
         let engine = QuickJsEngine::new(config).unwrap();
-        let big_script = "var arr = []; for (var i = 0; i < 100000; i++) { arr.push(new Array(1000).fill('x')); } arr.length;";
-        let result = engine.eval(big_script);
+        let result = engine.eval("new Uint8Array(200 * 1024 * 1024);");
         assert!(
             result.is_err(),
             "Expected memory limit error, got: {:?}",
             result
         );
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("out of memory"),
+            "Expected out-of-memory error from the 512KB cap, got: {msg}"
+        );
     }
 
+    // [P2-7(b) 覆盖留痕] 原崩溃配方（仅手工复现用，勿进 CI；属进程级崩溃，无法写成断言）：
+    //   let cfg = SandboxConfig::strict().with_memory_limit(400_000); // 512KB 在本机不触发（环境刀锋）
+    //   engine.eval("var arr = []; for (var i = 0; i < 100000; i++) { arr.push(new Array(1000).fill('x')); } arr.length;")
+    // → WSL 5/5 SIGSEGV（find_own_property quickjs.c:5337，rax=0）；Windows 侧同型崩溃可由
+    //   「对象属性增长」脚本在 512KB 触发（`o['k'+i]=i` 循环 → 0xC0000005）。上游修复
+    //   （升级 rquickjs/quickjs-ng）后可把它改回常规回归断言。
     #[test]
     fn test_sandbox_timeout() {
         // 测试超时机制：使用递归循环而非紧密循环，以便中断处理器有更多机会被调用

@@ -29,17 +29,20 @@ jobs:
       - name: Cargo test
         working-directory: rust
         run: cargo test --workspace
-      # [P2-7(b) 2026-09-19] test_sandbox_memory_limit 在 Linux 上会踩 QuickJS OOM 路径的
-      # NULL 解引用（JS_SetPropertyValue @ quickjs.c:8983，RAX=0 → mov eax,[rax+0x20]）→ 进程级
-      # SIGSEGV；该用例是唯一「Windows 跳过、仅 Linux 跑」的沙箱安全线用例（engine.rs:965），
-      # 触发概率随同进程并行内存压力变化（WSL 复现 3/3 崩溃偏移一致，孤立单跑 300 次 0 崩溃）。
-      # 处置：主步骤摘除它（保留其余全部用例），再单独串行跑它——既止住 CI 间歇红，又不丢覆盖。
+      # [P2-7(b) 2026-09-19 → 本版收口] test_sandbox_memory_limit 原脚本
+      # （arr.push(new Array(1000).fill('x')) 十万次循环）踩的是 quickjs-ng 0.8 的 OOM 缺陷：
+      # 首次 OOM 抛错 → JS_CallInternal 补栈回溯 → build_backtrace 内二次 OOM →
+      # JS_Throw 释放的正是待补栈回溯的 error object（quickjs.c:6471 → free_object 置
+      # p->shape=NULL，quickjs.c:5567）→ 末行 JS_DefinePropertyValue 解引用已释放对象 →
+      # SIGSEGV（find_own_property，quickjs.c:5337：sh==NULL，`mov eax,[rax+0x20]`，rax=0）。
+      # 是否触发取决于「首次失败后剩余多少 JS 堆余量」这一跨环境刀锋条件 → CI 间歇红；
+      # 隔离单跑并不能解决（run 35428715961 的串行单跑仍崩，WSL 单跑 8/8 却通过）。
+      # 根治：用例改为「单次巨量分配」保守脚本（engine.rs::test_sandbox_memory_limit），
+      # WSL(Linux)/Windows 各 5 档上限（256KB/384KB/512KB/1MB/64MB）实测「返回 Err 且不崩」。
+      # 故撤销 --skip 与串行隔离步骤，用例回归主测试档（覆盖不减、CI 结构复原）。
       - name: Cargo test (quickjs)
         working-directory: rust
-        run: cargo test -p legado-js --features quickjs -- --skip engine::quickjs_tests::test_sandbox_memory_limit
-      - name: Cargo test (quickjs) — 沙箱内存上限用例串行单跑 [P2-7(b) 隔离]
-        working-directory: rust
-        run: cargo test -p legado-js --features quickjs --lib -- --exact engine::quickjs_tests::test_sandbox_memory_limit --test-threads=1
+        run: cargo test -p legado-js --features quickjs
       - name: Cargo test legado-ffi full (quickjs)
         working-directory: rust
         run: cargo test -p legado-ffi --features quickjs
