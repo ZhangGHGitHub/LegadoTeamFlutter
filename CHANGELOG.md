@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.295] - 2026-09-19
+
+### Fixed
+- [Rust][UI] **书源脚本的磁盘缓存不再落系统临时目录（P2-15 ② 收口）**：此前 `cache.*` 未注入目录时回落到 `<temp_dir>/legado-js-cache`，Android 上多半不可写，写盘失败即无声失效（仅内部日志可见）。现 Dart 启动即把应用私有缓存目录（`getApplicationCacheDirectory()/js_cache`）注入 Rust 层（新增 frb 薄桥 `set_cache_dir` + 启动接线），书源脚本的磁盘缓存落到应用私有存储；未注入或注入失败时仍保留回落目录、不阻断启动，且写失败改为进程级**只告警一次**（不再每次失败刷日志）。
+- [Rust] **切书后不再沿用上一本的阅读模式/倒序目录（P2-15 第 3 条）**：书源脚本写入的 `bookType` / `bookReverseToc` 覆盖值改为随流程 scope 切换清理（书级绑定 `bookVar` 保留，切回原书状态不丢）；同时新增「陈旧覆盖值让位」——书源更新规则后，库里已有值的键不再被旧的覆盖值压住。
+
 ## [2.0.294] - 2026-09-19
 
 ### Fixed
