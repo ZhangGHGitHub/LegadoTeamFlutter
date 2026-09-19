@@ -128,6 +128,17 @@ pub mod ffi {
         legado_js::host_api::config_api::set_injected_read_book_config(&read_json);
     }
 
+    /// 注入 JS 磁盘缓存目录（P2-15 剩项：cache.* 落应用私有存储）
+    ///
+    /// Flutter 侧启动时传应用私有缓存目录（Android `Context.getCacheDir()`
+    /// 等价，Dart path_provider `getApplicationCacheDirectory()`），使 JS
+    /// `cache.put/get/putFile/getFile` 磁盘层落应用私有存储而非系统 temp
+    /// 目录（未注入时回落 `<temp_dir>/legado-js-cache`，磁盘缓存随系统
+    /// temp 清理而丢失）。
+    pub fn set_cache_dir(dir: String) {
+        legado_js::host_api::cache_store::set_cache_dir(&dir);
+    }
+
     /// 获取版本号
     pub fn version() -> String {
         env!("CARGO_PKG_VERSION").to_string()

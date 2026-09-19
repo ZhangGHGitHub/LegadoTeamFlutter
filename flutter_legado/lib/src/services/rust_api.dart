@@ -63,6 +63,10 @@ class RustApi
     // [UI-fix v2.0.2 | 2026-08-06] TTS 缓存目录初始化接线 — QoderCN
     await _initTtsCacheDir();
 
+    // [P2-15 剩项②③] JS 磁盘缓存目录初始化接线：cache.* 落应用私有缓存
+    // 目录（Android Context.getCacheDir() 等价），替代系统 temp 回落目录
+    await _initJsCacheDir();
+
     // 注入真实设备 ID（书山聚合等源登录登记设备 + 正文 X-Device-Id 校验；
     // 对齐原版 AppConst.androidId = Settings.Secure.ANDROID_ID）
     await _injectDeviceId();
@@ -219,6 +223,28 @@ class RustApi
       debugPrint('[RustApi] ttsSetCacheDir -> ${dir.path}（ok=$ok）');
     } catch (e) {
       debugPrint('[RustApi] ttsSetCacheDir 初始化失败，保留 Rust 默认目录：$e');
+    }
+  }
+
+  /// 设置 JS 磁盘缓存目录（应用初始化时调用）— P2-15 剩项
+  ///
+  /// Rust 侧 `cache_store` 未注入时回落 `<temp_dir>/legado-js-cache`
+  /// （系统 temp 目录，可能被系统清理，磁盘缓存随清理丢失）。这里指向
+  /// 应用私有缓存目录（Android `Context.getCacheDir()` 等价，Dart
+  /// `getApplicationCacheDirectory()`）下的 js_cache 子目录，使 JS
+  /// `cache.put/get/putFile/getFile` 磁盘层落应用私有存储；取不到路径时
+  /// 保留 Rust 默认并仅记日志，不阻断初始化。
+  Future<void> _initJsCacheDir() async {
+    try {
+      final base = await getApplicationCacheDirectory();
+      final dir = Directory('${base.path}${Platform.pathSeparator}js_cache');
+      if (!dir.existsSync()) {
+        dir.createSync(recursive: true);
+      }
+      await bridge.setCacheDir(dir: dir.path);
+      debugPrint('[RustApi] setCacheDir -> ${dir.path}');
+    } catch (e) {
+      debugPrint('[RustApi] setCacheDir 初始化失败，保留 Rust 默认目录：$e');
     }
   }
 

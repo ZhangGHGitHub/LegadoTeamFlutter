@@ -41,6 +41,16 @@ Future<void> setThemeMode({required String mode}) =>
 Future<void> setReadBookConfig({required String readJson}) =>
     RustLib.instance.api.crateFfiFfiSetReadBookConfig(readJson: readJson);
 
+/// 注入 JS 磁盘缓存目录（P2-15 剩项：cache.* 落应用私有存储）
+///
+/// Flutter 侧启动时传应用私有缓存目录（Android `Context.getCacheDir()`
+/// 等价，Dart path_provider `getApplicationCacheDirectory()`），使 JS
+/// `cache.put/get/putFile/getFile` 磁盘层落应用私有存储而非系统 temp
+/// 目录（未注入时回落 `<temp_dir>/legado-js-cache`，磁盘缓存随系统
+/// temp 清理而丢失）。
+Future<void> setCacheDir({required String dir}) =>
+    RustLib.instance.api.crateFfiFfiSetCacheDir(dir: dir);
+
 /// 获取版本号
 Future<String> version() => RustLib.instance.api.crateFfiFfiVersion();
 

@@ -63,18 +63,18 @@ fn memory_cache() -> &'static Mutex<LruCache<String, String>> {
 /// 宿主注入的磁盘缓存目录（P2-11 ②）
 static INJECTED_DIR: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 
-/// 注入磁盘缓存目录（宿主注入点，P2-11 ②）
+/// 注入磁盘缓存目录（宿主注入点，P2-11 ②；P2-15 剩项经 frb 薄桥接通）
 ///
 /// FFI/Android 宿主在初始化时调用，指向应用私有缓存目录（如 Android
-/// `Context.getCacheDir()`），使 `cache.put/get` 磁盘层落应用私有存储
-/// 而非系统 temp 目录。后续全部磁盘层读写（put/get/putFile/getFile/
-/// delete）生效；内存层不受注入影响。
+/// `Context.getCacheDir()`，Dart path_provider `getApplicationCacheDirectory()`
+/// 等价），使 `cache.put/get` 磁盘层落应用私有存储而非系统 temp 目录。
+/// 后续全部磁盘层读写（put/get/putFile/getFile/delete）生效；内存层不受
+/// 注入影响。
 ///
 /// 目录解析优先级见模块文档：env [`CACHE_DIR_ENV`]（非空）> 注入目录 >
-/// 缺省 temp 目录。本函数为普通 `pub` Rust API（不在 frb 导出面内，
-/// 不触发 FFI 绑定再生成）；Dart 侧经 flutter_rust_bridge 调用需另行
-/// 在 `legado-ffi::ffi` 模块加薄桥接函数并重新生成 Dart 绑定（属禁改区，
-/// 本任务只报告建议、不实施）。
+/// 缺省 temp 目录。Dart 侧经 flutter_rust_bridge 薄桥
+/// `legado-ffi::ffi::set_cache_dir`（P2-15 剩项新增，生成 Dart 绑定
+/// `setCacheDir`）在启动时注入应用私有缓存目录。
 pub fn set_cache_dir(path: impl AsRef<std::path::Path>) {
     if let Ok(mut guard) = INJECTED_DIR.get_or_init(|| Mutex::new(None)).lock() {
         *guard = Some(path.as_ref().to_path_buf());
@@ -91,6 +91,36 @@ pub(crate) fn clear_cache_dir() {
 
 /// 回落系统 temp 目录时的一次性告警日志
 static DEFAULT_DIR_WARNED: AtomicBool = AtomicBool::new(false);
+
+/// `put` 磁盘写失败（目录创建/序列化/`fs::write`）一次性告警标志
+/// （P2-15 剩项：目录不合法时每次 `cache.put` 都会失败，未限流前每次
+/// 各打一条错误日志；现进程内仅首条失败记录，后续静默）
+static PUT_WRITE_FAIL_WARNED: AtomicBool = AtomicBool::new(false);
+
+/// `putFile` 磁盘写失败一次性告警标志（同 [`PUT_WRITE_FAIL_WARNED`]）
+static PUT_FILE_WRITE_FAIL_WARNED: AtomicBool = AtomicBool::new(false);
+
+/// 一次性限流告警（P2-15 剩项，照抄 [`DEFAULT_DIR_WARNED`] 的
+/// `compare_exchange` 模式）：首条告警实际执行 `log` 并返回 true，
+/// 后续调用静默返回 false
+fn warn_once(flag: &AtomicBool, log: impl FnOnce()) -> bool {
+    if flag
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+    {
+        log();
+        true
+    } else {
+        false
+    }
+}
+
+/// 重置写失败一次性告警标志（测试隔离用）
+#[cfg(test)]
+pub(crate) fn reset_write_fail_warned() {
+    PUT_WRITE_FAIL_WARNED.store(false, Ordering::SeqCst);
+    PUT_FILE_WRITE_FAIL_WARNED.store(false, Ordering::SeqCst);
+}
 
 /// 磁盘缓存根目录：env 覆盖 > 宿主注入（[`set_cache_dir`]）>
 /// `<temp_dir>/legado-js-cache`（现状行为，回落时一次性告警）
@@ -193,10 +223,12 @@ pub fn put(key: &str, value: &str, save_time_secs: i64) -> bool {
     let path = disk_path(key);
     if let Some(parent) = path.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
-            eprintln!(
-                "[cache_store] 创建缓存目录失败 {:?}: {e}（降级保留内存层）",
-                parent
-            );
+            warn_once(&PUT_WRITE_FAIL_WARNED, || {
+                eprintln!(
+                    "[cache_store] 创建缓存目录失败 {:?}: {e}（降级保留内存层；同类失败后续不再逐条记日志）",
+                    parent
+                );
+            });
             put_memory(key, value);
             return false;
         }
@@ -207,13 +239,17 @@ pub fn put(key: &str, value: &str, save_time_secs: i64) -> bool {
     }) {
         Ok(j) => j,
         Err(e) => {
-            eprintln!("[cache_store] 序列化失败 {key}: {e}（降级保留内存层）");
+            warn_once(&PUT_WRITE_FAIL_WARNED, || {
+                eprintln!("[cache_store] 序列化失败 {key}: {e}（降级保留内存层；同类失败后续不再逐条记日志）");
+            });
             put_memory(key, value);
             return false;
         }
     };
     if let Err(e) = fs::write(&path, json) {
-        eprintln!("[cache_store] 写盘失败 {key} ({path:?}): {e}（降级保留内存层）");
+        warn_once(&PUT_WRITE_FAIL_WARNED, || {
+            eprintln!("[cache_store] 写盘失败 {key} ({path:?}): {e}（降级保留内存层；同类失败后续不再逐条记日志）");
+        });
         put_memory(key, value);
         return false;
     }
@@ -250,16 +286,26 @@ pub fn put_file(key: &str, value: &str) -> bool {
     let path = file_path(key);
     if let Some(parent) = path.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
-            eprintln!("[cache_store] 创建缓存目录失败 {:?}: {e}", parent);
+            warn_once(&PUT_FILE_WRITE_FAIL_WARNED, || {
+                eprintln!(
+                    "[cache_store] 创建缓存目录失败 {:?}: {e}（纯磁盘 API 无内存层可降级；同类失败后续不再逐条记日志）",
+                    parent
+                );
+            });
             return false;
         }
     }
     // P2-11 ②：纯磁盘 API（file/ 子目录，不进内存层）——写失败无内存层
-    // 可降级，仅记录失败原因（原 `.is_ok()` 静默吞错）
+    // 可降级，仅记录失败原因（原 `.is_ok()` 静默吞错）；P2-15 剩项：
+    // 限流为进程内首条（目录不合法时每次 `cache.putFile` 都会失败）
     match fs::write(&path, value) {
         Ok(()) => true,
         Err(e) => {
-            eprintln!("[cache_store] 写盘失败 {key} ({path:?}): {e}");
+            warn_once(&PUT_FILE_WRITE_FAIL_WARNED, || {
+                eprintln!(
+                    "[cache_store] 写盘失败 {key} ({path:?}): {e}（同类失败后续不再逐条记日志）"
+                );
+            });
             false
         }
     }
@@ -442,10 +488,11 @@ mod tests {
         assert!(get_from_memory(&k3).is_none());
         assert!(get_file(&k3).is_none());
 
-        // 收尾
+        // 收尾（P2-15 剩项：重置写失败告警标志，测试隔离）
         delete_memory(&k1);
         delete_memory(&k2);
         clear_cache_dir();
+        reset_write_fail_warned();
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -477,5 +524,26 @@ mod tests {
 
         clear_cache_dir();
         let _ = fs::remove_dir_all(&root);
+    }
+
+    /// P2-15 剩项 ④：写失败告警限流——进程内首条失败记录（返回 true），
+    /// 后续同类失败静默（返回 false）；`put`/`putFile` 两标志互独立；
+    /// 重置后（测试隔离）可再次首条触发
+    #[test]
+    fn test_write_fail_warned_once() {
+        let _lock = lock_cache_for_test();
+        reset_write_fail_warned();
+        assert!(warn_once(&PUT_WRITE_FAIL_WARNED, || {}), "首条失败应记录");
+        assert!(
+            !warn_once(&PUT_WRITE_FAIL_WARNED, || {}),
+            "后续同类失败应静默"
+        );
+        // putFile 标志与 put 标志互独立
+        assert!(warn_once(&PUT_FILE_WRITE_FAIL_WARNED, || {}));
+        assert!(!warn_once(&PUT_FILE_WRITE_FAIL_WARNED, || {}));
+        // 重置后（测试隔离）可再次首条触发
+        reset_write_fail_warned();
+        assert!(warn_once(&PUT_WRITE_FAIL_WARNED, || {}));
+        // 收尾：两标志保持已消费态（无其他测试依赖其首条语义）
     }
 }
