@@ -508,13 +508,19 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                         vertical: 4,
                       ),
                       decoration: BoxDecoration(
-                        color: Colors.black54,
+                        // [深色主题 Batch A-3] black54 → onSurfaceVariant：
+                        // 亮态 def #53433E（深色胶囊，观感等效旧 black54+白字）；
+                        // 暗态 def #D8C4BE（修复旧 black54 在黑底上近不可见），
+                        // 深色观感留 Batch B 对照参考阅读器截图复核
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                         borderRadius: BorderRadius.circular(12),
                       ),
                       child: Text(
                         '全局页 ${state.globalPageIndex + 1} / ${state.totalPages}',
-                        style: const TextStyle(
-                          color: Colors.white,
+                        // [深色主题 Batch A-3] 白字 → surface（亮态 #F5F5F5≈白；
+                        // 暗态 #424242 深字，与 onSurfaceVariant 亮底互为对比）
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.surface,
                           fontSize: 12,
                         ),
                       ),

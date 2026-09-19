@@ -94,13 +94,16 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final bottom = MediaQuery.paddingOf(context).bottom;
     return Container(
       constraints: BoxConstraints(
         maxHeight: MediaQuery.sizeOf(context).height * 0.88,
       ),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF2F2F7),
+      decoration: BoxDecoration(
+        // [深色主题 Batch A-1] iOS 硬编码浅色调色板 #F2F2F7 → scheme 槽位
+        // （亮色 def = #E2E2E2，暗色 def = #646464，跟随主题自动切换）
+        color: scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
       ),
       child: Column(
@@ -111,20 +114,22 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
             width: 36,
             height: 5,
             decoration: BoxDecoration(
-              color: const Color(0xFFC7C7CC),
+              // [深色主题 Batch A-1] 拖动把手 #C7C7CC → outlineVariant（中性描边槽位）
+              color: scheme.outlineVariant,
               borderRadius: BorderRadius.circular(3),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.fromLTRB(20, 14, 20, 8),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 14, 20, 8),
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
                 '漫画设置',
+                // [深色主题 Batch A-1] 标题 #1C1C1E → onSurface
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF1C1C1E),
+                  color: scheme.onSurface,
                 ),
               ),
             ),
@@ -316,12 +321,13 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
                     child: Row(
                       children: [
-                        const Expanded(
+                        Expanded(
                           child: Text(
                             '对齐',
+                            // [深色主题 Batch A-1] #1C1C1E → onSurface
                             style: TextStyle(
                               fontSize: 16,
-                              color: Color(0xFF1C1C1E),
+                              color: scheme.onSurface,
                             ),
                           ),
                         ),
@@ -359,14 +365,16 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
   }
 
   Widget _section(String title) {
+    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
       child: Text(
         title.toUpperCase(),
-        style: const TextStyle(
+        // [深色主题 Batch A-1] 分组标题 #8E8E93 → onSurfaceVariant
+        style: TextStyle(
           fontSize: 13,
           fontWeight: FontWeight.w500,
-          color: Color(0xFF8E8E93),
+          color: scheme.onSurfaceVariant,
           letterSpacing: 0.2,
         ),
       ),
@@ -374,17 +382,31 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
   }
 
   Widget _card(List<Widget> children) {
+    final scheme = Theme.of(context).colorScheme;
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        // [深色主题 Batch A-1] 白卡 → surface（暗色 def = #424242）
+        color: scheme.surface,
         borderRadius: BorderRadius.circular(12),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Column(children: children),
+      // [深色主题 Batch A-1] 内层透明 Material：框架 debug 断言
+      // 「ListTile background color or ink splashes may be invisible」要求
+      // ListTile 的最近 Material 祖先之间不得出现带背景的 DecoratedBox
+      // （本卡片即此类容器）；按框架提示包一层零视觉影响的透明 Material
+      //（卡片底色仍由外层 Container 的 scheme 槽位决定，外观不变）
+      child: Material(
+        type: MaterialType.transparency,
+        child: Column(children: children),
+      ),
     );
   }
 
-  Widget _divider() => const Divider(height: 1, indent: 16, color: Color(0xFFE5E5EA));
+  // [深色主题 Batch A-1] 分隔线 #E5E5EA → outlineVariant
+  Widget _divider() {
+    final scheme = Theme.of(context).colorScheme;
+    return Divider(height: 1, indent: 16, color: scheme.outlineVariant);
+  }
 
   Widget _switchTile({
     required String title,
@@ -399,7 +421,11 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
           ? null
           : Text(
               subtitle,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF8E8E93)),
+              // [深色主题 Batch A-1] 副标题 #8E8E93 → onSurfaceVariant
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
       value: value,
       onChanged: onChanged,
@@ -424,12 +450,20 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(fontSize: 16, color: Color(0xFF1C1C1E)),
+                  // [深色主题 Batch A-1] 滑杆标题 #1C1C1E → onSurface
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Theme.of(context).colorScheme.onSurface,
+                  ),
                 ),
               ),
               Text(
                 label,
-                style: const TextStyle(fontSize: 14, color: Color(0xFF8E8E93)),
+                // [深色主题 Batch A-1] 滑杆数值 #8E8E93 → onSurfaceVariant
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ],
           ),

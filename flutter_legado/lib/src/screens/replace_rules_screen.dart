@@ -98,7 +98,10 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
                 color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.8),
               ),
               filled: true,
-              fillColor: Colors.white.withValues(alpha: 0.2),
+              // [深色主题 Batch A-2] 白色 0.2 填充 → surfaceContainerHighest：
+              // 亮/暗两态下均为「AppBar surface 之上的一级 tonal 抬升」，
+              // 消除亮态近不可见、暗态呈灰白填充的双态不一致
+              fillColor: Theme.of(context).colorScheme.surfaceContainerHighest,
               isDense: true,
               contentPadding: const EdgeInsets.symmetric(vertical: 8),
               border: OutlineInputBorder(
