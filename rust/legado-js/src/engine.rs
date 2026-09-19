@@ -772,6 +772,8 @@ mod quickjs_tests {
     }
 
     #[test]
+    // 3.14 是任意的浮点绑定值（验证 float 绑定往返），并非 π 常量
+    #[allow(clippy::approx_constant)]
     fn test_eval_with_bindings_float() {
         let engine = make_engine();
         let bindings: Vec<(&str, JsValue)> = vec![("pi", JsValue::Number(3.14))];
