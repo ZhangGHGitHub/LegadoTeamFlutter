@@ -189,5 +189,9 @@
 
 ## 六、执行记录
 
+## 六、执行记录
+
+- **2026-09-20 Batch A 完成**（提交 `c1616a1fc3`）：A-1 漫画弹层 10 色 scheme 化（把手槽位偏离台账原议 secondaryContainer→outlineVariant，理由：着色容器语义不合中性把手；伴随 _card 包 transparency Material 的结构性修复，零像素变化）；A-2 替换规则搜索框 fillColor 统一 surfaceContainerHighest；A-3 阅读器徽标 onSurfaceVariant+surface（亮色等效论证 + 暗色观感留 Batch B 复核三要点已标注）。新增 manga_config_sheet_test.dart 2 项；flutter analyze 0；flutter test 1508 全过。A-4（排版引擎死默认，承重区）与 A-5（app_colors.dart 整体处置）按红线缓议，需单独 review/裁决。
+
 - 2026-09-19 建账：静态审计全量 grep（6 类模式）+ 逐条定性完成；未改代码、未用设备；台账首版发布。
 - 下一步：Batch A 五项可独立排期修复（其中 A-1 为唯一客观 P1）；Batch B 阻塞于外部输入清单①②。
