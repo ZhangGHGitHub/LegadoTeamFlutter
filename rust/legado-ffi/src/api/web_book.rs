@@ -178,10 +178,11 @@ struct BookMeta {
     variable: Option<String>,
 }
 
-/// book 元信息缓存容量（bookUrl 键；溢出即整体清空——降级 LRU 为全量
-/// 淘汰，与 PageBodyCache 的简单淘汰策略一致）
+/// book 元信息缓存容量（bookUrl 键；仅**新键**插入溢出时整体清空——降级
+/// LRU 为全量淘汰，与 PageBodyCache 的简单淘汰策略一致）
 const BOOK_META_CACHE_MAX: usize = 512;
-/// 章节 URL → book URL 映射缓存容量（溢出整体清空）
+/// (书源 URL, 章节 URL) 复合键 → book URL 映射缓存容量（仅**新键**插入
+/// 溢出时整体清空）
 const CHAPTER_BOOK_CACHE_MAX: usize = 8192;
 
 fn book_meta_cache() -> &'static Mutex<HashMap<String, BookMeta>> {
@@ -189,15 +190,26 @@ fn book_meta_cache() -> &'static Mutex<HashMap<String, BookMeta>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn chapter_book_cache() -> &'static Mutex<HashMap<String, String>> {
-    static CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+/// (书源 URL, 章节 URL) 复合键 → book URL
+///
+/// [P2-11 §193] 复合键防串键：两本书（不同书源）章节 URL 相同（聚合源
+/// 常见）时，正文阶段按**当前书源**的 sourceUrl 反查，不会绑定到别的书
+/// 的 meta（对齐 reader.rs Task #16 `get_by_book_and_chapter_url` 复合键
+/// 先例）；命中失败（换书源后旧源无记录等）回退既有空 name 字面量绑定。
+fn chapter_book_cache() -> &'static Mutex<HashMap<(String, String), String>> {
+    static CACHE: OnceLock<Mutex<HashMap<(String, String), String>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
 /// 按字段合并写入：新值非空覆盖，空字段保留旧值（详情/目录两阶段各自
 /// 只掌握部分字段，互不冲掉）
+///
+/// [P2-11 §199] 容量判定：仅**新键**插入且已达容量上限时整体清空；更新
+/// 既有键（merge 覆盖字段）不触发清空——修复旧版 `>=` 判定在满表时
+/// 任何写入（含既有键更新）都清空的缺陷
 fn book_meta_merge_insert(map: &mut HashMap<String, BookMeta>, key: String, patch: BookMeta) {
-    if map.len() >= BOOK_META_CACHE_MAX {
+    let is_new = !map.contains_key(&key);
+    if is_new && map.len() >= BOOK_META_CACHE_MAX {
         map.clear();
     }
     let entry = map.entry(key).or_default();
@@ -249,13 +261,17 @@ fn record_book_meta_from_info(book_url: &str, info: &WebBookInfo) {
     }
 }
 
-/// webbook_chapters：目录解析完成后记录 book 元信息 + 章节 → book 映射
+/// webbook_chapters：目录解析完成后记录 book 元信息 + (书源, 章节) → book 映射
 ///
 /// `last_chapter` 取最后一个非卷章标题（对齐 Book.lastChapter 语义）；
 /// 章节 URL 含空 URL 回退（= 目录页 URL）与卷章合成 URL，全部入映射，
-/// 正文阶段按章节 URL 原样反查即可命中。
+/// 正文阶段按 (sourceUrl, 章节 URL) 复合键原样反查即可命中。
+///
+/// [P2-11 §193] 映射键为复合键 (书源 URL, 章节 URL)（`source_url` 入参）：
+/// 同章节 URL 的不同书源书籍不串键（见 [`chapter_book_cache`] 注释）。
 fn record_chapter_list_cache(
     book_url: &str,
+    source_url: &str,
     toc_url: &str,
     name: &str,
     author: &str,
@@ -285,13 +301,35 @@ fn record_chapter_list_cache(
         book_meta_merge_insert(&mut map, book_url.to_string(), meta);
     }
     if let Ok(mut map) = chapter_book_cache().lock() {
-        if map.len() >= CHAPTER_BOOK_CACHE_MAX {
-            map.clear();
-        }
-        for ch in chapters {
-            if !ch.url.trim().is_empty() {
-                map.insert(ch.url.clone(), book_url.to_string());
-            }
+        chapter_book_insert_batch(&mut map, source_url, book_url, chapters);
+    }
+}
+
+/// [P2-11 §199] (书源, 章节) → book URL 批量写入：仅当**新键**数量使
+/// 总量溢出容量上限（当前条数 + 新键数 > 容量）时整体清空再写入；重复
+/// 记录同一批 (书源, 章节) 映射（既有键更新）不触发清空。整体清空与
+/// BookMeta / PageBodyCache 的简单淘汰策略一致（best-effort 缓存，未命中
+/// 回退空 name 字面量绑定，不值得 LRU 排序开销）。
+fn chapter_book_insert_batch(
+    map: &mut HashMap<(String, String), String>,
+    source_url: &str,
+    book_url: &str,
+    chapters: &[WebChapter],
+) {
+    let new_count = chapters
+        .iter()
+        .filter(|c| {
+            !c.url.trim().is_empty() && !map.contains_key(&(source_url.to_string(), c.url.clone()))
+        })
+        .count();
+    if new_count > 0 && map.len() + new_count > CHAPTER_BOOK_CACHE_MAX {
+        map.clear();
+    }
+    let src_key = source_url.to_string();
+    let book_key = book_url.to_string();
+    for ch in chapters {
+        if !ch.url.trim().is_empty() {
+            map.insert((src_key.clone(), ch.url.clone()), book_key.clone());
         }
     }
 }
@@ -301,16 +339,21 @@ fn lookup_book_meta_by_book_url(book_url: &str) -> Option<BookMeta> {
     book_meta_cache().lock().ok()?.get(book_url).cloned()
 }
 
-/// webbook_content：按章节 URL 反查 book 元信息
+/// webbook_content：按 (书源 URL, 章节 URL) 复合键反查 book 元信息
 ///
-/// 章节 URL → book URL（目录阶段映射）→ BookMeta（详情/目录阶段记录）。
-/// 未命中（未走详情/目录 FFI 调用，或缓存已淘汰）返回 None：正文阶段
-/// 回退既有空 name 字面量绑定语义，不破坏既有书源。
-fn lookup_book_meta_for_chapter(chapter_url: &str) -> Option<BookMeta> {
+/// (书源 URL, 章节 URL) → book URL（目录阶段映射）→ BookMeta（详情/目录
+/// 阶段记录）。未命中（未走详情/目录 FFI 调用、缓存已淘汰、或换书源后
+/// 当前书源下无记录）返回 None：正文阶段回退既有空 name 字面量绑定语义，
+/// 不破坏既有书源。
+///
+/// [P2-11 §193] `source_url` 入参（当前书源 sourceUrl）——同章节 URL 的
+/// 不同书源书籍不串键；未采用 FFI 面可选 bookUrl 入参方案（(a)），零
+/// 契约面（`webbook_content` 签名不变、无 frb 再生成）。
+fn lookup_book_meta_for_chapter(source_url: &str, chapter_url: &str) -> Option<BookMeta> {
     let book_url = chapter_book_cache()
         .lock()
         .ok()?
-        .get(chapter_url)
+        .get(&(source_url.to_string(), chapter_url.to_string()))
         .cloned()?;
     book_meta_cache().lock().ok()?.get(&book_url).cloned()
 }
@@ -1594,7 +1637,9 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         // P2-9 ②：反查详情/目录阶段记录的 book 元信息 → `book` 绑定扩面
         // （name/author/bookUrl/tocUrl/lastChapter/variable + 方法）；
         // 未命中时回退既有空 name 字面量（行为不变）
-        let mut book_meta = lookup_book_meta_for_chapter(&chapter.url);
+        // [P2-11 §193] 按 (书源 URL, 章节 URL) 复合键反查，同章节 URL 的
+        // 不同书源书籍不串键
+        let mut book_meta = lookup_book_meta_for_chapter(&source.book_source_url, &chapter.url);
         // P1-1：缓存 meta 有值但 variable 缺失/为空（记录点未补到、或缓存
         // 早于用户后来设置的变量）→ 按 bookUrl 从 DB 补
         if let Some(m) = book_meta.as_mut() {
@@ -1794,7 +1839,15 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             )
             .await?;
         // P2-9 ②：记录章节 URL → book 映射 + book 元信息（正文阶段反查用）
-        record_chapter_list_cache(book_url, &toc_url, &book_name, &book_author, &chapters);
+        // [P2-11 §193] 复合键 (书源 URL, 章节 URL)，同章节 URL 不同书源不串键
+        record_chapter_list_cache(
+            book_url,
+            &source.book_source_url,
+            &toc_url,
+            &book_name,
+            &book_author,
+            &chapters,
+        );
         Ok(chapters)
     }
 }
@@ -3721,8 +3774,10 @@ pub fn webbook_chapters(
         let chapters = convert_js_chapters(values);
         // P2-9 ②：记录章节 → book 映射 + 元信息（正文阶段反查用）；
         // JS 详情路径不导出 author（传 ""，规则源详情阶段 merge 写入可补）
+        // [P2-11 §193] 复合键 (书源 URL, 章节 URL)，同章节 URL 不同书源不串键
         record_chapter_list_cache(
             &url_for_cache,
+            &source.book_source_url,
             &toc_for_cache,
             &name_for_cache,
             "",
@@ -3791,7 +3846,9 @@ pub fn webbook_content(source_json: &str, chapter_json: &str) -> LegadoResult<St
         // P2-9 ②：反查详情/目录阶段记录的 book 元信息 → 填充 Book 模型字段
         // （JS 编排器 get_content 将 Book 整体序列化传给 getContent；缓存
         // 未命中时字段全空 = 既有行为，不破坏既有 JS 源）
-        let mut book_meta = lookup_book_meta_for_chapter(&chapter.url);
+        // [P2-11 §193] 按 (书源 URL, 章节 URL) 复合键反查，同章节 URL 的
+        // 不同书源书籍不串键
+        let mut book_meta = lookup_book_meta_for_chapter(&source.book_source_url, &chapter.url);
         // P1-1：缓存 meta 有值但 variable 缺失/为空 → 按 bookUrl 从 DB 补
         if let Some(m) = book_meta.as_mut() {
             if m.variable.as_deref().is_none_or(|v| v.trim().is_empty()) {
@@ -5597,15 +5654,19 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
                 word_count: None,
             },
         ];
+        let source_url = "https://meta-cache-test.example.com/source/9";
         record_chapter_list_cache(
             book_url,
+            source_url,
             "https://meta-cache-test.example.com/toc/9",
             "甲书",
             "甲作者",
             &chapters,
         );
-        let meta = lookup_book_meta_for_chapter("https://meta-cache-test.example.com/c/2")
-            .expect("章节 URL 应能反查到 meta");
+        // [P2-11 §193] 复合键 (书源 URL, 章节 URL) 反查
+        let meta =
+            lookup_book_meta_for_chapter(source_url, "https://meta-cache-test.example.com/c/2")
+                .expect("章节 URL 应能反查到 meta");
         assert_eq!(meta.name, "甲书");
         assert_eq!(meta.author, "甲作者");
         // 目录阶段以最后一个非卷章标题覆盖详情阶段的 lastChapter
@@ -5613,8 +5674,172 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
         // 详情阶段写入的 variable 不被目录阶段（variable=None）清空
         assert_eq!(meta.variable, Some(r#"{"a":"1"}"#.into()));
         // 未注册章节 URL → None（回退既有空 name 字面量绑定）
-        assert!(
-            lookup_book_meta_for_chapter("https://meta-cache-test.example.com/unknown").is_none()
+        assert!(lookup_book_meta_for_chapter(
+            source_url,
+            "https://meta-cache-test.example.com/unknown"
+        )
+        .is_none());
+    }
+
+    /// P2-11 §193：同章节 URL 的两本书（不同书源）不串键——复合键回归测试。
+    ///
+    /// 书 A（书源 S-A）与书 B（书源 S-B）共享同一章节 URL：正文阶段按
+    /// 各自书源的 sourceUrl 反查，各自命中自己的 meta；换到第三书源
+    /// S-C 反查同章节 URL → None（回退空 name 字面量绑定）。
+    ///
+    /// 进程级静态缓存为并行测试共享 → 本测试全部 URL 以
+    /// `cross-bind-test` 命名空间隔离。
+    #[test]
+    fn test_chapter_book_cache_composite_key_no_cross_binding() {
+        let shared_chapter = "https://cross-bind-test.example.com/c/shared";
+        let book_a = "https://cross-bind-test.example.com/b/a";
+        let book_b = "https://cross-bind-test.example.com/b/b";
+        let src_a = "https://cross-bind-test.example.com/source/a";
+        let src_b = "https://cross-bind-test.example.com/source/b";
+        let src_c = "https://cross-bind-test.example.com/source/c";
+        let chapters = vec![WebChapter {
+            url: shared_chapter.to_string(),
+            title: "共享章".into(),
+            index: 0,
+            is_vip: false,
+            is_volume: false,
+            variable: None,
+            word_count: None,
+        }];
+        record_chapter_list_cache(
+            book_a,
+            src_a,
+            "https://cross-bind-test.example.com/toc/a",
+            "A书",
+            "A作者",
+            &chapters,
+        );
+        record_chapter_list_cache(
+            book_b,
+            src_b,
+            "https://cross-bind-test.example.com/toc/b",
+            "B书",
+            "B作者",
+            &chapters,
+        );
+
+        // 各自书源反查同章节 URL → 各得自己的 meta，互不串键
+        let meta_a =
+            lookup_book_meta_for_chapter(src_a, shared_chapter).expect("书源 A 应命中自己的 meta");
+        assert_eq!(meta_a.name, "A书");
+        assert_eq!(meta_a.book_url, book_a);
+        let meta_b =
+            lookup_book_meta_for_chapter(src_b, shared_chapter).expect("书源 B 应命中自己的 meta");
+        assert_eq!(meta_b.name, "B书");
+        assert_eq!(meta_b.book_url, book_b);
+        // 第三书源（未记录）反查同章节 URL → None（回退空 name 绑定）
+        assert!(lookup_book_meta_for_chapter(src_c, shared_chapter).is_none());
+    }
+
+    /// P2-11 §199：BookMeta 容量判定——更新既有键**不清空**
+    ///（旧版 `>=` 判定在满表时任何写入都整体清空）。
+    #[test]
+    fn test_book_meta_merge_insert_update_existing_key_no_clear() {
+        let mut map: HashMap<String, BookMeta> = HashMap::new();
+        // 填满至容量上限（512）
+        for i in 0..BOOK_META_CACHE_MAX {
+            book_meta_merge_insert(
+                &mut map,
+                format!("https://trim-test.example.com/meta/{i}"),
+                BookMeta {
+                    name: format!("书{i}"),
+                    ..BookMeta::default()
+                },
+            );
+        }
+        assert_eq!(map.len(), BOOK_META_CACHE_MAX);
+        // 更新既有键（覆盖 name 字段）→ 不清空，容量不变
+        let existing_key = "https://trim-test.example.com/meta/0";
+        book_meta_merge_insert(
+            &mut map,
+            existing_key.to_string(),
+            BookMeta {
+                name: "改名后".into(),
+                ..BookMeta::default()
+            },
+        );
+        assert_eq!(map.len(), BOOK_META_CACHE_MAX, "更新既有键不得清空");
+        assert_eq!(map.get(existing_key).unwrap().name, "改名后");
+    }
+
+    /// P2-11 §199：BookMeta 容量判定——仅**新键**插入溢出才整体清空
+    ///（trim-after-insertion；本实现选整体清空而非 LRU，与 PageBodyCache
+    /// 简单淘汰一致——best-effort 缓存未命中有安全回退，不值 LRU 开销）。
+    #[test]
+    fn test_book_meta_merge_insert_clear_only_on_new_key_overflow() {
+        let mut map: HashMap<String, BookMeta> = HashMap::new();
+        for i in 0..BOOK_META_CACHE_MAX {
+            book_meta_merge_insert(
+                &mut map,
+                format!("https://trim-test.example.com/meta/{i}"),
+                BookMeta::default(),
+            );
+        }
+        // 新键插入且已达上限 → 整体清空后仅含新键
+        book_meta_merge_insert(
+            &mut map,
+            "https://trim-test.example.com/meta/new".to_string(),
+            BookMeta {
+                name: "新".into(),
+                ..BookMeta::default()
+            },
+        );
+        assert_eq!(map.len(), 1, "新键溢出应整体清空后仅留新键");
+        assert_eq!(
+            map.get("https://trim-test.example.com/meta/new")
+                .unwrap()
+                .name,
+            "新"
+        );
+    }
+
+    /// P2-11 §199：(书源, 章节) 批量写入容量判定——重复记录同批映射
+    /// （既有键）不清空；新键使总量溢出才整体清空。
+    #[test]
+    fn test_chapter_book_insert_batch_update_no_clear_and_overflow_clear() {
+        let src = "https://trim-test.example.com/source/batch";
+        let book = "https://trim-test.example.com/b/batch";
+        let mk_chapter = |n: usize| WebChapter {
+            url: format!("https://trim-test.example.com/c/batch/{n}"),
+            title: format!("章{n}"),
+            index: n as i32,
+            is_vip: false,
+            is_volume: false,
+            variable: None,
+            word_count: None,
+        };
+        let batch: Vec<WebChapter> = (0..CHAPTER_BOOK_CACHE_MAX).map(mk_chapter).collect();
+        let mut map: HashMap<(String, String), String> = HashMap::new();
+        chapter_book_insert_batch(&mut map, src, book, &batch);
+        assert_eq!(map.len(), CHAPTER_BOOK_CACHE_MAX);
+        // 重复记录同批（全既有键）→ 不清空
+        chapter_book_insert_batch(&mut map, src, book, &batch);
+        assert_eq!(map.len(), CHAPTER_BOOK_CACHE_MAX, "既有键更新不得清空");
+        // +1 新键 → 溢出，整体清空后仅含整批 + 新键（清空后重写全部）
+        let mut batch2 = batch.clone();
+        batch2.push(WebChapter {
+            url: "https://trim-test.example.com/c/batch/new".into(),
+            title: "新章".into(),
+            index: 999999,
+            is_vip: false,
+            is_volume: false,
+            variable: None,
+            word_count: None,
+        });
+        chapter_book_insert_batch(&mut map, src, book, &batch2);
+        assert_eq!(map.len(), CHAPTER_BOOK_CACHE_MAX + 1);
+        assert_eq!(
+            map.get(&(
+                src.to_string(),
+                "https://trim-test.example.com/c/batch/new".to_string()
+            ))
+            .unwrap(),
+            book
         );
     }
 
