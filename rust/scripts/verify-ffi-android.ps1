@@ -1,4 +1,7 @@
 # verify-ffi-android.ps1 - Verify Android jniLibs match FRB content hash
+#   + Rust 源码树指纹（P2-13：FRB hash 只覆盖 FFI 导出面；仅改 Rust 内部逻辑时
+#     hash 不变，会误判 in sync 打包旧 .so。现追加 rust/** 源码树指纹比对，
+#     指纹由 build-android.ps1 构建时写入 .so.meta 的 rustFingerprint 字段）
 #
 # Usage:
 #   .\verify-ffi-android.ps1
@@ -99,14 +102,24 @@ function Get-SoMetaHash {
     }
 }
 
-function Write-SoMeta {
-    param([string]$SoPath, [int]$Hash, [string]$BuildMode)
-    $meta = [ordered]@{
-        contentHash = $Hash
-        mode        = $BuildMode
-        builtAt     = (Get-Date).ToString("o")
+# P2-13: 读取 .so.meta 中的 Rust 源码树指纹（build-android.ps1 构建时写入）
+function Get-SoMetaFingerprint {
+    param([string]$SoPath)
+    $metaPath = "$SoPath.meta"
+    if (-not (Test-Path $metaPath)) { return $null }
+    try {
+        $meta = Get-Content $metaPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($meta.rustFingerprint) { return [string]$meta.rustFingerprint }
+        return $null
+    } catch {
+        return $null
     }
-    ($meta | ConvertTo-Json -Compress) | Set-Content "$SoPath.meta" -Encoding UTF8 -NoNewline
+}
+
+function Short-Hash {
+    param([string]$Hash)
+    if ($Hash.Length -ge 16) { return $Hash.Substring(0, 16) + "..." }
+    return $Hash
 }
 
 function Get-BuildCommand {
@@ -118,6 +131,22 @@ try {
 } catch {
     Write-Err "[FFI] $($_.Exception.Message)"
     exit 1
+}
+
+# P2-13: 计算当前 Rust 源码树指纹（rust-fingerprint.ps1），用于判定 .so 是否陈旧
+$FingerprintScript = Join-Path $ScriptDir "rust-fingerprint.ps1"
+$CurrentRustFingerprint = $null
+if (Test-Path $FingerprintScript) {
+    $fpPrevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $fpRaw = & $FingerprintScript -RustDir $RustDir
+    $ErrorActionPreference = $fpPrevEAP
+    if ($fpRaw) { $CurrentRustFingerprint = ($fpRaw -join "`n").Trim() }
+}
+if ($CurrentRustFingerprint) {
+    Write-Info "Rust source fingerprint: $(Short-Hash $CurrentRustFingerprint)"
+} else {
+    Write-Warn "Rust 源码树指纹不可用（rust-fingerprint.ps1 缺失或计算失败），本轮保守要求重编 .so"
 }
 
 Write-Info "=== Legado Android FFI verify ==="
@@ -146,14 +175,26 @@ foreach ($key in $SelectedKeys) {
         if ($metaHash -ne $expectedHash) {
             $issues.Add("$abi .so.meta hash=$metaHash, expected $expectedHash")
         } else {
-            Write-Info "[OK] $abi (meta)"
+            # P2-13: FRB content hash 只覆盖 FFI 导出面；再比对 Rust 源码树指纹，
+            # 防止「只改 Rust 内部逻辑（FFI 面不变）→ 误判 in sync → 打包旧 .so」
+            $metaFp = Get-SoMetaFingerprint -SoPath $soPath
+            if (-not $metaFp) {
+                $issues.Add("$abi .so.meta 缺 rustFingerprint（旧版构建产物），需重编 .so 以记录源码树指纹")
+            } elseif (-not $CurrentRustFingerprint) {
+                $issues.Add("$abi 当前 Rust 源码树指纹不可用，保守需重编 .so")
+            } elseif ($metaFp -cne $CurrentRustFingerprint) {
+                $issues.Add("$abi Rust 源码已变更（.so 指纹 $(Short-Hash $metaFp) ≠ 当前 $(Short-Hash $CurrentRustFingerprint)），.so 陈旧，需重编")
+            } else {
+                Write-Info "[OK] $abi (meta: FRB hash + Rust 源码指纹一致)"
+            }
         }
         continue
     }
 
     if (Test-SoEmbedsHash -SoPath $soPath -Hash $expectedHash) {
-        Write-Info "[OK] $abi (binary hash)"
-        Write-SoMeta -SoPath $soPath -Hash $expectedHash -BuildMode $Mode
+        # P2-13: 无 .meta 的旧 .so 通过二进制 hash 但无指纹记录 → 源码树状态未知。
+        # 保守重编（不回填指纹，否则等于给旧 .so 盖「当前指纹」，会再次骗过校验）
+        $issues.Add("$abi .so 无源码树指纹记录（.so 可能来自更早源码树），需重编并记录指纹")
     } else {
         $issues.Add("$abi liblegado_ffi.so out of sync (expected hash $expectedHash)")
     }
@@ -161,12 +202,12 @@ foreach ($key in $SelectedKeys) {
 
 if ($issues.Count -eq 0) {
     Write-Info ""
-    Write-Info "=== FFI verify PASSED ===" "Green"
+    Write-Info "=== FFI verify PASSED (FFI 面与 Rust 源码指纹一致，复用现有 .so) ===" "Green"
     exit 0
 }
 
 Write-Err ""
-Write-Err "=== FFI verify FAILED (content hash / .so out of sync) ==="
+Write-Err "=== FFI verify FAILED (FRB hash / Rust 源码指纹 / .so 不同步) ==="
 foreach ($item in $issues) {
     Write-Err "  - $item"
 }
@@ -192,6 +233,7 @@ if ($AutoBuild) {
         exit 2
     }
     Write-Warn ""
+    Write-Warn ">> Rust 源码已变更 / .so 陈旧或缺失，正在重编 .so ..."
     Write-Warn ">> Auto-running build-android.ps1 ..."
     & $BuildScript -Mode $Mode -Targets $Targets
     if ($LASTEXITCODE -ne 0) {

@@ -10,6 +10,12 @@
 #   .\scripts\build-apk.ps1 -Targets "x86_64"  # 仅编译 x86_64（模拟器）
 #   .\scripts\build-apk.ps1 -SkipRust          # 跳过 Rust 编译（.so 已存在时）
 #   .\scripts\build-apk.ps1 -Clean             # 清理后重新构建
+# 
+# FFI / .so 新鲜度检查（P2-13）：
+#   - 脚本会比较「Rust 源码树指纹」（rust/** 内容哈希，构建时记录在 .so.meta）与当前源码树：
+#     Rust 源码已变更 / .so 陈旧 → 自动重编 .so；FFI 面与源码均未变 → 复用 .so；
+#   - 若你手工 -SkipRust，检测到源码树变更时本脚本会硬失败（防止打包旧 .so）；
+#     确需跳过时，请自行确保 .so 与 Rust 源码一致（例如确认只改了 Dart）。
 
 param(
     [switch]$Release,
@@ -29,9 +35,33 @@ $RootDir = Split-Path -Parent $FlutterDir
 $RustDir = Join-Path $RootDir "rust"
 $BuildScript = Join-Path $RustDir "scripts\build-android.ps1"
 $VerifyScript = Join-Path $RustDir "scripts\verify-ffi-android.ps1"
+$FingerprintScript = Join-Path $RustDir "scripts\rust-fingerprint.ps1"
 $JniLibsDir = Join-Path $FlutterDir "android\app\src\main\jniLibs"
 
 $Mode = if ($Release) { "release" } else { "debug" }
+
+# P2-13: 前置检查 —— 比对 jniLibs 各 .so 的源码树指纹与当前 Rust 源码树（rust-fingerprint.ps1 -Check）。
+# 逐 ABI 明细行由子脚本 Write-Host 直接上屏；DECISION 行被捕获解析。
+# 返回 "REUSE" / "REBUILD" / $null（前置检查不可用，交由 verify 脚本判定）
+function Get-SoFingerprintDecision {
+    [CmdletBinding()]
+    param([string]$FpTargets)
+    if (-not (Test-Path $FingerprintScript)) { return $null }
+    $fpOut = $null
+    try {
+        $prevEAP = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        $fpOut = & $FingerprintScript -Check -Targets $FpTargets
+        $ErrorActionPreference = $prevEAP
+    } catch {
+        Write-Host "WARNING: Rust 源码树指纹前置检查失败（$($_.Exception.Message)），交由 verify 脚本判定" -ForegroundColor Yellow
+        return $null
+    }
+    foreach ($line in @($fpOut)) {
+        if ("$line" -match '^DECISION=(REUSE|REBUILD)') { return $Matches[1] }
+    }
+    return $null
+}
 
 Write-Host "=== Legado Android Build ===" -ForegroundColor Cyan
 Write-Host "Mode:    $Mode"
@@ -53,6 +83,14 @@ if ($Clean) {
 # ========== Step 2: Rust 交叉编译 / FFI 校验 ==========
 if ($SkipRust) {
     Write-Host "--- [2/5] Rust build skipped ---" -ForegroundColor DarkGray
+    # P2-13: 跳过 Rust 构建时仍检查源码树指纹；.so 陈旧则硬失败，
+    # 防止打包「旧 Rust + 新 Dart」混合体的旧 .so
+    $fpDecision = Get-SoFingerprintDecision -FpTargets $Targets
+    if ($fpDecision -eq "REBUILD") {
+        Write-Host "ERROR: Rust 源码已变更（或 .so 陈旧/缺失）但指定了 -SkipRust：将打包旧 .so（""旧 Rust + 新 Dart"" 混合体）！" -ForegroundColor Red
+        Write-Host "请去掉 -SkipRust 重跑以重编 .so；确需跳过时，请自行确保 .so 与 Rust 源码一致。" -ForegroundColor Red
+        exit 1
+    }
     if (Test-Path $VerifyScript) {
         & $VerifyScript -Mode $Mode -Targets $Targets
         if ($LASTEXITCODE -ne 0) {
@@ -70,6 +108,13 @@ if ($SkipRust) {
     }
 } else {
     Write-Host "--- [2/5] Verifying / building Rust FFI ---" -ForegroundColor Yellow
+    # P2-13: 前置检查打印明确结论（重编/复用）；实际重编/复用决策由 verify 脚本执行
+    $fpDecision = Get-SoFingerprintDecision -FpTargets $Targets
+    if ($fpDecision -eq "REBUILD") {
+        Write-Host ">> Rust 源码已变更（或 .so 陈旧/缺失），正在重编 .so ..." -ForegroundColor Yellow
+    } elseif ($fpDecision -eq "REUSE") {
+        Write-Host ">> FFI 面与源码均未变，复用现有 .so" -ForegroundColor Green
+    }
     if (Test-Path $VerifyScript) {
         & $VerifyScript -Mode $Mode -Targets $Targets -AutoBuild
         if ($LASTEXITCODE -ne 0) {

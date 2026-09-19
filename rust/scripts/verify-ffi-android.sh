@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
-# verify-ffi-android.sh — 校验 Android jniLibs 与 FRB content hash 是否同步（Linux/macOS/CI）
+# verify-ffi-android.sh — 校验 Android jniLibs 与 FRB content hash + Rust 源码树指纹是否同步（Linux/macOS/CI）
+#
+# P2-13: FRB content hash 只覆盖 FFI 导出面，只改 Rust 内部逻辑时 hash 不变，
+# 会误判 in sync 打包旧 .so。现追加 rust/** 源码树指纹比对（算法见 rust-fingerprint.sh，
+# 与 rust-fingerprint.ps1 一致）：
+#   - .meta 有 rustFingerprint 且与当前源码树不一致 → 硬失败（.so 陈旧）；
+#   - .meta 无 rustFingerprint（旧版构建产物）→ 仅告警不失败（迁移期 CI 兼容；
+#     重跑 build-android.sh 后自动补上指纹，此后按硬失败判定）。
+#   本地 Windows 流程（verify-ffi-android.ps1）对「无指纹」采取保守重编，口径不同属有意为之。
 #
 # 用法:
 #   ./verify-ffi-android.sh
@@ -19,6 +27,10 @@ JNILIBS_DIR="$FLUTTER_DIR/android/app/src/main/jniLibs"
 DART_FRB="$FLUTTER_DIR/lib/src/bridge/frb_generated.dart"
 RUST_FRB="$RUST_DIR/legado-ffi/src/frb_generated.rs"
 BUILD_SCRIPT="$SCRIPT_DIR/build-android.sh"
+
+# P2-13: 当前 Rust 源码树指纹
+source "$SCRIPT_DIR/rust-fingerprint.sh"
+RUST_FP="$(rust_fingerprint "$RUST_DIR")"
 
 declare -A ABI_MAP=(
     ["aarch64"]="arm64-v8a"
@@ -73,7 +85,15 @@ for key in "${KEYS[@]}"; do
     if [[ -f "$meta_path" ]]; then
         meta_hash="$(python3 -c "import json; print(json.load(open('$meta_path'))['contentHash'])" 2>/dev/null || true)"
         if [[ -n "$meta_hash" && "$meta_hash" == "$DART_HASH" ]]; then
-            echo "[OK] $abi（meta 校验通过）"
+            # P2-13: FRB hash 一致后再比对 Rust 源码树指纹（防止只改内部逻辑时误判 in sync）
+            meta_fp="$(python3 -c "import json; d=json.load(open('$meta_path')); v=d.get('rustFingerprint'); print(v if isinstance(v,str) else '')" 2>/dev/null || true)"
+            if [[ -z "$meta_fp" ]]; then
+                echo "[WARN] $abi .so.meta 缺 rustFingerprint（旧版构建产物），建议重跑 build-android.sh 记录指纹"
+            elif [[ "$meta_fp" != "$RUST_FP" ]]; then
+                ISSUES+=("$abi Rust 源码已变更（.so 指纹 ${meta_fp:0:16}… ≠ 当前 ${RUST_FP:0:16}…），.so 陈旧，需重编")
+            else
+                echo "[OK] $abi（meta 校验通过：FRB hash + Rust 源码指纹一致）"
+            fi
             continue
         fi
         if [[ -n "$meta_hash" ]]; then
@@ -90,6 +110,10 @@ needle = struct.pack('<i', h)
 data = pathlib.Path('$so_path').read_bytes()
 raise SystemExit(0 if needle in data else 1)
 " 2>/dev/null; then
+        # P2-13: 无 .meta 的旧 .so 通过二进制 hash 但无指纹记录 → 源码树状态未知。
+        # CI 迁移期仅告警不硬失败；回填 .meta（不含指纹）以便后续 FRB 校验走 meta 路径。
+        # 重跑 build-android.sh 后 .meta 会带上 rustFingerprint，此后按「指纹一致」判定。
+        echo "[WARN] $abi .so 无源码树指纹记录（.so 可能来自更早源码树），建议重跑 build-android.sh"
         echo "[OK] $abi（二进制 hash 校验通过）"
         python3 -c "
 import json, datetime, pathlib
@@ -103,7 +127,7 @@ done
 
 if [[ ${#ISSUES[@]} -eq 0 ]]; then
     echo ""
-    echo "=== FFI 校验通过 ==="
+    echo "=== FFI 校验通过（FFI 面与 Rust 源码指纹一致，复用现有 .so）==="
     exit 0
 fi
 

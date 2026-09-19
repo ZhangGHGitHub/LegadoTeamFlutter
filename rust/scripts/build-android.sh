@@ -24,6 +24,9 @@ echo ""
 # 切到 rust 目录（脚本所在目录的上级）
 cd "$(dirname "$0")/.."
 
+# P2-13: 引入 Rust 源码树指纹工具（算法须与 rust-fingerprint.ps1 保持一致）
+source "$(cd "$(dirname "$0")" && pwd)/rust-fingerprint.sh"
+
 # 安装 targets
 echo ">> Installing Rust targets..."
 rustup target add "${TARGETS[@]}"
@@ -61,13 +64,23 @@ if [ -f "legado-ffi/src/frb_generated.rs" ]; then
     echo "FRB content hash: $CONTENT_HASH"
 fi
 
+# P2-13: 计算当前 Rust 源码树指纹（FRB content hash 只覆盖 FFI 面，内部逻辑变更不改变它；
+# 指纹覆盖整个 rust/** 源码树，随 .so.meta 落盘，供 verify-ffi-android.sh/.ps1 判定 .so 是否陈旧）
+RUST_FP="$(rust_fingerprint "$(pwd)")"
+echo "Rust source fingerprint: ${RUST_FP:0:16}..."
+
 write_meta() {
     local so_path="$1"
     if [ -n "$CONTENT_HASH" ]; then
+        # 经环境变量传值，避免路径/指纹中的特殊字符破坏内联 Python 代码
+        META_SO_PATH="$so_path" META_CONTENT_HASH="$CONTENT_HASH" META_MODE="$MODE" META_RUST_FP="$RUST_FP" \
         python3 -c "
-import json, datetime
-meta = {'contentHash': int($CONTENT_HASH), 'mode': '$MODE', 'builtAt': datetime.datetime.now().isoformat()}
-open('${so_path}.meta', 'w').write(json.dumps(meta, separators=(',', ':')))
+import json, os, datetime
+meta = {'contentHash': int(os.environ['META_CONTENT_HASH']), 'mode': os.environ['META_MODE'], 'builtAt': datetime.datetime.now().isoformat()}
+fp = os.environ.get('META_RUST_FP')
+if fp:
+    meta['rustFingerprint'] = fp
+open(os.environ['META_SO_PATH'] + '.meta', 'w').write(json.dumps(meta, separators=(',', ':')))
 "
     fi
 }

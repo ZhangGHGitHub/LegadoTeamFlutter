@@ -160,6 +160,23 @@ if (Test-Path $FrbRs) {
     }
 }
 
+# P2-13: Rust 源码树指纹（rust-fingerprint.ps1）。FRB content hash 只覆盖 FFI 导出面，
+# 内部逻辑变更不会改变它；指纹覆盖整个 rust/** 源码树，随 .so.meta 落盘，
+# 供 verify-ffi-android.ps1 / build-apk.ps1 判定 jniLibs 里的 .so 是否陈旧。
+$FingerprintScript = Join-Path $ScriptDir "rust-fingerprint.ps1"
+$RustFingerprint = $null
+if (Test-Path $FingerprintScript) {
+    $fpPrevEAP = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $RustFingerprint = (& $FingerprintScript -RustDir $RustDir).Trim()
+    $ErrorActionPreference = $fpPrevEAP
+    if ($RustFingerprint) {
+        Write-Host "Rust source fingerprint: $($RustFingerprint.Substring(0, 16))..." -ForegroundColor DarkGray
+    } else {
+        Write-Host "   WARNING: Rust 源码树指纹计算失败，.meta 将不记录指纹（下次校验会强制重编）" -ForegroundColor Yellow
+    }
+}
+
 $triples = $SelectedKeys | ForEach-Object { $AllTargets[$_].triple }
 Write-Host ">> Ensuring Rust targets installed..." -ForegroundColor Yellow
 # rustup 将 "info: component ... is up to date" 写到 stderr，EAP=Stop 下会误判为异常；
@@ -178,6 +195,8 @@ $BuiltSo = @{}
 # S7/P0-1.3：记录每个 ABI 是否真正以 quickjs feature 构建（回退到无 quickjs 时为 $false），
 # 写入 .meta 供「构建命令 / Cargo feature / 产物符号」三方一致性校验，杜绝静默降级。
 $QuickJsUsed = @{}
+# P2-13：记录每个 ABI 是否复用了 target 目录的旧 .so（非当前源码全新编译）
+$ReusedSo = @{}
 
 foreach ($key in $SelectedKeys) {
     $info   = $AllTargets[$key]
@@ -212,6 +231,10 @@ foreach ($key in $SelectedKeys) {
             Write-Host "   Reusing synced .so from target: $synced" -ForegroundColor Yellow
             $srcFile = $synced
             $buildExit = 0
+            # P2-13：复用 target 缓存的旧 .so 时，其源码状态未知（可能是更早的源码树构建的），
+            # 不能盖当前指纹——下方 .meta 将不写 rustFingerprint，verify 会强制完整重编，
+            # 防止「旧 .so + 新指纹」再次骗过校验。
+            $ReusedSo[$key] = $true
         }
     }
     if ($buildExit -ne 0) {
@@ -262,6 +285,13 @@ foreach ($key in $SelectedKeys) {
             mode        = $Mode
             quickjs     = [bool]$QuickJsUsed[$key]
             builtAt     = (Get-Date).ToString("o")
+        }
+        # P2-13：记录构建时的 Rust 源码树指纹（复用 .so 时不记录，见上方说明）
+        if ($ReusedSo[$key]) {
+            $meta.reusedFrom = $srcFile
+            Write-Host "   NOTE: .so 复用自 target 缓存，.meta 不记录源码树指纹；下次校验将要求重编" -ForegroundColor Yellow
+        } elseif ($RustFingerprint) {
+            $meta.rustFingerprint = $RustFingerprint
         }
         ($meta | ConvertTo-Json -Compress) | Set-Content "$dstFile.meta" -Encoding UTF8 -NoNewline
     }
