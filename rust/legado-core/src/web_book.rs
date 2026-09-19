@@ -97,6 +97,14 @@ pub struct WebBookInfo {
     /// Book.putVariable；原版无专用 variable 规则字段，与目录解析同一机制）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variable: Option<String>,
+    /// 书籍类型位标记（对标 Kotlin Book.type / BookType 位标志；P2-15 ②
+    /// `type` 回流，2026-09-18）：JS `book.type=N` 写路径覆盖值优先（`bookType::{bookUrl}`
+    /// overlay），缺失回落书源 `bookSourceType` 换算（TEXT=8 / AUDIO=32 /
+    /// IMAGE=64 / VIDEO=4）。Dart 侧 `mergeWebInfo` 据此合并 `Book.bookType`
+    /// 并经既有 updateBook 链路落库 `books.book_type`，开读路由
+    /// （reader / reader-comic / audio / video）随值切换。
+    #[serde(default, skip_serializing_if = "is_zero", rename = "type")]
+    pub book_type: i32,
 }
 
 // ─── Fetcher trait ────────────────────────────────────────────────────────────
@@ -641,6 +649,7 @@ impl WebBookInfo {
             word_count: None,
             kind: None,
             variable: None,
+            book_type: 0,
         }
     }
 }
@@ -813,7 +822,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_get_book_info_serde_roundtrip() {
-        let info = WebBookInfo {
+        let mut info = WebBookInfo {
             name: "斗破苍穹".to_string(),
             author: "天蚕土豆".to_string(),
             cover_url: Some("https://example.com/cover.jpg".to_string()),
@@ -825,10 +834,19 @@ mod tests {
             word_count: None,
             kind: None,
             variable: None,
+            // P2-15 ②：type 回流（非零 → JSON 携带 `type` 键）
+            book_type: 64,
         };
         let json = serde_json::to_string(&info).unwrap();
+        assert!(json.contains(r#""type":64"#), "非零 type 应序列化进 JSON");
         let de: WebBookInfo = serde_json::from_str(&json).unwrap();
         assert_eq!(de, info);
+        // 零值省略（Dart 侧 mergeWebInfo 以「缺键 = 保留现值」语义依赖此行为）
+        info.book_type = 0;
+        let json0 = serde_json::to_string(&info).unwrap();
+        assert!(!json0.contains(r#""type""#), "零值 type 应省略不序列化");
+        let de0: WebBookInfo = serde_json::from_str(&json0).unwrap();
+        assert_eq!(de0.book_type, 0);
     }
 
     // ─── get_chapters 测试 ─────────────────────────────────────────────────────

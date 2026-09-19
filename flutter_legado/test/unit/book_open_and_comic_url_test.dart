@@ -203,6 +203,71 @@ url
     });
   });
 
+  group('mergeBookType（P2-15 ② 详情解析 type 回流合并）', () {
+    test('非零新值覆盖媒体位，非媒体标记位保留', () {
+      final existing = BookType.text | BookType.local; // 8 + 4096
+      expect(
+        BookOpenUtils.mergeBookType(existing, BookType.image),
+        BookType.image | BookType.local,
+      );
+    });
+
+    test('新值 video 覆盖既有 image 媒体位', () {
+      expect(
+        BookOpenUtils.mergeBookType(BookType.image, BookType.video),
+        BookType.video,
+      );
+    });
+
+    test('零值/缺键（Rust 侧零值省略）保留现有值', () {
+      final existing = BookType.image | BookType.notShelf;
+      expect(BookOpenUtils.mergeBookType(existing, 0), existing);
+      expect(BookOpenUtils.mergeBookType(0, 0), 0);
+    });
+
+    test('新值仅含 mask 外标记位（notShelf）时不动媒体位', () {
+      final existing = BookType.audio;
+      expect(
+        BookOpenUtils.mergeBookType(existing, BookType.notShelf),
+        existing,
+      );
+    });
+
+    test('mergeWebInfo：详情 JSON type=64 覆盖入架文本位 → 漫画路由', () {
+      const book = Book(
+        bookUrl: 'https://ex.com/b',
+        name: '二合一书',
+        bookType: BookType.text,
+      );
+      final merged = BookOpenUtils.mergeWebInfo(
+        book,
+        '{"name":"二合一书","type":64}',
+      );
+      expect(merged.bookType & BookOpenUtils.typeMask, BookType.image);
+      const source = BookSource(
+        bookSourceUrl: 'https://ex.com',
+        bookSourceName: '二合一书源',
+        bookSourceType: 0,
+      );
+      expect(
+        BookOpenUtils.routeForTypeBits(
+          BookOpenUtils.resolveTypeBits(merged.bookType, source),
+        ),
+        AppRoutes.readerComic,
+      );
+    });
+
+    test('mergeWebInfo：详情缺 type 键保留现有媒体位', () {
+      const book = Book(
+        bookUrl: 'https://ex.com/b',
+        name: '漫画书',
+        bookType: BookType.image,
+      );
+      final merged = BookOpenUtils.mergeWebInfo(book, '{"name":"漫画书"}');
+      expect(merged.bookType, BookType.image);
+    });
+  });
+
   group('parseComicImageUrls 复合 URL', () {
     test('双引号 src 含 JSON headers 完整抽出（不截断在第一个引号）', () {
       const html =

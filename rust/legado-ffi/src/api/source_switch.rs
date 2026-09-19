@@ -1596,6 +1596,7 @@ mod tests {
                 toc_url: new_toc.to_string(),
                 word_count: Some("123456".to_string()),
                 kind: Some("玄幻".to_string()),
+                book_type: 0,
             }),
             chapters: Ok(vec![WebChapter {
                 index: 0,
@@ -1872,6 +1873,7 @@ mod tests {
                 toc_url: new_toc.to_string(),
                 word_count: None,
                 kind: None,
+                book_type: 0,
             }),
             chapters: Ok(vec![WebChapter {
                 index: 0,
@@ -1988,6 +1990,7 @@ mod tests {
                     toc_url: String::new(),
                     word_count: None,
                     kind: None,
+                    book_type: 0,
                 }),
                 chapters: Ok(vec![WebChapter {
                     index: 0,

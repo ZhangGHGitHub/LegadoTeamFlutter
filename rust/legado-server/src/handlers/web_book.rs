@@ -431,6 +431,10 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             word_count,
             kind,
             variable: None,
+            // [P2-15 ②] 加法式新字段（WebBookInfo.book_type）编译必需：
+            // server 本地 fetcher 无 JS `book.type` 写路径，恒 0（= 改造前
+            // 无该字段、serde default 的等价语义），不改变 server 行为
+            book_type: 0,
         })
     }
 

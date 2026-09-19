@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.294] - 2026-09-19
+
+### Fixed
+- [Rust][UI] **书源脚本写入的阅读模式（`book.type`）真正生效（P2-15 第 2 条）**：此前 `book.type = 8/32/64` 只改 Rust 进程内 JS 可见值，**不回流也不落库**，7 个用它切小说/音频/漫画模式的源（微信读书二合一、禁漫天堂、画涯爱子、爱妹子、HentaiCosplay、AsianPornImage、键盘小说）"自动切模式"实际不生效。现经 `WebBookInfo.type`（零值省略键、向后兼容）→ Dart `mergeBookType` → **既有** `updateBook` 落 `books.book_type`（**未新增 DB 迁移**）：
+  - **覆盖语义**：只覆盖媒体位（video/text/audio/image/webFile/updateError），保留 local/notShelf 等标记位；`type==0`/缺键保留现值；详情解析为模式权威来源、**JS 写值 > 书源声明值**（对齐上游 `analyzeBookInfo`）
+  - **落库时机**：Dart 详情页 `mergeWebInfo` 之后的既有 `updateBook`（入架书才写库；未入库仅展示）
+  - 端到端：JS 写 `type=64` → `WebBookInfo.type=64` → Dart `bookType` 8→64 → 走漫画阅读路由
+- [Rust] 补 **`type` 调用点接线用例**（P2-15 第 4 条，三阶段）：覆盖"4 个调用点是否真传 `book_type_of_source`" —— 调用点退回硬编码 0 即失败；同时用断言钉住"同解析内跨规则可见性"的现状边界
+- [Docs] 台账补登记 **P2-7(c)**（CI SIGSEGV 用例根因与后续建议，上次写入失败）
+
+### Test
+- 两档均 0 失败：`cargo test --workspace`（ffi 372 / js 254）与 `--features legado-ffi/quickjs`（**ffi 454 / js 562**）
+- **两档 clippy 均 exit 0**；`cargo fmt --check` 0；`flutter analyze` 0 问题；`flutter test` **1489 全过**（含新增 `mergeBookType` 6 用例）
+
+### Note
+- 例外说明：为使新字段通过编译，给 `rust/legado-server/src/handlers/web_book.rs` 的 fetcher 字面量加了 4 行 `book_type: 0`（**加法式、语义 no-op**——server 路径无 JS 写路径，恒 0 等价于改造前的 serde default）
+- 同解析内跨规则的 `book.type` 可见性仍在 P2-15 ①/④ 登记（本批刻意未做，避免放大陈旧 overlay 遮蔽；测试已钉住现状 `name=="8"`，未来修复需同步改断言）
+
+- Contributor: 全栈工程师子代理
+
 ## [2.0.293] - 2026-09-19
 
 ### Fixed

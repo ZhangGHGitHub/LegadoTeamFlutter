@@ -1088,6 +1088,17 @@ impl RealBookSourceFetcher {
             AnalyzeUrl::get_absolute_url(book_url, &raw_toc)
         };
 
+        // [P2-15 ②] JS 写路径 overlay 读回（variable + type 覆盖值同键域）：
+        // overlay 键 = meta.bookUrl（IIFE 以 meta.bookUrl 为写入键），meta
+        // 未命中回退入参 book_url（零成本降级，同 P2-11 ① 既有语义）。
+        // 读回点必须晚于全部规则求值（`book.type=N` setter 在求值期经
+        // `__lgBookSetType` 桥写入 variable_store），此处构造点满足时序。
+        let overlay_key = lookup_book_meta_by_book_url(book_url)
+            .map(|m| m.book_url)
+            .filter(|u| !u.trim().is_empty())
+            .unwrap_or_else(|| book_url.to_string());
+        let (overlay, type_override, _) = book_write_overlays(&overlay_key);
+
         WebBookInfo {
             name,
             author,
@@ -1108,14 +1119,21 @@ impl RealBookSourceFetcher {
             // 合并后详情期 putVariable 值随既有「换源合并进 book.variable」
             // DB 持久路径存活进程重启（零 Dart 改动）；进程内同书后续流程
             // 不经此值——直接读 variable_store（见 book_write_overlays）
-            variable: {
-                let overlay_key = lookup_book_meta_by_book_url(book_url)
-                    .map(|m| m.book_url)
-                    .filter(|u| !u.trim().is_empty())
-                    .unwrap_or_else(|| book_url.to_string());
-                let (overlay, _, _) = book_write_overlays(&overlay_key);
-                merge_book_variable_json(analyzer.export_variables_json().as_deref(), &overlay)
-            },
+            variable: merge_book_variable_json(
+                analyzer.export_variables_json().as_deref(),
+                &overlay,
+            ),
+            // [P2-15 ② | type 回流 2026-09-18] JS `book.type=N` 写路径
+            // 覆盖值（`bookType::{overlay_key}` 裸键，IIFE setter 于规则
+            // 求值期写入——构造点在本行之前，值已落 store）优先；缺失/
+            // 解析失败回落书源 `bookSourceType` 换算（与上方 book 绑定
+            // 初值调用点 `book_type_of_source` 同一取值，保持 JS 可见值
+            // 与回流值一致）。经 WebBookInfo JSON `type` 键出 FFI →
+            // Dart `mergeWebInfo` 合并 `Book.bookType` → 既有 updateBook
+            // 链路落库 `books.book_type`（列已存在，无迁移）。
+            book_type: type_override.unwrap_or_else(|| {
+                crate::api::search::book_type_of_source(source.book_source_type)
+            }),
         }
     }
 
@@ -3605,6 +3623,13 @@ pub fn webbook_info(source_json: &str, book_url: &str) -> LegadoResult<String> {
             // JS 源 marshalled 详情暂不携带 variable（marshaller 未透出），
             // 换源变量以搜索候选与规则源详情导出为准
             variable: None,
+            // [P2-15 ②] JS 源路径：marshaller（legado-js JsBookInfo）不透出
+            // type 字段（禁改区，未扩展），JS 用户脚本对 book 对象的
+            // `type` 写入经 getBookInfo 返回值 JSON 携带、反序列化时被丢弃。
+            // 此处按书源 `bookSourceType` 换算兜底（与规则源无 overlay 时
+            // 同一取值），不劣于改造前（恒 0）；JS 源的 bookType 主来源
+            // 仍是入架时搜索候选/书源声明值。
+            book_type: crate::api::search::book_type_of_source(source.book_source_type),
         };
         // P2-9 ②：记录 book 元信息（目录/正文阶段 `book` 绑定扩面反查用）
         record_book_meta_from_info(book_url, &info);
@@ -5532,6 +5557,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             word_count: None,
             kind: None,
             variable: Some(r#"{"a":"1"}"#.into()),
+            book_type: 0,
         };
         record_book_meta_from_info(book_url, &info);
         let chapters = vec![
@@ -5759,6 +5785,148 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             "同书 overlay 覆盖值应优先于入参初值"
         );
         let _ = variable_store::remove_variable(&variable_store::book_type_key(override_url));
+    }
+
+    /// P2-15 ②：JS `book.type=N` 写路径值回流 `WebBookInfo.book_type`
+    ///（调用点接线回归用例）：先 `record_book_meta_from_info` 播种 meta（等价
+    /// 进程内已走过 webbook_info 的状态；未播种时 book 绑定退化为无 type
+    /// accessor 的字面量，探测 `undefined`），再调 `parse_book_info_from_body`
+    /// 全链路（init 写 `book.type=64` → `__lgBookSetType` 桥落
+    /// `bookType::{url}` overlay → 构造点读回）断言返回值。
+    ///
+    /// 三层守卫：
+    /// - A（IMAGE 源，书源 `bookSourceType=2` → 换算 64）：JS 写 64 →
+    ///   返回 book_type/name 反映 64；**调用点若回归硬编码 0，
+    ///   `info.book_type` 为 0 本用例失败**
+    /// - B（TEXT 源覆盖，`bookSourceType=0` → 换算 8）：JS 写 64 →
+    ///   回流值 64（**仅 overlay 写路径可产出 64**，JS 写桥断裂则回落
+    ///   书源换算 8 而失败）；name 探测钉住「同解析内跨规则引擎内
+    ///   可见性缺口」现状（P2-15 ① 同阶段跨规则不可见 / ④ overlay 黏性，
+    ///   已登记未做）：name 规则引擎按构造期初值重放绑定 → 读 "8"，
+    ///   若未来实现 getter 桥读/每规则重建绑定，此断言需同步改 "64"
+    /// - C（TEXT 源不写）：无 overlay → 回落书源换算 8（非 0，
+    ///   防「缺失即 0」回归）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_p215_type_backflow_from_js_write() {
+        let body = "<html><body>raw detail body</body></html>".to_string();
+        let seed_meta = |url: &str, name: &str| {
+            record_book_meta_from_info(
+                url,
+                &WebBookInfo {
+                    name: name.into(),
+                    author: "测试作者".into(),
+                    cover_url: None,
+                    intro: None,
+                    categories: Vec::new(),
+                    last_chapter: None,
+                    book_url: url.to_string(),
+                    toc_url: String::new(),
+                    word_count: None,
+                    kind: None,
+                    variable: None,
+                    book_type: 0,
+                },
+            );
+        };
+
+        // ── A：IMAGE 源（bookSourceType=2 → 换算 64），JS 写 64
+        let url_a = "https://p215-type-backflow.example.com/image/1";
+        let image_source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": "https://p215-type-backflow.example.com",
+            "bookSourceName": "P2-15 type 回流测试源",
+            "bookSourceType": 2,
+            "ruleBookInfo": {
+                "init": "<js>book.type = 64;</js>",
+                "name": "@js:String(book.type)"
+            }
+        }))
+        .expect("IMAGE 源 json");
+        seed_meta(url_a, "type 回流测试书");
+        let info_a = RealBookSourceFetcher::parse_book_info_from_body(
+            &image_source,
+            body.clone(),
+            url_a,
+            url_a,
+            true,
+            "",
+            "",
+        );
+        assert_eq!(
+            info_a.book_type, 64,
+            "A：JS book.type=64 写值应回流 WebBookInfo.book_type（调用点回归硬编码 0 则本断言失败）"
+        );
+        assert_eq!(
+            info_a.name, "64",
+            "A：name 规则直接探测 book.type（IIFE 绑定 + setter 桥）"
+        );
+
+        // ── B：TEXT 源（bookSourceType=0 → 换算 8），JS 写 64：回流值
+        // 应为 64（JS 写值胜书源声明，overlay 分支——写桥断裂则回落 8）
+        let url_b = "https://p215-type-backflow.example.com/text/1";
+        let text_source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": "https://p215-type-backflow.example.com/text",
+            "bookSourceName": "P2-15 type 覆盖测试源",
+            "bookSourceType": 0,
+            "ruleBookInfo": {
+                "init": "<js>book.type = 64;</js>",
+                "name": "@js:String(book.type)"
+            }
+        }))
+        .expect("TEXT 源 json");
+        seed_meta(url_b, "type 覆盖测试书");
+        let info_b = RealBookSourceFetcher::parse_book_info_from_body(
+            &text_source,
+            body.clone(),
+            url_b,
+            url_b,
+            true,
+            "",
+            "",
+        );
+        assert_eq!(
+            info_b.book_type, 64,
+            "B：JS 写值 64 应覆盖书源换算 8（overlay 分支）"
+        );
+        assert_eq!(
+            info_b.name, "8",
+            "B：同解析内跨规则 book.type 读为构造期初值 8（引擎内可见性缺口，\
+             P2-15 ① 同阶段跨规则不可见 / ④ overlay 黏性已登记未做；\
+             实现 getter 桥读/每规则重建绑定后此断言改 \"64\"）"
+        );
+
+        // ── C：TEXT 源不写 type：无 overlay → 回落书源换算 8（非 0）
+        let url_c = "https://p215-type-backflow.example.com/text/2";
+        let text_source_c: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": "https://p215-type-backflow.example.com/text",
+            "bookSourceName": "P2-15 type 回落测试源",
+            "bookSourceType": 0,
+            "ruleBookInfo": {
+                "name": "@js:String(book.type)"
+            }
+        }))
+        .expect("TEXT 源 json");
+        seed_meta(url_c, "type 回落测试书");
+        let info_c = RealBookSourceFetcher::parse_book_info_from_body(
+            &text_source_c,
+            body,
+            url_c,
+            url_c,
+            true,
+            "",
+            "",
+        );
+        assert_eq!(
+            info_c.book_type, 8,
+            "C：无 JS 写 → 回落书源 bookSourceType=0 换算 TEXT(8)，而非 0"
+        );
+        assert_eq!(info_c.name, "8", "C：name 探测为初值（书源换算 8）");
+
+        // 卫生：清理本用例 type overlay（variable_store 为进程级全局，
+        // 防跨用例串扰，同 test_p211_book_type_initial_value_from_source）
+        for url in [url_a, url_b, url_c] {
+            let _ = variable_store::remove_variable(&variable_store::book_type_key(url));
+        }
     }
 
     /// P2-11 ①：`merge_book_variable_json` 合并语义（两档口径均可跑，
@@ -6174,6 +6342,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
                 word_count: None,
                 kind: None,
                 variable: Some(r#"{"custom":"3"}"#.into()),
+                book_type: 0,
             },
         );
         let info = RealBookSourceFetcher::parse_book_info_from_body(
@@ -6260,6 +6429,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
                 word_count: None,
                 kind: None,
                 variable: Some(r#"{"custom":"2"}"#.into()),
+                book_type: 0,
             },
         );
         let info = RealBookSourceFetcher::parse_book_info_from_body(
@@ -6458,6 +6628,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
                 word_count: None,
                 kind: None,
                 variable: Some(r#"{"custom":"put-export"}"#.into()),
+                book_type: 0,
             },
         );
         // 第二次详情（同 URL，生产路径）：meta 命中 → IIFE 绑定 →
@@ -6492,6 +6663,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
                 word_count: None,
                 kind: None,
                 variable: Some(r#"{"custom":"put-export"}"#.into()),
+                book_type: 0,
             },
         );
         let info3 = RealBookSourceFetcher::parse_book_info_from_body(
@@ -6530,6 +6702,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
                 word_count: None,
                 kind: None,
                 variable: Some(r#"{"custom":"put-export"}"#.into()),
+                book_type: 0,
             },
         );
         let info4 = RealBookSourceFetcher::parse_book_info_from_body(
@@ -7790,6 +7963,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
                 word_count: None,
                 kind: None,
                 variable: None,
+                book_type: 0,
             })
         }
 

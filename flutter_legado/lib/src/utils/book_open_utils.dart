@@ -39,6 +39,25 @@ class BookOpenUtils {
   /// 从书籍已有 bookType 提取媒体类型位
   static int typeBitsOf(Book book) => book.bookType & typeMask;
 
+  /// [P2-15 ② | type 回流 2026-09-18] 详情解析 type（WebBookInfo JSON
+  /// `type` 键，BookType 位标记）并入书籍 bookType。
+  ///
+  /// 覆盖语义（对齐上游 analyzeBookInfo：详情解析是书籍模式的权威来源——
+  /// JS `book.type=N` 写路径值 > 书源声明值）：
+  /// - [fresh] 非零 → 覆盖现有**媒体位**（[typeMask] 内），非媒体标记位
+  ///   （local / notShelf / updateError 等）原样保留；
+  /// - [fresh] 为 0（含 Rust 侧零值省略不序列化、缺键）→ 保留现有值，
+  ///   不用空覆盖。
+  ///
+  /// 已知风险（与上游一致的取舍）：用户侧若手动改过书籍模式，下次详情
+  /// 进入/刷新时 JS `book.type` 写值会再次覆盖（JS 胜出）；本应用当前
+  /// 无手动改模式 UI，风险仅对未来功能面。
+  static int mergeBookType(int existing, int fresh) {
+    final freshBits = fresh & typeMask;
+    if (freshBits == 0) return existing;
+    return (existing & ~typeMask) | freshBits;
+  }
+
   /// 是否在线书籍（非本地、非 WebDAV）
   static bool isOnlineBook(Book book) =>
       book.origin.isNotEmpty &&
@@ -326,6 +345,9 @@ class BookOpenUtils {
       final freshKind = pick('kind');
       final freshToc = pick('toc_url');
       final freshAuthor = pick('author');
+      // [P2-15 ②] 详情解析 type 回流：非零覆盖媒体位（JS 写值胜出），
+      // 零值/缺键保留现有值（对齐上方 refresh 更新式合并的非空覆盖口径）
+      final freshType = (decoded['type'] as num?)?.toInt() ?? 0;
       return book.copyWith(
         coverUrl: freshCover ?? book.coverUrl,
         intro: freshIntro ?? book.intro,
@@ -335,6 +357,7 @@ class BookOpenUtils {
         kind: freshKind ?? book.kind,
         name: freshName,
         author: freshAuthor ?? book.author,
+        bookType: mergeBookType(book.bookType, freshType),
       );
     }
 
@@ -347,6 +370,10 @@ class BookOpenUtils {
     final tocUrl = pick('toc_url');
     final name = pick('name');
     final author = pick('author');
+    // [P2-15 ②] type 非「补全缺失」语义：详情解析是书籍模式权威来源
+    // （二合一文本源入架时 bookType=8，详情 JS 写 64 → 必须覆盖切漫画
+    // 模式），故非零新值同样覆盖媒体位；零值/缺键保留现有值
+    final freshType = (decoded['type'] as num?)?.toInt() ?? 0;
     return book.copyWith(
       coverUrl: hasCover ? book.coverUrl : pick('cover_url'),
       intro: hasIntro ? book.intro : pick('intro'),
@@ -358,6 +385,7 @@ class BookOpenUtils {
       kind: hasKind ? book.kind : pick('kind'),
       name: book.name.isNotEmpty ? book.name : (name ?? book.name),
       author: book.author.isNotEmpty ? book.author : (author ?? book.author),
+      bookType: mergeBookType(book.bookType, freshType),
     );
   }
 
