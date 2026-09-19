@@ -1,0 +1,12 @@
+{
+  "kind": "ok",
+  "count": 1,
+  "results": [
+    {
+      "name": "修改后书名",
+      "author": "修改后作者",
+      "bookUrl": "{BASE}/alt/book/1"
+    }
+  ],
+  "note": "loginCheckJs 首检返回修改后响应(code 200 + 新 body + 新 url 对象)→ 解析采用修改值(对齐原版 WebBook.kt:100-111 analyzeBookList baseUrl=res.url, body=res.body);原始响应体为登录墙页(无 .book-item),若被采用则 0 结果,本断言证明采用修改值;bookUrl 相对修改后 URL 绝对化"
+}

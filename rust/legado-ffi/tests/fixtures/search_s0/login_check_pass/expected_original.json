@@ -1,12 +1,4 @@
 {
-  "kind": "ok",
-  "count": 1,
-  "results": [
-    {
-      "name": "夺宝奇兵",
-      "author": "作者甲",
-      "bookUrl": "{BASE}/book/1"
-    }
-  ],
-  "note": "loginCheckJs 通过(code 200)→ 列表解析;bookUrl 相对最终 URL 绝对化"
+  "kind": "login_required",
+  "note": "s5 谓词夹具 P3-6 A 语义变更(2026-09-19):result.code() == 200 返回裸布尔 true(非 StrResponse 对象)→ as StrResponse cast 失败(WebBook.kt:84)→ errResponse(500) 二次 eval 仍返回裸 false、cast 失败 → 整源失败 LoginRequired(WebBook.kt:91-94 throw throwable);对齐 S0-C 结论 s5 失败源被排除(无书己)。旧谓词语义下的 kind=ok 不再成立"
 }

@@ -4,7 +4,7 @@
 //! 使用 legado-parser 的 AnalyzeUrl + AnalyzeRule 解析搜索结果。
 
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -30,6 +30,8 @@ use crate::runtime;
 /// 被新搜索重置，导致已取消搜索的在飞任务复活并污染后续搜索）。
 #[derive(Debug)]
 pub(crate) struct SearchSession {
+    /// 会话标识（S0-D 2026-09-19：计时输出携带会话标识，跨会话可关联）
+    pub session_id: u64,
     /// 取消标志：停止 / 页面销毁 / sink 关闭 / 新搜索取代均置位以终止本会话
     pub cancel: Arc<AtomicBool>,
     /// 暂停标志（软挂起：仅拦未派发书源，已派发任务继续完成）
@@ -40,11 +42,16 @@ pub(crate) struct SearchSession {
 impl SearchSession {
     fn new() -> Self {
         Self {
+            session_id: SEARCH_SESSION_COUNTER.fetch_add(1, Ordering::SeqCst),
             cancel: Arc::new(AtomicBool::new(false)),
             paused: Arc::new(AtomicBool::new(false)),
         }
     }
 }
+
+/// 会话标识递增计数（S0-D 2026-09-19：`SearchSession::new` 分配，从 1 起进程内单调递增；
+/// 仅用于计时/日志关联，无业务语义）
+static SEARCH_SESSION_COUNTER: AtomicU64 = AtomicU64::new(1);
 
 /// 当前活跃搜索会话（供无参 FFI `cancel_search`/`pause_search`/`resume_search` 定位）
 ///
@@ -556,6 +563,15 @@ pub struct SearchSourceBatch {
     /// 对齐原版 SearchModel `hasMore = hasMore || items.isNotEmpty()`；批次B G-B-02）
     #[serde(default)]
     pub has_more: bool,
+    /// 逐源错误八分类（任务书 B P2 项1，2026-09-19 加法式，零破坏）：
+    /// `ok` / `empty` / `http_error` / `timeout` / `login_required` / `js_error` /
+    /// `parser_error` / `cancelled`。
+    /// 由批次组装单点（`run_multi_stream` 批次闭包经 `classify_source_outcome`）
+    /// 对 `LegadoError` 变体映射；现有 `error` 字段及其语义保持不变（冻结约束），
+    /// 不读该字段的旧调用方零破坏。`#[serde(default)]` 兼容历史批次反序列化
+    /// （历史批次无此字段时回退空串；Rust 侧发出的批次恒为八类之一）。
+    #[serde(default)]
+    pub error_class: String,
 }
 
 /// 多源渐进式（流式）搜索驱动器
@@ -630,6 +646,9 @@ pub async fn run_multi_stream<F>(
             if session_cb.cancel.load(Ordering::SeqCst) || !is_current_session(&session_cb) {
                 return Ok(()); // 本会话已被取消或取代 → 丢弃该批次，不持久化、不推流
             }
+            // 逐源错误八分类（任务书 B P2 项1，2026-09-19）：批次组装单点映射，
+            // 结果写入批次 JSON `error_class`（加法式字段，见 API_CONTRACT.md §2.4 登记）
+            let error_class = classify_source_outcome(&outcome.result);
             let (mut books, error) = match outcome.result {
                 Ok(list) => (list, None),
                 Err(e) => (Vec::new(), Some(e.to_string())),
@@ -657,9 +676,21 @@ pub async fn run_multi_stream<F>(
                 total_count: outcome.total_count,
                 is_last: outcome.is_last,
                 has_more: has_more_acc,
+                error_class: error_class.to_string(),
             };
 
+            // [S0-D | 任务 B 2026-09-19] serialize 计时点（env 门控 LEGADO_SEARCH_PHASE_TIMING）：
+            // 批次序列化段，输出携带会话标识 + 书源 URL（计划要求可关联）
+            let t_serialize = std::time::Instant::now();
             let json = serde_json::to_string(&batch).map_err(|e| e.to_string())?;
+            if std::env::var_os("LEGADO_SEARCH_PHASE_TIMING").is_some() {
+                eprintln!(
+                    "[phase] serialize={}ms session={} src={}",
+                    t_serialize.elapsed().as_millis(),
+                    session_cb.session_id,
+                    batch.source_url
+                );
+            }
             // sink 关闭（Err）时提前终止
             on_batch(json)
         },
@@ -1214,18 +1245,42 @@ pub(crate) async fn search_single_source(
         );
     }
 
-    // [S0-E | WebBook.kt:74-98] loginCheckJs：成功响应先 eval；未登录 →
-    // errResponse(500) 二次 eval；仍需登录 → LoginRequired 上抛（原版错误吞吐：
-    //   单源失败静默不中断其他源）。JS 环境不兼容降级放行（与 web_book 路径一致）。
-    crate::api::web_book::RealBookSourceFetcher::execute_login_check(
+    // [S0-E | WebBook.kt:74-99] loginCheckJs：对齐原版 StrResponse 语义——检测
+    // 结果是可被解析采用的响应对象（JS 可修改响应：自动登录返回新 body/url 等）；
+    // 非对象返回值/执行失败 → errResponse(500) 二次 eval：仍 code 500 或 cast
+    // 失败 → LoginRequired（整源失败；原版错误吞吐：单源失败静默不中断其他源）。
+    // [WebBook.kt:100-111] 解析采用 login-check 返回的响应（baseUrl=res.url、
+    // body=res.body）：bookUrlPattern 直连判定与相对 URL 绝对化均基于修改后 URL。
+    let login_outcome = crate::api::web_book::RealBookSourceFetcher::execute_login_check(
         source, &body, &final_url, resp_code,
     )?;
+    // [S0-D | 任务 B 2026-09-19；任务 A 2026-09-19 适配] login_check 段计时点
+    //（env 门控 LEGADO_SEARCH_PHASE_TIMING）：已移至 login_check 调用之后，
+    // 恢复段末累计语义（即 login_check 段结束时刻的累计耗时），输出携带会话
+    // 标识 + 书源 URL（计划要求可关联）。
+    if phase_on {
+        let session_id = current_session().map(|s| s.session_id).unwrap_or(0);
+        eprintln!(
+            "[phase] login_check={}ms session={} src={}",
+            t_phase.elapsed().as_millis(),
+            session_id,
+            source.book_source_url
+        );
+    }
     // 5. 使用 AnalyzeRule 解析搜索结果（同步解析同样移入阻塞线程，
     //    灾难性正则/超大页面不会阻塞 runtime，单源超时可中断）
     let source_clone = source.clone();
     let keyword_owned = keyword.to_string();
+    let parse_body = login_outcome.body;
+    let parse_url = login_outcome.url;
     let parsed = tokio::task::spawn_blocking(move || {
-        parse_search_response_ex(&body, &final_url, &source_clone, precision, &keyword_owned)
+        parse_search_response_ex(
+            &parse_body,
+            &parse_url,
+            &source_clone,
+            precision,
+            &keyword_owned,
+        )
     })
     .await
     .map_err(|e| LegadoError::Internal(format!("搜索解析任务异常: {e}")))?;
@@ -1337,12 +1392,26 @@ fn parse_search_response_ex(
     // `-` 表示最终结果逆序（reverse），`+` 本版本仅去前缀、无额外行为。
     let (book_list_rule, reverse) =
         split_book_list_prefix(rule_search.book_list.as_deref().unwrap_or(""));
+    // [S0-D | 任务 B 2026-09-19] list 提取（getElements）段起点（env 门控计时）
+    let t_list_extract = std::time::Instant::now();
     let elements = if book_list_rule.is_empty() {
         // [S0-E] 对齐原版 getElements("")：空规则得空集合（随后走空列表回退）
         Vec::new()
     } else {
         analyzer.get_elements(&book_list_rule).unwrap_or_default()
     };
+    // [S0-D | 任务 B 2026-09-19] list 提取计时点（env 门控 LEGADO_SEARCH_PHASE_TIMING）：
+    // 输出携带会话标识 + 书源 URL（计划要求可关联）
+    if std::env::var_os("LEGADO_SEARCH_PHASE_TIMING").is_some() {
+        let session_id = current_session().map(|s| s.session_id).unwrap_or(0);
+        eprintln!(
+            "[phase] list_extract={}ms session={} src={} n={}",
+            t_list_extract.elapsed().as_millis(),
+            session_id,
+            source.book_source_url,
+            elements.len()
+        );
+    }
 
     if elements.is_empty() {
         // [S0-E | BookList.kt:100-108] 空列表详情回退：原版双条件 —— 列表为空
@@ -1378,6 +1447,8 @@ fn parse_search_response_ex(
     }
 
     // 对每个元素解析各字段
+    // [S0-D | 任务 B 2026-09-19] field 解析段起点（env 门控计时）
+    let t_field_parse = std::time::Instant::now();
     let mut results = Vec::new();
     for element_html in &elements {
         // 列表元素按结构化对象写入（JSON 元素 → result 注入为对象，
@@ -1507,6 +1578,20 @@ fn parse_search_response_ex(
         results.reverse();
     }
 
+    // [S0-D | 任务 B 2026-09-19] field 解析计时点（env 门控 LEGADO_SEARCH_PHASE_TIMING）：
+    // 覆盖元素级字段提取 + 去重逆序，输出携带会话标识 + 书源 URL（计划要求可关联）；
+    // bookUrlPattern 直连 / 空列表回退等早退路径不经过该段，故不产出此计时点
+    if std::env::var_os("LEGADO_SEARCH_PHASE_TIMING").is_some() {
+        let session_id = current_session().map(|s| s.session_id).unwrap_or(0);
+        eprintln!(
+            "[phase] field_parse={}ms session={} src={} n={}",
+            t_field_parse.elapsed().as_millis(),
+            session_id,
+            source.book_source_url,
+            results.len()
+        );
+    }
+
     Ok(results)
 }
 
@@ -1578,6 +1663,60 @@ fn dedup_search_results_keep_first(items: Vec<SearchResult>) -> Vec<SearchResult
         }
     }
     out
+}
+
+/// 逐源错误八分类（任务书 B P2 项1，2026-09-19 加法式，零破坏）
+///
+/// 批次组装单点对 `LegadoResult<Vec<SearchResult>>` 的分类映射，结果写入
+/// 批次 JSON `error_class`（八类：`ok` / `empty` / `http_error` / `timeout` /
+/// `login_required` / `js_error` / `parser_error` / `cancelled`）。
+/// 现有 `error` 字段及其语义保持不变（冻结约束）；本函数不产生、不修改错误，
+/// 仅对已产生的错误做展示层归类。
+///
+/// 映射规则（不可归类的落到最近类别，理由随任务报告说明）：
+/// - `Ok(非空)` → `ok`；`Ok(空)` / `ContentEmpty` / `TocEmpty` → `empty`
+/// - `LoginRequired` → `login_required`；`Timeout` → `timeout`；`JsEngine` → `js_error`
+/// - `Network(msg)` 按 `drive_source_batches` 包装消息关键词归类：
+///   含"超时"/timeout（L791 单源超时包装）→ `timeout`；
+///   含"取消"/cancel（L775 取消包装）或"任务异常"（L827 join 错误，最近类）→ `cancelled`；
+///   含"崩溃"（L787 panic 隔离，处理层崩溃最近类）→ `parser_error`；
+///   其余（含"没有可用书源"、HTTP 层错误）→ `http_error`
+/// - `Parser` / `BookParse` / `Serialization` → `parser_error`
+/// - `Database` / `Ffi` / `Internal` → `parser_error`（无专用类，最近类兜底）
+/// - `Io` → `http_error`（IO 层最近类）
+pub(crate) fn classify_source_outcome(result: &LegadoResult<Vec<SearchResult>>) -> &'static str {
+    match result {
+        Ok(list) if !list.is_empty() => "ok",
+        Ok(_) => "empty",
+        Err(e) => match e {
+            LegadoError::LoginRequired(_) => "login_required",
+            LegadoError::Timeout(_) => "timeout",
+            LegadoError::JsEngine(_) => "js_error",
+            LegadoError::Network(msg) => {
+                let lower = msg.to_lowercase();
+                if msg.contains("超时") || lower.contains("timeout") || lower.contains("timed out")
+                {
+                    "timeout"
+                } else if msg.contains("取消") || lower.contains("cancel") {
+                    "cancelled"
+                } else if msg.contains("崩溃") {
+                    "parser_error"
+                } else if msg.contains("任务异常") {
+                    "cancelled"
+                } else {
+                    "http_error"
+                }
+            }
+            LegadoError::ContentEmpty(_) | LegadoError::TocEmpty(_) => "empty",
+            LegadoError::Io(_) => "http_error",
+            LegadoError::Parser(_)
+            | LegadoError::BookParse(_)
+            | LegadoError::Serialization(_)
+            | LegadoError::Database(_)
+            | LegadoError::Ffi(_)
+            | LegadoError::Internal(_) => "parser_error",
+        },
+    }
 }
 
 #[cfg(test)]
@@ -1795,13 +1934,36 @@ mod s0e_tests {
         assert_eq!(d[0].book_name, "甲", "保留首次出现");
     }
 
-    /// WebBook.kt:74-98：loginCheckJs 通过（quickjs）
+    /// WebBook.kt:76-83：新语义下的「应通过」路径（quickjs，P3-6 A）：
+    /// ① 裸 `result`（方法形对象）→ 完成值 `{}`（函数属性被 stringify 丢弃）
+    ///    → 直通原始三元组；② JS 返回可 cast 的响应对象（三元表达式）
+    ///    → 采用修改后的 body/url。旧谓词写法 `result.code() == 200`（裸布尔
+    ///    完成值）在新语义下 cast 失败，不再构成通过路径（s0b 夹具
+    ///    login_check_pass 已固化该场景为整源失败）
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_s0e_login_check_pass() {
-        let source = mk_source("https://ex.com", None, Some("result.code() == 200"), None);
-        RealBookSourceFetcher::execute_login_check(&source, "ok", "https://ex.com/s", 200)
-            .expect("code 200 应通过");
+        // ① 方法形 result 直通：JSON.stringify 丢弃函数属性 → "{}" → 原始三元组
+        let source = mk_source("https://ex.com", None, Some("result"), None);
+        let resp =
+            RealBookSourceFetcher::execute_login_check(&source, "ok", "https://ex.com/s", 200)
+                .expect("方法形 result 应直通原始响应");
+        assert_eq!(resp.code, 200);
+        assert_eq!(resp.body, "ok", "直通应保留原始 body");
+        assert_eq!(resp.url, "https://ex.com/s");
+
+        // ② 可 cast 响应对象：三元 true 分支返回 {code, body, url} → 采用修改值
+        let source2 = mk_source(
+            "https://ex.com",
+            None,
+            Some("result.code() == 200 ? { code: 200, body: 'new-body', url: 'https://ex.com/s2' } : false"),
+            None,
+        );
+        let resp2 =
+            RealBookSourceFetcher::execute_login_check(&source2, "ok", "https://ex.com/s", 200)
+                .expect("可 cast 响应对象应通过");
+        assert_eq!(resp2.body, "new-body", "应采用 JS 修改后的 body");
+        assert_eq!(resp2.url, "https://ex.com/s2", "应采用 JS 修改后的 url");
     }
 
     /// WebBook.kt:88-90：首检未登录 + errResponse 二次 eval 仍未登录 → LoginRequired
@@ -1814,18 +1976,31 @@ mod s0e_tests {
         assert!(matches!(err, LegadoError::LoginRequired(_)));
     }
 
-    /// WebBook.kt:91-97：errResponse 路径 JS「自动登录」恢复 → 放行
+    /// WebBook.kt:84-95：errResponse 路径「恢复」→ 放行并采用二次结果
+    /// （quickjs，P3-6 A）：首检（code 200）命中三元 false 分支 → 裸 false
+    /// → cast 失败进入错误路径；二次 eval（errResponse code 500）命中 true
+    /// 分支 → 返回对象 {code: 200} ≠ 500 → 放行采用二次结果（L88 块值
+    /// 语义）。旧语义的字符串完成值（'false'/'ok'）在新语义下一律 cast
+    /// 失败，本例改用可 cast 响应对象的 code!=500 放行场景（s0b 夹具
+    /// login_check_second_adopt 固化同构场景）
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_s0e_login_check_err_path_recovers() {
         let source = mk_source(
             "https://ex.com",
             None,
-            Some("result.code() == 200 ? 'false' : 'ok'"),
+            Some("result.code() == 500 ? { code: 200, body: 'recovered', url: 'https://ex.com/s' } : false"),
             None,
         );
-        RealBookSourceFetcher::execute_login_check(&source, "b", "https://ex.com/s", 200)
-            .expect("errResponse 二次 eval 返回非 false 应放行");
+        let resp = RealBookSourceFetcher::execute_login_check(
+            &source,
+            "login-wall",
+            "https://ex.com/s",
+            200,
+        )
+        .expect("二次 eval 返回 code != 500 对象应放行");
+        assert_eq!(resp.code, 200, "应采用二次结果的 code");
+        assert_eq!(resp.body, "recovered", "应采用二次修改后的 body");
     }
 }
 
@@ -4551,5 +4726,142 @@ mod d4_js_precision_tests {
             .await
             .unwrap();
         assert_eq!(off.len(), 2);
+    }
+}
+
+// ─── [任务书 B P2 项1 | 2026-09-19] 逐源错误八分类单测 ─────────────────────
+//
+// 覆盖 `classify_source_outcome` 的八类映射，重点是真实构造路径：
+// `drive_source_batches` 的三类 `Network` 包装消息（取消 L775 / panic 隔离
+// L787 / 超时 L791）+ join 错误（L827）+ 各 `LegadoError` 变体。
+#[cfg(test)]
+mod error_class_tests {
+    use super::*;
+
+    fn mk_result() -> SearchResult {
+        SearchResult {
+            source_url: "src".to_string(),
+            source_name: "src".into(),
+            book_name: "书名".to_string(),
+            author: String::new(),
+            book_url: "https://ex.com/book/1".to_string(),
+            latest_chapter: None,
+            intro: None,
+            cover_url: None,
+            kind: None,
+            word_count: None,
+            book_type: 0,
+            origin_order: 0,
+            has_read_record: false,
+            read_record_author: None,
+            variable: None,
+        }
+    }
+
+    fn ok_nonempty() -> LegadoResult<Vec<SearchResult>> {
+        Ok(vec![mk_result()])
+    }
+
+    #[test]
+    fn test_ok_nonempty_maps_ok() {
+        assert_eq!(classify_source_outcome(&ok_nonempty()), "ok");
+    }
+
+    #[test]
+    fn test_ok_empty_maps_empty() {
+        let r: LegadoResult<Vec<SearchResult>> = Ok(Vec::new());
+        assert_eq!(classify_source_outcome(&r), "empty");
+    }
+
+    #[test]
+    fn test_login_required_maps_login_required() {
+        let r = LegadoResult::Err(LegadoError::LoginRequired("未登录".into()));
+        assert_eq!(classify_source_outcome(&r), "login_required");
+    }
+
+    #[test]
+    fn test_timeout_variant_and_batch_wrapper_map_timeout() {
+        let r1 = LegadoResult::Err(LegadoError::Timeout("30s".into()));
+        assert_eq!(classify_source_outcome(&r1), "timeout");
+        // drive_source_batches L791 包装：`搜索超时（{}s）`
+        let r2 = LegadoResult::Err(LegadoError::Network("搜索超时（30s）".into()));
+        assert_eq!(classify_source_outcome(&r2), "timeout");
+    }
+
+    #[test]
+    fn test_js_engine_maps_js_error() {
+        let r = LegadoResult::Err(LegadoError::JsEngine("quickjs: 规则脚本异常".into()));
+        assert_eq!(classify_source_outcome(&r), "js_error");
+    }
+
+    #[test]
+    fn test_network_panic_wrapper_maps_parser_error() {
+        // drive_source_batches L787 包装：单源 panic 隔离
+        let r = LegadoResult::Err(LegadoError::Network(
+            "单源搜索崩溃: panic at rule eval（已隔离，不影响其他源）".into(),
+        ));
+        assert_eq!(classify_source_outcome(&r), "parser_error");
+    }
+
+    #[test]
+    fn test_network_cancel_and_task_error_map_cancelled() {
+        // drive_source_batches L775 包装：`搜索已取消`
+        let r1 = LegadoResult::Err(LegadoError::Network("搜索已取消".into()));
+        assert_eq!(classify_source_outcome(&r1), "cancelled");
+        // L827 包装：`搜索任务异常: {e}`（join 错误，最近类归 cancelled）
+        let r2 = LegadoResult::Err(LegadoError::Network(
+            "搜索任务异常: task was canceled".into(),
+        ));
+        assert_eq!(classify_source_outcome(&r2), "cancelled");
+    }
+
+    #[test]
+    fn test_network_generic_maps_http_error() {
+        // 其余 Network（含 L312「没有可用书源」、HTTP 层错误）→ http_error
+        let r1 = LegadoResult::Err(LegadoError::Network("HTTP 404".into()));
+        assert_eq!(classify_source_outcome(&r1), "http_error");
+        let r2 = LegadoResult::Err(LegadoError::Network("没有可用书源".into()));
+        assert_eq!(classify_source_outcome(&r2), "http_error");
+    }
+
+    #[test]
+    fn test_parser_family_maps_parser_error() {
+        let r1 = LegadoResult::Err(LegadoError::Parser("css: 规则错误".into()));
+        assert_eq!(classify_source_outcome(&r1), "parser_error");
+        let r2 = LegadoResult::Err(LegadoError::BookParse("书名缺失".into()));
+        assert_eq!(classify_source_outcome(&r2), "parser_error");
+        let r3 = LegadoResult::Err(LegadoError::Serialization(serde_json::Error::io(
+            std::io::Error::new(std::io::ErrorKind::Other, "x"),
+        )));
+        assert_eq!(classify_source_outcome(&r3), "parser_error");
+    }
+
+    #[test]
+    fn test_db_ffi_internal_fall_back_to_parser_error() {
+        // 无专用类，最近类兜底（报告 §⑤ 说明）
+        for r in [
+            LegadoResult::Err(LegadoError::Database("db 打开失败".into())),
+            LegadoResult::Err(LegadoError::Ffi("ffi 边界错误".into())),
+            LegadoResult::Err(LegadoError::Internal("未知内部错误".into())),
+        ] {
+            assert_eq!(classify_source_outcome(&r), "parser_error");
+        }
+    }
+
+    #[test]
+    fn test_io_maps_http_error() {
+        let r = LegadoResult::Err(LegadoError::Io(std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "connect failed",
+        )));
+        assert_eq!(classify_source_outcome(&r), "http_error");
+    }
+
+    #[test]
+    fn test_empty_content_variants_map_empty() {
+        let r1 = LegadoResult::Err(LegadoError::ContentEmpty("无内容".into()));
+        assert_eq!(classify_source_outcome(&r1), "empty");
+        let r2 = LegadoResult::Err(LegadoError::TocEmpty("无目录".into()));
+        assert_eq!(classify_source_outcome(&r2), "empty");
     }
 }

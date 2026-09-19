@@ -179,6 +179,156 @@ pub fn execute_login_check_js(
     Ok(())
 }
 
+/// loginCheckJs 检测响应结果（对齐原版 `StrResponse`：code/body/url）
+///
+/// [P3-6 A | WebBook.kt:74-99] 原版 loginCheckJs 的 eval 结果按
+/// `evalJS(checkJs, it) as StrResponse` 消费——JS 可以返回**修改后的响应**
+/// （自动登录等场景），后续 `checkRedirect`/`analyzeBookList(baseUrl = res.url,
+/// body = res.body)` 直接采用修改值。本结构承载该响应三元组。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoginCheckResponse {
+    /// 响应码（JS 修改值；缺失/类型不符时回退原响应码）
+    pub code: u16,
+    /// 响应体（JS 修改值；缺失/类型不符时回退原响应体）
+    pub body: String,
+    /// 响应 URL（JS 修改值；缺失/类型不符时回退原响应 URL）
+    pub url: String,
+}
+
+/// loginCheckJs 执行/解析错误（对齐原版 `evalJS(checkJs, ...) as StrResponse`
+/// 失败的错误路径语义，WebBook.kt:84-99）
+#[derive(Debug, PartialEq, Eq)]
+pub enum LoginCheckEvalError {
+    /// JS 返回值无法解析为响应对象（等价原版 ClassCastException：
+    /// 裸布尔/数字/字符串/null/undefined 完成值均不能 cast 为 StrResponse）
+    CastFailed(String),
+    /// JS 执行失败（引擎/脚本错误，如语法错误）
+    JsFailed(String),
+}
+
+impl std::fmt::Display for LoginCheckEvalError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::CastFailed(m) => write!(f, "{m}"),
+            Self::JsFailed(m) => write!(f, "{m}"),
+        }
+    }
+}
+
+/// 执行 loginCheckJs 并按 StrResponse 对象语义解析完成值
+/// （P3-6 A 分叉点1：取代 `execute_login_check_js` 的谓词字符串判定，
+/// 搜索/详情等主链路改走本函数；explore 链本期保留旧函数）
+///
+/// - 注入与 [`execute_login_check_js`] 相同的方法形 `result` 绑定
+///   （body()/url()/code() 方法），真实书源写法 `result.body()` 可用；
+///   书源 `return result` 原样直通时，完成值为方法形对象，
+///   `JSON.stringify` 丢弃函数属性 → 文本 `{}` → 解析回退原始响应三元组；
+/// - 书源返回纯数据对象 `{ code, body, url }`（QuickJS 端口扩展，缺字段
+///   回退原值）→ 修改后响应被采用；
+/// - 其余完成值（裸布尔/数字/字符串/null/undefined，序列化文本不以 `{`
+///   开头）→ [`LoginCheckEvalError::CastFailed`]（对齐原版 cast 失败）。
+#[cfg(feature = "quickjs")]
+pub fn execute_login_check_response(
+    js_code: &str,
+    response_body: &str,
+    response_url: &str,
+    response_code: u16,
+    source_tag: &str,
+) -> Result<LoginCheckResponse, LoginCheckEvalError> {
+    use legado_parser::JsExecutor;
+
+    let executor = quickjs_impl::QuickJsExecutor::new(source_tag);
+
+    // 注入与 execute_login_check_js 相同的方法形 result 绑定
+    // （对齐 Kotlin StrResponse 语义：result.body()/url()/code() 方法调用）
+    let body_lit = serde_json::to_string(response_body)
+        .map_err(|e| LoginCheckEvalError::JsFailed(format!("响应体转义失败: {e}")))?;
+    let url_lit = serde_json::to_string(response_url)
+        .map_err(|e| LoginCheckEvalError::JsFailed(format!("响应 URL 转义失败: {e}")))?;
+    let wrapped_code = format!(
+        "var __result_body = {body_lit};\n\
+         var __result_url = {url_lit};\n\
+         var __result_code = {response_code};\n\
+         var result = {{ body: function() {{ return __result_body; }},\n\
+         url: function() {{ return __result_url; }},\n\
+         code: function() {{ return __result_code; }} }};\n\
+         {js_code}"
+    );
+    let eval_result = executor
+        .execute_js(&wrapped_code)
+        .map_err(|e| LoginCheckEvalError::JsFailed(format!("loginCheckJs 执行失败: {e}")))?;
+
+    parse_login_check_completion(&eval_result, response_body, response_url, response_code)
+}
+
+/// 解析 loginCheckJs 完成值（纯函数，对齐原版 `as StrResponse` 语义）：
+/// - `{}`（方法形 result 直通：JSON.stringify 丢弃函数属性）→ 原始响应三元组；
+/// - `{` 开头的 JSON 对象 → 修改后响应（body/url/code 字段缺失或类型不符
+///   时逐项回退原值）；
+/// - 其余文本（裸布尔/数字/字符串/null/undefined 的序列化结果）→
+///   CastFailed（对齐原版 ClassCastException 错误路径）。
+#[cfg(feature = "quickjs")]
+fn parse_login_check_completion(
+    completion: &str,
+    body: &str,
+    url: &str,
+    code: u16,
+) -> Result<LoginCheckResponse, LoginCheckEvalError> {
+    let trimmed = completion.trim();
+    if !trimmed.starts_with('{') {
+        // 完成值序列化：string 原始输出（无引号）、bool → true/false、
+        // number 数值文本、null → "null"、undefined → "undefined"、
+        // 对象/数组 → JSON 文本（函数属性被丢弃）。
+        // 非 JSON 对象文本一律不能 cast 为 StrResponse → 错误路径。
+        return Err(LoginCheckEvalError::CastFailed(format!(
+            "loginCheckJs 返回值无法解析为响应对象（对齐原版 as StrResponse 失败）: {trimmed}"
+        )));
+    }
+    let v: serde_json::Value = serde_json::from_str(trimmed).map_err(|e| {
+        LoginCheckEvalError::CastFailed(format!("loginCheckJs 返回对象 JSON 解析失败: {e}"))
+    })?;
+    let obj = v.as_object().ok_or_else(|| {
+        LoginCheckEvalError::CastFailed(format!("loginCheckJs 返回值不是响应对象: {trimmed}"))
+    })?;
+    let resp_body = obj
+        .get("body")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| body.to_string());
+    let resp_url = obj
+        .get("url")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| url.to_string());
+    let resp_code = obj
+        .get("code")
+        .and_then(|v| v.as_u64())
+        .and_then(|c| u16::try_from(c).ok())
+        .unwrap_or(code);
+    Ok(LoginCheckResponse {
+        code: resp_code,
+        body: resp_body,
+        url: resp_url,
+    })
+}
+
+/// 非 quickjs 构建下 loginCheckJs 对象解析降级：静默直通原始响应
+/// （与 `execute_login_check_js` 的静默跳过一致，v7a 无 JS 降级决策不变）
+#[cfg(not(feature = "quickjs"))]
+pub fn execute_login_check_response(
+    _js_code: &str,
+    response_body: &str,
+    response_url: &str,
+    response_code: u16,
+    _source_tag: &str,
+) -> Result<LoginCheckResponse, LoginCheckEvalError> {
+    Ok(LoginCheckResponse {
+        code: response_code,
+        body: response_body.to_string(),
+        url: response_url.to_string(),
+    })
+}
+
 /// 构建搜索 URL 的 AnalyzeUrl（接线 `{{JS表达式}}` 模板渲染）
 ///
 /// 对齐原版 AnalyzeUrl.kt `replaceKeyPageJs` 语义：
@@ -945,6 +1095,112 @@ mod tests {
         assert!(
             matches!(r3, Err(LoginCheckError::JsFailed(_))),
             "实际: {r3:?}"
+        );
+    }
+
+    // [P3-6 A | WebBook.kt:74-99] loginCheckJs 按 StrResponse 对象解析完成值
+    //（quickjs 为非默认 feature：仅在本 feature 启用时运行）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn login_check_response_method_form_passthrough() {
+        // 方法形 result 原样直通（裸 `result` 完成值 → JSON.stringify 丢弃函数
+        // 属性 → "{}"）→ 采用原始响应三元组。
+        // 注意：QuickJS 顶层脚本禁 `return`（与原版 Rhino 容忍度差异，
+        // 登记为端口已知差异），裸 `{...}` 在语句位置解析为块语句，
+        // 故对象完成值一律用表达式形式（裸标识符/括号对象/三元）。
+        let r = execute_login_check_response("result", "orig-body", "http://x/s", 200, "lit_test");
+        assert_eq!(
+            r,
+            Ok(LoginCheckResponse {
+                code: 200,
+                body: "orig-body".into(),
+                url: "http://x/s".into()
+            }),
+            "实际: {r:?}"
+        );
+        // 不带显式 return（脚本无完成值 → undefined → 文本 "undefined"）
+        // 对齐原版 cast 失败 → CastFailed
+        let r2 =
+            execute_login_check_response("var x = 1;", "orig-body", "http://x/s", 200, "lit_test");
+        assert!(
+            matches!(r2, Err(LoginCheckEvalError::CastFailed(_))),
+            "实际: {r2:?}"
+        );
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn login_check_response_modified_object_adopted() {
+        // 纯数据对象（QuickJS 端口扩展）→ 修改后响应被采用；缺字段回退原值。
+        // 括号对象表达式避免块语句解析（顶层禁 return，见上一测试注释）。
+        let r = execute_login_check_response(
+            "({ code: 403, body: 'new-body', url: 'http://alt/s2' })",
+            "orig-body",
+            "http://x/s",
+            200,
+            "lit_test",
+        );
+        assert_eq!(
+            r,
+            Ok(LoginCheckResponse {
+                code: 403,
+                body: "new-body".into(),
+                url: "http://alt/s2".into()
+            }),
+            "实际: {r:?}"
+        );
+        // 只改 body，code/url 缺失 → 回退原值
+        let r2 = execute_login_check_response(
+            "({ body: 'patched' })",
+            "orig-body",
+            "http://x/s",
+            302,
+            "lit_test",
+        );
+        assert_eq!(
+            r2,
+            Ok(LoginCheckResponse {
+                code: 302,
+                body: "patched".into(),
+                url: "http://x/s".into()
+            }),
+            "实际: {r2:?}"
+        );
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn login_check_response_bare_values_cast_fail() {
+        // 裸布尔/字符串/数字/null 完成值均非 StrResponse → CastFailed
+        //（对齐原版 ClassCastException 错误路径）
+        for js in ["false", "true", "'ok'", "42", "null", "undefined"] {
+            let r = execute_login_check_response(js, "body", "http://x", 200, "lit_test");
+            assert!(
+                matches!(r, Err(LoginCheckEvalError::CastFailed(_))),
+                "js={js} 应 CastFailed，实际: {r:?}"
+            );
+        }
+    }
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn login_check_response_js_error_classify() {
+        // 语法/运行时错误归类为 JsFailed
+        let r = execute_login_check_response("function {", "body", "http://x", 200, "lit_test");
+        assert!(
+            matches!(r, Err(LoginCheckEvalError::JsFailed(_))),
+            "实际: {r:?}"
+        );
+        let r2 = execute_login_check_response(
+            "throw new Error('boom');",
+            "body",
+            "http://x",
+            200,
+            "lit_test",
+        );
+        assert!(
+            matches!(r2, Err(LoginCheckEvalError::JsFailed(_))),
+            "实际: {r2:?}"
         );
     }
 

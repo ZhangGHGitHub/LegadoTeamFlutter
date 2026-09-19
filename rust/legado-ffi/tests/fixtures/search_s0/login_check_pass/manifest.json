@@ -6,5 +6,6 @@
   "created": "2026-08-28",
   "sanitized": true,
   "sanitization_note": "纯合成响应,不含任何真实站点数据;URL 指向本地夹具服务器",
-  "expected_source": "hand-derived from Kotlin WebBook.kt:74-98 / BookList.kt:62-108 (com.legado.app.release 3.26081008) semantics; cross-package validation against original app planned in S0-C"
+  "expected_source": "hand-derived from Kotlin WebBook.kt:74-98 / BookList.kt:62-108 (com.legado.app.release 3.26081008) semantics; cross-package validation against original app planned in S0-C",
+  "semantic_change_note": "2026-09-19 P3-6 任务 A:loginCheckJs 语义对齐 StrResponse 对象判定(原版 as StrResponse);本场景 JS 返回裸布尔 → cast 失败 → 整源失败,expected_original.json 由 kind=ok 改为 kind=login_required;response.bin 未变,sha256 不变"
 }

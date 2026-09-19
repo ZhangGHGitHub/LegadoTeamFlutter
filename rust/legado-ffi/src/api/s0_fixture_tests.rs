@@ -8,7 +8,10 @@
 //! 见 S0-C 流程。
 //!
 //! 场景与审计依据（SEARCH_PARITY_S0_AUDIT_RESULT_20260828.md §四 S0-B）：
-//! - login_check_pass / login_check_required（loginCheckJs 成功/失败，quickjs）
+//! - login_check_pass / login_check_required（loginCheckJs 成功/失败，quickjs；
+//!   P3-6 A 2026-09-19：按 StrResponse 对象判定，两者均为整源失败场景）
+//! - login_check_modified_response / login_check_second_adopt（P3-6 A 新增：
+//!   修改后响应被采用 / 二次 eval code!=500 放行采用，quickjs）
 //! - redirect_final_url（3xx → 解析基准 = 最终 URL）
 //! - book_url_pattern_hit / book_url_pattern_miss（详情直连 / 列表解析）
 //! - empty_list_detail_fallback / empty_list_unparseable（空列表回退 / 明确空结果）
@@ -268,5 +271,24 @@ async fn s0b_login_check_pass() {
 #[tokio::test]
 async fn s0b_login_check_required() {
     let (expected, actual, _) = run_scenario("login_check_required").await;
+    assert_matches_expected(&expected, &actual);
+}
+
+// [P3-6 A | 2026-09-19] loginCheckJs StrResponse 对象语义新增场景：
+// - modified_response：首检 JS 返回修改后响应对象（新 body/url）→ 解析采用修改值
+// - second_adopt：首检 cast 失败（裸 false）→ errResponse(500) 二次 eval 返回
+//   code!=500 对象 → 放行并采用二次结果（WebBook.kt:88 块值语义）
+
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn s0b_login_check_modified_response() {
+    let (expected, actual, _) = run_scenario("login_check_modified_response").await;
+    assert_matches_expected(&expected, &actual);
+}
+
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn s0b_login_check_second_adopt() {
+    let (expected, actual, _) = run_scenario("login_check_second_adopt").await;
     assert_matches_expected(&expected, &actual);
 }

@@ -1,0 +1,12 @@
+{
+  "kind": "ok",
+  "count": 1,
+  "results": [
+    {
+      "name": "恢复后书名",
+      "author": "恢复后作者",
+      "bookUrl": "{BASE}/rec/book/1"
+    }
+  ],
+  "note": "首检(原始响应 code 200)JS 返回裸 false(非对象)→ as StrResponse cast 失败(WebBook.kt:84)→ errResponse(500) 二次 eval 返回 code 200 对象(code!=500)→ 放行并采用二次结果(WebBook.kt:88 块值语义);解析采用二次修改值(body=恢复页,url={BASE}/rec);原始响应体为登录墙页(无 .book-item),若被采用则 0 结果"
+}

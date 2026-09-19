@@ -1,4 +1,4 @@
 {
   "kind": "login_required",
-  "note": "首检 false → errResponse(500) 二次 eval 仍 false → LoginRequired 上抛(WebBook.kt:88-94);单源静默失败不中断其他源"
+  "note": "P3-6 A 新语义(2026-09-19):loginCheckJs 返回裸 false(非 StrResponse 对象)→ 首检 as StrResponse cast 失败 → errResponse(500) 二次 eval 仍裸 false、cast 失败 → 整源失败 LoginRequired 上抛(WebBook.kt:84-94);结果类别与旧谓词语义一致(NotLoggedIn→LoginRequired),机制改为 cast 失败路径;单源静默失败不中断其他源"
 }

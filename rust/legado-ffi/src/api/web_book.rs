@@ -933,60 +933,94 @@ impl RealBookSourceFetcher {
 
     /// 执行 loginCheckJs 登录检测（规则路径增强）
     ///
-    /// 参考 Kotlin WebBook.kt 四链路中的 loginCheckJs 双路径模式：
-    /// - 成功路径：HTTP 响应正常时 evalJS(loginCheckJs)
-    /// - 无配置时静默跳过，不影响现有逻辑
+    /// 对齐原版 Kotlin WebBook.kt:74-99 双路径语义（searchBookAwait，
+    /// P3-6 A 分叉点2，替代旧谓词字符串判定 + JsFailed 无条件降级放行）：
+    /// - 检测结果是**可被后续解析采用的响应对象**（原版 StrResponse：
+    ///   code/body/url）——JS 可修改响应（自动登录等场景），调用方以
+    ///   返回值解析（原版 `checkRedirect(bookSource, res)` +
+    ///   `analyzeBookList(baseUrl = res.url, body = res.body)`）；
+    /// - 首检完成值无法解析为响应对象/执行失败（等价原版
+    ///   `as StrResponse` ClassCastException）→ 构造 errResponse
+    ///   （code 500，body=首次失败原因，对齐 getErrStrResponse 的
+    ///   body=stackTraceStr）二次 eval（WebBook.kt:84-99 verbatim）：
+    ///   - 二次 code == 500 → 整源失败（`throw throwable` 语义，
+    ///     对齐原版 LoginSourceException 文案）；
+    ///   - 二次 code != 500 → 放行并**采用二次结果**（WebBook.kt:88
+    ///     块值 = 二次返回值 res）；
+    ///   - 二次 cast 失败/抛错 → `catch (_: Throwable) { throw
+    ///     throwable }` = 重抛原始 throwable = 整源失败；
+    /// - 无 loginCheckJs 配置 → 直通原始响应（WebBook.kt:77 else 分支）；
+    /// - 非 quickjs 构建：JS 无法执行 → 静默直通原始响应（v7a 无 JS
+    ///   降级决策不变，js_executor.rs `execute_login_check_response`
+    ///   非 quickjs 变体）。
+    ///
+    /// 返回值 = 解析应采用的响应（JS 修改值或原始值）；Err 上抛
+    /// `LoginRequired` 由搜索链路按源静默吞吐（原版错误吞吐：单源
+    /// 失败不中断其他源）。
     pub(crate) fn execute_login_check(
         source: &BookSource,
         response_body: &str,
         response_url: &str,
         response_code: u16,
-    ) -> LegadoResult<()> {
+    ) -> LegadoResult<crate::js_executor::LoginCheckResponse> {
         let login_check_js = match &source.login_check_js {
             Some(js) if !js.trim().is_empty() => js,
-            _ => return Ok(()), // 无 loginCheckJs 配置，跳过
+            // [WebBook.kt:77] checkJs 为空 → 原始响应直通
+            _ => {
+                return Ok(crate::js_executor::LoginCheckResponse {
+                    code: response_code,
+                    body: response_body.to_string(),
+                    url: response_url.to_string(),
+                })
+            }
         };
 
-        // 对齐原版 Kotlin WebBook 双路径语义（WebBook.kt:226-250 等）：
-        // - 成功路径：正常响应 eval，判定未登录（false/未登录/needLogin）
-        //   → 构造 errResponse（HTTP 500）二次 eval（JS 可在此自动登录并返回新响应）
-        //   → 仍判定未登录则上抛 LoginRequired（提示用户先登录书源）
-        // - JS 环境不兼容（依赖 java.* 等 Android 运行时对象）→ 降级放行，
-        //   避免阻断无需登录检测能力的书源获取
-        match crate::js_executor::execute_login_check_js(
+        // 首检（成功响应）：完成值按 StrResponse 对象解析
+        let first = crate::js_executor::execute_login_check_response(
             login_check_js,
             response_body,
             response_url,
             response_code,
             &source.book_source_url,
+        );
+        if let Ok(resp) = first {
+            return Ok(resp);
+        }
+        let first_err = first.unwrap_err();
+
+        // [WebBook.kt:84-87] 错误路径：构造 errResponse（code 500，
+        // body = 首次失败原因，对齐 getErrStrResponse 的 body=stackTraceStr）
+        let err_body = format!("HTTP/1.1 500 Internal Server Error\n\n{}", first_err);
+        match crate::js_executor::execute_login_check_response(
+            login_check_js,
+            &err_body,
+            response_url,
+            500,
+            &source.book_source_url,
         ) {
-            Ok(()) => Ok(()),
-            Err(crate::js_executor::LoginCheckError::NotLoggedIn(msg)) => {
-                let err_body = format!("HTTP/1.1 500 Internal Server Error\n\n{msg}");
-                match crate::js_executor::execute_login_check_js(
-                    login_check_js,
-                    &err_body,
-                    response_url,
-                    500,
-                    &source.book_source_url,
-                ) {
-                    Ok(()) => Ok(()),
-                    Err(crate::js_executor::LoginCheckError::NotLoggedIn(_)) => {
-                        Err(LegadoError::LoginRequired(
-                            "书源需要登录，请先在书源菜单中登录后重试".into(),
-                        ))
-                    }
-                    Err(crate::js_executor::LoginCheckError::JsFailed(e)) => {
-                        eprintln!(
-                            "[web_book] loginCheckJs errResponse 路径执行失败（降级放行）: {e}"
-                        );
-                        Ok(())
-                    }
-                }
+            // [WebBook.kt:88-90] 二次 it.code() == 500 → throw throwable
+            //（重抛原始 throwable = 整源失败）
+            Ok(second) if second.code == 500 => {
+                eprintln!(
+                    "[web_book] loginCheckJs errResponse 二次 eval 仍 code 500（整源失败）: src={}",
+                    source.book_source_url
+                );
+                Err(LegadoError::LoginRequired(
+                    "书源需要登录，请先在书源菜单中登录后重试".into(),
+                ))
             }
-            Err(crate::js_executor::LoginCheckError::JsFailed(e)) => {
-                eprintln!("[web_book] loginCheckJs 执行失败（环境不兼容，降级放行）: {e}");
-                Ok(())
+            // [WebBook.kt:88] 块值 = 二次返回值 res：放行并采用二次结果
+            Ok(second) => Ok(second),
+            // [WebBook.kt:91-94] catch (_: Throwable) { throw throwable }
+            // = 重抛原始 throwable = 整源失败
+            Err(second_err) => {
+                eprintln!(
+                    "[web_book] loginCheckJs errResponse 二次 eval 失败（整源失败）: {second_err} src={}",
+                    source.book_source_url
+                );
+                Err(LegadoError::LoginRequired(
+                    "书源需要登录，请先在书源菜单中登录后重试".into(),
+                ))
             }
         }
     }
@@ -1915,8 +1949,11 @@ impl RealBookSourceFetcher {
             .fetch_url(&analyze_toc, source_headers.as_ref())
             .await?;
         // P2-1：loginCheckJs 目录体登录检测（调用形态与详情路径各
-        // execute_login_check 调用点一致；LegadoResult<()> → `?`）。
-        // 无 loginCheckJs 配置时内部直接跳过，不影响既有源。
+        // execute_login_check 调用点一致；P3-6 A：返回
+        // LegadoResult<LoginCheckResponse>（JS 修改后或原始响应），
+        // `?` 解包后本路径不采用响应值——explore/toc 链本期范围红线，
+        // 错误上抛 = 整源失败，对齐原版调用形态）。
+        // 无 loginCheckJs 配置时内部直通原始响应，不影响既有源。
         Self::execute_login_check(source, &toc_body, toc_url, 200)?;
         eprintln!(
             "[web_book] get_chapters_from_known_toc fetched {} in {:?}",

@@ -1,0 +1,10 @@
+{
+  "scenario": "login_check_second_adopt",
+  "encoding": "utf-8",
+  "response_sha256": "bf5ef0df7d293d74741e77b4d3a926f90cb41fff1d36d7b499e1537d89e38b92",
+  "fixture_version": 1,
+  "created": "2026-09-19",
+  "sanitized": true,
+  "sanitization_note": "纯合成响应,不含任何真实站点数据;URL 指向本地夹具服务器;response.bin 为登录墙页(无 .book-item),仅作为 loginCheckJs 二次 eval 修改响应的对照组",
+  "expected_source": "hand-derived from Kotlin WebBook.kt:74-99 / BookList.kt:62-108 (com.legado.app.release 3.26081008) semantics; P3-6 任务 A 新增:分叉点2 错误路径(code!=500 放行并采用二次结果,WebBook.kt:88 块值语义)"
+}
