@@ -343,8 +343,13 @@ mod tests {
             }
         });
 
-        let client =
-            crate::client::LegadoClient::new(crate::client::LegadoClientConfig::default()).unwrap();
+        // no_proxy=true：系统 DNS 直连回落语义不应被系统/环境变量代理架空
+        //（2026-09-19 死代理实测：HTTP_PROXY 存在时 localhost 流量被代理劫持而失败）
+        let config = crate::client::LegadoClientConfig {
+            no_proxy: true,
+            ..crate::client::LegadoClientConfig::default()
+        };
+        let client = crate::client::LegadoClient::new(config).unwrap();
         let resp = client
             .get(&format!("http://localhost:{}/", addr.port()), None)
             .await

@@ -799,7 +799,13 @@ mod tests {
             }
         });
 
-        let client = LegadoClient::new(LegadoClientConfig::default()).unwrap();
+        // no_proxy=true：回环测试流量不得经系统/环境变量代理路由
+        //（2026-09-19 死代理实测：HTTP_PROXY 存在时本用例 127.0.0.1 流量被代理劫持而失败）
+        let client = LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
         let r1 = client.get(&format!("http://{addr}/r1"), None).await;
         let r2 = client.get(&format!("http://{addr}/r2"), None).await;
         assert!(r1.is_ok() && r2.is_ok());
@@ -989,7 +995,13 @@ mod tests {
         let plain = "你好，这是一段用于验证 gzip 透明解压的响应文本。hello gzip!";
         let addr = spawn_gzip_server(plain).await;
 
-        let client = LegadoClient::new(LegadoClientConfig::default()).unwrap();
+        // no_proxy=true：回环测试流量不得经系统/环境变量代理路由
+        //（2026-09-19 死代理实测：HTTP_PROXY 存在时本用例 127.0.0.1 流量被代理劫持而失败）
+        let client = LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
         let resp = client
             .get(&format!("http://{}/", addr), None)
             .await
