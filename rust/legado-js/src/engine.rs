@@ -1009,12 +1009,35 @@ mod quickjs_tests {
         );
     }
 
-    // [P2-7(b) 覆盖留痕] 原崩溃配方（仅手工复现用，勿进 CI；属进程级崩溃，无法写成断言）：
-    //   let cfg = SandboxConfig::strict().with_memory_limit(400_000); // 512KB 在本机不触发（环境刀锋）
-    //   engine.eval("var arr = []; for (var i = 0; i < 100000; i++) { arr.push(new Array(1000).fill('x')); } arr.length;")
-    // → WSL 5/5 SIGSEGV（find_own_property quickjs.c:5337，rax=0）；Windows 侧同型崩溃可由
-    //   「对象属性增长」脚本在 512KB 触发（`o['k'+i]=i` 循环 → 0xC0000005）。上游修复
-    //   （升级 rquickjs/quickjs-ng）后可把它改回常规回归断言。
+    // [P2-16 2026-09-19] P2-7(b)/(c) 原崩溃配方改回常规回归断言（上方注释预留的槽位）。
+    // 上游 quickjs-ng 0.15.1（rquickjs-sys 0.12.2 内置）已修复 OOM 重入 UAF
+    // （e1c1e416 / Fixes #1469：build_backtrace 二次 OOM 不再先行释放在途异常），
+    // 原配方的进程级 SIGSEGV（WSL 5/5，find_own_property quickjs.c:5337，rax=0）
+    // 应变为干净的 OOM 异常：返回 Err 且不崩进程，OOM 后引擎仍可用。
+    #[test]
+    fn test_sandbox_memory_limit_oom_backtrace_regression() {
+        // 400KB 上限 + 十万次循环每次 push ~9KB 数组：约前 20~30 次迭代必然触顶 OOM
+        let config = SandboxConfig::strict().with_memory_limit(400_000);
+        let engine = QuickJsEngine::new(config).unwrap();
+        let result = engine.eval(
+            "var arr = []; for (var i = 0; i < 100000; i++) { arr.push(new Array(1000).fill('x')); } arr.length;",
+        );
+        assert!(
+            result.is_err(),
+            "400KB 上限下原崩溃配方应 OOM 返回 Err，got: {result:?}"
+        );
+        let msg = result.unwrap_err().to_string().to_lowercase();
+        assert!(
+            msg.contains("out of memory"),
+            "期望 out-of-memory 错误，实际: {msg}"
+        );
+        // UAF 回归核心断言：进程未崩，OOM 之后引擎仍可正常执行
+        match engine.eval("1 + 1") {
+            Ok(v) => assert_eq!(v, "2", "OOM 后引擎仍应可用且计算正确"),
+            Err(e) => panic!("OOM 后引擎应仍可用，实际返回错误: {e}"),
+        }
+    }
+
     #[test]
     fn test_sandbox_timeout() {
         // 测试超时机制：使用递归循环而非紧密循环，以便中断处理器有更多机会被调用

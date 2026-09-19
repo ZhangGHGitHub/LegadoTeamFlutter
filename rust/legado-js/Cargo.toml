@@ -10,7 +10,11 @@ legado-parser = { path = "../legado-parser" }
 # rquickjs 是重型依赖（需编译 QuickJS C 代码），设为可选 feature
 # 启用方式: cargo build --features quickjs
 # 注意："bindgen" 需要 libclang；非 apple 平台使用预生成绑定
-rquickjs = { version = "0.9", features = ["parallel", "classes", "properties", "loader", "chrono", "macro"], optional = true }
+# [P2-16] 0.9 → 0.12：rquickjs-sys 0.12.x 内置 quickjs-ng 0.15.1，含 OOM 重入
+# UAF 修复（上游 e1c1e416 / Fixes #1469，build_backtrace 重入 OOM → SIGSEGV）。
+# 注意：禁止启用 rust-alloc/allocator feature——换分配器会使 JS_SetMemoryLimit
+# （SandboxConfig.max_memory_bytes 的执行路径）失效为 no-op（rquickjs raw.rs 文档）。
+rquickjs = { version = "0.12", features = ["parallel", "classes", "properties", "loader", "chrono", "macro"], optional = true }
 
 
 # 编解码与加密 crate（sha2/base64 为字体反爬 cmap 解析必需，非可选；其余随 quickjs feature 启用）
@@ -91,6 +95,6 @@ quickjs = [
 # 无 iOS 目标——apple 平台启用 bindgen 运行时生成（CI macOS runner 自带 libclang；
 # 本地 Windows 仍用预生成绑定，无需 LLVM）
 [target.'cfg(not(target_os = "windows"))'.dependencies.rquickjs]
-version = "0.9"
+version = "0.12"
 optional = true
 features = ["bindgen"]
