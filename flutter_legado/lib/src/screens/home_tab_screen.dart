@@ -284,14 +284,21 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
                     children: [
                       Icon(Symbols.bar_chart_rounded, color: cs.primary),
                       const SizedBox(width: 10),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('累计阅读',
-                              style: Theme.of(context).textTheme.bodySmall),
-                          Text('$readBooks 本',
-                              style: Theme.of(context).textTheme.titleMedium),
-                        ],
+                      // [FIX 2026-09-19 P2-13②] 数值列限宽 + 省略号截断，防 Row 右溢
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('累计阅读',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall),
+                            Text('$readBooks 本',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleMedium),
+                          ],
+                        ),
                       ),
                     ],
                   ),
@@ -304,14 +311,21 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
                     children: [
                       Icon(Symbols.schedule_rounded, color: cs.primary),
                       const SizedBox(width: 10),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('阅读时长',
-                              style: Theme.of(context).textTheme.bodySmall),
-                          Text('$totalHours 小时',
-                              style: Theme.of(context).textTheme.titleMedium),
-                        ],
+                      // [FIX 2026-09-19 P2-13②] 数值列限宽 + 省略号截断，防 Row 右溢
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('阅读时长',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.bodySmall),
+                            Text('$totalHours 小时',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context).textTheme.titleMedium),
+                          ],
+                        ),
                       ),
                     ],
                   ),

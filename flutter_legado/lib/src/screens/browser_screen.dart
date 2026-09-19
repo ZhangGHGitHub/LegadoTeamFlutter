@@ -386,10 +386,15 @@ class _BrowserScreenState extends State<BrowserScreen> {
                     Icon(Symbols.language_rounded, size: 20,
                         color: theme.colorScheme.primary),
                     const SizedBox(width: 8),
-                    Text(
-                      uri?.host ?? url,
-                      style: theme.textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
+                    // [FIX 2026-09-19 P2-13②] host 限宽 + 省略号截断，防 Row 右溢
+                    Flexible(
+                      child: Text(
+                        uri?.host ?? url,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                     const Spacer(),
