@@ -67,6 +67,9 @@ fn main() {
         url: String,
         books: usize,
         error: Option<String>,
+        /// 八分类（P2 项1）：优先取批次 JSON 的 `error_class`（Rust 侧权威分类）；
+        /// 字段缺失（旧构建）时回退本地启发式 classify_error
+        error_class: String,
         elapsed_s: f64,
     }
 
@@ -86,6 +89,20 @@ fn main() {
             let err = v["error"].as_str().map(|s| s.to_string());
             let nbooks = v["books"].as_array().map(|a| a.len()).unwrap_or(0);
             let el = t0.elapsed().as_secs_f64();
+            // 八分类（P2 项1）：Rust 侧权威分类优先；字段缺失（旧构建）回退本地启发式
+            let rust_class = v["error_class"].as_str().unwrap_or("").to_string();
+            let error_class = if !rust_class.is_empty() {
+                rust_class
+            } else if err.is_none() {
+                (if nbooks > 0 { "ok" } else { "empty" }).to_string()
+            } else {
+                // 旧构建回退：启发式未命中归 http_error（八分类中最近类，与 Rust 侧映射一致）
+                match classify_error(err.as_deref().unwrap_or("")) {
+                    "other_error" => "http_error",
+                    other => other,
+                }
+                .to_string()
+            };
 
             if err.is_none() {
                 if nbooks > 0 {
@@ -99,11 +116,12 @@ fn main() {
             total_books += nbooks;
 
             println!(
-                "[{:7.2}s] #{} {} books={} err={}",
+                "[{:7.2}s] #{} {} books={} class={} err={}",
                 el,
                 recs.len() + 1,
                 name,
                 nbooks,
+                error_class,
                 err.as_deref().unwrap_or("")
             );
             recs.push(Rec {
@@ -111,6 +129,7 @@ fn main() {
                 url,
                 books: nbooks,
                 error: err,
+                error_class,
                 elapsed_s: el,
             });
             Ok(())
@@ -131,14 +150,11 @@ fn main() {
 
     let mut err_kinds: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
-    let mut cat_ok = 0usize;
-    let mut cat_empty = 0usize;
-    let mut cat_http = 0usize;
-    let mut cat_timeout = 0usize;
-    let mut cat_js = 0usize;
-    let mut cat_parser = 0usize;
-    let mut cat_other = 0usize;
+    // 八分类计数（P2 项1）：ok/empty/http_error/timeout/login_required/js_error/
+    // parser_error/cancelled
+    let mut cats: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
 
+    /// 旧构建回退启发式（新构建以批次 error_class 为准，此函数仅兼容旧二进制）
     fn classify_error(err: &str) -> &'static str {
         let e = err.to_lowercase();
         if e.contains("超时") || e.contains("timeout") {
@@ -156,28 +172,28 @@ fn main() {
     }
 
     for r in &recs {
-        if let Some(e) = &r.error {
+        if r.error.is_some() {
+            let e = r.error.as_deref().unwrap_or_default();
             let key: String = e.chars().take(60).collect();
-            *err_kinds.entry(key.clone()).or_default() += 1;
-            match classify_error(e) {
-                "timeout" => cat_timeout += 1,
-                "http_error" => cat_http += 1,
-                "js_error" => cat_js += 1,
-                "parser_error" => cat_parser += 1,
-                _ => cat_other += 1,
-            }
-        } else if r.books == 0 {
-            cat_empty += 1;
-        } else {
-            cat_ok += 1;
+            *err_kinds.entry(key).or_default() += 1;
         }
+        // 权威分类计数：error_class 已由批次 JSON（或回退逻辑）归一到八类
+        *cats.entry(r.error_class.clone()).or_insert(0) += 1;
     }
-    cat_ok = ok_count; // 与流式计数一致
-    cat_empty = empty_count;
+
+    let get = |k: &str| cats.get(k).copied().unwrap_or(0);
+    let cat_ok = get("ok");
+    let cat_empty = get("empty");
+    let cat_http = get("http_error");
+    let cat_timeout = get("timeout");
+    let cat_login = get("login_required");
+    let cat_js = get("js_error");
+    let cat_parser = get("parser_error");
+    let cat_cancelled = get("cancelled");
 
     println!(
-        "===== 分类汇总 ===== ok={} empty={} http={} timeout={} js={} parser={} other={}",
-        cat_ok, cat_empty, cat_http, cat_timeout, cat_js, cat_parser, cat_other
+        "===== 分类汇总 ===== ok={} empty={} http={} timeout={} login={} js={} parser={} cancelled={}",
+        cat_ok, cat_empty, cat_http, cat_timeout, cat_login, cat_js, cat_parser, cat_cancelled
     );
     println!("===== 错误分类（前 60 字符聚合，Top25）=====");
     for (k, c) in err_kinds.iter().take(25) {
@@ -192,6 +208,7 @@ fn main() {
                 "url": r.url,
                 "books": r.books,
                 "error": r.error,
+                "error_class": r.error_class,
                 "elapsed_s": r.elapsed_s,
             })
         })
@@ -206,9 +223,10 @@ fn main() {
                 "empty": cat_empty,
                 "http_error": cat_http,
                 "timeout": cat_timeout,
+                "login_required": cat_login,
                 "js_error": cat_js,
                 "parser_error": cat_parser,
-                "other_error": cat_other,
+                "cancelled": cat_cancelled,
                 "total_books": total_books,
                 "wall_s": wall,
             },

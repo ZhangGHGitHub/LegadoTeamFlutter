@@ -417,6 +417,14 @@ Future<String> searchCover({required String bookName}) =>
 /// 与 [`search_multi`] 不同：每完成一个书源即通过 `StreamSink` 推送一个结果批次
 /// （JSON 字符串），UI 侧可逐源渲染，无需等待最慢书源。流在所有书源完成后自然结束。
 ///
+/// 批次事件 JSON 字段（契约 §2.4 `SearchSourceBatch`）：
+/// `source_url` / `source_name` / `books`（逐书 `name`/`author`/`bookUrl`/`originOrder`
+/// 及可选 `hasReadRecord`）/ `error?`（失败批次携带错误文案，字段语义保留）/
+/// `finished_count` / `total_count` / `is_last` / `has_more` /
+/// `error_class`（P2 项1 加法式新字段：逐源错误八分类
+/// `ok`/`empty`/`http_error`/`timeout`/`login_required`/`js_error`/
+/// `parser_error`/`cancelled`；缺失或未知值按 `ok` 兼容处理，不影响既有字段）。
+///
 /// `query` — 搜索关键词
 /// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；为空则搜索所有启用的书源
 /// `page` — 页码（批次B G-B-01 透传；Dart 侧同关键词翻页递增、新关键词重置为 1）
