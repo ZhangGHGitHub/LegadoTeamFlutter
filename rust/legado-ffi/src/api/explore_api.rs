@@ -1769,9 +1769,69 @@ JSON.stringify(qtsj.concat([{title: base_url + '榜', url: '/rank'}]));
         );
     }
 
-    /// 网络回归：思路客发现「玄幻」页码展开后应 HTTP 成功并解析到书名
+    /// 回环夹具服务器：`/list1/*` 路径投递固定 HTML 样本，其余路径 404——
+    /// 思路客发现用例离线化（2026-09-19），不再发外网请求
+    fn spawn_explore_fixture_server(fixture: &str) -> u16 {
+        use std::io::{Read, Write};
+        let body: Vec<u8> = fixture.as_bytes().to_vec();
+        let listener =
+            std::net::TcpListener::bind("127.0.0.1:0").expect("bind 思路客发现夹具服务器");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut buf: Vec<u8> = Vec::new();
+                let mut one = [0u8; 1];
+                while !buf.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut one) {
+                        Ok(1) => buf.push(one[0]),
+                        _ => break,
+                    }
+                    if buf.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let head = String::from_utf8_lossy(&buf).to_string();
+                let target = head
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("/")
+                    .to_string();
+                let path_only = target.split('?').next().unwrap_or("/");
+                let (status, status_text, resp_body) = if path_only.starts_with("/list1/") {
+                    (200, "OK", body.clone())
+                } else {
+                    (404, "Not Found", b"not found".to_vec())
+                };
+                let resp = format!(
+                    "HTTP/1.1 {status} {status_text}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    resp_body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(&resp_body);
+                let _ = stream.flush();
+            }
+        });
+        port
+    }
+
+    /// 发现页回归：思路客「玄幻」页码展开后应成功并解析到书名（夹具化）
+    ///
+    /// 2026-09-19 夹具化：原为直连 `www.silukezw.com` 的联网用例
+    /// （`#[ignore = "requires network access"]`）。现取当日一次真实抓取的
+    /// 固定样本 `tests/fixtures/siluke_explore_xuanhuan_p1.html`
+    /// （抓取 URL 与时间见文件头注释），由 127.0.0.1 回环夹具服务器
+    /// 投递，书源 URL 指向回环地址——测试运行期间不再发外网请求；
+    /// 断言语义不变（≥5 本、bookUrl 多数非空、无 `{{page}}` 残留、
+    /// 错误信息不得含占位符 404）。
+    /// 注意：`explore_books_async` 复用 `http_state::shared_client()`
+    /// （默认配置，随宿主 env 代理路由）——无代理环境全离线可跑；代理
+    /// 环境下回环流量可能被劫持（需 http_state 层注入 no_proxy 客户端，
+    /// 该文件在本次文件避让范围内，属后续项）。
     #[test]
-    #[ignore = "requires network access"]
     fn test_explore_fetch_siluke_xuanhuan_live() {
         // P2-1：explore_fetch_books 入口执行 begin_book_flow（切 flow
         // scope）→ 触碰全局 store 状态，须与其它 store 测试串行（共享
@@ -1779,8 +1839,13 @@ JSON.stringify(qtsj.concat([{title: base_url + '榜', url: '/rank'}]));
         let _lock = crate::api::web_book::GLOBAL_STORE_TEST_LOCK
             .lock()
             .unwrap_or_else(|p| p.into_inner());
+        // 回环夹具服务器：投递固定样本（抓取说明见夹具文件头注释）
+        let fixture = std::fs::read_to_string("tests/fixtures/siluke_explore_xuanhuan_p1.html")
+            .expect("夹具文件缺失: tests/fixtures/siluke_explore_xuanhuan_p1.html");
+        let port = spawn_explore_fixture_server(&fixture);
+        let base = format!("http://127.0.0.1:{port}");
         let source = serde_json::json!({
-            "bookSourceUrl": "http://www.silukezw.com",
+            "bookSourceUrl": base,
             "bookSourceName": "思路客#2",
             "bookSourceType": 0,
             "ruleExplore": {

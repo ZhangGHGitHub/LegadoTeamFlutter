@@ -12,11 +12,14 @@
 //! - redirect_final_url（3xx → 解析基准 = 最终 URL）
 //! - book_url_pattern_hit / book_url_pattern_miss（详情直连 / 列表解析）
 //! - empty_list_detail_fallback / empty_list_unparseable（空列表回退 / 明确空结果）
+//!
+//! 2026-09-19：全链路本即离线（127.0.0.1 夹具服务器 + 仓内夹具文件），
+//! 移除陈旧的 `#[ignore = "requires network access"]`；执行器客户端改用
+//! 专用 no_proxy 客户端（不随宿主 env/系统代理路由），死代理环境亦免疫。
 
 #![cfg(test)]
 
 use super::search::search_single_source;
-use crate::http_state::shared_client;
 use legado_core::models::book_source::BookSource;
 use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
@@ -148,7 +151,15 @@ async fn run_scenario(scenario: &str) -> (Expected, String, Expected) {
         .replace("{PORT}", &port.to_string());
     let source: BookSource = serde_json::from_str(&source_json).unwrap();
 
-    let client = shared_client().expect("共享 HTTP 客户端");
+    // 专用 no_proxy 客户端（替代 http_state::shared_client）：夹具流量全走
+    // 127.0.0.1 回环，共享客户端（默认配置）会随宿主 env/系统代理路由，
+    // 代理环境下回环流量被劫持致误报（2026-09-19 死代理实测）；
+    // search_single_source 本身接受客户端注入，无需触碰生产共享单例
+    let client = legado_net::LegadoClient::new(legado_net::LegadoClientConfig {
+        no_proxy: true,
+        ..Default::default()
+    })
+    .expect("夹具专用 HTTP 客户端");
     let outcome = search_single_source(&client, &source, &request.keyword, 1, false).await;
 
     // 期望中的 {BASE} 占位替换为实际夹具服务器地址
@@ -215,35 +226,30 @@ fn assert_matches_expected(expected: &Expected, actual_json: &str) {
 }
 
 #[tokio::test]
-#[ignore = "requires network access"]
 async fn s0b_redirect_final_url() {
     let (expected, actual, _) = run_scenario("redirect_final_url").await;
     assert_matches_expected(&expected, &actual);
 }
 
 #[tokio::test]
-#[ignore = "requires network access"]
 async fn s0b_book_url_pattern_hit() {
     let (expected, actual, _) = run_scenario("book_url_pattern_hit").await;
     assert_matches_expected(&expected, &actual);
 }
 
 #[tokio::test]
-#[ignore = "requires network access"]
 async fn s0b_book_url_pattern_miss() {
     let (expected, actual, _) = run_scenario("book_url_pattern_miss").await;
     assert_matches_expected(&expected, &actual);
 }
 
 #[tokio::test]
-#[ignore = "requires network access"]
 async fn s0b_empty_list_detail_fallback() {
     let (expected, actual, _) = run_scenario("empty_list_detail_fallback").await;
     assert_matches_expected(&expected, &actual);
 }
 
 #[tokio::test]
-#[ignore = "requires network access"]
 async fn s0b_empty_list_unparseable() {
     let (expected, actual, _) = run_scenario("empty_list_unparseable").await;
     assert_matches_expected(&expected, &actual);
