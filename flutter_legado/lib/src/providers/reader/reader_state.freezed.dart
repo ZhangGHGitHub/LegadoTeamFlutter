@@ -41,9 +41,12 @@ mixin _$ReaderState {
   bool get showControls =>
       throw _privateConstructorUsedError; // ===== 阅读设置 =====
   /// 字体大小
+  /// [C2 R1] 默认字号对齐参考（参考 ~20-22sp/行 ~14 字；原版 ReadBookConfig
+  /// textSize=20sp）：18.0 → 20.0
   double get fontSize => throw _privateConstructorUsedError;
 
   /// 行高倍数
+  /// [C2 R2] 默认行距对齐参考（参考 ~1.7，原版 lineSpacingExtra=12）：1.6 → 1.7
   double get lineHeight => throw _privateConstructorUsedError;
 
   /// 背景色
@@ -370,11 +373,14 @@ class _$ReaderStateImpl implements _ReaderState {
   final bool showControls;
 // ===== 阅读设置 =====
   /// 字体大小
+  /// [C2 R1] 默认字号对齐参考（参考 ~20-22sp/行 ~14 字；原版 ReadBookConfig
+  /// textSize=20sp）：18.0 → 20.0
   @override
   @JsonKey()
   final double fontSize;
 
   /// 行高倍数
+  /// [C2 R2] 默认行距对齐参考（参考 ~1.7，原版 lineSpacingExtra=12）：1.6 → 1.7
   @override
   @JsonKey()
   final double lineHeight;
@@ -513,10 +519,13 @@ abstract class _ReaderState implements ReaderState {
   bool get showControls;
   @override // ===== 阅读设置 =====
   /// 字体大小
+  /// [C2 R1] 默认字号对齐参考（参考 ~20-22sp/行 ~14 字；原版 ReadBookConfig
+  /// textSize=20sp）：18.0 → 20.0
   double get fontSize;
   @override
 
   /// 行高倍数
+  /// [C2 R2] 默认行距对齐参考（参考 ~1.7，原版 lineSpacingExtra=12）：1.6 → 1.7
   double get lineHeight;
   @override
 
