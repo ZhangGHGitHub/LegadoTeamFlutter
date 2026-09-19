@@ -559,6 +559,12 @@ async fn explore_books_async(
         .as_deref()
         .map(crate::api::source_js_bindings::sanitize_js_lib_for_quickjs);
     let explore_setup = crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
+    // P2-11 ①：src = 发现响应体（explore 顶层分析器；单参 java.* 回退重解析
+    // 原始 body——对齐搜索路径 bind_orig_src 约定（web_book.rs L1269-1279）与
+    // 上游 AnalyzeRule.kt L904 `bindings["src"] = content`（this.content 不被
+    // 规则链更新，多步链子步单参 java.* 仍重解析顶层原始响应体；此前 explore
+    // 链式 JS 的 src 为中间产物，P2-11 §194 残差）
+    let body_src_json = serde_json::to_string(&body).unwrap_or_default();
     let analyzer = crate::js_executor::construct_analyzer_with_source_context(
         body,
         base_url.clone(),
@@ -566,6 +572,7 @@ async fn explore_books_async(
         js_lib_sanitized.as_deref(),
         explore_setup.clone(),
     );
+    let analyzer = with_explore_top_bindings(analyzer, &body_src_json);
 
     let elements = if book_list_rule.is_empty() {
         vec![analyzer.content().to_string()]
@@ -749,6 +756,30 @@ async fn explore_books_async(
     );
 
     Ok(results)
+}
+
+/// P2-11 ①：explore 顶层分析器的 JS 绑定（形态对齐搜索路径
+/// web_book.rs L1269-1279 的 `src` 重绑定，book 绑定按上游语义补 null）
+///
+/// - `src` = 顶层发现响应体 JSON 字面量：链式子步（`eval_js_chain_steps` /
+///   `run_js_steps_threaded` 的 `sub.add_js_binding` 传播）prologue 先注入
+///   `globalThis.src = <子分析器 content>`（中间产物），本绑定逐条注入排在
+///   其后、覆盖之 → 单参 `java.getStringList(rule)` / `java.getString(rule)` /
+///   `java.getElements(rule)` 的 content 回退重解析**顶层原始响应体**，对齐
+///   上游 `AnalyzeRule.evalJS` 的 `bindings["src"] = content`（AnalyzeRule.kt
+///   L904）与单参 `getStringList(rule, null)` 的 `mContent ?: this.content`
+///   （this.content 不被规则链更新，见 web_book.rs bind_orig_src 注释）
+/// - `book` = `null`（JSON null 字面量 → JS `null`）：explore 顶层 ruleData 为
+///   裸 `RuleData()`（上游 `WebBook.exploreBookAwait`，WebBook.kt L137），
+///   `AnalyzeRule.book = ruleData as? BaseBook`（L68）→ null；L899
+///   `bindings["book"] = book` 无条件注入，故 JS 侧为 `null` 而非 undefined
+fn with_explore_top_bindings(
+    analyzer: legado_parser::AnalyzeRule,
+    body_src_json: &str,
+) -> legado_parser::AnalyzeRule {
+    analyzer
+        .with_js_binding("src", body_src_json)
+        .with_js_binding("book", "null")
 }
 
 /// explore 链路 loginCheckJs 登录检测（双路径）
@@ -1387,6 +1418,94 @@ function getServerHost() { return 'https://a.test'; }
             }
             eprintln!("[aggregate-common] {name_kw} setup+explore OK");
         }
+    }
+}
+
+// ─── P2-11 ① explore 顶层 JS 绑定回归（src 重绑定 / book=null）──────────────
+
+#[cfg(all(test, feature = "quickjs"))]
+mod explore_binding_tests {
+    use super::*;
+    use legado_core::models::BookSource;
+
+    /// 与生产 `explore_books_async` 同一构造路径（explore_api.rs L567/L575）：
+    /// 原始响应文本（`response.body: String`）→ `serde_json::to_string` 得
+    /// JSON 字符串字面量（宿主 `java.*` 单参形态读 `globals().src` 期望 JS
+    /// 字符串，与搜索路径 `bind_orig_src` 约定一致）→ 顶层分析器 +
+    /// [`with_explore_top_bindings`]（src=顶层响应文本、book=null）。
+    fn explore_top_analyzer(body: &str) -> legado_parser::AnalyzeRule {
+        let source = BookSource::default();
+        let body_src_json = serde_json::to_string(body).unwrap();
+        let analyzer = crate::js_executor::construct_analyzer_with_source_context(
+            body.to_string(),
+            "https://explore.example.com/list".to_string(),
+            &source.book_source_url,
+            None,
+            None,
+        );
+        with_explore_top_bindings(analyzer, &body_src_json)
+    }
+
+    /// P2-11 ① 验收 1：bookList 链式步 2 用单参 `java.*` 必须重解析**顶层原始
+    /// 发现响应体**，而非步 1 的中间产物。
+    ///
+    /// 步 1 `$.data.items[*]` 提取出 2 个元素（中间产物 = items 数组）；
+    /// 步 2 `@js:JSON.stringify(java.getStringList('$.pageMeta.root'))`：
+    /// 单参 `java.getStringList`（宿主 quickjs_impl 单参形态读 `globals().src`）
+    /// 对齐上游 `AnalyzeRule.getStringList(rule, null)` 的
+    /// `mContent ?: this.content`（this.content 不被规则链更新，见
+    /// web_book.rs `bind_orig_src` 注释；上游 AnalyzeRule.kt L904
+    /// `bindings["src"] = content`）。修复前 explore 链式子步 `src` 为中间
+    /// 产物（P2-11 §194 残差）→ `$.pageMeta.root` 落空 → 空列表；修复后
+    /// `src` = 顶层响应体 → `["ROOT-777"]`。
+    #[test]
+    fn test_explore_chained_step_src_is_top_level_body() {
+        // 原始发现响应文本（生产：`response.body: String`）
+        let body = serde_json::json!({
+            "pageMeta": { "root": "ROOT-777" },
+            "data": { "items": [ { "n": "book-a" }, { "n": "book-b" } ] }
+        })
+        .to_string();
+        let analyzer = explore_top_analyzer(&body);
+
+        let rule = "$.data.items[*]\n@js:JSON.stringify(java.getStringList('$.pageMeta.root'))";
+        let elements = analyzer
+            .get_elements(rule)
+            .unwrap_or_else(|e| panic!("链式 bookList 规则解析失败: {e}"));
+        assert_eq!(
+            elements,
+            vec!["ROOT-777"],
+            "链式步 2 的单参 java.* 必须重解析顶层原始响应体（而非中间产物），实际: {elements:?}"
+        );
+    }
+
+    /// P2-11 ① 验收 2：explore 顶层 `book` 绑定值与上游一致 = `null`（JS
+    /// null，而非 undefined、而非未声明）。
+    ///
+    /// 上游 `WebBook.exploreBookAwait`（WebBook.kt L131-148）用裸
+    /// `val ruleData = RuleData()`（L137）；`AnalyzeRule.book get() =
+    /// ruleData as? BaseBook`（AnalyzeRule.kt L68）→ null；`evalJS` 无条件
+    /// `bindings["book"] = book`（L899）→ JS 侧 `book === null` 而非
+    /// undefined。探测用三态哨兵字符串（未绑定 undefined → "UNDEFINED"；
+    /// 绑定 null → "IS_NULL"；绑定非 null → 其 `String(book)` 值），修复前
+    /// （无绑定）输出 "UNDEFINED" 断言失败，修复后输出 "IS_NULL" 通过。
+    /// 不用 `String(book)` 直探：`normalize_js_rule_result`
+    ///（analyze_rule.rs L2004-2007）把 "null"/"undefined" 结果归一为空 →
+    /// `get_string` 恒得 ""，无法区分三态。
+    #[test]
+    fn test_explore_top_level_book_binding_is_null() {
+        let body = serde_json::json!({ "data": { "items": [] } }).to_string();
+        let analyzer = explore_top_analyzer(&body);
+
+        let probe = analyzer
+            .get_string(
+                "@js:typeof book === 'undefined' ? 'UNDEFINED' : (book === null ? 'IS_NULL' : String(book))",
+            )
+            .unwrap_or_else(|e| panic!("book 绑定探测失败: {e}"));
+        assert_eq!(
+            probe, "IS_NULL",
+            "explore 顶层 book 应为 null（上游 WebBook.kt L137 裸 RuleData → AnalyzeRule.kt L68 as? BaseBook = null），实际: {probe}"
+        );
     }
 }
 
