@@ -1082,6 +1082,12 @@ mod tests {
     struct ScriptedTocFetcher {
         chapters_by_url: Vec<(String, Vec<WebChapter>)>,
         requested: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+        /// [P2-1 复审] 自愈回写调用点回归测试：在首次抓取（坏 tocUrl）时模拟刷新窗口
+        /// （抓取前快照读取之后、tocUrl 回写之前）发生的「并发进度写入」——把该书的
+        /// durChapterIndex 置为 7。单列 update_toc_url 只触碰 tocUrl 不会覆盖它；若调用点
+        /// 退回旧的全行 update 形式，抓取前快照里的 0 会覆盖掉 7（丢更新）。仅自愈测试置
+        /// Some，其它测试置 None 不受影响。
+        seed_progress_book_url: Option<String>,
     }
 
     impl BookSourceFetcher for ScriptedTocFetcher {
@@ -1107,10 +1113,30 @@ mod tests {
             _source: &BookSource,
             book_url: &str,
         ) -> LegadoResult<Vec<WebChapter>> {
-            self.requested
-                .lock()
-                .unwrap_or_else(|e| e.into_inner())
-                .push(book_url.to_string());
+            let mut req = self.requested.lock().unwrap_or_else(|e| e.into_inner());
+            let is_first_fetch = req.is_empty();
+            req.push(book_url.to_string());
+            drop(req);
+
+            // [P2-1 复审] 模拟刷新窗口内的「并发进度写入」：只在首次抓取（坏 tocUrl）播种，
+            // 避开重试抓取，确保落在「快照读取之后、tocUrl 回写之前」的丢更新窗口内。
+            if is_first_fetch {
+                if let Some(burl) = &self.seed_progress_book_url {
+                    let _ = with_database(|db| {
+                        use rusqlite::params;
+                        db.connection()
+                            .execute(
+                                "UPDATE books SET durChapterIndex = 7 WHERE bookUrl = ?1",
+                                params![burl],
+                            )
+                            .map_err(|e| {
+                                LegadoError::Database(format!("播种 durChapterIndex 失败: {e}"))
+                            })?;
+                        Ok(())
+                    });
+                }
+            }
+
             Ok(self
                 .chapters_by_url
                 .iter()
@@ -1172,6 +1198,7 @@ mod tests {
                 ),
             ],
             requested: Arc::clone(&requested),
+            seed_progress_book_url: Some(book_url.to_string()),
         };
         let engine = WebBookEngine::new(fetcher);
         let resp = refresh_toc_with_fetcher(book_url, source_url, &engine).expect("自愈刷新应成功");
@@ -1190,6 +1217,14 @@ mod tests {
                 .find_by_url(book_url)?
                 .expect("书籍记录应仍存在");
             assert_eq!(saved.toc_url, detail_url, "成功地址应持久化为新 tocUrl");
+            // [P2-1 复审] 调用点回归检测：刷新窗口内并发写入的进度列
+            // （durChapterIndex=7，由 get_chapters 首次抓取时播种）必须保留。
+            // 单列 update_toc_url 只触碰 tocUrl；若调用点退回旧的全行 update 形式，
+            // 抓取前 37 列快照里的 0 会覆盖 7 → 本断言失败。
+            assert_eq!(
+                saved.dur_chapter_index, 7,
+                "刷新窗口内并发写入的进度列（durChapterIndex=7）不得被抓取前全行快照覆盖"
+            );
             Ok(())
         })
         .expect("DB 断言失败");
@@ -1230,6 +1265,7 @@ mod tests {
         let fetcher = ScriptedTocFetcher {
             chapters_by_url: vec![(book_url.to_string(), vec![])],
             requested: Arc::clone(&requested),
+            seed_progress_book_url: None,
         };
         let engine = WebBookEngine::new(fetcher);
         let err = refresh_toc_with_fetcher(book_url, source_url, &engine)
