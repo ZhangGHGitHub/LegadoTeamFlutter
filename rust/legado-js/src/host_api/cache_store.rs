@@ -89,6 +89,27 @@ pub(crate) fn clear_cache_dir() {
     }
 }
 
+/// 测试构建专用：显式磁盘目录覆盖槽（并行 UB 卫生）
+///
+/// 环境变量是进程级全局状态：并行测试（`--test-threads=N`）里
+/// `set_var`/`remove_var` 与其他测试的 env 并发读属数据竞争（UB），
+/// 故测试构建中 [`disk_dir`] 改走「测试覆盖槽 > 宿主注入（[`set_cache_dir`]）
+/// > 缺省 temp 目录」并整体旁路 env 分支，行为与宿主环境完全无关。
+/// 生产构建（`cfg(not(test))`）不含此槽，生产逻辑零改动。
+#[cfg(test)]
+static TEST_DISK_DIR_OVERRIDE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+
+/// 设置（`Some`）或清除（`None`）测试构建的磁盘目录覆盖
+#[cfg(test)]
+pub(crate) fn set_test_disk_dir_override(dir: Option<PathBuf>) {
+    if let Ok(mut guard) = TEST_DISK_DIR_OVERRIDE
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+    {
+        *guard = dir;
+    }
+}
+
 /// 回落系统 temp 目录时的一次性告警日志
 static DEFAULT_DIR_WARNED: AtomicBool = AtomicBool::new(false);
 
@@ -124,10 +145,29 @@ pub(crate) fn reset_write_fail_warned() {
 
 /// 磁盘缓存根目录：env 覆盖 > 宿主注入（[`set_cache_dir`]）>
 /// `<temp_dir>/legado-js-cache`（现状行为，回落时一次性告警）
+///
+/// 测试构建（`cfg(test)`）：优先查显式测试覆盖槽
+/// （[`set_test_disk_dir_override`]）并整体旁路 env 分支——并行测试
+/// 不得操作进程级环境变量（`set_var` 与并发 env 读是 UB）；生产
+/// 构建不含该分支，生产解析链（env > 注入 > 缺省）逐字节不变。
 pub fn disk_dir() -> PathBuf {
-    if let Ok(dir) = std::env::var(CACHE_DIR_ENV) {
-        if !dir.trim().is_empty() {
-            return PathBuf::from(dir);
+    #[cfg(test)]
+    {
+        if let Ok(guard) = TEST_DISK_DIR_OVERRIDE
+            .get_or_init(|| Mutex::new(None))
+            .lock()
+        {
+            if let Some(dir) = guard.clone() {
+                return dir;
+            }
+        }
+    }
+    #[cfg(not(test))]
+    {
+        if let Ok(dir) = std::env::var(CACHE_DIR_ENV) {
+            if !dir.trim().is_empty() {
+                return PathBuf::from(dir);
+            }
         }
     }
     if let Ok(guard) = INJECTED_DIR.get_or_init(|| Mutex::new(None)).lock() {
@@ -423,13 +463,16 @@ mod tests {
     }
 
     /// P2-11 ②：注入目录 → put→get 命中（磁盘文件落注入目录，清理后回落缺省）
+    ///
+    /// 前置清理改用显式测试覆盖槽（[`set_test_disk_dir_override`]）而非
+    /// `remove_var`：env 是进程级全局状态，并行测试中操作它是 UB。
     #[test]
     fn test_set_cache_dir_injected_hit() {
         let _lock = lock_cache_for_test();
         let root = unique_root("injected-hit");
         let injected = root.join("injected");
         let k = unique_key("inj");
-        let _ = std::env::remove_var(CACHE_DIR_ENV);
+        set_test_disk_dir_override(None);
         clear_cache_dir();
         set_cache_dir(&injected);
         assert_eq!(disk_dir(), injected);
@@ -458,7 +501,7 @@ mod tests {
         let k1 = unique_key("wfail-a");
         let k2 = unique_key("wfail-b");
         let k3 = unique_key("wfail-c");
-        let _ = std::env::remove_var(CACHE_DIR_ENV);
+        set_test_disk_dir_override(None);
         fs::create_dir_all(&root).expect("临时根目录");
 
         // 路径 A：注入目录指向普通文件 → create_dir_all 失败
@@ -496,7 +539,12 @@ mod tests {
         let _ = fs::remove_dir_all(&root);
     }
 
-    /// P2-11 ②：目录解析优先级 env > 注入 > 缺省 temp（未注入 → 现状行为）
+    /// P2-11 ②：目录解析优先级（测试构建：显式覆盖槽 > 注入 > 缺省 temp；
+    /// 生产构建为 env > 注入 > 缺省，cfg(not(test)) 路径逐字节未动）
+    ///
+    /// 原用例经 `set_var`/`remove_var` 操作进程级 env 验证「env 优先级最高」，
+    /// 现替换为测试覆盖槽（[`set_test_disk_dir_override`]）验证同构的
+    /// 「显式覆盖 > 注入 > 缺省」优先级——消除并行测试的 env 全局状态污染。
     #[test]
     fn test_cache_dir_priority_and_default() {
         let _lock = lock_cache_for_test();
@@ -504,24 +552,25 @@ mod tests {
         let env_dir = root.join("env-dir");
         let injected = root.join("injected-dir");
         let k = unique_key("prio");
-        let _ = std::env::remove_var(CACHE_DIR_ENV);
+        set_test_disk_dir_override(None);
         clear_cache_dir();
 
-        // 未注入且未设 env → 现状行为：回落 <temp_dir>/legado-js-cache，往返仍可用
+        // 未注入且未覆盖 → 现状行为：回落 <temp_dir>/legado-js-cache，往返仍可用
         assert_eq!(disk_dir(), std::env::temp_dir().join("legado-js-cache"));
         assert!(put(&k, "default-value", 0));
         assert_eq!(get(&k, false).as_deref(), Some("default-value"));
         delete(&k);
 
-        // env 优先级最高（同时存在注入时也优先 env）
-        let _ = std::env::set_var(CACHE_DIR_ENV, &env_dir);
+        // 显式覆盖槽优先级最高（同时存在注入时也优先覆盖槽）
+        set_test_disk_dir_override(Some(env_dir.clone()));
         set_cache_dir(&injected);
         assert_eq!(disk_dir(), env_dir);
 
-        // 移除 env 后注入目录生效
-        let _ = std::env::remove_var(CACHE_DIR_ENV);
+        // 清除覆盖槽后注入目录生效
+        set_test_disk_dir_override(None);
         assert_eq!(disk_dir(), injected);
 
+        set_test_disk_dir_override(None);
         clear_cache_dir();
         let _ = fs::remove_dir_all(&root);
     }
