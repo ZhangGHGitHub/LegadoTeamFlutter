@@ -760,19 +760,41 @@ impl HtmlParser {
                 .next()
                 .unwrap_or(root);
             // 裸 `@attr`（如目录规则 chapterUrl="@href"，元素片段本身即 <a>）：
-            // 「当前元素」= 片段根 = body 的直接子元素。从 body 下首个带该属性
-            // 的子元素取值，无则回退 body 自身——与下方「裸 token」分支（L661 起）
-            // 及 js 桥同语义；不跨层（`<dd><a href>` 上 @href 仍为空，跨层须
-            // 显式写 `a@href`）。text/html 等模式保持原行为。— P2-7(a) 2026-09-17
+            // 「当前元素」= 片段根 = body 的直接子元素。
+            // 语义统一（P2-11 ②，对齐上游 AnalyzeByJSoup 属性提取语义）：
+            // - 遍历 body **全部**直接子元素逐个取属性值并去重——同形于下方
+            //   「裸 token」分支（L669 起）；上游依据 `AnalyzeByJSoup.getResultLast`
+            //   else 分支（AnalyzeByJSoup.kt L270-277：`for (element in elements)`
+            //   逐个 `element.attr(lastRule)`，`url.isBlank() || textS.contains(url)`
+            //   跳空+去重），CSS 路径 L94-99 先 `element.select(...)` 出整组元素
+            //   再交 getResultLast；空前置规则即 children() 语义见
+            //   `ElementsSingle.getElementsSingle` L310-311（beforeRule 为空 →
+            //   `temp.children()`）；`AnalyzeRule` 默认模式规则经
+            //   `getAnalyzeByJSoup(result).getStringList(rule)`（AnalyzeRule.kt
+            //   L259）进入该路径。
+            // - 全部子元素均无该属性时回退 body 自身（Rust 包裹层 `<body>`，
+            //   上游无对应——上游根元素即片段元素本身）。
+            // - 不跨层（`<dd><a href>` 上 @href 仍为空，跨层须显式写 `a@href`）；
+            //   text/html 等模式保持原行为（上游仅属性提取路径去重，text 路径
+            //   逐元素保留——getResultLast L232-236 无 contains 检查）。
+            // — P2-7(a) 2026-09-17 / P2-11 ② 统一 2026-09-19
             if extract_mode == "attr" && !attr_name.is_empty() {
-                let value = elem
-                    .children()
-                    .filter_map(ElementRef::wrap)
-                    .find_map(|c| c.value().attr(&attr_name))
-                    .filter(|v| !v.is_empty())
-                    .or_else(|| elem.value().attr(&attr_name))
-                    .filter(|v| !v.is_empty());
-                return value.map(|v| vec![v.to_string()]).unwrap_or_default();
+                let mut attr_values: Vec<String> = Vec::new();
+                for child in elem.children().filter_map(ElementRef::wrap) {
+                    if let Some(v) = child.value().attr(&attr_name) {
+                        if !v.is_empty() && !attr_values.iter().any(|x| x == v) {
+                            attr_values.push(v.to_string());
+                        }
+                    }
+                }
+                if attr_values.is_empty() {
+                    if let Some(v) = elem.value().attr(&attr_name) {
+                        if !v.is_empty() {
+                            attr_values.push(v.to_string());
+                        }
+                    }
+                }
+                return attr_values;
             }
             return self
                 .extract_from_element(elem, extract_mode, &attr_name)
@@ -1884,6 +1906,84 @@ mod tests {
         distinct.sort();
         distinct.dedup();
         assert_eq!(distinct.len(), 688, "688 章 URL 应互异");
+    }
+
+    // ─── P2-11 ②：裸 `@attr` 多子元素语义统一（遍历全部 + 去重，对齐
+    // 上游 AnalyzeByJSoup.getResultLast L270-277）──────────────────────────
+
+    /// 多子元素片段（body 直接子级 `<a>` 并列）：`@href` 取**全部**属性值
+    /// （P2-7(a) 分支原只取首个命中 → 多章节 TOC 片段整块解析时丢后续 URL；
+    /// 统一后与上游 `getResultLast` 遍历全部元素一致）
+    #[test]
+    fn test_bare_at_attr_multi_child_hit_all() {
+        let p = HtmlParser::new();
+        let html = r#"<a href="/c/1.html">第1章</a><a href="/c/2.html">第2章</a>"#;
+        assert_eq!(
+            p.get_text(html, "@href").unwrap(),
+            vec!["/c/1.html", "/c/2.html"],
+            "多子元素应取全部属性值（上游 getResultLast L270-277 遍历全部）"
+        );
+        // 值不同的多子元素经 get_elements 同语义
+        assert_eq!(p.get_elements(html, "@href").unwrap().len(), 2);
+    }
+
+    /// 重复属性值去重（上游 `getResultLast` L274 `textS.contains(url)`）
+    #[test]
+    fn test_bare_at_attr_multi_child_dedup() {
+        let p = HtmlParser::new();
+        let html = r#"<a href="/c/1.html">第1章</a><a href="/c/1.html">第1章(重)</a><a href="/c/2.html">第2章</a>"#;
+        assert_eq!(
+            p.get_text(html, "@href").unwrap(),
+            vec!["/c/1.html", "/c/2.html"],
+            "重复属性值应去重（保留首现顺序）"
+        );
+        // 空值跳过（上游 L274 `url.isBlank()` 跳过）
+        let html2 = r#"<a href="">空</a><a href="/c/9.html">第9章</a>"#;
+        assert_eq!(p.get_text(html2, "@href").unwrap(), vec!["/c/9.html"]);
+    }
+
+    /// 与 `select_from_doc`「裸 token」分支（L669 起）跨分支一致性：
+    /// 同一多子元素片段，`@href` 与裸 token `href` 产出相同（全部 + 去重）
+    #[test]
+    fn test_bare_at_attr_consistent_with_bare_token_branch() {
+        let p = HtmlParser::new();
+        let html = r#"<a href="/c/1.html">第1章</a><a href="/c/1.html">重</a><a href="/c/2.html">第2章</a>"#;
+        let at_form = p.get_text(html, "@href").unwrap();
+        let token_form = p.get_text(html, "href").unwrap();
+        assert_eq!(
+            at_form, token_form,
+            "裸 @attr 与裸 token 多子元素语义应一致，实际: {at_form:?} / {token_form:?}"
+        );
+        assert_eq!(at_form, vec!["/c/1.html", "/c/2.html"]);
+    }
+
+    /// 单元素片段（P2-7(a) 常态）与 body 回退路径不回归
+    #[test]
+    fn test_bare_at_attr_single_child_and_body_fallback_unchanged() {
+        let p = HtmlParser::new();
+        // 单 <a> 片段：取值不变
+        assert_eq!(
+            p.get_text(r#"<a href="/c/1.html">第1章</a>"#, "@href")
+                .unwrap(),
+            vec!["/c/1.html"]
+        );
+        // 子元素均无该属性 → 回退 body 自身（P2-7(a) 回退语义保留）
+        assert_eq!(
+            p.get_text(r#"<body id="frag"><a>t</a></body>"#, "@id")
+                .unwrap(),
+            vec!["frag"]
+        );
+        // 多子元素但均无该属性 → 同样回退 body 自身
+        assert_eq!(
+            p.get_text(r#"<body id="frag"><a>t1</a><a>t2</a></body>"#, "@id")
+                .unwrap(),
+            vec!["frag"]
+        );
+        // 不跨层语义保留：`<dd><a>` 上 @href 仍为空
+        assert!(p
+            .get_text(r#"<dd><a href="/c/1.html">第1章</a></dd>"#, "@href")
+            .unwrap()
+            .is_empty());
     }
 
     /// `@text`/`@html` 走 body 全文/HTML 路径（行为不变；单元素片段下「偶然正确」）
