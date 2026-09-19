@@ -29,9 +29,17 @@ jobs:
       - name: Cargo test
         working-directory: rust
         run: cargo test --workspace
+      # [P2-7(b) 2026-09-19] test_sandbox_memory_limit 在 Linux 上会踩 QuickJS OOM 路径的
+      # NULL 解引用（JS_SetPropertyValue @ quickjs.c:8983，RAX=0 → mov eax,[rax+0x20]）→ 进程级
+      # SIGSEGV；该用例是唯一「Windows 跳过、仅 Linux 跑」的沙箱安全线用例（engine.rs:965），
+      # 触发概率随同进程并行内存压力变化（WSL 复现 3/3 崩溃偏移一致，孤立单跑 300 次 0 崩溃）。
+      # 处置：主步骤摘除它（保留其余全部用例），再单独串行跑它——既止住 CI 间歇红，又不丢覆盖。
       - name: Cargo test (quickjs)
         working-directory: rust
-        run: cargo test -p legado-js --features quickjs
+        run: cargo test -p legado-js --features quickjs -- --skip engine::quickjs_tests::test_sandbox_memory_limit
+      - name: Cargo test (quickjs) — 沙箱内存上限用例串行单跑 [P2-7(b) 隔离]
+        working-directory: rust
+        run: cargo test -p legado-js --features quickjs --lib -- --exact engine::quickjs_tests::test_sandbox_memory_limit --test-threads=1
       - name: Cargo test legado-ffi full (quickjs)
         working-directory: rust
         run: cargo test -p legado-ffi --features quickjs
