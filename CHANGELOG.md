@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.292] - 2026-09-19
+
+### Fixed
+- [Rust] **书源脚本 `book` 绑定的写路径不再静默丢弃（P2-11 ①）**：`book.putVariable/setType/setReverseToc` 与 `book.type=` 此前只改 JS 内存副本；现经 java-only 桥落到进程级变量表的裸键（`bookVar::{bookUrl}::{k}` / `bookType::{bookUrl}` / `bookReverseToc::{bookUrl}`），并在**下一次 `book` 绑定构造**（下一阶段/下一次 FFI 调用）时合并回读（overlay 优先于入参/base）。`book.type` 初值由硬编码 `0` 改为按书源类型换算（文本 8 / 音频 32 / 图像 64 / 视频 4 / 文件 136，与上游 `BookType` 逐位一致）——`📷🔞HentaiCosplay`/`📷🔞AsianPornImage` 等义 `if(book.type==64)` 分支的源由此走上正确分支
+- [Rust] **`cache.*` 磁盘层加宿主注入点并修写盘失败语义（P2-11 ②）**：新增 `set_cache_dir`（env > 注入 > temp 缺省 + 一次性回落告警）；写盘失败由静默 `.is_ok()` 改为**保留内存层并晋升新值 + 记录失败原因**（原表现为「put 后 get 永远 null」），`put_file` 补失败日志
+- **如实声明的能力边界（审查指出，勿按旧表述理解）**：
+  - ① 的写入**仅在下一次 `book` 绑定构造后对 `book.getVariable` 可见**；**同阶段内的后续规则读不到**，且 **`java.get`/`@get` 读不到这些键**（三套命名空间未打通）。语料中唯一 `book.putVariable` 使用者「就去看网」正是用 `java.get` 回读，**该源未闭环**（不劣于改前，但也不构成"已修好"）
+  - `type`/`reverseToc`/`bookVar` 键**仅进程级、不落 DB** → 重启回到初值；且 `type` 的变化**不会回流到 DB/Dart**，故 7 个语源的"自动切小说/漫画模式"仍不会真正切换（`type` **初值**真实化的效果是实在的）
+  - ② 的注入 API 就位但**无生产调用者**（Dart 侧接线属禁改区，未实施）；Android 上 temp 目录多半不可写 → 未注入时每次 `cache.put` 会打一行错误日志
+
+### Test
+- 两档口径均 0 失败：`cargo test --workspace`（ffi 372 / js 251）与 `cargo test --workspace --features legado-ffi/quickjs`（**ffi 449 / js 557**）；`cargo clippy --workspace -- -D warnings` 与 quickjs 档均 exit 0；`cargo fmt --check` 0
+- 新增 7 个测试：book 写路径同流程可见性/键格式/overlay 合并/type 初值与覆盖、cache 注入命中/写失败保留内存/目录优先级
+
+### Review
+- code-reviewer「有条件合入」：确认 type 换算与上游逐位一致、键空间与 flow-scope 不冲突、两档门禁计数吻合；最小项为「如实化三处注释 + 台账登记 ② 未闭环 + 剔除无关脏文件」，均已按此登记（注释修正与 type 调用点接线用例登记为后续小项）
+- Contributor: 全栈工程师子代理
+
 ## [2.0.291] - 2026-09-19
 
 ### Fixed

@@ -63,6 +63,9 @@ pub fn register_all_apis<'js>(
         register_file_apis(ctx, &java, &globals)?;
     }
     register_variable_apis(ctx, &java, &globals)?;
+    // P2-11 ①：book 绑定写路径桥（java-only；FFI web_book IIFE 经
+    // `java.__lgBook*` 探测后落 variable_store 裸键持久层）
+    register_book_binding_bridges(ctx, &java)?;
     register_utility_apis(ctx, &java, &globals)?;
     register_network_apis(ctx, &java, &globals)?;
     register_cookie_apis(ctx, &java, &globals)?;
@@ -1402,6 +1405,72 @@ fn register_variable_apis<'js>(
     })
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     java.set("__lgStoreGet", store_get)
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    Ok(())
+}
+
+/// P2-11 ①：`book` 绑定写路径宿主桥（java-only，不上裸全局）
+///
+/// FFI 侧 `web_book.rs` 的 `book` 绑定 IIFE 中，`book.putVariable` /
+/// `book.type=` / `book.setReverseToc` 等写操作经本模块 4 个桥落到
+/// [`variable_store`] 的**裸键持久层**（键格式由
+/// [`variable_store::book_var_key`] / [`variable_store::book_type_key`] /
+/// [`variable_store::book_reverse_toc_key`] 构造，两侧共用防漂移）：
+///
+/// - `__lgBookVarSet(bookUrl, key, value)` / `__lgBookVarDel(bookUrl, key)`
+///   → `bookVar::{bookUrl}::{key}`（`putVariable(k,null)` 走删除路径）
+/// - `__lgBookSetType(bookUrl, typeStr)` → `bookType::{bookUrl}`
+///   （语料 `book.type=8/32/64` 切小说/音频/漫画模式的落点）
+/// - `__lgBookSetReverseToc(bookUrl, flagStr)` → `bookReverseToc::{bookUrl}`
+///
+/// **生命周期**：进程级（`GLOBAL_VARIABLES`，进程重启即失——降级项，
+/// 未做 DB 持久化）；**跨流程可见性**：同 `bookUrl` 的详情 → 目录 →
+/// 正文 / 二次详情 / 换源各阶段的规则与请求，在构造 `book` 绑定时
+/// （`web_book::book_write_overlays`）读取本层并合并，因此同书后续
+/// 规则/请求能看到前面写入的值；跨书以 `bookUrl` 隔离，不串读。
+/// **降级说明**：引擎未注入这些桥（非 QuickJS 引擎 / 旧引擎实例）时
+/// IIFE 内的探测函数 `hb` 返回 null，写操作静默退化为仅改本地副本
+/// （等价改造前行为，不抛错）；桥写入失败（store 锁异常等）同样
+/// `let _ =` 吞掉——写路径永不阻断规则求值。
+#[cfg(feature = "quickjs")]
+fn register_book_binding_bridges<'js>(
+    ctx: &rquickjs::Ctx<'js>,
+    java: &rquickjs::Object<'js>,
+) -> Result<(), LegadoError> {
+    let var_set = rquickjs::Function::new(
+        ctx.clone(),
+        |book_url: String, key: String, value: String| {
+            let _ = variable_store::set_variable(
+                &variable_store::book_var_key(&book_url, &key),
+                &value,
+            );
+        },
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    java.set("__lgBookVarSet", var_set)
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    let var_del = rquickjs::Function::new(ctx.clone(), |book_url: String, key: String| {
+        let _ = variable_store::remove_variable(&variable_store::book_var_key(&book_url, &key));
+    })
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    java.set("__lgBookVarDel", var_del)
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    let set_type = rquickjs::Function::new(ctx.clone(), |book_url: String, value: String| {
+        let _ = variable_store::set_variable(&variable_store::book_type_key(&book_url), &value);
+    })
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    java.set("__lgBookSetType", set_type)
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    let set_reverse_toc = rquickjs::Function::new(ctx.clone(), |book_url: String, flag: String| {
+        let _ =
+            variable_store::set_variable(&variable_store::book_reverse_toc_key(&book_url), &flag);
+    })
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    java.set("__lgBookSetReverseToc", set_reverse_toc)
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
     Ok(())
@@ -4781,8 +4850,13 @@ decryptImage(result);
     }
 
     /// 全局 cache 对象（对齐 WebCacheManager）：记忆三件套 + 磁盘/文件缓存
+    ///
+    /// P2-11 ②：取磁盘层测试串行锁——cache_store 注入目录测试会切换
+    /// INJECTED_DIR/env/清理临时目录，互斥防止目录切换/清理干扰本测试
+    /// 磁盘读写。
     #[test]
     fn test_cache_global_roundtrip() {
+        let _lock = crate::host_api::cache_store::lock_cache_for_test();
         let engine = make_engine();
         let result = engine
             .eval(

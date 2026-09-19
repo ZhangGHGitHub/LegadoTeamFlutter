@@ -198,6 +198,7 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - `BookMeta`/`chapter_book_cache` 容量判定 `>=` 触发整体 clear（更新已有 key 也清空）；
   - 裸 `@attr` 多子元素语义（P3-2 移交）：应统一为「遍历全部子元素 + 去重」并修正注释；
   - 提交卫生：`rust/legado-ffi/tmp_diag/`、根目录 `nul`、`.tmp/`、`pnpm-lock.yaml` 等未跟踪物需在入库前定策略。
+  - **[2026-09-19 关闭]** ①② 已落地（见 CHANGELOG [2.0.292]）；其余各项见 P2-15。
   - **[复审新增] P2-1 调用点回归测试缺口**：`test_refresh_toc_self_heals_bad_toc_url` 只能测「方法层」（变异实验：把 `update_toc_url` 换回「先 find 再全行 update」该测试仍 PASS），**调用点回退（保留方法、改回旧快照全行回写）无测试可发现**。补法（复审给的 recipe ~10 行）：在该测试的 `ScriptedTocFetcher.get_chapters` 首次抓坏 toc 时用 `with_database` 执行 `UPDATE books SET durChapterIndex=7 WHERE bookUrl=?`，刷新后断言 `dur_chapter_index == 7`。
   - **[复审新增] P1-1 首次详情解析无 DB 兜底**：`detail_book_binding` 解析期只查 meta 缓存 → 进程内对该 bookUrl 的**首次**详情解析取不到 DB 用户变量（目录/正文/第二次详情起可达）。若要让「首次打开即生效」成立需在该处补 DB 兜底（注意 `book_binding_expr(Some(meta))` 会忽略 `fallback_name`，需保留 changeSource 保名语义）。
   - **[复审新增 P3] DB 变量被清空后缓存旧值不被覆盖**（`merge_insert` 仅 Some 覆盖）→ 陈旧窗口持续到缓存淘汰。
@@ -213,6 +214,15 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - `armeabi-v7a` 的 `.so` 未随 (C) 强制重编（设备为 arm64，FFI 未变故不影响），下次全量构建会自然刷新。
 
 - **P2-14 门禁口径（流程，2026-09-19）**：`cargo test --workspace` **默认不含 quickjs**，JS 宿主/门控用例不在其中。**自本批起，Rust 门禁按两档报数**：`cargo test --workspace`（无 quickjs）与 `cargo test --workspace --features legado-ffi/quickjs`；提交说明须写明口径，仅报前者会漏掉全部 JS 行为证明。
+
+- **P2-15 P2-11 ①② 审查沉淀**（开放，2026-09-19）：
+  - **[P1] ① 的能力边界与后续打通**：`book.putVariable` 写入仅「下一次 `book` 绑定构造」后对 `book.getVariable` 可见；**同阶段跨规则不可见**、**`java.get`/`@get` 读不到**（三套命名空间不连通）。语料唯一消费者「就去看网」（写 `序/元/除/嗅/兜/查` 后全部经 `java.get` 回读）**未闭环**。最小实现：`get_flow_variable` 在裸键回退后再按当前 flow scope 拼 `bookVar::{scope}::{key}` 兜底，或写桥内同时 `put_flow_variable`；同时修正 `quickjs_impl.rs`/`web_book.rs`/`variable_store.rs` 三处不准确注释。
+  - **[P1] ② 未闭环**：`set_cache_dir` 无生产调用者（Dart 接线属禁改区）；Android temp 多半不可写 → 未注入时每次 `cache.put` 打一行错误日志（建议加一次性/限流开关）。**在宿主接线与设备级 put→get 冒烟完成前不得标记 ② 关闭**；接线建议：`ffi.rs` 加薄桥（照 `set_device_id`）→ Dart 启动传应用私有缓存目录。
+  - **[P2] `type` 写入不回流 DB/Dart**：7 源（微信读书二合一/禁漫天堂/画涯爱子/爱妹子/HentaiCosplay/AsianPornImage/键盘小说）的「自动切模式」用户可见效果仍无；建议 `WebBookInfo` 增 type 或 Dart 侧合并。
+  - **[P2] `type` overlay 黏性**：上游每阶段 `removeAllBookType+addType` 重置，本实现进程级存活 → 跨阶段语义不同（当前语料无跨阶段写后读的源，无现网影响）；注释 + 台账登记。
+  - **[P2] 陈旧 overlay 压过 DB 用户变量编辑**：`book_write_overlays` 永远优先于 base，且换源的 `merge_variables` 是 detail 侧覆盖 DB 侧 → 用户在 App 内改过的同名键可能被旧 overlay 写回（建议 overlay 命中时让位给更新的 DB 值，或收窄为 flow 生命周期）。
+  - **[P2] type 调用点接线无用例**（7 个 fixture 均无 `book.type`）：最小配方（~12 行）——`record_book_meta_from_info` 播种 meta 后调 `parse_book_info_from_body(IMAGE 源, …)` 断言 `name=="64"`。
+  - **[P3]** `bookVar::{url}::{k}` 的 `::` 边界（URL 含 `::` 时可能串键）与键无限增长（每次绑定全表 `list_variable_keys()`）；写桥 add-only（源可写他人命名空间、`b.bookUrl` 被改写后错位丢写）；`merge_book_variable_json` 在 base 为数组/标量且 overlay 非空时丢弃 base；非 string 值 `JSON.stringify` vs 上游 `[object Object]`；大值上游走 `RuleBigDataHelp` 而本实现留在 `variable`（可能撑大 DB 列）；native `java.get` 读裸键 vs prelude 读 flow 优先（两套语义）；`java.clearVariables` 可整表清空（含 bookVar overlay，526 语料 0 使用）；`put_file` 无 TTL。
 
 ### P3：功能补齐与卫生项（2026-08-22 开启）
 

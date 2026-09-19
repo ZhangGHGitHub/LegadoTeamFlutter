@@ -18,12 +18,21 @@
 //! 故缓存实现为 **Rust 进程级存储**而非 JS 对象——同一进程内多书源共享
 //! 同一份缓存，对齐上游单例 CacheManager 语义（JS 侧每次 eval 都能命中）。
 //!
-//! 磁盘目录取环境变量 [`CACHE_DIR_ENV`]，缺省 `<temp_dir>/legado-js-cache`
-//! （测试通过环境变量隔离）。
+//! 磁盘目录解析优先级（P2-11 ②）：
+//! 1. 环境变量 [`CACHE_DIR_ENV`]（非空，测试隔离用）
+//! 2. 宿主注入目录（[`set_cache_dir`]，FFI/Android 宿主初始化时传入应用
+//!    私有缓存目录）
+//! 3. `<temp_dir>/legado-js-cache`（现状缺省，回落时一次性告警日志）
+//!
+//! 写盘失败（目录创建/序列化/`fs::write`）均记录失败原因并**保留内存层**
+//! （新值晋升内存层：同进程 `get` 可读、无 deadline 强制、`onlyDisk` 读
+//! 不受影响），返回值仍为 false——JS 侧 `cache.put` 忽略返回值，磁盘层
+//! 静默降级为内存层，不再「put 后 get 永远 null」无声丢失。
 
 use std::fs;
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 use lru::LruCache;
@@ -51,12 +60,61 @@ fn memory_cache() -> &'static Mutex<LruCache<String, String>> {
     })
 }
 
-/// 磁盘缓存根目录（env 覆盖，测试隔离用）
-pub fn disk_dir() -> PathBuf {
-    match std::env::var(CACHE_DIR_ENV) {
-        Ok(dir) if !dir.trim().is_empty() => PathBuf::from(dir),
-        _ => std::env::temp_dir().join("legado-js-cache"),
+/// 宿主注入的磁盘缓存目录（P2-11 ②）
+static INJECTED_DIR: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
+
+/// 注入磁盘缓存目录（宿主注入点，P2-11 ②）
+///
+/// FFI/Android 宿主在初始化时调用，指向应用私有缓存目录（如 Android
+/// `Context.getCacheDir()`），使 `cache.put/get` 磁盘层落应用私有存储
+/// 而非系统 temp 目录。后续全部磁盘层读写（put/get/putFile/getFile/
+/// delete）生效；内存层不受注入影响。
+///
+/// 目录解析优先级见模块文档：env [`CACHE_DIR_ENV`]（非空）> 注入目录 >
+/// 缺省 temp 目录。本函数为普通 `pub` Rust API（不在 frb 导出面内，
+/// 不触发 FFI 绑定再生成）；Dart 侧经 flutter_rust_bridge 调用需另行
+/// 在 `legado-ffi::ffi` 模块加薄桥接函数并重新生成 Dart 绑定（属禁改区，
+/// 本任务只报告建议、不实施）。
+pub fn set_cache_dir(path: impl AsRef<std::path::Path>) {
+    if let Ok(mut guard) = INJECTED_DIR.get_or_init(|| Mutex::new(None)).lock() {
+        *guard = Some(path.as_ref().to_path_buf());
     }
+}
+
+/// 清除注入目录（测试隔离用）
+#[cfg(test)]
+pub(crate) fn clear_cache_dir() {
+    if let Ok(mut guard) = INJECTED_DIR.get_or_init(|| Mutex::new(None)).lock() {
+        *guard = None;
+    }
+}
+
+/// 回落系统 temp 目录时的一次性告警日志
+static DEFAULT_DIR_WARNED: AtomicBool = AtomicBool::new(false);
+
+/// 磁盘缓存根目录：env 覆盖 > 宿主注入（[`set_cache_dir`]）>
+/// `<temp_dir>/legado-js-cache`（现状行为，回落时一次性告警）
+pub fn disk_dir() -> PathBuf {
+    if let Ok(dir) = std::env::var(CACHE_DIR_ENV) {
+        if !dir.trim().is_empty() {
+            return PathBuf::from(dir);
+        }
+    }
+    if let Ok(guard) = INJECTED_DIR.get_or_init(|| Mutex::new(None)).lock() {
+        if let Some(dir) = guard.clone() {
+            return dir;
+        }
+    }
+    if DEFAULT_DIR_WARNED
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+    {
+        eprintln!(
+            "[cache_store] 未注入宿主缓存目录（set_cache_dir）且未设 env {CACHE_DIR_ENV}——回落系统临时目录 {:?}（磁盘缓存随系统 temp 清理而丢失，宿主应在初始化时注入应用私有缓存目录）",
+            std::env::temp_dir().join("legado-js-cache")
+        );
+    }
+    std::env::temp_dir().join("legado-js-cache")
 }
 
 fn sha256_hex(input: &str) -> String {
@@ -85,6 +143,20 @@ fn now_millis() -> i64 {
         .unwrap_or(0)
 }
 
+/// 磁盘层测试串行锁（P2-11 ②）
+///
+/// 注入态（INJECTED_DIR）/ 环境变量（CACHE_DIR_ENV）/ 内存层均为进程级
+/// 全局状态：所有触碰磁盘层的测试（本模块与 quickjs_impl 的 cache 全局
+/// 测试）执行前取本锁，互不干扰目录切换/清理。
+#[cfg(test)]
+pub(crate) static CACHE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// 取磁盘层测试串行锁（返回守卫；中毒时恢复而非 panic）
+#[cfg(test)]
+pub(crate) fn lock_cache_for_test() -> std::sync::MutexGuard<'static, ()> {
+    CACHE_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner())
+}
+
 /// 内存层写入（`putMemory`）
 pub fn put_memory(key: &str, value: &str) {
     if let Ok(mut cache) = memory_cache().lock() {
@@ -105,6 +177,13 @@ pub fn delete_memory(key: &str) {
 }
 
 /// 磁盘写入（`put`）：saveTime 秒，0=永久（同步内存层），非零 → 清内存层
+///
+/// P2-11 ②：写盘失败（目录创建 / 序列化 / `fs::write`）均记录失败原因，
+/// 并把新值**晋升内存层**（保留内存层语义：不 `delete_memory` 旧值、
+/// 直接写新值）——降级说明：同进程 `get` 仍可读该值、无 deadline 强制
+/// （内存层不过期）、`onlyDisk` 读不受影响（磁盘层为空）。成功路径不变：
+/// 先写盘，成功后再调内存层（deadline==0 → 同步内存；非零 → 清内存，
+/// 对齐上游 put 后 deleteMemory）。
 pub fn put(key: &str, value: &str, save_time_secs: i64) -> bool {
     let deadline = if save_time_secs <= 0 {
         0
@@ -114,7 +193,11 @@ pub fn put(key: &str, value: &str, save_time_secs: i64) -> bool {
     let path = disk_path(key);
     if let Some(parent) = path.parent() {
         if let Err(e) = fs::create_dir_all(parent) {
-            eprintln!("[cache_store] 创建缓存目录失败 {:?}: {e}", parent);
+            eprintln!(
+                "[cache_store] 创建缓存目录失败 {:?}: {e}（降级保留内存层）",
+                parent
+            );
+            put_memory(key, value);
             return false;
         }
     }
@@ -124,11 +207,14 @@ pub fn put(key: &str, value: &str, save_time_secs: i64) -> bool {
     }) {
         Ok(j) => j,
         Err(e) => {
-            eprintln!("[cache_store] 序列化失败 {key}: {e}");
+            eprintln!("[cache_store] 序列化失败 {key}: {e}（降级保留内存层）");
+            put_memory(key, value);
             return false;
         }
     };
-    if fs::write(&path, json).is_err() {
+    if let Err(e) = fs::write(&path, json) {
+        eprintln!("[cache_store] 写盘失败 {key} ({path:?}): {e}（降级保留内存层）");
+        put_memory(key, value);
         return false;
     }
     if deadline == 0 {
@@ -168,7 +254,15 @@ pub fn put_file(key: &str, value: &str) -> bool {
             return false;
         }
     }
-    fs::write(&path, value).is_ok()
+    // P2-11 ②：纯磁盘 API（file/ 子目录，不进内存层）——写失败无内存层
+    // 可降级，仅记录失败原因（原 `.is_ok()` 静默吞错）
+    match fs::write(&path, value) {
+        Ok(()) => true,
+        Err(e) => {
+            eprintln!("[cache_store] 写盘失败 {key} ({path:?}): {e}");
+            false
+        }
+    }
 }
 
 /// 纯磁盘读取（`getFile`，不做 deadline 校验）
@@ -186,9 +280,21 @@ pub fn delete(key: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    // Ordering 经 `use super::*` 引入（文件头 import），此处仅补 AtomicUsize
+    use std::sync::atomic::AtomicUsize;
 
     static COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    /// 进程级唯一临时根目录（注入目录测试用，测试收尾 remove_dir_all 清理）
+    fn unique_root(tag: &str) -> PathBuf {
+        let n = COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!(
+            "legado-js-cache-test-{}-{}-{}",
+            std::process::id(),
+            n,
+            tag
+        ))
+    }
 
     fn unique_key(tag: &str) -> String {
         let n = COUNTER.fetch_add(1, Ordering::Relaxed);
@@ -197,6 +303,7 @@ mod tests {
 
     #[test]
     fn test_memory_roundtrip() {
+        let _lock = lock_cache_for_test();
         let k = unique_key("mem");
         assert!(get_from_memory(&k).is_none());
         put_memory(&k, "v1");
@@ -210,6 +317,7 @@ mod tests {
 
     #[test]
     fn test_put_get_permanent() {
+        let _lock = lock_cache_for_test();
         let k = unique_key("perm");
         assert!(put(&k, "perm-value", 0));
         assert_eq!(get(&k, false).as_deref(), Some("perm-value"));
@@ -225,6 +333,7 @@ mod tests {
 
     #[test]
     fn test_put_get_expired() {
+        let _lock = lock_cache_for_test();
         let k = unique_key("expired");
         // saveTime=1 秒；等待过期后磁盘读取应 None 且文件被清理
         assert!(put(&k, "short", 1));
@@ -234,6 +343,7 @@ mod tests {
 
     #[test]
     fn test_put_nonsync_clears_memory() {
+        let _lock = lock_cache_for_test();
         let k = unique_key("memclear");
         put_memory(&k, "old");
         put(&k, "new", 3600);
@@ -246,6 +356,7 @@ mod tests {
 
     #[test]
     fn test_file_roundtrip() {
+        let _lock = lock_cache_for_test();
         let k = unique_key("file");
         assert!(put_file(&k, "file-value"));
         assert_eq!(get_file(&k).as_deref(), Some("file-value"));
@@ -257,10 +368,114 @@ mod tests {
 
     #[test]
     fn test_missing_key_returns_none() {
+        let _lock = lock_cache_for_test();
         let k = unique_key("missing");
         assert!(get(&k, false).is_none());
         assert!(get(&k, true).is_none());
         assert!(get_file(&k).is_none());
         assert!(get_from_memory(&k).is_none());
+    }
+
+    /// P2-11 ②：注入目录 → put→get 命中（磁盘文件落注入目录，清理后回落缺省）
+    #[test]
+    fn test_set_cache_dir_injected_hit() {
+        let _lock = lock_cache_for_test();
+        let root = unique_root("injected-hit");
+        let injected = root.join("injected");
+        let k = unique_key("inj");
+        let _ = std::env::remove_var(CACHE_DIR_ENV);
+        clear_cache_dir();
+        set_cache_dir(&injected);
+        assert_eq!(disk_dir(), injected);
+        // 注入目录 → put→get 命中（永久值：内存/onlyDisk 双路）
+        assert!(put(&k, "injected-value", 0));
+        assert_eq!(get(&k, false).as_deref(), Some("injected-value"));
+        // onlyDisk 跳过内存层，直接读注入目录下的磁盘文件
+        assert_eq!(get(&k, true).as_deref(), Some("injected-value"));
+        assert!(disk_path(&k).starts_with(&injected));
+        delete(&k);
+        clear_cache_dir();
+        // 清除注入后回落缺省 temp 目录
+        assert_eq!(disk_dir(), std::env::temp_dir().join("legado-js-cache"));
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// P2-11 ②：写盘失败 → 保留内存层（新值晋升内存层，同进程可读）
+    ///
+    /// 路径 A：注入目录指向普通文件 → `create_dir_all` 失败；
+    /// 路径 B：注入目录存在但磁盘路径预建为目录 → `fs::write` 失败（EISDIR）；
+    /// `put_file` 失败仅记日志（纯磁盘 API 无内存层可降级）。
+    #[test]
+    fn test_put_write_failure_keeps_memory() {
+        let _lock = lock_cache_for_test();
+        let root = unique_root("write-fail");
+        let k1 = unique_key("wfail-a");
+        let k2 = unique_key("wfail-b");
+        let k3 = unique_key("wfail-c");
+        let _ = std::env::remove_var(CACHE_DIR_ENV);
+        fs::create_dir_all(&root).expect("临时根目录");
+
+        // 路径 A：注入目录指向普通文件 → create_dir_all 失败
+        let file_blocker = root.join("blocker.txt");
+        fs::write(&file_blocker, "x").expect("blocker 文件");
+        clear_cache_dir();
+        set_cache_dir(&file_blocker);
+        assert!(!put(&k1, "v1", 0));
+        // 新值晋升内存层：同进程可读
+        assert_eq!(get_from_memory(&k1).as_deref(), Some("v1"));
+        assert_eq!(get(&k1, false).as_deref(), Some("v1"));
+        // 磁盘层为空 → onlyDisk 读不受影响
+        assert!(get(&k1, true).is_none());
+
+        // 路径 B：注入目录存在，磁盘路径预建为目录 → fs::write 失败
+        let injected = root.join("inj-b");
+        clear_cache_dir();
+        set_cache_dir(&injected);
+        fs::create_dir_all(&disk_path(&k2)).expect("磁盘路径预建为目录");
+        assert!(!put(&k2, "v2", 0));
+        assert_eq!(get_from_memory(&k2).as_deref(), Some("v2"));
+        assert!(get(&k2, true).is_none());
+
+        // put_file 失败路径：file 路径预建为目录 → 仅记日志，无内存层
+        fs::create_dir_all(&file_path(&k3)).expect("file 路径预建为目录");
+        assert!(!put_file(&k3, "vf"));
+        assert!(get_from_memory(&k3).is_none());
+        assert!(get_file(&k3).is_none());
+
+        // 收尾
+        delete_memory(&k1);
+        delete_memory(&k2);
+        clear_cache_dir();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// P2-11 ②：目录解析优先级 env > 注入 > 缺省 temp（未注入 → 现状行为）
+    #[test]
+    fn test_cache_dir_priority_and_default() {
+        let _lock = lock_cache_for_test();
+        let root = unique_root("priority");
+        let env_dir = root.join("env-dir");
+        let injected = root.join("injected-dir");
+        let k = unique_key("prio");
+        let _ = std::env::remove_var(CACHE_DIR_ENV);
+        clear_cache_dir();
+
+        // 未注入且未设 env → 现状行为：回落 <temp_dir>/legado-js-cache，往返仍可用
+        assert_eq!(disk_dir(), std::env::temp_dir().join("legado-js-cache"));
+        assert!(put(&k, "default-value", 0));
+        assert_eq!(get(&k, false).as_deref(), Some("default-value"));
+        delete(&k);
+
+        // env 优先级最高（同时存在注入时也优先 env）
+        let _ = std::env::set_var(CACHE_DIR_ENV, &env_dir);
+        set_cache_dir(&injected);
+        assert_eq!(disk_dir(), env_dir);
+
+        // 移除 env 后注入目录生效
+        let _ = std::env::remove_var(CACHE_DIR_ENV);
+        assert_eq!(disk_dir(), injected);
+
+        clear_cache_dir();
+        let _ = fs::remove_dir_all(&root);
     }
 }

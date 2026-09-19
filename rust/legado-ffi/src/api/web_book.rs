@@ -429,7 +429,16 @@ fn db_book_variable(book_url: &str) -> Option<String> {
 ///   （name/author/bookUrl/tocUrl/lastChapter/variable）+ 方法面
 ///   （getVariable/putVariable/getCustomVariable/putCustomVariable 对齐
 ///   RuleDataInterface.kt:7-34；`setType` 为本扩展、上游无同名方法；
-///   `setReverseToc` 为脚本内标志降级——不持久化到 Book 模型，已文档化）。
+///   `setReverseToc` 为脚本内标志——P2-11 ① 起落 [`variable_store`]
+///   进程级裸键，见下）。
+/// - **P2-11 ① `type` 初值真实化**：`book_type` 入参为书源 BookType 位标志
+///   （调用点经 `crate::api::search::book_type_of_source` 换算：TEXT=8 /
+///   AUDIO=32 / IMAGE=64 / VIDEO=4 / FILE=136），与语料 `book.type=8/32/64`
+///   切小说/音频/漫画模式的位标志语义一致（对齐上游 `io.legado.app.constant.
+///   BookType`）；改造前硬编码 `0`，TEXT 源 `book.type` 恒 0 与 DB
+///   `book.book_type`(8) 不一致。JS 侧 `book.type=N` / `book.setType(N)`
+///   的覆盖值经 `__lgBookSetType` 桥落 [`variable_store`]，同书后续绑定
+///   构造在 [`book_write_overlays`] 读回并优先于入参初值。
 /// - `None`：逐字保留既有字面量语义（content 站点 `{"totalChapterNum":N,
 ///   "name":""}` / toc 站点 `{"name":…}`），不破坏未走详情/目录阶段的源。
 fn book_binding_expr(
@@ -437,9 +446,10 @@ fn book_binding_expr(
     fallback_name: &str,
     total_chapter_num: i32,
     content_site: bool,
+    book_type: i32,
 ) -> String {
     match meta {
-        Some(m) => iife_book_expr(m, total_chapter_num),
+        Some(m) => iife_book_expr(m, book_type, total_chapter_num),
         None if content_site => {
             format!("{{\"totalChapterNum\": {total_chapter_num}, \"name\": \"\"}}")
         }
@@ -447,26 +457,121 @@ fn book_binding_expr(
     }
 }
 
+/// P2-11 ①：读当前进程内 JS 写路径状态（[`variable_store`] 裸键持久层，
+/// 由 quickjs 引擎 `java.__lgBook*` 宿主桥写入，见
+/// `legado_js::host_api::quickjs_impl::register_book_binding_bridges`）：
+///
+/// 返回 (variable overlay, type 覆盖值, reverseToc 覆盖值)：
+/// - variable overlay：`bookVar::{bookUrl}::` 前缀下全部键（JS
+///   `book.putVariable` / `putCustomVariable` 写入），值为 IIFE 内存
+///   `m[k]` 原样字符串（string 直存、非 string 存其 JSON.stringify 结果，
+///   与内存 `b.variable` 语义一致）；
+/// - type 覆盖值：`bookType::{bookUrl}`（JS `book.type=N` /
+///   `book.setType(N)` 写入；i32 解析失败降级为无覆盖）；
+/// - reverseToc 覆盖值：`bookReverseToc::{bookUrl}`（JS
+///   `book.setReverseToc(f)` 写入；"true"/"1" → true，其余 → false）。
+///
+/// **生命周期**：进程级（`GLOBAL_VARIABLES`，进程重启即失——降级项，未做
+/// 详情期 DB 持久化；详情期写入经 [`WebBookInfo`] 合并走既有换源 DB 路径
+/// 可跨进程，见 `parse_book_info_from_body`）。**跨流程可见性**：同
+/// `bookUrl` 的详情 → 目录 → 正文 / 二次详情 / 换源各阶段，每次构造
+/// `book` 绑定都经本函数读回并合并，同一书籍流程内后续规则/请求能看到
+/// 前面阶段的写入；跨书以 `bookUrl` 隔离，不串读。**降级说明**：读取
+/// 失败（store 异常等）三路全降级为「无 overlay」，绑定按入参初值 +
+/// meta.variable 构造，不阻断规则求值。
+fn book_write_overlays(book_url: &str) -> (HashMap<String, String>, Option<i32>, Option<bool>) {
+    let Ok(keys) = variable_store::list_variable_keys() else {
+        return (HashMap::new(), None, None);
+    };
+    let prefix = variable_store::book_var_key_prefix(book_url);
+    let mut vars = HashMap::new();
+    for key in &keys {
+        let Some(remainder) = key.strip_prefix(&prefix) else {
+            continue;
+        };
+        if remainder.is_empty() {
+            continue;
+        }
+        if let Ok(Some(value)) = variable_store::get_variable(key) {
+            vars.insert(remainder.to_string(), value);
+        }
+    }
+    let type_override = variable_store::get_variable(&variable_store::book_type_key(book_url))
+        .ok()
+        .flatten()
+        .and_then(|s| s.trim().parse::<i32>().ok());
+    let reverse_override =
+        variable_store::get_variable(&variable_store::book_reverse_toc_key(book_url))
+            .ok()
+            .flatten()
+            .map(|s| matches!(s.trim(), "true" | "1"));
+    (vars, type_override, reverse_override)
+}
+
+/// P2-11 ①：把 JS 写路径的 variable overlay 合并进基础 variable JSON
+/// （overlay 值优先）。
+///
+/// `base` = `@put`/putVariable 导出值（`analyzer.export_variables_json`）
+/// 或 meta.variable；`overlay` 见 [`book_write_overlays`]。overlay 值以
+/// **JSON 字符串**插入对象（与 IIFE 内存 `m[k]` 恒为 string 的语义一致，
+/// 非 string 写入在 IIFE 内已 JSON.stringify 为字符串）。`overlay` 为空
+/// → `base` 原样返回（不重建，保留原值含非法 JSON 时的既有行为）；
+/// `base` 为 None / 解析失败 / 非对象 → 降级为仅 overlay 对象。
+/// 已知降级：`putVariable(k, null)` 只删 overlay 键（无 tombstone），
+/// base 的同名键会在后续合并中复现。
+fn merge_book_variable_json(
+    base: Option<&str>,
+    overlay: &HashMap<String, String>,
+) -> Option<String> {
+    if overlay.is_empty() {
+        return base.map(str::to_string);
+    }
+    let mut object = match base.and_then(|b| serde_json::from_str::<serde_json::Value>(b).ok()) {
+        Some(serde_json::Value::Object(map)) => map,
+        _ => serde_json::Map::new(),
+    };
+    for (key, value) in overlay {
+        object.insert(key.clone(), serde_json::Value::String(value.clone()));
+    }
+    serde_json::to_string(&object).ok()
+}
+
 /// `book` 绑定 IIFE 模板（占位符替换；占位符串在正常书名/变量值中
 /// 不可能出现，替换安全）
-const BOOK_BINDING_IIFE: &str = r#"(function(){var b={name:__NAME__,author:__AUTHOR__,bookUrl:__BOOK_URL__,tocUrl:__TOC_URL__,lastChapter:__LAST__,variable:__VARIABLE__,totalChapterNum:__TOTAL__,type:0,reverseToc:false};b.getVariable=function(k){var m=null;try{if(b.variable){m=JSON.parse(b.variable)||{};}}catch(e){m=null;}if(!m){return '';}var v=m[k];return (v===undefined||v===null)?'':String(v);};b.putVariable=function(k,v){var m=null;try{if(b.variable){m=JSON.parse(b.variable)||{};}}catch(e){m=null;}if(m===null){m={};}if(v===null||v===undefined){delete m[k];}else{m[k]=(typeof v==='string')?v:JSON.stringify(v);}b.variable=JSON.stringify(m);return true;};b.putCustomVariable=function(v){return b.putVariable('custom',v);};b.getCustomVariable=function(){return b.getVariable('custom');};b.setType=function(t){b.type=t;};b.setReverseToc=function(f){b.reverseToc=!!f;};return b;})()"#;
+///
+/// P2-11 ①：`type` / `reverseToc` 由硬编码 `0`/`false` 改为占位符初值
+/// （构造期经 [`book_write_overlays`] 读 JS 写路径覆盖值，缺省回落
+/// `book_type` 入参 / `false`），并用 accessor 捕获局部 `_type`/`_rev`
+/// ——语料直接赋值 `book.type = 8` 经 setter 落宿主桥；`putVariable` /
+/// 两个 setter 在 `b.bookUrl` 非空时经 `hb` 探测 `java.__lgBook*` 桥
+/// 写 [`variable_store`]（java-only 挂载；非 QuickJS 引擎探测为 null →
+/// 静默退化仅改本地副本，等价改造前行为，不抛错）。
+const BOOK_BINDING_IIFE: &str = r#"(function(){var _type=__TYPE__,_rev=__REVERSE_TOC__,_var=__VARIABLE__;function hb(n){try{if(typeof java!=='undefined'&&java&&typeof java[n]==='function'){return java[n];}}catch(e){}return null;}var b={name:__NAME__,author:__AUTHOR__,bookUrl:__BOOK_URL__,tocUrl:__TOC_URL__,lastChapter:__LAST__,variable:_var,totalChapterNum:__TOTAL__};b.getVariable=function(k){var m=null;try{if(b.variable){m=JSON.parse(b.variable)||{};}}catch(e){m=null;}if(!m){return '';}var v=m[k];return (v===undefined||v===null)?'':String(v);};b.putVariable=function(k,v){var m=null;try{if(b.variable){m=JSON.parse(b.variable)||{};}}catch(e){m=null;}if(m===null){m={};}var del=(v===null||v===undefined);if(del){delete m[k];}else{m[k]=(typeof v==='string')?v:JSON.stringify(v);}b.variable=JSON.stringify(m);if(b.bookUrl){var f=hb(del?'__lgBookVarDel':'__lgBookVarSet');if(f){if(del){f(b.bookUrl,k);}else{f(b.bookUrl,k,m[k]);}}}return true;};b.putCustomVariable=function(v){return b.putVariable('custom',v);};b.getCustomVariable=function(){return b.getVariable('custom');};Object.defineProperty(b,'type',{get:function(){return _type;},set:function(t){_type=t;if(b.bookUrl){var f=hb('__lgBookSetType');if(f){f(b.bookUrl,String(t));}}},configurable:true,enumerable:true});Object.defineProperty(b,'reverseToc',{get:function(){return _rev;},set:function(f){_rev=!!f;if(b.bookUrl){var h=hb('__lgBookSetReverseToc');if(h){h(b.bookUrl,String(_rev));}}},configurable:true,enumerable:true});b.setType=function(t){b.type=t;return true;};b.setReverseToc=function(f){b.reverseToc=f;return true;};return b;})()"#;
 
-fn iife_book_expr(meta: &BookMeta, total_chapter_num: i32) -> String {
+fn iife_book_expr(meta: &BookMeta, book_type: i32, total_chapter_num: i32) -> String {
     let json_str = |s: &str| serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string());
-    let variable = match &meta.variable {
+    // P2-11 ①：读同书写路径 overlay（JS putVariable/type/reverseToc 写入，
+    // 进程级 variable_store 裸键，跨流程可见）合并进绑定初值
+    let (overlay, type_override, reverse_override) = book_write_overlays(&meta.book_url);
+    let variable = merge_book_variable_json(meta.variable.as_deref(), &overlay);
+    let variable_json = match &variable {
         Some(v) if !v.trim().is_empty() => {
             serde_json::to_string(v).unwrap_or_else(|_| "null".to_string())
         }
         _ => "null".to_string(),
     };
+    let type_init = type_override.unwrap_or(book_type);
+    let reverse_init = reverse_override.unwrap_or(false);
     BOOK_BINDING_IIFE
         .replace("__NAME__", &json_str(&meta.name))
         .replace("__AUTHOR__", &json_str(&meta.author))
         .replace("__BOOK_URL__", &json_str(&meta.book_url))
         .replace("__TOC_URL__", &json_str(&meta.toc_url))
         .replace("__LAST__", &json_str(&meta.last_chapter))
-        .replace("__VARIABLE__", &variable)
+        .replace("__VARIABLE__", &variable_json)
         .replace("__TOTAL__", &total_chapter_num.to_string())
+        .replace("__TYPE__", &type_init.to_string())
+        .replace("__REVERSE_TOC__", &reverse_init.to_string())
 }
 
 /// P2-9 ②：详情（ruleBookInfo）阶段 `book` 绑定表达式：meta 命中 → IIFE
@@ -475,9 +580,13 @@ fn iife_book_expr(meta: &BookMeta, total_chapter_num: i32) -> String {
 /// 既有 `{"name": fallback_name}` 字面量（原 HEAD 详情阶段无 `book` 绑定，
 /// JS `book.*` 引用抛 ReferenceError，init 规则被 `if let Ok` 静默跳过；
 /// 字面量令引用本身合法、方法调用同样降级，执行路径与原先一致）。
-fn detail_book_binding(book_url: &str, fallback_name: &str) -> String {
+///
+/// P2-11 ①：`book_type` 入参（书源 BookType 位标志，见
+/// [`book_binding_expr`]）作 `book.type` 初值，JS 覆盖值经
+/// [`book_write_overlays`] 优先。
+fn detail_book_binding(book_url: &str, fallback_name: &str, book_type: i32) -> String {
     let meta = lookup_book_meta_by_book_url(book_url);
-    book_binding_expr(meta.as_ref(), fallback_name, 0, false)
+    book_binding_expr(meta.as_ref(), fallback_name, 0, false, book_type)
 }
 
 /// P2-9 ①：把「顶层原始响应内容」以 JSON 字面量注入 JS 全局 `src`，使单参
@@ -841,7 +950,15 @@ impl RealBookSourceFetcher {
         // putVariable 等依赖，见 detail_book_binding 注释）；未命中 → 既有
         // `{"name": existing_name}` 字面量（webbook_info 入参为 ""，换源
         // 路径带既有书名），执行路径与原 HEAD 一致
-        analyzer = analyzer.with_js_binding("book", &detail_book_binding(book_url, existing_name));
+        // P2-11 ①：type 初值 = 书源 BookType 位标志（TEXT=8 等），不再硬编码 0
+        analyzer = analyzer.with_js_binding(
+            "book",
+            &detail_book_binding(
+                book_url,
+                existing_name,
+                crate::api::search::book_type_of_source(source.book_source_type),
+            ),
+        );
 
         // 详情页 init（对齐原版 BookInfo.analyzeBookInfo：执行 init 规则后
         // setContent(getElement(init)) —— init 结果作为后续字段规则的新 content。
@@ -962,7 +1079,20 @@ impl RealBookSourceFetcher {
             // [T3 | AnalyzeRule.putVariable] bookInfo 规则求值期间 @put/JS
             // putVariable 级联导出（与目录解析 web_book.rs 同一手法），随
             // WebBookInfo 返回供换源合并进 book.variable
-            variable: analyzer.export_variables_json(),
+            // P2-11 ①：再合并本进程内 JS `book.putVariable` 写路径 overlay
+            // （variable_store 裸键，IIFE 以 meta.bookUrl 为写入键；meta 未
+            // 命中时 IIFE 不存在 → 无 overlay，按入参 book_url 读零成本降级）。
+            // 合并后详情期 putVariable 值随既有「换源合并进 book.variable」
+            // DB 持久路径存活进程重启（零 Dart 改动）；进程内同书后续流程
+            // 不经此值——直接读 variable_store（见 book_write_overlays）
+            variable: {
+                let overlay_key = lookup_book_meta_by_book_url(book_url)
+                    .map(|m| m.book_url)
+                    .filter(|u| !u.trim().is_empty())
+                    .unwrap_or_else(|| book_url.to_string());
+                let (overlay, _, _) = book_write_overlays(&overlay_key);
+                merge_book_variable_json(analyzer.export_variables_json().as_deref(), &overlay)
+            },
         }
     }
 
@@ -1748,7 +1878,15 @@ impl RealBookSourceFetcher {
                     crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
                 )
                 // P2-9 ②：book 绑定扩面（详情阶段，见 detail_book_binding 注释）
-                .with_js_binding("book", &detail_book_binding(book_url, book_name.as_str()))
+                // P2-11 ①：type 初值 = 书源 BookType 位标志（TEXT=8 等）
+                .with_js_binding(
+                    "book",
+                    &detail_book_binding(
+                        book_url,
+                        book_name.as_str(),
+                        crate::api::search::book_type_of_source(source.book_source_type),
+                    ),
+                )
                 // P2-9 ①：src = 详情响应体（见 bind_orig_src 注释）
                 .with_js_binding(
                     "src",
@@ -1828,8 +1966,15 @@ impl RealBookSourceFetcher {
         // P2-9 ②：book 绑定扩面（详情阶段）：init 规则的 `book.getVariable`
         // 等调用依赖（见 detail_book_binding 注释）；meta 未命中时字面量
         // 回退，执行路径与原 HEAD 一致
-        info_analyzer = info_analyzer
-            .with_js_binding("book", &detail_book_binding(book_url, book_name.as_str()));
+        // P2-11 ①：type 初值 = 书源 BookType 位标志（TEXT=8 等）
+        info_analyzer = info_analyzer.with_js_binding(
+            "book",
+            &detail_book_binding(
+                book_url,
+                book_name.as_str(),
+                crate::api::search::book_type_of_source(source.book_source_type),
+            ),
+        );
 
         // 1.6 详情页 init（对齐原版 analyzeBookInfo：init 结果 setContent 后
         // 再解析字段；书山聚合 init 把 data:URI hex detail JSON 转为
@@ -1939,7 +2084,14 @@ impl RealBookSourceFetcher {
         );
 
         // P2-9 ②：meta 命中 → IIFE 扩面绑定；未命中 → 既有 `{"name":…}` 字面量
-        let book_binding = book_binding_expr(book_meta, book_name, 0, false);
+        // P2-11 ①：type 初值 = 书源 BookType 位标志（TEXT=8 等）
+        let book_binding = book_binding_expr(
+            book_meta,
+            book_name,
+            0,
+            false,
+            crate::api::search::book_type_of_source(source.book_source_type),
+        );
         analyzer = analyzer.with_js_binding("book", &book_binding);
         // P2-9 ①：src = 目录响应体（本分析器 content 稳定，见 bind_orig_src 注释）
         let toc_content = analyzer.content().to_string();
@@ -2728,8 +2880,16 @@ fn parse_content_page_with_bindings(
         .with_js_binding("title", &t_json);
     // P2-9 ②：meta 命中时 `book` 绑定扩面为 IIFE 对象（字段 + 方法）；
     // 未命中保留既有空 name 字面量（不破坏未走详情/目录阶段的源）
+    // P2-11 ①：type 初值 = 书源 BookType 位标志；无书源上下文（测试/分页
+    // 降级）时按 TEXT(8) 兜底（与 book_type_of_source 默认分支一致）
     let total = book_total_chapter_num.unwrap_or(0);
-    analyzer = analyzer.with_js_binding("book", &book_binding_expr(book_meta, "", total, true));
+    let book_type = source
+        .map(|s| crate::api::search::book_type_of_source(s.book_source_type))
+        .unwrap_or(crate::api::search::book_type::TEXT);
+    analyzer = analyzer.with_js_binding(
+        "book",
+        &book_binding_expr(book_meta, "", total, true, book_type),
+    );
     // P2-9 ①：src = 正文响应体（见 bind_orig_src 注释）
     analyzer = analyzer.with_js_binding("src", &body_src_json);
     // 种子章节 @put 变量（对齐 AnalyzeRule.setChapter → getVariable）
@@ -5318,14 +5478,15 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     /// 详情/目录阶段的源）
     #[test]
     fn test_book_binding_none_fallback_keeps_literal_semantics() {
-        // content 站点：`{"totalChapterNum": N, "name": ""}`
+        // content 站点：`{"totalChapterNum": N, "name": ""}`（None 分支不用
+        // book_type 入参，传 0 占位）
         assert_eq!(
-            book_binding_expr(None, "ignored", 42, true),
+            book_binding_expr(None, "ignored", 42, true, 0),
             r#"{"totalChapterNum": 42, "name": ""}"#
         );
         // toc 站点：`{"name": book_name}`
         assert_eq!(
-            book_binding_expr(None, "测试书名", 0, false),
+            book_binding_expr(None, "测试书名", 0, false, 0),
             r#"{"name":"测试书名"}"#
         );
     }
@@ -5405,7 +5566,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             last_chapter: "第一百章".into(),
             variable: Some(r#"{"custom":"custom-val","n":3}"#.into()),
         };
-        let expr = book_binding_expr(Some(&meta), "", 42, true);
+        let expr = book_binding_expr(Some(&meta), "", 42, true, 8);
         let analyzer = crate::js_executor::construct_analyzer_with_js_lib(
             "<html><body>正文</body></html>".to_string(),
             "https://book.example.com/c/1".to_string(),
@@ -5422,6 +5583,189 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             out,
             "function|function|function|function|function|function|测试书名|测试作者|https://book.example.com/b/1|https://book.example.com/toc/1|第一百章|42|custom-val||true|v2|custom-val"
         );
+        // P2-11 ①：新 IIFE 的 putVariable 经 java.__lgBookVarSet 桥写
+        // variable_store 裸键（进程级）——测试收尾清残留，防污染并行/后续
+        // 测试对该 bookUrl 的绑定构造
+        let _ = variable_store::remove_variable(&variable_store::book_var_key(
+            "https://book.example.com/b/1",
+            "k2",
+        ));
+    }
+
+    /// P2-11 ① 核心回归：JS 里 `book.putVariable` / `book.type=N` /
+    /// `book.setReverseToc` 写入后，**同流程后续 `book` 绑定构造**（模拟
+    /// 详情 → 目录/正文 阶段）能读到新值——写入落 variable_store 裸键
+    /// 持久层，经 `book_write_overlays` 合并进下一轮 IIFE 初值。
+    ///
+    /// 覆盖：putVariable(string/非 string/put-then-delete)、type 直接赋值
+    /// （语料 `book.type=64` 切漫画模式形态）、setReverseToc、base 变量
+    /// （meta.variable）与 overlay 合并共存、覆盖值优先于入参初值。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_p211_book_write_paths_visible_in_same_flow() {
+        // 专属 bookUrl：并行测试互不串读（overlay 按 bookUrl 前缀过滤）
+        let book_url = "https://p211-write-flow-test.example.com/b/flow";
+        let meta = BookMeta {
+            name: "写流测试书".into(),
+            author: "写流作者".into(),
+            book_url: book_url.into(),
+            toc_url: format!("{book_url}/toc"),
+            last_chapter: String::new(),
+            variable: Some(r#"{"base":"b1"}"#.into()),
+        };
+
+        // ── 阶段 1：详情规则执行（模拟 ruleBookInfo 期 JS 写入）
+        let binding1 = book_binding_expr(Some(&meta), "", 5, true, 8);
+        crate::js_executor::construct_analyzer_with_js_lib(
+            "<html><body>详情</body></html>".to_string(),
+            book_url.to_string(),
+            "",
+            None,
+        )
+        .with_js_binding("book", &binding1)
+        .get_string(
+            "@js:book.putVariable('k','v');book.putVariable('num',42);book.putVariable('delkey','x');book.putVariable('delkey',null);book.type=64;book.setReverseToc(true);'ok'",
+        )
+        .expect("阶段 1 写入规则应可执行");
+
+        // 直读存储层确认落点（裸键持久层，进程级）
+        assert_eq!(
+            variable_store::get_variable(&variable_store::book_var_key(book_url, "k")).ok(),
+            Some(Some("v".to_string())),
+            "putVariable('k','v') 应落 bookVar 裸键"
+        );
+        assert_eq!(
+            variable_store::get_variable(&variable_store::book_var_key(book_url, "num")).ok(),
+            Some(Some("42".to_string())),
+            "非 string 值应存其 JSON.stringify 结果（与 IIFE 内存 m[k] 一致）"
+        );
+        assert_eq!(
+            variable_store::get_variable(&variable_store::book_var_key(book_url, "delkey")).ok(),
+            Some(None),
+            "putVariable(k,null) 应删 overlay 键"
+        );
+        assert_eq!(
+            variable_store::get_variable(&variable_store::book_type_key(book_url)).ok(),
+            Some(Some("64".to_string())),
+            "book.type=64 应落 bookType 裸键"
+        );
+        assert_eq!(
+            variable_store::get_variable(&variable_store::book_reverse_toc_key(book_url)).ok(),
+            Some(Some("true".to_string()))
+        );
+
+        // ── 阶段 2：同书后续规则重新构造绑定（模拟目录/正文阶段）
+        let binding2 = book_binding_expr(Some(&meta), "", 5, true, 8);
+        let out = crate::js_executor::construct_analyzer_with_js_lib(
+            "<html><body>目录</body></html>".to_string(),
+            format!("{book_url}/toc"),
+            "",
+            None,
+        )
+        .with_js_binding("book", &binding2)
+        .get_string(
+            "@js:book.getVariable('k')+'|'+book.getVariable('num')+'|'+book.getVariable('delkey')+'|'+String(book.type)+'|'+String(book.reverseToc)+'|'+book.getVariable('base')",
+        )
+        .expect("阶段 2 探测规则应可执行");
+        // k=v（overlay 合并）、num=42（string 形态）、delkey 已删 → 空、
+        // type=64（覆盖入参初值 8）、reverseToc=true、base=b1（meta 保留）
+        assert_eq!(out, "v|42||64|true|b1");
+
+        // 收尾清理（进程级全局 store）
+        for key in [
+            variable_store::book_var_key(book_url, "k"),
+            variable_store::book_var_key(book_url, "num"),
+            variable_store::book_type_key(book_url),
+            variable_store::book_reverse_toc_key(book_url),
+        ] {
+            let _ = variable_store::remove_variable(&key);
+        }
+    }
+
+    /// P2-11 ①：`book.type` 初值 = 书源类型（位标志，经
+    /// `book_type_of_source` 换算），不再硬编码 0；同书 overlay 覆盖值
+    /// 优先于入参初值。语料对照：TEXT 源 8 / AUDIO 源 32 / IMAGE 源 64。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_p211_book_type_initial_value_from_source() {
+        fn probe(book_url: &str, book_type_arg: i32) -> String {
+            let meta = BookMeta {
+                name: "类型初值测试书".into(),
+                author: String::new(),
+                book_url: book_url.into(),
+                toc_url: String::new(),
+                last_chapter: String::new(),
+                variable: None,
+            };
+            let binding = book_binding_expr(Some(&meta), "", 1, true, book_type_arg);
+            crate::js_executor::construct_analyzer_with_js_lib(
+                "<html><body>x</body></html>".to_string(),
+                book_url.to_string(),
+                "",
+                None,
+            )
+            .with_js_binding("book", &binding)
+            .get_string("@js:String(book.type)")
+            .expect("type 探测应可执行")
+        }
+
+        // 无 overlay 时初值 = 入参（调用点传 book_type_of_source 结果）
+        assert_eq!(
+            probe("https://p211-type-init.example.com/b/text", 8),
+            "8",
+            "TEXT 源初值应为 8（改造前硬编码 0）"
+        );
+        assert_eq!(
+            probe("https://p211-type-init.example.com/b/audio", 32),
+            "32",
+            "AUDIO 源初值应为 32"
+        );
+        assert_eq!(
+            probe("https://p211-type-init.example.com/b/image", 64),
+            "64",
+            "IMAGE 源初值应为 64"
+        );
+
+        // overlay 覆盖值（JS 前期 `book.type=16` 写入）优先于入参初值
+        let override_url = "https://p211-type-init.example.com/b/override";
+        variable_store::set_variable(&variable_store::book_type_key(override_url), "16")
+            .expect("预置 type 覆盖值");
+        assert_eq!(
+            probe(override_url, 8),
+            "16",
+            "同书 overlay 覆盖值应优先于入参初值"
+        );
+        let _ = variable_store::remove_variable(&variable_store::book_type_key(override_url));
+    }
+
+    /// P2-11 ①：`merge_book_variable_json` 合并语义（两档口径均可跑，
+    /// 不依赖 JS 引擎）：overlay 空 → base 原样；base 非法 → 降级仅
+    /// overlay；同名键 overlay 优先
+    #[test]
+    fn test_p211_merge_book_variable_json() {
+        // overlay 空 → base 原样（不重建，含 None 透传）
+        assert_eq!(
+            merge_book_variable_json(Some(r#"{"a":"1"}"#), &HashMap::new()),
+            Some(r#"{"a":"1"}"#.to_string())
+        );
+        assert_eq!(merge_book_variable_json(None, &HashMap::new()), None);
+        // base 解析失败 → 降级为仅 overlay 对象
+        let mut overlay_only = HashMap::new();
+        overlay_only.insert("a".to_string(), "1".to_string());
+        assert_eq!(
+            merge_book_variable_json(Some("not-json"), &overlay_only),
+            Some(r#"{"a":"1"}"#.to_string())
+        );
+        // 同名键 overlay 优先 + 异名键并集
+        let mut overlay = HashMap::new();
+        overlay.insert("a".to_string(), "new".to_string());
+        overlay.insert("b".to_string(), "2".to_string());
+        let merged =
+            merge_book_variable_json(Some(r#"{"a":"old","c":"3"}"#), &overlay).expect("合并应成功");
+        let value: serde_json::Value = serde_json::from_str(&merged).unwrap();
+        assert_eq!(value["a"], "new");
+        assert_eq!(value["b"], "2");
+        assert_eq!(value["c"], "3");
     }
 
     /// P2-9 ② 详情阶段（ruleBookInfo.init）`book.getVariable` 补前/补后对比

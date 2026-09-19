@@ -180,6 +180,47 @@ pub fn get_flow_variable(key: &str) -> Option<String> {
 }
 
 // ============================================================
+// P2-11 ① book 绑定写路径命名空间（裸键持久层键构造器）
+// ============================================================
+//
+/// book 绑定写路径存储键构造器（**裸键**——持久层，P1-1 语义：永不命中
+/// flow scope 前缀、换书/换流程不清空）。
+///
+/// 写入方：QuickJS 宿主桥 `java.__lgBookVarSet/__lgBookVarDel/__lgBookSetType/
+/// __lgBookSetReverseToc`（quickjs_impl.rs `register_book_binding_bridges`，
+/// 由 `book` 绑定 IIFE 的 putVariable/setType/setReverseToc 及直接赋值
+/// `book.type = N` 触发）。
+///
+/// 读取方：FFI `book` 绑定构造（legado-ffi web_book.rs `iife_book_expr`）按
+/// bookUrl 前缀枚举合并回绑定字面量（variable 覆盖层 / type / reverseToc
+/// 初值）。两侧共用本组构造器，键格式不漂移。
+///
+/// 生命周期：**进程级**（应用重启即失——降级项，未直接落 DB `books.variable`；
+/// 详情解析期 FFI 会把覆盖层并入 `WebBookInfo.variable` 走既有 DB 合并路径，
+/// 见 web_book.rs `parse_book_info_from_body` 注释）。
+/// 跨流程可见性：同一 bookUrl 的详情→目录→正文链、第二次详情、换源刷新均
+/// 可见（绑定构造期重新合并）；bookUrl 命名空间隔离，跨书不串读。
+pub fn book_var_key(book_url: &str, key: &str) -> String {
+    format!("bookVar::{book_url}::{key}")
+}
+
+/// `bookVar::{bookUrl}::` 前缀（绑定构造期枚举覆盖层用）
+pub fn book_var_key_prefix(book_url: &str) -> String {
+    format!("bookVar::{book_url}::")
+}
+
+/// `bookType::{bookUrl}`（book.setType / book.type = N；值为 BookType 位标志
+/// 字符串，如 "8"/"32"/"64"，对齐上游 io.legado.app.constant.BookType）
+pub fn book_type_key(book_url: &str) -> String {
+    format!("bookType::{book_url}")
+}
+
+/// `bookReverseToc::{bookUrl}`（book.setReverseToc；"true"/"false"）
+pub fn book_reverse_toc_key(book_url: &str) -> String {
+    format!("bookReverseToc::{book_url}")
+}
+
+// ============================================================
 // 测试基础设施（快照守卫 + 互斥锁）
 // ============================================================
 /// 全局态快照-恢复守卫（仅测试用，照抄 config_api.rs StoreGuard 模式）
@@ -406,5 +447,26 @@ mod tests {
         assert_eq!(get_variable("persist_k").unwrap(), Some("persist-v".into()));
         // 再清一次（已 None）= 无操作不报错
         clear_flow_scope().unwrap();
+    }
+
+    /// P2-11 ①：book 写路径键格式固化（宿主桥写入方 / FFI 合并读取方共用）
+    #[test]
+    fn test_book_write_path_key_format() {
+        let book_url = "https://example.com/b/1";
+        assert_eq!(
+            book_var_key(book_url, "k"),
+            "bookVar::https://example.com/b/1::k"
+        );
+        assert_eq!(
+            book_var_key_prefix(book_url),
+            "bookVar::https://example.com/b/1::"
+        );
+        assert_eq!(book_type_key(book_url), "bookType::https://example.com/b/1");
+        assert_eq!(
+            book_reverse_toc_key(book_url),
+            "bookReverseToc::https://example.com/b/1"
+        );
+        // 裸键：不命中 flow scope 前缀，换书清 scope 时不受影响（P1-1）
+        assert!(!book_var_key(book_url, "k").starts_with(FLOW_KEY_PREFIX));
     }
 }
