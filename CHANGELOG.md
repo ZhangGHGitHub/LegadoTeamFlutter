@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.296] - 2026-09-19
+
+### Fixed
+- [Rust] **发现/分类页的书源脚本补 `src` 与 `book` 绑定（P2-11 ①）**：搜索/详情/目录路径早已实现「子步 `java.*` 重解析顶层原始响应」，发现（分类）路径当时漏了同一收口，导致链式脚本里的 `src` 拿到的仍是中间产物、`book` 未绑定。现已按同一约定补齐（`book` 在无书籍上下文时与上游一致取 null）；补 2 个 quickjs 档回归测试。
+- [Rust] **属性提取统一为「遍历全部子元素 + 去重」（P2-11 ②）**：裸 `@href`/`@content` 形态此前只取**首个**命中子元素，与「裸 token」形态（遍历全部）不一致，部分书源在多个同形元素并存时字段/目录漏项。现按上游 `AnalyzeByJSoup` 的 `getResultLast` 语义（逐个取属性、跳空、去重）统一。
+
 ## [2.0.295] - 2026-09-19
 
 ### Fixed
