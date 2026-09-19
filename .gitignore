@@ -84,6 +84,21 @@ rust/_*.txt
 rust/legado-ffi/timing_*_out.txt
 flutter_legado/test_out.txt
 
+# === 工具产物清理（2026-09-19 提交卫生）===
+# 子代理/脚本的临时工作区（任意层级，如 .tmp/ 与 flutter_legado/.tmp/）
+.tmp/
+# uiautomator 转储默认落盘名：`adb shell uiautomator dump` 后 pull 到仓库根的残留
+.fd.xml
+.oh.xml
+# Windows 下 `> nul` 的重定向产物（Git Bash 会把它建成真实文件）
+nul
+# 根 package.json（commitizen 用）被 pnpm 生成的锁文件，内容含机器本地路径，与构建链无关
+pnpm-lock.yaml
+# Python 字节码缓存
+__pycache__/
+# 崩溃核心转储（Linux/WSL 下 SIGSEGV 落盘；本仓已有 0 字节占位残留）
+/core.[0-9]*
+
 # ── 安卓源码不上传 GitHub（2026-08-30 用户指令）────────────────
 # 原版安卓工程（app/ 与 modules/）仅保留在本地磁盘作参照，不进入版本
 # 跟踪与远程推送；已用 git rm --cached 解除跟踪。如需恢复跟踪：
