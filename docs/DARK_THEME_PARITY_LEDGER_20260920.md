@@ -194,6 +194,8 @@
 
 ## 六、执行记录
 
+- **2026-09-20 Batch B 前半完成**（我方采集 + 配对差分，证据 `docs/parity_shots/ours_dark_20260920/`，报告 `DARK_DELTA_20260920.md`）：我方深色 9/9 屏采集成功（MuMu Test；两次首跑失败为环境问题已补采，如实留痕），8 组配对量化完成。**必须改 1 项**：**M1 阅读器深色态正文背景为纯白**（参考纯黑，Δlum 213–255，8 屏中唯一方向性大色差）——已另行派修（阅读器为承重区，按谨慎口径：仅改深色态背景默认，不动排版/翻页管线）。**待裁决 6 项**：A1 扫码全屏扫描器 vs 页内；A2 主题横滑行 vs 网格 + 主题集映射方式；A3 04 页面 IA 与暖调基准（注意参考暖调疑为其 build 柠檬强调色残留）；A4 1-8 入口长按 vs 单击；A5 1-11 菜单键集是否收敛（参考 5 键、我方为超集）；A6 1-13 输入盒/仅本书细节（低优）。01/13 整体无需改。本轮 0 次崩溃弹窗（与 M2 误报修复待合验）。
+
 ## 六、执行记录
 
 - **2026-09-20 Batch A 完成**（提交 `c1616a1fc3`）：A-1 漫画弹层 10 色 scheme 化（把手槽位偏离台账原议 secondaryContainer→outlineVariant，理由：着色容器语义不合中性把手；伴随 _card 包 transparency Material 的结构性修复，零像素变化）；A-2 替换规则搜索框 fillColor 统一 surfaceContainerHighest；A-3 阅读器徽标 onSurfaceVariant+surface（亮色等效论证 + 暗色观感留 Batch B 复核三要点已标注）。新增 manga_config_sheet_test.dart 2 项；flutter analyze 0；flutter test 1508 全过。A-4（排版引擎死默认，承重区）与 A-5（app_colors.dart 整体处置）按红线缓议，需单独 review/裁决。
