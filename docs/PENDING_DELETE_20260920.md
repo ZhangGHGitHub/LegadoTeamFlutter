@@ -16,7 +16,7 @@
 | 提交 | `b99538b891`（本文档 + `.gitignore`）、`bb08c173bc`（`probe_icon` 移除，52 文件） |
 | 磁盘 | `D:` 可用 **171G → 473G**（使用率 88% → 66%） |
 | 第三部分复查 | 7 项全部核查完毕；**其中 2 项初版判定经二次复核被推翻**（见 §3.4 `.tmp/dbsrc`、§3.7 `parity_shots`） |
-| **第二轮（项目目录之外，§七）** | `D:\OH-WorkSpace\` 与 `D:\tmp` 的同类残留 **30G 已移入外部暂存区** `D:\OH-WorkSpace\_pending_delete\`，**未删除**，等待裁决 |
+| **第二轮（项目目录之外，§七）** | `D:\OH-WorkSpace\` 与 `D:\tmp` 的同类残留 **30G 已删除**（2026-09-20 用户确认"确认无误，删除了吧"） |
 
 > ⚠️ **两处初版误判已在文中标注作废**，请以纠正后的结论为准——这是本次复核最大的收获：
 > 1. **P1 严重度**：并非 19 个测试都"假绿"，只有**未标 `#[ignore]` 的 11 个**才是真问题（另 8 个静默跳过是刻意设计）。
@@ -355,7 +355,7 @@ Move-Item D:\OH-WorkSpace\LegadoTeam\legado\_pending_delete\root_tmp\* D:\OH-Wor
 
 > 背景：用户注意到项目**上一级与上上级**（`D:\OH-WorkSpace\`、`D:\tmp`）也有散落的图片与文件。排查后确认**与本轮仓库内清理无关**（仓库内操作全是 `mv`/`rm` 于仓库内部），而是长期积累的**同类残留**，根因是「**命令在哪个目录下执行，产物就落在那里**」的工作目录漂移。
 >
-> 处置：沿用同一套两阶段做法，移入外部暂存区 `D:\OH-WorkSpace\_pending_delete\`（**同一磁盘 rename，回移秒级**），**未删除任何内容**，等待用户裁决。
+> 处置：沿用同一套两阶段做法，先移入外部暂存区 `D:\OH-WorkSpace\_pending_delete\`（**同一磁盘 rename，回移秒级**），**经用户确认后已于 2026-09-20 实际删除，共释放 30G**。
 
 ### 7.1 残留成因与构成
 
@@ -390,7 +390,9 @@ Move-Item D:\OH-WorkSpace\LegadoTeam\legado\_pending_delete\root_tmp\* D:\OH-Wor
 | `OH-WorkSpace\Projects\legado_flutter\` | 73G | 重构版 Flutter 参考源（含 `.git`）；其中 `rust/` 61G 与 `build/` 12G 是构建产物，源码 `lib/` 仅 5.2M——日后瘦身只应动其构建目录 |
 | `Projects\legado-main.zip` | 11M | 上游打包副本 |
 
-### 7.4 回移命令
+### 7.4 回移命令（**已作废：暂存区已于 2026-09-20 删除**）
+
+> 以下为当初的两阶段工作流参考，**当前 `_pending_delete/` 已删除，命令不再适用**。
 
 ```powershell
 # 回移全部外部暂存内容
@@ -399,6 +401,17 @@ Move-Item D:\OH-WorkSpace\_pending_delete\* D:\OH-WorkSpace\
 # 回移 D:\tmp 的内容
 Move-Item D:\OH-WorkSpace\_pending_delete\D_tmp\* D:\tmp\
 ```
+
+### 7.5 外部清理的最终磁盘账
+
+| 时点 | `D:` 可用 | 使用率 |
+|---|---|---|
+| 本轮清理开始前 | 171G | 88% |
+| 仓库内清理后（§6.2） | 473G | 66% |
+| 外部清理搬入暂存后 | 474G（未释放） | 65% |
+| **外部清理实际删除后** | **503G** | **63%** |
+
+**两轮合计释放约 332G**（171G → 503G 可用）。
 
 ---
 
