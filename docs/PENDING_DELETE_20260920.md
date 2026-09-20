@@ -1,8 +1,8 @@
-# 目录清理 · 待删除暂存清单（2026-09-20）
+# 目录清理 · 执行记录与待裁决清单（2026-09-20）
 
-> 性质：项目目录整理的执行记录 + 待用户裁决清单。**本文件不代表已删除任何内容。**
+> 性质：项目目录整理的分级复核、执行记录与遗留裁决清单。
 > 执行：主代理（ZCode 本机通道）｜ 2026-09-20
-> 状态：已把「确定可删」的内容**移动**（非删除）到仓库根 `_pending_delete/`，等待用户裁决；第三部分（有调用链疑问的大块取证目录）按用户指令**原地未动**，本文件给出核查结论。
+> **状态：主体清理已执行完毕——释放约 302G，`D:` 可用空间 171G → 473G。** 过程分两阶段：先「移动到 `_pending_delete/` 暂存区」（不删任何东西），经调用链复核后再实际删除。仍保留待裁决的项见 §6.2 末表与 §3.7。
 
 ---
 
@@ -10,18 +10,22 @@
 
 | 项 | 数值 |
 |---|---|
-| 暂存区 `_pending_delete/` 合计 | **300G**（其中 `rust/target` 单独 292G） |
-| 移入条目数 | 构建产物 8 项 + 根目录残留 276 项 + 大块取证目录 5 项 + `probe_icon` 1 项 |
-| 删除/修改源码 | **无**（未 rm、未 commit） |
-| `.gitignore` 改动 | 新增 1 行 `/_pending_delete/`（保持 `git status` 干净） |
-| 入库内容变动 | 仅 `probe_icon/`（52 个 tracked 文件的移出，在 `git status` 显示为 D，**未提交**） |
-| 第三部分复查 | 7 项全部核查完毕：**不可删 3 项、可删 4 项**（见 §三） |
+| 第一阶段：暂存区 `_pending_delete/` | **300G**（其中 `rust/target` 单独 292G），276 项根目录残留 + 构建产物 8 项 + 取证目录 5 项 + `probe_icon` |
+| 第二阶段：实际删除 | **约 302G**（暂存区整体 + `.e2e_*` 1.4G + `tmp_debug`/`tmp_parity`/`.tmp` 零引用项） |
+| 源码改动 | **无**（未改任何源码；P1~P10 交开发 agent） |
+| 提交 | `b99538b891`（本文档 + `.gitignore`）、`bb08c173bc`（`probe_icon` 移除，52 文件） |
+| 磁盘 | `D:` 可用 **171G → 473G**（使用率 88% → 66%） |
+| 第三部分复查 | 7 项全部核查完毕；**其中 2 项初版判定经二次复核被推翻**（见 §3.4 `.tmp/dbsrc`、§3.7 `parity_shots`） |
 
-> 磁盘现状：`D:` 1.4T 中已用 1.2T、剩余 171G（88%）。本次移入暂存区**不释放空间**，需真正删除后才释放。
+> ⚠️ **两处初版误判已在文中标注作废**，请以纠正后的结论为准——这是本次复核最大的收获：
+> 1. **P1 严重度**：并非 19 个测试都"假绿"，只有**未标 `#[ignore]` 的 11 个**才是真问题（另 8 个静默跳过是刻意设计）。
+> 2. **`docs/parity_shots/` 孤儿目录**：初版称 24 个孤儿，实为**误判**——按目录名全仓重搜后被现行 ledger 引用，**本次一律未动**。
 
 ---
 
-## 一、已移入暂存区的清单
+## 一、曾移入暂存区的清单（**均已随 §6.2 删除**）
+
+> 本节保留清单与依据，用于追溯"这些东西是什么、为什么可以删"。**全部条目已于 2026-09-20 随 `_pending_delete/` 删除。**
 
 ### 1.1 可再生的构建产物（零风险；删除后由构建链重新生成）
 
@@ -81,11 +85,13 @@
 
 **确认依据**：该工程是为判定"旁载语境下 app 能否切换桌面图标"而建的决定性隔离探针，配套流水线 `.github/workflows/probe-icon-build.yml`（注释写明"产出未签名 IPA，供用户用同一工具在同一设备旁载"）。iOS 换图标任务已于 **2026-09-03 收口**（A 降级 + C 文档化落地，企业签出局，见 `docs/IOS_ICON_SWITCH_LIMITATION_20260903.md`）。
 
-> ⚠️ 移出后 `git status` 会出现 52 条 `D probe_icon/...`，**这是预期的，尚未提交**。若裁决删除需提交该删除；若裁决保留，回移即恢复。
+> ✅ **已删除并提交**：`bb08c173bc`（52 个文件）。配套 CI 流水线的处置见 §四 P5（**待开发 agent 处理**）。
 
 ---
 
-## 二、恢复方法
+## 二、恢复方法（**已作废：暂存区已于 2026-09-20 实际删除**）
+
+> 本节记录当初的暂存-回移机制，供日后复用同一工作流参考。**当前 `_pending_delete/` 已删除，以下命令不再适用。**
 
 暂存区是**同盘 rename**，回移是秒级操作。任一条目按"从哪来回哪去"即可：
 
@@ -95,16 +101,15 @@ Move-Item D:\OH-WorkSpace\LegadoTeam\legado\_pending_delete\rust\target D:\OH-Wo
 
 # 示例：回移根目录残留（276 项整批）
 Move-Item D:\OH-WorkSpace\LegadoTeam\legado\_pending_delete\root_tmp\* D:\OH-WorkSpace\LegadoTeam\legado\
-
-# 示例：回移 probe_icon（并撤销 git 的删除记录）
-Move-Item D:\OH-WorkSpace\LegadoTeam\legado\_pending_delete\probe_icon D:\OH-WorkSpace\LegadoTeam\legado\probe_icon
 ```
 
-裁决为"确认删除"时，直接删除整个 `_pending_delete/` 即可（300G 一并释放）；若裁决只删部分，按 §一 子表逐项处理。
+**若需重新清理**：`.gitignore` 中的 `/_pending_delete/` 规则已保留，按 §一 的方式重新建立同名暂存区即可，`git status` 不会被污染。
 
 ---
 
 ## 三、第三部分复查结论（调用链核查）
+
+> 本节为第二阶段的核查依据。**其中判为「可删」的项已按 §6.2 实际删除**；判为「保留」的项原地未动（`.tmp/dbsrc` 与 `docs/parity_shots` 两处判定经复核被推翻，已在对应小节标注）。
 
 对 7 项大体积取证目录逐项核查"哪里在调用、后续还用不用"。**判定基准**：机器可读结论是否已入库 + 关联任务是否已收口 + 是否存在活调用点。
 
@@ -159,14 +164,14 @@ Move-Item D:\OH-WorkSpace\LegadoTeam\legado\_pending_delete\probe_icon D:\OH-Wor
 
 **低风险可删**（引用仅为已关闭条目/历史记述）：
 
-| 子项 | 大小 | 引用出处与现实 |
-|---|---|---|
-| `dbsrc/`（含 `q7.db` 26M） | 305M | `docs/REFACTORING_ACTIVE_PLAN.md:167`——但该条属 **P2-6/P2-7，已关闭 2026-09-19**，引用仅为历史观测点 |
-| `p8_db/` | 155M | 仅 `CHANGELOG.md` 历史记述 |
-| `legado-with-MD3/` | 67M | 仅 `docs/UI_MD3_ALIGNMENT_AUDIT.md` / `UI_MD3_ALIGNMENT_PLAN.md`；MD3 布局计划"**四批已交付收口**"（`REFACTORING_ACTIVE_PLAN.md:309`） |
-| `pending_pushes_20260917.bundle` | 13M | **已核实冗余**：bundle 头指向 `4a4d1003d8`，该提交已在本地库且 `merge-base --is-ancestor` 判定可达 HEAD |
-| `ndk-shim/`、`wsl-diag/`、`a4_fixture/`、`device_verify_20260913/`、`diag_wangyue/`、`db_*_v9/` | — | 全仓零引用 |
-| 约 250 个一次性探针（`a0-a4.png`、`ui*.xml`、`bookinfo_08_*.py` 等） | 其余 | 全仓零引用 |
+| 子项 | 大小 | 引用出处与现实 | 处置 |
+|---|---|---|---|
+| `dbsrc/`（含 `q7.db` 26M） | 305M | `docs/REFACTORING_ACTIVE_PLAN.md:167` 属 **P2-6/P2-7（已关闭 2026-09-19）**，但该条目同时写明"**待用该源 + 真实响应离线复现后定性**" | ❌ **保留（初判作废）**——活跃台账标注为"仍可能需要"，不承担误删风险 |
+| `p8_db/` | 155M | 仅 `CHANGELOG.md` 历史记述 | ✅ 已删 |
+| `legado-with-MD3/` | 67M | 初判为"被 UI_MD3 文档引用"**不准确**：`docs/design_system.md:12` 引用的是上游仓库名 `HapeLee/legado-with-MD3@<commit>`，非本地目录；本地目录是该参考仓的克隆，可重新克隆 | ✅ 已删 |
+| `pending_pushes_20260917.bundle` | 13M | **已核实冗余**：bundle 头指向 `4a4d1003d8`，该提交已在本地库且 `merge-base --is-ancestor` 判定可达 HEAD | ✅ 已删 |
+| `ndk-shim/`、`wsl-diag/`、`a4_fixture/`、`device_verify_20260913/`、`diag_wangyue/`、`db_*_v9/` | — | 全仓零引用 | ✅ 已删 |
+| 约 250 个一次性探针（`a0-a4.png`、`ui*.xml`、`bookinfo_08_*.py` 等） | 其余 | 全仓零引用 | ⏸ **本次未删**（体积可忽略、需逐文件核引用，收益不成比例） |
 
 ### 3.5 `tmp_parity/`（835M）→ 目录必留、内含历史快照可清
 
@@ -200,16 +205,16 @@ Move-Item D:\OH-WorkSpace\LegadoTeam\legado\_pending_delete\probe_icon D:\OH-Wor
 
 **保留 33 个**（被活文档引用）：`docs/SCREEN_1TO1_PARITY_LEDGER_20260914.md` 引用的 `ours_2.0.259/261/262/264/269-283`、`ref_20260913`、`ref_batch4`；`docs/DARK_THEME_PARITY_LEDGER_20260920.md` 引用的 `baseline_flutter`、`ours_2.0.266`、`ours_dark_20260920`、`ref_batch3`、`ref_dark_20260920`；`docs/REFACTORING_ACTIVE_PLAN.md` 引用的 `queue_smoke_20260920`；另有 `ref_20260914`、`ref_batch2`、`pairs_latest`、`tmp_songhe`。
 
-**孤儿 24 个（无任何 md 引用 → 建议清）**：
+**⚠️ 本节初版判定作废（2026-09-20 二次复核纠正）**：初版称"24 个孤儿目录"，系**误判**——那次 grep 只在 `docs/*.md` 内按 `parity_shots/<name>` 前缀匹配，漏掉了不带前缀的裸目录名引用。按目录名**全仓**重搜后，多数"孤儿"实为**被现行 ledger 引用**：
 
-```
-ours_2.0.256  ours_2.0.257  ours_2.0.258  ours_2.0.260  ours_2.0.263
-ours_2.0.265  ours_2.0.268  ours_2.0.273
-pairs_2.0.260  pairs_2.0.261  pairs_2.0.262  pairs_2.0.263
-pairs_20260914  pairs_b2  pairs_b2_266  pairs_b3  pairs_b3_267  pairs_b4
-ref_b2_map  ref_batch1_map  ref_latest
-source_switch_fix_20260918  tmp_d11  p215_smoke_home.png
-```
+| 目录 | 实际引用方 |
+|---|---|
+| `ours_2.0.256`、`ours_2.0.257` | `docs/SCREEN_1TO1_PARITY_LEDGER_20260914.md` |
+| `pairs_2.0.260`、`pairs_b2`、`pairs_b2_266`、`pairs_b3` | `docs/SCREEN_1TO1_PARITY_LEDGER_20260914.md` |
+| `ref_latest` | `docs/parity_shots/pairs_latest/INDEX.md` |
+| 其余（`ours_2.0.258/260/263/265/268/273`、`pairs_2.0.261/262/263`、`pairs_20260914`、`pairs_b3_267`、`pairs_b4`、`ref_b2_map`、`ref_batch1_map`、`source_switch_fix_20260918`） | 仅 `CHANGELOG.md`（历史记述）与 `tmp_d11`（零引用） |
+
+**结论：`docs/parity_shots/` 本次一律不动。** 这些是入库的视觉 parity 证据，误删会破坏 DoD 证据链，且收益仅约 30M，不值得承担误判风险。若日后要瘦身，须按上表逐目录确认后单独裁决。
 
 **单独裁决项**：`tmp_songhe/`（**109M / 379 张截图**）命名带 `tmp_` 却混在证据目录里，被 `CHANGELOG.md` 与 `docs/RULE_TEMPLATE_SEGMENT_FIX_20260917.md` 引用。该修复属 **P2-6，已于 2026-09-18 关闭**（`REFACTORING_ACTIVE_PLAN.md:154`），故其引用属"已收口任务的历史证据"。建议：改名转存到正式证据目录后压缩，或直接删除（关联任务已关闭）。
 
@@ -222,8 +227,10 @@ source_switch_fix_20260918  tmp_d11  p215_smoke_home.png
 ### 【P1】Rust 测试夹具依赖仓库外相对路径，且缺夹具时"静默空跑仍报通过"
 
 - **问题**：**26 处**测试用 `concat!(env!("CARGO_MANIFEST_DIR"), "/../../tmp_debug/e2e_5558/sources_device.json")` 读夹具（`web_book.rs` 18 处 + `explore_api.rs` 8 处，分布在 **19 个测试函数**中），缺失时一律 `eprintln!("...缺失，跳过"); return;`——**测试仍然 PASS**。同理 `web_book.rs:4532` 的输出目录 `tmp_parity/` 也在仓库外。
-- **后果**：(a) CI 上根本没有这些文件，**19 个测试在 CI 中等于不存在**（假绿）；(b) 夹具一旦被清理，本地也悄无声息地失效，无人察觉。
-- **建议**：把夹具迁入版本管理的测试资源目录（如 `rust/legado-ffi/tests/fixtures/`），测试改用 `env!("CARGO_MANIFEST_DIR")` 指向它；把"跳过"改为 `panic!` 或加 `#[ignore]` 显式标注，避免沉默降级。`tmp_debug/sources.json`、`src_51.json`、`src_shen.json` 同样处理（后者处的 `.expect("sources.json")` 在夹具缺失时会 panic，属另一种不一致）。
+- **⚠️ 严重度需按 `#[ignore]` 二分（2026-09-20 复核修正）**：19 个里只有 **11 个是真正的问题**——
+  - **8 个已标 `#[ignore]`**（如 `test_batch_search_scan_text_sources`、`test_77shuku_search_diag`、`test_js_network_sources_diag`，标注写明"非确定性 CI 测试"）：它们本就不在 CI 跑，静默跳过是**刻意设计**，无问题。
+  - **11 个未标 `#[ignore]`**（`web_book.rs`：`test_jsoup_post_redirect_search_diag`、`test_qibuge_catalog_and_content_gbk`、`test_qibuge_search_diag`、`test_qiexs_search_diag`、`test_shushan_real_toc_repro`、`test_taoxiaoshuo_search_diag`、`test_xbqgxs_search_diag`；`explore_api.rs`：`test_aggregate_sources_common_explore_and_header`、`test_explore_real_jslib_get_config_visible`、`test_shushan_booklist_js_with_jslib_and_setup`、`test_shushan_header_rule_injected_to_global_headers`）：**它们在 CI 上会执行、找不到夹具、打印"跳过"、然后 PASS**。其中 `test_shushan_header_rule_injected_to_global_headers` / `test_shushan_booklist_js_with_jslib_and_setup` 从命名看是书山源修复的**回归测试**——却从未真正断言过。**这才是"假绿"的确切范围。**
+- **建议**：(1) 把这 11 个或补 `#[ignore]`（若确属网络诊断）或把夹具迁入 `rust/legado-ffi/tests/fixtures/` 让它真正断言——**二者必居其一，不能维持现状**；(2) 夹具迁入后改用 `env!("CARGO_MANIFEST_DIR")` 定位；(3) 把"缺夹具即跳过"的沉默降级改为显式失败或 `#[ignore]`；(4) `search.rs:3813` 对 `tmp_debug/sources.json` 用 `.expect()`（缺夹具 panic）与同族代码姿态不一致，一并统一。
 - **涉及文件**：`rust/legado-ffi/src/api/web_book.rs`、`explore_api.rs`、`search.rs`
 
 ### 【P2】`tmp_*/` 命名文件被入库，与 `.gitignore` 口径矛盾
@@ -242,10 +249,11 @@ source_switch_fix_20260918  tmp_d11  p215_smoke_home.png
 - **`api.md`**：与 `docs/api.md` **逐字节完全相同**（`diff` 无输出），两者均入库。建议删除根目录那份。
 - **`Makefile`**：已入库，但 `AGENTS.md` 明写"当前开发环境为 Windows，无 make 命令：给用户的命令必须是可直接执行的 CMD 或 PowerShell 命令行"。其内容（`cargo check/test/clippy`、`flutter analyze`）与 `rust/scripts/`、`scripts/` 下脚本重复。建议删除或明确标注"仅供 CI/Linux 使用"。
 
-### 【P5】`probe_icon` 移出后，CI 流水线成为死配置
+### 【P5】`probe_icon` 已删除，但 CI 流水线与文档引用仍在（**待处理**）
 
-- `probe_icon/` 移入暂存区后，`.github/workflows/probe-icon-build.yml` 的 `paths: ['probe_icon/**']` 永远不再命中，流水线成为死配置。若裁决删除，需一并删除该 workflow。
-- 同时 `docs/IOS_ICON_SWITCH_LIMITATION_20260903.md`、`docs/REFACTOR_DEFECT_AUDIT_V2_20260902.md` 中对 `probe_icon` 的引用需标注"已归档"。
+- **现状**：`probe_icon/` 已于 2026-09-20 **实际删除并提交**（`bb08c173bc`，52 个文件）。
+- **待处理**：`.github/workflows/probe-icon-build.yml` 的 `paths: ['probe_icon/**']` 再也不会命中，成为**死流水线**，需一并删除（或明确标注已废弃）。
+- 同时 `docs/IOS_ICON_SWITCH_LIMITATION_20260903.md`、`docs/REFACTOR_DEFECT_AUDIT_V2_20260902.md` 中对 `probe_icon` 的引用需标注"该探针已于 2026-09-20 归档删除"。
 
 ### 【P6】两本重构计划并存，历史计划未归档
 
@@ -295,18 +303,52 @@ source_switch_fix_20260918  tmp_d11  p215_smoke_home.png
 
 ## 六、执行记录
 
+### 6.1 第一阶段：建立暂存区（移入，不删）
+
 | 步骤 | 结果 |
 |---|---|
 | 建 `_pending_delete/` + `.gitignore` 加 `/_pending_delete/` | ✅（`git check-ignore` 通过，暂存区不出现在 `git status`） |
 | 搬移构建产物 8 项 | ✅ 全部 OK |
 | 搬移根目录残留 | ✅ **276 项搬移成功、5 项按预期保留、0 错误** |
 | 搬移大块取证目录 5 项 | ✅ 全部 OK |
-| 搬移 `probe_icon/` | ✅ OK（52 个 tracked 文件显示为 D，未提交） |
+| 搬移 `probe_icon/` | ✅ OK（52 个 tracked 文件显示为 D） |
 | 暂存区总量 | **300G** |
-| 未删除 / 未提交 | ✅ 未执行任何 `rm`、`git add`、`git commit` |
+| 提交 | `b99538b891`（文档 + `.gitignore`，**不含** probe_icon 删除） |
 
-> 工作区另有一处**非本次操作**的改动：`flutter_legado/lib/src/screens/search_content_screen.dart`（深色态输入盒对齐，属并行会话在途工作），本次全程未触碰。
+### 6.2 第二阶段：复核与实删（2026-09-20，用户授权执行）
+
+**已删除（释放约 302G）**：
+
+| 项 | 大小 | 依据 |
+|---|---|---|
+| `_pending_delete/` 整体 | 300G | 用户裁决；构成见 §一 |
+| `probe_icon/` | 52 文件 | 用户确认废弃；提交 `bb08c173bc` |
+| `.e2e_s0c/` `.e2e_r1v/` `.e2e_p03/` | 1.4G | 关联任务均已收口，机读结论已入库 `docs/evidence/search_parity_*` |
+| `tmp_debug/` 零引用大块（`apk_verify` `verify_0820` `apk_x86.so` `biying` `fl2.bin` `user_test_2026-08-13` `verify_0819` `parity` `search_probe` `batch_diag` `apk_check`） | 340M | 全仓零引用 |
+| `tmp_parity/` 6 个历史 db 快照（+ `sources_5558.json`） | ~874M | 全仓零引用；**目录与 `scan_wave2.jsonl` 保留** |
+| `.tmp/` 的 `p8_db`(155M) `legado-with-MD3`(67M) `pending_pushes_20260917.bundle`(13M) 及 `ndk-shim` `wsl-diag` `a4_fixture` `device_verify_20260913` `diag_wangyue` `db_*_v9`(6 项) | ~245M | 见 §3.4 |
+
+**磁盘变化**：`D:` 可用空间 **171G → 473G**（使用率 88% → 66%）。
+
+**复核后决定保留（与初版判定不同）**：
+
+| 项 | 大小 | 保留原因 |
+|---|---|---|
+| `.tmp/dbsrc/`（含 `q7.db`） | 305M | **初版判"可删"作废**：`docs/REFACTORING_ACTIVE_PLAN.md:167` 是**活跃台账**，把该库标为 P2-7 观测点且写明"待用该源 + 真实响应离线复现后定性"——属**仍可能需要**，不动 |
+| `docs/parity_shots/` 全部 | 245M | **初版"24 个孤儿"判定作废（误判）**，见 §3.7 纠正说明 |
+| `docs/parity_shots/tmp_songhe/` | 109M | 被 `CHANGELOG.md` 与 `RULE_TEMPLATE_SEGMENT_FIX_20260917.md` 引用，待单独裁决 |
+| `.tmp/corpus/`、`.tmp/ui/`、`.tmp/kazusa.apk` | 24M+ | 活文档/活跃脚本/参考版安装包 |
+| `tmp_debug/e2e_5558/`、`sources.json`、`src_51.json`、`src_shen.json` | 174M | 被 26 处测试读取 |
+| `tmp_debug/` 约 200 个 1–4K 一次性探针脚本 | ~1M | 体积可忽略，逐文件核引用收益不成比例，**留待后续** |
+| `.tmp/` 约 250 个一次性探针（`a0-a4.png`、`ui*.xml`、`bookinfo_08_*.py` 等） | 其余 | 同上 |
+
+### 6.3 本次未做（属开发 agent 范围或范围外）
+
+- §四 的 P1~P10 **一律未改代码/文档**（用户指定交开发 agent 处理）。
+- 另有两处**非本次操作**的并行会话在途改动：`flutter_legado/lib/src/screens/search_content_screen.dart`（深色态输入盒对齐）、`flutter_legado/pubspec.yaml`（新增 `zxing2`/`image` 依赖，PARITY A1）。
+- `.gitignore` 中的 `/_pending_delete/` 规则予以保留（暂存区已删除，该规则成为预留约定，供后续同类清理复用）。
 
 ---
 
 编写者：主代理（ZCode 本机通道）｜ 2026-09-20
+修订：主代理 ｜ 2026-09-20（P1 严重度按 `#[ignore]` 二分修正；§3.7 parity_shots 孤儿判定作废纠正；补 §六 实删执行记录）
