@@ -249,10 +249,14 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
                       Icon(Symbols.schedule_rounded,
                           size: 12, color: colorScheme.onSurfaceVariant),
                       const SizedBox(width: 4),
-                      Text(
-                        article.pubDate ?? '',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: colorScheme.onSurfaceVariant,
+                      // 宽时间戳（ISO-8601）在窄屏下可能溢出：Flexible 收缩 + 省略号
+                      Flexible(
+                        child: Text(
+                          article.pubDate ?? '',
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
                       if (isRead) ...[

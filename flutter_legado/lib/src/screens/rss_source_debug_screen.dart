@@ -185,32 +185,36 @@ class _RssSourceDebugScreenState extends ConsumerState<RssSourceDebugScreen> {
           Padding(
             // [LAYOUT_PLAN P2] 组内行 vertical12/horizontal8（页面水平边距 16dp 由此保证）
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-            child: Row(
-              children: [
-                const Icon(Symbols.filter_alt_rounded, size: 18),
-                const SizedBox(width: 6),
-                for (final level in _DebugLogLevel.values)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 6),
-                    child: FilterChip(
-                      label: Text(level.label),
-                      selected: _enabledLevels.contains(level),
-                      onSelected: (selected) {
-                        setState(() {
-                          if (selected) {
-                            _enabledLevels.add(level);
-                          } else {
-                            _enabledLevels.remove(level);
-                          }
-                        });
-                      },
-                      visualDensity: VisualDensity.compact,
-                      selectedColor:
-                          level.chipColor(theme).withValues(alpha: 0.25),
-                      checkmarkColor: level.chipColor(theme),
+            child: SingleChildScrollView(
+              // 窄屏下 4 个级别 chip 一行放不下：横向滚动（宽屏无滚动条，视觉不变）
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  const Icon(Symbols.filter_alt_rounded, size: 18),
+                  const SizedBox(width: 6),
+                  for (final level in _DebugLogLevel.values)
+                    Padding(
+                      padding: const EdgeInsets.only(right: 6),
+                      child: FilterChip(
+                        label: Text(level.label),
+                        selected: _enabledLevels.contains(level),
+                        onSelected: (selected) {
+                          setState(() {
+                            if (selected) {
+                              _enabledLevels.add(level);
+                            } else {
+                              _enabledLevels.remove(level);
+                            }
+                          });
+                        },
+                        visualDensity: VisualDensity.compact,
+                        selectedColor:
+                            level.chipColor(theme).withValues(alpha: 0.25),
+                        checkmarkColor: level.chipColor(theme),
+                      ),
                     ),
-                  ),
-              ],
+                ],
+              ),
             ),
           ),
           const Divider(height: 1),

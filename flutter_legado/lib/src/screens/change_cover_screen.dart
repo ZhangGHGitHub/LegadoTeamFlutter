@@ -153,9 +153,11 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
       appBar: LegadoAppBar(
         title: const Text('更换封面'),
         actions: [
-          TextButton.icon(
+          // 顶栏统一 36dp 图标槽位（TopBarActionStyler），带文字按钮会超出槽位
+          // 造成右溢：与其它屏一致用 IconButton，「本地」语义保留在 tooltip
+          IconButton(
+            tooltip: '本地',
             icon: const Icon(Symbols.photo_library_rounded),
-            label: const Text('本地'),
             onPressed: _pickLocal,
           ),
         ],
