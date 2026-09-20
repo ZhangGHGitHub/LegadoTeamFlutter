@@ -63,6 +63,7 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
   - **测试档 = MuMu 模拟器的「Test测试」实例**（guest 直连端点 **`192.168.1.19:5555`**，Android 15；该实例装有我方 `io.legado.flutter_legado`、原版 `com.legado.app.release`、**参考版 `io.legato.kazusa`** 三包，可做双/三包拓扑与参考采集）。启动：`"D:\Program Files\MuMuPlayer\nx_main\MuMuManager.exe" control -v 1 launch`（实例 index 1；`info -v all` 可查状态，`is_android_started` 为真后再 adb 连接；`127.0.0.1:16384/16416` 端点已失效，**只认 guest 直连**）。
   - **雷电模拟器已弃用**：emulator-5556（LDPlayer 实例 1）环境故障（VBox 栈无法拉起 VM 内核进程，2026-09-20 排查记录在案）；emulator-5554 为临时替代档（已停用）。**5558 验收档位待用户指定**，未指定前不得自行占用其它实例。
   - **冒烟脚本**（构建+安装+启动+崩溃检查）：`.\scripts\emulator_smoke_test.ps1 -Device 192.168.1.19:5555`（可加 `-CheckUI` 做书架主界面元素检查；复用 APK 加 `-SkipBuild`）；退出码 0=通过 1=失败。
+  - **MuMu ROM 限制（2026-09-20 实测，派任务前告知子代理，免得白撞）**：设备伪装三星 SM-G9900/Android 15，模拟器特征 prop 全空；**中文输入被阻断**（IME 启用被安全策略 patch、`cmd clipboard` 无实现、`input text` 仅 ASCII——搜索类探针改用应用内搜索历史 chip）；`screencap` 不能写 `/sdcard`（须 `exec-out screencap -p` 重定向本地）；`uiautomator` 写转储后自杀（崩溃缓冲区噪声，非应用问题）；`content` 与 toybox `grep` 段错误（改本地 grep）；`settings put secure` 静默回滚（用 `global`）；logcat 被 `E MESA: Failed to find VkFence`（Vulkan）刷屏。
 - **完成定义（DoD，2026-09-17 新增）**：判定「完成」的依据是**证据**，不是执行步骤：
   1. 代码改动须附「多代理协作规则」路由表中对应的证据，并在提交正文写明来源（CI 运行链接 / QA 报告路径 / 审查结论 / 截图路径）；
   2. **CI 能覆盖的验证不重复派角色**（`flutter analyze && flutter test`、`cargo test`、`./gradlew :app:testAppReleaseUnitTest` 一律以 CI 结果为准），角色只用于 CI 覆盖不到的场景（实机冒烟、UI 交互、跨模块手动复现）；
