@@ -58,8 +58,11 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 
 ## 验证与交付流程
 
-- 每轮修复后的两级验证：子代理先在安卓模拟器（端口 5556）测试，测试通过后再安装到安卓模拟器（端口 5558）通知用户实测验收
-- **模拟器冒烟测试为必做步骤**（构建+安装+启动+崩溃检查统一脚本）：`.\scripts\emulator_smoke_test.ps1 -Device emulator-5556`（子代理测试）；用户验收前执行 `-Device emulator-5558`（可加 `-CheckUI` 做书架主界面元素检查；复用 APK 加 `-SkipBuild`）；退出码 0=通过 1=失败
+- 每轮修复后的两级验证：子代理先在**测试档模拟器**测试，测试通过后再安装到**用户验收档**通知用户实测验收
+- **模拟器验证档（2026-09-20 用户指令：改用 MuMu，弃用雷电）**：
+  - **测试档 = MuMu 模拟器的「Test测试」实例**（guest 直连端点 **`192.168.1.19:5555`**，Android 15；该实例装有我方 `io.legado.flutter_legado`、原版 `com.legado.app.release`、**参考版 `io.legato.kazusa`** 三包，可做双/三包拓扑与参考采集）。启动：`"D:\Program Files\MuMuPlayer\nx_main\MuMuManager.exe" control -v 1 launch`（实例 index 1；`info -v all` 可查状态，`is_android_started` 为真后再 adb 连接；`127.0.0.1:16384/16416` 端点已失效，**只认 guest 直连**）。
+  - **雷电模拟器已弃用**：emulator-5556（LDPlayer 实例 1）环境故障（VBox 栈无法拉起 VM 内核进程，2026-09-20 排查记录在案）；emulator-5554 为临时替代档（已停用）。**5558 验收档位待用户指定**，未指定前不得自行占用其它实例。
+  - **冒烟脚本**（构建+安装+启动+崩溃检查）：`.\scripts\emulator_smoke_test.ps1 -Device 192.168.1.19:5555`（可加 `-CheckUI` 做书架主界面元素检查；复用 APK 加 `-SkipBuild`）；退出码 0=通过 1=失败。
 - **完成定义（DoD，2026-09-17 新增）**：判定「完成」的依据是**证据**，不是执行步骤：
   1. 代码改动须附「多代理协作规则」路由表中对应的证据，并在提交正文写明来源（CI 运行链接 / QA 报告路径 / 审查结论 / 截图路径）；
   2. **CI 能覆盖的验证不重复派角色**（`flutter analyze && flutter test`、`cargo test`、`./gradlew :app:testAppReleaseUnitTest` 一律以 CI 结果为准），角色只用于 CI 覆盖不到的场景（实机冒烟、UI 交互、跨模块手动复现）；
@@ -82,7 +85,7 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
   |---|---|---|---|
   | 代码实现/修改 | `full-stack-engineer` | 本地 | 提交 + 自测输出 |
   | `flutter_legado/**`、`rust/**` 的常规验证 | 不派角色 | — | CI 结果（`flutter analyze && flutter test`、`cargo test`） |
-  | 需实机验证（模拟器冒烟 5556 自测 / 5558 用户验收） | `QA-engineer` | 本地 | 冒烟脚本退出码 + 日志 |
+  | 需实机验证（模拟器冒烟：测试档 MuMu Test `192.168.1.19:5555`） | `QA-engineer` | 本地 | 冒烟脚本退出码 + 日志 |
   | UI 布局/交互改动 | `UI-operator` | 本地 | 截图对比 |
   | 跨模块 / FFI 契约 / 公共 API 变更，或 diff 超阈值 | `code-reviewer` | 云端（只发 diff） | 审查结论（提交前） |
   | 有 bug 且 CI/本地复现不出根因 | `debug-engineer` | 云端 | 根因结论 + 最小复现 |
@@ -106,3 +109,4 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 修订：Reasonix ｜ 2026-08-10（更新上游版本基准 3.26081008、计划文档引用、app 文件数；精简技能同步说明）
 修订：Qoder UI ｜ 2026-09-03（更新日志义务补全：应用内 assets/updateLog.md 纳入每批同步范围，杜绝仅更 CHANGELOG 的遗漏）
 修订：ZCode（本机 27B 通道）｜ 2026-09-17（子代理路由表角色名与 ZCode 类型名对齐、新增执行侧与触发条件；新增完成定义 DoD）
+修订：ZCode（本机 27B 通道）｜ 2026-09-20（**模拟器验证档改用 MuMu「Test测试」实例**：guest 直连 `192.168.1.19:5555`、启动方式与端点失效说明入档；雷电 5556/5554 弃用；5558 验收档位待用户指定；冒烟命令与路由表同步）
