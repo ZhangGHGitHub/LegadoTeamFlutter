@@ -16,6 +16,7 @@
 | 提交 | `b99538b891`（本文档 + `.gitignore`）、`bb08c173bc`（`probe_icon` 移除，52 文件） |
 | 磁盘 | `D:` 可用 **171G → 473G**（使用率 88% → 66%） |
 | 第三部分复查 | 7 项全部核查完毕；**其中 2 项初版判定经二次复核被推翻**（见 §3.4 `.tmp/dbsrc`、§3.7 `parity_shots`） |
+| **第二轮（项目目录之外，§七）** | `D:\OH-WorkSpace\` 与 `D:\tmp` 的同类残留 **30G 已移入外部暂存区** `D:\OH-WorkSpace\_pending_delete\`，**未删除**，等待裁决 |
 
 > ⚠️ **两处初版误判已在文中标注作废**，请以纠正后的结论为准——这是本次复核最大的收获：
 > 1. **P1 严重度**：并非 19 个测试都"假绿"，只有**未标 `#[ignore]` 的 11 个**才是真问题（另 8 个静默跳过是刻意设计）。
@@ -350,5 +351,57 @@ Move-Item D:\OH-WorkSpace\LegadoTeam\legado\_pending_delete\root_tmp\* D:\OH-Wor
 
 ---
 
+## 七、项目目录之外的清理（2026-09-20 第二轮，用户指定范围）
+
+> 背景：用户注意到项目**上一级与上上级**（`D:\OH-WorkSpace\`、`D:\tmp`）也有散落的图片与文件。排查后确认**与本轮仓库内清理无关**（仓库内操作全是 `mv`/`rm` 于仓库内部），而是长期积累的**同类残留**，根因是「**命令在哪个目录下执行，产物就落在那里**」的工作目录漂移。
+>
+> 处置：沿用同一套两阶段做法，移入外部暂存区 `D:\OH-WorkSpace\_pending_delete\`（**同一磁盘 rename，回移秒级**），**未删除任何内容**，等待用户裁决。
+
+### 7.1 残留成因与构成
+
+| 位置 | 大小 | 日期 | 成因 |
+|---|---|---|---|
+| `D:\OH-WorkSpace\.review_probe\` | 11G | 9/19 | 审查探针输出目录（clippy 日志 + `p12`/`p21`/`p29` 探针各自的 target，37 项） |
+| `D:\OH-WorkSpace\_cargo_target_p0_1_legado` +`_new` +`_new2` | 15.8G | 8/19 | P0-1 实验时用 `CARGO_TARGET_DIR` 指到工作区根做的三份 A/B/C 对比编译 |
+| `D:\OH-WorkSpace\probe_target\` | 762M | 9/18 | 探针工程的构建产物 |
+| `D:\OH-WorkSpace\*.png`（17 张） | 4.6M | 9/5–9/6 | `adb exec-out screencap -p > x.png` 时 cwd 为工作区根，截图落在此处（`a_dialog`/`b_home`/`d_launcher`/`reader_menu`… 对应那两天的阅读器调试） |
+| `D:\OH-WorkSpace\LegadoTeam\legado_probe\` | 741M | 9/18 | 一次性探针 Rust 工程（`probe/target/` 占绝大部分） |
+| `D:\OH-WorkSpace\LegadoTeam\.tmp_js_test.log` | 98B | 8/26 | 同类残留 |
+| `D:\tmp\` 的 110 个条目 | 2.3G | 8–9 月 | 项目探针产物散落：`legado_snap{,2,3}.db`/`p12_legado.db`/`legado_before.db` 库快照、约 60 个 `ui_*.xml`（uiautomator 转储）、`t6_*.png`/`qa*.png`/`ref_*.png`/`d11_*.png` 截图、`logcat_t6.txt`、`defect` 转储，以及 `p27b/`（1.8G，**P2-7b quickjs 崩溃调查 scratch**：CI 失败日志 + stress 日志 + `snap/rust`）与 `legado_probe/` |
+| **合计** | **约 30G** | | |
+
+**搬移前核查**：这些目录**当天没有任何文件改动**（唯一当天有改动的是 `LegadoTeam\legado`，即本仓库的清理与并行会话开发）；仓库内对它们**全部零引用**；`D:\tmp` **不是**系统临时目录（`TEMP`/`TMP` 指向 `C:\Users\admin\AppData\Local\Temp` 与 `C:\Windows\TEMP`，`TMPDIR` 未设置），也不在任何用户级/系统级环境变量里。
+
+### 7.2 `D:\tmp` 核查后**保留**的 3 项（不属可删范围）
+
+| 项 | 大小 | 保留原因 |
+|---|---|---|
+| `md3_ref_legado/` | 58M | **MD3 参考版源码副本**（`HapeLee/legado-with-MD3` 的克隆，干净在 `9db5ae6`、无本地改动）。被入库文档 `docs/UI_MD3_GAP_REPORT_20260903.md:4,24` 按**绝对路径**引用（"本地只读副本 `D:\tmp\md3_ref_legado`"），且本项目**视觉基准即参考版**，属有价值的参照源；体积可忽略，不承担误删风险 |
+| `rhino_probe/` | 9K | `RhinoProbe.java`/`.class` **于 2026-09-20 00:45 才被修改**，对应仍登记在案的 Rhino LiveConnect 互操作遗留条目（`REFACTORING_ACTIVE_PLAN.md:215` + `docs/RHINO_INTEROP_ANALYSIS_20260920.md`）——属在途工作，**不动** |
+| `readme.md` | 9K | **不是本项目的东西**：是 **NInfer 5090**（本机 Qwen 27B 推理引擎）的 README，属本机 LLM 环境，留待用户自行判断 |
+
+> 另注：`D:\tmp` 目录**本身保留**（只清了内容）。`flutter_legado/tool/gen_md3_colors.py` 以**命令行参数**接收 colors.xml 路径，**不硬编码** `D:\tmp/md3_ref_legado`，故该工具不受影响。
+
+### 7.3 项目目录之外**必须保留**的参照源
+
+| 路径 | 大小 | 说明 |
+|---|---|---|
+| `LegadoTeam\legado-upstream\` | 34M | 上游原版 Kotlin 源码（原版对齐的功能基准） |
+| `OH-WorkSpace\Projects\legado_flutter\` | 73G | 重构版 Flutter 参考源（含 `.git`）；其中 `rust/` 61G 与 `build/` 12G 是构建产物，源码 `lib/` 仅 5.2M——日后瘦身只应动其构建目录 |
+| `Projects\legado-main.zip` | 11M | 上游打包副本 |
+
+### 7.4 回移命令
+
+```powershell
+# 回移全部外部暂存内容
+Move-Item D:\OH-WorkSpace\_pending_delete\* D:\OH-WorkSpace\
+
+# 回移 D:\tmp 的内容
+Move-Item D:\OH-WorkSpace\_pending_delete\D_tmp\* D:\tmp\
+```
+
+---
+
 编写者：主代理（ZCode 本机通道）｜ 2026-09-20
 修订：主代理 ｜ 2026-09-20（P1 严重度按 `#[ignore]` 二分修正；§3.7 parity_shots 孤儿判定作废纠正；补 §六 实删执行记录）
+修订：主代理 ｜ 2026-09-20（补 §七：项目目录之外的 `D:\OH-WorkSpace` 与 `D:\tmp` 残留清理，含成因、保留项与回移命令）
