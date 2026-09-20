@@ -341,3 +341,37 @@ scope 语义：
 2. **favcomic 降级口径**：维持 eprintln 静默降级，还是升级为 7.1-2 的明确受限文案（建议升级）；
 3. **书山/番茄是否算 2 个源**：若 ⑫「3 源」实为 七猫/favcomic/书山/番茄 中的 3 个，需按源名修正 5.3；
 4. **(c) FFI 回调桩是否立项**：本文判定其 = (a) 的工程化、无增量收益，默认不立项（若未来出现「同一 Java 类被 >N 个新源命中且 shim 维护成本 > 桩服务成本」再议，建议 N=3）。
+
+---
+
+## 8. 实测统计（2026-09-20，用户提供最新书源合集）
+
+**语料**：`https://www.yckceo.com/yuedu/shuyuans/json/id/1283.json`（2026-09-20 抓取，**916 个书源**，6.69MB，落 `.tmp/corpus/` 不入库）。本节数字为**实测**，取代 §3.3 的推测。
+
+### 8.1 Java 互操作面（按"全字段含 jsLib" / "仅 jsLib 内"两种口径）
+| 模式 | 全字段命中源数 | 仅 jsLib 命中源数 |
+|---|---|---|
+| `Packages.` | 22 | 10 |
+| `importClass(` | **0** | **0** |
+| `Java.type(` | **0** | **0** |
+| `android.util.Base64` | 4 | 3 |
+| `java.lang.` | 11 | 8 |
+| `java.util.` | 5 | 4 |
+| `javax.crypto` | 8 | 5 |
+| `cn.hutool` | 4 | 4 |
+
+**jsLib 内用到 Java 面的源并集 = 11 个**：🏷七猫四合一本地版（及其同人版）、🏷七猫小说·API、⚡📂得间免费小说、🏷微信读书二合一本地源、🏷长佩文学、🏷阅文集团、📂酷狗小说、🔊听友M、🔞Linpx、🔞兽人小说站。
+**结论（对口径的直接影响）**：`importClass` 与 `Java.type` 在现网语料中 **0 命中** → 需要"任意 Java 反射"这一能力面的源**不存在**；实际需求集中在**具名类/方法的语义复刻**（Base64、javax.crypto、java.lang/java.util、hutool 几处），与 §6 建议的 (a) shim 路线完全吻合。
+
+### 8.2 涉事源的现状（订正 §3.3 推断）
+| 源 | 合集内条数 | jsLib 体积 | 说明 |
+|---|---|---|---|
+| 七猫 | **4** | 「四合一本地版」及其同人版均 **588,700 B**；「小说·API」12,195 B；「短剧」0 | 审计记的"587KB jsLib"即此，已导出 `.tmp/corpus/qimao_jslib.js`（1359 行） |
+| favcomic | **1**（🎨🔞（favcomic）喜漫漫画） | 16,184 B | 仍在 |
+| **书山 / 番茄** | **0 / 0** | — | **已从现网合集消失**（用户确认：失效后删除）→ §3.3 把它列为第三源属**推断过时**，本书更正 |
+
+### 8.3 jsLib 体积分布
+jsLib 非空 **45 源**；≥100KB **2 源**；≥500KB **2 源**（均为七猫四合一本地版）。→ "大 jsLib" 是极少数源的特性，夹具策略可按源定制。
+
+### 8.4 七猫 588KB jsLib 的 Java 面明细（导出件实测）
+`Packages.` 22 处、`android.util.Base64` 5 处、`javax.crypto` 3 处、`java.lang.` 8 处、`java.util.` 5 处、`cn.hutool` 1 处、`.getBytes(` 3 处、`UUID` 10 处；顶层函数含 `qmJavaOf` / `qmBase64Encode` / `qmHexDecodeAscii` / `qmMd5` / `qmSign` / `qmUrlSign` / `qmParamEncode` / `qmCacheOf` / `qmBookVariable` 等——是一套含签名与解码的 API 封装层。
