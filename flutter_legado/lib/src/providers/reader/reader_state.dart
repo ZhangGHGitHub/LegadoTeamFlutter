@@ -79,6 +79,49 @@ class ReaderBackground {
   static const List<String> labels = ['白色', '绿色', '棕色', '护眼', '夜间'];
 }
 
+/// [M1 深色态默认修复] 阅读背景默认解析（纯函数，可单测）
+///
+/// 优先级：
+/// 1. [customBgColor]（用户显式自定义背景，`reader_bg_use_custom` 置位）
+/// 2. [storedBgIndex]（用户显式选择的预设索引，越界视为未设置；
+///    含夜间预设 [ReaderBackground.dark] 0xFF1A1A1A——保留不变，显式选项）
+/// 3. 主题默认：深色 → 纯黑 0xFF000000（对齐参考版实测深色阅读背景，
+///    docs/parity_shots/ref_dark_20260920/10_reader.png）；
+///    亮色 → [ReaderBackground.white]（原默认，行为不变）
+///
+/// 设计要点：「从未显式设置」时默认随主题解析；用户显式选择过的背景
+/// （自定义或预设索引，含夜间预设）一律保留，不随主题切换变化。
+/// 主题默认深色对齐参考纯黑；夜间预设（0xFF1A1A1A）保留为显式选项。
+Color resolveReaderBackground({
+  required Brightness themeBrightness,
+  int? storedBgIndex,
+  Color? customBgColor,
+}) {
+  if (customBgColor != null) return customBgColor;
+  if (storedBgIndex != null &&
+      storedBgIndex >= 0 &&
+      storedBgIndex < ReaderBackground.presets.length) {
+    return ReaderBackground.presets[storedBgIndex];
+  }
+  // 主题默认深色：对齐参考纯黑（非夜间预设 0xFF1A1A1A；
+  // 夜间预设保留为用户显式选择的取值，索引 4 仍解析为 0xFF1A1A1A）
+  return themeBrightness == Brightness.dark
+      ? const Color(0xFF000000)
+      : ReaderBackground.white;
+}
+
+/// [M1 深色态默认修复] 主题模式 → 有效亮度（system 取平台亮度）
+Brightness themeBrightnessFor(ThemeMode mode, Brightness platformBrightness) {
+  switch (mode) {
+    case ThemeMode.light:
+      return Brightness.light;
+    case ThemeMode.dark:
+      return Brightness.dark;
+    case ThemeMode.system:
+      return platformBrightness;
+  }
+}
+
 /// 阅读器 UI 状态（immutable）
 ///
 /// 职责边界说明（对齐 UI_RESTRUCTURE_PLAN.md §3.2 铁律）：
@@ -165,7 +208,14 @@ extension ReaderStateDerived on ReaderState {
   }
 
   /// 是否为夜间（深色）背景
-  bool get isDarkBackground => backgroundColor == ReaderBackground.dark;
+  ///
+  /// [M1 收尾微调] 同时识别主题默认纯黑（0xFF000000，对齐参考）与
+  /// 夜间预设 [ReaderBackground.dark]（0xFF1A1A1A，显式选项）；
+  /// 否则纯黑默认下派生文字色会误落深灰（0xFF333333），底栏/顶栏
+  /// 跟随页色时对比度不足。
+  bool get isDarkBackground =>
+      backgroundColor == ReaderBackground.dark ||
+      backgroundColor == const Color(0xFF000000);
 
   /// 正文文字颜色（根据背景自动适配）
   Color get textColor =>

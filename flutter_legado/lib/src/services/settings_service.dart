@@ -83,6 +83,18 @@ class SettingsService {
     }
   }
 
+  /// [M1 深色态默认修复] 可空读取背景索引：null = 从未设置（与显式 0 区分），
+  /// 供阅读背景默认解析判断「用户是否显式选择过」
+  Future<int?> getBgColorIndexOrNull() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getInt(_keyBgColorIndex);
+    } catch (e) {
+      debugPrint('SettingsService.getBgColorIndexOrNull 异常: $e');
+      return null;
+    }
+  }
+
   Future<void> setBgColorIndex(int index) async {
     try {
       final prefs = await SharedPreferences.getInstance();

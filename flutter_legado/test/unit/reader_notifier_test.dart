@@ -9,6 +9,7 @@ import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
+import 'package:flutter_legado/src/providers/theme/theme_notifier.dart';
 
 import '../mocks/mocks.dart';
 
@@ -529,6 +530,12 @@ void main() {
       expect(state.isDarkBackground, isFalse);
     });
 
+    test('isDarkBackground 主题默认纯黑（M1 收尾微调）为 true', () {
+      final state = ReaderState(backgroundColor: const Color(0xFF000000));
+      expect(state.isDarkBackground, isTrue);
+      expect(state.textColor, equals(const Color(0xFFCCCCCC)));
+    });
+
     test('textColor 深色背景返回浅灰', () {
       const state = ReaderState(backgroundColor: ReaderBackground.dark);
       expect(state.textColor, equals(const Color(0xFFCCCCCC)));
@@ -558,6 +565,105 @@ void main() {
     test('标签包含中文名称', () {
       expect(ReaderBackground.labels, contains('白色'));
       expect(ReaderBackground.labels, contains('夜间'));
+    });
+  });
+
+  // ===== [M1 深色态默认修复] 深色主题下背景默认跟随深色 =====
+  //
+  // 行为契约：
+  // - 深色主题 + 从未显式设置背景 → 默认纯黑 0xFF000000（对齐参考实测；
+  //   夜间预设 ReaderBackground.dark 0xFF1A1A1A 保留为显式选项）
+  // - 亮色主题 + 从未显式设置背景 → 默认白色（原行为不变）
+  // - 用户显式选择（预设索引 / 自定义色）→ 一律保留，主题切换也不变
+  // - 主题切换（setThemeMode，toggleDayNight 同路）→ 仅「从未显式设置」
+  //   路径重新解析默认；ref.listen 钩子挂在 ReaderNotifier 上，
+  //   监听值为切换后的新模式（setThemeMode 异步落盘，此刻不能重读 prefs）
+  group('[M1] 深色态背景默认解析', () {
+    test('深色主题 + 从未设置背景 → 默认纯黑（对齐参考）', () async {
+      SharedPreferences.setMockInitialValues({'app_theme_mode': 'dark'});
+      container.read(readerNotifierProvider);
+      await pumpInit();
+      expect(readState().backgroundColor, equals(const Color(0xFF000000)));
+    });
+
+    test('亮色主题 + 从未设置背景 → 默认白色（原默认不变）', () async {
+      SharedPreferences.setMockInitialValues({'app_theme_mode': 'light'});
+      container.read(readerNotifierProvider);
+      await pumpInit();
+      expect(readState().backgroundColor, equals(ReaderBackground.white));
+    });
+
+    test('深色主题 + 显式预设索引 1 → 保留 green', () async {
+      SharedPreferences.setMockInitialValues({
+        'app_theme_mode': 'dark',
+        'reader_bg_color_index': 1,
+      });
+      container.read(readerNotifierProvider);
+      await pumpInit();
+      expect(readState().backgroundColor, equals(ReaderBackground.green));
+    });
+
+    test('深色主题 + 自定义背景 → 保留 custom', () async {
+      const custom = Color(0xFF232323);
+      SharedPreferences.setMockInitialValues({
+        'app_theme_mode': 'dark',
+        'reader_bg_use_custom': true,
+        'reader_custom_bg_color': 0xFF232323,
+      });
+      container.read(readerNotifierProvider);
+      await pumpInit();
+      expect(readState().backgroundColor, equals(custom));
+    });
+
+    test('主题切换 深色→亮色 + 从未设置 → 重解析为白色', () async {
+      SharedPreferences.setMockInitialValues({'app_theme_mode': 'dark'});
+      container.read(readerNotifierProvider);
+      await pumpInit();
+      expect(readState().backgroundColor, equals(const Color(0xFF000000)));
+
+      // 触发 ref.listen 钩子：监听值 next.themeMode=light 直接传入
+      // reapply（此刻 prefs 尚未落盘，不能重读）
+      await container
+          .read(themeNotifierProvider.notifier)
+          .setThemeMode(ThemeMode.light);
+      await pumpInit();
+      expect(readState().backgroundColor, equals(ReaderBackground.white));
+    });
+
+    test('主题切换 深色→亮色 + 显式 green → 仍 green（尊重显式选择）',
+        () async {
+      SharedPreferences.setMockInitialValues({
+        'app_theme_mode': 'dark',
+        'reader_bg_color_index': 1,
+      });
+      container.read(readerNotifierProvider);
+      await pumpInit();
+      expect(readState().backgroundColor, equals(ReaderBackground.green));
+
+      await container
+          .read(themeNotifierProvider.notifier)
+          .setThemeMode(ThemeMode.light);
+      await pumpInit();
+      expect(readState().backgroundColor, equals(ReaderBackground.green));
+    });
+
+    test('主题切换 深色→亮色 + 自定义背景 → 仍 custom（尊重显式选择）',
+        () async {
+      const custom = Color(0xFF232323);
+      SharedPreferences.setMockInitialValues({
+        'app_theme_mode': 'dark',
+        'reader_bg_use_custom': true,
+        'reader_custom_bg_color': 0xFF232323,
+      });
+      container.read(readerNotifierProvider);
+      await pumpInit();
+      expect(readState().backgroundColor, equals(custom));
+
+      await container
+          .read(themeNotifierProvider.notifier)
+          .setThemeMode(ThemeMode.light);
+      await pumpInit();
+      expect(readState().backgroundColor, equals(custom));
     });
   });
 }

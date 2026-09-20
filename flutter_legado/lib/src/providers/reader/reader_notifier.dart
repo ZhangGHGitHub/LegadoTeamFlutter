@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:ui' show Color;
 
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/material.dart'
+    show Brightness, ThemeMode, WidgetsBinding;
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,6 +14,7 @@ import '../../services/rust_api.dart';
 import '../../services/settings_service.dart';
 import '../../widgets/paragraph_layout_engine.dart';
 import '../providers.dart';
+import '../theme/theme_notifier.dart';
 import 'reader_state.dart';
 
 export 'reader_state.dart';
@@ -41,6 +45,23 @@ class ReaderNotifier extends Notifier<ReaderState> {
   ReaderState build() {
     // 延迟到 build() 返回后执行（state 初始化完成后才能访问）
     Future.microtask(_loadSettings);
+    // [M1 深色态默认修复] 主题切换时重新解析阅读背景默认（仅影响
+    // 「从未显式设置」路径，尊重用户显式选择；toggleDayNight 经
+    // setThemeMode 同路）。监听挂在阅读器 Notifier 上：仅阅读器实际
+    // 被使用（provider 已构建）时才随主题重解析，设置页切主题不会
+    // 强制构建阅读器状态。
+    ref.listen(
+      themeNotifierProvider,
+      (previous, next) {
+        if (previous?.themeMode != next.themeMode) {
+          // 传入监听值（next.themeMode）而非重读持久化：setThemeMode
+          // 先更新内存状态（触发本监听）后异步落盘，此刻读 prefs 是旧值
+          unawaited(reapplyBackgroundForCurrentTheme(
+            themeMode: next.themeMode,
+          ));
+        }
+      },
+    );
     return const ReaderState();
   }
 
@@ -48,22 +69,27 @@ class ReaderNotifier extends Notifier<ReaderState> {
   Future<void> _loadSettings() async {
     final fontSize = await _settings.getFontSize();
     final lineHeight = await _settings.getLineHeight();
-    final bgIndex = await _settings.getBgColorIndex();
+    // [M1 深色态默认修复] 可空读取：null = 从未设置（与显式选 0 区分）
+    final bgIndex = await _settings.getBgColorIndexOrNull();
     final modeName = await _settings.getFlipModeName();
     final legacyIndex = await _settings.getFlipMode();
-
-    var backgroundColor = state.backgroundColor;
-    if (bgIndex >= 0 && bgIndex < ReaderBackground.presets.length) {
-      backgroundColor = ReaderBackground.presets[bgIndex];
-    }
 
     // [UI-fix v2.0.4 | 2026-08-08] 恢复自定义背景色（界面 Sheet 长按
     // 背景圆圈自定义配色，对标原版 ReadBookConfig 自定义背景）— Qoder
     final prefs = await SharedPreferences.getInstance();
+    Color? customBgColor;
     if (prefs.getBool('reader_bg_use_custom') ?? false) {
       final custom = prefs.getInt('reader_custom_bg_color');
-      if (custom != null) backgroundColor = Color(custom);
+      if (custom != null) customBgColor = Color(custom);
     }
+
+    // [M1 深色态默认修复] 背景默认解析：显式自定义 > 显式预设索引 > 主题默认
+    // （深色 → 夜间预设；亮色 → 白色原默认不变；用户显式选择一律保留）
+    final backgroundColor = resolveReaderBackground(
+      themeBrightness: await _effectiveThemeBrightness(),
+      storedBgIndex: bgIndex,
+      customBgColor: customBgColor,
+    );
 
     state = state.copyWith(
       fontSize: fontSize,
@@ -71,6 +97,59 @@ class ReaderNotifier extends Notifier<ReaderState> {
       backgroundColor: backgroundColor,
       pageTurnMode: PageTurnMode.fromStorage(modeName, legacyIndex),
     );
+  }
+
+  /// [M1 深色态默认修复] 主题切换后重新解析阅读背景
+  ///
+  /// 仅影响「从未显式设置」路径：用户已显式选择自定义背景或有效预设索引时
+  /// 直接返回（尊重用户选择，不随主题变化）；仅在从未显式设置时按当前
+  /// 主题重新解析默认（深色 → 夜间预设，亮色 → 白色）。
+  ///
+  /// [themeMode]：切换后的新主题模式（build() 内 ref.listen 回调传入，
+  /// 避免此刻重读尚未落盘的持久化旧值）；省略时从 [SettingsService] 读取。
+  /// 由 build() 内 ref.listen(themeNotifierProvider) 在主题切换时调用
+  /// （toggleDayNight 经 setThemeMode 同路）。
+  Future<void> reapplyBackgroundForCurrentTheme({ThemeMode? themeMode}) async {
+    late SharedPreferences prefs;
+    try {
+      prefs = await SharedPreferences.getInstance();
+    } catch (e) {
+      debugPrint('ReaderNotifier.reapplyBackgroundForCurrentTheme 异常: $e');
+      return;
+    }
+    if (prefs.getBool('reader_bg_use_custom') ?? false) return;
+    final storedIndex = await _settings.getBgColorIndexOrNull();
+    final hasExplicitIndex = storedIndex != null &&
+        storedIndex >= 0 &&
+        storedIndex < ReaderBackground.presets.length;
+    if (hasExplicitIndex) return;
+    final resolved = resolveReaderBackground(
+      themeBrightness: await _effectiveThemeBrightness(mode: themeMode),
+      storedBgIndex: null,
+      customBgColor: null,
+    );
+    if (resolved != state.backgroundColor) {
+      state = state.copyWith(backgroundColor: resolved);
+    }
+  }
+
+  /// [M1 深色态默认修复] 解析当前主题的有效亮度
+  ///
+  /// light/dark 取显式主题模式；system 取平台亮度。无 WidgetsBinding
+  /// （如纯单测环境 `WidgetsBinding.instance` 抛 FlutterError）时回退
+  /// 亮色，保证解析始终有值。
+  /// [mode]：已知的新主题模式（主题切换监听路径直接传入）；
+  /// 省略时读持久化值（加载路径）。
+  Future<Brightness> _effectiveThemeBrightness({ThemeMode? mode}) async {
+    final effectiveMode = mode ?? await _settings.getThemeMode();
+    Brightness platform;
+    try {
+      platform =
+          WidgetsBinding.instance.platformDispatcher.platformBrightness;
+    } catch (_) {
+      platform = Brightness.light;
+    }
+    return themeBrightnessFor(effectiveMode, platform);
   }
 
   /// 打开书籍：加载目录并定位到上次阅读章节
