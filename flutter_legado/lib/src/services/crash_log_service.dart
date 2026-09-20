@@ -103,6 +103,16 @@ class CrashLogService {
     _crashFlagConsumed = false;
   }
 
+  /// [测试专用] 指定崩溃日志文件路径（生产环境由 [init] 设置）
+  ///
+  /// 测试环境无法调用 [getApplicationDocumentsDirectory]（需真实平台通道），
+  /// 经此接缝注入临时文件后，[logError]/[getLastCrashLog]/[clearCrashLog]
+  /// 即可脱离平台通道验证完整读写语义。
+  @visibleForTesting
+  void setCrashLogFileForTest(File file) {
+    _crashLogFile = file;
+  }
+
   /// 检查并重置崩溃标记（对应 Android 原版 MainActivity.notifyAppCrash）
   ///
   /// 返回 true 表示上次运行发生了崩溃，同时重置标记。
@@ -177,6 +187,26 @@ class CrashLogService {
 
   // ===== 崩溃日志 =====
 
+  /// 已知非致命软性告警特征（debug 模式布局诊断等）
+  ///
+  /// 这类错误不会中断应用（框架仅向控制台报告，应用功能不受影响），
+  /// 不应记为「崩溃」：否则会被写入 crash_log.txt 并置崩溃标记，
+  /// 下次启动误弹「上次运行发生崩溃」。新增软性告警时在此追加特征。
+  static const List<String> _softWarningMarkers = <String>[
+    // 框架 debug 模式下的 RenderFlex 溢出诊断
+    //（release 模式不报告；应用可正常使用）
+    'A RenderFlex overflowed by',
+  ];
+
+  /// 判断 [error] 是否为已知的非致命软性告警（如 RenderFlex 溢出）
+  ///
+  /// 软性告警只写普通日志、不写崩溃记录、不置崩溃标记（见 [logError]）。
+  @visibleForTesting
+  static bool isSoftWarning(Object error) {
+    final String message = error is FlutterError ? error.message : error.toString();
+    return _softWarningMarkers.any(message.contains);
+  }
+
   /// 记录错误信息（覆盖写入，仅保留最近一次崩溃）
   ///
   /// [error] 异常对象
@@ -184,6 +214,15 @@ class CrashLogService {
   void logError(Object error, StackTrace? stack) {
     final file = _crashLogFile;
     if (file == null) return;
+
+    // 非致命软性告警（如 debug 模式 RenderFlex 溢出）：应用未被中断，
+    // 只打标记写入普通日志，不写崩溃记录、不置崩溃标记，
+    // 避免下次启动误弹「上次运行发生崩溃」（MuMu 冒烟 12px 右溢误报）。
+    if (isSoftWarning(error)) {
+      put('[布局告警] $error', error: error);
+      logMessage('[布局告警] $error${stack == null ? '' : '\n$stack'}');
+      return;
+    }
 
     final buffer = StringBuffer()
       ..writeln('===== 崩溃日志 =====')
