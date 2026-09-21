@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.302] - 2026-09-21
+
+### Changed
+- [UI] **设置主页「字体管理」入口收起**（按参考版口径：字体/字号在阅读器内调整）：入口从设置主页移除，字体页面与功能保留，仍可从阅读器排版面板（「阅读字体」/「选择字体」）进入。已登记为授权偏离。
+- [UI] 「我的」页 Web 服务卡启用态强调色由 iOS 系统绿改为**当前主题主色**（`colorScheme.primary`），随调色板与明暗主题联动，不再残留绿色（该处为 iOS 时代孤儿色板 `app_colors.dart` 的最后一处消费方）。
+
+### Removed
+- [UI] 删除 iOS 时代孤儿色板 `lib/src/theme/app_colors.dart`（97 个槽位、仅 1 处真消费方，已迁移至 MD3 scheme）；阅读排版引擎的 `ParagraphConfig` 颜色默认值改为**必填**（漏传即编译报错，消除"白底白字"类静默事故）。
+
 ## [2.0.301] - 2026-09-21
 
 ### Changed
