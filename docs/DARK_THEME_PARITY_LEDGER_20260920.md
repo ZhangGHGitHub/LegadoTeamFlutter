@@ -208,3 +208,5 @@
 - 下一步：Batch A 五项可独立排期修复（其中 A-1 为唯一客观 P1）；Batch B 阻塞于外部输入清单①②。
 
 - **2026-09-21 队列③ 闭环（提交 `14752aba63`，版本 2.0.302+303）**：**A-4** ParagraphConfig 死默认改必填（28 构造点核对、25 处测试补显式色、行为不变；漏传颜色=编译错误）；**A-5** `app_colors.dart` 整体删除（全仓无引用验证后；唯一消费方设置页 Web 服务卡强调色 → `colorScheme.primary`，**有意可见变更**，随 0914 台账 3-1 屏补采复验）；**N6** 字体入口收起（页面/路由保留，阅读器面板可进）。已过 code-reviewer（结论：可提交，无 P0/P1）。门禁：analyze 0 / test 1584 全过（删除前后各一轮）。遗留 P3：`settings_screen.dart` 变量名 green→accent、失效文档（design_system/UI_MD3_* 提到 AppColors 的三处）同步。
+
+- **2026-09-21 用户裁决：A4 采用「B 方案（对齐）」**，实施形态取**重构版模式**（详情页 + 立即自动开读）。依据（三处源码核实）：原版 `startActivityForBook`（`style1/books/BooksFragment.kt:302`、`style2/BookshelfFragment2.kt:310`）与参考版 Compose `onClick→onOpenBookshelfBook`（`BookItem.kt:91` / `MainScreen.kt:556-568` / `MainNavGraph.kt:338-351` 无未读判断）**均为单击直开书**；重构版参考源 `_openBook` 为 `BookInfoPage(openReaderImmediately: true)`（`bookshelf_style1_page.dart:568-573`）——**三方一致，仅我方"未读书→详情页"偏离**。落地要求：① 去掉 `bookshelf_screen.dart:724-727` 未读特例（或改为详情页+自动开读）；② 阅读器**零进度兜底**（现无该处理，属承重区）→ 必须 code-reviewer + 设备验证；③ 实机验证点：未读书单击直达正文首章、返回后进度写回、长按仍进详情。
