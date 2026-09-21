@@ -1,7 +1,7 @@
 name: flutter_legado
 description: "Legado - A reading app powered by Rust + Flutter"
 publish_to: 'none'
-version: 2.0.300+301
+version: 2.0.301+302
 
 environment:
   sdk: '>=3.8.0 <4.0.0'
@@ -28,6 +28,10 @@ dependencies:
   riverpod_annotation: ^2.3.0
   mobile_scanner: ^7.0.0
   qr_flutter: ^4.1.0
+  # [PARITY A1] 图库二维码解码：参考版扫码页右上图库按钮，选中图片后本地
+  # 解码 QR（zxing2 纯 Dart 解码器 + image 解图），不依赖相机即可导入
+  zxing2: ^0.2.4
+  image: ^4.8.0
   saf: ^2.1.0
   archive: ^4.0.9
   package_info_plus: ^9.0.0

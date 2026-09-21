@@ -339,6 +339,33 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // [PARITY A6] 深色态输入盒填充对齐参考版：参考版深色下输入盒为浅色
+    // （像素采样 13_search_content.png：ref 盒内 (232,226,212) #E8E2D4
+    // L226.3 = 柠檬调色板 dark onSurface；我方旧实现为 surfaceContainerLow
+    // 深色盒 (26,28,22) L27.1，属真差异非采集污染）。深色态盒填充改用
+    // 当前调色板的 onSurface（各 palette 均为浅色，逐板自适应），盒内
+    // 前景（图标/提示）改用 surface 色保证浅盒上的对比；亮色态维持
+    // surfaceContainerLow 原行为不变。
+    // 源码级对照（20260920 续跑取证）：参考 SearchBar 默认槽位
+    // （ui/widget/components/SearchBar.kt:55 默认参数 / :103-108 解析 /
+    // :132-138 Surface 落色）= Miuix 引擎 → MiuixTheme.colorScheme
+    // .surfaceContainer（外部库 top.yukonga.miuix.kmp，数值不在仓库内）；
+    // 标准 material 引擎（仓库默认 composeEngine="material"，
+    // ThemePackageSettingsRepository.kt:14、FeatureSettingsRepositories.kt:283）
+    // → MaterialTheme.colorScheme.surfaceContainerLow。参考 12 板 dark
+    // surfaceContainerLow 全部为深色（Lemon #1E1B13，LemonColorScheme.kt:104；
+    // WH #1C1B1B、GR #1A1C16、Koharu #221919、Yuuka #1B1B21、Phoebe
+    // #1E1C13、Sora #191C20、August #231917、Carlotta #22191C、Mujika
+    // #22191B、Elink #1C1B1B、Transparent 0x8F000000），无一等于采集到的
+    // 浅盒 #E8E2D4；#E8E2D4 恰为 Lemon dark onSurface（LemonColorScheme.kt:80）。
+    // 即：标准引擎 + 任意参考板都无法复现采集浅盒，采集只能由 MuMu 参考实例
+    // 运行 Miuix 引擎解释（其 surfaceContainer 取值不可从仓库验证）。
+    // → [需设备重采对照]：设备空闲后核对该参考实例 composeEngine 设置，
+    // 并在 Lemon 深色下按两种引擎分别重采搜索盒像素；若确认标准引擎深色盒
+    // 为深色（#1E1B13），本深色盒填充回退 surfaceContainerLow。重采前保留
+    // 本在途实现（与 ledger 已裁定的采集 13_search_content.png 一致）。
+    final scheme = Theme.of(context).colorScheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
       appBar: LegadoAppBar(
         // [PARITY C1-C1] 标题对齐参考「搜索内容」
@@ -417,12 +444,19 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
               controller: _controller,
               // [PARITY C1-C3] hint 对齐参考「搜索...」
               hintText: '搜索...',
+              // [PARITY A6] 深色态盒内提示用 surface 色（浅色盒上深色字），
+              // 亮色态保持框架默认（onSurfaceVariant 派生，此处传 null）
+              hintStyle: WidgetStatePropertyAll(
+                isDark ? TextStyle(color: scheme.surface) : null,
+              ),
               // 原 TextField autofocus 语义保留：进页自动聚焦
               autoFocus: true,
               constraints: const BoxConstraints(minHeight: 40),
               elevation: const WidgetStatePropertyAll(0),
+              // [PARITY A6] 深色态盒填充 = onSurface（浅色盒，见 build 头部
+              // 注释的像素依据）；亮色态维持 surfaceContainerLow
               backgroundColor: WidgetStatePropertyAll(
-                Theme.of(context).colorScheme.surfaceContainerLow,
+                isDark ? scheme.onSurface : scheme.surfaceContainerLow,
               ),
               shape: WidgetStatePropertyAll(
                 RoundedRectangleBorder(
@@ -435,7 +469,8 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
               leading: Icon(
                 Symbols.search_rounded,
                 size: 20,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                // [PARITY A6] 深色态浅色盒上图标用 surface 色
+                color: isDark ? scheme.surface : scheme.onSurfaceVariant,
               ),
               trailing: [
                 if (_controller.text.isNotEmpty)

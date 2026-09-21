@@ -12,15 +12,18 @@ import '../../providers/reader/reader_notifier.dart';
 import '../../providers/ui_settings/ui_settings_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
-import '../../services/system_brightness.dart';
 
 /// [UI_SYNC_REFACTOR S2-1] 阅读菜单单块底部面板（对齐参考 ReadBookMenuBar）
 ///
-/// 五分区骨架：标题胶囊行（返回+书名+章节/源+More 溢出）→ FloatingIconRow
-///（高频 8 位图标行）→ Surface（亮度行/进度滑条/搜索 pill/工具行）。
-/// 常挂载+双向动画（visible 驱动）；朗读条暂与面板互斥显示（S2-2 并入面板
-/// 路由页，登记）；标题行 More 为顶栏溢出菜单高频项子集（charset/图片样式
-/// 等长尾项留顶栏文件待 S2-2 迁移）。
+/// 结构：屏幕顶栏（返回/书名/换源/刷新正文/缓存当前章/更多溢出 + 章节信息块
+/// 与中部快捷钮）→ 底部 Surface（进度滑条行 + 单行五键行动作行）。
+/// [PARITY A5] 键集收敛对齐参考版默认键集：动作行 = 全文搜索/自动翻页/
+/// 目录/朗读/设置（参考 ReadButtonConfigDelegate.kt:197-203
+/// DEFAULT_ENABLED_BUTTON_IDS = search/auto_page/catalog/read_aloud/setting，
+/// 显示顺序 ReadBookContract.kt:404+ ReadBookButtonIds；无第二页、无字号/
+/// 亮度键；参考 showBrightnessView 默认 "0" 亮度隐藏，字号/亮度保留在读内
+/// 入口 ReaderSettingsSheet / ReaderConfigPanel）。
+/// 常挂载+双向动画（visible 驱动）。
 class ReaderMenuPanel extends ConsumerStatefulWidget {
   final bool visible;
   final VoidCallback onBack;
@@ -69,36 +72,6 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     value: widget.visible ? 1 : 0,
   );
 
-  /// 五项行动作行分页控制器（对齐参考版可横滑两页）
-  final PageController _actionPageController = PageController();
-
-  // 亮度（自旧 ReaderBottomBar 迁移）
-  bool _brightnessSupported = false;
-  bool _autoBrightness = false;
-  double _brightness = 0.5;
-
-  @override
-  void initState() {
-    super.initState();
-    unawaited(_loadBrightness());
-  }
-
-  Future<void> _loadBrightness() async {
-    try {
-      final supported = await SystemBrightness.isSupported();
-      if (!mounted) return;
-      setState(() => _brightnessSupported = supported);
-      if (!supported) return;
-      final b = await SystemBrightness.getBrightness();
-      final auto = await SystemBrightness.isAutoBrightness();
-      if (!mounted) return;
-      setState(() {
-        _brightness = b;
-        _autoBrightness = auto;
-      });
-    } catch (_) {}
-  }
-
   @override
   void didUpdateWidget(covariant ReaderMenuPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -110,7 +83,6 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
   @override
   void dispose() {
     _menuController.dispose();
-    _actionPageController.dispose();
     super.dispose();
   }
 
@@ -208,15 +180,10 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     ReaderState state,
     bool autoPageActive,
   ) {
-    // [UI_SYNC_REFACTOR S2-2] 亮度竖条（对齐参考 brightnessVwPos 左右双位；
-    // readMenuBrightnessVertical 开关，横行同步隐藏）
-    final cs = Theme.of(context).colorScheme;
-    final ui = uiSettingsListenable.value;
-    final verticalBrightness =
-        _brightnessSupported && ui.readMenuBrightnessVertical;
-    final barOnLeft = ui.readMenuBrightnessPos == 'left';
-
-    Widget surface = Material(
+    // [PARITY A5] 面板键集对齐参考版：进度行 + 单行五键行动作行
+    //（参考版菜单无亮度/字号键与亮度竖条；亮度/字号保留在读内入口
+    // ReaderSettingsSheet / ReaderConfigPanel）。
+    return Material(
       color: barColor,
       borderRadius: const BorderRadius.vertical(top: Radius.circular(32)),
       child: SafeArea(
@@ -227,52 +194,13 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // [PARITY C2 M4/M5] 面板行序：亮度行（默认关，M5 参考该态无）
-              // → 进度行「X/Y + 目录%」文字 + 滑条（M4，保留寻址）
-              // → 可横滑五项行（章节梗概/AI改写/全文搜索/自动翻页/目录 ‖
-              //   朗读/界面/替换/更多；五项同名同序勿动）。
-              if (!verticalBrightness) _buildBrightnessRow(context, foreground),
               _buildProgressRow(context, notifier, state, foreground),
-              _buildActionPages(context, foreground, autoPageActive),
+              _buildActionRow(context, foreground, autoPageActive),
             ],
           ),
         ),
       ),
     );
-
-    if (verticalBrightness) {
-      surface = Stack(
-        children: [
-          surface,
-          Positioned(
-            bottom: 24,
-            left: barOnLeft ? 6 : null,
-            right: barOnLeft ? null : 6,
-            child: Container(
-              width: 40,
-              height: 168,
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHighest.withValues(alpha: 0.7),
-                borderRadius: BorderRadius.circular(40),
-              ),
-              child: RotatedBox(
-                quarterTurns: barOnLeft ? 3 : 1,
-                child: Slider(
-                  value: _brightness,
-                  onChanged: _autoBrightness
-                      ? null
-                      : (v) {
-                          setState(() => _brightness = v);
-                          unawaited(SystemBrightness.setBrightness(v));
-                        },
-                ),
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-    return surface;
   }
 
   // ── 分区 1：屏幕顶部工具栏（对齐原版：← 居左；⇄ ↻ ⬇ ⋮ 居右）──
@@ -513,13 +441,28 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     );
   }
 
-  // ── 分区：可横滑五项行动作行（对齐参考版：图标+标签，两页）──
+  // ── 分区：单行五键行动作行（[PARITY A5] 键集对齐参考版默认键集）──
   //
-  // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 对齐参考版主菜单：
-  // 第1页 章节梗概/AI改写/全文搜索/自动翻页/目录；
-  // 第2页 朗读/界面/替换/更多（参考版第2页为 朗读/设置，我方补替换与
-  // 更多以保留功能入口）。章节梗概/AI改写为已授权 AI 占位按钮 — Qoder
-  Widget _buildActionPages(
+  // [PARITY A5 | 深色对齐裁决"以参考版为准"] 参考版阅读菜单默认五键：
+  // 全文搜索/自动翻页/目录/朗读/设置。依据（参考源码 D:\tmp\md3_ref_legado）：
+  // ① 默认开启键集 ReadButtonConfigDelegate.kt:197-203
+  //   DEFAULT_ENABLED_BUTTON_IDS = {search, auto_page, catalog, read_aloud, setting}
+  //   （loadButtonConfig :148-154：用户未配置时按 ReadBookButtonIds 显示序取此五键）；
+  //   ② 键位定义 SystemMenuPage.kt:898-903：search→Icons.Search/search_content、
+  //   auto_page→Icons.PlayArrow/auto_next_page、catalog→Icons.List/chapter_list、
+  //   read_aloud→Icons.RecordVoiceOver/read_aloud、setting→Icons.Settings/setting；
+  //   ③ 文案 values-zh-rCN/strings.xml：search_content=全文搜索(:1036)、
+  //   auto_next_page=自动翻页(:465)、chapter_list=目录(:184)、
+  //   read_aloud=朗读(:189)、setting=设置(:97)；
+  //   ④ 布局 ReadBookContract.kt:359-360 readMenuIconItemsPerRow=5、
+  //   readMenuIconRowCount=1（单行五键，无第二页、无字号/亮度键；亮度
+  //   showBrightnessView 默认 "0" 隐藏，:390）。
+  // 注：在途版曾按 MuMu 定制实例截图放 章节梗概/AI改写 占位键，但参考源码默认
+  // 键集不含 ai_summary/ai_rewrite（ReadBookButtonIds 成员但默认 enabled=false，
+  // ReadButtonConfigDelegate.kt:172-190 normalizeButtonConfig），故按源码移除；
+  // 如需保留 AI 占位请主代理另立裁决。替换/更多入口保留于顶栏更多溢出菜单，
+  // 亮度/字号保留在读内（ReaderSettingsSheet / ReaderConfigPanel）。
+  Widget _buildActionRow(
     BuildContext context,
     Color? foreground,
     bool autoPageActive,
@@ -558,111 +501,31 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       );
     }
 
-    final page1 = <Widget>[
-      item(
-        Symbols.auto_awesome_rounded,
-        '章节梗概',
-        () => _showAiPlaceholder(context, '章节梗概'),
-      ),
-      item(
-        Symbols.edit_note_rounded,
-        'AI 改写',
-        () => _showAiPlaceholder(context, 'AI 改写'),
-      ),
+    // [PARITY A5] 键集/顺序/文案 = 参考默认五键（见本分区头部注释依据）：
+    // search / auto_page / catalog / read_aloud / setting。
+    // 图标随中部快捷钮既有 Symbols 形态；auto_page 运行中切 pause 图标 +
+    // primary 色（参考 active 态以颜色标记）。
+    final items = <Widget>[
       item(Symbols.search_rounded, '全文搜索', widget.onOpenContentSearch),
       item(
-        autoPageActive ? Icons.pause : Icons.auto_stories_outlined,
-        autoPageActive ? '停止翻页' : '自动翻页',
+        autoPageActive
+            ? Symbols.pause_rounded
+            : Symbols.play_arrow_rounded,
+        '自动翻页',
         widget.onToggleAutoPage,
         active: autoPageActive,
       ),
       item(Symbols.format_list_bulleted_rounded, '目录', widget.onOpenCatalog),
-    ];
-    final page2 = <Widget>[
       item(Symbols.headphones_rounded, '朗读', widget.onReadAloud),
-      item(Symbols.style_rounded, '界面', widget.onOpenSettings),
-      item(Symbols.find_replace_rounded, '替换', widget.onOpenReplaceRules),
-      item(Symbols.tune_rounded, '更多', widget.onOpenAdvancedConfig),
+      item(Symbols.settings_rounded, '设置', widget.onOpenSettings),
     ];
     return SizedBox(
       height: 76,
-      child: PageView(
-        controller: _actionPageController,
-        children: [
-          Row(children: page1),
-          Row(children: page2),
-        ],
-      ),
+      child: Row(children: items),
     );
   }
 
-  /// AI 占位弹层（章节梗概/AI 改写）：按钮占位先行（AGENTS 授权口径），
-  /// 服务后端独立立项；形态对齐参考版弹层（把手 + 标题 + 状态说明）
-  void _showAiPlaceholder(BuildContext context, String title) {
-    showModalBottomSheet<void>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) => SafeArea(
-        top: false,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(24, 0, 24, 32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: Theme.of(ctx).textTheme.titleLarge),
-              const SizedBox(height: 12),
-              Text(
-                'AI 服务未配置：按钮占位已就绪，服务后端独立立项后接通。',
-                style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(ctx).colorScheme.onSurfaceVariant,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ── 分区 4：亮度行（对标 ll_brightness，自旧底栏面板迁移）──
-  Widget _buildBrightnessRow(BuildContext context, Color? foreground) {
-    if (!_brightnessSupported || !widget.showBrightnessView) {
-      return const SizedBox.shrink();
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8),
-      child: Row(
-        children: [
-          IconButton(
-            icon: Icon(
-              _autoBrightness
-                  ? Icons.brightness_auto
-                  : Icons.brightness_auto_outlined,
-            ),
-            tooltip: _autoBrightness ? '关闭自动亮度' : '自动亮度',
-            onPressed: () async {
-              await SystemBrightness.setAutoBrightness(!_autoBrightness);
-              await _loadBrightness();
-            },
-          ),
-          Expanded(
-            child: Slider(
-              value: _brightness,
-              onChanged: _autoBrightness
-                  ? null
-                  : (v) {
-                      setState(() => _brightness = v);
-                      unawaited(SystemBrightness.setBrightness(v));
-                    },
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── 分区 5：进度滑条行（page=调章内页 / chapter=调章节）──
+  // ── 分区：进度滑条行（page=调章内页 / chapter=调章节）──
   Widget _buildProgressRow(
     BuildContext context,
     ReaderNotifier notifier,
