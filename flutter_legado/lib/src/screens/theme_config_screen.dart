@@ -667,7 +667,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // === 内置主题（UI_MD3_PLAN.md Batch 1：13 套 MD3 preset
                   // 选择器，paletteId 持久化；与下方自定义主题并存，自定义
                   // 已应用 4 色优先——第九节并存模型） ===
-                  // [B3-C1 A6] 分区卡结构：分区标题 + 13 色卡网格保留，A4/A5 不动
+                  // [B3-C1 A6] 分区卡结构：分区标题 + 13 色卡保留，A4/A5 不动
+                  // [队列⑦a A2] 形态对齐参考：13 色卡横滑一行（原 4 列网格）
                   const IosSectionHeader('内置主题'),
                   _BuiltinPaletteGrid(
                     selectedId: themeState.paletteId,
@@ -2058,12 +2059,14 @@ class _CoverRuleConfigDialogState extends State<_CoverRuleConfigDialog> {
   }
 }
 
-/// 内置 MD3 调色板选择网格（UI_MD3_PLAN.md Batch 1「内置 13 主题」区，
-/// 阶段D 2.0.270 起 13 套：def「默认」为默认选中，wh 纯白等 12 套保留）
+/// 内置 MD3 调色板横滑选择行（UI_MD3_PLAN.md Batch 1「内置 13 主题」区，
+/// 阶段D 2.0.270 起 13 套：def「默认」为默认选中，wh 黑白等 12 套保留）
 ///
+/// [队列⑦a A2] 形态对齐参考 ThemeColorSelector（ThemeConfigScreen.kt:1020，
+/// LazyRow 横滑一行 + Arrangement.spacedBy(16.dp) :1031-1032）。
 /// 每张卡片左半为亮色预览、右半为暗色预览（tonal 配对），底部显示
-/// 中文主题名；选中项描边 + 调色板主色对勾。点按经 [ThemeNotifier]
-/// 全局实时生效并持久化 paletteId。
+/// 中文主题名；选中项 2dp 主色描边 + 40dp 主色圆角底对勾。点按经
+/// [ThemeNotifier] 全局实时生效并持久化 paletteId。
 class _BuiltinPaletteGrid extends StatelessWidget {
   final String selectedId;
   final ValueChanged<String> onSelected;
@@ -2075,27 +2078,34 @@ class _BuiltinPaletteGrid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 4,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.only(top: 4, bottom: 8),
-      mainAxisSpacing: 10,
-      crossAxisSpacing: 10,
-      childAspectRatio: 0.82,
-      children: [
-        for (final palette in Md3Palettes.all)
-          _PaletteCard(
-            palette: palette,
-            selected: palette.id == selectedId,
-            onSelected: () => onSelected(palette.id),
-          ),
-      ],
+    // 横滑一行（参考 LazyRow；卡间距 16 对齐 spacedBy(16.dp)）
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          for (var i = 0; i < Md3Palettes.all.length; i += 1) ...[
+            if (i > 0) const SizedBox(width: 16),
+            _PaletteCard(
+              palette: Md3Palettes.all[i],
+              selected: Md3Palettes.all[i].id == selectedId,
+              onSelected: () => onSelected(Md3Palettes.all[i].id),
+            ),
+          ],
+        ],
+      ),
     );
   }
 }
 
-/// 单张调色板预览卡片
+/// 单张调色板预览卡片（64x64 方卡，形态对齐参考 ThemeColorButton
+/// ThemeConfigScreen.kt:1054：size(64.dp) + RoundedCornerShape(16.dp)
+/// :1089-1096；选中 2dp 主色描边 :1092-1095；选中 40dp/12dp 圆角主色底
+/// 24dp 对勾 :1134-1148；12dp 下距 :1152；labelSmall 标签
+/// :1154-1158）
+///
+/// 卡片内部保留我方左亮/右暗 surface 预览 + 色点（功能实现倾向我方；
+/// 参考为 48dp 半圆 arc 单模式预览 :1102-1132）。
 class _PaletteCard extends StatelessWidget {
   final Md3Palette palette;
   final bool selected;
@@ -2116,73 +2126,86 @@ class _PaletteCard extends StatelessWidget {
     final secondary = Color(palette.light.secondary);
     final tertiary = Color(palette.light.tertiary);
 
-    return InkWell(
-      onTap: onSelected,
-      borderRadius: BorderRadius.circular(12),
-      child: Column(
-        children: [
-          Expanded(
-            child: Container(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: selected ? primary : scheme.outlineVariant,
-                  width: selected ? 2 : 1,
-                ),
-              ),
-              clipBehavior: Clip.antiAlias,
-              // 左亮右暗：展示该套调色板的 tonal 亮暗配对
-              child: Row(
+    return SizedBox(
+      width: 64,
+      child: InkWell(
+        onTap: onSelected,
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          children: [
+            SizedBox(
+              height: 64,
+              child: Stack(
+                alignment: Alignment.center,
                 children: [
-                  Expanded(
-                    child: ColoredBox(
-                      color: light,
-                      child: Center(
-                        child: _PaletteDots(
-                          primary: primary,
-                          secondary: secondary,
-                          tertiary: tertiary,
+                  Container(
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainer,
+                      borderRadius: BorderRadius.circular(16),
+                      // 参考：选中 2dp 主色描边，未选中无描边（:1092-1095 else null）
+                      border: selected
+                          ? Border.all(color: primary, width: 2)
+                          : null,
+                    ),
+                    clipBehavior: Clip.antiAlias,
+                    // 左亮右暗：展示该套调色板的 tonal 亮暗配对
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: ColoredBox(
+                            color: light,
+                            child: Center(
+                              child: _PaletteDots(
+                                primary: primary,
+                                secondary: secondary,
+                                tertiary: tertiary,
+                              ),
+                            ),
+                          ),
                         ),
-                      ),
+                        Expanded(
+                          child: ColoredBox(
+                            color: dark,
+                            child: Center(
+                              child: _PaletteDots(
+                                primary: primary,
+                                secondary: secondary,
+                                tertiary: tertiary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
-                  Expanded(
-                    child: ColoredBox(
-                      color: dark,
-                      child: Center(
-                        child: _PaletteDots(
-                          primary: primary,
-                          secondary: secondary,
-                          tertiary: tertiary,
-                        ),
+                  if (selected)
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: primary,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Icon(
+                        Icons.check,
+                        size: 24,
+                        color: scheme.onPrimary,
                       ),
                     ),
-                  ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(height: 4),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              if (selected) ...[
-                Icon(Symbols.check_circle_rounded, size: 14, color: primary),
-                const SizedBox(width: 2),
-              ],
-              Flexible(
-                child: Text(
-                  palette.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                        color: selected ? primary : scheme.onSurfaceVariant,
-                      ),
-                ),
-              ),
-            ],
-          ),
-        ],
+            const SizedBox(height: 12),
+            Text(
+              palette.label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: selected ? primary : scheme.onSurface,
+                  ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2202,8 +2225,9 @@ class _PaletteDots extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // FittedBox 兜底：极窄单元格（小屏/4 列网格半卡 ~37dp）下色点行
-    // 39px 会溢出 2.8px（md3_acceptance_matrix_test 抓获）
+    // FittedBox 兜底：[队列⑦a A2] 64px 方卡内左/右半预览区约 30px 宽，
+    // 色点行 39px 需缩放下放（原 4 列网格半卡 ~37dp 时的兜底同样适用，
+    // md3_acceptance_matrix_test 回归守护）
     return FittedBox(
       fit: BoxFit.scaleDown,
       child: Row(

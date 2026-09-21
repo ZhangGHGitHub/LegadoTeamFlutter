@@ -46,7 +46,7 @@ class _LegadoAndroidTransitionsBuilder extends PageTransitionsBuilder {
 ///
 /// 集中管理按调色板装配的 light/dark ThemeData（UI_MD3_PLAN.md Batch 0）：
 /// - 13 套内置 MD3 tonal 调色板（[Md3Palettes]，默认 def「默认」，
-///   阶段D 2.0.270 对齐 kazusa 源码色值；WH 纯白等 12 套保留可切换）
+///   阶段D 2.0.270 对齐 kazusa 源码色值；WH 黑白等 12 套保留可切换）
 ///   + 用户自定义 4 色（themeConfigList 功能完整保留，
 ///   自定义已应用颜色优先于内置 palette role）
 /// - Expressive 大圆角经 component theme 显式落地：卡片 20 / 控件 12 /

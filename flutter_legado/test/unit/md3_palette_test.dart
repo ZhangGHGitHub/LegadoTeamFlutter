@@ -42,8 +42,10 @@ void main() {
       expect(Md3Palettes.defaultId, 'def');
       expect(Md3Palettes.byId('def').id, 'def');
       expect(Md3Palettes.def.label, '默认');
-      // 原 12 套（wh 纯白等）保留可切换，wh 仍在列首
-      expect(Md3Palettes.all.first.id, 'wh');
+      // [队列⑦a A2] 顺序已按参考 14 模式相对位置重排（gr 草野 = 参考位置 1
+      // 在列首；def 第 13 套收尾）
+      expect(Md3Palettes.all.first.id, 'gr');
+      expect(Md3Palettes.all.last.id, 'def');
     });
 
     test('未知 id 回退默认 def（UI_MD3_PLAN.md 第九节回滚路径）', () {

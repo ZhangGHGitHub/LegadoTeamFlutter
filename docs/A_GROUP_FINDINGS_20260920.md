@@ -145,3 +145,68 @@
   其余未跟踪文件（docs/parity_shots/*、.zcode/、.agent-teams/ 等）属其他在途任务/环境产物，非本任务改动。
 - 红线核验：`reader_screen.dart` 不在改动集；排版测量/翻页动画/手势文件零改动；未新增未授权 UI（A1 全屏扫描页为 ledger 裁决授权项）。
 - 本任务**未执行 commit**（按约束）。
+
+## ⑧ A2 同步风格版执行记录（队列⑦a，2026-09-20）
+
+> 依据：§⑤ A2 事实清单 + 用户裁决「A2 同步风格版 = 布局 + 名称 + 顺序 + 颜色一并对齐；视觉照参考版、功能实现倾向我方」。色值 11/12 一致，无需改动；唯 Transparent 深色 sCL 维持 §⑥-2「需设备重采」登记。
+
+### ⑧.1 改名（13 套显示名对齐参考 zh 名，id/键名零改动）
+
+| id | 旧名 | 新名 | 参考 zh（位置） |
+|---|---|---|---|
+| wh | 纯白 | 黑白 | 黑白（3 WH） |
+| gr | 森绿 | 草野 | 草野（1 GR） |
+| lemon | 柠檬 | 柠檬 | 柠檬（2）✓ 同名不动 |
+| koharu | 小春 | 春 | 春（8 Koharu） |
+| yuuka | 优香 | 千禧年 | 千禧年（9 Yuuka） |
+| phoebe | 菲比 | 隐海修会 | 隐海修会（10 Phoebe） |
+| sora | 穹 | 晴空 | 晴空（5 Sora） |
+| august | 八月 | 八月 | 八月（6）✓ 同名不动 |
+| carlotta | 卡洛塔 | 新浪潮 | 新浪潮（7 Carlotta） |
+| mujika | 姆吉卡 | 乐队 | 乐队（11 Mujika） |
+| elink | 墨水 | 电子书 | 电子书（4 Elink） |
+| transparent | 透明 | 透明 | 透明（13）✓ 同名不动 |
+| def | 默认 | 默认 | 参考无此套 ✓ 不动 |
+
+实际改动 9 处（同名 3 处不动），位于 `flutter_legado/lib/src/theme/md3_colors.dart` 各 `label:` 行（:139/:243/:451/:555/:659/:763/:971/:1075/:1179）。
+
+### ⑧.2 重排 + 参考有/我方无两项登记
+
+新顺序（`Md3Palettes.all`，顺序即主题选择器展示顺序）：
+`gr → lemon → wh → elink → sora → august → carlotta → koharu → yuuka → phoebe → mujika → transparent → def`
+
+**登记（参考有/我方无，不实现——红线：不新增未授权功能）**：
+- **动态取色（参考位置 0，AppThemeMode.Dynamic / ThemeResolver "0"）**：我方无动态取色能力，不占参考 0 位（0 是取色功能而非调色板）；登记于本节，不实现。
+- **自定义（参考位置 12，AppThemeMode.Custom / ThemeResolver "12"）**：参考 12 位是「自定义主题」功能入口（`ThemeConfigScreen.kt:253-334` 组 3 的自定义主题色区，仅 appTheme=12 显示）。我方自定义主题以「自定义主题 · 白天/夜间」区并存于本页下方（第九节并存模型），非独立模式项；登记于此，不新增模式项。
+- def「默认」为我方独有第 13 套，置于末尾（不占用参考 0 位）。
+
+### ⑧.3 形态对齐（4 列网格 → 横滑一行）
+
+- **参考依据**：`ThemeConfigScreen.kt:1020` `ThemeColorSelector` = `LazyRow(horizontalArrangement = Arrangement.spacedBy(16.dp), Modifier.fillMaxWidth())`（:1031-1032），item = `ThemeColorButton`（:1054）；卡片 `Modifier.size(64.dp)` + `RoundedCornerShape(16.dp)` + 选中 `BorderStroke(2.dp, primary)`（:1089-1096）；内部 48dp 半圆 arc（secondary 左半/tertiary 右半）+ 24dp primary 圆（:1102-1132）；选中 40dp 圆角12 primary 底 + 24dp Check icon（onPrimary）（:1134-1148）；`Spacer(height(12.dp))`（:1152）；`labelSmall` 标签（选中 primary / 未选 onSurface）（:1154-1158）。
+- **我方改动**（`flutter_legado/lib/src/screens/theme_config_screen.dart`）：`_BuiltinPaletteGrid` 由 `GridView.count(crossAxisCount: 4)` 改 `SingleChildScrollView(scrollDirection: horizontal)` + `Row`（卡间距 16 对齐 spacedBy(16.dp)）；`_PaletteCard` 改 64x64 方卡（16 圆角、选中 2dp primary 描边 + 40dp 圆角12 primary 底 24dp `Icons.check`（onPrimary）覆盖居中、下距 12、`labelSmall` 标签、未选无描边对齐参考 else null）。**卡片内部保留我方左亮/右暗 surface + 色点预览**（功能实现倾向我方；参考为 48dp 半圆 arc 单模式预览）——该取舍已在代码注释与本报告注明。
+- **只改布局形态**：选色逻辑（`onSelected → ThemeNotifier.setPaletteId`）与 paletteId 持久化零改动。
+
+### ⑧.4 测试断言更新（逐条理由）
+
+- `test/unit/md3_palette_test.dart:45-46`：列首断言 `'wh' → 'gr'`（重排后参考位置 1 的 gr 在列首），并新增列尾 `'def'` 断言固化新顺序；其余断言均按 id/色值，不受影响。
+- `test/widget/theme_config_test.dart`：显示名 finder 跟随改名（纯白→黑白 :52/:55、小春→春 :56/:87/:92、墨水→电子书 :57）+ 注释同步（:82）；tap 目标 koharu 为新顺序第 8 项，800px 测试视口内 x≈560-624 可见可点。
+- `test/widget/md3_acceptance_matrix_test.dart:225-226`：动态 `p.label` 驱动，不受改名/重排影响，零改动。
+- `test/widget/reader_dark_background_test.dart:89`：reason 字符串「而不是纯白」描述深色正文背景色对比（纯黑 vs 纯白），非 wh 调色板名称引用，保持不动。
+- `lib/src/theme/app_theme.dart:49`、`lib/src/screens/theme_config_screen.dart:2062`：注释中旧名同步更新（纯白→黑白）。
+
+### ⑧.5 门禁输出（队列⑦a）
+
+- `flutter analyze`：**No issues found!（0 项，ran in 5.0s）**
+- `flutter test`：**All tests passed!（1584/1584，exit 0）**——与基线同数（新断言均加在既有用例内，未新增测试文件）
+- `git status --short`（flutter_legado/ 内，本任务改动集，6 文件）：
+  ```
+   M docs/A_GROUP_FINDINGS_20260920.md            (本台账 §⑧ 执行记录 +65 行)
+   M flutter_legado/lib/src/screens/theme_config_screen.dart (A2 形态：横滑一行)
+   M flutter_legado/lib/src/theme/app_theme.dart   (A2 注释：纯白→黑白)
+   M flutter_legado/lib/src/theme/md3_colors.dart  (A2 改名 9 处 + 重排 all)
+   M flutter_legado/test/unit/md3_palette_test.dart (A2 顺序断言 列首 gr/列尾 def)
+   M flutter_legado/test/widget/theme_config_test.dart (A2 显示名断言跟随)
+  ```
+  其余未跟踪文件（docs/parity_shots/*、.zcode/、.agent-teams/、.qoder/ 等）属其他在途任务/环境产物，非本任务改动。
+- 红线核验：`reader_screen.dart` 不在改动集；排版测量/翻页动画/手势文件零改动；动态取色/自定义两项仅登记未实现（无新增功能/未授权 UI）；色值与调色板内容零改动（除名称字段）；id/键名零改动（存储与引用不受影响）。
+- 本任务**未执行 commit**（按约束）。

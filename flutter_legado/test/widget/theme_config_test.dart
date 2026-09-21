@@ -49,12 +49,13 @@ void main() {
     // 惰性列表需滚动到可见区再断言）：默认 def「默认」选中（13 套）
     expect(find.text('内置主题'), findsOneWidget);
     await tester
-        .dragUntilVisible(find.text('纯白'), find.byType(ListView),
+        .dragUntilVisible(find.text('黑白'), find.byType(ListView),
             const Offset(0, -120));
     await tester.pumpAndSettle();
-    expect(find.text('纯白'), findsOneWidget);
-    expect(find.text('小春'), findsOneWidget);
-    expect(find.text('墨水'), findsOneWidget);
+    // [队列⑦a A2] 显示名对齐参考 zh 名：纯白→黑白、小春→春、墨水→电子书
+    expect(find.text('黑白'), findsOneWidget);
+    expect(find.text('春'), findsOneWidget);
+    expect(find.text('电子书'), findsOneWidget);
 
     // 通用项位于内置主题网格下方，滚动到可见区再断言
     await tester.dragUntilVisible(find.text(r'切换图标'), find.byType(ListView), const Offset(0, -120));
@@ -79,17 +80,18 @@ void main() {
     await tester.pumpWidget(wrap());
     await tester.pumpAndSettle();
 
-    // 默认调色板为 def「默认」（阶段D 2.0.270 起；纯白等 12 套保留可切换）
+    // 默认调色板为 def「默认」（阶段D 2.0.270 起；黑白等 12 套保留可切换）
     expect(container.read(themeNotifierProvider).paletteId, equals('def'));
 
-    // [B3-C1 A6] 网格位于导出导入区下方，先滚动到可见区
+    // [B3-C1 A6] 色卡行位于导出导入区下方，先滚动到可见区
+    // [队列⑦a A2] koharu 显示名 小春→春（对齐参考 zh 名）
     await tester
-        .dragUntilVisible(find.text('小春'), find.byType(ListView),
+        .dragUntilVisible(find.text('春'), find.byType(ListView),
             const Offset(0, -120));
     await tester.pumpAndSettle();
 
-    // 点按「小春」（koharu）→ paletteId 更新并持久化
-    await tester.tap(find.text('小春'));
+    // 点按「春」（koharu）→ paletteId 更新并持久化
+    await tester.tap(find.text('春'));
     await tester.pumpAndSettle();
     expect(
       container.read(themeNotifierProvider).paletteId,

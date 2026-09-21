@@ -132,11 +132,11 @@ class Md3Palette {
 }
 
 /// 13 套内置 MD3 调色板（阶段D 2.0.270 起默认 def「默认」，对齐 kazusa
-/// 「默认」调色板源码色值；原 12 套含 WH 纯白保留可切换）
+/// 「默认」调色板源码色值；原 12 套含 WH 黑白保留可切换）
 abstract final class Md3Palettes {
   static const wh = Md3Palette(
     id: 'wh',
-    label: '纯白',
+    label: '黑白', // [队列⑦a A2] 对齐参考 zh 名（values-zh-rCN/arrays.xml:160-175，3 WH）
     seed: 0xFF5C5C5C,
     light: Md3Roles(
       primary: 0xFF5C5C5C,
@@ -240,7 +240,7 @@ abstract final class Md3Palettes {
 
   static const gr = Md3Palette(
     id: 'gr',
-    label: '森绿',
+    label: '草野', // [队列⑦a A2] 对齐参考 zh 名（1 GR）
     seed: 0xFF4C662B,
     light: Md3Roles(
       primary: 0xFF4C662B,
@@ -448,7 +448,7 @@ abstract final class Md3Palettes {
 
   static const koharu = Md3Palette(
     id: 'koharu',
-    label: '小春',
+    label: '春', // [队列⑦a A2] 对齐参考 zh 名（8 Koharu）
     seed: 0xFF8F4A4D,
     light: Md3Roles(
       primary: 0xFF8F4A4D,
@@ -552,7 +552,7 @@ abstract final class Md3Palettes {
 
   static const yuuka = Md3Palette(
     id: 'yuuka',
-    label: '优香',
+    label: '千禧年', // [队列⑦a A2] 对齐参考 zh 名（9 Yuuka）
     seed: 0xFF565992,
     light: Md3Roles(
       primary: 0xFF565992,
@@ -656,7 +656,7 @@ abstract final class Md3Palettes {
 
   static const phoebe = Md3Palette(
     id: 'phoebe',
-    label: '菲比',
+    label: '隐海修会', // [队列⑦a A2] 对齐参考 zh 名（10 Phoebe）
     seed: 0xFF6B5E10,
     light: Md3Roles(
       primary: 0xFF6B5E10,
@@ -760,7 +760,7 @@ abstract final class Md3Palettes {
 
   static const sora = Md3Palette(
     id: 'sora',
-    label: '穹',
+    label: '晴空', // [队列⑦a A2] 对齐参考 zh 名（5 Sora）
     seed: 0xFF3B608F,
     light: Md3Roles(
       primary: 0xFF3B608F,
@@ -968,7 +968,7 @@ abstract final class Md3Palettes {
 
   static const carlotta = Md3Palette(
     id: 'carlotta',
-    label: '卡洛塔',
+    label: '新浪潮', // [队列⑦a A2] 对齐参考 zh 名（7 Carlotta）
     seed: 0xFF8B4A62,
     light: Md3Roles(
       primary: 0xFF8B4A62,
@@ -1072,7 +1072,7 @@ abstract final class Md3Palettes {
 
   static const mujika = Md3Palette(
     id: 'mujika',
-    label: '姆吉卡',
+    label: '乐队', // [队列⑦a A2] 对齐参考 zh 名（11 Mujika）
     seed: 0xFF8E4958,
     light: Md3Roles(
       primary: 0xFF8E4958,
@@ -1176,7 +1176,7 @@ abstract final class Md3Palettes {
 
   static const elink = Md3Palette(
     id: 'elink',
-    label: '墨水',
+    label: '电子书', // [队列⑦a A2] 对齐参考 zh 名（4 Elink）
     seed: 0xFF000000,
     light: Md3Roles(
       primary: 0xFF000000,
@@ -1500,22 +1500,29 @@ abstract final class Md3Palettes {
     ),
   );
 
-  /// 默认调色板（阶段D 2.0.270 起为「默认」def；原 WH 纯白保留可切换）
+  /// 默认调色板（阶段D 2.0.270 起为「默认」def；原 WH 黑白保留可切换）
   static const String defaultId = 'def';
 
-  /// 全部内置调色板（顺序即主题选择器展示顺序；def 为第 13 套）
+  /// 全部内置调色板（顺序即主题选择器展示顺序；def 为第 13 套收尾）
+  ///
+  /// [队列⑦a A2] 按参考 14 模式（ThemeResolver.kt "0"-"13"）的相对顺序插入
+  /// 我方 13 套：gr(1)、lemon(2)、wh(3)、elink(4)、sora(5)、august(6)、
+  /// carlotta(7)、koharu(8)、yuuka(9)、phoebe(10)、mujika(11)、
+  /// transparent(13)；参考 0「动态取色」与 12「自定义」为功能项（非调色板），
+  /// 我方无对应能力，登记于 docs/A_GROUP_FINDINGS_20260920.md §⑧，不实现；
+  /// def 为我方独有默认套，置于末尾（参考 0 位是取色功能，不占用）。
   static const List<Md3Palette> all = [
-    wh,
     gr,
     lemon,
-    koharu,
-    yuuka,
-    phoebe,
+    wh,
+    elink,
     sora,
     august,
     carlotta,
+    koharu,
+    yuuka,
+    phoebe,
     mujika,
-    elink,
     transparent,
     def,
   ];
