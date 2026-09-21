@@ -10,7 +10,6 @@ import '../routes.dart';
 import '../services/auto_task_scheduler.dart';
 import '../providers/providers.dart';
 import '../providers/theme/theme_notifier.dart';
-import '../theme/app_colors.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
@@ -165,9 +164,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget _buildWebServiceCard(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    final green = theme.brightness == Brightness.dark
-        ? AppColors.iosGreenDark
-        : AppColors.iosGreenLight;
+    // [A-5 | 2026-09-20 用户裁决] AppColors 整体删除，本卡启用态 accent
+    // 改 MD3 scheme 取值。槽位映射（保持"开启态强调"视觉语义）：
+    //   AppColors.iosGreenLight / iosGreenDark（iOS 系统绿，按亮暗双取值）
+    //     → cs.primary（MD3 主色，随当前 13 套调色板亮/暗各自生效）
+    // 对齐参考版 SwitchSettingItem：开关 checked 色即 colorScheme.primary，
+    // 同卡内 Switch 与卡描边/图标槽同源，主题切换无残留绿。
+    final green = cs.primary;
     final enabled = _webService;
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),

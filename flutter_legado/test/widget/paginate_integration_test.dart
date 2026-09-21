@@ -24,6 +24,9 @@ void main() {
           paragraphSpacing: 8.0,
           indent: 32.0,
           justify: true,
+          // [A-4] 颜色必填：显式传原默认值（白底/黑字，分页用例与颜色无关）
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
         ),
         context: _FakeBuildContext(),
       );
@@ -133,6 +136,9 @@ void main() {
           fontSize: 16.0,
           lineHeight: 1.5,
           useZhLayout: true,
+          // [A-4] 颜色必填：显式传原默认值（白底/黑字，分页用例与颜色无关）
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
         ),
         context: _FakeBuildContext(),
       );
@@ -141,6 +147,9 @@ void main() {
           fontSize: 16.0,
           lineHeight: 1.5,
           useZhLayout: false,
+          // [A-4] 颜色必填：显式传原默认值（白底/黑字，分页用例与颜色无关）
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
         ),
         context: _FakeBuildContext(),
       );
@@ -184,6 +193,9 @@ void main() {
           indentCount: 2,
           useZhLayout: true,
           hangingPunctuation: true,
+          // [A-4] 颜色必填：显式传原默认值（白底/黑字，分页用例与颜色无关）
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
         ),
         context: _FakeBuildContext(),
       );
@@ -208,6 +220,9 @@ void main() {
           indent: 32.0,
           indentCount: 2,
           hangingPunctuation: false,
+          // [A-4] 颜色必填：显式传原默认值（白底/黑字，分页用例与颜色无关）
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
         ),
         context: _FakeBuildContext(),
       );
@@ -231,11 +246,23 @@ void main() {
       final content = '测试字号对分页的影响，这段文字需要足够长才能看出差异。' * 20;
 
       final smallFontEngine = ParagraphLayoutEngine(
-        config: const ParagraphConfig(fontSize: 12.0, lineHeight: 1.5),
+        // [A-4] 颜色必填：显式传原默认值（白底/黑字）
+        config: const ParagraphConfig(
+          fontSize: 12.0,
+          lineHeight: 1.5,
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
+        ),
         context: _FakeBuildContext(),
       );
       final largeFontEngine = ParagraphLayoutEngine(
-        config: const ParagraphConfig(fontSize: 24.0, lineHeight: 1.5),
+        // [A-4] 颜色必填：显式传原默认值（白底/黑字）
+        config: const ParagraphConfig(
+          fontSize: 24.0,
+          lineHeight: 1.5,
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
+        ),
         context: _FakeBuildContext(),
       );
 
@@ -292,7 +319,13 @@ void main() {
   group('paginateChapter - 与 layoutChapter 兼容性', () {
     test('layoutChapter 返回 paginateChapter 的最后一页', () {
       final engine = ParagraphLayoutEngine(
-        config: const ParagraphConfig(fontSize: 16.0, lineHeight: 1.5),
+        // [A-4] 颜色必填：显式传原默认值（白底/黑字）
+        config: const ParagraphConfig(
+          fontSize: 16.0,
+          lineHeight: 1.5,
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
+        ),
         context: _FakeBuildContext(),
       );
       final content = List.generate(5, (i) => '段落$i：${'文字' * 30}').join('\n\n');

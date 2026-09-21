@@ -9,7 +9,12 @@ import 'package:flutter_legado/src/widgets/reader/reader_text_content.dart';
 /// ② 正文渲染控件把 fontStyle 落到 TextStyle（渲染侧同参）。
 void main() {
   test('ParagraphConfig 携带并 copyWith 保留 fontStyle（测量侧同参）', () {
-    const cfg = ParagraphConfig(fontStyle: FontStyle.italic);
+    // [A-4] 颜色必填：显式传原默认值（白底/黑字，本用例只验证 fontStyle）
+    const cfg = ParagraphConfig(
+      fontStyle: FontStyle.italic,
+      backgroundColor: Colors.white,
+      textColor: Colors.black,
+    );
     expect(cfg.fontStyle, FontStyle.italic);
     expect(cfg.copyWith().fontStyle, FontStyle.italic);
     expect(cfg.copyWith(fontStyle: FontStyle.normal).fontStyle,

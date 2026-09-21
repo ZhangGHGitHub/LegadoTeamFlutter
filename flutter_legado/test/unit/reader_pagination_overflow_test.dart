@@ -81,6 +81,9 @@ void main() {
                   fontSize: fontSize,
                   lineHeight: lineHeight,
                   paragraphSpacing: paragraphSpacing,
+                  // [A-4] 颜色必填：与下方 ReaderTypographicPage 同参（白底黑字）
+                  backgroundColor: Colors.white,
+                  textColor: Colors.black,
                 ),
                 context: context,
               );
@@ -153,6 +156,9 @@ void main() {
                 fontSize: fontSize,
                 lineHeight: lineHeight,
                 paragraphSpacing: paragraphSpacing,
+                // [A-4] 颜色必填：与下方 ReaderTypographicPage 同参（白底黑字）
+                backgroundColor: Colors.white,
+                textColor: Colors.black,
               ),
               context: context,
             );

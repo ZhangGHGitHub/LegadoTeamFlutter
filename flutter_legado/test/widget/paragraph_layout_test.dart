@@ -193,7 +193,12 @@ void main() {
     late ParagraphConfig defaultConfig;
 
     setUp(() {
-      defaultConfig = const ParagraphConfig();
+      // [A-4 | 2026-09-20] 颜色改必填后显式传原默认值（白底/黑字），
+      // 本组用例仍验证其余几何默认值与颜色透传
+      defaultConfig = const ParagraphConfig(
+        backgroundColor: Colors.white,
+        textColor: Colors.black,
+      );
     });
 
     test('ParagraphConfig - 默认值验证', () {
@@ -783,27 +788,48 @@ void main() {
     });
 
     test('边界 - 极端缩进值', () {
-      final config = ParagraphConfig(indent: 999.0);
+      // [A-4] 颜色必填：显式传原默认值（白底/黑字）
+      final config = ParagraphConfig(
+        indent: 999.0,
+        backgroundColor: Colors.white,
+        textColor: Colors.black,
+      );
       expect(config.indent, equals(999.0));
     });
 
     test('边界 - 极小字号', () {
-      final config = const ParagraphConfig(fontSize: 8.0);
+      final config = const ParagraphConfig(
+        fontSize: 8.0,
+        backgroundColor: Colors.white,
+        textColor: Colors.black,
+      );
       expect(config.fontSize, equals(8.0));
     });
 
     test('边界 - 极大行高比', () {
-      final config = const ParagraphConfig(lineHeight: 3.0);
+      final config = const ParagraphConfig(
+        lineHeight: 3.0,
+        backgroundColor: Colors.white,
+        textColor: Colors.black,
+      );
       expect(config.lineHeight, equals(3.0));
     });
 
     test('边界 - 零字号', () {
-      final config = const ParagraphConfig(fontSize: 0.0);
+      final config = const ParagraphConfig(
+        fontSize: 0.0,
+        backgroundColor: Colors.white,
+        textColor: Colors.black,
+      );
       expect(config.fontSize, equals(0.0));
     });
 
     test('边界 - 负段落间距', () {
-      final config = const ParagraphConfig(paragraphSpacing: -5.0);
+      final config = const ParagraphConfig(
+        paragraphSpacing: -5.0,
+        backgroundColor: Colors.white,
+        textColor: Colors.black,
+      );
       expect(config.paragraphSpacing, equals(-5.0));
     });
 
@@ -939,8 +965,17 @@ void main() {
     });
 
     test('场景 - 缩进配置影响排版', () {
-      final configNoIndent = const ParagraphConfig(indent: 0.0);
-      final configWithIndent = const ParagraphConfig(indent: 32.0);
+      // [A-4] 颜色必填：显式传原默认值
+      final configNoIndent = const ParagraphConfig(
+        indent: 0.0,
+        backgroundColor: Colors.white,
+        textColor: Colors.black,
+      );
+      final configWithIndent = const ParagraphConfig(
+        indent: 32.0,
+        backgroundColor: Colors.white,
+        textColor: Colors.black,
+      );
       
       expect(configNoIndent.indent, equals(0.0));
       expect(configWithIndent.indent, equals(32.0));

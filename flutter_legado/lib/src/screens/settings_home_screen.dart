@@ -31,8 +31,12 @@ class SettingsHomeScreen extends StatelessWidget {
           () => Navigator.pushNamed(context, AppRoutes.sources)),
       (Symbols.schedule_rounded, '定时任务', '管理按计划执行的 JavaScript 任务',
           () => Navigator.pushNamed(context, AppRoutes.autoTasks)),
-      (Symbols.font_download_rounded, '字体管理', '阅读字体选择与导入',
-          () => Navigator.pushNamed(context, AppRoutes.fonts)),
+      // [N6 | 2026-09-20 用户裁决（授权偏离已登记，见
+      // docs/SCREEN_1TO1_PARITY_LEDGER_20260914.md 3-7/N6）]「字体管理」
+      // 入口自设置可见列表收起：参考版字号/字体仅在阅读器内调整、无独立
+      // 设置入口；字体页（font_screen / AppRoutes.fonts）与功能保留，仍经
+      // 阅读器排版面板「阅读字体」行进入（reader_config_panel /
+      // reader_settings_sheet_font_panel，与参考版阅读器内字体能力对齐）。
       (Symbols.info_rounded, '关于', '版本、日志与开源许可',
           () => Navigator.pushNamed(context, AppRoutes.about)),
     ];

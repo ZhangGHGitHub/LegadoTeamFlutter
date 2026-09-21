@@ -173,8 +173,11 @@ class ParagraphConfig {
     this.paragraphSpacing = 8.0,
     this.indent = 0.0,
     this.justify = true,
-    this.backgroundColor = Colors.white,
-    this.textColor = Colors.black,
+    // [A-4 | 2026-09-20 用户裁决] 原死默认 Colors.white/Colors.black（调用方
+    // 恒以 state 派生色覆写，默认值从未被生产路径依赖）改为必填：漏传颜色
+    // 直接编译错误，杜绝隐性主题回退（DARK_THEME 台账 C3 项闭环）。
+    required this.backgroundColor,
+    required this.textColor,
     this.letterSpacing = 0.0,
     this.fontFamily,
     this.indentCount = 2,

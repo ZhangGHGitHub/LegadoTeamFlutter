@@ -27,6 +27,9 @@ void main() {
           lineHeight: 1.5,
           indent: 0,
           useZhLayout: true,
+          // [A-4] 颜色必填：显式传原默认值（白底/黑字，断行用例与颜色无关）
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
         ),
         context: _FakeBuildContext(),
       );
@@ -51,6 +54,9 @@ void main() {
           lineHeight: 1.5,
           indent: 0,
           useZhLayout: true,
+          // [A-4] 颜色必填：显式传原默认值（白底/黑字，断行用例与颜色无关）
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
         ),
         context: _FakeBuildContext(),
       );
@@ -82,6 +88,9 @@ void main() {
           indent: 0,
           useZhLayout: true,
           textScaler: scaler,
+          // [A-4] 颜色必填：显式传原默认值（白底/黑字，断行用例与颜色无关）
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
         ),
         context: _FakeBuildContext(),
       );
@@ -104,6 +113,9 @@ void main() {
           lineHeight: 1.5,
           indent: 0,
           useZhLayout: true,
+          // [A-4] 颜色必填：显式传原默认值（白底/黑字，断行用例与颜色无关）
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
         ),
         context: _FakeBuildContext(),
       );
@@ -127,6 +139,9 @@ void main() {
           lineHeight: 1.5,
           indent: 0,
           useZhLayout: false,
+          // [A-4] 颜色必填：显式传原默认值（白底/黑字，断行用例与颜色无关）
+          backgroundColor: Colors.white,
+          textColor: Colors.black,
         ),
         context: _FakeBuildContext(),
       );
