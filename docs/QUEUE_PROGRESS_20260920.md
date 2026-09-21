@@ -67,6 +67,17 @@
 
 ---
 
+## 二·补二  第二次暂停点（2026-09-21 晚）
+
+**已完成并推送（本地=远端）**：
+- **⑦a A2 主题页同步风格版**：`1869dbb289`（版本 2.0.303+304，Flutter CI `35606956545` 绿）——9 处改名 + 顺序重排 + 横滑一行 64dp 方卡 + 选中 2dp 描边/40dp 圆点勾选（依据参考版 `ThemeConfigScreen.kt:1020/1032/1089-1158`）；选色逻辑/持久化/色值零改动；「动态取色/自定义」仅登记。
+- 推送追平：远端已与本地一致（此前 3 个提交经直连补推成功）。
+- ⑦b 项一（A3 干净基线）已于更早提交入库。
+
+**暂停时的在途状态**：
+1. **③b A4 书架单击对齐（有未提交代码，必须接管）**：`flutter_legado/lib/src/routes.dart`、`lib/src/screens/book_info_screen.dart`、`lib/src/screens/book_info_screen_load.part.dart` —— 正在实现"详情页 + 立即自动开读"（重构版模式）。**未验证**（未跑 analyze/test、未实机）；补丁备份 `.tmp/inflight/a4b_20260921.patch`。续跑要点：先 `flutter analyze && flutter test` 判可用性 → 阅读器**零进度兜底**确认（承重区，越界即停报告）→ 设备验证五项（Test）→ **过 code-reviewer 再提交**。
+2. **⑦b 参考重采（项二/项三）**：证据已采但报告段落未写——`docs/parity_shots/ref_dark_20260921/` 内 `05_ref_transparent_dark_appearance.png`（已更新，M 态）、`06_ref_transparent_dark_search.png` 与 `_tmp_u3x.xml`（untracked）。`RECAPTURE_20260921.md` 的 §2/§3 仍标"进行中，见后续补写"→ **续跑即补写结论**（结论决定 A6 输入盒 `isDark ? onSurface` 保留还是回退 `surfaceContainerLow`，以及 Transparent 深色 sCL 取值裁决）。
+
 ## 三、续跑队列（按序，复工即可用）
 
 | 序 | 任务 | 备注 |

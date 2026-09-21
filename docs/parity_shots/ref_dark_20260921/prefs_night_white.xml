@@ -1,0 +1,12 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="app_theme">12</string>
+    <string name="customMode">tonalSpot</string>
+    <string name="customContrast">Default</string>
+    <string name="backgroundImageNight">/storage/emulated/0/Android/data/io.legato.kazusa/files/backgroundImageNight/ae11f763b907ecaf2603fedd67a24bba.png</string>
+    <string name="backgroundImage">/storage/emulated/0/Android/data/io.legato.kazusa/files/backgroundImage/167f34855922e49a01f5adb27bee43c2.png</string>
+    <string name="themeMode">2</string>
+    <string name="composeEngine">material</string>
+    <string name="materialVersion">material3</string>
+    <string name="paletteStyle">tonalSpot</string>
+</map>

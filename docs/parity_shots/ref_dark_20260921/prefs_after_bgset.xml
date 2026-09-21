@@ -1,0 +1,10 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <string name="app_theme">12</string>
+    <string name="customMode">tonalSpot</string>
+    <string name="customContrast">Default</string>
+    <string name="themeMode">2</string>
+    <string name="composeEngine">material</string>
+    <string name="materialVersion">material3</string>
+    <string name="paletteStyle">tonalSpot</string>
+</map>
