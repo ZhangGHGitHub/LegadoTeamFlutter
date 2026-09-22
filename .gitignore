@@ -111,3 +111,11 @@ tmp_diag/
 /app/
 /modules/
 .zcodeignore
+
+# === 目录治理批⑨b（2026-09-22）===
+# 109M 证据目录：保留在磁盘（P2-6 证据），不入库
+docs/parity_shots/songhe_template_fix_20260917/
+# parity 采集/配对过程中的临时探针图
+docs/parity_shots/**/_tmp_*
+# Dart 测试基线日志（每次重跑可再生）
+docs/gate_baseline_test.txt
