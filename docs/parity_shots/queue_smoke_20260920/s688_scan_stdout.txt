@@ -1,0 +1,7 @@
+[diag] list_enabled_sources = 916
+[   2.68s] #1 🏷松鹤庭沐·言璃 books=1 class=ok err=
+[   3.25s] #2 📂网阅小说 books=2 class=ok err=
+===== 汇总 ===== 总书源=2 ok=2 empty=0 err=0 总书籍=3 墙钟=3.3s
+===== 分类汇总 ===== ok=2 empty=0 http=0 timeout=0 login=0 js=0 parser=0 cancelled=0
+===== 错误分类（前 60 字符聚合，Top25）=====
+报告已写入: D:\OH-WorkSpace\LegadoTeam\legado\.tmp\queue_smoke_20260920\s688_scan_report.json

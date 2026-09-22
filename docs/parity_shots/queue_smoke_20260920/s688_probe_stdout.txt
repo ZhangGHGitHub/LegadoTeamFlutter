@@ -1,0 +1,115 @@
+[wangyue] search books=2 (query=斗罗大陆)
+    #0 name="斗罗大陆IV终极斗罗" author="唐家三少" bookUrl="https://book15.net/books/details5775.html"
+    #1 name="斗罗大陆" author="唐家三少" bookUrl="https://book15.net/books/details3735.html"
+[wangyue] 选书: 斗罗大陆 (https://book15.net/books/details3735.html)
+[web_book] get_book_info fetch https://book15.net/books/details3735.html in 598.2627ms
+[web_book] get_book_info parse in 17.5352ms name=斗罗大陆
+[wangyue] info: name="斗罗大陆" kind=玄幻奇幻 last= toc=
+[web_book] get_chapters info_body in 532.7535ms
+[web_book] get_chapters elements=688 in 3.3323ms
+[web_book] get_chapters parse 688 chapters in 4.423ms (total 543.8545ms)
+[wangyue] chapters total=688 distinct_urls=688 vip=0
+[wangyue] first: [0] 第1章 引子 穿越的唐家三少 https://book15.net/chapter/index3735-4353910.html
+[wangyue] last : [687] 第688章 大结局，最后一个条件（全书完） https://book15.net/chapter/index3735-4354597.html
+[wangyue] content[0]: len=526661 head=引子 穿越的唐家三少()⏎巴蜀，历来有天府之国的美誉，其中，有名的门派莫过于唐门。⏎唐门所是一个神秘的地方，许多人只知道，那是一个半山腰，而唐门所这座山的山顶有一个令人胆颤心惊的名字，――鬼见愁。⏎从鬼见愁悬崖上扔出一块石头，要足足数上十九下才会听到石落山底的回声，可见其高，也正是因为这十九秒，尚超过十八层地狱一筹，故而得名。⏎一名身穿灰衣的青年正站鬼见愁顶峰，凛冽的山风不能令他的身体有丝毫移动，从他胸口处那斗大的唐字就可以认出，他来自 …(总长 532377)
+[wangyue] content[344]: len=852919 head=萨拉斯的眼神则变得十分沉郁，没有人知道他想什么。  为镇定的反而是雪夜大帝，嘴角处浮现出一丝淡淡的微笑，看着擂台上的唐三，眼中似乎只有赞许的光芒。⏎又一次被抗拒火环破坏了攻击，而且这次连唐三都已经被弹了出去，双方的战斗暂时停顿了下来。⏎化险为夷的火无双四人毫不犹豫的飞快与其他三名队友汇合一起，重组成了三角战阵。  另一边的史莱克学院七人也聚集一起。⏎绛珠的治疗权杖已经『插』了地上，一圈圈恢复光环释放，驱除着众人身上受到火属『性』魂力影响 …(总长 862311)
+[wangyue] 完成 墙钟=185.3s
+[songhe] search books=10 (query=斗罗大陆)
+    #0 name="斗罗大陆" author="唐家三少" bookUrl="https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468021"
+    #1 name="斗罗大陆III龙王传说" author="唐家三少" bookUrl="https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100804453"
+    #2 name="斗罗大陆IV终极斗罗" author="唐家三少" bookUrl="https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1123406185"
+    #3 name="斗罗大陆II绝世唐门" author="唐家三少" bookUrl="https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100462368"
+    #4 name="斗罗大陆V重生唐三" author="唐家三少" bookUrl="https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1137996625"
+    #5 name="斗罗大陆：平民魂师的逆袭" author="铁锅煮月亮" bookUrl="https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1159492048"
+    #6 name="树界降临斗罗大陆" author="心未乱" bookUrl="https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1152391420"
+    #7 name="斗罗大陆，普通魂师的逆袭" author="鹿小海" bookUrl="https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1157107093"
+    #8 name="无限恐怖，但在斗罗大陆" author="地狱及乐园的境界" bookUrl="https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1158933808"
+    #9 name="我在斗罗大陆捡碎片" author="西门阿宾" bookUrl="https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1151684939"
+[songhe] 选书: 斗罗大陆 (https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468021)
+[web_book] get_book_info fetch https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468021 in 148.5512ms
+[regex_safe] 首次编译 pattern（线程 main），前64字符: 正文卷.|正文.|VIP卷.|默认卷.|卷_|VIP章节.|免费章节.|章节目录.|最新章节.|[\(（【].*?[求更票谢乐发
+[web_book] get_book_info parse in 2.4029ms name=斗罗大陆
+[songhe] info: name="斗罗大陆" kind=9.9分 · 轻小说 · 712章 · 298.6万字 · 已完结
+影视原著、学院流、穿越、升级流、热血
+2025-03-04 last= toc=
+[web_book] get_chapters info_body in 156.4143ms
+[web_book] get_chapters elements=712 in 485µs
+[web_book] get_chapters parse 712 chapters in 516.8804ms (total 712.6728ms)
+[songhe] chapters total=712 distinct_urls=712 vip=0
+[songhe] first: [0] 
+第1章 引子 穿越的唐家三少 https://novel.html5.qq.com/be-api/content/ads-read,{
+	"method": "POST",
+	"body": {
+		"Scene": "chapter",
+		"ContentAncho …(总长 531)
+[songhe] last : [711] 
+第712章 大结局，最后一个条件（全书完） https://novel.html5.qq.com/be-api/content/ads-read,{
+	"method": "POST",
+	"body": {
+		"Scene": "chapter",
+		"Con …(总长 554)
+[songhe] content[0]: len=7574 head=巴蜀，历来有天府之国的美誉，其中，最有名的门派莫过于唐门。⏎唐门所在是一个神秘的地方，许多人只知道，那是一个半山腰，而唐门所在这座山的山顶有一个令人胆颤心惊的名字，——鬼见愁。⏎从鬼见愁悬崖上扔出一块石头，要足足数上十九下才会听到石落山底的回声，可见其高，也正是因为这十九秒，尚超过十八层地狱一筹，故而得名。⏎一名身穿灰衣的青年正站在鬼见愁顶峰，凛冽的山风不能令他的身体有丝毫移动，从他胸口处那斗大的唐字就可以认出，他来自唐门，灰衣代表的， …(总长 7611)
+[songhe] content[356]: len=8665 head=紫极魔瞳的精神冲击直接刺入大脑，魂力反噬。没错，苍晖学院的七名队员不会死，但他们却已经都变成了白痴。某些神经的损伤令他们永远也不可能恢复过来。哪怕是最好的治疗系魂师对大脑这个无比精密的组织也是束手无策。⏎唐三从来都不是一个善良的人，更不像他表面看上去那样普通。唐门本身就是亦正亦邪的，当面对有可能威胁到自己生命的敌人时，手下留情只会让自己陷入危机。⏎从看到对手的七位一体融合技，到对手发动攻击，唐三在彩光中通知队友们应变的方法以及击溃对手七 …(总长 8711)
+[songhe] 完成 墙钟=1.1s
+
+===== 汇总 =====
+{
+  "db": "D:/OH-WorkSpace/LegadoTeam/legado/.tmp/queue_smoke_20260920/s688_device_legado.db",
+  "query": "斗罗大陆",
+  "results": [
+    {
+      "content_lens": [
+        {
+          "index": 0,
+          "len": 526661
+        },
+        {
+          "index": 344,
+          "len": 852919
+        }
+      ],
+      "first_chapter": "[0] 第1章 引子 穿越的唐家三少 https://book15.net/chapter/index3735-4353910.html",
+      "info_kind": "玄幻奇幻",
+      "info_last_chapter": "",
+      "info_toc_url": "",
+      "last_chapter": "[687] 第688章 大结局，最后一个条件（全书完） https://book15.net/chapter/index3735-4354597.html",
+      "n_books": 2,
+      "n_chapters": 688,
+      "n_distinct_urls": 688,
+      "n_vip": 0,
+      "picked_book_url": "https://book15.net/books/details3735.html",
+      "picked_name": "斗罗大陆",
+      "search_ok": true,
+      "source": "wangyue",
+      "stage": "done",
+      "wall_s": 185.2730652
+    },
+    {
+      "content_lens": [
+        {
+          "index": 0,
+          "len": 7574
+        },
+        {
+          "index": 356,
+          "len": 8665
+        }
+      ],
+      "first_chapter": "[0] \n第1章 引子 穿越的唐家三少 https://novel.html5.qq.com/be-api/content/ads-read,{\n\t\"method\": \"POST\",\n\t\"body\": {\n\t\t\"Scene\": \"chapter\",\n\t\t\"ContentAnchorBatch\": [{\n\t\t\t\t\"BookID\": \"1100468021\",\n\t\t\t\t\"ChapterSeqNo\": [1]\n\t\t\t}]\n\t},\n\t\"headers\": {\n\t\t\"user-agent\": \"Mozilla/5.0 (Linux; Android 10; MI 8 Build/QKQ1.190828.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.101 Mobile Safari/537.36\",\n\t\t\"Referer\": \"https://bookshelf.html5.qq.com/qbread\",\n\t\t\"Q-GUID\": \"4aa27c7cf2d9aca3359656ea186488cb\"\n\t}\n}",
+      "info_kind": "9.9分 · 轻小说 · 712章 · 298.6万字 · 已完结\n影视原著、学院流、穿越、升级流、热血\n2025-03-04",
+      "info_last_chapter": "",
+      "info_toc_url": "",
+      "last_chapter": "[711] \n第712章 大结局，最后一个条件（全书完） https://novel.html5.qq.com/be-api/content/ads-read,{\n\t\"method\": \"POST\",\n\t\"body\": {\n\t\t\"Scene\": \"chapter\",\n\t\t\"ContentAnchorBatch\": [{\n\t\t\t\t\"BookID\": \"1100468021\",\n\t\t\t\t\"ChapterSeqNo\": [712]\n\t\t\t}]\n\t},\n\t\"headers\": {\n\t\t\"user-agent\": \"Mozilla/5.0 (Linux; Android 10; MI 8 Build/QKQ1.190828.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.101 Mobile Safari/537.36\",\n\t\t\"Referer\": \"https://bookshelf.html5.qq.com/qbread\",\n\t\t\"Q-GUID\": \"4aa27c7cf2d9aca3359656ea186488cb\"\n\t}\n}",
+      "n_books": 10,
+      "n_chapters": 712,
+      "n_distinct_urls": 712,
+      "n_vip": 0,
+      "picked_book_url": "https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468021",
+      "picked_name": "斗罗大陆",
+      "search_ok": true,
+      "source": "songhe",
+      "stage": "done",
+      "wall_s": 1.1472204
+    }
+  ]
+}

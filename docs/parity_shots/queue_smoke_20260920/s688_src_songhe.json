@@ -1,0 +1,65 @@
+{
+ "bookSourceUrl": "https://so.html5.qq.com#v2修复版",
+ "bookSourceName": "🏷松鹤庭沐·言璃",
+ "bookSourceGroup": "正版书源 🏷",
+ "bookSourceType": 0,
+ "customOrder": 17,
+ "enabled": 1,
+ "enabledExplore": 1,
+ "jsLib": null,
+ "enabledCookieJar": 1,
+ "concurrentRate": "3/1",
+ "header": "{\n\t\"user-agent\":\"Mozilla/5.0 (Linux; Android 10; MI 8 Build/QKQ1.190828.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.101 Mobile Safari/537.36\",\n\t\"Referer\":\"https://bookshelf.html5.qq.com/qbread\"\n\t}",
+ "bookSourceComment": "松鹤庭沐·言璃版X v2.3\n\n修复：搜索翻页重复、分类乱码、书名括号、宣传帖过滤\n新增：女生小说分类8个、男生小说榜单分区(总榜/完本/连载×12)\n优化：详情页信息丰富化、封面HTTPS、付费章兜底、限流防风控\n\n-修复部分ai代码格式问题\n-新增出版分类和部分二级分类\n-优化发现页样式，目录页付费上锁，正文页付费提示\n-—-寿横",
+ "variable": "",
+ "lastUpdateTime": 1788787878947,
+ "respondTime": 9109,
+ "weight": 0,
+ "exploreUrl": "@js:\nvar B = \"https://bookshelf.html5.qq.com/qbread/\";\nvar R = \"categorylist?traceid=0809004&sceneid=FeedsTab&strageid=&ch=001995&tabfrom=top&feeds_version=8516&reader_version=0&groupid=\";\nvar SP = \"　　　　　　 \", SS = \" 　　　　　　\";\nvar U = function(g, s, f, sub) {\n    return B + \"api/rank/list?ch=001995&groupid=\" + g + \"&start={{page}}&count=20&sort=\" + s + \"&sub=\" + (sub || \"\") + \"&tag=&words=&finish=\" + f + \",{'headers':{'Referer':'\" + B + R + g + \"&tag_type_id=1'}}\";\n};\nvar IT = function(t, g, s, f, sub, b) {\n    return { title: t, url: U(g, s, f, sub), style: { layout_flexGrow: 1, layout_flexBasisPercent: b || 0.25 } };\n};\nvar HD = function(t) {\n    return { title: t, url: \"\", style: { layout_flexGrow: 1, layout_flexBasisPercent: 1 } };\n};\nvar G = {\n    \"男频\": \"都市|1505|都市生活,异术超能,娱乐明星,商战职场,青春校园;玄幻|1501|异世大陆,东方玄幻,高武世界,王朝争霸;仙侠|1504|幻想修仙,神话修真,古典仙侠,修真文明,现代修真;奇幻|1502|史诗奇幻,另类幻想,剑与魔法,现代魔法,历史神话;历史|1506|架空历史,秦汉三国,两宋元明,两晋隋唐,历史传记,上古先秦,清史民国,外国历史;军事|1507|抗战烽火,战争幻想,谍战特工,军旅生涯,军事战争;科幻空间|1509|末世危机,时空穿梭,进化变异,未来世界,星际文明,超级科技,古武机甲;悬疑侦探|1508|;游戏竞技|1510|虚拟网游,游戏异界,电子竞技,游戏系统,游戏主播;武侠|1503|传统武侠,武侠幻想,武侠同人,古武未来,国术无双;体育|1511|篮球运动,足球运动,体育赛事;轻小说|1512|衍生同人,原生幻想,搞笑吐槽;短篇|1515|短篇小说,生活随笔,影视剧本,诗歌散文,人物传记,美文游记,评论文集;现实|1499|现实百态,爱情婚姻,成功励志,社会乡土,青春文学,文学艺术\",\n    \"女频\": \"现代言情|1524|婚恋情缘,豪门世家,都市生活,娱乐明星,都市异能,商战职场,民国情缘,官场沉浮;古代言情|1523|古典架空,穿越奇情,古代情缘,宫闱宅斗,经商种田,女尊王朝,热血江湖,上古蛮荒;悬疑侦探|1518|推理侦探,悬疑探险,神秘文化,恐怖惊悚,幽冥情缘;仙侠奇缘|1517|古典仙侠,仙侣奇缘,武侠情缘,现代修真,远古洪荒;玄幻言情|1516|东方玄幻,异世大陆,魔法幻情,异能超术,异族恋情,西方奇幻,远古神话;浪漫青春|1522|青春校园,青春纯爱,青春疼痛,叛逆成长;科幻空间|1519|时空穿梭,末世危机,未来世界,星际恋歌,超级科技,进化变异,古武机甲;游戏竞技|1520|网游情缘,电子竞技,游戏异界,体育竞技;纯爱|1707|婚恋情缘,时空穿梭,穿越奇情,古典架空,古代情缘,都市生活\",\n    \"出版文学\": \"小说|1688|社会,情感,侦探/悬疑/推理,作品集,历史,科幻,武侠,世界名著;励志|1690|成功/激励,心灵与修养,青少年励志,人际交往,人生哲学,口才/演讲/辩论,人在职场,女性励志;心理|1466|心理百科,心理学经典著作,心理学入门,应用心理学,人格心理学,心灵疗愈,心理学理论与研究,社会心理学;军事|1697|武器装备,军事理论,世界军事,军事文学,军事史,经典军事著作,战略战术战役,中国军事;政治|1464|政治理论,党政读物,中国政治,世界政治,法律普及读物,政治热点,公共管理,法律法规;文学|1692|中国现当代随笔,文集,中国现当代诗歌,纪实文学,文学评论与鉴赏,名家作品,中国古诗词,文学理论;文化|1461|文学,中国文化,文化史,地域文化,民族文化,艺术理论,国学普及读物,文化理论;历史|1693|历史普及读物,中国史,世界史,地方史志,历史随笔,文物考古,史料典籍,史学理论;社科|1691|教育,语言文字,社会科学总论,社会学,经典名家作品集,人类学/人口学,新闻传播出版,民族学;养生|1463|健康百科,饮食健康,常见病预防和治疗,药膳食疗,中医养生,女性/儿童,心理健康,中老年养生;投资|1704|理财技巧,女性理财,证券/股票,投资指南,外汇;经济|1703|经济通俗读物,经济学理论,各部门经济,中国经济,国际经济,经济史,经济法,财政税收;亲子|1683|家教方法,育儿/亲子,孕产知识,素质教育,母婴喂养/护理,胎教/早教,家教理论,养育女孩;管理|1689|一般管理学,市场/营销,企业与企业家,金融/投资,电子商务,会计/财务,商业史传,战略管理;两性|1696|恋爱,婚姻,婚恋综合,性知识;哲学|1701|中国哲学,哲学知识读物,西方哲学,哲学经典著作,东方哲学,伦理学,哲学理论与流派,马克思哲学;宗教|1702|佛教,宗教普及读物,道教,宗教理论与概况,伊斯兰教,宗教经典著作;传记|1695|人物合集,历史人物,财经人物,政治人物,文学家,历代帝王,其他,科学家;科普|1698|百科知识,科学世界,人类故事,宇宙知识,生物世界,生态环境,神秘现象,数理化;自然|1706|总论,地球科学,天文学,科技史,生物科学,化学,物理学;美食|1705|家常菜谱,药膳食疗,地方美食,茶酒饮料,烹饪理论/手册,饮食文化,西餐料理;休闲|1465|幽默笑话,旅游随笔,宠物杂事,游戏,家庭园艺,户外探险,国内自助旅游指南,车载户外;艺术|1461|文学,中国文化,文化史,地域文化,民族文化,艺术理论,国学普及读物,文化理论;时尚|1694|护肤/美容整形,家事窍门,时尚,家装方法指导,瘦身美体,服饰搭配/配饰,家装策略秘籍,彩妆/美发/美甲\"\n};\nvar T = {\n    \"风格\": \"轻松:20284,热血:20286,快节奏:20281,脑洞大:20280,搞笑:22176,谋略:20285,智斗:20279,正能量:20282,无金手指:20283,思想迪化:20561,人生巅峰:22147,群像:20278,爽文:20882,神功秘籍:22132,机缘奇遇:22144,鬼怪神魔:22247,兄弟情义:22309,孙悟空:22356,红颜知己:22187,变异生物:22258,高科技:22249,剑道:22286\",\n    \"流派\": \"穿越:20003,系统流:20006,无敌流:20011,重生:20002,日常文:20007,赚钱:20136,强者归来:20021,经营:20000,草根崛起:20020,无限流:20008,诸天流:20023,扮猪吃虎:20019,开局流:20515,文娱:20050,斗罗大陆:20199,争霸:20028,游戏异界:20162,兵王:20030,练功流:20166,护花高手:20134,洪荒:20057,末世:20055,升级流:20094,废柴流:20015,天才流:20014,医生流:20033,综漫:20200,凡人流:20503,架空历史:20148,异能:20046,进化:20082,召唤流:20012,三国:20026,养成:20004,种田:20090,单女主:20060\"\n};\nvar KD = [[\"总榜\", \"3\", \"\"], [\"完本\", \"0\", \"1\"], [\"连载\", \"0\", \"0\"]];\nvar BD = [\"男频\", \"女频\", \"出版文学\", \"风格\", \"流派\"];\n\nvar st = {};\ntry { st = JSON.parse(source.getVariable()); } catch (e) { st = {}; }\nvar bd = st.board || \"男频\";\nif (BD.indexOf(bd) === -1) bd = \"男频\";\nvar opts = [\"全部\"];\nif (G[bd]) G[bd].split(\";\").forEach(function(x) { opts.push(x.split(\"|\")[0]); });\nvar sb = st.sub || \"全部\";\nif (opts.indexOf(sb) === -1) sb = \"全部\";\n\nvar A1 = \"var s={};try{s=JSON.parse(source.getVariable())}catch(e){};var b=infoMap['分类板块']||'\" + bd + \"';s.board=b;s.sub='全部';source.setVariable(JSON.stringify(s));java.refreshExplore();\";\nvar A2 = \"var s={};try{s=JSON.parse(source.getVariable())}catch(e){};var v=infoMap['二级分类']||'\" + sb + \"';s.board='\" + bd + \"';s.sub=v;source.setVariable(JSON.stringify(s));java.toast('\" + bd + \" · '+v);java.refreshExplore();\";\n\nvar ui = [];\nui.push({ title: \"分类板块\", type: \"select\", chars: BD, default: bd, action: A1, style: { layout_flexBasisPercent: 1 } });\nif (opts.length > 1) ui.push({ title: \"二级分类\", type: \"select\", chars: opts, default: sb, action: A2, style: { layout_flexBasisPercent: 1 } });\n\nif (T[bd]) {\n    ui.push(HD(\"　　　　　　 \" + bd + \" 　　　　　　\"));\n    T[bd].split(\",\").forEach(function(x) {\n        var p = x.split(\":\");\n        ui.push(IT(p[0], p[1], 0, \"\"));\n    });\n} else {\n    ui.push(HD(\"　　　　　　 \" + bd + \"分类 　　　　　　\"));\n    G[bd].split(\";\").forEach(function(x) {\n        var p = x.split(\"|\");\n        if (sb !== \"全部\" && sb !== p[0]) return;\n        ui.push(IT(SP + p[0] + SS, p[1], 0, \"\", \"\", 1));\n        if (p[2]) p[2].split(\",\").forEach(function(s) { ui.push(IT(s, p[1], 0, \"\", s)); });\n        if (sb !== \"全部\") {\n            ui.push(HD(\"　　　　　　 \" + p[0] + \"榜单 　　　　　　\"));\n            KD.forEach(function(k) { ui.push(IT(p[0] + k[0], p[1], k[1], k[2], \"\")); });\n        }\n    });\n}\nJSON.stringify(ui);",
+ "ruleExplore": {
+  "bookList": "$.rows[*]",
+  "name": "$.resourceName##（.*",
+  "author": "$.author",
+  "intro": "$.summary",
+  "kind": "{{$.userscore}}分 · {{$.subject}} · {{$.serialnum}}章 · {{(Number(java.getString('$.contentsize'))/10000).toFixed(1)}}万字 · {{java.getString('$.isfinish')=='true'?'已完结':'连载中'}}\n{{String(java.getString('$.tag')).replace(/\\|/g,'、')}}\n{{String(java.timeFormat(java.getString('$.lastUpdatetime')*1000)).replace(/\\//g,'-').replace(/\\s.*/,'')}}",
+  "lastChapter": "$.lastSerialname##正文卷.|正文.|VIP卷.|默认卷.|卷_|VIP章节.|免费章节.|章节目录.|最新章节.|[\\(（【].*?[求更票谢乐发订合补加架字修Kk].*?[】）\\)]|.*新书.*|.*上线.*",
+  "bookUrl": "https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid={{$.resourceID}}",
+  "coverUrl": "$.picurl",
+  "wordCount": "$.contentsize"
+ },
+ "searchUrl": "https://newopensearch.reader.qq.com/wechat?keyword={{key}}&amp;start={{(page-1)*20}}&amp;end={{page*20-1}}",
+ "ruleSearch": {
+  "bookList": "$.booklist[*]",
+  "name": "$.title",
+  "author": "$.author",
+  "intro": "$.intro",
+  "kind": "{{$.categoryInfoV4##\\d.*?\\:(.*?)\\:.*?(,|$)##$1$2###}}\n{{$.updateInfo##已更新至.*##连载中}}",
+  "lastChapter": "$.updateInfo##已更新至##第",
+  "bookUrl": "$.bid\n<js>1100000000+parseInt(result)</js>\nhttps://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid={{result}}",
+  "coverUrl": "$.bid\n@js:\nvar s = result;\nfunction gt(s){\n    var a = s.slice(-3);\n    if(a<10){\n        var n = s.slice(-1);\n    }else if(a<100){\n        var n = s.slice(-2);\n    }else{\n        var n = a;\n    }\n    return n;\n}\n\"https://wfqqreader-1252317822.image.myqcloud.com/cover/\"+gt(s)+\"/\"+s+\"/b_\"+s+\".jpg\"",
+  "wordCount": "$.totalWords"
+ },
+ "ruleBookInfo": {
+  "init": "$.data.bookInfo",
+  "name": "$.resourceName##（.*",
+  "author": "$.author",
+  "intro": "<p>{{(t=String(java.getString('$.tag'))).length?'🏷️   标签：'+t.replace(/\\|/g,', '):''}}</p>{{'\\n'}}<br>\n<p>🔖   简介：{{$.summary}}</p>",
+  "kind": "{{$.userscore}}分 · {{$.subject}} · {{$.serialnum}}章 · {{(Number(java.getString('$.contentsize'))/10000).toFixed(1)}}万字 · {{java.getString('$.isfinish')=='true'?'已完结':'连载中'}}\n{{String(java.getString('$.tag')).replace(/\\|/g,'、')}}\n{{String(java.timeFormat(java.getString('$.lastUpdatetime')*1000)).replace(/\\//g,'-').replace(/\\s.*/,'')}}",
+  "lastChapter": "$.lastSerialname##正文卷.|正文.|VIP卷.|默认卷.|卷_|VIP章节.|免费章节.|章节目录.|最新章节.|[\\(（【].*?[求更票谢乐发订合补加架字修Kk].*?[】）\\)]|.*新书.*|.*上线.*",
+  "coverUrl": "$.picurl",
+  "tocUrl": "https://bookshelf.html5.qq.com/qbread/api/book/all-chapter?bookId={{$.resourceID}}",
+  "wordCount": "$.contentsize"
+ },
+ "ruleToc": {
+  "chapterList": "$.rows",
+  "chapterName": "{{(java.getString('$.isFree')!='true')?'🔒':''}}\n{{$.serialName##正文卷.|正文.|VIP卷.|默认卷.|卷_|VIP章节.|免费章节.|章节目录.|最新章节.|[\\(（【].*?[求更票谢乐发订合补加架字修Kk].*?[】）\\)]}}",
+  "chapterUrl": "https://novel.html5.qq.com/be-api/content/ads-read,{\n\t\"method\": \"POST\",\n\t\"body\": {\n\t\t\"Scene\": \"chapter\",\n\t\t\"ContentAnchorBatch\": [{\n\t\t\t\t\"BookID\": \"{{(baseUrl.match(/bookId=(\\d+)/)||['',''])[1]}}\",\n\t\t\t\t\"ChapterSeqNo\": [{{$.serialID}}]\n\t\t\t}]\n\t},\n\t\"headers\": {\n\t\t\"user-agent\": \"Mozilla/5.0 (Linux; Android 10; MI 8 Build/QKQ1.190828.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.101 Mobile Safari/537.36\",\n\t\t\"Referer\": \"https://bookshelf.html5.qq.com/qbread\",\n\t\t\"Q-GUID\": \"4aa27c7cf2d9aca3359656ea186488cb\"\n\t}\n}",
+  "isVip": "{{java.getString('$.isFree') == 'true' ? 'false' : 'true'}}"
+ },
+ "ruleContent": {
+  "content": "@js:\nvar outText;\nvar msg = '';\nvar isFreeRaw = java.getString('$.data.Content[0].ErrMsg');\n\nif(isFreeRaw != ''){\n    msg = \"\\n本章暂无法读取（可能为付费章节）\";\n    }\n     outText = java.getString('$.data.Content[0].Content[0]')\noutText+msg",
+  "title": "$.data.Content[0].ChapterInfo.Title"
+ },
+ "eventListener": 0,
+ "customButton": 0
+}

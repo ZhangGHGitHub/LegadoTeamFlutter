@@ -1,0 +1,60 @@
+{
+  "db": "D:/OH-WorkSpace/LegadoTeam/legado/.tmp/queue_smoke_20260920/s688_device_legado.db",
+  "query": "斗罗大陆",
+  "results": [
+    {
+      "content_lens": [
+        {
+          "index": 0,
+          "len": 526661
+        },
+        {
+          "index": 344,
+          "len": 852919
+        }
+      ],
+      "first_chapter": "[0] 第1章 引子 穿越的唐家三少 https://book15.net/chapter/index3735-4353910.html",
+      "info_kind": "玄幻奇幻",
+      "info_last_chapter": "",
+      "info_toc_url": "",
+      "last_chapter": "[687] 第688章 大结局，最后一个条件（全书完） https://book15.net/chapter/index3735-4354597.html",
+      "n_books": 2,
+      "n_chapters": 688,
+      "n_distinct_urls": 688,
+      "n_vip": 0,
+      "picked_book_url": "https://book15.net/books/details3735.html",
+      "picked_name": "斗罗大陆",
+      "search_ok": true,
+      "source": "wangyue",
+      "stage": "done",
+      "wall_s": 185.2730652
+    },
+    {
+      "content_lens": [
+        {
+          "index": 0,
+          "len": 7574
+        },
+        {
+          "index": 356,
+          "len": 8665
+        }
+      ],
+      "first_chapter": "[0] \n第1章 引子 穿越的唐家三少 https://novel.html5.qq.com/be-api/content/ads-read,{\n\t\"method\": \"POST\",\n\t\"body\": {\n\t\t\"Scene\": \"chapter\",\n\t\t\"ContentAnchorBatch\": [{\n\t\t\t\t\"BookID\": \"1100468021\",\n\t\t\t\t\"ChapterSeqNo\": [1]\n\t\t\t}]\n\t},\n\t\"headers\": {\n\t\t\"user-agent\": \"Mozilla/5.0 (Linux; Android 10; MI 8 Build/QKQ1.190828.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.101 Mobile Safari/537.36\",\n\t\t\"Referer\": \"https://bookshelf.html5.qq.com/qbread\",\n\t\t\"Q-GUID\": \"4aa27c7cf2d9aca3359656ea186488cb\"\n\t}\n}",
+      "info_kind": "9.9分 · 轻小说 · 712章 · 298.6万字 · 已完结\n影视原著、学院流、穿越、升级流、热血\n2025-03-04",
+      "info_last_chapter": "",
+      "info_toc_url": "",
+      "last_chapter": "[711] \n第712章 大结局，最后一个条件（全书完） https://novel.html5.qq.com/be-api/content/ads-read,{\n\t\"method\": \"POST\",\n\t\"body\": {\n\t\t\"Scene\": \"chapter\",\n\t\t\"ContentAnchorBatch\": [{\n\t\t\t\t\"BookID\": \"1100468021\",\n\t\t\t\t\"ChapterSeqNo\": [712]\n\t\t\t}]\n\t},\n\t\"headers\": {\n\t\t\"user-agent\": \"Mozilla/5.0 (Linux; Android 10; MI 8 Build/QKQ1.190828.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.101 Mobile Safari/537.36\",\n\t\t\"Referer\": \"https://bookshelf.html5.qq.com/qbread\",\n\t\t\"Q-GUID\": \"4aa27c7cf2d9aca3359656ea186488cb\"\n\t}\n}",
+      "n_books": 10,
+      "n_chapters": 712,
+      "n_distinct_urls": 712,
+      "n_vip": 0,
+      "picked_book_url": "https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468021",
+      "picked_name": "斗罗大陆",
+      "search_ok": true,
+      "source": "songhe",
+      "stage": "done",
+      "wall_s": 1.1472204
+    }
+  ]
+}
