@@ -1,5 +1,7 @@
 import 'dart:convert';
 
+import 'package:flutter/services.dart' show rootBundle;
+
 import '../models/models.dart';
 import 'book_api.dart';
 
@@ -35,10 +37,13 @@ part 'mock_book_api_content_ext.part.dart';
 ///   app/src/main/assets/defaultData/httpTTS.json
 ///   （百度 TTS / 阿里云语音，含真实 url 模板与 contentType）
 ///
-/// 书架书籍（Book）为调试用占位数据，字段结构严格对齐
-///   flutter_legado/lib/src/models/book.dart 与 docs/API_CONTRACT.md §2.2，
-///   书名/作者沿用经典网文以便 UI 截图对比；
-///   TODO(§6.4): 后续应从原 Android 端真实书架导出 JSON 替换。
+/// 书架书籍（Book）消费合成脱敏样例资产
+///   assets/mock_data/bookshelf_sample.json（USE_MOCK 数据源）：
+///   结构严格对齐 flutter_legado/lib/src/models/book.dart 与
+///   docs/API_CONTRACT.md §2.2（键名/类型与原版书架导出一致），
+///   内容已全部替换为虚构数据（书名/作者/URL 均为示例值，http(s) 主机名
+///   仅 example.com，不指向任何真实站点）；
+///   来源与脱敏口径见 assets/mock_data/README.md。
 class MockBookApi
     with MockBookApiStore,
         MockBookApiSources,
@@ -57,7 +62,9 @@ class MockBookApi
 
   @override
   Future<void> initialize() async {
-    // Mock 模式无需初始化
+    // Mock 模式无需初始化；确保书架样例资产已加载
+    // （MockBookApi 构造器保持同步，资产读取为异步，经守卫惰性完成）
+    await _ensureBooksLoaded();
   }
 
   @override

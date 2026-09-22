@@ -44,92 +44,12 @@ mixin MockBookApiStore {
 
   /// 初始化 Mock 数据
   ///
-  /// 数据来源见文件头注释。书籍为占位调试数据，书源/RSS/TTS 取自
-  /// Android 原端 app/src/main/assets/defaultData/ 下真实 JSON。
+  /// 数据来源见文件头注释。书源/RSS/TTS 取自
+  /// Android 原端 app/src/main/assets/defaultData/ 下真实 JSON（内置字面量）；
+  /// 书架书籍为合成脱敏样例，经资产 assets/mock_data/bookshelf_sample.json
+  /// 惰性加载（MockBookApi 构造器保持同步，资产读取为异步，
+  /// 各书架相关方法先 await [_ensureBooksLoaded]）。
   void _initMockData() {
-    // ── 书架书籍（占位调试数据，字段对齐 Book model & API_CONTRACT §2.2）──
-    // TODO(§6.4): 替换为原 Android 真实书架导出 JSON
-    _books.addAll([
-      Book(
-        bookUrl: 'mock://book/1',
-        tocUrl: 'https://www.biquge.com.cn/book/6909/',
-        name: '斗破苍穹',
-        author: '天蚕土豆',
-        kind: '玄幻',
-        coverUrl:
-            'https://www.biquge.com.cn/files/article/image/6/6909/6909s.jpg',
-        intro: '讲述了天才少年萧炎在创造了家族史上空前绝后的修炼纪录后突然成了废人，在药老的帮助下一步步走向巅峰的故事。',
-        latestChapterTitle: '第一千六百四十八章 大结局',
-        latestChapterTime: 1630656684531,
-        totalChapterNum: 1648,
-        wordCount: '5342000',
-        canUpdate: true,
-        order: 0,
-        group: 0,
-        origin: 'https://www.biquge.com.cn',
-        originName: '笔趣阁',
-      ),
-      Book(
-        bookUrl: 'mock://book/2',
-        tocUrl: 'https://www.qidian.com/book/1010erta/',
-        name: '凡人修仙传',
-        author: '忘语',
-        kind: '仙侠',
-        coverUrl: 'https://bookcover.yuewen.com/qdbimg/349573/1010erta/150',
-        intro: '一个普通山村少年，偶然下进入了当地江湖小门派，成了一名记名弟子，从而踏上了漫漫的修仙之路。',
-        latestChapterTitle: '第七百七十四章 飞升',
-        latestChapterTime: 1630656684531,
-        totalChapterNum: 774,
-        wordCount: 3728000.toString(),
-        canUpdate: true,
-        order: 1,
-        group: 0,
-        origin: 'https://www.qidian.com',
-        originName: '起点中文网',
-      ),
-      Book(
-        bookUrl: 'mock://book/3',
-        tocUrl:
-            'https://www.kaixin7days.com/book-service/bookMgt/getAllChapterByBookId',
-        name: '三体',
-        author: '刘慈欣',
-        kind: '科幻',
-        coverUrl: null,
-        intro: '文化大革命如火如荼进行的同时，军方探寻外星文明的绝秘计划"红岸工程"取得了突破性进展。',
-        latestChapterTitle: '第三部 死神永生',
-        latestChapterTime: 1630656684531,
-        totalChapterNum: 80,
-        wordCount: '880000',
-        canUpdate: false,
-        order: 2,
-        group: 1,
-        origin: 'https://www.kaixin7days.com',
-        originName: '消消乐听书',
-      ),
-    ]);
-
-    // 每本书 10 章（章节标题模拟真实网文目录风格）
-    for (var i = 0; i < 3; i++) {
-      final bookUrl = 'mock://book/${i + 1}';
-      final chapters = <BookChapter>[];
-      final contents = <int, String>{};
-      for (var j = 0; j < 10; j++) {
-        chapters.add(
-          BookChapter(
-            title: '第${j + 1}章 ${_mockChapterTitles[j]}',
-            bookUrl: bookUrl,
-            url: 'mock://chapter/$bookUrl/$j',
-            index: j,
-            start: j * 2000,
-            end: (j + 1) * 2000,
-          ),
-        );
-        contents[j] = _generateMockContent(i, j);
-      }
-      _chaptersCache[bookUrl] = chapters;
-      _contentCache[bookUrl] = contents;
-    }
-
     // ── 书源（来源：app/src/main/assets/defaultData/bookSources.json）──
     // 基于原 Android 内置「消消乐听书」音频源结构，扩充为 3 条贴近真实书源。
     _sources.addAll([
@@ -246,9 +166,12 @@ mixin MockBookApiStore {
       ),
     ]);
 
-    // 默认分组
+    // 默认分组（与书架样例的 group 字段对应：1=科幻、2=收藏）
     _bookGroups.add(
       BookGroup(groupId: 1, groupName: '科幻', order: 0, show: true),
+    );
+    _bookGroups.add(
+      BookGroup(groupId: 2, groupName: '收藏', order: 1, show: true),
     );
 
     // ── 字典规则（对标 Rust seed_default_rules：表为空时注入原版默认 5 源）──
@@ -305,6 +228,51 @@ mixin MockBookApiStore {
     }
   }
 
+  /// 书架样例资产路径（合成脱敏数据；来源与脱敏口径见
+  /// assets/mock_data/README.md，结构对齐 Book 模型 & API_CONTRACT §2.2）
+  static const String _bookshelfSampleAsset =
+      'assets/mock_data/bookshelf_sample.json';
+
+  Future<void>? _booksLoad;
+
+  /// 书架样例惰性加载守卫：首次调用时从资产读取 bookshelf_sample.json，
+  /// 填充 _books 与章节/正文缓存；之后各书架相关方法 await 本守卫即可
+  /// （同一 Future 记忆化，并发调用只加载一次）。
+  Future<void> _ensureBooksLoaded() =>
+      _booksLoad ??= _loadBookshelfSample();
+
+  /// 从资产加载书架样例并填充 _books 与章节/正文缓存
+  Future<void> _loadBookshelfSample() async {
+    final raw = await rootBundle.loadString(_bookshelfSampleAsset);
+    final list = jsonDecode(raw) as List<dynamic>;
+    _books.addAll(
+      list.map((e) => Book.fromJson(e as Map<String, dynamic>)).toList(),
+    );
+    // 每本书生成至多 10 章（章节标题模拟真实网文目录风格）
+    for (final book in _books) {
+      final count = book.totalChapterNum < 10
+          ? (book.totalChapterNum < 1 ? 1 : book.totalChapterNum)
+          : 10;
+      final chapters = <BookChapter>[];
+      final contents = <int, String>{};
+      for (var j = 0; j < count; j++) {
+        chapters.add(
+          BookChapter(
+            title: '第${j + 1}章 ${_mockChapterTitles[j]}',
+            bookUrl: book.bookUrl,
+            url: 'mock://chapter/${book.bookUrl}/$j',
+            index: j,
+            start: j * 2000,
+            end: (j + 1) * 2000,
+          ),
+        );
+        contents[j] = _generateMockContent(book, j);
+      }
+      _chaptersCache[book.bookUrl] = chapters;
+      _contentCache[book.bookUrl] = contents;
+    }
+  }
+
   static const _mockChapterTitles = [
     '初入江湖',
     '风云际会',
@@ -319,9 +287,9 @@ mixin MockBookApiStore {
   ];
 
   /// 生成 Mock 章节正文（足够排版引擎分页）
-  String _generateMockContent(int bookIndex, int chapterIndex) {
+  String _generateMockContent(Book book, int chapterIndex) {
     final paragraphs = <String>[];
-    final bookName = _books[bookIndex].name;
+    final bookName = book.name;
     paragraphs.add('    这是《$bookName》第${chapterIndex + 1}章的正文内容。');
     for (var i = 0; i < 15; i++) {
       paragraphs.add(

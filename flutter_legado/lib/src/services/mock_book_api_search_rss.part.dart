@@ -396,6 +396,7 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
 
   @override
   Future<Book> importLocalBook(String filePath) async {
+    await _ensureBooksLoaded();
     final book = Book(
       bookUrl: 'file://$filePath',
       name: filePath

@@ -73,6 +73,8 @@ flutter:
     - assets/images/
     # 默认数据（对标 Android assets/defaultData）
     - assets/default_data/
+    # Mock 书架样例（USE_MOCK 数据源，合成脱敏；口径见 assets/mock_data/README.md）
+    - assets/mock_data/
     # 帮助文档（对标 Android assets/web/help/md + storageHelp.md）
     - assets/web/help/md/
     - assets/storageHelp.md

@@ -8,27 +8,34 @@ mixin MockBookApiSources on MockBookApiStore implements BookApi {
   // ========== 书架操作 ==========
 
   @override
-  Future<List<Book>> getBooks() async => List.from(_books);
+  Future<List<Book>> getBooks() async {
+    await _ensureBooksLoaded();
+    return List.from(_books);
+  }
 
   @override
   Future<Book> addBook(Book book) async {
+    await _ensureBooksLoaded();
     _books.add(book);
     return book;
   }
 
   @override
   Future<void> updateBook(Book book) async {
+    await _ensureBooksLoaded();
     final idx = _books.indexWhere((b) => b.bookUrl == book.bookUrl);
     if (idx >= 0) _books[idx] = book;
   }
 
   @override
   Future<void> deleteBook(String bookUrl) async {
+    await _ensureBooksLoaded();
     _books.removeWhere((b) => b.bookUrl == bookUrl);
   }
 
   @override
   Future<Book?> getBook(String bookUrl) async {
+    await _ensureBooksLoaded();
     try {
       return _books.firstWhere((b) => b.bookUrl == bookUrl);
     } catch (_) {
@@ -38,18 +45,21 @@ mixin MockBookApiSources on MockBookApiStore implements BookApi {
 
   @override
   Future<void> topBook(String bookUrl) async {
+    await _ensureBooksLoaded();
     final idx = _books.indexWhere((b) => b.bookUrl == bookUrl);
     if (idx >= 0) _books[idx] = _books[idx].copyWith(order: -1);
   }
 
   @override
   Future<void> unTopBook(String bookUrl) async {
+    await _ensureBooksLoaded();
     final idx = _books.indexWhere((b) => b.bookUrl == bookUrl);
     if (idx >= 0) _books[idx] = _books[idx].copyWith(order: 0);
   }
 
   @override
   Future<void> setBookGroup(String bookUrl, int groupId) async {
+    await _ensureBooksLoaded();
     final idx = _books.indexWhere((b) => b.bookUrl == bookUrl);
     if (idx >= 0) _books[idx] = _books[idx].copyWith(group: groupId);
   }
@@ -62,6 +72,7 @@ mixin MockBookApiSources on MockBookApiStore implements BookApi {
 
   @override
   Future<void> reorderBooks(List<Map<String, dynamic>> orders) async {
+    await _ensureBooksLoaded();
     for (final item in orders) {
       final url = item['bookUrl'] as String?;
       final order = item['order'] as int?;

@@ -118,22 +118,27 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
   // ========== 阅读器操作 ==========
 
   @override
-  Future<List<BookChapter>> getChapters(String bookUrl) async =>
-      _chaptersCache[bookUrl] ?? [];
+  Future<List<BookChapter>> getChapters(String bookUrl) async {
+    await _ensureBooksLoaded();
+    return _chaptersCache[bookUrl] ?? [];
+  }
 
   @override
   Future<String> getChapterContent(String bookUrl, int chapterIndex) async {
+    await _ensureBooksLoaded();
     return _contentCache[bookUrl]?[chapterIndex] ?? '（暂无内容）';
   }
 
   @override
   Future<String> getChapterContentRaw(String bookUrl, int chapterIndex) async {
+    await _ensureBooksLoaded();
     // Mock 层不区分净化/raw，返回同一份缓存内容
     return _contentCache[bookUrl]?[chapterIndex] ?? '（暂无内容）';
   }
 
   @override
   Future<String> getChapterContentFull(String bookUrl, int chapterIndex) async {
+    await _ensureBooksLoaded();
     // Mock 层不区分本地/在线，统一返回缓存内容
     return _contentCache[bookUrl]?[chapterIndex] ?? '（Mock 模式：章节内容）';
   }
@@ -156,6 +161,7 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
     required String title,
     required String content,
   }) async {
+    await _ensureBooksLoaded();
     _contentCache.putIfAbsent(bookUrl, () => <int, String>{})[chapterIndex] =
         content;
     return true;
@@ -167,6 +173,7 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
     required int chapterIndex,
     required int chapterPos,
   }) async {
+    await _ensureBooksLoaded();
     final idx = _books.indexWhere((b) => b.bookUrl == bookUrl);
     if (idx >= 0) {
       _books[idx] = _books[idx].copyWith(
@@ -180,7 +187,10 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
   Future<List<BookChapter>> refreshToc(
     String bookUrl,
     String sourceUrl,
-  ) async => _chaptersCache[bookUrl] ?? [];
+  ) async {
+    await _ensureBooksLoaded();
+    return _chaptersCache[bookUrl] ?? [];
+  }
 
   /// 繁简转换类型 Mock 持久化键（与 Rust 侧配置键同名）
   static const _chineseConvertKey = 'chineseConverterType';

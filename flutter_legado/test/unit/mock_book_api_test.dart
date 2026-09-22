@@ -10,6 +10,9 @@ import 'package:flutter_legado/src/models/models.dart';
 /// 确保 Mock 实现的所有方法均可正常调用且返回合理数据，
 /// 不抛出 UnimplementedError，UI 轨可全界面跑通。
 void main() {
+  // MockBookApi 书架方法经守卫惰性读取样例资产（rootBundle），需先初始化 binding
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late MockBookApi api;
 
   setUp(() {
@@ -28,25 +31,25 @@ void main() {
   });
 
   group('书架操作', () {
-    test('getBooks 返回 3 本预置书', () async {
+    test('getBooks 返回 10 本样例书', () async {
       final books = await api.getBooks();
-      expect(books.length, 3);
-      expect(books[0].name, '斗破苍穹');
-      expect(books[1].name, '凡人修仙传');
-      expect(books[2].name, '三体');
+      expect(books.length, 10);
+      expect(books[0].name, '示例书籍 01');
+      expect(books[1].name, '示例书籍 02');
+      expect(books[2].name, '示例书籍 03');
     });
 
     test('addBook 添加后可获取', () async {
       final book = Book(bookUrl: 'mock://new', name: '新书', author: '测试');
       await api.addBook(book);
       final books = await api.getBooks();
-      expect(books.length, 4);
+      expect(books.length, 11);
     });
 
     test('getBook 按 URL 获取', () async {
       final book = await api.getBook('mock://book/1');
       expect(book, isNotNull);
-      expect(book!.name, '斗破苍穹');
+      expect(book!.name, '示例书籍 01');
     });
 
     test('getBook 不存在返回 null', () async {
@@ -57,7 +60,7 @@ void main() {
     test('deleteBook 删除后数量减少', () async {
       await api.deleteBook('mock://book/1');
       final books = await api.getBooks();
-      expect(books.length, 2);
+      expect(books.length, 9);
     });
 
     test('topBook/unTopBook 修改 order', () async {
@@ -202,7 +205,7 @@ void main() {
 
     test('getChapterContent 返回正文', () async {
       final content = await api.getChapterContent('mock://book/1', 0);
-      expect(content, contains('斗破苍穹'));
+      expect(content, contains('示例书籍 01'));
       expect(content.length, greaterThan(100));
     });
 
@@ -325,14 +328,15 @@ void main() {
   group('书籍分组', () {
     test('getBookGroups 返回预置分组', () async {
       final groups = await api.getBookGroups();
-      expect(groups.length, 1);
+      expect(groups.length, 2);
       expect(groups[0].groupName, '科幻');
+      expect(groups[1].groupName, '收藏');
     });
 
     test('addBookGroup 添加后可获取', () async {
       await api.addBookGroup(BookGroup(groupName: '玄幻', order: 1));
       final groups = await api.getBookGroups();
-      expect(groups.length, 2);
+      expect(groups.length, 3);
     });
   });
 
@@ -481,7 +485,7 @@ void main() {
         includeToc: true,
       );
       expect(result['success'], true);
-      expect(result['file_name'], contains('斗破苍穹'));
+      expect(result['file_name'], contains('示例书籍 01'));
     });
 
     test('bookExportInfo 返回预览信息', () async {
@@ -505,7 +509,7 @@ void main() {
         requestedBookUrl: 'mock://book/1',
       );
       expect(result, isNotNull);
-      expect(result!['name'], '斗破苍穹');
+      expect(result!['name'], '示例书籍 01');
     });
   });
 
