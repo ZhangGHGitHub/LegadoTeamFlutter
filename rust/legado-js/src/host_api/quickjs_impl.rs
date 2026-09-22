@@ -276,6 +276,101 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
       toString: function () { return String(java.bytesToStr(toJsonBytes(this.toByteArray()), 'UTF-8')); }
     };
   }
+  // P2-9 ① java.io.InputStream 最小面（语料 favcomic decode 路径，索引 703）：
+  // 对内存字节缓冲的纯读流抽象，无真实 JVM 对象/文件 IO/反射——与
+  // JSByteArrayInputStream/JSInflaterInputStream 同物种（宿主 java.inflateRawBytes
+  // 覆盖解压，本类只搬运字节）。方法挂 **prototype**（非实例字面量），使
+  // `x instanceof Packages.java.io.InputStream` 与 `.prototype` 直接访问均成立
+  //（favcomic 混淆体对 InputStream.prototype 做 Java 式类型探测）；new 与普通调用
+  // 双支持（无 new 时 Object.create(prototype) 显式构造，保住 instanceof 链）。
+  // Java 语义（审查修）：构造器**拷贝**输入字节序列（不别名调用方 buffer，
+  // 外部改动不污染流内容）；string / java.lang.String 输入经宿主 java.strToBytes
+  // 转字节（不可行时抛可读错误，绝不静默产生空流）；read 的 buffer 参数必须是
+  // 字节序列（ArrayBuffer.isView 覆盖 Int8Array 等全部 TypedArray + plain Array，
+  // 一律就地写入——plain Array 不得拷贝，否则 nio ByteBuffer.array() 读缓冲
+  // 收不到数据），非字节序列抛 TypeError；off/len 越界或负数按 Java
+  // IndexOutOfBoundsException 抛可读错误（不静默截断）；len==0 读 0 字节返回 0
+  //（即使 EOF）；mark/reset 按 Java 语义经 _mark 标记（reset 回到 mark 位置，
+  // 未 mark 时 mark==0 即回到起点，与 ByteArrayInputStream 一致）。
+  // 实例哨兵（审查修）：构造器返回 get 陷阱 Proxy（无 getPrototypeOf 陷阱 →
+  // instanceof 不受影响；in 判定经目标原型链直通）。已知成员（read/close/
+  // _bytes 等，含原型链继承）直通；未知字符串成员回落 makeUnknownClassSentinel
+  // ('java.io.InputStream.' + prop)——与类级未知成员同一文案 + 台账登记路径
+  //（读取安全并登记 `java.io.InputStream.<成员>`，调用/new 抛「此书源需要
+  // Java 脚本能力（Packages.java.io.InputStream.<成员>），当前不支持」），
+  // 未覆盖成员（readAllBytes/transferTo/markSupported 等）不再静默 undefined。
+  // _bytes 保留实例暴露（JSInflaterInputStream 的 inStream._bytes 提取依赖，
+  // 经陷阱 `in` 直通）。
+  function toInputStreamBytes(bytes) {
+    if (bytes === null || bytes === undefined) { return new Uint8Array(0); }
+    if (bytes instanceof Uint8Array) { return new Uint8Array(bytes); } // 拷贝不别名
+    if (ArrayBuffer.isView(bytes) || Array.isArray(bytes)) {
+      return toU8(bytes); // TypedArray/Array 构造即拷贝
+    }
+    var str = null;
+    if (typeof bytes === 'string') { str = bytes; }
+    else if (typeof bytes === 'object' && typeof bytes.getBytes === 'function') {
+      str = String(bytes); // java.lang.String（JSString 对象，toString 取回内容）
+    }
+    if (str !== null) {
+      if (typeof globalThis.java !== 'undefined' && globalThis.java &&
+          typeof globalThis.java.strToBytes === 'function') {
+        var json = String(globalThis.java.strToBytes(str, 'UTF-8'));
+        if (json.indexOf('[ERROR]') === 0) {
+          throw new Error('java.io.InputStream: 字符串输入转字节失败（java.strToBytes: ' + json + '）');
+        }
+        return fromJsonBytes(json);
+      }
+      throw new Error('java.io.InputStream: 字符串输入需宿主 java.strToBytes 转换，当前不可用');
+    }
+    throw new TypeError('java.io.InputStream 构造参数须为字节序列（TypedArray/Array）、字符串或 java.lang.String，实际为 ' + typeof bytes);
+  }
+  function JSInputStream(bytes) {
+    var self = (this instanceof JSInputStream) ? this : Object.create(JSInputStream.prototype);
+    self._bytes = toInputStreamBytes(bytes);
+    self._pos = 0;
+    self._mark = 0;
+    return new Proxy(self, {
+      get: function (t, prop) {
+        if (typeof prop !== 'string' || (prop in t)) { return Reflect.get(t, prop); }
+        return makeUnknownClassSentinel('java.io.InputStream.' + prop);
+      }
+    });
+  }
+  JSInputStream.prototype.read = function (buffer, off, count) {
+    var rem = this._bytes.length - this._pos;
+    if (buffer === undefined || buffer === null) {
+      if (rem <= 0) { return -1; }
+      var v = this._bytes[this._pos];
+      this._pos += 1;
+      return v;
+    }
+    // 就地写入调用方 buffer（全部 TypedArray + plain Array，见类注释）
+    var isSeq = ArrayBuffer.isView(buffer) || Array.isArray(buffer);
+    if (!isSeq) {
+      throw new TypeError('java.io.InputStream.read: 缓冲参数须为字节序列（TypedArray/Array），实际为 ' + (buffer === null ? 'null' : typeof buffer));
+    }
+    var o = (arguments.length >= 2) ? (Number(off) || 0) : 0;
+    var c = (arguments.length >= 3) ? (Number(count) || 0) : buffer.length;
+    if (c === 0) { return 0; } // Java：len==0 读 0 字节（即使 EOF）
+    if (o < 0 || c < 0 || o + c > buffer.length) {
+      throw new RangeError('java.io.InputStream.read: 越界（off=' + o + ', len=' + c + '，缓冲长度 ' + buffer.length + '）');
+    }
+    var n = Math.min(c, rem);
+    if (n === 0) { return -1; } // EOF（c>0）
+    for (var i = 0; i < n; i++) { buffer[o + i] = this._bytes[this._pos + i]; }
+    this._pos += n;
+    return n;
+  };
+  JSInputStream.prototype.available = function () { return this._bytes.length - this._pos; };
+  JSInputStream.prototype.skip = function (n) {
+    var k = Math.min(Math.max(0, Number(n) || 0), this._bytes.length - this._pos);
+    this._pos += k;
+    return k;
+  };
+  JSInputStream.prototype.mark = function () { this._mark = this._pos; };
+  JSInputStream.prototype.reset = function () { this._pos = this._mark; };
+  JSInputStream.prototype.close = function () {};
   // Inflater(true)：true 即 no-wrap（raw deflate）。本 shim 忽略该标志——
   // 宿主 java.inflateRawBytes 先按 raw 解压、未完整消费再按 zlib 封装宽容
   // 重试，两个构造标志的行为都被覆盖（降级项，已文档化）。
@@ -497,8 +592,12 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
         zip: { Inflater: JSInflater, InflaterInputStream: JSInflaterInputStream }
       },
       io: {
+        // 队列末项 java.io 最小面：抽象基类 InputStream（字节缓冲读流，
+        // 实例哨兵 + Java 语义构造/读，见构造器注释）——
+        // favcomic（索引 703）decode 路径经 imageDecode/coverDecodeJs 调用
         ByteArrayInputStream: JSByteArrayInputStream,
-        ByteArrayOutputStream: JSByteArrayOutputStream
+        ByteArrayOutputStream: JSByteArrayOutputStream,
+        InputStream: JSInputStream
       },
       nio: {
         ByteBuffer: {
@@ -5223,6 +5322,389 @@ decryptImage(result);
             )
             .unwrap();
         assert_eq!(r3, "true");
+    }
+
+    /// 队列末项 java.io.InputStream 最小面（favcomic decode 路径，索引 703）：
+    /// 内存字节缓冲读流——new/普通调用双 instanceof、.prototype.read 直接访问
+    ///（favcomic 混淆体的 Java 式类型探测点）、read(buffer) 就地填充、
+    /// read() 单字节、read(b,off,len) 子区间、plain-Array 就地写（nio ByteBuffer
+    /// .array() 读缓冲）、skip/reset/available/EOF/空输入/超大 count 截断、
+    /// null buffer 退化为单字节。Java 语义边界（构造拷贝/TypedArray 就地写/
+    /// 越界抛错/len==0/字符串输入/mark 复位）与实例哨兵（未覆盖成员回落可读
+    /// 文案+台账登记）见 test_packages_shim_input_stream_java_semantics 与
+    /// test_packages_shim_input_stream_capability_ledger。
+    #[test]
+    fn test_packages_shim_input_stream() {
+        let engine = make_engine();
+        let result = engine
+            .eval(
+                r#"
+                var P = Packages.java;
+                var IS = P.io.InputStream;
+                // 构造 + instanceof（new 与普通调用双支持）
+                var sNew = new IS(new Uint8Array([1,2,3,4,5,6,7,8]));
+                var sCall = IS(new Uint8Array([9,10,11]));
+                var viaNew = sNew instanceof IS;
+                var viaCall = sCall instanceof IS;
+                // favcomic 混淆体探测点：.prototype 直接访问
+                var protoRead = typeof IS.prototype.read === 'function';
+                var protoCtorName = IS.name === 'JSInputStream';
+                // read() 单字节序列
+                var b0 = sNew.read();
+                var b1 = sNew.read();
+                // read(buffer) 就地填充 Uint8Array
+                var buf = new Uint8Array(3);
+                var n1 = sNew.read(buf);
+                var bufVals = [buf[0], buf[1], buf[2]];
+                // read(buffer, off, count) 子区间（off=1 count=2）
+                var s3 = new IS(new Uint8Array([100,200,150,50]));
+                var sub = new Uint8Array(4);
+                var n2 = s3.read(sub, 1, 2);
+                var subVals = [sub[0], sub[1], sub[2], sub[3]];
+                // plain-Array 就地写（nio ByteBuffer.array() 读缓冲场景）
+                var s4 = new IS(new Uint8Array([7,8,9]));
+                var arr = new Array(3);
+                var n3 = s4.read(arr);
+                var arrVals = [arr[0], arr[1], arr[2]];
+                // skip / available / reset / EOF
+                var s5 = new IS(new Uint8Array([1,2,3]));
+                var skipped = s5.skip(1);
+                var availAfterSkip = s5.available();
+                var nextByte = s5.read();
+                s5.reset();
+                var availAfterReset = s5.available();
+                s5.read(); s5.read(); s5.read();
+                var nEof = s5.read();
+                // 空输入：available 0，read 立即 -1
+                var sEmpty = new IS(new Uint8Array([]));
+                var emptyAvail = sEmpty.available();
+                var emptyRead = sEmpty.read();
+                // 超大 count 截断到剩余量
+                var s6 = new IS(new Uint8Array([1,2]));
+                var big = new Uint8Array(10);
+                var nBig = s6.read(big, 0, 10);
+                var bigVals = [big[0], big[1]];
+                // null buffer 退化为单字节读
+                var s7 = new IS(new Uint8Array([42,43]));
+                var singleFromNull = s7.read(null);
+                JSON.stringify({
+                    viaNew: viaNew, viaCall: viaCall,
+                    protoRead: protoRead, ctorName: protoCtorName,
+                    b0: b0, b1: b1, n1: n1, bufVals: bufVals,
+                    n2: n2, subVals: subVals,
+                    n3: n3, arrVals: arrVals,
+                    skipped: skipped, availAfterSkip: availAfterSkip,
+                    nextByte: nextByte, availAfterReset: availAfterReset,
+                    nEof: nEof, emptyAvail: emptyAvail, emptyRead: emptyRead,
+                    nBig: nBig, bigVals: bigVals, singleFromNull: singleFromNull
+                });
+                "#,
+            )
+            .unwrap();
+        assert!(
+            result.contains("\"viaNew\":true"),
+            "new 实例应 instanceof：{result}"
+        );
+        assert!(
+            result.contains("\"viaCall\":true"),
+            "普通调用实例应 instanceof：{result}"
+        );
+        assert!(
+            result.contains("\"protoRead\":true"),
+            ".prototype.read 应可直接访问（favcomic 探测点）：{result}"
+        );
+        assert!(
+            result.contains("\"ctorName\":true"),
+            "构造器应为 JSInputStream：{result}"
+        );
+        assert!(
+            result.contains("\"b0\":1") && result.contains("\"b1\":2"),
+            "单字节序列：{result}"
+        );
+        assert!(
+            result.contains("\"n1\":3"),
+            "read(buffer) 应读入 3 字节：{result}"
+        );
+        assert!(
+            result.contains("[3,4,5]"),
+            "read(buffer) 就地填充 [3,4,5]：{result}"
+        );
+        assert!(
+            result.contains("\"n2\":2"),
+            "read(b,off,len) 子区间读 2 字节：{result}"
+        );
+        assert!(
+            result.contains("[0,100,200,0]"),
+            "子区间 off=1 写 [·,100,200,·]：{result}"
+        );
+        assert!(
+            result.contains("\"n3\":3"),
+            "plain-Array 就地写 3 字节：{result}"
+        );
+        assert!(
+            result.contains("[7,8,9]"),
+            "plain-Array 收到 [7,8,9]：{result}"
+        );
+        assert!(result.contains("\"skipped\":1"), "skip(1)：{result}");
+        assert!(
+            result.contains("\"availAfterSkip\":2"),
+            "skip 后可读 2：{result}"
+        );
+        assert!(
+            result.contains("\"nextByte\":2"),
+            "skip 后读 index1=2：{result}"
+        );
+        assert!(
+            result.contains("\"availAfterReset\":3"),
+            "reset 后可读 3：{result}"
+        );
+        assert!(
+            result.contains("\"nEof\":-1"),
+            "耗尽后 read 应 -1：{result}"
+        );
+        assert!(
+            result.contains("\"emptyAvail\":0"),
+            "空流 available 0：{result}"
+        );
+        assert!(
+            result.contains("\"emptyRead\":-1"),
+            "空流 read 立即 -1：{result}"
+        );
+        assert!(
+            result.contains("\"nBig\":2"),
+            "超大 count 截断到剩余 2：{result}"
+        );
+        assert!(result.contains("[1,2]"), "截断后读入 [1,2]：{result}");
+        assert!(
+            result.contains("\"singleFromNull\":42"),
+            "null buffer 退化单字节：{result}"
+        );
+    }
+
+    /// 能力清单断言：`java.io.InputStream` 已实现面（类级读取 / new /
+    /// read/close 等已实现成员）不登记、不抛；实例未覆盖成员（readAllBytes
+    /// 等）经实例哨兵回落「读取安全 + 调用可读文案 + 台账登记」（`java.io.InputStream.`
+    /// 前缀键）；真正未实现的符号（`java.io.PrintStream`）仍走「可读文案 +
+    /// 台账登记」路径。
+    #[test]
+    fn test_packages_shim_input_stream_capability_ledger() {
+        use crate::host_api::capability_ledger as ledger;
+        let _lock = ledger::LEDGER_TEST_LOCK.lock().unwrap();
+        ledger::reset_unknown_java_symbols();
+        let engine = make_engine();
+
+        // 已实现面：类级读取 / new / 已实现成员（read/close）均不登记、不抛错
+        let ok = engine
+            .eval(
+                r#"
+                var P = Packages.java;
+                var t = false;
+                try {
+                  var s = new P.io.InputStream(new Uint8Array([1]));
+                  s.read(); s.close();
+                } catch (e) { t = true; }
+                JSON.stringify({ threw: t, isFn: typeof P.io.InputStream === 'function' });
+                "#,
+            )
+            .unwrap();
+        assert!(
+            ok.contains("\"threw\":false"),
+            "InputStream 应可用不抛：{ok}"
+        );
+        assert!(ok.contains("\"isFn\":true"), "InputStream 应为函数：{ok}");
+        // 前缀匹配（审查修）：类级/实例级未覆盖成员登记键形如
+        // `java.io.InputStream.<成员>`，精确等值断言会漏掉后缀键。
+        assert!(
+            !ledger::unknown_java_symbols()
+                .iter()
+                .any(|(sym, _)| sym.starts_with("java.io.InputStream")),
+            "已实现的 java.io.InputStream 面不应登记进能力台账"
+        );
+
+        // 实例哨兵（审查修）：实例未覆盖成员读取安全（登记
+        // `java.io.InputStream.readAllBytes`），调用抛「可读文案」（登记
+        // `java.io.InputStream.readAllBytes()`）——不再静默 undefined。
+        let inst = engine
+            .eval(
+                r#"
+                var s = new Packages.java.io.InputStream(new Uint8Array([1]));
+                var tt = typeof s.readAllBytes;
+                var m = '';
+                try { s.readAllBytes(); } catch (e) { m = String(e); }
+                JSON.stringify({ tt: tt, m: m });
+                "#,
+            )
+            .unwrap();
+        assert!(
+            inst.contains("\"tt\":\"function\""),
+            "实例未覆盖成员读取应返回哨兵函数（探针安全）：{inst}"
+        );
+        assert!(
+            inst.contains("此书源需要 Java 脚本能力（Packages.java.io.InputStream.readAllBytes）"),
+            "实例未覆盖成员调用应抛可读文案：{inst}"
+        );
+        assert!(
+            ledger::unknown_java_symbols()
+                .iter()
+                .any(|(sym, _)| sym == "java.io.InputStream.readAllBytes"),
+            "实例未覆盖成员读取应登记 java.io.InputStream.readAllBytes"
+        );
+
+        // 未实现符号：读取即登记（P2-E 读取语义，哨兵不抛）；new/调用才抛「可读文案」。
+        // 这里用 `new` 触发 construct 陷阱 → 抛可读文案 + 台账登记。
+        let msg = engine
+            .eval(
+                r#"
+                var m = '';
+                try { new Packages.java.io.PrintStream(); } catch (e) { m = String(e); }
+                m;
+                "#,
+            )
+            .unwrap();
+        assert!(
+            msg.contains("Java 脚本能力"),
+            "未实现符号 new 应抛可读文案（能力清单提示）：{msg}"
+        );
+        assert!(
+            msg.contains("java.io.PrintStream"),
+            "可读文案应点名缺失符号：{msg}"
+        );
+        assert!(
+            ledger::unknown_java_symbols()
+                .iter()
+                .any(|(sym, _)| sym == "java.io.PrintStream"),
+            "未实现符号 java.io.PrintStream 应登记进能力台账"
+        );
+        ledger::reset_unknown_java_symbols();
+    }
+
+    /// Java 语义边界（审查修，精确实断言）：① 构造拷贝不别名（调用方篡改
+    /// buffer 不污染流内容）；② 全部 TypedArray（Int8Array）就地写；
+    /// ③ 越界（off+len>长度）抛可读 RangeError 而非静默截断；④ len==0 读 0
+    /// 字节（即使 EOF），EOF 且 c>0 读 -1；⑤ 字符串 / java.lang.String 输入
+    /// 经 java.strToBytes 转 UTF-8 字节（绝不静默空流）；⑥ mark/reset 按
+    /// Java 语义回到 mark 位置（ByteArrayInputStream 同款，未 mark 即 0）；
+    /// ⑦ 实例未覆盖成员（transferTo/markSupported）回落类级同款哨兵文案，
+    /// 台账登记 `java.io.InputStream.` 前缀键。
+    #[test]
+    fn test_packages_shim_input_stream_java_semantics() {
+        use crate::host_api::capability_ledger as ledger;
+        let _lock = ledger::LEDGER_TEST_LOCK.lock().unwrap();
+        let engine = make_engine();
+        ledger::reset_unknown_java_symbols();
+
+        let result = engine
+            .eval(
+                r#"
+                var P = Packages.java;
+                var IS = P.io.InputStream;
+                // ① 构造拷贝不别名
+                var src = new Uint8Array([1, 2, 3]);
+                var s1 = new IS(src);
+                src[0] = 99;
+                var copyOk = s1.read() === 1;
+                // ② Int8Array（非 Uint8Array 的 TypedArray）就地写
+                var s2 = new IS(new Uint8Array([5, 6, 7]));
+                var t8 = new Int8Array(3);
+                var typedN = s2.read(t8);
+                var typedVals = [t8[0], t8[1], t8[2]];
+                // ③ 越界（off=1, len=5, 缓冲长度 2）抛可读 RangeError
+                var s3 = new IS(new Uint8Array([1, 2, 3]));
+                var oobMsg = '';
+                try { s3.read(new Uint8Array(2), 1, 5); } catch (e) { oobMsg = e.message; }
+                // ④ len==0 读 0 字节（流中 / EOF 均 0）；EOF 且 c>0 读 -1
+                var s4 = new IS(new Uint8Array([7]));
+                var zeroMid = s4.read(new Uint8Array(4), 0, 0);
+                var consumed = s4.read();
+                var zeroAtEof = s4.read(new Uint8Array(4), 0, 0);
+                var eofRead = s4.read(new Uint8Array(4), 0, 4);
+                // ⑤ 字符串 / java.lang.String 输入转字节（绝不静默空流）
+                var sStr = new IS('abc');
+                var strVals = [sStr.read(), sStr.read(), sStr.read(), sStr.read()];
+                var sJStr = new IS(new P.lang.String('ab'));
+                var jStrVals = [sJStr.read(), sJStr.read(), sJStr.read()];
+                // ⑥ mark/reset 回到 mark 位置（Java ByteArrayInputStream 语义）：
+                // read→10(pos=1)、mark(mark=1)、read→20(pos=2)、reset(pos=1)、
+                // read→_bytes[1]=20。区别于 no-op（pos 停 2 → 30）与 reset→0（→10）。
+                var s5 = new IS(new Uint8Array([10, 20, 30]));
+                s5.read(); s5.mark(); s5.read(); s5.reset();
+                var markResetVal = s5.read();
+                // ⑦ 实例未覆盖成员回落类级同款哨兵
+                var s8 = new IS(new Uint8Array([1]));
+                var ttType = typeof s8.transferTo;
+                var ttMsg = '';
+                try { s8.transferTo(null); } catch (e) { ttMsg = e.message; }
+                var msType = typeof s8.markSupported;
+                JSON.stringify({
+                    copyOk: copyOk,
+                    typedN: typedN, typedVals: typedVals,
+                    oobMsg: oobMsg,
+                    zeroMid: zeroMid, consumed: consumed,
+                    zeroAtEof: zeroAtEof, eofRead: eofRead,
+                    strVals: strVals, jStrVals: jStrVals,
+                    markResetVal: markResetVal,
+                    ttType: ttType, ttMsg: ttMsg, msType: msType
+                });
+                "#,
+            )
+            .expect("InputStream Java 语义探测失败");
+
+        let v: serde_json::Value = serde_json::from_str(&result).expect("JSON 解析失败: {result}");
+        assert_eq!(
+            v["copyOk"], true,
+            "构造应拷贝输入（调用方篡改不污染流）：{result}"
+        );
+        assert_eq!(v["typedN"], 3, "Int8Array 应就地读入 3 字节：{result}");
+        assert_eq!(
+            v["typedVals"],
+            serde_json::json!([5, 6, 7]),
+            "Int8Array 应就地收到 [5,6,7]：{result}"
+        );
+        assert_eq!(
+            v["oobMsg"], "java.io.InputStream.read: 越界（off=1, len=5，缓冲长度 2）",
+            "越界应抛可读 RangeError（不静默截断）：{result}"
+        );
+        assert_eq!(v["zeroMid"], 0, "len==0 应读 0 字节（流中）：{result}");
+        assert_eq!(v["consumed"], 7, "单字节读应得 7：{result}");
+        assert_eq!(
+            v["zeroAtEof"], 0,
+            "len==0 在 EOF 也应返回 0（Java 语义）：{result}"
+        );
+        assert_eq!(v["eofRead"], -1, "EOF 且 c>0 应读 -1：{result}");
+        assert_eq!(
+            v["strVals"],
+            serde_json::json!([97, 98, 99, -1]),
+            "字符串输入应转 UTF-8 字节 [97,98,99]（非静默空流）：{result}"
+        );
+        assert_eq!(
+            v["jStrVals"],
+            serde_json::json!([97, 98, -1]),
+            "java.lang.String 输入应转字节 [97,98]（非静默空流）：{result}"
+        );
+        assert_eq!(
+            v["markResetVal"], 20,
+            "mark/reset 应回到 mark 位置：{result}"
+        );
+        assert_eq!(
+            v["ttType"], "function",
+            "实例未覆盖成员（transferTo）读取应返回哨兵函数：{result}"
+        );
+        assert_eq!(
+            v["ttMsg"],
+            "此书源需要 Java 脚本能力（Packages.java.io.InputStream.transferTo），当前不支持",
+            "实例未覆盖成员调用应抛可读文案：{result}"
+        );
+        assert_eq!(
+            v["msType"], "function",
+            "实例未覆盖成员（markSupported）读取应返回哨兵函数：{result}"
+        );
+        assert!(
+            ledger::unknown_java_symbols()
+                .iter()
+                .any(|(sym, _)| sym == "java.io.InputStream.transferTo"),
+            "实例未覆盖成员读取应登记 java.io.InputStream.transferTo"
+        );
+        ledger::reset_unknown_java_symbols();
     }
 
     /// Packages shim 扩面：java.lang.* / java.util.* / java.nio / zip / io

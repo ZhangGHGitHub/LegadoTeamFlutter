@@ -7,6 +7,10 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - [UI] **书籍详情页「在读」行章号错位一章（P2-21）**：该行此前把 0 基的 `durChapterIndex` 按 1 基解读（`chapters[durIdx-1]`），用户在第二章时显示**前一章**的章号与标题；现改为「标题优先取阅读记录存储值 `durChapterTitle`，无则回落目录 `chapters[durChapterIndex]`（0 基），皆无则不渲染该行」，并去掉自创的「第N章」前缀。
 - [UI] **详情页「最新」行与「共N章」行对齐参考版/原版口径（P2-21）**：「最新」行改为 `最新 · {latestChapterTitle}`（去掉「第N章」前缀与代码追加的「（全书完）」——该后缀实为站点标题自带）；「共N章」行由「共 N 章｜已读/未读」两态改为 `共 N 章` + `|` + `未读 / 已读 N 章 / 已读完` 三态（N = `durChapterIndex+1`），颜色改用主题角色色（章数 primary、分隔与状态 secondary）。
+- [UI] **详情页元信息区按参考版整理（去冗余行）**：移除参考版**不存在**的三处独立行——「目录：… · 已读: X%」行、「分组：…」行、「🏷️ 标签行」；分类/字数/分组改由顶部 chips 行承载（分组 chip 仅在该书有非空分组时显示，分组名裸名无「分组：」前缀），chips 行不再重复章数（章数由「共 N 章」行承载）。功能入口不丢：目录 → 四按钮「查看目录」卡；分组 → chips 行分组 chip + ⋮ 菜单「设置分组」；逐标签点击搜索/长按 JS 回调 → kind chip 手势（超集）。**登记**：原「已读: X%」百分比随该行移除，无同等替入口（进度以「已读 N 章」状态与书架进度条/阅读器呈现）。
+
+### Added
+- [Rust] **书源脚本 `java.io.InputStream` 最小能力面（队列末项）**：按「能力清单，只覆盖用到的类」口径，为真实语料夹具（favcomic jsLib，索引 703）用到的字节流类提供纯内存等价实现（构造拷贝、TypedArray/数组就地写读、`read(buf,off,len)` 越界抛错、`len==0` 返回 0、EOF 返回 -1、`mark/reset` 按 `ByteArrayInputStream` 语义），实例未知成员经 Proxy 回落「此书源需要 Java 脚本能力（`<符号>`），当前不支持」并登记能力台账；`PrintStream`/`File`/`IOException` 等 0 语料命中且依赖真实 JVM 语义的类**明确不支持但提示保留**。真实夹具由「加载必失败」推进为「加载完成 + InputStream 解析可用」，未覆盖符号的用户提示与台账登记行为不放松。
 
 ### Changed
 - [Rust] **搜索跨源聚合下沉为单一真源（内部重构，界面与行为零变化）**：新增 `legado-core::search_aggregate` 纯函数（同名同作者跨源合并 + origins 累加、四桶分桶 equal→tags→contains→other、桶内 originsCount 降序 + 首次到达序平局、空关键词原样返回），与 Dart 现行纯函数 `applyPrecisionSearch` 逐条对齐；`legado-ffi` 内新增 `aggregate_search_books_json` 作为跨端校验入口（crate 内 `pub`，**未暴露 FRB**，方法数不变）。

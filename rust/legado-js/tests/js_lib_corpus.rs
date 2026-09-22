@@ -88,45 +88,118 @@ hutool_md5_abc:\"900150983cd24fb0d6963f7d28e17f72\"";
     });
 }
 
-/// favcomic jsLib：加载**必失败**（缺失 Java 脚本能力，已文档化的降级路径）
+/// favcomic jsLib：`java.io.InputStream` 符号已解析为可用函数（队列末项
+/// `java.io` 最小面 shim 上线后）
 ///
-/// 诚实断言可复现失败签名，而非虚构的「加载成功」：
-/// - 语法合法（混淆 IIFE 无语法错误）→ `check_syntax` 通过，属**运行时**失败
-///   （生产路径据此跳过 Rhino 宽容归一化，直接降级 + 台账登记）；
-/// - 失败签名取**三种形态并集**（同一根因——脚本运行期引用 QuickJS 环境不
-///   存在的 Java 能力——在不同代码代际下的不同表征，逐条注释）：
-///   - 「Java 脚本能力（…）」：批次④能力受限 shim 上线后的正常错误文案；
-///   - 「decode is not defined」：历史形态（QuickJS 原始 JS 运行期错误）；
-///   - 字面 `undefined`：**已提交代码**的 JS 错误提取在部分路径退化的提取工件
-///     （信息丢失——eval 吞掉错误、返回字面 `undefined` 而非 `Err`），由④批次改善。
-/// - 因退化路径下 `JsEngine::eval` 可能返回 `Ok("undefined")` 而非 `Err`，故须
-///   **同时处理 `Ok`/`Err`**：把两者统一成「观测到的失败签名串」再断言并集。
+/// 取证（2026-09-22，生产同源 QuickJS 引擎本地探针实测，非猜测）：
+/// - 语料 favcomic（索引 703）混淆体对 `Packages.java.io.InputStream` 做 Java 式
+///   类型探测（`.prototype`/`instanceof`），是 decode 路径（`ruleContent.imageDecode`
+///   + `coverDecodeJs` → `decode(result)`，真实 content/cover 可达）的 Java 解密分支
+///   脚手架。`InputStream` 的**真实数据路径**是 `java.createSymmetricCrypto`
+///   （CryptoJS AES）+ `java.strToBytes`，`InputStream` 只搬运字节。
+/// - 队列末项 `java.io` 最小面补上抽象基类 `InputStream`（纯字节缓冲读流，无真实
+///   JVM 对象/文件 IO/反射）后：`Packages.java.io.InputStream` 由「未知类哨兵
+///   （读取登记 + new/read 抛可读文案）」变为**已实现函数**——`new`/`read`/
+///   `instanceof`/`.prototype.read` 全部可用，脚本越过该探测点进入 Java 解密
+///   分支（探针 `K Packages.java.io.InputStream`）。
+/// - **顶层签名诚实声明（审查修）**：IIFE 的字节码 try/catch 吞掉 `decode` 的
+///   运行时结果（测试用伪 7 字节输入非有效 AES 密文 → `decode` 返回 `null`）并
+///   执行回退子程序，顶层**完成**返回字面 `undefined`——但此顶层返回值在 shim
+///   上线前后**同值、不具区分力**（审查实测：删除 `Packages.java.io.InputStream`
+///   的哨兵态同样完成加载并返回 `undefined`——字节码吞掉异常后回退路径不产生
+///   返回值）。真实区分点是：① `java.io.InputStream` 解析为可用函数（isFn /
+///   `.prototype.read` / instanceof / read 探测全过）；② 能力台账**不再登记**
+///   `java.io.InputStream` 前缀键（前缀匹配负断言）；③ 真正未实现的
+///   `java.io.PrintStream` 仍走「可读文案 + 台账登记」路径（能力清单提示保留在
+///   真正使用点，保护不放松）。
+/// - **输出对比局限（诚实声明）**：本测试无法给出 favcomic 真实解密输出与参考
+///   实现的可复现对比——缺少真实 favcomic 密文与 AES 密钥/口令（探针 `jcalls` 显示
+///   `createSymmetricCrypto(s:20, s:51, u8:7)`：20 字符 key、51 字符 secret，值不外露）。
+///   可复现的是上述 ①②③ 区分点，而非解密产物。
 #[test]
-fn favcomic_jslib_load_fails_with_reproducible_signature() {
+fn favcomic_jslib_loads_with_resolved_input_stream() {
+    use legado_js::host_api::capability_ledger as ledger;
+
     let engine = production_engine();
     let lib = load_fixture("favcomic_ximan_comic.js");
+
+    // 台账为进程级全局；与同二进制内其他触碰台账的测试串行。
+    let _ledger_lock = ledger::LEDGER_TEST_LOCK.lock().unwrap();
+    ledger::reset_unknown_java_symbols();
 
     current_source::with_current_source_tag("e2e.favcomic", || {
         assert!(
             engine.check_syntax(&lib).is_ok(),
-            "favcomic jsLib 语法应合法（失败发生在运行期，非语法期）"
+            "favcomic jsLib 语法应合法（混淆 IIFE 无语法错误）"
         );
 
-        // 捕获 eval 结果：退化提取路径会返回 Ok("undefined") 而非 Err，
-        // 故把 Ok/Err 统一成「观测到的失败签名串」再断言。
+        // 顶层完成加载返回字面 undefined（字节码回退）。注意（审查修）：此顶层
+        // 值在 shim 上线前后同值（哨兵态同样完成加载），**不具区分力**——仅作
+        // 加载完成性观测；真实区分点是下方的 ① 解析探测 + ②③ 台账断言。
         let observed = match JsEngine::eval(&engine, &lib) {
             Ok(v) => v,
             Err(e) => e.to_string(),
         };
-
-        // 严格断言「加载必失败」：观测签名必须落在三种已文档化的失败形态之一。
-        // 若加载真正成功（返回有意义的完成值，或出现未预期的错误文案），此断言失败。
-        let matched = observed.contains("Java 脚本能力")
-            || observed.contains("decode")
-            || observed.trim() == "undefined";
         assert!(
-            matched,
-            "favcomic jsLib 加载必失败（缺失 Java 脚本能力）；观测签名不在三种已文档化形态内（原始值）: {observed}"
+            observed.trim() == "undefined",
+            "favcomic jsLib 应完成加载并返回 undefined（字节码回退）；观测: {observed}"
+        );
+
+        // 区分点①（队列末项 java.io 最小面）：`java.io.InputStream` 已解析为
+        // 函数（非能力受限哨兵）——`.prototype.read` 可直接访问（favcomic
+        // 混淆体的 Java 式类型探测点），new/read/instanceof 均可用。
+        let resolved: String = JsEngine::eval(
+            &engine,
+            r#"
+            var Ctor = Packages.java.io.InputStream;
+            var s = new Ctor(new Uint8Array([9, 8, 7]));
+            JSON.stringify({
+                isFn: typeof Ctor === 'function',
+                protoRead: typeof Ctor.prototype.read === 'function',
+                instance: s instanceof Ctor,
+                readOk: s.read() === 9
+            });
+            "#,
+        )
+        .expect("InputStream 解析探测失败");
+        assert!(
+            resolved.contains("\"isFn\":true")
+                && resolved.contains("\"protoRead\":true")
+                && resolved.contains("\"instance\":true")
+                && resolved.contains("\"readOk\":true"),
+            "java.io.InputStream 应解析为可用函数（非哨兵）：{resolved}"
+        );
+
+        // 区分点②（能力清单断言）：已实现的 `java.io.InputStream` 面（类级
+        // 探测 + 实例已实现成员）不登记台账。前缀匹配（审查修）：实例/类级未
+        // 覆盖成员登记键形如 `java.io.InputStream.<成员>`，精确等值会漏掉后缀键；
+        // 未实现的 PrintStream 命中仍须「可读文案 + 台账登记」双到位（保护不放松）。
+        assert!(
+            !ledger::unknown_java_symbols()
+                .iter()
+                .any(|(sym, _)| sym.starts_with("java.io.InputStream")),
+            "已实现的 java.io.InputStream 面不应登记进能力台账"
+        );
+        let msg: String = JsEngine::eval(
+            &engine,
+            r#"
+            var m = '';
+            try { new Packages.java.io.PrintStream(); } catch (e) { m = String(e); }
+            m;
+            "#,
+        )
+        .expect("PrintStream 能力清单探测失败");
+        assert!(
+            msg.contains("Java 脚本能力") && msg.contains("java.io.PrintStream"),
+            "未实现符号应抛可读文案并点名缺失符号：{msg}"
+        );
+        assert!(
+            ledger::unknown_java_symbols()
+                .iter()
+                .any(|(sym, _)| sym == "java.io.PrintStream"),
+            "未实现符号 java.io.PrintStream 应登记进能力台账"
         );
     });
+
+    ledger::reset_unknown_java_symbols();
 }

@@ -1420,8 +1420,11 @@ mod tests {
     /// （`record_jslib_load_failure`）；搜索批次通道将其归类 `js_error`，
     /// 搜索结果的 error 字段可见失败原因（队列④ P1-B 横幅呈现）。
     ///
-    /// 三段验证（P2-E 哨兵语义落地后重校——哨兵使「读取未知类」不再抛错，
-    /// 提示移到真正使用点，原「fixture 必失败」前提失效，逐段重钉）：
+    /// 四段验证（P2-E 哨兵语义落地后重校——哨兵使「读取未知类」不再抛错，
+    /// 提示移到真正使用点，原「fixture 必失败」前提失效，逐段重钉；
+    /// 队列末项 java.io 最小 shim 落地后再次重校 ③④——`java.io.
+    /// InputStream` 由「未覆盖示例」变为已覆盖面，未知类示例改钉
+    /// `java.io.PrintStream`）：
     /// ① favcomic 真实 fixture 回归：jsLib 为 16KB 混淆**纯 JS** polyfill
     ///    IIFE（`Function.prototype.bind` 等 polyfill，无 `Packages`/`decode`
     ///    等 Java 面引用）→ 必须校验通过——防 P2-E 哨兵对合法纯 JS jsLib
@@ -1429,13 +1432,19 @@ mod tests {
     /// ② 未定义全局引用失败：jsLib 调用不存在的运行时全局 → 加载失败，
     ///    JsEngine 文案 + jsLib 失败台账登记归因（台账 key
     ///    `executor:<source_tag>`，与缓存路径一致）；
-    /// ③ 未知 Java 类调用告警：jsLib `new Packages.java.io.InputStream()`
-    ///    （916 语料能力清单未覆盖该成员；`java.io` 已知子树仅含
-    ///    `ByteArrayInputStream`/`ByteArrayOutputStream`）→ P2-E 哨兵
-    ///    construct 陷阱抛「此书源需要 Java 脚本能力（Packages.java.io.
-    ///    InputStream），当前不支持」，经 validate_js_lib 文案上抛，未知
-    ///    符号 `java.io.InputStream` 登记未知 Java 符号台账（「未知类调用
-    ///    要告警」经 jsLib 通道端到端验证）。
+    /// ③ java.io.InputStream 最小 shim 回归（队列末项新覆盖）：
+    ///    `new Packages.java.io.InputStream(bytes)` + `read`/`close`
+    ///    校验通过且未知符号台账不登记 `java.io.InputStream` 前缀键
+    ///    （前缀匹配，审查修：实例/类级未覆盖成员登记键形如
+    ///    `java.io.InputStream.<成员>`，精确等值会漏掉后缀键；已覆盖类
+    ///    不得被哨兵误伤）；
+    /// ④ 未知 Java 类调用告警：jsLib `new Packages.java.io.PrintStream()`
+    ///    （916 语料 0 命中，依赖真实 JVM 文件 I/O，能力清单显式不实现）
+    ///    → P2-E 哨兵 construct 陷阱抛「此书源需要 Java 脚本能力
+    ///    （Packages.java.io.PrintStream），当前不支持」，经
+    ///    validate_js_lib 文案上抛，未知符号 `java.io.PrintStream`
+    ///    登记未知 Java 符号台账（「未知类调用要告警」经 jsLib 通道
+    ///    端到端验证）。
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_validate_js_lib_favcomic_jslib_failure_surfaces_and_records() {
@@ -1500,24 +1509,46 @@ mod tests {
             "台账快照应含本来源"
         );
 
-        // ③ 未知 Java 类调用（P2-E 哨兵）：告警文案 + 未知符号台账登记
+        // ③ java.io.InputStream 最小 shim 回归（队列末项新覆盖）：
+        //    构造 + 读 + close 校验通过，且不得登记未知符号台账
+        assert!(
+            validate_js_lib(
+                "favcomic-is.test",
+                "var s = new Packages.java.io.InputStream(new Uint8Array([1, 2, 3])); \
+                 s.read(); s.read(new Uint8Array(2), 0, 2); s.close();",
+                None,
+            )
+            .is_ok(),
+            "已覆盖类 java.io.InputStream 应校验通过（队列末项最小 shim 回归）"
+        );
+        assert!(
+            capability_ledger::unknown_java_symbols()
+                .iter()
+                .all(|(k, _)| !k.starts_with("java.io.InputStream")),
+            "已覆盖类 java.io.InputStream 面不应登记未知符号台账（前缀匹配）: {:?}",
+            capability_ledger::unknown_java_symbols()
+        );
+
+        // ④ 未知 Java 类调用（P2-E 哨兵）：告警文案 + 未知符号台账登记
+        //    （java.io.PrintStream：916 语料 0 命中 + 依赖真实 JVM 文件 I/O，
+        //    能力清单显式不实现——未知类示例自 InputStream 改钉至此）
         let err = validate_js_lib(
             "favcomic-unknown.test",
-            "new Packages.java.io.InputStream();",
+            "new Packages.java.io.PrintStream();",
             None,
         )
         .unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.contains("Java 脚本能力（Packages.java.io.InputStream）"),
+            msg.contains("Java 脚本能力（Packages.java.io.PrintStream）"),
             "未知类告警文案应经 jsLib 通道上抛: {msg}"
         );
         // 未知符号台账（contains 断言噪声免疫：同进程并行测试可能并发登记其他未知符号）
         assert!(
             capability_ledger::unknown_java_symbols()
                 .iter()
-                .any(|(k, _)| k == "java.io.InputStream"),
-            "未知类 java.io.InputStream 应登记未知符号台账: {:?}",
+                .any(|(k, _)| k == "java.io.PrintStream"),
+            "未知类 java.io.PrintStream 应登记未知符号台账: {:?}",
             capability_ledger::unknown_java_symbols()
         );
 
