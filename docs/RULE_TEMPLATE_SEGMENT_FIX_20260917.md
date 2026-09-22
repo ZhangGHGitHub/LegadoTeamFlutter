@@ -12,7 +12,7 @@
 1. 书籍详情页（斗罗大陆）点「换源」→ 列表**能搜到**「🏷松鹤庭沐·言璃」（显示「最新：已完结 / 298.6万字」）；
 2. 点该行 → 确认弹窗点「切换」→ 底部弹出 **`换源失败: Parser error: 换源失败：新书源未解析到任何章节，已保留原书源与目录`**，来源仍为「🧭无极书院」。
 
-截图：`docs/parity_shots/tmp_songhe/ours_01_changesource.png`（搜到了）、`ours_04_after_t4.png`（失败原文）、`ours_06_after_back.png`（未切换）。
+截图：`docs/parity_shots/songhe_template_fix_20260917/ours_01_changesource.png`（搜到了）、`ours_04_after_t4.png`（失败原文）、`ours_06_after_back.png`（未切换）。
 **结论**：失败不在「搜」，而在「切换」；且**不是发现页/导入/搜索**问题（发现页 `exploreUrl` 解析实测正常，85 条分类）。
 
 ## 2. 根因链（逐环实测）
@@ -108,9 +108,9 @@
 - `cargo run -p legado-ffi --example dbg_songhe_switch_break2 --features quickjs -- legado-ffi/tmp_songhe.json`：`get_chapters_with_vars 返回章节数` 由 **0 → 712**；对照 `get_chapters_with_hints(同 URL)` = 712
 
 **实机（MuMu `192.168.1.19:5555`，release APK 2.0.284+285）**
-- 修复前：`换源失败: Parser error: 换源失败：新书源未解析到任何章节…`（`docs/parity_shots/tmp_songhe/ours_04_after_t4.png`、QA `fail1_close_4.png`）
+- 修复前：`换源失败: Parser error: 换源失败：新书源未解析到任何章节…`（`docs/parity_shots/songhe_template_fix_20260917/ours_04_after_t4.png`、QA `fail1_close_4.png`）
 - 重搜后候选地址已正确（`…intro-info?bookid=1100468021`）
-- **切换成功**：详情页「来源」变为 `🏷松鹤庭沐…`、「共 712 章」、最新章刷新（`docs/parity_shots/tmp_songhe/v3_06_t8.png`）
+- **切换成功**：详情页「来源」变为 `🏷松鹤庭沐…`、「共 712 章」、最新章刷新（`docs/parity_shots/songhe_template_fix_20260917/v3_06_t8.png`）
 - 落库实测（含 `-wal` 一并拉取）：`originName = 🏷松鹤庭沐·言璃` ✓、`chapters` 表 **712 行** ✓、`tocUrl` 落库为 `…all-chapter?bookId=`（**丢 bookId**，见 §7 遗留项 (g)）
 
 编写者：主代理（ZCode）｜ 全栈工程师子代理 ｜ 2026-09-18

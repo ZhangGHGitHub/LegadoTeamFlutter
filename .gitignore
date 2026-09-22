@@ -110,3 +110,4 @@ tmp_diag/
 # git add -f app modules 并删除下方两行。
 /app/
 /modules/
+.zcodeignore

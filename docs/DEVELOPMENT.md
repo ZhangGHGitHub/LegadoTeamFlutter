@@ -167,21 +167,10 @@ flutter_rust_bridge_codegen generate
 ./scripts/generate-bridge.sh    # Linux/Mac
 ```
 
-### Makefile 快捷命令
+### Makefile（2026-09-22 归档）
 
-```bash
-# 根目录
-make run-windows              # 构建并运行 Windows 桌面版
-make build-windows            # 仅构建（Debug）
-make build-windows-release    # 仅构建（Release）
-
-# flutter_legado 目录
-cd flutter_legado
-make check    # Rust cargo check + Flutter analyze
-make test     # Rust cargo test + Flutter test
-make build    # Rust .so + Flutter APK (release)
-make gen      # flutter_rust_bridge_codegen generate
-```
+> 根目录 `Makefile` 已移入 `docs/过期文档/Makefile` 归档（PENDING_DELETE_20260920.md §P4）：当前开发环境为 Windows、无 `make` 命令（见 AGENTS.md「关键约束」），且 `make build`/`make gen` 等目标已不存在。
+> 实际执行以：codegen → `scripts/generate-bridge.ps1`（见上节）；构建/验证 → AGENTS.md「验证命令」（`cargo check/test`、`flutter analyze/test`、`flutter build`）。
 
 ---
 

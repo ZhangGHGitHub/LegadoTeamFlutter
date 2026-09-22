@@ -727,11 +727,15 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       // 目录就绪即自动开读（未读书取首章）；目录不可用则停留详情页，仍可
       // 经「阅读」FAB 手动开读。长按入口仍走 _openBookInfo 普通详情页，
       // 行为不变。
-      Navigator.pushNamed(
+      // [队列⑫ P3 | 2026-09-22] await 至弹回书架（先关阅读器再关详情页）
+      // 后触发单本定向刷新：未读链路（详情+自动开读）返回时同步新进度
+      await Navigator.pushNamed(
         context,
         AppRoutes.bookInfo,
         arguments: BookInfoArgs(book: book, openReaderImmediately: true),
       );
+      if (!context.mounted) return;
+      await _refreshBookOnReturn(context, ref, book);
       return;
     }
     var typeBits = BookOpenUtils.typeBitsOf(book);
@@ -758,13 +762,28 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     if (BookOpenUtils.needsReaderNotifier(route)) {
       ref.read(readerNotifierProvider.notifier).openBook(bookToOpen);
       await Navigator.pushNamed(context, route);
-      return;
+    } else {
+      await Navigator.pushNamed(
+        context,
+        route,
+        arguments: BookOpenUtils.argumentsForRoute(route, bookToOpen),
+      );
     }
-    await Navigator.pushNamed(
-      context,
-      route,
-      arguments: BookOpenUtils.argumentsForRoute(route, bookToOpen),
-    );
+    // [队列⑫ P3 | 2026-09-22] 弹回书架后单本定向刷新（进度同步）
+    if (!context.mounted) return;
+    await _refreshBookOnReturn(context, ref, book);
+  }
+
+  /// [队列⑫ P3 | 2026-09-22] 从阅读器/详情页返回书架：单本定向刷新
+  ///
+  /// 上方 `await Navigator.pushNamed` 在该路由被弹回（回到书架）时才返回，
+  /// 此刻重拉该书最新进度写回内存（BookshelfNotifier.refreshBook），
+  /// 「刚读完的书」进度行/进度条随返回同步。不做整页重建、不新增 UI；
+  /// 书若在阅读期间被移除，notifier 内部回退全量 refresh 保持一致。
+  Future<void> _refreshBookOnReturn(
+      BuildContext context, WidgetRef ref, Book book) async {
+    if (!context.mounted) return;
+    await ref.read(bookshelfNotifierProvider.notifier).refreshBook(book.bookUrl);
   }
 
   /// 长按封面/书名直接打开书籍信息页（对齐安卓原版行为）

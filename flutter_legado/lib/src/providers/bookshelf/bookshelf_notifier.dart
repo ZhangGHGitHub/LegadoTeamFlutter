@@ -56,6 +56,34 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
     await Future.wait([_loadBooks(), _loadGroups()]);
   }
 
+  /// [队列⑫ P3 | 2026-09-22] 从阅读器/详情页返回书架后的单本定向刷新
+  ///
+  /// 书架页常驻（_KeepAlivePage），开书返回时无刷新钩子——内存态 Book 进度
+  /// 滞留（刚读完的书仍显示旧进度/无进度行）。本方法仅重新拉取**受影响
+  /// 的那本书**的最新进度写回内存（getBook 单本读取），不做全量
+  /// 列表/分组重拉、不触发 isLoading 骨架、不改渲染逻辑。
+  ///
+  /// 若该书已不在数据源（如阅读期间从详情页移除出书架），回退全量
+  /// [refresh] 保持列表一致。
+  Future<void> refreshBook(String bookUrl) async {
+    try {
+      final api = ref.read(bookApiProvider);
+      final book = await api.getBook(bookUrl);
+      if (book == null) {
+        await refresh();
+        return;
+      }
+      state = state.copyWith(
+        books: [
+          for (final b in state.books)
+            if (b.bookUrl == bookUrl) book else b,
+        ],
+      );
+    } catch (e) {
+      state = state.copyWith(error: _mapError(e));
+    }
+  }
+
   /// 加载书籍分组（对标原版 BookshelfFragment1.initBookGroupData）
   Future<void> _loadGroups() async {
     try {

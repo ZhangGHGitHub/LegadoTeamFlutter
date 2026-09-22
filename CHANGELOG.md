@@ -211,7 +211,7 @@ All notable changes to this project will be documented in this file.
   - 书「斗罗大陆」（原 🏷松鹤庭沐·言璃）两次连续换源均成功：①→ 📂瀚海书阁 ②→ ⚡📂米读小说；详情页章节数/字数/最新章随新源更新（712章/298.6万字 → 51章/142.20万字 → 712章/286.6万字）
   - 每次换源后拉库核对（`-wal`/`-shm` 一并拉取）：`bookUrl` 恒为原主键 `https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468021`；换源①后 `originBookUrl=https://www.ingml.cc/novel/1529.html`（`tocUrl` 同值）；换源②后 `originBookUrl=https://api.midureader.com/fiction/book/getDetail,{…POST…}`、`tocUrl=https://book.midureader.com/book/chapter_list/100/….txt`——完整、无退化
   - 进入详情页一次（U7 后台刷新）后再次拉库：`tocUrl`/字数/类型/评分未损坏（与刷新前一致），`originBookUrl` 保持有效
-  - 截图 `docs/parity_shots/tmp_songhe/p8_*.png`；库快照 `.tmp/p8_db/`（`p8_before_legado.db*` 迁移前 v108 / `p8_sw1.db*` / `p8_sw2.db*` / `p8_final.db*`）
+  - 截图 `docs/parity_shots/songhe_template_fix_20260917/p8_*.png`；库快照 `.tmp/p8_db/`（`p8_before_legado.db*` 迁移前 v108 / `p8_sw1.db*` / `p8_sw2.db*` / `p8_final.db*`）
 
 - Contributor: 全栈工程师子代理
 
@@ -226,7 +226,7 @@ All notable changes to this project will be documented in this file.
 
 ### Real device
 - 2.0.287+288 release APK 装 MuMu（192.168.1.19:5555）：**连续换源可用**（A→B→C 均成功，未复现 2.0.285 的「书籍不存在」）；切到「🏷松鹤庭沐·言璃」后落库 `tocUrl = …/api/book/all-chapter?bookId=1100468021`（**完整**）、章节 712
-- **关键对照**：随后进入一次书籍详情页（即此前会把 tocUrl 写成退化值的那次后台刷新），再次拉库（连 `-wal`）比对——`tocUrl` 与章节数**均未变化**，守卫生效；截图 `docs/parity_shots/tmp_songhe/v7_02_sw1.png`、`v7_03_sw2.png`
+- **关键对照**：随后进入一次书籍详情页（即此前会把 tocUrl 写成退化值的那次后台刷新），再次拉库（连 `-wal`）比对——`tocUrl` 与章节数**均未变化**，守卫生效；截图 `docs/parity_shots/songhe_template_fix_20260917/v7_02_sw1.png`、`v7_03_sw2.png`
 
 - Contributor: 全栈工程师子代理
 
@@ -284,7 +284,7 @@ All notable changes to this project will be documented in this file.
 - 真实书源 fixture（quickjs）：bookUrl 链由「空串」→ `…intro-info?bookid=1100468021`；`get_chapters_with_vars` 章节数由 **0 → 712**
 
 ### Real device
-- 2.0.284+285 release APK 装 MuMu（192.168.1.19:5555）：书籍「斗罗大陆」换源切换到「🏷松鹤庭沐·言璃」**成功**——详情页「来源」变更、「共 712 章」、最新章刷新（截图 `docs/parity_shots/tmp_songhe/v3_06_t8.png`）；落库校验 `originName=🏷松鹤庭沐·言璃`、章节表 712 行
+- 2.0.284+285 release APK 装 MuMu（192.168.1.19:5555）：书籍「斗罗大陆」换源切换到「🏷松鹤庭沐·言璃」**成功**——详情页「来源」变更、「共 712 章」、最新章刷新（截图 `docs/parity_shots/songhe_template_fix_20260917/v3_06_t8.png`）；落库校验 `originName=🏷松鹤庭沐·言璃`、章节表 712 行
 - 已知残留（登记 `docs/REFACTORING_ACTIVE_PLAN.md` P2-6）：换源后书籍 `bookUrl` 未随新源更新（与上游 `toBook()` 差异）→ 落库 `tocUrl` 丢 bookId；以及该源详情字段的 `java.getString` 绑定层 JSONPath 缺口（kind/字数/章名锁标记显示不全）
 
 ### Review

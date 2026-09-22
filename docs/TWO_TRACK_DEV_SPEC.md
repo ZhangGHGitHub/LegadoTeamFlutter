@@ -86,7 +86,7 @@ cd flutter_legado
 flutter build apk --debug
 ```
 
-**正确做法（Rust 轨 codegen 后）**：codegen 与 `cargo build -p legado-ffi` 绑定为原子操作（Makefile `gen` 目标已实现）；Android 侧额外执行 `build-android.ps1` 同步 jniLibs。
+**正确做法（Rust 轨 codegen 后）**：codegen 与 `cargo build -p legado-ffi` 绑定为原子操作（原 Makefile `gen` 目标已于 2026-09-22 随 Makefile 归档至 docs/过期文档/Makefile 而废止；Windows 环境无 make，以 codegen 脚本为准）；Android 侧额外执行 `build-android.ps1` 同步 jniLibs。
 
 ### 3.3 UI 轨禁区
 
@@ -110,7 +110,7 @@ frb（flutter_rust_bridge）的调用桥按 **funcId 序号**把 Dart 调用分�
 `.dll`/`.so`）必须满足：
 
 1. **原子重建**：任何 FFI 面变更后，「codegen 生成 → cargo 重编译 → 替换运行环境
-   .dll/.so」必须作为一个原子操作整体完成（Makefile `gen` 目标即为此设），
+   .dll/.so」必须作为一个原子操作整体完成（原 Makefile `gen` 目标已随 Makefile 归档废止，见 docs/过期文档/Makefile；Windows 环境无 make，以 codegen 脚本为准），
    不允许只重生成 Dart 不重编 Rust，或只替换二进制不更新生成物。
 2. **禁止混配**：不同 codegen 批次产出的 Dart 生成物与 .dll/.so 严禁混搭运行
    （例如新 Dart 绑定配旧 .so）。混配时 funcId 序号错位，Dart 调用会被分派到
