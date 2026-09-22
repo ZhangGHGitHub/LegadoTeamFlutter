@@ -1,0 +1,9 @@
+==> force-stop io.legado.flutter_legado
+[books] 返回: 5000
+[chapters] 返回: 5000
+[cached_chapters] 返回: 5000
+book=VUI2补验书 dci=0 dcp=0 type=8 origin=https://vui2.local/origin
+chapters=3
+cached=3
+ch0_head=VUI2正文·第一章起点。清晨，海神湖畔的雾还未
+ch1_head=VUI2正文·第二章前行。修行路上，他第一次遇见
