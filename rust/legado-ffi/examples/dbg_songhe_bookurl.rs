@@ -2,8 +2,8 @@
 //!
 //! 用法（rust/ 目录下）：
 //! `cargo run -p legado-ffi --example dbg_songhe_bookurl --features quickjs`
-//! 默认读 cwd 下 `tmp_songhe.json`（BookSource 导出）与
-//! `tmp_songhe_search.json`（真实搜索响应）；可传参覆盖：
+//! 默认读 cwd 下 `tests/fixtures/songhe/source.json`（BookSource 导出）与
+//! `tests/fixtures/songhe/search.json`（真实搜索响应）；可传参覆盖：
 //! `-- <booksource.json> <search_response.json>`
 //!
 //! 逐段对比求值并原样打印（空串显式标注）：
@@ -80,17 +80,17 @@ fn eval_case(
 fn main() {
     let src_path = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "tmp_songhe.json".to_string());
+        .unwrap_or_else(|| "tests/fixtures/songhe/source.json".to_string());
     let search_path = std::env::args()
         .nth(2)
-        .unwrap_or_else(|| "tmp_songhe_search.json".to_string());
+        .unwrap_or_else(|| "tests/fixtures/songhe/search.json".to_string());
 
     let source_text = fs::read_to_string(&src_path).expect("read booksource json");
     let source: BookSource = serde_json::from_str(&source_text).expect("parse BookSource");
     let search_rule = source
         .rule_search
         .as_ref()
-        .expect("rule_search missing in tmp_songhe.json");
+        .expect("rule_search missing in songhe source.json");
     let book_url_rule = search_rule.book_url.clone().unwrap_or_default();
     let cover_url_rule = search_rule.cover_url.clone().unwrap_or_default();
 

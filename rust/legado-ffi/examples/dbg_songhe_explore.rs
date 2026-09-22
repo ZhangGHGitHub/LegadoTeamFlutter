@@ -1,7 +1,7 @@
 //! 真实书源「🏷松鹤庭沐·言璃」exploreUrl（@js: 脚本，返回发现页 UI JSON 数组）回归
 //!
-//! 用法：`cargo run -p legado-ffi --example dbg_songhe_explore --features quickjs -- legado-ffi/tmp_songhe.json`
-//! （在 rust/ 目录下运行；不传参时默认读 cwd 下 tmp_songhe.json）
+//! 用法：`cargo run -p legado-ffi --example dbg_songhe_explore --features quickjs -- legado-ffi/tests/fixtures/songhe/source.json`
+//! （在 rust/ 目录下运行；不传参时默认读 cwd 下 tests/fixtures/songhe/source.json）
 
 use legado_core::explore::ExploreCategory;
 use legado_core::models::BookSource;
@@ -11,7 +11,7 @@ use std::fs;
 fn main() {
     let path = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "tmp_songhe.json".to_string());
+        .unwrap_or_else(|| "tests/fixtures/songhe/source.json".to_string());
     let text = fs::read_to_string(&path).expect("read json");
 
     // 直接从导出 JSON 得到真实 BookSource（camelCase 键，与 Dart toJson 一致）

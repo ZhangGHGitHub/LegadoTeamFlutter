@@ -281,6 +281,8 @@ scope 语义：
 | 新引擎下后果（现状即后果） | **降级**：jsLib 求值失败 → eprintln 警告并继续（v2.0.19 曾改为报错阻断导致全局回归，后修复为降级，L3179）；正文规则不依赖 jsLib 的部分仍生效（favcomic 正文 2966B 图片列表恢复）；图片解密改走 Rust `image_api` + `eval_bytes` Uint8Array 注入（L3188） |
 | 可复现判断依据 | 有：CHANGELOG L3179 记录了「正文 2966B 图片列表恢复」的实测；jsLib 失败路径在 `js_executor.rs:678-745`（eprintln 降级分支）可复现触发 |
 
+> **注**：JS 错误提取在部分路径下退化为字面 `undefined`（favcomic jsLib 实测）→ 由 ④ 能力受限批次改善；测试对三种形态兼容。
+
 ### 5.3 书山 或 番茄（聚合源）——**已被 sanitize + 非严格模式覆盖（等价）**
 
 | 项 | 内容 |

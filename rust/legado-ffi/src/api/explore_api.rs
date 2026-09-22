@@ -1102,16 +1102,16 @@ function getServerHost() { return 'https://a.test'; }
     }
 
     /// 真实书山聚合 jsLib（47263 字节，含函数体内 Packages）验证 getConfig 可见。
-    /// 依赖设备导出文件，文件缺失时跳过（本地验证用）。
+    /// 依赖设备导出夹具；已标记 #[ignore]（夹具缺失时响亮 panic，需重新导出后手工运行）。
     #[test]
+    #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     fn test_explore_real_jslib_get_config_visible() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
         );
         let Ok(raw) = std::fs::read_to_string(path) else {
-            eprintln!("sources_device.json 缺失，跳过");
-            return;
+            panic!("夹具缺失: {path}（仓库外，已于 2026-09-20 删除）——请重新导出后再跑");
         };
         let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {
@@ -1201,14 +1201,14 @@ function getServerHost() { return 'https://a.test'; }
     /// 书源 setup（source/cookie）。验证 analyzer 注入 sanitize jsLib + setup 后
     /// `$.data[*]` 复合规则可解析出书籍。— DeepSeek Harness + Bridge
     #[test]
+    #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     fn test_shushan_booklist_js_with_jslib_and_setup() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
         );
         let Ok(raw) = std::fs::read_to_string(path) else {
-            eprintln!("sources_device.json 缺失，跳过");
-            return;
+            panic!("夹具缺失: {path}（仓库外，已于 2026-09-20 删除）——请重新导出后再跑");
         };
         let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {
@@ -1319,14 +1319,14 @@ function getServerHost() { return 'https://a.test'; }
     /// （含固定 X-Novel-Token）并写入全局请求头，java.ajax 请求自动携带
     /// —— 修复书山目录 /catalog 400 无效书源（java.ajax 缺认证头）。
     #[test]
+    #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     fn test_shushan_header_rule_injected_to_global_headers() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
         );
         let Ok(raw) = std::fs::read_to_string(path) else {
-            eprintln!("sources_device.json 缺失，跳过");
-            return;
+            panic!("夹具缺失: {path}（仓库外，已于 2026-09-20 删除）——请重新导出后再跑");
         };
         let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {
@@ -1374,14 +1374,14 @@ function getServerHost() { return 'https://a.test'; }
     /// 与书山同机制（jsLib + setup + header 规则）——探索 URL 模板解析不应
     /// 因 jsLib/setup 缺失而报错；header @js 规则应可执行。
     #[test]
+    #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     fn test_aggregate_sources_common_explore_and_header() {
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
         );
         let Ok(raw) = std::fs::read_to_string(path) else {
-            eprintln!("sources_device.json 缺失，跳过");
-            return;
+            panic!("夹具缺失: {path}（仓库外，已于 2026-09-20 删除）——请重新导出后再跑");
         };
         let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {

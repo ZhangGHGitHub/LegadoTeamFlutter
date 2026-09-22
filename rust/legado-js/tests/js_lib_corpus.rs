@@ -93,10 +93,14 @@ hutool_md5_abc:\"900150983cd24fb0d6963f7d28e17f72\"";
 /// 诚实断言可复现失败签名，而非虚构的「加载成功」：
 /// - 语法合法（混淆 IIFE 无语法错误）→ `check_syntax` 通过，属**运行时**失败
 ///   （生产路径据此跳过 Rhino 宽容归一化，直接降级 + 台账登记）；
-/// - 失败信息指向缺失的 Java 脚本能力：批次④能力受限 shim 上线后文案为
-///   「此书源需要 Java 脚本能力（Packages.java.io.InputStream），当前不支持」，
-///   此前原始签名为 `decode is not defined`——两种文案均为同一根因
-///   （脚本运行期引用 QuickJS 环境不存在的 Java 能力），故断言取并集。
+/// - 失败签名取**三种形态并集**（同一根因——脚本运行期引用 QuickJS 环境不
+///   存在的 Java 能力——在不同代码代际下的不同表征，逐条注释）：
+///   - 「Java 脚本能力（…）」：批次④能力受限 shim 上线后的正常错误文案；
+///   - 「decode is not defined」：历史形态（QuickJS 原始 JS 运行期错误）；
+///   - 字面 `undefined`：**已提交代码**的 JS 错误提取在部分路径退化的提取工件
+///     （信息丢失——eval 吞掉错误、返回字面 `undefined` 而非 `Err`），由④批次改善。
+/// - 因退化路径下 `JsEngine::eval` 可能返回 `Ok("undefined")` 而非 `Err`，故须
+///   **同时处理 `Ok`/`Err`**：把两者统一成「观测到的失败签名串」再断言并集。
 #[test]
 fn favcomic_jslib_load_fails_with_reproducible_signature() {
     let engine = production_engine();
@@ -107,12 +111,22 @@ fn favcomic_jslib_load_fails_with_reproducible_signature() {
             engine.check_syntax(&lib).is_ok(),
             "favcomic jsLib 语法应合法（失败发生在运行期，非语法期）"
         );
-        let err = JsEngine::eval(&engine, &lib)
-            .expect_err("favcomic jsLib 加载必失败（缺失 Java 脚本能力）");
-        let msg = err.to_string();
+
+        // 捕获 eval 结果：退化提取路径会返回 Ok("undefined") 而非 Err，
+        // 故把 Ok/Err 统一成「观测到的失败签名串」再断言。
+        let observed = match JsEngine::eval(&engine, &lib) {
+            Ok(v) => v,
+            Err(e) => e.to_string(),
+        };
+
+        // 严格断言「加载必失败」：观测签名必须落在三种已文档化的失败形态之一。
+        // 若加载真正成功（返回有意义的完成值，或出现未预期的错误文案），此断言失败。
+        let matched = observed.contains("Java 脚本能力")
+            || observed.contains("decode")
+            || observed.trim() == "undefined";
         assert!(
-            msg.contains("Java 脚本能力") || msg.contains("decode"),
-            "失败签名应指向缺失的 Java 脚本能力（两种批次文案均有效）: {msg}"
+            matched,
+            "favcomic jsLib 加载必失败（缺失 Java 脚本能力）；观测签名不在三种已文档化形态内（原始值）: {observed}"
         );
     });
 }

@@ -309,6 +309,8 @@ cargo test --workspace  # 含 legado-core 16 项 query_ttf 单测
 2. 换工具重签对照 → `-54` 仍现。
 3. **最小探针 app**（`probe_icon/`，单备选/纯 legacy/iPhone-only/仅公开 API）同设备同工具实测 → **`-54` 仍现**（自检 `supportsAlt=true / 磁盘声明=true / 散文件2/2` 全满足）。
 
+> **已归档删除**：该探针 App 已于 2026-09-20 归档删除（提交 bb08c173bc），流水线同步移除。
+
 按关闭条件「均不可 → 签名/系统限制，需文档化为已知限制」收口：H5（旁载 LS 未注册 `iconsDictionary`）坐实，代码层无法修复。已落地 A 优雅降级 + C 文档化（`IOS_ICON_SWITCH_LIMITATION_20260903.md`），**停止旁载语境投入**。
 
 ---

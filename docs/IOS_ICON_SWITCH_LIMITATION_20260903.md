@@ -54,6 +54,8 @@ domain=NSOSStatusErrorDomain code=-54
 - **iPhone-only**（`TARGETED_DEVICE_FAMILY=1`，无 iPad/universal）；
 - **仅公开 API**（`setAlternateIconName`），无私有旁路、无 Rust FFI、无复杂 UI。
 
+> **已归档删除**：该探针 App 已于 2026-09-20 归档删除（提交 bb08c173bc），流水线同步移除。
+
 真机实测结果：
 
 ```

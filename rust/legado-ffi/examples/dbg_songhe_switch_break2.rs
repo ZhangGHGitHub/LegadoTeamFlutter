@@ -14,8 +14,8 @@
 //!      与「不带」下的响应体前缀 → 判定目录请求是否透传书源头
 //!
 //! 运行（rust/ 目录下）：
-//! `cargo run -p legado-ffi --example dbg_songhe_switch_break2 --features quickjs -- legado-ffi/tmp_songhe.json`
-//! 或在 rust/legado-ffi 目录下不带参数运行（自动回退 legado-ffi/tmp_songhe.json）。
+//! `cargo run -p legado-ffi --example dbg_songhe_switch_break2 --features quickjs -- legado-ffi/tests/fixtures/songhe/source.json`
+//! 或在 rust/legado-ffi 目录下不带参数运行（自动回退 tests/fixtures/songhe/source.json）。
 //! 可选第 2 参数覆盖 bookUrl。
 //!
 //! 只读诊断：不修改任何既有源文件；仅新增本文件。
@@ -42,19 +42,25 @@ fn preview(s: &str, n: usize) -> String {
 }
 
 fn read_source_text(arg: &str) -> (String, String) {
-    for p in [arg, "tmp_songhe.json", "legado-ffi/tmp_songhe.json"] {
+    for p in [
+        arg,
+        "tests/fixtures/songhe/source.json",
+        "legado-ffi/tests/fixtures/songhe/source.json",
+    ] {
         if Path::new(p).exists() {
             let text = fs::read_to_string(p).unwrap_or_else(|e| panic!("read {p}: {e}"));
             return (p.to_string(), text);
         }
     }
-    panic!("未找到书源 JSON（尝试过 {arg} / tmp_songhe.json / legado-ffi/tmp_songhe.json）");
+    panic!(
+        "未找到书源 JSON（尝试过 {arg} / tests/fixtures/songhe/source.json / legado-ffi/tests/fixtures/songhe/source.json）"
+    );
 }
 
 fn main() {
     let src_arg = std::env::args()
         .nth(1)
-        .unwrap_or_else(|| "tmp_songhe.json".into());
+        .unwrap_or_else(|| "tests/fixtures/songhe/source.json".into());
     let (src_path, source_text) = read_source_text(&src_arg);
     let source: BookSource = serde_json::from_str(&source_text).expect("parse BookSource");
     let book_url = std::env::args()
