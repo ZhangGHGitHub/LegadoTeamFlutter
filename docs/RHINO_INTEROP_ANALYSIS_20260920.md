@@ -375,3 +375,24 @@ jsLib 非空 **45 源**；≥100KB **2 源**；≥500KB **2 源**（均为七猫
 
 ### 8.4 七猫 588KB jsLib 的 Java 面明细（导出件实测）
 `Packages.` 22 处、`android.util.Base64` 5 处、`javax.crypto` 3 处、`java.lang.` 8 处、`java.util.` 5 处、`cn.hutool` 1 处、`.getBytes(` 3 处、`UUID` 10 处；顶层函数含 `qmJavaOf` / `qmBase64Encode` / `qmHexDecodeAscii` / `qmMd5` / `qmSign` / `qmUrlSign` / `qmParamEncode` / `qmCacheOf` / `qmBookVariable` 等——是一套含签名与解码的 API 封装层。
+
+### 8.5 未覆盖 Java 符号登记（2026-09-22，批次⑤ 端到端探针实测，不改生产代码）
+
+登记口径：jsLib 加载期 `capability_ledger` 实测（进程级可查：`unknown_java_symbols()` /
+`jslib_load_failures()`）＋ 失败错误栈定位；夹具已入库
+（`rust/legado-js/tests/fixtures/js_lib/`，端到端测试 `rust/legado-js/tests/js_lib_corpus.rs`）。
+本批次**只登记、不补实现**（避让批次④对 `rust/legado-js/src/host_api/**` 的修改）。
+
+| # | 符号 | 出现位置 | 后果 | 处置 |
+|---|---|---|---|---|
+| 1 | `java.io.InputStream` | favcomic「🎨🔞（favcomic）喜漫漫画」jsLib（16,184 B 混淆 IIFE，合集 1283 索引 703，夹具 `favcomic_ximan_comic.js`）：运行期访问 `Packages.java.io.InputStream`（错误栈 `at get (eval_script:185:82) → Ui (14:6807) → CW (14:10661)`，混淆函数 `Ui` 读 HTTP 响应流） | jsLib 加载**运行时失败** → 该源脚本能力不可用（依赖其解码管线的搜索/内容规则无法执行）；生产行为 = eprintln 降级 + 台账登记（键 `executor:<source_tag>`），搜索批次通道经 `js_error` 可见原因，不崩溃。批次④能力受限 shim 后文案由原始 `decode is not defined` 变为「此书源需要 Java 脚本能力（Packages.java.io.InputStream），当前不支持」——同一根因（脚本运行期引用 QuickJS 环境不存在的 Java 能力），新文案更精确且同步登记台账 | 若需恢复该源：shim 补 `java.io` 最小抽象（对响应字节流提供 InputStream，§6 路线 (a) 具名类）；或接受降级。是否立项由后续批次决定 |
+| 2 | （无） | 七猫「🏷七猫四合一本地版」jsLib（588,700 B，夹具 `qimao_four_in_one_local.js`） | 加载**成功**；Java 面全部被现有 shim 覆盖（`Packages.java.lang.String.getBytes` / `android.util.Base64` / `cn.hutool` `DigestUtil.md5Hex` / `javax.crypto` 等，明细见 §8.4）：同一探针会话进程台账仅登记 favcomic 的 `java.io.InputStream` 一项，七猫加载与其全部纯函数调用（`qmMd5`/`qmSign`/`qmUrlSign`/`qmBase64Encode`/`qmHexDecodeAscii`/`qmParamEncode`，且 §8.4 所列 Java 面不含 `java.io`）未登记任何新未知符号 | 无需动作 |
+
+> **探针方法与期望值出处**：引擎配置与生产 `QuickJsExecutor` fresh 路径同源
+> （`SandboxConfig::default().with_allow_script_run(true)` + 64MB 内存上限 +
+> `with_current_source_tag` + jsLib 先行 + RESPONSE/JSOUP 双桥重注入）；纯函数期望值
+> 双路探明——生产同源 QuickJS 引擎本地探针实测 ＋ Python 独立重算（`hashlib.md5` /
+> `base64` ＋ 夹具内 `qmMapChars` 算法与 `QM_B64`/`QM_PARAM_MAP`/`QM_SECRET` 常量），
+> 逐项一致（如 `md5(legado)=bbd6a62a…`、`qmSign('abc')=16d26628…`、
+> `qmUrlSign({b:'2',a:'1'})=12eba91a…`、`qmParamEncode('abc')='4qGT'`、
+> hutool `md5Hex('abc')='90015098…'` 与公认 md5("abc") 吻合）。
