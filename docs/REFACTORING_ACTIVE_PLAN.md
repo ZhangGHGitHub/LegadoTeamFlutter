@@ -251,6 +251,7 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **backlog（P2/P3，未修）**：`urlOption retry` 字段已解析但**零消费者**（书源配置静默失效；修法=按上游"仅非 2xx/非 3xx 重发、无退避"模式接入，注意现 `RetryExecutor` 语义不同，约 4–8h）；charset 自动探测兜底缺失（无 header/meta 的非 UTF-8 页走 lossy，可引 `chardetng`，约 4–8h）；重定向跳数 10 vs 上游 20（1h）、`followRedirects=false` 未消费（4–8h）、JS 辅助请求上游**刻意不跟随**而我方跟随（2–4h）；JS `setCookie` 独立内存存储不落 DB、与客户端 CookieStore 不互通（8–16h，可缓）。
   - **保持现状（评估明确不建议改）**：concurrentRate 固定窗口算法（与上游逐行等价，含单测）、S0-E 非 2xx 语义、**显式 charset 解码响应（我方优于上游，勿改回）**、reqwest 默认头/UA 处理。
   - 未核实点：OkHttp "默认 20 跳"取自库文档未逐行核库源；`legado-db` cookie 表 schema 未复核；chardetng vs ICU4J 质量未做基准；语料中 urlOption `retry`/`followRedirects` 使用频率未统计。
+  - **新登记（2026-09-22，P2-19 修复过程中发现）**：**上游 `enabledCookieJar` 的按书源 cookie 门控未接入网络层**。事实：我方模型与 DB **已具备等价字段**（`rust/legado-core/src/models/book_source.rs:127` 的 `enabled_cookie_jar: Option<bool>`（serde `enabledCookieJar`）、`rust/legado-db/src/schema.rs` 的 `enabledCookieJar` 列），缺的是**让网络请求路径携带书源上下文**——`rust/legado-ffi/src/api/net_api.rs` 的 `http_get_bytes(url, headers_json)` 等接口无书源参数，打通需 **FFI 签名/契约变更 + parser 变更**，触碰"契约先行 + 双方确认"红线 → **本次未实现，单独立项待裁决**。影响：所有书源的 DB cookie 目前无条件注入（上游仅启用该开关的书源才读写 DB cookie）。
   - **可选排期（用户原始口径：排最后）**：**P1-1 项2 跨源聚合下沉 + 跨端夹具校验**（约 2 天量级）仍为可选项，未实施。
 
 ### P3：功能补齐与卫生项（2026-08-22 开启）
