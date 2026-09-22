@@ -78,6 +78,12 @@
 1. **③b A4 书架单击对齐（有未提交代码，必须接管）**：`flutter_legado/lib/src/routes.dart`、`lib/src/screens/book_info_screen.dart`、`lib/src/screens/book_info_screen_load.part.dart` —— 正在实现"详情页 + 立即自动开读"（重构版模式）。**未验证**（未跑 analyze/test、未实机）；补丁备份 `.tmp/inflight/a4b_20260921.patch`。续跑要点：先 `flutter analyze && flutter test` 判可用性 → 阅读器**零进度兜底**确认（承重区，越界即停报告）→ 设备验证五项（Test）→ **过 code-reviewer 再提交**。
 2. **⑦b 参考重采（项二/项三）**：证据已采但报告段落未写——`docs/parity_shots/ref_dark_20260921/` 内 `05_ref_transparent_dark_appearance.png`（已更新，M 态）、`06_ref_transparent_dark_search.png` 与 `_tmp_u3x.xml`（untracked）。`RECAPTURE_20260921.md` 的 §2/§3 仍标"进行中，见后续补写"→ **续跑即补写结论**（结论决定 A6 输入盒 `isDark ? onSurface` 保留还是回退 `surfaceContainerLow`，以及 Transparent 深色 sCL 取值裁决）。
 
+## 二·补三  ⑧ 关闭 + 队列进度（2026-09-22）
+
+- **⑧ 网阅 688 / 松鹤 712 实机自证：闭环成立**（提交 `825005b074`）——用设备实态 DB（Test2 拉的 916 源 enabled=1 + 库内源规则文本）跑 App 同源链路：网阅 **688 章/688 互异 URL**、松鹤 **712 章/712 互异**（重复 0），正文抽样 4/4 真实剧情；与 P2-7(a) 基线一致 → **P2-7(a) 设备验证缺口关闭**；松鹤"全免费"经直连站点 API 取证为**站点侧改免费**（非解析缺陷）。
+- **④ 能力受限提示+未知类告警：审查判定"需修改"已退回**（P1 预校验口径过宽会静默废源——仓内 favcomic 夹具即实证；P1 提示未到 UI 与用户口径反向；P2 `legado-js-error://` 解码疑似死代码 / 放行面超声明 / Packages 探测式写法受影响；P3 登记表无界等）→ 按最小清单修改中。
+- **⑨a 目录治理三项（P1 假绿 11 例 / P2 tmp_* 入库 / P5 死流水线）**：已派。
+
 ## 三、续跑队列（按序，复工即可用）
 
 | 序 | 任务 | 备注 |
