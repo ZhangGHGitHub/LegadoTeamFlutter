@@ -83,4 +83,24 @@ backlog（P2/P3）：`urlOption retry` 完全未消费、charset 无探测兜底
 
 ---
 
-编写者：主代理（ZCode 本机通道）｜ 2026-09-22
+## 六、2026-09-23 续批闭环（本次会话内完成，全部已推送）
+
+| 批次 | 内容 | 版本 | 提交 | 证据 |
+|---|---|---|---|---|
+| ⑩a | 搜索跨源聚合下沉为 Rust 单一真源（加法式 origins 字段 + 跨端夹具 5 case + ECMAScript 等价归一化）+ 审查 5 项修正 + P2-20 登记 | 2.0.308+309 | `c4712f4a7a` | Rust/Dart 双端夹具绿、`cargo test --workspace` 两档 0 failed、`flutter test` +1603、code-reviewer 审查（无阻断）→ 全修 |
+| 设备补验 | 种子本地书补验项 4（阅读器菜单 5 键）/项 6（书架单击直达阅读 + 返回定向刷新）：全通过（原「待裁决 1/3」撤销） | — | `5053da2544` | `docs/parity_shots/verify_ui_20260922/vui2_*`（49 文件）+ 报告补验节 |
+| P2-21 | 08 屏「在读/最新/共N章」三行块：off-by-one（0 基误当 1 基）+ 双基准形态对齐（去「第N章」前缀/去「（全书完）」代码后缀/三态=未读·已读N章·已读完） | 2.0.308+309 | `04b367948e` `dcfbdd24fc` | 实机双场景（存储值优先 / 目录回落）经种子书证明 off-by-one 修复；`b8_*` 证据 + 与参考 dump/截图对照；`flutter test` +1613 |
+| Rhino 末项 | 书源脚本 `java.io.InputStream` 最小能力面（实例哨兵 Proxy + Java 语义修正）+ 诚实化 e2e 断言 + 台账登记 | 2.0.308+309 | `70932519bc` | 真实夹具由「加载必失败」→「加载完成 + InputStream 解析可用」；quickjs 档 `js_lib_corpus` 2 passed；code-reviewer 两轮（3 重要 + 2 提示全采纳，另反证审查 spec 一处 off-by-one） |
+| P2-22 | 08 屏元信息区元素集对齐参考版：移除参考版不存在的「目录：」「分组：」「🏷️」三处独立行，分组→chips 条件 chip、kind→chips 逐项、chips 行去重复章数 | 2.0.308+309 | `95a6d65696` | 浅色截图 + 深色 dump + 参考源码三重取证；`flutter test` +1617（新增 5 例）；台账「08 元信息区对齐修订」节纠正 U5/U9/U10/U11/U12 旧表述 |
+| 卫生批 | 清 `clippy --all-targets` 三处既有债务（legado-net：`await_holding_lock` ×2 + `never_loop`） | 2.0.308+309 | `5b7962bf27` | `cargo clippy -p legado-net --all-targets -- -D warnings` 归零；`legado-net` 247 测试 ×3 连跑绿 |
+
+**本轮新登记（待裁决，均已写入 `docs/REFACTORING_ACTIVE_PLAN.md`）**：
+1. **P2-20**：Dart 搜索聚合双路径自身不一致（纯函数四独立桶 vs 增量桶 `_seenKeys` 预去重）——未来把运行时切到 Rust 聚合前须先裁决以哪条为准。
+2. **workspace 级 `clippy --all-targets -- -D warnings` 仍有 45 处既有报错**（工具链 clippy 0.1.97 lint 漂移；含 1 处为队列⑩a 引入）——建议单开一批清理，或修订 `rust/DEVELOPMENT.md` 门禁口径与 CI 对齐（CI 不带 `--all-targets`，`cargo clippy --workspace` 两档均 0）。
+3. **JS 侧跨源 cookie 泄漏**（`legado-js/src/host_api/network.rs:279-289`，面大于已修的 P1-1）——修法需先追 tag 取值来源。
+4. **D9 深色背景底色**：#4A4A4A（我方内置色板）vs #101418（参考）——属主题引擎/色板取值，需确认基线引擎要求（登记见 `docs/parity_shots/verify_ui_20260922/VERIFY_UI_20260922.md`）。
+5. **08 屏遗留（低优）**：三行左缘 13dp vs 参考 `BookInfoSummary` `start=16dp`（3dp），宜与全页 padding 一并复核。
+
+---
+
+编写者：主代理（ZCode 本机通道）｜ 2026-09-22（§六 续批回填 2026-09-23）
