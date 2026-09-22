@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [2.0.308] - 2026-09-23
 
+### Fixed
+- [UI] **书籍详情页「在读」行章号错位一章（P2-21）**：该行此前把 0 基的 `durChapterIndex` 按 1 基解读（`chapters[durIdx-1]`），用户在第二章时显示**前一章**的章号与标题；现改为「标题优先取阅读记录存储值 `durChapterTitle`，无则回落目录 `chapters[durChapterIndex]`（0 基），皆无则不渲染该行」，并去掉自创的「第N章」前缀。
+- [UI] **详情页「最新」行与「共N章」行对齐参考版/原版口径（P2-21）**：「最新」行改为 `最新 · {latestChapterTitle}`（去掉「第N章」前缀与代码追加的「（全书完）」——该后缀实为站点标题自带）；「共N章」行由「共 N 章｜已读/未读」两态改为 `共 N 章` + `|` + `未读 / 已读 N 章 / 已读完` 三态（N = `durChapterIndex+1`），颜色改用主题角色色（章数 primary、分隔与状态 secondary）。
+
 ### Changed
 - [Rust] **搜索跨源聚合下沉为单一真源（内部重构，界面与行为零变化）**：新增 `legado-core::search_aggregate` 纯函数（同名同作者跨源合并 + origins 累加、四桶分桶 equal→tags→contains→other、桶内 originsCount 降序 + 首次到达序平局、空关键词原样返回），与 Dart 现行纯函数 `applyPrecisionSearch` 逐条对齐；`legado-ffi` 内新增 `aggregate_search_books_json` 作为跨端校验入口（crate 内 `pub`，**未暴露 FRB**，方法数不变）。
 - [Rust] **`CoreSearchBook` 加法式新增可选字段 `origins`**（`#[serde(default, skip_serializing_if = "Vec::is_empty")]`，空时序列化省略）——既有搜索批次/解析/DB 路径不填充，批次 JSON 形态与旧消费方**零破坏**；Dart 侧 `SearchBook.origins` 加法式消费（非空优先、空回退 `{origin}`），运行时增量桶聚合路径未切换。

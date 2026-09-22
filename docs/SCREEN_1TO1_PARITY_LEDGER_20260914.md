@@ -575,4 +575,27 @@ B2-C1 ✅ 2.0.265（发现源卡单列列表行 P1 闭环；漏斗状态着色�
 
 **批七闭环（2.0.283，主代理视觉终验）**：四按钮横向拓宽 ✅（76×69dp/圆角15/间距10，跨度 997px vs 参考 976px 偏差 2.15%）；**在读行 16sp w700 加粗**（墨高 46px=参考 100%）；最新行 13sp/共N章 12sp w600 同步对齐。数据注：参考 08 的共N章行仅渲「共」+1 字（其数据截断），我方按完整数据渲染，不造截断（登记）。
 
+### P2-21 在读/最新/共N章三行块修正（2026-09-23，设备 MuMu「Test2」`127.0.0.1:16384`，版本 2.0.308+309）
+**触发**：设备复核轮种子本地书补验（`docs/parity_shots/verify_ui_20260922/`）实证——用户在第二章（DB `durChapterIndex=1`；`durChapterIndex` 全应用为 **0 基**：`home_tab_screen.dart:395` 用 `+1` 算百分比、`reader_notifier.dart:173` 直接索引 `chapters[]`、`bookshelf_screen.dart:724` 用 `<=0 && durChapterPos<=0` 判未读）时，详情页在读行显示「在读·第1章 第一章 起点」（前一章）；且三行文本形态与**双基准**均不一致。
+
+**权威口径取证**：
+- 参考版实机 dump（`ref_dark_20260920/08_book_info.xml`）：`在读 · 引子 穿越的唐家三少` / `最新 · 第二百三十六章 大结局，最后一个条件（全书完）` / `共 711 章` + `|` + `已读 1 章`；
+- 参考版源码（HapeLee/MD3 `BookInfoScreen.kt` `BookInfoSummary`）：`toc_s`(「在读 · %s」)=`book.durChapterTitle ?: 加载中…`、`lasted_show`(「最新 · %s」)=`latestChapterTitle`、第三行 `read_chapter_total`(「共 %d 章」) + `|` + when{`未读` / `已读完` / `read_chapter_index`(「已读 %d 章」，N=`durChapterIndex+1`)}；
+- 原版 `BookInfoActivity.kt:967-1000`：同用 `toc_s`/`lasted_show`，标题取 `resolveBookInfoTocTitle(durChapterTitle, durChapterIndex, chapterList)`（**优先存储标题、回落目录 `chapters[index]` 0 基**）。
+
+**修正（`book_info_screen_builders.part.dart`）**：
+1. 在读行：`在读·第$durIdx章 …`（1 基误读 + 自创前缀）→ `在读 · {标题}`；标题优先级 ①`book.durChapterTitle`（存储值）→ ②目录回落 `chapters[durChapterIndex]`（0 基）→ ③皆缺不渲染（D4 缺数据不渲染）；
+2. 最新行：去「第N章」前缀与代码追加的「（全书完）」后缀（参考 dump 中该后缀为站点标题自带）；E5「状态词回落目录末章标题」保留、回落亦不加后缀；
+3. 第三行：`共 N 章｜已读/未读`（两态、硬编码绿 `0xFF4CAF50`）→ `共 N 章`（primary/w700）+ `|`（secondary）+ `未读 / 已读 N 章 / 已读完`（secondary；N=`durChapterIndex+1`；未读判据 `dci==0 && dcp==0`，与参考 Kotlin 同源）。第三行两态改三态后，批七「0xFF4CAF50 已一致」的结论被修订为**主题角色色**（参考源码即 `primary`/`secondary`，绿调来自其激活调色板实例）。
+
+**实机验证（UI-operator，MuMu index 0「Test2」；DEBUG 变体、同 Dart 代码与版本号；种子本地书 3 章 + cached_chapters）**：
+- 场景 A（存储值优先，`durChapterTitle=引子 测试标题`、dci=1）：`在读 · 引子 测试标题` ✅；负向断言全 0 命中（无「第N章」、无「（全书完）」、无旧形态「在读·」）；
+- 场景 B（目录回落，`durChapterTitle` 空 + dci=1）：`在读 · 第二章 前行` ✅——旧 1 基代码会误显「第一章 起点」，**off-by-one 修复经实机回归证明**；最新行状态词「已完结」正确回落目录末章标题且不加后缀；
+- 第三行两场景均为 `共 3 章` + `|` + `已读 2 章`（与 DB `dci=1` 一致）；字号核对：在读 16sp / 最新 13sp / 第三行 12sp 与参考同位一致（h72/57/54px）；
+- 清理：种子书三表残留 0、书架恢复基线；logcat 全量 31801 行仅 uiautomator 自杀噪声，应用 0 崩溃；证据 `docs/parity_shots/verify_ui_20260922/b8_*`。
+
+**遗留（低优，登记不改）**：三行左缘我方 13dp vs 参考 `BookInfoSummary` 的 `start = 16.dp`（3dp 偏差，与四按钮区 13dp 边距同源，宜与全页 padding 一并复核）；最新行颜色沿用 [F1] 高对比 `onSurface`（比参考 `onSurfaceVariant` 更亮，属有意 WCAG 决策）。
+- 签名：全栈工程师 + UI-operator 子代理，2026-09-23（版本 2.0.308+309）
+
 修订：ZCode（本机 27B 通道）｜ 2026-09-21（**3-1「我的」屏 Web 服务卡启用态强调色变更**：iOS 系统绿 → `colorScheme.primary`，随 `app_colors.dart` 整体删除（队列③ A-5，提交 `14752aba63`）；该屏我方截图仍待补采（本表 3-1 行 ✅待补），补采时须一并复验此色变；另：3-7 行 N6 已按用户裁决登记为"保留页面、入口收起"）
+修订：ZCode ｜ 2026-09-23（**08 屏 P2-21 在读/最新/共N章三行块修正入表**：off-by-one 修复 + 双基准形态对齐，实机双场景验证通过，证据 `docs/parity_shots/verify_ui_20260922/b8_*`；批七「状态词绿色 0xFF4CAF50」口径修订为主题角色色）

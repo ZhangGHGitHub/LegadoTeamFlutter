@@ -983,10 +983,20 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     );
   }
 
-  /// [PARITY C1 D4] 章节信息单行：「共 N 章｜未读/已读」（对齐参考 08；
-  /// 替代原「在读/最新/目录」三行强调排版）。
+  /// [PARITY C1 D4][P2-21] 章节信息单行：「共 N 章 | 未读 / 已读 N 章 /
+  /// 已读完」（对齐参考 08 BookInfoSummary 行；替代原两态绿字版式）。
   /// 章数取 book.totalChapterNum 优先、回落实际章节数；
-  /// 状态：有阅读进度（durChapterIndex > 0）为「已读」，否则「未读」。
+  /// 状态三态（与参考 Kotlin when 分支同源，durChapterIndex 为 0 基）：
+  /// - 未读：durChapterIndex == 0 且 durChapterPos == 0（与书架页未读判据
+  ///   bookshelf_screen.dart 同源）
+  /// - 已读完：durChapterIndex + 1 == 章数 且 章数 > 0（参考版 Kotlin
+  ///   内字面量「已读完」）
+  /// - 已读 N 章：N = durChapterIndex + 1（0 基 +1，参考 read_chapter_index）
+  /// 排版对齐参考 Row(spacedBy(8.dp))：章数 primary + w700（PIL 取样
+  /// 共字首形墨量 0.185 > 已字 0.160，与参考 Bold 判定一致），分隔「|」
+  /// 与状态词 secondary（原绿色字面量 0xFF4CAF50 与实机取样
+  /// (181,204,186) 不符，改主题角色色，随激活调色板渲染——与参考版同源
+  /// 行为）。
   Widget _buildChapterStatLine(
       BuildContext context, Book book, List<BookChapter> chapters) {
     final cs = Theme.of(context).colorScheme;
@@ -997,23 +1007,31 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       return Text('暂无章节',
           style: ts.bodyLarge?.copyWith(color: cs.onSurfaceVariant));
     }
-    final readState = book.durChapterIndex > 0 ? '已读' : '未读';
-    return Text.rich(
-      TextSpan(
-        children: [
-          TextSpan(text: '共 $chapterTotal 章｜'),
-          // 状态词绿色强调（参考 08 状态词绿调）
-          TextSpan(
-            text: readState,
-            style: const TextStyle(color: Color(0xFF4CAF50)),
-          ),
-        ],
-      ),
-      // [H4 | 台账 0917 反馈批七] ref 08 共N章行墨高 35px/字宽 33px≈
-      // 12sp → 13sp 偏大，显式定 12sp（保留 w600 强调与状态词绿色）
-      style: ts.bodyLarge
-          ?.copyWith(fontSize: 12, fontWeight: FontWeight.w600,
-              color: cs.onSurface),
+    final dci = book.durChapterIndex;
+    final String readState;
+    if (dci == 0 && book.durChapterPos == 0) {
+      readState = '未读';
+    } else if (dci + 1 == chapterTotal && chapterTotal > 0) {
+      readState = '已读完';
+    } else {
+      readState = '已读 ${dci + 1} 章';
+    }
+    // [H4 | 台账 0917 反馈批七] ref 08 共N章行墨高 35px/字宽 33px≈
+    // 12sp → 13sp 偏大，显式定 12sp
+    final base = ts.bodyLarge?.copyWith(fontSize: 12);
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          '共 $chapterTotal 章',
+          style:
+              base?.copyWith(color: cs.primary, fontWeight: FontWeight.w700),
+        ),
+        const SizedBox(width: 8),
+        Text('|', style: base?.copyWith(color: cs.secondary)),
+        const SizedBox(width: 8),
+        Text(readState, style: base?.copyWith(color: cs.secondary)),
+      ],
     );
   }
 
@@ -1112,13 +1130,23 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     return wrap;
   }
 
-  /// [U9 | 台账 0917 批二] 在读/最新两行（参考 08「在读·第1章…」、
-  /// 「最新·第712章…」，置于「共 N 章」行上方；缺数据不渲染该行）：
-  /// - 在读行 = 阅读记录进度 durChapterIndex（1 基章节序）→ 实际章节标题
-  ///   （目录未加载/越界时降级为不带章节名，不显示脏索引）
-  /// - 最新行 = info 的 latestChapterTitle + 总章数（totalChapterNum 优先，
-  ///   回落实际章节数）；完结态（分类标签含 已完结/完本/已完本，与 U5
-  ///   聚合行同源）追加「（全书完）」后缀
+  /// [U9 | 台账 0917 批二][P2-21] 在读/最新两行（对齐参考 08
+  /// 「在读 · 引子 穿越」「最新 · 第二百三十六章…」，置于「共 N 章」行
+  /// 上方；缺数据不渲染该行）：
+  /// - 在读行 = 标题取值优先级（对齐原版/参考 resolveBookInfoTocTitle
+  ///   口径）：① 存储值 book.durChapterTitle（Rust 侧
+  ///   update_reading_progress 写入）→ ② 目录回落 chapters[durChapterIndex]
+  ///   （durChapterIndex 为 0 基：reader_notifier.dart 直接
+  ///   chapters[chapterIndex]；原实现按 1 基取 durIdx-1，偏一章）→
+  ///   ③ 皆缺（存储值空 + 目录未加载/越界）不渲染该行（D4 缺数据
+  ///   不渲染，不显示脏索引）；形态「在读 · {标题}」，无「第N章」前缀
+  /// - 最新行 = info 的 latestChapterTitle；[E5 | 台账 0917 反馈批四]
+  ///   部分书源该字段返回完结状态词（如「已完结」而非章节标题），此时
+  ///   回落目录末章真实标题（与在读行同源 chapters 列表，totalChapterNum
+  ///   优先、回落实际章节数）；数据缺（字段为空）不渲染该行（D4 单行
+  ///   口径，不造占位），状态词且目录无标题数据时保持原值（不丢行）；
+  ///   形态「最新 · {标题}」（参考 dump 中「（全书完）」为站点标题自带，
+  ///   非代码追加，故不再追加后缀）
   List<Widget> _buildReadLatestLines(
       BuildContext context, Book book, List<BookChapter> chapters) {
     final cs = Theme.of(context).colorScheme;
@@ -1142,36 +1170,39 @@ extension _BookInfoBuilders on _BookInfoScreenState {
           ),
         );
     final lines = <Widget>[];
-    // 在读行（阅读记录：durChapterIndex 为 1 基章节序）
+    // 在读行（[P2-21] 标题取值 ① 存储值 → ② 目录回落 → ③ 不渲染；
+    // durChapterIndex 为 0 基，原版 resolveBookInfoTocTitle 同口径
+    // chapters.getOrNull(currentIndex)）
     final durIdx = book.durChapterIndex;
-    if (durIdx > 0) {
-      var title = '';
-      if (durIdx <= chapters.length) {
-        title = chapters[durIdx - 1].title.trim();
+    final storedTitle = (book.durChapterTitle ?? '').trim();
+    String? readTitle = isMeaningfulText(storedTitle) ? storedTitle : null;
+    if (readTitle == null && durIdx >= 0 && durIdx < chapters.length) {
+      final tocTitle = chapters[durIdx].title.trim();
+      if (isMeaningfulText(tocTitle)) {
+        readTitle = tocTitle;
       }
-      // [H2 | 台账 0917 反馈批七] 在读行 16sp w700（ref 墨高 46px 粗体）
+    }
+    if (readTitle != null) {
+      // [H2 | 台账 0917 反馈批七] 在读行 16sp w700（ref 墨高 46px 粗体）；
+      // [P2-21] 形态对齐参考 toc_s「在读 · %s」：标题原文直出，无「第N章」
+      // 前缀（原「在读·第N章」前缀 + 1 基取 chapters[durIdx-1] 双错）
       lines.add(
-        line(
-          '在读·第$durIdx章${title.isEmpty ? '' : ' $title'}',
-          fontSize: 16,
-          weight: FontWeight.w700,
-        ),
+        line('在读 · $readTitle', fontSize: 16, weight: FontWeight.w700),
       );
     }
-    // 最新行（info：latestChapterTitle + 总章数 + 完结态）
+    // 最新行（info：latestChapterTitle）
     // [E5 | 台账 0917 反馈批四] 部分书源的 latestChapterTitle 字段返回的是完结
     // 状态词（如「已完结」而非章节标题，参考版实测「最新·第51章 已完结」缺
-    // 章节名），此时回落目录末章真实标题（与在读行同源 chapters 列表）并追加
-    // 「（全书完）」；数据缺（字段为空）保持现状不渲染（D4 单行口径，不造占位），
+    // 章节名），此时回落目录末章真实标题（与在读行同源 chapters 列表）；
+    // 数据缺（字段为空）保持现状不渲染（D4 单行口径，不造占位），
     // 状态词且目录无标题数据时保持原值（不丢行）。
+    // [P2-21] 形态对齐参考 lasted_show「最新 · %s」：去「第N章」前缀与
+    // 代码追加的「（全书完）」后缀（参考 dump 中该后缀为站点标题自带，
+    // 回落目录末章时同样不加后缀）
     final latestStatusRe =
         RegExp(r'^(已完结|完本|已完本|连载中|暂停更新|停更|断更)$');
     final latestRaw = (book.latestChapterTitle ?? '').trim();
     var latestTitle = latestRaw;
-    var finished = (book.kind ?? '')
-        .split(',')
-        .map((e) => e.trim())
-        .any((e) => e == '已完结' || e == '完本' || e == '已完本');
     if (latestStatusRe.hasMatch(latestTitle)) {
       final tocTotal =
           book.totalChapterNum > 0 ? book.totalChapterNum : chapters.length;
@@ -1180,18 +1211,12 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         final tocTitle = chapters[tocIdx].title.trim();
         if (isMeaningfulText(tocTitle)) {
           latestTitle = tocTitle;
-          finished = true;
         }
       }
     }
     if (isMeaningfulText(latestTitle)) {
-      final chapterTotal =
-          book.totalChapterNum > 0 ? book.totalChapterNum : chapters.length;
-      var text =
-          '最新·${chapterTotal > 0 ? '第$chapterTotal章 ' : ''}$latestTitle';
-      if (finished) text = '$text（全书完）';
       // [H3 | 台账 0917 反馈批七] 最新行 13sp 常规字重（ref 墨高 40px）
-      lines.add(line(text, fontSize: 13));
+      lines.add(line('最新 · $latestTitle', fontSize: 13));
     }
     return lines;
   }

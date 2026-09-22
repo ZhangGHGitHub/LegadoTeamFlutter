@@ -191,7 +191,9 @@ void main() {
       await tester.pumpAndSettle();
 
       // 书详页头部较高（居中封面卡 + 信息面板），目录行在首屏外，先滚动
-      final tocRow = find.textContaining('第一章 开端');
+      // [P2-21] 在读行同显「在读 · 第一章 开端」，目录行带「目录：」前缀
+      // 精确匹配取唯一
+      final tocRow = find.textContaining('目录：第一章 开端');
       await tester.dragUntilVisible(
         tocRow,
         find.byType(CustomScrollView),
@@ -370,9 +372,12 @@ void main() {
         tester.getTopLeft(find.text('查看目录').last).dy,
       ].reduce((a, b) => a < b ? a : b);
       // ③ 在读/最新/共N章三行块（U9 能力保留，置于四按钮之后）
+      // [P2-21] 形态对齐双基准：在读行「在读 · {存储标题}」（无「第N章」
+      // 前缀，orderBook 存储值=「第一章 开端」优先于目录回落）、
+      // 最新行「最新 · {latestChapterTitle}」
       final yReading = tester
-          .getTopLeft(find.textContaining('在读·第1章')).dy;
-      expect(find.textContaining('最新·第51章'), findsOneWidget);
+          .getTopLeft(find.textContaining('在读 · 第一章 开端')).dy;
+      expect(find.textContaining('最新 · 第五十一章 完结'), findsOneWidget);
       expect(find.textContaining('共 51 章'), findsOneWidget);
       // ④ 标签行（🏷️ 前缀连排，U11 移入面板首行：在读块之后、简介之前）
       final yTags = tester.getTopLeft(find.text('🏷️ ')).dy;
@@ -442,11 +447,13 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    // [E5 | 台账 0917 反馈批四] 最新行补章节名：部分书源 latestChapterTitle
-    // 返回状态词（如「已完结」，参考实测「最新·第51章 已完结」缺章节名），
-    // 回落目录末章真实标题（与在读行同源），状态词隐含完结追加「（全书完）」；
-    // 目录无标题数据时保持现状（不丢行、不造占位）
-    testWidgets('E5 最新行：状态词回落目录末章标题并追加（全书完）',
+    // [E5 | 台账 0917 反馈批四][P2-21] 最新行补章节名：部分书源
+    // latestChapterTitle 返回状态词（如「已完结」，参考实测缺章节名），
+    // 回落目录末章真实标题（与在读行同源）；[P2-21] 形态对齐参考
+    // 「最新 · %s」：无「第N章」前缀、无代码追加「（全书完）」后缀
+    // （参考 dump 中该后缀为站点标题自带，非代码行为）；目录无标题数据
+    // 时保持现状（不丢行、不造占位）
+    testWidgets('E5 最新行：状态词回落目录末章标题（无第N章前缀/无全书完后缀）',
         (tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 3.0;
@@ -477,12 +484,13 @@ void main() {
       await tester.pumpWidget(wrap(const BookInfoScreen(book: e5Book)));
       await tester.pumpAndSettle();
 
-      // 最新行 = 「最新·第51章 第五十一章 大结局（全书完）」：补章节标题，
-      // 状态词不再充当章节名
+      // 最新行 = 「最新 · 第五十一章 大结局」：补章节标题，状态词不再充当
+      // 章节名；[P2-21] 无「第51章」前缀、无代码追加「（全书完）」后缀
       expect(
-          find.textContaining('最新·第51章 第五十一章 大结局（全书完）'),
-          findsOneWidget);
-      expect(find.textContaining('最新·第51章 已完结'), findsNothing);
+          find.textContaining('最新 · 第五十一章 大结局'), findsOneWidget);
+      expect(find.textContaining('（全书完）'), findsNothing);
+      expect(find.textContaining('第51章'), findsNothing);
+      expect(find.textContaining('最新 · 已完结'), findsNothing);
       expect(tester.takeException(), isNull);
     });
 
