@@ -56,6 +56,24 @@ import 'screens/webdav_settings_screen.dart';
 import 'screens/welcome_config_screen.dart';
 import 'screens/welcome_screen.dart';
 
+/// 书籍信息页路由参数：Book 对象 + 是否进入即自动开读
+///
+/// [A4 对齐 B | 2026-09-21 裁决] 书架未读书单击 = 详情页 + 立即自动开读
+///（等价重构版 `BookInfoPage(openReaderImmediately: true)`）。长按封面/书名
+/// 及其余入口仍直接传 [Book]（走既有分支，行为不变）。
+class BookInfoArgs {
+  /// 书籍对象
+  final Book book;
+
+  /// 目录就绪后自动跳转阅读器（默认 false）
+  final bool openReaderImmediately;
+
+  const BookInfoArgs({
+    required this.book,
+    this.openReaderImmediately = false,
+  });
+}
+
 /// 路由配置
 class AppRoutes {
   static const home = '/';
@@ -198,6 +216,14 @@ class AppRoutes {
     },
     bookInfo: (context) {
       final args = ModalRoute.of(context)?.settings.arguments;
+      // [A4 对齐 B | 2026-09-21 裁决] BookInfoArgs：书架未读书单击
+      // = 详情页 + 立即自动开读（openReaderImmediately）
+      if (args is BookInfoArgs) {
+        return BookInfoScreen(
+          book: args.book,
+          openReaderImmediately: args.openReaderImmediately,
+        );
+      }
       // 路由参数规范化：优先接收 Book 对象
       if (args is Book) {
         return BookInfoScreen(book: args);

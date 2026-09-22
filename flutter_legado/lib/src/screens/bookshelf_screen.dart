@@ -716,13 +716,22 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
 
   // ===== 操作 =====
 
-  /// 对标原版 startActivityForBook：未读进书详；已读按 BookType 分流到
-  /// video / audio / reader-comic / reader（勿固定文本阅读器）。
-  /// — Reasonix + UI
+  /// 对标原版 startActivityForBook：未读进书详页 + 立即自动开读（A4 对齐 B）；
+  /// 已读按 BookType 分流到 video / audio / reader-comic / reader
+  /// （勿固定文本阅读器）。— Reasonix + UI
   Future<void> _openBook(
       BuildContext context, WidgetRef ref, Book book) async {
     if (book.durChapterIndex <= 0 && book.durChapterPos <= 0) {
-      _openBookInfo(context, book);
+      // [A4 对齐 B | 2026-09-21 裁决] 未读书单击 = 详情页 + 立即自动开读
+      // （等价重构版 BookInfoPage(openReaderImmediately: true)）：详情页
+      // 目录就绪即自动开读（未读书取首章）；目录不可用则停留详情页，仍可
+      // 经「阅读」FAB 手动开读。长按入口仍走 _openBookInfo 普通详情页，
+      // 行为不变。
+      Navigator.pushNamed(
+        context,
+        AppRoutes.bookInfo,
+        arguments: BookInfoArgs(book: book, openReaderImmediately: true),
+      );
       return;
     }
     var typeBits = BookOpenUtils.typeBitsOf(book);

@@ -627,5 +627,115 @@ void main() {
         await tester.pumpAndSettle();
       });
     });
+
+    // [A4 对齐 B | 2026-09-21 裁决；2026-09-22 review 硬化]
+    // openReaderImmediately（书架未读书单击 → 详情页 + 自动开读）：
+    // 机会在首轮全量加载完成时无条件消费 + postFrame 栈顶守卫
+    group('openReaderImmediately 自动开读', () {
+      final pushed = <String>[];
+
+      Widget wrapWithRoutes(Widget child) {
+        pushed.clear();
+        final observer = _PushedRouteObserver(pushed);
+        final routes = Map<String, WidgetBuilder>.from(AppRoutes.routes)
+          ..remove('/');
+        routes[AppRoutes.reader] = (_) => const Scaffold(
+              key: Key('reader-stub'),
+              body: Text('文本阅读页'),
+            );
+        return UncontrolledProviderScope(
+          container: container,
+          child: MaterialApp(
+            home: child,
+            routes: routes,
+            navigatorObservers: [observer],
+          ),
+        );
+      }
+
+      void stubAutoStart(Book book, List<BookChapter> chapters) {
+        when(() => mockApi.getBook(any())).thenAnswer((_) async => book);
+        when(() => mockApi.getChapters(any()))
+            .thenAnswer((_) async => chapters);
+        when(() => mockApi.getBookSources()).thenAnswer((_) async => []);
+        when(() => mockApi.getBookGroups()).thenAnswer((_) async => const []);
+        when(() => mockApi.fetchChapterContent(any(), any(), any()))
+            .thenAnswer((_) async => '正文内容');
+        when(() => mockApi.getChapterContent(any(), any()))
+            .thenAnswer((_) async => '正文内容');
+        when(() => mockApi.addBook(any())).thenAnswer((inv) async {
+          return inv.positionalArguments[0] as Book;
+        });
+        when(() => mockApi.updateBook(any())).thenAnswer((_) async {});
+        when(() => mockApi.refreshToc(any(), any()))
+            .thenAnswer((_) async => const []);
+      }
+
+      testWidgets('正面：目录非空首轮加载后自动压栈阅读器', (tester) async {
+        const book = Book(
+            bookUrl: 'u1',
+            name: '未读A4',
+            bookType: 8,
+            origin: 'https://src.com',
+            originName: '测试源');
+        stubAutoStart(book, const [
+          BookChapter(bookUrl: 'u1', index: 0, title: '第一章', url: 'c1'),
+          BookChapter(bookUrl: 'u1', index: 1, title: '第二章', url: 'c2'),
+        ]);
+
+        await tester.pumpWidget(wrapWithRoutes(
+            const BookInfoScreen(book: book, openReaderImmediately: true)));
+        await tester.pumpAndSettle();
+
+        expect(pushed, contains(AppRoutes.reader));
+        expect(find.byKey(const Key('reader-stub')), findsOneWidget);
+      });
+
+      testWidgets('负例：目录为空不自动开读，停留详情页', (tester) async {
+        const book = Book(
+            bookUrl: 'u2',
+            name: '空目录A4',
+            bookType: 8,
+            origin: 'https://src.com',
+            originName: '测试源');
+        stubAutoStart(book, const []);
+
+        await tester.pumpWidget(wrapWithRoutes(
+            const BookInfoScreen(book: book, openReaderImmediately: true)));
+        await tester.pumpAndSettle();
+
+        expect(pushed, isNot(contains(AppRoutes.reader)));
+        // 详情页仍在：书名渲染、无阅读器桩页
+        expect(find.text('空目录A4'), findsWidgets);
+        expect(find.byKey(const Key('reader-stub')), findsNothing);
+      });
+
+      testWidgets('守卫：自动开读返回后阅读器只被压栈一次', (tester) async {
+        const book = Book(
+            bookUrl: 'u3',
+            name: '守卫A4',
+            bookType: 8,
+            origin: 'https://src.com',
+            originName: '测试源');
+        stubAutoStart(book, const [
+          BookChapter(bookUrl: 'u3', index: 0, title: '第一章', url: 'c1'),
+          BookChapter(bookUrl: 'u3', index: 1, title: '第二章', url: 'c2'),
+        ]);
+
+        await tester.pumpWidget(wrapWithRoutes(
+            const BookInfoScreen(book: book, openReaderImmediately: true)));
+        await tester.pumpAndSettle();
+        expect(pushed.where((r) => r == AppRoutes.reader).length, 1);
+
+        // 退出阅读器返回详情页（_openReader 尾部 _reload 触发二次加载，
+        // 机会已消费，不得再压第二个阅读器）
+        Navigator.of(tester.element(find.byKey(const Key('reader-stub'))))
+            .pop();
+        await tester.pumpAndSettle();
+
+        expect(pushed.where((r) => r == AppRoutes.reader).length, 1);
+        expect(find.byKey(const Key('reader-stub')), findsNothing);
+      });
+    });
   });
 }

@@ -250,6 +250,34 @@ extension _BookInfoLoad on _BookInfoScreenState {
         });
       }
       debugPrint('[BookInfo] 全量完成 ${sw.elapsedMilliseconds}ms');
+      // [A4 对齐 B | 2026-09-21 裁决] openReaderImmediately（等价重构版
+      // BookInfoPage(openReaderImmediately: true)）：首轮全量加载（含目录
+      // 补全）完成后自动跳转阅读器——未读书单击直达正文首章；目录不可用
+      // 时不自动开读（停留在详情页，仍可经「阅读」FAB 手动开读，对标重构
+      // 版 currentChapters.isNotEmpty 守卫）。
+      // [review 2026-09-22 硬化] 机会在首轮全量加载完成时无条件消费（置位
+      // 提前到目录判定之前）：首轮目录为空也视为机会已用（停留详情页）；
+      // 此后 _reload / 桥接刷新 / 菜单刷新拿到目录，不再把用户拽进阅读器
+      //（旧实现在「首个目录非空的加载」触发——手点刷新补齐目录即被拽入，
+      // 与注释宣称的「仅首入触发」不符）。
+      final autoStartNow =
+          widget.openReaderImmediately && !_autoStartScheduled;
+      _autoStartScheduled = true;
+      if (autoStartNow && _chapters.isNotEmpty && mounted) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          // [review 2026-09-22 硬化] 栈顶校验：目录未入库的在线未读书，
+          // 详情页「阅读」FAB 早已可用——用户先点 FAB 进阅读器后本路由已
+          // 非栈顶，此时再压第二个阅读器，返回会落在上一层阅读器，
+          // 表现为「返回无反应」
+          if (ModalRoute.of(context)?.isCurrent != true) return;
+          final b = _loadedBook;
+          if (b == null) return;
+          // 续读位置仍取 durChapterIndex（未读书=0，即首章）；落库/分流
+          // 逻辑与「阅读」FAB 完全一致（_openReader）。
+          unawaited(_openReader(context, b, b.durChapterIndex));
+        });
+      }
     } catch (e) {
       debugPrint('[BookInfo] 加载失败: ${_errMsg(e)}');
       if (mounted) {

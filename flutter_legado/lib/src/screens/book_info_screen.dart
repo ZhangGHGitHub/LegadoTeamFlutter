@@ -53,7 +53,18 @@ class BookInfoScreen extends ConsumerStatefulWidget {
   /// 书籍 URL（向后兼容，当未传入 Book 对象时使用）
   final String bookUrl;
 
-  const BookInfoScreen({super.key, this.book, this.bookUrl = ''});
+  /// [A4 对齐 B | 2026-09-21 裁决] 进入后目录就绪即自动打开阅读器
+  ///（等价重构版 `BookInfoPage(openReaderImmediately: true)`：书架未读书
+  ///单击入口）；目录不可用则停留在详情页，仍可经「阅读」FAB 手动开读。
+  /// 默认 false，既有入口（长按封面/书名、阅读记录、搜索等）行为不变。
+  final bool openReaderImmediately;
+
+  const BookInfoScreen({
+    super.key,
+    this.book,
+    this.bookUrl = '',
+    this.openReaderImmediately = false,
+  });
 
   /// 获取有效的 bookUrl：优先从 Book 对象取值
   String get effectiveBookUrl => book?.bookUrl ?? bookUrl;
@@ -84,6 +95,12 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   BookSource? _bookSource;
   // 书架状态（对标原版 tv_shelf 加入书架/移出书架切换）
   bool _inBookshelf = false;
+  // [A4 对齐 B | 2026-09-21 裁决；2026-09-22 review 硬化] 自动开读机会
+  // 是否已消费：首轮全量加载完成时无条件置位（机会只属于首入——目录非空
+  // 才真正自动开读，目录为空则停留详情页）；此后 _reload / 桥接刷新 /
+  // 菜单刷新不再触发（对标重构版 BookInfoPage._autoStartScheduled）。
+  // postFrame 回调内另有 ModalRoute 栈顶校验，防用户抢先导航后二次压栈。
+  bool _autoStartScheduled = false;
   // [UI-FIX v2.0.3 | 2026-08-08] 删除提醒开关（对齐原版 LocalConfig.deleteBookAlert，本地持久化） — Qoder
   // 书源按 origin 缓存，避免每次详情页全量扫描书源列表
   static final Map<String, BookSource?> _sourceByOriginCache = {};
