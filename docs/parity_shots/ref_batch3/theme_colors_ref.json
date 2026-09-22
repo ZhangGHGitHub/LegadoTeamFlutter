@@ -1,0 +1,187 @@
+{
+  "task": "阶段D 配色对齐采样 - kazusa 参考版 12 内置主题主色",
+  "device": "192.168.1.19:5555",
+  "app": "io.legato.kazusa",
+  "generated_at": "2026-09-16 21:09",
+  "status": "fail_all",
+  "summary": "未能定位 12 张内置主题卡片。外观页唯一可操作的主题选择 UI 为『动态取色』chips 横排（共 10 项，与 12 内置主题名单仅 柠檬/透明 重合），疑为新版 kazusa 重构了主题选择入口；任务 verified path(4x3 卡片网格)与当前构建不符。未点击任何主题卡片，主题未被改动，无需恢复。",
+  "dynamic_color_chips_found": [
+    "草野",
+    "柠檬",
+    "黑白",
+    "新浪潮",
+    "春",
+    "千禧年",
+    "隐海修会",
+    "乐队",
+    "自定义",
+    "透明"
+  ],
+  "explored_pages": [
+    "设置(根)",
+    "外观(全页, 5 档滚动)",
+    "主题管理",
+    "主题风格(MD/Miuix)",
+    "高级",
+    "动态取色 chips 全枚举(首尾 dump)"
+  ],
+  "theme_changed": false,
+  "restore_needed": false,
+  "themes": [
+    {
+      "index": 1,
+      "name": "纯白",
+      "rgb": null,
+      "status": "fail",
+      "reason": "当前 kazusa 构建的外观页不存在任务描述的 12 张内置主题 4x3 卡片网格；外观页自顶向下全部区块为：当前主题预览/主题模式(跟随系统-浅色-深色)/动态取色 chips/字体设置/主题风格(MD|Miuix)/切换图标/预见性返回手势/字体大小/主题管理(导入导出)/主界面/状态栏显示/滑动动画/导航栏显示/悬浮底栏/平板界面/导航栏标签显示方式/白天夜间背景图片/容器设置(分隔线)/导航栏图标，逐区块 text dump + 5 档滚动截图像素扫描(高饱和区域检测)均未发现 12 卡片网格",
+      "evidence": [
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_top.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_mid.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_bottom.png"
+      ]
+    },
+    {
+      "index": 2,
+      "name": "森绿",
+      "rgb": null,
+      "status": "fail",
+      "reason": "当前 kazusa 构建的外观页不存在任务描述的 12 张内置主题 4x3 卡片网格；外观页自顶向下全部区块为：当前主题预览/主题模式(跟随系统-浅色-深色)/动态取色 chips/字体设置/主题风格(MD|Miuix)/切换图标/预见性返回手势/字体大小/主题管理(导入导出)/主界面/状态栏显示/滑动动画/导航栏显示/悬浮底栏/平板界面/导航栏标签显示方式/白天夜间背景图片/容器设置(分隔线)/导航栏图标，逐区块 text dump + 5 档滚动截图像素扫描(高饱和区域检测)均未发现 12 卡片网格",
+      "evidence": [
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_top.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_mid.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_bottom.png"
+      ]
+    },
+    {
+      "index": 3,
+      "name": "柠檬",
+      "rgb": null,
+      "status": "fail",
+      "reason": "当前 kazusa 构建的外观页不存在任务描述的 12 张内置主题 4x3 卡片网格；外观页自顶向下全部区块为：当前主题预览/主题模式(跟随系统-浅色-深色)/动态取色 chips/字体设置/主题风格(MD|Miuix)/切换图标/预见性返回手势/字体大小/主题管理(导入导出)/主界面/状态栏显示/滑动动画/导航栏显示/悬浮底栏/平板界面/导航栏标签显示方式/白天夜间背景图片/容器设置(分隔线)/导航栏图标，逐区块 text dump + 5 档滚动截图像素扫描(高饱和区域检测)均未发现 12 卡片网格",
+      "evidence": [
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_top.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_mid.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_bottom.png"
+      ]
+    },
+    {
+      "index": 4,
+      "name": "小春",
+      "rgb": null,
+      "status": "fail",
+      "reason": "当前 kazusa 构建的外观页不存在任务描述的 12 张内置主题 4x3 卡片网格；外观页自顶向下全部区块为：当前主题预览/主题模式(跟随系统-浅色-深色)/动态取色 chips/字体设置/主题风格(MD|Miuix)/切换图标/预见性返回手势/字体大小/主题管理(导入导出)/主界面/状态栏显示/滑动动画/导航栏显示/悬浮底栏/平板界面/导航栏标签显示方式/白天夜间背景图片/容器设置(分隔线)/导航栏图标，逐区块 text dump + 5 档滚动截图像素扫描(高饱和区域检测)均未发现 12 卡片网格",
+      "evidence": [
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_top.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_mid.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_bottom.png"
+      ]
+    },
+    {
+      "index": 5,
+      "name": "优香",
+      "rgb": null,
+      "status": "fail",
+      "reason": "当前 kazusa 构建的外观页不存在任务描述的 12 张内置主题 4x3 卡片网格；外观页自顶向下全部区块为：当前主题预览/主题模式(跟随系统-浅色-深色)/动态取色 chips/字体设置/主题风格(MD|Miuix)/切换图标/预见性返回手势/字体大小/主题管理(导入导出)/主界面/状态栏显示/滑动动画/导航栏显示/悬浮底栏/平板界面/导航栏标签显示方式/白天夜间背景图片/容器设置(分隔线)/导航栏图标，逐区块 text dump + 5 档滚动截图像素扫描(高饱和区域检测)均未发现 12 卡片网格",
+      "evidence": [
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_top.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_mid.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_bottom.png"
+      ]
+    },
+    {
+      "index": 6,
+      "name": "菲比",
+      "rgb": null,
+      "status": "fail",
+      "reason": "当前 kazusa 构建的外观页不存在任务描述的 12 张内置主题 4x3 卡片网格；外观页自顶向下全部区块为：当前主题预览/主题模式(跟随系统-浅色-深色)/动态取色 chips/字体设置/主题风格(MD|Miuix)/切换图标/预见性返回手势/字体大小/主题管理(导入导出)/主界面/状态栏显示/滑动动画/导航栏显示/悬浮底栏/平板界面/导航栏标签显示方式/白天夜间背景图片/容器设置(分隔线)/导航栏图标，逐区块 text dump + 5 档滚动截图像素扫描(高饱和区域检测)均未发现 12 卡片网格",
+      "evidence": [
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_top.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_mid.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_bottom.png"
+      ]
+    },
+    {
+      "index": 7,
+      "name": "穹",
+      "rgb": null,
+      "status": "fail",
+      "reason": "当前 kazusa 构建的外观页不存在任务描述的 12 张内置主题 4x3 卡片网格；外观页自顶向下全部区块为：当前主题预览/主题模式(跟随系统-浅色-深色)/动态取色 chips/字体设置/主题风格(MD|Miuix)/切换图标/预见性返回手势/字体大小/主题管理(导入导出)/主界面/状态栏显示/滑动动画/导航栏显示/悬浮底栏/平板界面/导航栏标签显示方式/白天夜间背景图片/容器设置(分隔线)/导航栏图标，逐区块 text dump + 5 档滚动截图像素扫描(高饱和区域检测)均未发现 12 卡片网格",
+      "evidence": [
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_top.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_mid.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_bottom.png"
+      ]
+    },
+    {
+      "index": 8,
+      "name": "八月",
+      "rgb": null,
+      "status": "fail",
+      "reason": "当前 kazusa 构建的外观页不存在任务描述的 12 张内置主题 4x3 卡片网格；外观页自顶向下全部区块为：当前主题预览/主题模式(跟随系统-浅色-深色)/动态取色 chips/字体设置/主题风格(MD|Miuix)/切换图标/预见性返回手势/字体大小/主题管理(导入导出)/主界面/状态栏显示/滑动动画/导航栏显示/悬浮底栏/平板界面/导航栏标签显示方式/白天夜间背景图片/容器设置(分隔线)/导航栏图标，逐区块 text dump + 5 档滚动截图像素扫描(高饱和区域检测)均未发现 12 卡片网格",
+      "evidence": [
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_top.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_mid.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_bottom.png"
+      ]
+    },
+    {
+      "index": 9,
+      "name": "卡洛塔",
+      "rgb": null,
+      "status": "fail",
+      "reason": "当前 kazusa 构建的外观页不存在任务描述的 12 张内置主题 4x3 卡片网格；外观页自顶向下全部区块为：当前主题预览/主题模式(跟随系统-浅色-深色)/动态取色 chips/字体设置/主题风格(MD|Miuix)/切换图标/预见性返回手势/字体大小/主题管理(导入导出)/主界面/状态栏显示/滑动动画/导航栏显示/悬浮底栏/平板界面/导航栏标签显示方式/白天夜间背景图片/容器设置(分隔线)/导航栏图标，逐区块 text dump + 5 档滚动截图像素扫描(高饱和区域检测)均未发现 12 卡片网格",
+      "evidence": [
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_top.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_mid.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_bottom.png"
+      ]
+    },
+    {
+      "index": 10,
+      "name": "姆吉卡",
+      "rgb": null,
+      "status": "fail",
+      "reason": "当前 kazusa 构建的外观页不存在任务描述的 12 张内置主题 4x3 卡片网格；外观页自顶向下全部区块为：当前主题预览/主题模式(跟随系统-浅色-深色)/动态取色 chips/字体设置/主题风格(MD|Miuix)/切换图标/预见性返回手势/字体大小/主题管理(导入导出)/主界面/状态栏显示/滑动动画/导航栏显示/悬浮底栏/平板界面/导航栏标签显示方式/白天夜间背景图片/容器设置(分隔线)/导航栏图标，逐区块 text dump + 5 档滚动截图像素扫描(高饱和区域检测)均未发现 12 卡片网格",
+      "evidence": [
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_top.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_mid.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_bottom.png"
+      ]
+    },
+    {
+      "index": 11,
+      "name": "墨水",
+      "rgb": null,
+      "status": "fail",
+      "reason": "当前 kazusa 构建的外观页不存在任务描述的 12 张内置主题 4x3 卡片网格；外观页自顶向下全部区块为：当前主题预览/主题模式(跟随系统-浅色-深色)/动态取色 chips/字体设置/主题风格(MD|Miuix)/切换图标/预见性返回手势/字体大小/主题管理(导入导出)/主界面/状态栏显示/滑动动画/导航栏显示/悬浮底栏/平板界面/导航栏标签显示方式/白天夜间背景图片/容器设置(分隔线)/导航栏图标，逐区块 text dump + 5 档滚动截图像素扫描(高饱和区域检测)均未发现 12 卡片网格",
+      "evidence": [
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_top.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_mid.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_bottom.png"
+      ]
+    },
+    {
+      "index": 12,
+      "name": "透明",
+      "rgb": null,
+      "status": "fail",
+      "reason": "当前 kazusa 构建的外观页不存在任务描述的 12 张内置主题 4x3 卡片网格；外观页自顶向下全部区块为：当前主题预览/主题模式(跟随系统-浅色-深色)/动态取色 chips/字体设置/主题风格(MD|Miuix)/切换图标/预见性返回手势/字体大小/主题管理(导入导出)/主界面/状态栏显示/滑动动画/导航栏显示/悬浮底栏/平板界面/导航栏标签显示方式/白天夜间背景图片/容器设置(分隔线)/导航栏图标，逐区块 text dump + 5 档滚动截图像素扫描(高饱和区域检测)均未发现 12 卡片网格",
+      "evidence": [
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_top.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_mid.png",
+        "docs/parity_shots/ref_batch3/04_appearance_no_grid_bottom.png"
+      ]
+    }
+  ],
+  "side_effects_check": {
+    "theme_changed": false,
+    "restore_needed": false,
+    "divider_toggle": "显示分隔线 开关经像素核验为 ON(与采样前默认一致, 未被改动)",
+    "current_theme_preview_rgb": [
+      51,
+      97,
+      141
+    ],
+    "note": "全程未点击任何主题卡片/chips 应用操作; 外观页预览区主色≈(51,97,141) 即采样前原主题, 保持原样"
+  }
+}
