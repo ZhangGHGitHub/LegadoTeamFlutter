@@ -8,7 +8,13 @@ use std::sync::OnceLock;
 
 /// 书名清洗：去「 作者xxx」「 xx 著」后缀并 trim
 ///
-/// 对齐 `AppPattern.nameRegex = "\\s+作\\s*者.*|\\s+\\S+\\s+著"`。
+/// 正则文本对齐 Dart `AppPattern.nameRegex = "\\s+作\\s*者.*|\\s+\\S+\\s+著"`
+/// （仅正则文本对齐）；**引擎空白/点语义差异**：本函数用 `regex` crate
+/// （Unicode 语义：`\s` 含 U+0085 不含 U+FEFF、`.` 仅排除 LF、`trim()`
+/// 按 Unicode White_Space），与 Dart（ECMAScript 语义）不等价——跨源聚合
+/// 路径的 ECMAScript 等价实现（探针实测显式字符类 + `js_trim`）见
+/// `search_aggregate.rs`（实测输出 `rust/_p03_norm_probe/probe_output.txt`）。
+/// 本函数仅服务 Rust 解析路径，聚合路径不调用。
 pub fn format_book_name(name: &str) -> String {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re =
@@ -18,7 +24,10 @@ pub fn format_book_name(name: &str) -> String {
 
 /// 作者清洗：去「作者:xxx」前缀、「 xx 著」后缀并 trim
 ///
-/// 对齐 `AppPattern.authorRegex = "^\\s*作\\s*者[:：\\s]+|\\s+著"`。
+/// 正则文本对齐 Dart `AppPattern.authorRegex = "^\\s*作\\s*者[:：\\s]+|\\s+著"`
+/// （仅正则文本对齐）；引擎空白/点语义差异同 `format_book_name`（`regex`
+/// crate Unicode 语义 ≠ Dart ECMAScript 语义），聚合路径的 ECMAScript 等价
+/// 实现见 `search_aggregate.rs`。本函数仅服务 Rust 解析路径，聚合路径不调用。
 pub fn format_book_author(author: &str) -> String {
     static RE: OnceLock<Regex> = OnceLock::new();
     let re =

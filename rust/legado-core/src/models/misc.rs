@@ -58,6 +58,15 @@ pub struct SearchBook {
         rename = "readRecordAuthor"
     )]
     pub read_record_author: Option<String>,
+    /// 跨源聚合 origins 集合（队列⑩a P1-1 项2：跨源聚合单一真源，2026-09-22 加法式新增）
+    ///
+    /// 由聚合入口 `search_aggregate::aggregate_search_books` 填充（同名同作者跨源
+    /// 合并后累加的 origins 集合，首次出现序）；既有流式批次 / 解析 / DB 读路径
+    /// 不填充（空数组，空时序列化省略 → 批次 JSON 形态零变化），旧消费方零破坏
+    /// （serde `default`）。Dart 侧 `SearchBook.origins` 加法式消费：非空时优先
+    /// 使用，空时回退 `{origin}` 现行行为（见 docs/API_CONTRACT.md 更新记录）。
+    #[serde(default, rename = "origins", skip_serializing_if = "Vec::is_empty")]
+    pub origins: Vec<String>,
 }
 
 fn default_neg_one() -> i32 {

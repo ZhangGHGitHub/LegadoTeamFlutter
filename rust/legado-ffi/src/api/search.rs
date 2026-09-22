@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use futures::StreamExt;
 
 use legado_core::models::{BookSource, SearchBook as CoreSearchBook};
+use legado_core::search_aggregate;
 use legado_core::source_matcher::SearchCandidate;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::repository::read_record_repository::decode_read_record_authors;
@@ -915,6 +916,9 @@ pub(crate) fn result_to_search_book(r: SearchResult) -> CoreSearchBook {
         // 阅读记录标识（由 api::search 批量附加后透传）
         has_read_record: r.has_read_record,
         read_record_author: r.read_record_author,
+        // 跨源聚合 origins（队列⑩a P1-1 项2 加法式字段）：解析/批次路径不填充，
+        // 仅聚合入口 aggregate_search_books_json 产出时非空
+        origins: Vec::new(),
     }
 }
 
@@ -1708,6 +1712,33 @@ fn dedup_search_results_keep_first(items: Vec<SearchResult>) -> Vec<SearchResult
         }
     }
     out
+}
+
+/// 跨源聚合单一真源入口（队列⑩a P1-1 项2，2026-09-22，加法式）
+///
+/// 输入 `books_json` 为书籍元素 JSON 数组（`CoreSearchBook` camelCase，即
+/// `SearchSourceBatch.books[]` 形态；单源内 bookUrl 去重由解析期
+/// `dedup_search_results_keep_first` 完成，本入口只处理跨源 name+author 合并），
+/// `key` 为搜索关键词，`keep_other` 对齐 Dart `applyPrecisionSearch(keepOther:)`
+///（精准搜索 false / 默认搜索 true，控制 other 桶去留）。输出为聚合后 JSON 数组
+///（同形：`name`/`author` 为清洗值、`origins` 跨源累加（首次出现序，加法式
+/// 字段，空时序列化省略）、`hasReadRecord` 各到达项 OR、其余字段保留首条到达
+/// 元数据；桶序 equal→tags→contains→(keep_other) other，桶内 originsCount 降序
+/// + 首次到达序平局）。
+///
+/// 纯函数：无状态、不触网、不读 DB —— 供跨端夹具校验（Rust 聚合结果 ≡ Dart
+/// 现行 `applyPrecisionSearch` 期望，`tests/fixtures/search_aggregate/`）；
+/// Dart 运行时聚合切换（FRB 暴露）留待后续批次，届时直接包装本函数。
+pub fn aggregate_search_books_json(
+    books_json: &str,
+    key: &str,
+    keep_other: bool,
+) -> LegadoResult<String> {
+    let books: Vec<CoreSearchBook> =
+        serde_json::from_str(books_json).map_err(LegadoError::Serialization)?;
+    let aggregated = search_aggregate::aggregate_search_books(&books, key, keep_other);
+    let json = serde_json::to_string(&aggregated).map_err(LegadoError::Serialization)?;
+    Ok(json)
 }
 
 /// 逐源错误八分类（任务书 B P2 项1，2026-09-19 加法式，零破坏）

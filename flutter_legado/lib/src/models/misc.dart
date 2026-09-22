@@ -29,6 +29,14 @@ class SearchBook with _$SearchBook {
     @JsonKey(name: 'chapterWordCountText') String? chapterWordCountText,
     @Default(-1) @JsonKey(name: 'chapterWordCount') int chapterWordCount,
     @Default(-1) @JsonKey(name: 'respondTime') int respondTime,
+    /// 跨源聚合 origins 集合（队列⑩a P1-1 项2，2026-09-22 加法式字段）
+    ///
+    /// Rust 侧 `CoreSearchBook.origins`（serde default + 空时省略序列化）：
+    /// 由跨源聚合入口产出（同名同作者跨源合并后累加的 origins，首次出现序）；
+    /// 既有流式批次 / 解析路径不填充（缺省空数组）。`SearchResult.fromSearchBook`
+    /// 消费：非空时优先作为有效 origins，空时回退 `{origin}` 现行行为
+    /// （对齐 Rust 聚合模块 effectiveOrigins 规则，见 docs/API_CONTRACT.md）。
+    @Default([]) @JsonKey(name: 'origins') List<String> origins,
   }) = _SearchBook;
 
   factory SearchBook.fromJson(Map<String, dynamic> json) =>

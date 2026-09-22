@@ -71,7 +71,11 @@ class SearchResult {
     final origin = sb.origin;
     return SearchResult(
       sourceName: sb.originName,
-      origins: origin.isEmpty ? const {} : {origin},
+      // 加法式字段消费（队列⑩a P1-1 项2）：聚合入口产出的跨源 origins 非空时
+      // 优先使用（对齐 Rust effectiveOrigins 规则）；空时回退现行 {origin} 行为
+      origins: sb.origins.isNotEmpty
+          ? sb.origins.toSet()
+          : (origin.isEmpty ? const {} : {origin}),
       hasReadRecord: hasReadRecord,
       book: Book(
         bookUrl: sb.bookUrl,

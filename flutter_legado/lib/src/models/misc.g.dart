@@ -26,6 +26,10 @@ _$SearchBookImpl _$$SearchBookImplFromJson(Map<String, dynamic> json) =>
       chapterWordCountText: json['chapterWordCountText'] as String?,
       chapterWordCount: (json['chapterWordCount'] as num?)?.toInt() ?? -1,
       respondTime: (json['respondTime'] as num?)?.toInt() ?? -1,
+      origins: (json['origins'] as List<dynamic>?)
+              ?.map((e) => e as String)
+              .toList() ??
+          const [],
     );
 
 Map<String, dynamic> _$$SearchBookImplToJson(_$SearchBookImpl instance) =>
@@ -48,6 +52,7 @@ Map<String, dynamic> _$$SearchBookImplToJson(_$SearchBookImpl instance) =>
       'chapterWordCountText': instance.chapterWordCountText,
       'chapterWordCount': instance.chapterWordCount,
       'respondTime': instance.respondTime,
+      'origins': instance.origins,
     };
 
 _$ReplaceRuleImpl _$$ReplaceRuleImplFromJson(Map<String, dynamic> json) =>

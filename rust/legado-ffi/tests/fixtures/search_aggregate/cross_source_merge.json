@@ -1,0 +1,116 @@
+{
+  "fixture": "search_aggregate/cross_source_merge",
+  "description": "跨端夹具（队列⑩a P1-1 项2，2026-09-22）：Rust search_aggregate::aggregate_search_books_json 与 Dart applyPrecisionSearch 对同一 books 输入产出同一 expected。books 为 SearchSourceBatch.books[] 形态（CoreSearchBook camelCase）；expected 为聚合后逐条投影——name/author 为清洗值、origin/originName/bookUrl/kind 保留首条到达元数据、hasReadRecord 为各到达项 OR、origins 为跨源累加集合（两端测试均按序比对，首次出现序为契约；其余字段按索引顺序敏感）。边界覆盖：空 key 原样透传（Dart L149，book 不清洗）、Unicode 边界（U+FEFF / U+0085 / CR / U+2028 / U+2029，新 case 非 ASCII 一律 \\uXXXX 转义保持文件 ASCII）、重复与空串 origins（Dart Set<String> 语义：保序去重留首 / 并集不滤空串 / 空串是合法成员；expected 由 Dart 实现实测产出，见 rust/_p03_norm_probe/probe_output.txt）。单源内 bookUrl 去重由解析期 dedup_search_results_keep_first 完成，不在本夹具范围。",
+  "cases": [
+    {
+      "id": "keep_other",
+      "key": "重生",
+      "keep_other": true,
+      "books": [
+        { "bookUrl": "https://s1.example/book/r1", "origin": "https://s1.example", "originName": "源一", "name": "重生", "author": "甲", "hasReadRecord": false },
+        { "bookUrl": "https://s2.example/book/r2", "origin": "https://s2.example", "originName": "源二", "name": "重生", "author": "作者：甲", "hasReadRecord": true },
+        { "bookUrl": "https://s3.example/book/r3", "origin": "https://s3.example", "originName": "源三", "name": "重生", "author": "甲", "hasReadRecord": false },
+        { "bookUrl": "https://s4.example/book/r4", "origin": "https://s4.example", "originName": "源四", "name": "都市情缘", "author": "乙", "kind": "重生,都市", "hasReadRecord": false },
+        { "bookUrl": "https://s4.example/book/r4-other", "origin": "https://s4.example", "originName": "源四", "name": "都市情缘", "author": "乙", "hasReadRecord": false },
+        { "bookUrl": "https://s5.example/book/r5", "origin": "https://s5.example", "originName": "源五", "name": "重生之路", "author": "丙", "hasReadRecord": false },
+        { "bookUrl": "https://s6.example/book/r6", "origin": "https://s6.example", "originName": "源六", "name": "重生之路", "author": "作者: 丙", "hasReadRecord": false },
+        { "bookUrl": "https://s7.example/book/r7", "origin": "https://s7.example", "originName": "源七", "name": "重生", "author": "戊", "hasReadRecord": false },
+        { "bookUrl": "https://s8.example/book/r8", "origin": "https://s8.example", "originName": "源八", "name": "重生", "author": "己", "hasReadRecord": false },
+        { "bookUrl": "https://s11.example/book/r11", "origin": "https://s11.example", "originName": "源十一", "name": "重生", "author": "庚", "origins": ["https://sA.example", "https://sB.example"], "hasReadRecord": false },
+        { "bookUrl": "https://s10.example/book/r10", "origin": "https://s10.example", "originName": "源十", "name": "斗破苍穹", "author": "天蚕土豆", "hasReadRecord": false }
+      ],
+      "expected": [
+        { "name": "重生", "author": "甲", "origin": "https://s1.example", "originName": "源一", "bookUrl": "https://s1.example/book/r1", "kind": null, "hasReadRecord": true, "origins": ["https://s1.example", "https://s2.example", "https://s3.example"] },
+        { "name": "重生", "author": "庚", "origin": "https://s11.example", "originName": "源十一", "bookUrl": "https://s11.example/book/r11", "kind": null, "hasReadRecord": false, "origins": ["https://sA.example", "https://sB.example"] },
+        { "name": "重生", "author": "戊", "origin": "https://s7.example", "originName": "源七", "bookUrl": "https://s7.example/book/r7", "kind": null, "hasReadRecord": false, "origins": ["https://s7.example"] },
+        { "name": "重生", "author": "己", "origin": "https://s8.example", "originName": "源八", "bookUrl": "https://s8.example/book/r8", "kind": null, "hasReadRecord": false, "origins": ["https://s8.example"] },
+        { "name": "都市情缘", "author": "乙", "origin": "https://s4.example", "originName": "源四", "bookUrl": "https://s4.example/book/r4", "kind": "重生,都市", "hasReadRecord": false, "origins": ["https://s4.example"] },
+        { "name": "重生之路", "author": "丙", "origin": "https://s5.example", "originName": "源五", "bookUrl": "https://s5.example/book/r5", "kind": null, "hasReadRecord": false, "origins": ["https://s5.example", "https://s6.example"] },
+        { "name": "都市情缘", "author": "乙", "origin": "https://s4.example", "originName": "源四", "bookUrl": "https://s4.example/book/r4-other", "kind": null, "hasReadRecord": false, "origins": ["https://s4.example"] },
+        { "name": "斗破苍穹", "author": "天蚕土豆", "origin": "https://s10.example", "originName": "源十", "bookUrl": "https://s10.example/book/r10", "kind": null, "hasReadRecord": false, "origins": ["https://s10.example"] }
+      ]
+    },
+    {
+      "id": "precision_drop_other",
+      "key": "重生",
+      "keep_other": false,
+      "books": [
+        { "bookUrl": "https://s1.example/book/r1", "origin": "https://s1.example", "originName": "源一", "name": "重生", "author": "甲", "hasReadRecord": false },
+        { "bookUrl": "https://s2.example/book/r2", "origin": "https://s2.example", "originName": "源二", "name": "重生", "author": "作者：甲", "hasReadRecord": true },
+        { "bookUrl": "https://s3.example/book/r3", "origin": "https://s3.example", "originName": "源三", "name": "重生", "author": "甲", "hasReadRecord": false },
+        { "bookUrl": "https://s4.example/book/r4", "origin": "https://s4.example", "originName": "源四", "name": "都市情缘", "author": "乙", "kind": "重生,都市", "hasReadRecord": false },
+        { "bookUrl": "https://s4.example/book/r4-other", "origin": "https://s4.example", "originName": "源四", "name": "都市情缘", "author": "乙", "hasReadRecord": false },
+        { "bookUrl": "https://s5.example/book/r5", "origin": "https://s5.example", "originName": "源五", "name": "重生之路", "author": "丙", "hasReadRecord": false },
+        { "bookUrl": "https://s6.example/book/r6", "origin": "https://s6.example", "originName": "源六", "name": "重生之路", "author": "作者: 丙", "hasReadRecord": false },
+        { "bookUrl": "https://s7.example/book/r7", "origin": "https://s7.example", "originName": "源七", "name": "重生", "author": "戊", "hasReadRecord": false },
+        { "bookUrl": "https://s8.example/book/r8", "origin": "https://s8.example", "originName": "源八", "name": "重生", "author": "己", "hasReadRecord": false },
+        { "bookUrl": "https://s11.example/book/r11", "origin": "https://s11.example", "originName": "源十一", "name": "重生", "author": "庚", "origins": ["https://sA.example", "https://sB.example"], "hasReadRecord": false },
+        { "bookUrl": "https://s10.example/book/r10", "origin": "https://s10.example", "originName": "源十", "name": "斗破苍穹", "author": "天蚕土豆", "hasReadRecord": false }
+      ],
+      "expected": [
+        { "name": "重生", "author": "甲", "origin": "https://s1.example", "originName": "源一", "bookUrl": "https://s1.example/book/r1", "kind": null, "hasReadRecord": true, "origins": ["https://s1.example", "https://s2.example", "https://s3.example"] },
+        { "name": "重生", "author": "庚", "origin": "https://s11.example", "originName": "源十一", "bookUrl": "https://s11.example/book/r11", "kind": null, "hasReadRecord": false, "origins": ["https://sA.example", "https://sB.example"] },
+        { "name": "重生", "author": "戊", "origin": "https://s7.example", "originName": "源七", "bookUrl": "https://s7.example/book/r7", "kind": null, "hasReadRecord": false, "origins": ["https://s7.example"] },
+        { "name": "重生", "author": "己", "origin": "https://s8.example", "originName": "源八", "bookUrl": "https://s8.example/book/r8", "kind": null, "hasReadRecord": false, "origins": ["https://s8.example"] },
+        { "name": "都市情缘", "author": "乙", "origin": "https://s4.example", "originName": "源四", "bookUrl": "https://s4.example/book/r4", "kind": "重生,都市", "hasReadRecord": false, "origins": ["https://s4.example"] },
+        { "name": "重生之路", "author": "丙", "origin": "https://s5.example", "originName": "源五", "bookUrl": "https://s5.example/book/r5", "kind": null, "hasReadRecord": false, "origins": ["https://s5.example", "https://s6.example"] }
+      ]
+    },
+    {
+      "id": "empty_key_passthrough",
+      "key": "",
+      "keep_other": true,
+      "books": [
+        { "bookUrl": "https://s1.example/book/e1", "origin": "https://s1.example", "originName": "\u6e90\u4e00", "name": "\u6597\u7834\u82cd\u7a79 \u4f5c\u8005\u5929\u8695\u571f\u8c46", "author": "\u4f5c\u8005: \u5929\u8695\u571f\u8c46", "origins": ["https://sA.example", "https://sB.example"], "hasReadRecord": true },
+        { "bookUrl": "https://s2.example/book/e2", "origin": "", "originName": "\u6e90\u4e8c", "name": "\u566a\u58f0\u4e66", "author": "\u8def\u4eba", "hasReadRecord": false }
+      ],
+      "expected": [
+        { "name": "\u6597\u7834\u82cd\u7a79 \u4f5c\u8005\u5929\u8695\u571f\u8c46", "author": "\u4f5c\u8005: \u5929\u8695\u571f\u8c46", "origin": "https://s1.example", "originName": "\u6e90\u4e00", "bookUrl": "https://s1.example/book/e1", "kind": null, "hasReadRecord": true, "origins": ["https://sA.example", "https://sB.example"] },
+        { "name": "\u566a\u58f0\u4e66", "author": "\u8def\u4eba", "origin": "", "originName": "\u6e90\u4e8c", "bookUrl": "https://s2.example/book/e2", "kind": null, "hasReadRecord": false, "origins": [] }
+      ]
+    },
+    {
+      "id": "unicode_boundaries",
+      "key": "\u6597\u7834\u82cd\u7a79",
+      "keep_other": true,
+      "books": [
+        { "bookUrl": "https://s1.example/book/u1", "origin": "https://s1.example", "originName": "\u6e90\u4e00", "name": "\u6597\u7834\u82cd\u7a79", "author": "\u7532", "hasReadRecord": false },
+        { "bookUrl": "https://s2.example/book/u2", "origin": "https://s2.example", "originName": "\u6e90\u4e8c", "name": "\u6597\u7834\u82cd\u7a79\uFEFF", "author": "\u7532", "hasReadRecord": false },
+        { "bookUrl": "https://s3.example/book/u3", "origin": "https://s3.example", "originName": "\u6e90\u4e09", "name": "\u6597\u7834\u82cd\u7a79\u0085\u4f5c\u8005\u5929\u8695\u571f\u8c46", "author": "\u7532", "hasReadRecord": false },
+        { "bookUrl": "https://s4.example/book/u4", "origin": "https://s4.example", "originName": "\u6e90\u56db", "name": "\u0085\u6597\u7834\u82cd\u7a79", "author": "\u7532", "hasReadRecord": false },
+        { "bookUrl": "https://s5.example/book/u5", "origin": "https://s5.example", "originName": "\u6e90\u4e94", "name": "\u6597\u7834\u82cd\u7a79 \u4f5c\u8005\r\u5929\u8695\u571f\u8c46", "author": "\u7532", "hasReadRecord": false },
+        { "bookUrl": "https://s6.example/book/u6", "origin": "https://s6.example", "originName": "\u6e90\u516d", "name": "\u6597\u7834\u82cd\u7a79\uFEFF\u4f5c\u8005\u5929\u8695\u571f\u8c46", "author": "\u7532", "hasReadRecord": false },
+        { "bookUrl": "https://s7.example/book/u7", "origin": "https://s7.example", "originName": "\u6e90\u4e03", "name": "\u6597\u7834\u82cd\u7a79\u2028", "author": "\u7532", "hasReadRecord": false },
+        { "bookUrl": "https://s8.example/book/u8", "origin": "https://s8.example", "originName": "\u6e90\u516b", "name": "\u6597\u7834\u82cd\u7a79 \u4f5c\u8005\u2029\u5929\u8695\u571f\u8c46", "author": "\u7532", "hasReadRecord": false }
+      ],
+      "expected": [
+        { "name": "\u6597\u7834\u82cd\u7a79", "author": "\u7532", "origin": "https://s1.example", "originName": "\u6e90\u4e00", "bookUrl": "https://s1.example/book/u1", "kind": null, "hasReadRecord": false, "origins": ["https://s1.example", "https://s2.example", "https://s4.example", "https://s6.example", "https://s7.example"] },
+        { "name": "\u6597\u7834\u82cd\u7a79\u0085\u4f5c\u8005\u5929\u8695\u571f\u8c46", "author": "\u7532", "origin": "https://s3.example", "originName": "\u6e90\u4e09", "bookUrl": "https://s3.example/book/u3", "kind": null, "hasReadRecord": false, "origins": ["https://s3.example"] },
+        { "name": "\u6597\u7834\u82cd\u7a79\r\u5929\u8695\u571f\u8c46", "author": "\u7532", "origin": "https://s5.example", "originName": "\u6e90\u4e94", "bookUrl": "https://s5.example/book/u5", "kind": null, "hasReadRecord": false, "origins": ["https://s5.example"] },
+        { "name": "\u6597\u7834\u82cd\u7a79\u2029\u5929\u8695\u571f\u8c46", "author": "\u7532", "origin": "https://s8.example", "originName": "\u6e90\u516b", "bookUrl": "https://s8.example/book/u8", "kind": null, "hasReadRecord": false, "origins": ["https://s8.example"] }
+      ]
+    },
+    {
+      "id": "origins_edge_semantics",
+      "key": "\u91cd\u751f",
+      "keep_other": true,
+      "books": [
+        { "bookUrl": "https://o1.example/book/g1", "origin": "https://o1.example", "originName": "\u6e90\u7532", "name": "\u91cd\u751f", "author": "\u7532", "origins": ["https://o1.example", "https://o1.example"], "hasReadRecord": false },
+        { "bookUrl": "https://o2.example/book/g2", "origin": "", "originName": "\u6e90\u4e59", "name": "\u91cd\u751f", "author": "\u4e59", "origins": [""], "hasReadRecord": false },
+        { "bookUrl": "https://o2.example/book/g3", "origin": "https://o2.example", "originName": "\u6e90\u4e19", "name": "\u91cd\u751f", "author": "\u4e19", "origins": ["https://o2.example"], "hasReadRecord": false },
+        { "bookUrl": "https://o3.example/book/g4", "origin": "https://o3.example", "originName": "\u6e90\u4e19", "name": "\u91cd\u751f", "author": "\u4e19", "origins": ["https://o3.example"], "hasReadRecord": true },
+        { "bookUrl": "https://o4.example/book/g5", "origin": "", "originName": "\u6e90\u4e01", "name": "\u91cd\u751f", "author": "\u4e01", "hasReadRecord": false },
+        { "bookUrl": "https://o4.example/book/g6", "origin": "https://o4.example", "originName": "\u6e90\u4e01", "name": "\u91cd\u751f", "author": "\u4e01", "hasReadRecord": false },
+        { "bookUrl": "https://o5.example/book/g7", "origin": "https://o5.example", "originName": "\u6e90\u620a", "name": "\u91cd\u751f", "author": "\u620a", "origins": [""], "hasReadRecord": false },
+        { "bookUrl": "https://o6.example/book/g8", "origin": "https://o6.example", "originName": "\u6e90\u620a", "name": "\u91cd\u751f", "author": "\u620a", "origins": ["https://o6.example"], "hasReadRecord": false }
+      ],
+      "expected": [
+        { "name": "\u91cd\u751f", "author": "\u4e19", "origin": "https://o2.example", "originName": "\u6e90\u4e19", "bookUrl": "https://o2.example/book/g3", "kind": null, "hasReadRecord": true, "origins": ["https://o2.example", "https://o3.example"] },
+        { "name": "\u91cd\u751f", "author": "\u620a", "origin": "https://o5.example", "originName": "\u6e90\u620a", "bookUrl": "https://o5.example/book/g7", "kind": null, "hasReadRecord": false, "origins": ["", "https://o6.example"] },
+        { "name": "\u91cd\u751f", "author": "\u7532", "origin": "https://o1.example", "originName": "\u6e90\u7532", "bookUrl": "https://o1.example/book/g1", "kind": null, "hasReadRecord": false, "origins": ["https://o1.example"] },
+        { "name": "\u91cd\u751f", "author": "\u4e59", "origin": "", "originName": "\u6e90\u4e59", "bookUrl": "https://o2.example/book/g2", "kind": null, "hasReadRecord": false, "origins": [""] },
+        { "name": "\u91cd\u751f", "author": "\u4e01", "origin": "", "originName": "\u6e90\u4e01", "bookUrl": "https://o4.example/book/g5", "kind": null, "hasReadRecord": false, "origins": ["https://o4.example"] }
+      ]
+    }
+  ]
+}

@@ -257,6 +257,12 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **新登记（2026-09-22，P2-19 修复过程中发现）**：**上游 `enabledCookieJar` 的按书源 cookie 门控未接入网络层**。事实：我方模型与 DB **已具备等价字段**（`rust/legado-core/src/models/book_source.rs:127` 的 `enabled_cookie_jar: Option<bool>`（serde `enabledCookieJar`）、`rust/legado-db/src/schema.rs` 的 `enabledCookieJar` 列），缺的是**让网络请求路径携带书源上下文**——`rust/legado-ffi/src/api/net_api.rs` 的 `http_get_bytes(url, headers_json)` 等接口无书源参数，打通需 **FFI 签名/契约变更 + parser 变更**，触碰"契约先行 + 双方确认"红线 → **本次未实现，单独立项待裁决**。影响：所有书源的 DB cookie 目前无条件注入（上游仅启用该开关的书源才读写 DB cookie）。
   - **可选排期（用户原始口径：排最后）**：**P1-1 项2 跨源聚合下沉 + 跨端夹具校验**（约 2 天量级）仍为可选项，未实施。
 
+- **P2-20 Dart 搜索聚合双路径不一致：纯函数 `applyPrecisionSearch` 四独立桶 vs `SearchNotifier` 增量桶 `_seenKeys` 预去重**（2026-09-22 登记，队列⑩a「搜索跨源聚合下沉到 Rust」审查发现；**开放，待裁决，本台账不擅自决定以哪条为准**）：
+  - **事实**：`search_state.dart` L144-207 纯函数 `applyPrecisionSearch` 用**四个独立 map**（equal→tags→contains→other）按清洗后 `name\u0000author` 键聚合，同一 `name+author` 键若因 `kind` 差异分落不同桶会各留 1 条；运行时增量路径 `SearchNotifier`（`search_notifier.dart` L307-310，`_seenKeys` 声明 L64）入桶前按 `'${name}|${author}|${origin}'` 预去重，同键同 origin 仅留首条。具体差异输入：同 name+author+origin 且 kind 分落不同桶（如「都市情缘+乙」：kind=`重生,都市` 落 tags 桶 + kind 缺失落 other 桶，同源 `https://s4.example`），纯函数/Rust `search_aggregate` 产出 **2 条**、增量路径仅 **1 条**。队列⑩a 的 Rust 实现与夹具均对齐**纯函数**语义（2 条），不覆盖增量路径。
+  - **登记原因**：队列⑩a 审查要求对齐范围如实限定为纯函数；另 `search_state.dart` L141-143 注释「语义与增量路径完全一致」与上述事实不符——该注释位于本次任务允许改动范围之外，**未改，如实记录待裁决后统一处理**。
+  - **影响面**：仅影响「同名同作者同 origin 且 kind 分落不同桶」的搜索结果条数（2 vs 1）；本轮 Dart 运行时仍走增量路径、UI 行为零变化，差异只会在后续批次把运行时聚合切到 Rust 入口（或按裁决改纯函数/增量路径之一）时显现。
+  - **待裁决点**：① 语义取舍——以纯函数四独立桶（不同 kind 各自成条、信息更全）为准，还是以增量路径 `_seenKeys` 预去重（同 origin 仅首条、列表更紧凑）为准？② 裁决后需同步的落点：`search_state.dart` 纯函数 / `rust/legado-core/src/search_aggregate.rs` / 夹具 `cross_source_merge.json` expected / `search_state.dart` L141-143 注释 / 本台账 / `API_CONTRACT.md` 两处限定措辞。③ 若裁选增量语义：Rust `Bucket` 需引入跨桶 `_seenKeys` 等价预去重（键含 origin），与现「桶内独立合并」互斥，需改实现 + 夹具 + 单测。
+
 ### P3：功能补齐与卫生项（2026-08-22 开启）
 
 

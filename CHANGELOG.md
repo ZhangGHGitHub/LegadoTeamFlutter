@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.308] - 2026-09-23
+
+### Changed
+- [Rust] **搜索跨源聚合下沉为单一真源（内部重构，界面与行为零变化）**：新增 `legado-core::search_aggregate` 纯函数（同名同作者跨源合并 + origins 累加、四桶分桶 equal→tags→contains→other、桶内 originsCount 降序 + 首次到达序平局、空关键词原样返回），与 Dart 现行纯函数 `applyPrecisionSearch` 逐条对齐；`legado-ffi` 内新增 `aggregate_search_books_json` 作为跨端校验入口（crate 内 `pub`，**未暴露 FRB**，方法数不变）。
+- [Rust] **`CoreSearchBook` 加法式新增可选字段 `origins`**（`#[serde(default, skip_serializing_if = "Vec::is_empty")]`，空时序列化省略）——既有搜索批次/解析/DB 路径不填充，批次 JSON 形态与旧消费方**零破坏**；Dart 侧 `SearchBook.origins` 加法式消费（非空优先、空回退 `{origin}`），运行时增量桶聚合路径未切换。
+- [Rust] **跨端夹具锁定两端聚合等价**：新增 `rust/legado-ffi/tests/fixtures/search_aggregate/cross_source_merge.json`（5 case：跨源合并 / 精准搜索丢弃 other / 空关键词原样返回 / 归一化 Unicode 边界 / 重复与空串 origins），Rust 集成测试与 Dart 单测读同一夹具比对（origins 按序比对，首次出现序为契约）。
+- [Rust] **聚合路径归一化改为 ECMAScript 等价实现**：Dart 探针逐码点实测 `\s`（25 成员，含 U+FEFF 不含 U+0085）/`trim`（26 成员）/`.` 排除集（4 成员）三集合分别建模——`regex` crate 的 Unicode 语义（`\s` 含 U+0085 不含 U+FEFF、`.` 仅排除 LF）与 Dart 不等价，原「正则文本相同即等价」的假设被证伪。
+
+### 说明
+- 本批为内部重构：Dart 运行时仍走既有增量桶路径，UI 与用户可见行为**零变化**；差异登记见 `docs/REFACTORING_ACTIVE_PLAN.md` P2-20（Dart 纯函数与增量桶两条路径自身不一致，待裁决）。
+
 ## [2.0.307] - 2026-09-22
 
 ### Fixed

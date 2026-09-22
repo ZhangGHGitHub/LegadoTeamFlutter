@@ -50,6 +50,16 @@ mixin _$SearchBook {
   @JsonKey(name: 'respondTime')
   int get respondTime => throw _privateConstructorUsedError;
 
+  /// 跨源聚合 origins 集合（队列⑩a P1-1 项2，2026-09-22 加法式字段）
+  ///
+  /// Rust 侧 `CoreSearchBook.origins`（serde default + 空时省略序列化）：
+  /// 由跨源聚合入口产出（同名同作者跨源合并后累加的 origins，首次出现序）；
+  /// 既有流式批次 / 解析路径不填充（缺省空数组）。`SearchResult.fromSearchBook`
+  /// 消费：非空时优先作为有效 origins，空时回退 `{origin}` 现行行为
+  /// （对齐 Rust 聚合模块 effectiveOrigins 规则，见 docs/API_CONTRACT.md）。
+  @JsonKey(name: 'origins')
+  List<String> get origins => throw _privateConstructorUsedError;
+
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
   $SearchBookCopyWith<SearchBook> get copyWith =>
@@ -80,7 +90,8 @@ abstract class $SearchBookCopyWith<$Res> {
       @JsonKey(name: 'originOrder') int originOrder,
       @JsonKey(name: 'chapterWordCountText') String? chapterWordCountText,
       @JsonKey(name: 'chapterWordCount') int chapterWordCount,
-      @JsonKey(name: 'respondTime') int respondTime});
+      @JsonKey(name: 'respondTime') int respondTime,
+      @JsonKey(name: 'origins') List<String> origins});
 }
 
 /// @nodoc
@@ -114,6 +125,7 @@ class _$SearchBookCopyWithImpl<$Res, $Val extends SearchBook>
     Object? chapterWordCountText = freezed,
     Object? chapterWordCount = null,
     Object? respondTime = null,
+    Object? origins = null,
   }) {
     return _then(_value.copyWith(
       bookUrl: null == bookUrl
@@ -188,6 +200,10 @@ class _$SearchBookCopyWithImpl<$Res, $Val extends SearchBook>
           ? _value.respondTime
           : respondTime // ignore: cast_nullable_to_non_nullable
               as int,
+      origins: null == origins
+          ? _value.origins
+          : origins // ignore: cast_nullable_to_non_nullable
+              as List<String>,
     ) as $Val);
   }
 }
@@ -218,7 +234,8 @@ abstract class _$$SearchBookImplCopyWith<$Res>
       @JsonKey(name: 'originOrder') int originOrder,
       @JsonKey(name: 'chapterWordCountText') String? chapterWordCountText,
       @JsonKey(name: 'chapterWordCount') int chapterWordCount,
-      @JsonKey(name: 'respondTime') int respondTime});
+      @JsonKey(name: 'respondTime') int respondTime,
+      @JsonKey(name: 'origins') List<String> origins});
 }
 
 /// @nodoc
@@ -250,6 +267,7 @@ class __$$SearchBookImplCopyWithImpl<$Res>
     Object? chapterWordCountText = freezed,
     Object? chapterWordCount = null,
     Object? respondTime = null,
+    Object? origins = null,
   }) {
     return _then(_$SearchBookImpl(
       bookUrl: null == bookUrl
@@ -324,6 +342,10 @@ class __$$SearchBookImplCopyWithImpl<$Res>
           ? _value.respondTime
           : respondTime // ignore: cast_nullable_to_non_nullable
               as int,
+      origins: null == origins
+          ? _value._origins
+          : origins // ignore: cast_nullable_to_non_nullable
+              as List<String>,
     ));
   }
 }
@@ -349,7 +371,9 @@ class _$SearchBookImpl implements _SearchBook {
       @JsonKey(name: 'originOrder') this.originOrder = 0,
       @JsonKey(name: 'chapterWordCountText') this.chapterWordCountText,
       @JsonKey(name: 'chapterWordCount') this.chapterWordCount = -1,
-      @JsonKey(name: 'respondTime') this.respondTime = -1});
+      @JsonKey(name: 'respondTime') this.respondTime = -1,
+      @JsonKey(name: 'origins') final List<String> origins = const []})
+      : _origins = origins;
 
   factory _$SearchBookImpl.fromJson(Map<String, dynamic> json) =>
       _$$SearchBookImplFromJson(json);
@@ -406,9 +430,33 @@ class _$SearchBookImpl implements _SearchBook {
   @JsonKey(name: 'respondTime')
   final int respondTime;
 
+  /// 跨源聚合 origins 集合（队列⑩a P1-1 项2，2026-09-22 加法式字段）
+  ///
+  /// Rust 侧 `CoreSearchBook.origins`（serde default + 空时省略序列化）：
+  /// 由跨源聚合入口产出（同名同作者跨源合并后累加的 origins，首次出现序）；
+  /// 既有流式批次 / 解析路径不填充（缺省空数组）。`SearchResult.fromSearchBook`
+  /// 消费：非空时优先作为有效 origins，空时回退 `{origin}` 现行行为
+  /// （对齐 Rust 聚合模块 effectiveOrigins 规则，见 docs/API_CONTRACT.md）。
+  final List<String> _origins;
+
+  /// 跨源聚合 origins 集合（队列⑩a P1-1 项2，2026-09-22 加法式字段）
+  ///
+  /// Rust 侧 `CoreSearchBook.origins`（serde default + 空时省略序列化）：
+  /// 由跨源聚合入口产出（同名同作者跨源合并后累加的 origins，首次出现序）；
+  /// 既有流式批次 / 解析路径不填充（缺省空数组）。`SearchResult.fromSearchBook`
+  /// 消费：非空时优先作为有效 origins，空时回退 `{origin}` 现行行为
+  /// （对齐 Rust 聚合模块 effectiveOrigins 规则，见 docs/API_CONTRACT.md）。
+  @override
+  @JsonKey(name: 'origins')
+  List<String> get origins {
+    if (_origins is EqualUnmodifiableListView) return _origins;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_origins);
+  }
+
   @override
   String toString() {
-    return 'SearchBook(bookUrl: $bookUrl, origin: $origin, originName: $originName, bookType: $bookType, name: $name, author: $author, kind: $kind, coverUrl: $coverUrl, intro: $intro, wordCount: $wordCount, latestChapterTitle: $latestChapterTitle, tocUrl: $tocUrl, time: $time, variable: $variable, originOrder: $originOrder, chapterWordCountText: $chapterWordCountText, chapterWordCount: $chapterWordCount, respondTime: $respondTime)';
+    return 'SearchBook(bookUrl: $bookUrl, origin: $origin, originName: $originName, bookType: $bookType, name: $name, author: $author, kind: $kind, coverUrl: $coverUrl, intro: $intro, wordCount: $wordCount, latestChapterTitle: $latestChapterTitle, tocUrl: $tocUrl, time: $time, variable: $variable, originOrder: $originOrder, chapterWordCountText: $chapterWordCountText, chapterWordCount: $chapterWordCount, respondTime: $respondTime, origins: $origins)';
   }
 
   @override
@@ -443,31 +491,34 @@ class _$SearchBookImpl implements _SearchBook {
             (identical(other.chapterWordCount, chapterWordCount) ||
                 other.chapterWordCount == chapterWordCount) &&
             (identical(other.respondTime, respondTime) ||
-                other.respondTime == respondTime));
+                other.respondTime == respondTime) &&
+            const DeepCollectionEquality().equals(other._origins, _origins));
   }
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-      runtimeType,
-      bookUrl,
-      origin,
-      originName,
-      bookType,
-      name,
-      author,
-      kind,
-      coverUrl,
-      intro,
-      wordCount,
-      latestChapterTitle,
-      tocUrl,
-      time,
-      variable,
-      originOrder,
-      chapterWordCountText,
-      chapterWordCount,
-      respondTime);
+  int get hashCode => Object.hashAll([
+        runtimeType,
+        bookUrl,
+        origin,
+        originName,
+        bookType,
+        name,
+        author,
+        kind,
+        coverUrl,
+        intro,
+        wordCount,
+        latestChapterTitle,
+        tocUrl,
+        time,
+        variable,
+        originOrder,
+        chapterWordCountText,
+        chapterWordCount,
+        respondTime,
+        const DeepCollectionEquality().hash(_origins)
+      ]);
 
   @JsonKey(ignore: true)
   @override
@@ -502,7 +553,8 @@ abstract class _SearchBook implements SearchBook {
       @JsonKey(name: 'originOrder') final int originOrder,
       @JsonKey(name: 'chapterWordCountText') final String? chapterWordCountText,
       @JsonKey(name: 'chapterWordCount') final int chapterWordCount,
-      @JsonKey(name: 'respondTime') final int respondTime}) = _$SearchBookImpl;
+      @JsonKey(name: 'respondTime') final int respondTime,
+      @JsonKey(name: 'origins') final List<String> origins}) = _$SearchBookImpl;
 
   factory _SearchBook.fromJson(Map<String, dynamic> json) =
       _$SearchBookImpl.fromJson;
@@ -554,6 +606,17 @@ abstract class _SearchBook implements SearchBook {
   @override
   @JsonKey(name: 'respondTime')
   int get respondTime;
+  @override
+
+  /// 跨源聚合 origins 集合（队列⑩a P1-1 项2，2026-09-22 加法式字段）
+  ///
+  /// Rust 侧 `CoreSearchBook.origins`（serde default + 空时省略序列化）：
+  /// 由跨源聚合入口产出（同名同作者跨源合并后累加的 origins，首次出现序）；
+  /// 既有流式批次 / 解析路径不填充（缺省空数组）。`SearchResult.fromSearchBook`
+  /// 消费：非空时优先作为有效 origins，空时回退 `{origin}` 现行行为
+  /// （对齐 Rust 聚合模块 effectiveOrigins 规则，见 docs/API_CONTRACT.md）。
+  @JsonKey(name: 'origins')
+  List<String> get origins;
   @override
   @JsonKey(ignore: true)
   _$$SearchBookImplCopyWith<_$SearchBookImpl> get copyWith =>
