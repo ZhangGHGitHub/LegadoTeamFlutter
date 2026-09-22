@@ -1,5 +1,7 @@
 # 换源「新书源未解析到任何章节」根因报告（规则模板段 + 目录参数语义 双层）
 
+> **证据可见性说明（2026-09-22）**：下文引用的 `docs/parity_shots/songhe_template_fix_20260917/` 内截图（109M/379 张）**不入库**（用户裁决：进 git 历史不可逆），仅存于开发机本地；路径与文件名保持有效，便于本地复看。
+
 - **日期**：2026-09-17 ~ 2026-09-18
 - **版本**：2.0.283+284 → **2.0.284+285**
 - **影响文件**：`rust/legado-parser/src/analyze_rule.rs`、`rust/legado-parser/src/lib.rs`、`rust/legado-parser/src/html.rs`（仅测试）、`rust/legado-ffi/src/api/web_book.rs`、`rust/legado-ffi/src/api/source_switch.rs`（报错文案）
