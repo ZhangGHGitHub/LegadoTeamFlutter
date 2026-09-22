@@ -42,9 +42,12 @@ pub fn set_custom_hosts(hosts_json: &str) -> LegadoResult<()> {
     Ok(())
 }
 
-/// 从 URL 或域名提取二级域名（对齐 Kotlin `NetworkUtils.getSubDomain`）
+/// 从 URL 或域名提取 Cookie 域名键（对齐 Kotlin `NetworkUtils.getSubDomain`）
 ///
-/// 与 MCP `clear_cookies` / HTTP Cookie 持久化键一致：取 host 最后两段。
+/// 单一真源：[`legado_net::cookie_store::domain_key_from_host`]（ETLD+1，IP 字面量
+/// 以自身为键），保证清除侧键与 HTTP Cookie 持久化存储侧键永不分叉
+///（2026-09-22 P1 回归修复：旧实现取 host 末两段，多段 TLD/IP 下清除空转）。
+/// 保留原「host 为空 → 回退原始 URL」分支。
 fn get_sub_domain(url: &str) -> String {
     let without_scheme = url
         .split("://")
@@ -55,16 +58,21 @@ fn get_sub_domain(url: &str) -> String {
         .unwrap_or("")
         .trim();
     let host = without_scheme.split('@').next_back().unwrap_or("");
-    let host = host.split(':').next().unwrap_or("").trim();
+    let host = if host.starts_with('[') {
+        // IPv6 字面量（如 `[::1]:8080`）：去首 `[` 后截到 `]`（再丢弃端口）
+        host.strip_prefix('[')
+            .unwrap_or(host)
+            .split(']')
+            .next()
+            .unwrap_or("")
+    } else {
+        host.split(':').next().unwrap_or("")
+    }
+    .trim();
     if host.is_empty() {
         return url.trim().to_string();
     }
-    let parts: Vec<&str> = host.split('.').filter(|p| !p.is_empty()).collect();
-    if parts.len() >= 2 {
-        parts[parts.len() - 2..].join(".")
-    } else {
-        host.to_string()
-    }
+    legado_net::cookie_store::domain_key_from_host(host)
 }
 
 /// 清除指定 URL 所属二级域名的 Cookie（契约 §2.3 `clearCookie`）
@@ -209,7 +217,7 @@ mod tests {
         let _g = TEST_LOCK.lock().unwrap();
         let _db_guard = crate::db_state::ensure_test_db();
 
-        // 二级域名键与 HTTP Cookie 持久化一致（host 最后两段）
+        // 二级域名键与 HTTP Cookie 持久化键一致（ETLD+1；单段 TLD 即末两段）
         let domain = "cookieclear.test";
         crate::db_state::with_database(|db| {
             let repo = legado_db::CookieRepository::new(db.connection());
@@ -240,6 +248,27 @@ mod tests {
 
         let err = clear_cookie("  ").unwrap_err();
         assert!(matches!(err, LegadoError::Internal(_)));
+    }
+
+    /// P1 回归钉死：清除侧键必须与存储侧键（ETLD+1 / IP 自键）相等
+    #[test]
+    fn test_get_sub_domain_matches_storage_key() {
+        // 多段 TLD：旧实现塌缩为 `com.cn`，现应为 ETLD+1
+        assert_eq!(get_sub_domain("https://www.a.com.cn/"), "a.com.cn");
+        assert_eq!(get_sub_domain("https://shop.a.co.uk/"), "a.co.uk");
+        // IP 字面量：旧实现塌缩为 `1.10`，现应为 IP 自身
+        assert_eq!(get_sub_domain("http://192.168.1.10:8080/x"), "192.168.1.10");
+        // IPv6 字面量（方括号 host）
+        assert_eq!(get_sub_domain("http://[::1]:8080/x"), "::1");
+        // 单段 TLD 行为不变
+        assert_eq!(
+            get_sub_domain("https://www.cookieclear.test/p"),
+            "cookieclear.test"
+        );
+        // 非 URL 输入回退原串（与空 host 兜底分支一致）
+        assert_eq!(get_sub_domain("not a url"), "not a url");
+        // 空 host（纯 scheme）兜底原 URL
+        assert_eq!(get_sub_domain("https://"), "https://");
     }
 
     /// hosts 变更后共享客户端必须重建（池化连接不得继续指向旧 IP）

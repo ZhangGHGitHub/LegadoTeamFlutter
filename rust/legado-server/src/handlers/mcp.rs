@@ -914,9 +914,12 @@ fn truncate_text(text: &str, max_chars: usize) -> String {
     }
 }
 
-/// 从 URL 或域名提取二级域名（对齐 Kotlin NetworkUtils.getSubDomain）
+/// 从 URL 或域名提取 Cookie 域名键（对齐 Kotlin NetworkUtils.getSubDomain）
 ///
-/// 简化实现：去掉协议前缀与路径后取 host，再取最后两段作为二级域名。
+/// 单一真源：[`legado_net::cookie_store::domain_key_from_host`]（ETLD+1，IP 字面量
+/// 以自身为键），与 HTTP Cookie 持久化存储侧键一致（2026-09-22 P1 回归修复：
+/// 旧实现取 host 末两段，多段 TLD/IP 下 get/clear 与存储键分叉）。
+/// 保留原「host 为空 → 回退原始 URL」分支。
 fn get_sub_domain(url: &str) -> String {
     let without_scheme = url
         .split("://")
@@ -927,16 +930,21 @@ fn get_sub_domain(url: &str) -> String {
         .unwrap_or("")
         .trim();
     let host = without_scheme.split('@').next_back().unwrap_or("");
-    let host = host.split(':').next().unwrap_or("").trim();
+    let host = if host.starts_with('[') {
+        // IPv6 字面量（如 `[::1]:8080`）：去首 `[` 后截到 `]`（再丢弃端口）
+        host.strip_prefix('[')
+            .unwrap_or(host)
+            .split(']')
+            .next()
+            .unwrap_or("")
+    } else {
+        host.split(':').next().unwrap_or("")
+    }
+    .trim();
     if host.is_empty() {
         return url.trim().to_string();
     }
-    let parts: Vec<&str> = host.split('.').filter(|p| !p.is_empty()).collect();
-    if parts.len() >= 2 {
-        parts[parts.len() - 2..].join(".")
-    } else {
-        host.to_string()
-    }
+    legado_net::cookie_store::domain_key_from_host(host)
 }
 
 /// 将任意错误转换为业务级 JsonRpcError（code -32000）
@@ -1584,6 +1592,59 @@ mod tests {
         )
         .await;
         assert!(result_text(&resp.0).contains("没有 Cookie"));
+    }
+
+    /// P1 回归钉死：多段 TLD / IP host 的 get/clear Cookie 键 = 存储键
+    ///（旧实现塌缩为 `com.cn`/`1.10`，清除空转、get 误报「没有 Cookie」）
+    #[tokio::test]
+    async fn test_cookies_keys_match_storage_for_multi_tld_and_ip() {
+        let state = make_test_state();
+        // 以存储侧键（ETLD+1 / IP 自身）预置持久层
+        {
+            let db = state.db.lock().await;
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.upsert("a.com.cn", "site=alice").unwrap();
+            repo.upsert("192.168.1.10", "lan=local").unwrap();
+        }
+
+        // 多段 TLD：子域 URL 命中 `a.com.cn` 行
+        let resp = call_tool(
+            State(state.clone()),
+            Json(make_call_req(
+                "get_cookies",
+                serde_json::json!({"url": "https://www.a.com.cn/book"}),
+            )),
+        )
+        .await;
+        assert!(resp.0.error.is_none());
+        assert!(result_text(&resp.0).contains("site=alice"));
+
+        // IP：IP URL 命中 `192.168.1.10` 行
+        let resp = call_tool(
+            State(state.clone()),
+            Json(make_call_req(
+                "get_cookies",
+                serde_json::json!({"url": "http://192.168.1.10:8080/x"}),
+            )),
+        )
+        .await;
+        assert!(resp.0.error.is_none());
+        assert!(result_text(&resp.0).contains("lan=local"));
+
+        // 清除多段 TLD 站点：真删到 `a.com.cn` 行，且不误伤 IP 行
+        let resp = call_tool(
+            State(state.clone()),
+            Json(make_call_req(
+                "clear_cookies",
+                serde_json::json!({"url": "https://www.a.com.cn/"}),
+            )),
+        )
+        .await;
+        assert!(resp.0.error.is_none());
+        let db = state.db.lock().await;
+        let repo = legado_db::CookieRepository::new(db.connection());
+        assert!(repo.get_by_tag("a.com.cn").unwrap().is_none());
+        assert!(repo.get_by_tag("192.168.1.10").unwrap().is_some());
     }
 
     #[tokio::test]

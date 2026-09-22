@@ -130,11 +130,10 @@ impl CookieStore {
 
     /// 生成 HTTP `Cookie` 请求头的值：`name1=value1; name2=value2`
     ///
-    /// `url` 用于提取域名。解析失败时返回空字符串。
+    /// `url` 用于提取域名（ETLD+1，见 [`cookie_domain_key`]）。解析失败时返回空字符串。
     pub fn get_cookie_string(&self, url: &str) -> String {
-        let domain = match extract_domain(url) {
-            Some(d) => d,
-            None => return String::new(),
+        let Some(domain) = cookie_domain_key(url) else {
+            return String::new();
         };
         self.domain_cookie_string(&domain)
     }
@@ -215,20 +214,234 @@ impl CookieStore {
     }
 }
 
-/// 从 URL 提取子域名（简化版，对应 `NetworkUtils.getSubDomain`）
+/// 高频多段公共后缀（两段 TLD）静态表
 ///
-/// 例如 `https://www.example.com/path` -> `example.com`
-fn extract_domain(url: &str) -> Option<String> {
-    use url::Url;
-    let parsed = Url::parse(url).ok()?;
-    let host = parsed.host_str()?;
-    // 简单取最后两段作为子域名
-    let parts: Vec<&str> = host.split('.').collect();
-    if parts.len() >= 2 {
-        Some(parts[parts.len() - 2..].join("."))
-    } else {
-        Some(host.to_string())
+/// 覆盖各国/地区常见的「二段顶级域」（如 `com.cn`、`co.uk`），用于计算
+/// 「有效顶级域 + 1」（ETLD+1）作为 Cookie 存储的域名键。命中时域名键取
+/// host 末三段；未命中时回退为单段 TLD 语义（取末两段）。
+///
+/// 该表为高频子集，并非完整 Public Suffix List（无通配符/例外规则）；
+/// 如需全量对齐可后续替换为内嵌 PSL 数据。
+const MULTI_LABEL_TLDS: &[&str] = &[
+    // 中国
+    "com.cn",
+    "net.cn",
+    "org.cn",
+    "gov.cn",
+    "edu.cn",
+    "ac.cn",
+    "mil.cn",
+    // 英国
+    "co.uk",
+    "org.uk",
+    "me.uk",
+    "net.uk",
+    "sch.uk",
+    "ac.uk",
+    "gov.uk",
+    // 澳大利亚
+    "com.au",
+    "net.au",
+    "org.au",
+    "edu.au",
+    "gov.au",
+    "id.au",
+    // 中国香港
+    "com.hk",
+    "org.hk",
+    "net.hk",
+    "idv.hk",
+    "edu.hk",
+    "gov.hk",
+    // 中国台湾
+    "com.tw",
+    "org.tw",
+    "net.tw",
+    "edu.tw",
+    "gov.tw",
+    // 日本
+    "co.jp",
+    "ne.jp",
+    "or.jp",
+    "ac.jp",
+    "go.jp",
+    "ed.jp",
+    "lg.jp",
+    // 巴西
+    "com.br",
+    "net.br",
+    "org.br",
+    "gov.br",
+    "edu.br",
+    // 墨西哥
+    "com.mx",
+    "org.mx",
+    "net.mx",
+    "gob.mx",
+    "edu.mx",
+    // 新加坡
+    "com.sg",
+    "org.sg",
+    "net.sg",
+    "edu.sg",
+    "gov.sg",
+    // 马来西亚
+    "com.my",
+    "net.my",
+    "org.my",
+    "gov.my",
+    "edu.my",
+    // 新西兰
+    "co.nz",
+    "org.nz",
+    "net.nz",
+    "govt.nz",
+    "school.nz",
+    // 韩国
+    "co.kr",
+    "or.kr",
+    "ne.kr",
+    "go.kr",
+    "re.kr",
+    // 印度
+    "co.in",
+    "net.in",
+    "org.in",
+    "firm.in",
+    "gen.in",
+    "ind.in",
+    // 印度尼西亚
+    "co.id",
+    "or.id",
+    "go.id",
+    "web.id",
+    // 越南
+    "com.vn",
+    "net.vn",
+    "org.vn",
+    "edu.vn",
+    "gov.vn",
+    // 泰国
+    "co.th",
+    "in.th",
+    "ac.th",
+    "go.th",
+    "or.th",
+    // 俄罗斯
+    "co.ru",
+    "org.ru",
+    "net.ru",
+    "pp.ru",
+    // 乌克兰
+    "com.ua",
+    "in.ua",
+    "org.ua",
+    "gov.ua",
+    "edu.ua",
+    // 以色列
+    "co.il",
+    "org.il",
+    "net.il",
+    "ac.il",
+    "gov.il",
+    // 拉丁美洲
+    "com.ar",
+    "com.co",
+    "com.pe",
+    "com.cl",
+    "com.ec",
+    "com.ve",
+    "com.py",
+    "com.uy",
+    "com.bo",
+    "com.do",
+    // 欧洲
+    "com.tr",
+    "com.pl",
+    "com.gr",
+    "com.it",
+    "com.es",
+    "com.pt",
+    "com.cz",
+    "com.ro",
+    "com.hu",
+    "com.se",
+    // 中东/非洲
+    "com.sa",
+    "com.eg",
+    "com.ng",
+    "co.za",
+    "com.pk",
+    "com.bd",
+    // 私有后缀（PSL 通配条目：用户子域本身即可注册，如 `user.github.io`）
+    "github.io",
+    "blogspot.com",
+    "pages.dev",
+    "vercel.app",
+    "netlify.app",
+    "workers.dev",
+];
+
+/// 由 host 计算 Cookie 存储的域名键（对齐上游 `NetworkUtils.getSubDomain`
+/// 的「有效顶级域 + 1」语义）
+///
+/// 规则（按优先级）：
+/// 1. IP 字面量（IPv4/IPv6，含 URL 中的 `[...]` 括号形式）→ 以自身为键；
+/// 2. 末两段命中 [`MULTI_LABEL_TLDS`]（多段公共后缀，如 `com.cn`）→ 取末三段；
+/// 3. 其余（单段 TLD，如 `com`）→ 取末两段；
+/// 4. 段数不足时回退为 host 自身（单段 host 兜底，如 `localhost`）。
+///
+/// 对齐说明：上游 `getSubDomain` 用 `PublicSuffixDatabase.getEffectiveTldPlusOne`，
+/// 其本质即「从 host 末尾按公共后缀长度截断 + 保留 1 段」；此处以高频多段
+/// 表近似该截断点（命中多段表则后缀长 2，否则后缀长 1），等价于对 host 做
+/// 「末段索引 = 总段数 - 后缀长 - 1」的 `lastIndexOf('.')` 定位。
+pub fn domain_key_from_host(host: &str) -> String {
+    // 去除 IPv6 的方括号（URL host 中 IPv6 形如 `[::1]`）
+    let bare = match host.strip_prefix('[') {
+        Some(inner) => inner.strip_suffix(']').unwrap_or(host),
+        None => host,
+    };
+    // 尾点归一化（FQDN 形式 `a.example.com.` 不应产生空尾段，
+    // 否则键塌缩为 `com.` 之类同形缺陷；同时让带尾点的 IP 仍命中 IP 自键分支）
+    let bare = bare.trim_end_matches('.');
+    // IP 字面量（IPv4/IPv6）以自身为键
+    if bare.parse::<std::net::Ipv4Addr>().is_ok() || bare.parse::<std::net::Ipv6Addr>().is_ok() {
+        return bare.to_string();
     }
+
+    let labels: Vec<&str> = bare.split('.').collect();
+    // 单段 host（如 localhost / 内网主机名）：以自身为键
+    if labels.len() <= 1 {
+        return bare.to_string();
+    }
+    // 判断末两段是否为多段公共后缀（决定后缀长度为 2 还是 1）
+    let last_two = format!("{}.{}", labels[labels.len() - 2], labels[labels.len() - 1]);
+    let suffix_len = if MULTI_LABEL_TLDS.contains(&last_two.as_str()) {
+        2
+    } else {
+        1
+    };
+    let take = suffix_len + 1;
+    // 段数不足（host 恰好等于或短于 后缀+1，如 host 即 `co.uk`）：以自身为键
+    if labels.len() <= take {
+        return bare.to_string();
+    }
+    bare.split('.')
+        .skip(labels.len() - take)
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+/// 从 URL 提取 Cookie 存储的域名键（对齐上游 `NetworkUtils.getSubDomain`）
+///
+/// 例如 `https://a.example.com.cn/` -> `example.com.cn`（多段 TLD 取末三段），
+/// `https://www.example.com/` -> `example.com`，`http://192.168.1.1/` -> `192.168.1.1`。
+///
+/// URL 解析失败或无 host 时返回 `None`。
+pub fn cookie_domain_key(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    let host = parsed.host_str()?;
+    Some(domain_key_from_host(host))
 }
 
 #[cfg(test)]
@@ -490,5 +703,155 @@ mod tests {
         ]);
         assert_eq!(store.get_cookies("example.com").len(), 2);
         assert_eq!(store.get_key("other.com", "token"), Some("xyz".to_string()));
+    }
+
+    // ─── 域名键（ETLD+1 / IP / 单段兜底）测试 ──────────────
+
+    #[test]
+    fn test_domain_key_multi_label_tld() {
+        // 多段 TLD（.com.cn）：不同二级域名应得到不同键，互不塌缩
+        assert_eq!(
+            cookie_domain_key("https://a.example.com.cn/x"),
+            Some("example.com.cn".to_string())
+        );
+        assert_eq!(
+            cookie_domain_key("https://b.other.com.cn/x"),
+            Some("other.com.cn".to_string())
+        );
+        // 两者不同（P1-1 缺陷的最小断言）
+        assert_ne!(
+            cookie_domain_key("https://a.example.com.cn/x"),
+            cookie_domain_key("https://b.other.com.cn/x"),
+            "不同 .com.cn 站点不应塌缩为同一域名键"
+        );
+    }
+
+    #[test]
+    fn test_domain_key_co_uk() {
+        // .co.uk 同理：取末三段
+        assert_eq!(
+            cookie_domain_key("https://shop.a.co.uk/"),
+            Some("a.co.uk".to_string())
+        );
+        assert_eq!(
+            cookie_domain_key("https://shop.b.co.uk/"),
+            Some("b.co.uk".to_string())
+        );
+    }
+
+    #[test]
+    fn test_domain_key_single_label_tld() {
+        // 单段 TLD（.com）：取末两段
+        assert_eq!(
+            cookie_domain_key("https://www.example.com/p"),
+            Some("example.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_domain_key_ipv4() {
+        // IPv4 字面量以自身为键
+        assert_eq!(
+            cookie_domain_key("http://192.168.1.10/"),
+            Some("192.168.1.10".to_string())
+        );
+        assert_eq!(
+            cookie_domain_key("http://127.0.0.1:8080/x"),
+            Some("127.0.0.1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_domain_key_ipv6() {
+        // IPv6 字面量（URL 中方括号形式）以去括号后的自身为键
+        assert_eq!(cookie_domain_key("http://[::1]/x"), Some("::1".to_string()));
+        assert_eq!(
+            cookie_domain_key("http://[2001:db8::1]/x"),
+            Some("2001:db8::1".to_string())
+        );
+    }
+
+    #[test]
+    fn test_domain_key_single_label_host() {
+        // 单段 host（localhost / 内网主机名）兜底为自身
+        assert_eq!(
+            cookie_domain_key("http://localhost:3000/"),
+            Some("localhost".to_string())
+        );
+        assert_eq!(
+            cookie_domain_key("http://intranet/"),
+            Some("intranet".to_string())
+        );
+    }
+
+    #[test]
+    fn test_domain_key_host_equals_suffix() {
+        // host 恰好等于多段后缀本身（如 `co.uk`）：段数不足，以自身为键
+        assert_eq!(domain_key_from_host("co.uk"), "co.uk");
+        assert_eq!(domain_key_from_host("com.cn"), "com.cn");
+    }
+
+    #[test]
+    fn test_domain_key_invalid_url() {
+        assert_eq!(cookie_domain_key("not a url"), None);
+    }
+
+    #[test]
+    fn test_domain_key_trailing_dot_normalized() {
+        // 尾点 FQDN 形式不应产生 `com.` 类塌缩键（P2-1）
+        assert_eq!(
+            cookie_domain_key("https://a.example.com.cn./x"),
+            Some("example.com.cn".to_string())
+        );
+        assert_eq!(domain_key_from_host("localhost."), "localhost");
+        // 带尾点的 IP 仍命中 IP 自键分支
+        assert_eq!(domain_key_from_host("192.168.1.10."), "192.168.1.10");
+    }
+
+    #[test]
+    fn test_domain_key_private_suffixes() {
+        // 私有后缀（PSL 通配条目）：用户子域本身即注册域（ETLD+1）
+        assert_eq!(
+            cookie_domain_key("https://user.github.io/"),
+            Some("user.github.io".to_string())
+        );
+        assert_eq!(
+            cookie_domain_key("https://x.vercel.app/"),
+            Some("x.vercel.app".to_string())
+        );
+        assert_eq!(
+            cookie_domain_key("https://x.blogspot.com/"),
+            Some("x.blogspot.com".to_string())
+        );
+    }
+
+    #[test]
+    fn test_get_cookie_string_multi_tld_isolated() {
+        // 两个不同 .com.cn 站点各存一个 cookie，互访只携带各自的 cookie
+        let mut store = CookieStore::new();
+        store.set_cookie(Cookie {
+            name: "siteA".to_string(),
+            value: "1".to_string(),
+            domain: "example.com.cn".to_string(),
+            path: "/".to_string(),
+            expires: None,
+            secure: false,
+            http_only: false,
+        });
+        store.set_cookie(Cookie {
+            name: "siteB".to_string(),
+            value: "2".to_string(),
+            domain: "other.com.cn".to_string(),
+            path: "/".to_string(),
+            expires: None,
+            secure: false,
+            http_only: false,
+        });
+        let a = store.get_cookie_string("https://a.example.com.cn/");
+        let b = store.get_cookie_string("https://b.other.com.cn/");
+        assert!(a.contains("siteA=1"), "a 站应携带自身 cookie: {a}");
+        assert!(!a.contains("siteB=2"), "a 站不应携带 b 站 cookie: {a}");
+        assert!(b.contains("siteB=2"), "b 站应携带自身 cookie: {b}");
+        assert!(!b.contains("siteA=1"), "b 站不应携带 a 站 cookie: {b}");
     }
 }

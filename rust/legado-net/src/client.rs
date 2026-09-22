@@ -278,8 +278,7 @@ impl LegadoClient {
             async move {
                 let mut req = client.get(&url);
                 req = apply_default_headers_static(req);
-                req = apply_custom_headers(req, (*headers).clone());
-                req = apply_cookie_static(req, &cookie_store, &url);
+                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
                 req.send().await
             }
         };
@@ -322,8 +321,7 @@ impl LegadoClient {
             async move {
                 let mut req = client.get(&url);
                 req = apply_default_headers_static(req);
-                req = apply_custom_headers(req, (*headers).clone());
-                req = apply_cookie_static(req, &cookie_store, &url);
+                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
                 req.send().await
             }
         };
@@ -371,8 +369,7 @@ impl LegadoClient {
             async move {
                 let mut req = client.post(&url).body(body);
                 req = apply_default_headers_static(req);
-                req = apply_custom_headers(req, (*headers).clone());
-                req = apply_cookie_static(req, &cookie_store, &url);
+                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
                 req.send().await
             }
         };
@@ -419,8 +416,7 @@ impl LegadoClient {
             async move {
                 let mut req = client.post(&url).body(body);
                 req = apply_default_headers_static(req);
-                req = apply_custom_headers(req, (*headers).clone());
-                req = apply_cookie_static(req, &cookie_store, &url);
+                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
                 req.send().await
             }
         };
@@ -449,8 +445,7 @@ impl LegadoClient {
             async move {
                 let mut req = client.head(&url);
                 req = apply_default_headers_static(req);
-                req = apply_custom_headers(req, (*headers).clone());
-                req = apply_cookie_static(req, &cookie_store, &url);
+                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
                 req.send().await
             }
         };
@@ -488,8 +483,7 @@ impl LegadoClient {
                     req = req.timeout(t);
                 }
                 req = apply_default_headers_static(req);
-                req = apply_custom_headers(req, (*headers).clone());
-                req = apply_cookie_static(req, &cookie_store, &url);
+                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
                 req.send().await
             }
         };
@@ -700,30 +694,53 @@ fn apply_default_headers_static(req: reqwest::RequestBuilder) -> reqwest::Reques
         .header("Cache-Control", "no-cache")
 }
 
-/// 将 CookieStore 中的 Cookie 注入到请求中（静态版本）
-fn apply_cookie_static(
-    req: reqwest::RequestBuilder,
-    cookie_store: &Arc<RwLock<CookieStore>>,
-    url: &str,
-) -> reqwest::RequestBuilder {
-    let cookie_string = {
-        let store = cookie_store.read().ok();
-        store.map(|s| s.get_cookie_string(url)).unwrap_or_default()
-    };
-    if cookie_string.is_empty() {
-        req
+/// 合并 DB Cookie 与规则/自定义 Cookie 头（**按键合并、规则优先**）
+///
+/// 对齐上游 `AnalyzeUrl.setCookie` 中 `mergeCookies(dbCookie, ruleCookie)`：
+/// 同键冲突时规则值胜，非冲突键两者都保留；任一侧为空时原样返回另一侧
+/// （避免无谓的重序列化）。
+///
+/// 该函数为纯函数，便于单测；实际注入见 [`apply_headers_and_cookies`]。
+fn merge_cookie_headers(db_cookie: &str, rule_cookie: &str) -> String {
+    if db_cookie.is_empty() {
+        rule_cookie.to_string()
+    } else if rule_cookie.is_empty() {
+        db_cookie.to_string()
     } else {
-        req.header("Cookie", cookie_string)
+        // merge_cookies_str(a, b)：b（规则）覆盖 a（DB）的同名键
+        CookieStore::merge_cookies_str(db_cookie, rule_cookie)
+            .unwrap_or_else(|| rule_cookie.to_string())
     }
 }
 
-/// 应用自定义请求头
-fn apply_custom_headers(
+/// 应用自定义请求头与 Cookie（对齐上游 `AnalyzeUrl.setCookie` 语义，静态版本）
+///
+/// - 默认头之外的自定义头**原样应用**（语义不变，含 UA=`"null"` 移除特判）；
+/// - `Cookie` 头单独处理：DB 持久化 Cookie 与规则/自定义 Cookie **按键合并、
+///   规则优先**（[`merge_cookie_headers`]），最后一次性注入，避免整体替换
+///   导致规则 Cookie 丢失（P1-2 缺陷修复）。
+fn apply_headers_and_cookies(
     mut req: reqwest::RequestBuilder,
+    cookie_store: &Arc<RwLock<CookieStore>>,
+    url: &str,
     headers: Option<HashMap<String, String>>,
 ) -> reqwest::RequestBuilder {
+    // 规则/自定义 Cookie 头（键不区分大小写；无则为空串）
+    let rule_cookie: String = headers
+        .as_ref()
+        .and_then(|h| {
+            h.iter()
+                .find(|(k, _)| k.to_lowercase() == "cookie")
+                .map(|(_, v)| v.clone())
+        })
+        .unwrap_or_default();
+
+    // 其余自定义头原样应用（跳过 Cookie，稍后统一合并注入）
     if let Some(hdrs) = headers {
         for (name, value) in hdrs {
+            if name.to_lowercase() == "cookie" {
+                continue; // Cookie 单独合并注入，避免整体替换
+            }
             // 特殊处理: UA 为 "null" 时移除（对应 Kotlin 拦截器逻辑）
             if name.to_lowercase() == "user-agent" && value == "null" {
                 continue;
@@ -731,21 +748,27 @@ fn apply_custom_headers(
             req = req.header(&name, &value);
         }
     }
-    req
+
+    // DB 持久化 Cookie
+    let db_cookie = {
+        let store = cookie_store.read().ok();
+        store.map(|s| s.get_cookie_string(url)).unwrap_or_default()
+    };
+
+    // 合并注入：DB 与规则 Cookie 按键合并、规则优先
+    let merged_cookie = merge_cookie_headers(&db_cookie, &rule_cookie);
+    if merged_cookie.is_empty() {
+        req
+    } else {
+        req.header("Cookie", merged_cookie)
+    }
 }
 
-/// 从 URL 提取 cookie domain（简化版）
+/// 从 URL 提取 cookie domain（ETLD+1，对齐上游 `NetworkUtils.getSubDomain`）
+///
+/// 解析失败时回退为 URL 本身（保持「仍能按原 URL 记录 Cookie」的旧行为）。
 fn extract_domain_for_cookie(url: &str) -> String {
-    if let Ok(parsed) = url::Url::parse(url) {
-        if let Some(host) = parsed.host_str() {
-            let parts: Vec<&str> = host.split('.').collect();
-            if parts.len() >= 2 {
-                return parts[parts.len() - 2..].join(".");
-            }
-            return host.to_string();
-        }
-    }
-    url.to_string()
+    crate::cookie_store::cookie_domain_key(url).unwrap_or_else(|| url.to_string())
 }
 
 #[cfg(test)]
@@ -1093,5 +1116,284 @@ mod tests {
         // 默认构建不携带持久化后端，行为不变
         let client = LegadoClient::new(LegadoClientConfig::default()).unwrap();
         assert!(client.cookie_persistence().is_none());
+    }
+
+    // ─── P1-1 复现：多段 TLD 站点 Cookie 隔离 ─────────────────
+
+    /// P1-1 最小复现：两个不同 `.com.cn` 站各 Set-Cookie 一次后互访，
+    /// 不应携带对方 Cookie，且持久化后端应为两条独立域名行（非塌缩的 `com.cn`）。
+    #[test]
+    fn test_multi_tld_sites_cookies_isolated_p1_1_repro() {
+        let persistence = Arc::new(MockPersistence::default());
+        let client = LegadoClient::with_cookie_persistence(
+            LegadoClientConfig::default(),
+            persistence.clone(),
+        )
+        .unwrap();
+
+        // a 站 Set-Cookie
+        let mut a_headers = HashMap::new();
+        a_headers.insert("Set-Cookie".to_string(), "siteA=alice".to_string());
+        client.save_cookies_from_response(
+            "https://a.example.com.cn/",
+            "https://a.example.com.cn/",
+            &a_headers,
+        );
+        // b 站 Set-Cookie
+        let mut b_headers = HashMap::new();
+        b_headers.insert("Set-Cookie".to_string(), "siteB=bob".to_string());
+        client.save_cookies_from_response(
+            "https://b.other.com.cn/",
+            "https://b.other.com.cn/",
+            &b_headers,
+        );
+
+        // 持久化后端：应为两条独立域名行，而非塌缩成单行 `com.cn`
+        let persisted = persistence.data.lock().unwrap();
+        assert!(
+            persisted.contains_key("example.com.cn"),
+            "a 站域名行应为 example.com.cn"
+        );
+        assert!(
+            persisted.contains_key("other.com.cn"),
+            "b 站域名行应为 other.com.cn"
+        );
+        assert!(
+            !persisted.contains_key("com.cn"),
+            "不应存在塌缩的 com.cn 行"
+        );
+        drop(persisted);
+
+        // 互访：各站请求 Cookie 仅携带自身 Cookie
+        let store = client.cookie_store().read().unwrap();
+        let a_cookie = store.get_cookie_string("https://a.example.com.cn/");
+        let b_cookie = store.get_cookie_string("https://b.other.com.cn/");
+        assert!(
+            a_cookie.contains("siteA=alice"),
+            "a 站应携带自身 cookie: {a_cookie}"
+        );
+        assert!(
+            !a_cookie.contains("siteB=bob"),
+            "a 站不应携带 b 站 cookie: {a_cookie}"
+        );
+        assert!(
+            b_cookie.contains("siteB=bob"),
+            "b 站应携带自身 cookie: {b_cookie}"
+        );
+        assert!(
+            !b_cookie.contains("siteA=alice"),
+            "b 站不应携带 a 站 cookie: {b_cookie}"
+        );
+    }
+
+    // ─── P1-2：规则 Cookie 优先合并 ──────────────────────────
+
+    /// P1-2 单测：`merge_cookie_headers` 按键合并、规则优先
+    #[test]
+    fn test_merge_cookie_headers_rule_priority_p1_2() {
+        // 规则为空 → DB 原样
+        assert_eq!(merge_cookie_headers("a=1; b=2", ""), "a=1; b=2");
+        // DB 为空 → 规则原样
+        assert_eq!(merge_cookie_headers("", "token=rule"), "token=rule");
+        // 双方均空 → 空
+        assert_eq!(merge_cookie_headers("", ""), "");
+        // 同键冲突规则胜 + 非冲突键都保留
+        let merged = merge_cookie_headers("a=1; b=2", "b=3; c=4");
+        let map = crate::cookie_store::CookieStore::cookie_string_to_map(&merged);
+        assert_eq!(
+            map.get("a"),
+            Some(&"1".to_string()),
+            "DB 独有键应保留: {merged}"
+        );
+        assert_eq!(
+            map.get("b"),
+            Some(&"3".to_string()),
+            "同键冲突应规则值胜: {merged}"
+        );
+        assert_eq!(
+            map.get("c"),
+            Some(&"4".to_string()),
+            "规则独有键应保留: {merged}"
+        );
+        // 防「拼接式」误实现（`"{db}; {rule}"` 也能通过上面的 map 断言）：
+        // 同键只允许出现一次，且 DB 旧值不得残留
+        assert_eq!(
+            merged.matches("b=").count(),
+            1,
+            "同键不得出现两次: {merged}"
+        );
+        assert!(
+            !merged.contains("b=2"),
+            "冲突键的 DB 值必须被覆盖: {merged}"
+        );
+    }
+
+    /// P1-2 端到端：DB Cookie 与规则 Cookie 头同时存在时，请求实际携带的是
+    /// 按键合并（规则优先）后的结果，而非 DB 整体替换。
+    #[tokio::test]
+    async fn test_cookie_merge_rule_priority_e2e_p1_2() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        // 最小 HTTP 服务器：读请求头，将收到的 Cookie 头原样回显为响应体
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                let mut head: Vec<u8> = Vec::new();
+                loop {
+                    let mut b = [0u8; 1];
+                    let n = match sock.read(&mut b).await {
+                        Ok(n) => n,
+                        Err(_) => return,
+                    };
+                    if n == 0 {
+                        return;
+                    }
+                    head.push(b[0]);
+                    if head.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let head_str = String::from_utf8_lossy(&head).to_string();
+                let cookie_value = head_str
+                    .lines()
+                    .find(|l| l.to_lowercase().starts_with("cookie:"))
+                    .map(|l| {
+                        l.split_once(':')
+                            .map(|(_, v)| v)
+                            .unwrap_or("")
+                            .trim()
+                            .to_string()
+                    })
+                    .unwrap_or_default();
+                let body = format!("Cookie: {cookie_value}");
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                if sock.write_all(resp.as_bytes()).await.is_err() {
+                    return;
+                }
+                let _ = sock.shutdown().await;
+            }
+        });
+
+        // 预置 DB Cookie（IP 域名键为 127.0.0.1）
+        let persistence = Arc::new(MockPersistence::default());
+        persistence.save("127.0.0.1", "dbcookie=fromDB; dbonly=dbvalue");
+        let client = LegadoClient::with_cookie_persistence(
+            LegadoClientConfig {
+                no_proxy: true,
+                ..LegadoClientConfig::default()
+            },
+            persistence,
+        )
+        .unwrap();
+
+        // 规则 Cookie 头：与 DB 的 dbcookie 冲突（规则应胜）+ 规则独有键
+        let mut headers = HashMap::new();
+        headers.insert(
+            "Cookie".to_string(),
+            "dbcookie=fromRule; ruleonly=rulevalue".to_string(),
+        );
+
+        let resp = client
+            .get(&format!("http://{addr}/"), Some(headers))
+            .await
+            .expect("请求回显 Cookie 服务器失败");
+        let body = resp.body.as_str();
+        assert!(
+            body.contains("dbcookie=fromRule"),
+            "同键冲突应规则 Cookie 胜: {body}"
+        );
+        assert!(
+            !body.contains("dbcookie=fromDB"),
+            "DB 同名 Cookie 应被规则覆盖: {body}"
+        );
+        assert!(
+            body.contains("ruleonly=rulevalue"),
+            "规则独有 Cookie 应保留: {body}"
+        );
+        assert!(
+            body.contains("dbonly=dbvalue"),
+            "DB 非冲突 Cookie 应保留: {body}"
+        );
+    }
+
+    /// P3-4 钉死：非 Cookie 自定义头（Referer/X-*）经 `apply_headers_and_cookies`
+    /// 仍原样到达服务端；UA="null" 不下发（保留旧拦截器语义，防合并重构误伤）
+    #[tokio::test]
+    async fn test_custom_headers_preserved_and_null_ua_skipped() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        // 最小 HTTP 服务器：把收到的请求头整体回显为响应体
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            if let Ok((mut sock, _)) = listener.accept().await {
+                let mut head: Vec<u8> = Vec::new();
+                loop {
+                    let mut b = [0u8; 1];
+                    let n = match sock.read(&mut b).await {
+                        Ok(n) => n,
+                        Err(_) => return,
+                    };
+                    if n == 0 {
+                        return;
+                    }
+                    head.push(b[0]);
+                    if head.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let body = String::from_utf8_lossy(&head).to_string();
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                if sock.write_all(resp.as_bytes()).await.is_err() {
+                    return;
+                }
+                let _ = sock.shutdown().await;
+            }
+        });
+
+        let client = LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
+
+        // 自定义头：Referer / X-* 必须到达；UA="null" 必须被跳过（不下发字面 "null"）
+        let mut headers = HashMap::new();
+        headers.insert(
+            "Referer".to_string(),
+            "https://referer.example/".to_string(),
+        );
+        headers.insert("X-Custom".to_string(), "v1".to_string());
+        headers.insert("user-agent".to_string(), "null".to_string());
+
+        let resp = client
+            .get(&format!("http://{addr}/"), Some(headers))
+            .await
+            .expect("请求回显服务器失败");
+        let body = resp.body.to_ascii_lowercase();
+        assert!(
+            body.contains("referer: https://referer.example/"),
+            "Referer 自定义头应到达: {}",
+            resp.body
+        );
+        assert!(
+            body.contains("x-custom: v1"),
+            "X-* 自定义头应到达: {}",
+            resp.body
+        );
+        assert!(
+            !body.contains("user-agent: null"),
+            "UA=\"null\" 不应下发（沿用旧拦截器跳过语义）: {}",
+            resp.body
+        );
     }
 }
