@@ -599,3 +599,47 @@ B2-C1 ✅ 2.0.265（发现源卡单列列表行 P1 闭环；漏斗状态着色�
 
 修订：ZCode（本机 27B 通道）｜ 2026-09-21（**3-1「我的」屏 Web 服务卡启用态强调色变更**：iOS 系统绿 → `colorScheme.primary`，随 `app_colors.dart` 整体删除（队列③ A-5，提交 `14752aba63`）；该屏我方截图仍待补采（本表 3-1 行 ✅待补），补采时须一并复验此色变；另：3-7 行 N6 已按用户裁决登记为"保留页面、入口收起"）
 修订：ZCode ｜ 2026-09-23（**08 屏 P2-21 在读/最新/共N章三行块修正入表**：off-by-one 修复 + 双基准形态对齐，实机双场景验证通过，证据 `docs/parity_shots/verify_ui_20260922/b8_*`；批七「状态词绿色 0xFF4CAF50」口径修订为主题角色色）
+
+## 08 元信息区对齐修订（2026-09-22，双基准重裁决，**修订节——只追加、不改写历史**）
+
+**性质**：本节对 U5/U9/U10/U11（及 U12/批三 L480 相关表述）按三份权威证据做**修订裁决**，历史条目原文保留、以「原表述 X，实为 Y，依据 …」逐条纠正。
+
+**权威证据（三份）**：
+- **A. 浅底截图** `docs/parity_shots/ref_20260914/08_book_info.png`：元素序 = 封面/书名/作者/来源 → **chips 行「奇幻玄幻」「142.20万字」** → 四按钮卡 → 「在读 · …」（加粗）→ 「最新 · …」→ 「共 711 章 ｜ 未读」→ 简介 → 右下浮动「阅读」按钮；**无独立目录行、无分组行、无 🏷️ 行**；
+- **B. 深色 dump** `docs/parity_shots/ref_dark_20260920/08_book_info.xml`（非空文本节点，文档序 + bounds）：`斗罗大陆`[432,569] → `唐家三少`[432,670] → `📁瀚海书阁`[432,744] → **`奇幻玄幻`[72,998][242,1059]、`142.20万字`[314,998][534,1059]（chips 行两 chip 同 y 带 998-1059）** → 四按钮卡 `已在书架`/`查看目录`[340,1239]/`书源`/`阅读记录`（y1239-1291）→ `在读 · 引子 穿越的唐家三少`[48,1375] → `最新 · 第二百三十六章 大结局，最后一个条件（全书完）`[48,1459] → `共 711 章`[48,1596] + `|`[235,1592] + `已读 1 章`[270,1596] → 简介正文[48,1712]；**「目录：」「分组：」「未分组」「🏷️」0 命中，无任何「·」连接聚合串（无评分/状态词）**；
+- **C. 参考源码**（`D:\tmp\md3_ref_legado`，HapeLee/legado-with-MD3）：`BookInfoScreen.kt` **L1068-1070** `if (highlightedTags.isNotEmpty()) { HighlightTagRow(...) }`（用户高亮规则行，非 🏷️ 标签行）、**L1071-1102** chips 行 `LazyRow(spacedBy 8.dp + fadingEdge)`：① 分组 chip `groupNames?.takeIf{it.isNotBlank()}?.let{ TextCard(stringResource(R.string.group_s, it)) }`（**条件显示、裸分组名**）② kind chips `itemsIndexed(items = kindLabels)` 逐项 TextCard（`surfaceContainer` 底 + `onSurfaceVariant` 字、labelLargeEmphasized，**无 clickable——参考 chip 不可交互**）、**L1107+** 四按钮卡（含「查看目录」）、**L1223-1314** `BookInfoSummary`（`toc_s`「在读 · %s」L1241 / `lasted_show`「最新 · %s」L1246 / `read_chapter_total`「共 %d 章」L1256 + `|` + when{未读/已读完/`read_chapter_index`「已读 %d 章」N=durChapterIndex+1} L1256-1269）；`BookInfoViewModel.kt` **L949-969**（`groupNames = bookGroupRepository.getGroupNames(book.group).joinToString(",").ifBlank{null}`；kindLabels = `getDisplayTagList()` 经 `highlightTagRuleRepository.getEnabled()` 规则拆分后的 regular 部分）；`BookExtensions.kt` **L149-150**（`getDisplayTagList = (customTag + kind).splitNotBlank(",","\n").distinct()`）；`values-zh-rCN/strings.xml` **L753** `group_s=%s`（**无「分组：」前缀**）、L754 `toc_s=在读 · %s`、L127 `lasted_show=最新 · %s`、L1643-1644「共 %d 章/已读 %d 章」；`HighlightTagRow.kt`（`ui/widget/components/card/`）= 用户高亮规则驱动，规则未启用/未命中时整行不渲染。
+
+### 逐条裁决（原表述 X，实为 Y，依据 …）
+| # | 原表述（台账位置） | 实为（修订裁决） | 依据 |
+|---|---|---|---|
+| 1 | **U5**（L449/455/460；E1 L499/509）：「参考有『评分 · 类型 · 章数 · 字数 · 完结态』信息聚合行（· 连接），应补齐」 | 参考 08 **无「·」连接聚合行**——kind/字数以 **chips 行独立 chip** 呈现，章数由「共 N 章」行承载；2.0.277 补的 `_buildAggregationLine`（· 连行）为误形态，本修订整体替换为参考 chips 行 | A（截图 chips 行=「奇幻玄幻」「142.20万字」两个独立 chip，非连排串）；B（两 chip 同 y 带 998-1059、全文集无「·」连接串/无「N章」项、`共 711 章`[48,1596] 独立成行）；C（L1071-1102 LazyRow 仅 group/kind TextCard，无聚合行 widget） |
+| 2 | **U9**（L468/472）：「参考 = 🏷️ 逗号连排标签行，标签行形态亦需对齐（🏷️ 前缀+逗号连排）」 | 参考 08 **无 🏷️ 标签行**——kind 信息即 chips 行 kind chips（逐项独立 chip、无 🏷️ 前缀、无独立标签行 widget）；参考 `HighlightTagRow`（L1068-1070）是**用户高亮规则行**（`getEnabled()` 规则驱动、非空才渲染；两份参考工件中均未出现），≠「🏷️ 标签行」；我方无规则系统，不引入 | A/B（两工件「🏷️」字符 0 命中）；C（L1068-1070 条件渲染 + L1071-1102 chips 行 + `HighlightTagRow.kt` 语义 + values-zh-rCN 无 🏷️ 字符串） |
+| 3 | **U10**（L484/489）：「三行块整体移至四按钮卡下方（sliver 序 ①信息聚合行 → ②四按钮卡 → ③三行块）」 | 位置裁决**成立**（参考三行块在四按钮卡下方）；误处=「①信息聚合行」——参考 08 ① 位是 **chips 行**（分组/kind/字数 chip），非「·」连接聚合行 | A（「在读 · …」行在四按钮卡之下）；B（在读 y1375 > 四按钮卡 y1239-1291；chips 行 y998-1059 在四按钮卡之上）；C（L1071-1102） |
+| 4 | **U11**（L485/490；连带 E3 L501「🏷️ 标签行：参考有（连排）」）：「标签行（🏷️ 前缀连排）按参考置于在读/最新之后、简介之前」 | 参考 08 **无 🏷️ 标签行**（同 #2）；且参考 chips 行位置在**四按钮卡之前**（封面/标题/作者/来源 之后紧邻），并非「在读/最新之后、简介之前」→ 本修订移除 🏷️ 行、chips 行按参考位置置于四按钮卡前 | A（chips 行元素序在四按钮卡之前）；B（chips y998-1059 < 四按钮卡 y1239）；C（L1071-1102 位于 `BookInfoHeader` 信息列内、`BookInfoActions` 之前） |
+| 5 | **U12**（L486/491）：「分组/目录行（参考此屏未现；upstream 有）→ 置简介之后（upstream 能力保留）」 | 参考 08 **无独立分组行、无独立目录行**：目录入口=四按钮卡内「查看目录」按钮；分组信息=chips 行**条件分组 chip**（裸名、无「分组：」前缀、无「未分组」兜底）→ 本修订移除独立分组/目录行，目录入口保留四按钮卡（功能不丢），分组信息收编 chips 行 | B（「分组：」「目录：」「未分组」0 命中；`查看目录`[340,1239] 在四按钮卡 y 带内）；A（四按钮卡含「查看目录」，无其他目录/分组行）；C（L1080-1088 `groupNames?.takeIf{it.isNotBlank()}?.let{…}` + L753 `group_s=%s`；L1107+ 四按钮卡） |
+| 6 | **批三 L480**：「参考顺序：信息行『评分·类型·N章·N字·完结态』→ 四按钮 → 在读·第X章/最新·第N章/共N章｜状态 → 标签（🏷️ 前缀连排）→ 简介 →（分组/目录行居后）」 | 参考顺序（修订口径）：封面/书名/作者/来源 → **chips 行（分组 chip 条件 + kind chips + 字数 chip）** → 四按钮（含「查看目录」）→「在读 · {标题}」（加粗）→「最新 · {标题}」→「共 N 章｜未读/已读 N 章/已读完」→ 简介 → 右下「阅读」FAB；无 🏷️ 行、无分组/目录行、无「·」连接信息行 | A/B/C（同上各行） |
+
+### 本次改动清单（2026-09-22，纯 Dart，未动 Rust/设备）
+- `flutter_legado/lib/src/screens/book_info_screen_builders.part.dart`：① 移除独立「目录：」行（`_buildTocSummaryText`/`_resolveTocTitle` 及「已读 X%」后缀；「查看目录」按钮保留于四按钮卡）② 移除独立「分组：」行（含「未分组/本地未分组」兜底文案）③ 移除 🏷️ 标签行 `_buildTagLine` ④ `_buildKindChipRow` 重构为参考 chips 行形态：分组 chip（条件、裸名、多组逗号连排单 chip）+ kind chips（逐项；tap=`_openSearch(kind, sourceUrl, event:'clickBookLabel')`、long-press=`_sourceCallBackLabel('longClickBookLabel', kind)`——参考 chip 无手势，此为功能保留超集）+ 字数 chip（`isMeaningfulText` 守卫）；**无章数 chip**（章数归「共 N 章」行）；几何按参考 TextCard 量化（`surfaceContainer` 底 + `onSurfaceVariant` 字、14sp w500、padding h8/v4、圆角 8dp、chip 间距 8dp、横向滚动）⑤ `_buildSummaryPanel` 收敛为仅简介面板（四按钮卡、三行块 P2-21 口径不动）
+- `flutter_legado/lib/src/screens/book_info_screen_load.part.dart`：删 `_isWebFileBook`（唯一消费方=目录行 webFile 隐藏）；`_tocLoading` 保留（加载流/首屏骨架用）
+- `flutter_legado/lib/src/screens/book_info_screen.dart`：删未用 `book_progress_utils` import（工具本体与单测保留，`book_list_item.dart` 仍在用）
+- 测试：新增 `flutter_legado/test/widget/book_info_meta_rows_test.dart`（5 项：无「目录：」「分组：」「🏷️」行 + chips 行无章数项 + 「共 711 章」承载 / 有分组显裸分组名 chip（无「分组：」前缀）/ 无分组不显（无「未分组」、kind chip 不丢）/ chips 行无章数 chip / kind chip tap→push 搜索页 + long-press→`sourceCallBackBtn(event:'longClickBookLabel')` verify）；同步 `test/widget/screens_coverage_batch1_test.dart`：目录行测试→「目录入口仅『查看目录』卡」（断言无「目录：」行、不内嵌章节列表）、「目录行显示已读进度百分比」测试删除（功能移除，见下裁决项）、版块顺序测试→「chips<四按钮<在读/最新<简介（无目录/分组/标签行）」y 序断言、U13 标签行横排→chips 行横排（9 项同行、无数据丢失）
+
+### 功能入口去向（功能不丢清单，末项主代理裁决）
+| 原入口 | 新去向 | 评估 |
+|---|---|---|
+| 「目录：」行（当前章节名 + 查看目录按钮） | 四按钮卡「查看目录」（同一 `_openTocScreen` 处理器） | 不丢 |
+| 「分组：」行（分组名/未分组兜底） | chips 行分组 chip（条件显示）+ ⋮ 菜单「设置分组」 | 不丢 |
+| 🏷️ 标签行（逐 tag 点击搜索 / 长按 JS 回调） | kind chips tap/long-press（手势原样保留；参考 chip 无手势，我方为超集） | 不丢 |
+| 「已读 X%」百分比显示（目录行后缀） | **移除，无替代入口**（阅读进度由「共 N 章」行「已读 N 章」状态词部分覆盖，百分比数字不再显示） | ⚠️ 主代理裁决项 |
+
+### report-only 差异（不改码，登记）
+1. 参考 chips 行 `LazyRow + fadingEdge`，我方 `SingleChildScrollView + Row`（同形态，仅缺滚动边缘渐隐）；
+2. 参考 kind chips 不可交互（TextCard 无 clickable），我方保留 tap/long-press（功能保留超集，见上表）；
+3. 参考字数 chip 源自书源 kind 字符串切分（B：「142.20万字」与「奇幻玄幻」同 chips 行），我方为独立 `Book.wordCount` 字段（书源数据模型差异，呈现结果等价）；
+4. 参考分组 chip 为 `joinToString(",")` 单条，我方一致（单 chip 逗号连排）；
+5. 参考 `HighlightTagRow` 用户高亮规则行（L1068-1070）我方无对应规则系统，未实现（upstream 能力缺口，超出 08 屏本次范围）；
+6. P2-21 遗留（三行左缘 13dp vs 参考 16dp 等）不受本修订影响，维持现状。
+
+**验证（门禁，2026-09-22）**：`flutter analyze` No issues found；`flutter test` 全过（**1617**，含 `book_info_meta_rows` 5 项新增 + batch1 同步）；本任务未运行 Rust 构建/未在设备操作（实机视觉复验由主代理另派 UI-operator）。
+- 签名：全栈工程师子代理，2026-09-22（修订节，版本不递增）

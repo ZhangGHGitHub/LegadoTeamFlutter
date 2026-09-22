@@ -177,95 +177,59 @@ void main() {
       expect(find.textContaining('测试作者'), findsWidgets);
     });
 
-    // [UI-fix v2.0.6 | 2026-08-08] 对齐原版：详情页目录行只显示当前章节名 +
-    // 「查看目录」按钮，不再内嵌完整章节列表（列表移至独立 TocScreen） — Qoder
-    testWidgets('目录行显示当前章节名与「查看目录」按钮（不内嵌章节列表）',
+    // [08 元信息区对齐 | 台账 0922 修订] 独立「目录：」行已移除（参考 08
+    // 无此行）：目录入口仅保留四按钮「查看目录」卡；详情页仍不内嵌完整
+    // 章节列表（列表在独立 TocScreen）；章数由「共 N 章」行承载
+    testWidgets('目录入口仅「查看目录」卡（独立目录行已移除，不内嵌章节列表）',
         (tester) async {
       when(() => mockApi.getBook(any())).thenAnswer((_) async => book);
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => const [
             BookChapter(bookUrl: 'https://src.com/book/1', index: 0, title: '第一章 开端'),
             BookChapter(bookUrl: 'https://src.com/book/1', index: 1, title: '第二章 发展'),
           ]);
+      when(() => mockApi.getBookGroups()).thenAnswer((_) async => const []);
+      when(() => mockApi.getBooks()).thenAnswer((_) async => const []);
 
       await tester.pumpWidget(wrap(const BookInfoScreen(book: book)));
       await tester.pumpAndSettle();
 
-      // 书详页头部较高（居中封面卡 + 信息面板），目录行在首屏外，先滚动
-      // [P2-21] 在读行同显「在读 · 第一章 开端」，目录行带「目录：」前缀
-      // 精确匹配取唯一
-      final tocRow = find.textContaining('目录：第一章 开端');
-      await tester.dragUntilVisible(
-        tocRow,
-        find.byType(CustomScrollView),
-        const Offset(0, -300),
-      );
-      await tester.pumpAndSettle();
-
-      // 目录行对齐原版：显示当前章节名（durChapterIndex=0 → 第一章）+「查看目录」按钮
-      // [PARITY C1 D2] 操作区四图标卡亦含「查看目录」卡（卡 + 目录行各一，共 2 处）
-      expect(tocRow, findsWidgets);
-      expect(find.text('查看目录'), findsWidgets);
-      // [PARITY C1 D4] 原「在读/最新/目录」三行（末章标题在「最新」行）改为
-      // 单行「共 N 章｜未读/已读」：不再渲染末章标题「第二章 发展」，
-      // 改为断言 D4 单行（totalChapterNum 缺省回落目录长度 2、
-      // durChapterIndex=0 → 未读），且仍不内嵌完整章节列表
+      // 独立「目录：」行不再渲染；目录入口唯一（四按钮卡）
+      expect(find.textContaining('目录：'), findsNothing);
+      expect(find.text('查看目录'), findsOneWidget);
+      // 原「已读: X%」进度显示随目录行移除（台账 0922 功能入口去向登记）
+      expect(find.textContaining('已读:'), findsNothing);
+      // 仍不内嵌完整章节列表；末章标题不渲染
       final list = find.descendant(
         of: find.byType(CustomScrollView),
         matching: find.byType(ListView),
       );
       expect(list, findsNothing);
       expect(find.textContaining('第二章 发展'), findsNothing);
-      expect(find.textContaining('共 2 章'), findsWidgets);
-    });
-
-    // 对齐原版 resolveBookInfoReadProgress：目录行附加「已读: X%」— Cursor UI
-    testWidgets('目录行显示已读进度百分比', (tester) async {
-      const bookWithProgress = Book(
-        bookUrl: 'https://src.com/book/1',
-        name: '测试书籍',
-        author: '测试作者',
-        origin: 'https://src.com',
-        originName: '测试源',
-        totalChapterNum: 11,
-        durChapterIndex: 5,
-        durChapterTitle: '第六章',
-      );
-      when(() => mockApi.getBook(any()))
-          .thenAnswer((_) async => bookWithProgress);
-      when(() => mockApi.getChapters(any())).thenAnswer((_) async => const [
-            BookChapter(
-                bookUrl: 'https://src.com/book/1', index: 5, title: '第六章'),
-          ]);
-
-      await tester.pumpWidget(wrap(const BookInfoScreen(book: bookWithProgress)));
-      await tester.pumpAndSettle();
-
-      final progressRow = find.textContaining('已读: 50%');
-      await tester.dragUntilVisible(
-        progressRow,
-        find.byType(CustomScrollView),
-        const Offset(0, -300),
-      );
-      await tester.pumpAndSettle();
-      expect(progressRow, findsWidgets);
+      // 章数由「共 N 章」行承载（totalChapterNum 缺省回落目录长度 2、
+      // durChapterIndex=0 → 未读）
+      expect(find.textContaining('共 2 章'), findsOneWidget);
+      expect(tester.takeException(), isNull);
     });
 
     testWidgets('目录为空时点击「查看目录」提示目录为空', (tester) async {
       when(() => mockApi.getBook(any())).thenAnswer((_) async => book);
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => []);
+      when(() => mockApi.getBookGroups()).thenAnswer((_) async => const []);
+      when(() => mockApi.getBooks()).thenAnswer((_) async => const []);
 
       await tester.pumpWidget(wrap(const BookInfoScreen(book: book)));
       await tester.pumpAndSettle();
 
-      // [PARITY C1 D2] 「查看目录」现为 2 处（操作区图标卡 + 目录行按钮，
-      // 同一 _openTocScreen 处理器，空目录均弹「目录为空」），取首个
+      // [台账 0922 修订] 独立目录行移除后「查看目录」唯一（四按钮卡），
+      // 直接定位；空目录点卡弹「目录为空」
+      expect(find.text('查看目录'), findsOneWidget);
       await tester.dragUntilVisible(
-        find.text('查看目录').first,
+        find.text('查看目录'),
         find.byType(CustomScrollView),
         const Offset(0, -300),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.text('查看目录').first);
+      await tester.tap(find.text('查看目录'));
       await tester.pumpAndSettle();
       expect(find.text('目录为空'), findsOneWidget);
     });
@@ -324,19 +288,20 @@ void main() {
       expect(find.text('收起'), findsNothing);
     });
 
-    // [U10/U11/U12 | 台账 0917 批三] 详情页版块顺序（对齐参考 08）：
-    // ①信息聚合行 → ②四按钮 → ③在读/最新/共N章三行块 → ④标签行 →
-    // ⑤简介 → ⑥分组/目录行。以各版块文本节点 y 坐标断言纵向顺序
-    // （四按钮 y < 在读 y < 标签 y < 简介 y < 分组/目录行 y）
-    testWidgets('版块顺序：四按钮<在读/最新<标签<简介<分组/目录行',
+    // [08 元信息区对齐 | 台账 0922 修订] 详情页版块顺序（对齐参考 08 元素集）：
+    // ① chips 行（kind chips + 字数，分组 chip 条件显示）→
+    // ② 四按钮卡 → ③ 在读/最新/共N章三行块 → ④ 简介（面板内）。
+    // 参考 08 无独立「目录：」行、「分组：」行、「🏷️ 标签行」——去噪后
+    // 以各版块文本节点 y 坐标断言纵向顺序
+    // （chips y < 四按钮 y < 在读 y < 简介 y），并断言三行均不渲染
+    testWidgets('版块顺序：chips<四按钮<在读/最新<简介（无目录/分组/标签行）',
         (tester) async {
       // 高视口保证全部版块同帧布局（CustomScrollView 视口外 sliver 不构建）
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 3.0;
       addTearDown(tester.view.resetPhysicalSize);
       addTearDown(tester.view.resetDevicePixelRatio);
-      // 数据齐备：聚合行（评分/类型/章数/字数/完结态）+ 在读/最新/共N章 +
-      // 标签行 + 简介 + 分组/目录行 全渲染
+      // 数据齐备：chips 行（kind 逐项 + 字数）+ 在读/最新/共N章 + 简介 全渲染
       const orderBook = Book(
         bookUrl: 'https://src.com/book/order',
         name: '序书',
@@ -364,45 +329,44 @@ void main() {
       await tester.pumpWidget(wrap(const BookInfoScreen(book: orderBook)));
       await tester.pumpAndSettle();
 
-      // ① 聚合行在屏（并入 ① 信息行位，参考只现一次）
-      expect(find.textContaining('9.9分 · 轻小说 · 51章'), findsOneWidget);
-      // ② 四按钮（卡内「查看目录」与面板目录行按钮各一处，取更靠上者=卡）
-      final yButtons = [
-        tester.getTopLeft(find.text('查看目录').first).dy,
-        tester.getTopLeft(find.text('查看目录').last).dy,
-      ].reduce((a, b) => a < b ? a : b);
-      // ③ 在读/最新/共N章三行块（U9 能力保留，置于四按钮之后）
-      // [P2-21] 形态对齐双基准：在读行「在读 · {存储标题}」（无「第N章」
-      // 前缀，orderBook 存储值=「第一章 开端」优先于目录回落）、
-      // 最新行「最新 · {latestChapterTitle}」
+      // ① chips 行在屏（kind 逐项成 chip + 字数 chip；chips 无章数项）
+      expect(find.text('9.9分'), findsOneWidget);
+      expect(find.text('轻小说'), findsOneWidget);
+      expect(find.text('120万字'), findsOneWidget);
+      expect(find.text('51章'), findsNothing);
+      // ② 四按钮（独立目录行移除后「查看目录」唯一，即卡内一处）
+      expect(find.text('查看目录'), findsOneWidget);
+      final yButtons = tester.getTopLeft(find.text('查看目录')).dy;
+      // ③ 在读/最新/共N章三行块（[P2-21] 形态对齐参考：在读行
+      // 「在读 · {存储标题}」、最新行「最新 · {latestChapterTitle}」）
       final yReading = tester
           .getTopLeft(find.textContaining('在读 · 第一章 开端')).dy;
       expect(find.textContaining('最新 · 第五十一章 完结'), findsOneWidget);
       expect(find.textContaining('共 51 章'), findsOneWidget);
-      // ④ 标签行（🏷️ 前缀连排，U11 移入面板首行：在读块之后、简介之前）
-      final yTags = tester.getTopLeft(find.text('🏷️ ')).dy;
-      // ⑤ 简介 / ⑥ 分组行 / 目录行（U12：分组/目录行置简介之后）
-      // 简介经 AnimatedCrossFade 双 Text 同位（折叠/展开各一，视觉同 y），取 .first
+      // ④ 简介（展开态双 Text 同位，取 .first）
       final yIntro = tester
           .getTopLeft(find.textContaining('版块顺序验证简介正文。').first)
           .dy;
-      final yGroup = tester.getTopLeft(find.textContaining('分组：')).dy;
-      final yToc = tester.getTopLeft(find.textContaining('目录：')).dy;
 
-      expect(yButtons, lessThan(yReading)); // U10：四按钮在读块之上
-      expect(yReading, lessThan(yTags)); // U10/U11
-      expect(yTags, lessThan(yIntro)); // U11：标签行简介之前
-      expect(yIntro, lessThan(yGroup)); // U12：分组行简介之后
-      expect(yGroup, lessThan(yToc));
+      // 去噪三行均不渲染（目录入口在 ② 卡内、分组信息入 ① chips 行、
+      // kind 信息即 ① chips 行逐项）
+      expect(find.textContaining('目录：'), findsNothing);
+      expect(find.textContaining('分组：'), findsNothing);
+      expect(find.textContaining('🏷️'), findsNothing);
+
+      final yChips = tester.getTopLeft(find.text('9.9分')).dy;
+      expect(yChips, lessThan(yButtons)); // ① 在 ② 之上
+      expect(yButtons, lessThan(yReading)); // ② 在 ③ 之上
+      expect(yReading, lessThan(yIntro)); // ③ 在 ④ 之上
       expect(tester.takeException(), isNull);
     });
 
-    // [U13 | 台账 0917 反馈批四] 标签行横排连排回归守卫：2.0.279 用户实测
-    // 「每个标签独占一行竖排」（根因见 2.0.280 台账行——该截图为旧构建产物，
-    // 当前代码即 U9「🏷️ 前缀 + 逗号连排 Wrap 横向自动换行」形态）。断言：
-    // 全部标签在屏（勿丢数据）+ 相邻标签同行（|Δy|≤2，验收 |Δy|≤20）+
-    // 标签总行数 ≤2（横排自动换行，竖排=9 行必失败）
-    testWidgets('U13 标签行横排连排：标签同行非竖排且无数据丢失', (tester) async {
+    // [08 元信息区对齐 | 台账 0922 修订] chips 行横排回归守卫（U13 标签行
+    // 后续）：原「🏷️ 前缀 + 逗号连排」标签行已移除（参考 08 无此行），
+    // kind 信息改由 chips 行逐项渲染（每 kind 一枚 TextCard 形态 chip，
+    // 横向单行滚动、不竖排）。断言：全部 kind 在屏（勿丢数据）+
+    // 相邻 chip 同行（|Δy|≤2）+ 整行仅占 1 个纵向行（非竖排 9 行）
+    testWidgets('chips 行横排连排：chip 同行非竖排且无数据丢失', (tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 3.0;
       addTearDown(tester.view.resetPhysicalSize);
@@ -428,22 +392,23 @@ void main() {
         '奇幻', '武侠', '历史', '都市', '科幻',
         '悬疑', '游戏', '其他', '言情',
       ];
-      // 勿丢数据：9 个标签 + 🏷️ 前缀全部渲染
-      expect(find.text('🏷️ '), findsOneWidget);
+      // 🏷️ 前缀标签行已移除；9 个 kind chip 全部渲染（勿丢数据）
+      expect(find.textContaining('🏷️'), findsNothing);
       for (final t in tags) {
-        expect(find.text(t), findsOneWidget, reason: '标签 $t 缺失');
+        expect(find.text(t), findsOneWidget, reason: 'chip $t 缺失');
       }
       // 横排连排：「奇幻」「武侠」同行（|Δy|≤2，严于验收 |Δy|≤20）
       final yA = tester.getTopLeft(find.text('奇幻')).dy;
       final yB = tester.getTopLeft(find.text('武侠')).dy;
       expect((yA - yB).abs(), lessThanOrEqualTo(2),
-          reason: '相邻标签必须同行（横排连排，非竖排）');
-      // 非竖排：全部标签占据的不同行数 ≤2（超宽自动换行），竖排=9 行
+          reason: '相邻 chip 必须同行（横排连排，非竖排）');
+      // 非竖排：全部 chip 同处 1 个纵向行（横向单行滚动；
+      // 竖排=9 行、多行换行=2+ 行均失败）
       final ys = tags
           .map((t) => tester.getTopLeft(find.text(t)).dy)
           .toSet();
-      expect(ys.length, lessThanOrEqualTo(2),
-          reason: '标签应横向自动换行（≤2 行），不应每标签独占一行竖排');
+      expect(ys.length, equals(1),
+          reason: 'chips 行应横向单行滚动，不应每 chip 独占一行竖排');
       expect(tester.takeException(), isNull);
     });
 

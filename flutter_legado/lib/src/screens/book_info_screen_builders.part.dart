@@ -7,6 +7,57 @@ part of 'book_info_screen.dart';
 // 本文件所有方法均运行于 State 自身（this），受保护访问语义安全。
 // ignore_for_file: invalid_use_of_protected_member
 
+/// [08 元信息区对齐 | 台账 0922 修订] chips 行单项数据（分组/kind/字数）
+class _MetaChipSpec {
+  const _MetaChipSpec({
+    required this.text,
+    this.onTap,
+    this.onLongPress,
+  });
+  final String text;
+  final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+}
+
+/// [08 元信息区对齐 | 台账 0922 修订] chips 行单项（参考 TextCard 观感）：
+/// surfaceContainer 底 + onSurfaceVariant 字、圆角 8dp、内边距 横8/纵4、
+/// 14sp w500（参考 labelLargeEmphasized=labelLarge+Medium）；
+/// 可选点击/长按手势（kind chip 承载原标签行的搜索/JS 回调入口）
+class _MetaChip extends StatelessWidget {
+  const _MetaChip({required this.spec});
+  final _MetaChipSpec spec;
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    final ts = Theme.of(context).textTheme;
+    final chip = Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: cs.surfaceContainer,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        spec.text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: ts.labelLarge?.copyWith(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: cs.onSurfaceVariant,
+        ),
+      ),
+    );
+    if (spec.onTap == null && spec.onLongPress == null) return chip;
+    return GestureDetector(
+      onTap: spec.onTap,
+      onLongPress: spec.onLongPress,
+      behavior: HitTestBehavior.opaque,
+      child: chip,
+    );
+  }
+}
+
 extension _BookInfoBuilders on _BookInfoScreenState {
 
   /// 页面主体：封面背景三档（off/off_for_default/on）+ seed 渐变 —— 内容叠层
@@ -661,11 +712,15 @@ extension _BookInfoBuilders on _BookInfoScreenState {
 
   Widget _buildBody(BuildContext context, Book book, List<BookChapter> chapters) {
     final cs = Theme.of(context).colorScheme;
-    // [U10/U11/U12 | 台账 0917 批三] 版块顺序对齐参考 08：
-    // ①信息聚合行 → ②四按钮卡 → ③在读/最新/共N章三行块 → ④标签行 →
-    // ⑤简介 → ⑥分组/目录行（标签行置顶信息面板首行、分组/目录行后移至
-    // 简介之后；聚合行并入 ① 信息行只现一次，U9 在读/最新与 U5 聚合行
-    // 两处能力均保留）
+    // [08 元信息区元素集对齐 | 台账 0922 修订] 版块顺序对齐参考 08：
+    // ① chips 行（分组 chip 条件显示 + kind chips + 字数，TextCard 观感）→
+    // ②四按钮卡 → ③在读/最新/共N章三行块 → ④简介（面板内）。
+    // 参考 08 无独立「目录：」行、「分组：」行、「🏷️ 标签行」——三行均已
+    // 移除/收编：分组信息入 ① chips 行（仅当书有非空分组；无分组不显示
+    // 「未分组」，参考 groupNames 非空才渲染分组 chip）；目录入口保留于
+    // ②「查看目录」卡；kind 信息即 ① chips 行逐项（原 🏷️ 行承载的逐 tag
+    // 点击搜索/长按 JS 回调迁至 chip 手势，功能不丢）。章数不入 chips，
+    // 由 ③「共 N 章」行承载（参考同源：章数只出现在共 N 章行）。
     final kinds = _buildKindLabels(book);
     // [UI-fix v2.0.6 | 2026-08-08] 移除详情页内嵌「搜索章节」框与完整章节列表，
     // 对齐原版 activity_book_info（详情页不含目录列表，目录由 tv_toc_view 跳转
@@ -748,11 +803,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         // 头部两栏（封面左置 110×160 + 信息右置；[U10-U12] 版块顺序重排后
         // 头部仅保留两栏，标签行/在读最新块/聚合行按参考序独立成 sliver）
         SliverToBoxAdapter(child: _buildHeader(context, book, chapters)),
-        // [U10 | 台账 0917 批三] ① 信息聚合行「评分 · 类型 · N章 · N字 · 完结态」
-        //（U5 聚合行并入 ① 信息行位，参考 08 只现一次；缺项省略、整行无
-        // 数据不渲染，位置不变仍在头部与四按钮之间）
+        // [08 元信息区对齐 | 台账 0922 修订] ① chips 行：分组 chip（条件）+
+        // kind chips + 字数 chip（对标参考 BookInfoHeader LazyRow/TextCard；
+        // 整行无数据不渲染；章数项已去除——由 ③「共 N 章」行承载）
         SliverToBoxAdapter(
-          child: _buildAggregationLine(context, book, kinds, chapters),
+          child: _buildKindChipRow(context, book, kinds),
         ),
         // ② 操作宫格（B1：四宫格：已在书架/查看目录/书源/阅读记录；
         // 「分组」收进 ⋮ 菜单）[PARITY C1 D2] 卡片行紧随 ① 信息行
@@ -778,11 +833,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         // 无数据时整段隐藏=缺省降级）
         ..._buildCharactersSection(context, book),
         ..._buildRelatedBooksSection(context, book),
-        // ④ 标签行 → ⑤ 简介 → ⑥ 分组/目录行（[U11/U12 | 台账 0917 批三]
-        // 标签行置顶面板首行、分组/目录行后移至简介之后；书名/作者/来源
-        // 两栏区在 _buildHeader）
+        // ④ 简介面板（[08 元信息区对齐 | 台账 0922 修订] 原 ④ 标签行 /
+        // ⑥ 分组行 / 目录行已移除或收编入 ① chips 行，面板内仅余简介；
+        // 书名/作者/来源两栏区在 _buildHeader）
         SliverToBoxAdapter(
-          child: _buildSummaryPanel(context, book, chapters, kinds),
+          child: _buildSummaryPanel(context, book),
         ),
         // 底部续铺纯色：内容不足一屏时填满剩余视口，避免透出封面虚化层
         SliverFillRemaining(
@@ -1035,99 +1090,66 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     );
   }
 
-  /// [U5 | 台账 0917] 信息聚合行（对齐 ref 08「9.9分 · 轻小说 · 712章 ·
-  /// 298.6万字 · 已完结」）：评分 · 类型 · 章数 · 字数 · 完结态，「·」连接，
-  /// 缺项自动省略、整行无数据不渲染。
-  ///
-  /// 数据源：Book 模型无 score/status 字段——评分/完结态自分类标签解析
-  /// （形如「9.9分」「已完结」的 kind 项），类型取首个非评分/非完结态/
-  /// 非文件大小的 kind 项；章数与章节行同源（totalChapterNum 优先）；
-  /// 字数取 Rust 预格式化 wordCount（「298.6万字」形态）经
-  /// isMeaningfulText 守卫（[U4] 模板残留/NaN 不渲染）。
-  Widget _buildAggregationLine(
-      BuildContext context, Book book, List<String> kinds,
-      List<BookChapter> chapters) {
-    final cs = Theme.of(context).colorScheme;
-    final ts = Theme.of(context).textTheme;
-    String? score;
-    String? type;
-    String? status;
-    for (final kind in kinds) {
-      if (score == null && RegExp(r'^\d+(\.\d+)?\s*分$').hasMatch(kind)) {
-        score = kind;
-        continue;
-      }
-      if (status == null &&
-          RegExp(r'^(已完结|完本|已完本|连载中|暂停更新|停更|断更)$')
-              .hasMatch(kind)) {
-        status = kind;
-        continue;
-      }
-      if (type == null &&
-          // 本地书追加的文件大小项（"2.3 MB"）不是类型
-          !RegExp(r'^\d+(\.\d+)?\s*(B|KB|MB|GB)$').hasMatch(kind)) {
-        type = kind;
-      }
-    }
-    final chapterTotal =
-        book.totalChapterNum > 0 ? book.totalChapterNum : chapters.length;
-    final items = <String>[
-      // [P2-8 环境兼容] `?score` 等为 Dart 3.8 集合简写，本仓库锁定的
-      // analyzer 6.4.1（build_runner 工具链）无法解析，改写为等价 if 守卫；
-      // SDK 侧 lint use_null_aware_elements 要求改回简写，与本工具链冲突，逐行 ignore
-      if (score != null) score, // ignore: use_null_aware_elements
-      if (type != null) type, // ignore: use_null_aware_elements
-      if (chapterTotal > 0) '$chapterTotal章',
-      if (isMeaningfulText(book.wordCount)) book.wordCount!.trim(),
-      if (status != null) status, // ignore: use_null_aware_elements
+  /// [08 元信息区对齐 | 台账 0922 修订] chips 行（对标参考 08
+  /// BookInfoHeader 的 LazyRow/TextCard chips 行）：
+  /// - 分组 chip：仅当书有非空分组时渲染（参考 groupNames 非空才渲染；
+  ///   无分组不显示、不显「未分组」——参考 dump 全书无分组即无该 chip）；
+  ///   分组名取值复用原 `_groupText` 掩码过滤逻辑（bookshelfNotifier 分组
+  ///   ∩ book.group 位掩码），多组以 ',' 连排单 chip（参考 joinToString(",")）
+  /// - kind chips：每个分类标签独立一 chip（参考 kindLabels itemsIndexed，
+  ///   逐 chip 与参考一致；原「评分/类型/完结态」特殊解析取消——参考对
+  ///   kind 原样逐项渲染，如「9.9分」「已完结」亦为普通 chip）；
+  ///   逐 chip 保留原 🏷️ 标签行手势（点击→按 kind 搜索、长按→JS 回调，
+  ///   功能迁自移除的标签行，功能不丢；参考 chip 无手势，此为保留既有
+  ///   入口的等价实现）
+  /// - 字数 chip：Rust 预格式化 wordCount（「142.20万字」形态，参考
+  ///   upKind 将 wordCount 并入 kind 列表成 chip），isMeaningfulText 守卫
+  /// - 章数 chip：去除（参考章数只出现在「共 N 章」行，由 ③ 三行块承载，
+  ///   chips 不再重复）
+  /// chip 形态（参考 TextCard 默认量值）：surfaceContainer 底 +
+  /// onSurfaceVariant 字、圆角 8dp、内边距 横8/纵4、chip 间距 8dp、
+  /// 行左右 13dp（与封面左缘对齐）、超宽横向滚动（参考 LazyRow）
+  Widget _buildKindChipRow(BuildContext context, Book book, List<String> kinds) {
+    final groupNames = _groupNamesFor(book);
+    final chips = <_MetaChipSpec>[
+      if (groupNames.isNotEmpty)
+        _MetaChipSpec(text: groupNames.join(',')),
+      for (final kind in kinds)
+        _MetaChipSpec(
+          text: kind,
+          onTap: () => _openSearch(kind, sourceUrl: book.origin, event: 'clickBookLabel'),
+          onLongPress: () => _sourceCallBackLabel('longClickBookLabel', kind),
+        ),
+      if (isMeaningfulText(book.wordCount))
+        _MetaChipSpec(text: book.wordCount!.trim()),
     ];
-    if (items.isEmpty) return const SizedBox.shrink();
-    // ref 08 量化：12sp 灰（PIL 实测墨色 62-70 灰阶≈onSurfaceVariant）、
-    // 左 22dp（x=66px @3x）、距章节行 8dp
-    // [F1 | 台账 0917 08 批] 面板区聚合行 onSurfaceVariant（wcag 2.08）改
-    // onSurface 高对比（像素断言 ≥4.5:1）；[F2] ref 墨高 38px≈12.7sp → 13sp
+    if (chips.isEmpty) return const SizedBox.shrink();
     return Padding(
-      padding: const EdgeInsets.only(left: 22, top: 8),
-      child: Text(
-        items.join(' · '),
-        style:
-            ts.bodyMedium?.copyWith(fontSize: 13, color: cs.onSurface),
+      padding: const EdgeInsets.fromLTRB(13, 8, 13, 0),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            for (final chip in chips)
+              Padding(
+                padding: const EdgeInsets.only(right: 8),
+                child: _MetaChip(spec: chip),
+              ),
+          ],
+        ),
       ),
     );
   }
 
-  /// [U9 | 台账 0917 批二] 标签行：「🏷️ 标签1, 标签2…」逗号连排自动换行
-  /// （对齐参考 08 形态，替代原竖排 chip：去 chip 底色改纯文本内联连排，
-  /// 超宽自动换行为多行）。每个标签独立挂 点击（对齐原版 lbKind →
-  /// SearchActivity.start(source, kind)）与长按（JS 回调）手势，行为与原
-  /// chip 行一致；本 SDK 无 TapAndHoldGestureRecognizer，故用「纯文本内联 +
-  /// 逐 tag GestureDetector」等价实现（TextSpan 单 recognizer 无法双挂）
-  Widget _buildTagLine(BuildContext context, Book book, List<String> kinds) {
-    final cs = Theme.of(context).colorScheme;
-    final labelStyle = TextStyle(fontSize: 11, color: cs.onSurfaceVariant);
-    final wrap = Wrap(
-      spacing: 0,
-      runSpacing: 2,
-      children: [
-        Text('🏷️ ', style: labelStyle),
-        for (var i = 0; i < kinds.length; i++) ...[
-          GestureDetector(
-            onTap: () => _openSearch(
-              kinds[i],
-              sourceUrl: book.origin,
-              event: 'clickBookLabel',
-            ),
-            onLongPress: () => _sourceCallBackLabel(
-              'longClickBookLabel',
-              kinds[i],
-            ),
-            child: Text(kinds[i], style: labelStyle),
-          ),
-          if (i < kinds.length - 1) Text(', ', style: labelStyle),
-        ],
-      ],
-    );
-    return wrap;
+  /// 分组名（book.group 位掩码 ∩ 书架分组）——原 `_groupText` 的取值逻辑
+  /// 抽出复用；空列表 = 无分组（chips 行不渲染分组 chip，不显示「未分组」）
+  List<String> _groupNamesFor(Book book) {
+    final groups = ref.read(bookshelfNotifierProvider).groups;
+    return groups
+        .where((g) => g.groupId > 0 && (book.group & g.groupId) != 0)
+        .map((g) => g.groupName)
+        .toList();
   }
 
   /// [U9 | 台账 0917 批二][P2-21] 在读/最新两行（对齐参考 08
@@ -1365,18 +1387,13 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     ];
   }
 
-  /// 信息面板（[U11/U12 | 台账 0917 批三] 版块序对齐参考 08：
-  /// ④ 标签行（置顶面板首行，surface 底保证对比）→ ⑤ 简介 →
-  /// ⑥ 分组/目录行（upstream 能力，后移至简介之后）；
+  /// 信息面板（[08 元信息区对齐 | 台账 0922 修订] 对标参考 08
+  /// BookInfoSummary：面板内仅「简介」（参考 08 面板无标签行、无独立
+  /// 分组行/目录行——标签信息已收编进 chips 行、分组信息入 chips 行
+  /// 条件 chip、目录入口保留于四按钮「查看目录」卡）；
   /// 书名/作者/来源两栏区在 _buildHeader，B1 形态对齐）
-  /// — full-stack-engineer + UI
-  Widget _buildSummaryPanel(
-      BuildContext context, Book book, List<BookChapter> chapters,
-      List<String> kinds) {
+  Widget _buildSummaryPanel(BuildContext context, Book book) {
     final cs = Theme.of(context).colorScheme;
-    final isWebFile = _isWebFileBook(book);
-    // 对齐原版 upLoading：加载中 / 失败 / 章节名 + 已读进度 — Cursor UI
-    final tocTitle = _buildTocSummaryText(book, chapters);
     return Container(
       decoration: BoxDecoration(
         color: cs.surface,
@@ -1388,71 +1405,10 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // [U11 | 台账 0917 批三] ④ 标签行：由头部移入面板首行（参考 08 位于
-          // 在读/最新块之后、简介之前；「🏷️ 前缀 + 逗号连排」形态与逐 tag
-          // 点击搜索/长按 JS 回调行为不变；无 kind 不渲染）
-          if (kinds.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: _buildTagLine(context, book, kinds),
-            ),
-          // [U12 | 台账 0917 批三] ⑤ 简介（对标 tv_intro_container +
-          // tv_intro_toggle；upstream 的分组/目录行现置其后）
+          // [08 元信息区对齐 | 台账 0922 修订] ④ 简介（对标参考 BookInfoSummary
+          // 简介段；原「🏷️ 标签行 / 分组：行 / 目录：行」已按参考 08 元素集
+          // 移除/收编——见 _buildKindChipRow 注释与台账 0922 修订节）
           _buildIntro(context, book),
-          // [U12 | 台账 0917 批三] ⑥ 分组行（对标 ic_groups + tv_group，
-          // 展示该书所属分组；upstream 能力保留，仅位置后移）
-          // [PARITY C1 D2] 行内「设置分组」小按钮已移除，并入次级入口：
-          // 顶栏 ⋮ 溢出菜单「设置分组」（_handleMenu 'group' → _showChangeGroup，
-          // 行为不变，功能不丢失）
-          _summaryRow(context, Symbols.groups_rounded, _groupText(book)),
-          // ⑥ 目录行（webFile 书隐藏，对齐原版 ll_toc.gone() — Cursor UI）
-          if (!isWebFile)
-            _summaryRow(
-              context,
-              Symbols.folder_open_rounded,
-              '目录：$tocTitle',
-              action: _smallAction(context, '查看目录', _openTocScreen),
-            ),
-        ],
-      ),
-    );
-  }
-
-  /// 摘要行（对标原版：18dp 图标 + 6dp 间距 + 13sp 文本 + 可选小按钮）
-  Widget _summaryRow(
-    BuildContext context,
-    IconData icon,
-    String text, {
-    Widget? action,
-    VoidCallback? onTap,
-    VoidCallback? onLongPress,
-  }) {
-    final cs = Theme.of(context).colorScheme;
-    final summaryColor = cs.onSurfaceVariant;
-    Widget label = Text(
-      text,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: TextStyle(fontSize: 13, color: summaryColor),
-    );
-    if (onTap != null || onLongPress != null) {
-      label = GestureDetector(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        behavior: HitTestBehavior.opaque,
-        child: label,
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: summaryColor),
-          const SizedBox(width: 6),
-          Expanded(child: label),
-          // lint：?action 与 build_runner 内置分析器不兼容，用 if-element 等价表达 — Qoder
-          // ignore: use_null_aware_elements
-          if (action != null) action,
         ],
       ),
     );
@@ -1474,29 +1430,6 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         child: Text(text, style: TextStyle(fontSize: 13, color: cs.onPrimary)),
       ),
     );
-  }
-
-  /// 分组显示文本（对标原版 tv_group；book.group 为位掩码）
-  /// [PARITY C1 D7] 无分组文案对齐原版 strings：网络书 no_group=「未分组」、
-  /// 本地书 local_no_group=「本地未分组」（原实现写死「无」，与原版不一致）
-  String _groupText(Book book) {
-    final groups = ref.read(bookshelfNotifierProvider).groups;
-    final names = groups
-        .where((g) => g.groupId > 0 && (book.group & g.groupId) != 0)
-        .map((g) => g.groupName)
-        .toList();
-    if (names.isNotEmpty) return '分组：${names.join('，')}';
-    return '分组：${_isOnlineBook(book) ? '未分组' : '本地未分组'}';
-  }
-
-  /// 目录行摘要（对齐原版 upLoading + resolveBookInfoReadProgress）— Cursor UI
-  String _buildTocSummaryText(Book book, List<BookChapter> chapters) {
-    if (_tocLoading) return '加载中…';
-    if (chapters.isEmpty) return '加载目录失败';
-    final title = _resolveTocTitle(book, chapters);
-    final percent = bookInfoReadProgressPercent(book);
-    if (percent == null) return title;
-    return '$title  ·  已读: $percent%';
   }
 
   /// 分类标签（本地书追加文件大小，对齐原版 upKinds）— Cursor UI
@@ -1637,23 +1570,6 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         ),
       ),
     );
-  }
-
-  /// 目录行标题（对齐原版 BookInfoActivity.resolveBookInfoTocTitle）：
-  /// durChapterTitle 非空优先，否则按 durChapterIndex 取章、末章兜底
-  /// [UI-fix v2.0.6 | 2026-08-08] — Qoder
-  String _resolveTocTitle(Book book, List<BookChapter> chapters) {
-    final stored = (book.durChapterTitle ?? '').trim();
-    if (stored.isNotEmpty) return stored;
-    BookChapter? ch;
-    final idx = book.durChapterIndex;
-    if (idx >= 0 && idx < chapters.length) {
-      ch = chapters[idx];
-    } else if (chapters.isNotEmpty) {
-      ch = chapters.last;
-    }
-    final title = (ch?.title ?? '').trim();
-    return title.isNotEmpty ? title : '暂无最新章节';
   }
 
   Widget _buildIntro(BuildContext context, Book book) {

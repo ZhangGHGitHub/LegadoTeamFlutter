@@ -313,10 +313,6 @@ extension _BookInfoLoad on _BookInfoScreenState {
     return book.bookUrl.toLowerCase().endsWith('.txt');
   }
 
-  /// 在线文件书（对齐原版 Book.isWebFile）
-  bool _isWebFileBook(Book book) =>
-      (book.bookType & BookType.webFile) != 0;
-
   /// 元数据是否需要联网补全（封面/简介/目录链接任一缺失）
   bool _needCompleteInfo(Book book) =>
       (book.coverUrl == null || book.coverUrl!.isEmpty) ||

@@ -30,7 +30,8 @@ import '../services/settings_service.dart';
 import '../utils/book_info_utils.dart';
 import '../utils/book_open_utils.dart';
 import '../utils/meaningful_text_guard.dart'; // [U4 | 台账 0917] 详情页渲染层模板残留守卫
-import '../utils/book_progress_utils.dart';
+// [08 元信息区对齐 | 台账 0922 修订] book_progress_utils 导入已随「目录：已读 X%」
+// 行移除而不再使用（工具本身保留：book_list_item 仍用，单测保留）
 import '../utils/source_login_entry.dart';
 import '../utils/source_login_prompt.dart';
 import '../widgets/book_cover.dart';
