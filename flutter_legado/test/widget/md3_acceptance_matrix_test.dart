@@ -65,7 +65,9 @@ void main() {
           addTearDown(tester.view.reset);
           await tester.pumpWidget(buildApp(name, mode));
           await tester.pumpAndSettle();
-          expect(find.text('内置主题'), findsOneWidget);
+          // [队列⑦c A3] 页首分组「内置主题」改名「主题模式」（对齐参考
+          // R.string.theme；主题模式选择器 + 13 色卡同行）
+          expect(find.text('主题模式'), findsOneWidget);
           expect(tester.takeException(), isNull);
         });
       }

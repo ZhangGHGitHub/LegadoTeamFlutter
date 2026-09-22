@@ -632,7 +632,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final ui = ref.watch(uiSettingsProvider);
 
     return Scaffold(
-      appBar: LegadoAppBar(title: const Text('主题设置')),
+      // [队列⑦c A3] 页标题对齐参考 R.string.theme_setting=外观
+      appBar: LegadoAppBar(title: const Text('外观')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : IosGroupedBody(
@@ -644,40 +645,35 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // === [2.0.268 用户裁决] 配色轮卡已移除（B3-C1 A2 系误判证据
                   // 产物，kazusa 源码无此能力，严格红线）；长按预设主色调选择
                   // 器本体（_showColorPicker，色卡行在用）保留不动 ===
-                  // === [B3-C1 A3 | 全栈工程师 + UI] 导出/导入主题（先 grep 确认
-                  // 无文件级导入导出能力，最小实现：导出当前配色 JSON / 导入应用；
-                  // 复用 ThemeColorsNotifier.applyColors + ThemeNotifier，
-                  // 全部经主题槽位，无硬编码色值） ===
-                  const IosSectionHeader('主题导出/导入'),
+                  // === [队列⑦c A3] IA 对齐参考版 ThemeConfigScreen.kt ===
+                  // 分组 1「主题模式」（参考 R.string.theme=主题模式：主题模式
+                  // 选择器 + 13 内置色卡同行）。[队列⑦c A3] 恢复页内主题模式
+                  // 选择器——此前 2026-08-13 裁决"主题模式仅放「我的」枢纽"，
+                  // 本次按参考 IA 指令恢复页内展示；复用既有 ThemeMode 状态与
+                  // ThemeNotifier.setThemeMode，非新增功能。
+                  // 原「主题导出/导入」独立分区并入下方通用组（对齐参考主题管理
+                  // 同簇）；[B3-C1 A3] 导出/导入能力保留不动。
+                  const IosSectionHeader('主题模式'),
                   IosGroup(
                       children: [
-                    IosListTile(
-                      icon: Symbols.ios_share_rounded,
-                      title: '导出主题',
-                      subtitle: '将当前配色导出为 JSON 文件',
-                      onTap: _exportTheme,
-                    ),
-                    IosListTile(
-                      icon: Symbols.download_rounded,
-                      title: '导入主题',
-                      subtitle: '导入主题 JSON 文件并应用',
-                      onTap: _importTheme,
-                    ),
-                  ]),
-                  // === 内置主题（UI_MD3_PLAN.md Batch 1：13 套 MD3 preset
-                  // 选择器，paletteId 持久化；与下方自定义主题并存，自定义
-                  // 已应用 4 色优先——第九节并存模型） ===
-                  // [B3-C1 A6] 分区卡结构：分区标题 + 13 色卡保留，A4/A5 不动
-                  // [队列⑦a A2] 形态对齐参考：13 色卡横滑一行（原 4 列网格）
-                  const IosSectionHeader('内置主题'),
-                  _BuiltinPaletteGrid(
-                    selectedId: themeState.paletteId,
-                    onSelected: themeNotifier.setPaletteId,
-                  ),
-                  // === [UI_SYNC_REFACTOR S4] 主题引擎参数化（对齐参考
-                  // ThemeEngine：paletteStyle 9 档 + 对比度 + AMOLED；
-                  // seed=自定义主色（未设时取当前内置色板锚点）） ===
-                  // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
+                        // 参考 ThemeModeSelector（:974-1012）material 引擎分支：
+                        // 跟随系统 / 浅色 / 深色（flow_sys/light_mode/dark_mode）
+                        _ThemeModeSelector(
+                          selected: themeState.themeMode,
+                          onChanged: themeNotifier.setThemeMode,
+                        ),
+                        // 13 套内置 MD3 preset 选择器（UI_MD3_PLAN.md Batch 1，
+                        // [队列⑦a A2] 13 色卡横滑一行形态；paletteId 持久化，
+                        // 与自定义主题并存——第九节并存模型）
+                        _BuiltinPaletteGrid(
+                          selectedId: themeState.paletteId,
+                          onSelected: themeNotifier.setPaletteId,
+                        ),
+                      ]),
+                  // === 分组 2「主题引擎」（我方 MD3 参数化：paletteStyle +
+                  // 对比度；参考版无对应分组——参考"主题风格"=compose 引擎
+                  // 开关，属参考独有，仅登记不实现）。[队列⑦c A3] AMOLED 纯黑
+                  // 移出本组，改入通用组首位（对齐参考 纯黑深色模式 首位） ===
                   const IosSectionHeader('主题引擎'),
                   IosGroup(
                       children: [
@@ -692,30 +688,68 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         subtitle: _contrastLabel(ui.themeContrastLevel),
                         onTap: _showContrastPicker,
                       ),
+                  ]),
+
+                  // === 分组 3 通用（无分组标题，对齐参考版未分组通用组；
+                  // 参考顺序 纯黑→切换图标→字体大小→主题管理→背景图片；
+                  // 参考独有 字体设置/自定义颜色/compose 引擎/预见性返回手势
+                  // 仅登记不实现） ===
+                  // [队列⑦c A3] 通用组排序：纯黑深色模式（自主题引擎移入，
+                  // 对齐参考 纯黑 首位）→ 切换图标 → 字体大小 → 主题管理
+                  // （原主题列表改名）→ 导出/导入主题（原顶部分区并入）→ 其余
+                  // 我方项保持原有相对顺序
+                  IosGroup(
+                      children: [
+                    // 纯黑深色模式（参考 pure_black=纯黑深色模式；原"AMOLED
+                    // 纯黑"，标题对齐参考，副标题保留）
                     SwitchListTile(
-                      title: const Text('AMOLED 纯黑'),
+                      title: const Text('纯黑深色模式'),
                       subtitle: const Text('暗色模式背景纯黑（省电护屏）'),
                       value: ui.themeAmoled,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
                           .setThemeAmoled(v),
                     ),
-                  ]),
-
-                  // === 通用（对齐原版顶部未分组项；主题模式仅在「我的」枢纽）===
-                  // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
-                  IosGroup(
-                      children: [
-                    // 更换桌面图标（对齐原版 change_icon；Android/iOS 支持，
-                    // Windows 等桌面端无运行时换图标能力时整项隐藏）
+                    // 切换图标（参考 change_icon=切换图标，摘要
+                    // change_icon_summary=切换软件显示在桌面的图标；
+                    // Android/iOS 支持，Windows 等桌面端整项隐藏）
                     if (LauncherIconService.isSupported)
                       IosListTile(
                         title: '切换图标',
-                        subtitle: '更换桌面显示的应用图标',
+                        subtitle: '切换软件显示在桌面的图标',
                         value: _launcherIconLabels[
                             _launcherIcons.indexOf(_launcherIcon).clamp(0, 6)],
                         onTap: _showLauncherIconPicker,
                       ),
+                    // 字体大小（参考 font_scale=字体大小；摘要半角冒号对齐
+                    // font_scale_summary「当前字体大小: %.1f」，见 theme_state）
+                    IosListTile(
+                      title: '字体大小',
+                      subtitle: themeState.fontScaleLabel,
+                      onTap: () => _showFontScalePicker(
+                          context, themeState, themeNotifier),
+                    ),
+                    // 主题管理（参考 theme_pack=主题管理；原"主题列表"改名，
+                    // 副标题保留；参考完整主题包管理屏属参考独有，仅登记）
+                    IosListTile(
+                      title: '主题管理',
+                      subtitle: '使用、保存、导入或分享主题',
+                      onTap: _showThemeListDialog,
+                    ),
+                    // 导出/导入主题（[B3-C1 A3] 复用 ThemeColorsNotifier +
+                    // ThemeNotifier，全部经主题槽位，无硬编码色值）
+                    IosListTile(
+                      icon: Symbols.ios_share_rounded,
+                      title: '导出主题',
+                      subtitle: '将当前配色导出为 JSON 文件',
+                      onTap: _exportTheme,
+                    ),
+                    IosListTile(
+                      icon: Symbols.download_rounded,
+                      title: '导入主题',
+                      subtitle: '导入主题 JSON 文件并应用',
+                      onTap: _importTheme,
+                    ),
                     IosListTile(
                       title: '启动界面样式',
                       subtitle: '设定显示时间，更改背景图片，是否显示文字等',
@@ -752,20 +786,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       onTap: _showBarElevationDialog,
                     ),
                     IosListTile(
-                      title: '字体大小',
-                      subtitle: themeState.fontScaleLabel,
-                      onTap: () => _showFontScalePicker(
-                          context, themeState, themeNotifier),
-                    ),
-                    IosListTile(
                       title: '封面设置',
                       subtitle: '通用封面规则及默认封面样式',
                       onTap: _showCoverConfigDialog,
-                    ),
-                    IosListTile(
-                      title: '主题列表',
-                      subtitle: '使用、保存、导入或分享主题',
-                      onTap: _showThemeListDialog,
                     ),
                     IosListTile(
                       title: '底栏图集',
@@ -803,10 +826,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       ),
                   ]),
 
-                  // === [UI_SYNC_REFACTOR B2] 顶栏与布局（对齐参考仓
-                  // ThemeConfig 顶栏组；设置经 uiSettings 即时全局生效） ===
-                  const IosSectionHeader('顶栏与布局'),
-                  // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
+                  // === 分组 4「主界面」（参考 R.string.main_activity=主界面；
+                  // [队列⑦c A3] 合并原"顶栏与布局"+"底栏与导航"两组为参考的单
+                  // 主界面组，设置经 uiSettings 即时全局生效；参考 首页与导航/
+                  // 显示状态栏/启用滑动时动画 属参考独有，仅登记不实现） ===
+                  const IosSectionHeader('主界面'),
                   IosGroup(
                       children: [
                     IosListTile(
@@ -835,14 +859,6 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       subtitle: '当前 ${ui.topBarOpacity}%',
                       onTap: _showTopBarOpacityDialog,
                     ),
-                  ]),
-
-                  // === [UI_SYNC_REFACTOR B3] 底栏与导航（对齐参考仓
-                  // MainNavigationSettingsSheet；设置即时全局生效） ===
-                  const IosSectionHeader('底栏与导航'),
-                  // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
-                  IosGroup(
-                      children: [
                     SwitchListTile(
                       title: const Text('显示底栏'),
                       subtitle: const Text('隐藏后仅侧栏/手势切页'),
@@ -869,6 +885,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       subtitle: '当前 ${ui.bottomBarOpacity}%',
                       onTap: _showBottomBarOpacityDialog,
                     ),
+                    // 大屏导航形态（参考 main_activity 组 tabletInterface=平板界面；
+                    // 四档 自动/始终/仅横屏/关闭）
                     IosListTile(
                       title: '大屏导航形态',
                       subtitle: _tabletLabel(ui.tabletInterface),
@@ -876,29 +894,47 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     ),
                   ]),
 
-                  // === [UI_SYNC_REFACTOR B6] 详情与圆角 ===
-                  const IosSectionHeader('详情与圆角'),
-                  // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
+                  // === 分组 5「书籍详情页」（参考 R.string.book_info_page=
+                  // 书籍详情页；原"详情与圆角"的封面三行；卡片圆角/分隔线移入
+                  // 下方"容器设置"组） ===
+                  const IosSectionHeader('书籍详情页'),
                   IosGroup(
                       children: [
+                    // 参考 book_info_follow_cover_color=界面颜色跟随封面取色，
+                    // 摘要 book_info_follow_cover_color_s=仅在显示背景封面时生效
                     SwitchListTile(
-                      title: const Text('跟随封面取色'),
-                      subtitle: const Text('详情页按封面主色自动换配色'),
+                      title: const Text('界面颜色跟随封面取色'),
+                      subtitle: const Text('仅在显示背景封面时生效'),
                       value: ui.bookInfoFollowCoverColor,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
                           .setBookInfoFollowCoverColor(v),
                     ),
+                    // 参考 book_info_network_cover_background=网络封面背景设置
                     IosListTile(
-                      title: '封面背景（网络封面）',
+                      title: '网络封面背景设置',
                       subtitle: _coverBgLabel(ui.bookInfoNetworkCoverBackground),
                       onTap: () => _showCoverBgPicker(false),
                     ),
+                    // 参考 book_info_default_cover_background=默认封面背景设置
                     IosListTile(
-                      title: '封面背景（默认封面）',
+                      title: '默认封面背景设置',
                       subtitle: _coverBgLabel(ui.bookInfoDefaultCoverBackground),
                       onTap: () => _showCoverBgPicker(true),
                     ),
+                  ]),
+
+                  // === 分组 8「容器设置」（参考 R.string
+                  // .theme_manage_section_container=容器设置；原"详情与圆角"的
+                  // 卡片圆角/分隔线两行；参考 容器背景图/容器背景不透明度/
+                  // 关闭设置分组圆角/覆盖卡片边框/边框粗细/日夜卡片边框颜色/
+                  // 分割线粗细/长度/颜色 等子项属参考独有，仅登记不实现） ===
+                  const IosSectionHeader('容器设置'),
+                  IosGroup(
+                      children: [
+                    // 参考 base_card_corner_radius=卡片圆角（0-40 滑杆）；我方为
+                    // 单对话框（覆写开关 + 4-28），参考 覆盖卡片圆角 双行开关
+                    // 结构属参考独有，仅登记
                     IosListTile(
                       title: '卡片圆角',
                       subtitle: ui.overrideBaseCardCornerRadius
@@ -906,8 +942,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                           : '跟随主题（20dp）',
                       onTap: _showCardRadiusDialog,
                     ),
+                    // 参考 show_divider_line=显示分隔线
                     SwitchListTile(
-                      title: const Text('设置行分隔线'),
+                      title: const Text('显示分隔线'),
                       subtitle: const Text('分组列表行底部显示短分隔线'),
                       value: ui.enableItemDivider,
                       onChanged: (v) => ref
@@ -916,9 +953,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                     ),
                   ]),
 
-                  // === [UI_SYNC_REFACTOR R1] 毛玻璃（对齐参考仓 blur 家族；
-                  // 默认关——低端机掉帧保护，开启后顶栏/悬浮底栏/详情背景生效） ===
-                  const IosSectionHeader('毛玻璃'),
+                  // === 分组 7「模糊效果」（参考 R.string.blur_effects=模糊效果；
+                  // [队列⑦c A3] 原"毛玻璃"改组名对齐参考；我方 启用毛玻璃 +
+                  // 顶栏/悬浮底栏模糊参数，参考 启用控件模糊/启用渐变模糊 开关
+                  // 结构属参考独有，仅登记；默认关——低端机掉帧保护） ===
+                  const IosSectionHeader('模糊效果'),
                   // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
                       children: [
@@ -1295,7 +1334,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     }
   }
 
-  /// 主题列表对话框：点击应用、删除按钮移除
+  /// 主题管理对话框（[队列⑦c A3] 原"主题列表"改名对齐参考 theme_pack=主题管理）：
+  /// 点击应用、删除按钮移除
   Future<void> _showThemeListDialog() async {
     var list = await _loadThemeList();
     if (!mounted) return;
@@ -1303,7 +1343,8 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setDialogState) => AlertDialog(
-          title: const Text('主题列表'),
+          // [队列⑦c A3] 对话框标题与入口行一致（主题管理）
+          title: const Text('主题管理'),
           content: SizedBox(
             width: 320,
             child: list.isEmpty
@@ -1672,8 +1713,11 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // [队列⑦c A3] 半角冒号 + 空格，对齐参考 font_scale_summary
+              // 「当前字体大小: %.1f」（values-zh-rCN/strings.xml :1203），
+              // 与 theme_state.fontScaleLabel 保持一致
               Text(
-                '当前字体大小：${(current / 10).toStringAsFixed(1)}',
+                '当前字体大小: ${(current / 10).toStringAsFixed(1)}',
                 style: Theme.of(ctx).textTheme.bodyMedium,
               ),
               const SizedBox(height: 8),
@@ -2055,6 +2099,103 @@ class _CoverRuleConfigDialogState extends State<_CoverRuleConfigDialog> {
               : const Text('确定'),
         ),
       ],
+    );
+  }
+}
+
+/// 主题模式三选分段控件（跟随系统 / 浅色 / 深色）。
+///
+/// [队列⑦c A3] 对齐参考 ThemeModeSelector（ThemeConfigScreen.kt:974-1012，
+/// 3 个相连 ToggleButton，material 引擎分支文案 跟随系统/浅色/深色，
+/// flow_sys/light_mode/dark_mode）。此前 2026-08-13 裁决"主题模式仅放
+/// 「我的」枢纽"，本次 A3 任务指令"IA 对齐参考版"予以覆盖，恢复页内选择器；
+/// 复用既有 ThemeState.themeMode 与 ThemeNotifier.setThemeMode（经
+/// SettingsService 持久化），非新增功能。
+class _ThemeModeSelector extends StatelessWidget {
+  final ThemeMode selected;
+  final ValueChanged<ThemeMode> onChanged;
+
+  const _ThemeModeSelector({
+    required this.selected,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Row(
+        children: [
+          for (final mode in ThemeMode.values)
+            Expanded(
+              child: _ModeSegment(
+                label: switch (mode) {
+                  ThemeMode.system => '跟随系统',
+                  ThemeMode.light => '浅色',
+                  ThemeMode.dark => '深色',
+                },
+                selected: mode == selected,
+                onTap: () => onChanged(mode),
+                selectedBg: scheme.primary,
+                selectedFg: scheme.onPrimary,
+                normalBg: scheme.surfaceContainerHighest,
+                normalFg: scheme.onSurface,
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+/// 主题模式选择器单段（相连三段，圆角矩形 + 选中主色底，对齐参考 3 相连
+/// ToggleButton 形态）
+class _ModeSegment extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  final Color selectedBg;
+  final Color selectedFg;
+  final Color normalBg;
+  final Color normalFg;
+
+  const _ModeSegment({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    required this.selectedBg,
+    required this.selectedFg,
+    required this.normalBg,
+    required this.normalFg,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      child: Material(
+        color: selected ? selectedBg : normalBg,
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Center(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? selectedFg : normalFg,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

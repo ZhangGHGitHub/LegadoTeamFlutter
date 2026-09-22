@@ -39,10 +39,11 @@ extension ThemeStateDerived on ThemeState {
     return fontScaleRaw / 10.0;
   }
 
-  /// 字体缩放展示文本（对齐原版 font_scale_summary「当前字体大小：%.1f」）
+  /// 字体缩放展示文本（[队列⑦c A3] 对齐原版 font_scale_summary
+  /// 「当前字体大小: %.1f」，半角冒号 + 空格，参考 values-zh-rCN/strings.xml :1203）
   String get fontScaleLabel {
     final scale = fontScale;
     if (scale == null) return '跟随系统';
-    return '当前字体大小：${scale.toStringAsFixed(1)}';
+    return '当前字体大小: ${scale.toStringAsFixed(1)}';
   }
 }

@@ -179,9 +179,10 @@ void main() {
       createContainer();
       await pumpInit();
       await readNotifier().setFontScale(10);
-      expect(readState().fontScaleLabel, equals('当前字体大小：1.0'));
+      // [队列⑦c A3] 半角冒号（对齐参考 font_scale_summary）
+      expect(readState().fontScaleLabel, equals('当前字体大小: 1.0'));
       await readNotifier().setFontScale(15);
-      expect(readState().fontScaleLabel, equals('当前字体大小：1.5'));
+      expect(readState().fontScaleLabel, equals('当前字体大小: 1.5'));
     });
   });
 
