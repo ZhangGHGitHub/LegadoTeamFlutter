@@ -105,6 +105,100 @@ extension _SearchBuilders on _SearchScreenState {
     );
   }
 
+  /// [队列④ P1-B] 失败书源横幅（非阻断）：单源搜索失败原仅 AppLog 留痕
+  /// （SearchModel 静默语义），现以结果区顶部可折叠横幅呈现——收起态
+  /// 文案用批次 `error`（可读文本，含书源能力受限提示；多条时显示计数），
+  /// 展开可见涉及源名 + 错误；不阻断滚动/结果消费，不改整体搜索交互。
+  Widget _buildFailedSourcesBanner(
+    BuildContext context,
+    List<SearchSourceFailure> failures,
+    bool expanded,
+  ) {
+    final theme = Theme.of(context);
+    final cs = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(left: 16, right: 16, bottom: 8),
+      child: Material(
+        color: cs.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: () => setState(() => _failedBannerExpanded = !expanded),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Padding(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      Symbols.warning_amber_rounded,
+                      size: 18,
+                      color: cs.onSurfaceVariant,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        failures.length == 1
+                            ? '书源搜索失败：${failures.first.error}'
+                            : '${failures.length} 个书源搜索失败，点击展开',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                    Icon(
+                      // 展开/收起箭头（与 source_edit_screen_builders 的
+                      // expand_less/expand_more 用法一致；本版本 Symbols 无 chevron_*）
+                      expanded
+                          ? Symbols.expand_less_rounded
+                          : Symbols.expand_more_rounded,
+                      size: 18,
+                      color: cs.onSurfaceVariant,
+                    ),
+                  ],
+                ),
+              ),
+              if (expanded)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      for (final f in failures)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text.rich(
+                            TextSpan(
+                              children: [
+                                TextSpan(
+                                  text: '${f.sourceName}：',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w600),
+                                ),
+                                TextSpan(
+                                  text: f.error,
+                                  style: TextStyle(
+                                    color: cs.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            style: theme.textTheme.bodySmall,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   /// 滚动到底自动加载（批次B G-B-03：原版 SearchActivity 滚动监听）
   ///
   /// 原版语义：触底 && !isSearchLiveData && hasMore && !isManualStopSearch

@@ -1107,6 +1107,29 @@ pub(crate) fn load_search_sources(source_urls_json: &str) -> LegadoResult<Vec<Bo
 /// 换源单源搜索超时（对齐原版 ChangeBookSourceViewModel `withTimeout(60000)`）
 pub(crate) const SWITCH_SOURCE_TIMEOUT: Duration = Duration::from_secs(60);
 
+/// 队列④ P2-D：bookList 提取（get_elements）错误放行面收窄
+///
+/// 仅 `LegadoError::JsEngine`（JS 求值失败——真·能力受限/脚本错误）加
+/// 「搜索结果列表解析失败」前缀后上抛（整源失败，经批次错误通道向用户
+/// 显示原因，error_class 仍为 `js_error`，契约不变）；其余错误类
+/// （Parser/JSON/XPath/put/模板等）维持既有 `unwrap_or_default()` 吞错语义
+/// → 空列表 → S0-E 空列表详情回退路径保持可达。
+/// 此前 `map_err` 全类放行使非 JS 错误也把整源打成失败、超出注释声明。
+pub(crate) fn book_list_elements_or_default(
+    result: LegadoResult<Vec<String>>,
+) -> LegadoResult<Vec<String>> {
+    match result {
+        Ok(list) => Ok(list),
+        Err(LegadoError::JsEngine(msg)) => Err(LegadoError::JsEngine(format!(
+            "搜索结果列表解析失败: {msg}"
+        ))),
+        Err(other) => {
+            eprintln!("[bookList] 非 JS 错误维持吞错语义（空列表）: {other}");
+            Ok(Vec::new())
+        }
+    }
+}
+
 pub(crate) async fn search_single_source(
     client: &LegadoClient,
     source: &BookSource,
@@ -1137,6 +1160,14 @@ pub(crate) async fn search_single_source(
         });
         return Ok(results);
     }
+
+    // 队列④ P1-A 复审：删除 jsLib 预校验——「存在任意 JS 语法」≠「搜索依赖
+    // jsLib」，口径过宽会误伤纯 CSS 规则 + `{{key}}` 字面插值的书源
+    //（favcomic 夹具实证：改前可正常搜，改后预校验必失败 → 每关键词 0 结果）。
+    // 能力缺失/JS 失败在真被使用时经既有路径给可读文案：searchUrl 失败 →
+    // `legado-js-error://` 错误 URL 解码（P2-C）；bookList JS 失败 →
+    // get_elements 上抛（P2-D）；jsLib 加载失败 → run_fresh 登记台账 +
+    // 真 JS 求值时上抛。error_class 映射不变。
 
     // 1. 获取搜索 URL 模板
     let search_url_template = source
@@ -1178,11 +1209,21 @@ pub(crate) async fn search_single_source(
             source.book_source_url
         );
     }
-    if analyze_url.url().starts_with("legado-js-error://") {
-        return Err(LegadoError::Internal(format!(
-            "searchUrl JS 求值失败: {}",
-            analyze_url.url()
-        )));
+    // 队列④ P2-C：必须用 rule_url() 判断/解码——analyze_url.url() 是经
+    // get_absolute_url 拼到书源域名下的绝对 URL，`legado-js-error://` 这类
+    // 非 http(s)/data/`/` 开头的自定义 scheme 会被当相对路径拼接而丢失
+    // 前缀（见 analyze_url 单测 test_js_error_url_prefix_survives_in_rule_url），
+    // 用 url() 判断的 guard 恒不命中（死码）
+    if analyze_url.rule_url().starts_with("legado-js-error://") {
+        // 解码错误 URL 还原真实 JS 错误文本，标注为 JsEngine
+        // （error_class 仍为 js_error——classify_source_outcome 既有映射，
+        // 契约不变；此前误标 Internal → parser_error）
+        let detail = crate::js_executor::decode_js_error_url(analyze_url.rule_url())
+            .map(|m| m.chars().take(160).collect::<String>());
+        return Err(LegadoError::JsEngine(match detail {
+            Some(d) if !d.is_empty() => format!("searchUrl JS 求值失败: {d}"),
+            _ => "searchUrl JS 求值失败（无法解码错误详情）".into(),
+        }));
     }
 
     // 3. 合并请求头：书源全局 header + AnalyzeUrl 提取的 header
@@ -1398,7 +1439,11 @@ fn parse_search_response_ex(
         // [S0-E] 对齐原版 getElements("")：空规则得空集合（随后走空列表回退）
         Vec::new()
     } else {
-        analyzer.get_elements(&book_list_rule).unwrap_or_default()
+        // 队列④ P2-D：bookList 规则 JS 求值失败不再静默吞掉（此前
+        // unwrap_or_default → 空列表 →「暂无书籍」无从查因）——仅
+        // JsEngine 类上抛（经批次错误通道显示原因，error_class 仍为
+        // js_error，契约不变）；非 JS 错误维持吞错语义（空列表 → S0-E 回退）
+        book_list_elements_or_default(analyzer.get_elements(&book_list_rule))?
     };
     // [S0-D | 任务 B 2026-09-19] list 提取计时点（env 门控 LEGADO_SEARCH_PHASE_TIMING）：
     // 输出携带会话标识 + 书源 URL（计划要求可关联）
@@ -2640,6 +2685,122 @@ mod tests {
             max_active.load(Ordering::SeqCst)
         );
     }
+
+    /// 队列④②：JS 引擎错误必须经现有搜索批次错误通道可见
+    ///
+    /// searchUrl / bookList 的 JS 失败现统一包成 `LegadoError::JsEngine`
+    ///（此前 searchUrl 失败包成 `Internal`，被误分类为 `parser_error`）：
+    /// 批次 `error_class` 保持既有映射 `js_error`（契约未变），`error` 字段
+    /// 携带可读原因（如「decode is not defined」），搜索结果里直接可见。
+    /// 本测试无网络，按驱动器层既有模式断言分类与错误文本的传递。
+    #[tokio::test]
+    async fn test_js_engine_error_surfaces_via_batch_channel() {
+        const MSG: &str = "searchUrl JS 求值失败: decode is not defined";
+
+        // 1) 分类映射：JsEngine → js_error（search.rs 既有映射，契约未变）
+        let classified =
+            classify_source_outcome(&LegadoResult::Err(LegadoError::JsEngine(MSG.into())));
+        assert_eq!(
+            classified, "js_error",
+            "JsEngine 错误应归类 js_error（而非 parser_error）"
+        );
+
+        // 2) 批次 error 字段携带可读文案（SearchSourceBatch.error = e.to_string()）
+        let (books, error) =
+            match LegadoResult::<Vec<SearchResult>>::Err(LegadoError::JsEngine(MSG.into())) {
+                Ok(list) => (list, None),
+                Err(e) => (Vec::new(), Some(e.to_string())),
+            };
+        assert!(books.is_empty(), "失败源书目应为空");
+        assert!(
+            error.as_deref().is_some_and(|m| m.contains(MSG)),
+            "批次 error 字段应含可读原因: {error:?}"
+        );
+
+        // 3) 驱动器层：单源 JS 失败不阻断批次，on_source 回调收到错误文本
+        let sources = vec![BookSource {
+            book_source_url: "https://favcomic.test".into(),
+            book_source_name: "favcomic".into(),
+            ..BookSource::default()
+        }];
+        let outcomes = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let outcomes_c = Arc::clone(&outcomes);
+        drive_source_batches(
+            sources,
+            1,
+            Duration::from_millis(500),
+            &Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            &Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            |_s: BookSource| async move {
+                Err(LegadoError::JsEngine(
+                    "searchUrl JS 求值失败: decode is not defined".into(),
+                ))
+            },
+            move |o: SourceBatchOutcome<SearchResult>| {
+                let (n, err) = match &o.result {
+                    Ok(b) => (Some(b.len()), None),
+                    Err(e) => (None, Some(e.to_string())),
+                };
+                outcomes_c.lock().unwrap().push((o.source_url, n, err));
+                Ok(())
+            },
+        )
+        .await;
+        let got = outcomes.lock().unwrap();
+        assert_eq!(got.len(), 1, "失败源也应产出一个批次");
+        let (url, n, err) = &got[0];
+        assert!(url.contains("favcomic.test"));
+        assert_eq!(*n, None, "失败源应无书目");
+        assert!(
+            err.as_deref()
+                .is_some_and(|m| m.contains("decode is not defined")),
+            "批次回调 error 应含可读原因: {err:?}"
+        );
+    }
+
+    /// 队列④ P2-D：bookList 提取错误放行面收窄的三态行为
+    ///
+    /// 1) JS 求值失败（JsEngine）→ 加「搜索结果列表解析失败」前缀后上抛
+    ///    → 整源失败（search_single_source 经 `?` 上抛，批次 error 通道可见）；
+    /// 2) 合法无命中（Ok 空列表）→ 仍为 empty（非错误，S0-E 回退可达）；
+    /// 3) 非 JS 错误（Parser 等）→ 维持既有吞错语义 → 空列表（整源不失败，
+    ///    S0-E 空列表详情回退路径保持可达）。
+    #[test]
+    fn test_book_list_elements_error_class_narrowing() {
+        // 1) bookList JS 失败 → 整源 Err（JsEngine 加前缀上抛）
+        let r = book_list_elements_or_default(Err(LegadoError::JsEngine(
+            "decode is not defined".into(),
+        )));
+        match r {
+            Err(LegadoError::JsEngine(m)) => assert!(
+                m.starts_with("搜索结果列表解析失败: "),
+                "JsEngine 错误应加前缀后上抛: {m}"
+            ),
+            other => panic!("JsEngine 错误应上抛（整源失败），实际: {other:?}"),
+        }
+
+        // 2) 合法无命中 → 仍为 empty（非错误；批次分类即 "empty"）
+        let empty = book_list_elements_or_default(Ok(Vec::<String>::new())).unwrap();
+        assert!(
+            empty.is_empty(),
+            "合法无命中应保持空列表（error_class=empty）"
+        );
+        assert_eq!(
+            classify_source_outcome(&Ok(Vec::<SearchResult>::new())),
+            "empty",
+            "合法无命中经批次分类仍为 empty"
+        );
+
+        // 3) 非 JS 错误维持吞错语义 → 空列表（整源不失败）
+        let swallowed =
+            book_list_elements_or_default(Err(LegadoError::Parser("XPath 解析失败".into())))
+                .unwrap();
+        assert!(
+            swallowed.is_empty(),
+            "非 JS 错误应吞为 empty 空列表（S0-E 回退可达），不得整源失败"
+        );
+    }
+
     // ─── P0-3 真实重叠压力测试（复审 7.3）：A 运行中被取代 → A 中止（排队源不发请求、
     //     在飞结果不交付 on_source），B 干净执行。取消标志直接置位模拟「register(B) 取消 A」，
     //     避免触碰全局 CURRENT_SEARCH_SESSION（与并发测试隔离）──

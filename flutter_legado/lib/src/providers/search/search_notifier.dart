@@ -197,6 +197,8 @@ class SearchNotifier extends Notifier<SearchState> {
       hasMore: true,
       isPaused: false,
       isManualStop: false,
+      // [队列④ P1-B] 新关键词 → 失败源横幅随会话重置
+      failedSources: const [],
     );
     await addToHistory(trimmed);
     if (seq != _searchSeq) return;
@@ -286,6 +288,10 @@ class SearchNotifier extends Notifier<SearchState> {
                 // Rust AppLog 三级（message/crash/http），'error' 非法会被 FFI 丢弃 — Qoder
                 .appLogPush(level: 'message', message: '书源搜索出错\n$srcName: $batchError')
                 .catchError((_) {}));
+            // [队列④ P1-B] 单源失败不再完全不可见：累积进 failedSources，
+            // 由搜索结果页顶部非阻断横幅呈现（文案=批次 error，展开可见
+            // 涉及源名）；不改整体搜索交互（失败源不阻断搜索，静默语义保留）
+            _recordSourceFailure(srcName, batchError);
           }
           final books = (batch['books'] as List<dynamic>? ?? const [])
               .whereType<Map<String, dynamic>>()
@@ -327,6 +333,20 @@ class SearchNotifier extends Notifier<SearchState> {
           state = state.copyWith(isLoading: false, isPaused: false);
         },
       );
+  }
+
+  /// 记录单源搜索失败（队列④ P1-B：批次 error 通道 → 可见状态累积）
+  ///
+  /// 同会话内同源去重（最新错误优先），防跨页重试导致列表无界增长；
+  /// 每次失败立即回写 state（横幅即时可见，不经结果列表 150ms 节流窗口）。
+  /// 调用方（批次回调）已做 `_searchSeq` 守卫，旧搜索的迟到批次不会误写。
+  void _recordSourceFailure(String sourceName, String error) {
+    final updated = <SearchSourceFailure>[
+      for (final f in state.failedSources)
+        if (f.sourceName != sourceName) f,
+      SearchSourceFailure(sourceName: sourceName, error: error),
+    ];
+    state = state.copyWith(failedSources: updated);
   }
 
   /// 节流调度结果列表物化（2026-08-24：修复逐批次全量重聚合 + 全量替换
@@ -599,6 +619,8 @@ class SearchNotifier extends Notifier<SearchState> {
       hasMore: false,
       isPaused: false,
       isManualStop: false,
+      // [队列④ P1-B] 清空结果 → 失败源横幅一并清空
+      failedSources: const [],
     );
   }
 
@@ -632,6 +654,8 @@ class SearchNotifier extends Notifier<SearchState> {
       hasMore: false,
       isPaused: false,
       isManualStop: false,
+      // [队列④ P1-B] 页面重开（新 ViewModel 语义）→ 失败源横幅一并清空
+      failedSources: const [],
     );
   }
 

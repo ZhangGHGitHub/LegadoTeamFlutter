@@ -446,6 +446,40 @@ fn urlencoding_lite(s: &str) -> String {
     out
 }
 
+/// [`urlencoding_lite`] 的逆操作：解码 `%XX` 百分号转义
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out: Vec<u8> = Vec::with_capacity(s.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            let hi = (bytes[i + 1] as char).to_digit(16);
+            let lo = (bytes[i + 2] as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hi, lo) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// 解码 `legado-js-error://search?e=<百分号编码>` 错误 URL，还原 JS 错误文本
+///
+/// [`build_search_url`] 等在 JS 求值失败时以该错误 URL 携带真实错误文本
+/// （避免把 @js: 脚本文本拼进请求 URL）；搜索路径据此还原、标注为
+/// `LegadoError::JsEngine` 上抛（error_class 仍为 `js_error`，契约不变）。
+pub fn decode_js_error_url(url: &str) -> Option<String> {
+    const PREFIX: &str = "legado-js-error://";
+    let rest = url.strip_prefix(PREFIX)?;
+    let query = rest.split_once('?').map(|(_, q)| q).unwrap_or("");
+    let e_val = query.split('&').find_map(|kv| kv.strip_prefix("e="))?;
+    Some(percent_decode(e_val))
+}
+
 /// 构建发现分类 URL（对标 Android WebBook.exploreBookAwait + infoMap）
 ///
 /// 携带书源 infoMap、jsLib 与**书源上下文 setup**（source/cookie 方法），
@@ -705,11 +739,21 @@ mod quickjs_impl {
                                             "[legado-ffi] 书源 {} jsLib 加载失败（降级继续）: {e}",
                                             self.source_tag
                                         );
+                                        // 队列④：jsLib 加载失败登记能力受限台账
+                                        // （键与缓存路径一致：executor:<source_tag>）
+                                        legado_js::host_api::capability_ledger::record_jslib_load_failure(
+                                            &format!("executor:{}", self.source_tag),
+                                            &e.to_string(),
+                                        );
                                     }
                                 } else {
                                     eprintln!(
                                         "[legado-ffi] 书源 {} jsLib 加载失败（降级继续）: {e}",
                                         self.source_tag
+                                    );
+                                    legado_js::host_api::capability_ledger::record_jslib_load_failure(
+                                        &format!("executor:{}", self.source_tag),
+                                        &e.to_string(),
                                     );
                                 }
                             }
@@ -748,7 +792,7 @@ mod quickjs_impl {
                 return run_fresh();
             }
             let key = format!("executor:{}", self.source_tag);
-            let (cached, _) = legado_js::engine_cache::get_or_create(
+            let (cached, _, _) = legado_js::engine_cache::get_or_create(
                 &key,
                 self.js_lib.as_deref(),
                 self.setup_script.as_deref(),
@@ -805,6 +849,47 @@ pub fn pool_engine(
     fresh_engine(source_tag)
 }
 
+/// 预校验书源 jsLib 可加载性（队列④：能力受限提示 + 未知类告警）
+///
+/// quickjs 启用：走与执行路径**同一**引擎缓存键 `executor:<source_tag>`，
+/// jsLib 加载失败（`js_lib_ok == Some(false)`）时——此时台账已由
+/// [`legado_js::engine_cache`] 登记——上抛 `LegadoError::JsEngine`，
+/// 文案形如「书源 jsLib 加载失败（decode is not defined）：书源脚本
+/// 能力不可用」，经批次错误通道在搜索结果中显示原因（error_class
+/// 仍为 `js_error`，契约不变）。
+///
+/// 未启用 quickjs：no-op（非 quickjs 构建本就不执行 JS，静默降级）。
+#[cfg(feature = "quickjs")]
+pub fn validate_js_lib(
+    source_tag: &str,
+    js_lib: &str,
+    setup_script: Option<&str>,
+) -> legado_core::LegadoResult<()> {
+    let key = format!("executor:{}", source_tag);
+    let (_, _, js_lib_ok) =
+        legado_js::engine_cache::get_or_create(&key, Some(js_lib), setup_script, None)
+            .map_err(|e| legado_core::LegadoError::JsEngine(e.to_string()))?;
+    if js_lib_ok == Some(false) {
+        let last_err =
+            legado_js::host_api::capability_ledger::last_jslib_error(&key).unwrap_or_default();
+        return Err(legado_core::LegadoError::JsEngine(format!(
+            "书源 jsLib 加载失败({})：书源脚本能力不可用",
+            last_err.chars().take(120).collect::<String>()
+        )));
+    }
+    Ok(())
+}
+
+/// 非 quickjs 构建下的降级实现：无 JS 能力可校验，直接通过
+#[cfg(not(feature = "quickjs"))]
+pub fn validate_js_lib(
+    _source_tag: &str,
+    _js_lib: &str,
+    _setup_script: Option<&str>,
+) -> legado_core::LegadoResult<()> {
+    Ok(())
+}
+
 // ─── 测试 ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -828,6 +913,45 @@ mod tests {
 
         #[cfg(not(feature = "quickjs"))]
         assert_eq!(result, "", "未启用 quickjs 时 @js: 规则应降级为空");
+    }
+
+    /// 队列④ P2-C：`legado-js-error://` 错误 URL 编解码往返（死码 guard 修复）
+    ///
+    /// `build_search_url_with_setup` 把 JS 错误文本百分号编码进错误占位 URL
+    /// （`urlencoding_lite`），搜索路径经 `decode_js_error_url` 还原（现基于
+    /// `AnalyzeUrl::rule_url()` 判断/解码，见 analyze_url 单测
+    /// `test_js_error_url_prefix_survives_in_rule_url`）。边界覆盖：
+    /// 非 ASCII（多字节 UTF-8）、缺 `e=`（返回 None）、裸 `%`（原样保留、
+    /// 不 panic/不误解码）。
+    #[test]
+    fn test_js_error_url_roundtrip() {
+        // 1) 非 ASCII + 中文往返
+        let msg = "searchUrl JS 求值失败: decode is not defined（书源：云霄小说）";
+        let url = format!("legado-js-error://search?e={}", urlencoding_lite(&msg));
+        assert_eq!(decode_js_error_url(&url).as_deref(), Some(msg));
+
+        // 2) 错误文本里的 `&` 被编码，不截断 query
+        let url = format!("legado-js-error://search?e={}", urlencoding_lite("a&b"));
+        assert_eq!(decode_js_error_url(&url).as_deref(), Some("a&b"));
+
+        // 3) 缺 `e=` → None（URL 无该前缀 / query 里无 e= 键亦 None）
+        assert_eq!(decode_js_error_url("legado-js-error://search"), None);
+        assert_eq!(decode_js_error_url("legado-js-error://search?x=1"), None);
+        assert_eq!(decode_js_error_url("https://h.com/search"), None);
+        // `e=` 存在但值空 → Some("")（与「缺 e=」可区分）
+        assert_eq!(
+            decode_js_error_url("legado-js-error://search?e="),
+            Some("".to_string())
+        );
+
+        // 4) 裸 `%`（后随非 hex 字符/串尾）原样保留；合法 %XX 正常解码
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("a%zz"), "a%zz");
+        assert_eq!(
+            decode_js_error_url("legado-js-error://search?e=100%").as_deref(),
+            Some("100%")
+        );
+        assert_eq!(percent_decode("%E4%B8%AD"), "中");
     }
 
     /// quickjs 启用时，验证字符串拼接类 JS 规则同样生效。
@@ -1287,6 +1411,117 @@ mod tests {
         assert!(result.is_ok(), "page 变量注入后 JS 应成功执行");
         let url = result.unwrap().url().to_string();
         assert!(url.contains("p=2"), "page=2 应注入 JS 全局: {url}");
+    }
+
+    /// 队列④ favcomic 口径：`validate_js_lib`（quickjs 档）复用引擎缓存
+    /// （key `executor:<source_tag>`），jsLib 求值失败时返回带可读文案的
+    /// `LegadoError::JsEngine`（「书源 jsLib 加载失败(...)：书源脚本能力
+    /// 不可用」），失败由 [`legado_js::engine_cache`] 登记能力台账
+    /// （`record_jslib_load_failure`）；搜索批次通道将其归类 `js_error`，
+    /// 搜索结果的 error 字段可见失败原因（队列④ P1-B 横幅呈现）。
+    ///
+    /// 三段验证（P2-E 哨兵语义落地后重校——哨兵使「读取未知类」不再抛错，
+    /// 提示移到真正使用点，原「fixture 必失败」前提失效，逐段重钉）：
+    /// ① favcomic 真实 fixture 回归：jsLib 为 16KB 混淆**纯 JS** polyfill
+    ///    IIFE（`Function.prototype.bind` 等 polyfill，无 `Packages`/`decode`
+    ///    等 Java 面引用）→ 必须校验通过——防 P2-E 哨兵对合法纯 JS jsLib
+    ///    误伤（回归护栏）；
+    /// ② 未定义全局引用失败：jsLib 调用不存在的运行时全局 → 加载失败，
+    ///    JsEngine 文案 + jsLib 失败台账登记归因（台账 key
+    ///    `executor:<source_tag>`，与缓存路径一致）；
+    /// ③ 未知 Java 类调用告警：jsLib `new Packages.java.io.InputStream()`
+    ///    （916 语料能力清单未覆盖该成员；`java.io` 已知子树仅含
+    ///    `ByteArrayInputStream`/`ByteArrayOutputStream`）→ P2-E 哨兵
+    ///    construct 陷阱抛「此书源需要 Java 脚本能力（Packages.java.io.
+    ///    InputStream），当前不支持」，经 validate_js_lib 文案上抛，未知
+    ///    符号 `java.io.InputStream` 登记未知 Java 符号台账（「未知类调用
+    ///    要告警」经 jsLib 通道端到端验证）。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_validate_js_lib_favcomic_jslib_failure_surfaces_and_records() {
+        use legado_js::host_api::capability_ledger;
+
+        let _engine_guard = legado_js::engine_cache::TEST_LOCK.lock().unwrap();
+        let _ledger_guard = capability_ledger::LEDGER_TEST_LOCK.lock().unwrap();
+        legado_js::engine_cache::clear_for_tests();
+        capability_ledger::reset_jslib_load_failures();
+        capability_ledger::reset_unknown_java_symbols();
+
+        // ① favcomic 真实书源 fixture：jsLib 为纯 JS 混淆 polyfill IIFE（无 Java 面）
+        let fixture = std::fs::read_to_string("tests/fixtures/comic_source.json").unwrap();
+        let sources: Vec<serde_json::Value> =
+            serde_json::from_str(&fixture).expect("书源 JSON 数组解析失败");
+        let source_json = sources[0].to_string();
+        let source: legado_core::models::BookSource =
+            serde_json::from_str(&source_json).expect("书源反序列化失败");
+        let js_lib = source.js_lib.clone().expect("favcomic fixture 应带 jsLib");
+        assert!(!js_lib.trim().is_empty());
+        assert!(
+            !js_lib.contains("Packages") && !js_lib.contains("Java."),
+            "fixture 口径回归：favcomic jsLib 应无 Java 面引用（若变化需重校本测试口径）"
+        );
+        // P2-E 回归：纯 JS jsLib 不受未知类哨兵影响，校验通过且无失败登记
+        assert!(
+            validate_js_lib("favcomic.test", &js_lib, None).is_ok(),
+            "纯 JS jsLib（无 Java 面）应校验通过（P2-E 哨兵不得误伤）"
+        );
+        assert_eq!(
+            capability_ledger::last_jslib_error("executor:favcomic.test"),
+            None,
+            "成功路径不应登记失败"
+        );
+
+        // ② 未定义全局引用失败（确定性探针全局，不依赖引擎未定义某具体名称）
+        let err = validate_js_lib(
+            "favcomic-fail.test",
+            "var x = __q4_probe_missing__();",
+            None,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, legado_core::LegadoError::JsEngine(_)),
+            "jsLib 失败应归为 JsEngine（批次通道 js_error）: {err}"
+        );
+        let msg = err.to_string();
+        assert!(
+            msg.contains("书源 jsLib 加载失败") && msg.contains("书源脚本能力不可用"),
+            "文案应明确告知能力不可用: {msg}"
+        );
+        let last_err = capability_ledger::last_jslib_error("executor:favcomic-fail.test")
+            .expect("jsLib 失败应登记台账（key executor:<source_tag>）");
+        assert!(
+            last_err.contains("__q4_probe_missing__"),
+            "台账应记录失败归因（未定义全局引用）: {last_err}"
+        );
+        assert!(
+            capability_ledger::jslib_load_failures()
+                .iter()
+                .any(|(tag, _, _)| tag == "executor:favcomic-fail.test"),
+            "台账快照应含本来源"
+        );
+
+        // ③ 未知 Java 类调用（P2-E 哨兵）：告警文案 + 未知符号台账登记
+        let err = validate_js_lib(
+            "favcomic-unknown.test",
+            "new Packages.java.io.InputStream();",
+            None,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("Java 脚本能力（Packages.java.io.InputStream）"),
+            "未知类告警文案应经 jsLib 通道上抛: {msg}"
+        );
+        // 未知符号台账（contains 断言噪声免疫：同进程并行测试可能并发登记其他未知符号）
+        assert!(
+            capability_ledger::unknown_java_symbols()
+                .iter()
+                .any(|(k, _)| k == "java.io.InputStream"),
+            "未知类 java.io.InputStream 应登记未知符号台账: {:?}",
+            capability_ledger::unknown_java_symbols()
+        );
+
+        capability_ledger::reset_jslib_load_failures();
     }
 }
 

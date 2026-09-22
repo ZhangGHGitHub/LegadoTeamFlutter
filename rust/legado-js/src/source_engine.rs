@@ -137,7 +137,7 @@ impl JsSourceEngine {
     pub fn new_quickjs(config: JsSourceConfig) -> Result<Self, legado_core::LegadoError> {
         let source_tag = Some(config.source_url.clone());
         let cache_key = format!("mainjs:{}:{}", config.source_url, config.main_js);
-        let (pooled_engine, main_js_status) = crate::engine_cache::get_or_create(
+        let (pooled_engine, _js_lib_ok, main_js_status) = crate::engine_cache::get_or_create(
             &cache_key,
             config.js_lib.as_deref(),
             None,

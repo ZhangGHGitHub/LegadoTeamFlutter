@@ -34,6 +34,12 @@ mixin _$SearchState {
   /// 错误信息
   String? get error => throw _privateConstructorUsedError;
 
+  /// 失败书源列表（队列④ P1-B：单源搜索失败原仅 AppLog 留痕、UI 不可见，
+  /// 现累积于此并在搜索结果页顶部以非阻断横幅呈现；新关键词搜索 / 清空 /
+  /// 页面重开时清空，同关键词续页按源名去重（最新错误优先））
+  List<SearchSourceFailure> get failedSources =>
+      throw _privateConstructorUsedError;
+
   /// 精准搜索：选中的书源 URL
   Set<String> get selectedSourceUrls => throw _privateConstructorUsedError;
 
@@ -81,6 +87,7 @@ abstract class $SearchStateCopyWith<$Res> {
       int searchedCount,
       int totalCount,
       String? error,
+      List<SearchSourceFailure> failedSources,
       Set<String> selectedSourceUrls,
       Set<String> selectedGroups,
       List<String> searchHistory,
@@ -110,6 +117,7 @@ class _$SearchStateCopyWithImpl<$Res, $Val extends SearchState>
     Object? searchedCount = null,
     Object? totalCount = null,
     Object? error = freezed,
+    Object? failedSources = null,
     Object? selectedSourceUrls = null,
     Object? selectedGroups = null,
     Object? searchHistory = null,
@@ -144,6 +152,10 @@ class _$SearchStateCopyWithImpl<$Res, $Val extends SearchState>
           ? _value.error
           : error // ignore: cast_nullable_to_non_nullable
               as String?,
+      failedSources: null == failedSources
+          ? _value.failedSources
+          : failedSources // ignore: cast_nullable_to_non_nullable
+              as List<SearchSourceFailure>,
       selectedSourceUrls: null == selectedSourceUrls
           ? _value.selectedSourceUrls
           : selectedSourceUrls // ignore: cast_nullable_to_non_nullable
@@ -195,6 +207,7 @@ abstract class _$$SearchStateImplCopyWith<$Res>
       int searchedCount,
       int totalCount,
       String? error,
+      List<SearchSourceFailure> failedSources,
       Set<String> selectedSourceUrls,
       Set<String> selectedGroups,
       List<String> searchHistory,
@@ -222,6 +235,7 @@ class __$$SearchStateImplCopyWithImpl<$Res>
     Object? searchedCount = null,
     Object? totalCount = null,
     Object? error = freezed,
+    Object? failedSources = null,
     Object? selectedSourceUrls = null,
     Object? selectedGroups = null,
     Object? searchHistory = null,
@@ -256,6 +270,10 @@ class __$$SearchStateImplCopyWithImpl<$Res>
           ? _value.error
           : error // ignore: cast_nullable_to_non_nullable
               as String?,
+      failedSources: null == failedSources
+          ? _value._failedSources
+          : failedSources // ignore: cast_nullable_to_non_nullable
+              as List<SearchSourceFailure>,
       selectedSourceUrls: null == selectedSourceUrls
           ? _value._selectedSourceUrls
           : selectedSourceUrls // ignore: cast_nullable_to_non_nullable
@@ -302,6 +320,8 @@ class _$SearchStateImpl implements _SearchState {
       this.searchedCount = 0,
       this.totalCount = 0,
       this.error,
+      final List<SearchSourceFailure> failedSources =
+          const <SearchSourceFailure>[],
       final Set<String> selectedSourceUrls = const <String>{},
       final Set<String> selectedGroups = const <String>{},
       final List<String> searchHistory = const [],
@@ -311,6 +331,7 @@ class _$SearchStateImpl implements _SearchState {
       this.isPaused = false,
       this.isManualStop = false})
       : _results = results,
+        _failedSources = failedSources,
         _selectedSourceUrls = selectedSourceUrls,
         _selectedGroups = selectedGroups,
         _searchHistory = searchHistory;
@@ -350,6 +371,22 @@ class _$SearchStateImpl implements _SearchState {
   /// 错误信息
   @override
   final String? error;
+
+  /// 失败书源列表（队列④ P1-B：单源搜索失败原仅 AppLog 留痕、UI 不可见，
+  /// 现累积于此并在搜索结果页顶部以非阻断横幅呈现；新关键词搜索 / 清空 /
+  /// 页面重开时清空，同关键词续页按源名去重（最新错误优先））
+  final List<SearchSourceFailure> _failedSources;
+
+  /// 失败书源列表（队列④ P1-B：单源搜索失败原仅 AppLog 留痕、UI 不可见，
+  /// 现累积于此并在搜索结果页顶部以非阻断横幅呈现；新关键词搜索 / 清空 /
+  /// 页面重开时清空，同关键词续页按源名去重（最新错误优先））
+  @override
+  @JsonKey()
+  List<SearchSourceFailure> get failedSources {
+    if (_failedSources is EqualUnmodifiableListView) return _failedSources;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_failedSources);
+  }
 
   /// 精准搜索：选中的书源 URL
   final Set<String> _selectedSourceUrls;
@@ -421,7 +458,7 @@ class _$SearchStateImpl implements _SearchState {
 
   @override
   String toString() {
-    return 'SearchState(keyword: $keyword, results: $results, isLoading: $isLoading, searchedCount: $searchedCount, totalCount: $totalCount, error: $error, selectedSourceUrls: $selectedSourceUrls, selectedGroups: $selectedGroups, searchHistory: $searchHistory, inputText: $inputText, searchPage: $searchPage, hasMore: $hasMore, isPaused: $isPaused, isManualStop: $isManualStop)';
+    return 'SearchState(keyword: $keyword, results: $results, isLoading: $isLoading, searchedCount: $searchedCount, totalCount: $totalCount, error: $error, failedSources: $failedSources, selectedSourceUrls: $selectedSourceUrls, selectedGroups: $selectedGroups, searchHistory: $searchHistory, inputText: $inputText, searchPage: $searchPage, hasMore: $hasMore, isPaused: $isPaused, isManualStop: $isManualStop)';
   }
 
   @override
@@ -438,6 +475,8 @@ class _$SearchStateImpl implements _SearchState {
             (identical(other.totalCount, totalCount) ||
                 other.totalCount == totalCount) &&
             (identical(other.error, error) || other.error == error) &&
+            const DeepCollectionEquality()
+                .equals(other._failedSources, _failedSources) &&
             const DeepCollectionEquality()
                 .equals(other._selectedSourceUrls, _selectedSourceUrls) &&
             const DeepCollectionEquality()
@@ -464,6 +503,7 @@ class _$SearchStateImpl implements _SearchState {
       searchedCount,
       totalCount,
       error,
+      const DeepCollectionEquality().hash(_failedSources),
       const DeepCollectionEquality().hash(_selectedSourceUrls),
       const DeepCollectionEquality().hash(_selectedGroups),
       const DeepCollectionEquality().hash(_searchHistory),
@@ -488,6 +528,7 @@ abstract class _SearchState implements SearchState {
       final int searchedCount,
       final int totalCount,
       final String? error,
+      final List<SearchSourceFailure> failedSources,
       final Set<String> selectedSourceUrls,
       final Set<String> selectedGroups,
       final List<String> searchHistory,
@@ -521,6 +562,12 @@ abstract class _SearchState implements SearchState {
 
   /// 错误信息
   String? get error;
+  @override
+
+  /// 失败书源列表（队列④ P1-B：单源搜索失败原仅 AppLog 留痕、UI 不可见，
+  /// 现累积于此并在搜索结果页顶部以非阻断横幅呈现；新关键词搜索 / 清空 /
+  /// 页面重开时清空，同关键词续页按源名去重（最新错误优先））
+  List<SearchSourceFailure> get failedSources;
   @override
 
   /// 精准搜索：选中的书源 URL

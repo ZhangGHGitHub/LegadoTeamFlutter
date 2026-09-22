@@ -24,6 +24,10 @@ struct Entry {
     /// 构建时 mainJs eval 是否成功（None = 无 mainJs）；
     /// 失败时调用方可选择带 bindings 重评（旧路径语义自洽）。
     main_js_ok: Option<bool>,
+    /// 构建时 jsLib eval 是否成功（None = 无 jsLib）；
+    /// 失败已降级继续（对齐原版 evaluateJsLib 无 catch），
+    /// 队列④ 由调用方据此上抛「书源脚本能力不可用」并登记台账。
+    js_lib_ok: Option<bool>,
 }
 struct Store {
     entries: HashMap<String, Entry>,
@@ -45,13 +49,14 @@ fn init_engine(
     js_lib: &str,
     setup_script: &str,
     main_js: &str,
-) -> LegadoResult<(SharedEngine, Option<bool>)> {
+) -> LegadoResult<(SharedEngine, Option<bool>, Option<bool>)> {
     let engine = QuickJsEngine::new(
         SandboxConfig::default()
             .with_allow_script_run(true)
             .with_memory_limit(64 * 1024 * 1024),
     )?;
     let mut main_js_ok: Option<bool> = None;
+    let mut js_lib_ok: Option<bool> = None;
     for (name, code) in [
         ("jsLib", js_lib),
         ("setup", setup_script),
@@ -66,6 +71,9 @@ fn init_engine(
             Ok(_) => {
                 if name == "mainJs" {
                     main_js_ok = Some(true);
+                }
+                if name == "jsLib" {
+                    js_lib_ok = Some(true);
                 }
             }
             Err(first_err) => {
@@ -96,6 +104,9 @@ fn init_engine(
                     if name == "mainJs" {
                         main_js_ok = Some(true);
                     }
+                    if name == "jsLib" {
+                        js_lib_ok = Some(true);
+                    }
                 } else {
                     eprintln!(
                         "[legado-js] 缓存引擎 {} {} 加载失败（降级继续）: {}",
@@ -104,11 +115,20 @@ fn init_engine(
                     if name == "mainJs" {
                         main_js_ok = Some(false);
                     }
+                    if name == "jsLib" {
+                        js_lib_ok = Some(false);
+                        // 队列④：jsLib 加载失败登记台账（进程可查询），
+                        // 调用方据此上抛「书源脚本能力不可用」
+                        crate::host_api::capability_ledger::record_jslib_load_failure(
+                            key,
+                            &first_err.to_string(),
+                        );
+                    }
                 }
             }
         }
     }
-    Ok((Arc::new(Mutex::new(engine)), main_js_ok))
+    Ok((Arc::new(Mutex::new(engine)), main_js_ok, js_lib_ok))
 }
 
 /// 获取带初始化上下文的缓存引擎；jsLib/setup 变化会重建对应条目。
@@ -117,7 +137,7 @@ pub fn get_or_create(
     js_lib: Option<&str>,
     setup_script: Option<&str>,
     main_js: Option<&str>,
-) -> LegadoResult<(SharedEngine, Option<bool>)> {
+) -> LegadoResult<(SharedEngine, Option<bool>, Option<bool>)> {
     let lib = js_lib.unwrap_or("");
     let setup = setup_script.unwrap_or("");
     let main = main_js.unwrap_or("");
@@ -133,13 +153,14 @@ pub fn get_or_create(
         let entry = guard.entries.get(key).unwrap();
         let engine = entry.engine.clone();
         let main_ok = entry.main_js_ok;
+        let lib_ok = entry.js_lib_ok;
         guard.order.retain(|k| k != key);
         guard.order.push_back(key.to_string());
-        return Ok((engine, main_ok));
+        return Ok((engine, main_ok, lib_ok));
     }
     guard.entries.remove(key);
     guard.order.retain(|k| k != key);
-    let (engine, main_ok) = init_engine(key, lib, setup, main)?;
+    let (engine, main_ok, lib_ok) = init_engine(key, lib, setup, main)?;
     guard.entries.insert(
         key.to_string(),
         Entry {
@@ -148,6 +169,7 @@ pub fn get_or_create(
             setup_script: setup.to_string(),
             main_js: main.to_string(),
             main_js_ok: main_ok,
+            js_lib_ok: lib_ok,
         },
     );
     guard.order.push_back(key.to_string());
@@ -156,7 +178,7 @@ pub fn get_or_create(
             guard.entries.remove(&old);
         }
     }
-    Ok((engine, main_ok))
+    Ok((engine, main_ok, lib_ok))
 }
 
 /// 测试串行锁：进程级缓存被同一二进制的多个测试共享，
@@ -193,7 +215,7 @@ mod tests {
     fn changing_initialization_scripts_rebuilds_entry() {
         let _guard = TEST_LOCK.lock().unwrap();
         clear_for_tests();
-        let (first, _) = get_or_create(
+        let (first, _, _) = get_or_create(
             "invalidate",
             Some("function marker(){ return 1; }"),
             None,
@@ -201,7 +223,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(first.lock().unwrap().eval("marker()").unwrap(), "1");
-        let (second, _) = get_or_create(
+        let (second, _, _) = get_or_create(
             "invalidate",
             Some("function marker(){ return 2; }"),
             None,

@@ -28,10 +28,10 @@
 use legado_core::LegadoError;
 
 use crate::host_api::{
-    archive_utils, asymmetric_crypto, cache_store, chinese_utils, concurrency_api, config_api,
-    cookie_store, crypto_api, encoding, file_utils, font_api, html_format, html_parse, json_utils,
-    misc_api, network, platform, regex_utils, register::mount_dual, string_utils, symmetric_crypto,
-    time_utils, variable_store,
+    archive_utils, asymmetric_crypto, cache_store, capability_ledger, chinese_utils,
+    concurrency_api, config_api, cookie_store, crypto_api, encoding, file_utils, font_api,
+    html_format, html_parse, json_utils, misc_api, network, platform, regex_utils,
+    register::mount_dual, string_utils, symmetric_crypto, time_utils, variable_store,
 };
 use crate::sandbox::SandboxConfig;
 use rquickjs::function::Opt;
@@ -80,6 +80,22 @@ pub fn register_all_apis<'js>(
     register_font_apis(ctx, &java, &globals)?;
     // 全局 cache 对象（P2-9 ① 记忆缓存三件套 + 磁盘缓存，对齐 WebCacheManager）
     register_cache_apis(ctx, &globals)?;
+
+    // 队列④ 能力受限台账：Packages 模拟层遇到未覆盖的 Java 类/成员时登记符号
+    // （capability_ledger），供"下一批补什么"诊断查询。必须先于
+    // inject_packages_shim 注册——shim 的 Proxy 陷阱与 Java.type/importClass
+    // 哨兵经 `java.reportUnknownSymbol` 回调查用。
+    // （须在 set("java", java) 移动 java 之前挂载）
+    // P3 硬化：仅挂 java 命名空间、不再挂裸全局——此前 mount_dual 把
+    // reportUnknownSymbol 同时写进 globalThis，污染全局作用域，可能与书源
+    // jsLib / 用户脚本中的同名标识符碰撞。shim 内所有调用点均为
+    // `java.reportUnknownSymbol`（trap / Java.type / importClass），java 专用即可。
+    let report_unknown_symbol = rquickjs::Function::new(ctx.clone(), |sym: String| -> () {
+        capability_ledger::record_unknown_java_symbol(&sym);
+    })
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    java.set("reportUnknownSymbol", report_unknown_symbol)
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
     // 将 java 命名空间对象注册到全局
     globals
@@ -298,7 +314,69 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
       close: function () {}
     };
   }
-  globalThis.Packages = {
+  // 队列④ 能力受限：未知 Java 类/成员访问 → 登记符号 + 抛带明确文案的错误。
+  // P2-E 读取语义：读取未知成员只登记并返回"可继续探测的哨兵"（不抛错）——
+  // 语料中的探测式代码（`typeof Packages.foo !== 'undefined'` 三元回退，
+  // RHINO_INTEROP_ANALYSIS_20260920 §8 命中 1 处）不再因一次读取中断整段脚本；
+  // 哨兵在**调用 / new / 取子成员**时才抛带明确文案的错误（用户口径"正常就是
+  // 不能用必须有提示"——提示保留在真正使用点）。
+  // 逐节点包 Proxy：get 陷阱对字符串属性若目标上查不到（`in` 查不到——
+  // 即连原型链上也没有）则返回全名哨兵；继承来的方法
+  // （toString/hasOwnProperty/valueOf 等）与 Symbol 属性直通，防误报。
+  // 函数（构造器）同样包一层——new/call 语义由默认 construct/apply 陷阱
+  // 原样保留，仅未知成员访问才告警。
+  // org.jsoup 经宿主桥实现（JSOUP_BRIDGE_JS 会替换其值），不对其加陷阱。
+  function makeUnknownClassSentinel(full) {
+    java.reportUnknownSymbol(full);
+    var msg = '此书源需要 Java 脚本能力（Packages.' + full + '），当前不支持';
+    // 目标必须是函数：对象目标 Proxy 的 apply/construct 陷阱不会被引擎调用
+    // （直接抛原生 "not a function" TypeError，丢可读文案）；函数目标天然
+    // 可调用/可构造，陷阱接管语义。
+    // ownKeys:[] + has:false 为一致的不变量组合——函数目标的 length/name 是
+    // 不可配置自有属性，ownKeys 不列出时 has 必须对其返回 false。
+    // set 恒返回 false（length/name 不可写 → 不变量要求；其余键静默丢弃）。
+    return new Proxy(function () {}, {
+      get: function (_t, prop) {
+        if (typeof prop !== 'string') { return undefined; }
+        var sub = full + '.' + prop;
+        java.reportUnknownSymbol(sub);
+        throw new Error('此书源需要 Java 脚本能力（Packages.' + sub + '），当前不支持');
+      },
+      has: function () { return false; },
+      apply: function () {
+        java.reportUnknownSymbol(full + '()');
+        throw new Error(msg);
+      },
+      construct: function () {
+        java.reportUnknownSymbol(full);
+        throw new Error(msg);
+      },
+      set: function () { return false; },
+      ownKeys: function () { return []; }
+    });
+  }
+  function trapNode(node, path) {
+    if (node === null || (typeof node !== 'object' && typeof node !== 'function')) {
+      return node;
+    }
+    if (typeof node === 'object') {
+      for (var k in node) {
+        if (Object.prototype.hasOwnProperty.call(node, k)) {
+          node[k] = trapNode(node[k], (path === '' ? '' : path + '.') + k);
+        }
+      }
+    }
+    return new Proxy(node, {
+      get: function (t, prop) {
+        if (typeof prop !== 'string' || (prop in t)) {
+          return Reflect.get(t, prop);
+        }
+        var full = (path === '') ? prop : (path + '.' + prop);
+        return makeUnknownClassSentinel(full);
+      }
+    });
+  }
+  var __pkRoot = {
     java: {
       // P2-9 ① java.lang 最小静态面（语料命中：Thread.sleep 8 /
       // System.currentTimeMillis 4；parseInt 等通用面一并提供）
@@ -458,7 +536,27 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
           };
         }
       }
-    } }
+    } },
+    // org.jsoup 预定义空对象：JSOUP_BRIDGE_JS 会写
+    // `Packages.org = Packages.org || {}` 并替换 jsoup 值——
+    // 若顶层树缺 org 键，读取会触发未知键陷阱
+    org: { jsoup: {} }
+  };
+  globalThis.Packages = trapNode(__pkRoot, '');
+
+  // Java.type / importClass 哨兵（语料零命中，RHINO_INTEROP_ANALYSIS_20260920 §8，
+  // 但书源可能探测）：不静默 undefined——登记符号 + 抛带明确文案的错误
+  globalThis.Java = {
+    type: function (name) {
+      var n = String(name == null ? '' : name);
+      java.reportUnknownSymbol('Java.type(' + n + ')');
+      throw new Error('此书源需要 Java 脚本能力（Java.type(' + n + ')），当前不支持');
+    }
+  };
+  globalThis.importClass = function (cls) {
+    var n = String(cls == null ? '' : cls);
+    java.reportUnknownSymbol('importClass(' + n + ')');
+    throw new Error('此书源需要 Java 脚本能力（importClass(' + n + ')），当前不支持');
   };
 })();
 "#;
@@ -4679,11 +4777,11 @@ decryptImage(result);
     }
 
     // ===== P2-6(e) java.getString 规则分派：绑定级回归测试 =====
-    // fixture 位于 workspace 内 rust/legado-ffi/（书源 + 本次 curl 生成的真实响应体）。
+    // fixture 位于 workspace 内 rust/legado-ffi/tests/fixtures/songhe/（书源 + curl 生成的真实响应体）。
 
     fn fixture_path(name: &str) -> std::path::PathBuf {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../legado-ffi")
+            .join("../legado-ffi/tests/fixtures/songhe")
             .join(name)
     }
 
@@ -4747,8 +4845,7 @@ decryptImage(result);
     /// 书源 `init` 规则为 `$.data.bookInfo`，故 getString 内容即 data.bookInfo 节点。
     #[test]
     fn test_binding_songhe_detail_kind_no_zero_words() {
-        let raw = std::fs::read_to_string(fixture_path("tmp_songhe_detail.json"))
-            .expect("detail fixture");
+        let raw = std::fs::read_to_string(fixture_path("detail.json")).expect("detail fixture");
         let v: serde_json::Value = serde_json::from_str(&raw).expect("detail json");
         let book_info = v
             .get("data")
@@ -4796,8 +4893,7 @@ decryptImage(result);
     /// 上游对 isFree 布尔 true 归一为 "true"，故 712 章全部不加锁。
     #[test]
     fn test_binding_songhe_chapters_no_free_lock() {
-        let raw = std::fs::read_to_string(fixture_path("tmp_songhe_chapters.json"))
-            .expect("chapters fixture");
+        let raw = std::fs::read_to_string(fixture_path("chapters.json")).expect("chapters fixture");
         let v: serde_json::Value = serde_json::from_str(&raw).expect("chapters json");
         let rows_json = serde_json::to_string(
             &v.get("rows")
@@ -4820,8 +4916,7 @@ decryptImage(result);
     /// 类5 补充（真实源·搜索）：ruleSearch 条目字段 `$.categoryInfoV4` 直取
     #[test]
     fn test_binding_songhe_search_category() {
-        let raw = std::fs::read_to_string(fixture_path("tmp_songhe_search.json"))
-            .expect("search fixture");
+        let raw = std::fs::read_to_string(fixture_path("search.json")).expect("search fixture");
         let v: serde_json::Value = serde_json::from_str(&raw).expect("search json");
         let item = &v["booklist"][0];
         let engine = make_engine();
@@ -5330,5 +5425,204 @@ decryptImage(result);
         assert!(result.contains("\"d2\":null"), "got: {result}");
         assert!(result.contains("\"f3\":null"), "got: {result}");
         assert!(result.contains("\"tPut\":\"function\""), "got: {result}");
+    }
+
+    /// 队列④①：未知 Java 符号 → 能力台账登记 + 可读错误文案
+    ///
+    /// 能力清单未覆盖的类/成员被访问时：
+    /// 1) 符号全名登记进 `capability_ledger`（进程可查询，供"下一批补什么"决策）；
+    /// 2) P2-E 读取语义：读取未知成员只登记并返回可探测哨兵（不抛错）；
+    ///    调用 / new / 取子成员才抛带明确文案的错误「此书源需要 Java 脚本能力（…），
+    ///    当前不支持」，经 `LegadoError::JsEngine` 进入搜索批次错误通道向用户可见。
+    #[test]
+    fn test_unknown_java_symbol_recorded_and_message() {
+        use crate::host_api::capability_ledger;
+
+        let _lock = capability_ledger::LEDGER_TEST_LOCK.lock().unwrap();
+        capability_ledger::reset_unknown_java_symbols();
+
+        let engine = make_engine();
+
+        // Packages 根下未知类：读取只登记 `foo`（哨兵，不抛错）；
+        // 取子成员 `.bar` 才抛带文案错误（错误串含完整路径 Packages.foo.bar）
+        assert!(
+            engine.eval("var s = Packages.foo;").is_ok(),
+            "P2-E：读取未知类应只登记哨兵、不抛错"
+        );
+        let err = engine.eval("Packages.foo.bar;").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("此书源需要 Java 脚本能力（Packages.foo.bar）"),
+            "got: {err}"
+        );
+        assert!(
+            capability_ledger::unknown_java_symbols()
+                .iter()
+                .any(|(k, _)| k == "foo"),
+            "未知符号 foo 应登记台账：{:?}",
+            capability_ledger::unknown_java_symbols()
+        );
+        assert!(
+            capability_ledger::unknown_java_symbols()
+                .iter()
+                .any(|(k, _)| k == "foo.bar"),
+            "取子成员符号 foo.bar 应登记台账：{:?}",
+            capability_ledger::unknown_java_symbols()
+        );
+
+        // 已知子树下的未知成员：读取只登记完整路径（哨兵）；
+        // new 实例化才抛带文案错误
+        assert!(
+            engine
+                .eval("var s2 = Packages.java.lang.NoSuchClass;")
+                .is_ok(),
+            "P2-E：已知子树下未知成员读取应只登记、不抛错"
+        );
+        let err = engine
+            .eval("new Packages.java.lang.NoSuchClass();")
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("此书源需要 Java 脚本能力（Packages.java.lang.NoSuchClass）"),
+            "got: {err}"
+        );
+        assert!(capability_ledger::unknown_java_symbols()
+            .iter()
+            .any(|(k, _)| k == "java.lang.NoSuchClass"));
+
+        // Java.type 哨兵：登记 `Java.type(<name>)` + 抛错
+        let err = engine.eval("Java.type('com.x.Y');").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("此书源需要 Java 脚本能力（Java.type(com.x.Y)）"),
+            "got: {err}"
+        );
+        assert!(capability_ledger::unknown_java_symbols()
+            .iter()
+            .any(|(k, _)| k == "Java.type(com.x.Y)"));
+
+        // importClass 哨兵：登记 `importClass(<cls>)` + 抛错
+        let err = engine.eval("importClass('com.x.Z');").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("此书源需要 Java 脚本能力（importClass(com.x.Z)）"),
+            "got: {err}"
+        );
+        assert!(capability_ledger::unknown_java_symbols()
+            .iter()
+            .any(|(k, _)| k == "importClass(com.x.Z)"));
+
+        // 四个未知符号各登记一次——以上四个 contains 断言即逐符号验证；
+        // 不做精确全量计数断言：同进程并行测试可能并发登记其他未知符号
+        // （噪声免疫），本测试结束也不做 reset（避免抹掉并行测试的登记）
+    }
+
+    /// 队列④ P2-E：未知类哨兵的探测安全语义
+    ///
+    /// 读取探测（typeof / 真值 / in / 探测三元）不抛错——语料命中 1 处
+    /// `typeof Packages` 三元回退式代码（RHINO_INTEROP_ANALYSIS_20260920 §8）；
+    /// 调用 / new / 取子成员仍抛带明确文案的错误（提示保留在真正使用点）。
+    #[test]
+    fn test_unknown_class_sentinel_probe_safe() {
+        use crate::host_api::capability_ledger;
+
+        let _lock = capability_ledger::LEDGER_TEST_LOCK.lock().unwrap();
+
+        let engine = make_engine();
+
+        // typeof 探测：哨兵目标为函数 → 'function'，不抛错
+        let r = engine
+            .eval("typeof Packages.foo === 'function' ? 'fn' : 'other'")
+            .unwrap();
+        assert!(r.contains("fn"), "哨兵 typeof 应为 function: {r}");
+
+        // 真值探测：对象代理为 truthy，不抛错
+        let r = engine
+            .eval("if (Packages.foo) { 'truthy' } else { 'falsy' }")
+            .unwrap();
+        assert!(r.contains("truthy"), "哨兵应为 truthy: {r}");
+
+        // in 检查：has 陷阱返回 false，不抛错
+        let r = engine.eval("'x' in Packages.foo ? 1 : 2").unwrap();
+        assert!(r.contains("2"), "'x' in 哨兵 应为 false: {r}");
+
+        // 语料命中的探测三元形态（`typeof Packages` 回退式）：整式完成不中断
+        let r = engine
+            .eval("typeof Packages.foo === 'undefined' ? 'absent' : 'present'")
+            .unwrap();
+        assert!(r.contains("present"), "探测三元应正常完成: {r}");
+
+        // 调用：apply 陷阱抛带文案错误 + 登记 `foo()`
+        let err = engine.eval("Packages.foo();").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("此书源需要 Java 脚本能力（Packages.foo）"),
+            "got: {err}"
+        );
+        assert!(capability_ledger::unknown_java_symbols()
+            .iter()
+            .any(|(k, _)| k == "foo()"));
+
+        // 实例化：construct 陷阱抛带文案错误
+        let err = engine.eval("new Packages.foo();").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("此书源需要 Java 脚本能力（Packages.foo）"),
+            "got: {err}"
+        );
+
+        // 取子成员：get 陷阱抛带文案错误（含子路径）
+        let err = engine.eval("Packages.foo.bar;").unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("此书源需要 Java 脚本能力（Packages.foo.bar）"),
+            "got: {err}"
+        );
+    }
+
+    /// 队列④③：已知能力面不误报——能力清单覆盖的类/成员访问不产生任何未知登记
+    ///
+    /// 若已知面误触陷阱，台账会被误报灌满、用户反复收到"需要 Java 能力"
+    /// 告警。访问前后台账计数不变即为通过（相对断言，不受并行测试噪声影响）。
+    #[test]
+    fn test_known_java_surface_records_nothing() {
+        use crate::host_api::capability_ledger;
+
+        let _lock = capability_ledger::LEDGER_TEST_LOCK.lock().unwrap();
+        let before = capability_ledger::unknown_java_symbol_count();
+
+        let engine = make_engine();
+        let result = engine
+            .eval(
+                r#"
+                var P = Packages;
+                JSON.stringify({
+                    pInt: P.java.lang.Integer.parseInt('42', 10),
+                    now: P.java.lang.System.currentTimeMillis() > 0,
+                    b64Len: P.android.util.Base64.decode('aGk=', 0).length === 2,
+                    uuidLen: P.java.util.UUID.randomUUID().toString().length === 36,
+                    hasCopyOf: P.java.util.Arrays.hasOwnProperty('copyOf') === true,
+                    intFn: typeof P.java.lang.Integer.parseInt === 'function',
+                    jsoupObj: typeof P.org.jsoup === 'object'
+                });
+                "#,
+            )
+            .unwrap();
+        assert!(result.contains("\"pInt\":42"), "got: {result}");
+        assert!(result.contains("\"now\":true"), "got: {result}");
+        assert!(result.contains("\"b64Len\":true"), "got: {result}");
+        assert!(result.contains("\"uuidLen\":true"), "got: {result}");
+        assert!(result.contains("\"hasCopyOf\":true"), "got: {result}");
+        // 注意：`typeof … === '…'` 是布尔表达式，JSON 里是 true 而非类型名字符串
+        assert!(result.contains("\"intFn\":true"), "got: {result}");
+        assert!(result.contains("\"jsoupObj\":true"), "got: {result}");
+
+        let after = capability_ledger::unknown_java_symbol_count();
+        assert_eq!(
+            before,
+            after,
+            "已知能力面不应登记任何未知符号：{:?}",
+            capability_ledger::unknown_java_symbols()
+        );
     }
 }

@@ -29,6 +29,11 @@ class SearchState with _$SearchState {
     /// 错误信息
     String? error,
 
+    /// 失败书源列表（队列④ P1-B：单源搜索失败原仅 AppLog 留痕、UI 不可见，
+    /// 现累积于此并在搜索结果页顶部以非阻断横幅呈现；新关键词搜索 / 清空 /
+    /// 页面重开时清空，同关键词续页按源名去重（最新错误优先））
+    @Default(<SearchSourceFailure>[]) List<SearchSourceFailure> failedSources,
+
     /// 精准搜索：选中的书源 URL
     @Default(<String>{}) Set<String> selectedSourceUrls,
 
@@ -58,6 +63,39 @@ class SearchState with _$SearchState {
     /// 抑制 play FAB 与滚动自动加载，直至新关键词搜索重置
     @Default(false) bool isManualStop,
   }) = _SearchState;
+}
+
+/// 单源搜索失败记录（队列④ P1-B：批次错误通道 → 可见 UI 的最小数据载体）
+///
+/// 数据来自 `searchMultiStream` 批次 JSON 的 `error`（可读错误文案，含
+/// 书源能力受限提示，如「此书源需要 Java 脚本能力（…），当前不支持」）
+/// 与 `source_name`（缺失时回退「未知书源」）。由 [SearchNotifier] 批次
+/// 监听累积进 [SearchState.failedSources]，搜索结果页横幅消费；
+/// 不改整体搜索交互（失败源不阻断搜索，对齐原版 SearchModel 静默语义，
+/// 仅把「仅 AppLog 留痕」升级为「留痕 + 可见呈现」）。
+class SearchSourceFailure {
+  const SearchSourceFailure({
+    required this.sourceName,
+    required this.error,
+  });
+
+  /// 书源名（批次 `source_name`；缺失回退「未知书源」）
+  final String sourceName;
+
+  /// 批次 `error` 文案（可读错误文本）
+  final String error;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SearchSourceFailure &&
+      other.sourceName == sourceName &&
+      other.error == error;
+
+  @override
+  int get hashCode => Object.hash(sourceName, error);
+
+  @override
+  String toString() => '$sourceName: $error';
 }
 
 /// 展示层派生属性

@@ -1276,6 +1276,10 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         let source_headers = Self::parse_source_headers(source);
 
+        // 队列④ P1-A 复审：删除 jsLib 预校验（与 search.rs 主路径同一处置：
+        // 口径过宽会误伤纯 CSS 规则书源；能力缺失/JS 失败在真被使用时经
+        // 既有路径给可读文案，error_class 映射不变）
+
         // 1. 解析搜索 URL 模板（`{{JS表达式}}` / `@js:` 模板经 JS 引擎求值渲染，
         //    纯字面模板走旧版路径；见 js_executor::build_search_url_with_setup）
         //    必须携带 jsLib + 书源上下文 setup：searchUrl 里 `{{source.getKey()}}`
@@ -1290,11 +1294,18 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             source.js_lib.as_deref(),
             crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
         );
-        if analyze_url.url().starts_with("legado-js-error://") {
-            return Err(LegadoError::Internal(format!(
-                "searchUrl JS 求值失败: {}",
-                analyze_url.url()
-            )));
+        // 队列④ P2-C：必须用 rule_url() 判断/解码（url() 经 get_absolute_url
+        // 拼接后丢失 `legado-js-error://` 前缀，见 analyze_url 单测），
+        // 解码错误 URL 还原真实 JS 错误文本，标注为 JsEngine
+        // （error_class 仍为 js_error——classify_source_outcome 既有
+        // 映射，契约不变；此前误标 Internal → parser_error）
+        if analyze_url.rule_url().starts_with("legado-js-error://") {
+            let detail = crate::js_executor::decode_js_error_url(analyze_url.rule_url())
+                .map(|m| m.chars().take(160).collect::<String>());
+            return Err(LegadoError::JsEngine(match detail {
+                Some(d) if !d.is_empty() => format!("searchUrl JS 求值失败: {d}"),
+                _ => "searchUrl JS 求值失败（无法解码错误详情）".into(),
+            }));
         }
 
         // 2. 发起 HTTP 请求。baseUrl 必须用重定向后最终 URL
@@ -1358,7 +1369,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         let elements = if book_list_rule.is_empty() {
             vec![analyzer.content().to_string()]
         } else {
-            analyzer.get_elements(book_list_rule).unwrap_or_default()
+            // 队列④ P2-D：仅 JsEngine 类上抛；非 JS 错误维持吞错语义
+            // （空列表 → 4.5 节空列表详情回退保持可达）
+            crate::api::search::book_list_elements_or_default(
+                analyzer.get_elements(book_list_rule),
+            )?
         };
         eprintln!(
             "[web_book] search request={request_url} base={base_url} elements={}",
@@ -3962,6 +3977,7 @@ mod tests {
     /// catalogUrl → chapterList java.ajax(/catalog) → 章节列表。
     /// — 书山目录修复（2026-08-17）
     #[test]
+    #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     #[cfg(feature = "quickjs")]
     fn test_shushan_real_toc_repro() {
         // webbook_chapters / webbook_content 会触发 P2-9 ③ 全局变量桥
@@ -3974,8 +3990,7 @@ mod tests {
             "/../../tmp_debug/e2e_5558/sources_device.json"
         );
         let Ok(raw) = std::fs::read_to_string(path) else {
-            eprintln!("sources_device.json 缺失，跳过");
-            return;
+            panic!("夹具缺失: {path}（仓库外，已于 2026-09-20 删除）——请重新导出后再跑");
         };
         let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {
@@ -4527,10 +4542,10 @@ mod tests {
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
         );
-        let out_path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../tmp_parity/scan_wave2.jsonl"
-        );
+        // 输出目标：改用系统临时目录，避免写仓库内/仓库根 tmp_parity/ 被 git 跟踪的路径
+        let out_dir = std::env::temp_dir().join("legado_parity");
+        let _ = std::fs::create_dir_all(&out_dir);
+        let out_path = out_dir.join("scan_wave2.jsonl");
         let Ok(raw) = std::fs::read_to_string(path) else {
             eprintln!("sources_device.json 缺失，跳过");
             return;
@@ -4621,10 +4636,14 @@ mod tests {
                 break;
             }
         }
-        let _ = std::fs::write(out_path, lines.join("\n"));
+        let _ = std::fs::write(&out_path, lines.join("\n"));
         eprintln!(
             "[wave2-summary] scanned={} ok={} empty={} failed={} out={}",
-            scanned, ok, empty, failed, out_path
+            scanned,
+            ok,
+            empty,
+            failed,
+            out_path.display()
         );
     }
 
@@ -4658,6 +4677,7 @@ mod tests {
     /// 七步阁 GBK POST 搜索回归（2026-08-17）：bookUrlPattern 全匹配修复
     /// （m.qibuge.com 正则不得命中 /s.php 搜索页 URL）
     #[test]
+    #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     #[cfg(feature = "quickjs")]
     fn test_qibuge_search_diag() {
         // P2-1：fixture 存在时 webbook_search 会执行 begin_book_flow（切
@@ -4673,7 +4693,7 @@ mod tests {
             "/../../tmp_debug/e2e_5558/sources_device.json"
         );
         let Ok(raw) = std::fs::read_to_string(path) else {
-            return;
+            panic!("夹具缺失: {path}（仓库外，已于 2026-09-20 删除）——请重新导出后再跑");
         };
         let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {
@@ -4745,6 +4765,7 @@ mod tests {
 
     /// 七步阁 GBK 目录/正文回归：详情页 meta charset=gbk 必须在简单 GET 路径正确解码。
     #[test]
+    #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     #[cfg(feature = "quickjs")]
     fn test_qibuge_catalog_and_content_gbk() {
         // P2-9 ③ / P1-2：入口 begin_book_flow 切 flow scope（只清旧 scope
@@ -4760,7 +4781,7 @@ mod tests {
             "/../../tmp_debug/e2e_5558/sources_device.json"
         );
         let Ok(raw) = std::fs::read_to_string(path) else {
-            return;
+            panic!("夹具缺失: {path}（仓库外，已于 2026-09-20 删除）——请重新导出后再跑");
         };
         let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {
@@ -4971,6 +4992,7 @@ mod tests {
 
     /// 淘小说 @js md5 签名搜索诊断（2026-08-17）
     #[test]
+    #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     #[cfg(feature = "quickjs")]
     fn test_taoxiaoshuo_search_diag() {
         let path = concat!(
@@ -4978,7 +5000,7 @@ mod tests {
             "/../../tmp_debug/e2e_5558/sources_device.json"
         );
         let Ok(raw) = std::fs::read_to_string(path) else {
-            return;
+            panic!("夹具缺失: {path}（仓库外，已于 2026-09-20 删除）——请重新导出后再跑");
         };
         let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {
@@ -5063,6 +5085,7 @@ mod tests {
     /// 企鹅小说 setup 依赖搜索验证（2026-08-17）：searchUrl 用
     /// `{{url=source.getKey();...}}`，缺 setup 时模板残留 → HTTP 404
     #[test]
+    #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     #[cfg(feature = "quickjs")]
     fn test_qiexs_search_diag() {
         let path = concat!(
@@ -5070,7 +5093,7 @@ mod tests {
             "/../../tmp_debug/e2e_5558/sources_device.json"
         );
         let Ok(raw) = std::fs::read_to_string(path) else {
-            return;
+            panic!("夹具缺失: {path}（仓库外，已于 2026-09-20 删除）——请重新导出后再跑");
         };
         let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {
@@ -5124,6 +5147,7 @@ mod tests {
     /// 新笔趣阁 @js: 重定向拦截搜索验证（2026-08-17）：searchUrl 用
     /// java.get(su,{}).headers('Location')[0] 需 jsoup Response 语义桥
     #[test]
+    #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     #[cfg(feature = "quickjs")]
     fn test_xbqgxs_search_diag() {
         let path = concat!(
@@ -5131,7 +5155,7 @@ mod tests {
             "/../../tmp_debug/e2e_5558/sources_device.json"
         );
         let Ok(raw) = std::fs::read_to_string(path) else {
-            return;
+            panic!("夹具缺失: {path}（仓库外，已于 2026-09-20 删除）——请重新导出后再跑");
         };
         let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {
@@ -5385,6 +5409,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
 
     /// org.jsoup + java.post(connectNR) 回归：云霄/键盘/天涯书库 searchUrl @js
     #[test]
+    #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     #[cfg(feature = "quickjs")]
     fn test_jsoup_post_redirect_search_diag() {
         // P2-1：fixture 存在时 webbook_search 会执行 begin_book_flow（切
@@ -5397,7 +5422,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             "/../../tmp_debug/e2e_5558/sources_device.json"
         );
         let Ok(raw) = std::fs::read_to_string(path) else {
-            return;
+            panic!("夹具缺失: {path}（仓库外，已于 2026-09-20 删除）——请重新导出后再跑");
         };
         let Ok(serde_json::Value::Array(sources)) = serde_json::from_str::<serde_json::Value>(&raw)
         else {

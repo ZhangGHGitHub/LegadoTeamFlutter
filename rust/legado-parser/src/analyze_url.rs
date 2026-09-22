@@ -1649,6 +1649,37 @@ mod tests {
         assert_eq!(url.url(), "https://example.com/list?page=3");
     }
 
+    // --- 队列④ P2-C：`legado-js-error://` 错误 URL 前缀的保真位置（死码 guard 修复依据） ---
+    /// `AnalyzeUrl::url()` 是经 `get_absolute_url` 拼到书源域名下的绝对 URL：
+    /// `legado-js-error://` 这类非 http(s)/data/`//`/`/` 开头的自定义 scheme
+    /// 被当相对路径拼到域名下（前缀丢失）；`rule_url()` 保留原始规则文本
+    ///（前缀保留）。据此，`legado-ffi` 搜索路径用 `rule_url()` 而非 `url()`
+    /// 判断/解码该错误 URL——用 `url()` 判断的 `starts_with` guard 恒不命中。
+    #[test]
+    fn test_js_error_url_prefix_survives_in_rule_url() {
+        let u = AnalyzeUrl::new(
+            "legado-js-error://search?e=x",
+            None,
+            Some(1),
+            "https://h.com",
+            None,
+        );
+        // url()：相对路径分支拼到书源域名下，前缀丢失
+        assert!(
+            !u.url().starts_with("legado-js-error://"),
+            "url() 为拼接后绝对 URL（域名下相对路径），不保留前缀: {}",
+            u.url()
+        );
+        assert!(u.url().starts_with("https://h.com/"), "got: {}", u.url());
+        // rule_url()：保留原始规则文本，前缀保留
+        assert!(
+            u.rule_url().starts_with("legado-js-error://"),
+            "rule_url() 应保留错误 URL 前缀: {}",
+            u.rule_url()
+        );
+        assert_eq!(u.rule_url(), "legado-js-error://search?e=x");
+    }
+
     /// 回归：思路客类 `/list1/{{page}}.html` 不得被 `{page}` 子串替换成 `/list1/{1}.html`
     #[test]
     fn test_double_brace_page_not_mangled_to_literal_brace() {
