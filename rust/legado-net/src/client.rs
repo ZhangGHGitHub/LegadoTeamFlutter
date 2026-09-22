@@ -796,27 +796,31 @@ mod tests {
             while let Ok((mut sock, _)) = listener.accept().await {
                 server_accepts.fetch_add(1, Ordering::SeqCst);
                 let mut head: Vec<u8> = Vec::new();
-                loop {
+                // 单连接处理循环：连接断开/关闭时 break 'conn，外层继续 accept 下一连接
+                'conn: loop {
                     head.clear();
-                    // 逐字节读到 \r\n\r\n（GET 无请求体）
-                    loop {
+                    // 逐字节读到 \r\n\r\n（GET 无请求体）；读失败或客户端关闭则未读全
+                    let complete = loop {
                         let mut b = [0u8; 1];
                         let n = match sock.read(&mut b).await {
                             Ok(n) => n,
-                            Err(_) => return,
+                            Err(_) => break false, // 读失败：连接已断
                         };
                         if n == 0 {
-                            return; // 客户端已关闭
+                            break false; // 客户端已关闭
                         }
                         head.push(b[0]);
                         if head.ends_with(b"\r\n\r\n") {
-                            break;
+                            break true;
                         }
+                    };
+                    if !complete {
+                        break 'conn; // 连接断开/关闭：结束本连接，等待下一 accept
                     }
                     let resp =
                         b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: keep-alive\r\n\r\nok";
                     if sock.write_all(resp).await.is_err() {
-                        return;
+                        break 'conn; // 写失败：连接已断
                     }
                 }
             }
@@ -838,6 +842,8 @@ mod tests {
             1,
             "两次顺序请求应复用同一条 keep-alive 连接（仅一次 accept）"
         );
+        // 断言已完成。服务器任务此刻仍阻塞在读请求/accept 上；drop 句柄后
+        // 任务随 #[tokio::test] 的 runtime 销毁被取消，不悬挂、不影响断言
         drop(server);
     }
 

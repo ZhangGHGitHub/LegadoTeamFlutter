@@ -187,15 +187,20 @@ pub fn resolver() -> Arc<CustomHostsResolver> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::Mutex;
+    use tokio::sync::Mutex;
 
-    /// 串行锁：以下测试读写全局 hosts 映射，需串行执行避免相互干扰
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    /// 串行锁：本模块全部 9 个测试读写全局 hosts 映射，需两两互斥串行执行。
+    /// 采用 `tokio::sync::Mutex`（异步感知）：两个 e2e 用例必须持锁跨整个请求体
+    /// （含 `.await`），std `MutexGuard` 跨 await 会触发 `clippy::await_holding_lock`；
+    /// 所有触及注册表的测试统一 `.lock().await` 获取。锁为进程级单实例，
+    /// 不区分同步/异步测试，互斥语义与原 std Mutex 完全一致
+    /// （且 tokio Mutex 无投毒，测试 panic 后锁仍可获取，消除原 `into_inner` 级联）。
+    static TEST_LOCK: Mutex<()> = Mutex::const_new(());
 
     /// 单 IP 字符串值解析
-    #[test]
-    fn test_parse_single_ip() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    #[tokio::test]
+    async fn test_parse_single_ip() {
+        let _g = TEST_LOCK.lock().await;
         apply_custom_hosts(r#"{"a.example.com": "1.2.3.4"}"#).unwrap();
         assert_eq!(
             lookup_ips("a.example.com"),
@@ -207,9 +212,9 @@ mod tests {
     }
 
     /// IP 数组值解析（对齐原版 parseIpsFromList）
-    #[test]
-    fn test_parse_ip_array() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    #[tokio::test]
+    async fn test_parse_ip_array() {
+        let _g = TEST_LOCK.lock().await;
         apply_custom_hosts(r#"{"b.example.com": ["1.1.1.1", "2.2.2.2"]}"#).unwrap();
         let ips = lookup_ips("b.example.com").unwrap();
         assert_eq!(ips.len(), 2);
@@ -217,18 +222,18 @@ mod tests {
     }
 
     /// 逗号分隔多 IP 字符串（对齐原版 parseIpsFromString）
-    #[test]
-    fn test_parse_comma_separated_string() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    #[tokio::test]
+    async fn test_parse_comma_separated_string() {
+        let _g = TEST_LOCK.lock().await;
         apply_custom_hosts(r#"{"c.example.com": "1.1.1.1, 2.2.2.2"}"#).unwrap();
         assert_eq!(lookup_ips("c.example.com").unwrap().len(), 2);
         clear_custom_hosts();
     }
 
     /// 非法输入：非 JSON / 非对象 → Internal 错误
-    #[test]
-    fn test_parse_invalid_json() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    #[tokio::test]
+    async fn test_parse_invalid_json() {
+        let _g = TEST_LOCK.lock().await;
         assert!(apply_custom_hosts("not json").is_err());
         assert!(apply_custom_hosts(r#"["a.com"]"#).is_err()); // 数组非对象
         assert!(apply_custom_hosts(r#""1.2.3.4""#).is_err()); // 字符串非对象
@@ -236,9 +241,9 @@ mod tests {
     }
 
     /// 非法 IP 值：该域名不纳入映射（等同未命中回落系统 DNS）
-    #[test]
-    fn test_parse_invalid_ip_skipped() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    #[tokio::test]
+    async fn test_parse_invalid_ip_skipped() {
+        let _g = TEST_LOCK.lock().await;
         apply_custom_hosts(r#"{"d.example.com": "not-an-ip", "e.example.com": 42}"#).unwrap();
         assert!(lookup_ips("d.example.com").is_none());
         assert!(lookup_ips("e.example.com").is_none());
@@ -247,9 +252,9 @@ mod tests {
     }
 
     /// 清除语义：空串 / 空对象均清空映射
-    #[test]
-    fn test_clear_semantics() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    #[tokio::test]
+    async fn test_clear_semantics() {
+        let _g = TEST_LOCK.lock().await;
         apply_custom_hosts(r#"{"f.example.com": "9.9.9.9"}"#).unwrap();
         assert!(lookup_ips("f.example.com").is_some());
 
@@ -263,9 +268,9 @@ mod tests {
     }
 
     /// 映射覆盖后 resolver 命中（不依赖系统 DNS）
-    #[test]
-    fn test_lookup_hit_and_miss() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+    #[tokio::test]
+    async fn test_lookup_hit_and_miss() {
+        let _g = TEST_LOCK.lock().await;
         apply_custom_hosts(r#"{"hit.example.com": "127.0.0.1"}"#).unwrap();
         assert!(lookup_ips("hit.example.com").is_some());
         // 未命中返回 None（resolver 内部回落系统 DNS）
@@ -276,7 +281,7 @@ mod tests {
     /// 端到端：hosts 映射命中后请求打到映射 IP 的本地服务器
     #[tokio::test]
     async fn test_e2e_hosts_override_hit() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = TEST_LOCK.lock().await;
 
         // 启动一次性本地 HTTP 服务器
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -321,7 +326,7 @@ mod tests {
     /// 端到端：未命中域名回落系统 DNS（localhost 由系统解析）
     #[tokio::test]
     async fn test_e2e_fallback_system_dns() {
-        let _g = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _g = TEST_LOCK.lock().await;
         clear_custom_hosts();
 
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
