@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.307] - 2026-09-22
+
+### Fixed
+- [Rust] **Cookie 域名存储键收敛为 ETLD+1（对齐上游 `NetworkUtils.getSubDomain`）**：修正多段 TLD 站点（如 `a.example.com.cn` 与 `b.other.com.cn`）共用键 `com.cn` 导致的 **cookie 互相覆盖/跨站携带**；IP 主机（含 IPv6 `[::1]`）与单标签 host 以自身为键；**清除/查询侧同步收敛**——`clearCookie` 与 MCP 的 `get/clear_cookies` 此前仍按"末两段"计算，多段 TLD 与 IP 书源清 Cookie 会**空转但界面仍提示成功**。另补 6 条私有后缀（`github.io`/`blogspot.com`/`pages.dev`/`vercel.app`/`netlify.app`/`workers.dev`）。
+- [Rust] **书源规则 Cookie 与已保存 Cookie 按键合并（规则优先）**：修正此前"DB cookie 整体替换规则 Cookie"（上游 `AnalyzeUrl` 为按键合并且规则优先）；顺带修正同场景会发出**两条 Cookie 请求头**的问题（`header()` 为 append 语义）。
+
+### 升级说明
+- 本次调整后，**多段 TLD 站点与 IP 字面量书源**（自建/局域网）的持久 cookie 在首次请求时不再携带，可能需要**重新登录一次**；其余域名（2 段/单段/普通子域）键前后一致，不受影响。
+
 ## [2.0.306] - 2026-09-22
 
 ### Changed
