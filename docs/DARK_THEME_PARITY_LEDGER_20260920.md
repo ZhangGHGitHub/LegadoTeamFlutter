@@ -216,3 +216,5 @@
   - **A6 搜索输入盒：回退 `surfaceContainerLow`**（⑦b 实测：参考 composeEngine=material → 填充槽 sCL；透明板深色盒全透明透现，我方原 `isDark ? onSurface` 与参考矛盾）；hint/图标深色态改 `onSurface`；注释换为已裁决口径 + 新增 2 条哨兵色 widget 测试。
   - **Transparent 深色 sCL：参考值 0x00FFFFFF 与我方一致 → 无需改动**（灰白底重采 + alpha 合成自检；旧批 0x8F000000 判为背景图缺失时兜底，标注推断）。
   - **A3 干净基线已入库**（默认动态取色主题 + 深色外观页顶部/中部帧）；**A3 页面 IA 对齐尚未实施**（列为 ⑦c 待办）。
+
+- **2026-09-21 A4 实施 + 审查（code-reviewer：pass/可提交，无 P0/P1）**：实现为"详情页 + 立即自动开读"（`BookInfoArgs(openReaderImmediately)`、`_autoStartScheduled` 守卫、目录非空且全量加载完成后 postFrame 开读；书架未读分支改推该参数；长按与已读分流不变）。**阅读器零进度经代码+实机双证无需补丁**；实机五项通过（未读单击直达首章 / 返回后 dci 0→1 写回 / 长按仍详情 / 已读无回归 / 应用零崩溃）。审查要求同批补齐：① 回调加**栈顶校验**（防用户抢先点 FAB 后二次压栈）；② "仅首入触发"落实（首轮加载完成即消费机会，避免后续 reload/桥接刷新把用户拽进阅读器）；③ 3 条 widget 测试（正面/空目录负例/只 push 一次）；④ 取证重采（`a4b2_03` 与长按图 md5 相同且内容为详情页，"返回落点"证据无效 → 重采 + 补"未读长按不自动开读"负例）。**审查附带 P3 观察（非本次引入，登记）**：书架从阅读器返回后不刷新（内存 Book 进度陈旧，`bookshelf_screen.dart` 仅下拉刷新；无功能损失，因详情页会取 DB 最新进度）；`_openReader` 的 `copyWith(bookType:)` 在 typeBits=0 时清内存 notShelf 位（不写库，无污染）。
