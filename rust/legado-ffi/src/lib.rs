@@ -21,6 +21,11 @@ pub mod http_state;
 pub mod js_executor;
 pub mod runtime;
 
+/// 测试支撑：全局变量 store / 桥读取器 / flow scope 的进程级状态锁
+/// （仅测试编译；供本 crate 所有测试模块共享同一把锁串行防串表）。
+#[cfg(test)]
+pub(crate) mod test_support;
+
 // 重新导出各业务 crate，便于外部（如 codegen）统一访问
 pub use legado_book;
 pub use legado_core;

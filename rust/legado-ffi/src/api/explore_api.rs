@@ -1106,6 +1106,9 @@ function getServerHost() { return 'https://a.test'; }
     #[test]
     #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     fn test_explore_real_jslib_get_config_visible() {
+        // 真实书山 jsLib 探索解析：JS 内 source./java. 绑定读写全局变量表
+        // → 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -1203,6 +1206,9 @@ function getServerHost() { return 'https://a.test'; }
     #[test]
     #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     fn test_shushan_booklist_js_with_jslib_and_setup() {
+        // 书山 bookList `<js>` 脚本（jsLib + setup 注入 source/cookie，
+        // source. 绑定读写全局变量表）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -1321,6 +1327,9 @@ function getServerHost() { return 'https://a.test'; }
     #[test]
     #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     fn test_shushan_header_rule_injected_to_global_headers() {
+        // 书山 header @js 规则（source. 绑定写全局表 + java.ajax 携带认证头）
+        // → 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -1376,6 +1385,9 @@ function getServerHost() { return 'https://a.test'; }
     #[test]
     #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     fn test_aggregate_sources_common_explore_and_header() {
+        // 通用聚合源（jsLib + setup + header 规则，source. 绑定读写全局表）
+        // → 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -1572,6 +1584,9 @@ mod tests {
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_explore_parse_url_js_source_get_put() {
+        // 探索 URL 解析 JS：source.get/put 绑定读写全局变量表
+        // → 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let source = BookSource {
             book_source_url: "https://explore-get.test".to_string(),
             book_source_name: "get/put".to_string(),
@@ -1591,6 +1606,9 @@ if(source.get('k')!=='v'){throw new Error('source.get/put failed');}
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_explore_parse_url_js_java_get_put() {
+        // 探索 URL 解析 JS：java.get 单参读全局变量表 / java.put 写全局表
+        // → 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let source = BookSource {
             book_source_url: "https://explore-java.test".to_string(),
             book_source_name: "java.get".to_string(),
@@ -1612,6 +1630,9 @@ if(source.get('mode')!=='audio'){throw new Error('source.get failed');}
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_explore_parse_url_js_aggregate_explore_kinds() {
+        // 聚合探索 JS：java.get + source.getLoginHeader 读全局变量表，
+        // 并写登录缓存 → 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         use crate::api::source_login_cache;
         let main_js = r#"
 function exploreKinds() {
@@ -1652,6 +1673,9 @@ function exploreKinds() {
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_explore_parse_url_js_host_from_jslib() {
+        // 大灰狼 jsLib 探索解析：source.getVariable/setVariable 读写全局表
+        // → 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let js_lib = r#"var host = ['https://api.dahuiwolf.test','https://backup.test'];
 function getArguments(open_argument, key) {
   try { open_argument = JSON.parse(open_argument); } catch (e) { open_argument = { server: host[0] }; }
@@ -1697,6 +1721,9 @@ JSON.stringify(qtsj.concat([{title: base_url + '榜', url: '/rank'}]));
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_explore_parse_url_dahuiwolf_from_env() {
+        // 大灰狼 env 探源（启用时执行真实 jsLib 探索 JS，source. 绑定读写
+        // 全局表）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let Ok(explore_url) = std::env::var("DAHUI_EXPLORE_URL") else {
             return;
         };
@@ -1835,10 +1862,8 @@ JSON.stringify(qtsj.concat([{title: base_url + '榜', url: '/rank'}]));
     fn test_explore_fetch_siluke_xuanhuan_live() {
         // P2-1：explore_fetch_books 入口执行 begin_book_flow（切 flow
         // scope）→ 触碰全局 store 状态，须与其它 store 测试串行（共享
-        // web_book 模块级锁）；结尾复位 flow scope
-        let _lock = crate::api::web_book::GLOBAL_STORE_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        // crate 级 test_support 锁）；结尾复位 flow scope
+        let _lock = crate::test_support::lock_global_store();
         // 回环夹具服务器：投递固定样本（抓取说明见夹具文件头注释）
         let fixture = std::fs::read_to_string("tests/fixtures/siluke_explore_xuanhuan_p1.html")
             .expect("夹具文件缺失: tests/fixtures/siluke_explore_xuanhuan_p1.html");

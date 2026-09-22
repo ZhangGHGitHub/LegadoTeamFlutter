@@ -35,6 +35,11 @@ pub mod rule_analyzer;
 pub mod rule_complete;
 pub mod xpath;
 
+/// 测试支撑：全局变量兜底读取器（`GLOBAL_VAR_FALLBACK`）的进程级状态锁
+/// （仅测试编译；供本 crate 所有测试模块共享同一把锁串行防串读取器）。
+#[cfg(test)]
+pub(crate) mod test_support;
+
 pub use analyze_rule::{
     set_global_variable_reader, split_top_level_hash, AnalyzeRule, JsExecutor, RuleType,
 };

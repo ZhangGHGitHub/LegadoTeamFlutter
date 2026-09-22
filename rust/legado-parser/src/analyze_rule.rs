@@ -4275,18 +4275,18 @@ mod tests {
 
     // ─── [P2-9 ③] 全局变量兜底读取器（get 最后 resort）──────────────────────
 
-    /// 全局读取器是进程级状态：注册/复位类测试串行化，避免与同 crate 其它
-    /// 调 `get()` 的测试并发交错（读取器按 key 命中，key 用独立前缀）
-    static GLOBAL_READER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    // 全局读取器是进程级状态：注册/复位类测试串行化，避免与同 crate 其它
+    // 调 `get()` 的测试并发交错（读取器按 key 命中，key 用独立前缀）。
+    // 锁已提升至 crate 级 `#[cfg(test)]` 共享模块 `crate::test_support`
+    // （GLOBAL_READER_TEST_LOCK / lock_global_reader），供本 crate 所有
+    // 测试模块共享同一把锁。
 
     /// P2-9 ③：`@get:{k}` 本地未命中 → 兜底读全局 store（FFI 层注入的
     /// 读取器）；本地有值时优先级不变（本地恒胜）；未注册读取器时维持
     /// 修复前行为（空串）。
     #[test]
     fn test_get_falls_back_to_global_reader() {
-        let _lock = GLOBAL_READER_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        let _lock = crate::test_support::lock_global_reader();
         // 模拟 FFI 层接线：全局 store 读取器（命中 p29_global_k → 固定值）
         set_global_variable_reader(Some(std::sync::Arc::new(|key: &str| -> Option<String> {
             (key == "p29_global_k").then(|| "p29_global_v".to_string())

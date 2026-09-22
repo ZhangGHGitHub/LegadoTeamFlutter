@@ -1013,6 +1013,9 @@ mod tests {
     #[test]
     #[ignore = "requires network access"]
     fn test_refresh_toc_success() {
+        // refresh_toc 入口执行 begin_book_flow（切 flow scope）→ 触碰全局
+        // store，持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let source_url = "https://toc-test.example.com";
         let book_url = "https://toc-test.example.com/book/1";
         let _db_guard = setup_db_and_source(source_url);
@@ -1025,10 +1028,8 @@ mod tests {
     fn test_refresh_toc_source_not_found() {
         // P2-1：refresh_toc 入口在 DB 查询前执行 begin_book_flow（切
         // flow scope，清旧前缀）→ 触碰全局 store 状态，须与其它 store
-        // 测试串行（共享 web_book 模块级锁）；结尾复位 flow scope
-        let _lock = crate::api::web_book::GLOBAL_STORE_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        // 测试串行（共享 crate 级 test_support 锁）；结尾复位 flow scope
+        let _lock = crate::test_support::lock_global_store();
         let _db_guard = setup_db_and_source("https://other.example.com");
         let err = refresh_toc("https://x.com/book", "https://nonexistent.example.com").unwrap_err();
         assert!(err.to_string().contains("书源不存在"));
@@ -1067,6 +1068,9 @@ mod tests {
     #[test]
     #[ignore = "requires network access"]
     fn test_refresh_toc_saves_to_db() {
+        // refresh_toc 入口执行 begin_book_flow（切 flow scope）→ 触碰全局
+        // store，持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let source_url = "https://toc-db-test.example.com";
         let book_url = "https://toc-db-test.example.com/book/2";
         let _db_guard = setup_db_and_source(source_url);

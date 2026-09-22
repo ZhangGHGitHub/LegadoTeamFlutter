@@ -1612,6 +1612,9 @@ mod tests {
     /// 书名/作者保留既有值（canReName=false）；章节 variable/is_volume 保留解析值
     #[test]
     fn test_switch_uses_parsed_toc_url_and_preserves_parsed_values() {
+        // 调 switch_book_source_with（换源执行链内含 begin_book_flow 切
+        // flow scope，JS 解析可写全局表）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         use crate::db_state::with_database;
         use legado_core::models::{Book, BookSource};
         use legado_core::web_book::WebBookInfo;
@@ -1875,7 +1878,6 @@ mod tests {
     /// scope，并行清 scope 会互串），串行执行。
     #[test]
     fn test_p215_switch_yields_stale_overlay_to_db_variable() {
-        use crate::api::web_book::GLOBAL_STORE_TEST_LOCK;
         use crate::db_state::{ensure_test_db, with_database};
         use legado_core::models::{Book, BookSource};
         use legado_core::web_book::{WebBookInfo, WebChapter};
@@ -1883,9 +1885,7 @@ mod tests {
         use legado_db::{BookRepository, BookSourceRepository};
         use legado_js::host_api::variable_store;
 
-        let _lock = GLOBAL_STORE_TEST_LOCK
-            .lock()
-            .unwrap_or_else(|p| p.into_inner());
+        let _lock = crate::test_support::lock_global_store();
         let _db_guard = ensure_test_db();
         let old_url = "https://p215-yield.example.com/book/1";
         let new_source = "https://p215-yield.example.com/new";
@@ -2045,6 +2045,9 @@ mod tests {
     /// T2 失败语义：详情解析失败 → 整个换源失败，旧源/旧目录/旧章节原样保留
     #[test]
     fn test_switch_fails_and_keeps_old_source_when_info_fails() {
+        // 调 switch_book_source_with（换源执行链内含 begin_book_flow 切
+        // flow scope）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         use crate::db_state::with_database;
         use legado_core::models::{Book, BookSource};
         use legado_db::repository::Repository;
@@ -2127,6 +2130,9 @@ mod tests {
     /// 同时验证「按新字段抓详情」链路：详情解析出的真实 tocUrl 用于取目录。
     #[test]
     fn test_switch_writes_origin_book_url_and_keeps_book_url_stable() {
+        // 调 switch_book_source_with（换源执行链内含 begin_book_flow 切
+        // flow scope）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         use crate::db_state::with_database;
         use legado_core::models::{Book, BookSource};
         use legado_core::web_book::WebBookInfo;
@@ -2239,6 +2245,9 @@ mod tests {
     /// originBookUrl 为第二源的详情页地址，不产生僵尸记录、不丢章节。
     #[test]
     fn test_two_consecutive_switches_both_succeed() {
+        // 连续两次 switch_book_source_with（换源执行链内含 begin_book_flow
+        // 切 flow scope）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         use crate::db_state::with_database;
         use legado_core::models::{Book, BookSource};
         use legado_core::web_book::WebBookInfo;

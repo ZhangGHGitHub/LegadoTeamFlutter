@@ -3957,17 +3957,15 @@ pub fn webbook_content(source_json: &str, chapter_json: &str) -> LegadoResult<St
     runtime::block_on(async { engine.get_content(&source, &chapter).await })
 }
 
-/// P2-9 ③ / P2-1：全局变量 store / 桥读取器 / flow scope 的进程级状态锁——
-/// 所有读写全局变量表或流程作用域的测试（含 book 绑定走 webbook_chapters /
-/// webbook_content 的书山回归）串行执行，防并行测试互相清表。
-/// P2-1：由本文件测试模块提升至模块级（`pub(crate)`），供 reader / explore_api
-/// 等其它模块的测试模块共享同一把锁（经 `crate::api::web_book::` 路径引用）
-#[cfg(test)]
-pub(crate) static GLOBAL_STORE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+// P2-9 ③ / P2-1：全局变量 store / 桥读取器 / flow scope 的进程级状态锁
+// 已提升至 crate 级 `#[cfg(test)]` 共享模块 `crate::test_support`
+// （GLOBAL_STORE_TEST_LOCK / lock_global_store），供本 crate 所有测试
+// 模块共享同一把锁；本模块测试经下方 `use` 引入后以裸名引用。
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_support::GLOBAL_STORE_TEST_LOCK;
     use legado_core::models::book_source::book_source_type;
     use legado_parser::AnalyzeRule;
 
@@ -4448,6 +4446,9 @@ mod tests {
     #[test]
     #[ignore = "外部 fixture 与源站网络诊断，非确定性 CI 测试"]
     fn test_batch_search_scan_text_sources() {
+        // 调 webbook_search（入口执行 begin_book_flow 切 flow scope）→ 触碰全局
+        // store，持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -4847,6 +4848,9 @@ mod tests {
     #[test]
     #[ignore = "外部源站网络诊断，非确定性 CI 测试"]
     fn test_77shuku_search_diag() {
+        // tmp_debug 夹具启用时执行 JS 书源搜索（入口 begin_book_flow，JS 绑定
+        // 可写全局表）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -4995,6 +4999,9 @@ mod tests {
     #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     #[cfg(feature = "quickjs")]
     fn test_taoxiaoshuo_search_diag() {
+        // tmp_debug 夹具启用时执行 JS 书源搜索（入口 begin_book_flow，JS 绑定
+        // 可写全局表）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -5088,6 +5095,9 @@ mod tests {
     #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     #[cfg(feature = "quickjs")]
     fn test_qiexs_search_diag() {
+        // tmp_debug 夹具启用时执行 JS 书源搜索（入口 begin_book_flow，JS 绑定
+        // 可写全局表）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -5150,6 +5160,9 @@ mod tests {
     #[ignore = "外部夹具 tmp_debug/e2e_5558/sources_device.json（仓库外，已于 2026-09-20 删除，无法复跑）+ 实网诊断（需真实登录/网络），非确定性 CI 测试"]
     #[cfg(feature = "quickjs")]
     fn test_xbqgxs_search_diag() {
+        // tmp_debug 夹具启用时执行 JS 书源搜索（入口 begin_book_flow，JS 绑定
+        // 可写全局表）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -5217,6 +5230,9 @@ mod tests {
     #[test]
     #[ignore = "外部源站限频/WAF，手工诊断专用"]
     fn test_js_network_sources_diag() {
+        // tmp_debug 夹具启用时执行 JS 书源搜索（入口 begin_book_flow，JS 绑定
+        // 可写全局表）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -5255,6 +5271,9 @@ mod tests {
     #[test]
     #[cfg(feature = "quickjs")]
     fn test_dejian_diag() {
+        // JS 书源（js_lib）搜索诊断：JS 内 source./java. 绑定读写全局变量表
+        // → 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let source = BookSource {
             book_source_url: "https://wechat.idejian.com##".to_string(),
             book_source_name: "得间小说".to_string(),
@@ -5283,6 +5302,9 @@ mod tests {
     #[test]
     #[ignore = "外部源站重定向，离线契约由 legado-js bridge test 覆盖"]
     fn test_connect_str_response_search_url_no_undefined() {
+        // JS 书源搜索诊断：JS 内 source./java. 绑定读写全局变量表
+        // → 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let source = BookSource {
             book_source_url: "https://qubook.org".to_string(),
             book_source_name: "趣书".to_string(),
@@ -5322,6 +5344,9 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     #[test]
     #[ignore = "外部源站/fixture 诊断，非确定性 CI 测试"]
     fn test_qushu123_connect_search_diag() {
+        // tmp_debug 夹具启用时执行 JS 书源搜索（入口 begin_book_flow，JS 绑定
+        // 可写全局表）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let path = concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -5367,6 +5392,9 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     #[test]
     #[ignore = "外部重定向源诊断，离线 Response bridge 契约覆盖"]
     fn test_tianyashuku_search_url_diag() {
+        // tmp_debug 夹具启用时执行 JS 书源搜索（入口 begin_book_flow，JS 绑定
+        // 可写全局表）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let raw = std::fs::read_to_string(concat!(
             env!("CARGO_MANIFEST_DIR"),
             "/../../tmp_debug/e2e_5558/sources_device.json"
@@ -5911,6 +5939,9 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_book_binding_iife_exposes_fields_and_methods() {
+        // 测试体内直接调 variable_store::remove_variable → 触碰全局表，
+        // 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let meta = BookMeta {
             name: "测试书名".into(),
             author: "测试作者".into(),
@@ -5956,6 +5987,9 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_p211_book_write_paths_visible_in_same_flow() {
+        // book 绑定写路径（book./java. 绑定写全局变量表）→ 持 crate 级
+        // test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         // 专属 bookUrl：并行测试互不串读（overlay 按 bookUrl 前缀过滤）
         let book_url = "https://p211-write-flow-test.example.com/b/flow";
         let meta = BookMeta {
@@ -6041,6 +6075,9 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_p211_book_type_initial_value_from_source() {
+        // probe 驱动 parse_book_info JS（book.getVariable 读全局表）→ 持
+        // crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         fn probe(book_url: &str, book_type_arg: i32) -> String {
             let meta = BookMeta {
                 name: "类型初值测试书".into(),
@@ -6113,6 +6150,9 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_p215_type_backflow_from_js_write() {
+        // JS 写回流 book 变量 + 测试体 variable_store::remove_variable →
+        // 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let body = "<html><body>raw detail body</body></html>".to_string();
         let seed_meta = |url: &str, name: &str| {
             record_book_meta_from_info(
@@ -6616,6 +6656,10 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_detail_phase_book_binding_before_after() {
+        // parse_book_info_from_body → book 绑定 IIFE 构造经 book_write_overlays
+        // 读全局变量表（bookVar_/bookType_/bookReverseToc_ overlay）→ 持 crate
+        // 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let source: BookSource = serde_json::from_value(serde_json::json!({
             "bookSourceUrl": "https://jhsu-binding-test.example.com",
             "bookSourceName": "详情绑定测试源",
@@ -6707,6 +6751,9 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_p29_real_jhsu_source_before_after() {
+        // 真实书源 JS（java./book. 绑定读写全局变量表，book 绑定 IIFE 构造
+        // 读 overlay）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let source: BookSource = serde_json::from_str(include_str!(
             "../../tests/fixtures/jhsu_book4cc_source.json"
         ))
@@ -6873,6 +6920,9 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_book_variable_from_db_no_manual_seeding() {
+        // 合成详情源 init 读 book.getVariable（DB 变量经全局变量表桥接）→
+        // 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
 
         // 合成详情源（与 test_p29 同构）：init 读 book.getVariable("custom")
@@ -7041,6 +7091,9 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_p29_real_aigei_source_getstringlist() {
+        // 真实书源 JS（java.getStringList 等绑定读写全局变量表）→ 持 crate
+        // 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let source: BookSource =
             serde_json::from_str(include_str!("../../tests/fixtures/aigei_agedm_source.json"))
                 .expect("艾格动漫书源 JSON（q9.db 逐字）");
@@ -7234,6 +7287,9 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
 
     #[test]
     fn test_webbook_content_empty_chapter_url_returns_error() {
+        // webbook_content 入口无条件 ensure_global_variable_bridge（注册全局
+        // 读取器）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let chapter_json = serde_json::to_string(&WebChapter::new(0, "第一章", "")).unwrap();
         let err = webbook_content(&make_source_json(), &chapter_json).unwrap_err();
         assert!(err.to_string().contains("章节URL不能为空"));
@@ -8097,6 +8153,9 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     #[test]
     #[ignore = "network smoke: qmao video content"]
     fn qmao_video_content_smoke() {
+        // 走 webbook_content（book./java. 绑定 + 全局变量桥）→ 持 crate 级
+        // test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let json = include_str!("../../tests/fixtures/qmao_min_source.json");
         let source: BookSource = serde_json::from_str(json).expect("source json");
         assert_eq!(source.book_source_type, book_source_type::VIDEO);

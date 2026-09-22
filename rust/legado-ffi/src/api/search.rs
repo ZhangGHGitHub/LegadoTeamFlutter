@@ -3673,6 +3673,9 @@ mod tests {
     #[test]
     #[ignore]
     fn test_e2e_yckceo_search_network() {
+        // 调 search_books（入口执行 begin_book_flow 切 flow scope）→ 触碰
+        // 全局 store，持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
 
         // cwd 为 rust/legado-ffi，书源夹具位于 tests/fixtures/
@@ -3700,6 +3703,9 @@ mod tests {
     #[test]
     #[ignore]
     fn test_e2e_yckceo_read_chain_network() {
+        // 搜索+刷新目录+正文链（search_books / refresh_toc 入口均
+        // begin_book_flow）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let _db_guard = crate::db_state::ensure_test_db();
 
         let json = std::fs::read_to_string("tests/fixtures/yckceo_7631.json")
@@ -3904,6 +3910,9 @@ mod tests {
     #[test]
     #[ignore = "requires network + tmp_debug fixtures"]
     fn probe_manga_sources_from_tmp_debug() {
+        // tmp_debug 夹具启用时经 search_books 探源（入口 begin_book_flow）
+        // → 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let _db = crate::db_state::ensure_test_db();
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tmp_debug");
         for (file, kw) in [
@@ -3969,6 +3978,9 @@ mod tests {
     #[test]
     #[ignore = "requires network + tmp_debug/sources.json"]
     fn probe_all_image_sources_batch() {
+        // tmp_debug 批量探源（search_books 入口 begin_book_flow）→ 持 crate
+        // 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let _db = crate::db_state::ensure_test_db();
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../tmp_debug/sources.json");
@@ -4096,6 +4108,9 @@ mod tests {
     #[test]
     #[ignore = "e2e network probe"]
     fn probe_missing_manga_sources() {
+        // tmp_debug 缺失源探因（search_books 入口 begin_book_flow）→ 持 crate
+        // 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let _db = crate::db_state::ensure_test_db();
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../tmp_debug/e2e_5558/probe_missing_srcs.json");
@@ -4133,6 +4148,9 @@ mod tests {
     #[test]
     #[ignore = "e2e network probe"]
     fn probe_fast_group_novel_search() {
+        // fast 组小说探源（search_books 入口 begin_book_flow）→ 持 crate 级
+        // test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         use std::collections::BTreeMap;
         let _db = crate::db_state::ensure_test_db();
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -4231,6 +4249,9 @@ mod tests {
     #[test]
     #[ignore = "e2e network probe"]
     fn probe_fast_group_novel_fail_classify() {
+        // fast 组失败分类（search_books 入口 begin_book_flow）→ 持 crate 级
+        // test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         use std::collections::BTreeMap;
         let _db = crate::db_state::ensure_test_db();
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -4420,6 +4441,10 @@ mod tests {
     #[test]
     #[ignore = "e2e network probe"]
     fn probe_gbk_charset_novel_search() {
+        // GBK 探源（build_search_url_with_lib 评估 search_url JS 规则 +
+        // 共享客户端抓取，JS 绑定可读写全局表）→ 持 crate 级 test_support
+        // 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let _db = crate::db_state::ensure_test_db();
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../tmp_debug/e2e_5558/probe_gbk_srcs.json");
@@ -4486,6 +4511,9 @@ mod tests {
     #[test]
     #[ignore = "e2e network probe"]
     fn probe_manga_group_e2e_search() {
+        // 漫画组 e2e 探源（search_books 入口 begin_book_flow）→ 持 crate 级
+        // test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         use std::collections::BTreeMap;
         let _db = crate::db_state::ensure_test_db();
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -4589,6 +4617,9 @@ mod tests {
     #[test]
     #[ignore = "requires network"]
     fn probe_51_toc_detail() {
+        // src_51 目录/详情探测（webbook_chapters / webbook_info 入口
+        // begin_book_flow）→ 持 crate 级 test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let _db = crate::db_state::ensure_test_db();
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .join("../../tmp_debug/src_51.json");
@@ -4685,6 +4716,9 @@ mod tests {
     #[test]
     #[ignore = "requires network"]
     fn probe_relative_search_urls() {
+        // 相对 URL 探源（search_books 入口 begin_book_flow）→ 持 crate 级
+        // test_support 锁串行防串表
+        let _lock = crate::test_support::lock_global_store();
         let _db = crate::db_state::ensure_test_db();
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tmp_debug");
         let raw = std::fs::read_to_string(root.join("sources.json")).unwrap();
