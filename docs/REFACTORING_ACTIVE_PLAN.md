@@ -244,6 +244,15 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **后续（部分完成 2026-09-20，提交 `f101b8f673`）**：11 例中 **9 例已夹具化转离线**（explore 1 例现抓 `silukezw.com/list1/1.html` 存仓内夹具经回环服务器投递；s0 5 例与 toc 3 例经侦察确认本即离线，属陈旧标注直接去 ignore；s0 执行器客户端换专用 no_proxy 客户端）——默认档 ignored 30→21，恢复 9 例覆盖。余 web_book.rs 2 例因该文件在途改动避让保持 ignore，待无冲突窗口。`legado-net` 3 例回环用例另修显式 `no_proxy`（`cda70a0c54`，修"死代理排查法"误报）；`cache_store` 测试改显式注入槽消除 env 互污（`b816977643`）。
 - **P2-18 Flutter CI 门禁长期被 skip 的基建修复**（**已关闭 2026-09-19**，提交 `f97efdfcb2`）：`flutter-ci.yml` 的 `android-ffi-sync` 作业长期在 `Set up Android SDK` 一步失败（`android-actions/setup-android@v3` 默认安装列表含已被 SDK 仓库移除的 `tools` 包 → `Warning: Failed to find package 'tools'` → sdkmanager exit 1），下游 `analyze` 作业被 skip → **`flutter analyze` / `flutter test` 这两个门禁自建立起就没在 CI 跑过**（历史多次被记为"基建问题、非我方"）。修法：显式 `packages: 'platform-tools'`（runner 镜像自带 SDK/cmdline-tools，NDK 由下一步 sdkmanager 安装）。**验证**：workflow_dispatch run 35445292930 与推送 run 35445743433 两次均两作业全绿，`Flutter analyze`/`Flutter test` 步骤真实执行并通过。
 
+- **P2-19 搜索 HTTP 层与上游逐项评估的发现（2026-09-22，队列⑩b，**未修**）**：按上游 Kotlin 实读逐项对比「重试 / cookie / charset / 重定向 / concurrentRate」，结论=主体近似、**三项确凿缺陷**（附最小复现）：
+  1. **[P1] cookie 域名键塌缩**：`client.rs:738-749`（与 `cookie_store.rs` 的 `extract_domain`）取 host **末两段**为键，无 Public Suffix 判定 → `a.example.com.cn` 与 `b.other.com.cn` 同键 `com.cn`，两站 cookie 互相覆盖并随任一请求发出（复现：两个不同 `.com.cn` 站各 Set-Cookie 一次后访问任一站，Cookie 头会带另一站的 cookie）。修法：引入 public suffix（`publicsuffix` crate 或内置高频多段 TLD 表 + IP 特判，对齐上游 `NetworkUtils.getSubDomain`），约 4–8h。
+  2. **[P1] 规则 Cookie 头被 DB 覆盖**：`client.rs:280-282` 自定义头先应用、`apply_cookie_static` 后应用且**整体替换** Cookie 头；上游 `AnalyzeUrl.kt:733-735` 是**按键合并且规则优先**。且我方 DB cookie **无 per-source `enabledCookieJar` 门控**（上游仅启用 cookie 的书源才读写 DB）。修法：注入前按键合并（自定义优先）+ 按书源 cookie 开关门控，约 4–8h。
+  3. **[P2] concurrentRate 编辑不生效**：`source_rate_limit.rs:14-32` 仅 `or_insert_with`、无刷新入口（上游 `BaseSource.kt:388` 编辑即 `updateConcurrentRate`）。约 2–4h（顺带把键统一为 source key）。
+  - **backlog（P2/P3，未修）**：`urlOption retry` 字段已解析但**零消费者**（书源配置静默失效；修法=按上游"仅非 2xx/非 3xx 重发、无退避"模式接入，注意现 `RetryExecutor` 语义不同，约 4–8h）；charset 自动探测兜底缺失（无 header/meta 的非 UTF-8 页走 lossy，可引 `chardetng`，约 4–8h）；重定向跳数 10 vs 上游 20（1h）、`followRedirects=false` 未消费（4–8h）、JS 辅助请求上游**刻意不跟随**而我方跟随（2–4h）；JS `setCookie` 独立内存存储不落 DB、与客户端 CookieStore 不互通（8–16h，可缓）。
+  - **保持现状（评估明确不建议改）**：concurrentRate 固定窗口算法（与上游逐行等价，含单测）、S0-E 非 2xx 语义、**显式 charset 解码响应（我方优于上游，勿改回）**、reqwest 默认头/UA 处理。
+  - 未核实点：OkHttp "默认 20 跳"取自库文档未逐行核库源；`legado-db` cookie 表 schema 未复核；chardetng vs ICU4J 质量未做基准；语料中 urlOption `retry`/`followRedirects` 使用频率未统计。
+  - **可选排期（用户原始口径：排最后）**：**P1-1 项2 跨源聚合下沉 + 跨端夹具校验**（约 2 天量级）仍为可选项，未实施。
+
 ### P3：功能补齐与卫生项（2026-08-22 开启）
 
 
