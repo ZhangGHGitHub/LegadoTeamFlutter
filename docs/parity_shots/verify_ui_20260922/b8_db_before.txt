@@ -1,0 +1,4 @@
+http://127.0.0.1:8092/r1va/detail | R1换源验证书 | type=1032 | dci=0 | shelf_bit=1
+https://lbxjtjs.com/page/1?s=%E6%96%97%E7%A0%B4%E8%8B%8D%E7%A9%B9%E6%96%97%E7%A0%B4%E8%8B%8D%E7%A9%B9 | 斗破苍穹斗破苍穹 的搜索结果 | type=64 | dci=0 | shelf_bit=0
+ch_total=3
+cc_total=2
