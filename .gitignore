@@ -119,3 +119,5 @@ docs/parity_shots/songhe_template_fix_20260917/
 docs/parity_shots/**/_tmp_*
 # Dart 测试基线日志（每次重跑可再生）
 docs/gate_baseline_test.txt
+# 零引用临时采集目录（审计判定可清；保留在盘不入库）
+docs/parity_shots/tmp_d11/
