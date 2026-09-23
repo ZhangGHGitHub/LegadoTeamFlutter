@@ -1,0 +1,25 @@
+=== 中途2 logcat 崩溃面扫描 2026-09-24 04:36:49 (#2 进行中) ===
+--- 关键模式 (排除 MESA/uiautomator/HP) ---
+09-24 04:34:08.401 26617 26617 E AndroidRuntime: FATAL EXCEPTION: main
+09-24 04:34:08.883 26631 26631 E AndroidRuntime: FATAL EXCEPTION: main
+09-24 04:34:12.550 26695 26695 E AndroidRuntime: FATAL EXCEPTION: main
+09-24 04:34:13.047 26710 26710 E AndroidRuntime: FATAL EXCEPTION: main
+09-24 04:34:13.536 26725 26725 E AndroidRuntime: FATAL EXCEPTION: main
+09-24 04:34:14.039 26739 26739 E AndroidRuntime: FATAL EXCEPTION: main
+09-24 04:34:16.929 26794 26794 E AndroidRuntime: FATAL EXCEPTION: main
+09-24 04:34:17.448 26808 26808 E AndroidRuntime: FATAL EXCEPTION: main
+09-24 04:34:20.297 26862 26862 E AndroidRuntime: FATAL EXCEPTION: main
+09-24 04:34:23.146 26916 26916 E AndroidRuntime: FATAL EXCEPTION: main
+(无输出=无命中)
+--- flutter E/W ---
+E-flutter: 0
+W-flutter: 0
+--- 进程 ---
+22739
+
+=== FATAL 归属判定 04:36:59 ===
+04:34:08-04:34:23 共10条 FATAL EXCEPTION:main, PID 26617-26916 (递增, 非应用 22739)
+栈: java.lang.IllegalStateException: UiAutomationService ... already registered!
+     at com.android.uiautomator.core.UiAutomationShellWrapper.connect
+判定: uiautomator dump 工具自杀(前次 UiAutomation 未注销即重复注册) => 任务排除项
+应用进程 22739: 无 FATAL/AndroidRuntime 记录

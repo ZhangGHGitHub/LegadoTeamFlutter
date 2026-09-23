@@ -1,0 +1,29 @@
+==> adb: D:\Android\platform-tools\adb.exe
+==> 目标设备: 127.0.0.1:16384（io.legado.flutter_legado）
+[PASS] 设备 127.0.0.1:16384 在线
+==> 校验 Android FFI content hash ...
+Rust source fingerprint: 2492b90758e3879e...
+=== Legado Android FFI verify ===
+Expected content hash: 1370864294
+Build mode: release
+Targets: aarch64, x86_64
+
+[OK] arm64-v8a (meta: FRB hash + Rust 源码指纹一致)
+[OK] x86_64 (meta: FRB hash + Rust 源码指纹一致)
+
+=== FFI verify PASSED (FFI 面与 Rust 源码指纹一致，复用现有 .so) ===
+[PASS] FFI content hash 校验通过
+==> flutter build apk --debug ...
+Try `flutter pub outdated` for more information.
+Running Gradle task 'assembleDebug'...                             13.2s
+√ Built build\app\outputs\flutter-apk\app-debug.apk
+[PASS] APK 构建成功（304.4 MB）
+==> adb install -r ...
+[PASS] APK 安装成功
+[PASS] 已装版本与 pubspec 一致（2.0.308）
+[PASS] 应用进程存活（u0_a55       10273   660   88007388 192496 0                   0 D io.legado.flutter_legado）
+[PASS] 无崩溃日志（FATAL/E/flutter）
+
+================ 冒烟测试汇总 ================
+  通过: 7   失败: 0   设备: 127.0.0.1:16384
+结果: PASSED

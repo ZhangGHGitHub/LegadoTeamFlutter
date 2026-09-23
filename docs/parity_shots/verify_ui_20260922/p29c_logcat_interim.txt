@@ -1,0 +1,11 @@
+=== 中途 logcat 崩溃面扫描 2026-09-24 04:27:06 (自冒烟测试 logcat -c 后) ===
+--- 关键模式命中 ---
+--- (以上无输出=无命中) ---
+--- 排除项计数 (MESA/uiautomator自杀/HP patched OK) ---
+MESA VkFence: 0
+uiautomator 自杀候选: 0
+HP patched OK: 0
+--- E/flutter 行数 ---
+E/flutter: 0
+--- 进程存活 ---
+22739

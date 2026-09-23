@@ -1,0 +1,5 @@
+=== .so baseline (before build) Thu Sep 24 02:15:04     2026 ===
+flutter_legado/android/app/src/main/jniLibs/arm64-v8a/liblegado_ffi.so | mtime=2026-09-23 13:40:41.181540000 +0800 | size=41603968
+flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so | mtime=2026-09-23 13:41:26.220896300 +0800 | size=41468368
+3caedfe90dc30f7b959e0f81e370820db3b82f741e2c8bc2ab7b97ffa1c139a5 *arm64-v8a/liblegado_ffi.so
+efea3b86269ab0c5d2e410a27473ef80c2456d2146d9c054465bb96971593e2f *x86_64/liblegado_ffi.so

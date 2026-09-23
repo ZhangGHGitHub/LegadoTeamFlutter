@@ -1,0 +1,13 @@
+== 2026-09-24 02:23:49 books WHERE name LIKE '斗破%' ==
+https://lbxjtjs.com/page/1?s=%E6%96%97%E7%A0%B4%E8%8B%8D%E7%A9%B9%E6%96%97%E7%A0%B4%E8%8B%8D%E7%A9%B9|https://lbxjtjs.com/bh|🔞Bi话||https://lbxjtjs.com/page/1?s=%E6%96%97%E7%A0%B4%E8%8B%8D%E7%A9%B9%E6%96%97%E7%A0%B4%E8%8B%8D%E7%A9%B9|0|
+https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468914|https://so.html5.qq.com#v2修复版|🏷松鹤庭沐·言璃||https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468914|0|
+
+== cached_chapters for that book ==
+0|
+第1章 陨落的天才|https://novel.html5.qq.com/be-api/content/ads-read,{
+	"method": "POST",
+	"body":|1790187812756|8181
+1|
+第2章 斗气大陆|https://novel.html5.qq.com/be-api/content/ads-read,{
+	"method": "POST",
+	"body":|1790187812873|10859

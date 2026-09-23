@@ -1,0 +1,10 @@
+=== 中途3 logcat 崩溃面扫描 2026-09-24 04:46:44 (#3 进行中) ===
+--- 关键模式 (排除 MESA/uiautomator自杀/HP) ---
+--- uiautomator 自杀 FATAL 计数 (排除项) ---
+UiAutomation FATAL 相关: 33
+--- 应用进程 22739 FATAL/AndroidRuntime ---
+(无输出=应用进程无崩溃)
+--- flutter E/W ---
+E-flutter: 0
+W-flutter: 0
+pid: 22739

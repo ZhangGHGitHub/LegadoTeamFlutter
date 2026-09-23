@@ -1,0 +1,22 @@
+P2-9 logcat 崩溃面全量扫描 (p29_logcat_full.txt, 5998 行, logcat -d -v time)
+================================================================
+[结论] 应用进程 io.legado.flutter_legado: 无原生崩溃、无 ANR、无 Java am_crash
+唯一的 app 级故障 = P2-9 新缺陷 #1: Dart 运行时 TypeError
+  type '_ChangeSourceSheetRoute' is not a subtype of type 'Route<String?>?' in type cast
+  时间 2026-09-24 02:36:51 (P2-13 崩溃对话框持久化记录, 见 p29_crash_dialog_change_source.xml)
+  触发: 阅读器顶栏/快捷栏「换源」→ reader_menu_panel.dart:213 pushNamed<String>(AppRoutes.changeSource)
+  根因: routes.dart generateRoute 对 /change_source 返回 _ChangeSourceSheetRoute(PageRouteBuilder<dynamic>)
+  进程 2716 崩溃后冻结, 02:39:27 被 force-stop (Killing 2716 ... due to from pid 8702), 重启后弹出崩溃对话框
+
+[排除集(已知环境噪声)]
+  F/libc Fatal signal 11 (SIGSEGV) x 34~35 次: 全部 Cmdline: uiautomator (uid 2000, Shutdown thread) = uiautomator dump 工具自杀, 任务指定排除
+  E MESA (vulkan) x 11: MuMu GPU 驱动噪音, 任务指定排除
+  E-HP x 0: 本段日志未出现
+
+[ANR 检查] 无 'ANR in' / 'am_anr' / 'Input dispatching timed out' → 无 ANR
+[am_crash] 无 am_crash/am_anr 事件 (Dart 未捕获异常走 P2-13 自持崩溃日志, 不触发 Android am_crash 路径)
+[Flutter 引擎 fatal] 无 F/flutter / FATAL EXCEPTION / Lost connection
+
+[应用进程 Killing 记录(外部 stop, 非崩溃)]
+  02:39:27.648 Killing 2716:io.legado.flutter_legado/u0a55 (adj 0): stop ... due to from pid 8702
+  02:45:02.629 Killing 8759:io.legado.flutter_legado/u0a55 (adj 0): stop ... due to from pid 9356

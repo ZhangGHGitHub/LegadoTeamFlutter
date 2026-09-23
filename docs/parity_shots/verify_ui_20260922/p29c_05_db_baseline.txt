@@ -1,0 +1,20 @@
+=== p29c DB 基线（本轮开始前，2026-09-24） ===
+CREATE TABLE cached_chapters (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    book_url TEXT NOT NULL,
+    chapter_index INTEGER NOT NULL,
+    chapter_title TEXT NOT NULL DEFAULT '',
+    chapter_url TEXT NOT NULL,
+    content TEXT NOT NULL DEFAULT '',
+    cached_at INTEGER NOT NULL,
+    size_bytes INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX idx_cached_chapters_book ON cached_chapters(book_url);
+CREATE UNIQUE INDEX idx_cached_chapters_book_url ON cached_chapters(book_url, chapter_url);
+=== cached_chapters rows ===
+3|http://127.0.0.1:8092/r1va/detail|http://127.0.0.1:8092/r1va/content?i=0&tok=TK777|27|1789847099225
+4|http://127.0.0.1:8092/r1va/detail|http://127.0.0.1:8092/r1va/content?i=1&tok=TK777|27|1789847099280
+43|https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468914|https://m.lvsexs.com/shu/84322/1134104.html|1778|1790193006181
+=== books key columns ===
+R1换源验证书|1032|http://127.0.0.1:8092/r1v/home/a|R1VA||http://127.0.0.1:8092/r1va/toc|3|0|0
+斗破苍穹|1032|https://m.lvsexs.com|📂绿色小说|https://m.lvsexs.com/xs/84322.html|https://m.lvsexs.com/shu/84322/|1663|0|0

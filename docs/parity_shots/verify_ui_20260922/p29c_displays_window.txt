@@ -1,0 +1,18 @@
+  Window #0 Window{abf00c1 u0 io.legado.flutter_legado/io.legado.flutter.MainActivity}:
+    mDisplayId=11 taskId=92 mSession=Session{fd95545 22424:u0a10055} mClient=android.os.BinderProxy@8fd1da8
+  Window #1 Window{d8895d4 u0 ScreenDecorOverlayBottom}:
+    mDisplayId=0 mSession=Session{6bd4cbe 1090:u0a10032} mClient=android.os.BinderProxy@99cfde6
+  Window #2 Window{62e08fe u0 ScreenDecorOverlay}:
+    mDisplayId=0 mSession=Session{6bd4cbe 1090:u0a10032} mClient=android.os.BinderProxy@79b0e80
+  Window #3 Window{6480f47 u0 NotificationShade}:
+    mDisplayId=0 mSession=Session{6bd4cbe 1090:u0a10032} mClient=android.os.BinderProxy@61edf61
+  Window #4 Window{9c932e0 u0 StatusBar}:
+    mDisplayId=0 mSession=Session{6bd4cbe 1090:u0a10032} mClient=android.os.BinderProxy@8da1912
+  Window #5 Window{74ad53f u0 ShellDropTarget}:
+    mDisplayId=0 mSession=Session{6bd4cbe 1090:u0a10032} mClient=android.os.BinderProxy@12c32a4
+  Window #6 Window{8152f0 u0 InputMethod}:
+    mDisplayId=0 mSession=Session{cedeb49 1490:1000} mClient=android.os.BinderProxy@60faf33
+  Window #7 Window{55147c4 u0 com.microsoft.launcher/com.microsoft.launcher.Launcher}:
+    mDisplayId=0 taskId=2 mSession=Session{76a7df5 2339:u0a10051} mClient=android.os.BinderProxy@70de2d7
+  Window #8 Window{d062431 u0 com.android.systemui.wallpapers.ImageWallpaper}:
+    mDisplayId=0 mSession=Session{6bd4cbe 1090:u0a10032} mClient=android.os.BinderProxy@b2821b5

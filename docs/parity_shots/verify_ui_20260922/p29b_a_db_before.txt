@@ -1,0 +1,81 @@
+BOOK: https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468914 | name=斗破苍穹 | origin=https://so.html5.qq.com#v2修复版 | originName=🏷松鹤庭沐·言璃 | originBookUrl= | tocUrl=https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468914 | total=1663 | dci=0
+TOC: idx=0 | title=
+第1章 陨落的天才 | url=https://novel.html5.qq.com/be-api/content/ads-read,{
+	"method": "POST",
+	"body": {
+		"Scene": "chapter",
+		"ContentAnchorBatch": [{
+				"BookID": "1100468914",
+				"ChapterSeqNo": [1]
+			}]
+	},
+	"headers": {
+		"user-agent": "Mozilla/5.0 (Linux; Android 10; MI 8 Build/QKQ1.190828.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.101 Mobile Safari/537.36",
+		"Referer": "https://bookshelf.html5.qq.com/qbread",
+		"Q-GUID": "4aa27c7cf2d9aca3359656ea186488cb"
+	}
+}
+TOC: idx=1 | title=
+第2章 斗气大陆 | url=https://novel.html5.qq.com/be-api/content/ads-read,{
+	"method": "POST",
+	"body": {
+		"Scene": "chapter",
+		"ContentAnchorBatch": [{
+				"BookID": "1100468914",
+				"ChapterSeqNo": [2]
+			}]
+	},
+	"headers": {
+		"user-agent": "Mozilla/5.0 (Linux; Android 10; MI 8 Build/QKQ1.190828.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.101 Mobile Safari/537.36",
+		"Referer": "https://bookshelf.html5.qq.com/qbread",
+		"Q-GUID": "4aa27c7cf2d9aca3359656ea186488cb"
+	}
+}
+TOC: idx=2 | title=
+第3章 客人 | url=https://novel.html5.qq.com/be-api/content/ads-read,{
+	"method": "POST",
+	"body": {
+		"Scene": "chapter",
+		"ContentAnchorBatch": [{
+				"BookID": "1100468914",
+				"ChapterSeqNo": [3]
+			}]
+	},
+	"headers": {
+		"user-agent": "Mozilla/5.0 (Linux; Android 10; MI 8 Build/QKQ1.190828.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.101 Mobile Safari/537.36",
+		"Referer": "https://bookshelf.html5.qq.com/qbread",
+		"Q-GUID": "4aa27c7cf2d9aca3359656ea186488cb"
+	}
+}
+CC: ch_idx=0 | ch_url=https://novel.html5.qq.com/be-api/content/ads-read,{
+	"method": "POST",
+	"body": {
+		"Scene": "chapter",
+		"ContentAnchorBatch": [{
+				"BookID": "1100468914",
+				"ChapterSeqNo": [1]
+			}]
+	},
+	"headers": {
+		"user-agent": "Mozilla/5.0 (Linux; Android 10; MI 8 Build/QKQ1.190828.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.101 Mobile Safari/537.36",
+		"Referer": "https://bookshelf.html5.qq.com/qbread",
+		"Q-GUID": "4aa27c7cf2d9aca3359656ea186488cb"
+	}
+} | cached_at=1790190832123 | bytes=8181 | head=“斗之力，三段！”
+望着测验魔石碑上面闪亮得甚至有些刺眼的五个大字，少年面无表
+CC: ch_idx=1 | ch_url=https://novel.html5.qq.com/be-api/content/ads-read,{
+	"method": "POST",
+	"body": {
+		"Scene": "chapter",
+		"ContentAnchorBatch": [{
+				"BookID": "1100468914",
+				"ChapterSeqNo": [2]
+			}]
+	},
+	"headers": {
+		"user-agent": "Mozilla/5.0 (Linux; Android 10; MI 8 Build/QKQ1.190828.002; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/83.0.4103.101 Mobile Safari/537.36",
+		"Referer": "https://bookshelf.html5.qq.com/qbread",
+		"Q-GUID": "4aa27c7cf2d9aca3359656ea186488cb"
+	}
+} | cached_at=1790190832268 | bytes=10859 | head=月如银盘，漫天繁星。
+山崖之颠，萧炎斜躺在草地之上，嘴中叼中一根青草，微微嚼动

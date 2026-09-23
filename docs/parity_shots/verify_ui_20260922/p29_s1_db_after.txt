@@ -1,0 +1,10 @@
+DB AFTER 2026-09-24 02:38:47
+== books ==
+https://lbxjtjs.com/page/1?s=%E6%96%97%E7%A0%B4%E8%8B%8D%E7%A9%B9%E6%96%97%E7%A0%B4%E8%8B%8D%E7%A9%B9|https://lbxjtjs.com/bh|🔞Bi话||0||0
+https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468914|https://www.deqixs.org|📂得奇小说网|https://www.deqixs.org/198/|0|
+第1章 陨落的天才|1663
+== cached_chapters (new source) ==
+== cached_chapters count by source (old vs new) ==
+old-qq|2
+0|第1章 陨落的天才|3339|1790188685291|https://www.deqixs.org/198/139036.html
+1|第2章 斗气大陆|3962|1790188685740|https://www.deqixs.org/198/139037.html

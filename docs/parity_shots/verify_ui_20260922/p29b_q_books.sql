@@ -1,0 +1,1 @@
+SELECT "BOOK: "||bookUrl||" | name="||name||" | type="||type||" | origin="||COALESCE(origin,"")||" | originName="||COALESCE(originName,"")||" | originBookUrl="||COALESCE(originBookUrl,"NULL")||" | tocUrl="||COALESCE(tocUrl,"")||" | total="||COALESCE(totalChapterNum,0)||" | dci="||COALESCE(durChapterIndex,0)||" | dcp="||COALESCE(durChapterPos,0) FROM books;

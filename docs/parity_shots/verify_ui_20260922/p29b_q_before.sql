@@ -1,0 +1,3 @@
+SELECT "BOOK: "||bookUrl||" | name="||name||" | origin="||COALESCE(origin,"")||" | originName="||COALESCE(originName,"")||" | originBookUrl="||COALESCE(originBookUrl,"NULL")||" | tocUrl="||COALESCE(tocUrl,"")||" | total="||COALESCE(totalChapterNum,0)||" | dci="||COALESCE(durChapterIndex,0) FROM books WHERE name LIKE '%斗破%';
+SELECT "TOC: idx="||[index]||" | title="||title||" | url="||url FROM chapters WHERE bookUrl IN (SELECT bookUrl FROM books WHERE name LIKE '%斗破%') ORDER BY [index] LIMIT 3;
+SELECT "CC: ch_idx="||chapter_index||" | ch_url="||chapter_url||" | cached_at="||cached_at||" | bytes="||size_bytes||" | head="||SUBSTR(content,1,40) FROM cached_chapters WHERE book_url IN (SELECT bookUrl FROM books WHERE name LIKE '%斗破%') ORDER BY chapter_index LIMIT 5;

@@ -297,6 +297,13 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **相邻未对齐（登记）**：分段未选中填充我方 `#646464`（Flutter 引擎 sCHH 槽）vs 参考 sCL `(29,32,36)`——**引擎槽位差异**，非 D9 范围；选中 accent 我方 def 固定值 vs 参考壁纸动态取色，属「动态取色」能力缺失（已单独登记）；外观页横向分隔带 `sC` 槽差异同登记。
   - **设备/工具发现（登记）**：① 冒烟脚本 `emulator_smoke_test.ps1` 会按 Rust 指纹**自动重编 `.so`**（本轮发生：arm64/x86_64 均已重编，见 `d9_03_so_after.txt`）——即「保持 .so 现状」的约束对含 Rust 改动的树不成立，后续派单须显式说明；② MuMu 逻辑 display 在 force-stop 后**重新编号**且旧 SF displayId 失效（须 `dumpsys` 重推）；③ guest `grep` 经 adb 触发 SIGSEGV、`E/HP: …patched OK` 属 ROM/补丁噪声，崩溃扫描须白名单；④ 设置首页「书源管理」卡附近误触会进入按域名分组视图（916 行 + 批量删除条），自动化驱动误采率高，建议后续评估入口/守护。
 
+- **P2-9 阅读器「刷新正文」不生效 / 换源后正文不刷新（用户实测报告，2026-09-24 已闭环）**：
+  - **根因**：①「刷新正文」走**缓存优先**的 `getChapterContentFull`（Rust 侧命中 `cached_chapters` 即原样返回）→ 点刷新等于重读同一份缓存（原版 `refreshContentDur` 是**先 `BookHelp.delContent` 删当前章缓存**再 `loadContent` 强制走网络）；三个入口里菜单那个零反馈、顶栏那个还**无条件**弹「已刷新」（误导）。② 阅读器内「换书源」是 `pushNamed` **fire-and-forget**，返回后不重读书籍记录/目录/正文 → 仍显示旧源内容（换源事务不改 `bookUrl`——稳定主键，故必须强制路径才能拿到新源正文）。
+  - **修复**：新增强制刷新 `refreshChapterContent()`（清该书缓存 → 联网重取 → 失败**保留旧正文**并给出原因）+ `reloadAfterSourceChange()`（重读书籍记录 → 重载新源目录（空则联网）→ 按标题匹配章节（同题保留章内位置）→ 强制刷新正文 → 保存进度）；四个入口（菜单换源/菜单刷新/顶栏换书源/顶栏刷新）统一为「进行中条 → 结果条（成功/失败可见）」；本地书隐藏换源/刷新/缓存入口（对齐原版 ReadMenu）。
+  - **实机验证中发现并修掉的两处崩溃回归（均为本批引入）**：① 阅读器内换源用 `pushNamed<String>` 与生产路由（`PageRouteBuilder<dynamic>` 的 `_ChangeSourceSheetRoute`）类型不符 → 运行期强转崩溃（对齐 Task#24 既有模式：无类型 `pushNamed` + `result is String`；新增「真实路由类型」测试钉死）；② 反馈时序用 `inProgress.close()`——当重载耗时超过 SnackBar 默认 4s 自动消失时长时，controller 已不在队列首 → `scaffold.dart:341`（`_snackBars.first == controller` 断言）崩溃，**成功提示因此永远看不到** → 改为进行中条 `Duration(minutes: 10)` + `removeCurrentSnackBar()` + 每个 await 后 `mounted` 守卫；新增 4 条**慢路径**用例（改造前红、栈帧与真机崩溃一致）。
+  - **验证**：`flutter analyze` 0 问题；`flutter test` 全量 +1643（widget 11/11 含 4 条慢路径、notifier 13/13）；**真机三轮**——详情页换源路线全项通过、顶栏刷新抓到「正文已刷新」、本地书入口**不渲染**（与首轮「置灰」对照）、**慢路径换源 3 次（每次 ≈10 分钟）全部抓到「已更换书源：<源名>」且零应用崩溃**（logcat 33 条 FATAL 经核为 `com.android.commands.uiautomator` 的 `UiAutomationService already registered!` dump 并发噪声，非应用）。证据 `docs/parity_shots/verify_ui_20260922/p29*`。
+  - **新登记（本轮实机发现，未修）**：① **换源重载耗时可达 ≈10 分钟**（大目录书源，如瀚海书阁 1663 章；疑似目录逐页串行抓取 + 站点慢）——虽有进行中提示，用户体感仍差，需评估优化（并行/超时/进度）；② 换源后 `books.totalChapterNum` 未随新源目录同步（DB 留旧值、UI 显示新值）；③ 源名前缀 emoji 在 DB（📂）与阅读器顶栏（💔）显示不一致，疑字体回退，按视觉一致性待查。
+
 ### P3：功能补齐与卫生项（2026-08-22 开启）
 
 

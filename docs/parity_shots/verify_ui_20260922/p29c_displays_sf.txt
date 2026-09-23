@@ -1,0 +1,3 @@
+Display 4619827820427265280 (HWC display 0): port=0 pnpId=GGL displayName="mumuscreen000"
+Display 4619826876442645002 (HWC display 10): port=10 pnpId=GGL displayName="mumuscreen010"
+Display 4619826915945327627 (HWC display 11): port=11 pnpId=GGL displayName="mumuscreen011"

@@ -1,0 +1,4 @@
+http://127.0.0.1:8092/r1va/detail | R1换源验证书 | type=1032 | origin=http://127.0.0.1:8092/r1v/home/a
+https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468914 | 斗破苍穹 | type=1032 | origin=https://m.lvsexs.com
+ch_total=53
+cc_total=3

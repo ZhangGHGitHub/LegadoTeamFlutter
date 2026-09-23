@@ -1,0 +1,27 @@
+# p29c 预检（2026-09-24 第三轮专项复验：慢路径换源/刷新反馈）
+## MuMu 实例
+- MuMuManager info -v all: index 0 "Test2" is_android_started=true, player_state=start_finished,
+  adb_host_ip=127.0.0.1 adb_port=16384 android_version=15.0 hyperv_enabled=true
+- index 1 "Test测试" 未启动（is_android_started=false）→ 目标端点 127.0.0.1:16384 = 实例 Test2
+## adb
+- D:/Android/platform-tools/adb.exe devices -l:
+  127.0.0.1:16384  device  product:r9q model:SM_G9900 device:r9q
+## git 工作区（待验修复所在，未 commit）
+- M flutter_legado/lib/src/providers/reader/reader_notifier.dart    (+151: reloadAfterSourceChange/refreshChapterContent)
+- M flutter_legado/lib/src/widgets/reader/reader_menu_panel.dart   (菜单刷新入口 Fix A 路径)
+- M flutter_legado/lib/src/widgets/reader/reader_settings_sheet.dart
+- M flutter_legado/lib/src/widgets/reader/reader_top_bar.dart      (换源 await 导航 + 10min 进行中条 + removeCurrentSnackBar + 结果条; 刷新按钮同构)
+## 变体决策
+- 使用 ps1 脚本构建 app-debug.apk（debug 变体）：任务要求装 debug（断言 _snackBars.first==controller 仅 debug 生效，
+  必须 debug 才能实证"不再踩断言"）。
+## 复用方法论（前两轮证据）
+- DB: adb -s 127.0.0.1:16384 shell "run-as io.legado.flutter_legado sqlite3 app_flutter/legado.db"
+- 换源 UI: 换源页(列表+搜索) -> 点书源卡片 -> 确认对话框(切换/取消) -> 进行中条"正在更换书源…" -> 结果条"已更换书源：<源名>"
+- SnackBar 文本可被 uiautomator dump 捕获（证据 p29b_sbg_3.xml 抓到"正在更换书源…"）
+- 崩溃判据: dump 中若出现"崩溃时间"字样 = 崩溃对话框 = 失败
+- 辅助: python p29b_adb.py dump/shot/tap/key/logcat-dump（OUT_DIR 同目录, 可直接复用）
+## 构建安装结果（p29c_smoke_build.log）
+- 变体: app-debug.apk（debug，断言可实证）; versionName=2.0.308（=pubspec, 安装校验 PASS）
+- .so 重编: 否（FFI verify PASSED: arm64-v8a/x86_64 均复用现有 .so, Rust 源码指纹 2492b90758e3879e 一致）
+- 安装: adb install -r Success; 进程存活 pid 22424; logcat 已清（脚本第4步）; 冷启动无 FATAL/E/flutter
+- 冒烟汇总: 通过 7 失败 0

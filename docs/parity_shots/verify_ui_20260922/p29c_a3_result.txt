@@ -1,0 +1,9 @@
+
+=== #3 完成记录 04:56:48 ===
+切换: 瀚海书阁 -> 绿色小说 | TAP_OK 04:45:59.7
+进行中条: burst frame3(04:46:01) 起可见; watcher poll198(04:56:01) in=1, poll199(04:56:04) in=0
+结果条: '已更换书源：📂绿色小说' 捕获于 w_199 + r1 (04:56:04)
+重载耗时: ~10min04s (04:45:59.7 -> 04:56:04) 慢路径 (与 10min 过期点重合, 边界)
+DB: origin=https://m.lvsexs.com originName=📂绿色小说 originBookUrl=https://m.lvsexs.com/xs/84322.html total=1663
+崩溃: 无
+证据: p29c_a3_burst_*.xml, p29c_a3_watch_timeline.txt, p29c_a3_w_199.xml

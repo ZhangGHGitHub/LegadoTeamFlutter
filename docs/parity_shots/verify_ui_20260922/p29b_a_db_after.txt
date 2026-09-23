@@ -1,0 +1,7 @@
+BOOK: https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468914 | name=斗破苍穹 | type=1032 | origin=https://www.deqixs.org | originName=📂得奇小说网 | originBookUrl=https://www.deqixs.org/198/ | tocUrl=https://www.deqixs.org/198/ | total=1663 | dci=0
+TOC: idx=0 | title=第1章 陨落的天才 | url=https://www.deqixs.org/198/139036.html
+TOC: idx=1 | title=第2章 斗气大陆 | url=https://www.deqixs.org/198/139037.html
+TOC: idx=2 | title=第3章 客人 | url=https://www.deqixs.org/198/139038.html
+CC: ch_idx=0 | ch_url=https://www.deqixs.org/198/139036.html | cached_at=1790190942395 | bytes=3339 | head=第1章 陨落的天才
+  　　“斗之力，三段！”
+  　　望着测验魔石碑上面闪亮得

@@ -1,0 +1,5 @@
+http://127.0.0.1:8092/r1va/detail | R1换源验证书 | type=1032 | origin=http://127.0.0.1:8092/r1v/home/a | notShelf=1
+https://lbxjtjs.com/page/1?s=%E6%96%97%E7%A0%B4%E8%8B%8D%E7%A9%B9%E6%96%97%E7%A0%B4%E8%8B%8D%E7%A9%B9 | 斗破苍穹斗破苍穹 的搜索结果 | type=64 | origin=https://lbxjtjs.com/bh | notShelf=0
+https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468914 | 斗破苍穹 | type=8 | origin=https://www.deqixs.org | notShelf=0
+ch_total=1002
+cc_total=4

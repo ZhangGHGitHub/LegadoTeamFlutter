@@ -1,0 +1,10 @@
+
+=== #2 完成记录 04:45:42 ===
+切换: 得奇小说网 -> 瀚海书阁 | tap 04:34:36.9
+进行中条: burst frame8 起可见 (04:34:45.5), watcher poll196(04:45:22) 仍 in=1, poll197(04:45:25) in=0
+  => 进行中条显示 ~10min (04:34:45->04:44:45 自动过期), 重载完成后结果条正常出现
+结果条: '已更换书源：📂瀚海书阁' 捕获于 w_197 + r1 (04:45:25)
+重载耗时: ~10min48s (04:34:37 -> 04:45:25) 慢路径
+DB: origin=https://www.ingml.cc originName=📂瀚海书阁 originBookUrl=https://www.ingml.cc/novel/2332.html
+崩溃: 无 (全帧无'崩溃时间'; 进程 22739 存活)
+证据: p29c_a2_burst_*.xml, p29c_a2_watch_timeline.txt, p29c_a2_w_197.xml

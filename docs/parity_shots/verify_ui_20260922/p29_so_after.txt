@@ -1,0 +1,7 @@
+=== .so after build Thu Sep 24 02:17:51     2026 ===
+flutter_legado/android/app/src/main/jniLibs/arm64-v8a/liblegado_ffi.so | mtime=2026-09-24 02:16:06.013089600 +0800 | size=41679864
+flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so | mtime=2026-09-24 02:16:51.580836100 +0800 | size=41502432
+
+重编判定: Rust 源码指纹 144195c71dead9fa -> 2492b90758e3879e 变化，FFI verify 自动重编两个目标（release），随后 verify PASSED
+5156dad97b8b1994152035a1105911dc1172e4625d2a8576253e49ad14b7a96f *arm64-v8a/liblegado_ffi.so
+a3b16a1941809b6a3c41164b11b461b4db5a3f8e39ae2a94a948ea96da962ae8 *x86_64/liblegado_ffi.so
