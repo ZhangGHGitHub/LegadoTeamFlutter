@@ -1117,7 +1117,7 @@ mod tests {
                     function getContent() { return ''; }";
         let src = extract(text).expect("提取应成功");
         assert!(
-            src.login_ui.as_ref().map_or(true, |s| s.trim().is_empty()),
+            src.login_ui.as_ref().is_none_or(|s| s.trim().is_empty()),
             "空 loginUi 应被移除"
         );
     }

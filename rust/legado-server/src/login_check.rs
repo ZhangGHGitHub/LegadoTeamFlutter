@@ -107,10 +107,11 @@ mod tests {
     use legado_core::models::BookSource;
 
     fn source_with_js(js: &str) -> BookSource {
-        let mut s = BookSource::default();
-        s.book_source_url = "https://example.com".into();
-        s.login_check_js = Some(js.to_string());
-        s
+        BookSource {
+            book_source_url: "https://example.com".into(),
+            login_check_js: Some(js.to_string()),
+            ..Default::default()
+        }
     }
 
     #[test]

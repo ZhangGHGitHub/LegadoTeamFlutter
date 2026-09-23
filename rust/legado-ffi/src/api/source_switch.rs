@@ -1994,13 +1994,12 @@ mod tests {
         with_database(|db| {
             use legado_core::models::BookSource;
             use legado_db::repository::Repository;
-            Ok(
-                legado_db::BookSourceRepository::new(db.connection()).insert(&BookSource {
-                    book_source_url: origin.to_string(),
-                    book_source_name: "变量源".to_string(),
-                    ..BookSource::default()
-                })?,
-            )
+            legado_db::BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: origin.to_string(),
+                book_source_name: "变量源".to_string(),
+                ..BookSource::default()
+            })?;
+            Ok(())
         })
         .expect("建源失败");
 
@@ -2022,7 +2021,7 @@ mod tests {
         }]);
 
         let row = with_database(|db| {
-            Ok(legado_db::SearchBookRepository::new(db.connection()).find_by_book_url(book_url)?)
+            legado_db::SearchBookRepository::new(db.connection()).find_by_book_url(book_url)
         })
         .expect("查询失败")
         .expect("searchBooks 行应存在");

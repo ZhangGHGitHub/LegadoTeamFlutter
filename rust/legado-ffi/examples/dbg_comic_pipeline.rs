@@ -55,8 +55,8 @@ fn main() {
                 t0.elapsed().as_millis(),
                 json.chars().take(400).collect::<String>()
             );
-            if explicit_book_url.is_some() {
-                explicit_book_url.unwrap()
+            if let Some(explicit) = explicit_book_url {
+                explicit
             } else {
                 let results: Vec<serde_json::Value> =
                     serde_json::from_str(&json).unwrap_or_default();

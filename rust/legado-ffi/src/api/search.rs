@@ -3838,7 +3838,7 @@ mod tests {
     /// 多作者集合编码（\u{1E}authors: 前缀）解码后逐作者匹配
     #[test]
     fn test_read_record_index_multi_author_encoded() {
-        let encoded = format!("\u{1E}authors:[\"作者A\",\"作者B\"]");
+        let encoded = "\u{1E}authors:[\"作者A\",\"作者B\"]".to_string();
         let index = ReadRecordIndex::of(vec![make_record("同名书", &encoded)]);
 
         assert!(index.contains("同名书", "作者A"));
@@ -4124,7 +4124,7 @@ mod tests {
         println!("ok_names={ok_names:?}");
         println!("top_errors:");
         let mut errs: Vec<_> = err_counter.into_iter().collect();
-        errs.sort_by(|a, b| b.1.cmp(&a.1));
+        errs.sort_by_key(|t| std::cmp::Reverse(t.1));
         for (k, c) in errs.iter().take(30) {
             println!("  {c}\t{k}");
         }
@@ -4422,7 +4422,7 @@ mod tests {
         println!("ok={ok} exact_origins={exact_origins} total={}", fast.len());
         println!("top_errors:");
         let mut errs: Vec<_> = err_counter.into_iter().collect();
-        errs.sort_by(|a, b| b.1.cmp(&a.1));
+        errs.sort_by_key(|t| std::cmp::Reverse(t.1));
         for (k, c) in errs {
             println!("  {c}\t{k}");
         }
@@ -4432,6 +4432,9 @@ mod tests {
         }
     }
 
+    // 仅被 quickjs 门控的探针 probe_fast_group_novel_fail_classify 调用：
+    // 默认档（无 quickjs）下调用方不编译 → 函数随之门控，免 dead_code
+    #[cfg(feature = "quickjs")]
     fn classify_search_err(es: &str) -> String {
         if es.contains("ReferenceError")
             || es.contains("TypeError")
@@ -5057,7 +5060,7 @@ mod error_class_tests {
         let r2 = LegadoResult::Err(LegadoError::BookParse("书名缺失".into()));
         assert_eq!(classify_source_outcome(&r2), "parser_error");
         let r3 = LegadoResult::Err(LegadoError::Serialization(serde_json::Error::io(
-            std::io::Error::new(std::io::ErrorKind::Other, "x"),
+            std::io::Error::other("x"),
         )));
         assert_eq!(classify_source_outcome(&r3), "parser_error");
     }
@@ -5076,10 +5079,7 @@ mod error_class_tests {
 
     #[test]
     fn test_io_maps_http_error() {
-        let r = LegadoResult::Err(LegadoError::Io(std::io::Error::new(
-            std::io::ErrorKind::Other,
-            "connect failed",
-        )));
+        let r = LegadoResult::Err(LegadoError::Io(std::io::Error::other("connect failed")));
         assert_eq!(classify_source_outcome(&r), "http_error");
     }
 

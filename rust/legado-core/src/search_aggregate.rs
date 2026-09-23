@@ -445,13 +445,12 @@ mod tests {
             ),
         ]
         .into_iter()
-        .map(|(url, origin, name)| {
-            let mut b = SearchBook::default();
-            b.book_url = url.to_string();
-            b.origin = origin.to_string();
-            b.name = name.to_string();
-            b.author = "甲".to_string();
-            b
+        .map(|(url, origin, name)| SearchBook {
+            book_url: url.to_string(),
+            origin: origin.to_string(),
+            name: name.to_string(),
+            author: "甲".to_string(),
+            ..Default::default()
         })
         .collect();
         let out = aggregate_search_books(&books, "斗破苍穹", true);

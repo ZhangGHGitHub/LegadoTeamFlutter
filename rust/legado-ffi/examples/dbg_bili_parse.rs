@@ -32,7 +32,7 @@ async fn run(db_path: &str, query: &str, out: &mut String) {
     }
 
     // 1. DB + bili 书源
-    let _ = legado_ffi::db_state::record_db_path(db_path);
+    legado_ffi::db_state::record_db_path(db_path);
     let db = match legado_ffi::legado_db::init_database(db_path) {
         Ok(d) => d,
         Err(e) => {

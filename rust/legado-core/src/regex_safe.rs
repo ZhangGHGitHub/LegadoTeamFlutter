@@ -487,11 +487,11 @@ mod tests {
         // LRU 淘汰正确性：超容量时逐出最久未用条目，而非整体 clear()
         {
             let mut cache = REGEX_CACHE.lock().unwrap();
+            // 探针 regex 只需填充缓存槽位：循环外编译一次、共享 Arc，
+            // 避免逐条重复编译（LRU 淘汰判定只看键与容量，与值是否共享无关）
+            let probe_re = Arc::new(Regex::new(r"a").unwrap());
             for i in 0..(REGEX_CACHE_CAPACITY + 64) {
-                cache.put(
-                    format!("__lru_probe_{i}__"),
-                    Ok(Arc::new(Regex::new(r"a").unwrap())),
-                );
+                cache.put(format!("__lru_probe_{i}__"), Ok(probe_re.clone()));
             }
             assert!(
                 cache.len() <= REGEX_CACHE_CAPACITY,

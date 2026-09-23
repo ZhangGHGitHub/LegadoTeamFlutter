@@ -69,7 +69,7 @@ mod tests {
     #[test]
     fn test_with_restores_previous() {
         set_current_source_tag("outer");
-        let inner = with_current_source_tag("inner", || current_source_tag());
+        let inner = with_current_source_tag("inner", current_source_tag);
         assert_eq!(inner.as_deref(), Some("inner"));
         assert_eq!(current_source_tag().as_deref(), Some("outer"));
         clear_current_source_tag();
@@ -78,7 +78,7 @@ mod tests {
     #[test]
     fn test_thread_isolation() {
         set_current_source_tag("main-thread-tag");
-        let child = std::thread::spawn(|| current_source_tag());
+        let child = std::thread::spawn(current_source_tag);
         // 子线程不应看到主线程的绑定
         assert!(child.join().unwrap().is_none());
         clear_current_source_tag();

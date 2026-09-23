@@ -2956,6 +2956,7 @@ fn parse_content_page(
 /// ruleContent 常以 `<js>`/`@js:` 引用 jsLib 定义的函数（Reload/getHosts 等），
 /// 此前不注入 → 正文 JS 抛错 → 正文为空（「搜到书但正文图片不显示/无法播放」）。
 #[cfg(test)]
+#[allow(clippy::too_many_arguments)] // #[cfg(test)] helper：参数集与相邻生产函数 parse_content_page_with_bindings 对齐（该函数已同款 allow），不拆结构体
 fn parse_content_page_with_js_lib(
     body: String,
     content_rule_str: &str,
@@ -4650,6 +4651,9 @@ mod tests {
 
     /// 七步阁站点可达性探测：不可达或非 2xx 时返回 false（跳过）。
     /// 外部站状态不应让 CI 变红；站点恢复后 e2e 自动回归。
+    // 仅被 quickjs 门控的 test_qibuge_search_diag 调用：默认档下调用方
+    // 不编译 → 函数随之门控，免 dead_code
+    #[cfg(feature = "quickjs")]
     fn qibuge_site_reachable() -> bool {
         let client = match crate::http_state::shared_client() {
             Ok(c) => c,
@@ -4752,7 +4756,7 @@ mod tests {
         match results {
             Ok(list) => {
                 eprintln!("[qibuge] search 结果数: {}", list.len());
-                assert!(list.len() > 0, "七步阁搜索应有结果，实际 {}", list.len());
+                assert!(!list.is_empty(), "七步阁搜索应有结果，实际 {}", list.len());
                 for it in list.iter().take(5) {
                     eprintln!(
                         "[qibuge]   -> {} | {} | {}",
@@ -4940,7 +4944,7 @@ mod tests {
         }
         // 字段级诊断：第一个元素的 name/author/bookUrl 提取
         let elems77 = analyzer.get_elements("class.BOX@tr!0").unwrap_or_default();
-        if let Some(elem) = elems77.get(0) {
+        if let Some(elem) = elems77.first() {
             let mut ea = crate::js_executor::construct_analyzer_with_source_context(
                 elem.clone(),
                 au.url().to_string(),
@@ -4977,7 +4981,7 @@ mod tests {
             );
         }
         assert!(
-            elems77.len() > 0,
+            !elems77.is_empty(),
             "77读书网 bookList 应解析出元素，实际 {}",
             elems77.len()
         );
@@ -4985,7 +4989,11 @@ mod tests {
         match results {
             Ok(list) => {
                 eprintln!("[77] search 结果数: {}", list.len());
-                assert!(list.len() > 0, "77读书网搜索应有结果，实际 {}", list.len());
+                assert!(
+                    !list.is_empty(),
+                    "77读书网搜索应有结果，实际 {}",
+                    list.len()
+                );
                 for it in list.iter().take(3) {
                     eprintln!("[77]   -> {} | {}", it.name, it.book_url);
                 }
@@ -5080,7 +5088,7 @@ mod tests {
         match results {
             Ok(list) => {
                 eprintln!("[taoxs] search 结果数: {}", list.len());
-                assert!(list.len() > 0, "淘小说搜索应有结果，实际 {}", list.len());
+                assert!(!list.is_empty(), "淘小说搜索应有结果，实际 {}", list.len());
                 for it in list.iter().take(3) {
                     eprintln!("[taoxs]   -> {} | {}", it.name, it.book_url);
                 }
@@ -5145,7 +5153,11 @@ mod tests {
         match results {
             Ok(list) => {
                 eprintln!("[qiexs] search 结果数: {}", list.len());
-                assert!(list.len() > 0, "企鹅小说搜索应有结果，实际 {}", list.len());
+                assert!(
+                    !list.is_empty(),
+                    "企鹅小说搜索应有结果，实际 {}",
+                    list.len()
+                );
                 for it in list.iter().take(3) {
                     eprintln!("[qiexs]   -> {} | {}", it.name, it.book_url);
                 }
@@ -5217,7 +5229,11 @@ mod tests {
         match results {
             Ok(list) => {
                 eprintln!("[xbqgxs] search 结果数: {}", list.len());
-                assert!(list.len() > 0, "新笔趣阁搜索应有结果，实际 {}", list.len());
+                assert!(
+                    !list.is_empty(),
+                    "新笔趣阁搜索应有结果，实际 {}",
+                    list.len()
+                );
                 for it in list.iter().take(3) {
                     eprintln!("[xbqgxs]   -> {} | {}", it.name, it.book_url);
                 }
@@ -7084,9 +7100,9 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
     ///
     /// **项①命中源**：`ruleBookInfo.intro` 3 处 `java.getStringList(...)`
     /// + `source.getVariable()`。补后 java 面已有 getStringList → intro
-    /// 得到线路/集数列表；补前（HEAD，`git grep getStringList HEAD --
+    ///   得到线路/集数列表；补前（HEAD，`git grep getStringList HEAD --
     /// rust/legado-js` 零命中）同一 JS 抛错、列表缺失 —— HEAD 侧原始
-    /// 输出由 worktree 探针 p29_head_probe 捕获
+    ///   输出由 worktree 探针 p29_head_probe 捕获
     // （.tmp/p29_head_probe_out.log）。
     #[cfg(feature = "quickjs")]
     #[test]

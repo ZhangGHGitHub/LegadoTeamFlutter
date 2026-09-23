@@ -62,7 +62,7 @@ fn main() {
     for (i, line) in lines.iter().enumerate() {
         let ln = i + 1;
         // 注意：.tmp_bili_jslib.txt 首行是 JSLIB_LEN 头，实际 jsLib 中 showCom 位于 L93-L118
-        if ln >= 93 && ln <= 118 {
+        if (93..=118).contains(&ln) {
             if ln == 93 {
                 patched.push_str("function showCom(bu){ return 0; } // showCom 已挖空（诊断）\n");
             }

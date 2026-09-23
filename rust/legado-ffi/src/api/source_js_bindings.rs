@@ -445,6 +445,11 @@ if (typeof setArguments === 'function') {{
     ))
 }
 
+#[cfg(not(feature = "quickjs"))]
+pub fn book_source_js_setup_script(_source: &BookSource) -> LegadoResult<String> {
+    Ok(String::new())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -495,9 +500,4 @@ function foo() { return host[0]; }"#;
         );
         assert!(cleaned.contains("var host"), "host 声明应保留");
     }
-}
-
-#[cfg(not(feature = "quickjs"))]
-pub fn book_source_js_setup_script(_source: &BookSource) -> LegadoResult<String> {
-    Ok(String::new())
 }

@@ -409,7 +409,7 @@ pub mod tests {
         g.extend_from_slice(&be16(0)); // instructionLength
                                        // flags：3 点，短向量正号（x: 0x12, y: 0x24）
         g.extend_from_slice(&[0x12 | 0x24, 0x12 | 0x24, 0x12 | 0x24]);
-        let d = variant as u8;
+        let d = variant;
         g.extend_from_slice(&[1 + d, 2 + d, 3 + d]); // x 增量
         g.extend_from_slice(&[4 + d, 5 + d, 6 + d]); // y 增量
         g
@@ -444,17 +444,17 @@ pub mod tests {
             composite_glyph_bytes()
         } else {
             let mut g = simple_glyph_bytes(0);
-            if g.len() % 2 != 0 {
+            if !g.len().is_multiple_of(2) {
                 g.push(0);
             }
             g
         };
         let mut g2 = simple_glyph_bytes(1);
-        if g2.len() % 2 != 0 {
+        if !g2.len().is_multiple_of(2) {
             g2.push(0);
         }
         let mut g3 = simple_glyph_bytes(2);
-        if g3.len() % 2 != 0 {
+        if !g3.len().is_multiple_of(2) {
             g3.push(0);
         }
         let off1 = 0usize;
@@ -488,7 +488,7 @@ pub mod tests {
         maxp.extend_from_slice(&be16(4)); // numGlyphs
         maxp.extend_from_slice(&be16(3)); // maxPoints
         maxp.extend_from_slice(&be16(1)); // maxContours
-        maxp.extend_from_slice(&vec![0u8; 22]); // 其余字段置 0
+        maxp.extend_from_slice(&[0u8; 22]); // 其余字段置 0
 
         // name（空记录）
         let mut name = Vec::new();

@@ -890,6 +890,26 @@ pub fn validate_js_lib(
     Ok(())
 }
 
+/// [体检 §二.5 | P3-6] AutoTask Custom JS 真实执行入口
+///
+/// 对齐原版 `AutoTaskRunner`（`AutoTask.buildSource(task)` → `source.evalJS(script)`）:
+/// 经 QuickJS 引擎（带引擎缓存与 Response/Jsoup 基础桥）真实求值并返回
+/// 完成值/错误,取代"验证脚本非空即视为成功"的静默假成功。
+/// 绑定面:基础桥(无书源 java/cookie 绑定——原版 AutoTask.buildSource
+/// 亦为合成源,重度绑定场景待书源上下文注入后扩展)。
+#[cfg(feature = "quickjs")]
+use legado_parser::JsExecutor;
+#[cfg(feature = "quickjs")]
+pub fn execute_auto_task_js(js_code: &str) -> Result<String, String> {
+    quickjs_impl::QuickJsExecutor::new("auto_task").execute_js(js_code)
+}
+
+/// 非 quickjs 构建:引擎不可用,如实报错(不再静默假成功)
+#[cfg(not(feature = "quickjs"))]
+pub fn execute_auto_task_js(_js_code: &str) -> Result<String, String> {
+    Err("Custom JS 执行需要 quickjs feature(当前构建未启用 JS 引擎)".to_string())
+}
+
 // ─── 测试 ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -927,7 +947,7 @@ mod tests {
     fn test_js_error_url_roundtrip() {
         // 1) 非 ASCII + 中文往返
         let msg = "searchUrl JS 求值失败: decode is not defined（书源：云霄小说）";
-        let url = format!("legado-js-error://search?e={}", urlencoding_lite(&msg));
+        let url = format!("legado-js-error://search?e={}", urlencoding_lite(msg));
         assert_eq!(decode_js_error_url(&url).as_deref(), Some(msg));
 
         // 2) 错误文本里的 `&` 被编码，不截断 query
@@ -1554,26 +1574,6 @@ mod tests {
 
         capability_ledger::reset_jslib_load_failures();
     }
-}
-
-/// [体检 §二.5 | P3-6] AutoTask Custom JS 真实执行入口
-///
-/// 对齐原版 `AutoTaskRunner`（`AutoTask.buildSource(task)` → `source.evalJS(script)`）:
-/// 经 QuickJS 引擎（带引擎缓存与 Response/Jsoup 基础桥）真实求值并返回
-/// 完成值/错误,取代"验证脚本非空即视为成功"的静默假成功。
-/// 绑定面:基础桥(无书源 java/cookie 绑定——原版 AutoTask.buildSource
-/// 亦为合成源,重度绑定场景待书源上下文注入后扩展)。
-#[cfg(feature = "quickjs")]
-use legado_parser::JsExecutor;
-#[cfg(feature = "quickjs")]
-pub fn execute_auto_task_js(js_code: &str) -> Result<String, String> {
-    quickjs_impl::QuickJsExecutor::new("auto_task").execute_js(js_code)
-}
-
-/// 非 quickjs 构建:引擎不可用,如实报错(不再静默假成功)
-#[cfg(not(feature = "quickjs"))]
-pub fn execute_auto_task_js(_js_code: &str) -> Result<String, String> {
-    Err("Custom JS 执行需要 quickjs feature(当前构建未启用 JS 引擎)".to_string())
 }
 
 #[cfg(test)]

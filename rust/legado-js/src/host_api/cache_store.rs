@@ -95,7 +95,7 @@ pub(crate) fn clear_cache_dir() {
 /// `set_var`/`remove_var` 与其他测试的 env 并发读属数据竞争（UB），
 /// 故测试构建中 [`disk_dir`] 改走「测试覆盖槽 > 宿主注入（[`set_cache_dir`]）
 /// > 缺省 temp 目录」并整体旁路 env 分支，行为与宿主环境完全无关。
-/// 生产构建（`cfg(not(test))`）不含此槽，生产逻辑零改动。
+/// > 生产构建（`cfg(not(test))`）不含此槽，生产逻辑零改动。
 #[cfg(test)]
 static TEST_DISK_DIR_OVERRIDE: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 
@@ -520,13 +520,13 @@ mod tests {
         let injected = root.join("inj-b");
         clear_cache_dir();
         set_cache_dir(&injected);
-        fs::create_dir_all(&disk_path(&k2)).expect("磁盘路径预建为目录");
+        fs::create_dir_all(disk_path(&k2)).expect("磁盘路径预建为目录");
         assert!(!put(&k2, "v2", 0));
         assert_eq!(get_from_memory(&k2).as_deref(), Some("v2"));
         assert!(get(&k2, true).is_none());
 
         // put_file 失败路径：file 路径预建为目录 → 仅记日志，无内存层
-        fs::create_dir_all(&file_path(&k3)).expect("file 路径预建为目录");
+        fs::create_dir_all(file_path(&k3)).expect("file 路径预建为目录");
         assert!(!put_file(&k3, "vf"));
         assert!(get_from_memory(&k3).is_none());
         assert!(get_file(&k3).is_none());

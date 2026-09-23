@@ -95,8 +95,8 @@ hutool_md5_abc:\"900150983cd24fb0d6963f7d28e17f72\"";
 /// - 语料 favcomic（索引 703）混淆体对 `Packages.java.io.InputStream` 做 Java 式
 ///   类型探测（`.prototype`/`instanceof`），是 decode 路径（`ruleContent.imageDecode`
 ///   + `coverDecodeJs` → `decode(result)`，真实 content/cover 可达）的 Java 解密分支
-///   脚手架。`InputStream` 的**真实数据路径**是 `java.createSymmetricCrypto`
-///   （CryptoJS AES）+ `java.strToBytes`，`InputStream` 只搬运字节。
+///     脚手架。`InputStream` 的**真实数据路径**是 `java.createSymmetricCrypto`
+///     （CryptoJS AES）+ `java.strToBytes`，`InputStream` 只搬运字节。
 /// - 队列末项 `java.io` 最小面补上抽象基类 `InputStream`（纯字节缓冲读流，无真实
 ///   JVM 对象/文件 IO/反射）后：`Packages.java.io.InputStream` 由「未知类哨兵
 ///   （读取登记 + new/read 抛可读文案）」变为**已实现函数**——`new`/`read`/

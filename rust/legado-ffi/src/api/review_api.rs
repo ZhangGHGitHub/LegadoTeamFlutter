@@ -660,15 +660,17 @@ mod tests {
 
     #[test]
     fn test_review_get_summary_disabled_returns_empty() {
-        let mut source = BookSource::default();
-        source.rule_review = Some(legado_core::models::ReviewRule {
-            enabled: false,
-            review_summary_url: Some("http://example.com/summary".into()),
-            summary_list_rule: Some("$.data".into()),
-            summary_paragraph_index_rule: Some("$.idx".into()),
-            summary_count_rule: Some("$.cnt".into()),
+        let source = BookSource {
+            rule_review: Some(legado_core::models::ReviewRule {
+                enabled: false,
+                review_summary_url: Some("http://example.com/summary".into()),
+                summary_list_rule: Some("$.data".into()),
+                summary_paragraph_index_rule: Some("$.idx".into()),
+                summary_count_rule: Some("$.cnt".into()),
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
         let source_json = serde_json::to_string(&source).unwrap();
         let result = review_get_summary(&source_json, "{}").unwrap();
         let payload: serde_json::Value = serde_json::from_str(&result).unwrap();
@@ -678,13 +680,15 @@ mod tests {
 
     #[test]
     fn test_review_get_detail_incomplete_rules() {
-        let mut source = BookSource::default();
-        source.rule_review = Some(legado_core::models::ReviewRule {
-            enabled: true,
-            review_detail_url: Some("http://example.com/detail".into()),
-            // 缺 detailListRule/detailContentRule
+        let source = BookSource {
+            rule_review: Some(legado_core::models::ReviewRule {
+                enabled: true,
+                review_detail_url: Some("http://example.com/detail".into()),
+                // 缺 detailListRule/detailContentRule
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
         let source_json = serde_json::to_string(&source).unwrap();
         let err = review_get_detail(&source_json, "{}", 1).unwrap_err();
         assert!(err.to_string().contains("段评详情规则缺失"));
@@ -705,13 +709,15 @@ mod tests {
 
     #[test]
     fn test_review_get_replies_incomplete_rules() {
-        let mut source = BookSource::default();
-        source.rule_review = Some(legado_core::models::ReviewRule {
-            enabled: true,
-            review_quote_url: Some("http://example.com/reply?page={{page}}".into()),
-            // 缺 replyListRule/replyContentRule
+        let source = BookSource {
+            rule_review: Some(legado_core::models::ReviewRule {
+                enabled: true,
+                review_quote_url: Some("http://example.com/reply?page={{page}}".into()),
+                // 缺 replyListRule/replyContentRule
+                ..Default::default()
+            }),
             ..Default::default()
-        });
+        };
         let source_json = serde_json::to_string(&source).unwrap();
         let err = review_get_replies(&source_json, "{}", 1).unwrap_err();
         assert!(err.to_string().contains("段评回复规则缺失"));
@@ -721,8 +727,10 @@ mod tests {
     fn test_review_get_replies_js_source_dispatched() {
         // Task #134：JS 书源不再拒绝，进入 JS 编排器分派路径；
         // 未启用 quickjs 时占位引擎报错（错误源自 JS 引擎而非"暂不支持"降级）
-        let mut source = BookSource::default();
-        source.main_js = Some("// js source".into());
+        let source = BookSource {
+            main_js: Some("// js source".into()),
+            ..Default::default()
+        };
         let source_json = serde_json::to_string(&source).unwrap();
         let err = review_get_replies(&source_json, "{}", 1).unwrap_err();
         assert!(!err.to_string().contains("暂不支持"), "降级分支应已移除");
@@ -731,8 +739,10 @@ mod tests {
     #[test]
     fn test_js_review_get_replies_empty_main_js_rejected() {
         // mainJs 为空的 JS 书源 → 明确错误（无编排器可构建）
-        let mut source = BookSource::default();
-        source.main_js = Some("   ".into());
+        let source = BookSource {
+            main_js: Some("   ".into()),
+            ..Default::default()
+        };
         let err = js_review_get_replies(&source, "{}", 1).unwrap_err();
         assert!(err.to_string().contains("mainJs"));
     }
@@ -775,9 +785,9 @@ mod tests {
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_review_get_replies_js_source_quickjs_e2e() {
-        let mut source = BookSource::default();
-        source.main_js = Some(
-            r#"
+        let source = BookSource {
+            main_js: Some(
+                r#"
             function getReviewDetail(chapter, book, paraIndex, paraData, page) {
                 return JSON.stringify({
                     items: [{
@@ -789,8 +799,10 @@ mod tests {
                 });
             }
             "#
-            .to_string(),
-        );
+                .to_string(),
+            ),
+            ..Default::default()
+        };
         let source_json = serde_json::to_string(&source).unwrap();
         let request_json = serde_json::json!({
             "paraIndex": 3,

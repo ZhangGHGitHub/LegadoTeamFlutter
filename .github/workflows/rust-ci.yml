@@ -22,10 +22,10 @@ jobs:
         run: cargo check --workspace
       - name: Cargo clippy (default features)
         working-directory: rust
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Cargo clippy (quickjs — 体检§三.10 门控代码此前从未 lint)
         working-directory: rust
-        run: cargo clippy -p legado-js -p legado-ffi --features quickjs -- -D warnings
+        run: cargo clippy -p legado-js -p legado-ffi --features quickjs --all-targets -- -D warnings
       - name: Cargo test
         working-directory: rust
         run: cargo test --workspace

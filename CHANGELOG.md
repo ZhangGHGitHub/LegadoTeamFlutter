@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - [Rust] **书源脚本 `java.io.InputStream` 最小能力面（队列末项）**：按「能力清单，只覆盖用到的类」口径，为真实语料夹具（favcomic jsLib，索引 703）用到的字节流类提供纯内存等价实现（构造拷贝、TypedArray/数组就地写读、`read(buf,off,len)` 越界抛错、`len==0` 返回 0、EOF 返回 -1、`mark/reset` 按 `ByteArrayInputStream` 语义），实例未知成员经 Proxy 回落「此书源需要 Java 脚本能力（`<符号>`），当前不支持」并登记能力台账；`PrintStream`/`File`/`IOException` 等 0 语料命中且依赖真实 JVM 语义的类**明确不支持但提示保留**。真实夹具由「加载必失败」推进为「加载完成 + InputStream 解析可用」，未覆盖符号的用户提示与台账登记行为不放松。
 
 ### Changed
+- [Tool] **代码规范门禁对齐并上锁**：清掉 `cargo clippy --workspace --all-targets -- -D warnings` 的全部 64 处既有报错（测试/示例目标，纯行为等价改写：结构体更新语法、`is_multiple_of`、`is_empty()`/`first()`、`io::Error::other`、冗余 `#[must_use]`、测试模块后的代码位移等），并给 CI 的两条 clippy 作业加 `--all-targets`——`rust/DEVELOPMENT.md` 记载的严格门禁自此与 CI 一致且被自动拦截。无用户可见变化。
 - [Rust] **搜索跨源聚合下沉为单一真源（内部重构，界面与行为零变化）**：新增 `legado-core::search_aggregate` 纯函数（同名同作者跨源合并 + origins 累加、四桶分桶 equal→tags→contains→other、桶内 originsCount 降序 + 首次到达序平局、空关键词原样返回），与 Dart 现行纯函数 `applyPrecisionSearch` 逐条对齐；`legado-ffi` 内新增 `aggregate_search_books_json` 作为跨端校验入口（crate 内 `pub`，**未暴露 FRB**，方法数不变）。
 - [Rust] **`CoreSearchBook` 加法式新增可选字段 `origins`**（`#[serde(default, skip_serializing_if = "Vec::is_empty")]`，空时序列化省略）——既有搜索批次/解析/DB 路径不填充，批次 JSON 形态与旧消费方**零破坏**；Dart 侧 `SearchBook.origins` 加法式消费（非空优先、空回退 `{origin}`），运行时增量桶聚合路径未切换。
 - [Rust] **跨端夹具锁定两端聚合等价**：新增 `rust/legado-ffi/tests/fixtures/search_aggregate/cross_source_merge.json`（5 case：跨源合并 / 精准搜索丢弃 other / 空关键词原样返回 / 归一化 Unicode 边界 / 重复与空串 origins），Rust 集成测试与 Dart 单测读同一夹具比对（origins 按序比对，首次出现序为契约）。

@@ -34,7 +34,7 @@ fn main() {
             String::new()
         })
     } else {
-        "斗破苍穹".to_string()
+        QUERY.to_string()
     };
     if query.trim().is_empty() {
         eprintln!("query is empty; abort");

@@ -329,19 +329,23 @@ mod tests {
 
         with_database(|db| {
             let book_repo = BookRepository::new(db.connection());
-            let mut book = Book::default();
-            book.book_url = book_url.to_string();
-            book.name = "听书卷测".into();
-            book.origin = String::new();
+            let book = Book {
+                book_url: book_url.to_string(),
+                name: "听书卷测".into(),
+                origin: String::new(),
+                ..Default::default()
+            };
             book_repo.insert(&book)?;
 
             let ch_repo = BookChapterRepository::new(db.connection());
-            let mut ch = BookChapter::default();
-            ch.book_url = book_url.to_string();
-            ch.index = 0;
-            ch.title = "第一卷".into();
-            ch.url = "volume://1".into();
-            ch.is_volume = true;
+            let ch = BookChapter {
+                book_url: book_url.to_string(),
+                index: 0,
+                title: "第一卷".into(),
+                url: "volume://1".into(),
+                is_volume: true,
+                ..Default::default()
+            };
             ch_repo.insert(&ch)?;
             Ok(())
         })
@@ -362,19 +366,23 @@ mod tests {
 
         with_database(|db| {
             let book_repo = BookRepository::new(db.connection());
-            let mut book = Book::default();
-            book.book_url = book_url.to_string();
-            book.name = "听书缓存".into();
-            book.origin = "http://source.example/audio".into();
+            let book = Book {
+                book_url: book_url.to_string(),
+                name: "听书缓存".into(),
+                origin: "http://source.example/audio".into(),
+                ..Default::default()
+            };
             book_repo.insert(&book)?;
 
             let ch_repo = BookChapterRepository::new(db.connection());
-            let mut ch = BookChapter::default();
-            ch.book_url = book_url.to_string();
-            ch.index = 0;
-            ch.title = "第1集".into();
-            ch.url = chapter_url.to_string();
-            ch.variable = Some(r#"{"lyric":"歌词A"}"#.into());
+            let ch = BookChapter {
+                book_url: book_url.to_string(),
+                index: 0,
+                title: "第1集".into(),
+                url: chapter_url.to_string(),
+                variable: Some(r#"{"lyric":"歌词A"}"#.into()),
+                ..Default::default()
+            };
             ch_repo.insert(&ch)?;
 
             let cache_repo = CacheBookRepository::new(db.connection());
@@ -407,18 +415,22 @@ mod tests {
 
         with_database(|db| {
             let book_repo = BookRepository::new(db.connection());
-            let mut book = Book::default();
-            book.book_url = book_url.to_string();
-            book.name = "无源听书".into();
-            book.origin = String::new();
+            let book = Book {
+                book_url: book_url.to_string(),
+                name: "无源听书".into(),
+                origin: String::new(),
+                ..Default::default()
+            };
             book_repo.insert(&book)?;
 
             let ch_repo = BookChapterRepository::new(db.connection());
-            let mut ch = BookChapter::default();
-            ch.book_url = book_url.to_string();
-            ch.index = 0;
-            ch.title = "直链".into();
-            ch.url = chapter_url.to_string();
+            let ch = BookChapter {
+                book_url: book_url.to_string(),
+                index: 0,
+                title: "直链".into(),
+                url: chapter_url.to_string(),
+                ..Default::default()
+            };
             ch_repo.insert(&ch)?;
             Ok(())
         })

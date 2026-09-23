@@ -327,9 +327,11 @@ mod tests {
     /// 抓取路径回退 bookUrl，行为与换源前一致（向后兼容）
     #[test]
     fn test_book_origin_book_url_roundtrip_and_legacy_default() {
-        let mut book = Book::default();
-        book.book_url = "https://old.example/book".to_string();
-        book.origin_book_url = "https://new.example/book".to_string();
+        let book = Book {
+            book_url: "https://old.example/book".to_string(),
+            origin_book_url: "https://new.example/book".to_string(),
+            ..Default::default()
+        };
         let json = serde_json::to_string(&book).unwrap();
         assert!(json.contains("\"originBookUrl\""));
         let de: Book = serde_json::from_str(&json).unwrap();
@@ -344,15 +346,21 @@ mod tests {
     /// 为空（未换源/存量库）回退稳定主键 bookUrl（向后兼容）
     #[test]
     fn test_book_page_fetch_url_preference() {
-        let mut book = Book::default();
-        book.book_url = "https://old.example/book/1".to_string();
+        let book = Book {
+            book_url: "https://old.example/book/1".to_string(),
+            ..Default::default()
+        };
         assert_eq!(
             book.book_page_fetch_url(),
             "https://old.example/book/1",
             "originBookUrl 为空应回退 bookUrl"
         );
 
-        book.origin_book_url = "https://new.example/book/1".to_string();
+        let book = Book {
+            book_url: "https://old.example/book/1".to_string(),
+            origin_book_url: "https://new.example/book/1".to_string(),
+            ..Default::default()
+        };
         assert_eq!(
             book.book_page_fetch_url(),
             "https://new.example/book/1",
@@ -363,9 +371,11 @@ mod tests {
     /// [P2-8] 纯空白的 originBookUrl 视同空（trim 判定），回退 bookUrl
     #[test]
     fn test_book_page_fetch_url_blank_falls_back() {
-        let mut book = Book::default();
-        book.book_url = "https://old.example/book/1".to_string();
-        book.origin_book_url = "   ".to_string();
+        let book = Book {
+            book_url: "https://old.example/book/1".to_string(),
+            origin_book_url: "   ".to_string(),
+            ..Default::default()
+        };
         assert_eq!(book.book_page_fetch_url(), "https://old.example/book/1");
     }
 

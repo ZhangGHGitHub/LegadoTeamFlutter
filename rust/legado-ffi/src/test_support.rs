@@ -35,7 +35,8 @@ pub(crate) static GLOBAL_STORE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mute
 ///
 /// 守卫存于测试局部（如 `let _lock = ...`），离开作用域自动释放；
 /// 中毒恢复语义与原 `lock().unwrap_or_else(|p| p.into_inner())` 一致。
-#[must_use]
+///
+/// 注：返回的 `MutexGuard` 本身即 `#[must_use]`，无需在函数上重复标注。
 pub(crate) fn lock_global_store() -> std::sync::MutexGuard<'static, ()> {
     GLOBAL_STORE_TEST_LOCK
         .lock()

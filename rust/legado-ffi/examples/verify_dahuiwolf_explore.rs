@@ -12,13 +12,15 @@ fn main() {
     let text = fs::read_to_string(&path).expect("read json");
     let arr: Vec<serde_json::Value> = serde_json::from_str(&text).expect("parse array");
     let raw = &arr[0];
-    let mut source = BookSource::default();
-    source.book_source_url = raw["bookSourceUrl"].as_str().unwrap_or("").to_string();
-    source.book_source_name = raw["bookSourceName"].as_str().unwrap_or("").to_string();
-    source.js_lib = raw["jsLib"].as_str().map(|s| s.to_string());
-    source.explore_url = raw["exploreUrl"].as_str().map(|s| s.to_string());
-    source.enabled = true;
-    source.enabled_explore = true;
+    let source = BookSource {
+        book_source_url: raw["bookSourceUrl"].as_str().unwrap_or("").to_string(),
+        book_source_name: raw["bookSourceName"].as_str().unwrap_or("").to_string(),
+        js_lib: raw["jsLib"].as_str().map(|s| s.to_string()),
+        explore_url: raw["exploreUrl"].as_str().map(|s| s.to_string()),
+        enabled: true,
+        enabled_explore: true,
+        ..Default::default()
+    };
 
     let explore_url = source.explore_url.clone().unwrap_or_default();
     let source_json = serde_json::to_string(&source).expect("serialize source");
@@ -41,6 +43,6 @@ fn main() {
     }
     println!("PASS {} categories", cats.len());
     for c in cats.iter().take(12) {
-        println!(" - {} [{}]", c.title, &c.r#type);
+        println!(" - {} [{}]", c.title, c.r#type);
     }
 }

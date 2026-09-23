@@ -669,7 +669,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         let file_path = dir.join("test.7z");
         // 7z magic: 37 7A BC AF 27 1C
-        fs::write(&file_path, &[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]).unwrap();
+        fs::write(&file_path, [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C]).unwrap();
 
         let magic = read_file_magic(file_path.to_str().unwrap()).unwrap();
         assert_eq!(magic, "7z");

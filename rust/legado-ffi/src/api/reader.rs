@@ -1581,7 +1581,7 @@ mod tests {
     #[test]
     fn test_content_processing_disabled_rules_not_applied() {
         // 模拟 get_enabled_rules 仅返回启用的规则
-        let all_rules = vec![
+        let all_rules = [
             make_test_rule("启用", "hello", "hi", false, true),
             make_test_rule("禁用", "world", "WORLD", false, false),
         ];
@@ -1619,7 +1619,7 @@ mod tests {
         // scope 为空字符串也视为全局
         let mut rule2 = make_test_rule("空scope", "x", "Y", false, true);
         rule2.scope = Some(String::new());
-        let result = process_content_with_rules("xax", "", &vec![rule2], "任意书籍");
+        let result = process_content_with_rules("xax", "", &[rule2], "任意书籍");
         assert_eq!(result, "YaY");
     }
 
