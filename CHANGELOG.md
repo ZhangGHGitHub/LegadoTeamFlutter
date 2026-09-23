@@ -16,6 +16,12 @@ All notable changes to this project will be documented in this file.
 - [Rust] **书源脚本之间不再互相串用 Cookie（P2-19 JS 宿主层作用域收敛）**：书源脚本（`java.ajax` 等）此前会把**全部书源**的 Cookie 合并进请求头——即书源 A 的脚本能带上书源 B 的凭据。现改为只携带**当前书源**的 Cookie（精确键 + ETLD+1 域名键，复用 HTTP 层同一套多段 TLD/IP 键口径，同名键精确者优先）；**没有书源上下文的脚本执行路径（字典规则、自动任务、替换规则预览、开发用 eval、JS 单文件源导入期）不再携带 JS 宿主 Cookie**（原先会带全量，正是泄漏面）。图片解码规则路径补书源绑定，保证本源 Cookie 照常携带。
 
 ### Changed
+- [Rust] **书源 Cookie 改为「按域名归属」并与原版对齐**：此前 JS 写入的 Cookie 只对**写它的书源**生效，导致同站多书源/多源共用同一 API 域时丢会话，且脚本用第三方域 URL 写的 Cookie 连本源自己都用不上；现按原版语义改为**按请求域名**匹配（同域 Cookie 在任意书源/任意脚本上下文向该域发请求都携带，非本源域写入的 Cookie 也按其域携带），同时保持「不相关域名的 Cookie 绝不携带」。与已保存 Cookie 的合并改为**按键合并**（静态头里已有的同名键优先，其余键追加），Cookie 头识别大小写不敏感。
+
+### Fixed
+- [Tool] **CI 补上 `legado-server` 的 quickjs 测试与 lint 覆盖面**：此前 CI 只跑 `-p legado-js`/`-p legado-ffi` 的 quickjs 档，`legado-server` 的 quickjs 门控测试**从未在 CI 运行**（并修掉两处既有测试 flake：测试 zip 命名撞名、Cookie 测试并行互清域名键）。
+
+### Changed
 - [UI] **深色模式页面底色与卡片底色对齐参考版（D9，用户裁决按参考版取值）**：默认（内置）色板深色下，页面背景 `#424242` → **`#101418`**、卡片/容器底色 `#4A4A4A` → **`#1D2024`**（更深的夜间底），与参考版默认深色一致；亮色模式与 12 套具名色板**不受影响**。实机验证：深色 10/10 采样命中、亮色回归 8/8 命中。
 - [Rust] **详情/目录等 HTTP 取数路径的 Cookie 查找口径与 `java.ajax` 统一**：此前 FFI 取数路径只按「书源 URL 精确键」查 JS 宿主 Cookie，导致以域名键（ETLD+1）写入的 Cookie 在脚本请求里带、在详情/目录请求里不带；现两条路径统一为「精确键 ∪ ETLD+1 域名键、精确键优先」（与 HTTP 层同一套多段 TLD/IP 键口径）。无公共 API 与契约变更。
 - [Rust] **搜索聚合三路径统一（P2-20，内部重构）**：Dart 纯函数 `applyPrecisionSearch` 与 Rust 单一真源补上与运行时增量桶一致的**跨桶预去重**（同一「书名+作者+书源」仅首次到达入桶、落桶由首次到达决定；跨源计数仍由 origins 集合承载），跨端夹具 `keep_other` 期望 8→7 条；`applyPrecisionSearch` 无生产调用（运行时走增量桶），**用户可见行为不变**。

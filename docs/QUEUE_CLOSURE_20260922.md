@@ -97,7 +97,7 @@ backlog（P2/P3）：`urlOption retry` 完全未消费、charset 无探测兜底
 **本轮新登记（待裁决，均已写入 `docs/REFACTORING_ACTIVE_PLAN.md`）**：
 1. **P2-20**：Dart 搜索聚合双路径自身不一致（纯函数四独立桶 vs 增量桶 `_seenKeys` 预去重）——未来把运行时切到 Rust 聚合前须先裁决以哪条为准。
 2. **workspace 级 `clippy --all-targets -- -D warnings` 仍有 45 处既有报错**（工具链 clippy 0.1.97 lint 漂移；含 1 处为队列⑩a 引入）——建议单开一批清理，或修订 `rust/DEVELOPMENT.md` 门禁口径与 CI 对齐（CI 不带 `--all-targets`，`cargo clippy --workspace` 两档均 0）。
-3. **JS 侧跨源 cookie 泄漏**（`legado-js/src/host_api/network.rs:279-289`，面大于已修的 P1-1）——修法需先追 tag 取值来源。
+3. **JS 侧跨源 cookie 泄漏** → **已闭环（2026-09-23）**：先按「当前书源」收敛作用域（P2-19），随后按用户裁决**同步上游语义**（cookie 按**域名**归属、同域跨书源共享、异域绝不携带），注入点下沉到请求级，并补 CI 的 `legado-server --features quickjs` 覆盖面。仅剩**持久化**差距（上游落 DB / 我方内存态）待裁决，见 `REFACTORING_ACTIVE_PLAN.md`。
 4. **D9 深色背景底色**：#4A4A4A（我方内置色板）vs #101418（参考）——属主题引擎/色板取值，需确认基线引擎要求（登记见 `docs/parity_shots/verify_ui_20260922/VERIFY_UI_20260922.md`）。
 5. **08 屏遗留（低优）**：三行左缘 13dp vs 参考 `BookInfoSummary` `start=16dp`（3dp），宜与全页 padding 一并复核。
 
