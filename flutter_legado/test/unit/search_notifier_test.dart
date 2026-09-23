@@ -34,9 +34,16 @@ void main() {
         .thenAnswer((_) async {});
     when(() => mockApi.clearSearchHistory()).thenAnswer((_) async {});
     // [fix31] 流式搜索契约默认桩：取消 no-op + 空流（各测试可覆写 searchMultiStream）
+    // [test-isolation 2026-09-22] searchMultiStream 的所有桩/verify 必须带
+    // page: any(named: 'page')：生产调用总显式传 page（search=1 / 续页=2）；
+    // 桩省略 page 时 mocktail 记录 VM 前向器填充的默认值，受前端增量编译缓存
+    // （build/test_cache）陈旧布局影响会失配 → 默认 null 响应 → 19 条失败
+    // （根因与证据见 docs/REFACTORING_ACTIVE_PLAN.md P2-20 登记条目）
     when(() => mockApi.cancelSearch()).thenAnswer((_) async {});
-    when(() =>
-            mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+    when(() => mockApi.searchMultiStream(
+            any(),
+            sourceUrls: any(named: 'sourceUrls'),
+            page: any(named: 'page')))
         .thenAnswer((_) => const Stream<Map<String, dynamic>>.empty());
     // [v2.0.31] 搜索范围持久化：默认无持久化 scope
     when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
@@ -103,8 +110,10 @@ void main() {
 
   group('SearchNotifier 打开页重置（fix33：默认不显示上次结果）', () {
     test('resetForOpen 清空上次结果/关键词/进度，不 auto-search', () async {
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => Stream.fromIterable([
                 makeBatch(books: [
                   {
@@ -138,8 +147,11 @@ void main() {
       expect(readState().error, isNull);
       expect(readState().isEmpty, isFalse, reason: '未搜索不显示空态');
       // 不 auto-search：searchMultiStream 仍只被调用一次（上次主动搜索）
-      verify(() => mockApi.searchMultiStream(any(),
-              sourceUrls: any(named: 'sourceUrls')))
+      verify(() => mockApi.searchMultiStream(
+            any(),
+            sourceUrls: any(named: 'sourceUrls'),
+            page: any(named: 'page'),
+          ))
           .called(1);
     });
 
@@ -441,13 +453,18 @@ void main() {
       await readNotifier().search('   ');
       expect(readState().isLoading, isFalse);
       expect(readState().keyword, equals(''));
-      verifyNever(() => mockApi
-          .searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')));
+      verifyNever(() => mockApi.searchMultiStream(
+            any(),
+            sourceUrls: any(named: 'sourceUrls'),
+            page: any(named: 'page'),
+          ));
     });
 
     test('正常搜索流式返回结果', () async {
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => Stream.fromIterable([
                 makeBatch(books: [
                   {
@@ -475,8 +492,10 @@ void main() {
     });
 
     test('多源批次同名同作者聚合为一条，originsCount 累加（进度 x/y 更新）', () async {
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => Stream.fromIterable([
                 makeBatch(
                   books: [
@@ -543,8 +562,10 @@ void main() {
     });
 
     test('空批次记 0 条 success 不报错（无匹配源，整体正常完成）', () async {
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => Stream.fromIterable([
                 makeBatch(books: const [], finished: 1, total: 2, isLast: false),
                 makeBatch(books: const [], finished: 2, total: 2, isLast: true),
@@ -569,8 +590,10 @@ void main() {
       when(() => mockApi.appLogPush(
           level: any(named: 'level'), message: any(named: 'message')))
           .thenAnswer((_) async {});
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => Stream.fromIterable([
                 makeBatch(
                     error: '搜索请求失败: HTTP 500',
@@ -613,8 +636,10 @@ void main() {
       when(() => mockApi.appLogPush(
           level: any(named: 'level'), message: any(named: 'message')))
           .thenAnswer((_) async {});
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => Stream.fromIterable([
                 makeBatch(
                     error: '书源 searchUrl 为空',
@@ -646,8 +671,10 @@ void main() {
     });
 
     test('流错误时设置 error（BridgeError）', () async {
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => Stream<Map<String, dynamic>>.error(
               const BridgeError(message: '网络超时')));
 
@@ -662,8 +689,10 @@ void main() {
     });
 
     test('流错误时设置 error（普通异常）', () async {
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer(
               (_) => Stream<Map<String, dynamic>>.error(Exception('未知错误')));
 
@@ -702,6 +731,7 @@ void main() {
       verify(() => mockApi.searchMultiStream(
             '测试',
             sourceUrls: ['https://a.com'],
+            page: any(named: 'page'),
           )).called(1);
     });
 
@@ -729,6 +759,7 @@ void main() {
       verify(() => mockApi.searchMultiStream(
             '测试',
             sourceUrls: ['https://xuanhuan.com'],
+            page: any(named: 'page'),
           )).called(1);
     });
 
@@ -751,6 +782,7 @@ void main() {
       verify(() => mockApi.searchMultiStream(
             '测试',
             sourceUrls: ['https://multi.com'],
+            page: any(named: 'page'),
           )).called(1);
     });
 
@@ -763,8 +795,11 @@ void main() {
       await readNotifier().search('测试');
 
       expect(readState().error, equals('所选筛选范围内无有效书源，请调整筛选条件'));
-      verifyNever(() => mockApi
-          .searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')));
+      verifyNever(() => mockApi.searchMultiStream(
+            any(),
+            sourceUrls: any(named: 'sourceUrls'),
+            page: any(named: 'page'),
+          ));
     });
 
     test('分组解析失败时仅使用直接选中的书源', () async {
@@ -781,6 +816,7 @@ void main() {
       verify(() => mockApi.searchMultiStream(
             '测试',
             sourceUrls: ['https://direct.com'],
+            page: any(named: 'page'),
           )).called(1);
     });
 
@@ -790,16 +826,21 @@ void main() {
       await readNotifier().search('全部搜索');
       await pumpStream();
 
-      verify(() => mockApi.searchMultiStream('全部搜索', sourceUrls: null))
-          .called(1);
+      verify(() => mockApi.searchMultiStream(
+            '全部搜索',
+            sourceUrls: null,
+            page: any(named: 'page'),
+          )).called(1);
     });
   });
 
   group('SearchNotifier 节流重建（2026-08-24：修复逐批次全量重聚合卡顿）', () {
     test('节流窗口内批次不触发中间重建，流结束最终聚合', () async {
       final controller = StreamController<Map<String, dynamic>>();
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => controller.stream);
 
       container.read(searchNotifierProvider);
@@ -880,8 +921,10 @@ void main() {
 
     test('stop() 后节流窗口内的结果也进入 state（最终聚合，保留已出结果）', () async {
       final controller = StreamController<Map<String, dynamic>>();
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => controller.stream);
 
       container.read(searchNotifierProvider);
@@ -922,8 +965,10 @@ void main() {
 
   group('SearchNotifier isEmpty 逻辑', () {
     test('有结果时 isEmpty 为 false', () async {
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => Stream.fromIterable([
                 makeBatch(books: [
                   {
@@ -1122,6 +1167,75 @@ void main() {
     });
   });
 
+  group(
+    'applyPrecisionSearch 跨桶预去重（P2-20：三条路径统一语义，2026-09-22）',
+    () {
+      SearchResult mk(
+        String name,
+        String author, {
+        String? kind,
+        required String origin,
+      }) =>
+          SearchResult(
+            book: Book(
+              name: name,
+              author: author,
+              kind: kind,
+              origin: origin,
+            ),
+            origins: {origin},
+          );
+
+      test(
+        '同 (name,author,origin) 因 kind 分落不同桶 → 仅首次到达桶保留 1 条',
+        () {
+          // 首条带 kind（落 tags）；次条同三元组（无 kind，若无 seen 门控本会
+          // 落 other）→ 跨桶 seen 预去重后整体丢弃，落桶由首次到达决定
+          final results = [
+            mk('都市情缘', '乙', kind: '重生,都市', origin: 'https://s4.example'),
+            mk('都市情缘', '乙', origin: 'https://s4.example'),
+          ];
+
+          final out = applyPrecisionSearch(results, '重生');
+
+          expect(out, hasLength(1), reason: '首次到达决定落桶；后续同键到达丢弃');
+          // 回归保护（P2-20）：若移除 seen 门控（裁决前「四桶各自独立 map」
+          // 实现），本用例产出 2 条（tags + other 各一条）——此断言变红。
+          // 同保护见夹具 cross_source_merge.json keep_other case（8→7 条）
+          expect(out.length, isNot(2));
+          // 首条元数据保留：kind 保留、bookUrl/origin 为首次到达
+          expect(out.first.book.kind, equals('重生,都市'));
+          expect(out.first.book.origin, equals('https://s4.example'));
+        },
+      );
+
+      test('不同 origin 的同名同作者 → 各保留，桶内归并 origins 累加', () {
+        final results = [
+          mk('一人之下', '米二', origin: 'https://a.com'),
+          mk('一人之下', '米二', origin: 'https://b.com'),
+        ];
+
+        final out = applyPrecisionSearch(results, '一人之下');
+
+        expect(out, hasLength(1), reason: '不同 origin 均通过 seen 预去重');
+        expect(out.first.originsCount, equals(2), reason: 'origins 跨源累加');
+        expect(
+          out.first.effectiveOrigins,
+          containsAll(['https://a.com', 'https://b.com']),
+        );
+
+        // 子断言：不同 origin 的同 (name,author) 因 kind 差异分落不同桶时
+        // 各自保留（seen 键含 origin，互不冲突）→ 2 条
+        final split = [
+          mk('都市情缘', '乙', kind: '重生,都市', origin: 'https://a.example'),
+          mk('都市情缘', '乙', origin: 'https://b.example'),
+        ];
+        final out2 = applyPrecisionSearch(split, '重生');
+        expect(out2, hasLength(2), reason: 'origin 不同 → seen 键不同 → 各保留');
+      });
+    },
+  );
+
   group('增量聚合桶（2026-08-24：流式路径 ≡ 一次性参考实现）', () {
     /// 构造批次书籍条目（字段契约同 Rust searchMultiStream books）
     Map<String, dynamic> b(
@@ -1167,8 +1281,10 @@ void main() {
         b('噪声书', '路人', origin: 'https://d.com'),
       ];
 
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => Stream.fromIterable([
             makeBatch(books: books.sublist(0, 2), finished: 1, total: 3),
             makeBatch(books: books.sublist(2, 4), finished: 2, total: 3),
@@ -1245,8 +1361,10 @@ void main() {
       Stream<Map<String, dynamic>> streamOnce() => Stream.fromIterable(
           [makeBatch(books: books)]);
 
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => streamOnce());
       await readNotifier().search('重生');
       await pumpStream();
@@ -1254,8 +1372,10 @@ void main() {
 
       // 切换精准搜索后重新搜索（对齐 SearchActivity 菜单行为）
       readNotifier().setPrecision(true);
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => streamOnce());
       await readNotifier().search('重生');
       await pumpStream();
@@ -1265,8 +1385,10 @@ void main() {
     });
 
     test('稳定平局序：同 originsCount 跨批次按首次到达顺序（对齐 sortedBucket 索引平局）', () async {
-      when(() =>
-              mockApi.searchMultiStream(any(), sourceUrls: any(named: 'sourceUrls')))
+      when(() => mockApi.searchMultiStream(
+              any(),
+              sourceUrls: any(named: 'sourceUrls'),
+              page: any(named: 'page')))
           .thenAnswer((_) => Stream.fromIterable([
             makeBatch(books: [b('测试甲', '甲作者', origin: 'https://1.com')]),
             makeBatch(books: [b('测试乙', '乙作者', origin: 'https://2.com')]),

@@ -60,7 +60,17 @@ class SearchNotifier extends Notifier<SearchState> {
   /// 对齐 applyPrecisionSearch 的索引平局语义）— Qoder UI
   int _groupSeq = 0;
 
-  /// 会话级去重键集（书名+作者+书源，与增量桶同步维护）— Cursor UI
+  /// 会话级**跨桶预去重**键集（P2-20 基准语义：书名+作者+书源，与增量桶同步维护）。
+  ///
+  /// 键在批次到达循环以 `'${r.book.name}|${r.book.author}|${r.book.origin}'`
+  /// 计算——**原始（未清洗）**值、`|` 分隔三段、含 origin；管辖「是否入桶」：
+  /// 同一 (name, author, origin) 三元组仅**首次到达**入桶（落哪个桶由首次到达
+  /// 决定），后续同键到达整体丢弃。纯函数 `applyPrecisionSearch`
+  /// （`search_state.dart`）与 Rust `search_aggregate` 的 seen 键与此**逐字
+  /// 对齐**（P2-20 裁决：三条路径统一到同一语义）。
+  /// 注意与 [_addToBuckets] 的**桶内聚合键**（`'$name\u0000$author'`，清洗后
+  /// 值、两段、不含 origin，管辖桶内归并分组）是两个不同的键。
+  /// — Cursor UI
   final _seenKeys = <String>{};
 
   /// 结果列表节流重建间隔（2026-08-24：修复逐批次全量重聚合 + 全量替换
@@ -305,6 +315,12 @@ class SearchNotifier extends Notifier<SearchState> {
           // （对齐原版 mergeItems.addOrigin 的逐批后台聚合语义），
           // flush 不再全量重聚合 — Qoder UI
           for (final r in books) {
+            // P2-20 基准：跨桶预去重键 = **原始（未清洗）** 书名|作者|书源 三段
+            // （含 origin），管「是否入桶」：同一三元组仅首次到达入桶、落桶由
+            // 首次到达决定，后续同键整体丢弃。纯函数 applyPrecisionSearch 与
+            // Rust search_aggregate 的 seen 键与此逐字对齐（P2-20 裁决：三条
+            // 路径统一到同一语义）；注意与 _addToBuckets 内桶内聚合键
+            // （清洗后 name\u0000author 两段、不含 origin）是两个不同的键
             final key = '${r.book.name}|${r.book.author}|${r.book.origin}';
             if (_seenKeys.add(key)) _addToBuckets(r, keyword);
           }
@@ -402,9 +418,16 @@ class SearchNotifier extends Notifier<SearchState> {
   /// 完全一致：formatBookName/formatBookAuthor 清洗 → 四分桶分类 →
   /// 以「清洗后书名+作者」为键去重归并多 origin）。每本书仅执行一次，
   /// 替代旧 flush 时对全量累积表重复执行的清洗 + 拷贝 — Qoder UI
+  ///
+  /// P2-20 双键区分：[_seenKeys] 跨桶预去重键（**原始** `name|author|origin`
+  /// 三段，管「是否入桶」，在批次到达循环计算）≠ 本方法的 [mapKey] 桶内
+  /// 聚合键（清洗后值 `'$name\u0000$author'` 两段、不含 origin，管「桶内归并
+  /// 分组」）。纯函数 / Rust 单一真源对两键分别逐字对齐（P2-20 裁决）。
   void _addToBuckets(SearchResult r, String key) {
     final name = formatBookName(r.book.name);
     final author = formatBookAuthor(r.book.author);
+    // 桶内聚合键：清洗后 name/author、NUL 分隔两段、不含 origin（P2-20：
+    // 与跨桶预去重键 _seenKeys 不同，见方法 doc）
     final mapKey = '$name\u0000$author';
     final normalized = (name != r.book.name || author != r.book.author)
         ? r.copyWith(book: r.book.copyWith(name: name, author: author))

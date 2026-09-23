@@ -140,7 +140,20 @@ extension SearchStateDisplay on SearchState {
 ///
 /// [2026-08-24] 流式搜索路径已改为 SearchNotifier 内的增量桶维护
 /// （_addToBuckets + _materializeResults，每本书仅入桶一次），本函数保留为
-/// 纯函数参考实现（一次性结果集聚合 / 单测基准），语义与增量路径完全一致。
+/// 纯函数参考实现（一次性结果集聚合 / 单测基准）。
+///
+/// [P2-20 | 2026-09-22] 本函数与增量桶路径**同语义**（裁决：以运行时增量桶
+/// 为准，三条路径——本纯函数 / `SearchNotifier` 增量桶 / Rust
+/// `search_aggregate` 单一真源——已统一到同一语义）：入桶前多一层**跨桶
+/// `seen` 预去重**，同一 `(name, author, origin)` 仅**首次到达**入桶（落哪个
+/// 桶由首次到达决定），后续同键到达一律丢弃（其 origin 已由首条代表，跨源
+/// 计数由 `origins` 集合承载）。**键来源（已核对，与运行时逐字一致）**：
+/// `SearchNotifier._seenKeys` 的键在 `search_notifier.dart` L324 计算——
+/// `'${r.book.name}|${r.book.author}|${r.book.origin}'`，即**原始（未清洗）**
+/// 书名/作者 + origin 三段、`|` 分隔；注意它与**桶内聚合键**（本函数
+/// `mergeInto` 的 `'$name\u0000$author'`，L175，**清洗后**值两段、不含
+/// origin）是**两个不同的键**——seen 键管「是否入桶」，桶内键管「桶内归并
+/// 分组」（同书多 origin 仍按桶内键合并累加）。
 List<SearchResult> applyPrecisionSearch(
   List<SearchResult> results,
   String key, {
@@ -152,6 +165,9 @@ List<SearchResult> applyPrecisionSearch(
   final tags = <String, SearchResult>{};
   final contains = <String, SearchResult>{};
   final other = <String, SearchResult>{};
+  // P2-20：跨桶预去重集（键来源与 SearchNotifier._seenKeys 逐字一致，
+  // 见函数 docstring「键来源」节：原始 name|author|origin，不含清洗）
+  final seen = <String>{};
 
   void mergeInto(Map<String, SearchResult> bucket, SearchResult item) {
     final name = formatBookName(item.book.name);
@@ -169,6 +185,12 @@ List<SearchResult> applyPrecisionSearch(
   }
 
   for (final r in results) {
+    // P2-20：跨桶预去重——键逐字对齐运行时增量路径（search_notifier.dart
+    // L324：'${r.book.name}|${r.book.author}|${r.book.origin}'，原始值不做
+    // 清洗、含 origin）；同一 (name, author, origin) 仅首次到达入桶（落桶
+    // 由首次到达决定），后续同键一律丢弃
+    final seenKey = '${r.book.name}|${r.book.author}|${r.book.origin}';
+    if (!seen.add(seenKey)) continue;
     final name = formatBookName(r.book.name);
     final author = formatBookAuthor(r.book.author);
     final kind = r.book.kind ?? '';

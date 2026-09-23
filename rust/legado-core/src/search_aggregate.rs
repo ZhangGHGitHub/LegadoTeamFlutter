@@ -3,16 +3,22 @@
 //! 把搜索两层去重中的**跨源聚合**（同名同作者跨源合并 + origins 累加）从
 //! Dart 侧下沉到 Rust，作为跨端夹具校验的基准实现。
 //!
-//! **对齐范围（严格限定）**：与 Dart 现行**纯函数** `applyPrecisionSearch`
-//! （`flutter_legado/lib/src/providers/search/search_state.dart` L144-207）
-//! 逐条对齐（不得自作主张改语义）。**不覆盖** `SearchNotifier` 增量桶路径
-//! （`search_notifier.dart` L307-310）：该路径入桶前多一层
-//! `_seenKeys.add('${name}|${author}|${origin}')` 预去重（`_seenKeys` 声明于
-//! L64），本模块与纯函数均无此步——具体表现：同名同作者同 origin、kind
-//! 分别落不同桶的输入（如「都市情缘+乙」带 kind 与不带 kind 两条），
-//! 纯函数/本模块产出 2 条，增量路径仅 1 条；差异登记与待裁决见
-//! `docs/REFACTORING_ACTIVE_PLAN.md` P2-20，故本模块不得与增量路径称
-//! 「完全一致」：
+//! **对齐范围（P2-20 裁决后，2026-09-22）**：与 Dart **纯函数**
+//! `applyPrecisionSearch`（`flutter_legado/lib/src/providers/search/
+//! search_state.dart`）及 `SearchNotifier` **增量桶路径**
+//! （`search_notifier.dart`）**逐条对齐——三条路径（纯函数 / 增量桶 /
+//! 本 Rust 单一真源）已统一到同一语义**：入桶前执行**跨桶预去重**
+//! （`seen` 集），同一 `(name, author, origin)` 仅**首次到达**入桶
+//! （落哪个桶由首次到达决定），后续同键到达一律丢弃（其 origin 已由
+//! 首条代表，跨源计数由 `origins` 集合承载）。`seen` 键与 Dart
+//! `SearchNotifier._seenKeys`（`search_notifier.dart` L324）**逐字一致**：
+//! **原始（未清洗）** `"{name}|{author}|{origin}"`（`|` 分隔三段、含
+//! origin；注意与桶内聚合键 `"{name}\u{0}{author}"`（清洗后值、两段、
+//! 不含 origin）是两个不同的键——seen 键管「是否入桶」，桶内键管「桶内
+//! 归并分组」）。**历史说明（一句）**：P2-20 裁决前本模块仅对齐纯函数
+//! 「四桶各自独立 map、无跨桶预去重」语义（不覆盖增量路径：同名同作者同
+//! origin 且 kind 分落不同桶时产出 2 条，增量路径仅 1 条；差异登记见
+//! `docs/REFACTORING_ACTIVE_PLAN.md` P2-20），现已对齐：
 //!
 //! 1. **归一化**：name/author 经本地 `normalize_book_name` /
 //!    `normalize_book_author` 清洗——**正则文本**与 Dart
@@ -29,11 +35,14 @@
 //! 2. **聚合键**：`"{name}\u{0}{author}"`（清洗后值，Dart mapKey 同规则；
 //!    键不含 bookUrl/origin——同名同作者即同书，单源内不同 bookUrl 亦合并，
 //!    origins 集合按 origin 去重不重复计数）。
-//! 3. **分桶**（按清洗后 name/author/kind 判定，四桶各自独立 map——同一键
-//!    可因 kind 差异落在不同桶；桶序）：
+//! 3. **跨桶预去重（P2-20）**：入桶前 `seen.insert(name|author|origin)`
+//!    （**原始值**，逐字对齐 `SearchNotifier._seenKeys`）；键已存在 → 该条
+//!    整体丢弃（不参与分桶/归并），仅首次到达决定落桶。
+//! 4. **分桶**（按清洗后 name/author/kind 判定，四桶各自独立 map——**不同
+//!    origin** 的同书可因 kind 差异落在不同桶；桶序）：
 //!    `equal`（name==key | author==key）→ `tags`（kind contains key）→
 //!    `contains`（name|author contains key）→ `other`（仅 `keep_other` 时保留）。
-//! 4. **归并**（Dart `withAddedOrigin`，`Set<String>` 保序去重语义，探针
+//! 5. **归并**（Dart `withAddedOrigin`，`Set<String>` 保序去重语义，探针
 //!    实测 `rust/_p03_norm_probe/probe_output.txt`「Set 语义」节）：
 //!    - 入桶首条：条目 origins = 该条 `effectiveOrigins` 的**保序去重**
 //!      副本（字段重复收敛，`{"o","o"}` 计 1；**不滤空串**——`[""]` →
@@ -42,10 +51,10 @@
 //!      序、**不滤空串**），仅 `other.origin` 非空且未出现时追加；
 //!      `hasReadRecord` OR；其余元数据（bookUrl/origin/originName/
 //!      coverUrl/…）保留**首条到达**项。
-//! 5. **排序**：桶内 originsCount 降序（effectiveOrigins 空按 1 计），
+//! 6. **排序**：桶内 originsCount 降序（effectiveOrigins 空按 1 计），
 //!    平局按**首次到达索引**升序（对齐 Dart `sortedBucket` 的索引平局裁决，
 //!    不依赖 sort 稳定性）。
-//! 6. **输出**：equal → tags → contains → (keep_other) other 桶序拼接；
+//! 7. **输出**：equal → tags → contains → (keep_other) other 桶序拼接；
 //!    空关键词直接原样返回（Dart `if (key.isEmpty) return results;`）。
 //!
 //! **effectiveOrigins 规则**（Dart `SearchResult.effectiveOrigins` 对齐）：
@@ -58,7 +67,7 @@
 
 use crate::models::misc::SearchBook;
 use regex::Regex;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
 // ─── ECMAScript 等价归一化（缺陷 1：探针实测显式字符类，禁止凭记忆猜）───
@@ -253,8 +262,10 @@ impl Bucket {
 /// 跨源聚合（单一真源入口，Dart `applyPrecisionSearch(results, key,
 /// {keepOther})` 逐条对齐的纯函数）：
 ///
-/// - `key` 空 → 原样返回（不聚合、不分桶，Dart 同规则）；
-/// - 归一化 → 分桶 → 归并 → 桶内排序 → 桶序拼接输出；
+/// - `key` 空 → 原样返回（不聚合、不分桶，Dart 同规则；seen 预去重同样
+///   不执行，对齐 Dart 早退路径）；
+/// - 归一化 → **跨桶预去重（P2-20）** → 分桶 → 归并 → 桶内排序 →
+///   桶序拼接输出；
 /// - 输出项 `name`/`author` 为清洗值，`origins` 为跨源累加集合（首次出现序），
 ///   `hasReadRecord` 为各到达项 OR，其余字段保留首条到达元数据。
 pub fn aggregate_search_books(
@@ -270,15 +281,25 @@ pub fn aggregate_search_books(
     let mut tags = Bucket::default();
     let mut contains = Bucket::default();
     let mut other = Bucket::default();
+    // P2-20 跨桶预去重：seen 键与 Dart `SearchNotifier._seenKeys`
+    // （search_notifier.dart L324）逐字一致——**原始（未清洗）**
+    // `"{name}|{author}|{origin}"` 三段；同一 (name, author, origin) 仅
+    // 首次到达入桶（落哪个桶由首次到达决定），后续同键到达整体丢弃
+    // （其 origin 已由首条代表，跨源计数由桶内 origins 集合承载）
+    let mut seen: HashSet<String> = HashSet::new();
 
     for item in books {
+        let seen_key = format!("{}|{}|{}", item.name, item.author, item.origin);
+        if !seen.insert(seen_key) {
+            continue;
+        }
         let name = normalize_book_name(&item.name);
         let author = normalize_book_author(&item.author);
         // 聚合键（Dart `'$name\u0000$author'`，清洗后值）
         let map_key = format!("{name}\u{0}{author}");
         let kind = item.kind.as_deref().unwrap_or("");
-        // 桶判定用清洗后 name/author（Dart L172-183 同规则）；
-        // keep_other=false 时 other 项直接丢弃（Dart L181 else-if 落空）
+        // 桶判定用清洗后 name/author（Dart L197-205 同规则）；
+        // keep_other=false 时 other 项直接丢弃（Dart L203 else-if 落空）
         if name == key || author == key {
             equal.merge(map_key, item, &name, &author);
         } else if kind.contains(key) {
@@ -618,9 +639,12 @@ mod tests {
     }
 
     #[test]
-    fn same_key_lands_in_different_buckets_by_kind() {
-        // 四桶各自独立 map：同名同作者键可因 kind 差异落不同桶
-        // （Dart L151-154 四个独立 map 同规则）
+    fn different_origins_same_key_land_in_different_buckets_by_kind() {
+        // 四桶各自独立 map：**不同 origin** 的同名同作者书可因 kind 差异
+        // 落不同桶（Dart L164-167 四个独立 map 同规则）。
+        // P2-20 注：两条 seen 键不同（origin 不同：a.com / b.com）→ 均通过
+        // 预去重；「**同 origin** + kind 差异」应去重为 1 条的情形见
+        // `same_origin_same_book_kind_diff_first_arrival_wins`
         let books = [
             mk("书A", "张三", "https://a.com"), // kind 命中 → tags
             mk("书A", "张三", "https://b.com"), // 无 kind、name contains → contains
@@ -629,9 +653,57 @@ mod tests {
         tagged.kind = Some("重生".to_string());
         let books = vec![tagged, books[1].clone()];
         let out = aggregate_search_books(&books, "重生", true);
-        assert_eq!(out.len(), 2, "同一 (name,author) 键分落两桶各一条");
+        assert_eq!(
+            out.len(),
+            2,
+            "不同 origin 的同 (name,author) 分落两桶各一条（seen 键含 origin，互不冲突）"
+        );
         assert_eq!(out[0].book_url, "https://a.com/book/书A", "tags 桶在前");
         assert_eq!(out[1].book_url, "https://b.com/book/书A");
+    }
+
+    #[test]
+    fn same_origin_same_book_kind_diff_first_arrival_wins() {
+        // P2-20 跨桶预去重：同一 (name, author, origin) 三元组（原始值）
+        // 仅首次到达入桶——落哪个桶由首次到达决定；后续同键到达整体丢弃。
+        // 首条带 kind → 落 tags；次条同三元组（无 kind）若无 seen 门控本会
+        // 落 contains/other，须被丢弃
+        let first = SearchBook {
+            kind: Some("重生,都市".to_string()),
+            ..mk("都市情缘", "乙", "https://s4.example")
+        };
+        let second = mk("都市情缘", "乙", "https://s4.example"); // 同三元组，无 kind
+        let out = aggregate_search_books(&[first, second], "重生", true);
+        assert_eq!(out.len(), 1, "首次到达决定落桶；后续同键到达丢弃");
+        // 回归保护（P2-20）：若移除 seen 门控（裁决前实现），kind 分桶差异
+        // 使本用例产出 2 条——本测试（及夹具 keep_other 8→7 条）随之变红
+        assert_ne!(
+            out.len(),
+            2,
+            "回归保护：无 seen 门控时同 (name,author,origin) 会因 kind 差异产出 2 条"
+        );
+        // 首条元数据保留：落 tags 桶，kind 保留，origins 单源
+        assert_eq!(out[0].book_url, "https://s4.example/book/都市情缘");
+        assert_eq!(out[0].kind, Some("重生,都市".to_string()));
+        assert_eq!(out[0].origins, vec!["https://s4.example".to_string()]);
+    }
+
+    #[test]
+    fn different_origins_same_book_each_kept_and_merged() {
+        // 不同 origin、同名同作者 → 两条均保留（seen 键含 origin，互不
+        // 冲突），桶内归并合并 origins 累加（首次出现序）
+        let books = [
+            mk("一人之下", "米二", "https://a.com"),
+            mk("一人之下", "米二", "https://b.com"),
+        ];
+        let out = aggregate_search_books(&books, "一人之下", true);
+        assert_eq!(out.len(), 1, "不同 origin 的同书各保留并桶内归并为一条");
+        assert_eq!(
+            out[0].origins,
+            vec!["https://a.com".to_string(), "https://b.com".to_string()],
+            "origins 按首次出现序累加"
+        );
+        assert_eq!(origins_count(&out[0].origins), 2);
     }
 
     #[test]
@@ -645,7 +717,11 @@ mod tests {
             mk("斗破苍穹", "天蚕土豆", "https://b.com"),
         ];
         let out2 = aggregate_search_books(&books, "", true);
-        assert_eq!(out2.len(), 2, "空 key 不聚合（Dart L149 同规则）");
+        assert_eq!(
+            out2.len(),
+            2,
+            "空 key 不聚合（Dart search_state.dart L162 同规则）"
+        );
     }
 
     #[test]

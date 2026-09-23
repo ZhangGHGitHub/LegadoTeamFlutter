@@ -12,7 +12,11 @@ All notable changes to this project will be documented in this file.
 ### Added
 - [Rust] **书源脚本 `java.io.InputStream` 最小能力面（队列末项）**：按「能力清单，只覆盖用到的类」口径，为真实语料夹具（favcomic jsLib，索引 703）用到的字节流类提供纯内存等价实现（构造拷贝、TypedArray/数组就地写读、`read(buf,off,len)` 越界抛错、`len==0` 返回 0、EOF 返回 -1、`mark/reset` 按 `ByteArrayInputStream` 语义），实例未知成员经 Proxy 回落「此书源需要 Java 脚本能力（`<符号>`），当前不支持」并登记能力台账；`PrintStream`/`File`/`IOException` 等 0 语料命中且依赖真实 JVM 语义的类**明确不支持但提示保留**。真实夹具由「加载必失败」推进为「加载完成 + InputStream 解析可用」，未覆盖符号的用户提示与台账登记行为不放松。
 
+### Fixed
+- [Rust] **书源脚本之间不再互相串用 Cookie（P2-19 JS 宿主层作用域收敛）**：书源脚本（`java.ajax` 等）此前会把**全部书源**的 Cookie 合并进请求头——即书源 A 的脚本能带上书源 B 的凭据。现改为只携带**当前书源**的 Cookie（精确键 + ETLD+1 域名键，复用 HTTP 层同一套多段 TLD/IP 键口径，同名键精确者优先）；**没有书源上下文的脚本执行路径（字典规则、自动任务、替换规则预览、开发用 eval、JS 单文件源导入期）不再携带 JS 宿主 Cookie**（原先会带全量，正是泄漏面）。图片解码规则路径补书源绑定，保证本源 Cookie 照常携带。
+
 ### Changed
+- [Rust] **搜索聚合三路径统一（P2-20，内部重构）**：Dart 纯函数 `applyPrecisionSearch` 与 Rust 单一真源补上与运行时增量桶一致的**跨桶预去重**（同一「书名+作者+书源」仅首次到达入桶、落桶由首次到达决定；跨源计数仍由 origins 集合承载），跨端夹具 `keep_other` 期望 8→7 条；`applyPrecisionSearch` 无生产调用（运行时走增量桶），**用户可见行为不变**。
 - [Rust] **JS 宿主请求对回环地址不再经系统/环境代理**：书源脚本（`java.connect` 等）访问 `127.0.0.1`/`::1`/`localhost` 时绕过代理（对齐 legado-net 既有回环免代理约定），本地源/本地测试服务不受环境代理劫持；真实主机仍按用户代理配置走。无用户可见变化。
 - [Tool] **代码规范门禁对齐并上锁**：清掉 `cargo clippy --workspace --all-targets -- -D warnings` 的全部 64 处既有报错（测试/示例目标，纯行为等价改写：结构体更新语法、`is_multiple_of`、`is_empty()`/`first()`、`io::Error::other`、冗余 `#[must_use]`、测试模块后的代码位移等），并给 CI 的两条 clippy 作业加 `--all-targets`——`rust/DEVELOPMENT.md` 记载的严格门禁自此与 CI 一致且被自动拦截。无用户可见变化。
 - [Rust] **搜索跨源聚合下沉为单一真源（内部重构，界面与行为零变化）**：新增 `legado-core::search_aggregate` 纯函数（同名同作者跨源合并 + origins 累加、四桶分桶 equal→tags→contains→other、桶内 originsCount 降序 + 首次到达序平局、空关键词原样返回），与 Dart 现行纯函数 `applyPrecisionSearch` 逐条对齐；`legado-ffi` 内新增 `aggregate_search_books_json` 作为跨端校验入口（crate 内 `pub`，**未暴露 FRB**，方法数不变）。

@@ -1,6 +1,6 @@
 {
   "fixture": "search_aggregate/cross_source_merge",
-  "description": "跨端夹具（队列⑩a P1-1 项2，2026-09-22）：Rust search_aggregate::aggregate_search_books_json 与 Dart applyPrecisionSearch 对同一 books 输入产出同一 expected。books 为 SearchSourceBatch.books[] 形态（CoreSearchBook camelCase）；expected 为聚合后逐条投影——name/author 为清洗值、origin/originName/bookUrl/kind 保留首条到达元数据、hasReadRecord 为各到达项 OR、origins 为跨源累加集合（两端测试均按序比对，首次出现序为契约；其余字段按索引顺序敏感）。边界覆盖：空 key 原样透传（Dart L149，book 不清洗）、Unicode 边界（U+FEFF / U+0085 / CR / U+2028 / U+2029，新 case 非 ASCII 一律 \\uXXXX 转义保持文件 ASCII）、重复与空串 origins（Dart Set<String> 语义：保序去重留首 / 并集不滤空串 / 空串是合法成员；expected 由 Dart 实现实测产出，见 rust/_p03_norm_probe/probe_output.txt）。单源内 bookUrl 去重由解析期 dedup_search_results_keep_first 完成，不在本夹具范围。",
+  "description": "跨端夹具（队列⑩a P1-1 项2，2026-09-22；P2-20 裁决同日落桶统一）：Rust search_aggregate::aggregate_search_books_json 与 Dart applyPrecisionSearch 对同一 books 输入产出同一 expected。books 为 SearchSourceBatch.books[] 形态（CoreSearchBook camelCase）；expected 为聚合后逐条投影——name/author 为清洗值、origin/originName/bookUrl/kind 保留首条到达元数据、hasReadRecord 为各到达项 OR、origins 为跨源累加集合（两端测试均按序比对，首次出现序为契约；其余字段按索引顺序敏感）。P2-20 裁决后三条路径（纯函数 / 增量桶 / Rust 单一真源）统一到同一语义：入桶前执行跨桶预去重（seen 键为**原始** (name,author,origin) 三段 `|` 分隔、与 `SearchNotifier._seenKeys` 逐字一致），同一三元组仅首次到达入桶、**落桶由首次到达决定**，后续同键到达整体丢弃（其 origin 已由首条代表，跨源计数由桶内 origins 集合承载）——`keep_other` case 中 r4（kind 命中 tags）与 r4-other（同三元组、无 kind）仅保留 r4 一条（expected 8→7 条）；若实现回退为「四桶各自独立 map、无 seen 预去重」，该 case 由 7 变 8 条，本夹具变红（回归保护）。边界覆盖：空 key 原样透传（Dart L149，book 不清洗）、Unicode 边界（U+FEFF / U+0085 / CR / U+2028 / U+2029，新 case 非 ASCII 一律 \\uXXXX 转义保持文件 ASCII）、重复与空串 origins（Dart Set<String> 语义：保序去重留首 / 并集不滤空串 / 空串是合法成员；expected 由 Dart 实现实测产出，见 rust/_p03_norm_probe/probe_output.txt）。单源内 bookUrl 去重由解析期 dedup_search_results_keep_first 完成，不在本夹具范围。",
   "cases": [
     {
       "id": "keep_other",
@@ -26,7 +26,6 @@
         { "name": "重生", "author": "己", "origin": "https://s8.example", "originName": "源八", "bookUrl": "https://s8.example/book/r8", "kind": null, "hasReadRecord": false, "origins": ["https://s8.example"] },
         { "name": "都市情缘", "author": "乙", "origin": "https://s4.example", "originName": "源四", "bookUrl": "https://s4.example/book/r4", "kind": "重生,都市", "hasReadRecord": false, "origins": ["https://s4.example"] },
         { "name": "重生之路", "author": "丙", "origin": "https://s5.example", "originName": "源五", "bookUrl": "https://s5.example/book/r5", "kind": null, "hasReadRecord": false, "origins": ["https://s5.example", "https://s6.example"] },
-        { "name": "都市情缘", "author": "乙", "origin": "https://s4.example", "originName": "源四", "bookUrl": "https://s4.example/book/r4-other", "kind": null, "hasReadRecord": false, "origins": ["https://s4.example"] },
         { "name": "斗破苍穹", "author": "天蚕土豆", "origin": "https://s10.example", "originName": "源十", "bookUrl": "https://s10.example/book/r10", "kind": null, "hasReadRecord": false, "origins": ["https://s10.example"] }
       ]
     },
