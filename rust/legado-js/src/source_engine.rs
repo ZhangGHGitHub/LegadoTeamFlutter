@@ -137,12 +137,20 @@ impl JsSourceEngine {
     pub fn new_quickjs(config: JsSourceConfig) -> Result<Self, legado_core::LegadoError> {
         let source_tag = Some(config.source_url.clone());
         let cache_key = format!("mainjs:{}:{}", config.source_url, config.main_js);
-        let (pooled_engine, _js_lib_ok, main_js_status) = crate::engine_cache::get_or_create(
-            &cache_key,
-            config.js_lib.as_deref(),
-            None,
-            Some(&config.main_js),
-        )?;
+        // P2-19 后续 #10：构造期绑定本源 tag（与 `call_function` 同款 save/restore
+        // 包裹，不改签名）：`init_engine` 构造期 eval jsLib/setup/mainJs 时，顶层
+        // 副作用（如 mainJs 顶层 `java.ajax`）须携带本源 JS 宿主 cookie；不绑定
+        // 则落入「未归属上下文」，连本源自己的 cookie 也不携带（回归面）。
+        // 缓存键含 source_url：命中时 get_or_create 为 no-op，包裹恒正确。
+        let (pooled_engine, _js_lib_ok, main_js_status) =
+            crate::host_api::current_source::with_current_source_tag(&config.source_url, || {
+                crate::engine_cache::get_or_create(
+                    &cache_key,
+                    config.js_lib.as_deref(),
+                    None,
+                    Some(&config.main_js),
+                )
+            })?;
         // 构建时 mainJs eval 失败（如顶层引用注入变量）→ 不标记 loaded，
         // 首次 invoke 走既有带 bindings 重评路径（与旧实现错误语义一致）。
         let main_js_loaded = !matches!(main_js_status, Some(false));
@@ -514,5 +522,81 @@ mod tests {
             JsSourceEngine::normalize_result(" 42 "),
             Some("42".to_string())
         );
+    }
+
+    /// P2-19 后续 #10：`new_quickjs` 构造期 mainJs 顶层 `java.ajax` 必须携带本源 cookie。
+    ///
+    /// 机制：`new_quickjs` → `engine_cache::get_or_create("mainjs:{url}:{mainJs}")`
+    /// → `init_engine` 在构造期 eval mainJs（顶层 `java.ajax` 即发起真实请求）。
+    /// 该路径须绑定本源 tag（`with_current_source_tag(&config.source_url)`），
+    /// 否则落入「未归属上下文」，连本源自己的 cookie 也不携带（与
+    /// network.rs「未归属不携带」用例对照）。请求目标为回环 cookie 记录服务器
+    /// （P2-17 同款 std TcpListener 模式）；缓存键含随机端口，用例间不串扰。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_p219_new_quickjs_construction_carries_own_source_cookie() {
+        use crate::host_api::cookie_store;
+        use std::io::{Read, Write};
+        use std::sync::Mutex;
+
+        // 回环 cookie 记录服务器：记录收到的 Cookie 请求头（忽略请求 body）
+        let seen: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let addr = listener.local_addr().expect("local_addr");
+        let seen_srv = seen.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(2) {
+                let Ok(mut sock) = stream else { continue };
+                let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    if sock.read_exact(&mut byte).is_err() {
+                        break;
+                    }
+                    head.push(byte[0]);
+                    if head.len() > 65_536 {
+                        break;
+                    }
+                }
+                let head_str = String::from_utf8_lossy(&head);
+                let cookie = head_str.lines().find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.trim()
+                        .eq_ignore_ascii_case("cookie")
+                        .then(|| value.trim().to_string())
+                });
+                *seen_srv.lock().unwrap() = cookie;
+                let body = r#"{"ok":1}"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+
+        const TAG: &str = "https://p219-mainjs.example.com/";
+        cookie_store::clear_cookies(TAG);
+        cookie_store::set_cookie(TAG, "p219_mainjs_token", "mainjs-val-4a7b");
+
+        // mainJs 顶层 `java.ajax`（入参为 JSON 字符串——java.ajax 桥接签名
+        // 为 (options: String)，形态与 network.rs p219 用例一致）
+        let main_js = format!(
+            r#"java.ajax('{{"url":"http://{addr}/echo"}}');
+function search(q) {{ return q; }}"#
+        );
+        let config = JsSourceConfig::new(TAG.to_string(), main_js);
+        let _engine = JsSourceEngine::new_quickjs(config).expect("new_quickjs 构造");
+
+        let got = seen.lock().unwrap().clone();
+        assert!(
+            got.as_deref()
+                .unwrap_or_default()
+                .contains("p219_mainjs_token=mainjs-val-4a7b"),
+            "构造期 mainJs 顶层 ajax 必须携带本源 cookie，实际 Cookie 头: {got:?}"
+        );
+        cookie_store::clear_cookies(TAG);
     }
 }

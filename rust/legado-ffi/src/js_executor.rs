@@ -866,9 +866,16 @@ pub fn validate_js_lib(
     setup_script: Option<&str>,
 ) -> legado_core::LegadoResult<()> {
     let key = format!("executor:{}", source_tag);
-    let (_, _, js_lib_ok) =
+    // P2-19 后续 #9：构造期绑定本源 tag（与 `execute_js` / `source_engine::new_quickjs`
+    // 同款 save/restore 包裹，加法式不改签名）：`init_engine` 构造期 eval
+    // jsLib/setup 时，顶层副作用（罕见 ajax）须携带本源 JS 宿主 cookie；
+    // 不绑定则落入「未归属上下文」（回归面：连本源 cookie 也不带）。
+    // 缓存键已含 source_tag：命中时 get_or_create 为 no-op，包裹恒正确。
+    let result = legado_js::host_api::current_source::with_current_source_tag(source_tag, || {
         legado_js::engine_cache::get_or_create(&key, Some(js_lib), setup_script, None)
-            .map_err(|e| legado_core::LegadoError::JsEngine(e.to_string()))?;
+    });
+    let (_, _, js_lib_ok) =
+        result.map_err(|e| legado_core::LegadoError::JsEngine(e.to_string()))?;
     if js_lib_ok == Some(false) {
         let last_err =
             legado_js::host_api::capability_ledger::last_jslib_error(&key).unwrap_or_default();
@@ -1573,6 +1580,75 @@ mod tests {
         );
 
         capability_ledger::reset_jslib_load_failures();
+    }
+
+    /// P2-19 后续 #9：`validate_js_lib` 构造期 jsLib 顶层 `java.ajax` 必须携带本源 cookie
+    /// （仿 `source_engine.rs` new_quickjs 构造期用例；回环 cookie 记录服务器，
+    /// P2-17 同款模式）。专用缓存键（含 p219 前缀）不与其他用例串扰。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_p219_validate_js_lib_construction_carries_own_source_cookie() {
+        use std::io::{Read, Write};
+        use std::sync::{Arc, Mutex};
+
+        use legado_js::host_api::cookie_store;
+
+        // 回环 cookie 记录服务器：记录收到的 Cookie 请求头（忽略请求 body）
+        let seen: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let addr = listener.local_addr().expect("local_addr");
+        let seen_srv = seen.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(2) {
+                let Ok(mut sock) = stream else { continue };
+                let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    if sock.read_exact(&mut byte).is_err() {
+                        break;
+                    }
+                    head.push(byte[0]);
+                    if head.len() > 65_536 {
+                        break;
+                    }
+                }
+                let head_str = String::from_utf8_lossy(&head);
+                let cookie = head_str.lines().find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.trim()
+                        .eq_ignore_ascii_case("cookie")
+                        .then(|| value.trim().to_string())
+                });
+                *seen_srv.lock().unwrap() = cookie;
+                let body = r#"{"ok":1}"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+
+        const TAG: &str = "https://p219-jslib.example.com/";
+        cookie_store::clear_cookies(TAG);
+        cookie_store::set_cookie(TAG, "p219_lib_token", "lib-val-5f1c");
+
+        // jsLib 顶层 `java.ajax`（入参为 JSON 字符串——java.ajax 桥接签名
+        // 为 (options: String)，形态与 network.rs p219 用例一致）
+        let js_lib = format!(r#"java.ajax('{{"url":"http://{addr}/echo"}}')"#);
+        let res = validate_js_lib(TAG, &js_lib, None);
+        assert!(res.is_ok(), "jsLib 顶层 ajax 不应致校验失败: {res:?}");
+
+        let got = seen.lock().unwrap().clone();
+        assert!(
+            got.as_deref()
+                .unwrap_or_default()
+                .contains("p219_lib_token=lib-val-5f1c"),
+            "构造期 jsLib 顶层 ajax 必须携带本源 cookie，实际 Cookie 头: {got:?}"
+        );
+        cookie_store::clear_cookies(TAG);
     }
 }
 

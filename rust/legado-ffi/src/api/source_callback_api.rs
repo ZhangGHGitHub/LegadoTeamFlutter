@@ -158,7 +158,13 @@ fn eval_call_back_js(
         ("result", result_value),
     ];
 
-    match guard.eval_with_bindings(js_str, &bindings) {
+    // P2-19：绑定当前书源 tag（对齐 explore_api / js_executor 主路径）：
+    // callBackJs 调用 java.ajax 时 Cookie/全局头按本源 book_source_url 过滤
+    // （而非未归属不带、更非全量合并泄漏）。
+    match legado_js::host_api::current_source::with_current_source_tag(
+        &source.book_source_url,
+        || guard.eval_with_bindings(js_str, &bindings),
+    ) {
         Ok(raw) => Ok(raw),
         Err(e) => {
             legado_js::host_api::ui_action_queue::discard_collect();

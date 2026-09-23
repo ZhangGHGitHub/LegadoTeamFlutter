@@ -133,7 +133,12 @@ fn eval_pay_action(
         ("result", JsValue::Null),
         ("src", JsValue::Null),
     ];
-    guard.eval_with_bindings(pay_action, &bindings)
+    // P2-19：绑定当前书源 tag（对齐 explore_api / js_executor 主路径）：
+    // payAction 脚本调用 java.ajax 时 Cookie/全局头按本源 book_source_url
+    // 过滤（而非未归属不带、更非全量合并泄漏）；退出时自动恢复原值。
+    legado_js::host_api::current_source::with_current_source_tag(&source.book_source_url, || {
+        guard.eval_with_bindings(pay_action, &bindings)
+    })
 }
 
 /// serde_json::Value → legado_js::JsValue（用于注入 book/chapter 绑定对象）

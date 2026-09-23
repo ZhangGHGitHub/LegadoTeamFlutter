@@ -138,6 +138,21 @@ fn build_client_with_timeout(timeout_ms: u64) -> Result<LegadoClient, String> {
     LegadoClient::new(config).map_err(|e| format!("build client error: {}", e))
 }
 
+/// 构建带自定义超时 + 回环直连语义的 LegadoClient（ajax 路径专用）
+///
+/// 回环 URL（本地书源/本地测试服务）强制 `no_proxy` 直连，对齐
+/// `connect_no_redirect` 与 P2-17 约定（cda70a0c54）：reqwest 默认客户端
+/// 在 HTTP_PROXY 存在时连 127.0.0.1 也走代理，死代理环境下本地流量会被
+/// 劫持；真实主机不受影响（`no_proxy=false` 沿用系统代理配置）。
+fn build_client_for_url(url: &str, timeout_ms: u64) -> Result<LegadoClient, String> {
+    let config = LegadoClientConfig {
+        read_timeout: std::time::Duration::from_millis(timeout_ms),
+        no_proxy: is_loopback_url(url),
+        ..Default::default()
+    };
+    LegadoClient::new(config).map_err(|e| format!("build client error: {}", e))
+}
+
 /// httpGet(url, headers?) → 同步 HTTP GET，返回响应体文本
 ///
 /// 对应 Kotlin 端 `ajax(url)` / `get(url, headers)` 的简化版本。
@@ -242,7 +257,7 @@ pub fn ajax(input: &str) -> Result<String, String> {
     };
 
     block_on(async {
-        let client = build_client_with_timeout(timeout)?;
+        let client = build_client_for_url(&url, timeout)?;
 
         let request = LegadoRequest {
             url,
@@ -299,15 +314,20 @@ mod http_options_tests {
 /// - 全局请求头（GLOBAL_HEADERS）：setup 阶段执行书源 header @js 规则后经
 ///   java.putGlobalHeaders 写入（书山聚合固定 X-Novel-Token 等），按当前书源
 ///   tag 隔离；JS 显式传入的 headers 优先。
-/// - 全局会话 Cookie（GLOBAL_COOKIES）：书山登录/setCookie 写入的 X-Novel-Token 等。
+/// - 会话 Cookie（GLOBAL_COOKIES）：书山登录/setCookie 写入的 X-Novel-Token 等。
+///   **P2-19：按「当前书源 tag」（线程局部 `current_source`）过滤**，不再全量
+///   合并所有书源（`all_cookies()` 会把源 B 的 cookie 带进源 A 的请求——跨源
+///   泄漏）。未归属上下文（无当前书源）不携带任何 JS 宿主存储 cookie——见
+///   [`crate::host_api::cookie_store::cookies_for_source_tag`] 的文档注释。
 fn merge_global_cookie(mut headers: HashMap<String, String>) -> HashMap<String, String> {
-    if let Some(tag) = crate::host_api::current_source::current_source_tag() {
-        for (k, v) in crate::host_api::global_headers::headers_for(&tag) {
+    let tag = crate::host_api::current_source::current_source_tag();
+    if let Some(t) = tag.as_deref() {
+        for (k, v) in crate::host_api::global_headers::headers_for(t) {
             headers.entry(k).or_insert(v);
         }
     }
     if !headers.contains_key("Cookie") {
-        let c = crate::host_api::cookie_store::all_cookies();
+        let c = crate::host_api::cookie_store::cookies_for_source_tag(tag.as_deref());
         if !c.is_empty() {
             headers.insert("Cookie".to_string(), c);
         }
@@ -368,7 +388,7 @@ fn ajax_request_body(opts: &HttpOptions) -> Result<String, String> {
         other => return Err(format!("ajax: unsupported method '{}'", other)),
     };
     block_on(async {
-        let client = build_client_with_timeout(timeout)?;
+        let client = build_client_for_url(&url, timeout)?;
         let request = LegadoRequest {
             url,
             method,
@@ -589,6 +609,8 @@ pub fn post_full(url: &str, body: &str, headers_json: Option<&str>) -> Result<St
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Read, Write};
+
     use super::*;
 
     /// 判断响应体是否为 httpbin 有效 JSON 响应（排除错误页面、Cloudflare 验证等）
@@ -822,6 +844,9 @@ mod tests {
     }
 
     /// 测试 post_full 返回完整响应 JSON
+    ///
+    /// 目标必须是 httpbin `/post`（POST `/get` 返回 405，200 守卫恒不成立，
+    /// 断言空转——P2-19 审查发现）。
     #[test]
     fn test_post_full() {
         let result = post_full(
@@ -832,8 +857,198 @@ mod tests {
         if let Ok(resp_json) = result {
             let resp: HttpResponse = serde_json::from_str(&resp_json).unwrap();
             if resp.status_code == 200 {
-                assert!(resp.body.contains("key"));
+                // httpbin /post 回显请求 JSON（`json` 字段），`key` 必须出现
+                assert!(
+                    resp.body.contains("key"),
+                    "回显体应含请求字段 key: {}",
+                    resp.body
+                );
             }
         }
+    }
+
+    /// 最小本地回环 Cookie 回显服务器（P2-19 泄漏复现的确定性替身）
+    ///
+    /// 行为：把收到的 `Cookie` **请求头**原样回显到 200 响应体的
+    /// `{"cookie":"<原值>"}`；请求不带 Cookie 头时回显 `{"cookie":null}`。
+    ///
+    /// 与 P2-17 的 `spawn_search_loopback_server` 同款 std `TcpListener` 模式
+    /// （legado-js 的 quickjs tokio feature 无 net）；回环流量经 `no_proxy`
+    /// 豁免系统/环境变量代理（见 `build_client_for_url` / connectNR 约定）。
+    fn spawn_cookie_echo_server(max_conns: usize) -> std::net::SocketAddr {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let addr = listener.local_addr().expect("local_addr");
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(max_conns) {
+                let Ok(mut sock) = stream else { continue };
+                let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                // GET 请求无 body：读到 \r\n\r\n 即请求头结束
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    if sock.read_exact(&mut byte).is_err() {
+                        break;
+                    }
+                    head.push(byte[0]);
+                    if head.len() > 65_536 {
+                        break;
+                    }
+                }
+                let head_str = String::from_utf8_lossy(&head);
+                // 头名忽略大小写匹配，但**保留 Cookie 值原样**（回显必须逐字节忠实，
+                // 否则断言会因大小写失真误判）
+                let cookie_value = head_str.lines().find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.trim()
+                        .eq_ignore_ascii_case("cookie")
+                        .then(|| value.trim().to_string())
+                });
+                let body = match cookie_value {
+                    Some(value) => format!(
+                        r#"{{"cookie":{}}}"#,
+                        serde_json::to_string(&value).expect("cookie value 序列化")
+                    ),
+                    None => r#"{"cookie":null}"#.to_string(),
+                };
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+        addr
+    }
+
+    /// P2-19 泄漏复现（先红后绿）：源 A 与源 B 各有 cookie，在**源 A 的脚本上下文**
+    /// 发 ajax → 请求头**不得**出现源 B 的 cookie；源 A 自己的 cookie 仍必须带上
+    /// （正向保留）。
+    ///
+    /// 请求目标是与源 tag 无关的第三方域（回环回显服务器），证明过滤口径是
+    /// 「当前书源 tag」而非「请求 URL 的域」；tag 用多段 TLD（com.cn）真实书源 URL 形态，
+    /// 与 HTTP 层 `domain_key_from_host` 键口径一致。
+    #[test]
+    fn test_p219_ajax_cookie_no_cross_source_leak() {
+        use crate::host_api::{cookie_store, current_source};
+
+        const TAG_A: &str = "https://www.a.book.com.cn/";
+        const TAG_B: &str = "https://www.b.book.com.cn/";
+        cookie_store::clear_cookies(TAG_A);
+        cookie_store::clear_cookies(TAG_B);
+        cookie_store::set_cookie(TAG_A, "p219_tokenA", "A-VAL-9f3c");
+        cookie_store::set_cookie(TAG_B, "p219_tokenB", "B-VAL-7a1d");
+
+        let addr = spawn_cookie_echo_server(4);
+        let resp_json = current_source::with_current_source_tag(TAG_A, || {
+            ajax(&format!(r#"{{"url":"http://{addr}/echo"}}"#))
+                .expect("ajax to loopback cookie-echo server")
+        });
+        // 清理：全局 cookie 存储为进程级共享，避免污染并行用例
+        cookie_store::clear_cookies(TAG_A);
+        cookie_store::clear_cookies(TAG_B);
+
+        let resp: HttpResponse = serde_json::from_str(&resp_json).expect("ajax 响应 JSON");
+        assert_eq!(resp.status_code, 200, "回显服务器应返回 200: {}", resp.body);
+        let echoed: serde_json::Value = serde_json::from_str(&resp.body).expect("回显体 JSON");
+        let cookie_str = echoed
+            .get("cookie")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        // 正向保留：源 A 自己的 cookie 必须仍带上（不得因修复而全丢）
+        assert!(
+            cookie_str.contains("p219_tokenA=A-VAL-9f3c"),
+            "源 A 自己的 cookie 必须仍带上，实际请求头 Cookie 为: {cookie_str}"
+        );
+        // 泄漏检查：源 B 的 cookie 不得出现（修复前 all_cookies() 全量合并 → 红）
+        assert!(
+            !cookie_str.contains("p219_tokenB"),
+            "跨源泄漏：源 B 的 cookie 出现在源 A 的请求头中: {cookie_str}"
+        );
+    }
+
+    /// P2-19 未归属上下文：无法确定当前书源（无 `with_current_source_tag` 绑定）时，
+    /// ajax 请求**不得携带任何** JS 宿主存储 cookie（安全默认：宁可不带，不得错带；
+    /// 旧行为 all_cookies() 全量合并正是泄漏源，修复后归零）。
+    #[test]
+    fn test_p219_ajax_cookie_unowned_attaches_nothing() {
+        use crate::host_api::{cookie_store, current_source};
+
+        const TAG_X: &str = "https://www.x.book.com.cn/";
+        const TAG_Y: &str = "https://www.y.book.com.cn/";
+        cookie_store::clear_cookies(TAG_X);
+        cookie_store::clear_cookies(TAG_Y);
+        cookie_store::set_cookie(TAG_X, "p219_tokenX", "X-VAL-5e2b");
+        cookie_store::set_cookie(TAG_Y, "p219_tokenY", "Y-VAL-c44a");
+
+        let addr = spawn_cookie_echo_server(2);
+        current_source::clear_current_source_tag(); // 确保未归属
+        let resp_json = ajax(&format!(r#"{{"url":"http://{addr}/echo"}}"#))
+            .expect("ajax to loopback cookie-echo server");
+        cookie_store::clear_cookies(TAG_X);
+        cookie_store::clear_cookies(TAG_Y);
+
+        let resp: HttpResponse = serde_json::from_str(&resp_json).expect("ajax 响应 JSON");
+        assert_eq!(resp.status_code, 200, "回显服务器应返回 200: {}", resp.body);
+        let echoed: serde_json::Value = serde_json::from_str(&resp.body).expect("回显体 JSON");
+        let cookie_str = echoed
+            .get("cookie")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        assert!(
+            cookie_str.is_empty(),
+            "未归属上下文的请求不得携带任何 JS 宿主存储 cookie，实际: {cookie_str}"
+        );
+    }
+
+    /// P2-19 `merge_global_cookie` 单元口径：Cookie 头按当前书源 tag 过滤
+    /// （A 在 / B 不在），不走真实网络，确定性快。
+    #[test]
+    fn test_p219_merge_global_cookie_filters_by_source_tag() {
+        use crate::host_api::{cookie_store, current_source};
+
+        const TAG_A: &str = "https://unit.a.book.com.cn/";
+        const TAG_B: &str = "https://unit.b.book.com.cn/";
+        cookie_store::clear_cookies(TAG_A);
+        cookie_store::clear_cookies(TAG_B);
+        cookie_store::set_cookie(TAG_A, "p219_uA", "uA-val");
+        cookie_store::set_cookie(TAG_B, "p219_uB", "uB-val");
+
+        let headers =
+            current_source::with_current_source_tag(TAG_A, || merge_global_cookie(HashMap::new()));
+        cookie_store::clear_cookies(TAG_A);
+        cookie_store::clear_cookies(TAG_B);
+
+        let cookie = headers.get("Cookie").cloned().unwrap_or_default();
+        assert!(
+            cookie.contains("p219_uA=uA-val"),
+            "源 A 自己的 cookie 必须保留: {cookie}"
+        );
+        assert!(
+            !cookie.contains("p219_uB"),
+            "源 B 的 cookie 不得泄漏进源 A 的请求头: {cookie}"
+        );
+    }
+
+    /// P2-19 未归属上下文单元口径：无当前书源 tag 时不注入 Cookie 头。
+    #[test]
+    fn test_p219_merge_global_cookie_unowned_no_cookie_header() {
+        use crate::host_api::{cookie_store, current_source};
+
+        const TAG_Z: &str = "https://unit.z.book.com.cn/";
+        cookie_store::clear_cookies(TAG_Z);
+        cookie_store::set_cookie(TAG_Z, "p219_uZ", "uZ-val");
+
+        current_source::clear_current_source_tag(); // 确保未归属
+        let headers = merge_global_cookie(HashMap::new());
+        cookie_store::clear_cookies(TAG_Z);
+
+        assert!(
+            !headers.contains_key("Cookie"),
+            "未归属上下文不得注入 JS 宿主存储 cookie: {:?}",
+            headers.get("Cookie")
+        );
     }
 }

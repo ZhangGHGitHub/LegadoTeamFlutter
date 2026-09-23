@@ -81,46 +81,60 @@ pub fn decode_image_bytes(source: &BookSource, img_url: &str, bytes: &[u8]) -> V
 
     #[cfg(feature = "quickjs")]
     {
-        // 每次新建引擎：同源多图连续 decode 时顶层 const/let 不会 redeclaration
-        let engine = match legado_js::QuickJsEngine::new(
-            legado_js::sandbox::SandboxConfig::default().with_allow_script_run(true),
-        ) {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("[legado-ffi] imageDecode 引擎创建失败（回退原图）: {e} url={img_url}");
-                return bytes.to_vec();
-            }
-        };
+        // P2-19：绑定当前书源 tag（对齐 pay_action_api / source_login_v2_api /
+        // source_callback_api 同款加法式包裹，不改签名）：imageDecode 规则与
+        // jsLib 内可出现 `java.ajax(source.key + "/k")` 等请求，Cookie 头按
+        // 当前书源过滤——不绑定则落入「未归属上下文」，本源自己的 cookie
+        // 也不携带（回归面：P2-19 修前 all_cookies() 全量合并至少还带着本源）。
+        legado_js::host_api::current_source::with_current_source_tag(
+            &source.book_source_url,
+            || {
+                // 每次新建引擎：同源多图连续 decode 时顶层 const/let 不会 redeclaration
+                let engine = match legado_js::QuickJsEngine::new(
+                    legado_js::sandbox::SandboxConfig::default().with_allow_script_run(true),
+                ) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        eprintln!(
+                            "[legado-ffi] imageDecode 引擎创建失败（回退原图）: {e} url={img_url}"
+                        );
+                        return bytes.to_vec();
+                    }
+                };
 
-        if let Some(lib) = js_lib.as_deref() {
-            if let Err(e) = JsEngine::eval(&engine, lib) {
-                // 降级继续：部分书源混淆 jsLib 依赖 Rhino Packages，但仍可能仅靠
-                // imageDecode 内联逻辑；失败必须可观测，勿静默当成功
-                eprintln!(
-                    "[legado-ffi] imageDecode jsLib 加载失败（降级继续 decode）: {e} source={}",
-                    source.book_source_url
-                );
-            }
-        }
+                if let Some(lib) = js_lib.as_deref() {
+                    if let Err(e) = JsEngine::eval(&engine, lib) {
+                        // 降级继续：部分书源混淆 jsLib 依赖 Rhino Packages，但仍可能仅靠
+                        // imageDecode 内联逻辑；失败必须可观测，勿静默当成功
+                        eprintln!(
+                            "[legado-ffi] imageDecode jsLib 加载失败（降级继续 decode）: {e} source={}",
+                            source.book_source_url
+                        );
+                    }
+                }
 
-        match JsEngine::eval_bytes(
-            &engine,
-            &rule,
-            &[
-                ("result", JsValue::Bytes(bytes.to_vec())),
-                ("src", JsValue::String(img_url.to_string())),
-            ],
-        ) {
-            Ok(decoded) if !decoded.is_empty() => decoded,
-            Ok(_) => {
-                eprintln!("[legado-ffi] imageDecode 返回空字节（回退原图）url={img_url}");
-                bytes.to_vec()
-            }
-            Err(e) => {
-                eprintln!("[legado-ffi] imageDecode 执行失败（回退原图）: {e} url={img_url}");
-                bytes.to_vec()
-            }
-        }
+                match JsEngine::eval_bytes(
+                    &engine,
+                    &rule,
+                    &[
+                        ("result", JsValue::Bytes(bytes.to_vec())),
+                        ("src", JsValue::String(img_url.to_string())),
+                    ],
+                ) {
+                    Ok(decoded) if !decoded.is_empty() => decoded,
+                    Ok(_) => {
+                        eprintln!("[legado-ffi] imageDecode 返回空字节（回退原图）url={img_url}");
+                        bytes.to_vec()
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "[legado-ffi] imageDecode 执行失败（回退原图）: {e} url={img_url}"
+                        );
+                        bytes.to_vec()
+                    }
+                }
+            },
+        )
     }
 
     #[cfg(not(feature = "quickjs"))]
@@ -501,6 +515,107 @@ decryptImage(result);"#;
         let b = decode_image_bytes(&src, "https://d.example.com/2.jpg", &[3, 4]);
         assert_eq!(a, vec![1, 2]);
         assert_eq!(b, vec![3, 4]);
+    }
+
+    /// P2-19 回归面：imageDecode 执行路径已绑定当前书源 tag——
+    /// 本源 JS 宿主 cookie 必须随 `java.ajax` 携带（正向保留），且不得带
+    /// 其他源的 cookie（跨源不泄漏）；与 network.rs「未归属不携带」用例对照。
+    ///
+    /// 机制：imageDecode 规则内 `java.ajax` 打到回环 cookie-记录服务器
+    /// （std TcpListener，P2-17 同款模式），服务器把收到的 `Cookie` 请求头
+    /// 记入共享状态；`decode_image_bytes` 内部 `with_current_source_tag`
+    /// （本文件修复点）使 ajax 的 Cookie 过滤命中本源 tag。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_p219_image_decode_path_carries_own_source_cookie() {
+        use std::io::{Read, Write};
+        use std::sync::{Arc, Mutex};
+
+        use legado_js::host_api::cookie_store;
+
+        // 回环 cookie 记录服务器：记录收到的 Cookie 请求头（忽略请求 body）
+        let seen: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let addr = listener.local_addr().expect("local_addr");
+        let seen_srv = seen.clone();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(4) {
+                let Ok(mut sock) = stream else { continue };
+                let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    if sock.read_exact(&mut byte).is_err() {
+                        break;
+                    }
+                    head.push(byte[0]);
+                    if head.len() > 65_536 {
+                        break;
+                    }
+                }
+                let head_str = String::from_utf8_lossy(&head);
+                let cookie = head_str.lines().find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.trim()
+                        .eq_ignore_ascii_case("cookie")
+                        .then(|| value.trim().to_string())
+                });
+                *seen_srv.lock().unwrap() = cookie;
+                let body = r#"{"ok":1}"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+
+        const TAG: &str = "https://p219-img.example.com/";
+        const OTHER_TAG: &str = "https://p219-img-other.example.com/";
+        cookie_store::set_cookie(TAG, "p219_img_token", "img-val-7c3e");
+        cookie_store::set_cookie(OTHER_TAG, "p219_img_other", "other-val-2d8a");
+
+        let url = format!("http://{addr}/echo");
+        let src: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": TAG,
+            "bookSourceName": "t",
+            "bookSourceType": 2,
+            "searchUrl": "https://p219-img.example.com/search",
+            "ruleSearch": {"bookList": ".x"},
+            "ruleContent": {
+                "content": ".x",
+                // ajax 仅为副作用（验证 Cookie 头），规则仍返回原始 bytes。
+                // `java.ajax` 桥接签名为 (options: String) —— 入参是 JSON 字符串
+                // （非 JS 对象字面量），形态与 network.rs p219 用例一致。
+                "imageDecode": format!(r#"java.ajax('{{"url":"{url}"}}'); result;"#)
+            }
+        }))
+        .unwrap();
+
+        let out = decode_image_bytes(&src, &url, &[0xAB, 0xCD]);
+        assert_eq!(
+            out,
+            vec![0xAB, 0xCD],
+            "imageDecode 正常返回原 bytes（ajax 仅为副作用）"
+        );
+
+        let got = seen.lock().unwrap().clone();
+        assert!(
+            got.as_deref()
+                .unwrap_or_default()
+                .contains("p219_img_token=img-val-7c3e"),
+            "本源 cookie 必须携带，实际 Cookie 头: {got:?}"
+        );
+        assert!(
+            !got.as_deref()
+                .unwrap_or_default()
+                .contains("p219_img_other"),
+            "其他源 cookie 不得出现，实际 Cookie 头: {got:?}"
+        );
+
+        cookie_store::clear_cookies(TAG);
+        cookie_store::clear_cookies(OTHER_TAG);
     }
 
     /// 真实站点链路：favcomic 图片下载 → jsLib decode → JPEG 头（需网络）
