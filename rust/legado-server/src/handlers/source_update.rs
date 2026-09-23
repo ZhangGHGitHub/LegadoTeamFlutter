@@ -111,17 +111,66 @@ pub async fn list_repos() -> Json<Value> {
     Json(json!({ "repos": repos, "total": repos.len() }))
 }
 
+/// 测试专用：`check_updates` 使用的仓库列表覆盖（离线化外部抓取）
+///
+/// 生产行为不变：未设置覆盖时 [`active_repos`] 返回 [`default_repos`]。
+/// 测试经 [`set_test_repos`] 注入本地回环仓库（Drop 守卫自动还原，
+/// panic 亦不泄漏到并行用例），把原本对 raw.githubusercontent.com /
+/// cdn.jsdelivr.net 的真联网检查变成确定性回环检查。
+#[cfg(test)]
+static TEST_REPOS_OVERRIDE: std::sync::Mutex<Option<Vec<SourceRepo>>> = std::sync::Mutex::new(None);
+
+/// 测试专用守卫：离开作用域（含 panic）自动还原仓库覆盖
+#[cfg(test)]
+struct TestReposGuard;
+
+#[cfg(test)]
+impl Drop for TestReposGuard {
+    fn drop(&mut self) {
+        *TEST_REPOS_OVERRIDE.lock().unwrap() = None;
+    }
+}
+
+/// 测试专用：覆盖 `check_updates` 使用的仓库列表，返回 Drop 守卫
+#[cfg(test)]
+fn set_test_repos(repos: Vec<SourceRepo>) -> TestReposGuard {
+    *TEST_REPOS_OVERRIDE.lock().unwrap() = Some(repos);
+    TestReposGuard
+}
+
+/// `check_updates` 使用的仓库列表：测试覆盖优先，生产恒为默认仓库
+fn active_repos() -> Vec<SourceRepo> {
+    #[cfg(test)]
+    if let Some(repos) = TEST_REPOS_OVERRIDE.lock().unwrap().clone() {
+        return repos;
+    }
+    default_repos()
+}
+
+/// 仓库 URL 是否指向本地回环（127.0.0.1 / localhost，测试注入的本地 mock）
+fn is_loopback_repo_url(url: &str) -> bool {
+    url.starts_with("http://127.0.0.1") || url.starts_with("http://localhost")
+}
+
 /// GET /api/sources/updates — 检查书源更新
 ///
 /// 从所有仓库获取远程书源列表，与本地对比，返回需要更新的书源。
 pub async fn check_updates(State(state): State<Arc<AppState>>) -> Result<Json<Value>, ApiError> {
-    let repos = default_repos();
-    let client = reqwest::Client::builder()
+    let repos = active_repos();
+    // 回环仓库（本地测试服务）不经系统/环境变量代理路由：reqwest 默认客户端
+    // 在 HTTP_PROXY 存在时连 127.0.0.1 也走代理，死代理环境下回环流量会被
+    // 劫持（P2-17 约定 cda70a0c54）。真实仓库集合沿用默认客户端，生产行为不变。
+    let builder = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .danger_accept_invalid_certs(true)
-        .dns_resolver(legado_net::custom_hosts::resolver())
-        .build()
-        .map_err(|e| legado_core::LegadoError::Network(format!("创建 HTTP 客户端失败: {e}")))?;
+        .dns_resolver(legado_net::custom_hosts::resolver());
+    let client = (if repos.iter().all(|r| is_loopback_repo_url(&r.url)) {
+        builder.no_proxy()
+    } else {
+        builder
+    })
+    .build()
+    .map_err(|e| legado_core::LegadoError::Network(format!("创建 HTTP 客户端失败: {e}")))?;
 
     // 获取本地书源列表
     let local_sources = {
@@ -393,6 +442,7 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::Request;
+    use std::io::{Read, Write};
     use tower::ServiceExt;
 
     use crate::routes::create_router;
@@ -434,11 +484,106 @@ mod tests {
         assert!(json["total"].as_u64().unwrap() > 0);
     }
 
+    /// 测试专用：本地回环书源仓库 mock（`default_repos` 两个外部仓库的确定性替身）
+    ///
+    /// 在指定路径提供 bookSource JSON 数组（200），其余路径 404。
+    /// std `TcpListener` 模式（与 `login_check` 的 cookie 回显服务器、legado-js 的
+    /// `spawn_httpbin_mock` 同款；测试不引入 tokio-net 依赖）。
+    fn spawn_source_repo_mock(
+        max_conns: usize,
+        routes: Vec<(String, String)>,
+    ) -> std::net::SocketAddr {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let addr = listener.local_addr().expect("local_addr");
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(max_conns) {
+                let Ok(mut sock) = stream else { continue };
+                let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    if sock.read_exact(&mut byte).is_err() {
+                        break;
+                    }
+                    head.push(byte[0]);
+                    if head.len() > 65_536 {
+                        break;
+                    }
+                }
+                let head_str = String::from_utf8_lossy(&head);
+                let target = head_str
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("/");
+                let (status, body) = routes
+                    .iter()
+                    .find(|(path, _)| path.as_str() == target)
+                    .map(|(_, body)| ("200 OK", body.as_str()))
+                    .unwrap_or_else(|| ("404 Not Found", r#"{"error":"not found"}"#));
+                let resp = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
+                    len = body.len()
+                );
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+        addr
+    }
+
+    /// `check_updates` 检查逻辑对本地回环仓库生效（确定性硬断言）
+    ///
+    /// 原本例真联网抓 raw.githubusercontent.com / cdn.jsdelivr.net（仅断言
+    /// 「非 404」——外网断线/仓库变更时检查静默失败，用例假绿）。现改为：
+    /// 本地库播种 + `set_test_repos` 注入两个本地回环仓库（Drop 守卫还原），
+    /// 响应各字段（success / remote_total / updates / new_count / 总量）逐项硬断言。
     #[tokio::test]
     async fn test_check_updates_route_exists() {
         let state = make_test_state();
-        let app = create_router(state);
 
+        // 本地库播种：Mock A lastUpdateTime=1000 < 远程 2000 → 应判定需更新；
+        // Mock New1 / Mock New2 本地不存在 → 应计为新增
+        {
+            let db = state.db.lock().await;
+            RoomImporter::import_book_sources(
+                db.connection(),
+                r#"[{"bookSourceUrl":"https://mock-a.example/","bookSourceName":"Mock A","lastUpdateTime":1000}]"#,
+            )
+            .expect("本地书源播种应成功");
+        }
+
+        let repo1 = json!([
+            {"bookSourceUrl": "https://mock-a.example/", "bookSourceName": "Mock A", "lastUpdateTime": 2000},
+            {"bookSourceUrl": "https://mock-new1.example/", "bookSourceName": "Mock New1", "lastUpdateTime": 3000}
+        ])
+        .to_string();
+        let repo2 = json!([
+            {"bookSourceUrl": "https://mock-new2.example/", "bookSourceName": "Mock New2", "lastUpdateTime": 4000}
+        ])
+        .to_string();
+        let addr = spawn_source_repo_mock(
+            8,
+            vec![
+                ("/repo1.json".to_string(), repo1),
+                ("/repo2.json".to_string(), repo2),
+            ],
+        );
+        let _repos_guard = set_test_repos(vec![
+            SourceRepo {
+                name: "本地仓库一".to_string(),
+                url: format!("http://{addr}/repo1.json"),
+                description: "测试回环仓库".to_string(),
+            },
+            SourceRepo {
+                name: "本地仓库二".to_string(),
+                url: format!("http://{addr}/repo2.json"),
+                description: "测试回环仓库".to_string(),
+            },
+        ]);
+
+        let app = create_router(state);
         let resp = app
             .oneshot(
                 Request::builder()
@@ -448,9 +593,53 @@ mod tests {
             )
             .await
             .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "本地回环仓库可达，检查应返回 200"
+        );
 
-        // 路由存在（不返回 404），可能因为网络问题返回 502
-        assert_ne!(resp.status(), StatusCode::NOT_FOUND);
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: Value = serde_json::from_slice(&body).unwrap();
+        let results = json["results"].as_array().expect("results 应为数组");
+        assert_eq!(results.len(), 2, "应检查注入的两个仓库");
+        for r in results {
+            assert_eq!(
+                r["success"], true,
+                "仓库检查应成功（回环 mock 可达）: error={}",
+                r["error"]
+            );
+            assert!(
+                r["remote_total"].as_u64().expect("remote_total") > 0,
+                "远程书源数应 > 0: {r}"
+            );
+        }
+        let r1 = results
+            .iter()
+            .find(|r| r["repo_name"] == "本地仓库一")
+            .expect("仓库一结果");
+        let r2 = results
+            .iter()
+            .find(|r| r["repo_name"] == "本地仓库二")
+            .expect("仓库二结果");
+        // 仓库一：Mock A（本地 1000 < 远程 2000）需更新；Mock New1 本地不存在 → 新增
+        assert_eq!(r1["remote_total"], 2);
+        assert_eq!(r1["new_count"], 1);
+        let updates = r1["updates"].as_array().expect("仓库一 updates 应为数组");
+        assert_eq!(updates.len(), 1, "仅 Mock A 应判定需更新");
+        assert_eq!(updates[0]["source_url"], "https://mock-a.example/");
+        assert_eq!(updates[0]["need_update"], true);
+        assert_eq!(updates[0]["local_update_time"], 1000);
+        assert_eq!(updates[0]["remote_update_time"], 2000);
+        // 仓库二：Mock New2 本地不存在 → 新增
+        assert_eq!(r2["remote_total"], 1);
+        assert_eq!(r2["new_count"], 1);
+        assert_eq!(r2["updates"].as_array().expect("仓库二 updates").len(), 0);
+        // 汇总量
+        assert_eq!(json["total_updates"], 1);
+        assert_eq!(json["total_new"], 2);
     }
 
     #[tokio::test]

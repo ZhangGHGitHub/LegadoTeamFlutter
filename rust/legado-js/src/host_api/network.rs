@@ -138,6 +138,29 @@ fn build_client_with_timeout(timeout_ms: u64) -> Result<LegadoClient, String> {
     LegadoClient::new(config).map_err(|e| format!("build client error: {}", e))
 }
 
+/// 构建默认配置 + `no_proxy` 的 LegadoClient（回环直连专用）
+///
+/// 对齐 P2-17 回环免代理约定（cda70a0c54）：reqwest 默认客户端在
+/// HTTP_PROXY 存在时连 127.0.0.1 也走代理，死代理/代理劫持环境下本地
+/// 流量（本地书源/本地测试服务）会失败；回环流量强制直连。
+fn build_client_loopback() -> Result<LegadoClient, String> {
+    let config = LegadoClientConfig {
+        no_proxy: true,
+        ..Default::default()
+    };
+    LegadoClient::new(config).map_err(|e| format!("build client error: {}", e))
+}
+
+/// 按 URL 构建默认配置客户端：回环 URL 用 `no_proxy` 直连，真实主机沿用
+/// 默认客户端（系统/环境变量代理配置不变，生产行为不受影响）
+fn build_client_for_url_default(url: &str) -> Result<LegadoClient, String> {
+    if is_loopback_url(url) {
+        build_client_loopback()
+    } else {
+        build_client()
+    }
+}
+
 /// 构建带自定义超时 + 回环直连语义的 LegadoClient（ajax 路径专用）
 ///
 /// 回环 URL（本地书源/本地测试服务）强制 `no_proxy` 直连，对齐
@@ -158,7 +181,8 @@ fn build_client_for_url(url: &str, timeout_ms: u64) -> Result<LegadoClient, Stri
 /// 对应 Kotlin 端 `ajax(url)` / `get(url, headers)` 的简化版本。
 pub fn http_get(url: &str, headers: Option<&str>) -> Result<String, String> {
     block_on(async {
-        let client = build_client()?;
+        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变
+        let client = build_client_for_url_default(url)?;
         let header_map = parse_headers(headers);
         let resp = client
             .get(url, header_map)
@@ -173,7 +197,8 @@ pub fn http_get(url: &str, headers: Option<&str>) -> Result<String, String> {
 /// 对应 Kotlin 端 `post(url, body, headers)` 的简化版本。
 pub fn http_post(url: &str, body: &str, headers: Option<&str>) -> Result<String, String> {
     block_on(async {
-        let client = build_client()?;
+        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变
+        let client = build_client_for_url_default(url)?;
         let header_map = parse_headers(headers);
         let resp = client
             .post(url, body, header_map)
@@ -188,7 +213,8 @@ pub fn http_post(url: &str, body: &str, headers: Option<&str>) -> Result<String,
 /// 对应 Kotlin 端 `head(urlStr, headers)` 的简化版本。
 pub fn http_head(url: &str) -> Result<String, String> {
     block_on(async {
-        let client = build_client()?;
+        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变
+        let client = build_client_for_url_default(url)?;
         let resp = client
             .head(url, None)
             .await
@@ -417,12 +443,27 @@ pub fn ajax_all(urls_json: &str) -> Result<String, String> {
             serde_json::from_str(urls_json).map_err(|e| format!("ajaxAll parse error: {}", e))?;
 
         let client = build_client()?;
+        // 回环 URL（本地书源/本地测试服务）须 no_proxy 直连（P2-17 约定
+        // cda70a0c54：HTTP_PROXY 存在时 reqwest 连 127.0.0.1 也走代理）；
+        // 真实主机 URL 沿用默认客户端（代理配置不变）
+        let loopback_client = urls
+            .iter()
+            .any(|url| is_loopback_url(url))
+            .then(build_client_loopback)
+            .transpose()?;
 
         use futures::stream::{self, StreamExt};
 
         let results: Vec<String> = stream::iter(urls)
             .map(|url| {
-                let c = client.clone();
+                let c = if is_loopback_url(&url) {
+                    loopback_client
+                        .as_ref()
+                        .expect("loopback client built above")
+                        .clone()
+                } else {
+                    client.clone()
+                };
                 async move {
                     c.get(&url, None)
                         .await
@@ -462,7 +503,12 @@ pub fn connect_full(
         .unwrap_or_default();
 
     block_on(async {
-        let client = build_client_with_timeout(timeout)?;
+        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变
+        let client = if is_loopback_url(url) {
+            build_client_for_url(url, timeout)?
+        } else {
+            build_client_with_timeout(timeout)?
+        };
         let request = LegadoRequest {
             url: url.to_string(),
             method,
@@ -553,7 +599,8 @@ pub fn head_full(url: &str, headers_json: Option<&str>) -> Result<String, String
         .unwrap_or_default();
 
     block_on(async {
-        let client = build_client()?;
+        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变
+        let client = build_client_for_url_default(url)?;
         let request = LegadoRequest {
             url: url.to_string(),
             method: Method::Head,
@@ -585,7 +632,8 @@ pub fn post_full(url: &str, body: &str, headers_json: Option<&str>) -> Result<St
         .unwrap_or_default();
 
     block_on(async {
-        let client = build_client()?;
+        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变
+        let client = build_client_for_url_default(url)?;
         let request = LegadoRequest {
             url: url.to_string(),
             method: Method::Post,
@@ -613,78 +661,256 @@ mod tests {
 
     use super::*;
 
-    /// 判断响应体是否为 httpbin 有效 JSON 响应（排除错误页面、Cloudflare 验证等）
+    /// 判断响应体是否为有效 JSON 对象（httpbin 风格回显；区分 404/错误页）
     fn is_valid_response(body: &str) -> bool {
         !body.is_empty() && body.trim_start().starts_with('{')
     }
 
-    /// 测试 http_get 基本请求（使用公开测试服务）
+    /// 本地回环 mock 服务器读到的一个 HTTP/1.1 请求
+    struct MockRequest {
+        method: String,
+        path: String,
+        query: String,
+        headers: Vec<(String, String)>,
+        body: String,
+    }
+
+    impl MockRequest {
+        /// 请求头 → JSON 对象（/get、/headers 回显用；键保持服务器收到时的大小写）
+        fn headers_json(&self) -> serde_json::Value {
+            let mut map = serde_json::Map::new();
+            for (k, v) in &self.headers {
+                map.insert(k.clone(), serde_json::Value::String(v.clone()));
+            }
+            serde_json::Value::Object(map)
+        }
+
+        /// query 串 → args 映射（httpbin /get 回显用；值保持 URL 编码原样）
+        fn args_json(&self) -> serde_json::Value {
+            let mut map = serde_json::Map::new();
+            for kv in self.query.split('&').filter(|s| !s.is_empty()) {
+                let (k, v) = kv.split_once('=').unwrap_or((kv, ""));
+                map.insert(k.to_string(), serde_json::Value::String(v.to_string()));
+            }
+            serde_json::Value::Object(map)
+        }
+    }
+
+    /// 逐字节读取一个完整 HTTP/1.1 请求（头到 `\r\n\r\n` + Content-Length body）
+    fn read_mock_http_request(sock: &mut std::net::TcpStream) -> Option<MockRequest> {
+        let mut head: Vec<u8> = Vec::new();
+        let mut byte = [0u8; 1];
+        while !head.ends_with(b"\r\n\r\n") {
+            if sock.read_exact(&mut byte).is_err() {
+                return None;
+            }
+            head.push(byte[0]);
+            if head.len() > 65_536 {
+                return None;
+            }
+        }
+        let head_str = String::from_utf8_lossy(&head).into_owned();
+        let mut lines = head_str.lines();
+        let request_line = lines.next().unwrap_or_default();
+        let mut parts = request_line.split_whitespace();
+        let method = parts.next().unwrap_or("GET").to_uppercase();
+        let target = parts.next().unwrap_or("/");
+        let (path, query) = match target.split_once('?') {
+            Some((p, q)) => (p, q),
+            None => (target, ""),
+        };
+        let mut headers = Vec::new();
+        for line in lines {
+            if line.is_empty() {
+                continue;
+            }
+            if let Some((k, v)) = line.split_once(':') {
+                headers.push((k.trim().to_string(), v.trim().to_string()));
+            }
+        }
+        let content_length = headers
+            .iter()
+            .find(|(k, _)| k.eq_ignore_ascii_case("content-length"))
+            .and_then(|(_, v)| v.parse::<usize>().ok())
+            .unwrap_or(0);
+        let mut body_buf = vec![0u8; content_length];
+        if content_length > 0 && sock.read_exact(&mut body_buf).is_err() {
+            return None;
+        }
+        Some(MockRequest {
+            method,
+            path: path.to_string(),
+            query: query.to_string(),
+            headers,
+            body: String::from_utf8_lossy(&body_buf).into_owned(),
+        })
+    }
+
+    /// 最小本地回环 httpbin 风格 mock 服务器（本模块 10 例真联网用例的确定性替身，
+    /// 替代 `https://httpbin.org/...`——外部 503/验证页/断网会让软断言用例静默通过）。
+    ///
+    /// 按用例实际断言逐一核对，复刻所需 httpbin 行为子集：
+    /// - `GET /get`     → `{"url","args","headers","origin"}`（回显 query/请求头，httpbin 签名）
+    /// - `GET /headers` → `{"headers":{...}}`（回显请求头）
+    /// - `POST /post`   → `{"data","json","headers","url"}`（回显 body；body 为 JSON 时附解析结果）
+    /// - HEAD 任意路由  → 200（仅响应头、无 body）
+    /// - 其他路由       → 404 `{"error":"not found"}`（「故意破坏」对照用）
+    ///
+    /// std `TcpListener` + 单线程模式（与 `spawn_search_loopback_server` /
+    /// `spawn_cookie_echo_server` 同款；legado-js 的 quickjs tokio feature 无 net）；
+    /// 回环流量经 `no_proxy` 豁免系统/环境变量代理（P2-17 约定，见
+    /// `build_client_for_url_default` / `build_client_loopback`）。
+    fn spawn_httpbin_mock(max_conns: usize) -> std::net::SocketAddr {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let addr = listener.local_addr().expect("local_addr");
+        let origin = addr.to_string();
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(max_conns) {
+                let Ok(mut sock) = stream else { continue };
+                let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                let Some(req) = read_mock_http_request(&mut sock) else {
+                    continue;
+                };
+                let (status, body) = if req.method == "HEAD" {
+                    ("200 OK", String::new())
+                } else if req.path == "/get" {
+                    // httpbin /get 回显：url 为完整请求 URL，origin 为 host（去端口）
+                    let host = origin.split_once(':').map_or(origin.as_str(), |(h, _)| h);
+                    (
+                        "200 OK",
+                        serde_json::json!({
+                            "url": format!("http://{origin}{path}", path = req.path),
+                            "args": req.args_json(),
+                            "headers": req.headers_json(),
+                            "origin": host,
+                        })
+                        .to_string(),
+                    )
+                } else if req.path == "/headers" {
+                    (
+                        "200 OK",
+                        serde_json::json!({ "headers": req.headers_json() }).to_string(),
+                    )
+                } else if req.path == "/post" {
+                    let mut v = serde_json::json!({
+                        "data": req.body,
+                        "headers": req.headers_json(),
+                        "url": format!("http://{origin}{}", req.path),
+                    });
+                    if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&req.body) {
+                        v["json"] = parsed;
+                    }
+                    ("200 OK", v.to_string())
+                } else {
+                    ("404 Not Found", r#"{"error":"not found"}"#.to_string())
+                };
+                let resp = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
+                    len = body.len()
+                );
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+        addr
+    }
+
+    /// 测试 http_get 基本请求（本地回环 mock：`/get` 回显 url/args/headers）
     #[test]
     fn test_http_get_basic() {
-        // 使用 httpbin 风格的公开 echo 服务
-        // 注意：如果网络不可用或服务异常，此测试会优雅跳过
-        let result = http_get("https://httpbin.org/get", None);
-        if let Ok(body) = result {
-            if is_valid_response(&body) {
-                assert!(body.contains("httpbin"), "响应应包含 httpbin 标识");
-            }
-        }
+        let addr = spawn_httpbin_mock(4);
+        let body =
+            http_get(&format!("http://{addr}/get"), None).expect("http_get 到本地回环 mock 应成功");
+        assert!(is_valid_response(&body), "响应应为 JSON 对象: {body}");
+        assert!(body.contains("/get"), "回显 URL 应含请求路径: {body}");
+        assert!(
+            body.contains("\"url\""),
+            "响应应含 httpbin 风格回显 url 字段: {body}"
+        );
     }
 
-    /// 测试 http_get 带自定义 headers
+    /// 测试 http_get 带自定义 headers（本地回环 mock：`/headers` 回显请求头）
+    ///
+    /// 头名大小写不敏感比对：reqwest 在 wire 上把请求头名小写化发送（hyper
+    /// `HeaderName` 规范），mock 忠实回显 wire 形态（`x-custom-header`）；
+    /// 原 httpbin 用例的客户端保留原始大小写，此处按 HTTP 头语义等价放宽。
     #[test]
     fn test_http_get_with_headers() {
+        let addr = spawn_httpbin_mock(4);
         let headers = r#"{"X-Custom-Header": "test-value"}"#;
-        let result = http_get("https://httpbin.org/headers", Some(headers));
-        if let Ok(body) = result {
-            if is_valid_response(&body) {
-                assert!(body.contains("X-Custom-Header"), "响应应包含自定义请求头");
-            }
-        }
+        let body = http_get(&format!("http://{addr}/headers"), Some(headers))
+            .expect("http_get 到本地回环 mock 应成功");
+        assert!(is_valid_response(&body), "响应应为 JSON 对象: {body}");
+        let lower = body.to_ascii_lowercase();
+        assert!(
+            lower.contains("x-custom-header"),
+            "响应应包含自定义请求头（大小写不敏感）: {body}"
+        );
+        assert!(
+            lower.contains("test-value"),
+            "响应应包含自定义请求头的值: {body}"
+        );
     }
 
-    /// 测试 http_post 基本请求
+    /// 测试 http_post 基本请求（本地回环 mock：`/post` 回显 data/json）
     #[test]
     fn test_http_post_basic() {
-        let result = http_post(
-            "https://httpbin.org/post",
+        let addr = spawn_httpbin_mock(4);
+        let body = http_post(
+            &format!("http://{addr}/post"),
             r#"{"key": "value"}"#,
             Some(r#"{"Content-Type": "application/json"}"#),
-        );
-        if let Ok(body) = result {
-            if is_valid_response(&body) {
-                assert!(!body.is_empty(), "POST 响应体不应为空");
-                assert!(body.contains("key"), "响应应包含请求体中的 key");
-            }
-        }
+        )
+        .expect("http_post 到本地回环 mock 应成功");
+        assert!(is_valid_response(&body), "响应应为 JSON 对象: {body}");
+        assert!(!body.is_empty(), "POST 响应体不应为空");
+        assert!(body.contains("key"), "响应应包含请求体中的 key: {body}");
+        assert!(body.contains("value"), "响应应包含请求体中的 value: {body}");
     }
 
-    /// 测试 http_head 返回 headers JSON
+    /// 测试 http_head 返回 headers JSON（本地回环 mock：HEAD `/get`）
     #[test]
     fn test_http_head() {
-        let result = http_head("https://httpbin.org/get");
-        if let Ok(headers_json) = result {
-            let parsed: Result<HashMap<String, String>, _> = serde_json::from_str(&headers_json);
-            assert!(parsed.is_ok(), "httpHead 应返回有效 JSON");
-        }
+        let addr = spawn_httpbin_mock(4);
+        let headers_json =
+            http_head(&format!("http://{addr}/get")).expect("http_head 到本地回环 mock 应成功");
+        let parsed: HashMap<String, String> =
+            serde_json::from_str(&headers_json).expect("httpHead 应返回有效 JSON");
+        assert!(!parsed.is_empty(), "HEAD 响应应含响应头: {parsed:?}");
+        assert!(
+            parsed
+                .keys()
+                .any(|k| k.eq_ignore_ascii_case("content-type")),
+            "应含 mock 服务器返回的 Content-Type 响应头: {parsed:?}"
+        );
     }
 
-    /// 测试 ajax 通用接口（GET）
+    /// 测试 ajax 通用接口（GET，本地回环 mock：`/get` 回显）
     #[test]
     fn test_ajax_get() {
+        let addr = spawn_httpbin_mock(4);
         let opts = serde_json::json!({
             "method": "GET",
-            "url": "https://httpbin.org/get",
+            "url": format!("http://{addr}/get"),
             "headers": {"Accept": "application/json"}
         });
-        let result = ajax(&opts.to_string());
-        if let Ok(resp_json) = result {
-            let resp: HttpResponse = serde_json::from_str(&resp_json).unwrap();
-            // 仅在服务正常时断言
-            if resp.status_code == 200 {
-                assert!(!resp.body.is_empty());
-            }
-        }
+        let resp_json = ajax(&opts.to_string()).expect("ajax GET 到本地回环 mock 应成功");
+        let resp: HttpResponse = serde_json::from_str(&resp_json).expect("ajax 响应应可解析");
+        assert_eq!(
+            resp.status_code, 200,
+            "mock 服务器应返回 200: {}",
+            resp.body
+        );
+        assert!(!resp.body.is_empty(), "GET 响应体不应为空");
+        assert!(
+            is_valid_response(&resp.body),
+            "响应应为 JSON 对象: {}",
+            resp.body
+        );
+        assert!(
+            resp.body.contains("/get"),
+            "回显 URL 应含请求路径: {}",
+            resp.body
+        );
     }
 
     /// 原版「url,{json}」格式外网诊断：依赖 httpbin.org，不能作为离线 CI 门禁。
@@ -705,24 +931,34 @@ mod tests {
         }
     }
 
-    /// 测试 ajax 通用接口（POST）
+    /// 测试 ajax 通用接口（POST，本地回环 mock：`/post` 回显 data/json）
     #[test]
     fn test_ajax_post() {
+        let addr = spawn_httpbin_mock(4);
         let opts = serde_json::json!({
             "method": "POST",
-            "url": "https://httpbin.org/post",
+            "url": format!("http://{addr}/post"),
             "body": "{\"hello\": \"world\"}",
             "headers": {"Content-Type": "application/json"},
             "timeout_ms": 10000
         });
-        let result = ajax(&opts.to_string());
-        if let Ok(resp_json) = result {
-            let resp: HttpResponse = serde_json::from_str(&resp_json).unwrap();
-            // 仅在服务正常时断言
-            if resp.status_code == 200 {
-                assert!(resp.body.contains("hello"));
-            }
-        }
+        let resp_json = ajax(&opts.to_string()).expect("ajax POST 到本地回环 mock 应成功");
+        let resp: HttpResponse = serde_json::from_str(&resp_json).expect("ajax 响应应可解析");
+        assert_eq!(
+            resp.status_code, 200,
+            "mock 服务器应返回 200: {}",
+            resp.body
+        );
+        assert!(
+            resp.body.contains("hello"),
+            "回显体应含请求字段 hello: {}",
+            resp.body
+        );
+        assert!(
+            resp.body.contains("world"),
+            "回显体应含请求值 world: {}",
+            resp.body
+        );
     }
 
     /// 测试 ajax 空 URL 应报错
@@ -743,24 +979,27 @@ mod tests {
         assert!(result.unwrap_err().contains("unsupported method"));
     }
 
-    /// 测试 ajaxAll 批量并发请求
+    /// 测试 ajaxAll 批量并发请求（本地回环 mock：3 个并发 `/get` 回显）
     #[test]
     fn test_ajax_all() {
+        let addr = spawn_httpbin_mock(8);
         let urls = serde_json::json!([
-            "https://httpbin.org/get",
-            "https://httpbin.org/get",
-            "https://httpbin.org/get"
+            format!("http://{addr}/get"),
+            format!("http://{addr}/get"),
+            format!("http://{addr}/get")
         ]);
-        let result = ajax_all(&urls.to_string());
-        if let Ok(results_json) = result {
-            let results: Vec<String> = serde_json::from_str(&results_json).unwrap();
-            assert_eq!(results.len(), 3, "应返回 3 个结果");
-            // 仅在服务正常时验证内容
-            for body in &results {
-                if is_valid_response(body) {
-                    assert!(body.contains("httpbin"), "响应应包含 httpbin 标识");
-                }
-            }
+        let results_json = ajax_all(&urls.to_string()).expect("ajaxAll 到本地回环 mock 应成功");
+        let results: Vec<String> = serde_json::from_str(&results_json).expect("结果应可解析");
+        assert_eq!(results.len(), 3, "应返回 3 个结果");
+        for body in &results {
+            assert!(
+                is_valid_response(body),
+                "每个响应体都应为 JSON 对象: {body}"
+            );
+            assert!(
+                body.contains("/get"),
+                "回显 URL 应含请求路径（httpbin 标识的本地等价物）: {body}"
+            );
         }
     }
 
@@ -814,57 +1053,70 @@ mod tests {
         assert!(result.unwrap_err().contains("unsupported method"));
     }
 
-    /// 测试 connect_full GET 请求（返回完整响应 JSON）
+    /// 测试 connect_full GET 请求（返回完整响应 JSON，本地回环 mock：`/get` 回显）
     #[test]
     fn test_connect_full_get() {
-        let result = connect_full(
-            "https://httpbin.org/get",
+        let addr = spawn_httpbin_mock(4);
+        let resp_json = connect_full(
+            &format!("http://{addr}/get"),
             Some("GET"),
             None,
             None,
             Some(10000),
+        )
+        .expect("connect_full GET 到本地回环 mock 应成功");
+        let resp: HttpResponse = serde_json::from_str(&resp_json).expect("响应应可解析");
+        assert_eq!(
+            resp.status_code, 200,
+            "mock 服务器应返回 200: {}",
+            resp.body
         );
-        if let Ok(resp_json) = result {
-            let resp: HttpResponse = serde_json::from_str(&resp_json).unwrap();
-            if resp.status_code == 200 {
-                assert!(!resp.body.is_empty());
-            }
-        }
+        assert!(!resp.body.is_empty(), "GET 响应体不应为空");
+        assert!(
+            is_valid_response(&resp.body),
+            "响应应为 JSON 对象: {}",
+            resp.body
+        );
     }
 
-    /// 测试 head_full 返回完整响应 JSON
+    /// 测试 head_full 返回完整响应 JSON（本地回环 mock：HEAD `/get`）
     #[test]
     fn test_head_full() {
-        let result = head_full("https://httpbin.org/get", None);
-        if let Ok(resp_json) = result {
-            let resp: HttpResponse = serde_json::from_str(&resp_json).unwrap();
-            // HEAD 请求应有状态码
-            assert!(resp.status_code > 0);
-        }
+        let addr = spawn_httpbin_mock(4);
+        let resp_json = head_full(&format!("http://{addr}/get"), None)
+            .expect("head_full 到本地回环 mock 应成功");
+        let resp: HttpResponse = serde_json::from_str(&resp_json).expect("响应应可解析");
+        assert_eq!(
+            resp.status_code, 200,
+            "HEAD 请求应得到 200 状态码（mock 服务器行为）"
+        );
     }
 
     /// 测试 post_full 返回完整响应 JSON
     ///
     /// 目标必须是 httpbin `/post`（POST `/get` 返回 405，200 守卫恒不成立，
-    /// 断言空转——P2-19 审查发现）。
+    /// 断言空转——P2-19 审查发现）；本地 mock 同样只对 `/post` 回显。
     #[test]
     fn test_post_full() {
-        let result = post_full(
-            "https://httpbin.org/post",
+        let addr = spawn_httpbin_mock(4);
+        let resp_json = post_full(
+            &format!("http://{addr}/post"),
             r#"{"key":"value"}"#,
             Some(r#"{"Content-Type":"application/json"}"#),
+        )
+        .expect("post_full 到本地回环 mock 应成功");
+        let resp: HttpResponse = serde_json::from_str(&resp_json).expect("响应应可解析");
+        assert_eq!(
+            resp.status_code, 200,
+            "mock 服务器应返回 200: {}",
+            resp.body
         );
-        if let Ok(resp_json) = result {
-            let resp: HttpResponse = serde_json::from_str(&resp_json).unwrap();
-            if resp.status_code == 200 {
-                // httpbin /post 回显请求 JSON（`json` 字段），`key` 必须出现
-                assert!(
-                    resp.body.contains("key"),
-                    "回显体应含请求字段 key: {}",
-                    resp.body
-                );
-            }
-        }
+        // mock /post 回显请求 JSON（`data`/`json` 字段），`key` 必须出现
+        assert!(
+            resp.body.contains("key"),
+            "回显体应含请求字段 key: {}",
+            resp.body
+        );
     }
 
     /// 最小本地回环 Cookie 回显服务器（P2-19 泄漏复现的确定性替身）
