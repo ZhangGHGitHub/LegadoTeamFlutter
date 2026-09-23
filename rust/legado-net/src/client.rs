@@ -617,6 +617,19 @@ impl LegadoClient {
     }
 
     /// 从响应头中提取 Set-Cookie 并保存到 CookieStore
+    ///
+    /// **按域写通道（重要 1）**：先取该域串行锁（`domain_write_lock`，最外层
+    /// D 锁），使「jar 更新 + 捕获全量串 + 持久化落库」对该域原子——并发的
+    /// 同域写入者（HTTP jar 路径 / JS 宿主路径）不得在「捕获」与「落库」之间
+    /// 插入，否则落库行会回退为过期视图（内存=NEW，重启回填=OLD）。
+    /// 结构性不变式不回归：**jar 写锁临界区内仍不做 DB/sink 调用**——jar 锁
+    /// 只覆盖更新/捕获，sink 调用在 jar 锁释放后、域通道锁内执行（锁序图见
+    /// [`crate::cookie_store::DOMAIN_WRITE_LOCKS`] 文档）。
+    ///
+    /// **空视图不删行（重要 3）**：`cookies` 表的行与 JS 侧 `setCookie` 写入
+    /// 共享（union 合并、同键 incoming 胜）。「空 jar 视图」仅说明**本次**
+    /// Set-Cookie 未贡献可解析的 name=value，不能证明该行 jar 独占——整行
+    /// 删除会抹掉 JS 侧键（进程内内存仍命中，重启后 JS 键丢失）。
     fn save_cookies_from_response(
         &self,
         original_url: &str,
@@ -641,9 +654,22 @@ impl LegadoClient {
             return;
         }
 
-        if let Ok(mut store) = self.cookie_store.write() {
-            // 解析 domain
-            let domain = extract_domain_for_cookie(url_for_cookie);
+        // 域键先解析（纯函数，无需持锁）
+        let domain = extract_domain_for_cookie(url_for_cookie);
+
+        // 按域写通道：最外层串行锁（D）——本域「捕获 + 写回」与并发的同域
+        // 写入严格串行（drop 时放行；中毒恢复语义见 DOMAIN_WRITE_LOCKS 文档）
+        let _domain_guard = crate::cookie_store::domain_write_lock(&domain);
+
+        // 更新内存 CookieStore 并**在 jar 写锁内**捕获受影响域的全量 Cookie 串；
+        // 持久化写回（DB 调用）放到**jar 锁释放后**（域通道锁仍持有）执行——
+        // jar 锁临界区内不做 DB/sink 调用（避免与 cookie 合并写串行锁形成
+        // 潜在锁环，池取连接等待也不得拖住 jar 读方）
+        let cookie_string = {
+            let Ok(mut store) = self.cookie_store.write() else {
+                // 写锁 poisoned：与改造前一致，整体跳过本次写回
+                return;
+            };
             for cookie_str in set_cookie_values {
                 // 简单解析：取 `name=value` 部分
                 if let Some(name_value) = cookie_str.split(';').next() {
@@ -661,16 +687,17 @@ impl LegadoClient {
                     }
                 }
             }
+            store.domain_cookie_string(&domain)
+        };
 
-            // 持久化写回：将变更域名的全部 Cookie 序列化后 upsert 到后端
-            //（同步写入，单行 upsert 开销可接受；后端失败仅记日志不阻断请求）
-            if let Some(ref persistence) = self.cookie_persistence {
-                let cookie_string = store.domain_cookie_string(&domain);
-                if cookie_string.is_empty() {
-                    persistence.delete(&domain);
-                } else {
-                    persistence.save(&domain, &cookie_string);
-                }
+        // 持久化写回（jar 写锁已释放、域通道锁内）：将变更域名的全部 Cookie
+        // 序列化后 upsert 到后端（同步写入，单行 upsert 开销可接受；后端
+        // 失败仅记日志不阻断请求）。
+        // 视图为空时**不删行**（重要 3，见函数文档）：该行与 JS 侧共享，
+        // 删除会抹掉 JS 键。
+        if let Some(ref persistence) = self.cookie_persistence {
+            if !cookie_string.is_empty() {
+                persistence.save(&domain, &cookie_string);
             }
         }
     }
@@ -1122,6 +1149,167 @@ mod tests {
         // 默认构建不携带持久化后端，行为不变
         let client = LegadoClient::new(LegadoClientConfig::default()).unwrap();
         assert!(client.cookie_persistence().is_none());
+    }
+
+    // ─── 重要 1：并发同域双写（per-domain 写通道） ─────────────
+
+    /// 并发测试用：带「过期捕获慢落库」闸门的假持久化后端
+    ///
+    /// 写回串缺少全量标记（= 过期捕获，未含另一线程的键）时 `save` 延迟
+    /// `slow_ms`——修复前确定性地制造「过期落库最后落库」的交错：另一线程的
+    /// 全量串（快速落库）已在延迟窗口内完成，最后落库必为过期视图；
+    /// 修复后（`domain_write_lock` 按域串行锁）两线程严格串行：先取锁者捕获
+    /// 必为单键（慢落库、先落库），后取锁者捕获必为全量串（快落库、最后
+    /// 落库），最终落库行 = 内存终态。
+    struct GatedPersistence {
+        data: Mutex<HashMap<String, String>>,
+        /// 全量串标记：写回串包含之 = 全量捕获 → 立即落库；否则慢落库
+        fast_when_contains: String,
+        /// 慢落库时长（毫秒）
+        slow_ms: u64,
+    }
+
+    impl crate::cookie_store::CookiePersistence for GatedPersistence {
+        fn load_all(&self) -> Vec<(String, String)> {
+            let guard = self.data.lock().unwrap();
+            guard.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
+        }
+
+        fn save(&self, tag: &str, cookie: &str) {
+            // 闸门：过期捕获（缺少全量标记）→ 慢落库，拉大窗口强制交错
+            if !cookie.contains(&self.fast_when_contains) {
+                std::thread::sleep(std::time::Duration::from_millis(self.slow_ms));
+            }
+            self.data
+                .lock()
+                .unwrap()
+                .insert(tag.to_string(), cookie.to_string());
+        }
+
+        fn delete(&self, tag: &str) {
+            self.data.lock().unwrap().remove(tag);
+        }
+    }
+
+    /// Cookie 串按键值对排序（顺序无关的等价断言辅助）
+    fn cookie_set_sorted(cookie_str: &str) -> Vec<String> {
+        let mut parts: Vec<String> = cookie_str
+            .split(';')
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty())
+            .collect();
+        parts.sort();
+        parts
+    }
+
+    /// 重要 1：并发同域双写，persist 后的最终状态必须等于内存终态
+    ///
+    /// **修复前（必红）**：无按域串行锁时，先完成 jar 写入的线程捕获「过期
+    /// 视图」（写回串缺另一线程的键）→ 被慢落库闸门拖延，最后落库必为该
+    /// 过期视图 → 落库行回退（内存含双键，落库行只有单键，重启回填=旧值），
+    /// 断言必红；
+    /// **修复后（必绿）**：`domain_write_lock` 使两线程严格串行，后取锁者
+    /// 捕获必为全量串并最后落库 → 落库行 = 内存终态。
+    #[test]
+    fn test_concurrent_same_domain_persist_equals_memory() {
+        const URL: &str = "https://www.concurrent-write.test/";
+        let domain = extract_domain_for_cookie(URL);
+
+        let persistence = Arc::new(GatedPersistence {
+            data: Mutex::new(HashMap::new()),
+            fast_when_contains: "kB=".to_string(),
+            slow_ms: 200,
+        });
+        let client = Arc::new(
+            LegadoClient::with_cookie_persistence(
+                LegadoClientConfig::default(),
+                persistence.clone(),
+            )
+            .unwrap(),
+        );
+
+        let mut a_headers = HashMap::new();
+        a_headers.insert("Set-Cookie".to_string(), "kA=A".to_string());
+        let mut b_headers = HashMap::new();
+        b_headers.insert("Set-Cookie".to_string(), "kB=B".to_string());
+
+        let c_a = client.clone();
+        let c_b = client.clone();
+        let handle_a = std::thread::spawn(move || {
+            c_a.save_cookies_from_response(URL, URL, &a_headers);
+        });
+        let handle_b = std::thread::spawn(move || {
+            c_b.save_cookies_from_response(URL, URL, &b_headers);
+        });
+        handle_a.join().unwrap();
+        handle_b.join().unwrap();
+
+        // 内存终态（两线程 jar 写入均已完成）
+        let memory = {
+            let store = client.cookie_store().read().unwrap();
+            store.domain_cookie_string(&domain)
+        };
+        let saved = persistence
+            .data
+            .lock()
+            .unwrap()
+            .get(&domain)
+            .cloned()
+            .unwrap_or_default();
+
+        // persist 后的最终落库状态必须等于内存终态
+        assert_eq!(
+            cookie_set_sorted(&saved),
+            cookie_set_sorted(&memory),
+            "并发同域双写：persist 后的最终落库状态必须等于内存终态（修复前过期落库可最后落库）: persisted={saved}, memory={memory}"
+        );
+        // 且落库行必须含双写两个键
+        let saved_set = cookie_set_sorted(&saved);
+        assert!(
+            saved_set.contains(&"kA=A".to_string()) && saved_set.contains(&"kB=B".to_string()),
+            "落库行必须含并发双写的两个键: {saved_set:?}"
+        );
+    }
+
+    // ─── 重要 3：空 jar 视图不得删除共享行 ─────────────────────
+
+    /// 重要 3：空 jar 视图（Set-Cookie 无可解析 name=value，如 `Secure; Path=/`）
+    /// 不得删除该域的整条共享行
+    ///
+    /// 同一 DB 行由 JS 侧（sink upsert）与 HTTP jar 写回共同写入
+    /// （union 合并、同键 incoming 胜）。「jar 视图为空」只说明**本次**
+    /// Set-Cookie 未贡献可解析的 name=value，不能证明该行 jar 独占——
+    /// 整行删除会抹掉 JS 侧 `setCookie` 写入的键（进程内内存仍命中，
+    /// 重启后 JS 键丢失）。
+    #[test]
+    fn test_empty_jar_view_does_not_delete_shared_row() {
+        let persistence = Arc::new(MockPersistence::default());
+        let client = LegadoClient::with_cookie_persistence(
+            LegadoClientConfig::default(),
+            persistence.clone(),
+        )
+        .unwrap();
+
+        // 模拟 JS 侧已为该域写入一个键（持久化层已有该行，且未经过 jar：
+        // 客户端构建在预置行之前，jar 内该域为空）
+        persistence.save("example.com", "js_key=js_val");
+
+        // 触发一次「空 jar 视图」保存：Set-Cookie 无 name=value（解析被跳过）
+        let mut headers = HashMap::new();
+        headers.insert("Set-Cookie".to_string(), "Secure; Path=/".to_string());
+        client.save_cookies_from_response(
+            "https://www.example.com/page",
+            "https://www.example.com/page",
+            &headers,
+        );
+
+        let persisted = persistence.data.lock().unwrap();
+        assert_eq!(
+            persisted.get("example.com").map(String::as_str),
+            Some("js_key=js_val"),
+            "空 jar 视图不得删除共享行（该行含 JS 侧键；修复前整行删除导致 JS 键丢失）: {:?}",
+            persisted.get("example.com")
+        );
     }
 
     // ─── P1-1 复现：多段 TLD 站点 Cookie 隔离 ─────────────────

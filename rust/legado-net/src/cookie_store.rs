@@ -4,6 +4,7 @@
 //! 提供基于内存的 Cookie 存储、查询、合并与过期清理功能。
 
 use std::collections::HashMap;
+use std::sync::{Arc, LazyLock, Mutex, MutexGuard};
 use std::time::SystemTime;
 
 /// 单个 Cookie 条目
@@ -43,6 +44,115 @@ pub trait CookiePersistence: Send + Sync {
     fn save(&self, tag: &str, cookie: &str);
     /// 删除单个域名的全部 Cookie
     fn delete(&self, tag: &str);
+}
+
+// ─── 按域 Cookie 写通道（per-domain 串行锁） ─────────────────────────────────
+
+/// 按域写通道注册表
+///
+/// 目的：让**同一域**的「jar 更新 + 捕获全量串 + 持久化落库」原子化。
+/// HTTP 写回路径（[`save_cookies_from_response`](crate::client::LegadoClient::save_cookies_from_response)）
+/// 与 JS 宿主写路径（`legado-js` `with_store_update`，quickjs 档委托本注册表）
+/// 都**先**取该域串行锁再取 jar/内存存储锁，使「本次捕获的视图」不会被并发的
+/// 同域写入者覆盖——否则「捕获全量串 → 落库」之间被插入的并发写会让落库行
+/// 回退为过期视图（内存=NEW，重启回填=OLD）。
+///
+/// **锁序（唯一固定顺序，无环）**：
+/// ```text
+/// D（本按域串行锁，最外层；其下允许 DB/sink I/O，
+///   但持 J/G 时绝不做 DB I/O）
+///   → J（jar RwLock：短临界区，仅更新/捕获/删除，不回调 D、不做 DB I/O）
+///   → G（JS 内存存储 Mutex：短临界区，不回调 D、不做 sink 调用）
+///   → C（FFI COOKIE_PERSIST_RW_LOCK：DB 行读-改-写串行化）
+///   → P（DB 连接池：取连接等待有界）
+/// ```
+/// 无环论证：J 持有者（jar 路径）必先持 D 再取 J，临界区内不等待 D/C/P；
+/// `JsCookieDbSink::remove/remove_all`（FFI 侧）持 C/P 后**短暂 scoped** 取 J
+///（且从不持 D），P 连接在取 J 前已归还；C/P 持有者不回调 D/J/G。
+/// 因此等待图 D→J→C→P 是链状，任何「持内锁等外锁」的回边均不存在。
+/// 中毒策略：各 `Mutex` 中毒后经 `into_inner` 恢复（与项目内其它锁的恢复
+/// 语义一致——持有者 panic 不应让写通道永久不可用）。
+static DOMAIN_WRITE_LOCKS: LazyLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// 从静态注册表取得某域写通道锁对象的 `'static` 原始指针
+///
+/// 若该域尚未注册，先向 [`DOMAIN_WRITE_LOCKS`] 登记 `Arc<Mutex<()>>`，再对
+/// 登记后的 `Arc` 克隆一次经 `Arc::into_raw` 交出裸指针（克隆保证注册表
+/// 仍持有原对象）。域锁（`Mutex<()>`）一经注册即由静态注册表永久持有
+/// （注册表条目永不删除），故其裸指针可安全地以 `'static` 解引用。
+fn domain_lock_ptr(
+    registry: &mut HashMap<String, Arc<Mutex<()>>>,
+    domain: &str,
+) -> *const Mutex<()> {
+    let arc = registry
+        .entry(domain.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone();
+    Arc::into_raw(arc)
+}
+
+/// 取某域的写通道串行锁（最外层 D 锁）
+///
+/// 返回守卫，drop 时该域写通道放行。`domain` 为域键：
+/// - net 层 jar 路径用 [`cookie_domain_key`]（ETLD+1，解析失败回退原 URL）；
+/// - JS 宿主路径用 `normalized_cookie_key`（quickjs 档委托本函数）。
+///
+/// 两侧必须经**同一来源**的域键规则，保证同域互斥。
+pub fn domain_write_lock(domain: &str) -> MutexGuard<'static, ()> {
+    let ptr = {
+        let mut registry = DOMAIN_WRITE_LOCKS.lock().unwrap_or_else(|p| p.into_inner());
+        domain_lock_ptr(&mut registry, domain)
+    };
+    // SAFETY：指针来自永久驻留于静态注册表的 `Arc<Mutex<()>>`（条目永不删除，
+    // 对象存活期 `'static`）；此处仅加锁并返回守卫，守卫 drop 只解锁、不触碰
+    // 对象所有权，故不构成双重 free 或悬垂。
+    unsafe { (&*ptr).lock().unwrap_or_else(|p| p.into_inner()) }
+}
+
+/// 持有全部按域写通道（注册表锁 + 全部域锁，按域键排序取锁防环）
+///
+/// 供「整体清空」类操作（`clear_all_cookies`）与逐域写方互斥：
+/// - 持**注册表锁**期间新域的 `domain_write_lock` 无法注册，临界区内不存在
+///   「快照后新建域」的旁路；
+/// - 域锁按**排序键序**获取（固定顺序 → 无环）。
+///
+/// 注册表锁与各域锁在其它持有者（`domain_write_lock`）处从不嵌套持有
+/// （注册表守卫在取域锁前已释放），故本函数持「注册表 + 域锁」亦无环。
+pub struct AllDomainWriteGuards {
+    /// 注册表锁（阻塞新域注册）
+    _registry: MutexGuard<'static, HashMap<String, Arc<Mutex<()>>>>,
+    /// 全部既有域锁（按域键排序）
+    _domains: Vec<MutexGuard<'static, ()>>,
+}
+
+impl AllDomainWriteGuards {
+    /// 取全部按域写通道（见 [`lock_all_domain_writes`]）
+    pub(crate) fn new(
+        registry: MutexGuard<'static, HashMap<String, Arc<Mutex<()>>>>,
+        domains: Vec<MutexGuard<'static, ()>>,
+    ) -> Self {
+        Self {
+            _registry: registry,
+            _domains: domains,
+        }
+    }
+}
+
+/// 取全部按域写通道（注册表锁 + 全部域锁），供整体清空操作使用
+pub fn lock_all_domain_writes() -> AllDomainWriteGuards {
+    let registry = DOMAIN_WRITE_LOCKS.lock().unwrap_or_else(|p| p.into_inner());
+    let mut keys: Vec<String> = registry.keys().cloned().collect();
+    keys.sort();
+    let mut domains = Vec::with_capacity(keys.len());
+    for key in &keys {
+        let ptr = Arc::as_ptr(registry.get(key).expect("键来自同一注册表快照，必然存在"));
+        // SAFETY：同 [`domain_write_lock`]——域锁对象由静态注册表永久持有，
+        // 指针存活期 `'static`；此处仅加锁返回守卫，守卫 drop 只解锁。
+        let guard = unsafe { (&*ptr).lock().unwrap_or_else(|p| p.into_inner()) };
+        domains.push(guard);
+    }
+    AllDomainWriteGuards::new(registry, domains)
 }
 
 /// 基于内存的 Cookie 存储

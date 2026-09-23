@@ -158,6 +158,10 @@ pub mod ffi {
         crate::db_state::record_db_path(&path);
         let db = legado_db::init_database(&path)?;
         crate::db_state::init_database(db)?;
+        // 上游同步（2026-09-23 用户裁决）：JS 写 cookie 落库持久化——注册
+        // 基于 CookieRepository 的持久化下沉并启动全量回填（内存优先、
+        // miss 回落；幂等：下沉 first-wins，回填按键合并不覆盖内存值）
+        crate::http_state::register_js_cookie_sink();
         // 启动时恢复配置（契约 §2.20.3 / §2.22.5，Task #73）：
         // 读回 customHosts 映射与独立 MCP 端口，尽力而为（失败仅记日志）
         crate::api::net_api::restore_custom_hosts();

@@ -2124,22 +2124,16 @@ fn register_cookie_apis<'js>(
     // 第一参为 **URL**（非书源 tag）：对齐上游 `CookieStore.setCookie(url, cookie)`
     // （归一为 `getSubDomain(url)` 域名键后落存储）；非 http(s) / 解析失败的原始串
     // 保留原键（镜像上游回退）。
-    // cookieStr 格式: "key=value" 或 "key=value; key2=value2"
+    // cookieStr 格式: "key=value" 或 "key=value; key2=value2"——解析口径
+    // （`;` 拆段、首个 `=` 分界、无 `=` 段 / 空键跳过、各 trim 一次）下沉在
+    // `cookie_store::set_cookie_str`：多段串一次锁内更新 + 至多一次持久化
+    // upsert（逐段 `set_cookie` 则每段一次锁 + 一次 upsert——高频写放大）。
     mount_dual(
         java,
         globals,
         "setCookie",
         rquickjs::Function::new(ctx.clone(), |url: String, cookie_str: String| -> bool {
-            for pair in cookie_str.split(';') {
-                let pair = pair.trim();
-                if let Some(eq_pos) = pair.find('=') {
-                    let key = pair[..eq_pos].trim();
-                    let value = pair[eq_pos + 1..].trim();
-                    if !key.is_empty() {
-                        cookie_store::set_cookie(&url, key, value);
-                    }
-                }
-            }
+            cookie_store::set_cookie_str(&url, &cookie_str);
             true
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,

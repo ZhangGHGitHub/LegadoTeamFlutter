@@ -85,6 +85,10 @@ where
 /// 不涉及 DB 的测试不受影响，cargo test 并行模式依旧生效。
 ///
 /// 注意：持有守卫期间勿再次调用本函数（该锁不可重入，会死锁）。
+///
+/// 锁序约束：同时使用 `test_support::lock_global_store()` 的测试必须
+/// **先**取全局 store 锁、**后**调用本函数（全局锁序不变式，见
+/// `test_support` 模块文档）——颠倒 + 并行执行 = ABBA 死锁。
 #[cfg(test)]
 #[must_use = "必须将返回的锁守卫绑定到变量（如 let _db_guard = ...），否则串行化失效"]
 pub fn ensure_test_db() -> std::sync::MutexGuard<'static, ()> {

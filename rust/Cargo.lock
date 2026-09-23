@@ -1950,6 +1950,7 @@ dependencies = [
  "hmac",
  "jsonpath-rust",
  "legado-core",
+ "legado-js",
  "legado-net",
  "legado-parser",
  "lru",

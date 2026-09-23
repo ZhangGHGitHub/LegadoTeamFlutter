@@ -63,6 +63,10 @@ legado-net    = { path = "../legado-net", optional = true }
 
 [features]
 default = []
+# 测试支撑面（提示 1）：门控 `test_clear_memory_only` 等非生产 API，
+# 供 `tests/` 集成二进制与依赖 crate 的测试经 dev-dependency 启用；
+# 生产构建（无 dev-deps）永不启用
+test-support = []
 quickjs = [
     "dep:rquickjs",
     "dep:md-5",
@@ -90,6 +94,12 @@ quickjs = [
     "dep:tokio",
     "dep:legado-net",
 ]
+
+# 自 dev-dependency（提示 1）：`tests/` 集成二进制链接的 lib 不带 cfg(test)，
+# 需经 dev-dep feature 统一启用 test-support 面（生产构建不受影响——
+# dev-dep 特征仅在测试目标构建中生效，workspace resolver v2 语义）
+[dev-dependencies]
+legado-js = { path = ".", features = ["test-support"] }
 
 # [iOS 轨 P1] CI 全平台走 bindgen 运行时生成（linux/macos 自带 libclang；
 # 无 iOS 目标——apple 平台启用 bindgen 运行时生成（CI macOS runner 自带 libclang；

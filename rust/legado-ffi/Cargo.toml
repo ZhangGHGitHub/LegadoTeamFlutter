@@ -29,6 +29,9 @@ flutter_rust_bridge = "=2.11.1"
 
 [dev-dependencies]
 encoding_rs = "0.8"
+# 提示 1：lib 单测（http_state.rs）与 tests/ 集成二进制使用
+# `cookie_store::test_clear_memory_only`——该面仅 test-support feature 下可见
+legado-js = { path = "../legado-js", features = ["test-support"] }
 
 # Unix 平台线程降权（nice 19）：修复多源搜索 CPU 风暴饿死 Flutter UI 线程
 [target.'cfg(any(target_os = "android", target_os = "linux"))'.dependencies]

@@ -257,6 +257,72 @@ mod tests {
         assert!(matches!(err, LegadoError::Internal(_)));
     }
 
+    /// 契约 §2.3（上游同步 2026-09-23）：clear_cookie 入口覆盖 JS cookie
+    /// 持久化行——「DB + net jar + JS store」双侧（归一域名键 + 原始串键）
+    /// 齐清且幂等（落库后清除入口仍把内存 + DB 两侧清干净）
+    #[test]
+    fn test_clear_cookie_covers_db_persistence_rows() {
+        let _g = TEST_LOCK.lock().unwrap();
+        // 断言含全局 JS cookie store 状态，持全局 store 串行锁排除并发干扰；
+        // 全局锁序不变式：先 store 锁、后 DB 锁（见 test_support 模块文档）
+        let _gs = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        use legado_js::host_api::cookie_store;
+
+        const URL: &str = "https://www.clearedb.test/path";
+        let dk = cookie_store::normalized_cookie_key(URL);
+        // 清理残留（幂等；下沉若已被同二进制其他用例注册，此处同时清 DB）
+        clear_cookie(URL).unwrap();
+
+        crate::http_state::register_js_cookie_sink();
+
+        // JS 侧写入（sink upsert：归一域名键下必有 DB 行）
+        cookie_store::set_cookie(URL, "s", "1");
+        let row = crate::db_state::with_database(|db| {
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.get_by_tag(&dk)
+        })
+        .unwrap();
+        assert!(
+            row.is_some(),
+            "JS 写入后 DB 必须有「归一域名键 → cookie 串」持久行"
+        );
+
+        // FFI 清除入口：DB + 内存两侧齐清
+        clear_cookie(URL).unwrap();
+        let row_norm = crate::db_state::with_database(|db| {
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.get_by_tag(&dk)
+        })
+        .unwrap();
+        assert!(
+            row_norm.is_none(),
+            "clear_cookie 后归一域名键 DB 行必须删除"
+        );
+        let row_raw = crate::db_state::with_database(|db| {
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.get_by_tag(URL)
+        })
+        .unwrap();
+        assert!(
+            row_raw.is_none(),
+            "原始 URL 形态键的 DB 行必须同步删除（两侧齐清）"
+        );
+        assert!(
+            cookie_store::get_cookie(URL).is_empty(),
+            "clear_cookie 后 JS 内存态必须为空"
+        );
+
+        // 幂等：重复清除不报错、状态保持干净
+        clear_cookie(URL).unwrap();
+        let row_again = crate::db_state::with_database(|db| {
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.get_by_tag(&dk)
+        })
+        .unwrap();
+        assert!(row_again.is_none(), "重复清除必须幂等");
+    }
+
     /// P1 回归钉死：清除侧键必须与存储侧键（ETLD+1 / IP 自键）相等
     #[test]
     fn test_get_sub_domain_matches_storage_key() {

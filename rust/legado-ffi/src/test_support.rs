@@ -23,6 +23,22 @@
 //! source_switch 引用）。本次提升为 crate 级 `#[cfg(test)]` 共享模块：语义与
 //! 用法不变，仅改可见性/位置——任何本 crate 测试模块（含 search、pre_update 等
 //! 此前无法引用的模块）都能拿到同一把锁。
+//!
+//! # 全局锁序不变式（并行测试防 ABBA 死锁，2026-09-23 并行挂死修复）
+//!
+//! 本 crate 的测试同时使用三把进程级串行锁，**获取顺序固定为**：
+//!
+//! 1. `GLOBAL_STORE_TEST_LOCK`（本模块，crate 级，作用域最广）
+//! 2. `db_state::ensure_test_db()` 返回的 DB 守卫（`db_state` 模块级）
+//! 3. 各测试模块自己的模块级 `TEST_LOCK`（作用域最窄；与 1/2 无环，
+//!    但须在任何会排队等待 1/2 的调用**之前**取得）
+//!
+//! 即：**先 store 锁、后 DB 锁**。颠倒（先 `ensure_test_db` 再
+//! `lock_global_store`）且两测试并行运行时构成 ABBA 死锁——2026-09-23
+//! 定位到的挂死之一：http_state/net_api 测试组（DB→store 序）与
+//! source_switch 测试组（store→DB 序）并行时互相持锁等待，默认并行
+//! `cargo test -p legado-ffi --lib` 整体挂死（单线程不复现）。新增同时
+//! 使用两把锁的测试必须遵循上述顺序。
 
 /// 全局变量 store / 桥读取器 / flow scope 的进程级状态锁。
 ///
