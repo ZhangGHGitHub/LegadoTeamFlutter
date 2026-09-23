@@ -380,6 +380,34 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+      # ── 搜索→进书→翻章 e2e（核心阅读链路，离线本地书源）──
+      # 设计：测试进程内 HttpServer（127.0.0.1 loopback 随机端口）提供
+      # 「搜索页（恒定 2 条结果）/ 书页（3 章目录）/ 章节正文页（唯一标记）」，
+      # 导入本地书源（纯 CSS 规则，无 JS/JVM 依赖）后走真实 Rust FFI 的
+      # 搜索流 / webbook_chapters 目录解析 / get_chapter_content_full 正文链。
+      # 零外网依赖、断言确定（结果计数==2、章节标记互斥），
+      # 复用上方图标测试的 UDID 自举模式（boot 幂等）。
+      # 门禁决策：硬门禁（不加 continue-on-error）——e2e 价值在于核心链路
+      # 损坏时让 CI 变红；离线设计已消除传统 flaky 来源（外网不稳定）。
+      - name: Run search-read e2e (iOS simulator)
+        working-directory: flutter_legado
+        run: |
+          set -euxo pipefail
+          UDID=$(xcrun simctl list devices available | grep -m1 -oE '[0-9A-F-]{36}')
+          echo "E2E test simulator: $UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          flutter test integration_test/e2e_search_read_ios_test.dart -d "$UDID"
+
+      - name: Upload e2e simulator Runner.app (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-e2e-runner-app
+          path: flutter_legado/build/ios/iphonesimulator/Runner.app
+          retention-days: 7
+          if-no-files-found: ignore
+
       - name: Boot simulator and launch app
         run: |
           set -euxo pipefail
