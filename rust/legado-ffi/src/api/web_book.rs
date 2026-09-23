@@ -747,18 +747,18 @@ impl RealBookSourceFetcher {
         Ok(Self { client })
     }
 
-    /// 解析书源 header 字段为请求头（含登录头与 JS Cookie 合并）
+    /// 解析书源 header 字段为请求头（含登录头）
     ///
     /// 对齐原版 `BaseSource.getHeaderMap(hasLoginHeader=true)`：
     /// 1. 书源静态 `header` 字段（JSON map）
     /// 2. 合并 `source_login_cache::get_login_header`（登录后保存的 loginHeader，
     ///    覆盖同名键，对齐原版 putAll 顺序 loginHeader 在后）
-    /// 3. 合并 JS `java.setCookie` 写入的全局 Cookie（GLOBAL_COOKIES）——
-    ///    仅当尚无 Cookie 头时设置，保证 JS 侧登录 Cookie 随请求发送
-    ///    （对齐原版 CookieStore 单存储自动附加语义）。
-    ///    P2-19 口径统一：与 JS `java.ajax` 路径共用同一底层函数
-    ///    `cookies_for_source_tag`（精确键 ∪ ETLD+1 域名键，精确键胜出），
-    ///    防止两条取数路径对同名 cookie 的携带口径分裂。
+    ///
+    /// JS `java.setCookie` 写入的 cookie **不再在本函数注入**（2026-09-23 上游同步，
+    /// 用户裁决）：取用改按**请求 URL 属域**（`fetch_page` 层
+    /// `cookie_store::cookies_for_url`，cookie 属于域名而非书源，同域 cookie 跨书源
+    /// 共享），与 JS `java.ajax` 路径共用同一底层函数与单一真源
+    /// `legado_net::cookie_store::cookie_domain_key`。
     fn parse_source_headers(source: &BookSource) -> Option<HashMap<String, String>> {
         let mut headers: HashMap<String, String> = source
             .header
@@ -772,13 +772,6 @@ impl RealBookSourceFetcher {
             if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&login_header_json) {
                 headers.extend(map);
             }
-        }
-
-        let js_cookie = legado_js::host_api::cookie_store::cookies_for_source_tag(Some(
-            &source.book_source_url,
-        ));
-        if !js_cookie.is_empty() && !headers.contains_key("Cookie") {
-            headers.insert("Cookie".to_string(), js_cookie);
         }
 
         if headers.is_empty() {
@@ -812,6 +805,15 @@ impl RealBookSourceFetcher {
         // 合并请求头：书源全局 header + AnalyzeUrl 解析出的 header
         let mut headers = source_headers.cloned().unwrap_or_default();
         headers.extend(analyze_url.headers().clone());
+
+        // JS `java.setCookie` 写入的 cookie：按请求 URL 属域取（`cookies_for_url`
+        // 内部归一为 `getSubDomain(url)` 等价域名键，单一真源
+        // `legado_net::cookie_store::cookie_domain_key`；不相关域名的 cookie
+        // 绝不携带，P2-19 不变式保留），并**按键合并**进已有 Cookie 头
+        //（已有同名键胜、非冲突键追加；键查找大小写不敏感）——对齐上游
+        // `AnalyzeUrl.setCookie` → `CookieManager.mergeCookies` 语义。
+        legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, url);
+
         let headers_opt = if headers.is_empty() {
             None
         } else {
@@ -918,7 +920,16 @@ impl RealBookSourceFetcher {
                 return Ok(cached);
             }
         }
-        let headers_opt = source_headers.cloned();
+        // 与 fetch_page 一致：按键合并请求 URL 属域的 JS cookie（改前缺口：
+        // 本路径漏注入 → 正文 nextUrl 分页 / subContent / 目录 nextTocUrl
+        // 分页等经 fetch_simple_cached 的请求丢失 JS cookie）
+        let mut headers = source_headers.cloned().unwrap_or_default();
+        legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, url);
+        let headers_opt = if headers.is_empty() {
+            None
+        } else {
+            Some(headers)
+        };
         // 简单 GET 同样必须保留字节至 charset 检测结束：正文/目录 URL 通常
         // 没有显式 UrlOption.charset，只能依赖响应头或 HTML meta。
         let response = self.client.get_raw(url, headers_opt).await?;
@@ -2541,7 +2552,19 @@ impl RealBookSourceFetcher {
                                 if let Some(cached) = cache_get_page_body(&page_url) {
                                     cached
                                 } else {
-                                    let response = client.get(&page_url, headers.cloned()).await?;
+                                    // 与 fetch_page / fetch_simple_cached 一致：按键合并
+                                    // 请求属域 JS cookie（改前缺口：并发分页请求丢 JS cookie）
+                                    let mut req_headers = headers.cloned().unwrap_or_default();
+                                    legado_js::host_api::cookie_store::merge_js_cookies(
+                                        &mut req_headers,
+                                        &page_url,
+                                    );
+                                    let req_headers = if req_headers.is_empty() {
+                                        None
+                                    } else {
+                                        Some(req_headers)
+                                    };
+                                    let response = client.get(&page_url, req_headers).await?;
                                     if !response.is_success() {
                                         return Err(LegadoError::Network(format!(
                                             "HTTP {} for {}",
@@ -8568,15 +8591,23 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
         .expect("清理本用例插入的 books 行");
     }
 
-    // ─── P2-19 分裂点修复：FFI HTTP 取数路径 Cookie 查找口径统一 ────────────────────────
+    // ─── P2-19 分裂点修复（2026-09-23 上游同步后改写）：FFI HTTP 取数路径
+    // Cookie 查找口径统一为「请求 URL 属域」────────────────────────────────
     //
-    // FFI HTTP 取数路径（`parse_source_headers` → 搜索/详情/目录）此前用
-    // `get_cookie(book_source_url)`（仅精确键），而 JS `java.ajax` 路径
-    // （`cookies_for_source_tag`）用「精确键 ∪ ETLD+1 域名键」（精确键胜出）——
-    // 同一域名键 cookie 在 `java.ajax` 带、在详情/目录 HTTP 不带。本组用例钉死
-    // 修复后口径（改造前 ①③ 应红、② 绿；改造后全绿）。
+    // 上游同步（用户裁决）后：JS 写 cookie 的键归一为 `getSubDomain(url)` 等价
+    // 域名键，读侧（FFI `fetch_page` 兜底 / JS `java.ajax`）统一按**请求 URL**
+    // 属域取（`cookie_store::cookies_for_url`），cookie 属于域名而非书源；
+    // 不相关域名的 cookie 绝不携带（P2-19 核心不变式保留）。注入点从
+    // `parse_source_headers`（书源维度）下沉到 `fetch_page`（请求 URL 维度）。
+    // 本组用例按新口径钉死（改前 ① 的「parse_source_headers 不再注入」断言与
+    // 同域共享断言应红，改造后全绿）。
 
-    /// 分裂点修复（①）：FFI HTTP 路径须像 `java.ajax` 一样携带 ETLD+1 域名键 cookie
+    /// 分裂点修复（①，上游同步改写）：FFI HTTP 路径按**请求 URL 属域**携带
+    /// ETLD+1 域名键 cookie；注入点已从 `parse_source_headers` 下沉到
+    /// `fetch_page`（按 `cookies_for_url(request_url)` 兜底）。断言分两层：
+    /// a) `parse_source_headers` 不再注入 JS Cookie（行为变化，改前红）；
+    /// b) `cookies_for_url`（fetch_page 兜底的取数层）命中域名键写入形态的
+    ///    cookie（含历史原始串键兼容）。
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_p219_ffi_http_path_carries_domain_key_cookie() {
@@ -8590,37 +8621,56 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
         const DOMAIN_KEY: &str = "example.com";
         cookie_store::clear_cookies(TAG);
         cookie_store::clear_cookies(DOMAIN_KEY);
-        // 域名键写入形态（对齐 FFI clear_cookie / 域名键约定）
+        // 域名键写入形态（非 URL 串自键 = 历史原始串键；读侧归一键 + 原始串键
+        // 双命中，兼容无迁移负担）
         cookie_store::set_cookie(DOMAIN_KEY, "p219_ffi_dk", "dk-val-ffi");
         let source = BookSource {
             book_source_url: TAG.to_string(),
             ..Default::default()
         };
+        // a) 注入点已下沉：parse_source_headers 不再注入 JS Cookie
         let headers = RealBookSourceFetcher::parse_source_headers(&source);
         let cookie = headers.as_ref().and_then(|h| h.get("Cookie").cloned());
         assert!(
-            cookie
-                .as_deref()
-                .unwrap_or("")
-                .contains("p219_ffi_dk=dk-val-ffi"),
-            "FFI HTTP 路径必须携带 ETLD+1 域名键 cookie（分裂点修复），实际: {cookie:?}"
+            cookie.as_deref().unwrap_or("").is_empty(),
+            "JS Cookie 注入已下沉 fetch_page（按请求 URL 属域兜底），parse_source_headers 不得再注入: {cookie:?}"
+        );
+        // b) fetch_page 兜底取数层（cookies_for_url）：该域请求必须命中域名键 cookie
+        let carried = cookie_store::cookies_for_url(TAG);
+        assert!(
+            carried.contains("p219_ffi_dk=dk-val-ffi"),
+            "FFI HTTP 路径（fetch_page 兜底）必须携带 ETLD+1 域名键 cookie（分裂点修复 + 原始串键兼容），实际: {carried}"
         );
         cookie_store::clear_cookies(TAG);
         cookie_store::clear_cookies(DOMAIN_KEY);
     }
 
-    /// 跨源不泄漏（②）：源 B 的 FFI HTTP 路径不得携带源 A 的 cookie
+    /// 异域不泄漏（②，原「跨源不泄漏」用例按上游语义改写，2026-09-23 用户裁决
+    /// 同步上游：cookie 属于域名，不再属于书源）：A 域写入的 cookie 绝不得
+    /// 出现在 B **域**的请求中。旧用例的 TAG_A/TAG_B（example.com 同域两子域）
+    /// 在新语义下属**同域共享**（不再泄漏），故异域对改用不同可注册域
+    ///（leak-src-a.example.com vs leak-src-b.other-site.net）。
+    /// 双档用例（无 quickjs 门控）：异域不携带不变式在两档均成立——默认档
+    /// 归一为原始串自键（无 ETLD+1），跨域同样不命中；同域共享部分依赖
+    /// ETLD+1，见下方 quickjs 门控用例。
     #[test]
-    fn test_p219_ffi_cross_source_no_leak() {
+    fn test_p219_ffi_cross_domain_no_leak() {
         let _lock = GLOBAL_STORE_TEST_LOCK
             .lock()
             .unwrap_or_else(|p| p.into_inner());
         use legado_js::host_api::cookie_store;
-        const TAG_A: &str = "https://p219ffa-a.example.com/";
-        const TAG_B: &str = "https://p219ffb-b.example.com/";
+        const TAG_A: &str = "https://p219ffa-a.leak-src-a.example.com/";
+        const TAG_B: &str = "https://p219ffb-b.leak-src-b.other-site.net/";
         cookie_store::clear_cookies(TAG_A);
         cookie_store::clear_cookies(TAG_B);
         cookie_store::set_cookie(TAG_A, "p219_ffi_a", "A-VAL-ffi");
+        // B 域请求（fetch_page 兜底取数层）不得携带 A 域 cookie
+        let carried = cookie_store::cookies_for_url(TAG_B);
+        assert!(
+            !carried.contains("p219_ffi_a"),
+            "不相关域名的 cookie 绝不携带（P2-19 不变式），B 域请求实际: {carried}"
+        );
+        // fetch_page 注入层同口径（parse_source_headers 已不再注入 JS Cookie）
         let source_b = BookSource {
             book_source_url: TAG_B.to_string(),
             ..Default::default()
@@ -8632,13 +8682,42 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             .unwrap_or_default();
         assert!(
             !cookie.contains("p219_ffi_a"),
-            "源 B 不得携带源 A 的 cookie: {cookie}"
+            "B 域书源请求头不得携带 A 域 cookie: {cookie}"
         );
         cookie_store::clear_cookies(TAG_A);
         cookie_store::clear_cookies(TAG_B);
     }
 
-    /// 多段 TLD / IP 字面量键一致（③）：FFI HTTP 路径与 HTTP 层同一套键规则
+    /// 同域跨书源共享（②'，上游语义新增正例，quickjs 档依赖 ETLD+1）：
+    /// 同一可注册域（example.com）下两个不同书源（不同子域），A 写的 cookie
+    /// B 域请求必须携带（cookie 属于域名，跨书源共享）。依据：2026-09-23
+    /// 用户裁决同步上游 `CookieManager.loadRequest`（按请求 URL 属域取）。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_p219_ffi_same_domain_cross_source_shared() {
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        use legado_js::host_api::cookie_store;
+        // 两书源子域同属 example.com（ETLD+1 末两段）
+        const TAG_A: &str = "https://a.p219share.example.com/";
+        const TAG_B: &str = "https://b.p219share.example.com/";
+        cookie_store::clear_cookies(TAG_A);
+        cookie_store::clear_cookies(TAG_B);
+        cookie_store::clear_cookies("p219share.example.com");
+        cookie_store::set_cookie(TAG_A, "p219_ffi_share", "SH-VAL-ffi");
+        let carried = cookie_store::cookies_for_url(TAG_B);
+        assert!(
+            carried.contains("p219_ffi_share=SH-VAL-ffi"),
+            "同域跨书源必须共享 cookie（上游语义：cookie 属于域名），B 域请求实际: {carried}"
+        );
+        cookie_store::clear_cookies(TAG_A);
+        cookie_store::clear_cookies(TAG_B);
+        cookie_store::clear_cookies("p219share.example.com");
+    }
+
+    /// 多段 TLD / IP 字面量键一致（③，上游同步改写）：FFI HTTP 路径（fetch_page
+    /// 兜底取数层）与 HTTP 层同一套键规则（单一真源 `domain_key_from_host`）。
     #[cfg(feature = "quickjs")]
     #[test]
     fn test_p219_ffi_multi_tld_and_ip_key_consistency() {
@@ -8651,14 +8730,9 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
         const DK_CN: &str = "book.com.cn";
         cookie_store::clear_cookies(TAG_CN);
         cookie_store::clear_cookies(DK_CN);
+        // 域名键写入形态（原始串自键）；读侧按请求 URL 归一域名键命中
         cookie_store::set_cookie(DK_CN, "p219_cn", "cn-val");
-        let src_cn = BookSource {
-            book_source_url: TAG_CN.to_string(),
-            ..Default::default()
-        };
-        let cookie_cn = RealBookSourceFetcher::parse_source_headers(&src_cn)
-            .and_then(|h| h.get("Cookie").cloned())
-            .unwrap_or_default();
+        let cookie_cn = cookie_store::cookies_for_url(TAG_CN);
         assert!(
             cookie_cn.contains("p219_cn=cn-val"),
             ".com.cn 域名键 cookie 必须携带: {cookie_cn}"
@@ -8671,13 +8745,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
         cookie_store::clear_cookies(TAG_IP);
         cookie_store::clear_cookies(DK_IP);
         cookie_store::set_cookie(DK_IP, "p219_ip", "ip-val");
-        let src_ip = BookSource {
-            book_source_url: TAG_IP.to_string(),
-            ..Default::default()
-        };
-        let cookie_ip = RealBookSourceFetcher::parse_source_headers(&src_ip)
-            .and_then(|h| h.get("Cookie").cloned())
-            .unwrap_or_default();
+        let cookie_ip = cookie_store::cookies_for_url(TAG_IP);
         assert!(
             cookie_ip.contains("p219_ip=ip-val"),
             "IP 字面量键 cookie 必须携带: {cookie_ip}"

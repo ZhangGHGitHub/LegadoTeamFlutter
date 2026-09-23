@@ -40,6 +40,12 @@ pub fn current_source_tag() -> Option<String> {
 /// 在闭包执行期间临时绑定书源标识，退出时恢复原值
 ///
 /// 供 `JsSourceEngine` 等嵌套调用场景使用，保证不破坏外层绑定。
+///
+/// 注意（2026-09-23 上游同步，用户裁决）：P2-19 曾以该绑定承载 JS cookie 取用
+/// scope（按书源 tag 维度过滤 `GLOBAL_COOKIES`）；同步上游后 cookie 取用改按
+/// **请求 URL 属域**（`cookie_store::cookies_for_url`，cookie 属于域名而非书源），
+/// 本绑定**不再承载 cookie scope**。保留不动，仍服务于全局请求头
+/// （`global_headers`，按 tag 隔离）与书源上下文（引擎分桶、验证码钩子等）。
 pub fn with_current_source_tag<R>(tag: &str, f: impl FnOnce() -> R) -> R {
     let prev = CURRENT_SOURCE.with(|cell| cell.borrow().clone());
     set_current_source_tag(tag);

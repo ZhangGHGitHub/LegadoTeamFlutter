@@ -438,7 +438,8 @@ async fn explore_books_async(
     page: i32,
 ) -> LegadoResult<Vec<WebSearchResult>> {
     // 解析书源 header（对齐原版 getHeaderMap(hasLoginHeader=true)：
-    // 静态 header + loginHeader 覆盖 + JS setCookie 全局 Cookie 兜底）— DeepSeek Harness + Bridge
+    // 静态 header + loginHeader 覆盖；JS setCookie cookie 改按**请求 URL 属域**
+    // 在下方合并请求头时兜底注入，见 2026-09-23 上游同步）— DeepSeek Harness + Bridge
     let mut source_headers: HashMap<String, String> = source
         .header
         .as_ref()
@@ -450,14 +451,6 @@ async fn explore_books_async(
         if let Ok(map) = serde_json::from_str::<HashMap<String, String>>(&login_header_json) {
             source_headers.extend(map);
         }
-    }
-    // P2-19 口径统一：与 JS `java.ajax` 路径共用同一底层函数
-    // `cookies_for_source_tag`（精确键 ∪ ETLD+1 域名键，精确键胜出），
-    // 防止详情/分类 HTTP 路径漏带域名键 cookie（原仅精确键 get_cookie）。
-    let js_cookie =
-        legado_js::host_api::cookie_store::cookies_for_source_tag(Some(&source.book_source_url));
-    if !js_cookie.is_empty() && !source_headers.contains_key("Cookie") {
-        source_headers.insert("Cookie".to_string(), js_cookie);
     }
     let source_headers = if source_headers.is_empty() {
         None
@@ -496,6 +489,15 @@ async fn explore_books_async(
     // 合并请求头：书源全局 header + AnalyzeUrl 解析出的 header
     let mut headers = source_headers.clone().unwrap_or_default();
     headers.extend(analyze_url.headers().clone());
+
+    // JS `java.setCookie` 写入的 cookie：按**请求 URL**（解析后的 final_url）
+    // 属域取——cookie 属于域名而非书源（同域跨书源共享，不相关域名绝不
+    // 携带）；`cookies_for_url` 内部归一为 `getSubDomain(url)` 等价域名键
+    // （单一真源 `legado_net::cookie_store::cookie_domain_key`）。**按键合并**
+    // 进已有 Cookie 头（已有同名键胜、非冲突键追加；键查找大小写不敏感）
+    // ——对齐上游 `AnalyzeUrl.setCookie` → `CookieManager.mergeCookies` 语义。
+    legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, &final_url);
+
     let headers_opt = if headers.is_empty() {
         None
     } else {

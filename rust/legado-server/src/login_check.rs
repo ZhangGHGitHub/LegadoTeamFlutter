@@ -152,16 +152,22 @@ mod tests {
         assert!(execute_login_check(&s, "body", "http://x", 200).is_ok());
     }
 
-    /// P2-19 后续 #7：loginCheckJs 顶层 `java.ajax` 必须携带本源 cookie
-    /// （回环 cookie 记录服务器，P2-17 同款模式；经公共入口
-    /// `execute_login_check` 验证 source_tag 全链路贯通）。
+    /// P2-19 后续 #7：loginCheckJs 顶层 `java.ajax` 必须携带**请求域**
+    /// cookie（cookie 属于域名而非书源，按请求 URL 属域携带；回环 cookie
+    /// 记录服务器，P2-17 同款模式；经公共入口 `execute_login_check` 验证
+    /// 全链路贯通）。
     #[cfg(feature = "quickjs")]
     #[test]
-    fn test_p219_login_check_js_carries_own_source_cookie() {
+    fn test_p219_login_check_js_carries_request_domain_cookie() {
         use std::io::{Read, Write};
         use std::sync::{Arc, Mutex};
 
         use legado_js::host_api::cookie_store;
+
+        // 进程级锁：本用例写/清回环域名键 127.0.0.1（全局 cookie store），
+        // 与同二进制内其他碰该键的测试串行（各 test 二进制独立进程，
+        // 无跨 crate 嵌套死锁）
+        let _lock = crate::test_support::lock_cookie_store_test();
 
         // 回环 cookie 记录服务器：记录收到的 Cookie 请求头（忽略请求 body）
         let seen: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
@@ -201,9 +207,15 @@ mod tests {
             }
         });
 
+        // 书源 tag（`with_current_source_tag` 绑定上下文，与 cookie 键无关）
         const TAG: &str = "https://p219-login.example.com/";
-        cookie_store::clear_cookies(TAG);
-        cookie_store::set_cookie(TAG, "p219_lc_token", "lc-val-91de");
+        // cookie 键 = **请求 URL 的属域键**（quickjs 档归一 IP 字面量为
+        // 自键 127.0.0.1）：cookie 属于域名而非书源，写入键须与 loginCheckJs
+        // 顶层 ajax 的请求域（echo_url 回环地址）一致，改前写 TAG 域键 →
+        // 按请求 URL 属域取落空（新语义下红测试根因）
+        let echo_url = format!("http://{addr}/echo");
+        cookie_store::clear_cookies(&echo_url);
+        cookie_store::set_cookie(&echo_url, "p219_lc_token", "lc-val-91de");
 
         // loginCheckJs 顶层 ajax（入参为 JSON 字符串——java.ajax 桥接签名
         // 为 (options: String)）+ 返回 "ok"（已登录语义）
@@ -221,8 +233,8 @@ mod tests {
             got.as_deref()
                 .unwrap_or_default()
                 .contains("p219_lc_token=lc-val-91de"),
-            "loginCheckJs 顶层 ajax 必须携带本源 cookie，实际 Cookie 头: {got:?}"
+            "loginCheckJs 顶层 ajax 必须携带请求域（127.0.0.1）cookie，实际 Cookie 头: {got:?}"
         );
-        cookie_store::clear_cookies(TAG);
+        cookie_store::clear_cookies(&echo_url);
     }
 }

@@ -285,13 +285,15 @@ pub fn ajax(input: &str) -> Result<String, String> {
     block_on(async {
         let client = build_client_for_url(&url, timeout)?;
 
+        // Cookie 合并须在 url move 进 LegadoRequest 前完成（新签名按请求 URL 取 cookie）
+        let headers = ensure_json_content_type(
+            merge_global_cookie(opts.headers.clone().unwrap_or_default(), &url),
+            &opts.body,
+        );
         let request = LegadoRequest {
             url,
             method,
-            headers: ensure_json_content_type(
-                merge_global_cookie(opts.headers.clone().unwrap_or_default()),
-                &opts.body,
-            ),
+            headers,
             body: opts.body.clone(),
             timeout: Some(std::time::Duration::from_millis(timeout)),
         };
@@ -340,24 +342,25 @@ mod http_options_tests {
 /// - 全局请求头（GLOBAL_HEADERS）：setup 阶段执行书源 header @js 规则后经
 ///   java.putGlobalHeaders 写入（书山聚合固定 X-Novel-Token 等），按当前书源
 ///   tag 隔离；JS 显式传入的 headers 优先。
-/// - 会话 Cookie（GLOBAL_COOKIES）：书山登录/setCookie 写入的 X-Novel-Token 等。
-///   **P2-19：按「当前书源 tag」（线程局部 `current_source`）过滤**，不再全量
-///   合并所有书源（`all_cookies()` 会把源 B 的 cookie 带进源 A 的请求——跨源
-///   泄漏）。未归属上下文（无当前书源）不携带任何 JS 宿主存储 cookie——见
-///   [`crate::host_api::cookie_store::cookies_for_source_tag`] 的文档注释。
-fn merge_global_cookie(mut headers: HashMap<String, String>) -> HashMap<String, String> {
+/// - 会话 Cookie（GLOBAL_COOKIES）：书山登录/`java.setCookie` 写入的
+///   X-Novel-Token 等。**上游同步（2026-09-23 用户裁决）：按请求 URL 的属域
+///   取**（`cookie_store::cookies_for_url`，写读两侧均归一为
+///   `getSubDomain(url)` 等价域名键，单一真源
+///   [`legado_net::cookie_store::cookie_domain_key`]），去掉书源 tag 维度——
+///   cookie 属于域名而非书源，同域 cookie 跨书源共享（对齐上游
+///   `CookieManager.loadRequest` 按请求 URL 取 cookie 的语义）。
+///   **按键合并**进已有 Cookie 头（已有同名键胜、非冲突 JS 键追加；
+///   键查找大小写不敏感）——对齐上游 `AnalyzeUrl.setCookie` →
+///   `CookieManager.mergeCookies` 语义。
+///   不变式保留：**不相关域名的 cookie 绝不携带**（P2-19 核心修复，不得回退）。
+fn merge_global_cookie(mut headers: HashMap<String, String>, url: &str) -> HashMap<String, String> {
     let tag = crate::host_api::current_source::current_source_tag();
     if let Some(t) = tag.as_deref() {
         for (k, v) in crate::host_api::global_headers::headers_for(t) {
             headers.entry(k).or_insert(v);
         }
     }
-    if !headers.contains_key("Cookie") {
-        let c = crate::host_api::cookie_store::cookies_for_source_tag(tag.as_deref());
-        if !c.is_empty() {
-            headers.insert("Cookie".to_string(), c);
-        }
-    }
+    crate::host_api::cookie_store::merge_js_cookies(&mut headers, url);
     headers
 }
 
@@ -415,13 +418,15 @@ fn ajax_request_body(opts: &HttpOptions) -> Result<String, String> {
     };
     block_on(async {
         let client = build_client_for_url(&url, timeout)?;
+        // Cookie 合并须在 url move 进 LegadoRequest 前完成（新签名按请求 URL 取 cookie）
+        let headers = ensure_json_content_type(
+            merge_global_cookie(opts.headers.clone().unwrap_or_default(), &url),
+            &opts.body,
+        );
         let request = LegadoRequest {
             url,
             method,
-            headers: ensure_json_content_type(
-                merge_global_cookie(opts.headers.clone().unwrap_or_default()),
-                &opts.body,
-            ),
+            headers,
             body: opts.body.clone(),
             timeout: Some(std::time::Duration::from_millis(timeout)),
         };
@@ -1173,73 +1178,118 @@ mod tests {
         addr
     }
 
-    /// P2-19 泄漏复现（先红后绿）：源 A 与源 B 各有 cookie，在**源 A 的脚本上下文**
-    /// 发 ajax → 请求头**不得**出现源 B 的 cookie；源 A 自己的 cookie 仍必须带上
-    /// （正向保留）。
+    /// 回环回显用例共享的串行锁（跨测试模块——回环域名键 `127.0.0.1` 同时被
+    /// source_engine.rs 等模块的回环用例共用）：cookie 全局存储为进程级共享，
+    /// 锁串行化「写 → 请求 → 断言 → 清理」段，避免并行用例互相清掉对方的键
+    ///（中毒恢复语义同 `legado-ffi::test_support::GLOBAL_STORE_TEST_LOCK`）。
+    fn lock_cookie_echo_test() -> std::sync::MutexGuard<'static, ()> {
+        crate::host_api::cookie_store::lock_cookie_store_test()
+    }
+
+    /// P2-19「跨源不泄漏」用例**改写为上游语义**（2026-09-23 用户裁决：同步上游
+    /// 「cookie 属于域名，不属于书源」）：
+    /// - 同域共享：向回环域（IP 字面量自键 `127.0.0.1`）写一次 cookie，
+    ///   在**不同书源上下文**（TAG_A / TAG_B）发同一回环请求，均必须携带——
+    ///   cookie 取用口径是「请求 URL 属域」，与书源 tag 无关（原「tag 维度」
+    ///   语义已废）；
+    /// - P2-19 不变式保留：异域（`f.book.com.cn`）写入的 cookie **绝不携带**
+    ///   进回环请求。
     ///
-    /// 请求目标是与源 tag 无关的第三方域（回环回显服务器），证明过滤口径是
-    /// 「当前书源 tag」而非「请求 URL 的域」；tag 用多段 TLD（com.cn）真实书源 URL 形态，
-    /// 与 HTTP 层 `domain_key_from_host` 键口径一致。
+    /// 原用例断言「源 B 的 cookie 不得出现在源 A 的请求头」；新口径下源 A/B 的
+    /// book.com.cn 域 cookie 本就不属回环域，故改写为「异域不携带」+「同域共享」。
     #[test]
-    fn test_p219_ajax_cookie_no_cross_source_leak() {
+    fn test_p219_ajax_cookie_same_domain_shared_foreign_never_carried() {
         use crate::host_api::{cookie_store, current_source};
 
         const TAG_A: &str = "https://www.a.book.com.cn/";
         const TAG_B: &str = "https://www.b.book.com.cn/";
-        cookie_store::clear_cookies(TAG_A);
-        cookie_store::clear_cookies(TAG_B);
-        cookie_store::set_cookie(TAG_A, "p219_tokenA", "A-VAL-9f3c");
-        cookie_store::set_cookie(TAG_B, "p219_tokenB", "B-VAL-7a1d");
+        const FOREIGN_URL: &str = "https://www.f.book.com.cn/";
+        const FOREIGN_KEY: &str = "f.book.com.cn"; // com.cn 多段 TLD → 末三段
 
         let addr = spawn_cookie_echo_server(4);
-        let resp_json = current_source::with_current_source_tag(TAG_A, || {
-            ajax(&format!(r#"{{"url":"http://{addr}/echo"}}"#))
-                .expect("ajax to loopback cookie-echo server")
-        });
-        // 清理：全局 cookie 存储为进程级共享，避免污染并行用例
-        cookie_store::clear_cookies(TAG_A);
-        cookie_store::clear_cookies(TAG_B);
+        let loopback_key = format!("http://{addr}/"); // 归一后域名键 = "127.0.0.1"
+        let _lock = lock_cookie_echo_test();
+        cookie_store::clear_cookies(&loopback_key);
+        cookie_store::clear_cookies(FOREIGN_URL);
+        cookie_store::clear_cookies(FOREIGN_KEY);
+        cookie_store::set_cookie(&loopback_key, "p219_sync", "SYNC-VAL-1f8a");
+        // 异域 cookie：绝不泄漏进回环请求（P2-19 不变式）
+        cookie_store::set_cookie(FOREIGN_URL, "p219_foreign", "F-VAL-6c2e");
 
-        let resp: HttpResponse = serde_json::from_str(&resp_json).expect("ajax 响应 JSON");
-        assert_eq!(resp.status_code, 200, "回显服务器应返回 200: {}", resp.body);
-        let echoed: serde_json::Value = serde_json::from_str(&resp.body).expect("回显体 JSON");
-        let cookie_str = echoed
-            .get("cookie")
-            .and_then(|v| v.as_str())
-            .unwrap_or("")
-            .to_string();
-        // 正向保留：源 A 自己的 cookie 必须仍带上（不得因修复而全丢）
-        assert!(
-            cookie_str.contains("p219_tokenA=A-VAL-9f3c"),
-            "源 A 自己的 cookie 必须仍带上，实际请求头 Cookie 为: {cookie_str}"
-        );
-        // 泄漏检查：源 B 的 cookie 不得出现（修复前 all_cookies() 全量合并 → 红）
-        assert!(
-            !cookie_str.contains("p219_tokenB"),
-            "跨源泄漏：源 B 的 cookie 出现在源 A 的请求头中: {cookie_str}"
-        );
+        // 书源 A 上下文
+        let resp_a = current_source::with_current_source_tag(TAG_A, || {
+            ajax(&format!(r#"{{"url":"http://{addr}/echo"}}"#))
+                .expect("ajax to loopback cookie-echo server (tag A)")
+        });
+        // 书源 B 上下文：同一请求 URL → 同域 cookie 跨书源共享
+        let resp_b = current_source::with_current_source_tag(TAG_B, || {
+            ajax(&format!(r#"{{"url":"http://{addr}/echo"}}"#))
+                .expect("ajax to loopback cookie-echo server (tag B)")
+        });
+
+        cookie_store::clear_cookies(&loopback_key);
+        cookie_store::clear_cookies(FOREIGN_URL);
+        cookie_store::clear_cookies(FOREIGN_KEY);
+        drop(_lock);
+
+        for (ctx, resp_json) in [("A", resp_a), ("B", resp_b)] {
+            let resp: HttpResponse = serde_json::from_str(&resp_json).expect("ajax 响应 JSON");
+            assert_eq!(resp.status_code, 200, "回显服务器应返回 200: {}", resp.body);
+            let echoed: serde_json::Value = serde_json::from_str(&resp.body).expect("回显体 JSON");
+            let cookie_str = echoed
+                .get("cookie")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+            assert!(
+                cookie_str.contains("p219_sync=SYNC-VAL-1f8a"),
+                "同域（回环）cookie 必须跨书源共享（上游语义：cookie 属于域名），\
+                 书源 {ctx} 上下文实际 Cookie 为: {cookie_str}"
+            );
+            assert!(
+                !cookie_str.contains("p219_foreign"),
+                "异域 cookie 绝不携带（P2-19 不变式），书源 {ctx} 上下文实际 Cookie 为: {cookie_str}"
+            );
+        }
     }
 
-    /// P2-19 未归属上下文：无法确定当前书源（无 `with_current_source_tag` 绑定）时，
-    /// ajax 请求**不得携带任何** JS 宿主存储 cookie（安全默认：宁可不带，不得错带；
-    /// 旧行为 all_cookies() 全量合并正是泄漏源，修复后归零）。
+    /// P2-19「未归属不携带」用例**改写为上游语义**（2026-09-23 用户裁决：同步上游，
+    /// 本批取消 P2-19 的「未归属不携带」收紧）：未归属上下文（字典规则/自动任务
+    /// 等无书源绑定的 JS 执行路径）向某域发请求时，**仍必须携带该域 cookie**——
+    /// 上游 `CookieManager.loadRequest` 按**请求 URL** 取 cookie，与书源上下文无关。
+    /// 异域（x/y.book.com.cn）cookie 依旧绝不携带（P2-19 不变式保留）。
     #[test]
-    fn test_p219_ajax_cookie_unowned_attaches_nothing() {
+    fn test_p219_ajax_cookie_unowned_carries_request_domain_cookie() {
         use crate::host_api::{cookie_store, current_source};
 
         const TAG_X: &str = "https://www.x.book.com.cn/";
         const TAG_Y: &str = "https://www.y.book.com.cn/";
+        const DK_X: &str = "x.book.com.cn"; // com.cn 多段 TLD → 末三段
+        const DK_Y: &str = "y.book.com.cn";
+
+        let addr = spawn_cookie_echo_server(2);
+        let loopback_key = format!("http://{addr}/"); // 归一后域名键 = "127.0.0.1"
+        let _lock = lock_cookie_echo_test();
+        cookie_store::clear_cookies(&loopback_key);
         cookie_store::clear_cookies(TAG_X);
         cookie_store::clear_cookies(TAG_Y);
+        cookie_store::clear_cookies(DK_X);
+        cookie_store::clear_cookies(DK_Y);
+        cookie_store::set_cookie(&loopback_key, "p219_unowned", "UN-VAL-3d9e");
+        // 异域 cookie：未归属请求异域时依旧绝不携带
         cookie_store::set_cookie(TAG_X, "p219_tokenX", "X-VAL-5e2b");
         cookie_store::set_cookie(TAG_Y, "p219_tokenY", "Y-VAL-c44a");
 
-        let addr = spawn_cookie_echo_server(2);
         current_source::clear_current_source_tag(); // 确保未归属
         let resp_json = ajax(&format!(r#"{{"url":"http://{addr}/echo"}}"#))
             .expect("ajax to loopback cookie-echo server");
+
+        cookie_store::clear_cookies(&loopback_key);
         cookie_store::clear_cookies(TAG_X);
         cookie_store::clear_cookies(TAG_Y);
+        cookie_store::clear_cookies(DK_X);
+        cookie_store::clear_cookies(DK_Y);
+        drop(_lock);
 
         let resp: HttpResponse = serde_json::from_str(&resp_json).expect("ajax 响应 JSON");
         assert_eq!(resp.status_code, 200, "回显服务器应返回 200: {}", resp.body);
@@ -1250,56 +1300,95 @@ mod tests {
             .unwrap_or("")
             .to_string();
         assert!(
-            cookie_str.is_empty(),
-            "未归属上下文的请求不得携带任何 JS 宿主存储 cookie，实际: {cookie_str}"
+            cookie_str.contains("p219_unowned=UN-VAL-3d9e"),
+            "未归属上下文请求回环域时必须携带该域 cookie（上游语义，本批取消收紧），实际: {cookie_str}"
+        );
+        assert!(
+            !cookie_str.contains("p219_tokenX") && !cookie_str.contains("p219_tokenY"),
+            "异域 cookie 绝不携带（P2-19 不变式），实际: {cookie_str}"
         );
     }
 
-    /// P2-19 `merge_global_cookie` 单元口径：Cookie 头按当前书源 tag 过滤
-    /// （A 在 / B 不在），不走真实网络，确定性快。
+    /// `merge_global_cookie` 单元口径（上游同步改写）：Cookie 头按**请求 URL** 的
+    /// 属域取（不再按当前书源 tag）——请求 URL 属域写过的 cookie 必须携带，
+    /// 不相关域名的 cookie 绝不注入（P2-19 不变式）。不走真实网络，确定性快。
     #[test]
-    fn test_p219_merge_global_cookie_filters_by_source_tag() {
+    fn test_merge_global_cookie_keyed_by_request_url() {
         use crate::host_api::{cookie_store, current_source};
 
-        const TAG_A: &str = "https://unit.a.book.com.cn/";
-        const TAG_B: &str = "https://unit.b.book.com.cn/";
-        cookie_store::clear_cookies(TAG_A);
-        cookie_store::clear_cookies(TAG_B);
-        cookie_store::set_cookie(TAG_A, "p219_uA", "uA-val");
-        cookie_store::set_cookie(TAG_B, "p219_uB", "uB-val");
+        let _lock = cookie_store::lock_cookie_store_test();
 
-        let headers =
-            current_source::with_current_source_tag(TAG_A, || merge_global_cookie(HashMap::new()));
-        cookie_store::clear_cookies(TAG_A);
-        cookie_store::clear_cookies(TAG_B);
+        // book.com.cn（com.cn 多段 TLD → 末三段）与 other-site.com（.com 末两段）
+        const REQ_URL: &str = "https://unit-a.book.com.cn/page";
+        const OTHER_URL: &str = "https://unit-b.other-site.com/page";
+        const DK_A: &str = "book.com.cn";
+        const DK_B: &str = "other-site.com";
 
-        let cookie = headers.get("Cookie").cloned().unwrap_or_default();
+        cookie_store::clear_cookies(REQ_URL);
+        cookie_store::clear_cookies(OTHER_URL);
+        cookie_store::clear_cookies(DK_A);
+        cookie_store::clear_cookies(DK_B);
+        cookie_store::set_cookie(REQ_URL, "p219_uA", "uA-val");
+        cookie_store::set_cookie(OTHER_URL, "p219_uB", "uB-val");
+
+        current_source::clear_current_source_tag();
+        let headers_a = merge_global_cookie(HashMap::new(), REQ_URL);
+        let headers_b = merge_global_cookie(HashMap::new(), OTHER_URL);
+
+        cookie_store::clear_cookies(REQ_URL);
+        cookie_store::clear_cookies(OTHER_URL);
+        cookie_store::clear_cookies(DK_A);
+        cookie_store::clear_cookies(DK_B);
+
+        let cookie_a = headers_a.get("Cookie").cloned().unwrap_or_default();
         assert!(
-            cookie.contains("p219_uA=uA-val"),
-            "源 A 自己的 cookie 必须保留: {cookie}"
+            cookie_a.contains("p219_uA=uA-val"),
+            "请求 URL 属域写过的 cookie 必须携带: {cookie_a}"
         );
         assert!(
-            !cookie.contains("p219_uB"),
-            "源 B 的 cookie 不得泄漏进源 A 的请求头: {cookie}"
+            !cookie_a.contains("p219_uB"),
+            "不相关域名的 cookie 绝不携带（P2-19 不变式）: {cookie_a}"
+        );
+        let cookie_b = headers_b.get("Cookie").cloned().unwrap_or_default();
+        assert!(
+            cookie_b.contains("p219_uB=uB-val"),
+            "请求 URL 属域写过的 cookie 必须携带: {cookie_b}"
+        );
+        assert!(
+            !cookie_b.contains("p219_uA"),
+            "不相关域名的 cookie 绝不携带（P2-19 不变式）: {cookie_b}"
         );
     }
 
-    /// P2-19 未归属上下文单元口径：无当前书源 tag 时不注入 Cookie 头。
+    /// 未归属上下文单元口径（上游同步改写）：Cookie 头按**请求 URL** 属域取——
+    /// 请求 URL 属域未写过 cookie 时不注入 Cookie 头（异域已写入的 cookie
+    /// 绝不注入，P2-19 不变式）。用例域为独有域名，避免与并行用例共享键。
     #[test]
-    fn test_p219_merge_global_cookie_unowned_no_cookie_header() {
+    fn test_merge_global_cookie_unowned_no_cookie_for_unwritten_domain() {
         use crate::host_api::{cookie_store, current_source};
 
-        const TAG_Z: &str = "https://unit.z.book.com.cn/";
-        cookie_store::clear_cookies(TAG_Z);
-        cookie_store::set_cookie(TAG_Z, "p219_uZ", "uZ-val");
+        let _lock = cookie_store::lock_cookie_store_test();
+
+        // 独有域名（本用例专用，不与其它并行用例共享键）
+        const WRITE_URL: &str = "https://unitz.unitzeta.com/"; // → 域名键 unitzeta.com
+        const REQ_URL: &str = "https://unitq.uniteta.com/x"; // → 域名键 uniteta.com
+        const DK_WRITE: &str = "unitzeta.com";
+        const DK_REQ: &str = "uniteta.com";
+
+        cookie_store::clear_cookies(WRITE_URL);
+        cookie_store::clear_cookies(DK_WRITE);
+        cookie_store::clear_cookies(DK_REQ);
+        cookie_store::set_cookie(WRITE_URL, "p219_uZ", "uZ-val");
 
         current_source::clear_current_source_tag(); // 确保未归属
-        let headers = merge_global_cookie(HashMap::new());
-        cookie_store::clear_cookies(TAG_Z);
+        let headers = merge_global_cookie(HashMap::new(), REQ_URL);
+        cookie_store::clear_cookies(WRITE_URL);
+        cookie_store::clear_cookies(DK_WRITE);
+        cookie_store::clear_cookies(DK_REQ);
 
         assert!(
             !headers.contains_key("Cookie"),
-            "未归属上下文不得注入 JS 宿主存储 cookie: {:?}",
+            "请求 URL 属域未写过 cookie 时不得注入 Cookie 头（异域 cookie 绝不注入）: {:?}",
             headers.get("Cookie")
         );
     }

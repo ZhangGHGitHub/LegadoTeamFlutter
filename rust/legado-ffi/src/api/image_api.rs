@@ -517,21 +517,30 @@ decryptImage(result);"#;
         assert_eq!(b, vec![3, 4]);
     }
 
-    /// P2-19 回归面：imageDecode 执行路径已绑定当前书源 tag——
-    /// 本源 JS 宿主 cookie 必须随 `java.ajax` 携带（正向保留），且不得带
-    /// 其他源的 cookie（跨源不泄漏）；与 network.rs「未归属不携带」用例对照。
+    /// P2-19 回归面（2026-09-23 上游同步改写）：imageDecode 执行路径的
+    /// `java.ajax` 必须携带**请求 URL 属域**的 cookie（上游语义：cookie
+    /// 属于域名而非书源，读侧按请求 URL 属域取 `cookie_store::cookies_for_url`，
+    /// 去掉书源 tag 维度）；不相关域名的 cookie 绝不携带（P2-19 核心不变式
+    /// 保留）；旧「本源携带 / 跨源不泄漏」口径随用户裁决同步上游而改写。
     ///
     /// 机制：imageDecode 规则内 `java.ajax` 打到回环 cookie-记录服务器
     /// （std TcpListener，P2-17 同款模式），服务器把收到的 `Cookie` 请求头
-    /// 记入共享状态；`decode_image_bytes` 内部 `with_current_source_tag`
-    /// （本文件修复点）使 ajax 的 Cookie 过滤命中本源 tag。
+    /// 记入共享状态；`decode_image_bytes` 内部 `with_current_source_tag` 绑定
+    /// （本文件修复点）不再承载 cookie scope（保留供 global_headers / 书源
+    /// 上下文）；回环域名键（127.0.0.1，IP 自键）与 js_executor P2-19 用例
+    /// 共享，须持全局存储锁串行。
     #[cfg(feature = "quickjs")]
     #[test]
-    fn test_p219_image_decode_path_carries_own_source_cookie() {
+    fn test_p219_image_decode_path_carries_request_domain_cookie() {
         use std::io::{Read, Write};
         use std::sync::{Arc, Mutex};
 
         use legado_js::host_api::cookie_store;
+
+        // 回环域名键（127.0.0.1）为进程级共享键，与 js_executor P2-19 用例串行
+        let _lock = crate::test_support::GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
 
         // 回环 cookie 记录服务器：记录收到的 Cookie 请求头（忽略请求 body）
         let seen: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
@@ -571,12 +580,16 @@ decryptImage(result);"#;
             }
         });
 
+        // 书源上下文（引擎分桶 / with_current_source_tag 绑定）；cookie 取用不再按 tag
         const TAG: &str = "https://p219-img.example.com/";
-        const OTHER_TAG: &str = "https://p219-img-other.example.com/";
-        cookie_store::set_cookie(TAG, "p219_img_token", "img-val-7c3e");
-        cookie_store::set_cookie(OTHER_TAG, "p219_img_other", "other-val-2d8a");
-
+        // 不相关域（other-site.com 与 127.0.0.1 属不同注册域）
+        const OTHER_TAG: &str = "https://p219-img-other.other-site.com/";
         let url = format!("http://{addr}/echo");
+        // 上游同步：携带的 cookie 键 = 请求 URL 归一域名键（127.0.0.1，IP 自键）
+        cookie_store::clear_cookies(&url);
+        cookie_store::clear_cookies(OTHER_TAG);
+        cookie_store::set_cookie(&url, "p219_img_token", "img-val-7c3e");
+        cookie_store::set_cookie(OTHER_TAG, "p219_img_other", "other-val-2d8a");
         let src: BookSource = serde_json::from_value(serde_json::json!({
             "bookSourceUrl": TAG,
             "bookSourceName": "t",
@@ -605,16 +618,16 @@ decryptImage(result);"#;
             got.as_deref()
                 .unwrap_or_default()
                 .contains("p219_img_token=img-val-7c3e"),
-            "本源 cookie 必须携带，实际 Cookie 头: {got:?}"
+            "请求 URL 属域（127.0.0.1）cookie 必须携带，实际 Cookie 头: {got:?}"
         );
         assert!(
             !got.as_deref()
                 .unwrap_or_default()
                 .contains("p219_img_other"),
-            "其他源 cookie 不得出现，实际 Cookie 头: {got:?}"
+            "不相关域名的 cookie 绝不携带（P2-19 不变式），实际 Cookie 头: {got:?}"
         );
 
-        cookie_store::clear_cookies(TAG);
+        cookie_store::clear_cookies(&url);
         cookie_store::clear_cookies(OTHER_TAG);
     }
 

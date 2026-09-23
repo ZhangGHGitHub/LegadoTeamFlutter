@@ -108,8 +108,15 @@ pub fn clear_cookie(url: &str) -> LegadoResult<()> {
         })?;
     }
 
-    // 3. JS 宿主 Cookie（java.clearCookies(tag) 同源）
+    // 3. JS 宿主 Cookie（java.clearCookies(url) 同源）：
+    //    清归一域名键（单一真源 `domain_key_from_host`，与写侧归一口径一致），
+    //    并追加清原始 URL 形态键——上游同步（2026-09-23 用户裁决）后读侧容忍
+    //    「归一键 + 原始串键」双命中，历史数据或 JS 侧可能直接以原始 URL 串
+    //    为键写入，须连 raw 键一并清除才不漏。http(s) 可解析 URL 的
+    //    norm(url) 即上行的 `domain` 键，两行删除互为幂等超集；非 http(s)
+    //    串两键相同，同样幂等。
     legado_js::host_api::cookie_store::clear_cookies(&domain);
+    legado_js::host_api::cookie_store::clear_cookies(url);
 
     Ok(())
 }

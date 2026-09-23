@@ -34,17 +34,30 @@ use std::sync::{Arc, Mutex};
 
 use crate::api::web_book::RealBookSourceFetcher;
 use legado_core::models::book_source::BookSource;
-use legado_core::models::rule::{BookInfoRule, TocRule};
+#[cfg_attr(not(feature = "quickjs"), allow(unused_imports))]
+use legado_core::models::rule::{BookInfoRule, SearchRule, TocRule};
 use legado_core::web_book::BookSourceFetcher;
 
+/// 单条记录请求：完整请求 target（含 query）+ Cookie 请求行（无则 None；
+/// 按行大小写不敏感提取——E2E 断言「请求头携带预期域 JS cookie」的数据源）
+#[derive(Debug, Clone)]
+struct RecordedRequest {
+    target: String,
+    /// E2E 断言数据源（quickjs 档）；默认档不读（RecordingServer 两档
+    /// 一致记录保持结构形态相同）
+    #[cfg_attr(not(feature = "quickjs"), allow(dead_code))]
+    cookie: Option<String>,
+}
+
 /// 记录型夹具服务器：投递固定目录响应，并记录全部请求 target（含 query）
+/// 与 Cookie 请求行
 struct RecordingServer {
     port: u16,
-    requests: Arc<Mutex<Vec<String>>>,
+    requests: Arc<Mutex<Vec<RecordedRequest>>>,
 }
 
 fn spawn_recording_server() -> RecordingServer {
-    let requests: Arc<Mutex<Vec<String>>> = Arc::default();
+    let requests: Arc<Mutex<Vec<RecordedRequest>>> = Arc::default();
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind 记录型夹具服务器");
     let port = listener.local_addr().unwrap().port();
     let reqs = Arc::clone(&requests);
@@ -57,7 +70,7 @@ fn spawn_recording_server() -> RecordingServer {
     RecordingServer { port, requests }
 }
 
-fn handle_conn(stream: &mut TcpStream, requests: &Arc<Mutex<Vec<String>>>) {
+fn handle_conn(stream: &mut TcpStream, requests: &Arc<Mutex<Vec<RecordedRequest>>>) {
     let mut buf = Vec::new();
     let mut byte = [0u8; 1];
     // 读请求头（到空行为止）
@@ -80,7 +93,18 @@ fn handle_conn(stream: &mut TcpStream, requests: &Arc<Mutex<Vec<String>>>) {
         .nth(1)
         .unwrap_or("/")
         .to_string();
-    requests.lock().unwrap().push(target.clone());
+    // Cookie 请求行（按行大小写不敏感匹配：reqwest 发 "Cookie"，源 header
+    // 小写 "cookie" 变体同样要能记录）
+    let cookie = head.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.trim()
+            .eq_ignore_ascii_case("cookie")
+            .then(|| value.trim().to_string())
+    });
+    requests.lock().unwrap().push(RecordedRequest {
+        target: target.clone(),
+        cookie,
+    });
 
     let path_only = target.split('?').next().unwrap_or("/").to_string();
     let (status, body) = match path_only.as_str() {
@@ -159,7 +183,12 @@ async fn get_chapters_with_vars_fetches_passed_toc_url_without_rederive() {
         .lock()
         .unwrap()
         .iter()
-        .map(|t| t.strip_prefix(&base).unwrap_or(t.as_str()).to_string())
+        .map(|r| {
+            r.target
+                .strip_prefix(&base)
+                .unwrap_or(r.target.as_str())
+                .to_string()
+        })
         .collect();
     assert_eq!(
         requests,
@@ -341,11 +370,169 @@ async fn toc_embedded_in_detail_page_url() {
         .lock()
         .unwrap()
         .iter()
-        .map(|t| t.strip_prefix(&base).unwrap_or(t.as_str()).to_string())
+        .map(|r| {
+            r.target
+                .strip_prefix(&base)
+                .unwrap_or(r.target.as_str())
+                .to_string()
+        })
         .collect();
     assert_eq!(
         requests,
         vec!["/detail".to_string()],
         "应恰好一次请求且打到传入的详情/目录 URL: {requests:?}"
     );
+}
+
+// ─── [P2-19 E2E 2026-09-23] 请求头携带预期域 JS cookie（不变式端到端化）──
+//
+// 记录型夹具服务器现在同时记录每个请求的 Cookie 请求行，可端到端断言：
+// 1. fetch_page 路径（search）的请求携带请求域（127.0.0.1）的 JS cookie；
+// 2. fetch_simple_cached 路径（目录 nextTocUrl 分页）的请求同样携带
+//    请求域的 JS cookie（此前该路径漏注入 → 分页请求丢 cookie 的回归）；
+// 3. 不变式：异域 JS cookie 绝不出现在 127.0.0.1 请求头（P2-19）。
+//
+// quickjs 门控：跨路径共享 127.0.0.1 域键依赖 ETLD+1 归一（IP 字面量
+// 自键，写 /all-chapter 与读 /toc/page2 均归一到 127.0.0.1）；默认档
+// raw 串自键只能命中同串 → 跨路径必 miss，本组断言仅在 quickjs 档成立。
+// 持 `lock_global_store()` 与本 crate P2-19 测试组（共享全局 cookie store
+// 的 127.0.0.1 键）串行。
+
+/// 异域 JS cookie 键（域 e2e-iso.com.cn；127.0.0.1 请求头必须不含它）
+#[cfg(feature = "quickjs")]
+const FOREIGN: &str = "https://www.f.e2e-iso.com.cn/";
+
+/// 清全局 cookie store 中本组测试可能占用的键（write 键 / IP 自键 /
+/// 异域两种归一形态），开/关各清一次防测试间串键。
+#[cfg(feature = "quickjs")]
+fn clear_e2e_cookie_keys(write_url: &str) {
+    use legado_js::host_api::cookie_store;
+    cookie_store::clear_cookies(write_url);
+    cookie_store::clear_cookies("127.0.0.1");
+    cookie_store::clear_cookies(FOREIGN);
+    cookie_store::clear_cookies("e2e-iso.com.cn");
+}
+
+/// E2E ① fetch_page 路径：search 请求头携带请求域 JS cookie，且不含异域 cookie。
+/// 测试锁语义：`lock_global_store()` 必须覆盖「写 → 请求 → 断言 → 清理」整段
+///（防并行用例途中抹掉对方键）；该 await 是本地回环 RecordingServer 请求，
+/// 测试锁为进程级串行而非生产锁，故显式 allow。
+#[cfg(feature = "quickjs")]
+#[allow(clippy::await_holding_lock)]
+#[tokio::test]
+async fn e2e_fetch_page_path_carries_request_domain_js_cookie() {
+    let _lock = crate::test_support::lock_global_store();
+    use legado_js::host_api::cookie_store;
+
+    let server = spawn_recording_server();
+    let base = format!("http://127.0.0.1:{}", server.port);
+    let write_url = format!("{base}/all-chapter");
+    clear_e2e_cookie_keys(&write_url);
+    // JS 写请求域 cookie（quickjs 档归一为 IP 自键 127.0.0.1）+ 异域 cookie
+    cookie_store::set_cookie(&write_url, "p219_e2e", "e2e-val-7c41");
+    cookie_store::set_cookie(FOREIGN, "p219_foreign", "foreign-val-0a1b");
+
+    let source = BookSource {
+        book_source_url: base.clone(),
+        book_source_name: "p219-e2e-fetch-page-fixture".into(),
+        search_url: Some(write_url.clone()),
+        rule_search: Some(SearchRule {
+            book_list: Some("$.rows[*]".into()),
+            name: Some(".title".into()),
+            book_url: Some(".url".into()),
+            ..Default::default()
+        }),
+        ..BookSource::default()
+    };
+
+    let fetcher = RealBookSourceFetcher::new().expect("real fetcher");
+    let books = fetcher
+        .search(&source, "k", 1)
+        .await
+        .expect("search 不应失败");
+    assert_eq!(books.len(), 3, "夹具应出 3 本: {books:?}");
+
+    // fetch_page 路径请求（target /all-chapter）头携带请求域 JS cookie
+    let reqs = server.requests.lock().unwrap();
+    let req = reqs
+        .iter()
+        .find(|r| {
+            r.target
+                .strip_prefix(&base)
+                .unwrap_or(r.target.as_str())
+                .starts_with("/all-chapter")
+        })
+        .expect("search 应向 /all-chapter 发请求");
+    let cookie = req.cookie.clone().expect("请求头应携带 Cookie 行");
+    assert!(
+        cookie.contains("p219_e2e=e2e-val-7c41"),
+        "fetch_page 路径请求应携带请求域 JS cookie，实际: {cookie}"
+    );
+    assert!(
+        !cookie.contains("p219_foreign"),
+        "异域 JS cookie 不得出现在请求头（P2-19 不变式），实际: {cookie}"
+    );
+
+    clear_e2e_cookie_keys(&write_url);
+}
+
+/// E2E ② fetch_simple_cached 路径：目录 nextTocUrl 分页请求头携带请求域
+/// JS cookie（改前该路径漏注入 → 本用例必红），且不含异域 cookie
+#[cfg(feature = "quickjs")]
+#[allow(clippy::await_holding_lock)]
+#[tokio::test]
+async fn e2e_fetch_simple_cached_path_carries_request_domain_js_cookie() {
+    let _lock = crate::test_support::lock_global_store();
+    use legado_js::host_api::cookie_store;
+
+    let server = spawn_recording_server();
+    let base = format!("http://127.0.0.1:{}", server.port);
+    let write_url = format!("{base}/all-chapter");
+    clear_e2e_cookie_keys(&write_url);
+    cookie_store::set_cookie(&write_url, "p219_e2e2", "e2e2-val-3d58");
+    cookie_store::set_cookie(FOREIGN, "p219_foreign", "foreign-val-0a1b");
+
+    let source = BookSource {
+        book_source_url: base.clone(),
+        book_source_name: "p219-e2e-simple-cached-fixture".into(),
+        rule_toc: Some(TocRule {
+            chapter_list: Some("$.rows[*]".into()),
+            chapter_name: Some(".title".into()),
+            chapter_url: Some(".url".into()),
+            next_toc_url: Some("$.nextPage".into()),
+            ..Default::default()
+        }),
+        ..BookSource::default()
+    };
+
+    let fetcher = RealBookSourceFetcher::new().expect("real fetcher");
+    let chapters = fetcher
+        .get_chapters_with_vars(&source, &write_url, &HashMap::new())
+        .await
+        .expect("get_chapters_with_vars 不应失败");
+    // page1 3 章 + page2（nextPage）空 rows → 共 3 章
+    assert_eq!(chapters.len(), 3, "应解析出 3 章: {chapters:?}");
+
+    // fetch_simple_cached 路径请求（nextTocUrl 分页 /toc/page2）头携带请求域 JS cookie
+    let reqs = server.requests.lock().unwrap();
+    let req = reqs
+        .iter()
+        .find(|r| {
+            r.target
+                .strip_prefix(&base)
+                .unwrap_or(r.target.as_str())
+                .starts_with("/toc/page2")
+        })
+        .expect("nextTocUrl 分页应向 /toc/page2 发请求");
+    let cookie = req.cookie.clone().expect("分页请求头应携带 Cookie 行");
+    assert!(
+        cookie.contains("p219_e2e2=e2e2-val-3d58"),
+        "fetch_simple_cached 路径请求应携带请求域 JS cookie，实际: {cookie}"
+    );
+    assert!(
+        !cookie.contains("p219_foreign"),
+        "异域 JS cookie 不得出现在请求头（P2-19 不变式），实际: {cookie}"
+    );
+
+    clear_e2e_cookie_keys(&write_url);
 }

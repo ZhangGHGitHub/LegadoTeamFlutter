@@ -405,14 +405,19 @@ mod tests {
         zip_path.to_string_lossy().to_string()
     }
 
-    /// 简单 UUID（避免测试依赖 uuid crate feature）
+    /// 简单 UUID（避免测试依赖 uuid crate feature；进程内递增序号防并发撞刻）
     fn uuid() -> String {
+        use std::sync::atomic::{AtomicU64, Ordering};
         use std::time::{SystemTime, UNIX_EPOCH};
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .subsec_nanos();
-        format!("{:x}{:x}", std::process::id(), nanos)
+        // 进程内单调序号：防两次并发 create_test_zip 落在同一时钟刻（SystemTime
+        // 粒度较粗）撞目录——共享 test.zip 被截断 / 目录被先结束者删掉的 flake
+        let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+        format!("{:x}{:x}{:x}", std::process::id(), nanos, seq)
     }
 
     #[test]

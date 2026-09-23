@@ -524,20 +524,25 @@ mod tests {
         );
     }
 
-    /// P2-19 后续 #10：`new_quickjs` 构造期 mainJs 顶层 `java.ajax` 必须携带本源 cookie。
+    /// P2-19 后续 #10（2026-09-23 上游同步改写）：`new_quickjs` 构造期 mainJs
+    /// 顶层 `java.ajax` 必须携带**请求 URL 属域**的 cookie（上游语义：cookie
+    /// 属于域名而非书源，读侧按请求 URL 属域取；P2-19「未归属不携带」收紧已
+    /// 随用户裁决取消——书源 tag 绑定不再承载 cookie scope，保留供引擎分桶）。
     ///
     /// 机制：`new_quickjs` → `engine_cache::get_or_create("mainjs:{url}:{mainJs}")`
     /// → `init_engine` 在构造期 eval mainJs（顶层 `java.ajax` 即发起真实请求）。
-    /// 该路径须绑定本源 tag（`with_current_source_tag(&config.source_url)`），
-    /// 否则落入「未归属上下文」，连本源自己的 cookie 也不携带（与
-    /// network.rs「未归属不携带」用例对照）。请求目标为回环 cookie 记录服务器
-    /// （P2-17 同款 std TcpListener 模式）；缓存键含随机端口，用例间不串扰。
+    /// 请求目标为回环 cookie 记录服务器（P2-17 同款 std TcpListener 模式）；
+    /// 回环域名键（127.0.0.1，IP 自键）与 network.rs 回环用例共享，须持
+    /// `cookie_store::COOKIE_STORE_TEST_LOCK` 串行；缓存键含随机端口，用例间不串扰。
     #[cfg(feature = "quickjs")]
     #[test]
-    fn test_p219_new_quickjs_construction_carries_own_source_cookie() {
+    fn test_p219_new_quickjs_construction_carries_request_domain_cookie() {
         use crate::host_api::cookie_store;
         use std::io::{Read, Write};
         use std::sync::Mutex;
+
+        // 回环域名键（127.0.0.1）为进程级共享键，与 network.rs 回环用例串行
+        let _lock = cookie_store::lock_cookie_store_test();
 
         // 回环 cookie 记录服务器：记录收到的 Cookie 请求头（忽略请求 body）
         let seen: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
@@ -577,14 +582,17 @@ mod tests {
             }
         });
 
+        // 书源上下文仍传入（引擎分桶 / 缓存键），cookie 取用不再按 tag
         const TAG: &str = "https://p219-mainjs.example.com/";
-        cookie_store::clear_cookies(TAG);
-        cookie_store::set_cookie(TAG, "p219_mainjs_token", "mainjs-val-4a7b");
+        // 上游同步：cookie 键 = 请求 URL 归一域名键（回环 IP 自键 127.0.0.1）
+        let echo_url = format!("http://{addr}/echo");
+        cookie_store::clear_cookies(&echo_url);
+        cookie_store::set_cookie(&echo_url, "p219_mainjs_token", "mainjs-val-4a7b");
 
         // mainJs 顶层 `java.ajax`（入参为 JSON 字符串——java.ajax 桥接签名
         // 为 (options: String)，形态与 network.rs p219 用例一致）
         let main_js = format!(
-            r#"java.ajax('{{"url":"http://{addr}/echo"}}');
+            r#"java.ajax('{{"url":"{echo_url}"}}');
 function search(q) {{ return q; }}"#
         );
         let config = JsSourceConfig::new(TAG.to_string(), main_js);
@@ -595,8 +603,9 @@ function search(q) {{ return q; }}"#
             got.as_deref()
                 .unwrap_or_default()
                 .contains("p219_mainjs_token=mainjs-val-4a7b"),
-            "构造期 mainJs 顶层 ajax 必须携带本源 cookie，实际 Cookie 头: {got:?}"
+            "构造期 mainJs 顶层 ajax 必须携带请求 URL 属域（127.0.0.1）cookie，实际 Cookie 头: {got:?}"
         );
-        cookie_store::clear_cookies(TAG);
+        cookie_store::clear_cookies(&echo_url);
+        drop(_lock);
     }
 }

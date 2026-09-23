@@ -2102,34 +2102,41 @@ fn register_cookie_apis<'js>(
     java: &rquickjs::Object<'js>,
     globals: &rquickjs::Object<'js>,
 ) -> Result<(), LegadoError> {
-    // getCookie(tag, key?) -> String
+    // getCookie(url, key?) -> String
+    // 参数名为历史遗留（曾按书源 tag 口径命名）：上游同步后（2026-09-23 用户裁决）
+    // 该参数语义为**请求/写入 URL**（或 URL 形态原始串键），归一与取用下沉在
+    // cookie_store 内部（写侧 `getSubDomain(url)` 等价域名键，读侧按 URL 属域 +
+    // 原始串兼容键，详见 [`cookie_store`] 模块文档）。
     mount_dual(
         java,
         globals,
         "getCookie",
-        rquickjs::Function::new(ctx.clone(), |tag: String, key: Opt<String>| -> String {
+        rquickjs::Function::new(ctx.clone(), |url: String, key: Opt<String>| -> String {
             match key.0 {
-                Some(k) => cookie_store::get_cookie_by_key(&tag, &k),
-                None => cookie_store::get_cookie(&tag),
+                Some(k) => cookie_store::get_cookie_by_key(&url, &k),
+                None => cookie_store::get_cookie(&url),
             }
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // setCookie(tag, cookieStr) -> bool
+    // setCookie(url, cookieStr) -> bool
+    // 第一参为 **URL**（非书源 tag）：对齐上游 `CookieStore.setCookie(url, cookie)`
+    // （归一为 `getSubDomain(url)` 域名键后落存储）；非 http(s) / 解析失败的原始串
+    // 保留原键（镜像上游回退）。
     // cookieStr 格式: "key=value" 或 "key=value; key2=value2"
     mount_dual(
         java,
         globals,
         "setCookie",
-        rquickjs::Function::new(ctx.clone(), |tag: String, cookie_str: String| -> bool {
+        rquickjs::Function::new(ctx.clone(), |url: String, cookie_str: String| -> bool {
             for pair in cookie_str.split(';') {
                 let pair = pair.trim();
                 if let Some(eq_pos) = pair.find('=') {
                     let key = pair[..eq_pos].trim();
                     let value = pair[eq_pos + 1..].trim();
                     if !key.is_empty() {
-                        cookie_store::set_cookie(&tag, key, value);
+                        cookie_store::set_cookie(&url, key, value);
                     }
                 }
             }
@@ -2138,19 +2145,19 @@ fn register_cookie_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // clearCookies(tag) -> bool
+    // clearCookies(url) -> bool（清该 URL 归一域名键 + 原始串键的全部 cookie）
     mount_dual(
         java,
         globals,
         "clearCookies",
-        rquickjs::Function::new(ctx.clone(), |tag: String| -> bool {
-            cookie_store::clear_cookies(&tag);
+        rquickjs::Function::new(ctx.clone(), |url: String| -> bool {
+            cookie_store::clear_cookies(&url);
             true
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // removeCookie(tag) -> String（对齐原版 CookieStore.removeCookie(url)
+    // removeCookie(url) -> String（对齐原版 CookieStore.removeCookie(url)
     // 返回 Unit → Rhino null → evalJS 兜底空串；若返回 bool true 会被
     // @js: URL 模板 {{url=source.getKey();cookie.removeCookie(url)}} 内联
     // 成 /true/search/ → 404（企鹅小说实测）。删除该域全部 cookie。
@@ -2159,8 +2166,8 @@ fn register_cookie_apis<'js>(
         java,
         globals,
         "removeCookie",
-        rquickjs::Function::new(ctx.clone(), |tag: String| -> String {
-            cookie_store::clear_cookies(&tag);
+        rquickjs::Function::new(ctx.clone(), |url: String| -> String {
+            cookie_store::clear_cookies(&url);
             String::new()
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,

@@ -25,7 +25,7 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Cargo clippy (quickjs — 体检§三.10 门控代码此前从未 lint)
         working-directory: rust
-        run: cargo clippy -p legado-js -p legado-ffi --features quickjs --all-targets -- -D warnings
+        run: cargo clippy -p legado-js -p legado-ffi -p legado-server --features quickjs --all-targets -- -D warnings
       - name: Cargo test
         working-directory: rust
         run: cargo test --workspace
@@ -46,6 +46,9 @@ jobs:
       - name: Cargo test legado-ffi full (quickjs)
         working-directory: rust
         run: cargo test -p legado-ffi --features quickjs
+      - name: Cargo test legado-server (quickjs)
+        working-directory: rust
+        run: cargo test -p legado-server --features quickjs
       # [体检 N7] 依赖漏洞门禁：RustSec Advisory Database 扫描
       - name: Install cargo-audit
         uses: taiki-e/install-action@v2

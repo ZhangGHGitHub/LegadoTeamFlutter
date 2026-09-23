@@ -1582,16 +1582,24 @@ mod tests {
         capability_ledger::reset_jslib_load_failures();
     }
 
-    /// P2-19 后续 #9：`validate_js_lib` 构造期 jsLib 顶层 `java.ajax` 必须携带本源 cookie
-    /// （仿 `source_engine.rs` new_quickjs 构造期用例；回环 cookie 记录服务器，
-    /// P2-17 同款模式）。专用缓存键（含 p219 前缀）不与其他用例串扰。
+    /// P2-19 后续 #9（2026-09-23 上游同步改写）：`validate_js_lib` 构造期 jsLib
+    /// 顶层 `java.ajax` 必须携带**请求 URL 属域**的 cookie（上游语义：cookie
+    /// 属于域名而非书源，读侧按请求 URL 属域取 `cookie_store::cookies_for_url`；
+    /// 书源 tag 不再承载 cookie scope）。回环 cookie 记录服务器（P2-17 同款
+    /// 模式）；回环域名键（127.0.0.1，IP 自键）与 image_api P2-19 用例共享，
+    /// 须持全局存储锁串行。专用缓存键（含 p219 前缀）不与其他用例串扰。
     #[cfg(feature = "quickjs")]
     #[test]
-    fn test_p219_validate_js_lib_construction_carries_own_source_cookie() {
+    fn test_p219_validate_js_lib_construction_carries_request_domain_cookie() {
         use std::io::{Read, Write};
         use std::sync::{Arc, Mutex};
 
         use legado_js::host_api::cookie_store;
+
+        // 回环域名键（127.0.0.1）为进程级共享键，与 image_api P2-19 用例串行
+        let _lock = crate::test_support::GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
 
         // 回环 cookie 记录服务器：记录收到的 Cookie 请求头（忽略请求 body）
         let seen: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
@@ -1631,13 +1639,16 @@ mod tests {
             }
         });
 
+        // 书源上下文仍传入（引擎分桶 / jsLib 缓存键），cookie 取用不再按 tag
         const TAG: &str = "https://p219-jslib.example.com/";
-        cookie_store::clear_cookies(TAG);
-        cookie_store::set_cookie(TAG, "p219_lib_token", "lib-val-5f1c");
+        // 上游同步：cookie 键 = 请求 URL 归一域名键（回环 IP 自键 127.0.0.1）
+        let echo_url = format!("http://{addr}/echo");
+        cookie_store::clear_cookies(&echo_url);
+        cookie_store::set_cookie(&echo_url, "p219_lib_token", "lib-val-5f1c");
 
         // jsLib 顶层 `java.ajax`（入参为 JSON 字符串——java.ajax 桥接签名
         // 为 (options: String)，形态与 network.rs p219 用例一致）
-        let js_lib = format!(r#"java.ajax('{{"url":"http://{addr}/echo"}}')"#);
+        let js_lib = format!(r#"java.ajax('{{"url":"{echo_url}"}}')"#);
         let res = validate_js_lib(TAG, &js_lib, None);
         assert!(res.is_ok(), "jsLib 顶层 ajax 不应致校验失败: {res:?}");
 
@@ -1646,9 +1657,9 @@ mod tests {
             got.as_deref()
                 .unwrap_or_default()
                 .contains("p219_lib_token=lib-val-5f1c"),
-            "构造期 jsLib 顶层 ajax 必须携带本源 cookie，实际 Cookie 头: {got:?}"
+            "构造期 jsLib 顶层 ajax 必须携带请求 URL 属域（127.0.0.1）cookie，实际 Cookie 头: {got:?}"
         );
-        cookie_store::clear_cookies(TAG);
+        cookie_store::clear_cookies(&echo_url);
     }
 }
 
