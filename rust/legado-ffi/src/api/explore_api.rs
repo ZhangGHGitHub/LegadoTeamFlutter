@@ -451,7 +451,11 @@ async fn explore_books_async(
             source_headers.extend(map);
         }
     }
-    let js_cookie = legado_js::host_api::cookie_store::get_cookie(&source.book_source_url);
+    // P2-19 口径统一：与 JS `java.ajax` 路径共用同一底层函数
+    // `cookies_for_source_tag`（精确键 ∪ ETLD+1 域名键，精确键胜出），
+    // 防止详情/分类 HTTP 路径漏带域名键 cookie（原仅精确键 get_cookie）。
+    let js_cookie =
+        legado_js::host_api::cookie_store::cookies_for_source_tag(Some(&source.book_source_url));
     if !js_cookie.is_empty() && !source_headers.contains_key("Cookie") {
         source_headers.insert("Cookie".to_string(), js_cookie);
     }

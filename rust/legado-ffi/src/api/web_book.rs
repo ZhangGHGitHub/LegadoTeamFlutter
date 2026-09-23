@@ -755,7 +755,10 @@ impl RealBookSourceFetcher {
     ///    覆盖同名键，对齐原版 putAll 顺序 loginHeader 在后）
     /// 3. 合并 JS `java.setCookie` 写入的全局 Cookie（GLOBAL_COOKIES）——
     ///    仅当尚无 Cookie 头时设置，保证 JS 侧登录 Cookie 随请求发送
-    ///    （对齐原版 CookieStore 单存储自动附加语义）— DeepSeek Harness + Bridge
+    ///    （对齐原版 CookieStore 单存储自动附加语义）。
+    ///    P2-19 口径统一：与 JS `java.ajax` 路径共用同一底层函数
+    ///    `cookies_for_source_tag`（精确键 ∪ ETLD+1 域名键，精确键胜出），
+    ///    防止两条取数路径对同名 cookie 的携带口径分裂。
     fn parse_source_headers(source: &BookSource) -> Option<HashMap<String, String>> {
         let mut headers: HashMap<String, String> = source
             .header
@@ -771,7 +774,9 @@ impl RealBookSourceFetcher {
             }
         }
 
-        let js_cookie = legado_js::host_api::cookie_store::get_cookie(&source.book_source_url);
+        let js_cookie = legado_js::host_api::cookie_store::cookies_for_source_tag(Some(
+            &source.book_source_url,
+        ));
         if !js_cookie.is_empty() && !headers.contains_key("Cookie") {
             headers.insert("Cookie".to_string(), js_cookie);
         }
@@ -8561,5 +8566,123 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
                 .map_err(|e| LegadoError::Database(e.to_string()))
         })
         .expect("清理本用例插入的 books 行");
+    }
+
+    // ─── P2-19 分裂点修复：FFI HTTP 取数路径 Cookie 查找口径统一 ────────────────────────
+    //
+    // FFI HTTP 取数路径（`parse_source_headers` → 搜索/详情/目录）此前用
+    // `get_cookie(book_source_url)`（仅精确键），而 JS `java.ajax` 路径
+    // （`cookies_for_source_tag`）用「精确键 ∪ ETLD+1 域名键」（精确键胜出）——
+    // 同一域名键 cookie 在 `java.ajax` 带、在详情/目录 HTTP 不带。本组用例钉死
+    // 修复后口径（改造前 ①③ 应红、② 绿；改造后全绿）。
+
+    /// 分裂点修复（①）：FFI HTTP 路径须像 `java.ajax` 一样携带 ETLD+1 域名键 cookie
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_p219_ffi_http_path_carries_domain_key_cookie() {
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        use legado_js::host_api::cookie_store;
+        const TAG: &str = "https://www.p219ffd.example.com/search";
+        // ETLD+1：host www.p219ffd.example.com 的可注册域为 example.com
+        // （末两段），而非 www.p219ffd.example.com
+        const DOMAIN_KEY: &str = "example.com";
+        cookie_store::clear_cookies(TAG);
+        cookie_store::clear_cookies(DOMAIN_KEY);
+        // 域名键写入形态（对齐 FFI clear_cookie / 域名键约定）
+        cookie_store::set_cookie(DOMAIN_KEY, "p219_ffi_dk", "dk-val-ffi");
+        let source = BookSource {
+            book_source_url: TAG.to_string(),
+            ..Default::default()
+        };
+        let headers = RealBookSourceFetcher::parse_source_headers(&source);
+        let cookie = headers.as_ref().and_then(|h| h.get("Cookie").cloned());
+        assert!(
+            cookie
+                .as_deref()
+                .unwrap_or("")
+                .contains("p219_ffi_dk=dk-val-ffi"),
+            "FFI HTTP 路径必须携带 ETLD+1 域名键 cookie（分裂点修复），实际: {cookie:?}"
+        );
+        cookie_store::clear_cookies(TAG);
+        cookie_store::clear_cookies(DOMAIN_KEY);
+    }
+
+    /// 跨源不泄漏（②）：源 B 的 FFI HTTP 路径不得携带源 A 的 cookie
+    #[test]
+    fn test_p219_ffi_cross_source_no_leak() {
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        use legado_js::host_api::cookie_store;
+        const TAG_A: &str = "https://p219ffa-a.example.com/";
+        const TAG_B: &str = "https://p219ffb-b.example.com/";
+        cookie_store::clear_cookies(TAG_A);
+        cookie_store::clear_cookies(TAG_B);
+        cookie_store::set_cookie(TAG_A, "p219_ffi_a", "A-VAL-ffi");
+        let source_b = BookSource {
+            book_source_url: TAG_B.to_string(),
+            ..Default::default()
+        };
+        let headers = RealBookSourceFetcher::parse_source_headers(&source_b);
+        let cookie = headers
+            .as_ref()
+            .and_then(|h| h.get("Cookie").cloned())
+            .unwrap_or_default();
+        assert!(
+            !cookie.contains("p219_ffi_a"),
+            "源 B 不得携带源 A 的 cookie: {cookie}"
+        );
+        cookie_store::clear_cookies(TAG_A);
+        cookie_store::clear_cookies(TAG_B);
+    }
+
+    /// 多段 TLD / IP 字面量键一致（③）：FFI HTTP 路径与 HTTP 层同一套键规则
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_p219_ffi_multi_tld_and_ip_key_consistency() {
+        let _lock = GLOBAL_STORE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|p| p.into_inner());
+        use legado_js::host_api::cookie_store;
+        // .com.cn 多段 TLD：域名键取末三段（ETLD+1 = book.com.cn）
+        const TAG_CN: &str = "https://a.b.book.com.cn/search";
+        const DK_CN: &str = "book.com.cn";
+        cookie_store::clear_cookies(TAG_CN);
+        cookie_store::clear_cookies(DK_CN);
+        cookie_store::set_cookie(DK_CN, "p219_cn", "cn-val");
+        let src_cn = BookSource {
+            book_source_url: TAG_CN.to_string(),
+            ..Default::default()
+        };
+        let cookie_cn = RealBookSourceFetcher::parse_source_headers(&src_cn)
+            .and_then(|h| h.get("Cookie").cloned())
+            .unwrap_or_default();
+        assert!(
+            cookie_cn.contains("p219_cn=cn-val"),
+            ".com.cn 域名键 cookie 必须携带: {cookie_cn}"
+        );
+        cookie_store::clear_cookies(TAG_CN);
+        cookie_store::clear_cookies(DK_CN);
+        // IP 字面量（含 :port）：域名键为 IP 自身
+        const TAG_IP: &str = "http://192.168.77.9:8080/api";
+        const DK_IP: &str = "192.168.77.9";
+        cookie_store::clear_cookies(TAG_IP);
+        cookie_store::clear_cookies(DK_IP);
+        cookie_store::set_cookie(DK_IP, "p219_ip", "ip-val");
+        let src_ip = BookSource {
+            book_source_url: TAG_IP.to_string(),
+            ..Default::default()
+        };
+        let cookie_ip = RealBookSourceFetcher::parse_source_headers(&src_ip)
+            .and_then(|h| h.get("Cookie").cloned())
+            .unwrap_or_default();
+        assert!(
+            cookie_ip.contains("p219_ip=ip-val"),
+            "IP 字面量键 cookie 必须携带: {cookie_ip}"
+        );
+        cookie_store::clear_cookies(TAG_IP);
+        cookie_store::clear_cookies(DK_IP);
     }
 }
