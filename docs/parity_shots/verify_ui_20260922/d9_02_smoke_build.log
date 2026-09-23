@@ -1,0 +1,101 @@
+# D9 smoke 构建安装日志（pwsh scripts/emulator_smoke_test.ps1 -Device 127.0.0.1:16384）
+Wed Sep 23 13:39:42     2026
+==> adb: D:\Android\platform-tools\adb.exe
+==> 目标设备: 127.0.0.1:16384（io.legado.flutter_legado）
+[PASS] 设备 127.0.0.1:16384 在线
+==> 校验 Android FFI content hash ...
+Rust source fingerprint: 144195c71dead9fa...
+=== Legado Android FFI verify ===
+Expected content hash: 1370864294
+Build mode: release
+Targets: aarch64, x86_64
+
+
+=== FFI verify FAILED (FRB hash / Rust 源码指纹 / .so 不同步) ===
+  - arm64-v8a Rust 源码已变更（.so 指纹 d0d7bc5b5419d9eb... ≠ 当前 144195c71dead9fa...），.so 陈旧，需重编
+  - x86_64 Rust 源码已变更（.so 指纹 d0d7bc5b5419d9eb... ≠ 当前 144195c71dead9fa...），.so 陈旧，需重编
+
+Run from repo root:
+  .\rust\scripts\build-android.ps1 -Mode release -Targets "aarch64,x86_64"
+
+Or unified entry:
+  .\flutter_legado\scripts\build-apk.ps1 -Targets "aarch64,x86_64"
+
+Pure Dart UI dev (no Rust):
+  flutter run --dart-define=USE_MOCK=true
+
+>> Rust 源码已变更 / .so 陈旧或缺失，正在重编 .so ...
+>> Auto-running build-android.ps1 ...
+=== Legado Rust Android Build ===
+Mode:      release
+NDK:       D:\Android\ndk\28.2.13676358
+Toolchain: D:\Android\ndk\28.2.13676358\toolchains\llvm\prebuilt\windows-x86_64\bin
+Targets:   aarch64, x86_64
+
+FRB content hash: 1370864294
+Rust source fingerprint: 144195c71dead9fa...
+>> Ensuring Rust targets installed...
+info: component rust-std for target aarch64-linux-android is up to date
+info: component rust-std for target x86_64-linux-android is up to date
+
+>> Building aarch64-linux-android (arm64-v8a)...
+[31;1m   Compiling legado-core v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-core)[0m
+[31;1m   Compiling legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)[0m
+[31;1m   Compiling legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net)[0m
+[31;1m   Compiling legado-parser v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-parser)[0m
+[31;1m   Compiling legado-db v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-db)[0m
+[31;1m   Compiling legado-js v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-js)[0m
+[31;1m   Compiling legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)[0m
+[31;1m   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)[0m
+[31;1m    Finished `release` profile [optimized] target(s) in 54.87s[0m
+   OK
+
+>> Building x86_64-linux-android (x86_64)...
+[31;1m   Compiling legado-core v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-core)[0m
+[31;1m   Compiling legado-book v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-book)[0m
+[31;1m   Compiling legado-net v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-net)[0m
+[31;1m   Compiling legado-parser v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-parser)[0m
+[31;1m   Compiling legado-db v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-db)[0m
+[31;1m   Compiling legado-js v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-js)[0m
+[31;1m   Compiling legado-server v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-server)[0m
+[31;1m   Compiling legado-ffi v0.2.0 (D:\OH-WorkSpace\LegadoTeam\legado\rust\legado-ffi)[0m
+[31;1m    Finished `release` profile [optimized] target(s) in 44.90s[0m
+   OK
+
+>> Copying .so files to Flutter jniLibs...
+   arm64-v8a\liblegado_ffi.so (39.7 MB)
+   x86_64\liblegado_ffi.so (39.5 MB)
+
+=== Build complete! ===
+Output: D:\OH-WorkSpace\LegadoTeam\legado\flutter_legado\android\app\src\main\jniLibs
+
+Next steps:
+  cd ..\flutter_legado
+  flutter build apk --debug
+  # or: .\scripts\build-apk.ps1
+Rust source fingerprint: 144195c71dead9fa...
+=== Legado Android FFI verify ===
+Expected content hash: 1370864294
+Build mode: release
+Targets: aarch64, x86_64
+
+[OK] arm64-v8a (meta: FRB hash + Rust 源码指纹一致)
+[OK] x86_64 (meta: FRB hash + Rust 源码指纹一致)
+
+=== FFI verify PASSED (FFI 面与 Rust 源码指纹一致，复用现有 .so) ===
+[PASS] FFI content hash 校验通过
+==> flutter build apk --debug ...
+[31;1mexception:                           ^^^^^^^^^^^^^^^^^[0m
+Running Gradle task 'assembleDebug'...                             68.2s
+√ Built build\app\outputs\flutter-apk\app-debug.apk
+[PASS] APK 构建成功（264.9 MB）
+==> adb install -r ...
+[PASS] APK 安装成功
+[PASS] 已装版本与 pubspec 一致（2.0.308）
+[PASS] 应用进程存活（u0_a55       35160   657   16647776 116444 0                   0 R io.legado.flutter_legado）
+[PASS] 无崩溃日志（FATAL/E/flutter）
+
+================ 冒烟测试汇总 ================
+  通过: 7   失败: 0   设备: 127.0.0.1:16384
+结果: PASSED
+SMOKE_EXIT=0

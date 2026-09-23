@@ -1,0 +1,13 @@
+[
+ {"label":"probe y790","center":[540,790],"half":4,"expected":null},
+ {"label":"probe y810","center":[540,810],"half":4,"expected":null},
+ {"label":"probe y826","center":[540,826],"half":4,"expected":null},
+ {"label":"probe y834","center":[540,834],"half":4,"expected":null},
+ {"label":"probe y842","center":[540,842],"half":4,"expected":null},
+ {"label":"probe y860","center":[540,860],"half":4,"expected":null},
+ {"label":"probe y900","center":[540,900],"half":4,"expected":null},
+ {"label":"probe y1242","center":[540,1242],"half":4,"expected":null},
+ {"label":"probe y1252","center":[540,1252],"half":4,"expected":null},
+ {"label":"probe y1020","center":[24,1020],"half":8,"expected":null},
+ {"label":"probe y960(主题引擎header内左)","center":[24,960],"half":8,"expected":null}
+]

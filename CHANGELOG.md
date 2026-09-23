@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 - [Rust] **书源脚本之间不再互相串用 Cookie（P2-19 JS 宿主层作用域收敛）**：书源脚本（`java.ajax` 等）此前会把**全部书源**的 Cookie 合并进请求头——即书源 A 的脚本能带上书源 B 的凭据。现改为只携带**当前书源**的 Cookie（精确键 + ETLD+1 域名键，复用 HTTP 层同一套多段 TLD/IP 键口径，同名键精确者优先）；**没有书源上下文的脚本执行路径（字典规则、自动任务、替换规则预览、开发用 eval、JS 单文件源导入期）不再携带 JS 宿主 Cookie**（原先会带全量，正是泄漏面）。图片解码规则路径补书源绑定，保证本源 Cookie 照常携带。
 
 ### Changed
+- [UI] **深色模式页面底色与卡片底色对齐参考版（D9，用户裁决按参考版取值）**：默认（内置）色板深色下，页面背景 `#424242` → **`#101418`**、卡片/容器底色 `#4A4A4A` → **`#1D2024`**（更深的夜间底），与参考版默认深色一致；亮色模式与 12 套具名色板**不受影响**。实机验证：深色 10/10 采样命中、亮色回归 8/8 命中。
+- [Rust] **详情/目录等 HTTP 取数路径的 Cookie 查找口径与 `java.ajax` 统一**：此前 FFI 取数路径只按「书源 URL 精确键」查 JS 宿主 Cookie，导致以域名键（ETLD+1）写入的 Cookie 在脚本请求里带、在详情/目录请求里不带；现两条路径统一为「精确键 ∪ ETLD+1 域名键、精确键优先」（与 HTTP 层同一套多段 TLD/IP 键口径）。无公共 API 与契约变更。
 - [Rust] **搜索聚合三路径统一（P2-20，内部重构）**：Dart 纯函数 `applyPrecisionSearch` 与 Rust 单一真源补上与运行时增量桶一致的**跨桶预去重**（同一「书名+作者+书源」仅首次到达入桶、落桶由首次到达决定；跨源计数仍由 origins 集合承载），跨端夹具 `keep_other` 期望 8→7 条；`applyPrecisionSearch` 无生产调用（运行时走增量桶），**用户可见行为不变**。
 - [Rust] **JS 宿主请求对回环地址不再经系统/环境代理**：书源脚本（`java.connect` 等）访问 `127.0.0.1`/`::1`/`localhost` 时绕过代理（对齐 legado-net 既有回环免代理约定），本地源/本地测试服务不受环境代理劫持；真实主机仍按用户代理配置走。无用户可见变化。
 - [Tool] **代码规范门禁对齐并上锁**：清掉 `cargo clippy --workspace --all-targets -- -D warnings` 的全部 64 处既有报错（测试/示例目标，纯行为等价改写：结构体更新语法、`is_multiple_of`、`is_empty()`/`first()`、`io::Error::other`、冗余 `#[must_use]`、测试模块后的代码位移等），并给 CI 的两条 clippy 作业加 `--all-targets`——`rust/DEVELOPMENT.md` 记载的严格门禁自此与 CI 一致且被自动拦截。无用户可见变化。

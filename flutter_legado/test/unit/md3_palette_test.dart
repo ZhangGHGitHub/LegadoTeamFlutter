@@ -84,13 +84,23 @@ void main() {
     test('def「默认」锚点 = kazusa 默认/黑白 调色板源码色值（阶段D 2.0.270）', () {
       // 亮色「默认」：primary #795548 / accent→secondary #E53935 /
       // backgroundColor→surface #F5F5F5 / bottomBackground→surfaceContainer #EEEEEE
+      // （亮色不受 D9 影响，原锚点保留）
       expect(Md3Palettes.def.light.primary, 0xFF795548);
       expect(Md3Palettes.def.light.secondary, 0xFFE53935);
       expect(Md3Palettes.def.light.surface, 0xFFF5F5F5);
       expect(Md3Palettes.def.light.surfaceContainer, 0xFFEEEEEE);
-      // 暗色「黑白」：backgroundColor/bottomBackground #424242 → surface（推导链
-      // 下 surfaceContainerLowest 同系 #343434）
-      expect(Md3Palettes.def.dark.surface, 0xFF424242);
+      // 暗色：[D9 2026-09-23] 底色对齐参考版「动态取色」深色（Material You
+      // 壁纸取色运行时值，非常量；像素依据 RECAPTURE_20260921 §1）：
+      //   页面背景 (540,450) rgb(16,20,24) → surface/background/surfaceDim
+      //   = #101418（surfaceDim==surface 遵参考引擎暗色约定
+      //   GRColorScheme.kt:77-79,101）；
+      //   分段控件未选中 (278,618,1742) rgb(29,32,36) → sCL = #1D2024。
+      // 原 kazusa 黑白套 #424242 锚点被 D9 裁决「按参考版取值」取代。
+      expect(Md3Palettes.def.dark.background, 0xFF101418);
+      expect(Md3Palettes.def.dark.surface, 0xFF101418);
+      expect(Md3Palettes.def.dark.surfaceDim, 0xFF101418);
+      expect(Md3Palettes.def.dark.surfaceContainerLow, 0xFF1D2024);
+      // surfaceContainerLowest 无参考采样值，D9 未覆盖，维持原同系值
       expect(Md3Palettes.def.dark.surfaceContainerLowest, 0xFF343434);
     });
 

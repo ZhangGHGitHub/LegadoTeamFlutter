@@ -1,0 +1,90 @@
+<?xml version='1.0' encoding='utf-8' standalone='yes' ?>
+<map>
+    <boolean name="flutter.useZhLayout" value="false" />
+    <long name="flutter.reader_adv_left_action" value="1" />
+    <string name="flutter.reader_layout_day_header_padding_right">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu16.0</string>
+    <long name="flutter.screenOrientation" value="0" />
+    <boolean name="flutter.reader_adv_auto_page_turn" value="false" />
+    <string name="flutter.reader_adv_margin_right">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu20.0</string>
+    <boolean name="flutter.hideNavigationBar" value="false" />
+    <boolean name="flutter.showReadTitleAddition" value="true" />
+    <boolean name="flutter.volumeKeyPage" value="true" />
+    <long name="flutter.reader_adv_paragraph_indent_chars" value="2" />
+    <string name="flutter.reader_layout_day_letter_spacing">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu0.0</string>
+    <long name="flutter.titleSize" value="0" />
+    <string name="flutter.app_palette_id">gr</string>
+    <long name="flutter.reader_layout_day_textBold" value="0" />
+    <string name="flutter.reader_layout_day_footer_padding_right">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu16.0</string>
+    <long name="flutter.footerMode" value="0" />
+    <long name="flutter.reader_adv_custom_text_color" value="0" />
+    <long name="flutter.tipFooterRight" value="6" />
+    <boolean name="flutter.shareLayout" value="false" />
+    <long name="flutter.reader_layout_day_flip_mode" value="1" />
+    <boolean name="flutter.showBrightnessView" value="true" />
+    <boolean name="flutter.reader_adv_show_chapter_name" value="false" />
+    <boolean name="flutter.bookshelf_layout" value="true" />
+    <string name="flutter.reader_layout_day_header_padding_top">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu0.0</string>
+    <boolean name="flutter.reader_layout_is_night" value="true" />
+    <long name="flutter.keep_light" value="0" />
+    <boolean name="flutter.autoChangeSource" value="true" />
+    <boolean name="flutter.reader_adv_show_progress" value="false" />
+    <long name="flutter.textBold" value="0" />
+    <boolean name="flutter.settingsMigrated_v271" value="true" />
+    <string name="flutter.reader_adv_letter_spacing">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu0.0</string>
+    <string name="flutter.reader_adv_margin_bottom">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu24.0</string>
+    <long name="flutter.tipHeaderRight" value="3" />
+    <boolean name="flutter.volumeKeyPageOnPlay" value="false" />
+    <boolean name="flutter.reader_adv_text_full_justify" value="true" />
+    <boolean name="flutter.showFooterLine" value="true" />
+    <boolean name="flutter.hangingPunctuation" value="false" />
+    <long name="flutter.pageTouchSlop" value="0" />
+    <long name="flutter.dictRuleVersion" value="1" />
+    <long name="flutter.headerMode" value="0" />
+    <string name="flutter.reader_layout_day_header_padding_bottom">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu0.0</string>
+    <string name="flutter.reader_layout_day_paragraph_spacing">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu2.0</string>
+    <long name="flutter.doubleHorizontalPage" value="0" />
+    <string name="flutter.reader_layout_day_footer_padding_top">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu6.0</string>
+    <boolean name="flutter.showHeaderLine" value="false" />
+    <boolean name="flutter.selectText" value="true" />
+    <boolean name="flutter.reader_adv_letter_spacing_migrated" value="true" />
+    <string name="flutter.reader_layout_day_footer_padding_left">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu16.0</string>
+    <long name="flutter.reader_layout_day_paragraph_indent_chars" value="2" />
+    <boolean name="flutter.reader_adv_auto_forward" value="true" />
+    <boolean name="flutter.paddingDisplayCutouts" value="false" />
+    <boolean name="flutter.crash_last_crash" value="true" />
+    <long name="flutter.reader_adv_center_action" value="3" />
+    <string name="flutter.progressBarBehavior">page</string>
+    <string name="flutter.reader_adv_paragraph_spacing">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu2.0</string>
+    <boolean name="flutter.noAnimScrollPage" value="false" />
+    <string name="flutter.reader_layout_day_margin_right">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu20.0</string>
+    <long name="flutter.tipHeaderMiddle" value="0" />
+    <boolean name="flutter.mouseWheelPage" value="true" />
+    <string name="flutter.reader_layout_day_margin_left">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu20.0</string>
+    <boolean name="flutter.readBodyToLh" value="true" />
+    <string name="flutter.reader_layout_day_header_padding_left">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu16.0</string>
+    <boolean name="flutter.reader_adv_show_battery" value="false" />
+    <boolean name="flutter.reader_layout_day_show_footer_line" value="true" />
+    <long name="flutter.titleTopSpacing" value="0" />
+    <string name="flutter.titleFont"></string>
+    <long name="flutter.flip_mode" value="1" />
+    <boolean name="flutter.reader_layout_day_show_header_line" value="false" />
+    <long name="flutter.tipHeaderLeft" value="2" />
+    <long name="flutter.tipFooterLeft" value="7" />
+    <string name="flutter.app_theme_mode">dark</string>
+    <string name="flutter.reader_adv_auto_interval">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu10.0</string>
+    <long name="flutter.titleMode" value="0" />
+    <boolean name="flutter.reader_adv_show_time" value="false" />
+    <string name="flutter.reader_layout_day_footer_padding_bottom">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu6.0</string>
+    <boolean name="flutter.readBarStyleFollowPage" value="false" />
+    <string name="flutter.reader_layout_day_margin_top">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu24.0</string>
+    <string name="flutter.reader_adv_margin_left">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu20.0</string>
+    <boolean name="flutter.hideStatusBar" value="false" />
+    <boolean name="flutter.reader_adv_italic" value="false" />
+    <string name="flutter.reader_adv_margin_top">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu24.0</string>
+    <long name="flutter.titleBottomSpacing" value="0" />
+    <long name="flutter.tipFooterMiddle" value="0" />
+    <long name="flutter.pageTouchClick" value="0" />
+    <long name="flutter.rssSourceVersion" value="6" />
+    <long name="flutter.reader_adv_right_action" value="2" />
+    <string name="flutter.reader_layout_day_margin_bottom">VGhpcyBpcyB0aGUgcHJlZml4IGZvciBEb3VibGUu24.0</string>
+</map>

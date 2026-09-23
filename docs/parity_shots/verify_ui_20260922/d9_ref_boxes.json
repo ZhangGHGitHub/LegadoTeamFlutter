@@ -1,0 +1,8 @@
+[
+ {"label":"ref页面背景","center":[540,450],"half":10,"expected":[16,20,24]},
+ {"label":"ref卡片/容器","center":[540,900],"half":10,"expected":[16,20,24]},
+ {"label":"ref提示横幅底sCL","center":[500,1390],"half":10,"expected":[29,32,36]},
+ {"label":"ref分段未选278","center":[278,1742],"half":6,"expected":[29,32,36]},
+ {"label":"ref分段未选618","center":[618,1742],"half":6,"expected":[29,32,36]},
+ {"label":"ref分段选中深色","center":[928,1742],"half":6,"expected":null}
+]

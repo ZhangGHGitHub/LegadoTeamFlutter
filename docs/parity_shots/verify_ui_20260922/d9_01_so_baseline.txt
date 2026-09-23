@@ -1,0 +1,7 @@
+# D9 .so 基线（构建前）
+2026-09-22 21:57:41.684345700 flutter_legado/android/app/src/main/jniLibs/arm64-v8a/liblegado_ffi.so
+253fbfc5bc9e7cd29c9938712f43d349 *flutter_legado/android/app/src/main/jniLibs/arm64-v8a/liblegado_ffi.so
+3dccf86b0cac5eaaedb9888f11f52729 *flutter_legado/android/app/src/main/jniLibs/arm64-v8a/liblegado_ffi.so.meta
+2026-09-22 21:58:24.934706200 flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so
+a08fc28881979372bc4124c1eb28fc03 *flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so
+ef28aafeffb0b7ed5d5919e558bb326e *flutter_legado/android/app/src/main/jniLibs/x86_64/liblegado_ffi.so.meta

@@ -1,0 +1,6 @@
+[
+ {"label":"书架·顶栏底(背景)","center":[540,96],"half":10,"expected":[16,20,24]},
+ {"label":"书架·空白区(卡右)","center":[700,700],"half":12,"expected":[16,20,24]},
+ {"label":"书架·空白区(卡下)","center":[540,1300],"half":12,"expected":[16,20,24]},
+ {"label":"书架·书卡(sCLowest,参考)","center":[204,700],"half":12,"expected":[52,52,52]}
+]

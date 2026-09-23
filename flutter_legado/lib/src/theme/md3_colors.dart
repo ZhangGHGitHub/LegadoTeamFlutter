@@ -1396,6 +1396,17 @@ abstract final class Md3Palettes {
   // tabBarBg 槽）；tertiary 取 primary 同族暖金棕（无参考槽位，推导值）。
   // 暗色「黑白」accent #E0E0E0 明度≈surface 同调（黑白套本无对比强调色），
   // 暗色 secondary 按 M3 tonal 语义取 primary 同族 #D9CFCE 保持整套协调。
+  // [D9 2026-09-23] 暗色背景底色对齐参考版（裁决「按参考版取值」）：
+  // 参考默认「动态取色」深色为 Material You 壁纸取色运行时值
+  // （ThemeEngine.kt:88-90 → resolveDynamicColorScheme:103-111 →
+  // dynamicDarkColorScheme，非源码常量），像素依据 RECAPTURE_20260921 §1：
+  //   页面背景 (540,450) rgb(16,20,24) = #101418 → surface/background/
+  //   surfaceDim（surfaceDim==surface 遵参考引擎暗色约定，
+  //   GRColorScheme.kt:77-79,101）；
+  //   分段控件未选中 (278,618,1742) rgb(29,32,36) = #1D2024 → sCL
+  //   （槽位经 RECAPTURE §2/§3 确认为 surfaceContainerLow）。
+  // 无参考采样值者保持原值不推外（sC/sCH/sCHH/surfaceBright/sCLowest，
+  // 登记后续跟进）；kazusa 黑白套 #424242 暗底锚点自此被 D9 取代。
   static const def = Md3Palette(
     id: 'def',
     label: '默认',
@@ -1466,9 +1477,9 @@ abstract final class Md3Palettes {
       onError: 0xFF690005,
       errorContainer: 0xFF93000A,
       onErrorContainer: 0xFFFFDAD6,
-      background: 0xFF424242,
+      background: 0xFF101418, // D9：参考版动态取色深色底（见上方 D9 注释块）
       onBackground: 0xFFEDE6E4,
-      surface: 0xFF424242,
+      surface: 0xFF101418, // D9：页面背景底色
       onSurface: 0xFFEDE6E4,
       surfaceVariant: 0xFF53433E,
       onSurfaceVariant: 0xFFD8C4BE,
@@ -1490,10 +1501,10 @@ abstract final class Md3Palettes {
       onTertiaryFixed: 0xFF372700,
       tertiaryFixedDim: 0xFFF0C98D,
       onTertiaryFixedVariant: 0xFF684613,
-      surfaceDim: 0xFF424242,
+      surfaceDim: 0xFF101418, // D9：遵参考引擎暗色约定 surfaceDim==surface
       surfaceBright: 0xFF6A6A6A,
       surfaceContainerLowest: 0xFF343434,
-      surfaceContainerLow: 0xFF4A4A4A,
+      surfaceContainerLow: 0xFF1D2024, // D9：参考版分段未选中底（sCL 槽）
       surfaceContainer: 0xFF4E4E4E,
       surfaceContainerHigh: 0xFF595959,
       surfaceContainerHighest: 0xFF646464,

@@ -1,0 +1,9 @@
+# D9 Rust 指纹漂移原因（git log rust/）
+fd1cf8bc7c 2026-09-23 13:20:43 +0800 test(rust): 11 例软断言真联网用例离线化（本地回环 mock + 硬断言）
+5b6b1bed97 2026-09-23 12:26:39 +0800 refactor(search): 聚合三路径语义统一（P2-20）+ 单测文件自洽化
+7dc2066329 2026-09-23 12:26:25 +0800 fix(rust): 书源脚本跨源 Cookie 作用域收敛（P2-19 JS 宿主层泄漏修复）
+54d5575fd4 2026-09-23 10:07:04 +0800 fix(rust): quickjs 档两例真联网用例回环化（确定性）+ 回环 URL 免代理
+a16b68190c 2026-09-23 09:41:54 +0800 chore(tool): clippy --all-targets 全量归零（64 处）+ CI 上锁
+
+结论: b8 批 .so 构建(09-22 21:58)之后 HEAD 前移（上列提交含 09-22/09-23 新 Rust 提交），
+FFI verify 判定 .so 陈旧 → smoke 脚本 -AutoBuild 重编。属管线自同步，非 D9 Dart 改动触发。

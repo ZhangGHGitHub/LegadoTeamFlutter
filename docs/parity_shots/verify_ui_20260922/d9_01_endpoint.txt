@@ -1,0 +1,20 @@
+# D9 端点判定（2026-09-22 重派发轮）
+
+## MuMuManager info -v all（关键片段）
+index 0 Test2: adb_host_ip=127.0.0.1 adb_port=16384 player_state=start_finished is_android_started=true
+index 1 Test测试: adb_port=16416 player_state=start_finished（is_android_started=true 但见下）
+
+## adb 实测
+adb devices -l:
+  127.0.0.1:16384  device (SM_G9900)
+  emulator-5554      device (SM_G9900)
+adb connect 127.0.0.1:16384 -> already connected
+adb connect 127.0.0.1:16416 -> cannot connect: 积极拒绝 (10061)
+
+## 同 guest 判定（16384 vs 5554）
+ro.build.display.id: 均为 V417IR release-keys
+android_id: 均为 33578804431a95bd
+
+## 结论
+采用端点 127.0.0.1:16384（Test2，MuMu index 0）。
+16416（Test测试）adb 连接被拒绝，本轮未用；5554 为同 guest 次路径，本轮未单独使用。
