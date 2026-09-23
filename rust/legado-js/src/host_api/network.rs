@@ -80,6 +80,31 @@ fn sanitize_request_url(url: &str) -> String {
     legado_parser::AnalyzeUrl::normalize_book_source_tag_url(trimmed)
 }
 
+/// 判断 URL 是否指向本地回环地址（127.0.0.1 / ::1 / localhost，http/https）
+///
+/// 供 `connect_no_redirect` 决定 `no_proxy`：reqwest 默认客户端在
+/// HTTP_PROXY/HTTPS_PROXY 存在时连回环地址也走代理，会把本地测试流量
+/// 劫持到死代理；回环豁免对齐 legado-net 约定（cda70a0c54）。
+fn is_loopback_url(url: &str) -> bool {
+    let lower = url.to_ascii_lowercase();
+    for scheme in ["http://", "https://"] {
+        let Some(rest) = lower.strip_prefix(scheme) else {
+            continue;
+        };
+        // host 段：到第一个 ':' 或 '/' 为止；[::1] 带方括号形式
+        let host = rest.split([':', '/']).next().unwrap_or("");
+        let host = host
+            .strip_prefix('[')
+            .unwrap_or(host)
+            .strip_suffix(']')
+            .unwrap_or(host);
+        if host == "127.0.0.1" || host == "::1" || host == "localhost" {
+            return true;
+        }
+    }
+    false
+}
+
 /// POST 有 body 时若缺 Content-Type，补 form-urlencoded（对齐 Jsoup.requestBody）
 fn ensure_form_content_type(headers: &mut HashMap<String, String>, has_body: bool) {
     if !has_body {
@@ -468,6 +493,11 @@ pub fn connect_no_redirect(
     block_on(async {
         let config = LegadoClientConfig {
             follow_redirects: false,
+            // 回环流量（本地测试服务/本地源）不得经系统/环境变量代理路由：
+            // reqwest 默认客户端在 HTTP_PROXY 存在时连 127.0.0.1 也走代理，
+            // 死代理环境下回环用例会被劫持（cda70a0c54 约定）。仅回环 URL
+            // 豁免代理；真实主机仍走用户代理配置，不改变生产行为。
+            no_proxy: is_loopback_url(&url),
             ..LegadoClientConfig::default()
         };
         let client =

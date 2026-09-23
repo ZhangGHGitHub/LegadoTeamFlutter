@@ -3697,6 +3697,7 @@ fn register_font_apis<'js>(
 mod tests {
     use crate::engine::{JsEngine, QuickJsEngine};
     use crate::sandbox::SandboxConfig;
+    use std::io::{Read, Write};
 
     fn make_engine() -> QuickJsEngine {
         QuickJsEngine::new(SandboxConfig::permissive()).expect("Failed to create QuickJsEngine")
@@ -3924,20 +3925,86 @@ mod tests {
         );
     }
 
+    /// 最小本地回环 HTTP/1.1 搜索 mock 服务器（connectNR / Response bridge
+    /// POST 用例的确定性替身，替代外网 tianyashuku.net —— CI 中该站行为
+    /// 变化/反爬会改变 302 响应导致用例偶发失败，P2-17 类真联网隐患）。
+    ///
+    /// 行为忠实复刻帝国 CMS 真站签名：
+    /// - POST body 含 `tbname=bookname` → `302 Found` + `Location: /result/?searchid=1`；
+    /// - body 丢失（connectNR 未把第 4 参传到宿主）→ `200` + 短提示页、无 Location。
+    ///
+    /// 用例断言保持不变，仍能捕获 body 丢失回归。
+    ///
+    /// 用 std `TcpListener` + 单线程（legado-js 的 quickjs tokio feature 无 net）；
+    /// 回环流量经 `no_proxy` 豁免系统/环境变量代理（见 network.rs `connect_no_redirect`）。
+    fn spawn_search_loopback_server(max_conns: usize) -> std::net::SocketAddr {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let addr = listener.local_addr().expect("local_addr");
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(max_conns) {
+                let Ok(mut sock) = stream else { continue };
+                let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                let Some(body) = read_http_request_body(&mut sock) else {
+                    continue;
+                };
+                let resp = if body.contains("tbname=bookname") {
+                    "HTTP/1.1 302 Found\r\nLocation: /result/?searchid=1\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        .to_string()
+                } else {
+                    let notice = "<html><body>请输入查询条件</body></html>";
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        notice.len(),
+                        notice
+                    )
+                };
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+        addr
+    }
+
+    /// 逐字节读取一个完整 HTTP/1.1 请求（头到 `\r\n\r\n` + Content-Length body），返回 body。
+    fn read_http_request_body(sock: &mut std::net::TcpStream) -> Option<String> {
+        let mut buf: Vec<u8> = Vec::new();
+        let mut byte = [0u8; 1];
+        while !buf.ends_with(b"\r\n\r\n") {
+            sock.read_exact(&mut byte).ok()?;
+            buf.push(byte[0]);
+        }
+        let content_length = String::from_utf8_lossy(&buf)
+            .lines()
+            .find_map(|line| {
+                line.to_ascii_uppercase()
+                    .strip_prefix("CONTENT-LENGTH:")?
+                    .trim()
+                    .parse::<usize>()
+                    .ok()
+            })
+            .unwrap_or(0);
+        let mut body = vec![0u8; content_length];
+        if content_length > 0 {
+            sock.read_exact(&mut body).ok()?;
+        }
+        Some(String::from_utf8_lossy(&body).into_owned())
+    }
+
     #[test]
     fn test_connectnr_passes_body() {
+        let addr = spawn_search_loopback_server(8);
         let engine = make_engine();
-        // java.connectNR 四参须把 body 传到宿主；丢 body 时帝国 CMS 返回 200 提示页无 Location
-        let js = r#"
-var url = 'https://tianyashuku.net/e/search/index.php';
+        // java.connectNR 四参须把 body 传到宿主；丢 body 时服务器返回 200 提示页无 Location
+        let js = format!(
+            r#"
+var url = 'http://{addr}/e/search/index.php';
 var body = 'show=title,writer&keyboard=%E4%B8%80%E5%BF%B5&tbname=bookname&tempid=1';
-var hs = JSON.stringify({'User-Agent':'Mozilla/5.0','Content-Type':'application/x-www-form-urlencoded'});
+var hs = JSON.stringify({{'User-Agent':'Mozilla/5.0','Content-Type':'application/x-www-form-urlencoded'}});
 var raw = java.connectNR(url, 'POST', hs, body);
 var r = JSON.parse(raw);
-JSON.stringify({status: r.status_code, loc: (r.headers.location||r.headers.Location||null), bodyLen: (r.body||'').length});
-"#;
-        let result = engine.eval(js).expect("eval");
-        eprintln!("connectNR arity result: {}", result);
+JSON.stringify({{status: r.status_code, loc: (r.headers.location||r.headers.Location||null), bodyLen: (r.body||'').length}});
+"#
+        );
+        let result = engine.eval(&js).expect("eval");
         assert!(
             result.contains("\"status\":302") || result.contains("result/?searchid"),
             "got {result}"
@@ -3946,16 +4013,18 @@ JSON.stringify({status: r.status_code, loc: (r.headers.location||r.headers.Locat
 
     #[test]
     fn test_response_bridge_post_location() {
+        let addr = spawn_search_loopback_server(8);
         let engine = make_engine();
-        let js = r#"
-var url = 'https://tianyashuku.net/e/search/index.php';
+        let js = format!(
+            r#"
+var url = 'http://{addr}/e/search/index.php';
 var body = 'show=title,writer&keyboard=%E4%B8%80%E5%BF%B5&tbname=bookname&tempid=1';
-var hs = {'User-Agent':'Mozilla/5.0','Content-Type':'application/x-www-form-urlencoded'};
+var hs = {{'User-Agent':'Mozilla/5.0','Content-Type':'application/x-www-form-urlencoded'}};
 var loc = java.post(url, body, hs).header('location');
 String(loc);
-"#;
-        let result = engine.eval(js).expect("eval");
-        eprintln!("bridge post loc: {}", result);
+"#
+        );
+        let result = engine.eval(&js).expect("eval");
         assert!(
             result.contains("searchid") || result.contains("result"),
             "got {result}"
