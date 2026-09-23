@@ -272,7 +272,7 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - 事实：我方有参考版**不存在**的三处独立行——「目录：… · 已读: X%」「分组：…」「🏷️ 标签行」；chips 行还重复了章数（参考章数只在「共 N 章」行）。
   - 证据：浅色截图 `ref_20260914/08_book_info.png` + 深色 dump `ref_dark_20260920/08_book_info.xml`（非空文本全集逐条核对）+ 参考源码 `BookInfoScreen.kt` chips LazyRow（分组 chip 条件显示裸名 + kind chips）与 `HighlightTagRow.kt`（用户高亮规则驱动，非标签行）。
   - 修正：三类行移除/收编（分组→chips 行条件 chip；kind→chips 逐项；逐 tag 点击搜索/长按 JS 回调迁至 chip 手势）；chips 行重构为参考 TextCard 形态（圆角 8/横8纵4/14sp w500）；面板内仅余简介。
-  - 登记：原「已读: X%」百分比随目录行移除、无同等替入口（进度以「已读 N 章」+ 书架进度条 + 阅读器呈现，参考版即此形态）；台账追加「08 元信息区对齐修订」节并纠正 U5/U9/U10/U11/U12 旧表述。
+  - 登记：原「已读: X%」百分比随目录行移除、无同等替入口（进度以「已读 N 章」+ 书架进度条 + 阅读器呈现，参考版即此形态）；**用户裁决 2026-09-23：接受移除、不补回**；台账追加「08 元信息区对齐修订」节并纠正 U5/U9/U10/U11/U12 旧表述。
   - 验证：`flutter analyze` 0 问题、`flutter test` +1617 全过（新增 `book_info_meta_rows_test.dart` 5 例：三类行不再渲染 / 分组 chip 条件 / chips 无章数 / chip 手势入口 / 目录入口唯一）。
 
 ### P3：功能补齐与卫生项（2026-08-22 开启）
