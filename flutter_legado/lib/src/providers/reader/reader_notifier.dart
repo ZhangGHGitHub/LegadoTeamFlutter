@@ -424,6 +424,157 @@ class ReaderNotifier extends Notifier<ReaderState> {
     state = state.copyWith(currentBook: book);
   }
 
+  // [P2-9 | 2026-09-24] 强制刷新当前章正文（绕过缓存，重新联网抓取）
+  //
+  // 对标原版 refreshContentDur（delContent + loadContent）语义：
+  // 失效缓存 → 联网重抓 → 回写缓存并更新 State。
+  // 受「不新增 FFI / 不改契约」约束，无法新增单章级删缓存 API，
+  // 故以 clearBookCache（书级，≈ 原版 clearCache/refreshContentAll）作为
+  // 缓存失效原语——作用域比原版 delContent（章级）更宽，属已知偏差（报告说明）。
+  //
+  // 成功返回 null；失败返回错误原因（保留旧正文，不清空 chapterContent）。
+  // 本地书（origin 为空 / loc_book / dav:）与无书籍/目录/非法索引时
+  // 直接返回说明性原因，不触碰 state 数据（对齐原版：本地书不显示
+  // 换源/刷新菜单，此守卫兜底面板侧入口）。
+  Future<String?> refreshChapterContent() async {
+    final book = state.currentBook;
+    if (book == null || state.chapters.isEmpty) return '没有书籍或目录';
+    if (book.origin.isEmpty ||
+        book.origin == BookType.localTag ||
+        book.origin.startsWith(BookType.webDavTag)) {
+      return '本地书不支持刷新正文';
+    }
+    final idx = state.currentChapterIndex;
+    if (idx < 0 || idx >= state.chapters.length) return '无效章节索引';
+    final chapter = state.chapters[idx];
+    final api = ref.read(bookApiProvider);
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      // 1) 失效缓存（不经此步，fetch 会命中旧缓存——根因 A）
+      await api.clearBookCache(book.bookUrl);
+      // 2) 联网重抓并回写缓存（fetch 内部命中缓存才返回缓存）
+      final content = await api.fetchChapterContent(
+        book.bookUrl,
+        chapter.url,
+        book.origin,
+      );
+      if (content.trim().isEmpty) {
+        // 空正文视为抓取失败：保留旧正文，不清空
+        state = state.copyWith(isLoading: false, error: '正文抓取为空');
+        return '正文抓取为空';
+      }
+      state = state.copyWith(chapterContent: content, isLoading: false);
+      return null;
+    } catch (e) {
+      // 失败保留旧正文（_loadChapterContent 会清空，刷新路径不得如此）
+      final msg = _mapError(e);
+      state = state.copyWith(isLoading: false, error: msg);
+      return msg;
+    }
+  }
+
+  // [P2-9 | 2026-09-24] 换书源后重载（换源路由 await 返回、确认发生切换后调用）
+  //
+  // 顺序（与 openBook 的目录加载/定位语义对齐，勿误重置阅读进度）：
+  // 1) getBook 重读书籍记录（Rust 换源事务已更新 origin/originName/
+  //    tocUrl/originBookUrl 并清该书缓存）→ updateCurrentBook 同步对象；
+  // 2) 重载目录：getChapters 优先本地库，空则 refreshToc 联网取（对齐 openBook）；
+  // 3) 章节定位：旧章标题 精确 → 宽松（互含）→ 原索引（范围内）→ 0
+  //    （对齐单章换源浮层 _matchChapterIndex 逻辑）；
+  // 4) 位置保留：仅当命中章节与旧章同题时保留 currentChapterPos，
+  //    否则归 0；随后持久化进度；
+  // 5) 强制刷新命中章正文（同 refreshChapterContent 路径）。
+  //
+  // bookUrl 稳定性：Rust 换源事务保持 bookUrl 为稳定主键不变
+  // （P2-8：originBookUrl 写入新源详情页地址）。即使 bookUrl 前后相同，
+  // 缓存键（bookUrl+chapterUrl）可能未变，仍必须走强制路径清缓存，
+  // 保证旧正文不残留（换源事务已清缓存，此处为防御性双保险）。
+  //
+  // 成功返回 null；失败返回错误原因（已完成的步骤不回滚：目录已更新则
+  // 保留，旧正文保留，error 置位供 UI 反馈）。
+  Future<String?> reloadAfterSourceChange(String bookUrl) async {
+    final book = state.currentBook;
+    if (book == null) return '没有书籍';
+    final oldIndex = state.currentChapterIndex;
+    final oldChapter =
+        (state.chapters.isNotEmpty &&
+            oldIndex >= 0 &&
+            oldIndex < state.chapters.length)
+        ? state.chapters[oldIndex]
+        : null;
+    final oldTitle = (oldChapter?.title ?? book.durChapterTitle ?? '').trim();
+    final oldPos = state.currentChapterPos;
+
+    final api = ref.read(bookApiProvider);
+    state = state.copyWith(isLoading: true, error: null);
+    try {
+      // 1) 重读书籍记录（换源事务后的新记录）
+      final newBook = await api.getBook(bookUrl);
+      if (newBook == null) {
+        throw StateError('读取书籍记录失败');
+      }
+      // 2) 同步书籍对象（bookUrl 稳定，源相关字段为新值）
+      state = state.copyWith(currentBook: newBook);
+      // 3) 重载目录（对齐 openBook：本地库优先，空则联网）
+      var chapters = await api.getChapters(bookUrl);
+      if (chapters.isEmpty && newBook.origin.isNotEmpty) {
+        chapters = await api.refreshToc(bookUrl, newBook.origin);
+      }
+      if (chapters.isEmpty) {
+        throw StateError('目录加载失败（新源无目录）');
+      }
+      // 4) 章节定位 + 位置保留
+      final target = _matchChapterAfterTocReload(chapters, oldTitle, oldIndex);
+      final sameChapter =
+          oldChapter != null &&
+          chapters[target].title.trim() == oldChapter.title.trim();
+      state = state.copyWith(
+        chapters: chapters,
+        currentChapterIndex: target,
+        currentChapterPos: sameChapter ? oldPos : 0,
+      );
+      // 5) 强制刷新命中章正文（同 Fix A 路径；bookUrl 不变时靠清缓存
+      //    保证取到新源正文）
+      final err = await refreshChapterContent();
+      if (err != null) {
+        // 正文抓取失败：目录已是新源，保留旧正文，错误显式返回
+        state = state.copyWith(isLoading: false, error: err);
+        return '正文刷新失败：$err';
+      }
+      // 持久化换源后的新进度（新章节索引/位置）
+      await _saveProgress();
+      state = state.copyWith(isLoading: false);
+      return null;
+    } catch (e) {
+      final msg = _mapError(e);
+      state = state.copyWith(isLoading: false, error: msg);
+      return msg;
+    }
+  }
+
+  /// 换源重载目录后的章节定位（对齐 change_chapter_source_sheet 的
+  /// _matchChapterIndex：精确标题 → 宽松互含 → 原索引（范围内）→ 0）
+  int _matchChapterAfterTocReload(
+    List<BookChapter> toc,
+    String oldTitle,
+    int oldIndex,
+  ) {
+    if (toc.isEmpty) return 0;
+    final title = oldTitle.trim();
+    if (title.isNotEmpty) {
+      final exact = toc.indexWhere((c) => c.title.trim() == title);
+      if (exact >= 0) return exact;
+      final soft = toc.indexWhere(
+        (c) =>
+            c.title.isNotEmpty &&
+            (c.title.contains(title) || title.contains(c.title)),
+      );
+      if (soft >= 0) return soft;
+    }
+    if (oldIndex >= 0 && oldIndex < toc.length) return oldIndex;
+    return 0;
+  }
+
   // ===== 内部工具 =====
 
   Future<void> _saveProgress() async {

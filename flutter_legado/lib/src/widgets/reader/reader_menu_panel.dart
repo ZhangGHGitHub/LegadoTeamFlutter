@@ -203,6 +203,86 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     );
   }
 
+  // [P2-9 | 2026-09-24] 换源流程（Fix B）：await 导航 → 路由以新 bookUrl
+  // pop（发生了切换）时重载书/目录/强制刷新正文（见
+  // ReaderNotifier.reloadAfterSourceChange）；用户取消（pop null）
+  // 不做任何事（不重载、不提示）。
+  // 反馈：进行中 SnackBar → 成功「已更换书源：<源名>」（源名取换源后
+  // 记录的 originName）/ 失败含原因。
+  Future<void> _changeSourceFlow(BuildContext context, Book book) async {
+    // [P2-9 fix | 2026-09-24] 生产 /change_source 路由是
+    // _ChangeSourceSheetRoute（PageRouteBuilder<dynamic>，见
+    // AppRoutes.generateRoute）：类型化 pushNamed<String> 会在运行期把
+    // 生成的路由强转 Route<String?> 抛 TypeError（真机崩溃）。对齐
+    // 详情页 Task#24 既有修法（book_info_screen_builders
+    // ._showChangeSourceDialog）：无类型 pushNamed + result is String 判定
+    // [P2-9 fix2 | 2026-09-24] 慢路径 SnackBar 竞态：旧写法
+    // 「controller.close() 收起进行中条」在重载 > 4s（SnackBar 默认自动
+    // 消失时长）时，进行中条已离开 Scaffold 队列，close() 踩
+    // scaffold.dart:341 `_snackBars.first == controller` 断言 / 空队列
+    // StateError，恰在「收起进行中条」一步崩溃、结果条永不出现（真机 8
+    // 次换源全如此，证据
+    // docs/parity_shots/verify_ui_20260922/p29b_b1_crash_dialog.png）。
+    // 修法：第一个 await 前取好对象；进行中条显式 10min duration（慢重载
+    // 期间不自动消失）；结果就绪用 removeCurrentSnackBar() 收起（本 SDK
+    // 队列为空时早退、无断言）再显结果条
+    final messenger = ScaffoldMessenger.of(context);
+    final notifier = ref.read(readerNotifierProvider.notifier);
+    final result = await Navigator.pushNamed(
+      context,
+      AppRoutes.changeSource,
+      arguments: book,
+    );
+    if (result is! String) return; // 取消 / 关闭 pop null → 不做任何事
+    if (!context.mounted) return;
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('正在更换书源…'),
+        duration: Duration(minutes: 10),
+      ),
+    );
+    final err = await notifier.reloadAfterSourceChange(result);
+    if (!context.mounted) return;
+    messenger.removeCurrentSnackBar(); // 收起进行中条（已消失则无操作，不踩断言）
+    final sourceName = ref.read(readerNotifierProvider).currentBook?.originName;
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          err == null
+              ? (sourceName != null && sourceName.isNotEmpty
+                  ? '已更换书源：$sourceName'
+                  : '已更换书源')
+              : '更换书源后重载失败：$err',
+        ),
+      ),
+    );
+  }
+
+  // [P2-9 | 2026-09-24] 刷新正文流程（Fix A）：强制联网抓取（绕过缓存，
+  // 见 ReaderNotifier.refreshChapterContent）→ 显式成功反馈 / 失败反馈
+  // 含原因（失败保留旧正文，不清空）。
+  Future<void> _refreshContentFlow(BuildContext context) async {
+    // [P2-9 fix2 | 2026-09-24] 与 _changeSourceFlow 同一慢路径竞态：强制
+    // 抓取 > 4s（SnackBar 默认自动消失时长）时，旧写法 controller.close()
+    // 踩 scaffold.dart:341 `_snackBars.first == controller` 断言 / 空队
+    // 列 StateError，结果条永不出现。修法：进行中条显式 10min duration +
+    // removeCurrentSnackBar() 收起（已自动消失则无操作、不踩断言）
+    final messenger = ScaffoldMessenger.of(context);
+    final notifier = ref.read(readerNotifierProvider.notifier);
+    messenger.showSnackBar(
+      const SnackBar(
+        content: Text('正在刷新正文…'),
+        duration: Duration(minutes: 10),
+      ),
+    );
+    final err = await notifier.refreshChapterContent();
+    if (!context.mounted) return;
+    messenger.removeCurrentSnackBar(); // 收起进行中条（已消失则无操作，不踩断言）
+    messenger.showSnackBar(
+      SnackBar(content: Text(err == null ? '正文已刷新' : '刷新正文失败：$err')),
+    );
+  }
+
   // ── 分区 1：屏幕顶部工具栏（对齐原版：← 居左；⇄ ↻ ⬇ ⋮ 居右）──
   //
   // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 用户反馈②：顶栏按参考版改造——
@@ -221,6 +301,13 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     // [PARITY C2 M2] 移除来源 URL 全文行：参考版顶栏信息块只保留
     // 章节名 + 书源小字徽标，不再渲染章节链接全文（来源名并入小字行）。
     final sourceName = book?.originName ?? '';
+    // [P2-9 | 2026-09-24] 在线书判定（对齐顶栏 isOnline 语义，WebDAV 视作
+    // 本地）：本地书（loc_book/dav:）不显示换源/刷新正文（原版 ReadMenu
+    // 对本地书隐藏这两项入口）；notifier 侧守卫兜底
+    // （refreshChapterContent 对本地书返回原因、不触网）
+    final isOnline = book != null &&
+        book.origin != BookType.localTag &&
+        !book.origin.startsWith(BookType.webDavTag);
     return Material(
       color: barColor,
       child: SafeArea(
@@ -248,28 +335,34 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                       ),
                     ),
                   ),
-                  IconButton(
+                  // [P2-9 fix | 2026-09-24] 本地书不渲染换源/刷新正文/缓存
+                  // 当前章（对齐原版 ReadMenu 本地书菜单构成：三项仅在线书
+                  // 可见，与顶栏 isOnline 分支一致）。首版「isOnline ? 可点
+                  // : null」的置灰形态被实机观测为「显示且点击无反应」
+                  // （35% alpha no-op），现改为不渲染。
+                  // 换源 = await 导航：路由 pop 新 bookUrl（发生切换）后
+                  // 重载书/目录/强制刷新正文；取消（pop null）不做任何事
+                  // （原实现未 await，换源后正文不刷新——缺陷根因 B）
+                  // 换源闭包体保留 HEAD 基线缩进列（collection-if 后果
+                  // 不重新缩进），避免 diff 引入纯空白行
+                  if (isOnline) IconButton(
                     icon: const Icon(Symbols.swap_horiz_rounded),
                     tooltip: '换源',
-                    onPressed: book == null
-                        ? null
-                        : () => Navigator.pushNamed(
-                            context,
-                            AppRoutes.changeSource,
-                            arguments: book,
-                          ),
+                    onPressed: () => unawaited(_changeSourceFlow(context, book)),
                   ),
-                  IconButton(
+                  // [P2-9 | 2026-09-24] 刷新正文 = 强制拉取（绕过缓存，
+                  // 见 ReaderNotifier.refreshChapterContent），统一 Fix A
+                  // 路径 + 可见反馈（进行中/成功/失败含原因）
+                  if (isOnline) IconButton(
                     icon: const Icon(Symbols.refresh_rounded),
                     tooltip: '刷新正文',
-                    onPressed: () => unawaited(notifier.reloadChapterContent()),
+                    onPressed: () => unawaited(_refreshContentFlow(context)),
                   ),
-                  IconButton(
+                  if (isOnline) IconButton(
                     icon: const Icon(Symbols.download_rounded),
                     tooltip: '缓存当前章',
-                    onPressed: book == null
-                        ? null
-                        : () async {
+                    onPressed:
+                        () async {
                             final idx = ref
                                 .read(readerNotifierProvider)
                                 .currentChapterIndex;
@@ -389,17 +482,14 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                           '设置',
                           widget.onOpenSettings,
                         ),
-                        _shortcutButton(
+                        // [P2-9 fix | 2026-09-24] 本地书不渲染换源快捷钮
+                        // （隐藏而非置灰，同顶栏行）；换源 = await 导航，
+                        // 成功后重载，取消不做任何事
+                        if (isOnline) _shortcutButton(
                           context,
                           Symbols.swap_horiz_rounded,
                           '换源',
-                          book == null
-                              ? null
-                              : () => Navigator.pushNamed(
-                                  context,
-                                  AppRoutes.changeSource,
-                                  arguments: book,
-                                ),
+                          () => unawaited(_changeSourceFlow(context, book)),
                         ),
                       ],
                     ),

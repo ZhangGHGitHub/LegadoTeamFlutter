@@ -337,7 +337,18 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
             config: adv.copy(),
             onChanged: _commitAdv, // 面板行内修改统一经 _commitAdv 持久化
             onReload: () {
-              // 简繁转换等需重载正文（对标原版 postEvent UP_CONFIG[5]）
+              // [P2-9 | 2026-09-24] 保持缓存优先重载（不接入 Fix A
+              // 强制路径）。简繁转换是「配置变更重渲染」而非网络刷新：
+              // Rust 侧 cached_chapters 存原始正文，每次读取（含缓存
+              // 命中）都会重放净化（替换规则/简繁转换/去重复标题，见
+              // fetch_chapter_content_inner 缓存分支 +
+              // apply_content_processing_inner 读取
+              // current_chinese_convert_direction），缓存路径即可正确
+              // 呈现新配置；若改走强制路径会 clearBookCache 清空整书
+              // 离线缓存、强制触网，且本地书被
+              // refreshChapterContent 守卫拒绝而无法重载——破坏
+              // 本地书路径。对标原版 UP_CONFIG[5] → loadContent（缓存
+              // 优先重载）语义。
               unawaited(notifier.reloadChapterContent());
             },
           ),
