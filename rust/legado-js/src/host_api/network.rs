@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::OnceLock;
 
 use crate::host_api::runtime_bridge::block_on;
 use legado_net::{LegadoClient, LegadoClientConfig, LegadoRequest, Method};
@@ -121,59 +122,80 @@ fn ensure_form_content_type(headers: &mut HashMap<String, String>, has_body: boo
     }
 }
 
-/// 构建共享 LegadoClient（使用默认配置）
+/// 进程级共享客户端池（性能专项 2026-09-24）
 ///
-/// 后续可从 HostEnv 注入配置。
-fn build_client() -> Result<LegadoClient, String> {
-    let config = LegadoClientConfig::default();
-    LegadoClient::new(config).map_err(|e| format!("build client error: {}", e))
-}
-
-/// 构建带自定义超时的 LegadoClient
-fn build_client_with_timeout(timeout_ms: u64) -> Result<LegadoClient, String> {
-    let config = LegadoClientConfig {
-        read_timeout: std::time::Duration::from_millis(timeout_ms),
-        ..Default::default()
-    };
-    LegadoClient::new(config).map_err(|e| format!("build client error: {}", e))
-}
-
-/// 构建默认配置 + `no_proxy` 的 LegadoClient（回环直连专用）
+/// 此前每次 JS 网络调用（ajax/get/post/head/connect/ajaxAll/connectNR/
+/// downloadFile/字体下载…）都 `LegadoClient::new` 新建客户端——即新建
+/// reqwest 连接池，每调用重复 TCP+TLS 握手（真实站点实测每页多 ~38ms；
+/// 本地 HTTPS mock 实测新建 10/50 页分别多 10/50 次 TLS 握手）。
+/// 现收敛为进程级单例池：`LegadoClient` 是 `Clone`（内部全 `Arc`），
+/// clone 廉价且**共享同一连接池**（keep-alive 复用）。语义逐池保持等价：
 ///
-/// 对齐 P2-17 回环免代理约定（cda70a0c54）：reqwest 默认客户端在
-/// HTTP_PROXY 存在时连 127.0.0.1 也走代理，死代理/代理劫持环境下本地
-/// 流量（本地书源/本地测试服务）会失败；回环流量强制直连。
-fn build_client_loopback() -> Result<LegadoClient, String> {
-    let config = LegadoClientConfig {
-        no_proxy: true,
-        ..Default::default()
-    };
-    LegadoClient::new(config).map_err(|e| format!("build client error: {}", e))
-}
+/// - 默认池：默认配置（系统/环境变量代理、跟随重定向、60s 读超时）
+/// - 回环池：`no_proxy` 直连（P2-17 约定 cda70a0c54：HTTP_PROXY 存在时
+///   reqwest 连 127.0.0.1 也走代理，死代理环境下本地流量会被劫持）
+/// - 不跟随重定向池：`follow_redirects=false`（connectNR 拦截 302 取
+///   Location 头），回环/非回环分池（代理语义同前两条）
+///
+/// 读超时：各池统一用 `LegadoClientConfig::default()`（60s）；所有
+/// `send(LegadoRequest)` 调用点均带**逐请求** `timeout`（reqwest 逐请求
+/// 超时覆盖客户端级），有效超时与修复前逐客户端配置一致。
+///
+/// Cookie：共享池的内存 CookieStore 跨调用累积（按域 upsert），与 FFI
+/// 主链路共享客户端、上游 OkHttp 单客户端 + cookieJar 语义一致（改进
+/// 不回退）；JS 层 `merge_js_cookies` 按域合并注入不受影响。
+static SHARED_CLIENT_DEFAULT: OnceLock<LegadoClient> = OnceLock::new();
+static SHARED_CLIENT_LOOPBACK: OnceLock<LegadoClient> = OnceLock::new();
+static SHARED_CLIENT_NO_REDIRECT: OnceLock<LegadoClient> = OnceLock::new();
+static SHARED_CLIENT_NO_REDIRECT_LOOPBACK: OnceLock<LegadoClient> = OnceLock::new();
 
-/// 按 URL 构建默认配置客户端：回环 URL 用 `no_proxy` 直连，真实主机沿用
-/// 默认客户端（系统/环境变量代理配置不变，生产行为不受影响）
-fn build_client_for_url_default(url: &str) -> Result<LegadoClient, String> {
-    if is_loopback_url(url) {
-        build_client_loopback()
-    } else {
-        build_client()
+/// 取进程级共享客户端（池由 `loopback`/`no_redirect` 选择）
+///
+/// 首次调用构建并安装；并发竞争时复用先装入者（同配置，无副作用）。
+fn shared_client(loopback: bool, no_redirect: bool) -> Result<LegadoClient, String> {
+    let (pool, config) = match (loopback, no_redirect) {
+        (false, false) => (&SHARED_CLIENT_DEFAULT, LegadoClientConfig::default()),
+        (true, false) => (
+            &SHARED_CLIENT_LOOPBACK,
+            LegadoClientConfig {
+                no_proxy: true,
+                ..Default::default()
+            },
+        ),
+        (false, true) => (
+            &SHARED_CLIENT_NO_REDIRECT,
+            LegadoClientConfig {
+                follow_redirects: false,
+                ..Default::default()
+            },
+        ),
+        (true, true) => (
+            &SHARED_CLIENT_NO_REDIRECT_LOOPBACK,
+            LegadoClientConfig {
+                follow_redirects: false,
+                no_proxy: true,
+                ..Default::default()
+            },
+        ),
+    };
+    if let Some(client) = pool.get() {
+        return Ok(client.clone());
     }
+    let client = LegadoClient::new(config).map_err(|e| format!("build client error: {}", e))?;
+    Ok(pool.get_or_init(|| client).clone())
 }
 
-/// 构建带自定义超时 + 回环直连语义的 LegadoClient（ajax 路径专用）
-///
-/// 回环 URL（本地书源/本地测试服务）强制 `no_proxy` 直连，对齐
-/// `connect_no_redirect` 与 P2-17 约定（cda70a0c54）：reqwest 默认客户端
-/// 在 HTTP_PROXY 存在时连 127.0.0.1 也走代理，死代理环境下本地流量会被
-/// 劫持；真实主机不受影响（`no_proxy=false` 沿用系统代理配置）。
-fn build_client_for_url(url: &str, timeout_ms: u64) -> Result<LegadoClient, String> {
-    let config = LegadoClientConfig {
-        read_timeout: std::time::Duration::from_millis(timeout_ms),
-        no_proxy: is_loopback_url(url),
-        ..Default::default()
-    };
-    LegadoClient::new(config).map_err(|e| format!("build client error: {}", e))
+/// 按 URL 取共享客户端：回环 URL（127.0.0.1/::1/localhost）用 `no_proxy`
+/// 直连池（P2-17 约定 cda70a0c54），真实主机用默认池（系统/环境变量
+/// 代理配置不变，生产行为不受影响）。
+pub(crate) fn shared_client_for_url(url: &str) -> Result<LegadoClient, String> {
+    shared_client(is_loopback_url(url), false)
+}
+
+/// 取不跟随重定向的共享客户端（connectNR 语义：拦截 302 取 Location 头），
+/// 回环/非回环分池（代理语义同 `shared_client_for_url`）。
+fn shared_client_no_redirect(url: &str) -> Result<LegadoClient, String> {
+    shared_client(is_loopback_url(url), true)
 }
 
 /// httpGet(url, headers?) → 同步 HTTP GET，返回响应体文本
@@ -181,8 +203,9 @@ fn build_client_for_url(url: &str, timeout_ms: u64) -> Result<LegadoClient, Stri
 /// 对应 Kotlin 端 `ajax(url)` / `get(url, headers)` 的简化版本。
 pub fn http_get(url: &str, headers: Option<&str>) -> Result<String, String> {
     block_on(async {
-        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变
-        let client = build_client_for_url_default(url)?;
+        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变；
+        // 进程级共享池（2026-09-24 性能专项：不再每调用新建连接池）
+        let client = shared_client_for_url(url)?;
         let header_map = parse_headers(headers);
         let resp = client
             .get(url, header_map)
@@ -197,8 +220,9 @@ pub fn http_get(url: &str, headers: Option<&str>) -> Result<String, String> {
 /// 对应 Kotlin 端 `post(url, body, headers)` 的简化版本。
 pub fn http_post(url: &str, body: &str, headers: Option<&str>) -> Result<String, String> {
     block_on(async {
-        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变
-        let client = build_client_for_url_default(url)?;
+        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变；
+        // 进程级共享池（2026-09-24 性能专项：不再每调用新建连接池）
+        let client = shared_client_for_url(url)?;
         let header_map = parse_headers(headers);
         let resp = client
             .post(url, body, header_map)
@@ -213,8 +237,9 @@ pub fn http_post(url: &str, body: &str, headers: Option<&str>) -> Result<String,
 /// 对应 Kotlin 端 `head(urlStr, headers)` 的简化版本。
 pub fn http_head(url: &str) -> Result<String, String> {
     block_on(async {
-        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变
-        let client = build_client_for_url_default(url)?;
+        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变；
+        // 进程级共享池（2026-09-24 性能专项：不再每调用新建连接池）
+        let client = shared_client_for_url(url)?;
         let resp = client
             .head(url, None)
             .await
@@ -283,7 +308,8 @@ pub fn ajax(input: &str) -> Result<String, String> {
     };
 
     block_on(async {
-        let client = build_client_for_url(&url, timeout)?;
+        // 共享池（有效超时由逐请求 timeout 决定，与修复前一致）
+        let client = shared_client_for_url(&url)?;
 
         // Cookie 合并须在 url move 进 LegadoRequest 前完成（新签名按请求 URL 取 cookie）
         let headers = ensure_json_content_type(
@@ -417,7 +443,8 @@ fn ajax_request_body(opts: &HttpOptions) -> Result<String, String> {
         other => return Err(format!("ajax: unsupported method '{}'", other)),
     };
     block_on(async {
-        let client = build_client_for_url(&url, timeout)?;
+        // 共享池（有效超时由逐请求 timeout 决定，与修复前一致）
+        let client = shared_client_for_url(&url)?;
         // Cookie 合并须在 url move 进 LegadoRequest 前完成（新签名按请求 URL 取 cookie）
         let headers = ensure_json_content_type(
             merge_global_cookie(opts.headers.clone().unwrap_or_default(), &url),
@@ -447,14 +474,14 @@ pub fn ajax_all(urls_json: &str) -> Result<String, String> {
         let urls: Vec<String> =
             serde_json::from_str(urls_json).map_err(|e| format!("ajaxAll parse error: {}", e))?;
 
-        let client = build_client()?;
+        let client = shared_client(false, false)?;
         // 回环 URL（本地书源/本地测试服务）须 no_proxy 直连（P2-17 约定
         // cda70a0c54：HTTP_PROXY 存在时 reqwest 连 127.0.0.1 也走代理）；
-        // 真实主机 URL 沿用默认客户端（代理配置不变）
+        // 真实主机 URL 沿用默认池（代理配置不变）
         let loopback_client = urls
             .iter()
             .any(|url| is_loopback_url(url))
-            .then(build_client_loopback)
+            .then(|| shared_client(true, false))
             .transpose()?;
 
         use futures::stream::{self, StreamExt};
@@ -508,12 +535,9 @@ pub fn connect_full(
         .unwrap_or_default();
 
     block_on(async {
-        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变
-        let client = if is_loopback_url(url) {
-            build_client_for_url(url, timeout)?
-        } else {
-            build_client_with_timeout(timeout)?
-        };
+        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变；
+        // 共享池（有效超时由逐请求 timeout 决定，与修复前一致）
+        let client = shared_client_for_url(url)?;
         let request = LegadoRequest {
             url: url.to_string(),
             method,
@@ -562,17 +586,14 @@ pub fn connect_no_redirect(
         body_owned.as_ref().is_some_and(|b| !b.is_empty()),
     );
     block_on(async {
-        let config = LegadoClientConfig {
-            follow_redirects: false,
-            // 回环流量（本地测试服务/本地源）不得经系统/环境变量代理路由：
-            // reqwest 默认客户端在 HTTP_PROXY 存在时连 127.0.0.1 也走代理，
-            // 死代理环境下回环用例会被劫持（cda70a0c54 约定）。仅回环 URL
-            // 豁免代理；真实主机仍走用户代理配置，不改变生产行为。
-            no_proxy: is_loopback_url(&url),
-            ..LegadoClientConfig::default()
-        };
-        let client =
-            LegadoClient::new(config).map_err(|e| format!("connectNR client error: {}", e))?;
+        // 不跟随重定向共享池（回环/非回环分池）：
+        // - `follow_redirects=false`：拦截 302 取 Location 头（jsoup 语义）
+        // - 回环流量（本地测试服务/本地源）不得经系统/环境变量代理路由：
+        //   reqwest 默认客户端在 HTTP_PROXY 存在时连 127.0.0.1 也走代理，
+        //   死代理环境下回环用例会被劫持（cda70a0c54 约定）。仅回环 URL
+        //   豁免代理；真实主机仍走用户代理配置，不改变生产行为。
+        let client = shared_client_no_redirect(&url)
+            .map_err(|e| format!("connectNR client error: {}", e))?;
         let request = LegadoRequest {
             url,
             method,
@@ -604,8 +625,9 @@ pub fn head_full(url: &str, headers_json: Option<&str>) -> Result<String, String
         .unwrap_or_default();
 
     block_on(async {
-        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变
-        let client = build_client_for_url_default(url)?;
+        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变；
+        // 进程级共享池（2026-09-24 性能专项：不再每调用新建连接池）
+        let client = shared_client_for_url(url)?;
         let request = LegadoRequest {
             url: url.to_string(),
             method: Method::Head,
@@ -637,8 +659,9 @@ pub fn post_full(url: &str, body: &str, headers_json: Option<&str>) -> Result<St
         .unwrap_or_default();
 
     block_on(async {
-        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变
-        let client = build_client_for_url_default(url)?;
+        // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变；
+        // 进程级共享池（2026-09-24 性能专项：不再每调用新建连接池）
+        let client = shared_client_for_url(url)?;
         let request = LegadoRequest {
             url: url.to_string(),
             method: Method::Post,
@@ -764,7 +787,7 @@ mod tests {
     /// std `TcpListener` + 单线程模式（与 `spawn_search_loopback_server` /
     /// `spawn_cookie_echo_server` 同款；legado-js 的 quickjs tokio feature 无 net）；
     /// 回环流量经 `no_proxy` 豁免系统/环境变量代理（P2-17 约定，见
-    /// `build_client_for_url_default` / `build_client_loopback`）。
+    /// 回环共享池 `SHARED_CLIENT_LOOPBACK` / `SHARED_CLIENT_NO_REDIRECT_LOOPBACK`）。
     fn spawn_httpbin_mock(max_conns: usize) -> std::net::SocketAddr {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
         let addr = listener.local_addr().expect("local_addr");
@@ -1036,18 +1059,118 @@ mod tests {
         assert!(map.is_none());
     }
 
-    /// 测试 build_client 构建成功
+    /// 四个进程级共享池均可构建，且重复取回同一实例（OnceLock 幂等，
+    /// 2026-09-24 性能专项：不再每调用新建客户端/连接池）
     #[test]
-    fn test_build_client() {
-        let client = build_client();
-        assert!(client.is_ok(), "默认配置构建客户端应成功");
+    fn test_shared_client_pools() {
+        for (loopback, no_redirect) in [(false, false), (true, false), (false, true), (true, true)]
+        {
+            assert!(
+                shared_client(loopback, no_redirect).is_ok(),
+                "共享池 (loopback={loopback}, no_redirect={no_redirect}) 应构建成功"
+            );
+        }
+        // 幂等：两次取回共享同一实例（cookie_store 内部分配指针一致）
+        let a = shared_client(false, false).expect("默认池");
+        let b = shared_client(false, false).expect("默认池");
+        assert!(
+            std::ptr::eq(
+                std::sync::Arc::as_ptr(a.cookie_store()),
+                std::sync::Arc::as_ptr(b.cookie_store())
+            ),
+            "同一池两次取回应为同一实例（连接池复用前提）"
+        );
+        // 不同池互不相同
+        let c = shared_client(true, false).expect("回环池");
+        assert!(
+            !std::ptr::eq(
+                std::sync::Arc::as_ptr(a.cookie_store()),
+                std::sync::Arc::as_ptr(c.cookie_store())
+            ),
+            "回环池与默认池应为不同实例"
+        );
     }
 
-    /// 测试 build_client_with_timeout 构建成功
+    /// 共享池 keep-alive 复用证明（2026-09-24 性能专项）：
+    /// 同一共享客户端连发 N 次 → 服务端仅 1 次 accept（池内 keep-alive 复用）；
+    /// 每请求新建 LegadoClient → N 次 accept（修复前行为，回归对照）。
+    /// HTTP 层计数等价反映 TLS 层成本：每新建连接 = 1 次 TCP + 1 次 TLS 握手。
     #[test]
-    fn test_build_client_with_timeout() {
-        let client = build_client_with_timeout(5000);
-        assert!(client.is_ok(), "自定义超时构建客户端应成功");
+    fn test_shared_pool_reuses_keep_alive() {
+        const N: usize = 5;
+        let (addr, accepts) = spawn_counting_keep_alive_server(N + N + 2);
+        let base = format!("http://{addr}/");
+
+        // ① 共享客户端（回环池）连发 N 次：应仅 1 次 accept
+        let client = shared_client_for_url(&base).expect("共享池");
+        block_on(async {
+            for _ in 0..N {
+                let resp = client.get(&base, None).await.expect("共享池 GET 应成功");
+                assert!(resp.status == 200, "状态码应为 200: {}", resp.status);
+            }
+        });
+        let shared_accepts = accepts.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            shared_accepts, 1,
+            "共享池 {N} 次请求应复用同一连接（1 次 accept），实测 {shared_accepts}"
+        );
+
+        // ② 每请求新建客户端（修复前行为）连发 N 次：应 N 次 accept
+        block_on(async {
+            for _ in 0..N {
+                let fresh = LegadoClient::new(LegadoClientConfig {
+                    no_proxy: true,
+                    ..Default::default()
+                })
+                .expect("新建客户端");
+                let resp = fresh.get(&base, None).await.expect("新建客户端 GET 应成功");
+                assert!(resp.status == 200, "状态码应为 200: {}", resp.status);
+            }
+        });
+        let total_accepts = accepts.load(std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            total_accepts,
+            1 + N,
+            "新建客户端 {N} 次请求应新建 {N} 连接（共 {N}+1 次 accept）"
+        );
+    }
+
+    /// 最小 keep-alive 计数服务器：统计 accept 次数（连接数证据），
+    /// 同一连接循环处理多个请求（HTTP/1.1 keep-alive）
+    fn spawn_counting_keep_alive_server(
+        max_conns: usize,
+    ) -> (
+        std::net::SocketAddr,
+        std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let addr = listener.local_addr().expect("local_addr");
+        let accepts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counter = std::sync::Arc::clone(&accepts);
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(max_conns) {
+                let Ok(mut sock) = stream else { continue };
+                counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                // keep-alive：同一连接循环处理请求，直到客户端关闭
+                while let Some(req) = read_mock_http_request(&mut sock) {
+                    let _body = if req.method == "HEAD" {
+                        String::new()
+                    } else {
+                        "ok".to_string()
+                    };
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n{}",
+                        _body.len(),
+                        _body
+                    );
+                    if sock.write_all(resp.as_bytes()).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+        (addr, accepts)
     }
 
     /// 测试 connect_full 不支持的 HTTP 方法
@@ -1131,7 +1254,8 @@ mod tests {
     ///
     /// 与 P2-17 的 `spawn_search_loopback_server` 同款 std `TcpListener` 模式
     /// （legado-js 的 quickjs tokio feature 无 net）；回环流量经 `no_proxy`
-    /// 豁免系统/环境变量代理（见 `build_client_for_url` / connectNR 约定）。
+    /// 豁免系统/环境变量代理（见回环共享池 `SHARED_CLIENT_LOOPBACK` /
+    /// connectNR 约定）。
     fn spawn_cookie_echo_server(max_conns: usize) -> std::net::SocketAddr {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
         let addr = listener.local_addr().expect("local_addr");

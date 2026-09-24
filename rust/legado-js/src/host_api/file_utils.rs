@@ -198,10 +198,10 @@ mod impl_file_utils {
             fs::create_dir_all(parent).map_err(|e| format!("Cannot create dir: {}", e))?;
         }
 
-        // 使用 LegadoClient 异步下载（通过 block_on 桥接）
+        // 异步下载（通过 block_on 桥接）：进程级共享池（2026-09-24 性能专项：
+        // 不再每下载新建客户端/连接池；回环 URL 经 no_proxy 直连池）
         let bytes = crate::host_api::runtime_bridge::block_on(async {
-            let config = legado_net::LegadoClientConfig::default();
-            let client = legado_net::LegadoClient::new(config)
+            let client = crate::host_api::network::shared_client_for_url(url)
                 .map_err(|e| format!("Download client error: {}", e))?;
             client
                 .get_bytes(url, None)

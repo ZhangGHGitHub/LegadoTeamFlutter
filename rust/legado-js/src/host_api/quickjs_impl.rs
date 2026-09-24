@@ -3602,9 +3602,9 @@ fn resolve_archive_bytes(source: &str, kind: &str) -> Result<Vec<u8>, String> {
     // legado-net 响应体当前经 String 中转，纯二进制压缩包可能受影响）
     if source.starts_with("http://") || source.starts_with("https://") {
         use crate::host_api::runtime_bridge::block_on;
-        use legado_net::{LegadoClient, LegadoClientConfig};
         return block_on(async {
-            let client = LegadoClient::new(LegadoClientConfig::default())
+            // 进程级共享池（2026-09-24 性能专项：不再每调用新建连接池）
+            let client = crate::host_api::network::shared_client_for_url(source)
                 .map_err(|e| format!("网络客户端初始化失败: {e}"))?;
             client
                 .get_bytes(source, None)

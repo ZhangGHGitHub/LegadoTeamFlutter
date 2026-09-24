@@ -334,6 +334,11 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **验证**：`flutter analyze` 0 问题、`flutter test` +1676、Rust workspace 两档 0 failed（2735/3158）、clippy 两档 0/0、fmt 干净；性能对照（本地假源）**选中→落地 605ms → 0ms（缓存命中零网络，抓取计数断言不增）**；Rust 10 条新测（缓存超限/取消代数/命中零抓取/未命中现场抓/enrich 写缓存/失败直通/超时隔离/并发上限）+ Dart 测试（走预拉通道且 `verifyNever switchSource`/取消/进度串三态）。
   - **说明**：默认**不开预拉**（与上游一致）；开启「加载目录」后等待前移到搜索阶段（并行、有进度），选中即落地；未开启时选中后当场抓（有进度 + 可取消），与上游默认体验一致。
 
+- **目录抓取「每页 ≈7 秒」归因（2026-09-24，已闭环）**：真实站点分段计时（curl）＝**TTFB（服务端处理）60–70%**（不可控）+ **每页新 TCP+TLS ≈30%（≈38ms/页，我方可控）** + DNS ≈3% + 传输 ≈5%；连接复用 vs 每页新建对照（真实站点 N=10）：中位 51.5ms vs 89.5ms。
+  - **发现的真问题（已修）**：书源 **JS 宿主网络层**（`rust/legado-js/src/host_api/network.rs` 原 5 个 per-call builder）**每次调用新建 `LegadoClient`**（= 新建连接池 → 每页重复 TCP+TLS）；`java.ajax`/`connect` 取目录页/正文即命中。**修法**：改为 4 个进程级共享池（默认 / 回环免代理 / 不跟随重定向 / 回环+不跟随，`OnceLock<LegadoClient>`），全部调用点切换；`misc_api.connect`/`file_utils.download_file`/`font_api.download_font`/`quickjs_impl.resolve_archive_bytes` 同步收敛；语义逐池核对等价（逐请求超时、回环 `no_proxy`、`connectNR` 不跟随重定向、Cookie 内存 store 累积行为不变）。新增 keep-alive 断言（共享池 N=5 请求 → 服务端仅 1 次 accept）。**实测收益**：10 页 ≈380ms、50 页 ≈1.9s。
+  - **复核为无病**：FFI 主链（搜索/详情/目录/封面）早已走 `http_state::shared_client()` 进程级共享池；TOC 分页内仅做廉价 headers 克隆、无逐页 DB 写、无逐页 BookSource 序列化。
+  - **残留（登记，待后续批次）**：① `web_book.rs` 每页 `serde_json::to_string(&page_body)` + 逐页重建分析器上下文（低频，待优化）；② `legado-server` 各 handler 每请求新建客户端（独立 dev/API 服务，非热路径）；③ 进一步压缩需站点/架构层面（HTTP/2 多路复用；`nextTocUrl` 串行依赖下页间并行无意义，但**页码型** `page=N+1` 可在解析当页时预取下一页——需在 web_book.rs 内改造）。
+
 ### P3：功能补齐与卫生项（2026-08-22 开启）
 
 

@@ -81,9 +81,10 @@ pub fn set_cookie_sink(sink: Arc<dyn CookieSink>) -> bool {
 /// `cookies` 表的行有**两个生产者**：本 crate 的 JS `set_cookie` sink
 /// upsert，与 HTTP jar 写回（net 层 `DbCookiePersistence`，含 **jar 独占**
 /// 的会话 cookie）。回填将后者一并灌入 JS 内存 store；而 JS ajax 使用
-/// **无 jar** 客户端（`network.rs::build_client` → `LegadoClient::new`）+
-/// [`merge_js_cookies`] 把本 store 并入请求头 → jar 会话 cookie 对 JS ajax
-/// 变为**可见**（批次前 JS ajax 只见 JS 写入的 cookie）——这是一个可见性
+/// **进程级共享池**客户端（`network.rs::shared_client_for_url`；客户端自身
+/// 仅持内存 CookieStore、无持久 jar）+ [`merge_js_cookies`] 把本 store
+/// 并入请求头 → jar 会话 cookie 对 JS ajax 变为**可见**（批次前 JS ajax
+/// 只见 JS 写入的 cookie）——这是一个可见性
 /// 变化。结论（查证）：按域匹配仍然 sound——两侧共享单一来源域键规则
 /// （`cookie_domain_key` ETLD+1），jar cookie 只落在自身域键下，JS 读侧只
 /// 取请求自身域键、绝不跨域携带；与上游「cookie 属于域名」语义一致

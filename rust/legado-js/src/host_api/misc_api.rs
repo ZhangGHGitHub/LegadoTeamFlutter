@@ -10,7 +10,6 @@
 #[cfg(feature = "quickjs")]
 pub fn connect(url: &str, header: &str) -> String {
     use crate::host_api::runtime_bridge::block_on;
-    use legado_net::{LegadoClient, LegadoClientConfig};
     use std::collections::HashMap;
 
     let headers: Option<HashMap<String, String>> = if header.is_empty() {
@@ -20,8 +19,9 @@ pub fn connect(url: &str, header: &str) -> String {
     };
 
     let result = block_on(async {
-        let config = LegadoClientConfig::default();
-        let client = match LegadoClient::new(config) {
+        // 进程级共享池（2026-09-24 性能专项：不再每调用新建客户端/连接池；
+        // 回环 URL 经 no_proxy 直连池，真实主机走默认池，语义不变）
+        let client = match crate::host_api::network::shared_client_for_url(url) {
             Ok(c) => c,
             Err(e) => return format!("[ERROR] {}", e),
         };
@@ -75,7 +75,6 @@ pub fn get_tag(tag_name: &str) -> String {
 #[cfg(feature = "quickjs")]
 pub fn ajax_test_all(urls: &str) -> String {
     use crate::host_api::runtime_bridge::block_on;
-    use legado_net::{LegadoClient, LegadoClientConfig};
 
     let url_list: Vec<String> = serde_json::from_str(urls).unwrap_or_else(|_| {
         urls.split(',')
@@ -85,14 +84,18 @@ pub fn ajax_test_all(urls: &str) -> String {
     });
 
     let results = block_on(async {
-        let config = LegadoClientConfig::default();
-        let client = match LegadoClient::new(config) {
-            Ok(c) => c,
-            Err(_) => return vec![],
-        };
         let mut results = Vec::new();
 
         for url in &url_list {
+            // 进程级共享池（2026-09-24 性能专项：不再每调用新建客户端/连接池）
+            let Ok(client) = crate::host_api::network::shared_client_for_url(url) else {
+                results.push(serde_json::json!({
+                    "url": url,
+                    "statusCode": 0,
+                    "success": false
+                }));
+                continue;
+            };
             let status = match client.get(url, None).await {
                 Ok(resp) => resp.status,
                 Err(_) => 0,

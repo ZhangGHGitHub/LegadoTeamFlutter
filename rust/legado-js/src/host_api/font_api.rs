@@ -213,10 +213,11 @@ fn load_font_bytes(data: &str, font_type: &str, cache_key: &str) -> Result<Vec<u
 #[cfg(feature = "quickjs")]
 fn download_font(url: &str) -> Result<Vec<u8>, String> {
     use crate::host_api::runtime_bridge::block_on;
-    use legado_net::{LegadoClient, LegadoClientConfig};
 
     block_on(async {
-        let client = LegadoClient::new(LegadoClientConfig::default())
+        // 进程级共享池（2026-09-24 性能专项：不再每下载新建客户端/连接池；
+        // 回环 URL 经 no_proxy 直连池）
+        let client = crate::host_api::network::shared_client_for_url(url)
             .map_err(|e| format!("build client error: {}", e))?;
         // 字体为二进制资源，用 get_raw 避免 UTF-8 有损转换
         let resp = client
