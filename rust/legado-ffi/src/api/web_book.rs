@@ -7,6 +7,7 @@
 //! 实现完整的搜索→详情→目录→正文链路。
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -945,6 +946,48 @@ impl RealBookSourceFetcher {
             cache_put_page_body(url, &body);
         }
         Ok(body)
+    }
+
+    /// 目录（nextTocUrl）分页页抓取：三态返回，对齐上游 body-null 判停语义
+    ///
+    /// - `Ok(Some(body))`：2xx（经页面缓存 + JS cookie 合并，同
+    ///   [`fetch_simple_cached`]）；
+    /// - `Ok(None)`：传输成功但 HTTP 非 2xx —— 上游 `res.body?.let` 的
+    ///   body-null 语义 = 截断保留前缀并判停，**不是**整刷失败（改前
+    ///   `fetch_simple_cached(...)?` 把 4xx/5xx 当硬失败 → 单页 500 丢全目录）；
+    /// - `Err`：I/O 级传输错误（超时/DNS/连接失败），对齐上游异常 → 整刷失败。
+    async fn fetch_toc_page_optional(
+        &self,
+        url: &str,
+        source_headers: Option<&HashMap<String, String>>,
+    ) -> LegadoResult<Option<String>> {
+        // data: URI（书山 bookUrl 形态）优先处理、不读缓存（同 fetch_simple_cached）
+        if let Some(result) = fetch_data_uri_content(url) {
+            return result.map(Some);
+        }
+        if let Some(cached) = cache_get_page_body(url) {
+            eprintln!("[web_book] toc page cache hit: {url}");
+            return Ok(Some(cached));
+        }
+        let mut headers = source_headers.cloned().unwrap_or_default();
+        legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, url);
+        let headers_opt = if headers.is_empty() {
+            None
+        } else {
+            Some(headers)
+        };
+        let response = self.client.get_raw(url, headers_opt).await?;
+        if !response.is_success() {
+            eprintln!(
+                "[web_book] toc page HTTP {} for {url} → 截断判停（对齐上游 body-null 保留前缀）",
+                response.status
+            );
+            return Ok(None);
+        }
+        check_redirect_log(url, &response.url);
+        let body = decode_web_response(&response.body, &response.headers, None);
+        cache_put_page_body(url, &body);
+        Ok(Some(body))
     }
 
     /// 执行 loginCheckJs 登录检测（规则路径增强）
@@ -2254,12 +2297,18 @@ impl RealBookSourceFetcher {
             chapter_list_rule = stripped;
         }
 
+        // [性能专项 2026-09-24] 书源上下文 setup 脚本外提：quickjs 档该函数
+        // 会把整个 BookSource 序列化为 JSON 注入脚本，改前逐页（串行分页循环内）
+        // 重复计算。此处计算一次，各解析器构造点按值克隆复用。
+        let toc_setup_script =
+            crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
+
         let mut analyzer = crate::js_executor::construct_analyzer_with_source_context(
             toc_body,
             toc_url.to_string(),
             &source.book_source_url,
             js_lib_sanitized,
-            crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
+            toc_setup_script.clone(),
         );
 
         // P2-9 ②：meta 命中 → IIFE 扩面绑定；未命中 → 既有 `{"name":…}` 字面量
@@ -2313,7 +2362,7 @@ impl RealBookSourceFetcher {
             toc_url.to_string(),
             &source.book_source_url,
             js_lib_sanitized,
-            crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
+            toc_setup_script.clone(),
         )
         // [P2-6h] 逐章解析器补 `book` 绑定（对齐原版 BookChapterList.kt:236-245：
         // 每章复用同一带 book 绑定的 analyzeRule）。此前只有 chapterList 层的
@@ -2433,10 +2482,35 @@ impl RealBookSourceFetcher {
                     std::collections::HashSet::new();
                 visited.insert(toc_url.to_string());
                 let mut next_url = next_urls.remove(0);
+                // [性能专项 2026-09-24] 刷新代数在循环入口捕获（新刷新 bump 代数
+                // → 本链在下一页边界中止，对齐上游 ensureActive()）；目录总页数
+                // 上限含首抓页（上游仅靠 visited 去重，新 URL 失控链会无限抓取）。
+                let epoch = current_toc_fetch_epoch();
+                let mut toc_pages_seen: usize = 1;
                 while !next_url.is_empty() && visited.insert(next_url.clone()) {
-                    let page_body = self
-                        .fetch_simple_cached(&next_url, source_headers, true)
-                        .await?;
+                    // 取消判活：被新刷新代数抢占 → 中止在途分页链（不静默、不写库）
+                    if epoch != current_toc_fetch_epoch() {
+                        return Err(LegadoError::Internal(
+                            "toc refresh superseded by a newer refresh generation".into(),
+                        ));
+                    }
+                    // 页数上限：防失控新 URL 链（600 页 × 每页 10s 形态）
+                    if toc_pages_seen >= MAX_TOC_PAGES {
+                        eprintln!(
+                            "[web_book] toc chain hit MAX_TOC_PAGES={MAX_TOC_PAGES}, stopping"
+                        );
+                        break;
+                    }
+                    // [性能专项] 三态抓取：2xx → Some(body)；非 2xx → None（截断
+                    // 保留前缀，对齐上游 res.body?.let 的 body-null 判停，而非整刷
+                    // 失败）；I/O 级错误 → Err（对齐上游异常 → 整刷失败）。
+                    let Some(page_body) = self
+                        .fetch_toc_page_optional(&next_url, source_headers)
+                        .await?
+                    else {
+                        break;
+                    };
+                    toc_pages_seen += 1;
                     // P2-9 ①：src = 本页响应体（先序列化再 move 进构造器）
                     let page_src_json = serde_json::to_string(&page_body).unwrap_or_default();
                     let page_analyzer = crate::js_executor::construct_analyzer_with_source_context(
@@ -2444,7 +2518,7 @@ impl RealBookSourceFetcher {
                         next_url.clone(),
                         &source.book_source_url,
                         js_lib_sanitized,
-                        crate::api::source_js_bindings::book_source_js_setup_script(source).ok(),
+                        toc_setup_script.clone(),
                     )
                     .with_js_binding("src", &page_src_json);
                     let page_elements = if chapter_list_rule.is_empty() {
@@ -2531,6 +2605,8 @@ impl RealBookSourceFetcher {
                 let volume_r = volume_rule.to_string();
                 let update_time_r = update_time_rule.to_string();
                 let client = self.client.clone();
+                // [性能专项 2026-09-24] 刷新代数（并行拉页的取消判活基线）
+                let epoch = current_toc_fetch_epoch();
 
                 let futs: Vec<_> = next_urls
                     .into_iter()
@@ -2548,6 +2624,12 @@ impl RealBookSourceFetcher {
                         // chapterList 层；此前并发分支缺失，`@js:book.name` 在该路径取空）
                         let book_binding = book_binding.clone();
                         async move {
+                            // 取消判活：被新刷新代数抢占 → 中止本页（不发请求）
+                            if epoch != current_toc_fetch_epoch() {
+                                return Err(LegadoError::Internal(
+                                    "toc refresh superseded by a newer refresh generation".into(),
+                                ));
+                            }
                             let body = {
                                 if let Some(cached) = cache_get_page_body(&page_url) {
                                     cached
@@ -2658,11 +2740,22 @@ impl RealBookSourceFetcher {
                         }
                     })
                     .collect();
-                let all = futures::future::join_all(futs).await;
-                for page in all {
+                // [性能专项 2026-09-24] 有界并行：对齐上游 mapAsync(threadCount=32)，
+                // 按 TOC_PAGE_CONCURRENCY 滑窗推进（保序）；改前 join_all 无上限 →
+                // N 页 = N-1 个并发连接打爆站点/本地回环。任一页失败即整刷失败
+                // （对齐上游 res.body!! NPE 语义，不可静默丢章）——改前 eprintln
+                // 跳过 = 静默丢章。
+                let mut stream =
+                    futures::StreamExt::buffered(futures::stream::iter(futs), TOC_PAGE_CONCURRENCY);
+                while let Some(page) = futures::StreamExt::next(&mut stream).await {
                     match page {
                         Ok(chs) => chapters.extend(chs),
-                        Err(e) => eprintln!("[web_book] toc page fetch failed: {e}"),
+                        Err(e) => {
+                            eprintln!(
+                                "[web_book] toc page fetch failed → aborting refresh (no silent loss): {e}"
+                            );
+                            return Err(e);
+                        }
                     }
                 }
             }
@@ -2948,6 +3041,34 @@ pub fn build_engine() -> LegadoResult<WebBookEngine<RealBookSourceFetcher>> {
 /// Kotlin 原版无显式上限（依赖 nextUrl 重复/空终止），
 /// Rust 轨加法式加固以防恶意/异常规则导致死循环。
 const MAX_CONTENT_PAGES: usize = 99;
+
+// ─── 目录（nextTocUrl）分页性能专项 2026-09-24 ─────────────────────────────
+//
+// 换源后重载 ≈10 分钟根因：串行 nextTocUrl 链总耗时 ≈ 页数 × 每页站点延迟
+// （回环 mock 实测每页「我方成本」仅 12~19ms，站点延迟占比 ≈100%）。以下
+// 常量/状态用于对齐上游语义并消除失控放大：
+//
+// - MAX_TOC_PAGES：串行目录链总页数上限（含首抓页）。上游仅靠 visited 去重
+//   判停，每页 next 都是新 URL 的「失控链」会无限抓取；512 页 × 每页 100 章
+//   = 5.1 万章，远超真实目录，截断保护。
+// - TOC_PAGE_CONCURRENCY：并行拉页（nextTocUrl 展开 >1 页）并发上限，对齐
+//   上游 `AppConfig.threadCount` 默认 32（原 `join_all` 无界）。
+// - TOC_FETCH_EPOCH：进程级刷新代数。每次 refresh_toc 入口 +1；目录分页链
+//   在每页边界比对捕获的代数，被新刷新抢占即中止（对齐上游 ensureActive()
+//   判活语义，无状态 FFI 用原子计数器实现，不改 FFI 签名）。
+const MAX_TOC_PAGES: usize = 512;
+const TOC_PAGE_CONCURRENCY: usize = 32;
+static TOC_FETCH_EPOCH: AtomicU64 = AtomicU64::new(0);
+
+/// 新刷新代数 +1（refresh_toc 入口调用，使在途旧刷新的分页链在下一页边界中止）
+pub fn bump_toc_fetch_epoch() {
+    TOC_FETCH_EPOCH.fetch_add(1, Ordering::SeqCst);
+}
+
+/// 当前刷新代数（分页链在页边界比对，不等即已被新刷新抢占）
+fn current_toc_fetch_epoch() -> u64 {
+    TOC_FETCH_EPOCH.load(Ordering::SeqCst)
+}
 
 /// 解析单页正文，返回（净化后正文，下一页 URL 列表）
 ///
