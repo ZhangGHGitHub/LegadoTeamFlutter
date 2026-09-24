@@ -45,11 +45,15 @@ fn test_update_book_preserves_chapters() {
     chapter_repo.insert_batch(&chapters).unwrap();
     assert_eq!(chapter_repo.count_by_book_url(book_url).unwrap(), 3);
 
-    // 3. 模拟翻章保存进度 → repo.update()
+    // 3. 模拟翻章保存进度：全行 update() 只验证「不得级联删除目录」；
+    //    [B-3] 进度列已被 update() 结构性排除（防陈旧快照回退进度），
+    //    进度写入走字段级 update_progress（对齐 update_reading_progress 路径）
     let mut progressed = repo.find_by_url(book_url).unwrap().unwrap();
     progressed.dur_chapter_index = 1;
     progressed.dur_chapter_pos = 42;
     repo.update(&progressed).unwrap();
+    repo.update_progress(book_url, 1, 42, Some("第2章"), 0)
+        .unwrap();
 
     // 4. 关键断言：章节目录必须完整保留（修复前此处会变成 0）
     assert_eq!(

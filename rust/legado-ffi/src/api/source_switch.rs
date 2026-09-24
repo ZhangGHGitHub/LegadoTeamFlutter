@@ -827,6 +827,11 @@ fn switch_book_source_with<F: BookSourceFetcher>(
             .unchecked_transaction()
             .map_err(|e| LegadoError::Database(format!("开启换源事务失败: {e}")))?;
 
+        // [B-4] `update` 的 UPDATE SET 结构性排除进度列（见
+        // BookRepository::update 的 [B-3] 注释）：本事务的入参 book 是「抓取前
+        // 快照」（source_switch.rs:645 读取），不含分钟级网络抓取窗口内写入的
+        // 进度——全行写回会把窗口内进度抹平。此处零代码改动：靠结构排除实现
+        // 「换源提交不抹窗口内进度」。
         BookRepository::new(conn).update(&book)?;
         let cache_repo = legado_db::CacheBookRepository::new(conn);
         cache_repo.delete_by_book(book_url)?;
@@ -838,6 +843,11 @@ fn switch_book_source_with<F: BookSourceFetcher>(
             .map_err(|e| LegadoError::Database(format!("提交换源事务失败: {e}")))?;
         Ok(())
     })?;
+
+    // [B-6] 换源提交后按**新书源**登记 (书源, 章节) → 下一章 URL：换源后
+    // 正文分页「命中下一章即截断」按当前书源的目录判定（registry 复合键
+    // (书源, 章节) 天然隔离旧源登记，此处为当前书源补齐精确通道）
+    super::web_book::record_next_chapter_map(new_source_url, &web_chapters);
 
     serde_json::to_string(&book).map_err(LegadoError::Serialization)
 }
@@ -1437,18 +1447,26 @@ mod tests {
         .expect("初始数据写入失败");
 
         // 复现 switch_book_source 的 DB 部分：仅改书源字段，bookUrl 保持稳定，然后清旧章节+缓存
+        // [B-7] 与换源事务同款：删旧章节须包事务（delete_by_book_url 事务外为 no-op）
         with_database(|db| {
-            let repo = BookRepository::new(db.connection());
+            let conn = db.connection();
+            let tx = conn.unchecked_transaction().map_err(|e| {
+                legado_core::LegadoError::Database(format!("开启换源测试事务失败: {e}"))
+            })?;
+            let repo = BookRepository::new(conn);
             let mut book = repo.find_by_url(old_url)?.expect("书籍应存在");
             book.origin = "https://task16-new-src.example.com".to_string();
             book.origin_name = "新源".to_string();
             book.toc_url = new_url.to_string();
             repo.update(&book)?; // WHERE bookUrl=old_url 命中原行
 
-            let cache_repo = CacheBookRepository::new(db.connection());
+            let cache_repo = CacheBookRepository::new(conn);
             cache_repo.delete_by_book(old_url)?;
-            let chapter_repo = BookChapterRepository::new(db.connection());
+            let chapter_repo = BookChapterRepository::new(conn);
             chapter_repo.delete_by_book_url(old_url)?;
+            tx.commit().map_err(|e| {
+                legado_core::LegadoError::Database(format!("提交换源测试事务失败: {e}"))
+            })?;
             Ok(())
         })
         .expect("换源 DB 更新失败");

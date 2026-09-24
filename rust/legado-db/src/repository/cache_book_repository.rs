@@ -95,6 +95,30 @@ impl<'a> CacheBookRepository<'a> {
         Ok(count)
     }
 
+    /// [B-5] 删除「章节 URL 已不在当前目录中」的缓存正文
+    ///
+    /// 目录重写（refresh_toc / 换源 / 服务端目录更新）后，旧目录 URL 键控的
+    /// 缓存行成为「上一代目录」内容：不清理则按索引读取会张冠李戴（把旧
+    /// 目录某章正文当成本章）。URL 未变化的章节保留缓存（不强制重抓）。
+    /// 须在「删旧章节 + 写新章节」的同一事务内、新章节写入**之后**调用
+    /// （子查询引用 chapters 表的新集合；chapters.url / cached_chapters
+    /// .chapter_url 均 NOT NULL，NOT IN 无 NULL 陷阱）。
+    pub fn clear_stale_chapter_urls(&self, book_url: &str) -> LegadoResult<usize> {
+        let count = self
+            .conn
+            .execute(
+                // 两处 ?1 均引用同一参数索引 1（SQLite 重复占位符），只绑 1 个参数
+                "DELETE FROM cached_chapters
+                 WHERE book_url = ?1
+                   AND chapter_url NOT IN (
+                       SELECT url FROM chapters WHERE bookUrl = ?1
+                   )",
+                params![book_url],
+            )
+            .map_err(|e| LegadoError::Database(format!("清理失效缓存失败: {e}")))?;
+        Ok(count)
+    }
+
     /// 按书籍 URL 查询所有缓存章节
     pub fn get_by_book(&self, book_url: &str) -> LegadoResult<Vec<CachedChapter>> {
         let mut stmt = self

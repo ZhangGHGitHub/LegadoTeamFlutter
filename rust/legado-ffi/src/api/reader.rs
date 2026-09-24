@@ -394,7 +394,10 @@ fn refresh_toc_with_fetcher<F: BookSourceFetcher>(
         if let Err(e) = crate::api::pre_update::run_pre_update_js(&source, book) {
             eprintln!("[refresh_toc] preUpdateJs: {e}");
         } else {
-            // 持久化 preUpdateJs / 钩子对 bookUrl·tocUrl·variable 等的改写
+            // 持久化 preUpdateJs / 钩子对 bookUrl·tocUrl·variable 等的改写。
+            // [B-4] 这是全行快照写回，但 `update` 的 UPDATE SET 结构性排除
+            // 进度列（B-3），钩子执行/持久化期间并发写入的进度不会被回退
+            // （此处零代码改动，靠结构排除保护进度）。
             let _ =
                 with_database(|db| legado_db::BookRepository::new(db.connection()).update(book));
         }
@@ -536,7 +539,16 @@ fn refresh_toc_with_fetcher<F: BookSourceFetcher>(
     // （搜索→目录页→点章节进入阅读的路径，此时 Flutter 尚未执行带 origin 的
     // addBook）。既有记录 origin 仍为默认值时同样补齐（加法式，不覆盖已有真实书源）。
     with_database(|db| {
-        let book_repo = legado_db::BookRepository::new(db.connection());
+        let conn = db.connection();
+        // [B-7] 「删旧章节 + 写新章节 + 清失效缓存」包进同一事务：裸 autocommit
+        // 删除会向并发读者暴露「0 章」中间态（对齐换源事务模式）。
+        // delete_by_book_url 事务外为 no-op（见 BookChapterRepository）；
+        // pool 共享 &Connection 无法用 &mut Connection::transaction()，
+        // 沿用项目既有的 unchecked_transaction() 模式（见 source_switch.rs）。
+        let tx = conn
+            .unchecked_transaction()
+            .map_err(|e| LegadoError::Database(format!("开启目录更新事务失败: {e}")))?;
+        let book_repo = legado_db::BookRepository::new(conn);
         match book_repo.find_by_url(book_url)? {
             None => {
                 // Task#125：占位落库须打 NOT_SHELF，对齐原版 readBook 临时书 /
@@ -562,11 +574,22 @@ fn refresh_toc_with_fetcher<F: BookSourceFetcher>(
             }
             _ => {}
         }
-        let repo = BookChapterRepository::new(db.connection());
+        let repo = BookChapterRepository::new(conn);
         repo.delete_by_book_url(book_url)?;
-        repo.insert_batch(&book_chapters)?;
+        repo.insert_batch_no_tx(&book_chapters)?;
+        // [B-5] 目录变更后清理失效缓存（同事务）：章节 URL 已不在新目录中的
+        // 缓存行删除，URL 未变的章节保留缓存（不强制重抓）
+        legado_db::CacheBookRepository::new(conn).clear_stale_chapter_urls(book_url)?;
+        tx.commit()
+            .map_err(|e| LegadoError::Database(format!("提交目录更新事务失败: {e}")))?;
         Ok(())
     })?;
+
+    // [B-6] 目录重写后按当前书源登记 (书源, 章节) → 下一章 URL：正文分页
+    // 「命中下一章即截断」需按最新目录判定。本入口（refresh_toc）不经
+    // web_book 的章节列表缓存链（record_chapter_list_cache），须在此显式登记；
+    // registry 复合键 (书源, 章节) 天然隔离旧源登记，重复登记幂等。
+    super::web_book::record_next_chapter_map(source_url, &web_chapters);
 
     // 显示层标题繁简转换（入库的是原始标题，仅转换返回副本）
     let mut book_chapters = book_chapters;
@@ -594,7 +617,9 @@ pub fn fetch_chapter_content(
     source_url: &str,
 ) -> LegadoResult<String> {
     // 取得真实章节序号与标题（供去重复标题与缓存使用）
-    let (chapter_index, chapter_title, chapter_variable) =
+    // [B-12] 第 4 项 known_chapter：未知章节 URL 时不得回退 (0, "") 并写
+    // index=0 缓存行（污染缓存且目录云图标错位）
+    let (chapter_index, chapter_title, chapter_variable, known_chapter) =
         get_chapter_index_title_variable(book_url, chapter_url)?;
     fetch_chapter_content_inner(
         book_url,
@@ -603,6 +628,7 @@ pub fn fetch_chapter_content(
         chapter_index,
         &chapter_title,
         chapter_variable.as_deref(),
+        known_chapter,
     )
 }
 
@@ -618,6 +644,7 @@ fn fetch_chapter_content_inner(
     chapter_index: i32,
     chapter_title: &str,
     chapter_variable: Option<&str>,
+    known_chapter: bool,
 ) -> LegadoResult<String> {
     // 1. 检查 DB 缓存
     // Task #16 P0：按 (book_url, chapter_url) 复合键查找，避免不同书籍共用
@@ -626,6 +653,11 @@ fn fetch_chapter_content_inner(
         let repo = CacheBookRepository::new(db.connection());
         repo.get_by_book_and_chapter_url(book_url, chapter_url)
     })?;
+
+    // [B-1] 空正文缓存行按 miss 处理（对齐上游 BookHelp.kt:271「内容为空
+    // 直接返回」/ :557-559「空内容不入缓存」）：历史遗留的空行若按命中
+    // 返回，该章节将永久空白、永不重抓
+    let cached = cached.filter(|c| !c.content.trim().is_empty());
 
     if let Some(cached_chapter) = cached {
         // 缓存存储原始正文，返回前应用净化（避免规则变更后缓存陈旧）
@@ -673,13 +705,17 @@ fn fetch_chapter_content_inner(
     // 3. 抓取成功后写入 DB 缓存（对齐原版 BookContent.analyzeContent
     //    L207-209 `needSave → BookHelp.saveContent` 的「获取成功即写」时机）。
     //    写失败仅告警不传播——缓存写入失败不得导致阅读获取失败。
-    save_chapter_cache(
-        book_url,
-        chapter_index,
-        chapter_title,
-        chapter_url,
-        &content,
-    );
+    // [B-12] 未知章节 URL（不在当前目录）不写缓存：上游按目录定位章节，
+    // 回退 (0, "") 写出的 index=0 缓存行会污染目录云图标与后续读取
+    if known_chapter {
+        save_chapter_cache(
+            book_url,
+            chapter_index,
+            chapter_title,
+            chapter_url,
+            &content,
+        );
+    }
 
     // 缓存写入原始正文，返回净化后的正文（透传真实章节标题，使去重复标题生效）
     Ok(apply_content_processing_chapter(
@@ -703,6 +739,11 @@ fn save_chapter_cache(
     chapter_url: &str,
     content: &str,
 ) {
+    // [B-1] 空内容不入缓存（对齐上游 BookHelp.kt:557-559）：杜绝空行入库后
+    // 被读侧按命中返回、章节永久空白的缺陷链
+    if content.trim().is_empty() {
+        return;
+    }
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
@@ -775,6 +816,7 @@ pub fn get_chapter_content_full(book_url: &str, chapter_index: i32) -> LegadoRes
     let source_url = book.origin;
 
     // 直接调用 inner，复用已持有的章节信息，避免冗余的 get_chapter_index_and_title 查询
+    // （章节经 find_by_book_url_and_index 定位，必然已知 → known_chapter=true）
     fetch_chapter_content_inner(
         book_url,
         &chapter.url,
@@ -782,6 +824,7 @@ pub fn get_chapter_content_full(book_url: &str, chapter_index: i32) -> LegadoRes
         chapter.index,
         &chapter.title,
         chapter.variable.as_deref(),
+        true,
     )
 }
 
@@ -963,20 +1006,22 @@ fn process_content_with_rules_inner(
     processor.process(raw_content, chapter_title, &entries)
 }
 
-/// 根据 chapter_url 查找章节序号、标题与变量（找不到时返回 (0, 空标题, None)）
+/// 根据 chapter_url 查找章节序号、标题与变量（找不到时返回 (0, 空标题, None, false)）
+///
+/// 第 4 项 `known`（[B-12]）：该 URL 是否命中当前目录。未知 URL 回退
+/// (0, "", None) 仅用于读取/展示，调用方不得据此写入 index=0 的缓存行。
 fn get_chapter_index_title_variable(
     book_url: &str,
     chapter_url: &str,
-) -> LegadoResult<(i32, String, Option<String>)> {
+) -> LegadoResult<(i32, String, Option<String>, bool)> {
     let chapters = with_database(|db| {
         let repo = BookChapterRepository::new(db.connection());
         repo.find_by_book_url(book_url)
     })?;
-    Ok(chapters
-        .iter()
-        .find(|ch| ch.url == chapter_url)
-        .map(|ch| (ch.index, ch.title.clone(), ch.variable.clone()))
-        .unwrap_or((0, String::new(), None)))
+    Ok(match chapters.iter().find(|ch| ch.url == chapter_url) {
+        Some(ch) => (ch.index, ch.title.clone(), ch.variable.clone(), true),
+        None => (0, String::new(), None, false),
+    })
 }
 
 #[cfg(test)]

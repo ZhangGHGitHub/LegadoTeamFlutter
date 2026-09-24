@@ -43,14 +43,39 @@ pub fn clear_book_cache(book_url: &str) -> LegadoResult<i32> {
 }
 
 /// 获取指定章节的缓存内容（无缓存返回空字符串）
+///
+/// [B-1] 空正文缓存行按 miss 返回空（对齐上游 BookHelp.kt:271/:557-559）。
+/// [B-5] 读侧 URL 校验：书籍有目录（chapters 表非空）时，缓存行的
+/// `chapter_url` 必须等于当前目录该索引章节的 URL，否则是上一代目录的
+/// 失效缓存行（换目录未清理），按 miss 返回空，避免张冠李戴；
+/// 无目录记录的书籍（纯缓存场景）保持原有行为。
 pub fn get_chapter_cache(book_url: &str, chapter_index: i32) -> LegadoResult<String> {
     with_database(|db| {
-        let repo = CacheBookRepository::new(db.connection());
+        let conn = db.connection();
+        let repo = CacheBookRepository::new(conn);
         let chapters = repo.get_by_book(book_url)?;
-        let found = chapters
+        let cached = chapters
             .into_iter()
             .find(|c| c.chapter_index == chapter_index);
-        Ok(found.map(|c| c.content).unwrap_or_default())
+        let Some(cached) = cached else {
+            return Ok(String::new());
+        };
+        // [B-1] 空内容行不是有效缓存（历史遗留空行按命中返回会使章节永久空白）
+        if cached.content.trim().is_empty() {
+            return Ok(String::new());
+        }
+        let ch_repo = BookChapterRepository::new(conn);
+        let toc = ch_repo.find_by_book_url(book_url)?;
+        if toc.is_empty() {
+            // 无目录记录：无「当前代」可言，保持既有读行为
+            return Ok(cached.content);
+        }
+        // [B-5] 当前目录该索引的章节 URL 与缓存行 URL 不一致（或章节已不在
+        // 目录中）→ 失效缓存，返回 miss
+        match toc.iter().find(|c| c.index == chapter_index) {
+            Some(ch) if ch.url == cached.chapter_url => Ok(cached.content),
+            _ => Ok(String::new()),
+        }
     })
 }
 
@@ -61,13 +86,24 @@ pub fn get_chapter_cache(book_url: &str, chapter_index: i32) -> LegadoResult<Str
 /// 云图标；返回顺序按 chapter_index 升序（仓储已排序），空 chapter_url 过滤。
 pub fn list_cached_chapter_urls(book_url: &str) -> LegadoResult<Vec<String>> {
     with_database(|db| {
-        let repo = CacheBookRepository::new(db.connection());
+        let conn = db.connection();
+        let repo = CacheBookRepository::new(conn);
         let chapters = repo.get_by_book(book_url)?;
-        Ok(chapters
+        let urls: Vec<String> = chapters
             .into_iter()
             .map(|c| c.chapter_url)
             .filter(|u| !u.trim().is_empty())
-            .collect())
+            .collect();
+        // [B-5] 读侧 URL 校验（云图标对齐）：书籍有目录时，仅当前目录仍
+        // 存在的章节 URL 才算「已缓存」——上一代目录的失效缓存行不应点亮
+        // 新目录章节的云图标；无目录记录的书籍保持原有行为
+        let toc = BookChapterRepository::new(conn).find_by_book_url(book_url)?;
+        if toc.is_empty() {
+            return Ok(urls);
+        }
+        let current: std::collections::HashSet<String> =
+            toc.iter().map(|c| c.url.clone()).collect();
+        Ok(urls.into_iter().filter(|u| current.contains(u)).collect())
     })
 }
 
@@ -103,6 +139,11 @@ pub fn save_chapter_content(
     content: &str,
     chapter_url: &str,
 ) -> LegadoResult<bool> {
+    // [B-1] 空内容不入缓存（对齐上游 BookHelp.kt:557-559）：空行入库会被
+    // 读侧按命中返回，使该章节永久空白、永不重抓；返回 false 表示未写入
+    if content.trim().is_empty() {
+        return Ok(false);
+    }
     // 缺省字段回填：对齐 Kotlin cached_chapters 主键（book_url + chapter_url）
     let (chapter_title, chapter_url) = if title.is_empty() || chapter_url.is_empty() {
         let ch = with_database(|db| {

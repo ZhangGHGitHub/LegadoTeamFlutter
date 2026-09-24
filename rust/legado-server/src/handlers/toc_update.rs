@@ -248,14 +248,26 @@ async fn update_one_toc(
             }
         }
 
-        let chapter_repo = BookChapterRepository::new(db.connection());
+        // [B-7] 对齐 refresh_toc/换源事务模式：删旧章节 + 写新章节 + 清失效
+        // 缓存包进同一事务（delete_by_book_url 事务外为 no-op；裸 autocommit
+        // 删除会向并发读者暴露「0 章」中间态）。pool 共享 &Connection 用
+        // 项目既有的 unchecked_transaction() 模式（见 source_switch.rs）。
+        let conn = db.connection();
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        let chapter_repo = BookChapterRepository::new(conn);
         chapter_repo
             .delete_by_book_url(book_url)
             .map_err(|e| e.to_string())?;
         chapter_repo
-            .insert_batch(&book_chapters)
+            .insert_batch_no_tx(&book_chapters)
             .map_err(|e| e.to_string())?;
         book_repo.update(&book).map_err(|e| e.to_string())?;
+        // [B-5] 目录变更后清理失效缓存（同事务）：章节 URL 已不在新目录的
+        // 缓存行删除，URL 未变的章节保留缓存（不强制重抓）
+        legado_db::CacheBookRepository::new(conn)
+            .clear_stale_chapter_urls(book_url)
+            .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
     }
 
     Ok(TocUpdateOutcome {

@@ -78,7 +78,27 @@ impl<'a> BookChapterRepository<'a> {
     }
 
     /// 删除指定书籍的所有章节
+    ///
+    /// [B-7] 删旧目录 + 写新目录必须包在**同一事务**（先例：换源事务
+    /// source_switch.rs `unchecked_transaction()` + `insert_batch_no_tx`）：
+    /// 裸 autocommit 删除与后续批量插入之间，并发读者（另一池连接）能
+    /// 观察到该书「0 章」中间态（并发翻章报「章节不存在」、目录为空）。
+    /// 因此本方法在**事务外**（autocommit）是 no-op 并告警，强制调用方
+    /// 在 `unchecked_transaction()` 内调用；事务内正常执行删除。
+    /// 调用方审计：换源事务（事务内✓）、refresh_toc 重写（已包事务）、
+    /// legado-server toc_update（已包事务）、各 cfg(test) 清理段（no-op
+    /// 无害，测试库按用例隔离/全新）均不受损。
     pub fn delete_by_book_url(&self, book_url: &str) -> LegadoResult<()> {
+        // rusqlite 0.31 无 in_transaction()（0.32 才有）；is_autocommit()==false
+        // 即处于显式事务内（unchecked_transaction() 的 BEGIN 已生效）
+        if self.conn.is_autocommit() {
+            eprintln!(
+                "[B-7] delete_by_book_url 在事务外被调用（bookUrl={book_url}）：\
+                 已跳过删除（no-op），避免向并发读者暴露「0 章」中间态；\
+                 请改用 unchecked_transaction() 包裹删除+写入"
+            );
+            return Ok(());
+        }
         self.conn
             .execute("DELETE FROM chapters WHERE bookUrl = ?1", params![book_url])
             .map_err(|e| LegadoError::Database(format!("删除失败: {e}")))?;
@@ -305,15 +325,37 @@ mod tests {
     #[test]
     fn test_delete_by_book_url() {
         let db = crate::init_in_memory_database().unwrap();
-        insert_parent_book(db.connection(), "book1");
-        insert_parent_book(db.connection(), "book2");
-        let repo = BookChapterRepository::new(db.connection());
+        let conn = db.connection();
+        insert_parent_book(conn, "book1");
+        insert_parent_book(conn, "book2");
+        let repo = BookChapterRepository::new(conn);
         repo.insert(&make_chapter("book1", 0, "ch0")).unwrap();
         repo.insert(&make_chapter("book1", 1, "ch1")).unwrap();
         repo.insert(&make_chapter("book2", 0, "ch0")).unwrap();
+        // [B-7] delete_by_book_url 事务外为 no-op（防「0 章」中间态），
+        // 删除须包事务（与换源/refresh_toc 事务同款 unchecked_transaction 模式）
+        let tx = conn.unchecked_transaction().unwrap();
         repo.delete_by_book_url("book1").unwrap();
+        tx.commit().unwrap();
         assert_eq!(repo.count_by_book_url("book1").unwrap(), 0);
         assert_eq!(repo.count_by_book_url("book2").unwrap(), 1);
+    }
+
+    /// [B-7] 事务外裸调用 delete_by_book_url 是 no-op（不删章、不报错）
+    #[test]
+    fn test_delete_by_book_url_noop_outside_transaction() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        insert_parent_book(conn, "book1");
+        let repo = BookChapterRepository::new(conn);
+        repo.insert(&make_chapter("book1", 0, "ch0")).unwrap();
+        // 无外层事务 → no-op，章节仍在
+        repo.delete_by_book_url("book1").unwrap();
+        assert_eq!(
+            repo.count_by_book_url("book1").unwrap(),
+            1,
+            "事务外删除应 no-op（防并发读者看到 0 章中间态）"
+        );
     }
 
     #[test]

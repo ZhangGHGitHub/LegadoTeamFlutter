@@ -263,6 +263,37 @@ impl<'a> BookRepository<'a> {
         Ok(())
     }
 
+    /// [B-3] 进度字段级更新（单条 SQL，不触碰其他列）
+    ///
+    /// 阅读进度（durChapterIndex/durChapterPos/durChapterTitle/durChapterTime）
+    /// 的唯一常规写入口（新书创建经 insert_replace 全列写入除外）：
+    /// [`Repository::update`](./trait.Repository.html) 的 UPDATE SET 已结构性
+    /// 排除进度列，任何全行快照回写都不得回退进度；进度只经本方法落库
+    /// （`update_reading_progress`）。
+    pub fn update_progress(
+        &self,
+        book_url: &str,
+        chapter_index: i32,
+        chapter_pos: i32,
+        chapter_title: Option<&str>,
+        chapter_time: i64,
+    ) -> LegadoResult<()> {
+        self.conn
+            .execute(
+                "UPDATE books SET durChapterIndex = ?1, durChapterPos = ?2,
+                    durChapterTitle = ?3, durChapterTime = ?4 WHERE bookUrl = ?5",
+                params![
+                    chapter_index,
+                    chapter_pos,
+                    chapter_title,
+                    chapter_time,
+                    book_url
+                ],
+            )
+            .map_err(|e| LegadoError::Database(format!("更新阅读进度失败: {e}")))?;
+        Ok(())
+    }
+
     /// 更新书籍但保留库内原有 readConfig（对齐上游 `BookDao.updatePreservingReadConfig`）
     ///
     /// 上游事务语义：先取库内 readConfig JSON → 执行全行 update → 再写回原 JSON，
@@ -502,6 +533,14 @@ impl<'a> Repository<Book> for BookRepository<'a> {
     fn update(&self, item: &Book) -> LegadoResult<()> {
         // Task#125 P0：update 改为原地 UPDATE，避免 INSERT OR REPLACE
         // 删除 books 行触发 chapters 的 ON DELETE CASCADE，导致翻章后目录被清空
+        //
+        // [B-3] 进度列「不回滚」语义：UPDATE SET 结构性排除 4 个阅读进度列
+        // （durChapterTitle/durChapterIndex/durChapterPos/durChapterTime）。
+        // 全行快照回写（目录页菜单 update_book 持陈旧 Book 对象、换源事务
+        // 用抓取前快照）不得把进度打回旧值——进度只经
+        // [`Self::update_progress`] 单列更新与新书创建（insert_replace）写入。
+        // 对齐上游单列更新先例（P2-1 update_toc_url）。
+        // 注意：durVolumeIndex/chapterInVolumeIndex 是目录定位列非进度，保留。
         let read_config_json = item
             .read_config
             .as_ref()
@@ -515,13 +554,12 @@ impl<'a> Repository<Book> for BookRepository<'a> {
                     customTag=?7, coverUrl=?8, customCoverUrl=?9, intro=?10, customIntro=?11,
                     charset=?12, type=?13, \"group\"=?14, latestChapterTitle=?15,
                     latestChapterTime=?16, lastCheckTime=?17, lastCheckCount=?18,
-                    totalChapterNum=?19, durChapterTitle=?20, durChapterIndex=?21,
-                    durVolumeIndex=?22, chapterInVolumeIndex=?23, durChapterPos=?24,
-                    durChapterTime=?25, wordCount=?26, canUpdate=?27, \"order\"=?28,
-                    originOrder=?29, variable=?30, readConfig=?31, syncTime=?32,
-                    infoHtml=?33, tocHtml=?34, downloadUrls=?35, coverOrigin=?36,
-                    originBookUrl=?37
-                 WHERE bookUrl=?38",
+                    totalChapterNum=?19, durVolumeIndex=?20, chapterInVolumeIndex=?21,
+                    wordCount=?22, canUpdate=?23, \"order\"=?24,
+                    originOrder=?25, variable=?26, readConfig=?27, syncTime=?28,
+                    infoHtml=?29, tocHtml=?30, downloadUrls=?31, coverOrigin=?32,
+                    originBookUrl=?33
+                 WHERE bookUrl=?34",
                 params![
                     item.toc_url,
                     item.origin,
@@ -542,12 +580,8 @@ impl<'a> Repository<Book> for BookRepository<'a> {
                     item.last_check_time,
                     item.last_check_count,
                     item.total_chapter_num,
-                    item.dur_chapter_title,
-                    item.dur_chapter_index,
                     item.dur_volume_index,
                     item.chapter_in_volume_index,
-                    item.dur_chapter_pos,
-                    item.dur_chapter_time,
                     item.word_count,
                     item.can_update,
                     item.order,

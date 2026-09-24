@@ -202,6 +202,79 @@ fn chapter_book_cache() -> &'static Mutex<HashMap<(String, String), String>> {
     CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// (书源 URL, 章节 URL) 复合键 → **下一章** URL（目录阶段登记，[B-6] 用）
+///
+/// nextContentUrl 分页链的「命中下一章 URL 即截断」判定需要 nextChapterUrl
+/// （上游 BookContent.kt:76-80 `mNextChapterUrl = nextChapterUrl ?:
+/// getChapter(bookUrl, index+1)?.url`）。无状态 FFI 用进程级缓存承接
+/// 目录 → 正文的流转（与 [`chapter_book_cache`] 同款模式）：目录抓取/
+/// 重写/换源提交后按 (书源, 章节) 登记「下一章 URL」，正文分页阶段按
+/// 复合键反查精确截断；未命中回退 URL 形态保守启发式
+/// （见 [`pagination_truncation_heuristic`]）。
+fn next_chapter_cache() -> &'static Mutex<HashMap<(String, String), String>> {
+    static CACHE: OnceLock<Mutex<HashMap<(String, String), String>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// 记录 (书源, 章节) → 下一章 URL 映射（正文分页截断判定用，[B-6]）
+///
+/// 目录抓取/重写完成后调用（`record_chapter_list_cache`、refresh_toc 事务
+/// 提交后、换源事务提交后）。按 index 稳定排序后逐章登记「索引更靠后的
+/// 下一个**非卷**且 URL 非空章节」作为下一章；最后一章不登记——与上游
+/// BookContent.kt 的 index-0 回绕 fallback 有意不同：截断哨兵不应指回首章，
+/// 末页 next 指回首章时由 visited 去重终止而非误截断。
+///
+/// 容量策略与 [`chapter_book_insert_batch`] 一致：仅**新键**插入溢出容量
+/// 上限（CHAPTER_BOOK_CACHE_MAX）时整体清空（best-effort 缓存，未命中
+/// 回退 URL 形态启发式判定，不值得 LRU 排序开销）。
+pub fn record_next_chapter_map(source_url: &str, chapters: &[WebChapter]) {
+    if source_url.trim().is_empty() || chapters.is_empty() {
+        return;
+    }
+    // 目录通常已按 index 有序，仍按 index 稳定排序兜底（卷章/分页乱序源
+    // 防御；稳定排序保持同 index 章节的原始相对顺序）
+    let mut sorted: Vec<&WebChapter> = chapters.iter().collect();
+    sorted.sort_by_key(|c| c.index);
+    // 逆序线性扫描：每个章节的「下一非卷章节」= 其后（index 更大方向）
+    // 最近一个非卷且 URL 非空章节；空 URL 章节（= 目录页回退/卷章合成
+    // URL）不登记——正文分页链的截断哨兵指向它们无意义（对齐上游
+    // mNextChapterUrl 为空时不截断的语义）
+    let mut next_non_volume: Option<String> = None;
+    let mut entries: Vec<((String, String), String)> = Vec::new();
+    for c in sorted.iter().rev() {
+        if c.url.trim().is_empty() {
+            continue;
+        }
+        if let Some(n) = next_non_volume.clone() {
+            entries.push(((source_url.to_string(), c.url.clone()), n));
+        }
+        if !c.is_volume {
+            next_non_volume = Some(c.url.clone());
+        }
+    }
+
+    let mut map = match next_chapter_cache().lock() {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    let new_count = entries.iter().filter(|(k, _)| !map.contains_key(k)).count();
+    if new_count > 0 && map.len() + new_count > CHAPTER_BOOK_CACHE_MAX {
+        map.clear();
+    }
+    for (k, v) in entries {
+        map.insert(k, v);
+    }
+}
+
+/// 按 (书源 URL, 章节 URL) 反查下一章 URL（正文分页截断判定的精确通道）
+fn lookup_next_chapter_url(source_url: &str, chapter_url: &str) -> Option<String> {
+    next_chapter_cache()
+        .lock()
+        .ok()?
+        .get(&(source_url.to_string(), chapter_url.to_string()))
+        .cloned()
+}
+
 /// 按字段合并写入：新值非空覆盖，空字段保留旧值（详情/目录两阶段各自
 /// 只掌握部分字段，互不冲掉）
 ///
@@ -304,6 +377,9 @@ fn record_chapter_list_cache(
     if let Ok(mut map) = chapter_book_cache().lock() {
         chapter_book_insert_batch(&mut map, source_url, book_url, chapters);
     }
+    // [B-6] 同步登记 (书源, 章节) → 下一章 URL（正文分页「命中下一章即
+    // 截断」的精确通道；未命中时正文阶段回退 URL 形态启发式）
+    record_next_chapter_map(source_url, chapters);
 }
 
 /// [P2-11 §199] (书源, 章节) → book URL 批量写入：仅当**新键**数量使
@@ -3252,12 +3328,90 @@ fn parse_content_page_with_bindings(
     (content, next_urls)
 }
 
+// ─── [B-6] 正文分页「命中下一章 URL 即截断」（上游 BookContent.kt:76-80）──
+//
+/// URL 尾段（去掉 query/fragment 后最后一段），如
+/// "https://x/chap/8_2.html?q=1" → "8_2.html"
+fn url_leaf_segment(url: &str) -> &str {
+    let path = url.split(['?', '#']).next().unwrap_or(url);
+    path.rsplit('/').next().unwrap_or(path)
+}
+
+/// 字符串中第一段连续 ASCII 数字（以字符串返回便于直接比较）
+fn first_digit_run(s: &str) -> Option<String> {
+    let mut run = String::new();
+    for ch in s.chars() {
+        if ch.is_ascii_digit() {
+            run.push(ch);
+        } else if !run.is_empty() {
+            break;
+        }
+    }
+    (!run.is_empty()).then_some(run)
+}
+
+/// 尾段文件名主干是否纯数字（"8.html" → true，"8_2.html" → false）
+fn is_bare_digit_leaf(leaf: &str) -> bool {
+    let stem = leaf.rsplit_once('.').map(|(stem, _)| stem).unwrap_or(leaf);
+    !stem.is_empty() && stem.bytes().all(|b| b.is_ascii_digit())
+}
+
+/// [B-6] 保守 URL 形态启发式：registry（目录登记的下一章 URL）未命中时
+/// 兜底判定候选是否「下一章」。只判证据充分的形态，宁漏勿误截：
+/// - 章节与候选尾段首段数字相同 → 同章分页（/chap/1.html → /chap/1_2.html）；
+/// - 尚无已抓页证据（首个候选）→ 继续；
+/// - 末页尾段纯数字（/p/5.html）→ 章号式分页（/p/0.html → /p/1.html），继续；
+/// - 仅当「末页为带后缀页（如 8_2.html）+ 章节/候选尾段均纯数字 + 数字
+///   不同」判为下一章（/chap/8.html → /chap/8_2.html → /chap/9.html）。
+fn pagination_truncation_heuristic(
+    chapter_url: &str,
+    candidate: &str,
+    last_fetched_page: Option<&str>,
+) -> bool {
+    let c_num = first_digit_run(url_leaf_segment(chapter_url));
+    let n_num = first_digit_run(url_leaf_segment(candidate));
+    let (Some(c), Some(n)) = (c_num.as_deref(), n_num.as_deref()) else {
+        return false;
+    };
+    if c == n {
+        return false;
+    }
+    let Some(last) = last_fetched_page else {
+        return false;
+    };
+    if is_bare_digit_leaf(url_leaf_segment(last)) {
+        return false;
+    }
+    is_bare_digit_leaf(url_leaf_segment(chapter_url))
+        && is_bare_digit_leaf(url_leaf_segment(candidate))
+}
+
+/// [B-6] 正文分页截断判定：候选 URL 命中下一章 → 停止串行分页（上游
+/// BookContent.kt:76-80 `mNextChapterUrl`，仅串行单 next 分支；多 URL
+/// 分支与上游一致不截断）。
+///
+/// 精确通道优先：目录阶段登记的下一章 URL（[`lookup_next_chapter_url`]）
+/// 命中时做**精确相等**判定（登记缺失/已淘汰才回退启发式）。
+fn should_stop_at_next_chapter(
+    source_url: &str,
+    chapter_url: &str,
+    candidate: &str,
+    last_fetched_page: Option<&str>,
+) -> bool {
+    if let Some(next_chapter) = lookup_next_chapter_url(source_url, chapter_url) {
+        return candidate == next_chapter;
+    }
+    pagination_truncation_heuristic(chapter_url, candidate, last_fetched_page)
+}
+
 /// nextContentUrl 分页循环（抓取后续页并按页拼接）
 ///
 /// 缺口① nextContentUrl 分页（审计 2026-08-06，加法式），对标 Kotlin
 /// `BookContent.analyzeContent` 分页循环：
 /// - 单个下一页 URL：串行循环直到为空/重复（对标 `while (nextUrl.isNotEmpty()
 ///   && !nextUrlList.contains(nextUrl))`）
+/// - [B-6] 串行分支每页边界判定「命中下一章 URL 即截断」（上游
+///   BookContent.kt:76-80；registry 精确通道 + URL 形态保守启发式兜底）
 /// - 多个下一页 URL：逐页抓取且不再继续分页（对标原版并发分支
 ///   `getNextPageUrl = false`，此处降级串行）
 /// - 防死循环保护：已访问 URL 去重（含首章 URL）+ 最大页数上限
@@ -3268,7 +3422,7 @@ async fn fetch_paginated_content<F, Fut>(
     first_content: String,
     next_urls: Vec<String>,
     chapter_url: &str,
-    _source_url: &str,
+    source_url: &str,
     content_rule_str: &str,
     next_url_rule: &str,
     is_media: bool,
@@ -3326,10 +3480,26 @@ where
             }
         } else {
             let mut next_url = next_urls.into_iter().next().unwrap_or_default();
+            // [B-6] 最近一次成功抓取的页 URL：截断判定的证据（首个候选无
+            // 已抓页证据不截断；末页尾段纯数字 = 章号式分页不截断）
+            let mut last_fetched_page: Option<String> = None;
             while !next_url.is_empty()
                 && visited.insert(next_url.clone())
                 && content_list.len() < MAX_CONTENT_PAGES
             {
+                // [B-6] 命中下一章 URL 的截断判定（上游 BookContent.kt:76-80
+                // mNextChapterUrl）：本章末页的「下一页」链接指向下一章时在此
+                // 截断，否则下一章正文会按页混入本章（红态证据：
+                // red_pagination_follows_into_next_chapter，沿链最多 99 页）。
+                // 精确通道（目录登记 registry）优先，未命中回退保守启发式。
+                if should_stop_at_next_chapter(
+                    source_url,
+                    chapter_url,
+                    &next_url,
+                    last_fetched_page.as_deref(),
+                ) {
+                    break;
+                }
                 let next_body = match fetch_page(next_url.clone()).await {
                     Ok(b) => b,
                     Err(e) => {
@@ -3353,9 +3523,10 @@ where
                     book_meta,
                 );
                 content_list.push(page_content);
+                // [B-6] 记录本页 URL，作为下一页边界的截断判定证据
+                last_fetched_page = Some(next_url.clone());
                 // 仅在获得单个下一页时继续串行（对标 Kotlin size==1 分支）；
-                // 命中下一章 URL 的截断判定因无状态签名不可得 nextChapterUrl，
-                // 由 URL 去重与页数上限兜底
+                // 「命中下一章即截断」判定见循环顶部（[B-6]）
                 next_url = if following.len() == 1 {
                     following.into_iter().next().unwrap_or_default()
                 } else {
@@ -7955,6 +8126,71 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
         ));
         assert!(result.contains("第一页正文"));
         assert!(!result.contains("第二页正文"));
+    }
+
+    /// [视角 B 猎捕 2026-09-24 | 缺陷 B-7 | 正文跨章污染] nextContentUrl 分页链
+    /// 缺「命中下一章 URL 即截断」判定（API_CONTRACT.md:427 记为已知降级）：
+    /// 章节末页的「下一页」链接指向**下一章**时，本函数会把下一章正文按页
+    /// 拼接进本章（`\n` 连接），并继续沿链抓取，最多 99 页。
+    ///
+    /// 影响：真实书源（分页型站点末页 next 即下一章）在阅读器里会把下一章正文
+    /// 混入本章，且下一章正文长度错误（后章内容重复出现）。
+    /// 本用例给出可量化的红态证据，供主代理裁决是否升级修复。
+    ///
+    /// 期望：命中下一章 URL（同源目录里紧邻的章节地址）即截断，结果不含下一章正文。
+    /// 实际：结果含「下一章正文」。
+    #[test]
+    fn red_pagination_follows_into_next_chapter() {
+        const CUR_HTML: &str = "<html><body><div class='content'><p>本章第一页</p></div>\
+<a class='next' href='/chap/8_2.html'>下一页</a></body></html>";
+        const CUR_LAST_HTML: &str = "<html><body><div class='content'><p>本章第二页</p></div>\
+<a class='next' href='/chap/9.html'>下一章</a></body></html>";
+        const NEXT_CHAPTER_HTML: &str =
+            "<html><body><div class='content'><p>下一章正文不应出现在本章</p></div>\
+<a class='next' href='/chap/10.html'>下一章</a></body></html>";
+
+        let mut pages = std::collections::HashMap::new();
+        pages.insert(
+            "https://example.com/chap/8_2.html".to_string(),
+            CUR_LAST_HTML.to_string(),
+        );
+        pages.insert(
+            "https://example.com/chap/9.html".to_string(),
+            NEXT_CHAPTER_HTML.to_string(),
+        );
+
+        let (first_content, next_urls) = parse_content_page(
+            CUR_HTML.to_string(),
+            ".content@html",
+            ".next@href",
+            "https://example.com/chap/8.html", // 本章 URL（下一章为 /chap/9.html）
+            "https://example.com",
+            false,
+        );
+        let result = runtime::block_on(fetch_paginated_content(
+            first_content,
+            next_urls,
+            "https://example.com/chap/8.html",
+            "https://example.com",
+            ".content@html",
+            ".next@href",
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            scripted_fetch(pages),
+        ));
+
+        assert!(result.contains("本章第一页"), "前置：本章首页正文应在");
+        assert!(result.contains("本章第二页"), "前置：本章第二页正文应在");
+        assert!(
+            !result.contains("下一章正文"),
+            "期望：分页链命中下一章 URL（/chap/9.html）应截断；实际正文混入下一章内容：{result}"
+        );
     }
 
     #[test]
