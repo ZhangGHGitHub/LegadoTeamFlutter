@@ -263,6 +263,42 @@ impl<'a> BookRepository<'a> {
         Ok(())
     }
 
+    /// [目录派生字段同步] 单条 UPDATE 同步目录派生字段（P2-1 update_toc_url
+    /// 同款局部写器）：目录刷新/换源提交成功后，books 行同步
+    /// totalChapterNum / latestChapterTitle（latestChapterTime 可选，仅章数
+    /// 增长时写入——对齐上游 updateBookTocInfo 条件分支）。
+    ///
+    /// 单条 UPDATE 只触碰上述列：不写进度列（B-3 安全），也不回退抓取前
+    /// 快照里的其他列（P2-1 丢更新窗口语义）。调用方须在目标事务内使用
+    /// （与章节删除/插入同事务，目录行数与派生字段原子一致）。
+    pub fn update_toc_derived_fields(
+        &self,
+        book_url: &str,
+        total_chapter_num: i32,
+        latest_chapter_title: Option<&str>,
+        latest_chapter_time: Option<i64>,
+    ) -> LegadoResult<()> {
+        let res = match latest_chapter_time {
+            Some(latest_time) => self.conn.execute(
+                "UPDATE books SET totalChapterNum = ?1, latestChapterTitle = ?2,
+                    latestChapterTime = ?3 WHERE bookUrl = ?4",
+                params![
+                    total_chapter_num,
+                    latest_chapter_title,
+                    latest_time,
+                    book_url
+                ],
+            ),
+            None => self.conn.execute(
+                "UPDATE books SET totalChapterNum = ?1, latestChapterTitle = ?2
+                    WHERE bookUrl = ?3",
+                params![total_chapter_num, latest_chapter_title, book_url],
+            ),
+        };
+        res.map_err(|e| LegadoError::Database(format!("更新目录派生字段失败: {e}")))?;
+        Ok(())
+    }
+
     /// [B-3] 进度字段级更新（单条 SQL，不触碰其他列）
     ///
     /// 阅读进度（durChapterIndex/durChapterPos/durChapterTitle/durChapterTime）

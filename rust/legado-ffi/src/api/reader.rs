@@ -351,6 +351,15 @@ pub fn chapter_to_local_info(ch: &BookChapter) -> legado_book::ChapterInfo {
 
 // ─── 在线目录/正文抓取 ────────────────────────────────────────────────────────
 
+/// 当前 Unix 时间戳（毫秒）——目录派生字段同步写 latestChapterTime 用
+/// （与本模块缓存写入处的 SystemTime 表达式同一实现风格）
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
 /// 从网络刷新书籍目录
 ///
 /// 流程：
@@ -544,6 +553,16 @@ fn refresh_toc_with_fetcher<F: BookSourceFetcher>(
         })
         .collect();
 
+    // [目录派生字段同步] 对齐上游 updateBookTocInfo：刷新成功后 books 行
+    // totalChapterNum = 新目录章数 / latestChapterTitle = 末章标题（截断保留
+    // 前缀时 = 前缀章数，与上游一致；空结果不会走到这里——上方守卫已提前
+    // 返回）。latestChapterTime 仅章数增长时写入（上游条件分支）。真实 origin
+    // 书籍走单列 UPDATE 写器（只触碰派生字段，不写进度列——B-3 安全，P2-1
+    // 风格）；占位/本地 origin 路径在同一内存对象上同步（全行写结构性排除
+    // 进度列，B-3 安全）。
+    let new_total = book_chapters.len() as i32;
+    let new_latest_title: Option<String> = book_chapters.last().map(|c| c.title.clone());
+
     // 4. 确保书籍记录存在（满足 chapters 表外键约束），然后先删除旧章节，再批量插入新章节
     // [Task #66 加固] 占位落库须带书源信息（origin/originName）：否则 origin 取默认
     // loc_book，阅读器随后按 origin 找书源取正文会报「书源不存在: loc_book」
@@ -564,13 +583,18 @@ fn refresh_toc_with_fetcher<F: BookSourceFetcher>(
             None => {
                 // Task#125：占位落库须打 NOT_SHELF，对齐原版 readBook 临时书 /
                 // 书架 list_books 过滤；否则「仅浏览/拉目录」会污染书架。
-                let book = legado_core::models::Book {
+                let mut book = legado_core::models::Book {
                     book_url: book_url.to_string(),
                     origin: source_url.to_string(),
                     origin_name: source.book_source_name.clone(),
                     book_type: legado_core::models::book::book_type::NOT_SHELF,
                     ..legado_core::models::Book::default()
                 };
+                // [目录派生字段同步] 新书无旧章数（0 < new_total 恒成立——
+                // 目录非空守卫在前）→ 派生字段随插入一并写入
+                book.total_chapter_num = new_total;
+                book.latest_chapter_title = new_latest_title.clone();
+                book.latest_chapter_time = now_millis();
                 book_repo.insert(&book)?;
             }
             Some(mut existing)
@@ -581,9 +605,27 @@ fn refresh_toc_with_fetcher<F: BookSourceFetcher>(
                 if existing.origin_name.is_empty() {
                     existing.origin_name = source.book_source_name.clone();
                 }
+                // [目录派生字段同步] 同一内存对象上同步（全行 update 结构性
+                // 排除进度列，B-3 安全）
+                let old_total = existing.total_chapter_num;
+                existing.total_chapter_num = new_total;
+                existing.latest_chapter_title = new_latest_title.clone();
+                if old_total < new_total {
+                    existing.latest_chapter_time = now_millis();
+                }
                 book_repo.update(&existing)?;
             }
-            _ => {}
+            Some(existing) => {
+                // [目录派生字段同步] 真实 origin 书籍：单条 UPDATE 只触碰派生
+                // 字段（不写进度列、不回退抓取前快照的其他列，B-3/P2-1 安全）；
+                // latestChapterTime 仅章数增长时写（上游条件分支）
+                book_repo.update_toc_derived_fields(
+                    book_url,
+                    new_total,
+                    new_latest_title.as_deref(),
+                    (existing.total_chapter_num < new_total).then_some(now_millis()),
+                )?;
+            }
         }
         let repo = BookChapterRepository::new(conn);
         repo.delete_by_book_url(book_url)?;
@@ -1396,6 +1438,90 @@ mod tests {
 
         // 收尾清理
         with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete(book_url);
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [目录派生字段同步] refresh_toc 成功后 books 行 totalChapterNum/
+    /// latestChapterTitle 同步为新目录值（红态：刷新前 999/「旧最新章节」；
+    /// 修复前第 4 步事务只删章+插章+清缓存，派生字段不触碰 → 书架「共 N 章」
+    /// 与详情页「最新·…」保持旧值）。真实 origin 书籍走单列 UPDATE 写器
+    /// （B-3 安全：不写进度列——播种 durChapterIndex=42 断言不被覆盖）。
+    #[test]
+    fn test_refresh_toc_syncs_toc_derived_fields() {
+        use std::sync::{Arc, Mutex};
+
+        let book_url = "https://toc-sync.example.com/book/1";
+        let source_url = "https://toc-sync-src.example.com";
+        let toc_url = "https://toc-sync.example.com/toc";
+
+        let _db_guard = setup_db_and_source(source_url);
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&legado_core::models::Book {
+                book_url: book_url.to_string(),
+                origin: source_url.to_string(),
+                origin_name: "测试书源".to_string(),
+                name: "同步书".to_string(),
+                toc_url: toc_url.to_string(),
+                // 红态播种：陈旧的目录派生字段 + 进度列（B-3 回归哨兵）
+                total_chapter_num: 999,
+                latest_chapter_title: Some("旧最新章节".to_string()),
+                dur_chapter_index: 42,
+                ..legado_core::models::Book::default()
+            })?;
+            Ok(())
+        })
+        .expect("初始数据写入失败");
+
+        let requested = Arc::new(Mutex::new(Vec::new()));
+        let fetcher = ScriptedTocFetcher {
+            chapters_by_url: vec![(
+                toc_url.to_string(),
+                (0..4)
+                    .map(|i| WebChapter {
+                        index: i,
+                        title: format!("新目录第{i}章"),
+                        url: format!("{toc_url}/c{i}"),
+                        is_vip: false,
+                        is_volume: false,
+                        variable: None,
+                        word_count: None,
+                    })
+                    .collect(),
+            )],
+            requested: Arc::clone(&requested),
+            seed_progress_book_url: None,
+        };
+        let engine = WebBookEngine::new(fetcher);
+        let resp = refresh_toc_with_fetcher(book_url, source_url, &engine).expect("目录刷新应成功");
+        assert_eq!(resp.total, 4, "应解析到 4 个章节");
+
+        with_database(|db| {
+            let saved = BookRepository::new(db.connection())
+                .find_by_url(book_url)?
+                .expect("书籍记录应仍存在");
+            assert_eq!(
+                saved.total_chapter_num, 4,
+                "totalChapterNum 应同步为新目录章数（不得保留旧值 999）"
+            );
+            assert_eq!(
+                saved.latest_chapter_title.as_deref(),
+                Some("新目录第3章"),
+                "latestChapterTitle 应同步为新目录末章标题（不得保留旧值）"
+            );
+            assert_eq!(
+                saved.dur_chapter_index, 42,
+                "进度列（durChapterIndex=42）不得被派生字段同步覆盖（B-3）"
+            );
+            Ok(())
+        })
+        .expect("DB 断言失败");
+
+        // 收尾清理
+        with_database(|db| {
+            let _ = BookChapterRepository::new(db.connection()).delete_by_book_url(book_url);
             let _ = BookRepository::new(db.connection()).delete(book_url);
             Ok(())
         })

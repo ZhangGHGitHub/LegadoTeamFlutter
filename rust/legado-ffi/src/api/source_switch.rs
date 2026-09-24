@@ -801,6 +801,15 @@ fn apply_book_variable_merge(
     );
 }
 
+/// 当前 Unix 时间戳（毫秒）——目录派生字段同步写 latestChapterTime 用
+/// （与 legado-core::toc_updater::now_millis 同一实现风格）
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+}
+
 /// 换源提交尾段（旧路径与预拉缓存版共用）：
 /// tocUrl 解析 → 空目录守卫 → BookChapter 转换（稳定 bookUrl）→ 单事务落库
 /// → [B-6] 新源下一章登记 → 书籍 JSON。
@@ -893,11 +902,26 @@ fn commit_source_switch(
     if info.kind.is_some() {
         book.kind = info.kind;
     }
-    if info.last_chapter.is_some() {
-        book.latest_chapter_title = info.last_chapter;
-    }
     if info.word_count.is_some() {
         book.word_count = info.word_count;
+    }
+    // [目录派生字段同步] 对齐上游 BookChapterList.updateBookTocInfo（目录成功
+    // 后 totalChapterNum/latestChapterTitle 以目录结果写入；详情 lastChapter
+    // 规则值写在目录写之前，由目录值覆盖——此处不再取详情值）：
+    // - totalChapterNum = 落库章节数（与同事务 insert_batch 的 bookChapters
+    //   行数一致，DB 内部一致性；书架进度百分比 = durChapterIndex/(N-1) 随之
+    //   正确）
+    // - latestChapterTitle = 新目录末章标题
+    // - latestChapterTime = now，仅章数增长时（上游 updateBookTocInfo 条件分支）
+    // 截断目录（非 2xx 保留前缀）按前缀章数写入——对齐上游「body-null 判停
+    // 后 updateBookTocInfo 写 list.size」；I/O 级失败/空结果不会走到提交
+    // （目录抓取 Err 上抛 + 函数入口空目录守卫），不存在陈旧值写回路径。
+    let old_total = book.total_chapter_num;
+    let new_total = book_chapters.len() as i32;
+    book.total_chapter_num = new_total;
+    book.latest_chapter_title = book_chapters.last().map(|c| c.title.clone());
+    if old_total < new_total {
+        book.latest_chapter_time = now_millis();
     }
     // 标记需要重新获取章节列表
     book.last_check_time = 0;
@@ -2206,7 +2230,15 @@ mod tests {
         assert_eq!(book.name, "旧源书名");
         assert_eq!(book.author, "旧作者");
         assert_eq!(book.origin, new_source);
-        assert_eq!(book.latest_chapter_title.as_deref(), Some("大结局"));
+        // [目录派生字段同步] 目录成功后 latestChapterTitle 以目录末章为准
+        // （对齐上游：详情写在目录写之前，目录写胜出——详情「大结局」被覆盖）；
+        // totalChapterNum = 落库章节数
+        assert_eq!(
+            book.latest_chapter_title.as_deref(),
+            Some("第一卷 第一章"),
+            "latestChapterTitle 应为目录末章标题（覆盖详情 lastChapter 值）"
+        );
+        assert_eq!(book.total_chapter_num, 1, "totalChapterNum 应为落库章节数");
         // [T5] book.variable = 候选变量 ⊕ 详情导出变量（详情页后写入者优先），
         // 旧源旧值不再残留（R1）
         let book_var: serde_json::Value =
@@ -2252,6 +2284,122 @@ mod tests {
             let _ = BookSourceRepository::new(db.connection()).delete(new_source);
             let _ = legado_db::SearchBookRepository::new(db.connection())
                 .delete_by_book_url(new_detail);
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [目录派生字段同步] 换源（现场抓取通道）后 totalChapterNum/latestChapterTitle
+    /// 必须按**新目录**同步：播种陈旧派生字段（999 章/「旧源最新章节」），新目录
+    /// 5 章（末章「第4章」）→ 提交后两字段 == 新目录值（返回 JSON + DB 双断言），
+    /// 且与同事务落库的 bookChapters 行数一致（DB 内部一致性）。
+    /// 红态（修复前）：commit_source_switch 从 total_chapter_num 取值，全行
+    /// `update` 把抓取前快照的旧值原样写回（999/「旧源最新章节」）；
+    /// latestChapterTitle 只取详情 lastChapter（B-13），目录末章被忽略。
+    /// 语义对齐上游 updateBookTocInfo：目录成功后 total=目录章数、
+    /// latest=目录末章标题（详情值被目录写覆盖——上游目录写在详情写之后）。
+    #[test]
+    fn test_source_switch_syncs_toc_derived_fields() {
+        let _lock = crate::test_support::lock_global_store();
+        use crate::db_state::with_database;
+        use legado_core::models::{Book, BookSource};
+        use legado_core::web_book::WebBookInfo;
+        use legado_db::repository::Repository;
+        use legado_db::{BookChapterRepository, BookRepository, BookSourceRepository};
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let old_url = "https://sw-sync-old.example.com/book/1";
+        let new_source = "https://sw-sync-new.example.com";
+        let new_detail = "https://sw-sync-new.example.com/book/1";
+        let new_toc = "https://sw-sync-new.example.com/book/1/chapters";
+
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: old_url.to_string(),
+                origin: "https://sw-sync-old-src.example.com".to_string(),
+                origin_name: "旧源".to_string(),
+                name: "测试书".to_string(),
+                author: "测试作者".to_string(),
+                // 红态播种：陈旧的目录派生字段（换源前旧源值）
+                total_chapter_num: 999,
+                latest_chapter_title: Some("旧源最新章节".to_string()),
+                ..Book::default()
+            })?;
+            BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: new_source.to_string(),
+                book_source_name: "新源".to_string(),
+                ..BookSource::default()
+            })?;
+            Ok(())
+        })
+        .expect("初始数据写入失败");
+
+        // 新目录 5 章：第0章..第4章（末章标题 = 第4章）
+        let mock = SwitchMockFetcher {
+            info: Ok(WebBookInfo {
+                name: "测试书".to_string(),
+                author: "测试作者".to_string(),
+                cover_url: None,
+                intro: None,
+                categories: vec![],
+                // 详情 lastChapter 值不得胜出：目录成功后由目录末章覆盖
+                // （对齐上游：详情写在目录写之前，目录写胜出）
+                last_chapter: Some("详情末章".to_string()),
+                variable: None,
+                book_url: new_detail.to_string(),
+                toc_url: new_toc.to_string(),
+                word_count: None,
+                kind: None,
+                book_type: 0,
+            }),
+            chapters: Ok(test_web_chapters(5, new_toc)),
+            chapters_requested: std::sync::Mutex::new(Vec::new()),
+            detail_vars_requested: std::sync::Mutex::new(Vec::new()),
+            toc_vars_requested: std::sync::Mutex::new(Vec::new()),
+        };
+
+        let resp =
+            switch_book_source_with(&mock, old_url, new_source, new_detail).expect("换源应成功");
+        let book: Book = serde_json::from_str(&resp).unwrap();
+
+        assert_eq!(
+            book.total_chapter_num, 5,
+            "totalChapterNum 应为新目录章数（不得写回抓取前快照旧值 999）"
+        );
+        assert_eq!(
+            book.latest_chapter_title.as_deref(),
+            Some("第4章"),
+            "latestChapterTitle 应为新目录末章标题（覆盖详情值/旧值）"
+        );
+
+        // DB 终态：派生字段与目录行数同事务一致
+        with_database(|db| {
+            let persisted = BookRepository::new(db.connection())
+                .find_by_url(old_url)?
+                .expect("书籍记录应仍存在");
+            assert_eq!(
+                persisted.total_chapter_num, 5,
+                "DB totalChapterNum 应为新目录章数"
+            );
+            assert_eq!(
+                persisted.latest_chapter_title.as_deref(),
+                Some("第4章"),
+                "DB latestChapterTitle 应为新目录末章标题"
+            );
+            let chapters = BookChapterRepository::new(db.connection()).find_by_book_url(old_url)?;
+            assert_eq!(
+                chapters.len() as i32,
+                persisted.total_chapter_num,
+                "DB 内部一致性：totalChapterNum == 落库章节数"
+            );
+            Ok(())
+        })
+        .expect("DB 断言失败");
+
+        // 收尾清理
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete(old_url);
+            let _ = BookSourceRepository::new(db.connection()).delete(new_source);
             Ok(())
         })
         .ok();
@@ -3416,10 +3564,16 @@ mod tests {
             Some("9999"),
             "字数应用缓存详情值"
         );
+        // [目录派生字段同步] 命中路径同样以目录为准：缓存目录 2 章（第0章/第1章）
+        // → 末章「第1章」覆盖缓存详情 lastChapter（「大结局」）
         assert_eq!(
             book.latest_chapter_title.as_deref(),
-            Some("大结局"),
-            "最新章节应用缓存详情值"
+            Some("第1章"),
+            "最新章节应用缓存目录末章值（目录写覆盖详情 lastChapter）"
+        );
+        assert_eq!(
+            book.total_chapter_num, 2,
+            "totalChapterNum 应为缓存目录章数"
         );
 
         // DB 终态：目录挂稳定主键、字段落库一致
@@ -3441,6 +3595,122 @@ mod tests {
             prefetch_cache_get(new_source, new_detail).is_some(),
             "apply 不得删除缓存条目"
         );
+
+        // 收尾清理
+        prefetch_cache_clear();
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete(old_url);
+            let _ = BookSourceRepository::new(db.connection()).delete(new_source);
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [目录派生字段同步] 预拉缓存命中通道（零网络）同样同步派生字段：
+    /// 缓存目录（3 章，末章「第2章」）为准——mock 全 Err 证明命中路径零抓取，
+    /// 缓存 info 的 lastChapter（「大结局」）不得胜出；提交后 total/latest
+    /// == 缓存目录值（返回 JSON + DB 双断言）。
+    /// 红态（修复前）：同现场抓取通道——全行 update 写回抓取前快照旧值
+    /// （999/「旧源最新章节」），latest 取缓存详情值（「大结局」）。
+    #[test]
+    fn test_source_switch_prefetch_hit_syncs_toc_derived_fields() {
+        let _lock = crate::test_support::lock_global_store();
+        use crate::db_state::with_database;
+        use legado_core::models::{Book, BookSource};
+        use legado_db::repository::Repository;
+        use legado_db::{BookChapterRepository, BookRepository, BookSourceRepository};
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let old_url = "https://sw-pf-sync.example.com/book/1";
+        let new_source = "https://sw-pf-sync.example.com/new";
+        let new_detail = "https://sw-pf-sync.example.com/book/1";
+        let new_toc = "https://sw-pf-sync.example.com/book/1/chapters";
+
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: old_url.to_string(),
+                origin: "https://sw-pf-sync-old.example.com".to_string(),
+                origin_name: "旧源".to_string(),
+                name: "测试书".to_string(),
+                author: "测试作者".to_string(),
+                // 红态播种：陈旧的目录派生字段
+                total_chapter_num: 999,
+                latest_chapter_title: Some("旧源最新章节".to_string()),
+                ..Book::default()
+            })?;
+            BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: new_source.to_string(),
+                book_source_name: "预拉新源".to_string(),
+                ..BookSource::default()
+            })?;
+            Ok(())
+        })
+        .expect("初始数据写入失败");
+
+        // 缓存种子：3 章目录（第0章..第2章）+ 详情 info（lastChapter=「大结局」）
+        prefetch_cache_clear();
+        prefetch_cache_insert(
+            new_source,
+            new_detail,
+            Some(test_web_info(new_toc)),
+            test_web_chapters(3, new_toc),
+        );
+
+        // mock 全 Err：命中路径零网络（详情/目录均不得抓取），目录以缓存值为准
+        let mock = SwitchMockFetcher {
+            info: Err(LegadoError::Internal("全命中不得抓详情".into())),
+            chapters: Err(LegadoError::Internal("全命中不得抓目录".into())),
+            chapters_requested: std::sync::Mutex::new(Vec::new()),
+            detail_vars_requested: std::sync::Mutex::new(Vec::new()),
+            toc_vars_requested: std::sync::Mutex::new(Vec::new()),
+        };
+
+        let resp = switch_book_source_prefetch_with(&mock, old_url, new_source, new_detail)
+            .expect("全命中换源应成功");
+        let book: Book = serde_json::from_str(&resp).expect("换源返回应可解析");
+
+        // 零网络 + 派生字段同步
+        assert!(
+            mock.detail_vars_requested.lock().unwrap().is_empty(),
+            "全命中不得发起详情抓取"
+        );
+        assert!(
+            mock.chapters_requested.lock().unwrap().is_empty(),
+            "全命中不得发起目录抓取"
+        );
+        assert_eq!(
+            book.total_chapter_num, 3,
+            "totalChapterNum 应为缓存目录章数（不得写回旧值 999）"
+        );
+        assert_eq!(
+            book.latest_chapter_title.as_deref(),
+            Some("第2章"),
+            "latestChapterTitle 应为缓存目录末章标题（覆盖缓存详情 lastChapter 值）"
+        );
+
+        // DB 终态：派生字段与目录行数同事务一致
+        with_database(|db| {
+            let persisted = BookRepository::new(db.connection())
+                .find_by_url(old_url)?
+                .expect("书籍记录应仍存在");
+            assert_eq!(
+                persisted.total_chapter_num, 3,
+                "DB totalChapterNum 应为缓存目录章数"
+            );
+            assert_eq!(
+                persisted.latest_chapter_title.as_deref(),
+                Some("第2章"),
+                "DB latestChapterTitle 应为缓存目录末章标题"
+            );
+            let chapters = BookChapterRepository::new(db.connection()).find_by_book_url(old_url)?;
+            assert_eq!(
+                chapters.len() as i32,
+                persisted.total_chapter_num,
+                "DB 内部一致性：totalChapterNum == 落库章节数"
+            );
+            Ok(())
+        })
+        .expect("DB 断言失败");
 
         // 收尾清理
         prefetch_cache_clear();

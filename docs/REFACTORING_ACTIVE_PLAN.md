@@ -339,6 +339,11 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **复核为无病**：FFI 主链（搜索/详情/目录/封面）早已走 `http_state::shared_client()` 进程级共享池；TOC 分页内仅做廉价 headers 克隆、无逐页 DB 写、无逐页 BookSource 序列化。
   - **残留（登记，待后续批次）**：① `web_book.rs` 每页 `serde_json::to_string(&page_body)` + 逐页重建分析器上下文（低频，待优化）；② `legado-server` 各 handler 每请求新建客户端（独立 dev/API 服务，非热路径）；③ 进一步压缩需站点/架构层面（HTTP/2 多路复用；`nextTocUrl` 串行依赖下页间并行无意义，但**页码型** `page=N+1` 可在解析当页时预取下一页——需在 web_book.rs 内改造）。
 
+- **换源/刷目录后「目录派生字段」不同步（2026-09-24 已闭环）**：真机实证 DB `totalChapterNum` 残留旧源（1663 vs 新源 999）、`latestChapterTitle` 亦不同步。
+  - **上游语义**：`BookChapterList.updateBookTocInfo`（`legado-upstream` BookChapterList.kt:162-186）——`totalChapterNum = list.size`（**含截断前缀，上游无截断概念**）、`latestChapterTitle = 末章`、`latestChapterTime` 仅章数增长时刷新；详情页字段先写、目录写后覆盖。
+  - **修复**：新增 `BookRepository::update_toc_derived_fields`（单条 UPDATE，**不触进度列** → B-3 安全），在 `commit_source_switch`（live 与预拉缓存两条提交通道共用）与 `refresh_toc` 的**同一事务内**同步三字段；三条通道各留红态复现。
+  - **同类面登记（未修）**：`lastCheckTime/lastCheckCount`（本仓 UI 无消费者，无收益）、进度列 remap（上游 `migrateTo` 会重映射，与 B-3 的结构性排除取向冲突，保留）、`searchBooks` 候选展示数据（下次搜索即刷新）、`book.wordCount`（详情页来源，设计差异）、`infoHtml/tocHtml` 调试快照、`durVolumeIndex/chapterInVolumeIndex`（与 remap 同类）。
+
 ### P3：功能补齐与卫生项（2026-08-22 开启）
 
 
