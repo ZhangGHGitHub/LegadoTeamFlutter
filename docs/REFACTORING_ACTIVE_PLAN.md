@@ -314,7 +314,19 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **视角 C（失败与边界，6 条已闭环）**：C1a 换书失败时渲染上一本正文且无提示（openBook 换书即清旧状态，上游 `ReadBook.resetData` 依据）、C1b 并发 openBook 旧结果覆盖新结果（新增 `_openSeq` 书级代际守卫，与 `_loadSeq` 章级守卫双轨）、C2「刷新正文」失败先清整本离线缓存不可回滚（改 **fetch-first**：抓取成功后才失效缓存；精确到章需新增 FFI，已登记为已知偏差）、C3 **章内翻页进度从不落库、HOME/被杀丢进度**（真机实证：UI 4/16 → DB `durChapterPos` 仍 0 → 重启回 1/16；已加 `WidgetsBindingObserver` → paused/inactive/detached 落库）、C4 空正文白屏无提示（Dart 侧「本章无正文」）、C5「刷新正文」无重入守卫。
   - **口径豁免（登记，非缺陷）**：进度保存失败静默、翻章失败仍前进并持久化新章索引、单源搜索失败静默、缓存写失败仅告警、书架卡片直出状态词、错误文案为 Rust 技术串——均有上游依据（见各猎捕报告的「口径问题单列」）。
 - **待用户裁决**：换源/目录的**感知等待**（≈10 分钟无法靠我方代码消除）——A. 目录渐进渲染（每落一页即写库并通知 UI，感知等待≈首页延迟）；B. 维持现状 + UI 进度提示。两者均需**新增 FFI 面（进度回调/流式）＝契约变更**，按纪律停下待决；C. 仅网络侧改善。
-- **第 2/3 波（待执行）**：视角 D（真机主流程巡检）+ E（性能剖面）；视角 F（iOS 平台差异）。
+- **第 2 波**：
+  - **视角 F（iOS 平台差异，已闭环，提交 `1be37fb6ee`）**：审计出 43 处平台分支，产出 4 条 P1 + 5 条 P2 + 3 条观感登记。已修：
+    A1 WKWebView 明文 HTTP 被 ATS 拦（Info.plist 仅开 `NSAllowsArbitraryLoadsInWebContent`）+ 三处 WebView 失败可见提示；
+    B1 iOS 亮度自动档调未注册通道（未捕获 `MissingPluginException` → 阅读底栏亮度行消失）→ iOS 分支化 + 测试；
+    C1 iOS 本地书落 tmp 且以绝对路径为身份（系统清理/重签后失效）→ `LocalBookStore` 复制进 `Documents/books/` + 相对标识，Rust `resolve_local_book_path`（绝对路径原样透传=存量兼容）；
+    C3 自定义字体绝对路径 → 相对标识 + 存量自愈 + 缺失可见提示；
+    E1 Rust 静态库 min-iOS 18.5 vs App 13.0（274 条 ld warning）→ CI 导出 `IPHONEOS_DEPLOYMENT_TARGET=13.0`；
+    C2 iOS 选择器吞 mobi/umd → `FileType.any` 回落 + 提示（Android 不变）。
+    **待真机确认（1 项）**：A2 深链在 UIScene 架构下的冷启动可达性（静态核对确认 SceneDelegate 已实现 `scene(_:openURLContexts:)` 转发，原生链路完整，故未改原生）。
+    **登记不改**：D1 系统 TTS 桥双端死代码（朗读实走 Rust httpTTS，不为 iOS 补桥）；E1 之外的观感差异（转场时长分档、iOS 状态栏隐藏设置无效/音量键翻页无事件源、听书缓存目录选择在 iOS 必然失败）；G1 「网络代理」设置全仓无消费点（双端无效，非 iOS 特有）。
+  - **视角 D（真机主流程巡检）**：**3 次子代理失败**（2 次工具调用格式坍缩、1 次静默失联），已留 5 个 `rf_*` 证据文件但未成报告；**暂停该角度**，待需要时再派（或以人工/短步骤方式补）。
+- **第 3 波（待执行）**：视角 E（性能剖面）——视角 B 已给本地耗时剖面（DB 段全 <7ms，>2s 仅网络与写锁争用），E 的增量有限，可与 D 合并或降级。
+
 
 ### P3：功能补齐与卫生项（2026-08-22 开启）
 
