@@ -183,15 +183,9 @@ fn domain_write_guard(domain_key: &str) -> std::sync::MutexGuard<'static, ()> {
             let mut registry = LOCAL_DOMAIN_WRITE_LOCKS
                 .lock()
                 .unwrap_or_else(|p| p.into_inner());
-            let arc = registry
-                .entry(domain_key.to_string())
-                .or_insert_with(|| Arc::new(Mutex::new(())))
-                .clone();
-            Arc::into_raw(arc)
+            local_domain_lock_raw(&mut registry, domain_key)
         };
-        // SAFETY：同 net 层 `domain_write_lock`——锁对象由静态注册表永久
-        // 持有（条目永不删除）；此处仅加锁，守卫 drop 只解锁、不触碰所有权。
-        unsafe { (&*ptr).lock().unwrap_or_else(|p| p.into_inner()) }
+        local_lock_domain_ptr(ptr)
     }
 }
 
@@ -199,6 +193,78 @@ fn domain_write_guard(domain_key: &str) -> std::sync::MutexGuard<'static, ()> {
 #[cfg(not(feature = "quickjs"))]
 static LOCAL_DOMAIN_WRITE_LOCKS: LazyLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
+
+/// 默认档本地域锁注册表条目数告警阈值（资源保护，不改变正确性语义；
+/// 理由同 net 层 `DOMAIN_REGISTRY_WARN_CAP`：条目 = 出现过的域键，无界
+/// 增长只能来自病态输入——规则脚本以拼接/随机串反复调用 cookie 接口，
+/// 每个新串登记一条域锁；超阈值一次性告警并带当前条目数——纯诊断信号，
+/// 不做逐出/拒绝（逐出会破坏「裸指针 `'static` 有效」不变式，正确性
+/// 语义不可变；条目数量本身不影响任何互斥语义）
+#[cfg(not(feature = "quickjs"))]
+const LOCAL_DOMAIN_REGISTRY_WARN_CAP: usize = 4096;
+
+/// 一次性告警标记（每进程至多告警一次，避免病态输入刷屏）
+#[cfg(not(feature = "quickjs"))]
+static LOCAL_DOMAIN_REGISTRY_CAP_WARNED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// 注册表条目数超阈值时一次性告警（仅诊断，不参与锁语义）
+#[cfg(not(feature = "quickjs"))]
+fn maybe_warn_local_registry_growth(count: usize) {
+    if count > LOCAL_DOMAIN_REGISTRY_WARN_CAP
+        && !LOCAL_DOMAIN_REGISTRY_CAP_WARNED.swap(true, std::sync::atomic::Ordering::Relaxed)
+    {
+        eprintln!(
+            "[legado-js] cookie 本地域锁注册表条目数 {count} 超过阈值 {LOCAL_DOMAIN_REGISTRY_WARN_CAP}（病态输入持续生成新域键；一次性告警，不影响正确性）"
+        );
+    }
+}
+
+/// 从本地静态注册表取得某域写通道锁对象的 `'static` 原始指针
+///
+/// 若该域尚未注册，先向 [`LOCAL_DOMAIN_WRITE_LOCKS`] 登记 `Arc<Mutex<()>>`，
+/// 再对登记后的 `Arc` 克隆一次经 `Arc::into_raw` 交出裸指针（克隆保证
+/// 注册表仍持有原对象）。域锁（`Mutex<()>`）一经注册即由静态注册表永久
+/// 持有（注册表条目永不删除），故其裸指针可安全地以 `'static` 解引用。
+#[cfg(not(feature = "quickjs"))]
+fn local_domain_lock_raw(
+    registry: &mut HashMap<String, Arc<Mutex<()>>>,
+    domain: &str,
+) -> *const Mutex<()> {
+    let is_new = !registry.contains_key(domain);
+    let arc = registry
+        .entry(domain.to_string())
+        .or_insert_with(|| Arc::new(Mutex::new(())))
+        .clone();
+    if is_new {
+        maybe_warn_local_registry_growth(registry.len());
+    }
+    // 不变式断言（debug 构建）：注册表此刻仍持有交出裸指针的那个 Arc。
+    // 该不变式是 [`local_lock_domain_ptr`] unsafe 合法性的前提——条目一旦
+    // 可被删除/替换，已交出的裸指针即悬垂。
+    debug_assert!(
+        registry
+            .get(domain)
+            .is_some_and(|held| Arc::ptr_eq(held, &arc)),
+        "cookie 本地域锁注册表不变式被破坏：条目被删除/替换，裸指针 'static 有效性失效"
+    );
+    Arc::into_raw(arc)
+}
+
+/// 由 `'static` 裸指针取域锁（默认档本地注册表唯一的 unsafe 解引用点）
+///
+/// # Safety
+/// 指针必须来自 [`local_domain_lock_raw`]（或同一注册表存活条目的
+/// `Arc::as_ptr`）——`Arc<Mutex<()>>` 一经注册即由静态注册表永久持有
+///（**注册表条目永不删除**——本文件 unsafe 的不变式：任何未来引入
+/// 注册表清理/条目删除的改动都会立即制造悬垂指针，必须同步重构本指针
+/// 方案，例如改为经注册表守卫加锁）。对象存活期 `'static`；此处仅加锁
+/// 并返回守卫，守卫 drop 只解锁、不触碰对象所有权，故不构成双重 free
+/// 或悬垂。
+#[cfg(not(feature = "quickjs"))]
+fn local_lock_domain_ptr(ptr: *const Mutex<()>) -> std::sync::MutexGuard<'static, ()> {
+    unsafe { (&*ptr).lock().unwrap_or_else(|p| p.into_inner()) }
+}
 
 /// 全部按域写通道守卫（整体清空操作用；quickjs 档 = net 层
 /// [`legado_net::cookie_store::AllDomainWriteGuards`]，默认档 = 本地同形结构）
@@ -230,16 +296,48 @@ fn lock_all_domain_writes() -> DomainWriteAllGuards {
         keys.sort();
         let mut domains = Vec::with_capacity(keys.len());
         for key in &keys {
+            // 注册表守卫在持期间条目不可被删/换，[`local_lock_domain_ptr`]
+            // 的 SAFETY 前提在此平凡成立（与 [`domain_write_guard`] 不同，
+            // 此处连克隆 Arc 都不需要）。
             let ptr = Arc::as_ptr(registry.get(key).expect("键来自同一注册表快照，必然存在"));
-            // SAFETY：同 `domain_write_guard`——锁对象由静态注册表永久持有，
-            // 指针存活期 'static；此处仅加锁返回守卫，守卫 drop 只解锁。
-            domains.push(unsafe { (&*ptr).lock().unwrap_or_else(|p| p.into_inner()) });
+            domains.push(local_lock_domain_ptr(ptr));
         }
         DomainWriteAllGuards {
             _registry: registry,
             _domains: domains,
         }
     }
+}
+
+/// [正确性 2026-09-24] 默认档专用：FFI 删除侧（`clear_cookie`）批量取本侧
+/// 本地注册表的按域写通道（D 锁）
+///
+/// 默认档的 JS 写侧与 FFI 删除侧入口共享本地注册表（quickjs 档 JS 侧
+/// 复用 net 注册表，FFI 侧取 net D 即已覆盖 JS 写侧，本函数在该档不
+/// 存在）。调用方传入域键候选集（FFI `clear_cookie` 传「存储域键 / JS
+/// 归一键 / 域键归一结果」三键），本函数去重 + 排序后逐键取 D 锁（排序
+/// 序 → 固定顺序 → 无环）——使删除侧「内存清除 + sink 删行」与并发同域
+/// JS 写侧「内存更新 + sink 写回」的 RMW 窗口互斥（删行被夹在 RMW 中间
+/// 导致旧视图复活已删行的红态，见 FFI 回归
+/// `test_clear_cookie_concurrent_rmw_no_resurrection`）。
+///
+/// 注册表守卫在函数返回时释放：删除侧只需排除被删键（删除按键生效，
+/// 快照后新注册的域只写自身键、不会复活被删行），无需阻塞新域注册
+/// （与 [`lock_all_domain_writes`] 的「全量清空」语义不同）。
+#[cfg(not(feature = "quickjs"))]
+pub fn lock_local_domain_writes(keys: &[String]) -> Vec<std::sync::MutexGuard<'static, ()>> {
+    let mut registry = LOCAL_DOMAIN_WRITE_LOCKS
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let mut keys = keys.to_vec();
+    keys.sort();
+    keys.dedup();
+    let mut guards = Vec::with_capacity(keys.len());
+    for key in &keys {
+        let ptr = local_domain_lock_raw(&mut registry, key);
+        guards.push(local_lock_domain_ptr(ptr));
+    }
+    guards
 }
 
 /// Cookie 键归一（上游 `NetworkUtils.getSubDomain` 等价规则）
@@ -402,14 +500,40 @@ pub fn set_cookie_str(url: &str, cookie_str: &str) {
 /// 持久化下沉（若已注册）：内存两键清除后**对称删除持久行**
 ///（raw 键 + 归一域名键，幂等）——保证 FFI `clear_cookie` 入口把
 /// 「内存 + DB」两侧都清干净。
+///
+/// [正确性 2026-09-24] 删除侧纳入与写方同一保护域：公共入口先取归一域
+/// 键的按域写通道（D 锁），再执行「内存清除 + sink 删行」（写方统一锁
+/// 归一键；raw 键为历史遗留、无写方锁它；quickjs 档同时挡住 jar 写回
+/// 路径）——排除并发同域写方「捕获视图 → 落库」的 RMW 窗口，删行不被
+/// 旧视图写回复活（红态回归：`test_clear_cookie_concurrent_rmw_no_
+/// resurrection`）。**已持 D 的删除侧入口（FFI `clear_cookie` 等）必须
+/// 改用 [`clear_cookies_locked`]**——`std::sync::Mutex` 不可重入，公共
+/// 入口重取同一把 D = 同线程自死锁。
 pub fn clear_cookies(url: &str) {
+    // 按域写通道（重要 1）：与同域写方互斥，见函数文档
+    let norm = normalize_cookie_key(url);
+    let _domain_guard = domain_write_guard(&norm);
+    clear_cookies_locked(url);
+}
+
+/// [`clear_cookies`] 内层变体（**假设锁已持有**）：调用方必须已持有本侧
+/// 域注册表中 `normalize_cookie_key(url)` 的按域写通道（D 锁）——
+/// quickjs 档 = net 注册表（`legado_net::cookie_store::domain_write_lock`）；
+/// 默认档 = 本 crate 本地注册表（`lock_local_domain_writes` /
+/// `domain_write_guard`）
+///
+/// [正确性 2026-09-24] 本变体**绝不取 D**（`std::sync::Mutex` 不可重入
+/// ——D 内重取同一把 D = 同线程自死锁；FFI `clear_cookie` 取 D 后只调
+/// 本变体）；仅执行「内存两键清除（G 作用域）+ sink 删行（G 释放后、
+/// 仍在 D 内）」。
+///
+/// 锁序 D→G→C→P：本变体在 D 内被调；sink 删行实现（FFI
+/// `JsCookieDbSink::remove` → `delete_cookie_rows`）内部取 C+P——
+/// 链状无环。
+pub fn clear_cookies_locked(url: &str) {
     let raw = url.trim().to_string();
     let norm = normalize_cookie_key(url);
     let norm_differs = norm != raw;
-    // 按域写通道（重要 1）：与同域写方互斥（写方统一锁归一键；raw 键为
-    // 历史遗留、无写方锁它），否则「内存清除 + sink 删行」完成后并发写
-    // 可复活已清除域（quickjs 档同时挡住 jar 写回路径）
-    let _domain_guard = domain_write_guard(&norm);
     {
         let mut store = lock_store();
         store.remove(&raw);

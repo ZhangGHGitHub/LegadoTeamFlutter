@@ -324,7 +324,7 @@ pub async fn call_tool(
                     // 上游 #452-#456 新增 5 类工具
                     "eval_js" => call_eval_js(&state, &arguments).await,
                     "get_cookies" => call_get_cookies(&state, &arguments).await,
-                    "clear_cookies" => call_clear_cookies(&state, &arguments).await,
+                    "clear_cookies" => call_clear_cookies(state.clone(), &arguments).await,
                     "debug_source" => call_debug_source(&state, &arguments).await,
                     "get_debug_progress" => call_get_debug_progress(&state, &arguments).await,
                     "check_sources" => call_check_sources(&state, &arguments).await,
@@ -1090,13 +1090,36 @@ async fn call_get_cookies(
     Ok(mcp_text(text))
 }
 
+/// 进程内 Cookie 行删除串行锁（C 守卫，与 FFI 侧 `COOKIE_PERSIST_RW_LOCK`
+/// 对应）
+///
+/// [正确性 2026-09-24] 删除侧（`clear_cookies` 工具）纳入与写方同一
+/// 保护域：取 D（按域写通道，`legado_net::cookie_store::domain_write_lock`）
+/// 与 C（本锁：进程内 cookie 行读-改-写串行化）、P（DB 池），全局锁序
+/// D→C→P（链状无环）。当前进程 cookie 行尚无生产写方（server 的 cookie
+/// 层是 DB 持久层，JS 宿主 store 进程内无写入方——见 `login_check` 备注），
+/// 本锁是删除侧按保护域纪律应持有的位置：未来引入 server 侧写方（如 JS
+/// cookie 持久化下沉）时，其 RMW 必须也落在本锁内，否则删行可被夹在
+/// RMW 中间、旧视图写回复活已删行（FFI 侧红态回归
+/// `test_clear_cookie_concurrent_rmw_no_resurrection`；本工具红态回归
+/// `test_clear_cookies_concurrent_rmw_no_resurrection`）。
+///
+/// 跨进程 caveat：进程内锁不覆盖另一进程（server ↔ app FFI 进程）的写方，
+/// 跨进程竞态回落到数据库行级语句原子性。
+static COOKIE_DELETE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 /// 清除书源 Cookie（#453，对齐 Kotlin clear_cookies）
 ///
 /// 清除指定 URL 所属二级域名的持久层 Cookie。
 /// 差距说明：Kotlin 端同时清除持久、会话与 WebView Cookie；
 /// Rust server 无会话/WebView 层，仅清除持久层。
+///
+/// [正确性 2026-09-24] 删除侧纳入 D+C 保护域（与 FFI `clear_cookie` 修复
+/// 同一纪律）：阻塞段（取 D 锁 + C 守卫 + DB 删行）移入
+/// [`tokio::task::spawn_blocking`]，避免阻塞 async runtime（同
+/// [`call_eval_js`] 先例）；`state` 改传 `Arc`（move 进阻塞闭包）。
 async fn call_clear_cookies(
-    state: &AppState,
+    state: Arc<AppState>,
     args: &serde_json::Value,
 ) -> Result<serde_json::Value, JsonRpcError> {
     let url = args
@@ -1107,10 +1130,17 @@ async fn call_clear_cookies(
         .ok_or_else(|| rpc_err("参数 url 不能为空"))?;
 
     let domain = get_sub_domain(&url);
-    let db = state.db.lock().await;
-    let conn = db.connection();
-    let repo = legado_db::CookieRepository::new(conn);
-    repo.delete_by_tag(&domain).map_err(db_err)?;
+    // D（按域写通道，最外层）→ C（行级 RMW 串行）→ P（DB 池）
+    let outcome: Result<(), JsonRpcError> = tokio::task::spawn_blocking(move || {
+        let _d = legado_net::cookie_store::domain_write_lock(&domain);
+        let _c = COOKIE_DELETE_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let db = state.db.blocking_lock();
+        let repo = legado_db::CookieRepository::new(db.connection());
+        repo.delete_by_tag(&domain).map_err(db_err)
+    })
+    .await
+    .map_err(|e| rpc_err(format!("Cookie 清除任务异常: {e}")))?;
+    outcome?;
 
     Ok(mcp_text("Cookie 已清除".to_string()))
 }
@@ -1658,6 +1688,79 @@ mod tests {
             .await;
             assert!(resp.0.error.is_some());
         }
+    }
+
+    /// [正确性 2026-09-24] 并发「删行被夹在写方 RMW 中间」→ 旧视图写回复活已删行
+    ///
+    /// 写方线程模拟写方 RMW：取 D(dk) → 旧视图（预置的 "s=1"）→ 等放行信号
+    ///（超时 2s）→ 旧视图落库 → 放 D。删除侧调 MCP 工具 `clear_cookies`。
+    ///
+    /// 红态（删除侧 = 裸 delete_by_tag，未纳入保护域）：删除在写方持 D 期间
+    /// 完成，随后写方落库旧视图 → 行复活（断言失败）。
+    /// 绿态（删除侧 = spawn_blocking 内取 D + C 守卫删行）：删除被 D 阻塞，
+    /// 写方落库放 D 后删除才执行 → 行被最终删除（断言通过）。
+    #[tokio::test]
+    async fn test_clear_cookies_concurrent_rmw_no_resurrection() {
+        let state = make_test_state();
+        const DK: &str = "rmwserver.test";
+        const URL: &str = "https://www.rmwserver.test/x";
+
+        // 预置持久行（写方旧视图来源）
+        {
+            let db = state.db.lock().await;
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.upsert(DK, "s=1").unwrap();
+        }
+
+        let (captured_tx, captured_rx) = std::sync::mpsc::channel();
+        let (go_tx, go_rx) = std::sync::mpsc::channel();
+        let state_writer = state.clone();
+        let writer = std::thread::spawn(move || {
+            // 写方保护域（D）：与生产 jar 写回路径同一把锁
+            let _d = legado_net::cookie_store::domain_write_lock(DK);
+            let _ = captured_tx.send(());
+            // 绿态：删除侧阻塞在 D 上 → 此处必然超时；红态：删除已完成
+            let _ = go_rx.recv_timeout(std::time::Duration::from_secs(2));
+            // 旧视图落库（独立线程无 tokio runtime 上下文 →
+            // 自建当前线程 runtime 取 db 锁）
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            rt.block_on(async move {
+                let db = state_writer.db.lock().await;
+                let repo = legado_db::CookieRepository::new(db.connection());
+                repo.upsert(DK, "s=1").unwrap();
+            });
+            // 放 D（guard drop）
+        });
+        captured_rx.recv().expect("写方应完成视图捕获（持 D）");
+
+        // 删除侧：MCP 工具调用（红态：裸删除立即完成；绿态：spawn_blocking 内 D + C）
+        let resp = call_tool(
+            State(state.clone()),
+            Json(make_call_req(
+                "clear_cookies",
+                serde_json::json!({"url": URL}),
+            )),
+        )
+        .await;
+        assert!(
+            resp.0.error.is_none(),
+            "clear_cookies 应成功: {:?}",
+            resp.0.error
+        );
+
+        // 放行写方落库（绿态下写方已超时落库；红态下落库发生在删除完成之后 → 复活）
+        let _ = go_tx.send(());
+        writer.join().expect("写方线程不应 panic");
+
+        let db = state.db.lock().await;
+        let repo = legado_db::CookieRepository::new(db.connection());
+        assert!(
+            repo.get_by_tag(DK).unwrap().is_none(),
+            "删行不得被写方旧视图复活（删行被夹在 RMW 中间后写回）"
+        );
     }
 
     #[tokio::test]

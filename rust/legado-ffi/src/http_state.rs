@@ -69,8 +69,9 @@ fn merge_cookie_strings(existing: &str, incoming: &str) -> String {
 /// [`DbCookiePersistence::save`] / [`JsCookieDbSink::upsert`]）
 ///
 /// 在 [`COOKIE_PERSIST_RW_LOCK`] 内：读现有行 → 与传入串按键合并
-///（同名键新值胜）→ upsert 合并结果。两侧皆空时跳过（行本不存在；
-/// 空串写回走 `delete` 专门路径，此为防御分支）。
+///（同名键新值胜）→ upsert 合并结果。两侧皆空时跳过（行本不存在，
+/// 此为防御分支——删除路径已收敛到 [`delete_cookie_rows`] /
+/// [`clear_all_cookie_rows`]）。
 /// DB 未初始化 / 读写失败仅记日志——绝不向 JS 执行线程或网络请求传播。
 fn persist_cookie_row_merged(tag: &str, incoming: &str) {
     let _guard = COOKIE_PERSIST_RW_LOCK
@@ -93,6 +94,57 @@ fn persist_cookie_row_merged(tag: &str, incoming: &str) {
     }) {
         log::warn!("合并持久化 Cookie '{tag_for_log}' 写入失败: {e}");
     }
+}
+
+/// 删除一条或多条 cookie 持久化行（删除侧，C 守卫）
+///
+/// [正确性 2026-09-24] 删除侧纳入与写方同一保护域：在
+/// [`COOKIE_PERSIST_RW_LOCK`]（C）内经 [`crate::db_state::with_database`]
+///（P）逐键删行——与写方 [`persist_cookie_row_merged`] 的 RMW（捕获旧视图
+/// → 合并落库）串行。否则删除可被夹在 RMW 中间，写方随后落库旧视图即把
+/// 已删行「复活」（红态复现：
+/// `test_clear_cookie_concurrent_rmw_no_resurrection`）。
+///
+/// **锁前置**：调用方必须已持有对应域键的按域写通道（D 锁）——本函数只
+/// 承担 C+P 段，D 锁由入口持有（FFI [`crate::api::net_api::clear_cookie`] /
+/// server `call_clear_cookies`）。全局锁序 D→C→P（D 最外层、C 串行 RMW、
+/// P 池连接最内层）。
+/// **跨进程 caveat**：进程内锁不覆盖跨进程写方（app FFI 进程与 server
+/// 进程各自独立运行）；跨进程竞态回落到数据库行级原子性
+///（`delete_by_tag` / `upsert` 各自单语句原子）。
+///
+/// 不吞错：DB 未初始化 / 读写失败向上返回，容忍策略由调用方决定
+///（入口传播 / 下沉仅记日志）。
+pub(crate) fn delete_cookie_rows(tags: &[&str]) -> LegadoResult<()> {
+    if tags.is_empty() {
+        return Ok(());
+    }
+    let _c_guard = COOKIE_PERSIST_RW_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    let tags: Vec<String> = tags.iter().map(|s| s.to_string()).collect();
+    crate::db_state::with_database(move |db| {
+        let repo = legado_db::CookieRepository::new(db.connection());
+        for tag in &tags {
+            repo.delete_by_tag(tag)?;
+        }
+        Ok(())
+    })
+}
+
+/// 删除全部 cookie 持久化行（全量清除侧，C 守卫）
+///
+/// 同 [`delete_cookie_rows`]：调用方须已持 D 锁（全量清除 = 全域写通道，
+/// 调用方 `clear_all_cookies` 已取全部域 D）；C + P 内 `clear_all`，
+/// 与写方 RMW 串行。不吞错。
+pub(crate) fn clear_all_cookie_rows() -> LegadoResult<()> {
+    let _c_guard = COOKIE_PERSIST_RW_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    crate::db_state::with_database(|db| {
+        let repo = legado_db::CookieRepository::new(db.connection());
+        repo.clear_all()
+    })
 }
 
 /// 基于 legado-db cookies 表的 Cookie 持久化实现
@@ -119,17 +171,6 @@ impl CookiePersistence for DbCookiePersistence {
 
     fn save(&self, tag: &str, cookie: &str) {
         persist_cookie_row_merged(tag, cookie);
-    }
-
-    fn delete(&self, tag: &str) {
-        let tag_for_log = tag.to_string();
-        let tag = tag.to_string();
-        if let Err(e) = crate::db_state::with_database(move |db| {
-            let repo = legado_db::CookieRepository::new(db.connection());
-            repo.delete_by_tag(&tag)
-        }) {
-            log::warn!("删除持久化 Cookie '{}' 失败: {}", tag_for_log, e);
-        }
     }
 }
 
@@ -177,13 +218,10 @@ impl legado_js::host_api::cookie_store::CookieSink for JsCookieDbSink {
 
     fn remove(&self, domain_key: &str) {
         let key = domain_key.to_string();
-        let key_for_log = key.clone();
-        let key_for_db = key.clone();
-        if let Err(e) = crate::db_state::with_database(move |db| {
-            let repo = legado_db::CookieRepository::new(db.connection());
-            repo.delete_by_tag(&key_for_db)
-        }) {
-            log::warn!("JS Cookie 持久化 '{key_for_log}' 删除失败: {e}");
+        // [正确性 2026-09-24] DB 删行走 C 守卫（与写方 RMW 串行）；
+        // 调用方（JS 侧 clear_cookies）已持本侧域 D 锁
+        if let Err(e) = delete_cookie_rows(std::slice::from_ref(&key.as_str())) {
+            log::warn!("JS Cookie 持久化 '{key}' 删除失败: {e}");
         }
         // 同步清共享 HTTP 客户端内存 CookieStore 的对应域（键为域名键时
         // 命中；原始串键与 jar 域名键不符 → 天然 no-op）：否则 jar 后续
@@ -199,10 +237,9 @@ impl legado_js::host_api::cookie_store::CookieSink for JsCookieDbSink {
     }
 
     fn remove_all(&self) {
-        if let Err(e) = crate::db_state::with_database(|db| {
-            let repo = legado_db::CookieRepository::new(db.connection());
-            repo.clear_all()
-        }) {
+        // [正确性 2026-09-24] DB 全清走 C 守卫（与写方 RMW 串行）；
+        // 调用方（JS 侧 clear_all_cookies）已持全部域 D 锁
+        if let Err(e) = clear_all_cookie_rows() {
             log::warn!("JS Cookie 持久化全清失败: {e}");
         }
         // 同步清空共享客户端内存 CookieStore（全量清除 = 全层清除）
@@ -403,7 +440,10 @@ mod tests {
         );
     }
 
-    /// DbCookiePersistence 直接测试：save/load/delete 与 CookieRepository 联动。
+    /// DbCookiePersistence 直接测试：save/load 与 CookieRepository 联动；
+    /// 删除走 CookieRepository 直删（`CookiePersistence::delete` 死 API
+    /// 已移除——保护性删除收敛到 [`delete_cookie_rows`]/[`clear_all_cookie_rows`]，
+    /// 见 [正确性 2026-09-24]）
     #[test]
     fn test_db_cookie_persistence_roundtrip() {
         let _g = TEST_LOCK.lock().unwrap();
@@ -420,7 +460,11 @@ mod tests {
             "save 后 load_all 应包含写入条目"
         );
 
-        persistence.delete("roundtrip.com");
+        crate::db_state::with_database(|db| {
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.delete_by_tag("roundtrip.com")
+        })
+        .unwrap();
         let loaded = persistence.load_all();
         assert!(
             !loaded.iter().any(|(tag, _)| tag == "roundtrip.com"),

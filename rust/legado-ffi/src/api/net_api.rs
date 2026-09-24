@@ -83,14 +83,54 @@ fn get_sub_domain(url: &str) -> String {
 /// 3. JS 宿主 `cookie_store` 内存表
 ///
 /// 差距：原版另清 WebView Cookie / CacheManager 会话；本实现无独立 WebView 层。
+///
+/// [正确性 2026-09-24] 删除侧纳入与写方同一保护域（否则删行可被夹在写方
+/// 「捕获视图 → 落库」的 RMW 中间，随后写方落库旧视图即把已删行「复活」，
+/// 红态回归：`test_clear_cookie_concurrent_rmw_no_resurrection`）：
+/// - **D（按域写通道，最外层）**：对「存储域键 + JS 归一键 + 域键归一
+///   结果」去重排序后逐键取 net 层域锁（quickjs 档 JS 写侧 / jar 写回
+///   共用 net 注册表 → 一把锁覆盖；默认档 JS 写侧用本地注册表 → 另经
+///   [`legado_js::host_api::cookie_store::lock_local_domain_writes`] 取同
+///   键集本地 D，两侧写方都能挡住）；
+/// - **C（DB 行 RMW 串行）**：删行走 [`crate::http_state::delete_cookie_rows`]
+///   （C 守卫内逐键删行，与写方 `persist_cookie_row_merged` 的 RMW 串行）；
+/// - **全局锁序 D→J→C→P**：J（jar）仅在清内存 CookieStore 的短作用域内
+///   取放、不跨 DB I/O；C 在 D 内取；P 最内层——链状无环。
+/// - **自死锁规避**：`std::sync::Mutex` 不可重入，本入口对每个 D 键
+///   至多取一次（键集先去重 + 排序），且其后 JS 侧只调「假设锁已持有」
+///   的 [`legado_js::host_api::cookie_store::clear_cookies_locked`]（绝不
+///   重取 D）；公共入口 `clear_cookies` 不在本路径上被调用。
+/// - **跨进程 caveat**：进程内 D/C 不覆盖另一进程（app ↔ server）的写方；
+///   跨进程竞态回落到数据库行级语句原子性。
 pub fn clear_cookie(url: &str) -> LegadoResult<()> {
     let url = url.trim();
     if url.is_empty() {
         return Err(LegadoError::Internal("url 不能为空".into()));
     }
     let domain = get_sub_domain(url);
+    // 删除侧保护域键候选：存储域键（jar / DB 行键）+ JS 归一键 + 域键
+    // 归一结果（双档归一口径的兜底超集）。去重 + 排序保证每个 D 键只取
+    // 一次且顺序固定（Mutex 不可重入 + 排序序无环）
+    let norm = legado_js::host_api::cookie_store::normalized_cookie_key(url);
+    let mut keys = vec![
+        domain.clone(),
+        norm.clone(),
+        legado_js::host_api::cookie_store::normalized_cookie_key(&domain),
+    ];
+    keys.sort();
+    keys.dedup();
+    // D（最外层）：与同域写方「捕获 + 落库」互斥
+    let _d_guards: Vec<_> = keys
+        .iter()
+        .map(|k| legado_net::cookie_store::domain_write_lock(k))
+        .collect();
+    // 默认档：JS 写侧用本地注册表（quickjs 档 JS 侧复用 net 注册表，上方
+    // net D 已覆盖，该函数不存在于此档）
+    #[cfg(not(feature = "quickjs"))]
+    let _local_guards = legado_js::host_api::cookie_store::lock_local_domain_writes(&keys);
 
-    // 1. 内存 CookieStore（共享客户端；未初始化时 shared_client 会惰性创建）
+    // 1. 内存 CookieStore（共享客户端；J 作用域在 DB I/O 前完成——锁序
+    //    D→J，不持 J 跨 DB I/O；未初始化时 shared_client 会惰性创建）
     {
         let client = crate::http_state::shared_client()?;
         let mut store = client
@@ -100,23 +140,21 @@ pub fn clear_cookie(url: &str) -> LegadoResult<()> {
         store.remove_domain(&domain);
     }
 
-    // 2. 持久层（DB 未初始化时跳过，与 MCP clear_cookies 行为一致）
+    // 2. 持久层（C 守卫删行，与写方 RMW 串行；DB 未初始化时跳过，与 MCP
+    //    clear_cookies 行为一致）
     if crate::db_state::is_initialized() {
-        crate::db_state::with_database(|db| {
-            let repo = legado_db::CookieRepository::new(db.connection());
-            repo.delete_by_tag(&domain)
-        })?;
+        crate::http_state::delete_cookie_rows(&[&domain])?;
     }
 
-    // 3. JS 宿主 Cookie（java.clearCookies(url) 同源）：
+    // 3. JS 宿主 Cookie（java.clearCookies(url) 同源；已持 D 的内层变体）：
     //    清归一域名键（单一真源 `domain_key_from_host`，与写侧归一口径一致），
     //    并追加清原始 URL 形态键——上游同步（2026-09-23 用户裁决）后读侧容忍
     //    「归一键 + 原始串键」双命中，历史数据或 JS 侧可能直接以原始 URL 串
     //    为键写入，须连 raw 键一并清除才不漏。http(s) 可解析 URL 的
     //    norm(url) 即上行的 `domain` 键，两行删除互为幂等超集；非 http(s)
     //    串两键相同，同样幂等。
-    legado_js::host_api::cookie_store::clear_cookies(&domain);
-    legado_js::host_api::cookie_store::clear_cookies(url);
+    legado_js::host_api::cookie_store::clear_cookies_locked(&domain);
+    legado_js::host_api::cookie_store::clear_cookies_locked(url);
 
     Ok(())
 }
@@ -369,5 +407,113 @@ mod tests {
 
         assert!(set_custom_hosts("not-json").is_err());
         assert!(set_custom_hosts(r#"["array"]"#).is_err());
+    }
+
+    /// [正确性 2026-09-24] 并发「删行被夹在写方 RMW 中间」→ 旧视图写回复活已删行
+    ///
+    /// 写方线程模拟生产 jar 写回（save_cookies_from_response）：取 D(domain)
+    /// → 捕获 jar 域视图 → 等放行信号（超时 2s）→ 以捕获视图合并落库
+    ///（C + 合并 upsert，与生产 persist 路径同源）→ 放 D。
+    /// 删除侧线程跑 FFI 入口 [`clear_cookie`]。
+    ///
+    /// 红态（删除侧未纳入 D/C 保护域）：删除在写方持 D 期间完成删行，
+    /// 随后写方落库旧视图 → 行复活（断言失败）。默认档下该窗口真实存在：
+    /// jar 写回走 net 注册表的 D，JS 清除走本地注册表的 D，两注册表
+    /// 互不串行。
+    /// 绿态（删除侧取 D + C 守卫）：删除阻塞在 D 上，写方超时落库
+    ///（复活）并放 D 后，删除的 D+C 段执行 → 行被最终删除（断言通过）。
+    #[test]
+    fn test_clear_cookie_concurrent_rmw_no_resurrection() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _gs = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        crate::http_state::register_js_cookie_sink();
+
+        const URL: &str = "https://www.rmwffi.test/x";
+        // jar 写回 / 删除侧共用的域名键（ETLD+1，与存储侧键一致）
+        let dk = get_sub_domain(URL);
+
+        // 清理残留 + 预置：jar 内存域视图（写方将捕获）+ DB 行
+        clear_cookie(URL).unwrap();
+        {
+            let client = crate::http_state::shared_client().unwrap();
+            client
+                .cookie_store()
+                .write()
+                .unwrap()
+                .set_cookies_from_string(&dk, "s=1");
+        }
+        crate::db_state::with_database(|db| {
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.upsert(&dk, "s=1")
+        })
+        .unwrap();
+
+        let (captured_tx, captured_rx) = std::sync::mpsc::channel();
+        let (go_tx, go_rx) = std::sync::mpsc::channel();
+        let dk_writer = dk.clone();
+        let writer = std::thread::spawn(move || {
+            // 写方保护域（D）：与生产 jar 写回同一把锁
+            let _d = legado_net::cookie_store::domain_write_lock(&dk_writer);
+            // 捕获 jar 域视图（生产路径在 J 作用域内捕获）
+            let captured = crate::http_state::shared_client()
+                .unwrap()
+                .cookie_store()
+                .read()
+                .unwrap_or_else(|p| p.into_inner())
+                .domain_cookie_string(&dk_writer);
+            let _ = captured_tx.send(());
+            // 绿态：删除侧阻塞在 D 上 → 此处必然超时；红态：删除已完成
+            let _ = go_rx.recv_timeout(std::time::Duration::from_secs(2));
+            // 落库捕获视图（C + 合并 upsert，与生产 persist 路径同源）
+            if !captured.is_empty() {
+                let persistence = crate::http_state::DbCookiePersistence;
+                legado_net::CookiePersistence::save(&persistence, &dk_writer, &captured);
+            }
+            // 放 D（guard drop）
+        });
+
+        // 删除侧：独立线程跑 FFI 清除入口
+        let done = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let done_flag = std::sync::Arc::clone(&done);
+        let deleter = std::thread::spawn(move || {
+            let _ = clear_cookie(URL);
+            done_flag.store(true, std::sync::atomic::Ordering::SeqCst);
+        });
+
+        // 等写方完成捕获（此刻写方持 D + 旧视图）
+        captured_rx.recv().expect("写方应完成视图捕获");
+        // 等删除完成（绿态下需等写方 2s 超时放 D；留足上限防误判死锁）
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+        while !done.load(std::sync::atomic::Ordering::SeqCst) {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "clear_cookie 不应永久阻塞（锁序 D→C 链状无环）"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        // 放行写方落库（绿态下写方已超时落库；红态下落库发生于删除完成之后）
+        let _ = go_tx.send(());
+        writer.join().expect("写方线程不应 panic");
+        deleter.join().expect("删除线程不应 panic");
+
+        // 终态：已删行不得被写方旧视图复活
+        let row = crate::db_state::with_database(|db| {
+            let repo = legado_db::CookieRepository::new(db.connection());
+            repo.get_by_tag(&dk)
+        })
+        .unwrap();
+        assert!(row.is_none(), "删行被夹在写方 RMW 中间后不得复活: {row:?}");
+        // jar 内存侧同样干净
+        let client = crate::http_state::shared_client().unwrap();
+        assert!(client
+            .cookie_store()
+            .read()
+            .unwrap()
+            .get_cookies(&dk)
+            .is_empty());
+
+        // 收尾：清理残留（幂等）
+        clear_cookie(URL).unwrap();
     }
 }

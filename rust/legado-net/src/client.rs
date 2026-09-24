@@ -1087,10 +1087,6 @@ mod tests {
                 .unwrap()
                 .insert(tag.to_string(), cookie.to_string());
         }
-
-        fn delete(&self, tag: &str) {
-            self.data.lock().unwrap().remove(tag);
-        }
     }
 
     #[test]
@@ -1184,10 +1180,6 @@ mod tests {
                 .lock()
                 .unwrap()
                 .insert(tag.to_string(), cookie.to_string());
-        }
-
-        fn delete(&self, tag: &str) {
-            self.data.lock().unwrap().remove(tag);
         }
     }
 

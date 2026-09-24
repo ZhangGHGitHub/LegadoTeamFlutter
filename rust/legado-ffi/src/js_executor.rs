@@ -96,6 +96,74 @@ pub fn construct_analyzer_with_source_context(
     AnalyzeRule::new(content, base_url)
 }
 
+/// 目录分页共享上下文（循环不变部分收敛）
+///
+/// [性能专项 2026-09-24 | 登记项] 目录分页每页重复开销收敛：同一书源的
+/// 分页循环里，`source_tag` / jsLib / setup 脚本属循环不变量。改前逐页经
+/// [`construct_analyzer_with_source_context`] 重建执行器（重复克隆 jsLib +
+/// setup 串、每次新建 `Arc<QuickJsExecutor>`）；底层引擎本就按
+/// `executor:<source_tag>` 缓存一次、执行器本身无状态，逐页重建只有
+/// 克隆/分配开销。此处循环前构建一次，`Arc<dyn JsExecutor>` 在各构造点
+/// 共享；逐页输入仅剩本页 `content` / `base_url`（+ 逐页 `src` 绑定序列化）。
+#[cfg(feature = "quickjs")]
+pub type TocPageContext = std::sync::Arc<dyn legado_parser::JsExecutor>;
+
+/// 构建目录分页共享上下文（quickjs 档）
+///
+/// `setup_script` 按值传入（循环不变量，只移动一次）；传 `None` 得到与
+/// [`construct_analyzer_with_js_lib`] 同谱的执行器（无 setup 绑定）。
+#[cfg(feature = "quickjs")]
+pub fn build_toc_page_context(
+    source_tag: &str,
+    js_lib: Option<&str>,
+    setup_script: Option<String>,
+) -> TocPageContext {
+    std::sync::Arc::new(
+        QuickJsExecutor::new(source_tag)
+            .with_js_lib(js_lib.map(|s| s.to_string()))
+            .with_setup_script(setup_script),
+    )
+}
+
+/// 从共享上下文构造目录页解析器（quickjs 档）
+///
+/// 执行器跨构造点/跨页共享（引擎缓存见 [`build_toc_page_context`] 文档）；
+/// 抓取/截断/上限/取消语义不变——仅构造开销收敛。
+#[cfg(feature = "quickjs")]
+pub fn construct_toc_page_analyzer(
+    ctx: &TocPageContext,
+    content: String,
+    base_url: String,
+) -> AnalyzeRule {
+    AnalyzeRule::with_js_executor(content, base_url, ctx.clone())
+}
+
+/// 非 quickjs 构建下的降级实现
+///
+/// 该档无 JS 执行器（[`AnalyzeRule::new`] 原样降级），共享上下文为占位的
+/// 零大小类型（刻意非单元值，规避 `clippy::let_unit_value`）；签名与
+/// quickjs 档一致，调用方按档无感。
+#[cfg(not(feature = "quickjs"))]
+pub struct TocPageContext;
+
+#[cfg(not(feature = "quickjs"))]
+pub fn build_toc_page_context(
+    _source_tag: &str,
+    _js_lib: Option<&str>,
+    _setup_script: Option<String>,
+) -> TocPageContext {
+    TocPageContext
+}
+
+#[cfg(not(feature = "quickjs"))]
+pub fn construct_toc_page_analyzer(
+    _ctx: &TocPageContext,
+    content: String,
+    base_url: String,
+) -> AnalyzeRule {
+    AnalyzeRule::new(content, base_url)
+}
+
 /// 执行 loginCheckJs 登录检测脚本
 ///
 /// 将 HTTP 响应上下文以 `result` 绑定注入 JS 环境，

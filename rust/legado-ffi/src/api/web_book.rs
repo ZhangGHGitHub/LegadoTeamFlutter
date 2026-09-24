@@ -2374,17 +2374,26 @@ impl RealBookSourceFetcher {
         }
 
         // [性能专项 2026-09-24] 书源上下文 setup 脚本外提：quickjs 档该函数
-        // 会把整个 BookSource 序列化为 JSON 注入脚本，改前逐页（串行分页循环内）
-        // 重复计算。此处计算一次，各解析器构造点按值克隆复用。
+        // 会把整个 BookSource 序列化为 JSON 注入脚本，循环前计算一次。
         let toc_setup_script =
             crate::api::source_js_bindings::book_source_js_setup_script(source).ok();
-
-        let mut analyzer = crate::js_executor::construct_analyzer_with_source_context(
-            toc_body,
-            toc_url.to_string(),
+        // [性能专项 2026-09-24 | 登记项] 目录分页每页重复开销收敛：循环不变
+        // 部分（source_tag / jsLib / setup 脚本 + 执行器）构建一次共享上下文，
+        // 三处构造点（chapterList 层 toc 解析器 / elem_analyzer / 串行逐页
+        // 解析器）经 `Arc<dyn JsExecutor>` 复用；改前逐页重复克隆 jsLib +
+        // setup 串并新建执行器（底层引擎按 executor:<source_tag> 缓存，
+        // 逐页新建仅徒耗克隆/分配）。逐页输入仅剩本页 content/base_url
+        // （+ 逐页 src 绑定序列化），抓取/截断/上限/取消语义不变。
+        let toc_page_ctx = crate::js_executor::build_toc_page_context(
             &source.book_source_url,
             js_lib_sanitized,
-            toc_setup_script.clone(),
+            toc_setup_script,
+        );
+
+        let mut analyzer = crate::js_executor::construct_toc_page_analyzer(
+            &toc_page_ctx,
+            toc_body,
+            toc_url.to_string(),
         );
 
         // P2-9 ②：meta 命中 → IIFE 扩面绑定；未命中 → 既有 `{"name":…}` 字面量
@@ -2433,12 +2442,12 @@ impl RealBookSourceFetcher {
 
         // 对齐原版 BookChapterList：单一 AnalyzeRule + setContent(item) 循环，
         // 复用 stringRuleCache / JsExecutor，避免每章新建解析器（数百章时差一个数量级）。
-        let mut elem_analyzer = crate::js_executor::construct_analyzer_with_source_context(
+        // [性能专项 2026-09-24 | 登记项] 执行器经共享上下文 toc_page_ctx 复用
+        // （不再按构造点重建执行器）
+        let mut elem_analyzer = crate::js_executor::construct_toc_page_analyzer(
+            &toc_page_ctx,
             String::new(),
             toc_url.to_string(),
-            &source.book_source_url,
-            js_lib_sanitized,
-            toc_setup_script.clone(),
         )
         // [P2-6h] 逐章解析器补 `book` 绑定（对齐原版 BookChapterList.kt:236-245：
         // 每章复用同一带 book 绑定的 analyzeRule）。此前只有 chapterList 层的
@@ -2587,14 +2596,15 @@ impl RealBookSourceFetcher {
                         break;
                     };
                     toc_pages_seen += 1;
-                    // P2-9 ①：src = 本页响应体（先序列化再 move 进构造器）
+                    // P2-9 ①：src = 本页响应体（逐页数据：先序列化再 move 进构造器，
+                    // 保留在循环内）
+                    // [性能专项 2026-09-24 | 登记项] 解析器上下文改用循环前共享的
+                    // toc_page_ctx：逐页不再克隆 jsLib/setup、不再新建执行器
                     let page_src_json = serde_json::to_string(&page_body).unwrap_or_default();
-                    let page_analyzer = crate::js_executor::construct_analyzer_with_source_context(
+                    let page_analyzer = crate::js_executor::construct_toc_page_analyzer(
+                        &toc_page_ctx,
                         page_body,
                         next_url.clone(),
-                        &source.book_source_url,
-                        js_lib_sanitized,
-                        toc_setup_script.clone(),
                     )
                     .with_js_binding("src", &page_src_json);
                     let page_elements = if chapter_list_rule.is_empty() {

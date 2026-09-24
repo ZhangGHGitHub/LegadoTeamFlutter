@@ -42,8 +42,6 @@ pub trait CookiePersistence: Send + Sync {
     fn load_all(&self) -> Vec<(String, String)>;
     /// 插入/更新单个域名的 Cookie 字符串
     fn save(&self, tag: &str, cookie: &str);
-    /// 删除单个域名的全部 Cookie
-    fn delete(&self, tag: &str);
 }
 
 // ─── 按域 Cookie 写通道（per-domain 串行锁） ─────────────────────────────────
@@ -75,21 +73,72 @@ pub trait CookiePersistence: Send + Sync {
 static DOMAIN_WRITE_LOCKS: LazyLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+/// 域锁注册表条目数告警阈值（资源保护，不改变正确性语义）
+///
+/// 注册表条目 = 出现过的域键（正常应用：书源域数十至数千个）；无界增长
+/// 只能来自病态输入（规则脚本以拼接/随机串反复调用 cookie 接口 → 每个新
+/// 串登记一条域锁）。超阈值时一次性告警（带当前条目数）——纯诊断信号：
+/// **不做逐出/拒绝**（逐出会破坏「裸指针 `'static` 有效」不变式，正确性
+/// 语义不可变；条目数量本身不影响任何互斥语义）。
+const DOMAIN_REGISTRY_WARN_CAP: usize = 4096;
+
+/// 一次性告警标记（每进程至多告警一次，避免病态输入刷屏）
+static DOMAIN_REGISTRY_CAP_WARNED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// 注册表条目数超阈值时一次性告警（仅诊断，不参与锁语义）
+fn maybe_warn_domain_registry_growth(count: usize) {
+    if count > DOMAIN_REGISTRY_WARN_CAP
+        && !DOMAIN_REGISTRY_CAP_WARNED.swap(true, std::sync::atomic::Ordering::Relaxed)
+    {
+        eprintln!(
+            "[legado-net] cookie 域锁注册表条目数 {count} 超过阈值 {DOMAIN_REGISTRY_WARN_CAP}（病态输入持续生成新域键；一次性告警，不影响正确性）"
+        );
+    }
+}
+
 /// 从静态注册表取得某域写通道锁对象的 `'static` 原始指针
 ///
 /// 若该域尚未注册，先向 [`DOMAIN_WRITE_LOCKS`] 登记 `Arc<Mutex<()>>`，再对
 /// 登记后的 `Arc` 克隆一次经 `Arc::into_raw` 交出裸指针（克隆保证注册表
 /// 仍持有原对象）。域锁（`Mutex<()>`）一经注册即由静态注册表永久持有
 /// （注册表条目永不删除），故其裸指针可安全地以 `'static` 解引用。
-fn domain_lock_ptr(
+fn domain_lock_raw(
     registry: &mut HashMap<String, Arc<Mutex<()>>>,
     domain: &str,
 ) -> *const Mutex<()> {
+    let is_new = !registry.contains_key(domain);
     let arc = registry
         .entry(domain.to_string())
         .or_insert_with(|| Arc::new(Mutex::new(())))
         .clone();
+    if is_new {
+        maybe_warn_domain_registry_growth(registry.len());
+    }
+    // 不变式断言（debug 构建）：注册表此刻仍持有交出裸指针的那个 Arc。
+    // 该不变式是 [`lock_domain_ptr`] unsafe 合法性的前提——条目一旦可被
+    // 删除/替换，已交出的裸指针即悬垂。
+    debug_assert!(
+        registry
+            .get(domain)
+            .is_some_and(|held| Arc::ptr_eq(held, &arc)),
+        "cookie 域锁注册表不变式被破坏：条目被删除/替换，裸指针 'static 有效性失效"
+    );
     Arc::into_raw(arc)
+}
+
+/// 由 `'static` 裸指针取域锁（本文件唯一的 unsafe 解引用点）
+///
+/// # Safety
+/// 指针必须来自 [`domain_lock_raw`]（或同一注册表存活条目的
+/// `Arc::as_ptr`）——`Arc<Mutex<()>>` 一经注册即由静态注册表永久持有
+///（**注册表条目永不删除**——本文件 unsafe 的不变式：任何未来引入
+/// 注册表清理/条目删除的改动都会立即制造悬垂指针，必须同步重构本指针
+/// 方案，例如改为经注册表守卫加锁）。对象存活期 `'static`；此处仅加锁
+/// 并返回守卫，守卫 drop 只解锁、不触碰对象所有权，故不构成双重 free
+/// 或悬垂。
+fn lock_domain_ptr(ptr: *const Mutex<()>) -> MutexGuard<'static, ()> {
+    unsafe { (&*ptr).lock().unwrap_or_else(|p| p.into_inner()) }
 }
 
 /// 取某域的写通道串行锁（最外层 D 锁）
@@ -102,12 +151,9 @@ fn domain_lock_ptr(
 pub fn domain_write_lock(domain: &str) -> MutexGuard<'static, ()> {
     let ptr = {
         let mut registry = DOMAIN_WRITE_LOCKS.lock().unwrap_or_else(|p| p.into_inner());
-        domain_lock_ptr(&mut registry, domain)
+        domain_lock_raw(&mut registry, domain)
     };
-    // SAFETY：指针来自永久驻留于静态注册表的 `Arc<Mutex<()>>`（条目永不删除，
-    // 对象存活期 `'static`）；此处仅加锁并返回守卫，守卫 drop 只解锁、不触碰
-    // 对象所有权，故不构成双重 free 或悬垂。
-    unsafe { (&*ptr).lock().unwrap_or_else(|p| p.into_inner()) }
+    lock_domain_ptr(ptr)
 }
 
 /// 持有全部按域写通道（注册表锁 + 全部域锁，按域键排序取锁防环）
@@ -146,11 +192,11 @@ pub fn lock_all_domain_writes() -> AllDomainWriteGuards {
     keys.sort();
     let mut domains = Vec::with_capacity(keys.len());
     for key in &keys {
+        // 注册表守卫在持期间条目不可被删/换，[`lock_domain_ptr`] 的 SAFETY
+        // 前提在此平凡成立（与 [`domain_write_lock`] 不同，此处连克隆 Arc
+        // 都不需要）。
         let ptr = Arc::as_ptr(registry.get(key).expect("键来自同一注册表快照，必然存在"));
-        // SAFETY：同 [`domain_write_lock`]——域锁对象由静态注册表永久持有，
-        // 指针存活期 `'static`；此处仅加锁返回守卫，守卫 drop 只解锁。
-        let guard = unsafe { (&*ptr).lock().unwrap_or_else(|p| p.into_inner()) };
-        domains.push(guard);
+        domains.push(lock_domain_ptr(ptr));
     }
     AllDomainWriteGuards::new(registry, domains)
 }
