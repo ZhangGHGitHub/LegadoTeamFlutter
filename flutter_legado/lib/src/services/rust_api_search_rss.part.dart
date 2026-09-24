@@ -189,6 +189,23 @@ mixin RustApiSearchRss on RustApiDecode implements BookApi {
     newBookUrl: newBookUrl,
   );
 
+  /// 切换书源（预拉缓存版，2026-09-24 加法式；命中零网络/未命中现场抓取可取消）
+  @override
+  Future<String> switchSourcePrefetch(
+    String bookUrl,
+    String newSourceUrl,
+    String newBookUrl,
+  ) => bridge.sourceSwitchApplyPrefetch(
+    bookUrl: bookUrl,
+    newSourceUrl: newSourceUrl,
+    newBookUrl: newBookUrl,
+  );
+
+  /// 取消进行中的「换源（预拉缓存版）」应用（对齐上游 cancelChangeSource）
+  @override
+  Future<void> cancelSwitchSourceApply() =>
+      bridge.sourceSwitchApplyCancel();
+
   /// 更新换源列表项用户评分（-1/0/1）
   @override
   Future<void> updateSearchBookScore(String bookUrl, int score) =>

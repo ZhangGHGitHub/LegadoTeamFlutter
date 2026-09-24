@@ -257,6 +257,26 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
     return newBookUrl;
   }
 
+  /// 预拉缓存版 mock：命中语义无法在纯 mock 表达，直通 [switchSource]；
+  /// 计数供单测断言「选中命中后不再触发第二次抓取」（call count）
+  int prefetchApplyCallCount = 0;
+  int cancelApplyCallCount = 0;
+
+  @override
+  Future<String> switchSourcePrefetch(
+    String bookUrl,
+    String newSourceUrl,
+    String newBookUrl,
+  ) async {
+    prefetchApplyCallCount++;
+    return switchSource(bookUrl, newSourceUrl, newBookUrl);
+  }
+
+  @override
+  Future<void> cancelSwitchSourceApply() async {
+    cancelApplyCallCount++;
+  }
+
   final Map<String, int> _searchBookScores = {};
 
   @override

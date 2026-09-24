@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-09-24 | **换源感知等待（搜索期预拉缓存 + 可取消 apply，加法式，零破坏）**：对齐上游 Android `ChangeBookSourceViewModel` 三步——① 搜索期 enrich 对候选做内存预拉缓存写入（有界并发 8、单候选 60s 超时、失败/超时隔离直通；缓存 key `source_url\u0000book_url` 对齐上游 `primaryStr()`、目录上限 30000 章）；② §2.4 加法式新增 `switchSourcePrefetch(bookUrl, newSourceUrl, newBookUrl) → Future<String>`——命中预拉缓存直接提交缓存详情+目录（**零网络、选中即落地**），部分命中仅补抓目录，未命中现场抓取（执行链同 `switchSource`，既有方法冻结不变）；③ §2.4 加法式新增 `cancelSwitchSourceApply() → Future<void>`（对齐上游 `cancelChangeSource` L715-721）——apply 代数 +1 并 bump 目录刷新代数，在途 apply 提交前三点代数比对即中止（DB 零变更），在途目录分页链下一页边界中止；④ Flutter 换源页：apply 在途展示可取消加载态（spinner + 取消钮），进度串对齐上游 zh「结果 N，进度 M/K：源名」（values-zh/strings.xml:1457 + ChangeBookSourceDialog.kt L286-298）。§2.4 方法数 17→**19**，附录合计 278→**280**，BookApi 口径 275→**277** |
 | 2026-09-22 | **队列⑩a P2-20 搜索跨源聚合三路径语义收敛（加法式，零破坏，方法数不变）**：P2-20 裁决落地——三条路径（Dart 纯函数 `applyPrecisionSearch` / `SearchNotifier` 增量桶 / Rust `aggregate_search_books` 单一真源）**在同一输入列表内**统一到同一语义：入桶前跨桶预去重（seen 键为**原始** `name|author|origin` 三段，与运行时 `_seenKeys` 逐字一致），同一 `(name, author, origin)` 仅**首次到达**入桶（落桶由首次到达决定，四桶优先级 equal→tags→contains→other 不变），后续同键到达丢弃（origin 由首条代表，跨源计数由桶内 `origins` 集合承载）。实现：纯函数（`search_state.dart`）与 Rust 入口（`legado-core::search_aggregate`）各补 `seen` 门控；`search_notifier.dart` 运行时路径仅补注释、行为不动（语义基准）。两端各新增 2 条单测（同键 kind 分桶 → 仅首条 1 条，含 assert_ne 回归保护；不同 origin 各保留、origins 累加）+ 跨端夹具 `cross_source_merge.json` `keep_other` expected 8→7 条（若回退为无 seen 的四桶独立实现，该 case 由 7 变 8 条、夹具变红——回归保护）。**范围限定（必读）**：该统一仅在**单次调用的输入列表**内成立——运行时 `_seenKeys` 为**会话级跨页**（跨页 APPEND 不清空，直至新关键词/清空），纯函数 / Rust 入口为**单次调用**语义、不携带会话状态；未来若把运行时聚合切到 Rust 入口，须传**会话累积列表**（会话内全部 books）而非单批 `SearchSourceBatch.books[]`，否则跨页同键书会重复计数（跨页重复回归）。§2.4 方法数 17 不变、附录合计不变 |
 | 2026-09-22 | **队列⑩a P1-1 项2 搜索跨源聚合单一真源（加法式，零破坏，方法数不变）**：① **Rust 单一聚合入口**——`legado-core` 新增 `search_aggregate` 模块（`aggregate_search_books(books, key, keep_other)` 纯函数：归一化清洗 / 聚合键 `name\u0000author`（清洗后值）/ 四独立桶 equal→tags→contains→(keep_other) other / 桶内 originsCount 降序 + 首次到达索引平局 / 归并时 origins 并集累加（首次出现序，origin 去重不重复计数）+ `hasReadRecord` 跨源 OR + 首条到达元数据保留 / 空 key 原样返回），与 Dart 现行**纯函数** `applyPrecisionSearch`（`search_state.dart` L144-207）**逐条对齐（对齐范围严格限定为纯函数，不覆盖 `SearchNotifier` 增量桶路径——该路径入桶前多一层 `_seenKeys` 预去重（`search_notifier.dart` L307-310，`_seenKeys` 声明 L64），同名同作者同 origin 且 kind 分落不同桶时（如「都市情缘+乙」同源两条）纯函数/本入口产出 2 条、增量路径仅 1 条；差异登记 `REFACTORING_ACTIVE_PLAN.md` P2-20 待裁决，故本模块不得与增量路径称「完全一致」）**；FFI 层 `legado-ffi/src/api/search.rs::aggregate_search_books_json(books_json, key, keep_other) → Result<String>` 作为跨端校验入口（**FFI crate 内 pub 函数，本轮不做 FRB 暴露**——避免 codegen + `BookApi`/`MockBookApi` 同步面，Dart 运行时聚合切换留待后续批次，届时直接包装本函数）。② **`CoreSearchBook`（`SearchSourceBatch.books[]` 元素）加法式新增可选字段 `origins`（string 数组，serde default + 空时省略序列化）**——由聚合入口产出（同名同作者跨源合并后累加的 origins，首次出现序）；既有流式批次 / 解析 / DB 读路径不填充（空 → 序列化省略 → 批次 JSON 形态零变化），旧消费方零破坏。③ **Dart 侧加法式消费**——`SearchBook.origins`（`@Default([])`）+ `SearchResult.fromSearchBook` 非空时优先作为有效 origins（对齐 Rust `effective_origins` 规则：origins 非空→用它；否则 origin 非空→`{origin}`；全空→空集合，计数下限 1）；**Dart 运行时聚合路径（`SearchNotifier` 增量桶 + 150ms 节流）本轮不切换**——切换为每次 flush 跨 FFI 全量聚合将引入 O(n) 性能回归与会话态映射复杂度，非最小改动，故本轮交付 Rust 参考实现 + 加法式字段 + 跨端夹具锁定两端等价。④ **跨端夹具校验**——`rust/legado-ffi/tests/fixtures/search_aggregate/cross_source_merge.json`（books + expected，含跨源同名合并 / 作者「作者：」前缀与书名「 作者」后缀归一化 / 同源重复去重 / 四桶分落（同一键因 kind 差异落不同桶）/ 预填 origins 字段 / hasReadRecord OR / keep_other 两态），Rust 集成测试 `tests/search_aggregate_fixture.rs` 与 Dart 单测 `test/unit/search_aggregate_fixture_test.dart` 各跑同一夹具与 expected 比对（origins 按序比对（首次出现序为契约）、其余字段顺序敏感，不依赖真网络），已验证 Rust 聚合结果 ≡ Dart 现行纯函数 `applyPrecisionSearch` 期望。**双轨确认记录（一句）**：本变更 Rust/Flutter 双轨均归我方——Rust 侧仅 `search_aggregate` 新模块 + `CoreSearchBook.origins` 加法式字段 + FFI 内 pub JSON 入口（无 FRB 签名变更），Flutter 侧仅 `SearchBook.origins` 加法式消费（增量桶聚合路径不变、UI 零改动），既有搜索批次 JSON 形态与行为零变化。§2.4 方法数 17 不变、附录合计不变 |
 | 2026-09-22 | **队列④ P1-B 单源搜索失败 UI 落地（纯 Flutter，无新 FFI，方法数不变）**：§2.4 `searchMultiStream` 批次事件 `error` / `source_name` 字段原在 Flutter 侧仅 `AppLog` 留痕（单源失败 UI 不可见）。本次落地最小可见呈现：`SearchNotifier` 批次监听将单源失败累积进 `SearchState.failedSources`（按源名去重、最新错误优先；新关键词搜索 / 清空结果 / 页面重开三处会话重置，同关键词续页会话内累积），搜索结果页顶部（列表头位置）以非阻断横幅呈现——文案取批次 `error`（含书源能力受限提示），点击展开可见逐源明细（`source_name` + `error`）。整体搜索交互不变（失败源不阻断搜索，对齐原版 `SearchModel` 静默语义，仅把「仅 AppLog 留痕」升级为「留痕 + 可见呈现」）；FFI 契约零变更，§2.4 方法数 17 不变、附录合计不变 |
@@ -155,8 +156,8 @@
 ## 2. 方法清单
 
 > 共 **42 个方法模块**（§2.1–§2.45，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
-> BookApi 接口当前共 **275 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
-> 附录 §2.x 行合计 **278** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
+> BookApi 接口当前共 **277 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
+> 附录 §2.x 行合计 **280** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -225,7 +226,7 @@
 >
 > ℹ️ **BackstageWebView DOM 通道（SOURCE_DIFF P1）**：Rust 侧 `ffi::webview_request_stream / webview_submit / webview_cancel / webview_pending`（核心 `legado-core/src/webview_channel.rs`）。Flutter `WebViewBridgeListener` 订阅后，`@webjs` / 正文 `contentRule.webJs` / `java.webView*` 经真实 WebView 执行并回传；无订阅者时回退无头 QuickJS 或历史桥接载荷（`interceptResult`）。默认超时 60s，规则级 Mode.WebJs 10s。**Android**：`PlatformBridgeService`→原生 `legado/webview.backstageEval`：`cacheFirst`→`WebSettings.LOAD_CACHE_ELSE_NETWORK`；`isRule`+html 时注入 `java`/`source`/`cache` JavascriptInterface（变量读写与精简同步 API；ajax 等网络类仍建议无头宿主）。非 Android 回退 `webview_flutter`（无 cacheMode）。加法式新增。
 
-### 2.4 搜索操作（17 个方法）
+### 2.4 搜索操作（19 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -240,6 +241,8 @@
 | `searchSourceStream(String bookName, String author, {List<String>? sourceUrls, bool loadInfo = false, bool loadToc = false, bool loadWordCount = false, bool forceRefresh = false})` | bookName, author, sourceUrls(可选), loadInfo, loadToc, loadWordCount, forceRefresh | `Stream<Map<String, dynamic>>` | 换源搜索流式（Task #156 / T6）：逐源完成即推一批次事件，首批候选 <5s 到达（500+ 源规模验收线）；批次事件含 `source_index` / `source_url` / `source_name` / `error?` / `finished_count` / `total_count` / `is_last` / `matches[]`（`matches` = 当前已过滤评分排序候选**全量快照**，Rust 侧维持过滤/排序、UI 仅替换展示）；DB 复用路径（forceRefresh=false 且库有数据）推单批即结束；enrich 开启时搜索阶段结束后再推一批 enriched+重排快照（不阻塞首批到达）。旧 `searchSource` 保留兼容 |
 | `searchCover(String bookName)` | bookName | `Future<List<Map<String, dynamic>>>` | 搜索书籍封面候选列表：复用多书源搜索提取封面 URL，每项字段 `url` / `width` / `height`（未知尺寸填 0），无候选返回空列表 |
 | `switchSource(String bookUrl, String newSourceUrl, String newBookUrl)` | bookUrl, newSourceUrl, newBookUrl | `Future<String>` | 切换书源 |
+| `switchSourcePrefetch(String bookUrl, String newSourceUrl, String newBookUrl)` | bookUrl, newSourceUrl, newBookUrl | `Future<String>` | 切换书源（预拉缓存版，2026-09-24 换源感知等待，加法式新增）：命中搜索期预拉缓存（`SwitchPrefetchCache`，key = `newSourceUrl\u0000newBookUrl`，对齐上游 `primaryStr()`）→ 缓存详情+目录**零网络**直接提交（选中即落地）；部分命中（有 info 无 chapters）→ 仅补抓目录；未命中 → 现场抓取详情+目录（执行链同 `switchSource`，且提交前可经 `cancelSwitchSourceApply` 取消，取消后 DB 零变更）；返回新 bookUrl JSON |
+| `cancelSwitchSourceApply()` | 无 | `Future<void>` | 取消进行中的「换源（预拉缓存版）」apply（对齐上游 `cancelChangeSource`，ChangeBookSourceViewModel.kt L715-721）：换源 apply 代数 +1 并 bump 目录刷新代数——未提交 apply 在提交前代数比对即中止（DB 零变更），在途目录分页链在下一页边界中止 |
 | `updateSearchBookScore(String bookUrl, int score)` | bookUrl, score（-1/0/1） | `Future<void>` | 更新换源列表项用户评分（对标原版 `SourceConfig.setBookScore`，持久化 `searchBooks.bookScore` 并同步书源聚合分） |
 | `deleteSearchBook(String bookUrl)` | bookUrl | `Future<void>` | 删除换源列表项（对标换源页长按「删除」，按 bookUrl 移除 `searchBooks` 行） |
 | `searchCoverRules(String name)` | name: 书名（作为规则搜索关键词，对齐原版 `BookCover.searchCover(book)` 传 `book.name` 语义） | `Future<String>` | 按书名执行 coverRules 表中全部启用规则搜封面（JS 搜索规则语义对齐原版 `BookCover.searchCover` 链路），返回候选封面 URL **裸 JSON Array**（遵守 §1.4 铁律）；无启用规则/无候选返回空数组（非异常）；单规则失败隔离（记日志跳过，不阻断其余规则）。错误码：Internal（coverRules 规则数据读取失败）（台账 §5.13-10，第四批后置项，Task #72，加法式新增） |
@@ -270,6 +273,8 @@
 > ℹ️ **跨源聚合单一真源（队列⑩a P1-1 项2，2026-09-22，加法式，零破坏）**：`SearchSourceBatch.books[]` 元素（`CoreSearchBook`）新增可选字段 `origins`（string 数组，`#[serde(default, skip_serializing_if = "Vec::is_empty")]`——空时序列化省略，**既有批次 JSON 形态零变化**）。填充路径：Rust 跨源聚合入口 `legado_ffi::api::search::aggregate_search_books_json(books_json, key, keep_other)`（FFI crate 内 pub 函数，非 FRB 暴露；`legado-core::search_aggregate::aggregate_search_books` 纯函数为单一真源，语义与 Dart **纯函数** `applyPrecisionSearch`（`search_state.dart` L144-207）逐条对齐——同名同作者跨源合并、origins 并集累加（首次出现序，同源不重复计数）、`hasReadRecord` 跨源 OR、桶序 equal→tags→contains→(keep_other) other、桶内 originsCount 降序 + 首次到达索引平局、空 key 原样返回；**P2-20 裁决后（2026-09-22 收敛）三条路径（纯函数 / `SearchNotifier` 增量桶 / Rust 单一真源）已统一到同一语义——限定在**同一输入列表内**：入桶前跨桶预去重（seen 键为**原始** `(name, author, origin)` 三段，与 `_seenKeys` 逐字一致），同一三元组仅**首次到达**入桶、**落桶由首次到达决定**，后续同键到达丢弃（其 origin 已由首条代表，跨源计数由桶内 `origins` 集合承载）；纯函数与 Rust 入口已补 `seen` 门控，夹具 `keep_other` expected 8→7 条（若回退为无 seen 的四桶独立实现，该 case 由 7 变 8 条、夹具变红——回归保护）。**范围限定（必读）**：该统一仅对**单次调用的输入列表**成立——运行时 `_seenKeys` 为**会话级跨页**去重（跨页 APPEND 不清空，直至新关键词/清空），纯函数 / Rust 入口是**单次调用**语义、不携带会话状态；未来若把运行时聚合切到 Rust 入口，须传**会话累积列表**（会话内全部 books）而非单批 `SearchSourceBatch.books[]`，否则跨页同键书会重复计数（跨页重复回归）。既有 `searchMultiStream` / `searchMulti` 流式批次与解析路径**不填充**该字段（恒为空 → 省略序列化），旧消费方零破坏。Dart 侧 `SearchBook.origins`（`@Default([])`）加法式消费：`SearchResult.fromSearchBook` 非空时优先作为有效 origins（对齐 Rust `effective_origins`：origins 非空→用它；否则 origin 非空→`{origin}`；全空→空集合，计数下限 1）；Dart 运行时增量桶聚合路径不变（切换评估见更新记录 2026-09-22 行③）。跨端夹具：`rust/legado-ffi/tests/fixtures/search_aggregate/cross_source_merge.json`（Rust 集成测试 + Dart 单测双端比对，锁定两端聚合等价，不依赖真网络）。
 >
 > ℹ️ **封面规则搜索（台账 §5.13-10，Task #72）**：原版实现为单条封面规则配置——Kotlin `BookCover.searchCover(book)` 读取 `CoverRule(enable, searchUrl, coverRule)`（用户配置存 CacheManager，缺省回退 `DefaultData.coverRule`，UI 入口 `CoverRuleConfigDialog`），以 `AnalyzeUrl(searchUrl, book.name)` 发起搜索请求，再经 `AnalyzeRule.getString(coverRule, isUrl=true)` 提取封面 URL。本轨差异与对齐方案：规则载体为 `legado-db` 既有 `coverRules` 表（`id` / `name` / `rule` / `enable`，默认数据注入已就位），执行全部 `enable=1` 规则；规则执行复用既有书源搜索/JS 执行基础设施（`legado-net` HTTP 抓取 + `legado-parser`/quickjs 规则解析链路，与 `dictLookup` 字典规则执行同模式），`rule` 文本承载 searchUrl 与提取规则（具体内联格式由 Rust 轨实施时按表内既有数据确定）；单规则失败隔离不阻断其余；与既有 `searchCover`（多书源搜索提取封面）互补并存、互不影响。冻结契约保持不变，本方法为加法式新增。
+>
+> ℹ️ **换源预拉缓存与感知等待（2026-09-24，加法式，零破坏）**：对齐上游 Android `ChangeBookSourceViewModel`「换源感知等待」方案三步——① **搜索期并行预拉**：`searchSourceStream` / `searchSource` 的 enrich 阶段对候选做内存预拉缓存写入（`SwitchPrefetchCache`，`source_switch.rs`）——有界并发 `ENRICH_CONCURRENCY = 8`（上游 threadCount=32 覆盖「搜索+enrich」全链，本轨搜索期已是 32 宽，enrich 为重目录突发，收敛到 8 防连接池饱和），单候选超时复用 `search::SWITCH_SOURCE_TIMEOUT`（60s），单候选失败/超时回退原候选直通、不阻断整批（对齐上游 per-source `try/catch + ensureActive`）；缓存条目 `{info: Option<WebBookInfo>, chapters: Vec<WebChapter>}`，key = `new_source_url\u0000new_book_url`（对齐上游 `primaryStr()` = origin+bookUrl 拼接，`\u0000` 分隔防拼接边界歧义），总目录数上限 `PREFETCH_CACHE_MAX_CHAPTERS = 30000`（超限条目跳过、不计入配额）；② **选中命中零网络**：`switchSourcePrefetch`（§2.4 加法式新增）——完整命中（chapters 非空）→ 缓存详情+目录直接提交，**零网络、选中即落地**；部分命中（info 有、chapters 空）→ 仅补抓目录（2a 跳过）；未命中 → 现场抓取详情（2a）+目录（2b），执行链与 `switchSource` 同构（`switchSource` 本体签名与行为冻结不变）；③ **可取消加载态**：`cancelSwitchSourceApply`（§2.4 加法式新增，对齐上游 `cancelChangeSource` L715-721）——`SWITCH_APPLY_EPOCH` 代数 +1 并同步 bump 目录刷新代数（`bump_toc_fetch_epoch`）：在途 apply 在详情前/目录前/提交前三点代数比对即中止（`Err("换源已取消")`，DB 零变更），在途目录分页链在下一页边界中止；Flutter 换源页 apply 在途展示可取消加载态（spinner + 取消钮）。**双轨确认记录（一句）**：本变更 Rust/Flutter 双轨均归我方——Rust 仅 `source_switch.rs` 增 `SwitchPrefetchCache`/`SWITCH_APPLY_EPOCH`/`cancel_switch_apply` + FFI `source_switch_apply_prefetch`/`source_switch_apply_cancel` 两个新导出；Flutter 侧 `BookApi.switchSourcePrefetch`/`cancelSwitchSourceApply` + RustApi/MockBookApi 实现 + 换源页进度串对齐上游 zh「结果 %1$d, 当前进度 %2$d / %3$d: %4$s」（values-zh/strings.xml:1457 + ChangeBookSourceDialog.kt L286-298）与可取消加载态；`reloadAfterSourceChange` 链、进度保持、本地书隐藏入口、`switchSource` 既有行为均不变。§2.4 方法数 17→**19**，附录合计 278→**280**，BookApi 口径 275→**277** |
 
 ### 2.5 RSS 源操作（11 个方法）
 
@@ -903,7 +908,7 @@
 | 1 | 初始化/版本 | 2 |
 | 2 | 书架操作 | 10 |
 | 3 | 书源操作 | 32 |
-| 4 | 搜索操作 | 17 |
+| 4 | 搜索操作 | 19 |
 | 5 | RSS 源操作 | 11 |
 | 6 | 本地书籍操作 | 4 |
 | 7 | 书签操作 | 7 |
@@ -942,11 +947,11 @@
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 8 |
 | 44 | 字典规则操作 | 7 |
-| | **合计（§2.x 附录行合计）** | **278** |
+| | **合计（§2.x 附录行合计）** | **280** |
 
 > 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`，取代人工统计）：
-> - 附录行合计 **278** = §2.x 实际方法行总数；其中与 BookApi 同名 264（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1）、§1.7 命名等价对的 FFI 登记名 8
+> - 附录行合计 **280** = §2.x 实际方法行总数；其中与 BookApi 同名 266（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2）、§1.7 命名等价对的 FFI 登记名 8
 >   （对应 7 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
 >   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
-> - BookApi 代码计数 **275** = 264 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1）+ 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
+> - BookApi 代码计数 **277** = 266 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2）+ 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。

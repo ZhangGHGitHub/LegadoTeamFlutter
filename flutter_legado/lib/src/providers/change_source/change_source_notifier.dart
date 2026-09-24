@@ -129,6 +129,9 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
           progressFinished: (batch['finished_count'] as int?) ?? 0,
           progressTotal:
               (batch['total_count'] as int?) ?? searchingCount,
+          // 2026-09-24 换源感知等待：记录最后完成的源名（对齐上游
+          // changeSourceProgress 的 (count, name) 发射，Dialog L286-298）
+          progressLastSourceName: batch['source_name'] as String?,
         );
       }
       if (seq != _searchSeq) return;
@@ -140,6 +143,7 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
         searchingCount: null,
         progressFinished: null,
         progressTotal: null,
+        progressLastSourceName: null,
       );
     } catch (e) {
       if (seq != _searchSeq) return;
@@ -149,13 +153,16 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
         searchingCount: null,
         progressFinished: null,
         progressTotal: null,
+        progressLastSourceName: null,
       );
     }
   }
 
   /// 应用选中的书源，返回切换后的新 bookUrl
   ///
-  /// 经 [BookApi.switchSource] 回写 Rust；解析返回 JSON 取出新 bookUrl，
+  /// 经 [BookApi.switchSourcePrefetch]（预拉缓存版，2026-09-24 换源感知
+  /// 等待）回写 Rust：命中搜索期预拉缓存 → 零网络直接落地；未命中 →
+  /// 现场抓取（可经 [cancelApply] 取消）。解析返回 JSON 取出新 bookUrl，
   /// 解析失败时回退到候选项 [SourceMatch.bookUrl]。切换失败时抛出异常，
   /// 由 UI 侧展示错误提示。
   Future<String> applySource(
@@ -167,9 +174,11 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
     }
     state = state.copyWith(applyingUrl: match.sourceUrl);
     try {
-      final updatedJson = await ref
-          .read(bookApiProvider)
-          .switchSource(bookUrl, match.sourceUrl, match.bookUrl);
+      final updatedJson = await ref.read(bookApiProvider).switchSourcePrefetch(
+            bookUrl,
+            match.sourceUrl,
+            match.bookUrl,
+          );
       var newBookUrl = match.bookUrl;
       try {
         final decoded = jsonDecode(updatedJson);
@@ -187,6 +196,14 @@ class ChangeSourceNotifier extends Notifier<ChangeSourceState> {
       rethrow;
     }
   }
+
+  /// 取消进行中的「换源（预拉缓存版）」应用（对齐上游 cancelChangeSource，
+  /// ChangeBookSourceViewModel.kt L715-721）
+  ///
+  /// Rust 侧 apply 代数 +1 并 bump 目录刷新代数：未提交的 apply 在提交前
+  /// 代数比对即中止（DB 零变更），在途目录分页链在下一页边界中止。
+  Future<void> cancelApply() =>
+      ref.read(bookApiProvider).cancelSwitchSourceApply();
 
   /// 统一错误映射
   String _mapError(Object e) {

@@ -38,6 +38,11 @@ mixin _$ChangeSourceState {
   /// 参与搜索的书源总数（T6 流式：批次 total_count，权威值来自 Rust）
   int? get progressTotal => throw _privateConstructorUsedError;
 
+  /// 最后完成的书源名（2026-09-24 换源感知等待：批次 source_name，
+  /// 对齐上游 changeSourceProgress 进度串「结果 N，当前进度 M/K: 源名」，
+  /// upstream values-zh/strings.xml:1457）
+  String? get progressLastSourceName => throw _privateConstructorUsedError;
+
   @JsonKey(ignore: true)
   $ChangeSourceStateCopyWith<ChangeSourceState> get copyWith =>
       throw _privateConstructorUsedError;
@@ -56,7 +61,8 @@ abstract class $ChangeSourceStateCopyWith<$Res> {
       String? applyingUrl,
       int? searchingCount,
       int? progressFinished,
-      int? progressTotal});
+      int? progressTotal,
+      String? progressLastSourceName});
 }
 
 /// @nodoc
@@ -79,6 +85,7 @@ class _$ChangeSourceStateCopyWithImpl<$Res, $Val extends ChangeSourceState>
     Object? searchingCount = freezed,
     Object? progressFinished = freezed,
     Object? progressTotal = freezed,
+    Object? progressLastSourceName = freezed,
   }) {
     return _then(_value.copyWith(
       results: null == results
@@ -109,6 +116,10 @@ class _$ChangeSourceStateCopyWithImpl<$Res, $Val extends ChangeSourceState>
           ? _value.progressTotal
           : progressTotal // ignore: cast_nullable_to_non_nullable
               as int?,
+      progressLastSourceName: freezed == progressLastSourceName
+          ? _value.progressLastSourceName
+          : progressLastSourceName // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 }
@@ -128,7 +139,8 @@ abstract class _$$ChangeSourceStateImplCopyWith<$Res>
       String? applyingUrl,
       int? searchingCount,
       int? progressFinished,
-      int? progressTotal});
+      int? progressTotal,
+      String? progressLastSourceName});
 }
 
 /// @nodoc
@@ -149,6 +161,7 @@ class __$$ChangeSourceStateImplCopyWithImpl<$Res>
     Object? searchingCount = freezed,
     Object? progressFinished = freezed,
     Object? progressTotal = freezed,
+    Object? progressLastSourceName = freezed,
   }) {
     return _then(_$ChangeSourceStateImpl(
       results: null == results
@@ -179,6 +192,10 @@ class __$$ChangeSourceStateImplCopyWithImpl<$Res>
           ? _value.progressTotal
           : progressTotal // ignore: cast_nullable_to_non_nullable
               as int?,
+      progressLastSourceName: freezed == progressLastSourceName
+          ? _value.progressLastSourceName
+          : progressLastSourceName // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -193,7 +210,8 @@ class _$ChangeSourceStateImpl implements _ChangeSourceState {
       this.applyingUrl,
       this.searchingCount,
       this.progressFinished,
-      this.progressTotal})
+      this.progressTotal,
+      this.progressLastSourceName})
       : _results = results;
 
   /// 匹配到的候选书源列表（Rust 已按评分降序排序，UI 直接渲染）
@@ -234,9 +252,15 @@ class _$ChangeSourceStateImpl implements _ChangeSourceState {
   @override
   final int? progressTotal;
 
+  /// 最后完成的书源名（2026-09-24 换源感知等待：批次 source_name，
+  /// 对齐上游 changeSourceProgress 进度串「结果 N，当前进度 M/K: 源名」，
+  /// upstream values-zh/strings.xml:1457）
+  @override
+  final String? progressLastSourceName;
+
   @override
   String toString() {
-    return 'ChangeSourceState(results: $results, isLoading: $isLoading, error: $error, applyingUrl: $applyingUrl, searchingCount: $searchingCount, progressFinished: $progressFinished, progressTotal: $progressTotal)';
+    return 'ChangeSourceState(results: $results, isLoading: $isLoading, error: $error, applyingUrl: $applyingUrl, searchingCount: $searchingCount, progressFinished: $progressFinished, progressTotal: $progressTotal, progressLastSourceName: $progressLastSourceName)';
   }
 
   @override
@@ -255,7 +279,9 @@ class _$ChangeSourceStateImpl implements _ChangeSourceState {
             (identical(other.progressFinished, progressFinished) ||
                 other.progressFinished == progressFinished) &&
             (identical(other.progressTotal, progressTotal) ||
-                other.progressTotal == progressTotal));
+                other.progressTotal == progressTotal) &&
+            (identical(other.progressLastSourceName, progressLastSourceName) ||
+                other.progressLastSourceName == progressLastSourceName));
   }
 
   @override
@@ -267,7 +293,8 @@ class _$ChangeSourceStateImpl implements _ChangeSourceState {
       applyingUrl,
       searchingCount,
       progressFinished,
-      progressTotal);
+      progressTotal,
+      progressLastSourceName);
 
   @JsonKey(ignore: true)
   @override
@@ -285,7 +312,8 @@ abstract class _ChangeSourceState implements ChangeSourceState {
       final String? applyingUrl,
       final int? searchingCount,
       final int? progressFinished,
-      final int? progressTotal}) = _$ChangeSourceStateImpl;
+      final int? progressTotal,
+      final String? progressLastSourceName}) = _$ChangeSourceStateImpl;
 
   @override
 
@@ -316,6 +344,12 @@ abstract class _ChangeSourceState implements ChangeSourceState {
 
   /// 参与搜索的书源总数（T6 流式：批次 total_count，权威值来自 Rust）
   int? get progressTotal;
+  @override
+
+  /// 最后完成的书源名（2026-09-24 换源感知等待：批次 source_name，
+  /// 对齐上游 changeSourceProgress 进度串「结果 N，当前进度 M/K: 源名」，
+  /// upstream values-zh/strings.xml:1457）
+  String? get progressLastSourceName;
   @override
   @JsonKey(ignore: true)
   _$$ChangeSourceStateImplCopyWith<_$ChangeSourceStateImpl> get copyWith =>

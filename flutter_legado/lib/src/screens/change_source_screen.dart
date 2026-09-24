@@ -991,7 +991,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
             child: Text(
               state.isLoading
-                  ? _loadingProgressLabel(results.length, state)
+                  ? state.loadingProgressLabel(results.length)
                   : '找到 ${results.length} 个匹配书源',
               style: Theme.of(context).textTheme.labelMedium?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -1011,16 +1011,6 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
         ],
       ),
     );
-  }
-
-  /// T6 流式进度文案：批次 finished_count/total_count → 「x/y 源完成」
-  String _loadingProgressLabel(int resultCount, ChangeSourceState state) {
-    final x = state.progressFinished;
-    final y = state.progressTotal;
-    if (x != null && y != null && y > 0) {
-      return '已找到 $resultCount 个匹配书源（$x/$y 源完成），搜索中…';
-    }
-    return '已找到 $resultCount 个匹配书源，搜索中…';
   }
 
   Widget _buildResultTile(
@@ -1168,12 +1158,32 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                 ),
               )
             else if (isApplying)
-              const Padding(
-                padding: EdgeInsets.only(left: 4, top: 12),
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+              Padding(
+                padding: const EdgeInsets.only(left: 4, top: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    // 2026-09-24 换源感知等待：apply 在途（未命中现场抓取）
+                    // 可取消——Rust apply 代数 +1 → 提交前中止（DB 零变更），
+                    // 对齐上游 cancelChangeSource
+                    IconButton(
+                      icon: Icon(
+                        Symbols.close_rounded,
+                        size: 18,
+                        color: colorScheme.outline,
+                      ),
+                      tooltip: '取消换源',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: () => ref
+                          .read(changeSourceNotifierProvider.notifier)
+                          .cancelApply(),
+                    ),
+                  ],
                 ),
               ),
           ],

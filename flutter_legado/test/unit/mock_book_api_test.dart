@@ -182,6 +182,24 @@ void main() {
       final url = await api.switchSource('old', 'source', 'new_url');
       expect(url, 'new_url');
     });
+
+    test(
+      'switchSourcePrefetch 直通 switchSource 并计数'
+      '（2026-09-24 换源预拉缓存：命中/未命中语义由 Rust 侧承担，'
+      'mock 仅记录调用供单测断言 call count）',
+      () async {
+        final before = api.prefetchApplyCallCount;
+        final url = await api.switchSourcePrefetch('old', 'source', 'new_url');
+        expect(url, 'new_url');
+        expect(api.prefetchApplyCallCount, before + 1);
+      },
+    );
+
+    test('cancelSwitchSourceApply 计数且无副作用', () async {
+      final before = api.cancelApplyCallCount;
+      await api.cancelSwitchSourceApply();
+      expect(api.cancelApplyCallCount, before + 1);
+    });
   });
 
   group('RSS 源操作', () {

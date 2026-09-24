@@ -417,14 +417,6 @@ Future<String> searchCover({required String bookName}) =>
 /// 与 [`search_multi`] 不同：每完成一个书源即通过 `StreamSink` 推送一个结果批次
 /// （JSON 字符串），UI 侧可逐源渲染，无需等待最慢书源。流在所有书源完成后自然结束。
 ///
-/// 批次事件 JSON 字段（契约 §2.4 `SearchSourceBatch`）：
-/// `source_url` / `source_name` / `books`（逐书 `name`/`author`/`bookUrl`/`originOrder`
-/// 及可选 `hasReadRecord`）/ `error?`（失败批次携带错误文案，字段语义保留）/
-/// `finished_count` / `total_count` / `is_last` / `has_more` /
-/// `error_class`（P2 项1 加法式新字段：逐源错误八分类
-/// `ok`/`empty`/`http_error`/`timeout`/`login_required`/`js_error`/
-/// `parser_error`/`cancelled`；缺失或未知值按 `ok` 兼容处理，不影响既有字段）。
-///
 /// `query` — 搜索关键词
 /// `source_urls_json` — 可选 JSON 数组，指定搜索的书源 URL 列表；为空则搜索所有启用的书源
 /// `page` — 页码（批次B G-B-01 透传；Dart 侧同关键词翻页递增、新关键词重置为 1）
@@ -867,6 +859,30 @@ Future<String> sourceSwitchApply({
   newSourceUrl: newSourceUrl,
   newBookUrl: newBookUrl,
 );
+
+/// 切换到新书源（预拉缓存版，2026-09-24 加法式；契约 §2.4 `switchSourcePrefetch`）
+///
+/// 命中搜索期预拉缓存 → 缓存详情+目录直接用（零网络）；未命中 → 现场抓取
+/// （执行链同 [`source_switch_apply`]，可取消——事务提交前调用
+/// [`source_switch_apply_cancel`] 即阻断，DB 零变更）。
+/// 返回更新后的书籍 JSON（与 [`source_switch_apply`] 相同）。
+Future<String> sourceSwitchApplyPrefetch({
+  required String bookUrl,
+  required String newSourceUrl,
+  required String newBookUrl,
+}) => RustLib.instance.api.crateFfiFfiSourceSwitchApplyPrefetch(
+  bookUrl: bookUrl,
+  newSourceUrl: newSourceUrl,
+  newBookUrl: newBookUrl,
+);
+
+/// 取消进行中的「换源（预拉缓存版）」应用（2026-09-24 加法式；
+/// 契约 §2.4 `cancelSwitchSourceApply`；对齐上游 `cancelChangeSource()`）
+///
+/// apply 代数 +1 + bump 目录刷新代数：未提交的 apply 在提交前比对代数
+/// 即中止（DB 零变更），在途目录分页链在下一页边界中止。
+Future<void> sourceSwitchApplyCancel() =>
+    RustLib.instance.api.crateFfiFfiSourceSwitchApplyCancel();
 
 /// 更新换源列表项用户评分（-1/0/1）
 Future<void> updateSearchBookScore({

@@ -321,6 +321,25 @@ abstract class BookApi {
     String newBookUrl,
   );
 
+  /// 切换书源（预拉缓存版，2026-09-24 加法式；对齐上游「换源感知等待」方案）
+  ///
+  /// 搜索期已按开关预拉候选详情/目录（有界并发 + 单候选 60s 超时 + 单失败
+  /// 隔离）：命中预拉缓存 → 缓存详情+目录直接用（**零网络**，选中即落地）；
+  /// 未命中 → 现场抓取（执行链与 [switchSource] 一致，且可在提交前经
+  /// [cancelSwitchSourceApply] 取消——DB 零变更）。
+  /// 返回更新后的书籍 JSON（与 [switchSource] 相同）。
+  Future<String> switchSourcePrefetch(
+    String bookUrl,
+    String newSourceUrl,
+    String newBookUrl,
+  );
+
+  /// 取消进行中的「换源（预拉缓存版）」应用（对齐上游 `cancelChangeSource`）
+  ///
+  /// apply 代数 +1 并 bump 目录刷新代数：未提交的 apply 在提交前比对代数
+  /// 即中止（DB 零变更），在途目录分页链在下一页边界中止。
+  Future<void> cancelSwitchSourceApply();
+
   /// 更新换源列表项用户评分（-1/0/1，对标原版 SourceConfig 书维度评分）
   Future<void> updateSearchBookScore(String bookUrl, int score);
 

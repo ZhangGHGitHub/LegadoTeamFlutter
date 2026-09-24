@@ -32,6 +32,11 @@ class ChangeSourceState with _$ChangeSourceState {
 
     /// 参与搜索的书源总数（T6 流式：批次 total_count，权威值来自 Rust）
     int? progressTotal,
+
+    /// 最后完成的书源名（2026-09-24 换源感知等待：批次 source_name，
+    /// 对齐上游 changeSourceProgress 进度串「结果 N，当前进度 M/K: 源名」，
+    /// upstream values-zh/strings.xml:1457）
+    String? progressLastSourceName,
   }) = _ChangeSourceState;
 }
 
@@ -42,4 +47,20 @@ extension ChangeSourceStateDisplay on ChangeSourceState {
 
   /// 是否正在切换书源
   bool get isApplying => applyingUrl != null;
+
+  /// T6 流式进度文案（2026-09-24 换源感知等待：对齐上游 zh「结果 %1$d,
+  /// 当前进度 %2$d / %3$d: %4$s」，upstream values-zh/strings.xml:1457 +
+  /// ChangeBookSourceDialog.kt L286-298）：结果数 N + 进度 M/K + 最后完成源名
+  /// （[progressLastSourceName] 缺失/为空时退化为「结果 N，进度 M/K」）
+  String loadingProgressLabel(int resultCount) {
+    final x = progressFinished;
+    final y = progressTotal;
+    if (x != null && y != null && y > 0) {
+      final name = progressLastSourceName;
+      return name != null && name.isNotEmpty
+          ? '结果 $resultCount，进度 $x/$y：$name'
+          : '结果 $resultCount，进度 $x/$y';
+    }
+    return '结果 $resultCount，搜索中…';
+  }
 }

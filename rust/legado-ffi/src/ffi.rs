@@ -1142,6 +1142,34 @@ pub mod ffi {
         )?)
     }
 
+    /// 切换到新书源（预拉缓存版，2026-09-24 加法式；契约 §2.4 `switchSourcePrefetch`）
+    ///
+    /// 命中搜索期预拉缓存 → 缓存详情+目录直接用（零网络）；未命中 → 现场抓取
+    /// （执行链同 [`source_switch_apply`]，可取消——事务提交前调用
+    /// [`source_switch_apply_cancel`] 即阻断，DB 零变更）。
+    /// 返回更新后的书籍 JSON（与 [`source_switch_apply`] 相同）。
+    pub fn source_switch_apply_prefetch(
+        book_url: String,
+        new_source_url: String,
+        new_book_url: String,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::source_switch::switch_book_source_prefetch(
+            &book_url,
+            &new_source_url,
+            &new_book_url,
+        )?)
+    }
+
+    /// 取消进行中的「换源（预拉缓存版）」应用（2026-09-24 加法式；
+    /// 契约 §2.4 `cancelSwitchSourceApply`；对齐上游 `cancelChangeSource()`）
+    ///
+    /// apply 代数 +1 + bump 目录刷新代数：未提交的 apply 在提交前比对代数
+    /// 即中止（DB 零变更），在途目录分页链在下一页边界中止。
+    pub fn source_switch_apply_cancel() -> Result<(), BridgeError> {
+        crate::api::source_switch::cancel_switch_apply();
+        Ok(())
+    }
+
     /// 更新换源列表项用户评分（-1/0/1）
     pub fn update_search_book_score(book_url: String, score: i32) -> Result<(), BridgeError> {
         crate::api::source_switch::update_search_book_score(&book_url, score)?;
