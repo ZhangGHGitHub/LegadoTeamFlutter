@@ -40,7 +40,8 @@ class ReaderScreen extends ConsumerStatefulWidget {
   ConsumerState<ReaderScreen> createState() => _ReaderScreenState();
 }
 
-class _ReaderScreenState extends ConsumerState<ReaderScreen> {
+class _ReaderScreenState extends ConsumerState<ReaderScreen>
+    with WidgetsBindingObserver {
   final GlobalKey<ReaderPageViewState> _pageViewKey =
       GlobalKey<ReaderPageViewState>();
 
@@ -88,6 +89,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     super.initState();
     // F6：音量键翻页（对标 volumeKeyPage / volumeKeyPageOnPlay）
     HardwareKeyboard.instance.addHandler(_onHardwareKey);
+    // [C3-hunt | 2026-09-24] 注册 App 生命周期观察者：切后台/分离时
+    // 落盘章内进度（见 didChangeAppLifecycleState）
+    WidgetsBinding.instance.addObserver(this);
   }
 
   @override
@@ -104,6 +108,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   @override
   void dispose() {
     HardwareKeyboard.instance.removeHandler(_onHardwareKey);
+    // [C3-hunt | 2026-09-24] 注销生命周期观察者（与 initState 配对）
+    WidgetsBinding.instance.removeObserver(this);
     _autoTimer?.cancel();
     // [UI-fix v2.0.3 | 2026-08-08] 退出阅读器恢复系统 UI 与方向
     // （hideStatusBar/hideNavigationBar/screenOrientation 仅阅读页内生效，
@@ -111,6 +117,35 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations(const []);
     super.dispose();
+  }
+
+  // [C3-hunt | 2026-09-24] App 生命周期 → 章内进度落盘
+  //
+  // 对齐原版 ReadBookActivity.onPause() → ReadBook.saveRead()
+  // （切后台即落盘，进程被回收/划掉不丢章内位置）。修复前章内进度
+  // （updatePosition）只改内存 state，落库仅在翻章/目录跳章/换源重载/
+  // PopScope 返回退出时触发——按 HOME 进后台后 force-stop 重进会回到
+  // 上次翻章位置（章首）（C3 缺陷，真机实测：翻到 4/16 页 → HOME →
+  // force-stop → 重进回到 1/16，DB durChapterPos 仍 0）。
+  //
+  // 与既有 PopScope 路径的关系：触发条件不同（系统生命周期 vs 返回退出），
+  // 落库操作收敛到同一个幂等的 notifier.saveProgress()（写库失败静默，
+  // 重复写同一进度无副作用），两者可共存互不冲突。
+  //
+  // 不引入「章内翻页节流落库」：原版仅在 换章/后台/退出 时机落盘，
+  // 逐页写库属超范围行为变更；C3 缺陷（后台/被杀丢位置）由本钩子完整修复。
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    switch (state) {
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+      case AppLifecycleState.detached:
+        // 切后台/窗口分离/进程分离：当前章内位置立即落库
+        unawaited(ref.read(readerNotifierProvider.notifier).saveProgress());
+      case AppLifecycleState.resumed:
+      case AppLifecycleState.hidden:
+        break;
+    }
   }
 
   // ===== [UI-fix v2.0.3 | 2026-08-08] MoreConfig 第①批系统级生效 =====

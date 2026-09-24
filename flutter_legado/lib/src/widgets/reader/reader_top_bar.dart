@@ -1288,6 +1288,11 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                           tooltip: '刷新',
                           visualDensity: VisualDensity.compact,
                           onPressed: () async {
+                            // [C5-hunt | 2026-09-24] 重入守卫：已有刷新在途
+                            // 时进行中 SnackBar 已在展示，静默返回（与菜单
+                            // 面板 _refreshContentFlow 同形态；notifier 侧
+                            // _refreshing 兜底）
+                            if (notifier.isRefreshing) return;
                             // [P2-9 | 2026-09-24] 刷新 = 强制拉取（绕过缓存
                             // 重新联网抓取，见 ReaderNotifier
                             // .refreshChapterContent），与菜单「刷新正文」

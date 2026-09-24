@@ -269,6 +269,10 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     // removeCurrentSnackBar() 收起（已自动消失则无操作、不踩断言）
     final messenger = ScaffoldMessenger.of(context);
     final notifier = ref.read(readerNotifierProvider.notifier);
+    // [C5-hunt | 2026-09-24] 重入守卫：已有刷新在途时进行中 SnackBar 已
+    // 在展示，静默返回（避免 N 次点击堆叠 N 个 SnackBar / N 次强制抓取，
+    // 与换源流程 _applying 防重入同形态；notifier 侧 _refreshing 兜底）
+    if (notifier.isRefreshing) return;
     messenger.showSnackBar(
       const SnackBar(
         content: Text('正在刷新正文…'),

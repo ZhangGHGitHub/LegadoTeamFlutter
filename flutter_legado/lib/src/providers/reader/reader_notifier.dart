@@ -48,6 +48,25 @@ class ReaderNotifier extends Notifier<ReaderState> {
   // 只是被取代的加载结果不得写回状态。
   int _loadSeq = 0;
 
+  // [C1b-hunt | 2026-09-24] openBook 代际号：每次 openBook 自增并捕获；
+  // 任一异步结果返回时若已有更新的 openBook 发起（并发开书 A 慢 / B 快），
+  // 丢弃旧结果（不写目录/正文/索引、不写 error、不清 isLoading）——防 A
+  // 的迟到结果覆盖已打开的 B（C1b 缺陷）。与 _loadSeq 粒度不同、可共存：
+  // _openSeq 守「整次 openBook」（书级，并发开书），_loadSeq 守「单次正文
+  // 加载」（章级，连点翻页）；openBook 内部触发的 _loadChapterContent 仍
+  // 各自受 _loadSeq 守卫，两守卫互不替代。
+  int _openSeq = 0;
+
+  // [C5-hunt | 2026-09-24] 刷新正文重入守卫：refreshChapterContent 在途
+  // 期间再次调用（UI 双入口：菜单面板 _refreshContentFlow / 顶栏刷新钮）
+  // 直接返回原因、不重复清缓存与联网抓取（对齐换源流程
+  // ChangeSourceNotifier.isApplying / _applying 的防重入形态，C5 缺陷：
+  // N 次点击 = N 次整书清缓存 + N 次强制抓取）
+  bool _refreshing = false;
+
+  /// 刷新正文是否进行中（UI 入口据此提前返回，避免堆叠 SnackBar）
+  bool get isRefreshing => _refreshing;
+
   @override
   ReaderState build() {
     // 延迟到 build() 返回后执行（state 初始化完成后才能访问）
@@ -160,22 +179,56 @@ class ReaderNotifier extends Notifier<ReaderState> {
   }
 
   /// 打开书籍：加载目录并定位到上次阅读章节
+  ///
+  /// [C1a-hunt | 2026-09-24] 换书（bookUrl 变化）时同步清空上一本书的
+  /// 残留状态（目录/正文/章索引/章内位置/分页器/全局页数）——对齐原版
+  /// ReadBook.resetData(book) → clearTextChapter() 并重置 chapterSize。
+  /// 修复前打开 B 书目录抓取失败时，A 书目录/正文仍留在 State，
+  /// reader_page_view 的「error 非空 && 正文为空」全屏错误页门槛失效，
+  /// A 书正文冒充 B 书渲染且无任何错误提示（C1a 缺陷）。同书重开
+  /// （ErrorView 重试 / 自动换源重载 openBook(currentBook)）不清空，
+  /// 保留既有状态（F1b 重试不丢章节）。
+  ///
+  /// [C1b-hunt | 2026-09-24] 代际守卫（_openSeq）：每次调用自增并捕获，
+  /// 任一 await 之后若已被更新的 openBook 取代（并发开书 A 慢 / B 快）
+  /// 则丢弃旧结果（不写目录/正文/索引、不写 error、不清 isLoading）——
+  /// 防 A 的迟到结果覆盖已打开的 B（C1b 缺陷）。
   Future<void> openBook(Book book) async {
+    final openSeq = ++_openSeq;
+    // [C1a-hunt | 2026-09-24] 换书判定：与当前书 bookUrl 不同才清旧书残留
+    final isBookChange =
+        state.currentBook == null || state.currentBook!.bookUrl != book.bookUrl;
     state = state.copyWith(
       currentBook: book,
       isLoading: true,
       error: null,
       showControls: false,
     );
+    if (isBookChange) {
+      // [C1a-hunt | 2026-09-24] 换书即清旧书残留（对齐原版
+      // resetData → clearTextChapter）：换书失败时错误页门槛（error 非空
+      // && 正文为空）可生效，目录/正文不再残留上一本书
+      state = state.copyWith(
+        chapters: const <BookChapter>[],
+        chapterContent: '',
+        currentChapterIndex: 0,
+        currentChapterPos: 0,
+      );
+      _paginator.clear();
+      // 全局页数随清空归零（totalPages=0 → globalPageIndex 钳制到 0）
+      _syncGlobalPageInfo();
+    }
     await _beginReadRecordSession(book);
 
     try {
       final api = ref.read(bookApiProvider);
       var chapters = await api.getChapters(book.bookUrl);
+      if (openSeq != _openSeq) return; // [C1b-hunt] 已被更新的 openBook 取代，丢弃旧结果
       // 对齐原版：本地无目录的网络书籍（如刚从搜索结果加入书架，
       // 尚未拉取过目录），自动经书源规则从网络获取目录
       if (chapters.isEmpty && book.origin.isNotEmpty) {
         chapters = await api.refreshToc(book.bookUrl, book.origin);
+        if (openSeq != _openSeq) return; // [C1b-hunt]
       }
       var chapterIndex = book.durChapterIndex;
       var chapterPos = book.durChapterPos;
@@ -190,9 +243,11 @@ class ReaderNotifier extends Notifier<ReaderState> {
       );
       await _loadChapterContent();
     } catch (e) {
-      state = state.copyWith(error: _mapError(e));
+      // [C1b-hunt] 被取代的 openBook 的错误不得覆盖新状态（collection-if
+      // 保持 HEAD 基线缩进列，避免 diff 引入纯空白行）
+      if (openSeq == _openSeq) state = state.copyWith(error: _mapError(e));
     } finally {
-      state = state.copyWith(isLoading: false);
+      if (openSeq == _openSeq) state = state.copyWith(isLoading: false);
     }
   }
 
@@ -467,6 +522,16 @@ class ReaderNotifier extends Notifier<ReaderState> {
   // 故以 clearBookCache（书级，≈ 原版 clearCache/refreshContentAll）作为
   // 缓存失效原语——作用域比原版 delContent（章级）更宽，属已知偏差（报告说明）。
   //
+  // [C2-hunt | 2026-09-24] 顺序修正：原「clearBookCache → fetch」在抓取
+  // 失败时整书离线缓存已删除且无法回滚（用户既没拿到新正文、又丢了
+  // 全部离线缓存，此后离线翻任何已缓存章节都会抓取失败——C2 缺陷）。
+  // 改为「先抓取、成功后再失效缓存」：成功 → 用户看到新正文，且旧缓存
+  // 失效（其余章节不再读到换源/更新前的旧内容）；失败（异常/空正文）
+  // → 旧缓存完整保留、旧正文保留、仅置 error。
+  // [C5-hunt | 2026-09-24] 重入守卫（_refreshing）：在途期间重复调用
+  // 直接返回原因，N 次点击不再触发 N 次清缓存 + N 次强制抓取
+  // （对齐换源流程 isApplying/_applying 的防重入形态）。
+  //
   // 成功返回 null；失败返回错误原因（保留旧正文，不清空 chapterContent）。
   // 本地书（origin 为空 / loc_book / dav:）与无书籍/目录/非法索引时
   // 直接返回说明性原因，不触碰 state 数据（对齐原版：本地书不显示
@@ -481,30 +546,36 @@ class ReaderNotifier extends Notifier<ReaderState> {
     }
     final idx = state.currentChapterIndex;
     if (idx < 0 || idx >= state.chapters.length) return '无效章节索引';
+    if (_refreshing) return '正文刷新进行中'; // [C5-hunt] 重入守卫
+    _refreshing = true;
     final chapter = state.chapters[idx];
     final api = ref.read(bookApiProvider);
     state = state.copyWith(isLoading: true, error: null);
     try {
-      // 1) 失效缓存（不经此步，fetch 会命中旧缓存——根因 A）
-      await api.clearBookCache(book.bookUrl);
-      // 2) 联网重抓并回写缓存（fetch 内部命中缓存才返回缓存）
+      // [C2-hunt] 1) 先联网抓取（不预失效缓存：抓取失败时旧缓存完好）
       final content = await api.fetchChapterContent(
         book.bookUrl,
         chapter.url,
         book.origin,
       );
       if (content.trim().isEmpty) {
-        // 空正文视为抓取失败：保留旧正文，不清空
+        // 空正文视为抓取失败：保留旧正文与旧缓存，不清空
         state = state.copyWith(isLoading: false, error: '正文抓取为空');
         return '正文抓取为空';
       }
+      // [C2-hunt] 2) 成功后再失效整书缓存（fetch 已把本章新内容回写
+      // 缓存，此步清掉其余章节的旧内容；本章节目后续读取为网络新内容）
+      await api.clearBookCache(book.bookUrl);
       state = state.copyWith(chapterContent: content, isLoading: false);
       return null;
     } catch (e) {
-      // 失败保留旧正文（_loadChapterContent 会清空，刷新路径不得如此）
+      // [C2-hunt] 失败保留旧正文与旧缓存（_loadChapterContent 会清空，
+      // 刷新路径不得如此）
       final msg = _mapError(e);
       state = state.copyWith(isLoading: false, error: msg);
       return msg;
+    } finally {
+      _refreshing = false; // [C5-hunt]
     }
   }
 

@@ -673,6 +673,30 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       );
     }
 
+    // [C4-hunt | 2026-09-24] 成功但正文为空（章节无正文 / 源返回空）：
+    // 旧版渲染纯空白页且无任何提示（C4 缺陷）。现居中显示可见提示。
+    // 不影响前置分支：加载中（LoadingIndicator）、冻结帧（isLoading &&
+    // error == null）、F4 全屏 ErrorView（error != null && 正文为空）。
+    if (state.error == null &&
+        !state.isLoading &&
+        state.currentBook != null &&
+        state.chapters.isNotEmpty &&
+        state.chapterContent.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Text(
+            '本章无正文',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: state.fontSize,
+              color: _resolveTextColor(state),
+            ),
+          ),
+        ),
+      );
+    }
+
     return _buildContent(context, state, repaginate: true);
   }
 
