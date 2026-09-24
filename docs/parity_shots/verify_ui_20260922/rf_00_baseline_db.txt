@@ -1,0 +1,12 @@
+=== books ===
+http://127.0.0.1:8092/r1va/detail | R1VA | R1换源验证书 | R1作者 | grp=group | total=3 | durIdx=0 | durPos=0 | durTitle=
+https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468914 | 🏷松鹤庭沐·言璃 | 斗破苍穹 | 天蚕土豆 | grp=group | total=1663 | durIdx=0 | durPos=0 | durTitle=
+第1章 陨落的天才
+=== readRecord ===
+R1换源验证书|22615160|1789781126708
+VUI2补验书|684792|1790099106270
+P29B本地验证书|89987|1790192774278
+斗破苍穹|22998404|1790216655599
+=== groups ===
+=== cached_chapters count ===
+4

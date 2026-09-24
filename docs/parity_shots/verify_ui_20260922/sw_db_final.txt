@@ -1,0 +1,2 @@
+http://127.0.0.1:8092/r1va/detail|R1VA|R1换源验证书|3|0|0
+https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468914|📂得奇小说网|斗破苍穹|1663|0|0
