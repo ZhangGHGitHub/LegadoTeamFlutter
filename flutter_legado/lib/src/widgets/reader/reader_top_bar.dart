@@ -19,6 +19,7 @@ import '../../screens/source_login_screen.dart';
 import '../help/help_assets.dart';
 import '../help/show_help.dart';
 import 'change_chapter_source_sheet.dart';
+import 'change_source_flow.dart';
 import 'reader_page_chrome.dart';
 import 'reader_settings_sheet.dart';
 
@@ -301,56 +302,16 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
 
   /// [P2-9 | 2026-09-24] 换书源：await 导航，发生切换（路由 pop 新
   /// bookUrl）后走 [ReaderNotifier.reloadAfterSourceChange]（重读书籍
-  /// → 重载目录 → 章节定位 → 强制刷新正文），并有可见反馈（进行中 /
-  /// 成功含源名 / 失败含原因）；取消或关闭（pop null）不做任何事。
-  Future<void> _changeBookSource(BuildContext context, Book book) async {
-    // [P2-9 fix | 2026-09-24] 生产 /change_source 路由是
-    // _ChangeSourceSheetRoute（PageRouteBuilder<dynamic>，见
-    // AppRoutes.generateRoute）：类型化 pushNamed<String> 会在运行期把
-    // 生成的路由强转 Route<String?> 抛 TypeError（真机崩溃）。对齐
-    // 详情页 Task#24 既有修法（book_info_screen_builders
-    // ._showChangeSourceDialog）：无类型 pushNamed + result is String 判定
-    // [P2-9 fix2 | 2026-09-24] 慢路径 SnackBar 竞态：旧写法
-    // 「controller.close() 收起进行中条」在重载 > 4s（SnackBar 默认自动
-    // 消失时长）时，进行中条已离开 Scaffold 队列，close() 踩
-    // scaffold.dart:341 `_snackBars.first == controller` 断言 / 空队列
-    // StateError，恰在「收起进行中条」一步崩溃、结果条永不出现（真机 8
-    // 次换源全如此，证据
-    // docs/parity_shots/verify_ui_20260922/p29b_b1_crash_dialog.png）。
-    // 修法：第一个 await 前取好对象；进行中条显式 10min duration（慢重载
-    // 期间不自动消失）；结果就绪用 removeCurrentSnackBar() 收起（本 SDK
-    // 队列为空时早退、无断言）再显结果条
-    final messenger = ScaffoldMessenger.of(context);
-    final notifier = ref.read(readerNotifierProvider.notifier);
-    final result = await Navigator.pushNamed(
-      context,
-      AppRoutes.changeSource,
-      arguments: book,
-    );
-    if (result is! String) return; // 取消 / 关闭 pop null → 不做任何事
-    if (!context.mounted) return;
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('正在更换书源…'),
-        duration: Duration(minutes: 10),
-      ),
-    );
-    final err = await notifier.reloadAfterSourceChange(result);
-    if (!context.mounted) return;
-    messenger.removeCurrentSnackBar(); // 收起进行中条（已消失则无操作，不踩断言）
-    final sourceName = ref.read(readerNotifierProvider).currentBook?.originName;
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          err == null
-              ? (sourceName != null && sourceName.isNotEmpty
-                  ? '已更换书源：$sourceName'
-                  : '已更换书源')
-              : '更换书源后重载失败：$err',
-        ),
-      ),
-    );
-  }
+  /// → 重载目录 → 章节定位 → 强制刷新正文）；取消或关闭（pop null）
+  /// 不做任何事。
+  /// [SB-HUNT | 2026-09-25] 统一至 runChangeSourceFlow（与菜单面板换源
+  /// 入口共用）：notifier 级共享重入锁（在途第二触发静默忽略）+ 必收
+  /// 清理（clearSnackBars，离场/异常也不留残留）+ 结果去重（成功反馈
+  /// 只保留换源页「已切换到」，阅读器侧只弹失败条）。原 [P2-9
+  /// fix/fix2] 的无类型 pushNamed 与 10min 进行中条语义见
+  /// change_source_flow.dart。
+  Future<void> _changeBookSource(BuildContext context, Book book) =>
+      runChangeSourceFlow(ref, context, book);
 
   /// 切换书籍 ReadConfig 字段并持久化，随后重载当前章正文
   Future<void> _updateBookConfig(
@@ -1304,9 +1265,9 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                             // 同一慢路径竞态：进行中条 > 4s 先自动消失后，
                             // 旧写法 controller.close() 踩 scaffold.dart:341
                             // 断言 / 空队列 StateError，结果条永不出现。修
-                            // 法：进行中条显式 10min duration +
-                            // removeCurrentSnackBar() 收起（已消失则无操作、
-                            // 不踩断言）
+                            // 法：进行中条显式 10min duration + 结果就绪
+                            // 收起（[SB-HUNT | 2026-09-25] 改 clearSnackBars
+                            // 必收，见下）
                             final messenger = ScaffoldMessenger.of(context);
                             messenger.showSnackBar(
                               const SnackBar(
@@ -1315,8 +1276,13 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                               ),
                             );
                             final err = await notifier.refreshChapterContent();
+                            // [SB-HUNT | 2026-09-25] 必收清理（与换源流程
+                            // 统一）：先 clearSnackBars（root 队列、空队列
+                            // 安全、不踩 scaffold.dart:341 断言）——抓取
+                            // 期间用户离场（context 已卸载）也不留进行中
+                            // 条；结果条仅在仍在阅读场展示
+                            messenger.clearSnackBars();
                             if (!context.mounted) return;
-                            messenger.removeCurrentSnackBar(); // 收起进行中条（已消失则无操作，不踩断言）
                             messenger.showSnackBar(
                               SnackBar(
                                 content: Text(

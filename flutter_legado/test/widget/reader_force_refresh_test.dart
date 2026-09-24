@@ -298,8 +298,10 @@ void main() {
       expect(st.currentChapterIndex, 1); // 「第二章」按标题命中
       expect(st.currentChapterPos, 3); // 同题章节 → 章内位置保留
       expect(st.chapterContent, '新源新正文');
-      // 换源成功 toast（源名取换源后记录的 originName）
-      expect(find.text('已更换书源：源B'), findsOneWidget);
+      // [SB-HUNT | 2026-09-25] 结果去重：成功反馈唯一来源 = 换源页
+      // 「已切换到「源名」」（本夹具自动 pop 无页侧条）；阅读器侧不再
+      // 弹「已更换书源：源名」成功条（仅保留失败条）
+      expect(find.text('已更换书源：源B'), findsNothing);
       await tester.pump(const Duration(seconds: 5));
       await tester.pumpAndSettle();
     });
@@ -447,7 +449,9 @@ void main() {
       expect(st.currentBook?.origin, 'https://source-b.com');
       expect(st.currentChapterIndex, 1);
       expect(st.chapterContent, '新源新正文');
-      expect(find.text('已更换书源：源B'), findsOneWidget);
+      // [SB-HUNT | 2026-09-25] 结果去重：阅读器侧成功条已移除（换源页
+      // 「已切换到」为唯一成功反馈，见 change_source_flow.dart 文件头）
+      expect(find.text('已更换书源：源B'), findsNothing);
       await tester.pump(const Duration(seconds: 5));
       await tester.pumpAndSettle();
     });
@@ -506,7 +510,7 @@ void main() {
     // 推进方式：tap 触发后 pump(5s) 覆盖 4s 自动消失时刻，pump(2s)
     // 覆盖 6s 慢 mock 完成时刻，pumpAndSettle 跑完结果条入场动画。
 
-    testWidgets('菜单面板换源（慢路径）：不崩溃且结果条出现', (tester) async {
+    testWidgets('菜单面板换源（慢路径）：不崩溃、无阅读器侧结果条、无残留（SB-HUNT 去重）', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final mockApi = MockRustApi();
       final container = makeContainer(mockApi);
@@ -565,8 +569,11 @@ void main() {
       // 旧写法在此抛 scaffold.dart:341 断言 / StateError —— 必须无异常
       final exception = tester.takeException();
       expect(exception, isNull);
-      // 结果条最终出现（旧写法崩在收起进行中条一步，结果条永不出现）
-      expect(find.textContaining('已更换书源'), findsOneWidget);
+      // [SB-HUNT | 2026-09-25] 结果去重 + 必收清理：成功时阅读器侧不再
+      // 弹结果条（换源页「已切换到」为唯一成功反馈），且重载完成后
+      // clearSnackBars 已收起 10min 进行中条 —— 慢路径终态无任何残留
+      expect(find.textContaining('已更换书源'), findsNothing);
+      expect(find.byType(SnackBar), findsNothing);
       verify(() => mockApi.getBook('https://book.com/1')).called(1);
       expect(
         container.read(readerNotifierProvider).currentBook?.origin,
@@ -623,7 +630,7 @@ void main() {
       await tester.pumpAndSettle();
     });
 
-    testWidgets('顶栏换书源（慢路径）：不崩溃且结果条出现', (tester) async {
+    testWidgets('顶栏换书源（慢路径）：不崩溃、无阅读器侧结果条、无残留（SB-HUNT 去重）', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final mockApi = MockRustApi();
       final container = makeContainer(mockApi);
@@ -683,7 +690,10 @@ void main() {
 
       final exception = tester.takeException();
       expect(exception, isNull);
-      expect(find.textContaining('已更换书源'), findsOneWidget);
+      // [SB-HUNT | 2026-09-25] 结果去重 + 必收清理：成功时阅读器侧无
+      // 结果条、10min 进行中条已被 clearSnackBars 收起（终态无残留）
+      expect(find.textContaining('已更换书源'), findsNothing);
+      expect(find.byType(SnackBar), findsNothing);
       verify(() => mockApi.getBook('https://book.com/1')).called(1);
       expect(
         container.read(readerNotifierProvider).currentBook?.origin,

@@ -67,6 +67,32 @@ class ReaderNotifier extends Notifier<ReaderState> {
   /// 刷新正文是否进行中（UI 入口据此提前返回，避免堆叠 SnackBar）
   bool get isRefreshing => _refreshing;
 
+  // [SB-HUNT | 2026-09-25] 换源流程重入锁（provider/notifier 级，顶栏与
+  // 菜单面板两入口共用——真机缺陷：两入口各自开换源页并各挂一条 10min
+  // 「正在更换书源…」条，第二条/残留条）。两阶段使用：
+  //   ① 导航阶段：UI 辅助（runChangeSourceFlow）tryBegin 后推换源页，
+  //      pop 返回后 endChangeSourceFlow 释放——同步交接给重载阶段，
+  //      中间无用户输入窗口；
+  //   ② 重载阶段：reloadAfterSourceChange 内部再置位并 try/finally
+  //      复位，作为兜底（其他调用方直接调 reload 时同样被挡住）。
+  // 在途期间第二次触发被 UI 层静默忽略（进行中条即轻提示）。
+  bool _changeSourceFlowActive = false;
+
+  /// 换源流程是否进行中（导航或重载任一阶段）
+  bool get isChangeSourceFlowActive => _changeSourceFlowActive;
+
+  /// 尝试进入换源流程：已在途返回 false（调用方据此提前返回）
+  bool tryBeginChangeSourceFlow() {
+    if (_changeSourceFlowActive) return false;
+    _changeSourceFlowActive = true;
+    return true;
+  }
+
+  /// 结束换源流程（导航阶段结束；重载阶段由 finally 独立复位）
+  void endChangeSourceFlow() {
+    _changeSourceFlowActive = false;
+  }
+
   @override
   ReaderState build() {
     // 延迟到 build() 返回后执行（state 初始化完成后才能访问）
@@ -601,6 +627,10 @@ class ReaderNotifier extends Notifier<ReaderState> {
   Future<String?> reloadAfterSourceChange(String bookUrl) async {
     final book = state.currentBook;
     if (book == null) return '没有书籍';
+    // [SB-HUNT | 2026-09-25] 重入兜底：重载阶段在途（或导航阶段
+    // 进行中）时直接返回，不重复 getBook/重载目录/清缓存
+    if (_changeSourceFlowActive) return '更换书源进行中';
+    _changeSourceFlowActive = true;
     final oldIndex = state.currentChapterIndex;
     final oldChapter =
         (state.chapters.isNotEmpty &&
@@ -658,6 +688,9 @@ class ReaderNotifier extends Notifier<ReaderState> {
       final msg = _mapError(e);
       state = state.copyWith(isLoading: false, error: msg);
       return msg;
+    } finally {
+      // [SB-HUNT | 2026-09-25] 重载阶段锁必复位（含异常/取消路径）
+      _changeSourceFlowActive = false;
     }
   }
 

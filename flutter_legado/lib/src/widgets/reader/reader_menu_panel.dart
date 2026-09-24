@@ -12,6 +12,7 @@ import '../../providers/reader/reader_notifier.dart';
 import '../../providers/ui_settings/ui_settings_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
+import 'change_source_flow.dart';
 
 /// [UI_SYNC_REFACTOR S2-1] 阅读菜单单块底部面板（对齐参考 ReadBookMenuBar）
 ///
@@ -207,56 +208,13 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
   // pop（发生了切换）时重载书/目录/强制刷新正文（见
   // ReaderNotifier.reloadAfterSourceChange）；用户取消（pop null）
   // 不做任何事（不重载、不提示）。
-  // 反馈：进行中 SnackBar → 成功「已更换书源：<源名>」（源名取换源后
-  // 记录的 originName）/ 失败含原因。
-  Future<void> _changeSourceFlow(BuildContext context, Book book) async {
-    // [P2-9 fix | 2026-09-24] 生产 /change_source 路由是
-    // _ChangeSourceSheetRoute（PageRouteBuilder<dynamic>，见
-    // AppRoutes.generateRoute）：类型化 pushNamed<String> 会在运行期把
-    // 生成的路由强转 Route<String?> 抛 TypeError（真机崩溃）。对齐
-    // 详情页 Task#24 既有修法（book_info_screen_builders
-    // ._showChangeSourceDialog）：无类型 pushNamed + result is String 判定
-    // [P2-9 fix2 | 2026-09-24] 慢路径 SnackBar 竞态：旧写法
-    // 「controller.close() 收起进行中条」在重载 > 4s（SnackBar 默认自动
-    // 消失时长）时，进行中条已离开 Scaffold 队列，close() 踩
-    // scaffold.dart:341 `_snackBars.first == controller` 断言 / 空队列
-    // StateError，恰在「收起进行中条」一步崩溃、结果条永不出现（真机 8
-    // 次换源全如此，证据
-    // docs/parity_shots/verify_ui_20260922/p29b_b1_crash_dialog.png）。
-    // 修法：第一个 await 前取好对象；进行中条显式 10min duration（慢重载
-    // 期间不自动消失）；结果就绪用 removeCurrentSnackBar() 收起（本 SDK
-    // 队列为空时早退、无断言）再显结果条
-    final messenger = ScaffoldMessenger.of(context);
-    final notifier = ref.read(readerNotifierProvider.notifier);
-    final result = await Navigator.pushNamed(
-      context,
-      AppRoutes.changeSource,
-      arguments: book,
-    );
-    if (result is! String) return; // 取消 / 关闭 pop null → 不做任何事
-    if (!context.mounted) return;
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text('正在更换书源…'),
-        duration: Duration(minutes: 10),
-      ),
-    );
-    final err = await notifier.reloadAfterSourceChange(result);
-    if (!context.mounted) return;
-    messenger.removeCurrentSnackBar(); // 收起进行中条（已消失则无操作，不踩断言）
-    final sourceName = ref.read(readerNotifierProvider).currentBook?.originName;
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          err == null
-              ? (sourceName != null && sourceName.isNotEmpty
-                  ? '已更换书源：$sourceName'
-                  : '已更换书源')
-              : '更换书源后重载失败：$err',
-        ),
-      ),
-    );
-  }
+  // [SB-HUNT | 2026-09-25] 统一至 runChangeSourceFlow（与顶栏换源入口
+  // 共用）：notifier 级共享重入锁（在途第二触发静默忽略）+ 必收清理
+  // （clearSnackBars，离场/异常也不留残留）+ 结果去重（成功反馈只保留
+  // 换源页「已切换到」，阅读器侧只弹失败条）。原 [P2-9 fix/fix2] 的
+  // 无类型 pushNamed 与 10min 进行中条语义见 change_source_flow.dart。
+  Future<void> _changeSourceFlow(BuildContext context, Book book) =>
+      runChangeSourceFlow(ref, context, book);
 
   // [P2-9 | 2026-09-24] 刷新正文流程（Fix A）：强制联网抓取（绕过缓存，
   // 见 ReaderNotifier.refreshChapterContent）→ 显式成功反馈 / 失败反馈
@@ -266,7 +224,7 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     // 抓取 > 4s（SnackBar 默认自动消失时长）时，旧写法 controller.close()
     // 踩 scaffold.dart:341 `_snackBars.first == controller` 断言 / 空队
     // 列 StateError，结果条永不出现。修法：进行中条显式 10min duration +
-    // removeCurrentSnackBar() 收起（已自动消失则无操作、不踩断言）
+    // 结果就绪收起（[SB-HUNT | 2026-09-25] 改 clearSnackBars 必收，见下）
     final messenger = ScaffoldMessenger.of(context);
     final notifier = ref.read(readerNotifierProvider.notifier);
     // [C5-hunt | 2026-09-24] 重入守卫：已有刷新在途时进行中 SnackBar 已
@@ -280,8 +238,11 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
       ),
     );
     final err = await notifier.refreshChapterContent();
+    // [SB-HUNT | 2026-09-25] 必收清理（与换源流程统一）：先 clearSnackBars
+    // （root 队列、空队列安全、不踩 scaffold.dart:341 断言）——抓取期间
+    // 用户离场（context 已卸载）也不留进行中条；结果条仅在仍在阅读场展示
+    messenger.clearSnackBars();
     if (!context.mounted) return;
-    messenger.removeCurrentSnackBar(); // 收起进行中条（已消失则无操作，不踩断言）
     messenger.showSnackBar(
       SnackBar(content: Text(err == null ? '正文已刷新' : '刷新正文失败：$err')),
     );
