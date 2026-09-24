@@ -10,7 +10,7 @@ use legado_core::LegadoResult;
 use legado_db::repository::Repository;
 use legado_db::BookRepository;
 
-use crate::db_state::with_database;
+use crate::db_state::{resolve_local_book_path, with_database};
 
 /// 书籍格式检测结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,12 +52,21 @@ pub fn parse_metadata(file_path: &str) -> LegadoResult<BookMetadata> {
 /// 2. 解析元数据
 /// 3. 构造 Book 实体
 /// 4. 插入数据库
+///
+/// [iOS 视角F C1] `file_path` 可以是「可迁移标识」（相对 Documents 的路径，
+/// 如 `books/x.epub`）而非绝对路径：解析/检测时用 [`resolve_local_book_path`]
+/// 还原为当前容器的真实路径，而 **`book_url` 原样存 `file_path`**（即标识），
+/// 使本地书在重签名/重装（容器 UUID 变化）后仍可按相对标识重建读取。
+/// 绝对路径（存量/非 iOS）经 resolver 原样透传，行为不变。
 pub fn import_local_book(file_path: &str) -> LegadoResult<ImportResult> {
+    // 还原为真实文件路径（相对标识 → 当前 Documents 拼接；绝对/Web 原样）
+    let real_path = resolve_local_book_path(file_path);
+
     // 检测格式（用于验证文件是否为支持的格式）
-    let _format = LocalBook::detect_format(file_path)?;
+    let _format = LocalBook::detect_format(&real_path)?;
 
     // 解析元数据
-    let metadata = match LocalBook::parse(file_path) {
+    let metadata = match LocalBook::parse(&real_path) {
         Ok(m) => m,
         Err(e) => {
             return Ok(ImportResult {

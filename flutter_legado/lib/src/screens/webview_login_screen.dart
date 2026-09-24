@@ -83,6 +83,9 @@ class _WebViewLoginScreenState extends State<WebViewLoginScreen> {
   late final WebViewController _controller;
   bool _checking = false;
 
+  /// 当前加载页面 URL（onPageStarted，含跳转后），供主框架 HTTP 错误判定
+  String _startedUrl = '';
+
   @override
   void initState() {
     super.initState();
@@ -91,8 +94,12 @@ class _WebViewLoginScreenState extends State<WebViewLoginScreen> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageStarted: (url) => _syncCookie(url),
+          onPageStarted: (url) {
+            _startedUrl = url;
+            _syncCookie(url);
+          },
           onPageFinished: (url) async {
+            _startedUrl = url;
             await _syncCookie(url);
             if (_checking && mounted) {
               setState(() => _checking = false);
@@ -100,6 +107,27 @@ class _WebViewLoginScreenState extends State<WebViewLoginScreen> {
                 ..hideCurrentSnackBar()
                 ..showSnackBar(const SnackBar(content: Text('登录检测完成')));
               Navigator.of(context).pop(true);
+            }
+          },
+          // [iOS 视角F A1] 主框架加载失败（网络断开/证书错误等）可见化：
+          // 过去失败只留白屏，用户无从归因。
+          onWebResourceError: (error) {
+            if (error.isForMainFrame ?? false) {
+              _reportLoadFailure(error.description);
+            }
+          },
+          onHttpError: (error) {
+            final status = error.response?.statusCode;
+            if (status == null || status < 400) return;
+            // 主框架判定：iOS WKWebView 的 onHttpError 仅源自主框架导航
+            //（request 为 null，子资源不触发）直接提示；Android
+            // onReceivedHttpError 对子资源（图片 404 等）也触发，按当前
+            // 页面 URL 匹配，避免误报。
+            final requestUri = error.request?.uri;
+            if (requestUri == null ||
+                (_startedUrl.isNotEmpty &&
+                    requestUri.toString() == _startedUrl)) {
+              _reportLoadFailure('HTTP $status');
             }
           },
           onNavigationRequest: (request) {
@@ -127,6 +155,22 @@ class _WebViewLoginScreenState extends State<WebViewLoginScreen> {
     } else {
       _controller.loadRequest(Uri.parse(initialUrl), headers: headers);
     }
+  }
+
+  /// [iOS 视角F A1] 主框架加载失败上屏提示 + 日志留痕。
+  ///
+  /// onWebResourceError / onHttpError 同一失败可能先后各触发一次，
+  /// hideCurrentSnackBar 去重；「检测」重加载失败时 onPageFinished 不会
+  /// 触发，顺带复位 _checking（否则检测转圈永停）。
+  void _reportLoadFailure(String reason) {
+    if (!mounted) return;
+    debugPrint('[WebViewLogin] 主框架加载失败：$reason');
+    if (_checking) {
+      setState(() => _checking = false);
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text('页面加载失败：$reason')));
   }
 
   /// 读取系统 Cookie 并落库 loginHeader（对齐原版 onPageStarted/Finished

@@ -37,6 +37,41 @@ pub fn current_db_path() -> Option<String> {
     DB_PATH.lock().ok().and_then(|guard| guard.clone())
 }
 
+/// 解析本地书籍的真实文件路径（[iOS 视角F C1] 加法式，不改 FFI 契约）。
+///
+/// `book_url` 可能是三种形态之一：
+/// - **Web URL**（含 `://`）：在线书，原样返回（不是本地文件）。
+/// - **绝对路径**（如 `/var/.../tmp/x.epub` 或桌面 `C:\...`）：存量本地书
+///   / 非 iOS 平台写入的绝对路径，**原样返回**——这是读侧兼容点，保证升级后
+///   既有本地书（只要文件还在磁盘）仍可读取，不破坏既有语义。
+/// - **相对可迁移标识**（如 `books/x.epub`，iOS 新导入写入）：以「当前容器
+///   的 Documents 目录」为基拼接成真实路径。基目录取自 [`current_db_path`]
+///   的父目录（App 的 DB 固定落在 `Documents/legado.db`），从而跨重签名 /
+///   重装（容器 UUID 变化）仍能重建出正确路径。
+///
+/// DB 未记录（None）时相对标识无从拼接，原样返回（调用方按文件不存在优雅降级）。
+pub fn resolve_local_book_path(book_url: &str) -> String {
+    // Web URL 不是本地文件，原样返回
+    if book_url.contains("://") {
+        return book_url.to_string();
+    }
+    let p = std::path::Path::new(book_url);
+    // 绝对路径（存量/非 iOS）原样返回——读侧兼容旧数据
+    if p.is_absolute() {
+        return book_url.to_string();
+    }
+    // 相对可迁移标识：拼接到当前 Documents 目录（DB 路径的父目录）
+    let base = current_db_path()
+        .as_deref()
+        .map(std::path::Path::new)
+        .and_then(|db| db.parent())
+        .map(|d| d.to_path_buf());
+    match base {
+        Some(base) => base.join(p).to_string_lossy().into_owned(),
+        None => book_url.to_string(),
+    }
+}
+
 /// 初始化全局数据库连接池（由 `ffi_db_open` 调用）
 ///
 /// 从 `Database` 实例中提取连接池并存储到全局状态。
@@ -105,4 +140,27 @@ pub fn ensure_test_db() -> std::sync::MutexGuard<'static, ()> {
     TEST_DB_LOCK
         .lock()
         .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_local_book_path;
+
+    /// [iOS 视角F C1] 透传语义：Web URL 与绝对路径一律原样返回
+    /// （两个分支都在读取全局 DB 路径之前返回，可并行安全）
+    #[test]
+    fn resolve_passthrough_web_and_absolute() {
+        // Web URL：含 :// → 原样
+        assert_eq!(
+            resolve_local_book_path("https://a.example.com/book.epub"),
+            "https://a.example.com/book.epub"
+        );
+        // 绝对路径（存量本地书 / 桌面）：原样。
+        // 用平台真实的绝对路径（temp_dir 恒为绝对）构造：Windows 上
+        // `/var/...` 只是 rooted 而非 absolute，会落入相对分支读取全局
+        // DB 路径，与并行 DB 测试竞态——故必须平台感知
+        let abs = std::env::temp_dir().join("abs_probe.epub");
+        let abs = abs.to_string_lossy().into_owned();
+        assert_eq!(resolve_local_book_path(&abs), abs);
+    }
 }

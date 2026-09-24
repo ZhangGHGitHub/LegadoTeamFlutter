@@ -48,6 +48,10 @@ class _BrowserScreenState extends State<BrowserScreen> {
   /// 内嵌 WebView 页面是否加载完成（进度指示用）
   bool _embeddedLoading = true;
 
+  /// 内嵌 WebView 当前页面 URL（onPageStarted/Finished，主框架
+  /// HTTP 错误判定时与 request URL 匹配用）
+  String _embeddedStartedUrl = '';
+
   /// 当前平台是否支持内嵌 WebView（对齐 rss_article_detail_screen 判定）
   bool get _webViewSupported =>
       Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
@@ -91,19 +95,45 @@ class _BrowserScreenState extends State<BrowserScreen> {
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(NavigationDelegate(
-        onPageStarted: (_) {
-          if (mounted) setState(() => _embeddedLoading = true);
+        onPageStarted: (startedUrl) {
+          if (mounted) {
+            setState(() {
+              _embeddedLoading = true;
+              _embeddedStartedUrl = startedUrl;
+            });
+          }
         },
         onPageFinished: (finishedUrl) {
           if (mounted) {
             setState(() {
               _embeddedLoading = false;
+              _embeddedStartedUrl = finishedUrl;
               _urlController.text = finishedUrl;
             });
           }
         },
-        onWebResourceError: (_) {
-          if (mounted) setState(() => _embeddedLoading = false);
+        onWebResourceError: (error) {
+          if (mounted) {
+            setState(() => _embeddedLoading = false);
+            // [iOS 视角F A1] 主框架加载失败上屏提示（子资源错误不打扰）
+            if (error.isForMainFrame ?? false) {
+              _reportLoadFailure('页面加载失败：${error.description}');
+            }
+          }
+        },
+        onHttpError: (error) {
+          final status = error.response?.statusCode;
+          if (status == null || status < 400) return;
+          // 主框架判定：iOS WKWebView 的 onHttpError 仅源自主框架导航
+          //（request 为 null，子资源不触发）直接提示；Android
+          // onReceivedHttpError 对子资源（图片 404 等）也触发，按当前
+          // 页面 URL 匹配，避免误报。
+          final requestUri = error.request?.uri;
+          if (requestUri == null ||
+              (_embeddedStartedUrl.isNotEmpty &&
+                  requestUri.toString() == _embeddedStartedUrl)) {
+            _reportLoadFailure('页面加载失败：HTTP $status');
+          }
         },
       ));
     if (html.isNotEmpty) {
@@ -128,6 +158,16 @@ class _BrowserScreenState extends State<BrowserScreen> {
     _urlController.dispose();
     _jsResultController.dispose();
     super.dispose();
+  }
+
+  /// [iOS 视角F A1] 内嵌 WebView 主框架加载失败上屏提示
+  ///（过去失败只留白屏，进度条停住后用户无从归因）
+  void _reportLoadFailure(String message) {
+    if (!mounted) return;
+    debugPrint('[Browser] $message');
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message)));
   }
 
   /// 规范化 URL（自动补全协议）

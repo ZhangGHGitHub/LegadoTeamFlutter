@@ -16,7 +16,7 @@ use legado_db::{
     CacheRepository, ReplaceRuleRepository,
 };
 
-use crate::db_state::with_database;
+use crate::db_state::{resolve_local_book_path, with_database};
 use crate::runtime;
 
 // ─── 简繁转换配置（对齐 Kotlin AppConfig.chineseConverterType） ──────────────
@@ -191,6 +191,10 @@ pub struct ChapterListResponse {
 /// 获取指定书籍的章节列表
 ///
 /// 优先从数据库读取；若数据库无记录且为本地书籍，则从文件解析章节并入库（懒加载）。
+///
+/// [iOS 视角F C1] 本地书 `book_url` 可能是相对可迁移标识（`books/x.epub`），
+/// 落盘解析前经 [`resolve_local_book_path`] 还原为当前容器真实路径；DB 查询与
+/// 章节行 `book_url`/`base_url` 仍用原始标识（保持主键一致）。绝对路径原样透传。
 pub fn get_chapters(book_url: &str) -> LegadoResult<ChapterListResponse> {
     // 1. 尝试从数据库读取已有章节
     let chapters = with_database(|db| {
@@ -207,7 +211,9 @@ pub fn get_chapters(book_url: &str) -> LegadoResult<ChapterListResponse> {
 
     // 2. 数据库无章节：如果是本地书籍，从文件解析并入库
     if is_local_book(book_url) {
-        let chapter_infos = legado_book::LocalBook::get_chapters(book_url)?;
+        // [C1] 还原为真实文件路径（相对标识 → 当前 Documents；绝对原样）
+        let real_path = resolve_local_book_path(book_url);
+        let chapter_infos = legado_book::LocalBook::get_chapters(&real_path)?;
         let mut book_chapters: Vec<BookChapter> = chapter_infos
             .iter()
             .map(|ci| BookChapter {
@@ -259,8 +265,11 @@ pub fn get_chapters(book_url: &str) -> LegadoResult<ChapterListResponse> {
 
 /// 获取章节正文内容
 ///
-/// 对于本地书籍（bookUrl 为文件路径），使用 legado-book 解析器读取。
+/// 对于本地书籍（bookUrl 为文件路径或相对可迁移标识），使用 legado-book 解析器读取。
 /// 对于在线书籍，需配合书源规则通过网络获取（此处返回数据库缓存或空）。
+///
+/// [iOS 视角F C1] 本地书 `book_url` 为相对可迁移标识时，经 [`resolve_local_book_path`]
+/// 还原为当前容器真实路径后再落盘解析；章节 DB 查询仍用原始标识。
 pub fn get_chapter_content(book_url: &str, chapter_index: i32) -> LegadoResult<String> {
     get_chapter_content_inner(book_url, chapter_index, true)
 }
@@ -290,8 +299,10 @@ fn get_chapter_content_inner(
     // 判断是否为本地书籍
     if is_local_book(book_url) {
         // 使用 legado-book 解析本地文件
+        // [C1] 还原为真实文件路径（相对标识 → 当前 Documents；绝对原样）
+        let real_path = resolve_local_book_path(book_url);
         let content = legado_book::LocalBook::get_chapter_content(
-            book_url,
+            &real_path,
             &chapter_to_local_info(&chapter),
         )?;
         // 读取时净化：DB/文件保留原始正文，返回前应用内容净化
@@ -1055,6 +1066,53 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    // ─── [iOS 视角F C1] 本地书「相对可迁移标识」读写回环 ─────────────────────
+
+    /// [iOS 视角F C1] 相对标识回环：写入以「当前容器 Documents 基目录」解析。
+    ///
+    /// 构造临时基目录 `base`（模拟 Documents），其下 `books/sample.txt` 为本地书；
+    /// 通过 `record_db_path(base/legado.db)` 让 resolver 以 `base` 为基。导入时传入
+    /// 相对标识 `books/sample.txt`，断言 `book_url` 原样存标识（非绝对路径），且
+    /// `get_chapters`/`get_chapter_content` 能经 resolver 还原真实路径读到内容。
+    /// 收尾删除该书与章节行，避免污染共享内存库（不削弱既有测试）。
+    #[test]
+    fn local_book_relative_identifier_roundtrip() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CTR: AtomicUsize = AtomicUsize::new(0);
+        let n = CTR.fetch_add(1, Ordering::SeqCst);
+        let base =
+            std::env::temp_dir().join(format!("legado_c1_base_{}_{}", std::process::id(), n));
+        let books = base.join("books");
+        std::fs::create_dir_all(&books).unwrap();
+        let file = books.join("sample.txt");
+        std::fs::write(&file, "第一章\n正文一\n\n第二章\n正文二\n").unwrap();
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        // resolver 以 DB 路径的父目录为 Documents 基：记录 base/legado.db
+        crate::db_state::record_db_path(base.join("legado.db").to_str().unwrap());
+
+        // 写侧：导入存「相对可迁移标识」，而非绝对路径
+        let res = crate::api::book_import::import_local_book("books/sample.txt").unwrap();
+        assert!(res.success, "导入失败: {:?}", res.error);
+        let url = res.book.as_ref().unwrap().book_url.clone();
+        assert_eq!(url, "books/sample.txt", "book_url 应存相对可迁移标识");
+
+        // 读侧：章节列表 + 正文均经 resolver 还原真实路径
+        let chapters = get_chapters("books/sample.txt").unwrap();
+        assert!(chapters.total >= 1, "相对标识应能解析出章节");
+        let content = get_chapter_content("books/sample.txt", 0).unwrap();
+        assert!(!content.trim().is_empty(), "应能读到正文");
+
+        // 收尾清理：删除该书的章节行与书行，恢复共享内存库状态
+        with_database(|db| {
+            BookChapterRepository::new(db.connection()).delete_by_book_url("books/sample.txt")?;
+            BookRepository::new(db.connection()).delete_by_url("books/sample.txt")?;
+            Ok(())
+        })
+        .unwrap();
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     // ─── refresh_toc 测试 ───────────────────────────────────────────────────

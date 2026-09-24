@@ -15,6 +15,7 @@ import '../models/models.dart';
 import '../theme/md3_colors.dart';
 import 'book_api.dart';
 import 'cover_decode_loader.dart';
+import 'local_book_store.dart';
 import 'platform_bridge_service.dart';
 import 'settings_service.dart';
 
@@ -59,6 +60,15 @@ class RustApi
 
     final dbPath = await _defaultDbPath();
     await bridge.dbOpen(path: dbPath);
+
+    // [iOS 视角F C1] 预热 LocalBookStore.resolveSync 的 Documents 基目录缓存
+    // （复用 path_provider 已缓存的应用 Documents 目录，供本地书「相对可迁移
+    // 标识」的 Dart 读侧消费点同步解析；失败不阻断初始化）。
+    try {
+      LocalBookStore.warmWith(await getApplicationDocumentsDirectory());
+    } catch (_) {
+      // 基目录暂不可得时 resolveSync 优雅降级（原样返回），不阻断启动
+    }
 
     // [UI-fix v2.0.2 | 2026-08-06] TTS 缓存目录初始化接线 — QoderCN
     await _initTtsCacheDir();

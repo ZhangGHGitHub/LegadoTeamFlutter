@@ -29,6 +29,10 @@ class _FontScreenState extends State<FontScreen> {
   // [C3 标题字体] 标题字体键（与 ReaderAdvancedConfig.titleFont 同源）
   static const _keyTitleFont = 'titleFont';
   static const _keyCustomFonts = 'reader_custom_fonts'; // [{family, path}]
+  // [iOS 视角F C3] 自定义字体持久子目录（相对应用 Documents 目录）。
+  // 存「相对标识」而非绝对路径：iOS 容器 UUID 在重签名/重装后变化，绝对路径
+  // 会失效；相对标识在读取侧用「当前容器 Documents 目录」运行时拼接重建。
+  static const _fontSubDir = 'fonts';
 
   /// 当前 target 对应的字体家族键（body=既有链路，title=titleFont）
   String get _familyKey =>
@@ -70,29 +74,88 @@ class _FontScreenState extends State<FontScreen> {
     final family = prefs.getString(_familyKey);
     final customRaw = prefs.getStringList(_keyCustomFonts) ?? [];
     final customs = <_FontOption>[];
-    for (final entry in customRaw) {
-      final parts = entry.split('|');
+    final missing = <String>[];
+    // [iOS 视角F C3] Documents 根目录（运行时拼接相对标识用），惰性获取
+    String? docsPath;
+    bool docsFetched = false;
+    final sep = Platform.pathSeparator;
+    Future<String> docs() async {
+      if (!docsFetched) {
+        final d = await getApplicationDocumentsDirectory();
+        docsPath = d.path;
+        docsFetched = true;
+      }
+      return docsPath!;
+    }
+
+    var healedAny = false;
+    for (var i = 0; i < customRaw.length; i++) {
+      final parts = customRaw[i].split('|');
       if (parts.length != 2) continue;
+      final fam = parts[0];
+      final stored = parts[1];
+      // [iOS 视角F C3] 解析真实路径：
+      // - 相对标识（新格式，fonts/x.ttf）→ 当前 Documents 目录拼接；
+      // - 绝对路径（旧格式）→ 原样；若已失效（容器 UUID 变化）则回退到
+      //   Documents/fonts/<文件名> 自愈，并把该条目归一化为相对标识回写。
+      late File file;
+      String? healedRelative;
+      if (File(stored).isAbsolute) {
+        file = File(stored);
+        if (!await file.exists()) {
+          final base = await docs();
+          final fallback =
+              File('$base$sep$_fontSubDir$sep${_baseName(stored)}');
+          if (await fallback.exists()) {
+            file = fallback;
+            healedRelative = '$_fontSubDir/${_baseName(stored)}';
+          }
+        }
+      } else {
+        final base = await docs();
+        file = File('$base$sep${stored.replaceAll('/', sep)}');
+      }
+      if (!await file.exists()) {
+        missing.add(fam);
+        continue;
+      }
       // 尝试重新注册字体（应用重启后需重新加载）
       try {
-        final file = File(parts[1]);
-        if (await file.exists()) {
-          final loader = FontLoader(parts[0])
-            ..addFont(
-              file.readAsBytes().then((b) => b.buffer.asByteData()),
-            );
-          await loader.load();
-          customs.add(_FontOption(family: parts[0], label: parts[0]));
+        final loader = FontLoader(fam)
+          ..addFont(
+            file.readAsBytes().then((b) => b.buffer.asByteData()),
+          );
+        await loader.load();
+        customs.add(_FontOption(family: fam, label: fam));
+        if (healedRelative != null) {
+          // 自愈：把旧绝对路径条目归一化为相对可迁移标识
+          customRaw[i] = '$fam|$healedRelative';
+          healedAny = true;
         }
       } catch (_) {
-        // 字体文件失效则跳过
+        missing.add(fam);
       }
+    }
+    // [iOS 视角F C3] 自愈归一化后回写（仅确有变化时），使旧绝对路径不再依赖容器 UUID
+    if (healedAny) {
+      await prefs.setStringList(_keyCustomFonts, customRaw);
     }
     if (mounted) {
       setState(() {
         _currentFamily = family;
         _customFonts = customs;
       });
+      if (missing.isNotEmpty) {
+        // [iOS 视角F C3] 字体缺失须可见（不再静默跳过）
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content:
+                  Text('部分自定义字体文件缺失，未加载：${missing.join('、')}'),
+            ),
+          );
+      }
     }
   }
 
@@ -142,7 +205,9 @@ class _FontScreenState extends State<FontScreen> {
 
       final prefs = await SharedPreferences.getInstance();
       final list = prefs.getStringList(_keyCustomFonts) ?? [];
-      list.add('$family|${target.path}');
+      // [iOS 视角F C3] 存「相对 Documents 的可迁移标识」而非绝对路径：
+      // 读取侧用当前容器 Documents 目录运行时拼接，跨重签名/重装仍有效。
+      list.add('$family|$_fontSubDir/$family.ttf');
       await prefs.setStringList(_keyCustomFonts, list);
 
       if (mounted) {
@@ -166,6 +231,12 @@ class _FontScreenState extends State<FontScreen> {
     } finally {
       if (mounted) setState(() => _importing = false);
     }
+  }
+
+  /// 取路径末段（不引入 package:path 直接依赖；兼容 `/` 与 `\` 分隔符）
+  String _baseName(String p) {
+    final parts = p.split(RegExp(r'[/\\]'));
+    return parts.isEmpty ? p : parts.last;
   }
 
   String get _currentLabel {

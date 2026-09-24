@@ -60,6 +60,12 @@ jobs:
         run: |
           set -euxo pipefail
           export SDKROOT=$(xcrun --sdk iphoneos --show-sdk-path)
+          # [视角F E1] rustc 对 apple 目标默认取 SDK 默认最低 iOS 版本（如 18.5），
+          # 与 App 的 13.0（Runner.xcodeproj / Podfile platform :ios, '13.0'）
+          # 不匹配时，链接期报 "object file ... built for newer 'iOS' version
+          # (18.5) than being linked (13.0)"；显式钉 13.0 使静态库对象文件
+          # 最低版本与 App 对齐
+          export IPHONEOS_DEPLOYMENT_TARGET=13.0
           cargo rustc --release --target aarch64-apple-ios -p legado-ffi --lib --crate-type staticlib --features quickjs
           mkdir -p ../flutter_legado/ios/RustFFI
           cp target/aarch64-apple-ios/release/liblegado_ffi.a \
@@ -70,6 +76,9 @@ jobs:
         run: |
           set -euxo pipefail
           export SDKROOT=$(xcrun --sdk iphonesimulator --show-sdk-path)
+          # [视角F E1] 同设备步：钉 13.0，避免静态库对象文件最低版本
+          # （SDK 默认 18.5）高于 App 链接版本（13.0）
+          export IPHONEOS_DEPLOYMENT_TARGET=13.0
           # bindgen 把 rust 三元组 aarch64-apple-ios-sim 原样传 clang（无效），
           # 追加合法的 -simulator 三元组覆盖（clang 取最后一个 --target）
           export BINDGEN_EXTRA_CLANG_ARGS="--target=aarch64-apple-ios-simulator -isysroot $SDKROOT"

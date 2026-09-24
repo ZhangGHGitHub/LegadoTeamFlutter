@@ -68,6 +68,19 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>需要相机权限以扫描二维码导入书源</string>
+	<!-- [iOS 视角F A1] WKWebView 加载明文 http:// 书源/登录页被 ATS 拦截
+	     （iOS 默认 NSAllowsArbitraryLoadsInWebContent=NO）。此处只放开「WebView
+	     内容」的任意加载：NSAllowsArbitraryLoadsInWebContent=YES。
+	     刻意不开 NSAllowsArbitraryLoads——那会无差别放宽 App 自身全部
+	     URLSession/NSURL 请求的 ATS，属不必要的攻击面扩大；App 侧真实网络
+	     走 Rust reqwest+rustls（裸 socket，不受 ATS 管辖），无需 ATS 例外。
+	     故本键 = 最小外科式例外，仅覆盖 3 处 WebView 调用点（登录页/规则
+	     桥/内置浏览器）。 -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<true/>
+	</dict>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

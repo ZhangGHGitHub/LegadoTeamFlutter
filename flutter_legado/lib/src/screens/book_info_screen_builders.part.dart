@@ -1445,7 +1445,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         .toList();
     if (!_isOnlineBook(book)) {
       try {
-        final file = File(book.bookUrl);
+        // [iOS 视角F C1] bookUrl 可能是「相对 Documents 可迁移标识」（books/x.epub），
+        // 需解析为当前容器真实路径后再取文件大小；绝对/Web 原样透传。
+        final file = File(LocalBookStore.resolveSync(book.bookUrl));
         if (file.existsSync()) {
           final size = file.lengthSync();
           if (size > 0) {

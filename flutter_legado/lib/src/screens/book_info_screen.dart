@@ -25,6 +25,7 @@ import '../widgets/top_bar_button.dart';
 import '../services/cover_palette_service.dart';
 import '../services/book_api.dart';
 import '../services/cache_service.dart';
+import '../services/local_book_store.dart'; // [iOS 视角F C1] 本地书相对标识解析
 import '../services/platform_bridge_service.dart';
 import '../services/settings_service.dart';
 import '../utils/book_info_utils.dart';

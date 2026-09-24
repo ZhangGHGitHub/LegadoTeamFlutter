@@ -358,7 +358,17 @@ class PlatformBridgeService {
       );
     }
     final controller = _newController();
-    await _loadAndWaitFinished(controller, url: url, html: html);
+    // [iOS 视角F A1] 主框架加载失败（ATS 拦截/DNS/连接/主文档 4xx-5xx）：
+    // 上屏提示 + 返回显式 [ERROR]，不再在坏页面上跑 JS 把空/错误页当成功结果
+    // 静默回传（用户此前只看到「正文空」）。
+    final loadFailure =
+        await _loadAndWaitFinished(controller, url: url, html: html);
+    if (loadFailure != null) {
+      debugPrint('[PlatformBridge] webView 加载失败：$loadFailure'
+          '（url=$url html=${html.isNotEmpty ? '<html>' : '<空>'}）');
+      _showSnackBar('页面加载失败：$loadFailure');
+      return '[ERROR] WebView 加载失败：$loadFailure';
+    }
     if (isRule && resultJson.isNotEmpty) {
       // resultJson 已是 Rust serde_json 字面量（对齐 GSON.toJson → window.result）
       await controller.runJavaScript('window.result = $resultJson;');
@@ -390,7 +400,15 @@ class PlatformBridgeService {
     }
     final regex = RegExp(sourceRegex);
     final controller = _newController();
-    await _loadAndWaitFinished(controller, url: url, html: html);
+    final loadFailure =
+        await _loadAndWaitFinished(controller, url: url, html: html);
+    if (loadFailure != null) {
+      // [iOS 视角F A1] 嗅探是尽力而为语义（保留返回 ''=未找到），但主框架
+      // 没加载起来时直接短路并留可诊断日志，避免静默「正文空且查无原因」。
+      debugPrint('[PlatformBridge] webViewGetSource 加载失败，嗅探短路：'
+          '$loadFailure（url=$url）');
+      return '';
+    }
     if (js.isNotEmpty) {
       // 触发型 JS（如点击播放按钮），fire-and-forget 后等待资源出现
       await controller.runJavaScript(js);
@@ -457,6 +475,10 @@ class PlatformBridgeService {
 
     final controller = _newController();
     final finished = Completer<void>();
+    // [iOS 视角F A1] 记录主框架加载失败原因（ATS 拦截/DNS/连接等），
+    // 超时时并入错误串，让「等待跳转超时」可归因而非静默。
+    String? loadFailure;
+    String? startedUrl;
     void completeFinished() {
       if (!finished.isCompleted) finished.complete();
     }
@@ -470,9 +492,31 @@ class PlatformBridgeService {
         }
         return NavigationDecision.navigate;
       },
+      onPageStarted: (u) => startedUrl = u,
       onPageFinished: (_) => completeFinished(),
-      onWebResourceError: (_) => completeFinished(),
-      onHttpError: (_) => completeFinished(),
+      onWebResourceError: (e) {
+        if (e.isForMainFrame ?? false) {
+          loadFailure =
+              '资源错误：${e.description}${e.url != null ? '（${e.url}）' : ''}';
+        }
+        completeFinished();
+      },
+      onHttpError: (e) {
+        final status = e.response?.statusCode;
+        if (status != null && status >= 400 && loadFailure == null) {
+          // 主框架判定同 [_loadAndWaitFinished]：iOS request 为 null
+          //（主框架专属流）直接计；Android 对子资源也触发，按当前页面
+          // URL 匹配，避免图片 404 等误记为加载失败。
+          final requestUri = e.request?.uri;
+          if (requestUri == null ||
+              (startedUrl != null && requestUri.toString() == startedUrl)) {
+            final target = e.response?.uri ?? requestUri;
+            loadFailure =
+                'HTTP $status${target != null ? '（$target）' : ''}';
+          }
+        }
+        completeFinished();
+      },
     ));
     _load(controller, url: url, html: html);
     if (js.isNotEmpty) {
@@ -487,33 +531,78 @@ class PlatformBridgeService {
     try {
       return await capture.future.timeout(_webViewTimeout);
     } on TimeoutException {
+      final reason = loadFailure;
       debugPrint(
         '[PlatformBridge] webViewGetOverrideUrl：等待跳转超时'
-        '（overrideUrlRegex=$overrideUrlRegex）',
+        '（overrideUrlRegex=$overrideUrlRegex'
+        '${reason != null ? '；加载失败：$reason' : ''}）',
       );
-      return '[ERROR] webViewGetOverrideUrl 等待跳转超时';
+      return '[ERROR] webViewGetOverrideUrl 等待跳转超时'
+          '${reason != null ? '（加载失败：$reason）' : ''}';
     }
   }
 
   /// 加载并等待 onPageFinished（超时/资源错误均按「已到达终态」放行，
-  /// 交由后续 JS 阶段兜底，对齐 Kotlin 失败路径由 callback 报错的语义）
-  Future<void> _loadAndWaitFinished(
+  /// 交由后续 JS 阶段兜底，对齐 Kotlin 失败路径由 callback 报错的语义）。
+  ///
+  /// [iOS 视角F A1] 返回主框架加载失败原因（null=成功）。WKWebView 对明文
+  /// http 被 ATS 拦截 / DNS / 连接失败 / 主文档 4xx-5xx 会以「主框架资源
+  /// 错误」形式回调，过去此处一律静默放行，失败被下游吞成 `''`/`[ERROR]`，
+  /// 用户只看到「正文空/规则失败」。现将主框架失败原因回传，调用方据此
+  /// 上屏提示或留可诊断日志，不再静默。子资源错误 / 超时仍按既有「到达终态」
+  /// 语义放行（嗅探类动作需尽力而为）。
+  Future<String?> _loadAndWaitFinished(
     WebViewController controller, {
     required String url,
     required String html,
   }) {
-    final finished = Completer<void>();
-    void completeOnce() {
-      if (!finished.isCompleted) finished.complete();
+    final finished = Completer<String?>();
+    String? failure;
+    String? startedUrl;
+
+    void completeOnce(String? reason) {
+      if (reason != null && failure == null) failure = reason;
+      if (!finished.isCompleted) finished.complete(failure);
     }
 
     controller.setNavigationDelegate(NavigationDelegate(
-      onPageFinished: (_) => completeOnce(),
-      onWebResourceError: (_) => completeOnce(),
-      onHttpError: (_) => completeOnce(),
+      onPageStarted: (u) => startedUrl = u,
+      onPageFinished: (_) => completeOnce(null),
+      onWebResourceError: (e) {
+        // 仅主框架失败才记为「页面没加载起来」；子资源错误不阻断。
+        if (e.isForMainFrame ?? false) {
+          completeOnce('资源错误：${e.description}'
+              '${e.url != null ? '（${e.url}）' : ''}');
+        } else {
+          completeOnce(null);
+        }
+      },
+      onHttpError: (e) {
+        final status = e.response?.statusCode;
+        if (status == null || status < 400) {
+          // 2xx 子资源或无状态码：不视为主框架失败
+          return;
+        }
+        // [iOS 视角F A1] 主框架判定：公开类型 WebResourceRequest 只有
+        // uri（无 isForMainFrame）。iOS WKWebView 的 onHttpError 源自主框架
+        // 导航回调（decidePolicyForNavigationResponse，request 为 null，
+        // 子资源不触发）→ 直接计为主框架失败；Android onReceivedHttpError
+        // 对子资源（图片 404 等）也会触发 → 按当前加载页面 URL
+        //（onPageStarted，含跳转后）匹配，避免子资源 4xx 误判为页面失败。
+        final requestUri = e.request?.uri;
+        if (requestUri == null ||
+            (startedUrl != null && requestUri.toString() == startedUrl)) {
+          final target = e.response?.uri ?? requestUri;
+          completeOnce('HTTP $status'
+              '${target != null ? '（$target）' : ''}');
+        }
+      },
     ));
     _load(controller, url: url, html: html);
-    return finished.future.timeout(_webViewTimeout, onTimeout: () {});
+    return finished.future.timeout(
+      _webViewTimeout,
+      onTimeout: () => failure ?? '加载超时（${_webViewTimeout.inSeconds}s）',
+    );
   }
 
   /// 解析嗅探 JS 返回的 URL 列表（runJavaScriptReturningResult 返回 JSON 串）

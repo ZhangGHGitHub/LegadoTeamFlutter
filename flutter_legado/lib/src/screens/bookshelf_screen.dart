@@ -18,6 +18,7 @@ import '../providers/reader/reader_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart'
     show TopBarButtonStyle;
 import '../routes.dart';
+import '../services/local_book_store.dart';
 import '../utils/book_open_utils.dart';
 import '../widgets/book_grid_item.dart';
 import '../widgets/book_list_item.dart';
@@ -801,11 +802,23 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final notifier = ref.read(bookshelfNotifierProvider.notifier);
     final errorColor = Theme.of(context).colorScheme.error;
 
-    final result = await FilePicker.platform.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: const ['epub', 'txt', 'mobi', 'pdf', 'umd'],
-      allowMultiple: true,
-    );
+    // [iOS 视角F C2] file_picker 8.x 的 iOS 端对 FileType.custom 逐个把扩展名
+    // 解析为 UTI（UTTypeCreatePreferredIdentifierForTag）：解析不到（mobi/umd
+    // 未在 iOS 注册）的扩展名被静默跳过（仅 [Skipping type] 日志）→ 选择器
+    // 实际只剩 epub/txt/pdf 可选，而 Rust 内核支持 MOBI 解析——收窄扩展名
+    // 列表会让 iOS 丢失 Android 已有的 mobi 导入能力。故 iOS 回落
+    // FileType.any（全部文件可选，不可导入的格式由下方失败 SnackBar 显式
+    // 报告）；Android 保持原列表不变。
+    // 注意：file_picker 8.3.7 Dart 侧在 type != custom 且 allowedExtensions
+    // 非空时抛 ArgumentError，any 分支不得传列表。
+    final result = Platform.isIOS
+        ? await FilePicker.platform.pickFiles(
+            type: FileType.any, allowMultiple: true)
+        : await FilePicker.platform.pickFiles(
+            type: FileType.custom,
+            allowedExtensions: const ['epub', 'txt', 'mobi', 'pdf', 'umd'],
+            allowMultiple: true,
+          );
     if (result == null || result.files.isEmpty) return;
 
     var successCount = 0;
@@ -820,8 +833,24 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         failures.add(file.name);
         continue;
       }
+      // [iOS 视角F C1] iOS file_picker Import 模式把文件「移动」到 tmp；
+      // 此处拷入持久 Documents/books/ 并改存「相对 Documents 可迁移标识」，
+      // 避免 tmp 清理 / 重签名（容器 UUID 变化）后本地书失效（读侧以当前
+      // 容器路径重建）。非 iOS 平台保持原绝对路径不变（兼容存量）。
+      String toImport = path;
+      if (Platform.isIOS) {
+        try {
+          toImport = await LocalBookStore.store(path);
+        } catch (e) {
+          failures.add(file.name);
+          if (failureDetails.length < 3) {
+            failureDetails.add('${file.name}：本地书持久化失败（$e）');
+          }
+          continue;
+        }
+      }
       try {
-        await notifier.importLocalBook(path);
+        await notifier.importLocalBook(toImport);
         successCount++;
       } catch (e) {
         failures.add(file.name);
@@ -843,6 +872,19 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
           ? ' 等 ${failures.length} 本'
           : '';
       messages.add('导入失败：$detail$more');
+    }
+    // [iOS 视角F C2] UI 提示：any 选择器下选到不可导入的扩展名时，
+    // 显式说明「显示全部文件、仅电子书格式可导入」，避免静默困惑
+    if (Platform.isIOS) {
+      const importable = {'epub', 'txt', 'mobi', 'pdf', 'umd'};
+      final pickedExts = result.files
+          .map((f) => f.name.split('.').last.toLowerCase())
+          .where((e) => e.isNotEmpty)
+          .toSet();
+      if (pickedExts.difference(importable).isNotEmpty) {
+        messages.add(
+            'iOS 选择器显示全部文件，仅电子书格式（epub/txt/mobi/pdf/umd）可导入');
+      }
     }
     if (messages.isEmpty) return;
     messenger.showSnackBar(
