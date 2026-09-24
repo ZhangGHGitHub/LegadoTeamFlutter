@@ -640,7 +640,13 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       return _buildContent(context, state, repaginate: false);
     }
 
-    if (state.error != null) {
+    // [F1-hunt F4 | 2026-09-24] 全屏 ErrorView 仅在「正文为空」时生效：
+    // 章节加载失败（_loadChapterContent 失败路径已清空正文）→ 全屏错误
+    // 页（重试/换源）；「刷新正文失败 / 换源重载失败」保留旧正文（不清
+    // 空）并置 error → 此处不降级，仍渲染旧正文，失败由调用方 SnackBar
+    // （「刷新正文失败：…」「更换书源后重载失败：…」）提示，避免刷新
+    // 失败把整屏可读正文换成错误页（F4 缺陷②「刷新失败全屏降级」）
+    if (state.error != null && state.chapterContent.isEmpty) {
       final book = state.currentBook;
       // [fix Task#24 | 2026-08-08] 正文/章节加载失败（如「正文为空」，多由换源
       // 匹配错书导致）时，除「重试」外引导用户「换源」逃离坏书源（对齐原版）— Qoder

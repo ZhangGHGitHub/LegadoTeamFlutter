@@ -1700,8 +1700,16 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         );
         if (confirmed != true || !mounted) return;
       }
-      await notifier.removeBook(book.bookUrl);
+      // [F1-hunt F3 | 2026-09-24] 按 notifier 返回结果分支：DB 写失败时
+      // 不翻 _inBookshelf、不弹成功提示，改弹失败提示（项目规则：用户
+      // 可见的失败必须有提示；修复前无论成败都提示「已移出书架」）
+      final ok = await notifier.removeBook(book.bookUrl);
       if (!mounted) return;
+      if (!ok) {
+        final err = ref.read(bookshelfNotifierProvider).error;
+        _snack(err != null ? '移出书架失败：$err' : '移出书架失败');
+        return;
+      }
       setState(() => _inBookshelf = false);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('《${book.name}》已移出书架')),
@@ -1709,9 +1717,16 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     } else {
       // 清除 notShelf 位转正：之前阅读时可能已以 notShelf 临时落库，
       // addBook 走原地 UPDATE 安全 upsert（不会级联删章节），同时清掉标记进书架。
-      await notifier
+      // [F1-hunt F3 | 2026-09-24] 按结果分支：写库失败不得提示「已加入
+      // 书架」、不得翻 _inBookshelf（假成功根因），改弹失败提示
+      final ok = await notifier
           .addBook(book.copyWith(bookType: book.bookType & ~BookType.notShelf));
       if (!mounted) return;
+      if (!ok) {
+        final err = ref.read(bookshelfNotifierProvider).error;
+        _snack(err != null ? '加入书架失败：$err' : '加入书架失败');
+        return;
+      }
       setState(() => _inBookshelf = true);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('《${book.name}》已加入书架')),
@@ -1752,10 +1767,18 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     if (_inBookshelf) {
       await ref.read(bookApiProvider).updateBook(updated);
     } else if (selected > 0) {
-      await ref.read(bookshelfNotifierProvider.notifier).addBook(
+      // [F1-hunt F3 | 2026-09-24] 同 _toggleShelf：写库失败不得把本地
+      // 状态翻成在架（假成功），改弹失败提示
+      final ok = await ref.read(bookshelfNotifierProvider.notifier).addBook(
             updated.copyWith(bookType: updated.bookType & ~BookType.notShelf),
           );
-      if (mounted) setState(() => _inBookshelf = true);
+      if (!mounted) return;
+      if (ok) {
+        setState(() => _inBookshelf = true);
+      } else {
+        final err = ref.read(bookshelfNotifierProvider).error;
+        _snack(err != null ? '加入书架失败：$err' : '加入书架失败');
+      }
     } else if (mounted) {
       setState(() => _loadedBook = updated);
     }

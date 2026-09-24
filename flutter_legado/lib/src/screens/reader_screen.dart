@@ -342,7 +342,15 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   /// 预加载当前章节的前后各 2 章内容，提升翻页阅读体验（静默失败）
   ///
   /// 对齐计划 Phase 2.7：前后各 2 章的 API 调用编排，实现翻页无等待感。
-  /// 此处仅决定「何时调用 getChapterContent」，文本解析/净化/替换由 Rust 内部完成。
+  /// 此处仅决定「何时预载」，文本解析/净化/替换由 Rust 内部完成。
+  ///
+  /// [F1-hunt F5 | 2026-09-24] getChapterContent → getChapterContentFull
+  /// （缓存+网络合并，与阅读器章节加载 / ReaderPageView 相邻章预载同
+  /// 链路）：修复前 getChapterContent 仅读本地缓存（Rust 侧未缓存时
+  /// 返回 need_fetch 占位，结果被丢弃），在线书从未缓存的章节上预载
+  /// 是 no-op，±2 章暖缓存窗口完全失效。保留预载（±2 窗口意图不变），
+  /// 改走 Full 路径：缓存命中直接返回、未命中联网抓取并回写缓存，
+  /// 无需 Rust 侧改动。
   void _preloadAdjacentChapters(ReaderState state) {
     final book = state.currentBook;
     final chapters = state.chapters;
@@ -356,13 +364,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       final next = index + offset;
       if (next < chapters.length) {
         unawaited(
-          api.getChapterContent(book.bookUrl, next).catchError((_) => ''),
+          api.getChapterContentFull(book.bookUrl, next).catchError((_) => ''),
         );
       }
       final prev = index - offset;
       if (prev >= 0) {
         unawaited(
-          api.getChapterContent(book.bookUrl, prev).catchError((_) => ''),
+          api.getChapterContentFull(book.bookUrl, prev).catchError((_) => ''),
         );
       }
     }

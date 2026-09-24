@@ -115,13 +115,20 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   }
 
   /// 添加书籍到书架
-  Future<void> addBook(Book book) async {
+  ///
+  /// [F1-hunt F3 | 2026-09-24] 返回值携带结果：true = 写库成功且 UI 列表
+  /// 已同步；false = 写库失败（error 已写入 state.error）。修复前异常被
+  /// 吞掉后正常返回，调用方无法区分成功/失败，详情页无条件提示「已加入
+  /// 书架」（假成功；书架非空时 state.error 又不渲染 → 完全静默）
+  Future<bool> addBook(Book book) async {
     try {
       final api = ref.read(bookApiProvider);
       await api.addBook(book);
       state = state.copyWith(books: [...state.books, book]);
+      return true;
     } catch (e) {
       state = state.copyWith(error: _mapError(e));
+      return false;
     }
   }
 
@@ -144,15 +151,19 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
   /// 删除书籍：调用 Rust API 后同步本地 UI 状态
   ///
   /// 注意：where 过滤是「UI 状态同步」而非「业务逻辑」
-  Future<void> removeBook(String bookUrl) async {
+  /// [F1-hunt F3 | 2026-09-24] 同 addBook：返回写库结果，失败时 UI 列表
+  /// 不变、error 置位，调用方据此提示失败（不再无条件「已移出书架」）
+  Future<bool> removeBook(String bookUrl) async {
     try {
       final api = ref.read(bookApiProvider);
       await api.deleteBook(bookUrl);
       state = state.copyWith(
         books: state.books.where((b) => b.bookUrl != bookUrl).toList(),
       );
+      return true;
     } catch (e) {
       state = state.copyWith(error: _mapError(e));
+      return false;
     }
   }
 
