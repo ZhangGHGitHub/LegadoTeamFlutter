@@ -30,7 +30,7 @@ use legado_core::LegadoError;
 use crate::host_api::{
     archive_utils, asymmetric_crypto, cache_store, capability_ledger, chinese_utils,
     concurrency_api, config_api, cookie_store, crypto_api, encoding, file_utils, font_api,
-    html_format, html_parse, json_utils, misc_api, network, platform, regex_utils,
+    html_format, html_parse, json_utils, message_digest, misc_api, network, platform, regex_utils,
     register::mount_dual, string_utils, symmetric_crypto, time_utils, variable_store,
 };
 use crate::sandbox::SandboxConfig;
@@ -70,6 +70,11 @@ pub fn register_all_apis<'js>(
     register_network_apis(ctx, &java, &globals)?;
     register_cookie_apis(ctx, &java, &globals)?;
     register_crypto_apis(ctx, &java, &globals)?;
+    // java.security.MessageDigest（纯 Rust md-5/sha1/sha2）：Packages 模拟层
+    // 的 security.MessageDigest.getInstance 依赖 messageDigestValidate/Digest
+    // 宿主绑定，须先于 inject_packages_shim 注册（mount_dual 写入 java 对象，
+    // 在 set("java", java) 移动 java 之前完成）
+    register_message_digest_apis(ctx, &java, &globals)?;
     register_html_apis(ctx, &java, &globals)?;
     register_html_parse_apis(ctx, &java, &globals)?;
     register_chinese_apis(ctx, &java, &globals)?;
@@ -409,6 +414,35 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
       close: function () {}
     };
   }
+  // java.security.MessageDigest 最小面（语料 3 命中：七猫 MD5 一次性 /
+  // 微信读书 SHA-256 一次性 / 酷狗 MD5 增量 update+digest）。
+  // getInstance(algo) → 实例：update(bytes) 累积，digest(bytes?) 收尾并返回
+  // 字节数组（Uint8Array，Java 语义；hex/base64 由书源 JS 侧负责）。
+  // 算法名经宿主 java.messageDigestValidate 预校验（未知算法 → shim 的
+  // getInstance 登记台账 + 抛可读文案，不静默产出空摘要）；纯 Rust 计算走
+  // java.messageDigestDigest(algo, bytes)。Java 语义：digest() 复位状态
+  // （本 shim 直接重置 buf，与「一次 digest 后实例即重置」一致）；
+  // update/digest 均返回 this 以支持链式。
+  function JSMMessageDigestInstance(algo) {
+    var buf = new Uint8Array(0);
+    function append(chunk) {
+      var c = toU8(chunk || []);
+      var nb = new Uint8Array(buf.length + c.length);
+      nb.set(buf, 0);
+      nb.set(c, buf.length);
+      buf = nb;
+    }
+    return {
+      update: function (input) { append(input); return this; },
+      digest: function (input) {
+        if (arguments.length > 0) { append(input); }
+        var out = java.messageDigestDigest(algo, buf);
+        // Java 语义：digest() 复位状态
+        buf = new Uint8Array(0);
+        return out;
+      }
+    };
+  }
   // 队列④ 能力受限：未知 Java 类/成员访问 → 登记符号 + 抛带明确文案的错误。
   // P2-E 读取语义：读取未知成员只登记并返回"可继续探测的哨兵"（不抛错）——
   // 语料中的探测式代码（`typeof Packages.foo !== 'undefined'` 三元回退，
@@ -610,6 +644,23 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
             };
           }
         }
+      },
+      // java.security.MessageDigest 最小面（语料 3 命中，见 JSMMessageDigestInstance）：
+      // getInstance(algo) 经宿主 java.messageDigestValidate 预校验算法（未知算法 →
+      // java.reportUnknownSymbol 登记台账 + 抛可读文案，不静默产出空摘要）；
+      // 返回实例的 update(bytes) 累积 / digest(bytes?) 输出字节数组（Uint8Array）
+      security: {
+        MessageDigest: {
+          getInstance: function (algo) {
+            var a = (algo == null) ? '' : String(algo);
+            if (!java.messageDigestValidate(a)) {
+              var full = 'java.security.MessageDigest.getInstance("' + a + '")';
+              java.reportUnknownSymbol(full);
+              throw new Error('此书源需要 Java 脚本能力（Packages.' + full + '），当前不支持');
+            }
+            return JSMMessageDigestInstance(a);
+          }
+        }
       }
     },
     android: { util: { Base64: {
@@ -642,6 +693,18 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
     org: { jsoup: {} }
   };
   globalThis.Packages = trapNode(__pkRoot, '');
+
+  // 裸 java 全局镜像 java.security / java.lang（语料酷狗命中：裸
+  // `java.security.MessageDigest` / `new java.lang.String(...)`，无 Packages 前缀）。
+  // 重新暴露**同一** trapped 节点（非新增类）——未知成员访问仍走
+  // reportUnknownSymbol 登记 + 可读文案；仅当裸 java 尚无同名键时补 java.lang
+  // （宿主函数命名空间无 lang/security 键，安全）。
+  if (globalThis.java && typeof globalThis.java === 'object') {
+    globalThis.java.security = globalThis.Packages.java.security;
+    if (globalThis.java.lang === undefined) {
+      globalThis.java.lang = globalThis.Packages.java.lang;
+    }
+  }
 
   // Java.type / importClass 哨兵（语料零命中，RHINO_INTEROP_ANALYSIS_20260920 §8，
   // 但书源可能探测）：不静默 undefined——登记符号 + 抛带明确文案的错误
@@ -755,42 +818,106 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
 })();
 "#;
 
-/// Rhino `org.jsoup.Jsoup` 模拟层（云霄小说/键盘小说/玄幻文学等 searchUrl
-/// `@js:` 块直接调用 `org.jsoup.Jsoup.parse(html).select(...).attr(...)`）。
-/// QuickJS 无 Java 包导入；经 `java.jsoupAttr/jsoupText` 宿主桥对齐 Jsoup 常用子集。
+/// Rhino `org.jsoup.Jsoup` 模拟层（云霄小说/键盘小说/玄幻文学/77读书等
+/// searchUrl `@js:` 块直接调用 `org.jsoup.Jsoup.parse(html).select(...)`）。
+/// QuickJS 无 Java 包导入；经 `java.jsoupAttr/jsoupText/jsoupSize/jsoup*`
+/// 宿主桥对齐 Jsoup 常用子集：
+/// - **集合对象**（`select` 返回，对齐 `org.jsoup.select.Elements`）：
+///   `attr/text/html`（首匹配语义）+ 集合 API `size()/get(i)/isEmpty()/first()/each()`
+///   （77读书搜索规则 `rows.size()`/`rows.get(i)`——此前缺失，`rows.size()`
+///   抛 `not a function`，整条搜索规则失败）；`select(sub)` 为集合内全部元素
+///   的后代并集，扁平近似为 `css + ' ' + sub`（既有语义）。
+/// - **单元素对象**（`get(i)/first()` 返回，对齐 `org.jsoup.Element` 常用面）：
+///   `attr/text/html/select`（作用域为本元素 HTML 快照）+ `toString`；
+///   `remove()` 登记到父元素 removed 列表 → 父元素 `html()/toString()` 不再
+///   含被移除子块（字符串级近似移除，见 `jsoup_html_n_excluded` 文档）。
+///   空集合 `get/first` 返回空元素（取值全空串），宽松偏离 jsoup 抛
+///   IllegalStateException（书源侧普遍先 `size()` 守卫）。
+/// - **`Packages.org.jsoup.parser.Parser.unescapeEntities(s, base)`**：
+///   HTML 实体反转义（77读书正文规则；`base` 参数忽略，书源仅传 HTML base）。
 #[cfg(feature = "quickjs")]
 pub const JSOUP_BRIDGE_JS: &str = r#"
 (function () {
-  function __els(html, css) {
+  // 集合对象（select 返回值）：对齐 org.jsoup.select.Elements
+  function __set(parent, html, css) {
+    var h = String(html == null ? '' : html);
+    var c = String(css || '');
     return {
-      attr: function (name) { return java.jsoupAttr(String(html), String(css), String(name)); },
-      text: function () { return java.jsoupText(String(html), String(css)); },
-      html: function () { return java.jsoupHtml(String(html), String(css)); },
-      first: function () { return this; },
-      select: function (sub) {
-        var next = String(css || '') + ' ' + String(sub || '');
-        return __els(html, next.trim());
+      attr: function (name) { return java.jsoupAttrN(h, c, 0, String(name)); },
+      text: function () { return java.jsoupTextN(h, c, 0); },
+      html: function () { return java.jsoupHtmlN(h, c, 0); },
+      size: function () { return java.jsoupSize(h, c); },
+      isEmpty: function () { return java.jsoupSize(h, c) === 0; },
+      first: function () { return __element(parent, h, c, 0); },
+      get: function (i) { return __element(parent, h, c, i); },
+      each: function (fn) {
+        var n = this.size();
+        for (var j = 0; j < n; j++) { fn(this.get(j), j); }
       },
-      toString: function () { return java.jsoupHtml(String(html), String(css)); }
+      select: function (sub) {
+        var next = (c ? c + ' ' : '') + String(sub || '');
+        return __set(parent, h, next.replace(/^\s+/, ''));
+      },
+      toString: function () { return java.jsoupHtmlN(h, c, 0); }
     };
+  }
+  // 单元素对象（get/first 返回值）：对齐 org.jsoup.Element 常用面
+  function __element(parent, html, css, i) {
+    var h = String(html == null ? '' : html);
+    var c = String(css || '');
+    var removed = [];
+    function outerHtml() {
+      if (removed.length === 0) return java.jsoupHtmlN(h, c, i);
+      return java.jsoupHtmlNExcluded(h, c, i, removed.join('\n'));
+    }
+    var el = {
+      attr: function (name) { return java.jsoupAttrN(h, c, i, String(name)); },
+      text: function () { return java.jsoupTextN(h, c, i); },
+      html: function () { return outerHtml(); },
+      select: function (sub) { return __set(el, outerHtml(), String(sub || '')); },
+      remove: function () {
+        if (parent && typeof parent.__markRemoved === 'function') {
+          parent.__markRemoved(c, i, removed);
+        }
+      },
+      toString: function () { return outerHtml(); }
+    };
+    // 父元素登记：子块选择器 + 其内部已移除选择器（后代拼接传播）
+    el.__markRemoved = function (subCss, subI, subRemoved) {
+      removed.push(String(subCss));
+      if (subRemoved) {
+        for (var k = 0; k < subRemoved.length; k++) {
+          removed.push(String(subCss) + ' ' + subRemoved[k]);
+        }
+      }
+    };
+    return el;
   }
   var Jsoup = {
     parse: function (html) {
       var h = String(html == null ? '' : html);
       return {
-        select: function (css) { return __els(h, String(css || '')); },
-        body: function () { return __els(h, 'body'); },
+        select: function (css) { return __set(null, h, String(css || '')); },
+        body: function () { return __element(null, h, 'body', 0); },
         toString: function () { return h; }
       };
+    }
+  };
+  // org.jsoup.parser.Parser.unescapeEntities(s, base)（HTML 实体反转义）
+  var Parser = {
+    unescapeEntities: function (s, _base) {
+      return java.jsoupUnescapeEntities(String(s == null ? '' : s));
     }
   };
   globalThis.org = globalThis.org || {};
   globalThis.org.jsoup = globalThis.org.jsoup || {};
   globalThis.org.jsoup.Jsoup = Jsoup;
+  globalThis.org.jsoup.parser = { Parser: Parser };
   if (globalThis.Packages) {
     globalThis.Packages.org = globalThis.Packages.org || {};
     globalThis.Packages.org.jsoup = globalThis.Packages.org.jsoup || {};
     globalThis.Packages.org.jsoup.Jsoup = Jsoup;
+    globalThis.Packages.org.jsoup.parser = { Parser: Parser };
   }
 })();
 "#;
@@ -957,17 +1084,26 @@ fn register_encoding_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // encodeURIComponent(str) -> String（JS 标准语义：保留 -_.!~*'()）
+    // encodeURIComponent(value) -> String（JS 标准语义：保留 -_.!~*'()）
     // [UI-fix 2026-08-10 | Reasonix] 对齐原版 Rhino 内建：yckceo 书源
     // （思兔 sto66 等）searchUrl 模板 {{encodeURIComponent(key)}} 依赖此函数，
     // 缺失致表达式求值失败 → URL 残缺 → 搜索无结果
+    // [MessageDigest 批次 2026-09-25] 入参由严格 String 改为 JS 语义 Coerced 强转：
+    // 七猫 jsLib 的 qmUrl 对非字符串值（page:1 为 JS int）调用
+    // encodeURIComponent(params[k])，Rhino/JS 原生 encodeURIComponent(1) 会 ToString
+    // 成 "1"，而宿主严格 String 签名抛 `Error converting from js 'int' into type
+    // 'string'` → qmSearch('测试',1) 整条 searchUrl 失败。改用 Coerced<String>
+    //（JS_ToString）对齐 JS 规范 ToString 语义（int/bool/null/undefined 均强转）。
     mount_dual(
         java,
         globals,
         "encodeURIComponent",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
-            encoding::encode_uri_component(&s)
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            |s: rquickjs::Coerced<std::string::String>| -> String {
+                encoding::encode_uri_component(&s.0)
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -2395,6 +2531,65 @@ fn register_crypto_apis<'js>(
     Ok(())
 }
 
+/// 注册 `java.security.MessageDigest` 摘要 API
+///
+/// QuickJS 无 JVM，`java.security.MessageDigest` 经纯 Rust（md-5/sha1/sha2）模拟：
+/// - `messageDigestValidate(algo) -> bool` — 算法是否受支持（供 Packages shim 的
+///   `getInstance` 前置校验；未知算法由 shim 抛「当前不支持」文案并登记台账）
+/// - `messageDigestDigest(algo, bytes) -> Uint8Array` — 一次性摘要，字节数组输出
+///   （Java `digest(byte[])` 语义，非 hex/base64 字符串）；增量 `update()` 由
+///   shim 侧 `JSMMessageDigestInstance` 累积字节、`digest()` 收尾时一次性传入
+///   本宿主函数（与 Java 增量语义等价）。
+///
+/// 支持 MD5/SHA-1/SHA-256/SHA-512（语料 3 命中实际用法，见 message_digest 模块）；
+/// 未知算法在本函数返回 Err、shim 侧转可读文案 + 台账，不静默产出空摘要。
+#[cfg(feature = "quickjs")]
+fn register_message_digest_apis<'js>(
+    ctx: &rquickjs::Ctx<'js>,
+    java: &rquickjs::Object<'js>,
+    globals: &rquickjs::Object<'js>,
+) -> Result<(), LegadoError> {
+    // messageDigestValidate(algo) -> bool
+    mount_dual(
+        java,
+        globals,
+        "messageDigestValidate",
+        rquickjs::Function::new(ctx.clone(), |algo: String| -> bool {
+            message_digest::is_supported_algorithm(&algo)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // messageDigestDigest(algo, bytes) -> Uint8Array（字节数组，非 hex 串）
+    mount_dual(
+        java,
+        globals,
+        "messageDigestDigest",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>,
+             algo: String,
+             data: rquickjs::TypedArray<u8>|
+             -> rquickjs::Result<rquickjs::Value<'js>> {
+                use rquickjs::IntoJs;
+                let data_b: Vec<u8> = data.as_bytes().unwrap_or(&[]).to_vec();
+                let out = message_digest::digest_bytes(&algo, &data_b).map_err(|e| {
+                    rquickjs::Error::FromJs {
+                        from: "MessageDigest",
+                        to: "Uint8Array",
+                        message: Some(e),
+                    }
+                })?;
+                let arr: rquickjs::TypedArray<u8> = rquickjs::TypedArray::new(ctx.clone(), out)?;
+                arr.into_js(&ctx)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    Ok(())
+}
+
 /// 注册 HTML 格式化 API
 ///
 /// 对应 Kotlin 端 `HtmlFormatter` 中的格式化方法。
@@ -2655,6 +2850,79 @@ fn register_html_parse_apis<'js>(
         "jsoupHtml",
         rquickjs::Function::new(ctx.clone(), |html: String, css: String| -> String {
             html_parse::jsoup_html(&html, &css)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // java.jsoupSize(html, css) — org.jsoup.select.Elements 集合计数
+    // （JSOUP_BRIDGE_JS Elements 模拟层集合 API 底层；77读书搜索规则
+    // `rows.size()` 此前因缺失抛 `not a function`）
+    java.set(
+        "jsoupSize",
+        rquickjs::Function::new(ctx.clone(), |html: String, css: String| -> u32 {
+            html_parse::jsoup_size(&html, &css)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // java.jsoupAttrN(html, css, i, attr) — 第 i 个匹配元素属性
+    // （shim `rows.get(i).attr(name)`；i 为 i64，负数按 0、越界空串）
+    java.set(
+        "jsoupAttrN",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |html: String, css: String, i: i64, attr: String| -> String {
+                html_parse::jsoup_attr_n(&html, &css, i, &attr)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // java.jsoupTextN(html, css, i) — 第 i 个匹配元素文本
+    java.set(
+        "jsoupTextN",
+        rquickjs::Function::new(ctx.clone(), |html: String, css: String, i: i64| -> String {
+            html_parse::jsoup_text_n(&html, &css, i)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // java.jsoupHtmlN(html, css, i) — 第 i 个匹配元素 innerHTML
+    java.set(
+        "jsoupHtmlN",
+        rquickjs::Function::new(ctx.clone(), |html: String, css: String, i: i64| -> String {
+            html_parse::jsoup_html_n(&html, &css, i)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // java.jsoupHtmlNExcluded(html, css, i, excludes) — 第 i 个元素 innerHTML
+    // 并移除子元素（换行分隔选择器列表；shim `Element.remove()`，
+    // 77读书正文规则 `tp.get(0).remove()` 后 `e.html()` 的移除视图）
+    java.set(
+        "jsoupHtmlNExcluded",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |html: String, css: String, i: i64, excludes: String| -> String {
+                html_parse::jsoup_html_n_excluded(&html, &css, i, &excludes)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // java.jsoupUnescapeEntities(s) — HTML 实体反转义
+    // （shim `Packages.org.jsoup.parser.Parser.unescapeEntities`，
+    // 77读书正文规则 `Parser.unescapeEntities(htm, true)`）
+    java.set(
+        "jsoupUnescapeEntities",
+        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+            html_parse::jsoup_unescape_entities(&s)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )

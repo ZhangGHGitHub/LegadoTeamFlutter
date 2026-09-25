@@ -47,6 +47,54 @@ use scraper::{Html, Selector};
 /// `class.foo` → `.foo`、`tag.foo` → `foo`、`id.foo` → `#foo`，其余原样。
 /// 否则 `class.comic-contain` 会被 CSS 解析器当成「标签 class + 类 comic-contain」
 /// → 永远 0 命中（包子漫画正文 `java.getElements('class.comic-contain@amp-img')`）。
+/// 表格族片段的表格上下文包裹（html5ever 按规范丢弃顶层孤立表格标签）
+///
+/// HTML5 解析器（html5ever）按规范丢弃顶层孤立的表格标签（`tr/td/tbody/…`
+/// 作为文档顶层起始时整段丢弃）：元素作用域重解析（JS 桥
+/// `rows.get(i).select('td')` → 以行 innerHTML 快照再选子元素）会因此丢失
+/// 结构，`td` 选择命中 0 个 → 77读书表格规则整行被 `td.size() < 7` 过滤。
+/// 表格族片段必须先裹上表格上下文（显式 `<tbody>`，不依赖隐式节点插入）：
+/// - `<td>/<th>` 起始 → `<table><tbody><tr>…</tr></tbody></table>`；
+/// - `<tr` 起始 → `<table><tbody>…</tbody></table>`；
+/// - `<tbody>/<thead>/<tfoot>/<caption>` 起始 → `<table>…</table>`；
+/// - 完整文档 / `<table` / `<body` / 普通元素起始的快照自包含 → 原样解析。
+///
+/// 返回 (文档, 下钻层数)：下钻层数 = 从 body 首个元素子到片段根元素的层数
+/// （0 = 无需包裹）；壳层仅承载结构、不承载业务属性，元素自身定位需按壳层数
+/// 下钻（见 `fragment_root` / `ElementSnapshot::attr`）。
+fn parse_document_wrapped(html: &str) -> (Html, u8) {
+    match leading_tag(html).as_str() {
+        "td" | "th" => (
+            Html::parse_document(&format!("<table><tbody><tr>{html}</tr></tbody></table>")),
+            3,
+        ),
+        "tr" => (
+            Html::parse_document(&format!("<table><tbody>{html}</tbody></table>")),
+            2,
+        ),
+        "tbody" | "thead" | "tfoot" | "caption" => {
+            (Html::parse_document(&format!("<table>{html}</table>")), 1)
+        }
+        _ => (Html::parse_document(html), 0),
+    }
+}
+
+/// 片段起始标签的标签名（小写；非标签起始返回空串）
+///
+/// 用精确标签名匹配（而非 `starts_with("<th")` 之类前缀）避免把
+/// `<thead` 误判为 `<th` 单元格、`<track` 误判为 `<tr` 行。
+fn leading_tag(frag: &str) -> String {
+    let lower = frag.trim_start().to_ascii_lowercase();
+    if !lower.starts_with('<') {
+        return String::new();
+    }
+    let rest = &lower[1..];
+    let end = rest
+        .find(|c: char| c == '>' || c.is_ascii_whitespace())
+        .unwrap_or(rest.len());
+    rest[..end].to_string()
+}
+
 fn select_outer_htmls(html: &str, css: &str) -> Vec<String> {
     if html.is_empty() || css.trim().is_empty() {
         return Vec::new();
@@ -55,7 +103,7 @@ fn select_outer_htmls(html: &str, css: &str) -> Vec<String> {
     let Ok(selector) = Selector::parse(&normalized) else {
         return Vec::new();
     };
-    let document = Html::parse_document(html);
+    let (document, _) = parse_document_wrapped(html);
     document.select(&selector).map(|e| e.html()).collect()
 }
 
@@ -124,30 +172,38 @@ struct ElementSnapshot {
 impl ElementSnapshot {
     fn from_outer(outer: String) -> Self {
         // parse_fragment 的根选择器不可靠（:root 匹配不到 fragment 根），
-        // 改用 parse_document + body 内首个元素
-        let doc = Html::parse_document(&outer);
-        let body_sel = Selector::parse("body").ok();
-        let inner = body_sel
+        // 改用 parse_document + 下钻至片段根元素（表格上下文包裹见
+        // parse_document_wrapped；下钻层数由壳层数决定）
+        let (doc, drill) = parse_document_wrapped(&outer);
+        let root = fragment_root(&doc, drill);
+        // inner 取片段根的 outerHTML（与非表格快照 body.inner_html() 单元素时
+        // 等价），text 取片段根全部后代文本
+        let inner = root.as_ref().map(|e| e.html()).unwrap_or_default();
+        let text = root
             .as_ref()
-            .and_then(|s| doc.select(s).next())
-            .map(|body| body.inner_html())
-            .unwrap_or_default();
-        let text = body_sel
-            .as_ref()
-            .and_then(|s| doc.select(s).next())
-            .map(|body| body.text().collect::<Vec<_>>().join(""))
+            .map(|e| e.text().collect::<Vec<_>>().join(""))
             .unwrap_or_default();
         Self { outer, inner, text }
     }
 
     fn attr(&self, name: &str) -> Option<String> {
-        let doc = Html::parse_document(&self.outer);
-        let body_sel = Selector::parse("body").ok()?;
-        let body = doc.select(&body_sel).next()?;
-        // body 内首个元素（原 fragment 的根元素）
-        let elem = body.children().find_map(scraper::ElementRef::wrap)?;
-        elem.value().attr(name).map(|v| v.to_string())
+        let (doc, drill) = parse_document_wrapped(&self.outer);
+        fragment_root(&doc, drill)?
+            .value()
+            .attr(name)
+            .map(|v| v.to_string())
     }
+}
+
+/// body 首个元素子，再下钻 `drill` 层（表格包裹壳层）至片段根元素
+fn fragment_root<'a>(doc: &'a Html, drill: u8) -> Option<scraper::ElementRef<'a>> {
+    let body_sel = Selector::parse("body").ok()?;
+    let body = doc.select(&body_sel).next()?;
+    let mut elem = body.children().find_map(scraper::ElementRef::wrap)?;
+    for _ in 0..drill {
+        elem = elem.children().find_map(scraper::ElementRef::wrap)?;
+    }
+    Some(elem)
 }
 
 /// 从 HTML 快照解析出元素对象（供 select 后的元素转换）
@@ -558,6 +614,269 @@ pub fn jsoup_html(html: &str, css: &str) -> String {
         .first()
         .map(|s| s.inner.clone())
         .unwrap_or_default()
+}
+
+/// `java.jsoupSize(html, css)` → 匹配元素数量
+///
+/// 对齐 `org.jsoup.select.Elements#size`（77读书等书源搜索规则
+/// `doc.select('tr')` 后按 `rows.size()` / `rows.get(i)` 遍历表格行；
+/// 此前 JSOUP_BRIDGE_JS 的 Elements 模拟层无集合 API，`rows.size()`
+/// 抛 `not a function`，整条搜索规则失败）。
+pub fn jsoup_size(html: &str, css: &str) -> u32 {
+    select_outer_htmls(html, css).len() as u32
+}
+
+/// `java.jsoupAttrN(html, css, i, attr)` → 第 i 个匹配元素的属性
+///
+/// `i` 为 i64（JS 侧可能传负数，负数按 0 处理）；越界 → 空串
+/// （宽松偏离 JDK `List.get` 抛 IndexOutOfBounds：书源侧普遍先
+/// `size()` 守卫，宿主侧取空串避免整条规则因个别越界中断）。
+pub fn jsoup_attr_n(html: &str, css: &str, i: i64, attr: &str) -> String {
+    snapshots_from_html(html, css)
+        .get(i.max(0) as usize)
+        .and_then(|s| s.attr(attr))
+        .unwrap_or_default()
+}
+
+/// `java.jsoupTextN(html, css, i)` → 第 i 个匹配元素文本（越界 → 空串）
+pub fn jsoup_text_n(html: &str, css: &str, i: i64) -> String {
+    snapshots_from_html(html, css)
+        .get(i.max(0) as usize)
+        .map(|s| s.text.clone())
+        .unwrap_or_default()
+}
+
+/// `java.jsoupHtmlN(html, css, i)` → 第 i 个匹配元素 innerHTML（越界 → 空串）
+pub fn jsoup_html_n(html: &str, css: &str, i: i64) -> String {
+    snapshots_from_html(html, css)
+        .get(i.max(0) as usize)
+        .map(|s| s.inner.clone())
+        .unwrap_or_default()
+}
+
+/// `java.jsoupHtmlNExcluded(html, css, i, excludes)` → 第 i 个元素
+/// innerHTML 并移除指定子元素
+///
+/// 对齐 `org.jsoup.Element#remove` 的移除后视图（77读书正文规则：
+/// `e.select('div#content_tip').get(0).remove()` 后 `e.html()` 不得
+/// 再含被移除子块）。`excludes` 为换行分隔的子选择器列表，逐个在
+/// 当前 HTML 上做字符串级近似移除（匹配元素 outerHTML 快照 →
+/// `replacen` 首次出现）。
+///
+/// 近似说明：字符串级移除无法区分「节点」与「文本中恰好出现的同形
+/// 标记」（如正文文本里原样写了 `<div>x</div>` 字面量会被一并移除）；
+/// 书源正文场景几乎不存在该形态，属已文档化的取舍。
+pub fn jsoup_html_n_excluded(html: &str, css: &str, i: i64, excludes: &str) -> String {
+    let mut out = jsoup_html_n(html, css, i);
+    if out.is_empty() {
+        return out;
+    }
+    for sub in excludes
+        .split('\n')
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+    {
+        for matched in select_outer_htmls(&out, sub) {
+            if !matched.is_empty() {
+                out = out.replacen(&matched, "", 1);
+            }
+        }
+    }
+    out
+}
+
+/// jsoup 常用命名实体表（HTML4 基础集 + 全 Latin-1 重音字符 +
+/// 书源正文高频排版标点；jsoup `Html4Entities`/`Html5Entities` 核心子集）
+const NAMED_ENTITIES: &[(&str, &str)] = &[
+    ("amp", "&"),
+    ("lt", "<"),
+    ("gt", ">"),
+    ("quot", "\""),
+    ("apos", "'"),
+    ("nbsp", "\u{a0}"),
+    ("iexcl", "\u{a1}"),
+    ("cent", "\u{a2}"),
+    ("pound", "\u{a3}"),
+    ("curren", "\u{a4}"),
+    ("yen", "\u{a5}"),
+    ("brvbar", "\u{a6}"),
+    ("sect", "\u{a7}"),
+    ("uml", "\u{a8}"),
+    ("copy", "\u{a9}"),
+    ("laquo", "\u{ab}"),
+    ("not", "\u{ac}"),
+    ("shy", "\u{ad}"),
+    ("reg", "\u{ae}"),
+    ("macr", "\u{af}"),
+    ("deg", "\u{b0}"),
+    ("plusmn", "\u{b1}"),
+    ("sup2", "\u{b2}"),
+    ("sup3", "\u{b3}"),
+    ("acute", "\u{b4}"),
+    ("micro", "\u{b5}"),
+    ("para", "\u{b6}"),
+    ("middot", "\u{b7}"),
+    ("cedil", "\u{b8}"),
+    ("sup1", "\u{b9}"),
+    ("ordf", "\u{aa}"),
+    ("ordm", "\u{ba}"),
+    ("frac14", "\u{bc}"),
+    ("frac12", "\u{bd}"),
+    ("frac34", "\u{be}"),
+    ("iquest", "\u{bf}"),
+    ("Agrave", "\u{c0}"),
+    ("Aacute", "\u{c1}"),
+    ("Acirc", "\u{c2}"),
+    ("Atilde", "\u{c3}"),
+    ("Auml", "\u{c4}"),
+    ("Aring", "\u{c5}"),
+    ("AElig", "\u{c6}"),
+    ("Ccedil", "\u{c7}"),
+    ("Egrave", "\u{c8}"),
+    ("Eacute", "\u{c9}"),
+    ("Ecirc", "\u{ca}"),
+    ("Euml", "\u{cb}"),
+    ("Igrave", "\u{cc}"),
+    ("Iacute", "\u{cd}"),
+    ("Icirc", "\u{ce}"),
+    ("Iuml", "\u{cf}"),
+    ("ETH", "\u{d0}"),
+    ("Ntilde", "\u{d1}"),
+    ("Ograve", "\u{d2}"),
+    ("Oacute", "\u{d3}"),
+    ("Ocirc", "\u{d4}"),
+    ("Otilde", "\u{d5}"),
+    ("Ouml", "\u{d6}"),
+    ("Oslash", "\u{d8}"),
+    ("Ugrave", "\u{d9}"),
+    ("Uacute", "\u{da}"),
+    ("Ucirc", "\u{db}"),
+    ("Uuml", "\u{dc}"),
+    ("Yacute", "\u{dd}"),
+    ("THORN", "\u{de}"),
+    ("szlig", "\u{df}"),
+    ("agrave", "\u{e0}"),
+    ("aacute", "\u{e1}"),
+    ("acirc", "\u{e2}"),
+    ("atilde", "\u{e3}"),
+    ("auml", "\u{e4}"),
+    ("aring", "\u{e5}"),
+    ("aelig", "\u{e6}"),
+    ("ccedil", "\u{e7}"),
+    ("egrave", "\u{e8}"),
+    ("eacute", "\u{e9}"),
+    ("ecirc", "\u{ea}"),
+    ("euml", "\u{eb}"),
+    ("igrave", "\u{ec}"),
+    ("iacute", "\u{ed}"),
+    ("icirc", "\u{ee}"),
+    ("iuml", "\u{ef}"),
+    ("eth", "\u{f0}"),
+    ("ntilde", "\u{f1}"),
+    ("ograve", "\u{f2}"),
+    ("oacute", "\u{f3}"),
+    ("ocirc", "\u{f4}"),
+    ("otilde", "\u{f5}"),
+    ("ouml", "\u{f6}"),
+    ("oslash", "\u{f8}"),
+    ("ugrave", "\u{f9}"),
+    ("uacute", "\u{fa}"),
+    ("ucirc", "\u{fb}"),
+    ("uuml", "\u{fc}"),
+    ("yacute", "\u{fd}"),
+    ("thorn", "\u{fe}"),
+    ("yuml", "\u{ff}"),
+    ("ndash", "\u{2013}"),
+    ("mdash", "\u{2014}"),
+    ("lsquo", "\u{2018}"),
+    ("rsquo", "\u{2019}"),
+    ("sbquo", "\u{201a}"),
+    ("ldquo", "\u{201c}"),
+    ("rdquo", "\u{201d}"),
+    ("bdquo", "\u{201e}"),
+    ("dagger", "\u{2020}"),
+    ("Dagger", "\u{2021}"),
+    ("bull", "\u{2022}"),
+    ("hellip", "\u{2026}"),
+    ("permil", "\u{2030}"),
+    ("prime", "\u{2032}"),
+    ("Prime", "\u{2033}"),
+    ("lsaquo", "\u{2039}"),
+    ("rsaquo", "\u{203a}"),
+    ("oline", "\u{203e}"),
+    ("euro", "\u{20ac}"),
+    ("trade", "\u{2122}"),
+    ("larr", "\u{2190}"),
+    ("uarr", "\u{2191}"),
+    ("rarr", "\u{2192}"),
+    ("darr", "\u{2193}"),
+];
+
+/// `java.jsoupUnescapeEntities(s)` → 反转义 HTML 实体
+///
+/// 对齐 `org.jsoup.parser.Parser#unescapeEntities(s, base)` 的常用面
+/// （77读书正文规则 `Parser.unescapeEntities(htm, true)`，`base` 参数
+/// 宿主侧忽略——书源仅传 HTML base，不传 XML base）：
+/// - `#ddd` 十进制 / `#xhh` 十六进制数字实体 → 对应字符，非法码点原样保留；
+/// - 命名实体查 [`NAMED_ENTITIES`] 内置表；
+/// - 未知命名实体 / 无 `;` 终止的片段 → 原样保留（对齐 jsoup 不改写
+///   未知实体的行为，非静默丢弃）。
+pub fn jsoup_unescape_entities(input: &str) -> String {
+    let chars: Vec<char> = input.chars().collect();
+    let mut out = String::with_capacity(input.len());
+    let mut i = 0usize;
+    while i < chars.len() {
+        if chars[i] != '&' {
+            out.push(chars[i]);
+            i += 1;
+            continue;
+        }
+        // 12 字符窗口内找 `;` 终止（对齐 jsoup Parser 的实体长度上限）
+        let mut end: Option<usize> = None;
+        let mut j = i + 1;
+        while j < chars.len() && j - i <= 12 {
+            if chars[j] == ';' {
+                end = Some(j);
+                break;
+            }
+            if chars[j].is_ascii_alphanumeric() || chars[j] == '#' {
+                j += 1;
+            } else {
+                break;
+            }
+        }
+        let Some(e_end) = end else {
+            out.push('&');
+            i += 1;
+            continue;
+        };
+        let entity: String = chars[(i + 1)..e_end].iter().collect();
+        let replacement = if let Some(hex) = entity
+            .strip_prefix("#x")
+            .or_else(|| entity.strip_prefix("#X"))
+        {
+            u32::from_str_radix(hex, 16)
+                .ok()
+                .and_then(std::char::from_u32)
+                .map(|c| c.to_string())
+        } else if let Some(dec) = entity.strip_prefix('#') {
+            dec.parse::<u32>()
+                .ok()
+                .and_then(std::char::from_u32)
+                .map(|c| c.to_string())
+        } else {
+            NAMED_ENTITIES
+                .iter()
+                .find(|(name, _)| **name == entity)
+                .map(|(_, rep)| rep.to_string())
+        };
+        match replacement {
+            Some(r) => out.push_str(&r),
+            None => out.push_str(&chars[i..=e_end].iter().collect::<String>()),
+        }
+        i = e_end + 1;
+    }
+    out
 }
 
 /// `java.getString(rule, mContent)` → 多值换行连接（mContent 空=当前 src）
@@ -1040,5 +1359,90 @@ mod tests {
                 Ok(())
             })
             .unwrap();
+    }
+
+    /// Elements 集合 API（77读书搜索规则 `rows.size()` / `rows.get(i)`）：
+    /// 表格行计数与按索引取元素（attr/text/html 三级）
+    #[test]
+    fn test_jsoup_elements_indexed_access() {
+        let html = "<table><tr><td>列0</td><td>[玄幻]</td><td><a href=\"/novel/1\">书名A</a></td><td><a>章A</a></td><td>c4</td><td><span>作者甲</span></td><td>c6</td><td>1200K</td></tr><tr><td>列0</td><td>[都市]</td><td><a href=\"/novel/2\">书名B</a></td><td><a>章B</a></td><td>c4</td><td><span>作者乙</span></td><td>c6</td><td>88K</td></tr><tr><td>短行</td></tr></table>";
+        assert_eq!(jsoup_size(html, "tr"), 3);
+        assert_eq!(jsoup_size(html, "tr td"), 17);
+        // 行集合内按索引取元素（text/html 三级）
+        let row1 = jsoup_html_n(html, "tr", 1);
+        assert!(row1.contains("书名B"));
+        assert_eq!(
+            jsoup_text_n(html, "tr", 0),
+            "列0[玄幻]书名A章Ac4作者甲c61200K"
+        );
+        // 元素作用域内再选子元素（对齐 JS 桥 `rows.get(i).select('a')`：
+        // 集合 scope = 元素自身 html 快照）
+        let row0 = jsoup_html_n(html, "tr", 0);
+        assert!(row0.contains("<td>列0</td>"));
+        assert_eq!(jsoup_size(&row0, "a"), 2);
+        assert_eq!(jsoup_attr_n(&row0, "a", 0, "href"), "/novel/1");
+        assert_eq!(jsoup_attr_n(&row0, "a", 1, "href"), ""); // 章A 的 a 无 href → 空串
+                                                             // 越界 → 空串（宽松语义）
+        assert_eq!(jsoup_text_n(html, "tr", 99), "");
+        assert_eq!(jsoup_attr_n(html, "tr", 99, "x"), "");
+        assert_eq!(jsoup_html_n(html, "tr", 99), "");
+    }
+
+    /// `jsoup_html_n_excluded`：移除子元素后的元素视图（77读书正文
+    /// `tp.get(0).remove()` 后 `e.html()` 不得再含被移除块）
+    #[test]
+    fn test_jsoup_html_n_excluded() {
+        let html = "<div id=\"ChapterContents\"><p>正文第一段</p><div id=\"content_tip\">提示框广告</div><p>正文第二段</p><div class=\"tip2\">尾部块</div></div>";
+        // 不移除：原样
+        let base = jsoup_html_n(html, "div#ChapterContents", 0);
+        assert!(base.contains("提示框广告"));
+        // 单选择器移除
+        let r1 = jsoup_html_n_excluded(html, "div#ChapterContents", 0, "div#content_tip");
+        assert!(!r1.contains("提示框广告"));
+        assert!(r1.contains("正文第一段") && r1.contains("正文第二段"));
+        assert!(r1.contains("<div class=\"tip2\">尾部块</div>"));
+        // 多选择器移除（换行分隔）
+        let r2 = jsoup_html_n_excluded(html, "div#ChapterContents", 0, "div#content_tip\ndiv.tip2");
+        assert!(!r2.contains("提示框广告") && !r2.contains("尾部块"));
+        assert!(r2.contains("正文第一段") && r2.contains("正文第二段"));
+        // 空 excludes → 等价 base
+        assert_eq!(
+            jsoup_html_n_excluded(html, "div#ChapterContents", 0, ""),
+            base
+        );
+        // 越界 i → 空串
+        assert_eq!(
+            jsoup_html_n_excluded(html, "div#ChapterContents", 9, "div#content_tip"),
+            ""
+        );
+    }
+
+    /// 实体反转义：数字实体（十/十六）+ 命名实体 + 未知实体原样保留
+    #[test]
+    fn test_jsoup_unescape_entities() {
+        // 数字实体（十进制 + 十六进制；用可见字符避免空白字面量歧义）
+        assert_eq!(jsoup_unescape_entities("&#65;&#x42;"), "AB");
+        assert_eq!(jsoup_unescape_entities("&#32;"), "\u{20}"); // 空格
+        assert_eq!(jsoup_unescape_entities("&#27665;"), "\u{6c11}"); // 民
+                                                                     // 命名实体（书源正文高频）
+        assert_eq!(
+            jsoup_unescape_entities("&lt;div&gt;&amp;&quot;&apos;&nbsp;"),
+            "<div>&\"'\u{a0}"
+        );
+        assert_eq!(
+            jsoup_unescape_entities("&mdash;&hellip;&ldquo;x&rdquo;"),
+            "\u{2014}\u{2026}\u{201c}x\u{201d}"
+        );
+        // 未知命名实体 / 无分号终止 → 原样保留（非静默丢弃）
+        assert_eq!(
+            jsoup_unescape_entities("&bogus; &amp &xzzz1;"),
+            "&bogus; &amp &xzzz1;"
+        );
+        // 非法数字码点（0x110000 超 u32 范围不成立；用非法代理区 0xD800）
+        assert_eq!(jsoup_unescape_entities("&#55296;"), "&#55296;");
+        // 普通文本原样
+        assert_eq!(jsoup_unescape_entities("no entities"), "no entities");
+        // 无 `;` 时只保留 `&` 本身并继续扫描
+        assert_eq!(jsoup_unescape_entities("a & b"), "a & b");
     }
 }
