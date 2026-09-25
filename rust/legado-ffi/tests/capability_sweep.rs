@@ -610,6 +610,21 @@ fn scan_bare_calls(text: &str, out: &mut BTreeSet<String>) {
 
 /// 从 BookSource 收集全部 JS 片段（label, text）。
 fn collect_fragments(src: &BookSource) -> Vec<(&'static str, String)> {
+    // 整行注释剥离（2026-09-26）：`// …` 独占行不构成运行时符号引用——
+    // 语料实证：Linpx/兽人 loginCheckJs 的「Sigma 版本新增函数」注释清单
+    // （`// cookie.setWebCookie(url,cookie)`）被计入缺失 2 源（假阳性）。
+    // 仅剥**整行**注释：URL 中的 `//`（如 `https://`）出现在行中段不受影响；
+    // 行内尾注释与 /* */ 块注释不处理（无证据且误伤面大）。
+    fn strip_full_line_comments(s: &str) -> String {
+        s.lines()
+            .filter(|l| {
+                let t = l.trim_start();
+                !(t.starts_with("//") && !t[2..].trim_start().starts_with('@'))
+            })
+            .collect::<Vec<_>>()
+            .join("
+")
+    }
     let mut out: Vec<(&'static str, String)> = Vec::new();
     if let Some(js_lib) = &src.js_lib {
         if !js_lib.is_empty() {
@@ -695,6 +710,7 @@ fn collect_fragments(src: &BookSource) -> Vec<(&'static str, String)> {
             out.push(("loginUrl", login_url.clone()));
         }
     }
+    out.iter_mut().for_each(|(_, text)| *text = strip_full_line_comments(text));
     out
 }
 
