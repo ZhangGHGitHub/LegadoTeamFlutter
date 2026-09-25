@@ -320,7 +320,7 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **② 目录派生字段同步 PASS**：换源前后 DB `totalChapterNum 3→5`、`latestChapterTitle 第三章三→第五章戊`，与目录页/新源逐项一致。
   - **③ 后台进度保存（C3）PASS**：翻到全局页 5/6 → `am start SETTINGS` 逼后台（ResumedActivity 已非本 app）→ **DB chPos 3→4、durChapterTime=后台时刻** → force-stop → 重进**精确还原 5/6**；正常返回键退出对照 PASS。
   - **双入口去重回归 PASS**（每入口一条进行中/结果条，无残留）。
-  - **新发现（登记，未修）**：换源后阅读器「下一章预览」未刷新（预览缓存为旧源内容）——小尾巴待查。
+  - **新发现（已修，2026-09-26）**：换源后阅读器「下一章预览」未刷新（预览缓存为旧源内容）——已修（`93d894156f`）：预览失效条件由「仅章号判变」扩为「章号或内容变化即清相邻章预览/在途标记」，在途预载补 bookUrl 守卫防旧源结果回写；flutter test 1682 全绿。
   - 证据 `docs/parity_shots/verify_ui_20260922/swd_*`。
 - **第 2 波补充：换源三修复的真机验证（2026-09-24，新端点 `192.168.100.63:5555`，MuMu 实例重启后 guest NAT 子网由 192.168.1.x 漂到 192.168.100.x）**：
   - ① 换源感知等待主流程 **PASS**：勾「加载目录」→ 搜索阶段预拉 → 选中**数秒完成** + toast「已更换书源：📂绿色小说」；对照**取消路径 PASS**（书架数据逐字段未变、无崩溃、可再次发起）。
@@ -386,6 +386,7 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **3b-5**：Packages 树补 `android.text.TextUtils.isEmpty`（Kotlin `null||len==0` 语义，#135 阅文）；
   - **任务4 对账**：sweep 五清单同步（CAPABILITY_NAMES 167→**172**、COOKIE_PROVIDED +3、CACHE_PROVIDED +dev_id、PACKAGES_KNOWN +android.text.TextUtils、新增 JAVA_OBJECT_MEMBERS 属性特例 java.url/headerMap）；916 源干跑 after **ok=862/c=50/b=2/a=2**（before ok=862/c=50/b=4/a=0）：b→a 2 条 = #626/#888 69书吧——混淆 jsLib 经批次2修复推进至 JVM 锁能力（`java.util.concurrent.locks`）并以可读文案报「此书源需要 Java 脚本能力」，**诊断精度提升非回归**（前态为混淆体内 `not a function`），锁桩不立项登记待下轮分诊；静态缺失表 **37→31（本批 6 项全消除、零新增）**；`cookie.split` 定性为本地 JS 变量假阳性保留在表注记；
   - **遗留**：UI 桥 java.open/java.openWeb/java.showPhoto「确认暂缓」；`cookie.setWebCookie`（语料 2 命中）与 response.cookies() 已登记说明；证据 `.tmp/capability_sweep/`（gate_r2/r3_*.log、dry_run_*.batch2final.*、static_report.batch2final.before.*）与 `.tmp/capability_batch2_progress.md`。
+  - **低优尾巴闭环（2026-09-26，同批 `93d894156f`/`6fd155853f`）**：①换源「下一章预览」未刷新——已修（见上）；②08 屏「在读/最新」行左缘 13dp→16dp 对齐参考（QUEUE_CLOSURE_20260922 低优遗留）——已修；③进度列 remap（上游 migrateTo 与 B-3 取向冲突）——维持「保留」裁决；④D1 系统 TTS 桥双端死代码——维持「登记不改」（朗读实走 Rust httpTTS）；⑤G1「网络代理」设置无消费点——维持「登记不改」（接线属新功能需授权）；⑥源侧数据问题（终极全栖接口域名失效等）——书源方问题不立项。**低优尾巴清单至此全部有归属。**
 - **Top-10 分诊（详见清扫报告）**：`java.searchBook` 宿主回调（5 源，M）/`cookie.getKey`（4 源，S/低）/`cache.getFromMemory/putMemory/deleteMemory`（4+2 源，S/低）/远程 jsLib 加载器（4 源，S-M/低）/重复形参宽容（3 源，M/中）/`java.open` UI 桥（3 源，M）……小工具批（各 1 源，整批 S/低）：HMacBase64/tripleDES/base64Decoder/hexEncodeToString/cookie.mapToCookie 等。**合计可救活约 39–42 源（4.3–4.6%）**。
   - **确认不做**：`JavaImporter`/`Java.type`（无 JVM）、`Packages.okhttp3` 第二套 HTTP 栈（java.* 已覆盖，源侧迁移）、`com.*` 本地 App 包互操作、`Packages.android.graphics.BitmapFactory`（JVM 图形栈）。
   - 清扫入口已入库（`capability_sweep.rs`，含静态对账与干跑，可随时重跑）；修复批次按 Top-10 排期，等用户指示。
