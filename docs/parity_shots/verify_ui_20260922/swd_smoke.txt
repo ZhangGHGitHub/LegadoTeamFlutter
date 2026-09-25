@@ -1,0 +1,14 @@
+=== 冒烟测试（scripts/emulator_smoke_test.ps1 -Device 192.168.100.63:5555）===
+时间: 2026-09-25 (本轮 swd)
+结果: PASSED (通过 7 / 失败 0)
+
+关键记录（汇报项①）:
+- 端点: 192.168.100.63:5555 (MuMu guest, NAT 192.168.100.x)
+- 是否重编 .so: 是。Rust 源码指纹 1e1c4c9da19b9e61... ≠ .so 指纹 14da1f38a9f1ae8e...
+  → 自动重编 aarch64-v8a (49.91s) + x86_64 (41.18s)，release 模式
+  → 重编后 FFI verify PASSED（FRB hash 519116798 + 源码指纹一致）
+- APK: flutter build apk --debug 成功，304.4 MB
+- 安装: adb install -r Success
+- versionName: 2.0.308（与 pubspec 一致）
+- 进程存活: u0_a55 2324 io.legado.flutter_legado
+- 崩溃日志检查（启动后 -t 300）: 无 FATAL/E/flutter

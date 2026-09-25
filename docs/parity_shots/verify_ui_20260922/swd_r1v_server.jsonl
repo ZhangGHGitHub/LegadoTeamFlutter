@@ -1,0 +1,38 @@
+{"ts": 1790320548.771, "kind": "server_start", "port": 8092, "mode": "r1v"}
+{"ts": 1790320553.622, "kind": "req", "path": "/r1v/sources.json"}
+{"ts": 1790320553.622, "kind": "sources_json"}
+{"ts": 1790320633.83, "kind": "req", "path": "/r1v/sources.json"}
+{"ts": 1790320633.831, "kind": "sources_json"}
+{"ts": 1790320825.524, "kind": "req", "path": "/r1v/sources.json"}
+{"ts": 1790320825.524, "kind": "sources_json"}
+{"ts": 1790321036.39, "kind": "req", "path": "/r1v/sources.json"}
+{"ts": 1790321036.39, "kind": "sources_json"}
+{"ts": 1790321386.399, "kind": "req", "path": "/r1v/sources.json"}
+{"ts": 1790321386.399, "kind": "sources_json"}
+{"ts": 1790321388.768, "kind": "req", "path": "/r1vb/search?kw=R1%E6%8D%A2%E6%BA%90%E9%AA%8C%E8%AF%81%E4%B9%A62"}
+{"ts": 1790321388.843, "kind": "req", "path": "/r1va/search?kw=R1%E6%8D%A2%E6%BA%90%E9%AA%8C%E8%AF%81%E4%B9%A62"}
+{"ts": 1790321675.091, "kind": "req", "path": "/r1va/detail"}
+{"ts": 1790321685.675, "kind": "req", "path": "/r1va/search?kw=R1%E6%8D%A2%E6%BA%90%E9%AA%8C%E8%AF%81%E4%B9%A6"}
+{"ts": 1790321685.742, "kind": "req", "path": "/r1vb/search?kw=R1%E6%8D%A2%E6%BA%90%E9%AA%8C%E8%AF%81%E4%B9%A6"}
+{"ts": 1790321826.528, "kind": "req", "path": "/r1vb/detail?vid=VID123"}
+{"ts": 1790321826.532, "kind": "req", "path": "/r1vb/toc?tok=TK777"}
+{"ts": 1790321826.54, "kind": "req", "path": "/r1vb/content?i=0&tok=TK777"}
+{"ts": 1790321826.578, "kind": "req", "path": "/r1vb/content?i=2&tok=TK777"}
+{"ts": 1790321826.578, "kind": "req", "path": "/r1vb/content?i=1&tok=TK777"}
+{"ts": 1790322324.561, "kind": "req", "path": "/r1vb/detail?vid=VID123"}
+{"ts": 1790322648.492, "kind": "req", "path": "/r1vb/detail?vid=VID123"}
+{"ts": 1790322648.515, "kind": "req", "path": "/r1vb/content?i=0&tok=TK777"}
+{"ts": 1790322661.052, "kind": "req", "path": "/r1vb/detail?vid=VID123"}
+{"ts": 1790322687.854, "kind": "req", "path": "/r1va/detail"}
+{"ts": 1790322687.856, "kind": "req", "path": "/r1va/toc"}
+{"ts": 1790322687.897, "kind": "req", "path": "/r1va/detail"}
+{"ts": 1790322741.048, "kind": "req", "path": "/r1va/content?i=0&tok=TK777"}
+{"ts": 1790322741.062, "kind": "req", "path": "/r1va/content?i=1&tok=TK777"}
+{"ts": 1790322776.496, "kind": "req", "path": "/r1vb/detail?vid=VID123"}
+{"ts": 1790322776.498, "kind": "req", "path": "/r1vb/toc?tok=TK777"}
+{"ts": 1790322776.504, "kind": "req", "path": "/r1vb/content?i=0&tok=TK777"}
+{"ts": 1790322836.194, "kind": "req", "path": "/r1vb/detail?vid=VID123"}
+{"ts": 1790323463.872, "kind": "req", "path": "/r1vb/search?kw=R1%E6%8D%A2%E6%BA%90%E9%AA%8C%E8%AF%81%E4%B9%A62"}
+{"ts": 1790323463.892, "kind": "req", "path": "/r1va/search?kw=R1%E6%8D%A2%E6%BA%90%E9%AA%8C%E8%AF%81%E4%B9%A62"}
+{"ts": 1790323855.657, "kind": "req", "path": "/r1vb/search?kw=R1%E6%8D%A2%E6%BA%90%E9%AA%8C%E8%AF%81%E4%B9%A62"}
+{"ts": 1790323855.706, "kind": "req", "path": "/r1va/search?kw=R1%E6%8D%A2%E6%BA%90%E9%AA%8C%E8%AF%81%E4%B9%A62"}

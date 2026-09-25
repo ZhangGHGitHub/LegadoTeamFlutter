@@ -1,0 +1,3 @@
+R1换源验证书~http://127.0.0.1:8092/r1va/detail~http://127.0.0.1:8092/r1vb/detail?vid={{svid}}~http://127.0.0.1:8092/r1v/home/b~3~第三章 终局
+R1换源验证书2~http://127.0.0.1:8093/wa/detail~~http://127.0.0.1:8093/r1w/home/a~3~第三章 三
+R1换源验证书~var~{"svid":"VID123","tok":"TK777"}

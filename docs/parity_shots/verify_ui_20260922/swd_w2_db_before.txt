@@ -1,0 +1,2 @@
+http://127.0.0.1:8092/r1va/detail|http://127.0.0.1:8092/r1v/home/b|R1VB|http://127.0.0.1:8092/r1vb/detail?vid={{svid}}|3|第三章 终局|第一章 起源|0|0
+http://127.0.0.1:8093/wa/detail|http://127.0.0.1:8093/r1w/home/a|SWA||3|第三章 三|第一章 一|0|0

@@ -1,0 +1,8 @@
+=== books 全量基线（2026-09-25 swd 轮，恢复目标）===
+http://www.biqugere.net/biquge/233076/~https://www.dmx5.cc#~📂女生文学#书源.com~重生高考前99天~8~895~527~0~第888章 和宋时微的拥抱~第527章 台阶~https://www.dmx5.cc/book/65/65772/
+https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468914~https://www.deqixs.org~📂得奇小说网~斗破苍穹~8~999~0~3~第999章 白狐引起的血案~第1章 陨落的天才~https://www.deqixs.org/198/
+
+=== cached_chapters 按书分布 ===
+http://127.0.0.1:8092/r1va/detail : 2
+http://www.biqugere.net/biquge/233076/ : 10
+https://bookshelf.html5.qq.com/qbread/api/novel/intro-info?bookid=1100468914 : 3

@@ -1,0 +1,8 @@
+{"ts": 1790323855.724, "kind": "req", "path": "/wa/search?kw=R1%E6%8D%A2%E6%BA%90%E9%AA%8C%E8%AF%81%E4%B9%A62"}
+{"ts": 1790323855.753, "kind": "req", "path": "/wb/search?kw=R1%E6%8D%A2%E6%BA%90%E9%AA%8C%E8%AF%81%E4%B9%A62"}
+{"ts": 1790323915.96, "kind": "req", "path": "/wa/detail"}
+{"ts": 1790323915.96, "kind": "req", "path": "/wb/detail"}
+{"ts": 1790323915.962, "kind": "req", "path": "/wa/toc"}
+{"ts": 1790323915.964, "kind": "req", "path": "/wa/detail"}
+{"ts": 1790323925.963, "kind": "req", "path": "/wb/toc"}
+{"ts": 1790323935.965, "kind": "req", "path": "/wb/detail"}

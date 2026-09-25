@@ -1,0 +1,23 @@
+==> force-stop io.legado.flutter_legado
+[books R1VA] 5000
+[chapters R1VA] 5000
+[cached_chapters R1VA] 5000
+[books SWA] 5000
+[chapters SWA] 5000
+[cached_chapters SWA] 5000
+B1=http://127.0.0.1:8092/r1va/detail o=http://127.0.0.1:8092/r1v/home/a tot=3 lt=[第三章 终局] dci=0 dcp=0
+B1=http://127.0.0.1:8093/wa/detail o=http://127.0.0.1:8093/r1w/home/a tot=3 lt=[第三章 三] dci=0 dcp=0
+CH1=3
+CC1=3
+CH2=3
+CC2=3
+Error: in prepare, near ",": syntax error
+  ookSourceUrl IN 'http://127.0.0.1:8092/r1v/home/a','http://127.0.0.1:8092/r1v/
+                                      error here ---^
+B1=http://127.0.0.1:8092/r1va/detail o=http://127.0.0.1:8092/r1v/home/a tot=3 lt=[第三章 终局] dci=0 dcp=0
+B1=http://127.0.0.1:8093/wa/detail o=http://127.0.0.1:8093/r1w/home/a tot=3 lt=[第三章 三] dci=0 dcp=0
+CH1=3
+CC1=3
+CH2=3
+CC2=3
+BS_fixture=0
