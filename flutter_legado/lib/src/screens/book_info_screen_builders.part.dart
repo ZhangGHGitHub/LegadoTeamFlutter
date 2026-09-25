@@ -1179,7 +1179,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
     // 16sp w700；最新行墨高 40px/字宽 38px≈13sp 常规字重 → 13sp
     Widget line(String text, {double fontSize = 13, FontWeight? weight}) =>
         Padding(
-          padding: const EdgeInsets.only(left: 13, top: 6),
+          // [08 左缘对齐 | 台账 0922 遗留闭环 2026-09-26] 参考
+          // BookInfoSummary start=16dp（ref x=48），我方 13dp（x=39）差 3dp
+          padding: const EdgeInsets.only(left: 16, top: 6),
           child: Text(
             text,
             maxLines: 1,

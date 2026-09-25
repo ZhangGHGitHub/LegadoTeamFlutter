@@ -557,7 +557,11 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
 
     // [UI_SYNC_REFACTOR S6 修 | 2026-09-08] 记录分页参数（相邻章预载复用
     // 同参）并在章变更时清相邻章预览（防旧章预览/位图残留）— Qoder
-    final chapterChanged = _paginatedChapterIndex != chapterIndex;
+    // [换源预览修复 | 2026-09-26] 换源后同章号内容被整章替换（index 不变），
+    // 仅按章号判变会让章边界承接页残留旧源文本——内容变化同样清相邻章
+    // 预览与在途标记，eager 预载随后以新源 bookUrl 重建 — Qoder
+    final chapterChanged = _paginatedChapterIndex != chapterIndex ||
+        content != _paginatedContent;
     _pagedConfig = config;
     _pagedWidth = availableWidth;
     _pagedHeight = availableHeight;
@@ -910,6 +914,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     }
     final book = state.currentBook;
     final baseChapter = state.currentChapterIndex;
+    // [换源预览修复 | 2026-09-26] 在途预载须同时校验 bookUrl：换源后章号
+    // 往往不变，仅校验章号会让旧源拉取的结果回写、覆盖新源预览 — Qoder
+    final baseBookUrl = book?.bookUrl;
     final target = baseChapter + delta;
     final config = _pagedConfig;
     final availableWidth = _pagedWidth;
@@ -924,9 +931,10 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
           .read(bookApiProvider)
           .getChapterContentFull(book.bookUrl, target);
       if (!mounted) return;
-      // 发起后章节已切换则作废
-      if (ref.read(readerNotifierProvider).currentChapterIndex !=
-          baseChapter) {
+      // 发起后章节已切换或已换源（bookUrl 变）则作废
+      final live = ref.read(readerNotifierProvider);
+      if (live.currentChapterIndex != baseChapter ||
+          live.currentBook?.bookUrl != baseBookUrl) {
         return;
       }
       if (content.trim().isEmpty) {

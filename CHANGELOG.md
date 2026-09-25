@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.309] - 2026-09-26
+
+### Fixed
+- [Rust] **书源脚本引擎能力对账（两批，静态缺失 37→31 项）**：对齐 916 源语料实测缺口——`cookie.getKey/replaceCookie/cookieToMap/mapToCookie` 全套、`cache` 内存三方法与 `cache.dev_id`、远程 jsLib 加载器（URL 映射逐条拉取+降级）、prologue 变量冲突与重复形参宽容（书旗/长佩/乐乎等源搜索失败根因）、DESede/HMAC 摘要与 `HMacBase64`/`base64Decoder`/`hexEncodeToString`/`sleep` 别名（阅文系解密）、URL 规则窗口 `java.url`/`java.headerMap.put`（刚够小说网防爬 Cookie）、`Packages.android.text.TextUtils.isEmpty`。能力面 164→172。
+- [UI] **换源后阅读器章边界不再残留旧源内容预览**：预览失效此前只按章号判定，换源同章号整章替换不触发；现内容变化即清相邻章预览，在途预载增加 bookUrl 守卫防旧源结果回写。
+- [UI] **详情页「在读/最新」行左缘对齐参考版**（13dp→16dp，参考 BookInfoSummary 实测）。
+
 ## [2.0.308] - 2026-09-23
 
 ### Fixed
