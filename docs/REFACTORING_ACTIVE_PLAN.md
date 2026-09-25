@@ -370,7 +370,12 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **静态对账**：缺失符号 38 个（按引用源数）；已提供并被高频引用的宿主函数 TOP：ajax(184 源)/getString(103)/get(97)/log(96)/put(81)/removeCookie(73)/toast(61)/base64Decode(52)。
   - **干跑分类**：ok-离线可跑 **856 源（93.5%）**｜需网络/登录 **48 源（5.2%，离线不可判）**｜JS 语法/引用错误 **12 源（6 簇，见下）**｜缺失 Java 能力（可达路径）**0**｜**引擎内部错误（panic）0——916 源无任何引擎崩溃，健壮性通过**。
   - **b 类 12 源定因（6 簇）**：远程库 jsLib 加载器未实现（4 源，cdn 的 crypto-js 被当 JS 编译）；QuickJS 严格性——重复形参（3 源，Rhino 容忍 QuickJS 拒）；JavaImporter（Rhino 专有，2 源）；混淆 jsLib 兼容性（2 源，obfuscator.io 产物）；prologue 变量冲突（2 源）。
-  - **Top-10 分诊（详见清扫报告）**：`java.searchBook` 宿主回调（5 源，M）/`cookie.getKey`（4 源，S/低）/`cache.getFromMemory/putMemory/deleteMemory`（4+2 源，S/低）/远程 jsLib 加载器（4 源，S-M/低）/重复形参宽容（3 源，M/中）/`java.open` UI 桥（3 源，M）……小工具批（各 1 源，整批 S/低）：HMacBase64/tripleDES/base64Decoder/hexEncodeToString/cookie.mapToCookie 等。**合计可救活约 39–42 源（4.3–4.6%）**。
+  - **第一批落地（2026-09-25，Top-10 之 2/3 + 远程 jsLib 加载器，已提交）**：
+  - `cookie.getKey(url, key)`：对齐上游 `CookieStore.getKey`（miss → 空串；读侧按域名归属复用 `cookies_for_url` 同一口径）；
+  - `cache.putMemory/getFromMemory/deleteMemory`：对齐上游 `CacheManager` 50MB 内存 LRU（进程内存态、无 TTL、miss → null；独立命名空间不与 DB `cache` 表混淆）；
+  - **远程 jsLib 加载器**：`jsLib` 为 URL 映射（`{"name": "https://..."}`）时逐条拉取（共享客户端、30s 超时、2MB 上限、md5(url) 缓存 64 条）并 eval；失败 → 台账 + 跳过该条降级（**有意分叉**：上游单条失败抛错整源中断，我方降级继续——已注释登记）；
+  - **前后对照（capability_sweep 重跑）**：静态缺失表 4 符号归零、宿主函数面 164→167；干跑 ok 856→859、b 类 12→9（「远程库 jsLib 加载器未实现」4 源簇消失）。
+- **Top-10 分诊（详见清扫报告）**：`java.searchBook` 宿主回调（5 源，M）/`cookie.getKey`（4 源，S/低）/`cache.getFromMemory/putMemory/deleteMemory`（4+2 源，S/低）/远程 jsLib 加载器（4 源，S-M/低）/重复形参宽容（3 源，M/中）/`java.open` UI 桥（3 源，M）……小工具批（各 1 源，整批 S/低）：HMacBase64/tripleDES/base64Decoder/hexEncodeToString/cookie.mapToCookie 等。**合计可救活约 39–42 源（4.3–4.6%）**。
   - **确认不做**：`JavaImporter`/`Java.type`（无 JVM）、`Packages.okhttp3` 第二套 HTTP 栈（java.* 已覆盖，源侧迁移）、`com.*` 本地 App 包互操作、`Packages.android.graphics.BitmapFactory`（JVM 图形栈）。
   - 清扫入口已入库（`capability_sweep.rs`，含静态对账与干跑，可随时重跑）；修复批次按 Top-10 排期，等用户指示。
 
