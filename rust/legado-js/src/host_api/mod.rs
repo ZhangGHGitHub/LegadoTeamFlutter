@@ -25,6 +25,10 @@ pub mod global_headers;
 pub mod html_format;
 #[cfg(feature = "quickjs")]
 pub mod html_parse;
+/// 远程 jsLib 加载器（cap 3：URL 映射 jsLib 经共享客户端拉取 + 进程缓存
+/// + 台账降级；随 quickjs feature 门控——依赖网络/引擎宿主面）
+#[cfg(feature = "quickjs")]
+pub mod jslib_loader;
 pub mod json_utils;
 /// java.security.MessageDigest 摘要核心（MD5/SHA-1/SHA-256/SHA-512，复用
 /// md-5/sha1/sha2 既有依赖；随 quickjs feature 门控）

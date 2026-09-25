@@ -998,6 +998,39 @@ mod tests {
         clear_cookies(WRITE_URL);
         clear_cookies(DK);
     }
+
+    /// cap 1（cookie.getKey 面）：读侧按键读取（`get_cookie_by_key`，即
+    /// `java.getCookie(url, key)` 两参形态）——跨子域命中同一域名键、
+    /// miss 空串（对齐上游 `mergeCookiesToMap[key] ?: ""` 不抛错）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_get_cookie_by_key_cross_subdomain_domain_key() {
+        let _lock = lock_cookie_store_test();
+        const WRITE_URL: &str = "https://www.capb1gk1.example.com/";
+        clear_cookies(WRITE_URL);
+        set_cookie(WRITE_URL, "csrf", "cap123");
+        // 读侧跨子域归一同一域名键（capb1gk1.example.com）
+        assert_eq!(
+            get_cookie_by_key("https://a.capb1gk1.example.com/", "csrf"),
+            "cap123",
+            "跨子域读必须命中同一域名键"
+        );
+        assert_eq!(
+            get_cookie_by_key("http://capb1gk1.example.com/", "csrf"),
+            "cap123",
+            "协议差异不影响域名键（http/https 同域）"
+        );
+        // miss → 空串（不抛错）
+        assert_eq!(
+            get_cookie_by_key("https://a.capb1gk1.example.com/", "noSuchKey"),
+            "",
+            "miss 必须空串"
+        );
+        // 无 key 全域串形态（getCookie(url)）
+        let all = get_cookie("https://capb1gk1.example.com/");
+        assert!(all.contains("csrf=cap123"), "全域串必须含 key: {all}");
+        clear_cookies(WRITE_URL);
+    }
 }
 
 // ─── 持久化下沉（sink）测试 ─────────────────────────────────────────────────────

@@ -119,14 +119,47 @@ pub fn sanitize_js_lib_for_quickjs(js_lib: &str) -> String {
     out
 }
 
-/// explore/callback 上下文加载 jsLib：完整 → sanitize 后完整 → QuickJS 前缀 → 仅 host 声明
+/// explore/callback 上下文加载 jsLib：URL 映射（cap 3）→ 完整 → sanitize 后完整 →
+/// QuickJS 前缀 → 仅 host 声明
+///
+/// `source_tag` 用于 URL 映射拉取失败的台账键（`explore:{source_tag}`，与
+/// 执行器路径 `executor:{source_tag}` 同构）
 #[cfg(feature = "quickjs")]
-pub fn load_js_lib_for_explore(guard: &legado_js::QuickJsEngine, js_lib: Option<&str>) {
+pub fn load_js_lib_for_explore(
+    guard: &legado_js::QuickJsEngine,
+    source_tag: &str,
+    js_lib: Option<&str>,
+) {
     use legado_js::JsEngine;
 
     let Some(lib) = js_lib.map(str::trim).filter(|s| !s.is_empty()) else {
         return;
     };
+
+    // 0) cap 3（URL 映射 jsLib）：经加载器解析（共享客户端拉取 + 进程缓存 +
+    //    逐条降级台账登记）→ eval 拼接脚本；非 URL 映射形态走下列原始级联
+    let is_url_map = legado_js::host_api::jslib_loader::parse_js_lib_url_map(lib).is_some();
+    if is_url_map {
+        let ledger_tag = format!("explore:{}", source_tag);
+        match legado_js::host_api::jslib_loader::resolve_js_lib_url_map(
+            lib,
+            &ledger_tag,
+            &legado_js::host_api::jslib_loader::default_js_lib_fetcher,
+        ) {
+            Some(script) => {
+                if guard.eval(&script).is_ok() {
+                    return;
+                }
+                eprintln!("[explore] URL 映射 jsLib eval 失败（降级继续）");
+            }
+            // 全条拉取失败：加载器内已逐条记台账（上游「下载jsLib-…失败」措辞）
+            None => eprintln!(
+                "[explore] 书源 {source_tag} URL 映射 jsLib 全条拉取失败（台账已登记，降级继续）"
+            ),
+        }
+        // URL 映射形态不回退原始级联（原始 JSON 非合法 JS，级联只会重复失败）
+        return;
+    }
 
     // 1) 完整 jsLib（引擎 eval 已非严格：全局可见 + 函数裸调用 this=globalThis，
     //    对齐 Rhino 语义；书山等聚合源函数 `let { source } = this` 可用）
@@ -221,6 +254,14 @@ var cookie = {{
     }}
     return java.getCookie(String(url), String(key));
   }},
+  // 对齐上游 CookieStore.getKey：按键读（域归属，miss → 空串不抛错）；
+  // 无 key 形态返回全域串（上游 JsExtensions key 为 null 时取全串）
+  getKey: function(url, key) {{
+    if (key === undefined || key === null || key === '') {{
+      return java.getCookie(String(url));
+    }}
+    return java.getCookie(String(url), String(key));
+  }},
   setCookie: function(url, value) {{ return java.setCookie(String(url), String(value)); }},
   clearCookies: function(url) {{ return java.clearCookies(String(url)); }},
   removeCookie: function(url) {{ return java.removeCookie(String(url)); }}
@@ -228,7 +269,14 @@ var cookie = {{
 var cache = {{
   get: function(k) {{ return get(String(k)) || null; }},
   put: function(k, v) {{ put(String(k), String(v)); return v; }},
-  remove: function(k) {{ removeVariable(String(k)); return true; }}
+  remove: function(k) {{ removeVariable(String(k)); return true; }},
+  // 对齐上游 CacheManager memoryLruCache（WebCacheManager JS 面）：
+  // 进程级内存缓存，与磁盘 cache 表 / 会话变量独立命名空间，无 TTL，
+  // 跨书源共享（同进程），重启丢失；miss 显式 null（语料判缺式
+  // `v === undefined || v === null`）
+  putMemory: function(k, v) {{ java.cachePutMemory(String(k), v); }},
+  getFromMemory: function(k) {{ return java.cacheGetFromMemory(String(k)); }},
+  deleteMemory: function(k) {{ java.cacheDeleteMemory(String(k)); return true; }}
 }};
 
 // 对齐原版 getKey() = bookSourceUrl：登录缓存键用 sourceUrl 而非请求 baseUrl

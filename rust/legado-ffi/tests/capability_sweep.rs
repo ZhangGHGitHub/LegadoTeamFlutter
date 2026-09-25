@@ -47,7 +47,9 @@ use legado_ffi::legado_js::host_api::current_source;
 use legado_ffi::legado_js::sandbox::SandboxConfig;
 use legado_ffi::legado_js::QuickJsEngine;
 
-/// 能力面：quickjs_impl.rs 已注册的 164 个宿主函数（`java.*` 双挂载 + 裸全局）。
+/// 能力面：quickjs_impl.rs 已注册的宿主函数（`java.*` 双挂载 + 裸全局）。
+/// 数量为 [`CAPABILITY_NAMES`] 长度（2026-09-25 批次 1 补齐后 167；清单随宿主注册增减，
+/// 报告与对账处一律以 `CAPABILITY_NAMES.len()` 动态取数，不再硬编码）。
 /// 提取自 `mount_dual(java, globals, "…")` / `java.set("…")` / `globals.set("…")`，
 /// 与生产代码逐名一致（2026-09-25 快照，见 .tmp/capability_sweep/capability_names.txt）。
 const CAPABILITY_NAMES: &[&str] = &[
@@ -72,7 +74,10 @@ const CAPABILITY_NAMES: &[&str] = &[
     "base64Encode",
     "base64EncodeBytes",
     "bytesToStr",
+    "cacheDeleteMemory",
     "cacheFile",
+    "cacheGetFromMemory",
+    "cachePutMemory",
     "clearCookies",
     "clearTtsCache",
     "clearVariables",
@@ -282,14 +287,33 @@ const PACKAGES_KNOWN_NS: &[&str] = &[
 /// `java.lang` 重新暴露同一 trapped 节点）
 const BARE_JAVA_MIRROR_NS: &[&str] = &["java.lang", "java.security"];
 
-/// 生产 setup 脚本 JS `cookie` 对象提供的方法（getCookie/setCookie/clearCookies/removeCookie）；
+/// 生产 setup 脚本 JS `cookie` 对象提供的方法（getCookie/**getKey**/setCookie/clearCookies/removeCookie）；
 /// 原版 gedor CookieStore 的 `cookie.get/put/remove/clear` **未提供**。
-const COOKIE_PROVIDED: &[&str] = &["getCookie", "setCookie", "clearCookies", "removeCookie"];
+/// （getKey：cap 1 补齐，对齐上游 CookieStore.getKey 按键读域归属，miss 空串）
+const COOKIE_PROVIDED: &[&str] = &[
+    "getCookie",
+    "getKey",
+    "setCookie",
+    "clearCookies",
+    "removeCookie",
+];
 
-/// `cache` 对象提供的方法：setup 脚本 JS 对象（get/put/remove）∪ Rust 侧对象（get/put/delete/getFile/putFile）。
-const CACHE_PROVIDED: &[&str] = &["get", "put", "remove", "delete", "getFile", "putFile"];
+/// `cache` 对象提供的方法：setup 脚本 JS 对象（get/put/remove + cap 2 内存三件套
+/// putMemory/getFromMemory/deleteMemory，经 java.* 宿主桥落 cache_store 内存层）
+/// ∪ Rust 侧对象（get/put/delete/getFile/putFile + 内存三件套）。
+const CACHE_PROVIDED: &[&str] = &[
+    "get",
+    "put",
+    "remove",
+    "delete",
+    "getFile",
+    "putFile",
+    "putMemory",
+    "getFromMemory",
+    "deleteMemory",
+];
 
-/// 裸调用观察名单（不在 164 能力面内、但书源常见的 Rhino/宿主符号）。
+/// 裸调用观察名单（不在能力面内、但书源常见的 Rhino/宿主符号）。
 const BARE_WATCHLIST: &[&str] = &[
     "importClass",
     "print",
@@ -696,7 +720,7 @@ fn classify_chain(chain: &str) -> Option<(String, &'static str)> {
     let seg0 = path.split('.').next().unwrap_or("");
     match seg0 {
         "java" | "javax" | "android" | "cn" | "org" | "com" => {
-            // java.<宿主函数>( → 164 能力面
+            // java.<宿主函数>( → 能力面（CAPABILITY_NAMES）
             if let Some(name) = path.strip_prefix("java.") {
                 if !name.contains('.') {
                     if CAPABILITY_NAMES.contains(&name) {
@@ -803,7 +827,7 @@ fn test_static_capability_reconciliation() {
             scan_dotted_chains(text, &mut chains);
             scan_bare_calls(text, &mut calls);
         }
-        // 裸调用：164 能力面 + 观察名单
+        // 裸调用：能力面（CAPABILITY_NAMES） + 观察名单
         for name in CAPABILITY_NAMES {
             if calls.contains(*name) {
                 let entry = bare_used.entry(name).or_insert((0, Vec::new()));
@@ -867,11 +891,12 @@ fn test_static_capability_reconciliation() {
     let dir = sweep_dir();
     let mut md = String::new();
     md.push_str(&format!(
-        "# 静态能力对账报告\n\n- 语料：`{}`（{} 源）\n- 含 JS 片段源数：{}\n- 耗时：{:.2}s\n- 能力面快照：quickjs_impl.rs 164 个宿主函数（双挂载 java.*/裸全局）\n- 文件门控（生产未注册）：{}\n\n",
+        "# 静态能力对账报告\n\n- 语料：`{}`（{} 源）\n- 含 JS 片段源数：{}\n- 耗时：{:.2}s\n- 能力面快照：quickjs_impl.rs {} 个宿主函数（双挂载 java.*/裸全局）\n- 文件门控（生产未注册）：{}\n\n",
         corpus_path().display(),
         total,
         src_has_js,
         started.elapsed().as_secs_f64(),
+        CAPABILITY_NAMES.len(),
         FILE_GATED_NAMES.len()
     ));
     md.push_str("## 片段命中\n\n| 片段 | 出现源数 |\n|---|---|\n");
@@ -1140,10 +1165,19 @@ fn run_source_dry(idx: usize, src: &BookSource) -> SourceDryRun {
             let mut first_err: Option<String> = None;
             let mut result = String::new();
 
-            // jsLib
+            // jsLib（cap 3：URL 映射形态经加载器解析——干跑离线，fetcher 注入
+            // 空内容 stub：URL 条目按空文件处理不记台账，非 URL 映射形态
+            // `resolve` 返回 None，保留原直接 eval 行为）
             if let Some(js_lib) = &src.js_lib {
                 if !js_lib.is_empty() {
-                    if let Err(e) = engine.eval(js_lib) {
+                    let offline_fetch = |_: &str| Ok(String::new());
+                    let script = legado_js::host_api::jslib_loader::resolve_js_lib_url_map(
+                        js_lib,
+                        &tag,
+                        &offline_fetch,
+                    );
+                    let candidate = script.as_deref().unwrap_or(js_lib);
+                    if let Err(e) = engine.eval(candidate) {
                         out.jslib_failed = true;
                         first_err = Some(format!("jsLib：{e}"));
                     }

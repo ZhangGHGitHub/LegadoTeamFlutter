@@ -84,7 +84,7 @@ pub fn register_all_apis<'js>(
     register_archive_apis(ctx, &java, &globals)?;
     register_font_apis(ctx, &java, &globals)?;
     // 全局 cache 对象（P2-9 ① 记忆缓存三件套 + 磁盘缓存，对齐 WebCacheManager）
-    register_cache_apis(ctx, &globals)?;
+    register_cache_apis(ctx, &java, &globals)?;
 
     // 队列④ 能力受限台账：Packages 模拟层遇到未覆盖的 Java 类/成员时登记符号
     // （capability_ledger），供"下一批补什么"诊断查询。必须先于
@@ -2947,6 +2947,7 @@ fn register_html_parse_apis<'js>(
 #[cfg(feature = "quickjs")]
 fn register_cache_apis<'js>(
     ctx: &rquickjs::Ctx<'js>,
+    java: &rquickjs::Object<'js>,
     globals: &rquickjs::Object<'js>,
 ) -> Result<(), LegadoError> {
     let cache =
@@ -3010,6 +3011,49 @@ fn register_cache_apis<'js>(
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    // ─── 书源 setup 脚本内存缓存桥（cap 2：cookie/cache 全局桥面补齐）──────
+    // 书源 setup 脚本（source_js_bindings::book_source_js_setup_script）以
+    // `var cache = {...}` 遮蔽本全局 cache 对象，其 putMemory/getFromMemory/
+    // deleteMemory 经下列 java.* 宿主桥落 cache_store 内存层（与 setup 的
+    // get/put/remove → 会话变量层、磁盘 cache 表互不串键，对齐上游
+    // CacheManager memoryLruCache 的独立命名空间）。
+    mount_dual(
+        java,
+        globals,
+        "cachePutMemory",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>, key: String, value: rquickjs::Value<'js>| -> () {
+                cache_store::put_memory(&key, &stringify_cache_value(&ctx, &value));
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // 缺失键返回显式 null（setup 侧判缺式 `v === undefined || v === null`）
+    mount_dual(
+        java,
+        globals,
+        "cacheGetFromMemory",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ctx: rquickjs::Ctx<'js>, key: String| -> rquickjs::Result<rquickjs::Value<'js>> {
+                cache_value_or_null(&ctx, cache_store::get_from_memory(&key))
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    mount_dual(
+        java,
+        globals,
+        "cacheDeleteMemory",
+        rquickjs::Function::new(ctx.clone(), |key: String| -> () {
+            cache_store::delete_memory(&key);
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
 
     // get(key, onlyDisk?) -> String | null
     cache

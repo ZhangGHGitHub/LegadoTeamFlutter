@@ -788,7 +788,37 @@ mod quickjs_impl {
                     &self.source_tag,
                     || {
                         if let Some(lib) = &self.js_lib {
-                            if let Err(e) = legado_js::JsEngine::eval(&engine, lib) {
+                            // cap 3（URL 映射 jsLib）：先探测 URL 映射形态（全字符串值
+                            // 的 JSON 对象）→ 经加载器解析（共享客户端拉取 + 进程缓存 +
+                            // 逐条降级台账登记），eval 拼接脚本；非 URL 映射形态照旧
+                            // 走原始 eval 级联
+                            let ledger_tag = format!("executor:{}", self.source_tag);
+                            let is_url_map =
+                                legado_js::host_api::jslib_loader::parse_js_lib_url_map(lib)
+                                    .is_some();
+                            let url_map_script =
+                                legado_js::host_api::jslib_loader::resolve_js_lib_url_map(
+                                    lib,
+                                    &ledger_tag,
+                                    &legado_js::host_api::jslib_loader::default_js_lib_fetcher,
+                                );
+                            if is_url_map {
+                                // 逐条拉取失败已在加载器内记台账（降级跳过该条，
+                                // 仅依赖该 jsLib 的规则受影响）；全失败时脚本为 None，
+                                // 直接跳过 eval（原始 JSON 非合法 JS，不回退原始级联）
+                                if let Some(script) = &url_map_script {
+                                    if let Err(e) = legado_js::JsEngine::eval(&engine, script) {
+                                        eprintln!(
+                                            "[legado-ffi] 书源 {} URL 映射 jsLib eval 失败（降级继续）: {e}",
+                                            self.source_tag
+                                        );
+                                        legado_js::host_api::capability_ledger::record_jslib_load_failure(
+                                            &ledger_tag,
+                                            &e.to_string(),
+                                        );
+                                    }
+                                }
+                            } else if let Err(e) = legado_js::JsEngine::eval(&engine, lib) {
                                 // 仅对语法错误尝试 Rhino 宽容语法归一化后重试一次（与 engine_cache
                                 // 缓存路径一致；对齐原版 corejs-Rhino 宽松解析——B 站 jsLib 的
                                 // let 参数影子重声明、data..item_null 双点笔误等）；运行时错误按原样降级。
@@ -810,7 +840,7 @@ mod quickjs_impl {
                                         // 队列④：jsLib 加载失败登记能力受限台账
                                         // （键与缓存路径一致：executor:<source_tag>）
                                         legado_js::host_api::capability_ledger::record_jslib_load_failure(
-                                            &format!("executor:{}", self.source_tag),
+                                            &ledger_tag,
                                             &e.to_string(),
                                         );
                                     }
@@ -820,7 +850,7 @@ mod quickjs_impl {
                                         self.source_tag
                                     );
                                     legado_js::host_api::capability_ledger::record_jslib_load_failure(
-                                        &format!("executor:{}", self.source_tag),
+                                        &ledger_tag,
                                         &e.to_string(),
                                     );
                                 }

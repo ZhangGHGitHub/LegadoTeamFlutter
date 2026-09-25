@@ -292,7 +292,11 @@ fn bootstrap_explore_js_context(
 ) -> LegadoResult<()> {
     use legado_js::JsEngine;
 
-    crate::api::source_js_bindings::load_js_lib_for_explore(guard, source.js_lib.as_deref());
+    crate::api::source_js_bindings::load_js_lib_for_explore(
+        guard,
+        source.book_source_url.as_str(),
+        source.js_lib.as_deref(),
+    );
 
     // JS 单文件书源：exploreUrl @js: 常调用 mainJs 内定义的函数
     if source.is_js_source() {
