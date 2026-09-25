@@ -209,11 +209,11 @@ fn explore_host_fallback_script(source: &BookSource) -> String {
     let url = source.book_source_url.trim();
     if url.starts_with("http://") || url.starts_with("https://") {
         format!(
-            "var host = [{url_json}];",
+            "globalThis.host = [{url_json}];",
             url_json = serde_json::to_string(url).unwrap_or_default()
         )
     } else {
-        "var host = [];".to_string()
+        "globalThis.host = [];".to_string()
     }
 }
 
@@ -239,15 +239,18 @@ pub fn book_source_js_setup_script(source: &BookSource) -> LegadoResult<String> 
 
     Ok(format!(
         r#"
-var baseUrl = {base_url_json};
-var sourceUrl = {source_url_json};
-var loginUrl = {login_url_json};
-var __srcData = {source_json};
-var source = Object.assign({{}}, __srcData);
-var sourceApi = source;
+// [能力对账批次 2 | #702/#850] 顶层 var → globalThis 属性注入：不注册 QuickJS
+// 全局 var 条目，书源块顶层 `let baseUrl` 等不再触发 redeclaration（属性存在
+// 对裸标识符读路径等价；写路径不变）
+globalThis.baseUrl = {base_url_json};
+globalThis.sourceUrl = {source_url_json};
+globalThis.loginUrl = {login_url_json};
+globalThis.__srcData = {source_json};
+globalThis.source = Object.assign({{}}, __srcData);
+globalThis.sourceApi = source;
 
 // 对齐 Android BaseSource.evalJS：cookie / cache 全局（explore 脚本常用 cookie.getCookie）
-var cookie = {{
+globalThis.cookie = {{
   getCookie: function(url, key) {{
     if (key === undefined || key === null || key === '') {{
       return java.getCookie(String(url));
@@ -264,9 +267,26 @@ var cookie = {{
   }},
   setCookie: function(url, value) {{ return java.setCookie(String(url), String(value)); }},
   clearCookies: function(url) {{ return java.clearCookies(String(url)); }},
-  removeCookie: function(url) {{ return java.removeCookie(String(url)); }}
+  removeCookie: function(url) {{ return java.removeCookie(String(url)); }},
+  // 对齐上游 CookieStore.replaceCookie：现存域 cookie ∪ 新串（新值覆盖、
+  // 旧键保留）后写回；空参 no-op — 3b-3（爱丽丝书屋）
+  replaceCookie: function(url, value) {{ java.replaceCookie(String(url), String(value == null ? '' : value)); }},
+  // 对齐上游 CookieStore.cookieToMap：';' 拆段 → 对象（键值 trim、空值段
+  // 剔除、同名键覆盖）；宿主层返回 JSON 串，此处还原为对象 — 3b-3
+  cookieToMap: function(str) {{
+    try {{ return JSON.parse(java.cookieToMap(String(str == null ? '' : str))); }} catch (e) {{ return {{}}; }}
+  }},
+  // 对齐上游 CookieStore.mapToCookie：`k=v` 以 '; ' 连接；空/不可序列化
+  // → null（上游返回 null；宿主层 Option.None → undefined，此处转 null）
+  // — 3b-3
+  mapToCookie: function(map) {{
+    var json = (map === null || map === undefined) ? '' : (typeof map === 'string' ? map : JSON.stringify(map));
+    if (!json) return null;
+    var r = java.mapToCookie(json);
+    return r === undefined ? null : r;
+  }}
 }};
-var cache = {{
+globalThis.cache = {{
   get: function(k) {{ return get(String(k)) || null; }},
   put: function(k, v) {{ put(String(k), String(v)); return v; }},
   remove: function(k) {{ removeVariable(String(k)); return true; }},
@@ -278,6 +298,19 @@ var cache = {{
   getFromMemory: function(k) {{ return java.cacheGetFromMemory(String(k)); }},
   deleteMemory: function(k) {{ java.cacheDeleteMemory(String(k)); return true; }}
 }};
+// 语料 cache.dev_id（#25 听小说APP，设备标识读写）：属性式 getter/setter，
+// 后端全局 cache 存储（saveTime=0 永久口径——put 默认无过期）；未写入前
+// 读为 null。— 3b-3
+Object.defineProperty(globalThis.cache, 'dev_id', {{
+  get: function() {{
+    var v = get('dev_id');
+    return (v === undefined || v === null || v === '') ? null : String(v);
+  }},
+  set: function(v) {{
+    if (v === undefined || v === null) return;
+    put('dev_id', String(v));
+  }}
+}});
 
 // 对齐原版 getKey() = bookSourceUrl：登录缓存键用 sourceUrl 而非请求 baseUrl
 //（书山 bookUrl 为 data: URI 或详情页 URL，与书源 URL 不同；此前用 baseUrl
@@ -380,9 +413,33 @@ if (typeof java === 'object' && java !== null) {{
   __mountBookSourceApi(java);
 }}
 
+// ── 3b-4（#286 刚够小说网，对齐上游 AnalyzeUrl.evalJS java=this 口径）──
+// 上游 URL 规则 JS 窗口内 java 即 AnalyzeUrl 实例：
+// java.headerMap = 实例请求头 Map（put 即时生效于本次请求）；java.url =
+// 实例 url 字段（@js:/{{{{}}}} 窗口未赋值 → ''、选项 js 窗口 = 已解析 URL）。
+// Rust 侧经宿主 getCurrentUrl/headerMapPut 桥接 legado-parser 线程局部，
+// parse_with_js 收尾把写入落进 AnalyzeUrl.headers → 请求组头生效。
+if (typeof java.headerMap === 'undefined') {{
+  Object.defineProperty(java, 'headerMap', {{
+    value: {{
+      put: function (k, v) {{ return java.headerMapPut(String(k), String(v == null ? '' : v)); }}
+    }}
+  }});
+}}
+try {{
+  Object.defineProperty(java, 'url', {{
+    get: function () {{
+      var u = java.getCurrentUrl();
+      // 非 URL 规则窗口（source evalJS，上游 java=source）回退 sourceUrl
+      //（上游 BaseSource.evalJS 绑定 java=source，java.url = getUrl()）
+      return u ? u : sourceUrl;
+    }}
+  }});
+}} catch (__e) {{ /* 池化引擎二次 setup 时属性已存在且不可配置：跳过 */ }}
+
 // infoMap：可读写 Map（对标 Android InfoMap 实例）
-var __infoData = {info_map_json};
-var infoMap = new Proxy(__infoData, {{
+globalThis.__infoData = {info_map_json};
+globalThis.infoMap = new Proxy(__infoData, {{
   get: function(target, prop) {{
     if (prop === 'get') {{
       return function(k) {{ return target[k] || null; }};
@@ -404,19 +461,19 @@ var infoMap = new Proxy(__infoData, {{
 }});
 
 // 预置登录缓存（与 CacheManager 对齐）
-var __loginHeaderSeed = {login_header_seed};
+globalThis.__loginHeaderSeed = {login_header_seed};
 if (__loginHeaderSeed) {{
   put(__loginHeaderKey(), String(__loginHeaderSeed));
   // 同步登录认证头到全局 Cookie（供 java.ajax 自动携带书山 X-Novel-Token 等）
   try {{
-    var __lh = __loginHeaderSeed;
+    globalThis.__lh = __loginHeaderSeed;
     if (typeof __lh === 'string') __lh = JSON.parse(__lh);
     if (__lh && typeof __lh === 'object') {{
       for (var __k in __lh) {{
         if (!Object.prototype.hasOwnProperty.call(__lh, __k)) continue;
-        var __v = String(__lh[__k]);
+        globalThis.__v = String(__lh[__k]);
         if (!__v) continue;
-        var __lk = String(__k).toLowerCase();
+        globalThis.__lk = String(__k).toLowerCase();
         if (__lk === 'cookie') {{
           java.setCookie(baseUrl, __v);
         }} else if (__lk.indexOf('token') >= 0 || __lk.indexOf('session') >= 0 || __lk.indexOf('auth') >= 0) {{
@@ -426,7 +483,7 @@ if (__loginHeaderSeed) {{
     }}
   }} catch (e) {{}}
 }}
-var __loginInfoSeed = {login_info_seed};
+globalThis.__loginInfoSeed = {login_info_seed};
 if (__loginInfoSeed) {{
   put(__userInfoKey(), String(__loginInfoSeed));
 }}
@@ -436,24 +493,24 @@ if (__loginInfoSeed) {{
 // 携带书山聚合固定 X-Novel-Token 等认证头（原版 AnalyzeUrl(source) 每次请求
 // 都解析 header 规则；setup 阶段求值一次即可覆盖静态/登录态头）
 try {{
-  var __headerRule = String(source.header || '');
-  var __headerJs = null;
+  globalThis.__headerRule = String(source.header || '');
+  globalThis.__headerJs = null;
   if (__headerRule.indexOf('@js:') === 0) {{
     __headerJs = __headerRule.substring(4);
   }} else if (__headerRule.indexOf('<js>') === 0) {{
-    var __hend = __headerRule.lastIndexOf('<');
+    globalThis.__hend = __headerRule.lastIndexOf('<');
     __headerJs = __hend > 4 ? __headerRule.substring(4, __hend) : __headerRule.substring(4);
   }}
   if (__headerJs) {{
-    var __headerFn = new Function('return (' + __headerJs + ');');
-    var __headerResult = __headerFn.call({{ source: source, cookie: cookie, java: java }});
-    var __headerJson = String(__headerResult);
-    var __headerMap = JSON.parse(__headerJson);
+    globalThis.__headerFn = new Function('return (' + __headerJs + ');');
+    globalThis.__headerResult = __headerFn.call({{ source: source, cookie: cookie, java: java }});
+    globalThis.__headerJson = String(__headerResult);
+    globalThis.__headerMap = JSON.parse(__headerJson);
     if (__headerMap && typeof __headerMap === 'object') {{
       java.putGlobalHeaders(__headerJson);
     }}
   }} else if (__headerRule) {{
-    var __hmap = JSON.parse(__headerRule);
+    globalThis.__hmap = JSON.parse(__headerRule);
     if (__hmap && typeof __hmap === 'object') {{
       java.putGlobalHeaders(__headerRule);
     }}
@@ -476,7 +533,7 @@ globalThis.sourceApi = sourceApi;
 
 // jsLib setArguments uses Rhino this.source
 if (typeof setArguments === 'function') {{
-  var __legadoSetArguments = setArguments;
+  globalThis.__legadoSetArguments = setArguments;
   setArguments = function(key, value) {{
     return __legadoSetArguments.call({{ source: source, cookie: cookie, java: java }}, key, value);
   }};

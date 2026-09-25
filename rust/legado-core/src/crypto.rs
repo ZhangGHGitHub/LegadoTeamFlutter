@@ -335,6 +335,241 @@ impl DesCrypto {
 }
 
 // ---------------------------------------------------------------------------
+// 3DES (Triple DES / Java DESede)
+// ---------------------------------------------------------------------------
+
+/// 3DES（Java `DESede`）对称加密工具
+///
+/// Java JCE `DESede` 语义（E-D-E 链）：
+/// - 16 字节密钥 = 双密钥 `E(k1)D(k2)E(k1)`（对应 `des::TdesEde2`）
+/// - 24 字节密钥 = 三密钥 `E(k1)D(k2)E(k3)`（对应 `des::TdesEde3`）
+///
+/// 支持 CBC / ECB 模式，PKCS7 或 NoPadding 填充。
+pub struct TripleDesCrypto;
+
+impl TripleDesCrypto {
+    /// 3DES-CBC 解密（PKCS7 填充）
+    pub fn decrypt_cbc(key: &[u8], iv: &[u8], data: &[u8]) -> LegadoResult<Vec<u8>> {
+        use cbc::cipher::block_padding::Pkcs7;
+        use cbc::cipher::{BlockDecryptMut, KeyIvInit};
+        use des::{TdesEde2, TdesEde3};
+
+        type Dec2 = cbc::Decryptor<TdesEde2>;
+        type Dec3 = cbc::Decryptor<TdesEde3>;
+
+        let mut buf = data.to_vec();
+        let pt = match key.len() {
+            16 => Dec2::new_from_slices(key, iv)
+                .map_err(crypto_init_err)?
+                .decrypt_padded_mut::<Pkcs7>(&mut buf)
+                .map_err(crypto_op_err)?,
+            24 => Dec3::new_from_slices(key, iv)
+                .map_err(crypto_init_err)?
+                .decrypt_padded_mut::<Pkcs7>(&mut buf)
+                .map_err(crypto_op_err)?,
+            n => return Err(bad_key_len("DESEDE", n, &[16, 24])),
+        };
+        Ok(pt.to_vec())
+    }
+
+    /// 3DES-CBC 加密（PKCS7 填充）
+    pub fn encrypt_cbc(key: &[u8], iv: &[u8], data: &[u8]) -> LegadoResult<Vec<u8>> {
+        use cbc::cipher::block_padding::Pkcs7;
+        use cbc::cipher::{BlockEncryptMut, KeyIvInit};
+        use des::{TdesEde2, TdesEde3};
+
+        type Enc2 = cbc::Encryptor<TdesEde2>;
+        type Enc3 = cbc::Encryptor<TdesEde3>;
+
+        let mut buf = make_padded_buf(DES_BLOCK_SIZE, data);
+        let ct = match key.len() {
+            16 => Enc2::new_from_slices(key, iv)
+                .map_err(crypto_init_err)?
+                .encrypt_padded_mut::<Pkcs7>(&mut buf, data.len())
+                .map_err(crypto_op_err)?,
+            24 => Enc3::new_from_slices(key, iv)
+                .map_err(crypto_init_err)?
+                .encrypt_padded_mut::<Pkcs7>(&mut buf, data.len())
+                .map_err(crypto_op_err)?,
+            n => return Err(bad_key_len("DESEDE", n, &[16, 24])),
+        };
+        Ok(ct.to_vec())
+    }
+
+    /// 3DES-CBC 解密（NoPadding；密文长度须为 8 的倍数）
+    pub fn decrypt_cbc_nopadding(key: &[u8], iv: &[u8], data: &[u8]) -> LegadoResult<Vec<u8>> {
+        use cbc::cipher::block_padding::NoPadding;
+        use cbc::cipher::{BlockDecryptMut, KeyIvInit};
+        use des::{TdesEde2, TdesEde3};
+
+        type Dec2 = cbc::Decryptor<TdesEde2>;
+        type Dec3 = cbc::Decryptor<TdesEde3>;
+
+        if !data.len().is_multiple_of(DES_BLOCK_SIZE) {
+            return Err(LegadoError::Parser(format!(
+                "DESEDE/CBC/NoPadding ciphertext length must be multiple of {}, got {}",
+                DES_BLOCK_SIZE,
+                data.len()
+            )));
+        }
+        let mut buf = data.to_vec();
+        let pt = match key.len() {
+            16 => Dec2::new_from_slices(key, iv)
+                .map_err(crypto_init_err)?
+                .decrypt_padded_mut::<NoPadding>(&mut buf)
+                .map_err(crypto_op_err)?,
+            24 => Dec3::new_from_slices(key, iv)
+                .map_err(crypto_init_err)?
+                .decrypt_padded_mut::<NoPadding>(&mut buf)
+                .map_err(crypto_op_err)?,
+            n => return Err(bad_key_len("DESEDE", n, &[16, 24])),
+        };
+        Ok(pt.to_vec())
+    }
+
+    /// 3DES-CBC 加密（NoPadding；明文长度须为 8 的倍数）
+    pub fn encrypt_cbc_nopadding(key: &[u8], iv: &[u8], data: &[u8]) -> LegadoResult<Vec<u8>> {
+        use cbc::cipher::block_padding::NoPadding;
+        use cbc::cipher::{BlockEncryptMut, KeyIvInit};
+        use des::{TdesEde2, TdesEde3};
+
+        type Enc2 = cbc::Encryptor<TdesEde2>;
+        type Enc3 = cbc::Encryptor<TdesEde3>;
+
+        if !data.len().is_multiple_of(DES_BLOCK_SIZE) {
+            return Err(LegadoError::Parser(format!(
+                "DESEDE/CBC/NoPadding plaintext length must be multiple of {}, got {}",
+                DES_BLOCK_SIZE,
+                data.len()
+            )));
+        }
+        let mut buf = data.to_vec();
+        let ct = match key.len() {
+            16 => Enc2::new_from_slices(key, iv)
+                .map_err(crypto_init_err)?
+                .encrypt_padded_mut::<NoPadding>(&mut buf, data.len())
+                .map_err(crypto_op_err)?,
+            24 => Enc3::new_from_slices(key, iv)
+                .map_err(crypto_init_err)?
+                .encrypt_padded_mut::<NoPadding>(&mut buf, data.len())
+                .map_err(crypto_op_err)?,
+            n => return Err(bad_key_len("DESEDE", n, &[16, 24])),
+        };
+        Ok(ct.to_vec())
+    }
+
+    /// 3DES-ECB 解密（PKCS7 填充）
+    pub fn decrypt_ecb(key: &[u8], data: &[u8]) -> LegadoResult<Vec<u8>> {
+        use cbc::cipher::block_padding::Pkcs7;
+        use cbc::cipher::{BlockDecryptMut, KeyInit};
+        use des::{TdesEde2, TdesEde3};
+
+        type Dec2 = ecb::Decryptor<TdesEde2>;
+        type Dec3 = ecb::Decryptor<TdesEde3>;
+
+        let mut buf = data.to_vec();
+        let pt = match key.len() {
+            16 => Dec2::new_from_slice(key)
+                .map_err(crypto_init_err)?
+                .decrypt_padded_mut::<Pkcs7>(&mut buf)
+                .map_err(crypto_op_err)?,
+            24 => Dec3::new_from_slice(key)
+                .map_err(crypto_init_err)?
+                .decrypt_padded_mut::<Pkcs7>(&mut buf)
+                .map_err(crypto_op_err)?,
+            n => return Err(bad_key_len("DESEDE", n, &[16, 24])),
+        };
+        Ok(pt.to_vec())
+    }
+
+    /// 3DES-ECB 加密（PKCS7 填充）
+    pub fn encrypt_ecb(key: &[u8], data: &[u8]) -> LegadoResult<Vec<u8>> {
+        use cbc::cipher::block_padding::Pkcs7;
+        use cbc::cipher::{BlockEncryptMut, KeyInit};
+        use des::{TdesEde2, TdesEde3};
+
+        type Enc2 = ecb::Encryptor<TdesEde2>;
+        type Enc3 = ecb::Encryptor<TdesEde3>;
+
+        let mut buf = make_padded_buf(DES_BLOCK_SIZE, data);
+        let ct = match key.len() {
+            16 => Enc2::new_from_slice(key)
+                .map_err(crypto_init_err)?
+                .encrypt_padded_mut::<Pkcs7>(&mut buf, data.len())
+                .map_err(crypto_op_err)?,
+            24 => Enc3::new_from_slice(key)
+                .map_err(crypto_init_err)?
+                .encrypt_padded_mut::<Pkcs7>(&mut buf, data.len())
+                .map_err(crypto_op_err)?,
+            n => return Err(bad_key_len("DESEDE", n, &[16, 24])),
+        };
+        Ok(ct.to_vec())
+    }
+
+    /// 3DES-ECB 解密（NoPadding；密文长度须为 8 的倍数）
+    pub fn decrypt_ecb_nopadding(key: &[u8], data: &[u8]) -> LegadoResult<Vec<u8>> {
+        use cbc::cipher::block_padding::NoPadding;
+        use cbc::cipher::{BlockDecryptMut, KeyInit};
+        use des::{TdesEde2, TdesEde3};
+
+        type Dec2 = ecb::Decryptor<TdesEde2>;
+        type Dec3 = ecb::Decryptor<TdesEde3>;
+
+        if !data.len().is_multiple_of(DES_BLOCK_SIZE) {
+            return Err(LegadoError::Parser(format!(
+                "DESEDE/ECB/NoPadding ciphertext length must be multiple of {}, got {}",
+                DES_BLOCK_SIZE,
+                data.len()
+            )));
+        }
+        let mut buf = data.to_vec();
+        let pt = match key.len() {
+            16 => Dec2::new_from_slice(key)
+                .map_err(crypto_init_err)?
+                .decrypt_padded_mut::<NoPadding>(&mut buf)
+                .map_err(crypto_op_err)?,
+            24 => Dec3::new_from_slice(key)
+                .map_err(crypto_init_err)?
+                .decrypt_padded_mut::<NoPadding>(&mut buf)
+                .map_err(crypto_op_err)?,
+            n => return Err(bad_key_len("DESEDE", n, &[16, 24])),
+        };
+        Ok(pt.to_vec())
+    }
+
+    /// 3DES-ECB 加密（NoPadding；明文长度须为 8 的倍数）
+    pub fn encrypt_ecb_nopadding(key: &[u8], data: &[u8]) -> LegadoResult<Vec<u8>> {
+        use cbc::cipher::block_padding::NoPadding;
+        use cbc::cipher::{BlockEncryptMut, KeyInit};
+        use des::{TdesEde2, TdesEde3};
+
+        type Enc2 = ecb::Encryptor<TdesEde2>;
+        type Enc3 = ecb::Encryptor<TdesEde3>;
+
+        if !data.len().is_multiple_of(DES_BLOCK_SIZE) {
+            return Err(LegadoError::Parser(format!(
+                "DESEDE/ECB/NoPadding plaintext length must be multiple of {}, got {}",
+                DES_BLOCK_SIZE,
+                data.len()
+            )));
+        }
+        let mut buf = data.to_vec();
+        let ct = match key.len() {
+            16 => Enc2::new_from_slice(key)
+                .map_err(crypto_init_err)?
+                .encrypt_padded_mut::<NoPadding>(&mut buf, data.len())
+                .map_err(crypto_op_err)?,
+            24 => Enc3::new_from_slice(key)
+                .map_err(crypto_init_err)?
+                .encrypt_padded_mut::<NoPadding>(&mut buf, data.len())
+                .map_err(crypto_op_err)?,
+            n => return Err(bad_key_len("DESEDE", n, &[16, 24])),
+        };
+        Ok(ct.to_vec())
+    }
+}
+
+// ---------------------------------------------------------------------------
 // RC4
 // ---------------------------------------------------------------------------
 
@@ -428,6 +663,29 @@ pub fn rc4_decrypt_base64(key: &str, ciphertext_b64: &str) -> LegadoResult<Strin
     let plaintext = Rc4Crypto::process(key.as_bytes(), &ciphertext);
     String::from_utf8(plaintext)
         .map_err(|e| LegadoError::Parser(format!("UTF-8 decode error: {}", e)))
+}
+
+/// 3DES（DESede）加密后 Base64 编码
+///
+/// 对齐上游 `JsEncodeUtils.tripleDESEncodeBase64Str`：
+/// `createSymmetricCrypto("DESede/{mode}/{padding}", key, iv).encryptBase64(data)`。
+/// key/iv 为原始字符串字节（UTF-8）。
+pub fn triple_des_encrypt_base64(
+    key: &str,
+    mode: &str,
+    padding: &str,
+    iv: &str,
+    plaintext: &str,
+) -> LegadoResult<String> {
+    use base64::Engine;
+    let transformation = format!("DESede/{mode}/{padding}");
+    let ciphertext = symmetric_encrypt(
+        &transformation,
+        key.as_bytes(),
+        Some(iv.as_bytes()),
+        plaintext.as_bytes(),
+    )?;
+    Ok(base64::engine::general_purpose::STANDARD.encode(&ciphertext))
 }
 
 // ---------------------------------------------------------------------------
@@ -530,6 +788,30 @@ pub fn symmetric_decrypt(
             let iv = iv.unwrap_or(b"\0\0\0\0\0\0\0\0");
             DesCrypto::decrypt_cbc(key, iv, data)
         }
+        "DESEDE" => {
+            let nopad = is_no_padding(&padding);
+            match mode.as_str() {
+                "CBC" => {
+                    let iv = iv
+                        .ok_or_else(|| LegadoError::Parser("DESEDE/CBC requires IV".to_string()))?;
+                    if nopad {
+                        TripleDesCrypto::decrypt_cbc_nopadding(key, iv, data)
+                    } else {
+                        TripleDesCrypto::decrypt_cbc(key, iv, data)
+                    }
+                }
+                "ECB" => {
+                    if nopad {
+                        TripleDesCrypto::decrypt_ecb_nopadding(key, data)
+                    } else {
+                        TripleDesCrypto::decrypt_ecb(key, data)
+                    }
+                }
+                other => Err(LegadoError::Parser(format!(
+                    "Unsupported DESede mode: {other} (supported: CBC, ECB)"
+                ))),
+            }
+        }
         "RC4" => Ok(Rc4Crypto::process(key, data)),
         other => Err(LegadoError::Parser(format!(
             "Unsupported algorithm: {other}"
@@ -576,6 +858,30 @@ pub fn symmetric_encrypt(
         "DES" => {
             let iv = iv.unwrap_or(b"\0\0\0\0\0\0\0\0");
             DesCrypto::encrypt_cbc(key, iv, data)
+        }
+        "DESEDE" => {
+            let nopad = is_no_padding(&padding);
+            match mode.as_str() {
+                "CBC" => {
+                    let iv = iv
+                        .ok_or_else(|| LegadoError::Parser("DESEDE/CBC requires IV".to_string()))?;
+                    if nopad {
+                        TripleDesCrypto::encrypt_cbc_nopadding(key, iv, data)
+                    } else {
+                        TripleDesCrypto::encrypt_cbc(key, iv, data)
+                    }
+                }
+                "ECB" => {
+                    if nopad {
+                        TripleDesCrypto::encrypt_ecb_nopadding(key, data)
+                    } else {
+                        TripleDesCrypto::encrypt_ecb(key, data)
+                    }
+                }
+                other => Err(LegadoError::Parser(format!(
+                    "Unsupported DESede mode: {other} (supported: CBC, ECB)"
+                ))),
+            }
         }
         "RC4" => Ok(Rc4Crypto::process(key, data)),
         other => Err(LegadoError::Parser(format!(
@@ -692,6 +998,137 @@ mod tests {
         let iv = b"initvec0";
         let result = DesCrypto::encrypt_cbc(key, iv, b"data");
         assert!(result.is_err());
+    }
+
+    // ---- 3DES (DESEDE) ----
+
+    #[test]
+    fn test_triple_des_cbc_roundtrip_24key() {
+        let key = b"0123456789abcdeffedcba98"; // 24 bytes = 三密钥
+        let iv = b"initvec0";
+        let plaintext = b"DESede CBC test data for Legado";
+
+        let ct = TripleDesCrypto::encrypt_cbc(key, iv, plaintext).expect("encrypt");
+        let pt = TripleDesCrypto::decrypt_cbc(key, iv, &ct).expect("decrypt");
+        assert_eq!(&pt, plaintext);
+    }
+
+    #[test]
+    fn test_triple_des_cbc_roundtrip_16key() {
+        let key = b"0123456789abcdef"; // 16 bytes = 双密钥 EDE2
+        let iv = b"initvec0";
+        let plaintext = b"DESede two-key CBC roundtrip";
+
+        let ct = TripleDesCrypto::encrypt_cbc(key, iv, plaintext).expect("encrypt");
+        let pt = TripleDesCrypto::decrypt_cbc(key, iv, &ct).expect("decrypt");
+        assert_eq!(&pt, plaintext);
+    }
+
+    #[test]
+    fn test_triple_des_ecb_roundtrip_24key() {
+        let key = b"0123456789abcdeffedcba98"; // 24 bytes
+        let plaintext = b"DESede ECB PKCS7 test data!";
+
+        let ct = TripleDesCrypto::encrypt_ecb(key, plaintext).expect("encrypt");
+        let pt = TripleDesCrypto::decrypt_ecb(key, &ct).expect("decrypt");
+        assert_eq!(&pt, plaintext);
+    }
+
+    #[test]
+    fn test_triple_des_ecb_nopadding_roundtrip_16key() {
+        let key = b"0123456789abcdef";
+        let plaintext = b"01234567"; // 恰好 8 字节
+
+        let ct = TripleDesCrypto::encrypt_ecb_nopadding(key, plaintext).expect("encrypt");
+        assert_eq!(ct.len(), 8);
+        let pt = TripleDesCrypto::decrypt_ecb_nopadding(key, &ct).expect("decrypt");
+        assert_eq!(&pt, plaintext);
+    }
+
+    #[test]
+    fn test_triple_des_bad_key_len() {
+        let iv = b"initvec0";
+        assert!(TripleDesCrypto::encrypt_cbc(b"shortkey", iv, b"data").is_err());
+        assert!(TripleDesCrypto::decrypt_ecb(b"shortkey", b"01234567").is_err());
+    }
+
+    #[test]
+    fn test_triple_des_ede2_equals_single_des_when_k1_eq_k2() {
+        // EDE2(k, k) = E(k)D(k)E(k) ≡ E(k)：16 字节密钥（k1 == k2）单块
+        // NoPadding 结果必须等于同 8 字节密钥的单 DES-ECB（用 des  crate 直接锚定）
+        use cbc::cipher::block_padding::NoPadding;
+        use cbc::cipher::{BlockEncryptMut, KeyInit};
+        use des::Des;
+
+        let key8 = [0x01u8; 8];
+        let key16 = [0x01u8; 16];
+        let block = [0x42u8; 8];
+
+        let mut des_block = block;
+        let des_ct = ecb::Encryptor::<Des>::new_from_slice(&key8)
+            .expect("des init")
+            .encrypt_padded_mut::<NoPadding>(&mut des_block, 8)
+            .expect("des ecb");
+
+        let tdes_ct = TripleDesCrypto::encrypt_ecb_nopadding(&key16, &block).expect("tdes ecb");
+        assert_eq!(&tdes_ct, des_ct);
+    }
+
+    #[test]
+    fn test_triple_des_ede3_k3_eq_k1_equals_ede2() {
+        // EDE3(k1,k2,k1) = E(k1)D(k2)E(k1) ≡ EDE2(k1,k2)：24 字节密钥
+        // （k3 == k1）结果必须等于 16 字节密钥 (k1,k2) 的双密钥模式
+        let key16 = b"1111111122222222";
+        let key24 = b"111111112222222211111111";
+        let block = [0x5au8; 8];
+
+        let ct16 = TripleDesCrypto::encrypt_ecb_nopadding(key16, &block).expect("ede2");
+        let ct24 = TripleDesCrypto::encrypt_ecb_nopadding(key24, &block).expect("ede3");
+        assert_eq!(ct16, ct24);
+        assert!(!ct16.is_empty());
+    }
+
+    #[test]
+    fn test_triple_des_dispatch_symmetric_api() {
+        let key = b"0123456789abcdeffedcba98"; // 24 bytes
+        let iv = b"initvec0";
+        let plaintext = b"dispatch DESede test data";
+
+        let ct =
+            symmetric_encrypt("DESede/CBC/PKCS5Padding", key, Some(iv), plaintext).expect("enc");
+        let pt = symmetric_decrypt("DESede/CBC/PKCS5Padding", key, Some(iv), &ct).expect("dec");
+        assert_eq!(&pt, plaintext);
+
+        let ct2 = symmetric_encrypt("DESede/ECB/NoPadding", key, None, b"abcd1234").expect("enc2");
+        let pt2 = symmetric_decrypt("DESede/ECB/NoPadding", key, None, &ct2).expect("dec2");
+        assert_eq!(&pt2, b"abcd1234");
+    }
+
+    #[test]
+    fn test_triple_des_unknown_mode_rejected() {
+        let key = b"0123456789abcdeffedcba98"; // 24 bytes
+        let result = symmetric_encrypt("DESede/OFB", key, None, b"data");
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_triple_des_encrypt_base64() {
+        let key = "0123456789abcdef";
+        let iv = "initvec0";
+        let out = triple_des_encrypt_base64(key, "CBC", "PKCS5Padding", iv, "base64 out").unwrap();
+        // 标准 Base64 输出，且可被对称 API 还原
+        use base64::Engine;
+        let ct = base64::engine::general_purpose::STANDARD
+            .decode(&out)
+            .unwrap();
+        let pt = symmetric_decrypt(
+            "DESede/CBC/PKCS5Padding",
+            key.as_bytes(),
+            Some(iv.as_bytes()),
+            &ct,
+        )
+        .unwrap();
+        assert_eq!(pt, "base64 out".as_bytes());
     }
 
     // ---- RC4 ----

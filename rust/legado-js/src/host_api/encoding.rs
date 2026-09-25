@@ -275,12 +275,22 @@ mod impl_encoding {
         Ok(base64::engine::general_purpose::STANDARD.encode(&bytes))
     }
 
+    /// HMAC 算法名归一：大写 + 去 '-' + 剥离开头的 "HMAC" 前缀。
+    ///
+    /// 兼容 JCA 风格命名（`HmacSHA1` / `HMAC-SHA1` → `SHA1`），#135 阅文
+    /// QDSign 链路 `java.HMacBase64(sign, "HMAC-SHA1", aid)` 依赖该口径：
+    /// 归一后与既有 "SHA1"/"MD5"/"SHA256"/"SHA512" 分发臂对齐。
+    fn normalize_hmac_algorithm(algorithm: &str) -> String {
+        let n = algorithm.to_uppercase().replace('-', "");
+        n.strip_prefix("HMAC").unwrap_or(&n).to_string()
+    }
+
     /// 通用 HMAC — hmacHex(data, algorithm, key)
-    /// 支持: MD5, SHA-1, SHA-256, SHA-512
+    /// 支持: MD5, SHA-1, SHA-256, SHA-512（含 JCA 风格 `HMAC-SHA1` 等写法）
     ///
     /// 对应 Kotlin: `HMacHex(data, algorithm, key)`
     pub fn hmac_hex(data: &str, algorithm: &str, key: &str) -> Result<String, String> {
-        match algorithm.to_uppercase().replace('-', "").as_str() {
+        match normalize_hmac_algorithm(algorithm).as_str() {
             "MD5" => hmac_md5(data, key),
             "SHA1" => {
                 type HmacSha1 = Hmac<Sha1>;
@@ -302,11 +312,11 @@ mod impl_encoding {
     }
 
     /// HMAC Base64 — hmacBase64(data, algorithm, key)
-    /// 支持: MD5, SHA-1, SHA-256, SHA-512
+    /// 支持: MD5, SHA-1, SHA-256, SHA-512（含 JCA 风格 `HMAC-SHA1` 等写法）
     ///
     /// 对应 Kotlin: `HMacBase64(data, algorithm, key)`
     pub fn hmac_base64(data: &str, algorithm: &str, key: &str) -> Result<String, String> {
-        let bytes: Vec<u8> = match algorithm.to_uppercase().replace('-', "").as_str() {
+        let bytes: Vec<u8> = match normalize_hmac_algorithm(algorithm).as_str() {
             "MD5" => {
                 type HmacMd5T = Hmac<Md5>;
                 let mut mac = HmacMd5T::new_from_slice(key.as_bytes())
@@ -622,6 +632,28 @@ mod tests {
             .decode(&result)
             .unwrap();
         assert_eq!(decoded.len(), 32); // SHA-256 output is 32 bytes
+    }
+
+    /// JCA 风格算法名归一（#135 阅文 QDSign：HMacBase64(sign, "HMAC-SHA1", aid)）：
+    /// "HMAC-SHA1" / "HmacSHA1" 与裸 "SHA1" 必须等价。
+    #[test]
+    fn test_hmac_jca_style_algorithm_names() {
+        let plain = hmac_base64("hello", "SHA1", "key").unwrap();
+        for alias in ["HMAC-SHA1", "HmacSHA1", "HMACSHA1"] {
+            assert_eq!(
+                hmac_base64("hello", alias, "key").unwrap(),
+                plain,
+                "{alias} 应与 SHA1 等价"
+            );
+        }
+        let plain_hex = hmac_hex("hello", "MD5", "key").unwrap();
+        for alias in ["HMAC-MD5", "HmacMD5", "HMACMD5"] {
+            assert_eq!(
+                hmac_hex("hello", alias, "key").unwrap(),
+                plain_hex,
+                "{alias} 应与 MD5 等价"
+            );
+        }
     }
 
     #[test]

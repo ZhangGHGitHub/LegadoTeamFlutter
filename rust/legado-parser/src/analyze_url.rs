@@ -18,6 +18,7 @@
 //! - bookName/title 等内置变量支持
 //! - getByteArrayAwait 流式读取（data URI 直接解码）
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 
 use base64::Engine;
@@ -27,6 +28,46 @@ use regex::Regex;
 use legado_core::{LegadoError, LegadoResult};
 
 use crate::analyze_rule::JsExecutor;
+
+thread_local! {
+    /// 当前 AnalyzeUrl 的请求 URL（对齐上游 `AnalyzeUrl.evalJS` 的
+    /// `bindings["java"] = this` 口径：URL 规则 JS 窗口内 `java` 即 AnalyzeUrl
+    /// 实例，`java.url` = 其 `url` 字段）。状态机：
+    /// - `parse_with_js` 入口置 `Some("")`——上游 `var url = ""`（L104），
+    ///   `@js:`/`{{}}` 评估窗口内字段尚未赋值 → `java.url` 为空串；
+    /// - URL 选项 `{"js": ...}` 评估前置 `Some(绝对 URL)`——上游在
+    ///   `url = getAbsoluteURL(...)`（L235）**之后**才评估选项 js（L274-278）；
+    /// - `parse_with_js` 退出置 `None`——非 URL 规则窗口（source evalJS，
+    ///   上游 java=source）`java.url` 应回退 sourceUrl，不残留上一请求。
+    static CURRENT_URL: RefCell<Option<String>> = const { RefCell::new(None) };
+
+    /// URL 规则 JS 窗口内书源经 `java.headerMap.put(k, v)` 写入的请求头
+    /// （上游即 AnalyzeUrl 实例的 `headerMap` 字段——写入直接生效于本次
+    /// 请求）。宿主桥写入 → `parse_with_js` 在选项 js 评估后统一取走并入
+    /// `self.headers`，请求组头（fetch_page）即可见。
+    static PENDING_REQUEST_HEADERS: RefCell<Vec<(String, String)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// 读取当前请求 URL（`java.url` 后端；`None` = 非 URL 规则窗口）
+pub fn current_url() -> Option<String> {
+    CURRENT_URL.with(|c| c.borrow().clone())
+}
+
+/// 设置当前请求 URL（仅供 parser 内部状态机与测试使用）
+pub fn set_current_url(url: Option<String>) {
+    CURRENT_URL.with(|c| *c.borrow_mut() = url);
+}
+
+/// 书源在 URL 规则 JS 窗口写入请求头（`java.headerMap.put` 后端）
+pub fn push_pending_request_header(key: String, value: String) {
+    PENDING_REQUEST_HEADERS.with(|c| c.borrow_mut().push((key, value)));
+}
+
+/// 取走窗口内写入的请求头（`parse_with_js` 收尾并入 AnalyzeUrl.headers）
+pub fn take_pending_request_headers() -> Vec<(String, String)> {
+    PENDING_REQUEST_HEADERS.with(|c| std::mem::take(&mut *c.borrow_mut()))
+}
 
 /// HTTP 请求方法
 #[derive(Debug, Clone, PartialEq)]
@@ -1155,7 +1196,11 @@ impl AnalyzeUrl {
                 continue;
             }
             if let Ok(lit) = serde_json::to_string(value) {
-                prologue.push_str(&format!("var {name} = {lit};\n"));
+                // [能力对账批次 2 | #850] 属性注入替代顶层 var：不注册 QuickJS
+                // 全局 var 条目，书源块顶层 `let key` 不再触发同脚本
+                // `invalid redefinition of global identifier`（属性存在对裸
+                // 标识符读路径等价）
+                prologue.push_str(&format!("globalThis.{name} = {lit};\n"));
             }
         }
         prologue
@@ -1230,9 +1275,19 @@ impl AnalyzeUrl {
             // AnalyzeUrl.evalJS(jsStr, result) 会把前一段 URL/规则文本绑定为
             // JS 变量 result；趣书等 `URL,{json}\n@js` 规则通过
             // String(result) 从前缀构造重定向后的分页 URL。
+            // [能力对账批次 2 | #702/#850] result 绑定改 globalThis 属性注入
+            // （不注册全局 var 条目）；书源块经 Function-eval 作用域隔离
+            // （对齐 analyze_rule.rs 书山去重修复 2026-08-14 既有模式）：
+            // 块内顶层 let/const 不再跨 eval 残留（引擎池复用翻页不再
+            // redeclaration），完成值经 Function 返回原样保留；块内顶层
+            // `return` 合法。行为差异（对齐仓库「独立作用域」语义）：块内
+            // 顶层 var 不再跨 eval 持久。
             let result_lit = serde_json::to_string(&result).unwrap_or_else(|_| "\"\"".to_string());
-            let code_with_vars =
-                format!("{var_prologue}var result = {result_lit};\n{eval_prologue}{js_code}");
+            let block_lit = serde_json::to_string(js_code).unwrap_or_else(|_| "\"\"".to_string());
+            let code_with_vars = format!(
+                "{var_prologue}globalThis.result = {result_lit};\n{eval_prologue}\
+new Function('__legadoCode', 'return eval(__legadoCode);')({block_lit})"
+            );
 
             // 执行 JS 并获取结果
             match js_executor.execute_js(&code_with_vars) {
@@ -1271,11 +1326,16 @@ impl AnalyzeUrl {
         page: i32,
         js_executor: &dyn JsExecutor,
     ) -> LegadoResult<Self> {
+        // 0. URL 规则窗口状态机开启：@js:/{{}} 评估窗口内 java.url = ""
+        //    （上游 AnalyzeUrl.url 字段此时仍未赋值，见 CURRENT_URL 文档）
+        crate::analyze_url::set_current_url(Some(String::new()));
+
         // 1. 先执行 @js:/<js> 内嵌 JS（失败上抛真实错误：懒人听书
         //    未配置登录会话时 lrtsResolveSession 抛「请先登录…」；
         //    静默保留 @js: 文本会被当 URL 请求 → HTTP 404 误导）
         let (processed, js_err) = Self::analyze_js_with_error(template, js_executor, variables);
         if let Some(err) = js_err {
+            crate::analyze_url::set_current_url(None);
             return Err(LegadoError::Internal(format!(
                 "URL 模板 JS 执行失败: {err}"
             )));
@@ -1285,7 +1345,47 @@ impl AnalyzeUrl {
         let processed = Self::replace_inner_expressions_with_js(&processed, variables, js_executor);
 
         // 3. 调用标准 parse 流程
-        Self::parse(&processed, variables, page)
+        let mut parsed = match Self::parse(&processed, variables, page) {
+            Ok(p) => p,
+            Err(e) => {
+                crate::analyze_url::set_current_url(None);
+                return Err(e);
+            }
+        };
+
+        // 4. URL 选项 `{"js": ...}` 评估路径（对齐上游 AnalyzeUrl.analyzeUrl()
+        //    L274-278：url 已绝对化后评估，`bindings["result"] = url`，返回值
+        //    改写 url；评估窗口内 java.url = 已解析 URL——上游 java 即
+        //    AnalyzeUrl 实例）。窗口内书源经 java.headerMap.put 写入的请求头
+        //    一并落入 self.headers（上游同款：写入实例 headerMap 即时生效）。
+        let url_json = serde_json::to_string(parsed.url()).unwrap_or_else(|_| "\"\"".into());
+        crate::analyze_url::set_current_url(Some(parsed.url().to_string()));
+        if parsed.url_js().is_some() {
+            match js_executor.execute_js_with_result(parsed.url_js().unwrap_or_default(), &url_json)
+            {
+                Ok(out) => {
+                    // 上游 `?.toString()?.let { url = it }`：非空结果改写 URL
+                    //（空串改写会使请求必败，此处保守跳过——登记为有意收窄）
+                    let out = out.trim();
+                    if !out.is_empty() {
+                        parsed.set_url(out);
+                    }
+                }
+                Err(e) => {
+                    // 选项 js 失败：保留已解析 URL 降级继续（与 jsLib 降级同口径），
+                    // 不中断整源解析
+                    eprintln!("[legado-parser] URL 选项 js 执行失败（降级继续）: {e}");
+                }
+            }
+        }
+        // 窗口收尾：书源写入的请求头并入本次请求；URL 状态机复位（后续
+        // source evalJS 窗口 java.url 回退 sourceUrl，见 CURRENT_URL 文档）
+        for (k, v) in crate::analyze_url::take_pending_request_headers() {
+            parsed.headers_mut().insert(k, v);
+        }
+        crate::analyze_url::set_current_url(None);
+
+        Ok(parsed)
     }
 
     /// 使用模板上下文解析 URL（支持 bookName/title 等内置变量）
@@ -1351,12 +1451,28 @@ impl AnalyzeUrl {
                 // 保证 `page > 1` 等比较与算术表达式正确求值）
                 let mut js_code = String::new();
                 for (k, v) in variables {
+                    // [能力对账批次 2 | #702/#850] 对齐 js_variable_prologue：
+                    // globalThis 属性注入（不注册全局 var 条目，避免与块内
+                    // 顶层 let 冲突）；非标识符键（如复合键）改下标注入，
+                    // 替代此前必然产生非法 JS 的 `var <非标识符>`
+                    let is_ident = k
+                        .chars()
+                        .next()
+                        .is_some_and(|c| c == '_' || c == '$' || c.is_ascii_alphabetic())
+                        && k.chars()
+                            .all(|c| c == '_' || c == '$' || c.is_ascii_alphanumeric());
+                    if !is_ident {
+                        let k_lit = serde_json::to_string(k).unwrap_or_else(|_| "\"\"".to_string());
+                        let v_lit = serde_json::to_string(v).unwrap_or_else(|_| "\"\"".to_string());
+                        js_code.push_str(&format!("globalThis[{k_lit}] = {v_lit};\n"));
+                        continue;
+                    }
                     if v.parse::<i64>().is_ok() {
-                        js_code.push_str(&format!("var {} = {};\n", k, v));
+                        js_code.push_str(&format!("globalThis.{k} = {v};\n"));
                     } else {
                         // 转义单引号
                         let escaped = v.replace('\\', "\\\\").replace('\'', "\\'");
-                        js_code.push_str(&format!("var {} = '{}';\n", k, escaped));
+                        js_code.push_str(&format!("globalThis.{k} = '{escaped}';\n"));
                     }
                 }
                 js_code.push_str(expr);
@@ -1449,6 +1565,16 @@ impl AnalyzeUrl {
 
     pub fn url(&self) -> &str {
         &self.url
+    }
+
+    /// 改写解析后的请求 URL（URL 选项 `{"js": ...}` 返回值改写路径专用，
+    /// 对齐上游 `option.getJs()?.let { evalJS(jsStr, url)?.let { url = it } }`）
+    ///
+    /// 注：上游同时回写 baseUrl（getBaseUrl(url)）；我方 parse 流程未做该
+    /// 回写（base_url 仅构造期使用），此处保持一致不改写——登记为有意分叉。
+    pub fn set_url(&mut self, url: &str) {
+        self.url = url.to_string();
+        self.url_no_query = self.url.clone();
     }
 
     pub fn url_no_query(&self) -> &str {
@@ -2510,9 +2636,9 @@ mod tests {
             "https://example.com/e/search/index.php,{\"method\":\"POST\"}\n@js:String(result)";
         let (out, err) = AnalyzeUrl::analyze_js_with_error(template, &executor, &HashMap::new());
         assert!(err.is_none(), "JS 不应失败: {err:?}");
-        assert!(out.contains("var result = \"https://example.com/e/search/index.php,{\\\"method\\\":\\\"POST\\\"}"), "应注入完整 URL option 前缀: {out}");
+        assert!(out.contains("globalThis.result = \"https://example.com/e/search/index.php,{\\\"method\\\":\\\"POST\\\"}"), "应注入完整 URL option 前缀: {out}");
         assert!(
-            !out.contains("var result = \"@js:"),
+            !out.contains("globalThis.result = \"@js:"),
             "result 不应绑定 JS 块自身: {out}"
         );
     }
@@ -2559,9 +2685,12 @@ mod tests {
         // 简单变量名直接查找（不经过 JS）
         assert!(out.starts_with("重生|2|"), "简单变量应直接替换: {out}");
         let code = &out["重生|2|".len()..];
-        assert!(code.contains("var page = 2;"), "page 应以数字注入: {code}");
         assert!(
-            code.contains("var key = '重生';"),
+            code.contains("globalThis.page = 2;"),
+            "page 应以数字注入: {code}"
+        );
+        assert!(
+            code.contains("globalThis.key = '重生';"),
             "key 应以字符串注入: {code}"
         );
     }
@@ -2716,5 +2845,147 @@ mod tests {
             body,
             "<html><body><p id='def'>n. 测试释义</p></body></html>"
         );
+    }
+    // --- 25. URL 选项 js 评估路径（3b-4，对齐上游 AnalyzeUrl L274-278）---
+
+    /// 捕获型 Mock：记录 execute_js_with_result 的 (code, result_json) 与
+    /// 调用时刻的 current_url 线程局部状态
+    struct UrlOptionRecordingExecutor {
+        calls: std::sync::Mutex<Vec<(String, String, Option<String>)>>,
+        rewrite_to: Option<String>,
+    }
+
+    impl UrlOptionRecordingExecutor {
+        fn new(rewrite_to: Option<String>) -> Self {
+            Self {
+                calls: std::sync::Mutex::new(Vec::new()),
+                rewrite_to,
+            }
+        }
+    }
+
+    impl crate::analyze_rule::JsExecutor for UrlOptionRecordingExecutor {
+        fn execute_js(&self, js_code: &str) -> Result<String, String> {
+            // @js:/{{}} 规则窗口：此刻 java.url 应为空串（上游 url 字段未赋值）
+            self.calls.lock().unwrap().push((
+                js_code.to_string(),
+                String::new(),
+                super::current_url(),
+            ));
+            if js_code.contains("buildUrl") {
+                return Ok("https://jsout.test/search".to_string());
+            }
+            Ok(js_code.to_string())
+        }
+
+        fn execute_js_with_result(
+            &self,
+            js_code: &str,
+            result_json: &str,
+        ) -> Result<String, String> {
+            // 选项 js 窗口：此刻 java.url 应为已解析绝对 URL（上游 L235 赋值后）
+            self.calls.lock().unwrap().push((
+                js_code.to_string(),
+                result_json.to_string(),
+                super::current_url(),
+            ));
+            Ok(self.rewrite_to.clone().unwrap_or_default())
+        }
+    }
+
+    #[test]
+    fn test_url_option_js_rewrites_url_and_result_binding() {
+        let ex = UrlOptionRecordingExecutor::new(Some("https://rewritten.test/a?x=1".into()));
+        let parsed = AnalyzeUrl::parse_with_js(
+            "https://origin.test/p,{\"js\":\"source.getKey()\"}",
+            &HashMap::new(),
+            1,
+            &ex,
+        )
+        .unwrap();
+        // 返回值改写 URL（上游 evalJS(jsStr, url)?.let { url = it }）
+        assert_eq!(parsed.url(), "https://rewritten.test/a?x=1");
+        let calls = ex.calls.lock().unwrap();
+        let with_result: Vec<_> = calls.iter().filter(|(_, rj, _)| !rj.is_empty()).collect();
+        assert_eq!(with_result.len(), 1, "仅选项 js 走 execute_js_with_result");
+        let (code, result_json, cur) = &with_result[0];
+        assert_eq!(code, "source.getKey()");
+        assert_eq!(
+            result_json, "\"https://origin.test/p\"",
+            "result 绑定为已解析 URL"
+        );
+        assert_eq!(
+            cur.as_deref(),
+            Some("https://origin.test/p"),
+            "选项 js 窗口内 java.url = 已解析 URL（上游 java=AnalyzeUrl 实例）"
+        );
+    }
+
+    #[test]
+    fn test_url_rule_window_current_url_empty_then_reset() {
+        let ex = UrlOptionRecordingExecutor::new(None);
+        let parsed = AnalyzeUrl::parse_with_js("@js:buildUrl()", &HashMap::new(), 1, &ex).unwrap();
+        let calls = ex.calls.lock().unwrap();
+        assert!(!calls.is_empty(), "@js 规则窗口至少一次调用");
+        let (code0, _, cur0) = &calls[0];
+        assert!(code0.contains("buildUrl"), "首个调用为 @js 规则窗口");
+        assert_eq!(
+            cur0.as_deref(),
+            Some(""),
+            "@js/{{}} 窗口内 java.url 为空串（上游 url 字段未赋值）"
+        );
+        // parse_with_js 返回后状态机复位：非 URL 窗口不残留上一请求
+        assert_eq!(super::current_url(), None);
+        assert_eq!(
+            parsed.url(),
+            "https://jsout.test/search",
+            "无选项 js 时保留规则窗口解析出的 URL"
+        );
+    }
+
+    #[test]
+    fn test_url_option_js_pending_headers_landed() {
+        struct HeaderPushExecutor;
+        impl crate::analyze_rule::JsExecutor for HeaderPushExecutor {
+            fn execute_js(&self, js_code: &str) -> Result<String, String> {
+                Ok(js_code.to_string())
+            }
+            fn execute_js_with_result(
+                &self,
+                _js_code: &str,
+                _result_json: &str,
+            ) -> Result<String, String> {
+                // 模拟 java.headerMap.put('Cookie', 'is_human=x')（#286 语料）
+                super::push_pending_request_header("Cookie".to_string(), "is_human=x".to_string());
+                super::push_pending_request_header("X-Test".to_string(), "1".to_string());
+                Ok(String::new())
+            }
+        }
+        let parsed = AnalyzeUrl::parse_with_js(
+            "https://origin.test/s?key={{key}},{\"js\":\"x\"}",
+            &HashMap::new(),
+            1,
+            &HeaderPushExecutor,
+        )
+        .unwrap();
+        assert_eq!(
+            parsed.headers().get("Cookie").map(String::as_str),
+            Some("is_human=x"),
+            "窗口内写入的请求头必须落入 AnalyzeUrl.headers（请求组头生效）"
+        );
+        assert_eq!(
+            parsed.headers().get("X-Test").map(String::as_str),
+            Some("1")
+        );
+        // 收尾已取空：不得残留至下一解析
+        assert!(super::take_pending_request_headers().is_empty());
+    }
+
+    #[test]
+    fn test_set_url_updates_url_no_query() {
+        let mut url = AnalyzeUrl::parse("https://a.test/p", &HashMap::new(), 1).unwrap();
+        url.set_url("https://b.test/q?x=1");
+        assert_eq!(url.url(), "https://b.test/q?x=1");
+        assert_eq!(url.url_no_query(), "https://b.test/q?x=1");
     }
 }

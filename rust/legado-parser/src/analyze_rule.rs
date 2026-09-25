@@ -56,6 +56,15 @@ pub fn set_global_variable_reader(reader: Option<GlobalVariableReader>) {
 pub trait JsExecutor: Send + Sync {
     /// 执行 JavaScript 代码，返回结果字符串
     fn execute_js(&self, js_code: &str) -> Result<String, String>;
+
+    /// 执行 JavaScript 代码并预置 `result` 变量绑定（上游 AnalyzeUrl.evalJS
+    /// 的 `bindings["result"] = result` 口径——URL 选项 `{"js": ...}` 与 bodyJs
+    /// 在 `result` 中拿到当前 URL/正文）。默认实现忽略 result（不依赖该
+    /// 绑定的执行器无需感知）；QuickJS 执行器覆写为 `globalThis.result` 注入。
+    fn execute_js_with_result(&self, js_code: &str, result_json: &str) -> Result<String, String> {
+        let _ = result_json;
+        self.execute_js(js_code)
+    }
 }
 
 /// 规则类型枚举
@@ -1530,9 +1539,16 @@ impl AnalyzeRule {
             // 读到 store 值形成 JS/规则双轨不一致）。
             if let Ok(guard) = self.variables.lock() {
                 let vars_json = serde_json::to_string(&*guard).unwrap_or_else(|_| "{}".into());
+                // [能力对账批次 2 | #702/#850] __lgVars 改 globalThis 属性
+                // 注入（内部 __ 前缀名，无 jsLib 同名 let 冲突面；不注册
+                // 全局 var 条目，下方函数体内的裸 __lgVars 读经全局属性等价
+                // 解析）。上方 var 裸赋值保护列表（d/data/...）**不改**：
+                // 名称与 jsLib 顶层 let 可能重名，属性写入有踩全局 let 存储
+                // 的风险，且规则块已 Function-eval 隔离（见下），var 列表
+                // 不再构成 redeclaration 冲突面
                 prologue.push_str(&format!(
                     "if (typeof java !== 'undefined') {{\n\
-                     var __lgVars = {vars_json};\n\
+                     globalThis.__lgVars = {vars_json};\n\
                      java.put = function(k,v){{ k=String(k); var s=String(v==null?'':v); __lgVars[k]=s; if (typeof java.__lgStorePut==='function') {{ java.__lgStorePut(k,s); }} return s; }};\n\
                      java.get = function(k){{ k=String(k); var v=__lgVars[k]; if (v) {{ return String(v); }} if (typeof java.__lgStoreGet==='function') {{ var g=java.__lgStoreGet(k); if (g) {{ return String(g); }} }} return ''; }};\n\
                      java.setLocal = function(k,v){{ __lgVars[k]=String(v==null?'':v); return java; }};\n\

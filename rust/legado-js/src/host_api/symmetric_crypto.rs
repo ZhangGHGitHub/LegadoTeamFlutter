@@ -115,9 +115,11 @@ pub fn build_symmetric_crypto_object<'js>(
     match algo.as_str() {
         "AES" if mode == "CBC" || mode == "ECB" || mode == "NONE" => {}
         "DES" | "RC4" => {}
+        // 3DES（#135 阅文 QDSign 解密：DESede/CBC/PKCS5Padding 16 字节密钥）
+        "DESEDE" if mode == "CBC" || mode == "ECB" => {}
         _ => {
             return Err(js_err(format!(
-                "Unsupported algorithm: {algo} (supported: AES/DES/RC4)"
+                "Unsupported algorithm: {algo} (supported: AES/DES/DESEDE/RC4)"
             )));
         }
     }
@@ -248,6 +250,26 @@ mod tests {
         let ct = AesCrypto::encrypt_cbc_nopadding(key, iv, plain).unwrap();
         let st = SymState {
             transformation: "AES/CBC/NoPadding".into(),
+            key: key.to_vec(),
+            iv: Some(iv.to_vec()),
+        };
+        let pt = st.decrypt(&ct).unwrap();
+        assert_eq!(&pt, plain);
+    }
+
+    // #135 阅文 QDSign：createSymmetricCrypto("DESede/CBC/PKCS5Padding", key0, iv)
+    // 16 字节密钥（base64(md5)）→ 双密钥 EDE；此处用 NoPadding 变体验证 SymState
+    // 经 symmetric_decrypt 的 DESEDE 分发
+    #[test]
+    fn test_sym_state_desede_bytes() {
+        use legado_core::crypto::TripleDesCrypto;
+
+        let key = b"0123456789abcdef"; // 16 bytes
+        let iv = b"00000000";
+        let plain = b"DESedeNoPadding1"; // 16 bytes（8 的倍数）
+        let ct = TripleDesCrypto::encrypt_cbc_nopadding(key, iv, plain).unwrap();
+        let st = SymState {
+            transformation: "DESede/CBC/NoPadding".into(),
             key: key.to_vec(),
             iv: Some(iv.to_vec()),
         };

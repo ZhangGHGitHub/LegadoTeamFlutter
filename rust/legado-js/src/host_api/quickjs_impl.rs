@@ -666,6 +666,11 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
     android: { util: { Base64: {
       decode: function (s, flags) { return java.base64DecodeToByteArray(String(s), flags || 0); },
       encodeToString: function (bytes, flags) { return java.base64EncodeBytes(toU8(bytes)); }
+    } },
+    // 语料 Packages.android.text.TextUtils.isEmpty（#135 阅文）——Kotlin 语义：
+    // `cs == null || cs.length == 0`（空串/未传 → true，非空 → false）— 3b-5
+    text: { TextUtils: {
+      isEmpty: function (s) { return s === null || s === undefined || String(s).length === 0; }
     } } },
     cn: { hutool: { crypto: { digest: { DigestUtil: { md5Hex: function (s) { return java.md5Encode(String(s)); } } } } } },
     javax: { crypto: {
@@ -756,7 +761,10 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
       },
       body: function () { return (r && r.body) || ''; },
       statusCode: function () { return r ? r.status_code : 0; },
-      headersMap: function () { return h; }
+      headersMap: function () { return h; },
+      // 辅助新增（非上游 OkHttp 面）：本响应最终 URL 的域归属 cookie 串
+      //（响应 Set-Cookie 已在请求层落 cookie 存储，读即所得）— 3b-3
+      cookies: function () { return java.getCookie((r && r.url) || ''); }
     };
   }
   var __nativeGetVariable = java.get;
@@ -776,7 +784,9 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
     return {
       body: (r && r.body) || '',
       raw: function () { return raw; },
-      callTime: function () { return 0; }
+      callTime: function () { return 0; },
+      // 辅助新增（非上游 OkHttp 面）：本响应最终 URL 的域归属 cookie 串 — 3b-3
+      cookies: function () { return java.getCookie(finalUrl); }
     };
   }
   java.connect = function (url, arg2, arg3, arg4, arg5) {
@@ -974,6 +984,18 @@ fn register_encoding_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
+    // base64Decoder(str) -> String — base64Decode 别名（#561 语料期望；
+    // 上游无此符号，登记为兼容 shim：解码口径与 base64Decode 完全一致）
+    mount_dual(
+        java,
+        globals,
+        "base64Decoder",
+        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+            encoding::base64_decode(&s).unwrap_or_else(|e| format!("[ERROR] {}", e))
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
     // base64DecodeToByteArray(str, flags?) -> Uint8Array（字节数组）
     // 对应 Kotlin: base64DecodeToByteArray(str?, flags=0): ByteArray?
     // 空白输入返回 null（对齐 Kotlin 的 null 返回）；flags 兼容 Android URL_SAFE(8)
@@ -1039,6 +1061,18 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "hexEncode",
+        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+            encoding::hex_encode(&s)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // hexEncodeToString(str) -> String — hexEncode 别名（#324 长佩语料，
+    // 对齐上游 HexUtil.encodeHexStr 命名；输出同为小写 hex）
+    mount_dual(
+        java,
+        globals,
+        "hexEncodeToString",
         rquickjs::Function::new(ctx.clone(), |s: String| -> String {
             encoding::hex_encode(&s)
         })
@@ -1172,6 +1206,25 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "hmacBase64",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |data: String, algorithm: String, key: String| -> String {
+                encoding::hmac_base64(&data, &algorithm, &key)
+                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // HMacBase64(data, algorithm, key) -> String
+    // #135 阅文 QDSign：java.HMacBase64(sign, "HMAC-SHA1", aid).slice(0, -4)
+    // 对齐上游 JsExtensions 的 JCA 风格命名（JS 属性访问大小写敏感，
+    // 与 hmacBase64 共存）；算法名归一支持 "HMAC-SHA1"/"HmacSHA1"
+    // （见 encoding::normalize_hmac_algorithm）。
+    mount_dual(
+        java,
+        globals,
+        "HMacBase64",
         rquickjs::Function::new(
             ctx.clone(),
             |data: String, algorithm: String, key: String| -> String {
@@ -1995,6 +2048,21 @@ fn register_utility_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
+    // sleep(ms) — threadSleep 别名（#45 露西弗俱乐部语料 java.sleep(1000)）。
+    // 风险口径与 threadSleep 完全一致（#45 可行性评估结论）：
+    // 阻塞的是 JS 执行工作线程而非 UI 线程，0..=30000ms 钳制；
+    // #45 的调用点均包在 }catch(e){} 内，上限降级可被 JS 捕获。
+    mount_dual(
+        java,
+        globals,
+        "sleep",
+        rquickjs::Function::new(ctx.clone(), |ms: i64| -> () {
+            let ms = ms.clamp(0, 30_000);
+            std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
     // inflateRawBytes(bytes) -> Uint8Array — P2-9 ①：语料
     // `java.util.zip.Inflater` 流程（2 源）的 raw-deflate 解压宿主桥，
     // Packages shim 的 util.zip.Inflater/InflaterInputStream 委托到本方法。
@@ -2133,6 +2201,39 @@ fn register_network_apis<'js>(
                 }
                 Err(_) => false,
             }
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // getCurrentUrl() -> String（`java.url` 属性后端）
+    // 读 legado-parser 的 CURRENT_URL 线程局部（对齐上游 AnalyzeUrl.evalJS
+    // `bindings["java"] = this` 口径：URL 规则 JS 窗口内 java 即 AnalyzeUrl
+    // 实例）——`@js:`/`{{}}` 窗口为空串（上游 url 字段未赋值）、URL 选项
+    // js 窗口为已解析绝对 URL；非 URL 窗口返回空串（setup 脚本 java.url
+    // getter 再回退 sourceUrl，对齐上游 BaseSource.evalJS java=source）
+    mount_dual(
+        java,
+        globals,
+        "getCurrentUrl",
+        rquickjs::Function::new(ctx.clone(), || -> String {
+            legado_parser::analyze_url::current_url().unwrap_or_default()
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // headerMapPut(key, value) -> bool（`java.headerMap.put` 后端）
+    // 上游 URL 规则窗口内 java.headerMap 即 AnalyzeUrl 实例的请求头 Map
+    //（写入直接生效于本次请求）；Rust 侧经 legado-parser 线程局部收集器
+    // 暂存，parse_with_js 收尾并入 AnalyzeUrl.headers → fetch_page 组头生效。
+    // 非 URL 窗口写入会被下次窗口收尾丢弃（上游同款：无 AnalyzeUrl 上下文
+    // 则无 headerMap 可写；语料 #286 仅在选项 js 窗口使用）。
+    mount_dual(
+        java,
+        globals,
+        "headerMapPut",
+        rquickjs::Function::new(ctx.clone(), |key: String, value: String| -> bool {
+            legado_parser::analyze_url::push_pending_request_header(key, value);
+            true
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -2303,6 +2404,75 @@ fn register_cookie_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
+    // replaceCookie(url, cookieStr) -> String
+    // 对齐上游 `CookieStore.replaceCookie`（CookieManagerInterface）：现存域
+    // cookie ∪ 新串按键合并（新值覆盖、旧键保留）后写回；空参 no-op。
+    // 返回空串（上游返回 Unit → Rhino null → evalJS 兜底空串；沿用
+    // removeCookie 同款口径，防 URL 模板内联 true）。— 3b-3
+    mount_dual(
+        java,
+        globals,
+        "replaceCookie",
+        rquickjs::Function::new(ctx.clone(), |url: String, cookie_str: String| -> String {
+            cookie_store::replace_cookie_str(&url, &cookie_str);
+            String::new()
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // cookieToMap(cookieStr) -> String（有序键值对的 JSON 串）
+    // 对齐上游 `CookieStore.cookieToMap`（`;` 拆段、首个 `=` 分界、键值
+    // trim、空值段剔除、同名键覆盖）；rquickjs 闭包不便直构 JS 对象，
+    // 返回 JSON 串、setup 脚本 cookie 对象包装层 JSON.parse 还原
+    //（键序以手拼 JSON 保留首次出现序，不经 serde BTreeMap 重排）。— 3b-3
+    mount_dual(
+        java,
+        globals,
+        "cookieToMap",
+        rquickjs::Function::new(ctx.clone(), |cookie_str: String| -> String {
+            let pairs = cookie_store::cookie_str_to_map(&cookie_str);
+            let body = pairs
+                .iter()
+                .map(|(k, v)| {
+                    format!(
+                        "{}:{}",
+                        serde_json::to_string(k).unwrap_or_else(|_| "\"\"".into()),
+                        serde_json::to_string(v).unwrap_or_else(|_| "\"\"".into())
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("{{{body}}}")
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // mapToCookie(mapJson) -> Option<String>
+    // 对齐上游 `CookieStore.mapToCookie`：空表/不可解析 → null（上游返回
+    // null），否则 `k=v` 以 `; ` 连接；入参为 JS 侧 JSON.stringify 后的
+    // 对象串。— 3b-3
+    mount_dual(
+        java,
+        globals,
+        "mapToCookie",
+        rquickjs::Function::new(ctx.clone(), |map_json: String| -> Option<String> {
+            let value: serde_json::Value = serde_json::from_str(&map_json).ok()?;
+            let obj = value.as_object()?;
+            let pairs: Vec<(String, String)> = obj
+                .iter()
+                .map(|(k, v)| {
+                    let v = match v {
+                        serde_json::Value::String(s) => s.clone(),
+                        other => other.to_string(),
+                    };
+                    (k.clone(), v)
+                })
+                .collect();
+            cookie_store::map_to_cookie_str(&pairs)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
     Ok(())
 }
 
@@ -2455,6 +2625,23 @@ fn register_crypto_apis<'js>(
                     &key_bytes,
                     iv_bytes.as_deref(),
                 )
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )?;
+
+    // tripleDESEncodeBase64Str(data, key, mode, padding, iv) -> String
+    // 对齐 JsEncodeUtils.tripleDESEncodeBase64Str（#135 阅文 QDSign 加密）：
+    // createSymmetricCrypto("DESede/{mode}/{padding}", key, iv).encryptBase64(data)
+    mount_dual(
+        java,
+        globals,
+        "tripleDESEncodeBase64Str",
+        rquickjs::Function::new(
+            ctx.clone(),
+            |data: String, key: String, mode: String, padding: String, iv: String| -> String {
+                crypto_api::triple_des_encode_base64_str(&data, &key, &mode, &padding, &iv)
+                    .unwrap_or_else(|e| format!("[ERROR] {e}"))
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -4505,6 +4692,153 @@ decryptImage(result);
         assert_eq!(result, "secret data");
     }
 
+    /// #135 阅文 QDSign 链路：tripleDESEncodeBase64Str 加密 →
+    /// createSymmetricCrypto("DESede/CBC/PKCS5Padding").decryptStr 还原
+    #[test]
+    fn test_java_desede_chain_qdsign() {
+        let engine = make_engine();
+        let js = r#"
+const data = 'QDSign sign payload';
+const key = '0123456789abcdef'; // 16 字节密钥 → 双密钥 EDE
+const iv  = '00000000';
+const b64 = java.tripleDESEncodeBase64Str(data, key, 'CBC', 'PKCS5Padding', iv);
+const cipher = java.createSymmetricCrypto('DESede/CBC/PKCS5Padding', key, iv);
+cipher.decryptStr(b64);
+"#;
+        let out = engine.eval(js).expect("DESede 加密-解密链路应成功");
+        assert_eq!(out, "QDSign sign payload");
+    }
+
+    /// tripleDESEncodeBase64Str 错误模式应返回 [ERROR] 前缀而非抛异常
+    #[test]
+    fn test_java_desede_bad_mode_returns_error_prefix() {
+        let engine = make_engine();
+        let out = engine
+            .eval(
+                "java.tripleDESEncodeBase64Str('x', '0123456789abcdef', 'OFB', 'NoPadding', '00000000')",
+            )
+            .unwrap();
+        assert!(out.starts_with("[ERROR]"), "应为 [ERROR] 前缀: {out}");
+    }
+
+    // ── 3b-3/3b-4/3b-5 引擎级测试（2026-09-26）──
+
+    #[test]
+    fn test_cookie_replace_to_map_roundtrip() {
+        let engine = make_engine();
+        // replaceCookie：现存域 cookie ∪ 新串（新值覆盖、旧键保留）
+        engine
+            .eval("java.setCookie('https://b233.test/', 'a=1; keep=2')")
+            .unwrap();
+        engine
+            .eval("java.replaceCookie('https://b233.test/', 'a=9; new=x')")
+            .unwrap();
+        let full = engine.eval("java.getCookie('https://b233.test/')").unwrap();
+        assert!(full.contains("a=9"), "新值覆盖: {full}");
+        assert!(full.contains("keep=2"), "旧键保留: {full}");
+        assert!(full.contains("new=x"), "新键写入: {full}");
+        // cookieToMap：';' 拆段 → JSON 串（键值 trim、空值段剔除、同名覆盖）
+        let map_json = engine
+            .eval("java.cookieToMap('x = 1 ;; y=2; x=3; bad; e=')")
+            .unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&map_json).unwrap();
+        assert_eq!(parsed["x"], "3", "同名键后值覆盖");
+        assert_eq!(parsed["y"], "2");
+        assert!(parsed.get("bad").is_none() && parsed.get("e").is_none());
+        // mapToCookie：'; ' 连接；空/不可解析 → null
+        let joined = engine
+            .eval("java.mapToCookie(JSON.stringify({a:'1', b:'2'}))")
+            .unwrap();
+        assert_eq!(joined, "a=1; b=2");
+        // 裸 java 面：宿主 Option.None → JS undefined（rquickjs 转换口径）；
+        // setup 脚本 cookie.mapToCookie 包装层负责转 null（对齐上游返回 null）
+        let none = engine.eval("java.mapToCookie('{}')").unwrap();
+        assert_eq!(none, "undefined", "裸 java.mapToCookie 空表 → undefined");
+        // 收尾
+        engine
+            .eval("java.clearCookies('https://b233.test/')")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_get_current_url_and_header_map_put() {
+        let engine = make_engine();
+        // 非 URL 窗口（未设置）→ 空串
+        assert_eq!(engine.eval("java.getCurrentUrl()").unwrap(), "");
+        // URL 规则窗口（模拟 parser 状态机置值）
+        legado_parser::analyze_url::set_current_url(Some("https://cur.test/s?k=1".into()));
+        assert_eq!(
+            engine.eval("java.getCurrentUrl()").unwrap(),
+            "https://cur.test/s?k=1"
+        );
+        // headerMapPut → parser 线程局部收集器
+        engine
+            .eval("java.headerMapPut('Cookie', 'is_human=x')")
+            .unwrap();
+        engine.eval("java.headerMapPut('X-T', '1')").unwrap();
+        let pending = legado_parser::analyze_url::take_pending_request_headers();
+        assert_eq!(
+            pending,
+            vec![
+                ("Cookie".to_string(), "is_human=x".to_string()),
+                ("X-T".to_string(), "1".to_string()),
+            ]
+        );
+        // 复位（对齐 parse_with_js 退出语义）
+        legado_parser::analyze_url::set_current_url(None);
+        assert_eq!(engine.eval("java.getCurrentUrl()").unwrap(), "");
+    }
+
+    #[test]
+    fn test_packages_android_text_utils_is_empty() {
+        let engine = make_engine();
+        assert_eq!(
+            engine
+                .eval("Packages.android.text.TextUtils.isEmpty('')")
+                .unwrap(),
+            "true",
+            "Kotlin 语义：空串 → true"
+        );
+        assert_eq!(
+            engine
+                .eval("Packages.android.text.TextUtils.isEmpty(null)")
+                .unwrap(),
+            "true",
+            "Kotlin 语义：null → true"
+        );
+        assert_eq!(
+            engine
+                .eval("Packages.android.text.TextUtils.isEmpty('a')")
+                .unwrap(),
+            "false",
+            "非空 → false"
+        );
+    }
+
+    #[test]
+    fn test_response_bridge_cookies_helper() {
+        let engine = make_engine();
+        // 桥注入**前**伪造 java.connect（桥按当前引用捕获原生实现）——
+        // 返回罐头响应 JSON，全程零联网
+        engine
+            .eval(
+                "java.connect = function () { return JSON.stringify({ status_code: 200, body: 'x', headers: {}, url: 'https://resp-ck.test/x' }); };",
+            )
+            .unwrap();
+        engine.eval(super::RESPONSE_BRIDGE_JS).unwrap();
+        // 响应 JSON 带 url：cookies() 读该 URL 域归属 cookie（请求层已落存储）
+        engine
+            .eval("java.setCookie('https://resp-ck.test/x', 'ck=9')")
+            .unwrap();
+        let got = engine
+            .eval("java.connect('https://resp-ck.test/x').cookies()")
+            .unwrap();
+        assert_eq!(got, "ck=9", "response.cookies() 读响应 URL 域 cookie");
+        engine
+            .eval("java.clearCookies('https://resp-ck.test/x')")
+            .unwrap();
+    }
+
     #[test]
     fn test_java_get_cookie() {
         let engine = make_engine();
@@ -5631,6 +5965,66 @@ decryptImage(result);
             )
             .unwrap();
         assert!(result.contains("\"ok\":true"), "got: {result}");
+    }
+
+    /// 第二批兼容别名：HMacBase64 / base64Decoder / hexEncodeToString / sleep
+    #[test]
+    fn test_alias_batch_hmac_base64_decoder_hex_sleep() {
+        let engine = make_engine();
+        // HMacBase64：JCA 风格算法名 "HMAC-SHA1" 必须与 hmacBase64("SHA1") 等价
+        // （#135 阅文 QDSign：java.HMacBase64(sign, "HMAC-SHA1", aid).slice(0, -4)）
+        let eq = engine
+            .eval(
+                "java.HMacBase64('hello', 'HMAC-SHA1', 'key') === java.hmacBase64('hello', 'SHA1', 'key')",
+            )
+            .unwrap();
+        assert_eq!(
+            eq, "true",
+            "HMacBase64(HMAC-SHA1) 应与 hmacBase64(SHA1) 等价"
+        );
+        let sliced = engine
+            .eval("java.HMacBase64('hello', 'HMAC-SHA1', 'key').slice(0, -4)")
+            .unwrap();
+        assert!(!sliced.starts_with("[ERROR]"), "got: {sliced}");
+
+        // base64Decoder == base64Decode（#561 兼容 shim）
+        assert_eq!(
+            engine.eval("java.base64Decoder('aGVsbG8=')").unwrap(),
+            "hello"
+        );
+        assert_eq!(
+            engine
+                .eval("java.base64Decoder('aGVsbG8=') === java.base64Decode('aGVsbG8=')")
+                .unwrap(),
+            "true"
+        );
+
+        // hexEncodeToString == hexEncode（#324 长佩，小写 hex）
+        assert_eq!(engine.eval("java.hexEncodeToString('hi')").unwrap(), "6869");
+        assert_eq!(
+            engine
+                .eval("java.hexEncodeToString('hi') === java.hexEncode('hi')")
+                .unwrap(),
+            "true"
+        );
+
+        // sleep（#45 露西弗俱乐部）：真实休眠 + 负值钳制为 0 立即返回
+        // （30s 上限与 threadSleep 同一 clamp 表达式，负值路径覆盖钳制下界）
+        let r = engine
+            .eval(
+                r#"
+                var t0 = java.currentTimeMillis();
+                java.sleep(30);
+                var dt = java.currentTimeMillis() - t0;
+                var t1 = java.currentTimeMillis();
+                java.sleep(-5);
+                var dt2 = java.currentTimeMillis() - t1;
+                JSON.stringify({ ok: dt >= 25, fast: dt2 < 500 });
+                "#,
+            )
+            .unwrap();
+        assert!(r.contains("\"ok\":true"), "got: {r}");
+        assert!(r.contains("\"fast\":true"), "got: {r}");
     }
 
     /// java.inflateRawBytes（上游 zip Inflater 流宿主）+ 完整 wrInflateRaw 流程

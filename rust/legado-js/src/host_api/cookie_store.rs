@@ -493,6 +493,80 @@ pub fn set_cookie_str(url: &str, cookie_str: &str) {
     });
 }
 
+/// 上游 `CookieStore.cookieToMap` 语义的纯函数：`;` 拆段、首个 `=` 分界
+/// （limit 2 等价——值内 `=` 保留）、无 `=` 段跳过、键 trim、值 trim 后为
+/// 空跳过（上游 `isNotBlank` 判定，含 `"null"` 字面量——非空必过）；
+/// 同名键**位置保留、值覆盖**（Kotlin LinkedHashMap put 语义）。
+///
+/// 键值对按首次出现顺序排列（供 [`map_to_cookie_str`] 决定性输出）。
+pub fn cookie_str_to_map(cookie_str: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    for seg in cookie_str.split(';') {
+        let seg = seg.trim();
+        let Some(eq) = seg.find('=') else {
+            continue;
+        };
+        let key = seg[..eq].trim();
+        if key.is_empty() {
+            continue;
+        }
+        let value = seg[eq + 1..].trim();
+        if value.is_empty() {
+            continue;
+        }
+        if let Some(slot) = out.iter_mut().find(|(k, _)| k == key) {
+            slot.1 = value.to_string();
+        } else {
+            out.push((key.to_string(), value.to_string()));
+        }
+    }
+    out
+}
+
+/// 上游 `CookieStore.mapToCookie` 语义的纯函数：空表 → `None`（上游返回
+/// null）；否则 `k=v` 以 `; ` 连接（键值不再 trim——map 已是规范形态）。
+pub fn map_to_cookie_str(pairs: &[(String, String)]) -> Option<String> {
+    if pairs.is_empty() {
+        return None;
+    }
+    Some(
+        pairs
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("; "),
+    )
+}
+
+/// 上游 `CookieStore.replaceCookie` 语义：url / cookie_str 任一为空 no-op；
+/// 否则取现存域 cookie（[`get_cookie`]）与新串按键合并（**新值覆盖、旧键
+/// 保留**），一次性 [`set_cookie_str`] 写回（含持久化下沉 upsert）。
+///
+/// get 与 set 各自独立取锁（不跨写持锁），同域并发 RMW 窗口与上游
+/// `replaceCookie`（getCookieNoSession → putAll → setCookie 三步）一致；
+/// 高频替换路径由调用方按需串行化。
+pub fn replace_cookie_str(url: &str, cookie_str: &str) {
+    if url.trim().is_empty() || cookie_str.trim().is_empty() {
+        return;
+    }
+    let old = get_cookie(url);
+    if old.trim().is_empty() {
+        set_cookie_str(url, cookie_str);
+        return;
+    }
+    let mut merged = cookie_str_to_map(&old);
+    for (k, v) in cookie_str_to_map(cookie_str) {
+        if let Some(slot) = merged.iter_mut().find(|(ek, _)| *ek == k) {
+            slot.1 = v;
+        } else {
+            merged.push((k, v));
+        }
+    }
+    if let Some(s) = map_to_cookie_str(&merged) {
+        set_cookie_str(url, &s);
+    }
+}
+
 /// clearCookies(url) — 清除该 URL 归一域名键的 Cookie，并连带清除
 ///（不同的）原始串键——覆盖历史遗留的原始 URL 形态键（兼容：存储为
 /// 内存态、无迁移负担，读侧同时尝试两候选，清理侧同样两键齐清）
@@ -1372,5 +1446,70 @@ mod sink_tests {
         );
         backfill_from_sink();
         assert_eq!(get_cookie(KEY), "", "全量清除 + 回填后不得复活已清除域");
+    }
+
+    // ── 3b-3：cookieToMap / mapToCookie / replaceCookie 纯函数（对齐上游
+    //    CookieStore.kt 语义）──
+
+    #[test]
+    fn test_cookie_str_to_map_upstream_semantics() {
+        // 基本拆分 + 键值 trim
+        let m = cookie_str_to_map("a=1; b = 2 ;c=3");
+        assert_eq!(
+            m,
+            vec![
+                ("a".to_string(), "1".to_string()),
+                ("b".to_string(), "2".to_string()),
+                ("c".to_string(), "3".to_string()),
+            ]
+        );
+        // 无 `=` 段跳过、空值段剔除（上游 isNotBlank 判定）
+        let m = cookie_str_to_map("novalue; empty=; ok=v; =nokey;  ;");
+        assert_eq!(m, vec![("ok".to_string(), "v".to_string())]);
+        // 值内 `=` 保留（首个 `=` 分界，上游 split limit 2 口径）
+        let m = cookie_str_to_map("sig=abc==;x=1");
+        assert_eq!(m[0], ("sig".to_string(), "abc==".to_string()));
+        // 同名键：位置保留、值覆盖（LinkedHashMap put 语义）
+        let m = cookie_str_to_map("a=1; b=2; a=9");
+        assert_eq!(
+            m,
+            vec![
+                ("a".to_string(), "9".to_string()),
+                ("b".to_string(), "2".to_string()),
+            ]
+        );
+        // 空串 → 空表
+        assert!(cookie_str_to_map("").is_empty());
+    }
+
+    #[test]
+    fn test_map_to_cookie_str() {
+        // 空 → None（上游 mapToCookie 空表返回 null）
+        assert_eq!(map_to_cookie_str(&[]), None);
+        let pairs = vec![
+            ("a".to_string(), "1".to_string()),
+            ("b".to_string(), "2".to_string()),
+        ];
+        assert_eq!(map_to_cookie_str(&pairs), Some("a=1; b=2".to_string()));
+    }
+
+    #[test]
+    fn test_replace_cookie_str_merges_and_persists() {
+        let _lock = lock_cookie_store_test();
+        const URL: &str = "https://replace.fresh.test/";
+        // 空参 no-op
+        replace_cookie_str(URL, "");
+        assert_eq!(get_cookie(URL), "");
+        // 现存域 cookie ∪ 新串（新值覆盖、旧键保留）
+        set_cookie(URL, "old", "1");
+        set_cookie(URL, "keep", "2");
+        replace_cookie_str(URL, "old=9; new=x");
+        let got = get_cookie(URL);
+        assert!(got.contains("old=9"), "新值必须覆盖: {got}");
+        assert!(got.contains("keep=2"), "旧键必须保留: {got}");
+        assert!(got.contains("new=x"), "新键必须写入: {got}");
+        // 收尾（内存 + 持久行齐清）
+        clear_cookies(URL);
+        assert_eq!(get_cookie(URL), "");
     }
 }

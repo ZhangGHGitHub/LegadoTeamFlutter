@@ -83,6 +83,7 @@ const CAPABILITY_NAMES: &[&str] = &[
     "clearVariables",
     "connect",
     "connectNR",
+    "cookieToMap",
     "copyText",
     "createAsymmetricCrypto",
     "createSign",
@@ -100,6 +101,7 @@ const CAPABILITY_NAMES: &[&str] = &[
     "formatTime",
     "get",
     "get7zStringContent",
+    "getCurrentUrl",
     "getCookie",
     "getElement",
     "getElements",
@@ -149,8 +151,10 @@ const CAPABILITY_NAMES: &[&str] = &[
     "jsoupUnescapeEntities",
     "lock",
     "log",
+    "headerMapPut",
     "logType",
     "longToast",
+    "mapToCookie",
     "md5Encode",
     "md5Encode16",
     "messageDigestDigest",
@@ -178,6 +182,7 @@ const CAPABILITY_NAMES: &[&str] = &[
     "regExp",
     "regExpFindAll",
     "regExpReplace",
+    "replaceCookie",
     "removeCookie",
     "removeVariable",
     "replaceAll",
@@ -257,6 +262,8 @@ const PACKAGES_KNOWN: &[&str] = &[
     "java.nio.ByteBuffer",
     "java.security.MessageDigest",
     "android.util.Base64",
+    // 3b-5（2026-09-26）：TextUtils.isEmpty（#135 阅文；Kotlin null||len==0）
+    "android.text.TextUtils",
     "cn.hutool.crypto.digest.DigestUtil",
     "javax.crypto.spec.SecretKeySpec",
     "javax.crypto.spec.IvParameterSpec",
@@ -278,6 +285,7 @@ const PACKAGES_KNOWN_NS: &[&str] = &[
     "javax.crypto",
     "javax.crypto.spec",
     "android.util",
+    "android.text",
     "cn.hutool",
     "cn.hutool.crypto",
     "org.jsoup",
@@ -286,6 +294,14 @@ const PACKAGES_KNOWN_NS: &[&str] = &[
 /// 裸 java 全局镜像的命名空间（quickjs_impl.rs：`java.security` 与
 /// `java.lang` 重新暴露同一 trapped 节点）
 const BARE_JAVA_MIRROR_NS: &[&str] = &["java.lang", "java.security"];
+
+/// 裸 `java` 全局上的**属性式**成员（非函数面；setup 脚本/引擎挂载）—
+/// 3b-4（2026-09-26）：`java.url`（URL 规则窗口内 = 当前请求 URL，上游
+/// AnalyzeUrl.evalJS `bindings["java"] = this` 口径；source 窗口回退
+/// sourceUrl）/`java.headerMap`（请求头 Map，put 经线程局部收集器落入
+/// AnalyzeUrl.headers）。classify_chain 的 java. 分支按函数面判定，属性
+/// 在此特判：单段（java.url）或多段链首（java.headerMap.put）命中即提供。
+const JAVA_OBJECT_MEMBERS: &[&str] = &["url", "headerMap"];
 
 /// 生产 setup 脚本 JS `cookie` 对象提供的方法（getCookie/**getKey**/setCookie/clearCookies/removeCookie）；
 /// 原版 gedor CookieStore 的 `cookie.get/put/remove/clear` **未提供**。
@@ -296,6 +312,11 @@ const COOKIE_PROVIDED: &[&str] = &[
     "setCookie",
     "clearCookies",
     "removeCookie",
+    // 3b-3（2026-09-26）：对齐上游 CookieStore 补齐三方法（爱丽丝书屋）；
+    // cookie.split 定性为本地 JS 变量假阳性（仅报告）
+    "replaceCookie",
+    "cookieToMap",
+    "mapToCookie",
 ];
 
 /// `cache` 对象提供的方法：setup 脚本 JS 对象（get/put/remove + cap 2 内存三件套
@@ -311,6 +332,9 @@ const CACHE_PROVIDED: &[&str] = &[
     "putMemory",
     "getFromMemory",
     "deleteMemory",
+    // 3b-3（2026-09-26）：cache.dev_id 属性式 getter/setter（#25 听小说APP
+    // 设备标识；后端 saveTime=0 永久键）
+    "dev_id",
 ];
 
 /// 裸调用观察名单（不在能力面内、但书源常见的 Rhino/宿主符号）。
@@ -731,10 +755,18 @@ fn classify_chain(chain: &str) -> Option<(String, &'static str)> {
                         };
                         return Some((format!("java.{name}"), status));
                     }
+                    if JAVA_OBJECT_MEMBERS.contains(&name) {
+                        return Some((format!("java.{name}"), "提供（java 对象属性）"));
+                    }
                     if name == "type" {
                         return Some((String::from("Java.type"), "缺失（受控：记台账并友好报错）"));
                     }
                     return Some((format!("java.{name}"), "缺失"));
+                }
+                // 多段链（java.headerMap.put 等）：链首为 java 对象属性 → 提供
+                let head = name.split('.').next().unwrap_or("");
+                if JAVA_OBJECT_MEMBERS.contains(&head) {
+                    return Some((format!("java.{name}"), "提供（java 对象属性链）"));
                 }
             }
             // 镜像命名空间（java.security / java.lang 同时挂在裸 java 下；
@@ -1111,7 +1143,12 @@ fn variable_prologue(src: &BookSource) -> String {
         if !valid {
             continue;
         }
-        out.push_str(&format!("var {name} = {};\n", js_string_lit(value.trim())));
+        // [能力对账批次 2 | #702/#850] 对齐生产 js_variable_prologue：
+        // globalThis 属性注入（不注册全局 var 条目，与块顶层 let 不冲突）
+        out.push_str(&format!(
+            "globalThis.{name} = {};\n",
+            js_string_lit(value.trim())
+        ));
     }
     out
 }
@@ -1177,9 +1214,30 @@ fn run_source_dry(idx: usize, src: &BookSource) -> SourceDryRun {
                         &offline_fetch,
                     );
                     let candidate = script.as_deref().unwrap_or(js_lib);
-                    if let Err(e) = engine.eval(candidate) {
-                        out.jslib_failed = true;
-                        first_err = Some(format!("jsLib：{e}"));
+                    match engine.eval(candidate) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            // [能力对账批次 2 | #26/#324/#583] 镜像生产缓存引擎的
+                            // Rhino 宽容语法归一化回退（legado-js
+                            // engine_cache.rs）：仅语法错误路径下归一化
+                            // （双点折叠 + let/const 影子形参改名，含自引用
+                            // 初始化值窗口排除）后重试，成功则清除
+                            // jslib_failed——生产已能加载的源在干跑不得误判
+                            // 为 b 类（干跑无 LEXICAL 新引擎回退，归一化是
+                            // 唯一救济路径）
+                            let mut recovered = false;
+                            if engine.check_syntax(candidate).is_err() {
+                                let (normalized, changed) =
+                                    legado_js::jslib_normalize::normalize(candidate);
+                                if changed {
+                                    recovered = engine.eval(&normalized).is_ok();
+                                }
+                            }
+                            if !recovered {
+                                out.jslib_failed = true;
+                                first_err = Some(format!("jsLib：{e}"));
+                            }
+                        }
                     }
                 }
             }
@@ -1189,8 +1247,15 @@ fn run_source_dry(idx: usize, src: &BookSource) -> SourceDryRun {
                 let blocks = extract_js_blocks(search_url);
                 let prologue = variable_prologue(src);
                 for block in blocks.into_iter().take(8) {
+                    // [能力对账批次 2 | #702/#850] 与 analyze_url.rs
+                    // analyze_js_with_error 逐字一致：globalThis 属性注入
+                    // + Function-eval 块隔离（干跑为每源新引擎、多块共享
+                    // 同一引擎且无 LEXICAL 新引擎回退，块内顶层 let 不
+                    // 隔离会跨块 redeclaration → 误判 b 类）
+                    let block_lit = js_string_lit(&block);
                     let code = format!(
-                        "{prologue}var key = \"测试\"; var page = 1; var result = {};\n{EVAL_URI_FALLBACK_JS}{block}",
+                        "{prologue}globalThis.key = \"测试\"; globalThis.page = 1; globalThis.result = {};\n{EVAL_URI_FALLBACK_JS}\
+new Function('__legadoCode', 'return eval(__legadoCode);')({block_lit})",
                         js_string_lit(&result)
                     );
                     match engine.eval(&code) {

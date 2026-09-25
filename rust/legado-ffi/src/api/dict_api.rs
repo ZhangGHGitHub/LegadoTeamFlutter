@@ -478,8 +478,9 @@ fn base_js_executor(_tag: &str) -> Option<Arc<dyn JsExecutor>> {
 ///
 /// 对标 Kotlin `AnalyzeUrl.evalJS` / `AnalyzeRule.evalJS` 的脚本绑定
 /// （`bindings["key"]` / `bindings["result"]` 等）：QuickJS 无等价
-/// bindings 注入口，故以 `var key/word/result = <JSON 字面量>;` 前置
-/// 注入后再执行（同 `js_executor::execute_login_check_js` 的既有模式）。
+/// bindings 注入口，故以 `globalThis.key/word/result = <JSON 字面量>;`
+/// 前置注入后再执行（同 `js_executor::execute_login_check_js` 的既有模式；
+/// [能力对账批次 2] var → globalThis 属性注入，不注册全局 var 条目）。
 struct DictScopeExecutor {
     base: Option<Arc<dyn JsExecutor>>,
     prelude: String,
@@ -487,8 +488,10 @@ struct DictScopeExecutor {
 
 impl DictScopeExecutor {
     fn new(base: Option<Arc<dyn JsExecutor>>, key: &str, result: &str) -> Self {
+        // [能力对账批次 2 | #702/#850] var → globalThis 属性注入（不注册全局
+        // var 条目，与规则块顶层 let 声明不再冲突；读路径等价）
         let prelude = format!(
-            "var key = {};\nvar word = {};\nvar result = {};\n",
+            "globalThis.key = {};\nglobalThis.word = {};\nglobalThis.result = {};\n",
             js_string_literal(key),
             js_string_literal(key),
             js_string_literal(result),

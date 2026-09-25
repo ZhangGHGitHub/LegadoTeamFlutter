@@ -208,11 +208,15 @@ pub fn execute_login_check_js(
         .map_err(|e| LoginCheckError::JsFailed(format!("响应体转义失败: {e}")))?;
     let url_lit = serde_json::to_string(response_url)
         .map_err(|e| LoginCheckError::JsFailed(format!("响应 URL 转义失败: {e}")))?;
+    // [能力对账批次 2 | #702/#850] var → globalThis 属性注入：不注册 QuickJS
+    // 全局 var 条目，loginCheckJs 顶层 `let result` 等声明不再触发同脚本
+    // redefinition（裸标识符读路径经全局属性等价）；跨 eval 的顶层 let
+    // 持久化由 QuickJsExecutor 的 LEXICAL 新引擎回退兜底（既有机制）
     let wrapped_code = format!(
-        "var __result_body = {body_lit};\n\
-         var __result_url = {url_lit};\n\
-         var __result_code = {response_code};\n\
-         var result = {{ body: function() {{ return __result_body; }},\n\
+        "globalThis.__result_body = {body_lit};\n\
+         globalThis.__result_url = {url_lit};\n\
+         globalThis.__result_code = {response_code};\n\
+         globalThis.result = {{ body: function() {{ return __result_body; }},\n\
          url: function() {{ return __result_url; }},\n\
          code: function() {{ return __result_code; }} }};\n\
          {js_code}"
@@ -291,6 +295,10 @@ impl std::fmt::Display for LoginCheckEvalError {
 ///   （body()/url()/code() 方法），真实书源写法 `result.body()` 可用；
 ///   书源 `return result` 原样直通时，完成值为方法形对象，
 ///   `JSON.stringify` 丢弃函数属性 → 文本 `{}` → 解析回退原始响应三元组；
+///   [能力对账批次 2 | #702/#850] 脚本空完成（末条为非空语句之前的
+///   声明语句，如尾随 `var x = 1;`）时完成值同样回落为前导
+///   `globalThis.result` 赋值 → `{}` 直通（规范语义，V8/Rhino 一致；
+///   见 `login_check_response_method_form_passthrough` 测试注释）；
 /// - 书源返回纯数据对象 `{ code, body, url }`（QuickJS 端口扩展，缺字段
 ///   回退原值）→ 修改后响应被采用；
 /// - 其余完成值（裸布尔/数字/字符串/null/undefined，序列化文本不以 `{`
@@ -313,11 +321,15 @@ pub fn execute_login_check_response(
         .map_err(|e| LoginCheckEvalError::JsFailed(format!("响应体转义失败: {e}")))?;
     let url_lit = serde_json::to_string(response_url)
         .map_err(|e| LoginCheckEvalError::JsFailed(format!("响应 URL 转义失败: {e}")))?;
+    // [能力对账批次 2 | #702/#850] var → globalThis 属性注入：不注册 QuickJS
+    // 全局 var 条目，loginCheckJs 顶层 `let result` 等声明不再触发同脚本
+    // redefinition（裸标识符读路径经全局属性等价）；跨 eval 的顶层 let
+    // 持久化由 QuickJsExecutor 的 LEXICAL 新引擎回退兜底（既有机制）
     let wrapped_code = format!(
-        "var __result_body = {body_lit};\n\
-         var __result_url = {url_lit};\n\
-         var __result_code = {response_code};\n\
-         var result = {{ body: function() {{ return __result_body; }},\n\
+        "globalThis.__result_body = {body_lit};\n\
+         globalThis.__result_url = {url_lit};\n\
+         globalThis.__result_code = {response_code};\n\
+         globalThis.result = {{ body: function() {{ return __result_body; }},\n\
          url: function() {{ return __result_url; }},\n\
          code: function() {{ return __result_code; }} }};\n\
          {js_code}"
@@ -673,8 +685,10 @@ impl ExploreInfoMapJsExecutor {
 #[cfg(feature = "quickjs")]
 impl legado_parser::JsExecutor for ExploreInfoMapJsExecutor {
     fn execute_js(&self, js_code: &str) -> Result<String, String> {
+        // [能力对账批次 2 | #702/#850] var → globalThis 属性注入（不注册全局
+        // var 条目，与书源块顶层 let 声明不再冲突；读路径等价）
         let wrapped = format!(
-            "var infoMap = {};\nvar page = {};\nvar baseUrl = {};\n{}",
+            "globalThis.infoMap = {};\nglobalThis.page = {};\nglobalThis.baseUrl = {};\n{}",
             self.info_map_json,
             self.page,
             serde_json::to_string(&self.base_url).unwrap_or_else(|_| "\"\"".to_string()),
@@ -917,6 +931,18 @@ mod quickjs_impl {
                 }
                 other => other,
             }
+        }
+
+        /// 带 `result` 绑定的执行（上游 AnalyzeUrl.evalJS `bindings["result"]`
+        /// 口径）：URL 选项 `{"js": ...}` / bodyJs 在 `result` 中拿到当前 URL。
+        /// 非严格 eval 下裸 `result` 标识符经 globalThis 解析，前缀注入等价。
+        fn execute_js_with_result(
+            &self,
+            js_code: &str,
+            result_json: &str,
+        ) -> Result<String, String> {
+            let wrapped = format!("globalThis.result = {result_json};\n{js_code}");
+            self.execute_js(&wrapped)
         }
     }
 }
@@ -1367,12 +1393,27 @@ mod tests {
             }),
             "实际: {r:?}"
         );
-        // 不带显式 return（脚本无完成值 → undefined → 文本 "undefined"）
-        // 对齐原版 cast 失败 → CastFailed
+        // [能力对账批次 2 | #702/#850] 尾随声明语句的完成值语义（var → globalThis
+        // 属性注入的规范后果，V8/Rhino 同语义）：程序的完成值 = 最后一条
+        // **非空**语句的值。`var x = 1;` 是空完成声明语句 → 程序完成值回落到
+        // 前导最后一条非空语句 `globalThis.result = {...}`（表达式语句，值为
+        // 方法形 result 对象）→ JSON.stringify 丢弃函数属性 → "{}" → 方法形
+        // 直通分支 → 采用原始响应三元组。
+        // 旧全 var 前导下同类脚本完成值 "undefined" → CastFailed，那是包装器
+        // 自身空完成的附带产物；新包装器回落为 "{}" 直通对「loginCheckJs 未
+        // 修改 result 且无完成值」更合理（= 未检出登录问题 → 放行原始响应，
+        // 旧行为会误入 500 err 路径 → 二次 CastFailed → 整源失败）。
+        // 现实形态（末条语句为表达式：result.body().contains(...)、裸 result、
+        // ({...})）完成值不变，不受本差异影响。
         let r2 =
             execute_login_check_response("var x = 1;", "orig-body", "http://x/s", 200, "lit_test");
-        assert!(
-            matches!(r2, Err(LoginCheckEvalError::CastFailed(_))),
+        assert_eq!(
+            r2,
+            Ok(LoginCheckResponse {
+                code: 200,
+                body: "orig-body".into(),
+                url: "http://x/s".into()
+            }),
             "实际: {r2:?}"
         );
     }

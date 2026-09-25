@@ -9,6 +9,11 @@
 //!
 //! 本模块只在严格引擎解析失败时被调用（见 crate::engine_cache），对合法脚本零影响：
 //! - 第 1 类：把影子声明及其后续引用改名为 <参数名>_shim；
+//!   **初始化值窗口除外**：`let P = P || d` 自引用初始化式中，右侧
+//!   `P` 按作者（Rhino 宽容）意图解析为**参数**而非影子绑定（Rhino 无
+//!   TDZ）→ 改名后必须保留参数名，否则 QuickJS 自引用 TDZ 运行时报错
+//!   （书旗 #26 `let sourceUrl = sourceUrl || "https://..."` 实证）；
+//!   声明后（初始化值语句结束处起）的引用全部改名为 <参数名>_shim；
 //! - 第 2 类：在字符串/模板/注释感知的前提下，把代码上下文中恰好两个连续的点折叠为一个。
 //!
 //! 纯 Rust 实现（无外部依赖），不启用 quickjs feature 也可编译与单测。
@@ -270,13 +275,22 @@ fn is_regex_start(last: Option<char>) -> bool {
 // ──────────────────── 第 1 类：let/const 参数影子重命名 ────────────────────
 
 /// 把函数体内用 let/const 重声明的参数名改名为 <name>_shim，
-/// 并同步改名该影子声明之后（至函数体结束）的全部引用。
-/// 单个影子改名计划：(影子声明位置, 参数名, 所属函数体结束下标)。
+/// 并同步改名该影子声明之后（至函数体结束）的全部引用；
+/// 初始化值窗口 [init_start, init_end) 内的同名引用**不改**（按作者
+/// Rhino 意图解析为参数本身，见模块头注释）。
+/// 单个影子改名计划：(影子声明位置, 参数名, 所属函数体结束下标,
+/// 初始化值窗口起止；无初始化值时窗口为空区间)。
 #[derive(Clone)]
 struct ShadowPlan {
     decl_pos: usize,
     name: String,
     body_end: usize,
+    /// 初始化值起点（'=' 下标；无初始化值 = 声明名结束下标，窗口空）
+    init_start: usize,
+    /// 初始化值终点（语句结束 ';'/'\n' 下标或 ASI 终止下标；
+    /// 多声明列表取整条语句末尾——后续项初始化值中的同名引用
+    /// 同样按参数处理，保守不动）
+    init_end: usize,
 }
 
 fn rename_shadowed_params(src: &str) -> String {
@@ -587,11 +601,15 @@ fn apply_renames(chars: &[char], plans: &[ShadowPlan]) -> String {
             continue;
         }
 
-        // 标识符词首：检查改名命中（仅代码上下文）
+        // 标识符词首：检查改名命中（仅代码上下文）；初始化值窗口
+        // [init_start, init_end) 内的同名引用保留参数名（空窗口无排除）
         if let Some(id) = identifier_at(chars, i) {
-            let hit = plans
-                .iter()
-                .find(|p| p.name == id && i >= p.decl_pos && i < p.body_end);
+            let hit = plans.iter().find(|p| {
+                p.name == id
+                    && i >= p.decl_pos
+                    && i < p.body_end
+                    && !(i >= p.init_start && i < p.init_end)
+            });
             if let Some(p) = hit {
                 out.push_str(&p.name);
                 out.push('_');
@@ -731,6 +749,17 @@ fn split_param_names(param_text: &str) -> Vec<String> {
 }
 
 /// 在 [start, end) 内找 let/const <参数名> 影子声明，追加到 plans。
+///
+/// 按“声明项”解析：每个名称 ∈ param_names 的项生成一个改名计划——
+/// 声明名本身与初始化值结束之后（至函数体结束）的引用改名为
+/// `<name>_shim`；初始化值窗口 [init_start, init_end) 内的同名引用
+/// **保留参数名**：`let P = P || ...` 自引用初始化式右侧的 P 按作者
+/// （Rhino 宽容、无 TDZ）意图解析为**参数**（书旗 #26 实证），改名
+/// 会触发 QuickJS 自引用 TDZ 运行时报错。
+/// - 多声明列表（`let a, x = 1`）中初始化值窗口天然延伸过顶层逗号
+///   至整条语句结束（后续项初始化值中的同名引用同样按参数处理）；
+///   无初始化值项在多声明列表中窗口同样保守延伸至语句结束；
+/// - 解构声明 / 项首非标识符：放弃整条语句。
 fn scan_shadows(
     chars: &[char],
     start: usize,
@@ -784,74 +813,133 @@ fn scan_shadows(
             while j < end && chars[j].is_whitespace() {
                 j += 1;
             }
-            if j >= end || (chars[j] == '{' || chars[j] == '[') {
-                // 解构声明或空语句：跳过到语句结束
+            if j < end && (chars[j] == '{' || chars[j] == '[') {
+                // 解构声明（const {a} = ...）：无法可靠处理，整条语句放弃
                 i = j;
                 continue;
             }
+            // 逐项解析：(名称位置, 名称, 初始化值起点, 项后位置, 是否有初始化值)。
+            // 初始化值起点 = '=' 下标（无初始化值 = 名后空白结束处，窗口空）；
+            // 项后位置 = 初始化值走查结束处（语句终止符下标，走查不停顿于多声明
+            // 列表的顶层逗号）或逗号/终止符下标。
+            let mut items: Vec<(usize, String, usize, usize, bool)> = Vec::new();
             let mut k = j;
-            let mut expect_name = true; // 当前处于“声明名”位置（项首）
-            let mut depth = 0usize; // 初始化值内的括号深度
+            let mut multi = false;
             while k < end {
                 let ch = chars[k];
-                if (ch == ';' || ch == '\n') && depth == 0 {
+                if ch == ',' {
+                    k += 1;
+                    multi = true;
+                    while k < end && chars[k].is_whitespace() {
+                        k += 1;
+                    }
+                    continue;
+                }
+                if ch == ';' || ch == '\n' {
+                    k += 1;
                     break;
                 }
-                if expect_name {
-                    if ch == ',' {
-                        k += 1; // 项间逗号（含尾逗号）
-                        continue;
+                if ch == '{' || ch == '[' {
+                    // 解构模式：放弃本条语句
+                    while k < end && chars[k] != ';' && chars[k] != '\n' {
+                        k += 1;
                     }
-                    if ch == '{' || ch == '[' {
-                        // 解构模式：放弃本条语句
-                        while k < end && chars[k] != ';' && chars[k] != '\n' {
-                            k += 1;
-                        }
-                        break;
-                    }
-                    let ident = identifier_at(chars, k);
-                    if let Some(id) = ident {
-                        if param_names.contains(&id) {
-                            plans.push(ShadowPlan {
-                                decl_pos: k,
-                                name: id,
-                                body_end: end,
-                            });
-                        }
-                        while k < end
-                            && (chars[k].is_alphanumeric() || chars[k] == '_' || chars[k] == '$')
-                        {
-                            k += 1;
-                        }
-                        // 声明名之后：'=' 进入初始化值模式，',' 回到下一项
-                        while k < end && chars[k].is_whitespace() {
-                            k += 1;
-                        }
-                        if k < end && chars[k] == '=' {
-                            expect_name = false;
-                            k += 1;
-                        } else if k < end && chars[k] == ',' {
-                            // 保持 expect_name，循环体继续处理逗号
-                        } else {
-                            // let a; / let a（ASI）：声明结束
-                            break;
-                        }
-                    } else {
-                        break; // 非标识符开头：放弃本条语句
-                    }
-                } else {
-                    match ch {
-                        '(' | '[' | '{' => depth += 1,
-                        ')' | ']' | '}' => depth = depth.saturating_sub(1),
-                        ',' if depth == 0 => {
-                            expect_name = true;
-                            k += 1;
+                    items.clear();
+                    break;
+                }
+                let Some(name) = identifier_at(chars, k) else {
+                    // 项首非标识符：放弃本条语句
+                    items.clear();
+                    k = end;
+                    break;
+                };
+                let name_pos = k;
+                k += name.chars().count();
+                // 声明名之后只允许非换行空白（换行触发 ASI/语法错误）
+                let mut ws = k;
+                while ws < end && chars[ws].is_whitespace() && chars[ws] != '\n' {
+                    ws += 1;
+                }
+                let (init_start, post_pos, has_init) = if ws < end && chars[ws] == '=' {
+                    let s = ws;
+                    let mut w = ws + 1;
+                    let mut d = 0usize;
+                    while w < end {
+                        let c2 = chars[w];
+                        // 字符串字面量整体吞掉：串内括号不计深度（防止
+                        // "a(" 之类不平衡串内字符拖宽窗口）
+                        if c2 == '\'' || c2 == '"' {
+                            let q = c2;
+                            w += 1;
+                            while w < end && chars[w] != q {
+                                if chars[w] == '\\' {
+                                    w += 1;
+                                }
+                                w += 1;
+                            }
+                            w += 1;
                             continue;
                         }
-                        _ => {}
+                        if c2 == '/' && w + 1 < end {
+                            if chars[w + 1] == '/' {
+                                while w < end && chars[w] != '\n' {
+                                    w += 1;
+                                }
+                                continue;
+                            }
+                            if chars[w + 1] == '*' {
+                                w += 2;
+                                while w + 1 < end && !(chars[w] == '*' && chars[w + 1] == '/') {
+                                    w += 1;
+                                }
+                                w += 1;
+                                continue;
+                            }
+                        }
+                        match c2 {
+                            '(' | '[' | '{' => d += 1,
+                            ')' | ']' | '}' => d = d.saturating_sub(1),
+                            _ => {}
+                        }
+                        // 深度 0 的语句终止符结束走查；多声明列表的顶层
+                        // ',' 不终止：窗口延伸过后续项直至语句末尾
+                        if (c2 == ';' || c2 == '\n') && d == 0 {
+                            break;
+                        }
+                        w += 1;
                     }
+                    (s, w, true)
+                } else {
+                    // 无初始化值（let a, / let a ASI）：窗口空，项结束于
+                    // 逗号/终止符/函数体末
+                    (ws, ws, false)
+                };
+                items.push((name_pos, name, init_start, post_pos, has_init));
+                k = post_pos;
+            }
+            // 循环结束时 k = 语句终止符之后（或函数体末）
+            let stmt_end = k;
+            for (name_pos, name, init_start, post_pos, has_init) in items {
+                if !param_names.contains(&name) {
+                    continue;
                 }
-                k += 1;
+                // 初始化值窗口 [init_start, init_end)：窗口内同名引用保留
+                // 参数名（按作者 Rhino 意图，见模块头注释），声明名与
+                // 窗口外引用改名。
+                let init_end = if has_init {
+                    post_pos
+                } else if multi {
+                    stmt_end
+                } else {
+                    init_start // 单声明无初始化值：空窗口
+                };
+                plans.push(ShadowPlan {
+                    decl_pos: name_pos,
+                    name,
+                    body_end: end,
+                    init_start,
+                    init_end,
+                });
             }
         }
         i += 1;
@@ -959,6 +1047,72 @@ mod tests {
         let (out, changed) = normalize(src);
         assert_eq!(out, src);
         assert!(!changed);
+    }
+
+    // ── 第 1 类：自引用初始化值窗口（书旗 #26 实证）──
+
+    #[test]
+    fn self_referencing_initializer_keeps_param() {
+        // #26 书旗形态：`let P = P || "d"` 自引用初始化式——右侧 P 按作者
+        // （Rhino 宽容、无 TDZ）意图解析为参数，必须保留参数名；声明名与
+        // 声明后的引用改名。旧实现把右侧也改名 → `P_shim || "d"` 自引用
+        // TDZ（QuickJS 运行时 "is not initialized"）。
+        let src = "function GetUrl(path, params, sourceUrl){\n\
+                   let sourceUrl = sourceUrl || \"https://shuqi.example/\";\n\
+                   return sourceUrl;\n}";
+        let (out, changed) = normalize(src);
+        assert!(changed);
+        assert!(
+            out.contains("let sourceUrl_shim = sourceUrl ||"),
+            "实际: {out}"
+        );
+        // 声明后（初始化值语句结束处起）的引用改名
+        assert!(out.contains("return sourceUrl_shim;"), "实际: {out}");
+        // 右侧参数引用保留
+        assert!(
+            out.contains("= sourceUrl || \"https://shuqi.example/\";"),
+            "实际: {out}"
+        );
+    }
+
+    #[test]
+    fn self_referencing_initializer_no_initializer_ref_after() {
+        // 初始化值之后的语句引用改名、初始化值内保留：
+        // `let P = f(P)` 函数调用形态同理。
+        let src = "function f(x){ let x = x || 1; return x; }";
+        let (out, _) = normalize(src);
+        assert!(out.contains("let x_shim = x || 1;"), "实际: {out}");
+        assert!(out.contains("return x_shim;"), "实际: {out}");
+    }
+
+    #[test]
+    fn initializer_window_string_parens_safe() {
+        // 初始化值内不平衡串内括号不得拖宽窗口：
+        // `let a = "(" + a; return a;` 的 `return a` 必须改名。
+        let src = "function f(a){ let a = \"(\" + a; return a; }";
+        let (out, _) = normalize(src);
+        assert!(out.contains("let a_shim = \"(\" + a;"), "实际: {out}");
+        assert!(out.contains("return a_shim;"), "实际: {out}");
+    }
+
+    #[test]
+    fn multi_decl_no_init_item_window_extends() {
+        // 多声明列表无初始化值项：`let a, x = a;` 后续项初始化值中的 a
+        // 保守按参数处理（保留参数名），声明后引用改名。
+        let src = "function f(a){ let a, x = a; return a + x; }";
+        let (out, _) = normalize(src);
+        assert!(out.contains("let a_shim, x = a;"), "实际: {out}");
+        assert!(out.contains("return a_shim + x;"), "实际: {out}");
+    }
+
+    #[test]
+    fn no_initializer_single_decl_still_renamed_after() {
+        // 单声明无初始化值（`let a;`）：窗口空，声明后引用照常改名。
+        let src = "function f(a){ let a; a = 1; return a; }";
+        let (out, _) = normalize(src);
+        assert!(out.contains("let a_shim;"), "实际: {out}");
+        assert!(out.contains("a_shim = 1;"), "实际: {out}");
+        assert!(out.contains("return a_shim;"), "实际: {out}");
     }
 
     // ── 综合：B 站 jsLib 的两个真实病灶（最小复现）──

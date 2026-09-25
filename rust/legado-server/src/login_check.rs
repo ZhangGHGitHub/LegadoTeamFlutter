@@ -68,8 +68,11 @@ fn run_login_check_js(
         .map_err(|e| LoginCheckError::JsFailed(format!("body escape: {e}")))?;
     let url_lit = serde_json::to_string(response_url)
         .map_err(|e| LoginCheckError::JsFailed(format!("url escape: {e}")))?;
+    // [能力对账批次 2 | #702/#850] var → globalThis 属性注入（与 ffi 侧
+    // js_executor 同款改造保持一致；本路径每次新建 QuickJsEngine 无池化，
+    // 属性注入不改变行为，仅不注册全局 var 条目）
     let wrapped_code = format!(
-        "var __result_body = {body_lit};\n         var __result_url = {url_lit};\n         var __result_code = {response_code};\n         var result = {{ body: function() {{ return __result_body; }},\n         url: function() {{ return __result_url; }},\n         code: function() {{ return __result_code; }} }};\n         {js_code}"
+        "globalThis.__result_body = {body_lit};\n         globalThis.__result_url = {url_lit};\n         globalThis.__result_code = {response_code};\n         globalThis.result = {{ body: function() {{ return __result_body; }},\n         url: function() {{ return __result_url; }},\n         code: function() {{ return __result_code; }} }};\n         {js_code}"
     );
 
     let eval_result = eval_js(&wrapped_code, source_tag)?;
