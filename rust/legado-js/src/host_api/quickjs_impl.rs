@@ -192,31 +192,68 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
   function toU8(x) { return (x instanceof Uint8Array) ? x : new Uint8Array(x); }
   function toJsonBytes(u8) { var a = []; for (var i = 0; i < u8.length; i++) a.push(u8[i]); return JSON.stringify(a); }
   function fromJsonBytes(json) { return new Uint8Array(JSON.parse(json)); }
+  // JSString —— Rhino NativeJavaObject（java.lang.String）模拟体。
+  // toString/valueOf → 内容本身（字符串 coercion 路径：拼接、String()、
+  // 模板插值、JSON.parse 参数均取回内容）。
+  //
+  // Java String 方法面（2026-09-26 小小阅读 jsLib 第二层，Rhino
+  // WrapFactory javaPrimitiveWrap 默认 true：Kotlin `: String` 返回值在
+  // Rhino 里是带 Java String 方法面的对象）：源 decode 实链用法——
+  // `k.length()`（可调用）、`k.length` 数值上下文（属性形态经 valueOf
+  // 数值强转，故 length 为「函数 + valueOf/toString」双形态，普通数字
+  // 自有属性会破坏调用形态）、`k.substring(i, i3)`、`i.getBytes()`。
+  // 完整最小充分集另含 charAt/indexOf/equals/isEmpty；toJSON 保证
+  // JSON.stringify 场景直接产出内容（缺则 stringify 为 {} 丢内容；
+  // eval 结果字符串化路径 engine.rs result_to_string 对对象走
+  // JSON.stringify，经 toJSON 得到内容串）。
   function JSString(s) {
-    return {
+    var self = {
       toString: function () { return s; },
       valueOf: function () { return s; },
-      getBytes: function (charset) { return fromJsonBytes(java.strToBytes(s, charset || 'UTF-8')); }
+      getBytes: function (charset) { return fromJsonBytes(java.strToBytes(s, charset || 'UTF-8')); },
+      substring: function (start, end) {
+        return end === undefined ? s.substring(start) : s.substring(start, end);
+      },
+      charAt: function (i) { return s.charAt(i); },
+      indexOf: function (str, from) {
+        return from === undefined ? s.indexOf(str) : s.indexOf(str, from);
+      },
+      equals: function (o) {
+        // Java String.equals(null) === false（对齐 Java 语义，非 JS 强转）
+        return (o === null || o === undefined) ? false : (s === String(o));
+      },
+      isEmpty: function () { return s.length === 0; },
+      toJSON: function () { return s; }
     };
+    var lengthFn = function () { return s.length; };
+    lengthFn.valueOf = function () { return s.length; };
+    lengthFn.toString = function () { return String(s.length); };
+    self.length = lengthFn;
+    return self;
   }
   function JavaString() {
     var a0 = arguments.length > 0 ? arguments[0] : undefined;
     var isBytes = (a0 instanceof Uint8Array) || Array.isArray(a0);
-    // new.target 判别调用形态（2026-09-26 小小阅读 jsLib 修复，双基准裁决
-    // .tmp/crosscheck_20260927/verdict.md 定案引擎缺口）：
+    // 两种调用形态一律返回 JSString **对象**（2026-09-26 小小阅读 jsLib
+    // 第二层定案，双基准裁决 .tmp/crosscheck_20260927/verdict.md 引擎缺口
+    // 再深一层——Rhino WrapFactory javaPrimitiveWrap 默认 true）：
     // - **new 调用**（七猫正文 `new Packages.java.lang.String(...)`）：
     //   JS `new` 语义下若显式 return 原始值（字符串），表达式结果为 this
     //   空对象 → String(this) = "[object Object]"（2026-08-15 七猫正文
-    //   [object Object] 根因）。bytes 分支必须返回 JSString **对象**，
-    //   让 new 保留对象，toString/valueOf 再取回明文字符串——保持现状；
+    //   [object Object] 根因）。必须返回 JSString 对象，让 new 保留对象，
+    //   toString/valueOf 再取回明文字符串；
     // - **无 new 的普通调用**（小小阅读 jsLib：JavaImporter 合并 java.lang
     //   等包后 `with (javaImport)` 作用域内标识符 `String` 被本构造器
     //   遮蔽，`k = String(Arrays.copyOfRange(data, 0, 16))` 不带 new）：
-    //   上游 Rhino LiveConnect 语义——无 new 调用类构造器 = 实例化，
-    //   其字符串 coercion 即内容本身，宿主侧（java.digestHex 的 &str 入参）
-    //   最终拿到的是**原始字符串**；若返回 JSString 对象，rquickjs 严格
-    //   转换拒收（"Error converting from js 'object' into type 'string'"），
-    //   整条 bookList 规则崩溃。故普通调用时计算完内容返回原始串。
+    //   Rhino LiveConnect 语义——无 new 调用类构造器 = 实例化，返回
+    //   NativeJavaObject。jsLib 实证（第一层修复后验收实测推进到
+    //   `not a function (at decode:68:20)` 再深挖）：L83
+    //   `bytes = i.getBytes()`（i = 普通调用 `String(bytes...)`）要求
+    //   普通调用结果**必须是带可调用 getBytes 的对象**——第一层
+    //   「普通调用返回原始串」的设计在第二层被证伪，回退为对象。
+    //   下游宿主严格 &str 入参不再被对象直送：java.digestHex /
+    //   java.md5Encode 的 JS 层包装（本 shim 尾部）先 String() 强转
+    //   （JSString valueOf → 内容）再调宿主闭包，宿主绑定本体不动。
     // Java String(byte[], offset, length, charset) 重载（qmDecodeTextBytes
     // 用 `new String(bytes, 0, headSize, 'ISO-8859-1')` 做编码探测头）：
     // 取子数组按 charset 解码，而非把 offset 当 charset 名。
@@ -241,9 +278,9 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
     } else {
       s = String(arguments[0]);
     }
-    // new 调用（new.target 为构造器，真值）→ 保持 JSString 对象；
-    // 无 new 普通调用（new.target === undefined）→ 原始字符串。
-    return new.target ? JSString(s) : s;
+    // 统一返回 JSString 对象（new 保留对象 / 无 new 实例化对象），
+    // 内容 s 经 toString/valueOf/toJSON 三条 coercion 路径取回。
+    return JSString(s);
   }
   // String.valueOf 静态方法（P2-9 ① java.lang 最小静态面）：
   // 挂在 JavaString 构造器函数上，`new Packages.java.lang.String(...)` 语义不变
@@ -894,6 +931,30 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
     };
     mergeJavaPkgs(importer, arguments);
     return importer;
+  };
+
+  // —— Rhino javaPrimitiveWrap 对齐（2026-09-26 小小阅读 jsLib 第二层）——
+  // Kotlin digestHex/md5Encode/md5Encode16 返回 `String`：Rhino 里经
+  // WrapFactory 包为 NativeJavaObject（Java String 方法面可调：
+  // length()/substring()/getBytes()…，字符串 coercion 即内容）。
+  // 宿主绑定本体是严格 &str 入参 + JS 原始串出参（Rust 侧 digest_hex /
+  // md5_encode 不动），此处以 JS 包装层补 Rhino 语义：入参先 String()
+  // 强转（JSString 经 valueOf → 内容，Uint8Array 等其它形态亦不直送
+  // Rust 侧严格转换），返回值统一 JSString 包装。
+  // 仅替换 java 命名空间绑定；裸全局镜像保持原始串语义（engine.rs
+  // test_host_api_md5_encode 等既有断言钉住裸全局 md5Encode/md5Encode16
+  // 返回原始串，且语料 URL 模板拼接经 toString/valueOf 强转两形态一致）。
+  var origDigestHex = java.digestHex;
+  java.digestHex = function (data, algo) {
+    return JSString(origDigestHex(String(data), String(algo)));
+  };
+  var origMd5Encode = java.md5Encode;
+  java.md5Encode = function (s) {
+    return JSString(origMd5Encode(String(s)));
+  };
+  var origMd5Encode16 = java.md5Encode16;
+  java.md5Encode16 = function (s) {
+    return JSString(origMd5Encode16(String(s)));
   };
 })();
 "#;
@@ -4478,8 +4539,13 @@ mod tests {
     #[test]
     fn test_java_namespace_md5() {
         let engine = make_engine();
+        // 2026-09-26 小小阅读第二层：java.md5Encode JS 绑定返回 JSString 对象
+        //（Java String 方法面）。eval 结果字符串化路径（result_to_string →
+        // JSON.stringify，经 toJSON）得 JSON 串（带引号）；String() 强转取回原始明文。
         let result = engine.eval("java.md5Encode('hello')").unwrap();
-        assert_eq!(result, "5d41402abc4b2a76b9719d911017c592");
+        assert_eq!(result, "\"5d41402abc4b2a76b9719d911017c592\"");
+        let coerced = engine.eval("String(java.md5Encode('hello'))").unwrap();
+        assert_eq!(coerced, "5d41402abc4b2a76b9719d911017c592");
     }
 
     #[test]
@@ -4831,7 +4897,10 @@ String(loc);
     #[test]
     fn test_java_and_bare_produce_same_result() {
         let engine = make_engine();
-        let java_result = engine.eval("java.md5Encode('test123')").unwrap();
+        // 2026-09-26 小小阅读第二层后两形态分化：java.md5Encode 返回 JSString
+        // 对象（Java String 方法面），裸全局 md5Encode 保持原始串。比较内容
+        // 须经 String() 强转对齐（JSString valueOf → 明文），摘要值本身不变。
+        let java_result = engine.eval("String(java.md5Encode('test123'))").unwrap();
         let bare_result = engine.eval("md5Encode('test123')").unwrap();
         assert_eq!(java_result, bare_result);
     }
@@ -5188,8 +5257,16 @@ cipher.decryptStr(b64);
     #[test]
     fn test_java_digest_hex() {
         let engine = make_engine();
+        // 2026-09-26 小小阅读第二层：java.digestHex JS 绑定返回 JSString 对象
+        //（Java String 方法面：length()/substring()/getBytes()…）。eval 结果
+        // 字符串化经 JSON.stringify(toJSON) 得 JSON 串（带引号）；
+        // String() 强转取回原始明文摘要。
         let result = engine.eval("java.digestHex('hello', 'MD5')").unwrap();
-        assert_eq!(result, "5d41402abc4b2a76b9719d911017c592");
+        assert_eq!(result, "\"5d41402abc4b2a76b9719d911017c592\"");
+        let coerced = engine
+            .eval("String(java.digestHex('hello', 'MD5'))")
+            .unwrap();
+        assert_eq!(coerced, "5d41402abc4b2a76b9719d911017c592");
     }
 
     #[test]
