@@ -509,7 +509,12 @@ fn resolve_dispatched_strings<'js>(ctx: &Ctx<'js>, content: &str, rule: &str) ->
     }
 }
 
-/// 构建带 html()/text()/attr()/toString() 方法的元素 JS 对象
+/// 构建带 html()/text()/attr()/toString()/select() 方法的元素 JS 对象
+///
+/// `select(sub)` 返回 Elements 面集合对象（作用域 = 本元素 outerHTML
+/// 快照，委托 `jsoup_text_n/jsoup_html_n/jsoup_attr_n/jsoup_size`）——
+/// 久久漫画混淆体 `els[i].select('a').text()`（此前元素对象无 select
+/// 方法，抛 `not a function`，整条 bookList 规则失败）。
 fn build_element_object<'js>(
     ctx: &Ctx<'js>,
     snap: &ElementSnapshot,
@@ -555,6 +560,247 @@ fn build_element_object<'js>(
     )
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
+    // select(sub) → Elements 面集合对象（作用域 = 本元素 outerHTML 快照，
+    // 与 JSOUP_BRIDGE_JS `__element.select` 委托语义一致）
+    let outer_sel = snap.outer.clone();
+    obj.set(
+        "select",
+        rquickjs::Function::new(
+            ctx.clone(),
+            move |ctx: Ctx<'js>, sub: String| -> rquickjs::Result<rquickjs::Object<'js>> {
+                build_elements_collection(&ctx, outer_sel.clone(), sub.trim_start().to_string())
+                    .map_err(js_err)
+            },
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+
+    Ok(obj)
+}
+
+/// 宿主错误 → QuickJS 错误（宿主桥 fallible 闭包统一映射，
+/// 对齐 asymmetric_crypto `js_err` 形态）
+fn js_err(e: LegadoError) -> rquickjs::Error {
+    rquickjs::Error::FromJs {
+        from: "String",
+        to: "HtmlParse",
+        message: Some(e.to_string()),
+    }
+}
+
+/// 第 i 个匹配元素的元素对象（越界 → 空元素对象：取值全空串，对齐
+/// JSOUP_BRIDGE_JS `__set` 空集合 `get/first` 宽松语义）
+fn element_object_at<'js>(
+    ctx: &Ctx<'js>,
+    scope_html: &str,
+    css: &str,
+    i: i64,
+) -> Result<rquickjs::Object<'js>, LegadoError> {
+    let snaps = snapshots_from_html(scope_html, css);
+    let snap = match snaps.get(i.max(0) as usize) {
+        Some(s) => s,
+        None => &ElementSnapshot {
+            outer: String::new(),
+            inner: String::new(),
+            text: String::new(),
+        },
+    };
+    build_element_object(ctx, snap)
+}
+
+/// 选择器链拼接（对齐 `__set.select`：`c ? c + ' ' + sub : sub`，
+/// 结果去前导空白）
+fn join_css_chain(c: &str, sub: &str) -> String {
+    let mut next = if c.is_empty() {
+        String::new()
+    } else {
+        format!("{c} ")
+    };
+    next.push_str(sub);
+    next.trim_start().to_string()
+}
+
+/// 构建 Elements 面集合 JS 对象（元素对象 `select(sub)` 返回值）
+///
+/// 作用域为 `scope_html`（元素 outerHTML 快照或父级 HTML），`css` 为选择器
+/// 链（可为空）。各方法委托既有 `jsoup_text_n/jsoup_html_n/jsoup_attr_n/
+/// jsoup_size`（与 `java.jsoup*` 宿主桥同一计算路径），面与
+/// JSOUP_BRIDGE_JS `__set` 对齐并补：
+/// - **数字下标键**（"0"/"1"/… → 元素对象，上游 Java List 下标语义）；
+/// - **`length` 属性**（久久漫画混淆体 `_0x139d2['length']` 直读；与
+///   `size()` 并存，两者缺一不可）。
+fn build_elements_collection<'js>(
+    ctx: &Ctx<'js>,
+    scope_html: String,
+    css: String,
+) -> Result<rquickjs::Object<'js>, LegadoError> {
+    let obj =
+        rquickjs::Object::new(ctx.clone()).map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    let snaps = snapshots_from_html(&scope_html, &css);
+    let n = snaps.len() as u32;
+
+    // text() → 首匹配语义（对齐 __set 的 attr/text/html 三方法）
+    {
+        let (s, c) = (scope_html.clone(), css.clone());
+        obj.set(
+            "text",
+            rquickjs::Function::new(ctx.clone(), move || jsoup_text_n(&s, &c, 0))
+                .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    }
+    // html() → 首匹配元素 innerHTML
+    {
+        let (s, c) = (scope_html.clone(), css.clone());
+        obj.set(
+            "html",
+            rquickjs::Function::new(ctx.clone(), move || jsoup_html_n(&s, &c, 0))
+                .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    }
+    // attr(name) → 首匹配元素属性
+    {
+        let s = scope_html.clone();
+        let c = css.clone();
+        obj.set(
+            "attr",
+            rquickjs::Function::new(ctx.clone(), move |name: String| {
+                jsoup_attr_n(&s, &c, 0, &name)
+            })
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    }
+    // size()/isEmpty()/length 属性（length 为久久混淆体直读面）
+    obj.set("size", rquickjs::Function::new(ctx.clone(), move || n))
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    obj.set(
+        "isEmpty",
+        rquickjs::Function::new(ctx.clone(), move || n == 0),
+    )
+    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    obj.set("length", n)
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    // toString() → 首匹配元素 innerHTML（对齐 __set）
+    {
+        let s = scope_html.clone();
+        let c = css.clone();
+        obj.set(
+            "toString",
+            rquickjs::Function::new(ctx.clone(), move || jsoup_html_n(&s, &c, 0))
+                .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    }
+    // first()/last()/get(i) → 元素对象（越界 → 空元素对象）
+    {
+        let (s, c) = (scope_html.clone(), css.clone());
+        obj.set(
+            "first",
+            rquickjs::Function::new(
+                ctx.clone(),
+                move |ctx: Ctx<'js>| -> rquickjs::Result<rquickjs::Object<'js>> {
+                    element_object_at(&ctx, &s, &c, 0).map_err(js_err)
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    }
+    {
+        let (s, c) = (scope_html.clone(), css.clone());
+        obj.set(
+            "last",
+            rquickjs::Function::new(
+                ctx.clone(),
+                move |ctx: Ctx<'js>| -> rquickjs::Result<rquickjs::Object<'js>> {
+                    element_object_at(&ctx, &s, &c, (n.saturating_sub(1)) as i64).map_err(js_err)
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    }
+    {
+        let (s, c) = (scope_html.clone(), css.clone());
+        obj.set(
+            "get",
+            rquickjs::Function::new(
+                ctx.clone(),
+                move |ctx: Ctx<'js>, i: i64| -> rquickjs::Result<rquickjs::Object<'js>> {
+                    element_object_at(&ctx, &s, &c, i).map_err(js_err)
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    }
+    // toArray() → 元素对象数组（对齐 __set）
+    {
+        let (s, c) = (scope_html.clone(), css.clone());
+        obj.set(
+            "toArray",
+            rquickjs::Function::new(
+                ctx.clone(),
+                move |ctx: Ctx<'js>| -> rquickjs::Result<rquickjs::Array<'js>> {
+                    let arr = rquickjs::Array::new(ctx.clone())?;
+                    for i in 0..n {
+                        let el = element_object_at(&ctx, &s, &c, i as i64).map_err(js_err)?;
+                        arr.set(i as usize, el)?;
+                    }
+                    Ok(arr)
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    }
+    // each(fn) → 逐元素回调（对齐 __set：fn(element, index)）
+    {
+        let (s, c) = (scope_html.clone(), css.clone());
+        obj.set(
+            "each",
+            rquickjs::Function::new(
+                ctx.clone(),
+                move |ctx: Ctx<'js>, cb: rquickjs::Function<'js>| -> rquickjs::Result<()> {
+                    for i in 0..n {
+                        let el = element_object_at(&ctx, &s, &c, i as i64).map_err(js_err)?;
+                        // 显式标注结果类型：Function::call 的 R 泛型不可推断
+                        // （never_type_fallback，2024 版将变硬错误）
+                        let _v: rquickjs::Value<'js> = cb.call((el, i as i32))?;
+                    }
+                    Ok(())
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    }
+    // select(sub) → 嵌套集合（选择器链续接，对齐 __set）
+    {
+        let (s, c) = (scope_html.clone(), css.clone());
+        obj.set(
+            "select",
+            rquickjs::Function::new(
+                ctx.clone(),
+                move |ctx: Ctx<'js>, sub: String| -> rquickjs::Result<rquickjs::Object<'js>> {
+                    build_elements_collection(&ctx, s.clone(), join_css_chain(&c, &sub))
+                        .map_err(js_err)
+                },
+            )
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    }
+    // 数字下标键 "0"/"1"/… → 元素对象（上游 Java List 下标语义，
+    // 预建快照逐下标挂载，避免逐下标重复解析）
+    for (i, snap) in snaps.iter().enumerate() {
+        let el = build_element_object(ctx, snap)?;
+        obj.set(i.to_string(), el)
+            .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    }
     Ok(obj)
 }
 
@@ -587,6 +833,18 @@ pub fn get_element<'js>(
         arr.set(idx, obj)
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     }
+    // 久久漫画混淆体：`els['length']`（原生数组属性）+ `els.size()`（上游
+    // Elements 面）——数组对象补挂 size 方法（rquickjs::Array 无原生
+    // size 方法；length 为原生属性，两者并存）
+    let total = outs.len();
+    // rquickjs::Array 自身 set 仅接受 usize 下标，挂字符串键需经 as_object
+    arr.as_object()
+        .set(
+            "size",
+            rquickjs::Function::new(ctx.clone(), move || total)
+                .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        )
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     Ok(arr)
 }
 
