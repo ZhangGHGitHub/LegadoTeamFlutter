@@ -226,6 +226,17 @@ class _SearchScreenState
         });
       }
       _updateInputHelpVisibility();
+      // [结果可见性兜底 | 2026-09-26] 搜索完成且有结果时收起焦点：输入帮助层
+      // 显隐口径为「聚焦即帮助层」（对标原版 setOnQueryTextFocusChangeListener），
+      // 手机上键盘与焦点同起同落不构成困局；桌面/模拟器 IME 可能键盘已收而
+      // 焦点仍在 → 帮助层常驻盖住结果且无键盘可收（真机验收实测 2026-09-26）。
+      // 完成即失焦，结果必然可见；用户重新聚焦仍可唤出帮助层（设计不变）。
+      if (prev.isLoading &&
+          !next.isLoading &&
+          next.hasResults &&
+          _focusNode.hasFocus) {
+        _focusNode.unfocus();
+      }
       // 空结果智能引导（对齐原版 searchFinishLiveData L457-477）
       if (prev.isLoading &&
           !next.isLoading &&
