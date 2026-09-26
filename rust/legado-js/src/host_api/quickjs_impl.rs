@@ -202,33 +202,48 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
   function JavaString() {
     var a0 = arguments.length > 0 ? arguments[0] : undefined;
     var isBytes = (a0 instanceof Uint8Array) || Array.isArray(a0);
-    // 注意：调用方以 `new Packages.java.lang.String(...)` 使用本构造器，
-    // JS `new` 语义下若显式 return 原始值（字符串），表达式结果为 this
-    // 空对象 → String(this) = "[object Object]"（2026-08-15 七猫正文
-    // [object Object] 根因）。bytes 分支必须返回 JSString **对象**，
-    // 让 new 保留对象，toString/valueOf 再取回明文字符串。
+    // new.target 判别调用形态（2026-09-26 小小阅读 jsLib 修复，双基准裁决
+    // .tmp/crosscheck_20260927/verdict.md 定案引擎缺口）：
+    // - **new 调用**（七猫正文 `new Packages.java.lang.String(...)`）：
+    //   JS `new` 语义下若显式 return 原始值（字符串），表达式结果为 this
+    //   空对象 → String(this) = "[object Object]"（2026-08-15 七猫正文
+    //   [object Object] 根因）。bytes 分支必须返回 JSString **对象**，
+    //   让 new 保留对象，toString/valueOf 再取回明文字符串——保持现状；
+    // - **无 new 的普通调用**（小小阅读 jsLib：JavaImporter 合并 java.lang
+    //   等包后 `with (javaImport)` 作用域内标识符 `String` 被本构造器
+    //   遮蔽，`k = String(Arrays.copyOfRange(data, 0, 16))` 不带 new）：
+    //   上游 Rhino LiveConnect 语义——无 new 调用类构造器 = 实例化，
+    //   其字符串 coercion 即内容本身，宿主侧（java.digestHex 的 &str 入参）
+    //   最终拿到的是**原始字符串**；若返回 JSString 对象，rquickjs 严格
+    //   转换拒收（"Error converting from js 'object' into type 'string'"），
+    //   整条 bookList 规则崩溃。故普通调用时计算完内容返回原始串。
     // Java String(byte[], offset, length, charset) 重载（qmDecodeTextBytes
     // 用 `new String(bytes, 0, headSize, 'ISO-8859-1')` 做编码探测头）：
     // 取子数组按 charset 解码，而非把 offset 当 charset 名。
+    // 各分支只算内容 s（计算与包装分离），末尾按调用形态统一包装。
+    var s;
     if (arguments.length >= 4 && isBytes) {
       var off4 = Number(arguments[1]) || 0;
       var len4 = Number(arguments[2]) || 0;
       var sub4 = toU8(a0).slice(off4, off4 + len4);
       var r4 = java.bytesToStr(toJsonBytes(sub4), String(arguments[3]));
-      return JSString(String(r4));
-    }
-    if (arguments.length === 3 && isBytes) {
+      s = String(r4);
+    } else if (arguments.length === 3 && isBytes) {
       var off3 = Number(arguments[1]) || 0;
       var len3 = Number(arguments[2]) || 0;
       var sub3 = toU8(a0).slice(off3, off3 + len3);
-      return JSString(String(java.bytesToStr(toJsonBytes(sub3), 'UTF-8')));
-    }
-    if (arguments.length >= 2 && isBytes) {
+      s = String(java.bytesToStr(toJsonBytes(sub3), 'UTF-8'));
+    } else if (arguments.length >= 2 && isBytes) {
       var r = java.bytesToStr(toJsonBytes(toU8(a0)), String(arguments[1]));
-      return JSString(String(r));
+      s = String(r);
+    } else if (arguments.length === 1 && isBytes) {
+      s = String(java.bytesToStr(toJsonBytes(toU8(a0)), 'UTF-8'));
+    } else {
+      s = String(arguments[0]);
     }
-    if (arguments.length === 1 && isBytes) { return JSString(String(java.bytesToStr(toJsonBytes(toU8(a0)), 'UTF-8'))); }
-    return JSString(String(arguments[0]));
+    // new 调用（new.target 为构造器，真值）→ 保持 JSString 对象；
+    // 无 new 普通调用（new.target === undefined）→ 原始字符串。
+    return new.target ? JSString(s) : s;
   }
   // String.valueOf 静态方法（P2-9 ① java.lang 最小静态面）：
   // 挂在 JavaString 构造器函数上，`new Packages.java.lang.String(...)` 语义不变
