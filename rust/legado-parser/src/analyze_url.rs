@@ -2921,6 +2921,31 @@ mod tests {
         );
     }
 
+    /// [天脉漫画修正 | 2026-09-26] URL 选项 js 的 void 类调用（java.toast/
+    /// longToast，上游 Kotlin 返回 Unit→null）不得改写 URL：桥侧 toast 曾
+    /// 原样返回提示文案 → `{"js":"java.toast('…');"}` 把 URL 改写成文案 →
+    /// Url::parse 失败 → reqwest 裸 builder error（实机天脉漫画/大美书网）。
+    /// 空返回跳过改写（上游 `evalJS(...)?.toString()?.let` 语义）。
+    #[test]
+    fn test_url_option_js_void_like_toast_keeps_url() {
+        let ex = UrlOptionRecordingExecutor::new(None);
+        let parsed = AnalyzeUrl::parse_with_js(
+            "https://origin.test/api/front/index/search,{\"js\":\"java.toast('正在搜索漫画，请稍等…');\",\"method\":\"POST\",\"body\":\"key=重生高考前99天\"}",
+            &HashMap::new(),
+            1,
+            &ex,
+        )
+        .unwrap();
+        assert_eq!(
+            parsed.url(),
+            "https://origin.test/api/front/index/search",
+            "void 类返回（空串）不得改写 URL"
+        );
+        let calls = ex.calls.lock().unwrap();
+        let with_result: Vec<_> = calls.iter().filter(|(_, rj, _)| !rj.is_empty()).collect();
+        assert_eq!(with_result.len(), 1, "选项 js 恰执行一次");
+    }
+
     #[test]
     fn test_url_rule_window_current_url_empty_then_reset() {
         let ex = UrlOptionRecordingExecutor::new(None);

@@ -132,10 +132,13 @@ pub fn to_url(path: &str, query: &str) -> String {
 
 /// toast - 日志输出 + UI 队列（对齐原版 appCtx.toastOnUi 的可见提示）
 ///
-/// 对应 Kotlin: `toast(msg)` -> appCtx.toastOnUi(...)
+/// 对应 Kotlin: `toast(msg)` -> appCtx.toastOnUi(...)，返回 Unit→JS null。
 /// 收集开启时入队 `{"action":"toast","message":...}` 由 Flutter 展示
 /// SnackBar（登录表单「正在登录/登录成功/请先填写账号密码」等提示与
 /// 原版一致可见）；未收集时仅输出 stderr 日志。
+/// **返回值必须为空串**（对齐上游 void）：此前原样返回消息文本，URL 选项
+/// `{"js":"java.toast('…');"}` 的返回值非空 → URL 被改写成提示文案 →
+/// reqwest 裸 builder error（实机天脉漫画/大美书网）。
 /// — DeepSeek Harness + Bridge（2026-08-14 登录消息对齐）
 pub fn toast(msg: &str) -> String {
     eprintln!("[TOAST] {}", msg);
@@ -143,12 +146,13 @@ pub fn toast(msg: &str) -> String {
         "action": "toast",
         "message": msg,
     }));
-    msg.to_string()
+    String::new()
 }
 
 /// longToast - 长提示（UI 队列 + 日志输出替代）
 ///
-/// 对应 Kotlin: `longToast(msg)` -> appCtx.longToastOnUi("${getTag()}: ${msg}")
+/// 对应 Kotlin: `longToast(msg)` -> appCtx.longToastOnUi(...)，返回 Unit→JS
+/// null（返回值语义同 [`toast`]，必须为空串）。
 /// 与 toast 一致入队 UI 动作（Flutter 侧长停留 SnackBar）；未收集时
 /// 仅输出 stderr 日志。
 pub fn long_toast(msg: &str) -> String {
@@ -157,7 +161,7 @@ pub fn long_toast(msg: &str) -> String {
         "action": "longToast",
         "message": msg,
     }));
-    msg.to_string()
+    String::new()
 }
 
 // ============================================================
@@ -408,14 +412,16 @@ mod tests {
 
     #[test]
     fn test_toast() {
+        // [天脉漫画修正 | 2026-09-26] 返回空串对齐上游 Unit→null（返回消息
+        // 文本曾致 URL 选项 js 把 URL 改写成提示文案 → 裸 builder error）
         let result = toast("hello");
-        assert_eq!(result, "hello");
+        assert_eq!(result, "");
     }
 
     #[test]
     fn test_long_toast() {
         let result = long_toast("长提示内容");
-        assert_eq!(result, "长提示内容");
+        assert_eq!(result, "");
     }
 
     #[test]
