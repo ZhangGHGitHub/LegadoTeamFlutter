@@ -30,6 +30,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class WebViewBridge {
 
     private var webView: WebView? = null
+    // [销毁竞态防护 | 2026-09-26] 已销毁标志：置位后一切后续回调立即让路
+    private var destroyed = false
     private val handler = Handler(Looper.getMainLooper())
 
     companion object {
@@ -185,6 +187,7 @@ class WebViewBridge {
                             if (pageFinished) return
                             pageFinished = true
                             if (result.isCompleted) return
+                            if (destroyed) return
 
                             // 对齐：window.result = cache.getFromMemory('webview_result')
                             if (isRule && resultJson.isNotEmpty()) {
@@ -450,17 +453,25 @@ class WebViewBridge {
     }
 
     private fun destroyInternal() {
-        webView?.let { wv ->
-            try {
-                wv.stopLoading()
-                wv.loadUrl("about:blank")
-                wv.clearHistory()
-                wv.removeJavascriptInterface("java")
-                wv.destroy()
-            } catch (_: Exception) {
-            }
-        }
+        if (destroyed) return
+        destroyed = true
+        val wv = webView
         webView = null
+        wv?.let {
+            // 真销毁延迟 2s：让在途 chromium 回调（onPageFinished 等）先
+            // 落地——同步 destroy() 会把在途内部 Handler 置空，回调里的
+            // evaluateJavascript 再触发即 NPE（真机崩溃根因）
+            handler.postDelayed({
+                try {
+                    it.stopLoading()
+                    it.loadUrl("about:blank")
+                    it.clearHistory()
+                    it.removeJavascriptInterface("java")
+                    it.destroy()
+                } catch (_: Exception) {
+                }
+            }, 2000L)
+        }
     }
 
     /** evaluateJavascript 回调值为 JSON 编码字符串 */
