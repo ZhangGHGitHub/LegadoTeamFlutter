@@ -83,7 +83,13 @@ class WebViewBridge {
                 evaluateJs(js, safeResult)
             }
             "backstageEval" -> {
-                backstageEval(call, safeResult, context)
+                // [并发竞态修复 | 2026-09-26] 每次调用独立实例：共享实例的
+                // destroyInternal 会销毁上一个（在途）调用正在使用的 WebView，
+                // 被销毁 WebView 的 chromium 回调再触发即在原生层 NPE 崩溃
+                // 整个应用（真机实测：916 源并发搜索）。backstageEval 的
+                // WebView 生命周期由本次调用闭环（完成自毁 + 超时兜底），
+                // 独立实例无共享状态损失。
+                WebViewBridge().backstageEval(call, safeResult, context)
             }
             "close" -> {
                 destroy()
