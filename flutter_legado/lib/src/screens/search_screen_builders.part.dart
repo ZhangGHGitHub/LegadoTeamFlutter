@@ -164,32 +164,44 @@ extension _SearchBuilders on _SearchScreenState {
               if (expanded)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      for (final f in failures)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text.rich(
-                            TextSpan(
-                              children: [
+                  // [搜索失败列表滚动修复 | 2026-09-26] 横幅位于结果列表上方
+                  // 的固定区（Expanded 之外），展开态此前裸 Column 平铺全部
+                  // 失败项——99 条时超高被直接裁切且无法滚动（真机验收实测
+                  // 2026-09-26）；限高 45% 视口 + 内部滚动，错误文本可选中
+                  // （长按复制上报）
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(context).size.height * 0.45,
+                    ),
+                    child: SingleChildScrollView(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          for (final f in failures)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4),
+                              child: SelectableText.rich(
                                 TextSpan(
-                                  text: '${f.sourceName}：',
-                                  style: const TextStyle(
-                                      fontWeight: FontWeight.w600),
+                                  children: [
+                                    TextSpan(
+                                      text: '${f.sourceName}：',
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w600),
+                                    ),
+                                    TextSpan(
+                                      text: f.error,
+                                      style: TextStyle(
+                                        color: cs.onSurfaceVariant,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                TextSpan(
-                                  text: f.error,
-                                  style: TextStyle(
-                                    color: cs.onSurfaceVariant,
-                                  ),
-                                ),
-                              ],
+                                style: theme.textTheme.bodySmall,
+                              ),
                             ),
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        ),
-                    ],
+                        ],
+                      ),
+                    ),
                   ),
                 ),
             ],
