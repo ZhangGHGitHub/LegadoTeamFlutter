@@ -215,19 +215,30 @@ class WebViewBridge {
                                         100L + delayTime
                                     }
                                     handler.postDelayed({
-                                        if (result.isCompleted) return@postDelayed
-                                        val userJs =
-                                            if (js.isNotEmpty()) js
-                                            else "document.documentElement.outerHTML"
-                                        val injection =
-                                            if (isRule && html.isNotEmpty()) {
-                                                "try{var cache=$nameCache,source=$nameSource,java=$nameJava;}catch(e){}\n"
-                                            } else ""
-                                        view?.evaluateJavascript(injection + userJs) { value ->
+                                        // [崩溃防护 | 2026-09-26] 簇B 修复使
+                                        // java.webView(null,…) 真正可达，桥内
+                                        // 并发竞态的 NPE（WebViewBridge.kt:217
+                                        // 真机实测）会杀死整个应用——降级为日志，
+                                        // 该源按超时/空结果失败
+                                        try {
                                             if (!result.isCompleted) {
-                                                result.success(unescapeJsResult(value))
-                                                destroyInternal()
+                                                val userJs =
+                                                    if (js.isNotEmpty()) js
+                                                    else "document.documentElement.outerHTML"
+                                                val injection =
+                                                    if (isRule && html.isNotEmpty()) {
+                                                        "try{var cache=$nameCache,source=$nameSource,java=$nameJava;}catch(e){}\n"
+                                                    } else ""
+                                                view?.evaluateJavascript(injection + userJs) { value ->
+                                                    if (!result.isCompleted) {
+                                                        result.success(unescapeJsResult(value))
+                                                        destroyInternal()
+                                                    }
+                                                }
                                             }
+                                        } catch (t: Throwable) {
+                                            android.util.Log.e("WebViewBridge", "webViewEval", t)
+                                            destroyInternal()
                                         }
                                     }, wait)
                                 }
