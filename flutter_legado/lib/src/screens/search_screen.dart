@@ -85,6 +85,7 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
   // [队列④ P1-B] 失败书源横幅展开态（折叠=摘要行，展开=逐源明细；
   // failedSources 变空时经 ref.listen 自动收起，见 build 内监听回调）
   bool _failedBannerExpanded = false;
+  int? _loginToastShownForSession;
 
   @override
   void initState() {
@@ -237,6 +238,28 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           next.hasResults &&
           _focusNode.hasFocus) {
         _focusNode.unfocus();
+      }
+      // [登录提示 | 2026-09-26] 参考版行为：搜索完成后有「需要登录」类失败
+      // 时底部弹出一次轻提示（用户描述：底下会弹出一下提示）。按会话去重，
+      // 不随批次重复打扰；具体源清单仍在失败横幅（可展开/复制）。
+      if (prev.isLoading &&
+          !next.isLoading &&
+          next.failedSources.isNotEmpty &&
+          _loginToastShownForSession != _searchSessionId) {
+        final loginCount = next.failedSources
+            .where((f) =>
+                f.error.contains('Login required') ||
+                f.error.contains('需要登录'))
+            .length;
+        if (loginCount > 0 && mounted) {
+          _loginToastShownForSession = _searchSessionId;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('$loginCount 个书源需要登录，请先在书源菜单中登录后重试'),
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
       }
       // 空结果智能引导（对齐原版 searchFinishLiveData L457-477）
       if (prev.isLoading &&
