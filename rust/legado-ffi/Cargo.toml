@@ -49,3 +49,11 @@ required-features = ["quickjs"]
 [[example]]
 name = "dbg_jslib"
 required-features = ["quickjs"]
+
+# [夹具缺陷修复 | 2026-09-27] 批量搜索扫描同样依赖 QuickJsExecutor——无
+# quickjs 构建下 @js:/<js> searchUrl 不求值，原始规则文本被当字面 URL，
+# JS 源全部静默产出假结果（实测 16 源 3 秒跑完、艾格/听笔趣阁等 JS 源
+# 全部伪 http_error）。与 dbg_* 同款门控：无 feature 直接拒绝编译
+[[example]]
+name = "scan_search_sources"
+required-features = ["quickjs"]
