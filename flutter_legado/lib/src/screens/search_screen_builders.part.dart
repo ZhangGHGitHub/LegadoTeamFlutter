@@ -64,7 +64,6 @@ bool _isMeaningfulText(String? value) {
 }
 
 extension _SearchBuilders on _SearchScreenState {
-
   /// 搜索中停止 FAB + 浮动 x/y（对齐原版 fb_start_stop + tv_search_progress）
   Widget _buildStopFab(BuildContext context, SearchState state) {
     final theme = Theme.of(context);
@@ -129,8 +128,10 @@ extension _SearchBuilders on _SearchScreenState {
             mainAxisSize: MainAxisSize.min,
             children: [
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 child: Row(
                   children: [
                     Icon(
@@ -148,6 +149,34 @@ extension _SearchBuilders on _SearchScreenState {
                         overflow: TextOverflow.ellipsis,
                         style: theme.textTheme.bodySmall,
                       ),
+                    ),
+                    // [失败详情一键复制 | 2026-09-26] 逐条 SelectableText 的
+                    // 「全选」只作用于单条选区（各自独立 scope），用户实测无法
+                    // 整体复制——标题栏一键复制全部失败详情（源名：错误，逐行）
+                    IconButton(
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(
+                        minWidth: 32,
+                        minHeight: 32,
+                      ),
+                      icon: Icon(
+                        Symbols.content_copy_rounded,
+                        size: 16,
+                        color: cs.onSurfaceVariant,
+                      ),
+                      tooltip: '复制全部失败详情',
+                      onPressed: () async {
+                        final text = failures
+                            .map((f) => '${f.sourceName}：${f.error}')
+                            .join('\n');
+                        final messenger = ScaffoldMessenger.of(context);
+                        await Clipboard.setData(ClipboardData(text: text));
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text('已复制 ${failures.length} 条书源失败详情'),
+                          ),
+                        );
+                      },
                     ),
                     Icon(
                       // 展开/收起箭头（与 source_edit_screen_builders 的
@@ -186,7 +215,8 @@ extension _SearchBuilders on _SearchScreenState {
                                     TextSpan(
                                       text: '${f.sourceName}：',
                                       style: const TextStyle(
-                                          fontWeight: FontWeight.w600),
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                     ),
                                     TextSpan(
                                       text: f.error,
@@ -276,9 +306,7 @@ extension _SearchBuilders on _SearchScreenState {
       shape: const WidgetStatePropertyAll(StadiumBorder()),
       // [1-6 ②] 无阴影（SearchBar 默认 elevation 6 会投影，参考版为扁平胶囊）
       elevation: const WidgetStatePropertyAll(0.0),
-      backgroundColor: WidgetStatePropertyAll(
-        colorScheme.surfaceContainerHigh,
-      ),
+      backgroundColor: WidgetStatePropertyAll(colorScheme.surfaceContainerHigh),
       constraints: const BoxConstraints(minHeight: 56, maxHeight: 56),
       padding: const WidgetStatePropertyAll(
         EdgeInsets.symmetric(horizontal: 16),
@@ -292,8 +320,7 @@ extension _SearchBuilders on _SearchScreenState {
           ? [
               IconButton(
                 padding: EdgeInsets.zero,
-                constraints:
-                    const BoxConstraints(minWidth: 32, minHeight: 32),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
                 icon: const Icon(Symbols.close_rounded, size: 20),
                 onPressed: () {
                   _searchController.clear();
@@ -357,9 +384,7 @@ extension _SearchBuilders on _SearchScreenState {
         _circleAction(
           context,
           icon: Symbols.filter_list_rounded,
-          tooltip: _resultFilterWords.isEmpty
-              ? '搜索结果过滤'
-              : '搜索结果过滤（已开启）',
+          tooltip: _resultFilterWords.isEmpty ? '搜索结果过滤' : '搜索结果过滤（已开启）',
           active: _resultFilterWords.isNotEmpty,
           onTap: _showResultFilterDialog,
         ),
@@ -410,8 +435,10 @@ extension _SearchBuilders on _SearchScreenState {
         // P1-3：对标原版「标识读过的书籍」（show_search_read_record）
         setState(() => _showReadRecord = !_showReadRecord);
         SharedPreferences.getInstance().then((prefs) {
-          prefs.setBool(_SearchScreenState._prefsShowReadRecord,
-              _showReadRecord);
+          prefs.setBool(
+            _SearchScreenState._prefsShowReadRecord,
+            _showReadRecord,
+          );
         });
         break;
       case 'sources':
@@ -505,9 +532,11 @@ extension _SearchBuilders on _SearchScreenState {
                     child: ActionChip(
                       avatar: const Icon(Symbols.folder_rounded, size: 16),
                       // 展示实际分组名（粘性可见），点击清除并重搜
-                      label: Text(state.selectedGroups.length == 1
-                          ? state.selectedGroups.first
-                          : '${state.selectedGroups.length} 分组'),
+                      label: Text(
+                        state.selectedGroups.length == 1
+                            ? state.selectedGroups.first
+                            : '${state.selectedGroups.length} 分组',
+                      ),
                       onPressed: () {
                         final kw = state.keyword;
                         ref
@@ -522,8 +551,10 @@ extension _SearchBuilders on _SearchScreenState {
                 if (state.selectedSourceUrls.isNotEmpty)
                   ActionChip(
                     avatar: const Icon(Symbols.filter_list_rounded, size: 16),
-                    label: Text('${state.selectedSourceUrls.length} '
-                        '${AppStrings.sources}'),
+                    label: Text(
+                      '${state.selectedSourceUrls.length} '
+                      '${AppStrings.sources}',
+                    ),
                     onPressed: () {
                       final kw = state.keyword;
                       ref
@@ -535,8 +566,8 @@ extension _SearchBuilders on _SearchScreenState {
                     },
                   ),
               ],
+            ),
           ),
-        ),
         // 结果列表
         Expanded(
           child: NotificationListener<ScrollNotification>(
@@ -566,7 +597,10 @@ extension _SearchBuilders on _SearchScreenState {
   /// 07_search_results）封面实测 220x311px（1080 基准 480dpi → ≈73.3x103.7dp，
   /// 比例 5:7），80x110（240x330px）偏大约 9%；74x104（222x312px）对齐参考。
   Widget _buildResultItem(
-      BuildContext context, SearchResult result, Set<String> shelfKeys) {
+    BuildContext context,
+    SearchResult result,
+    Set<String> shelfKeys,
+  ) {
     final book = result.book;
     // [批次B G-B-05] 在架判定（原版 SearchViewModel.kt L110-116 键集语义）
     final inShelf = _isInBookshelf(book, shelfKeys);
@@ -668,16 +702,16 @@ extension _SearchBuilders on _SearchScreenState {
                       Container(
                         margin: const EdgeInsets.only(left: 8),
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: colorScheme.surfaceContainer,
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Md3AnimatedTextLine(
                           text: '${result.originsCount}',
-                          style: Theme.of(context)
-                              .textTheme
-                              .labelSmall
+                          style: Theme.of(context).textTheme.labelSmall
                               ?.copyWith(
                                 color: colorScheme.onSurfaceVariant,
                                 fontWeight: FontWeight.w500,
@@ -708,7 +742,9 @@ extension _SearchBuilders on _SearchScreenState {
                           for (final label in kindLabels)
                             Container(
                               padding: const EdgeInsets.symmetric(
-                                  horizontal: 6, vertical: 1),
+                                horizontal: 6,
+                                vertical: 1,
+                              ),
                               decoration: BoxDecoration(
                                 color: colorScheme.surfaceContainerHighest,
                                 borderRadius: BorderRadius.circular(4),
@@ -784,15 +820,15 @@ extension _SearchBuilders on _SearchScreenState {
   List<SearchResult> _filterSearchResults(List<SearchResult> results) {
     final words = _resultFilterWords;
     if (words.isEmpty) return results;
-    return results
-        .where((r) {
-          final book = r.book;
-          return !words.any((w) =>
-              book.name.toLowerCase().contains(w) ||
-              book.author.toLowerCase().contains(w) ||
-              (book.kind ?? '').toLowerCase().contains(w));
-        })
-        .toList();
+    return results.where((r) {
+      final book = r.book;
+      return !words.any(
+        (w) =>
+            book.name.toLowerCase().contains(w) ||
+            book.author.toLowerCase().contains(w) ||
+            (book.kind ?? '').toLowerCase().contains(w),
+      );
+    }).toList();
   }
 
   /// 搜索结果过滤编辑对话框（对齐原版 showSearchResultFilterDialog：
@@ -832,8 +868,9 @@ extension _SearchBuilders on _SearchScreenState {
       sources = await ref.read(bookApiProvider).getEnabledBookSources();
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('书源加载失败: $e')));
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('书源加载失败: $e')));
       }
       return;
     }
@@ -856,7 +893,8 @@ extension _SearchBuilders on _SearchScreenState {
     );
     if (!mounted) return;
     final after = ref.read(searchNotifierProvider);
-    final changed = !_setEquals(before.selectedGroups, after.selectedGroups) ||
+    final changed =
+        !_setEquals(before.selectedGroups, after.selectedGroups) ||
         !_setEquals(before.selectedSourceUrls, after.selectedSourceUrls);
     // 筛选变更且有关键词时自动重搜（对齐原版 scope 变更观察者重搜）
     if (changed && after.keyword.isNotEmpty) {
@@ -898,8 +936,11 @@ extension _SearchBuilders on _SearchScreenState {
   List<Book> _shelfSuggest(String key, List<Book> books) {
     if (key.isEmpty) return const [];
     return books
-        .where((b) => (b.bookType & BookType.notShelf) == 0 &&
-            (b.name.contains(key) || b.author.contains(key)))
+        .where(
+          (b) =>
+              (b.bookType & BookType.notShelf) == 0 &&
+              (b.name.contains(key) || b.author.contains(key)),
+        )
         .toList();
   }
 
@@ -909,11 +950,17 @@ extension _SearchBuilders on _SearchScreenState {
   /// [批次B G-B-05] 书架实时搜索（对标原版 upHistory L389-424）：输入非空时按
   /// 书名/作者子串过滤在架书籍显示「书架」节，点击直达书籍详情页。
   Widget _buildSearchHistory(
-      BuildContext context, SearchState state, List<Book> shelfBooks) {
+    BuildContext context,
+    SearchState state,
+    List<Book> shelfBooks,
+  ) {
     final suggestions = state.suggestions;
     // 书架实时搜索（原版 BookDao.flowSearch L83：name/author LIKE '%key%'）：
     // 输入为空或无匹配 → 隐藏本节（原版 tvBookShow/rvBookshelfSearch gone）
-    final shelfMatches = _shelfSuggest(_searchController.text.trim(), shelfBooks);
+    final shelfMatches = _shelfSuggest(
+      _searchController.text.trim(),
+      shelfBooks,
+    );
 
     if (state.searchHistory.isEmpty && shelfMatches.isEmpty) {
       // 安卓原版：无历史时显示纯灰字提示
@@ -946,16 +993,12 @@ extension _SearchBuilders on _SearchScreenState {
                         Icon(
                           Symbols.history_rounded,
                           size: 18,
-                          color: Theme.of(context)
-                              .colorScheme
-                              .onSurfaceVariant,
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                         ),
                         const SizedBox(width: 6),
                         Text(
                           AppStrings.searchHistory,
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleSmall
+                          style: Theme.of(context).textTheme.titleSmall
                               ?.copyWith(fontWeight: FontWeight.w600),
                         ),
                         const Spacer(),
@@ -974,13 +1017,11 @@ extension _SearchBuilders on _SearchScreenState {
                           child: Center(
                             child: Text(
                               '无匹配的历史关键词',
-                              style: Theme.of(context)
-                                  .textTheme
-                                  .bodySmall
+                              style: Theme.of(context).textTheme.bodySmall
                                   ?.copyWith(
-                                    color: Theme.of(context)
-                                        .colorScheme
-                                        .onSurfaceVariant,
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.onSurfaceVariant,
                                   ),
                             ),
                           ),
@@ -999,7 +1040,10 @@ extension _SearchBuilders on _SearchScreenState {
                                 child: InkWell(
                                   borderRadius: BorderRadius.circular(14),
                                   onTap: () => _onHistoryChipTapped(
-                                      context, keyword, shelfBooks),
+                                    context,
+                                    keyword,
+                                    shelfBooks,
+                                  ),
                                   child: Container(
                                     width: double.infinity,
                                     padding: const EdgeInsets.symmetric(
@@ -1018,19 +1062,23 @@ extension _SearchBuilders on _SearchScreenState {
                                         ),
                                         const SizedBox(width: 8),
                                         InkWell(
-                                          borderRadius:
-                                              BorderRadius.circular(999),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
                                           onTap: () async {
                                             await ref
-                                                .read(searchNotifierProvider
-                                                    .notifier)
+                                                .read(
+                                                  searchNotifierProvider
+                                                      .notifier,
+                                                )
                                                 .deleteHistoryItem(keyword);
                                             if (!context.mounted) return;
-                                            ScaffoldMessenger.of(context)
-                                                .showSnackBar(
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
                                               SnackBar(
-                                                  content:
-                                                      Text('已删除「$keyword」')),
+                                                content: Text('已删除「$keyword」'),
+                                              ),
                                             );
                                           },
                                           child: Padding(
@@ -1064,21 +1112,25 @@ extension _SearchBuilders on _SearchScreenState {
   /// [批次B G-B-05] 书架实时搜索节（对标原版 tvBookShow 标签 + rvBookshelfSearch 列表）
   ///
   /// 点击 → 直达书籍详情页（原版 showBookInfo(book)）；行 = 封面 + 书名/作者。
-  List<Widget> _buildShelfSuggestSection(BuildContext context, List<Book> books) {
+  List<Widget> _buildShelfSuggestSection(
+    BuildContext context,
+    List<Book> books,
+  ) {
     final theme = Theme.of(context);
     return [
       Padding(
         padding: const EdgeInsets.only(top: 16),
         child: Text(
           '书架',
-          style: theme.textTheme.titleSmall
-              ?.copyWith(fontWeight: FontWeight.w600),
+          style: theme.textTheme.titleSmall?.copyWith(
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       for (final book in books)
         InkWell(
-          onTap: () => Navigator.pushNamed(context, AppRoutes.bookInfo,
-              arguments: book),
+          onTap: () =>
+              Navigator.pushNamed(context, AppRoutes.bookInfo, arguments: book),
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 4),
             child: Row(
@@ -1114,8 +1166,8 @@ extension _SearchBuilders on _SearchScreenState {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: theme.textTheme.bodySmall?.copyWith(
-                                  color: theme.colorScheme.onSurfaceVariant,
-                                ),
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
                           ),
                         ),
                     ],
@@ -1135,7 +1187,10 @@ extension _SearchBuilders on _SearchScreenState {
   /// ② 无书名与关键词完全相同的在架书 → 填入并搜索；
   /// ③ 否则（存在同名书）→ 仅填入输入框，不自动搜索。
   void _onHistoryChipTapped(
-      BuildContext context, String keyword, List<Book> shelfBooks) {
+    BuildContext context,
+    String keyword,
+    List<Book> shelfBooks,
+  ) {
     final current = _searchController.text.trim();
     if (current != keyword) {
       _searchController.text = keyword;
@@ -1208,9 +1263,7 @@ extension _SearchBuilders on _SearchScreenState {
     if (action == 'disable_precision') {
       setState(() => _precision = false);
       notifier.setPrecision(false);
-      ref
-          .read(bookApiProvider)
-          .setConfig('precisionSearch', 'false');
+      ref.read(bookApiProvider).setConfig('precisionSearch', 'false');
     } else if (action == 'clear_scope') {
       notifier.clearAllFilter();
     }
@@ -1261,8 +1314,9 @@ class _ResultFilterDialogState extends State<_ResultFilterDialog> {
     super.initState();
     _controller = TextEditingController(text: widget.initialFilter);
     // 光标置于末尾（对齐原版 editView.setSelection(end)）
-    _controller.selection =
-        TextSelection.collapsed(offset: widget.initialFilter.length);
+    _controller.selection = TextSelection.collapsed(
+      offset: widget.initialFilter.length,
+    );
   }
 
   @override
@@ -1283,8 +1337,9 @@ class _ResultFilterDialogState extends State<_ResultFilterDialog> {
         children: [
           Text(
             '每行一个普通文本，匹配书名、作者或分类标签，忽略英文字母大小写',
-            style: theme.textTheme.bodySmall
-                ?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -1309,8 +1364,7 @@ class _ResultFilterDialogState extends State<_ResultFilterDialog> {
         ),
         TextButton(
           // 确定：返回 trim 后文本（空串 = 清空屏蔽词表）
-          onPressed: () =>
-              Navigator.pop(context, _controller.text.trim()),
+          onPressed: () => Navigator.pop(context, _controller.text.trim()),
           child: const Text('确定'),
         ),
       ],

@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.313] - 2026-09-26
+
+### Added
+- [UI] **搜索失败详情一键复制**：失败横幅标题栏新增复制按钮，一键复制全部失败条目（源名：错误，逐行）；此前逐条长按选择的「全选」只作用于单条选区，无法整体复制（用户实测）。
+
 ## [2.0.312] - 2026-09-26
 
 ### Fixed

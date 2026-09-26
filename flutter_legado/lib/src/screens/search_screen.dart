@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -53,8 +54,7 @@ class SearchScreen extends ConsumerStatefulWidget {
   ConsumerState<SearchScreen> createState() => _SearchScreenState();
 }
 
-class _SearchScreenState
-    extends ConsumerState<SearchScreen>
+class _SearchScreenState extends ConsumerState<SearchScreen>
     with WidgetsBindingObserver {
   final _searchController = TextEditingController();
   final _focusNode = FocusNode();
@@ -211,7 +211,8 @@ class _SearchScreenState
       // [2026-08-24] 旧条件在加载中任何长度变化都滚顶：节流增量渲染每 150ms flush
       // 都会 animateTo(0) → 页面被反复拉回顶部、无法滚动。改为仅在「新搜索开始」
       // （isLoading false→true 且关键词变化或结果已清空）时触发。— Qoder UI
-      final isNewSearch = !prev.isLoading &&
+      final isNewSearch =
+          !prev.isLoading &&
           next.isLoading &&
           (prev.keyword != next.keyword || next.results.isEmpty);
       if (isNewSearch) {
@@ -272,10 +273,9 @@ class _SearchScreenState
                 children: [
                   Text(
                     '搜索',
-                    style: Theme.of(context)
-                        .textTheme
-                        .headlineMedium
-                        ?.copyWith(fontWeight: FontWeight.w700),
+                    style: Theme.of(context).textTheme.headlineMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 12),
                   _buildSearchField(context),
@@ -301,8 +301,9 @@ class _SearchScreenState
                       vertical: 6,
                     ),
                     decoration: BoxDecoration(
-                      color:
-                          Theme.of(context).colorScheme.surfaceContainerHighest,
+                      color: Theme.of(
+                        context,
+                      ).colorScheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(999),
                     ),
                     child: Text(
@@ -329,11 +330,11 @@ class _SearchScreenState
         floatingActionButton: state.isLoading
             ? _buildStopFab(context, state)
             : (state.hasMore &&
-                    !state.isManualStop &&
-                    state.error == null &&
-                    state.keyword.isNotEmpty)
-                ? _buildNextPageFab()
-                : null,
+                  !state.isManualStop &&
+                  state.error == null &&
+                  state.keyword.isNotEmpty)
+            ? _buildNextPageFab()
+            : null,
       ),
     );
   }
