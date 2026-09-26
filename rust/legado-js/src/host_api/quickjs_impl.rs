@@ -801,15 +801,33 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
     var r = null;
     try { r = JSON.parse(jsonStr); } catch (e) { r = null; }
     var finalUrl = (r && r.url) || '';
+    var h = (r && r.headers) || {};
     var raw = {
       request: function () {
         return { url: function () { return finalUrl; } };
       },
       code: function () { return r ? r.status_code : 0; },
-      headers: function () { return (r && r.headers) || {}; }
+      // 头名大小写不敏感取单值（镜像 __resp.header；okhttp3 Headers 语义）
+      header: function (name) {
+        var lk = String(name).toLowerCase();
+        for (var k in h) { if (String(k).toLowerCase() === lk) return h[k]; }
+        return null;
+      },
+      // 对齐 okhttp3 语义（镜像 __resp.headers）：带参 → [值] 数组（天籁 403
+      // 分支 `res.raw().headers("Set-Cookie")[0]` 取 cookie）；无参 → 全量头 map
+      headers: function (name) {
+        if (arguments.length === 0) return h;
+        var v = this.header(name);
+        return v === null ? [] : [v];
+      }
     };
     return {
-      body: (r && r.body) || '',
+      // 对齐上游 StrResponse（Kotlin `fun body() = body`）：body 为方法而非
+      // 属性。有意偏离：爱丽丝书屋#61 语料以 `.body` 属性读取（该源在上游
+      // 原版侧同样不兼容），双基线「功能=原版侧」取上游方法形态
+      body: function () { return (r && r.body) || ''; },
+      // 对齐上游 StrResponse `fun code(): Int`（okhttp3 Response.code()）
+      code: function () { return r ? r.status_code : 0; },
       raw: function () { return raw; },
       callTime: function () { return 0; },
       // 辅助新增（非上游 OkHttp 面）：本响应最终 URL 的域归属 cookie 串 — 3b-3
@@ -4529,10 +4547,11 @@ mod tests {
         let engine = make_engine();
         engine.eval(r#"java.connect = function(){ return JSON.stringify({status_code:200,body:'ok',headers:{},url:'https://final.example/result'}); };"#).unwrap();
         engine.eval(super::RESPONSE_BRIDGE_JS).unwrap();
-        let result = engine.eval(r#"JSON.stringify({body:java.connect('https://start.example').body,url:java.connect('https://start.example').raw().request().url()})"#).unwrap();
+        // body 对齐上游 StrResponse 为方法（`body()`/`code()`），非属性
+        let result = engine.eval(r#"JSON.stringify({body:java.connect('https://start.example').body(),code:java.connect('https://start.example').code(),url:java.connect('https://start.example').raw().request().url()})"#).unwrap();
         assert_eq!(
             result,
-            r#"{"body":"ok","url":"https://final.example/result"}"#
+            r#"{"body":"ok","code":200,"url":"https://final.example/result"}"#
         );
     }
 
