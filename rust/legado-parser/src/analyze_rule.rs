@@ -1089,7 +1089,42 @@ impl AnalyzeRule {
                         }
                         // 非模板段：照旧按元素规则提取；后续 JS 以元素列表为
                         // 前序结果
-                        elems = self.get_elements_single_step(r)?;
+                        // [簇A 修正 | 2026-09-26] 提取前先按字符串绑定 flush
+                        // 既有 JS 步（它们位于首个提取之前，上游 result=内容
+                        // 字符串）；flush 后方可置 saw_extract
+                        if !pending_js.is_empty() {
+                            // 逐步线程式执行（输出→下一步输入，对齐上游链式
+                            // result 传递），末步输出作为本提取段的内容
+                            let mut current = js_continuation
+                                .take()
+                                .unwrap_or_else(|| self.content.clone());
+                            for code in pending_js.drain(..) {
+                                let mut sub =
+                                    AnalyzeRule::new(current.clone(), self.base_url.clone());
+                                self.share_variable_store_into(&mut sub);
+                                if let Some(exec) = self.js_executor() {
+                                    sub.set_js_executor(exec);
+                                }
+                                for (n, v) in &self.js_bindings {
+                                    sub.add_js_binding(n, v);
+                                }
+                                let out = sub.execute_js_rule(code)?;
+                                current = out.first().cloned().unwrap_or_default();
+                            }
+                            // 提取段以 JS 末步输出为内容（上游链式 result 传递）
+                            let mut sub_extract = AnalyzeRule::new(current, self.base_url.clone());
+                            self.share_variable_store_into(&mut sub_extract);
+                            if let Some(exec) = self.js_executor() {
+                                sub_extract.set_js_executor(exec);
+                            }
+                            for (n, v) in &self.js_bindings {
+                                sub_extract.add_js_binding(n, v);
+                            }
+                            elems = sub_extract.get_elements_single_step(r)?;
+                            js_continuation = None;
+                        } else {
+                            elems = self.get_elements_single_step(r)?;
+                        }
                         js_continuation = None;
                     }
                     JsChainStep::Js(code) => pending_js.push(code),
