@@ -1486,8 +1486,17 @@ impl AnalyzeRule {
             // len/jm/from：影视频源 TOC/正文惯用裸赋值（榴莲 `len=java.getElements`
             // 、红牛 `jm=...`）。不预声明 start/end/host/i/url（书源常 let/const
             // 同名，var 预声明会 SyntaxError）— Reasonix
+            // [规则JS×jsLib 作用域冲突修复 | 2026-09-26] 预声明由 `var X, …`
+            // 改为 `globalThis.X = undefined` 属性预置：同引擎先加载的 jsLib
+            // 若有顶层 `let d`（长佩文学实测），`var d` 与之构成重复声明 →
+            // 整个规则 JS 求值 SyntaxError（redeclaration of 'd'）；globalThis
+            // 属性与词法声明（let/const/var 任意）不冲突，裸赋值语义等价
+            //（属性存在 → 严格模式赋值不再 ReferenceError；jsLib 已有词法
+            // `d` 时赋值命中词法绑定）。上游无需预声明（Rhino getShareScope
+            // + chainTo 每次 eval 挂新子作用域），此处为无子作用域引擎的
+            // 等价替代 — Qoder
             prologue.push_str(
-                "var d, data, json, list, arr, obj, tmp, index, num, comic_chapter, header, headers, chapter_domain, end_num, rule, pic, html, img_ext, all, len, jm, from;\n",
+                "globalThis.d=undefined;globalThis.data=undefined;globalThis.json=undefined;globalThis.list=undefined;globalThis.arr=undefined;globalThis.obj=undefined;globalThis.tmp=undefined;globalThis.index=undefined;globalThis.num=undefined;globalThis.comic_chapter=undefined;globalThis.header=undefined;globalThis.headers=undefined;globalThis.chapter_domain=undefined;globalThis.end_num=undefined;globalThis.rule=undefined;globalThis.pic=undefined;globalThis.html=undefined;globalThis.img_ext=undefined;globalThis.all=undefined;globalThis.len=undefined;globalThis.jm=undefined;globalThis.from=undefined;\n",
             );
             if let Ok(content_json) = serde_json::to_string(&self.content) {
                 // 经 globalThis 属性赋值注入（对齐原版 ScriptableObject.put
@@ -2887,10 +2896,10 @@ mod tests {
             "chapter 注入: {code}"
         );
         assert!(
-            code.contains("var d, data, json, list, arr, obj, tmp")
-                && code.contains(", all,")
-                && code.contains("len,"),
-            "应预声明裸赋值变量 all/len（严格模式）: {code}"
+            code.contains("globalThis.d=undefined")
+                && code.contains("globalThis.all=undefined")
+                && code.contains("globalThis.len=undefined"),
+            "应预置裸赋值变量 all/len（globalThis 属性，不与 jsLib 词法声明冲突）: {code}"
         );
     }
 
@@ -2909,8 +2918,8 @@ mod tests {
         let recorded = executor.executed.lock().unwrap().clone();
         assert_eq!(recorded.len(), 1);
         assert!(
-            recorded[0].contains(", all;") || recorded[0].contains(" all,"),
-            "prologue 须含 var all: {}",
+            recorded[0].contains("globalThis.all=undefined"),
+            "prologue 须含 globalThis.all 预置: {}",
             recorded[0]
         );
     }
@@ -2957,17 +2966,13 @@ mod tests {
         let recorded = executor.executed.lock().unwrap().clone();
         assert_eq!(recorded.len(), 1);
         assert!(
-            recorded[0].contains(", len,")
-                || recorded[0].contains(" len,")
-                || recorded[0].contains(", len;"),
-            "prologue 须含 var len: {}",
+            recorded[0].contains("globalThis.len=undefined"),
+            "prologue 须含 globalThis.len 预置: {}",
             recorded[0]
         );
         assert!(
-            recorded[0].contains(", jm,")
-                || recorded[0].contains(" jm,")
-                || recorded[0].contains(", jm;"),
-            "prologue 须含 var jm: {}",
+            recorded[0].contains("globalThis.jm=undefined"),
+            "prologue 须含 globalThis.jm 预置: {}",
             recorded[0]
         );
     }

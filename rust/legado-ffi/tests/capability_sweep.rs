@@ -622,8 +622,10 @@ fn collect_fragments(src: &BookSource) -> Vec<(&'static str, String)> {
                 !(t.starts_with("//") && !t[2..].trim_start().starts_with('@'))
             })
             .collect::<Vec<_>>()
-            .join("
-")
+            .join(
+                "
+",
+            )
     }
     let mut out: Vec<(&'static str, String)> = Vec::new();
     if let Some(js_lib) = &src.js_lib {
@@ -710,7 +712,8 @@ fn collect_fragments(src: &BookSource) -> Vec<(&'static str, String)> {
             out.push(("loginUrl", login_url.clone()));
         }
     }
-    out.iter_mut().for_each(|(_, text)| *text = strip_full_line_comments(text));
+    out.iter_mut()
+        .for_each(|(_, text)| *text = strip_full_line_comments(text));
     out
 }
 

@@ -36,6 +36,33 @@ use crate::host_api::{
 use crate::sandbox::SandboxConfig;
 use rquickjs::function::Opt;
 
+/// 可空字符串入参（rquickjs `Opt<T>` 只认 undefined、不认显式 null——
+/// 上游 Kotlin `String?` 可空参语义下语料合法调用 `java.webView(null, url,
+/// null)` 会报「Error converting from js 'null' into type 'string'」）。
+/// null / undefined 均映射 None，其余按 String 转换。— 2026-09-26
+struct NullStr(Option<String>);
+
+impl<'js> rquickjs::FromJs<'js> for NullStr {
+    fn from_js(_ctx: &rquickjs::Ctx<'js>, value: rquickjs::Value<'js>) -> rquickjs::Result<Self> {
+        if value.is_undefined() || value.is_null() {
+            return Ok(NullStr(None));
+        }
+        Ok(NullStr(Some(String::from_js(_ctx, value)?)))
+    }
+}
+
+/// 可空布尔入参（语义同 [`NullStr`]）
+struct NullBool(Option<bool>);
+
+impl<'js> rquickjs::FromJs<'js> for NullBool {
+    fn from_js(_ctx: &rquickjs::Ctx<'js>, value: rquickjs::Value<'js>) -> rquickjs::Result<Self> {
+        if value.is_undefined() || value.is_null() {
+            return Ok(NullBool(None));
+        }
+        Ok(NullBool(Some(bool::from_js(_ctx, value)?)))
+    }
+}
+
 /// 将所有宿主 API 注册到 QuickJS 全局上下文
 ///
 /// 每个函数同时挂载到 `java` 命名空间对象和裸全局，
@@ -826,6 +853,22 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
     return __resp(__nativeConnect(String(url), 'HEAD', hs));
   };
 })();
+
+  // [可空入参垫片 | 2026-09-26] 原生 webView 已改 NullStr/NullBool 可空
+  // 入参（null/undefined 均 None、上游 Kotlin String? 语义），换型后
+  // arity=4 必填——垫片把缺参/undefined 补成 null，恒 4 参调用
+  (function () {
+    var nativeWebView = java.webView;
+    java.webView = function (html, url, js, cacheFirst) {
+      return nativeWebView(
+        html === undefined ? null : html,
+        url === undefined ? null : url,
+        js === undefined ? null : js,
+        cacheFirst === undefined ? null : cacheFirst === true
+      );
+    };
+  })();
+
 "#;
 
 /// Rhino `org.jsoup.Jsoup` 模拟层（云霄小说/键盘小说/玄幻文学/77读书等
@@ -3671,18 +3714,19 @@ fn register_misc_apis<'js>(
     )?;
 
     // webView(html?, url?, js?, cacheFirst?) -> String
-    // 对应 Kotlin: webView(html, url, js) / webView(html, url, js, cacheFirst)
+    // 对应 Kotlin: webView(html: String?, url: String?, js: String?, cacheFirst: Boolean)
+    // [可空入参修复 | 2026-09-26] rquickjs `Opt<T>` 只认 undefined、不认显式
+    // null——语料听笔趣阁/棉花糖/17k 调 `java.webView(null, url, null)`（上游
+    // Kotlin String? 可空参合法）报「Error converting from js 'null' into
+    // type 'string'」。改用 NullStr/NullBool 入参（null/undefined → None），
+    // 配 JS 垫片恒定 4 参调用（undefined 补 null），见 RESPONSE_BRIDGE_JS。
     mount_dual(
         java,
         globals,
         "webView",
         rquickjs::Function::new(
             ctx.clone(),
-            |html: Opt<String>,
-             url: Opt<String>,
-             js: Opt<String>,
-             cache_first: Opt<bool>|
-             -> String {
+            |html: NullStr, url: NullStr, js: NullStr, cache_first: NullBool| -> String {
                 platform::web_view_ex(
                     html.0.as_deref().unwrap_or(""),
                     url.0.as_deref().unwrap_or(""),
@@ -4816,6 +4860,25 @@ cipher.decryptStr(b64);
     }
 
     #[test]
+    fn test_web_view_nullable_args() {
+        let engine = make_engine();
+        engine.eval(super::RESPONSE_BRIDGE_JS).unwrap();
+        // 显式 null 入参（上游 Kotlin String? 语义）不得再报
+        // 「Error converting from js 'null' into type 'string'」——语料
+        // 听笔趣阁/棉花糖/17k 的 searchUrl 形态 `java.webView(null, url, null)`
+        let out = engine
+            .eval("java.webView(null, 'https://x.test/', null)")
+            .expect("null 入参调用不得抛转换错误");
+        // 桌面桩可能返回 [ERROR] 前缀或空串；关键断言是调用本身成功
+        assert!(
+            !out.contains("converting from js"),
+            "不得出现入参转换错误: {out}"
+        );
+        // 缺参形态（1 参）经垫片补 null 后同样可调
+        let _ = engine.eval("java.webView('x')");
+    }
+
+    #[test]
     fn test_response_bridge_cookies_helper() {
         let engine = make_engine();
         // 桥注入**前**伪造 java.connect（桥按当前引用捕获原生实现）——
@@ -5574,9 +5637,15 @@ cipher.decryptStr(b64);
     #[test]
     fn test_bare_web_view_bridge() {
         let engine = make_engine();
-        // 裸全局调用 webView
+        // [可空入参修复 | 2026-09-26] 原生 webView 换 NullStr/NullBool 后
+        // arity=4；生产环境 RESPONSE_BRIDGE_JS 垫片恒在（补 null 至 4 参），
+        // 本测试对齐生产形态先注入桥，裸全局 3 参调用经垫片照常工作
+        engine.eval(super::RESPONSE_BRIDGE_JS).unwrap();
+        let engine = engine;
+        // 裸全局调用 webView（垫片同时镜像到裸全局：java.webView 被覆盖，
+        // 裸 webView 仍指原生——此处经 java 面验证垫片，再验裸全局原生）
         let result = engine
-            .eval("webView('', 'http://bare.com', 'js_code')")
+            .eval("java.webView('', 'http://bare.com', 'js_code')")
             .unwrap();
         let parsed: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert_eq!(parsed["action"], "webView");
