@@ -1022,6 +1022,10 @@ impl AnalyzeRule {
             // 链式 getElements：首段按元素规则提取，后续 JS 以拼接/单元素为 result
             let mut elems: Vec<String> = Vec::new();
             let mut pending_js: Vec<&str> = Vec::new();
+            // [簇A 修正 | 2026-09-26] 仅当 JS 步之前存在前缀选择器（Extract）
+            // 才以 Elements 绑定 result——纯 JS 开头的链（`<js>result.replace…`
+            // 后接提取段）上游拿字符串，误绑 Elements 致 `replace 不存在`
+            let mut saw_extract = false;
             // [P2-6a | 台账 0917] 链内模板段状态（get_strings 路径模板语义
             // 移植到 getElements 链）：
             // - template_ctx：下一模板段的回填内容（= 前序步结果；初始为
@@ -1037,6 +1041,7 @@ impl AnalyzeRule {
                         if r.is_empty() {
                             continue;
                         }
+                        saw_extract = true;
                         // [P2-6a | 台账 0917] 链内模板段（与 eval_js_chain_steps
                         // P0-2/P2-6f1 判定一致：判定域 = 顶层拆分后提取核心，
                         // 含 `{{`/`@get:`）：
@@ -1067,7 +1072,7 @@ impl AnalyzeRule {
                                 let (_out, flushed_ctx) = self.run_js_steps_threaded_inner(
                                     payload,
                                     &pending_js,
-                                    Some(&elems),
+                                    if saw_extract { Some(&elems) } else { None },
                                 )?;
                                 template_ctx = flushed_ctx;
                                 pending_js.clear();
@@ -1098,7 +1103,7 @@ impl AnalyzeRule {
             let mut elements_payload: Option<&[String]> = None;
             let result_payload = match js_continuation.take() {
                 Some(s) => s,
-                None => {
+                None if saw_extract => {
                     elements_payload = Some(&elems);
                     if elems.len() == 1 {
                         elems[0].clone()
@@ -1111,6 +1116,8 @@ impl AnalyzeRule {
                         })
                     }
                 }
+                // 纯 JS 开头（无前缀选择器）：result 维持内容字符串绑定
+                None => self.content.clone(),
             };
             let (last_out, _final_current) =
                 self.run_js_steps_threaded_inner(result_payload, &pending_js, elements_payload)?;

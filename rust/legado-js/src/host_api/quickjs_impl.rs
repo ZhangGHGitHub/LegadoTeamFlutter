@@ -962,6 +962,8 @@ pub const JSOUP_BRIDGE_JS: &str = r#"
       return {
         select: function (css) { return __set(null, h, String(css || '')); },
         body: function () { return __element(null, h, 'body', 0); },
+        // Document.text()（语料完本神站：doc.text() 取全文档文本）
+        text: function () { return java.jsoupTextN(h, 'body', 0); },
         toString: function () { return h; }
       };
     }
