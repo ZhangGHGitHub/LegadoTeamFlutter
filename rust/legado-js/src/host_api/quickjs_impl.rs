@@ -650,6 +650,28 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
           }
         },
         HashMap: JSHashMap,
+        // 得间免费小说（jsLib）：java.util.Base64.getDecoder().decode(str) /
+        // getEncoder().encodeToString(bytes)。解密/编码全部委托宿主既有桥，
+        // 不重实现：
+        // - decode → java.base64DecodeToByteArray（空白输入 → null，Java 语义
+        //   保留：null 归一为空字节序列，不中断书源脚本）；
+        // - encodeToString → java.base64EncodeBytes（与 android.util.Base64
+        //   面同一宿主函数，口径一致）
+        Base64: {
+          getDecoder: function () {
+            return {
+              decode: function (s, flags) {
+                var b = java.base64DecodeToByteArray(String(s), flags || 0);
+                return (b === null || b === undefined) ? new Uint8Array(0) : toU8(b);
+              }
+            };
+          },
+          getEncoder: function () {
+            return {
+              encodeToString: function (bytes) { return java.base64EncodeBytes(toU8(bytes)); }
+            };
+          }
+        },
         zip: { Inflater: JSInflater, InflaterInputStream: JSInflaterInputStream }
       },
       io: {
@@ -686,6 +708,75 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
               throw new Error('此书源需要 Java 脚本能力（Packages.' + full + '），当前不支持');
             }
             return JSMMessageDigestInstance(a);
+          }
+        },
+        // 得间免费小说（jsLib）RSA 签名面：KeyFactory / Signature / spec。
+        // 全部加密计算委托宿主既有 asymmetric_crypto（java.createSign），
+        // 本层只做 Java API 形态适配，不重实现任何密码学：
+        // - KeyFactory.getInstance 仅接受 "RSA"（非 RSA → 登记符号 + 可读文案）
+        // - generatePrivate(spec) 取 spec.encode()（PKCS#8 DER 字节）转 Base64
+        //   字符串，供 createSign.setPrivateKey → parse_private_key 解析
+        // - Signature.update 累积、sign() 一次性委托 createSign（PKCS#1 v1.5
+        //   确定性签名），输出 Uint8Array
+        KeyFactory: {
+          getInstance: function (algo) {
+            var a = (algo == null) ? '' : String(algo);
+            if (a.toUpperCase() !== 'RSA') {
+              var full = 'java.security.KeyFactory.getInstance("' + a + '")';
+              java.reportUnknownSymbol(full);
+              throw new Error('此书源需要 Java 脚本能力（Packages.' + full + '），当前不支持');
+            }
+            return {
+              generatePrivate: function (spec) {
+                if (!spec || typeof spec.encode !== 'function') {
+                  throw new Error('KeyFactory.generatePrivate: 参数须为带 encode() 方法的 spec 对象（PKCS8EncodedKeySpec 返回值）');
+                }
+                return { _key: java.base64EncodeBytes(toU8(spec.encode())) };
+              }
+            };
+          }
+        },
+        Signature: {
+          getInstance: function (algo) {
+            var a = (algo == null) ? '' : String(algo);
+            // 提前做算法预校验：宿主 createSign 内部 parse_sign_algorithm，
+            // 未知算法在 getInstance 即抛可读错误，不拖到 sign() 才暴露
+            var base = java.createSign(a);
+            var key = null;
+            var buf = new Uint8Array(0);
+            return {
+              initSign: function (priKey) {
+                if (!priKey || typeof priKey._key !== 'string') {
+                  throw new Error('Signature.initSign: 参数须为 KeyFactory.generatePrivate 返回的密钥对象');
+                }
+                key = priKey;
+                buf = new Uint8Array(0);
+                return this;
+              },
+              update: function (data) {
+                var c = toU8(data || []);
+                var nb = new Uint8Array(buf.length + c.length);
+                nb.set(buf, 0);
+                nb.set(c, buf.length);
+                buf = nb;
+                return this;
+              },
+              sign: function () {
+                if (!key) {
+                  throw new Error('Signature.sign: 须先调用 initSign');
+                }
+                base.setPrivateKey(key._key);
+                return base.sign(buf);
+              }
+            };
+          }
+        },
+        spec: {
+          // Java 语料中 PKCS8EncodedKeySpec(bytes) 不带 new 直接调用（得间
+          // jsLib）：普通函数调用返回 spec 对象，encode() 取回原始字节
+          // （toU8 拷贝不别名）
+          PKCS8EncodedKeySpec: function (bytes) {
+            return { encode: function () { return toU8(bytes); } };
           }
         }
       }
@@ -751,6 +842,43 @@ fn inject_packages_shim<'js>(ctx: &rquickjs::Ctx<'js>) -> Result<(), LegadoError
     var n = String(cls == null ? '' : cls);
     java.reportUnknownSymbol('importClass(' + n + ')');
     throw new Error('此书源需要 Java 脚本能力（importClass(' + n + ')），当前不支持');
+  };
+
+  // JavaImporter（得间免费小说 jsLib）：Rhino importPackage 容器。
+  // 设计取舍（2026-09-26）：
+  // - 零参 `new JavaImporter()` 必须不抛错——得间 jsLib 构造后立即调用
+  //   `javaImport.importPackage(Packages.java.lang, …, Packages.java.util)`；
+  //   Rhino 语义是「with 作用域即 importer 自身，importPackage 合并后类名
+  //   才可解析」，故本模拟层**不预挂载** Packages.java 各面（预挂载会让
+  //   importPackage 形同虚设，且未知成员陷阱语义与 Rhino 不符）。
+  // - `new JavaImporter(pkg1, …)` 亦接受构造参数（等价于构造时即
+  //   importPackage），两种用法都可用。
+  // - importPackage(...pkgs) 变参：合并各包的**直接**类成员（自身可枚举
+  //   属性；被 trapNode 代理包裹的包节点经默认 ownKeys/get 陷阱原样
+  //   枚举）；同名冲突先注册者胜（不覆盖既有成员）。
+  // - 构造器显式返回对象（new 语义下覆盖 this），`with (javaImport)` 即
+  //   对合并后的成员集做作用域解析。
+  function mergeJavaPkgs(target, args) {
+    for (var i = 0; i < args.length; i++) {
+      var pkg = args[i];
+      if (pkg === null || pkg === undefined) { continue; }
+      if (typeof pkg !== 'object' && typeof pkg !== 'function') { continue; }
+      for (var k in pkg) {
+        if (Object.prototype.hasOwnProperty.call(pkg, k) && target[k] === undefined) {
+          target[k] = pkg[k];
+        }
+      }
+    }
+  }
+  globalThis.JavaImporter = function JavaImporter() {
+    var importer = {
+      importPackage: function () {
+        mergeJavaPkgs(importer, arguments);
+        return importer;
+      }
+    };
+    mergeJavaPkgs(importer, arguments);
+    return importer;
   };
 })();
 "#;
