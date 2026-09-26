@@ -902,7 +902,17 @@ pub const JSOUP_BRIDGE_JS: &str = r#"
       size: function () { return java.jsoupSize(h, c); },
       isEmpty: function () { return java.jsoupSize(h, c) === 0; },
       first: function () { return __element(parent, h, c, 0); },
+      last: function () { return __element(parent, h, c, Math.max(0, java.jsoupSize(h, c) - 1)); },
       get: function (i) { return __element(parent, h, c, i); },
+      // 上游 Elements 继承 Java List：JS 侧 toArray() 返回元素数组
+      //（语料笔趣阁/文学小说/晋江 bookList JS 首句 `result.toArray()`）
+      // — 簇A 2026-09-26
+      toArray: function () {
+        var n = java.jsoupSize(h, c);
+        var out = [];
+        for (var j = 0; j < n; j++) out.push(__element(parent, h, c, j));
+        return out;
+      },
       each: function (fn) {
         var n = this.size();
         for (var j = 0; j < n; j++) { fn(this.get(j), j); }
@@ -961,6 +971,36 @@ pub const JSOUP_BRIDGE_JS: &str = r#"
     unescapeEntities: function (s, _base) {
       return java.jsoupUnescapeEntities(String(s == null ? '' : s));
     }
+  };
+  // 链式规则引擎的「元素列表 → Elements」构造器：getElements 前缀选择器
+  // 抽出的元素 HTML 列表（上游语义：JS 步的 result = 上一步的 Elements）。
+  // 每个元素对象以自身 HTML 为内容（index 0），select/attr/text 就地求值。
+  // — 簇A 2026-09-26
+  globalThis.__jsoupElementsFromList = function (list) {
+    var arr = [];
+    for (var j = 0; j < list.length; j++) {
+      arr.push(String(list[j] == null ? '' : list[j]));
+    }
+    var joined = arr.join(String.fromCharCode(10));
+    return {
+      toArray: function () {
+        var out = [];
+        for (var j = 0; j < arr.length; j++) out.push(__element(null, arr[j], '', 0));
+        return out;
+      },
+      get: function (i) { return __element(null, arr[i] || '', '', 0); },
+      size: function () { return arr.length; },
+      isEmpty: function () { return arr.length === 0; },
+      first: function () { return __element(null, arr[0] || '', '', 0); },
+      last: function () { return __element(null, arr[arr.length - 1] || '', '', 0); },
+      each: function (fn) {
+        for (var j = 0; j < arr.length; j++) fn(__element(null, arr[j], '', 0), j);
+      },
+      select: function (sub) { return __set(null, joined, String(sub || '')); },
+      attr: function (name) { return arr.length ? __element(null, arr[0], '', 0).attr(name) : ''; },
+      text: function () { return java.jsoupTextN(joined, '', 0); },
+      toString: function () { return joined; }
+    };
   };
   globalThis.org = globalThis.org || {};
   globalThis.org.jsoup = globalThis.org.jsoup || {};

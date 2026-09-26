@@ -1064,8 +1064,11 @@ impl AnalyzeRule {
                                             .unwrap_or_else(|_| elems.join("\n"))
                                     }
                                 });
-                                let (_out, flushed_ctx) =
-                                    self.run_js_steps_threaded(payload, &pending_js)?;
+                                let (_out, flushed_ctx) = self.run_js_steps_threaded_inner(
+                                    payload,
+                                    &pending_js,
+                                    Some(&elems),
+                                )?;
                                 template_ctx = flushed_ctx;
                                 pending_js.clear();
                             }
@@ -1092,15 +1095,25 @@ impl AnalyzeRule {
             }
             // 将元素列表交给 JS：单元素直接作 result；多元素 JSON 数组字符串；
             // 模板段之后取其结果作为前序步结果（P2-6a）
-            let result_payload = js_continuation.take().unwrap_or_else(|| {
-                if elems.len() == 1 {
-                    elems[0].clone()
-                } else {
-                    serde_json::to_string(&elems).unwrap_or_else(|_| elems.join("\n"))
+            let mut elements_payload: Option<&[String]> = None;
+            let result_payload = match js_continuation.take() {
+                Some(s) => s,
+                None => {
+                    elements_payload = Some(&elems);
+                    if elems.len() == 1 {
+                        elems[0].clone()
+                    } else {
+                        serde_json::to_string(&elems).unwrap_or_else(|_| {
+                            elems.join(
+                                "
+",
+                            )
+                        })
+                    }
                 }
-            });
+            };
             let (last_out, _final_current) =
-                self.run_js_steps_threaded(result_payload, &pending_js)?;
+                self.run_js_steps_threaded_inner(result_payload, &pending_js, elements_payload)?;
             // JS 返回 JSON 数组时拆成多元素（`[result]` 包装场景）
             if last_out.len() == 1 {
                 let s = last_out[0].trim();
@@ -1125,10 +1138,13 @@ impl AnalyzeRule {
     /// [P2-6a | 台账 0917] 链式 getElements 的 JS 步批量执行：以 `current`
     /// 为子规则当前内容（execute_js_rule 注入 result/src），顺序执行各步，
     /// 每步输出（首个元素）作为下一步 content。返回 (末步输出, 最终内容)。
-    fn run_js_steps_threaded(
+    /// [`run_js_steps_threaded`] 的 Elements 绑定变体：`elements` 非空时
+    /// 各 JS 步的 result 绑定为元素列表（上游链式语义，簇A）
+    fn run_js_steps_threaded_inner(
         &self,
         mut current: String,
         codes: &[&str],
+        elements: Option<&[String]>,
     ) -> LegadoResult<(Vec<String>, String)> {
         let mut last_out = Vec::new();
         for code in codes {
@@ -1140,10 +1156,21 @@ impl AnalyzeRule {
             for (n, v) in &self.js_bindings {
                 sub.add_js_binding(n, v);
             }
-            last_out = sub.execute_js_rule(code)?;
+            last_out = match elements {
+                Some(elems) => sub.execute_js_rule_with_elements(code, elems)?,
+                None => sub.execute_js_rule(code)?,
+            };
             current = last_out.first().cloned().unwrap_or_default();
         }
         Ok((last_out, current))
+    }
+
+    fn run_js_steps_threaded(
+        &self,
+        mut current: String,
+        codes: &[&str],
+    ) -> LegadoResult<(Vec<String>, String)> {
+        self.run_js_steps_threaded_inner(current, codes, None)
     }
 
     /// 单步 getElements（无 `@js:` 链）
@@ -1459,6 +1486,26 @@ impl AnalyzeRule {
     /// 如果已注入 JsExecutor，则调用其执行 JS 代码；
     /// 否则降级返回空结果。
     fn execute_js_rule(&self, js_code: &str) -> LegadoResult<Vec<String>> {
+        self.execute_js_rule_inner(js_code, None)
+    }
+
+    /// JS 步的 result 以「上一步的 Elements」绑定（上游 getElements 链式
+    /// 语义：Mode.Js -> evalJS(rule, result)，前缀选择器产出 Elements）。
+    /// 元素列表经桥 `__jsoupElementsFromList` 构造（JSOUP_BRIDGE_JS）。
+    /// — 簇A 2026-09-26
+    fn execute_js_rule_with_elements(
+        &self,
+        js_code: &str,
+        elements: &[String],
+    ) -> LegadoResult<Vec<String>> {
+        self.execute_js_rule_inner(js_code, Some(elements))
+    }
+
+    fn execute_js_rule_inner(
+        &self,
+        js_code: &str,
+        elements: Option<&[String]>,
+    ) -> LegadoResult<Vec<String>> {
         // JS 规则体中的 {{$.field}} / {$.field} 必须在 eval 前按当前 JSON
         // 元素展开。红薯小说 ruleBookUrl 使用 @js + {{$.bid}}；此前该
         // 占位符作为字符串字面量进入 JS，最终 bookUrl 保留 {{$.bid}}。
@@ -1511,17 +1558,32 @@ impl AnalyzeRule {
                 // 属性访问；书山 bookUrl 等规则依赖，字符串注入取不到
                 // 字段 → 所有书 bookUrl 相同 → 去重折叠成 1 条）。
                 // — DeepSeek Harness + Bridge（2026-08-14 去重折叠修复）
-                let result_literal = if self.json_element_mode {
-                    match serde_json::from_str::<serde_json::Value>(&self.content) {
-                        Ok(v) if v.is_object() || v.is_array() => {
-                            serde_json::to_string(&v).unwrap_or_else(|_| content_json.clone())
-                        }
-                        _ => content_json.clone(),
-                    }
+                // [簇A | 2026-09-26] 链式前缀选择器之后的 JS 步：result 按
+                // 上游绑定 Elements（桥构造器）；其余维持字符串绑定（纯 JS
+                // 开头的规则上游同样拿字符串）
+                if let Some(elems) = elements {
+                    let elems_json =
+                        serde_json::to_string(elems).unwrap_or_else(|_| "[]".to_string());
+                    prologue.push_str(&format!(
+                        "globalThis.result = __jsoupElementsFromList({elems_json});
+"
+                    ));
                 } else {
-                    content_json.clone()
-                };
-                prologue.push_str(&format!("globalThis.result = {result_literal};\n"));
+                    let result_literal = if self.json_element_mode {
+                        match serde_json::from_str::<serde_json::Value>(&self.content) {
+                            Ok(v) if v.is_object() || v.is_array() => {
+                                serde_json::to_string(&v).unwrap_or_else(|_| content_json.clone())
+                            }
+                            _ => content_json.clone(),
+                        }
+                    } else {
+                        content_json.clone()
+                    };
+                    prologue.push_str(&format!(
+                        "globalThis.result = {result_literal};
+"
+                    ));
+                }
                 prologue.push_str(&format!("globalThis.src = {content_json};\n"));
             }
             if let Ok(base_json) = serde_json::to_string(&self.base_url) {
@@ -4190,9 +4252,11 @@ mod tests {
             .iter()
             .find(|c| c.ends_with("(\"buildA\")"))
             .expect("buildA 步应被执行");
+        // [簇A | 2026-09-26] Elements 绑定口径：前缀选择器后的 JS 步 result
+        // 绑桥构造器（上游链式语义；旧口径为字符串 "[]"）
         assert!(
-            a.contains("globalThis.result = \"[]\";"),
-            "模板段前 JS 步以元素列表（空 → []）为 result flush: {a}"
+            a.contains("globalThis.result = __jsoupElementsFromList("),
+            "模板段前 JS 步以 Elements 为 result flush: {a}"
         );
         // 模板段之后 buildB 取模板字面结果
         let b = calls
@@ -4443,6 +4507,74 @@ mod tests {
         assert!(
             res.is_empty(),
             "真嵌套主规则含 leak 大括号，解析落空: {res:?}"
+        );
+    }
+
+    // ── 簇A（2026-09-26）：链式前缀选择器后的 JS 步 result 绑 Elements ──
+
+    #[test]
+    fn test_chained_prefix_js_binds_result_as_elements() {
+        // 记录型执行器：捕获实际执行的 JS（含 prologue）
+        struct RecordingExecutor {
+            codes: std::sync::Mutex<Vec<String>>,
+        }
+        impl crate::analyze_rule::JsExecutor for RecordingExecutor {
+            fn execute_js(&self, js_code: &str) -> Result<String, String> {
+                self.codes.lock().unwrap().push(js_code.to_string());
+                Ok("[]".to_string())
+            }
+        }
+        let recording = std::sync::Arc::new(RecordingExecutor {
+            codes: std::sync::Mutex::new(Vec::new()),
+        });
+        let exec: std::sync::Arc<dyn crate::analyze_rule::JsExecutor> = recording.clone();
+        let mut rule = AnalyzeRule::new(
+            r#"<html><body><ul class="fk"><li>a</li><li>b</li></ul></body></html>"#.to_string(),
+            "https://example.com/".to_string(),
+        );
+        rule.set_js_executor(exec.clone());
+        // 前缀选择器 + <js>（语料笔趣阁形态：result.toArray()）
+        let _ = rule
+            .get_elements(
+                r#"class.fk@tag.li
+<js>result.toArray().map(function(el){ return el.text(); })</js>"#,
+            )
+            .unwrap();
+        let codes = recording.codes.lock().unwrap();
+        assert!(
+            codes.iter().any(|c| c.contains("__jsoupElementsFromList(")),
+            "前缀选择器之后的 JS 步 result 应绑 Elements 构造器"
+        );
+    }
+
+    #[test]
+    fn test_pure_js_first_keeps_string_result_binding() {
+        struct RecordingExecutor {
+            codes: std::sync::Mutex<Vec<String>>,
+        }
+        impl crate::analyze_rule::JsExecutor for RecordingExecutor {
+            fn execute_js(&self, js_code: &str) -> Result<String, String> {
+                self.codes.lock().unwrap().push(js_code.to_string());
+                Ok("[]".to_string())
+            }
+        }
+        let recording = std::sync::Arc::new(RecordingExecutor {
+            codes: std::sync::Mutex::new(Vec::new()),
+        });
+        let exec: std::sync::Arc<dyn crate::analyze_rule::JsExecutor> = recording.clone();
+        let mut rule = AnalyzeRule::new(
+            r#"<html></html>"#.to_string(),
+            "https://example.com/".to_string(),
+        );
+        rule.set_js_executor(exec.clone());
+        // 纯 JS 开头（无前缀）：上游 result = 内容字符串
+        let _ = rule
+            .get_elements(r#"<js>result.replace(/<!--gg-->/, "")</js>"#)
+            .unwrap();
+        let codes = recording.codes.lock().unwrap();
+        assert!(
+            !codes.iter().any(|c| c.contains("__jsoupElementsFromList(")),
+            "纯 JS 开头的规则 result 维持字符串绑定（上游同款）"
         );
     }
 }
