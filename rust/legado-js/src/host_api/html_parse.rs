@@ -1269,7 +1269,13 @@ mod tests {
 
     #[test]
     fn test_select_empty_and_invalid() {
-        assert!(select_outer_htmls("<html></html>", "").is_empty());
+        // [艾格修正 | 2026-09-26] 空 css = 元素自身（恒等选择，非空 html 返回
+        // 自身单元素）；非法选择器仍返回空集
+        assert_eq!(
+            select_outer_htmls("<html></html>", ""),
+            vec!["<html></html>".to_string()]
+        );
+        assert!(select_outer_htmls("", "").is_empty());
         assert!(select_outer_htmls("<html></html>", "!!invalid!!").is_empty());
     }
 

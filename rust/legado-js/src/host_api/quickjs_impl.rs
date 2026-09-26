@@ -5755,11 +5755,13 @@ cipher.decryptStr(b64);
     #[test]
     fn test_js_long_toast() {
         let engine = make_engine();
+        // [天脉漫画修正 | 2026-09-26] toast/longToast 返回空串（上游 Kotlin
+        // Unit→JS null）；返回消息文本曾致 URL 选项 js 把 URL 改写成提示文案
         let result = engine.eval("java.longToast('长提示')").unwrap();
-        assert_eq!(result, "长提示");
+        assert_eq!(result, "");
         // 裸全局同样可用
         let result = engine.eval("longToast('bare')").unwrap();
-        assert_eq!(result, "bare");
+        assert_eq!(result, "");
     }
 
     #[test]
