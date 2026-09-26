@@ -1024,7 +1024,10 @@ impl AnalyzeRule {
             let mut pending_js: Vec<&str> = Vec::new();
             // [簇A 修正 | 2026-09-26] 仅当 JS 步之前存在前缀选择器（Extract）
             // 才以 Elements 绑定 result——纯 JS 开头的链（`<js>result.replace…`
-            // 后接提取段）上游拿字符串，误绑 Elements 致 `replace 不存在`
+            // 后接提取段）上游拿字符串，误绑 Elements 致 `replace 不存在`。
+            // [文学小说回归修正 | 2026-09-26] flush 判读须用置位**前**的快照
+            // （extract_before）：Extract 分支开头即置位，直接读 saw_extract
+            // 恒为真（模板 flush 曾因此对 JS 领先链恒绑 Elements）
             let mut saw_extract = false;
             // [P2-6a | 台账 0917] 链内模板段状态（get_strings 路径模板语义
             // 移植到 getElements 链）：
@@ -1041,6 +1044,10 @@ impl AnalyzeRule {
                         if r.is_empty() {
                             continue;
                         }
+                        // [文学小说回归修正 | 2026-09-26] 置位前快照：本提取
+                        // 段之前是否已有提取——两处中链 flush 的绑定语境都取
+                        // 该值，不可直接读 saw_extract（此时已恒真）
+                        let extract_before = saw_extract;
                         saw_extract = true;
                         // [P2-6a | 台账 0917] 链内模板段（与 eval_js_chain_steps
                         // P0-2/P2-6f1 判定一致：判定域 = 顶层拆分后提取核心，
@@ -1061,18 +1068,28 @@ impl AnalyzeRule {
                             || r.to_ascii_lowercase().contains("@get:");
                         if is_template_seg {
                             if !pending_js.is_empty() {
-                                let payload = js_continuation.take().unwrap_or_else(|| {
-                                    if elems.len() == 1 {
-                                        elems[0].clone()
-                                    } else {
-                                        serde_json::to_string(&elems)
-                                            .unwrap_or_else(|_| elems.join("\n"))
+                                // [文学小说回归修正 | 2026-09-26] 绑定语境按
+                                // payload 来源判定（对齐上游 result=上一步输出）：
+                                // 模板字面→字符串；提取领先→Elements；纯 JS
+                                // 开头→内容字符串（此前 saw_extract 经置位恒真
+                                // →JS 领先链亦被误绑空 Elements）
+                                let (payload, elements) = match js_continuation.take() {
+                                    Some(s) => (s, None),
+                                    None if extract_before => {
+                                        let p = if elems.len() == 1 {
+                                            elems[0].clone()
+                                        } else {
+                                            serde_json::to_string(&elems)
+                                                .unwrap_or_else(|_| elems.join("\n"))
+                                        };
+                                        (p, Some(elems.as_slice()))
                                     }
-                                });
+                                    None => (self.content.clone(), None),
+                                };
                                 let (_out, flushed_ctx) = self.run_js_steps_threaded_inner(
                                     payload,
                                     &pending_js,
-                                    if saw_extract { Some(&elems) } else { None },
+                                    elements,
                                 )?;
                                 template_ctx = flushed_ctx;
                                 pending_js.clear();
@@ -1089,28 +1106,35 @@ impl AnalyzeRule {
                         }
                         // 非模板段：照旧按元素规则提取；后续 JS 以元素列表为
                         // 前序结果
-                        // [簇A 修正 | 2026-09-26] 提取前先按字符串绑定 flush
-                        // 既有 JS 步（它们位于首个提取之前，上游 result=内容
-                        // 字符串）；flush 后方可置 saw_extract
+                        // [文学小说回归修正 | 2026-09-26] 提取段执行前 flush
+                        // 既有 JS 步，绑定语境按 payload 来源判定（对齐上游
+                        // result=上一步输出）：
+                        // - 提取领先链（class.zw_txt\n<js>result.toArray()…）
+                        //   →Elements 绑定（上游 getElements：前缀选择器产出
+                        //   Elements、紧随 <js> 拿 Elements；ffea1465eb 一律
+                        //   字符串绑定致 toArray not a function，<input>:3:15）
+                        // - 纯 JS 开头链 →内容字符串绑定（ffea1465eb 1:7 簇
+                        //   修复语义，保持——result.replace 等字符串方法）
+                        // - 模板段字面 →字符串绑定
+                        // 逐步线程式执行（输出→下一步输入），末步输出作为本
+                        // 提取段的内容
                         if !pending_js.is_empty() {
-                            // 逐步线程式执行（输出→下一步输入，对齐上游链式
-                            // result 传递），末步输出作为本提取段的内容
-                            let mut current = js_continuation
-                                .take()
-                                .unwrap_or_else(|| self.content.clone());
-                            for code in pending_js.drain(..) {
-                                let mut sub =
-                                    AnalyzeRule::new(current.clone(), self.base_url.clone());
-                                self.share_variable_store_into(&mut sub);
-                                if let Some(exec) = self.js_executor() {
-                                    sub.set_js_executor(exec);
+                            let (payload, elements) = match js_continuation.take() {
+                                Some(s) => (s, None),
+                                None if extract_before => {
+                                    let p = if elems.len() == 1 {
+                                        elems[0].clone()
+                                    } else {
+                                        serde_json::to_string(&elems)
+                                            .unwrap_or_else(|_| elems.join("\n"))
+                                    };
+                                    (p, Some(elems.as_slice()))
                                 }
-                                for (n, v) in &self.js_bindings {
-                                    sub.add_js_binding(n, v);
-                                }
-                                let out = sub.execute_js_rule(code)?;
-                                current = out.first().cloned().unwrap_or_default();
-                            }
+                                None => (self.content.clone(), None),
+                            };
+                            let (_out, current) =
+                                self.run_js_steps_threaded_inner(payload, &pending_js, elements)?;
+                            pending_js.clear();
                             // 提取段以 JS 末步输出为内容（上游链式 result 传递）
                             let mut sub_extract = AnalyzeRule::new(current, self.base_url.clone());
                             self.share_variable_store_into(&mut sub_extract);
@@ -1121,7 +1145,6 @@ impl AnalyzeRule {
                                 sub_extract.add_js_binding(n, v);
                             }
                             elems = sub_extract.get_elements_single_step(r)?;
-                            js_continuation = None;
                         } else {
                             elems = self.get_elements_single_step(r)?;
                         }
@@ -1205,14 +1228,6 @@ impl AnalyzeRule {
             current = last_out.first().cloned().unwrap_or_default();
         }
         Ok((last_out, current))
-    }
-
-    fn run_js_steps_threaded(
-        &self,
-        mut current: String,
-        codes: &[&str],
-    ) -> LegadoResult<(Vec<String>, String)> {
-        self.run_js_steps_threaded_inner(current, codes, None)
     }
 
     /// 单步 getElements（无 `@js:` 链）
@@ -4289,16 +4304,22 @@ mod tests {
             .unwrap();
         assert_eq!(out, vec!["B2"], "末段 JS 结果作为最终元素: {out:?}");
         let calls = executor.calls();
-        // 模板段前的 buildA 先 flush（payload=空元素列表 JSON `[]`）
+        // 模板段前的 buildA 先 flush（本规则无前缀选择器 = JS 领先链）
         let a = calls
             .iter()
             .find(|c| c.ends_with("(\"buildA\")"))
             .expect("buildA 步应被执行");
-        // [簇A | 2026-09-26] Elements 绑定口径：前缀选择器后的 JS 步 result
-        // 绑桥构造器（上游链式语义；旧口径为字符串 "[]"）
+        // [文学小说回归修正 | 2026-09-26] 绑定语境按 payload 来源判定：JS
+        // 领先链 → 内容字符串绑定；提取领先链才绑 Elements（ac157b6471 的
+        // saw_extract 判读经置位恒真，曾把本形态误绑空 Elements——与 1:7
+        // 簇同根，此前本断言错误固化了该行为）
         assert!(
-            a.contains("globalThis.result = __jsoupElementsFromList("),
-            "模板段前 JS 步以 Elements 为 result flush: {a}"
+            !a.contains("__jsoupElementsFromList("),
+            "JS 领先链的模板前 flush 维持字符串绑定: {a}"
+        );
+        assert!(
+            a.contains("globalThis.result = \"\";"),
+            "JS 领先链 flush 的 result = 内容字符串（上游 result=上一步输出）: {a}"
         );
         // 模板段之后 buildB 取模板字面结果
         let b = calls
@@ -4617,6 +4638,121 @@ mod tests {
         assert!(
             !codes.iter().any(|c| c.contains("__jsoupElementsFromList(")),
             "纯 JS 开头的规则 result 维持字符串绑定（上游同款）"
+        );
+    }
+
+    /// [文学小说回归修正 | 2026-09-26] 提取领先链（`class.zw_txt\n<js>
+    /// result.toArray()…</js>\na`，语料 wenxue88 实测 not a function
+    /// `<input>:3:15`）：中链 flush 的 JS 步位于前缀选择器**之后**，须按
+    /// Elements 绑定——ffea1465eb 的中链 flush 一律字符串绑定致
+    /// `result.toArray` 不存在。
+    #[test]
+    fn test_extract_leading_midchain_js_binds_elements() {
+        struct RecordingExecutor {
+            codes: std::sync::Mutex<Vec<String>>,
+        }
+        impl crate::analyze_rule::JsExecutor for RecordingExecutor {
+            fn execute_js(&self, js_code: &str) -> Result<String, String> {
+                self.codes.lock().unwrap().push(js_code.to_string());
+                Ok(String::new())
+            }
+        }
+        let recording = std::sync::Arc::new(RecordingExecutor {
+            codes: std::sync::Mutex::new(Vec::new()),
+        });
+        let exec: std::sync::Arc<dyn crate::analyze_rule::JsExecutor> = recording.clone();
+        let mut rule = AnalyzeRule::new(
+            r#"<html><body><div class="zw_txt"><a href="/a1/">安定此心</a></div><div class="zw_txt"><a href="/a2/">其他书</a></div></body></html>"#
+                .to_string(),
+            "https://www.wenxue88.com/".to_string(),
+        );
+        rule.set_js_executor(exec.clone());
+        // 语料文学小说 bookList 全文（182 字符）
+        let _ = rule
+            .get_elements(
+                r#"class.zw_txt
+<js>
+key = java.get("key");
+list = result.toArray();
+re = new RegExp(key);
+html = "";
+for(i in list){
+	re.test(list[i])?html+=list[i]:""
+	}
+result = String(html)
+</js>
+a"#,
+            )
+            .unwrap();
+        let codes = recording.codes.lock().unwrap();
+        assert_eq!(codes.len(), 1, "仅中链 flush 执行一次 JS: {codes:?}");
+        let js = &codes[0];
+        assert!(
+            js.contains("globalThis.result = __jsoupElementsFromList(["),
+            "提取领先链的中链 JS 步 result 应绑 Elements 构造器: {js}"
+        );
+        assert!(
+            js.contains("安定此心"),
+            "Elements 绑定载荷应为前缀选择器抽出的元素列表: {js}"
+        );
+    }
+
+    /// 笔趣阁 1:7 簇回归守护（ffea1465eb 修复语义不得回退）：
+    /// `<js>result.replace…</js>\n$.data.search[*]@js:…`——首个提取段执行前
+    /// 的 JS 步须按**字符串**绑定 flush（此前 ac157b6471 误绑空 Elements 致
+    /// `result.replace` not a function，`<input>:1:7`）。
+    #[test]
+    fn test_js_leading_chain_flush_keeps_string_binding() {
+        struct RecordingExecutor {
+            codes: std::sync::Mutex<Vec<String>>,
+        }
+        impl crate::analyze_rule::JsExecutor for RecordingExecutor {
+            fn execute_js(&self, js_code: &str) -> Result<String, String> {
+                self.codes.lock().unwrap().push(js_code.to_string());
+                if js_code.contains("replace(/<!--gg-->/") {
+                    Ok(r#"{"data":{"search":["ab"]}}"#.to_string())
+                } else {
+                    Ok("[]".to_string())
+                }
+            }
+        }
+        let recording = std::sync::Arc::new(RecordingExecutor {
+            codes: std::sync::Mutex::new(Vec::new()),
+        });
+        let exec: std::sync::Arc<dyn crate::analyze_rule::JsExecutor> = recording.clone();
+        let mut rule = AnalyzeRule::new(
+            r#"{"data":{"search":["a<!--gg-->b"]}}"#.to_string(),
+            "https://www.smepc.com".to_string(),
+        );
+        rule.set_js_executor(exec.clone());
+        // 语料笔趣阁 bookList 全文（127 字符）
+        let _ = rule
+            .get_elements(
+                r#"<js>result.replace(/<!--gg-->/, "")</js>
+$.data.search[*]@js:
+if (result == "[]") {
+	  java.longToast("暂无搜索结果，请查看源注释")
+}
+result"#,
+            )
+            .unwrap();
+        let codes = recording.codes.lock().unwrap();
+        assert_eq!(codes.len(), 2, "replace flush + 尾部 JS 共两次: {codes:?}");
+        assert!(
+            !codes[0].contains("__jsoupElementsFromList("),
+            "首个提取前的 JS 步须维持字符串绑定（1:7 簇修复语义）: {}",
+            codes[0]
+        );
+        assert!(
+            codes[0]
+                .contains(r#"globalThis.result = "{\"data\":{\"search\":[\"a<!--gg-->b\"]}}";"#),
+            "JS 领先链 flush 的 result = 内容字符串: {}",
+            codes[0]
+        );
+        assert!(
+            codes[1].contains("__jsoupElementsFromList("),
+            "提取之后的尾部 JS 步按 Elements 绑定（上游链式语义）: {}",
+            codes[1]
         );
     }
 }
