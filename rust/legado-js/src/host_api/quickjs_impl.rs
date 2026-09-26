@@ -895,7 +895,7 @@ pub const JSOUP_BRIDGE_JS: &str = r#"
   function __set(parent, html, css) {
     var h = String(html == null ? '' : html);
     var c = String(css || '');
-    return {
+    var obj = {
       attr: function (name) { return java.jsoupAttrN(h, c, 0, String(name)); },
       text: function () { return java.jsoupTextN(h, c, 0); },
       html: function () { return java.jsoupHtmlN(h, c, 0); },
@@ -923,6 +923,21 @@ pub const JSOUP_BRIDGE_JS: &str = r#"
       },
       toString: function () { return java.jsoupHtmlN(h, c, 0); }
     };
+    // [艾格修正 | 2026-09-26] 上游 select 返回 Java List，JS 侧支持数字
+    // 下标访问（`select('#nice')[0].select('p a')[0]`，Rhino NativeJavaList
+    // 语义）——惰性 getter 逐下标挂载（艾格动漫 searchUrl 实测
+    // `cannot read property 'select' of undefined` <input>:5:73，[0] 得
+    // undefined）
+    var n = java.jsoupSize(h, c);
+    for (var j = 0; j < n; j++) {
+      (function (idx) {
+        Object.defineProperty(obj, String(idx), {
+          enumerable: true,
+          get: function () { return __element(parent, h, c, idx); }
+        });
+      })(j);
+    }
+    return obj;
   }
   // 单元素对象（get/first 返回值）：对齐 org.jsoup.Element 常用面
   function __element(parent, html, css, i) {
@@ -984,7 +999,7 @@ pub const JSOUP_BRIDGE_JS: &str = r#"
       arr.push(String(list[j] == null ? '' : list[j]));
     }
     var joined = arr.join(String.fromCharCode(10));
-    return {
+    var obj = {
       toArray: function () {
         var out = [];
         for (var j = 0; j < arr.length; j++) out.push(__element(null, arr[j], '', 0));
@@ -1003,6 +1018,16 @@ pub const JSOUP_BRIDGE_JS: &str = r#"
       text: function () { return java.jsoupTextN(joined, '', 0); },
       toString: function () { return joined; }
     };
+    // [艾格修正 | 2026-09-26] 数字下标访问（上游 Java List 语义，同 __set）
+    for (var j = 0; j < arr.length; j++) {
+      (function (idx) {
+        Object.defineProperty(obj, String(idx), {
+          enumerable: true,
+          get: function () { return __element(null, arr[idx], '', 0); }
+        });
+      })(j);
+    }
+    return obj;
   };
   globalThis.org = globalThis.org || {};
   globalThis.org.jsoup = globalThis.org.jsoup || {};

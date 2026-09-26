@@ -96,8 +96,15 @@ fn leading_tag(frag: &str) -> String {
 }
 
 fn select_outer_htmls(html: &str, css: &str) -> Vec<String> {
-    if html.is_empty() || css.trim().is_empty() {
+    if html.is_empty() {
         return Vec::new();
+    }
+    // [艾格修正 | 2026-09-26] 空 css = 元素自身（恒等选择）：链式规则引擎
+    // `__jsoupElementsFromList` 的元素对象以 css='' 构造（每项自身即元素，
+    // 对齐上游 Element 对象直接取 text/html），此前空 css 一律返回空集 →
+    // 文学小说链 toArray 后 `re.test(list[i])` 恒 false、取值全空
+    if css.trim().is_empty() {
+        return vec![html.to_string()];
     }
     let normalized = legado_parser::HtmlParser::normalize_jsoup_selector(css);
     let Ok(selector) = Selector::parse(&normalized) else {
