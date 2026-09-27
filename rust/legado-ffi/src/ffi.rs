@@ -447,8 +447,11 @@ pub mod ffi {
     /// 经此通道挂起等待真实 WebView 执行。事件 JSON 字段（snake_case）：
     /// `key` / `action` / `html` / `url` / `js` / `source_regex` /
     /// `override_url_regex` / `cache_first` / `delay_time` / `is_rule` /
-    /// `result` / `created_at_ms`。订阅时先回放进行中请求。
-    /// UI 执行后经 [`webview_submit`] 回传；超时/取消调 [`webview_cancel`]。
+    /// `result` / `source_key` / `cookie` / `created_at_ms`。订阅时先回放
+    /// 进行中请求。`source_key` / `cookie` 为项 B 加法式字段（`serde
+    /// default` 空串），旧端忽略未知字段不破坏反序列化。
+    /// UI 执行后经 [`webview_submit`] / [`webview_submit_result_with_cookies`]
+    /// 回传；超时/取消调 [`webview_cancel`]。
     pub async fn webview_request_stream(sink: StreamSink<String>) -> Result<(), BridgeError> {
         crate::api::webview_api::run_webview_request_stream(|event| {
             sink.add(event).map_err(|e| e.to_string())
@@ -461,6 +464,23 @@ pub mod ffi {
     pub fn webview_submit(key: String, result: String) -> Result<bool, BridgeError> {
         Ok(crate::api::webview_api::submit_webview_result(
             &key, &result,
+        ))
+    }
+
+    /// 提交 WebView 执行结果 + 域 cookie 回流（项 B/B1，加法式条目）
+    ///
+    /// `cookies_json` — JSON 对象：域键或 http(s) URL → `k1=v1; k2=v2`
+    /// cookie 串（空串 / `{}` 表示无回流，语义同 [`webview_submit`]）。
+    /// 域键按 ETLD+1 归一后 merged upsert 落 `cookies` 表并同步 JS 桥
+    /// 共享客户端池内存 CookieStore，最后唤醒等待方（先持久化后唤醒）。
+    /// 旧 [`webview_submit`] 冻结不动（旧端不做 cookie 回流）。
+    pub fn webview_submit_result_with_cookies(
+        key: String,
+        result: String,
+        cookies_json: String,
+    ) -> Result<bool, BridgeError> {
+        Ok(crate::api::webview_api::submit_webview_result_with_cookies(
+            &key, &result, &cookies_json,
         ))
     }
 

@@ -7,12 +7,14 @@ import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.CookieManager
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONArray
+import org.json.JSONObject
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
@@ -21,11 +23,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  * WebView 桥接 — 反爬验证 + BackstageWebView 语义（cacheMode / java·source 注入）
  *
  * 支持方法：
- * - loadUrl / evaluateJs / close：既有验证码通道
+ * - loadUrl / evaluateJs / close：既有验证码通道（纯字符串语义不变）
  * - backstageEval：对齐 Kotlin BackstageWebView（cacheFirst→LOAD_CACHE_ELSE_NETWORK；
- *   isRule 时注入 java/source/cache JavascriptInterface + getInjectionString）
+ *   isRule 或 sourceKey 非空时注入 java/source/cache JavascriptInterface +
+ *   getInjectionString；B1 加法式返回 cookie 回流信封，见 [buildEnvelope]）
  *
- * — WebViewBridge + Bridge｜2026-08-13
+ * — WebViewBridge + Bridge｜2026-08-13｜项 B/B1 cookie 回流 + sourceKey
  */
 class WebViewBridge {
 
@@ -104,6 +107,11 @@ class WebViewBridge {
     /**
      * 对齐 BackstageWebView.getStrResponse：
      * action=webView | webViewGetSource | webViewGetOverrideUrl
+     *
+     * B1 加法式返回值：有 cookie 回流时返回信封
+     * `{"result": ..., "cookies": {"<url>": "k=v; ..."}}`（CookieManager
+     * 按 finalUrl 读取）；无 cookie 时返回纯结果串（与旧版语义一致，
+     * 旧版 Kotlin 返回的纯串 Dart 侧按「非信封」兜底解析）。
      */
     @SuppressLint("SetJavaScriptEnabled")
     private fun backstageEval(call: MethodCall, result: SafeResult, context: Context) {
@@ -118,6 +126,11 @@ class WebViewBridge {
         val resultJson = call.argument<String>("result").orEmpty()
         val delayTime = (call.argument<Number>("delayTime")?.toLong() ?: 0L).coerceAtLeast(0L)
         val sourceKey = call.argument<String>("sourceKey").orEmpty()
+
+        // B1（设计文档 §2.2 G4）：sourceKey 非空按 isRule 同等口径生效
+        // （对齐上游 tag 语义）——注入 java/source/cache 接口、
+        // window.result 与 eval 前缀，页内 JS 可经 java 桥读取源 key
+        val ruleLike = isRule || sourceKey.isNotEmpty()
 
         if (url.isEmpty() && html.isEmpty()) {
             result.success("")
@@ -140,6 +153,9 @@ class WebViewBridge {
 
                 val capturedOverride = AtomicBoolean(false)
                 var overrideHit: String? = null
+                // B1：当前页 cookie 快照（onPageFinished 捕获 + 最终 eval
+                // 前重读），随结果信封回传，Rust 侧按 ETLD+1 归一落库
+                var capturedCookies = ""
 
                 webView = WebView(context).apply {
                     settings.javaScriptEnabled = true
@@ -150,8 +166,9 @@ class WebViewBridge {
                         if (cacheFirst) WebSettings.LOAD_CACHE_ELSE_NETWORK
                         else WebSettings.LOAD_DEFAULT
 
-                    // 对齐 BackstageWebView：isRule + html 时注入 java/source/cache
-                    if (isRule && html.isNotEmpty()) {
+                    // 对齐 BackstageWebView：ruleLike（isRule 或 sourceKey 非空）
+                    // + html 时注入 java/source/cache（B1 同等口径）
+                    if (ruleLike && html.isNotEmpty()) {
                         addJavascriptInterface(cacheIface, nameCache)
                         addJavascriptInterface(sourceIface, nameSource)
                         addJavascriptInterface(javaIface, nameJava)
@@ -173,7 +190,10 @@ class WebViewBridge {
                                 ) {
                                     if (capturedOverride.compareAndSet(false, true)) {
                                         overrideHit = u
-                                        result.success(u)
+                                        // B1：拦截命中 URL 的 cookie 随结果回传
+                                        val c =
+                                            CookieManager.getInstance().getCookie(u).orEmpty()
+                                        result.success(buildEnvelope(u, c, u))
                                         destroyInternal()
                                     }
                                     return true
@@ -189,8 +209,16 @@ class WebViewBridge {
                             if (result.isCompleted) return
                             if (destroyed) return
 
+                            // B1：首次 onPageFinished 捕获当前页 cookie（WAF 挑战
+                            // 页通常由验证 JS 写入 cookie，最终 eval 前再重读）
+                            val fUrl = finishedUrl ?: view?.url?.toString().orEmpty()
+                            if (fUrl.isNotEmpty()) {
+                                capturedCookies =
+                                    CookieManager.getInstance().getCookie(fUrl).orEmpty()
+                            }
+
                             // 对齐：window.result = cache.getFromMemory('webview_result')
-                            if (isRule && resultJson.isNotEmpty()) {
+                            if (ruleLike && resultJson.isNotEmpty()) {
                                 view?.evaluateJavascript(
                                     "window.result = $nameCache.getFromMemory('webview_result');",
                                     null
@@ -231,16 +259,28 @@ class WebViewBridge {
                                         // 该源按超时/空结果失败
                                         try {
                                             if (!result.isCompleted) {
+                                                // B1：最终 eval 前重读页面 cookie（等待窗口内
+                                                // 验证流程可能新写 cookie，以最新快照为准）
+                                                val cookieUrl = view?.url?.toString().orEmpty()
+                                                capturedCookies =
+                                                    CookieManager.getInstance()
+                                                        .getCookie(cookieUrl).orEmpty()
                                                 val userJs =
                                                     if (js.isNotEmpty()) js
                                                     else "document.documentElement.outerHTML"
                                                 val injection =
-                                                    if (isRule && html.isNotEmpty()) {
+                                                    if (ruleLike && html.isNotEmpty()) {
                                                         "try{var cache=$nameCache,source=$nameSource,java=$nameJava;}catch(e){}\n"
                                                     } else ""
                                                 view?.evaluateJavascript(injection + userJs) { value ->
                                                     if (!result.isCompleted) {
-                                                        result.success(unescapeJsResult(value))
+                                                        result.success(
+                                                            buildEnvelope(
+                                                                unescapeJsResult(value),
+                                                                capturedCookies,
+                                                                cookieUrl,
+                                                            )
+                                                        )
                                                         destroyInternal()
                                                     }
                                                 }
@@ -272,8 +312,13 @@ class WebViewBridge {
                     if (!result.isCompleted) {
                         if (action == "webViewGetOverrideUrl") {
                             result.success(
-                                if (overrideHit != null) overrideHit
-                                else "[ERROR] webViewGetOverrideUrl 等待跳转超时"
+                                if (overrideHit != null) {
+                                    buildEnvelope(
+                                        overrideHit,
+                                        capturedCookies,
+                                        overrideHit,
+                                    )
+                                } else "[ERROR] webViewGetOverrideUrl 等待跳转超时"
                             )
                         } else {
                             result.error(
@@ -321,7 +366,14 @@ class WebViewBridge {
         }
         val regex = Regex(sourceRegex)
         if (!finishedUrl.isNullOrEmpty() && regex.containsMatchIn(finishedUrl)) {
-            result.success(finishedUrl)
+            // B1：命中页 URL 的 cookie 随结果回传
+            result.success(
+                buildEnvelope(
+                    finishedUrl,
+                    CookieManager.getInstance().getCookie(finishedUrl).orEmpty(),
+                    finishedUrl,
+                )
+            )
             destroyInternal()
             return
         }
@@ -349,7 +401,14 @@ class WebViewBridge {
                 for (i in 0 until arr.length()) {
                     val candidate = arr.optString(i)
                     if (candidate.isNotEmpty() && regex.containsMatchIn(candidate)) {
-                        result.success(candidate)
+                        // B1：命中资源 URL 的 cookie 随结果回传
+                        result.success(
+                            buildEnvelope(
+                                candidate,
+                                CookieManager.getInstance().getCookie(candidate).orEmpty(),
+                                candidate,
+                            )
+                        )
                         destroyInternal()
                         return@evaluateJavascript
                     }
@@ -362,6 +421,24 @@ class WebViewBridge {
             result.success("")
             destroyInternal()
         }
+    }
+
+    /**
+     * B1 cookie 回流信封（加法式）：无 cookie 时返回纯结果串（与旧版
+     * 语义逐字节一致，旧版 Kotlin 兼容）；有 cookie 时返回
+     * `{"result": ..., "cookies": {"<cookieUrl>": "k=v; ..."}}`。
+     * Dart 侧 [PlatformBridgeService] 解析信封，非信封值按纯结果兜底。
+     */
+    private fun buildEnvelope(
+        resultText: String,
+        cookies: String,
+        cookieUrl: String,
+    ): String {
+        if (cookies.isEmpty() || cookieUrl.isEmpty()) return resultText
+        return JSONObject().apply {
+            put("result", resultText)
+            put("cookies", JSONObject().apply { put(cookieUrl, cookies) })
+        }.toString()
     }
 
     @SuppressLint("SetJavaScriptEnabled")

@@ -52,6 +52,19 @@ pub struct WebViewRequest {
     /// 规则级注入的 result JSON/文本（对齐 CacheManager webview_result）
     #[serde(default)]
     pub result: String,
+    /// 当前 JS 执行上下文的书源 key（对齐上游 `tag=getSource()?.getKey()` 语义）
+    ///
+    /// 加法式字段（项 B/B1，设计文档 §2.2 G4）：Kotlin 侧非空时按 `is_rule`
+    /// 同等口径注入 java/source/cache JavascriptInterface；旧端（不感知
+    /// 本字段的反序列化器）经 `#[serde(default)]` 缺省为空串，兼容不破。
+    #[serde(default)]
+    pub source_key: String,
+    /// 请求域已持有的 cookie 串（`k1=v1; k2=v2`，B4 由 Rust 侧按请求 URL 域
+    /// 从 JS cookie store 取用后填入，Kotlin 侧 load 前经 CookieManager 写入）
+    ///
+    /// 加法式字段（项 B/B4）：同上，缺省空串兼容。
+    #[serde(default)]
+    pub cookie: String,
     pub created_at_ms: u64,
 }
 
@@ -265,6 +278,54 @@ mod tests {
     use super::*;
     use std::thread;
 
+    /// B1 加法式字段：旧 JSON（无 source_key/cookie）反序列化缺省为空串，兼容不破
+    #[test]
+    fn legacy_json_without_new_fields_deserializes() {
+        let legacy = r#"{
+            "key": "webview-1-0",
+            "action": "webView",
+            "html": "<p>x</p>",
+            "url": "https://example.com",
+            "js": "document.body.innerText",
+            "source_regex": "",
+            "override_url_regex": "",
+            "cache_first": false,
+            "delay_time": 0,
+            "is_rule": false,
+            "result": "",
+            "created_at_ms": 1
+        }"#;
+        let req: WebViewRequest = serde_json::from_str(legacy).unwrap();
+        assert_eq!(req.source_key, String::new());
+        assert_eq!(req.cookie, String::new());
+    }
+
+    /// B1 加法式字段：含新字段的 JSON 往返（round-trip）保持
+    #[test]
+    fn new_fields_round_trip() {
+        let req = WebViewRequest {
+            key: "webview-2-0".into(),
+            action: "webViewGetSource".into(),
+            html: String::new(),
+            url: "https://a.example.com".into(),
+            js: String::new(),
+            source_regex: "x".into(),
+            override_url_regex: String::new(),
+            cache_first: false,
+            delay_time: 0,
+            is_rule: false,
+            result: String::new(),
+            source_key: "https://source.example.com".into(),
+            cookie: "acw_tc=1; session=2".into(),
+            created_at_ms: 7,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"source_key\""));
+        assert!(json.contains("\"cookie\""));
+        let back: WebViewRequest = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, req);
+    }
+
     #[test]
     fn submit_wakes_waiter() {
         let mgr = WebViewManager::new_leaked();
@@ -281,6 +342,8 @@ mod tests {
             delay_time: 0,
             is_rule: true,
             result: "\"x\"".into(),
+            source_key: String::new(),
+            cookie: String::new(),
             created_at_ms: 0,
         });
         let key = handle.key().to_string();

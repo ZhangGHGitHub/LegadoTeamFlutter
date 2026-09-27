@@ -2980,6 +2980,12 @@ fn apply_content_web_hooks(
                 delay_time: 0,
                 is_rule: false,
                 result: String::new(),
+                // B1 加法式字段：FFI 内容嗅探路径无 JS 执行上下文，
+                // source_key 恒空（Kotlin 侧 is_rule=false 且 sourceKey
+                // 为空 → 不注入接口，与上游非规则调用语义一致）；
+                // cookie 由 B4 按请求 URL 域从 JS cookie store 填入
+                source_key: String::new(),
+                cookie: String::new(),
                 created_at_ms: 0,
             };
             if let Ok(hit) = legado_core::webview_channel::request_and_wait(
@@ -3011,6 +3017,10 @@ fn apply_content_web_hooks(
                 delay_time: 0,
                 is_rule: false,
                 result: String::new(),
+                // B1 加法式字段：FFI 内容嗅探路径无 JS 执行上下文，
+                // source_key 恒空；cookie 由 B4 按请求 URL 域填入
+                source_key: String::new(),
+                cookie: String::new(),
                 created_at_ms: 0,
             };
             if let Ok(out) = legado_core::webview_channel::request_and_wait(

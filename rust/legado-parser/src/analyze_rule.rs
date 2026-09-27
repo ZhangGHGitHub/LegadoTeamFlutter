@@ -1884,6 +1884,13 @@ impl AnalyzeRule {
                 delay_time: 0,
                 is_rule: true,
                 result: result_json,
+                // B1 加法式字段：规则解析层（legado-parser）不依赖
+                // legado-js（反向依赖成环），无 JS 书源上下文可填；
+                // Kotlin 侧由 is_rule 触发 java/source/cache 注入，
+                // sourceKey 空串即无 tag 语义（对齐上游 tag 可为空）
+                source_key: String::new(),
+                // B4 起按请求 URL 域从 JS cookie store 取用（当前恒空）
+                cookie: String::new(),
                 created_at_ms: 0,
             };
             match legado_core::webview_channel::request_and_wait(

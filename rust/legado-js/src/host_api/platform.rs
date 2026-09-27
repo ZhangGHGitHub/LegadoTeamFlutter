@@ -51,6 +51,9 @@ fn run_or_payload(mut req: WebViewRequest) -> String {
             "overrideUrlRegex": req.override_url_regex,
             "cacheFirst": req.cache_first,
             "delayTime": req.delay_time,
+            // B1 加法式字段：Flutter 侧（platform_bridge_service）按同名字段取用
+            "sourceKey": req.source_key,
+            "cookie": req.cookie,
         })
         .to_string();
         super::ui_action_queue::push_payload_json(&payload);
@@ -81,6 +84,12 @@ pub fn web_view_ex(html: &str, url: &str, js: &str, cache_first: bool, delay_tim
         delay_time,
         is_rule: false,
         result: String::new(),
+        // B1（设计文档 §2.2 G4）：填当前线程书源上下文（对齐上游
+        // `tag=getSource()?.getKey()`）；Kotlin 侧 sourceKey 非空即按
+        // is_rule 同等口径注入 java/source/cache 接口
+        source_key: current_source::current_source_tag().unwrap_or_default(),
+        // B4（后续提交填入：按请求 URL 域取 JS cookie store 属域 cookie）
+        cookie: String::new(),
         created_at_ms: 0,
     })
 }
@@ -110,6 +119,12 @@ pub fn web_view_get_source_ex(
         delay_time,
         is_rule: false,
         result: String::new(),
+        // B1（设计文档 §2.2 G4）：填当前线程书源上下文（对齐上游
+        // `tag=getSource()?.getKey()`）；Kotlin 侧 sourceKey 非空即按
+        // is_rule 同等口径注入 java/source/cache 接口
+        source_key: current_source::current_source_tag().unwrap_or_default(),
+        // B4（后续提交填入：按请求 URL 域取 JS cookie store 属域 cookie）
+        cookie: String::new(),
         created_at_ms: 0,
     })
 }
@@ -135,6 +150,12 @@ pub fn web_view_get_override_url(
         delay_time,
         is_rule: false,
         result: String::new(),
+        // B1（设计文档 §2.2 G4）：填当前线程书源上下文（对齐上游
+        // `tag=getSource()?.getKey()`）；Kotlin 侧 sourceKey 非空即按
+        // is_rule 同等口径注入 java/source/cache 接口
+        source_key: current_source::current_source_tag().unwrap_or_default(),
+        // B4（后续提交填入：按请求 URL 域取 JS cookie store 属域 cookie）
+        cookie: String::new(),
         created_at_ms: 0,
     })
 }

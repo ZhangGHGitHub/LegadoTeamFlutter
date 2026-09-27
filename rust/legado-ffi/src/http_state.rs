@@ -73,7 +73,12 @@ fn merge_cookie_strings(existing: &str, incoming: &str) -> String {
 /// 此为防御分支——删除路径已收敛到 [`delete_cookie_rows`] /
 /// [`clear_all_cookie_rows`]）。
 /// DB 未初始化 / 读写失败仅记日志——绝不向 JS 执行线程或网络请求传播。
-fn persist_cookie_row_merged(tag: &str, incoming: &str) {
+///
+/// `pub(crate)`：除本模块两个写方（[`DbCookiePersistence::save`] /
+/// [`JsCookieDbSink::upsert`]）外，WebView cookie 回流入口
+/// （`crate::api::webview_api::submit_webview_result_with_cookies`，项 B/B1）
+/// 对归一后的域键逐条调用。
+pub(crate) fn persist_cookie_row_merged(tag: &str, incoming: &str) {
     let _guard = COOKIE_PERSIST_RW_LOCK
         .lock()
         .unwrap_or_else(|p| p.into_inner());
@@ -391,6 +396,8 @@ mod tests {
     #[test]
     fn test_shared_client_same_underlying() {
         let _g = TEST_LOCK.lock().unwrap();
+        // 池锁（项 B/B1 锁序扩）：与 webview_api 等第二组池触碰测试串行
+        let _p = crate::test_support::lock_pool_tests();
         let c1 = shared_client().unwrap();
         let c2 = shared_client().unwrap();
         assert!(
@@ -403,6 +410,7 @@ mod tests {
     #[test]
     fn test_shared_client_concurrent() {
         let _g = TEST_LOCK.lock().unwrap();
+        let _p = crate::test_support::lock_pool_tests();
         let baseline = shared_client().unwrap();
         let baseline_ptr = Arc::as_ptr(baseline.cookie_store()) as usize;
 
@@ -423,6 +431,7 @@ mod tests {
     #[test]
     fn test_reset_shared_client_rebuilds() {
         let _g = TEST_LOCK.lock().unwrap();
+        let _p = crate::test_support::lock_pool_tests();
         let before = shared_client().unwrap();
         reset_shared_client();
         let after = shared_client().unwrap();
@@ -439,6 +448,8 @@ mod tests {
     #[test]
     fn test_shared_client_with_db_cookie_persistence() {
         let _g = TEST_LOCK.lock().unwrap();
+        // 池锁在 DB 守卫之前（锁序：store → 池 → DB，见 test_support 文档）
+        let _p = crate::test_support::lock_pool_tests();
         let _db_guard = crate::db_state::ensure_test_db();
 
         // 预置一条 Cookie 到 DB（tag 为域名，与内存 CookieStore 键对齐）
@@ -598,6 +609,9 @@ mod tests {
         // source_switch / search 测试组同序；颠倒 + 并行执行 = ABBA 死锁，
         // 见 test_support 模块文档）
         let _gs = crate::test_support::lock_global_store();
+        // 池锁（store → 池 → DB，见 test_support 文档）：本用例触碰
+        // 共享客户端 jar 内存，须与第二组池触碰测试（webview_api）串行
+        let _p = crate::test_support::lock_pool_tests();
         let _db_guard = crate::db_state::ensure_test_db();
         use legado_js::host_api::cookie_store;
 
@@ -681,6 +695,9 @@ mod tests {
         // source_switch / search 测试组同序；颠倒 + 并行执行 = ABBA 死锁，
         // 见 test_support 模块文档）
         let _gs = crate::test_support::lock_global_store();
+        // 池锁（store → 池 → DB，见 test_support 文档）：本用例触碰
+        // 共享客户端 jar 内存，须与第二组池触碰测试（webview_api）串行
+        let _p = crate::test_support::lock_pool_tests();
         let _db_guard = crate::db_state::ensure_test_db();
         use legado_js::host_api::cookie_store;
 
@@ -722,6 +739,9 @@ mod tests {
         // source_switch / search 测试组同序；颠倒 + 并行执行 = ABBA 死锁，
         // 见 test_support 模块文档）
         let _gs = crate::test_support::lock_global_store();
+        // 池锁（store → 池 → DB，见 test_support 文档）：全量清除同步
+        // 清共享客户端 jar 内存，须与第二组池触碰测试（webview_api）串行
+        let _p = crate::test_support::lock_pool_tests();
         let _db_guard = crate::db_state::ensure_test_db();
         use legado_js::host_api::cookie_store;
 

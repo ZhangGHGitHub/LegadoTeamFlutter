@@ -58,3 +58,29 @@ pub(crate) fn lock_global_store() -> std::sync::MutexGuard<'static, ()> {
         .lock()
         .unwrap_or_else(|p| p.into_inner())
 }
+
+/// 共享 HTTP 客户端池（`http_state::shared_client` 单例 + quickjs 档
+/// `legado-js` 四池）的进程级状态锁。
+///
+/// 池是全局单例：任何「构建 / reset / 指针稳定性断言」类测试与并发运行的
+/// 其他池触碰者互踩（reset 把槽位置 None → 他侧 `shared_client()` 惰性
+/// 重建 → 指针相等断言误判 / 并发构建竞态）。项 B/B1 新增
+/// `webview_api::submit_webview_result_with_cookies`（落库后
+/// `reset_shared_client_pools` 同步 JS 桥共享客户端内存 CookieStore）
+/// 引入第二组池触碰测试，须串行。
+///
+/// **全局锁序不变式（2026-09-26 项 B 扩）**：锁获取为**相对顺序**约束
+/// （非强制全取）：模块级 `TEST_LOCK`（若有）最外层 →
+/// `GLOBAL_STORE_TEST_LOCK` → 本锁 → `db_state::ensure_test_db()` DB 守卫
+/// 最内层。即同一测试**凡同时持两把，必按此相对序**（store 先于池、池
+/// 先于 DB）：池锁持有者只可能等待 DB 锁（不再等待 store 锁），
+/// cookie 下沉测试组（store → 池 → DB）与池触碰组（池 → DB）之间无环。
+pub(crate) static POOL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// 便捷持锁函数：取得 [`POOL_TEST_LOCK`] 的守卫直至测试结束（用法同
+/// [`lock_global_store`]）。
+pub(crate) fn lock_pool_tests() -> std::sync::MutexGuard<'static, ()> {
+    POOL_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner())
+}

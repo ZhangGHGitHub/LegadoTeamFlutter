@@ -65,7 +65,7 @@ class RustLib extends BaseEntrypoint<RustLibApi, RustLibApiImpl, RustLibWire> {
   String get codegenVersion => '2.11.1';
 
   @override
-  int get rustContentHash => 519116798;
+  int get rustContentHash => -1458213946;
 
   static const kDefaultExternalLibraryLoaderConfig =
       ExternalLibraryLoaderConfig(
@@ -1048,6 +1048,12 @@ abstract class RustLibApi extends BaseApi {
   Future<bool> crateFfiFfiWebviewSubmit({
     required String key,
     required String result,
+  });
+
+  Future<bool> crateFfiFfiWebviewSubmitResultWithCookies({
+    required String key,
+    required String result,
+    required String cookiesJson,
   });
 }
 
@@ -9660,6 +9666,43 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     debugName: "webview_submit",
     argNames: ["key", "result"],
   );
+
+  @override
+  Future<bool> crateFfiFfiWebviewSubmitResultWithCookies({
+    required String key,
+    required String result,
+    required String cookiesJson,
+  }) {
+    return handler.executeNormal(
+      NormalTask(
+        callFfi: (port_) {
+          final serializer = SseSerializer(generalizedFrbRustBinding);
+          sse_encode_String(key, serializer);
+          sse_encode_String(result, serializer);
+          sse_encode_String(cookiesJson, serializer);
+          pdeCallFfi(
+            generalizedFrbRustBinding,
+            serializer,
+            funcId: 267,
+            port: port_,
+          );
+        },
+        codec: SseCodec(
+          decodeSuccessData: sse_decode_bool,
+          decodeErrorData: sse_decode_bridge_error,
+        ),
+        constMeta: kCrateFfiFfiWebviewSubmitResultWithCookiesConstMeta,
+        argValues: [key, result, cookiesJson],
+        apiImpl: this,
+      ),
+    );
+  }
+
+  TaskConstMeta get kCrateFfiFfiWebviewSubmitResultWithCookiesConstMeta =>
+      const TaskConstMeta(
+        debugName: "webview_submit_result_with_cookies",
+        argNames: ["key", "result", "cookiesJson"],
+      );
 
   @protected
   AnyhowException dco_decode_AnyhowException(dynamic raw) {

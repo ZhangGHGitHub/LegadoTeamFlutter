@@ -213,12 +213,27 @@ abstract class BookApi {
   ///
   /// 字段：`key` / `action` / `html` / `url` / `js` / `source_regex` /
   /// `override_url_regex` / `cache_first` / `delay_time` / `is_rule` /
-  /// `result` / `created_at_ms`。订阅后 Rust 侧 `@webjs`/正文 webJs/
-  /// `java.webView*` 可走真实 DOM。
+  /// `result` / `source_key` / `cookie` / `created_at_ms`。订阅后 Rust
+  /// 侧 `@webjs`/正文 webJs/`java.webView*` 可走真实 DOM。
+  /// `source_key` / `cookie` 为项 B 加法式字段（缺省空串），旧端
+  /// 忽略未知字段不破坏反序列化。
   Stream<Map<String, dynamic>> webviewRequestStream();
 
   /// 提交 WebView 执行结果，唤醒 Rust 等待方
   Future<bool> submitWebviewResult(String key, String result);
+
+  /// 提交 WebView 执行结果 + 域 cookie 回流（项 B/B1，加法式条目）
+  ///
+  /// [cookiesJson] — JSON 对象：域键或 http(s) URL → `k1=v1; k2=v2`
+  /// cookie 串（空串 / `{}` 表示无回流，语义同 [submitWebviewResult]）。
+  /// Rust 侧按 ETLD+1 归一域键后 merged upsert 落库并同步 JS 桥
+  /// 共享客户端内存 CookieStore，最后唤醒等待方（先持久化后唤醒）。
+  /// 旧 [submitWebviewResult] 冻结不动（旧端不做 cookie 回流）。
+  Future<bool> submitWebviewResultWithCookies(
+    String key,
+    String result,
+    String cookiesJson,
+  );
 
   /// 取消 WebView 请求（空结果唤醒）
   Future<bool> cancelWebviewRequest(String key);

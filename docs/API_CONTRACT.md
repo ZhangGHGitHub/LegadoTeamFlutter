@@ -54,6 +54,7 @@
 | 2026-08-18 | **G8 `$n` 跨步分组（无新 FFI）**：allInOne 正则 `getElements`（`:` 前缀）在有捕获组时把 `[全文,$1,$2,…]` 编成 JSON 数组元素；`getString("$2")` / `$1##…` 对齐原版 `SourceRule.makeUpRule` 用前序捕获组回填。覆盖书书小说/笔下文学/若夏等目录规则。方法表不变 |
 | 2026-08-19 | **搜索 baseUrl=重定向最终 URL（无新 FFI）**：`webbookSearch` 对齐 `WebBook.search` 的 `baseUrl = res.url`；搜索 302 到详情页时按空列表回退解析 `ruleBookInfo`。方法表不变 |
 | 2026-08-24 | **webbook* FFI 非阻塞化（无签名变更）**：Rust 侧 `ffi::webbook_search/info/chapters/content` 改为 `async fn` + tokio 阻塞线程池执行（`spawn_blocking`），对齐原版 `WebBook.kt` Dispatchers.IO 语义——网络 + quickjs JS 解析不再阻塞 Dart 主 isolate（此前 wire 函数同步执行，加载目录卡 UI 数秒）；Dart 侧 API 表面不变（仍 `Future<String>`），codegen 双侧重生成 |
+| 2026-09-26 | **项 B/B1 WebView cookie 回流 + sourceKey（加法式）**：新增 `webviewSubmitResultWithCookies`（§2.3，WebView 执行结果 + 域 cookie 回流，Rust 侧按 ETLD+1 归一域键 merged upsert 落 `cookies` 表并同步 JS 桥共享客户端内存 CookieStore，先持久化后唤醒）；`WebViewRequest` 事件加法式字段 `source_key`（JS 执行线程当前书源 key，缺省空串）/ `cookie`（B4 起按请求域预填，缺省空串）——`serde(default)` 空串缺省，旧端忽略未知字段不破坏反序列化。Android 原生 `backstageEval` 加法式返回 cookie 回流信封（无 cookie 时纯结果串，旧版语义不变）；注入接口口径由 `isRule` 扩为「`isRule` 或 `sourceKey` 非空」。旧 `webviewSubmit` 冻结不动。§2.3 方法数 32→**33**，附录合计 280→**281**，BookApi 口径 277→**278** |
 
 ---
 
@@ -156,8 +157,8 @@
 ## 2. 方法清单
 
 > 共 **42 个方法模块**（§2.1–§2.45，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
-> BookApi 接口当前共 **277 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
-> 附录 §2.x 行合计 **280** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
+> BookApi 接口当前共 **278 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
+> 附录 §2.x 行合计 **281** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -181,7 +182,7 @@
 | `importBooks(String jsonArray)` | jsonArray: JSON 数组字符串 | `Future<int>` | 批量导入书籍，返回成功导入的数量 |
 | `reorderBooks(List<Map<String, dynamic>> orders)` | orders: `[{bookUrl, order}, ...]` | `Future<void>` | 批量持久化拖拽排序（对齐原版 BookAdapter.swap 后 updateBook） |
 
-### 2.3 书源操作（32 个方法）
+### 2.3 书源操作（33 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -208,8 +209,9 @@
 | `verificationRequestStream()` | 无 | `Stream<Map<String, dynamic>>` | 验证码请求事件流（长期存活，订阅时先回放进行中请求），事件字段：`key` / `source_url` / `source_name` / `image_url` / `title` / `use_browser`（恒 false，已降级）/ `created_at_ms`（Task #90，加法式新增） |
 | `submitVerificationResult(String key, String code)` | key: resultKey；code: 用户输入的验证码 | `Future<bool>` | 提交验证码结果唤醒 JS 等待方（对齐 Kotlin `setResult`：空值也唤醒，空值判定在等待侧），返回是否命中进行中请求（Task #90，加法式新增） |
 | `cancelVerificationRequest(String key)` | key: resultKey | `Future<bool>` | 取消验证码请求（对齐 Kotlin `checkResult`：以空结果唤醒等待方），返回是否命中（Task #90，加法式新增） |
-| `webviewRequestStream()` | 无 | `Stream<Map<String, dynamic>>` | BackstageWebView DOM 执行请求流（长期存活，订阅时回放进行中请求）。事件字段：`key` / `action` / `html` / `url` / `js` / `source_regex` / `override_url_regex` / `cache_first` / `delay_time` / `is_rule` / `result` / `created_at_ms`（SOURCE_DIFF P1，加法式新增） |
-| `submitWebviewResult(String key, String result)` | key: resultKey；result: WebView 执行结果（可空） | `Future<bool>` | 提交 DOM 执行结果唤醒 Rust 等待方，返回是否命中（SOURCE_DIFF P1，加法式新增） |
+| `webviewRequestStream()` | 无 | `Stream<Map<String, dynamic>>` | BackstageWebView DOM 执行请求流（长期存活，订阅时回放进行中请求）。事件字段：`key` / `action` / `html` / `url` / `js` / `source_regex` / `override_url_regex` / `cache_first` / `delay_time` / `is_rule` / `result` / `created_at_ms` / `source_key` / `cookie`（SOURCE_DIFF P1 加法式新增；`source_key` / `cookie` 为项 B 加法式字段（B1 sourceKey 补全 / B4 请求域预填），`serde(default)` 空串缺省，旧端忽略未知字段） |
+| `submitWebviewResult(String key, String result)` | key: resultKey；result: WebView 执行结果（可空） | `Future<bool>` | 提交 DOM 执行结果唤醒 Rust 等待方，返回是否命中（SOURCE_DIFF P1，加法式新增；项 B/B1 起 cookie 回流场景改调 `submitWebviewResultWithCookies`，本方法冻结不动） |
+| `submitWebviewResultWithCookies(String key, String result, String cookiesJson)` | key: resultKey；result: WebView 执行结果；cookiesJson: cookie 回流 JSON 对象（`{"<url 或域键>": "k1=v1; k2=v2"}`，空串 / `{}` = 无回流） | `Future<bool>` | 提交 DOM 执行结果并回流域 cookie（项 B/B1，加法式新增）：Rust 侧对每个域键按 ETLD+1 归一（`cookie_store::normalized_cookie_key`）merged upsert 落 `cookies` 表，并同步 JS 桥共享客户端内存 CookieStore（quickjs 构建重置共享池；复用 http_state 落库/锁序口径），**先持久化后唤醒**等待方；不相关域键不落行（P2-19 口径）。双轨均归我方、加法式，旧端忽略未知字段；Android 原生 `backstageEval` 加法式返回 `{"result","cookies"}` 信封（无 cookie 时纯结果串，旧版语义不变），非 Android 回退路径经 `document.cookie` 尽力读取（仅非 HttpOnly，仅 webView 主路径） |
 | `cancelWebviewRequest(String key)` | key: resultKey | `Future<bool>` | 取消 WebView 请求（空结果唤醒），返回是否命中（SOURCE_DIFF P1，加法式新增） |
 | `setSourceVariable(String sourceUrl, String variable)` | sourceUrl: 书源 URL；variable: 自定义变量内容（空串=清除） | `Future<void>` | 设置书源自定义变量（对齐原版 `source.setVariable`），单列 UPDATE 语义仅更新 `variable` 单列，规避 `updateBookSource` 全行更新风险；variable 为空串表示清除该变量。错误码：Internal（书源不存在）/ Db（写入失败）。**DB schema 变更预告**：`book_sources` 表补 `variable` 列（幂等迁移，SCHEMA_VERSION 102→103）（台账 §5.11-3，第三批后置项，Task #63，加法式新增） |
 | `clearCookie(String url)` | url: 书源/订阅源 URL（或任意含域名的地址） | `Future<void>` | 清除该 URL 所属二级域名的 Cookie（对齐原版 `CookieStore.removeCookie` / 编辑页 `menu_clear_cookie`）。清除范围：① cookies 表持久层；② 共享 HTTP 客户端内存 CookieStore；③ JS 宿主 `java.clearCookies`（内存表 + 其**落库行**——2026-09-23 起 JS 写入的 cookie 亦落 `cookies` 表，按 ETLD+1 域键持久化并在进程启动时回填；该域的持久行随本入口一并清除）。差距说明：原版另清 WebView Cookie / 会话 CacheManager，本实现无独立 WebView Cookie 层（与 MCP `clear_cookies` 一致）。url 为空 → Internal。加法式新增（2026-08-12 P1-2） |
@@ -225,6 +227,8 @@
 > ℹ️ **验证码交互通道（Task #90）**：Rust 侧 `ffi::verification_request_stream / verification_submit / verification_cancel / verification_pending`（核心实现 `legado-core/src/verification_channel.rs`，对齐 Kotlin `SourceVerificationHelp` + `JsExtensions.getVerificationCode/startBrowserAwait`）。JS 书源经宿主 API 钩子挂起等待（std condvar 阻塞 JS 工作线程，不占用 tokio runtime，默认超时 5 分钟对齐 Kotlin）；同书源并发请求经航班去重共享结果（空 source_url 匿名请求不去重）；`use_browser` 一律降级为图片验证码（桌面端无 WebView）。`verificationSubmit` 无论 code 是否为空都唤醒等待方（对齐 Kotlin `setResult`），空值由等待侧报「验证结果为空」；`verificationCancel` 等价 Kotlin `checkResult`（空结果唤醒）；超时返回「source verification timed out」。订阅事件流时先回放当前进行中的请求。冻结契约保持不变，本组方法为加法式新增。
 >
 > ℹ️ **BackstageWebView DOM 通道（SOURCE_DIFF P1）**：Rust 侧 `ffi::webview_request_stream / webview_submit / webview_cancel / webview_pending`（核心 `legado-core/src/webview_channel.rs`）。Flutter `WebViewBridgeListener` 订阅后，`@webjs` / 正文 `contentRule.webJs` / `java.webView*` 经真实 WebView 执行并回传；无订阅者时回退无头 QuickJS 或历史桥接载荷（`interceptResult`）。默认超时 60s，规则级 Mode.WebJs 10s。**Android**：`PlatformBridgeService`→原生 `legado/webview.backstageEval`：`cacheFirst`→`WebSettings.LOAD_CACHE_ELSE_NETWORK`；`isRule`+html 时注入 `java`/`source`/`cache` JavascriptInterface（变量读写与精简同步 API；ajax 等网络类仍建议无头宿主）。非 Android 回退 `webview_flutter`（无 cacheMode）。加法式新增。
+>
+> ℹ️ **项 B/B1 WebView cookie 回流 + sourceKey 补全（2026-09-26，加法式，零破坏）**：Rust 侧新增 `ffi::webview_submit_result_with_cookies`（Dart `submitWebviewResultWithCookies`）——WebView 执行结果 + 域 cookie 回流：cookiesJson 每个域键按 ETLD+1 归一（`cookie_store::normalized_cookie_key`，不相关域不落行，P2-19 口径）merged upsert 落 `cookies` 表 + 同步 JS 桥共享客户端内存 CookieStore（quickjs 构建重置共享池，复用 http_state 落库/锁序口径），先持久化后唤醒等待方；`WebViewRequest` 事件加法式字段 `source_key`（JS 执行线程当前书源 key，缺省空串）/ `cookie`（B4 起按请求域预填，缺省空串），`serde(default)` 空串缺省、旧端忽略未知字段不破坏反序列化。Android 原生 `backstageEval`：注入接口口径由 `isRule` 扩为「`isRule` 或 `sourceKey` 非空」（对齐上游 tag 语义）；结果确定时（onPageFinished 首次命中 + 最终 eval 前）`CookieManager.getCookie(finalUrl)` 读取并随结果回传，返回值加法式改为 `{"result","cookies"}` 信封（cookie 为空时仍返回纯结果串，旧版 loadUrl/evaluateJs 通道语义不变）；非 Android 回退路径 `document.cookie` 尽力读取（仅非 HttpOnly，仅 webView 主路径，嗅探动作空串）。旧 `webviewSubmit`（`submitWebviewResult`）冻结不动。
 
 ### 2.4 搜索操作（19 个方法）
 
@@ -907,7 +911,7 @@
 |---|------|--------|
 | 1 | 初始化/版本 | 2 |
 | 2 | 书架操作 | 10 |
-| 3 | 书源操作 | 32 |
+| 3 | 书源操作 | 33 |
 | 4 | 搜索操作 | 19 |
 | 5 | RSS 源操作 | 11 |
 | 6 | 本地书籍操作 | 4 |
@@ -947,11 +951,11 @@
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 8 |
 | 44 | 字典规则操作 | 7 |
-| | **合计（§2.x 附录行合计）** | **280** |
+| | **合计（§2.x 附录行合计）** | **281** |
 
-> 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`，取代人工统计）：
-> - 附录行合计 **280** = §2.x 实际方法行总数；其中与 BookApi 同名 266（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2）、§1.7 命名等价对的 FFI 登记名 8
+> 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`，取代人工统计）：
+> - 附录行合计 **281** = §2.x 实际方法行总数；其中与 BookApi 同名 267（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1）、§1.7 命名等价对的 FFI 登记名 8
 >   （对应 7 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
 >   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
-> - BookApi 代码计数 **277** = 266 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2）+ 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
+> - BookApi 代码计数 **278** = 267 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1）+ 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。

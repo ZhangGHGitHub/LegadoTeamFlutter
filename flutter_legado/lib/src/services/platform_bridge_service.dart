@@ -12,6 +12,21 @@ import '../utils/legado_deep_link.dart';
 import 'deep_link_service.dart';
 import 'platform_channel.dart';
 
+/// webView 类载荷执行结果：结果串 + WebView 侧域 cookie 回流（项 B/B1）
+///
+/// [cookiesJson] 为 JSON 对象：域键或 http(s) URL → `k1=v1; k2=v2`
+/// cookie 串；空串表示无回流（Rust 侧按旧 `submitWebviewResult`
+/// 语义唤醒等待方，不做 cookie 持久化）。
+class WebViewEvalOutcome {
+  const WebViewEvalOutcome(this.result, this.cookiesJson);
+
+  /// 真实执行结果串（或 `[ERROR] ...` / 空串）
+  final String result;
+
+  /// 域 cookie 回流 JSON（`{"<url>": "k=v; k2=v2"}`），空串 = 无
+  final String cookiesJson;
+}
+
 /// Rust 平台桥接载荷拦截执行服务（Task #114 批次2 跨轨管线③） — QoderCN
 ///
 /// Rust 侧 `legado-js/src/host_api/platform.rs` 对 7 个平台交互 API 返回
@@ -223,24 +238,60 @@ class PlatformBridgeService {
     }
   }
 
+  /// 分发执行 webView 类载荷，返回结果串 + 域 cookie 回流（项 B/B1）
+  ///
+  /// 供 WebViewBridgeListener 调 FFI `webviewSubmitResultWithCookies`
+  /// 回传使用；动作类 action 的 cookie 回流恒为空串（语义同
+  /// [dispatchPayload] 的返回值）。
+  Future<WebViewEvalOutcome> dispatchPayloadWithCookies(
+    Map<String, dynamic> payload,
+  ) async {
+    final action = (payload['action'] ?? '').toString();
+    switch (action) {
+      case 'webView':
+      case 'webViewGetSource':
+      case 'webViewGetOverrideUrl':
+        return _runWebViewOutcome(action, payload);
+      default:
+        return WebViewEvalOutcome(await dispatchPayload(payload), '');
+    }
+  }
+
   // ========== 结果类 action：真实 WebView 执行（对齐 Kotlin BackstageWebView） ==========
 
-  /// 执行 webView / webViewGetSource / webViewGetOverrideUrl
+  /// 执行 webView / webViewGetSource / webViewGetOverrideUrl（返回结果串）
   Future<String> _runWebViewAction(
+    String action,
+    Map<String, dynamic> payload,
+  ) async =>
+      (await _runWebViewOutcome(action, payload)).result;
+
+  /// 执行 webView 类 action，返回结果串 + WebView 侧域 cookie 回流（项 B/B1）
+  ///
+  /// - Android 原生 backstageEval：Kotlin 侧返回 cookie 回流信封
+  ///   （`CookieManager` 按 finalUrl 读取，见 [WebViewBridge.buildEnvelope]）；
+  /// - Flutter 回退路径：`document.cookie` 尽力读取（非 HttpOnly 子集），
+  ///   仅 webView 主路径回传，嗅探类 action 回传空串（B1 偏差，Android
+  ///   真机走原生路径为主）。
+  Future<WebViewEvalOutcome> _runWebViewOutcome(
     String action,
     Map<String, dynamic> payload,
   ) async {
     if (!_webViewSupported) {
       // 桌面无 WebView：返回错误串（对齐 Rust 验证码通道 [ERROR] 约定），
       // 由规则链路按失败处理（Kotlin 此路径会抛异常使规则失败）
-      return '[ERROR] WebView 能力在当前平台不可用（仅 Android/iOS/macOS）';
+      return WebViewEvalOutcome(
+        '[ERROR] WebView 能力在当前平台不可用（仅 Android/iOS/macOS）',
+        '',
+      );
     }
     final url = (payload['url'] ?? '').toString();
     final html = (payload['html'] ?? '').toString();
     final js = (payload['js'] ?? '').toString();
-    if (url.isEmpty && html.isEmpty) return '';
+    if (url.isEmpty && html.isEmpty) return const WebViewEvalOutcome('', '');
 
-    // Android：走原生 BackstageWebView（真实 cacheMode + java/source 注入）
+    // Android：走原生 BackstageWebView（真实 cacheMode + java/source 注入
+    // + cookie 回流信封）
     if (Platform.isAndroid) {
       try {
         return await _nativeBackstageEval(action, payload);
@@ -262,33 +313,42 @@ class PlatformBridgeService {
             cacheFirst: payload['cacheFirst'] == true,
           );
         case 'webViewGetSource':
-          return await _webViewSniffSource(
-            url: url,
-            html: html,
-            js: js,
-            sourceRegex: (payload['sourceRegex'] ?? '').toString(),
-            delayMs: _delayOf(payload),
-            cacheFirst: payload['cacheFirst'] == true,
+          return WebViewEvalOutcome(
+            await _webViewSniffSource(
+              url: url,
+              html: html,
+              js: js,
+              sourceRegex: (payload['sourceRegex'] ?? '').toString(),
+              delayMs: _delayOf(payload),
+              cacheFirst: payload['cacheFirst'] == true,
+            ),
+            '',
           );
         case 'webViewGetOverrideUrl':
-          return await _webViewSniffOverrideUrl(
-            url: url,
-            html: html,
-            js: js,
-            overrideUrlRegex: (payload['overrideUrlRegex'] ?? '').toString(),
-            delayMs: _delayOf(payload),
-            cacheFirst: payload['cacheFirst'] == true,
+          return WebViewEvalOutcome(
+            await _webViewSniffOverrideUrl(
+              url: url,
+              html: html,
+              js: js,
+              overrideUrlRegex: (payload['overrideUrlRegex'] ?? '').toString(),
+              delayMs: _delayOf(payload),
+              cacheFirst: payload['cacheFirst'] == true,
+            ),
+            '',
           );
       }
     } catch (e) {
       debugPrint('[PlatformBridge] $action 执行失败：$e');
-      return '[ERROR] $action 执行失败：$e';
+      return WebViewEvalOutcome('[ERROR] $action 执行失败：$e', '');
     }
-    return '';
+    return const WebViewEvalOutcome('', '');
   }
 
   /// Android 原生 Backstage：LOAD_CACHE_ELSE_NETWORK + JavascriptInterface
-  Future<String> _nativeBackstageEval(
+  ///
+  /// B1（加法式）：Kotlin 侧返回 cookie 回流信封（有 cookie 时）或纯结果
+  /// 串（无 cookie / 旧版 Kotlin），由 [_parseBackstageEnvelope] 统一解析。
+  Future<WebViewEvalOutcome> _nativeBackstageEval(
     String action,
     Map<String, dynamic> payload,
   ) async {
@@ -308,7 +368,35 @@ class PlatformBridgeService {
         'sourceKey': (payload['sourceKey'] ?? payload['tag'] ?? '').toString(),
       },
     );
-    return _normalizeJsResult(raw);
+    final (result, cookiesJson) = _parseBackstageEnvelope(raw);
+    return WebViewEvalOutcome(result, cookiesJson);
+  }
+
+  /// 解析 backstageEval 通道返回值（项 B/B1 加法式信封）
+  ///
+  /// 新版 Kotlin：信封 `{"result": string, "cookies": {url: "k=v; ..."}}`
+  /// （cookies 为空对象时 Kotlin 侧直接回纯结果串）；旧版 Kotlin：纯结果
+  /// 串。返回 (result, cookiesJson)；非信封值一律按纯结果处理、
+  /// cookiesJson 为空（旧版语义原样保留）。
+  ///
+  /// 信封判定要求 `result` 值为 String（Kotlin 侧约定）：结果本身恰为
+  /// 带 `result` 键的 JSON 对象串（旧版纯串形态）时不误判为信封。
+  (String, String) _parseBackstageEnvelope(Object? raw) {
+    final text = _normalizeJsResult(raw);
+    final trimmed = text.trim();
+    if (!trimmed.startsWith('{')) return (text, '');
+    try {
+      final decoded = jsonDecode(trimmed);
+      if (decoded is Map<String, dynamic> && decoded['result'] is String) {
+        final cookies = decoded['cookies'];
+        final cookiesJson =
+            cookies is Map && cookies.isNotEmpty ? jsonEncode(cookies) : '';
+        return (decoded['result'] as String, cookiesJson);
+      }
+    } catch (_) {
+      // 非合法信封（如结果本身恰是对象 JSON 串但结构不符）→ 按纯结果
+    }
+    return (text, '');
   }
 
   /// delayTime 解析（毫秒；Kotlin 无 js 时默认 900ms 等待渲染）
@@ -340,10 +428,12 @@ class PlatformBridgeService {
   }
 
   /// webView：加载页面 → 延时 → 执行 JS（缺省取 outerHTML）→ 返回结果
+  /// + 域 cookie 回流（B1：回退路径经 `document.cookie` 尽力读取，
+  /// 仅非 HttpOnly 子集，Rust 侧按 ETLD+1 归一域键）
   ///
   /// [isRule] 对齐 Kotlin BackstageWebView.isRule：注入 `window.result`。
   /// [cacheFirst]：非 Android 回退路径无原生 cacheMode，仅日志（Android 走原生）。
-  Future<String> _webViewEval({
+  Future<WebViewEvalOutcome> _webViewEval({
     required String url,
     required String html,
     required String js,
@@ -367,7 +457,7 @@ class PlatformBridgeService {
       debugPrint('[PlatformBridge] webView 加载失败：$loadFailure'
           '（url=$url html=${html.isNotEmpty ? '<html>' : '<空>'}）');
       _showSnackBar('页面加载失败：$loadFailure');
-      return '[ERROR] WebView 加载失败：$loadFailure';
+      return WebViewEvalOutcome('[ERROR] WebView 加载失败：$loadFailure', '');
     }
     if (isRule && resultJson.isNotEmpty) {
       // resultJson 已是 Rust serde_json 字面量（对齐 GSON.toJson → window.result）
@@ -378,8 +468,25 @@ class PlatformBridgeService {
     await Future<void>.delayed(Duration(milliseconds: waitMs));
     final script =
         js.isNotEmpty ? js : 'document.documentElement.outerHTML';
-    final result = await controller.runJavaScriptReturningResult(script);
-    return _normalizeJsResult(result);
+    final result =
+        _normalizeJsResult(await controller.runJavaScriptReturningResult(script));
+    // B1：回退路径 cookie 尽力读取（无原生 CookieManager；document.cookie
+    // 不含 HttpOnly，以当前页 URL 为键，Rust 侧归一域键后落库）
+    String cookiesJson = '';
+    final pageUrl = await controller.currentUrl();
+    if (pageUrl != null && pageUrl.isNotEmpty) {
+      try {
+        final cookieStr = _normalizeJsResult(
+          await controller.runJavaScriptReturningResult('document.cookie'),
+        );
+        if (cookieStr.isNotEmpty) {
+          cookiesJson = jsonEncode(<String, String>{pageUrl: cookieStr});
+        }
+      } catch (e) {
+        debugPrint('[PlatformBridge] document.cookie 读取失败（不影响结果）：$e');
+      }
+    }
+    return WebViewEvalOutcome(result, cookiesJson);
   }
 
   /// webViewGetSource：嗅探匹配 sourceRegex 的资源 URL（尽力对齐 Kotlin

@@ -329,6 +329,18 @@ mixin RustApiSources on RustApiDecode implements BookApi {
       bridge.webviewSubmit(key: key, result: result);
 
   @override
+  Future<bool> submitWebviewResultWithCookies(
+    String key,
+    String result,
+    String cookiesJson,
+  ) =>
+      bridge.webviewSubmitResultWithCookies(
+        key: key,
+        result: result,
+        cookiesJson: cookiesJson,
+      );
+
+  @override
   Future<bool> cancelWebviewRequest(String key) =>
       bridge.webviewCancel(key: key);
 }
