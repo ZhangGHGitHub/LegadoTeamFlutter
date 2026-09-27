@@ -98,6 +98,23 @@ class PlatformBridgeService {
   /// 页面加载 / 嗅探总超时（对齐 Kotlin BackstageWebView withTimeout 60s）
   static const Duration _webViewTimeout = Duration(seconds: 60);
 
+  /// B2 eval 重试阶梯（对齐 Kotlin RETRY_LADDER_MS，可配置常量）：
+  /// [200,400,600,800,1000]ms 循环
+  static const List<int> _webViewRetryLadderMs = [200, 400, 600, 800, 1000];
+
+  /// B2 最大重试次数（对齐 Kotlin MAX_EVAL_RETRIES：30 次，累计阶梯
+  /// ≤18s，总预算受 [_webViewTimeout]=60s 约束）
+  static const int _webViewMaxEvalRetries = 30;
+
+  /// B2 挑战签名（对齐 Kotlin CHALLENGE_SIGNATURES，可配置常量）：
+  /// WAF 挑战页标志（AcWScV2 校验 / setCookie 写入 / 验证中提示），
+  /// eval 结果命中即按阶梯重试
+  static const List<String> _webViewChallengeSignatures = [
+    'acw_sc__v2',
+    'setCookie',
+    '正在验证',
+  ];
+
   /// 当前平台是否具备真实 WebView 能力（对齐 rss_article_detail_screen 判定）
   bool get _webViewSupported =>
       Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
@@ -429,7 +446,9 @@ class PlatformBridgeService {
 
   /// webView：加载页面 → 延时 → 执行 JS（缺省取 outerHTML）→ 返回结果
   /// + 域 cookie 回流（B1：回退路径经 `document.cookie` 尽力读取，
-  /// 仅非 HttpOnly 子集，Rust 侧按 ETLD+1 归一域键）
+  /// 仅非 HttpOnly 子集，Rust 侧按 ETLD+1 归一域键；B2：结果空/
+  /// 命中挑战签名时按阶梯重试，对齐 Kotlin RETRY_LADDER_MS /
+  /// CHALLENGE_SIGNATURES，总预算 ≤ [_webViewTimeout]=60s）
   ///
   /// [isRule] 对齐 Kotlin BackstageWebView.isRule：注入 `window.result`。
   /// [cacheFirst]：非 Android 回退路径无原生 cacheMode，仅日志（Android 走原生）。
@@ -463,13 +482,37 @@ class PlatformBridgeService {
       // resultJson 已是 Rust serde_json 字面量（对齐 GSON.toJson → window.result）
       await controller.runJavaScript('window.result = $resultJson;');
     }
+    // B2：eval 重试总预算锚点（对齐 Kotlin opStartMs 的「操作开始」
+    // 口径：加载 + 等待 + 重试总耗时 ≤ _webViewTimeout=60s，加载阶段
+    // 另受 _loadAndWaitFinished 的 60s 超时约束）
+    final opStartMs = DateTime.now().millisecondsSinceEpoch;
     // 对齐 Kotlin：无 js 时默认等待 900ms 渲染；有 js 时等待 100ms + delayTime
     final waitMs = js.isEmpty ? (delayMs > 0 ? delayMs : 900) : 100 + delayMs;
     await Future<void>.delayed(Duration(milliseconds: waitMs));
     final script =
         js.isNotEmpty ? js : 'document.documentElement.outerHTML';
-    final result =
-        _normalizeJsResult(await controller.runJavaScriptReturningResult(script));
+    // B2：重试阶梯（对齐 Kotlin RETRY_LADDER_MS / MAX_EVAL_RETRIES /
+    // CHALLENGE_SIGNATURES）：结果空（页面未就绪）或命中挑战签名
+    // （WAF 挑战页标志）时按阶梯延时重试，至多 _webViewMaxEvalRetries
+    // 次，间隔以剩余预算截断；最终接受点（最后一次 eval 后）再读
+    // cookie，时点与 Kotlin buildEnvelope 一致且严格更新
+    String result;
+    for (var attempt = 0; ; attempt++) {
+      result = _normalizeJsResult(
+        await controller.runJavaScriptReturningResult(script),
+      );
+      if (!_needsWebViewRetry(result) || attempt >= _webViewMaxEvalRetries) {
+        break;
+      }
+      final remainingMs =
+          _webViewTimeout.inMilliseconds -
+          (DateTime.now().millisecondsSinceEpoch - opStartMs);
+      if (remainingMs <= 0) break;
+      final nextDelayMs = _webViewRetryLadderMs[
+              attempt % _webViewRetryLadderMs.length]
+          .clamp(0, remainingMs);
+      await Future<void>.delayed(Duration(milliseconds: nextDelayMs));
+    }
     // B1：回退路径 cookie 尽力读取（无原生 CookieManager；document.cookie
     // 不含 HttpOnly，以当前页 URL 为键，Rust 侧归一域键后落库）
     String cookiesJson = '';
@@ -487,6 +530,16 @@ class PlatformBridgeService {
       }
     }
     return WebViewEvalOutcome(result, cookiesJson);
+  }
+
+  /// B2 重试判定（对齐 Kotlin needsRetryResult）：结果空（页面未就绪/
+  /// 外框空）或命中挑战签名（WAF 挑战页标志）
+  bool _needsWebViewRetry(String text) {
+    if (text.isEmpty) return true;
+    for (final sig in _webViewChallengeSignatures) {
+      if (text.contains(sig)) return true;
+    }
+    return false;
   }
 
   /// webViewGetSource：嗅探匹配 sourceRegex 的资源 URL（尽力对齐 Kotlin

@@ -26,9 +26,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  * - loadUrl / evaluateJs / close：既有验证码通道（纯字符串语义不变）
  * - backstageEval：对齐 Kotlin BackstageWebView（cacheFirst→LOAD_CACHE_ELSE_NETWORK；
  *   isRule 或 sourceKey 非空时注入 java/source/cache JavascriptInterface +
- *   getInjectionString；B1 加法式返回 cookie 回流信封，见 [buildEnvelope]）
+ *   getInjectionString；B1 加法式返回 cookie 回流信封，见 [buildEnvelope]；
+ *   B2 webView 主路径 eval 结果空/命中挑战签名时按阶梯重试，见
+ *   [RETRY_LADDER_MS] / [CHALLENGE_SIGNATURES]）
  *
  * — WebViewBridge + Bridge｜2026-08-13｜项 B/B1 cookie 回流 + sourceKey
+ * ｜2026-09-26 项 B/B2 eval 重试阶梯
  */
 class WebViewBridge {
 
@@ -39,6 +42,15 @@ class WebViewBridge {
 
     companion object {
         private const val TIMEOUT_MS = 60_000L
+
+        /** B2 eval 重试阶梯（可配置常量）：[200,400,600,800,1000]ms 循环 */
+        private val RETRY_LADDER_MS = longArrayOf(200L, 400L, 600L, 800L, 1000L)
+
+        /** B2 最大重试次数（30 次，累计阶梯 ≤18s，总预算受 TIMEOUT_MS 约束） */
+        private const val MAX_EVAL_RETRIES = 30
+
+        /** B2 挑战签名（可配置常量）：WAF 挑战页标志，命中即按阶梯重试 */
+        private val CHALLENGE_SIGNATURES = listOf("acw_sc__v2", "setCookie", "正在验证")
 
         /** 对齐 WebJsExtensions 随机接口名，避免与页面全局冲突 */
         private fun randomIfaceName(): String {
@@ -140,6 +152,9 @@ class WebViewBridge {
         handler.post {
             try {
                 destroyInternal()
+                // B2：eval 重试阶梯的总预算锚点（与全局超时同一起算口径，
+                // 保证等待 + 重试总耗时不超 TIMEOUT_MS=60s）
+                val opStartMs = System.currentTimeMillis()
                 val nameJava = randomIfaceName()
                 val nameSource = randomIfaceName()
                 val nameCache = randomIfaceName()
@@ -251,6 +266,46 @@ class WebViewBridge {
                                     } else {
                                         100L + delayTime
                                     }
+                                    // B2 eval 重试阶梯（局部递归函数：捕获局部
+                                    // capturedCookies / result / opStartMs）
+                                    //
+                                    // eval 结果空 / 命中挑战签名（CHALLENGE_SIGNATURES，
+                                    // WAF 挑战页标志）→ 按 [200,400,600,800,1000]ms
+                                    // 阶梯重试至多 MAX_EVAL_RETRIES 次；总预算受
+                                    // TIMEOUT_MS 约束（自 opStartMs 起算，剩余不足
+                                    // 直接采纳最后结果——全局超时兜底会先触发）。
+                                    // cookie 快照在最终采纳时重读（重试窗口内验证
+                                    // 流程可能新写 cookie，以最新快照为准，B1 口径）
+                                    fun evalWithRetry(wv: WebView, script: String, attempt: Int) {
+                                        wv.evaluateJavascript(script) { value ->
+                                            if (result.isCompleted) return@evaluateJavascript
+                                            val text = unescapeJsResult(value)
+                                            val remaining =
+                                                TIMEOUT_MS - (System.currentTimeMillis() - opStartMs)
+                                            if (attempt < MAX_EVAL_RETRIES &&
+                                                needsRetryResult(text) &&
+                                                remaining > 0
+                                            ) {
+                                                val delay = RETRY_LADDER_MS[
+                                                    attempt % RETRY_LADDER_MS.size
+                                                ].coerceAtMost(remaining)
+                                                handler.postDelayed({
+                                                    if (!result.isCompleted) {
+                                                        evalWithRetry(wv, script, attempt + 1)
+                                                    }
+                                                }, delay)
+                                                return@evaluateJavascript
+                                            }
+                                            val cUrl = wv.url?.toString().orEmpty()
+                                            capturedCookies =
+                                                CookieManager.getInstance()
+                                                    .getCookie(cUrl).orEmpty()
+                                            result.success(
+                                                buildEnvelope(text, capturedCookies, cUrl)
+                                            )
+                                            destroyInternal()
+                                        }
+                                    }
                                     handler.postDelayed({
                                         // [崩溃防护 | 2026-09-26] 簇B 修复使
                                         // java.webView(null,…) 真正可达，桥内
@@ -259,12 +314,6 @@ class WebViewBridge {
                                         // 该源按超时/空结果失败
                                         try {
                                             if (!result.isCompleted) {
-                                                // B1：最终 eval 前重读页面 cookie（等待窗口内
-                                                // 验证流程可能新写 cookie，以最新快照为准）
-                                                val cookieUrl = view?.url?.toString().orEmpty()
-                                                capturedCookies =
-                                                    CookieManager.getInstance()
-                                                        .getCookie(cookieUrl).orEmpty()
                                                 val userJs =
                                                     if (js.isNotEmpty()) js
                                                     else "document.documentElement.outerHTML"
@@ -272,17 +321,8 @@ class WebViewBridge {
                                                     if (ruleLike && html.isNotEmpty()) {
                                                         "try{var cache=$nameCache,source=$nameSource,java=$nameJava;}catch(e){}\n"
                                                     } else ""
-                                                view?.evaluateJavascript(injection + userJs) { value ->
-                                                    if (!result.isCompleted) {
-                                                        result.success(
-                                                            buildEnvelope(
-                                                                unescapeJsResult(value),
-                                                                capturedCookies,
-                                                                cookieUrl,
-                                                            )
-                                                        )
-                                                        destroyInternal()
-                                                    }
+                                                view?.let { wv ->
+                                                    evalWithRetry(wv, injection + userJs, 0)
                                                 }
                                             }
                                         } catch (t: Throwable) {
@@ -421,6 +461,12 @@ class WebViewBridge {
             result.success("")
             destroyInternal()
         }
+    }
+
+    /** B2 重试判定：结果空（页面未就绪/外框空）或命中挑战签名（WAF 挑战页标志） */
+    private fun needsRetryResult(text: String): Boolean {
+        if (text.isEmpty()) return true
+        return CHALLENGE_SIGNATURES.any { sig -> text.contains(sig) }
     }
 
     /**
