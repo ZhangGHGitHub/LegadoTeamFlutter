@@ -79,8 +79,10 @@ jobs:
         run: |
           chmod +x scripts/verify-ffi-android.sh
           ./scripts/verify-ffi-android.sh debug "aarch64,x86_64"
-          # 体检§三.10+§8.3:扩展校验范围——v7a(当前 quickjs:false 需人工决策)与 release 模式
-          ./scripts/verify-ffi-android.sh release "aarch64,armv7,x86_64" || echo "::warning::release/v7a FFI 校验未通过(见体检§一.1/§8.3),需按计划处理"
+          # 体检§三.10+§8.3:扩展校验范围——release 模式全 ABI。v7a 已裁决(P2-24 关闭,
+          # 2026-09-27):维持无 JS 降级(rar 无法 32 位编译),quickjs:false 为既定目标态
+          # 而非待决策项;此处校验失败仍仅告警(见体检§一.1/§8.3),由构建侧按降级口径处理
+          ./scripts/verify-ffi-android.sh release "aarch64,armv7,x86_64" || echo "::warning::release/v7a FFI 校验未通过(见体检§一.1/§8.3),v7a 按 P2-24 无 JS 降级口径处理"
 
   analyze:
     runs-on: ubuntu-latest

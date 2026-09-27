@@ -64,9 +64,14 @@ jobs:
         working-directory: rust
         run: cargo build --release --target aarch64-linux-android -p legado-ffi --features quickjs
 
-      - name: Build Rust FFI (armv7)
+      # [P2-24/P2-25] armv7 显式不带 quickjs：quickjs feature 组合含 rar
+      # （RAR 档案解压，rust/legado-js/Cargo.toml L49/L90），rar 无法在 32 位
+      # armv7 编译（u64: ToUsize 未实现）→ 带 quickjs 必编译失败并使整个
+      # release 工作流中断。按 P2-24 已裁决口径：armeabi-v7a 维持无 JS 降级
+      # （本地 rust/scripts/build-android.ps1 的回退语义在此固化为显式命令）。
+      - name: Build Rust FFI (armv7, no quickjs — P2-24 v7a 降级口径)
         working-directory: rust
-        run: cargo build --release --target armv7-linux-androideabi -p legado-ffi --features quickjs
+        run: cargo build --release --target armv7-linux-androideabi -p legado-ffi
 
       # ─── 复制 .so 到 jniLibs ───
       - name: Copy .so to jniLibs
