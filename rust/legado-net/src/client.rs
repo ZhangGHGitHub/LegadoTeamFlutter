@@ -12,6 +12,7 @@
 //! - SSL/TLS 配置（证书验证控制、自定义 CA）
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
@@ -102,6 +103,13 @@ impl Default for LegadoClientConfig {
     }
 }
 
+/// 客户端构建计数器（进程级单调递增）
+///
+/// 每次 `LegadoClient` 构建取一个唯一实例 ID。用于区分「共享同一
+/// CookieStore 的重建客户端」（池 reset / hosts 变更重建后 store 指针
+/// 不变但 client_id 必变），供上层做脑裂修复后的回归断言。
+static CLIENT_BUILD_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 /// Legado HTTP 客户端
 ///
 /// 基于 `reqwest::Client`，附带 Cookie 存储、可选重试、按域名限流，
@@ -118,6 +126,8 @@ pub struct LegadoClient {
     proxy_pool: Option<Arc<ProxyPool>>,
     /// Cookie 持久化后端（可选，由上层注入，如 legado-ffi 的 DB 实现）
     cookie_persistence: Option<Arc<dyn CookiePersistence>>,
+    /// 实例 ID（构建时取号；clone 共享同一 ID，见 [`Self::client_id`]）
+    client_id: u64,
 }
 
 impl LegadoClient {
@@ -137,10 +147,45 @@ impl LegadoClient {
         Self::build(config, Some(persistence))
     }
 
+    /// 创建复用既有内存 Cookie 存储的 HTTP 客户端（跨客户端共享 store）
+    ///
+    /// `store` 实例被所有持有它的客户端/池共享（如 FFI 主链路与 JS 桥四池
+    /// 共享同一 `Arc<RwLock<CookieStore>>`），对齐上游单客户端单
+    /// CookieStore 语义：client1 请求 403 Set-Cookie 重种后，client2 的
+    /// 下一个请求即携带该 Cookie（脑裂修复，x81zws 根因）。携带
+    /// `persistence` 时构建期以后端 `load_all` **合并预载**（内存已有
+    /// 域按名冲突时内存值胜——重建不丢在途状态；内存没有的域补载），
+    /// 响应 Set-Cookie 照常经后端写回。
+    pub fn with_cookie_store(
+        config: LegadoClientConfig,
+        store: Arc<RwLock<CookieStore>>,
+        persistence: Option<Arc<dyn CookiePersistence>>,
+    ) -> LegadoResult<Self> {
+        Self::build_with_store(config, persistence, Some(store))
+    }
+
     /// 内部构建入口：可选携带 Cookie 持久化后端
     fn build(
         config: LegadoClientConfig,
         cookie_persistence: Option<Arc<dyn CookiePersistence>>,
+    ) -> LegadoResult<Self> {
+        Self::build_with_store(config, cookie_persistence, None)
+    }
+
+    /// 内部构建入口：可选复用既有 Cookie store + 可选持久化后端
+    ///
+    /// - `existing = None`：全新 store（可选从后端 `load_all` 预载，
+    ///   等价原 `build` 语义）；
+    /// - `existing = Some(store)`：**复用该 store 实例**（不丢内容）；
+    ///   携带持久化后端时按域合并预载（见 [`Self::with_cookie_store`]）。
+    ///
+    /// 锁口径：后端 `load_all`（DB I/O）在 store 写锁**之外**执行；
+    /// 合并预载在短 J 写锁临界区内完成（无 I/O），与
+    /// `save_cookies_from_response` 的 J 锁纪律一致。
+    fn build_with_store(
+        config: LegadoClientConfig,
+        cookie_persistence: Option<Arc<dyn CookiePersistence>>,
+        existing: Option<Arc<RwLock<CookieStore>>>,
     ) -> LegadoResult<Self> {
         let mut builder = ClientBuilder::new()
             .connect_timeout(config.connect_timeout)
@@ -219,16 +264,44 @@ impl LegadoClient {
             }
         };
 
-        // Cookie 持久化：启动时从后端加载到内存 CookieStore
-        let cookie_store = {
-            let mut store = CookieStore::new();
-            if let Some(ref persistence) = cookie_persistence {
-                let entries = persistence.load_all();
-                let count = entries.len();
-                store.load_persisted(entries);
-                log::info!("从持久化后端加载 {} 条域名 Cookie 记录", count);
+        // Cookie store：复用共享实例或新建（可选从持久化后端预载）
+        let cookie_store = match existing {
+            // 复用共享 store（跨客户端/池，脑裂修复）：内容不丢；携带
+            // 持久化后端时合并预载（内存按域优先，后端补缺）
+            Some(store) => {
+                if let Some(ref persistence) = cookie_persistence {
+                    let entries = persistence.load_all(); // DB I/O 在 J 锁外
+                    let count = entries.len();
+                    let mut guard = store.write().unwrap_or_else(|p| p.into_inner());
+                    for (domain, loaded) in &entries {
+                        let existing_str = guard.domain_cookie_string(domain);
+                        if existing_str.is_empty() {
+                            guard.set_cookies_from_string(domain, loaded);
+                        } else if let Some(merged) =
+                            CookieStore::merge_cookies_str(loaded, &existing_str)
+                        {
+                            // 合并结果整体重写该域（同名键内存值胜，
+                            // merge_cookies_str 后者覆盖前者）
+                            guard.set_cookies_from_string(domain, &merged);
+                        }
+                    }
+                    log::info!(
+                        "共享 Cookie store 合并预载持久化后端 {} 条域名 Cookie 记录",
+                        count
+                    );
+                }
+                store
             }
-            Arc::new(RwLock::new(store))
+            None => {
+                let mut store = CookieStore::new();
+                if let Some(ref persistence) = cookie_persistence {
+                    let entries = persistence.load_all();
+                    let count = entries.len();
+                    store.load_persisted(entries);
+                    log::info!("从持久化后端加载 {} 条域名 Cookie 记录", count);
+                }
+                Arc::new(RwLock::new(store))
+            }
         };
 
         Ok(Self {
@@ -241,6 +314,7 @@ impl LegadoClient {
             ua_rotator,
             proxy_pool,
             cookie_persistence,
+            client_id: CLIENT_BUILD_COUNTER.fetch_add(1, Ordering::SeqCst),
         })
     }
 
@@ -267,6 +341,14 @@ impl LegadoClient {
     /// 获取 Cookie 持久化后端引用（如有）
     pub fn cookie_persistence(&self) -> Option<&Arc<dyn CookiePersistence>> {
         self.cookie_persistence.as_ref()
+    }
+
+    /// 实例 ID（构建时取号，进程级唯一；clone 共享同一 ID）
+    ///
+    /// 用于区分「共享同一 CookieStore 的重建客户端」：池 reset / hosts
+    /// 变更重建后 `cookie_store()` 指针不变但 `client_id()` 必变。
+    pub fn client_id(&self) -> u64 {
+        self.client_id
     }
 
     /// 获取重试执行器引用（如有）
@@ -515,11 +597,17 @@ impl LegadoClient {
 
     /// 创建使用自定义代理的客户端副本（对应 Kotlin `getProxyClient`）
     ///
-    /// 保留原客户端的 Cookie 持久化后端（共享同一 `Arc`）。
+    /// 保留原客户端的 Cookie 持久化后端（共享同一 `Arc`）与既有
+    /// Cookie store 实例（共享同一 `Arc`，副本与原件同罐——脑裂修复
+    /// 后 `with_proxy` 不得另开新 store）。
     pub fn with_proxy(&self, proxy_url: &str) -> LegadoResult<Self> {
         let mut config = self.config.clone();
         config.proxy = Some(ProxyConfig::from_url(proxy_url));
-        Self::build(config, self.cookie_persistence.clone())
+        Self::build_with_store(
+            config,
+            self.cookie_persistence.clone(),
+            Some(self.cookie_store.clone()),
+        )
     }
 
     // ---------- 内部方法 ----------

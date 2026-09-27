@@ -10,7 +10,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, OnceLock, RwLock};
 
 use crate::host_api::runtime_bridge::block_on;
-use legado_net::{CookiePersistence, LegadoClient, LegadoClientConfig, LegadoRequest, Method};
+use legado_net::{
+    CookiePersistence, CookieStore, LegadoClient, LegadoClientConfig, LegadoRequest, Method,
+};
 
 /// 默认请求超时（毫秒），与 Kotlin 端一致
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
@@ -155,6 +157,18 @@ fn ensure_form_content_type(headers: &mut HashMap<String, String>, has_body: boo
 /// `design_upstream_aligned.md` §3 项 A）。未注册后端时（CLI/测试路
 /// 径）行为等价 `LegadoClient::new`（纯内存 jar，语义不变）。
 ///
+/// **共享内存 Cookie store（脑裂修复，x81zws 根因，2026-09-26）**：
+/// 此前四池各建独立内存罐，与 FFI 主链路（搜索 POST 走的
+/// `legado-ffi::http_state::shared_client`）互不通气——主链路 403
+/// Set-Cookie 重种只落 FFI 罐 + DB，`java.ajax` 侧罐内仍是启动时
+/// `load_all` 的旧值 → App 内确定性失败（上游单客户端单 CookieStore
+/// 无此问题）。修复：`legado-ffi::db_open` 经
+/// [`set_client_cookie_store`] 注入 FFI 侧进程级共享 store 实例
+/// （first-wins），四池构建/重建时复用同一 `Arc<RwLock<CookieStore>>`
+/// ——任一侧 403 重种同轮对另一侧可见（上游同款闭环）；池 reset 重建
+/// 客户端不丢 store 内容（合并预载，内存值同名冲突时胜出）。未注册
+/// 共享 store 时（CLI/测试路径）各池保持独立内存罐（原语义不变）。
+///
 /// **锁序不变式**（仿 `legado-ffi::http_state::shared_client`）：客户端
 /// 构建（含持久化后端 `load_all` 的 DB I/O）在持有池槽位**写锁之前**
 /// 完成——槽位锁临界区不做 DB/sink 调用；并发首建时各线程自建，槽位
@@ -248,6 +262,22 @@ pub fn set_client_cookie_persistence(p: Arc<dyn CookiePersistence>) -> bool {
     CLIENT_COOKIE_PERSISTENCE.set(p).is_ok()
 }
 
+/// 共享内存 Cookie store 钩子（脑裂修复，2026-09-26）
+///
+/// 由 `legado-ffi::ffi::db_open` 注入 FFI 侧进程级共享 store 实例
+/// （`legado-ffi::http_state::shared_cookie_store()`，与 FFI 主链路
+/// `shared_client()` 同一罐）——四池构建/重建复用该实例，任一侧 403
+/// Set-Cookie 重种同轮对另一侧可见（上游单客户端单 CookieStore 语义，
+/// x81zws 根因）。
+static CLIENT_COOKIE_STORE: OnceLock<Arc<RwLock<CookieStore>>> = OnceLock::new();
+
+/// 注册共享内存 Cookie store（first-wins，同 [`set_client_cookie_persistence`]）
+///
+/// 返回本次注册是否生效：重复注册忽略并返回 `false`（不覆盖首个实例）。
+pub fn set_client_cookie_store(store: Arc<RwLock<CookieStore>>) -> bool {
+    CLIENT_COOKIE_STORE.set(store).is_ok()
+}
+
 /// 重置全部 4 个池槽位（仿 `legado-ffi::http_state::reset_shared_client`）
 ///
 /// 置空后下次 [`shared_client`] 调用按当前配置重建（构建时读取此刻已
@@ -262,26 +292,34 @@ pub fn reset_shared_client_pools() {
     }
 }
 
-/// 以显式持久化后端构建池客户端（测试入口：不触碰全局钩子，确定性
-/// 覆盖已注册/未注册两个分支）
+/// 以显式持久化后端 + 共享 store 构建池客户端（测试入口：不触碰全局
+/// 钩子，确定性覆盖已注册/未注册分支组合）
 fn build_pool_client_with(
     kind: PoolKind,
     persistence: Option<Arc<dyn CookiePersistence>>,
+    store: Option<Arc<RwLock<CookieStore>>>,
 ) -> Result<LegadoClient, String> {
     let config = kind.config();
-    match persistence {
-        // 已注册：构建即从后端预载已持久化 cookie 进内存 jar
-        // （DB I/O；须在槽位写锁之前完成，见模块头锁序不变式）
-        Some(p) => LegadoClient::with_cookie_persistence(config, p),
-        // 未注册：等价改造前 `LegadoClient::new`（纯内存 jar）
-        None => LegadoClient::new(config),
+    match (store, persistence) {
+        // 共享 store 已注册（脑裂修复）：复用同一实例；携带持久化后端
+        // 时合并预载（内存值同名冲突时胜出，重建不丢内容；DB I/O 在
+        // 槽位写锁之前完成，见模块头锁序不变式）
+        (Some(s), p) => LegadoClient::with_cookie_store(config, s, p),
+        // 未注册共享 store：等价改造前行为（纯内存 jar，独立实例）
+        (None, Some(p)) => LegadoClient::with_cookie_persistence(config, p),
+        (None, None) => LegadoClient::new(config),
     }
     .map_err(|e| format!("build client error: {e}"))
 }
 
-/// 以当前已注册的持久化后端构建池客户端（未注册时为 `None`）
+/// 以当前已注册的持久化后端 + 共享 store 构建池客户端（未注册时为
+/// `None`）
 fn build_pool_client(kind: PoolKind) -> Result<LegadoClient, String> {
-    build_pool_client_with(kind, CLIENT_COOKIE_PERSISTENCE.get().cloned())
+    build_pool_client_with(
+        kind,
+        CLIENT_COOKIE_PERSISTENCE.get().cloned(),
+        CLIENT_COOKIE_STORE.get().cloned(),
+    )
 }
 
 /// 取进程级共享客户端（池由 `loopback`/`no_redirect` 选择）
@@ -1189,12 +1227,14 @@ mod tests {
     }
 
     /// 四个进程级共享池均可构建，且重复取回同一实例（槽位注册表幂等，
-    /// 2026-09-24 性能专项：不再每调用新建客户端/连接池）；reset 后四池
-    /// 全部可重建（设计项 A）
+    /// 2026-09-24 性能专项：不再每调用新建客户端/连接池）；注册共享
+    /// store 钩子后四池共用同一 CookieStore（脑裂修复），reset 后四池
+    /// 全部可重建且 store 内容不丢（设计项 A + 脑裂修复）
     #[test]
     fn test_shared_client_pools() {
         let _lock = lock_pool_test();
         register_test_persistence();
+        register_test_store();
         reset_shared_client_pools();
         for (loopback, no_redirect) in [(false, false), (true, false), (false, true), (true, true)]
         {
@@ -1213,24 +1253,34 @@ mod tests {
             ),
             "同一池两次取回应为同一实例（连接池复用前提）"
         );
-        // 不同池互不相同
+        // 脑裂修复：注册共享 store 后不同池共用同一 CookieStore
+        // （FFI 主链路与 JS 桥池同罐，上游单客户端单 CookieStore 语义）
         let c = shared_client(true, false).expect("回环池");
         assert!(
-            !std::ptr::eq(
+            std::ptr::eq(
                 std::sync::Arc::as_ptr(a.cookie_store()),
                 std::sync::Arc::as_ptr(c.cookie_store())
             ),
-            "回环池与默认池应为不同实例"
+            "注册共享 store 后回环池与默认池应共用同一 CookieStore（脑裂修复）"
         );
-        // reset 后四池全部可重建（设计项 A：重建走当前持久化钩子）
+        // reset 后四池全部可重建（重建走当前持久化钩子 + 共享 store；
+        // store 指针不变、客户端实例必变）
+        let before_reset = shared_client(true, false).expect("回环池（reset 前）");
         reset_shared_client_pools();
         for (loopback, no_redirect) in [(false, false), (true, false), (false, true), (true, true)]
         {
+            let rebuilt = shared_client(loopback, no_redirect).expect("reset 后共享池应重建成功");
             assert!(
-                shared_client(loopback, no_redirect).is_ok(),
-                "reset 后共享池 (loopback={loopback}, no_redirect={no_redirect}) 应重建成功"
+                std::sync::Arc::ptr_eq(before_reset.cookie_store(), rebuilt.cookie_store()),
+                "reset 后共享池应复用同一 CookieStore（内容不丢）"
             );
         }
+        let after_reset = shared_client(true, false).expect("回环池（reset 后）");
+        assert_ne!(
+            before_reset.client_id(),
+            after_reset.client_id(),
+            "reset 后应重建底层客户端实例"
+        );
     }
 
     /// 共享池 keep-alive 复用证明（2026-09-24 性能专项）：
@@ -1317,13 +1367,16 @@ mod tests {
         (addr, accepts)
     }
 
-    // ── Cookie 持久化共享池（设计项 A，2026-09-26）─────────────────────
+    // ── Cookie 持久化 + 共享 store 共享池（设计项 A + 脑裂修复，2026-09-26）
     //
     // 根因（`.tmp/engine_forensic_d/report_d.md` §2）：JS 桥池客户端此前
     // 仅内存 jar，冷启动即失 Set-Cookie 种下的 WAF 状态机 cookie，状态机
-    // 跨进程断链（x81zws.com）。修复：池构建路径注入 CookiePersistence
-    // 后端（first-wins），构建/重建时预载 + 写回。以下用例触碰进程级
-    // 全局状态（池槽位 + 持久化钩子），统一持 POOL_TEST_LOCK 串行。
+    // 跨进程断链（x81zws.com）；且四池与 FFI 主链路各持独立内存罐，主
+    // 链路 403 重种 JS 侧不可见（脑裂，App 内确定性失败）。修复：池构建
+    // 路径注入 CookiePersistence 后端 + 共享 CookieStore 实例（均
+    // first-wins），构建/重建时合并预载 + 写回。以下用例触碰进程级全局
+    // 状态（池槽位 + 持久化钩子 + 共享 store 钩子），统一持
+    // POOL_TEST_LOCK 串行。
 
     /// 池用例串行锁（池槽位 + 持久化钩子为进程级共享）：串行化
     /// 「注册 → 请求 → 断言 → 重置」段，避免并行用例互相清掉对方的槽/行
@@ -1402,6 +1455,20 @@ mod tests {
         let _ = set_client_cookie_persistence(test_persistence());
     }
 
+    /// 进程级共享测试 store 实例（脑裂修复用例的共享罐；仿
+    /// `TEST_PERSISTENCE`——first-wins 钩子下所有触碰池的用例必须
+    /// 共享同一实例）
+    static TEST_STORE: OnceLock<Arc<RwLock<CookieStore>>> = OnceLock::new();
+
+    fn test_store() -> Arc<RwLock<CookieStore>> {
+        Arc::clone(TEST_STORE.get_or_init(|| Arc::new(RwLock::new(CookieStore::new()))))
+    }
+
+    /// 把共享测试 store 注册进全局钩子（幂等；first-wins 返回值忽略）
+    fn register_test_store() {
+        let _ = set_client_cookie_store(test_store());
+    }
+
     /// 最小 WAF 403 状态机 mock（设计项 A：模拟 x81zws 的 403+Set-Cookie
     /// 挑战；与 `spawn_cookie_echo_on` 同款 std `TcpListener` 模式）
     ///
@@ -1464,26 +1531,34 @@ mod tests {
     }
 
     /// 设计项 A 钩子 first-wins 语义：二次注册返回 false 且不覆盖首实例；
-    /// reset 重建后装入的客户端仍指向首注册实例
+    /// reset 重建后装入的客户端仍指向首注册实例（共享 store 内容不丢，
+    /// 脑裂修复：store 指针不变、客户端实例必变）
     #[test]
     fn test_set_client_cookie_persistence_first_wins() {
         let _lock = lock_pool_test();
         register_test_persistence();
+        register_test_store();
         // 二次注册（临时实例）必须被忽略
         assert!(
             !set_client_cookie_persistence(Arc::new(RecordingPersistence::default())),
             "二次注册应返回 false（first-wins，不覆盖）"
         );
+        // 先 reset 再取「首次构建」：排空前序用例在 store 注册前预填的
+        // 池槽位（那些客户端走无共享 store 路径，store 指针与重建
+        // 后的必然不等，flaky 根因）
+        reset_shared_client_pools();
         // reset 重建：装入的客户端仍指向首注册实例
         let before = shared_client(true, false).expect("回环池（首次构建）");
         reset_shared_client_pools();
         let after = shared_client(true, false).expect("回环池（reset 后重建）");
         assert!(
-            !std::ptr::eq(
-                std::sync::Arc::as_ptr(before.cookie_store()),
-                std::sync::Arc::as_ptr(after.cookie_store())
-            ),
-            "reset 后池应重建新客户端"
+            std::sync::Arc::ptr_eq(before.cookie_store(), after.cookie_store()),
+            "reset 后池应复用同一 CookieStore（内容不丢，脑裂修复）"
+        );
+        assert_ne!(
+            before.client_id(),
+            after.client_id(),
+            "reset 后池应重建新客户端实例"
         );
         let bound = after
             .cookie_persistence()
@@ -1582,11 +1657,129 @@ mod tests {
         reset_shared_client_pools();
     }
 
-    /// 未注册路径回归：不触碰全局钩子时，显式 `None` 构建等价改造前
-    /// `LegadoClient::new`（无持久化后端、jar 为空）；注册路径则预载后端行
+    /// 脑裂回归（x81zws 根因，2026-09-26）：两客户端（回环池 ≙ FFI 主
+    /// 链路对回环请求的等价 / 不跟随重定向回环池 ≙ JS 桥 connectNR）
+    /// 共享同一内存 CookieStore 后——
+    ///
+    /// 两池均取 `no_proxy` 直连回环池（P2-17 约定：127.0.0.1 等回环
+    /// URL 必须绕过系统/环境变量代理；若走默认池，代理接管时 403
+    /// 挑战可能来自代理而非 WAF mock，Set-Cookie 不下发，重种断言
+    /// 失去归因性）。
+    ///
+    /// ① client1 请求吃 403 + Set-Cookie（重种落共享 store）→
+    ///    **client2 的下一个请求头必须携带该 cookie**（200 过状态机；
+    ///    修复前各池独立 jar，此场景必败——App 内搜索确定性失败的
+    ///    复现）；
+    /// ② `clear_cookie` 的 J 层清除（清共享 store 域）→ 403 重种 →
+    ///    同轮另一客户端可见（上游同款闭环：清与重种同一 store）。
+    ///
+    /// 修复前红态：`build_pool_client_with(kind, p, None)` 各池独立建
+    /// 罐，client1 的重种只进 client1 自身 jar + 持久化后端；已构建且
+    /// 不 reset 的 client2 下一请求仍用旧 jar → WAF 状态机再挑战 403。
+    /// 绿态：池复用同一 `Arc<RwLock<CookieStore>>`，重种同轮跨池可见。
+    #[test]
+    fn test_split_brain_shared_store_cross_pool_same_round() {
+        let _lock = lock_pool_test();
+        let fake = test_persistence();
+        register_test_persistence();
+        register_test_store();
+        fake.clear();
+        // 清共享 store 残留 WAF 键（防跨用例污染，保证以下断言可
+        // 归因于本用例的 403 重种）
+        test_store()
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove_domain("127.0.0.1");
+        reset_shared_client_pools();
+
+        let addr = spawn_waf_403_echo_server(4);
+        let url = format!("http://{addr}/waf");
+
+        // 双客户端预建（模拟 App 内搜索主链路与 JS 桥同时存活），
+        // 且必须同罐（脑裂修复前提）；均为 no_proxy 直连回环池
+        // （P2-17：回环 URL 不经过系统/环境变量代理）
+        let client1 =
+            shared_client(true, false).expect("回环池（client1，FFI 主链路对回环请求的等价）");
+        let client2 =
+            shared_client(true, true).expect("不跟随重定向回环池（client2，JS 桥 connectNR 等价）");
+        assert!(
+            std::sync::Arc::ptr_eq(client1.cookie_store(), client2.cookie_store()),
+            "两池必须共享同一 CookieStore（脑裂修复前提）"
+        );
+
+        // ① client1 首请求：无 WAF cookie → 403 挑战 + Set-Cookie 重种
+        let resp1 = block_on(async { client1.get(&url, None).await })
+            .expect("client1 首请求应成功（403 非错误）");
+        assert_eq!(
+            resp1.status, 403,
+            "无状态机 cookie 时 WAF 应回 403 挑战: {}",
+            resp1.status
+        );
+        // 重种证据：共享 store 域键已含 WAF 键（用真实 `url` 解析域键；
+        // 勿写字面量模板——`assert!` 无参时不做字符串插值）
+        {
+            let shared = test_store();
+            let store = shared.read().unwrap_or_else(|p| p.into_inner());
+            assert!(
+                store
+                    .get_cookie_string(&url)
+                    .contains("p219_cold=WAF-VAL-7f3b"),
+                "403 Set-Cookie 重种必须落共享 store"
+            );
+        }
+
+        // ② client2 下一请求（中间无池 reset，与预建同一实例）：
+        // 请求头必须携带该 cookie → 200 过状态机（修复前必败场景）
+        let resp2 = block_on(async { client2.get(&url, None).await })
+            .expect("client2 请求应成功（同轮重种应过状态机）");
+        assert_eq!(
+            resp2.status, 200,
+            "client1 403 重种后 client2 下一请求必须携带该 cookie（共享 store 同轮可见）: {}",
+            resp2.status
+        );
+        assert!(
+            resp2.body.contains("p219_cold=WAF-VAL-7f3b"),
+            "client2 回显 Cookie 头必须含 WAF 状态机键: {}",
+            resp2.body
+        );
+
+        // ③ clear_cookie 的 J 层清除（清共享 store 域）→ 403 重种 →
+        //    同轮另一客户端可见（清与重种同一 store，上游同款闭环）
+        test_store()
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove_domain("127.0.0.1");
+        let resp3 = block_on(async { client2.get(&url, None).await })
+            .expect("清除后 client2 再挑战请求应成功");
+        assert_eq!(
+            resp3.status, 403,
+            "J 层清除后下一请求应再被 WAF 挑战（重种闭环前提）: {}",
+            resp3.status
+        );
+        let resp4 = block_on(async { client1.get(&url, None).await })
+            .expect("同轮重种后 client1 请求应成功");
+        assert_eq!(
+            resp4.status, 200,
+            "清除后 403 重种必须同轮对 client1 可见（清/重种同一共享 store）: {}",
+            resp4.status
+        );
+
+        // 收尾：清共享实例并重置池（不留残留给后续用例）
+        fake.clear();
+        test_store()
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove_domain("127.0.0.1");
+        reset_shared_client_pools();
+    }
+
+    /// 未注册路径回归：不触碰全局钩子时，显式 `None` 构建（无共享
+    /// store、无持久化后端）等价改造前 `LegadoClient::new`（jar 为空）；
+    /// 注册路径则预载后端行
     #[test]
     fn test_pool_build_without_persistence_is_plain_new() {
-        let client = build_pool_client_with(PoolKind::Default, None).expect("未注册路径构建应成功");
+        let client =
+            build_pool_client_with(PoolKind::Default, None, None).expect("未注册路径构建应成功");
         assert!(
             client.cookie_persistence().is_none(),
             "未注册路径不得携带持久化后端（等价改造前 LegadoClient::new）"
@@ -1605,7 +1798,7 @@ mod tests {
         let fake = RecordingPersistence::default();
         fake.seed("127.0.0.1", "legacy_check=OK-1");
         let persistence: Arc<dyn CookiePersistence> = Arc::new(fake);
-        let client2 = build_pool_client_with(PoolKind::Loopback, Some(persistence))
+        let client2 = build_pool_client_with(PoolKind::Loopback, Some(persistence.clone()), None)
             .expect("注册路径构建应成功");
         assert!(
             client2.cookie_persistence().is_some(),
@@ -1620,6 +1813,53 @@ mod tests {
                 .get_cookie_string("http://127.0.0.1:1/")
                 .contains("legacy_check=OK-1"),
             "注册路径构建必须预载持久化 cookie 进 jar"
+        );
+
+        // 共享 store 路径：复用既有 store 实例（指针一致）+ 持久化后端
+        // 合并预载（空 store 全量预载；已含域内存值同名冲突时胜出）
+        let shared = Arc::new(RwLock::new(CookieStore::new()));
+        let client3 = build_pool_client_with(
+            PoolKind::Loopback,
+            Some(persistence.clone()),
+            Some(shared.clone()),
+        )
+        .expect("共享 store 路径构建应成功");
+        assert!(
+            std::sync::Arc::ptr_eq(client3.cookie_store(), &shared),
+            "共享 store 路径必须复用传入的 store 实例（脑裂修复）"
+        );
+        let store = client3
+            .cookie_store()
+            .read()
+            .unwrap_or_else(|p| p.into_inner());
+        assert!(
+            store
+                .get_cookie_string("http://127.0.0.1:1/")
+                .contains("legacy_check=OK-1"),
+            "共享 store 路径构建必须预载持久化 cookie 进复用 jar"
+        );
+        // 内存值同名冲突时胜出：jar 已有值不得被后端旧值覆盖
+        drop(store);
+        client3
+            .cookie_store()
+            .write()
+            .unwrap_or_else(|p| p.into_inner())
+            .set_cookies_from_string("127.0.0.1", "legacy_check=MEM-WINS");
+        let client4 = build_pool_client_with(
+            PoolKind::Loopback,
+            Some(persistence.clone()),
+            Some(shared.clone()),
+        )
+        .expect("共享 store 路径构建应成功");
+        let store = client4
+            .cookie_store()
+            .read()
+            .unwrap_or_else(|p| p.into_inner());
+        assert!(
+            store
+                .get_cookie_string("http://127.0.0.1:1/")
+                .contains("legacy_check=MEM-WINS"),
+            "合并预载同名键内存值必须胜出（不丢在途状态）"
         );
     }
 

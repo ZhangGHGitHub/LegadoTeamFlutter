@@ -382,7 +382,8 @@ mod tests {
         assert_eq!(get_sub_domain("https://"), "https://");
     }
 
-    /// hosts 变更后共享客户端必须重建（池化连接不得继续指向旧 IP）
+    /// hosts 变更后共享客户端必须重建（池化连接不得继续指向旧 IP），
+    /// 但共享 Cookie store 内容不丢（脑裂修复语义：重建不另开新罐）
     #[test]
     fn test_set_custom_hosts_rebuilds_shared_client() {
         let _g = TEST_LOCK.lock().unwrap();
@@ -392,7 +393,12 @@ mod tests {
         set_custom_hosts(r#"{"reset-pool.test": "10.9.9.9"}"#).unwrap();
         let after = crate::http_state::shared_client().unwrap();
         assert!(
-            !std::sync::Arc::ptr_eq(before.cookie_store(), after.cookie_store()),
+            std::sync::Arc::ptr_eq(before.cookie_store(), after.cookie_store()),
+            "hosts 变更重建后应复用进程级共享 Cookie store（内容不丢）"
+        );
+        assert_ne!(
+            before.client_id(),
+            after.client_id(),
             "hosts 变更后共享客户端应重建（避免池化连接指向旧 IP）"
         );
         // 收尾：清除映射

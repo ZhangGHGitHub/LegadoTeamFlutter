@@ -20,6 +20,19 @@
 //!
 //! 若构建时 DB 尚未初始化（`ffi_db_open` 未先于首次请求调用），则降级为纯内存
 //! Cookie（与既有行为一致）；`reset_shared_client` 后重建时会重新尝试接入。
+//!
+//! ## 共享内存 Cookie store（脑裂修复，x81zws 根因，2026-09-26）
+//!
+//! 此前 FFI 主链路（搜索 POST 走 [`shared_client`]）与 JS 桥四池
+//! （`java.ajax` 走 `legado-js` host_api/network.rs 池）各持互不通气的
+//! 内存 CookieStore：403 Set-Cookie 重种只落 FFI 罐 + DB，JS 桥罐是启动
+//! 时 `load_all` 的旧值 → 设备内搜索确定性失败（上游单客户端单
+//! CookieStore 无此问题）。修复：本模块提供进程级共享 store 实例
+//! [`shared_cookie_store`]，FFI 主客户端经 `LegadoClient::with_cookie_store`
+//! 复用，JS 桥池经 `register_js_client_cookie_persistence` 注册同一实例——
+//! 任一侧 403 重种同轮对另一侧可见（上游同款闭环）。`clear_cookie`
+//! （removeCookie）清的三层之一即该共享 store；池/主客户端 reset 重建
+//! 客户端但**不丢 store 内容**（合并预载，内存值同名冲突时胜出）。
 
 use std::sync::{Arc, Mutex, OnceLock, RwLock};
 
@@ -287,6 +300,21 @@ pub fn register_js_cookie_sink() {
     cookie_store::backfill_from_sink();
 }
 
+/// 进程级共享内存 Cookie store（FFI 主链路与 JS 桥四池共用同一实例）
+///
+/// 脑裂修复（x81zws 根因）：此前两侧各持独立内存罐，403 Set-Cookie 重种
+/// 不同轮可见。现经 `LegadoClient::with_cookie_store`（主客户端）与
+/// `legado_js::host_api::network::set_client_cookie_store`（JS 桥池钩子，
+/// 由 [`register_js_client_cookie_persistence`] 注册）共享同一实例；
+/// 持久化写入仍经 [`DbCookiePersistence`] 落库（语义不变），构建时
+/// `load_all` 以合并预载（内存值同名冲突时胜出，reset 重建不丢内容）。
+static SHARED_COOKIE_STORE: OnceLock<Arc<RwLock<CookieStore>>> = OnceLock::new();
+
+/// 取进程级共享内存 Cookie store（惰性创建）
+pub(crate) fn shared_cookie_store() -> &'static Arc<RwLock<CookieStore>> {
+    SHARED_COOKIE_STORE.get_or_init(|| Arc::new(RwLock::new(CookieStore::new())))
+}
+
 /// 承载单例的可变槽位
 ///
 /// 用 `OnceLock` 惰性创建 `RwLock`，再用 `Option` 支持重置（设为 `None` 后下次访问重建）。
@@ -335,14 +363,17 @@ pub fn shared_client() -> LegadoResult<LegadoClient> {
 /// **必须在不持有客户端槽位锁时调用**（见 [`shared_client`] 锁序约束）：
 /// `LegadoClient::build` 同步执行 `persistence.load_all()`（DB I/O），
 /// 若在槽位写锁临界区内执行，池取连接的等待会拖住全部读方。
+///
+/// **复用进程级共享 store**（脑裂修复）：reset 重建不新建罐——store 内容
+/// 跨 reset 保留，持久化后端 `load_all` 以合并预载（内存值同名冲突时
+/// 胜出，不丢在途 403 重种状态）。
 fn build_default_client() -> LegadoResult<LegadoClient> {
-    let client = match make_cookie_persistence() {
-        Some(persistence) => {
-            LegadoClient::with_cookie_persistence(LegadoClientConfig::default(), persistence)
-        }
-        None => LegadoClient::new(LegadoClientConfig::default()),
-    };
-    client.map_err(|e| LegadoError::Network(format!("初始化共享 HTTP 客户端失败: {e}")))
+    LegadoClient::with_cookie_store(
+        LegadoClientConfig::default(),
+        shared_cookie_store().clone(),
+        make_cookie_persistence(),
+    )
+    .map_err(|e| LegadoError::Network(format!("初始化共享 HTTP 客户端失败: {e}")))
 }
 
 /// 重置共享客户端
@@ -365,17 +396,24 @@ pub fn reset_shared_client() {
 /// 由 [`crate::ffi::Bridge::db_open`] 在 DB 初始化后调用（仅 quickjs 档）；
 /// 零 FFI 方法变更（不加/不改导出函数签名）。
 ///
+/// **共享 store 注册（脑裂修复）**：除持久化后端外，同时把进程级共享
+/// store（[`shared_cookie_store`]）注册进 JS 桥池钩子——四池与 FFI 主
+/// 客户端共用同一内存罐（`java.ajax` 与搜索主链路 403 重种同轮互见，
+/// 上游单客户端单 CookieStore 语义）。
+///
 /// **锁序不变式**（同 [`shared_client`]）：池重建由下次 JS 请求惰性触发，
-/// 构建（含持久化后端 DB `load_all`）在槽位写锁**之外**完成——写锁临界区
-/// 内无 DB/sink 调用；并发首次构建时各线程自建客户端，槽位内先装者胜
-/// （败者构建直接丢弃——其 CookieStore 是 DB 全新加载、无在途写入，
-/// 丢弃无数据损失）。
+/// 构建（含持久化后端 DB `load_all` 合并预载）在槽位写锁**之外**完成
+/// ——写锁临界区内无 DB/sink 调用；并发首次构建时各线程自建客户端，
+/// 槽位内先装者胜（败者构建直接丢弃——其 store 复用共享实例、合并预载
+/// 幂等，丢弃无数据损失）。
 #[cfg(feature = "quickjs")]
 pub fn register_js_client_cookie_persistence() {
     let _ =
         legado_js::host_api::network::set_client_cookie_persistence(Arc::new(DbCookiePersistence));
+    // 共享内存 store：JS 桥四池与 FFI 主客户端共用同一实例（脑裂修复）
+    let _ = legado_js::host_api::network::set_client_cookie_store(shared_cookie_store().clone());
     // 兜底：注册前已构建的池（正常时序不存在，见上）下次访问时
-    // 按持久化后端重建
+    // 按持久化后端 + 共享 store 重建
     legado_js::host_api::network::reset_shared_client_pools();
 }
 
@@ -427,7 +465,9 @@ mod tests {
         }
     }
 
-    /// reset 后应重建底层客户端（CookieStore Arc 指针不同）。
+    /// reset 后应重建底层客户端（client_id 不同），但**共享 Cookie
+    /// store 内容不丢**（Arc 指针不变——脑裂修复语义：reset 重建客户端
+    /// 不另开新罐，在途 403 重种状态跨 reset 保留）。
     #[test]
     fn test_reset_shared_client_rebuilds() {
         let _g = TEST_LOCK.lock().unwrap();
@@ -436,8 +476,13 @@ mod tests {
         reset_shared_client();
         let after = shared_client().unwrap();
         assert!(
-            !Arc::ptr_eq(before.cookie_store(), after.cookie_store()),
-            "reset 后应重建底层客户端"
+            Arc::ptr_eq(before.cookie_store(), after.cookie_store()),
+            "reset 后应复用进程级共享 Cookie store（内容不丢）"
+        );
+        assert_ne!(
+            before.client_id(),
+            after.client_id(),
+            "reset 后应重建底层客户端实例"
         );
     }
 

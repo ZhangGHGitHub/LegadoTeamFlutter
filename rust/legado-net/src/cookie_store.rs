@@ -221,6 +221,12 @@ impl CookieStore {
         }
     }
 
+    /// 是否无任何域名 Cookie 记录（共享 store 合并预载时区分
+    /// 「空 store 直接预载」与「非空 store 按域合并」）
+    pub fn is_empty(&self) -> bool {
+        self.cookies.is_empty()
+    }
+
     /// 获取指定域名的所有 Cookie（不含已过期的）
     pub fn get_cookies(&self, domain: &str) -> Vec<&Cookie> {
         self.cookies
