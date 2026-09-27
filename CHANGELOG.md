@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.315] - 2026-09-28
+
+### Fixed
+- [UI] **修复已缓存章节点「刷新正文」不生效且会误清整书离线缓存**：此前「缓存优先 + 抓取优先」组合下，已缓存章刷新不发网络请求、直接返回旧缓存即判成功，成功后还会误清整书离线缓存；现对齐原版 refreshContentDur（delContent → loadContent）——先失效当前章缓存行（章级，新增 clearChapterCache FFI）再强制联网重取，失败仅当前章缓存丢失，同书他章缓存保留。
+
 ## [2.0.314] - 2026-09-28
 
 ### Fixed
