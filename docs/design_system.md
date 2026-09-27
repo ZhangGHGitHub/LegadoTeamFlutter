@@ -3,7 +3,7 @@
 > 数据来源：`flutter_legado/lib/src/theme/app_theme.dart`（MD3 主题装配）、`md3_colors.dart`（12 套内置调色板）、`app_typography.dart`（M3 字阶）
 > Token 来源基准：Material Design 3 官方指南（Expressive 视觉层），12 套内置命名主题 × 亮/暗 tonal 配对，语义槽位与 Android 原版一一对应
 >
-> **定位说明（2026-08-28 更新）**：本文档描述当前主题 Token 体系，作为 UI 实现的统一依据。项目对齐标准为：**界面功能与交互流程对齐 Android 原版，UI 视觉风格自由**——UI 开发遵循 Material Design 官方指南（Material Design 3 Expressive，apple-ui-designer 技能降为可选参考），视觉语言正按 `docs/UI_MD3_PLAN.md` 由 iOS 体系迁移至 MD3 体系；**本文档为 MD3 token 单一事实源**，修改 Token 时需同步更新本档与代码实现（`md3_colors.dart` 走生成器）。
+> **定位说明（2026-09-27）**：本文只定义 Flutter 实现使用的主题 Token 与生成关系，不定义产品视觉目标。布局、间距、形态、图标、文案、配色、字体和明暗主题均按参考版截图一比一验收，执行依据为 `SCREEN_1TO1_PARITY_SPEC_20260914.md` 与对应台账；MD3 Token 是实现工具，不能覆盖参考版基准。旧版“视觉风格自由”及仅按 Material 规范验收的描述均已废止。修改 Token 时同步维护本文与代码实现（`md3_colors.dart` 走生成器）。
 
 ---
 

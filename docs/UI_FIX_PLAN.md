@@ -5,7 +5,9 @@
 **计划范围**: P1 和 P2 优先级差异（共 12 项）  
 **预计工时**: 20.5 天（4 周）
 
-> **⚠️ 标准修订声明（2026-08-05，用户确认）**：重构对齐标准已调整为——**界面功能、页面结构与交互流程必须与 Android 原版保持一致，但 UI 视觉风格允许自由改变**。本文档中历史的"视觉一致性 ≥ 90%"、"像素级对齐"等验收标准不再适用于后续 UI 演进；后续任务以功能一致性为验收基准，视觉设计以 `docs/design_system.md` 为准。
+> **历史标准记录（2026-08-05，已被后续决定废止）**：本段记录当时采用的“界面功能对齐 Android 原版、UI 视觉风格自由”口径，仅用于追溯，不再指导当前开发或验收。当前口径见下方历史文档声明及 `SCREEN_1TO1_PARITY_SPEC_20260914.md`。
+
+> **⚠️ 历史文档声明（2026-09-27）**：上方 2026-08-05 的视觉自由口径已被后续用户决定废止。本文仅保留为旧批次记录，不是当前需求、任务队列或验收标准；不得据此派发新任务。当前视觉以参考版全域一比一为准，实施与验收见 [SCREEN_1TO1_PARITY_SPEC_20260914.md](SCREEN_1TO1_PARITY_SPEC_20260914.md)、对应台账、[REFACTORING_ACTIVE_PLAN.md](REFACTORING_ACTIVE_PLAN.md) 和 [REFACTORING_WORKFLOW.md](REFACTORING_WORKFLOW.md)。
 
 
 ---
@@ -911,16 +913,16 @@ P2-7 (设置项) ───────┘
 
 ### C. 参考文档
 
-1. [UI_COMPARISON_REPORT.md](UI_COMPARISON_REPORT.md) - UI 对比分析报告
-2. [UI_DIFFERENCE_PRIORITIES.md](UI_DIFFERENCE_PRIORITIES.md) - 差异优先级分类文档
-3. [KOTLIN_SYNC_REPORT.md](KOTLIN_SYNC_REPORT.md) - Kotlin 代码同步报告
+1. [UI_COMPARISON_REPORT.md](过期文档/UI_COMPARISON_REPORT.md) - UI 对比分析报告
+2. [UI_DIFFERENCE_PRIORITIES.md](过期文档/UI_DIFFERENCE_PRIORITIES.md) - 差异优先级分类文档
+3. [KOTLIN_SYNC_REPORT.md](过期文档/KOTLIN_SYNC_REPORT.md) - Kotlin 代码同步报告
 4. [MIGRATION_WORKFLOW.md](../rust/MIGRATION_WORKFLOW.md) - 数据库迁移工作流
 
 ---
 
 ## UI 缺口修复批次（2026-08-06）
 
-> **背景**：2026-08-06 Flutter UI 功能缺口实测审计（约 92 项：P0 2 / P1 44 / P2 46）与 Rust 源码级复查（4 项 P1 实质缺口）。本批次将 P0/P1 UI 缺口列为可执行任务清单；台账总览见 [REFACTORING_REMAINING_PLAN.md §5](REFACTORING_REMAINING_PLAN.md)，量化统计见 [REFACTORING_AUDIT_REPORT_20260806.md](REFACTORING_AUDIT_REPORT_20260806.md)。
+> **背景**：2026-08-06 Flutter UI 功能缺口实测审计（约 92 项：P0 2 / P1 44 / P2 46）与 Rust 源码级复查（4 项 P1 实质缺口）。本批次将 P0/P1 UI 缺口列为可执行任务清单；台账总览见 [REFACTORING_REMAINING_PLAN.md §5](过期文档/REFACTORING_REMAINING_PLAN.md)，量化统计见 [REFACTORING_AUDIT_REPORT_20260806.md](过期文档/REFACTORING_AUDIT_REPORT_20260806.md)。
 >
 > ✅ **批次状态（2026-08-06，Task #119 回写）**：批次 0-3 已全部完成——批次0 `0cde41a5c`（v2.0.1）/ 批次1 `873abea29`（v2.0.1）/ 批次2 `522e1c1be`（v2.0.2，含 Rust 前置 `b7368193a`、`9ac94b173`）/ 批次3 `13a11220e`（v2.0.3，含治理 `6633c25e3`、`0c452f4b5`）。留项清单见审计报告 §7。
 >
@@ -1000,7 +1002,7 @@ P2-7 (设置项) ───────┘
 
 - 优先消化：6 处日志入口（已入批次 0）、编码/字距/边距参数、导入排序、自动任务菜单
 - 结构治理：删除 `rss_config_screen.dart`（与 `rss_source_manage_screen.dart` 重复，前者 5 存根），删除前核销替代覆盖
-- 逐条明细见综合报告附录；完成一项即在 [REFACTORING_REMAINING_PLAN.md §5](REFACTORING_REMAINING_PLAN.md) 销记一项
+- 逐条明细见综合报告附录；完成一项即在 [REFACTORING_REMAINING_PLAN.md §5](过期文档/REFACTORING_REMAINING_PLAN.md) 销记一项
 
 ### 批次 4：阅读器页面对齐 Android 原版（2026-08-08）——✅ 已完成
 
@@ -1016,7 +1018,7 @@ P2-7 (设置项) ───────┘
 
 **评审修复批次**（三维度评审 + 实测问题收口）：字距旧值迁移（letterSpacing 旧比例值归一）、分页底部 RenderFlex 溢出（reader_page_view/paragraph_layout_engine 改实测标题块与页脚高度并区分首页容量）、顶栏章节 URL 行交互（点击按偏好开内置/系统浏览器、长按三选项菜单）、TocScreen TabBar `tabAlignment` 断言修复、"删除重复标题"Toast 与 shareLayout 副标题文案。
 
-**后置项**：已登记 [REFACTORING_REMAINING_PLAN.md §5.11/§5.12](REFACTORING_REMAINING_PLAN.md)（删除重复标题正文效果、shareLayout 日夜双配置接入等）。
+**后置项**：已登记 [REFACTORING_REMAINING_PLAN.md §5.11/§5.12](过期文档/REFACTORING_REMAINING_PLAN.md)（删除重复标题正文效果、shareLayout 日夜双配置接入等）。
 
 ### 批次 5：主题设置页与其他设置页对齐 Android 原版（2026-08-08）——✅ 已完成
 
@@ -1031,7 +1033,7 @@ P2-7 (设置项) ───────┘
 
 **评审修复批次**（三维度评审 + 实测问题收口）：两设置页异步对话框后补 `mounted` 防护共 15 处；`app_theme.dart` 修复"仅设背景色时 AppBar 前景对比度不足"（appBarForeground 一律按实际 AppBar 背景亮度动态取色，与背景明暗校验同判定）；自定义颜色改 `applyColors` 批量写入避免逐项重建主题。
 
-**后置项**：已登记 [REFACTORING_REMAINING_PLAN.md §5.13](REFACTORING_REMAINING_PLAN.md) 共 10 项（customHosts/checkSource/uploadRule/Cronet/videoSetting/mcpPort/jsSourceApiToken/clearWebViewData/shrinkDatabase/coverRule，均缺 WebView/Cronet/Room/JS 引擎等跨轨支撑）。
+**后置项**：已登记 [REFACTORING_REMAINING_PLAN.md §5.13](过期文档/REFACTORING_REMAINING_PLAN.md) 共 10 项（customHosts/checkSource/uploadRule/Cronet/videoSetting/mcpPort/jsSourceApiToken/clearWebViewData/shrinkDatabase/coverRule，均缺 WebView/Cronet/Room/JS 引擎等跨轨支撑）。
 
 ### 跨轨依赖汇总（本批次）
 

@@ -1,8 +1,10 @@
 # 双轨协作开发规范（UI 轨与 Rust 轨）
 
-**日期**: 2026-08-01
-**版本**: v1.0
+**日期**: 2026-09-27
+**版本**: v1.1
 **维护人**: Legado 开发团队（Qoder / QoderCN）
+
+> 本文只规定 Rust/Flutter 双轨边界、Mock 与 FFI/codegen/native 构建专项步骤。通用任务优先级、Agent 派发、当前分支策略、常规验证、证据和关闭流程统一见 [REFACTORING_WORKFLOW.md](REFACTORING_WORKFLOW.md)、根目录 [AGENTS.md](../AGENTS.md) 与开发规范；视觉目标见 [SCREEN_1TO1_PARITY_SPEC_20260914.md](SCREEN_1TO1_PARITY_SPEC_20260914.md)。
 
 ---
 
@@ -13,7 +15,7 @@
 Legado Flutter 重构采用 **Rust 核心引擎 + Flutter 跨平台 UI** 架构，两端通过 `flutter_rust_bridge`（FFI）连接。在实际开发中暴露出以下痛点：
 
 - **UI 迭代被 Rust 交叉编译拖慢**：每次修改 Rust 代码都需重新编译 cdylib、执行 codegen、同步 DLL，一次完整循环耗时数分钟，严重拖慢 UI 调整节奏。
-- **UI 对齐需要高频迭代**：Flutter 端需逐屏对照 Android 原版精调界面差异（功能与结构对齐，视觉风格自由），要求秒级热重载。
+- **UI 对齐需要高频迭代**：Flutter 端按参考版截图核对用户可见布局和交互；纯 Dart UI 可先用 Mock 开发，再进入双轨集成验证。
 - **两人可并行**：项目采用 Qoder 与 QoderCN 双向协作模式，天然适合一人专注 UI、一人专注 Rust 引擎的并行分工。
 
 ### 1.2 目标
@@ -175,66 +177,56 @@ flutter run -d windows --dart-define=USE_MOCK=true
 ### 5.2 日常流程
 
 1. 启动 Mock 模式。
-2. 对照 `docs/baseline_android/` 截图逐屏精调。
+2. 按 `SCREEN_1TO1_PARITY_SPEC_20260914.md` 和对应屏幕台账对照参考版截图；状态以 Active 计划为准。
 3. 使用 `flutter analyze` 确保静态分析无错误。
 4. 编写 / 更新 `flutter_legado/test/` 下对应 Widget 测试。
-5. 提交到 `feature/ui-<描述>` 分支。
+5. 按根目录 `AGENTS.md` 当前分支和提交策略交付，不沿用本文件旧分支示例。
 
 ### 5.3 实机验证
 
 - 里程碑节点才构建 APK 上模拟器 / 实机对照。
-- APK 构建由 Rust 轨或 CI 执行（涉及 Rust 交叉编译）。
+- APK 构建通过当前统一构建脚本或 CI 执行；涉及 Rust 交叉编译时按 §3.2/§3.4 校验 hash。
 - UI 轨不自行执行含 Rust 编译的构建流程。
 
 ---
 
 ## 6. Git 分支规范
 
-### 6.1 分支命名
+### 6.1 分支与冲突
 
-| 轨道 | 分支前缀 | 示例 |
-|------|----------|------|
-| UI 轨 | `feature/ui-<描述>` | `feature/ui-bookshelf-grid` |
-| Rust 轨 | `feature/rust-<描述>` | `feature/rust-search-engine` |
-| 修复 | `fix/<描述>` | `fix/content-hash-sync` |
+- 分支创建、命名、集成分支和提交历史纪律以根目录 `AGENTS.md` 为准；本文不再维护第二套分支方案或示例。
+- 同一批跨轨修改必须先界定文件所有权与契约。遇到共享文件冲突、契约语义不一致或 codegen 产物不匹配时暂停合并，由任务负责人依据 `API_CONTRACT.md` 和当前任务卡协调；不得仅按“某轨优先”覆盖另一侧。
 
 ### 6.2 冲突处理
 
-- FFI 边界文件（`bridge/`、`frb_generated*`、`rust_api.dart`）冲突时**以 Rust 轨为准**。
-- UI 层文件冲突时以 UI 轨为准。
-- 公共文件冲突双方协商。
+- FFI 边界文件（`bridge/`、`frb_generated*`、`rust_api.dart`）冲突时暂停集成，先核对已确认契约和本批文件边界，再由任务负责人安排解决。
+- UI 层文件冲突时按任务卡确认的文件所有者处理，不用轨道标签覆盖未提交工作。
+- 公共文件冲突时暂停相关提交并协调，保留双方尚未提交的改动。
 
-### 6.3 合并顺序
+### 6.3 集成顺序
 
-```
-Rust 轨先合（含 codegen 产物 + 重编译 DLL）
-        ↓
-UI 轨 rebase 到最新 master 后合入
-```
-
-- 此顺序确保 UI 轨 rebase 后拿到最新 FFI 产物，避免 hash 不匹配。
+- 集成分支与合流步骤遵循根目录 `AGENTS.md` 和当前任务卡，不把固定的“Rust 先合、UI 再 rebase”作为所有任务的通用规则。
+- 对确实涉及 FFI 的批次，契约先行；随后在同一集成批次完成 Dart/Rust codegen、native 重建、hash 核对和端到端验证。未完成配对验证不得交付。
 
 ### 6.4 提交信息
 
-- 使用中文（项目既有规范）。
-- 格式建议：`[UI] 书架页网格布局调整` / `[Rust] 搜索引擎添加分页支持`。
+提交格式、中文描述、版本和双日志同步均以 [legado-dev-conventions.md](../.qoder/rules/legado-dev-conventions.md) 与根目录 `AGENTS.md` 为准；旧式 `[UI]` / `[Rust]` 样例仅作历史记录，不用于新提交。
 
 ---
 
 ## 7. 集成节奏
 
-### 7.1 周期
+### 7.1 集成触发
 
-- 建议**每周一次**集成验证。
-- 里程碑前可增加频次。
+- 集成以任务依赖、契约变更和阶段门为触发，不规定固定周频。
+- FFI 契约或 codegen/native 产物变更后必须执行本节对应的配对验证。
 
 ### 7.2 集成验证步骤
 
-1. 合并双轨分支到集成分支 / master。
-2. 全量 `flutter test`（UI 轨负责确保通过）。
-3. 全量 `cargo test`（Rust 轨负责确保通过）。
-4. APK / Windows 构建。
-5. 模拟器 / 桌面端冒烟测试。
+1. 按根目录 `AGENTS.md` 当前分支策略集成，不改写已提交历史。
+2. 以当前 CI 工作流验证 Flutter/Rust 常规门禁；不重复派角色跑 CI 覆盖项。
+3. FFI 变更执行 §3 的双侧 codegen、native 构建及 hash 校验。
+4. 仅对 CI 未覆盖的平台或 UI 行为按统一工作流执行设备/桌面验收。
 
 ### 7.3 集成失败处理
 
@@ -256,14 +248,15 @@ UI 轨 rebase 到最新 master 后合入
 | 文档 | 关系 |
 |------|------|
 | [legado-dev-conventions.md](../.qoder/rules/legado-dev-conventions.md) | 通用开发规范，本规范为其在双轨场景下的补充 |
+| [REFACTORING_WORKFLOW.md](REFACTORING_WORKFLOW.md) | 通用任务实施、Agent 分工、验证证据与关闭流程 |
 | [API_CONTRACT.md](API_CONTRACT.md) | 契约登记表，本规范第 4 节流程的操作载体 |
 | [VERSION_CONTROL.md](VERSION_CONTROL.md) | 版本记录，集成里程碑在此登记 |
 | [DEVELOPMENT.md](DEVELOPMENT.md) | 开发者指南，含构建与运行说明 |
 
 ### 8.2 生效与修订
 
-- **生效日期**：2026-08-01
-- **修订流程**：任何一轨提出修订 → 双方评审确认 → 更新本文档并记录版本号 → 通知全员。
+- **生效日期**：2026-08-01；流程边界修订：2026-09-27
+- **修订流程**：规范文档修订遵循根目录 `AGENTS.md` 与统一工作流；若修订涉及 FFI 契约，另按契约的双轨确认要求执行。更新本文档版本与日期。
 - 修订时同步更新文档头部版本与日期。
 
 ### 8.3 术语表
@@ -278,5 +271,5 @@ UI 轨 rebase 到最新 master 后合入
 
 ---
 
-**最后更新**: 2026-08-01
+**最后更新**: 2026-09-27
 **维护者**: Legado 开发团队

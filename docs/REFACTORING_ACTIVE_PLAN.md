@@ -1,17 +1,19 @@
 # Legado 后续重构执行计划（Active）
 
-> 版本：2026-08-22
+> 版本：2026-09-27
 >
-> 本文是当前重构开放项的唯一执行计划。历史阶段计划、审计报告和已完成批次仅作为证据保存在 `docs/过期文档/`，不得重新作为当前任务来源。
+> 本文是当前重构开放任务、状态和顺序的唯一权威入口。统一实施、Agent 派发、验证和关闭流程见 [REFACTORING_WORKFLOW.md](REFACTORING_WORKFLOW.md)；专题文档只保存方法和证据，不维护第二份当前状态。
 >
-> 总体判断：Flutter + Rust Phase 0-4 主体已完成，但尚未达到“只剩 A* 素材验收”或“全库无桩”的状态。当前必须先处理入口功能空实现、分支集成和可复现验证，再处理契约与技术债。
+> 当前推进方向（2026-09-27 用户确认）：先完成搜索/书架至正文阅读、翻章、进度恢复、换源和离线缓存的书籍主流程，再推进其他现有功能；漫画/视频先于音频。参考版为用户可见行为目标；与 Android 原版或已确认规则存在实质差异时，先向用户裁决。内部保持 Rust + Flutter 架构。
+>
+> **进度校准提示**：以下历史执行记录和旧任务登记保留为证据，不自动等同当前开放问题。新批次开始前须按 `REFACTORING_WORKFLOW.md` 阶段 0 对照当前 HEAD、源码、测试与验收证据；未经核验的旧登记标为“待核验”。
 
 ## 一、状态口径
 
-- **已完成**：有源码落点、测试证据和关闭提交；若尚未合入主线，标为“代码已完成、待集成”。
-- **待验收**：实现已存在，但依赖真实设备、网络、书源或用户素材；不能计入工程缺口清零。
-- **待决策**：存在多个合理架构方向，必须先记录决策再实施。
-- **不纳入**：明确 N/A 或由平台能力等价覆盖，必须有原因和证据。
+- **待核验**：只有历史登记或推断，尚未证明当前 HEAD 存在问题。
+- **已确认待修 / 实施中 / 待复验**：按当前可复现证据进入对应工程阶段。
+- **待用户素材 / 待用户裁决**：工程阻塞分别来自真实账号、内容或硬件，或用户可见行为/架构取舍。
+- **已关闭 / N/A**：必须附当前适用的源码、提交、CI、设备或素材证据及明确范围。
 - **禁止口径**：不再使用“零 TODO/桩”“全部完成”“全量通过”等没有范围、HEAD、命令和提交号的绝对表述。
 
 ## 二、当前完成基线
@@ -275,7 +277,7 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - **待裁决点**：① 语义取舍——以纯函数四独立桶（不同 kind 各自成条、信息更全）为准，还是以增量路径 `_seenKeys` 预去重（同 origin 仅首条、列表更紧凑）为准？② 裁决后需同步的落点：`search_state.dart` 纯函数 / `rust/legado-core/src/search_aggregate.rs` / 夹具 `cross_source_merge.json` expected / `search_state.dart` L141-143 注释 / 本台账 / `API_CONTRACT.md` 两处限定措辞。③ 若裁选增量语义：Rust `Bucket` 需引入跨桶 `_seenKeys` 等价预去重（键含 origin），与现「桶内独立合并」互斥，需改实现 + 夹具 + 单测。
 
   - **闭环（2026-09-23，提交随本轮批次）**：**裁决=以运行时增量桶语义为准**（同一 `(name, author, origin)` 仅首次到达入桶、落桶由首次到达决定；后续同键整体丢弃；跨源计数仍由 `origins` 集合承载）。理由：① 这是线上真实行为；② 同书同源出现两行是 UX 缺陷；③ 纯函数与 Rust 作为「参考实现/单一真源」必须与线上一致，否则误导未来切换。
-  - **落地**：三路径统一——`search_state.dart`（纯函数加跨桶 `seen` 预去重，键=**原始未清洗** `name|author|origin`，与运行时 `_seenKeys` 逐字一致；与桶内归并键「清洗后 `name author`（不含 origin）」显式区分并写入三处文档）、`rust/legado-core/src/search_aggregate.rs`（同款跨桶 `seen` + docstring 重写）、跨端夹具 `cross_source_merge.json`（`keep_other` 期望 8→7 条，由两端实现运行重算、非手调）；`search_notifier.dart` **仅补注释、零行为改动**（`git diff -U0` 无非注释行）。
+  - **落地**：三路径统一——`search_state.dart`（纯函数加跨桶 `seen` 预去重，键=**原始未清洗** `name|author|origin`，与运行时 `_seenKeys` 逐字一致；与桶内归并键「清洗后 `name\u0000author`（不含 origin）」显式区分并写入三处文档）、`rust/legado-core/src/search_aggregate.rs`（同款跨桶 `seen` + docstring 重写）、跨端夹具 `cross_source_merge.json`（`keep_other` 期望 8→7 条，由两端实现运行重算、非手调）；`search_notifier.dart` **仅补注释、零行为改动**（`git diff -U0` 无非注释行）。
   - **证据**：① 两端各新增 2 条单测（同键 kind 分落两桶 → 仅 1 条 + `assert_ne`/`isNot(2)` 回归保护；不同 origin 同键各保留且 origins 累加）；② 证伪实验：临时摘除 seen 门控 → 4 处测试全部转红（2≠1、夹具 8≠7），恢复即绿；③ 门禁：`flutter analyze` 0 问题、`flutter test` 全量 +1619 全过、Rust 目标测试与 workspace 两档 0 failed、clippy 两档（`--all-targets`）0/0、`fmt --check` 归零。
   - **范围限定（审查补充，已写入 `API_CONTRACT.md`）**：统一口径**限于同一输入列表内**——运行时 `_seenKeys` 是**会话级跨页**（跨页 APPEND 不清空），纯函数/Rust 的 `seen` 是单次调用级；**未来若把运行时切到 Rust 入口，必须传会话累积列表（而非单批 `SearchSourceBatch.books[]`）**，否则跨页重复会回归。
   - **已修（2026-09-22；原 2026-09-23 登记「P2-20 过程中发现，未修」，处置待定 → 已闭环）**：`flutter test test/unit/search_notifier_test.dart` **单独运行**时有 19 条既有失败（mock API group 18 条 + `resetForOpen` 1 条；已用 `git stash` 在改动前树上复跑确认**与 P2-20 改动无关**，全量套件前后均全绿）。**根因（红/绿复现链已确证；下述机制为探针实测归因，取代登记时「Null Stream 桩失配」的旧说法）**：该文件全部 `searchMultiStream` 桩/verify 省略 `page` 命名参数，而生产 `SearchNotifier.search()/loadNextPage` 经 `_attachSearchStream` 恒显式传 `page`（1/2，`search_notifier.dart` L283-285）；桩省略命名参数时 mocktail 记录的是 VM 惰性生成的 noSuchMethod 前向器为省略参数填充的值，该填充值受测试内核增量编译 dill（`build/test_cache/build/*.cache.dill.track.dill`，frontend_server_aot 经 `--initialize-from-dill` + alternative-invalidation 构建）的陈旧类布局影响：陈旧态下前向器把省略的 `page` 填成 `null`（新鲜态填默认值 `1`）→ 生产调用 `{…, page: 1}` 与桩记录 `{…, page: null}` 失配 → mocktail 落回默认响应（null）→ 隐式下转到非空 `Stream<Map<String,dynamic>>` 抛 TypeError，被 `search()` try/catch 捕获（L228-231）置 `state.error`、results 空 → 19 条失败。**全量套件为何绿**：全文件编译路径刷新共享增量 dill 的类布局，前向器填 `page: 1`，桩即匹配。**修复**：该文件 25 处 `searchMultiStream` 桩/verify 全部补 `page: any(named: 'page')`（与续页测试 L1281-1290 及同目录 widget 测试同款惯用法），匹配不再依赖前向器填充值；**零生产代码改动、零断言削弱、零用例删除**（`setUp` 默认桩与 `addTearDown(container.dispose)` 清理齐备，文件自包含）。**证据**：① 红态（含 `flutter clean` 触发器）单文件运行确定性 19 红，绿态确定性全绿；② 探针实测调用侧 `page` 红态填 `null` / 绿态填 `1`（探针文件已删）；③ verbose 测试运行定位陈旧 dill，`rm -rf build/test_cache` 全新编译即绿；④ 修复后门禁：单文件 +68 全绿（当前态与 `flutter clean` 后复跑均绿）、`flutter test test/unit/` 全绿、全量 `flutter test` +1619 全绿（计数不变）、`flutter analyze` 0 问题。
@@ -344,7 +346,7 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
 
 - **换源感知等待（按用户指令「根据源码的做法来」对齐原版，2026-09-24 已闭环）**：
   - **上游做法（源码依据）**：搜索阶段对候选**并行预拉**「书籍信息 + 目录（开关 `changeSourceLoadToc`，默认 false）+ 字数」，单项 `withTimeout(60000)`、失败隔离；目录缓存进内存（`tocMap[primaryStr()]`，上限 30000 章）；**选中源时若缓存命中即零网络落地**，未命中才当场抓；全程 `changeSourceLoading` + `changeSourceCancelable`（可取消）；进度串 `change_source_progress`=「结果 %d, 当前进度 %d / %d: %s」（`ChangeBookSourceViewModel.kt` L334/363/396-413/680-720，`values-zh/strings.xml:1457`）。
-  - **我方落地**：Rust `source_switch.rs` 增 `SwitchSearchOptions`（`load_info`/`load_toc`/`load_word_count` 默认 false，读与上游同名配置键）+ `SwitchPrefetchCache`（键 `源 书`，上限 30000 章）+ enrich 阶段（**有界并发 8**、逐候选 60s 超时、失败直通不阻断）+ apply 三分支（完整命中零网络 / 部分命中只补目录 / 未命中现场抓）+ `SWITCH_APPLY_EPOCH` 取消（三个比对点，取消后 **DB 零变更**）；**FFI 加法式**新增 `switchSourcePrefetch` / `cancelSwitchSourceApply`（契约已在 `docs/API_CONTRACT.md` 登记，BookApi 275→277、附录 278→280，双轨确认一句）；Flutter 侧换源页接进度串（对齐上游文案）+ 可取消加载态，`applySource` 走预拉通道；换源页菜单「加载信息/加载目录/加载字数」与上游同名。
+  - **我方落地**：Rust `source_switch.rs` 增 `SwitchSearchOptions`（`load_info`/`load_toc`/`load_word_count` 默认 false，读与上游同名配置键）+ `SwitchPrefetchCache`（键 `源\u0000书`，上限 30000 章）+ enrich 阶段（**有界并发 8**、逐候选 60s 超时、失败直通不阻断）+ apply 三分支（完整命中零网络 / 部分命中只补目录 / 未命中现场抓）+ `SWITCH_APPLY_EPOCH` 取消（三个比对点，取消后 **DB 零变更**）；**FFI 加法式**新增 `switchSourcePrefetch` / `cancelSwitchSourceApply`（契约已在 `docs/API_CONTRACT.md` 登记，BookApi 275→277、附录 278→280，双轨确认一句）；Flutter 侧换源页接进度串（对齐上游文案）+ 可取消加载态，`applySource` 走预拉通道；换源页菜单「加载信息/加载目录/加载字数」与上游同名。
   - **验证**：`flutter analyze` 0 问题、`flutter test` +1676、Rust workspace 两档 0 failed（2735/3158）、clippy 两档 0/0、fmt 干净；性能对照（本地假源）**选中→落地 605ms → 0ms（缓存命中零网络，抓取计数断言不增）**；Rust 10 条新测（缓存超限/取消代数/命中零抓取/未命中现场抓/enrich 写缓存/失败直通/超时隔离/并发上限）+ Dart 测试（走预拉通道且 `verifyNever switchSource`/取消/进度串三态）。
   - **说明**：默认**不开预拉**（与上游一致）；开启「加载目录」后等待前移到搜索阶段（并行、有进度），选中即落地；未开启时选中后当场抓（有进度 + 可取消），与上游默认体验一致。
 
@@ -443,10 +445,13 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
 
 ## 四、文档治理
 
+> 本节说明文档职责；当前任务状态仍以本文为唯一来源，一般实施步骤以 `REFACTORING_WORKFLOW.md` 为准。
+
 | 文档 | 当前职责 |
 |---|---|
 | 本文 | 唯一当前开放项与执行顺序 |
-| `docs/README.md` | 当前状态和文档索引 |
+| `REFACTORING_WORKFLOW.md` | Agent 派发、任务生命周期、验证证据与关闭流程 |
+| `docs/README.md` | 文档索引，不维护当前任务状态 |
 | `API_CONTRACT.md` | 跨轨接口契约 |
 | `TWO_TRACK_DEV_SPEC.md` | 双轨与 codegen 纪律 |
 | `RESIDUAL_RISKS_2026-08-13.md` | A* 和工程残余风险 |
@@ -500,3 +505,5 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
 - **【新登记 2026-09-22，当日闭环】quickjs 档 2 例真联网用例回环化 + 同类隐患盘点**（CI run 35807393352，quickjs 档）：`legado-js::quickjs_impl::tests::test_connectnr_passes_body` 向真站 `tianyashuku.net` POST 断言 302，站点行为变化/反爬改回 200 提示页（无 Location）→ 间歇 panic（原始输出 `got {"status":200,"loc":null,"bodyLen":21}`，580 passed / 1 failed）。**处置（下线化优先，非 ignore）**：该例与同类 `test_response_bridge_post_location`（同站、同 `connect_no_redirect` 代码路径）改为本地回环 mock 服务器（`quickjs_impl.rs` 测试 helper `spawn_search_loopback_server`/`read_http_request_body`，std `TcpListener`+单线程，因 quickjs 的 tokio feature 无 net）：body 含 `tbname=bookname` → `302 Found` + `Location: /result/?searchid=1`；body 丢失 → `200` + 短提示页无 Location（忠实复刻真站失败签名，**断言未放宽**）。**有效性验证**：故意去掉 JS 第 4 参 body → `got {"status":200,"loc":null,"bodyLen":33}` 红，恢复后绿。**回环代理劫持（沿用 P2-17 判定法/cda70a0c54 约定）**：死代理实测确认 `HTTP_PROXY` 存在时 `connect_no_redirect` 默认客户端把 127.0.0.1 也送代理而劫持 → `network.rs::connect_no_redirect` 对回环 URL（`is_loopback_url`：127.0.0.1/::1/localhost）加 `no_proxy` 豁免，真实主机仍走用户代理（生产行为不变）；修后死代理档两用例绿。**同类隐患盘点（CI 两档全量）**：硬断言真联网仅上述 2 例（已修）；其余真联网均为软断言（不致红，死代理下连接即拒→优雅跳过），列清单待主代理后续：① `legado-js/src/host_api/network.rs` 10 个 httpbin.org 用例（`test_http_get_basic` 等，`if let Ok`+`is_valid_response` 软跳）② `legado-server/src/handlers/source_update.rs::test_check_updates_route_exists`（handler 真抓 raw.githubusercontent.com/cdn.jsdelivr.net，30s 超时，测试仅断言非 404）。`explore_api`/`search`/`misc_api`/`mcp` 等其余 `ex.com`/`a.test`/`example.com` 均为纯字符串夹具无 I/O，勿动。`legado-ffi::web_book::test_tianyashuku_search_url_diag` 等既有显式 `#[ignore]` 保持。
 
 修订：ZCode（27B 通道）｜ 2026-09-24（换源预拉缓存与感知等待（加法式，零破坏）：对齐上游 `ChangeBookSourceViewModel` 三步——① 搜索期 enrich 并行预拉候选（有界并发 8、单候选 60s 超时、失败/超时隔离直通，内存 `SwitchPrefetchCache`，key=`source_url\u0000book_url` 对齐上游 `primaryStr()`、目录上限 30000）；② 选中命中 → 直接提交缓存详情+目录（**零网络、选中即落地**），未命中 → 现场抓取（可取消）；③ 新 FFI `cancelSwitchSourceApply`（对齐上游 `cancelChangeSource`）apply 代数 +1 并 bump 目录刷新代数，在途 apply 提交前阻断（DB 零变更）。§2.4 方法数 17→19、附录合计 278→280、BookApi 275→277，见 `docs/API_CONTRACT.md` 2026-09-24 行与 §2.4 ℹ️ 块；Rust `source_switch.rs` 10 条新单测 + FFI 2 个新导出，Flutter 侧 `BookApi.switchSourcePrefetch`/`cancelSwitchSourceApply` + 换源页可取消加载态与上游 zh 进度串对齐）
+
+修订：Codex｜2026-09-27（统一计划职责与当前用户确认的主线：本文作为唯一开放任务/状态入口；新增 `REFACTORING_WORKFLOW.md` 定义 Agent 派发、实施、验证和关闭流程；先完成书籍主流程，漫画/视频先于音频；参考版用户可见行为为目标，实质冲突先向用户裁决。旧登记须核验后再派发）

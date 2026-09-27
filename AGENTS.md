@@ -16,7 +16,6 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 | `flutter_legado/` | Flutter UI（Windows 构建主模块），`lib/` 为 Dart 源码 |
 | `rust/` | Rust 工作区（legado-book / legado-core / legado-db / legado-ffi / legado-js / legado-net / legado-parser / legado-server） |
 | `docs/` | 项目文档（计划、报告、规范、API 契约） |
-| `.qoder/` | Qoder 配置（rules 规则、skills、agents、specs、repowiki） |
 
 ## 验证命令
 
@@ -27,21 +26,24 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 
 ## 规范与文档路由（改动前必读）
 
-1. [.qoder/rules/legado-dev-conventions.md](.qoder/rules/legado-dev-conventions.md) — 开发规范：优先级分类（P0/P1/P2）、验证优先工作流、Git 安全实践、Windows 编码处理、文档存放规范
-2. [docs/TWO_TRACK_DEV_SPEC.md](docs/TWO_TRACK_DEV_SPEC.md) — 双轨开发规范：Rust+Flutter FFI 契约冻结、Mock 驱动、原子化工作流
-3. [docs/UI_FIX_PLAN.md](docs/UI_FIX_PLAN.md) — UI 修复的权威执行依据（四步文档研读流程）
-4. [docs/API_CONTRACT.md](docs/API_CONTRACT.md) — FFI API 契约（跨轨变更必须先冻结契约）
-5. [docs/design_system.md](docs/design_system.md) — 设计系统
-6. [docs/REFACTORING_ACTIVE_PLAN.md](docs/REFACTORING_ACTIVE_PLAN.md) — 当前唯一后续重构执行计划（历史阶段计划见 docs/过期文档/）
+1. [.qoder/rules/legado-dev-conventions.md](.qoder/rules/legado-dev-conventions.md) — 项目开发规范：优先级分类（P0/P1/P2）、验证优先工作流、Git 安全实践、Windows 编码处理、文档存放规范
+2. [docs/REFACTORING_WORKFLOW.md](docs/REFACTORING_WORKFLOW.md) — 重构任务统一实施、Agent 派发、验证、证据与关闭流程
+3. [docs/REFACTORING_ACTIVE_PLAN.md](docs/REFACTORING_ACTIVE_PLAN.md) — 当前唯一开放任务与进度状态入口
+4. [docs/API_CONTRACT.md](docs/API_CONTRACT.md) — FFI API 契约（跨轨变更必须先更新并冻结契约）
+5. [docs/TWO_TRACK_DEV_SPEC.md](docs/TWO_TRACK_DEV_SPEC.md) — Rust/Flutter 双轨边界、Mock 与 FRB/native 构建专项说明
+6. [docs/SCREEN_1TO1_PARITY_SPEC_20260914.md](docs/SCREEN_1TO1_PARITY_SPEC_20260914.md) — 参考版视觉比对规范；状态回写 Active 计划
+7. [docs/READING_FLOW_DEFECT_HUNT_PLAN_20260924.md](docs/READING_FLOW_DEFECT_HUNT_PLAN_20260924.md) — 阅读主流程缺陷发现/取证专项流程
+8. [docs/design_system.md](docs/design_system.md) — 设计系统
+9. [docs/UI_FIX_PLAN.md](docs/UI_FIX_PLAN.md) — 历史 UI 批次材料，不作为当前需求或验收标准
 
 ## 关键约束
 
-- **原版对齐**：功能实现逻辑必须参照 Android 原版源码（功能基准：`com.legado.app.release` 3.26081008）；界面功能、页面结构与交互流程必须与原版保持一致；**视觉一比一（2026-09-14 用户修订，废止 2026-08-05「视觉风格自由」授权）**：UI 视觉（布局骨架/位置层级/间距圆角/图标文案形态/**配色/字体/明暗主题**）以参考版实机截图为准一比一对齐，原版仅作功能基准（双基准口径：功能=原版+参考版任一侧，视觉=参考版）；实现层仍遵循 Material Design 3（参考版即 M3 风格）；执行规范与台账见 docs/SCREEN_1TO1_PARITY_SPEC_20260914.md 与 docs/SCREEN_1TO1_PARITY_LEDGER_20260914.md；**全域口径（2026-09-20 用户确认）**：视觉（布局/层级/间距/配色/字体/明暗主题，**含非深色的全部屏幕与交互形态**）一律以参考版为准，不再逐屏单独裁决；**功能实现与重构决策倾向重构版（我方）的做法**——参考版仅为原版的 UI 风格改造版、功能基本一致，故实现层不必照搬其内部做法，**仅当差异特别大时才上报用户决断**
+- **原版/参考版对齐**：参考版是当前用户可见行为和视觉目标；按参考版核对布局、交互、结果、配色、字体和明暗主题。Android 原版用于语义交叉核对。若参考版与 Android 原版或用户已确认规则出现实质用户可见差异，暂停该项并向用户提供证据和选项，未经裁决不得自行选择。Rust + Flutter 内部架构保持现状，除非用户另行批准架构调整。详细流程见 `docs/REFACTORING_WORKFLOW.md`，逐屏方法见 `docs/SCREEN_1TO1_PARITY_SPEC_20260914.md`。
 - **双轨并存**：旧 Android 代码暂不删除，保持双轨并存；Rust 核心逻辑 + Flutter UI 为新架构
-- **FFI 变更**：修改 Rust/Dart FFI 边界前，先更新 `docs/API_CONTRACT.md` 契约，再实施代码；跨轨阻塞项须 Rust 轨先行交付契约；契约修改需双方（Qoder/QoderCN）确认；Mock 数据使用从原 Android 应用抓取的真实 JSON
+- **FFI 变更**：修改 Rust/Dart FFI 边界前，先更新 `docs/API_CONTRACT.md` 契约，再实施代码；跨轨阻塞项须 Rust 轨先行交付契约；契约修改需相关轨道负责人确认；Mock 数据使用从原 Android 应用抓取的真实 JSON
 - **重构红线**：本项目为重构项目，**未经允许禁止新增 Android 原版不存在的功能**（用户明确授权的除外，如 LargeTitle 大标题、颜文字空态彩蛋、阅读热力图等，授权记录见提交与文档）；发现未授权的偏离项（如推荐算法等）必须清理，一切以不偏离重构核心为目标（2026-08-29 用户修订授权口径）
 - **执行边界**：不得超范围删除或修改文件，删除/修改代码前必须先确认范围无误
-- **计划驱动**：每阶段开发前先审查当前执行计划（docs/REFACTORING_ACTIVE_PLAN.md，唯一开放项台账；历史计划已归档 docs/过期文档/），确认进度符合度后按 P0/P1/P2 优先级顺序执行
+- **计划驱动**：所有阶段按 `docs/REFACTORING_WORKFLOW.md` 实施；唯一开放项、任务状态及进度只维护于 `docs/REFACTORING_ACTIVE_PLAN.md`。专题文档只保存方法和证据，不另设状态源；历史计划不得重新作为当前任务来源。
 - **UI 层职责边界**：UI 层只做界面渲染、交互与状态管理，不含业务逻辑；数据经 Rust Bridge 获取；遵循 UI 层与底层分离原则
 - **文档存放**：新建计划/报告/交接类 `.md` 必须放 `docs/`；根目录仅保留 README.md、CHANGELOG.md、LICENSE、AGENTS.md 等约定文件
 - **全中文规范**：汇报、代码注释全部使用中文；commit 描述/正文使用中文（类型/作用域按约定式提交用英文小写）
@@ -50,7 +52,7 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 ## Git 纪律与版本控制
 
 - 每次改动验证通过后立即 commit 到本地；阶段性成果须 commit 并 push
-- **提交信息必须遵循约定式提交（Conventional Commits）**：`<类型>[作用域]: <中文描述>`，类型用 `fix`/`feat`/`docs`/`refactor`/`test`/`chore` 等英文小写，作用域用 `ui`/`rust`/`tool`（替代旧式 `[UI]`/`[Rust]`/`[Tool]` 前缀，如 `fix(ui): ...`、`fix(rust): ...`）；`fix` 必须在正文说明根因、脚注关联 `Fixes #编号`；描述 ≤72 字符、正文行 ≤100 字符、不得混用类型、不得用模糊描述；详细规则见 `.qoder/rules/legado-dev-conventions.md`「Git 提交规范」章节
+- **提交信息必须遵循约定式提交（Conventional Commits）**：`<类型>[作用域]: <中文描述>`，类型用 `fix`/`feat`/`docs`/`refactor`/`test`/`chore` 等英文小写，作用域用 `ui`/`rust`/`tool`（替代旧式 `[UI]`/`[Rust]`/`[Tool]` 前缀，如 `fix(ui): ...`、`fix(rust): ...`）；`fix` 必须在正文说明根因、脚注关联 `Fixes #编号`；描述 ≤72 字符、正文行 ≤100 字符、不得混用类型、不得用模糊描述；详细规则见项目开发规范文件「Git 提交规范」章节
 - 分支策略：`feature/rust-*` 与 `feature/ui-*` 独立开发，集成使用 `integration/*` 分支；仅从当前 HEAD 创建规范分支，不得改动已提交历史
 - 署名规范：UI 层代码署名「— 子代理名称 + UI」，Bridge 层代码署名「— 子代理名称 + Bridge」，文档末尾附编写者署名与日期
 - 批次修复按 pubspec 版本 patch 递增（如 2.0.0+2 → 2.0.1+3），每批同步更新 CHANGELOG 与应用内更新日志 `flutter_legado/assets/updateLog.md`（关于页展示，仅记录用户可见变化，按日期条目格式），记录版本号与贡献者；版本号记录于 CHANGELOG 与提交正文，commit subject 不带版本号
@@ -78,36 +80,29 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 
 ## 多代理协作规则
 
-- 主 Agent（Qoder）职责：① 拆解并分发任务至子代理；② 推进任务，子代理卡住时主动跟进协助解困；③ 验收任务
+- 主 Agent 职责：① 拆解并分发任务至子代理；② 推进任务，子代理卡住时主动跟进协助解困；③ 验收任务
 - **（2026-09-11 用户明确）子代理执行原则**：
   - **主代理只做任务分解与审核**（拆解、派发、读 diff 复核、验收判定、文档与提交），**具体执行操作全部交给子代理**（编码、取证、构建、实机验证等），主代理不自行兜底实现
   - **禁止主代理兜底子代理**：子代理失败/超时/卡住时，须先向用户说明情况并**申请同意**后方可改由主代理接手；未获同意不得自行兜底
   - **子代理并行上限 = 2**：任意时刻最多两个子代理并行（原「可大规模并行」口径按此收敛）
-- **子代理路由表**（2026-09-17 修订：角色名与 ZCode 实际类型名对齐，新增执行侧与触发条件）：
+- **Agent 路由表**（按任务能力选择执行者；名称是项目职责标签，不绑定特定 Agent 产品的配置名）：
 
-  | 触发条件 | 角色（须与 ZCode 类型名逐字一致） | 执行侧 | 证据形态 |
+  | 触发条件 | 执行职责 | 执行侧 | 证据形态 |
   |---|---|---|---|
-  | 代码实现/修改 | `full-stack-engineer` | 本地 | 提交 + 自测输出 |
-  | `flutter_legado/**`、`rust/**` 的常规验证 | 不派角色 | — | CI 结果（`flutter analyze && flutter test`、`cargo test`） |
-  | 需实机验证（模拟器冒烟：测试档 MuMu Test `192.168.1.19:5555`） | `QA-engineer` | 本地 | 冒烟脚本退出码 + 日志 |
-  | UI 布局/交互改动 | `UI-operator` | 本地 | 截图对比 |
-  | 跨模块 / FFI 契约 / 公共 API 变更，或 diff 超阈值 | `code-reviewer` | 云端（只发 diff） | 审查结论（提交前） |
-  | 有 bug 且 CI/本地复现不出根因 | `debug-engineer` | 云端 | 根因结论 + 最小复现 |
-  | 引入新依赖 / 技术选型 / 大范围调研与依赖梳理 | `Researcher` | 本地 | 调研结论 + 出处 |
+  | 代码实现/修改 | 编码 Agent | 按项目授权环境 | 提交 + 自测输出 |
+  | `flutter_legado/**`、`rust/**` 的常规验证 | 不额外派发；以 CI 为准 | CI | CI 运行结果 |
+  | 需实机验证 | QA Agent | 经实时探测可用的测试设备 | 脚本退出码 + 日志/截图 |
+  | UI 布局/交互改动 | UI 验收 Agent | 经实时探测可用的设备 | 同条件截图与差异记录 |
+  | 跨模块 / FFI 契约 / 公共 API 变更，或大范围重构 | 独立审查 Agent | 仅提供最小必要上下文 | 提交前审查结论 |
+  | 有 bug 且 CI/本地复现不出根因 | 调试 Agent | 仅提供最小复现和错误信息 | 根因结论 + 最小复现 |
+  | 引入新依赖 / 技术选型 / 大范围调研与依赖梳理 | 研究 Agent | 按任务需要选择 | 调研结论 + 出处 |
 
-  - **角色名必须逐字一致**：ZCode 实际类型名为 `full-stack-engineer`、`QA-engineer`、`code-reviewer`、`debug-engineer`、`Researcher`、`UI-operator`。历史坑：本表旧版写的 `qa`/`researcher`/`ui-operator` 三个写法在 ZCode 中不存在，导致照文档派发失败、角色长期闲置（统计：除 full-stack-engineer 外其余角色使用次数为 0）
-  - 云端角色（`code-reviewer`、`debug-engineer`）**只发最小上下文**（diff / 最小复现 + 错误栈），禁止整库读取
+  - Agent 名称、产品类型和可用工具以当前执行环境为准；本表仅定义职责和证据，不维护特定产品内置角色清单。
+  - 需要云端/外部审查时只发送最小 diff 或最小复现与错误栈，不发送无关源码。
   - 常规任务先判断能否派发（可自包含、上下文隔离有价值、可并行），能派则派
 - 冲突避让：多个子代理同时改代码时必须避让同一文件/模块；任务分配须满足文件不重叠、工作量平均、技能匹配三项原则
 - 文档维护：每阶段结束须及时检查并更新所有相关文档（重构计划、进度、README 等），保证后续开发者可顺利接手
 - 口头约定正式化：主动提示用户是否需要将对话中达成的口头约定整理成清单写入规则文件
-
-## Qoder 配置说明
-
-- `.qoder/agents/builtin/`：Qoder 产品内置专家团模板（code-reviewer、full-stack-engineer、qa、researcher、ui-operator），仅含 frontmatter，由产品自动维护，**勿手动编辑**；需要项目专用 agent 请创建到 `.qoder/agents/`（非 builtin 目录）
-- `.agents/skills/`：**技能权威路径**，当前 53 个技能（资产清单与 lint 仅统计该处）
-- `.qoder/skills/` 与 `.claude/skills/`：同源副本；以 `.agents/skills/` 为权威路径，修改技能后同步副本
-- `.qoder/rules/legado-dev-conventions.md`：项目唯一规则文件，与本文档配合使用
 
 编写者：Qoder ｜ 2026-08-10
 修订：Reasonix ｜ 2026-08-10（更新上游版本基准 3.26081008、计划文档引用、app 文件数；精简技能同步说明）
@@ -116,3 +111,4 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 修订：ZCode（本机 27B 通道）｜ 2026-09-20（**模拟器验证档改用 MuMu「Test测试」实例并用其统一承担自测与用户验收**：guest 直连 `192.168.1.19:5555`、MuMuManager 启动方式与端点失效说明、ROM 限制清单入档；雷电 5556 不再修复、5554 与 5558 档位一并废弃）
 修订：ZCode ｜ 2026-09-24（**设备档停用告警入档**：MuMu guest 仅 `lo`、宿主缺虚拟交换机与 `vmms` → 无外网 + adb 恒 offline，附不经 adb 的诊断配方；恢复前不派设备任务）
 修订：ZCode ｜ 2026-09-23（**MuMu 实操补充入档**：实例↔端点映射会漂（须先 `MuMuManager info -v all` 判定在线实例；index 0 的 adb 端口 16384 与 `emulator-5554` 是同一 guest 的两条路径）、多屏逻辑 display id 会变（输入 `input -d`、截图 `exec-out screencap -d`）、`run-as sqlite3` 种子须装 debug 变体、语义文本在 `content-desc`）
+修订：Codex ｜ 2026-09-27（移除已停用 Agent 工具的配置说明，将 Agent 路由改为按职责描述）

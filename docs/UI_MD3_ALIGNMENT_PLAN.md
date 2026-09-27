@@ -4,6 +4,8 @@
 > 参考目标：https://github.com/HapeLee/legado-with-MD3 （锚点 6dc2972，已消费至本地；当前 HEAD 0ce6805 同结构）
 > 关联规范：`docs/design_system.md`（MD3 token 单一事实源）、`docs/LEGADO_M3_TOKEN_SPEC.md`、`docs/LEGADO_M3_COMPONENT_MAPPING.md`、`docs/UI_MD3_PLAN.md`、`docs/API_CONTRACT.md`、`docs/TWO_TRACK_DEV_SPEC.md`
 
+> **历史方案声明（2026-09-27）**：本方案记录 2026-09-04 的 MD3 风格迁移背景与计划，不是当前任务队列或视觉验收依据。其“视觉风格自由”、90–98% 风格复刻和固定模拟器/分支流程均已过时；当前视觉基准以参考版全域一比一规范为准，当前任务和实施流程分别见 `REFACTORING_ACTIVE_PLAN.md` 与 `REFACTORING_WORKFLOW.md`。本文后续条目仅作历史记录。
+
 ---
 
 ## 一、背景与目标
@@ -205,7 +207,7 @@ HapeLee 纯 Android（`Theme.Material3Expressive.DynamicColors.DayNight + values
 |---|---|
 | 静态门禁 | 每批 `flutter analyze 0 issues` + `flutter test` 全绿（含 `md3_palette_test.dart` 22 组合 ≥AA 4.5 + `md3_acceptance_matrix_test.dart` 渲染矩阵 `theme_config/home/settings/search × WH/koharu/sora × 亮暗`） |
 | 对比度 | `test/unit/md3_palette_test.dart` 自动化守护；`transparent` 豁免、`elink 3.95` 按 `AA-large` 豁免已登记 |
-| 截图 | 模拟器 `-CheckUI` 流程承担（Windows/Linux 字体差异不做 golden 二进制基线），以 `docs/baseline_android/` 功能一致为准，视觉不做像素级验收（`docs/UI_FIX_PLAN.md` 口径） |
+| 截图 | 本文是历史 MD3 整理记录，不作为当前视觉门禁；当前视觉基准、参考图和屏级验收按 `SCREEN_1TO1_PARITY_SPEC_20260914.md` 与对应台账执行，任务状态回写 `REFACTORING_ACTIVE_PLAN.md` |
 | 冒烟 | `.\scripts\emulator_smoke_test.ps1 -Device emulator-5556`（子代理）+ `-Device emulator-5558 -CheckUI`（用户验收） |
 | iOS | `ios-build.yml` 异步（90min 超时）+ 真机侧滑/键盘/Sheet/状态栏三档走查 + `grep -R Cupertino` 零新增；以 CI 为准，Windows 本地不跑 `flutter build ios` |
 | Rust | B0 额外 `cargo test -p legado-js --features quickjs` |
