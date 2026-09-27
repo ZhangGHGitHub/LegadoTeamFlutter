@@ -192,7 +192,7 @@ Flutter 无 Expressive shape scale preset，经 component theme 显式落地（`
 | 状态指示图标 | 语义色（green/orange/error） | 需适配亮暗（暗色用 shade300） |
 | 媒体覆盖层图标 | `#FFFFFF` | 仅在深色覆盖层上使用 |
 
-**图标字体**：Batch 1 起引入 Material Symbols（默认内置/功能图标与底栏 SVG），无法映射为单 glyph 的插画用 MD3 矢量等价物（UI_MD3_PLAN.md 第三节）。
+**图标字体**：Batch 1 起引入 Material Symbols（默认内置/功能图标与底栏 SVG），无法映射为单 glyph 的插画用 MD3 矢量等价物（`过期文档/UI_MD3_PLAN.md` 第三节，已归档）。
 
 **禁止**：
 - 禁止使用 `Colors.black` 作为通用图标色（暗色下不可见）

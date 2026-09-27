@@ -169,7 +169,7 @@ flutter_rust_bridge_codegen generate
 
 ### Makefile（2026-09-22 归档）
 
-> 根目录 `Makefile` 已移入 `docs/过期文档/Makefile` 归档（PENDING_DELETE_20260920.md §P4）：当前开发环境为 Windows、无 `make` 命令（见 AGENTS.md「关键约束」），且 `make build`/`make gen` 等目标已不存在。
+> 根目录 `Makefile` 已移入 `docs/过期文档/Makefile` 归档（`过期文档/PENDING_DELETE_20260920.md` §P4，已归档）：当前开发环境为 Windows、无 `make` 命令（见 AGENTS.md「关键约束」），且 `make build`/`make gen` 等目标已不存在。
 > 实际执行以：codegen → `scripts/generate-bridge.ps1`（见上节）；构建/验证 → AGENTS.md「验证命令」（`cargo check/test`、`flutter analyze/test`、`flutter build`）。
 
 ---

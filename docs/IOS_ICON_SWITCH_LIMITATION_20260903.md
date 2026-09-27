@@ -3,7 +3,7 @@
 > 日期：2026-09-03
 > 状态：**已收口**——H5（旁载签名 / LaunchServices 注册语境）决定性坐实，代码层无法修复
 > 关联台账：`REFACTOR_DEFECT_AUDIT_V2_20260902.md` §2.3 / §8.8（P2-D，本文件为其关闭记录）
-> 前序：`IOS_TRACK_FEASIBILITY_20260830.md`（旁载签名语境假设首次登记）
+> 前序：`过期文档/IOS_TRACK_FEASIBILITY_20260830.md`（已归档；旁载签名语境假设首次登记）
 
 ---
 

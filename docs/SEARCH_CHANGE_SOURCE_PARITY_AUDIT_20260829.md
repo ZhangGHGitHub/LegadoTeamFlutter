@@ -6,7 +6,7 @@
 > 审计性质：只读，未改动任何代码
 > 对比对象：重构轨 `rust/legado-ffi` + `flutter_legado` vs 原版 `app/src/main/java/io/legado/app`
 > 原版关键文件：WebBook.kt / BookList.kt / SearchModel.kt / ChangeBookSourceViewModel.kt / SearchBookDao.kt / SearchScope.kt
-> 关联文档：SEARCH_PARITY_REMEDIATION_PLAN_20260828.md、REFACTOR_DEFECT_AUDIT_20260828.md
+> 关联文档：`过期文档/SEARCH_PARITY_REMEDIATION_PLAN_20260828.md`、`过期文档/REFACTOR_DEFECT_AUDIT_20260828.md`（两文均已归档 docs/过期文档/）
 
 ## 审计方法
 

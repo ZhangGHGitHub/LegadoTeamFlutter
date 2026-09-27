@@ -1,6 +1,6 @@
 # S0-C 双包终态对比收口报告（2026-09-03）
 
-> 性质：P0-2 S0 双包基线的终态证据采集与 parity 判定（接续 `SEARCH_PARITY_REMEDIATION_PLAN_20260828.md` §8.6/§8.8 三轮未闭环遗留）
+> 性质：P0-2 S0 双包基线的终态证据采集与 parity 判定（接续 `过期文档/SEARCH_PARITY_REMEDIATION_PLAN_20260828.md` §8.6/§8.8 三轮未闭环遗留；该计划现已归档）
 > 设备：emulator-5556 单机双包串行（原版 `com.legado.app.release 3.26082623` + 重构版 `io.legado.flutter_legado`，均装于 5556）
 > HEAD 基线：`4fc08cb977`；夹具：`scripts/s0c_server.py`（v4）；驱动：`scripts/s0c_run_same_device.py`
 > 机读证据：`docs/evidence/search_parity_20260903/s0c_report_same_device.json`（原始 dump/XML/服务器 JSONL 见 `.e2e_s0c/`，不入库）

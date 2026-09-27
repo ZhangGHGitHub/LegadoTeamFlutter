@@ -45,7 +45,7 @@
 | 13 | MOBI LZMA/加密 | — | — | `mobi.rs:21 未实现：LZMA(17481)/加密`、`423 encryption!=0&&!=1`、`500 compression 17481` 均保留，属可接受边界，导入失败文案未在本次验证。 |
 | 14 | 引擎缓存 8 vs 并发 32 | ❌ | ✅ 已对齐 | `engine_cache.rs:17 MAX_ENTRIES=32`，注释“与 SEARCH_CONCURRENCY=32 对齐”，`search.rs:102 SEARCH_CONCURRENCY=32`，1:1。 |
 | 15 | 杂物与 .gitignore | ❌ (169) | ✅ 已治 | `.gitignore:72 .tmp_* /73 .shot_* /78 timing_book_out*` 等已补，`git status --porcelain` 从 169→46（M33+??13），`??` 余 `android/app/...` 由 `.gitignore` 登记的不上传名单覆盖，属预期。 |
-| 16 | 超长文件/golden | ❌ | 🟡 golden 策略已定，未缩文件 | `matchesGoldenFile` 仍 0，但 `UI_MD3_PLAN.md:28` 已登记“以渲染矩阵替代 golden（跨平台字体脆弱）+ 模拟器 -CheckUI 承担截图验收”，`md3_acceptance_matrix_test.dart` 在位。文件长度：9 个超长（V1 7→9，新增 `theme_config_screen 1411` / `rss_source_manage 1319`）：`book_info 2165`/`source 1745`/`reader_config_panel 1694`/`source_edit 1634`/`search 1558`/`other_settings 1472`/`reader_comic 1379` + widget `reader_top_bar 1462`。 |
+| 16 | 超长文件/golden | ❌ | 🟡 golden 策略已定，未缩文件 | `matchesGoldenFile` 仍 0，但 `过期文档/UI_MD3_PLAN.md:28`（已归档）已登记“以渲染矩阵替代 golden（跨平台字体脆弱）+ 模拟器 -CheckUI 承担截图验收”，`md3_acceptance_matrix_test.dart` 在位。文件长度：9 个超长（V1 7→9，新增 `theme_config_screen 1411` / `rss_source_manage 1319`）：`book_info 2165`/`source 1745`/`reader_config_panel 1694`/`source_edit 1634`/`search 1558`/`other_settings 1472`/`reader_comic 1379` + widget `reader_top_bar 1462`。 |
 | 17 | UI 直连 http / 主 isolate jsonDecode | ❌ | 🟡 未动，但有注入点 | `auto_task_notifier.dart:7 import http` 仍在（REST 降级）；`reader_screen.dart:276/841 jsonDecode` 量级小，P3-4 已治封面 `jsonDecode` 卡顿，余量同类模式。 |
 | 18 | 平台边界登记 | — | — | RSS 图文降级/悬浮窗/二维码占位等维持，V2 不变。 |
 

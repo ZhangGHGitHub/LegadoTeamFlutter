@@ -13,7 +13,7 @@
 
 ## 基准口径
 
-- **功能语义核对 = Android 原版**（legado-upstream 源码）；功能基准为双基准（原版 + 参考版任一侧存在即应有），行为分歧时以原版源码裁决（见 [SCREEN_1TO1_PARITY_SPEC_20260914.md](SCREEN_1TO1_PARITY_SPEC_20260914.md) §一）。
+- **功能基准 = Android 原版与参考版共同核对**（任一侧存在即应有能力）；**参考版负责用户可见行为和视觉目标**，**Android 原版用于语义交叉核对**；两者存在实质差异时暂停该项并提交证据与选项，由用户裁决（见 [SCREEN_1TO1_PARITY_SPEC_20260914.md](SCREEN_1TO1_PARITY_SPEC_20260914.md) §一）。
 - **视觉验收 = 参考版截图**（`io.legato.kazusa` 实机截图），逐屏方法与台账见 [SCREEN_1TO1_PARITY_SPEC_20260914.md](SCREEN_1TO1_PARITY_SPEC_20260914.md) / [SCREEN_1TO1_PARITY_LEDGER_20260914.md](SCREEN_1TO1_PARITY_LEDGER_20260914.md)；深色基准见 [DARK_THEME_PARITY_LEDGER_20260920.md](DARK_THEME_PARITY_LEDGER_20260920.md)。
 - 历史截图目录（`baseline_android/`、`baseline_flutter/`、`baseline_reference/`、`parity_shots/` 等）所载采集日期、工具与模拟器信息为**历史取证事实，不代表当前设备状态**。
 - 当前设备任务必须以执行前实时探测为准（MuMu 在线实例、ADB 端点、guest 网络与应用变体）；不把文档中的固定端口或旧设备可用记录当作当前保证（雷电档已于 2026-09-20 弃用）。
