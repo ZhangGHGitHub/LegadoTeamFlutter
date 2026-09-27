@@ -1092,7 +1092,10 @@ mod login_check_tests {
             200,
         )
         .expect("JS 修改响应应首检成功");
-        assert_eq!(r.body, "modified-body", "应采用 JS 修改的响应体，实际: {r:?}");
+        assert_eq!(
+            r.body, "modified-body",
+            "应采用 JS 修改的响应体，实际: {r:?}"
+        );
         assert_eq!(r.url, "https://a.com/new", "应采用 JS 修改的 URL");
         assert_eq!(r.code, 200);
     }
