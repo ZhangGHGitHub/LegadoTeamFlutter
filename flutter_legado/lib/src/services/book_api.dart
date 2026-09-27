@@ -782,6 +782,14 @@ abstract class BookApi {
   /// 清除指定书籍章节缓存，返回删除行数
   Future<int> clearBookCache(String bookUrl);
 
+  /// 清除指定书籍**单章**的章节缓存，返回删除行数
+  ///
+  /// 对齐上游原版 `BookHelp.delContent` 章级语义（STAGE3-C2B，契约 §2.16）：
+  /// 仅删该章缓存行（bookUrl + chapterIndex 定位），**不触碰**
+  /// `sameTitleRemoved` 等章级开关键，不触发整书清理；
+  /// 行不存在为 no-op 成功（返回 0）；空 bookUrl 返回参数错误。
+  Future<int> clearChapterCache(String bookUrl, int chapterIndex);
+
   /// 获取缓存书籍数量
   Future<int> getCacheBookCount();
 

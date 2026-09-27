@@ -95,6 +95,10 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
   @override
   Future<int> clearBookCache(String bookUrl) async => 0;
 
+  /// Mock 无缓存存储：no-op 返回 0（对齐 clearBookCache 的 Mock 语义）
+  @override
+  Future<int> clearChapterCache(String bookUrl, int chapterIndex) async => 0;
+
   @override
   Future<int> getCacheBookCount() async => 3;
 

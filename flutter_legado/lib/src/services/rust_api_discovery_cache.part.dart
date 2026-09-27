@@ -149,6 +149,16 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
     return deleted.toInt();
   }
 
+  /// 清除指定书籍单章的章节缓存（对齐上游原版 BookHelp.delContent 章级语义）
+  @override
+  Future<int> clearChapterCache(String bookUrl, int chapterIndex) async {
+    final deleted = await bridge.cacheClearChapter(
+      bookUrl: bookUrl,
+      chapterIndex: chapterIndex,
+    );
+    return deleted.toInt();
+  }
+
   /// 获取缓存书籍数量
   @override
   Future<int> getCacheBookCount() async {

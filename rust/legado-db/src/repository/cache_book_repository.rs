@@ -228,6 +228,26 @@ impl<'a> CacheBookRepository<'a> {
         Ok(count)
     }
 
+    /// 按 (book_url, chapter_index) 删除单章缓存（STAGE3-C2B）
+    ///
+    /// 对齐上游原版 `BookHelp.delContent` 章级语义：仅删除该书的指定
+    /// 章节缓存行，同书其他章节缓存不受影响；行不存在为 no-op（返回 0）。
+    /// 与 [`Self::delete_by_book`] 的区别：不整书清理。
+    pub fn delete_by_book_and_index(
+        &self,
+        book_url: &str,
+        chapter_index: i32,
+    ) -> LegadoResult<usize> {
+        let count = self
+            .conn
+            .execute(
+                "DELETE FROM cached_chapters WHERE book_url = ?1 AND chapter_index = ?2",
+                params![book_url, chapter_index],
+            )
+            .map_err(|e| LegadoError::Database(format!("删除单章缓存失败: {e}")))?;
+        Ok(count)
+    }
+
     /// 删除过期缓存（cached_at < before_timestamp），返回删除行数
     pub fn delete_expired(&self, before_timestamp: i64) -> LegadoResult<usize> {
         let count = self
@@ -454,6 +474,44 @@ mod tests {
         assert_eq!(got_a.content, "A 更新后的正文");
         // bookB 不受影响，仍为原始内容
         assert_eq!(got_b.content, "content here");
+    }
+
+    /// STAGE3-C2B：单章删除只删 (book_url, chapter_index) 行——
+    /// 同书其他章节保留、行不存在为 no-op（返回 0）、他书同索引不受影响
+    #[test]
+    fn test_delete_by_book_and_index_single_row() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = CacheBookRepository::new(db.connection());
+
+        repo.insert(&make_cached("book1", "http://ex.com/ch1", 0, 1000))
+            .unwrap();
+        repo.insert(&make_cached("book1", "http://ex.com/ch2", 1, 2000))
+            .unwrap();
+        repo.insert(&make_cached("book2", "http://ex.com/ch1", 0, 3000))
+            .unwrap();
+
+        // 删 book1 的第 0 章：仅删 1 行
+        let deleted = repo.delete_by_book_and_index("book1", 0).unwrap();
+        assert_eq!(deleted, 1);
+
+        // book1 第 1 章保留，book2 同索引第 0 章不受影响
+        assert!(repo
+            .get_by_book_and_chapter_url("book1", "http://ex.com/ch1")
+            .unwrap()
+            .is_none());
+        assert!(repo
+            .get_by_book_and_chapter_url("book1", "http://ex.com/ch2")
+            .unwrap()
+            .is_some());
+        assert!(repo
+            .get_by_book_and_chapter_url("book2", "http://ex.com/ch1")
+            .unwrap()
+            .is_some());
+        assert_eq!(repo.get_stats().unwrap().total_chapters, 2);
+
+        // 行不存在为 no-op：重复删除 / 未缓存索引均返回 0 且不报错
+        assert_eq!(repo.delete_by_book_and_index("book1", 0).unwrap(), 0);
+        assert_eq!(repo.delete_by_book_and_index("book1", 99).unwrap(), 0);
     }
 
     /// Task #19 补强3：复合键删除只删本书，不误伤其他书同 URL 缓存

@@ -1755,6 +1755,17 @@ pub mod ffi {
         Ok(crate::api::cache_api::clear_book_cache(&book_url)?)
     }
 
+    /// 清除指定书籍单章的章节缓存，返回删除行数（STAGE3-C2B）
+    ///
+    /// 对齐上游原版 `BookHelp.delContent` 章级语义：仅删该章缓存行，
+    /// 不触碰章级开关键，不触发整书清理；行不存在为 no-op（返回 0）。
+    pub fn cache_clear_chapter(book_url: String, chapter_index: i32) -> Result<i32, BridgeError> {
+        Ok(crate::api::cache_api::clear_chapter_cache(
+            &book_url,
+            chapter_index,
+        )?)
+    }
+
     /// 获取章节缓存内容
     pub fn cache_get_chapter(book_url: String, chapter_index: i32) -> Result<String, BridgeError> {
         let content = crate::api::cache_api::get_chapter_cache(&book_url, chapter_index)?;

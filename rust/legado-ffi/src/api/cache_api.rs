@@ -57,6 +57,27 @@ pub fn clear_book_cache(book_url: &str) -> LegadoResult<i32> {
     })
 }
 
+/// 清除指定书籍**单章**的章节缓存（STAGE3-C2B，API_CONTRACT §2.16）
+///
+/// 对齐上游原版 `BookHelp.delContent` 章级语义：仅删除该书指定索引的
+/// 缓存行（book_url + chapter_index 定位），同书其他章节缓存不受影响；
+/// **不触碰** `sameTitleRemoved` 等章级开关键——开关键复位是整书清理
+/// （[`clear_book_cache`] / [`clear_cache_before`]）的语义，章级失效不适用。
+/// 行不存在为 no-op 成功（返回 0）；空 bookUrl 返回参数错误。
+///
+/// 供阅读器「刷新正文」先失效当前章再强制联网重取（对齐上游
+/// `ReadBookViewModel.refreshContentDur` = delContent → loadContent）。
+pub fn clear_chapter_cache(book_url: &str, chapter_index: i32) -> LegadoResult<i32> {
+    if book_url.trim().is_empty() {
+        return Err(LegadoError::Internal("bookUrl 不能为空".into()));
+    }
+    with_database(|db| {
+        let repo = CacheBookRepository::new(db.connection());
+        let deleted = repo.delete_by_book_and_index(book_url, chapter_index)?;
+        Ok(deleted as i32)
+    })
+}
+
 /// 获取指定章节的缓存内容（无缓存返回空字符串）
 ///
 /// [B-1] 空正文缓存行按 miss 返回空（对齐上游 BookHelp.kt:271/:557-559）。
@@ -316,6 +337,85 @@ mod tests {
 
         // 清空缓存不报错
         assert!(clear_cache().unwrap());
+    }
+
+    /// STAGE3-C2B：单章失效只删 (book_url, chapter_index) 行——
+    /// 同书他章保留、`sameTitleRemoved` 章级开关键不动、行不存在 no-op
+    #[test]
+    fn test_clear_chapter_cache_single_row() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_cache().unwrap();
+
+        let book_url = "http://clear-chapter.example.com/book1";
+
+        // 两章缓存 + 一章级「不删重复标题」开关键
+        assert!(save_chapter_content(
+            book_url,
+            0,
+            "第一章",
+            "第一章正文",
+            "http://clear-chapter.example.com/ch1"
+        )
+        .unwrap());
+        assert!(save_chapter_content(
+            book_url,
+            1,
+            "第二章",
+            "第二章正文",
+            "http://clear-chapter.example.com/ch2"
+        )
+        .unwrap());
+        with_database(|db| {
+            let repo = CacheRepository::new(db.connection());
+            repo.put(&format!("sameTitleRemoved:{book_url}:0"), "1", 0)?;
+            Ok(())
+        })
+        .unwrap();
+
+        // 仅失效第 0 章
+        let deleted = clear_chapter_cache(book_url, 0).unwrap();
+        assert_eq!(deleted, 1, "应仅删除 1 行");
+
+        // 第 0 章已删、第 1 章保留（无整书清理）
+        assert!(
+            get_chapter_cache(book_url, 0).unwrap().is_empty(),
+            "被失效章缓存应已删除"
+        );
+        assert_eq!(get_chapter_cache(book_url, 1).unwrap(), "第二章正文");
+
+        // 章级开关键不受影响（区别于 clear_book_cache 的整书复位语义）
+        with_database(|db| {
+            let repo = CacheRepository::new(db.connection());
+            assert!(
+                repo.contains_key(&format!("sameTitleRemoved:{book_url}:0"))?,
+                "章级开关键不得被单章失效触碰"
+            );
+            Ok(())
+        })
+        .unwrap();
+
+        // 行不存在为 no-op：重复删除 / 未缓存索引均返回 0 且不报错
+        assert_eq!(clear_chapter_cache(book_url, 0).unwrap(), 0);
+        assert_eq!(clear_chapter_cache(book_url, 99).unwrap(), 0);
+
+        // 清理测试数据
+        clear_cache().unwrap();
+    }
+
+    /// STAGE3-C2B：空 bookUrl 为参数错误（不上抛至 DB 层）
+    #[test]
+    fn test_clear_chapter_cache_empty_book_url() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        let err = clear_chapter_cache("", 0).unwrap_err();
+        assert!(
+            err.to_string().contains("bookUrl 不能为空"),
+            "空 bookUrl 应报参数错误，实际: {err}"
+        );
+        assert!(
+            matches!(err, LegadoError::Internal(_)),
+            "空 bookUrl 应为 Internal（参数）错误"
+        );
     }
 
     /// Task #136 R5：写入→cache_get 读回一致

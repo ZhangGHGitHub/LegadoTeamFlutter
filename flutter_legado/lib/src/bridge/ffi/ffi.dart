@@ -1345,6 +1345,18 @@ Future<bool> cacheClear() => RustLib.instance.api.crateFfiFfiCacheClear();
 Future<int> cacheClearBook({required String bookUrl}) =>
     RustLib.instance.api.crateFfiFfiCacheClearBook(bookUrl: bookUrl);
 
+/// 清除指定书籍单章的章节缓存，返回删除行数（STAGE3-C2B）
+///
+/// 对齐上游原版 `BookHelp.delContent` 章级语义：仅删该章缓存行，
+/// 不触碰章级开关键，不触发整书清理；行不存在为 no-op（返回 0）。
+Future<int> cacheClearChapter({
+  required String bookUrl,
+  required int chapterIndex,
+}) => RustLib.instance.api.crateFfiFfiCacheClearChapter(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+);
+
 /// 获取章节缓存内容
 Future<String> cacheGetChapter({
   required String bookUrl,
