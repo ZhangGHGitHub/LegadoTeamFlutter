@@ -29,6 +29,24 @@ use crate::retry::{RetryConfig, RetryExecutor};
 use crate::ssl_config::SslConfig;
 use crate::user_agent::{UserAgentMiddleware, UserAgentRotator};
 
+/// 缺省 User-Agent：桌面 Chrome 形态（**全仓唯一缺省 UA 字面量**）
+///
+/// 上游对齐（`AppConfig.kt:803-809` `getPrefUserAgent()` 缺省值）：所有未
+/// 显式配置 UA 的请求（含 JS 桥 ajax，`HttpHelper.kt:74-77` 拦截器）都
+/// 携带该浏览器 UA；"Legado/1.0" 会被反爬站点识别为非浏览器而拒绝/返回
+/// 空列表。
+///
+/// 该常量被两侧网络客户端共同引用——FFI 主链路（`legado-ffi` search.rs
+/// `ensure_default_user_agent` / image_api）与 JS 桥四个共享客户端池
+/// （`LegadoClientConfig::default()`，legado-js host_api/network.rs 池
+/// 配置逐项派生自 Default）——同 UA 指纹使 WAF 与 UA 绑定的 cookie 能
+/// 跨层复用（`.tmp/engine_forensic_d/report_d.md`；此前 Default 为
+/// "Legado/1.0"，主链路已补注入而 JS 桥四池漏网，指纹不一致致 WAF
+/// cookie 跨层失效）。漂移防护：
+/// `legado-ffi search.rs::test_default_user_agent_matches_net_client_default`。
+pub const DEFAULT_USER_AGENT: &str =
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
 /// HTTP 客户端配置
 ///
 /// 默认值参考 `HttpHelper.kt` 中 `okHttpClient` 的构建参数。
@@ -38,7 +56,7 @@ pub struct LegadoClientConfig {
     pub connect_timeout: Duration,
     /// 读取超时，默认 60s（对应 OkHttp `.readTimeout(60, TimeUnit.SECONDS)`）
     pub read_timeout: Duration,
-    /// User-Agent 字符串（默认 UA，轮换优先级低于 `user_agents`）
+    /// User-Agent 字符串（缺省见 [`DEFAULT_USER_AGENT`]，轮换优先级低于 `user_agents`）
     pub user_agent: String,
     /// 代理配置（单一代理，兼容旧接口）
     pub proxy: Option<ProxyConfig>,
@@ -67,7 +85,10 @@ impl Default for LegadoClientConfig {
         Self {
             connect_timeout: Duration::from_secs(15),
             read_timeout: Duration::from_secs(60),
-            user_agent: "Legado/1.0".to_string(),
+            // 缺省 UA 对齐上游浏览器形态（见 [`DEFAULT_USER_AGENT`] 文档）：
+            // 此前 "Legado/1.0" 仅被 FFI 主链路补注入覆盖，JS 桥四池漏网，
+            // 两客户端 UA 指纹不一致致 WAF cookie 跨层失效
+            user_agent: DEFAULT_USER_AGENT.to_string(),
             proxy: None,
             accept_invalid_certs: true,
             follow_redirects: true,
@@ -883,6 +904,22 @@ mod tests {
         assert!(cfg.follow_redirects);
         assert!(cfg.retry.is_none());
         assert!(cfg.rate_limit.is_none());
+    }
+
+    /// 缺省 UA 回归防护：必须保持浏览器形态（上游 `AppConfig.kt:803-809`
+    /// 桌面 Chrome UA），且与 FFI 主链路 `ensure_default_user_agent` 同串
+    /// （跨 crate 钉死见 legado-ffi search.rs::test_default_user_agent_matches_net_client_default）
+    #[test]
+    fn test_default_user_agent_is_browser_ua() {
+        let cfg = LegadoClientConfig::default();
+        assert_eq!(cfg.user_agent, DEFAULT_USER_AGENT);
+        assert!(
+            cfg.user_agent.starts_with("Mozilla/5.0")
+                && cfg.user_agent.contains("Chrome/")
+                && cfg.user_agent.contains("Safari/537.36"),
+            "缺省 UA 应为桌面 Chrome 形态: {}",
+            cfg.user_agent
+        );
     }
 
     #[test]

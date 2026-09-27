@@ -18,6 +18,7 @@ use legado_core::source_matcher::SearchCandidate;
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::repository::read_record_repository::decode_read_record_authors;
 use legado_db::ReadRecordRepository;
+use legado_net::client::DEFAULT_USER_AGENT;
 use legado_net::LegadoClient;
 use legado_parser::{AnalyzeUrl, RequestMethod};
 
@@ -2181,16 +2182,16 @@ fn parse_header_option(header_str: Option<&str>) -> Option<HashMap<String, Strin
 /// 请求头缺少 User-Agent 时补充 Chrome UA
 ///
 /// [UI-fix 2026-08-10 | Reasonix] 对齐原版 BaseSource.kt:202-204 + AppConfig.userAgent：
-/// 默认 UA（Legado/1.0）会被反爬站点识别为非浏览器而拒绝/返回空列表。
+/// 默认 UA（旧缺省 "Legado/1.0"）会被反爬站点识别为非浏览器而拒绝/返回空列表。
 /// 书源 header 已配置 UA（任意大小写键名）时不覆盖。
+///
+/// UA 字面量统一引用 [`legado_net::client::DEFAULT_USER_AGENT`]（全仓唯一
+/// 缺省 UA 常量，与 JS 桥共享客户端池的 `LegadoClientConfig::default` 同串
+/// ——同 UA 指纹使 WAF 与 UA 绑定的 cookie 跨层复用；跨 crate 钉死测试
+/// `test_default_user_agent_matches_net_client_default` 防漂移）。
 fn ensure_default_user_agent(headers: &mut HashMap<String, String>) {
     if !headers.keys().any(|k| k.eq_ignore_ascii_case("user-agent")) {
-        headers.insert(
-            "User-Agent".to_string(),
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 \
-             (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                .to_string(),
-        );
+        headers.insert("User-Agent".to_string(), DEFAULT_USER_AGENT.to_string());
     }
 }
 
@@ -2506,6 +2507,26 @@ mod tests {
         ensure_default_user_agent(&mut headers);
         assert_eq!(headers.get("user-agent").unwrap(), "CustomMobile/1.0");
         assert!(headers.keys().all(|k| k != "User-Agent"));
+    }
+
+    /// 跨 crate 不变式：FFI 主链路注入的缺省 UA 与 JS 桥共享客户端池
+    /// （legado-net `LegadoClientConfig::default`，四池配置逐项派生自 Default）
+    /// 完全同串——两客户端同 UA 指纹，WAF 与 UA 绑定的 cookie（report_d）
+    /// 才能跨层复用；任一侧字面量漂移此测试必红
+    #[test]
+    fn test_default_user_agent_matches_net_client_default() {
+        let mut headers = HashMap::new();
+        ensure_default_user_agent(&mut headers);
+        assert_eq!(
+            headers.get("User-Agent").map(String::as_str),
+            Some(legado_net::client::DEFAULT_USER_AGENT),
+            "ensure_default_user_agent 注入的 UA 必须引用共享常量"
+        );
+        assert_eq!(
+            legado_net::client::LegadoClientConfig::default().user_agent,
+            legado_net::client::DEFAULT_USER_AGENT,
+            "JS 桥池缺省 UA（LegadoClientConfig::default）必须与主链路同串"
+        );
     }
 
     // ─── 测试 1.5: sto66 真实响应体复现（XPath bookList + ## 替换）───────────
