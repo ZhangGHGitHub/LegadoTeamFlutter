@@ -211,19 +211,32 @@ void main() {
   });
 
   // ==========================================================================
-  // C2 「刷新正文」失败 → 整书离线缓存已先被清空（不可回滚）
+  // C2 「刷新正文」失败 → 缓存丢失范围（[STAGE3-C2B | 2026-09-28] 用户
+  // 裁决后语义）：刷新编排改为「先失效当前章（clearChapterCache ≡ 上游
+  // BookHelp.delContent）→ 联网抓取」，不再整书 clearBookCache。失败时：
+  // 同书他章缓存行保留（C2 缺陷根因已除），当前章缓存行已在「先失效」
+  // 步骤删除且失败不回滚（对齐上游 delContent → loadContent 失败语义，
+  // UI 仍显示旧正文 + 失败原因）。
   // ==========================================================================
 
-  group('C2 刷新正文失败导致整书离线缓存丢失', () {
-    test('[C2] 刷新正文抓取失败后，原已缓存章节不得丢失', () async {
+  group('C2 刷新正文失败：仅丢当前章缓存行（对齐上游 delContent）', () {
+    test('[C2] 刷新失败后同书他章缓存保留，当前章缓存行已失效', () async {
       stubProgress();
       stubPerBook();
-      // 模拟 cached_chapters 存储：A 书已缓存 3 章
+      // 模拟 cached_chapters 存储（行键 = 书标签/章序，chapter_index 0 → c1）：
+      // A 书已缓存 3 章
       final cache = <String>{'A/c1', 'A/c2', 'A/c3'};
-      when(() => mockApi.clearBookCache(any())).thenAnswer((_) async {
-        final n = cache.length;
-        cache.clear(); // Rust clearBookCache 为书级 DELETE
-        return n;
+      // [STAGE3-C2B] 章级失效：只删当前章行（≡ 上游 BookHelp.delContent，
+      // Rust 侧 DELETE FROM cached_chapters WHERE book_url=? AND
+      // chapter_index=?，返回删除行数）
+      when(
+        () => mockApi.clearChapterCache(any(), any()),
+      ).thenAnswer((invocation) async {
+        final idx = invocation.positionalArguments[1] as int;
+        final key = 'A/c${idx + 1}';
+        final existed = cache.contains(key);
+        cache.remove(key);
+        return existed ? 1 : 0; // 删除行数（行不存在 = 0，与 Rust 一致）
       });
       // 断网：强制联网重抓失败
       when(
@@ -238,18 +251,29 @@ void main() {
       expect(
         readState().chapterContent,
         'A-CH0',
-        reason: '基线：旧正文保留（F4 修法，不降级为错误页）',
+        reason: '基线：失败保留旧正文（不降级为错误页）',
       );
 
+      // [STAGE3-C2B] 不变量 1：同书他章缓存保留 —— 刷新路径绝不清整书
+      // （C2 缺陷根因：缓存优先 × 清缓存顺序组合曾致整书离线缓存丢失；
+      // 整书清理仅属设置页「清缓存」的显式路径）
       expect(
         cache,
-        isNotEmpty,
+        containsAll(['A/c2', 'A/c3']),
         reason:
-            '刷新失败后 cached_chapters 已被清空且无回滚：refreshChapterContent 先 '
-            'clearBookCache(整书) 再联网抓取（reader_notifier.dart:488-495），'
-            '抓取失败时缓存不回填 → 用户既没拿到新正文，又丢掉整本书的离线缓存；'
-            '此后离线翻到任何已缓存章节都会抓取失败（原版 refreshContentDur 只 '
-            'delContent 当前章）。当前 cache=${cache.toList()}',
+            '刷新失败后同书他章（c2/c3）缓存行必须保留；刷新路径不得再调用'
+            '整书 clearBookCache。当前 cache=${cache.toList()}',
+      );
+      // [STAGE3-C2B] 不变量 2：当前章缓存行已在「先失效」步骤删除且
+      // 失败不回滚（对齐上游 refreshContentDur = delContent → loadContent：
+      // 失败时仅当前章缓存丢失，用户已裁决）
+      expect(
+        cache,
+        isNot(contains('A/c1')),
+        reason:
+            '当前章（index=0 → A/c1）缓存行在抓取前已失效（对齐上游 '
+            'delContent 章级语义）；失败不回滚该行。'
+            '当前 cache=${cache.toList()}',
       );
     });
   });

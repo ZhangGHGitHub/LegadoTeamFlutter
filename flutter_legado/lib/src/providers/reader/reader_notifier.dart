@@ -541,21 +541,23 @@ class ReaderNotifier extends Notifier<ReaderState> {
   }
 
   // [P2-9 | 2026-09-24] 强制刷新当前章正文（绕过缓存，重新联网抓取）
+  // [STAGE3-C2B | 2026-09-28] 对齐上游原版 refreshContentDur（用户已裁决）：
+  // delContent + loadContent = 先失效当前章缓存 → 再联网重抓。
+  // 现已具备章级失效 FFI（clearChapterCache ≡ 上游 BookHelp.delContent，
+  // 仅删当前章缓存行、不触碰章级开关键），C2 期自创的「先抓取、成功后才
+  // 失效」与「成功后 clearBookCache 整书清缓存」一并移除——缓存优先 ×
+  // fetch-first 的组合正是「已缓存章刷新不生效且误清整书离线缓存」的
+  // 根因（STAGE3-C2B 裁决前形态）。
   //
-  // 对标原版 refreshContentDur（delContent + loadContent）语义：
-  // 失效缓存 → 联网重抓 → 回写缓存并更新 State。
-  // 受「不新增 FFI / 不改契约」约束，无法新增单章级删缓存 API，
-  // 故以 clearBookCache（书级，≈ 原版 clearCache/refreshContentAll）作为
-  // 缓存失效原语——作用域比原版 delContent（章级）更宽，属已知偏差（报告说明）。
-  //
-  // [C2-hunt | 2026-09-24] 顺序修正：原「clearBookCache → fetch」在抓取
-  // 失败时整书离线缓存已删除且无法回滚（用户既没拿到新正文、又丢了
-  // 全部离线缓存，此后离线翻任何已缓存章节都会抓取失败——C2 缺陷）。
-  // 改为「先抓取、成功后再失效缓存」：成功 → 用户看到新正文，且旧缓存
-  // 失效（其余章节不再读到换源/更新前的旧内容）；失败（异常/空正文）
-  // → 旧缓存完整保留、旧正文保留、仅置 error。
+  // 新语义（对齐上游）：
+  // - 刷新必发网络请求（失效当前章缓存后，缓存优先不再拦截）；
+  // - 成功：新内容持久化并更新 State（fetch 自动回写缓存行，无需再
+  //   整书清缓存）；
+  // - 失败（异常/空正文）：当前章缓存行已在「先失效」步骤删除（失败
+  //   保留旧缓存的持久层语义按用户裁决对齐上游后不再保留），UI 保留
+  //   旧正文并显示失败原因，同书他章缓存原样保留（无整书清理）。
   // [C5-hunt | 2026-09-24] 重入守卫（_refreshing）：在途期间重复调用
-  // 直接返回原因，N 次点击不再触发 N 次清缓存 + N 次强制抓取
+  // 直接返回原因，N 次点击不再触发 N 次失效 + N 次强制抓取
   // （对齐换源流程 isApplying/_applying 的防重入形态）。
   //
   // 成功返回 null；失败返回错误原因（保留旧正文，不清空 chapterContent）。
@@ -578,25 +580,27 @@ class ReaderNotifier extends Notifier<ReaderState> {
     final api = ref.read(bookApiProvider);
     state = state.copyWith(isLoading: true, error: null);
     try {
-      // [C2-hunt] 1) 先联网抓取（不预失效缓存：抓取失败时旧缓存完好）
+      // [STAGE3-C2B] 1) 先失效当前章缓存（≡ 上游 delContent：只删本章
+      // 行，同书他章缓存不受影响）
+      await api.clearChapterCache(book.bookUrl, idx);
+      // 2) 联网抓取（缓存已失效，缓存优先不再拦截，必取站点新内容）
       final content = await api.fetchChapterContent(
         book.bookUrl,
         chapter.url,
         book.origin,
       );
       if (content.trim().isEmpty) {
-        // 空正文视为抓取失败：保留旧正文与旧缓存，不清空
+        // 空正文视为抓取失败：保留旧正文（当前章缓存行已失效，
+        // 他章不受影响，无整书清理）
         state = state.copyWith(isLoading: false, error: '正文抓取为空');
         return '正文抓取为空';
       }
-      // [C2-hunt] 2) 成功后再失效整书缓存（fetch 已把本章新内容回写
-      // 缓存，此步清掉其余章节的旧内容；本章节目后续读取为网络新内容）
-      await api.clearBookCache(book.bookUrl);
+      // 3) 成功：持久化新内容（fetch 已自动回写当前章缓存行）
       state = state.copyWith(chapterContent: content, isLoading: false);
       return null;
     } catch (e) {
-      // [C2-hunt] 失败保留旧正文与旧缓存（_loadChapterContent 会清空，
-      // 刷新路径不得如此）
+      // [STAGE3-C2B] 失败保留旧正文并显示原因；仅当前章缓存行丢失
+      // （对齐上游，不做整书清理）
       final msg = _mapError(e);
       state = state.copyWith(isLoading: false, error: msg);
       return msg;
@@ -672,8 +676,8 @@ class ReaderNotifier extends Notifier<ReaderState> {
       // [F1-hunt F1 | 2026-09-24] 换源重载完成章节定位后回写进度，
       // 保证后续 _saveProgress 持久化的是新目录下的命中章/保留位
       _syncCurrentBookProgress();
-      // 5) 强制刷新命中章正文（同 Fix A 路径；bookUrl 不变时靠清缓存
-      //    保证取到新源正文）
+      // 5) 强制刷新命中章正文（同 Fix A 路径；[STAGE3-C2B] 先失效当前
+      //    章缓存行再抓取，bookUrl 不变时仍保证取到新源正文）
       final err = await refreshChapterContent();
       if (err != null) {
         // 正文抓取失败：目录已是新源，保留旧正文，错误显式返回

@@ -276,7 +276,11 @@ void main() {
         return Future<Book?>.delayed(Duration(seconds: delay), () => _newBookRecord);
       });
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => _newToc);
-      when(() => mockApi.clearBookCache(any())).thenAnswer((_) async => 0);
+      // [STAGE3-C2B] 换源重载末尾的强制刷新改单章失效（Rust 换源事务
+      // 已清整书缓存，本章行已不存在，删除数 0）
+      when(
+        () => mockApi.clearChapterCache(any(), any()),
+      ).thenAnswer((_) async => 0);
       when(
         () => mockApi.fetchChapterContent(any(), any(), any()),
       ).thenAnswer((_) async => '新源新正文');
@@ -340,7 +344,11 @@ void main() {
             Future<Book?>.delayed(const Duration(seconds: 8), () => _newBookRecord),
       );
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => _newToc);
-      when(() => mockApi.clearBookCache(any())).thenAnswer((_) async => 0);
+      // [STAGE3-C2B] 换源重载末尾的强制刷新改单章失效（Rust 换源事务
+      // 已清整书缓存，本章行已不存在，删除数 0）
+      when(
+        () => mockApi.clearChapterCache(any(), any()),
+      ).thenAnswer((_) async => 0);
       when(
         () => mockApi.fetchChapterContent(any(), any(), any()),
       ).thenAnswer((_) async => '新源新正文');
@@ -478,7 +486,11 @@ void main() {
         () => mockApi.getBook(any()),
       ).thenAnswer((_) async => _newBookRecord);
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => _newToc);
-      when(() => mockApi.clearBookCache(any())).thenAnswer((_) async => 0);
+      // [STAGE3-C2B] 换源重载末尾的强制刷新改单章失效（Rust 换源事务
+      // 已清整书缓存，本章行已不存在，删除数 0）
+      when(
+        () => mockApi.clearChapterCache(any(), any()),
+      ).thenAnswer((_) async => 0);
       when(
         () => mockApi.fetchChapterContent(any(), any(), any()),
       ).thenAnswer((_) async => '新源新正文');

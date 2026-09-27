@@ -24,9 +24,12 @@
 //    四个入口（菜单面板换源/刷新 + 顶栏换书源/刷新）各钉一条慢路径：
 //    改造前该组必红（takeException 非 null 且结果条不出现）。
 //
-// 本文件引用的 mock 方法均属既有 RustApi 契约（未新增 FFI）；
-// 新行为以「UI 入口触发强制路径」表达，改造前文件可编译可运行，
-// 红 = 断言失败（非编译错误）。
+// [STAGE3-C2B | 2026-09-28] 刷新路径新增单章缓存失效 FFI
+// clearChapterCache（≡ 上游 BookHelp.delContent，章级语义）：刷新编排
+// 改为「先失效当前章 → 联网抓取」，不再整书 clearBookCache（失败仅丢
+// 当前章缓存行，同书他章保留）。除该新增外，本文件引用的 mock 方法
+// 均属既有 RustApi 契约；新行为以「UI 入口触发强制路径」表达，改造前
+// 文件可编译可运行，红 = 断言失败（非编译错误）。
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -186,13 +189,16 @@ void main() {
   setUpAll(registerFallbacks);
 
   group('① 菜单面板「刷新正文」= 强制拉取（绕过缓存）', () {
-    testWidgets('点刷新正文 → 清缓存 + 联网抓取，正文更新为网络新内容并有成功反馈', (tester) async {
+    testWidgets('点刷新正文 → 失效当前章 + 联网抓取，正文更新为网络新内容并有成功反馈', (tester) async {
       SharedPreferences.setMockInitialValues({});
       final mockApi = MockRustApi();
       final container = makeContainer(mockApi);
       addTearDown(container.dispose);
       stubOpenBook(mockApi);
-      when(() => mockApi.clearBookCache(any())).thenAnswer((_) async => 2);
+      // [STAGE3-C2B] 先失效当前章缓存行（≡ 上游 delContent），再联网抓取
+      when(
+        () => mockApi.clearChapterCache(any(), any()),
+      ).thenAnswer((_) async => 1);
       when(
         () => mockApi.fetchChapterContent(any(), any(), any()),
       ).thenAnswer((_) async => '新正文（网络）');
@@ -208,8 +214,11 @@ void main() {
       await tester.tap(find.byTooltip('刷新正文'));
       await tester.pumpAndSettle();
 
-      // 强制拉取路径：清缓存 + 联网抓取当前章（url 属当前目录 c2）
-      verify(() => mockApi.clearBookCache('https://book.com/1')).called(1);
+      // 强制拉取路径：[STAGE3-C2B] 先失效当前章缓存行（index=1，
+      // ≡ 上游 delContent）+ 联网抓取当前章（url 属当前目录 c2）
+      verify(
+        () => mockApi.clearChapterCache('https://book.com/1', 1),
+      ).called(1);
       verify(
         () => mockApi.fetchChapterContent(
           'https://book.com/1',
@@ -241,7 +250,11 @@ void main() {
         () => mockApi.getBook(any()),
       ).thenAnswer((_) async => _newBookRecord);
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => _newToc);
-      when(() => mockApi.clearBookCache(any())).thenAnswer((_) async => 0);
+      // [STAGE3-C2B] 换源重载末尾的强制刷新改单章失效（Rust 换源事务
+      // 已清整书缓存，本章行已不存在，删除数 0）
+      when(
+        () => mockApi.clearChapterCache(any(), any()),
+      ).thenAnswer((_) async => 0);
       when(
         () => mockApi.fetchChapterContent(any(), any(), any()),
       ).thenAnswer((_) async => '新源新正文');
@@ -314,7 +327,10 @@ void main() {
       final container = makeContainer(mockApi);
       addTearDown(container.dispose);
       stubOpenBook(mockApi);
-      when(() => mockApi.clearBookCache(any())).thenAnswer((_) async => 1);
+      // [STAGE3-C2B] 刷新先失效当前章缓存行（≡ 上游 delContent）
+      when(
+        () => mockApi.clearChapterCache(any(), any()),
+      ).thenAnswer((_) async => 1);
       when(
         () => mockApi.fetchChapterContent(any(), any(), any()),
       ).thenAnswer((_) async => '新正文（网络）');
@@ -342,7 +358,11 @@ void main() {
       final container = makeContainer(mockApi);
       addTearDown(container.dispose);
       stubOpenBook(mockApi);
-      when(() => mockApi.clearBookCache(any())).thenAnswer((_) async => 0);
+      // [STAGE3-C2B] 刷新先失效当前章缓存行；失败仅当前章缓存丢失，
+      // 不做整书清理（对齐上游 delContent 失败语义）
+      when(
+        () => mockApi.clearChapterCache(any(), any()),
+      ).thenAnswer((_) async => 1);
       when(
         () => mockApi.fetchChapterContent(any(), any(), any()),
       ).thenThrow(const BridgeError(message: '404: 源不可达'));
@@ -393,7 +413,11 @@ void main() {
         () => mockApi.getBook(any()),
       ).thenAnswer((_) async => _newBookRecord);
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => _newToc);
-      when(() => mockApi.clearBookCache(any())).thenAnswer((_) async => 0);
+      // [STAGE3-C2B] 换源重载末尾的强制刷新改单章失效（Rust 换源事务
+      // 已清整书缓存，本章行已不存在，删除数 0）
+      when(
+        () => mockApi.clearChapterCache(any(), any()),
+      ).thenAnswer((_) async => 0);
       when(
         () => mockApi.fetchChapterContent(any(), any(), any()),
       ).thenAnswer((_) async => '新源新正文');
@@ -524,7 +548,11 @@ void main() {
             Future<Book?>.delayed(const Duration(seconds: 6), () => _newBookRecord),
       );
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => _newToc);
-      when(() => mockApi.clearBookCache(any())).thenAnswer((_) async => 0);
+      // [STAGE3-C2B] 换源重载末尾的强制刷新改单章失效（Rust 换源事务
+      // 已清整书缓存，本章行已不存在，删除数 0）
+      when(
+        () => mockApi.clearChapterCache(any(), any()),
+      ).thenAnswer((_) async => 0);
       when(
         () => mockApi.fetchChapterContent(any(), any(), any()),
       ).thenAnswer((_) async => '新源新正文');
@@ -589,7 +617,10 @@ void main() {
       final container = makeContainer(mockApi);
       addTearDown(container.dispose);
       stubOpenBook(mockApi);
-      when(() => mockApi.clearBookCache(any())).thenAnswer((_) async => 0);
+      // [STAGE3-C2B] 刷新先失效当前章缓存行（≡ 上游 delContent）
+      when(
+        () => mockApi.clearChapterCache(any(), any()),
+      ).thenAnswer((_) async => 1);
       // 慢路径：fetchChapterContent 延迟 7s（> 4s 自动消失时长；取 7s
       // 保证完成时刻晚于队列移除帧，旧 close() 代码必踩空队列）
       when(
@@ -644,7 +675,11 @@ void main() {
             Future<Book?>.delayed(const Duration(seconds: 6), () => _newBookRecord),
       );
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => _newToc);
-      when(() => mockApi.clearBookCache(any())).thenAnswer((_) async => 0);
+      // [STAGE3-C2B] 换源重载末尾的强制刷新改单章失效（Rust 换源事务
+      // 已清整书缓存，本章行已不存在，删除数 0）
+      when(
+        () => mockApi.clearChapterCache(any(), any()),
+      ).thenAnswer((_) async => 0);
       when(
         () => mockApi.fetchChapterContent(any(), any(), any()),
       ).thenAnswer((_) async => '新源新正文');
@@ -709,7 +744,10 @@ void main() {
       final container = makeContainer(mockApi);
       addTearDown(container.dispose);
       stubOpenBook(mockApi);
-      when(() => mockApi.clearBookCache(any())).thenAnswer((_) async => 1);
+      // [STAGE3-C2B] 刷新先失效当前章缓存行（≡ 上游 delContent）
+      when(
+        () => mockApi.clearChapterCache(any(), any()),
+      ).thenAnswer((_) async => 1);
       // 慢路径：fetchChapterContent 延迟 7s（> 4s 自动消失时长；取 7s
       // 保证完成时刻晚于队列移除帧，旧 close() 代码必踩空队列）
       when(
