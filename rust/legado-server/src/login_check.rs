@@ -101,7 +101,10 @@ pub fn execute_login_check(
     ) {
         // [WebBook.kt:88-90] 二次 code==500 → 整源失败（重抛原始 throwable）
         Ok(second) if second.code == 500 => {
-            eprintln!("[server login_check] second eval still code 500 (whole source fail): src={}", source.book_source_url);
+            eprintln!(
+                "[server login_check] second eval still code 500 (whole source fail): src={}",
+                source.book_source_url
+            );
             Err(LegadoError::LoginRequired(
                 "书源需要登录，请先在书源菜单中登录后重试".into(),
             ))
@@ -110,7 +113,10 @@ pub fn execute_login_check(
         Ok(second) => Ok(second),
         // [WebBook.kt:91-94] 二次 eval 失败（cast/JS）→ 整源失败
         Err(second_err) => {
-            eprintln!("[server login_check] second eval failed (whole source fail): {second_err}: src={}", source.book_source_url);
+            eprintln!(
+                "[server login_check] second eval failed (whole source fail): {second_err}: src={}",
+                source.book_source_url
+            );
             Err(LegadoError::LoginRequired(
                 "书源需要登录，请先在书源菜单中登录后重试".into(),
             ))
@@ -189,10 +195,13 @@ fn parse_login_check_completion(
             "loginCheckJs return value cannot be parsed as response object (original as StrResponse failed): {trimmed}"
         )));
     }
-    let v: serde_json::Value = serde_json::from_str(trimmed)
-        .map_err(|e| LoginCheckEvalError::CastFailed(format!("loginCheckJs object JSON parse failed: {e}")))?;
+    let v: serde_json::Value = serde_json::from_str(trimmed).map_err(|e| {
+        LoginCheckEvalError::CastFailed(format!("loginCheckJs object JSON parse failed: {e}"))
+    })?;
     let obj = v.as_object().ok_or_else(|| {
-        LoginCheckEvalError::CastFailed(format!("loginCheckJs return value is not a response object: {trimmed}"))
+        LoginCheckEvalError::CastFailed(format!(
+            "loginCheckJs return value is not a response object: {trimmed}"
+        ))
     })?;
     let resp_body = obj
         .get("body")
