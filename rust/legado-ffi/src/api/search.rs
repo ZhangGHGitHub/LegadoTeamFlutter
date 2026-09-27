@@ -441,23 +441,7 @@ pub fn multi_source_search(query: &str, source_urls_json: &str) -> LegadoResult<
     let index = ReadRecordIndex::load();
     let annotated: Vec<AnnotatedCandidate> = results
         .into_iter()
-        .map(|c| {
-            let (has_record, record_author) = index.lookup(&c.book_name, &c.author);
-            AnnotatedCandidate {
-                book_name: c.book_name,
-                author: c.author,
-                cover_url: c.cover_url,
-                intro: c.intro,
-                latest_chapter: c.latest_chapter,
-                source_url: c.source_url,
-                source_name: c.source_name,
-                book_url: c.book_url,
-                relevance_score: 0.0,
-                has_read_record: has_record,
-                read_record_author: record_author,
-                variable: c.variable,
-            }
-        })
+        .map(|c| build_annotated_candidate(c, &index))
         .collect();
 
     serde_json::to_string(&annotated).map_err(LegadoError::Serialization)
@@ -1039,7 +1023,8 @@ fn annotate_results(results: &mut [SearchResult], index: &ReadRecordIndex) {
 ///
 /// 字段为 `legado_core::search_engine::SearchResult` 的加法式超集：
 /// 不修改 core 结构，仅在输出 JSON 中额外携带
-/// `hasReadRecord` / `readRecordAuthor`（Dart 侧 jsonDecode 兼容）。
+/// `hasReadRecord` / `readRecordAuthor` / `originOrder`（Dart 侧 jsonDecode 兼容；
+/// originOrder [STAGE4-P36] 补齐，与 `search_books` / `run_multi_stream` 输出对齐）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct AnnotatedCandidate {
     /// 书籍名称
@@ -1060,6 +1045,10 @@ struct AnnotatedCandidate {
     pub book_url: String,
     /// 相关性评分
     pub relevance_score: f64,
+    /// 书源手动排序编号（对齐原版 BookList.kt:215 originOrder = customOrder；
+    /// [STAGE4-P36] 补齐 multi_source_search 输出契约，与 search_books 同语义）
+    #[serde(default, rename = "originOrder")]
+    pub origin_order: i32,
     /// 是否有阅读记录
     #[serde(default, rename = "hasReadRecord")]
     pub has_read_record: bool,
@@ -1073,6 +1062,27 @@ struct AnnotatedCandidate {
     /// 规则变量 JSON（换源 T5 透传，additive）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variable: Option<String>,
+}
+
+/// 构造单个标注候选（自 [`multi_source_search`] 内联 map 提取，供契约测试；
+/// [STAGE4-P36] 补 originOrder 赋值链：SearchResult → AnnotatedCandidate → JSON）
+fn build_annotated_candidate(c: SearchResult, index: &ReadRecordIndex) -> AnnotatedCandidate {
+    let (has_record, record_author) = index.lookup(&c.book_name, &c.author);
+    AnnotatedCandidate {
+        book_name: c.book_name,
+        author: c.author,
+        cover_url: c.cover_url,
+        intro: c.intro,
+        latest_chapter: c.latest_chapter,
+        source_url: c.source_url,
+        source_name: c.source_name,
+        book_url: c.book_url,
+        relevance_score: 0.0,
+        origin_order: c.origin_order,
+        has_read_record: has_record,
+        read_record_author: record_author,
+        variable: c.variable,
+    }
 }
 
 // ─── 内部实现 ─────────────────────────────────────────────────────────────────
@@ -2366,6 +2376,62 @@ mod tests {
         };
         let core = result_to_search_book(r);
         assert_eq!(core.origin_order, 5);
+    }
+
+    #[test]
+    fn test_annotated_candidate_json_carries_origin_order() {
+        // [STAGE4-P36] 跨源候选 originOrder 契约：multi_source_search 输出 DTO
+        // （AnnotatedCandidate）必须像 SearchResult 一样携带 originOrder
+        // （source.customOrder，BookList.kt:215）。模拟三个源按出现序
+        // customOrder 0/1/2 → 首源 0、后续按出现序 1、2
+        let index = ReadRecordIndex::of(Vec::new());
+        let results = vec![
+            result_with_origin_order("首源", "http://s1.example.com", "书甲", 0),
+            result_with_origin_order("次源", "http://s2.example.com", "书乙", 1),
+            result_with_origin_order("三源", "http://s3.example.com", "书丙", 2),
+        ];
+        let annotated: Vec<AnnotatedCandidate> = results
+            .into_iter()
+            .map(|c| build_annotated_candidate(c, &index))
+            .collect();
+        let json = serde_json::to_value(&annotated).expect("序列化成功");
+        let arr = json.as_array().expect("JSON 数组");
+        assert_eq!(arr.len(), 3);
+        assert_eq!(json[0]["originOrder"], serde_json::json!(0));
+        assert_eq!(json[1]["originOrder"], serde_json::json!(1));
+        assert_eq!(json[2]["originOrder"], serde_json::json!(2));
+        // 原有契约字段不回归
+        assert_eq!(json[0]["book_name"], serde_json::json!("书甲"));
+        assert_eq!(
+            json[1]["source_url"],
+            serde_json::json!("http://s2.example.com")
+        );
+    }
+
+    /// 构造指定书源/originOrder 的 SearchResult（originOrder 契约测试用）
+    fn result_with_origin_order(
+        source_name: &str,
+        source_url: &str,
+        book_name: &str,
+        origin_order: i32,
+    ) -> SearchResult {
+        SearchResult {
+            source_url: source_url.to_string(),
+            source_name: source_name.to_string(),
+            book_name: book_name.to_string(),
+            author: "作者".to_string(),
+            book_url: format!("{source_url}/book/1"),
+            latest_chapter: None,
+            intro: None,
+            cover_url: None,
+            kind: None,
+            word_count: None,
+            book_type: book_type::TEXT,
+            origin_order,
+            has_read_record: false,
+            read_record_author: None,
+            variable: None,
+        }
     }
 
     #[test]

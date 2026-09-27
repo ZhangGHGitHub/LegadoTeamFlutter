@@ -16,10 +16,10 @@
 //!   普通 `#[test]`（非 `#[tokio::test]`），`run_multi_stream` 同样以
 //!   `legado_ffi::runtime::block_on` 驱动并收集全部批次。
 //!
-//! originOrder 一致性仅在 `search_books` 与 `run_multi_stream` 之间断言：
-//! `multi_source_search` 的输出 DTO（`AnnotatedCandidate`）契约上不带
-//! originOrder 字段（加法式超集设计），属契约级已知差异而非语义差异
-//! （随任务报告 §⑤ 披露）。
+//! originOrder 一致性三入口全断言（`search_books` / `multi_source_search` /
+//! `run_multi_stream`）：[STAGE4-P36] 起 `multi_source_search` 输出 DTO
+//! （`AnnotatedCandidate`，加法式超集设计）补齐 `originOrder` 字段，
+//! 此前的契约级已知差异（仅 sync/stream 两断言）已关闭。
 //!
 //! 逐源错误八分类联动（P2 项1）：成功批次 `error_class == "ok"` 且无 `error`；
 //! login 失败批次（quickjs 档）`error_class == "login_required"` 且保留 `error` 文案。
@@ -201,8 +201,9 @@ struct StreamBatch {
 struct EntryResults {
     /// `search_books`：(书籍标识, originOrder)，结果顺序
     sync: Vec<(BookKey, i32)>,
-    /// `multi_source_search`：书籍标识，结果顺序（契约不带 originOrder）
-    multi: Vec<BookKey>,
+    /// `multi_source_search`：(书籍标识, originOrder)，结果顺序
+    /// （[STAGE4-P36] 起契约携带 originOrder，三入口全断言）
+    multi: Vec<(BookKey, i32)>,
     /// `run_multi_stream`：按批次到达顺序
     stream_batches: Vec<StreamBatch>,
 }
@@ -229,15 +230,18 @@ fn run_three_entries(keyword: &str, source_urls_json: &str) -> EntryResults {
     // 入口 2：multi_source_search（同步包装，输出 AnnotatedCandidate JSON 数组）
     let r2 = legado_ffi::api::search::multi_source_search(keyword, source_urls_json)
         .expect("multi_source_search 执行失败");
-    let multi: Vec<BookKey> = serde_json::from_str::<Vec<serde_json::Value>>(&r2)
+    let multi: Vec<(BookKey, i32)> = serde_json::from_str::<Vec<serde_json::Value>>(&r2)
         .unwrap_or_default()
         .into_iter()
         .map(|v| {
             (
-                v["source_url"].as_str().unwrap_or_default().to_string(),
-                v["book_name"].as_str().unwrap_or_default().to_string(),
-                v["author"].as_str().unwrap_or_default().to_string(),
-                v["book_url"].as_str().unwrap_or_default().to_string(),
+                (
+                    v["source_url"].as_str().unwrap_or_default().to_string(),
+                    v["book_name"].as_str().unwrap_or_default().to_string(),
+                    v["author"].as_str().unwrap_or_default().to_string(),
+                    v["book_url"].as_str().unwrap_or_default().to_string(),
+                ),
+                v["originOrder"].as_i64().unwrap_or(0) as i32,
             )
         })
         .collect();
@@ -302,7 +306,7 @@ fn run_three_entries(keyword: &str, source_urls_json: &str) -> EntryResults {
 fn assert_parity(out: &EntryResults, expected_count: usize) {
     // 最终结果集（三入口必须完全一致；流式只允许批次到达顺序不同）
     let set_sync: HashSet<BookKey> = out.sync.iter().map(|(k, _)| k.clone()).collect();
-    let set_multi: HashSet<BookKey> = out.multi.iter().cloned().collect();
+    let set_multi: HashSet<BookKey> = out.multi.iter().map(|(k, _)| k.clone()).collect();
     let set_stream: HashSet<BookKey> = out
         .stream_batches
         .iter()
@@ -354,7 +358,7 @@ fn assert_parity(out: &EntryResults, expected_count: usize) {
     let order_multi: Vec<(String, String)> = out
         .multi
         .iter()
-        .map(|k| (k.0.clone(), k.3.clone()))
+        .map(|(k, _)| (k.0.clone(), k.3.clone()))
         .collect();
     let order_stream: Vec<(String, String)> = out
         .stream_batches
@@ -374,10 +378,15 @@ fn assert_parity(out: &EntryResults, expected_count: usize) {
         "逐源内书籍顺序不一致 (run_multi_stream): sync={order_sync:?} stream={order_stream:?}"
     );
 
-    // originOrder 一致性（仅 search_books 与 run_multi_stream；
-    // multi_source_search 契约不带该字段，见文件头说明）
+    // originOrder 一致性（三入口全断言；[STAGE4-P36] 起 multi_source_search
+    // 输出契约补齐 originOrder，此前的两断言已知差异已关闭，见文件头说明）
     let oo_sync: BTreeMap<(String, String), i32> = out
         .sync
+        .iter()
+        .map(|(k, o)| ((k.0.clone(), k.3.clone()), *o))
+        .collect();
+    let oo_multi: BTreeMap<(String, String), i32> = out
+        .multi
         .iter()
         .map(|(k, o)| ((k.0.clone(), k.3.clone()), *o))
         .collect();
@@ -391,8 +400,12 @@ fn assert_parity(out: &EntryResults, expected_count: usize) {
         })
         .collect();
     assert_eq!(
+        oo_sync, oo_multi,
+        "originOrder 不一致 (multi_source_search): sync={oo_sync:?} multi={oo_multi:?}"
+    );
+    assert_eq!(
         oo_sync, oo_stream,
-        "originOrder 不一致: sync={oo_sync:?} stream={oo_stream:?}"
+        "originOrder 不一致 (run_multi_stream): sync={oo_sync:?} stream={oo_stream:?}"
     );
 }
 
