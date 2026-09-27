@@ -73,6 +73,7 @@
 | [TWO_TRACK_DEV_SPEC.md](TWO_TRACK_DEV_SPEC.md) | 双轨协作开发规范（UI 轨与 Rust 轨分离开发） |
 | [API_CONTRACT.md](API_CONTRACT.md) | BookApi 接口契约文档（UI 轨与 Rust 轨唯一接口基准） |
 | [api.md](api.md) | 阅读 API 接口文档 |
+| [IOS_CI_SIGNING_SETUP.md](IOS_CI_SIGNING_SETUP.md) | iOS CI 签名脚手架（P2-26）：secrets 配置、两态行为、真机安装与排障（签名素材待用户提供） |
 
 ## 📁 文档存放规范
 
