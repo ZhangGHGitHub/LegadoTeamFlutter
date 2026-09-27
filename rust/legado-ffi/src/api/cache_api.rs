@@ -34,10 +34,25 @@ pub fn clear_cache() -> LegadoResult<bool> {
 }
 
 /// 清除指定书籍的章节缓存（对齐原版 BookHelp.clearCache(book) 的 DB 侧语义）
+///
+/// [B-10] 清缓存 = 复位该书的阅读偏好：除 cached_chapters 外，同时删除
+/// caches 表 `sameTitleRemoved:{book_url}:%` 章级「不删重复标题」开关键
+/// （写入侧 reader::toggle_same_title_removed，消费侧读取时跳过同标题去重；
+/// 不清则清缓存后章节仍按旧开关渲染，用户预期「重置」落空）。LIKE 模式
+/// 经 [`like_escape`] 转义 book_url 防通配符跨书误删（同 clear_cache_before）。
 pub fn clear_book_cache(book_url: &str) -> LegadoResult<i32> {
     with_database(|db| {
-        let repo = CacheBookRepository::new(db.connection());
+        use rusqlite::params;
+        let conn = db.connection();
+        let repo = CacheBookRepository::new(conn);
         let deleted = repo.delete_by_book(book_url)?;
+        // 复位该书的章级「删除重复标题」开关（caches 表键前缀匹配）
+        let pattern = format!("sameTitleRemoved:{}:%", like_escape(book_url));
+        conn.execute(
+            "DELETE FROM caches WHERE key LIKE ?1 ESCAPE '\\'",
+            params![pattern],
+        )
+        .map_err(|e| LegadoError::Database(format!("复位章级开关失败：{e}")))?;
         Ok(deleted as i32)
     })
 }
