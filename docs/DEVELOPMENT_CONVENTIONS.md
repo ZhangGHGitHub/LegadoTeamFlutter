@@ -2,6 +2,8 @@
 
 本文件记录了项目开发过程中的约定、规范和最佳实践。
 
+> **迁移说明（2026-09-27）**：本文件自 `.qoder/rules/legado-dev-conventions.md` 迁移而来（文档与重构流程统一批次），为项目唯一通用开发规范入口。原文件中 Qoder 工具配置说明（SearchReplace 工具用法等）未随迁；历史内容与修订记录保持原文。
+
 ## 📊 优先级分类系统
 
 UI修复和功能开发任务按以下优先级分类：
@@ -28,14 +30,20 @@ UI修复和功能开发任务按以下优先级分类：
 
 ## 🔍 验证优先工作流程
 
-统一任务生命周期见 [docs/REFACTORING_WORKFLOW.md](../../docs/REFACTORING_WORKFLOW.md)。本节只保留本规范负责的验证与 Git 安全要点；项目模块门禁以根目录 `AGENTS.md` 和对应 CI 工作流为准。
+统一任务生命周期见 [REFACTORING_WORKFLOW.md](REFACTORING_WORKFLOW.md)。本节只保留本规范负责的验证与 Git 安全要点；项目模块门禁以根目录 `AGENTS.md` 和对应 CI 工作流为准。
+
+### 基准口径
+
+- **功能语义核对 = Android 原版**（legado-upstream 源码）；功能基准为双基准（原版 + 参考版任一侧存在即应有），行为分歧时以原版源码裁决。
+- **视觉验收 = 参考版截图**（`io.legato.kazusa` 实机截图），逐屏方法见 [SCREEN_1TO1_PARITY_SPEC_20260914.md](SCREEN_1TO1_PARITY_SPEC_20260914.md)。
+- 历史截图目录（`docs/baseline_*`、`docs/parity_shots/` 等）所载采集日期、工具与模拟器信息为历史取证事实，不代表当前设备状态；当前设备任务必须以执行前实时探测为准，不把文档中的固定端口或旧设备可用记录当作当前保证。
 
 ### 标准验证流程
 
 1. **先确定变更类型和范围** - 读取唯一 Active 任务与验收条件；保护已有未提交修改。
 2. **运行适用的最小回归** - 先验证本次行为，再运行该轨 CI 门禁。Flutter、Rust、Android 命令见根目录 `AGENTS.md`。
 3. **按风险补充验证** - CI 覆盖的常规验证以 CI 结果为证据，不重复派角色执行；仅对 CI 未覆盖的 UI 交互、平台生命周期、硬件或真实素材场景做设备/端到端测试。
-4. **设备测试前探测环境** - 按 `AGENTS.md` 中 MuMu 流程实时检查实例、端点、网络和应用变体；不得使用已弃用的固定 LDPlayer 端口。
+4. **设备测试前探测环境** - 按 `AGENTS.md` 中 MuMu 流程实时检查实例、端点、网络和应用变体；不得使用已弃用的固定 LDPlayer 端口；文档所载端点/端口仅为记录时点信息，不构成当前可用保证。
 5. **复核完整变更集** - 查看 `git diff`、测试结果与证据路径，确认没有越出任务范围。
 6. **通过后提交** - 按本文 Conventional Commits 及版本/日志联动规则提交并回填 Active 计划；失败时先记录并修复，不在已知失败状态上继续叠加任务。
 
@@ -138,7 +146,7 @@ Fixes #239
 ### 7. 与版本/CHANGELOG 联动
 
 - 批次修复按 pubspec 版本 patch 递增（如 2.0.90+92 → 2.0.91+93），每批同步更新 CHANGELOG 与应用内更新日志 `flutter_legado/assets/updateLog.md`（关于页展示，仅记录用户可见变化，按日期条目格式），记录版本号与贡献者。
-- 提交说明末尾保留署名（如 `— DeepSeek Harness + Bridge`）。
+- 提交说明末尾保留署名（如 `— 子代理名称 + Bridge`，与根目录 `AGENTS.md` 署名规范一致）。
 
 ## 💻 Windows编码问题处理
 
@@ -160,25 +168,11 @@ Windows环境下，中文字符在某些工具中可能出现编码问题：
 4. **考虑替代工具** - 如使用Python脚本进行文件修改
 5. **恢复被剥离的 BOM**（.ps1 等 PowerShell 脚本必需）：`$b=[System.IO.File]::ReadAllBytes($p); $n=New-Object byte[] ($b.Length+3); [Array]::Copy([byte[]](239,187,191),0,$n,0,3); [Array]::Copy($b,0,$n,3,$b.Length); [System.IO.File]::WriteAllBytes($p,$n)`
 
-## 🛠️ 工具使用指南
+## 🛠️ 编码问题的脚本化替代方案
 
-### SearchReplace 工具
-**优势**：
-- 精确的文本替换
-- 支持多行修改
-- 自动显示变更diff
+> 原 Qoder「SearchReplace 工具」配置说明未随本规范迁移（属工具产品配置）。
 
-**限制**：
-- Windows上可能存在UTF-8编码问题
-- 对于包含中文的大规模修改可能不稳定
-
-**最佳实践**：
-- 用于小范围的精确修改
-- 修改后立即验证
-- 遇到问题及时回滚
-
-### Python脚本替代方案
-当SearchReplace遇到编码问题时，可以使用Python脚本：
+当编辑工具遇到编码问题时，可以使用 Python 脚本：
 ```python
 with open('file_path', 'r', encoding='utf-8') as f:
     content = f.read()
@@ -281,7 +275,7 @@ String get icon {
 - `AGENTS.md`（Agent 工作入口）
 
 ### 现有文档
-根目录原有的过程/报告类文档（UI_FIX 系列、KOTLIN 系列、REFACTORING_FIX_REPORT.md、TASK_76_SUMMARY.md、VERSION_CONTROL.md、DEVELOPMENT.md、api.md 等）已统一迁移至 `docs/`，详见 [docs/README.md](../../docs/README.md) 索引。
+根目录原有的过程/报告类文档（UI_FIX 系列、KOTLIN 系列、REFACTORING_FIX_REPORT.md、TASK_76_SUMMARY.md、VERSION_CONTROL.md、DEVELOPMENT.md、api.md 等）已统一迁移至 `docs/`，详见 [README.md](README.md) 索引；历史计划类材料归档于 `docs/过期文档/`。
 
 ## 📚 参考资源
 
@@ -291,5 +285,5 @@ String get icon {
 
 ---
 
-**最后更新**: 2024年
-**维护者**: Legado开发团队
+**最后更新**: 2026-09-27（自 `.qoder/rules/legado-dev-conventions.md` 迁移；原文件历史修订记录保留于 Git 历史）
+**维护者**: Legado 开发团队

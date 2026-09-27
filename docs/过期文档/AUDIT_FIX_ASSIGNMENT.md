@@ -1,7 +1,7 @@
 # 审计修复任务分配与完成报告（第一批 + 第二批）
 
 **日期**: 2026-08-05
-**依据**: [PROJECT_AUDIT_REPORT.md](PROJECT_AUDIT_REPORT.md)
+**依据**: [PROJECT_AUDIT_REPORT.md](PROJECT_AUDIT_REPORT.md)（该报告已归档至 docs/过期文档/）
 **分支**: `feature/rust-core`
 **验收方**: 用户（AI 为执行方，修复完成后由用户验收）
 

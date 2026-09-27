@@ -70,3 +70,27 @@
 | 原路径 | 新路径 | 理由 |
 |---|---|---|
 | docs/parity_shots/tmp_songhe/ | docs/parity_shots/songhe_template_fix_20260917/ | §P8：命名带 tmp_ 却为 2026-09-17 松鹤换源修复证据（109M/379 截图），PENDING_DELETE §3.7 单独裁决=改名不删；引用已同步更新（CHANGELOG.md×3、RULE_TEMPLATE_SEGMENT_FIX_20260917.md×3 目录引用、目录内 capture_snackbar*.py×2；PENDING_DELETE 执行日志与 P2 json 文件提及不动） |
+
+## 四、2026-09-27 文档统一批次（16 移动 + 1 规范迁移）
+
+> 依据：2026-09-27 用户确认的「文档处置清单与未结项交叉表」。逐条核验证据（commit/行号级）见本目录 `RESEARCH_LEGACY_PLANS_20260927_A.md` / `RESEARCH_LEGACY_PLANS_20260927_UI.md`；替代关系见本目录 `README.md`。仍有效未结项已登记 `docs/REFACTORING_ACTIVE_PLAN.md`「文档统一批次登记」节（P2-23 / P2-24 决策项 / P3-8 + 两条低优候选）。
+
+| 原路径 | 新路径 | 归档理由（摘要） |
+|---|---|---|
+| docs/AUDIT_FIX_ASSIGNMENT.md | docs/过期文档/AUDIT_FIX_ASSIGNMENT.md | 4 条未结项全部收口（08e731957e/d994a4fdbb/961a2d353），无独立独占证据 |
+| docs/IOS_TRACK_FEASIBILITY_20260830.md | docs/过期文档/IOS_TRACK_FEASIBILITY_20260830.md | P1/P2-A/B/C 收口；P2 剩项与 P3 三端收敛迁 Active（P2-23/P3-8）；签名矩阵/插件对照/平台限制保留全文 |
+| docs/PARSER_GAP_FIX_PROGRESS_20260815.md | docs/过期文档/PARSER_GAP_FIX_PROGRESS_20260815.md | A* 由 Active P2-4 跟踪；WAF 已收口（83a8890aff/500941a6de）；G1-G15 历史证据保留全文 |
+| docs/SEARCH_PARITY_REMEDIATION_PLAN_20260828.md | docs/过期文档/SEARCH_PARITY_REMEDIATION_PLAN_20260828.md | 主体收口；3 开放项挂 P3-6；armv7 决策项 → P2-24；§7.2/§8.6/8.8 证据保留全文 |
+| docs/UI_FIX_PLAN.md | docs/过期文档/UI_FIX_PLAN.md | 批次 0-5 全交付；视觉口径已被 0914 一比一规范废止（文档自带历史声明） |
+| docs/UI_MD3_PLAN.md | docs/过期文档/UI_MD3_PLAN.md | B0-B6 全落地（2.0.110-2.0.119）；动态取色残余在 Active D9 登记 |
+| docs/UI_MD3_ALIGNMENT_PLAN.md | docs/过期文档/UI_MD3_ALIGNMENT_PLAN.md | 被 0914 一比一规范取代（文档自带历史声明） |
+| docs/UI_MD3_LAYOUT_PLAN.md | docs/过期文档/UI_MD3_LAYOUT_PLAN.md | 四批 2.0.161-165 收口 |
+| docs/UI_MD3_LAYOUT_PLAN_PROGRESS_20260905.md | docs/过期文档/UI_MD3_LAYOUT_PLAN_PROGRESS_20260905.md | 与上篇捆绑归档（含转场形态根因更正） |
+| docs/UI_ONE_TO_ONE_CLONE_PLAN_20260905.md | docs/过期文档/UI_ONE_TO_ONE_CLONE_PLAN_20260905.md | S0-S7/T 全交付；**§〇 红线豁免授权记录仍有效**（指针已更新至新路径） |
+| docs/UI_SYNC_REFACTOR_PLAN_20260905.md | docs/过期文档/UI_SYNC_REFACTOR_PLAN_20260905.md | 当日交付收口；§三参数取证保留 |
+| docs/UI_REMAINING_DEV_SUGGESTIONS_20260909.md | docs/过期文档/UI_REMAINING_DEV_SUGGESTIONS_20260909.md | 批 A-E 完成；§E 裁决记录保留 |
+| docs/PARITY_FIX_TASKS_B2_20260916.md | docs/过期文档/PARITY_FIX_TASKS_B2_20260916.md | 批 2 已交付（2.0.264-266），同系任务书此前已归档 |
+| docs/SESSION_REPORTS_20260829-31.md | docs/过期文档/SESSION_REPORTS_20260829-31.md | 开发史会话报告（保留原文+归档说明） |
+| docs/PENDING_DELETE_20260920.md | docs/过期文档/PENDING_DELETE_20260920.md | 清理执行记录已核销（遗留项经 P2-17/ARCHIVE_MAP §三闭环） |
+| docs/LEGADO_TEAM_DEV_HISTORY.md | docs/过期文档/LEGADO_TEAM_DEV_HISTORY.md | 开发史对话记录（保留原文+归档说明；文内旧链接按历史原文保留不修复） |
+| .qoder/rules/legado-dev-conventions.md | docs/DEVELOPMENT_CONVENTIONS.md | **迁移（非归档）**：通用开发规范入 docs/，Qoder 工具配置说明未随迁；现行文档链接已同步 |

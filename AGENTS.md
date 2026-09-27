@@ -26,7 +26,7 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 
 ## 规范与文档路由（改动前必读）
 
-1. [.qoder/rules/legado-dev-conventions.md](.qoder/rules/legado-dev-conventions.md) — 项目开发规范：优先级分类（P0/P1/P2）、验证优先工作流、Git 安全实践、Windows 编码处理、文档存放规范
+1. [docs/DEVELOPMENT_CONVENTIONS.md](docs/DEVELOPMENT_CONVENTIONS.md) — 项目开发规范：优先级分类（P0/P1/P2）、验证优先工作流、基准口径、Git 安全实践、Windows 编码处理、文档存放规范（自 `.qoder/rules/legado-dev-conventions.md` 迁移，2026-09-27）
 2. [docs/REFACTORING_WORKFLOW.md](docs/REFACTORING_WORKFLOW.md) — 重构任务统一实施、Agent 派发、验证、证据与关闭流程
 3. [docs/REFACTORING_ACTIVE_PLAN.md](docs/REFACTORING_ACTIVE_PLAN.md) — 当前唯一开放任务与进度状态入口
 4. [docs/API_CONTRACT.md](docs/API_CONTRACT.md) — FFI API 契约（跨轨变更必须先更新并冻结契约）
@@ -34,14 +34,16 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 6. [docs/SCREEN_1TO1_PARITY_SPEC_20260914.md](docs/SCREEN_1TO1_PARITY_SPEC_20260914.md) — 参考版视觉比对规范；状态回写 Active 计划
 7. [docs/READING_FLOW_DEFECT_HUNT_PLAN_20260924.md](docs/READING_FLOW_DEFECT_HUNT_PLAN_20260924.md) — 阅读主流程缺陷发现/取证专项流程
 8. [docs/design_system.md](docs/design_system.md) — 设计系统
-9. [docs/UI_FIX_PLAN.md](docs/UI_FIX_PLAN.md) — 历史 UI 批次材料，不作为当前需求或验收标准
+9. [docs/SCREEN_1TO1_PARITY_LEDGER_20260914.md](docs/SCREEN_1TO1_PARITY_LEDGER_20260914.md) — 一比一视觉比对台账（完成状态回写 Active 计划）
+
+> 历史计划与已结束批次材料（含 UI_FIX_PLAN.md 等 UI 批次材料）一律在 `docs/过期文档/`，仅作追溯，不作为当前需求或验收标准。
 
 ## 关键约束
 
 - **原版/参考版对齐**：参考版是当前用户可见行为和视觉目标；按参考版核对布局、交互、结果、配色、字体和明暗主题。Android 原版用于语义交叉核对。若参考版与 Android 原版或用户已确认规则出现实质用户可见差异，暂停该项并向用户提供证据和选项，未经裁决不得自行选择。Rust + Flutter 内部架构保持现状，除非用户另行批准架构调整。详细流程见 `docs/REFACTORING_WORKFLOW.md`，逐屏方法见 `docs/SCREEN_1TO1_PARITY_SPEC_20260914.md`。
 - **双轨并存**：旧 Android 代码暂不删除，保持双轨并存；Rust 核心逻辑 + Flutter UI 为新架构
 - **FFI 变更**：修改 Rust/Dart FFI 边界前，先更新 `docs/API_CONTRACT.md` 契约，再实施代码；跨轨阻塞项须 Rust 轨先行交付契约；契约修改需相关轨道负责人确认；Mock 数据使用从原 Android 应用抓取的真实 JSON
-- **重构红线**：本项目为重构项目，**未经允许禁止新增 Android 原版不存在的功能**（用户明确授权的除外，如 LargeTitle 大标题、颜文字空态彩蛋、阅读热力图等，授权记录见提交与文档）；发现未授权的偏离项（如推荐算法等）必须清理，一切以不偏离重构核心为目标（2026-08-29 用户修订授权口径）
+- **重构红线**：本项目为重构项目，**未经允许禁止新增 Android 原版不存在的功能**（用户明确授权的除外，如 LargeTitle 大标题、颜文字空态彩蛋、阅读热力图、AI 摘要改写/角色卡 Characters/相关书 RelatedBooks（2026-09-05 授权，记录正本见 `docs/过期文档/UI_ONE_TO_ONE_CLONE_PLAN_20260905.md` §〇）等，授权记录见提交与文档）；发现未授权的偏离项（如推荐算法等）必须清理，一切以不偏离重构核心为目标（2026-08-29 用户修订授权口径）
 - **执行边界**：不得超范围删除或修改文件，删除/修改代码前必须先确认范围无误
 - **计划驱动**：所有阶段按 `docs/REFACTORING_WORKFLOW.md` 实施；唯一开放项、任务状态及进度只维护于 `docs/REFACTORING_ACTIVE_PLAN.md`。专题文档只保存方法和证据，不另设状态源；历史计划不得重新作为当前任务来源。
 - **UI 层职责边界**：UI 层只做界面渲染、交互与状态管理，不含业务逻辑；数据经 Rust Bridge 获取；遵循 UI 层与底层分离原则
@@ -69,6 +71,7 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
   - **MuMu ROM 限制与绕行（2026-09-20 实测 + 用户侧复核，派任务前必读）**：设备伪装三星 SM-G9900/Android 15，模拟器特征 prop 全空。**中文输入三条绕行路径（不要再撞 IME）**：① 批量书源验证走 FFI/example——`cargo run --release --example scan_search_sources -- <db> @关键词文件(UTF-8 无 BOM) <报告.json>`（全程不碰模拟器）；② 走 UI 时把中文注入 `search_keywords`（该机 **adbd 即 root**、自带 sqlite3 3.44.3，`/data/data/<pkg>/app_flutter/legado.db` 直写；写完退出搜索页再进即刷新，不必 force-stop；WAL 下勿高频外部连接）；③ Flutter 测试内 `tester.enterText()` 直进引擎、绕过系统 IME。其余限制：IME enable/set 被安全策略 patch（但 **2026-09-21 实测 `input text` 可注入中文**，早前"仅 ASCII"的记录作废）；`cmd clipboard` 有命令但空实现（`service call clipboard` 可通但构造 ClipData 过繁、不值得走）；`screencap` 不能写 `/sdcard`（用 `exec-out screencap -p`）；`uiautomator` 写转储后自杀（噪声）；`content` 与 toybox `grep` 段错误（改本地解析）；`settings put secure` 静默回滚（用 `global`）；logcat 被 `E MESA: Failed to find VkFence` 刷屏。
   - **⚠ 设备档当前不可用（2026-09-24 实测，恢复前派设备任务=白跑）**：MuMu 实例（index 0「Test2」）**guest 内只有 `lo`、没有任何网络接口** → 现象三连：① **guest 无外网**（`ping` 报 `Network is unreachable`，真实书源/本地 mock 全不可达）；② **adb 报 `offline`**（16384/5555 端口在监听、TCP 可连，但 adbd 握手不完成；`adb kill-server`/换 MuMu 自带 adb/重启实例均**无效**）；③ **guest 直连端点 `192.168.1.19:5555` 不可达**。**宿主侧证据**：`Get-NetAdapter -IncludeHidden` 里**没有 MuMu/Hyper-V 虚拟交换机**（只有 WLAN/以太网/Radmin VPN/WAN Miniport），服务里只有 `HvHost`+`MuMuRemoteService`、**没有 `vmms`**（而 MuMu 报 `hyperv_enabled=true`）→ 判定为**宿主虚拟网络组件丢失**，需用户侧修复（MuMu 设置内的网络/修复、重装 MuMu 驱动组件，或启用 Hyper-V 平台并重建 vSwitch——均需管理员/可能需重启）。**诊断配方（不经 adb）**：`MuMuManager.exe sh --vmindex 0 --cmd "getprop init.svc.adbd; ip addr show; ping -c 2 -W 2 223.5.5.5"`（adbd 显示 running 但只有 `lo` 即命中本故障）。
   - **MuMu 实操补充（2026-09-23 实测，设备任务派单前必读）**：① **实例↔端点映射会漂**——当日实例 index 0「Test2」的 adb 端口为 **16384**（同 guest adbd 另有 `127.0.0.1:5555` 暴露为 `emulator-5554`，两者是**同一台 guest 的两条路径**，可用「设备侧写标记 → 从另一端点读回」验证）；index 1「Test测试」当时**未运行**（16416 连接拒绝），故设备任务须**先用 `MuMuManager.exe info -v all` 判定在线实例**，不要假设 5555/16384 恒可用。② **多屏/逻辑 display**：应用窗口挂在独立逻辑 display 上，其 id 每次 `force-stop` 后**会变**——输入须 `input -d <logicalId> tap/…`，截图须 `exec-out screencap -p -d <SF displayId>`（直接 `screencap` 会把设备端 warning 文本混入 stdout 损坏 PNG）。③ **`run-as sqlite3` 直写 DB 要求包可调试**：release 变体报 `package not debuggable`，种子/注入类验证须装 **debug 变体**（同 Dart 代码、同版本号），并在证据里注明变体与是否发生 Rust 重建（`.so` mtime）。④ 我方应用语义文本在 **`content-desc`**（Flutter 语义树），不在 `text` 属性——dump 核实须读 content-desc。
+  - **端点时效性（2026-09-27 补充）**：本节及历史文档所载端点/IP/端口（含 `192.168.1.19:5555`、`192.168.100.63:5555`、`127.0.0.1:16384/16416` 等）均为**记录时点的历史事实**，会随宿主网段（NAT 子网漂移）与实例运行状态变化；每次设备任务前必须以 `MuMuManager.exe info -v all` 与 adb 实测探测为准，**不得把固定端点或旧设备可用记录当作当前可用保证**。
 - **完成定义（DoD，2026-09-17 新增）**：判定「完成」的依据是**证据**，不是执行步骤：
   1. 代码改动须附「多代理协作规则」路由表中对应的证据，并在提交正文写明来源（CI 运行链接 / QA 报告路径 / 审查结论 / 截图路径）；
   2. **CI 能覆盖的验证不重复派角色**（`flutter analyze && flutter test`、`cargo test`、`./gradlew :app:testAppReleaseUnitTest` 一律以 CI 结果为准），角色只用于 CI 覆盖不到的场景（实机冒烟、UI 交互、跨模块手动复现）；
@@ -112,3 +115,4 @@ Legado：Rust + Flutter 跨平台阅读器，与 Android 原版（gedoor/legado�
 修订：ZCode ｜ 2026-09-24（**设备档停用告警入档**：MuMu guest 仅 `lo`、宿主缺虚拟交换机与 `vmms` → 无外网 + adb 恒 offline，附不经 adb 的诊断配方；恢复前不派设备任务）
 修订：ZCode ｜ 2026-09-23（**MuMu 实操补充入档**：实例↔端点映射会漂（须先 `MuMuManager info -v all` 判定在线实例；index 0 的 adb 端口 16384 与 `emulator-5554` 是同一 guest 的两条路径）、多屏逻辑 display id 会变（输入 `input -d`、截图 `exec-out screencap -d`）、`run-as sqlite3` 种子须装 debug 变体、语义文本在 `content-desc`）
 修订：Codex ｜ 2026-09-27（移除已停用 Agent 工具的配置说明，将 Agent 路由改为按职责描述）
+修订：Legado 项目维护组 ｜ 2026-09-27（**文档与重构流程统一**：通用开发规范入口迁移至 `docs/DEVELOPMENT_CONVENTIONS.md`（原 `.qoder/rules/legado-dev-conventions.md`）；移除 UI_FIX_PLAN.md 当前入口，视觉入口指向 `docs/SCREEN_1TO1_PARITY_SPEC_20260914.md` 并补台账路由；新增设备端点时效性与实时探测要求）

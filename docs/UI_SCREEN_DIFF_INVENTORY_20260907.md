@@ -1,6 +1,6 @@
 # 全屏差异清单（参考版 vs 我方）— 2026-09-07 实测取证
 
-取证方法：emulator-5556 实机驱动逐屏截图，参考版=`io.legato.kazusa`（浅色主题），我方=`io.legado.flutter_legado`（2.0.206+207，深色主题）。**比对口径（2026-09-14 升级）**：升级为**截图一比一**——视觉基准=参考版截图（含配色/字体/明暗主题，2026-09-14 用户修订废止 2026-08-05 视觉自由授权）；本清单的功能项登记继续有效作为功能对齐依据，视觉对齐按新规范执行：[SCREEN_1TO1_PARITY_SPEC_20260914.md](SCREEN_1TO1_PARITY_SPEC_20260914.md) + 台账 [SCREEN_1TO1_PARITY_LEDGER_20260914.md](SCREEN_1TO1_PARITY_LEDGER_20260914.md)。参考截图权威归档已迁至 docs/parity_shots/ref_20260913/（原 .tmp/ref_shots_20260913/）。**功能基准（2026-09-11 修订）**：原版与参考版**双基准并重**——某项在原版或参考版任一侧存在即属应有能力（此前仅按原版口径关闭的项已重开，见 §十）。阅读器域取证见 [UI_ONE_TO_ONE_CLONE_PLAN_20260905.md §五·八/§五·九](UI_ONE_TO_ONE_CLONE_PLAN_20260905.md)（2026-09-06）。
+取证方法：emulator-5556 实机驱动逐屏截图，参考版=`io.legato.kazusa`（浅色主题），我方=`io.legado.flutter_legado`（2.0.206+207，深色主题）。**比对口径（2026-09-14 升级）**：升级为**截图一比一**——视觉基准=参考版截图（含配色/字体/明暗主题，2026-09-14 用户修订废止 2026-08-05 视觉自由授权）；本清单的功能项登记继续有效作为功能对齐依据，视觉对齐按新规范执行：[SCREEN_1TO1_PARITY_SPEC_20260914.md](SCREEN_1TO1_PARITY_SPEC_20260914.md) + 台账 [SCREEN_1TO1_PARITY_LEDGER_20260914.md](SCREEN_1TO1_PARITY_LEDGER_20260914.md)。参考截图权威归档已迁至 docs/parity_shots/ref_20260913/（原 .tmp/ref_shots_20260913/）。**功能基准（2026-09-11 修订）**：原版与参考版**双基准并重**——某项在原版或参考版任一侧存在即属应有能力（此前仅按原版口径关闭的项已重开，见 §十）。阅读器域取证见 [UI_ONE_TO_ONE_CLONE_PLAN_20260905.md §五·八/§五·九](过期文档/UI_ONE_TO_ONE_CLONE_PLAN_20260905.md)（2026-09-06）。
 
 ## 一、主页签
 
@@ -149,7 +149,7 @@
 ### 开发建议（详见独立文档）
 
 未完成项与搁置项的逐项开发建议（基准引用/实施方案/风险/估算/排期）见
-[UI_REMAINING_DEV_SUGGESTIONS_20260909.md](UI_REMAINING_DEV_SUGGESTIONS_20260909.md)：
+[UI_REMAINING_DEV_SUGGESTIONS_20260909.md](过期文档/UI_REMAINING_DEV_SUGGESTIONS_20260909.md)：
 批A 源码核实（0.5d）→ 批B 详情页对齐（2d）→ 批C/D 体验增强（8d）→ 批E 换源外壳（1.5d）；
 搁置解禁项（首页模块管理）建议独立立项（3~5d，需授权）。
 

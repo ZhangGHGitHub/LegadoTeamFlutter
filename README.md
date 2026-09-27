@@ -60,7 +60,7 @@ flutter test
 | [AGENTS.md](AGENTS.md) | Agent 工作入口与验证命令 |
 | [rust/README.md](rust/README.md) | Rust 引擎架构与 Crate 说明 |
 | [docs/API_CONTRACT.md](docs/API_CONTRACT.md) | FFI / BookApi 契约 |
-| [docs/AUDIT_FIX_TASKS_20260814.md](docs/AUDIT_FIX_TASKS_20260814.md) | 审计修复任务清单 |
+| [docs/AUDIT_FIX_TASKS_20260814.md](docs/过期文档/AUDIT_FIX_TASKS_20260814.md) | 审计修复任务清单（已归档，仅供追溯） |
 | [CHANGELOG.md](CHANGELOG.md) | 版本更新日志 |
 
 ---

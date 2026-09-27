@@ -2,9 +2,9 @@
 
 **日期**: 2026-09-27
 **版本**: v1.1
-**维护人**: Legado 开发团队（Qoder / QoderCN）
+**维护人**: Legado 开发团队
 
-> 本文只规定 Rust/Flutter 双轨边界、Mock 与 FFI/codegen/native 构建专项步骤。通用任务优先级、Agent 派发、当前分支策略、常规验证、证据和关闭流程统一见 [REFACTORING_WORKFLOW.md](REFACTORING_WORKFLOW.md)、根目录 [AGENTS.md](../AGENTS.md) 与开发规范；视觉目标见 [SCREEN_1TO1_PARITY_SPEC_20260914.md](SCREEN_1TO1_PARITY_SPEC_20260914.md)。
+> 本文只规定 Rust/Flutter 双轨边界、Mock 与 FFI/codegen/native 构建专项步骤。通用任务优先级、Agent 派发、当前分支策略、常规验证、证据和关闭流程统一见 [REFACTORING_WORKFLOW.md](REFACTORING_WORKFLOW.md)、根目录 [AGENTS.md](../AGENTS.md) 与[通用开发规范](DEVELOPMENT_CONVENTIONS.md)；视觉目标见 [SCREEN_1TO1_PARITY_SPEC_20260914.md](SCREEN_1TO1_PARITY_SPEC_20260914.md)。
 
 ---
 
@@ -16,7 +16,7 @@ Legado Flutter 重构采用 **Rust 核心引擎 + Flutter 跨平台 UI** 架构�
 
 - **UI 迭代被 Rust 交叉编译拖慢**：每次修改 Rust 代码都需重新编译 cdylib、执行 codegen、同步 DLL，一次完整循环耗时数分钟，严重拖慢 UI 调整节奏。
 - **UI 对齐需要高频迭代**：Flutter 端按参考版截图核对用户可见布局和交互；纯 Dart UI 可先用 Mock 开发，再进入双轨集成验证。
-- **两人可并行**：项目采用 Qoder 与 QoderCN 双向协作模式，天然适合一人专注 UI、一人专注 Rust 引擎的并行分工。
+- **任务级并行**：按轨划分文件边界后，UI 与 Rust 引擎的工作可由不同任务或代理并行推进；分工与并行上限以统一工作流为准。
 
 ### 1.2 目标
 
@@ -210,7 +210,7 @@ flutter run -d windows --dart-define=USE_MOCK=true
 
 ### 6.4 提交信息
 
-提交格式、中文描述、版本和双日志同步均以 [legado-dev-conventions.md](../.qoder/rules/legado-dev-conventions.md) 与根目录 `AGENTS.md` 为准；旧式 `[UI]` / `[Rust]` 样例仅作历史记录，不用于新提交。
+提交格式、中文描述、版本和双日志同步均以 [DEVELOPMENT_CONVENTIONS.md](DEVELOPMENT_CONVENTIONS.md) 与根目录 `AGENTS.md` 为准；旧式 `[UI]` / `[Rust]` 样例仅作历史记录，不用于新提交。
 
 ---
 
@@ -247,7 +247,7 @@ flutter run -d windows --dart-define=USE_MOCK=true
 
 | 文档 | 关系 |
 |------|------|
-| [legado-dev-conventions.md](../.qoder/rules/legado-dev-conventions.md) | 通用开发规范，本规范为其在双轨场景下的补充 |
+| [DEVELOPMENT_CONVENTIONS.md](DEVELOPMENT_CONVENTIONS.md) | 通用开发规范，本规范为其在双轨场景下的补充 |
 | [REFACTORING_WORKFLOW.md](REFACTORING_WORKFLOW.md) | 通用任务实施、Agent 分工、验证证据与关闭流程 |
 | [API_CONTRACT.md](API_CONTRACT.md) | 契约登记表，本规范第 4 节流程的操作载体 |
 | [VERSION_CONTROL.md](VERSION_CONTROL.md) | 版本记录，集成里程碑在此登记 |

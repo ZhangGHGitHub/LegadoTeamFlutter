@@ -181,8 +181,7 @@
   3. **`java.put`（进程全局 store）↔ `@get`（analyzer 本地 store）无桥**（3 源：小米阅读/就去看网/手机小说）：手机小说 `tocUrl` 取空回退 book_url → 目录页错 → `get()` 兜底读全局 store 或流程入口 seed。
   4. **`apply_put_map` 只取首值**（4 源）：`@put:{y:#t@text##ab##XY}` 全损 → 改走完整 `get_strings` 管道。
   5. **`%%` 定界**（3 实现 / ~4 源）：我方 max_len vs 上游「首列表为界」→ 改 zip 边界 + 回归断言。
-  6–13（登记）：越界 `$n` 回退（0 命中）、JS 单值数组 join（`a,b` vs `a
-b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null vs undefined（守卫式等价）、`fromBookInfo` 硬编码 false（0 命中）、Rhino `Packages.*`/`android.util.Base64` 互操作（3 源，架构性限制）、`source.refreshExplore`/`variableComment`（1|1）、全局 store 生命周期（随第 3 项处理）。
+  6–13（登记）：越界 `$n` 回退（0 命中）、JS 单值数组 join（`a,b` vs `a\nb`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null vs undefined（守卫式等价）、`fromBookInfo` 硬编码 false（0 命中）、Rhino `Packages.*`/`android.util.Base64` 互操作（3 源，架构性限制）、`source.refreshExplore`/`variableComment`（1|1）、全局 store 生命周期（随第 3 项处理）。
   - **新登记（2026-09-22，队列末项：Rhino `java.io` 最小 shim，取证驱动；同日 code-review 修后重校）**：语料 916 源中 `java.io` 面**字面**命中仅 `ByteArrayInputStream`/`ByteArrayOutputStream`（**5 源**：语料 #21/#36/#58/#304/#389，听友M/微信读书 wrInflateRaw 流，`quickjs_impl.rs` 已 shim）；**抽象基类 `InputStream` 字面 0 命中**，但 **favcomic（索引 703）混淆体在运行期解码后探测**（`.prototype`/`instanceof` Java 式类型探测，为 decode 路径的 Java 解密分支脚手架，经 `ruleContent.imageDecode` + `coverDecodeJs` → `decode(result)` 真实 content/cover 可达）。其**真实数据路径**是 `java.createSymmetricCrypto`（CryptoJS AES）+ `java.strToBytes`，`InputStream` 只搬运字节。**结论（用户口径「能力清单、只覆盖用到的类、用户提示必须保留」）**：**实施 `java.io.InputStream` 最小面**——纯内存字节缓冲读流（方法挂 **prototype** 使 `instanceof`/`.prototype` 成立，`new` 与普通调用双支持，无真实 JVM 对象/文件 IO/反射），走既有能力台账登记路径，**加法式、零 FFI 签名变更、零新依赖**（落点 `rust/legado-js/src/host_api/quickjs_impl.rs`）。**Java 语义（审查修）**：构造器**拷贝**输入字节（不别名调用方 buffer）；字符串/`java.lang.String` 输入经宿主 `java.strToBytes` 转字节（失败抛可读错误，**绝不**静默产生空流）；`read(b,off,len)` 的 buffer 参数覆盖全部 TypedArray（含 `Int8Array`）+ plain Array（一律就地写、不拷贝）；越界/负 off/len 抛可读 `RangeError`（不静默截断）；len==0 读 0 字节返回 0（即使 EOF）、EOF 且 c>0 返回 -1；`mark`/`reset` 按 Java 语义经 `_mark`（reset 回到 mark 位置、未 mark 即 0，与 `ByteArrayInputStream` 一致）——审查决策取「2 行 `_mark` 修复」而非「删除 no-op 实现」，依据：审查要求已实现成员行为不受影响，而 Java 语义修复仅 2 行成本。**实例哨兵（审查修）**：构造器返回 get 陷阱 Proxy——已知成员（read/available/skip/mark/reset/close/`_bytes`，含原型链继承）直通（`in` 语义不受影响，`instanceof`/`.prototype` 探测仍成立，favcomic 依赖）；未知字符串成员回落类级同款哨兵（读取安全并登记 `java.io.InputStream.<成员>` 前缀台账键、调用/new 抛 `此书源需要 Java 脚本能力（Packages.java.io.InputStream.<成员>），当前不支持`），未覆盖成员不再静默 `undefined`；`_bytes` 保留实例暴露（`JSInflaterInputStream` 的 `inStream._bytes` 提取依赖）。**显式不支持（登记 + 保留提示，非本次范围）**：`PrintStream`/`FileReader`/`FileWriter`/`StringReader`/`StringWriter`/`BufferedReader`/`BufferedWriter`/`DataInputStream`/`IOException`（语料 0 命中 + 语义依赖真实 JVM 类型系统/文件 IO/反射，强行模拟即违反「不照搬 JVM」红线）——命中时抛 `此书源需要 Java 脚本能力（Packages.<全名>），当前不支持` 并经 `record_unknown_java_symbol` 登记能力台账（首次登记 eprintln `[legado-js] 能力受限登记`）。**e2e 签名（审查修后诚实重校）**：IIFE 顶层返回值字面 `undefined` 在 shim 上线前后**同值、不具区分力**（审查实测：`delete Packages.java.io.InputStream` 的哨兵态同样完成加载并返回 `undefined`——字节码吞掉异常后回退路径不产生返回值）；真实区分点 = ① `java.io.InputStream` 解析为可用函数（isFn/`.prototype.read`/instanceof/read 探测全过）+ ② 台账**不再**登记 `java.io.InputStream` **前缀**键（台账负断言用**前缀匹配** `starts_with`——精确等值会漏掉 `java.io.InputStream.<成员>` 类后缀键）+ ③ 未覆盖符号（`java.io.PrintStream` 等）仍抛可读文案 + 登记（保护不放松）。测试：单测 `test_packages_shim_input_stream` / `test_packages_shim_input_stream_capability_ledger`（含实例哨兵段 + 前缀断言）/ **`test_packages_shim_input_stream_java_semantics`（审查修新增：构造拷贝/Int8Array 就地写/越界抛错/len==0/字符串输入/mark 复位/实例哨兵七个反例，JSON 解析后逐条 `assert_eq` 精确实断言）**（quickjs 档）+ e2e `favcomic_jslib_loads_with_resolved_input_stream`（台账负断言同改前缀匹配）。**输出对比局限（如实登记）**：缺真实 favcomic 密文与 AES 密钥/口令（探针 `createSymmetricCrypto(s:20,s:51,u8:7)`，值不外露），**无法**给出真实解密产物与参考实现的可复现对比；可复现的是上述 ①②③ 区分点，而非解密产物。
 - **P2-10 P2-8 审查剩余项**（**已关闭 2026-09-18**）：P1-1 固化回归测试、P2-2 存量坏 `tocUrl` 自愈（单列回写）、P2-3 server 单一取址点、P2-4 Dart DB 优先、P3-1 trim、P3-3 注释如实化、P3-4 RoomImporter 保留字段均已完成；P3-2（裸 `@attr` 多子元素语义）经只读核查后判定应统一为「遍历全部子元素 + 去重」，作为独立小项并入 P2-11。历史记录：P1-1 已修（写侧 `fill_origin_book_url_if_empty` + Dart 自动换源补字段 + 自愈补列），**其固化回归测试待补**（「换源后以缺 `originBookUrl` 的 Book JSON 调 `updateBook` 不得清空列」）。其余：
   - P2-2 存量坏 `tocUrl` 不自愈：`reader.rs` 的 `refresh_toc` 在目录为空且 `book_page_fetch_url()` 与 `toc_url` 不同时应用书籍页重试一次并回写；
@@ -195,8 +194,7 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
   - `book` 绑定为只读快照：`book.type = N`（~7 源切小说/音频/漫画模式）、`setReverseToc`（1 源）、`book.putVariable`（1 源）写入被静默丢弃；`type` 初值硬编码 0（可无损改真实值）→ 视影响面决定落存储或显式声明；
   - 正文阶段 `book` 反查只以章节 URL 为键（两书产生相同章节 URL 时理论上串键）→ `webbook_content` 增可选 bookUrl 或复合键；
   - `explore_api` 未套用 `src` 重绑定/`book` 绑定（链式 JS 的 src 仍为中间产物，同类残差）；
-  - `java.lang` parse 面近似（`parseInt('12abc')`→12、`Double.parseDouble('NaN')` 抛错等）、`getStringList` 细分差异（上游按 `
-` 拆分/`null` 语义/`get/isEmpty` 别名）；
+  - `java.lang` parse 面近似（`parseInt('12abc')`→12、`Double.parseDouble('NaN')` 抛错等）、`getStringList` 细分差异（上游按 `\n` 拆分/`null` 语义/`get/isEmpty` 别名）；
   - `archive_utils::inflate_raw_bytes` 两个 attempt 的极性注释与实现相反（功能正确）；
   - `mergeDbBook` 的 DB 值纯空白时会压过路由有效值（与 `bookFetchUrl` 的 trim 语义不一致）；
   - `BookMeta`/`chapter_book_cache` 容量判定 `>=` 触发整体 clear（更新已有 key 也清空）；
@@ -443,6 +441,17 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
 - ▶️ **剩余（2026-09-03 更新）**：S0-D 性能剖析——环境依赖已随 S0-C 闭合解除（双包同机可跑同基线），可独立排期（分段计时探针 LEGADO_SEARCH_PHASE_TIMING 已存在）；F1 loginCheckJs 语义对齐（P1，rust/legado-ffi/src/js_executor.rs，对齐原版"evalJS 返回值须可强转 StrResponse + 错误路径 code!=500 放行"语义，见 `SEARCH_PARITY_S0C_CLOSURE_20260903.md` §3.1）。
 
 
+### 文档统一批次登记（2026-09-27，旧计划核验移交）
+
+> 来源：2026-09-27 用户确认的「文档处置清单与未结项交叉表」；16 篇旧计划/记录已归档 `docs/过期文档/`（映射见 `docs/过期文档/ARCHIVE_MAP_20260922.md` §四）。逐条核验证据（commit/行号级）见 `docs/过期文档/RESEARCH_LEGACY_PLANS_20260927_A.md` 与 `RESEARCH_LEGACY_PLANS_20260927_UI.md`。
+
+- **P2-23 iOS 自动任务降级 + 真机走查**（待核验，低优）：workmanager iOS 降级（前台定时执行，对齐插件对照表 L71）+ iOS 真机走查清单，iOS 轨 P2 收尾。来源：`过期文档/IOS_TRACK_FEASIBILITY_20260830.md` §五 P2（2026-08-31 修订行在案）。
+- **P2-24 armv7 JS ABI 治理（决策项，待用户裁决）**：① 将 rar（及同类非 JS 归档依赖）从 quickjs feature 拆出为独立可选 feature（armv7 可带 JS）；② 接受 armv7 为无 JS 遗留 ABI / 不再随 APK 分发 armeabi-v7a。裁决后改 `rust/legado-js/Cargo.toml` feature 结构。根因证据：`过期文档/SEARCH_PARITY_REMEDIATION_PLAN_20260828.md` §7.2（L202-207）。
+- **P3-8 iOS 三端收敛**（待核验，低优）：Windows 行为基线固化 + macos/linux FFI 接线冒烟（dylib/framework 装载）+ CI 三产物矩阵。来源：`过期文档/IOS_TRACK_FEASIBILITY_20260830.md` §五 P3。
+- **低优候选 1：渲染矩阵补页（详情/阅读两屏）**：`test/widget/md3_acceptance_matrix_test.dart` 仍仅 4 屏，改动最重的两屏无单测级渲染防护（实机截图已由 parity_shots 流程承担）；随下一轮 UI 测试批顺带。来源：`过期文档/UI_SYNC_REFACTOR_PLAN_20260905.md` §七#7。
+- **低优候选 2：Characters/RelatedBooks 后端数据链 + AI 摘要链**（授权在案 2026-09-05，UI 骨架已就位、空数据隐藏）：契约未冻结（API_CONTRACT 无 getBookCharacters/getRelatedBooks）、Rust 轨未排期；按 2026-09-27 主线口径属主线后功能，排期待用户指示。授权正本：`过期文档/UI_ONE_TO_ONE_CLONE_PLAN_20260905.md` §〇。
+- **在案待裁决（不新增动作）**：Material You 动态取色默认槽位（见 D9 段登记）；首页模块管理解禁（2026-09-11「暂不」在案，解禁按 `过期文档/UI_REMAINING_DEV_SUGGESTIONS_20260909.md` §E 路径契约先行）；animateItem 三件套（留档不催办）；iOS 签名分发（$99 开发者账号 + TestFlight，见 IOS 文档 §二）；A* 实网验收 9 项待素材（P2-4）。
+
 ## 四、文档治理
 
 > 本节说明文档职责；当前任务状态仍以本文为唯一来源，一般实施步骤以 `REFACTORING_WORKFLOW.md` 为准。
@@ -456,16 +465,16 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
 | `TWO_TRACK_DEV_SPEC.md` | 双轨与 codegen 纪律 |
 | `RESIDUAL_RISKS_2026-08-13.md` | A* 和工程残余风险 |
 | `SOURCE_DIFF_AUDIT_2026-08-13.md` | 原版源码差异证据 |
-| `SEARCH_PARITY_REMEDIATION_PLAN_20260828.md` | 搜索速度与结果一致性当前修复计划 |
-| `UI_MD3_PLAN.md` | Flutter UI 视觉迁移至 MD3 Expressive 的当前执行计划（UI 轨独立推进，不涉 Rust/FFI） |
-| `UI_MD3_LAYOUT_PLAN.md` | 分批全量二三级重排+动效全补规划（UI 轨，2026-09-04 立项，四批已交付收口） |
-| `PARSER_GAP_FIX_PROGRESS_20260815.md` | 解析 parity 交接与证据 |
+| `SEARCH_PARITY_REMEDIATION_PLAN_20260828.md` | 已归档（历史证据，docs/过期文档/）；开放项挂 P3-6，armv7 决策项见 P2-24 |
+| `UI_MD3_PLAN.md` | 已归档（历史证据，docs/过期文档/）；视觉主题类当前规范为 parity spec/台账 |
+| `UI_MD3_LAYOUT_PLAN.md` | 已归档（历史证据，docs/过期文档/；四批已交付收口） |
+| `PARSER_GAP_FIX_PROGRESS_20260815.md` | 已归档（历史证据，docs/过期文档/）；A* 验收由 P2-4 + RESIDUAL_RISKS §A* 跟踪 |
 | `过期文档/README.md` | 历史文档目录和替代关系 |
 
 新增计划、报告、交接文档必须放在 `docs/`；历史材料只允许放在 `docs/过期文档/`，不得再创建新的日期版计划散落在根目录。
 
 编写者：Codex ｜ 2026-08-19
-修订：Qoder UI ｜ 2026-09-05（一比一复刻立项：IA 结构层全量 S0–S7（主框架收顶栏/阅读菜单收敛/详情补齐/主题引擎参数化/Sheet 统一壳/三端适配），Material 单引擎，用户授权纳入 AI 摘要改写/角色卡/相关书（红线豁免记录见 UI_ONE_TO_ONE_CLONE_PLAN_20260905.md §〇，后端数据链契约先行 Rust 轨另排）；R3⑥ 剩余 8 项归档至 UI_SYNC_REFACTOR_PLAN_20260905.md §七）
+修订：Qoder UI ｜ 2026-09-05（一比一复刻立项：IA 结构层全量 S0–S7（主框架收顶栏/阅读菜单收敛/详情补齐/主题引擎参数化/Sheet 统一壳/三端适配），Material 单引擎，用户授权纳入 AI 摘要改写/角色卡/相关书（红线豁免记录见 docs/过期文档/UI_ONE_TO_ONE_CLONE_PLAN_20260905.md §〇，后端数据链契约先行 Rust 轨另排）；R3⑥ 剩余 8 项归档至 docs/过期文档/UI_SYNC_REFACTOR_PLAN_20260905.md §七）
 修订：Qoder UI ｜ 2026-09-05（全量同步重构当日交付：布局优先六批 B0+B2/B3/B4/B5/B1/B6+B7——顶栏 5 档按钮+merge 胶囊+Dynamic 搜索行、底栏三态+悬浮 64dp 胶囊+Rail 简版、详情取色换肤 400ms+折叠顶栏+背景三档+ExtendedFAB、阅读菜单 scale0.88+搜索 pill+r32、miuix 字阶拉齐+书架行 vertical12、详情与圆角开关组+对话框按钮规范；版本 2.0.168–2.0.173，门禁 analyze 0+test 1336 全过；剩余 blur 家族/dynamic_color/FastScroll 全站/朗读胶囊 morph 等登记于 UI_SYNC_REFACTOR_PLAN_20260905.md §七）
 修订：Qoder UI ｜ 2026-09-05（布局规划 P1–P4 四批全量交付并完成收尾：主链二三级/书源规则链/设置系通用约 40 页重排 + 动效全补（转场分档/Hero 全链路/Skeleton/Contained 接线/裸下拉清零 10 页/空态收敛/阅读器 chrome/Sheet 28dp）；残页 3 处闭合（explore_show 经共享列表组件、reader_comic 顶栏动作行、other_settings 三 Dialog 主题级合规验证）；搜索 pill/胶囊独立 fade/predictiveBack 按登记口径保留；版本 2.0.161–2.0.165，门禁 analyze 0 + test 1321 全过；详见 UI_MD3_LAYOUT_PLAN.md「实施状态」与 UI_MD3_LAYOUT_PLAN_PROGRESS_20260905.md）
 修订：Qoder + Bridge ｜ 2026-09-04（换源任务书 T6 流式化收口（任务书唯一 ⏸ 项销记）：Rust run_change_source_stream + StreamSink searchSourceStream（契约 §2.4）+ Dart 逐源渐显与 x/y 进度（U1 过渡反馈的永久替代）+ 首轮搜索/高级选项加载竞态修复；5556 实测 1024 源首候选 ≤2s、flutter test 1313 全过；版本 2.0.154+155；详见 TASK_HANDOFF_CHANGE_SOURCE_FIX_20260903.md §〇）
@@ -507,3 +516,5 @@ b`）、`nextChapterUrl` 未绑定（1 源）、search/explore 的 `book` null v
 修订：ZCode（27B 通道）｜ 2026-09-24（换源预拉缓存与感知等待（加法式，零破坏）：对齐上游 `ChangeBookSourceViewModel` 三步——① 搜索期 enrich 并行预拉候选（有界并发 8、单候选 60s 超时、失败/超时隔离直通，内存 `SwitchPrefetchCache`，key=`source_url\u0000book_url` 对齐上游 `primaryStr()`、目录上限 30000）；② 选中命中 → 直接提交缓存详情+目录（**零网络、选中即落地**），未命中 → 现场抓取（可取消）；③ 新 FFI `cancelSwitchSourceApply`（对齐上游 `cancelChangeSource`）apply 代数 +1 并 bump 目录刷新代数，在途 apply 提交前阻断（DB 零变更）。§2.4 方法数 17→19、附录合计 278→280、BookApi 275→277，见 `docs/API_CONTRACT.md` 2026-09-24 行与 §2.4 ℹ️ 块；Rust `source_switch.rs` 10 条新单测 + FFI 2 个新导出，Flutter 侧 `BookApi.switchSourcePrefetch`/`cancelSwitchSourceApply` + 换源页可取消加载态与上游 zh 进度串对齐）
 
 修订：Codex｜2026-09-27（统一计划职责与当前用户确认的主线：本文作为唯一开放任务/状态入口；新增 `REFACTORING_WORKFLOW.md` 定义 Agent 派发、实施、验证和关闭流程；先完成书籍主流程，漫画/视频先于音频；参考版用户可见行为为目标，实质冲突先向用户裁决。旧登记须核验后再派发）
+
+修订：Legado 项目维护组 ｜ 2026-09-27（**文档统一批次**：12 篇点名旧计划 + 4 篇同类材料核验后归档 `docs/过期文档/`（ARCHIVE_MAP §四）；仍有效项登记 P2-23 / P2-24（待用户裁决）/ P3-8 与两条低优候选；§四治理表 4 行同步归档状态；§〇 红线豁免授权正本指针更新；通用开发规范迁至 `docs/DEVELOPMENT_CONVENTIONS.md`；NUL 历史缺陷核实已由 `ed6211b004` 修复、另将 2 处代码段内嵌真实换行转为 `\n` 文本）

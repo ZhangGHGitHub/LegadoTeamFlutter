@@ -5,6 +5,8 @@
 >
 > **取证依据**：**com.legado.app.release**，版本号 **versionName=3.26073003**（本仓库构建的安卓 release 版）。
 > 取证时间：2026-07-31；只读取证，未改任何代码。
+>
+> **口径更新（2026-09-27，文档统一批次）**：本目录为 **历史取证快照**，现用于 **Android 原版功能语义核对**；视觉验收基准以**参考版截图**为准（方法见 [docs/SCREEN_1TO1_PARITY_SPEC_20260914.md](../SCREEN_1TO1_PARITY_SPEC_20260914.md)）。上文「视觉基准」表述为取证时点口径，已由参考版视觉基准取代。文中采集日期、模拟器（雷电 LDPlayer9 emulator-5556，**已于 2026-09-20 弃用**）与环境信息均为历史取证事实，**不代表当前设备状态**；当前设备任务以执行前实时探测为准。
 
 ## 0 环境与方法
 
@@ -98,5 +100,5 @@
 
 - [docs/baseline_android/ANDROID_UI_BASELINE.md](../baseline_android/ANDROID_UI_BASELINE.md) — Android 原版界面文字基准（同版本取证）
 - [docs/baseline_flutter/FLUTTER_UI_CAPTURE.md](../baseline_flutter/FLUTTER_UI_CAPTURE.md) — Flutter 版界面取证与差异记录
-- [docs/UI_COMPARISON_REPORT.md](../UI_COMPARISON_REPORT.md) — UI 对比分析报告
-- [docs/UI_FIX_PLAN.md](../UI_FIX_PLAN.md) — UI 修复详细计划
+- [docs/过期文档/UI_COMPARISON_REPORT.md](../过期文档/UI_COMPARISON_REPORT.md) — UI 对比分析报告（已归档）
+- [docs/过期文档/UI_FIX_PLAN.md](../过期文档/UI_FIX_PLAN.md) — UI 修复详细计划（已归档）

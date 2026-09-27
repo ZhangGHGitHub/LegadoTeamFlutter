@@ -1,5 +1,7 @@
 # legadoteam 项目开发史（Qoder 对话记录）
 
+> **归档说明（2026-09-27）**：本文件为历史开发过程的对话记录原文归档，仅作追溯；其中提及的工具（Qoder 等）、目录结构与文档路径均代表**记录时点**状态，**不代表当前工具或流程**；文内旧路径链接按历史原文保留、不修复。当前规范与流程以根目录 `AGENTS.md`、`docs/REFACTORING_WORKFLOW.md`、`docs/DEVELOPMENT_CONVENTIONS.md` 为准。
+
 ## 元数据
 
 - 项目: legadoteam

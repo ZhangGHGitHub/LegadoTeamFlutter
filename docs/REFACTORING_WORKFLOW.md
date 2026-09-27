@@ -14,10 +14,10 @@
 | Flutter/Rust FFI 签名与数据契约 | [API_CONTRACT.md](API_CONTRACT.md) | 跨轨需求先更新契约；此处不复制接口定义 |
 | 视觉基准与逐屏比对方法 | [SCREEN_1TO1_PARITY_SPEC_20260914.md](SCREEN_1TO1_PARITY_SPEC_20260914.md) 和对应台账 | 视觉以参考版截图为目标；完成状态仍回写 Active 计划 |
 | 阅读缺陷的发现和取证 | [READING_FLOW_DEFECT_HUNT_PLAN_20260924.md](READING_FLOW_DEFECT_HUNT_PLAN_20260924.md) | 只规定猎捕；确认缺陷后按本文派发修复 |
-| 通用编码规范、提交和 Windows 编码注意事项 | [.qoder/rules/legado-dev-conventions.md](../.qoder/rules/legado-dev-conventions.md) | 与本文配合；矛盾时以 AGENTS 的当前规则为准 |
+| 通用编码规范、提交和 Windows 编码注意事项 | [DEVELOPMENT_CONVENTIONS.md](DEVELOPMENT_CONVENTIONS.md) | 与本文配合；矛盾时以 AGENTS 的当前规则为准 |
 | 历史计划或已结束 UI 批次 | `docs/过期文档/`、标注为历史的专题文档 | 仅提供来源证据，不得派发新任务 |
 
-`docs/README.md` 是索引，不是状态源。`TWO_TRACK_DEV_SPEC.md` 只维护双轨和 codegen 专项技术步骤。`UI_FIX_PLAN.md` 是历史 UI 批次材料，不是当前视觉或功能验收标准。任何文档发生冲突时，按上表权威顺序处理，并登记需要修正的文档链接。
+`docs/README.md` 是索引，不是状态源。`TWO_TRACK_DEV_SPEC.md` 只维护双轨和 codegen 专项技术步骤。历史 UI 批次材料（含 `UI_FIX_PLAN.md`）已归档于 `docs/过期文档/`，不是当前视觉或功能验收标准。任何文档发生冲突时，按上表权威顺序处理，并登记需要修正的文档链接。
 
 ## 2. 重构目标和差异裁决
 
