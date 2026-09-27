@@ -239,9 +239,26 @@ pub fn get_chapters(book_url: &str) -> LegadoResult<ChapterListResponse> {
 
         // 存入数据库供后续访问
         if !book_chapters.is_empty() {
+            // [B-13b] 懒加载入库同时同步 books 行目录派生字段（totalChapterNum /
+            // latestChapterTitle / latestChapterTime）：修复前仅写章节行，books
+            // 行派生字段停留 0/NULL → 书架章节数与最新章节显示为空。
+            // latestChapterTime 仅章数增长时写入（对齐 refresh_toc 的增长条件
+            // 分支）；books 行不存在时 no-op（书架入口 add_book 已建行）。
+            let new_total = book_chapters.len() as i32;
+            let new_latest_title: Option<String> = book_chapters.last().map(|c| c.title.clone());
             with_database(|db| {
-                let repo = BookChapterRepository::new(db.connection());
+                let conn = db.connection();
+                let repo = BookChapterRepository::new(conn);
                 repo.insert_batch(&book_chapters)?;
+                let book_repo = BookRepository::new(conn);
+                if let Some(existing) = book_repo.find_by_url(book_url)? {
+                    book_repo.update_toc_derived_fields(
+                        book_url,
+                        new_total,
+                        new_latest_title.as_deref(),
+                        (existing.total_chapter_num < new_total).then_some(now_millis()),
+                    )?;
+                }
                 Ok(())
             })?;
         }
