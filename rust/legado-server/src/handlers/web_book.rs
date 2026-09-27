@@ -459,7 +459,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         // 对齐原版 analyzeChapterList(baseUrl=book.tocUrl, redirectUrl=res.url,
         // body=res.body)，WebBook.kt:353-360：base URL 保持原请求 URL，
         // 仅 body 采用 JS 修改值；无配置/非 quickjs 直通时与原 body 等价）
-        let login_outcome = crate::login_check::execute_login_check(source, &info_body, book_url, 200)?;
+        let login_outcome =
+            crate::login_check::execute_login_check(source, &info_body, book_url, 200)?;
         let info_body = login_outcome.body;
         let info_rule = source.rule_book_info.as_ref();
         let info_analyzer = AnalyzeRule::new(info_body, book_url.to_string());
@@ -556,7 +557,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         // analyzeContent(baseUrl=chapter.getAbsoluteURL(), redirectUrl=res.url,
         // body=res.body)，WebBook.kt:483-492：base URL 保持原章节 URL，
         // 仅 body 采用 JS 修改值；无配置/非 quickjs 直通时与原 body 等价
-        let login_outcome = crate::login_check::execute_login_check(source, &body, &chapter.url, 200)?;
+        let login_outcome =
+            crate::login_check::execute_login_check(source, &body, &chapter.url, 200)?;
         let body = login_outcome.body;
 
         // 2. 使用正文规则解析首页（Task #135：含 nextContentUrl 分页规则提取）
