@@ -456,17 +456,22 @@
 
 > 来源：2026-09-27 用户确认的「文档处置清单与未结项交叉表」；16 篇旧计划/记录已归档 `docs/过期文档/`（映射见 `docs/过期文档/ARCHIVE_MAP_20260922.md` §四）。逐条核验证据（commit/行号级）见 `docs/过期文档/RESEARCH_LEGACY_PLANS_20260927_A.md` 与 `RESEARCH_LEGACY_PLANS_20260927_UI.md`。
 
-- **P2-23 iOS 自动任务降级 + 真机走查**（待核验，低优）：workmanager iOS 降级（前台定时执行，对齐插件对照表 L71）+ iOS 真机走查清单，iOS 轨 P2 收尾。来源：`过期文档/IOS_TRACK_FEASIBILITY_20260830.md` §五 P2（2026-08-31 修订行在案）。
-- **P2-24 armeabi-v7a（32 位）JS 引擎降级登记（状态：**按 2026-08-29 用户裁决维持现状**，非开放待裁决项）**：
-  - **既有裁决（2026-08-29 用户确认）**：保留 armeabi-v7a 降级——原版支持 ARM32，v7a 不剔除出发布矩阵；v7a 包 `quickjs=false`（无 JS 引擎：纯规则书源可用、JS 书源不可用）属**已裁决现状**，维持运行，不作为普通待裁决项重排。
-  - **技术事实（登记备查，2026-09-27 核实）**：`rust/legado-js/Cargo.toml:49,90` 的 quickjs feature 组合包含 `rar`（RAR 档案解压依赖，服务 CBR 等压缩档案场景，与 `zip`/`sevenz-rust2`/`flate2` 同属档案族——**并非 JS 引擎本体依赖**，只是被并入同一 feature 组合）；`rar` 在 32 位 armv7 无法编译（`u64: ToUsize` 未实现）→ 构建链对 v7a 的 quickjs 尝试失败。机制：`rust/scripts/build-android.ps1`（L219-246）对每个 ABI 先以 `--features quickjs` 构建，**失败自动回退**无 quickjs 并记录 `quickjs=$false`——v7a 即经此回退路径产出降级 .so（P2-16 批次实证「三 ABI 构建成功，v7a quickjs=false 降级不变」）；`flutter_legado/android/app/build.gradle.kts:43` 仍打包 `armeabi-v7a`；`.github/workflows/flutter-ci.yml:82-83` 对 v7a 标注「当前 quickjs:false 需人工决策」。根因证据：`过期文档/SEARCH_PARITY_REMEDIATION_PLAN_20260828.md` §7.2（L202-207，已归档）。
-  - **登记一处需核实的矛盾**：`.github/workflows/flutter-release.yml`（L67-69）对 armv7 直接传 `--features quickjs`（无 build-android 式回退），与「rar 无法在 armv7 编译」的登记相抵——该工作流 v7a release 链路的实际产物状态未核实（可能构建失败或产出与本地降级口径不一致的结果）；无论是否重开决策，此项都应单独核实修正。
-  - **重开条件**：仅当用户**主动重开**该裁决（如真实 armv7 用户反馈需要 JS 书源）时，才进入方案比较（如把 `rar` 拆出 quickjs 组合为独立可选 feature）；**不得从「拆分 feature」直接推断 v7a JS 可用**——`rquickjs-sys`（C 交叉编译 + 32 位 bindgen）与其余 quickjs 组合成员在 armv7 的编译与运行均未验证，须先以 v7a 工具链试编实证。
-  - **若重开，影响面（先行盘点，未实施）**：Cargo（`legado-js` quickjs feature 拆分与 `legado-ffi` 透传、Cargo.lock）；FFI/绑定面（feature 门控符号变化须核对 API_CONTRACT 契约与 FRB codegen）；QuickJS 注册层（`legado-js` engine/宿主能力台账的 `cfg(feature="quickjs")` 门控路径）；Android 构建脚本（`build-android.ps1` per-target feature 决策与回退逻辑、`rust-fingerprint.ps1`/`verify-ffi-android` 的 .so 指纹与 feature 记录口径）；Gradle（`build.gradle.kts` abiFilters/jniLibs 分包策略）；CI workflow（rust-ci / flutter-ci / flutter-release / BetaRelease 的构建矩阵与 feature 参数，含上条 flutter-release 矛盾修正）；`flutter_legado/.metadata` 与构建产物元数据清单；armv7 构建与 JS smoke（`emulator_smoke_test.ps1`）须在 v7a 环境补验。
-- **P3-8 iOS 三端收敛**（待核验，低优）：Windows 行为基线固化 + macos/linux FFI 接线冒烟（dylib/framework 装载）+ CI 三产物矩阵。来源：`过期文档/IOS_TRACK_FEASIBILITY_20260830.md` §五 P3。
+- **P2-23 iOS 自动任务降级 + 真机走查**（待核验，低优）：workmanager iOS 降级（前台定时执行，对齐插件对照表 L71）+ iOS 真机走查清单，iOS 轨 P2 收尾。来源：`过期文档/IOS_TRACK_FEASIBILITY_20260830.md` §五 P2（2026-08-31 修订行在案）。**2026-09-27 注记**：iOS 已定为**主要真实目标**，真机走查以 **P2-26 签名改造**产出为前置；排期随主线节奏。
+- **P2-24 armeabi-v7a（32 位）JS 引擎降级（**已关闭 2026-09-27**：用户裁决维持降级现状，不拆 feature；仅当用户主动重开决策时才比较方案）**：
+  - **裁决记录**：2026-08-29 用户确认保留 armeabi-v7a 降级（原版支持 ARM32，不剔除出发布矩阵）；**2026-09-27 用户复核确认维持降级现状**（真机存量已少，不做 rar 拆分 feature 等方案投入）——本项关闭；「移除 armeabi-v7a」自始不是本项选项。下列技术事实与影响面登记**保留备查**（供未来用户主动重开时引用，非当前待办）：
+  - **技术事实（2026-09-27 核实）**：`rust/legado-js/Cargo.toml:49,90` 的 quickjs feature 组合包含 `rar`（RAR 档案解压依赖，服务 CBR 等压缩档案场景，与 `zip`/`sevenz-rust2`/`flate2` 同属档案族——**并非 JS 引擎本体依赖**，只是被并入同一 feature 组合）；`rar` 在 32 位 armv7 无法编译（`u64: ToUsize` 未实现）→ 构建链对 v7a 的 quickjs 尝试失败。机制：`rust/scripts/build-android.ps1`（L219-246）对每个 ABI 先以 `--features quickjs` 构建，**失败自动回退**无 quickjs 并记录 `quickjs=$false`——v7a 即经此回退路径产出降级 .so（P2-16 批次实证「三 ABI 构建成功，v7a quickjs=false 降级不变」）；`flutter_legado/android/app/build.gradle.kts:43` 仍打包 `armeabi-v7a`；`.github/workflows/flutter-ci.yml:82-83` 对 v7a 标注「当前 quickjs:false 需人工决策」。根因证据：`过期文档/SEARCH_PARITY_REMEDIATION_PLAN_20260828.md` §7.2（L202-207，已归档）。
+  - **派生核实项**：`.github/workflows/flutter-release.yml`（L67-69）对 armv7 直接传 `--features quickjs`（无 build-android 式回退），与上述降级机制相抵——已派生为 **P2-25**（随本项关闭仍需单独核实修正，属 CI 链路事实问题）。
+  - **若未来重开，影响面（盘点备查，未实施）**：Cargo（`legado-js` quickjs feature 拆分与 `legado-ffi` 透传、Cargo.lock）；FFI/绑定面（feature 门控符号变化须核对 API_CONTRACT 契约与 FRB codegen）；QuickJS 注册层（`legado-js` engine/宿主能力台账的 `cfg(feature="quickjs")` 门控路径）；Android 构建脚本（`build-android.ps1` per-target feature 决策与回退逻辑、`rust-fingerprint.ps1`/`verify-ffi-android` 的 .so 指纹与 feature 记录口径）；Gradle（`build.gradle.kts` abiFilters/jniLibs 分包策略）；CI workflow（rust-ci / flutter-ci / flutter-release / BetaRelease 的构建矩阵与 feature 参数，含 P2-25 矛盾修正）；`flutter_legado/.metadata` 与构建产物元数据清单；armv7 构建与 JS smoke（`emulator_smoke_test.ps1`）须在 v7a 环境补验。**注意：不得从「拆分 feature」直接推断 v7a JS 可用**——`rquickjs-sys`（C 交叉编译 + 32 位 bindgen）与其余 quickjs 组合成员在 armv7 的编译与运行均未验证，须先以 v7a 工具链试编实证。
+- **P2-25 flutter-release.yml 的 armv7 quickjs 矛盾核实修正**（待核验，随 P2-24 裁决派生）：`.github/workflows/flutter-release.yml` L67-69 对 armv7 直传 `--features quickjs`（无回退），与「rar 无法在 armv7 编译 → v7a 维持无 JS 降级」口径相抵；核实该工作流 v7a 产物实际状态（可能构建失败或与本地降级口径不一致），按降级口径修正（对齐 build-android.ps1 的回退语义或显式传无 quickjs），并同步 rust-ci / flutter-ci 相应校验点。
+- **P2-26 iOS CI 签名改造**（**2026-09-27 用户立项**：iOS 为**主要真实目标**（Android/Windows 次之），暂不做上架准备，需要 CI 签名改造）：
+  - **目标**：CI 产出**开发/Ad-hoc 签名 ipa**，真机可长期安装验证（摆脱 7 天自签反复重签）；**非目标：TestFlight / App Store 上架（明确暂缓，未来另立项）**。
+  - **范围**：`.github/workflows/ios-build.yml` / `flutter-release.yml` 签名步骤改造（`--no-codesign` → 开发者签名）、证书与描述文件管理（fastlane match 或手动 secrets 维护）、GitHub Secrets 注入（P12 证书 + provisioning profile + 密码）、签名产物分发方式（artifact + 真机安装/信任流程文档）。
+  - **前置（用户素材）**：Apple Developer Program 账号（$99/年）并创建证书 / App ID / 描述文件、提供 CI secrets；账号到位前工程侧可先行——workflow 签名步骤脚手架（secrets 缺失时自动回落未签名产物，不红 CI）+ 安装文档草稿。
+  - **依赖与联动**：P2-23 真机走查以其签名为前置；A* 真机类验收项（媒体键等）按 iOS 真机为主要验收目标（2026-09-27 平台优先级）。
+- **P3-8 iOS 三端收敛**（待核验，低优）：Windows 行为基线固化 + macos/linux FFI 接线冒烟（dylib/framework 装载）+ CI 三产物矩阵。来源：`过期文档/IOS_TRACK_FEASIBILITY_20260830.md` §五 P3。**2026-09-27 注记**：iOS 主要真实目标 → 本项 iOS 侧行为基线权重提升；仍低优，随主线后。
 - **低优候选 1：渲染矩阵补页（详情/阅读两屏）**：`test/widget/md3_acceptance_matrix_test.dart` 仍仅 4 屏，改动最重的两屏无单测级渲染防护（实机截图已由 parity_shots 流程承担）；随下一轮 UI 测试批顺带。来源：`过期文档/UI_SYNC_REFACTOR_PLAN_20260905.md` §七#7。
 - **低优候选 2：Characters/RelatedBooks 后端数据链 + AI 摘要链**（授权在案 2026-09-05，UI 骨架已就位、空数据隐藏）：契约未冻结（API_CONTRACT 无 getBookCharacters/getRelatedBooks）、Rust 轨未排期；按 2026-09-27 主线口径属主线后功能，排期待用户指示。授权正本：`过期文档/UI_ONE_TO_ONE_CLONE_PLAN_20260905.md` §〇。
-- **在案待裁决（不新增动作）**：Material You 动态取色默认槽位（见 D9 段登记）；首页模块管理解禁（2026-09-11「暂不」在案，解禁按 `过期文档/UI_REMAINING_DEV_SUGGESTIONS_20260909.md` §E 路径契约先行）；animateItem 三件套（留档不催办）；iOS 签名分发（$99 开发者账号 + TestFlight，见 IOS 文档 §二）；A* 实网验收 9 项待素材（P2-4）。
+- **在案待裁决（不新增动作）**：Material You 动态取色默认槽位（见 D9 段登记）；首页模块管理解禁（2026-09-11「暂不」在案，解禁按 `过期文档/UI_REMAINING_DEV_SUGGESTIONS_20260909.md` §E 路径契约先行）；animateItem 三件套（留档不催办）；A* 实网验收 9 项待素材（P2-4，真机类项按 2026-09-27 平台优先级以 iOS 真机为主要验收目标）。原「iOS 签名分发」待裁决项已裁决移出（2026-09-27：iOS 主要真实目标、暂不上架、CI 签名改造 → P2-26）。
 
 ## 四、文档治理
 
@@ -534,3 +539,7 @@
 修订：Codex｜2026-09-27（统一计划职责与当前用户确认的主线：本文作为唯一开放任务/状态入口；新增 `REFACTORING_WORKFLOW.md` 定义 Agent 派发、实施、验证和关闭流程；先完成书籍主流程，漫画/视频先于音频；参考版用户可见行为为目标，实质冲突先向用户裁决。旧登记须核验后再派发）
 
 修订：Legado 项目维护组 ｜ 2026-09-27（**文档统一批次**：12 篇点名旧计划 + 4 篇同类材料核验后归档 `docs/过期文档/`（ARCHIVE_MAP §四）；仍有效项登记 P2-23 / P2-24（待用户裁决）/ P3-8 与两条低优候选；§四治理表 4 行同步归档状态；§〇 红线豁免授权正本指针更新；通用开发规范迁至 `docs/DEVELOPMENT_CONVENTIONS.md`；NUL 历史缺陷核实已由 `ed6211b004` 修复、另将 2 处代码段内嵌真实换行转为 `\n` 文本）
+
+修订：Legado 项目维护组 ｜ 2026-09-27（**返修批**：基准口径三处同步——删除「行为分歧时以原版源码裁决」，改 Android 原版与参考版共同核对、实质差异由用户裁决；P3-6/P2-19 状态拆分消除矛盾并存；10 处旧归档路径修复）
+
+修订：Legado 项目维护组 ｜ 2026-09-27（**平台裁决入档**：① P2-24 关闭——armv7 维持降级现状（用户复核确认，真机存量少；flutter-release 矛盾派生 **P2-25** 核实修正）；② iOS 定为**主要真实目标**（Android/Windows 次之），暂不上架、需 CI 签名改造 → 立项 **P2-26**（前置=Apple Developer 账号素材，工程侧可先行脚手架）；P2-23 真机走查以 P2-26 为前置、P3-8 iOS 权重注记；A* 真机类验收以 iOS 真机为主；「iOS 签名分发」待裁决项移出）
