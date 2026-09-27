@@ -103,9 +103,13 @@ class _WebViewBridgeListenerState extends ConsumerState<WebViewBridgeListener> {
       'isRule': event['is_rule'] == true,
       'result': (event['result'] ?? '').toString(),
       // B1 加法式字段（项 B/G4）：书源 key 随载荷下发，Android 原生路径
-      // 按 isRule 同等口径注入 java/source/cache 接口；B4 起再补 `cookie`
-      // （Rust 侧按请求域从 JS cookie store 预取的域 cookie 推入）
+      // 按 isRule 同等口径注入 java/source/cache 接口
       'sourceKey': (event['source_key'] ?? '').toString(),
+      // B4（设计文档 §3 项 B）：Rust 按请求 URL 域从 JS cookie store
+      // 预取的属域 cookie（"k1=v1; k2=v2"，无则空串）随载荷下发；
+      // Android 原生路径 load 前 CookieManager.setCookie 逐对预写，
+      // webview_flutter 回退路径 setCookie 等价预写
+      'cookie': (event['cookie'] ?? '').toString(),
     };
     try {
       final outcome =

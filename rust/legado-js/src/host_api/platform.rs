@@ -88,8 +88,14 @@ pub fn web_view_ex(html: &str, url: &str, js: &str, cache_first: bool, delay_tim
         // `tag=getSource()?.getKey()`）；Kotlin 侧 sourceKey 非空即按
         // is_rule 同等口径注入 java/source/cache 接口
         source_key: current_source::current_source_tag().unwrap_or_default(),
-        // B4（后续提交填入：按请求 URL 域取 JS cookie store 属域 cookie）
-        cookie: String::new(),
+        // B4（设计文档 §3 项 B）：按请求 URL 域取 JS cookie store 属域
+        // cookie（`cookies_for_url` 口径：ETLD+1 域键 + 原始串条目合并，
+        // raw 胜，"k1=v1; k2=v2"；无则空串）。Kotlin 侧 load 前逐对
+        // `CookieManager.setCookie(url, …)` 预写，Flutter 回退路径用
+        // webview_flutter `setCookie` 等价预写——让 WebView 首请求即携带
+        // JS 侧会话态（对齐上游 `CookieManager.loadRequest` 按请求 URL
+        // 属域取 cookie 语义；两档均可用，无 quickjs 门控）
+        cookie: super::cookie_store::cookies_for_url(url),
         created_at_ms: 0,
     })
 }
@@ -123,8 +129,14 @@ pub fn web_view_get_source_ex(
         // `tag=getSource()?.getKey()`）；Kotlin 侧 sourceKey 非空即按
         // is_rule 同等口径注入 java/source/cache 接口
         source_key: current_source::current_source_tag().unwrap_or_default(),
-        // B4（后续提交填入：按请求 URL 域取 JS cookie store 属域 cookie）
-        cookie: String::new(),
+        // B4（设计文档 §3 项 B）：按请求 URL 域取 JS cookie store 属域
+        // cookie（`cookies_for_url` 口径：ETLD+1 域键 + 原始串条目合并，
+        // raw 胜，"k1=v1; k2=v2"；无则空串）。Kotlin 侧 load 前逐对
+        // `CookieManager.setCookie(url, …)` 预写，Flutter 回退路径用
+        // webview_flutter `setCookie` 等价预写——让 WebView 首请求即携带
+        // JS 侧会话态（对齐上游 `CookieManager.loadRequest` 按请求 URL
+        // 属域取 cookie 语义；两档均可用，无 quickjs 门控）
+        cookie: super::cookie_store::cookies_for_url(url),
         created_at_ms: 0,
     })
 }
@@ -154,8 +166,14 @@ pub fn web_view_get_override_url(
         // `tag=getSource()?.getKey()`）；Kotlin 侧 sourceKey 非空即按
         // is_rule 同等口径注入 java/source/cache 接口
         source_key: current_source::current_source_tag().unwrap_or_default(),
-        // B4（后续提交填入：按请求 URL 域取 JS cookie store 属域 cookie）
-        cookie: String::new(),
+        // B4（设计文档 §3 项 B）：按请求 URL 域取 JS cookie store 属域
+        // cookie（`cookies_for_url` 口径：ETLD+1 域键 + 原始串条目合并，
+        // raw 胜，"k1=v1; k2=v2"；无则空串）。Kotlin 侧 load 前逐对
+        // `CookieManager.setCookie(url, …)` 预写，Flutter 回退路径用
+        // webview_flutter `setCookie` 等价预写——让 WebView 首请求即携带
+        // JS 侧会话态（对齐上游 `CookieManager.loadRequest` 按请求 URL
+        // 属域取 cookie 语义；两档均可用，无 quickjs 门控）
+        cookie: super::cookie_store::cookies_for_url(url),
         created_at_ms: 0,
     })
 }

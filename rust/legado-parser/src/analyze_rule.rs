@@ -1889,7 +1889,12 @@ impl AnalyzeRule {
                 // Kotlin 侧由 is_rule 触发 java/source/cache 注入，
                 // sourceKey 空串即无 tag 语义（对齐上游 tag 可为空）
                 source_key: String::new(),
-                // B4 起按请求 URL 域从 JS cookie store 取用（当前恒空）
+                // B4（设计文档 §3 项 B 偏差记录）：cookie 推入仅在能触达
+                // JS cookie store 的层做——JS 执行路径（legado-js
+                // platform.rs）与 FFI 内容钩子（legado-ffi web_book.rs）
+                // 按请求 URL 域 `cookies_for_url` 填入；规则解析层
+                // （本 crate）仅依赖 legado-core，若依赖 legado-js 即成
+                // 环（legado-js 反向依赖本 crate），故此处恒空
                 cookie: String::new(),
                 created_at_ms: 0,
             };

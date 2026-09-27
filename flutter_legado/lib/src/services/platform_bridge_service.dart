@@ -328,6 +328,8 @@ class PlatformBridgeService {
             isRule: payload['isRule'] == true,
             resultJson: (payload['result'] ?? '').toString(),
             cacheFirst: payload['cacheFirst'] == true,
+            // B4：Rust 预取的属域 cookie 经 setCookie 等价预写
+            cookie: (payload['cookie'] ?? '').toString(),
           );
         case 'webViewGetSource':
           return WebViewEvalOutcome(
@@ -338,6 +340,9 @@ class PlatformBridgeService {
               sourceRegex: (payload['sourceRegex'] ?? '').toString(),
               delayMs: _delayOf(payload),
               cacheFirst: payload['cacheFirst'] == true,
+              // B4：嗅探首请求同样携带 Rust 预取的属域 cookie（对齐
+              // Kotlin 原生路径 load 前逐对预写，动作无关）
+              cookie: (payload['cookie'] ?? '').toString(),
             ),
             '',
           );
@@ -350,6 +355,8 @@ class PlatformBridgeService {
               overrideUrlRegex: (payload['overrideUrlRegex'] ?? '').toString(),
               delayMs: _delayOf(payload),
               cacheFirst: payload['cacheFirst'] == true,
+              // B4：同 webViewGetSource——加载前预写属域 cookie
+              cookie: (payload['cookie'] ?? '').toString(),
             ),
             '',
           );
@@ -383,6 +390,9 @@ class PlatformBridgeService {
         'result': (payload['result'] ?? '').toString(),
         'delayTime': _delayOf(payload),
         'sourceKey': (payload['sourceKey'] ?? payload['tag'] ?? '').toString(),
+        // B4（设计文档 §3 项 B）：Rust 按请求 URL 域预取的属域 cookie
+        // 透传 Kotlin，load 前 CookieManager.setCookie 逐对预写
+        'cookie': (payload['cookie'] ?? '').toString(),
       },
     );
     final (result, cookiesJson) = _parseBackstageEnvelope(raw);
@@ -452,6 +462,9 @@ class PlatformBridgeService {
   ///
   /// [isRule] 对齐 Kotlin BackstageWebView.isRule：注入 `window.result`。
   /// [cacheFirst]：非 Android 回退路径无原生 cacheMode，仅日志（Android 走原生）。
+  /// [cookie] B4：Rust 按请求 URL 域预取的属域 cookie（"k1=v1; k2=v2"），
+  /// load 前经 WebViewCookieManager.setCookie 逐对写入原生 cookie jar，
+  /// 首请求即携带会话态（等价 Kotlin CookieManager 预写）。
   Future<WebViewEvalOutcome> _webViewEval({
     required String url,
     required String html,
@@ -460,6 +473,7 @@ class PlatformBridgeService {
     bool isRule = false,
     String resultJson = '',
     bool cacheFirst = false,
+    String cookie = '',
   }) async {
     if (cacheFirst) {
       debugPrint(
@@ -467,6 +481,10 @@ class PlatformBridgeService {
       );
     }
     final controller = _newController();
+    // B4：load 前预写属域 cookie（同 _webViewSniffSource /
+    // _webViewSniffOverrideUrl；cookie 与 url 同生同灭，html-only 无
+    // url 时 Rust 侧恒空，天然跳过）
+    await _injectDomainCookies(url: url, cookie: cookie);
     // [iOS 视角F A1] 主框架加载失败（ATS 拦截/DNS/连接/主文档 4xx-5xx）：
     // 上屏提示 + 返回显式 [ERROR]，不再在坏页面上跑 JS 把空/错误页当成功结果
     // 静默回传（用户此前只看到「正文空」）。
@@ -542,6 +560,40 @@ class PlatformBridgeService {
     return false;
   }
 
+  /// B4（设计文档 §3 项 B）：Rust 按请求 URL 域预取的属域 cookie
+  /// （`cookies_for_url` 口径 "k1=v1; k2=v2"，无则空串）load 前逐对写入
+  /// webview_flutter 原生 cookie jar——`WebViewCookieManager.setCookie`
+  /// 底层即 Android `CookieManager` / iOS 全局 cookie 存储，与 Kotlin
+  /// 原生路径 `CookieManager.getInstance().setCookie(url, pair)` 同一
+  /// 进程级 cookie jar，首请求即携带 JS 侧会话态（对齐上游
+  /// CookieManager 预写语义）。
+  ///
+  /// 域键取 URL host（CookieManager 首参传域或 URL 等效，Kotlin 侧
+  /// 直接传 url）；cookie / url 任一为空跳过（html-only 无 url 时
+  /// Rust 侧恒空，天然 no-op）；无 `=` 的坏段静默跳过（对齐
+  /// CookieManager.setCookie 对畸形 cookie 串的忽略行为）。
+  Future<void> _injectDomainCookies({
+    required String url,
+    required String cookie,
+  }) async {
+    if (cookie.isEmpty || url.isEmpty) return;
+    final domain = Uri.tryParse(url)?.host ?? '';
+    if (domain.isEmpty) return;
+    final manager = WebViewCookieManager();
+    for (final part in cookie.split(';')) {
+      final pair = part.trim();
+      if (pair.isEmpty) continue;
+      final eq = pair.indexOf('=');
+      if (eq <= 0) continue;
+      final name = pair.substring(0, eq).trim();
+      final value = pair.substring(eq + 1);
+      if (name.isEmpty) continue;
+      await manager.setCookie(
+        WebViewCookie(name: name, value: value, domain: domain),
+      );
+    }
+  }
+
   /// webViewGetSource：嗅探匹配 sourceRegex 的资源 URL（尽力对齐 Kotlin
   /// SnifferWebClient.onLoadResource：Flutter 无资源加载回调，改为页面
   /// 完成后经 JS 收集 performance 资源条目与 DOM 引用 URL 后按正则匹配；
@@ -553,6 +605,7 @@ class PlatformBridgeService {
     required String sourceRegex,
     required int delayMs,
     bool cacheFirst = false,
+    String cookie = '',
   }) async {
     if (sourceRegex.isEmpty) return '';
     if (cacheFirst) {
@@ -560,6 +613,8 @@ class PlatformBridgeService {
     }
     final regex = RegExp(sourceRegex);
     final controller = _newController();
+    // B4：load 前预写属域 cookie（对齐 Kotlin 原生路径，动作无关）
+    await _injectDomainCookies(url: url, cookie: cookie);
     final loadFailure =
         await _loadAndWaitFinished(controller, url: url, html: html);
     if (loadFailure != null) {
@@ -620,6 +675,7 @@ class PlatformBridgeService {
     required String overrideUrlRegex,
     required int delayMs,
     bool cacheFirst = false,
+    String cookie = '',
   }) async {
     if (overrideUrlRegex.isEmpty) return '';
     if (cacheFirst) {
@@ -678,6 +734,9 @@ class PlatformBridgeService {
         completeFinished();
       },
     ));
+    // B4：load 前预写属域 cookie（初始 URL 即命中的早退路径无 WebView，
+    // 无需预写；此处为实际加载路径）
+    await _injectDomainCookies(url: url, cookie: cookie);
     _load(controller, url: url, html: html);
     if (js.isNotEmpty) {
       // 触发型 JS：首次加载到达终态后执行以诱发目标跳转（无二次加载）

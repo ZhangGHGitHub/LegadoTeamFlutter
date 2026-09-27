@@ -138,6 +138,9 @@ class WebViewBridge {
         val resultJson = call.argument<String>("result").orEmpty()
         val delayTime = (call.argument<Number>("delayTime")?.toLong() ?: 0L).coerceAtLeast(0L)
         val sourceKey = call.argument<String>("sourceKey").orEmpty()
+        // B4（设计文档 §3 项 B）：Rust 按请求 URL 域从 JS cookie store
+        // 预取的属域 cookie（"k1=v1; k2=v2"，无则空串）
+        val cookie = call.argument<String>("cookie").orEmpty()
 
         // B1（设计文档 §2.2 G4）：sourceKey 非空按 isRule 同等口径生效
         // （对齐上游 tag 语义）——注入 java/source/cache 接口、
@@ -370,6 +373,18 @@ class WebViewBridge {
                         destroyInternal()
                     }
                 }, TIMEOUT_MS)
+
+                // B4（设计文档 §3 项 B）：load 前把 Rust 预取的属域 cookie
+                // 逐对写入 WebView cookie jar（对齐上游 CookieManager
+                // 预写口径，首请求即携带 JS 侧会话态）；cookie 与 url
+                // 同生同灭——html-only 无 url 时 cookie 恒空，天然跳过
+                if (cookie.isNotEmpty() && url.isNotEmpty()) {
+                    val cm = CookieManager.getInstance()
+                    for (pair in cookie.split(';')) {
+                        val p = pair.trim()
+                        if (p.isNotEmpty()) cm.setCookie(url, p)
+                    }
+                }
 
                 val wv = webView!!
                 if (html.isNotEmpty()) {
