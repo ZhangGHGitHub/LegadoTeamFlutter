@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -16,7 +17,12 @@ import '../services/platform_bridge_service.dart';
 ///
 /// 无可见 UI（后台 WebView）；桌面无 WebView 能力时回传错误串唤醒等待方。
 ///
+/// B3：执行并发池（对齐上游 WebViewPool 容量 5）——至多 5 个 WebView
+/// 并行执行，超出并行度的请求按 FIFO 排队，任务结束后补位队头。
+/// 各请求 key 唯一（Rust 侧按 key 唤醒等待方），并行不互相覆盖。
+///
 /// — WebViewBridge + Bridge｜2026-08-13｜项 B/B1 cookie 回流
+/// ｜2026-09-26 项 B/B3 并发池（并行度 5 + FIFO）
 class WebViewBridgeListener extends ConsumerStatefulWidget {
   final Widget child;
 
@@ -29,8 +35,18 @@ class WebViewBridgeListener extends ConsumerStatefulWidget {
 
 class _WebViewBridgeListenerState extends ConsumerState<WebViewBridgeListener> {
   StreamSubscription<Map<String, dynamic>>? _subscription;
-  /// 串行执行，避免并发 WebView 抢主线程
-  Future<void> _chain = Future<void>.value();
+
+  // ========== B3 并发池（对齐上游 WebViewPool 容量 5） ==========
+
+  /// 并行度上限：至多 5 个 WebView 同时执行（对齐上游 WebViewPool 容量 5；
+  /// 原单 `_chain` 全串行，多书源并发抓取时互相排队放大延迟）
+  static const int _maxConcurrency = 5;
+
+  /// 当前在途任务数（信号量计数）
+  int _inFlight = 0;
+
+  /// FIFO 排队：超出并行度的事件按到达顺序排队，槽位释放后补位队头
+  final Queue<Map<String, dynamic>> _pending = Queue();
 
   @override
   void initState() {
@@ -51,7 +67,22 @@ class _WebViewBridgeListenerState extends ConsumerState<WebViewBridgeListener> {
     if (!mounted) return;
     final key = (event['key'] ?? '').toString();
     if (key.isEmpty) return;
-    _chain = _chain.then((_) => _handle(event)).catchError((Object e) {
+    if (_inFlight < _maxConcurrency) {
+      _start(event);
+    } else {
+      _pending.add(event);
+    }
+  }
+
+  /// 占用一个槽位执行任务；结束时释放槽位并补位队头（FIFO）
+  void _start(Map<String, dynamic> event) {
+    _inFlight++;
+    _handle(event).whenComplete(() {
+      _inFlight--;
+      if (_pending.isNotEmpty) {
+        _start(_pending.removeFirst());
+      }
+    }).catchError((Object e) {
       debugPrint('[WebViewBridge] 处理失败：$e');
     });
   }
