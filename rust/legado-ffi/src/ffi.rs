@@ -162,6 +162,13 @@ pub mod ffi {
         // 基于 CookieRepository 的持久化下沉并启动全量回填（内存优先、
         // miss 回落；幂等：下沉 first-wins，回填按键合并不覆盖内存值）
         crate::http_state::register_js_cookie_sink();
+        // 设计项 A（2026-09-26，JS 桥共享客户端 cookie 持久化）：注入 DB
+        // 持久化后端到 legado-js 池客户端钩子（first-wins）并兜底重置已
+        // 构建池——正常时序本调用先于一切 JS 执行（池尚未构建）。仅
+        // quickjs 档（池机制在该档的 network 模块内）；零 FFI 方法变更
+        // （不加/不改导出函数签名）
+        #[cfg(feature = "quickjs")]
+        crate::http_state::register_js_client_cookie_persistence();
         // 启动时恢复配置（契约 §2.20.3 / §2.22.5，Task #73）：
         // 读回 customHosts 映射与独立 MCP 端口，尽力而为（失败仅记日志）
         crate::api::net_api::restore_custom_hosts();

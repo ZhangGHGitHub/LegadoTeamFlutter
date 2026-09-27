@@ -7,10 +7,10 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock, RwLock};
 
 use crate::host_api::runtime_bridge::block_on;
-use legado_net::{LegadoClient, LegadoClientConfig, LegadoRequest, Method};
+use legado_net::{CookiePersistence, LegadoClient, LegadoClientConfig, LegadoRequest, Method};
 
 /// 默认请求超时（毫秒），与 Kotlin 端一致
 const DEFAULT_TIMEOUT_MS: u64 = 30_000;
@@ -144,45 +144,174 @@ fn ensure_form_content_type(headers: &mut HashMap<String, String>, has_body: boo
 /// Cookie：共享池的内存 CookieStore 跨调用累积（按域 upsert），与 FFI
 /// 主链路共享客户端、上游 OkHttp 单客户端 + cookieJar 语义一致（改进
 /// 不回退）；JS 层 `merge_js_cookies` 按域合并注入不受影响。
-static SHARED_CLIENT_DEFAULT: OnceLock<LegadoClient> = OnceLock::new();
-static SHARED_CLIENT_LOOPBACK: OnceLock<LegadoClient> = OnceLock::new();
-static SHARED_CLIENT_NO_REDIRECT: OnceLock<LegadoClient> = OnceLock::new();
-static SHARED_CLIENT_NO_REDIRECT_LOOPBACK: OnceLock<LegadoClient> = OnceLock::new();
+///
+/// **Cookie 持久化（设计项 A，2026-09-26）**：池支持注入
+/// [`CookiePersistence`] 后端（[`set_client_cookie_persistence`]，
+/// first-wins，由 `legado-ffi::ffi::db_open` 注入 DB 实现）——客户端
+/// 构建/重建时从后端预载已持久化 cookie 进内存 jar，响应 Set-Cookie
+/// 同步写回（按域 upsert，含无 Expires 的会话 cookie）。修复 x81zws
+/// WAF 状态机跨进程断链（根因：JS 桥池客户端仅内存 jar，冷启动即失
+/// Set-Cookie 种下的状态；见 `.tmp/engine_forensic_d/report_d.md` §2 /
+/// `design_upstream_aligned.md` §3 项 A）。未注册后端时（CLI/测试路
+/// 径）行为等价 `LegadoClient::new`（纯内存 jar，语义不变）。
+///
+/// **锁序不变式**（仿 `legado-ffi::http_state::shared_client`）：客户端
+/// 构建（含持久化后端 `load_all` 的 DB I/O）在持有池槽位**写锁之前**
+/// 完成——槽位锁临界区不做 DB/sink 调用；并发首建时各线程自建，槽位
+/// 内先装者胜（败者构建直接丢弃——其 jar 是后端全新加载、无在途写
+/// 入，丢弃无数据损失）。
+///
+/// 池槽位注册表：`OnceLock` 惰性创建 4 槽数组，每槽
+/// `RwLock<Option<LegadoClient>>`（`Option` 供
+/// [`reset_shared_client_pools`] 置空后下次访问按当前配置重建）
+static POOL_SLOTS: OnceLock<[RwLock<Option<LegadoClient>>; 4]> = OnceLock::new();
+
+/// 池标识（loopback/no_redirect 两配置轴的 4 种组合，语义逐池保持）
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PoolKind {
+    /// 默认池：默认配置（系统/环境变量代理、跟随重定向、60s 读超时）
+    Default,
+    /// 回环池：`no_proxy` 直连（P2-17 约定 cda70a0c54）
+    Loopback,
+    /// 不跟随重定向池：`follow_redirects=false`（connectNR 拦截 302 取
+    /// Location 头）
+    NoRedirect,
+    /// 不跟随重定向回环池：`no_proxy` + `follow_redirects=false`
+    NoRedirectLoopback,
+}
+
+impl PoolKind {
+    /// 全部池（reset 遍历顺序）
+    const ALL: [PoolKind; 4] = [
+        PoolKind::Default,
+        PoolKind::Loopback,
+        PoolKind::NoRedirect,
+        PoolKind::NoRedirectLoopback,
+    ];
+
+    /// 标志 → 池标识
+    fn from_flags(loopback: bool, no_redirect: bool) -> Self {
+        match (loopback, no_redirect) {
+            (false, false) => PoolKind::Default,
+            (true, false) => PoolKind::Loopback,
+            (false, true) => PoolKind::NoRedirect,
+            (true, true) => PoolKind::NoRedirectLoopback,
+        }
+    }
+
+    /// 池配置（与改造前四池配置逐项一致）
+    fn config(&self) -> LegadoClientConfig {
+        match self {
+            PoolKind::Default => LegadoClientConfig::default(),
+            PoolKind::Loopback => LegadoClientConfig {
+                no_proxy: true,
+                ..Default::default()
+            },
+            PoolKind::NoRedirect => LegadoClientConfig {
+                follow_redirects: false,
+                ..Default::default()
+            },
+            PoolKind::NoRedirectLoopback => LegadoClientConfig {
+                follow_redirects: false,
+                no_proxy: true,
+                ..Default::default()
+            },
+        }
+    }
+}
+
+/// 取池槽位引用
+fn pool_slot(kind: PoolKind) -> &'static RwLock<Option<LegadoClient>> {
+    let slots = POOL_SLOTS.get_or_init(|| {
+        [
+            RwLock::new(None),
+            RwLock::new(None),
+            RwLock::new(None),
+            RwLock::new(None),
+        ]
+    });
+    &slots[kind as usize]
+}
+
+/// Cookie 持久化后端钩子（设计项 A）
+///
+/// 由 `legado-ffi::ffi::db_open` 在 DB 初始化后、一切 JS 执行前注入
+/// （具体类型 `legado-ffi::http_state::DbCookiePersistence`：DB 未就
+/// 绪时 `load_all` 降级为空、`save` 仅记日志，不影响网络请求）。
+static CLIENT_COOKIE_PERSISTENCE: OnceLock<Arc<dyn CookiePersistence>> = OnceLock::new();
+
+/// 注册 Cookie 持久化后端（first-wins，仿
+/// `legado-js::host_api::cookie_store::set_cookie_sink`）
+///
+/// 返回本次注册是否生效：重复注册忽略并返回 `false`（不覆盖首个实例）。
+pub fn set_client_cookie_persistence(p: Arc<dyn CookiePersistence>) -> bool {
+    CLIENT_COOKIE_PERSISTENCE.set(p).is_ok()
+}
+
+/// 重置全部 4 个池槽位（仿 `legado-ffi::http_state::reset_shared_client`）
+///
+/// 置空后下次 [`shared_client`] 调用按当前配置重建（构建时读取此刻已
+/// 注册的持久化后端）。供 `db_open` 在注入钩子后兜底重建：正常时序
+/// db_open 先于一切 JS 执行、池尚未构建（reset 为空操作）；若某路径
+/// 已先行构建池，reset 保证重建后的客户端携带持久化后端。
+pub fn reset_shared_client_pools() {
+    for kind in PoolKind::ALL {
+        *pool_slot(kind)
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = None;
+    }
+}
+
+/// 以显式持久化后端构建池客户端（测试入口：不触碰全局钩子，确定性
+/// 覆盖已注册/未注册两个分支）
+fn build_pool_client_with(
+    kind: PoolKind,
+    persistence: Option<Arc<dyn CookiePersistence>>,
+) -> Result<LegadoClient, String> {
+    let config = kind.config();
+    match persistence {
+        // 已注册：构建即从后端预载已持久化 cookie 进内存 jar
+        // （DB I/O；须在槽位写锁之前完成，见模块头锁序不变式）
+        Some(p) => LegadoClient::with_cookie_persistence(config, p),
+        // 未注册：等价改造前 `LegadoClient::new`（纯内存 jar）
+        None => LegadoClient::new(config),
+    }
+    .map_err(|e| format!("build client error: {e}"))
+}
+
+/// 以当前已注册的持久化后端构建池客户端（未注册时为 `None`）
+fn build_pool_client(kind: PoolKind) -> Result<LegadoClient, String> {
+    build_pool_client_with(kind, CLIENT_COOKIE_PERSISTENCE.get().cloned())
+}
 
 /// 取进程级共享客户端（池由 `loopback`/`no_redirect` 选择）
 ///
-/// 首次调用构建并安装；并发竞争时复用先装入者（同配置，无副作用）。
+/// 首次调用构建并安装（已注册持久化后端时构建即预载；未注册时等价
+/// `LegadoClient::new`）；并发竞争时复用先装入者（同配置，无副作用）。
+/// 锁序不变式：构建不持槽位写锁（见模块头说明）。
 fn shared_client(loopback: bool, no_redirect: bool) -> Result<LegadoClient, String> {
-    let (pool, config) = match (loopback, no_redirect) {
-        (false, false) => (&SHARED_CLIENT_DEFAULT, LegadoClientConfig::default()),
-        (true, false) => (
-            &SHARED_CLIENT_LOOPBACK,
-            LegadoClientConfig {
-                no_proxy: true,
-                ..Default::default()
-            },
-        ),
-        (false, true) => (
-            &SHARED_CLIENT_NO_REDIRECT,
-            LegadoClientConfig {
-                follow_redirects: false,
-                ..Default::default()
-            },
-        ),
-        (true, true) => (
-            &SHARED_CLIENT_NO_REDIRECT_LOOPBACK,
-            LegadoClientConfig {
-                follow_redirects: false,
-                no_proxy: true,
-                ..Default::default()
-            },
-        ),
-    };
-    if let Some(client) = pool.get() {
-        return Ok(client.clone());
+    let kind = PoolKind::from_flags(loopback, no_redirect);
+    // 快路径：已初始化则直接 clone 返回
+    {
+        let guard = pool_slot(kind)
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        if let Some(client) = guard.as_ref() {
+            return Ok(client.clone());
+        }
     }
-    let client = LegadoClient::new(config).map_err(|e| format!("build client error: {}", e))?;
-    Ok(pool.get_or_init(|| client).clone())
+    // 慢路径：先构建（含持久化后端 load_all，不持槽位锁），再短暂持
+    // 写锁装入
+    let client = build_pool_client(kind)?;
+    let mut guard = pool_slot(kind)
+        .write()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    // 并发首次构建时再次检查：他线程已装入则返回其结果（自身构建丢弃）
+    if let Some(existing) = guard.as_ref() {
+        return Ok(existing.clone());
+    }
+    *guard = Some(client.clone());
+    Ok(client)
 }
 
 /// 按 URL 取共享客户端：回环 URL（127.0.0.1/::1/localhost）用 `no_proxy`
@@ -787,7 +916,7 @@ mod tests {
     /// std `TcpListener` + 单线程模式（与 `spawn_search_loopback_server` /
     /// `spawn_cookie_echo_server` 同款；legado-js 的 quickjs tokio feature 无 net）；
     /// 回环流量经 `no_proxy` 豁免系统/环境变量代理（P2-17 约定，见
-    /// 回环共享池 `SHARED_CLIENT_LOOPBACK` / `SHARED_CLIENT_NO_REDIRECT_LOOPBACK`）。
+    /// 回环共享池 `PoolKind::Loopback` / `PoolKind::NoRedirectLoopback`）。
     fn spawn_httpbin_mock(max_conns: usize) -> std::net::SocketAddr {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
         let addr = listener.local_addr().expect("local_addr");
@@ -1059,10 +1188,14 @@ mod tests {
         assert!(map.is_none());
     }
 
-    /// 四个进程级共享池均可构建，且重复取回同一实例（OnceLock 幂等，
-    /// 2026-09-24 性能专项：不再每调用新建客户端/连接池）
+    /// 四个进程级共享池均可构建，且重复取回同一实例（槽位注册表幂等，
+    /// 2026-09-24 性能专项：不再每调用新建客户端/连接池）；reset 后四池
+    /// 全部可重建（设计项 A）
     #[test]
     fn test_shared_client_pools() {
+        let _lock = lock_pool_test();
+        register_test_persistence();
+        reset_shared_client_pools();
         for (loopback, no_redirect) in [(false, false), (true, false), (false, true), (true, true)]
         {
             assert!(
@@ -1089,6 +1222,15 @@ mod tests {
             ),
             "回环池与默认池应为不同实例"
         );
+        // reset 后四池全部可重建（设计项 A：重建走当前持久化钩子）
+        reset_shared_client_pools();
+        for (loopback, no_redirect) in [(false, false), (true, false), (false, true), (true, true)]
+        {
+            assert!(
+                shared_client(loopback, no_redirect).is_ok(),
+                "reset 后共享池 (loopback={loopback}, no_redirect={no_redirect}) 应重建成功"
+            );
+        }
     }
 
     /// 共享池 keep-alive 复用证明（2026-09-24 性能专项）：
@@ -1097,6 +1239,8 @@ mod tests {
     /// HTTP 层计数等价反映 TLS 层成本：每新建连接 = 1 次 TCP + 1 次 TLS 握手。
     #[test]
     fn test_shared_pool_reuses_keep_alive() {
+        let _lock = lock_pool_test();
+        register_test_persistence();
         const N: usize = 5;
         let (addr, accepts) = spawn_counting_keep_alive_server(N + N + 2);
         let base = format!("http://{addr}/");
@@ -1171,6 +1315,312 @@ mod tests {
             }
         });
         (addr, accepts)
+    }
+
+    // ── Cookie 持久化共享池（设计项 A，2026-09-26）─────────────────────
+    //
+    // 根因（`.tmp/engine_forensic_d/report_d.md` §2）：JS 桥池客户端此前
+    // 仅内存 jar，冷启动即失 Set-Cookie 种下的 WAF 状态机 cookie，状态机
+    // 跨进程断链（x81zws.com）。修复：池构建路径注入 CookiePersistence
+    // 后端（first-wins），构建/重建时预载 + 写回。以下用例触碰进程级
+    // 全局状态（池槽位 + 持久化钩子），统一持 POOL_TEST_LOCK 串行。
+
+    /// 池用例串行锁（池槽位 + 持久化钩子为进程级共享）：串行化
+    /// 「注册 → 请求 → 断言 → 重置」段，避免并行用例互相清掉对方的槽/行
+    static POOL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock_pool_test() -> std::sync::MutexGuard<'static, ()> {
+        POOL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// 内存版 CookiePersistence 测试替身（模拟 `legado-ffi::http_state::DbCookiePersistence`
+    /// 的 DB 写回，不涉真实数据库）
+    #[derive(Default)]
+    struct RecordingPersistence {
+        rows: std::sync::Mutex<HashMap<String, String>>,
+    }
+
+    impl RecordingPersistence {
+        /// 预置一条持久化行（域键 → cookie 串）
+        fn seed(&self, domain: &str, cookie: &str) {
+            self.rows
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .insert(domain.to_string(), cookie.to_string());
+        }
+
+        /// 读一条持久化行
+        fn get(&self, domain: &str) -> Option<String> {
+            self.rows
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .get(domain)
+                .cloned()
+        }
+
+        /// 清空全部持久化行
+        fn clear(&self) {
+            self.rows.lock().unwrap_or_else(|p| p.into_inner()).clear();
+        }
+    }
+
+    impl CookiePersistence for RecordingPersistence {
+        fn load_all(&self) -> Vec<(String, String)> {
+            self.rows
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .clone()
+                .into_iter()
+                .collect()
+        }
+
+        fn save(&self, tag: &str, cookie: &str) {
+            self.rows
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .insert(tag.to_string(), cookie.to_string());
+        }
+    }
+
+    /// 进程级共享测试持久化实例：`set_client_cookie_persistence` 为
+    /// first-wins，所有触碰池的用例必须共享同一实例（首注册胜者恒为该
+    /// 共享实例，而非某用例的临时实例）
+    static TEST_PERSISTENCE: OnceLock<Arc<RecordingPersistence>> = OnceLock::new();
+
+    fn test_persistence() -> Arc<RecordingPersistence> {
+        Arc::clone(TEST_PERSISTENCE.get_or_init(|| Arc::new(RecordingPersistence::default())))
+    }
+
+    /// 把共享测试实例注册进全局钩子（幂等；first-wins 返回值忽略）
+    ///
+    /// 传入的是 `test_persistence()` 克隆出的新 `Arc`（不独占 `OnceLock`
+    /// 内实例的所有权），由参数位完成到 `Arc<dyn CookiePersistence>`
+    /// 的 unsized 收敛。
+    fn register_test_persistence() {
+        let _ = set_client_cookie_persistence(test_persistence());
+    }
+
+    /// 最小 WAF 403 状态机 mock（设计项 A：模拟 x81zws 的 403+Set-Cookie
+    /// 挑战；与 `spawn_cookie_echo_on` 同款 std `TcpListener` 模式）
+    ///
+    /// 行为：请求**不含** `p219_cold=WAF-VAL-7f3b` Cookie 时判为 WAF
+    /// 挑战 → 403 + `Set-Cookie: p219_cold=WAF-VAL-7f3b; Path=/`（种下
+    /// 状态机会话键，会话 cookie 无 Expires，照常被持久化）；含该
+    /// Cookie 时判为状态机通过 → 200，并把 Cookie 请求头原样回显到
+    /// `{"cookie":"<原值>"}`。
+    fn spawn_waf_403_echo_server(max_conns: usize) -> std::net::SocketAddr {
+        const WAF_COOKIE: &str = "p219_cold=WAF-VAL-7f3b";
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let addr = listener.local_addr().expect("local_addr");
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(max_conns) {
+                let Ok(mut sock) = stream else { continue };
+                let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                // GET 请求无 body：读到 \r\n\r\n 即请求头结束
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    if sock.read_exact(&mut byte).is_err() {
+                        break;
+                    }
+                    head.push(byte[0]);
+                    if head.len() > 65_536 {
+                        break;
+                    }
+                }
+                let head_str = String::from_utf8_lossy(&head);
+                let cookie_value = head_str.lines().find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.trim()
+                        .eq_ignore_ascii_case("cookie")
+                        .then(|| value.trim().to_string())
+                });
+                let (status, set_cookie_line, body) = match cookie_value {
+                    Some(v) if v.contains(WAF_COOKIE) => (
+                        "200 OK",
+                        String::new(),
+                        format!(
+                            r#"{{"cookie":{}}}"#,
+                            serde_json::to_string(&v).expect("cookie value 序列化")
+                        ),
+                    ),
+                    _ => (
+                        "403 Forbidden",
+                        format!("Set-Cookie: {WAF_COOKIE}; Path=/\r\n"),
+                        r#"{"error":"waf"}"#.to_string(),
+                    ),
+                };
+                let resp = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\n{set_cookie_line}Content-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+        addr
+    }
+
+    /// 设计项 A 钩子 first-wins 语义：二次注册返回 false 且不覆盖首实例；
+    /// reset 重建后装入的客户端仍指向首注册实例
+    #[test]
+    fn test_set_client_cookie_persistence_first_wins() {
+        let _lock = lock_pool_test();
+        register_test_persistence();
+        // 二次注册（临时实例）必须被忽略
+        assert!(
+            !set_client_cookie_persistence(Arc::new(RecordingPersistence::default())),
+            "二次注册应返回 false（first-wins，不覆盖）"
+        );
+        // reset 重建：装入的客户端仍指向首注册实例
+        let before = shared_client(true, false).expect("回环池（首次构建）");
+        reset_shared_client_pools();
+        let after = shared_client(true, false).expect("回环池（reset 后重建）");
+        assert!(
+            !std::ptr::eq(
+                std::sync::Arc::as_ptr(before.cookie_store()),
+                std::sync::Arc::as_ptr(after.cookie_store())
+            ),
+            "reset 后池应重建新客户端"
+        );
+        let bound = after
+            .cookie_persistence()
+            .expect("注册持久化后，池客户端必须携带持久化后端");
+        let shared: Arc<dyn CookiePersistence> = test_persistence();
+        assert!(
+            Arc::ptr_eq(bound, &shared),
+            "客户端应指向首注册实例（未被二次注册覆盖）"
+        );
+    }
+
+    /// 设计项 A 冷启动恢复：403+Set-Cookie 种下状态机 cookie → 写回持久化
+    /// 后端 → reset 重建（冷启动模拟）→ 新客户端同域请求携带该 cookie
+    /// 通过状态机（200）；P2-19 反例：不相关域（::1 自键 ≠ 127.0.0.1）
+    /// 请求头绝不携带
+    #[test]
+    fn test_persistence_cold_start_same_domain_carried_foreign_never() {
+        let _lock = lock_pool_test();
+        let fake = test_persistence();
+        register_test_persistence();
+        fake.clear();
+        reset_shared_client_pools();
+
+        let addr = spawn_waf_403_echo_server(4);
+        let url = format!("http://{addr}/waf");
+
+        // ① 初始态（无 cookie）：WAF 挑战 403 + Set-Cookie 种状态机
+        let client1 = shared_client(true, false).expect("回环池（首次构建）");
+        let resp1 =
+            block_on(async { client1.get(&url, None).await }).expect("首请求应成功（403 非错误）");
+        assert_eq!(
+            resp1.status, 403,
+            "无状态机 cookie 时 WAF 应回 403 挑战: {}",
+            resp1.status
+        );
+
+        // 写回证据：持久化后端必须持有该域 cookie 行（含会话 cookie）
+        let row = fake
+            .get("127.0.0.1")
+            .expect("Set-Cookie 写回必须进持久化后端（会话 cookie 也持久化）");
+        assert!(
+            row.contains("p219_cold=WAF-VAL-7f3b"),
+            "持久化行必须含 WAF 状态机键: {row}"
+        );
+
+        // ② 冷启动模拟：重置池 → 重建（新客户端 jar 从持久化后端预载）
+        reset_shared_client_pools();
+        let client2 = shared_client(true, false).expect("回环池（冷启动重建）");
+
+        // 同域（127.0.0.1）请求必须携带重载的 cookie → 状态机通过 200
+        let resp2 =
+            block_on(async { client2.get(&url, None).await }).expect("第二请求（冷启动后）应成功");
+        assert_eq!(
+            resp2.status, 200,
+            "冷启动重建后应携带重载 cookie 通过状态机（200）: {}",
+            resp2.status
+        );
+        assert!(
+            resp2.body.contains("p219_cold=WAF-VAL-7f3b"),
+            "回显 Cookie 头必须含 WAF 状态机键（同域携带证据）: {}",
+            resp2.body
+        );
+
+        // P2-19 反例（真实请求）：不相关域 ::1（IP 字面量自键 ≠ 127.0.0.1）
+        // 请求头不携带该域 cookie
+        let foreign_addr = spawn_ipv6_cookie_echo_server(1);
+        let foreign_url = format!("http://{foreign_addr}/echo");
+        let resp_foreign =
+            block_on(async { client2.get(&foreign_url, None).await }).expect("不相关域请求应成功");
+        let echoed: serde_json::Value =
+            serde_json::from_str(&resp_foreign.body).expect("回显体 JSON");
+        let foreign_cookie = echoed
+            .get("cookie")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        assert!(
+            !foreign_cookie.contains("p219_cold"),
+            "不相关域（::1）请求头不携带 127.0.0.1 域 cookie（P2-19 不变式：\
+             cookie 持久化与取用一律走 ETLD+1 归一域键，禁止整包跨域注入）: {foreign_cookie}"
+        );
+
+        // P2-19 反例（jar 层）：重建后客户端 jar 在不相关域不可见该 cookie
+        let foreign_view = client2
+            .cookie_store()
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .get_cookie_string("http://[::1]:1/");
+        assert!(
+            !foreign_view.contains("p219_cold"),
+            "重建 jar 的不相关域 cookie 应为空（IP 字面量自键 ::1 ≠ 127.0.0.1）: {foreign_view}"
+        );
+
+        // 收尾：清共享实例并重置池（不留残留给后续用例）
+        fake.clear();
+        reset_shared_client_pools();
+    }
+
+    /// 未注册路径回归：不触碰全局钩子时，显式 `None` 构建等价改造前
+    /// `LegadoClient::new`（无持久化后端、jar 为空）；注册路径则预载后端行
+    #[test]
+    fn test_pool_build_without_persistence_is_plain_new() {
+        let client = build_pool_client_with(PoolKind::Default, None).expect("未注册路径构建应成功");
+        assert!(
+            client.cookie_persistence().is_none(),
+            "未注册路径不得携带持久化后端（等价改造前 LegadoClient::new）"
+        );
+        let store = client
+            .cookie_store()
+            .read()
+            .unwrap_or_else(|p| p.into_inner());
+        assert_eq!(
+            store.get_cookie_string("http://127.0.0.1:1/"),
+            "",
+            "未注册路径 jar 应为空"
+        );
+        drop(store);
+
+        let fake = RecordingPersistence::default();
+        fake.seed("127.0.0.1", "legacy_check=OK-1");
+        let persistence: Arc<dyn CookiePersistence> = Arc::new(fake);
+        let client2 = build_pool_client_with(PoolKind::Loopback, Some(persistence))
+            .expect("注册路径构建应成功");
+        assert!(
+            client2.cookie_persistence().is_some(),
+            "注册路径必须携带持久化后端"
+        );
+        let store = client2
+            .cookie_store()
+            .read()
+            .unwrap_or_else(|p| p.into_inner());
+        assert!(
+            store
+                .get_cookie_string("http://127.0.0.1:1/")
+                .contains("legacy_check=OK-1"),
+            "注册路径构建必须预载持久化 cookie 进 jar"
+        );
     }
 
     /// 测试 connect_full 不支持的 HTTP 方法
@@ -1254,10 +1704,22 @@ mod tests {
     ///
     /// 与 P2-17 的 `spawn_search_loopback_server` 同款 std `TcpListener` 模式
     /// （legado-js 的 quickjs tokio feature 无 net）；回环流量经 `no_proxy`
-    /// 豁免系统/环境变量代理（见回环共享池 `SHARED_CLIENT_LOOPBACK` /
+    /// 豁免系统/环境变量代理（见回环共享池 `PoolKind::Loopback` /
     /// connectNR 约定）。
     fn spawn_cookie_echo_server(max_conns: usize) -> std::net::SocketAddr {
-        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        spawn_cookie_echo_on("127.0.0.1:0", max_conns)
+    }
+
+    /// IPv6 回环 `[::1]` 版 Cookie 回显服务器（设计项 A 的 P2-19 反例
+    /// 用：`::1` 的 IP 字面量自键 ≠ `127.0.0.1`，为真正的不相关域）
+    fn spawn_ipv6_cookie_echo_server(max_conns: usize) -> std::net::SocketAddr {
+        spawn_cookie_echo_on("[::1]:0", max_conns)
+    }
+
+    /// 回显服务器通用实现（绑定地址参数化：`127.0.0.1:0` / `[::1]:0`）
+    fn spawn_cookie_echo_on(bind_addr: &str, max_conns: usize) -> std::net::SocketAddr {
+        let listener = std::net::TcpListener::bind(bind_addr)
+            .unwrap_or_else(|_| panic!("bind {bind_addr} 失败"));
         let addr = listener.local_addr().expect("local_addr");
         std::thread::spawn(move || {
             for stream in listener.incoming().take(max_conns) {

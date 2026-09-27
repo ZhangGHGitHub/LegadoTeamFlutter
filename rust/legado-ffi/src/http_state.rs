@@ -348,6 +348,32 @@ pub fn reset_shared_client() {
     *guard = None;
 }
 
+/// 注册 JS 桥共享客户端池的 Cookie 持久化后端（设计项 A，2026-09-26）
+///
+/// 设计/取证：`.tmp/engine_forensic_d/design_upstream_aligned.md` §3 与
+/// `report_d.md` §2 —— JS 桥四池客户端此前 jar 仅内存驻留，冷启动即丢失
+/// WAF 状态机会话（如 x81zws 八一中文网的 403 + Set-Cookie 挑战），重启后
+/// 状态机被重新挑战。本注册把 [`DbCookiePersistence`] 注入 `legado-js`
+/// 池客户端钩子（first-wins，重复注册忽略），再兜底重置已构建的池
+/// （正常时序 `db_open` 先于一切 JS 执行、池尚未构建，reset 仅为兜底）。
+///
+/// 由 [`crate::ffi::Bridge::db_open`] 在 DB 初始化后调用（仅 quickjs 档）；
+/// 零 FFI 方法变更（不加/不改导出函数签名）。
+///
+/// **锁序不变式**（同 [`shared_client`]）：池重建由下次 JS 请求惰性触发，
+/// 构建（含持久化后端 DB `load_all`）在槽位写锁**之外**完成——写锁临界区
+/// 内无 DB/sink 调用；并发首次构建时各线程自建客户端，槽位内先装者胜
+/// （败者构建直接丢弃——其 CookieStore 是 DB 全新加载、无在途写入，
+/// 丢弃无数据损失）。
+#[cfg(feature = "quickjs")]
+pub fn register_js_client_cookie_persistence() {
+    let _ =
+        legado_js::host_api::network::set_client_cookie_persistence(Arc::new(DbCookiePersistence));
+    // 兜底：注册前已构建的池（正常时序不存在，见上）下次访问时
+    // 按持久化后端重建
+    legado_js::host_api::network::reset_shared_client_pools();
+}
+
 // ─── 测试 ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
