@@ -520,13 +520,26 @@ async fn explore_books_async(
         )));
     }
 
-    // loginCheckJs 登录检测（对齐原版 WebBook.exploreBookAwait:148-172 +
-    // web_book::RealBookSourceFetcher::execute_login_check 双路径）：
-    // 未登录上抛 LoginRequired，由 UI 引导登录，避免把登录页/验证页当正常内容解析。
+    // loginCheckJs 登录检测（对齐原版 WebBook.exploreBookAwait:148-172 的
+    // `evalJS(checkJs, it) as StrResponse` 双路径 + 采用修改响应，与搜索链
+    // web_book::RealBookSourceFetcher::execute_login_check 同构）：
+    // - 完成值按 StrResponse 对象解析（裸布尔/字符串等 cast 失败走错误路径，
+    //   不再降级放行）；
+    // - 未登录上抛 LoginRequired，由 UI 引导登录，避免把登录页/验证页当
+    //   正常内容解析；
+    // - JS 修改后的响应（自动登录等场景）被采用：后续解析用 outcome.body/url
+    //   （对齐原版 WebBook.kt:173-181 `analyzeBookList(baseUrl = res.url,
+    //   body = res.body)`）。
     // — DeepSeek Harness + Bridge（2026-08-14 发现页修复 R3）
-    explore_login_check(source, &response.body, &response.url, response.status)?;
+    // — full-stack-engineer + Bridge（STAGE4-P36 语义对齐 F1 三叉点）
+    let login_outcome = crate::api::web_book::RealBookSourceFetcher::execute_login_check(
+        source,
+        &response.body,
+        &response.url,
+        response.status,
+    )?;
 
-    let body = response.body;
+    let body = login_outcome.body;
 
     // 对齐原版 BookList：explore.bookList 为空时回退 search 规则
     let explore_rule = source.rule_explore.as_ref();
@@ -556,8 +569,10 @@ async fn explore_books_async(
         book_list_rule = book_list_rule[1..].to_string();
     }
 
-    // 重定向后的最终 URL 作为 base（对齐原版 WebBook.kt:173-181 用 res.url）— A5
-    let base_url = response.url.clone();
+    // 重定向后的最终 URL 作为 base（对齐原版 WebBook.kt:173-181 用 res.url；
+    // STAGE4-P36：采用 loginCheckJs 修改后的 outcome.url——原版 res.url 即
+    // check 后的 StrResponse.url）— A5
+    let base_url = login_outcome.url.clone();
     let t_parse = std::time::Instant::now();
 
     // 书山聚合等聚合源 bookList `<js>` 脚本依赖 jsLib 函数（getSessionId 等）与
@@ -792,59 +807,6 @@ fn with_explore_top_bindings(
         .with_js_binding("book", "null")
 }
 
-/// explore 链路 loginCheckJs 登录检测（双路径）
-///
-/// 对齐原版 `WebBook.exploreBookAwait`（WebBook.kt:148-172）与
-/// `web_book::RealBookSourceFetcher::execute_login_check`：
-/// - 成功路径：正常响应 eval 判定未登录 → 构造 errResponse(500) 二次 eval
-///   （JS 可自动登录并返回新响应）→ 仍未登录则上抛 `LoginRequired`
-/// - JS 环境不兼容（依赖 java.* 等）→ 降级放行，避免阻断
-///   — DeepSeek Harness + Bridge（2026-08-14 发现页修复 R3）
-fn explore_login_check(
-    source: &BookSource,
-    response_body: &str,
-    response_url: &str,
-    response_code: u16,
-) -> LegadoResult<()> {
-    let login_check_js = match &source.login_check_js {
-        Some(js) if !js.trim().is_empty() => js,
-        _ => return Ok(()), // 无 loginCheckJs 配置，跳过
-    };
-
-    match crate::js_executor::execute_login_check_js(
-        login_check_js,
-        response_body,
-        response_url,
-        response_code,
-        &source.book_source_url,
-    ) {
-        Ok(()) => Ok(()),
-        Err(crate::js_executor::LoginCheckError::NotLoggedIn(msg)) => {
-            let err_body = format!("HTTP/1.1 500 Internal Server Error\n\n{msg}");
-            match crate::js_executor::execute_login_check_js(
-                login_check_js,
-                &err_body,
-                response_url,
-                500,
-                &source.book_source_url,
-            ) {
-                Ok(()) => Ok(()),
-                Err(crate::js_executor::LoginCheckError::NotLoggedIn(_)) => Err(
-                    LegadoError::LoginRequired("书源需要登录，请先在书源菜单中登录后重试".into()),
-                ),
-                Err(crate::js_executor::LoginCheckError::JsFailed(e)) => {
-                    eprintln!("[explore] loginCheckJs errResponse 路径执行失败（降级放行）: {e}");
-                    Ok(())
-                }
-            }
-        }
-        Err(crate::js_executor::LoginCheckError::JsFailed(e)) => {
-            eprintln!("[explore] loginCheckJs 执行失败（环境不兼容，降级放行）: {e}");
-            Ok(())
-        }
-    }
-}
-
 // ─── 字段清洗（对齐原版 BookHelp / HtmlFormatter） ────────────────────────────
 
 /// 详情页单本回退解析（A9）：explore 列表规则无命中时，用 ruleBookInfo
@@ -1042,6 +1004,7 @@ mod field_clean_tests {
 #[cfg(all(test, feature = "quickjs"))]
 mod login_check_tests {
     use super::*;
+    use crate::api::web_book::RealBookSourceFetcher;
     use legado_core::models::BookSource;
 
     fn source_with_login_check(js: &str) -> BookSource {
@@ -1056,28 +1019,99 @@ mod login_check_tests {
         .unwrap()
     }
 
+    /// [STAGE4-P36] explore 链三叉点 1（分叉点1：裸布尔 → cast 失败 → 整源失败）：
+    /// 对齐原版 WebBook.kt:149-172 `evalJS(checkJs, it) as StrResponse`——
+    /// 裸布尔完成值无法 cast 为响应对象（原版 ClassCastException 语义）→
+    /// 首检 CastFailed → 二次 errResponse(500) eval 仍 cast 失败 →
+    /// 整源失败 LoginRequired（旧谓词语义会按字符串内容判定，已废弃）。
     #[test]
-    fn test_explore_login_check_not_logged_in_raises() {
-        // loginCheckJs 返回 "false"（未登录）→ 二次 errResponse(500) eval 仍 false
-        // → 上抛 LoginRequired
+    fn test_explore_login_check_bare_false_whole_source_fail() {
         let source = source_with_login_check("false;");
-        let err = explore_login_check(&source, "<html>登录页</html>", "https://a.com/explore", 200)
-            .unwrap_err();
-        assert!(matches!(err, LegadoError::LoginRequired(_)));
+        let r = RealBookSourceFetcher::execute_login_check(
+            &source,
+            "<html>登录页</html>",
+            "https://a.com/explore",
+            200,
+        )
+        .unwrap_err();
+        assert!(matches!(r, LegadoError::LoginRequired(_)));
     }
 
+    /// [STAGE4-P36] 分叉点1（裸 true 同样 cast 失败——红测试，旧谓词语义
+    /// 会把 `true` 当「已登录」放行，新语义整源失败）。
+    #[test]
+    fn test_explore_login_check_bare_true_whole_source_fail() {
+        let source = source_with_login_check("true;");
+        let r = RealBookSourceFetcher::execute_login_check(
+            &source,
+            "<html>正常页</html>",
+            "https://a.com/explore",
+            200,
+        );
+        assert!(
+            matches!(r, Err(LegadoError::LoginRequired(_))),
+            "裸 true 完成值应整源失败（cast 失败不降级），实际: {r:?}"
+        );
+    }
+
+    /// [STAGE4-P36] 三叉点 2（二次 eval code≠500 → 放行并采用二次结果）：
+    /// 正常响应（code 200）下 JS 返回裸字符串 `"false"` → cast 失败走错误
+    /// 路径；errResponse(500) 二次 eval 时 JS 自动登录并返回修改响应
+    /// `{code: 200, body: ...}`（code≠500）→ 放行且**采用二次结果**
+    /// （对齐原版 WebBook.kt:88「块值 = 二次返回值 res」，body 为自动登录
+    /// 后的新响应体，url 缺失回退原 URL）。
+    #[test]
+    fn test_explore_login_check_second_adopt() {
+        let js = r#"result.code() === 500 ? {code: 200, body: "auto-login-ok"} : "false""#;
+        let source = source_with_login_check(js);
+        let r = RealBookSourceFetcher::execute_login_check(
+            &source,
+            "<html>登录页</html>",
+            "https://a.com/explore",
+            200,
+        )
+        .expect("二次 eval code≠500 应放行");
+        assert_eq!(r.body, "auto-login-ok", "应采用二次修改响应体，实际: {r:?}");
+        assert_eq!(r.code, 200);
+        assert_eq!(r.url, "https://a.com/explore", "缺失字段应回退原 URL");
+    }
+
+    /// [STAGE4-P36] 三叉点 3（JS 修改的响应被采用）：正常响应下 JS 直接
+    /// 返回修改响应对象（自动登录场景）→ 首检成功即采用修改值
+    /// （对齐原版 analyzeBookList(baseUrl = res.url, body = res.body)）。
+    /// 注意：QuickJS 顶层禁 `return`，裸 `{...}` 在语句位置是块语句，
+    /// 对象完成值一律用括号表达式形式（见 login_check_response 测试注释）。
+    #[test]
+    fn test_explore_login_check_modified_response_adopted() {
+        let js = r#"({code: 200, body: "modified-body", url: "https://a.com/new"})"#;
+        let source = source_with_login_check(js);
+        let r = RealBookSourceFetcher::execute_login_check(
+            &source,
+            "<html>正常页</html>",
+            "https://a.com/explore",
+            200,
+        )
+        .expect("JS 修改响应应首检成功");
+        assert_eq!(r.body, "modified-body", "应采用 JS 修改的响应体，实际: {r:?}");
+        assert_eq!(r.url, "https://a.com/new", "应采用 JS 修改的 URL");
+        assert_eq!(r.code, 200);
+    }
+
+    /// 无 loginCheckJs 配置 → 原始响应三元组直通（对齐 WebBook.kt:77
+    /// checkJs 为空直通）。
     #[test]
     fn test_explore_login_check_no_config_skips() {
         let source = BookSource::default();
-        let r = explore_login_check(&source, "<html>x</html>", "https://a.com", 200);
-        assert!(r.is_ok(), "无 loginCheckJs 配置应跳过检测");
-    }
-
-    #[test]
-    fn test_explore_login_check_logged_in_ok() {
-        let source = source_with_login_check("true;");
-        let r = explore_login_check(&source, "<html>正常页</html>", "https://a.com/explore", 200);
-        assert!(r.is_ok(), "已登录应放行");
+        let r = RealBookSourceFetcher::execute_login_check(
+            &source,
+            "<html>x</html>",
+            "https://a.com",
+            200,
+        )
+        .expect("无 loginCheckJs 配置应直通");
+        assert_eq!(r.body, "<html>x</html>");
+        assert_eq!(r.url, "https://a.com");
+        assert_eq!(r.code, 200);
     }
 
     /// 复现：jsLib 函数体内含 Rhino Packages（try-catch 合法语法）+ 后部

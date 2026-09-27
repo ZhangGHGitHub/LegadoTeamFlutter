@@ -26,7 +26,7 @@
 //!   + `legado-js` QuickJS（`@js:` 规则，经 `JsExecutor` 注入，需 quickjs 特性）；
 //! - JS 作用域对齐 Kotlin `AnalyzeUrl/AnalyzeRule.evalJS` 的绑定语义：
 //!   以 `var key/word/result = <JSON 字符串字面量>` 前置注入
-//!   （同 `js_executor::execute_login_check_js` 的 result 注入模式）；
+//!   （同 `js_executor::execute_login_check_response` 的 result 注入模式）；
 //! - 各启用规则的结果逐条写入 `definitions`（前缀 `【规则名】` 区分来源，
 //!   原版为每规则独立页签，本契约 DictEntry 为扁平列表）；规则执行失败
 //!   （网络错误 / JS 报错）仅记日志并跳过，不中断整体查询；
@@ -479,7 +479,7 @@ fn base_js_executor(_tag: &str) -> Option<Arc<dyn JsExecutor>> {
 /// 对标 Kotlin `AnalyzeUrl.evalJS` / `AnalyzeRule.evalJS` 的脚本绑定
 /// （`bindings["key"]` / `bindings["result"]` 等）：QuickJS 无等价
 /// bindings 注入口，故以 `globalThis.key/word/result = <JSON 字面量>;`
-/// 前置注入后再执行（同 `js_executor::execute_login_check_js` 的既有模式；
+/// 前置注入后再执行（同 `js_executor::execute_login_check_response` 的既有模式；
 /// [能力对账批次 2] var → globalThis 属性注入，不注册全局 var 条目）。
 struct DictScopeExecutor {
     base: Option<Arc<dyn JsExecutor>>,

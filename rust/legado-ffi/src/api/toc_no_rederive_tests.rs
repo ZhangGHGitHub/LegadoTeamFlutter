@@ -246,8 +246,8 @@ async fn known_toc_login_check_js_blocks_when_not_logged_in() {
     );
 }
 
-/// 非 quickjs 构建：loginCheckJs 静默降级跳过（execute_login_check_js 为
-/// no-op stub）——与同构建详情路径行为一致，目录正常解析。
+/// 非 quickjs 构建：loginCheckJs 静默降级跳过（execute_login_check_response
+/// 直通原始响应三元组）——与同构建详情路径行为一致，目录正常解析。
 #[cfg(not(feature = "quickjs"))]
 #[tokio::test]
 async fn known_toc_login_check_js_degrades_without_quickjs() {
