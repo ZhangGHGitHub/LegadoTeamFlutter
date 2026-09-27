@@ -202,7 +202,10 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .fetch_url(&analyze_url, source_headers.as_ref())
             .await?;
 
-        crate::login_check::execute_login_check(source, &body, analyze_url.url(), 200)?;
+        // [STAGE4-P36] 采用 loginCheckJs 修改后的响应（分叉点3，对齐原版
+        // analyzeBookList(baseUrl=res.url, body=res.body)）
+        let login_outcome =
+            crate::login_check::execute_login_check(source, &body, analyze_url.url(), 200)?;
 
         // 3. 使用搜索规则解析结果
         let search_rule = source.rule_search.as_ref();
@@ -210,8 +213,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .and_then(|r| r.book_list.as_deref())
             .unwrap_or("");
 
-        let base_url = analyze_url.url().to_string();
-        let analyzer = AnalyzeRule::new(body, base_url.clone());
+        let base_url = login_outcome.url.clone();
+        let analyzer = AnalyzeRule::new(login_outcome.body, base_url.clone());
 
         // 获取书籍列表元素
         let elements = if book_list_rule.is_empty() {
@@ -323,8 +326,12 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         // 1. 请求书籍详情页
         let body = self.fetch_simple(book_url, source_headers.as_ref()).await?;
 
-        // 1.5 loginCheckJs
-        crate::login_check::execute_login_check(source, &body, book_url, 200)?;
+        // 1.5 loginCheckJs（[STAGE4-P36] 采用 JS 修改后的响应体（分叉点3），
+        // 对齐原版 analyzeBookInfo(baseUrl=book.bookUrl, redirectUrl=res.url,
+        // body=res.body)，WebBook.kt:253-260：base URL 保持原详情页 URL，
+        // 仅 body 采用 JS 修改值；无配置/非 quickjs 直通时与原 body 等价）
+        let login_outcome = crate::login_check::execute_login_check(source, &body, book_url, 200)?;
+        let body = login_outcome.body;
 
         // 2. 使用 bookInfo 规则解析
         let info_rule = source.rule_book_info.as_ref();
@@ -447,7 +454,13 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         // 1. 先获取详情页以确定 toc_url
         let info_body = self.fetch_simple(book_url, source_headers.as_ref()).await?;
-        crate::login_check::execute_login_check(source, &info_body, book_url, 200)?;
+
+        // 1.5 loginCheckJs（[STAGE4-P36] 采用 JS 修改后的响应体（分叉点3），
+        // 对齐原版 analyzeChapterList(baseUrl=book.tocUrl, redirectUrl=res.url,
+        // body=res.body)，WebBook.kt:353-360：base URL 保持原请求 URL，
+        // 仅 body 采用 JS 修改值；无配置/非 quickjs 直通时与原 body 等价）
+        let login_outcome = crate::login_check::execute_login_check(source, &info_body, book_url, 200)?;
+        let info_body = login_outcome.body;
         let info_rule = source.rule_book_info.as_ref();
         let info_analyzer = AnalyzeRule::new(info_body, book_url.to_string());
 
@@ -539,7 +552,12 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .fetch_simple(&chapter.url, source_headers.as_ref())
             .await?;
 
-        crate::login_check::execute_login_check(source, &body, &chapter.url, 200)?;
+        // [STAGE4-P36] 采用 JS 修改后的响应体（分叉点3），对齐原版
+        // analyzeContent(baseUrl=chapter.getAbsoluteURL(), redirectUrl=res.url,
+        // body=res.body)，WebBook.kt:483-492：base URL 保持原章节 URL，
+        // 仅 body 采用 JS 修改值；无配置/非 quickjs 直通时与原 body 等价
+        let login_outcome = crate::login_check::execute_login_check(source, &body, &chapter.url, 200)?;
+        let body = login_outcome.body;
 
         // 2. 使用正文规则解析首页（Task #135：含 nextContentUrl 分页规则提取）
         let content_rule = source.rule_content.as_ref();
