@@ -80,7 +80,5 @@ pub(crate) static POOL_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new((
 /// 便捷持锁函数：取得 [`POOL_TEST_LOCK`] 的守卫直至测试结束（用法同
 /// [`lock_global_store`]）。
 pub(crate) fn lock_pool_tests() -> std::sync::MutexGuard<'static, ()> {
-    POOL_TEST_LOCK
-        .lock()
-        .unwrap_or_else(|p| p.into_inner())
+    POOL_TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner())
 }

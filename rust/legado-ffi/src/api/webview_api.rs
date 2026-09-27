@@ -201,7 +201,11 @@ mod tests {
             &format!("{{\"{}\": \"a=2; b=3\"}}", URL),
         );
         assert!(hit, "必须命中进行中的请求");
-        assert_eq!(waiter.join().unwrap().unwrap(), "done", "等待方必须收到结果");
+        assert_eq!(
+            waiter.join().unwrap().unwrap(),
+            "done",
+            "等待方必须收到结果"
+        );
 
         let row = db_cookie_row(&dk).expect("落库后 DB 行必须存在");
         assert_eq!(
@@ -231,8 +235,7 @@ mod tests {
         let other_dk = cookie_store::normalized_cookie_key(OTHER_URL);
         assert_ne!(keep_dk, other_dk, "两个域键必须不同");
         let tags: Vec<&str> = vec![keep_dk.as_str(), other_dk.as_str()];
-        crate::http_state::delete_cookie_rows(&tags)
-            .expect("清理残留行必须成功（DB 已初始化）");
+        crate::http_state::delete_cookie_rows(&tags).expect("清理残留行必须成功（DB 已初始化）");
 
         // 无关域已有行
         crate::http_state::persist_cookie_row_merged(&keep_dk, "keep=1");
@@ -268,8 +271,7 @@ mod tests {
         }
         // 收尾清理
         let tags: Vec<&str> = vec![keep_dk.as_str(), other_dk.as_str()];
-        crate::http_state::delete_cookie_rows(&tags)
-            .expect("收尾清理必须成功（DB 已初始化）");
+        crate::http_state::delete_cookie_rows(&tags).expect("收尾清理必须成功（DB 已初始化）");
     }
 
     /// 空 / 非法 cookiesJson：不 panic、不落库、唤醒语义与旧方法一致
@@ -305,7 +307,7 @@ mod tests {
             // 首次命中唤醒后请求已出队，后续提交返回 false（同旧方法语义）
             assert_eq!(
                 hit,
-                bad == "",
+                bad.is_empty(),
                 "首次提交必须命中，重复提交返回 false（{bad}）"
             );
         }

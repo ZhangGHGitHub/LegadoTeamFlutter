@@ -480,7 +480,9 @@ pub mod ffi {
         cookies_json: String,
     ) -> Result<bool, BridgeError> {
         Ok(crate::api::webview_api::submit_webview_result_with_cookies(
-            &key, &result, &cookies_json,
+            &key,
+            &result,
+            &cookies_json,
         ))
     }
 
