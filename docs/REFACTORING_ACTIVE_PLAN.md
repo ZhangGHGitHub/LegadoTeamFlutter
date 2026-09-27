@@ -16,6 +16,15 @@
 - **已关闭 / N/A**：必须附当前适用的源码、提交、CI、设备或素材证据及明确范围。
 - **禁止口径**：不再使用“零 TODO/桩”“全部完成”“全量通过”等没有范围、HEAD、命令和提交号的绝对表述。
 
+### 验证口径（2026-09-27 平台裁决）
+
+- **真实设备验收平台（当前唯一）＝ Android MuMu「Test测试」实例**（在线实例与端点以执行前实时探测为准）。
+- **Android 结果可以关闭**：Rust 核心逻辑、FFI、Dart 通用逻辑、Android 实机行为。
+- **Android 结果不得直接宣称通过**：iOS 真机、iOS 权限、后台任务、WebView、音频、通知、签名验证（iOS 专属面）。
+- **Flutter 三端共用代码仅作为共享实现依据**，不等同三端运行时行为一致。
+- **iOS 当前限制**（无本地 Mac、Apple 设备与可授权测试者）：保留 macOS CI 可选编译检查；模拟器 CI 可运行时记录为「**iOS 编译/模拟器验证**」；**不安排 Agent 自行 iOS 真机验收**；**iOS 签名不作为当前主流程完成条件**。
+- **恢复入口保留**：iOS 真机测试能力（签名脚手架与文档）已由 P2-26 交付备查，恢复时无需重做；**当前不要求申请 Apple Developer Program**；iOS 真机相关项在缺设备期间一律保持「**待外部测试能力**」。
+
 ## 二、当前完成基线
 
 | 范围 | 当前判断 | 证据 |
@@ -456,21 +465,21 @@
 
 > 来源：2026-09-27 用户确认的「文档处置清单与未结项交叉表」；16 篇旧计划/记录已归档 `docs/过期文档/`（映射见 `docs/过期文档/ARCHIVE_MAP_20260922.md` §四）。逐条核验证据（commit/行号级）见 `docs/过期文档/RESEARCH_LEGACY_PLANS_20260927_A.md` 与 `RESEARCH_LEGACY_PLANS_20260927_UI.md`。
 
-- **P2-23 iOS 自动任务降级 + 真机走查**（待核验，低优）：workmanager iOS 降级（前台定时执行，对齐插件对照表 L71）+ iOS 真机走查清单，iOS 轨 P2 收尾。来源：`过期文档/IOS_TRACK_FEASIBILITY_20260830.md` §五 P2（2026-08-31 修订行在案）。**2026-09-27 注记**：iOS 已定为**主要真实目标**，真机走查以 **P2-26 签名改造**产出为前置；排期随主线节奏。
+- **P2-23 iOS 自动任务降级 + 真机走查**（**待 Apple 设备或外部测试者**；2026-09-27 二次修订）：workmanager iOS 降级（前台定时执行，对齐插件对照表 L71）+ iOS 真机走查清单，iOS 轨 P2 收尾。来源：`过期文档/IOS_TRACK_FEASIBILITY_20260830.md` §五 P2（2026-08-31 修订行在案）。当前无本地 Mac/Apple 设备/可授权测试者，不安排 Agent 自行 iOS 真机验收；自动任务降级的工程部分仍可在 iOS 编译/模拟器层验证；恢复真机测试入口见 P2-26，不阻塞 Android 主流程。
 - **P2-24 armeabi-v7a（32 位）JS 引擎降级（**已关闭 2026-09-27**：用户裁决维持降级现状，不拆 feature；仅当用户主动重开决策时才比较方案）**：
   - **裁决记录**：2026-08-29 用户确认保留 armeabi-v7a 降级（原版支持 ARM32，不剔除出发布矩阵）；**2026-09-27 用户复核确认维持降级现状**（真机存量已少，不做 rar 拆分 feature 等方案投入）——本项关闭；「移除 armeabi-v7a」自始不是本项选项。下列技术事实与影响面登记**保留备查**（供未来用户主动重开时引用，非当前待办）：
   - **技术事实（2026-09-27 核实）**：`rust/legado-js/Cargo.toml:49,90` 的 quickjs feature 组合包含 `rar`（RAR 档案解压依赖，服务 CBR 等压缩档案场景，与 `zip`/`sevenz-rust2`/`flate2` 同属档案族——**并非 JS 引擎本体依赖**，只是被并入同一 feature 组合）；`rar` 在 32 位 armv7 无法编译（`u64: ToUsize` 未实现）→ 构建链对 v7a 的 quickjs 尝试失败。机制：`rust/scripts/build-android.ps1`（L219-246）对每个 ABI 先以 `--features quickjs` 构建，**失败自动回退**无 quickjs 并记录 `quickjs=$false`——v7a 即经此回退路径产出降级 .so（P2-16 批次实证「三 ABI 构建成功，v7a quickjs=false 降级不变」）；`flutter_legado/android/app/build.gradle.kts:43` 仍打包 `armeabi-v7a`；`.github/workflows/flutter-ci.yml:82-83` 对 v7a 标注「当前 quickjs:false 需人工决策」。根因证据：`过期文档/SEARCH_PARITY_REMEDIATION_PLAN_20260828.md` §7.2（L202-207，已归档）。
   - **派生核实项**：`.github/workflows/flutter-release.yml`（L67-69）对 armv7 直接传 `--features quickjs`（无 build-android 式回退），与上述降级机制相抵——已派生为 **P2-25**（随本项关闭仍需单独核实修正，属 CI 链路事实问题）。
   - **若未来重开，影响面（盘点备查，未实施）**：Cargo（`legado-js` quickjs feature 拆分与 `legado-ffi` 透传、Cargo.lock）；FFI/绑定面（feature 门控符号变化须核对 API_CONTRACT 契约与 FRB codegen）；QuickJS 注册层（`legado-js` engine/宿主能力台账的 `cfg(feature="quickjs")` 门控路径）；Android 构建脚本（`build-android.ps1` per-target feature 决策与回退逻辑、`rust-fingerprint.ps1`/`verify-ffi-android` 的 .so 指纹与 feature 记录口径）；Gradle（`build.gradle.kts` abiFilters/jniLibs 分包策略）；CI workflow（rust-ci / flutter-ci / flutter-release / BetaRelease 的构建矩阵与 feature 参数，含 P2-25 矛盾修正）；`flutter_legado/.metadata` 与构建产物元数据清单；armv7 构建与 JS smoke（`emulator_smoke_test.ps1`）须在 v7a 环境补验。**注意：不得从「拆分 feature」直接推断 v7a JS 可用**——`rquickjs-sys`（C 交叉编译 + 32 位 bindgen）与其余 quickjs 组合成员在 armv7 的编译与运行均未验证，须先以 v7a 工具链试编实证。
 - **P2-25 flutter-release.yml 的 armv7 quickjs 矛盾核实修正**（**已关闭 2026-09-27**，提交 `b991c9d53b`，— full-stack-engineer + Tool）：核实结论=全仓 armv7+quickjs 直传仅 flutter-release.yml L69 一处（rust-ci/integration-smoke 的 quickjs 均在宿主 x86_64/Windows，无 armv7 目标）；fork `ZhangGHGitHub/LegadoTeamFlutter` 的 Flutter Release 工作流零运行记录（近 60 次运行均无该工作流），矛盾按静态定性入档——无回退逻辑下该步编译失败即中断整个 release 链（v7a APK 永不产出）。修正：armv7 构建步骤显式去掉 `--features quickjs`（build-android.ps1 回退语义固化为显式命令，注释固化 P2-24 裁决依据）；`flutter-ci.yml` L82-83「v7a 需人工决策」注释同步为已裁决既定态。验证：两 yml `yaml.safe_load` 通过。
-- **P2-26 iOS CI 签名改造**（**脚手架+文档已交付 2026-09-27**，提交 `4d5366d818`，— full-stack-engineer + Tool；**当前状态：待用户素材**）：
+- **P2-26 iOS CI 签名改造**（**暂缓／待测试能力**，2026-09-27 二次修订：不阻塞 Android 主流程；签名不作为当前主流程完成条件。脚手架+文档已交付，提交 `4d5366d818`，— full-stack-engineer + Tool）：
   - **已交付（无素材部分）**：`ios-build.yml` 新增条件签名脚手架（4 secrets 映射 job 级 env：`IOS_P12_BASE64`/`IOS_P12_PASSWORD`/`IOS_PROFILE_BASE64`/`IOS_EXPORT_METHOD`；签名步骤 `if: env.IOS_P12_BASE64 != ''` 门控）——**态 A**（无 secrets，当前默认）：跳过签名步骤、走既有未签名链路 + warning 提示，CI 保持全绿；**态 B**（有 secrets）：临时 keychain 导入 P12 → 安装描述文件 → 对最终修改版 Runner.app（图标注入/plist 剥离后）直接 codesign 重签（嵌套 framework 先签 + `codesign -v --strict` 验证；entitlements 的 application-identifier 从 profile 自身提取，免 TEAM_ID secret）→ artifact `legado-ios-signed-ipa`（retention 14 天）。**有意不用 `flutter build ipa`**：其重新 archive 会丢弃既有 in-place 图标注入/plist 剥离修复（-54 回归修复）。验证：yml `yaml.safe_load` 通过、4 个新步骤脚本 `bash -n` 通过、base64/entitlements 命令本地 dummy 演练通过。
   - **文档**：`docs/IOS_CI_SIGNING_SETUP.md`（目标与非目标/素材清单含有效期对比：免费团队 7 天 vs 付费 Ad-hoc 最长 12 个月/Secrets 配置表+base64 命令/CI 两态行为/真机安装与信任流程/排障表/与脚手架步骤对应关系）；`docs/README.md` 索引登记。bundle id 实证=`io.legado.flutterLegado`。
-  - **待用户素材（启用态 B 的前置）**：Apple Developer Program 账号（$99/年）+ 证书 P12（建议 Apple Distribution 配 ad-hoc）+ Ad-hoc 描述文件（登记目标真机 UDID）+ 4 个 GitHub Secrets。素材到位后首跑需盯 `Prepare signing materials` 步骤（codesign/keychain 行为未经真机 CI 实证）；已知行为：态 B 下 `legado-ios-unsigned-ipa` 内容也含签名 app（既有打包步无条件执行），下载签名包用 `legado-ios-signed-ipa`。
-- **P3-8 iOS 三端收敛**（待核验，低优）：Windows 行为基线固化 + macos/linux FFI 接线冒烟（dylib/framework 装载）+ CI 三产物矩阵。来源：`过期文档/IOS_TRACK_FEASIBILITY_20260830.md` §五 P3。**2026-09-27 注记**：iOS 主要真实目标 → 本项 iOS 侧行为基线权重提升；仍低优，随主线后。
+  - **恢复条件（未来需要时，当前不要求申请）**：Apple Developer Program 账号（$99/年）+ 证书 P12（建议 Apple Distribution 配 ad-hoc）+ Ad-hoc 描述文件（登记目标真机 UDID）+ 4 个 GitHub Secrets；恢复时无需重做脚手架。届时首跑需盯 `Prepare signing materials` 步骤（codesign/keychain 行为未经真机 CI 实证）；已知行为：态 B 下 `legado-ios-unsigned-ipa` 内容也含签名 app（既有打包步无条件执行），下载签名包用 `legado-ios-signed-ipa`。
+- **P3-8 iOS 三端收敛**（待核验，低优）：Windows 行为基线固化 + macos/linux FFI 接线冒烟（dylib/framework 装载）+ CI 三产物矩阵。来源：`过期文档/IOS_TRACK_FEASIBILITY_20260830.md` §五 P3。**2026-09-27 二次修订**：iOS 真机验收暂缓（待外部测试能力）；本项在 iOS 侧仅保留 CI 编译/模拟器层面的兼容检查价值，仍低优，随主线后。
 - **低优候选 1：渲染矩阵补页（详情/阅读两屏）**：`test/widget/md3_acceptance_matrix_test.dart` 仍仅 4 屏，改动最重的两屏无单测级渲染防护（实机截图已由 parity_shots 流程承担）；随下一轮 UI 测试批顺带。来源：`过期文档/UI_SYNC_REFACTOR_PLAN_20260905.md` §七#7。
 - **低优候选 2：Characters/RelatedBooks 后端数据链 + AI 摘要链**（授权在案 2026-09-05，UI 骨架已就位、空数据隐藏）：契约未冻结（API_CONTRACT 无 getBookCharacters/getRelatedBooks）、Rust 轨未排期；按 2026-09-27 主线口径属主线后功能，排期待用户指示。授权正本：`过期文档/UI_ONE_TO_ONE_CLONE_PLAN_20260905.md` §〇。
-- **在案待裁决（不新增动作）**：Material You 动态取色默认槽位（见 D9 段登记）；首页模块管理解禁（2026-09-11「暂不」在案，解禁按 `过期文档/UI_REMAINING_DEV_SUGGESTIONS_20260909.md` §E 路径契约先行）；animateItem 三件套（留档不催办）；A* 实网验收 9 项待素材（P2-4，真机类项按 2026-09-27 平台优先级以 iOS 真机为主要验收目标）。原「iOS 签名分发」待裁决项已裁决移出（2026-09-27：iOS 主要真实目标、暂不上架、CI 签名改造 → P2-26）。
+- **在案待裁决（不新增动作）**：Material You 动态取色默认槽位（见 D9 段登记）；首页模块管理解禁（2026-09-11「暂不」在案，解禁按 `过期文档/UI_REMAINING_DEV_SUGGESTIONS_20260909.md` §E 路径契约先行）；animateItem 三件套（留档不催办）；A* 实网验收 9 项待素材（P2-4；真机类项按 2026-09-27 验证口径以 **Android MuMu 为唯一真机验收平台**，iOS 真机项保持待外部测试能力）。原「iOS 签名分发」待裁决项已裁决移出（2026-09-27：签名改造立项 P2-26，现状态=暂缓/待测试能力）。
 
 ## 四、文档治理
 
@@ -544,3 +553,5 @@
 修订：Legado 项目维护组 ｜ 2026-09-27（**平台裁决入档**：① P2-24 关闭——armv7 维持降级现状（用户复核确认，真机存量少；flutter-release 矛盾派生 **P2-25** 核实修正）；② iOS 定为**主要真实目标**（Android/Windows 次之），暂不上架、需 CI 签名改造 → 立项 **P2-26**（前置=Apple Developer 账号素材，工程侧可先行脚手架）；P2-23 真机走查以 P2-26 为前置、P3-8 iOS 权重注记；A* 真机类验收以 iOS 真机为主；「iOS 签名分发」待裁决项移出）
 
 修订：Legado 项目维护组 ｜ 2026-09-27（**P2-25/P2-26 实施批**：P2-25 关闭——armv7 quickjs 直传修正 `b991c9d53b`（全仓仅此一处直传，gh 查证 release 工作流零运行记录、静态定性）；P2-26 脚手架+文档交付 `4d5366d818`（ios-build.yml 两态签名脚手架 + `docs/IOS_CI_SIGNING_SETUP.md`），当前状态=**待用户素材**（Apple Developer 账号/证书/描述文件/4 Secrets）；执行代理 full-stack-engineer + Tool，主代理复核 diff 通过）
+
+修订：Legado 项目维护组 ｜ 2026-09-27（**验证口径二次修订（2026-09-27 晚，取代本日早前「iOS 主要真实目标」表述）**：Android MuMu 为当前唯一真实设备验收平台——Android 结果可关闭 Rust 核心/FFI/Dart 通用逻辑/Android 实机行为，**不得**直接宣称 iOS 真机/权限/后台任务/WebView/音频/通知/签名验证通过；Flutter 三端共用代码仅为共享实现依据；iOS 保留 macOS CI 编译检查、模拟器 CI 可跑时记录「iOS 编译/模拟器验证」，不安排 Agent 自行真机验收，签名不作主流程完成条件；P2-23→待 Apple 设备或外部测试者；P2-26→暂缓/待测试能力（不阻塞 Android 主流程，恢复入口保留，当前不要求申请 Apple Developer Program）。口径落点：本文 §一「验证口径」+ REFACTORING_WORKFLOW 门 D）
