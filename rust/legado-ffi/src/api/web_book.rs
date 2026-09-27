@@ -1958,7 +1958,8 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         // fetch_known_toc_body / fetch_detail_and_derive_toc_body，共享尾部
         // 提取为 parse_chapters_from_toc_body（同时供 get_chapters_with_vars
         // 的「已知目录页」路径复用）。
-        let (toc_url, toc_body, book_author) =
+        // [B-11] 末位：目录页重定向后最终 URL（首抓页分析器 redirect 基准）
+        let (toc_url, toc_body, book_author, toc_final_url) =
             if let Some(raw_toc) = known_toc_url.filter(|u| !u.is_empty() && *u != book_url) {
                 self.fetch_known_toc_body(
                     source,
@@ -2020,6 +2021,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 Some(&book_meta),
                 js_lib_sanitized.as_deref(),
                 t0,
+                &toc_final_url,
             )
             .await?;
         // P2-9 ②：记录章节 URL → book 映射 + book 元信息（正文阶段反查用）
@@ -2095,9 +2097,12 @@ impl RealBookSourceFetcher {
         // ,{json} 拼进请求 → 目录接口 404/错误响应 → 「共 0 章」。
         let analyze_toc = legado_parser::AnalyzeUrl::parse(toc_url, variables, 1)
             .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
-        let toc_body = self
-            .fetch_url(&analyze_toc, source_headers.as_ref())
+        // [B-11] 取响应体 + 重定向后最终 URL（原 fetch_url 丢弃 final_url）
+        let page = self
+            .fetch_page(&analyze_toc, source_headers.as_ref())
             .await?;
+        let toc_final_url = page.final_url;
+        let toc_body = page.body;
         // P2-1：loginCheckJs 目录体登录检测（调用形态与详情路径各
         // execute_login_check 调用点一致；P3-6 A：返回
         // LegadoResult<LoginCheckResponse>（JS 修改后或原始响应），
@@ -2123,6 +2128,7 @@ impl RealBookSourceFetcher {
             None,
             js_lib_sanitized.as_deref(),
             t0,
+            &toc_final_url,
         )
         .await
     }
@@ -2133,7 +2139,9 @@ impl RealBookSourceFetcher {
     /// `raw_toc` 可为相对路径（相对 `book_url` 绝对化）。解析后目录地址
     /// 等于 `book_url`（如相对路径形态）时按 bookUrl 请求选项抓取并解析
     /// 书名；否则直接抓目录页（目录地址可能带请求选项，先经 AnalyzeUrl
-    /// 解析）。返回（最终目录地址, 目录响应体）。
+    /// 解析）。返回（最终目录地址, 目录响应体, 作者, 目录页重定向后最终
+    /// URL——[B-11] 经 fetch_page 取 FetchedPage.final_url，供首抓页
+    /// redirect 基准贯通）。
     #[allow(clippy::too_many_arguments)] // 逐字迁移原分支参数集，暂不拆结构体
     async fn fetch_known_toc_body(
         &self,
@@ -2145,7 +2153,7 @@ impl RealBookSourceFetcher {
         js_lib_sanitized: Option<&str>,
         book_name: &mut String,
         t0: std::time::Instant,
-    ) -> LegadoResult<(String, String, String)> {
+    ) -> LegadoResult<(String, String, String, String)> {
         let info_rule = source.rule_book_info.as_ref();
         let toc_url = if raw_toc.starts_with("http://") || raw_toc.starts_with("https://") {
             raw_toc.to_string()
@@ -2161,7 +2169,10 @@ impl RealBookSourceFetcher {
             // bookUrl 同样可能带「url,{json}」请求选项（七猫），经 AnalyzeUrl 解析
             let analyze_book = legado_parser::AnalyzeUrl::parse(book_url, variables, 1)
                 .map_err(|e| LegadoError::Internal(format!("bookUrl 解析失败: {e}")))?;
-            let info_body = self.fetch_url(&analyze_book, source_headers).await?;
+            // [B-11] 取响应体 + 重定向后最终 URL（原 fetch_url 丢弃 final_url）
+            let page = self.fetch_page(&analyze_book, source_headers).await?;
+            let toc_final_url = page.final_url;
+            let info_body = page.body;
             Self::execute_login_check(source, &info_body, book_url, 200)?;
             // P2-9 ②：书名空或配了 author 规则时建解析器（名字仅在空时补，
             // author 取 ruleBookInfo.author，逐行 trim 取首非空行，同 name 模式）
@@ -2212,7 +2223,7 @@ impl RealBookSourceFetcher {
                         .to_string();
                 }
             }
-            Ok((toc_url, info_body, book_author))
+            Ok((toc_url, info_body, book_author, toc_final_url))
         } else {
             // tocUrl 可能是「url,{json}」带请求选项的格式（七猫四合一
             // qmGetUrl 生成 https://.../chapter/chapter-list?...,
@@ -2221,16 +2232,23 @@ impl RealBookSourceFetcher {
             // → 目录接口 404/错误 → 「共 0 章」（2026-08-15 用户反馈）
             let analyze_toc = legado_parser::AnalyzeUrl::parse(&toc_url, variables, 1)
                 .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
-            let body = self.fetch_url(&analyze_toc, source_headers).await?;
+            // [B-11] 取响应体 + 重定向后最终 URL（原 fetch_url 丢弃 final_url）
+            let page = self.fetch_page(&analyze_toc, source_headers).await?;
             // P2-9 ②：纯目录页路径无详情字段，author 空（详情阶段记录可补）
-            Ok((toc_url, body, String::new()))
+            Ok((toc_url, page.body, String::new(), page.final_url))
         }
     }
 
     /// 详情页路径抓取目录响应体（原 get_chapters_with_hints_and_vars 的
     /// else 分支，逐字迁移）：抓详情页 → ruleBookInfo.init + tocUrl 规则
     /// 推导目录页地址（tocUrl 规则为空时目录地址=详情页 URL 并复用详情
-    /// 响应体）。返回（最终目录地址, 目录响应体）。
+    /// 响应体）。返回（最终目录地址, 目录响应体, 作者, 目录页重定向后
+    /// 最终 URL）。
+    ///
+    /// [B-11] 末位新增目录页重定向后最终 URL（`FetchedPage.final_url`）：
+    /// 目录页经 302 重定向到更深地址时，首抓页分析器的 redirect 基准必须
+    /// 是最终 URL（对齐原版 WebBook.kt:357 `redirectUrl = res.url`），
+    /// 否则相对章节/nextTocUrl 链接会拼到重定向前地址上 404。
     #[allow(clippy::too_many_arguments)] // 逐字迁移原分支参数集，暂不拆结构体
     async fn fetch_detail_and_derive_toc_body(
         &self,
@@ -2241,14 +2259,17 @@ impl RealBookSourceFetcher {
         js_lib_sanitized: Option<&str>,
         book_name: &mut String,
         t0: std::time::Instant,
-    ) -> LegadoResult<(String, String, String)> {
+    ) -> LegadoResult<(String, String, String, String)> {
         let info_rule = source.rule_book_info.as_ref();
         // 1. 先获取详情页以确定 toc_url
         //    （bookUrl 可能带「url,{json}」请求选项，七猫发现列表 qmGetUrl 生成；
         //    经 AnalyzeUrl 解析出 url/method/headers 再请求，直接 GET 会 401/404）
         let analyze_book = legado_parser::AnalyzeUrl::parse(book_url, variables, 1)
             .map_err(|e| LegadoError::Internal(format!("bookUrl 解析失败: {e}")))?;
-        let info_body = self.fetch_url(&analyze_book, source_headers).await?;
+        // [B-11] 取响应体 + 重定向后最终 URL（原 fetch_url 丢弃 final_url）
+        let page = self.fetch_page(&analyze_book, source_headers).await?;
+        let detail_final_url = page.final_url;
+        let info_body = page.body;
         eprintln!("[web_book] get_chapters info_body in {:?}", t0.elapsed());
 
         // 1.5 loginCheckJs 登录检测
@@ -2328,16 +2349,19 @@ impl RealBookSourceFetcher {
         };
 
         // 2. B3.1 tocHtml 缓存复用：当 tocUrl == bookUrl 时复用详情页响应体，避免重复请求
-        let toc_body = if toc_url == book_url {
-            info_body
+        // [B-11] 复用分支的目录页最终 URL = 详情页最终 URL（同一响应）
+        let (toc_body, toc_final_url) = if toc_url == book_url {
+            (info_body, detail_final_url)
         } else {
             // 同 known-tocUrl 路径：tocUrl 可能带「url,{json}」请求选项（七猫），
             // 经 AnalyzeUrl 解析出 url/method/headers 再请求
             let analyze_toc = legado_parser::AnalyzeUrl::parse(&toc_url, variables, 1)
                 .map_err(|e| LegadoError::Internal(format!("tocUrl 解析失败: {e}")))?;
-            self.fetch_url(&analyze_toc, source_headers).await?
+            // [B-11] 取响应体 + 重定向后最终 URL（原 fetch_url 丢弃 final_url）
+            let page = self.fetch_page(&analyze_toc, source_headers).await?;
+            (page.body, page.final_url)
         };
-        Ok((toc_url, toc_body, book_author))
+        Ok((toc_url, toc_body, book_author, toc_final_url))
     }
 
     /// 目录解析共享尾部（原 get_chapters_with_hints_and_vars 两分支之后的
@@ -2346,6 +2370,14 @@ impl RealBookSourceFetcher {
     /// ruleToc（chapterList → 章节循环、nextTocUrl 分页、去重/反转、
     /// formatJs），返回章节列表。
     /// `t0` 为整段流程起点（含抓目录耗时），仅用于 eprintln 计时日志。
+    ///
+    /// `toc_final_url`：首抓目录页重定向后最终 URL（对齐原版
+    /// WebBook.kt:357 `redirectUrl = res.url`）。首抓页解析基准 = 请求
+    /// URL（`toc_url`），但章节 URL 绝对化 / 空 URL 回退 / nextTocUrl
+    /// 绝对化与去重排除均用 `toc_final_url`（原版 AnalyzeRule.redirectUrl
+    /// 语义）；串行后续页保持请求 URL 语义（原版 BookChapterList.kt:83
+    /// `analyzeChapterList(book, nextUrl, nextUrl, …)`）。无重定向时
+    /// `toc_final_url == toc_url`，行为与既有实现逐字一致。
     #[allow(clippy::too_many_arguments)] // 目录解析共享尾部参数集，暂不拆结构体
     async fn parse_chapters_from_toc_body(
         &self,
@@ -2357,6 +2389,7 @@ impl RealBookSourceFetcher {
         book_meta: Option<&BookMeta>,
         js_lib_sanitized: Option<&str>,
         t0: std::time::Instant,
+        toc_final_url: &str,
     ) -> LegadoResult<Vec<WebChapter>> {
         // 3. B3.4 反转标记：chapterList 规则以 "-" 前缀表示倒序，"+" 前缀仅为标记（对标 Kotlin BookChapterList）
         let toc_rule = source.rule_toc.as_ref();
@@ -2395,6 +2428,12 @@ impl RealBookSourceFetcher {
             toc_body,
             toc_url.to_string(),
         );
+        // [B-11] 首抓页重定向贯通（对齐原版 WebBook.kt:357：
+        // setBaseUrl(book.tocUrl) + setRedirectUrl(res.url)）：base 保持
+        // 请求 URL，redirect 记重定向后最终 URL——后续章节/nextTocUrl
+        // 绝对化经 redirect_url 生效。无重定向时 final == 请求 URL，
+        // set_redirect_url 为等价重写。
+        analyzer.set_redirect_url(toc_final_url);
 
         // P2-9 ②：meta 命中 → IIFE 扩面绑定；未命中 → 既有 `{"name":…}` 字面量
         // P2-11 ①：type 初值 = 书源 BookType 位标志（TEXT=8 等）
@@ -2455,6 +2494,9 @@ impl RealBookSourceFetcher {
         // `{{book.name}}` 取空（民间故事/涨姿势/华语中文/月亮小说/可阅文学 5 源）。
         // P2-9 ②：绑定表达式与 chapterList 层一致（meta 命中 → IIFE 扩面）
         ;
+        // [B-11] 逐章解析器同 chapterList 层：redirect 记首抓页最终 URL
+        // （串行后续页循环内按页覆写为当页请求 URL，见下方 set_base_url）
+        elem_analyzer.set_redirect_url(toc_final_url);
         elem_analyzer = elem_analyzer.with_js_binding("book", &book_binding);
 
         let t_parse = std::time::Instant::now();
@@ -2502,17 +2544,19 @@ impl RealBookSourceFetcher {
 
             // B3.3 空 URL 回退 + 绝对化（对标 Kotlin BookChapterList）
             //    - 卷章 url 空：用 `title + index` 替代（合成唯一标识，不绝对化）
-            //    - 普通章 url 空：回退 baseUrl（目录页 url）
-            //    - 非空 url：基于 toc_url 绝对化
+            //    - 普通章 url 空：回退 baseUrl（原版 BookChapter.baseUrl =
+            //      首抓页重定向后最终 URL）
+            //    - 非空 url：基于最终 URL 绝对化（[B-11] 对齐原版
+            //      AnalyzeRule.redirectUrl；无重定向时 final == 请求 URL）
             let raw_url = raw_url_probe;
             let url = if raw_url.is_empty() {
                 if is_volume {
                     format!("{}{}", title, index)
                 } else {
-                    toc_url.to_string()
+                    toc_final_url.to_string()
                 }
             } else {
-                AnalyzeUrl::get_absolute_url(toc_url, &raw_url)
+                AnalyzeUrl::get_absolute_url(toc_final_url, &raw_url)
             };
 
             // @put 变量写入章节（对齐 BookChapter.putVariable → variable JSON）
@@ -2545,11 +2589,15 @@ impl RealBookSourceFetcher {
             .trim();
         if !next_toc_rule.is_empty() {
             let t_next = std::time::Instant::now();
+            // [B-11] 排除判据 = 首抓页最终 URL（对齐原版
+            // BookChapterList `nextUrlList.filter { it != redirectUrl }`）：
+            // 重定向场景下请求 URL 与最终 URL 不同，按请求 URL 排除会漏
+            // 掉「下一页 == 最终地址」的自环页
             let mut next_urls: Vec<String> = analyzer
                 .get_strings_ex(next_toc_rule, true)
                 .unwrap_or_default()
                 .into_iter()
-                .filter(|u| !u.is_empty() && u != toc_url)
+                .filter(|u| !u.is_empty() && u != toc_final_url)
                 .collect();
             // 去重保序
             {
@@ -2565,7 +2613,10 @@ impl RealBookSourceFetcher {
             if next_urls.len() == 1 {
                 let mut visited: std::collections::HashSet<String> =
                     std::collections::HashSet::new();
-                visited.insert(toc_url.to_string());
+                // [B-11] 已访问种子 = 首抓页最终 URL（对齐原版
+                // `nextUrlList = arrayListOf(redirectUrl)`）：重定向场景下
+                // 若按请求 URL 播种，自环「最终地址」无法被去重拦截
+                visited.insert(toc_final_url.to_string());
                 let mut next_url = next_urls.remove(0);
                 // [性能专项 2026-09-24] 刷新代数在循环入口捕获（新刷新 bump 代数
                 // → 本链在下一页边界中止，对齐上游 ensureActive()）；目录总页数
@@ -2619,6 +2670,11 @@ impl RealBookSourceFetcher {
                     for (i, elem) in page_elements.iter().enumerate() {
                         elem_analyzer.clear_variables();
                         elem_analyzer.set_base_url(base.clone());
+                        // [B-11] 串行后续页保持请求 URL 语义（对齐原版
+                        // BookChapterList.kt:83 `analyzeChapterList(book,
+                        // nextUrl, nextUrl, …)`：base 与 redirect 同为当页
+                        // 请求 URL），覆写首抓页的 final URL 基准
+                        elem_analyzer.set_redirect_url(&base);
                         elem_analyzer.set_element_content(elem.clone());
                         let mut title = elem_analyzer.get_string(name_rule).unwrap_or_default();
                         let raw_url_probe = elem_analyzer.get_string(url_rule).unwrap_or_default();
@@ -2716,9 +2772,13 @@ impl RealBookSourceFetcher {
                                     "toc refresh superseded by a newer refresh generation".into(),
                                 ));
                             }
-                            let body = {
+                            // [B-11] 抓取 + 重定向后最终 URL（对齐原版并发分支
+                            // `analyzeChapterList(book, urlStr, res.url, …)`：
+                            // base = 请求 URL，redirect = 最终 URL）。缓存命中
+                            // 无响应对象，按请求 URL 为基准
+                            let (body, page_final_url) = {
                                 if let Some(cached) = cache_get_page_body(&page_url) {
-                                    cached
+                                    (cached, page_url.clone())
                                 } else {
                                     // 与 fetch_page / fetch_simple_cached 一致：按键合并
                                     // 请求属域 JS cookie（改前缺口：并发分页请求丢 JS cookie）
@@ -2740,7 +2800,12 @@ impl RealBookSourceFetcher {
                                         )));
                                     }
                                     cache_put_page_body(&page_url, &response.body);
-                                    response.body
+                                    let final_url = if response.url.is_empty() {
+                                        page_url.clone()
+                                    } else {
+                                        response.url.clone()
+                                    };
+                                    (response.body, final_url)
                                 }
                             };
                             // P2-9 ①：src = 本页响应体（先序列化再 move 进构造器）
@@ -2752,6 +2817,8 @@ impl RealBookSourceFetcher {
                                     &source_url,
                                     js_lib.as_deref(),
                                 );
+                            // [B-11] 页内 nextTocUrl 绝对化基准记重定向后最终 URL
+                            page_analyzer.set_redirect_url(&page_final_url);
                             // P2-9 ②：`book` 绑定扩面（meta 命中 → IIFE；未命中 → name 字面量）
                             page_analyzer = page_analyzer
                                 .with_js_binding("book", &book_binding)
@@ -2768,6 +2835,8 @@ impl RealBookSourceFetcher {
                                 &source_url,
                                 js_lib.as_deref(),
                             );
+                            // [B-11] 逐章解析器与页解析器同基准（redirect = 最终 URL）
+                            elem.set_redirect_url(&page_final_url);
                             // P2-9 ②：逐章解析器同样带 `book` 绑定（与串行分页一致）
                             elem = elem.with_js_binding("book", &book_binding);
                             let mut page_chs = Vec::with_capacity(page_elements.len());
@@ -2803,14 +2872,17 @@ impl RealBookSourceFetcher {
                                         .captures(&info)
                                         .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
                                 };
+                                // [B-11] 空 URL 回退 / 绝对化基准 = 当页重定向后最终
+                                // URL（对齐原版并发分支 BookChapter.baseUrl =
+                                // res.url）；无重定向时 final == 请求 URL
                                 let url = if raw.is_empty() {
                                     if is_volume {
                                         format!("{}{}", title, i)
                                     } else {
-                                        page_url.clone()
+                                        page_final_url.clone()
                                     }
                                 } else {
-                                    AnalyzeUrl::get_absolute_url(&page_url, &raw)
+                                    AnalyzeUrl::get_absolute_url(&page_final_url, &raw)
                                 };
                                 page_chs.push(WebChapter {
                                     index: i as i32,
@@ -6038,6 +6110,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             None, // book_meta：无元信息 → 既有 `{"name":"测试书名"}` 字面量
             None,
             std::time::Instant::now(),
+            "https://book.example.com/toc", // [B-11] 无重定向：最终 URL = 请求 URL
         ))
         .expect("chapters");
         assert_eq!(chapters.len(), 1);
@@ -7227,6 +7300,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             Some(&meta),
             None,
             std::time::Instant::now(),
+            toc_url, // [B-11] 无重定向：最终 URL = 请求 URL
         ))
         .expect("补后：目录解析应成功（逐字规则，不 panic）");
         assert_eq!(ch.len(), 2);
@@ -7256,6 +7330,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             None,
             None,
             std::time::Instant::now(),
+            toc_url, // [B-11] 无重定向：最终 URL = 请求 URL
         ))
         .expect("补前：目录解析本身仍成功（规则无异常，仅字段缺失）");
         assert!(
