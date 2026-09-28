@@ -25,13 +25,15 @@ import '../utils/book_open_utils.dart';
 /// - 三 Tab：目录 / 书签 / 标注（对齐原版 TabFragmentPageAdapter；
 ///   [PARITY C2 T1] 参考版仅 2 项，「标注」为功能超集，登记保留）
 /// - 目录 Tab：卷分组样式、当前章节淡蓝底高亮（[PARITY C2 T5]）+ 自动定位、
-///   章节字数胶囊（[PARITY C2 T2]，受「加载字数」开关控制）
+///   章节字数胶囊（[PARITY C2 T2]，受「加载字数」开关控制）、
+///   缓存状态图标（[P2-28]，对齐原版 ChapterListAdapter.upHasCache 三态）
 ///   [PARITY C2 T4] 底部当前章节信息条 + 跳转顶/底已移除（跳转能力保留于目录 FAB）
 /// - 书签/标注 Tab：数据经 BookApi（bookmarkNotifier / highlightListByBook）
 /// - 溢出菜单对齐 book_toc.xml 顺序与条件显隐（随 Tab 切换，对齐 TocActivity.onMenuOpened）
 /// - 返回值：选中章节 index（int），供调用方走现有阅读跳转链路
-/// - [PARITY C2 T2] 章节缓存状态云图标已移除（缓存能力保留于目录 FAB「一键缓存」，
-///   原经 BookApi.listCachedChapterUrls 渲染实心/空心云，[UI-fix v2.0.6] Task #22）
+/// - [P2-28] 章节行缓存状态三态（未缓存=云 / 已缓存=无图标 / 当前章=对勾）
+///   对齐原版 ChapterListAdapter.upHasCache，数据经 BookApi.listCachedChapterUrls
+///   （[UI-fix v2.0.6] Task #22 接通的只读 FFI，契约 §2.43.5）
 class TocScreen extends ConsumerStatefulWidget {
   /// 书籍对象（路由参数规范化：优先使用 Book 对象）
   final Book book;
@@ -81,8 +83,11 @@ class _TocScreenState extends ConsumerState<TocScreen>
   bool _chaptersLoading = true;
   String? _chaptersError;
 
-  /// [PARITY C2 T2] 原「已缓存章节集合 + 缓存态轮询定时器」随章节行云图标
-  /// 移除而删除（缓存能力保留于目录 FAB「一键缓存」，缓存轮询不再驱动行内展示）。
+  /// [P2-28] 本书已缓存章节 URL 集合（经 BookApi.listCachedChapterUrls，
+  /// 契约 §2.43.5；对齐原版 cacheFileNames.contains(chapter.getFileName()) 判定。
+  /// 本地书恒视为已缓存（对齐原版 isLocalBook），不发起查询）
+  Set<String> _cachedUrls = const {};
+
   /// 标注列表（BookHighlight JSON 解析后的 Map，经 BookApi.highlightListByBook）
   List<Map<String, dynamic>> _highlights = [];
   bool _highlightsLoading = true;
@@ -100,7 +105,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
     _initBookshelfState();
     _loadSettings();
     _loadHighlights();
-    // [PARITY C2 T2] 缓存态轮询随章节行云图标移除而删除（缓存能力见 FAB「一键缓存」）。
+    // [P2-28] 缓存状态无独立轮询定时器：由 didPopNext 页面重现时经
+    // _refreshOnReshow 刷新（缓存能力另见 FAB「一键缓存」）。
     // 书签按书名+作者加载（对齐原版 bookmarkDao.getByBook，规避同名书混入，
     // 契约 §2.7 getBookmarksByBook，台账 §5.14-2，Task #65）
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -150,7 +156,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// [UI-fix v2.0.7 | 2026-08-09] Task #26：页面重现（从阅读器返回）时刷新。
   /// 对齐原版 ChapterListFragment 经 EventBus.SAVE_CONTENT 增量刷新语义：
   /// 同步书籍进度（durChapterIndex/Title）使当前章高亮与标题不陈旧。
-  /// [PARITY C2 T2] 原「缓存云图标刷新」随云图标移除而删，现仅刷新书籍进度。
+  /// [P2-28] 同时刷新已缓存章节 URL 集，使目录云图标状态在从阅读器/
+  /// 缓存页返回后保持最新。
   @override
   void didPopNext() {
     _refreshOnReshow();
@@ -162,6 +169,17 @@ class _TocScreenState extends ConsumerState<TocScreen>
       final fresh = await api.getBook(_book.bookUrl);
       if (!mounted) return;
       if (fresh != null) setState(() => _book = fresh);
+      // [P2-28] 刷新缓存 URL 集（本地书恒视为已缓存，对齐原版 isLocalBook，不查询）
+      if (!_isLocal) {
+        try {
+          final urls =
+              (await api.listCachedChapterUrls(_book.bookUrl)).toSet();
+          if (!mounted) return;
+          setState(() => _cachedUrls = urls);
+        } catch (_) {
+          // 刷新失败保持旧集
+        }
+      }
     } catch (_) {
       // 刷新失败不阻断展示，保持旧状态
     }
@@ -196,9 +214,22 @@ class _TocScreenState extends ConsumerState<TocScreen>
         }
       }
       if (!mounted) return;
-      // [PARITY C2 T2] 原「加载已缓存章节 url 供云图标渲染」随云图标移除而删除。
+      // [P2-28] 加载已缓存章节 URL 集供章节行缓存状态图标渲染（对齐原版
+      // cacheFileNames 判定，契约 §2.43.5 listCachedChapterUrls）；本地书
+      // 恒视为已缓存（对齐原版 isLocalBook），跳过查询。
+      Set<String> cachedUrls = const {};
+      if (!_isLocal) {
+        try {
+          cachedUrls =
+              (await api.listCachedChapterUrls(_book.bookUrl)).toSet();
+        } catch (_) {
+          // 查询失败降级为全未缓存态，不阻断目录展示
+        }
+        if (!mounted) return;
+      }
       setState(() {
         _chapters = chapters;
+        _cachedUrls = cachedUrls;
         _chaptersLoading = false;
       });
       // 初次进入自动滚动定位当前章节（按 index 估算偏移）
@@ -755,8 +786,13 @@ class _TocScreenState extends ConsumerState<TocScreen>
   }
 
   /// 章节行：当前章节淡蓝底高亮（[PARITY C2 T5]）；右侧字数胶囊（[PARITY C2 T2]）
-  /// [PARITY C2 T2] 移除行内缓存状态云图标：参考版章节行右侧仅「字数胶囊」，
-  /// 缓存状态自章节行省略（缓存能力保留于目录 FAB「一键缓存」，缓存轮询不变）。
+  /// 与缓存状态图标（[P2-28]，对齐原版 ChapterListAdapter.upHasCache 三态）：
+  /// - 当前阅读章 → 恒显示对勾（ic_check → Icons.check，优先于云朵，
+  ///   含本地书——对齐原版 upHasCache 的 isCurrent 分支）
+  /// - 未缓存网络章 → 云朵图标（ic_outline_cloud_24 → Icons.cloud_outlined）
+  /// - 已缓存章 / 本地书 → 无图标（本地书恒视为已缓存，对齐原版 isLocalBook；
+  ///   卷标题行走 _buildVolumeRow，不参与缓存判定）
+  /// 布局对齐 item_chapter_list.xml：状态图标居右、字数胶囊在其左侧。
   /// [PARITY C2 T5] 当前章高亮由「选中加粗+主题色」改为参考版淡蓝整行底。
   Widget _buildChapterRow(BuildContext context, BookChapter chapter) {
     final cs = Theme.of(context).colorScheme;
@@ -764,6 +800,13 @@ class _TocScreenState extends ConsumerState<TocScreen>
     final wordCount = chapter.wordCount;
     final showWordCount =
         _loadWordCount && wordCount != null && wordCount.isNotEmpty;
+    // [P2-28] 缓存状态三态图标（对齐原版 upHasCache：ic_check / ic_outline_cloud_24
+    // 同用 secondaryText 着色；24dp 容器 4dp padding ≈ 16px 字形）
+    final Widget? statusIcon = isCurrent
+        ? Icon(Icons.check, size: 16, color: cs.onSurfaceVariant)
+        : (!_isLocal && !_cachedUrls.contains(chapter.url))
+            ? Icon(Icons.cloud_outlined, size: 16, color: cs.onSurfaceVariant)
+            : null;
     return ListTile(
       dense: true,
       // [PARITY C2 T5] 参考版当前章为淡蓝整行底（量化 ref≈(238,243,253)）：
@@ -778,19 +821,31 @@ class _TocScreenState extends ConsumerState<TocScreen>
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      // [PARITY C2 T2] 右侧仅保留字数胶囊（缓存云图标已移除，见函数头注）。
-      trailing: showWordCount
-          ? Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: cs.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(999),
-              ),
-              child: Text(
-                '$wordCount 字',
-                style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant),
-              ),
+      // [P2-28] 右侧：字数胶囊（左）+ 缓存状态图标（右）；两者皆无时为 null。
+      trailing: (showWordCount || statusIcon != null)
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (showWordCount) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: cs.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      '$wordCount 字',
+                      style: TextStyle(
+                          fontSize: 11, color: cs.onSurfaceVariant),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                ?statusIcon,
+              ],
             )
           : null,
       // 返回选中章节 index，由调用方走现有阅读跳转链路（对齐原版 openChapter setResult）
