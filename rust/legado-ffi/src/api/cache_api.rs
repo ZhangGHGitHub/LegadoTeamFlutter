@@ -143,6 +143,66 @@ pub fn list_cached_chapter_urls(book_url: &str) -> LegadoResult<Vec<String>> {
     })
 }
 
+/// 已缓存章节的 (chapter_url, wordCount) 单条目（P2-28c，API_CONTRACT §2.43.6）
+///
+/// FFI JSON 序列化形态 `[{"url":"...","wordCount":"..."}]`（camelCase 字段，
+/// 与 §2.43.5 相邻条目风格一致）。
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CachedChapterEntry {
+    /// 缓存章节 URL（cached_chapters.chapter_url）
+    pub url: String,
+    /// 章节字数（`chapters` 表当前值；P2-28b 回填链已按原版 wordCountFormat
+    /// 格式化为「1200字」/「1.1万字」形态，未回填为空串）
+    pub word_count: String,
+}
+
+/// 列出某本书已缓存章节的 (chapter_url, wordCount) 集合
+/// （P2-28c，API_CONTRACT §2.43.6，目录页实时字数刷新数据链）
+///
+/// [`list_cached_chapter_urls`] 的升级形态：单次只读查询（纯 SELECT，
+/// 复用 [`CacheBookRepository::get_by_book`] +
+/// [`BookChapterRepository::find_by_book_url`]，零额外 SQL）同时给出 URL
+/// 集合与字数映射，供 Flutter 目录页 1 秒轮询（P2-28b）一次调用同时完成
+/// ⬇ 图标翻转与字数胶囊同帧刷新。
+///
+/// 过滤语义与 [`list_cached_chapter_urls`] 一致：按 chapter_index 升序
+/// （仓储已排序）、空 `chapter_url` 过滤；书籍有目录时同步过滤已退出
+/// 当前目录的陈旧缓存行（[B-5] 同源）。`word_count` 取 `chapters` 表
+/// 当前值（与 P2-28b 回填链同源，避免 `cached_chapters` 表内旧快照），
+/// 未回填（NULL/空）为空串。
+pub fn list_cached_chapters(book_url: &str) -> LegadoResult<Vec<CachedChapterEntry>> {
+    with_database(|db| {
+        let conn = db.connection();
+        let cached = CacheBookRepository::new(conn).get_by_book(book_url)?;
+        let toc = BookChapterRepository::new(conn).find_by_book_url(book_url)?;
+        // url -> wordCount（chapters 表当前值；None/空 → 空串）
+        let word_counts: std::collections::HashMap<String, String> = toc
+            .iter()
+            .filter(|c| !c.url.trim().is_empty())
+            .map(|c| (c.url.clone(), c.word_count.clone().unwrap_or_default()))
+            .collect();
+        // [B-5] 与 §2.43.5 同源：有目录时仅保留仍在当前目录中的缓存行
+        let current: Option<std::collections::HashSet<String>> = if toc.is_empty() {
+            None
+        } else {
+            Some(toc.iter().map(|c| c.url.clone()).collect())
+        };
+        Ok(cached
+            .into_iter()
+            .filter(|c| !c.chapter_url.trim().is_empty())
+            .filter(|c| match &current {
+                Some(set) => set.contains(&c.chapter_url),
+                None => true,
+            })
+            .map(|c| CachedChapterEntry {
+                word_count: word_counts.get(&c.chapter_url).cloned().unwrap_or_default(),
+                url: c.chapter_url,
+            })
+            .collect())
+    })
+}
+
 /// 获取缓存书籍数量
 pub fn get_cache_book_count() -> LegadoResult<i32> {
     with_database(|db| {
@@ -319,6 +379,9 @@ fn like_escape(s: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legado_core::models::{Book, BookChapter};
+    use legado_db::repository::book_repository::BookRepository;
+    use legado_db::repository::Repository;
 
     #[test]
     fn test_cache_apis() {
@@ -551,5 +614,135 @@ mod tests {
 
         // 清理测试数据
         clear_cache().unwrap();
+    }
+
+    /// [P2-28c] list_cached_chapters：集合正确（chapter_index 升序、[B-5]
+    /// 过滤陈旧缓存行）+ wordCount 取 `chapters` 表当前值（未回填 → 空串）。
+    /// 直写缓存行（绕过 save_chapter_content 的回填链），避免回填改写 ch0
+    /// 现值，证明 wordCount 读自 chapters 表而非缓存正文重算；纯 SELECT
+    /// （查询前后 chapters 表内容不变）。
+    #[test]
+    fn test_list_cached_chapters_set_and_word_count() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://wc-poll.example.com/book/1";
+        let ch0 = "https://wc-poll.example.com/ch/0";
+        let ch3 = "https://wc-poll.example.com/ch/3";
+        let ch9 = "https://wc-poll.example.com/ch/9";
+
+        with_database(|db| {
+            let conn = db.connection();
+            BookRepository::new(conn).insert(&Book {
+                book_url: book_url.to_string(),
+                origin: "https://wc-poll-src.example.com".to_string(),
+                ..Book::default()
+            })?;
+            // 目录行：ch0 已回填字数（当前值），ch3 未回填（NULL）
+            BookChapterRepository::new(conn).insert(&BookChapter {
+                url: ch0.to_string(),
+                title: "第一章".to_string(),
+                book_url: book_url.to_string(),
+                index: 0,
+                word_count: Some("1200字".to_string()),
+                ..BookChapter::default()
+            })?;
+            BookChapterRepository::new(conn).insert(&BookChapter {
+                url: ch3.to_string(),
+                title: "第四章".to_string(),
+                book_url: book_url.to_string(),
+                index: 3,
+                ..BookChapter::default()
+            })?;
+            // 直写缓存行（绕过 save_chapter_content 的回填链）
+            for (index, url, content) in [(0i32, ch0, "第一章正文"), (3, ch3, "第四章正文")]
+            {
+                CacheBookRepository::new(conn).insert(&CachedChapter {
+                    id: 0,
+                    book_url: book_url.to_string(),
+                    chapter_index: index,
+                    chapter_title: format!("第{}章", index + 1),
+                    chapter_url: url.to_string(),
+                    content: content.to_string(),
+                    cached_at: 0,
+                    size_bytes: content.len() as i64,
+                })?;
+            }
+            // 陈旧缓存行：ch9 不在当前目录（模拟上一代目录残留，[B-5]）
+            CacheBookRepository::new(conn).insert(&CachedChapter {
+                id: 0,
+                book_url: book_url.to_string(),
+                chapter_index: 9,
+                chapter_title: "第十章".to_string(),
+                chapter_url: ch9.to_string(),
+                content: "陈旧缓存正文".to_string(),
+                cached_at: 0,
+                size_bytes: 8,
+            })?;
+            Ok(())
+        })
+        .expect("前置数据写入失败");
+
+        let entries = list_cached_chapters(book_url).expect("查询应成功");
+        assert_eq!(
+            entries
+                .iter()
+                .map(|e| (e.url.as_str(), e.word_count.as_str()))
+                .collect::<Vec<_>>(),
+            vec![(ch0, "1200字"), (ch3, "")],
+            "chapter_index 升序、过滤陈旧缓存行（[B-5]）、wordCount 取 chapters 表当前值（未回填 → 空串）"
+        );
+
+        // 清理测试数据（章节行事务外删除为 B-7 no-op，测试库隔离无害）
+        with_database(|db| {
+            CacheBookRepository::new(db.connection()).delete_by_book(book_url)?;
+            let _ = BookChapterRepository::new(db.connection()).delete_by_book_url(book_url);
+            BookRepository::new(db.connection()).delete_by_url(book_url)?;
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [P2-28c] 空书 → 空集合；无目录书（纯缓存场景）→ 缓存行全量返回
+    /// 且 wordCount 为空串（无目录可取，保持 §2.43.5 原有行为）
+    #[test]
+    fn test_list_cached_chapters_empty_book_and_no_toc() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        // 完全未缓存的书 → 空集合
+        assert!(
+            list_cached_chapters("https://wc-none.example.com/absent")
+                .expect("查询应成功")
+                .is_empty(),
+            "无缓存行的书应返回空集合"
+        );
+
+        // 无目录记录的书（纯缓存场景）：缓存行全量返回、wordCount 空串
+        let book_url = "https://wc-notoc.example.com/book/9";
+        let ch_url = "https://wc-notoc.example.com/ch/0";
+        with_database(|db| {
+            CacheBookRepository::new(db.connection()).insert(&CachedChapter {
+                id: 0,
+                book_url: book_url.to_string(),
+                chapter_index: 0,
+                chapter_title: "第一章".to_string(),
+                chapter_url: ch_url.to_string(),
+                content: "纯缓存章正文".to_string(),
+                cached_at: 0,
+                size_bytes: 8,
+            })?;
+            Ok(())
+        })
+        .expect("前置数据写入失败");
+
+        let entries = list_cached_chapters(book_url).expect("查询应成功");
+        assert_eq!(entries.len(), 1, "无目录书应保持原有行为（全量返回缓存行）");
+        assert_eq!(entries[0].url, ch_url);
+        assert_eq!(entries[0].word_count, "", "无目录可取 wordCount → 空串");
+
+        // 清理测试数据
+        with_database(|db| {
+            CacheBookRepository::new(db.connection()).delete_by_book(book_url)?;
+            Ok(())
+        })
+        .ok();
     }
 }

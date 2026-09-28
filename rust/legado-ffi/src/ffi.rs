@@ -1781,6 +1781,18 @@ pub mod ffi {
         to_json(&urls)
     }
 
+    /// 列出某本书已缓存章节的 (chapter_url, wordCount) 集合
+    /// （P2-28c，API_CONTRACT §2.43.6，目录页实时字数刷新数据链）
+    ///
+    /// 返回 JSON 对象数组（`[{"url":"...","wordCount":"..."},...]`，按
+    /// chapter_index 升序、空 url 过滤），wordCount 取 `chapters` 表当前值
+    /// （P2-28b 回填链同源，未回填为空串）。供 Flutter 目录页 1 秒轮询
+    /// （P2-28b）一次调用同时翻转「未缓存」⬇ 图标与同帧刷新字数胶囊。
+    pub fn cache_list_cached_chapters(book_url: String) -> Result<String, BridgeError> {
+        let entries = crate::api::cache_api::list_cached_chapters(&book_url)?;
+        to_json(&entries)
+    }
+
     /// 获取缓存书籍数量
     pub fn cache_get_book_count() -> Result<i32, BridgeError> {
         let count = crate::api::cache_api::get_cache_book_count()?;

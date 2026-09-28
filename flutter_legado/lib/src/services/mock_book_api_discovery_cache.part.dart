@@ -126,6 +126,11 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
   Future<List<String>> listCachedChapterUrls(String bookUrl) async =>
       const <String>[];
 
+  // [P2-28c | 2026-09-28] mock 返回空映射（无实时字数刷新数据）
+  @override
+  Future<Map<String, String>> listCachedChapters(String bookUrl) async =>
+      const <String, String>{};
+
   @override
   Future<int> cacheDownloadStart(
     String bookUrl,

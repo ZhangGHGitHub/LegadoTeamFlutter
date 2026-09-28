@@ -813,6 +813,12 @@ abstract class BookApi {
   /// [UI-fix v2.0.6 | 2026-08-08] Task #22 — Qoder
   Future<List<String>> listCachedChapterUrls(String bookUrl);
 
+  /// 列出某本书已缓存章节的 (chapter_url, wordCount) 映射（目录页实时字数刷新）
+  /// [P2-28c | 2026-09-28] 加法式新增（契约 §2.43.6 cacheListCachedChapters）：
+  /// 返回 url → wordCount（wordCount 取 Rust `chapters` 表当前值，空值不收录），
+  /// 供目录页 1s 轮询一次调用同时翻转 ⬇ 图标与刷新字数胶囊（同帧）。
+  Future<Map<String, String>> listCachedChapters(String bookUrl);
+
   // ========== 批量缓存下载（对齐原版 CacheActivity，契约 §2.43.3） ==========
 
   /// 启动批量缓存下载任务（真实抓取并写入 cached_chapters；

@@ -208,6 +208,30 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
     return const <String>[];
   }
 
+  /// 列出某本书已缓存章节的 (chapter_url, wordCount) 映射（目录页实时字数刷新）
+  ///
+  /// [P2-28c | 2026-09-28] 接通 cacheListCachedChapters FFI（契约 §2.43.6）：
+  /// 解析 Rust 返回的 JSON 对象数组 `[{"url":...,"wordCount":...}]` 为
+  /// url → wordCount Map（空 wordCount 不收录；非数组/非对象条目跳过）。
+  @override
+  Future<Map<String, String>> listCachedChapters(String bookUrl) async {
+    final json = await bridge.cacheListCachedChapters(bookUrl: bookUrl);
+    final decoded = jsonDecode(json);
+    final map = <String, String>{};
+    if (decoded is List) {
+      for (final e in decoded) {
+        if (e is Map) {
+          final url = e['url']?.toString() ?? '';
+          final wc = e['wordCount']?.toString() ?? '';
+          if (url.isNotEmpty && wc.isNotEmpty) {
+            map[url] = wc;
+          }
+        }
+      }
+    }
+    return map;
+  }
+
   // ========== 批量缓存下载（对齐原版 CacheActivity，契约 §2.43.3） ==========
 
   /// [UI-fix v2.0.16 | 2026-08-10] 接通 cacheDownloadStart FFI（真实下载写缓存）— Reasonix
