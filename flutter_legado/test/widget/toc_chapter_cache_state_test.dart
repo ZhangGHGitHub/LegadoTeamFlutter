@@ -300,19 +300,57 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('[P2-28b] 轮询：批量缓存下载中新缓存章行⬇实时变为字数胶囊，dispose 后停止轮询',
+  testWidgets('[P2-28c] 轮询：新缓存章⬇消失且字数胶囊同帧出现，dispose 后停止轮询',
       (tester) async {
-    // 首次查询仅 u0 已缓存（第四章 u3 未缓存 → 行内 ⬇ 图标）；
-    // 轮询起 u3 新缓存（模拟批量离线缓存逐章落库）→ 对应行 ⬇ 消失
+    // 章节数据中 u3（第四章）**无 wordCount**（chapters 表未回填）：
+    // 字数胶囊只能来自轮询字数映射（P2-28c 数据链），而非章节数据——
+    // 修前实现（仅 diff URL 集合）⬇ 会翻转但胶囊缺席（红）
+    final chapters = [
+      const BookChapter(
+        url: 'u0',
+        title: '第一章',
+        index: 0,
+        bookUrl: bookUrl,
+        wordCount: '1200',
+      ),
+      const BookChapter(
+        url: 'v0',
+        title: '第一卷',
+        index: 1,
+        bookUrl: bookUrl,
+        isVolume: true,
+      ),
+      const BookChapter(
+        url: 'u2',
+        title: '第三章',
+        index: 2,
+        bookUrl: bookUrl,
+      ),
+      const BookChapter(
+        url: 'u3',
+        title: '第四章',
+        index: 3,
+        bookUrl: bookUrl,
+      ),
+    ];
+
+    // 首次查询仅 u0 已缓存（u3 未缓存 → 行内 ⬇ 图标）；
+    // 轮询起 u3 新缓存（模拟批量离线缓存逐章落库）
+    var urlsPollCount = 0;
     when(() => mockApi.getBook(any())).thenAnswer((_) async => makeBook());
     when(() => mockApi.getChapters(bookUrl))
-        .thenAnswer((_) async => makeChapters());
-    var pollCount = 0;
+        .thenAnswer((_) async => chapters);
     when(() => mockApi.listCachedChapterUrls(bookUrl)).thenAnswer((_) async {
-      pollCount++;
-      return pollCount == 1
+      urlsPollCount++;
+      return urlsPollCount == 1
           ? const <String>['u0']
           : const <String>['u0', 'u3'];
+    });
+    // 字数刷新数据链（契约 §2.43.6）：已缓存章 url → wordCount 映射
+    var wcPollCount = 0;
+    when(() => mockApi.listCachedChapters(bookUrl)).thenAnswer((_) async {
+      wcPollCount++;
+      return const <String, String>{'u0': '1200', 'u3': '3400'};
     });
     when(() => mockApi.highlightListByBook(bookUrl: bookUrl))
         .thenAnswer((_) async => '[]');
@@ -323,13 +361,17 @@ void main() {
     await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 0))));
     await settleInitial(tester);
 
-    // 初始：未缓存的「第四章」显示 ⬇（第三章同样未缓存，亦显示 ⬇）
+    // 初始：未缓存的「第四章」显示 ⬇；章节数据无 wordCount → 无胶囊
     expect(
       find.descendant(
         of: chapterRow('第四章'),
         matching: find.byIcon(Icons.download_for_offline_outlined),
       ),
       findsOneWidget,
+    );
+    expect(
+      find.descendant(of: chapterRow('第四章'), matching: find.text('3400')),
+      findsNothing,
     );
     expect(
       find.descendant(
@@ -339,8 +381,9 @@ void main() {
       findsOneWidget,
     );
 
-    // 1s 轮询触发：u3 新缓存 → setState 刷新「第四章」行（⬇ 消失，
-    // 字数胶囊原样展示「3400」）；「第三章」仍未缓存，⬇ 保留
+    // 1s 轮询触发：u3 新缓存 → 同一帧「第四章」⬇ 消失且字数胶囊
+    // 「3400」出现（对齐参考版 SAVE_CONTENT 同帧刷行语义）；
+    // 「第三章」仍未缓存，⬇ 保留
     await tester.pump(const Duration(seconds: 1));
     await tester.pump();
     await tester.pump();
@@ -363,16 +406,22 @@ void main() {
       findsOneWidget,
     );
 
-    // dispose（卸载）后不再轮询：无新增 listCachedChapterUrls 调用；
+    // dispose（卸载）后不再轮询：两个查询入口调用计数均冻结；
     // 若 dispose 漏取消定时器，teardown 的「periodic Timer still active」
     // 检查将直接使本用例失败
-    final countBeforeDispose = pollCount;
+    final urlsBeforeDispose = urlsPollCount;
+    final wcBeforeDispose = wcPollCount;
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 3));
     expect(
-      pollCount,
-      countBeforeDispose,
-      reason: 'dispose 后不应再有轮询查询',
+      urlsPollCount,
+      urlsBeforeDispose,
+      reason: 'dispose 后不应再有 listCachedChapterUrls 查询',
+    );
+    expect(
+      wcPollCount,
+      wcBeforeDispose,
+      reason: 'dispose 后不应再有 listCachedChapters 查询',
     );
   });
 }

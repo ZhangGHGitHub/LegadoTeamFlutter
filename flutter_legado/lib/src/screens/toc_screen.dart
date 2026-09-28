@@ -92,6 +92,12 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// 本地书恒视为已缓存（对齐原版 isLocalBook），不发起查询）
   Set<String> _cachedUrls = const {};
 
+  /// [P2-28c] 轮询获得的字数映射（url → wordCount，取 chapters 表当前值，
+  /// 仅含非空项）：行渲染时优先于章节数据 wordCount，使新缓存章的字数
+  /// 胶囊与 ⬇ 图标翻转同帧出现（对齐参考版 ChapterListFragment 订阅
+  /// SAVE_CONTENT 同帧刷行语义，P2-28b 轮询升级）
+  final Map<String, String> _polledWordCounts = {};
+
   /// [P2-28b] 缓存状态轮询定时器（每秒一次，仅在线书；页面关闭/dispose 时取消）。
   /// 对齐原版 ChapterListFragment 订阅 EventBus.SAVE_CONTENT 的「每章正文保存
   /// 后刷新对应行」语义——我方以只读 FFI listCachedChapterUrls 轮询替代事件总线
@@ -170,20 +176,31 @@ class _TocScreenState extends ConsumerState<TocScreen>
     });
   }
 
-  /// [P2-28b] 轮询已缓存章节 URL 集合：与 [_cachedUrls] 做 diff，
-  /// 仅在出现新增时 setState（避免每秒无谓整行重建）；查询失败保留旧集合。
+  /// [P2-28b→P2-28c] 轮询缓存态（升级为字数刷新数据链）：单次调用
+  /// [BookApi.listCachedChapters]（契约 §2.43.6）同时完成 URL 集合 diff
+  /// （翻转「未缓存」⬇ 图标）与字数映射刷新（新缓存章字数胶囊同帧出现，
+  /// 对齐参考版 ChapterListFragment 订阅 SAVE_CONTENT 同帧刷行语义）；
+  /// 两者均无变化时跳过 setState（避免每秒无谓整行重建）；查询失败保留旧态。
   Future<void> _pollCachedUrls() async {
     try {
-      final urls =
-          (await ref.read(bookApiProvider).listCachedChapterUrls(_book.bookUrl))
-              .toSet();
+      final entries =
+          await ref.read(bookApiProvider).listCachedChapters(_book.bookUrl);
+      final urls = entries.keys.toSet();
+      final urlsChanged =
+          urls.difference(_cachedUrls).isNotEmpty ||
+          _cachedUrls.difference(urls).isNotEmpty;
+      final wordCountsChanged =
+          entries.keys.any((u) => _polledWordCounts[u] != entries[u]);
       if (!mounted) return;
-      // 仅当有「新增」已缓存章节才刷新（对齐原版 SAVE_CONTENT 增量刷新行：
-      // 只在新章节正文落库时才有可见变化）
-      if (urls.difference(_cachedUrls).isEmpty) return;
-      setState(() => _cachedUrls = urls);
+      if (!urlsChanged && !wordCountsChanged) return;
+      setState(() {
+        _cachedUrls = urls;
+        _polledWordCounts
+          ..clear()
+          ..addAll(entries);
+      });
     } catch (_) {
-      // 查询失败保留旧集合（不影响目录展示）
+      // 查询失败保留旧态（不影响目录展示）
     }
   }
 
@@ -847,7 +864,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
   Widget _buildChapterRow(BuildContext context, BookChapter chapter) {
     final cs = Theme.of(context).colorScheme;
     final isCurrent = chapter.index == _book.durChapterIndex;
-    final wordCount = chapter.wordCount;
+    // [P2-28c] 优先取轮询字数映射（新缓存章胶囊同帧出现），回退章节数据值
+    final wordCount = _polledWordCounts[chapter.url] ?? chapter.wordCount;
     final showWordCount =
         _loadWordCount && wordCount != null && wordCount.isNotEmpty;
     // [P2-28b] 缓存状态三态图标（对齐参考版 StatusIcon：check_circle 24dp→行内
