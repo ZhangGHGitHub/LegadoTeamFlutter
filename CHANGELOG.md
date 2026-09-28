@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.318] - 2026-09-28
+
+### Fixed
+- [UI] **目录章节行补缓存状态指示与字数标签（对齐原版 ChapterListAdapter）**：未缓存的网络章节右侧显示云朵图标、已缓存章节不再显示、当前阅读章节显示对勾（本地书籍不发起缓存查询，恒视为已缓存）；章节字数胶囊显示经回归测试验证（受「加载字数」开关控制）；缓存状态在从阅读器/缓存页返回目录时自动刷新。数据链复用既有只读接口 `listCachedChapterUrls`（契约 §2.43.5），零新增 FFI。
+
 ## [2.0.317] - 2026-09-28
 
 ### Fixed
