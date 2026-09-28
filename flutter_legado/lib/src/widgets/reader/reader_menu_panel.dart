@@ -7,17 +7,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../models/models.dart';
-import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../providers/ui_settings/ui_settings_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
 import 'change_source_flow.dart';
+import 'reader_download_dialog.dart';
 
 /// [UI_SYNC_REFACTOR S2-1] 阅读菜单单块底部面板（对齐参考 ReadBookMenuBar）
 ///
-/// 结构：屏幕顶栏（返回/书名/换源/刷新正文/缓存当前章/更多溢出 + 章节信息块
-/// 与中部快捷钮）→ 底部 Surface（进度滑条行 + 单行五键行动作行）。
+/// 结构：屏幕顶栏（返回/书名/换源/刷新正文/下载（离线缓存）/更多溢出 +
+/// 章节信息块与中部快捷钮）→ 底部 Surface（进度滑条行 + 单行五键行动作行）。
 /// [PARITY A5] 键集收敛对齐参考版默认键集：动作行 = 全文搜索/自动翻页/
 /// 目录/朗读/设置（参考 ReadButtonConfigDelegate.kt:197-203
 /// DEFAULT_ENABLED_BUTTON_IDS = search/auto_page/catalog/read_aloud/setting，
@@ -323,29 +323,15 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                     tooltip: '刷新正文',
                     onPressed: () => unawaited(_refreshContentFlow(context)),
                   ),
+                  // [P2-27 | 2026-09-28] 下载入口改弹「离线缓存」范围对话框
+                  // （对齐原版 menu_download → showBookDownloadDialog /
+                  // 参考版 DownloadSheet；默认起始 = 当前章，与原版一致），
+                  // 移除自创的「直接缓存当前章」行为；共享实现见
+                  // reader_download_dialog.dart（与顶栏下载钮同源）
                   if (isOnline) IconButton(
                     icon: const Icon(Symbols.download_rounded),
-                    tooltip: '缓存当前章',
-                    onPressed:
-                        () async {
-                            final idx = ref
-                                .read(readerNotifierProvider)
-                                .currentChapterIndex;
-                            try {
-                              await ref
-                                  .read(bookApiProvider)
-                                  .cacheDownloadStart(book.bookUrl, idx, idx);
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('当前章已加入缓存队列')),
-                              );
-                            } catch (e) {
-                              if (!context.mounted) return;
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(content: Text('缓存失败：$e')),
-                              );
-                            }
-                          },
+                    tooltip: '下载（离线缓存）',
+                    onPressed: () => showReaderOfflineCacheDialog(context, ref),
                   ),
                   PopupMenuButton<String>(
                     tooltip: '更多',

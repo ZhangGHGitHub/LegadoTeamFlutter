@@ -511,9 +511,11 @@ void main() {
       await tester.pumpAndSettle();
 
       // 本地书：在线书专属入口不渲染（而非置灰不可点）
+      // [P2-27 | 2026-09-28] 下载入口 tooltip 由「缓存当前章」改为
+      // 「下载（离线缓存）」（弹范围对话框，对齐原版 menu_download）
       expect(find.byTooltip('换源'), findsNothing);
       expect(find.byTooltip('刷新正文'), findsNothing);
-      expect(find.byTooltip('缓存当前章'), findsNothing);
+      expect(find.byTooltip('下载（离线缓存）'), findsNothing);
       // 面板仍完整渲染（退出/更多/快捷钮保留，非整体隐藏）
       expect(find.byTooltip('退出阅读'), findsOneWidget);
       expect(find.byTooltip('更多'), findsOneWidget);

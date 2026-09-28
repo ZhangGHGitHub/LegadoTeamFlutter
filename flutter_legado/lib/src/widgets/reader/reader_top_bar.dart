@@ -20,6 +20,7 @@ import '../help/help_assets.dart';
 import '../help/show_help.dart';
 import 'change_chapter_source_sheet.dart';
 import 'change_source_flow.dart';
+import 'reader_download_dialog.dart';
 import 'reader_page_chrome.dart';
 import 'reader_settings_sheet.dart';
 
@@ -695,75 +696,10 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
     showHelp(context, HelpAssets.readMenuHelp);
   }
 
-  /// 离线缓存对话框（对标原版 CacheActivity/showDownloadDialog：
-  /// 选择起止章节 → cacheDownloadStart 批量任务真实下载写缓存）
-  /// [UI-fix v2.0.16 | 2026-08-10] 原实现逐章 downloadAddTask 仅登记内存
-  /// 任务不执行下载，cached_chapters 永不写入→目录页图标不更新 — Reasonix
-  void _showCacheDialog(BuildContext context, WidgetRef ref) {
-    final state = ref.read(readerNotifierProvider);
-    final book = state.currentBook;
-    final chapters = state.chapters;
-    if (book == null || chapters.isEmpty) return;
-    if (book.origin == BookType.localTag) {
-      _snack(context, '本地书籍无需缓存');
-      return;
-    }
-    final startCtrl = TextEditingController(text: '${book.durChapterIndex + 2}');
-    final endCtrl = TextEditingController(text: '${chapters.length}');
-
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('缓存后续章节'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: startCtrl,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: '起始章节序号'),
-            ),
-            TextField(
-              controller: endCtrl,
-              keyboardType: TextInputType.number,
-              decoration: InputDecoration(labelText: '结束章节序号（共 ${chapters.length} 章）'),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () async {
-              Navigator.pop(dialogContext);
-              final start = int.tryParse(startCtrl.text) ?? 1;
-              final end = int.tryParse(endCtrl.text) ?? chapters.length;
-              if (start < 1 || end > chapters.length || start > end) {
-                _snack(context, '章节范围无效');
-                return;
-              }
-              final api = ref.read(bookApiProvider);
-              final count = end - start + 1;
-              try {
-                // 0-based 索引（含端点）；Rust 侧超界自动截断
-                await api.cacheDownloadStart(book.bookUrl, start - 1, end - 1);
-                if (context.mounted) {
-                  _snack(context, '已加入缓存队列：$count 章（可在书籍菜单「缓存管理」查看进度）');
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  _snack(context, '缓存启动失败：$e');
-                }
-              }
-            },
-            child: const Text('开始缓存'),
-          ),
-        ],
-      ),
-    );
-  }
+  // [P2-27 | 2026-09-28] 离线缓存对话框（原内联 _showCacheDialog）统一
+  // 提取至共享实现 showReaderOfflineCacheDialog（reader_download_dialog.dart，
+  // 与菜单面板顶栏下载钮同源，杜绝两份实现漂移）；默认值对齐原版
+  // showBookDownloadDialog（起始 = 当前章 1-based、结束 = 总章数）。
 
   // ===== [UI-fix v2.0.4 | 2026-08-08] 模块 A 新增：源操作菜单自底栏
   // 迁入（承接原底栏“源菜单”全部功能，对齐原版 tv_source_action 点击
@@ -1296,7 +1232,8 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
                           icon: const Icon(Icons.download_outlined, size: 22),
                           tooltip: '缓存（离线缓存）',
                           visualDensity: VisualDensity.compact,
-                          onPressed: () => _showCacheDialog(context, ref),
+                          onPressed: () =>
+                              showReaderOfflineCacheDialog(context, ref),
                         ),
                       ] else if (book != null)
                         IconButton(
