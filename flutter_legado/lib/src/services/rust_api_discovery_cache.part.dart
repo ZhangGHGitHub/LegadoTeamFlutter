@@ -269,6 +269,32 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
     return bridge.cacheDownloadList();
   }
 
+  /// 查询某本书当前在途下载章节 index 集合（目录页 DOWNLOADING 态动画）
+  ///
+  /// [P2-29 | 2026-09-29] 接通 cacheDownloadRunningChapters FFI（契约 §2.43.7）：
+  /// 解析 Rust 返回的 JSON 整型数组（0-based 升序；无活跃任务为空数组）为
+  /// `List<int>`（非数组/非整型条目跳过，降级空集合）。
+  @override
+  Future<List<int>> listDownloadingChapters(String bookUrl) async {
+    final json =
+        await bridge.cacheDownloadRunningChapters(bookUrl: bookUrl);
+    final decoded = jsonDecode(json);
+    final list = <int>[];
+    if (decoded is List) {
+      for (final e in decoded) {
+        if (e is int) {
+          list.add(e);
+        } else {
+          final v = int.tryParse(e.toString());
+          if (v != null) {
+            list.add(v);
+          }
+        }
+      }
+    }
+    return list;
+  }
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）

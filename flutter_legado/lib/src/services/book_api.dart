@@ -840,6 +840,13 @@ abstract class BookApi {
   /// 列出全部批量下载任务（JSON 数组）
   Future<String> cacheDownloadList();
 
+  /// 查询某本书当前在途下载章节 index 集合（目录页 DOWNLOADING 态动画）
+  /// [P2-29 | 2026-09-29] 加法式新增（契约 §2.43.7 cacheDownloadRunningChapters）：
+  /// 只读（纯任务表读 + 落库恢复回读，零写入），返回该书批量下载
+  /// （§2.43.3）当前正在抓取的章节 index（0-based 升序；无活跃任务为空集合），
+  /// 供目录页 1s 轮询（P2-28b/c）驱动下载中行 16px 加载指示动画。
+  Future<List<int>> listDownloadingChapters(String bookUrl);
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）

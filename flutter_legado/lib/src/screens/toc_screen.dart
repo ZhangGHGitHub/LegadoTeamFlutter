@@ -35,6 +35,12 @@ import '../utils/book_open_utils.dart';
 ///   当前章=对勾圈），图标对齐参考版 TocScreen.StatusIcon，
 ///   数据经 BookApi.listCachedChapterUrls
 ///   （[UI-fix v2.0.6] Task #22 接通的只读 FFI，契约 §2.43.5）
+/// - [P2-29] 章节行状态机对齐参考版五态（用户验收「下载中缺少过渡动画」）：
+///   当前章→定位图标 location_on（替代 check_circle）/ 下载中→16px 加载
+///   指示（数据经 BookApi.listDownloadingChapters，契约 §2.43.7，1s 轮询
+///   同周期刷新）/ 失败→红色重试图标（点击单章重下，复用
+///   cacheDownloadStart(idx, idx)；失败记录数据源留项恒空，恒不显示）/
+///   未缓存→⬇ / 已缓存→无图标（本地书恒视为已缓存，无图标）
 /// - [P2-28b] 页面打开期间每秒轮询缓存状态（对齐原版 ChapterListFragment
 ///   订阅 EventBus.SAVE_CONTENT 的行刷新语义）：批量离线缓存下载中，每章正文
 ///   保存后对应行 ⬇ 图标实时变为字数胶囊/无图标，无需退出重进
@@ -42,7 +48,18 @@ class TocScreen extends ConsumerStatefulWidget {
   /// 书籍对象（路由参数规范化：优先使用 Book 对象）
   final Book book;
 
-  const TocScreen({super.key, required this.book});
+  /// [P2-29] 测试注入缝：失败章节 index 集合（ERROR 态）。生产恒 null——
+  /// Rust 批量下载任务表仅 failed 计数、无逐章失败记录（补齐需任务表写
+  /// 路径改动，超出本批授权；契约 §2.43.7 ERROR 留项：分支先落、数据源
+  /// 恒空恒不显示，不伪造）；单测经此参数驱动 ERROR 分支（红色重试图标
+  /// + 单章重下点击 → cacheDownloadStart(bookUrl, idx, idx)）。
+  final Set<int>? failedChapterIndicesForTest;
+
+  const TocScreen({
+    super.key,
+    required this.book,
+    this.failedChapterIndicesForTest,
+  });
 
   @override
   ConsumerState<TocScreen> createState() => _TocScreenState();
@@ -98,12 +115,28 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// SAVE_CONTENT 同帧刷行语义，P2-28b 轮询升级）
   final Map<String, String> _polledWordCounts = {};
 
-  /// [P2-28b] 缓存状态轮询定时器（每秒一次，仅在线书；页面关闭/dispose 时取消）。
+  /// [P2-29] 本书当前在途下载章节 index 集合（经 BookApi.listDownloadingChapters，
+  /// 契约 §2.43.7 cacheDownloadRunningChapters；对齐参考版 TocViewModel
+  /// runningIndices——源自 `CacheBook.downloadStateFlow` 全局状态流）：
+  /// 初始加载 + 1s 轮询（P2-28b/c）同周期刷新，驱动下载中行 16px 加载指示
+  /// 动画（对齐参考版 `AppContainedLoadingIndicator` 16dp 形态）；
+  /// 无活跃批量下载任务时为空集。
+  Set<int> _downloadingIndices = const {};
+
+  /// [P2-29] 缓存状态轮询定时器（每秒一次，仅在线书；页面关闭/dispose 时取消）。
   /// 对齐原版 ChapterListFragment 订阅 EventBus.SAVE_CONTENT 的「每章正文保存
   /// 后刷新对应行」语义——我方以只读 FFI listCachedChapterUrls 轮询替代事件总线
   /// （零契约面方案）：批量离线缓存下载中，每章正文保存后该行 ⬇ 图标实时
   /// 变为字数胶囊/无图标。
   Timer? _cachePollTimer;
+
+  /// [P2-29] 失败章节 index 集合（ERROR 态，对齐参考版 failedIndices——
+  /// 源自 `CacheBook.downloadStateFlow`）。数据链留项：Rust 批量下载任务表
+  /// 仅 failed 计数、无逐章失败记录（补齐需任务表写路径改动，超出本批
+  /// 授权；契约 §2.43.7 ERROR 留项：ERROR 分支先落、数据源恒空恒不显示，
+  /// 不伪造），单测经 [TocScreen.failedChapterIndicesForTest] 注入驱动。
+  Set<int> get _failedIndices =>
+      widget.failedChapterIndicesForTest ?? const {};
 
   /// 标注列表（BookHighlight JSON 解析后的 Map，经 BookApi.highlightListByBook）
   List<Map<String, dynamic>> _highlights = [];
@@ -183,21 +216,36 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// 两者均无变化时跳过 setState（避免每秒无谓整行重建）；查询失败保留旧态。
   Future<void> _pollCachedUrls() async {
     try {
-      final entries =
-          await ref.read(bookApiProvider).listCachedChapters(_book.bookUrl);
+      final api = ref.read(bookApiProvider);
+      final entries = await api.listCachedChapters(_book.bookUrl);
       final urls = entries.keys.toSet();
       final urlsChanged =
           urls.difference(_cachedUrls).isNotEmpty ||
           _cachedUrls.difference(urls).isNotEmpty;
       final wordCountsChanged =
           entries.keys.any((u) => _polledWordCounts[u] != entries[u]);
+      // [P2-29] 下载中集合（契约 §2.43.7）：与缓存态/字数同周期拉取，
+      // 驱动下载中行 16px 加载指示动画；单项查询失败保留旧态
+      List<int> downloading;
+      try {
+        downloading = await api.listDownloadingChapters(_book.bookUrl);
+      } catch (_) {
+        downloading = _downloadingIndices.toList();
+      }
+      final downloadingSet = downloading.toSet();
+      final downloadingChanged = downloadingSet.difference(_downloadingIndices)
+              .isNotEmpty ||
+          _downloadingIndices.difference(downloadingSet).isNotEmpty;
       if (!mounted) return;
-      if (!urlsChanged && !wordCountsChanged) return;
+      if (!urlsChanged && !wordCountsChanged && !downloadingChanged) {
+        return;
+      }
       setState(() {
         _cachedUrls = urls;
         _polledWordCounts
           ..clear()
           ..addAll(entries);
+        _downloadingIndices = downloading.toSet();
       });
     } catch (_) {
       // 查询失败保留旧态（不影响目录展示）
@@ -280,6 +328,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
       // cacheFileNames 判定，契约 §2.43.5 listCachedChapterUrls）；本地书
       // 恒视为已缓存（对齐原版 isLocalBook），跳过查询。
       Set<String> cachedUrls = const {};
+      List<int> downloading = const [];
       if (!_isLocal) {
         try {
           cachedUrls =
@@ -287,11 +336,18 @@ class _TocScreenState extends ConsumerState<TocScreen>
         } catch (_) {
           // 查询失败降级为全未缓存态，不阻断目录展示
         }
+        // [P2-29] 初始加载下载中集合（契约 §2.43.7）：使首帧即可渲染
+        // 下载中行 16px 加载指示（对齐参考版打开目录即见 LOADING 态）；
+        // 查询失败降级为空集（后续 1s 轮询自愈）
+        try {
+          downloading = await api.listDownloadingChapters(_book.bookUrl);
+        } catch (_) {}
         if (!mounted) return;
       }
       setState(() {
         _chapters = chapters;
         _cachedUrls = cachedUrls;
+        _downloadingIndices = downloading.toSet();
         _chaptersLoading = false;
       });
       // 初次进入自动滚动定位当前章节（按 index 估算偏移）
@@ -783,6 +839,41 @@ class _TocScreenState extends ConsumerState<TocScreen>
     }
   }
 
+  /// [P2-29] 单章重下（ERROR 态红色重试图标点击；对齐参考版 canDownload =
+  /// NONE || ERROR 时的单章下载动作，重试语义对齐原版 download_chapter）：
+  /// 复用 [BookApi.cacheDownloadStart]（契约 §2.43.3 闭区间语义 start==end
+  /// 即单章；同书在途任务复用语义不变）重下失败章；启动成功后 1s 轮询
+  /// （P2-28b/c）将自动把该行翻为下载中 16px 加载指示。
+  Future<void> _retryChapterDownload(int chapterIndex) async {
+    try {
+      await ref
+          .read(bookApiProvider)
+          .cacheDownloadStart(_book.bookUrl, chapterIndex, chapterIndex);
+      if (!mounted) return;
+      var title = '';
+      for (final c in _chapters) {
+        if (c.index == chapterIndex) {
+          title = c.title;
+          break;
+        }
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            title.isNotEmpty
+                ? '「$title」已加入重新下载队列'
+                : '第 ${chapterIndex + 1} 章已加入重新下载队列',
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('重新下载启动失败：$e')),
+      );
+    }
+  }
+
   // ===== 目录 Tab =====
 
   Widget _buildChapterTab(BuildContext context) {
@@ -848,14 +939,24 @@ class _TocScreenState extends ConsumerState<TocScreen>
   }
 
   /// 章节行：当前章节淡蓝底高亮（[PARITY C2 T5]）；右侧字数胶囊（[PARITY C2 T2]）
-  /// 与缓存状态图标（[P2-28b] 三态，图标对齐参考版 TocScreen.StatusIcon，
-  /// 数据经 BookApi.listCachedChapterUrls 只读 FFI）：
-  /// - 当前阅读章 → 恒显示对勾圈（Icons.Default.CheckCircle → Icons.check_circle，
-  ///   着色 secondary，优先于 ⬇ 图标，含本地书——对齐原版 isCurrent 分支）
+  /// 与状态图标（[P2-29] 五态对齐参考版 TocScreen.StatusIcon +
+  /// DownloadState 状态机，优先级 isDur→DOWNLOADING→ERROR→未缓存→已缓存）：
+  /// - 当前阅读章（isDur）→ 定位图标（Icons.Default.LocationOn →
+  ///   Icons.location_on，着色 secondary，优先于其余态，含本地书——对齐
+  ///   参考版 DUR 分支；[P2-29] 替代 P2-28b 的 check_circle）
+  /// - 下载中（[P2-29]，index ∈ _downloadingIndices，数据经
+  ///   BookApi.listDownloadingChapters 契约 §2.43.7，对齐参考版 LOADING 态
+  ///   `AppContainedLoadingIndicator` 16dp 形态）→ 16px 加载指示
+  ///   （SizedBox 16 + CircularProgressIndicator strokeWidth 2，着色 primary）
+  /// - 失败（[P2-29]，index ∈ _failedIndices，对齐参考版 ERROR 态）→ 红色
+  ///   重试图标（Icons.refresh，error 着色）可点击 → 单章重下复用
+  ///   cacheDownloadStart(bookUrl, idx, idx)（契约 §2.43.3 闭区间单章语义）；
+  ///   数据链留项：Rust 任务表仅 failed 计数、无逐章失败记录 → 生产恒空
+  ///   恒不显示（不伪造，契约 §2.43.7 ERROR 留项）
   /// - 未缓存网络章 → 离线下载图标 ⬇（Icons.Outlined.DownloadForOffline →
   ///   Icons.download_for_offline_outlined，着色 outline 50% 透明度）
-  /// - 已缓存章 / 本地书 → 无图标（本地书恒视为已缓存，对齐原版 isLocalBook；
-  ///   卷标题行走 _buildVolumeRow，不参与缓存判定）
+  /// - 已缓存章 / 本地书 → 无图标（本地书恒视为已缓存，对齐原版 isLocalBook /
+  ///   参考版 LOCAL 态；卷标题行走 _buildVolumeRow，不参与缓存判定）
   /// 字数胶囊：原样展示 wordCount（Rust 回填链已按原版 wordCountFormat 存
   /// 「1200字」/「1.1万字」形态，与原版 ChapterListAdapter:231 / 参考版
   /// TocScreen.kt:1205 的 as-is 展示一致，不再追加「 字」后缀）。
@@ -868,26 +969,59 @@ class _TocScreenState extends ConsumerState<TocScreen>
     final wordCount = _polledWordCounts[chapter.url] ?? chapter.wordCount;
     final showWordCount =
         _loadWordCount && wordCount != null && wordCount.isNotEmpty;
-    // [P2-28b] 缓存状态三态图标（对齐参考版 StatusIcon：check_circle 24dp→行内
-    // 16px、DownloadForOffline outline@0.5 着色；size 16 沿用 P2-28 行高适配）
-    final Widget? statusIcon = isCurrent
-        ? Icon(Icons.check_circle, size: 16, color: cs.secondary)
-        : (!_isLocal && !_cachedUrls.contains(chapter.url))
-            ? Icon(
-                Icons.download_for_offline_outlined,
-                size: 16,
-                color: cs.outline.withValues(alpha: 0.5),
-              )
-            : null;
+    // [P2-29] 状态图标五态（优先级对齐参考版：DUR→LOADING→ERROR→NONE→
+    // 已缓存无图标；size 16 沿用 P2-28 行高适配；内容带取整行 48 保证
+    // 图标居中可命中，见下方 contentPadding 注释）
+    final bool isDownloading = _downloadingIndices.contains(chapter.index);
+    final bool isError = _failedIndices.contains(chapter.index);
+    final Widget? statusIcon;
+    if (isCurrent) {
+      // 当前阅读章：定位图标（[P2-29] 替代 check_circle，对齐参考版 DUR 态）
+      statusIcon = Icon(Icons.location_on, size: 16, color: cs.secondary);
+    } else if (isDownloading) {
+      // 下载中：16px 加载指示（对齐参考版 LOADING 态 16dp 转圈形态）
+      statusIcon = SizedBox(
+        width: 16,
+        height: 16,
+        child: CircularProgressIndicator(
+          strokeWidth: 2,
+          color: cs.primary,
+        ),
+      );
+    } else if (isError) {
+      // 失败：红色重试图标可点击 → 单章重下（复用 §2.43.3 闭区间单章语义）
+      statusIcon = IconButton(
+        icon: Icon(Icons.refresh, size: 16, color: cs.error),
+        iconSize: 16,
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+        tooltip: '重新下载本章',
+        onPressed: () => _retryChapterDownload(chapter.index),
+      );
+    } else if (!_isLocal && !_cachedUrls.contains(chapter.url)) {
+      // 未缓存网络章：离线下载图标 ⬇
+      statusIcon = Icon(
+        Icons.download_for_offline_outlined,
+        size: 16,
+        color: cs.outline.withValues(alpha: 0.5),
+      );
+    } else {
+      // 已缓存章 / 本地书：无图标（本地书恒视为已缓存，对齐原版 isLocalBook）
+      statusIcon = null;
+    }
     return ListTile(
       dense: true,
       // [PARITY C2 T5] 参考版当前章为淡蓝整行底（量化 ref≈(238,243,253)）：
       // 用 primary 低透明度铺底替代默认 selected 主题色，文字保持常规色。
       tileColor: isCurrent ? cs.primary.withValues(alpha: 0.10) : null,
-      // [LAYOUT_MOTION_AUDIT L3] 章节行内边距对齐 vertical12 + horizontal8
-      //（单行 dense 默认高 48，内容+24 未超限，itemExtent 48 保持有效）
-      contentPadding:
-          const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
+      // [LAYOUT_MOTION_AUDIT L3] 章节行内边距 horizontal8；vertical 取 0 而非 12：
+      // M3 ListTile trailing 的 _yOffsetFor 按整 tile 高 48 居中后再叠加
+      // contentPadding.vertical，v12 会把 16px 状态图标下移 12px（底边超出 24px
+      // 内容带），中心点被裁切，ERROR 重试图标 tester.tap 命中不到。vertical 0
+      // 使内容带=整行 48，图标居中（16..32）可命中；dense 自然行高 48 与 itemExtent
+      // 48 一致，标题仍垂直居中，视觉与 P2-28 不变。
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8),
       title: Text(
         chapter.title,
         maxLines: 1,

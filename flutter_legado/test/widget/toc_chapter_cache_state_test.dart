@@ -13,14 +13,24 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../mocks/mocks.dart';
 
-/// 目录页章节行缓存状态指示测试（用户验收 P2-28b，对齐参考版
-/// TocScreen.StatusIcon 三态语义 — full-stack-engineer + UI）
+/// 目录页章节行缓存状态指示测试（用户验收 P2-28b 三态 → P2-29 五态，
+/// 对齐参考版 TocScreen.StatusIcon + DownloadState 状态机 —
+/// full-stack-engineer + UI）
 ///
 /// 图标取证基准（参考版 legado-with-MD3 TocScreen.kt StatusIcon 1148-1241）：
 /// - 未缓存（NONE）→ Icons.Outlined.DownloadForOffline（outline 50% 着色）
 ///   → 我方 Icons.download_for_offline_outlined
-/// - 当前章（SUCCESS_ICON）→ Icons.Default.CheckCircle（secondary 着色）
-///   → 我方 Icons.check_circle（行高适配 16px，参考版 24dp）
+/// - [P2-29] 当前章（DUR）→ Icons.Default.LocationOn（secondary 着色）
+///   → 我方 Icons.location_on（行高适配 16px，参考版 24dp；替代 P2-28b
+///   的 check_circle）
+/// - [P2-29] 下载中（DOWNLOADING）→ AppContainedLoadingIndicator 16dp
+///   转圈 → 我方 SizedBox 16 + CircularProgressIndicator（strokeWidth 2，
+///   primary 着色），数据经 BookApi.listDownloadingChapters（契约 §2.43.7，
+///   1s 轮询同周期刷新）
+/// - [P2-29] 失败（ERROR）→ 红色重试图标（Icons.refresh，error 着色）
+///   可点击 → 单章重下 cacheDownloadStart(bookUrl, idx, idx)；数据链留项：
+///   Rust 任务表仅 failed 计数、无逐章失败记录 → 生产恒空恒不显示（不伪造），
+///   本文件经 TocScreen.failedChapterIndicesForTest 注入缝驱动该分支
 /// 字数胶囊：Rust 回填链（对齐原版 BookHelp.writeText → upWordCount，
 /// StringUtils.wordCountFormat 存「1200字」/「1.1万字」形态），展示端
 /// 原样输出（对齐原版 ChapterListAdapter.kt:231 / 参考版 TocScreen.kt:1205），
@@ -100,8 +110,12 @@ void main() {
         ),
       ];
 
-  /// 公共 stub：书架态/章节/缓存集合/标注/书签
-  void stubCommon(List<BookChapter> chapters, List<String> cachedUrls) {
+  /// 公共 stub：书架态/章节/缓存集合/下载中集合/标注/书签
+  void stubCommon(
+    List<BookChapter> chapters,
+    List<String> cachedUrls, {
+    List<int> downloading = const [],
+  }) {
     when(() => mockApi.getBook(any())).thenAnswer((_) async => makeBook());
     when(() => mockApi.getChapters(bookUrl)).thenAnswer(
       (_) async => chapters,
@@ -109,14 +123,21 @@ void main() {
     when(() => mockApi.listCachedChapterUrls(bookUrl)).thenAnswer(
       (_) async => cachedUrls,
     );
+    // [P2-29] 下载中集合（契约 §2.43.7）：初始加载与 1s 轮询均经此 stub
+    when(() => mockApi.listDownloadingChapters(bookUrl)).thenAnswer(
+      (_) async => downloading,
+    );
     when(() => mockApi.highlightListByBook(bookUrl: bookUrl))
         .thenAnswer((_) async => '[]');
     when(() => mockApi.getBookmarksByBook('测试书', '作者A'))
         .thenAnswer((_) async => const <Bookmark>[]);
   }
 
-  /// 初始渲染：build 帧 + 冲刷两次异步加载微任务（不推进 1s 轮询定时器）
+  /// 初始渲染：build 帧 + 冲刷三次异步加载微任务（P2-29 初始加载链
+  /// getBook→getChapters→listCachedChapterUrls→listDownloadingChapters，
+  /// 不推进 1s 轮询定时器）
   Future<void> settleInitial(WidgetTester tester) async {
+    await tester.pump();
     await tester.pump();
     await tester.pump();
   }
@@ -150,11 +171,11 @@ void main() {
       find.descendant(of: chapterRow('第一章'), matching: find.text('1200')),
       findsOneWidget,
     );
-    // 当前章「第四章」显示对勾圈（参考版 SUCCESS_ICON 态）
+    // [P2-29] 当前章「第四章」显示定位图标（参考版 DUR 态，替代 check_circle）
     expect(
       find.descendant(
         of: chapterRow('第四章'),
-        matching: find.byIcon(Icons.check_circle),
+        matching: find.byIcon(Icons.location_on),
       ),
       findsOneWidget,
     );
@@ -170,29 +191,31 @@ void main() {
       findsNothing,
     );
     expect(
-      find.descendant(of: volumeRow, matching: find.byIcon(Icons.check_circle)),
+      find.descendant(
+          of: volumeRow,
+          matching: find.byIcon(Icons.location_on)),
       findsNothing,
     );
     // 卸载：dispose 取消轮询定时器（在线书）
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('当前阅读章恒显示对勾圈（未缓存时以对勾替代⬇，对齐原版 isCurrent 分支）',
+  testWidgets('当前阅读章恒显示定位图标（未缓存时以定位替代⬇，对齐原版 isCurrent 分支）',
       (tester) async {
     // 缓存集合仅 u0：u2 未缓存、u3（当前章）也未缓存
     stubCommon(makeChapters(), const ['u0']);
     await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
     await settleInitial(tester);
 
-    // 当前章「第四章」：对勾圈
+    // [P2-29] 当前章「第四章」：定位图标（DUR 态，替代对勾圈）
     expect(
       find.descendant(
         of: chapterRow('第四章'),
-        matching: find.byIcon(Icons.check_circle),
+        matching: find.byIcon(Icons.location_on),
       ),
       findsOneWidget,
     );
-    // 当前章未缓存也不显示离线下载图标（原版：isCurrent 时 ivChecked 置对勾）
+    // 当前章未缓存也不显示离线下载图标（原版：isCurrent 时状态图标置定位）
     expect(
       find.descendant(
         of: chapterRow('第四章'),
@@ -289,11 +312,12 @@ void main() {
     expect(find.byIcon(Icons.download_for_offline_outlined), findsNothing);
     // 本地书不请求缓存列表（数据无意义，避免无谓 FFI 调用；亦免轮询定时器）
     verifyNever(() => mockApi.listCachedChapterUrls(any()));
-    // 本地书当前章（第二章）仍显示对勾圈（原版 upHasCache isCurrent 分支）
+    // [P2-29] 本地书当前章（第二章）仍显示定位图标（LOCAL 恒缓存语义下
+    // isCurrent 分支 → 定位图标，替代 check_circle）
     expect(
       find.descendant(
         of: chapterRow('第二章'),
-        matching: find.byIcon(Icons.check_circle),
+        matching: find.byIcon(Icons.location_on),
       ),
       findsOneWidget,
     );
@@ -352,6 +376,16 @@ void main() {
       wcPollCount++;
       return const <String, String>{'u0': '1200', 'u3': '3400'};
     });
+    // [P2-29] 下载中集合数据链（契约 §2.43.7）：轮询同周期拉取，恒空
+    // （本用例不驱动 DOWNLOADING 态，仅需 stub 以免 mocktail 抛 TypeError
+    // 被轮询 catch 吞掉后掩盖真实断言）
+    var dlPollCount = 0;
+    when(() => mockApi.listDownloadingChapters(bookUrl)).thenAnswer(
+      (_) async {
+        dlPollCount++;
+        return const <int>[];
+      },
+    );
     when(() => mockApi.highlightListByBook(bookUrl: bookUrl))
         .thenAnswer((_) async => '[]');
     when(() => mockApi.getBookmarksByBook('测试书', '作者A'))
@@ -406,11 +440,12 @@ void main() {
       findsOneWidget,
     );
 
-    // dispose（卸载）后不再轮询：两个查询入口调用计数均冻结；
+    // dispose（卸载）后不再轮询：三个查询入口调用计数均冻结；
     // 若 dispose 漏取消定时器，teardown 的「periodic Timer still active」
     // 检查将直接使本用例失败
     final urlsBeforeDispose = urlsPollCount;
     final wcBeforeDispose = wcPollCount;
+    final dlBeforeDispose = dlPollCount;
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 3));
     expect(
@@ -423,5 +458,125 @@ void main() {
       wcBeforeDispose,
       reason: 'dispose 后不应再有 listCachedChapters 查询',
     );
+    expect(
+      dlPollCount,
+      dlBeforeDispose,
+      reason: 'dispose 后不应再有 listDownloadingChapters 查询（P2-29）',
+    );
+  });
+
+  // ===== [P2-29] 目录章节行五态（对齐参考版 DownloadState 状态机） =====
+
+  testWidgets(
+      '[P2-29] 下载中章渲染 16px 加载指示（替代 ⬇，对齐参考版 LOADING 态；'
+      '当前章定位图标 / 已缓存章无图标）',
+      (tester) async {
+    // 缓存 u0（第一章）；在途下载集合 [2]（第三章）；
+    // 第三章未缓存但下载中 → 应显示 16px 转圈而非 ⬇
+    stubCommon(makeChapters(), const ['u0'], downloading: const [2]);
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
+    await settleInitial(tester);
+
+    // 下载中的「第三章」：行内 16px 加载指示（CircularProgressIndicator），
+    // 且不再显示离线下载 ⬇（LOADING 态优先于 NONE 态）
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
+      ),
+      findsNothing,
+    );
+    // 转圈直径 16px（对齐参考版 AppContainedLoadingIndicator 16dp 形态）
+    expect(
+      tester.getSize(find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byType(CircularProgressIndicator),
+      )),
+      const Size.square(16),
+    );
+    // 当前章「第四章」：定位图标（DUR 态，P2-29 新形态）
+    expect(
+      find.descendant(
+        of: chapterRow('第四章'),
+        matching: find.byIcon(Icons.location_on),
+      ),
+      findsOneWidget,
+    );
+    // 已缓存的「第一章」：无状态图标（已缓存态）
+    expect(
+      find.descendant(
+        of: chapterRow('第一章'),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: chapterRow('第一章'),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsNothing,
+    );
+    // 卸载：dispose 取消轮询定时器（在线书）
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('[P2-29] 失败章红色重试图标，点击触发单章重下（start==end 单章语义）',
+      (tester) async {
+    // 缓存 u0；ERROR 态经注入缝（failedChapterIndicesForTest）驱动：
+    // 第三章（index 2）失败。生产无失败记录数据源（恒空恒不显示，不伪造），
+    // 本用例仅验证 UI 分支：红色重试图标 + 点击 → cacheDownloadStart(idx, idx)
+    stubCommon(makeChapters(), const ['u0']);
+    when(() => mockApi.cacheDownloadStart(bookUrl, 2, 2))
+        .thenAnswer((_) async => 7);
+
+    await tester.pumpWidget(
+      wrap(
+        TocScreen(
+          book: makeBook(dur: 3),
+          failedChapterIndicesForTest: const {2},
+        ),
+      ),
+    );
+    await settleInitial(tester);
+
+    // 失败章「第三章」：红色重试图标（替代 ⬇；ERROR 态优先于 NONE 态）
+    final retryIcon = find.descendant(
+      of: chapterRow('第三章'),
+      matching: find.byIcon(Icons.refresh),
+    );
+    expect(retryIcon, findsOneWidget);
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
+      ),
+      findsNothing,
+    );
+    // 图标着色为 error（对齐参考版 ERROR 态 error 着色）
+    final iconWidget = tester.widget<Icon>(retryIcon);
+    expect(
+      iconWidget.color,
+      Theme.of(tester.element(chapterRow('第三章'))).colorScheme.error,
+    );
+
+    // 点击 → 单章重下（契约 §2.43.3 闭区间 start==end）+ SnackBar 反馈
+    await tester.tap(retryIcon);
+    await tester.pump();
+    await tester.pump();
+    verify(() => mockApi.cacheDownloadStart(bookUrl, 2, 2)).called(1);
+    expect(
+      find.textContaining('已加入重新下载队列'),
+      findsOneWidget,
+    );
+    // 卸载：dispose 取消轮询定时器（在线书）
+    await tester.pumpWidget(const SizedBox());
   });
 }
