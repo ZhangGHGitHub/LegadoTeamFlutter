@@ -1451,6 +1451,14 @@ Future<bool> cacheDownloadCancel({required PlatformInt64 taskId}) =>
 Future<String> cacheDownloadList() =>
     RustLib.instance.api.crateFfiFfiCacheDownloadList();
 
+/// P2-29（API_CONTRACT §2.43.7）：该书当前在途下载章节 index 的 JSON 整型数组
+/// （升序、0-based；无活跃任务为空数组 `[]`）。只读：纯任务表读 +
+/// 落库恢复回读，零写入。
+Future<String> cacheDownloadRunningChapters({required String bookUrl}) =>
+    RustLib.instance.api.crateFfiFfiCacheDownloadRunningChapters(
+      bookUrl: bookUrl,
+    );
+
 /// 执行章节购买动作（对照 Kotlin ReadBookActivity.payAction）
 ///
 /// 返回 JSON：`{"kind": "url"/"success"/"none", "value": "<JS 返回原文>"}`；

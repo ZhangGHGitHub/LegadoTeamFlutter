@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-09-29 | **P2-29 目录章节行状态机对齐参考版五态：新增只读查询 listDownloadingChapters（加法式，零破坏，+1 方法）**：用户验收反馈「下载中缺少过渡动画」——P2-28b/c 目录轮询只翻转缓存态，批量离线缓存下载中章节行无 DOWNLOADING 态动画，且我方当前章 check_circle 与参考版 SUCCESS 态撞形。§2.43 加法式新增 `cacheDownloadRunningChapters(bookUrl) → Future<String>`（§2.43.7）：单次只读查询（纯任务表读 + 恢复回读，**零写入**）返回该书当前在途下载章节 index 集合，JSON 整型数组 `[2,3,...]`（0-based 升序；无活跃任务返回空数组）；Rust `cache_download_api::cache_download_running_chapters`（进程内任务表纯读 + `ensure_restored` 落库恢复回读：每 `running` 任务在途章 = `next_index`（worker 顺序下载，`[start,end]` 闭区间内方收录））；FFI `ffi::cache_download_running_chapters`（frb 主链）+ FRB codegen；Dart `BookApi/RustApi/MockBookApi.listDownloadingChapters`（RustApi 解析 JSON 数组为 `List<int>`）；目录页 1s 轮询（P2-28b/c）同周期拉取下载中集合驱动五态行（isDur location_on / DOWNLOADING 16px 转圈 / ERROR 红色重试 / NONE ⬇ / 已缓存无图标）。ERROR 态数据链：任务表仅 failed 计数、无逐章失败记录（记录需任务表写路径改动，超出本批授权）→ 目录页 ERROR 分支先落、数据源恒空（恒不显示，不伪造），待数据链补齐后接。§2.43 方法数 9→**10**，§1.7 等价对 13→**14**，附录合计 283→**284**，BookApi 口径 280→**281** |
 | 2026-09-28 | **P2-28c 目录页实时字数刷新数据链：新增只读查询 listCachedChapters（加法式，零破坏，+1 方法）**：2.0.319 真机点验发现 P2-28b 轮询只 diff URL 集合（翻转 ⬇ 图标），字数胶囊渲染数据（章节 wordCount）不在轮询刷新路径内——批量缓存下载中胶囊要重开目录才出现。§2.43 加法式新增 `cacheListCachedChapters(bookUrl) → Future<String>`（§2.43.6）：单次只读查询返回该书已缓存章节的 (chapter_url, wordCount) 集合，JSON 对象数组 `[{"url":"...","wordCount":"..."}]`（按 chapter_index 升序、空 url 过滤；wordCount 取 `chapters` 表当前值（P2-28b 回填链同源），未回填为空串；有目录书过滤已退出当前目录的陈旧缓存行，与 §2.43.5 同步）；Rust `cache_api::list_cached_chapters`（纯 SELECT，复用 `CacheBookRepository::get_by_book` + `BookChapterRepository::find_by_book_url` 零额外查询）；FFI `ffi::cache_list_cached_chapters`（frb 主链）；Dart `BookApi/RustApi/MockBookApi.listCachedChapters`（RustApi 将 JSON 解析为 `Map<String, String>` url→wordCount，空 wordCount 不收录）；目录页 1s 轮询（P2-28b）升级为新方法：一次调用同时 diff URL 集合（翻转 ⬇）与刷新字数映射（新缓存章字数胶囊同帧出现，对齐参考版 ChapterListFragment 订阅 SAVE_CONTENT 同帧刷行语义）；查询失败保留旧态，dispose/停轮询语义不变。§2.43 方法数 8→**9**，§1.7 等价对 12→**13**，附录合计 282→**283**，BookApi 口径 279→**280** |
 | 2026-09-28 | **STAGE3-C2B 刷新正文对齐上游原版强制联网重取（用户已裁决，加法式新增 1 方法）**：§2.16 加法式新增 `clearChapterCache(bookUrl, chapterIndex) → Future<int>`——删除指定书籍单章的正文缓存行（对齐上游原版 `BookHelp.delContent` 章级语义：仅删该章缓存行、**不触碰** `sameTitleRemoved` 等章级开关键、行不存在为 no-op 成功、空 bookUrl 返回参数错误、**不触发整书清理**）；FFI `ffi::cache_clear_chapter`（Rust `cache_api::clear_chapter_cache` → `CacheBookRepository::delete_by_book_and_index`）。Dart 阅读器 `refreshChapterContent` 编排改为「先失效当前章 → 再抓取」（对齐上游 `ReadBookViewModel.refreshContentDur` = `BookHelp.delContent` → `ReadBook.loadContent`），移除 C2 期自创的「抓取成功后才失效 + 成功后整书 `clearBookCache`」——已缓存章节点刷新必发网络请求，失败仅丢当前章缓存（同书他章缓存保留，UI 保留旧正文并显示失败原因）。§2.16 方法数 8→**9**，附录合计 281→**282**，BookApi 口径 278→**279** |
 | 2026-09-24 | **换源感知等待（搜索期预拉缓存 + 可取消 apply，加法式，零破坏）**：对齐上游 Android `ChangeBookSourceViewModel` 三步——① 搜索期 enrich 对候选做内存预拉缓存写入（有界并发 8、单候选 60s 超时、失败/超时隔离直通；缓存 key `source_url\u0000book_url` 对齐上游 `primaryStr()`、目录上限 30000 章）；② §2.4 加法式新增 `switchSourcePrefetch(bookUrl, newSourceUrl, newBookUrl) → Future<String>`——命中预拉缓存直接提交缓存详情+目录（**零网络、选中即落地**），部分命中仅补抓目录，未命中现场抓取（执行链同 `switchSource`，既有方法冻结不变）；③ §2.4 加法式新增 `cancelSwitchSourceApply() → Future<void>`（对齐上游 `cancelChangeSource` L715-721）——apply 代数 +1 并 bump 目录刷新代数，在途 apply 提交前三点代数比对即中止（DB 零变更），在途目录分页链下一页边界中止；④ Flutter 换源页：apply 在途展示可取消加载态（spinner + 取消钮），进度串对齐上游 zh「结果 N，进度 M/K：源名」（values-zh/strings.xml:1457 + ChangeBookSourceDialog.kt L286-298）。§2.4 方法数 17→**19**，附录合计 278→**280**，BookApi 口径 275→**277** |
@@ -137,7 +138,7 @@
 
 ### 1.7 BookApi / FFI 命名等价表（F3-10，2026-08-14）
 
-以下 13 对 Dart `BookApi` 方法名与契约/FFI 登记名不一致，语义等价，计数时勿重复：
+以下 14 对 Dart `BookApi` 方法名与契约/FFI 登记名不一致，语义等价，计数时勿重复：
 
 | BookApi（Dart） | 契约 §2.x / FFI 登记名 |
 |-----------------|------------------------|
@@ -149,6 +150,7 @@
 | `loginActionV2` | `sourceLoginActionV2`（§2.3） |
 | `listCachedChapterUrls` | `cacheListCachedChapterUrls`（§2.43.5） |
 | `listCachedChapters` | `cacheListCachedChapters`（§2.43.6） |
+| `listDownloadingChapters` | `cacheDownloadRunningChapters`（§2.43.7） |
 | `getCachedChapter` | `cacheGetChapter`（§2.16 / §2.41） |
 | `getLoginHeader` | `sourceGetLoginHeader`（§2.3） |
 | `getLoginInfo` | `sourceGetLoginInfo`（§2.3） |
@@ -160,8 +162,8 @@
 ## 2. 方法清单
 
 > 共 **42 个方法模块**（§2.1–§2.45，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
-> BookApi 接口当前共 **280 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
-> 附录 §2.x 行合计 **283** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
+> BookApi 接口当前共 **281 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
+> 附录 §2.x 行合计 **284** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -723,7 +725,7 @@
 | `ttsSpeak({required String text, required String engineUrl, double speed = 1.0})` | text: 朗读文本，engineUrl: 引擎 URL 模板，speed: 语速 | `Future<Map<String, dynamic>>` | TTS 真实合成。返回字段（camelCase）：`audioPath: String`（本地音频文件绝对路径）/ `fromCache: bool`（是否缓存命中）/ `contentType: String`（音频 MIME 类型）。服务器返回 json/text 时以响应体文本抛出 BridgeError |
 | `ttsSetCacheDir(String path)` | path: 缓存目录绝对路径 | `Future<bool>` | 设置 TTS 音频缓存目录（全局生效） |
 
-### 2.43 缓存写/购买/批量下载/导出扩展（Task #136 R5+R6+R7+R8，9 个方法）
+### 2.43 缓存写/购买/批量下载/导出扩展（Task #136 R5+R6+R7+R8，10 个方法）
 
 > Task #136 合并批次，均为**加法式**新增（不改既有签名/行为）。仅走 frb 主链路（`ffi.rs`），
 > 旧式 C ABI（`bridge.rs`）已按 Task #136 R12 冻结新增并标注 DEPRECATED，故本批不在 C ABI 面暴露。
@@ -801,6 +803,26 @@
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
 | `cacheListCachedChapters({required String bookUrl})` | bookUrl | `Future<String>` | 该书已缓存章节 url+wordCount 的 JSON 对象数组（`[{"url":"...","wordCount":"..."},...]`，按 chapter_index 升序、空 url 过滤；wordCount 取 `chapters` 表当前值，未回填为空串）；Dart 侧 `RustApi.listCachedChapters` 解析为 `Map<String, String>`（url → wordCount，空 wordCount 不收录）供目录页实时字数胶囊渲染 |
+
+#### 2.43.7 目录页下载中态查询（P2-29，1 个方法）
+
+> [P2-29 | 2026-09-29] 加法式新增（不改既有签名/行为），仅走 frb 主链路（`ffi.rs`）。
+> 目录页五态行 DOWNLOADING 态动画的数据链（对齐参考版 `TocViewModel` 的 `runningIndices`
+> —— 源自 `CacheBook.downloadStateFlow` 全局状态流）：单次只读查询（进程内任务表纯读 +
+> `ensure_restored` 落库恢复回读，**零写入**）返回该书当前在途下载章节的 index 集合，
+> 目录页 1s 轮询（P2-28b/c）与 §2.43.6 同周期拉取，驱动下载中行渲染 16px 加载指示
+> （对齐参考版 `AppContainedLoadingIndicator` 16dp 形态，用户可见行为对齐）。
+> 在途章语义：§2.43.3 的 worker 顺序逐章下载（`next_index` 恒为「当前正在抓取的章」
+> 或「刚完成一章后待抓的下一章」），故每 `running` 任务至多一个在途章 = `next_index`
+> （越出 `[start_chapter, end_chapter]` 闭区间不收录，任务终态后不收录）；
+> 无活跃任务的书籍返回空数组。
+> **ERROR 态留项**：Rust 任务表仅有 failed 计数、无逐章失败记录（补齐需任务表
+> 写路径改动，超出本批授权）→ 目录页 ERROR 分支先落（红色重试图标 + 单章重下点击），
+> 数据源恒空（恒不显示，不伪造），待失败记录数据链补齐后接入。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `cacheDownloadRunningChapters({required String bookUrl})` | bookUrl | `Future<String>` | 该书批量下载（§2.43.3）当前在途章节 index 的 JSON 整型数组（升序、0-based；无活跃任务为空数组 `[]`）；Dart 侧 `RustApi.listDownloadingChapters` 解析为 `List<int>` 供目录页 DOWNLOADING 态动画 |
 
 ---
 
@@ -968,13 +990,13 @@
 | 40 | 本地 TXT 全文搜索 | 4 |
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 5 |
 | 42 | TTS 真实合成管线 | 2 |
-| 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 9 |
+| 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 10 |
 | 44 | 字典规则操作 | 7 |
-| | **合计（§2.x 附录行合计）** | **283** |
+| | **合计（§2.x 附录行合计）** | **284** |
 
-> 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`、2026-09-28 STAGE3-C2B 增 §2.16 单章缓存失效 1 方法 `clearChapterCache`、2026-09-28 P2-28c 增 §2.43 目录实时刷新 1 方法 `listCachedChapters`，取代人工统计）：
-> - 附录行合计 **283** = §2.x 实际方法行总数；其中与 BookApi 同名 269（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1）、§1.7 命名等价对的 FFI 登记名 8
->   （对应 7 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
+> 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`、2026-09-28 STAGE3-C2B 增 §2.16 单章缓存失效 1 方法 `clearChapterCache`、2026-09-28 P2-28c 增 §2.43 目录实时刷新 1 方法 `listCachedChapters`、2026-09-29 P2-29 增 §2.43 目录下载中态查询 1 方法 `listDownloadingChapters`，取代人工统计）：
+> - 附录行合计 **284** = §2.x 实际方法行总数；其中与 BookApi 同名 269（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1）、§1.7 命名等价对的 FFI 登记名 9
+>   （对应 8 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
 >   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
-> - BookApi 代码计数 **280** = 269 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1）+ 7 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
+> - BookApi 代码计数 **281** = 269 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1）+ 8 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。

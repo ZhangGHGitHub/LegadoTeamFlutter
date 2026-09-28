@@ -393,6 +393,34 @@ pub fn cache_download_list() -> LegadoResult<Vec<CacheDownloadTask>> {
     Ok(out)
 }
 
+/// P2-29：该书当前在途下载章节 index 集合（API_CONTRACT §2.43.7，
+/// 纯任务表读 + `ensure_restored` 落库恢复回读，**零写入**）
+///
+/// 在途章语义：§2.43.3 worker 顺序逐章下载（`next_index` 恒为「当前正在
+/// 抓取的章」或「刚完成一章后待抓的下一章」），故每 `running` 任务至多
+/// 一个在途章 = `next_index`（越出 `[start_chapter, end_chapter]` 闭区间
+/// 不收录，任务终态后不收录）；无活跃任务的书籍返回空集合。
+/// 返回升序（0-based；同书多任务时各自去重排序）。
+pub fn cache_download_running_chapters(book_url: &str) -> LegadoResult<Vec<i32>> {
+    ensure_restored();
+    let map = TASKS
+        .lock()
+        .map_err(|e| LegadoError::Ffi(format!("任务表加锁失败: {e}")))?;
+    let mut out: Vec<i32> = map
+        .values()
+        .filter(|t| {
+            t.book_url == book_url && t.status.lock().map(|s| *s == "running").unwrap_or(false)
+        })
+        .filter_map(|t| {
+            let next = t.next_index.load(Ordering::SeqCst);
+            (next >= t.start_chapter && next <= t.end_chapter).then_some(next)
+        })
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    Ok(out)
+}
+
 fn snapshot(task_id: u64, task: &TaskInner) -> CacheDownloadTask {
     let status = task
         .status
@@ -559,6 +587,83 @@ mod tests {
             BookRepository::new(conn).delete_by_url(&book_url)
         })
         .unwrap();
+        let _ = std::fs::remove_file(&txt_path);
+    }
+
+    /// P2-29：在途章集合 = 运行中任务的 next_index（区间内）；
+    /// 终态后清空；无关书恒空；零写入（只读）
+    #[test]
+    fn test_running_chapters() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        crate::api::cache_api::clear_cache().unwrap();
+
+        // 200 章本地 TXT：保证 worker 运行窗口足够长，可稳定观测在途态
+        let dir = std::env::temp_dir().join("legado_p229_running_test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let txt_path = dir.join("p229_running.txt");
+        let mut content = String::new();
+        for i in 0..200 {
+            content.push_str(&format!("第{i}章 标题\n\n这是第{i}章的正文。\n\n"));
+        }
+        std::fs::write(&txt_path, &content).unwrap();
+        let book_url = txt_path.to_string_lossy().to_string();
+
+        let book_json = serde_json::json!({
+            "bookUrl": book_url,
+            "name": "在途章查询测试",
+            "author": "",
+            "origin": "loc_book"
+        })
+        .to_string();
+        crate::api::bookshelf::add_book(&book_json).unwrap();
+
+        let list = crate::api::reader::get_chapters(&book_url).unwrap();
+        assert_eq!(list.total, 200, "TXT 应解析出 200 章");
+
+        let task_id = cache_download_start(&book_url, 0, 199).unwrap();
+
+        // 运行中：在途章集合非空且恒在 [0, 199] 内
+        let mut seen = 0usize;
+        loop {
+            let running = cache_download_running_chapters(&book_url).unwrap();
+            if !running.is_empty() {
+                assert!(
+                    running.iter().all(|&i| (0..=199).contains(&i)),
+                    "在途章应位于任务闭区间内: {running:?}"
+                );
+                seen += 1;
+            }
+            let p = cache_download_progress(task_id).unwrap();
+            if p.status != "running" {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        assert!(seen > 0, "任务运行期间应观测到非空在途章集合");
+
+        // 终态：在途章集合清空（next_index 越出区间 / 状态非 running）
+        assert!(
+            cache_download_running_chapters(&book_url)
+                .unwrap()
+                .is_empty(),
+            "任务终态后不应再有在途章"
+        );
+        // 无关书籍恒空
+        assert!(
+            cache_download_running_chapters("http://unrelated.example.com/book")
+                .unwrap()
+                .is_empty(),
+            "无活跃任务的书籍应返回空集合"
+        );
+
+        // 清理
+        with_database(|db| {
+            let conn = db.connection();
+            BookChapterRepository::new(conn).delete_by_book_url(&book_url)?;
+            BookRepository::new(conn).delete_by_url(&book_url)
+        })
+        .unwrap();
+        crate::api::cache_api::clear_cache().unwrap();
         let _ = std::fs::remove_file(&txt_path);
     }
 }
