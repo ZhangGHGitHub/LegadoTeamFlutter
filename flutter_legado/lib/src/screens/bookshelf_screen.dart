@@ -286,18 +286,17 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     ];
   }
 
-  // ===== [parity C3 B2] 自绘「图标+分体圆角卡」溢出菜单 =====
+  // ===== [parity C3 B2] 自绘「图标+圆角卡」溢出菜单 =====
   //
-  // 量测自参考 04 截图（1080×1920 @3x → 360×640dp）：
-  // · 全屏覆盖层 = 最浅 surface（≈(248,249,255) → surfaceContainerLowest），
-  //   完全遮住书架内容（参考左区 95% 为纯色，无内容透出）；
-  // · 右侧竖板：x 181..343dp（宽 162dp，右缘离屏 17dp），全高，
-  //   色 ≈(242,243,249) → surfaceContainerLow，右缘 7dp 落影；
-  // · 卡：144×48dp，色 = 覆盖层同色（分体观感），圆角 8dp（实测 6.7dp，
-  //   抗锯齿偏低，取设计值 8），卡间 8dp 露出竖板色形成「分体」；
-  // · 卡内：24dp 图标（onSurface）距卡左 15dp；标签 14sp onSurface 距卡左
-  //   49dp 起（4 字 ≈55dp）；首卡顶 ≈88dp（顶栏 56 + tab 行 32 下方）。
-  // 首屏 11 项顺序与功能项不动（台账 1-4），我方特有项保留（双基准原则）。
+  // [P2-31] 形态对齐参考版（RoundDropdownMenu 非 Miuix 分支：M3
+  // DropdownMenu shape=medium / shadowElevation 4 / surfaceContainerLow）——
+  // 由「全屏不透明白底 + 右侧竖板」改为「浮层」：
+  // · 背景书架内容保持可见（route opaque=false）；
+  // · 半透明 scrim（_kMenuScrimColor，alpha≈0.25）压暗整屏，点按关闭；
+  // · 右侧一枚圆角 16 + 阴影浮卡（surfaceContainerLow）承载菜单项，
+  //   高度受限可滚动；卡内 24dp 图标（onSurface）距左 15dp + 14sp 标签。
+  // 首屏 11 项顺序/文案/功能项不动（台账 1-4），图标逐项对齐参考版
+  // （见 _cardMenuItems [P2-31] 注），我方特有项保留（双基准原则）。
 
   List<_CardMenuItem> _cardMenuItems(WidgetRef ref) {
     final state = ref.read(bookshelfNotifierProvider);
@@ -309,17 +308,20 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
       // 台账 1-4② 误判为功能缺失）
       // [parity C3 B3] 文案对齐参考版：「添加远程书籍」→「远程书籍」、
       // 「书架布局」→「布局设置」
-      _CardMenuItem('remote', '远程书籍', Symbols.cloud_rounded),
-      _CardMenuItem('import', AppStrings.addLocalBook, Symbols.folder_open_rounded),
-      _CardMenuItem('update_all', AppStrings.updateAll, Symbols.sync_rounded),
+      // [P2-31] 图标逐项对齐参考版 BookshelfScreen 溢出菜单
+      // （Wifi/Save/Refresh/GridView/ViewCarousel/Link/Edit/Bookmarks/
+      // UploadFile/CloudDownload/History → 映射 material_symbols rounded）
+      _CardMenuItem('remote', '远程书籍', Symbols.wifi_rounded),
+      _CardMenuItem('import', AppStrings.addLocalBook, Symbols.save_rounded),
+      _CardMenuItem('update_all', AppStrings.updateAll, Symbols.refresh_rounded),
       _CardMenuItem('layout', '布局设置', Symbols.grid_view_rounded),
-      _CardMenuItem('groups', '分组管理', Symbols.folder_rounded),
+      _CardMenuItem('groups', '分组管理', Symbols.view_carousel_rounded),
       _CardMenuItem('add_url', '添加网址', Symbols.link_rounded),
-      _CardMenuItem('select_mode', '选择模式', Symbols.checklist_rounded),
-      _CardMenuItem('manage', AppStrings.manageBookshelf, Symbols.tune_rounded),
-      _CardMenuItem('export_list', '导出书单', Icons.file_upload_outlined),
-      _CardMenuItem('import_list', '导入书单', Icons.file_download_outlined),
-      _CardMenuItem('log', '日志', Symbols.receipt_long_rounded),
+      _CardMenuItem('select_mode', '选择模式', Symbols.edit_rounded),
+      _CardMenuItem('manage', AppStrings.manageBookshelf, Symbols.bookmarks_rounded),
+      _CardMenuItem('export_list', '导出书单', Symbols.upload_file_rounded),
+      _CardMenuItem('import_list', '导入书单', Symbols.cloud_download_rounded),
+      _CardMenuItem('log', '日志', Symbols.history_rounded),
       // 我方特有项（双基准原则保留不删）：离线缓存（对应原版
       // menu_download 缓存/导出）+ 分组展示模式 + 书源管理
       _CardMenuItem('offline_cache', '离线缓存', Symbols.wifi_off_rounded),
@@ -347,93 +349,107 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     _handleMenuAction(context, ref, action);
   }
 
-  /// 菜单页：全屏浅色覆盖 + 右侧竖板 + 分体圆角卡列表（可滚动）
+  /// [P2-31] 菜单页：参考版浮层形态——
+  /// 背景书架内容保持可见（route opaque=false），半透明 scrim 压暗整屏，
+  /// 右侧一枚圆角阴影浮卡承载菜单项（对标参考 RoundDropdownMenu 非 Miuix
+  /// 分支：M3 DropdownMenu shape=medium / shadowElevation 4 /
+  /// surfaceContainerLow），点 scrim 关闭。11 项功能行为不变。
   Widget _buildCardMenuPage(BuildContext context, WidgetRef ref) {
     final colorScheme = Theme.of(context).colorScheme;
     final items = _cardMenuItems(ref);
-    final card = colorScheme.surfaceContainerLowest; // 卡/覆盖层 ≈(248,249,255)
-    final panel = colorScheme.surfaceContainerLow; // 竖板 ≈(242,243,249)
+    final cardColor = colorScheme.surfaceContainerLow; // 浮卡（近白）
     final onSurface = colorScheme.onSurface;
 
     Widget buildCard(int index, _CardMenuItem item) {
-      // 首卡顶 32dp：参考 04 首卡顶 88dp 含状态栏 24 + 顶栏 56 之上的余量，
-      // 自绘菜单页不重绘顶栏，取 32dp 使首卡视觉位置贴近参考
+      // 浮卡内条目：透明行（浮卡统一底色），段间以加宽间距分隔
       final isSectionBreak = _isSectionBreak(items, index);
       return Padding(
         padding: EdgeInsets.only(
-          top: index == 0 ? 32 : (isSectionBreak ? 16 : 8),
+          top: index == 0 ? 8 : (isSectionBreak ? 16 : 4),
         ),
-        child: Material(
-          color: card,
-          borderRadius: BorderRadius.circular(8),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(8),
-            onTap: () => Navigator.pop(context, item.action),
-            child: SizedBox(
-              height: 48,
-              child: Row(
-                children: [
-                  // 图标列：距卡左 15dp、宽 24dp（量测 15..33dp）
-                  Padding(
-                    padding: const EdgeInsets.only(left: 15),
-                    child: Icon(item.icon, size: 24, color: onSurface),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      item.label,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: onSurface,
-                        fontWeight: FontWeight.w400,
-                      ),
-                      overflow: TextOverflow.ellipsis,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: () => Navigator.pop(context, item.action),
+          child: SizedBox(
+            height: 48,
+            child: Row(
+              children: [
+                // 图标列：距卡左 15dp、宽 24dp（量测 15..33dp）
+                Padding(
+                  padding: const EdgeInsets.only(left: 15),
+                  child: Icon(item.icon, size: 24, color: onSurface),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    item.label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: onSurface,
+                      fontWeight: FontWeight.w400,
                     ),
+                    overflow: TextOverflow.ellipsis,
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
       );
     }
 
-    return Material(
-      color: card, // 全屏覆盖层（不透明，遮住书架内容）
-      child: Stack(
-        children: [
-          // 点覆盖层（竖板以外）关闭
-          Positioned.fill(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => Navigator.pop(context),
+    return Stack(
+      children: [
+        // [P2-31] 半透明 scrim：压暗后方书架（内容仍可见），点按关闭
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () => Navigator.pop(context),
+            child: ColoredBox(
+              // [P2-31] 稳定键值（widget 测试以同名字面量断言 scrim 存在；
+              // 不导出命名常量，保证修复前测试亦可编译 → 干净红→绿）
+              key: const ValueKey<String>('bookshelf_menu_scrim'),
+              color: _kMenuScrimColor,
             ),
           ),
-          // 右侧竖板：宽 162dp、全高、右缘离屏 17dp、右缘落影
-          Align(
-            alignment: Alignment.centerRight,
-            child: Container(
-              width: 162,
-              margin: const EdgeInsets.only(right: 17),
-              decoration: BoxDecoration(
-                color: panel,
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x141B1E22),
-                    blurRadius: 12,
-                    offset: Offset(4, 0),
+        ),
+        // [P2-31] 右侧浮卡：圆角 16 + 阴影（对标参考 surfaceContainerLow
+        // 卡 + shadowElevation 4），高度受限可滚动
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final maxCardHeight = constraints.maxHeight * 0.7;
+            return Align(
+              alignment: Alignment.centerRight,
+              child: Padding(
+                padding: const EdgeInsets.only(right: 16),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxCardHeight),
+                  // Material 提供浮卡底色 + 圆角 + 落影（elevation 4 对标
+                  // 参考 shadowElevation 4），并为卡内 InkWell 提供 Material
+                  // 祖先（ink 涟漪画布）
+                  child: Material(
+                    color: cardColor,
+                    borderRadius: BorderRadius.circular(16),
+                    elevation: 4,
+                    child: SizedBox(
+                      width: 232,
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 9,
+                          vertical: 8,
+                        ),
+                        itemCount: items.length,
+                        itemBuilder: (_, i) => buildCard(i, items[i]),
+                      ),
+                    ),
                   ),
-                ],
+                ),
               ),
-              child: ListView.builder(
-                padding: const EdgeInsets.symmetric(horizontal: 9),
-                itemCount: items.length,
-                itemBuilder: (_, i) => buildCard(i, items[i]),
-              ),
-            ),
-          ),
-        ],
-      ),
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -1583,12 +1599,14 @@ class _CardMenuItem {
   const _CardMenuItem(this.action, this.label, this.icon);
 }
 
-/// [parity C3 B2] 菜单页路由：整页从右侧轻微滑入（Offset 0.15，非整屏
-/// 横滑，贴合「菜单浮层」语义），opaque 遮住书架内容
+/// [P2-31] 菜单页路由：整页淡入（浮层形态）。
+/// [P2-31] opaque=false —— 背景书架内容保持可见（对标参考
+/// RoundDropdownMenu 浮层，而非全屏不透明覆盖）；scrim + 浮卡见
+/// _buildCardMenuPage。
 class _CardMenuRoute extends PageRouteBuilder<String> {
   _CardMenuRoute(Widget page)
       : super(
-          opaque: true,
+          opaque: false,
           transitionDuration: const Duration(milliseconds: 200),
           reverseTransitionDuration: const Duration(milliseconds: 150),
           pageBuilder: (_, _, _) => page,
@@ -1601,12 +1619,11 @@ class _CardMenuRoute extends PageRouteBuilder<String> {
     Animation<double> secondaryAnimation,
     Widget child,
   ) {
-    return SlideTransition(
-      position: Tween<Offset>(
-        begin: const Offset(0.15, 0),
-        end: Offset.zero,
-      ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOut)),
-      child: child,
-    );
+    return FadeTransition(opacity: animation, child: child);
   }
 }
+
+/// [P2-31] 菜单 scrim 色（半透明压暗，书架内容仍透出）。
+/// 半透明（alpha 0x40 ≈ 0.25）保证后方书架内容透出可见（浮层形态，
+/// 而非修复前的全屏不透明白底）。
+const Color _kMenuScrimColor = Color(0x40000000);
