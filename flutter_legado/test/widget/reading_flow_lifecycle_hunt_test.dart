@@ -58,6 +58,9 @@ void main() {
     when(() => api.getChapterContent(any(), any())).thenAnswer((_) async => '');
     when(() => api.getBookSources()).thenAnswer((_) async => const []);
     when(() => api.getConfig(any())).thenAnswer((_) async => '');
+    // [P2-30] 退出判定现查 DB 在架状态：桩「已入架」记录（notShelf 位未置）
+    // 使退出走直接退出路径（不弹「放入书架」框），C3b 的落库断言语义不变
+    when(() => api.getBook(any())).thenAnswer((_) async => _book);
     when(
       () => api.updateReadingProgress(
         bookUrl: any(named: 'bookUrl'),
@@ -164,8 +167,11 @@ void main() {
       notifier.updatePosition(7);
       await tester.pump();
 
+      // [P2-30] 退出改经 maybePop（= 系统返回/顶栏返回按钮路径，受
+      // canPop=false 拦截 → 退出判定）；getBook 桩返回已入架记录 →
+      // 判定走「直接退出」路：saveProgress 落库 7 后 pop（断言语义不变）
       final navigator = tester.state<NavigatorState>(find.byType(Navigator));
-      navigator.pop();
+      navigator.maybePop();
       await tester.pumpAndSettle();
 
       expect(

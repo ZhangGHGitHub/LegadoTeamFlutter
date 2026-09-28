@@ -7,14 +7,17 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import '../constants/pref_keys.dart';
 import '../models/book.dart';
 import '../models/book_source.dart';
 import '../models/source_match.dart';
 import '../providers/audio/audio_notifier.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
+import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
+import '../utils/book_open_utils.dart';
 import '../widgets/reader/read_aloud_bar.dart';
 import '../widgets/reader/auto_turn_panel.dart';
 import '../widgets/reader/reader_page_chrome.dart';
@@ -83,6 +86,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
 
   /// F6：跟踪主题日夜，变化时重载布局桶（shareLayout=false）
   bool? _layoutIsNight;
+
+  /// [P2-30] 退出判定进行中标记（防系统返回连点触发多路判定/重复弹窗）
+  bool _exitPending = false;
 
   @override
   void initState() {
@@ -411,6 +417,130 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     }
   }
 
+  // ===== [P2-30 | 未入架书退出提示] =====
+  //
+  // 对齐原版 ReadBookActivity.finish() 三路语义（参考版 closeReadBook 同款）：
+  // 1. 已入架（DB 记录存在且未打 notShelf 位）→ 直接退出（现状不变）；
+  // 2. 未入架 + 「返回时提示放入书架」开关（PrefKeys.showAddToShelfAlert，
+  //    既有设置项，默认开）关闭 → 静默退出且清理未入架书的临时落库记录
+  //    （对齐原版 !showAddToShelfAlert 分支 removeFromBookshelf，书不残留）；
+  // 3. 未入架 + 开关开启 → 弹「放入书架」对话框：
+  //    确认 → 清 notShelf 位入架（复用 bookshelf addBook upsert）→ 落库进度 → 退出；
+  //    取消/ dismiss → 清理未入架临时记录并退出（书不残留）。
+  //
+  // 在架判定以 DB 记录的 notShelf 位为准（BookOpenUtils.isInBookshelf）：
+  // 路由带入的内存 Book 是瘦壳（openBook 只回写媒体类型位，不带 notShelf 位），
+  // 不可作为在架依据——与 book_info_screen 的判定数据源一致。
+
+  /// 退出判定入口（PopScope 拦截所有 pop 尝试后调用）
+  Future<void> _onExitPop(BuildContext context) async {
+    if (_exitPending) return;
+    _exitPending = true;
+    try {
+      final book = ref.read(readerNotifierProvider).currentBook;
+      if (book == null) {
+        if (context.mounted) Navigator.pop(context);
+        return;
+      }
+      // 在架判定：DB 记录权威（查询失败按未入架处理，对齐原版默认
+      // inBookshelf=false 语义；未入架书不会走到删除在架书的分支）
+      var inShelf = false;
+      try {
+        final dbBook =
+            await ref.read(bookApiProvider).getBook(book.bookUrl);
+        inShelf = BookOpenUtils.isInBookshelf(dbBook);
+      } catch (_) {
+        inShelf = false;
+      }
+      final notifier = ref.read(readerNotifierProvider.notifier);
+      if (inShelf) {
+        // 已入架 → 直接退出（现状不变：进度落库 + pop）
+        await notifier.saveProgress();
+        if (context.mounted) Navigator.pop(context);
+        return;
+      }
+      // 未入架：读「返回时提示放入书架」开关（既有设置项，默认开启）
+      final showAlert = await ref.read(settingsProvider).getBoolPref(
+            PrefKeys.showAddToShelfAlert,
+            defaultValue: true,
+          );
+      if (!context.mounted) return;
+      if (!showAlert) {
+        // 开关关 → 静默退出且书不残留（对齐原版第二路）
+        await _removeNotShelfBook(book);
+        if (context.mounted) Navigator.pop(context);
+        return;
+      }
+      // 默认路 → 弹「放入书架」提示
+      final confirmed = await _showAddToShelfDialog(context, book.name);
+      if (!context.mounted) return;
+      if (confirmed) {
+        // 确认 → 入架（复用 book_info_screen 同款调用：清 notShelf 位 +
+        // addBook 原地 upsert，不会级联删章节目录）→ 落库进度 → 退出
+        final ok = await ref.read(bookshelfNotifierProvider.notifier).addBook(
+              book.copyWith(bookType: book.bookType & ~BookType.notShelf),
+            );
+        if (!context.mounted) return;
+        if (!ok) {
+          // 入架失败：可见提示且不退出（项目规则：用户可见失败必须提示）
+          final err = ref.read(bookshelfNotifierProvider).error;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(err != null ? '加入书架失败：$err' : '加入书架失败'),
+            ),
+          );
+          return;
+        }
+        await notifier.saveProgress();
+        if (context.mounted) Navigator.pop(context);
+      } else {
+        // 取消 → 退出且未入架书不残留（对齐原版第三路 noButton 分支）
+        await _removeNotShelfBook(book);
+        if (context.mounted) Navigator.pop(context);
+      }
+    } finally {
+      _exitPending = false;
+    }
+  }
+
+  /// 清理未入架书的临时落库记录（对齐原版 removeFromBookshelf：
+  /// 仅删除本次会话以 notShelf 临时入库的书；已入架书不会进入本方法）
+  Future<void> _removeNotShelfBook(Book book) async {
+    try {
+      await ref.read(bookApiProvider).deleteBook(book.bookUrl);
+    } catch (_) {
+      // 清理失败不阻断退出（极端残留仅影响占位行，不污染书架列表）
+    }
+  }
+
+  /// 「放入书架」确认对话框（对齐参考版 AppAlertDialog：标题「放入书架」、
+  /// 正文「是否将《书名》放入书架？」、取消/确认；圆角按钮走主题
+  /// dialogTheme 28dp 大圆角容器 + FilledButton 确认，与既有 Dialog 风格一致）。
+  /// 返回 true=确认入架；false=取消/dismiss（含系统返回关闭对话框，
+  /// 对齐参考版 onDismiss → ExitWithoutAddingCurrentBookToBookshelf）。
+  Future<bool> _showAddToShelfDialog(BuildContext context, String bookName) {
+    return showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('放入书架'),
+        content: Text('是否将《$bookName》放入书架？'),
+        actionsAlignment: MainAxisAlignment.end,
+        actionsPadding: const EdgeInsets.fromLTRB(12, 0, 16, 12),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          const SizedBox(width: 8),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确认'),
+          ),
+        ],
+      ),
+    ).then((v) => v ?? false);
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(readerNotifierProvider);
@@ -450,10 +580,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     );
 
     return PopScope<Object?>(
-      // 退出阅读器时确保阅读进度已保存到书架
+      // [P2-30] 退出判定统一收敛到 onPopInvokedWithResult（canPop=false 使
+      // 系统返回/手势返回/ Navigator.maybePop —— 阅读顶栏「返回/回书架」
+      // 按钮即此路径 —— 全部先过判定函数再 pop，对齐原版 finish() 单一
+      // 退出路径）。注意：裸 Navigator.pop()（应用内无此调用点）不受
+      // canPop 拦截，直接 didPop=true 走兜底落库分支（保持既有行为：
+      // 进度落库 + 退出，不弹窗）。
+      canPop: false,
       onPopInvokedWithResult: (didPop, result) {
         if (didPop) {
           unawaited(notifier.saveProgress());
+        } else {
+          unawaited(_onExitPop(context));
         }
       },
       child: Scaffold(
