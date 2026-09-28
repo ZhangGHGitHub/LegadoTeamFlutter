@@ -730,6 +730,21 @@ fn fetch_chapter_content_inner(
     let cached = cached.filter(|c| !c.content.trim().is_empty());
 
     if let Some(cached_chapter) = cached {
+        // [P2-28b] 存量惰性自愈：缓存命中但该章 wordCount 为空（旧版本
+        // 写入的缓存，早于回填链引入）时，按缓存正文长度补算回填**一次**
+        // （回填成功后 wordCount 非空，后续命中不再写）。失败仅告警，
+        // 不影响正文返回（对齐原版 writeText 的 best-effort 语义）
+        let wc_missing = with_database(|db| {
+            BookChapterRepository::new(db.connection()).word_count_missing(book_url, chapter_url)
+        })
+        .unwrap_or(false);
+        if wc_missing {
+            if let Err(e) =
+                backfill_chapter_word_count(book_url, chapter_url, &cached_chapter.content)
+            {
+                log::warn!("章节字数自愈回填失败（已忽略，不影响阅读）: {e}");
+            }
+        }
         // 缓存存储原始正文，返回前应用净化（避免规则变更后缓存陈旧）
         let processed = apply_content_processing_chapter(
             book_url,
@@ -796,23 +811,106 @@ fn fetch_chapter_content_inner(
     ))
 }
 
+/// 字数格式化（对齐原版 `StringUtils.wordCountFormat`：
+/// words≤0 → ""；0<words≤10000 → "{words}字"；
+/// words>10000 → `DecimalFormat("#.#").format(words * 1.0f / 10000f.toDouble()) + "万字"`）
+///
+/// 原版 `words * 1.0f` 为 f32 乘法（<2^24 整数精确），`/ 10000f.toDouble()`
+/// 为 f64 除法；`DecimalFormat("#.#")` 默认 HALF_EVEN，按 double 的**精确
+/// 二进制值**（dyadic rational）舍入——故此处不近似 round，而是取出
+/// f64 尾数/指数后做精确的有理数 HALF_EVEN 舍入（`#` 号语义：去尾零，
+/// 无小数位时不补 ".0"）。
+pub fn word_count_format(words: usize) -> String {
+    if words == 0 {
+        return String::new();
+    }
+    if words <= 10000 {
+        return format!("{words}字");
+    }
+    let v = f64::from(words as f32) / 10000.0;
+    let bits = v.to_bits();
+    let exp_field = ((bits >> 52) & 0x7FF) as i32;
+    let mantissa = ((bits & 0x000F_FFFF_FFFF_FFFF) | (1u64 << 52)) as u128;
+    // v = mantissa × 2^(exp_field-1075)；求 t = round_HALF_EVEN(v×10)
+    //（v×10 的精确值即 mantissa×10 × 2^e，e≥0 为纯移位无舍入）
+    let e = exp_field - 1075;
+    let n = mantissa * 10;
+    let t = if e >= 0 {
+        n << e.min(72) as u32 // e>72 对现实字数不可达
+    } else {
+        let d_exp = (-e) as u32;
+        let q = n >> d_exp;
+        let r = n & ((1u128 << d_exp) - 1);
+        let half = 1u128 << d_exp;
+        let twice_r = 2 * r;
+        if twice_r > half {
+            q + 1
+        } else if twice_r < half {
+            q
+        } else {
+            // tie（恰为 .5）→ HALF_EVEN 取偶数侧
+            if q.is_multiple_of(2) {
+                q
+            } else {
+                q + 1
+            }
+        }
+    };
+    let (int_part, frac_part) = (t / 10, t % 10);
+    if frac_part == 0 {
+        format!("{int_part}万字")
+    } else {
+        format!("{int_part}.{frac_part}万字")
+    }
+}
+
+/// [P2-28b] 正文缓存写入/命中自愈后回填 chapters.wordCount
+/// （对齐原版 `BookHelp.writeText` → `BookChapterDao.upWordCount`）
+///
+/// 注意：原版门控 `AppConfig.tocCountWords` 为 Kotlin 端设置；我方对应开关
+/// （`toc_load_word_count`）在 Flutter SharedPreferences，未同步至 Rust，
+/// 故 Rust 侧**无条件**回填，显示由目录页「加载字数」开关控制。
+///
+/// 返回受影响行数（0 = 该章不在目录中，无需回填，非错误）。
+fn backfill_chapter_word_count(
+    book_url: &str,
+    chapter_url: &str,
+    content: &str,
+) -> LegadoResult<u64> {
+    // 原版字数 = Kotlin `String.length`（UTF-16 码元数）
+    let word_count = word_count_format(content.encode_utf16().count());
+    if word_count.is_empty() {
+        return Ok(0);
+    }
+    with_database(|db| {
+        BookChapterRepository::new(db.connection()).up_word_count(
+            book_url,
+            chapter_url,
+            &word_count,
+        )
+    })
+}
+
 /// 阅读获取（非缓存命中）成功后把正文写入 cached_chapters
 ///
 /// 对齐 Android 原版「阅读即缓存」语义：正文成功解析后按
 /// (book_url, chapter_url) 复合键立即写入（含 chapter_index 等字段），
 /// 目录页云图标据此变为已缓存态。写失败仅告警不传播——原版
 /// saveContent 为异步 fire-and-forget，缓存写失败不得使阅读主流程失败。
+///
+/// [P2-28b] 写入成功后按原版 `writeText` 语义回填 `chapters.wordCount`
+/// （best-effort，失败仅告警）。返回缓存写入是否成功。
 fn save_chapter_cache(
     book_url: &str,
     chapter_index: i32,
     chapter_title: &str,
     chapter_url: &str,
     content: &str,
-) {
+) -> bool {
     // [B-1] 空内容不入缓存（对齐上游 BookHelp.kt:557-559）：杜绝空行入库后
     // 被读侧按命中返回、章节永久空白的缺陷链
     if content.trim().is_empty() {
-        return;
+        return false;
     }
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -835,7 +933,13 @@ fn save_chapter_cache(
     });
     if let Err(e) = result {
         log::warn!("阅读缓存写入失败（已忽略，不影响阅读）: {e}");
+        return false;
     }
+    // 回填失败仅告警（对齐原版 writeText：回填属 best-effort，不得影响阅读）
+    if let Err(e) = backfill_chapter_word_count(book_url, chapter_url, content) {
+        log::warn!("章节字数回填失败（已忽略，不影响阅读）: {e}");
+    }
+    true
 }
 
 /// 一次调用获取章节正文（合并 get_chapter_content + fetch_chapter_content）
@@ -1760,6 +1864,286 @@ mod tests {
         .unwrap()
         .unwrap();
         assert_eq!(cached.content, "第四章正文v2");
+    }
+
+    // ─── [P2-28b] 章节字数回填链测试（对齐原版 BookHelp.writeText → upWordCount）──
+
+    /// 辅助：读取指定书指定 index 章节的 wordCount
+    fn read_chapter_word_count(book_url: &str, index: i32) -> Option<String> {
+        with_database(|db| {
+            Ok(BookChapterRepository::new(db.connection())
+                .find_by_book_url_and_index(book_url, index)?
+                .and_then(|c| c.word_count))
+        })
+        .unwrap_or_default()
+    }
+
+    /// [P2-28b] word_count_format 与原版 StringUtils.wordCountFormat 逐值对齐
+    ///
+    /// 原版：words≤0 → ""；0<words≤10000 → "{words}字"；words>10000 →
+    /// `DecimalFormat("#.#").format(words * 1.0f / 10000f.toDouble()) + "万字"`。
+    /// DecimalFormat 按 double 的精确二进制值 HALF_EVEN 舍入，故以下用例覆盖
+    /// 浮点怪癖值：10500（1.05 双精度略高于 1.05 → 1.1）、12500（1.25 精确
+    /// 平局 → HALF_EVEN 取偶 1.2）、13500（1.35 双精度略高于 1.35 → 1.4）、
+    /// 14999/15000（同为 1.5）、10001/99999（去尾零形态）
+    #[test]
+    fn test_word_count_format_aligned_with_original() {
+        let cases = [
+            (0usize, ""),
+            (1, "1字"),
+            (9999, "9999字"),
+            (10000, "10000字"),
+            (10001, "1万字"),
+            (10500, "1.1万字"),
+            (12500, "1.2万字"),
+            (13500, "1.4万字"),
+            (14999, "1.5万字"),
+            (15000, "1.5万字"),
+            (25000, "2.5万字"),
+            (99999, "10万字"),
+        ];
+        for (words, expected) in cases {
+            assert_eq!(
+                word_count_format(words),
+                expected,
+                "words={} 应与原版 wordCountFormat 一致",
+                words
+            );
+        }
+    }
+
+    /// [P2-28b] 缓存写入成功后回填章节字数（对齐原版 writeText「成功写入后回填」；
+    /// 字数 = UTF-16 码元数，格式对齐原版 StringUtils.wordCountFormat）
+    #[test]
+    fn test_save_chapter_cache_backfills_word_count() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://wc-backfill.example.com/book/1";
+        let chapter_url = "https://wc-backfill.example.com/ch/4";
+
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&legado_core::models::Book {
+                book_url: book_url.to_string(),
+                origin: "https://wc-src.example.com".to_string(),
+                ..legado_core::models::Book::default()
+            })?;
+            BookChapterRepository::new(db.connection()).insert(&BookChapter {
+                url: chapter_url.to_string(),
+                title: "第四章".to_string(),
+                book_url: book_url.to_string(),
+                index: 4,
+                ..BookChapter::default()
+            })?;
+            Ok(())
+        })
+        .expect("前置数据写入失败");
+
+        // 10500 UTF-16 码元 → "1.1万字"（double(1.05) 精确值 1.0500…0044 > 1.05 中点，
+        // HALF_EVEN 进位——与原版 DecimalFormat("#.#") 行为一致）
+        assert!(
+            save_chapter_cache(book_url, 4, "第四章", chapter_url, &"字".repeat(10500)),
+            "缓存写入应成功"
+        );
+        assert_eq!(
+            read_chapter_word_count(book_url, 4).as_deref(),
+            Some("1.1万字"),
+            "缓存写入成功后应按原版 wordCountFormat 格式回填字数"
+        );
+
+        // 短内容 → 纯字数 + 字 形态
+        assert!(
+            save_chapter_cache(book_url, 4, "第四章", chapter_url, "第四章正文"),
+            "缓存写入应成功"
+        );
+        assert_eq!(
+            read_chapter_word_count(book_url, 4).as_deref(),
+            Some("5字"),
+            "≤10000 码元应为 纯字数+字 形态"
+        );
+
+        // 收尾清理（章节行事务外删除为 B-7 no-op，测试库隔离无害）
+        with_database(|db| {
+            CacheBookRepository::new(db.connection()).delete_by_book(book_url)?;
+            let _ = BookChapterRepository::new(db.connection()).delete_by_book_url(book_url);
+            BookRepository::new(db.connection()).delete_by_url(book_url)?;
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [P2-28b] 缓存命中惰性自愈：存量 wordCount 为空的章，命中返回路径按本次
+    /// 缓存正文长度补算回填一次；首次回填后 wordCount 非空，后续命中不再写
+    /// （一次性语义，经 AFTER UPDATE 探针触发器计数证明）
+    #[test]
+    fn test_cache_hit_lazy_self_heals_word_count_once() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://wc-heal.example.com/book/1";
+        let chapter_url = "https://wc-heal.example.com/ch/7";
+        let content = "x".repeat(25000); // 25000 UTF-16 码元 → "2.5万字"
+
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&legado_core::models::Book {
+                book_url: book_url.to_string(),
+                origin: "https://wc-src.example.com".to_string(),
+                ..legado_core::models::Book::default()
+            })?;
+            // 章节行（wordCount 为空，模拟存量目录）
+            BookChapterRepository::new(db.connection()).insert(&BookChapter {
+                url: chapter_url.to_string(),
+                title: "第七章".to_string(),
+                book_url: book_url.to_string(),
+                index: 7,
+                ..BookChapter::default()
+            })?;
+            // 直写缓存行（模拟早于回填链引入的旧缓存，wordCount 未回填；
+            // 不经 save_chapter_cache，避免其自身的回填掩盖「存量」前提）
+            CacheBookRepository::new(db.connection()).insert(&CachedChapter {
+                id: 0,
+                book_url: book_url.to_string(),
+                chapter_index: 7,
+                chapter_title: "第七章".to_string(),
+                chapter_url: chapter_url.to_string(),
+                content: content.clone(),
+                cached_at: 0,
+                size_bytes: content.len() as i64,
+            })?;
+            Ok(())
+        })
+        .expect("前置数据写入失败");
+
+        // 首次命中：正文原样返回 + 一次性字数回填
+        let got = fetch_chapter_content(book_url, chapter_url, "https://wc-src.example.com")
+            .expect("缓存命中正文返回不受回填影响");
+        assert_eq!(got, content);
+        assert_eq!(
+            read_chapter_word_count(book_url, 7).as_deref(),
+            Some("2.5万字"),
+            "首次命中应惰性自愈回填字数"
+        );
+
+        // 安装 UPDATE 探针（仅本书范围），证明二次命中不再写 wordCount
+        with_database(|db| {
+            db.connection()
+                .execute("CREATE TABLE IF NOT EXISTS wc_update_probe (n INTEGER)", [])
+                .map_err(|e| LegadoError::Database(format!("探针建表失败: {e}")))?;
+            db.connection()
+                .execute(
+                    "CREATE TRIGGER wc_heal_probe AFTER UPDATE ON chapters \
+                     WHEN OLD.bookUrl = 'https://wc-heal.example.com/book/1' \
+                     BEGIN INSERT INTO wc_update_probe VALUES (1); END",
+                    [],
+                )
+                .map_err(|e| LegadoError::Database(format!("探针触发器创建失败: {e}")))?;
+            Ok(())
+        })
+        .expect("探针安装失败");
+
+        // 二次命中：wordCount 已非空 → 不重复回填
+        let got2 =
+            fetch_chapter_content(book_url, chapter_url, "https://wc-src.example.com").unwrap();
+        assert_eq!(got2, content);
+        assert_eq!(
+            read_chapter_word_count(book_url, 7).as_deref(),
+            Some("2.5万字")
+        );
+        let updates = with_database(|db| {
+            let count: i64 = db
+                .connection()
+                .query_row("SELECT COUNT(*) FROM wc_update_probe", [], |row| row.get(0))
+                .map_err(|e| LegadoError::Database(format!("探针计数查询失败: {e}")))?;
+            Ok(count)
+        })
+        .unwrap();
+        assert_eq!(updates, 0, "二次命中不应再次写 wordCount（一次性回填）");
+
+        // 收尾清理：撤探针 + 清缓存/章节/书行
+        with_database(|db| {
+            let _ = db
+                .connection()
+                .execute("DROP TRIGGER IF EXISTS wc_heal_probe", []);
+            let _ = db
+                .connection()
+                .execute("DROP TABLE IF EXISTS wc_update_probe", []);
+            CacheBookRepository::new(db.connection()).delete_by_book(book_url)?;
+            let _ = BookChapterRepository::new(db.connection()).delete_by_book_url(book_url);
+            BookRepository::new(db.connection()).delete_by_url(book_url)?;
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [P2-28b] 回填失败不得影响正文返回：用按 bookUrl 定界的触发器模拟
+    /// chapters 表 UPDATE 失败（RAISE ABORT；定界使即便清理遗漏也不波及其他用例）
+    /// ——缓存命中自愈路径与缓存写入路径均降级告警，正文照常返回
+    #[test]
+    fn test_word_count_backfill_failure_harmless() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://wc-fail.example.com/book/1";
+        let chapter_url = "https://wc-fail.example.com/ch/0";
+        let content = "f".repeat(12000); // 12000 码元 → "1.2万字"（1.2 为精确双精度值）
+
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&legado_core::models::Book {
+                book_url: book_url.to_string(),
+                origin: "https://wc-src.example.com".to_string(),
+                ..legado_core::models::Book::default()
+            })?;
+            BookChapterRepository::new(db.connection()).insert(&BookChapter {
+                url: chapter_url.to_string(),
+                title: "第一章".to_string(),
+                book_url: book_url.to_string(),
+                index: 0,
+                ..BookChapter::default()
+            })?;
+            CacheBookRepository::new(db.connection()).insert(&CachedChapter {
+                id: 0,
+                book_url: book_url.to_string(),
+                chapter_index: 0,
+                chapter_title: "第一章".to_string(),
+                chapter_url: chapter_url.to_string(),
+                content: content.clone(),
+                cached_at: 0,
+                size_bytes: content.len() as i64,
+            })?;
+            // 模拟回填失败：仅拦截本书的 chapters UPDATE
+            db.connection()
+                .execute(
+                    "CREATE TRIGGER wc_fail_sim BEFORE UPDATE ON chapters \
+                     WHEN OLD.bookUrl = 'https://wc-fail.example.com/book/1' \
+                     BEGIN SELECT RAISE(ABORT, '模拟字数回填失败'); END",
+                    [],
+                )
+                .map_err(|e| LegadoError::Database(format!("失败模拟触发器创建失败: {e}")))?;
+            Ok(())
+        })
+        .expect("前置数据写入失败");
+
+        // 缓存命中路径：自愈回填失败（降级告警）→ 正文仍原样返回
+        let got = fetch_chapter_content(book_url, chapter_url, "https://wc-src.example.com")
+            .expect("回填失败不得影响正文返回");
+        assert_eq!(got, content);
+
+        // 写入路径：缓存写入成功（覆盖缓存行），回填失败降级告警，主流程不受影响
+        save_chapter_cache(book_url, 0, "第一章", chapter_url, &content);
+
+        // wordCount 保持为空（回填从未成功）
+        assert!(
+            read_chapter_word_count(book_url, 0)
+                .map(|w| w.trim().is_empty())
+                .unwrap_or(true),
+            "回填失败后 wordCount 应保持为空"
+        );
+
+        // 收尾清理：撤触发器 + 清缓存/章节/书行
+        with_database(|db| {
+            let _ = db
+                .connection()
+                .execute("DROP TRIGGER IF EXISTS wc_fail_sim", []);
+            CacheBookRepository::new(db.connection()).delete_by_book(book_url)?;
+            let _ = BookChapterRepository::new(db.connection()).delete_by_book_url(book_url);
+            BookRepository::new(db.connection()).delete_by_url(book_url)?;
+            Ok(())
+        })
+        .ok();
     }
 
     #[test]

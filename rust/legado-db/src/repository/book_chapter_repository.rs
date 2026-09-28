@@ -77,6 +77,54 @@ impl<'a> BookChapterRepository<'a> {
         Ok(count)
     }
 
+    /// 回填章节字数（[P2-28b]，对齐原版 BookChapterDao.upWordCount：
+    /// `update chapters set wordCount = :wordCount where bookUrl = :bookUrl and url = :url`）
+    ///
+    /// 调用方：正文缓存写入成功后 / 缓存命中且 wordCount 为空时的惰性自愈
+    /// （reader.rs `save_chapter_cache` / `fetch_chapter_content_inner` 命中路径），
+    /// 写入值由调用方按原版 `StringUtils.wordCountFormat` 语义格式化后传入。
+    ///
+    /// 返回受影响行数（0 = 无匹配章节行，非错误——该章不在目录中时无需回填）。
+    /// 方法顺序与原版一致（bookUrl, url, wordCount）。
+    pub fn up_word_count(
+        &self,
+        book_url: &str,
+        chapter_url: &str,
+        word_count: &str,
+    ) -> LegadoResult<u64> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE chapters SET wordCount = ?3 WHERE bookUrl = ?1 AND url = ?2",
+                params![book_url, chapter_url, word_count],
+            )
+            .map_err(|e| LegadoError::Database(format!("字数回填失败: {e}")))?;
+        Ok(affected as u64)
+    }
+
+    /// 该章 wordCount 是否为空（NULL/空白）——[P2-28b] 存量惰性自愈判据
+    ///
+    /// 缓存命中返回路径调用：章节行存在但 wordCount 为空（旧版本写入的缓存，
+    /// 早于回填链引入）时返回 true，调用方据此按缓存正文长度补算回填一次；
+    /// 章节行不存在返回 false（目录里没有该章，无需也无从回填）。
+    pub fn word_count_missing(&self, book_url: &str, chapter_url: &str) -> LegadoResult<bool> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT wordCount FROM chapters WHERE bookUrl = ?1 AND url = ?2")
+            .map_err(|e| LegadoError::Database(format!("准备字数查询失败: {e}")))?;
+        let mut rows = stmt
+            .query_map(params![book_url, chapter_url], |row| {
+                row.get::<_, Option<String>>(0)
+            })
+            .map_err(|e| LegadoError::Database(format!("字数查询失败: {e}")))?;
+        Ok(match rows.next() {
+            Some(Ok(Some(wc))) => wc.trim().is_empty(),
+            Some(Ok(None)) => true,
+            Some(Err(e)) => return Err(LegadoError::Database(format!("行解析失败: {e}"))),
+            None => false,
+        })
+    }
+
     /// 删除指定书籍的所有章节
     ///
     /// [B-7] 删旧目录 + 写新目录必须包在**同一事务**（先例：换源事务
@@ -320,6 +368,80 @@ mod tests {
         repo.insert(&make_chapter("book2", 0, "ch0")).unwrap();
         assert_eq!(repo.count_by_book_url("book1").unwrap(), 2);
         assert_eq!(repo.count_by_book_url("book2").unwrap(), 1);
+    }
+
+    /// [P2-28b] up_word_count 回填：命中行更新且可回读；未命中返回 0 不报错
+    #[test]
+    fn test_up_word_count() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        insert_parent_book(conn, "book1");
+        let repo = BookChapterRepository::new(conn);
+        repo.insert(&make_chapter("book1", 0, "第1章")).unwrap();
+
+        assert_eq!(
+            repo.up_word_count("book1", "book1/ch0", "12字").unwrap(),
+            1,
+            "命中章节的行数回填应影响 1 行"
+        );
+        let saved = repo
+            .find_by_book_url_and_index("book1", 0)
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.word_count.as_deref(), Some("12字"));
+
+        // 未命中章节 / 未命中书 → 0 行受影响，非错误（对齐原版 upWordCount 静默语义）
+        assert_eq!(repo.up_word_count("book1", "book1/ch9", "1字").unwrap(), 0);
+        assert_eq!(
+            repo.up_word_count("no-such-book", "book1/ch0", "1字")
+                .unwrap(),
+            0
+        );
+    }
+
+    /// [P2-28b] word_count_missing：NULL/空白 → true；有值 → false；
+    /// 行不存在 → false（目录里没有该章，无需也无从回填）
+    #[test]
+    fn test_word_count_missing() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        insert_parent_book(conn, "book1");
+        let repo = BookChapterRepository::new(conn);
+        repo.insert(&make_chapter("book1", 0, "ch0")).unwrap(); // 默认 wordCount 为 NULL
+        let mut full = make_chapter("book1", 1, "ch1");
+        full.word_count = Some("3400字".to_string());
+        repo.insert(&full).unwrap();
+        let mut blank = make_chapter("book1", 2, "ch2");
+        blank.word_count = Some("  ".to_string()); // 空白同样判为空
+        repo.insert(&blank).unwrap();
+
+        assert!(
+            repo.word_count_missing("book1", "book1/ch0").unwrap(),
+            "NULL wordCount 应判为空"
+        );
+        assert!(
+            repo.word_count_missing("book1", "book1/ch2").unwrap(),
+            "空白 wordCount 应判为空"
+        );
+        assert!(
+            !repo.word_count_missing("book1", "book1/ch1").unwrap(),
+            "有值 wordCount 不应判为空"
+        );
+        assert!(!repo.word_count_missing("book1", "book1/ch9").unwrap());
+        assert!(!repo
+            .word_count_missing("no-such-book", "book1/ch0")
+            .unwrap());
+    }
+
+    /// [P2-28b] 失败形态：缺 chapters 表时回填/判空均 Err（调用方须降级告警，
+    /// 不得传播影响正文返回——对应 reader 层「回填失败不影响正文」要求）
+    #[test]
+    fn test_word_count_ops_fail_without_chapters_table() {
+        // 裸内存连接无 schema → "no such table: chapters"
+        let bare = rusqlite::Connection::open_in_memory().unwrap();
+        let repo = BookChapterRepository::new(&bare);
+        assert!(repo.up_word_count("b", "u", "1字").is_err());
+        assert!(repo.word_count_missing("b", "u").is_err());
     }
 
     #[test]
