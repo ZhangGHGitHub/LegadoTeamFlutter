@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.317] - 2026-09-28
+
+### Fixed
+- [UI] **阅读器顶栏下载入口改为弹「离线缓存」章节范围选择对话框（对齐原版 menu_download）**：菜单面板顶栏此前为自创「直接缓存当前章」行为（点按即 cacheDownloadStart 当前章），与原版 BaseReadBookActivity.showBookDownloadDialog / 参考版 DownloadSheet 不符；现两处顶栏（菜单面板/工具栏）统一提取共享实现弹出「离线缓存」范围对话框（标题对齐 offline_cache），默认起始 = 当前章（1-based）、结束 = 总章数（对齐原版 durChapterIndex + 1 / totalChapterNum，修复工具栏顶栏自创「+2 起始 / 缓存后续章节标题」偏差），确认时按 0-based 含端点索引发起批量缓存，成功反馈统一为「已加入缓存队列：N 章（可在书籍菜单「缓存管理」查看进度）」；空输入/无效范围校验保留既有语义。
+
 ## [2.0.316] - 2026-09-28
 
 ### Fixed
