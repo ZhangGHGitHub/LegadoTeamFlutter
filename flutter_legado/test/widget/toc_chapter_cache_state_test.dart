@@ -13,17 +13,25 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../mocks/mocks.dart';
 
-/// 目录页章节行缓存状态指示测试（用户验收 P2-28，对齐原版
-/// ChapterListAdapter.upHasCache 三态语义 — full-stack-engineer + UI）
+/// 目录页章节行缓存状态指示测试（用户验收 P2-28b，对齐参考版
+/// TocScreen.StatusIcon 三态语义 — full-stack-engineer + UI）
 ///
-/// 原版基准（app/src/main/java/io/legado/app/ui/book/toc/ChapterListAdapter.kt）：
-/// - :192-197 cached 判定：本地书/卷标题恒 true；在线章按 cacheFileNames 命中
-/// - :343-352 upHasCache：未缓存显示云朵（ic_outline_cloud_24）、已缓存隐藏；
-///   当前阅读章恒显示对勾（ic_check）
-/// - :219-236 字数标签：tocCountWords 开关且 wordCount 非空时显示（我方
-///   「加载字数」开关默认开，对齐 AppConfig.tocCountWords）
-/// 本地书/卷标题行无云图标；本地书当前阅读章仍显示对勾（对齐原版
-/// upHasCache 的 isCurrent 分支，非卷行一律经 upHasCache 处理）。
+/// 图标取证基准（参考版 legado-with-MD3 TocScreen.kt StatusIcon 1148-1241）：
+/// - 未缓存（NONE）→ Icons.Outlined.DownloadForOffline（outline 50% 着色）
+///   → 我方 Icons.download_for_offline_outlined
+/// - 当前章（SUCCESS_ICON）→ Icons.Default.CheckCircle（secondary 着色）
+///   → 我方 Icons.check_circle（行高适配 16px，参考版 24dp）
+/// 字数胶囊：Rust 回填链（对齐原版 BookHelp.writeText → upWordCount，
+/// StringUtils.wordCountFormat 存「1200字」/「1.1万字」形态），展示端
+/// 原样输出（对齐原版 ChapterListAdapter.kt:231 / 参考版 TocScreen.kt:1205），
+/// 不再追加「 字」后缀。
+/// [P2-28b] 追加：页面打开期间每秒轮询 listCachedChapterUrls（零契约面
+/// 替代原版 ChapterListFragment 订阅 EventBus.SAVE_CONTENT 的行刷新），
+/// 批量离线缓存下载中对应行 ⬇ 图标实时变为字数胶囊/无图标；dispose 取消
+/// 定时器。注意：在线书 TocScreen 持有 1s 周期轮询定时器，本文件各用例
+/// 均用显式 tester.pump 推进（pumpAndSettle 永不停机），并在用例末尾
+/// 卸载（dispose 取消定时器，teardown 的「periodic Timer still active」
+/// 检查同时充当「dispose 后不再轮询」的证明）。
 void main() {
   late MockRustApi mockApi;
   late ProviderContainer container;
@@ -107,30 +115,48 @@ void main() {
         .thenAnswer((_) async => const <Bookmark>[]);
   }
 
-  testWidgets('未缓存网络章显示云朵图标，已缓存章与卷标题行无图标',
+  /// 初始渲染：build 帧 + 冲刷两次异步加载微任务（不推进 1s 轮询定时器）
+  Future<void> settleInitial(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump();
+  }
+
+  testWidgets('未缓存网络章显示离线下载图标⬇，已缓存章与卷标题行无图标',
       (tester) async {
     // 缓存集合命中 u0（第一章）与 u3（当前章），u2 未缓存；卷 v0 不在集合
     stubCommon(makeChapters(), const ['u0', 'u3']);
     await tester.pumpWidget(wrap(TocScreen(book: makeBook())));
-    await tester.pumpAndSettle();
+    await settleInitial(tester);
 
     expect(find.text('第一章'), findsOneWidget);
     expect(find.text('第三章'), findsOneWidget);
-    // 仅未缓存的「第三章」显示云朵
+    // 仅未缓存的「第三章」显示离线下载图标（参考版 StatusIcon NONE 态）
     expect(
       find.descendant(
         of: chapterRow('第三章'),
-        matching: find.byIcon(Icons.cloud_outlined),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
       ),
       findsOneWidget,
     );
-    // 已缓存的「第一章」无图标
+    // 已缓存的「第一章」无图标，且字数胶囊原样展示（P2-28b：不再追加「 字」）
     expect(
       find.descendant(
         of: chapterRow('第一章'),
-        matching: find.byIcon(Icons.cloud_outlined),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
       ),
       findsNothing,
+    );
+    expect(
+      find.descendant(of: chapterRow('第一章'), matching: find.text('1200')),
+      findsOneWidget,
+    );
+    // 当前章「第四章」显示对勾圈（参考版 SUCCESS_ICON 态）
+    expect(
+      find.descendant(
+        of: chapterRow('第四章'),
+        matching: find.byIcon(Icons.check_circle),
+      ),
+      findsOneWidget,
     );
     // 卷标题行（Container，非章节行 ListTile）无状态图标（原版 ivChecked.gone）
     final volumeRow = find.ancestor(
@@ -139,61 +165,66 @@ void main() {
     );
     expect(
       find.descendant(
-          of: volumeRow, matching: find.byIcon(Icons.cloud_outlined)),
+          of: volumeRow,
+          matching: find.byIcon(Icons.download_for_offline_outlined)),
       findsNothing,
     );
     expect(
-      find.descendant(of: volumeRow, matching: find.byIcon(Icons.check)),
+      find.descendant(of: volumeRow, matching: find.byIcon(Icons.check_circle)),
       findsNothing,
     );
+    // 卸载：dispose 取消轮询定时器（在线书）
+    await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('当前阅读章恒显示对勾（未缓存时以对勾替代云朵，对齐原版 isCurrent 分支）',
+  testWidgets('当前阅读章恒显示对勾圈（未缓存时以对勾替代⬇，对齐原版 isCurrent 分支）',
       (tester) async {
     // 缓存集合仅 u0：u2 未缓存、u3（当前章）也未缓存
     stubCommon(makeChapters(), const ['u0']);
     await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
-    await tester.pumpAndSettle();
+    await settleInitial(tester);
 
-    // 当前章「第四章」：对勾
+    // 当前章「第四章」：对勾圈
     expect(
       find.descendant(
         of: chapterRow('第四章'),
-        matching: find.byIcon(Icons.check),
+        matching: find.byIcon(Icons.check_circle),
       ),
       findsOneWidget,
     );
-    // 当前章未缓存也不显示云朵（原版：isCurrent 时 ivChecked 置为 ic_check）
+    // 当前章未缓存也不显示离线下载图标（原版：isCurrent 时 ivChecked 置对勾）
     expect(
       find.descendant(
         of: chapterRow('第四章'),
-        matching: find.byIcon(Icons.cloud_outlined),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
       ),
       findsNothing,
     );
-    // 非当前的未缓存章「第三章」仍显示云朵
+    // 非当前的未缓存章「第三章」仍显示离线下载图标
     expect(
       find.descendant(
         of: chapterRow('第三章'),
-        matching: find.byIcon(Icons.cloud_outlined),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
       ),
       findsOneWidget,
     );
+    await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('字数标签：开关默认开且 wordCount 非空显示胶囊，空则隐藏',
+  testWidgets('字数胶囊：开关默认开且 wordCount 非空原样展示，空则隐藏',
       (tester) async {
     stubCommon(makeChapters(), const ['u0']);
     await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
-    await tester.pumpAndSettle();
+    await settleInitial(tester);
 
-    // 有 wordCount 的两章显示字数胶囊（对齐原版 tv_word_count，位于行内）
+    // 有 wordCount 的两章显示字数胶囊，原样展示（对齐原版 tv_word_count /
+    // 参考版 NormalCard 原样输出；Rust 回填值自带「字/万字」后缀）
     expect(
-      find.descendant(of: chapterRow('第一章'), matching: find.text('1200 字')),
+      find.descendant(of: chapterRow('第一章'), matching: find.text('1200')),
       findsOneWidget,
     );
     expect(
-      find.descendant(of: chapterRow('第四章'), matching: find.text('3400 字')),
+      find.descendant(of: chapterRow('第四章'), matching: find.text('3400')),
       findsOneWidget,
     );
     // 无 wordCount 的「第三章」无字数标签
@@ -204,9 +235,29 @@ void main() {
       ),
       findsNothing,
     );
+    await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('本地书不显示云朵图标且不请求缓存列表（对齐原版 isLocalBook 恒 cached）',
+  testWidgets('「加载字数」开关关闭时隐藏字数胶囊（对齐原版 tocCountWords 门控）',
+      (tester) async {
+    // 开关持久化为 false（默认 true）：wordCount 非空也不显示胶囊
+    SharedPreferences.setMockInitialValues({'toc_load_word_count': false});
+    stubCommon(makeChapters(), const ['u0']);
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
+    await settleInitial(tester);
+
+    expect(
+      find.descendant(of: chapterRow('第一章'), matching: find.text('1200')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: chapterRow('第四章'), matching: find.text('3400')),
+      findsNothing,
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('本地书不显示⬇图标且不请求缓存列表（对齐原版 isLocalBook 恒 cached）',
       (tester) async {
     final localChapters = [
       const BookChapter(
@@ -232,19 +283,96 @@ void main() {
     await tester.pumpWidget(
       wrap(TocScreen(book: makeBook(origin: BookType.localTag, dur: 1))),
     );
-    await tester.pumpAndSettle();
+    await settleInitial(tester);
 
-    // 本地书无云图标（原版：isLocalBook → cached=true → 云朵隐藏）
-    expect(find.byIcon(Icons.cloud_outlined), findsNothing);
-    // 本地书不请求缓存列表（数据无意义，避免无谓 FFI 调用）
+    // 本地书无离线下载图标（原版：isLocalBook → cached=true → 图标隐藏）
+    expect(find.byIcon(Icons.download_for_offline_outlined), findsNothing);
+    // 本地书不请求缓存列表（数据无意义，避免无谓 FFI 调用；亦免轮询定时器）
     verifyNever(() => mockApi.listCachedChapterUrls(any()));
-    // 本地书当前章（第二章）仍显示对勾（原版 upHasCache isCurrent 分支）
+    // 本地书当前章（第二章）仍显示对勾圈（原版 upHasCache isCurrent 分支）
     expect(
       find.descendant(
         of: chapterRow('第二章'),
-        matching: find.byIcon(Icons.check),
+        matching: find.byIcon(Icons.check_circle),
       ),
       findsOneWidget,
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('[P2-28b] 轮询：批量缓存下载中新缓存章行⬇实时变为字数胶囊，dispose 后停止轮询',
+      (tester) async {
+    // 首次查询仅 u0 已缓存（第四章 u3 未缓存 → 行内 ⬇ 图标）；
+    // 轮询起 u3 新缓存（模拟批量离线缓存逐章落库）→ 对应行 ⬇ 消失
+    when(() => mockApi.getBook(any())).thenAnswer((_) async => makeBook());
+    when(() => mockApi.getChapters(bookUrl))
+        .thenAnswer((_) async => makeChapters());
+    var pollCount = 0;
+    when(() => mockApi.listCachedChapterUrls(bookUrl)).thenAnswer((_) async {
+      pollCount++;
+      return pollCount == 1
+          ? const <String>['u0']
+          : const <String>['u0', 'u3'];
+    });
+    when(() => mockApi.highlightListByBook(bookUrl: bookUrl))
+        .thenAnswer((_) async => '[]');
+    when(() => mockApi.getBookmarksByBook('测试书', '作者A'))
+        .thenAnswer((_) async => const <Bookmark>[]);
+
+    // 当前章设为第一章（u0 已缓存）：第四章/第三章均未缓存 → 两行 ⬇
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 0))));
+    await settleInitial(tester);
+
+    // 初始：未缓存的「第四章」显示 ⬇（第三章同样未缓存，亦显示 ⬇）
+    expect(
+      find.descendant(
+        of: chapterRow('第四章'),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
+      ),
+      findsOneWidget,
+    );
+
+    // 1s 轮询触发：u3 新缓存 → setState 刷新「第四章」行（⬇ 消失，
+    // 字数胶囊原样展示「3400」）；「第三章」仍未缓存，⬇ 保留
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: chapterRow('第四章'),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: chapterRow('第四章'), matching: find.text('3400')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
+      ),
+      findsOneWidget,
+    );
+
+    // dispose（卸载）后不再轮询：无新增 listCachedChapterUrls 调用；
+    // 若 dispose 漏取消定时器，teardown 的「periodic Timer still active」
+    // 检查将直接使本用例失败
+    final countBeforeDispose = pollCount;
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(seconds: 3));
+    expect(
+      pollCount,
+      countBeforeDispose,
+      reason: 'dispose 后不应再有轮询查询',
     );
   });
 }
