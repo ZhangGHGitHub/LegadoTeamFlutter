@@ -85,6 +85,59 @@ class _VideoScreenState extends State<VideoScreen> {
 
   VideoPlaySettings _playSettings = VideoPlaySettings();
 
+  // ===== [P4-3 波次1b V3] 选集/倍速（对齐原版 gsyVideo） =====
+
+  /// 当前播放倍速（会话级，对齐原版 VideoPlayer.playSpeed：
+  /// 视图级成员、切集保留、不持久化；1.0 = 正常）
+  double _playbackSpeed = 1.0;
+
+  /// 浮层提示文案（对齐原版 tip_view / showOverlayTip）
+  String? _tipText;
+
+  /// 提示自动隐藏定时器（原版 showOverlayTip(delay) 2 秒后淡出）
+  Timer? _tipTimer;
+
+  /// 原版 showOverlayTip(message, 2000)：居中提示，[durationMs] 后自动消失
+  void _showTip(String text, {int durationMs = 2000}) {
+    setState(() => _tipText = text);
+    _tipTimer?.cancel();
+    _tipTimer = Timer(Duration(milliseconds: durationMs), () {
+      if (mounted) setState(() => _tipText = null);
+    });
+  }
+
+  /// 选集（对齐原版 showEpisodeDialog：选集 → chapterInVolumeIndex=position
+  /// → saveRead(0) → startPlay；此侧经 [_playChapter] 解析播放并写回进度）
+  Future<void> _openEpisodeDialog() async {
+    if (widget.book == null || _chapters.isEmpty) return;
+    final index = await showVideoEpisodeDialog(
+      context,
+      episodes: [
+        for (var i = 0; i < _chapters.length; i++)
+          VideoEpisodeItem(title: _chapters[i].title, chapterIndex: i),
+      ],
+      currentChapterIndex: _chapterIndex,
+    );
+    if (index != null && mounted && index != _chapterIndex) {
+      unawaited(_playChapter(index));
+    }
+  }
+
+  /// 倍速档位选择（对齐原版 showSpeedDialog：playSpeed=value → setSpeed →
+  /// 入口文案「X.XX X」+ 提示「X倍播放中」2 秒；1.0 时入口回「倍速」无提示）
+  Future<void> _openSpeedDialog() async {
+    final value = await showVideoSpeedDialog(
+      context,
+      currentSpeed: _playbackSpeed,
+    );
+    if (value == null || !mounted) return;
+    setState(() => _playbackSpeed = value);
+    _controller.setPlaybackSpeed(value);
+    if (value != 1.0) {
+      _showTip(speedTipLabel(value));
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -371,6 +424,11 @@ class _VideoScreenState extends State<VideoScreen> {
       if (_playSettings.autoPlay) {
         await _controller.play();
       }
+      // [P4-3 波次1b V3] 换集重建控制器后恢复会话级倍速
+      // （对齐原版 playSpeed 为视图级成员，跨集保持）
+      if (_playbackSpeed != 1.0) {
+        _controller.setPlaybackSpeed(_playbackSpeed);
+      }
       if (!mounted) return;
       debugPrint(
         '[VideoPlay] after play '
@@ -386,6 +444,7 @@ class _VideoScreenState extends State<VideoScreen> {
 
   @override
   void dispose() {
+    _tipTimer?.cancel();
     if (_isFullScreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setPreferredOrientations([
@@ -647,6 +706,24 @@ class _VideoScreenState extends State<VideoScreen> {
             children: [
               VideoPlayer(_controller),
               if (_showControls) _buildOverlayControls(),
+              // [P4-3 波次1b V3] 原版 tip_view：画面居中提示（如「1.5倍播放中」）
+              if (_tipText != null)
+                Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 16,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.black54,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _tipText!,
+                      style: const TextStyle(color: Colors.white, fontSize: 14),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),
@@ -746,6 +823,32 @@ class _VideoScreenState extends State<VideoScreen> {
                     ),
                   ),
                   const Spacer(),
+                  // [P4-3 波次1b V3] 选集/倍速入口。原版二者仅存在于全屏控制器
+                  // （video_layout_controller_full.xml 的 episode_list /
+                  // playback_speed；非全屏 video_layout_controller.xml 无此二项，
+                  // findViewById 为 null 安全跳过），故仅全屏渲染。
+                  // 原版自右向左顺序：next → 选集 → 倍速；此侧最右为全屏键，
+                  // 选集/倍速置于其左侧，顺序：倍速、选集。
+                  if (_isFullScreen) ...[
+                    TextButton(
+                      onPressed: _openSpeedDialog,
+                      child: Text(
+                        speedEntryLabel(_playbackSpeed),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    if (widget.book != null && _chapters.isNotEmpty)
+                      TextButton(
+                        onPressed: _openEpisodeDialog,
+                        child: const Text(
+                          '选集',
+                          style: TextStyle(color: Colors.white, fontSize: 14),
+                        ),
+                      ),
+                  ],
                   IconButton(
                     icon: Icon(
                       _isFullScreen
