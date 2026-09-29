@@ -28,8 +28,12 @@
 // 4. 条漫：右上点击 → 下滚一屏（恰好一个视口高、无切章副作用）；
 //    左上点击（-1）无任何副作用；
 // 5. 中心点击（action 0）→ 控制栏显隐切换；
-// 6. 长按图片项 → 底栏菜单（保存图片/分享图片/复制图片）；点「复制图片」
+// 6. 长按图片项 → 底栏菜单（保存图片/分享图片/复制链接）；点「复制链接」
 //    → 剪贴板写入图片链接（参考版 CopyImage 的文本降级，见实现说明）。
+//
+// [P4-3 W2-fix P1-2] 条漫点击「下一页」距章尾不足一视口时：先滚完剩余
+// 距离到章尾（部分消费），真正到章边界（consumed < 1）才切下一章
+//（对齐参考版 performWebtoonTap L705-732）。
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -73,6 +77,8 @@ BookSource _buildComicSource() {
 }
 
 /// [P4-3 E5] 测试 Mock：可注入滚动模式 / 磁盘缓存 / 记录进度与解码调用
+///
+/// [W2-fix] 新增 [chapterCount] 注入（条漫章尾部分消费切章用例需多章）
 class _ClickActionsMockApi extends MockBookApi {
   _ClickActionsMockApi({
     required this.source,
@@ -80,6 +86,7 @@ class _ClickActionsMockApi extends MockBookApi {
     Map<String, String>? configs,
     this.durChapterPos = 0,
     this.imageCount = 3,
+    this.chapterCount = 1,
     this.diskBytes,
   }) : _configs = configs ?? {};
 
@@ -89,6 +96,7 @@ class _ClickActionsMockApi extends MockBookApi {
   final Map<String, String> _configs;
   final int durChapterPos;
   final int imageCount;
+  final int chapterCount;
   /// 磁盘缓存注入（null = 未命中）
   final List<int>? diskBytes;
   final List<String> decodeCalls = [];
@@ -106,18 +114,20 @@ class _ClickActionsMockApi extends MockBookApi {
         origin: source.bookSourceUrl,
         originName: source.bookSourceName,
         canUpdate: true,
-        totalChapterNum: 1,
+        totalChapterNum: chapterCount,
         durChapterPos: durChapterPos,
       );
 
   @override
-  Future<List<BookChapter>> getChapters(String bookUrl) async => [
-        BookChapter(
-          index: 0,
-          url: 'https://manga.example.com/comic/1/ch1.html',
-          title: '第一章',
+  Future<List<BookChapter>> getChapters(String bookUrl) async =>
+      List<BookChapter>.generate(
+        chapterCount,
+        (i) => BookChapter(
+          index: i,
+          url: 'https://manga.example.com/comic/1/ch${i + 1}.html',
+          title: '第${i + 1}章',
         ),
-      ];
+      );
 
   @override
   Future<String> fetchChapterContent(
@@ -172,6 +182,7 @@ _ClickActionsMockApi _buildApi({
   Map<String, String>? configs,
   int durChapterPos = 0,
   int imageCount = 3,
+  int chapterCount = 1,
   List<int>? diskBytes,
   required List<List<int>> progressCalls,
 }) {
@@ -181,6 +192,7 @@ _ClickActionsMockApi _buildApi({
     configs: configs,
     durChapterPos: durChapterPos,
     imageCount: imageCount,
+    chapterCount: chapterCount,
     diskBytes: diskBytes,
   );
 }
@@ -209,6 +221,25 @@ Future<void> _settleImageDecode(WidgetTester tester) async {
     () => Future<void>.delayed(const Duration(milliseconds: 200)),
   );
   await tester.pump();
+}
+
+/// 等待滚动范围稳定并返回稳定值（[W2-fix]）
+///
+/// 图片项「占位（屏高 0.6）→ FFI 解码后真实高度」的切换发生在真实事件
+/// 循环（每 200ms 一轮 [runAsync] + 一帧布局），收敛前 [ScrollPosition]
+/// 的 maxScrollExtent 会漂移，条漫「距章尾定位」用例须先等其稳定。
+Future<double> _settleExtentStable(WidgetTester tester) async {
+  var prev = -1.0;
+  for (var i = 0; i < 10; i++) {
+    await _settleImageDecode(tester);
+    final cur = tester
+        .state<ScrollableState>(find.byType(Scrollable).first)
+        .position
+        .maxScrollExtent;
+    if (cur > 0 && cur == prev) return cur;
+    prev = cur;
+  }
+  return prev;
 }
 
 /// mock 系统剪贴板通道（setData 记录写入文本；getData 返回空）。
@@ -440,6 +471,57 @@ void main() {
       expect(progressCalls, isEmpty);
     });
 
+    // [P4-3 W2-fix P1-2] 对齐参考版 performWebtoonTap（L705-732）：
+    // animateScrollBy 部分消费（目标被章边界钳制），只有真正已在章边界
+    //（consumed < 1）才切章；旧实现距章尾不足一视口时直接跳章、
+    // 跳过剩余内容。
+    testWidgets('条漫：距章尾不足一视口点「下一页」先滚完剩余再切章（P1-2）',
+        (tester) async {
+      final progressCalls = <List<int>>[];
+      final api = _buildApi(progressCalls: progressCalls, chapterCount: 2);
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      // [W2-fix] 先滚到底部强制构建尾部项（末张图 + 底部章节导航），
+      // 再等滚动范围稳定：ListView.builder 对未构建尾部项按「已构建项
+      // 平均高度」估算 maxScrollExtent（底部导航实际 ~148px 会被估算成
+      // 800px，extent 虚高 652px），未滚到底前读到的稳定值不可信；
+      // 滚到底后全部项已构建，extent 收敛到实际值（3×800+148−600=1948）
+      final pos =
+          tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+      pos.jumpTo(100000); // 越界 → jumpTo 收敛到当前 maxScrollExtent
+      await tester.pump();
+      final extent = await _settleExtentStable(tester);
+      expect(extent, greaterThan(600),
+          reason: '三页内容高应超过一个视口（600px）');
+
+      // 移到距章尾不足一视口（600px）处：剩余 300px
+      pos.jumpTo(extent - 300);
+      await tester.pump();
+
+      // 右上区（区2，action 1）= 下一页：先滚完剩余 300px 到章尾
+      //（目标被章边界钳制、部分消费），不切章
+      await tester.tapAt(const Offset(667, 100));
+      await tester.pumpAndSettle();
+      final pos2 =
+          tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+      expect(pos2.pixels, closeTo(pos2.maxScrollExtent, 1),
+          reason: '应滚完剩余距离停在章尾（对齐 animateScrollBy 部分消费；'
+              'extent 用 settle 后重读值，防解码期漂移）');
+      expect(find.textContaining('章节1/2'), findsOneWidget,
+          reason: '未真正到章边界（consumed ≥ 1）不应切章'
+              '（旧实现 target > maxScrollExtent 即跳章、跳过章尾内容）');
+
+      // 再点：已停在章边界（无可滚距离）→ 切下一章
+      await tester.tapAt(const Offset(667, 100));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('章节2/2'), findsOneWidget,
+          reason: '章边界处点「下一页」= 切下一章（consumed < 1 语义）');
+    });
+
     testWidgets('左上点击（区0 = 无动作）：无控制栏、无滚动、无进度',
         (tester) async {
       final progressCalls = <List<int>>[];
@@ -481,7 +563,7 @@ void main() {
           reason: '再次中心点击应收起控制栏');
     });
 
-    testWidgets('长按图片项 → 底栏菜单（保存/分享/复制图片）', (tester) async {
+    testWidgets('长按图片项 → 底栏菜单（保存/分享/复制链接）', (tester) async {
       final progressCalls = <List<int>>[];
       final api = _buildApi(progressCalls: progressCalls);
       final container = ProviderContainer(
@@ -495,17 +577,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('保存图片'), findsOneWidget);
       expect(find.text('分享图片'), findsOneWidget);
-      expect(find.text('复制图片'), findsOneWidget);
+      // [W2-fix P2-4] 复制的是图片链接文本（URI 复制降级），文案对齐行为
+      expect(find.text('复制链接'), findsOneWidget);
 
-      // 点「复制图片」→ 关闭菜单 + 剪贴板写入图片链接
+      // 点「复制链接」→ 关闭菜单 + 剪贴板写入图片链接
       final written = mockClipboard(tester);
-      await tester.tap(find.text('复制图片'));
+      await tester.tap(find.text('复制链接'));
       await tester.pumpAndSettle();
-      expect(find.text('复制图片'), findsNothing, reason: '菜单应已关闭');
+      expect(find.text('复制链接'), findsNothing, reason: '菜单应已关闭');
       expect(
         written,
         contains('https://cdn.example.com/img/0.jpg'),
-        reason: '复制图片 = 图片链接文本（参考版 CopyImage 的文本降级）',
+        reason: '复制链接 = 图片链接文本（参考版 CopyImage 的文本降级）',
       );
       expect(find.text('已复制图片链接'), findsOneWidget);
     });

@@ -16,7 +16,9 @@
 // 1. 单页式（模式 1）：设置面板「自动翻页」开关 → 到点自动下一页；
 //    再关开关 → 停止翻页（再点停止）；
 // 2. 速度滑杆：拖动 → setConfig 持久化 mangaAutoReadSpeed；
-// 3. 条漫（模式 4）：自动滚动到章末 → 自动切下一章（两章 mock 端到端）。
+// 3. 条漫（模式 4）：自动滚动**先滚完剩余距离到章末**（部分消费，
+//    不跳过章尾内容）→ 500ms 延迟 → 自动切下一章（两章 mock 端到端）；
+// 4. [W2-fix P2-1] 长按页操作底栏打开期间自动翻页暂停，关闭后恢复。
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -156,6 +158,37 @@ Future<void> _closeSheetAndControls(WidgetTester tester) async {
   await tester.pumpAndSettle();
 }
 
+/// 等待引擎完成 PNG 解码（真实事件循环，供条漫项真实高度生效）
+///
+/// 同 reader_comic_click_actions_test._settleImageDecode 先例：未解码时
+/// 图片项高度为 0，条漫可滚动范围为 0，「章末」判定与页级进度写入
+///（_onScroll 在 maxScrollExtent = 0 时跳过）均不成立。
+Future<void> _settleImageDecode(WidgetTester tester) async {
+  await tester.runAsync(
+    () => Future<void>.delayed(const Duration(milliseconds: 200)),
+  );
+  await tester.pump();
+}
+
+/// 等待滚动范围稳定并返回稳定值（[W2-fix]）
+///
+/// 图片项「占位（屏高 0.6）→ FFI 解码后真实高度」的切换发生在真实事件
+/// 循环（每 200ms 一轮 [runAsync] + 一帧布局），收敛前 maxScrollExtent
+/// 会漂移，条漫「章尾时序推演」用例须先等其稳定。
+Future<double> _settleExtentStable(WidgetTester tester) async {
+  var prev = -1.0;
+  for (var i = 0; i < 10; i++) {
+    await _settleImageDecode(tester);
+    final cur = tester
+        .state<ScrollableState>(find.byType(Scrollable).first)
+        .position
+        .maxScrollExtent;
+    if (cur > 0 && cur == prev) return cur;
+    prev = cur;
+  }
+  return prev;
+}
+
 void main() {
   testWidgets('[P4-3 E3] 单页式：开关后到点自动下一页；再关开关停止',
       (tester) async {
@@ -249,7 +282,14 @@ void main() {
       );
     });
 
-    testWidgets('条漫：自动滚动到章末 → 自动切下一章', (tester) async {
+    // [P4-3 W2-fix P1-1] 条漫自动滚动对齐参考版 autoScrollWebtoon：
+    // 每周期 animateScrollBy(10000px) 部分消费——距章尾不足 10000px
+    // 时先滚完剩余距离（consumed 被边界钳制），真正到章末（consumed<1）
+    // 才 delay(500L) 切章；旧实现「target ≥ maxScrollExtent 即切章」
+    // 会在距章尾不足 10000px 时跳过章尾内容，本用例以章尾可见页
+    // 进度 [0,2] 的写入锁定「先滚完再切章」行为。
+    testWidgets('条漫：距章尾不足一周期先滚完剩余距离再切章（P1-1）',
+        (tester) async {
       final progressCalls = <List<int>>[];
       // 条漫（模式 4）+ 速度档 15（最快，周期 ceil(16/15×10000)=10667ms）
       // + 两章
@@ -274,15 +314,115 @@ void main() {
 
       await _enableAutoRead(tester);
       await _closeSheetAndControls(tester);
+      // [W2-fix] 真实解码 + 等滚动范围稳定（占位 → 解码高度收敛；
+      // 条漫项 3×800px 内容高，章尾约 1800px < 10000px）
+      final extent = await _settleExtentStable(tester);
+      expect(extent, greaterThan(0), reason: '解码后应可滚动');
+      expect(extent, lessThan(10000),
+          reason: '章尾距顶部不足一个周期滚动量 10000px'
+              '（用例时序按「一周期滚完剩余距离」推演）');
 
-      // 一个周期（10667ms）：条漫滚动 10000px 超过章内容高 → 章末切章
-      await tester.pump(const Duration(milliseconds: 10700));
-      // 参考版 consumed<1 → NextChapter 前有 500ms 延迟（L694）
-      await tester.pump(const Duration(milliseconds: 500));
-      await tester.pumpAndSettle();
+      // [W2-fix] 定时器相位与解码收敛循环的真实时间推进耦合（范围稳定
+      // 期间假时钟同步前移），首个周期可能仍在飞行，固定泵序列不可推演
+      // → 以 1s 步长有界等待章末切章：两个完整周期（2×10667ms）+
+      // 500ms 切章延迟 + 相位余量，40 步足够覆盖。关键断言是**次序**：
+      // 章尾进度 [0,2]（可见页 = 末页）先于新章 [1,0] 写入——即
+      // 「先滚完章尾再切章」；旧实现「target ≥ maxScrollExtent 即切章」
+      // 直接跳章、不产生 [0,2]，本用例在旧实现下为红。
+      int iEnd = -1;
+      int iNext = -1;
+      for (var i = 0; i < 40; i++) {
+        await tester.pump(const Duration(milliseconds: 1000));
+        iEnd = progressCalls
+            .indexWhere((c) => c.length == 2 && c[0] == 0 && c[1] == 2);
+        iNext = progressCalls
+            .indexWhere((c) => c.length == 2 && c[0] == 1 && c[1] == 0);
+        if (iNext >= 0) break;
+      }
+      expect(iEnd, greaterThanOrEqualTo(0),
+          reason: '应先滚完章 1 章尾（可见页 = 末页 2 写入进度 [0,2]），'
+              '旧实现「target ≥ maxScrollExtent 即切章」不产生该写入');
+      expect(iNext, greaterThan(iEnd),
+          reason: '章尾进度 [0,2] 应先于新章章首进度 [1,0]'
+              '（先滚完再切章，不跳过章尾内容）');
       expect(find.textContaining('章节2/2'), findsOneWidget,
           reason: '条漫自动滚动到章末应自动进入下一章');
-      expect(progressCalls, contains(equals([1, 0])),
-          reason: '新章章首应写入进度 [1,0]');
-  });
+
+      // 收尾：关自动翻页（取消周期定时器，避免测试残留活动 Timer）
+      await tester.tapAt(const Offset(400, 300));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('漫画设置'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(SwitchListTile, '自动翻页'));
+      await tester.pumpAndSettle();
+      await _closeSheetAndControls(tester);
+    });
+
+    // [P4-3 W2-fix P2-1] 对齐参考版 LaunchedEffect 依赖 activeSheet：
+    // 长按页操作底栏打开期间自动翻页暂停（旧实现仅 _showControls 守卫），
+    // 关闭后从新周期恢复。
+    // 时序设计：速度档 15（周期 15s ≫ 长按 500ms 持有窗口）——
+    // 首个 tick 落在底栏打开之后，长按与定时器 tick 无重建竞态；
+    // 底栏打开期间两个周期 tick 应全部被 _pageActionsOpen 守卫暂停。
+    testWidgets('自动翻页：页操作底栏打开期间暂停、关闭后恢复（P2-1）',
+        (tester) async {
+      final progressCalls = <List<int>>[];
+      final configWrites = <List<String>>[];
+      // 单页式（模式 1）+ 速度档 15（15s/页，见上时序设计）
+      final api = _AutoReadMockApi(
+        progressCalls: progressCalls,
+        configWrites: configWrites,
+        configs: {'mangaScrollMode': '1', 'mangaAutoReadSpeed': '15'},
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: ReaderComicScreen(bookUrl: 'mock://c4')),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('页数1/3'), findsOneWidget);
+
+      await _enableAutoRead(tester);
+      await _closeSheetAndControls(tester);
+
+      // 长按打开页操作底栏（首个 15s 周期内无 tick，长按不被重建打断）
+      await tester.longPressAt(const Offset(400, 100));
+      await tester.pumpAndSettle();
+      expect(find.text('保存图片'), findsOneWidget,
+          reason: '页操作底栏应已打开');
+
+      // 底栏打开期间两个完整周期（tick @15s / @30s）→ 全部被
+      // _pageActionsOpen 守卫暂停（页码不前进；旧实现仅 _showControls
+      // 守卫，底栏打开仍翻页，本断言在旧实现下必然失败）
+      await tester.pump(const Duration(seconds: 15));
+      await tester.pump(const Duration(seconds: 15));
+      expect(find.textContaining('页数1/3'), findsOneWidget,
+          reason: '底栏打开期间定时器 tick 应被暂停（页码不前进）');
+
+      // 关闭底栏（barrier 点击）→ 恢复
+      await tester.tapAt(const Offset(400, 20));
+      await tester.pumpAndSettle();
+      expect(find.text('保存图片'), findsNothing, reason: '底栏应已关闭');
+
+      // 下一周期（@45s，距关栏 ≤15s）→ 自动翻到第 2 页
+      await tester.pump(const Duration(seconds: 15));
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      expect(find.textContaining('页数2/3'), findsOneWidget,
+          reason: '底栏关闭后自动翻页应从周期恢复');
+
+      // 收尾：关自动翻页（取消周期定时器，避免测试残留活动 Timer）
+      await tester.tapAt(const Offset(400, 300));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('漫画设置'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(SwitchListTile, '自动翻页'));
+      await tester.pumpAndSettle();
+      await _closeSheetAndControls(tester);
+    });
 }

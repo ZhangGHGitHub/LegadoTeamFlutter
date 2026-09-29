@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-/// [P4-3 E5] 长按页操作底栏（保存图片 / 分享图片 / 复制图片）
+/// [P4-3 E5] 长按页操作底栏（保存图片 / 分享图片 / 复制链接）
 ///
 /// 对齐参考版 ui/book/manga/\MangaReaderSheets.kt L179-252
 /// MangaReaderPageActionsSheet（单页项：save_image / share / copy_text /
@@ -34,7 +34,9 @@ class MangaPageActionsSheet extends StatelessWidget {
         children: [
           _tile(context, Icons.save, '保存图片', onSave),
           _tile(context, Icons.share, '分享图片', onShare),
-          _tile(context, Icons.content_copy, '复制图片', onCopy),
+          // [P4-3 W2-fix P2-4] 本实现复制的是图片链接文本（URI 复制降级），
+          // 文案对齐实际行为：「复制链接」
+          _tile(context, Icons.content_copy, '复制链接', onCopy),
         ],
       ),
     );
@@ -78,7 +80,7 @@ class MangaPageActionsSheet extends StatelessWidget {
 ///
 /// [onSave] 保存图片（用户选目录写入，对齐原版）；
 /// [onShare] 分享图片（系统分享面板，对齐参考版 share 临时文件）；
-/// [onCopy] 复制图片（图片链接文本，参考版 URI 复制的降级实现）。
+/// [onCopy] 复制链接（图片链接文本，参考版 URI 复制的降级实现）。
 Future<void> showMangaPageActionsSheet(
   BuildContext context, {
   required Future<void> Function() onSave,

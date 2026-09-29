@@ -54,13 +54,18 @@ BookSource _buildComicSource() {
 }
 
 /// [P4-3 E1] 测试 Mock：可注入滚动模式配置 / 记录进度写入 / 控制图片数量
+///
+/// [W2-fix] 新增 [chapterCount] / [durChapterIndex] 注入（R2L 边界与切章
+/// 落点用例需要多章 + 指定起始章）
 class _ScrollModeMockApi extends MockBookApi {
   _ScrollModeMockApi({
     required this.source,
     required this.progressCalls,
     Map<String, String>? configs,
     this.durChapterPos = 0,
+    this.durChapterIndex = 0,
     this.imageCount = 3,
+    this.chapterCount = 1,
   }) : _configs = configs ?? {};
 
   final BookSource source;
@@ -68,7 +73,9 @@ class _ScrollModeMockApi extends MockBookApi {
   final List<List<int>> progressCalls;
   final Map<String, String> _configs;
   final int durChapterPos;
+  final int durChapterIndex;
   final int imageCount;
+  final int chapterCount;
   final List<String> decodeCalls = [];
 
   @override
@@ -83,18 +90,21 @@ class _ScrollModeMockApi extends MockBookApi {
         origin: source.bookSourceUrl,
         originName: source.bookSourceName,
         canUpdate: true,
-        totalChapterNum: 1,
+        totalChapterNum: chapterCount,
+        durChapterIndex: durChapterIndex,
         durChapterPos: durChapterPos,
       );
 
   @override
-  Future<List<BookChapter>> getChapters(String bookUrl) async => [
-        BookChapter(
-          index: 0,
-          url: 'https://manga.example.com/comic/1/ch1.html',
-          title: '第一章',
+  Future<List<BookChapter>> getChapters(String bookUrl) async =>
+      List<BookChapter>.generate(
+        chapterCount,
+        (i) => BookChapter(
+          index: i,
+          url: 'https://manga.example.com/comic/1/ch${i + 1}.html',
+          title: '第${i + 1}章',
         ),
-      ];
+      );
 
   @override
   Future<String> fetchChapterContent(
@@ -143,7 +153,9 @@ void main() {
   _ScrollModeMockApi buildApi({
     Map<String, String>? configs,
     int durChapterPos = 0,
+    int durChapterIndex = 0,
     int imageCount = 3,
+    int chapterCount = 1,
     required List<List<int>> progressCalls,
   }) {
     return _ScrollModeMockApi(
@@ -151,7 +163,9 @@ void main() {
       progressCalls: progressCalls,
       configs: configs,
       durChapterPos: durChapterPos,
+      durChapterIndex: durChapterIndex,
       imageCount: imageCount,
+      chapterCount: chapterCount,
     );
   }
 
@@ -333,6 +347,159 @@ void main() {
       // 条漫路径：ListView + 恢复后页脚显示估算页（页 2 → 「页数3/3」）
       expect(find.byType(ListView), findsWidgets);
       expect(find.textContaining('页数3/3'), findsOneWidget);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // [P4-3 W2-fix] 独立审查（STAGE-REVIEW-P43W2）P0 修复回归
+  //
+  // 取证（参考版）：
+  // - P0-1：MangaReaderViewModel.kt L1127-1143 requestPageStep 按**逻辑页**
+  //   判边界（nextPageItemIndex null → openRelativeChapter）；R2L 布局
+  //   （导航页占显示索引 0、真实页占 1..n）下旧实现的 display 换算判定
+  //   全错：第 2 页点上一页被误判边界直接切上一章、第 1 页点上一页
+  //   animateToPage(n+1) 越界永不切章、末页点下一页落到导航页。
+  // - P0-2：MangaReaderViewModel openChapter(index, pageIndex = 0) 新章
+  //   恒从 0 页开始；旧实现 _goToChapter 不递增 _loadSeq，切章后
+  //   PageView 重挂落回控制器构造时 initialPage（旧章恢复页）。
+  // ---------------------------------------------------------------------------
+  group('[P4-3 W2-fix] R2L 边界与切章落点（P0）', () {
+    // 测试视口 800x600，默认九区 clickActions：
+    // 右上(667,100) 区2 → action 1 下一页；左中(133,300) 区3 → action 2 上一页。
+
+    testWidgets('R2L 首页（逻辑页 0）点上一页 = 切上一章（P0-1）',
+        (tester) async {
+      final progressCalls = <List<int>>[];
+      // 模式 2（R2L）+ 两章，从第 2 章章首进入（durChapterIndex = 1）
+      final api = buildApi(
+        configs: const {'mangaScrollMode': '2'},
+        durChapterIndex: 1,
+        chapterCount: 2,
+        progressCalls: progressCalls,
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await pumpScreen(tester, api, container);
+
+      expect(find.textContaining('章节2/2'), findsOneWidget);
+      expect(find.textContaining('页数1/3'), findsOneWidget,
+          reason: 'R2L 起始 = 逻辑页 0（阅读首页）');
+
+      // 左中区（区3，action 2）= 上一页；逻辑页 0 已是章首 → 切上一章
+      await tester.tapAt(const Offset(133, 300));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('章节1/2'), findsOneWidget,
+          reason: 'R2L 首页点上一页应切上一章'
+              '（旧实现 display 换算误判为可翻，animateToPage 越界不切章）');
+    });
+
+    testWidgets('R2L 逻辑第 2 页点上一页 = 去第 1 页（P0-1）',
+        (tester) async {
+      final progressCalls = <List<int>>[];
+      final api = buildApi(
+        configs: const {'mangaScrollMode': '2'},
+        durChapterIndex: 1,
+        chapterCount: 2,
+        progressCalls: progressCalls,
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await pumpScreen(tester, api, container);
+
+      // 逻辑页 0 → 点下一页 → 逻辑页 1（R2L 阅读「下一页」= 逻辑页 +1）
+      await tester.tapAt(const Offset(667, 100));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('页数2/3'), findsOneWidget);
+
+      // 逻辑页 1 点上一页 = 回逻辑页 0（非切章）
+      await tester.tapAt(const Offset(133, 300));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('页数1/3'), findsOneWidget,
+          reason: 'R2L 逻辑第 2 页点上一页应回第 1 页');
+      expect(find.textContaining('章节2/2'), findsOneWidget,
+          reason: '不应误切上一章'
+              '（旧实现把 display n-1 当 R2L 上一页边界 → 直接切章）');
+    });
+
+    testWidgets('R2L 末页（逻辑页 n-1）点下一页 = 切下一章（P0-1）',
+        (tester) async {
+      final progressCalls = <List<int>>[];
+      final api = buildApi(
+        configs: const {'mangaScrollMode': '2'},
+        chapterCount: 2,
+        progressCalls: progressCalls,
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await pumpScreen(tester, api, container);
+
+      // 逻辑页 0 → 1 → 2（末页）
+      await tester.tapAt(const Offset(667, 100));
+      await tester.pumpAndSettle();
+      await tester.tapAt(const Offset(667, 100));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('页数3/3'), findsOneWidget);
+
+      // 末页点下一页 → 切下一章（新章章首）
+      await tester.tapAt(const Offset(667, 100));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('章节2/2'), findsOneWidget,
+          reason: 'R2L 末页点下一页应切下一章'
+              '（旧实现控制器方向取反后落到导航页，永不切章）');
+      expect(find.textContaining('页数1/3'), findsOneWidget,
+          reason: '新章恒从章首开始');
+    });
+
+    testWidgets('带页级进度恢复进入：切章落点 = 0 页（P0-2）',
+        (tester) async {
+      final progressCalls = <List<int>>[];
+      // L2R 单页 + 记录页 2（durChapterPos > 0 的常态恢复进入）
+      final api = buildApi(
+        configs: const {'mangaScrollMode': '1'},
+        durChapterPos: 2,
+        chapterCount: 2,
+        progressCalls: progressCalls,
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await pumpScreen(tester, api, container);
+
+      expect(find.textContaining('页数3/3'), findsOneWidget,
+          reason: '恢复进入应定位到记录页（页索引 2）');
+
+      // 末页点下一页 → 切下一章
+      await tester.tapAt(const Offset(667, 100));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('章节2/2'), findsOneWidget);
+      expect(find.textContaining('页数1/3'), findsOneWidget,
+          reason: '切章应落新章第 0 页（对齐参考版 openChapter(index, 0)）'
+              '（旧实现控制器代数未失效，切章后落回旧章恢复页）');
+      // 页脚文本由 _visiblePageIndex 驱动、切章后可能被掩盖，须再验
+      // PageView 控制器**实际停靠页**（旧实现旧控制器代数未失效，
+      // 新章重挂后按旧偏移 1600px 停靠 → 实际仍停在第 3 页）
+      final pagedPos = tester
+          .state<ScrollableState>(
+            find.descendant(
+              of: find.byType(PageView),
+              matching: find.byType(Scrollable),
+            ).first,
+          )
+          .position;
+      expect(
+        pagedPos.pixels / pagedPos.viewportDimension,
+        closeTo(0, 0.5),
+        reason: '新章须恒从第 0 页停靠（参考版 openChapter(index, 0)）',
+      );
+      expect(progressCalls, contains(equals([1, 0])),
+          reason: '新章章首进度应落库');
     });
   });
 }

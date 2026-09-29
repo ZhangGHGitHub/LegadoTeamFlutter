@@ -145,6 +145,15 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// ceil(16/速度×10000)ms 滚动 10000px，见 [MangaAutoRead] 取证注释）
   Timer? _autoReadTimer;
 
+  /// [P4-3 W2-fix P1-1②] 自动翻页切章挂起标志：条漫到章末排定 500ms
+  /// 延迟切章期间定时器仍在 tick，用本标志防止重复排定导致连跳多章；
+  /// 延迟回调内复位（对齐参考版 while 循环逐周期串行、不重入语义）
+  bool _autoReadChapterPending = false;
+
+  /// [P4-3 W2-fix P2-1] 长按页操作底栏是否打开（对齐参考版 LaunchedEffect
+  /// 依赖 activeSheet：底栏打开期间自动翻页暂停）
+  bool _pageActionsOpen = false;
+
   /// [P4-3 E2] 分页适配类型 0..5（持久化；缺省/非法 → 默认 0 = 全屏适配，
   /// 对齐参考版 Contract L121）
   int _pageScaleType = MangaPageScaleType.defaultValue;
@@ -279,32 +288,63 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     _autoReadTimer = Timer.periodic(period, (_) => _autoReadTick());
   }
 
-  /// [P4-3 E3] 定时器 tick：控制栏/面板打开期间暂停（守卫见上）
+  /// [P4-3 E3] 定时器 tick：控制栏/面板/页操作底栏打开期间暂停（守卫见上）
   void _autoReadTick() {
-    if (_showControls) return;
+    // [P4-3 W2-fix P2-1] 页操作底栏打开同样暂停（对齐参考版 LaunchedEffect
+    // 依赖 activeSheet 的语义，原实现仅 _showControls 守卫）
+    if (_showControls || _pageActionsOpen) return;
     if (MangaScrollModes.isPaged(_scrollMode)) {
       // 单页式：翻一页（边界自动切章，见 [_stepPage]；其内部已 unawaited）
+      // [P4-3 W2-fix P2-6] 控制器尚未挂接（切章重建瞬间）本周期空转
+      if (_pagedController?.hasClients != true) return;
       _stepPage(1);
       return;
     }
-    // 条漫：滚动 10000px（参考版 L688 value = 10_000f）；不足一周期
-    //（已到章末）→ 500ms 后切下一章（参考版 L694 delay(500L)）
-    if (!_scrollController.hasClients) {
-      unawaited(_nextChapter());
-      return;
-    }
+    // 条漫自动滚动（对齐参考版 MangaReaderScreen autoScrollWebtoon）：
+    // 每周期滚 10000px，但距章末不足 10000px 时先滚完剩余距离
+    //（参考版 animateScrollBy 的 consumed 被边界钳制，consumed<1 才切章，
+    // 不会跳过章尾内容）
+    // [P4-3 W2-fix P1-1③] 控制器无客户端时对齐 _preloadVisibleImages
+    // 直接空转（原实现误当章末触发切章）
+    if (!_scrollController.hasClients) return;
     final position = _scrollController.position;
-    final target = position.pixels + MangaAutoRead.webtoonScrollPx;
-    if (target >= position.maxScrollExtent) {
-      Future.delayed(const Duration(milliseconds: 500),
-          () => unawaited(_nextChapter()));
+    final remaining = position.maxScrollExtent - position.pixels;
+    if (remaining <= 0) {
+      _scheduleAutoReadNextChapter();
       return;
     }
+    // [P4-3 W2-fix P1-1①] 逐周期滚动部分距离（remaining 不足一周期时
+    // 滚到章末），章末后延迟 500ms 切下一章（参考版 delay(500L)）
+    final target = position.pixels +
+        (remaining >= MangaAutoRead.webtoonScrollPx
+            ? MangaAutoRead.webtoonScrollPx
+            : remaining);
     position.animateTo(
       target,
       duration: MangaAutoRead.webtoonCycle(_autoReadSpeed),
       curve: Curves.linear,
     );
+  }
+
+  /// 条漫自动翻页到章末后延迟 500ms 切下一章
+  ///
+  /// [P4-3 W2-fix P1-1②] 延迟回调补 mounted / 自动翻页开关 / 控制栏与
+  /// 页操作底栏 / 控制器挂载 / 位置复检守卫（原实现无守卫且定时器仍在
+  /// tick，加载慢时回调直接切章会连跳多章）
+  void _scheduleAutoReadNextChapter() {
+    if (_autoReadChapterPending) return;
+    _autoReadChapterPending = true;
+    Future.delayed(const Duration(milliseconds: 500), () {
+      _autoReadChapterPending = false;
+      if (!mounted || !_autoRead || _showControls || _pageActionsOpen) {
+        return;
+      }
+      if (!_scrollController.hasClients) return;
+      final pos = _scrollController.position;
+      // 复检：延迟期间用户手动滚动 / 控制器重建可能已离开章末
+      if (pos.pixels < pos.maxScrollExtent - 1) return;
+      unawaited(_nextChapter());
+    });
   }
 
   /// [P4-3 E1] 应用翻页模式：
@@ -936,6 +976,14 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     _currentChapterIndex = index;
     _restorePageIndex = null; // 手动切章不应用初始页级恢复
     _visiblePageIndex = 0; // 新章从章首开始
+    // [P4-3 W2-fix P0-2] 递增预载代数：使旧章在途预载失效（同 _loadBook
+    // L565 先例），并令 [_syncPagedController] 的 _pagedGen == _loadSeq
+    // 守卫失配 → 重建控制器 initialPage = 章首（对齐参考版
+    // openChapter(index, pageIndex = 0) 新章恒从 0 页开始）。
+    // 原实现不递增：切章后 PageView 以新图片列表卸载重挂时落回控制器
+    // 构造时的 initialPage（即旧章恢复页），带页级进度恢复进入后
+    // 每次切章都落旧页。
+    _loadSeq++;
     // 滚动到顶部
     if (_scrollController.hasClients) {
       _scrollController.jumpTo(0);
@@ -1041,30 +1089,37 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// [P4-3 E5] 单步翻页 / 条漫滚一视口
   ///
   /// [direction] 1 = 阅读方向下一页，-1 = 上一页。
-  /// - 单页式：PageController 动画翻页；R2L 时阅读「下一页」= 显示索引
-  ///   减小（控制器方向取反）；已到边界 → 切上/下一章（对齐参考版
-  ///   PageStep 到边界转章节切换）；
-  /// - 条漫：纵向滚动一视口；不足一视口（已到章边界）→ 切章
-  ///   （对齐参考版 consumed < oneViewport → 章节切换语义）。
+  /// - 单页式：PageController 动画翻页；边界按**逻辑页**判定
+  ///   （对齐参考版 requestPageStep 的 nextPageItemIndex null →
+  ///   openRelativeChapter）；R2L 时阅读「下一页」= 显示索引减小
+  ///   （控制器方向取反，仅用于动画目标换算）；
+  /// - 条漫：纵向滚动一视口，目标被章边界钳制（对齐参考版
+  ///   performWebtoonTap 的 animateScrollBy 部分消费）；只有真正
+  ///   已在章边界（无可滚距离）才切章（consumed < 1 语义）。
   void _stepPage(int direction) {
     if (MangaScrollModes.isPaged(_scrollMode)) {
       final controller = _pagedController;
       final n = _imageUrls.length;
-      if (controller == null || n == 0) return;
+      // [P4-3 W2-fix P2-6] 控制器尚未挂接（切章重建瞬间）空转
+      if (controller == null || !controller.hasClients || n == 0) return;
       final reversed = MangaScrollModes.isReversed(_scrollMode);
-      final display = MangaPagedView.displayIndexOf(
-        logicalPage: _visiblePageIndex,
-        pageCount: n,
-        reversed: reversed,
-      );
-      // 边界判定：L2R 末尾页显示索引 n-1；R2L 末页在显示索引 0
-      final atBoundary = direction > 0
-          ? display == (reversed ? 0 : n - 1)
-          : display == (reversed ? n - 1 : 0);
+      // [P4-3 W2-fix P0-1] 边界按逻辑页判定（_visiblePageIndex 是逻辑页：
+      // 0 = 阅读首页 .. n-1 = 末页），对齐参考版 requestPageStep
+      // 「nextPageItemIndex 返回 null → openRelativeChapter」：
+      // R2L（reversed 布局：导航页占显示索引 0、真实页占 1..n）下原
+      // display 换算判定全错——第 2 页点上一页被误判边界直接切上一章、
+      // 第 1 页点上一页越界永不切章、末页点下一页落到导航页。
+      final logical = _visiblePageIndex;
+      final atBoundary = direction > 0 ? logical == n - 1 : logical == 0;
       if (atBoundary) {
         unawaited(direction > 0 ? _nextChapter() : _prevChapter());
         return;
       }
+      final display = MangaPagedView.displayIndexOf(
+        logicalPage: logical,
+        pageCount: n,
+        reversed: reversed,
+      );
       // R2L：控制器翻页方向与阅读方向相反
       final controllerDirection = reversed ? -direction : direction;
       controller.animateToPage(
@@ -1075,16 +1130,35 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       return;
     }
     // 条漫：纵向滚动一视口（条漫恒为纵向 ListView）
+    // [P4-3 W2-fix P1-2] 对齐参考版 performWebtoonTap（L705-732）：
+    // 先滚一视口（被章边界钳制、部分消费），只有真正已在章边界
+    // （consumed < 1，即无可滚距离）才切章；原实现距章尾不足一视口时
+    // 直接跳章、跳过剩余内容。
     if (!_scrollController.hasClients) return;
     final position = _scrollController.position;
-    final target = position.pixels + position.viewportDimension * direction;
-    if (direction > 0 && target > position.maxScrollExtent) {
-      unawaited(_nextChapter());
+    if (direction > 0) {
+      if (position.pixels >= position.maxScrollExtent) {
+        unawaited(_nextChapter());
+        return;
+      }
+      var target = position.pixels + position.viewportDimension;
+      if (target > position.maxScrollExtent) {
+        target = position.maxScrollExtent; // 滚完剩余距离（部分消费）
+      }
+      position.animateTo(
+        target,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
       return;
     }
-    if (direction < 0 && target < 0) {
+    if (position.pixels <= 0) {
       unawaited(_prevChapter());
       return;
+    }
+    var target = position.pixels - position.viewportDimension;
+    if (target < 0) {
+      target = 0; // 滚完剩余距离（部分消费）
     }
     position.animateTo(
       target,
@@ -1106,12 +1180,17 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// 显示长按页操作菜单（对齐参考版单页 onLongClick L1082 / 条漫长按 L761-771）
   void _showPageActions(int index) {
     if (index < 0 || index >= _imageUrls.length) return;
+    // [P4-3 W2-fix P2-1] 底栏打开期间自动翻页暂停（对齐参考版
+    // LaunchedEffect 依赖 activeSheet；关闭时复位）
+    _pageActionsOpen = true;
     showMangaPageActionsSheet(
       context,
       onSave: () => _savePageImage(index),
       onShare: () => _sharePageImage(index),
       onCopy: () => _copyPageImage(index),
-    );
+    ).whenComplete(() {
+      if (mounted) _pageActionsOpen = false;
+    });
   }
 
   /// 解析当前页图片字节（内存缓存 → 磁盘缓存 → FFI 解码回退）
@@ -1303,6 +1382,18 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       return _buildImageList();
     }
     return MangaPagedView(
+      // [P4-3 W2-fix P0-2] 代数 key：切章 _loadSeq 递增（见 _goToChapter）
+      // 时强制重建 PageView 子树（新 State / 新滚动位置），使新控制器的
+      // initialPage（章首 0 页）真正生效。无 key 时，加载间隙若未跨帧
+      // （图片已缓存 / 测试桩立即返回），PageView 不卸树，旧滚动位置
+      // 被保留、新控制器 initialPage 失效 → 新章按旧像素偏移停靠
+      // （durChapterPos=2 恢复进入后切章仍停在第 3 页，页脚却显示 1/3）。
+      // 参考版：切章原子置 currentItemIndex = 0 且 navigationId 换代
+      // （MangaReaderViewModel.kt L1112/L1118），上下章恒 pageIndex = 0
+      // （L1124）；分页器按代归位（MangaReaderScreen.kt L859-862
+      // rememberPagerState(initialPage)，L875-886 按 currentItemIndex /
+      // navigationId 的 LaunchedEffect → scrollToPage(target)）。
+      key: ValueKey('mangaPaged-$_loadSeq'),
       controller: _pagedController!,
       pageCount: _imageUrls.length,
       axis: MangaScrollModes.axisOf(_scrollMode),
