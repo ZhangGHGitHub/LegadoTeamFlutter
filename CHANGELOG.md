@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.324] - 2026-09-29
+
+### Added
+- [Rust] **漫画图片磁盘缓存**（对齐原版 BookHelp.saveImage/getImage）：图片按书隔离落盘（MD5 命名）、二次打开直接本地读取不再重复下载；缓存读写失败静默降级不影响在线加载。
+- [UI] **书架「视频」分组**（对齐原版 IdVideo 聚合语义）：有视频类书籍时书架自动出现视频分组，无则不显示。
+
 ## [2.0.323] - 2026-09-29
 
 ### Added
