@@ -87,6 +87,22 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// 页脚用「当前可见页」近似索引（滚动估算）
   int _visiblePageIndex = 0;
 
+  /// [P4-1 C1] 页级进度恢复目标页（取自 book.durChapterPos；null = 章首开始）
+  ///
+  /// 非 null 时表示「待应用 / 锚定中」：图片解码期间内容高度不稳定
+  /// （占位 0.6 屏 → 未解码 0 → 实际高度），每次内容度量变化（
+  /// [ScrollMetricsNotification]）都会把视图重新锚定到记录页，直到
+  /// 用户手动滚动（[_onScroll] 消费）或切章（[_goToChapter] 清零）。
+  /// 对齐原版 ReadManga.upData → scrollToPositionWithOffset 定位语义。
+  int? _restorePageIndex;
+
+  /// [P4-1 C1] 标记「本次滚动来自恢复跳转」（jumpTo 触发的 [_onScroll]
+  /// 不视为用户操作，不终止页级恢复锚定）
+  bool _isRestoreJump = false;
+
+  /// [P4-1 C3] 相邻章预载代数（换书/取消守卫，对齐 C1b 代数守卫先例）
+  int _loadSeq = 0;
+
   @override
   void initState() {
     super.initState();
@@ -279,6 +295,12 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
         _currentChapterIndex = 0;
       }
 
+      // [P4-1 C1] 记住记录的页级进度（重开定位页；0/缺省 = 章首）
+      _restorePageIndex =
+          _book!.durChapterPos > 0 ? _book!.durChapterPos : null;
+      // [P4-1 C3] 代数守卫：换书/重载后失效在途的相邻章预载
+      _loadSeq++;
+
       // 加载当前章节的图片
       await _loadChapterImages();
     } catch (e) {
@@ -365,6 +387,11 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
 
       // 触发初始预加载
       _preloadVisibleImages();
+
+      // [P4-1 C1] 恢复记录的页级进度（定位到记录页）
+      _applyPageRestore();
+      // [P4-1 C3] 当前章加载完成后后台预载相邻章（下一章优先、静默失败）
+      unawaited(_preloadAdjacentChapters());
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -397,6 +424,13 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
 
   /// 滚动监听，触发预加载
   void _onScroll() {
+    // [P4-1 C1] 区分「恢复跳转」与「用户滚动」：jumpTo 触发的本次滚动
+    // 不终止页级恢复锚定；用户手动滚动则消费待恢复目标（已离开记录页）
+    final fromRestoreJump = _isRestoreJump;
+    _isRestoreJump = false;
+    if (!fromRestoreJump && _restorePageIndex != null) {
+      _restorePageIndex = null;
+    }
     if (_imageUrls.isNotEmpty && _scrollController.hasClients) {
       final max = _scrollController.position.maxScrollExtent;
       if (max > 0) {
@@ -404,10 +438,87 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
         final page = (ratio * (_imageUrls.length - 1)).round();
         if (page != _visiblePageIndex) {
           setState(() => _visiblePageIndex = page);
+          // [P4-1 C1] 页级进度：可见页变化即持久化（对齐文本阅读器
+          // 「每次页级位置变化保存一次」的事件驱动频率，非逐帧写入）
+          unawaited(_saveProgress());
         }
       }
     }
     _preloadVisibleImages();
+  }
+
+  /// 滚动度量（内容高度）变化监听 — [P4-1 C1]
+  ///
+  /// 图片解码期间内容高度不稳定（占位 → 0 → 实际），[ScrollMetricsNotification]
+  /// 在度量变化时派发（注意：控制器 listener 收不到纯度量变化，须用
+  /// Notification）。仍有待应用/锚定的页级恢复目标时，postFrame 里把视图
+  /// 重新锚定到记录页（布局阶段 jumpTo 无效，须推迟到帧结束）。
+  bool _onScrollMetricsChanged(ScrollMetricsNotification notification) {
+    if (_restorePageIndex != null && !_isRestoreJump) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _jumpToRestoredPage();
+      });
+    }
+    return false;
+  }
+
+  /// [P4-1 C1] 应用页级进度恢复：定位到 durChapterPos 记录页
+  ///
+  /// 对齐原版 ReadManga.upData/buildMangaContent：重开恢复记录页
+  /// （clamped 到 [0, imageCount-1]）。首跳在 postFrame 里执行（确保
+  /// ListView 已构建）；图片解码改变滚动范围时由 [_onScrollMetrics]
+  /// 补跳一次后消费。
+  void _applyPageRestore() {
+    final target = _restorePageIndex;
+    _restorePageIndex = null;
+    if (target == null || _imageUrls.length < 2) return;
+    final page = target.clamp(0, _imageUrls.length - 1);
+    if (page == 0) return; // 章首 = 默认位置，无需跳转
+    _restorePageIndex = page; // 保持待应用：滚动范围稳定后补跳
+    _jumpToRestoredPage();
+  }
+
+  /// [P4-1 C1] 跳到记录页（按页比例估算，与 [_onScroll] 的可见页近似
+  /// 公式自洽，页脚/进度回读一致）
+  ///
+  /// 不在此消费 [_restorePageIndex]：图片解码后内容高度仍会变化，由
+  /// [_onScrollMetricsChanged] 的度量变化继续把视图锚定到记录页；用户
+  /// 手动滚动时由 [_onScroll] 消费（终止锚定）。
+  void _jumpToRestoredPage() {
+    final page = _restorePageIndex;
+    if (page == null || _imageUrls.length < 2) return;
+    if (!_scrollController.hasClients) return;
+    final max = _scrollController.position.maxScrollExtent;
+    if (max <= 0) return;
+    // 标记为恢复跳转：jumpTo 同步触发的 [_onScroll] 不误判为用户滚动
+    _isRestoreJump = true;
+    _scrollController.jumpTo(max * page / (_imageUrls.length - 1));
+  }
+
+  /// [P4-1 C3] 当前章加载完成后后台预载相邻章（下一章优先、上一章次之）
+  ///
+  /// 复用 [BookApi.getChapterContentFull]（缓存+网络合并，零契约变更）：
+  /// 缓存命中直接返回、未命中联网抓取并回写 Rust 侧章节缓存，
+  /// 使相邻章翻页无等待。静默失败语义对齐文本阅读器
+  /// reader_screen._preloadAdjacentChapters（catch 不显示错误、不阻断
+  /// 当前阅读）；换书/重载后经 [_loadSeq] 代数守卫中止剩余预载。
+  Future<void> _preloadAdjacentChapters() async {
+    final seq = _loadSeq;
+    final api = ref.read(bookApiProvider);
+    final candidates = <int>[
+      if (_currentChapterIndex + 1 < _chapters.length)
+        _currentChapterIndex + 1, // 下一章优先（翻页方向）
+      if (_currentChapterIndex - 1 >= 0) _currentChapterIndex - 1,
+    ];
+    for (final index in candidates) {
+      try {
+        await api.getChapterContentFull(widget.bookUrl, index);
+      } catch (_) {
+        // 预载失败静默：不显示错误、不阻断阅读（下次进入该章再试）
+      }
+      // 换书/重载/退出：中止剩余预载（代数守卫 + mounted 检查）
+      if (seq != _loadSeq || !mounted) return;
+    }
   }
 
   /// 预加载当前可见区域前后的图片。
@@ -499,13 +610,17 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// 切换到指定章节
   Future<void> _goToChapter(int index) async {
     if (index < 0 || index >= _chapters.length) return;
+    // 切章前保存旧章的页级进度（_visiblePageIndex 仍指向旧章可见页）
     await _saveProgress();
     _currentChapterIndex = index;
+    _restorePageIndex = null; // 手动切章不应用初始页级恢复
+    _visiblePageIndex = 0; // 新章从章首开始
     // 滚动到顶部
     if (_scrollController.hasClients) {
       _scrollController.jumpTo(0);
     }
     await _loadChapterImages();
+    // 新章章首进度（chapterPos=0，与 chapterIndex 一并落库）
     await _saveProgress();
   }
 
@@ -524,13 +639,20 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   }
 
   /// 保存阅读进度
+  ///
+  /// [P4-1 C1] chapterPos 携带页级进度（当前可见页索引，clamp 到
+  /// [0, imageCount-1]），替代修复前恒 0；对齐原版
+  /// ReadManga.saveRead/buildMangaContent 的 durChapterPos 语义
+  /// （与章级 durChapterIndex 一并落库，互不覆写）。
   Future<void> _saveProgress() async {
     try {
       final api = ref.read(bookApiProvider);
+      final maxPage = _imageUrls.isEmpty ? 0 : _imageUrls.length - 1;
+      final pos = _visiblePageIndex.clamp(0, maxPage);
       await api.updateReadingProgress(
         bookUrl: widget.bookUrl,
         chapterIndex: _currentChapterIndex,
-        chapterPos: 0,
+        chapterPos: pos,
       );
     } catch (_) {
       // 保存失败不阻断阅读流程
@@ -623,23 +745,30 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   }
 
   /// 构建图片列表（纵向连续滚动 + 双指缩放）
+  ///
+  /// [P4-1 C1] 外层包 [NotificationListener] 监听 [ScrollMetricsNotification]：
+  /// 内容高度随图片解码变化时派发该通知，驱动页级进度恢复的「持续锚定到
+  /// 记录页」（ScrollController listener 收不到纯度量变化，须用 Notification）。
   Widget _buildImageList() {
-    return InteractiveViewer(
-      minScale: 1.0,
-      maxScale: 3.0,
-      boundaryMargin: const EdgeInsets.all(0),
-      child: ListView.builder(
-        controller: _scrollController,
-        itemCount: _imageUrls.length + 1, // +1 用于底部章节导航
-        padding: EdgeInsets.zero,
-        physics: const ClampingScrollPhysics(),
-        itemBuilder: (context, index) {
-          // 最后一项：章节导航
-          if (index == _imageUrls.length) {
-            return _buildChapterNavigation();
-          }
-          return _buildImageItem(index);
-        },
+    return NotificationListener<ScrollMetricsNotification>(
+      onNotification: _onScrollMetricsChanged,
+      child: InteractiveViewer(
+        minScale: 1.0,
+        maxScale: 3.0,
+        boundaryMargin: const EdgeInsets.all(0),
+        child: ListView.builder(
+          controller: _scrollController,
+          itemCount: _imageUrls.length + 1, // +1 用于底部章节导航
+          padding: EdgeInsets.zero,
+          physics: const ClampingScrollPhysics(),
+          itemBuilder: (context, index) {
+            // 最后一项：章节导航
+            if (index == _imageUrls.length) {
+              return _buildChapterNavigation();
+            }
+            return _buildImageItem(index);
+          },
+        ),
       ),
     );
   }
