@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.325] - 2026-09-29
+
+### Added
+- [UI] **视频全屏选集/倍速浮层**（对齐原版 ChoiceEpisodeDialog/ChoiceSpeedDialog）：全屏播放时底栏新增「选集」「倍速」入口，选集靠右 40% 宽面板可跳任意一集并高亮当前集，倍速 8 档（0.5x–3.0x 降序）切换；倍速为会话级（切集保持，与原版一致不持久化）。
+
+### Changed
+- [文档] P4-3 立项（漫画/视频体验对齐批）与真实素材设备验证收口（docs/REFACTORING_ACTIVE_PLAN.md）。
+
 ## [2.0.324] - 2026-09-29
 
 ### Added
