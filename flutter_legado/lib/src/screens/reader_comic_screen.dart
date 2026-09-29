@@ -19,6 +19,8 @@ import '../utils/manga_epaper.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/error_view.dart';
 import '../widgets/manga/manga_config_sheet.dart';
+import 'reader_comic/manga_paged_view.dart';
+import 'reader_comic/manga_scroll_mode.dart';
 
 /// 漫画阅读页面
 ///
@@ -103,6 +105,17 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// [P4-1 C3] 相邻章预载代数（换书/取消守卫，对齐 C1b 代数守卫先例）
   int _loadSeq = 0;
 
+  /// [P4-3 E1] 翻页模式（对齐参考版 MangaScrollMode；默认条漫 4）
+  int _scrollMode = MangaScrollModes.defaultValue;
+
+  /// [P4-3 E1] 单页式 PageController（模式/章节/初始页变化时重建）
+  PageController? _pagedController;
+
+  /// [P4-3 E1] 控制器当前规格（轴/是否右起/所属代数），用于判定是否需重建
+  Axis _pagedAxis = Axis.horizontal;
+  bool _pagedReversed = false;
+  int _pagedGen = 0;
+
   @override
   void initState() {
     super.initState();
@@ -115,6 +128,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    // [P4-3 E1] 单页式控制器（此时元素树已卸载，控制器已解绑，可安全释放）
+    _pagedController?.dispose();
     // 退出前保存阅读进度
     unawaited(_saveProgress());
     super.dispose();
@@ -129,6 +144,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       final eInk = await api.getConfig(MangaConfigKeys.enableEInk);
       final gray = await api.getConfig(MangaConfigKeys.enableGray);
       final thr = await api.getConfig(MangaConfigKeys.eInkThreshold);
+      // [P4-3 E1] 翻页模式（缺省/非法 → 条漫 4）
+      final modeRaw = await api.getConfig(MangaConfigKeys.scrollMode);
       if (!mounted) return;
       setState(() {
         _colorFilter = MangaColorFilterConfig.fromStorage(filterRaw);
@@ -136,10 +153,110 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
         _enableEInk = eInk == 'true';
         _enableGray = gray == 'true';
         _eInkThreshold = int.tryParse(thr ?? '') ?? 150;
+        _scrollMode = MangaScrollModes.parse(modeRaw);
       });
+      // [P4-3 E1] 配置可能在图片加载后才生效：同步单页式控制器
+      _applyScrollMode();
       await _applyBrightness(_colorFilter.l);
     } catch (_) {}
   }
+
+  /// [P4-3 E1] 持久化翻页模式并即时应用
+  Future<void> _persistScrollMode(int mode) async {
+    _scrollMode =
+        MangaScrollModes.valid.contains(mode) ? mode : MangaScrollModes.defaultValue;
+    if (mounted) setState(() {});
+    _applyScrollMode();
+    try {
+      await ref.read(bookApiProvider)
+          .setConfig(MangaConfigKeys.scrollMode, '$_scrollMode');
+    } catch (_) {}
+  }
+
+  /// [P4-3 E1] 应用翻页模式：
+  /// - 单页式（1/2/3）→ 创建/同步 [PageController]（初始页 = 待恢复页或当前页）；
+  /// - 条漫式（4/5）→ 释放单页式控制器（条漫控制器保留偏移，重新附着时
+  ///   自然恢复位置，缩放/磁盘缓存/预载路径不变）。
+  void _applyScrollMode() {
+    if (MangaScrollModes.isPaged(_scrollMode)) {
+      final n = _imageUrls.length;
+      if (n == 0) return; // 图片未就绪：_loadChapterImages 完成后会再同步
+      // 待恢复的页级进度优先（单页式定位由控制器 initialPage 完成，此处消费）
+      final initial = (_restorePageIndex ?? _visiblePageIndex).clamp(0, n - 1);
+      _restorePageIndex = null;
+      _visiblePageIndex = initial;
+      _syncPagedController(initialLogical: initial);
+    } else {
+      _disposePagedController();
+    }
+  }
+
+  /// [P4-3 E1] 模式/章节/初始页变化时重建 PageController；规格一致时保留当前页
+  void _syncPagedController({required int initialLogical}) {
+    if (_imageUrls.isEmpty) return;
+    final n = _imageUrls.length;
+    final axis = MangaScrollModes.axisOf(_scrollMode);
+    final reversed = MangaScrollModes.isReversed(_scrollMode);
+    final old = _pagedController;
+    // 控制器与当前规格一致 → 保留用户当前页（不重置 initialPage）
+    if (old != null &&
+        _pagedAxis == axis &&
+        _pagedReversed == reversed &&
+        _pagedGen == _loadSeq) {
+      return;
+    }
+    final display = MangaPagedView.displayIndexOf(
+      logicalPage: initialLogical,
+      pageCount: n,
+      reversed: reversed,
+    );
+    final next = PageController(initialPage: display, viewportFraction: 1.0)
+      ..addListener(_onPagedScroll);
+    _pagedController = next;
+    _pagedAxis = axis;
+    _pagedReversed = reversed;
+    _pagedGen = _loadSeq;
+    if (mounted) setState(() {});
+    if (old != null) {
+      // 旧控制器仍附着于 PageView：须待 didUpdateWidget 解绑后再释放
+      //（附着期同步 dispose 在 debug 断言）
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        old.dispose();
+      });
+    }
+  }
+
+  /// [P4-3 E1] 切回条漫式：释放单页式控制器（同样等解绑后释放）
+  void _disposePagedController() {
+    final old = _pagedController;
+    _pagedController = null;
+    if (old != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        old.dispose();
+      });
+    }
+  }
+
+  /// [P4-3 E1] 单页式页切换：更新可见页（精确页索引）+ 持久化进度 + 预载
+  void _onPagedPageChanged(int displayIndex) {
+    final n = _imageUrls.length;
+    if (n == 0) return;
+    final page = MangaPagedView.logicalPageOf(
+      displayIndex: displayIndex,
+      pageCount: n,
+      reversed: MangaScrollModes.isReversed(_scrollMode),
+    );
+    if (page != _visiblePageIndex) {
+      setState(() => _visiblePageIndex = page);
+      // [P4-3 E1] 页级进度：单页式记录精确页索引（非比例估算），
+      // 与 webtoon 的「可见页变化即持久化」事件驱动频率一致
+      unawaited(_saveProgress());
+    }
+    _preloadVisibleImages();
+  }
+
+  /// [P4-3 E1] 单页式滚动：触发前后预载（±2 页）
+  void _onPagedScroll() => _preloadVisibleImages();
 
   Future<void> _persistColorFilter(MangaColorFilterConfig cfg) async {
     _colorFilter = MangaColorFilterConfig(
@@ -225,11 +342,14 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       enableEInk: _enableEInk,
       enableGray: _enableGray,
       eInkThreshold: _eInkThreshold,
+      // [P4-3 E1] 翻页模式（对齐参考版阅读模式下拉）
+      scrollMode: _scrollMode,
       onColorFilterChanged: (c) => unawaited(_persistColorFilter(c)),
       onFooterChanged: (c) => unawaited(_persistFooter(c)),
       onEnableEInkChanged: (v) => unawaited(_persistEInk(v)),
       onEnableGrayChanged: (v) => unawaited(_persistGray(v)),
       onEInkThresholdChanged: (v) => unawaited(_persistThreshold(v)),
+      onScrollModeChanged: (m) => unawaited(_persistScrollMode(m)),
     );
   }
 
@@ -385,6 +505,15 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
         _loading = false;
       });
 
+      // [P4-3 E1] 单页式：图片可见前创建 PageController
+      //（初始页 = 待恢复页或章首；须在 _applyPageRestore 消费 _restorePageIndex 前取值）
+      if (MangaScrollModes.isPaged(_scrollMode) && _imageUrls.isNotEmpty) {
+        final initial =
+            (_restorePageIndex ?? 0).clamp(0, _imageUrls.length - 1);
+        _visiblePageIndex = initial; // 页脚/进度回读一致
+        _syncPagedController(initialLogical: initial);
+      }
+
       // 触发初始预加载
       _preloadVisibleImages();
 
@@ -474,6 +603,11 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     if (target == null || _imageUrls.length < 2) return;
     final page = target.clamp(0, _imageUrls.length - 1);
     if (page == 0) return; // 章首 = 默认位置，无需跳转
+    if (MangaScrollModes.isPaged(_scrollMode)) {
+      // [P4-3 E1] 单页式：定位已由 PageController.initialPage 完成
+      //（_loadChapterImages 同步控制器时消费），无需 ListView 跳转锚定
+      return;
+    }
     _restorePageIndex = page; // 保持待应用：滚动范围稳定后补跳
     _jumpToRestoredPage();
   }
@@ -529,6 +663,14 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// — Reasonix + UI
   void _preloadVisibleImages() {
     if (_imageUrls.isEmpty || !mounted) return;
+    // [P4-3 E1] 单页式：按精确页索引预载（±2 页），无需比例估算
+    if (MangaScrollModes.isPaged(_scrollMode)) {
+      _preloadIndicesInRange(
+        _visiblePageIndex - _preloadRange,
+        _visiblePageIndex + _preloadRange,
+      );
+      return;
+    }
     // 防御：loading 态 ListView 尚未构建时 ScrollController 未 attach，
     // 访问 position 抛断言（加载完成 build 后由 _onScroll 再次触发）
     if (!_scrollController.hasClients) return;
@@ -543,11 +685,19 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     final lastVisible = ((scrollOffset + viewportHeight) / screenHeight).ceil().clamp(0, _imageUrls.length - 1);
 
     // 扩展预加载范围（前后各 2 页）
-    final preloadStart = (firstVisible - _preloadRange).clamp(0, _imageUrls.length - 1);
-    final preloadEnd = (lastVisible + _preloadRange).clamp(0, _imageUrls.length - 1);
+    _preloadIndicesInRange(
+      firstVisible - _preloadRange,
+      lastVisible + _preloadRange,
+    );
+  }
 
+  /// 预载指定索引范围（条漫/单页式共用；越界收敛，去重由 [_preloadedIndices]）
+  void _preloadIndicesInRange(int start, int end) {
+    if (_imageUrls.isEmpty) return;
+    final s = start.clamp(0, _imageUrls.length - 1);
+    final e = end.clamp(0, _imageUrls.length - 1);
     final useFfi = _bookSource != null;
-    for (var i = preloadStart; i <= preloadEnd; i++) {
+    for (var i = s; i <= e; i++) {
       if (!_preloadedIndices.contains(i)) {
         _preloadedIndices.add(i);
         final url = _imageUrls[i];
@@ -769,7 +919,33 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       );
     }
 
-    return _buildImageList();
+    // [P4-3 E1] 模式分发：单页式（1/2/3）→ 分页器；条漫式（4/5）→ 连续滚动
+    return MangaScrollModes.isPaged(_scrollMode)
+        ? _buildPagedContent()
+        : _buildImageList();
+  }
+
+  /// [P4-3 E1] 构建单页式分页器（L2R/R2L 横向、T2B 纵向；R2L 首页在右）
+  Widget _buildPagedContent() {
+    if (_pagedController == null) {
+      // 防御：控制器未及创建（模式晚于图片生效且未同步）→
+      // 本帧回退条漫路径，postFrame 创建控制器后切换
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && MangaScrollModes.isPaged(_scrollMode)) {
+          _syncPagedController(initialLogical: _visiblePageIndex);
+        }
+      });
+      return _buildImageList();
+    }
+    return MangaPagedView(
+      controller: _pagedController!,
+      pageCount: _imageUrls.length,
+      axis: MangaScrollModes.axisOf(_scrollMode),
+      reversed: MangaScrollModes.isReversed(_scrollMode),
+      onDisplayIndexChanged: _onPagedPageChanged,
+      pageBuilder: (context, logicalPage) => _buildImageItem(logicalPage),
+      navBuilder: (context) => _buildChapterNavigation(),
+    );
   }
 
   /// 构建图片列表（纵向连续滚动 + 双指缩放）
@@ -794,7 +970,16 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
             if (index == _imageUrls.length) {
               return _buildChapterNavigation();
             }
-            return _buildImageItem(index);
+            var item = _buildImageItem(index);
+            // [P4-3 E1] 条漫（间隔）：页间 8px 间距
+            //（参考版 Arrangement.spacedBy(8.dp)，实现为 4px 上 + 4px 下包裹）
+            if (_scrollMode == MangaScrollModes.webtoonWithGap) {
+              item = Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: item,
+              );
+            }
+            return item;
           },
         ),
       ),

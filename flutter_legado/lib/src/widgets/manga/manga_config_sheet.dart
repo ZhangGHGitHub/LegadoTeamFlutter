@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/manga_config.dart';
+import '../../screens/reader_comic/manga_scroll_mode.dart';
 
 /// 漫画阅读配置底栏面板（对齐原版滤镜 / 电子纸 / 页脚 Dialog 入口结构）
 ///
@@ -13,11 +14,15 @@ class MangaConfigSheet extends StatefulWidget {
   final bool enableEInk;
   final bool enableGray;
   final int eInkThreshold;
+  /// [P4-3 E1] 翻页模式（对齐参考版 MangaScrollMode）
+  final int scrollMode;
   final ValueChanged<MangaColorFilterConfig> onColorFilterChanged;
   final ValueChanged<MangaFooterConfig> onFooterChanged;
   final ValueChanged<bool> onEnableEInkChanged;
   final ValueChanged<bool> onEnableGrayChanged;
   final ValueChanged<int> onEInkThresholdChanged;
+  /// [P4-3 E1] 翻页模式变更
+  final ValueChanged<int> onScrollModeChanged;
 
   const MangaConfigSheet({
     super.key,
@@ -26,11 +31,13 @@ class MangaConfigSheet extends StatefulWidget {
     required this.enableEInk,
     required this.enableGray,
     required this.eInkThreshold,
+    required this.scrollMode,
     required this.onColorFilterChanged,
     required this.onFooterChanged,
     required this.onEnableEInkChanged,
     required this.onEnableGrayChanged,
     required this.onEInkThresholdChanged,
+    required this.onScrollModeChanged,
   });
 
   static Future<void> show(
@@ -40,11 +47,13 @@ class MangaConfigSheet extends StatefulWidget {
     required bool enableEInk,
     required bool enableGray,
     required int eInkThreshold,
+    required int scrollMode,
     required ValueChanged<MangaColorFilterConfig> onColorFilterChanged,
     required ValueChanged<MangaFooterConfig> onFooterChanged,
     required ValueChanged<bool> onEnableEInkChanged,
     required ValueChanged<bool> onEnableGrayChanged,
     required ValueChanged<int> onEInkThresholdChanged,
+    required ValueChanged<int> onScrollModeChanged,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -56,11 +65,13 @@ class MangaConfigSheet extends StatefulWidget {
         enableEInk: enableEInk,
         enableGray: enableGray,
         eInkThreshold: eInkThreshold,
+        scrollMode: scrollMode,
         onColorFilterChanged: onColorFilterChanged,
         onFooterChanged: onFooterChanged,
         onEnableEInkChanged: onEnableEInkChanged,
         onEnableGrayChanged: onEnableGrayChanged,
         onEInkThresholdChanged: onEInkThresholdChanged,
+        onScrollModeChanged: onScrollModeChanged,
       ),
     );
   }
@@ -75,6 +86,8 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
   late bool _eInk;
   late bool _gray;
   late int _threshold;
+  /// [P4-3 E1] 翻页模式
+  late int _scrollMode;
 
   @override
   void initState() {
@@ -90,6 +103,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
     _eInk = widget.enableEInk;
     _gray = widget.enableGray;
     _threshold = widget.eInkThreshold;
+    _scrollMode = widget.scrollMode;
   }
 
   @override
@@ -138,6 +152,20 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
             child: ListView(
               padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottom),
               children: [
+                // [P4-3 E1] 阅读模式（对齐参考版 MangaSettingsPanel 阅读模式下拉）
+                _section('阅读模式'),
+                _card([
+                  _dropdownTile(
+                    title: '翻页模式',
+                    value: _scrollMode,
+                    options: MangaScrollModes.options,
+                    labelOf: MangaScrollModes.labelOf,
+                    onChanged: (v) {
+                      setState(() => _scrollMode = v);
+                      widget.onScrollModeChanged(_scrollMode);
+                    },
+                  ),
+                ]),
                 _section('显示效果'),
                 _card([
                   _switchTile(
@@ -406,6 +434,50 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
   Widget _divider() {
     final scheme = Theme.of(context).colorScheme;
     return Divider(height: 1, indent: 16, color: scheme.outlineVariant);
+  }
+
+  /// [P4-3 E1] 下拉选择行（标题 + 选项下拉；对齐参考版阅读模式下拉）
+  Widget _dropdownTile({
+    required String title,
+    required int value,
+    required List<int> options,
+    required String Function(int) labelOf,
+    required ValueChanged<int> onChanged,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              // 标题 #1C1C1E → onSurface（深色主题槽位）
+              style: TextStyle(fontSize: 16, color: scheme.onSurface),
+            ),
+          ),
+          DropdownButton<int>(
+            value: options.contains(value) ? value : options.first,
+            items: options
+                .map((o) => DropdownMenuItem<int>(
+                      value: o,
+                      child: Text(
+                        labelOf(o),
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ))
+                .toList(),
+            // DropdownButton.onChanged 为 ValueChanged<int?>?（可为 null）
+            onChanged: (v) {
+              if (v != null) onChanged(v);
+            },
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _switchTile({

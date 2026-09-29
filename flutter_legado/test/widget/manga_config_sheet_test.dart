@@ -28,11 +28,14 @@ void main() {
           enableEInk: false,
           enableGray: false,
           eInkThreshold: 128,
+          // [P4-3 E1] 翻页模式（缺省条漫 4）
+          scrollMode: 4,
           onColorFilterChanged: (_) {},
           onFooterChanged: (_) {},
           onEnableEInkChanged: (_) {},
           onEnableGrayChanged: (_) {},
           onEInkThresholdChanged: (_) {},
+          onScrollModeChanged: (_) {},
         ),
       ),
     );

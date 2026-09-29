@@ -215,4 +215,7 @@ abstract final class MangaConfigKeys {
   static const enableEInk = 'enableMangaEInk';
   static const eInkThreshold = 'mangaEInkThreshold';
   static const enableGray = 'enableMangaGray';
+
+  /// [P4-3 E1] 翻页模式（对齐参考版 MangaScrollMode，默认条漫 4）
+  static const scrollMode = 'mangaScrollMode';
 }
