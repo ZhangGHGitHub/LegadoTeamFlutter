@@ -196,3 +196,66 @@ https___www.tuku.cc_manga-73562__62b1be09         (本波, 20:27 新建, images/
 ---
 
 *报告完。纪律自检：未改生产代码；未卸载/未清数据三包；DB 写前有备份；外部失败全部如实记录；本波次为设备唯一占用代理。*
+
+---
+
+## 2.0.325 冒烟与 V3 点验（2026-09-29）
+
+> 版本 `2.0.325+326`（HEAD `b08c38b64c`）。本批改动为**纯 Dart（零 Rust）**：视频全屏新增「倍速 / 选集」浮层（对齐原版 `ChoiceSpeedDialog` / `ChoiceEpisodeDialog`，二者入口仅存在于全屏控制器）。执行代理：STAGE-QA-P43W1-SMOKE（QA 子代理）。纪律：全程只读 + 设备点验，未改任何生产代码。
+
+### 一、冒烟测试（构建 + 安装 + 启动 + 崩溃检查）
+
+- 命令：`pwsh.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\emulator_smoke_test.ps1 -Device 192.168.100.62:5555`
+- **退出码：`0`（PASSED，7 通过 / 0 失败）**
+- **构建形态：FFI REUSE + 轻构建**。FFI 校验 `[OK] arm64-v8a / x86_64`（Rust 源码指纹 `2895a9fc…` 与 content hash `1549248103` 一致，**复用现有 .so，未触发 Rust 重编**）；Dart 侧 `assembleDebug` 仅 **5.3s**（增量，产物 282.3 MB）。与本批「纯 Dart（零 Rust）→ 预期 REUSE / 轻构建」一致，如实记录。
+- **版本复核：`已装版本与 pubspec 一致（2.0.325）`**（pubspec `2.0.325+326`，versionName=2.0.325 / buildNumber=326）。
+- **FATAL：`0`**（`[PASS] 无崩溃日志（FATAL/E/flutter）`）。
+- 进程存活：`pidof` → pid 47781（`R io.legado.flutter_legado`）。
+- 结论：冒烟**通过**。本批纯 Dart 改动下构建链路无回归。
+
+> 旁证（前段会话，非本冒烟产生）：应用启动时曾出现应用内「上次运行发生崩溃（崩溃时间 2026-09-29 20:30:27）」恢复弹窗（`v3_01_crash_dialog.png`），其崩溃时间点早于本次冒烟（约 20:47），属**前一会话**崩溃，非本批构建引入；本次冒烟 FATAL=0，当前构建干净。
+
+### 二、V3 全屏「倍速 / 选集」点验（用设备已有视频书：非凡资源网·海贼王，第02集）
+
+**方法说明**：视频播放中 uiautomator 无法达到 idle（`could not get idle state`，位置持续更新 / 视频持续渲染），故采用「**双击暂停视频 → 画面静止 → uiautomator dump（content-desc 语义树）**」技巧取证，辅以截图与 `[VideoPlay]` logcat。所有播放屏语义证据均取自**暂停态**（可复现、非截图猜测）。
+
+| 步骤 | 验证点 | 结论 | 关键证据（content-desc / 日志 / 截图） |
+|---|---|---|---|
+| a | 书架视频组 → 海贼王 → 进播放屏并起播 | 通过 | `[VideoPlay] chapter=第01集 url=…/10135_…/index.m3u8`；`v3_04_video_screen.png`、`v3_05_current.png` |
+| b | **全屏**：底栏出现「倍速」「选集」入口；**非全屏**：二者不存在 | 通过 | 非全屏 `v3pause_portrait.xml`（底栏仅 播放/14:25//25:19/全屏，无倍速/选集）+ `v3_06_portrait_nofull.png`；全屏 `v3_fullscreen.xml`（`content-desc="倍速"` 与 `"选集"` 各 1，位于 `退出全屏` 左侧）+ `v3_07_fullscreen.png`。与代码 `if (_isFullScreen) …倍速/选集…` 一致 |
+| c | 倍速浮层：8 档**降序** + 当前 1.0 高亮 → 选 1.5x → 入口文案变「1.5X」+ 屏中提示「1.5倍播放中」 | 通过 | 浮层 `v3_speed_dialog.xml`：8 项依序 `3.0X/2.5X/2.0X/1.5X/1.25X/1.0X/0.75X/0.5X`（右靠 30% 宽全高）+ `v3_08_speed_dialog.png`；选 1.5X 后 `v3_speed15.xml`：`content-desc="1.5X"`（入口，位于原倍速位 `[1368,924][1560,1068]`）+ `content-desc="1.5倍播放中"`（屏中提示）+ `v3_09_speed15_tip.png` |
+| d | 切下一集（第02集）→ 倍速**保持 1.5x**（会话级） | 通过 | `[VideoPlay] chapter=第02集 url=…/10134_…/index.m3u8` + `controller ready` + `after play isPlaying=true`；暂停后 `v3_ep2_paused.xml` 入口仍 `content-desc="1.5X"`（非「倍速」）+ `v3_11_ep2_speed15.png`。与代码「新章 controller init 时 `_playbackSpeed!=1.0` 则 setPlaybackSpeed 恢复」一致 |
+| e | 选集浮层：章节列表 + 当前集定位 → 点集跳转 | 通过 | `v3_episode_dialog.xml`：标题 `content-desc="选集（1180）"`（海贼王 1180 集），右靠 40% 宽全高，列表 `第01集…第07集`（当前集第01集位于列表顶部）+ `v3_10_episode_dialog.png`；点「第02集」后 logcat `chapter=第02集` 证实跳转成功 |
+| f | 退出并**重进应用** → 倍速回 **1.0**（不持久化） | 通过 | `am force-stop` + 重启（新 pid 46885）→ 重新进入海贼王视频屏（resumed 第02集）→ 进全屏后 `v3_f_fullscreen.xml` 入口为 `content-desc="倍速"`（=1.0，**非** `1.5X`）+ `v3_14_reenter_fullscreen.png`。与代码 `_playbackSpeed=1.0` 为会话级字段、**从不写入 SharedPreferences** 一致 |
+
+**总体判定：V3 全屏「倍速 / 选集」六项点验（a–f）全部通过**，行为与原版语义一致（入口仅全屏、倍速会话级不持久化、选集按集跳转、切集保持倍速）。
+
+### 三、方法与限制（如实记录，未硬造）
+
+1. **uiautomator idle 失效**：视频屏（播放/全屏）无法 `uiautomator dump`（`could not get idle state`）。对策：双击暂停视频令画面静止后 dump 成功。**所有播放屏语义证据均取自暂停态**，非播放中实采。
+2. **倍速高亮（1.0X）为视觉态**：uiautomator dump 无法区分高亮底色。该项以**代码逻辑**（`highlighted: (value - currentSpeed).abs() < 0.001`，currentSpeed=1.0 → `1.0X` 项高亮）+ 截图 `v3_08_speed_dialog.png`（视觉证据）确认；dump 仅证明 8 项**存在且顺序正确**。
+3. **实际播放速率（1.5x）为 ExoPlayer 内部态**：uiautomator 无法直接读取。经「入口文案 `1.5X` + 提示 `1.5倍播放中` + 代码路径（`_controller.setPlaybackSpeed(1.5)` 及新章恢复）」三方印证，未单独断言解码器倍速值。
+4. **当前集滚动定位**：本次验证时处于第01集（首集），列表天然置顶，`setSelectionFromTop`（current>0 才滚动）的**中段剧集滚动定位**未在「中间集」场景实测，如实记录为未覆盖分支（代码逻辑已核对）。
+5. **VM service `ext.flutter.*` 扩展方法不可用**：本连接对 `ext.flutter.*` 一律 `Method not found`（-32601），故坐标 / 状态读取改走 uiautomator dump（暂停态）+ logcat 路线；未影响结论。
+6. **崩溃恢复弹窗**（前段会话，见一、旁证）：非本批构建引入，本次冒烟 FATAL=0。
+
+### 四、本段证据索引（均位于 `docs/materials_1301/evidence/`）
+
+**截图（PNG，命名 `v3_*.png`）**
+- `v3_00_app_current.png` / `v3_01_crash_dialog.png` / `v3_02_video_group.png` / `v3_03_after_tap_hai.png` / `v3_04_video_screen.png` / `v3_05_current.png`（a：进入播放屏）
+- `v3_06_portrait_nofull.png`（b：非全屏，无倍速/选集）｜`v3_07_fullscreen.png`（b：全屏，倍速/选集在列）
+- `v3_08_speed_dialog.png`（c：倍速浮层 8 档）｜`v3_09_speed15_tip.png`（c：1.5X + 提示）
+- `v3_10_episode_dialog.png`（e：选集浮层 选集（1180））｜`v3_11_ep2_speed15.png`（d：切第02集后仍 1.5X）
+- `v3_12_relaunch.png` / `v3_13_reenter_video.png` / `v3_14_reenter_fullscreen.png`（f：重进后倍速回 1.0）
+
+**uiautomator dump（content-desc 语义树，`.xml`）**
+- `v3pause_portrait.xml`（非全屏底栏，无倍速/选集）｜`v3_fullscreen.xml`（全屏底栏，倍速/选集/退出全屏）
+- `v3_speed_dialog.xml`（倍速 8 档降序）｜`v3_speed15.xml`（1.5X 入口 + 1.5倍播放中）
+- `v3_episode_dialog.xml`（选集（1180）+ 剧集列表）｜`v3_ep2_paused.xml`（第02集暂停，入口仍 1.5X）
+- `v3_relaunch.xml` / `v3_video_group.xml`（重进·书架/视频组）｜`v3_f_reenter1.xml`（重进·非全屏）｜`v3_f_fullscreen.xml`（重进·全屏，入口「倍速」=1.0）
+
+**logcat（`[VideoPlay]`，命令内联证据）**
+- 第01集 / 第02集 chapter 加载、`controller ready`、`after play isPlaying=true`（切集与起播）
+- 重进后 `chapter=第02集`（last-watched 恢复）
+
+*本段纪律自检：未改生产代码；设备点验全程只读；暂停/重进均为可恢复操作；限制项（高亮/实际倍速/中段滚动/VM 扩展）全部如实标注，未硬造证据。*
