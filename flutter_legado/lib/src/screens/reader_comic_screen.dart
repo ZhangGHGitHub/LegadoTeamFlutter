@@ -1,12 +1,17 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io' show File;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../services/bridge_http.dart';
 
 import '../models/models.dart';
@@ -19,7 +24,10 @@ import '../utils/manga_epaper.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/error_view.dart';
 import '../widgets/manga/manga_config_sheet.dart';
+import 'reader_comic/manga_click_actions.dart';
 import 'reader_comic/manga_paged_view.dart';
+import 'reader_comic/manga_page_actions_sheet.dart';
+import 'reader_comic/manga_page_image_resolver.dart';
 import 'reader_comic/manga_scroll_mode.dart';
 
 /// 漫画阅读页面
@@ -115,6 +123,13 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   Axis _pagedAxis = Axis.horizontal;
   bool _pagedReversed = false;
   int _pagedGen = 0;
+
+  /// [P4-3 E5] 九区点击动作（9 格行优先；对齐参考版 Contract L167 默认值，
+  /// 固定不可改——九区编辑器不在本波范围，见 manga_click_actions.dart 注释）
+  final List<int> _clickActions = MangaClickActions.defaultActions;
+
+  /// [P4-3 E5] 点击按下位置（tap-up 时换算位移，区分点击与滑动/缩放意图）
+  Offset? _tapDownPosition;
 
   @override
   void initState() {
@@ -844,6 +859,215 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     });
   }
 
+  // ---------------------------------------------------------------------------
+  // [P4-3 E5] 九区点击 + 长按菜单
+  //
+  // 取证（参考版 legado-with-MD3）：
+  // - MangaReaderInteraction.kt L15-41：九区索引（row*3+col）/动作解析/循环；
+  // - MangaReaderScreen.kt L1945-1969 performMangaClickAction：
+  //   -1 无动作 / 0 菜单 / 1 下一页 / 2 上一页 / 3 下一章 / 4 上一章；
+  //   L705-736 条漫点击 = 滚一视口（不足一视口 → 切章）；
+  //   L930-1000 单页点击 = 翻页 intent（R2L 阅读「下一页」= 显示索引减小）。
+  // ---------------------------------------------------------------------------
+
+  /// [P4-3 E5] 九区点击入口：tap-up 位置 → 区域 → 动作
+  ///
+  /// 按下/抬起位移超过 8px 视为滑动/缩放意图，不触发点击（对齐参考版
+  /// tap 判定语义；视口级 GestureDetector 只收「点」不收「滑」）。
+  void _onTapInRegion(Offset up, Size viewport) {
+    final down = _tapDownPosition;
+    _tapDownPosition = null;
+    if (down == null) return;
+    if ((up - down).distance > 8) return;
+    final action = MangaClickActions.actionAt(
+      _clickActions,
+      up.dx,
+      up.dy,
+      viewport.width,
+      viewport.height,
+    );
+    _executeClickAction(action);
+  }
+
+  /// [P4-3 E5] 执行点击动作（动作语义见 [_executeClickAction] 注释）
+  void _executeClickAction(int action) {
+    switch (action) {
+      case MangaClickActions.none:
+        break; // -1：无动作（对齐参考版 none）
+      case MangaClickActions.menu:
+        _toggleControls(); // 0：控制栏显隐（对齐参考版 ToggleMenu）
+      case MangaClickActions.next:
+        _stepPage(1);
+      case MangaClickActions.prev:
+        _stepPage(-1);
+      case MangaClickActions.nextChapter:
+        unawaited(_nextChapter());
+      case MangaClickActions.prevChapter:
+        unawaited(_prevChapter());
+    }
+  }
+
+  /// [P4-3 E5] 单步翻页 / 条漫滚一视口
+  ///
+  /// [direction] 1 = 阅读方向下一页，-1 = 上一页。
+  /// - 单页式：PageController 动画翻页；R2L 时阅读「下一页」= 显示索引
+  ///   减小（控制器方向取反）；已到边界 → 切上/下一章（对齐参考版
+  ///   PageStep 到边界转章节切换）；
+  /// - 条漫：纵向滚动一视口；不足一视口（已到章边界）→ 切章
+  ///   （对齐参考版 consumed < oneViewport → 章节切换语义）。
+  void _stepPage(int direction) {
+    if (MangaScrollModes.isPaged(_scrollMode)) {
+      final controller = _pagedController;
+      final n = _imageUrls.length;
+      if (controller == null || n == 0) return;
+      final reversed = MangaScrollModes.isReversed(_scrollMode);
+      final display = MangaPagedView.displayIndexOf(
+        logicalPage: _visiblePageIndex,
+        pageCount: n,
+        reversed: reversed,
+      );
+      // 边界判定：L2R 末尾页显示索引 n-1；R2L 末页在显示索引 0
+      final atBoundary = direction > 0
+          ? display == (reversed ? 0 : n - 1)
+          : display == (reversed ? n - 1 : 0);
+      if (atBoundary) {
+        unawaited(direction > 0 ? _nextChapter() : _prevChapter());
+        return;
+      }
+      // R2L：控制器翻页方向与阅读方向相反
+      final controllerDirection = reversed ? -direction : direction;
+      controller.animateToPage(
+        display + controllerDirection,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+      return;
+    }
+    // 条漫：纵向滚动一视口（条漫恒为纵向 ListView）
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final target = position.pixels + position.viewportDimension * direction;
+    if (direction > 0 && target > position.maxScrollExtent) {
+      unawaited(_nextChapter());
+      return;
+    }
+    if (direction < 0 && target < 0) {
+      unawaited(_prevChapter());
+      return;
+    }
+    position.animateTo(
+      target,
+      duration: const Duration(milliseconds: 300),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // [P4-3 E5] 长按页操作菜单（保存 / 分享 / 复制）
+  //
+  // 取证：参考版 MangaReaderViewModel L300-340（LongPressPage →
+  // PageActions 底栏）、MangaReaderSheets L179-252（底栏三项单页动作）、
+  // 原版 ReadMangaActivity L242-276（长按存图：用户先选目录再写入）。
+  // 图片字节解析：内存缓存 → 磁盘缓存（getImageCache）→ FFI 解码回退，
+  // 不重新下载（见 manga_page_image_resolver.dart）。
+  // ---------------------------------------------------------------------------
+
+  /// 显示长按页操作菜单（对齐参考版单页 onLongClick L1082 / 条漫长按 L761-771）
+  void _showPageActions(int index) {
+    if (index < 0 || index >= _imageUrls.length) return;
+    showMangaPageActionsSheet(
+      context,
+      onSave: () => _savePageImage(index),
+      onShare: () => _sharePageImage(index),
+      onCopy: () => _copyPageImage(index),
+    );
+  }
+
+  /// 解析当前页图片字节（内存缓存 → 磁盘缓存 → FFI 解码回退）
+  Future<MangaPageImageBytes?> _resolvePageImage(int index) async {
+    final url = _imageUrls[index];
+    return resolveMangaPageImageBytes(
+      api: ref.read(bookApiProvider),
+      bookUrl: widget.bookUrl,
+      url: url,
+      // 有书源才走 FFI 解码链路（对齐 _DecodedComicImage 的分发条件）
+      sourceJson: _bookSource == null ? null : jsonEncode(_bookSource!.toJson()),
+      memoryCached: ComicImageDecodeCache.get(_book?.origin ?? '', url),
+    );
+  }
+
+  /// 保存图片（对齐原版：用户选目录写入；取消选择时回退文档目录并提示，
+  /// 先例 auto_task_screen saveFile → 文档目录兜底）
+  Future<void> _savePageImage(int index) async {
+    final data = await _resolvePageImage(index);
+    if (data == null) {
+      _showPageActionSnackBar('无法获取图片数据');
+      return;
+    }
+    final fileName = 'manga-${DateTime.now().millisecondsSinceEpoch}${data.suffix}';
+    try {
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: '保存图片',
+        fileName: fileName,
+      );
+      if (path != null) {
+        final file = File(path)..writeAsBytesSync(data.bytes);
+        _showPageActionSnackBar('已保存: ${file.path}');
+      } else {
+        // 用户取消目录选择 → 兜底写应用文档目录
+        final dir = await getApplicationDocumentsDirectory();
+        final file = File('${dir.path}/$fileName')..writeAsBytesSync(data.bytes);
+        _showPageActionSnackBar('已保存到文档目录: ${file.path}');
+      }
+    } catch (e) {
+      _showPageActionSnackBar('保存图片失败: $e');
+    }
+  }
+
+  /// 分享图片（对齐参考版 ShareImage：临时文件 + 系统分享面板；
+  /// 先例 auto_task_screen shareXFiles）
+  Future<void> _sharePageImage(int index) async {
+    final data = await _resolvePageImage(index);
+    if (data == null) {
+      _showPageActionSnackBar('无法获取图片数据');
+      return;
+    }
+    try {
+      final dir = await getTemporaryDirectory();
+      final file = File(
+        '${dir.path}/manga-${DateTime.now().millisecondsSinceEpoch}${data.suffix}',
+      );
+      await file.writeAsBytes(data.bytes);
+      await Share.shareXFiles([XFile(file.path)], subject: '漫画图片');
+    } catch (e) {
+      _showPageActionSnackBar('分享失败: $e');
+    }
+  }
+
+  /// 复制图片
+  ///
+  /// 降级说明：参考版 CopyImage（ReadMangaActivity L150-154）用
+  /// ClipData.newUri 复制 URI；本方依赖集无图片/URI 剪贴板同族包先例，
+  /// 按文本剪贴板先例（about_screen L58 / audio_screen L834）复制图片链接。
+  Future<void> _copyPageImage(int index) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: _imageUrls[index]));
+      _showPageActionSnackBar('已复制图片链接');
+    } catch (_) {
+      _showPageActionSnackBar('复制失败');
+    }
+  }
+
+  /// 页操作结果提示（项目先例：ScaffoldMessenger.showSnackBar）
+  void _showPageActionSnackBar(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+      );
+  }
+
   /// 重试加载失败的图片
   void _retryImage(int index) {
     setState(() {
@@ -862,20 +1086,30 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       },
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: GestureDetector(
-          onTap: _toggleControls,
-          child: Stack(
-            children: [
-              // 主内容区域
-              _buildContent(),
-              // 漫画页脚信息条（对标原版 ReaderInfoBar）
-              if (!_footerConfig.hideFooter) _buildMangaFooter(),
-              // 顶部控制栏
-              if (_showControls) _buildTopBar(),
-              // 底部进度条
-              if (_showControls) _buildBottomBar(),
-            ],
-          ),
+        // [P4-3 E5] 九区点击：视口级 GestureDetector 承担点击导航
+        //（对齐参考版「导航属于视口而非单个变换后的条漫项」）；
+        // 子项的长按手势与按钮仍按竞技场规则优先命中
+        body: LayoutBuilder(
+          builder: (context, constraints) {
+            final viewport = Size(constraints.maxWidth, constraints.maxHeight);
+            return GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapDown: (details) => _tapDownPosition = details.localPosition,
+              onTapUp: (details) => _onTapInRegion(details.localPosition, viewport),
+              child: Stack(
+                children: [
+                  // 主内容区域
+                  _buildContent(),
+                  // 漫画页脚信息条（对标原版 ReaderInfoBar）
+                  if (!_footerConfig.hideFooter) _buildMangaFooter(),
+                  // 顶部控制栏
+                  if (_showControls) _buildTopBar(),
+                  // 底部进度条
+                  if (_showControls) _buildBottomBar(),
+                ],
+              ),
+            );
+          },
         ),
       ),
     );
@@ -987,7 +1221,20 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   }
 
   /// 构建单张图片项
+  ///
+  /// [P4-3 E5] 外包长按命中层（对齐参考版单页 onLongClick L1082 /
+  /// 条漫长按 L761-771）：长按 → 页操作菜单（保存/分享/复制）。
+  /// 条漫与单页两条路径的页构建都经过本方法，一处接线两态生效。
   Widget _buildImageItem(int index) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onLongPress: () => _showPageActions(index),
+      child: _buildImageItemBody(index),
+    );
+  }
+
+  /// 图片项本体（占位 / FFI 解码 / 直连网络分发）
+  Widget _buildImageItemBody(int index) {
     final url = _imageUrls[index];
     final isFailed = _failedIndices.contains(index);
 
