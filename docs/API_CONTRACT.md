@@ -122,7 +122,7 @@
 
 ### 1.6.1 进程注入型 FFI（void，不经 BookApi，MD3 对齐 2026-09-04）
 
-以下 4 个 `ffi.rs` 导出为 Flutter→Rust 单向进程级注入（返回 void，经 `bridge.*` 直调，不进 `BookApi` 抽象层与方法计数）：
+以下 5 个 `ffi.rs` 导出为 Flutter→Rust 单向进程级注入（返回 void，经 `bridge.*` 直调，不进 `BookApi` 抽象层与方法计数）：
 
 | FFI 函数 | 入参 | 说明 |
 |----------|------|------|
@@ -130,6 +130,7 @@
 | `set_theme_config` | theme_json（`get_theme_config` 同形 JSON） | Batch 0 R1：启动/切换调色板时注入当前 palette 亮色 role，JS `getThemeConfig()` 优先返回注入值，未注入回退 wh 默认 |
 | `set_theme_mode` | mode（"0"=跟随系统/"1"=亮/"2"=暗，对齐 Kotlin themeMode） | Batch 0 R2 + R 批 R3：`setThemeMode` 时注入，JS `getThemeMode()` 映射为 auto/light/dark（"0"→auto；未注入回退 light） |
 | `set_read_book_config` | read_json（`get_read_book_config` 同形 JSON） | R 批 R4：阅读配置变更时注入当前阅读配置，JS `getReadBookConfig()` 优先返回注入值，未注入回退硬编码默认 |
+| `set_image_cache_dir` | dir（应用缓存目录下 `image_cache` 子目录，P4-2a） | 与 `set_cache_dir` 同型的进程注入（`set_cache_dir` 服务 JS 缓存）：`saveImageCache`/`getImageCache`（§2.46）图片磁盘缓存落应用私有缓存目录；未注入时回落 `<temp_dir>/legado-image-cache`（一次性告警）。Dart 侧 `RustApi.initialize` 经 `path_provider` 注入 |
 
 > 注入键集合约定（R 批 R5 登记）：`set_theme_config` JSON 必需键 `themeName/isNightTheme/primaryColor/accentColor/backgroundColor/bottomBackground/statusBarColor/navigationBarColor`；可选透传键 `paletteId/背景图路径/blur/圆角覆写` 等（Rust 不解释，原样透传 JS）；注入为进程内存级（RwLock），重启需 Flutter 在 `RustApi.init` 重注，注入前 JS 调用拿到 wh 默认。
 >
@@ -162,9 +163,9 @@
 
 ## 2. 方法清单
 
-> 共 **42 个方法模块**（§2.1–§2.45，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
-> BookApi 接口当前共 **281 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
-> 附录 §2.x 行合计 **284** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
+> 共 **43 个方法模块**（§2.1–§2.46，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
+> BookApi 接口当前共 **283 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
+> 附录 §2.x 行合计 **286** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -847,10 +848,24 @@
 
 ---
 
+### 2.46 图片磁盘缓存（image_cache FFI，2 个方法）
+
+> [P4-2a | 2026-09-29] 加法式新增（不改既有签名/行为）：漫画/图片书源图片的**磁盘缓存存取**，对齐原版 `BookHelp.saveImage`（L347+：`isImageExist` 命中即跳过 → 下载 → `writeImage` 写盘，写失败仅记日志**不抛异常**）与 `BookHelp.getImage`（L392+：返回缓存文件路径）+ `MangaVH.mangaImagePath`（L31-34：**本地优先**——缓存文件存在则取本地、否则走网络）语义。
+> 目录结构对齐原版 `downloadDir/book_cache/{bookFolderName}/images/{md5_16(url)}.{suffix}`：缓存根目录经 `set_image_cache_dir` 进程注入（§1.6.1，Dart 启动时传应用私有缓存目录下 `image_cache` 子目录，与 `set_cache_dir` 同型；未注入回落 `<temp_dir>/legado-image-cache`）→ 书目录 = `sanitize(bookUrl)`（非法文件名字符替换 `_` 截断 64 字符 + `_{md5_8(bookUrl)}` 防截断碰撞，原版以 `book.getFolderName()` 为键、本书以 `bookUrl` 为键的加法式简化）→ `images/` → 文件名 = MD5(url) 小写 hex 中段 16 字符（原版 `MD5Utils.md5Encode16` = `hex[8..24]`）+ `.{suffix}`（原版 `UrlUtil.getSuffix(src, "jpg")`：URL 末段 `.` 后后缀，须匹配 `[A-Za-z0-9]{1,5}` 否则缺省 `jpg`）。
+> 字节跨 FFI 走 base64 String（对齐 `fetchImageWithDecode` 的 `{base64, len}` JSON 惯例，§1.3 复杂类型 JSON 约定）：`saveImageCache` 入参 bytes 由 Dart 侧 base64 编码、`getImageCache` 返回 base64 由 Dart 侧解码。**写失败/读失败均降级**（save 返回 false、get 返回 null 并记一次性日志），不抛 FFI 异常——缓存是加速器不是数据源，失败必须不影响在线加载（对齐原版 saveImage catch 仅记 AppLog）。
+> 书目录以 `bookUrl` 隔离（不同书互不串缓存）；图片文件按 URL 命名与 bookUrl 无关（同 URL 同书内幂等覆盖）。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `saveImageCache({required String bookUrl, required String url, required List<int> bytes})` | bookUrl / url / bytes | `Future<bool>` | 图片字节落盘缓存（对齐原版 `writeImage`）：写入 `{缓存根}/{书目录}/images/{md5_16(url)}.{suffix}`；成功 `true`；base64 输入非法 / 目录创建失败 / 写盘失败返回 `false`（静默降级 + 一次性日志，**不抛异常**——不影响在线加载）。Rust FFI 面为 `save_image_cache(bookUrl, url, bytesBase64) -> Result<bool, BridgeError>`（base64 解码失败抛 Ffi 错，IO 降级返回 `Ok(false)`）；Dart 侧 `RustApi.saveImageCache` 捕获所有错误统一返回 `false` |
+| `getImageCache({required String bookUrl, required String url})` | bookUrl / url | `Future<List<int>?>` | 读取磁盘缓存（对齐原版 `getImage`/`isImageExist` 的本地优先语义）：命中返回图片字节；未命中 / 读失败返回 `null`（降级走网络加载）。Rust FFI 面为 `get_image_cache(bookUrl, url) -> Result<Option<String>, BridgeError>`（base64 或 null；文件不存在与读失败均降级 `Ok(None)`） |
+
+---
+
 ### 2.44 数据层实现备注（不涉契约签名）
 
 > 本节登记数据层内部实现变更预告，均不改变任何契约签名，仅供 Rust 轨实施与双轨知会。
-> 本节不含方法，不计入方法模块数与附录统计（方法模块为 42 个，§2.1–§2.45，编号跳过 2.24/2.27）。
+> 本节不含方法，不计入方法模块数与附录统计（方法模块为 43 个，§2.1–§2.46，编号跳过 2.24/2.27）。
 >
 > ℹ️ **BookRepository::insert 级联删除隐患（第三批后置项，Task #63）**：`BookRepository::insert` 当前走
 > INSERT OR REPLACE，存在外键级联删除隐患；将在本批改为 upsert 链路（内部实现变更，不涉契约签名，不改任何 FFI 行为）。
@@ -995,11 +1010,12 @@
 | 42 | TTS 真实合成管线 | 2 |
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 10 |
 | 44 | 字典规则操作 | 7 |
-| | **合计（§2.x 附录行合计）** | **284** |
+| 45 | 图片磁盘缓存 | 2 |
+| | **合计（§2.x 附录行合计）** | **286** |
 
-> 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`、2026-09-28 STAGE3-C2B 增 §2.16 单章缓存失效 1 方法 `clearChapterCache`、2026-09-28 P2-28c 增 §2.43 目录实时刷新 1 方法 `listCachedChapters`、2026-09-29 P2-29 增 §2.43 目录下载中态查询 1 方法 `listDownloadingChapters`，取代人工统计）：
-> - 附录行合计 **284** = §2.x 实际方法行总数；其中与 BookApi 同名 269（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1）、§1.7 命名等价对的 FFI 登记名 9
+> 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`、2026-09-28 STAGE3-C2B 增 §2.16 单章缓存失效 1 方法 `clearChapterCache`、2026-09-28 P2-28c 增 §2.43 目录实时刷新 1 方法 `listCachedChapters`、2026-09-29 P2-29 增 §2.43 目录下载中态查询 1 方法 `listDownloadingChapters`、2026-09-29 P4-2a 增 §2.46 图片磁盘缓存 2 方法 `saveImageCache`/`getImageCache`，取代人工统计）：
+> - 附录行合计 **286** = §2.x 实际方法行总数；其中与 BookApi 同名 271（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2）、§1.7 命名等价对的 FFI 登记名 9
 >   （对应 8 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
 >   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
-> - BookApi 代码计数 **281** = 269 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1）+ 8 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
+> - BookApi 代码计数 **283** = 271 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2）+ 8 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。

@@ -21,6 +21,8 @@ base64 = { workspace = true }
 regex = { workspace = true }
 futures = "0.3"
 log = "0.4"
+# [P4-2a | 2026-09-29] 图片磁盘缓存文件命名（对齐原版 MD5Utils.md5Encode16）
+md5 = "0.7"
 rusqlite = { version = "0.31", features = ["bundled"] }
 r2d2 = "0.8"
 r2d2_sqlite = "0.24"

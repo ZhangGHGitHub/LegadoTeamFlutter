@@ -153,9 +153,11 @@ fn handle_conn(
         404 => "Not Found",
         _ => "Error",
     };
-    let mut resp: Vec<u8> =
-        format!("HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\nConnection: close\r\n", body.len())
-            .into_bytes();
+    let mut resp: Vec<u8> = format!(
+        "HTTP/1.1 {status} {reason}\r\nContent-Length: {}\r\nConnection: close\r\n",
+        body.len()
+    )
+    .into_bytes();
     for (k, v) in &headers {
         resp.extend(format!("{k}: {v}\r\n").into_bytes());
     }
@@ -179,17 +181,16 @@ fn html_route(status: u16, body: &str) -> Route {
 fn binary_route(status: u16, body: Vec<u8>) -> Route {
     Route {
         status,
-        headers: vec![(
-            "Content-Type".to_string(),
-            "image/webp".to_string(),
-        )],
+        headers: vec![("Content-Type".to_string(), "image/webp".to_string())],
         body,
     }
 }
 
 /// 最小 PNG 明文（魔数 + 4 字节负载）：解码命中 / 透传用例的期望值
 fn min_png() -> Vec<u8> {
-    vec![0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x01, 0x02, 0x03]
+    vec![
+        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x01, 0x02, 0x03,
+    ]
 }
 
 /// 夹具路径（与 51manga 密文夹具同约定：CARGO_MANIFEST_DIR/tests/fixtures/）
@@ -235,7 +236,14 @@ fn test_favcomic_comic_chain_detail_toc_content_offline() {
         // 章节页：内嵌 "images" 数组（favcomic 真实章节页 data 形态），
         // 各章图片列表不同（证明 content 规则按章执行）
         for (n, imgs) in [
-            (1, vec!["/comic/9001/01.webp", "/comic/9001/02.webp", "/comic/9001/03.webp"]),
+            (
+                1,
+                vec![
+                    "/comic/9001/01.webp",
+                    "/comic/9001/02.webp",
+                    "/comic/9001/03.webp",
+                ],
+            ),
             (2, vec!["/comic/9001/04.webp", "/comic/9001/05.webp"]),
             (3, vec!["/comic/9001/06.webp"]),
         ] {
@@ -273,7 +281,8 @@ fn test_favcomic_comic_chain_detail_toc_content_offline() {
         "夹具 coverDecodeJs 事实（Dart 封面解码路径映射源）"
     );
 
-    legado_ffi::api::source::add_source(&source_json).expect("夹具书源写入（bookSourceUrl 指向回环）");
+    legado_ffi::api::source::add_source(&source_json)
+        .expect("夹具书源写入（bookSourceUrl 指向回环）");
 
     let book = Book {
         book_url: book_url.clone(),
@@ -311,7 +320,10 @@ fn test_favcomic_comic_chain_detail_toc_content_offline() {
         );
     }
     // 脚本噪音不得残留（body 已被规则输出替代）
-    assert!(!content0.contains("chapterData"), "content 规则输出应替代原始 body");
+    assert!(
+        !content0.contains("chapterData"),
+        "content 规则输出应替代原始 body"
+    );
 
     // ③ 第 2 章不同图片列表（2 图），证明规则按章执行而非缓存串章
     let content1 =
@@ -420,7 +432,11 @@ fn test_empty_content_rule_returns_chapter_url_like_original() {
         content, chapter_url,
         "空 content 规则（非 JS 源）应回退章节 URL 字符串（对齐原版 Kotlin WebBook.kt:429-433）"
     );
-    assert_eq!(get("/ch/1"), 0, "空 content 规则不得请求章节页（包装层短路）");
+    assert_eq!(
+        get("/ch/1"),
+        0,
+        "空 content 规则不得请求章节页（包装层短路）"
+    );
     assert!(get("/book/1") >= 1, "目录刷新应请求详情页");
 }
 
@@ -523,13 +539,11 @@ fn test_fetch_image_with_decode_xor_decode_hit_and_composite_headers() {
     let composite = format!(
         "{url},{{\"headers\":{{\"X-Embed\":\"fav\",\"Referer\":\"https://embed.example/\"}}}}"
     );
-    let out2 =
-        legado_ffi::api::image_api::fetch_image_with_decode(&composite, &source_json)
-            .expect("复合 URL 解码不应失败");
+    let out2 = legado_ffi::api::image_api::fetch_image_with_decode(&composite, &source_json)
+        .expect("复合 URL 解码不应失败");
     let decoded2 = base64::engine::general_purpose::STANDARD
         .decode(
-            serde_json::from_str::<serde_json::Value>(&out2)
-                .unwrap()["base64"]
+            serde_json::from_str::<serde_json::Value>(&out2).unwrap()["base64"]
                 .as_str()
                 .expect("base64 字段"),
         )
@@ -579,9 +593,8 @@ fn test_fetch_image_with_decode_non_image_result_is_error() {
         r#"{{"bookSourceUrl":"http://127.0.0.1:{port}/src","bookSourceName":"XOR 解码源","bookSourceType":2,"jsLib":"function decode(b){{var o=new Uint8Array(b.length);for(var i=0;i<b.length;i++){{o[i]=b[i]^0xFF;}}return o;}}","ruleContent":{{"content":".x","imageDecode":"decode(result);"}}}}"#
     );
     let url = format!("http://127.0.0.1:{port}/img/plain.png");
-    let err =
-        legado_ffi::api::image_api::fetch_image_with_decode(&url, &source_json)
-            .expect_err("解码后非图片魔数必须报错，不得当成功回传");
+    let err = legado_ffi::api::image_api::fetch_image_with_decode(&url, &source_json)
+        .expect_err("解码后非图片魔数必须报错，不得当成功回传");
     assert!(
         err.to_string().contains("imageDecode"),
         "错误信息应指向 imageDecode 解码结果非有效图片，实际：{err}"
@@ -598,22 +611,27 @@ fn test_fetch_image_without_decode_rule_passes_through() {
     let plain = min_png();
     let plain_len = plain.len();
     let mut routes: HashMap<String, Route> = HashMap::new();
-    routes.insert("/img/plain.png".to_string(), binary_route(200, plain.clone()));
+    routes.insert(
+        "/img/plain.png".to_string(),
+        binary_route(200, plain.clone()),
+    );
     let (port, _hits, _log) = spawn_mock_server(Arc::new(routes));
 
     let source_json = format!(
         r#"{{"bookSourceUrl":"http://127.0.0.1:{port}/src","bookSourceName":"透传源","bookSourceType":2,"ruleContent":{{}}}}"#
     );
     let url = format!("http://127.0.0.1:{port}/img/plain.png");
-    let out =
-        legado_ffi::api::image_api::fetch_image_with_decode(&url, &source_json)
-            .expect("无解码规则的透传不应失败");
+    let out = legado_ffi::api::image_api::fetch_image_with_decode(&url, &source_json)
+        .expect("无解码规则的透传不应失败");
     let v: serde_json::Value = serde_json::from_str(&out).expect("结果 JSON 解析");
     assert_eq!(v["len"].as_u64(), Some(plain_len as u64));
     let decoded = base64::engine::general_purpose::STANDARD
         .decode(v["base64"].as_str().expect("base64 字段"))
         .expect("base64 解码");
-    assert_eq!(decoded, plain, "无 imageDecode 时应原样透传（base64 精确一致）");
+    assert_eq!(
+        decoded, plain,
+        "无 imageDecode 时应原样透传（base64 精确一致）"
+    );
 }
 
 /// HTTP 失败 → `LegadoError::Network`（默认档）：404 响应不得当成功回传。
@@ -631,9 +649,8 @@ fn test_fetch_image_http_error_is_network_error() {
     );
     // 未注册路由 → 404
     let url = format!("http://127.0.0.1:{port}/img/missing.png");
-    let err =
-        legado_ffi::api::image_api::fetch_image_with_decode(&url, &source_json)
-            .expect_err("HTTP 404 必须报错");
+    let err = legado_ffi::api::image_api::fetch_image_with_decode(&url, &source_json)
+        .expect_err("HTTP 404 必须报错");
     assert!(
         err.to_string().contains("HTTP 404"),
         "错误信息应含 HTTP 状态，实际：{err}"

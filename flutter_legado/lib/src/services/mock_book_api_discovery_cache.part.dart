@@ -153,6 +153,28 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
   Future<List<int>> listDownloadingChapters(String bookUrl) async =>
       const <int>[];
 
+  // ========== 图片磁盘缓存（契约 §2.46，Mock 以内存 Map 模拟落盘） ==========
+
+  /// [P4-2a | 2026-09-29] mock 图片磁盘缓存写侧：存入内存 Map（模拟 Rust
+  /// MD5 文件落盘），恒返回 true（对齐 Rust 侧写成功语义）。
+  @override
+  Future<bool> saveImageCache({
+    required String bookUrl,
+    required String url,
+    required List<int> bytes,
+  }) async {
+    _imageCache['$bookUrl\u0000$url'] = List<int>.of(bytes);
+    return true;
+  }
+
+  /// [P4-2a | 2026-09-29] mock 图片磁盘缓存读侧：命中返回字节副本，
+  /// 未命中返回 null（对齐 Rust 侧本地优先语义）。
+  @override
+  Future<List<int>?> getImageCache(String bookUrl, String url) async {
+    final hit = _imageCache['$bookUrl\u0000$url'];
+    return hit == null ? null : List<int>.of(hit);
+  }
+
   // ========== 章节购买 ==========
 
   @override

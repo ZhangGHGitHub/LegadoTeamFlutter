@@ -847,6 +847,29 @@ abstract class BookApi {
   /// 供目录页 1s 轮询（P2-28b/c）驱动下载中行 16px 加载指示动画。
   Future<List<int>> listDownloadingChapters(String bookUrl);
 
+  // ========== 图片磁盘缓存（对齐原版 BookHelp.saveImage/getImage，契约 §2.46） ==========
+
+  /// 将图片字节落盘缓存（对齐原版 `BookHelp.writeImage`，契约 §2.46）
+  ///
+  /// [bookUrl] 书 URL（缓存目录按书隔离）；[url] 图片 URL（文件名 =
+  /// MD5(url) 中段 16 字符 + 后缀，对齐原版 `MD5Utils.md5Encode16`）；
+  /// [bytes] 图片原始字节。成功返回 `true`；写盘失败/输入非法返回
+  /// `false`（静默降级，**不抛异常**——缓存失败不影响在线加载）。
+  /// [P4-2a | 2026-09-29] 加法式新增（契约 §2.46 image_cache FFI）。
+  Future<bool> saveImageCache({
+    required String bookUrl,
+    required String url,
+    required List<int> bytes,
+  });
+
+  /// 读取图片磁盘缓存（对齐原版 `BookHelp.getImage`/`isImageExist` 本地优先
+  /// 语义，契约 §2.46）
+  ///
+  /// 命中返回图片字节；未命中或读失败返回 `null`（调用方降级走网络加载，
+  /// 对齐原版 `MangaVH.mangaImagePath` L31-34 本地优先语义）。
+  /// [P4-2a | 2026-09-29] 加法式新增（契约 §2.46 image_cache FFI）。
+  Future<List<int>?> getImageCache(String bookUrl, String url);
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）

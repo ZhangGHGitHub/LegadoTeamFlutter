@@ -295,6 +295,45 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
     return list;
   }
 
+  // ========== 图片磁盘缓存（对齐原版 BookHelp.saveImage/getImage，契约 §2.46） ==========
+
+  /// [P4-2a | 2026-09-29] 接通 save_image_cache FFI（契约 §2.46 image_cache）：
+  /// bytes 先 base64 编码跨 FFI（对齐 fetchImageWithDecode 的 base64 约定）；
+  /// 任何异常统一降级 `false`（写失败不影响在线加载，对齐原版 saveImage
+  /// catch 仅记日志不抛异常语义）。
+  @override
+  Future<bool> saveImageCache({
+    required String bookUrl,
+    required String url,
+    required List<int> bytes,
+  }) async {
+    try {
+      return await bridge.saveImageCache(
+        bookUrl: bookUrl,
+        url: url,
+        bytesBase64: base64Encode(bytes),
+      );
+    } catch (e) {
+      debugPrint('[RustApi] saveImageCache 失败（降级在线加载）：$e');
+      return false;
+    }
+  }
+
+  /// [P4-2a | 2026-09-29] 接通 get_image_cache FFI（契约 §2.46 image_cache）：
+  /// 命中 → base64 解码返回图片字节；未命中/读失败/FFI 异常统一降级
+  /// `null`（调用方回落网络加载，对齐原版 mangaImagePath 本地优先语义）。
+  @override
+  Future<List<int>?> getImageCache(String bookUrl, String url) async {
+    try {
+      final b64 = await bridge.getImageCache(bookUrl: bookUrl, url: url);
+      if (b64 == null || b64.isEmpty) return null;
+      return base64Decode(b64);
+    } catch (e) {
+      debugPrint('[RustApi] getImageCache 失败（降级在线加载）：$e');
+      return null;
+    }
+  }
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）

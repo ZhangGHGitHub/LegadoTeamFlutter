@@ -139,6 +139,16 @@ pub mod ffi {
         legado_js::host_api::cache_store::set_cache_dir(&dir);
     }
 
+    /// 注入图片磁盘缓存目录（P4-2a，契约 §1.6.1/§2.46）
+    ///
+    /// Flutter 侧启动时传应用私有缓存目录（Dart `getApplicationCacheDirectory()`）
+    /// 下 `image_cache` 子目录，使 `save_image_cache`/`get_image_cache`（对齐原版
+    /// `BookHelp.saveImage`/`getImage`，§2.46）落应用私有存储；未注入时 Rust 侧
+    /// 回落 `<temp_dir>/legado-image-cache`（一次性告警，对齐 cache_store 先例）。
+    pub fn set_image_cache_dir(dir: String) {
+        crate::api::image_cache_api::set_cache_dir(&dir);
+    }
+
     /// 获取版本号
     pub fn version() -> String {
         env!("CARGO_PKG_VERSION").to_string()
@@ -1816,6 +1826,44 @@ pub mod ffi {
     /// 失败（数据库锁/文件损坏）或数据库未初始化时降级返回 0，不抛异常。
     pub fn cache_shrink_database() -> Result<i64, BridgeError> {
         Ok(crate::api::cache_api::shrink_database())
+    }
+
+    /// 写入图片磁盘缓存（P4-2a，API_CONTRACT §2.46）
+    ///
+    /// 对齐原版 `BookHelp.saveImage`/`writeImage`：`bytes_base64` 为图片字节的
+    /// base64（Dart 侧编码）；落盘路径 = `{注入缓存根}/sanitize(bookUrl)/images/
+    /// {md5_mid16(url)}.{suffix}`（md5 中段 16 字符对齐 `MD5Utils.md5Encode16`）。
+    /// base64 解码失败 → `Err`（Ffi）；目录创建/写盘 IO 失败 → 降级 `Ok(false)`
+    /// （静默 + 一次性日志，**不抛异常**——缓存失败不影响在线加载）。
+    pub fn save_image_cache(
+        book_url: String,
+        url: String,
+        bytes_base64: String,
+    ) -> Result<bool, BridgeError> {
+        use base64::Engine as _;
+        let bytes = base64::engine::general_purpose::STANDARD
+            .decode(&bytes_base64)
+            .map_err(|e| BridgeError {
+                message: format!("save_image_cache: base64 解码失败: {e}"),
+            })?;
+        Ok(crate::api::image_cache_api::save_image_cache(
+            &book_url, &url, &bytes,
+        ))
+    }
+
+    /// 读取图片磁盘缓存（P4-2a，API_CONTRACT §2.46）
+    ///
+    /// 命中返回图片字节的 base64（Dart 侧解码）；未命中 / 读盘失败均降级
+    /// `Ok(None)`（读失败一次性日志），调用方一律回落网络加载——对齐原版
+    /// `BookHelp.getImage`/`isImageExist` 的「本地存在才用，否则走网络」语义。
+    pub fn get_image_cache(book_url: String, url: String) -> Result<Option<String>, BridgeError> {
+        use base64::Engine as _;
+        let Some(bytes) = crate::api::image_cache_api::get_image_cache(&book_url, &url) else {
+            return Ok(None);
+        };
+        Ok(Some(
+            base64::engine::general_purpose::STANDARD.encode(bytes),
+        ))
     }
 
     /// 写入/覆盖单章缓存（Task #136 R5，API_CONTRACT §2.43.1）
