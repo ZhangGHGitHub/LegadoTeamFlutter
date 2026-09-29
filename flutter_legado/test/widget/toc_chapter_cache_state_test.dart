@@ -13,33 +13,45 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../mocks/mocks.dart';
 
-/// 目录页章节行缓存状态指示测试（用户验收 P2-28b 三态 → P2-29 五态，
-/// 对齐参考版 TocScreen.StatusIcon + DownloadState 状态机 —
+/// 目录页章节行缓存状态指示测试（用户验收 P2-28b 三态 → P2-29 五态 →
+/// P2-29b 互斥分支与着色修正，对齐参考版 ReaderBookSheet.kt
+/// ReaderSheetChapterStatus 单 when 链 + DownloadState 状态机 —
 /// full-stack-engineer + UI）
 ///
-/// 图标取证基准（参考版 legado-with-MD3 TocScreen.kt StatusIcon 1148-1241）：
-/// - 未缓存（NONE）→ Icons.Outlined.DownloadForOffline（outline 50% 着色）
-///   → 我方 Icons.download_for_offline_outlined
-/// - [P2-29] 当前章（DUR）→ Icons.Default.LocationOn（secondary 着色）
-///   → 我方 Icons.location_on（行高适配 16px，参考版 24dp；替代 P2-28b
-///   的 check_circle）
-/// - [P2-29] 下载中（DOWNLOADING）→ AppContainedLoadingIndicator 16dp
-///   转圈 → 我方 SizedBox 16 + CircularProgressIndicator（strokeWidth 2，
-///   primary 着色），数据经 BookApi.listDownloadingChapters（契约 §2.43.7，
-///   1s 轮询同周期刷新）
-/// - [P2-29] 失败（ERROR）→ 红色重试图标（Icons.refresh，error 着色）
-///   可点击 → 单章重下 cacheDownloadStart(bookUrl, idx, idx)；数据链留项：
-///   Rust 任务表仅 failed 计数、无逐章失败记录 → 生产恒空恒不显示（不伪造），
+/// 图标取证基准（参考版 legado-with-MD3 ReaderBookSheet.kt
+/// ReaderSheetChapterStatus :1039-1096 单 when 互斥链，ReaderSheetStatusIcon
+/// :1100-1111 tint=secondary；行级高亮 ReaderSheetChapterItem :965-974）：
+/// - ① showCount（字数开关开 && wordCount 非空 && (LOCAL || SUCCESS)）
+///   → 字数胶囊：当前章 = primaryContainer 底 + onPrimaryContainer 字；
+///   普通章 = surfaceContainer 底（灰底）+ onSurfaceVariant 字；
+///   8sp labelSmallEmphasized，padding 横 6 纵 2，圆角 8 —— 胶囊短路
+///   全部状态图标（当前章有字数时只显示胶囊，无定位图标）
+/// - ② isDur（当前章且无胶囊）→ Icons.Default.LocationOn（secondary 着色，
+///   非红）→ 我方 Icons.location_on（行高适配 16px，参考版 16dp）
+/// - ③ DOWNLOADING → AppContainedLoadingIndicator 16dp 转圈 → 我方
+///   SizedBox 16 + CircularProgressIndicator（strokeWidth 2，primary 着色），
+///   数据经 BookApi.listDownloadingChapters（契约 §2.43.7，1s 轮询同周期刷新）
+/// - ④ SUCCESS（已缓存且无胶囊，如字数开关关）→ Icons.Default.CheckCircle
+///   （secondary 着色）→ 我方 Icons.check_circle（16px）
+/// - ⑤ ERROR → 红色重试图标（Icons.refresh，error 着色）可点击 → 单章重下
+///   cacheDownloadStart(bookUrl, idx, idx)；数据链留项：Rust 任务表仅
+///   failed 计数、无逐章失败记录 → 生产恒空恒不显示（不伪造），
 ///   本文件经 TocScreen.failedChapterIndicesForTest 注入缝驱动该分支
+/// - ⑥ NONE（未缓存网络章）→ Icons.Outlined.DownloadForOffline
+///   （outline 50% 着色）→ 我方 Icons.download_for_offline_outlined
+/// - ⑦ LOCAL（本地书无字数且非当前章）→ when 链无分支命中，渲染空
+///   （本地书不显示对勾图标）
+/// 行级高亮（参考版 ReaderSheetChapterItem :965-974）：当前章（isDur）
+/// 行背景 secondaryContainer + 标题 onSecondaryContainer（M3 ListTile 经
+/// tileColor 铺底、textColor 注色）；普通行 onSurface。
 /// 字数胶囊：Rust 回填链（对齐原版 BookHelp.writeText → upWordCount，
 /// StringUtils.wordCountFormat 存「1200字」/「1.1万字」形态），展示端
-/// 原样输出（对齐原版 ChapterListAdapter.kt:231 / 参考版 TocScreen.kt:1205），
-/// 不再追加「 字」后缀。
+/// 原样输出（对齐原版 ChapterListAdapter.kt:231），不再追加「 字」后缀。
 /// [P2-28b] 追加：页面打开期间每秒轮询 listCachedChapterUrls（零契约面
 /// 替代原版 ChapterListFragment 订阅 EventBus.SAVE_CONTENT 的行刷新），
-/// 批量离线缓存下载中对应行 ⬇ 图标实时变为字数胶囊/无图标；dispose 取消
-/// 定时器。注意：在线书 TocScreen 持有 1s 周期轮询定时器，本文件各用例
-/// 均用显式 tester.pump 推进（pumpAndSettle 永不停机），并在用例末尾
+/// 批量离线缓存下载中对应行 ⬇ 图标实时变为字数胶囊/对勾图标；dispose
+/// 取消定时器。注意：在线书 TocScreen 持有 1s 周期轮询定时器，本文件各
+/// 用例均用显式 tester.pump 推进（pumpAndSettle 永不停机），并在用例末尾
 /// 卸载（dispose 取消定时器，teardown 的「periodic Timer still active」
 /// 检查同时充当「dispose 后不再轮询」的证明）。
 void main() {
@@ -67,6 +79,53 @@ void main() {
   /// item_chapter_list.xml 布局），故以行为锚点而非 Text 后代。
   Finder chapterRow(String title) =>
       find.ancestor(of: find.text(title), matching: find.byType(ListTile));
+
+  /// [P2-29b] 行内字数胶囊 Container（字数 Text 的最近 Container 祖先；
+  /// M3 ListTile 内部无 Container 且胶囊 Container 直挂 Text，上溯首个
+  /// 命中即胶囊本体）。
+  Container capsuleOf(WidgetTester tester, String rowTitle, String wordCount) {
+    final Element el = tester.element(
+      find.descendant(of: chapterRow(rowTitle), matching: find.text(wordCount)),
+    );
+    Container? capsule;
+    // 本工具链（Flutter 3.44.8）Element 无公开 parent getter，改用
+    // visitAncestorElements 上溯（命中即停）
+    el.visitAncestorElements((Element ancestor) {
+      if (ancestor.widget is Container) {
+        capsule = ancestor.widget as Container;
+        return false;
+      }
+      return true;
+    });
+    return capsule!;
+  }
+
+  /// [P2-29b] 行标题 Text 的包裹 DefaultTextStyle（M3 ListTile 以
+  /// AnimatedDefaultTextStyle 包标题，并把行 textColor 写入 style.color；
+  /// 上溯取首个 DefaultTextStyle 祖先（含子类 AnimatedDefaultTextStyle））。
+  DefaultTextStyle titleStyleOf(WidgetTester tester, String rowTitle) {
+    final Element el = tester.element(
+      find.descendant(of: chapterRow(rowTitle), matching: find.text(rowTitle)),
+    );
+    DefaultTextStyle? style;
+    el.visitAncestorElements((Element ancestor) {
+      if (ancestor.widget is DefaultTextStyle) {
+        style = ancestor.widget as DefaultTextStyle;
+        return false;
+      }
+      return true;
+    });
+    return style!;
+  }
+
+  /// [P2-29b] 行背景（M3 ListTile 以 Ink.decoration 承载 tileColor）。
+  Color? tileColorOf(WidgetTester tester, String rowTitle) {
+    final ink = tester.widget<Ink>(
+      find.descendant(of: chapterRow(rowTitle), matching: find.byType(Ink)),
+    );
+    final deco = ink.decoration;
+    return deco is ShapeDecoration ? deco.color : null;
+  }
 
   const String bookUrl = 'https://src.com/book/1';
 
@@ -142,7 +201,7 @@ void main() {
     await tester.pump();
   }
 
-  testWidgets('未缓存网络章显示离线下载图标⬇，已缓存章与卷标题行无图标',
+  testWidgets('未缓存网络章显示离线下载图标⬇，已缓存章与卷标题行无状态图标',
       (tester) async {
     // 缓存集合命中 u0（第一章）与 u3（当前章），u2 未缓存；卷 v0 不在集合
     stubCommon(makeChapters(), const ['u0', 'u3']);
@@ -159,7 +218,8 @@ void main() {
       ),
       findsOneWidget,
     );
-    // 已缓存的「第一章」无图标，且字数胶囊原样展示（P2-28b：不再追加「 字」）
+    // 已缓存的「第一章」无状态图标，字数胶囊原样展示（P2-28b：不再追加
+    // 「 字」；[P2-29b] 普通章胶囊为 surfaceContainer 灰底，分色见互斥用例）
     expect(
       find.descendant(
         of: chapterRow('第一章'),
@@ -171,13 +231,18 @@ void main() {
       find.descendant(of: chapterRow('第一章'), matching: find.text('1200')),
       findsOneWidget,
     );
-    // [P2-29] 当前章「第四章」显示定位图标（参考版 DUR 态，替代 check_circle）
+    // [P2-29b] 当前章「第四章」（有字数且已缓存）：字数胶囊短路定位图标——
+    // 只显示「3400」胶囊，无 location_on（修前两者并存，本断言修前红）
+    expect(
+      find.descendant(of: chapterRow('第四章'), matching: find.text('3400')),
+      findsOneWidget,
+    );
     expect(
       find.descendant(
         of: chapterRow('第四章'),
         matching: find.byIcon(Icons.location_on),
       ),
-      findsOneWidget,
+      findsNothing,
     );
     // 卷标题行（Container，非章节行 ListTile）无状态图标（原版 ivChecked.gone）
     final volumeRow = find.ancestor(
@@ -200,14 +265,16 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('当前阅读章恒显示定位图标（未缓存时以定位替代⬇，对齐原版 isCurrent 分支）',
+  testWidgets('当前章无字数胶囊（未缓存不显字数）显示定位图标替代⬇（对齐参考版 isDur 分支）',
       (tester) async {
-    // 缓存集合仅 u0：u2 未缓存、u3（当前章）也未缓存
+    // 缓存集合仅 u0：u2 未缓存、u3（当前章）也未缓存 → 当前章不满足
+    // showCount（需本地 || 已缓存）→ 无字数胶囊 → 走 isDur 分支显示定位图标
     stubCommon(makeChapters(), const ['u0']);
     await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
     await settleInitial(tester);
 
-    // [P2-29] 当前章「第四章」：定位图标（DUR 态，替代对勾圈）
+    // [P2-29b] 当前章「第四章」无胶囊（未缓存）：定位图标（DUR 分支，
+    // 参考版 :1063，short-circuit 于 ①胶囊之后；替代 P2-28b 的对勾圈）
     expect(
       find.descendant(
         of: chapterRow('第四章'),
@@ -215,7 +282,7 @@ void main() {
       ),
       findsOneWidget,
     );
-    // 当前章未缓存也不显示离线下载图标（原版：isCurrent 时状态图标置定位）
+    // 当前章未缓存也不显示离线下载图标（参考版 isDur 分支优先于 NONE 分支）
     expect(
       find.descendant(
         of: chapterRow('第四章'),
@@ -236,12 +303,15 @@ void main() {
 
   testWidgets('字数胶囊：开关默认开且 wordCount 非空原样展示，空则隐藏',
       (tester) async {
-    stubCommon(makeChapters(), const ['u0']);
+    // [P2-29b] 胶囊条件对齐参考版 showCount（:1039-1041）：开关开 &&
+    // wordCount 非空 && (本地 || 已缓存)——两章均需已缓存才显示胶囊
+    stubCommon(makeChapters(), const ['u0', 'u3']);
     await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
     await settleInitial(tester);
 
-    // 有 wordCount 的两章显示字数胶囊，原样展示（对齐原版 tv_word_count /
-    // 参考版 NormalCard 原样输出；Rust 回填值自带「字/万字」后缀）
+    // 有 wordCount 且已缓存的两章显示字数胶囊，原样展示（对齐原版
+    // tv_word_count / 参考版 NormalCard 原样输出；Rust 回填值自带
+    // 「字/万字」后缀）
     expect(
       find.descendant(of: chapterRow('第一章'), matching: find.text('1200')),
       findsOneWidget,
@@ -261,11 +331,13 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('「加载字数」开关关闭时隐藏字数胶囊（对齐原版 tocCountWords 门控）',
+  testWidgets('「加载字数」开关关闭：隐藏字数胶囊，已缓存章显示对勾图标（参考版 SUCCESS 态）',
       (tester) async {
-    // 开关持久化为 false（默认 true）：wordCount 非空也不显示胶囊
+    // 开关持久化为 false（默认 true）：wordCount 非空也不显示胶囊；
+    // [P2-29b] 已缓存且无胶囊的章走参考版 SUCCESS 分支 → 对勾图标
+    // （CheckCircle，secondary 色，:1069-1071）
     SharedPreferences.setMockInitialValues({'toc_load_word_count': false});
-    stubCommon(makeChapters(), const ['u0']);
+    stubCommon(makeChapters(), const ['u0', 'u3']);
     await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
     await settleInitial(tester);
 
@@ -277,14 +349,48 @@ void main() {
       find.descendant(of: chapterRow('第四章'), matching: find.text('3400')),
       findsNothing,
     );
+    // 已缓存的「第一章」：对勾图标（SUCCESS 态替代 P2-29 的「已缓存无图标」）
+    final checkIcon = find.descendant(
+      of: chapterRow('第一章'),
+      matching: find.byIcon(Icons.check_circle),
+    );
+    expect(checkIcon, findsOneWidget);
+    // 对勾着色 secondary（对齐参考版 ReaderSheetStatusIcon tint，:1100-1111）
+    expect(
+      tester.widget<Icon>(checkIcon).color,
+      Theme.of(tester.element(chapterRow('第一章'))).colorScheme.secondary,
+    );
+    // 当前章「第四章」（开关关 → 无胶囊）：定位图标（isDur 分支，
+    // 优先于 NONE/未缓存判定——u3 本未缓存，不显示 ⬇）
+    expect(
+      find.descendant(
+        of: chapterRow('第四章'),
+        matching: find.byIcon(Icons.location_on),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: chapterRow('第四章'),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
+      ),
+      findsNothing,
+    );
+    // 卸载：dispose 取消轮询定时器（在线书）
     await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('本地书不显示⬇图标且不请求缓存列表（对齐原版 isLocalBook 恒 cached）',
       (tester) async {
+    // [P2-29b] 第一章带 wordCount：本地书恒视为已缓存（LOCAL 计入 showCount
+    // 的 LOCAL || SUCCESS 条件），有字数即显示胶囊
     final localChapters = [
       const BookChapter(
-          url: 'u0', title: '第一章', index: 0, bookUrl: bookUrl),
+          url: 'u0',
+          title: '第一章',
+          index: 0,
+          bookUrl: bookUrl,
+          wordCount: '1200'),
       const BookChapter(
           url: 'u1', title: '第二章', index: 1, bookUrl: bookUrl),
       const BookChapter(
@@ -312,8 +418,8 @@ void main() {
     expect(find.byIcon(Icons.download_for_offline_outlined), findsNothing);
     // 本地书不请求缓存列表（数据无意义，避免无谓 FFI 调用；亦免轮询定时器）
     verifyNever(() => mockApi.listCachedChapterUrls(any()));
-    // [P2-29] 本地书当前章（第二章）仍显示定位图标（LOCAL 恒缓存语义下
-    // isCurrent 分支 → 定位图标，替代 check_circle）
+    // [P2-29] 本地书当前章（第二章，无字数）显示定位图标（LOCAL 恒缓存
+    // 语义下 isDur 分支，被 ①胶囊短路后的第二分支）
     expect(
       find.descendant(
         of: chapterRow('第二章'),
@@ -321,6 +427,15 @@ void main() {
       ),
       findsOneWidget,
     );
+    // [P2-29b] 本地书有字数的章节显示字数胶囊（LOCAL 计入 showCount 的
+    // LOCAL || SUCCESS 条件，参考版 :1041）
+    expect(
+      find.descendant(of: chapterRow('第一章'), matching: find.text('1200')),
+      findsOneWidget,
+    );
+    // [P2-29b] 本地书不显示对勾图标（LOCAL 不等同网络书 SUCCESS 态：
+    // 参考版 when 链对 LOCAL 且无字数且非当前的章节无分支命中，渲染空）
+    expect(find.byIcon(Icons.check_circle), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -509,7 +624,8 @@ void main() {
       ),
       findsOneWidget,
     );
-    // 已缓存的「第一章」：无状态图标（已缓存态）
+    // 已缓存的「第一章」：[P2-29b] 显示字数胶囊（非状态图标，互斥分支 ①），
+    // ⬇ 与转圈均不显示
     expect(
       find.descendant(
         of: chapterRow('第一章'),
@@ -523,6 +639,10 @@ void main() {
         matching: find.byType(CircularProgressIndicator),
       ),
       findsNothing,
+    );
+    expect(
+      find.descendant(of: chapterRow('第一章'), matching: find.text('1200')),
+      findsOneWidget,
     );
     // 卸载：dispose 取消轮询定时器（在线书）
     await tester.pumpWidget(const SizedBox());
@@ -574,6 +694,166 @@ void main() {
     verify(() => mockApi.cacheDownloadStart(bookUrl, 2, 2)).called(1);
     expect(
       find.textContaining('已加入重新下载队列'),
+      findsOneWidget,
+    );
+    // 卸载：dispose 取消轮询定时器（在线书）
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // ===== [P2-29b] 互斥分支与着色修正断言 =====
+
+  testWidgets(
+      '[P2-29b] 当前章+有字数（已缓存）：只显示胶囊无状态图标（互斥）+ isDur 分色',
+      (tester) async {
+    // u0/u3 均缓存且带 wordCount，当前章为「第四章」(u3)：胶囊短路全部
+    // 状态图标——定位/对勾/转圈/⬇/重试均须缺席（修前胶囊与定位图标
+    // 并存，本断言修前红）
+    stubCommon(makeChapters(), const ['u0', 'u3']);
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
+    await settleInitial(tester);
+
+    final cs = Theme.of(tester.element(chapterRow('第四章'))).colorScheme;
+
+    // ① 胶囊独占断言：「第四章」仅有「3400」胶囊，五种状态元素皆无
+    expect(
+      find.descendant(of: chapterRow('第四章'), matching: find.text('3400')),
+      findsOneWidget,
+    );
+    for (final finder in [
+      find.byIcon(Icons.location_on),
+      find.byIcon(Icons.check_circle),
+      find.byType(CircularProgressIndicator),
+      find.byIcon(Icons.download_for_offline_outlined),
+      find.byIcon(Icons.refresh),
+    ]) {
+      expect(
+        find.descendant(of: chapterRow('第四章'), matching: finder),
+        findsNothing,
+      );
+    }
+
+    // ② isDur 分色（参考版 :1045-1059）：当前章胶囊 primaryContainer 底 +
+    // onPrimaryContainer 字，8sp（参考版 labelSmallEmphasized.copy(8sp)）
+    final currentCapsule = capsuleOf(tester, '第四章', '3400');
+    final currentDeco = currentCapsule.decoration;
+    expect(currentDeco, isA<BoxDecoration>());
+    expect((currentDeco as BoxDecoration).color, cs.primaryContainer);
+    final currentText = tester.widget<Text>(find.descendant(
+      of: chapterRow('第四章'),
+      matching: find.text('3400'),
+    ));
+    expect(currentText.style?.color, cs.onPrimaryContainer);
+    expect(currentText.style?.fontSize, 8);
+
+    // ③ 普通章胶囊（「第一章」，非当前）：surfaceContainer 灰底 +
+    // onSurfaceVariant 字（参考版 :1048/:1058 非 isDur 分支）
+    final normalCapsule = capsuleOf(tester, '第一章', '1200');
+    final normalDeco = normalCapsule.decoration;
+    expect(normalDeco, isA<BoxDecoration>());
+    expect((normalDeco as BoxDecoration).color, cs.surfaceContainer);
+    final normalText = tester.widget<Text>(find.descendant(
+      of: chapterRow('第一章'),
+      matching: find.text('1200'),
+    ));
+    expect(normalText.style?.color, cs.onSurfaceVariant);
+
+    // 卸载：dispose 取消轮询定时器（在线书）
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('[P2-29b] 当前章无字数：定位图标 secondary 色（非红）',
+      (tester) async {
+    // 「第三章」(u2) 为当前章且无 wordCount、未缓存 → 无胶囊 → isDur 分支
+    // 定位图标；[P2-29b] 将 P2-29 的红色定位改为 secondary（参考版
+    // ReaderSheetStatusIcon :1100-1111 tint=colorScheme.secondary）
+    stubCommon(makeChapters(), const ['u0']);
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 2))));
+    await settleInitial(tester);
+
+    final locationIcon = find.descendant(
+      of: chapterRow('第三章'),
+      matching: find.byIcon(Icons.location_on),
+    );
+    expect(locationIcon, findsOneWidget);
+    // 着色 secondary（非红/error 色）
+    final cs = Theme.of(tester.element(chapterRow('第三章'))).colorScheme;
+    expect(tester.widget<Icon>(locationIcon).color, cs.secondary);
+    // 当前章走 isDur 分支优先于 NONE 分支 → 不显示 ⬇
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
+      ),
+      findsNothing,
+    );
+    // 卸载：dispose 取消轮询定时器（在线书）
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      '[P2-29b] 当前章行级高亮：secondaryContainer 底 + onSecondaryContainer '
+      '标题（参考版 ReaderSheetChapterItem :965-974）',
+      (tester) async {
+    stubCommon(makeChapters(), const ['u0', 'u3']);
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
+    await settleInitial(tester);
+
+    final cs = Theme.of(tester.element(chapterRow('第四章'))).colorScheme;
+
+    // 当前章行背景：secondaryContainer（M3 ListTile 经 Ink.decoration 承载
+    // tileColor）
+    expect(tileColorOf(tester, '第四章'), cs.secondaryContainer);
+    // 当前章标题色：onSecondaryContainer（M3 ListTile 以 effectiveColor
+    // 覆写标题样式色，经 textColor 参数注入）
+    expect(
+      titleStyleOf(tester, '第四章').style.color,
+      cs.onSecondaryContainer,
+    );
+    // 普通行标题色：onSurface 不变（tileColor 为 null 回退主题默认）
+    expect(titleStyleOf(tester, '第一章').style.color, cs.onSurface);
+    // 卸载：dispose 取消轮询定时器（在线书）
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('[P2-29b] 未缓存章带 wordCount 不显示胶囊（showCount 需 本地||已缓存）',
+      (tester) async {
+    // u2 带 wordCount「2500」但未缓存 → 不满足 showCount 的
+    // (本地 || 已缓存) 条件 → 无胶囊，落 ⑥ NONE 分支显 ⬇；
+    // 已缓存 u0（当前章）胶囊正常
+    final chapters = [
+      const BookChapter(
+        url: 'u0',
+        title: '第一章',
+        index: 0,
+        bookUrl: bookUrl,
+        wordCount: '1200',
+      ),
+      const BookChapter(
+        url: 'u2',
+        title: '第三章',
+        index: 2,
+        bookUrl: bookUrl,
+        wordCount: '2500',
+      ),
+    ];
+    stubCommon(chapters, const ['u0']);
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 0))));
+    await settleInitial(tester);
+
+    expect(
+      find.descendant(of: chapterRow('第三章'), matching: find.text('2500')),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
+      ),
+      findsOneWidget,
+    );
+    // 已缓存「第一章」（当前章）：胶囊正常显示
+    expect(
+      find.descendant(of: chapterRow('第一章'), matching: find.text('1200')),
       findsOneWidget,
     );
     // 卸载：dispose 取消轮询定时器（在线书）

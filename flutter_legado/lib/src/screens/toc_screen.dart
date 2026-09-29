@@ -41,6 +41,15 @@ import '../utils/book_open_utils.dart';
 ///   同周期刷新）/ 失败→红色重试图标（点击单章重下，复用
 ///   cacheDownloadStart(idx, idx)；失败记录数据源留项恒空，恒不显示）/
 ///   未缓存→⬇ / 已缓存→无图标（本地书恒视为已缓存，无图标）
+/// - [P2-29b] 状态元素互斥分支与着色修正（用户指正：参考版当前章没有
+///   红色定位图标，只有高亮胶囊）：行右侧状态元素改为对齐参考版
+///   ReaderSheetChapterStatus 单 when 链的互斥分支（字数胶囊短路全部状态
+///   图标——当前章有字数时只显示高亮胶囊，不再与定位图标并存）；定位图标
+///   着色统一 secondary（参考 ReaderSheetStatusIcon tint）；补参考版
+///   SUCCESS 态对勾图标（已缓存且无胶囊时，secondary 色）；当前章行级
+///   高亮改参考行色（背景 secondaryContainer + 标题 onSecondaryContainer）；
+///   字数胶囊改 isDur 分色（当前章 primaryContainer/onPrimaryContainer，
+///   普通章 surfaceContainer/onSurfaceVariant，8sp、圆角 8）
 /// - [P2-28b] 页面打开期间每秒轮询缓存状态（对齐原版 ChapterListFragment
 ///   订阅 EventBus.SAVE_CONTENT 的行刷新语义）：批量离线缓存下载中，每章正文
 ///   保存后对应行 ⬇ 图标实时变为字数胶囊/无图标，无需退出重进
@@ -938,49 +947,89 @@ class _TocScreenState extends ConsumerState<TocScreen>
     );
   }
 
-  /// 章节行：当前章节淡蓝底高亮（[PARITY C2 T5]）；右侧字数胶囊（[PARITY C2 T2]）
-  /// 与状态图标（[P2-29] 五态对齐参考版 TocScreen.StatusIcon +
-  /// DownloadState 状态机，优先级 isDur→DOWNLOADING→ERROR→未缓存→已缓存）：
-  /// - 当前阅读章（isDur）→ 定位图标（Icons.Default.LocationOn →
-  ///   Icons.location_on，着色 secondary，优先于其余态，含本地书——对齐
-  ///   参考版 DUR 分支；[P2-29] 替代 P2-28b 的 check_circle）
-  /// - 下载中（[P2-29]，index ∈ _downloadingIndices，数据经
+  /// 章节行：当前章行级高亮（[P2-29b] 对齐参考版 ReaderSheetChapterItem
+  /// :965-974——isDur → 行背景 secondaryContainer + 标题 onSecondaryContainer，
+  /// 替代此前 primary 10% 淡底；[PARITY C2 T5]）；右侧状态元素为
+  /// **互斥分支**（[P2-29b] 对齐参考版 ReaderSheetChapterStatus :1039-1096 单
+  /// when 链，优先级从高到低，字数胶囊短路全部状态图标）：
+  /// - ① showCount（加载字数开关开 && wordCount 非空 && (本地书 || 已缓存)，
+  ///   对齐参考版 :1039-1041）→ 字数胶囊：当前章 = primaryContainer 底 +
+  ///   onPrimaryContainer 字；普通章 = surfaceContainer 底 + onSurfaceVariant
+  ///   字；8sp labelSmallEmphasized，padding 横 6 纵 2，圆角 8
+  ///   （当前章有字数时只显示高亮胶囊，无定位图标）
+  /// - ② isDur（当前章且无胶囊）→ 定位图标（Icons.Default.LocationOn →
+  ///   Icons.location_on；[P2-29b] 着色统一 secondary，对齐参考版
+  ///   ReaderSheetStatusIcon :1100-1111 tint=colorScheme.secondary，16px）
+  /// - ③ 下载中（index ∈ _downloadingIndices，数据经
   ///   BookApi.listDownloadingChapters 契约 §2.43.7，对齐参考版 LOADING 态
   ///   `AppContainedLoadingIndicator` 16dp 形态）→ 16px 加载指示
   ///   （SizedBox 16 + CircularProgressIndicator strokeWidth 2，着色 primary）
-  /// - 失败（[P2-29]，index ∈ _failedIndices，对齐参考版 ERROR 态）→ 红色
-  ///   重试图标（Icons.refresh，error 着色）可点击 → 单章重下复用
+  /// - ④ 已缓存且无胶囊（网络书 url ∈ _cachedUrls，如字数开关关或 wordCount
+  ///   空）→ 对勾图标（参考版 SUCCESS 态 :1069-1071 CheckCircle，secondary 色）
+  /// - ⑤ 失败（index ∈ _failedIndices，对齐参考版 ERROR 态）→ 红色重试图标
+  ///   （Icons.refresh，error 着色）可点击 → 单章重下复用
   ///   cacheDownloadStart(bookUrl, idx, idx)（契约 §2.43.3 闭区间单章语义）；
   ///   数据链留项：Rust 任务表仅 failed 计数、无逐章失败记录 → 生产恒空
   ///   恒不显示（不伪造，契约 §2.43.7 ERROR 留项）
-  /// - 未缓存网络章 → 离线下载图标 ⬇（Icons.Outlined.DownloadForOffline →
+  /// - ⑥ 未缓存网络章 → 离线下载图标 ⬇（Icons.Outlined.DownloadForOffline →
   ///   Icons.download_for_offline_outlined，着色 outline 50% 透明度）
-  /// - 已缓存章 / 本地书 → 无图标（本地书恒视为已缓存，对齐原版 isLocalBook /
-  ///   参考版 LOCAL 态；卷标题行走 _buildVolumeRow，不参与缓存判定）
+  /// - ⑦ 本地书章节（无胶囊且非当前章）→ 无显示（参考版 LOCAL 态：showCount
+  ///   假且非 isDur 时 when 链无分支命中，渲染空；本地书不等同网络书 SUCCESS
+  ///   态，故也不显示对勾图标；卷标题行走 _buildVolumeRow，不参与判定）
   /// 字数胶囊：原样展示 wordCount（Rust 回填链已按原版 wordCountFormat 存
   /// 「1200字」/「1.1万字」形态，与原版 ChapterListAdapter:231 / 参考版
   /// TocScreen.kt:1205 的 as-is 展示一致，不再追加「 字」后缀）。
-  /// 布局对齐 item_chapter_list.xml：状态图标居右、字数胶囊在其左侧。
-  /// [PARITY C2 T5] 当前章高亮由「选中加粗+主题色」改为参考版淡蓝整行底。
+  /// 布局对齐 item_chapter_list.xml：状态元素居右（互斥，至多一个）。
   Widget _buildChapterRow(BuildContext context, BookChapter chapter) {
     final cs = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
     final isCurrent = chapter.index == _book.durChapterIndex;
     // [P2-28c] 优先取轮询字数映射（新缓存章胶囊同帧出现），回退章节数据值
     final wordCount = _polledWordCounts[chapter.url] ?? chapter.wordCount;
-    final showWordCount =
-        _loadWordCount && wordCount != null && wordCount.isNotEmpty;
-    // [P2-29] 状态图标五态（优先级对齐参考版：DUR→LOADING→ERROR→NONE→
-    // 已缓存无图标；size 16 沿用 P2-28 行高适配；内容带取整行 48 保证
-    // 图标居中可命中，见下方 contentPadding 注释）
+    final isCached = !_isLocal && _cachedUrls.contains(chapter.url);
+    // [P2-29b] 字数胶囊条件对齐参考版 showCount（:1039-1041）：
+    // 开关开 && wordCount 非空 && (本地书 || 网络书已缓存)
+    final showCount =
+        _loadWordCount &&
+        (wordCount?.isNotEmpty ?? false) &&
+        (_isLocal || isCached);
+    // [P2-29b] 状态元素互斥分支（对齐参考版单 when 链，①~⑥ 至多渲染一个；
+    // size 16 沿用 P2-28 行高适配；内容带取整行 48 保证图标居中可命中，见
+    // 下方 contentPadding 注释）
     final bool isDownloading = _downloadingIndices.contains(chapter.index);
     final bool isError = _failedIndices.contains(chapter.index);
-    final Widget? statusIcon;
-    if (isCurrent) {
-      // 当前阅读章：定位图标（[P2-29] 替代 check_circle，对齐参考版 DUR 态）
-      statusIcon = Icon(Icons.location_on, size: 16, color: cs.secondary);
+    final Widget? statusTrailing;
+    if (showCount) {
+      // ① 字数胶囊（isDur 分色；短路全部状态图标——当前章不再与定位图标并存）
+      statusTrailing = Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+        decoration: BoxDecoration(
+          // 参考版 :1045-1049：当前章 = primaryContainer 底，
+          // 普通章 = surfaceContainer 底（灰底）
+          color: isCurrent ? cs.primaryContainer : cs.surfaceContainer,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        // [P2-28b] 原样展示（Rust 回填值已带「字/万字」后缀；showCount 守卫
+        // 已保证非空）
+        child: Text(
+          wordCount!,
+          style: textTheme.labelSmall?.copyWith(
+            fontSize: 8,
+            // 8sp labelSmallEmphasized（参考版 :1054）
+            fontWeight: FontWeight.w500,
+            // 参考版 :1055-1059：当前章 = onPrimaryContainer，
+            // 普通章 = onSurfaceVariant
+            color: isCurrent ? cs.onPrimaryContainer : cs.onSurfaceVariant,
+          ),
+        ),
+      );
+    } else if (isCurrent) {
+      // ② 当前章且无胶囊（被 ① 短路）：定位图标（参考版 DUR 态，
+      // ReaderSheetStatusIcon tint=secondary，非红色）
+      statusTrailing = Icon(Icons.location_on, size: 16, color: cs.secondary);
     } else if (isDownloading) {
-      // 下载中：16px 加载指示（对齐参考版 LOADING 态 16dp 转圈形态）
-      statusIcon = SizedBox(
+      // ③ 下载中：16px 加载指示（对齐参考版 LOADING 态 16dp 转圈形态）
+      statusTrailing = SizedBox(
         width: 16,
         height: 16,
         child: CircularProgressIndicator(
@@ -988,9 +1037,13 @@ class _TocScreenState extends ConsumerState<TocScreen>
           color: cs.primary,
         ),
       );
+    } else if (isCached) {
+      // ④ 已缓存且无胶囊（字数开关关或 wordCount 空）：对勾图标
+      // （参考版 SUCCESS 态 :1069-1071 CheckCircle，secondary 色）
+      statusTrailing = Icon(Icons.check_circle, size: 16, color: cs.secondary);
     } else if (isError) {
-      // 失败：红色重试图标可点击 → 单章重下（复用 §2.43.3 闭区间单章语义）
-      statusIcon = IconButton(
+      // ⑤ 失败：红色重试图标可点击 → 单章重下（复用 §2.43.3 闭区间单章语义）
+      statusTrailing = IconButton(
         icon: Icon(Icons.refresh, size: 16, color: cs.error),
         iconSize: 16,
         visualDensity: VisualDensity.compact,
@@ -999,22 +1052,27 @@ class _TocScreenState extends ConsumerState<TocScreen>
         tooltip: '重新下载本章',
         onPressed: () => _retryChapterDownload(chapter.index),
       );
-    } else if (!_isLocal && !_cachedUrls.contains(chapter.url)) {
-      // 未缓存网络章：离线下载图标 ⬇
-      statusIcon = Icon(
+    } else if (!_isLocal && !isCached) {
+      // ⑥ 未缓存网络章：离线下载图标 ⬇（参考版 NONE 态 outline 色）
+      statusTrailing = Icon(
         Icons.download_for_offline_outlined,
         size: 16,
         color: cs.outline.withValues(alpha: 0.5),
       );
     } else {
-      // 已缓存章 / 本地书：无图标（本地书恒视为已缓存，对齐原版 isLocalBook）
-      statusIcon = null;
+      // ⑦ 本地书章节（无胶囊且非当前章）：无显示（参考版 LOCAL 态渲染空，
+      // 本地书恒视为已缓存但不显示对勾图标，对齐原版 isLocalBook 语义）
+      statusTrailing = null;
     }
     return ListTile(
       dense: true,
-      // [PARITY C2 T5] 参考版当前章为淡蓝整行底（量化 ref≈(238,243,253)）：
-      // 用 primary 低透明度铺底替代默认 selected 主题色，文字保持常规色。
-      tileColor: isCurrent ? cs.primary.withValues(alpha: 0.10) : null,
+      // [P2-29b] 当前章行级高亮对齐参考版 ReaderSheetChapterItem :965-974：
+      // isDur → 行背景 secondaryContainer + 标题 onSecondaryContainer（蓝色
+      // 主调下即此前量化的淡蓝底 ≈(238,243,253)，替代 primary 10% 铺底）
+      tileColor: isCurrent ? cs.secondaryContainer : null,
+      // [P2-29b] 行级文字色：M3 ListTile 以 effectiveColor 覆写标题样式色，
+      // 经 textColor 参数注入（普通行回退 listTileTheme 的 onSurface 不变）
+      textColor: isCurrent ? cs.onSecondaryContainer : null,
       // [LAYOUT_MOTION_AUDIT L3] 章节行内边距 horizontal8；vertical 取 0 而非 12：
       // M3 ListTile trailing 的 _yOffsetFor 按整 tile 高 48 居中后再叠加
       // contentPadding.vertical，v12 会把 16px 状态图标下移 12px（底边超出 24px
@@ -1027,35 +1085,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
-      // [P2-28] 右侧：字数胶囊（左）+ 缓存状态图标（右）；两者皆无时为 null。
-      trailing: (showWordCount || statusIcon != null)
-          ? Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (showWordCount) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 3,
-                    ),
-                    decoration: BoxDecoration(
-                      color: cs.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    // [P2-28b] 原样展示（Rust 回填值已带「字/万字」后缀；
-                    // showWordCount 守卫已保证非空）
-                    child: Text(
-                      wordCount,
-                      style: TextStyle(
-                          fontSize: 11, color: cs.onSurfaceVariant),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                ?statusIcon,
-              ],
-            )
-          : null,
+      // [P2-29b] 右侧状态元素：互斥分支——字数胶囊与状态图标不再并存
+      // （对齐参考版单 when 链），两者皆无时为 null
+      trailing: statusTrailing,
       // 返回选中章节 index，由调用方走现有阅读跳转链路（对齐原版 openChapter setResult）
       onTap: () => Navigator.of(context).pop(chapter.index),
     );
