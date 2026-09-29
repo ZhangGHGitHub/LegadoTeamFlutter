@@ -1,0 +1,420 @@
+[
+  {
+    "bookSourceComment": "//梦不觉",
+    "bookSourceGroup": "影视频源 🎬",
+    "bookSourceName": "🎬奈飞工厂",
+    "bookSourceType": 4,
+    "bookSourceUrl": "https://www.netflixgc.com",
+    "customButton": false,
+    "customOrder": 15,
+    "enabled": true,
+    "enabledCookieJar": true,
+    "enabledExplore": true,
+    "eventListener": false,
+    "exploreUrl": "<js>\nvar host = \"https://www.netflixgc.com\";\nvar channels = { \"🎬 电影\": 1, \"📺 电视剧\": 2, \"🧸 漫剧\": 3, \"🎭 综艺\": 23, \"🎞️ 纪录片\": 24 };\nvar currentChannel = '🎬 电影';\ntry {\n  var saved = source.getVariable();\n  if (saved) {\n    var obj = JSON.parse(saved);\n    if (obj.channel) currentChannel = obj.channel;\n  }\n} catch(e) {}\nvar cid = channels[currentChannel] || 1;\n\nvar filters = {\n  \"类型\": {\n    \"1\": [\"全部\",\"喜剧\",\"爱情\",\"恐怖\",\"动作\",\"科幻\",\"剧情\",\"犯罪\",\"奇幻\",\"悬疑\",\"惊悚\",\"家庭\",\"冒险\",\"同性\",\"运动\",\"战争\",\"灾难\",\"NETFLIX\",\"HBO\",\"BBC ONE\",\"HULU\",\"APPLE TV\",\"FOX\"],\n    \"2\": [\"全部\",\"古装\",\"战争\",\"青春偶像\",\"喜剧\",\"爱情\",\"家庭\",\"犯罪\",\"动作\",\"奇幻\",\"剧情\",\"历史\",\"经典\",\"乡村\",\"情景\",\"商战\",\"恐怖\",\"悬疑\",\"惊悚\",\"冒险\",\"同性\",\"运动\",\"灾难\",\"NETFLIX\",\"HBO\",\"BBC ONE\",\"HULU\",\"APPLE TV\",\"FOX\",\"NBC\",\"其他\"],\n    \"3\": [\"全部\",\"搞笑\",\"热血\",\"催泪\",\"后宫\",\"机战\",\"致郁\",\"百合\",\"推理\",\"校园\",\"音乐\",\"社团\",\"装通\",\"战斗\",\"日常\",\"恋爱\",\"冒险\",\"魔幻\",\"喜剧\",\"动作\",\"奇幻\",\"剧情\",\"动画\",\"科幻\",\"NETFLIX\"],\n    \"23\": [\"全部\",\"真人秀\",\"搞笑\",\"音乐\",\"冒险\",\"爱情\",\"喜剧\",\"脱口秀\",\"NETFLIX\"],\n    \"24\": [\"全部\",\"人物\",\"军事\",\"历史\",\"文化\",\"探索\",\"科技\",\"自然\",\"剧情\",\"纪录片\",\"NETFLIX\"]\n  },\n  \"地区\": {\n    \"1\": [\"全部\",\"中国\",\"大陆\",\"香港\",\"台湾\",\"美国\",\"韩国\",\"日本\",\"泰国\",\"新加坡\",\"马来西亚\",\"印度\",\"英国\",\"法国\",\"瑞典\",\"瑞士\",\"乌克兰\",\"加拿大\",\"西班牙\",\"俄罗斯\",\"其它\"],\n    \"2\": [\"全部\",\"中国\",\"大陆\",\"香港\",\"台湾\",\"美国\",\"韩国\",\"日本\",\"泰国\",\"新加坡\",\"马来西亚\",\"印度\",\"英国\",\"法国\",\"瑞典\",\"瑞士\",\"乌克兰\",\"加拿大\",\"西班牙\",\"俄罗斯\",\"其它\"],\n    \"3\": [\"全部\",\"日本\",\"美国\",\"其他\"],\n    \"23\": [\"全部\",\"美国\",\"日本\",\"韩国\"],\n    \"24\": [\"全部\",\"美国\",\"日本\",\"韩国\",\"英国\"]\n  },\n  \"年份\": {\n    \"1\": [\"全部\",\"2026\",\"2025\",\"2024\",\"2023\",\"2022\",\"2021\",\"2020\",\"2019\",\"2018\",\"2017\",\"2016\",\"2015\",\"2014\",\"2013\",\"2012\",\"2011\",\"2010\",\"2009\",\"2008\",\"2007\",\"2006\",\"2005\",\"2004\",\"2003\",\"2002\",\"2001\",\"2000\",\"1999\",\"1998\",\"1997\",\"1996\",\"1995\",\"1994\",\"1993\",\"1992\",\"1991\",\"1990\",\"其他\"],\n    \"2\": [\"全部\",\"2026\",\"2025\",\"2024\",\"2023\",\"2022\",\"2021\",\"2020\",\"2019\",\"2018\",\"2017\",\"2016\",\"2015\",\"2014\",\"2013\",\"2012\",\"2011\",\"2010\",\"2009\",\"2008\",\"2007\",\"2006\",\"2005\",\"2004\",\"2003\",\"2002\",\"2001\",\"2000\"],\n    \"3\": [\"全部\",\"2026\",\"2025\",\"2024\",\"2023\",\"2022\",\"2021\",\"2020\",\"2019\",\"2018\",\"2017\",\"2016\",\"2015\",\"2014\",\"2013\",\"2012\",\"2011\",\"2010\",\"2009\",\"2008\",\"2007\",\"2006\",\"2005\",\"2004\",\"2003\",\"2002\",\"2001\",\"2000\",\"1999\",\"1998\",\"1997\",\"1996\",\"1995\",\"1994\",\"1993\",\"1992\",\"1991\",\"1990\",\"其他\"],\n    \"23\": [\"全部\",\"2026\",\"2025\",\"2024\",\"2023\",\"2022\",\"2021\",\"2020\",\"2019\",\"2018\",\"2017\",\"2016\",\"2015\",\"2014\",\"2013\",\"2012\",\"2011\",\"其他\"],\n    \"24\": [\"全部\",\"2026\",\"2025\",\"2024\",\"2023\",\"2022\",\"2021\",\"2020\",\"2019\",\"2018\",\"2017\",\"2016\",\"2015\",\"2014\",\"2013\",\"2012\",\"2011\",\"其他\"]\n  },\n  \"语言\": {\n    \"1\": [\"全部\",\"中文\",\"粤语\",\"闽南语\",\"英语\",\"日语\",\"韩语\",\"法语\",\"俄语\",\"德语\",\"泰语\",\"瑞典语\",\"印度语\"],\n    \"2\": [\"全部\",\"中文\",\"国语\",\"粤语\",\"闽南语\",\"英语\",\"日语\",\"韩语\",\"法语\",\"俄语\",\"德语\",\"泰语\",\"瑞典语\",\"印度语\",\"其它\"],\n    \"3\": [\"全部\",\"日语\",\"英语\"],\n    \"23\": [\"全部\",\"英语\",\"日语\",\"韩语\"],\n    \"24\": [\"全部\",\"英语\",\"日语\",\"韩语\"]\n  }\n};\n\nvar ui = [\n  { title: '关键字', type: 'text', default: '', style: { layout_flexBasisPercent: 1 } },\n  { title: '🔍 搜剧', type: 'button', action: \"var k=infoMap['关键字']; if(!k){ java.toast('请输入影片名称'); } else { java.searchBook(k, source); }\", style: { layout_flexBasisPercent: 1 } },\n  { title: '频道切换', type: 'select', chars: Object.keys(channels), default: currentChannel, action: \"var c=infoMap['频道切换']; var obj={}; try{obj=JSON.parse(source.getVariable());}catch(e){} obj.channel=c; source.setVariable(JSON.stringify(obj)); java.refreshExplore(); java.toast('已切换到: '+c);\", style: { layout_flexBasisPercent: 1 } }\n];\n\nfunction pushTag(group, name, urlStr) {\n  ui.push({ title: name, url: urlStr, style: { layout_flexGrow: 1, layout_flexBasisPercent: 0.2 } });\n}\n\nvar sorts = [{name: \"按最新\", val: \"time\"}, {name: \"按最热\", val: \"hits\"}, {name: \"按评分\", val: \"score\"}];\nui.push({ title: '👇 【排行榜】', url: '', style: { layout_flexBasisPercent: 1, layout_flexGrow: 1 } });\nsorts.forEach(function(s) {\n  var apiBody = \"type=\"+cid+\"&class=&area=&year=&lang=&letter=&by=\"+s.val+\"&page={{page}}\";\n  var apiUrl = host + \"/index.php/ds_api/vod,{\\\"method\\\":\\\"POST\\\",\\\"body\\\":\\\"\" + apiBody + \"\\\"}\";\n  pushTag(\"排行\", s.name, apiUrl);\n});\n\nui.push({ title: '👇 【按类型】', url: '', style: { layout_flexBasisPercent: 1, layout_flexGrow: 1 } });\n(filters[\"类型\"][cid] || []).forEach(function(c) {\n  var cPath = c === \"全部\" ? \"\" : encodeURIComponent(c);\n  var apiBody = \"type=\"+cid+\"&class=\"+cPath+\"&area=&year=&lang=&letter=&by=time&page={{page}}\";\n  var apiUrl = host + \"/index.php/ds_api/vod,{\\\"method\\\":\\\"POST\\\",\\\"body\\\":\\\"\" + apiBody + \"\\\"}\";\n  pushTag(\"类型\", c, apiUrl);\n});\n\nui.push({ title: '👇 【按地区】', url: '', style: { layout_flexBasisPercent: 1, layout_flexGrow: 1 } });\n(filters[\"地区\"][cid] || []).forEach(function(a) {\n  var aPath = a === \"全部\" ? \"\" : encodeURIComponent(a);\n  var apiBody = \"type=\"+cid+\"&class=&area=\"+aPath+\"&year=&lang=&letter=&by=time&page={{page}}\";\n  var apiUrl = host + \"/index.php/ds_api/vod,{\\\"method\\\":\\\"POST\\\",\\\"body\\\":\\\"\" + apiBody + \"\\\"}\";\n  pushTag(\"地区\", a, apiUrl);\n});\n\nui.push({ title: '👇 【按年份】', url: '', style: { layout_flexBasisPercent: 1, layout_flexGrow: 1 } });\n(filters[\"年份\"][cid] || []).forEach(function(y) {\n  var yPath = y === \"全部\" ? \"\" : y;\n  var apiBody = \"type=\"+cid+\"&class=&area=&year=\"+yPath+\"&lang=&letter=&by=time&page={{page}}\";\n  var apiUrl = host + \"/index.php/ds_api/vod,{\\\"method\\\":\\\"POST\\\",\\\"body\\\":\\\"\" + apiBody + \"\\\"}\";\n  pushTag(\"年份\", y, apiUrl);\n});\n\nui.push({ title: '👇 【按语言】', url: '', style: { layout_flexBasisPercent: 1, layout_flexGrow: 1 } });\n(filters[\"语言\"][cid] || []).forEach(function(l) {\n  var lPath = l === \"全部\" ? \"\" : encodeURIComponent(l);\n  var apiBody = \"type=\"+cid+\"&class=&area=&year=&lang=\"+lPath+\"&letter=&by=time&page={{page}}\";\n  var apiUrl = host + \"/index.php/ds_api/vod,{\\\"method\\\":\\\"POST\\\",\\\"body\\\":\\\"\" + apiBody + \"\\\"}\";\n  pushTag(\"语言\", l, apiUrl);\n});\n\nJSON.stringify(ui);\n</js>",
+    "header": "{\"User-Agent\": \"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36\"}",
+    "lastUpdateTime": 1789005932602,
+    "respondTime": 4380,
+    "ruleBookInfo": {
+      "author": "meta[property=og:novel:author]@content || .slide-info:matches(演员) a@text || .slide-info:contains(演员) a@text",
+      "coverUrl": "meta[property=og:image]@content || .detail-pic img@data-src",
+      "intro": "meta[property=og:description]@content || #height_limit@text || .text.cor3@text",
+      "kind": "meta[property=og:novel:category]@content || .slide-info:matches(类型) a@text || .slide-info:contains(类型) a@text",
+      "lastChapter": "meta[property=og:novel:latest_chapter_name]@content || .slide-info-remarks:nth-of-type(1)@text || .slide-info-remarks:eq(0)@text",
+      "name": "meta[property=og:novel:book_name]@content || h3.slide-info-title@text"
+    },
+    "ruleContent": {
+      "content": "<js>\nvar out = '';\ntry {\n    // 抛弃正则，直接用字符串分割，完美避开嵌套大括号被截断的问题\n    var parts = String(result).split('var player_aaaa=');\n    if (parts.length > 1) {\n        // 截取到 </script> 之前的内容\n        var jsonStr = parts[1].split('</script>')[0].trim();\n        // 如果末尾有分号，则去掉分号，确保是纯净的 JSON\n        if (jsonStr.charAt(jsonStr.length - 1) === ';') {\n            jsonStr = jsonStr.slice(0, -1);\n        }\n        \n        var data = JSON.parse(jsonStr);\n        var url = String(data.url);\n        \n        if (data.encrypt == 2) {\n            var b64Str = String(java.base64Decode(url));\n            url = decodeURIComponent(b64Str);\n        } else if (data.encrypt == 1) {\n            url = decodeURIComponent(url);\n        }\n        \n        out = '' + url.replace(/\\\\\\//g, '/');\n    } else {\n        out = '⚠️ 解析失败，源码中未找到 player_aaaa 配置。';\n    }\n} catch(e) {\n    out = '⚠️ 解析异常：' + String(e);\n}\nout;\n</js>"
+    },
+    "ruleExplore": {
+      "author": "$.vod_actor",
+      "bookList": "$.list",
+      "bookUrl": "$.url",
+      "coverUrl": "$.vod_pic",
+      "intro": "$.vod_blurb",
+      "kind": "$.vod_tag##<[^>]+>",
+      "lastChapter": "$.vod_remarks",
+      "name": "$.vod_name"
+    },
+    "ruleSearch": {
+      "author": ".slide-info:contains(演员) a@text",
+      "bookList": ".search-list .flex.rel.overflow",
+      "bookUrl": "a[href*=/voddetail/]@href",
+      "coverUrl": "img@data-src",
+      "kind": ".slide-info:contains(类型) a@text",
+      "lastChapter": ".slide-info-remarks:eq(0)@text",
+      "name": "h3.slide-info-title@text"
+    },
+    "ruleToc": {
+      "chapterList": ".anthology-list-play li a",
+      "chapterName": "text",
+      "chapterUrl": "href"
+    },
+    "searchUrl": "https://www.netflixgc.com/vodsearch/-------------.html?wd={{key}}",
+    "weight": 0
+  },
+  {
+    "bookSourceComment": "如遇卡顿在章节URL切换下面线路\n         A\": \"doppiocdn.com\",\n        \"B\": \"doppiocdn1.com\",\n        \"C\": \"doppiocdn.media\",\n        \"D\": \"doppiocdn.net\",\n        \"E\": \"doppiocdn.org\",\n        \"F\": \"doppiocdn.live\",",
+    "bookSourceGroup": "影视频源 🎬,特殊书源 🔞",
+    "bookSourceName": "🎬🔞VirtalTaboo直播",
+    "bookSourceType": 4,
+    "bookSourceUrl": "https://zh.virtualtaboo.live##吉吉国王",
+    "customButton": false,
+    "customOrder": 37,
+    "enabled": true,
+    "enabledCookieJar": false,
+    "enabledExplore": true,
+    "eventListener": false,
+    "exploreUrl": "@js:var currentPrimaryTag = 'girls';\nlet sort = [], push = (t, u, p) => sort.push({ title: t, url: u, style: { layout_flexBasisPercent: p } });\n\nlet data = JSON.parse(java.ajax('https://zh.virtualtaboo.live/api/front/models/liveTags?primaryTag=girls&withMixedTags=true&sac=true'));\nlet tagGroups = data.liveTagGroups || [], tagDetails = data.liveTagDetails || {};\n\nlet tagNameMap = {\n    'tagLanguageChinese':'中文','tagLanguageUkrainian':'乌克兰语','autoTagNew':'新主播','autoTagVr':'VR直播',\n    'subcultureBdsm':'虐恋','groupShow':'群组秀','ageTeen':'18+','ageYoung':'22+','ageMilf':'熟女',\n    'ageMature':'成熟','ageOld':'老年','ethnicityMiddleEastern':'中东','ethnicityAsian':'亚洲','ethnicityEbony':'黑人',\n    'ethnicityIndian':'印度','ethnicityLatino':'拉丁','ethnicityMultiracial':'混血','ethnicityWhite':'白人',\n    'bodyTypePetite':'娇小','bodyTypeAthletic':'运动型','bodyTypeMedium':'匀称','bodyTypeCurvy':'曲线型',\n    'bodyTypeBBW':'大码美女','bodyTypeBig':'丰满','hairColorBlonde':'金发','hairColorBrown':'棕发',\n    'hairColorBlack':'黑发','hairColorRed':'红发','hairColorColorful':'彩发','hairColorHairless':'无毛',\n    'privatePriceEight':'8元/分钟','privatePriceSixteenToTwentyFour':'16-24元/分钟','privatePriceThirtyTwoSixty':'32-60元/分钟',\n    'privatePriceNinetyPlus':'90+元/分钟','autoTagBestPrivates':'最佳私密秀','autoTagRecordablePrivate':'可录制私密秀',\n    'autoTagSpy':'可窥视','autoTagP2P':'P2P直播','autoTagInteractiveToy':'互动玩具','mobile':'手机直播',\n    'tagGroupSex':'群交','specificsBigTits':'巨乳','specificsHairy':'有毛','doPublicPlace':'公共场合',\n    'specificsBigAss':'大屁股','doAnal':'肛交','doSquirt':'喷水','fuckMachine':'炮机','doHardcore':'硬核',\n    'doBlowjob':'口交','specificSmallTits':'贫乳','specificPregnant':'孕妇','doFisting':'拳交',\n    'doMasturbation':'自慰','specificShaven':'剃毛','doDeepThroat':'深喉','doDildoOrVibrator':'假阳具/震动器',\n    'doFootFetish':'恋足','doOffice':'办公室','subcultureGoth':'哥特','jerkOffInstruction':'射精指导',\n    'subcultureSwingers':'交换伴侣','doCosplay':'Cosplay','doSexToys':'性玩具','doTalk':'聊天',\n    'subcultureEmo':'Emo','subcultureCuckold':'出轨','subcultureMistresses':'情妇','videoGames':'电玩',\n    'doStriptease':'脱衣舞','asmr':'ASMR','doYoga':'瑜伽','doCooking':'烹饪','autoTagNonNude':'非全裸',\n    'specificInterracial':'跨种族','specificsTattoos':'纹身','specificsPiercing':'穿孔','autoTagLovense':'Lovense',\n    'latex':'乳胶','doRolePlay':'角色扮演','leather':'皮革','autoTagKiiroo':'Kiiroo','corset':'紧身内衣',\n    'doAnalToys':'后庭玩具','doNippleToys':'乳头玩具','specificBigClit':'大阴蒂','specificBigNipples':'大乳头',\n    'specificHairyArmpits':'腋毛','specificTrimmed':'修剪','specificTomboy':'假小子','specificQueer':'酷儿',\n    'specificNonBinary':'非二元性别','subcultureEgirl':'电子女孩','subcultureAnime':'动漫女孩',\n    'subcultureGlamour':'高贵','subcultureKpop':'韩流','subcultureHousewives':'家庭主妇',\n    'subcultureGymBabe':'健身宝贝','subcultureRomantic':'浪漫','subculturePunks':'朋克',\n    'subcultureNerds':'书呆子','subcultureGamers':'玩家','subcultureStudent':'学生',\n    'subcultureClubber':'夜店女郎','subcultureBottom':'Bottom','subcultureTop':'Top',\n    'subcultureChubbies':'胖熊','subcultureCubs':'小熊','subcultureDragQueens':'变装皇后',\n    'subcultureEboy':'E-boy','subcultureGymRats':'健身狂','subcultureHunks':'猛男',\n    'subcultureJocks':'运动男','subcultureOtters':'水獭','subcultureStuds':'种马',\n    'doEroticDance':'色情舞','cockRating':'大屌评分','doEjaculation':'射精','doTwerk':'电臀舞',\n    'doAssToMouth':'肛交到口交','doDoublePenetration':'双茎插入','doOrgasm':'高潮',\n    'doFoursome':'四人性交','doAhegao':'高潮脸','doCreamPie':'体内射精','doDoggyStyle':'狗式',\n    'doPussyLicking':'舔鲍鱼','doBukkake':'集体颜射','doShower':'洗澡','doHumiliation':'羞辱',\n    'doOilShow':'精油表演','doCumshot':'颜射','doGape':'开肛','doCamelToe':'阴部骆驼趾',\n    'doFlashing':'快闪裸体','doCowgirl':'骑乘女','doFacesitting':'骑脸','doGagging':'强制塞口',\n    'doStrapon':'穿戴式阳具','do69Position':'69姿势','doMassage':'按摩','doSpanking':'鞭打',\n    'doUpskirt':'裙底风光','doGloryHole':'厕板洞','doThreesome':'三人性交','doSmoking':'抽烟',\n    'boots':'靴子','heels':'高跟鞋','nylon':'丝袜','specificJeans':'牛仔裤','specificSportGear':'运动装备',\n    'tagLanguageAfrican':'非洲裔','tagLanguageAlgerian':'阿尔及利亚','tagLanguageArgentinian':'阿根廷',\n    'tagLanguageArmenian':'亚美尼亚','tagLanguageAssamese':'阿萨姆','tagLanguageAustralian':'澳大利亚',\n    'tagLanguageAustrian':'奥地利人','tagLanguageBangladeshi':'孟加拉','tagLanguageBelgian':'比利时',\n    'tagLanguageBengali':'孟加拉语','tagLanguageBrazilian':'巴西','tagLanguageBulgarian':'保加利亚人',\n    'tagLanguageCanadian':'加拿大','tagLanguageChilean':'智利','tagLanguageColombian':'哥伦比亚',\n    'tagLanguageCroatian':'克罗地亚','tagLanguageCzech':'捷克','tagLanguageDanish':'丹麦',\n    'tagLanguageDominican':'多米尼加','tagLanguageDutch':'荷兰','tagLanguageEcuadorian':'厄瓜多尔',\n    'tagLanguageEgyptian':'埃及','tagLanguageEstonian':'爱沙尼亚','tagLanguageEuropean':'欧洲女孩',\n    'tagLanguageFilipino':'菲律宾','tagLanguageFinnish':'芬兰','tagLanguageFrench':'法语',\n    'tagLanguageGeorgian':'格鲁吉亚','tagLanguageGermanSpeaking':'德语','tagLanguageGreek':'希腊',\n    'tagLanguageGujarati':'古吉拉特','tagLanguageHindi':'印地','tagLanguageHungarian':'匈牙利',\n    'tagLanguageIndonesian':'印度尼西亚','tagLanguageIrish':'爱尔兰','tagLanguageIsraeli':'以色列',\n    'tagLanguageItalian':'意大利','tagLanguageJamaican':'牙买加','tagLanguageJapanese':'日语',\n    'tagLanguageKannada':'卡纳达','tagLanguageKenyan':'肯尼亚','tagLanguageKiwi':'新西兰',\n    'tagLanguageKorean':'韩语','tagLanguageLatvian':'拉脱维亚','tagLanguageLithuanian':'立陶宛',\n    'tagLanguageMalagasy':'马尔加什','tagLanguageMalayalam':'马拉雅拉姆','tagLanguageMalaysian':'马来西亚',\n    'tagLanguageMarathi':'马拉地','tagLanguageMexican':'墨西哥','tagLanguageMoroccan':'摩洛哥',\n    'tagLanguageNigerian':'尼日利亚','tagLanguageNordic':'北欧','tagLanguageNorwegian':'挪威',\n    'tagLanguageOdia':'奥里亚','tagLanguagePeruvian':'秘鲁','tagLanguagePolish':'波兰',\n    'tagLanguagePortuguese':'葡萄牙','tagLanguagePortugueseSpeaking':'葡萄牙语','tagLanguagePunjabi':'旁遮普',\n    'tagLanguageRomanian':'罗马尼亚','tagLanguageRussianSpeaking':'俄罗斯','tagLanguageSerbian':'塞尔维亚',\n    'tagLanguageSlovakian':'斯洛伐克','tagLanguageSouthAfrican':'南非','tagLanguageSpanish':'西班牙语',\n    'tagLanguageSpanishSpeaking':'西班牙','tagLanguageSriLankan':'斯里兰卡','tagLanguageSwedish':'瑞典',\n    'tagLanguageSwiss':'瑞士','tagLanguageTaiwanese':'台湾省','tagLanguageTamil':'泰米尔',\n    'tagLanguageTelugu':'泰卢固','tagLanguageThai':'泰国','tagLanguageTurkish':'土耳其',\n    'tagLanguageUKModels':'英国','tagLanguageUSModels':'美国','tagLanguageUgandan':'乌干达',\n    'tagLanguageVenezuelan':'委内瑞拉','tagLanguageVietnamese':'越南','tagLanguageZimbabwean':'津巴布韦'\n};\n\nfunction getDisplay(tag) { return tagNameMap[tag] || tag.replace(/([A-Z])/g, ' $1').trim(); }\n\nfunction buildUrl(tag) {\n    return 'https://zh.virtualtaboo.live/api/front/models?removeShows=false&recInFeatured=false&limit=60&offset={{(page-1)*60}}&primaryTag=' + currentPrimaryTag + '&filterGroupTags=' + encodeURIComponent(JSON.stringify([[tag]])) + '&sortBy=stripRanking&parentTag=' + tag + '&userRole=user&sac=true';\n}\n\nfunction render(tags, title) {\n    if (!tags || !tags.length) return;\n    push('❤️ ' + title + ' ❤️', null, 1);\n    for (var i = 0; i < tags.length; i++) {\n        var tag = tags[i];\n        if (!tag) continue;\n        var count = tagDetails[tag] ? tagDetails[tag].modelsLive || 0 : 0;\n        push(getDisplay(tag) + (count > 0 ? count + '人' : ''), buildUrl(tag), 0.29);\n    }\n}\n\nfunction sortTags(tags) {\n    tags.sort(function(a, b) {\n        var ca = tagDetails[a] ? tagDetails[a].modelsLive || 0 : 0;\n        var cb = tagDetails[b] ? tagDetails[b].modelsLive || 0 : 0;\n        return cb - ca;\n    });\n    return tags;\n}\n\nfunction findGroup(alias) {\n    for (var i = 0; i < tagGroups.length; i++) {\n        if (tagGroups[i].alias === alias) return tagGroups[i];\n    }\n    return null;\n}\n\nfunction renderManual(list, title) {\n    var valid = [];\n    for (var i = 0; i < list.length; i++) {\n        var tag = list[i];\n        if (tagDetails[tag] && tagDetails[tag].modelsLive > 0) valid.push(tag);\n    }\n    render(sortTags(valid), title);\n}\n\n// ============================================================\n// girls 频道\n// ============================================================\ncurrentPrimaryTag = 'girls';\npush('🔥 在线热门', 'https://zh.virtualtaboo.live/api/front/models?removeShows=false&recInFeatured=false&limit=60&offset=0&primaryTag=girls&sortBy=stripRanking&userRole=user&sac=true', 1);\n\nvar quickLang = [\n    ['🇨🇳 中文', 'tagLanguageChinese'],\n    ['🇯🇵 日语', 'tagLanguageJapanese'],\n    ['🇻🇳 越南语', 'tagLanguageVietnamese']\n];\nfor (var i = 0; i < quickLang.length; i++) {\n    var tag = quickLang[i][1];\n    var count = tagDetails[tag] ? tagDetails[tag].modelsLive || 0 : 0;\n    if (count > 0) push(quickLang[i][0] + count + '人', buildUrl(tag), 0.29);\n}\n\nvar groupTitles = { 'specials': '🔥 特别推荐', 'age': '🎂 年龄', 'ethnicity': '🌍 人种', 'bodyType': '💪 体型', 'hairColor': '💇 发色', 'privatePrice': '💰 价格' };\n['specials', 'age', 'ethnicity', 'bodyType', 'hairColor', 'privatePrice'].forEach(function(alias) {\n    var group = findGroup(alias);\n    if (!group) return;\n    var valid = [];\n    var tags = group.tags || [];\n    for (var i = 0; i < tags.length; i++) {\n        var tag = tags[i];\n        if (tagDetails[tag] && tagDetails[tag].modelsLive > 0) valid.push(tag);\n    }\n    render(sortTags(valid), groupTitles[alias]);\n});\n\nvar langTags = [];\nfor (var tag in tagDetails) {\n    if (tag.indexOf('tagLanguage') === 0 && tag.indexOf('-') === -1 && tagDetails[tag].modelsLive > 0) langTags.push(tag);\n}\nrender(sortTags(langTags), '🌐 语言分类');\n\nvar subTags = [];\nfor (var tag in tagDetails) {\n    if (tag.indexOf('subculture') === 0 && tag.indexOf('-') === -1 && tagDetails[tag].modelsLive > 0) subTags.push(tag);\n}\nrender(sortTags(subTags), '🎭 亚文化');\n\nvar allGroup = findGroup('allTags');\nvar actionTags = [], bodyTags = [], perfTags = [];\nvar perfKeywords = ['striptease', 'eroticDance', 'twerk', 'oilShow', 'shower', 'topless', 'flashing', 'upskirt'];\nif (allGroup) {\n    var allTags = allGroup.tags || [];\n    for (var i = 0; i < allTags.length; i++) {\n        var tag = allTags[i];\n        if (!tagDetails[tag] || tagDetails[tag].modelsLive <= 0) continue;\n        if (tag.indexOf('do') === 0) actionTags.push(tag);\n        else if (tag.indexOf('specific') === 0) bodyTags.push(tag);\n        for (var k = 0; k < perfKeywords.length; k++) {\n            if (tag.indexOf(perfKeywords[k]) !== -1) { perfTags.push(tag); break; }\n        }\n    }\n}\nrender(sortTags(actionTags), '🎬 活动分类');\nrender(sortTags(bodyTags), '🔍 身体特征');\nrender(sortTags(perfTags), '💃 表演类型');\n\nrenderManual(['doStrapon','doAnalToys','autoTagInteractiveToy','doDildoOrVibrator','fuckMachine','doNippleToys','doSexToys','autoTagKiiroo','autoTagLovense'], '📱 设备分类');\nrenderManual(['doSmoking','subcultureCuckold','specificsPiercing','cockRating','heels','corset','doFootFetish','specificJeans','subcultureBdsm','leather','subcultureMistresses','latex','nylon','specificsTattoos','specificPregnant','specificSportGear'], '🖤 恋物癖');\n\n// ============================================================\n// couples 频道\n// ============================================================\nfunction buildCouples() {\n    currentPrimaryTag = 'couples';\n    var data2 = JSON.parse(java.ajax('https://zh.virtualtaboo.live/api/front/models/liveTags?primaryTag=couples&withMixedTags=true&sac=true'));\n    var tagGroups2 = data2.liveTagGroups || [];\n    var tagDetails2 = data2.liveTagDetails || {};\n\n    function renderCouplesTags(tags, title) {\n        if (!tags || !tags.length) return;\n        push('❤️ ' + title + ' ❤️', null, 1);\n        for (var i = 0; i < tags.length; i++) {\n            var tag = tags[i];\n            if (!tag) continue;\n            var count = tagDetails2[tag] ? tagDetails2[tag].modelsLive || 0 : 0;\n            push(getDisplay(tag) + (count > 0 ? count + '人' : ''), buildUrl(tag), 0.29);\n        }\n    }\n\n    function findGroup2(alias) {\n        for (var i = 0; i < tagGroups2.length; i++) {\n            if (tagGroups2[i].alias === alias) return tagGroups2[i];\n        }\n        return null;\n    }\n\n    function sortTags2(tags) {\n        tags.sort(function(a, b) {\n            var ca = tagDetails2[a] ? tagDetails2[a].modelsLive || 0 : 0;\n            var cb = tagDetails2[b] ? tagDetails2[b].modelsLive || 0 : 0;\n            return cb - ca;\n        });\n        return tags;\n    }\n\n    function renderManualCouples(list, title) {\n        var valid = [];\n        for (var i = 0; i < list.length; i++) {\n            var tag = list[i];\n            if (tagDetails2[tag] && tagDetails2[tag].modelsLive > 0) valid.push(tag);\n        }\n        renderCouplesTags(sortTags2(valid), title);\n    }\n\n    push('💕 情侣专区 💕', null, 1);\n\n    var groupTitles2 = {\n        'specials': '🔥 特别推荐',\n        'age': '🎂 年龄',\n        'ethnicity': '🌍 人种',\n        'bodyType': '💪 体型',\n        'hairColor': '💇 发色',\n        'privatePrice': '💰 价格'\n    };\n    ['specials', 'age', 'ethnicity', 'bodyType', 'hairColor', 'privatePrice'].forEach(function(alias) {\n        var group = findGroup2(alias);\n        if (!group) return;\n        var valid = [];\n        var tags = group.tags || [];\n        for (var i = 0; i < tags.length; i++) {\n            var tag = tags[i];\n            if (tagDetails2[tag] && tagDetails2[tag].modelsLive > 0) valid.push(tag);\n        }\n        renderCouplesTags(sortTags2(valid), groupTitles2[alias]);\n    });\n\n    ['tagLanguage', 'subculture'].forEach(function(prefix) {\n        var tags = [];\n        for (var tag in tagDetails2) {\n            if (tag.indexOf(prefix) === 0 && tag.indexOf('-') === -1 && tagDetails2[tag].modelsLive > 0) tags.push(tag);\n        }\n        renderCouplesTags(sortTags2(tags), prefix === 'tagLanguage' ? '🌐 语言分类' : '🎭 亚文化');\n    });\n\n    var allGroup2 = findGroup2('allTags');\n    var actionTags2 = [], bodyTags2 = [], perfTags2 = [];\n    var perfKeywords = ['striptease', 'eroticDance', 'twerk', 'oilShow', 'shower', 'topless', 'flashing', 'upskirt'];\n    if (allGroup2) {\n        var allTags2 = allGroup2.tags || [];\n        for (var i = 0; i < allTags2.length; i++) {\n            var tag = allTags2[i];\n            if (!tagDetails2[tag] || tagDetails2[tag].modelsLive <= 0) continue;\n            if (tag.indexOf('do') === 0) actionTags2.push(tag);\n            else if (tag.indexOf('specific') === 0) bodyTags2.push(tag);\n            for (var k = 0; k < perfKeywords.length; k++) {\n                if (tag.indexOf(perfKeywords[k]) !== -1) { perfTags2.push(tag); break; }\n            }\n        }\n    }\n    renderCouplesTags(sortTags2(actionTags2), '🎬 活动分类');\n    renderCouplesTags(sortTags2(bodyTags2), '🔍 身体特征');\n    renderCouplesTags(sortTags2(perfTags2), '💃 表演类型');\n\n    renderManualCouples(['doStrapon','doAnalToys','autoTagInteractiveToy','doDildoOrVibrator','fuckMachine','doNippleToys','doSexToys','autoTagKiiroo','autoTagLovense'], '📱 设备分类');\n    renderManualCouples(['doSmoking','subcultureCuckold','specificsPiercing','cockRating','heels','corset','doFootFetish','specificJeans','subcultureBdsm','leather','subcultureMistresses','latex','nylon','specificsTattoos','specificPregnant','specificSportGear'], '🖤 恋物癖');\n}\n\n// ============================================================\n// men 频道\n// ============================================================\nfunction buildMen() {\n    currentPrimaryTag = 'men';\n    var data2 = JSON.parse(java.ajax('https://zh.virtualtaboo.live/api/front/models/liveTags?primaryTag=men&withMixedTags=true&sac=true'));\n    var tagGroups2 = data2.liveTagGroups || [];\n    var tagDetails2 = data2.liveTagDetails || {};\n\n    function renderMenTags(tags, title) {\n        if (!tags || !tags.length) return;\n        push('❤️ ' + title + ' ❤️', null, 1);\n        for (var i = 0; i < tags.length; i++) {\n            var tag = tags[i];\n            if (!tag) continue;\n            var count = tagDetails2[tag] ? tagDetails2[tag].modelsLive || 0 : 0;\n            push(getDisplay(tag) + (count > 0 ? count + '人' : ''), buildUrl(tag), 0.29);\n        }\n    }\n\n    function findGroup2(alias) {\n        for (var i = 0; i < tagGroups2.length; i++) {\n            if (tagGroups2[i].alias === alias) return tagGroups2[i];\n        }\n        return null;\n    }\n\n    function sortTags2(tags) {\n        tags.sort(function(a, b) {\n            var ca = tagDetails2[a] ? tagDetails2[a].modelsLive || 0 : 0;\n            var cb = tagDetails2[b] ? tagDetails2[b].modelsLive || 0 : 0;\n            return cb - ca;\n        });\n        return tags;\n    }\n\n    function renderManualMen(list, title) {\n        var valid = [];\n        for (var i = 0; i < list.length; i++) {\n            var tag = list[i];\n            if (tagDetails2[tag] && tagDetails2[tag].modelsLive > 0) valid.push(tag);\n        }\n        renderMenTags(sortTags2(valid), title);\n    }\n\n    push('👨 男主播专区 👨', null, 1);\n\n    var groupTitles2 = {\n        'specials': '🔥 特别推荐',\n        'orientation': '💖 性取向',\n        'age': '🎂 年龄',\n        'ethnicity': '🌍 人种',\n        'bodyType': '💪 体型',\n        'hairColor': '💇 发色',\n        'privatePrice': '💰 价格'\n    };\n    ['specials', 'orientation', 'age', 'ethnicity', 'bodyType', 'hairColor', 'privatePrice'].forEach(function(alias) {\n        var group = findGroup2(alias);\n        if (!group) return;\n        var valid = [];\n        var tags = group.tags || [];\n        for (var i = 0; i < tags.length; i++) {\n            var tag = tags[i];\n            if (tagDetails2[tag] && tagDetails2[tag].modelsLive > 0) valid.push(tag);\n        }\n        renderMenTags(sortTags2(valid), groupTitles2[alias]);\n    });\n\n    ['tagLanguage', 'subculture'].forEach(function(prefix) {\n        var tags = [];\n        for (var tag in tagDetails2) {\n            if (tag.indexOf(prefix) === 0 && tag.indexOf('-') === -1 && tagDetails2[tag].modelsLive > 0) tags.push(tag);\n        }\n        renderMenTags(sortTags2(tags), prefix === 'tagLanguage' ? '🌐 语言分类' : '🎭 亚文化');\n    });\n\n    var allGroup2 = findGroup2('allTags');\n    var actionTags2 = [], bodyTags2 = [], perfTags2 = [];\n    var perfKeywords = ['striptease', 'eroticDance', 'twerk', 'oilShow', 'shower', 'topless', 'flashing', 'upskirt'];\n    if (allGroup2) {\n        var allTags2 = allGroup2.tags || [];\n        for (var i = 0; i < allTags2.length; i++) {\n            var tag = allTags2[i];\n            if (!tagDetails2[tag] || tagDetails2[tag].modelsLive <= 0) continue;\n            if (tag.indexOf('do') === 0) actionTags2.push(tag);\n            else if (tag.indexOf('specific') === 0) bodyTags2.push(tag);\n            for (var k = 0; k < perfKeywords.length; k++) {\n                if (tag.indexOf(perfKeywords[k]) !== -1) { perfTags2.push(tag); break; }\n            }\n        }\n    }\n    renderMenTags(sortTags2(actionTags2), '🎬 活动分类');\n    renderMenTags(sortTags2(bodyTags2), '🔍 身体特征');\n    renderMenTags(sortTags2(perfTags2), '💃 表演类型');\n\n    renderManualMen(['doStrapon','doAnalToys','autoTagInteractiveToy','doDildoOrVibrator','fuckMachine','doNippleToys','doSexToys','autoTagKiiroo','autoTagLovense'], '📱 设备分类');\n    renderManualMen(['doSmoking','subcultureCuckold','specificsPiercing','cockRating','heels','corset','doFootFetish','specificJeans','subcultureBdsm','leather','subcultureMistresses','latex','nylon','specificsTattoos','specificPregnant','specificSportGear'], '🖤 恋物癖');\n}\n\n// ============================================================\n// trans 频道\n// ============================================================\nfunction buildTrans() {\n    currentPrimaryTag = 'trans';\n    var data3 = JSON.parse(java.ajax('https://zh.virtualtaboo.live/api/front/models/liveTags?primaryTag=trans&withMixedTags=true&sac=true'));\n    var tagGroups3 = data3.liveTagGroups || [];\n    var tagDetails3 = data3.liveTagDetails || {};\n\n    function renderTransTags(tags, title) {\n        if (!tags || !tags.length) return;\n        push('❤️ ' + title + ' ❤️', null, 1);\n        for (var i = 0; i < tags.length; i++) {\n            var tag = tags[i];\n            if (!tag) continue;\n            var count = tagDetails3[tag] ? tagDetails3[tag].modelsLive || 0 : 0;\n            push(getDisplay(tag) + (count > 0 ? count + '人' : ''), buildUrl(tag), 0.29);\n        }\n    }\n\n    function findGroup3(alias) {\n        for (var i = 0; i < tagGroups3.length; i++) {\n            if (tagGroups3[i].alias === alias) return tagGroups3[i];\n        }\n        return null;\n    }\n\n    function sortTags3(tags) {\n        tags.sort(function(a, b) {\n            var ca = tagDetails3[a] ? tagDetails3[a].modelsLive || 0 : 0;\n            var cb = tagDetails3[b] ? tagDetails3[b].modelsLive || 0 : 0;\n            return cb - ca;\n        });\n        return tags;\n    }\n\n    function renderManualTrans(list, title) {\n        var valid = [];\n        for (var i = 0; i < list.length; i++) {\n            var tag = list[i];\n            if (tagDetails3[tag] && tagDetails3[tag].modelsLive > 0) valid.push(tag);\n        }\n        renderTransTags(sortTags3(valid), title);\n    }\n\n    push('⚧️ 跨性别专区 ⚧️', null, 1);\n\n    var groupTitles3 = {\n        'specials': '🔥 特别推荐',\n        'age': '🎂 年龄',\n        'ethnicity': '🌍 人种',\n        'bodyType': '💪 体型',\n        'hairColor': '💇 发色',\n        'privatePrice': '💰 价格'\n    };\n    ['specials', 'age', 'ethnicity', 'bodyType', 'hairColor', 'privatePrice'].forEach(function(alias) {\n        var group = findGroup3(alias);\n        if (!group) return;\n        var valid = [];\n        var tags = group.tags || [];\n        for (var i = 0; i < tags.length; i++) {\n            var tag = tags[i];\n            if (tagDetails3[tag] && tagDetails3[tag].modelsLive > 0) valid.push(tag);\n        }\n        renderTransTags(sortTags3(valid), groupTitles3[alias]);\n    });\n\n    ['tagLanguage', 'subculture'].forEach(function(prefix) {\n        var tags = [];\n        for (var tag in tagDetails3) {\n            if (tag.indexOf(prefix) === 0 && tag.indexOf('-') === -1 && tagDetails3[tag].modelsLive > 0) tags.push(tag);\n        }\n        renderTransTags(sortTags3(tags), prefix === 'tagLanguage' ? '🌐 语言分类' : '🎭 亚文化');\n    });\n\n    var allGroup3 = findGroup3('allTags');\n    var actionTags3 = [], bodyTags3 = [], perfTags3 = [];\n    var perfKeywords = ['striptease', 'eroticDance', 'twerk', 'oilShow', 'shower', 'topless', 'flashing', 'upskirt'];\n    if (allGroup3) {\n        var allTags3 = allGroup3.tags || [];\n        for (var i = 0; i < allTags3.length; i++) {\n            var tag = allTags3[i];\n            if (!tagDetails3[tag] || tagDetails3[tag].modelsLive <= 0) continue;\n            if (tag.indexOf('do') === 0) actionTags3.push(tag);\n            else if (tag.indexOf('specific') === 0) bodyTags3.push(tag);\n            for (var k = 0; k < perfKeywords.length; k++) {\n                if (tag.indexOf(perfKeywords[k]) !== -1) { perfTags3.push(tag); break; }\n            }\n        }\n    }\n    renderTransTags(sortTags3(actionTags3), '🎬 活动分类');\n    renderTransTags(sortTags3(bodyTags3), '🔍 身体特征');\n    renderTransTags(sortTags3(perfTags3), '💃 表演类型');\n\n    renderManualTrans(['doStrapon','doAnalToys','autoTagInteractiveToy','doDildoOrVibrator','fuckMachine','doNippleToys','doSexToys','autoTagKiiroo','autoTagLovense'], '📱 设备分类');\n    renderManualTrans(['doSmoking','subcultureCuckold','specificsPiercing','cockRating','heels','corset','doFootFetish','specificJeans','subcultureBdsm','leather','subcultureMistresses','latex','nylon','specificsTattoos','specificPregnant','specificSportGear'], '🖤 恋物癖');\n}\n\n// ============================================================\n// 执行所有频道\n// ============================================================\nbuildCouples();\nbuildMen();\nbuildTrans();\n\nJSON.stringify(sort);",
+    "header": "{\"User-Agent\": \"Mozilla/5.0 (Android)\"}",
+    "lastUpdateTime": 1787736438275,
+    "loginUrl": "https://zh.virtualtaboo.live###可能要挂梯",
+    "respondTime": 5367,
+    "ruleBookInfo": {
+      "author": "{{$.user.user.name}}",
+      "coverUrl": "https://img.doppiocdn.com/thumbs/{{$.user.user.snapshotTimestamp}}/{{$.cam.streamName}}_webp",
+      "name": "{{$.user.user.username}}",
+      "tocUrl": "https://zh.virtualtaboo.live/api/front/v2/broadcasts/{{$.user.user.id}}?uniq=ix9yufd20we8bscq"
+    },
+    "ruleContent": {},
+    "ruleExplore": {
+      "bookList": "$.blocks..models[*]||$.models[*]",
+      "bookUrl": "https://zh.virtualtaboo.live/api/front/v2/models/{{$.id}}/cam?timezoneOffset=-480&triggerRequest=loadCam&primaryTag=girls&withRecentShow=1&skipTipMenu=1&uniq=ix9yufd20we8bscq",
+      "coverUrl": "@js:result.snapshotTimestamp && result.streamName ? 'https://img.doppiocdn.com/thumbs/' + result.snapshotTimestamp + '/' + result.streamName + '_webp' : result.snapshotUrl",
+      "kind": "@js:var s={'public':'免费','groupShow':'付费'}[result.status]||'离线';var c=result.country?result.country.toUpperCase()+' ':'未知';c+' | '+(s)+(result.isLive?(' | '+(result.viewersCount||0)+'在看'):'')",
+      "name": "@js:\nif (\"{{$.status}}\"==\"public\"){result=\"{{$.username}}\"}else{result=\"\"}"
+    },
+    "ruleSearch": {
+      "author": "$.streamName",
+      "bookList": "$.models[*]",
+      "bookUrl": "https://zh.virtualtaboo.live/api/front/v2/models/{{$.id}}/cam?timezoneOffset=-480&triggerRequest=loadCam&primaryTag=girls&withRecentShow=1&skipTipMenu=1&uniq=ix9yufd20we8bscq",
+      "checkKeyWord": "bao",
+      "coverUrl": "@js:try{var sn=result.streamName;var ts=result.snapshotTimestamp;if(sn&&ts){'https://img.doppiocdn.live/thumbs/'+ts+'/'+sn+'_webp'}else if(result.previewUrl){result.previewUrl}else if(result.previewUrlThumbBig){result.previewUrlThumbBig}else if(result.previewUrlThumbSmall){result.previewUrlThumbSmall}else if(result.avatarUrl){result.avatarUrl}else{''}}catch(e){''}",
+      "intro": "$.groupShowTopic",
+      "kind": "@js:var s={'public':'免费','groupShow':'付费'}[result.status]||'离线';var c=result.country?result.country.toUpperCase()+' ':'未知';c+' | '+s+' | '+(result.viewersCount||0)+'在看'",
+      "name": "@js:\nif (\"{{$.status}}\"==\"public\"){result=\"{{$.username}}\"}else{result=\"\"}"
+    },
+    "ruleToc": {
+      "chapterList": "$..item",
+      "chapterName": "@js: ( ({ 'true': '在线', 'false': '离线' }[result.isLive] || result.isLive)+({ 'public': '免费', 'groupShow': '收费', 'p2p': '一对一','off':' ' }[result.status] || result.status) )",
+      "chapterUrl": "@js: 'https://edge-hls.doppiocdn.live/hls/'+result.modelId+'/master/'+result.modelId+'_'+({ 'public': 'auto', 'groupShow': '160p_blurred', 'p2p': '160p_blurred','off':' ' }[result.status] || result.status)+'.m3u8?pkey=bXorqTB5ZhP5FcpX'\n//卡顿就换掉上面域名"
+    },
+    "searchUrl": "https://zh.virtualtaboo.live/api/front/v4/models/search/group/username?query={{key}}&limit=500&offset={{(page-1)*500}}&primaryTag=girls&uniq=",
+    "weight": 0
+  },
+  {
+    "bookSourceComment": "不解锁付费\nby二月无雪\n交流群：1097919737",
+    "bookSourceGroup": "影视频源 🎬,特殊书源 🔞",
+    "bookSourceName": "🎬🔞黄豆短剧",
+    "bookSourceType": 4,
+    "bookSourceUrl": "https://huangdoudj.com",
+    "customButton": false,
+    "customOrder": 47,
+    "enabled": true,
+    "enabledCookieJar": true,
+    "enabledExplore": true,
+    "eventListener": false,
+    "exploreUrl": "@js:(function(){\n  var cats=[\n    ['🆕 最新','https://huangdoudj.com/'],\n    ['🎬 独家','https://huangdoudj.com/category/yuandou/'],\n    ['🎬 魔改','https://huangdoudj.com/category/mgdj/'],\n    ['🤖 AI漫剧','https://huangdoudj.com/category/ai/'],\n    ['🌸 二次元','https://huangdoudj.com/category/erciyuan/'],\n    ['🔥 擦边','https://huangdoudj.com/category/cbdj/'],\n    ['🎥 真人','https://huangdoudj.com/category/real/'],\n    ['🕳️ 黑料','https://huangdoudj.com/category/heiliao/']\n  ];\n  var out=[];\n  for(var i=0;i<cats.length;i++){\n    out.push({title:cats[i][0],url:cats[i][1],style:{layout_flexGrow:1,layout_flexShrink:1,layout_flexBasisPercent:0.3}});\n  }\n  return JSON.stringify(out);\n})()",
+    "header": "{\"User-Agent\":\"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36\",\"Referer\":\"https://huangdoudj.com/\"}",
+    "lastUpdateTime": 1789045131910,
+    "loginUrl": "function webLogin(){\n  try{java.openWeb('https://huangdoudj.com/');}catch(e){\n    try{java.startBrowser('https://huangdoudj.com/','');}catch(e2){java.toast('打开网页失败');}\n  }\n}\nwebLogin();",
+    "respondTime": 8488,
+    "ruleBookInfo": {
+      "coverUrl": "a.dm-detail-poster img@src",
+      "intro": "meta[property=\"og:description\"]@content",
+      "kind": "a.breadcrumb a@text||nav.breadcrumb a@text",
+      "name": "@js:(function(){\n  var html=String(result||'');\n  var m=html.match(/<h1[^>]*>([^<]*)<\\/h1>/);\n  return m?m[1].trim():'';\n})()"
+    },
+    "ruleContent": {
+      "content": "@js:(function(){\n  var html=String(result||'');\n  var ep='';var em=String(baseUrl||'').match(/[?&]ep=(\\d+)/);\n  if(em)ep=em[1];\n  var src='';\n  if(ep){\n    var re=new RegExp('data-ep=\"'+ep+'\"[^>]*data-ep-src=\"([^\"]+)\"');\n    var m=html.match(re);\n    if(m)src=m[1];\n  }\n  if(!src){var m3=html.match(/data-ep-src=\"([^\"]+)\"/);if(m3)src=m3[1];}\n  if(!src){var m4=html.match(/data-video-src=\"([^\"]+)\"/);if(m4)src=m4[1];}\n  if(src&&src.indexOf('http')<0)src='https://huangdoudj.com'+src;\n  return src;\n})()"
+    },
+    "ruleExplore": {},
+    "ruleSearch": {
+      "bookList": "article.dm-card",
+      "bookUrl": "@js:(function(){var html=String(result||'');var m=html.match(/href=\"([^\"]*series\\/details\\/[^\"]+)\"/);return m?(\"https://huangdoudj.com\"+m[1]):\"\";})()",
+      "checkKeyWord": "荒岛",
+      "coverUrl": "img.dm-card-img@src",
+      "intro": "p.dm-card-sub@text",
+      "kind": "span.dm-card-heat-text@text",
+      "name": "h3.dm-card-title@text"
+    },
+    "ruleToc": {
+      "chapterList": "a.dm-ep",
+      "chapterName": "@js:(function(){\n  var html=String(result||'');\n  var freeM=html.match(/data-ep-free=\"(\\d+)\"/);\n  var titleM=html.match(/title=\"(\\d+)/);\n  var n=titleM?titleM[1]:'';\n  var name=n?('第'+n+'集'):'';\n  if(freeM&&freeM[1]==='0')name+=' 🔒';\n  return name;\n})()",
+      "chapterUrl": "@href"
+    },
+    "searchUrl": "/search/?keyword={{key}}",
+    "weight": 0
+  },
+  {
+    "bookSourceComment": "by 狼崽儿 //2026.7.5\n如果只想要播放地址不想要反复弹出播放器，可以自行删除正文规则的第一行“java.startBrowser(baseUrl, book.name + ' - ' + chapter.title);”。\n反之就加回来\n影视聚合资源站，内含电影，电视剧，短剧，AI漫剧，动漫，综艺，电影解说和体育等影视资源。资源高清。喜欢看各大视频可入。",
+    "bookSourceGroup": "影视频源 🎬",
+    "bookSourceName": "🎬非凡资源网",
+    "bookSourceType": 4,
+    "bookSourceUrl": "http://23.225.142.42",
+    "customButton": false,
+    "customOrder": 163,
+    "enabled": true,
+    "enabledCookieJar": true,
+    "enabledExplore": true,
+    "eventListener": false,
+    "exploreUrl": "[\n    { \"title\": \"动作片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=6&pg={{page}}\" },\n    { \"title\": \"喜剧片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=7&pg={{page}}\" },\n    { \"title\": \"爱情片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=8&pg={{page}}\" },\n    { \"title\": \"科幻片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=9&pg={{page}}\" },\n    { \"title\": \"恐怖片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=10&pg={{page}}\" },\n    { \"title\": \"剧情片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=11&pg={{page}}\" },\n    { \"title\": \"战争片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=12&pg={{page}}\" },\n    { \"title\": \"记录片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=20&pg={{page}}\" },\n    { \"title\": \"伦理片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=34&pg={{page}}\" },\n    { \"title\": \"国产剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=13&pg={{page}}\" },\n    { \"title\": \"欧美剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=16&pg={{page}}\" },\n    { \"title\": \"韩国剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=15&pg={{page}}\" },\n    { \"title\": \"日本剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=22&pg={{page}}\" },\n    { \"title\": \"香港剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=14&pg={{page}}\" },\n    { \"title\": \"台湾剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=21&pg={{page}}\" },\n    { \"title\": \"海外剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=23&pg={{page}}\" },\n    { \"title\": \"泰国剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=24&pg={{page}}\" },\n    { \"title\": \"短剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=36&pg={{page}}\" },\n    { \"title\": \"大陆综艺\", \"url\": \"/api.php/provide/vod/?ac=detail&t=25&pg={{page}}\" },\n    { \"title\": \"港台综艺\", \"url\": \"/api.php/provide/vod/?ac=detail&t=26&pg={{page}}\" },\n    { \"title\": \"日韩综艺\", \"url\": \"/api.php/provide/vod/?ac=detail&t=27&pg={{page}}\" },\n    { \"title\": \"欧美综艺\", \"url\": \"/api.php/provide/vod/?ac=detail&t=28&pg={{page}}\" },\n    { \"title\": \"国产动漫\", \"url\": \"/api.php/provide/vod/?ac=detail&t=29&pg={{page}}\" },\n    { \"title\": \"日韩动漫\", \"url\": \"/api.php/provide/vod/?ac=detail&t=30&pg={{page}}\" },\n    { \"title\": \"欧美动漫\", \"url\": \"/api.php/provide/vod/?ac=detail&t=31&pg={{page}}\" },\n    { \"title\": \"港台动漫\", \"url\": \"/api.php/provide/vod/?ac=detail&t=32&pg={{page}}\" },\n    { \"title\": \"海外动漫\", \"url\": \"/api.php/provide/vod/?ac=detail&t=33&pg={{page}}\" }\n  ]",
+    "lastUpdateTime": 1786774818570,
+    "respondTime": 3917,
+    "ruleBookInfo": {
+      "author": "$.list[0].vod_director",
+      "coverUrl": "$.list[0].vod_pic",
+      "intro": "$.list[0].vod_content@js:result=result.replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').trim();",
+      "kind": "$.list[0].vod_class",
+      "name": "$.list[0].vod_name"
+    },
+    "ruleContent": {
+      "content": "@js:\njava.toast('正在加载: ' + chapter.title);\nresult = baseUrl;"
+    },
+    "ruleExplore": {
+      "author": "$.vod_director",
+      "bookList": "$.list",
+      "bookUrl": "$.vod_id@js:result='/api.php/provide/vod/?ac=detail&ids='+String(result);",
+      "coverUrl": "$.vod_pic",
+      "intro": "$.vod_remarks",
+      "kind": "$.vod_class",
+      "name": "$.vod_name"
+    },
+    "ruleSearch": {
+      "author": "$.vod_director",
+      "bookList": "$.list",
+      "bookUrl": "$.vod_id@js:result='/api.php/provide/vod/?ac=detail&ids='+String(result);",
+      "coverUrl": "$.vod_pic",
+      "intro": "$.vod_remarks",
+      "kind": "$.vod_class",
+      "name": "$.vod_name"
+    },
+    "ruleToc": {
+      "chapterList": "@js:\nvar data = JSON.parse(src);\nvar vod = data.list[0];\nvar playUrl = vod.vod_play_url || '';\nvar lines = playUrl.split('$$$');\nvar m3u8Line = lines.length > 1 ? lines[1] : lines[0];\nvar eps = m3u8Line.split('#');\nvar list = [];\nfor (var i = 0; i < eps.length; i++) {\n  var idx = eps[i].indexOf('$');\n  if (idx > 0) {\n    list.push({\n      text: eps[i].substring(0, idx),\n      href: eps[i].substring(idx + 1)\n    });\n  }\n}\nlist",
+      "chapterName": "text",
+      "chapterUrl": "href"
+    },
+    "searchUrl": "/api.php/provide/vod/?ac=detail&wd={{key}}&pg={{page}}",
+    "weight": 0
+  },
+  {
+    "bookSourceComment": "by狼崽儿 //2026.7.3\n影视聚合资源站，内含电影，电视剧，短剧，AI漫剧，动漫，综艺，电影解说和体育等影视资源。资源高清。喜欢看各大视频可入。\n如果只想要播放地址不想要反复弹出播放器，可以自行删除正文规则的第一行。\n资源取自网络，仅供个人学习与参考。发布的内容仅做宽带测试使用，请在下载后24小时内删除。请支持购买正版！\n如果只想要播放地址不想要反复弹出播放器，可以自行删除正文规则的第一行\njava.startBrowser(baseUrl, book.name + ' - ' + chapter.title);\n反之就加回来",
+    "bookSourceGroup": "影视频源 🎬",
+    "bookSourceName": "🎬量子资源网",
+    "bookSourceType": 4,
+    "bookSourceUrl": "http://23.224.101.30/",
+    "customButton": false,
+    "customOrder": 169,
+    "enabled": true,
+    "enabledCookieJar": true,
+    "enabledExplore": true,
+    "eventListener": false,
+    "exploreUrl": "[\n    { \"title\": \"动作片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=6&pg={{page}}\" },\n    { \"title\": \"喜剧片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=7&pg={{page}}\" },\n    { \"title\": \"爱情片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=8&pg={{page}}\" },\n    { \"title\": \"科幻片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=9&pg={{page}}\" },\n    { \"title\": \"恐怖片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=10&pg={{page}}\" },\n    { \"title\": \"剧情片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=11&pg={{page}}\" },\n    { \"title\": \"战争片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=12&pg={{page}}\" },\n    { \"title\": \"记录片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=20&pg={{page}}\" },\n    { \"title\": \"伦理片🔞\", \"url\": \"/api.php/provide/vod/?ac=detail&t=34&pg={{page}}\" },\n    { \"title\": \"预告片\", \"url\": \"/api.php/provide/vod/?ac=detail&t=45&pg={{page}}\" },\n    { \"title\": \"国产剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=13&pg={{page}}\" },\n    { \"title\": \"欧美剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=16&pg={{page}}\" },\n    { \"title\": \"韩国剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=15&pg={{page}}\" },\n    { \"title\": \"日本剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=22&pg={{page}}\" },\n    { \"title\": \"香港剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=14&pg={{page}}\" },\n    { \"title\": \"台湾剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=21&pg={{page}}\" },\n    { \"title\": \"海外剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=23&pg={{page}}\" },\n    { \"title\": \"泰国剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=24&pg={{page}}\" },\n    { \"title\": \"大陆综艺\", \"url\": \"/api.php/provide/vod/?ac=detail&t=25&pg={{page}}\" },\n    { \"title\": \"港台综艺\", \"url\": \"/api.php/provide/vod/?ac=detail&t=26&pg={{page}}\" },\n    { \"title\": \"日韩综艺\", \"url\": \"/api.php/provide/vod/?ac=detail&t=27&pg={{page}}\" },\n    { \"title\": \"欧美综艺\", \"url\": \"/api.php/provide/vod/?ac=detail&t=28&pg={{page}}\" },\n    { \"title\": \"国产动漫\", \"url\": \"/api.php/provide/vod/?ac=detail&t=29&pg={{page}}\" },\n    { \"title\": \"日韩动漫\", \"url\": \"/api.php/provide/vod/?ac=detail&t=30&pg={{page}}\" },\n    { \"title\": \"欧美动漫\", \"url\": \"/api.php/provide/vod/?ac=detail&t=31&pg={{page}}\" },\n    { \"title\": \"港台动漫\", \"url\": \"/api.php/provide/vod/?ac=detail&t=32&pg={{page}}\" },\n    { \"title\": \"海外动漫\", \"url\": \"/api.php/provide/vod/?ac=detail&t=33&pg={{page}}\" },\n    { \"title\": \"电影解说\", \"url\": \"/api.php/provide/vod/?ac=detail&t=35&pg={{page}}\" },\n    { \"title\": \"短剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=46&pg={{page}}\" },\n    { \"title\": \"AI漫剧\", \"url\": \"/api.php/provide/vod/?ac=detail&t=52&pg={{page}}\" },\n    { \"title\": \"足球\", \"url\": \"/api.php/provide/vod/?ac=detail&t=37&pg={{page}}\" },\n    { \"title\": \"篮球\", \"url\": \"/api.php/provide/vod/?ac=detail&t=38&pg={{page}}\" }\n  ]",
+    "lastUpdateTime": 1786774833840,
+    "respondTime": 5988,
+    "ruleBookInfo": {
+      "author": "$.list[0].vod_director",
+      "coverUrl": "$.list[0].vod_pic",
+      "intro": "$.list[0].vod_blurb",
+      "kind": "$.list[0].vod_class",
+      "name": "$.list[0].vod_name"
+    },
+    "ruleContent": {
+      "content": "@js:\njava.toast('正在加载: ' + chapter.title);\nresult = baseUrl;"
+    },
+    "ruleExplore": {
+      "author": "$.vod_director",
+      "bookList": "$.list",
+      "bookUrl": "$.vod_id@js:result='/api.php/provide/vod/?ac=detail&ids='+String(result);",
+      "coverUrl": "$.vod_pic",
+      "intro": "$.vod_remarks",
+      "kind": "$.vod_class",
+      "name": "$.vod_name"
+    },
+    "ruleSearch": {
+      "author": "$.vod_director",
+      "bookList": "$.list",
+      "bookUrl": "$.vod_id@js:result='/api.php/provide/vod/?ac=detail&ids='+String(result);",
+      "coverUrl": "$.vod_pic",
+      "intro": "$.vod_remarks",
+      "kind": "$.vod_class",
+      "name": "$.vod_name"
+    },
+    "ruleToc": {
+      "chapterList": "@js:\nvar data = JSON.parse(src);\nvar vod = data.list[0];\nvar playUrl = vod.vod_play_url || '';\nvar lines = playUrl.split('$$$');\nvar m3u8Line = lines.length > 1 ? lines[1] : lines[0];\nvar eps = m3u8Line.split('#');\nvar list = [];\nfor (var i = 0; i < eps.length; i++) {\n  var idx = eps[i].indexOf('$');\n  if (idx > 0) {\n    list.push({\n      text: eps[i].substring(0, idx),\n      href: eps[i].substring(idx + 1)\n    });\n  }\n}\nlist",
+      "chapterName": "text",
+      "chapterUrl": "href"
+    },
+    "searchUrl": "/api.php/provide/vod/?ac=detail&wd={{key}}&pg={{page}}",
+    "weight": 0
+  },
+  {
+    "bookSourceComment": "",
+    "bookSourceGroup": "影视频源 🎬",
+    "bookSourceName": "🎬艾格动漫",
+    "bookSourceType": 4,
+    "bookSourceUrl": "https://www.agedm.org/search#",
+    "customButton": false,
+    "customOrder": 267,
+    "enabled": true,
+    "enabledCookieJar": false,
+    "enabledExplore": false,
+    "eventListener": false,
+    "lastUpdateTime": 1766914893806,
+    "loginUrl": "https://rentry.la/agefans",
+    "respondTime": 10492,
+    "ruleBookInfo": {
+      "intro": ".video_detail_desc@text\n@js:\nvar sz0=source.getVariable();\nif(sz0==null||sz0==\"\"){\n\tsz0=1\n}\nlet list = java.getStringList('.nav-pills .nav-item .nav-link@text')\nlet idList=java.getStringList('.nav-pills .nav-item .nav-link@data-bs-target')\nlet str=`     可以修改源变量查看不同线路，当前：${sz0}\\n`\nfor(let x=0;x<list.length;x++){\nlet txtArray0=java.getStringList(\"id.\"+idList[x].replace(\"#\",\"\")+\"@tag.ul@tag.li@tag.a@text\");\nstr =str+`源名称：${list[x]}，源变量：${x+1}，共：${txtArray0.length}集\\n`\n}\nstr+result"
+    },
+    "ruleContent": {
+      "content": "@js:\nvar playIurl=java.getString(\"id.iframeForVideo@src\")\nvar sz1=source.getVariable();\nif(sz1==null||sz1==\"\"){\n\tsz1=1\n}\nvar nametitle=title\nif(playIurl){\n\tif(book.durChapterIndex==chapter.index){\n       java.toast(`播放地址：${String(playIurl)}`)\n\t      java.startBrowser(playIurl,title)\r\t\t\n\t      java.toast(title+\":视频加载中，请等待…\")\r\r\n\t}\n}\nresult=`\\n<br>集数:【${nametitle}】\\n<br>温馨提示：\\n<br>【刷新正文】播放\\n<br>或者【点击章节链接】跳转到浏览器播放\\n<br>修改了源变量需要刷新正文\\n<br>当前播放线路：${java.getString('.nav-pills .nav-item .active@text')}\\n<br>当前播放源变量：${sz1}\\n<br>${java.getString(\".card-body@html\")}\\n<br>集数:【${nametitle}】\\n<br>温馨提示：\\n<br>【刷新正文】播放\\n<br>或者【点击章节链接】跳转到浏览器播放\\n<br>修改了源变量需要刷新正文\\n<br>当前播放线路：${java.getString('.nav-pills .nav-item .active@text')}\\n<br>当前播放源变量：${sz1}\\n<br>${java.getString(\".card-body@html\")}\\n<br>集数:【${nametitle}】\\n<br>温馨提示：\\n<br>【刷新正文】播放\\n<br>或者【点击章节链接】跳转到浏览器播放\\n<br>修改了源变量需要刷新正文\\n<br>当前播放线路：${java.getString('.nav-pills .nav-item .active@text')}\\n<br>当前播放源变量：${sz1}\\n<br>${java.getString(\".card-body@html\")}`\nresult;"
+    },
+    "ruleExplore": {},
+    "ruleSearch": {
+      "author": ".card-body .video_detail_info.7@textNodes",
+      "bookList": ".cata_video_item",
+      "bookUrl": ".card-body .card-title a@href",
+      "coverUrl": ".video_cover .video_cover_wrapper a img@data-original",
+      "intro": ".card-body .desc@text",
+      "kind": ".video_cover .text-truncate@text&&.card-body .video_detail_info.4@textNodes&&.card-body .video_detail_info.6@textNodes",
+      "name": ".card-body .card-title a@text"
+    },
+    "ruleToc": {
+      "chapterList": "@js:\nvar sz=source.getVariable();\nif(sz==null||sz==\"\"){\n\tsz=1\n}\nvar idName= java.getString('.nav-pills .nav-item:nth-child('+sz+') .nav-link@data-bs-target').replace(\"#\",\"\")\n\nlet array = []\nlet txtArray=java.getStringList(\"id.\"+idName+\"@tag.ul@tag.li@tag.a@text\");\n\tlet hrefTxt = java.getStringList(\"id.\"+idName+\"@tag.ul@tag.li@tag.a@href\");\n\t  for(let y=0;y<txtArray.length;y++){\r\n\t\tarray.push({\r\n\t\t name:txtArray[y],\r\n\t\t url:hrefTxt[y]\r\n\t\t})\r\n\t}\narray",
+      "chapterName": "name",
+      "chapterUrl": "url"
+    },
+    "searchUrl": "@js:\nvar html = java.ajax(\"https://rentry.la/agefans\");\n\n/*获取最新地址*/\nvar soUrl = org.jsoup.Jsoup.parse(html).select('#nice').select('#nice').select(\"blockquote\")[0].select(\"p a\")[0].html()\n\nvar re = /^(?:http(s)?:\\/\\/)?[\\w.-]+(?:\\.[\\w\\.-]+)+[\\w\\-\\._~:/?#[\\]@!\\$&'\\(\\)\\*\\+,;=.]+$/\n\t\nvar su=source.getKey()\n\n/*判断请求地址*/\nvar postUrl= soUrl && soUrl!=\"\" && re.test(soUrl)?`${soUrl}/search`:su\n\n\npostUrl+\"?query={{key}}&page={{page}},\"+JSON.stringify({\n\"webview\":true\n})",
+    "weight": 0
+  },
+  {
+    "bookSourceComment": "wjc是竟成",
+    "bookSourceGroup": "影视频源 🎬",
+    "bookSourceName": "🎬U酷资源",
+    "bookSourceType": 4,
+    "bookSourceUrl": "https://ukuzy.com/",
+    "customButton": false,
+    "customOrder": 322,
+    "enabled": true,
+    "enabledCookieJar": false,
+    "enabledExplore": true,
+    "eventListener": false,
+    "exploreUrl": "[\n{\"title\":\"——\",\"url\":\"\",\"style\": {\"layout_flexGrow\": 0,\"layout_flexBasisPercent\": 1,\"layout_wrapBefore\": false}},\n{\"title\":\"首页\",\"url\":\"https://ukuzy.com/index.php/index/index/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}}, \n{\"title\":\"——\",\"url\":\"\",\"style\": {\"layout_flexGrow\": 0,\"layout_flexBasisPercent\": 1,\"layout_wrapBefore\": false}},\n{\"title\":\"电影\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/1/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0,\"layout_flexBasisPercent\": 1,\"layout_wrapBefore\": false}},\n{\"title\":\"动作片\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/6/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}},\n{\"title\":\"喜剧片\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/7/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}},\n{\"title\":\"爱情片\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/8/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}},\n{\"title\":\"科幻片\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/9/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}},\n{\"title\":\"恐怖片\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/10/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}},\n{\"title\":\"剧情片\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/11/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}},\n{\"title\":\"战争片\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/12/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}},\n{\"title\":\"动漫电影\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/20/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}},\n{\"title\":\"——\",\"url\":\"\",\"style\": {\"layout_flexGrow\": 0,\"layout_flexBasisPercent\": 1,\"layout_wrapBefore\": false}},\n{\"title\":\"电视剧\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/2/page/{{page}}.html?ac=detail\",\"style\": {\"layout_flexGrow\": 0,\"layout_flexBasisPercent\": 1,\"layout_wrapBefore\": false}},\n{\"title\":\"台湾剧\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/21/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}},\n{\"title\":\"韩剧\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/22/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}},\n{\"title\":\"国产剧\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/13/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}},\n{\"title\":\"港澳剧\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/14/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}},\n{\"title\":\"日剧\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/15/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}},\n{\"title\":\"欧美剧\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/16/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}}, \n{\"title\":\"泰剧\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/23/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}},\n{\"title\":\"——\",\"url\":\"\",\"style\": {\"layout_flexGrow\": 0,\"layout_flexBasisPercent\": 1,\"layout_wrapBefore\": false}},\n{\"title\":\"综艺\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/3/page/{{page}}.html?ac=detail\",\"style\": {\"layout_flexGrow\": 0,\"layout_flexBasisPercent\": 1,\"layout_wrapBefore\": false}},\n{\"title\":\"——\",\"url\":\"\",\"style\": {\"layout_flexGrow\": 0,\"layout_flexBasisPercent\": 1,\"layout_wrapBefore\": false}},\n{\"title\":\"动漫\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/4/page/{{page}}.html?ac=detail\",\"style\": {\"layout_flexGrow\": 0,\"layout_flexBasisPercent\": 1,\"layout_wrapBefore\": false}},\n{\"title\":\"——\",\"url\":\"\",\"style\": {\"layout_flexGrow\": 0,\"layout_flexBasisPercent\": 1,\"layout_wrapBefore\": false}},\n{\"title\":\"纪录片\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/24/page/{{page}}.html?ac=detail\",\"style\": {\"layout_flexGrow\": 0,\"layout_flexBasisPercent\": 1,\"layout_wrapBefore\": false}},\n{\"title\":\"——\",\"url\":\"\",\"style\": {\"layout_flexGrow\": 0,\"layout_flexBasisPercent\": 1,\"layout_wrapBefore\": false}},\n{\"title\":\"伦理片\",\"url\":\"https://ukuzy.com/index.php/vod/type/id/25/page/{{page}}.html?ac=detail\",\"style\":{\"layout_flexGrow\": 0.25,\"layout_flexBasisPercent\": -1,\"layout_wrapBefore\": false}}\n]",
+    "lastUpdateTime": 1786774599995,
+    "respondTime": 11242,
+    "ruleBookInfo": {
+      "author": "@css:.vodinfobox>ul>li:eq(1)>span@text",
+      "coverUrl": "@css:.vodImg>img@src",
+      "intro": "@css:div[class=\"ibox playBox\"]>div[class=\"vodplayinfo\"]@text",
+      "kind": "@css:.vodinfobox>ul>li:eq(3)>span@text",
+      "wordCount": "@css:.vodh>span@text"
+    },
+    "ruleContent": {
+      "content": "<js>\nvar url=\"\";\nif(/.*\\.m3u8.*/.test(baseUrl)){url=baseUrl}\nelse{\njm=java.htmlFormat(result).match(/.*(\\{.*\\}).*/)[1];\nurl=baseUrl.match(/(.*)\\/share.*/)[1]+jm.match(/.*url\":\"(.*)\"\\}.*/)[1];\n}\nurl\n</js>"
+    },
+    "ruleExplore": {
+      "bookList": "@css:.xing_vb>ul",
+      "bookUrl": "@css:.xing_vb4>a@href",
+      "name": "@css:.xing_vb4>a@textNodes"
+    },
+    "ruleSearch": {
+      "bookList": "@css:.xing_vb>ul",
+      "bookUrl": "@css:.xing_vb4>a@href",
+      "name": "@css:.xing_vb4>a@textNodes"
+    },
+    "ruleToc": {
+      "chapterList": "@css:#play_2>ul>li",
+      "chapterName": "@css:a@text##(.+)\\$(.+)##$1",
+      "chapterUrl": "@css:a@text##(.+)\\$(.+)##$2"
+    },
+    "searchUrl": "https://ukuzy.com/index.php/vod/search/page/{{page}}/wd/{{key}}.html?ac=detail",
+    "weight": 74
+  },
+  {
+    "bookSourceComment": "by二月无雪\n交流群：756138903",
+    "bookSourceGroup": "影视频源 🎬",
+    "bookSourceName": "🎬电源先生",
+    "bookSourceType": 4,
+    "bookSourceUrl": "https://silidm.com",
+    "customButton": false,
+    "customOrder": 344,
+    "enabled": true,
+    "enabledCookieJar": true,
+    "enabledExplore": true,
+    "eventListener": false,
+    "exploreUrl": "<js>\nvar result = [];\nvar mainCat = infoMap[\"片库\"] || \"电影片库\";\n\nresult.push({\n    \"title\": \"片库\",\n    \"type\": \"select\",\n    \"chars\": [\"电影片库\", \"剧集片库\", \"动漫片库\", \"综艺片库\"],\n    \"default\": mainCat,\n    \"action\": \"java.refreshExplore()\",\n    \"style\": {\"layout_flexGrow\": 1, \"layout_flexBasisPercent\": 1}\n});\n\nvar cats = {\n    \"电影片库\": [\n        [\"剧情\", \"/show/dy---%E5%89%A7%E6%83%85-----{{page}}---.html\"],\n        [\"喜剧\", \"/show/dy---%E5%96%9C%E5%89%A7-----{{page}}---.html\"],\n        [\"动作\", \"/show/dy---%E5%8A%A8%E4%BD%9C-----{{page}}---.html\"],\n        [\"爱情\", \"/show/dy---%E7%88%B1%E6%83%85-----{{page}}---.html\"],\n        [\"科幻\", \"/show/dy---%E7%A7%91%E5%B9%BB-----{{page}}---.html\"],\n        [\"恐怖\", \"/show/dy---%E6%81%90%E6%80%96-----{{page}}---.html\"],\n        [\"战争\", \"/show/dy---%E6%88%98%E4%BA%89-----{{page}}---.html\"]\n    ],\n    \"剧集片库\": [\n        [\"国产剧\", \"/show/juji---%E5%9B%BD%E4%BA%A7%E5%89%A7-----{{page}}---.html\"],\n        [\"美剧\", \"/show/juji---%E7%BE%8E%E5%89%A7-----{{page}}---.html\"],\n        [\"韩国剧\", \"/show/juji---%E9%9F%A9%E5%9B%BD%E5%89%A7-----{{page}}---.html\"],\n        [\"港剧\", \"/show/juji---%E6%B8%AF%E5%89%A7-----{{page}}---.html\"],\n        [\"台湾剧\", \"/show/juji---%E5%8F%B0%E6%B9%BE%E5%89%A7-----{{page}}---.html\"],\n        [\"日本剧\", \"/show/juji---%E6%97%A5%E6%9C%AC%E5%89%A7-----{{page}}---.html\"],\n        [\"泰国剧\", \"/show/juji---%E6%B3%B0%E5%9B%BD%E5%89%A7-----{{page}}---.html\"]\n    ],\n    \"动漫片库\": [\n        [\"国产动漫\", \"/show/dongman---%E5%9B%BD%E4%BA%A7%E5%8A%A8%E6%BC%AB-----{{page}}---.html\"],\n        [\"日韩动漫\", \"/show/dongman---%E6%97%A5%E9%9F%A9%E5%8A%A8%E6%BC%AB-----{{page}}---.html\"],\n        [\"欧美动漫\", \"/show/dongman---%E6%AC%A7%E7%BE%8E%E5%8A%A8%E6%BC%AB-----{{page}}---.html\"]\n    ],\n    \"综艺片库\": [\n        [\"大陆综艺\", \"/show/zongyi---%E5%A4%A7%E9%99%86%E7%BB%BC%E8%89%BA-----{{page}}---.html\"]\n    ]\n};\n\nvar selected = cats[mainCat];\nfor (var i = 0; i < selected.length; i++) {\n    result.push({\n        \"title\": selected[i][0],\n        \"url\": selected[i][1],\n        \"style\": {\"layout_flexGrow\": 1, \"layout_flexBasisPercent\": 0.25}\n    });\n}\n\nJSON.stringify(result);\n</js>",
+    "header": "{\"User-Agent\": \"Mozilla/5.0 (Linux; Android 12; Pixel 6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.4951.61 Mobile Safari/537.36\"}",
+    "lastUpdateTime": 1785683483562,
+    "respondTime": 7292,
+    "ruleBookInfo": {
+      "coverUrl": "class.video-cover@tag.img@data-src",
+      "intro": "class.vod_content@text",
+      "kind": "class.video-info-aux@tag.a.0@text",
+      "name": "class.page-title@text"
+    },
+    "ruleContent": {
+      "content": "<js>\n(function(){\n    var html = String(result);\n    var idx = html.indexOf(\"player_aaaa\");\n    if (idx < 0) return \"\";\n    var start = html.indexOf(\"{\", idx);\n    if (start < 0) return \"\";\n    var depth = 0;\n    var end = start;\n    for (var i = start; i < html.length; i++) {\n        if (html.charAt(i) === \"{\") depth++;\n        else if (html.charAt(i) === \"}\") {\n            depth--;\n            if (depth === 0) {\n                end = i;\n                break;\n            }\n        }\n    }\n    var jsonStr = html.substring(start, end + 1);\n    try {\n        var data = JSON.parse(jsonStr);\n        return data.url || \"\";\n    } catch(e) {\n        return \"\";\n    }\n})()\n</js>",
+      "sourceRegex": ".*\\.(m3u8|mp4).*"
+    },
+    "ruleExplore": {
+      "bookList": "class.module-item",
+      "bookUrl": "class.video-name@tag.a@href",
+      "coverUrl": "class.module-item-pic@tag.img@data-src",
+      "intro": "class.video-text@text",
+      "name": "class.video-name@tag.a@text"
+    },
+    "ruleSearch": {
+      "bookList": "class.module-search-item",
+      "bookUrl": "tag.h3@tag.a@href",
+      "coverUrl": "class.module-item-pic@tag.img@data-src",
+      "intro": "class.video-info-main@text",
+      "name": "tag.h3@tag.a@text"
+    },
+    "ruleToc": {
+      "chapterList": "class.play-source-content.0@tag.a",
+      "chapterName": "text",
+      "chapterUrl": "href"
+    },
+    "searchUrl": "/search/{{key}}----------{{page}}---.html",
+    "weight": 0
+  },
+  {
+    "bookSourceGroup": "影视频源 🎬",
+    "bookSourceName": "🎬榴莲影视",
+    "bookSourceType": 4,
+    "bookSourceUrl": "https://66yy.net",
+    "customButton": false,
+    "customOrder": 364,
+    "enabled": true,
+    "enabledCookieJar": true,
+    "enabledExplore": false,
+    "eventListener": false,
+    "header": "{\n\t\"User-Agent\":\"Mozilla/5.0 (Linux; U; Android 11; zh-CN; PCAM00 Build/RKQ1.201217.002) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/100.0.4896.58 UCBrowser/16.4.4.1295 Mobile Safari/537.36 MQQBrowser/14.6 SogouMSE/14.6\"\n\t}",
+    "lastUpdateTime": 1766914879826,
+    "respondTime": 3440,
+    "ruleBookInfo": {},
+    "ruleContent": {
+      "content": "class.myui-player__video@script.0@all##.*url\":\"(.*)\",\"url_next\":.*from\":\"(.*)\",\"server.*##$1_$2\n@js:\nres=result.match(/(.*)_(.*)/)\nurl=res[1].replace(/\\\\/g,'')\nif(res[2]==\"wjm3u8\"){\nresult=\"https://jx.wujinkk.com/dplayer/?url=\"+url\n}else if(res[2]==\"bjm3u8\"){\nresult=\"https://zy.aoxtv.com/m3u8.php?url=\"+url\n}else if(res[2]==\"tkm3u8\"){\nresult=\"https://jx.huishij.com/yun/?url=\"+url\n}else{\nresult=\"https://jx.bozrc.com:4433/player/?url=\"+url\n}\nif(book.durChapterIndex==chapter.index){\n\t\tjava.startBrowser(result,title)\n\t\tjava.toast('正在加载视频\\n视频加载较慢，请耐心等待')\n\t}\n'<p>【刷新正文】播放\\n✅直链:\\n'+result"
+    },
+    "ruleExplore": {},
+    "ruleSearch": {
+      "author": "class.detail@p.1@ownText",
+      "bookList": "class.myui-vodlist__media@li",
+      "bookUrl": "a.0@href",
+      "coverUrl": "a@data-original@src",
+      "intro": "p.3@ownText",
+      "kind": "p.2@text##(分类|地区|年份)：##,",
+      "lastChapter": "class.pic-text@text",
+      "name": "class.title@text",
+      "wordCount": "class.pic-tag@text"
+    },
+    "ruleToc": {
+      "chapterList": "<js>\nall=\"\"\n\n//线路个数\nlen=java.getElements('class.nav-tabs[0]@li').length\n\nfor(i=1;i<=len;i++){\n\t\n\t//获取线路名称\nfrom=java.getElements('class.nav-tabs[0]@li')[i-1].text()\n\n//获取线路的播放列表\nres=java.getElements('class.myui-content__list')[i-1]\n\n//把线路名称插入列表里，在更新时间那里显示\nres=JSON.stringify(res).replace(/<\\/a>/g,'<p>'+'🎬'+from+'</p></a>')\n\nall+=JSON.parse(res)\n}\nall\n</js>\nclass.myui-content__list@li@a",
+      "chapterName": "ownText",
+      "chapterUrl": "href",
+      "updateTime": "p@text"
+    },
+    "searchUrl": "/vodsearch/-------------.html?wd={{key}}&submit=",
+    "weight": 0
+  }
+]
