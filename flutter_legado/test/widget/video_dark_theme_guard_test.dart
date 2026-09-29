@@ -24,7 +24,7 @@ import 'package:flutter_legado/src/widgets/video_settings_dialog.dart';
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  List<VideoEpisodeItem> _episodes() => const [
+  List<VideoEpisodeItem> episodes() => const [
         VideoEpisodeItem(title: '第1集', chapterIndex: 0),
         VideoEpisodeItem(title: '第2集', chapterIndex: 1),
       ];
@@ -76,7 +76,7 @@ void main() {
               builder: (context) => TextButton(
                 onPressed: () => showVideoEpisodeDialog(
                   context,
-                  episodes: _episodes(),
+                  episodes: episodes(),
                   currentChapterIndex: 0,
                 ),
                 child: const Text('打开选集'),

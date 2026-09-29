@@ -202,7 +202,7 @@ class _VideoSettingsDialogState extends State<_VideoSettingsDialog> {
 // - 入口仅存在于全屏控制器 video_layout_controller_full.xml（episode_list /
 //   playback_speed / next）；非全屏控制器无此二入口。
 
-/// 选集对话框的剧集项（对齐原版 SwitchVideoAdapter<BookChapter>）
+/// 选集对话框的剧集项（对齐原版 `SwitchVideoAdapter<BookChapter>`）
 class VideoEpisodeItem {
   /// 剧集标题（原版 BookChapter.title）
   final String title;
@@ -252,7 +252,7 @@ String speedEntryLabel(double speed) =>
 
 /// 倍速 tip 文案（对齐原版 VideoPlayer.kt:411「X倍播放中」，展示 2 秒；
 /// 长按倍速 tip「X倍速播放中」见 VideoPlayer.kt:112，勿混）
-String speedTipLabel(double speed) => '${speed}倍播放中';
+String speedTipLabel(double speed) => '$speed倍播放中';
 
 /// 选集对话框（对齐原版 ChoiceEpisodeDialog）
 ///
@@ -353,7 +353,7 @@ class _VideoEpisodePanelState extends State<_VideoEpisodePanel> {
                 controller: _scrollController,
                 padding: const EdgeInsetsDirectional.only(start: 8, end: 16),
                 itemCount: widget.episodes.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 4),
+                separatorBuilder: (_, _) => const SizedBox(height: 4),
                 itemBuilder: (context, i) {
                   final item = widget.episodes[i];
                   final isCurrent =

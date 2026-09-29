@@ -83,7 +83,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('选集（5）'), findsOneWidget);
       for (var i = 1; i <= 5; i++) {
-        expect(find.text('第${i}集'), findsOneWidget);
+        expect(find.text('第$i集'), findsOneWidget);
       }
     });
 
