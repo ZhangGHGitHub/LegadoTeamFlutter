@@ -2,6 +2,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../models/manga_config.dart';
+import '../../screens/reader_comic/manga_auto_read.dart';
 import '../../screens/reader_comic/manga_scroll_mode.dart';
 
 /// 漫画阅读配置底栏面板（对齐原版滤镜 / 电子纸 / 页脚 Dialog 入口结构）
@@ -24,6 +25,18 @@ class MangaConfigSheet extends StatefulWidget {
   /// [P4-3 E1] 翻页模式变更
   final ValueChanged<int> onScrollModeChanged;
 
+  /// [P4-3 E3] 自动翻页开关当前值（会话态；null = 不渲染自动翻页区块）
+  final bool? autoReadEnabled;
+
+  /// [P4-3 E3] 自动翻页速度档 1..15（当前值）
+  final int? autoReadSpeed;
+
+  /// [P4-3 E3] 自动翻页开关变更（非 null 时渲染区块）
+  final ValueChanged<bool>? onAutoReadChanged;
+
+  /// [P4-3 E3] 自动翻页速度档变更（随开关显隐，见原版 L572-575）
+  final ValueChanged<int>? onAutoReadSpeedChanged;
+
   const MangaConfigSheet({
     super.key,
     required this.colorFilter,
@@ -38,6 +51,10 @@ class MangaConfigSheet extends StatefulWidget {
     required this.onEnableGrayChanged,
     required this.onEInkThresholdChanged,
     required this.onScrollModeChanged,
+    this.autoReadEnabled,
+    this.autoReadSpeed,
+    this.onAutoReadChanged,
+    this.onAutoReadSpeedChanged,
   });
 
   static Future<void> show(
@@ -54,6 +71,11 @@ class MangaConfigSheet extends StatefulWidget {
     required ValueChanged<bool> onEnableGrayChanged,
     required ValueChanged<int> onEInkThresholdChanged,
     required ValueChanged<int> onScrollModeChanged,
+    // [P4-3 E3] 自动翻页（可选；不传则不渲染区块，既有调用方不受影响）
+    bool? autoReadEnabled,
+    int? autoReadSpeed,
+    ValueChanged<bool>? onAutoReadChanged,
+    ValueChanged<int>? onAutoReadSpeedChanged,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -72,6 +94,10 @@ class MangaConfigSheet extends StatefulWidget {
         onEnableGrayChanged: onEnableGrayChanged,
         onEInkThresholdChanged: onEInkThresholdChanged,
         onScrollModeChanged: onScrollModeChanged,
+        autoReadEnabled: autoReadEnabled,
+        autoReadSpeed: autoReadSpeed,
+        onAutoReadChanged: onAutoReadChanged,
+        onAutoReadSpeedChanged: onAutoReadSpeedChanged,
       ),
     );
   }
@@ -89,6 +115,16 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
   /// [P4-3 E1] 翻页模式
   late int _scrollMode;
 
+  /// [P4-3 E3] 自动翻页开关（区块仅在上游提供回调时渲染）
+  late bool _autoRead;
+
+  /// [P4-3 E3] 自动翻页速度档
+  late int _autoReadSpeed;
+
+  /// 是否渲染「自动翻页」区块（上游显式接线时才渲染，
+  /// 保证既有未接线的 sheet 用法/测试不受影响）
+  bool get _showAutoReadSection => widget.onAutoReadChanged != null;
+
   @override
   void initState() {
     super.initState();
@@ -104,6 +140,8 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
     _gray = widget.enableGray;
     _threshold = widget.eInkThreshold;
     _scrollMode = widget.scrollMode;
+    _autoRead = widget.autoReadEnabled ?? false;
+    _autoReadSpeed = widget.autoReadSpeed ?? MangaAutoRead.defaultValue;
   }
 
   @override
@@ -166,6 +204,42 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     },
                   ),
                 ]),
+                // [P4-3 E3] 自动翻页（对齐参考版 AutoReadSettingsContent
+                // MangaSettingsPanel L755-767：开关 + 速度滑杆 1..15；
+                // 速度项随开关显隐，对齐原版 ReadMangaActivity L572-575）
+                if (_showAutoReadSection) ...[
+                  _section('自动翻页'),
+                  _card([
+                    _switchTile(
+                      title: '自动翻页',
+                      subtitle: '单页式定时翻页；条漫定时滚动',
+                      value: _autoRead,
+                      onChanged: (v) {
+                        setState(() => _autoRead = v);
+                        widget.onAutoReadChanged!(v);
+                      },
+                    ),
+                    if (_autoRead) ...[
+                      _divider(),
+                      _sliderTile(
+                        title: '自动速度',
+                        value: _autoReadSpeed.toDouble(),
+                        min: MangaAutoRead.minSpeed.toDouble(),
+                        max: MangaAutoRead.maxSpeed.toDouble(),
+                        label: '$_autoReadSpeed 档',
+                        onChanged: (v) {
+                          final rounded = v
+                              .round()
+                              .clamp(MangaAutoRead.minSpeed,
+                                  MangaAutoRead.maxSpeed);
+                          if (rounded == _autoReadSpeed) return;
+                          setState(() => _autoReadSpeed = rounded);
+                          widget.onAutoReadSpeedChanged?.call(_autoReadSpeed);
+                        },
+                      ),
+                    ],
+                  ]),
+                ],
                 _section('显示效果'),
                 _card([
                   _switchTile(

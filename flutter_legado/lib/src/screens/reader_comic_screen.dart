@@ -24,6 +24,7 @@ import '../utils/manga_epaper.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/error_view.dart';
 import '../widgets/manga/manga_config_sheet.dart';
+import 'reader_comic/manga_auto_read.dart';
 import 'reader_comic/manga_click_actions.dart';
 import 'reader_comic/manga_paged_view.dart';
 import 'reader_comic/manga_page_actions_sheet.dart';
@@ -131,6 +132,18 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// [P4-3 E5] 点击按下位置（tap-up 时换算位移，区分点击与滑动/缩放意图）
   Offset? _tapDownPosition;
 
+  /// [P4-3 E3] 自动翻页/自动滚动开关（会话态，不落库——对齐参考版
+  /// MangaReaderContract L44 autoReadEnabled 默认 false 的会话态语义）
+  bool _autoRead = false;
+
+  /// [P4-3 E3] 自动翻页速度档 1..15（持久化；缺省/非法 → 默认 3，
+  /// 对齐参考版 Contract L136 autoReadSpeed 默认 3）
+  int _autoReadSpeed = MangaAutoRead.defaultValue;
+
+  /// [P4-3 E3] 自动翻页定时器（单页式每 速度×1s 翻一页；条漫每周期
+  /// ceil(16/速度×10000)ms 滚动 10000px，见 [MangaAutoRead] 取证注释）
+  Timer? _autoReadTimer;
+
   @override
   void initState() {
     super.initState();
@@ -143,6 +156,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   void dispose() {
     _scrollController.removeListener(_onScroll);
     _scrollController.dispose();
+    // [P4-3 E3] 取消自动翻页定时器
+    _autoReadTimer?.cancel();
     // [P4-3 E1] 单页式控制器（此时元素树已卸载，控制器已解绑，可安全释放）
     _pagedController?.dispose();
     // 退出前保存阅读进度
@@ -161,6 +176,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       final thr = await api.getConfig(MangaConfigKeys.eInkThreshold);
       // [P4-3 E1] 翻页模式（缺省/非法 → 条漫 4）
       final modeRaw = await api.getConfig(MangaConfigKeys.scrollMode);
+      // [P4-3 E3] 自动翻页速度档（缺省/非法 → 默认 3）
+      final speedRaw = await api.getConfig(MangaConfigKeys.autoReadSpeed);
       if (!mounted) return;
       setState(() {
         _colorFilter = MangaColorFilterConfig.fromStorage(filterRaw);
@@ -169,6 +186,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
         _enableGray = gray == 'true';
         _eInkThreshold = int.tryParse(thr ?? '') ?? 150;
         _scrollMode = MangaScrollModes.parse(modeRaw);
+        _autoReadSpeed = MangaAutoRead.parse(speedRaw);
       });
       // [P4-3 E1] 配置可能在图片加载后才生效：同步单页式控制器
       _applyScrollMode();
@@ -182,10 +200,85 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
         MangaScrollModes.valid.contains(mode) ? mode : MangaScrollModes.defaultValue;
     if (mounted) setState(() {});
     _applyScrollMode();
+    // [P4-3 E3] 翻页模式决定自动定时器语义（单页/条漫），变更后重启
+    _restartAutoReadTimer();
     try {
       await ref.read(bookApiProvider)
           .setConfig(MangaConfigKeys.scrollMode, '$_scrollMode');
     } catch (_) {}
+  }
+
+  /// [P4-3 E3] 打开/关闭自动翻页（会话态，不持久化）
+  ///
+  /// 对齐参考版 MangaReaderContract L44（autoReadEnabled 会话态）+
+  /// 原版 ReadMangaActivity L570-591 开关互斥语义（条漫自动滚动与
+  /// 单页自动翻页共用同一开关与速度档，本实现以翻页模式区分两态）。
+  /// 「再点停止」：再调一次（enabled=false）即取消定时器。
+  void _setAutoReadEnabled(bool enabled) {
+    if (enabled == _autoRead) return;
+    if (mounted) setState(() => _autoRead = enabled);
+    _restartAutoReadTimer();
+  }
+
+  /// [P4-3 E3] 持久化自动翻页速度档并重启定时器（1..15，越限收敛）
+  Future<void> _persistAutoReadSpeed(int speed) async {
+    final v = MangaAutoRead.parse('$speed');
+    if (v == _autoReadSpeed) return;
+    if (mounted) setState(() => _autoReadSpeed = v);
+    _restartAutoReadTimer();
+    try {
+      await ref.read(bookApiProvider)
+          .setConfig(MangaConfigKeys.autoReadSpeed, '$v');
+    } catch (_) {}
+  }
+
+  /// [P4-3 E3] 启动/重启自动翻页定时器（关闭或开关态为 false 时不排程）
+  ///
+  /// 取证（参考版 MangaReaderScreen）：
+  /// - 单页式 L200-216：循环 delay(速度×1000L) → PageStep(1)；
+  /// - 条漫 L677-699：每周期 tween(ceil(16/速度×10000)ms) 滚 10000px，
+  ///   到章末（consumed < 1）→ delay(500L) 后 NextChapter。
+  /// 参考版 LaunchedEffect 依赖 menuVisible/activeSheet——控制栏/设置面板
+  /// 打开期间自动翻页暂停，关闭后从新周期恢复 → 本实现以 [_showControls]
+  /// 守卫跳过 tick（设置面板打开时控制栏必然可见，单一守卫覆盖两态），
+  /// 并在控制栏收起时 [_restartAutoReadTimer] 重排（对齐 LaunchedEffect
+  /// 依赖变化重建语义，恢复后先走满一个完整间隔）。
+  void _restartAutoReadTimer() {
+    _autoReadTimer?.cancel();
+    _autoReadTimer = null;
+    if (!_autoRead) return;
+    final period = MangaScrollModes.isPaged(_scrollMode)
+        ? MangaAutoRead.pageStepDelay(_autoReadSpeed)
+        : MangaAutoRead.webtoonCycle(_autoReadSpeed);
+    _autoReadTimer = Timer.periodic(period, (_) => _autoReadTick());
+  }
+
+  /// [P4-3 E3] 定时器 tick：控制栏/面板打开期间暂停（守卫见上）
+  void _autoReadTick() {
+    if (_showControls) return;
+    if (MangaScrollModes.isPaged(_scrollMode)) {
+      // 单页式：翻一页（边界自动切章，见 [_stepPage]；其内部已 unawaited）
+      _stepPage(1);
+      return;
+    }
+    // 条漫：滚动 10000px（参考版 L688 value = 10_000f）；不足一周期
+    //（已到章末）→ 500ms 后切下一章（参考版 L694 delay(500L)）
+    if (!_scrollController.hasClients) {
+      unawaited(_nextChapter());
+      return;
+    }
+    final position = _scrollController.position;
+    final target = position.pixels + MangaAutoRead.webtoonScrollPx;
+    if (target >= position.maxScrollExtent) {
+      Future.delayed(const Duration(milliseconds: 500),
+          () => unawaited(_nextChapter()));
+      return;
+    }
+    position.animateTo(
+      target,
+      duration: MangaAutoRead.webtoonCycle(_autoReadSpeed),
+      curve: Curves.linear,
+    );
   }
 
   /// [P4-3 E1] 应用翻页模式：
@@ -359,12 +452,17 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       eInkThreshold: _eInkThreshold,
       // [P4-3 E1] 翻页模式（对齐参考版阅读模式下拉）
       scrollMode: _scrollMode,
+      // [P4-3 E3] 自动翻页（开关会话态 + 速度档 1..15 持久化）
+      autoReadEnabled: _autoRead,
+      autoReadSpeed: _autoReadSpeed,
       onColorFilterChanged: (c) => unawaited(_persistColorFilter(c)),
       onFooterChanged: (c) => unawaited(_persistFooter(c)),
       onEnableEInkChanged: (v) => unawaited(_persistEInk(v)),
       onEnableGrayChanged: (v) => unawaited(_persistGray(v)),
       onEInkThresholdChanged: (v) => unawaited(_persistThreshold(v)),
       onScrollModeChanged: (m) => unawaited(_persistScrollMode(m)),
+      onAutoReadChanged: (v) => _setAutoReadEnabled(v),
+      onAutoReadSpeedChanged: (v) => unawaited(_persistAutoReadSpeed(v)),
     );
   }
 
@@ -857,6 +955,9 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     setState(() {
       _showControls = !_showControls;
     });
+    // [P4-3 E3] 控制栏收起 = 自动翻页恢复（对齐参考版 LaunchedEffect 依赖
+    // menuVisible/activeSheet 变化重建：从新周期开始计时）
+    if (!_showControls) _restartAutoReadTimer();
   }
 
   // ---------------------------------------------------------------------------

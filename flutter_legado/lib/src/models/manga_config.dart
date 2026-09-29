@@ -218,4 +218,8 @@ abstract final class MangaConfigKeys {
 
   /// [P4-3 E1] 翻页模式（对齐参考版 MangaScrollMode，默认条漫 4）
   static const scrollMode = 'mangaScrollMode';
+
+  /// [P4-3 E3] 自动翻页速度档 1..15（对齐参考版 autoReadSpeed，默认 3；
+  /// 开关本身为会话态不落库，对齐参考版 Contract L44 语义）
+  static const autoReadSpeed = 'mangaAutoReadSpeed';
 }
