@@ -46,6 +46,8 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
       final api = ref.read(bookApiProvider);
       final books = await api.getBooks();
       state = state.copyWith(books: books, isLoading: false);
+      // [P4-2b V4] 书籍就绪后重推视频聚合分组（对齐原版 IdVideo 动态显隐）
+      _applyVideoGroup();
     } catch (e) {
       state = state.copyWith(error: _mapError(e), isLoading: false);
     }
@@ -93,7 +95,13 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
         ..sort((a, b) => a.order.compareTo(b.order));
       // 对标原版 upGroup：始终保证「全部」组存在并置顶；
       // 无自定义分组时仅单一「全部」组（此时 UI 不显示 TabBar）
-      final allGroup = const BookGroup(groupId: BookGroupId.all, groupName: '全部');
+      // 合成组 order=-10 对齐原版种子（AppDatabase.kt:206-208），确保早于
+      // 视频组（order=-5，AppDatabase.kt:241-244）与自定义组（order≥0）
+      final allGroup = const BookGroup(
+        groupId: BookGroupId.all,
+        groupName: '全部',
+        order: -10,
+      );
       final hasAll = visible.any((g) => g.groupId == BookGroupId.all);
       final list = hasAll ? visible : [allGroup, ...visible];
       final lastIndex = await _settings.getBookshelfTabPosition();
@@ -101,10 +109,61 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
         groups: list,
         selectedGroupIndex: lastIndex.clamp(0, list.length - 1),
       );
+      // [P4-2b V4] 分组就绪后重推视频聚合分组（books 可能已先于 groups 加载）
+      _applyVideoGroup();
     } catch (e) {
       // 分组加载失败不阻断书架展示
       state = state.copyWith(error: _mapError(e));
     }
+  }
+
+  /// [P4-2b V4] 重推视频聚合分组（对齐原版 IdVideo 动态显隐语义）
+  ///
+  /// 原版依据：
+  /// - `BookGroup.kt:39` `IdVideo = -6`；`AppDatabase.kt:241-244` 种子「视频」组
+  ///   （order=-5, show=1）
+  /// - `BookGroupDao.kt:36` show 查询：视频组仅当存在视频书时出现在分组列表
+  ///   （`groupId = -6 and exists (select 1 from books where type & video > 0)`）
+  ///
+  /// 我方 `book_groups` 表无视频组行（Rust 侧无种子，DB 中 -6 行仅可能来自
+  /// 未来种子迁移），故在数据层合成：有视频书（`bookType & BookType.video`）
+  /// 且 groups 尚无 -6 组 → 补「视频」组；无视频书但存在 -6 组 → 移除（空组
+  /// 不展示，对齐原版）。幂等：状态与条件一致时不写 state。
+  ///
+  /// 组内书籍过滤由 `currentGroupBooks` 既有 [BookGroupId.video] 分支承担
+  /// （bookshelf_state.dart，`type & video != 0`，对齐原版 isVideo 判定）。
+  void _applyVideoGroup() {
+    final groups = state.groups;
+    final hasVideoBook =
+        state.books.any((b) => (b.bookType & BookType.video) != 0);
+    final hasVideoGroup =
+        groups.any((g) => g.groupId == BookGroupId.video);
+    if (hasVideoBook == hasVideoGroup) return;
+
+    // 组列表变化后按 groupId 保持当前选中 Tab 不动（防插入/移除导致索引
+    // 错位跳组）；当前组已不在新列表时回退「全部」组
+    final previousGroupId = state.selectedGroup?.groupId ?? BookGroupId.all;
+    final List<BookGroup> next;
+    if (hasVideoBook) {
+      // 合成组对齐原版种子：order=-5、show=1（AppDatabase.kt:241-244）
+      next = [
+        ...groups,
+        const BookGroup(
+          groupId: BookGroupId.video,
+          groupName: '视频',
+          order: -5,
+        ),
+      ]..sort((a, b) => a.order.compareTo(b.order));
+    } else {
+      // 当前体系 DB 无 -6 行，列表中 -6 组必为合成组（见方法注释）
+      next = groups.where((g) => g.groupId != BookGroupId.video).toList();
+    }
+    var index = next.indexWhere((g) => g.groupId == previousGroupId);
+    if (index < 0) {
+      index = next.indexWhere((g) => g.groupId == BookGroupId.all);
+      if (index < 0) index = 0;
+    }
+    state = state.copyWith(groups: next, selectedGroupIndex: index);
   }
 
   /// 切换分组 Tab（对标原版 onTabSelected → AppConfig.saveTabPosition）
@@ -125,6 +184,8 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
       final api = ref.read(bookApiProvider);
       await api.addBook(book);
       state = state.copyWith(books: [...state.books, book]);
+      // [P4-2b V4] 新加入的视频书触发视频聚合分组出现
+      _applyVideoGroup();
       return true;
     } catch (e) {
       state = state.copyWith(error: _mapError(e));
@@ -160,6 +221,8 @@ class BookshelfNotifier extends Notifier<BookshelfState> {
       state = state.copyWith(
         books: state.books.where((b) => b.bookUrl != bookUrl).toList(),
       );
+      // [P4-2b V4] 删尽视频书后视频聚合分组消失（对齐原版 show 查询动态隐藏）
+      _applyVideoGroup();
       return true;
     } catch (e) {
       state = state.copyWith(error: _mapError(e));
