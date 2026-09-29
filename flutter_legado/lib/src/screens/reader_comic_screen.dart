@@ -566,18 +566,46 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   }
 
   /// FFI 预加载：与 [_DecodedComicImage] 共用缓存 — Reasonix + UI
+  ///
+  /// [P4-2a | 契约 §2.46] 图片磁盘缓存优先：磁盘命中 → 存入内存缓存
+  /// 并跳过网络；未命中走网络预载，成功后回写磁盘缓存（fire-and-forget
+  /// 静默降级，不影响在线）。
   Future<void> _preloadViaFfi(String url) async {
     final source = _bookSource;
     final book = _book;
     if (source == null || book == null || !mounted) return;
     try {
       final api = ref.read(bookApiProvider);
+      final diskHit = await api.getImageCache(widget.bookUrl, url);
+      if (diskHit != null &&
+          diskHit.isNotEmpty &&
+          looksLikeImageBytes(diskHit)) {
+        ComicImageDecodeCache.put(
+          book.origin,
+          url,
+          diskHit is Uint8List ? diskHit : Uint8List.fromList(diskHit),
+        );
+        return;
+      }
       await ComicImageDecodeCache.preload(
         api: api,
         url: url,
         sourceJson: jsonEncode(source.toJson()),
         bookSourceUrl: book.origin,
       );
+      // [P4-2a] 网络预载成功后回写磁盘缓存（失败静默降级，不影响在线）
+      final loaded = ComicImageDecodeCache.get(book.origin, url);
+      if (loaded != null) {
+        try {
+          await api.saveImageCache(
+            bookUrl: widget.bookUrl,
+            url: url,
+            bytes: loaded,
+          );
+        } catch (_) {
+          // 磁盘缓存写失败静默降级（契约 §2.46 降级语义）
+        }
+      }
     } catch (_) {
       // 预加载失败静默；正式渲染会再试并展示错误态
     }
@@ -795,6 +823,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
           url: url,
           sourceJson: jsonEncode(_bookSource!.toJson()),
           bookSourceUrl: _book!.origin,
+          bookUrl: widget.bookUrl, // [P4-2a] 图片磁盘缓存按书隔离的目录键
           eInkThreshold: _enableEInk ? _eInkThreshold : null,
           onError: () {
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1220,10 +1249,18 @@ class ComicImageDecodeCache {
 /// 按书源 header 自动构造，Flutter 无需重复传 header。
 ///
 /// [UI-fix v2.0.19 | 2026-08-11] 漫画/图片源图片解密链路落地 — Reasonix
+///
+/// [P4-2a | 2026-09-29] 图片磁盘缓存优先（契约 §2.46，对齐原版
+/// `MangaVH.mangaImagePath` 本地优先语义）：加载前经 [bookUrl] 查
+/// `getImageCache` 磁盘缓存，命中直接本地字节渲染（不走网络）；
+/// 未命中走 `fetchImageWithDecode` 网络链路，成功后经 `saveImageCache`
+/// 回写磁盘缓存（fire-and-forget，写失败静默降级不影响在线加载）。
 class _DecodedComicImage extends ConsumerStatefulWidget {
   final String url;
   final String sourceJson;
   final String bookSourceUrl;
+  /// 书籍 URL（图片磁盘缓存目录按书隔离，契约 §2.46）— P4-2a
+  final String bookUrl;
   final VoidCallback onError;
   /// 非 null 时做真像素电子纸二值化（对齐 EpaperTransformation）
   final int? eInkThreshold;
@@ -1232,6 +1269,7 @@ class _DecodedComicImage extends ConsumerStatefulWidget {
     required this.url,
     required this.sourceJson,
     required this.bookSourceUrl,
+    required this.bookUrl,
     required this.onError,
     this.eInkThreshold,
   });
@@ -1300,6 +1338,22 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
     });
     try {
       final api = ref.read(bookApiProvider);
+      // [P4-2a | 契约 §2.46] 图片磁盘缓存优先（对齐原版 MangaVH.mangaImagePath
+      // 本地优先语义）：命中 → 直接本地字节渲染，跳过网络解码链；未命中/
+      // 读失败降级走下方网络链路（读失败已由 Rust 侧降级 null，不影响在线）。
+      final cached = await api.getImageCache(widget.bookUrl, widget.url);
+      if (cached != null && cached.isNotEmpty && looksLikeImageBytes(cached)) {
+        final cachedBytes =
+            cached is Uint8List ? cached : Uint8List.fromList(cached);
+        if (!mounted) return;
+        ComicImageDecodeCache.put(widget.bookSourceUrl, widget.url, cachedBytes);
+        setState(() {
+          _bytes = cachedBytes;
+          _loading = false;
+        });
+        await _applyEpaperIfNeeded(cachedBytes);
+        return;
+      }
       final json = await api.fetchImageWithDecode(widget.url, widget.sourceJson);
       final decoded = jsonDecode(json) as Map<String, dynamic>;
       final b64 = decoded['base64'] as String? ?? '';
@@ -1314,6 +1368,9 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
       }
       if (!mounted) return;
       ComicImageDecodeCache.put(widget.bookSourceUrl, widget.url, bytes);
+      // [P4-2a] 网络成功后回写磁盘缓存：fire-and-forget，写失败静默降级
+      // （不影响在线加载，对齐原版 saveImage catch 仅记日志不抛异常语义）
+      unawaited(_saveDiskCache(api, bytes));
       setState(() {
         _bytes = bytes;
         _loading = false;
@@ -1326,6 +1383,23 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
         _loading = false;
       });
       widget.onError();
+    }
+  }
+
+  /// [P4-2a | 契约 §2.46] 将图片字节写入磁盘缓存（fire-and-forget）。
+  ///
+  /// 写盘失败/输入非法时 `saveImageCache` 返回 false（Rust 侧静默降级），
+  /// 此处再兜底捕获任何异常——缓存是加速器不是数据源，失败必须不影响
+  /// 在线加载（对齐原版 `BookHelp.saveImage` catch 仅记日志语义）。
+  Future<void> _saveDiskCache(BookApi api, List<int> bytes) async {
+    try {
+      await api.saveImageCache(
+        bookUrl: widget.bookUrl,
+        url: widget.url,
+        bytes: bytes,
+      );
+    } catch (_) {
+      // 磁盘缓存写失败静默降级：不影响在线加载（契约 §2.46 降级语义）
     }
   }
 

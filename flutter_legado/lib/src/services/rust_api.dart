@@ -77,6 +77,11 @@ class RustApi
     // 目录（Android Context.getCacheDir() 等价），替代系统 temp 回落目录
     await _initJsCacheDir();
 
+    // [P4-2a | 2026-09-29] 图片磁盘缓存目录初始化接线（契约 §1.6.1/§2.46）：
+    // 漫画图片缓存落应用私有缓存目录下的 image_cache 子目录，
+    // 替代 Rust 侧系统 temp 回落目录
+    await _initImageCacheDir();
+
     // 注入真实设备 ID（书山聚合等源登录登记设备 + 正文 X-Device-Id 校验；
     // 对齐原版 AppConst.androidId = Settings.Secure.ANDROID_ID）
     await _injectDeviceId();
@@ -255,6 +260,28 @@ class RustApi
       debugPrint('[RustApi] setCacheDir -> ${dir.path}');
     } catch (e) {
       debugPrint('[RustApi] setCacheDir 初始化失败，保留 Rust 默认目录：$e');
+    }
+  }
+
+  /// 设置图片磁盘缓存目录（应用初始化时调用）— P4-2a（契约 §1.6.1/§2.46）
+  ///
+  /// Rust 侧 `image_cache` 未注入时回落 `<temp_dir>/legado-image-cache`
+  /// （系统 temp 目录，可能被系统清理，图片缓存随清理丢失）。这里指向
+  /// 应用私有缓存目录（Android `Context.getCacheDir()` 等价，Dart
+  /// `getApplicationCacheDirectory()`）下的 image_cache 子目录，使漫画
+  /// 图片磁盘缓存（对齐原版 `BookHelp.saveImage`/`getImage`）落应用私有
+  /// 存储；取不到路径时保留 Rust 默认并仅记日志，不阻断初始化。
+  Future<void> _initImageCacheDir() async {
+    try {
+      final base = await getApplicationCacheDirectory();
+      final dir = Directory('${base.path}${Platform.pathSeparator}image_cache');
+      if (!dir.existsSync()) {
+        dir.createSync(recursive: true);
+      }
+      await bridge.setImageCacheDir(dir: dir.path);
+      debugPrint('[RustApi] setImageCacheDir -> ${dir.path}');
+    } catch (e) {
+      debugPrint('[RustApi] setImageCacheDir 初始化失败，保留 Rust 默认目录：$e');
     }
   }
 
