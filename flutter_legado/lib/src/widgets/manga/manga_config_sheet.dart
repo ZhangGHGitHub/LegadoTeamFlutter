@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/manga_config.dart';
 import '../../screens/reader_comic/manga_auto_read.dart';
+import '../../screens/reader_comic/manga_page_scale_type.dart';
 import '../../screens/reader_comic/manga_scroll_mode.dart';
 
 /// 漫画阅读配置底栏面板（对齐原版滤镜 / 电子纸 / 页脚 Dialog 入口结构）
@@ -37,6 +38,13 @@ class MangaConfigSheet extends StatefulWidget {
   /// [P4-3 E3] 自动翻页速度档变更（随开关显隐，见原版 L572-575）
   final ValueChanged<int>? onAutoReadSpeedChanged;
 
+  /// [P4-3 E2] 分页适配类型 0..5（当前值；null = 默认 0）
+  final int? pageScaleType;
+
+  /// [P4-3 E2] 分页适配类型变更（非 null 且当前为单页模式时渲染下拉，
+  /// 对齐参考版 L372-386：条漫模式改显侧边距滑杆，本面板不渲染）
+  final ValueChanged<int>? onPageScaleTypeChanged;
+
   const MangaConfigSheet({
     super.key,
     required this.colorFilter,
@@ -55,6 +63,8 @@ class MangaConfigSheet extends StatefulWidget {
     this.autoReadSpeed,
     this.onAutoReadChanged,
     this.onAutoReadSpeedChanged,
+    this.pageScaleType,
+    this.onPageScaleTypeChanged,
   });
 
   static Future<void> show(
@@ -76,6 +86,9 @@ class MangaConfigSheet extends StatefulWidget {
     int? autoReadSpeed,
     ValueChanged<bool>? onAutoReadChanged,
     ValueChanged<int>? onAutoReadSpeedChanged,
+    // [P4-3 E2] 分页适配类型（可选；不传则不渲染下拉，既有调用方不受影响）
+    int? pageScaleType,
+    ValueChanged<int>? onPageScaleTypeChanged,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -98,6 +111,8 @@ class MangaConfigSheet extends StatefulWidget {
         autoReadSpeed: autoReadSpeed,
         onAutoReadChanged: onAutoReadChanged,
         onAutoReadSpeedChanged: onAutoReadSpeedChanged,
+        pageScaleType: pageScaleType,
+        onPageScaleTypeChanged: onPageScaleTypeChanged,
       ),
     );
   }
@@ -121,9 +136,19 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
   /// [P4-3 E3] 自动翻页速度档
   late int _autoReadSpeed;
 
+  /// [P4-3 E2] 分页适配类型 0..5
+  late int _pageScaleType;
+
   /// 是否渲染「自动翻页」区块（上游显式接线时才渲染，
   /// 保证既有未接线的 sheet 用法/测试不受影响）
   bool get _showAutoReadSection => widget.onAutoReadChanged != null;
+
+  /// 是否渲染「页面适配」下拉：上游接线且当前为单页模式才渲染
+  /// （对齐参考版 L372-386：条漫模式改显侧边距滑杆，本面板不渲染；
+  /// 面板内切回单页模式后本项随 [_scrollMode] 变化自动出现）
+  bool get _showPageScale =>
+      widget.onPageScaleTypeChanged != null &&
+      MangaScrollModes.isPaged(_scrollMode);
 
   @override
   void initState() {
@@ -142,6 +167,7 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
     _scrollMode = widget.scrollMode;
     _autoRead = widget.autoReadEnabled ?? false;
     _autoReadSpeed = widget.autoReadSpeed ?? MangaAutoRead.defaultValue;
+    _pageScaleType = widget.pageScaleType ?? MangaPageScaleType.defaultValue;
   }
 
   @override
@@ -203,6 +229,21 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                       widget.onScrollModeChanged(_scrollMode);
                     },
                   ),
+                  // [P4-3 E2] 页面适配（对齐参考版 L372-386 非条漫才渲染；
+                  // 条漫侧边距滑杆不在本波范围）
+                  if (_showPageScale) ...[
+                    _divider(),
+                    _dropdownTile(
+                      title: '页面适配',
+                      value: _pageScaleType,
+                      options: MangaPageScaleType.options,
+                      labelOf: MangaPageScaleType.labelOf,
+                      onChanged: (v) {
+                        setState(() => _pageScaleType = v);
+                        widget.onPageScaleTypeChanged!(v);
+                      },
+                    ),
+                  ],
                 ]),
                 // [P4-3 E3] 自动翻页（对齐参考版 AutoReadSettingsContent
                 // MangaSettingsPanel L755-767：开关 + 速度滑杆 1..15；

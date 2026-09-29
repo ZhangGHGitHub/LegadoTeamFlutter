@@ -222,4 +222,8 @@ abstract final class MangaConfigKeys {
   /// [P4-3 E3] 自动翻页速度档 1..15（对齐参考版 autoReadSpeed，默认 3；
   /// 开关本身为会话态不落库，对齐参考版 Contract L44 语义）
   static const autoReadSpeed = 'mangaAutoReadSpeed';
+
+  /// [P4-3 E2] 分页适配类型 0..5（对齐参考版 pageScaleType，
+  /// Contract L121 默认 0 = 全屏适配）
+  static const pageScaleType = 'mangaPageScaleType';
 }

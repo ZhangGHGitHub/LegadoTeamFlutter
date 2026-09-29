@@ -29,6 +29,7 @@ import 'reader_comic/manga_click_actions.dart';
 import 'reader_comic/manga_paged_view.dart';
 import 'reader_comic/manga_page_actions_sheet.dart';
 import 'reader_comic/manga_page_image_resolver.dart';
+import 'reader_comic/manga_page_scale_type.dart';
 import 'reader_comic/manga_scroll_mode.dart';
 
 /// 漫画阅读页面
@@ -144,6 +145,16 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// ceil(16/速度×10000)ms 滚动 10000px，见 [MangaAutoRead] 取证注释）
   Timer? _autoReadTimer;
 
+  /// [P4-3 E2] 分页适配类型 0..5（持久化；缺省/非法 → 默认 0 = 全屏适配，
+  /// 对齐参考版 Contract L121）
+  int _pageScaleType = MangaPageScaleType.defaultValue;
+
+  /// [P4-3 E2] 图片渲染 BoxFit：单页式按适配类型映射（Screen L1463-1472）；
+  /// 条漫恒 fitWidth（Screen L1568）
+  BoxFit get _imageFit => MangaScrollModes.isPaged(_scrollMode)
+      ? MangaPageScaleType.fitFor(type: _pageScaleType)
+      : MangaPageScaleType.webtoonFit;
+
   @override
   void initState() {
     super.initState();
@@ -178,6 +189,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       final modeRaw = await api.getConfig(MangaConfigKeys.scrollMode);
       // [P4-3 E3] 自动翻页速度档（缺省/非法 → 默认 3）
       final speedRaw = await api.getConfig(MangaConfigKeys.autoReadSpeed);
+      // [P4-3 E2] 分页适配类型（缺省/非法 → 默认 0 = 全屏适配）
+      final scaleRaw = await api.getConfig(MangaConfigKeys.pageScaleType);
       if (!mounted) return;
       setState(() {
         _colorFilter = MangaColorFilterConfig.fromStorage(filterRaw);
@@ -187,6 +200,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
         _eInkThreshold = int.tryParse(thr ?? '') ?? 150;
         _scrollMode = MangaScrollModes.parse(modeRaw);
         _autoReadSpeed = MangaAutoRead.parse(speedRaw);
+        _pageScaleType = MangaPageScaleType.parse(scaleRaw);
       });
       // [P4-3 E1] 配置可能在图片加载后才生效：同步单页式控制器
       _applyScrollMode();
@@ -229,6 +243,18 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     try {
       await ref.read(bookApiProvider)
           .setConfig(MangaConfigKeys.autoReadSpeed, '$v');
+    } catch (_) {}
+  }
+
+  /// [P4-3 E2] 持久化分页适配类型（0..5，缺省/非法回退 0；
+  /// 对齐参考版 MangaReaderViewModel L816 PAGE_SCALE_TYPE 持久化）
+  Future<void> _persistPageScaleType(int type) async {
+    final v = MangaPageScaleType.parse('$type');
+    if (v == _pageScaleType) return;
+    if (mounted) setState(() => _pageScaleType = v);
+    try {
+      await ref.read(bookApiProvider)
+          .setConfig(MangaConfigKeys.pageScaleType, '$v');
     } catch (_) {}
   }
 
@@ -455,6 +481,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       // [P4-3 E3] 自动翻页（开关会话态 + 速度档 1..15 持久化）
       autoReadEnabled: _autoRead,
       autoReadSpeed: _autoReadSpeed,
+      // [P4-3 E2] 分页适配类型（单页式映射 BoxFit；条漫恒 fitWidth）
+      pageScaleType: _pageScaleType,
       onColorFilterChanged: (c) => unawaited(_persistColorFilter(c)),
       onFooterChanged: (c) => unawaited(_persistFooter(c)),
       onEnableEInkChanged: (v) => unawaited(_persistEInk(v)),
@@ -463,6 +491,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       onScrollModeChanged: (m) => unawaited(_persistScrollMode(m)),
       onAutoReadChanged: (v) => _setAutoReadEnabled(v),
       onAutoReadSpeedChanged: (v) => unawaited(_persistAutoReadSpeed(v)),
+      // [P4-3 E2] 分页适配类型变更持久化（对齐参考版 ViewModel L816）
+      onPageScaleTypeChanged: (v) => unawaited(_persistPageScaleType(v)),
     );
   }
 
@@ -1357,6 +1387,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
           sourceJson: jsonEncode(_bookSource!.toJson()),
           bookSourceUrl: _book!.origin,
           bookUrl: widget.bookUrl, // [P4-2a] 图片磁盘缓存按书隔离的目录键
+          // [P4-3 E2] 分页适配类型映射的 BoxFit（条漫恒 fitWidth）
+          fit: _imageFit,
           eInkThreshold: _enableEInk ? _eInkThreshold : null,
           onError: () {
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1381,6 +1413,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
         url: url,
         headers: _imageHeaders,
         threshold: _eInkThreshold,
+        // [P4-3 E2] 分页适配类型映射的 BoxFit（条漫恒 fitWidth）
+        fit: _imageFit,
         onError: () {
           WidgetsBinding.instance.addPostFrameCallback((_) {
             if (mounted && !_failedIndices.contains(index)) {
@@ -1391,12 +1425,13 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       );
     }
 
-    return _wrapImageFilter(
-      CachedNetworkImage(
-        imageUrl: url,
-        httpHeaders: _imageHeaders, // 防盗链 header（对齐原版）— Reasonix
-        fit: BoxFit.fitWidth,
-        width: double.infinity,
+      return _wrapImageFilter(
+        CachedNetworkImage(
+          imageUrl: url,
+          httpHeaders: _imageHeaders, // 防盗链 header（对齐原版）— Reasonix
+          // [P4-3 E2] 分页适配类型映射的 BoxFit（条漫恒 fitWidth）
+          fit: _imageFit,
+          width: double.infinity,
         // 漫画页按屏宽全分辨率显示，不限制 memCacheWidth（磁盘缓存默认开启）
         progressIndicatorBuilder: (context, _, progress) =>
             _buildImageLoadingPlaceholder(progress.progress),
@@ -1798,6 +1833,10 @@ class _DecodedComicImage extends ConsumerStatefulWidget {
   /// 非 null 时做真像素电子纸二值化（对齐 EpaperTransformation）
   final int? eInkThreshold;
 
+  /// [P4-3 E2] 图片渲染 BoxFit（调用方按分页适配类型映射传入，
+  /// 条漫恒 fitWidth；见 [MangaPageScaleType.fitFor] 取证注释）
+  final BoxFit fit;
+
   const _DecodedComicImage({
     required this.url,
     required this.sourceJson,
@@ -1805,6 +1844,7 @@ class _DecodedComicImage extends ConsumerStatefulWidget {
     required this.bookUrl,
     required this.onError,
     this.eInkThreshold,
+    this.fit = BoxFit.fitWidth,
   });
 
   @override
@@ -1951,7 +1991,8 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
     if (widget.eInkThreshold != null && epaper != null) {
       return RawImage(
         image: epaper,
-        fit: BoxFit.fitWidth,
+        // [P4-3 E2] 分页适配类型映射的 BoxFit
+        fit: widget.fit,
         width: double.infinity,
       );
     }
@@ -1959,7 +2000,8 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
     if (bytes != null) {
       return Image.memory(
         bytes,
-        fit: BoxFit.fitWidth,
+        // [P4-3 E2] 分页适配类型映射的 BoxFit
+        fit: widget.fit,
         width: double.infinity,
         gaplessPlayback: true,
         errorBuilder: (context, _, _) => _errorPlaceholder(),
@@ -2008,6 +2050,7 @@ class _EpaperNetworkImage extends StatefulWidget {
     required this.headers,
     required this.threshold,
     required this.onError,
+    this.fit = BoxFit.fitWidth,
   });
 
   final BookApi api;
@@ -2015,6 +2058,9 @@ class _EpaperNetworkImage extends StatefulWidget {
   final Map<String, String>? headers;
   final int threshold;
   final VoidCallback onError;
+
+  /// [P4-3 E2] 图片渲染 BoxFit（见 [MangaPageScaleType.fitFor] 取证注释）
+  final BoxFit fit;
 
   @override
   State<_EpaperNetworkImage> createState() => _EpaperNetworkImageState();
@@ -2102,7 +2148,8 @@ class _EpaperNetworkImageState extends State<_EpaperNetworkImage> {
     if (img != null) {
       return RawImage(
         image: img,
-        fit: BoxFit.fitWidth,
+        // [P4-3 E2] 分页适配类型映射的 BoxFit
+        fit: widget.fit,
         width: double.infinity,
       );
     }
