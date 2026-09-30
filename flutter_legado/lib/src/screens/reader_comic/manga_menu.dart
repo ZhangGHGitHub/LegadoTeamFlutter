@@ -92,6 +92,9 @@ class MangaMenuIconButton extends StatelessWidget {
 /// 标题胶囊（对齐参考版 MangaTitleCapsule L259-317）
 ///
 /// 高 40 stadium、背景 surfaceContainerLow、双行（书名 + 章名）单行省略号；
+/// 内容块水平左置、垂直居中（参考版 Box `contentAlignment =
+/// Alignment.CenterStart`），双行左对齐（[Column]
+/// `crossAxisAlignment.start`，两行左缘对齐，窄行不居中漂移）；
 /// [onTap] 为空时不可点击（参考版点击 = OpenBookInfo，本方无书籍信息面板
 /// 入口，本波保持纯展示，见汇报「未做」项）。
 class MangaTitleCapsule extends StatelessWidget {
@@ -120,9 +123,14 @@ class MangaTitleCapsule extends StatelessWidget {
         ),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Center(
+          // 参考版 Box contentAlignment = Alignment.CenterStart：
+          // 内容块水平左置（start）、垂直居中；双行再互相左对齐，
+          // 避免窄行（章名）在宽行（书名）下居中漂移造成两行错位
+          child: Align(
+            alignment: Alignment.centerLeft,
             child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // 书名（参考版 labelMediumEmphasized：14sp 强调体）
                 Text(
@@ -318,20 +326,54 @@ class MangaMenuBottomBar extends StatelessWidget {
                       onTap: onPrevChapter,
                     ),
                     const SizedBox(width: 8),
+                    // 页进度滑条（参考版 ReadMenuSlider → AppSlider 视觉：
+                    // 小 thumb + 细轨道 + 均匀分段点，无数值气泡）。
+                    // 本 SDK MD3 默认滑条 = 20px 大 thumb / 4px 轨道 /
+                    // onlyForDiscrete 数值气泡，局部 SliderTheme 包裹对齐
+                    // （只影响本底栏滑条，不动应用级滑条主题）
                     Expanded(
-                      child: Slider(
-                        value: pageValue.clamp(0.0, pageMax),
-                        min: 0,
-                        max: pageMax,
-                        divisions: divisions,
-                        activeColor: scheme.onSurfaceVariant,
-                        inactiveColor: scheme.outlineVariant,
-                        onChanged:
-                            pageEnabled ? (v) => onSeekPage(v.round()) : null,
-                        // 无障碍描述（对齐参考版 readingPageDescription；
-                        // 本 SDK Slider 用 semanticFormatterCallback 承载）
-                        semanticFormatterCallback: (_) =>
-                            readingPageDescription,
+                      child: SliderTheme(
+                        data: SliderThemeData(
+                          trackHeight: 2,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 6,
+                            disabledThumbRadius: 6,
+                          ),
+                          overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 14,
+                          ),
+                          tickMarkShape: const RoundSliderTickMarkShape(
+                            tickMarkRadius: 2,
+                          ),
+                          thumbColor: scheme.onSurfaceVariant,
+                          disabledThumbColor: scheme.onSurfaceVariant
+                              .withValues(alpha: 0.38),
+                          overlayColor:
+                              scheme.onSurfaceVariant.withValues(alpha: 0.12),
+                          // 分段点配色（浅/暗主题均可见）：active 轨道
+                          // （onSurfaceVariant 色）上放 outlineVariant 点、
+                          // inactive 轨道（outlineVariant 色）上放
+                          // onSurfaceVariant 点
+                          activeTickMarkColor: scheme.outlineVariant,
+                          inactiveTickMarkColor: scheme.onSurfaceVariant,
+                        ),
+                        child: Slider(
+                          value: pageValue.clamp(0.0, pageMax),
+                          min: 0,
+                          max: pageMax,
+                          divisions: divisions,
+                          activeColor: scheme.onSurfaceVariant,
+                          inactiveColor: scheme.outlineVariant,
+                          onChanged:
+                              pageEnabled ? (v) => onSeekPage(v.round()) : null,
+                          // 无障碍描述（对齐参考版 readingPageDescription；
+                          // 本 SDK Slider 用 semanticFormatterCallback 承载）
+                          semanticFormatterCallback: (_) =>
+                              readingPageDescription,
+                          // 参考版 Compose/Miuix 滑条无数值气泡；本 SDK 默认
+                          // onlyForDiscrete 会常显页码气泡，显式关闭
+                          showValueIndicator: ShowValueIndicator.never,
+                        ),
                       ),
                     ),
                     const SizedBox(width: 8),
