@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -472,8 +473,9 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     final syncState = ref.watch(syncNotifierProvider);
     final notifier = ref.read(syncNotifierProvider.notifier);
 
-    return Scaffold(
-      appBar: LegadoAppBar(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(
         title: const Text('备份与恢复'),
         actions: [
           IconButton(
@@ -571,23 +573,23 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                       ? null
                       : _testWebDavConnection,
                 ),
-                SwitchListTile(
+                SettingSwitchRow(
                   // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
                   dense: true,
                   contentPadding:
                       const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                  title: const Text('同步书籍进度'),
-                  subtitle: const Text('在多设备间同步书籍阅读进度'),
+                  title: '同步书籍进度',
+                  subtitle: '在多设备间同步书籍阅读进度',
                   value: syncState.syncBookProgress,
                   onChanged: (v) => notifier.setSyncBookProgress(v),
                 ),
-                SwitchListTile(
+                SettingSwitchRow(
                   // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
                   dense: true,
                   contentPadding:
                       const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                  title: const Text('同步书籍进度增强'),
-                  subtitle: const Text('同步更详细的阅读进度信息'),
+                  title: '同步书籍进度增强',
+                  subtitle: '同步更详细的阅读进度信息',
                   value: syncState.syncBookProgressPlus,
                   onChanged: syncState.syncBookProgress
                       ? (v) => notifier.setSyncBookProgressPlus(v)
@@ -625,28 +627,26 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
                   subtitle: '恢复时忽略一些内容不恢复，方便不同手机配置不同',
                   onTap: _busy ? null : _showRestoreIgnore,
                 ),
-                SwitchListTile(
+                SettingSwitchRow(
                   // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
                   dense: true,
                   contentPadding:
                       const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                  title: const Text('仅保留最新备份'),
-                  subtitle: const Text('本地备份仅保留最新备份文件'),
+                  title: '仅保留最新备份',
+                  subtitle: '本地备份仅保留最新备份文件',
                   value: _onlyLatestBackup,
                   onChanged: (v) {
                     setState(() => _onlyLatestBackup = v);
                     _settings.setBoolPref(PrefKeys.onlyLatestBackup, v);
                   },
                 ),
-                SwitchListTile(
+                SettingSwitchRow(
                   // [LAYOUT_PLAN P3] 开关行规范：组内行 vertical12/horizontal8，无 Chevron
                   dense: true,
                   contentPadding:
                       const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
-                  title: const Text('自动检查新备份'),
-                  subtitle: const Text(
-                    '打开软件时检查是否有新备份，有新备份时提示是否更新',
-                  ),
+                  title: '自动检查新备份',
+                  subtitle: '打开软件时检查是否有新备份，有新备份时提示是否更新',
                   value: _autoCheckNewBackup,
                   onChanged: (v) {
                     setState(() => _autoCheckNewBackup = v);

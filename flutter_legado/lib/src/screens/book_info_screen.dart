@@ -38,6 +38,7 @@ import '../utils/source_login_prompt.dart';
 import '../widgets/book_cover.dart';
 import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4 收尾] 详情下拉 M3 化
 import '../widgets/error_view.dart';
+import '../widgets/pill_divider.dart'; // [GLOBALCOMP B5] 弹窗菜单分隔统一
 import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 import '../widgets/list_footer.dart';
 part 'book_info_screen_load.part.dart';
@@ -309,14 +310,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
             const PopupMenuItem(
                 value: 'clearCache', child: Text('清理缓存')),
             // ── 分隔线后：本端独有项（双基准 + 红线：功能不删除）──
-            PopupMenuItem<String>(
-              value: 'menuDivider',
-              enabled: false,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Divider(height: 1, thickness: 1, color: cs.outlineVariant),
-              ),
-            ),
+            // [GLOBALCOMP B5] 自造 disabled PopupMenuItem+Divider 换统一
+            // PillMenuDivider（对齐 B1 批 8 处弹窗菜单分隔形态）
+            const PillMenuDivider<String>(),
             if (source?.customButton == true)
               const PopupMenuItem(value: 'customBtn', child: Text('自定义')),
             if (isLocal)

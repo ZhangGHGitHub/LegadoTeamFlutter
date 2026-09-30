@@ -21,6 +21,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -194,8 +195,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
     final mainPrefs = ref.watch(mainPrefsProvider);
     final mainPrefsNotifier = ref.read(mainPrefsProvider.notifier);
 
-    return Scaffold(
-      appBar: LegadoAppBar(title: const Text('其他设置')),
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(title: const Text('其他设置')),
       body: IosGroupedBody(
         child: ListView(
           padding: const EdgeInsets.only(bottom: 32),
@@ -215,9 +217,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
             const IosSectionHeader('主界面'),
             IosGroup(flat: true, // [LAYOUT_MOTION_AUDIT L2] 设置拆扁平
                 children: [
-              SwitchListTile(
-                title: const Text('自动刷新'),
-                subtitle: const Text('打开软件时自动更新书籍'),
+              SettingSwitchRow(
+                title: '自动刷新',
+                subtitle: '打开软件时自动更新书籍',
                 value: _autoRefresh,
                 onChanged: (v) {
                   setState(() => _autoRefresh = v);
@@ -225,31 +227,31 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 },
               ),
               if (_autoRefresh)
-                SwitchListTile(
-                  title: const Text('仅更新已读完'),
-                  subtitle: const Text('自动刷新时，只更新已读完的书籍'),
+                SettingSwitchRow(
+                  title: '仅更新已读完',
+                  subtitle: '自动刷新时，只更新已读完的书籍',
                   value: _onlyUpdateRead,
                   onChanged: (v) {
                     setState(() => _onlyUpdateRead = v);
                     _settingsService.setBoolPref(PrefKeys.onlyUpdateRead, v);
                   },
                 ),
-              SwitchListTile(
-                title: const Text('自动跳转最近阅读'),
-                subtitle: const Text('默认打开书架'),
+              SettingSwitchRow(
+                title: '自动跳转最近阅读',
+                subtitle: '默认打开书架',
                 value: _defaultToRead,
                 onChanged: (v) {
                   setState(() => _defaultToRead = v);
                   _settingsService.setBoolPref(PrefKeys.defaultToRead, v);
                 },
               ),
-              SwitchListTile(
-                title: const Text('显示发现'),
+              SettingSwitchRow(
+                title: '显示发现',
                 value: mainPrefs.showDiscovery,
                 onChanged: (v) => mainPrefsNotifier.setShowDiscovery(v),
               ),
-              SwitchListTile(
-                title: const Text('显示订阅'),
+              SettingSwitchRow(
+                title: '显示订阅',
                 value: mainPrefs.showRss,
                 onChanged: (v) => mainPrefsNotifier.setShowRss(v),
               ),
@@ -284,9 +286,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                     : _customHostsSummary,
                 onTap: _showCustomHostsDialog,
               ),
-              SwitchListTile(
-                title: const Text('Web 服务唤醒锁'),
-                subtitle: const Text(_androidOnly),
+              SettingSwitchRow(
+                title: 'Web 服务唤醒锁',
+                subtitle: _androidOnly,
                 value: _webServiceWakeLock,
                 onChanged: (v) {
                   setState(() => _webServiceWakeLock = v);
@@ -317,9 +319,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 subtitle: _checkSourceConfigSummary,
                 onTap: _showCheckSourceConfigDialog,
               ),
-              SwitchListTile(
-                title: const Text('抗锯齿'),
-                subtitle: const Text('绘制图片时抗锯齿'),
+              SettingSwitchRow(
+                title: '抗锯齿',
+                subtitle: '绘制图片时抗锯齿',
                 value: _antiAlias,
                 onChanged: (v) {
                   setState(() => _antiAlias = v);
@@ -362,9 +364,9 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   apply: (v) => setState(() => _preDownloadNum = v),
                 ),
               ),
-              SwitchListTile(
-                title: const Text('默认启用替换净化'),
-                subtitle: const Text('新加入书架的书是否启用替换净化'),
+              SettingSwitchRow(
+                title: '默认启用替换净化',
+                subtitle: '新加入书架的书是否启用替换净化',
                 value: _replaceEnableDefault,
                 onChanged: (v) {
                   setState(() => _replaceEnableDefault = v);
@@ -372,18 +374,18 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                       PrefKeys.replaceEnableDefault, v);
                 },
               ),
-              SwitchListTile(
-                title: const Text('全程响应耳机按键'),
-                subtitle: const Text('即使退出软件也响应耳机按键'),
+              SettingSwitchRow(
+                title: '全程响应耳机按键',
+                subtitle: '即使退出软件也响应耳机按键',
                 value: _mediaButtonOnExit,
                 onChanged: (v) {
                   setState(() => _mediaButtonOnExit = v);
                   _settingsService.setBoolPref(PrefKeys.mediaButtonOnExit, v);
                 },
               ),
-              SwitchListTile(
-                title: const Text('耳机按键启动朗读'),
-                subtitle: const Text('通过耳机按键来启动朗读'),
+              SettingSwitchRow(
+                title: '耳机按键启动朗读',
+                subtitle: '通过耳机按键来启动朗读',
                 value: _readAloudByMediaButton,
                 onChanged: (v) {
                   setState(() => _readAloudByMediaButton = v);
@@ -391,27 +393,27 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                       PrefKeys.readAloudByMediaButton, v);
                 },
               ),
-              SwitchListTile(
-                title: const Text('忽略音频焦点'),
-                subtitle: const Text('允许与其他应用同时播放音频'),
+              SettingSwitchRow(
+                title: '忽略音频焦点',
+                subtitle: '允许与其他应用同时播放音频',
                 value: _ignoreAudioFocus,
                 onChanged: (v) {
                   setState(() => _ignoreAudioFocus = v);
                   _settingsService.setBoolPref(PrefKeys.ignoreAudioFocus, v);
                 },
               ),
-              SwitchListTile(
-                title: const Text('自动清除过期搜索数据'),
-                subtitle: const Text('超过一天的搜索数据'),
+              SettingSwitchRow(
+                title: '自动清除过期搜索数据',
+                subtitle: '超过一天的搜索数据',
                 value: _autoClearExpired,
                 onChanged: (v) {
                   setState(() => _autoClearExpired = v);
                   _settingsService.setBoolPref(PrefKeys.autoClearExpired, v);
                 },
               ),
-              SwitchListTile(
-                title: const Text('返回时提示放入书架'),
-                subtitle: const Text('阅读未放入书架的书籍在返回时提示放入书架'),
+              SettingSwitchRow(
+                title: '返回时提示放入书架',
+                subtitle: '阅读未放入书架的书籍在返回时提示放入书架',
                 value: _showAddToShelfAlert,
                 onChanged: (v) {
                   setState(() => _showAddToShelfAlert = v);
@@ -419,17 +421,17 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                       PrefKeys.showAddToShelfAlert, v);
                 },
               ),
-              SwitchListTile(
-                title: const Text('自动更新'),
-                subtitle: const Text('每天自动检查软件是否更新'),
+              SettingSwitchRow(
+                title: '自动更新',
+                subtitle: '每天自动检查软件是否更新',
                 value: _autoUpdateVariant,
                 onChanged: (v) {
                   setState(() => _autoUpdateVariant = v);
                   _settingsService.setBoolPref(PrefKeys.autoUpdateVariant, v);
                 },
               ),
-              SwitchListTile(
-                title: const Text('漫画浏览'),
+              SettingSwitchRow(
+                title: '漫画浏览',
                 value: _showMangaUi,
                 onChanged: (v) {
                   setState(() => _showMangaUi = v);
@@ -485,38 +487,36 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                   apply: (v) => setState(() => _threadCount = v),
                 ),
               ),
-              SwitchListTile(
-                title: const Text('文字操作显示搜索'),
-                subtitle: const Text('长按文字在操作菜单中显示阅读·搜索'),
+              SettingSwitchRow(
+                title: '文字操作显示搜索',
+                subtitle: '长按文字在操作菜单中显示阅读·搜索',
                 value: _processText,
                 onChanged: (v) {
                   setState(() => _processText = v);
                   _settingsService.setBoolPref(PrefKeys.processText, v);
                 },
               ),
-              SwitchListTile(
-                title: const Text('记录日志'),
-                subtitle: const Text('记录调试日志'),
+              SettingSwitchRow(
+                title: '记录日志',
+                subtitle: '记录调试日志',
                 value: _recordLog,
                 onChanged: (v) {
                   setState(() => _recordLog = v);
                   CrashLogService.instance.setRecordLog(v);
                 },
               ),
-              SwitchListTile(
-                title: const Text('记录 HTTP 请求'),
-                subtitle: const Text(
-                  '在内存中保留最近 50 条已脱敏的请求与响应记录',
-                ),
+              SettingSwitchRow(
+                title: '记录 HTTP 请求',
+                subtitle: '在内存中保留最近 50 条已脱敏的请求与响应记录',
                 value: _recordHttpLog,
                 onChanged: (v) {
                   setState(() => _recordHttpLog = v);
                   CrashLogService.instance.setRecordHttpLog(v);
                 },
               ),
-              SwitchListTile(
-                title: const Text('记录堆转储'),
-                subtitle: const Text('当应用发生OOM崩溃时保存堆转储'),
+              SettingSwitchRow(
+                title: '记录堆转储',
+                subtitle: '当应用发生OOM崩溃时保存堆转储',
                 value: _recordHeapDump,
                 onChanged: (v) {
                   setState(() => _recordHeapDump = v);

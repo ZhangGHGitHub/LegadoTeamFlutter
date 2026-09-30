@@ -10,6 +10,7 @@ import '../routes.dart';
 import '../services/auto_task_scheduler.dart';
 import '../providers/providers.dart';
 import '../providers/theme/theme_notifier.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
@@ -246,7 +247,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget build(BuildContext context) {
     final themeMode = ref.watch(themeNotifierProvider).themeMode;
     // [MD3 LargeTitle] 主 Tab 根页可折叠大标题（UI_MD3_PLAN.md Batch 1）
-    return Scaffold(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
       body: LegadoLargeTitleScroll(
         title: Text(AppStrings.my),
         actions: [
@@ -278,13 +280,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     onTap: () =>
                         Navigator.pushNamed(context, AppRoutes.autoTasks),
                   ),
-                  SwitchListTile(
-                    secondary: Icon(
-                      Symbols.autorenew_rounded,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                    title: const Text('运行定时任务'),
-                    subtitle: const Text('重启后保留计划；Android 可能延后实际执行时间'),
+                  SettingSwitchRow(
+                    icon: Symbols.autorenew_rounded,
+                    title: '运行定时任务',
+                    subtitle: '重启后保留计划；Android 可能延后实际执行时间',
                     value: _autoTaskService,
                     onChanged: _toggleAutoTaskService,
                   ),
@@ -341,8 +340,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               IosGroup(
                 separatorIndent: 62,
                 children: [
-                  SwitchListTile(
-                    secondary: _mcpServiceBusy
+                  SettingSwitchRow(
+                    leading: _mcpServiceBusy
                         ? const SizedBox(
                             width: 20,
                             height: 20,
@@ -354,12 +353,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               context,
                             ).colorScheme.onSurfaceVariant,
                           ),
-                    title: const Text('MCP 服务'),
-                    subtitle: Text(
-                      _mcpService && _mcpPort > 0
-                          ? '端口 $_mcpPort（带令牌保护的书源开发工具）'
-                          : '带令牌保护的书源开发工具',
-                    ),
+                    title: 'MCP 服务',
+                    subtitle: _mcpService && _mcpPort > 0
+                        ? '端口 $_mcpPort（带令牌保护的书源开发工具）'
+                        : '带令牌保护的书源开发工具',
                     value: _mcpService,
                     onChanged: _mcpServiceBusy ? null : _toggleMcpService,
                   ),

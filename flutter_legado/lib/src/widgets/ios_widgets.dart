@@ -201,6 +201,10 @@ class IosGroup extends StatelessWidget {
 class IosListTile extends StatelessWidget {
   /// 可选；嵌套设置页常见无图标行
   final IconData? icon;
+
+  /// 自定义前导件（优先于 [icon]）。用于忙态 spinner 等非静态图标；
+  /// 行语义包装件 [SettingSwitchRow] 亦经此透传。
+  final Widget? leading;
   final Color? iconColor;
   final Color? iconBackground;
   final String title;
@@ -214,9 +218,20 @@ class IosListTile extends StatelessWidget {
   final bool showChevron;
   final VoidCallback? onTap;
 
+  /// 行是否可用（同 ListTile.enabled：false 时文字/图标灰显且不可点）
+  final bool enabled;
+
+  /// 行高密度（透传 ListTile.dense；null 走 ListTileTheme）
+  final bool? dense;
+
+  /// 覆盖主题默认行内边距（透传 ListTile.contentPadding；
+  /// 密排开关行如 WebDav 组内 vertical12/horizontal8 用）
+  final EdgeInsetsGeometry? contentPadding;
+
   const IosListTile({
     super.key,
     this.icon,
+    this.leading,
     required this.title,
     this.iconColor,
     this.iconBackground,
@@ -225,6 +240,9 @@ class IosListTile extends StatelessWidget {
     this.value,
     this.showChevron = true,
     this.onTap,
+    this.enabled = true,
+    this.dense,
+    this.contentPadding,
   });
 
   @override
@@ -250,8 +268,8 @@ class IosListTile extends StatelessWidget {
           )
         : null;
 
-    Widget? leading;
-    if (icon != null) {
+    Widget? leading = this.leading;
+    if (leading == null && icon != null) {
       if (iconBackground != null || iconColor != null) {
         // 显式传色时保留旧 tonal 方块（兼容沉浸域调用）
         leading = Container(
@@ -290,6 +308,9 @@ class IosListTile extends StatelessWidget {
                     : null,
                 trailing: trailing,
                 onTap: onTap,
+                enabled: enabled,
+                dense: dense,
+                contentPadding: contentPadding,
               ),
               Align(
                 alignment: Alignment.centerLeft,
@@ -320,6 +341,62 @@ class IosListTile extends StatelessWidget {
           : null,
       trailing: trailing,
       onTap: onTap,
+      enabled: enabled,
+      dense: dense,
+      contentPadding: contentPadding,
+    );
+  }
+}
+
+/// M3 设置开关行（对齐参考版 `SwitchSettingItem`）
+///
+/// 语义与 `IosListTile` 同族（图标 + 标题 + 副标题 + 尾部），尾部固定为
+/// `Switch`：整行可点即切换（参考版非 Miuix 分支 `onClick = onCheckedChange(!checked)`），
+/// 语义经 `MergeSemantics` 合并为单一开关节点（与 `SwitchListTile` 同法）。
+/// `onChanged == null` 时行禁用（文字灰显、不可点、开关灰置），同 `SwitchListTile`。
+/// [icon] 为静态图标；[leading] 自定义前导件（忙态 spinner 等）优先于 [icon]。
+/// [dense]/[contentPadding] 供密排行保留原参数（如 WebDav 组内 vertical12/horizontal8）。
+class SettingSwitchRow extends StatelessWidget {
+  final IconData? icon;
+  final Widget? leading;
+  final String title;
+  final String? subtitle;
+  final bool value;
+  final ValueChanged<bool>? onChanged;
+  final bool? dense;
+  final EdgeInsetsGeometry? contentPadding;
+
+  const SettingSwitchRow({
+    super.key,
+    this.icon,
+    this.leading,
+    required this.title,
+    this.subtitle,
+    required this.value,
+    this.onChanged,
+    this.dense,
+    this.contentPadding,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final onChanged = this.onChanged;
+    return MergeSemantics(
+      child: IosListTile(
+        icon: icon,
+        leading: leading,
+        title: title,
+        subtitle: subtitle,
+        showChevron: false,
+        enabled: onChanged != null,
+        dense: dense,
+        contentPadding: contentPadding,
+        // 同 SwitchListTile：控件不参与焦点，整行即单一焦点/语义目标
+        trailing: ExcludeFocus(
+          child: Switch(value: value, onChanged: onChanged),
+        ),
+        onTap: onChanged == null ? null : () => onChanged(!value),
+      ),
     );
   }
 }

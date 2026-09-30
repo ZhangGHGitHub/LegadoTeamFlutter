@@ -11,6 +11,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -631,9 +632,10 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
     final colors = ref.watch(themeColorsProvider);
     final ui = ref.watch(uiSettingsProvider);
 
-    return Scaffold(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
       // [队列⑦c A3] 页标题对齐参考 R.string.theme_setting=外观
-      appBar: LegadoAppBar(title: const Text('外观')),
+      topBar: LegadoAppBar(title: const Text('外观')),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : IosGroupedBody(
@@ -702,9 +704,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       children: [
                     // 纯黑深色模式（参考 pure_black=纯黑深色模式；原"AMOLED
                     // 纯黑"，标题对齐参考，副标题保留）
-                    SwitchListTile(
-                      title: const Text('纯黑深色模式'),
-                      subtitle: const Text('暗色模式背景纯黑（省电护屏）'),
+                    SettingSwitchRow(
+                      title: '纯黑深色模式',
+                      subtitle: '暗色模式背景纯黑（省电护屏）',
                       value: ui.themeAmoled,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
@@ -758,9 +760,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                             .pushNamed(AppRoutes.welcomeConfig);
                       },
                     ),
-                    SwitchListTile(
-                      title: const Text('沉浸式状态栏'),
-                      subtitle: const Text('状态栏颜色透明'),
+                    SettingSwitchRow(
+                      title: '沉浸式状态栏',
+                      subtitle: '状态栏颜色透明',
                       value: _transparentStatusBar,
                       onChanged: (v) async {
                         setState(() => _transparentStatusBar = v);
@@ -769,9 +771,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                             .setTransparentStatusBar(v);
                       },
                     ),
-                    SwitchListTile(
-                      title: const Text('沉浸式导航栏'),
-                      subtitle: const Text('导航栏颜色透明'),
+                    SettingSwitchRow(
+                      title: '沉浸式导航栏',
+                      subtitle: '导航栏颜色透明',
                       value: _immNavigationBar,
                       onChanged: (v) async {
                         setState(() => _immNavigationBar = v);
@@ -798,11 +800,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                         AppRoutes.bottomBarSkin,
                       ),
                     ),
-                    SwitchListTile(
-                      title: const Text('跟随壁纸配色'),
-                      subtitle: const Text(
-                        '使用系统壁纸色板生成日间和夜间主题（Android 12+/iOS）',
-                      ),
+                    SettingSwitchRow(
+                      title: '跟随壁纸配色',
+                      subtitle: '使用系统壁纸色板生成日间和夜间主题（Android 12+/iOS）',
                       value: _wallpaperColorFollow,
                       onChanged: (v) {
                         setState(() => _wallpaperColorFollow = v);
@@ -814,9 +814,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       },
                     ),
                     if (_wallpaperColorFollow)
-                      SwitchListTile(
-                        title: const Text('壁纸变化时自动更新'),
-                        subtitle: const Text('系统壁纸变化后自动应用新色板'),
+                      SettingSwitchRow(
+                        title: '壁纸变化时自动更新',
+                        subtitle: '系统壁纸变化后自动应用新色板',
                         value: _wallpaperColorAutoUpdate,
                         onChanged: (v) {
                           setState(() => _wallpaperColorAutoUpdate = v);
@@ -838,17 +838,17 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       subtitle: _topBarStyleLabel(ui.topBarButtonStyle),
                       onTap: _showTopBarStylePicker,
                     ),
-                    SwitchListTile(
-                      title: const Text('合并顶栏按钮'),
-                      subtitle: const Text('顶栏按钮收进胶囊容器'),
+                    SettingSwitchRow(
+                      title: '合并顶栏按钮',
+                      subtitle: '顶栏按钮收进胶囊容器',
                       value: ui.mergeTopBarActions,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
                           .setMergeTopBarActions(v),
                     ),
-                    SwitchListTile(
-                      title: const Text('大顶栏形态'),
-                      subtitle: const Text('书架/我的等根页使用可折叠大标题'),
+                    SettingSwitchRow(
+                      title: '大顶栏形态',
+                      subtitle: '书架/我的等根页使用可折叠大标题',
                       value: ui.useFlexibleTopAppBar,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
@@ -859,17 +859,17 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       subtitle: '当前 ${ui.topBarOpacity}%',
                       onTap: _showTopBarOpacityDialog,
                     ),
-                    SwitchListTile(
-                      title: const Text('显示底栏'),
-                      subtitle: const Text('隐藏后仅侧栏/手势切页'),
+                    SettingSwitchRow(
+                      title: '显示底栏',
+                      subtitle: '隐藏后仅侧栏/手势切页',
                       value: ui.showBottomView,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
                           .setShowBottomView(v),
                     ),
-                    SwitchListTile(
-                      title: const Text('悬浮底栏'),
-                      subtitle: const Text('64dp 胶囊悬浮形态（ Experimental）'),
+                    SettingSwitchRow(
+                      title: '悬浮底栏',
+                      subtitle: '64dp 胶囊悬浮形态（ Experimental）',
                       value: ui.useFloatingBottomBar,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
@@ -902,9 +902,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       children: [
                     // 参考 book_info_follow_cover_color=界面颜色跟随封面取色，
                     // 摘要 book_info_follow_cover_color_s=仅在显示背景封面时生效
-                    SwitchListTile(
-                      title: const Text('界面颜色跟随封面取色'),
-                      subtitle: const Text('仅在显示背景封面时生效'),
+                    SettingSwitchRow(
+                      title: '界面颜色跟随封面取色',
+                      subtitle: '仅在显示背景封面时生效',
                       value: ui.bookInfoFollowCoverColor,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
@@ -943,9 +943,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       onTap: _showCardRadiusDialog,
                     ),
                     // 参考 show_divider_line=显示分隔线
-                    SwitchListTile(
-                      title: const Text('显示分隔线'),
-                      subtitle: const Text('分组列表行底部显示短分隔线'),
+                    SettingSwitchRow(
+                      title: '显示分隔线',
+                      subtitle: '分组列表行底部显示短分隔线',
                       value: ui.enableItemDivider,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
@@ -961,9 +961,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                   // [B3-C1 A6] 每区独立圆角卡（IosGroup 卡片模式）
                   IosGroup(
                       children: [
-                    SwitchListTile(
-                      title: const Text('启用毛玻璃'),
-                      subtitle: const Text('低端设备开启可能掉帧'),
+                    SettingSwitchRow(
+                      title: '启用毛玻璃',
+                      subtitle: '低端设备开启可能掉帧',
                       value: ui.enableBlur,
                       onChanged: (v) => ref
                           .read(uiSettingsProvider.notifier)
@@ -1003,9 +1003,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       subtitle: _bgImage.isEmpty ? '未设置' : _bgImage,
                       onTap: () => _showBgImageDialog(PrefKeys.bgImage),
                     ),
-                    SwitchListTile(
-                      title: const Text('透明导航栏'),
-                      subtitle: const Text(_androidOnly),
+                    SettingSwitchRow(
+                      title: '透明导航栏',
+                      subtitle: _androidOnly,
                       value: _transparentNavBar,
                       onChanged: (v) {
                         setState(() => _transparentNavBar = v);
@@ -1039,9 +1039,9 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
                       subtitle: _bgImageNight.isEmpty ? '未设置' : _bgImageNight,
                       onTap: () => _showBgImageDialog(PrefKeys.bgImageN),
                     ),
-                    SwitchListTile(
-                      title: const Text('透明导航栏'),
-                      subtitle: const Text(_androidOnly),
+                    SettingSwitchRow(
+                      title: '透明导航栏',
+                      subtitle: _androidOnly,
                       value: _transparentNavBarNight,
                       onChanged: (v) {
                         setState(() => _transparentNavBarNight = v);
