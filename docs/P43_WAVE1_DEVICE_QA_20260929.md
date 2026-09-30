@@ -622,3 +622,30 @@ https___www.tuku.cc_manga-73562__62b1be09         (本波, 20:27 新建, images/
 - **版本注记：** pubspec 现为 **2.0.331+332**——由 22ff2c51c4（`chore(release): 版本 2.0.331+332`，早于 SVG 提交 99efc7c90f）提升，任务书中「应仍 2.0.330」表述已过期；已装==pubspec 一致性核对因设备离线未执行（构建侧 APK 构建自当前工作树，含 pubspec 2.0.331+332）。
 - 证据：`docs/materials_1301/evidence/svgmove_ffi_verify.log`（FFI 校验输出）｜`svgmove_build_full.log`（全量构建日志，md5 7ba449bf…，grep asset/warn/error 零命中）｜`.qa_scratch/svg_move_build.log`（临时件）。
 - **装机补跑结果：通过（2026-09-30 18:45，设备恢复后补跑，QA 子代理，未改任何生产代码）。** 补跑时验收机仍离线（两个 MuMu 实例均 `is_android_started=false`，`ping 192.168.100.62` 回「无法访问目标主机」），经 `mumu-cli control --vmindex 1 launch` 启动实例 1「Test测试」(=192.168.100.62，`player_state=start_finished`，本地 ADB 端口 16416)，`adb connect 192.168.100.62:5555` 重连成功（`device` 在线）；重跑 `emulator_smoke_test.ps1 -Device 192.168.100.62:5555` → **7 PASS / 0 FAIL，退出码 0**：构建形态=**FFI REUSE**（content hash 1549248103，aarch64/x86_64 复用现有 .so，与本批零 Rust 改动一致）+ 轻构建（`flutter build apk --debug`，Gradle assembleDebug 8.6s，APK 282.4 MB）；**版本复核：已装 2.0.331 == pubspec 2.0.331+332**（versionName=2.0.331/buildNumber=332，闭合上文版本注记）；进程存活（pid 2992）；无 FATAL/E/flutter 崩溃日志。漫画菜单点验（M2 形态）：书架→《全职高手》→阅读器 ch26 第01话 p9/50（总进度 24.9%，与 M2c 同屏态）→点屏呼出菜单，结构 dump + 像素采样双重佐证——实心顶栏（返回/刷新/更多，y72-192，底 (238,238,238) 实心非透明）+ 进度行（上一章圆钮/胶囊滑条「页数 9/50」/下一章圆钮，y1560-1728，primary 暖棕 (121,85,72)）+ **贴底三键白条**（目录/自动/翻页设置，y1776-1896，底 (245,245,245) 暖白），bounds 与 M2 记录逐项一致，**菜单无回归**。截图 `m331_menu_check.png`（1080×1920 RGBA，md5 ff468516…）。证据：`m331_smoke_rerun.log`（md5 83c5a84e…）｜`m331_menu.xml`｜`m331_home.xml`｜`m331_chk0_home.png`（均位于 `docs/materials_1301/evidence/`）。收尾：设备 /sdcard m331_* 临时文件已清；**结论：SVG 移出批装机冒烟补跑通过，版本/进程/崩溃门禁全绿，M2 漫画菜单形态无回归，阻塞项闭合。**
+## M3 装机采证（2026-09-30）
+
+> QA 子代理（STAGE-QA-P43M3）：M3 四项修复装机截图终审采证。HEAD=11683d443b，pubspec 2.0.331+332（未升版属预期），验收机 MuMu 192.168.100.62:5555（1080×1920 dpr3，Android 15）。全程未改任何生产代码；判定以「新鲜 uiautomator dump + PIL 像素断言 + 代码定位」三重证据为准，视觉终审素材（crop 图）留主代理复核。
+
+### 一、冒烟构建+装机：通过
+- `emulator_smoke_test.ps1 -Device 192.168.100.62:5555` → **7 PASS / 0 FAIL，退出码 0**：FFI 复用（零 Rust 改动）+ 轻构建；**已装 2.0.331 == pubspec 2.0.331+332**；进程存活；无 FATAL/E/flutter 崩溃。证据 `m3_smoke.log`｜`m3_01_home.png`｜`m3_02_book.png`｜`m3_03_reader.png`。
+
+### 二、逐项断言表（M3 四项修复）
+
+| # | 修复项 | 断言 | 证据（`docs/materials_1301/evidence/`） | 判定 |
+|---|--------|------|------|------|
+| 1a | 状态栏覆盖（浅色） | 状态栏区 y10-70×x120-1050 主色 (238,238,238) 53270px（顶栏 surfaceContainer 背景延伸至状态栏），y60 四角全 (238,238,238) 非黑；底缘 y1900-1919 全 (245,245,245) 白条至屏幕底缘 | `m3_menu_light.png` + `m3_menu_light.xml`（9263B 新鲜 dump，24 节点）｜`m3_crop_statusbar.png`｜`m3_crop_bottombar.png` | **通过** |
+| 1b | 状态栏覆盖（暗色） | 切「深色」后同一菜单展开态：状态栏区 y8-64 主色 (78,78,78) 95%、纯黑像素 0%（暗色 surfaceContainer 灰、非纯黑——「纯黑深色模式」开关为关）；底缘 y1900-1919 全 (16,20,24) 暗色 surface 贴底无黑缝；测后主题还原「跟随系统」 | `m3_menu_dark.png` + `m3_menu_dark.xml`（9261B）｜`m3_crop_dark_statusbar.png`｜`m3_crop_dark_bottombar.png` | **通过** |
+| 2 | 顶栏换源键 | 浅色/暗色 dump 均含「换源」desc [672,72][792,192]（y132 浅色深色簇 667px / 暗色亮簇 808px）；点击打开**既有**换源弹层（ChangeSourceScreen 新鲜 dump：Back/搜索筛选/重新搜索/高级选项/搜索/滚到顶部/滚到底部），关闭后源仍「七七漫画」，未真换源 | `m3_source_sheet.png` + `m3_source_sheet.xml`（7183B）｜`m3_crop_topright_icons.png`｜`m3_crop_dark_topright.png` | **通过** |
+| 3 | 自动键书本图标 | 底栏「自动」键 [480,1776][600,1896] 图标为书本造型（auto_stories），浅色 crop 视觉确认 + 代码 `manga_menu.dart` `Symbols.auto_stories_rounded`（开启 primary / 关闭 onSurface，无主题分支，暗色同构）；暗色键区亮像素 1984/14400（13.8%） | `m3_crop_autokey.png`｜`m3_crop_dark_autokey.png` | **通过** |
+| 4 | 设置面板重组 | 「漫画阅读设置」标题 [60,311][423,392]；5 模式按钮组（当前 T2B 高亮 primaryContainer (250,218,211) 2572px，其余 0）；条漫模式专属「侧边留白」滑杆（仅 isWebtoon，初值 0%）；页脚快捷行 左对齐/居中/隐藏页脚 三按钮 + 预览条 | `m3_config_panel.png+xml`（10427B）｜`m3_config_panel_footer.png+xml`｜`m3_config_webtoon.png+xml`（9753B） | **通过** |
+| 4a | 侧边留白生效 | 条漫模式滑杆 20% → 内容落入 x216-864 槽位（1080×20% 每侧 216px，内容行 y1100/y1300 非背景像素在槽内）；45% 决定性实验内容 x486-593 与代码公式 `h = width × p/100`（`reader_comic_screen.dart` L1737-1744）精确吻合；测后滑杆还原 0%（dump SeekBar desc 0%） | `m3_webtoon_pad20.png` | **通过** |
+| 4b | 页脚预览交互 | 点「左对齐」→ 预览条高亮 x228→x133 互换；点「居中」→ 还原 x228 | `m3_config_preview_left.png`｜`m3_config_preview_center.png` | **通过** |
+
+### 三、检查可用性声明
+- 全部 7 项断言均有「dump 节点 bounds + 像素采样」双重可复现证据（命令与采样窗口见 `.qa_scratch/m3_draft.md`），**无「检查不可用/未证明」项**。
+- 局限：图标「书本造型」的视觉判定基于 3x 放大 crop（`m3_crop_autokey.png`）+ 代码符号名（`auto_stories_rounded`）双证，非人工像素级描边比对；crop 图已留档供主代理视觉复核。
+
+### 四、设备收尾还原（全部完成）
+- 侧边留白滑杆回 0%（dump 确认）；模式还原 T2B 单页式；色彩滑杆全 0%；页脚还原居中；主题还原「跟随系统」（页面底色回 (245,245,245)，跟随系统选中棕色 7224px）；阅读器经「返回」退出至书架（菜单收起）；/sdcard 本次会话临时文件（m3_dump7/8.xml、qa_*.png、m3_menu_dump*.xml）已清（历史 QA 遗留文件非本任务产物，未动）。残留书态：《全职高手》T2B，p2/50（总进度 24.8%）。
+
+*本段纪律自检：未改任何生产代码；判定以像素采样+新鲜 dump+代码定位为准；图像视觉终审素材（`m3_menu_light.png` / `m3_menu_dark.png` / 各 crop）留主代理复核。*
