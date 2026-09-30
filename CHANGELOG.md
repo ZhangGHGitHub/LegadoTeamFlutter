@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.338] - 2026-10-01
+
+### Fixed
+- [UI] 首页「最近阅读」打开漫画书参数类型错误修复（原传 Book 对象而漫画路由仅识别 String，导致 bookUrl 为空进异常页面）。
+
+### Changed
+- [UI] 4 屏开书逻辑（阅读记录/离线缓存/欢迎页/首页最近阅读）收敛为统一 BookOpenUtils.openBook 编排；首页未读书籍由直接进阅读器改为先进详情页（与书架及其余入口一致）。
+- [Rust] 工程卫生：删除 server fetcher 无意义重试兜底、零引用的 RateLimiter 方法与遗留临时诊断目录。
+- [Rust] 4 处静默失败补告警日志（章级删除重复标题开关、听书缓存查询、配置坏行、发现页默认值落库；行为不变，仅留痕）。
+
 ## [2.0.337] - 2026-10-01
 
 ### Added
