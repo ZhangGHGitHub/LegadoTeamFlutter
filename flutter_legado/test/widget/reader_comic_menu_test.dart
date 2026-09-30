@@ -1,29 +1,36 @@
-// [P4-3 M1] 漫画菜单对齐参考版（顶栏胶囊 + 两行悬浮底栏 + 目录 sheet）
+// [P4-3 M2] 漫画菜单按用户截图重构（实心顶栏 + 两段底栏 + 目录 sheet）
 //
-// 取证（参考版，legado-with-MD3）：
-// - MangaReaderOverlays.kt L208-257 MangaMenuTopBar：透明悬浮顶栏 =
-//   返回圆钮 + 标题胶囊（书名/章名双行）+ 合并操作胶囊；
-//   L259-317 MangaTitleCapsule：高 40 stadium、surfaceContainerLow；
-// - L424-649 MangaMenuBottomBar 悬浮形态：圆角面板（surfaceContainerHigh
-//   + 1dp outlineVariant 描边）两行——Row1 上一章/页进度滑条/下一章，
-//   Row2 目录/自动（停止）/翻页设置（SpaceBetween 均布）；
-// - L678-742 MangaMenuIconButton：40dp 圆钮 surfaceContainerLow 背景；
-// - 目录 = 模态 bottom sheet（ReaderBookSheet L279-374，72% 屏高，
-//   章节列表 tab：虚拟化列表 + 当前章高亮 + 点击跳章）。
+// 视觉基准 = 用户截图（参考版 APK kazusa 3.26.15；本地参考源码快照滞后，
+// 仅取语义与颜色角色依据，形态以截图为准）：
+// - 顶栏 MangaMenuTopBar：实心 surfaceContainer 背景（浅色浅灰/暗色自动暗）、
+//   Row1 返回 + 刷新 + 更多（more_vert，= 打开页操作底栏；换源无功能
+//   不放 E8）、Row2 书名大字 24sp + 次行章节名 + 源名（右端，
+//   取证 Book.originName / BookSource.bookSourceName，URL 形态不显）；
+// - 底栏 MangaMenuBottomBar 两段分离（非 M1 一体化悬浮面板）：
+//   进度行 = 左右圆形白钮（surface 底 + 阴影、skip_previous/skip_next
+//   图标，替换 M1 箭头）+ 中间白色胶囊内 Slider（自绘竖条 thumb
+//   primary、轨道透明、divisions 点串 primary）；贴底白条 = 全宽
+//   surface 三键均布（目录/自动/设置齿轮，自动开启时图标 primary 蓝）；
+// - 目录 = 模态 bottom sheet（章节列表 tab：虚拟化列表 + 当前章高亮 +
+//   点击跳章）。
 //
-// 本测试覆盖 6 个对齐点：
-// 1. 顶栏：书名/章名胶囊 + 返回/刷新键（刷新 = 先收菜单再重取当前章）；
-// 2. 底栏两行结构（上一章/滑条/下一章 + 目录/自动/翻页设置 三键均布）；
-// 3. 自动键点击切换自动翻页开关，键描述 自动/停止 随开关态切换；
+// 本测试覆盖 6 个对齐点（M2 调整 + 新增 3 断言）：
+// 1. 顶栏：实心背景（surfaceContainer，【新增断言】）+ 书名/章节名/
+//    源名 + 返回/刷新/更多键（刷新 = 先收菜单再重取当前章）；
+// 2. 底栏两段结构：进度行（上一章 skip_previous/滑条/下一章 skip_next，
+//    【新增断言】skip 图标）+ 贴底白条（目录/自动/翻页设置 三键均布）；
+// 3. 自动键点击切换自动翻页开关，键描述 自动/停止 随开关态切换，
+//    【新增断言】图标状态着色（关 onSurface / 开 primary）；
 // 4. 目录 sheet：标题「目录(N)」+ 当前章高亮 + 点击跳章（进度写入）；
 // 5. 滑条拖动 → 跳页（单页式 PageView 动画落定，页脚页数更新）；
-// 6. 主题化：暗色主题下底栏面板 = surfaceContainerHigh 族、
-//    胶囊 = surfaceContainerLow（非恒黑）。
+// 6. 主题化：暗色主题下顶栏背景 = surfaceContainer（暗）、
+//    圆钮/胶囊/白条 = surface 族（非恒黑）。
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
@@ -176,8 +183,9 @@ Future<void> _showControls(WidgetTester tester) async {
 }
 
 void main() {
-  group('[P4-3 M1] 漫画菜单对齐参考版', () {
-    testWidgets('① 顶栏：书名/章名胶囊 + 返回/刷新键（刷新 = 收菜单 + 重取）',
+  group('[P4-3 M2] 漫画菜单按用户截图重构', () {
+    testWidgets(
+        '① 顶栏：实心背景 + 书名/章节名/源名 + 返回/刷新/更多（刷新 = 收菜单 + 重取）',
         (tester) async {
       final progressCalls = <List<int>>[];
       final configWrites = <List<String>>[];
@@ -198,36 +206,43 @@ void main() {
 
       await _showControls(tester);
 
-      // 顶栏 = 透明悬浮胶囊行：书名/章名胶囊 + 返回圆钮 + 刷新键
+      // 顶栏 = 实心 AppBar 式：背景行（返回 + 刷新 + 更多）+
+      // 标题区（书名大字 + 章节名 + 源名次行）
       final topBar = find.byType(MangaMenuTopBar);
       expect(topBar, findsOneWidget);
       expect(
         find.descendant(of: topBar, matching: find.text('测试漫画')),
         findsOneWidget,
-        reason: '标题胶囊第一行 = 书名',
+        reason: '标题区第一行 = 书名大字',
       );
       expect(
         find.descendant(of: topBar, matching: find.text('第1章')),
         findsOneWidget,
-        reason: '标题胶囊第二行 = 章名',
+        reason: '标题区次行左端 = 章节名',
+      );
+      expect(
+        find.descendant(of: topBar, matching: find.text('测试漫画源')),
+        findsOneWidget,
+        reason: '标题区次行右端 = 源名（bookSourceName 取证值）',
       );
       expect(find.byTooltip('返回'), findsOneWidget);
       expect(find.byTooltip('刷新'), findsOneWidget);
-
-      // 亮色主题（默认）：胶囊背景 = surfaceContainerLow（主题化，非恒黑）
-      final scheme = Theme.of(tester.element(topBar)).colorScheme;
-      final capsule = tester.widget<Container>(
-        find.descendant(
-          of: topBar,
-          matching: find.byWidgetPredicate(
-            (w) =>
-                w is Container &&
-                (w.decoration as BoxDecoration?)?.color ==
-                    scheme.surfaceContainerLow,
-          ),
-        ).first,
+      expect(
+        find.byTooltip('更多'),
+        findsOneWidget,
+        reason: '右上图标组 = 刷新 + 更多（换源无功能不放，E8 登记）',
       );
-      expect(capsule.decoration, isA<BoxDecoration>());
+
+      // 【M2 新增断言③】顶栏实心背景 = surfaceContainer（主题化，非恒黑）
+      final scheme = Theme.of(tester.element(topBar)).colorScheme;
+      final topBarBg = tester.widget<Container>(
+        find.descendant(of: topBar, matching: find.byType(Container)).first,
+      );
+      expect(
+        topBarBg.color,
+        scheme.surfaceContainer,
+        reason: '实心顶栏背景应取 surfaceContainer（浅色 = 浅灰）',
+      );
 
       // 刷新键：先收起菜单，再重取当前章（fetchChapterContent 次数 +1）
       final before = fetchCalls.length;
@@ -239,7 +254,8 @@ void main() {
           reason: '刷新键应触发当前章正文重取（invalidateCurrentChapter）');
     });
 
-    testWidgets('② 底栏两行结构：上一章/滑条/下一章 + 目录/自动/翻页设置',
+    testWidgets(
+        '② 底栏两段结构：进度行（上一章/滑条/下一章）+ 贴底白条（目录/自动/翻页设置）',
         (tester) async {
       final progressCalls = <List<int>>[];
       final api = _MenuMockApi(
@@ -257,7 +273,7 @@ void main() {
 
       final bottomBar = find.byType(MangaMenuBottomBar);
       expect(bottomBar, findsOneWidget);
-      // Row1：上一章 / 页进度滑条 / 下一章
+      // 段1 进度行：上一章 / 页进度滑条（白色胶囊内）/ 下一章
       expect(
         find.descendant(of: bottomBar, matching: find.byTooltip('上一章')),
         findsOneWidget);
@@ -265,7 +281,26 @@ void main() {
         find.descendant(of: bottomBar, matching: find.byTooltip('下一章')),
         findsOneWidget);
       expect(find.byType(Slider), findsOneWidget);
-      // Row2：目录 / 自动 / 翻页设置
+      // 【M2 新增断言①】进度行圆形白钮图标 = Symbols.skip 系列
+      // （替换 M1 箭头；find.byTooltip 命中 Tooltip 本体，
+      // 图标须经 descendant 定位其 Icon 子件）
+      final prevIcon = tester.widget<Icon>(
+        find.descendant(
+          of: find.byTooltip('上一章'),
+          matching: find.byType(Icon),
+        ),
+      );
+      expect(prevIcon.icon, Symbols.skip_previous_rounded,
+          reason: '上一章圆钮 = skip_previous（|◀）');
+      final nextIcon = tester.widget<Icon>(
+        find.descendant(
+          of: find.byTooltip('下一章'),
+          matching: find.byType(Icon),
+        ),
+      );
+      expect(nextIcon.icon, Symbols.skip_next_rounded,
+          reason: '下一章圆钮 = skip_next（▶|）');
+      // 段2 贴底白条：目录 / 自动 / 翻页设置（三键均布）
       expect(
         find.descendant(of: bottomBar, matching: find.byTooltip('目录')),
         findsOneWidget);
@@ -276,13 +311,13 @@ void main() {
         find.descendant(of: bottomBar, matching: find.byTooltip('翻页设置')),
         findsOneWidget);
 
-      // 两行结构：Row1 整体在 Row2 之上
+      // 两段分离：白条（目录键）整体在进度行（上一章键）之下
       expect(
         tester.getTopLeft(find.byTooltip('目录')).dy,
         greaterThan(tester.getTopLeft(find.byTooltip('上一章')).dy),
-        reason: '目录行应在页进度行之下',
+        reason: '贴底白条应在悬浮进度行之下（两段分离，非一体化面板）',
       );
-      // Row2 三键均布（SpaceBetween）：目录最左、翻页设置最右、自动居中
+      // 白条三键均布（spaceEvenly）：目录最左、翻页设置最右、自动居中
       final tocX = tester.getTopLeft(find.byTooltip('目录')).dx;
       final autoX = tester.getTopLeft(find.byTooltip('自动')).dx;
       final settingsX = tester.getTopLeft(find.byTooltip('翻页设置')).dx;
@@ -313,9 +348,23 @@ void main() {
 
       await _showControls(tester);
 
-      // 关态：键描述 = 「自动」
+      // 关态：键描述 = 「自动」，图标着色 = onSurface
       expect(find.byTooltip('自动'), findsOneWidget);
       expect(find.byTooltip('停止'), findsNothing);
+      final scheme =
+          Theme.of(tester.element(find.byType(MangaMenuBottomBar)))
+              .colorScheme;
+      final autoIconOff = tester.widget<Icon>(
+        find.descendant(
+          of: find.byTooltip('自动'),
+          matching: find.byType(Icon),
+        ),
+      );
+      expect(
+        autoIconOff.color,
+        scheme.onSurface,
+        reason: '【M2 新增断言②】自动键关态图标 = onSurface（默认色）',
+      );
 
       // 点击 → 开：描述切换为「停止」；控制栏显示期间自动翻页暂停
       //（对齐参考版 LaunchedEffect 依赖 menuVisible：守卫内不翻页）
@@ -323,6 +372,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byTooltip('停止'), findsOneWidget,
           reason: '开启后键描述 = 停止（再点停止）');
+      // 【M2 新增断言②】开态图标状态着色 = primary 蓝（截图基准）
+      final autoIconOn = tester.widget<Icon>(
+        find.descendant(
+          of: find.byTooltip('停止'),
+          matching: find.byType(Icon),
+        ),
+      );
+      expect(
+        autoIconOn.color,
+        scheme.primary,
+        reason: '自动键开启时图标应变 primary 蓝（截图状态着色）',
+      );
       expect(find.textContaining('页数1/3'), findsOneWidget,
           reason: '控制栏显示期间自动翻页应暂停（页不前进）');
 
@@ -394,7 +455,7 @@ void main() {
           matching: find.text('第2章'),
         ),
         findsOneWidget,
-        reason: '顶栏标题胶囊章名应更新为第 2 章',
+        reason: '顶栏标题区章节名应更新为第 2 章',
       );
       expect(progressCalls, contains(equals([1, 0])),
           reason: '新章章首进度 [chapterIndex=1, chapterPos=0] 应落库');
@@ -431,7 +492,7 @@ void main() {
           reason: '跳末页应写入页级进度（章 0、页索引 2）');
     });
 
-    testWidgets('⑥ 暗色主题：底栏 = surfaceContainerHigh 族、胶囊 = Low',
+    testWidgets('⑥ 暗色主题：顶栏 = surfaceContainer（暗）、圆钮/胶囊/白条 = surface 族',
         (tester) async {
       final progressCalls = <List<int>>[];
       final api = _MenuMockApi(
@@ -448,41 +509,48 @@ void main() {
 
       await _showControls(tester);
 
-      // 底栏悬浮面板 = surfaceContainerHigh（75% 不透明度）
-      final panel = tester.widget<Container>(
+      // 【M2】顶栏实心背景 = surfaceContainer（暗色自动暗，非恒黑）
+      final topBarBg = tester.widget<Container>(
         find.descendant(
-          of: find.byType(MangaMenuBottomBar),
-          matching: find.byWidgetPredicate(
-            (w) =>
-                w is Container && w.decoration is BoxDecoration),
+          of: find.byType(MangaMenuTopBar),
+          matching: find.byType(Container),
         ).first,
       );
-      final panelDecoration = panel.decoration as BoxDecoration;
       expect(
-        panelDecoration.color,
-        equals(darkTheme.colorScheme.surfaceContainerHigh
-            .withValues(alpha: 0.75)),
-        reason: '暗色主题底栏面板应取 surfaceContainerHigh 族（非恒黑）',
-      );
-      expect(panelDecoration.border, isA<Border>());
-      expect(
-        (panelDecoration.border as Border).top.color,
-        equals(darkTheme.colorScheme.outlineVariant),
-        reason: '底栏描边 = outlineVariant',
+        topBarBg.color,
+        darkTheme.colorScheme.surfaceContainer,
+        reason: '暗色主题实心顶栏应取 surfaceContainer（暗色表面）',
       );
 
-      // 顶栏胶囊（圆钮/标题胶囊背景）= surfaceContainerLow（暗色）
-      final capsuleFinder = find.descendant(
-        of: find.byType(MangaMenuTopBar),
+      // 进度行圆钮（surface 底，decoration 承载）×2 + 白色胶囊 ×1
+      final circleFinder = find.descendant(
+        of: find.byType(MangaMenuBottomBar),
         matching: find.byWidgetPredicate(
           (w) =>
               w is Container &&
-              (w.decoration as BoxDecoration?)?.color ==
-                  darkTheme.colorScheme.surfaceContainerLow,
+              w.decoration is BoxDecoration &&
+              (w.decoration as BoxDecoration).color ==
+                  darkTheme.colorScheme.surface,
         ),
       );
-      expect(capsuleFinder, findsWidgets,
-          reason: '暗色主题下胶囊背景应跟随主题 surfaceContainerLow');
+      expect(
+        circleFinder,
+        findsNWidgets(3),
+        reason: '暗色主题下圆钮×2 + 白色胶囊应取 surface 族（非恒白）',
+      );
+
+      // 贴底白条（color 属性承载）= surface（暗色）
+      final whiteBarFinder = find.descendant(
+        of: find.byType(MangaMenuBottomBar),
+        matching: find.byWidgetPredicate(
+          (w) => w is Container && w.color == darkTheme.colorScheme.surface,
+        ),
+      );
+      expect(
+        whiteBarFinder,
+        findsOneWidget,
+        reason: '贴底白条应取 surface（暗色表面，非恒白）',
+      );
     });
   });
 }
