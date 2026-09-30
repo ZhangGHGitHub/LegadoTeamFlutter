@@ -11,6 +11,7 @@ import '../models/models.dart';
 import '../providers/rss/rss_notifier.dart';
 import '../providers/rss_history/rss_history_notifier.dart';
 import '../routes.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4] 下拉 M3 化
 import '../widgets/empty_state.dart';
@@ -89,8 +90,9 @@ class _RssScreenState extends ConsumerState<RssScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(rssNotifierProvider);
     final notifier = ref.read(rssNotifierProvider.notifier);
-    return Scaffold(
-      appBar: DynamicSearchAppBar(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: DynamicSearchAppBar(
         title: AppStrings.rss,
         // [UI_SYNC_REFACTOR S1b 修正] subtitle=当前分组；搜索行默认收起
         subtitle: (state.selectedGroup?.isEmpty ?? true)

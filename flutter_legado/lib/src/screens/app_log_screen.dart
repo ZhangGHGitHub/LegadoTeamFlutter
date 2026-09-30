@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -112,8 +113,9 @@ class _AppLogScreenState extends ConsumerState<AppLogScreen>
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(appLogNotifierProvider);
-    return Scaffold(
-      appBar: LegadoAppBar(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(
         title: const Text('应用日志'),
         // [MD3 Batch 6] 前景走全局 tabBarTheme（onSurface/onSurfaceVariant +
         // primary 指示器），与 M3 AppBar surface 背景配对（原白色系前瞻

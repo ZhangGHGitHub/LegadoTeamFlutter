@@ -27,6 +27,7 @@ import '../routes.dart';
 import '../screens/explore_show_screen.dart';
 import '../utils/responsive.dart';
 import '../utils/source_login_entry.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/explore_book_list.dart';
 import '../widgets/dynamic_search_app_bar.dart';
@@ -89,11 +90,12 @@ class _ExploreScreenState extends ConsumerState<ExploreScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isTablet = constraints.maxWidth >= Responsive.mediumMax;
-        return Scaffold(
+        // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+        return AppScaffold(
           // [UI_SYNC_REFACTOR S1b] Dynamic 搜索行顶栏（对齐参考
           // DynamicTopAppBar：标题+搜索切换钮+bottomContent 展开行；
           // FilterChip 横滑条为常驻 bottom 追加）
-          appBar: DynamicSearchAppBar(
+          topBar: DynamicSearchAppBar(
             title: '发现',
             // [UI_SYNC_REFACTOR S1b 修正] 对齐参考 ListScaffold：subtitle=
             // 当前分组、搜索行默认收起（切换钮展开）、分组筛选走下拉菜单

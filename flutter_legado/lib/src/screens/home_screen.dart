@@ -8,6 +8,7 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../l10n/app_strings.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../routes.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/navigation/app_navigation_bars.dart';
 import '../providers/bottom_bar_skin_notifier.dart';
 import '../providers/main_prefs_notifier.dart';
@@ -272,7 +273,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               for (final tab in tabs) _KeepAlivePage(child: _pageOf(tab)),
             ],
           );
-          return Scaffold(
+          // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+          return AppScaffold(
             // 沉浸式状态栏开启时顶栏延伸至状态栏区域（对标原版 fullScreen +
             // AppConfig.isTransparentStatusBar）；关闭时保留顶部 SafeArea
             body: SafeArea(
@@ -294,7 +296,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ),
             // [UI_SYNC_REFACTOR B3] 底栏三形态：隐藏 / 悬浮 64dp 胶囊 / 标准
             // NavigationBar（label 三档 + 透明度）；皮肤图标两种形态均保留
-            bottomNavigationBar: _buildBottomBar(
+            bottomBar: _buildBottomBar(
               context,
               ui,
               tabs,

@@ -20,6 +20,7 @@ import '../providers/ui_settings/ui_settings_notifier.dart'
 import '../routes.dart';
 import '../services/local_book_store.dart';
 import '../utils/book_open_utils.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/app_progress_indicator.dart';
 import '../widgets/book_grid_item.dart';
 import '../widgets/book_list_item.dart';
@@ -125,8 +126,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     // LegadoAppBar。
     final plainAppBar = (state.isLoading && state.books.isEmpty) ||
         (state.error != null && state.books.isEmpty);
-    return Scaffold(
-      appBar: plainAppBar ? _buildAppBar(context, ref) : null,
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: plainAppBar ? _buildAppBar(context, ref) : null,
       body: _buildBody(context, ref),
     );
   }
