@@ -1641,9 +1641,14 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     }
     final fileName = 'manga-${DateTime.now().millisecondsSinceEpoch}${data.suffix}';
     try {
+      // [D1 修复] file_picker 8.x 在 Android/iOS 的 saveFile 必传 bytes
+      // （缺省抛 ArgumentError「Bytes are required on Android & iOS」，
+      // 旧代码漏传 → 保存恒失败且取消兜底分支永不可达）；取消时平台
+      // 返回 null → 下方文档目录兜底写入仍由本方落盘，语义不变
       final path = await FilePicker.platform.saveFile(
         dialogTitle: '保存图片',
         fileName: fileName,
+        bytes: data.bytes,
       );
       if (path != null) {
         final file = File(path)..writeAsBytesSync(data.bytes);

@@ -48,7 +48,9 @@
 // 距离到章尾（部分消费），真正到章边界（consumed < 1）才切下一章
 //（对齐参考版 performWebtoonTap L705-732）。
 import 'dart:convert';
+import 'dart:io';
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -63,6 +65,11 @@ import 'package:flutter_legado/src/widgets/manga/manga_config_sheet.dart';
 
 // [P4-3 M4 批2] 面板接线用例需断言面板类型（MangaConfigSheet）
 import 'package:flutter_legado/src/services/mock_book_api.dart';
+
+// [D1 修复] 存图回归测试桩注入（path_provider 平台接口为传递依赖，
+// 测试直引以覆写 instance 保持 hermetic，不改 pubspec）
+// ignore: depend_on_referenced_packages
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
 /// 1x1 透明 PNG（RGBA，68 字节，CRC 校验通过的合法编码）
 ///
@@ -319,6 +326,66 @@ List<String> mockClipboard(WidgetTester tester) {
     },
   );
   return written;
+}
+
+// =====================================================================
+// [D1 修复] 保存图片回归测试桩
+//
+// D1 根因：file_picker 8.x 在 Android/iOS 的 saveFile 必传 bytes
+// （FilePickerIO.saveFile：bytes == null → 抛 ArgumentError
+// 「Bytes are required on Android & iOS when saving a file.」）。
+// 旧 _savePageImage 漏传 bytes → 保存恒失败、取消兜底分支永不可达。
+// 桩经 FilePicker.platform / PathProviderPlatform.instance 平台注入：
+// ① 断言 saveFile 收到 bytes（D1 回归）；② 取消（返回 null）时
+// 兜底写应用文档目录落盘。
+// =====================================================================
+
+/// [D1 修复] FilePicker 桩：记录 saveFile 实参，返回固定 [result]
+/// （非 null = 用户选中路径；null = 用户取消保存对话框）
+class _FakeFilePicker extends FilePicker {
+  _FakeFilePicker(this.result);
+  final String? result;
+  Uint8List? capturedBytes;
+  String? capturedFileName;
+
+  @override
+  Future<String?> saveFile({
+    String? dialogTitle,
+    String? fileName,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Uint8List? bytes,
+    bool lockParentWindow = false,
+  }) async {
+    capturedBytes = bytes;
+    capturedFileName = fileName;
+    return result;
+  }
+}
+
+/// [D1 修复] path_provider 平台桩：文档目录固定返回 [docDir]
+class _FakePathProvider extends PathProviderPlatform {
+  _FakePathProvider(this.docDir);
+  final String docDir;
+
+  @override
+  Future<String?> getApplicationDocumentsPath() async => docDir;
+}
+
+/// 注入 FilePicker 平台桩并登记恢复（原实例为 registrant 初始化值；
+/// 若宿主未初始化则恢复为 FilePickerIO，不影响后续用例）
+void _useFakeFilePicker(_FakeFilePicker fake) {
+  FilePicker? original;
+  var initialized = false;
+  try {
+    original = FilePicker.platform;
+    initialized = true;
+  } catch (_) {
+    // late 未初始化（测试宿主 registrant 无本平台分支）
+  }
+  FilePicker.platform = fake;
+  addTearDown(() => FilePicker.platform = initialized ? original! : FilePickerIO());
 }
 
 void main() {
@@ -1060,6 +1127,100 @@ void main() {
           reason: '色彩滤镜区已滚入视口');
       expect(panelPos.pixels, greaterThan(0),
           reason: '锚点跳转改变了面板滚动偏移');
+    });
+  });
+
+  // =====================================================================
+  // [D1 修复] 保存图片 bytes 传入 + 取消兜底
+  // 根因：file_picker 8.x saveFile 缺 bytes 必填（Android/iOS 抛
+  // ArgumentError）；暴露自 M4 长按接线，影响波次2 起全部保存入口
+  // （长按直接存图 + 页操作菜单「保存图片」共用 _savePageImage）。
+  // 触发路径：默认 mangaLongClickSaveImage=true → 长按直接存图。
+  // =====================================================================
+  group('[D1 修复] 保存图片 bytes 传入与取消兜底', () {
+    testWidgets('成功路径：saveFile 收到 bytes，选中路径落盘', (tester) async {
+      // 真实 IO 事件在 fake-async 测试体里须经 runAsync 转动
+      //（先例 _settleImageDecode 注释：真实事件循环只有 runAsync 可等）
+      final tempDir = (
+        await tester.runAsync(() => Directory.systemTemp.createTemp('d1_save_'))
+      )!;
+      addTearDown(() => tempDir.delete(recursive: true));
+      final chosenPath = '${tempDir.path}/manga-chosen.png';
+      final fake = _FakeFilePicker(chosenPath);
+      _useFakeFilePicker(fake);
+
+      final api = _buildApi(progressCalls: <List<int>>[]);
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      // 长按第 1 张图 → 默认直接存图分支
+      await tester.longPressAt(const Offset(400, 100));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.textContaining('已保存:'), findsOneWidget,
+          reason: 'saveFile 返回选中路径 → 成功分支（非失败提示）');
+      expect(fake.capturedBytes, isNotNull,
+          reason: 'D1 回归：saveFile 必须收到 bytes（旧代码漏传恒失败）');
+      expect(
+        fake.capturedBytes!.take(4).toList(),
+        equals(const [0x89, 0x50, 0x4E, 0x47]),
+        reason: '传入 bytes 为 PNG 字节（页面图片解析结果）',
+      );
+      expect(fake.capturedFileName, endsWith('.png'),
+          reason: '文件扩展名按魔数推断');
+      expect(File(chosenPath).existsSync(), isTrue, reason: '选中路径落盘');
+      expect(
+        File(chosenPath).readAsBytesSync(),
+        equals(fake.capturedBytes),
+        reason: '落盘内容 = saveFile 收到的 bytes',
+      );
+    });
+
+    testWidgets('取消路径：saveFile 返回 null → 文档目录兜底落盘',
+        (tester) async {
+      // 真实 IO 事件在 fake-async 测试体里须经 runAsync 转动
+      final tempDir = (
+        await tester.runAsync(() => Directory.systemTemp.createTemp('d1_cancel_'))
+      )!;
+      addTearDown(() => tempDir.delete(recursive: true));
+
+      // 文档目录覆写为 temp 目录（hermetic，不碰真实 Documents）
+      final originalProvider = PathProviderPlatform.instance;
+      PathProviderPlatform.instance = _FakePathProvider(tempDir.path);
+      addTearDown(() => PathProviderPlatform.instance = originalProvider);
+
+      final fake = _FakeFilePicker(null); // 用户取消保存对话框
+      _useFakeFilePicker(fake);
+
+      final api = _buildApi(progressCalls: <List<int>>[]);
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      await tester.longPressAt(const Offset(400, 100));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.textContaining('已保存到文档目录'), findsOneWidget,
+          reason: '取消（saveFile 返回 null）→ 文档目录兜底分支');
+      expect(fake.capturedBytes, isNotNull,
+          reason: '取消分支同样收到 bytes（bytes 仅平台实际存文件时消费）');
+      final files = tempDir
+          .listSync()
+          .where((e) => e is File && e.path.endsWith('.png'))
+          .toList();
+      expect(files, hasLength(1), reason: '兜底目录应落盘 1 个文件');
+      expect(
+        (files.single as File).readAsBytesSync(),
+        equals(fake.capturedBytes),
+        reason: '兜底落盘内容 = 页面图片字节',
+      );
     });
   });
 }
