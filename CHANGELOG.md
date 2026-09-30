@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.327] - 2026-09-30
+
+### Fixed
+- [UI] 漫画条漫自动翻页在章尾停留过久的问题（低速档原需多等一整个滚动周期，现滚到章尾即自动切下一章，对齐参考版滚动完成即判定语义）。
+
 ## [2.0.326] - 2026-09-29
 
 ### Added
