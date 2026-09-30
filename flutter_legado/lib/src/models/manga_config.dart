@@ -226,4 +226,9 @@ abstract final class MangaConfigKeys {
   /// [P4-3 E2] 分页适配类型 0..5（对齐参考版 pageScaleType，
   /// Contract L121 默认 0 = 全屏适配）
   static const pageScaleType = 'mangaPageScaleType';
+
+  /// [P4-3 M3 修4] 条漫侧边留白百分比 0..45（对齐参考版 SettingSlider
+  /// sidePaddingPercent 0..45，仅条漫路径生效：每侧 padding =
+  /// 百分比 × 视口宽；默认 0，单页式模式设置面板不显示此滑杆）
+  static const sidePadding = 'mangaSidePadding';
 }

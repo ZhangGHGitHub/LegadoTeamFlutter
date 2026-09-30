@@ -65,6 +65,34 @@ abstract final class MangaScrollModes {
   /// 是否右起（R2L）：显示索引与逻辑页序反转（首页在最右）
   static bool isReversed(int mode) => mode == pageRightToLeft;
 
+  /// [P4-3 M3 修4] 设置面板 5 模式按钮组（按值 1..5 顺序，对齐用户截图
+  /// 按钮文案；替代 M2 的下拉 [options]）
+  static const List<int> buttonOptions = [
+    pageLeftToRight,
+    pageRightToLeft,
+    pageTopToBottom,
+    webtoon,
+    webtoonWithGap,
+  ];
+
+  /// [P4-3 M3 修4] 按钮组文案（单页式 ×3 + 条漫 ×2；值 4 = 条漫、
+  /// 值 5 = 条漫（页面有空隙），对应 mangaScrollMode 1/2/3/4/5）
+  static String buttonLabelOf(int mode) {
+    switch (mode) {
+      case pageLeftToRight:
+        return '单页式（从左到右）';
+      case pageRightToLeft:
+        return '单页式（从右到左）';
+      case pageTopToBottom:
+        return '单页式（从上到下）';
+      case webtoon:
+        return '条漫';
+      case webtoonWithGap:
+      default:
+        return '条漫（页面有空隙）';
+    }
+  }
+
   /// 设置面板下拉文案（对齐参考版 MangaSettingsPanel 选项文案）
   static String labelOf(int mode) {
     switch (mode) {
