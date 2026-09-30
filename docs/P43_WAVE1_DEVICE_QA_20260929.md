@@ -515,3 +515,57 @@ https___www.tuku.cc_manga-73562__62b1be09         (本波, 20:27 新建, images/
 - 装机：`scripts/emulator_smoke_test.ps1 -Device 192.168.100.62:5555`（HEAD e2a6b930be / 2.0.329+330）→ 7 PASS / 0 FAIL，退出码 0，已装版本 2.0.329 与 pubspec 一致，无 FATAL/E/flutter；FFI content hash 1549248103 通过（与 2.0.328 轮一致，佐证"代码未变、仅版本号 2.0.328→2.0.329"）；构建形态 `flutter build apk --debug`（282.3 MB，Gradle assembleDebug 9.7s 增量）；原始日志 `m329_smoke_raw.log`（md5 874cf22e…）。
 - 菜单点验：书架 →《全职高手》→ ch25 预告 p1/24（总进度 23.8%，与 M1b 同状态）→ 轻点中央 (540,960) 呼出浅色菜单：顶栏（返回/标题胶囊左对齐双行/刷新）+ 底栏（上一章/滑条「页数 1/24」/下一章 + 目录/自动/翻页设置）全部在树（dump content-desc 实测）；像素抽检底栏 y1600-1870：轨道 (217,215,216)、面板 (240,240,240)、图标 (174,174,174)、thumb 深色 (83,67,62)，与 M1b 修正态一致；截图 `m2_menu_check.png`（1080×1920，md5 fc859070…，前缀与 M1b 展开态截图相同 → 与 2.0.328 已验状态像素级一致）。
 - 结论：2.0.329 装机冒烟通过，M1 菜单批状态无回归；设备已复原（菜单收起、/sdcard 临时文件已清）。
+
+## M2 装机采证（2026-09-30）
+
+> STAGE-QA-P43M2（QA 子代理）：2.0.329+330 漫画菜单 M2 重构（对齐用户截图：顶栏实心 AppBar 式 + 进度行独立白圆钮/白胶囊竖条 thumb + 贴底白条三键）装机采证——构建装机 + 浅色/暗色菜单截图 + 自动键状态着色，供主代理视觉终审。HEAD 基线 0556a29752（其后 9f2d41f5f7/9b1dbd1566 仅改图片加载/失败占位视觉，不动菜单结构）；M2 菜单提交 994b1649f5 已含于装机 APK。设备 MuMu 192.168.100.62:5555（1080×1920，dpr 3.0）。被测书：阅文漫画《全职高手》（101 章，续读位 ch26 第01话 p1/50，24.8%）。全程未改任何生产代码。
+
+### 一、冒烟（emulator_smoke_test.ps1 -Device 192.168.100.62:5555）
+
+- **结果：7 PASS / 0 FAIL，退出码 0**：flutter build apk --debug（322.1 MB，Gradle assembleDebug 13.6s）；FFI content hash 1549248103 通过（aarch64/x86_64 复用 .so）；已装版本 2.0.329 与 pubspec 一致；进程存活（pid 9976）；无 FATAL/E/flutter。
+- 其他会话遗留的 4 个未跟踪 test 文件不影响构建（test 文件不进 APK），构建正常通过。
+- 证据：`m2_smoke_raw.log`（md5 5c8841b6…）
+
+### 二、逐项结构断言（浅色菜单 `m2_menu_light.xml` 新鲜 dump；像素 dpr 3.0）
+
+| 断言项 | 期望（spec 截图） | 实测（bounds / 像素） | 判定 |
+| --- | --- | --- | --- |
+| 顶栏实心底 | surfaceContainer 实心 | 顶栏底 (238,238,238) 实心非透明 | 通过 |
+| 顶栏·返回 | 左键 | Button [0,72][120,192] desc=返回 | 通过 |
+| 顶栏·刷新 | 右上点 | Button [816,72][936,192] desc=刷新 | 通过 |
+| 顶栏·更多 | 右上点 | Button [960,72][1080,192] desc=更多（打开页操作底栏） | 通过 |
+| 顶栏·书名大字 | 书名+章节名/源名行 | 标题区 desc=书名+章名（⚠ 混入污染书名列表，见陷阱 2）；单行省略号渲染 | 通过（UI 侧正确） |
+| 进度行·上一章圆钮 | 独立白圆钮 | Button [48,1560][216,1728]（168px 圆=56dp）底 (245,245,245) 浮起阴影 | 通过 |
+| 进度行·胶囊滑条 | 白胶囊内竖条 thumb+点串 | SeekBar desc=「页数 1/50」；胶囊底 (245,245,245) stadium 全圆角；竖条 thumb=primary | 通过 |
+| 进度行·下一章圆钮 | 独立白圆钮 | Button [864,1560][1032,1728] | 通过 |
+| 三键行·目录 | 贴底白条左 | Button [180,1776][300,1896] desc=目录 | 通过 |
+| 三键行·自动 | 贴底白条中 | Button [480,1776][600,1896] desc=自动（开=停止） | 通过 |
+| 三键行·设置⚙ | 贴底白条右 | Button [780,1776][900,1896] desc=翻页设置（gear 图标） | 通过 |
+| 白条底 | 贴底白条 | 条底 (245,245,245)=scheme.surface 暖白（非纯白 255，spec「白条」=surface 实现成立）；三键图标中心 x=240/539/839 与 dump 一致 | 通过 |
+| 自动键开启 | 图标变 primary（spec 蓝） | desc 自动→停止；图标 OFF (29,29,29)→ON (121,85,72)，与同屏滑条 thumb（primary）同色交叉验证；**本机暖色种子 primary=暖棕非蓝**（见陷阱 1，非缺陷）；菜单展开态自动翻页暂停（L423/446 守卫），ON 态截图无翻页漂移 | 通过 |
+| 暗色主题菜单 | 顶栏/白条暗色系 | 切深色（我的→主题模式→sheet）：我的页背景 (29,32,36)；菜单顶栏底 (78,78,78)、贴底条底 (16,20,24)、图标 (237,230,228) 亮 onSurface——暗色系非恒黑非纯白；**`m2_menu_dark.xml` 与 `m2_menu_light.xml` 字节级相同（md5 69bf8f76…）→ 暗/浅色结构完全一致** | 通过 |
+| 主题还原 | 切回跟随系统 | 我的页背景 (240,240,240)/顶 (244,244,244) 浅色 + 行值=跟随系统（`m2_theme_restored.png`/`m2_chk_restored.xml`） | 通过 |
+
+- 视觉终审素材（`docs/materials_1301/evidence/`）：`m2_menu_light.png`（浅色展开态，md5 32bb4b8a…）、`m2_auto_on.png`（自动开启态，md5 21e61a23…）、`m2_menu_dark.png`（暗色展开态，md5 1731f701…）；配套 `m2_menu_light.xml`/`m2_menu_dark.xml`（md5 69bf8f76… 同树）、裁剪 `m2_menu_light_top_crop.png`/`m2_menu_light_bottom_crop.png`/`m2_menu_dark_top_crop.png`/`m2_menu_dark_bottom_crop.png`/`m2_auto_on_key_crop.png`；过程证据 `m2_chk_auto_state.xml`/`m2_auto_off.png`/`m2_chk_auto_off.xml`/`m2_dark_mine.png`/`m2_theme_restored.png`；结论明细 `m2_draft.md`
+- 收尾：菜单收起、自动翻页 OFF、/sdcard m2_* 临时文件已清（`adb shell ls /sdcard/m2_*` 空）
+
+### 三、异常与陷阱（均非 M2 菜单缺陷，如实记录）
+
+1. **自动键 ON 色为暖棕 (121,85,72) 而非 spec「蓝」**：本机应用主题种子=暖色系，scheme.primary 随之为棕；状态着色逻辑正确（开=primary、desc 停止），颜色随种子。视觉终审如按「蓝」比对，需先切蓝色种子/默认主题（建议主代理终审时知悉）。
+2. **章节标题数据污染（M1 异常 1 延续，数据/源解析层）**：标题/页脚 a11y desc 仍混入耽美书名列表（真实章名在末尾）；菜单 UI 正确渲染 bookName+chapterName+单行省略号，非缺陷；建议后续在源解析/入库层清洗 chapter.title。
+3. **书架卡片 tap 直达阅读器**（不经详情页）：本次导航实测行为（续读位语义），非缺陷。
+4. **环境陷阱（同 M1/M1b）**：Git Bash 全程 `export MSYS_NO_PATHCONV=1` + Windows 风格路径；本会话 uiautomator dump 基本返回新鲜树（M1b 的持续陈旧树未复现，上一会话的陈旧 `m2_menu_light.xml` 已被本会话新 dump 覆盖）；上一会话 m2_auto_on.png 曾三次覆盖（双击往返+自动翻页漂移），本会话以「单点+1.2s+desc 即时验证」定稿。
+
+*本段纪律自检：未改任何生产代码；设备操作只读/可恢复（主题切换已还原跟随系统、自动翻页开过即关、/sdcard 临时文件已清）；不硬造——自动键 ON 色与 spec「蓝」的偏差如实定性为主题种子色而非缺陷并给出交叉验证（与滑条 thumb primary 同色）、暗/浅色结构一致性以双 xml 字节级相同为证。*
+
+## 2.0.330 冒烟（2026-09-30）
+
+- **冒烟**：`scripts/emulator_smoke_test.ps1 -Device 192.168.100.62:5555`（HEAD c2eb332d2f / 2.0.330+331）→ **7 PASS / 0 FAIL，退出码 0**：debug APK 282.4 MB（Gradle assembleDebug 12.9s）；FFI content hash 1549248103 通过（aarch64/x86_64 复用 .so，与 2.0.328/329 轮一致）；已装版本 2.0.330 与 pubspec 一致；进程存活（pid 13073，全程未变）；无 FATAL/E/flutter。原始日志 `m330_smoke_raw.log`。
+- **漫画链路·正常出图**：书架 →《全职高手》→ 阅读器 ch26 第01话 p1/50（desc 实测「页数1/50 章节26/101 总进度24.8%」，`m330_chk2.xml`）：页面为深底漫画内容页（页区均值 15.4/σ44.9，有内容方差，非占位态），菜单三件套正常渲染（`m330_reader_p1.png`）。素材批改动集中在失败/加载占位路径，正常加载路径无变化 ✓。
+- **漫画链路·失败占位（断网点验，程序化证据）**：断网（`svc wifi disable`）+ 未缓存页 ch26 p7 → 页面呈深底 + 中央 64px 占位（`m330_fail2.png` 51.7KB，对比**同页在线 2.8MB** `m330_p7online.png` 亮色内容，量级差 54×）；占位像素特征：中央 64px 盒中亮度带(30-200)占 10.9%（素材 image_loading_error.png 灰度 33-67、不透明率 36.8% → 64px 渲染理论值 ≈11.4%，吻合）、>200 亮像素 0%（**排除旧白色 broken_image 图标**）、周边 94% ≤30（55% 黑底语义）。结论：**新素材占位（Image.asset）成立**；视觉终审素材 `m330_fail2_crop.png` / `m330_p7online_crop.png`（本会话模型无视觉，像素统计为判定依据，主代理复核图像）。
+- **行为注记（非缺陷）**：① 阅读器错误态在页内不自动重试（离线→恢复在线后 p7 页字节级不变 51690B，p8→p7 往返仍占位；重开阅读器后同页显示真实内容——B1 单测已断言占位含重试按钮，重试为显式交互）；② 相邻页预缓存生效（断网时 p8 仍显 2.1MB 缓存内容 `m330_p8offline.png`）。
+- **单元测试（代码层接线佐证）**：`flutter test test/unit/loading_error_asset_test.dart test/widget/reader_comic_error_placeholder_test.dart` → 5/5 通过（素材 6933B 与原版字节级一致 md5 1238cf6b…、pubspec assets/images/ 目录声明、解码失败/无书源/直连骨架三形态占位断言）。
+- **环境陷阱（如实记录）**：① 首次 `svc wifi disable` 使 adb-over-LAN 通道失联（设备 offline，TCP 10060，127.0.0.1:5555-5558 均拒绝）；经 **mumu-cli**（`D:\Program Files\MuMuPlayer\nx_main\mumu-cli.exe`）本地通道恢复：`sh --vmindex 1 --cmd "svc wifi enable"`（目标=实例 1「Test测试」/192.168.100.62；实例 0「Test2」=192.168.100.63 未受影响）；其后所有断网/恢复均走 mumu-cli 通道执行、LAN 通道仅用于取件，避免再次失联。② Git Bash `adb pull /tmp/x`（MSYS_NO_PATHCONV=1）落盘 Windows 盘根相对路径 `D:\tmp\x`，取件路径注意。
+- **结论**：2.0.330 装机冒烟通过，版本/进程/崩溃门禁全绿；漫画正常出图无回归，失败占位已切换为新素材图（程序化证据充分，图像留待视觉终审）。收尾：Wi-Fi 已恢复开启、阅读器停留 ch26 p8（在线亮色内容）、/sdcard m330_* 已清（`ls` 计数 0）。
+
+*本段纪律自检：未改任何生产代码；设备操作可恢复（Wi-Fi 复原、临时文件已清、实例 0 未触碰）；不硬造——失败占位「图像内容」以像素统计+同页在线/离线量级差+单测三证交叉支撑，视觉不可见项如实标注为主代理终审项，不冒充已视觉确认。*
