@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.335] - 2026-09-30
+
+### Changed
+- [UI] 底部弹窗壳统一：主题选择、底栏皮肤操作、书源操作三处自造弹窗迁移到统一 AppBottomSheet（标题与把手形态对齐参考版，行为不变）。
+
 ## [2.0.334] - 2026-09-30
 
 ### Added
