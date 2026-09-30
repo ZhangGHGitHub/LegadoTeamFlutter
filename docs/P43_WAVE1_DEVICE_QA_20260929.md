@@ -649,3 +649,124 @@ https___www.tuku.cc_manga-73562__62b1be09         (本波, 20:27 新建, images/
 - 侧边留白滑杆回 0%（dump 确认）；模式还原 T2B 单页式；色彩滑杆全 0%；页脚还原居中；主题还原「跟随系统」（页面底色回 (245,245,245)，跟随系统选中棕色 7224px）；阅读器经「返回」退出至书架（菜单收起）；/sdcard 本次会话临时文件（m3_dump7/8.xml、qa_*.png、m3_menu_dump*.xml）已清（历史 QA 遗留文件非本任务产物，未动）。残留书态：《全职高手》T2B，p2/50（总进度 24.8%）。
 
 *本段纪律自检：未改任何生产代码；判定以像素采样+新鲜 dump+代码定位为准；图像视觉终审素材（`m3_menu_light.png` / `m3_menu_dark.png` / 各 crop）留主代理复核。*
+
+## M4 装机采证（2026-09-30）
+
+> QA 子代理（STAGE-QA-P43M4）：M4 设置面板扩充（批1 页脚内容胶囊组 / 批2 行为开关组+背景色板 / 批3「滤镜」入口按钮）装机截图终审采证。HEAD=0644f43e2a，pubspec 2.0.332+333（未升版属预期），验收机 MuMu 192.168.100.62:5555（1080×1920 dpr3，Android 15 已 root）。全程未改任何生产代码；判定以「新鲜 uiautomator dump + PIL 像素断言 + 代码定位」三重证据为准，crop 图留主代理复核。
+
+### 一、冒烟构建+装机：通过
+- `emulator_smoke_test.ps1 -Device 192.168.100.62:5555` → **7 PASS / 0 FAIL，退出码 0**：FFI 复用（content hash 1549248103 一致，零 Rust 改动）+ `flutter build apk --debug` 282.4 MB；**已装 2.0.332 == pubspec 2.0.332+333**（装前 2.0.331）；进程存活；无 FATAL/E/flutter 崩溃。证据 `m4_smoke.log`｜`m4_00_home.png`。
+
+### 二、逐项断言表（M4 三批）
+
+| # | 项目 | 断言 | 证据（`docs/materials_1301/evidence/`） | 判定 |
+|---|------|------|------|------|
+| 面板 | 全览（滚动到底） | 区块顺序 阅读模式→页面适配→自动翻页→显示效果→色彩滤镜(亮度/R/G/B/A 五滑杆 0%)→页脚设置(快捷行+预览条+7 胶囊)→其他(8 复选框)→背景颜色(5 色板)；8 开关默认态像素判定全对（禁用漫画缩放/音量键翻页/长按保存图片=勾选，余为未勾选） | `m4_46`｜`m4_49`｜`m4_60`（png+xml 成对） | **通过** |
+| 批1 | 页脚胶囊交互 | 点「页数」胶囊→该段变暗（透明底+opacity0.4+浅灰字，区域主色 226 灰底→245 行背景）；预览条语义串「第三话 页数4/30…」→「第三话 4/30…」（页数段消失）；再点恢复完整串 | `m4_46`(前)｜`m4_47`(变暗+段消失)｜`m4_48`(恢复) | **通过** |
+| 批2a | 禁用漫画缩放（默认 ON） | 取消勾选 ON→OFF（像素 121,85,72+白勾→暗环）；关面板重开仍 OFF（**持久化通过**）；复勾还原 ON。双指捏合手势 adb 单指针通道不可注入，「OFF 时缩放生效」未机械证明（代码门控 `_disableMangaScale→InteractiveViewer(min1/max3)` 已核，建议真机补测） | `m4_73`｜`m4_74`(OFF)｜`m4_75`(重开仍 OFF)｜`m4_76`(还原 ON) | **通过（含 1 项验证边界）** |
+| 批2b | 长按保存图片（默认 ON，**重点项**） | 默认 ON 长按应直接保存。**实测 FAIL**：长按 (540,900) 800ms 无菜单（分支路由正确）但 toast「**保存图片失败: Invalid argument(s): Bytes are required on Android & iOS when saving a file.**」，全设备无文件产生（/sdcard 各目录+MediaStore+应用内 documents 均查，documents 目录不存在）。缺陷定位：`reader_comic_screen.dart` L1636 `_savePageImage` 调 `FilePicker.platform.saveFile(dialogTitle, fileName)` **缺 `bytes:` 参数**（file_picker ^8.0.0 Android/iOS 必需），异常先于「取消→兜底写文档目录」分支抛出，兜底不可达；菜单「保存图片」按钮（L1613）命中同一函数，实测同 toast（**两保存入口均不可用**）。取消勾选后长按→页操作菜单（保存图片/分享图片/复制链接）正常出现 ✓；勾回还原 ON ✓ | `m4_50`｜`m4_51_lp_t1`(toast a11y [0,1683][1032,1920])｜`m4_56`(三键菜单)｜`m4_59`(菜单保存同 toast)｜`m4_54`/`m4_55`/`m4_62`(开关像素前后) | **FAIL（缺陷 D1）** |
+| 批2c | 背景色板 | 5 圆点（黑 x144/白 x276/灰 x408/绿 x540/蓝 x672，y≈1745）选中=primary(121,85,72)描边+勾；点「白」→选中态切换 ✓ + 条漫留白区 100% (255,255,255) 纯白渲染 ✓；点「黑」还原选中 ✓。早期「背景不渲染」误报撤销（T2B 全宽页+屏角采样落在菜单区，条漫留白区蓝底 100% (0,97,164) 证明 `Color(_mangaBgColor)` 生效） | `m4_62`(白选中)｜`m4_66`(白留白 100%)｜`m4_68`(黑还原)｜`m4_43`(蓝留白 100%) | **通过** |
+| 批3 | 「滤镜」按钮 | 点击 (170,488) → 面板即时锚滚至「色彩滤镜」区顶（贴视口顶边 [48,572]），五滑杆全可见 | `m4_36`(前)｜`m4_37_filter`(后) | **通过** |
+| 3f | 条漫模式侧边留白 | 原模式 T2B（m4_40 像素）；切「条漫」→「侧边留白」滑杆出现（0%，「全屏适配」行隐藏）；拖动 0%→29%（指示器 64%）；条漫留白 29% 关面板留白区出现（背景蓝 100% 纯蓝）；还原 0%+T2B（滑杆段消失） | `m4_41`｜`m4_42`｜`m4_43`｜`m4_45`｜`m4_70` | **通过** |
+
+### 三、缺陷与验证边界
+- **D1（M4 批2，严重）：图片保存功能不可用**——`_savePageImage` 缺 `bytes:` 参数致 file_picker 恒抛异常，长按直接保存与菜单「保存图片」均失败且无文件落盘（兜底分支不可达）。复现：任意漫画页长按（长按保存图片=默认 ON）或长按出菜单点「保存图片」。期望：系统保存对话框或兜底写文档目录 + toast「已保存: <path>」；实际：toast「保存图片失败: Invalid argument(s)…」。修复方向：`saveFile(dialogTitle:…, fileName:…, bytes: data.bytes)`（仅开发侧，本任务未改码）。
+- 验证边界：① 双指捏合不可注入（adb 单指针），缩放行为未机械证明；② 分享图片/复制链接未抽验（非本批断言项）；③ 音量键翻页/反转音量键为仅存储开关，仅验默认态。
+
+### 四、设备收尾还原（全部完成）
+- 8 开关全回默认（禁用翻页动画 ON→OFF 还原；长按保存/禁用漫画缩放抽验后勾回 ON）；背景=黑；模式=T2B；侧边留白=0%；页脚胶囊全显示（页数段已恢复）；色彩滤镜五滑杆=0%；设置面板/页操作菜单全部收起，阅读器停留正常浏览态（`m4_77`）。
+
+*本段纪律自检：未改任何生产代码；判定以像素采样+新鲜 dump+代码定位为准；D1 缺陷仅描述复现/期望/实际与修复方向，不代改；crop/全幅截图（m4_00…m4_77 共 58 png + 53 xml + 1 冒烟日志，112 件）已归档 `docs/materials_1301/evidence/`，留主代理视觉复核。*
+
+## M4b D1 修复回归（2026-09-30）
+
+> QA 子代理（STAGE-QA-P43M4B）：M4 缺陷 D1 修复（`_savePageImage` 补 `bytes:` 参数，87133fe04b）真机回归——快速：装机冒烟 + 两保存入口验证。HEAD=87133fe04b，pubspec 2.0.332+333，验收机 MuMu 192.168.100.62:5555（1080×1920 dpr3，Android 15 已 root）。被测书：阅文漫画《全职高手》（101 章，ch26 第01话）。全程未改任何生产代码；D1 修复在 Dart 层**确认生效**，但**新发现缺陷 D2（插件层 FATAL 崩溃）阻塞 Download 保存**，取消兜底路径 PASS。
+
+### 一、冒烟构建+装机：通过
+- `scripts/emulator_smoke_test.ps1 -Device 192.168.100.62:5555` → **7 PASS / 0 FAIL，退出码 0**：FFI 复用（content hash 1549248103 一致，零 Rust 改动）+ `flutter build apk --debug`（Gradle assembleDebug 11.4s，282.4 MB）；**已装 2.0.332 == pubspec 2.0.332+333**；进程存活；无 FATAL/E/flutter 崩溃。证据 `m4b_smoke.log`。
+
+### 二、开关默认态：通过
+- 设置面板「其他」区「长按保存图片」Switch **默认 ON**：像素判定 ON 签名（primary 暖棕 (121,85,72) + 白勾 145px，OFF 态为暗环 (83,67,62) 91px——与 M4 轮同签名体系），与代码 `reader_comic_screen.dart` L257 `_mangaLongClickSaveImage = true` 一致。证据 `m4b_07_switch_on.png`。
+
+### 三、两入口保存验证：D1 修复生效，但触发新缺陷 D2（崩溃）
+
+| 步骤 | 结果 | 证据（`docs/materials_1301/evidence/`） |
+|---|---|---|
+| 入口 a：长按直接保存（开关 ON） | **D1 修复生效**：M4 轮的即时 toast「保存图片失败: Invalid argument(s): Bytes are required…」不再出现，**系统保存对话框（SAF/ACTION_CREATE_DOCUMENT）正常弹出**（对话框 dump 含文件名输入框+保存按钮，`m4b_08_savedialog_a.png/xml`） | `m4b_08` |
+| 入口 a：对话框点「保存」→ /sdcard/Download | **D2 崩溃**：进程 FATAL 强杀（前台掉到 kazusa），/sdcard/Download 遗留 **0 字节** `manga-1790780351361.jpg`（22:59）；本方 Dart 后段写盘与「已保存:」SnackBar 不可达 | `m4b_09_after_save_a.png`、`m4b_18` 见下、`m4b_fatal_stack_d2.txt`（崩溃 #1） |
+| 入口 b：取消开关 → 长按 → 页菜单「保存图片」 | 菜单出现（保存图片/分享图片/复制链接，`m4b_14_menu_b.png/xml`）；点「保存图片」后 **SAF 对话框同样弹出（D1 修复对入口 b 亦生效）**；点保存 → **同 D2 崩溃**（23:03，/sdcard/Download 遗留 0 字节 `manga-1790780625652.jpg`） | `m4b_14`、`m4b_fatal_stack_d2.txt`（崩溃 #2） |
+| 取消兜底（对话框双 BACK 取消） | **PASS**：SnackBar「**已保存到文档目录: /data/user/0/io.legado.flutter_legado/app_flutter/manga-1790780523632.jpg**」（a11y 节点实读，`m4b_17_fallback_snackbar.xml`）；adb 落盘核实：`manga-1790780469503.jpg` / `manga-1790780523632.jpg` 均 **194,481 字节，JFIF 魔数 `ffd8 ffe0` 头 / `ffd9` 尾**（`m4b_ls_app_flutter.txt`） | `m4b_10`/`m4b_11`/`m4b_12`、`m4b_17`、`m4b_ls_app_flutter.txt` |
+| 开关还原 | 勾回 ON（ON 像素签名复核通过），设备还原 | `m4b_15_switch_restored.png` |
+
+**Download 目录 ls 证据**（`m4b_ls_download.txt`）：两次「保存」各遗留 1 个 0 字节文件（`manga-1790780351361.jpg` 22:59 / `manga-1790780625652.jpg` 23:03，大小 0）——provider 在对话框确认时预创建空文档，插件崩溃导致字节未写入。
+
+### 四、新缺陷 D2（插件层，阻塞 Download 保存，仅描述不改码）
+- **现象**：SAF 对话框点「保存」后，`file_picker 8.3.7` 插件 `FilePickerDelegate.onActivityResult`（L83 附近）经 `ContentResolver.openOutputStream(uri)` 写 bytes 时抛未捕获 `SecurityException`（**本 ROM 的 DownloadStorageProvider 拒绝**：`Permission Denial: writing com.android.providers.downloads.DownloadStorageProvider uri content://com.android.providers.downloads.documents/document/N ... requires android.permission.MANAGE_DOCUMENTS, or grantUriPermission()`）→ 经 `FlutterActivity.onActivityResult`（`MainActivity.kt:293`）抛至主线程 → `FATAL EXCEPTION: main` → 进程被系统强杀。
+- **复现**：任意漫画页长按（开关 ON）或页菜单「保存图片」→ 保存对话框选 /sdcard/Download → 点「保存」。
+- **期望**：文件写入 Download 目录 + SnackBar「已保存: <路径>」；**实际**：0 字节空文件 + 应用崩溃强杀（两次崩溃 pid 15029/15870，完整堆栈见 `m4b_fatal_stack_d2.txt`）。
+- **机理**：插件仅 `catch (IOException)`，`SecurityException`（RuntimeException 系）未捕获；属「ROM 级授权缺陷（MuMu Download provider 未授 grantUriPermission/MANAGE_DOCUMENTS）× 插件异常处理弱点」叠加——标准 ROM 上可能不触发，但插件层不捕获任何写失败即崩主线程属插件缺陷，Dart 侧 `File(path).writeAsBytesSync` 兜底永远不可达。
+- **修复方向（开发侧选项，本任务不实施）**：① `MainActivity.kt:293` onActivityResult 包装层捕获 SecurityException 并回传错误给 Dart（Dart 落兜底文档目录）；② 升级 file_picker 或改用 MediaStore 直写 Downloads（Android 10+）；③ 向插件上游提 issue。
+- **验证边界**：Download 保存路径在本机被 D2 阻塞，「已保存:」SnackBar 在本 ROM 不可证明；取消兜底路径已全链路证明（toast + 落盘字节 + 魔数）；非本 ROM 设备（真实手机/其他模拟器）上 D2 是否触发未验证。
+
+### 五、设备收尾还原（全部完成）
+- 「长按保存图片」开关还原 ON（像素复核）；设置面板收起；阅读器正常浏览态；/sdcard 本次会话 QA 临时文件已清（两个 0 字节崩溃残留文件 `manga-1790780351361.jpg`/`manga-1790780625652.jpg` 属 D2 崩溃取证物，**保留未清**，供开发复现）；应用重启后无 FATAL。
+
+### 六、证据索引（均位于 `docs/materials_1301/evidence/`）
+- 冒烟：`m4b_smoke.log`（7 PASS / 0 FAIL）
+- 流程截图：`m4b_00_home.png` → `m4b_01_group.png`（书架视频组）→ `m4b_02_reader.png`/`m4b_03_reader_p3.png`/`m4b_04_reader_p6.png`（读者）→ `m4b_05_toolbar_crop.png`/`m4b_06_panel_open.png`/`m4b_07_switch_on.png`（开关 ON 默认态）→ `m4b_08_savedialog_a.png`（入口 a 对话框）→ `m4b_09_after_save_a.png`（崩溃后前台）→ `m4b_10_after_cancel.png`/`m4b_11_fallback_toast.png`/`m4b_12_fallback_toast2.png`（取消兜底）→ `m4b_13_switch_off.png`（开关 OFF）→ `m4b_14_menu_b.png`（入口 b 菜单）→ `m4b_15_switch_restored.png`（还原 ON）
+- dump：`m4b_16_savedialog_a.xml`（SAF 对话框树）｜`m4b_17_fallback_snackbar.xml`（兜底 SnackBar 全文）｜`m4b_18_menu_b.xml`（页操作菜单树）
+- 文件证据：`m4b_ls_download.txt`（Download 两个 0 字节残留）｜`m4b_ls_app_flutter.txt`（app_flutter 两个 194,481 B JFIF）｜`m4b_fatal_stack_d2.txt`（D2 完整 FATAL 堆栈 + file_picker 源码机理）
+
+*本段纪律自检：未改任何生产代码；D1 修复生效（两入口 SAF 对话框均弹出，M4 的 ArgumentError toast 消失）如实确认；D2 崩溃完整报错与堆栈如实记录不淡化；Download 保存被 D2 阻塞、兜底路径全链证明、Dart 层「已保存:」toast 在本 ROM 不可证明——均如实标注；崩溃残留 0 字节文件保留供开发复现。*
+
+## M4c D2 修复回归（2026-09-30）
+
+> QA 子代理（STAGE-QA-P43M4C）：D2 修复（6468a456bb + fe7780279e，新增 `legado/storage` 通道 MediaStore 直写 `Download/legado/`）真机回归——冒烟构建（含 Kotlin 编译核验）+ 长按保存三连 + 磁盘落盘核实 + 崩溃检查。HEAD=fe7780279e，pubspec 2.0.332+333，验收机 MuMu 192.168.100.62:5555（1080×1920 dpr3，Android 15 已 root）。被测书：阅文漫画《全职高手》（同 M4b）。全程未改任何生产代码。**D2 修复核心目标达成：SAF 对话框消除、FATAL 崩溃 0 起；但新发现缺陷 D3（MediaStore 幻影写入「假成功」）——toast 宣称保存成功但文件未落盘、MediaStore 无记录，Download 保存在本机功能上仍不可用。**
+
+### 一、冒烟构建+装机+Kotlin 编译核验：通过
+- `scripts/emulator_smoke_test.ps1 -Device 192.168.100.62:5555` → **7 PASS / 0 FAIL，退出码 0**：FFI 复用（content hash 1549248103 一致，零 Rust 改动）+ `flutter build apk --debug`（Gradle assembleDebug，APK 282 MB）；**已装 2.0.332 == pubspec 2.0.332+333**；进程存活；无 FATAL/E/flutter。证据 `m4c_smoke_raw.log`。
+- **Kotlin 编译核验（任务要求项）**：对构建产物 APK 的 dex 做字节级扫描（本机 Git Bash 无 strings，用 PowerShell 字节扫描），在 `classes18.dex` 命中类描述符 `Lio/legado/flutter/StorageBridge;`（offset 72703）与通道名 `legado/storage`（offset 83615）→ **新增 Kotlin 类 StorageBridge 确实在 APK 内，Gradle 构建含 Kotlin 编译且成功**。
+
+### 二、开关默认态：通过（判定方式与 M4b 不同，如实说明）
+- 设置面板「其他」区「长按保存图片」默认 ON（截图 `m4c_05_other_tab.png` + 裁剪 `m4c_05c_switch_zoom.png`/`m4c_05d_switch_zoom2.png`）。
+- **判定方式说明**：本会话整屏渲染为灰度（M4b 的暖棕 ON 像素签名不可用），开关状态改由源码判定：`manga_config_sheet.dart` L1165-1192 `_checkboxTile` 用 `CheckboxListTile.adaptive`（勾选勾 = ON），且默认值 `_mangaLongClickSaveImage = true`（`reader_comic_screen.dart`）。
+
+### 三、长按保存三连（+ 重启后对照组）：toast「已保存」、无 SAF、无崩溃，**但文件未落盘（D3）**
+
+| 步骤 | 结果 | 证据（`docs/materials_1301/evidence/`） |
+|---|---|---|
+| 长按保存 #1（23:31） | **无 SAF 对话框**（uiautomator dump 未见 ACTION_CREATE_DOCUMENT 节点）、无崩溃；SnackBar 为「**已保存: Download/legado/manga-…jpg**」——通道成功文案（与 `result.success("$RELATIVE_DIR$fileName")` 一致），非「已保存到文档目录」兜底文案 | `m4c_06_longpress_save.png`（+`m4c_06b/06c` 裁剪） |
+| 长按保存 #2（23:33:04） | 同 #1 模式：通道成功 toast、无 SAF、无崩溃 | `m4c_07_save2.png`（+`m4c_07b`） |
+| 长按保存 #3（23:33:16） | 同上 | `m4c_08_save3.png`（+`m4c_08b`） |
+| 磁盘落盘核实（#1-#3 后 + 最终复核） | **`/sdcard/Download/legado/` 目录不存在**（No such file or directory）；MediaStore downloads 表 `content query` **无任何新增行**；`find` 全盘（/data /mnt /sdcard /storage）找不到新文件 | `m4c_ls_legado_1.txt` |
+| 对照组：force-stop 重启（pid 17869）后长按保存 #4（23:35:42，3s 后截图） | 同模式：通道成功 toast，**仍无文件、无 MediaStore 行** → D3 可复现、与进程状态无关 | `m4c_10_fresh_save.png`（+`m4c_10b`） |
+| logcat 崩溃检查 | 全程 logcat（1386 行）**0 FATAL / 0 SecurityException / 0 E/flutter**；重启后复查亦 0 → **D2 崩溃签名（SecurityException 抛主线程强杀）已消除** | `m4c_logcat_session_filtered.txt`、`m4c_logcat_restart_filtered.txt` |
+
+**结论：D2 崩溃与 SAF 对话框均已消除（修复核心目标达成）；但保存链路呈「toast 宣称成功 + 实际未落盘」模式（D3），Download 保存在本 ROM 功能上仍不可用。**
+
+### 四、新缺陷 D3（ROM 级 MediaStore 幻影写入，阻塞 Download 持久化，仅描述不改码）
+- **现象**：`StorageBridge.saveImageToDownloads`（API 29+）的 `insert` / `openOutputStream` / `write` / `flush` 全部返回成功（无任何异常 → `result.success`）→ Dart 显示「已保存: Download/legado/<文件>」，但**文件从未持久化**：`/sdcard/Download/legado/` 目录从未被创建、MediaStore downloads 表无新行、`find` 全盘无文件。
+- **复现**：本 MuMu（Android 15 rooted，ROM MediaProvider）任意漫画页长按保存（开关 ON）。4/4 复现（含应用重启后 1 次）。
+- **期望**：文件持久化至 `Download/legado/`（size > 0、JFIF/PNG 魔数）+ MediaStore 行存在；**实际**：三者皆无，仅成功 toast。
+- **机理（假设，未深入 ROM 内部证实）**：本 ROM 的 MediaProvider 静默丢弃写入（phantom write）——`insert` 返回 URI、`openOutputStream` 返回可写流、`write`/`flush` 不抛错，但字节未落到 FUSE/SD 存储层。因全程无异常，通道 `result.success` 成为**假阳性**，`finally` 中的「失败清理 0 字节残留」分支也因此从未触发（未检测到失败）。
+- **与 D2 的区分**：D2 = 显式拒绝 + 未捕获异常 → 崩溃（file_picker 仅 catch IOException，SecurityException 逃逸）；D3 = 静默丢弃 + 通道假成功（StorageBridge 全异常捕获的设计目标达成——无崩溃，但缺「写后持久化校验」）。
+- **验证边界与建议（开发侧选项，本任务不实施）**：① 原生侧 `result.success` 前读回校验（如 `ContentResolver` 查该 URI 的 `_size` 是否 > 0 / 读回首字节比对），校验失败改回 `result.error` 以触发 Dart 文档目录兜底；② 或 flush 后 stat 核实；③ 「通道失败 → 文档目录兜底」路径**在本 ROM 无法直接触发**（通道恒报成功），该路径已由 3 个单元测试覆盖：`flutter_legado/test/widget/reader_comic_click_actions_test.dart` `[D2 修复] 保存图片 MediaStore 通道与平台分派` 组——「Android 分支：通道成功 → Download/legado 提示，不走 file_picker」「Android 分支：通道失败 → 文档目录兜底」「非 Android 分支：不调通道，走 file_picker saveFile」，**本轮执行 3/3 通过**。
+- **验证边界**：D3 是否发生在标准 ROM/其他模拟器未验证；缺陷限定于本 ROM 的 MediaProvider 行为，非通道代码逻辑必然错误。
+
+### 五、D2 之前的 0 字节残留：仍在（仅记录，未清理）
+- M4b 轮 D2 崩溃产生的 2 个 0 字节文件 `manga-1790780351361.jpg`（22:59）/ `manga-1790780625652.jpg`（23:03）**仍在 `/sdcard/Download/` 根目录**（注意：位于 Download/ 根目录，非新代码目标 `Download/legado/`）；本会话新保存**未产生任何新残留文件**（目标目录根本不存在）。证据 `m4c_ls_legado_1.txt`。
+
+### 六、未决异常（如实陈述，不影响 D3 结论）
+- 保存 #1/#2/#3 三张截图（间隔 80s，而 SnackBar duration 仅 2s）中「已保存」pill 文案像素级一致；且 pill 内文件名的时间戳数字在不同裁剪/重读间**读出相互矛盾**（小字 1080p 放大 1.5x、约 20px 数字，视觉读数不可靠）。无法区分是「snackbar 堆栈未刷新/卡住」还是「数字误读」，**此异常未根因定位**。
+- 可靠事实（不依赖小字读数）：每次保存均出现**通道成功文案前缀「已保存: Download/legado/」**（非「已保存到文档目录」兜底文案）、**无 SAF 对话框**（uiautomator dump 实证）、**无崩溃**（logcat 实证）、**无文件落盘**（ls + MediaStore query + find 实证）。
+
+### 七、设备收尾还原（全部完成）
+- 「长按保存图片」开关保持 ON（默认态，全程未动过）；设置面板/阅读器已收起（HOME 退到 launcher）；/sdcard 本会话 QA 临时文件已清理（`m4c_ui2.xml` 等）；D2 时代 2 个 0 字节残留**保留**作 D2/D3 取证物；应用进程存活（pid 17869），最近 50 行 logcat 0 崩溃签名。
+
+### 八、证据索引（均位于 `docs/materials_1301/evidence/`）
+- 冒烟：`m4c_smoke_raw.log`（7 PASS / 0 FAIL）
+- 截图：`m4c_01_home.png` → `m4c_02_detail.png` → `m4c_03_reader.png` → `m4c_04_panel.png` → `m4c_05_other_tab.png`（+`m4c_05b_switch_crop.png`/`m4c_05c_switch_zoom.png`/`m4c_05d_switch_zoom2.png`/`m4c_05e_switch_row.png`）→ `m4c_06_longpress_save.png`（+`m4c_06b_snackbar_crop.png`/`m4c_06c_snackbar_refix.png`）→ `m4c_07_save2.png`（+`m4c_07b_snackbar2.png`）→ `m4c_08_save3.png`（+`m4c_08b_snackbar3.png`）→ `m4c_09_final_state.png` → `m4c_10_fresh_save.png`（+`m4c_10b_snackbar.png` 对照组裁剪）
+- 文件证据：`m4c_ls_legado_1.txt`（Download ls + MediaStore query + 结论）｜`m4c_logcat_session_filtered.txt`（全程 0 崩溃）｜`m4c_logcat_restart_filtered.txt`（重启后 0 崩溃）
+- 单元测试：`flutter test test/widget/reader_comic_click_actions_test.dart --plain-name "D2 修复"` → **3/3 通过**（通道成功 / 通道失败兜底 / 非 Android）
+
+*本段纪律自检：未改任何生产代码；D2 核心目标（崩溃消除 + SAF 消除 + Kotlin 编译进包）确认达成；D3 假成功缺陷不淡化——现象/复现/机理/修复方向完整记录；「写后持久化校验」在本 ROM 不可直接证明（通道恒报成功、兜底路径不可触发），改以单元测试 3/3 通过佐证并如实声明；snackbar 小字读数异常如实陈述不掩盖。*

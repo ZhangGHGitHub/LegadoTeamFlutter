@@ -1,0 +1,4 @@
+total 170380
+-rwxrwxrwx  1 root     root             0 2026-09-30 22:59 manga-1790780351361.jpg
+-rwxrwxrwx  1 root     root             0 2026-09-30 23:03 manga-1790780625652.jpg
+-rwxrwxrwx  1 root     root        202731 2026-09-29 18:16 manga_sources_clean_36.json

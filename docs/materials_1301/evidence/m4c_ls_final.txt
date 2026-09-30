@@ -1,0 +1,7 @@
+=== Download/legado ===
+ls: /sdcard/Download/legado/: No such file or directory
+=== D2 残留（Download 根）===
+-rwxrwxrwx 1 root root 0 2026-09-30 22:59 /sdcard/Download/manga-1790780351361.jpg
+-rwxrwxrwx 1 root root 0 2026-09-30 23:03 /sdcard/Download/manga-1790780625652.jpg
+=== 全盘找 3 个新文件 ===
+NONE

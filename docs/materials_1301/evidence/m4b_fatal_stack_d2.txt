@@ -1,0 +1,54 @@
+# D2 崩溃堆栈证据（M4b，设备 192.168.100.62:5555 MuMu Android 15）
+# 崩溃 #1（入口 a：长按直接保存，22:59:29，pid 15029，document/4）——完整堆栈（当时 logcat 捕获）：
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: FATAL EXCEPTION: main
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: Process: io.legado.flutter_legado, PID: 15029
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: java.lang.RuntimeException: Failure delivering result ResultInfo{who=null, request=31501, result=-1, data=Intent { dat=content://com.android.providers.downloads.documents/... flg=0x43 }} to activity {io.legado.flutter_legado/io.legado.flutter.MainActivity}: java.lang.SecurityException: Permission Denial: writing com.android.providers.downloads.DownloadStorageProvider uri content://com.android.providers.downloads.documents/document/4 from pid=15029, uid=10055 requires android.permission.MANAGE_DOCUMENTS, or grantUriPermission()
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.app.ActivityThread.deliverResults(ActivityThread.java:6062)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.app.ActivityThread.handleSendResult(ActivityThread.java:6101)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.app.servertransaction.ActivityResultItem.execute(ActivityResultItem.java:78)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.app.servertransaction.ActivityTransactionItem.execute(ActivityTransactionItem.java:133)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeNonLifecycleItem(TransactionExecutor.java:133)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.executeTransactionItems(TransactionExecutor.java:164)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.app.servertransaction.TransactionExecutor.execute(TransactionExecutor.java:72)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.app.ActivityThread$H.handleMessage(ActivityThread.java:2784)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.os.Handler.dispatchMessage(Handler.java:128)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.os.Looper.loopOnce(Looper.java:237)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.os.Looper.loop(Looper.java:327)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.app.ActivityThread.main(ActivityThread.java:8693)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at java.lang.reflect.Method.invoke(Native Method)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at com.android.internal.os.RuntimeInit$MethodAndArgsCaller.run(RuntimeInit.java:601)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at com.android.internal.os.ZygoteInit.main(ZygoteInit.java:1070)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: Caused by: java.lang.SecurityException: Permission Denial: writing com.android.providers.downloads.DownloadStorageProvider uri content://com.android.providers.downloads.documents/document/4 from pid=15029, uid=10055 requires android.permission.MANAGE_DOCUMENTS, or grantUriPermission()
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.os.Parcel.createExceptionOrNull(Parcel.java:3261)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.os.Parcel.createException(Parcel.java:3254)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.os.Parcel.readException(Parcel.java:3243)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.database.DatabaseUtils.readExceptionFromParcel(DatabaseUtils.java:201)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.database.DatabaseUtils.readExceptionWithFileNotFoundExceptionFromParcel(DatabaseUtils.java:164)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.content.ContentProviderProxy.openAssetFile(ContentProviderNative.java:737)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.content.ContentResolver.openAssetFileDescriptor(ContentResolver.java:1876)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.content.ContentResolver.openOutputStream(ContentResolver.java:1574)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.content.ContentResolver.openOutputStream(ContentResolver.java:1548)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at com.mr.flutter.plugin.filepicker.FilePickerDelegate.onActivityResult(FilePickerDelegate.java:83)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at io.flutter.embedding.engine.FlutterEngineConnectionRegistry$FlutterEngineActivityPluginBinding.onActivityResult(FlutterEngineConnectionRegistry.java:795)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at io.flutter.embedding.engine.FlutterEngineConnectionRegistry.onActivityResult(FlutterEngineConnectionRegistry.java:443)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at io.flutter.embedding.android.FlutterActivityAndFragmentDelegate.onActivityResult(FlutterActivityAndFragmentDelegate.java:1006)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at io.flutter.embedding.android.FlutterActivity.onActivityResult(FlutterActivity.java:926)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at io.legado.flutter.MainActivity.onActivityResult(MainActivity.kt:293)
+09-30 22:59:29.961 15029 15029 E AndroidRuntime: 	at android.app.Activity.onActivityResult(Activity.java:7571)
+... 14 more
+09-30 22:59:29.963   840   856 W ActivityTaskManager:   Force finishing activity io.legado.flutter_legado/io.legado.flutter.MainActivity
+
+# 崩溃 #2（入口 b：菜单「保存图片」，23:03:53，pid 15870，document/5）——关键行（当时 logcat 捕获）：
+09-30 23:03:53.875  1934 15647 E DatabaseUtils: java.lang.SecurityException: Permission Denial: writing com.android.providers.downloads.DownloadStorageProvider uri content://com.android.providers.downloads.documents/document/5 from pid=15870, uid=10055 requires android.permission.MANAGE_DOCUMENTS, or grantUriPermission()
+09-30 23:03:53.877 15870 15870 E AndroidRuntime: FATAL EXCEPTION: main
+09-30 23:03:53.877 15870 15870 E AndroidRuntime: java.lang.RuntimeException: Failure delivering result ResultInfo{who=null, request=7074, result=-1, data=Intent { dat=content://com.android.providers.downloads.documents/... flg=0x43 }} to activity {io.legado.flutter_legado/io.legado.flutter.MainActivity}: java.lang.SecurityException: Permission Denial: writing com.android.providers.downloads.DownloadStorageProvider uri content://com.android.providers.downloads.documents/document/5 from pid=15870, uid=10055 requires android.permission.MANAGE_DOCUMENTS, or grantUriPermission()
+09-30 23:03:53.877 15870 15870 E AndroidRuntime: Caused by: java.lang.SecurityException: Permission Denial: writing com.android.providers.downloads.DownloadStorageProvider uri content://com.android.providers.downloads.documents/document/5 from pid=15870, uid=10055 requires android.permission.MANAGE_DOCUMENTS, or grantUriPermission()
+
+# 崩溃机理（file_picker 8.3.7 源码，pub cache file_picker-8.3.7/.../FilePickerDelegate.java L83 附近）：
+#   SAVE_FILE_CODE 且 RESULT_OK 且 bytes != null 时：
+#   OutputStream outputStream = this.activity.getContentResolver().openOutputStream(uri);
+#   outputStream.write(bytes); ...
+#   仅 catch (IOException e)；SecurityException 属 RuntimeException 未被捕获 →
+#   经 FlutterActivity.onActivityResult 链（MainActivity.kt:293）抛到主线程 → FATAL，进程被系统强杀。
+# 结果：provider 在对话框确认时已创建 0 字节空文档（/sdcard/Download/manga-*.jpg），
+# 插件崩溃导致内容未写入；本方 Dart 层 File(path).writeAsBytesSync 与 SnackBar「已保存:」永不可达。

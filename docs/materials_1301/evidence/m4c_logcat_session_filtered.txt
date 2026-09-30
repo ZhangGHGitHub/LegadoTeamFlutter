@@ -1,0 +1,11 @@
+# M4c 会话 logcat 崩溃扫描（2026-09-30，adb logcat -d 全量 1386 行）
+# 判定：FATAL EXCEPTION=0 行 / SecurityException=0 行 / E/flutter=0 行
+# 下为命中的相关行（本应为空，空=无崩溃证据）：
+09-30 23:29:35.459 17580 17580 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7b62da911be0 in tid 17580 (Shutdown thread), pid 17580 (Shutdown thread)
+
+09-30 23:32:02.605 17696 17696 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7bf004ee3be0 in tid 17696 (Shutdown thread), pid 17696 (Shutdown thread)
+
+09-30 23:32:10.942 17716 17716 F libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x7f6a13ab4be0 in tid 17716 (Shutdown thread), pid 17716 (Shutdown thread)
+
+09-30 23:32:11.112 17735 17735 F libc    : Fatal signal 11 (SIGSEGV), code 2 (SEGV_ACCERR), fault addr 0x796ab4c9e37d in tid 17735 (grep), pid 17735 (grep)
+

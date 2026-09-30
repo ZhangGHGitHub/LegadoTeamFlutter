@@ -1,0 +1,17 @@
+=== M4c 最终磁盘核验 (2026-09-30 23:4x, 4 次保存后) ===
+$ adb shell ls -la /sdcard/Download/ | grep manga
+-rwxrwxrwx  1 root     root      26920144 2026-09-12 02:54 legado_app_3.26082823_universal_release-1.apk
+-rwxrwxrwx  1 root     root      26920144 2026-09-12 01:02 legado_app_3.26082823_universal_release.apk
+-rwxrwxrwx  1 root     root             0 2026-09-30 22:59 manga-1790780351361.jpg
+-rwxrwxrwx  1 root     root             0 2026-09-30 23:03 manga-1790780625652.jpg
+-rwxrwxrwx  1 root     root        202731 2026-09-29 18:16 manga_sources_clean_36.json
+
+$ adb shell ls -la /sdcard/Download/legado/
+ls: /sdcard/Download/legado/: No such file or directory
+
+$ adb shell 'content query --uri content://media/external/downloads --projection _id:_display_name:_size' | grep manga
+Row: 9 _id=1000000419, _display_name=manga_sources_clean_36.json, _size=202731
+Row: 11 _id=1000001279, _display_name=manga-1790780351361.jpg, _size=0
+Row: 12 _id=1000001286, _display_name=manga-1790780625652.jpg, _size=0
+
+结论: /sdcard/Download/legado/ 目录不存在; MediaStore 无新增行; 仅 D2 修复前 22:59/23:03 的 2 个 0 字节残留仍在 Download/ 根目录
