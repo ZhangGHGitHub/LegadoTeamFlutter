@@ -121,3 +121,5 @@ docs/parity_shots/**/_tmp_*
 docs/gate_baseline_test.txt
 # 零引用临时采集目录（审计判定可清；保留在盘不入库）
 docs/parity_shots/tmp_d11/
+# QA 代理过程草稿目录（正式证据归档至 docs/materials_1301/evidence/）
+.qa_scratch/
