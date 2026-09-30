@@ -224,6 +224,46 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   /// 单页式路径不生效，设置面板仅 isWebtoon 显示此滑杆）
   int _sidePadding = 0;
 
+  // ---------------------------------------------------------------------------
+  // [P4-3 M4 批2] 行为开关组（键名对齐原版 PreferKey，AppConfig.kt 默认值
+  // 取证：disableClickScroll=false L906-907 / disableMangaScale=**true**
+  // L880-881 / disableMangaPageAnim=false L892-893 / hideMangaTitle=false
+  // L940-941 / volumeKeyPage=**true** L747-748 / reverseVolumeKeyPage=false
+  // L749-750 / mangaLongClickSaveImage=**true** L886-887 /
+  // disableMangaCrossFade=false（参考版 MangaSettings）；mangaBgColor 新增
+  // 默认黑 0xFF000000（对齐原版 Scaffold 硬编码黑，默认行为零变化）
+  // ---------------------------------------------------------------------------
+
+  /// 禁用点击翻页（九区 1/2 失效，0/3/4 保留；对齐参考版 L1953/L714）
+  bool _disableClickScroll = false;
+
+  /// 禁用漫画缩放（true = InteractiveViewer 不渲染）
+  bool _disableMangaScale = true;
+
+  /// 禁用翻页动画（true = 单页 jumpToPage / 条漫 jumpTo 替代 animate；
+  /// 自动翻页定时器条漫路径 animateTo 保留）
+  bool _disableMangaPageAnim = false;
+
+  /// 隐藏漫画列表标题（我方无章节标题页 → 映射 0 图卷章分隔页 +
+  /// 章节导航区标题隐藏，按钮保留）
+  bool _hideMangaTitle = false;
+
+  /// 音量键翻页（平台无按键拦截通道 → 仅持久化，行为待平台支持）
+  bool _volumeKeyPage = true;
+
+  /// 反转音量键翻页方向（同上仅持久化）
+  bool _reverseVolumeKeyPage = false;
+
+  /// 长按保存图片（true = 长按直接 _savePageImage；false = 弹页操作菜单，
+  /// 对齐原版 ReadMangaActivity L239-250 分支）
+  bool _mangaLongClickSaveImage = true;
+
+  /// 禁用加载淡入动画（false = 图片加载完成淡入，参考版 L1751 crossfade）
+  bool _disableMangaCrossFade = false;
+
+  /// 阅读背景色（ARGB 整型，Scaffold 底色 = 图片未覆盖区域底色）
+  int _mangaBgColor = MangaBgColors.black;
+
   /// [P4-3 E2] 图片渲染 BoxFit：单页式按适配类型映射（Screen L1463-1472）；
   /// 条漫恒 fitWidth（Screen L1568）
   BoxFit get _imageFit => MangaScrollModes.isPaged(_scrollMode)
@@ -287,6 +327,25 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       final scaleRaw = await api.getConfig(MangaConfigKeys.pageScaleType);
       // [P4-3 M3 修4] 条漫侧边留白百分比（缺省/非法 → 默认 0，越限收敛 0..45）
       final padRaw = await api.getConfig(MangaConfigKeys.sidePadding);
+      // [P4-3 M4 批2] 行为开关组 9 键（缺省语义：disableMangaScale /
+      // volumeKeyPage / mangaLongClickSaveImage 三键缺省 → true（对齐
+      // AppConfig.kt 默认值），其余缺省 → false；背景色缺省 → 黑）
+      final clickScrollRaw =
+          await api.getConfig(MangaConfigKeys.disableClickScroll);
+      final scaleRaw2 =
+          await api.getConfig(MangaConfigKeys.disableMangaScale);
+      final pageAnimRaw =
+          await api.getConfig(MangaConfigKeys.disableMangaPageAnim);
+      final hideTitleRaw =
+          await api.getConfig(MangaConfigKeys.hideMangaTitle);
+      final volKeyRaw = await api.getConfig(MangaConfigKeys.volumeKeyPage);
+      final revVolKeyRaw =
+          await api.getConfig(MangaConfigKeys.reverseVolumeKeyPage);
+      final longClickSaveRaw =
+          await api.getConfig(MangaConfigKeys.mangaLongClickSaveImage);
+      final crossFadeRaw =
+          await api.getConfig(MangaConfigKeys.disableMangaCrossFade);
+      final bgRaw = await api.getConfig(MangaConfigKeys.mangaBgColor);
       if (!mounted) return;
       setState(() {
         _colorFilter = MangaColorFilterConfig.fromStorage(filterRaw);
@@ -298,6 +357,17 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
         _autoReadSpeed = MangaAutoRead.parse(speedRaw);
         _pageScaleType = MangaPageScaleType.parse(scaleRaw);
         _sidePadding = int.tryParse(padRaw ?? '')?.clamp(0, 45) ?? 0;
+        // 三键缺省 → true（null 时回退默认 true；非 null 按 'true' 判定）
+        _disableClickScroll = clickScrollRaw == 'true';
+        _disableMangaScale = scaleRaw2 == null ? true : scaleRaw2 == 'true';
+        _disableMangaPageAnim = pageAnimRaw == 'true';
+        _hideMangaTitle = hideTitleRaw == 'true';
+        _volumeKeyPage = volKeyRaw == null ? true : volKeyRaw == 'true';
+        _reverseVolumeKeyPage = revVolKeyRaw == 'true';
+        _mangaLongClickSaveImage =
+            longClickSaveRaw == null ? true : longClickSaveRaw == 'true';
+        _disableMangaCrossFade = crossFadeRaw == 'true';
+        _mangaBgColor = MangaBgColors.parse(bgRaw);
       });
       // [P4-3 E1] 配置可能在图片加载后才生效：同步单页式控制器
       _applyScrollMode();
@@ -365,6 +435,33 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     try {
       await ref.read(bookApiProvider)
           .setConfig(MangaConfigKeys.sidePadding, '$_sidePadding');
+    } catch (_) {}
+  }
+
+  /// [P4-3 M4 批2] 持久化行为开关（8 键通用：setState 即时生效 +
+  /// setConfig 落库，键名对齐原版 PreferKey）
+  Future<void> _persistMangaBool(
+    String key,
+    bool value,
+    void Function(bool) apply,
+  ) async {
+    apply(value);
+    if (mounted) setState(() {});
+    try {
+      await ref
+          .read(bookApiProvider)
+          .setConfig(key, value ? 'true' : 'false');
+    } catch (_) {}
+  }
+
+  /// [P4-3 M4 批2] 持久化阅读背景色（ARGB 整型 → 十进制字符串；
+  /// setState 即时重建 Scaffold 使色板点选实时生效）
+  Future<void> _persistMangaBgColor(int argb) async {
+    if (argb < 0 || argb > 0xFFFFFFFF) return;
+    if (argb == _mangaBgColor) return;
+    if (mounted) setState(() => _mangaBgColor = argb);
+    try {
+      await ref.read(bookApiProvider).setConfig(MangaConfigKeys.mangaBgColor, '$argb');
     } catch (_) {}
   }
 
@@ -676,6 +773,42 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       // [P4-3 M3 修4] 条漫侧边留白（条漫专属滑杆，0..45% 持久化）
       sidePadding: _sidePadding,
       onSidePaddingChanged: (v) => unawaited(_persistSidePadding(v)),
+      // [P4-3 M4 批2] 行为开关组（8 布尔键 + 背景色；键名对齐原版
+      // PreferKey，持久化经 _persistMangaBool / _persistMangaBgColor）
+      disableClickScroll: _disableClickScroll,
+      disableMangaScale: _disableMangaScale,
+      disableMangaPageAnim: _disableMangaPageAnim,
+      hideMangaTitle: _hideMangaTitle,
+      volumeKeyPage: _volumeKeyPage,
+      reverseVolumeKeyPage: _reverseVolumeKeyPage,
+      mangaLongClickSaveImage: _mangaLongClickSaveImage,
+      disableMangaCrossFade: _disableMangaCrossFade,
+      mangaBgColor: _mangaBgColor,
+      onDisableClickScrollChanged: (v) => unawaited(_persistMangaBool(
+          MangaConfigKeys.disableClickScroll, v, (x) => _disableClickScroll = x)),
+      onDisableMangaScaleChanged: (v) => unawaited(_persistMangaBool(
+          MangaConfigKeys.disableMangaScale, v, (x) => _disableMangaScale = x)),
+      onDisableMangaPageAnimChanged: (v) => unawaited(_persistMangaBool(
+          MangaConfigKeys.disableMangaPageAnim,
+          v,
+          (x) => _disableMangaPageAnim = x)),
+      onHideMangaTitleChanged: (v) => unawaited(_persistMangaBool(
+          MangaConfigKeys.hideMangaTitle, v, (x) => _hideMangaTitle = x)),
+      onVolumeKeyPageChanged: (v) => unawaited(_persistMangaBool(
+          MangaConfigKeys.volumeKeyPage, v, (x) => _volumeKeyPage = x)),
+      onReverseVolumeKeyPageChanged: (v) => unawaited(_persistMangaBool(
+          MangaConfigKeys.reverseVolumeKeyPage,
+          v,
+          (x) => _reverseVolumeKeyPage = x)),
+      onMangaLongClickSaveImageChanged: (v) => unawaited(_persistMangaBool(
+          MangaConfigKeys.mangaLongClickSaveImage,
+          v,
+          (x) => _mangaLongClickSaveImage = x)),
+      onDisableMangaCrossFadeChanged: (v) => unawaited(_persistMangaBool(
+          MangaConfigKeys.disableMangaCrossFade,
+          v,
+          (x) => _disableMangaCrossFade = x)),
+      onMangaBgColorChanged: (v) => unawaited(_persistMangaBgColor(v)),
     );
   }
 
@@ -750,11 +883,16 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       );
       final current = (controller.page ?? 0).round();
       if (current == display) return; // 已在目标页（动画未落定）
-      controller.animateToPage(
-        display,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
+      // [P4-3 M4 批2] 禁用翻页动画：jumpToPage 替代 animateToPage
+      if (_disableMangaPageAnim) {
+        controller.jumpToPage(display);
+      } else {
+        controller.animateToPage(
+          display,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      }
       return;
     }
     // 条漫：按页比例估算像素跳转（与 [_onScroll] 的可见页近似公式
@@ -1335,6 +1473,13 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
 
   /// [P4-3 E5] 执行点击动作（动作语义见 [_executeClickAction] 注释）
   void _executeClickAction(int action) {
+    // [P4-3 M4 批2] 禁用点击翻页：翻页类动作 1/2（下一页/上一页）失效，
+    // 0 菜单 / 3 下一章 / 4 上一章保留（对齐参考版 MangaReaderScreen
+    // L1953/L714 disableClickScroll 守卫）
+    if (_disableClickScroll &&
+        (action == MangaClickActions.next || action == MangaClickActions.prev)) {
+      return;
+    }
     switch (action) {
       case MangaClickActions.none:
         break; // -1：无动作（对齐参考版 none）
@@ -1387,11 +1532,17 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       );
       // R2L：控制器翻页方向与阅读方向相反
       final controllerDirection = reversed ? -direction : direction;
-      controller.animateToPage(
-        display + controllerDirection,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
+      // [P4-3 M4 批2] 禁用翻页动画：jumpToPage 替代 animateToPage
+      //（目标计算不变；自动翻页定时器条漫路径 animateTo 保留）
+      if (_disableMangaPageAnim) {
+        controller.jumpToPage(display + controllerDirection);
+      } else {
+        controller.animateToPage(
+          display + controllerDirection,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      }
       return;
     }
     // 条漫：纵向滚动一视口（条漫恒为纵向 ListView）
@@ -1410,11 +1561,16 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       if (target > position.maxScrollExtent) {
         target = position.maxScrollExtent; // 滚完剩余距离（部分消费）
       }
-      position.animateTo(
-        target,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
+      // [P4-3 M4 批2] 禁用翻页动画：jumpTo 替代 animateTo（目标不变）
+      if (_disableMangaPageAnim) {
+        position.jumpTo(target);
+      } else {
+        position.animateTo(
+          target,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeInOut,
+        );
+      }
       return;
     }
     if (position.pixels <= 0) {
@@ -1425,11 +1581,15 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     if (target < 0) {
       target = 0; // 滚完剩余距离（部分消费）
     }
-    position.animateTo(
-      target,
-      duration: const Duration(milliseconds: 300),
-      curve: Curves.easeInOut,
-    );
+    if (_disableMangaPageAnim) {
+      position.jumpTo(target);
+    } else {
+      position.animateTo(
+        target,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -1560,7 +1720,9 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
         }
       },
       child: Scaffold(
-        backgroundColor: Colors.black,
+        // [P4-3 M4 批2] 阅读背景色（ARGB 整型持久化；默认黑 0xFF000000
+        // = 原硬编码 Colors.black，默认行为零变化）
+        backgroundColor: Color(_mangaBgColor),
         // [P4-3 E5] 九区点击：视口级 GestureDetector 承担点击导航
         //（对齐参考版「导航属于视口而非单个变换后的条漫项」）；
         // 子项的长按手势与按钮仍按竞技场规则优先命中
@@ -1629,11 +1791,16 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              chapter.title.isNotEmpty ? chapter.title : '暂无图片',
-              style: const TextStyle(color: Colors.white70, fontSize: 18),
-            ),
-            const SizedBox(height: 24),
+            // [P4-3 M4 批2] 隐藏漫画列表标题：0 图卷章分隔页标题隐藏
+            //（我方无独立章节标题页，hideMangaTitle 映射到此 + 导航区；
+            // 上下章按钮保留）
+            if (!_hideMangaTitle) ...[
+              Text(
+                chapter.title.isNotEmpty ? chapter.title : '暂无图片',
+                style: const TextStyle(color: Colors.white70, fontSize: 18),
+              ),
+              const SizedBox(height: 24),
+            ],
             // 章节导航按钮（卷章分隔页仍需跳转上下章）
             if (_currentChapterIndex > 0)
               TextButton(
@@ -1699,35 +1866,41 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   /// [P4-3 M3 修4] 条漫路径按 [_sidePadding] 百分比加水平 padding
   /// （见方法尾部包裹逻辑）。
   Widget _buildImageList() {
+    final listView = ListView.builder(
+      controller: _scrollController,
+      itemCount: _imageUrls.length + 1, // +1 用于底部章节导航
+      padding: EdgeInsets.zero,
+      physics: const ClampingScrollPhysics(),
+      itemBuilder: (context, index) {
+        // 最后一项：章节导航
+        if (index == _imageUrls.length) {
+          return _buildChapterNavigation();
+        }
+        var item = _buildImageItem(index);
+        // [P4-3 E1] 条漫（间隔）：页间 8px 间距
+        //（参考版 Arrangement.spacedBy(8.dp)，实现为 4px 上 + 4px 下包裹）
+        if (_scrollMode == MangaScrollModes.webtoonWithGap) {
+          item = Padding(
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            child: item,
+          );
+        }
+        return item;
+      },
+    );
+    // [P4-3 M4 批2] 禁用漫画缩放（原版默认 true）：InteractiveViewer
+    // 不渲染，仅启用时包裹缩放层
+    final zoomable = !_disableMangaScale
+        ? InteractiveViewer(
+            minScale: 1.0,
+            maxScale: 3.0,
+            boundaryMargin: const EdgeInsets.all(0),
+            child: listView,
+          )
+        : listView;
     final list = NotificationListener<ScrollMetricsNotification>(
       onNotification: _onScrollMetricsChanged,
-      child: InteractiveViewer(
-        minScale: 1.0,
-        maxScale: 3.0,
-        boundaryMargin: const EdgeInsets.all(0),
-        child: ListView.builder(
-          controller: _scrollController,
-          itemCount: _imageUrls.length + 1, // +1 用于底部章节导航
-          padding: EdgeInsets.zero,
-          physics: const ClampingScrollPhysics(),
-          itemBuilder: (context, index) {
-            // 最后一项：章节导航
-            if (index == _imageUrls.length) {
-              return _buildChapterNavigation();
-            }
-            var item = _buildImageItem(index);
-            // [P4-3 E1] 条漫（间隔）：页间 8px 间距
-            //（参考版 Arrangement.spacedBy(8.dp)，实现为 4px 上 + 4px 下包裹）
-            if (_scrollMode == MangaScrollModes.webtoonWithGap) {
-              item = Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: item,
-              );
-            }
-            return item;
-          },
-        ),
-      ),
+      child: zoomable,
     );
     // [P4-3 M3 修4] 条漫侧边留白：每侧 padding = 视口宽 × p/100（p =
     // _sidePadding 0..45）。对齐参考版 MangaReaderScreen L500/L1706：
@@ -1752,9 +1925,26 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   Widget _buildImageItem(int index) {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onLongPress: () => _showPageActions(index),
-      child: _buildImageItemBody(index),
+      // [P4-3 M4 批2] 长按保存图片（原版默认 **true**）：开启时长按
+      // 直接存当前页（对齐原版 ReadMangaActivity L239-250 分支）；
+      // 关闭时长按弹页操作菜单（保存/分享/复制）
+      onLongPress: () {
+        if (_mangaLongClickSaveImage) {
+          unawaited(_savePageImage(index));
+        } else {
+          _showPageActions(index);
+        }
+      },
+      child: _wrapImageFade(_buildImageItemBody(index)),
     );
+  }
+
+  /// [P4-3 M4 批2] 图片加载淡入包裹（参考版 L1751 crossfade 语义）：
+  /// disableMangaCrossFade = false（默认）时包裹 [_MangaImageFade]
+  /// 淡入 300ms；= true 时直接返回 child 不包
+  Widget _wrapImageFade(Widget child) {
+    if (_disableMangaCrossFade) return child;
+    return _MangaImageFade(child: child);
   }
 
   /// 图片项本体（占位 / FFI 解码 / 直连网络分发）
@@ -1961,7 +2151,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       child: Column(
         children: [
           // 当前章节标题
-          if (_currentChapterIndex < _chapters.length)
+          // [P4-3 M4 批2] 隐藏漫画列表标题：导航区标题隐藏（按钮保留）
+          if (_currentChapterIndex < _chapters.length && !_hideMangaTitle)
             Padding(
               padding: const EdgeInsets.only(bottom: 16),
               child: Text(
@@ -2222,6 +2413,50 @@ class ComicImageDecodeCache {
 /// `getImageCache` 磁盘缓存，命中直接本地字节渲染（不走网络）；
 /// 未命中走 `fetchImageWithDecode` 网络链路，成功后经 `saveImageCache`
 /// 回写磁盘缓存（fire-and-forget，写失败静默降级不影响在线加载）。
+/// [P4-3 M4 批2] 图片加载淡入（对齐参考版 MangaReaderScreen L1751
+/// crossfade：加载完成 300ms 淡入；disableMangaCrossFade 键控制包裹，
+/// 见屏幕侧 [_wrapImageFade]；根节点 ValueKey('mangaImageFade') 为
+/// widget 测试取证钩子）
+class _MangaImageFade extends StatefulWidget {
+  final Widget child;
+
+  const _MangaImageFade({required this.child});
+
+  @override
+  State<_MangaImageFade> createState() => _MangaImageFadeState();
+}
+
+class _MangaImageFadeState extends State<_MangaImageFade>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
+      value: 0,
+    );
+    _ctrl.forward();
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      key: const ValueKey('mangaImageFade'),
+      opacity: _ctrl,
+      child: widget.child,
+    );
+  }
+}
+
 class _DecodedComicImage extends ConsumerStatefulWidget {
   final String url;
   final String sourceJson;

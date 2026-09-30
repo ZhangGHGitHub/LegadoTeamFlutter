@@ -65,6 +65,52 @@ class MangaConfigSheet extends StatefulWidget {
   /// sidePaddingPercent 0..45；单页式不显示，保留页面适配下拉）
   final ValueChanged<int>? onSidePaddingChanged;
 
+  // ---------------------------------------------------------------------------
+  // [P4-3 M4 批2] 行为开关组 + 背景色（null = 当前值缺省；区块随
+  // onMangaBgColorChanged 接线渲染；键名/默认值对齐原版 PreferKey，
+  // 见 MangaConfigKeys 注释）
+  // ---------------------------------------------------------------------------
+
+  /// 禁用点击翻页（原版默认 false；九区 1/2 失效，0/3/4 保留）
+  final bool? disableClickScroll;
+
+  /// 禁用漫画缩放（原版默认 **true**；InteractiveViewer 不渲染）
+  final bool? disableMangaScale;
+
+  /// 禁用翻页动画（原版默认 false；jump 替代 animate）
+  final bool? disableMangaPageAnim;
+
+  /// 隐藏漫画列表标题（原版默认 false）
+  final bool? hideMangaTitle;
+
+  /// 音量键翻页（原版默认 **true**；平台无按键拦截通道，仅持久化）
+  final bool? volumeKeyPage;
+
+  /// 反转音量键翻页方向（参考版默认 false；同上仅持久化）
+  final bool? reverseVolumeKeyPage;
+
+  /// 长按保存图片（原版默认 **true**；开启时长按直接存图）
+  final bool? mangaLongClickSaveImage;
+
+  /// 禁用加载淡入动画（参考版默认 false = 淡入开启）
+  final bool? disableMangaCrossFade;
+
+  /// 背景颜色（ARGB 整型；null = 默认黑 [MangaBgColors.black]）
+  final int? mangaBgColor;
+
+  /// 行为开关变更回调（非 null 时随区块渲染）
+  final ValueChanged<bool>? onDisableClickScrollChanged;
+  final ValueChanged<bool>? onDisableMangaScaleChanged;
+  final ValueChanged<bool>? onDisableMangaPageAnimChanged;
+  final ValueChanged<bool>? onHideMangaTitleChanged;
+  final ValueChanged<bool>? onVolumeKeyPageChanged;
+  final ValueChanged<bool>? onReverseVolumeKeyPageChanged;
+  final ValueChanged<bool>? onMangaLongClickSaveImageChanged;
+  final ValueChanged<bool>? onDisableMangaCrossFadeChanged;
+
+  /// 背景色变更（非 null 时渲染「其他」区块）
+  final ValueChanged<int>? onMangaBgColorChanged;
+
   const MangaConfigSheet({
     super.key,
     required this.colorFilter,
@@ -87,6 +133,26 @@ class MangaConfigSheet extends StatefulWidget {
     this.onPageScaleTypeChanged,
     this.sidePadding,
     this.onSidePaddingChanged,
+    // [P4-3 M4 批2] 行为开关组 + 背景色（可选；不传则不渲染区块，
+    // 既有调用方不受影响）
+    this.disableClickScroll,
+    this.disableMangaScale,
+    this.disableMangaPageAnim,
+    this.hideMangaTitle,
+    this.volumeKeyPage,
+    this.reverseVolumeKeyPage,
+    this.mangaLongClickSaveImage,
+    this.disableMangaCrossFade,
+    this.mangaBgColor,
+    this.onDisableClickScrollChanged,
+    this.onDisableMangaScaleChanged,
+    this.onDisableMangaPageAnimChanged,
+    this.onHideMangaTitleChanged,
+    this.onVolumeKeyPageChanged,
+    this.onReverseVolumeKeyPageChanged,
+    this.onMangaLongClickSaveImageChanged,
+    this.onDisableMangaCrossFadeChanged,
+    this.onMangaBgColorChanged,
   });
 
   static Future<void> show(
@@ -114,6 +180,26 @@ class MangaConfigSheet extends StatefulWidget {
     // [P4-3 M3 修4] 条漫侧边留白（可选；不传则不渲染滑杆，既有调用方不受影响）
     int? sidePadding,
     ValueChanged<int>? onSidePaddingChanged,
+    // [P4-3 M4 批2] 行为开关组 + 背景色（可选；不传则不渲染区块，
+    // 既有调用方不受影响）
+    bool? disableClickScroll,
+    bool? disableMangaScale,
+    bool? disableMangaPageAnim,
+    bool? hideMangaTitle,
+    bool? volumeKeyPage,
+    bool? reverseVolumeKeyPage,
+    bool? mangaLongClickSaveImage,
+    bool? disableMangaCrossFade,
+    int? mangaBgColor,
+    ValueChanged<bool>? onDisableClickScrollChanged,
+    ValueChanged<bool>? onDisableMangaScaleChanged,
+    ValueChanged<bool>? onDisableMangaPageAnimChanged,
+    ValueChanged<bool>? onHideMangaTitleChanged,
+    ValueChanged<bool>? onVolumeKeyPageChanged,
+    ValueChanged<bool>? onReverseVolumeKeyPageChanged,
+    ValueChanged<bool>? onMangaLongClickSaveImageChanged,
+    ValueChanged<bool>? onDisableMangaCrossFadeChanged,
+    ValueChanged<int>? onMangaBgColorChanged,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -140,6 +226,24 @@ class MangaConfigSheet extends StatefulWidget {
         onPageScaleTypeChanged: onPageScaleTypeChanged,
         sidePadding: sidePadding,
         onSidePaddingChanged: onSidePaddingChanged,
+        disableClickScroll: disableClickScroll,
+        disableMangaScale: disableMangaScale,
+        disableMangaPageAnim: disableMangaPageAnim,
+        hideMangaTitle: hideMangaTitle,
+        volumeKeyPage: volumeKeyPage,
+        reverseVolumeKeyPage: reverseVolumeKeyPage,
+        mangaLongClickSaveImage: mangaLongClickSaveImage,
+        disableMangaCrossFade: disableMangaCrossFade,
+        mangaBgColor: mangaBgColor,
+        onDisableClickScrollChanged: onDisableClickScrollChanged,
+        onDisableMangaScaleChanged: onDisableMangaScaleChanged,
+        onDisableMangaPageAnimChanged: onDisableMangaPageAnimChanged,
+        onHideMangaTitleChanged: onHideMangaTitleChanged,
+        onVolumeKeyPageChanged: onVolumeKeyPageChanged,
+        onReverseVolumeKeyPageChanged: onReverseVolumeKeyPageChanged,
+        onMangaLongClickSaveImageChanged: onMangaLongClickSaveImageChanged,
+        onDisableMangaCrossFadeChanged: onDisableMangaCrossFadeChanged,
+        onMangaBgColorChanged: onMangaBgColorChanged,
       ),
     );
   }
@@ -169,6 +273,19 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
   /// [P4-3 M3 修4] 条漫侧边留白百分比 0..45
   late int _sidePadding;
 
+  // [P4-3 M4 批2] 行为开关组 + 背景色（缺省值对齐原版：
+  // disableMangaScale / volumeKeyPage / mangaLongClickSaveImage 三键
+  // 缺省 true，其余缺省 false；背景色缺省黑 0xFF000000）
+  late bool _disableClickScroll;
+  late bool _disableMangaScale;
+  late bool _disableMangaPageAnim;
+  late bool _hideMangaTitle;
+  late bool _volumeKeyPage;
+  late bool _reverseVolumeKeyPage;
+  late bool _mangaLongClickSaveImage;
+  late bool _disableMangaCrossFade;
+  late int _mangaBgColor;
+
   /// [P4-3 M4 批1] 页脚内容胶囊组样例数据（与 [_footerPreview] 同源，
   /// 保证胶囊文案与预览条逐段一致：第三话 / 页数 4/30 / 章节 1/45 /
   /// 总进度 0.3%；隐藏段对应 MangaFooterConfig 的 hide* 字段）
@@ -196,6 +313,11 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
       widget.onSidePaddingChanged != null &&
       MangaScrollModes.isWebtoon(_scrollMode);
 
+  /// [P4-3 M4 批2] 是否渲染「其他」区块（行为开关组 + 背景色板）：
+  /// 上游显式接线（onMangaBgColorChanged 非 null）时才渲染，
+  /// 保证既有未接线的 sheet 用法/测试不受影响
+  bool get _showBehaviorSection => widget.onMangaBgColorChanged != null;
+
   @override
   void initState() {
     super.initState();
@@ -215,6 +337,15 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
     _autoReadSpeed = widget.autoReadSpeed ?? MangaAutoRead.defaultValue;
     _pageScaleType = widget.pageScaleType ?? MangaPageScaleType.defaultValue;
     _sidePadding = (widget.sidePadding ?? 0).clamp(0, 45);
+    _disableClickScroll = widget.disableClickScroll ?? false;
+    _disableMangaScale = widget.disableMangaScale ?? true;
+    _disableMangaPageAnim = widget.disableMangaPageAnim ?? false;
+    _hideMangaTitle = widget.hideMangaTitle ?? false;
+    _volumeKeyPage = widget.volumeKeyPage ?? true;
+    _reverseVolumeKeyPage = widget.reverseVolumeKeyPage ?? false;
+    _mangaLongClickSaveImage = widget.mangaLongClickSaveImage ?? true;
+    _disableMangaCrossFade = widget.disableMangaCrossFade ?? false;
+    _mangaBgColor = widget.mangaBgColor ?? MangaBgColors.black;
   }
 
   @override
@@ -467,6 +598,90 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     _footerCapsuleGroup(),
                   ],
                 ]),
+                // [P4-3 M4 批2] 「其他」区块：行为开关组（8 复选框行，
+                // 对齐参考版 MangaSettingsPanel L334-561 开关顺序：
+                // 缩放/动画/点击/标题/音量键 ×2/长按存图/淡入）+
+                // 背景色板行（黑/白/灰/绿/蓝 + 当前色圆点；键名对齐
+                // 原版 PreferKey，键持久化经各 on*Changed 回调落库）
+                if (_showBehaviorSection) ...[
+                  _section('其他'),
+                  _card([
+                    _checkboxTile(
+                      title: '禁用点击翻页',
+                      value: _disableClickScroll,
+                      onChanged: (v) {
+                        setState(() => _disableClickScroll = v);
+                        widget.onDisableClickScrollChanged?.call(v);
+                      },
+                    ),
+                    _divider(),
+                    _checkboxTile(
+                      title: '禁用漫画缩放',
+                      value: _disableMangaScale,
+                      onChanged: (v) {
+                        setState(() => _disableMangaScale = v);
+                        widget.onDisableMangaScaleChanged?.call(v);
+                      },
+                    ),
+                    _divider(),
+                    _checkboxTile(
+                      title: '禁用翻页动画',
+                      value: _disableMangaPageAnim,
+                      onChanged: (v) {
+                        setState(() => _disableMangaPageAnim = v);
+                        widget.onDisableMangaPageAnimChanged?.call(v);
+                      },
+                    ),
+                    _divider(),
+                    _checkboxTile(
+                      title: '隐藏漫画列表标题',
+                      value: _hideMangaTitle,
+                      onChanged: (v) {
+                        setState(() => _hideMangaTitle = v);
+                        widget.onHideMangaTitleChanged?.call(v);
+                      },
+                    ),
+                    _divider(),
+                    _checkboxTile(
+                      title: '音量键翻页',
+                      subtitle: '平台无按键拦截通道，仅保存设置',
+                      value: _volumeKeyPage,
+                      onChanged: (v) {
+                        setState(() => _volumeKeyPage = v);
+                        widget.onVolumeKeyPageChanged?.call(v);
+                      },
+                    ),
+                    _divider(),
+                    _checkboxTile(
+                      title: '反转音量键翻页方向',
+                      value: _reverseVolumeKeyPage,
+                      onChanged: (v) {
+                        setState(() => _reverseVolumeKeyPage = v);
+                        widget.onReverseVolumeKeyPageChanged?.call(v);
+                      },
+                    ),
+                    _divider(),
+                    _checkboxTile(
+                      title: '长按保存图片',
+                      value: _mangaLongClickSaveImage,
+                      onChanged: (v) {
+                        setState(() => _mangaLongClickSaveImage = v);
+                        widget.onMangaLongClickSaveImageChanged?.call(v);
+                      },
+                    ),
+                    _divider(),
+                    _checkboxTile(
+                      title: '禁用加载淡入动画',
+                      value: _disableMangaCrossFade,
+                      onChanged: (v) {
+                        setState(() => _disableMangaCrossFade = v);
+                        widget.onDisableMangaCrossFadeChanged?.call(v);
+                      },
+                    ),
+                    _divider(),
+                    _bgColorRow(),
+                  ]),
+                ],
               ],
             ),
           ),
@@ -881,6 +1096,91 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
             min: min,
             max: max,
             onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// [P4-3 M4 批2] 行为开关行（CheckboxListTile.adaptive，样式同
+  /// [_switchTile]；点击标题/复选框均翻转并触发 [onChanged]）
+  Widget _checkboxTile({
+    required String title,
+    String? subtitle,
+    required bool value,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return CheckboxListTile.adaptive(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      title: Text(title, style: const TextStyle(fontSize: 16)),
+      subtitle: subtitle == null
+          ? null
+          : Text(
+              subtitle,
+              // [深色主题 Batch A-1] 副标题 → onSurfaceVariant（同
+              // [_switchTile]）
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
+      value: value,
+      // CheckboxListTile.onChanged 为 ValueChanged<bool?>?（三态语义）
+      // → 收敛为非 null 布尔后转发
+      onChanged: (v) {
+        if (v != null) onChanged(v);
+      },
+    );
+  }
+
+  /// [P4-3 M4 批2] 背景色板行（[MangaBgColors.all] 五档预设 +
+  /// 当前色不在预设内时追加当前色圆点；选中 = primary 描边 + 勾；
+  /// 点选经 [onMangaBgColorChanged] 持久化 ARGB 整型十进制）
+  Widget _bgColorRow() {
+    final scheme = Theme.of(context).colorScheme;
+    final swatches = <int>[...MangaBgColors.all];
+    if (!swatches.contains(_mangaBgColor)) {
+      swatches.add(_mangaBgColor); // 当前色圆点（非预设值兜底展示）
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '背景颜色',
+            style: TextStyle(fontSize: 16, color: scheme.onSurface),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: swatches.map((argb) {
+              final selected = argb == _mangaBgColor;
+              return GestureDetector(
+                key: ValueKey('mangaBgSwatch-$argb'),
+                behavior: HitTestBehavior.opaque,
+                onTap: () {
+                  if (argb == _mangaBgColor) return;
+                  setState(() => _mangaBgColor = argb);
+                  widget.onMangaBgColorChanged?.call(argb);
+                },
+                child: Container(
+                  width: 32,
+                  height: 32,
+                  margin: const EdgeInsets.only(right: 12),
+                  decoration: BoxDecoration(
+                    color: Color(argb),
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: selected ? scheme.primary : scheme.outline,
+                      width: selected ? 2 : 1,
+                    ),
+                  ),
+                  child: selected
+                      ? const Icon(Icons.check, size: 16, color: Colors.grey)
+                      : null,
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),

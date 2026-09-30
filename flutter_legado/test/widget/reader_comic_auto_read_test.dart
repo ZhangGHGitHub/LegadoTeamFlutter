@@ -385,7 +385,14 @@ void main() {
       final api = _AutoReadMockApi(
         progressCalls: progressCalls,
         configWrites: configWrites,
-        configs: {'mangaScrollMode': '1', 'mangaAutoReadSpeed': '15'},
+        // [P4-3 M4 批2] 注入 mangaLongClickSaveImage=false：批 2 新默认
+        // true 使长按直接存图（不进页操作底栏），本用例测「长按开底栏
+        // 暂停自动翻页」语义，须显式关闭长按存图保持旧菜单路径
+        configs: {
+          'mangaScrollMode': '1',
+          'mangaAutoReadSpeed': '15',
+          'mangaLongClickSaveImage': 'false',
+        },
       );
       final container = ProviderContainer(
         overrides: [bookApiProvider.overrideWithValue(api)],

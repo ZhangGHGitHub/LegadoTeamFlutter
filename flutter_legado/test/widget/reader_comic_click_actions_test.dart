@@ -31,6 +31,19 @@
 // 6. 长按图片项 → 底栏菜单（保存图片/分享图片/复制链接）；点「复制链接」
 //    → 剪贴板写入图片链接（参考版 CopyImage 的文本降级，见实现说明）。
 //
+// [P4-3 M4 批2] 行为开关组 + 背景色（原版语义取证：
+// - AppConfig.kt L747-748 volumeKeyPage 默认 **true** / L749-750
+//   reverseVolumeKeyPage 默认 false；L880-881 disableMangaScale 默认
+//   **true**；L886-887 mangaLongClickSaveImage 默认 **true**；
+//   L892-893 disableMangaPageAnim 默认 false；L906-907 disableClickScroll
+//   默认 false；L940-941 hideMangaTitle 默认 false；
+// - PreferKey.kt L134/L136/L219/L220/L221 键名即值（对齐 MangaConfigKeys）；
+// - 参考版 MangaSettings disableMangaCrossFade 默认 false（淡入开启）；
+//   mangaBgColor 新增键（默认 0xFF000000 黑 = 原版硬编码黑零变化）；
+// - 音量键翻页：平台无按键拦截通道 → 仅持久化登记，行为待平台支持
+//   （禁止改 Android 壳工程）；hideMangaTitle 映射 0 图卷章分隔页 +
+//   导航区标题隐藏（我方无独立章节标题页，不硬造）。
+//
 // [P4-3 W2-fix P1-2] 条漫点击「下一页」距章尾不足一视口时：先滚完剩余
 // 距离到章尾（部分消费），真正到章边界（consumed < 1）才切下一章
 //（对齐参考版 performWebtoonTap L705-732）。
@@ -46,6 +59,9 @@ import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/reader_comic/manga_click_actions.dart';
 import 'package:flutter_legado/src/screens/reader_comic/manga_page_image_resolver.dart';
 import 'package:flutter_legado/src/screens/reader_comic_screen.dart';
+import 'package:flutter_legado/src/widgets/manga/manga_config_sheet.dart';
+
+// [P4-3 M4 批2] 面板接线用例需断言面板类型（MangaConfigSheet）
 import 'package:flutter_legado/src/services/mock_book_api.dart';
 
 /// 1x1 透明 PNG（RGBA，68 字节，CRC 校验通过的合法编码）
@@ -78,7 +94,9 @@ BookSource _buildComicSource() {
 
 /// [P4-3 E5] 测试 Mock：可注入滚动模式 / 磁盘缓存 / 记录进度与解码调用
 ///
-/// [W2-fix] 新增 [chapterCount] 注入（条漫章尾部分消费切章用例需多章）
+/// [W2-fix] 新增 [chapterCount] 注入（条漫章尾部分消费切章用例需多章）；
+/// [P4-3 M4 批2] 新增 [isVolume] 注入（0 图卷章分隔页用例）+
+/// [setConfigCalls] 记录（面板持久化接线断言）
 class _ClickActionsMockApi extends MockBookApi {
   _ClickActionsMockApi({
     required this.source,
@@ -88,6 +106,7 @@ class _ClickActionsMockApi extends MockBookApi {
     this.imageCount = 3,
     this.chapterCount = 1,
     this.diskBytes,
+    this.isVolume = false,
   }) : _configs = configs ?? {};
 
   final BookSource source;
@@ -99,8 +118,13 @@ class _ClickActionsMockApi extends MockBookApi {
   final int chapterCount;
   /// 磁盘缓存注入（null = 未命中）
   final List<int>? diskBytes;
+  /// [P4-3 M4 批2] 章节 isVolume 标记（0 图卷章分隔页用例）
+  final bool isVolume;
   final List<String> decodeCalls = [];
   int imageCacheCalls = 0;
+
+  /// [P4-3 M4 批2] setConfig 调用记录（面板持久化接线断言）
+  final List<({String key, String value})> setConfigCalls = [];
 
   @override
   Future<List<BookSource>> getBookSources() async => [source];
@@ -126,6 +150,7 @@ class _ClickActionsMockApi extends MockBookApi {
           index: i,
           url: 'https://manga.example.com/comic/1/ch${i + 1}.html',
           title: '第${i + 1}章',
+          isVolume: isVolume,
         ),
       );
 
@@ -153,6 +178,8 @@ class _ClickActionsMockApi extends MockBookApi {
   @override
   Future<void> setConfig(String key, String value) async {
     _configs[key] = value;
+    // [P4-3 M4 批2] 记录持久化调用（面板行为开关/背景色接线断言）
+    setConfigCalls.add((key: key, value: value));
   }
 
   @override
@@ -184,6 +211,7 @@ _ClickActionsMockApi _buildApi({
   int imageCount = 3,
   int chapterCount = 1,
   List<int>? diskBytes,
+  bool isVolume = false,
   required List<List<int>> progressCalls,
 }) {
   return _ClickActionsMockApi(
@@ -194,6 +222,7 @@ _ClickActionsMockApi _buildApi({
     imageCount: imageCount,
     chapterCount: chapterCount,
     diskBytes: diskBytes,
+    isVolume: isVolume,
   );
 }
 
@@ -240,6 +269,25 @@ Future<double> _settleExtentStable(WidgetTester tester) async {
     prev = cur;
   }
   return prev;
+}
+
+/// [P4-3 M4 批2] 条漫滚到真实底部（强制构建章尾导航区 sliver）
+///
+/// 本 SDK 的 [ScrollPosition.jumpTo] 不收敛越界值（jumpTo(100000) 后
+/// pixels 仍为 100000、视口完全脱离内容 → 尾部 sliver 不构建）；
+/// 须迭代跳「当前范围内 maxScrollExtent」：每跳一次视口落当前底部、
+/// 强制构建尾部 sliver，extent 由「已构建项平均高估算」收敛到真值
+///（3×800+导航区−600），图片解码稳定后再跳一次锁定新底部。
+Future<void> _jumpToWebtoonBottom(WidgetTester tester) async {
+  final pos =
+      tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+  for (var i = 0; i < 5; i++) {
+    pos.jumpTo(pos.maxScrollExtent);
+    await tester.pump();
+  }
+  await _settleExtentStable(tester);
+  pos.jumpTo(pos.maxScrollExtent);
+  await tester.pump();
 }
 
 /// mock 系统剪贴板通道（setData 记录写入文本；getData 返回空）。
@@ -565,7 +613,12 @@ void main() {
 
     testWidgets('长按图片项 → 底栏菜单（保存/分享/复制链接）', (tester) async {
       final progressCalls = <List<int>>[];
-      final api = _buildApi(progressCalls: progressCalls);
+      // [P4-3 M4 批2] 长按存图默认开启（长按直接存图，原版默认 true）→
+      // 本用例显式注入 false，保持测「长按弹菜单」的旧语义
+      final api = _buildApi(
+        progressCalls: progressCalls,
+        configs: const {'mangaLongClickSaveImage': 'false'},
+      );
       final container = ProviderContainer(
         overrides: [bookApiProvider.overrideWithValue(api)],
       );
@@ -592,5 +645,368 @@ void main() {
       );
       expect(find.text('已复制图片链接'), findsOneWidget);
     });
+  });
+
+  // =====================================================================
+  // [P4-3 M4 批2] 行为开关组 + 背景色
+  // 原版语义取证（app/src/main/java/io/legado/app/）：
+  // - AppConfig.kt L747-748 volumeKeyPage 默认 **true** / L749-750
+  //   reverseVolumeKeyPage 默认 false；L880-881 disableMangaScale 默认
+  //   **true**；L886-887 mangaLongClickSaveImage 默认 **true**；
+  //   L892-893 disableMangaPageAnim 默认 false；L906-907 disableClickScroll
+  //   默认 false；L940-941 hideMangaTitle 默认 false；
+  // - PreferKey.kt L134/L136/L219/L220/L221 键名即值（MangaConfigKeys 对齐）；
+  // - 参考版 MangaSettings：disableMangaCrossFade 默认 false（淡入开启）、
+  //   background 0xFF000000；MangaSettingsPanel L334-561 开关顺序；
+  // - 原版 ReadMangaActivity L239-250 长按存图分支（开关开=直接存图、
+  //   关=页操作菜单）；
+  // - 音量键翻页：平台无按键拦截通道 → 仅持久化登记（键落库断言），
+  //   行为待平台支持，禁止改 Android 壳工程；
+  // - hideMangaTitle：我方无独立章节标题页 → 映射 0 图卷章分隔页标题 +
+  //   章节导航区标题隐藏（不硬造）。
+  group('[P4-3 M4 批2] 行为开关组 + 背景色', () {
+    testWidgets('disableClickScroll=true：翻页动作 1/2 失效，菜单 0 保留',
+        (tester) async {
+      final progressCalls = <List<int>>[];
+      final api = _buildApi(
+        configs: const {'mangaScrollMode': '1', 'disableClickScroll': 'true'},
+        progressCalls: progressCalls,
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      expect(find.textContaining('页数1/3'), findsOneWidget);
+
+      // 右上区（区2 = 动作1 下一页）→ 被禁用
+      await tester.tapAt(const Offset(667, 100));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('页数1/3'), findsOneWidget,
+          reason: '禁用点击翻页 → 翻页动作 1/2 失效（对齐参考版 L714/L1953）');
+      expect(progressCalls, isEmpty, reason: '未翻页 → 无进度写入');
+
+      // 中心区（区4 = 动作0 菜单）保留 → 控制栏出现
+      await tester.tapAt(const Offset(400, 300));
+      await tester.pumpAndSettle();
+      expect(find.text('测试漫画'), findsOneWidget,
+          reason: '菜单动作 0 保留');
+    });
+
+    testWidgets('disableMangaScale 默认 true：缩放层不渲染', (tester) async {
+      final api = _buildApi(progressCalls: <List<int>>[]);
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+      expect(find.byType(InteractiveViewer), findsNothing,
+          reason: '原版默认 disableMangaScale=true → 无 InteractiveViewer');
+    });
+
+    testWidgets('disableMangaScale=false：缩放层渲染', (tester) async {
+      final api = _buildApi(
+        configs: const {'disableMangaScale': 'false'},
+        progressCalls: <List<int>>[],
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+      expect(find.byType(InteractiveViewer), findsOneWidget);
+    });
+
+    testWidgets('disableMangaPageAnim=true：单页翻页即时跳转（jump）',
+        (tester) async {
+      final api = _buildApi(
+        configs: const {'mangaScrollMode': '1', 'disableMangaPageAnim': 'true'},
+        progressCalls: <List<int>>[],
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      expect(find.textContaining('页数1/3'), findsOneWidget);
+      // 右上区（动作1）→ jumpToPage 即时切换：单帧（100ms）后页已切换
+      await tester.tapAt(const Offset(667, 100));
+      await tester.pump(); // 100ms
+      expect(find.textContaining('页数2/3'), findsOneWidget,
+          reason: 'jump 即时切换（对照组 300ms 动画中点 150ms 前不切换）');
+    });
+
+    testWidgets('disableMangaPageAnim 默认 false：单页翻页走 300ms 动画',
+        (tester) async {
+      final api = _buildApi(
+        configs: const {'mangaScrollMode': '1'},
+        progressCalls: <List<int>>[],
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      expect(find.textContaining('页数1/3'), findsOneWidget);
+      // 右上区（动作1）→ animateToPage 300ms 进行中：
+      // 单帧（100ms）尚未过切换中点，页脚仍在第 1 页
+      await tester.tapAt(const Offset(667, 100));
+      await tester.pump(); // 100ms
+      expect(find.textContaining('页数1/3'), findsOneWidget,
+          reason: '动画进行中（100ms < 300ms 中点），页面未切换');
+
+      // 动画完成后切换
+      await tester.pumpAndSettle();
+      expect(find.textContaining('页数2/3'), findsOneWidget);
+    });
+
+    testWidgets('hideMangaTitle=true：条漫导航区标题隐藏（不硬造章节标题页）',
+        (tester) async {
+      final api = _buildApi(
+        configs: const {'hideMangaTitle': 'true'},
+        chapterCount: 2,
+        progressCalls: <List<int>>[],
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      await _jumpToWebtoonBottom(tester);
+
+      expect(find.text('第1章'), findsNothing,
+          reason: 'hideMangaTitle → 导航区标题隐藏');
+      expect(find.text('下一章'), findsOneWidget,
+          reason: '导航区已构建、按钮保留（防误判为整区缺失）');
+    });
+
+    testWidgets('hideMangaTitle 默认 false：条漫导航区标题显示',
+        (tester) async {
+      final api = _buildApi(
+        chapterCount: 2,
+        progressCalls: <List<int>>[],
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      await _jumpToWebtoonBottom(tester);
+
+      expect(find.text('第1章'), findsOneWidget);
+      expect(find.text('下一章'), findsOneWidget);
+    });
+
+    testWidgets('hideMangaTitle=true：0 图卷章分隔页标题隐藏（按钮保留）',
+        (tester) async {
+      final api = _buildApi(
+        configs: const {'hideMangaTitle': 'true'},
+        imageCount: 0,
+        chapterCount: 2,
+        isVolume: true,
+        progressCalls: <List<int>>[],
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      expect(find.text('第1章'), findsNothing,
+          reason: 'hideMangaTitle → 0 图卷章分隔页标题隐藏');
+      expect(find.text('下一章'), findsOneWidget,
+          reason: '分隔页导航按钮保留');
+    });
+
+    testWidgets('0 图卷章默认：分隔页标题显示（对照）', (tester) async {
+      final api = _buildApi(
+        imageCount: 0,
+        chapterCount: 2,
+        isVolume: true,
+        progressCalls: <List<int>>[],
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      expect(find.text('第1章'), findsOneWidget);
+      expect(find.text('下一章'), findsOneWidget);
+    });
+
+    testWidgets('mangaLongClickSaveImage 默认 true：长按直接存图（不弹菜单）',
+        (tester) async {
+      final api = _buildApi(progressCalls: <List<int>>[]);
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      // 长按第 1 张图 → 直接走存图分支（对齐原版 ReadMangaActivity L239-250）
+      await tester.longPressAt(const Offset(400, 100));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('保存图片'), findsNothing,
+          reason: '长按存图开启 → 不弹页操作菜单');
+      // widget 测试无 FilePicker 平台通道 → 存图 catch 兜底提示
+      // （证明走了存图分支而非菜单分支）
+      expect(
+        find.textContaining('保存图片失败'),
+        findsOneWidget,
+        reason: '存图分支触发（FilePicker MissingPluginException 被 catch）',
+      );
+    });
+
+    testWidgets('mangaLongClickSaveImage=false：长按弹页操作菜单',
+        (tester) async {
+      final api = _buildApi(
+        configs: const {'mangaLongClickSaveImage': 'false'},
+        progressCalls: <List<int>>[],
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      await tester.longPressAt(const Offset(400, 100));
+      await tester.pumpAndSettle();
+      expect(find.text('保存图片'), findsOneWidget,
+          reason: '长按存图关闭 → 长按弹现有页操作菜单');
+      expect(find.text('分享图片'), findsOneWidget);
+    });
+
+    testWidgets('disableMangaCrossFade 默认 false：图片加载淡入包裹渲染',
+        (tester) async {
+      final api = _buildApi(progressCalls: <List<int>>[]);
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      expect(find.byKey(const ValueKey('mangaImageFade')), findsWidgets,
+          reason: '默认淡入开启（参考版 disableMangaCrossFade=false）');
+    });
+
+    testWidgets('disableMangaCrossFade=true：淡入包裹不渲染', (tester) async {
+      final api = _buildApi(
+        configs: const {'disableMangaCrossFade': 'true'},
+        progressCalls: <List<int>>[],
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      expect(find.byKey(const ValueKey('mangaImageFade')), findsNothing);
+    });
+
+    testWidgets('mangaBgColor 默认黑：Scaffold 背景 0xFF000000',
+        (tester) async {
+      final api = _buildApi(progressCalls: <List<int>>[]);
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      expect(
+        tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
+        const Color(0xFF000000),
+        reason: '默认背景黑（对齐原版硬编码黑，零变化）',
+      );
+    });
+
+    testWidgets('mangaBgColor 持久化白（十进制 ARGB）：Scaffold 背景生效',
+        (tester) async {
+      // 0xFFFFFFFF = 4294967295（十进制 ARGB 持久化格式）
+      final api = _buildApi(
+        configs: const {'mangaBgColor': '4294967295'},
+        progressCalls: <List<int>>[],
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      expect(
+        tester.widget<Scaffold>(find.byType(Scaffold)).backgroundColor,
+        const Color(0xFFFFFFFF),
+      );
+    });
+
+    testWidgets('面板接线：行为开关 + 色板点选 → setConfig 持久化',
+        (tester) async {
+      final api = _buildApi(progressCalls: <List<int>>[]);
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      // 中心点击 → 控制栏 → 齿轮打开设置面板
+      await tester.tapAt(const Offset(400, 300));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('翻页设置'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MangaConfigSheet), findsOneWidget,
+          reason: '设置面板已打开');
+
+      // 面板 ListView 为惰性 sliver（视口 ± cacheExtent 外不构建）→
+      // 先滚「其他」卡入视野（面板 ListView = 树中最后一个）
+      final panelList = find.byType(ListView).last;
+      await tester.dragUntilVisible(
+        find.text('禁用点击翻页'),
+        panelList,
+        const Offset(0, -300),
+      );
+      expect(find.text('其他'), findsOneWidget,
+          reason: '「其他」区块渲染（滚入视野后构建）');
+      // 禁用点击翻页（默认 false → true）
+      await tester.tap(find.text('禁用点击翻页'));
+      await tester.pump();
+      // 音量键翻页（默认 true → false；仅持久化，行为待平台支持）
+      await tester.tap(find.text('音量键翻页'));
+      await tester.pump();
+      // 背景色板：白色 swatch（0xFFFFFFFF = 4294967295）。
+      // swatch 行位于「其他」卡最底行，dragUntilVisible 尾部
+      // ensureVisible 默认最小滚动（swatch 可能仅一角入视口，tap 命中
+      // 测试不命中 → 点选无效）→ 面板 Scrollable（树中最后一个；
+      // 面板内容无图片，extent 不漂移，单次 jump 到底即整行入视口）
+      final panelPos =
+          tester.state<ScrollableState>(find.byType(Scrollable).last).position;
+      panelPos.jumpTo(panelPos.maxScrollExtent);
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('mangaBgSwatch-4294967295')));
+      await tester.pump();
+
+      expect(
+        api.setConfigCalls,
+        contains((key: 'disableClickScroll', value: 'true')),
+        reason: '禁用点击翻页持久化',
+      );
+      expect(
+        api.setConfigCalls,
+        contains((key: 'volumeKeyPage', value: 'false')),
+        reason: '音量键翻页（关闭）持久化',
+      );
+      expect(
+        api.setConfigCalls,
+        contains((key: 'mangaBgColor', value: '4294967295')),
+        reason: '背景色（十进制 ARGB）持久化',
+      );
+    });
+
   });
 }
