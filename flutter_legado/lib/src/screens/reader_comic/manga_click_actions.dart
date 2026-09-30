@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// [P4-3 E5] 漫画屏九区（3x3）点击动作配置
 ///
 /// 取证（参考版，legado-with-MD3）：
@@ -64,6 +66,43 @@ abstract final class MangaClickActions {
   }
 
   /// 配置循环的下一个动作（对齐参考版 nextMangaClickAction：
-  /// -1→0→1→2→3→4→-1）。预留给后续九宫格编辑器使用。
+  /// -1→0→1→2→3→4→-1）。九宫格编辑器点击循环切换使用。
   static int cycleNext(int action) => action == prevChapter ? none : action + 1;
+
+  /// 动作中文名（对齐参考版 ClickActionsSettingsContent labels：
+  /// 无操作 / 菜单 / 下一页 / 上一页 / 下一章 / 上一章）
+  static String labelOf(int action) => switch (action) {
+        none => '无操作',
+        menu => '菜单',
+        next => '下一页',
+        prev => '上一页',
+        nextChapter => '下一章',
+        prevChapter => '上一章',
+        _ => '无操作',
+      };
+
+  /// 归一化动作值：越界/非法回 [none]（编辑器循环与配置解析共用）
+  static int normalize(int action) =>
+      (action >= none && action <= prevChapter) ? action : none;
+
+  /// 解析持久化串（JSON 数组，9 值）；缺失/非法/长度不符回默认配置
+  static List<int> parse(String? raw) {
+    if (raw == null || raw.isEmpty) return defaultActions;
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is List) {
+        final list = decoded
+            .whereType<num>()
+            .map((n) => normalize(n.toInt()))
+            .toList();
+        if (list.length == defaultActions.length) return list;
+      }
+    } catch (_) {
+      // 非法 JSON → 默认配置
+    }
+    return defaultActions;
+  }
+
+  /// 序列化为持久化串（JSON 数组）
+  static String serialize(List<int> actions) => jsonEncode(actions);
 }

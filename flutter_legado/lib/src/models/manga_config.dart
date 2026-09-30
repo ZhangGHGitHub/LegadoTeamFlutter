@@ -275,6 +275,11 @@ abstract final class MangaConfigKeys {
   /// 阅读背景颜色（ARGB 整型十进制持久化，默认 0xFF000000 黑；
   /// 接 Scaffold 背景色 = 图片未覆盖区域底色）
   static const mangaBgColor = 'mangaBgColor';
+
+  /// 九区（3x3）点击动作配置（[P4-3 M5] JSON 数组 9 值持久化，
+  /// 默认对齐参考版 Contract L167 [-1,-1,1,2,0,1,2,1,1]；
+  /// 经设置面板九宫格编辑器循环切换，见 MangaClickActions）
+  static const mangaClickActions = 'mangaClickActions';
 }
 
 /// [P4-3 M4 批2] 漫画阅读背景色预设色板（ARGB 整型）

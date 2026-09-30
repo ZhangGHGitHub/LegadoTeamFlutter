@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../models/manga_config.dart';
 import '../../screens/reader_comic/manga_auto_read.dart';
+import '../../screens/reader_comic/manga_click_actions.dart';
 import '../../screens/reader_comic/manga_page_scale_type.dart';
 import '../../screens/reader_comic/manga_scroll_mode.dart';
 
@@ -111,6 +112,11 @@ class MangaConfigSheet extends StatefulWidget {
   /// 背景色变更（非 null 时渲染「其他」区块）
   final ValueChanged<int>? onMangaBgColorChanged;
 
+  /// [P4-3 M5] 九区点击动作（9 值；null = 默认配置）与变更回调
+  /// （非 null 时渲染「点击区域」区块；回调参数 = 被点击格索引）
+  final List<int>? clickActions;
+  final ValueChanged<int>? onClickActionChanged;
+
   const MangaConfigSheet({
     super.key,
     required this.colorFilter,
@@ -153,6 +159,9 @@ class MangaConfigSheet extends StatefulWidget {
     this.onMangaLongClickSaveImageChanged,
     this.onDisableMangaCrossFadeChanged,
     this.onMangaBgColorChanged,
+    // [P4-3 M5] 点击区编辑器（可选；不传则不渲染区块）
+    this.clickActions,
+    this.onClickActionChanged,
   });
 
   static Future<void> show(
@@ -200,6 +209,9 @@ class MangaConfigSheet extends StatefulWidget {
     ValueChanged<bool>? onMangaLongClickSaveImageChanged,
     ValueChanged<bool>? onDisableMangaCrossFadeChanged,
     ValueChanged<int>? onMangaBgColorChanged,
+    // [P4-3 M5] 点击区编辑器（可选）
+    List<int>? clickActions,
+    ValueChanged<int>? onClickActionChanged,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -244,6 +256,8 @@ class MangaConfigSheet extends StatefulWidget {
         onMangaLongClickSaveImageChanged: onMangaLongClickSaveImageChanged,
         onDisableMangaCrossFadeChanged: onDisableMangaCrossFadeChanged,
         onMangaBgColorChanged: onMangaBgColorChanged,
+        clickActions: clickActions,
+        onClickActionChanged: onClickActionChanged,
       ),
     );
   }
@@ -285,6 +299,9 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
   late bool _mangaLongClickSaveImage;
   late bool _disableMangaCrossFade;
   late int _mangaBgColor;
+
+  /// [P4-3 M5] 九区点击动作本地态（面板内即时刷新，持久化经回调）
+  late List<int> _clickActions;
 
   /// [P4-3 M4 批3] 面板滚动控制：「滤镜」入口锚点跳转（ensureVisible
   /// 经目标 ScrollPosition）需面板列表处于可控滚动状态
@@ -328,9 +345,12 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
       MangaScrollModes.isWebtoon(_scrollMode);
 
   /// [P4-3 M4 批2] 是否渲染「其他」区块（行为开关组 + 背景色板）：
-  /// 上游显式接线（onMangaBgColorChanged 非 null）时才渲染，
-  /// 保证既有未接线的 sheet 用法/测试不受影响
+  /// 上游显式接线（onMangaBgColorChanged 非 null）时才渲染，  /// 保证既有未接线的 sheet 用法/测试不受影响
   bool get _showBehaviorSection => widget.onMangaBgColorChanged != null;
+
+  /// [P4-3 M5] 是否渲染「点击区域」区块（九宫格编辑器）：
+  /// 上游显式接线（onClickActionChanged 非 null）时才渲染
+  bool get _showClickActionsSection => widget.onClickActionChanged != null;
 
   @override
   void initState() {
@@ -360,6 +380,8 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
     _mangaLongClickSaveImage = widget.mangaLongClickSaveImage ?? true;
     _disableMangaCrossFade = widget.disableMangaCrossFade ?? false;
     _mangaBgColor = widget.mangaBgColor ?? MangaBgColors.black;
+    _clickActions =
+        List<int>.from(widget.clickActions ?? MangaClickActions.defaultActions);
   }
 
   @override
@@ -679,7 +701,6 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     _divider(),
                     _checkboxTile(
                       title: '音量键翻页',
-                      subtitle: '平台无按键拦截通道，仅保存设置',
                       value: _volumeKeyPage,
                       onChanged: (v) {
                         setState(() => _volumeKeyPage = v);
@@ -717,6 +738,14 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     _bgColorRow(),
                   ]),
                 ],
+                // [P4-3 M5] 「点击区域」区块：九宫格编辑器（对齐参考版
+                // MangaSettingsPanel L772-802 ClickActionsSettingsContent：
+                // 3x3 网格每格显示当前动作名，点击循环切换
+                // -1→0→1→2→3→4→-1 并持久化，屏内即时生效）
+                if (_showClickActionsSection) ...[
+                  _section('点击区域'),
+                  _card([_clickActionsGrid()]),
+                ],
               ],
             ),
           ),
@@ -725,8 +754,73 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
     );
   }
 
-  Widget _section(String title) {
+  /// [P4-3 M5] 九宫格点击区编辑器（对齐参考版 ClickActionsSettingsContent
+  /// L772-802）：3x3 网格每格按钮显示当前动作名，点击循环切换
+  /// （-1→0→1→2→3→4→-1）并经 [MangaConfigSheet.onClickActionChanged]
+  /// 持久化；底部提示对齐参考版 cycle hint。
+  Widget _clickActionsGrid() {
     final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var row = 0; row < 3; row++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                children: [
+                  for (var col = 0; col < 3; col++)
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        child: _clickActionCell(
+                          scheme,
+                          index: row * 3 + col,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          const SizedBox(height: 4),
+          Text(
+            '点击格子循环切换该区域动作',
+            style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 单格动作按钮：显示当前动作名（无操作/菜单/下一页/上一页/下一章/
+  /// 上一章）；点击循环切换并持久化（本地态即时刷新）
+  Widget _clickActionCell(ColorScheme scheme, {required int index}) {
+    final action = index < _clickActions.length
+        ? _clickActions[index]
+        : MangaClickActions.menu;
+    return OutlinedButton(
+      key: ValueKey('mangaClickActionCell-$index'),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        foregroundColor: scheme.onSurface,
+        side: BorderSide(color: scheme.outlineVariant),
+      ),
+      onPressed: () {
+        final next = MangaClickActions.cycleNext(action);
+        setState(() {
+          _clickActions = List<int>.from(_clickActions)..[index] = next;
+        });
+        widget.onClickActionChanged?.call(index);
+      },
+      child: Text(
+        MangaClickActions.labelOf(action),
+        style: const TextStyle(fontSize: 13),
+      ),
+    );
+  }
+
+  Widget _section(String title) {    final scheme = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
       child: Text(

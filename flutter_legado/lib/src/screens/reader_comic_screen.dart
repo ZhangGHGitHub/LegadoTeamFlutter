@@ -170,9 +170,10 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   bool _pagedReversed = false;
   int _pagedGen = 0;
 
-  /// [P4-3 E5] 九区点击动作（9 格行优先；对齐参考版 Contract L167 默认值，
-  /// 固定不可改——九区编辑器不在本波范围，见 manga_click_actions.dart 注释）
-  final List<int> _clickActions = MangaClickActions.defaultActions;
+  /// [P4-3 E5 / M5] 九区点击动作（9 格行优先；默认对齐参考版 Contract
+  /// L167 [-1,-1,1,2,0,1,2,1,1]；经设置面板九宫格编辑器可改并持久化
+  /// 于 [MangaConfigKeys.mangaClickActions]）
+  List<int> _clickActions = MangaClickActions.defaultActions;
 
   /// [P4-3 E5] 点击按下位置（tap-up 时换算位移，区分点击与滑动/缩放意图）
   Offset? _tapDownPosition;
@@ -306,6 +307,11 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     _menuCtrl.dispose();
     // [P4-3 E1] 单页式控制器（此时元素树已卸载，控制器已解绑，可安全释放）
     _pagedController?.dispose();
+    // [P4-3 M5] 音量键捕获注销：退出阅读器立即关闭，防拦截范围
+    // 外泄到其它页面（系统音量键恢复默认行为）
+    final bridge = PlatformBridgeService.instance;
+    bridge.unregisterVolumeKeyHandler();
+    unawaited(bridge.setVolumeKeyCapture(false));
     // 退出前保存阅读进度
     unawaited(_saveProgress());
     super.dispose();
@@ -342,6 +348,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       final volKeyRaw = await api.getConfig(MangaConfigKeys.volumeKeyPage);
       final revVolKeyRaw =
           await api.getConfig(MangaConfigKeys.reverseVolumeKeyPage);
+      final clickActionsRaw =
+          await api.getConfig(MangaConfigKeys.mangaClickActions);
       final longClickSaveRaw =
           await api.getConfig(MangaConfigKeys.mangaLongClickSaveImage);
       final crossFadeRaw =
@@ -369,9 +377,13 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
             longClickSaveRaw == null ? true : longClickSaveRaw == 'true';
         _disableMangaCrossFade = crossFadeRaw == 'true';
         _mangaBgColor = MangaBgColors.parse(bgRaw);
+        // [P4-3 M5] 九区点击动作（缺省/非法回参考版默认配置）
+        _clickActions = MangaClickActions.parse(clickActionsRaw);
       });
       // [P4-3 E1] 配置可能在图片加载后才生效：同步单页式控制器
       _applyScrollMode();
+      // [P4-3 M5] 音量键捕获同步（开关开启时注册，对齐原版阅读器内拦截）
+      _syncVolumeKeyCapture();
       await _applyBrightness(_colorFilter.l);
     } catch (_) {}
   }
@@ -400,6 +412,45 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     if (enabled == _autoRead) return;
     if (mounted) setState(() => _autoRead = enabled);
     _restartAutoReadTimer();
+  }
+
+  /// [P4-3 M5] 音量键捕获同步：仅阅读器活跃且开关开启时启用捕获
+  /// （对齐原版 ReadMangaActivity.onKeyDown L894-902 的阅读器内
+  /// 拦截语义；壳侧 onKeyDown 捕获后经 legado/reader_keys 通道回发）
+  void _syncVolumeKeyCapture() {
+    final bridge = PlatformBridgeService.instance;
+    if (_volumeKeyPage) {
+      bridge.registerVolumeKeyHandler(_handleVolumeKey);
+      unawaited(bridge.setVolumeKeyCapture(true));
+    } else {
+      bridge.unregisterVolumeKeyHandler();
+      unawaited(bridge.setVolumeKeyCapture(false));
+    }
+  }
+
+  /// [P4-3 M5] 音量键事件：up=上一页、down=下一页（对齐原版
+  /// scrollToPrev/scrollToNext），反转开关交换方向；走九区点击同一
+  /// 导航链 [_stepPage]（条漫滚动/单页翻页自然适配，边界与点击一致）
+  Future<void> _handleVolumeKey(String direction) async {
+    if (!mounted || !_volumeKeyPage) return;
+    final forward = direction == 'down';
+    final next = _reverseVolumeKeyPage ? !forward : forward;
+    _stepPage(next ? 1 : -1);
+  }
+
+  /// [P4-3 M5] 九区点击动作循环切换并持久化（对齐参考版
+  /// UpdateClickAction → nextMangaClickAction 循环 -1→0→1→2→3→4→-1）
+  Future<void> _cycleClickAction(int index) async {
+    if (index < 0 || index >= _clickActions.length) return;
+    final next = MangaClickActions.cycleNext(_clickActions[index]);
+    final updated = List<int>.from(_clickActions)..[index] = next;
+    if (mounted) setState(() => _clickActions = updated);
+    try {
+      await ref.read(bookApiProvider).setConfig(
+            MangaConfigKeys.mangaClickActions,
+            MangaClickActions.serialize(updated),
+          );
+    } catch (_) {}
   }
 
   /// [P4-3 E3] 持久化自动翻页速度档并重启定时器（1..15，越限收敛）
@@ -796,7 +847,11 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       onHideMangaTitleChanged: (v) => unawaited(_persistMangaBool(
           MangaConfigKeys.hideMangaTitle, v, (x) => _hideMangaTitle = x)),
       onVolumeKeyPageChanged: (v) => unawaited(_persistMangaBool(
-          MangaConfigKeys.volumeKeyPage, v, (x) => _volumeKeyPage = x)),
+          MangaConfigKeys.volumeKeyPage, v, (x) {
+        _volumeKeyPage = x;
+        // [P4-3 M5] 开关即时启停捕获（关闭立即恢复系统音量键）
+        _syncVolumeKeyCapture();
+      })),
       onReverseVolumeKeyPageChanged: (v) => unawaited(_persistMangaBool(
           MangaConfigKeys.reverseVolumeKeyPage,
           v,
@@ -810,6 +865,10 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
           v,
           (x) => _disableMangaCrossFade = x)),
       onMangaBgColorChanged: (v) => unawaited(_persistMangaBgColor(v)),
+      // [P4-3 M5] 九宫格点击区编辑器（对齐参考版 ClickActionsSettingsContent
+      // L772-802：点击循环切换；单格索引回调，屏内即时生效）
+      clickActions: _clickActions,
+      onClickActionChanged: (index) => unawaited(_cycleClickAction(index)),
     );
   }
 
