@@ -10,6 +10,7 @@ import '../routes.dart';
 import '../services/settings_service.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
+import '../widgets/pill_divider.dart';
 
 /// 远程书库（对齐原版 RemoteBookActivity）
 ///
@@ -104,7 +105,7 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
               },
               itemBuilder: (_) => [
                 const PopupMenuItem(value: 'server', child: Text('服务器配置')),
-                const PopupMenuDivider(),
+                const PillMenuDivider(),
                 CheckedPopupMenuItem(
                   value: 'sort_name',
                   checked: state.sortKey == RemoteBookSort.name,
@@ -115,7 +116,7 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                   checked: state.sortKey == RemoteBookSort.time,
                   child: const Text('按时间'),
                 ),
-                const PopupMenuDivider(),
+                const PillMenuDivider(),
                 const PopupMenuItem(
                   value: 'webdav_settings',
                   child: Text('默认 WebDAV 设置'),

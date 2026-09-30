@@ -14,6 +14,7 @@ import '../providers/providers.dart';
 import '../routes.dart';
 import '../services/source_import_service.dart';
 import '../widgets/custom_group_dialog.dart';
+import '../widgets/pill_divider.dart';
 
 /// 关联导入弹出式确认对话框（对标原版各 ImportXxxDialog，视觉遵循 MD3）
 ///
@@ -479,7 +480,7 @@ class _AssociationImportDialogState
                   value: 'select_update',
                   child: Text('选中更新源'),
                 ),
-                const PopupMenuDivider(),
+                const PillMenuDivider(),
                 CheckedPopupMenuItem(
                   value: 'keep_name',
                   checked: _keepName,

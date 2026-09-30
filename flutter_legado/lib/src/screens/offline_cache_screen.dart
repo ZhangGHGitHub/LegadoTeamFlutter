@@ -17,6 +17,7 @@ import '../utils/book_open_utils.dart';
 import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/export_dialog.dart';
 import '../widgets/loading_indicator.dart';
+import '../widgets/pill_divider.dart';
 
 /// 离线缓存界面（对齐原版 CacheActivity）
 ///
@@ -357,7 +358,7 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
               PopupMenuItem(
                   value: 'download_after', child: Text('缓存当前章节之后')),
               PopupMenuItem(value: 'stop_all', child: Text('停止全部下载')),
-              PopupMenuDivider(),
+              PillMenuDivider(),
               PopupMenuItem(value: 'queue', child: Text('下载队列')),
             ],
           ),

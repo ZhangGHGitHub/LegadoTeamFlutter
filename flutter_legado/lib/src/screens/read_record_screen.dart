@@ -18,6 +18,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
 import '../utils/error_message.dart';
+import '../widgets/pill_divider.dart';
 
 /// 阅读记录页（对齐原版 `ReadRecordActivity`）
 ///
@@ -122,7 +123,7 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
                 checked: state.sortMode == ReadRecordSortMode.lastRead,
                 child: const Text('按最后阅读'),
               ),
-              const PopupMenuDivider(),
+              const PillMenuDivider(),
               CheckedPopupMenuItem(
                 value: 'enable_record',
                 checked: state.enableRecord,

@@ -115,7 +115,7 @@ extension _SourceActions on _SourceScreenState {
           ],
         ),
       ),
-      const PopupMenuDivider(),
+      const PillMenuDivider(),
       sortItem(SourceSort.manual, '手动排序'),
       sortItem(SourceSort.weight, '自动排序（权重）'),
       sortItem(SourceSort.name, '按名称'),

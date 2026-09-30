@@ -12,6 +12,7 @@ import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../widgets/app_progress_indicator.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/pill_divider.dart';
 
 /// 单条正文搜索结果
 class _ContentMatch {
@@ -410,7 +411,7 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
                 checked: _SearchContentOptions.useRegex,
                 child: const Text('正则'),
               ),
-              const PopupMenuDivider(),
+              const PillMenuDivider(),
               // [C4 双基准对齐] 搜索范围三档：语义取重构版 SearchContentPrefsPort
               //（仅当前章 / 本书已缓存 / 本书含网络），参考版「仅本书」对应已缓存档
               CheckedPopupMenuItem(

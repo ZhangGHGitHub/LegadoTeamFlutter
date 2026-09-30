@@ -55,3 +55,28 @@ class SettingItemDivider extends StatelessWidget {
     return PillDivider(widthFraction: 0.8, enabled: enabled);
   }
 }
+
+/// 弹窗菜单项间分隔（PopupMenuEntry 形态）。
+///
+/// 对标参考版 `PillDivider()` 在 RoundDropdownMenuItem 之间的用法
+/// （PillDivider.kt 被 13 文件引用，均为弹窗菜单项分隔），亦为我方
+/// `PopupMenuDivider` 的形态替代：高度沿用 PopupMenuDivider 的 16dp，
+/// 内容为 20% 宽胶囊线（PillDivider 默认参数）。
+/// 泛型与宿主 `PopupMenuButton<T>` 的 T 一致（由上下文推断）。
+class PillMenuDivider<T> extends PopupMenuEntry<T> {
+  const PillMenuDivider({super.key});
+
+  @override
+  double get height => 16;
+
+  @override
+  bool represents(T? value) => false;
+
+  @override
+  State<PillMenuDivider<T>> createState() => _PillMenuDividerState<T>();
+}
+
+class _PillMenuDividerState<T> extends State<PillMenuDivider<T>> {
+  @override
+  Widget build(BuildContext context) => const PillDivider();
+}

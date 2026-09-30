@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import '../widgets/legado_app_bar.dart';
@@ -10,6 +10,7 @@ import '../models/models.dart';
 import '../providers/source/source_notifier.dart';
 import '../services/source_import_service.dart';
 import '../widgets/custom_group_dialog.dart';
+import '../widgets/pill_divider.dart';
 
 /// 书源导入状态（对标原版 ImportBookSourceStatus）
 enum _ImportStatus {
@@ -264,7 +265,7 @@ class _SourceImportConfirmScreenState
                 value: 'select_update',
                 child: Text('选中更新源'),
               ),
-              const PopupMenuDivider(),
+              const PillMenuDivider(),
               CheckedPopupMenuItem(
                 value: 'keep_name',
                 checked: _keepName,
