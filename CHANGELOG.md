@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.339] - 2026-10-01
+
+### Changed
+- [UI] 设置开关行整行可点即切换（对齐参考版 SwitchSettingItem；我的/其他设置/外观/备份与恢复 4 屏 39 行）。
+- [UI] GLOBALCOMP B4/B5：新增 AppScaffold 统一页壳（首批 12 屏迁移，零改写直通行为等价）与 SettingSwitchRow 设置开关行族；IosListTile 增透传参数（存量零影响）；book_info 菜单分隔换统一 PillMenuDivider（内部重构，其余行为不变）。
+
 ## [2.0.338] - 2026-10-01
 
 ### Fixed
