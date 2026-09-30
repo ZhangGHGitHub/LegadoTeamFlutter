@@ -149,8 +149,8 @@ Future<void> _enableAutoRead(WidgetTester tester) async {
   // 中心点击 → 控制栏显示
   await tester.tapAt(_centerOffset(tester));
   await tester.pumpAndSettle();
-  // 顶栏「漫画设置」
-  await tester.tap(find.byTooltip('漫画设置'));
+  // 底栏「翻页设置」键（[P4-3 M1] 菜单对齐参考版后入口改底栏）
+  await tester.tap(find.byTooltip('翻页设置'));
   await tester.pumpAndSettle();
   // 「自动翻页」开关（SwitchListTile 标题定位，避免命中灰度/电子纸开关）
   final switchTile = find.widgetWithText(SwitchListTile, '自动翻页');
@@ -239,7 +239,7 @@ void main() {
       // 再关开关 → 停止翻页（「再点停止」语义）
       await tester.tapAt(_centerOffset(tester));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('漫画设置'));
+      await tester.tap(find.byTooltip('翻页设置'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(SwitchListTile, '自动翻页'));
       await tester.pumpAndSettle();
@@ -364,7 +364,7 @@ void main() {
       // 收尾：关自动翻页（取消周期定时器，避免测试残留活动 Timer）
       await tester.tapAt(_centerOffset(tester));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('漫画设置'));
+      await tester.tap(find.byTooltip('翻页设置'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(SwitchListTile, '自动翻页'));
       await tester.pumpAndSettle();
@@ -432,7 +432,7 @@ void main() {
       // 收尾：关自动翻页（取消周期定时器，避免测试残留活动 Timer）
       await tester.tapAt(_centerOffset(tester));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('漫画设置'));
+      await tester.tap(find.byTooltip('翻页设置'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(SwitchListTile, '自动翻页'));
       await tester.pumpAndSettle();
@@ -573,7 +573,7 @@ void main() {
       // 收尾：关自动翻页（取消周期定时器，避免测试残留活动 Timer）
       await tester.tapAt(_centerOffset(tester));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('漫画设置'));
+      await tester.tap(find.byTooltip('翻页设置'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(SwitchListTile, '自动翻页'));
       await tester.pumpAndSettle();
@@ -653,7 +653,7 @@ void main() {
       // 收尾：关自动翻页（取消周期定时器，避免测试残留活动 Timer）
       await tester.tapAt(_centerOffset(tester));
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('漫画设置'));
+      await tester.tap(find.byTooltip('翻页设置'));
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(SwitchListTile, '自动翻页'));
       await tester.pumpAndSettle();

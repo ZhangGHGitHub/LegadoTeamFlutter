@@ -118,11 +118,11 @@ class _ScaleMockApi extends MockBookApi {
   Future<List<int>?> getImageCache(String bookUrl, String url) async => null;
 }
 
-/// 打开漫画设置面板（控制栏 → 顶栏「漫画设置」）
+/// 打开漫画设置面板（控制栏 → 底栏「翻页设置」键 [P4-3 M1]）
 Future<void> _openSheet(WidgetTester tester) async {
   await tester.tapAt(const Offset(400, 300));
   await tester.pumpAndSettle();
-  await tester.tap(find.byTooltip('漫画设置'));
+  await tester.tap(find.byTooltip('翻页设置'));
   await tester.pumpAndSettle();
 }
 

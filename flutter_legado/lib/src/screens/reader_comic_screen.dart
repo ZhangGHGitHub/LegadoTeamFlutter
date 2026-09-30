@@ -9,7 +9,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
-import 'package:material_symbols_icons/symbols.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/bridge_http.dart';
@@ -25,7 +24,9 @@ import '../widgets/loading_indicator.dart';
 import '../widgets/error_view.dart';
 import '../widgets/manga/manga_config_sheet.dart';
 import 'reader_comic/manga_auto_read.dart';
+import 'reader_comic/manga_catalog_sheet.dart';
 import 'reader_comic/manga_click_actions.dart';
+import 'reader_comic/manga_menu.dart';
 import 'reader_comic/manga_paged_view.dart';
 import 'reader_comic/manga_page_actions_sheet.dart';
 import 'reader_comic/manga_page_image_resolver.dart';
@@ -46,7 +47,8 @@ class ReaderComicScreen extends ConsumerStatefulWidget {
   ConsumerState<ReaderComicScreen> createState() => _ReaderComicScreenState();
 }
 
-class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
+class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
+    with SingleTickerProviderStateMixin {
   /// 滚动控制器，用于纵向连续滚动
   final ScrollController _scrollController = ScrollController();
 
@@ -70,6 +72,22 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
 
   /// 是否显示控制栏（顶部返回 + 底部进度条）
   bool _showControls = false;
+
+  /// [P4-3 M1] 菜单（顶栏/底栏）显隐动画控制器：
+  /// 顶栏自上滑入、底栏自下滑入 + 淡入；隐藏时反向播放，**动画落定后
+  /// 菜单子树从树中移除**（build 的 AnimatedBuilder 在动画结束帧返回
+  /// SizedBox.shrink），保证隐藏态 `find.text(书名)` findsNothing
+  /// （测试确定性，对齐既有 click_actions 用例的显隐断言）。
+  late final AnimationController _menuCtrl;
+
+  /// [P4-3 M1] 顶栏滑动（-1 → 0）
+  late final Animation<Offset> _topBarPos;
+
+  /// [P4-3 M1] 底栏滑动（1 → 0）
+  late final Animation<Offset> _bottomBarPos;
+
+  /// [P4-3 M1] 菜单淡入淡出
+  late final Animation<double> _menuOpacity;
 
   /// 已预加载的图片索引集合（避免重复预加载）
   final Set<int> _preloadedIndices = {};
@@ -203,6 +221,21 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
+    // [P4-3 M1] 菜单显隐动画（200ms，对齐既有 300ms 翻页动画的快显隐档位）
+    _menuCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 200),
+    );
+    final curve = CurvedAnimation(parent: _menuCtrl, curve: Curves.easeOut);
+    _topBarPos = Tween<Offset>(
+      begin: const Offset(0, -1),
+      end: Offset.zero,
+    ).animate(curve);
+    _bottomBarPos = Tween<Offset>(
+      begin: const Offset(0, 1),
+      end: Offset.zero,
+    ).animate(curve);
+    _menuOpacity = curve;
     unawaited(_loadMangaConfig());
     unawaited(_loadBook());
   }
@@ -213,6 +246,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     _scrollController.dispose();
     // [P4-3 E3] 取消自动翻页定时器
     _autoReadTimer?.cancel();
+    // [P4-3 M1] 菜单显隐动画控制器
+    _menuCtrl.dispose();
     // [P4-3 E1] 单页式控制器（此时元素树已卸载，控制器已解绑，可安全释放）
     _pagedController?.dispose();
     // 退出前保存阅读进度
@@ -608,6 +643,66 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       // [P4-3 E2] 分页适配类型变更持久化（对齐参考版 ViewModel L816）
       onPageScaleTypeChanged: (v) => unawaited(_persistPageScaleType(v)),
     );
+  }
+
+  /// [P4-3 M1] 刷新键：重载当前章节（对齐参考版 RefreshChapter，
+  /// MangaReaderViewModel L244-253：setMenuVisible(false) +
+  /// invalidateCurrentChapter() + RetryChapter）：先收起控制栏，再走
+  /// [_loadChapterImages] 重取路径（清空内容缓存 → 在线 fetchChapterContent
+  /// 重抓 / 本地 getChapterContent 重读）。
+  void _refreshChapter() {
+    if (_showControls) _toggleControls();
+    unawaited(_loadChapterImages());
+  }
+
+  /// [P4-3 M1] 目录键：弹目录 bottom sheet（对齐参考版 OpenCatalog =
+  /// ReaderBookSheetRoute(initialTab=Toc)，取证见 manga_catalog_sheet.dart）
+  void _openCatalog() {
+    MangaCatalogSheet.show(
+      context,
+      chapters: _chapters,
+      currentIndex: _currentChapterIndex,
+      onSelected: (index) => unawaited(_goToChapter(index)),
+    );
+  }
+
+  /// [P4-3 M1] 底栏页进度滑条 seek：跳到目标逻辑页（对齐参考版
+  /// SeekToPage intent；no-op 守卫：目标 = 当前页 / 已在目标像素时不触发
+  /// 进度写入，保证 progressCalls 不因无效拖拽增长）
+  void _seekToPage(int page) {
+    final n = _imageUrls.length;
+    if (n == 0) return;
+    final target = page.clamp(0, n - 1);
+    if (target == _visiblePageIndex) return;
+    if (MangaScrollModes.isPaged(_scrollMode)) {
+      // 单页式：PageController 动画翻到目标显示索引（逻辑页 → 显示索引
+      // 经 MangaPagedView.displayIndexOf 换算，R2L 时控制器方向取反，
+      // 同 _stepPage 先例）
+      final controller = _pagedController;
+      if (controller == null || !controller.hasClients) return;
+      final display = MangaPagedView.displayIndexOf(
+        logicalPage: target,
+        pageCount: n,
+        reversed: MangaScrollModes.isReversed(_scrollMode),
+      );
+      final current = (controller.page ?? 0).round();
+      if (current == display) return; // 已在目标页（动画未落定）
+      controller.animateToPage(
+        display,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeInOut,
+      );
+      return;
+    }
+    // 条漫：按页比例估算像素跳转（与 [_onScroll] 的可见页近似公式
+    // ratio×(n-1) 自洽，跳后 _onScroll 回读一致）
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    final max = position.maxScrollExtent;
+    if (max <= 0) return;
+    final targetPixels = n > 1 ? max * target / (n - 1) : 0.0;
+    if ((targetPixels - position.pixels).abs() < 1) return; // 已在目标
+    position.jumpTo(targetPixels);
   }
 
   /// 图片渲染滤镜：灰度用 ColorFilter；电子纸走真像素二值化（见图片组件）
@@ -1133,6 +1228,13 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     setState(() {
       _showControls = !_showControls;
     });
+    // [P4-3 M1] 菜单滑入/滑出动画（隐藏时动画落定后子树移除，
+    // 见 build 的 AnimatedBuilder）
+    if (_showControls) {
+      _menuCtrl.forward();
+    } else {
+      _menuCtrl.reverse();
+    }
     // [P4-3 E3] 控制栏收起 = 自动翻页恢复（对齐参考版 LaunchedEffect 依赖
     // menuVisible/activeSheet 变化重建：从新周期开始计时）
     if (!_showControls) _restartAutoReadTimer();
@@ -1412,10 +1514,21 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
                   _buildContent(),
                   // 漫画页脚信息条（对标原版 ReaderInfoBar）
                   if (!_footerConfig.hideFooter) _buildMangaFooter(),
-                  // 顶部控制栏
-                  if (_showControls) _buildTopBar(),
-                  // 底部进度条
-                  if (_showControls) _buildBottomBar(),
+                  // [P4-3 M1] 菜单顶栏（悬浮胶囊，透明底 + 滑入动画；
+                  // 隐藏动画落定后 AnimatedBuilder 返回 shrink 移除子树）
+                  Positioned(
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    child: _buildAnimatedMenu(_topBarPos, _buildTopBar),
+                  ),
+                  // [P4-3 M1] 菜单底栏（悬浮圆角面板，两行结构）
+                  Positioned(
+                    bottom: 0,
+                    left: 0,
+                    right: 0,
+                    child: _buildAnimatedMenu(_bottomBarPos, _buildBottomBar),
+                  ),
                 ],
               ),
             );
@@ -1782,70 +1895,55 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     );
   }
 
-  /// 构建顶部控制栏
-  Widget _buildTopBar() {
-    return Positioned(
-      top: 0,
-      left: 0,
-      right: 0,
-      child: Material(
-        color: const Color(0xCC000000),
-        child: SafeArea(
-          bottom: false,
-          child: SizedBox(
-            height: kToolbarHeight,
-            child: Row(
-              children: [
-                // 返回按钮
-                // [LAYOUT_PLAN P3 补] 沉浸域仅顶栏动作行规范：补 tooltip +
-                // 图标切 Symbols 体系（对齐 legado_app_bar 返回），本体不动
-                IconButton(
-                  tooltip: '返回',
-                  icon: const Icon(Symbols.arrow_back_rounded, color: Colors.white),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-                // 书名
-                Expanded(
-                  child: Text(
-                    _book?.name ?? '漫画阅读',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                // 章节标题
-                if (_currentChapterIndex < _chapters.length)
-                  Flexible(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                      child: Text(
-                        _chapters[_currentChapterIndex].title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(color: Colors.white70, fontSize: 12),
-                      ),
-                    ),
-                  ),
-                IconButton(
-                  // [LAYOUT_PLAN P3 补] 沉浸域顶栏动作行规范：图标切 Symbols 体系
-                  icon: const Icon(Symbols.tune_rounded, color: Colors.white),
-                  tooltip: '漫画设置',
-                  onPressed: _openMangaConfig,
-                ),
-              ],
+  /// [P4-3 M1] 菜单动画包裹：顶栏自上 / 底栏自下滑入 + 淡入；
+  /// 隐藏时动画反向播放，**动画落定后**（isAnimating=false 帧）返回
+  /// SizedBox.shrink 移除菜单子树——保证隐藏态测试树中无菜单文本
+  /// （find.text(书名) findsNothing）且动画期间 IgnorePointer 不响应。
+  Widget _buildAnimatedMenu(
+    Animation<Offset> slide,
+    WidgetBuilder buildBar,
+  ) {
+    return AnimatedBuilder(
+      animation: _menuCtrl,
+      builder: (context, _) {
+        // 隐藏且动画已落定 = 彻底移除（不再占树）
+        if (!_showControls && !_menuCtrl.isAnimating) {
+          return const SizedBox.shrink();
+        }
+        return IgnorePointer(
+          // 滑出动画期间不响应点击（对齐参考版菜单可见才可操作）
+          ignoring: !_showControls,
+          child: SlideTransition(
+            position: slide,
+            child: FadeTransition(
+              opacity: _menuOpacity,
+              child: buildBar(context),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
-  /// 漫画页脚信息条
+  /// [P4-3 M1] 构建顶部控制栏（透明悬浮胶囊，对齐参考版 MangaMenuTopBar）
+  ///
+  /// 返回圆钮 + 标题胶囊（书名/章名双行）+ 合并操作胶囊（本波仅
+  /// 「刷新」键；换源/更多待 E8 源操作面板，不放假按钮）。
+  Widget _buildTopBar(BuildContext context) {
+    final chapterName = _currentChapterIndex < _chapters.length
+        ? _chapters[_currentChapterIndex].title
+        : null;
+    return MangaMenuTopBar(
+      bookName: _book?.name ?? '漫画阅读',
+      chapterName: chapterName,
+      onBack: () => Navigator.of(context).pop(),
+      onRefresh: _refreshChapter,
+    );
+  }
+
+  /// [P4-3 M1] 漫画页脚信息条（对齐参考版 MangaFooter L114-154：
+  /// 白字 + 黑字阴影 78% alpha offset 1.5/1.5 blur 3，替代旧暗色底块；
+  /// 控制栏显示时上抬避让悬浮底栏）
   Widget _buildMangaFooter() {
     final chapterName = _currentChapterIndex < _chapters.length
         ? _chapters[_currentChapterIndex].title
@@ -1864,109 +1962,68 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     final align = _footerConfig.footerOrientation == MangaFooterConfig.alignCenter
         ? Alignment.center
         : Alignment.centerLeft;
+    final bottomInset = MediaQuery.of(context).padding.bottom;
+    // 控制栏可见时上抬：底栏内容高（16+40+12+40+16=124）+ 底边距 16 + 间隙 8
+    final lift = _showControls ? 124 + 16 + 8 : 0;
     return Positioned(
-      left: 12,
-      right: 12,
-      bottom: _showControls ? 88 : 12,
+      left: 16,
+      right: 16,
+      bottom: bottomInset + 12 + lift,
       child: IgnorePointer(
         child: Align(
           alignment: align,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: const Color(0x99000000),
-              borderRadius: BorderRadius.circular(8),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              // 参考版 MangaFooterTextShadow：黑 78% / offset(1.5,1.5) /
+              // blur 3（白字直接浮于漫画内容上，无暗色底块）
+              shadows: [
+                Shadow(
+                  color: Color.fromRGBO(0, 0, 0, 0.78),
+                  offset: Offset(1.5, 1.5),
+                  blurRadius: 3,
+                ),
+              ],
             ),
-            child: Text(
-              label,
-              style: const TextStyle(color: Colors.white70, fontSize: 11),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
       ),
     );
   }
 
-  /// 构建底部进度条
-  Widget _buildBottomBar() {
-    final hasPrev = _currentChapterIndex > 0;
-    final hasNext = _currentChapterIndex < _chapters.length - 1;
-
-    return Positioned(
-      bottom: 0,
-      left: 0,
-      right: 0,
-      child: Material(
-        color: const Color(0xCC000000),
-        child: SafeArea(
-          top: false,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // 图片进度（当前页/总页数）
-                Row(
-                  children: [
-                    // 上一章按钮
-                    IconButton(
-                      icon: const Icon(Icons.skip_previous, color: Colors.white),
-                      onPressed: hasPrev ? _prevChapter : null,
-                    ),
-                    // 章节进度滑块
-                    Expanded(
-                      child: Slider(
-                        value: _chapters.isNotEmpty
-                            ? _currentChapterIndex.toDouble()
-                            : 0,
-                        min: 0,
-                        max: _chapters.length > 1
-                            ? (_chapters.length - 1).toDouble()
-                            : 1,
-                        divisions: _chapters.length > 1
-                            ? _chapters.length - 1
-                            : null,
-                        activeColor: Colors.white,
-                        inactiveColor: Colors.white24,
-                        onChanged: (value) {
-                          unawaited(_goToChapter(value.toInt()));
-                        },
-                      ),
-                    ),
-                    // 下一章按钮
-                    IconButton(
-                      icon: const Icon(Icons.skip_next, color: Colors.white),
-                      onPressed: hasNext ? _nextChapter : null,
-                    ),
-                  ],
-                ),
-                // 进度信息
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        '第 ${_currentChapterIndex + 1} / ${_chapters.length} 章',
-                        style: const TextStyle(color: Colors.white54, fontSize: 12),
-                      ),
-                      if (_imageUrls.isNotEmpty) ...[
-                        const SizedBox(width: 16),
-                        Text(
-                          '${_imageUrls.length} 页',
-                          style: const TextStyle(color: Colors.white54, fontSize: 12),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+  /// [P4-3 M1] 构建底部控制栏（悬浮圆角面板，对齐参考版
+  /// MangaMenuBottomBar 悬浮形态：Row1 上一章/页进度滑条/下一章 +
+  /// Row2 目录/自动（停止）/翻页设置 SpaceBetween 均布）
+  Widget _buildBottomBar(BuildContext context) {
+    final pageCount = _imageUrls.length;
+    return MangaMenuBottomBar(
+      // 上一章/下一章（边界由 _prevChapter/_nextChapter 内部守卫）
+      onPrevChapter: () => unawaited(_prevChapter()),
+      onNextChapter: () => unawaited(_nextChapter()),
+      // 页进度滑条（对齐参考版 ReadMenuSlider：value = 0 基页索引、
+      // 范围 0..(pageCount-1).coerceAtLeast(1)、steps = (pageCount-2)）
+      pageValue:
+          (pageCount > 0 ? _visiblePageIndex.clamp(0, pageCount - 1) : 0)
+              .toDouble(),
+      pageMax: (pageCount - 1).clamp(1, 999999).toDouble(),
+      divisions: pageCount > 1 ? pageCount - 1 : null,
+      pageEnabled: pageCount > 1,
+      readingPageDescription:
+          pageCount > 0 ? '页数 ${_visiblePageIndex + 1}/$pageCount' : '',
+      onSeekPage: _seekToPage,
+      // 目录键（弹目录 sheet，取证见 manga_catalog_sheet.dart）
+      onOpenCatalog: _openCatalog,
+      // 自动键（点击 = ToggleAutoRead；长按 = 自动翻页设置，
+      // 参考版 OpenSettings(AUTO_READ)；本方设置面板含自动翻页区块）
+      autoReadEnabled: _autoRead,
+      onToggleAutoRead: () => _setAutoReadEnabled(!_autoRead),
+      onOpenAutoSettings: _openMangaConfig,
+      // 翻页设置键（参考版 OpenSettings(READER) → 漫画设置面板）
+      onOpenPageSettings: _openMangaConfig,
     );
   }
 }
