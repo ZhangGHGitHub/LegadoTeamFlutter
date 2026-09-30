@@ -9,9 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../constants/pref_keys.dart';
 import '../models/book.dart';
 import '../providers/providers.dart';
-import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
-import '../services/platform_bridge_service.dart';
 import '../services/settings_service.dart';
 import '../utils/book_open_utils.dart';
 
@@ -138,36 +136,15 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
   }
 
   Future<void> _openLastRead(Book book) async {
-    final nav = PlatformBridgeService.navigatorKey.currentState;
-    final ctx = PlatformBridgeService.navigatorKey.currentContext;
-    if (nav == null || ctx == null) return;
-
-    var typeBits = BookOpenUtils.typeBitsOf(book);
-    if (BookOpenUtils.isOnlineBook(book)) {
-      try {
-        final sources = await ref.read(bookApiProvider).getBookSources();
-        String norm(String u) => u.trim().replaceAll(RegExp(r'/+$'), '');
-        final o = norm(book.origin);
-        for (final s in sources) {
-          if (norm(s.bookSourceUrl) == o || s.bookSourceUrl == book.origin) {
-            typeBits = BookOpenUtils.resolveTypeBits(typeBits, s);
-            break;
-          }
-        }
-      } catch (_) {}
-    }
-
-    final bookToOpen =
-        typeBits != 0 ? book.copyWith(bookType: typeBits) : book;
-    final route = BookOpenUtils.routeForTypeBits(typeBits);
-    if (BookOpenUtils.needsReaderNotifier(route)) {
-      ref.read(readerNotifierProvider.notifier).openBook(bookToOpen);
-      await nav.pushNamed(route);
-      return;
-    }
-    await nav.pushNamed(
-      route,
-      arguments: BookOpenUtils.argumentsForRoute(route, bookToOpen),
+    // 启动直达路径无页面 context 可用，经全局 navigatorKey 导航；并保持
+    // 「默认开读直达阅读器」既有行为（不经未读进详情分支，unreadOpensBookInfo
+    // = false）——分流编排统一在 BookOpenUtils.openBook
+    await BookOpenUtils.openBook(
+      context,
+      ref,
+      book,
+      useGlobalNavigator: true,
+      unreadOpensBookInfo: false,
     );
   }
 

@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -65,13 +63,6 @@ class BottomBarSkinNotifier extends Notifier<BottomBarSkinState> {
     final ok = await _service.delete(name);
     if (ok) await reload();
     return ok;
-  }
-
-  Future<String> importZipFile(File zipFile, {String? preferredName}) async {
-    final name = await _service.importZip(zipFile, preferredName: preferredName);
-    await reload();
-    await setActive(name);
-    return name;
   }
 }
 

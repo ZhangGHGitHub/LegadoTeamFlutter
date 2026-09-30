@@ -98,9 +98,7 @@ pub(crate) struct RealBookSourceFetcher {
 
 impl RealBookSourceFetcher {
     fn new() -> Self {
-        let config = LegadoClientConfig::default();
-        let client = LegadoClient::new(config)
-            .unwrap_or_else(|_| LegadoClient::new(LegadoClientConfig::default()).expect("client"));
+        let client = LegadoClient::new(LegadoClientConfig::default()).expect("LegadoClient init");
         Self { client }
     }
 

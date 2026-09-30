@@ -9,7 +9,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/read_record/read_record_notifier.dart';
-import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../utils/book_open_utils.dart';
 import '../widgets/custom_refresh_indicator.dart';
@@ -279,40 +278,9 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     await _openBook(context, book);
   }
 
-  /// 对齐原版 startActivityForBook
+  /// 对齐原版 startActivityForBook（分流编排统一在 BookOpenUtils.openBook）
   Future<void> _openBook(BuildContext context, Book book) async {
-    if (book.durChapterIndex <= 0 && book.durChapterPos <= 0) {
-      await Navigator.pushNamed(context, AppRoutes.bookInfo, arguments: book);
-      return;
-    }
-    var typeBits = BookOpenUtils.typeBitsOf(book);
-    if (BookOpenUtils.isOnlineBook(book)) {
-      try {
-        final sources = await ref.read(bookApiProvider).getBookSources();
-        String norm(String u) => u.trim().replaceAll(RegExp(r'/+$'), '');
-        final o = norm(book.origin);
-        for (final s in sources) {
-          if (norm(s.bookSourceUrl) == o || s.bookSourceUrl == book.origin) {
-            typeBits = BookOpenUtils.resolveTypeBits(typeBits, s);
-            break;
-          }
-        }
-      } catch (_) {}
-    }
-    if (!context.mounted) return;
-    final bookToOpen =
-        typeBits != 0 ? book.copyWith(bookType: typeBits) : book;
-    final route = BookOpenUtils.routeForTypeBits(typeBits);
-    if (BookOpenUtils.needsReaderNotifier(route)) {
-      ref.read(readerNotifierProvider.notifier).openBook(bookToOpen);
-      await Navigator.pushNamed(context, route);
-      return;
-    }
-    await Navigator.pushNamed(
-      context,
-      route,
-      arguments: BookOpenUtils.argumentsForRoute(route, bookToOpen),
-    );
+    await BookOpenUtils.openBook(context, ref, book);
   }
 
   Future<void> _confirmDelete(

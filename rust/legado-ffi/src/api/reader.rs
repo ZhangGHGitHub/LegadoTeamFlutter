@@ -81,12 +81,17 @@ fn same_title_removed_key(book_url: &str, chapter_index: i32) -> String {
 ///
 /// DB 不可用/读取异常时回退全局默认 true，不阻断正文读取。
 fn is_same_title_removed(book_url: &str, chapter_index: i32) -> bool {
-    let value = with_database(|db| {
+    // DB 读取异常不再静默吞错：warn 后回退全局默认 true（返回值行为不变）
+    let value = match with_database(|db| {
         let repo = CacheRepository::new(db.connection());
         repo.get(&same_title_removed_key(book_url, chapter_index))
-    })
-    .ok()
-    .flatten();
+    }) {
+        Ok(value) => value,
+        Err(e) => {
+            log::warn!("读取章级删除重复标题开关失败，回退全局默认 true: {e}");
+            None
+        }
+    };
     !matches!(value.as_deref(), Some("1"))
 }
 

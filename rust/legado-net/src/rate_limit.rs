@@ -52,20 +52,6 @@ impl RateLimiter {
             .map(SemaphorePermit)
             .map_err(|e| LegadoError::Network(format!("Rate limiter closed: {}", e)))
     }
-
-    /// 尝试获取许可，不阻塞
-    pub fn try_acquire(&self) -> Option<SemaphorePermit<'_>> {
-        self.permits.try_acquire().ok().map(SemaphorePermit)
-    }
-
-    /// 带超时的许可获取（返回 OwnedSemaphorePermit，可跨任务使用）
-    pub async fn acquire_timeout(&self, timeout: Duration) -> LegadoResult<OwnedSemaphorePermit> {
-        tokio::time::timeout(timeout, self.permits.clone().acquire_owned())
-            .await
-            .map_err(|_| LegadoError::Timeout("Rate limit: acquire timeout".into()))?
-            .map(OwnedSemaphorePermit)
-            .map_err(|e| LegadoError::Network(format!("Rate limiter closed: {}", e)))
-    }
 }
 
 /// 许可持有者，Drop 时自动释放
@@ -125,20 +111,15 @@ pub struct DomainSlot {
 }
 
 impl DomainSlot {
-    /// 异步获取许可
-    pub async fn acquire(&self) -> LegadoResult<OwnedSemaphorePermit> {
+    /// 异步获取许可（返回 tokio 所有权许可，Drop 时自动释放）
+    pub async fn acquire(&self) -> LegadoResult<tokio::sync::OwnedSemaphorePermit> {
         self.permits
             .clone()
             .acquire_owned()
             .await
-            .map(OwnedSemaphorePermit)
             .map_err(|e| LegadoError::Network(format!("Domain rate limiter closed: {}", e)))
     }
 }
-
-/// 所有权许可，Drop 时自动释放
-#[allow(dead_code)]
-pub struct OwnedSemaphorePermit(tokio::sync::OwnedSemaphorePermit);
 
 /// 从 URL 中提取域名
 pub fn extract_domain(url: &str) -> String {
@@ -339,37 +320,6 @@ mod tests {
 
         drop(p2);
         assert_eq!(limiter.available_permits(), 2);
-    }
-
-    #[test]
-    fn test_rate_limiter_try_acquire() {
-        let limiter = RateLimiter::new(1);
-        let p1 = limiter.try_acquire();
-        assert!(p1.is_some());
-
-        let p2 = limiter.try_acquire();
-        assert!(p2.is_none());
-
-        drop(p1);
-        let p3 = limiter.try_acquire();
-        assert!(p3.is_some());
-    }
-
-    #[tokio::test]
-    async fn test_rate_limiter_acquire_timeout() {
-        let limiter = Arc::new(RateLimiter::new(1));
-
-        // 占满许可
-        let _p1 = limiter.acquire().await.unwrap();
-
-        // 超时获取
-        let l2 = Arc::clone(&limiter);
-        let result =
-            tokio::spawn(async move { l2.acquire_timeout(Duration::from_millis(50)).await })
-                .await
-                .unwrap();
-
-        assert!(result.is_err());
     }
 
     #[test]

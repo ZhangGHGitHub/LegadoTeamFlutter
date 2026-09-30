@@ -2,6 +2,8 @@
 //!
 //! 基于 caches 表实现应用配置的读写操作。
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use legado_core::LegadoResult;
 use legado_db::CacheRepository;
 
@@ -9,6 +11,9 @@ use crate::db_state::with_database;
 
 /// 配置键前缀
 const CONFIG_PREFIX: &str = "config:";
+
+/// 读配置行失败的一次性告警标记（高频路径，避免逐行刷屏）
+static CONFIG_ROW_FAIL_WARNED: AtomicBool = AtomicBool::new(false);
 
 /// 获取指定配置项的值（不存在返回空字符串）
 pub fn get_config(key: &str) -> LegadoResult<String> {
@@ -46,10 +51,23 @@ pub fn get_all_config() -> LegadoResult<std::collections::HashMap<String, String
             .map_err(|e| legado_core::LegadoError::Database(format!("查询失败: {e}")))?;
 
         let mut map = std::collections::HashMap::new();
-        for row in rows.filter_map(|r| r.ok()) {
-            // 去掉前缀
-            let short_key = row.0.strip_prefix(CONFIG_PREFIX).unwrap_or(&row.0);
-            map.insert(short_key.to_string(), row.1);
+        for row in rows {
+            match row {
+                Ok(row) => {
+                    // 去掉前缀
+                    let short_key = row.0.strip_prefix(CONFIG_PREFIX).unwrap_or(&row.0);
+                    map.insert(short_key.to_string(), row.1);
+                }
+                Err(e) => {
+                    // 坏行照旧跳过，仅首条告警一次（对齐 image_cache 一次性告警先例）
+                    if CONFIG_ROW_FAIL_WARNED
+                        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                        .is_ok()
+                    {
+                        log::warn!("读取配置行失败（仅告警一次，后续静默跳过）: {e}");
+                    }
+                }
+            }
         }
         Ok(map)
     })

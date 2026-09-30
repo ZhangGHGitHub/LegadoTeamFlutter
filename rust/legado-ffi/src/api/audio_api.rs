@@ -92,10 +92,15 @@ pub fn resolve_audio_play_book(
         requested_book_url,
         cached,
         |b| b.book_url.as_str(),
-        |url| {
-            with_database(|db| legado_db::BookRepository::new(db.connection()).find_by_url(url))
-                .ok()
-                .flatten()
+        |url| match with_database(|db| {
+            legado_db::BookRepository::new(db.connection()).find_by_url(url)
+        }) {
+            Ok(book) => book,
+            Err(e) => {
+                // DB 读取异常不再静默吞错：warn 后按未缓存继续解析（行为不变）
+                log::warn!("读取听书书籍缓存失败，按未缓存继续解析: {e}");
+                None
+            }
         },
     );
     Ok(resolved)

@@ -113,7 +113,10 @@ fn init_info_map_defaults(source_url: &str, categories: &[ExploreCategory]) {
             .as_deref()
             .filter(|s| !s.is_empty())
             .unwrap_or(chars[0]);
-        let _ = explore_info_map::ensure_default(source_url, &cat.title, default);
+        if let Err(e) = explore_info_map::ensure_default(source_url, &cat.title, default) {
+            // 仅落库失败告警：内存态已写入，发现页默认值仍可用
+            log::warn!("发现页默认值未落库（内存态不受影响）: {e}");
+        }
     }
 }
 

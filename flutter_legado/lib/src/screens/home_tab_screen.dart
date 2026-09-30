@@ -8,7 +8,6 @@ import '../models/models.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/read_record/read_record_notifier.dart';
-import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../utils/book_open_utils.dart';
 import '../widgets/book_cover.dart';
@@ -409,30 +408,9 @@ class _HomeTabScreenState extends ConsumerState<HomeTabScreen> {
   }
 
   Future<void> _openBook(Book book) async {
-    // 与阅读记录页同链路：书源类型位解析后经通知器开书进阅读器
-    var typeBits = book.bookType;
-    try {
-      final sources = await ref.read(bookApiProvider).getBookSources();
-      final o = book.origin.trim().replaceAll(RegExp(r'/+$'), '');
-      for (final s in sources) {
-        if (s.bookSourceUrl == o) {
-          typeBits = BookOpenUtils.resolveTypeBits(typeBits, s);
-          break;
-        }
-      }
-    } catch (_) {}
-    if (!mounted) return;
-    final bookToOpen =
-        typeBits != 0 ? book.copyWith(bookType: typeBits) : book;
-    final route = BookOpenUtils.routeForTypeBits(typeBits);
-    if (BookOpenUtils.needsReaderNotifier(route)) {
-      ref.read(readerNotifierProvider.notifier).openBook(bookToOpen);
-    }
-    unawaitedNav(route, bookToOpen);
-  }
-
-  Future<void> unawaitedNav(String route, Book book) async {
-    await Navigator.pushNamed(context, route, arguments: book);
+    // 与阅读记录页同链路：分流编排统一在 BookOpenUtils.openBook
+    // （未读进详情 + 书源类型位解析后按类型进阅读器）
+    await BookOpenUtils.openBook(context, ref, book);
   }
 }
 

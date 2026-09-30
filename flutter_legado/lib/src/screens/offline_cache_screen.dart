@@ -9,7 +9,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../models/models.dart';
 import '../providers/providers.dart';
-import '../providers/reader/reader_notifier.dart';
 import '../providers/sync/sync_notifier.dart';
 import '../routes.dart';
 import '../services/export_service.dart';
@@ -261,39 +260,8 @@ class _OfflineCacheScreenState extends ConsumerState<OfflineCacheScreen> {
   // ===== 打开书籍（对齐原版 startActivityForBook：未读进书详，已读按类型分流） =====
 
   Future<void> _openBook(Book book) async {
-    if (book.durChapterIndex <= 0 && book.durChapterPos <= 0) {
-      await Navigator.pushNamed(context, AppRoutes.bookInfo, arguments: book);
-      return;
-    }
-    // 与书架共用 BookOpenUtils，避免漫画/视频误进文本阅读器 — Reasonix + UI
-    var typeBits = BookOpenUtils.typeBitsOf(book);
-    if (BookOpenUtils.isOnlineBook(book)) {
-      try {
-        final sources = await ref.read(bookApiProvider).getBookSources();
-        String norm(String u) => u.trim().replaceAll(RegExp(r'/+$'), '');
-        final o = norm(book.origin);
-        for (final s in sources) {
-          if (norm(s.bookSourceUrl) == o || s.bookSourceUrl == book.origin) {
-            typeBits = BookOpenUtils.resolveTypeBits(typeBits, s);
-            break;
-          }
-        }
-      } catch (_) {}
-    }
-    if (!mounted) return;
-    final bookToOpen =
-        typeBits != 0 ? book.copyWith(bookType: typeBits) : book;
-    final route = BookOpenUtils.routeForTypeBits(typeBits);
-    if (BookOpenUtils.needsReaderNotifier(route)) {
-      ref.read(readerNotifierProvider.notifier).openBook(bookToOpen);
-      await Navigator.pushNamed(context, route);
-      return;
-    }
-    await Navigator.pushNamed(
-      context,
-      route,
-      arguments: BookOpenUtils.argumentsForRoute(route, bookToOpen),
-    );
+    // 分流编排统一在 BookOpenUtils.openBook（未读进书详 + 类型位分流）
+    await BookOpenUtils.openBook(context, ref, book);
   }
 
   // ===== 单本导出（对齐原版 CacheActivity → ExportBookService） =====

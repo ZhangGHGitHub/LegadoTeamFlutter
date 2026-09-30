@@ -321,44 +321,6 @@ class BottomBarSkinService {
     }
   }
 
-  /// ?????????? zip ??????? / ? UI ???
-  Future<String> importZip(File zipFile, {String? preferredName}) async {
-    final sessionId = await extractZipToSession(zipFile);
-    try {
-      final images = await stagingImages(sessionId);
-      final prefill = buildPrefill(images);
-      final assigns = <String, BottomBarSkinSlotAssign>{};
-      for (final e in prefill.entries) {
-        final sel = e.value.selected;
-        if (sel != null) {
-          assigns[e.key] = BottomBarSkinSlotAssign(
-            selected: sel,
-            normal: e.value.normal,
-          );
-        }
-      }
-      if (assigns.isEmpty) {
-        throw StateError(
-          'no slot images (need bookshelf/home/notes/settings _selected/_normal)',
-        );
-      }
-      final baseName = preferredName?.isNotEmpty == true
-          ? preferredName!
-          : zipFile.uri.pathSegments.last.replaceAll(
-              RegExp(r'\.zip$', caseSensitive: false),
-              '',
-            );
-      return await saveFromAssign(
-        desiredName: baseName,
-        assigns: assigns,
-        sessionId: sessionId,
-      );
-    } catch (e) {
-      await discardSession(sessionId);
-      rethrow;
-    }
-  }
-
   /// 导出图集为 zip 字节（对齐 BottomBarSkinManager.buildZipBytes）
   Future<List<int>> buildZipBytes(String skinName) async {
     if (!await hasSkin(skinName)) throw StateError('skin not found');
