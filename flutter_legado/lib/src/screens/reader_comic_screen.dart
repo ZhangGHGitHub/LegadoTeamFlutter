@@ -113,7 +113,25 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   bool _isRestoreJump = false;
 
   /// [P4-1 C3] 相邻章预载代数（换书/取消守卫，对齐 C1b 代数守卫先例）
+  ///
+  /// [P4-3 E4] 会话加载 token 映射登记（只登记映射、不重复实现）：
+  /// 参考版 `MangaLoadToken(sessionId, revision, bookUrl, chapterIndex)`
+  /// （MangaReaderSessionModels.kt L42-61）+ `MangaSessionState.accepts(token)`
+  /// （L76-79：sessionId/revision/bookUrl 失配即丢弃在飞结果；
+  /// DefaultMangaReaderSession chapterLoaded L276-296 同语义）——本字段是其
+  /// 简化等价物：屏幕实例即唯一会话（实例 bookUrl 固定）≡ sessionId+bookUrl，
+  /// 换书（_loadBook）/切章（_goToChapter）递增代数 ≡ revision 换代；
+  /// 在飞相邻章预载经代数失配中止（_preloadAdjacentChapters `seq != _loadSeq`
+  /// 守卫），陈旧的单页式子树经代数 `ValueKey('mangaPaged-$_loadSeq')`
+  /// （_buildPagedContent）强制重建——语义等价「token 失配 → 丢弃结果」，
+  /// 无需引入参考版 Empty/Loading/Ready/Failed 四态状态机。
   int _loadSeq = 0;
+
+  /// [P4-3 E4] 当前错误是否为「章级」错误（章节正文获取失败 / 非卷章
+  /// 0 图校验失败）：ErrorView 重试只重载当前章节 [_loadChapterImages]
+  /// （对齐参考版 RetryChapter L308-318 章级重载，不重拉书籍信息/目录）；
+  /// false = 书级错误（书籍信息/目录获取失败），重试走整书重载 [_loadBook]
+  bool _errorChapterLevel = false;
 
   /// [P4-3 E1] 翻页模式（对齐参考版 MangaScrollMode；默认条漫 4）
   int _scrollMode = MangaScrollModes.defaultValue;
@@ -613,6 +631,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _errorChapterLevel = false; // [P4-3 E4] 书级重载入口复位章级错误标记
     });
 
     try {
@@ -679,6 +698,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _errorChapterLevel = false; // [P4-3 E4] 章级重载入口复位章级错误标记
       _imageUrls = [];
       _preloadedIndices.clear();
       _failedIndices.clear();
@@ -744,6 +764,26 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
         _loading = false;
       });
 
+      // [P4-3 E4] 0 图章节校验（对齐原版 ReadManga.kt L227-230
+      // contentLoadFinish：imageCount==0 && !isVolume → loadFail「正文没有
+      // 图片」；参考版 MangaChapterPageLoader L36-38 同条件 throw →
+      // Failed 态 → 全屏错误 + 章级重试 MangaReaderOverlays L757-771）：
+      // - 非卷章：进入章级错误态（ErrorView + 重试，重试只重载当前章）
+      // - 卷章（isVolume）：0 图是合法分隔页（原版 L635-636 ReaderLoading
+      //   分隔页、标题=章名；参考版 L452-460 ChapterEdge "volume:..."
+      //   message=chapterTitle）→ 非错误，_buildContent 显示章节标题
+      //   + 上下章导航
+      // 0 图无图片项：跳过分页控制器创建/预载/进度恢复，直接返回
+      if (_imageUrls.isEmpty) {
+        if (!_chapters[_currentChapterIndex].isVolume) {
+          setState(() {
+            _error = '正文没有图片';
+            _errorChapterLevel = true;
+          });
+        }
+        return;
+      }
+
       // [P4-3 E1] 单页式：图片可见前创建 PageController
       //（初始页 = 待恢复页或章首；须在 _applyPageRestore 消费 _restorePageIndex 前取值）
       if (MangaScrollModes.isPaged(_scrollMode) && _imageUrls.isNotEmpty) {
@@ -765,6 +805,10 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       setState(() {
         // BridgeError 无自定义 toString()，裸显会显示 "Instance of 'BridgeError'"
         _error = errorMessage(e);
+        // [P4-3 E4] 章节正文获取失败 = 章级错误：重试只重载当前章
+        // （对齐参考版 chapterLoaded 失败 → Failed(token, message) →
+        // RetryChapter 章级重试，不重拉书籍信息/目录）
+        _errorChapterLevel = true;
         _loading = false;
       });
     }
@@ -1390,20 +1434,31 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
     if (_error != null) {
       return ErrorView(
         message: _error!,
-        onRetry: _loadBook,
+        // [P4-3 E4] 章级错误（章节正文获取失败 / 0 图校验失败）重试只重载
+        // 当前章（对齐参考版 RetryChapter L308-318）；书级错误（书籍信息/
+        // 目录获取失败）仍走整书重载
+        onRetry: _errorChapterLevel ? _loadChapterImages : _loadBook,
       );
     }
 
+    // [P4-3 E4] 0 图分支：非卷章 0 图已在上方进入错误态（正文没有图片），
+    // 到达这里的只有卷章（isVolume）0 图 = 合法分隔页（对齐原版
+    // ReadManga L635-636 卷章渲染 ReaderLoading(chapter.index, -1,
+    // chapter.title, true) 分隔页；参考版 L452-460 ChapterEdge "volume:..."
+    // message=chapterTitle）：显示章节标题 + 上下章导航（非「暂无图片」、
+    // 非错误态）
     if (_imageUrls.isEmpty) {
+      final chapter = _chapters[_currentChapterIndex];
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.image_not_supported, size: 64, color: Colors.white54),
-            const SizedBox(height: 16),
-            const Text('暂无图片', style: TextStyle(color: Colors.white54, fontSize: 16)),
+            Text(
+              chapter.title.isNotEmpty ? chapter.title : '暂无图片',
+              style: const TextStyle(color: Colors.white70, fontSize: 18),
+            ),
             const SizedBox(height: 24),
-            // 章节导航按钮
+            // 章节导航按钮（卷章分隔页仍需跳转上下章）
             if (_currentChapterIndex > 0)
               TextButton(
                 onPressed: _prevChapter,
