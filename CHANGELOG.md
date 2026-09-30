@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.340] - 2026-10-01
+
+### Changed
+- [UI] GLOBALCOMP B4 第二批：AppScaffold 统一页壳完成全部常规页迁移（48 屏 49 处，两子批；含 welcome 闪屏背景、txt_toc_rules 无顶栏 FAB、条件顶栏等特殊形态承接）；永久排除域（阅读器承重/播放器/折叠顶栏承重等 7 处）按用户裁决维持原生并写入壳文档。
+
 ## [2.0.339] - 2026-10-01
 
 ### Changed
