@@ -33,6 +33,9 @@ class PlatformChannel {
   /// 绕开 file_picker SAF 链路）
   static const MethodChannel storage = MethodChannel('legado/storage');
 
+  /// 阅读器按键通道（[M5] 音量键翻页：捕获开关 + 原生端 volumeKey 事件）
+  static const MethodChannel readerKeys = MethodChannel('legado/reader_keys');
+
   /// 事件通道：用于接收原生层的流式事件
   static const EventChannel eventChannel =
       EventChannel('io.legado.app/events');
@@ -209,6 +212,32 @@ class PlatformChannel {
       // （原生端 error）→ 统一降级 null，绝不向上抛
       return null;
     }
+  }
+
+  // ─── 阅读器按键方法（[M5] 音量键翻页） ─────────────────────────
+
+  /// 设置音量键捕获（仅漫画阅读器活跃且开关开启时启用；原生端
+  /// onKeyDown 捕获后经同通道回发 `volumeKey` 事件）。
+  ///
+  /// 通道未注册（非 Android / 测试环境）静默降级，绝不向上抛。
+  static Future<void> setVolumeKeyCapture(bool enabled) async {
+    try {
+      await readerKeys.invokeMethod<void>('setVolumeKeyCapture', enabled);
+    } catch (_) {
+      // MissingPluginException / PlatformException → 静默降级
+    }
+  }
+
+  /// 注册音量键事件回调（原生端 `invokeMethod('volumeKey', 'up'/'down')`）。
+  static void setVolumeKeyHandler(
+    Future<dynamic> Function(MethodCall call) handler,
+  ) {
+    readerKeys.setMethodCallHandler(handler);
+  }
+
+  /// 注销音量键事件回调（退出阅读器时调用，防回调泄漏）。
+  static void clearVolumeKeyHandler() {
+    readerKeys.setMethodCallHandler(null);
   }
 
   // ─── 通知方法 ─────────────────────────────────────────────────

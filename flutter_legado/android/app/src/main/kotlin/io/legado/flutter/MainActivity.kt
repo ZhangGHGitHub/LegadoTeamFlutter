@@ -4,6 +4,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import android.view.View
 import android.view.WindowInsetsController
 import android.view.WindowManager
@@ -22,6 +23,7 @@ open class MainActivity : FlutterActivity() {
     private val mediaSessionBridge = MediaSessionBridge()
     private val cookieBridge = CookieBridge()
     private val storageBridge = StorageBridge()
+    private val readerKeysBridge = ReaderKeysBridge()
 
     private var deepLinkChannel: MethodChannel? = null
     private var autoTaskJobChannel: MethodChannel? = null
@@ -78,6 +80,17 @@ open class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 storageBridge.handleMethodCall(call, result, this)
             }
+
+        // 注册阅读器按键通道（[M5] 音量键翻页：捕获开启时 onKeyDown
+        // 拦截音量键通知 Dart 翻页并消费，不调系统音量；对齐原版
+        // ReadMangaActivity.onKeyDown L894-902）
+        val readerKeysChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger, ReaderKeysBridge.CHANNEL
+        )
+        readerKeysBridge.setMethodChannel(readerKeysChannel)
+        readerKeysChannel.setMethodCallHandler { call, result ->
+            readerKeysBridge.handleMethodCall(call, result)
+        }
 
         // 注册 Cookie 通道（WebView 登录页读取系统 CookieManager，对齐
         // 原版 WebViewLoginFragment 的 CookieManager.getCookie 链路）
@@ -301,6 +314,16 @@ open class MainActivity : FlutterActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         filePickerBridge.onActivityResult(requestCode, resultCode, data)
+    }
+
+    /**
+     * [M5] 音量键翻页：漫画阅读器活跃且捕获开启时消费音量键并通知
+     * Dart 翻页（对齐原版 ReadMangaActivity.onKeyDown L894-902）；
+     * 其余情况交还系统（全局音量键行为不变）。
+     */
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        if (readerKeysBridge.handleKeyDown(keyCode)) return true
+        return super.onKeyDown(keyCode, event)
     }
 
     override fun onDestroy() {

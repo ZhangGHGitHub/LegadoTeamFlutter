@@ -1000,4 +1000,44 @@ class PlatformBridgeService {
     if (!useMediaStoreDownloads) return null;
     return PlatformChannel.saveImageToDownloads(fileName: fileName, bytes: bytes);
   }
+
+  // ========== [M5] 音量键翻页（阅读器按键通道） ==========
+
+  /// [M5] 「是否支持音量键捕获」的分派决策覆写（测试性，同
+  /// [saveViaDownloadsOverride] 范式）：默认 `Platform.isAndroid`。
+  bool? volumeKeyCaptureOverride;
+
+  /// [M5] 音量键捕获是否可用（Android 壳通道；非 Android 恒 false）
+  bool get volumeKeyCaptureSupported =>
+      volumeKeyCaptureOverride ?? Platform.isAndroid;
+
+  /// [M5] 设置音量键捕获（仅漫画阅读器活跃且开关开启时启用；
+  /// 退出阅读器立即关闭，防拦截范围外泄到其它页面——
+  /// 对齐原版 ReadMangaActivity.onKeyDown L894-902 的阅读器内拦截语义）
+  Future<void> setVolumeKeyCapture(bool enabled) async {
+    if (!volumeKeyCaptureSupported) return;
+    await PlatformChannel.setVolumeKeyCapture(enabled);
+  }
+
+  /// [M5] 注册音量键事件回调（原生端捕获后回发 up/down）
+  void registerVolumeKeyHandler(
+    Future<void> Function(String direction) onVolumeKey,
+  ) {
+    if (!volumeKeyCaptureSupported) return;
+    PlatformChannel.setVolumeKeyHandler((call) async {
+      if (call.method == 'volumeKey') {
+        final direction = call.arguments;
+        if (direction == 'up' || direction == 'down') {
+          await onVolumeKey(direction as String);
+        }
+      }
+      return null;
+    });
+  }
+
+  /// [M5] 注销音量键事件回调
+  void unregisterVolumeKeyHandler() {
+    if (!volumeKeyCaptureSupported) return;
+    PlatformChannel.clearVolumeKeyHandler();
+  }
 }
