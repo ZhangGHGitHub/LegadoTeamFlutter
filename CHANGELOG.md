@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.336] - 2026-10-01
+
+### Changed
+- [UI] 书源/替换规则/订阅源三处分组管理弹窗收敛为统一泛型实现（内部重构，行为不变；顺带修复三处共有的输入框控制器过早释放隐患，零用户可见变化）。
+
 ## [2.0.335] - 2026-09-30
 
 ### Changed
