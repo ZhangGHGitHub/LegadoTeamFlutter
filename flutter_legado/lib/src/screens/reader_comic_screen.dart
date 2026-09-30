@@ -1782,10 +1782,14 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
                 color: const Color(0xFF2A2A2A),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: const Icon(
-                Icons.image,
-                size: 64,
-                color: Color(0xFF444444),
+              // [STAGE-UI-P43UNIFY1 B1] 图标位改真实素材图：参考版图片加载
+              // 形态直接显示该素材（ImageProvider.kt:39 errorBitmap =
+              // R.drawable.image_loading_error；调研报告 §2.4），我方此前用
+              // Icons.image 图标代替 → 统一为同名素材（字节级一致）
+              child: Image.asset(
+                'assets/images/image_loading_error.png',
+                width: 64,
+                height: 64,
               ),
             ),
             const SizedBox(height: 16),
@@ -1813,17 +1817,22 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
 
   /// 图片加载失败占位符（显示重试按钮）
   Widget _buildImageErrorPlaceholder(int index, String url) {
+    // [STAGE-UI-P43UNIFY1 B1] 底色 0xFF1A1A1A → 55% 黑：参考版失败态为
+    // Color.Black.copy(alpha = 0.55f) 整面覆盖（MangaReaderScreen.kt
+    // MangaImageLoadOverlay failed 分支，调研报告 §2.5）
     return Container(
       height: MediaQuery.of(context).size.height * 0.4,
-      color: const Color(0xFF1A1A1A),
+      color: Colors.black.withValues(alpha: 0.55),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.broken_image,
-              size: 64,
-              color: Color(0xFF666666),
+            // [STAGE-UI-P43UNIFY1 B1] 同 B1 素材图（参考版失败占位即该素材，
+            // 调研报告 §2.4）
+            Image.asset(
+              'assets/images/image_loading_error.png',
+              width: 64,
+              height: 64,
             ),
             const SizedBox(height: 12),
             const Text(
@@ -2300,14 +2309,21 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
   }
 
   Widget _errorPlaceholder() {
+    // [STAGE-UI-P43UNIFY1 B1] 底色 0xFF1A1A1A → 55% 黑（参考版失败态
+    // Color.Black.copy(alpha = 0.55f)，同 _buildImageErrorPlaceholder）
     return Container(
       height: MediaQuery.of(context).size.height * 0.4,
-      color: const Color(0xFF1A1A1A),
+      color: Colors.black.withValues(alpha: 0.55),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(Icons.broken_image, size: 64, color: Color(0xFF666666)),
+            // [STAGE-UI-P43UNIFY1 B1] 图标位改真实素材图（调研报告 §2.4）
+            Image.asset(
+              'assets/images/image_loading_error.png',
+              width: 64,
+              height: 64,
+            ),
             const SizedBox(height: 12),
             Text(
               _error ?? '图片加载失败',
@@ -2442,9 +2458,11 @@ class _EpaperNetworkImageState extends State<_EpaperNetworkImage> {
         width: double.infinity,
       );
     }
+    // [STAGE-UI-P43UNIFY1 B1] 电子纸错误分支底色同语义 → 55% 黑
+    //（参考版失败态 Color.Black.copy(alpha = 0.55f)，调研报告 §2.5）
     return Container(
       height: MediaQuery.of(context).size.height * 0.4,
-      color: const Color(0xFF1A1A1A),
+      color: Colors.black.withValues(alpha: 0.55),
       child: Center(
         child: Text(
           _error ?? '图片加载失败',
