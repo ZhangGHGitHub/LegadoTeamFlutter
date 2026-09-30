@@ -1853,19 +1853,22 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
               height: 64,
             ),
             const SizedBox(height: 12),
-            const Text(
+            // [STAGE-UI-P43UNIFY2 B4] 文案 0xFF888888 → 主题槽 onSurfaceVariant
+            Text(
               '图片加载失败',
-              style: TextStyle(color: Color(0xFF888888), fontSize: 14),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 14,
+              ),
             ),
             const SizedBox(height: 16),
-            FilledButton.icon(
+            // [STAGE-UI-P43UNIFY2 B4] 重试按钮 0xFF444444 硬编码底色 → MD3
+            // 主题化 OutlinedButton（对齐参考版 MangaImageLoadOverlay 失败分支的
+            // MediumOutlinedButton，SeriesButton Outlined 风格，调研报告 §2.5）
+            OutlinedButton.icon(
               onPressed: () => _retryImage(index),
               icon: const Icon(Icons.refresh, size: 18),
               label: const Text('重试'),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF444444),
-                foregroundColor: Colors.white,
-              ),
             ),
           ],
         ),
@@ -2353,20 +2356,22 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
               height: 64,
             ),
             const SizedBox(height: 12),
+            // [STAGE-UI-P43UNIFY2 B4] 文案 0xFF888888 → 主题槽 onSurfaceVariant
             Text(
               _error ?? '图片加载失败',
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFF888888), fontSize: 12),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
             ),
             const SizedBox(height: 16),
-            FilledButton.icon(
+            // [STAGE-UI-P43UNIFY2 B4] 重试按钮 0xFF444444 → MD3 主题化
+            // OutlinedButton（对齐参考版 MediumOutlinedButton，调研报告 §2.5）
+            OutlinedButton.icon(
               onPressed: _load,
               icon: const Icon(Icons.refresh, size: 18),
               label: const Text('重试'),
-              style: FilledButton.styleFrom(
-                backgroundColor: const Color(0xFF444444),
-                foregroundColor: Colors.white,
-              ),
             ),
           ],
         ),
@@ -2496,7 +2501,11 @@ class _EpaperNetworkImageState extends State<_EpaperNetworkImage> {
       child: Center(
         child: Text(
           _error ?? '图片加载失败',
-          style: const TextStyle(color: Color(0xFF888888), fontSize: 12),
+          // [STAGE-UI-P43UNIFY2 B4] 文案 0xFF888888 → 主题槽 onSurfaceVariant
+          style: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            fontSize: 12,
+          ),
         ),
       ),
     );

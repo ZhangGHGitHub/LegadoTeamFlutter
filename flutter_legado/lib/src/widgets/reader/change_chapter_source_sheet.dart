@@ -309,7 +309,8 @@ class _ChangeChapterSourceSheetState
   Widget _buildBody(ColorScheme scheme) {
     if (_selected != null) return _buildToc(scheme);
     if (_loading) {
-      return const Center(child: CircularProgressIndicator.adaptive());
+      // [STAGE-UI-P43UNIFY2 B4] .adaptive() → 标准环（参考版无 adaptive 用法）
+      return const Center(child: AppCircularProgressIndicator());
     }
     if (_error != null) {
       return Center(
@@ -365,7 +366,8 @@ class _ChangeChapterSourceSheetState
 
   Widget _buildToc(ColorScheme scheme) {
     if (_tocLoading) {
-      return const Center(child: CircularProgressIndicator.adaptive());
+      // [STAGE-UI-P43UNIFY2 B4] .adaptive() → 标准环（参考版无 adaptive 用法）
+      return const Center(child: AppCircularProgressIndicator());
     }
     if (_tocError != null) {
       return Center(

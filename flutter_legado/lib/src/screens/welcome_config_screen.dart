@@ -8,6 +8,7 @@ import '../widgets/legado_app_bar.dart';
 import '../constants/pref_keys.dart';
 import '../providers/providers.dart';
 import '../services/settings_service.dart';
+import '../widgets/app_progress_indicator.dart';
 import '../widgets/ios_widgets.dart';
 
 /// 欢迎页样式配置（对齐原版 WelcomeConfigFragment + pref_config_welcome.xml）
@@ -137,7 +138,8 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
     return Scaffold(
       appBar: LegadoAppBar(title: const Text('欢迎页样式')),
       body: _loading
-          ? const Center(child: CircularProgressIndicator.adaptive())
+          // [STAGE-UI-P43UNIFY2 B4] .adaptive() → 标准环（参考版无 adaptive 用法）
+          ? const Center(child: AppCircularProgressIndicator())
           : IosGroupedBody(
               child: ListView(
                 children: [
