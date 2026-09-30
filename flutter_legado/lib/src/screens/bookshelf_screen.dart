@@ -20,6 +20,7 @@ import '../providers/ui_settings/ui_settings_notifier.dart'
 import '../routes.dart';
 import '../services/local_book_store.dart';
 import '../utils/book_open_utils.dart';
+import '../widgets/app_progress_indicator.dart';
 import '../widgets/book_grid_item.dart';
 import '../widgets/book_list_item.dart';
 import '../widgets/custom_refresh_indicator.dart';
@@ -1093,10 +1094,12 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         builder: (context, text, _) => AlertDialog(
           content: Row(
             children: [
+              // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（线宽口径：保留
+              // 2dp 实参；参考版主流默认 4dp 由封装默认承载）
               const SizedBox(
                 width: 24,
                 height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: AppCircularProgressIndicator(strokeWidth: 2),
               ),
               const SizedBox(width: 16),
               Expanded(child: Text(text)),

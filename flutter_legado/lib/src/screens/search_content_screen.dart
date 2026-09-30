@@ -10,6 +10,7 @@ import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
+import '../widgets/app_progress_indicator.dart';
 import '../widgets/empty_state.dart';
 
 /// 单条正文搜索结果
@@ -512,7 +513,8 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const CircularProgressIndicator(),
+            // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（默认参数视觉等价）
+            const AppCircularProgressIndicator(),
             const SizedBox(height: 16),
             Text(_totalChapters == 0
                 ? AppStrings.searching
@@ -531,8 +533,11 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
     return Column(
       children: [
         if (_searching)
-          LinearProgressIndicator(
-            value: _totalChapters == 0 ? null : _scannedChapters / _totalChapters,
+          // [STAGE-UI-P43UNIFY2 B3] 顶栏 indeterminate 条换接统一封装
+          //（progress null = indeterminate；确定性 x/y 语义经 progress 承载，
+          // 视觉等价：无 minHeight 实参 → 默认 4dp）
+          AppLinearProgressIndicator(
+            progress: _totalChapters == 0 ? null : _scannedChapters / _totalChapters,
           ),
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),

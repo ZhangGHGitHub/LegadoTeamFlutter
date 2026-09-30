@@ -10,6 +10,7 @@ import '../../models/models.dart';
 import '../../providers/providers.dart';
 import '../../screens/reader_comic_screen.dart' show ComicImageDecodeCache;
 import '../../utils/comic_image_utils.dart';
+import '../app_progress_indicator.dart';
 
 /// 文本阅读器内「图片主导正文」兜底渲染。
 ///
@@ -167,7 +168,8 @@ class _ReaderImageDominantBodyState
         width: double.infinity,
         placeholder: (context, url) => SizedBox(
           height: expandHeight ? viewH * 0.5 : viewH * 0.4,
-          child: const Center(child: CircularProgressIndicator()),
+          // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（默认参数视觉等价）
+          child: const Center(child: AppCircularProgressIndicator()),
         ),
         errorWidget: (context, url, error) => SizedBox(
           height: 160,
@@ -283,7 +285,8 @@ class _FfiComicImageState extends ConsumerState<_FfiComicImage> {
         if (snap.connectionState != ConnectionState.done) {
           return SizedBox(
             height: widget.maxHeight ?? viewH * 0.4,
-            child: const Center(child: CircularProgressIndicator()),
+            // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（默认参数视觉等价）
+            child: const Center(child: AppCircularProgressIndicator()),
           );
         }
         final bytes = snap.data;

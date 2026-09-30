@@ -12,6 +12,7 @@ import 'package:video_player/video_player.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../utils/video_play_utils.dart';
+import '../widgets/app_progress_indicator.dart';
 import '../widgets/video_settings_dialog.dart';
 
 /// 视频播放页面
@@ -578,7 +579,8 @@ class _VideoScreenState extends State<VideoScreen> {
                 ),
               )
             : _loadingChapter
-                ? const Center(child: CircularProgressIndicator())
+                // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（默认参数视觉等价）
+                ? const Center(child: AppCircularProgressIndicator())
                 : FutureBuilder<void>(
                     future: _initializeVideoPlayerFuture,
                     builder: (context, snapshot) {
@@ -587,7 +589,8 @@ class _VideoScreenState extends State<VideoScreen> {
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
-                              CircularProgressIndicator(),
+                              // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装
+                              AppCircularProgressIndicator(),
                               SizedBox(height: 16),
                               Text('正在加载视频...'),
                             ],

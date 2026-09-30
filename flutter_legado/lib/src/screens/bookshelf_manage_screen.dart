@@ -16,6 +16,7 @@ import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/bookshelf_manage/bookshelf_manage_notifier.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
+import '../widgets/app_progress_indicator.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/loading_indicator.dart';
@@ -251,10 +252,12 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
         builder: (context, text, _) => AlertDialog(
           content: Row(
             children: [
+              // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（线宽口径：保留
+              // 2dp 实参；参考版主流默认 4dp 由封装默认承载）
               const SizedBox(
                 width: 24,
                 height: 24,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                child: AppCircularProgressIndicator(strokeWidth: 2),
               ),
               const SizedBox(width: 16),
               Expanded(child: Text(text)),

@@ -801,7 +801,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
           future: SystemBrightness.isSupported(),
           builder: (context, snapshot) {
             if (snapshot.connectionState != ConnectionState.done) {
-              return const Center(child: CircularProgressIndicator());
+              // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（默认参数视觉等价）
+              return const Center(child: AppCircularProgressIndicator());
             }
             
             final supported = snapshot.data ?? false;
@@ -818,7 +819,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
               future: SystemBrightness.isAutoBrightness(),
               builder: (context, autoSnapshot) {
                 if (autoSnapshot.connectionState != ConnectionState.done) {
-                  return const Center(child: CircularProgressIndicator());
+                  // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（默认参数视觉等价）
+                  return const Center(child: AppCircularProgressIndicator());
                 }
 
                 final isAuto = autoSnapshot.data ?? false;
@@ -842,7 +844,8 @@ extension _ReaderConfigBuilders on _ReaderConfigPanelState {
                         future: SystemBrightness.getBrightness(),
                         builder: (context, brightnessSnapshot) {
                           if (brightnessSnapshot.connectionState != ConnectionState.done) {
-                            return const Center(child: CircularProgressIndicator());
+                            // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（默认参数视觉等价）
+                            return const Center(child: AppCircularProgressIndicator());
                           }
 
                           final brightness = brightnessSnapshot.data ?? 0.5;

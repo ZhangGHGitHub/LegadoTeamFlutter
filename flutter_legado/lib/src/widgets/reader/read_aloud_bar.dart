@@ -9,6 +9,7 @@ import '../../models/misc.dart';
 import '../../providers/audio/audio_notifier.dart';
 import '../../providers/providers.dart';
 import '../../routes.dart';
+import '../app_progress_indicator.dart';
 
 /// 阅读器朗读控制条
 ///
@@ -502,10 +503,11 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
                 }
               },
               child: audio.isLoading
+                  // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（保留 2dp 实参）
                   ? const SizedBox(
                       width: 22,
                       height: 22,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: AppCircularProgressIndicator(strokeWidth: 2),
                     )
                   : Icon(
                       audio.isPlaying ? Icons.pause : Icons.play_arrow,

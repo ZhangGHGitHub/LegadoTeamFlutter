@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'app_progress_indicator.dart';
+
 /// 视频播放设置（对标原版 `ui/video/config/SettingsDialog` + `VideoPlay` prefs）
 class VideoPlaySettings {
   static const _ns = 'videoPlay';
@@ -88,9 +90,10 @@ class _VideoSettingsDialogState extends State<_VideoSettingsDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       title: const Text('播放设置'),
       content: _loading || s == null
+          // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（默认参数视觉等价）
           ? const SizedBox(
               height: 96,
-              child: Center(child: CircularProgressIndicator()),
+              child: Center(child: AppCircularProgressIndicator()),
             )
           : SizedBox(
               width: double.maxFinite,

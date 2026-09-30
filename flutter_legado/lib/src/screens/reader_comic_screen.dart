@@ -20,6 +20,7 @@ import '../services/system_brightness.dart';
 import '../utils/comic_image_utils.dart';
 import '../utils/error_message.dart';
 import '../utils/manga_epaper.dart';
+import '../widgets/app_progress_indicator.dart';
 import '../widgets/loading_indicator.dart';
 import '../widgets/error_view.dart';
 import '../widgets/manga/manga_config_sheet.dart';
@@ -2297,7 +2298,9 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
       // [STAGE-UI-P43UNIFY1 B2] 加载态：去整面 0xFF1A1A1A 底色（参考版 #2082
       // 不整页压黑）；环色 0xFF666666 → 主题槽（color 省略 → 主题 primary，
       // 参考版 MangaReaderOverlays.kt:754 加载环为裸 CircularProgressIndicator）；
-      // 环宽 2 维持（2dp→4dp 宽度基线是 B4 项，不在本批）。深底上主题
+      // [STAGE-UI-P43UNIFY2 B3] 换接统一封装 AppCircularProgressIndicator；
+      // 线宽口径（B4 裁决）：参考版 34 处调用 0 覆盖 strokeWidth → 主流默认
+      // 4dp，本处保留 2dp 实参（避免既有细环视觉抖动）。深底上主题
       // primary 可见性沿用参考版取舍（dark 主题 primary 为浅紫，可见；
       // light 主题 primary 为深紫，深底可见性有限——与参考版一致，如实遵循）
       // 保留 Container 作 widget 测试取证位（断言 color == null 即证明
@@ -2306,7 +2309,7 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
       return Container(
         height: MediaQuery.of(context).size.height * 0.6,
         child: const Center(
-          child: CircularProgressIndicator(strokeWidth: 2),
+          child: AppCircularProgressIndicator(strokeWidth: 2),
         ),
       );
     }
@@ -2465,13 +2468,14 @@ class _EpaperNetworkImageState extends State<_EpaperNetworkImage> {
     if (_loading) {
       // [STAGE-UI-P43UNIFY1 B2] 电子纸加载态与 _DecodedComicImage 同口径：
       // 去整面 0xFF1A1A1A 底色 + 环色走主题槽（详见该处取证注释）
+      // [STAGE-UI-P43UNIFY2 B3] 换接统一封装（线宽口径 B4 裁决：保留 2dp 实参）
       // 保留 Container 作 widget 测试取证位（断言 color == null 即证明
       // 「加载态无整面硬编码底色」，B2 测试依赖），故不以 SizedBox 替换
       // ignore: sized_box_for_whitespace
       return Container(
         height: MediaQuery.of(context).size.height * 0.6,
         child: const Center(
-          child: CircularProgressIndicator(strokeWidth: 2),
+          child: AppCircularProgressIndicator(strokeWidth: 2),
         ),
       );
     }

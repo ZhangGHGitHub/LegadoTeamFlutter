@@ -7,6 +7,7 @@ import 'package:saf/saf.dart';
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_progress_indicator.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -278,7 +279,8 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
   /// 听书主体（根据状态展示 loading/error/内容三态）
   Widget _buildBody(AudioState provider) {
     if (provider.isLoading && !provider.hasChapters) {
-      return const Center(child: CircularProgressIndicator());
+      // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（默认参数视觉等价）
+      return const Center(child: AppCircularProgressIndicator());
     }
     if (provider.state == PlayerState.error && !provider.hasChapters) {
       return Center(

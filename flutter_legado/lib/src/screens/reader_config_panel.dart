@@ -11,6 +11,7 @@ import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../services/system_brightness.dart';
+import '../widgets/app_progress_indicator.dart'; // [STAGE-UI-P43UNIFY2 B3] part 文件内裸环换接统一封装
 import '../widgets/reader/reader_padding_config_sheet.dart';
 import '../widgets/reader/reader_tip_config_sheet.dart';
 part 'reader_config_panel_data.part.dart';

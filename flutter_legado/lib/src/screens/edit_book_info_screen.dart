@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNot
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/book_api.dart';
+import '../widgets/app_progress_indicator.dart';
 import '../widgets/book_cover.dart';
 
 /// 书籍信息编辑页面
@@ -68,10 +69,11 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
           FilledButton.icon(
             onPressed: _saving ? null : _save,
             icon: _saving
+                // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（保留 2dp 实参）
                 ? const SizedBox(
                     width: 16,
                     height: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
+                    child: AppCircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Symbols.check_rounded, size: 18),
             label: const Text('保存'),

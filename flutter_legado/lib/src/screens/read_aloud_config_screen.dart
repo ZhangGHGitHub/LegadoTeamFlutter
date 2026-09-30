@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNot
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../widgets/app_progress_indicator.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 
@@ -138,7 +139,8 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
         label: const Text('添加引擎'),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator())
+          // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（默认参数视觉等价）
+          ? const Center(child: AppCircularProgressIndicator())
           : _engines.isEmpty
               ? Center(
                   child: Column(

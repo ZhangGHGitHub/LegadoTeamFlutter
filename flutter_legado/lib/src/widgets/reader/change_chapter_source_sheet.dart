@@ -8,6 +8,7 @@ import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../services/book_api.dart';
 import '../../utils/error_message.dart';
+import '../app_progress_indicator.dart';
 
 /// 单章换源（对标原版 `ChangeChapterSourceDialog`）
 ///
@@ -298,7 +299,8 @@ class _ChangeChapterSourceSheetState
             ),
           Expanded(child: _buildBody(scheme)),
           if (_applying)
-            const LinearProgressIndicator(minHeight: 2),
+            // [STAGE-UI-P43UNIFY2 B3] 换接统一封装（保留 minHeight: 2 实参，视觉不变）
+            const AppLinearProgressIndicator(minHeight: 2),
         ],
       ),
     );

@@ -7,6 +7,7 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/search/search_notifier.dart';
 import '../utils/error_message.dart';
+import 'app_progress_indicator.dart';
 
 /// 搜索范围筛选面板（书源单选）
 ///
@@ -162,7 +163,8 @@ class _SearchFilterPanelState extends ConsumerState<SearchFilterPanel> {
             // 内容区域
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator())
+                  // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（默认参数视觉等价）
+                  ? const Center(child: AppCircularProgressIndicator())
                   : _error != null
                       ? _buildErrorView()
                       : _buildSourceList(state),
