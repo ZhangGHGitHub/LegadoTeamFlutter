@@ -30,7 +30,7 @@ import 'package:material_symbols_icons/symbols.dart';
 ///   - 贴底白条：全宽（colorScheme.surface、SafeArea bottom）三键均布：
 ///     目录（list，保留）/ 自动翻页（auto_mode，新增状态着色：开启
 ///     图标 primary 蓝、关闭 onSurface）/ 设置（settings 齿轮，
-///     替换 M1 tune 图标）。
+///     替换 M1 tune 图标，点击仍 = OpenSettings(READER) 翻页设置）。
 ///
 /// 按键语义（M1 保留，对齐参考版 intent + MangaReaderViewModel L244-253）：
 /// - 上一章/下一章：PreviousChapter/NextChapter（边界由屏幕层守卫）；
@@ -41,53 +41,6 @@ import 'package:material_symbols_icons/symbols.dart';
 ///   OpenSettings(AUTO_READ)）；翻页设置：OpenSettings(READER)；
 /// - 离线缓存键（参考版仅 cacheAvailable 时渲染）：我方无漫画离线缓存
 ///   功能，不放此键。
-
-/// 40×40 圆形胶囊图标按钮（对齐参考版 MangaMenuIconButton L678-742）
-///
-/// 图标 20dp、tint onSurfaceVariant、背景 surfaceContainerLow 圆形；
-/// [tooltip] 同时作为语义标签（对齐参考版 contentDescription）。
-class MangaMenuIconButton extends StatelessWidget {
-  final IconData icon;
-  final String tooltip;
-  final VoidCallback? onTap;
-  final GestureLongPressCallback? onLongPress;
-
-  const MangaMenuIconButton({
-    super.key,
-    required this.icon,
-    required this.tooltip,
-    this.onTap,
-    this.onLongPress,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Semantics(
-      button: true,
-      label: tooltip,
-      child: Tooltip(
-        message: tooltip,
-        child: GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onTap: onTap,
-          onLongPress: onLongPress,
-          child: Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: scheme.surfaceContainerLow,
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: Icon(icon, size: 20, color: scheme.onSurfaceVariant),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
 /// 顶栏图标键（[P4-3 M2] 无底纯图标，onSurface，40dp 点击区）
 ///
@@ -269,11 +222,267 @@ class MangaMenuTopBar extends StatelessWidget {
   }
 }
 
-/// 底栏（对齐参考版 MangaMenuBottomBar 悬浮形态 L424-649）
+// [P4-3 M2] 底栏两段尺寸常量（供屏幕层页脚上抬适配；两段分离、非一体化面板）
+/// 进度行高（左右圆形白钮直径，截图 ~52-56dp 取 56）
+const double kMangaProgressRowHeight = 56;
+
+/// 贴底白条高（三键行）
+const double kMangaBottomBarHeight = 56;
+
+/// 进度行与白条之间的间隙
+const double kMangaBottomSegmentGap = 8;
+
+/// 进度胶囊高（胶囊内 Slider 区域；thumb 竖条高 = 此高 × 60%）
+const double kMangaProgressCapsuleHeight = 44;
+
+/// 进度行圆形白钮（surface 底 + 浮起阴影，直径 [kMangaProgressRowHeight]）
 ///
-/// 悬浮圆角面板（radius 32 + margin 16 + 导航栏内边距）：
-/// - Row1：上一章 / 页进度滑条（weight 1）/ 下一章（spacedBy 8）；
-/// - Row2：目录 / 自动（停止） / 翻页设置（SpaceBetween 均布）。
+/// 图标 [Symbols.skip_previous] / [Symbols.skip_next]（替换 M1 箭头），
+/// 图标色 onSurface；[tooltip] 同时作为语义标签。
+class _MangaCircleButton extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  const _MangaCircleButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      button: true,
+      label: tooltip,
+      child: Tooltip(
+        message: tooltip,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Container(
+            width: kMangaProgressRowHeight,
+            height: kMangaProgressRowHeight,
+            decoration: BoxDecoration(
+              // 白色圆钮：surface 底（暗色主题自动为暗色表面）
+              color: scheme.surface,
+              shape: BoxShape.circle,
+              // 浮起阴影（截图：圆钮浮起于漫画内容上）
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x26000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Icon(icon, size: 28, color: scheme.onSurface),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 自绘竖条 Slider thumb（[P4-3 M2] 截图：参考版深蓝竖条贴左形态）
+///
+/// ~4.5dp 宽 × 胶囊高 60% 的圆角竖条，primary 色（启用）/ 38% alpha
+/// primary（禁用，pageCount = 1），配色按 enableAnimation 插值
+/// （对齐 SDK [RoundSliderThumbShape] 的 ColorTween 模式）。
+class _MangaBarThumbShape extends SliderComponentShape {
+  /// 竖条宽（截图 ~4-5dp）
+  static const double barWidth = 4.5;
+
+  /// 竖条高 = 胶囊高 [kMangaProgressCapsuleHeight] × 60%
+  static double get barHeight => kMangaProgressCapsuleHeight * 0.6;
+
+  @override
+  Size getPreferredSize(
+    bool isEnabled,
+    bool isDiscrete, {
+    TextPainter? labelPainter,
+    double? textScaleFactor,
+  }) {
+    return Size(barWidth, barHeight);
+  }
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    required Animation<double> activationAnimation,
+    required Animation<double> enableAnimation,
+    required bool isDiscrete,
+    required TextPainter labelPainter,
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required TextDirection textDirection,
+    required double value,
+    required double textScaleFactor,
+    required Size sizeWithOverflow,
+  }) {
+    assert(sliderTheme.disabledThumbColor != null);
+    assert(sliderTheme.thumbColor != null);
+    // 竖条配色：禁用 → 启用 按 enableAnimation 插值（SDK 同款模式）
+    final color = ColorTween(
+      begin: sliderTheme.disabledThumbColor,
+      end: sliderTheme.thumbColor,
+    ).evaluate(enableAnimation)!;
+    final rect = Rect.fromCenter(
+      center: center,
+      width: barWidth,
+      height: barHeight,
+    );
+    final corner = Radius.circular(barWidth / 2);
+    context.canvas.drawRRect(
+      RRect.fromRectAndCorners(
+        rect,
+        topLeft: corner,
+        topRight: corner,
+        bottomLeft: corner,
+        bottomRight: corner,
+      ),
+      Paint()..color = color,
+    );
+  }
+}
+
+/// 进度胶囊（白色 stadium 全圆角，占余宽，内放分段 SeekToPage 滑条）
+///
+/// 滑条：thumb = [_MangaBarThumbShape] 自绘竖条（primary）、轨道透明
+/// （trackHeight 0 = 不绘制轨道）、divisions 点串 primary 色（参考版
+/// 整串均匀蓝点：active 段实心 primary、inactive 段 40% alpha primary）；
+/// 拖动语义不变（SeekToPage），pageCount = 1 时禁用保持。
+class _MangaProgressCapsule extends StatelessWidget {
+  final double pageValue;
+  final double pageMax;
+  final int? divisions;
+  final bool pageEnabled;
+  final String readingPageDescription;
+  final void Function(int page) onSeekPage;
+
+  const _MangaProgressCapsule({
+    required this.pageValue,
+    required this.pageMax,
+    required this.divisions,
+    required this.pageEnabled,
+    required this.readingPageDescription,
+    required this.onSeekPage,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      height: kMangaProgressCapsuleHeight,
+      decoration: BoxDecoration(
+        // 白色胶囊：surface 底 + 全圆角（stadium）+ 浮起阴影
+        color: scheme.surface,
+        borderRadius: BorderRadius.circular(kMangaProgressCapsuleHeight / 2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x26000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        // 局部 SliderTheme（只影响本胶囊滑条，不动应用级滑条主题）：
+        // 竖条 thumb + 透明轨道 + primary 点串 + 无数值气泡
+        child: SliderTheme(
+          data: SliderThemeData(
+            // 轨道透明：trackHeight 0 → SDK 轨道绘制直接 no-op
+            trackHeight: 0,
+            thumbShape: _MangaBarThumbShape(),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
+            tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 2),
+            thumbColor: scheme.primary,
+            disabledThumbColor: scheme.primary.withValues(alpha: 0.38),
+            overlayColor: scheme.primary.withValues(alpha: 0.12),
+            // 点串配色（截图整串均匀蓝点）：thumb 左侧 active 段
+            // 实心 primary、右侧 inactive 段 40% alpha primary
+            activeTickMarkColor: scheme.primary,
+            inactiveTickMarkColor: scheme.primary.withValues(alpha: 0.4),
+          ),
+          child: Slider(
+            value: pageValue.clamp(0.0, pageMax),
+            min: 0,
+            max: pageMax,
+            divisions: divisions,
+            // 轨道透明后 active/inactive 轨不绘制，仅留合法色
+            activeColor: scheme.primary,
+            inactiveColor: scheme.surface,
+            onChanged: pageEnabled ? (v) => onSeekPage(v.round()) : null,
+            // 无障碍描述（对齐参考版 readingPageDescription）
+            semanticFormatterCallback: (_) => readingPageDescription,
+            // 参考版无数值气泡（本 SDK 默认 onlyForDiscrete 常显，显式关闭）
+            showValueIndicator: ShowValueIndicator.never,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 三键行按键（白条内，图标 28 / 点击区 40×40 透明）
+///
+/// [iconColor] 支持状态着色（自动键：开启 = primary 蓝，关闭 = onSurface）；
+/// [tooltip] 同时作为语义标签。
+class _MangaBottomBarKey extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
+  final Color iconColor;
+  final VoidCallback onTap;
+  final GestureLongPressCallback? onLongPress;
+
+  const _MangaBottomBarKey({
+    required this.icon,
+    required this.tooltip,
+    required this.iconColor,
+    required this.onTap,
+    this.onLongPress,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      button: true,
+      label: tooltip,
+      child: Tooltip(
+        message: tooltip,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          onLongPress: onLongPress,
+          child: SizedBox(
+            width: 40,
+            height: 40,
+            child: Icon(icon, size: 28, color: iconColor),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 底栏（[P4-3 M2] 两段分离：进度行悬浮于图上 + 贴底白条，非 M1 一体化面板）
+///
+/// - 进度行（悬浮）：左右独立圆形白钮（surface 底 + 浮起阴影、直径
+///   [kMangaProgressRowHeight]、图标 skip_previous / skip_next，替换
+///   M1 箭头）+ 中间白色胶囊（stadium 全圆角、占余宽）内放 Slider
+///   （竖条 thumb primary / 轨道透明 / divisions 点串 primary）；
+/// - 贴底白条（[kMangaBottomBarHeight] 高、colorScheme.surface、
+///   SafeArea bottom）：三键均布 = 目录（list，保留）/ 自动（auto_mode，
+///   状态着色：开启 primary 蓝、关闭 onSurface）/ 设置（settings 齿轮，
+///   替换 M1 tune，点击仍 = OpenSettings(READER) 翻页设置）；
+/// - 段间间隙 [kMangaBottomSegmentGap]；语义保留（SeekToPage /
+///   ToggleAutoRead 描述 停止/自动 随开关态、长按 OpenSettings(AUTO_READ) /
+///   OpenSettings(READER)，离线缓存键不放）。
 class MangaMenuBottomBar extends StatelessWidget {
   /// 上一章（屏幕层守卫：无上一章时 no-op）
   final VoidCallback onPrevChapter;
@@ -302,7 +511,7 @@ class MangaMenuBottomBar extends StatelessWidget {
   /// 目录键（参考版 OpenCatalog）
   final VoidCallback onOpenCatalog;
 
-  /// 自动阅读开关态（决定键描述 停止/自动，对齐参考版 L606-610）
+  /// 自动阅读开关态（决定键描述 停止/自动 与图标着色 primary/onSurface）
   final bool autoReadEnabled;
 
   /// 自动键点击（参考版 ToggleAutoRead）
@@ -311,7 +520,7 @@ class MangaMenuBottomBar extends StatelessWidget {
   /// 自动键长按（参考版 OpenSettings(AUTO_READ)）
   final VoidCallback onOpenAutoSettings;
 
-  /// 翻页设置键（参考版 OpenSettings(READER)）
+  /// 翻页设置键（设置齿轮，参考版 OpenSettings(READER)）
   final VoidCallback onOpenPageSettings;
 
   const MangaMenuBottomBar({
@@ -336,121 +545,80 @@ class MangaMenuBottomBar extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     return SafeArea(
       top: false,
-      child: Container(
-        // 参考版 floating：navigationBarsPadding + padding(16, 16)
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        decoration: BoxDecoration(
-          // 任务要求：底栏 = surfaceContainerHigh（75% 不透明度）+ 1dp 描边
-          color: scheme.surfaceContainerHigh.withValues(alpha: 0.75),
-          borderRadius: BorderRadius.circular(32),
-          border: Border.all(color: scheme.outlineVariant, width: 1),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Padding(
-              padding: const EdgeInsets.only(top: 16),
-              child: Padding(
-                // Row1：上一章 / 滑条 / 下一章（h-padding 16，spacedBy 8）
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Row(
-                  children: [
-                    MangaMenuIconButton(
-                      icon: Symbols.arrow_back_rounded,
-                      tooltip: '上一章',
-                      onTap: onPrevChapter,
-                    ),
-                    const SizedBox(width: 8),
-                    // 页进度滑条（参考版 ReadMenuSlider → AppSlider 视觉：
-                    // 小 thumb + 细轨道 + 均匀分段点，无数值气泡）。
-                    // 本 SDK MD3 默认滑条 = 20px 大 thumb / 4px 轨道 /
-                    // onlyForDiscrete 数值气泡，局部 SliderTheme 包裹对齐
-                    // （只影响本底栏滑条，不动应用级滑条主题）
-                    Expanded(
-                      child: SliderTheme(
-                        data: SliderThemeData(
-                          trackHeight: 2,
-                          thumbShape: const RoundSliderThumbShape(
-                            enabledThumbRadius: 6,
-                            disabledThumbRadius: 6,
-                          ),
-                          overlayShape: const RoundSliderOverlayShape(
-                            overlayRadius: 14,
-                          ),
-                          tickMarkShape: const RoundSliderTickMarkShape(
-                            tickMarkRadius: 2,
-                          ),
-                          thumbColor: scheme.onSurfaceVariant,
-                          disabledThumbColor: scheme.onSurfaceVariant
-                              .withValues(alpha: 0.38),
-                          overlayColor:
-                              scheme.onSurfaceVariant.withValues(alpha: 0.12),
-                          // 分段点配色（浅/暗主题均可见）：active 轨道
-                          // （onSurfaceVariant 色）上放 outlineVariant 点、
-                          // inactive 轨道（outlineVariant 色）上放
-                          // onSurfaceVariant 点
-                          activeTickMarkColor: scheme.outlineVariant,
-                          inactiveTickMarkColor: scheme.onSurfaceVariant,
-                        ),
-                        child: Slider(
-                          value: pageValue.clamp(0.0, pageMax),
-                          min: 0,
-                          max: pageMax,
-                          divisions: divisions,
-                          activeColor: scheme.onSurfaceVariant,
-                          inactiveColor: scheme.outlineVariant,
-                          onChanged:
-                              pageEnabled ? (v) => onSeekPage(v.round()) : null,
-                          // 无障碍描述（对齐参考版 readingPageDescription；
-                          // 本 SDK Slider 用 semanticFormatterCallback 承载）
-                          semanticFormatterCallback: (_) =>
-                              readingPageDescription,
-                          // 参考版 Compose/Miuix 滑条无数值气泡；本 SDK 默认
-                          // onlyForDiscrete 会常显页码气泡，显式关闭
-                          showValueIndicator: ShowValueIndicator.never,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    MangaMenuIconButton(
-                      icon: Symbols.arrow_forward_rounded,
-                      tooltip: '下一章',
-                      onTap: onNextChapter,
-                    ),
-                  ],
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          // 段1：进度行（悬浮于漫画内容上方）
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              16,
+              12,
+              16,
+              kMangaBottomSegmentGap,
+            ),
+            child: Row(
+              children: [
+                _MangaCircleButton(
+                  icon: Symbols.skip_previous_rounded,
+                  tooltip: '上一章',
+                  onTap: onPrevChapter,
                 ),
-              ),
+                const SizedBox(width: 8),
+                // 白色胶囊占余宽（stadium 全圆角 + 浮起阴影 + 分段滑条）
+                Expanded(
+                  child: _MangaProgressCapsule(
+                    pageValue: pageValue,
+                    pageMax: pageMax,
+                    divisions: divisions,
+                    pageEnabled: pageEnabled,
+                    readingPageDescription: readingPageDescription,
+                    onSeekPage: onSeekPage,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                _MangaCircleButton(
+                  icon: Symbols.skip_next_rounded,
+                  tooltip: '下一章',
+                  onTap: onNextChapter,
+                ),
+              ],
             ),
-            // Spacer 12（参考版 L600 Spacer(Modifier.height(12.dp))）
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              child: Row(
-                // Row2：目录 / 自动（停止）/ 翻页设置（SpaceBetween 均布）
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  MangaMenuIconButton(
-                    icon: Symbols.list_rounded,
-                    tooltip: '目录',
-                    onTap: onOpenCatalog,
-                  ),
-                  MangaMenuIconButton(
-                    icon: Symbols.auto_mode_rounded,
-                    // 参考版 L606-610：开 = 「停止」，关 = 「自动」
-                    tooltip: autoReadEnabled ? '停止' : '自动',
-                    onTap: onToggleAutoRead,
-                    onLongPress: onOpenAutoSettings,
-                  ),
-                  MangaMenuIconButton(
-                    icon: Symbols.tune_rounded,
-                    tooltip: '翻页设置',
-                    onTap: onOpenPageSettings,
-                  ),
-                ],
-              ),
+          ),
+          // 段2：贴底白条（全宽 surface，三键均布；SafeArea bottom 由
+          // 外层 SafeArea 承担导航栏内边距）
+          Container(
+            height: kMangaBottomBarHeight,
+            color: scheme.surface,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _MangaBottomBarKey(
+                  icon: Symbols.list_rounded,
+                  tooltip: '目录',
+                  iconColor: scheme.onSurface,
+                  onTap: onOpenCatalog,
+                ),
+                _MangaBottomBarKey(
+                  icon: Symbols.auto_mode_rounded,
+                  // 参考版 L606-610：开 = 「停止」，关 = 「自动」
+                  tooltip: autoReadEnabled ? '停止' : '自动',
+                  // 状态着色（截图：开启图标变 primary 蓝，关闭 onSurface）
+                  iconColor:
+                      autoReadEnabled ? scheme.primary : scheme.onSurface,
+                  onTap: onToggleAutoRead,
+                  onLongPress: onOpenAutoSettings,
+                ),
+                _MangaBottomBarKey(
+                  // 设置齿轮（替换 M1 tune 图标），点击 = 翻页设置
+                  icon: Symbols.settings_rounded,
+                  tooltip: '翻页设置',
+                  iconColor: scheme.onSurface,
+                  onTap: onOpenPageSettings,
+                ),
+              ],
             ),
-            const SizedBox(height: 16),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

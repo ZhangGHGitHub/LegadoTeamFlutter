@@ -1988,8 +1988,14 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
         ? Alignment.center
         : Alignment.centerLeft;
     final bottomInset = MediaQuery.of(context).padding.bottom;
-    // 控制栏可见时上抬：底栏内容高（16+40+12+40+16=124）+ 底边距 16 + 间隙 8
-    final lift = _showControls ? 124 + 16 + 8 : 0;
+    // [P4-3 M2] 控制栏可见时上抬避让两段底栏（进度行 56 + 间隙 8 +
+    // 贴底白条 56 + 间隙 8 = 128；段间尺寸常量见 manga_menu.dart）
+    final lift = _showControls
+        ? kMangaProgressRowHeight +
+            kMangaBottomSegmentGap +
+            kMangaBottomBarHeight +
+            kMangaBottomSegmentGap
+        : 0;
     return Positioned(
       left: 16,
       right: 16,
@@ -2020,9 +2026,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     );
   }
 
-  /// [P4-3 M1] 构建底部控制栏（悬浮圆角面板，对齐参考版
-  /// MangaMenuBottomBar 悬浮形态：Row1 上一章/页进度滑条/下一章 +
-  /// Row2 目录/自动（停止）/翻页设置 SpaceBetween 均布）
+  /// [P4-3 M2] 构建底部控制栏（两段分离：进度行悬浮 + 贴底白条三键，
+  /// 按用户截图重构；参数与语义不变，见 manga_menu.dart 组件文档）
   Widget _buildBottomBar(BuildContext context) {
     final pageCount = _imageUrls.length;
     return MangaMenuBottomBar(
