@@ -24,8 +24,10 @@ import 'package:material_symbols_icons/symbols.dart';
 ///     图标 Symbols.skip_previous / skip_next，替换 M1 arrow 图标）+
 ///     中间白色胶囊（stadium 全圆角、surface、占余宽）内放 Slider——
 ///     thumb 自绘竖条（4.5dp 宽 × 胶囊高 60% 圆角竖条，primary 色，
-///     参考版为深蓝竖条）、轨道透明、divisions 点串 primary 色
-///     （参考版整串均匀蓝点）；拖动语义不变（SeekToPage），
+///     参考版为深蓝竖条）、轨道透明、divisions 点串自绘 primary 色
+///     （参考版整串均匀蓝点；[P4-3 M2b] 改自绘 CustomPaint 均布点串，
+///     绕开标准 tickMark 密度门禁——50 页级章节下标准 tick 永不绘制，
+///     见 m2b 复验证据）；拖动语义不变（SeekToPage），
 ///     pageCount = 1 时禁用保持；
 ///   - 贴底白条：全宽（colorScheme.surface、SafeArea bottom）三键均布：
 ///     目录（list，保留）/ 自动翻页（auto_mode，新增状态着色：开启
@@ -352,9 +354,51 @@ class _MangaBarThumbShape extends SliderComponentShape {
 
 /// 进度胶囊（白色 stadium 全圆角，占余宽，内放分段 SeekToPage 滑条）
 ///
+/// 自绘点串画笔（进度胶囊内 Slider 下层，[P4-3 M2b]）
+///
+/// 根因（装机复验 m2b_menu_light.png 胶囊内除竖条外全白）：Flutter
+/// slider.dart 标准 tickMark 有密度门禁——仅当
+/// `adjustedTrackWidth / divisions >= 3.0 * tickMarkWidth` 才绘制整串
+/// （Flutter 3.44.8 行为）；480dpi 下胶囊轨宽 ≈171.5dp、50 页章节
+/// divisions = 49 → 3.5dp < 3 × 6dp → 整串被跳过，标准架构下此场景
+/// 点串永不出现。故改自绘：按 divisions 在胶囊内水平均布
+/// divisions+1 个 3dp 实色 primary 点（含首尾端点，独立于 thumb 位置，
+/// 整串均匀），位于 Slider（thumb 层）之下。
+class _MangaTickDotsPainter extends CustomPainter {
+  /// 分段数（divisions = pageCount - 1；≥ 1 才有点串）
+  final int divisions;
+
+  /// 点色（scheme.primary，随主题）
+  final Color color;
+
+  /// 点直径（~3dp，白底上清晰可见）
+  static const double dotDiameter = 3.0;
+
+  _MangaTickDotsPainter({required this.divisions, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (divisions < 1) return;
+    final paint = Paint()..color = color;
+    final radius = dotDiameter / 2;
+    // 含首尾端点的均布整串（i = 0..divisions → divisions+1 点）
+    for (var i = 0; i <= divisions; i++) {
+      final x = size.width * i / divisions;
+      canvas.drawCircle(Offset(x, size.height / 2), radius, paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_MangaTickDotsPainter oldDelegate) =>
+      oldDelegate.divisions != divisions || oldDelegate.color != color;
+}
+
+/// 进度胶囊（白色 stadium 全圆角，占余宽，内放分段 SeekToPage 滑条）
+///
 /// 滑条：thumb = [_MangaBarThumbShape] 自绘竖条（primary）、轨道透明
-/// （trackHeight 0 = 不绘制轨道）、divisions 点串实色 primary
-/// （3dp 点、整串均匀深点，对齐参考版观感；白胶囊底上清晰可见）；
+/// （trackHeight 0 = 不绘制轨道）、点串 = [_MangaTickDotsPainter] 自绘
+/// （Slider 下层均布 3dp 实色 primary 点，绕开标准 tickMark 密度门禁；
+/// 标准 tick 置 noTickMark 防双重绘制）；
 /// 拖动语义不变（SeekToPage），pageCount = 1 时禁用保持。
 class _MangaProgressCapsule extends StatelessWidget {
   final double pageValue;
@@ -392,39 +436,55 @@ class _MangaProgressCapsule extends StatelessWidget {
       ),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20),
-        // 局部 SliderTheme（只影响本胶囊滑条，不动应用级滑条主题）：
-        // 竖条 thumb + 透明轨道 + primary 点串 + 无数值气泡
-        child: SliderTheme(
-          data: SliderThemeData(
-            // 轨道透明：trackHeight 0 → SDK 轨道绘制直接 no-op
-            trackHeight: 0,
-            thumbShape: _MangaBarThumbShape(),
-            overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-            // 点串增强（装机采证 m2_menu_light.png：2dp + 40% alpha 在
-            // 白色胶囊上对比不足不可见）：点半径加大到 3dp、inactive
-            // 段由 40% alpha 改实色 primary —— 与参考版整串均匀深点
-            // 观感一致，白底上清晰可见
-            tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 3),
-            thumbColor: scheme.primary,
-            disabledThumbColor: scheme.primary.withValues(alpha: 0.38),
-            overlayColor: scheme.primary.withValues(alpha: 0.12),
-            activeTickMarkColor: scheme.primary,
-            inactiveTickMarkColor: scheme.primary,
-          ),
-          child: Slider(
-            value: pageValue.clamp(0.0, pageMax),
-            min: 0,
-            max: pageMax,
-            divisions: divisions,
-            // 轨道透明后 active/inactive 轨不绘制，仅留合法色
-            activeColor: scheme.primary,
-            inactiveColor: scheme.surface,
-            onChanged: pageEnabled ? (v) => onSeekPage(v.round()) : null,
-            // 无障碍描述（对齐参考版 readingPageDescription）
-            semanticFormatterCallback: (_) => readingPageDescription,
-            // 参考版无数值气泡（本 SDK 默认 onlyForDiscrete 常显，显式关闭）
-            showValueIndicator: ShowValueIndicator.never,
-          ),
+        // 两层叠放：下层自绘点串（均布整串，独立于 thumb 位置）+
+        // 上层 Slider（竖条 thumb 覆盖点串之上 + 透明轨道 + 无数值气泡）
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // 下层：自绘点串（divisions ≥ 1 时渲染；pageCount = 1 无分段
+            // 不画点）。占满胶囊内容区（与 Slider 同宽同高），点在
+            // 竖条 thumb 下方也画（整串均布，不随 thumb 位置变化）
+            if (divisions != null && divisions! >= 1)
+              CustomPaint(
+                size: Size.infinite,
+                painter: _MangaTickDotsPainter(
+                  divisions: divisions!,
+                  color: scheme.primary,
+                ),
+              ),
+            // 上层：Slider（局部 SliderTheme 只影响本胶囊滑条，不动
+            // 应用级滑条主题）。标准 tickMark 置 noTickMark——密度门禁
+            // （轨宽/divisions ≥ 3×点宽 才绘整串）在 50 页级章节下永不
+            // 满足，点串已改自绘，避免标准 tick 干扰/双重绘制
+            SliderTheme(
+              data: SliderThemeData(
+                // 轨道透明：trackHeight 0 → SDK 轨道绘制直接 no-op
+                trackHeight: 0,
+                thumbShape: _MangaBarThumbShape(),
+                overlayShape:
+                    const RoundSliderOverlayShape(overlayRadius: 14),
+                tickMarkShape: SliderTickMarkShape.noTickMark,
+                thumbColor: scheme.primary,
+                disabledThumbColor: scheme.primary.withValues(alpha: 0.38),
+                overlayColor: scheme.primary.withValues(alpha: 0.12),
+              ),
+              child: Slider(
+                value: pageValue.clamp(0.0, pageMax),
+                min: 0,
+                max: pageMax,
+                divisions: divisions,
+                // 轨道透明后 active/inactive 轨不绘制，仅留合法色
+                activeColor: scheme.primary,
+                inactiveColor: scheme.surface,
+                onChanged: pageEnabled ? (v) => onSeekPage(v.round()) : null,
+                // 无障碍描述（对齐参考版 readingPageDescription）
+                semanticFormatterCallback: (_) => readingPageDescription,
+                // 参考版无数值气泡（本 SDK 默认 onlyForDiscrete 常显，
+                // 显式关闭）
+                showValueIndicator: ShowValueIndicator.never,
+              ),
+            ),
+          ],
         ),
       ),
     );

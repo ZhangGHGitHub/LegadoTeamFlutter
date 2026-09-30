@@ -324,6 +324,14 @@ void main() {
       expect(tocX, lessThan(autoX));
       expect(settingsX, greaterThan(autoX));
 
+      // [P4-3 M2b] 自绘点串层：胶囊内 Slider 下层 CustomPaint（标准
+      // tickMark 密度门禁下 50 页级章节整串不绘制，点串改自绘均布）
+      expect(
+        find.descendant(of: bottomBar, matching: find.byType(CustomPaint)),
+        findsOneWidget,
+        reason: '进度胶囊内应有自绘点串层（CustomPaint，位于 Slider 下层）',
+      );
+
       // 滑条参数：0 基页索引，max = pageCount-1，divisions = pageCount-1
       final slider = tester.widget<Slider>(find.byType(Slider));
       expect(slider.min, 0.0);
