@@ -17,6 +17,7 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
 import '../services/book_api.dart';
+import '../services/platform_bridge_service.dart';
 import '../services/system_brightness.dart';
 import '../utils/comic_image_utils.dart';
 import '../utils/error_message.dart';
@@ -1633,6 +1634,15 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
 
   /// 保存图片（对齐原版：用户选目录写入；取消选择时回退文档目录并提示，
   /// 先例 auto_task_screen saveFile → 文档目录兜底）
+  ///
+  /// [D2] 平台分派（根因：MuMu DownloadStorageProvider 拒写
+  /// SecurityException × file_picker 8.3.7 仅 catch IOException →
+  /// 未捕获异常抛主线程 FATAL，m4b_fatal_stack_d2.txt）：
+  /// - Android：MediaStore 直写通道（Download/legado/，不弹 SAF 对话框）
+  ///   → 成功 toast「已保存: Download/legado/<文件名>」；通道失败 /
+  ///   API < 29 → 回退文档目录兜底（现有逻辑 + 现有 toast）；
+  /// - iOS / 其他平台：保持现有 file_picker saveFile 路径
+  ///   （[D1 修复] bytes 必传；取消返回 null → 文档目录兜底）。
   Future<void> _savePageImage(int index) async {
     final data = await _resolvePageImage(index);
     if (data == null) {
@@ -1640,6 +1650,26 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       return;
     }
     final fileName = 'manga-${DateTime.now().millisecondsSinceEpoch}${data.suffix}';
+    final service = PlatformBridgeService.instance;
+    if (service.useMediaStoreDownloads) {
+      // [D2] Android：MediaStore 直写（不经 SAF，绕开 file_picker 崩溃链路）
+      final saved = await service.saveImageToDownloads(fileName, data.bytes);
+      if (saved != null) {
+        _showPageActionSnackBar('已保存: $saved');
+        return;
+      }
+      // 通道失败 / API < 29 → 兜底写应用文档目录（现有逻辑）
+      try {
+        final dir = await getApplicationDocumentsDirectory();
+        final file =
+            File('${dir.path}/$fileName')..writeAsBytesSync(data.bytes);
+        _showPageActionSnackBar('已保存到文档目录: ${file.path}');
+      } catch (e) {
+        _showPageActionSnackBar('保存图片失败: $e');
+      }
+      return;
+    }
+    // iOS / 其他平台：现有 file_picker saveFile 路径
     try {
       // [D1 修复] file_picker 8.x 在 Android/iOS 的 saveFile 必传 bytes
       // （缺省抛 ArgumentError「Bytes are required on Android & iOS」，

@@ -66,6 +66,10 @@ import 'package:flutter_legado/src/widgets/manga/manga_config_sheet.dart';
 // [P4-3 M4 批2] 面板接线用例需断言面板类型（MangaConfigSheet）
 import 'package:flutter_legado/src/services/mock_book_api.dart';
 
+// [D2 修复] 存图 MediaStore 通道与平台分派（通道 mock + 分派覆写）
+import 'package:flutter_legado/src/services/platform_bridge_service.dart';
+import 'package:flutter_legado/src/services/platform_channel.dart';
+
 // [D1 修复] 存图回归测试桩注入（path_provider 平台接口为传递依赖，
 // 测试直引以覆写 instance 保持 hermetic，不改 pubspec）
 // ignore: depend_on_referenced_packages
@@ -1221,6 +1225,161 @@ void main() {
         equals(fake.capturedBytes),
         reason: '兜底落盘内容 = 页面图片字节',
       );
+    });
+  });
+
+  // =====================================================================
+  // [D2 修复] 保存图片 MediaStore 通道与平台分派
+  // 根因：MuMu DownloadStorageProvider 拒写（SecurityException: requires
+  // MANAGE_DOCUMENTS）× file_picker 8.3.7 FilePickerDelegate 仅 catch
+  // IOException → 未捕获异常抛主线程 FATAL（m4b_fatal_stack_d2.txt）。
+  // Android 改走 legado/storage 通道（MediaStore 直写 Download/legado/，
+  // 不弹 SAF 对话框）；通道失败 → 文档目录兜底；非 Android 保持
+  // file_picker saveFile（D1 修复态）。
+  // 分派可测性：Platform.isAndroid 在 Windows 测试宿主不可伪造，经
+  // PlatformBridgeService.saveViaDownloadsOverride 强制分支。
+  // =====================================================================
+  group('[D2 修复] 保存图片 MediaStore 通道与平台分派', () {
+    /// mock legado/storage 通道（teardown 自动恢复）
+    void mockStorageChannel(
+      WidgetTester tester,
+      Future<Object?> Function(MethodCall call) handler,
+    ) {
+      final messenger = tester.binding.defaultBinaryMessenger;
+      messenger.setMockMethodCallHandler(PlatformChannel.storage, handler);
+      addTearDown(
+        () => messenger.setMockMethodCallHandler(PlatformChannel.storage, null),
+      );
+    }
+
+    testWidgets('Android 分支：通道成功 → Download/legado 提示，不走 file_picker',
+        (tester) async {
+      final channelCalls = <MethodCall>[];
+      mockStorageChannel(tester, (call) async {
+        channelCalls.add(call);
+        return 'Download/legado/manga-d2.png';
+      });
+      PlatformBridgeService.instance.saveViaDownloadsOverride = true;
+      addTearDown(() =>
+          PlatformBridgeService.instance.saveViaDownloadsOverride = null);
+      final fake = _FakeFilePicker('must-not-use-file-picker');
+      _useFakeFilePicker(fake);
+
+      final api = _buildApi(progressCalls: <List<int>>[]);
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      // 长按第 1 张图 → 默认直接存图分支
+      await tester.longPressAt(const Offset(400, 100));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.textContaining('已保存: Download/legado/'), findsOneWidget,
+          reason: 'Android 分支通道成功 → toast 相对路径');
+      expect(channelCalls, hasLength(1),
+          reason: 'Android 分支必须调用 MediaStore 通道');
+      final args =
+          channelCalls.single.arguments as Map<Object?, Object?>;
+      expect(args['fileName'], endsWith('.png'),
+          reason: '通道参数 fileName 保留扩展名（按魔数推断）');
+      expect(
+        (args['bytes'] as List<int>).take(4).toList(),
+        equals(const [0x89, 0x50, 0x4E, 0x47]),
+        reason: '通道参数 bytes 为页面图片 PNG 字节',
+      );
+      expect(fake.capturedBytes, isNull,
+          reason: 'Android 分支不走 file_picker（D2 绕开 SAF）');
+    });
+
+    testWidgets('Android 分支：通道失败 → 文档目录兜底', (tester) async {
+      // 真实 IO 事件在 fake-async 测试体里须经 runAsync 转动
+      final tempDir =
+          (await tester.runAsync(() => Directory.systemTemp.createTemp('d2_fail_')))!;
+      addTearDown(() => tempDir.delete(recursive: true));
+      final originalProvider = PathProviderPlatform.instance;
+      PathProviderPlatform.instance = _FakePathProvider(tempDir.path);
+      addTearDown(() => PathProviderPlatform.instance = originalProvider);
+
+      mockStorageChannel(tester, (call) async {
+        // 模拟原生端 provider 拒写（result.error → PlatformException）
+        throw PlatformException(
+          code: 'SAVE_FAILED',
+          message: 'provider rejected write',
+        );
+      });
+      PlatformBridgeService.instance.saveViaDownloadsOverride = true;
+      addTearDown(() =>
+          PlatformBridgeService.instance.saveViaDownloadsOverride = null);
+      final fake = _FakeFilePicker('must-not-use-file-picker');
+      _useFakeFilePicker(fake);
+
+      final api = _buildApi(progressCalls: <List<int>>[]);
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      await tester.longPressAt(const Offset(400, 100));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.textContaining('已保存到文档目录'), findsOneWidget,
+          reason: '通道失败 → 文档目录兜底（现有逻辑）');
+      expect(fake.capturedBytes, isNull,
+          reason: 'Android 分支不走 file_picker');
+      final files = tempDir
+          .listSync()
+          .where((e) => e is File && e.path.endsWith('.png'))
+          .toList();
+      expect(files, hasLength(1), reason: '兜底目录应落盘 1 个文件');
+      expect(
+        (files.single as File).readAsBytesSync().take(4).toList(),
+        equals(const [0x89, 0x50, 0x4E, 0x47]),
+        reason: '兜底落盘内容 = 页面图片字节',
+      );
+    });
+
+    testWidgets('非 Android 分支：不调通道，走 file_picker saveFile',
+        (tester) async {
+      // 真实 IO 事件在 fake-async 测试体里须经 runAsync 转动
+      final tempDir = (
+        await tester.runAsync(() => Directory.systemTemp.createTemp('d2_other_'))
+      )!;
+      addTearDown(() => tempDir.delete(recursive: true));
+      final chosenPath = '${tempDir.path}/manga-other.png';
+
+      var channelCalls = 0;
+      mockStorageChannel(tester, (call) async {
+        channelCalls++;
+        return 'Download/legado/should-not-happen.png';
+      });
+      PlatformBridgeService.instance.saveViaDownloadsOverride = false;
+      addTearDown(() =>
+          PlatformBridgeService.instance.saveViaDownloadsOverride = null);
+      final fake = _FakeFilePicker(chosenPath);
+      _useFakeFilePicker(fake);
+
+      final api = _buildApi(progressCalls: <List<int>>[]);
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      await tester.longPressAt(const Offset(400, 100));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.textContaining('已保存:'), findsOneWidget,
+          reason: '非 Android 走 file_picker saveFile 成功分支');
+      expect(fake.capturedBytes, isNotNull,
+          reason: 'file_picker saveFile 必须收到 bytes（D1 回归）');
+      expect(File(chosenPath).existsSync(), isTrue, reason: '选中路径落盘');
+      expect(channelCalls, 0, reason: '非 Android 不得调用 MediaStore 通道');
     });
   });
 }
