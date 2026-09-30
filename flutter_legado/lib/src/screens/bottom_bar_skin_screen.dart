@@ -12,6 +12,7 @@ import '../providers/bottom_bar_skin_notifier.dart';
 import '../services/bottom_bar_skin_format.dart';
 import '../services/bottom_bar_skin_service.dart';
 import '../widgets/ios_widgets.dart';
+import '../widgets/bottom_sheet_widget.dart';
 import 'bottom_bar_skin_assign_screen.dart';
 
 /// 底栏皮肤管理（对齐 BottomBarSkinActivity）
@@ -206,39 +207,32 @@ class BottomBarSkinScreen extends ConsumerWidget {
     BottomBarSkinNotifier notifier,
     String name,
   ) async {
-    final action = await showModalBottomSheet<String>(
+    // [统一壳 B2a] 伪标题 ListTile 改统一壳标题（对齐 AppModalBottomSheet 语义）
+    final action = await AppBottomSheet.show<String>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: Text(name),
-              enabled: false,
-            ),
-            ListTile(
-              leading: const Icon(Symbols.edit_rounded),
-              title: const Text('编辑'),
-              onTap: () => Navigator.pop(ctx, 'edit'),
-            ),
-            ListTile(
-              leading: const Icon(Symbols.file_download_rounded),
-              title: const Text('导出'),
-              onTap: () => Navigator.pop(ctx, 'export'),
-            ),
-            ListTile(
-              leading: const Icon(Symbols.share_rounded),
-              title: const Text('分享'),
-              onTap: () => Navigator.pop(ctx, 'share'),
-            ),
-            ListTile(
-              leading: const Icon(Symbols.delete_rounded),
-              title: const Text('删除'),
-              onTap: () => Navigator.pop(ctx, 'delete'),
-            ),
-          ],
+      title: name,
+      children: [
+        ListTile(
+          leading: const Icon(Symbols.edit_rounded),
+          title: const Text('编辑'),
+          onTap: () => Navigator.pop(context, 'edit'),
         ),
-      ),
+        ListTile(
+          leading: const Icon(Symbols.file_download_rounded),
+          title: const Text('导出'),
+          onTap: () => Navigator.pop(context, 'export'),
+        ),
+        ListTile(
+          leading: const Icon(Symbols.share_rounded),
+          title: const Text('分享'),
+          onTap: () => Navigator.pop(context, 'share'),
+        ),
+        ListTile(
+          leading: const Icon(Symbols.delete_rounded),
+          title: const Text('删除'),
+          onTap: () => Navigator.pop(context, 'delete'),
+        ),
+      ],
     );
     if (!context.mounted) return;
     if (action == 'delete') {

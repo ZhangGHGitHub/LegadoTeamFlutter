@@ -13,6 +13,7 @@ import '../providers/theme/theme_notifier.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
+import '../widgets/bottom_sheet_widget.dart';
 
 /// 我的页面（枢纽菜单）
 ///
@@ -458,40 +459,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   void _showThemePicker(BuildContext context) {
     final themeNotifier = ref.read(themeNotifierProvider.notifier);
     final currentMode = ref.read(themeNotifierProvider).themeMode;
-    showModalBottomSheet<ThemeMode>(
+    // [统一壳 B2a] 自造壳迁移统一 AppBottomSheet（对齐参考版 AppModalBottomSheet
+    // 语义；把手由主题 bottomSheetTheme.showDragHandle 统一提供）
+    AppBottomSheet.show<ThemeMode>(
       context: context,
-      showDragHandle: true,
-      builder: (ctx) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    AppStrings.selectTheme,
-                    style: Theme.of(ctx).textTheme.titleMedium,
-                  ),
-                ),
-              ),
-              ...ThemeMode.values.map((mode) {
-                final selected = mode == currentMode;
-                return ListTile(
-                  leading: Icon(
-                    selected ? Symbols.check_circle_rounded : Symbols.radio_button_unchecked_rounded,
-                    color: selected ? Theme.of(ctx).colorScheme.primary : null,
-                  ),
-                  title: Text(_getThemeLabel(mode)),
-                  onTap: () => Navigator.pop(ctx, mode),
-                );
-              }),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
+      title: AppStrings.selectTheme,
+      children: [
+        ...ThemeMode.values.map((mode) {
+          final selected = mode == currentMode;
+          return ListTile(
+            leading: Icon(
+              selected ? Symbols.check_circle_rounded : Symbols.radio_button_unchecked_rounded,
+              color: selected ? Theme.of(context).colorScheme.primary : null,
+            ),
+            title: Text(_getThemeLabel(mode)),
+            onTap: () => Navigator.pop(context, mode),
+          );
+        }),
+        const SizedBox(height: 8),
+      ],
     ).then((selectedMode) {
       if (selectedMode != null) {
         themeNotifier.setThemeMode(selectedMode);

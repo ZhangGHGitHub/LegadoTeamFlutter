@@ -74,4 +74,54 @@ void main() {
 
     expect(find.text('测试弹窗'), findsNothing);
   });
+
+  // [统一壳 B2a] 迁移形态用例：标题 + 操作 ListTile 列表（主题选择/底栏皮肤/
+  // 书源操作三处迁移后的共同形态），点击 ListTile 以返回值关闭。
+  testWidgets('AppBottomSheet 列表操作项返回值（迁移形态）', (tester) async {
+    String? action;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => Center(
+              child: ElevatedButton(
+                onPressed: () async {
+                  action = await AppBottomSheet.show<String>(
+                    context: context,
+                    title: '测试书源',
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.arrow_upward),
+                        title: const Text('置顶'),
+                        onTap: () => Navigator.pop(context, 'top'),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.delete),
+                        title: const Text('删除'),
+                        onTap: () => Navigator.pop(context, 'delete'),
+                      ),
+                    ],
+                  );
+                },
+                child: const Text('打开'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('测试书源'), findsOneWidget);
+    expect(find.text('置顶'), findsOneWidget);
+    expect(find.text('删除'), findsOneWidget);
+
+    await tester.tap(find.text('删除'));
+    await tester.pumpAndSettle();
+
+    expect(action, 'delete');
+    expect(find.text('测试书源'), findsNothing);
+  });
 }

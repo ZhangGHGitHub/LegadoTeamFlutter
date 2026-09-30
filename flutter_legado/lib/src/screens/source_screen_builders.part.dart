@@ -921,64 +921,57 @@ extension _SourceBuilders on _SourceScreenState {
     final hasExplore =
         (source.exploreUrl ?? '').trim().isNotEmpty;
 
-    final action = await showModalBottomSheet<String>(
+    // [统一壳 B2a] 自造壳（IosGrabber+滚动列）迁移统一 AppBottomSheet
+    // （对齐参考版 AppModalBottomSheet 语义；把手由主题统一提供），
+    // 标题=书源名（操作对象语义）
+    final action = await AppBottomSheet.show<String>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.only(top: 8, bottom: 4),
-                child: IosGrabber(),
-              ),
-              ListTile(
-                leading: const Icon(Symbols.vertical_align_top_rounded),
-                title: const Text('置顶'),
-                enabled: manualSort,
-                onTap: () => Navigator.pop(ctx, 'top'),
-              ),
-              ListTile(
-                leading: const Icon(Symbols.vertical_align_bottom_rounded),
-                title: const Text('置底'),
-                enabled: manualSort,
-                onTap: () => Navigator.pop(ctx, 'bottom'),
-              ),
-              if (hasLoginUrl)
-                ListTile(
-                  leading: const Icon(Symbols.person_rounded),
-                  title: const Text('登录'),
-                  onTap: () => Navigator.pop(ctx, 'login'),
-                ),
-              ListTile(
-                leading: const Icon(Symbols.search_rounded),
-                title: const Text('搜索'),
-                onTap: () => Navigator.pop(ctx, 'search'),
-              ),
-              ListTile(
-                leading: const Icon(Symbols.bug_report_rounded),
-                title: const Text('调试'),
-                onTap: () => Navigator.pop(ctx, 'debug'),
-              ),
-              ListTile(
-                leading: Icon(Symbols.delete_rounded, color: colorScheme.error),
-                title: Text('删除',
-                    style: TextStyle(color: colorScheme.error)),
-                onTap: () => Navigator.pop(ctx, 'delete'),
-              ),
-              if (hasExplore)
-                ListTile(
-                  leading: Icon(source.enabledExplore
-                      ? Symbols.explore_off_rounded
-                      : Symbols.explore_rounded),
-                  title:
-                      Text(source.enabledExplore ? '禁用发现' : '启用发现'),
-                  onTap: () => Navigator.pop(ctx, 'toggle_explore'),
-                ),
-            ],
-          ),
+      title: source.bookSourceName,
+      children: [
+        ListTile(
+          leading: const Icon(Symbols.vertical_align_top_rounded),
+          title: const Text('置顶'),
+          enabled: manualSort,
+          onTap: () => Navigator.pop(context, 'top'),
         ),
-      ),
+        ListTile(
+          leading: const Icon(Symbols.vertical_align_bottom_rounded),
+          title: const Text('置底'),
+          enabled: manualSort,
+          onTap: () => Navigator.pop(context, 'bottom'),
+        ),
+        if (hasLoginUrl)
+          ListTile(
+            leading: const Icon(Symbols.person_rounded),
+            title: const Text('登录'),
+            onTap: () => Navigator.pop(context, 'login'),
+          ),
+        ListTile(
+          leading: const Icon(Symbols.search_rounded),
+          title: const Text('搜索'),
+          onTap: () => Navigator.pop(context, 'search'),
+        ),
+        ListTile(
+          leading: const Icon(Symbols.bug_report_rounded),
+          title: const Text('调试'),
+          onTap: () => Navigator.pop(context, 'debug'),
+        ),
+        ListTile(
+          leading: Icon(Symbols.delete_rounded, color: colorScheme.error),
+          title: Text('删除',
+              style: TextStyle(color: colorScheme.error)),
+          onTap: () => Navigator.pop(context, 'delete'),
+        ),
+        if (hasExplore)
+          ListTile(
+            leading: Icon(source.enabledExplore
+                ? Symbols.explore_off_rounded
+                : Symbols.explore_rounded),
+            title:
+                Text(source.enabledExplore ? '禁用发现' : '启用发现'),
+            onTap: () => Navigator.pop(context, 'toggle_explore'),
+          ),
+      ],
     );
 
     if (action == null || !context.mounted) return;
