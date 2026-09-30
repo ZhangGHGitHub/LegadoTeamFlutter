@@ -29,6 +29,10 @@ class PlatformChannel {
   /// Cookie 通道：WebView 登录页读取系统 CookieManager
   static const MethodChannel cookie = MethodChannel('legado/cookie');
 
+  /// [D2] 存储通道：MediaStore 直写 Download/legado/（Kotlin StorageBridge，
+  /// 绕开 file_picker SAF 链路）
+  static const MethodChannel storage = MethodChannel('legado/storage');
+
   /// 事件通道：用于接收原生层的流式事件
   static const EventChannel eventChannel =
       EventChannel('io.legado.app/events');
@@ -181,6 +185,30 @@ class PlatformChannel {
   /// 选择目录，返回目录 URI 字符串（SAF DocumentTree）
   static Future<String?> pickDirectory() async {
     return await filePicker.invokeMethod<String>('pickDirectory');
+  }
+
+  // ─── 存储方法 ─────────────────────────────────────────────────
+
+  /// [D2] 经 MediaStore 通道保存图片到系统 Download/legado/ 目录
+  /// （Kotlin StorageBridge；API 29+，无需存储权限/SAF）。
+  ///
+  /// 成功返回相对路径（如 `Download/legado/manga-x.png`）；通道未注册、
+  /// API < 29 或原生端写入失败（result.error）时返回 null，由调用方回退
+  /// 文档目录兜底。纯通道调用（无平台判断，分派在调用方/服务层）。
+  static Future<String?> saveImageToDownloads({
+    required String fileName,
+    required List<int> bytes,
+  }) async {
+    try {
+      return await storage.invokeMethod<String>('saveImageToDownloads', {
+        'fileName': fileName,
+        'bytes': bytes,
+      });
+    } catch (_) {
+      // MissingPluginException（非 Android / 通道未注册）/ PlatformException
+      // （原生端 error）→ 统一降级 null，绝不向上抛
+      return null;
+    }
   }
 
   // ─── 通知方法 ─────────────────────────────────────────────────

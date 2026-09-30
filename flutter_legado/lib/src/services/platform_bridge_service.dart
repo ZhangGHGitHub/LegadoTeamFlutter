@@ -972,4 +972,32 @@ class PlatformBridgeService {
       SnackBar(content: Text(message), duration: duration),
     );
   }
+
+  // ========== [D2] MediaStore 下载存储通道 ==========
+
+  /// [D2] 「是否经 MediaStore 通道保存图片」的分派决策覆写（测试性）。
+  ///
+  /// 默认 `Platform.isAndroid`；widget 测试宿主（Windows）无法伪造
+  /// Platform 静态属性，经此覆写强制 Android 分支（true）或
+  /// 非 Android 分支（false），测试后须置回 null。
+  bool? saveViaDownloadsOverride;
+
+  /// [D2] 保存图片是否走 MediaStore 直写通道（Android Download/legado/）
+  bool get useMediaStoreDownloads =>
+      saveViaDownloadsOverride ?? Platform.isAndroid;
+
+  /// [D2] 经 MediaStore 通道保存图片到系统 Download/legado/ 目录
+  ///
+  /// 根因：file_picker 8.3.7 的 saveFile 走 SAF，MuMu 的
+  /// DownloadStorageProvider 拒写（SecurityException: requires
+  /// MANAGE_DOCUMENTS）而插件仅 catch IOException → 未捕获异常抛到
+  /// 主线程 FATAL（docs/materials_1301/evidence/m4b_fatal_stack_d2.txt）。
+  ///
+  /// 成功返回相对路径（如 `Download/legado/manga-x.png`）；非 Android
+  /// （分派不走通道）、通道未注册或原生端写入失败时返回 null，
+  /// 调用方回退应用文档目录兜底。
+  Future<String?> saveImageToDownloads(String fileName, List<int> bytes) async {
+    if (!useMediaStoreDownloads) return null;
+    return PlatformChannel.saveImageToDownloads(fileName: fileName, bytes: bytes);
+  }
 }

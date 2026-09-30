@@ -21,6 +21,7 @@ open class MainActivity : FlutterActivity() {
     private val filePickerBridge = FilePickerBridge()
     private val mediaSessionBridge = MediaSessionBridge()
     private val cookieBridge = CookieBridge()
+    private val storageBridge = StorageBridge()
 
     private var deepLinkChannel: MethodChannel? = null
     private var autoTaskJobChannel: MethodChannel? = null
@@ -68,6 +69,14 @@ open class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_FILE_PICKER)
             .setMethodCallHandler { call, result ->
                 filePickerBridge.handleMethodCall(call, result, this)
+            }
+
+        // 注册存储通道（[D2] MediaStore 直写 Download/legado/，绕开
+        // file_picker SAF 链路：MuMu DownloadStorageProvider 拒写时
+        // SecurityException 经 file_picker 未捕获路径主线程 FATAL）
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, StorageBridge.CHANNEL)
+            .setMethodCallHandler { call, result ->
+                storageBridge.handleMethodCall(call, result, this)
             }
 
         // 注册 Cookie 通道（WebView 登录页读取系统 CookieManager，对齐
