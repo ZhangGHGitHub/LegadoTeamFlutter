@@ -3,7 +3,8 @@
 // 取证（参考版，legado-with-MD3）：
 // - MangaSettingsPanel.kt L372-386：非条漫模式显示「页面适配」6 选项下拉
 //   → UpdateSetting(PAGE_SCALE_TYPE)；L364-371 条漫模式改显侧边距滑杆
-//   （侧边距不在本波范围，故条漫模式下不渲染「页面适配」项）；
+//   （侧边距已由 [P4-3 M3 修4] 落地为「侧边留白」滑杆 0..45%，
+//   故条漫模式下仍不渲染「页面适配」项）；
 // - MangaReaderContract.kt L121：默认 0；MangaReaderViewModel.kt L816
 //   PAGE_SCALE_TYPE → updateMangaPreference（持久化）。
 //
@@ -186,9 +187,11 @@ void main() {
 
       await _openSheet(tester);
 
-      // 条漫模式下参考版显示侧边距滑杆（不在本波范围）→ 无「页面适配」
+      // 条漫模式 [P4-3 M3 修4]：阅读模式改 5 按钮组（M2「翻页模式」下拉
+      // 已移除）且屏侧接线后显「侧边留白」滑杆 → 仍无「页面适配」项
       expect(find.text('页面适配'), findsNothing);
-      expect(find.text('翻页模式'), findsOneWidget);
+      expect(find.text('阅读模式'), findsOneWidget);
+      expect(find.text('侧边留白'), findsOneWidget);
     });
 
     testWidgets('已配置 mangaPageScaleType=3：下拉回显「适配高度」',
