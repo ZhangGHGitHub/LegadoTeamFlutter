@@ -29,10 +29,11 @@ import 'package:material_symbols_icons/symbols.dart';
 ///     绕开标准 tickMark 密度门禁——50 页级章节下标准 tick 永不绘制，
 ///     见 m2b 复验证据）；拖动语义不变（SeekToPage），
 ///     pageCount = 1 时禁用保持；
-///   - 贴底白条：全宽（colorScheme.surface、SafeArea bottom）三键均布：
-///     目录（list，保留）/ 自动翻页（auto_mode，新增状态着色：开启
-///     图标 primary 蓝、关闭 onSurface）/ 设置（settings 齿轮，
-///     替换 M1 tune 图标，点击仍 = OpenSettings(READER) 翻页设置）。
+///   - 贴底白条：全宽（colorScheme.surface，[P4-3 M3 修1] 背景覆盖
+///     底部安全区直至屏幕底缘）三键均布：目录（list，保留）/ 自动翻页
+///     （[P4-3 M3 修3] auto_stories 书本样式，状态着色：开启图标
+///     primary 蓝、关闭 onSurface）/ 设置（settings 齿轮，替换 M1 tune
+///     图标，点击仍 = OpenSettings(READER) 翻页设置）。
 ///
 /// 按键语义（M1 保留，对齐参考版 intent + MangaReaderViewModel L244-253）：
 /// - 上一章/下一章：PreviousChapter/NextChapter（边界由屏幕层守卫）；
@@ -83,10 +84,12 @@ class _MangaTopBarIcon extends StatelessWidget {
 /// 顶栏（[P4-3 M2] 实心 AppBar 式，按用户截图重构）
 ///
 /// 实心表面色（colorScheme.surfaceContainer，浅色 = 浅灰 / 暗色自动暗）
-/// 占满宽度，SafeArea 含状态栏区：
-/// - Row1：返回（无底图标）+ Spacer + 右上图标组（刷新 + 更多 more_vert
-///   三点，无胶囊底、间距均布——参考版「换源」键我方无功能不放，
-///   E8 登记；「更多」= 打开页操作底栏，复用既有页操作菜单）；
+/// 占满宽度并**覆盖状态栏区**：[P4-3 M3 修1] 最外层背景 Container 包住
+/// 整个区域，SafeArea 只作内容 padding、不裁背景（M2 旧结构 SafeArea
+/// 在外 → 背景从状态栏下方才开始，顶部漏黑条）；
+/// - Row1：返回（无底图标）+ Spacer + 右上图标组（换源 + 刷新 + 更多
+///   more_vert 三点，无胶囊底、间距均布；「更多」= 打开页操作底栏，
+///   复用既有页操作菜单）；
 /// - Row2 标题区（左对齐，padding 16）：书名大字（24sp w600 onSurface）
 ///   + 次行 Row（章节名 14sp onSurfaceVariant 省略号 + Spacer + 源名
 ///   13sp onSurfaceVariant，源名 null/空不显示）；
@@ -125,12 +128,13 @@ class MangaMenuTopBar extends StatelessWidget {
     final source = sourceName?.trim() ?? '';
     final hasChapter = chapter.isNotEmpty;
     final hasSource = source.isNotEmpty;
-    return SafeArea(
-      // 实心顶栏含状态栏区（截图：SafeArea 上缘覆盖状态栏）
-      bottom: false,
-      child: Container(
-        // 实心表面色占满宽度（浅色主题 = 浅灰，暗色自动暗）
-        color: scheme.surfaceContainer,
+    // [P4-3 M3 修1] 背景 Container 为最外层（含状态栏区的整个顶栏区域），
+    // SafeArea 只作内容 padding、不裁背景——M2 旧结构 SafeArea 在外，
+    // 背景从状态栏下方才开始，顶部漏黑条
+    return Container(
+      color: scheme.surfaceContainer,
+      child: SafeArea(
+        bottom: false,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -538,8 +542,9 @@ class _MangaBottomBarKey extends StatelessWidget {
 ///   [kMangaProgressRowHeight]、图标 skip_previous / skip_next，替换
 ///   M1 箭头）+ 中间白色胶囊（stadium 全圆角、占余宽）内放 Slider
 ///   （竖条 thumb primary / 轨道透明 / divisions 点串 primary）；
-/// - 贴底白条（[kMangaBottomBarHeight] 高、colorScheme.surface、
-///   SafeArea bottom）：三键均布 = 目录（list，保留）/ 自动（auto_mode，
+/// - 贴底白条（[kMangaBottomBarHeight] 内容区高、colorScheme.surface、
+///   [P4-3 M3 修1] 背景覆盖底部安全区直至屏幕底缘）：三键均布 =
+///   目录（list，保留）/ 自动（[P4-3 M3 修3] auto_stories 书本样式，
 ///   状态着色：开启 primary 蓝、关闭 onSurface）/ 设置（settings 齿轮，
 ///   替换 M1 tune，点击仍 = OpenSettings(READER) 翻页设置）；
 /// - 段间间隙 [kMangaBottomSegmentGap]；语义保留（SeekToPage /
@@ -605,83 +610,90 @@ class MangaMenuBottomBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return SafeArea(
-      top: false,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // 段1：进度行（悬浮于漫画内容上方）
-          Padding(
-            padding: const EdgeInsets.fromLTRB(
-              16,
-              12,
-              16,
-              kMangaBottomSegmentGap,
-            ),
-            child: Row(
-              children: [
-                _MangaCircleButton(
-                  icon: Symbols.skip_previous_rounded,
-                  tooltip: '上一章',
-                  onTap: onPrevChapter,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        // 段1：进度行（悬浮于漫画内容上方）
+        Padding(
+          padding: const EdgeInsets.fromLTRB(
+            16,
+            12,
+            16,
+            kMangaBottomSegmentGap,
+          ),
+          child: Row(
+            children: [
+              _MangaCircleButton(
+                icon: Symbols.skip_previous_rounded,
+                tooltip: '上一章',
+                onTap: onPrevChapter,
+              ),
+              const SizedBox(width: 8),
+              // 白色胶囊占余宽（stadium 全圆角 + 浮起阴影 + 分段滑条）
+              Expanded(
+                child: _MangaProgressCapsule(
+                  pageValue: pageValue,
+                  pageMax: pageMax,
+                  divisions: divisions,
+                  pageEnabled: pageEnabled,
+                  readingPageDescription: readingPageDescription,
+                  onSeekPage: onSeekPage,
                 ),
-                const SizedBox(width: 8),
-                // 白色胶囊占余宽（stadium 全圆角 + 浮起阴影 + 分段滑条）
-                Expanded(
-                  child: _MangaProgressCapsule(
-                    pageValue: pageValue,
-                    pageMax: pageMax,
-                    divisions: divisions,
-                    pageEnabled: pageEnabled,
-                    readingPageDescription: readingPageDescription,
-                    onSeekPage: onSeekPage,
+              ),
+              const SizedBox(width: 8),
+              _MangaCircleButton(
+                icon: Symbols.skip_next_rounded,
+                tooltip: '下一章',
+                onTap: onNextChapter,
+              ),
+            ],
+          ),
+        ),
+        // 段2：贴底白条（全宽 surface，三键均布）
+        // [P4-3 M3 修1] 背景 Container 覆盖底部安全区（手势导航条）直至
+        // 屏幕底缘：SafeArea 置于背景内侧只作内容 padding，三键行居中于
+        // 56dp 内容区（M2 旧结构 SafeArea 在外 → 白条上方即止，底部漏黑条）
+        Container(
+          color: scheme.surface,
+          child: SafeArea(
+            top: false,
+            child: SizedBox(
+              height: kMangaBottomBarHeight,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  _MangaBottomBarKey(
+                    icon: Symbols.list_rounded,
+                    tooltip: '目录',
+                    iconColor: scheme.onSurface,
+                    onTap: onOpenCatalog,
                   ),
-                ),
-                const SizedBox(width: 8),
-                _MangaCircleButton(
-                  icon: Symbols.skip_next_rounded,
-                  tooltip: '下一章',
-                  onTap: onNextChapter,
-                ),
-              ],
+                  _MangaBottomBarKey(
+                    // [P4-3 M3 修3] 自动键图标 = auto_stories（打开的书本
+                    // 样式，用户确认参考版底栏中间键形态；替换 auto_mode，
+                    // 着色逻辑不变）
+                    icon: Symbols.auto_stories_rounded,
+                    // 参考版 L606-610：开 = 「停止」，关 = 「自动」
+                    tooltip: autoReadEnabled ? '停止' : '自动',
+                    // 状态着色（截图：开启图标变 primary 蓝，关闭 onSurface）
+                    iconColor:
+                        autoReadEnabled ? scheme.primary : scheme.onSurface,
+                    onTap: onToggleAutoRead,
+                    onLongPress: onOpenAutoSettings,
+                  ),
+                  _MangaBottomBarKey(
+                    // 设置齿轮（替换 M1 tune 图标），点击 = 翻页设置
+                    icon: Symbols.settings_rounded,
+                    tooltip: '翻页设置',
+                    iconColor: scheme.onSurface,
+                    onTap: onOpenPageSettings,
+                  ),
+                ],
+              ),
             ),
           ),
-          // 段2：贴底白条（全宽 surface，三键均布；SafeArea bottom 由
-          // 外层 SafeArea 承担导航栏内边距）
-          Container(
-            height: kMangaBottomBarHeight,
-            color: scheme.surface,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _MangaBottomBarKey(
-                  icon: Symbols.list_rounded,
-                  tooltip: '目录',
-                  iconColor: scheme.onSurface,
-                  onTap: onOpenCatalog,
-                ),
-                _MangaBottomBarKey(
-                  icon: Symbols.auto_mode_rounded,
-                  // 参考版 L606-610：开 = 「停止」，关 = 「自动」
-                  tooltip: autoReadEnabled ? '停止' : '自动',
-                  // 状态着色（截图：开启图标变 primary 蓝，关闭 onSurface）
-                  iconColor:
-                      autoReadEnabled ? scheme.primary : scheme.onSurface,
-                  onTap: onToggleAutoRead,
-                  onLongPress: onOpenAutoSettings,
-                ),
-                _MangaBottomBarKey(
-                  // 设置齿轮（替换 M1 tune 图标），点击 = 翻页设置
-                  icon: Symbols.settings_rounded,
-                  tooltip: '翻页设置',
-                  iconColor: scheme.onSurface,
-                  onTap: onOpenPageSettings,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

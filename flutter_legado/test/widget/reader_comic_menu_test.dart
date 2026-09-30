@@ -243,6 +243,27 @@ void main() {
         scheme.surfaceContainer,
         reason: '实心顶栏背景应取 surfaceContainer（浅色 = 浅灰）',
       );
+      // 【M3 修1】背景 Container 为最外层、SafeArea 在内作内容 padding
+      //（背景覆盖状态栏区，不再从状态栏下方才开始漏黑条）
+      expect(
+        topBarBg.child,
+        isA<SafeArea>(),
+        reason: 'M3 修1：顶栏背景 Container 的直接子应是 SafeArea（背景不裁状态栏区）',
+      );
+      // 【M3 修1】贴底白条背景 Container 同构（覆盖底部安全区直至屏幕底缘）
+      final whiteBar = tester.widget<Container>(
+        find.descendant(
+          of: find.byType(MangaMenuBottomBar),
+          matching: find.byWidgetPredicate(
+            (w) => w is Container && w.color == scheme.surface,
+          ),
+        ).first,
+      );
+      expect(
+        whiteBar.child,
+        isA<SafeArea>(),
+        reason: 'M3 修1：白条背景 Container 的直接子应是 SafeArea（背景不裁底部安全区）',
+      );
 
       // 刷新键：先收起菜单，再重取当前章（fetchChapterContent 次数 +1）
       final before = fetchCalls.length;
@@ -372,6 +393,13 @@ void main() {
         autoIconOff.color,
         scheme.onSurface,
         reason: '【M2 新增断言②】自动键关态图标 = onSurface（默认色）',
+      );
+      // 【M3 修3】自动键图标 = auto_stories（打开的书本样式，用户确认
+      // 参考版底栏中间键形态；替换 M2 auto_mode）
+      expect(
+        autoIconOff.icon,
+        Symbols.auto_stories_rounded,
+        reason: 'M3 修3：自动键图标应为 auto_stories 书本样式',
       );
 
       // 点击 → 开：描述切换为「停止」；控制栏显示期间自动翻页暂停
