@@ -68,7 +68,6 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/icons/
     # 默认书籍封面（对标 Android res/drawable/image_cover_default.jpg）
     - assets/images/
     # 默认数据（对标 Android assets/defaultData）
