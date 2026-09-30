@@ -150,6 +150,23 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// 延迟回调内复位（对齐参考版 while 循环逐周期串行、不重入语义）
   bool _autoReadChapterPending = false;
 
+  /// [P4-3 W2-fix ⑬] 条漫自动滚动「在飞」滚动 future 及其目标像素：
+  /// 记录最近一次 [ScrollPosition.animateTo] 的完成 future 与滚动目标。
+  /// 周期 tick 在「滚向章末」的在飞滚动尚未落定时不重启（守卫），滚动
+  /// **完成回调**（whenComplete）里复检章末并**当下**调度切章（对齐
+  /// 参考版 MangaReaderScreen L688-699：animateScrollBy 挂起至动画结束
+  /// 立即检查 consumed<1 → NextChapter + delay(500L)，不等下一个周期
+  /// tick，修低速时章尾多等一整周期的停留 QA ⑬ ≥90s）。中段滚动
+  ///（目标 < 章末）不触发守卫，逐周期续滚保持连续（参考版 10000px/周期
+  /// 100% 占空）。
+  Future<void>? _webtoonScrollFuture;
+  double? _webtoonScrollTarget;
+
+  /// [P4-3 W2-fix ⑬] 上述在飞滚动是否尚未落定（future 的 whenComplete
+  /// 未触发）：仅由最新 future 的完成回调清除（identical 判定），被新
+  /// 滚动顶替的旧 future 完成时不会误清新滚动的在飞标记。
+  bool _webtoonScrollInFlight = false;
+
   /// [P4-3 W2-fix P2-1] 长按页操作底栏是否打开（对齐参考版 LaunchedEffect
   /// 依赖 activeSheet：底栏打开期间自动翻页暂停）
   bool _pageActionsOpen = false;
@@ -313,17 +330,52 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       _scheduleAutoReadNextChapter();
       return;
     }
+    // [P4-3 W2-fix ⑬] 在飞守卫：上一周期的滚动是「滚向章末」（目标已达
+    // 章末）且尚未落定（future 未完成）时，本 tick 不重启 —— 由该滚动的
+    // 完成回调（whenComplete）复检章末并当下调度切章（见下方）。低速
+    //（周期长）下旧实现 tick 相位滞后、滚完剩余仍判「还有剩余」再爬一整
+    // 周期，章尾停留 ≈ 3P（QA ⑬ 低速 ≥90s 同族）；中段滚动（目标 < 章末）
+    // 不触发本守卫，逐周期续滚保持连续（对齐参考版 10000px/周期）。
+    final inFlightTarget = _webtoonScrollTarget;
+    if (_webtoonScrollInFlight &&
+        inFlightTarget != null &&
+        inFlightTarget >= position.maxScrollExtent - 1) {
+      return;
+    }
     // [P4-3 W2-fix P1-1①] 逐周期滚动部分距离（remaining 不足一周期时
     // 滚到章末），章末后延迟 500ms 切下一章（参考版 delay(500L)）
     final target = position.pixels +
         (remaining >= MangaAutoRead.webtoonScrollPx
             ? MangaAutoRead.webtoonScrollPx
             : remaining);
-    position.animateTo(
+    final f = position.animateTo(
       target,
       duration: MangaAutoRead.webtoonCycle(_autoReadSpeed),
       curve: Curves.linear,
     );
+    _webtoonScrollFuture = f;
+    _webtoonScrollTarget = target;
+    _webtoonScrollInFlight = true;
+    // [P4-3 W2-fix ⑬] 滚动**完成当下**复检章末（1px 容差，对齐参考版
+    // consumed<1f）：到章末即当下调度切章（500ms 后执行），不等下一个
+    // 周期 tick
+    f.whenComplete(() {
+      // 仅当仍是当前在飞滚动才清标记（旧 future 被新滚动取消时其完成
+      // 回调不应误清新滚动的在飞标记）
+      if (identical(_webtoonScrollFuture, f)) {
+        _webtoonScrollFuture = null;
+        _webtoonScrollTarget = null;
+        _webtoonScrollInFlight = false;
+      }
+      if (!mounted || !_autoRead || _showControls || _pageActionsOpen) {
+        return;
+      }
+      if (!_scrollController.hasClients) return;
+      final pos = _scrollController.position;
+      if (pos.pixels >= pos.maxScrollExtent - 1) {
+        _scheduleAutoReadNextChapter();
+      }
+    });
   }
 
   /// 条漫自动翻页到章末后延迟 500ms 切下一章
@@ -332,7 +384,9 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
   /// 页操作底栏 / 控制器挂载 / 位置复检守卫（原实现无守卫且定时器仍在
   /// tick，加载慢时回调直接切章会连跳多章）
   void _scheduleAutoReadNextChapter() {
-    if (_autoReadChapterPending) return;
+    if (_autoReadChapterPending) {
+      return;
+    }
     _autoReadChapterPending = true;
     Future.delayed(const Duration(milliseconds: 500), () {
       _autoReadChapterPending = false;
@@ -342,7 +396,9 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen> {
       if (!_scrollController.hasClients) return;
       final pos = _scrollController.position;
       // 复检：延迟期间用户手动滚动 / 控制器重建可能已离开章末
-      if (pos.pixels < pos.maxScrollExtent - 1) return;
+      if (pos.pixels < pos.maxScrollExtent - 1) {
+        return;
+      }
       unawaited(_nextChapter());
     });
   }
