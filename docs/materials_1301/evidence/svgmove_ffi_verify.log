@@ -1,0 +1,4 @@
+=== FFI verify (release, aarch64,x86_64, auto-build) ===
+FFI verify exit: 0
+=== flutter build apk --debug (full output) ===
+flutter build exit: 0
