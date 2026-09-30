@@ -286,6 +286,20 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
   late bool _disableMangaCrossFade;
   late int _mangaBgColor;
 
+  /// [P4-3 M4 批3] 面板滚动控制：「滤镜」入口锚点跳转（ensureVisible
+  /// 经目标 ScrollPosition）需面板列表处于可控滚动状态
+  final ScrollController _scrollController = ScrollController();
+
+  /// [P4-3 M4 批3] 「色彩滤镜」区块锚点 key（「滤镜」入口跳转目标；
+  /// ensureVisible alignment 0.0 使区块标题顶边对齐面板视口顶边）
+  final GlobalKey _colorFilterSectionKey = GlobalKey();
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
   /// [P4-3 M4 批1] 页脚内容胶囊组样例数据（与 [_footerPreview] 同源，
   /// 保证胶囊文案与预览条逐段一致：第三话 / 页数 4/30 / 章节 1/45 /
   /// 总进度 0.3%；隐藏段对应 MangaFooterConfig 的 hide* 字段）
@@ -392,8 +406,25 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
               ),
             ),
           ),
+          // [P4-3 M4 批3] 「滤镜」入口（锚点跳到面板内色彩滤镜区）：
+          // 原版 menu_manga_color_filter 为独立对话框
+          // （ReadMangaActivity L605-608 → MangaColorFilterDialog），
+          // 我方色彩滤镜已并入面板区块（M2）→ 入口改为面板内锚点
+          // 跳转（ScrollController + GlobalKey + Scrollable.ensureVisible）；
+          // 「点击区域设置」（九区编辑器，原版 ClickActionConfigDialog /
+          // 参考版 ClickActionsSettingsContent L772-801）登记不做，
+          // 此处不放假按钮
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 4),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _filterEntryButton(),
+            ),
+          ),
           Flexible(
             child: ListView(
+              // [P4-3 M4 批3] 滚动控制（「滤镜」入口锚点跳转）
+              controller: _scrollController,
               padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + bottom),
               children: [
                 // [P4-3 M3 修4] 阅读模式：5 按钮组（单页式 ×3 + 条漫 ×2，
@@ -516,7 +547,11 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     ),
                   ],
                 ]),
-                _section('色彩滤镜'),
+                // [P4-3 M4 批3] 「滤镜」入口跳转锚点（ensureVisible 目标）
+                Container(
+                  key: _colorFilterSectionKey,
+                  child: _section('色彩滤镜'),
+                ),
                 _card([
                   _sliderTile(
                     title: '亮度',
@@ -705,6 +740,29 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
         ),
       ),
     );
+  }
+
+  /// [P4-3 M4 批3] 「滤镜」入口按钮：锚点跳到面板内「色彩滤镜」区块。
+  /// 对齐原版独立滤镜对话框（ReadMangaActivity L605-608）的面板内集成
+  /// 形态——点击即把色彩滤镜区顶边滚到面板视口顶边。
+  Widget _filterEntryButton() {
+    final scheme = Theme.of(context).colorScheme;
+    return TextButton.icon(
+      onPressed: _jumpToColorFilter,
+      icon: Icon(Icons.colorize, color: scheme.primary),
+      label: Text(
+        '滤镜',
+        style: TextStyle(color: scheme.onSurface),
+      ),
+    );
+  }
+
+  /// [P4-3 M4 批3] 锚点跳转：Scrollable.ensureVisible 以
+  /// alignment 0.0 把色彩滤镜区顶边对齐到面板视口顶边（即时跳，无动画）。
+  void _jumpToColorFilter() {
+    final ctx = _colorFilterSectionKey.currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(ctx, alignment: 0.0);
   }
 
   Widget _card(List<Widget> children) {

@@ -1009,4 +1009,57 @@ void main() {
     });
 
   });
+
+  // [P4-3 M4 批3] 滤镜入口（锚点跳到面板内色彩滤镜区）
+  //
+  // 原版取证：ReadMangaActivity L605-608 menu_manga_color_filter →
+  // showDialogFragment(MangaColorFilterDialog())（独立对话框）；我方
+  // 色彩滤镜已并入面板区块（M2）→ 入口改面板内锚点跳转
+  // （ScrollController + GlobalKey + Scrollable.ensureVisible，
+  // ensureVisible alignment 0.0 = 目标顶边对齐视口顶边，即时跳）。
+  // 「点击区域设置」（九区编辑器，原版 ClickActionConfigDialog /
+  // 参考版 ClickActionsSettingsContent L772-801）登记不做，
+  // 面板不放假按钮。
+  group('[P4-3 M4 批3] 滤镜入口锚点跳转', () {
+    testWidgets('点「滤镜」入口 → 色彩滤镜区顶边对齐面板视口顶边',
+        (tester) async {
+      final api = _buildApi(progressCalls: <List<int>>[]);
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      // 中心点击 → 控制栏 → 齿轮打开设置面板
+      await tester.tapAt(const Offset(400, 300));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('翻页设置'));
+      await tester.pumpAndSettle();
+      expect(find.byType(MangaConfigSheet), findsOneWidget,
+          reason: '设置面板已打开');
+
+      // 初始：面板滚动位置 0，阅读模式区在视口内、色彩滤镜区在视口外
+      final panelPos =
+          tester.state<ScrollableState>(find.byType(Scrollable).last).position;
+      expect(panelPos.pixels, 0, reason: '面板初始滚动位置在顶部');
+      expect(find.text('阅读模式'), findsOneWidget);
+
+      // 点「滤镜」入口（面板头部固定行，不随滚动）
+      await tester.tap(find.text('滤镜'));
+      await tester.pump();
+
+      // 锚点跳转：色彩滤镜区顶边对齐面板视口顶边（alignment 0.0），
+      // 滚动偏移 > 0。偏移量 16 = _section 区块标题上内边距
+      // （fromLTRB(4,16,4,8)）——ensureVisible 对齐的是锚点容器
+      // 顶边，标题 Text 顶边低 16px
+      final listRect = tester.getRect(find.byType(ListView).last);
+      final targetRect = tester.getRect(find.text('色彩滤镜'));
+      expect(targetRect.top - listRect.top, closeTo(16, 1.0),
+          reason: '色彩滤镜区顶边应对齐面板视口顶边（ensureVisible 0.0）');
+      expect(find.text('色彩滤镜'), findsOneWidget,
+          reason: '色彩滤镜区已滚入视口');
+      expect(panelPos.pixels, greaterThan(0),
+          reason: '锚点跳转改变了面板滚动偏移');
+    });
+  });
 }
