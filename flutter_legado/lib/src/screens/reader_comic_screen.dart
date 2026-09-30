@@ -1767,19 +1767,30 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
 
   /// 图片加载占位符（骨架屏效果，[progress] 为下载进度 0.0~1.0）
   Widget _buildImageLoadingPlaceholder(double? progress) {
+    // [STAGE-UI-P43UNIFY1 B2] 加载态去整面硬编码底色：参考版 #2082 后
+    // MangaImageLoadOverlay loading 分支不再整页压黑（MangaReaderScreen.kt
+    // 1618-1647 注释），我方同步去除 0xFF1A1A1A 整面底色
+    final colorScheme = Theme.of(context).colorScheme;
+    // 保留 Container 作 widget 测试取证位（断言 color == null 即证明
+    // 「加载态无整面硬编码底色」，B2 测试依赖），故不以 SizedBox 替换
+    // ignore: sized_box_for_whitespace
     return Container(
       height: MediaQuery.of(context).size.height * 0.6,
-      color: const Color(0xFF1A1A1A),
       child: Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // 骨架屏动画效果
+            // [STAGE-UI-P43UNIFY1 B2] 块底 0xFF2A2A2A → 主题槽
+            // surfaceContainerHighest（参考版 SkeletonPlaceholders.kt:54-56
+            // 骨架块 surfaceContainerHighest→High→Highest 级联取证 + 我方
+            // SkeletonBox 同口径；参考版漫画场景无骨架（grep 零命中），
+            // 「同场景固定深灰」不可证 → 按主题槽等价表达）
             Container(
               width: 200,
               height: 200,
               decoration: BoxDecoration(
-                color: const Color(0xFF2A2A2A),
+                color: colorScheme.surfaceContainerHighest,
                 borderRadius: BorderRadius.circular(8),
               ),
               // [STAGE-UI-P43UNIFY1 B1] 图标位改真实素材图：参考版图片加载
@@ -1794,19 +1805,25 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
             ),
             const SizedBox(height: 16),
             // 进度条
+            // [STAGE-UI-P43UNIFY1 B2] 轨 0xFF2A2A2A → surfaceContainerHighest、
+            // 填充 0xFF666666 → 主题槽 primary
             SizedBox(
               width: 120,
               child: LinearProgressIndicator(
                 value: progress,
-                backgroundColor: const Color(0xFF2A2A2A),
-                valueColor: const AlwaysStoppedAnimation<Color>(Color(0xFF666666)),
+                backgroundColor: colorScheme.surfaceContainerHighest,
+                valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
               ),
             ),
             if (progress != null) ...[
               const SizedBox(height: 8),
+              // [STAGE-UI-P43UNIFY1 B2] % 文案 0xFF888888 → 主题槽 onSurfaceVariant
               Text(
                 '${(progress * 100).toInt()}%',
-                style: const TextStyle(color: Color(0xFF888888), fontSize: 12),
+                style: TextStyle(
+                  color: colorScheme.onSurfaceVariant,
+                  fontSize: 12,
+                ),
               ),
             ],
           ],
@@ -2277,11 +2294,19 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
+      // [STAGE-UI-P43UNIFY1 B2] 加载态：去整面 0xFF1A1A1A 底色（参考版 #2082
+      // 不整页压黑）；环色 0xFF666666 → 主题槽（color 省略 → 主题 primary，
+      // 参考版 MangaReaderOverlays.kt:754 加载环为裸 CircularProgressIndicator）；
+      // 环宽 2 维持（2dp→4dp 宽度基线是 B4 项，不在本批）。深底上主题
+      // primary 可见性沿用参考版取舍（dark 主题 primary 为浅紫，可见；
+      // light 主题 primary 为深紫，深底可见性有限——与参考版一致，如实遵循）
+      // 保留 Container 作 widget 测试取证位（断言 color == null 即证明
+      // 「加载态无整面硬编码底色」，B2 测试依赖），故不以 SizedBox 替换
+      // ignore: sized_box_for_whitespace
       return Container(
         height: MediaQuery.of(context).size.height * 0.6,
-        color: const Color(0xFF1A1A1A),
         child: const Center(
-          child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF666666)),
+          child: CircularProgressIndicator(strokeWidth: 2),
         ),
       );
     }
@@ -2438,14 +2463,15 @@ class _EpaperNetworkImageState extends State<_EpaperNetworkImage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
+      // [STAGE-UI-P43UNIFY1 B2] 电子纸加载态与 _DecodedComicImage 同口径：
+      // 去整面 0xFF1A1A1A 底色 + 环色走主题槽（详见该处取证注释）
+      // 保留 Container 作 widget 测试取证位（断言 color == null 即证明
+      // 「加载态无整面硬编码底色」，B2 测试依赖），故不以 SizedBox 替换
+      // ignore: sized_box_for_whitespace
       return Container(
         height: MediaQuery.of(context).size.height * 0.6,
-        color: const Color(0xFF1A1A1A),
         child: const Center(
-          child: CircularProgressIndicator(
-            strokeWidth: 2,
-            color: Color(0xFF666666),
-          ),
+          child: CircularProgressIndicator(strokeWidth: 2),
         ),
       );
     }
