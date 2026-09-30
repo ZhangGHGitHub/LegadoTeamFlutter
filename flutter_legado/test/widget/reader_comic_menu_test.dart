@@ -3,8 +3,9 @@
 // 视觉基准 = 用户截图（参考版 APK kazusa 3.26.15；本地参考源码快照滞后，
 // 仅取语义与颜色角色依据，形态以截图为准）：
 // - 顶栏 MangaMenuTopBar：实心 surfaceContainer 背景（浅色浅灰/暗色自动暗）、
-//   Row1 返回 + 刷新 + 更多（more_vert，= 打开页操作底栏；换源无功能
-//   不放 E8）、Row2 书名大字 24sp + 次行章节名 + 源名（右端，
+//   Row1 返回 + 换源（shuffle，[P4-3 M3 修2] 复用既有换源底部弹层，
+//   成功换源后整书重载）+ 刷新 + 更多（more_vert，= 打开页操作底栏）、
+//   Row2 书名大字 24sp + 次行章节名 + 源名（右端，
 //   取证 Book.originName / BookSource.bookSourceName，URL 形态不显）；
 // - 底栏 MangaMenuBottomBar 两段分离（非 M1 一体化悬浮面板）：
 //   进度行 = 左右圆形白钮（surface 底 + 阴影、skip_previous/skip_next
@@ -14,9 +15,10 @@
 // - 目录 = 模态 bottom sheet（章节列表 tab：虚拟化列表 + 当前章高亮 +
 //   点击跳章）。
 //
-// 本测试覆盖 6 个对齐点（M2 调整 + 新增 3 断言）：
+// 本测试覆盖 7 个对齐点（M2 调整 + M3 修2 换源键新增断言）：
 // 1. 顶栏：实心背景（surfaceContainer，【新增断言】）+ 书名/章节名/
-//    源名 + 返回/刷新/更多键（刷新 = 先收菜单再重取当前章）；
+//    源名 + 返回/换源/刷新/更多键（换源 = 复用换源弹层，
+//    刷新 = 先收菜单再重取当前章）；
 // 2. 底栏两段结构：进度行（上一章 skip_previous/滑条/下一章 skip_next，
 //    【新增断言】skip 图标）+ 贴底白条（目录/自动/翻页设置 三键均布）；
 // 3. 自动键点击切换自动翻页开关，键描述 自动/停止 随开关态切换，
@@ -34,6 +36,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/routes.dart';
 import 'package:flutter_legado/src/screens/reader_comic/manga_menu.dart';
 import 'package:flutter_legado/src/screens/reader_comic_screen.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
@@ -52,7 +55,9 @@ class _MenuMockApi extends MockBookApi {
     required this.fetchCalls,
     Map<String, String>? configs,
     this.chapterCount = 3,
-  }) : _configs = configs ?? {};
+    List<String>? bookLoads,
+  })  : _configs = configs ?? {},
+        bookLoads = bookLoads ?? <String>[];
 
   /// 每章图片数（与既有漫画 mock 一致取 3，保证滑条/单页式有页可跳）
   static const int imageCount = 3;
@@ -65,6 +70,9 @@ class _MenuMockApi extends MockBookApi {
 
   /// 章节正文抓取记录（章节 URL；刷新键应使当前章 +1 次）
   final List<String> fetchCalls;
+
+  /// 书信息抓取记录（bookUrl；换源后整书重载断言 getBook 收到新 URL）
+  final List<String> bookLoads;
 
   final Map<String, String> _configs;
   final int chapterCount;
@@ -89,7 +97,9 @@ class _MenuMockApi extends MockBookApi {
       ];
 
   @override
-  Future<Book?> getBook(String bookUrl) async => Book(
+  Future<Book?> getBook(String bookUrl) async {
+    bookLoads.add(bookUrl);
+    return Book(
         bookUrl: bookUrl,
         tocUrl: 'https://manga.example.com/comic/1/',
         name: '测试漫画',
@@ -100,6 +110,7 @@ class _MenuMockApi extends MockBookApi {
         totalChapterNum: chapterCount,
         durChapterPos: 0,
       );
+  }
 
   @override
   Future<List<BookChapter>> getChapters(String bookUrl) async =>
@@ -157,7 +168,38 @@ Offset _centerOffset(WidgetTester tester) {
   return Offset(logical.width / 2, logical.height / 2);
 }
 
+/// [P4-3 M3 修2] 换源路由桩：真实路由 ChangeSourceScreen 为底部半透明
+/// sheet 路由（需完整书源列表交互），测试只验证「换源键触发 pushNamed +
+/// 成功回传新 bookUrl 后整书重载」，故以首帧 postFrame pop('mock://menu2')
+/// 模拟换源成功回传（路由结果 = 新 bookUrl String，同真实契约）
+class _FakeChangeSourceRoute extends StatefulWidget {
+  const _FakeChangeSourceRoute();
+
+  @override
+  State<_FakeChangeSourceRoute> createState() => _FakeChangeSourceRouteState();
+}
+
+class _FakeChangeSourceRouteState extends State<_FakeChangeSourceRoute> {
+  bool _popped = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_popped) {
+      _popped = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).pop('mock://menu2');
+        }
+      });
+    }
+    return const SizedBox.shrink();
+  }
+}
+
 /// 打开阅读器并等待首屏加载完成
+///
+/// [P4-3 M3 修2] MaterialApp 补 `routes`（默认无 onGenerateRoute，
+/// pushNamed 换源路由会抛「无路由」）：换源路由 = 桩 [_FakeChangeSourceRoute]
 Future<void> _pumpScreen(
   WidgetTester tester,
   _MenuMockApi api,
@@ -169,6 +211,9 @@ Future<void> _pumpScreen(
       container: container,
       child: MaterialApp(
         theme: theme,
+        routes: {
+          AppRoutes.changeSource: (_) => const _FakeChangeSourceRoute(),
+        },
         home: ReaderComicScreen(bookUrl: 'mock://menu'),
       ),
     ),
@@ -226,11 +271,25 @@ void main() {
         reason: '标题区次行右端 = 源名（bookSourceName 取证值）',
       );
       expect(find.byTooltip('返回'), findsOneWidget);
+      // 【M3 修2】换源键 = Symbols.shuffle（参考版右上三图标补齐；
+      // 真实功能 = 复用换源弹层，非假按钮；见测试⑦ 重载断言）
+      expect(find.byTooltip('换源'), findsOneWidget);
+      final changeSourceIcon = tester.widget<Icon>(
+        find.descendant(
+          of: find.byTooltip('换源'),
+          matching: find.byType(Icon),
+        ),
+      );
+      expect(
+        changeSourceIcon.icon,
+        Symbols.shuffle_rounded,
+        reason: 'M3 修2：换源键图标应为 Symbols.shuffle（shuffle）',
+      );
       expect(find.byTooltip('刷新'), findsOneWidget);
       expect(
         find.byTooltip('更多'),
         findsOneWidget,
-        reason: '右上图标组 = 刷新 + 更多（换源无功能不放，E8 登记）',
+        reason: '右上图标组 = 换源 + 刷新 + 更多（M3 修2 补齐换源键）',
       );
 
       // 【M2 新增断言③】顶栏实心背景 = surfaceContainer（主题化，非恒黑）
@@ -586,6 +645,49 @@ void main() {
         whiteBarFinder,
         findsOneWidget,
         reason: '贴底白条应取 surface（暗色表面，非恒白）',
+      );
+    });
+
+    testWidgets('⑦ 换源键：复用换源弹层，成功换源后以新 URL 整书重载',
+        (tester) async {
+      final progressCalls = <List<int>>[];
+      final fetchCalls = <String>[];
+      final bookLoads = <String>[];
+      final api = _MenuMockApi(
+        progressCalls: progressCalls,
+        configWrites: <List<String>>[],
+        fetchCalls: fetchCalls,
+        bookLoads: bookLoads,
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await _pumpScreen(tester, api, container);
+
+      // 初始加载 = 入口 bookUrl（'mock://menu'）
+      expect(bookLoads, equals(['mock://menu']),
+          reason: '首屏应以入口 bookUrl 抓书信息');
+
+      // 点换源键 → 桩路由首帧 postFrame pop('mock://menu2')
+      //（模拟换源成功回传新 bookUrl）
+      await _showControls(tester);
+      await tester.tap(find.byTooltip('换源'));
+      await tester.pumpAndSettle();
+
+      expect(
+        bookLoads,
+        contains('mock://menu2'),
+        reason: 'M3 修2：换源成功后应切到 _activeBookUrl 并以新 URL 重抓书信息（整书重载）',
+      );
+      // 重载后回到新源第 1 章（章归零 + 页脚页码复位）
+      expect(
+        find.descendant(
+          of: find.byType(MangaMenuTopBar),
+          matching: find.text('第1章'),
+        ),
+        findsOneWidget,
+        reason: '整书重载后章节应归零（第 1 章）',
       );
     });
   });

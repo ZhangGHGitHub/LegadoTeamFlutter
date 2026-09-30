@@ -15,6 +15,7 @@ import '../services/bridge_http.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../routes.dart';
 import '../services/book_api.dart';
 import '../services/system_brightness.dart';
 import '../utils/comic_image_utils.dart';
@@ -55,6 +56,11 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
 
   /// 当前书籍（用于加载章节和图片）
   Book? _book;
+
+  /// [P4-3 M3 修2] 活跃 bookUrl（初始 = [ReaderComicScreen.bookUrl]；
+  /// 顶栏换源键成功换源后切到新源 URL 并整书重载——widget 参数不可变，
+  /// 用屏内状态承载当前源，屏内所有按 bookUrl 的取数/缓存/进度均走此值）
+  late String _activeBookUrl;
 
   /// 章节列表
   List<BookChapter> _chapters = [];
@@ -221,6 +227,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   @override
   void initState() {
     super.initState();
+    // [P4-3 M3 修2] 活跃 bookUrl 初始 = 入参（换源成功后更新）
+    _activeBookUrl = widget.bookUrl;
     _scrollController.addListener(_onScroll);
     // [P4-3 M1] 菜单显隐动画（200ms，对齐既有 300ms 翻页动画的快显隐档位）
     _menuCtrl = AnimationController(
@@ -667,6 +675,35 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     );
   }
 
+  /// [P4-3 M3 修2] 顶栏换源键：复用既有换源底部弹层（AppRoutes.changeSource，
+  /// 详情页 _showChangeSourceDialog / 听书页 _openChangeSource 同款先例——
+  /// 换源页为半透明 sheet 路由，压在本阅读页上方，真实换源功能）：
+  /// 传当前书籍打开换源 sheet；换源成功路由回传新 bookUrl（String），
+  /// 切换 [_activeBookUrl] 后整书重载（章节/图片/进度全部跟新源）。
+  /// 未换源（pop 无结果）保持当前源不变。书籍未加载完时 no-op 守卫。
+  void _openChangeSource() {
+    final book = _book;
+    if (book == null) return;
+    unawaited(
+      Navigator.of(context)
+              .pushNamed(AppRoutes.changeSource, arguments: book)
+              .then((dynamic result) {
+        final newBookUrl = result is String ? result : null;
+        if (newBookUrl == null || newBookUrl.isEmpty || !mounted) return;
+        setState(() {
+          _activeBookUrl = newBookUrl;
+          // 整书重载归位：章首开始、清页级恢复锚定与可见页估算
+          _currentChapterIndex = 0;
+          _restorePageIndex = null;
+          _visiblePageIndex = 0;
+        });
+        // 代数换代：中止在飞相邻章预载 + 单页式子树强制重建
+        _loadSeq++;
+        unawaited(_loadBook());
+      }),
+    );
+  }
+
   /// [P4-3 M1] 底栏页进度滑条 seek：跳到目标逻辑页（对齐参考版
   /// SeekToPage intent；no-op 守卫：目标 = 当前页 / 已在目标像素时不触发
   /// 进度写入，保证 progressCalls 不因无效拖拽增长）
@@ -732,8 +769,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
 
     try {
       final api = ref.read(bookApiProvider);
-      // 获取书籍信息
-      _book = await api.getBook(widget.bookUrl);
+      // 获取书籍信息（[P4-3 M3 修2] 走活跃 bookUrl，换源后按新源重载）
+      _book = await api.getBook(_activeBookUrl);
       if (_book == null) {
         setState(() {
           _error = '未找到书籍信息';
@@ -747,13 +784,13 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       // 须自动 refreshToc，否则漫画阅读器永远「暂无章节」无法进正文/图片。
       // 设备实测：51漫画 book.type=notShelf|image、chapters=0，Rust 侧
       // refresh_toc 可出 1 章+正文图，缺此回退则整链断裂。— Reasonix + UI
-      _chapters = await api.getChapters(widget.bookUrl);
+      _chapters = await api.getChapters(_activeBookUrl);
       if (_chapters.isEmpty &&
           _book != null &&
           _book!.origin.isNotEmpty &&
           !_book!.origin.startsWith(BookType.localTag) &&
           !_book!.origin.startsWith(BookType.webDavTag)) {
-        _chapters = await api.refreshToc(widget.bookUrl, _book!.origin);
+        _chapters = await api.refreshToc(_activeBookUrl, _book!.origin);
       }
       if (_chapters.isEmpty) {
         setState(() {
@@ -824,16 +861,16 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       // 获取章节内容
       String content;
       if (chapter.url.isNotEmpty && _book != null) {
-        // 在线章节：通过 fetchChapterContent 获取
+        // 在线章节：通过 fetchChapterContent 获取（[P4-3 M3 修2] 活跃 bookUrl）
         content = await api.fetchChapterContent(
-          widget.bookUrl,
+          _activeBookUrl,
           chapter.url,
           _book!.origin,
         );
       } else {
         // 本地章节：通过 getChapterContent 获取
         content = await api.getChapterContent(
-          widget.bookUrl,
+          _activeBookUrl,
           _currentChapterIndex,
         );
       }
@@ -1025,7 +1062,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     ];
     for (final index in candidates) {
       try {
-        await api.getChapterContentFull(widget.bookUrl, index);
+        await api.getChapterContentFull(_activeBookUrl, index);
       } catch (_) {
         // 预载失败静默：不显示错误、不阻断阅读（下次进入该章再试）
       }
@@ -1105,7 +1142,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     if (source == null || book == null || !mounted) return;
     try {
       final api = ref.read(bookApiProvider);
-      final diskHit = await api.getImageCache(widget.bookUrl, url);
+      final diskHit = await api.getImageCache(_activeBookUrl, url);
       if (diskHit != null &&
           diskHit.isNotEmpty &&
           looksLikeImageBytes(diskHit)) {
@@ -1127,7 +1164,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       if (loaded != null) {
         try {
           await api.saveImageCache(
-            bookUrl: widget.bookUrl,
+            bookUrl: _activeBookUrl,
             url: url,
             bytes: loaded,
           );
@@ -1215,7 +1252,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       final maxPage = _imageUrls.isEmpty ? 0 : _imageUrls.length - 1;
       final pos = _visiblePageIndex.clamp(0, maxPage);
       await api.updateReadingProgress(
-        bookUrl: widget.bookUrl,
+        bookUrl: _activeBookUrl,
         chapterIndex: _currentChapterIndex,
         chapterPos: pos,
       );
@@ -1401,7 +1438,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     final url = _imageUrls[index];
     return resolveMangaPageImageBytes(
       api: ref.read(bookApiProvider),
-      bookUrl: widget.bookUrl,
+      bookUrl: _activeBookUrl,
       url: url,
       // 有书源才走 FFI 解码链路（对齐 _DecodedComicImage 的分发条件）
       sourceJson: _bookSource == null ? null : jsonEncode(_bookSource!.toJson()),
@@ -1702,7 +1739,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
           url: url,
           sourceJson: jsonEncode(_bookSource!.toJson()),
           bookSourceUrl: _book!.origin,
-          bookUrl: widget.bookUrl, // [P4-2a] 图片磁盘缓存按书隔离的目录键
+          // [P4-3 M3 修2] 活跃 bookUrl（磁盘缓存目录键随换源切换）
+          bookUrl: _activeBookUrl,
           // [P4-3 E2] 分页适配类型映射的 BoxFit（条漫恒 fitWidth）
           fit: _imageFit,
           eInkThreshold: _enableEInk ? _eInkThreshold : null,
@@ -1979,9 +2017,10 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     _showPageActions(_visiblePageIndex);
   }
 
-  /// [P4-3 M2] 构建顶部控制栏（实心 AppBar 式，按用户截图重构：
-  /// surfaceContainer 实心背景 + Row1 返回/刷新/更多 + Row2 书名大字 +
-  /// 章节名 + 源名；「更多」= 打开页操作底栏，换源无功能不放 E8）
+  /// [P4-3 M2/M3] 构建顶部控制栏（实心 AppBar 式，按用户截图重构：
+  /// surfaceContainer 实心背景（覆盖状态栏区）+ Row1 返回/换源/刷新/更多 +
+  /// Row2 书名大字 + 章节名 + 源名；「更多」= 打开页操作底栏；
+  /// [P4-3 M3 修2] 换源键 = 复用既有换源底部弹层（_openChangeSource）
   Widget _buildTopBar(BuildContext context) {
     final chapterName = _currentChapterIndex < _chapters.length
         ? _chapters[_currentChapterIndex].title
@@ -1991,6 +2030,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       chapterName: chapterName,
       sourceName: _sourceName,
       onBack: () => Navigator.of(context).pop(),
+      onChangeSource: _openChangeSource,
       onRefresh: _refreshChapter,
       onMore: _openPageActions,
     );

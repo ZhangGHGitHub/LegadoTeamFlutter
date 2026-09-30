@@ -12,9 +12,11 @@ import 'package:material_symbols_icons/symbols.dart';
 /// - 顶栏 [MangaMenuTopBar]：实心表面色（colorScheme.surfaceContainer，
 ///   浅色 = 浅灰 / 暗色自动暗）占满宽度，SafeArea 含状态栏区；
 ///   Row1 = 返回（图标无底、onSurface）+ Spacer + 右上图标组
-///   （刷新 + 更多 more_vert 三点，onSurface、无胶囊底、间距均布——
-///   参考版「换源」键我方无功能不放，E8 登记；「更多」= 打开页操作
-///   底栏，复用既有页操作菜单）；Row2 标题区（左对齐 padding 16）=
+///   （[P4-3 M3 修2] 换源（Symbols.shuffle）+ 刷新 + 更多 more_vert 三点，
+///   onSurface、无胶囊底、间距均布——换源键复用既有换源底部弹层
+///   ChangeSourceScreen（详情页/听书页同款 pushNamed 先例，真实功能非
+///   假按钮）；「更多」= 打开页操作底栏，复用既有页操作菜单）；
+///   Row2 标题区（左对齐 padding 16）=
 ///   书名大字（24sp w600 onSurface）+ 次行 Row（章节名 14sp
 ///   onSurfaceVariant 省略号 + Spacer + 源名 13sp onSurfaceVariant，
 ///   源名为 null/空不显示）；点击标题区 = 返回详情页（保留 M1 语义）。
@@ -102,6 +104,12 @@ class MangaMenuTopBar extends StatelessWidget {
   final String? sourceName;
 
   final VoidCallback onBack;
+
+  /// [P4-3 M3 修2] 「换源」键（Symbols.shuffle）：复用既有换源底部弹层
+  /// ChangeSourceScreen（详情页/听书页同款 pushNamed 先例，真实功能）；
+  /// 换源成功后屏幕层整书重载
+  final VoidCallback onChangeSource;
+
   final VoidCallback onRefresh;
 
   /// [P4-3 M2] 「更多」键（打开页操作底栏，复用既有页操作菜单）
@@ -116,6 +124,7 @@ class MangaMenuTopBar extends StatelessWidget {
     this.chapterName,
     this.sourceName,
     required this.onBack,
+    required this.onChangeSource,
     required this.onRefresh,
     required this.onMore,
     this.onOpenBookInfo,
@@ -139,7 +148,9 @@ class MangaMenuTopBar extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Row1：返回 + Spacer + 右上图标组（刷新 + 更多，间距均布）
+            // Row1：返回 + Spacer + 右上图标组（换源 + 刷新 + 更多，间距均布）
+            // [P4-3 M3 修2] 补换源键（参考版右上三图标）：Symbols.shuffle，
+            // 点击复用既有换源底部弹层（真实功能，非假按钮）
             Row(
               children: [
                 _MangaTopBarIcon(
@@ -149,14 +160,19 @@ class MangaMenuTopBar extends StatelessWidget {
                 ),
                 const Spacer(),
                 _MangaTopBarIcon(
+                  icon: Symbols.shuffle_rounded,
+                  tooltip: '换源',
+                  onTap: onChangeSource,
+                ),
+                const SizedBox(width: 8),
+                _MangaTopBarIcon(
                   icon: Symbols.refresh_rounded,
                   tooltip: '刷新',
                   onTap: onRefresh,
                 ),
                 const SizedBox(width: 8),
                 _MangaTopBarIcon(
-                  // 「更多」= 打开页操作底栏（复用既有页操作菜单，真实功能）；
-                  // 参考版「换源」键我方无功能，不放（E8 登记）
+                  // 「更多」= 打开页操作底栏（复用既有页操作菜单，真实功能）
                   icon: Symbols.more_vert_rounded,
                   tooltip: '更多',
                   onTap: onMore,
