@@ -612,3 +612,12 @@ https___www.tuku.cc_manga-73562__62b1be09         (本波, 20:27 新建, images/
 - 配对对照件：`m2b_menu_light.png`（5c9c47c0…，修复前同屏态，非白像素=0）
 
 *本段纪律自检：未改任何生产代码；设备操作只读/可恢复（菜单已收起、/sdcard m2c_* 临时文件已清、阅读器停留 ch26 p9/50）；判定以像素采样+M2b 配对对照为准，图像视觉终审素材（m2c_capsule_crop.png / m2c_menu_light.png）留主代理复核。*
+
+## SVG 移出后构建冒烟（2026-09-30）
+
+> QA 子代理：SVG 移出（99efc7c90f：8 个零引用 `assets/icons/ic_bottom_*.svg` git-mv 至 `docs/pending_deletion/assets_icons_unused/`，pubspec 移除 `- assets/icons/` 声明）后快速构建验证。HEAD f04199881a，全程未改任何生产代码。
+
+- **构建门禁：通过。** FFI verify（release，aarch64/x86_64）PASSED（content hash 1549248103，复用现有 .so，与 2.0.330/331 各轮一致）；`flutter build apk --debug` exit 0（Gradle assembleDebug 22.3s，APK 282.4 MB），**全量构建日志 118 行无任何 asset/资源解析告警或报错**；APK 内容核验：`assets/flutter_assets/assets/` 仅含 default_data/images/mock_data/web 及 md 文件，**无 `assets/icons/`、无 `ic_bottom*` 残留**（命中 "icons" 的仅 MaterialIcons 等字体包名，与本次移除无关）。
+- **装机冒烟（安装/启动/崩溃检查）：阻塞（环境问题，非代码问题）。** 验收机 MuMu 192.168.100.62:5555 全程离线：adb 初显 offline → disconnect+reconnect 超时（WSAE 10060），`ping 192.168.100.62` 由网关 192.168.100.52 回「无法访问目标主机」（host 级不可达），期间重试 5 次（约 12 分钟）均不可达；`emulator_smoke_test.ps1 -Device 192.168.100.62:5555` 退出码 1（`[FAIL] 设备不在线`，脚本首步即止，未触达构建/装机段）。设备恢复后需补跑：装机 + 版本复核 + 启动 + FATAL 检查。
+- **版本注记：** pubspec 现为 **2.0.331+332**——由 22ff2c51c4（`chore(release): 版本 2.0.331+332`，早于 SVG 提交 99efc7c90f）提升，任务书中「应仍 2.0.330」表述已过期；已装==pubspec 一致性核对因设备离线未执行（构建侧 APK 构建自当前工作树，含 pubspec 2.0.331+332）。
+- 证据：`docs/materials_1301/evidence/svgmove_ffi_verify.log`（FFI 校验输出）｜`svgmove_build_full.log`（全量构建日志，md5 7ba449bf…，grep asset/warn/error 零命中）｜`.qa_scratch/svg_move_build.log`（临时件）。
