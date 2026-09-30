@@ -353,8 +353,8 @@ class _MangaBarThumbShape extends SliderComponentShape {
 /// 进度胶囊（白色 stadium 全圆角，占余宽，内放分段 SeekToPage 滑条）
 ///
 /// 滑条：thumb = [_MangaBarThumbShape] 自绘竖条（primary）、轨道透明
-/// （trackHeight 0 = 不绘制轨道）、divisions 点串 primary 色（参考版
-/// 整串均匀蓝点：active 段实心 primary、inactive 段 40% alpha primary）；
+/// （trackHeight 0 = 不绘制轨道）、divisions 点串实色 primary
+/// （3dp 点、整串均匀深点，对齐参考版观感；白胶囊底上清晰可见）；
 /// 拖动语义不变（SeekToPage），pageCount = 1 时禁用保持。
 class _MangaProgressCapsule extends StatelessWidget {
   final double pageValue;
@@ -400,14 +400,16 @@ class _MangaProgressCapsule extends StatelessWidget {
             trackHeight: 0,
             thumbShape: _MangaBarThumbShape(),
             overlayShape: const RoundSliderOverlayShape(overlayRadius: 14),
-            tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 2),
+            // 点串增强（装机采证 m2_menu_light.png：2dp + 40% alpha 在
+            // 白色胶囊上对比不足不可见）：点半径加大到 3dp、inactive
+            // 段由 40% alpha 改实色 primary —— 与参考版整串均匀深点
+            // 观感一致，白底上清晰可见
+            tickMarkShape: const RoundSliderTickMarkShape(tickMarkRadius: 3),
             thumbColor: scheme.primary,
             disabledThumbColor: scheme.primary.withValues(alpha: 0.38),
             overlayColor: scheme.primary.withValues(alpha: 0.12),
-            // 点串配色（截图整串均匀蓝点）：thumb 左侧 active 段
-            // 实心 primary、右侧 inactive 段 40% alpha primary
             activeTickMarkColor: scheme.primary,
-            inactiveTickMarkColor: scheme.primary.withValues(alpha: 0.4),
+            inactiveTickMarkColor: scheme.primary,
           ),
           child: Slider(
             value: pageValue.clamp(0.0, pageMax),
