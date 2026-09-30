@@ -4,6 +4,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -149,8 +150,9 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
     final coverState = ref.watch(changeCoverNotifierProvider);
     final previewUrl = _selectedUrl ?? widget.effectiveCurrentCover;
 
-    return Scaffold(
-      appBar: LegadoAppBar(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(
         title: const Text('更换封面'),
         actions: [
           // 顶栏统一 36dp 图标槽位（TopBarActionStyler），带文字按钮会超出槽位
@@ -162,7 +164,7 @@ class _ChangeCoverScreenState extends ConsumerState<ChangeCoverScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: SafeArea(
+      bottomBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: FilledButton.icon(

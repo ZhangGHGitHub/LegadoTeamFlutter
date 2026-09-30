@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -431,8 +432,9 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                 ),
               ),
               Expanded(
-                child: Scaffold(
-                  appBar: LegadoAppBar(
+                child: AppScaffold(
+                  // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+                  topBar: LegadoAppBar(
                     title: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
@@ -586,7 +588,7 @@ class _ChangeSourceScreenState extends ConsumerState<ChangeSourceScreen>
                         : null,
                   ),
                   body: _buildBody(state, results),
-                  bottomNavigationBar: _buildBottomBar(state, results),
+                  bottomBar: _buildBottomBar(state, results),
                   // [A2 形态对齐 | full-stack-engineer + UI] 搜索 FAB 原样
                   // 保留于面板内（相对面板右下角，位置语义不变）
                   floatingActionButton: FloatingActionButton.extended(

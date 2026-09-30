@@ -19,6 +19,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../models/models.dart';
 import '../providers/explore/explore_show_notifier.dart';
 import '../providers/providers.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/explore_book_list.dart';
 import '../widgets/explore_page_control.dart';
@@ -113,8 +114,9 @@ class _ExploreShowScreenState extends ConsumerState<ExploreShowScreen> {
     final args = this.args;
     // 参数缺失兜底（正常路径由 routes.dart 保证非空）
     if (args == null) {
-      return Scaffold(
-        appBar: LegadoAppBar(title: const Text('')),
+      // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+      return AppScaffold(
+        topBar: LegadoAppBar(title: const Text('')),
         body: const EmptyState(
           icon: Symbols.explore_rounded,
           title: '参数错误',
@@ -128,8 +130,9 @@ class _ExploreShowScreenState extends ConsumerState<ExploreShowScreen> {
       exploreShowNotifierProvider(args).select((s) => s.title),
     );
 
-    return Scaffold(
-      appBar: LegadoAppBar(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(
         title: Text(title),
         actions: [
           // [B2-C1 2-5 | full-stack-engineer + UI] 筛选漏斗按开启态着色

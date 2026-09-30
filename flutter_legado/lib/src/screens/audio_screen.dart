@@ -8,6 +8,7 @@ import 'package:saf/saf.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/app_progress_indicator.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -222,8 +223,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
     final notifier = ref.watch(audioNotifierProvider.notifier);
     return ListenableBuilder(
       listenable: notifier,
-      builder: (context, _) => Scaffold(
-      appBar: LegadoAppBar(
+      builder: (context, _) => AppScaffold(
+      // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+      topBar: LegadoAppBar(
         title: Text(widget.effectiveBookName.isNotEmpty ? widget.effectiveBookName : '听书'),
         actions: [
           // 定时停止按钮

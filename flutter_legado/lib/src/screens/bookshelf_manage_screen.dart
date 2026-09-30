@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -288,8 +289,9 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     final theme = Theme.of(context);
     final state = ref.watch(bookshelfManageNotifierProvider);
     final selectedCount = state.selectedUrls.length;
-    return Scaffold(
-      appBar: LegadoAppBar(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(
         // 原版 TitleBar 内嵌 view_search：搜索框与菜单图标同行，无标题文字
         title: SizedBox(
           height: 36,
@@ -351,7 +353,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
           ),
         ],
       ),
-      bottomNavigationBar: selectedCount > 0
+      bottomBar: selectedCount > 0
           ? _buildActionBar(theme, state)
           : null,
       body: _buildBody(theme, state),

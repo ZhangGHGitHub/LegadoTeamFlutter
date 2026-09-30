@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -264,10 +265,12 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
-    return Scaffold(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
       // [UI_MD3_ALIGNMENT_PLAN.md Batch B B4] 分组背景走 tonal
+      // [GLOBALCOMP B4] 代码编辑域差异化背景（有意与主题默认区分，保留）
       backgroundColor: cs.surfaceContainerLow,
-      appBar: LegadoAppBar(
+      topBar: LegadoAppBar(
         title: Text(
           _openedSourceUrl == null || _openedSourceUrl!.isEmpty
               ? '新建 JS 书源'

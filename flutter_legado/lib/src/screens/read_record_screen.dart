@@ -2,6 +2,7 @@
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/md3_heatmap_calendar.dart';
 import 'read_record_daily_view.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -85,8 +86,9 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
     final state = ref.watch(readRecordNotifierProvider);
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      appBar: LegadoAppBar(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(
         title: TextField(
           controller: _searchController,
           textAlignVertical: TextAlignVertical.center,

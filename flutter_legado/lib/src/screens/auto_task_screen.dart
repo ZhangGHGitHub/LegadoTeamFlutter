@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -169,8 +170,9 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(autoTaskNotifierProvider);
     final notifier = ref.read(autoTaskNotifierProvider.notifier);
-    return Scaffold(
-      appBar: LegadoAppBar(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(
         title: const Text('定时任务'),
         // [UI-fix v2.0.3 | 2026-08-06] 溢出菜单（对标原版 AutoTaskActivity
         // menu_import_local / menu_import_on_line / menu_export / menu_help）

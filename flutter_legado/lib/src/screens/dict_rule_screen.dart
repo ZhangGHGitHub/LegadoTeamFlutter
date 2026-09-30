@@ -14,6 +14,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import '../widgets/loading_indicator.dart';
 
@@ -507,8 +508,9 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    return Scaffold(
-      appBar: _selectMode ? _buildSelectAppBar() : _buildNormalAppBar(),
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: _selectMode ? _buildSelectAppBar() : _buildNormalAppBar(),
       body: _buildBody(theme),
       floatingActionButton: _selectMode
           ? null

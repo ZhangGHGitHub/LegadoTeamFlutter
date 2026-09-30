@@ -14,6 +14,7 @@ import 'package:zxing2/zxing2.dart'
     show BinaryBitmap, HybridBinarizer, Result, ResultMetadataType,
         RGBLuminanceSource;
 
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 
 /// 扫码结果类型
@@ -278,8 +279,9 @@ class _QrcodeScreenState extends State<QrcodeScreen> {
   @override
   Widget build(BuildContext context) {
     // [PARITY A1] 标题对齐参考版「扫描二维码」
-    return Scaffold(
-      appBar: LegadoAppBar(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(
         title: const Text('扫描二维码'),
         actions: [
           // [PARITY A1] 参考版右上图库按钮：本地选图解码二维码（免相机）

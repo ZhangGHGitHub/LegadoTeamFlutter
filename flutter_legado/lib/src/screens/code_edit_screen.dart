@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 
@@ -201,9 +202,11 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _handlePop();
       },
-      child: Scaffold(
+      child: AppScaffold(
+        // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+        // 背景色 cs.surface 与主题默认一致：冗余参数按裁决原样保留（色值不变）
         backgroundColor: cs.surface,
-        appBar: LegadoAppBar(
+        topBar: LegadoAppBar(
           title: Text(widget.title),
           leading: IconButton(
             icon: const Icon(Symbols.close_rounded),
