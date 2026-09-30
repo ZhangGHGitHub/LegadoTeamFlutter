@@ -218,6 +218,12 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   /// 对齐参考版 Contract L121）
   int _pageScaleType = MangaPageScaleType.defaultValue;
 
+  /// [P4-3 M3 修4] 条漫侧边留白百分比 0..45（持久化，默认 0；仅条漫渲染
+  /// 路径消费：每侧 padding = 视口宽 × p/100，对齐参考版 MangaReaderScreen
+  /// fraction = 1 - p×2/100 ⇔ itemWidth = 视口宽 × (1 - 2p/100)；
+  /// 单页式路径不生效，设置面板仅 isWebtoon 显示此滑杆）
+  int _sidePadding = 0;
+
   /// [P4-3 E2] 图片渲染 BoxFit：单页式按适配类型映射（Screen L1463-1472）；
   /// 条漫恒 fitWidth（Screen L1568）
   BoxFit get _imageFit => MangaScrollModes.isPaged(_scrollMode)
@@ -279,6 +285,8 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       final speedRaw = await api.getConfig(MangaConfigKeys.autoReadSpeed);
       // [P4-3 E2] 分页适配类型（缺省/非法 → 默认 0 = 全屏适配）
       final scaleRaw = await api.getConfig(MangaConfigKeys.pageScaleType);
+      // [P4-3 M3 修4] 条漫侧边留白百分比（缺省/非法 → 默认 0，越限收敛 0..45）
+      final padRaw = await api.getConfig(MangaConfigKeys.sidePadding);
       if (!mounted) return;
       setState(() {
         _colorFilter = MangaColorFilterConfig.fromStorage(filterRaw);
@@ -289,6 +297,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
         _scrollMode = MangaScrollModes.parse(modeRaw);
         _autoReadSpeed = MangaAutoRead.parse(speedRaw);
         _pageScaleType = MangaPageScaleType.parse(scaleRaw);
+        _sidePadding = int.tryParse(padRaw ?? '')?.clamp(0, 45) ?? 0;
       });
       // [P4-3 E1] 配置可能在图片加载后才生效：同步单页式控制器
       _applyScrollMode();
@@ -343,6 +352,19 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     try {
       await ref.read(bookApiProvider)
           .setConfig(MangaConfigKeys.pageScaleType, '$v');
+    } catch (_) {}
+  }
+
+  /// [P4-3 M3 修4] 持久化条漫侧边留白（0..45%，越限收敛；仅条漫渲染
+  /// 路径生效——条漫 ListView 包水平 padding，单页式不受影响；
+  /// setState 即时重建条漫子树使滑杆拖动实时生效）
+  Future<void> _persistSidePadding(int value) async {
+    final v = value.clamp(0, 45);
+    if (v == _sidePadding) return;
+    if (mounted) setState(() => _sidePadding = v);
+    try {
+      await ref.read(bookApiProvider)
+          .setConfig(MangaConfigKeys.sidePadding, '$_sidePadding');
     } catch (_) {}
   }
 
@@ -651,6 +673,9 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       onAutoReadSpeedChanged: (v) => unawaited(_persistAutoReadSpeed(v)),
       // [P4-3 E2] 分页适配类型变更持久化（对齐参考版 ViewModel L816）
       onPageScaleTypeChanged: (v) => unawaited(_persistPageScaleType(v)),
+      // [P4-3 M3 修4] 条漫侧边留白（条漫专属滑杆，0..45% 持久化）
+      sidePadding: _sidePadding,
+      onSidePaddingChanged: (v) => unawaited(_persistSidePadding(v)),
     );
   }
 
@@ -1671,8 +1696,10 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   /// [P4-1 C1] 外层包 [NotificationListener] 监听 [ScrollMetricsNotification]：
   /// 内容高度随图片解码变化时派发该通知，驱动页级进度恢复的「持续锚定到
   /// 记录页」（ScrollController listener 收不到纯度量变化，须用 Notification）。
+  /// [P4-3 M3 修4] 条漫路径按 [_sidePadding] 百分比加水平 padding
+  /// （见方法尾部包裹逻辑）。
   Widget _buildImageList() {
-    return NotificationListener<ScrollMetricsNotification>(
+    final list = NotificationListener<ScrollMetricsNotification>(
       onNotification: _onScrollMetricsChanged,
       child: InteractiveViewer(
         minScale: 1.0,
@@ -1701,6 +1728,19 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
           },
         ),
       ),
+    );
+    // [P4-3 M3 修4] 条漫侧边留白：每侧 padding = 视口宽 × p/100（p =
+    // _sidePadding 0..45）。对齐参考版 MangaReaderScreen L500/L1706：
+    // fraction = 1 - p×2/100，itemWidthPx = 视口宽 × fraction ⇔ 每侧
+    // 让出 p% 视口宽；仅条漫（4/5）路径生效，单页式路径参考版
+    // fraction 恒 1（不加 padding）
+    if (!MangaScrollModes.isWebtoon(_scrollMode) || _sidePadding <= 0) {
+      return list;
+    }
+    final h = MediaQuery.sizeOf(context).width * (_sidePadding / 100.0);
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: h),
+      child: list,
     );
   }
 

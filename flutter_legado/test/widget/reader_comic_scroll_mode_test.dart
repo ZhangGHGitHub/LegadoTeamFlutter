@@ -502,4 +502,82 @@ void main() {
           reason: '新章章首进度应落库');
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // [P4-3 M3 修4c] 条漫侧边留白（新键 mangaSidePadding，0..45%）
+  //
+  // 取证（参考版 MangaReaderScreen）：
+  // - fraction = 1 - sidePaddingPercent×2/100，itemWidthPx = 视口宽 ×
+  //   fraction ⇔ 每侧 padding = 视口宽 × p/100；
+  // - 仅条漫（4/5）路径生效，单页式（1/2/3）fraction 恒 1（不加 padding）。
+  // 测试视口 800×600：p = 20 → 每侧 padding = 800 × 0.2 = 160px。
+  // ---------------------------------------------------------------------------
+  group('[P4-3 M3 修4c] 条漫侧边留白', () {
+    testWidgets(
+        '条漫(4) + mangaSidePadding=20：图片列表两侧各 160px 水平 padding',
+        (tester) async {
+      final progressCalls = <List<int>>[];
+      final api = buildApi(
+        configs: const {'mangaScrollMode': '4', 'mangaSidePadding': '20'},
+        progressCalls: progressCalls,
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await pumpScreen(tester, api, container);
+
+      // 条漫 ListView 仍为渲染路径
+      expect(find.byType(ListView), findsWidgets);
+      // 视口宽 800 × 20% = 每侧 160px 的水平 padding 包裹列表
+      final sidePaddings = tester
+          .widgetList<Padding>(
+            find.byWidgetPredicate(
+              (w) =>
+                  w is Padding &&
+                  w.padding == const EdgeInsets.symmetric(horizontal: 160.0),
+            ),
+          )
+          .toList();
+      expect(sidePaddings, isNotEmpty,
+          reason: '条漫 + sidePadding 20% 应在列表外包 160px 水平 padding');
+      // 该 padding 直接包裹条漫 ListView（经 NotificationListener/
+      // InteractiveViewer 链）
+      expect(
+        find.ancestor(
+          of: find.byType(ListView),
+          matching: find.byWidget(sidePaddings.first),
+        ),
+        findsOneWidget,
+        reason: '侧边留白 padding 必须包裹条漫列表本体（而非其他兄弟节点）',
+      );
+    });
+
+    testWidgets(
+        '单页式(1) + mangaSidePadding=20：单页式路径不生效（无水平 padding）',
+        (tester) async {
+      final progressCalls = <List<int>>[];
+      final api = buildApi(
+        configs: const {'mangaScrollMode': '1', 'mangaSidePadding': '20'},
+        progressCalls: progressCalls,
+      );
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+      await pumpScreen(tester, api, container);
+
+      // 单页式走 PageView 路径（参考版 fraction 恒 1，不加 padding）
+      expect(find.byType(PageView), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (w) =>
+              w is Padding &&
+              w.padding == const EdgeInsets.symmetric(horizontal: 160.0),
+        ),
+        findsNothing,
+        reason: '单页式模式不应消费 sidePadding（参考版 fraction 恒 1）',
+      );
+    });
+  });
 }
