@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.333] - 2026-09-30
+
+### Changed
+- [UI] 弹窗菜单项之间的分隔线改为胶囊短线条（对齐参考版弹窗菜单形态），覆盖书源排序、导入确认、缓存队列等菜单。
+
 ## [2.0.332] - 2026-09-30
 
 ### Changed
