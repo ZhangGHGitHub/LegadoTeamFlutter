@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.328] - 2026-09-30
+
+### Fixed
+- [UI] 漫画章节解析不出图片时给出明确错误提示与「重试本章」（对齐原版「正文没有图片」语义，重试不再整书重载）；卷分隔章（无正文图）改为显示卷标题分隔页，不再误显示「暂无图片」。
+
 ## [2.0.327] - 2026-09-30
 
 ### Fixed
