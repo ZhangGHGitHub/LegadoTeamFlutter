@@ -169,6 +169,15 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
   /// [P4-3 M3 修4] 条漫侧边留白百分比 0..45
   late int _sidePadding;
 
+  /// [P4-3 M4 批1] 页脚内容胶囊组样例数据（与 [_footerPreview] 同源，
+  /// 保证胶囊文案与预览条逐段一致：第三话 / 页数 4/30 / 章节 1/45 /
+  /// 总进度 0.3%；隐藏段对应 MangaFooterConfig 的 hide* 字段）
+  static const String _sampleChapterName = '第三话';
+  static const int _sampleChapterIndex = 0;
+  static const int _sampleChapterSize = 45;
+  static const int _samplePageIndex = 3;
+  static const int _sampleImageCount = 30;
+
   /// 是否渲染「自动翻页」区块（上游显式接线时才渲染，
   /// 保证既有未接线的 sheet 用法/测试不受影响）
   bool get _showAutoReadSection => widget.onAutoReadChanged != null;
@@ -448,6 +457,15 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                   _footerQuickRow(),
                   _divider(),
                   _footerPreview(),
+                  // [P4-3 M4 批1] 页脚内容胶囊组：一排组成段胶囊
+                  //（第三话/页数/4/30/章节/1/45/总进度/0.3%），点击
+                  // toggle 对应 hide* 字段并经 onFooterChanged 持久化，
+                  // 预览条随胶囊即时刷新（buildLabel 已按开关逐段渲染）；
+                  // hideFooter 时整条页脚隐藏，组成段胶囊随之不渲染
+                  if (!_footer.hideFooter) ...[
+                    _divider(),
+                    _footerCapsuleGroup(),
+                  ],
                 ]),
               ],
             ),
@@ -665,11 +683,11 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
   Widget _footerPreview() {
     final scheme = Theme.of(context).colorScheme;
     final label = _footer.buildLabel(
-      chapterName: '第三话',
-      chapterIndex: 0,
-      chapterSize: 45,
-      pageIndex: 3,
-      imageCount: 30,
+      chapterName: _sampleChapterName,
+      chapterIndex: _sampleChapterIndex,
+      chapterSize: _sampleChapterSize,
+      pageIndex: _samplePageIndex,
+      imageCount: _sampleImageCount,
     );
     final text = _footer.hideFooter
         ? '页脚已隐藏'
@@ -694,6 +712,107 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
             color: scheme.onSurfaceVariant,
           ),
         ),
+      ),
+    );
+  }
+
+  /// [P4-3 M4 批1] 页脚内容胶囊组：一排页脚组成段胶囊（对齐用户截图
+  /// 「第三话｜页数｜4/30｜章节｜1/45｜总进度｜0.3%」），Wrap 换行；
+  /// 每个胶囊 = 页脚一个组成段，点击 toggle 对应 [MangaFooterConfig]
+  /// hide* 字段并经 [onFooterChanged] 持久化，预览条即时反映。
+  /// 显示段 = primaryContainer 高亮胶囊（同 [_modeButtonGroup] 形态），
+  /// 隐藏段 = 透明底 + 降透明度 0.4 + 删除线（「隐藏段变暗」视觉）。
+  /// 样例段值与 [_footerPreview] 同源（[_sampleChapterName] 等），
+  /// 进度段用 [MangaFooterConfig.progressPercent] 复算保证逐段一致。
+  Widget _footerCapsuleGroup() {
+    final scheme = Theme.of(context).colorScheme;
+    final progressSample = MangaFooterConfig.progressPercent(
+      chapterIndex: _sampleChapterIndex,
+      chapterSize: _sampleChapterSize,
+      pageIndex: _samplePageIndex,
+      imageCount: _sampleImageCount,
+    );
+    // (文案, 当前是否隐藏, 翻转该段 hide 字段)
+    final segments = <(String, bool, VoidCallback)>[
+      (
+        _sampleChapterName,
+        _footer.hideChapterName,
+        () => _footer.hideChapterName = !_footer.hideChapterName,
+      ),
+      (
+        '页数',
+        _footer.hidePageNumberLabel,
+        () => _footer.hidePageNumberLabel = !_footer.hidePageNumberLabel,
+      ),
+      (
+        '${_samplePageIndex + 1}/$_sampleImageCount',
+        _footer.hidePageNumber,
+        () => _footer.hidePageNumber = !_footer.hidePageNumber,
+      ),
+      (
+        '章节',
+        _footer.hideChapterLabel,
+        () => _footer.hideChapterLabel = !_footer.hideChapterLabel,
+      ),
+      (
+        '${_sampleChapterIndex + 1}/$_sampleChapterSize',
+        _footer.hideChapter,
+        () => _footer.hideChapter = !_footer.hideChapter,
+      ),
+      (
+        '总进度',
+        _footer.hideProgressRatioLabel,
+        () => _footer.hideProgressRatioLabel = !_footer.hideProgressRatioLabel,
+      ),
+      (
+        progressSample,
+        _footer.hideProgressRatio,
+        () => _footer.hideProgressRatio = !_footer.hideProgressRatio,
+      ),
+    ];
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+      child: Wrap(
+        spacing: 8,
+        runSpacing: 8,
+        children: segments.map((seg) {
+          final hidden = seg.$2;
+          return GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () {
+              seg.$3();
+              setState(() {});
+              widget.onFooterChanged(_footer);
+            },
+            // AnimatedContainer 不支持 opacity 参数 → 外层 AnimatedOpacity
+            // 承担「隐藏段变暗」的过渡（0.4），底色动画仍由容器自身完成
+            child: AnimatedOpacity(
+              opacity: hidden ? 0.4 : 1.0,
+              duration: const Duration(milliseconds: 120),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                decoration: BoxDecoration(
+                  color:
+                      hidden ? Colors.transparent : scheme.primaryContainer,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  seg.$1,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: hidden ? FontWeight.w400 : FontWeight.w600,
+                    color: hidden
+                        ? scheme.onSurfaceVariant
+                        : scheme.onPrimaryContainer,
+                    decoration: hidden ? TextDecoration.lineThrough : null,
+                  ),
+                ),
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }

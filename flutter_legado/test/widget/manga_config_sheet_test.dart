@@ -222,7 +222,17 @@ void main() {
       expect(find.text('左对齐'), findsOneWidget);
       expect(find.text('居中'), findsOneWidget);
       expect(find.text('隐藏页脚'), findsOneWidget);
-      expect(find.textContaining('第三话'), findsOneWidget);
+      // [P4-3 M4 批1] 内容胶囊组：7 段胶囊 + 预览条全段样例文案
+      //（第三话 / 页数 4/30 / 章节 1/45 / 总进度 0.3%）
+      for (final cap
+          in const ['第三话', '页数', '4/30', '章节', '1/45', '总进度', '0.3%']) {
+        expect(find.text(cap), findsOneWidget, reason: '内容胶囊 $cap 缺');
+      }
+      expect(
+        find.text('第三话 页数4/30 章节1/45 总进度0.3%'),
+        findsOneWidget,
+        reason: '预览条应为全段样例文案',
+      );
 
       // 点「居中」→ orientation=居中 且取消隐藏
       await tester.tap(find.text('居中'));
@@ -237,23 +247,125 @@ void main() {
               );
       expect(previewText.data, contains('第三话'));
 
-      // 点「隐藏页脚」→ hideFooter 置位，预览条改为「页脚已隐藏」占位
+      // 点「隐藏页脚」→ hideFooter 置位，预览条改为「页脚已隐藏」占位；
+      // [P4-3 M4 批1] 整条页脚隐藏时内容胶囊组随之不渲染 → 全页无「第三话」
       await tester.tap(find.text('隐藏页脚'));
       await tester.pumpAndSettle();
       expect(records.last, (MangaFooterConfig.alignCenter, true));
       expect(find.text('页脚已隐藏'), findsOneWidget);
       expect(find.textContaining('第三话'), findsNothing);
 
-      // 再点「隐藏页脚」→ 恢复显示（toggle 语义）
+      // 再点「隐藏页脚」→ 恢复显示（toggle 语义），[P4-3 M4 批1]
+      // 内容胶囊组随之恢复渲染
       await tester.tap(find.text('隐藏页脚'));
       await tester.pumpAndSettle();
       expect(records.last, (MangaFooterConfig.alignCenter, false));
-      expect(find.textContaining('第三话'), findsOneWidget);
+      expect(find.text('第三话'), findsOneWidget,
+          reason: '恢复后内容胶囊「第三话」应渲染');
+      expect(
+        find.text('第三话 页数4/30 章节1/45 总进度0.3%'),
+        findsOneWidget,
+        reason: '恢复后预览条应回到全段样例文案',
+      );
 
       // 点「左对齐」→ orientation 回左对齐且取消隐藏
       await tester.tap(find.text('左对齐'));
       await tester.pumpAndSettle();
       expect(records.last, (MangaFooterConfig.alignLeft, false));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // [P4-3 M4 批1] 页脚内容胶囊组（对齐用户截图：第三话｜页数｜4/30｜
+  // 章节｜1/45｜总进度｜0.3%；每胶囊 = 页脚一个组成段，点击 toggle
+  // 对应 hide* 字段并经 onFooterChanged 持久化，预览条即时刷新；
+  // 隐藏段降透明度 + 删除线，胶囊本体仍渲染）
+  // ---------------------------------------------------------------------------
+  group('[P4-3 M4 批1] 页脚内容胶囊组', () {
+    testWidgets(
+        '7 段胶囊存在；点击 toggle 对应 hide 字段经回调传出，预览条即时更新',
+        (tester) async {
+      // sheet 内 setState 原地修改同一 _footer 实例后再回调 → 回调时
+      // 用 fromStorage(toStorage()) 快照，逐条记录字段状态
+      final records = <MangaFooterConfig>[];
+      await tester.pumpWidget(buildSheet(
+        ThemeMode.dark,
+        onFooterChanged: (f) =>
+            records.add(MangaFooterConfig.fromStorage(f.toStorage())),
+      ));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+
+      // 页脚设置区在列表底部，[M4 批1] 胶囊组又在预览条下方 →
+      // 滚到列表末端再断言
+      await tester.fling(find.byType(ListView), const Offset(0, -1600), 3000);
+      await tester.pumpAndSettle();
+
+      // 默认全段显示：7 个内容胶囊 + 预览条全段样例文案
+      for (final cap
+          in const ['第三话', '页数', '4/30', '章节', '1/45', '总进度', '0.3%']) {
+        expect(find.text(cap), findsOneWidget, reason: '内容胶囊 $cap 缺');
+      }
+      expect(find.text('第三话 页数4/30 章节1/45 总进度0.3%'), findsOneWidget);
+      expect(records, isEmpty, reason: '未交互前不应有持久化回调');
+
+      // 点「第三话」→ hideChapterName 置位；预览条失去章名段
+      await tester.tap(find.text('第三话'));
+      await tester.pumpAndSettle();
+      expect(records.length, 1);
+      expect(records.last.hideChapterName, isTrue, reason: '章名段应置隐藏');
+      expect(
+        find.text('页数4/30 章节1/45 总进度0.3%'),
+        findsOneWidget,
+        reason: '预览条应即时失去「第三话」段',
+      );
+      // 被隐藏的胶囊仍渲染（降透明度 + 删除线形态），仅样式变化
+      expect(find.text('第三话'), findsOneWidget);
+
+      // 点「总进度」→ hideProgressRatioLabel 置位（隐藏段标签，值保留）
+      await tester.tap(find.text('总进度'));
+      await tester.pumpAndSettle();
+      expect(records.length, 2);
+      expect(records.last.hideProgressRatioLabel, isTrue);
+      expect(records.last.hideProgressRatio, isFalse,
+          reason: '仅隐藏「总进度」标签，进度值段不应受影响');
+      expect(
+        find.text('页数4/30 章节1/45 0.3%'),
+        findsOneWidget,
+        reason: '预览条应失去「总进度」标签但保留 0.3%',
+      );
+
+      // 点「0.3%」→ hideProgressRatio 置位（值段整段消失）
+      await tester.tap(find.text('0.3%'));
+      await tester.pumpAndSettle();
+      expect(records.length, 3);
+      expect(records.last.hideProgressRatio, isTrue);
+      expect(
+        find.text('页数4/30 章节1/45'),
+        findsOneWidget,
+        reason: '预览条应失去进度值段',
+      );
+
+      // 点「页数」→ hidePageNumberLabel 置位（隐藏段标签，值保留）
+      await tester.tap(find.text('页数'));
+      await tester.pumpAndSettle();
+      expect(records.length, 4);
+      expect(records.last.hidePageNumberLabel, isTrue);
+      expect(
+        find.text('4/30 章节1/45'),
+        findsOneWidget,
+        reason: '预览条应失去「页数」标签但保留 4/30',
+      );
+
+      // 再点「页数」→ toggle 恢复（hidePageNumberLabel 复位，
+      // 早先置位的章名隐藏保持，验证原地实例的独立 toggle 语义）
+      await tester.tap(find.text('页数'));
+      await tester.pumpAndSettle();
+      expect(records.length, 5);
+      expect(records.last.hidePageNumberLabel, isFalse);
+      expect(records.last.hideChapterName, isTrue,
+          reason: '早先置位的章名隐藏不应被后续 toggle 冲掉');
+      expect(find.text('页数4/30 章节1/45'), findsOneWidget);
     });
   });
 }

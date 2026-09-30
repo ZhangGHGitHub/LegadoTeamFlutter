@@ -164,7 +164,7 @@ class MangaFooterConfig {
     }
     if (!hideProgressRatio && chapterSize > 0) {
       if (!hideProgressRatioLabel) buf.write('总进度');
-      final percent = _progressPercent(
+      final percent = progressPercent(
         chapterIndex: chapterIndex,
         chapterSize: chapterSize,
         pageIndex: pageIndex,
@@ -175,7 +175,9 @@ class MangaFooterConfig {
     return buf.toString().trim();
   }
 
-  static String _progressPercent({
+  /// [P4-3 M4 批1] 总进度百分比文案（对齐原版进度计算；公开供页脚
+  /// 内容胶囊组复算样例段值，保证胶囊文案与 buildLabel 预览一致）
+  static String progressPercent({
     required int chapterIndex,
     required int chapterSize,
     required int pageIndex,
