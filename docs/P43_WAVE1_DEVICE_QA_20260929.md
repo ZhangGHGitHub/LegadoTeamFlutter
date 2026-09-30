@@ -456,3 +456,56 @@ https___www.tuku.cc_manga-73562__62b1be09         (本波, 20:27 新建, images/
 - 点选「无响应」先核查是否读到陈旧 dump；原生 `input tap/keyevent` 实际生效。
 
 *本段纪律自检：未改任何生产代码；设备操作全程只读/可恢复（未做换源/导入/数据变更）；漫画书来源非 tuku.cc/天脉已如实注明、不硬造「按目标源完成」；翻页判定以 screencap 哈希差异为准（当前模型不支持图像输入，以 a11y 树 + 哈希对比为证据）。*
+
+## M1 菜单 UI 装机采证（2026-09-30）
+
+> STAGE-QA-P43M1（QA 子代理）：2.0.329-dev 漫画菜单重构（对齐参考版：顶栏胶囊+底栏两行）装机采证——构建装机 + 结构 dump + 截图，供主代理视觉比对。HEAD=11a4ea3d9a，pubspec 2.0.328+329（装机显示 2.0.328，本批未升版本号属预期）。设备 MuMu「Test测试」192.168.100.62:5555（竖屏 1080×1920）。被测书：阅文漫画《全职高手》（共 101 章），测试起点 ch25「预告」。
+> 判定方法：当前模型不支持图像输入，结构断言以 uiautomator dump（content-desc/bounds）+ PIL 像素采样为证据；截图（`docs/materials_1301/evidence/m1_*.png`）为人工视觉比对素材。全程未改任何生产代码。
+
+### 一、冒烟（emulator_smoke_test.ps1 -Device 192.168.100.62:5555）
+
+- **结果：7 PASS / 0 FAIL，退出码 0**。构建形态 flutter build apk --debug（322 MB；FFI content hash 校验通过，复用 .so）；版本 2.0.328 与 pubspec 一致；进程存活（pid 5649）；无 FATAL/E/flutter。
+- 证据：`m1_smoke_raw.log`
+
+### 二、逐项结构断言表（浅色菜单 `m1_menu_open.xml`；ch25 预告 p4/24）
+
+| 断言项 | 期望 | 实测（bounds / content-desc） | 判定 |
+| --- | --- | --- | --- |
+| 顶栏·返回 | 顶栏左键 | Button [48,84][168,204] desc=返回 | 通过 |
+| 顶栏·标题胶囊 | 书名+章名单行省略号 | View [216,84][864,204] desc=书名+章名（⚠ 混入污染书名列表，见异常 1） | 通过（UI 侧正确） |
+| 顶栏·刷新 | 顶栏右键 | Button [912,84][1032,204] desc=刷新 | 通过 |
+| 底栏 Row1·上一章 | 滑条左 | Button [99,1533][219,1653] desc=上一章 | 通过 |
+| 底栏 Row1·滑条 | 页数 X/N 语义 | SeekBar [306,1521][450,1665] desc=「页数 4/24」 | 通过 |
+| 底栏 Row1·下一章 | 滑条右 | Button [861,1533][981,1653] desc=下一章 | 通过 |
+| 底栏 Row2·目录 | 左 | Button [99,1683][219,1803] desc=目录 | 通过 |
+| 底栏 Row2·自动 | 中（开起后=停止） | Button [480,1683][600,1803] desc=自动 | 通过 |
+| 底栏 Row2·翻页设置 | 右 | Button [861,1683][981,1803] desc=翻页设置 | 通过 |
+| 目录 sheet | 标题「目录(N)」/ 当前章高亮 / 点行跳章 | desc=目录(101)；最新在前（25=预告=当前章）；row25 高亮底 (236,223,220) vs 其他行 (226,226,226)；点 row26→第01话 p1/50、26/101、24.8% | 通过 |
+| 自动切换 | 自动↔停止往返 | desc 自动→(tap)停止→(tap)自动；ON 态截图 `m1_auto_toggled.png` | 通过 |
+| 翻页设置 | MangaConfigSheet 打开 | 「漫画设置」+阅读模式/翻页模式（从上到下、全屏适配）/自动翻页 Switch/显示效果/色彩滤镜 | 通过 |
+| 刷新 | 收起菜单+重载当前章 | 缓存命中即时恢复（两帧 md5 相同，loading 中间帧未捕获——如实注明）；恢复后状态正常 | 通过 |
+| 收起态 | 动画后干净画面+页脚 | `m1_menu_collapsed.png`（该态 xml 仅页脚节点） | 通过 |
+| 滑入动画 | 200ms 淡入/滑入 | 代码 `_menuCtrl` 200ms（reader_comic_screen.dart L225-227）；录屏 `m1_anim_record.mp4` 抽帧：中间帧 `m1_menu_anim_mid.png`（t≈0.62s 顶栏 alpha≈90%）+ 落定帧 `m1_menu_anim_settled.png`，两端点态互证 | 通过 |
+| 暗色主题菜单 | 面板/胶囊暗色系，非恒黑非纯白 | 切深色→重进阅读器（ch26）采证 `m1_menu_open_dark.png/xml`：结构 bounds 与浅色一致；胶囊底 (29,32,36)、底栏面板 (67,67,67)；浅色对照 (240,240,240)/(193,191,189)；已切回「跟随系统」还原（`m1_theme_restored.png` 背景 (244,244,244)） | 通过 |
+
+- 证据总表（`docs/materials_1301/evidence/`）：`m1_smoke_raw.log`、`m1_home.png/xml`、`m1_reader_open.png/xml`、`m1_menu_open.png/xml`、`m1_toc_sheet.png/xml`、`m1_toc_scrolled.png/xml`、`m1_toc_row25.png/xml`、`m1_after_chapter_jump.png/xml`、`m1_auto_toggled.png`、`m1_config_sheet.png/xml`、`m1_refresh_loading.png`、`m1_refresh_done.png/xml`、`m1_menu_collapsed.png`、`m1_anim_record.mp4`、`m1_menu_anim_mid.png`、`m1_menu_anim_settled.png`、`m1_dark_settings_page.png`、`m1_menu_open_dark.png/xml`、`m1_theme_restored.png`；结论明细 `m1_draft.md`
+
+### 三、异常与陷阱（均非 M1 菜单缺陷，如实记录）
+
+1. **章节标题数据污染（数据/源解析层，非 UI 缺陷）**：标题胶囊 a11y desc 混入 15 个耽美书名×2 组列表。根因：阅文漫画《全职高手》章节的 chapter.title 被污染源数据污染（「书名\n[书名列表×2]\n实际章名」，真实章名在末尾，跳章后尾部随之变化）；菜单 UI 正确渲染 bookName+chapterName、视觉单行省略号只显示首行。建议后续在源解析/入库层清洗 chapter.title。
+2. **QA 侧误操作致章节回退（自查，非应用缺陷）**：暗色测试阶段一条本意为「设置页下滑」的指令实际在阅读器内执行（tap 324,1800+swipe），快速上滑在 T2B 纵向分页=回退，读者 ch26(p1/50,24.8%)→ch25 预告(p1/24,23.8%)；pid 未变、无 FATAL/E/flutter，应用处理正确。
+3. **MangaConfigSheet 关闭路径**：scrim 仅顶部 86px 且被状态栏拦截（tap 540,43 无效），唯一下滑手势可关（isScrollControlled 近全屏 sheet 共性特征，非缺陷）。
+4. **环境陷阱**：uiautomator dump 偶发 SIGSEGV（Shutdown thread，exit 139，无害）→ 循环重试规避；Git Bash MSYS 路径转换 → 全程 `export MSYS_NO_PATHCONV=1`；刷新缓存命中即时恢复，loading 中间帧未捕获、不硬造证据。
+
+*本段纪律自检：未改任何生产代码；设备操作只读/可恢复（主题切换已还原、目录跳章为阅读器自身功能）；不硬造——动画中间帧取自录屏抽帧（MuMu ROM screenrecord 实际 13fps 低帧率，如实注明）、刷新 loading 未捕获如实注明、胶囊污染定性为数据层问题并给出根因。*
+
+## M1b 修正后重截（2026-09-30）
+
+- 装机：`scripts/emulator_smoke_test.ps1 -Device 192.168.100.62:5555`（HEAD 6bc359fb74 / 2.0.328+329）→ 7 PASS / 0 FAIL，退出码 0，版本 2.0.328 与 pubspec 一致，无 FATAL/E/flutter，FFI content hash 1549248103 通过（`m1b_smoke_raw.log`）。
+- 路径：书架 →《全职高手》→ ch25 预告 p1/24（总进度 23.8%）→ 轻点中央 (540,960) 呼出浅色菜单。
+- 证据（`docs/materials_1301/evidence/`）：`m1b_menu_open_light.png`（展开态，md5 fc859070…）、`m1b_menu_collapsed.png`（收起态，916e29f0…）、`m1b_menu_open_light.xml`（新 dump，md5 6dfd21c5…，root desc=「预告 页数1/24 章节25/101 总进度23.8%」，含 返回/标题View/刷新 + 上一章/SeekBar「页数 1/24」/下一章 + 目录/自动/翻页设置）。
+- 修正验证（dpr 3.0，像素实测）：
+  - **标题胶囊左对齐 生效**：双行文字 L1 x254-416（y105-123）/ L2 x256-418（y124-144），左缘差 2px；内容块位于顶栏 (x216-864) 左侧（若居中应起于 ~x458）→ `Align(centerLeft)+Column(start)` 生效 ✓
+  - **底栏滑条细轨+小thumb 生效**：轨道 y1602-1607 ≈ 6px = 2sp ✓（M1 为 12px）；thumb 深色 (83,67,62) 实心圆中心 (287,1605) 半径 ≈17-18px = 6sp ✓；**无页码气泡**（M1 的 58px 深色气泡消失，仅 thumb 上方 overlay 弧 40px）✓
+  - **点串 未视觉成立（如实记录）**：divisions=23、tickMarkRadius=2 在代码中，但屏幕轨道为均匀 6px 带 (216,196,190)，24 个刻度位（25.2px 间隔，实测 4/24 命中）均无 12px 圆点凸出或暗色对比 → 点串与轨道同色重叠/未渲染，建议下轮以 debug 断点或 widget test 复核 tick 颜色。
+- 陷阱（同 M1）：设备零无障碍服务 → uiautomator dump 间歇返回陈旧树（本次首取误得小说菜单树），需重试循环 + grep 当前屏 content-desc 甄别；M1b 旧证据文件（错误中间态）已整体替换。
