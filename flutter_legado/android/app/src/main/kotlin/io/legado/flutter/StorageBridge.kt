@@ -142,8 +142,7 @@ class StorageBridge {
         val size: Long? = resolver
             .query(uri, arrayOf(MediaStore.Downloads.SIZE), null, null, null)
             ?.use { cursor ->
-                if (!cursor.moveToFirst()) return null
-                cursor.getLong(0)
+                if (!cursor.moveToFirst()) null else cursor.getLong(0)
             }
         if (size != data.size.toLong()) {
             throw IOException(
