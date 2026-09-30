@@ -1925,10 +1925,33 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     );
   }
 
-  /// [P4-3 M1] 构建顶部控制栏（透明悬浮胶囊，对齐参考版 MangaMenuTopBar）
+  /// [P4-3 M2] 源名取证（按用户截图：顶栏次行右端显示源名）
   ///
-  /// 返回圆钮 + 标题胶囊（书名/章名双行）+ 合并操作胶囊（本波仅
-  /// 「刷新」键；换源/更多待 E8 源操作面板，不放假按钮）。
+  /// 字段取证：`Book.origin` = 书源 URL（不适合展示）；
+  /// `Book.originName` = DB 源显示名（默认空串）。优先取已解析的
+  /// [_bookSource]（BookSource.bookSourceName，同 reader_top_bar.dart
+  /// L728-729 先例 `(source?.bookSourceName ?? book.originName).trim()`）。
+  /// 空值 / URL 形态（http 前缀）判为取不到 → 返回 null，
+  /// 顶栏次行仅显示章节名（截图基准：取不到不显，不放假值）。
+  String? get _sourceName {
+    final name =
+        (_bookSource?.bookSourceName ?? _book?.originName ?? '').trim();
+    if (name.isEmpty) return null;
+    if (name.startsWith('http://') || name.startsWith('https://')) {
+      return null;
+    }
+    return name;
+  }
+
+  /// [P4-3 M2] 「更多」键：打开页操作底栏（复用既有页操作菜单
+  /// 保存/分享/复制，作用于当前可见页）
+  void _openPageActions() {
+    _showPageActions(_visiblePageIndex);
+  }
+
+  /// [P4-3 M2] 构建顶部控制栏（实心 AppBar 式，按用户截图重构：
+  /// surfaceContainer 实心背景 + Row1 返回/刷新/更多 + Row2 书名大字 +
+  /// 章节名 + 源名；「更多」= 打开页操作底栏，换源无功能不放 E8）
   Widget _buildTopBar(BuildContext context) {
     final chapterName = _currentChapterIndex < _chapters.length
         ? _chapters[_currentChapterIndex].title
@@ -1936,8 +1959,10 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     return MangaMenuTopBar(
       bookName: _book?.name ?? '漫画阅读',
       chapterName: chapterName,
+      sourceName: _sourceName,
       onBack: () => Navigator.of(context).pop(),
       onRefresh: _refreshChapter,
+      onMore: _openPageActions,
     );
   }
 

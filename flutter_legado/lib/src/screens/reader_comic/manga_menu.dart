@@ -1,41 +1,41 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 
-/// [P4-3 M1] 漫画阅读器菜单组件（顶栏胶囊 / 两行悬浮底栏）
+/// [P4-3 M2] 漫画阅读器菜单组件（实心顶栏 / 悬浮进度行 + 贴底白条三键行）
 ///
-/// 取证（参考版 legado-with-MD3 MangaReaderOverlays.kt）：
-/// - L95-111 配色槽位：MangaMenuSurfaceColor = surfaceContainerHigh（底栏
-///   悬浮面）、MangaMenuButtonColor = surfaceContainerLow（胶囊/圆钮）、
-///   tint = onSurfaceVariant、边框 = outlineVariant；
-///   本实现按任务要求「主题化、非恒黑」：胶囊 = surfaceContainerLow、
-///   底栏 = surfaceContainerHigh（75% 不透明度）、文字/图标 =
-///   onSurfaceVariant、边框 = outlineVariant —— 亮色主题出浅色胶囊、
-///   暗色主题自动出深色胶囊。
-/// - L208-257 MangaMenuTopBar：顶栏**始终透明无表面背景**，只显示
-///   悬浮胶囊（safeDrawing 顶边距 + 水平 16 / 垂直 4 padding，Row
-///   spacedBy 16：返回圆钮 + 标题胶囊 weight1 + 合并操作胶囊）；
-/// - L259-317 MangaTitleCapsule：高 40、stadium（RoundedCornerShape(50)）、
-///   背景 surfaceContainerLow、水平 padding 12、双行 Column（书名
-///   labelMediumEmphasized + 章名 labelSmall alpha 0.7，均
-///   onSurfaceVariant 单行省略号）；
-/// - L328-425 MangaMenuMergedActions：stadium 胶囊 Row 合并 40dp 点击区 /
-///   20dp 图标按钮（参考版 换源|刷新|更多；本方 换源/更多 待 E8 源操作
-///   面板，本波只放「刷新」键，不放假按钮）；
-/// - L424-649 MangaMenuBottomBar（悬浮形态）：RoundedCornerShape(32) +
-///   navigationBarsPadding + margin 水平/垂直 16、面 = surfaceContainerHigh、
-///   1dp outlineVariant 描边；内 Column v-padding 16：
-///   Row1 spacedBy 8（上一章 + 页进度滑条 weight1 + 下一章，h-padding 16），
-///   Spacer 12，Row2 SpaceBetween（目录 | 自动阅读 | 翻页设置，h-padding 16）；
-/// - L678-742 MangaMenuIconButton：40dp 圆钮（非玻璃态 = clip(CircleShape)
-///   + 背景 surfaceContainerLow）、20dp 图标、contentDescription 语义；
-///   Row2 的 ReaderMenuAction（ReaderMenuPrimitives L99-106）= 图标按钮
-///   列表（图标 + 语义描述，无可见文字标签）。
+/// **本批视觉基准 = 用户截图描述**（参考版 APK kazusa 3.26.15 漫画菜单）。
+/// 本地参考源码快照（legado-with-MD3 MangaReaderOverlays.kt）滞后于用户 APK
+/// —— 本地 grep 证实无 Miuix 漫画菜单 / 无 SkipPrevious 图标，故本批仅取
+/// 语义与颜色角色依据（页脚 MangaFooter L108-152、Slider 分段 SeekToPage、
+/// 键 intent、surface 色角色），形态以截图为准：
 ///
-/// 底栏按键语义（参考版 L596-636 + MangaReaderViewModel L244-253）：
+/// - 顶栏 [MangaMenuTopBar]：实心表面色（colorScheme.surfaceContainer，
+///   浅色 = 浅灰 / 暗色自动暗）占满宽度，SafeArea 含状态栏区；
+///   Row1 = 返回（图标无底、onSurface）+ Spacer + 右上图标组
+///   （刷新 + 更多 more_vert 三点，onSurface、无胶囊底、间距均布——
+///   参考版「换源」键我方无功能不放，E8 登记；「更多」= 打开页操作
+///   底栏，复用既有页操作菜单）；Row2 标题区（左对齐 padding 16）=
+///   书名大字（24sp w600 onSurface）+ 次行 Row（章节名 14sp
+///   onSurfaceVariant 省略号 + Spacer + 源名 13sp onSurfaceVariant，
+///   源名为 null/空不显示）；点击标题区 = 返回详情页（保留 M1 语义）。
+/// - 底栏 [MangaMenuBottomBar]：两段分离（进度行悬浮于图上、白条贴底，
+///   非 M1 一体化圆角面板）：
+///   - 进度行：左右独立圆形白钮（surface 底 + 浮起阴影、直径 56；
+///     图标 Symbols.skip_previous / skip_next，替换 M1 arrow 图标）+
+///     中间白色胶囊（stadium 全圆角、surface、占余宽）内放 Slider——
+///     thumb 自绘竖条（4.5dp 宽 × 胶囊高 60% 圆角竖条，primary 色，
+///     参考版为深蓝竖条）、轨道透明、divisions 点串 primary 色
+///     （参考版整串均匀蓝点）；拖动语义不变（SeekToPage），
+///     pageCount = 1 时禁用保持；
+///   - 贴底白条：全宽（colorScheme.surface、SafeArea bottom）三键均布：
+///     目录（list，保留）/ 自动翻页（auto_mode，新增状态着色：开启
+///     图标 primary 蓝、关闭 onSurface）/ 设置（settings 齿轮，
+///     替换 M1 tune 图标）。
+///
+/// 按键语义（M1 保留，对齐参考版 intent + MangaReaderViewModel L244-253）：
 /// - 上一章/下一章：PreviousChapter/NextChapter（边界由屏幕层守卫）；
 /// - 滑条：value = 0 基页索引、范围 0..(pageCount-1).coerceAtLeast(1)、
-///   steps = (pageCount-2).coerceAtLeast(0)、pageCount > 1 才可拖
-///   （SeekToPage(it.toInt())）；
+///   divisions = (pageCount-2)、pageCount > 1 才可拖（SeekToPage）；
 /// - 目录：OpenCatalog（弹目录 bottom sheet，见 manga_catalog_sheet.dart）；
 /// - 自动：ToggleAutoRead（描述 = 停止/自动 随开关态，长按 =
 ///   OpenSettings(AUTO_READ)）；翻页设置：OpenSettings(READER)；
@@ -89,73 +89,35 @@ class MangaMenuIconButton extends StatelessWidget {
   }
 }
 
-/// 标题胶囊（对齐参考版 MangaTitleCapsule L259-317）
+/// 顶栏图标键（[P4-3 M2] 无底纯图标，onSurface，40dp 点击区）
 ///
-/// 高 40 stadium、背景 surfaceContainerLow、双行（书名 + 章名）单行省略号；
-/// 内容块水平左置、垂直居中（参考版 Box `contentAlignment =
-/// Alignment.CenterStart`），双行左对齐（[Column]
-/// `crossAxisAlignment.start`，两行左缘对齐，窄行不居中漂移）；
-/// [onTap] 为空时不可点击（参考版点击 = OpenBookInfo，本方无书籍信息面板
-/// 入口，本波保持纯展示，见汇报「未做」项）。
-class MangaTitleCapsule extends StatelessWidget {
-  final String bookName;
-  final String? chapterName;
+/// 截图形态：实心顶栏内的图标键不带圆形/胶囊底，图标色 onSurface、
+/// 无背景、间距均布；[tooltip] 同时作为语义标签。
+class _MangaTopBarIcon extends StatelessWidget {
+  final IconData icon;
+  final String tooltip;
   final VoidCallback? onTap;
 
-  const MangaTitleCapsule({
-    super.key,
-    required this.bookName,
-    this.chapterName,
+  const _MangaTopBarIcon({
+    required this.icon,
+    required this.tooltip,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: onTap,
-      child: Container(
-        height: 40,
-        decoration: BoxDecoration(
-          color: scheme.surfaceContainerLow,
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          // 参考版 Box contentAlignment = Alignment.CenterStart：
-          // 内容块水平左置（start）、垂直居中；双行再互相左对齐，
-          // 避免窄行（章名）在宽行（书名）下居中漂移造成两行错位
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // 书名（参考版 labelMediumEmphasized：14sp 强调体）
-                Text(
-                  bookName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color: scheme.onSurfaceVariant,
-                  ),
-                ),
-                // 章名（参考版 labelSmall alpha 0.7；空白不渲染第二行）
-                if ((chapterName?.trim().isEmpty ?? true) == false)
-                  Text(
-                    chapterName!,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 11,
-                      color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                    ),
-                  ),
-              ],
-            ),
+    return Semantics(
+      button: true,
+      label: tooltip,
+      child: Tooltip(
+        message: tooltip,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(8),
+            child: Icon(icon, size: 24, color: scheme.onSurface),
           ),
         ),
       ),
@@ -163,68 +125,141 @@ class MangaTitleCapsule extends StatelessWidget {
   }
 }
 
-/// 顶栏（对齐参考版 MangaMenuTopBar L208-257）
+/// 顶栏（[P4-3 M2] 实心 AppBar 式，按用户截图重构）
 ///
-/// 透明悬浮：返回圆钮 + 标题胶囊（weight 1）+ 合并操作胶囊（本波仅
-/// 「刷新」键；换源/更多待 E8 源操作面板）。
+/// 实心表面色（colorScheme.surfaceContainer，浅色 = 浅灰 / 暗色自动暗）
+/// 占满宽度，SafeArea 含状态栏区：
+/// - Row1：返回（无底图标）+ Spacer + 右上图标组（刷新 + 更多 more_vert
+///   三点，无胶囊底、间距均布——参考版「换源」键我方无功能不放，
+///   E8 登记；「更多」= 打开页操作底栏，复用既有页操作菜单）；
+/// - Row2 标题区（左对齐，padding 16）：书名大字（24sp w600 onSurface）
+///   + 次行 Row（章节名 14sp onSurfaceVariant 省略号 + Spacer + 源名
+///   13sp onSurfaceVariant，源名 null/空不显示）；
+/// - 点击标题区 = 返回详情页（保留 M1 语义：onOpenBookInfo ?? onBack）。
 class MangaMenuTopBar extends StatelessWidget {
   final String bookName;
   final String? chapterName;
+
+  /// [P4-3 M2] 源名（书源显示名；null/空 = 次行右端不显示，仅显章节名）
+  final String? sourceName;
+
   final VoidCallback onBack;
   final VoidCallback onRefresh;
+
+  /// [P4-3 M2] 「更多」键（打开页操作底栏，复用既有页操作菜单）
+  final VoidCallback onMore;
+
+  /// 标题区点击（缺省回退 [onBack] = 返回详情页，保留 M1 语义）
   final VoidCallback? onOpenBookInfo;
 
   const MangaMenuTopBar({
     super.key,
     required this.bookName,
     this.chapterName,
+    this.sourceName,
     required this.onBack,
     required this.onRefresh,
+    required this.onMore,
     this.onOpenBookInfo,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final chapter = chapterName?.trim() ?? '';
+    final source = sourceName?.trim() ?? '';
+    final hasChapter = chapter.isNotEmpty;
+    final hasSource = source.isNotEmpty;
     return SafeArea(
+      // 实心顶栏含状态栏区（截图：SafeArea 上缘覆盖状态栏）
       bottom: false,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-        child: Row(
+      child: Container(
+        // 实心表面色占满宽度（浅色主题 = 浅灰，暗色自动暗）
+        color: scheme.surfaceContainer,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            MangaMenuIconButton(
-              icon: Symbols.arrow_back_rounded,
-              tooltip: '返回',
-              onTap: onBack,
+            // Row1：返回 + Spacer + 右上图标组（刷新 + 更多，间距均布）
+            Row(
+              children: [
+                _MangaTopBarIcon(
+                  icon: Symbols.arrow_back_rounded,
+                  tooltip: '返回',
+                  onTap: onBack,
+                ),
+                const Spacer(),
+                _MangaTopBarIcon(
+                  icon: Symbols.refresh_rounded,
+                  tooltip: '刷新',
+                  onTap: onRefresh,
+                ),
+                const SizedBox(width: 8),
+                _MangaTopBarIcon(
+                  // 「更多」= 打开页操作底栏（复用既有页操作菜单，真实功能）；
+                  // 参考版「换源」键我方无功能，不放（E8 登记）
+                  icon: Symbols.more_vert_rounded,
+                  tooltip: '更多',
+                  onTap: onMore,
+                ),
+              ],
             ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: MangaTitleCapsule(
-                bookName: bookName,
-                chapterName: chapterName,
-                // 参考版标题胶囊点击 = OpenBookInfo；本方无该面板入口时
-                // 回退为返回（保持可点语义，不造新功能）
-                onTap: onOpenBookInfo ?? onBack,
-              ),
-            ),
-            const SizedBox(width: 16),
-            // 合并操作胶囊（参考版 换源|刷新|更多；本波仅刷新，
-            // 换源/更多键待 E8 源操作面板，不放假按钮）
-            Container(
-              height: 40,
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  MangaMenuIconButton(
-                    icon: Symbols.refresh_rounded,
-                    tooltip: '刷新',
-                    onTap: onRefresh,
-                  ),
-                ],
+            // Row2 标题区（左对齐 padding 16）：书名大字 + 次行（章名 + 源名）；
+            // 点击 = 返回详情页（保留现有语义）
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onOpenBookInfo ?? onBack,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 书名大字（~24sp w600 onSurface，截图形态）
+                    Text(
+                      bookName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    // 次行：章节名（~14sp onSurfaceVariant 省略号）+ Spacer +
+                    // 源名（~13sp onSurfaceVariant，右端；null/空不显示）
+                    Row(
+                      mainAxisAlignment:
+                          hasChapter ? MainAxisAlignment.start : MainAxisAlignment.end,
+                      children: [
+                        if (hasChapter)
+                          Flexible(
+                            child: Text(
+                              chapter,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                        if (hasChapter && hasSource) const Spacer(),
+                        if (hasSource)
+                          Text(
+                            source,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: scheme.onSurfaceVariant,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
