@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -157,8 +158,9 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(sourceLoginNotifierProvider);
-    return Scaffold(
-      appBar: LegadoAppBar(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(
         title: Text('登录 - ${widget.sourceName}'),
         bottom: TabBar(
           controller: _tabController,
@@ -185,7 +187,7 @@ class _SourceLoginScreenState extends ConsumerState<SourceLoginScreen>
           _buildLoginUrlTab(),
         ],
       ),
-      bottomNavigationBar: SafeArea(
+      bottomBar: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(16),
           child: FilledButton.icon(

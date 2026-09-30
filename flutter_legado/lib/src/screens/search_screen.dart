@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -282,8 +283,9 @@ class _SearchScreenState extends ConsumerState<SearchScreen>
           FocusScope.of(context).unfocus();
         }
       },
-      child: Scaffold(
-        appBar: _buildAppBar(context),
+      child: AppScaffold(
+        // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+        topBar: _buildAppBar(context),
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [

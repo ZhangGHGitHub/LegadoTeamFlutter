@@ -1,5 +1,6 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -48,7 +49,8 @@ It was a dark and stormy night.''';
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(txtTocRulesNotifierProvider);
-    return Scaffold(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
       // [台账 4-1 ①②⑦ | 2.0.274] 顶栏/入口重构（对齐参考 01_txt_toc_rule 截图）：
       // ① 大标题左对齐、动作钮上行独立——复用 LegadoTabRootHeaderSliver 大标题
       //    模式（滚动折叠为标准栏，_buildHeaderSliver）；

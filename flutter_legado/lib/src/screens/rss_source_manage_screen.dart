@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter/services.dart';
@@ -169,11 +170,12 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop && _batchMode) _exitBatch();
       },
-      child: Scaffold(
-        appBar: _batchMode ? _buildBatchAppBar() : _buildAppBar(),
+      child: AppScaffold(
+        // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+        topBar: _batchMode ? _buildBatchAppBar() : _buildAppBar(),
         body: _buildBody(),
         // 底部常驻批量操作栏（对标原版 SelectActionBar + rss_source_sel.xml）
-        bottomNavigationBar: _buildBatchBottomBar(),
+        bottomBar: _buildBatchBottomBar(),
       ),
     );
   }

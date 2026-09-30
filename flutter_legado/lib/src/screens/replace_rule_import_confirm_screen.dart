@@ -1,6 +1,7 @@
 ﻿import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -232,8 +233,9 @@ class _ReplaceRuleImportConfirmScreenState
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
-    return Scaffold(
-      appBar: LegadoAppBar(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(
         title: const Text('导入替换规则'),
         actions: [
           // 自定义源分组（对标 menu_new_group，always 显示）
@@ -272,7 +274,7 @@ class _ReplaceRuleImportConfirmScreenState
               itemBuilder: (context, index) => _buildItem(index),
             ),
       // 底部操作区（对标 dialog_recycler_view：footerLeft / cancel / ok）
-      bottomNavigationBar: Container(
+      bottomBar: Container(
         decoration: BoxDecoration(
           color: colorScheme.surface,
           border: Border(

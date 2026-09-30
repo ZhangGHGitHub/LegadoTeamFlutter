@@ -12,6 +12,7 @@ import '../providers/providers.dart';
 import '../routes.dart';
 import '../services/settings_service.dart';
 import '../utils/book_open_utils.dart';
+import '../widgets/app_scaffold.dart';
 
 /// 启动闪屏（对齐原版 WelcomeActivity + activity_welcome.xml）
 ///
@@ -172,7 +173,9 @@ class _WelcomeScreenState extends ConsumerState<WelcomeScreen>
       );
     }
 
-    return Scaffold(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    // 背景色/背景图语义保留：surface 作闪屏底色，body 内 DecoratedBox 叠加背景图
+    return AppScaffold(
       backgroundColor: theme.colorScheme.surface,
       body: DecoratedBox(
         decoration: BoxDecoration(

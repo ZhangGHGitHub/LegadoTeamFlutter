@@ -1,6 +1,7 @@
 ﻿import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -47,8 +48,9 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(rssNotifierProvider);
     final notifier = ref.read(rssNotifierProvider.notifier);
-    return Scaffold(
-      appBar: LegadoAppBar(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(
         title: Text(widget.source.sourceName),
         leading: IconButton(
           icon: const Icon(Symbols.arrow_back_ios_new_rounded),

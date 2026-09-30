@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -74,8 +75,9 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) _onWillPop();
       },
-      child: Scaffold(
-        appBar: LegadoAppBar(
+      child: AppScaffold(
+        // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+        topBar: LegadoAppBar(
           title: const Text('远程书籍'),
           actions: [
             IconButton(

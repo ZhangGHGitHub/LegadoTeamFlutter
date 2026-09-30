@@ -10,6 +10,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../services/book_api.dart';
 import '../services/platform_channel.dart';
 import '../utils/url_utils.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'source_login_screen.dart';
 
@@ -239,8 +240,9 @@ class _WebViewLoginScreenState extends State<WebViewLoginScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: LegadoAppBar(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(
         title: Text('登录 ${widget.sourceName}'),
         actions: [
           if (_checking)

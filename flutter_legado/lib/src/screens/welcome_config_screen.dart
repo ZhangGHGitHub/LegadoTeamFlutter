@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 
 import '../constants/pref_keys.dart';
@@ -135,8 +136,9 @@ class _WelcomeConfigScreenState extends ConsumerState<WelcomeConfigScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: LegadoAppBar(title: const Text('欢迎页样式')),
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(title: const Text('欢迎页样式')),
       body: _loading
           // [STAGE-UI-P43UNIFY2 B4] .adaptive() → 标准环（参考版无 adaptive 用法）
           ? const Center(child: AppCircularProgressIndicator())

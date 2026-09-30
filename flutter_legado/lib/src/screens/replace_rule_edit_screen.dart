@@ -12,6 +12,7 @@ import '../providers/providers.dart';
 import '../providers/replace_rule/replace_rule_notifier.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'code_edit_screen.dart';
 
@@ -430,8 +431,9 @@ class _ReplaceRuleEditScreenState extends ConsumerState<ReplaceRuleEditScreen> {
   @override
   Widget build(BuildContext context) {
     final groups = _collectGroups();
-    return Scaffold(
-      appBar: LegadoAppBar(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
+      topBar: LegadoAppBar(
         title: Text(_isEdit ? '编辑替换规则' : '添加替换规则'),
         actions: [
           // 保存（醒目，点即存并返回；对标原版 menu_save showAsAction=always）

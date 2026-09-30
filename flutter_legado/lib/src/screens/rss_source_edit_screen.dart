@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -509,8 +510,9 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
       },
       child: DefaultTabController(
         length: 4,
-        child: Scaffold(
-          appBar: LegadoAppBar(
+        child: AppScaffold(
+          // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+          topBar: LegadoAppBar(
             leading: IconButton(
               icon: const Icon(Symbols.arrow_back_rounded),
               onPressed: _tryExit,

@@ -24,6 +24,12 @@ import 'package:flutter/material.dart';
 /// `resizeToAvoidBottomInset` 等非主流参数不提供，需要时用原生 Scaffold
 /// 并在统一批台账登记。
 ///
+/// **永久排除域（裁决 2026-10-01）**：reader_screen/reader_comic_screen
+/// （阅读器承重域）、video_screen（播放器条件全屏域）、book_info_screen
+/// （折叠 SliverAppBar+FAB 定位承重）、home_tab_screen（PageView 内嵌页）、
+/// classic_login_dialog（对话框内嵌壳）——上述文件维持原生 Scaffold，
+/// 不迁移。
+///
 /// 本壳对参数**零改写**直通 `Scaffold`，迁移点视觉/交互逐参数等价
 /// （widget 测试 test/widget/app_scaffold_test.dart 有同构等价用例）。
 class AppScaffold extends StatelessWidget {

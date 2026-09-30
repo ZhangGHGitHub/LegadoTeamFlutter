@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -48,9 +49,10 @@ class _RuleSubScreenState extends ConsumerState<RuleSubScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(ruleSubNotifierProvider);
 
-    return Scaffold(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
       // 原版顶栏：标题「规则订阅」+ 新增按钮（menu_add）
-      appBar: LegadoAppBar(
+      topBar: LegadoAppBar(
         title: const Text('规则订阅'),
         actions: [
           IconButton(

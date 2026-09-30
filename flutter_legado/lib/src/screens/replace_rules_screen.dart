@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/md3_fast_scroller.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -75,9 +76,10 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     final state = ref.watch(replaceRuleNotifierProvider);
     final notifier = ref.read(replaceRuleNotifierProvider.notifier);
     final filtered = _applyFilters(state.rules);
-    return Scaffold(
+    // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+    return AppScaffold(
       // 对齐原版 activity_replace_rule.xml：TitleBar 内嵌 view_search 搜索框
-      appBar: _batchMode ? _buildBatchAppBar() : LegadoAppBar(
+      topBar: _batchMode ? _buildBatchAppBar() : LegadoAppBar(
         titleSpacing: 0,
         title: SizedBox(
           height: 36,

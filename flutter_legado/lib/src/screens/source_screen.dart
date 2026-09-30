@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter/services.dart';
@@ -95,15 +96,16 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
           ref.read(sourceNotifierProvider.notifier).exitBatchMode();
         }
       },
-      child: Scaffold(
-        appBar: state.batchMode
+      child: AppScaffold(
+        // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
+        topBar: state.batchMode
             ? _buildBatchAppBar(context, state)
             : _buildAppBar(context, state),
         body: _buildBody(context),
         // 底部常驻批量操作栏（全选/反选/删除/更多选项，
         // 对标原版 SelectActionBar + book_source_sel.xml）；
         // 非批量模式下点击全选/反选会自动进入批量模式
-        bottomNavigationBar: _buildBatchBottomBar(context, state),
+        bottomBar: _buildBatchBottomBar(context, state),
       ),
     );
   }
