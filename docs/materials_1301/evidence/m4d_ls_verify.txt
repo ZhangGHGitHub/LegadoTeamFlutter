@@ -1,0 +1,13 @@
+=== 文档目录新文件 ===
+-rw------- 1 u0_a55 u0_a55 194481 2026-09-30 23:01 /data/user/0/io.legado.flutter_legado/app_flutter/manga-1790780469503.jpg
+-rw------- 1 u0_a55 u0_a55 194481 2026-09-30 23:02 /data/user/0/io.legado.flutter_legado/app_flutter/manga-1790780523632.jpg
+-rw------- 1 u0_a55 u0_a55 194481 2026-09-30 23:51 /data/user/0/io.legado.flutter_legado/app_flutter/manga-1790783505352.jpg
+
+=== 魔数校验（期望 ffd8 ffe0 JFIF）===
+00000000: ffd8 ffe0 0010 4a46 4946 0001 0100 0001  ......JFIF......
+
+=== Download/legado 应不存在（幻影被拦截）===
+ls: /sdcard/Download/legado/: No such file or directory
+
+=== logcat FATAL 检查 ===
+0
