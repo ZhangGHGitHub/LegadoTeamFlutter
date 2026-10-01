@@ -817,6 +817,92 @@ mod tests {
         assert!(found.read_config.unwrap().reverse_toc);
     }
 
+    /// [漫画设置作用域 2026-10-01] updateBook 全行走 `update` 回写：
+    /// 书级 readConfig 字段（mangaScrollMode / webtoonSidePaddingDp）round-trip
+    /// 不丢失，其他 readConfig 字段保留，进度列按既有「不回滚」语义不被快照覆盖
+    #[test]
+    fn test_update_roundtrip_preserves_manga_scope_and_progress() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+        let mut book = make_book("u1", "n1", "a1");
+        book.read_config = Some(legado_core::models::ReadConfig {
+            reverse_toc: true,
+            daily_chapters: 7,
+            manga_scroll_mode: Some(2),
+            webtoon_side_padding_dp: Some(20),
+            ..legado_core::models::ReadConfig::default()
+        });
+        repo.insert(&book).unwrap();
+
+        // 进度经单列入口写入（唯一常规写入口）
+        repo.update_progress("u1", 3, 15, Some("第三章"), 1_700_000_000_000)
+            .unwrap();
+
+        // 整书快照回写（模拟 Flutter updateBook）：更新书级字段 + 书名，
+        // 并故意携带陈旧进度值
+        let mut snapshot = repo.find_by_url("u1").unwrap().unwrap();
+        snapshot.name = "改名".to_string();
+        snapshot.read_config.as_mut().unwrap().manga_scroll_mode = Some(3);
+        snapshot.dur_chapter_index = 0;
+        snapshot.dur_chapter_pos = 0;
+        snapshot.dur_chapter_title = Some("第一章".to_string());
+        repo.update(&snapshot).unwrap();
+
+        let found = repo.find_by_url("u1").unwrap().unwrap();
+        assert_eq!(found.name, "改名");
+        let rc = found.read_config.unwrap();
+        // 书级字段回写不丢失（旧实现类型化 ReadConfig 会静默丢弃未知键）
+        assert_eq!(rc.manga_scroll_mode, Some(3));
+        assert_eq!(rc.webtoon_side_padding_dp, Some(20));
+        // 其他 readConfig 字段保留
+        assert!(rc.reverse_toc);
+        assert_eq!(rc.daily_chapters, 7);
+        // 进度列不回滚（update 结构性排除）
+        assert_eq!(found.dur_chapter_index, 3);
+        assert_eq!(found.dur_chapter_pos, 15);
+        assert_eq!(found.dur_chapter_title.as_deref(), Some("第三章"));
+    }
+
+    /// [漫画设置作用域 2026-10-01] 旧数据库 readConfig JSON（无书级键）兼容：
+    /// 解析为 None；经 update 回写后不凭空新增书级键，原有字段原样保留
+    #[test]
+    fn test_update_legacy_read_config_json_without_manga_scope() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+        let book = make_book("u1", "n1", "a1");
+        repo.insert(&book).unwrap();
+
+        // 模拟旧版本落库的 readConfig JSON（仅既有字段）
+        db.connection()
+            .execute(
+                "UPDATE books SET readConfig = ?1 WHERE bookUrl = ?2",
+                params![r#"{"reverseToc":true,"dailyChapters":7}"#, "u1"],
+            )
+            .unwrap();
+
+        let found = repo.find_by_url("u1").unwrap().unwrap();
+        let rc = found.read_config.as_ref().unwrap();
+        assert!(rc.reverse_toc);
+        assert_eq!(rc.daily_chapters, 7);
+        assert!(rc.manga_scroll_mode.is_none());
+        assert!(rc.webtoon_side_padding_dp.is_none());
+
+        // 旧书快照回写：readConfig 保持旧形态（未覆盖时跳过序列化）
+        repo.update(&found).unwrap();
+        let raw: String = db
+            .connection()
+            .query_row(
+                "SELECT readConfig FROM books WHERE bookUrl = ?1",
+                params!["u1"],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(raw.contains("reverseToc"), "raw={raw}");
+        assert!(raw.contains("dailyChapters"), "raw={raw}");
+        assert!(!raw.contains("mangaScrollMode"), "raw={raw}");
+        assert!(!raw.contains("webtoonSidePaddingDp"), "raw={raw}");
+    }
+
     #[test]
     fn test_update_read_config_field() {
         let db = crate::init_in_memory_database().unwrap();

@@ -24,6 +24,8 @@ _$ReadConfigImpl _$$ReadConfigImplFromJson(Map<String, dynamic> json) =>
       closeCredits: (json['closeCredits'] as num?)?.toInt() ?? 0,
       playMode: (json['playMode'] as num?)?.toInt() ?? 0,
       playSpeed: (json['playSpeed'] as num?)?.toDouble() ?? 1.0,
+      mangaScrollMode: (json['mangaScrollMode'] as num?)?.toInt(),
+      webtoonSidePaddingDp: (json['webtoonSidePaddingDp'] as num?)?.toInt(),
     );
 
 Map<String, dynamic> _$$ReadConfigImplToJson(_$ReadConfigImpl instance) =>
@@ -44,6 +46,8 @@ Map<String, dynamic> _$$ReadConfigImplToJson(_$ReadConfigImpl instance) =>
       'closeCredits': instance.closeCredits,
       'playMode': instance.playMode,
       'playSpeed': instance.playSpeed,
+      'mangaScrollMode': instance.mangaScrollMode,
+      'webtoonSidePaddingDp': instance.webtoonSidePaddingDp,
     };
 
 _$BookImpl _$$BookImplFromJson(Map<String, dynamic> json) => _$BookImpl(

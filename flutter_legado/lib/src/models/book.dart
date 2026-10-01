@@ -43,6 +43,17 @@ class ReadConfig with _$ReadConfig {
     @Default(0) @JsonKey(name: 'closeCredits') int closeCredits,
     @Default(0) @JsonKey(name: 'playMode') int playMode,
     @Default(1.0) @JsonKey(name: 'playSpeed') double playSpeed,
+    /// [漫画设置作用域 2026-10-01] 书级翻页模式覆盖（null = 未覆盖，跟随
+    /// 全局 [MangaConfigKeys.scrollMode]）。对齐参考版 `Book.ReadConfig.mangaScrollMode`
+    /// 与 MangaReaderViewModel 有效值优先级 `book?.scrollMode ?: settings.scrollMode`。
+    @JsonKey(name: 'mangaScrollMode') int? mangaScrollMode,
+    /// [漫画设置作用域 2026-10-01] 书级条漫侧边留白覆盖（null = 未覆盖，
+    /// 跟随全局 [MangaConfigKeys.sidePadding]）。
+    ///
+    /// 键名对齐参考版 `Book.ReadConfig.webtoonSidePaddingDp`，但数值沿用
+    /// Flutter 既有百分比口径 0..45（每侧留白 = 视口宽 × p/100），与参考版
+    /// 字段仅做作用域对齐，**不做 dp/百分比换算**（无明确换算规则前禁止混用单位）。
+    @JsonKey(name: 'webtoonSidePaddingDp') int? webtoonSidePaddingDp,
   }) = _ReadConfig;
 
   factory ReadConfig.fromJson(Map<String, dynamic> json) =>

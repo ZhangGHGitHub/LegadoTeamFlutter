@@ -24,6 +24,14 @@ import '../../screens/reader_comic/manga_scroll_mode.dart';
 /// - 自动翻页卡/显示效果卡/色彩滤镜卡保留不动。
 /// 「长按设为全局默认」语义登记不做（需书级/全局设置分层，残余差异
 /// 见 P4-3 M3 汇报）。
+///
+/// [漫画设置作用域 2026-10-01] 按用户裁决补参考版「本书覆盖 + 全局回退」：
+/// - 仅翻页模式与条漫侧边留白渲染「跟随全局 / 本书」作用域药丸（有当前书
+///   且上游接线书级写路径时）；无当前书只显示全局路径；
+/// - 「跟随全局」= 清除书级覆盖（回调传 null，不写默认值冒充清除）；
+/// - 长按保存图片/自动速度/九区点击动作保持全局，不提供作用域控件；
+/// - 不新增「长按设为全局默认」按钮（原版/参考版均无该入口，
+///   `read_type_long` 残留资源不使用）。
 class MangaConfigSheet extends StatefulWidget {
   final MangaColorFilterConfig colorFilter;
   final MangaFooterConfig footer;
@@ -65,6 +73,35 @@ class MangaConfigSheet extends StatefulWidget {
   /// 对齐参考版 MangaSettingsPanel L339-400：isWebtoon → SettingSlider
   /// sidePaddingPercent 0..45；单页式不显示，保留页面适配下拉）
   final ValueChanged<int>? onSidePaddingChanged;
+
+  // ---------------------------------------------------------------------------
+  // [漫画设置作用域 2026-10-01] 「跟随全局 / 本书」作用域控件（仅翻页模式与
+  // 条漫侧边留白两项——对齐参考版 Book.ReadConfig.mangaScrollMode /
+  // webtoonSidePaddingDp 的书级覆盖 + 全局回退语义；长按存图/自动速度/
+  // 九区点击动作保持全局，不提供书级作用域）
+  // ---------------------------------------------------------------------------
+
+  /// 是否存在当前书（false = 无书，仅显示全局路径，不渲染作用域控件）
+  final bool hasCurrentBook;
+
+  /// 当前书书级翻页模式覆盖（null = 未覆盖，跟随全局）
+  final int? bookScrollMode;
+
+  /// 全局翻页模式值（作用域切回全局时回显；null = 回退 [scrollMode]）
+  final int? globalScrollMode;
+
+  /// 书级翻页模式写回调（null = 清除覆盖、跟随全局；非 null 且
+  /// [hasCurrentBook] 为真时渲染作用域控件）
+  final ValueChanged<int?>? onBookScrollModeChanged;
+
+  /// 当前书书级侧边留白覆盖（百分比口径 0..45；null = 未覆盖，跟随全局）
+  final int? bookSidePadding;
+
+  /// 全局侧边留白值（百分比口径 0..45；作用域切回全局时回显）
+  final int? globalSidePadding;
+
+  /// 书级侧边留白写回调（null = 清除覆盖、跟随全局）
+  final ValueChanged<int?>? onBookSidePaddingChanged;
 
   // ---------------------------------------------------------------------------
   // [P4-3 M4 批2] 行为开关组 + 背景色（null = 当前值缺省；区块随
@@ -139,6 +176,15 @@ class MangaConfigSheet extends StatefulWidget {
     this.onPageScaleTypeChanged,
     this.sidePadding,
     this.onSidePaddingChanged,
+    // [漫画设置作用域] 作用域控件（可选；缺省 = 无书仅全局，既有调用方
+    // 不受影响）
+    this.hasCurrentBook = false,
+    this.bookScrollMode,
+    this.globalScrollMode,
+    this.onBookScrollModeChanged,
+    this.bookSidePadding,
+    this.globalSidePadding,
+    this.onBookSidePaddingChanged,
     // [P4-3 M4 批2] 行为开关组 + 背景色（可选；不传则不渲染区块，
     // 既有调用方不受影响）
     this.disableClickScroll,
@@ -189,6 +235,14 @@ class MangaConfigSheet extends StatefulWidget {
     // [P4-3 M3 修4] 条漫侧边留白（可选；不传则不渲染滑杆，既有调用方不受影响）
     int? sidePadding,
     ValueChanged<int>? onSidePaddingChanged,
+    // [漫画设置作用域] 作用域控件（可选；缺省 = 无书仅全局）
+    bool hasCurrentBook = false,
+    int? bookScrollMode,
+    int? globalScrollMode,
+    ValueChanged<int?>? onBookScrollModeChanged,
+    int? bookSidePadding,
+    int? globalSidePadding,
+    ValueChanged<int?>? onBookSidePaddingChanged,
     // [P4-3 M4 批2] 行为开关组 + 背景色（可选；不传则不渲染区块，
     // 既有调用方不受影响）
     bool? disableClickScroll,
@@ -238,6 +292,13 @@ class MangaConfigSheet extends StatefulWidget {
         onPageScaleTypeChanged: onPageScaleTypeChanged,
         sidePadding: sidePadding,
         onSidePaddingChanged: onSidePaddingChanged,
+        hasCurrentBook: hasCurrentBook,
+        bookScrollMode: bookScrollMode,
+        globalScrollMode: globalScrollMode,
+        onBookScrollModeChanged: onBookScrollModeChanged,
+        bookSidePadding: bookSidePadding,
+        globalSidePadding: globalSidePadding,
+        onBookSidePaddingChanged: onBookSidePaddingChanged,
         disableClickScroll: disableClickScroll,
         disableMangaScale: disableMangaScale,
         disableMangaPageAnim: disableMangaPageAnim,
@@ -286,6 +347,19 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
 
   /// [P4-3 M3 修4] 条漫侧边留白百分比 0..45
   late int _sidePadding;
+
+  /// [漫画设置作用域] 书级翻页模式覆盖镜像（null = 跟随全局；
+  /// 面板内切换作用域即经回调写入/清除）
+  int? _bookScrollMode;
+
+  /// [漫画设置作用域] 书级侧边留白覆盖镜像（null = 跟随全局）
+  int? _bookSidePadding;
+
+  /// [漫画设置作用域] 全局翻页模式回退值（作用域切回全局时回显）
+  late int _globalScrollMode;
+
+  /// [漫画设置作用域] 全局侧边留白回退值（百分比 0..45）
+  late int _globalSidePadding;
 
   // [P4-3 M4 批2] 行为开关组 + 背景色（缺省值对齐原版：
   // disableMangaScale / volumeKeyPage / mangaLongClickSaveImage 三键
@@ -344,6 +418,15 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
       widget.onSidePaddingChanged != null &&
       MangaScrollModes.isWebtoon(_scrollMode);
 
+  /// [漫画设置作用域] 是否渲染翻页模式作用域控件：有当前书且上游接入
+  /// 书级写路径（无书 = 仅全局，对齐任务口径）
+  bool get _showScrollModeScope =>
+      widget.hasCurrentBook && widget.onBookScrollModeChanged != null;
+
+  /// [漫画设置作用域] 是否渲染侧边留白作用域控件（条件同上）
+  bool get _showSidePaddingScope =>
+      widget.hasCurrentBook && widget.onBookSidePaddingChanged != null;
+
   /// [P4-3 M4 批2] 是否渲染「其他」区块（行为开关组 + 背景色板）：
   /// 上游显式接线（onMangaBgColorChanged 非 null）时才渲染，  /// 保证既有未接线的 sheet 用法/测试不受影响
   bool get _showBehaviorSection => widget.onMangaBgColorChanged != null;
@@ -366,11 +449,25 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
     _eInk = widget.enableEInk;
     _gray = widget.enableGray;
     _threshold = widget.eInkThreshold;
-    _scrollMode = widget.scrollMode;
+    // [漫画设置作用域] 全局回退值缺省回退旧参数（直接构造的既有调用方
+    // 行为不变）；有效值 = 书级覆盖 ?? 全局。书级覆盖仅在有当前书且上游
+    // 接入书级写路径时生效（否则该字段视为未覆盖，避免只读不可写的假态）
+    _globalScrollMode = widget.globalScrollMode ?? widget.scrollMode;
+    _bookScrollMode =
+        (widget.hasCurrentBook && widget.onBookScrollModeChanged != null)
+            ? widget.bookScrollMode
+            : null;
+    _scrollMode = _bookScrollMode ?? _globalScrollMode;
     _autoRead = widget.autoReadEnabled ?? false;
     _autoReadSpeed = widget.autoReadSpeed ?? MangaAutoRead.defaultValue;
     _pageScaleType = widget.pageScaleType ?? MangaPageScaleType.defaultValue;
-    _sidePadding = (widget.sidePadding ?? 0).clamp(0, 45);
+    _globalSidePadding =
+        (widget.globalSidePadding ?? widget.sidePadding ?? 0).clamp(0, 45);
+    _bookSidePadding =
+        (widget.hasCurrentBook && widget.onBookSidePaddingChanged != null)
+            ? widget.bookSidePadding?.clamp(0, 45)
+            : null;
+    _sidePadding = _bookSidePadding ?? _globalSidePadding;
     _disableClickScroll = widget.disableClickScroll ?? false;
     _disableMangaScale = widget.disableMangaScale ?? true;
     _disableMangaPageAnim = widget.disableMangaPageAnim ?? false;
@@ -456,6 +553,15 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                 // SettingSlider sidePaddingPercent 仅 isWebtoon 显示）
                 _section('阅读模式'),
                 _card([
+                  // [漫画设置作用域] 翻页模式作用域选择（跟随全局/本书；
+                  // 无当前书或上游未接书级写路径时不渲染 → 仅全局）
+                  if (_showScrollModeScope)
+                    _scopeRow(
+                      title: '翻页模式',
+                      prefix: 'mangaScrollMode',
+                      bookScope: _bookScrollMode != null,
+                      onChanged: _changeScrollModeScope,
+                    ),
                   _modeButtonGroup(),
                   if (_showPageScale) ...[
                     _divider(),
@@ -477,6 +583,14 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                     _divider(),
                     _sliderTile(
                       title: '侧边留白',
+                      // [漫画设置作用域] 侧边留白作用域选择（跟随全局/本书）
+                      titleTrailing: _showSidePaddingScope
+                          ? _scopePills(
+                              prefix: 'mangaSidePadding',
+                              bookScope: _bookSidePadding != null,
+                              onChanged: _changeSidePaddingScope,
+                            )
+                          : null,
                       value: _sidePadding.toDouble(),
                       min: 0,
                       max: 45,
@@ -484,8 +598,21 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                       onChanged: (v) {
                         final rounded = v.round().clamp(0, 45);
                         if (rounded == _sidePadding) return;
-                        setState(() => _sidePadding = rounded);
-                        widget.onSidePaddingChanged!(rounded);
+                        // [漫画设置作用域] 按当前作用域写入全局键或书级字段
+                        final bookScope = _bookSidePadding != null;
+                        setState(() {
+                          _sidePadding = rounded;
+                          if (bookScope) {
+                            _bookSidePadding = rounded;
+                          } else {
+                            _globalSidePadding = rounded;
+                          }
+                        });
+                        if (bookScope) {
+                          widget.onBookSidePaddingChanged?.call(rounded);
+                        } else {
+                          widget.onSidePaddingChanged?.call(rounded);
+                        }
                       },
                     ),
                   ],
@@ -930,6 +1057,128 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
     );
   }
 
+  /// [漫画设置作用域] 翻页模式作用域切换：
+  /// - 选「本书」= 以当前有效值物化书级覆盖（写入 `readConfig.mangaScrollMode`）；
+  /// - 选「跟随全局」= 清除书级覆盖（回调传 null）并回显全局值。
+  void _changeScrollModeScope(bool bookScope) {
+    if (bookScope) {
+      setState(() => _bookScrollMode = _scrollMode);
+      widget.onBookScrollModeChanged?.call(_scrollMode);
+      return;
+    }
+    setState(() {
+      _bookScrollMode = null;
+      _scrollMode = _globalScrollMode;
+    });
+    widget.onBookScrollModeChanged?.call(null);
+  }
+
+  /// [漫画设置作用域] 侧边留白作用域切换（同上：
+  /// 「本书」物化覆盖 /「跟随全局」清除覆盖并回显全局值）
+  void _changeSidePaddingScope(bool bookScope) {
+    if (bookScope) {
+      setState(() => _bookSidePadding = _sidePadding);
+      widget.onBookSidePaddingChanged?.call(_sidePadding);
+      return;
+    }
+    setState(() {
+      _bookSidePadding = null;
+      _sidePadding = _globalSidePadding;
+    });
+    widget.onBookSidePaddingChanged?.call(null);
+  }
+
+  /// [漫画设置作用域] 作用域选择行：左侧标题 + 右侧「跟随全局/本书」药丸组
+  Widget _scopeRow({
+    required String title,
+    required String prefix,
+    required bool bookScope,
+    required ValueChanged<bool> onChanged,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              title,
+              style: TextStyle(fontSize: 16, color: scheme.onSurface),
+            ),
+          ),
+          _scopePills(
+            prefix: prefix,
+            bookScope: bookScope,
+            onChanged: onChanged,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// [漫画设置作用域] 「跟随全局 / 本书」药丸组（选中 = primaryContainer
+  /// 高亮 + onPrimaryContainer 字 w600，未选 = 透明底 + outlineVariant 描边，
+  /// 形态与 [_modeButtonGroup] 一致；[prefix] 区分不同设置项的作用域控件 key）
+  Widget _scopePills({
+    required String prefix,
+    required bool bookScope,
+    required ValueChanged<bool> onChanged,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    Widget pill({
+      required String label,
+      required bool selected,
+      required Key key,
+      required VoidCallback onTap,
+    }) {
+      return GestureDetector(
+        key: key,
+        behavior: HitTestBehavior.opaque,
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: selected ? scheme.primaryContainer : Colors.transparent,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: selected ? Colors.transparent : scheme.outlineVariant,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+              color: selected
+                  ? scheme.onPrimaryContainer
+                  : scheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        pill(
+          key: ValueKey('$prefix-scopeGlobal'),
+          label: '跟随全局',
+          selected: !bookScope,
+          onTap: () => onChanged(false),
+        ),
+        const SizedBox(width: 6),
+        pill(
+          key: ValueKey('$prefix-scopeBook'),
+          label: '本书',
+          selected: bookScope,
+          onTap: () => onChanged(true),
+        ),
+      ],
+    );
+  }
+
   /// [P4-3 M3 修4] 阅读模式 5 按钮组（单页式 ×3 + 条漫 ×2，按值 1..5
   /// 顺序，Wrap 换行；选中 = primaryContainer 底 + onPrimaryContainer
   /// 字 w600，未选 = 透明底 + onSurfaceVariant 字，对齐用户截图形态）
@@ -946,8 +1195,21 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
             behavior: HitTestBehavior.opaque,
             onTap: () {
               if (mode == _scrollMode) return;
-              setState(() => _scrollMode = mode);
-              widget.onScrollModeChanged(mode);
+              // [漫画设置作用域] 按当前作用域写入全局键或书级字段
+              final bookScope = _bookScrollMode != null;
+              setState(() {
+                _scrollMode = mode;
+                if (bookScope) {
+                  _bookScrollMode = mode;
+                } else {
+                  _globalScrollMode = mode;
+                }
+              });
+              if (bookScope) {
+                widget.onBookScrollModeChanged?.call(mode);
+              } else {
+                widget.onScrollModeChanged(mode);
+              }
             },
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 120),
@@ -1215,6 +1477,8 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
     required double max,
     required String label,
     required ValueChanged<double> onChanged,
+    /// [漫画设置作用域] 标题行尾可选控件（作用域药丸组；null = 不渲染）
+    Widget? titleTrailing,
   }) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
@@ -1233,6 +1497,10 @@ class _MangaConfigSheetState extends State<MangaConfigSheet> {
                   ),
                 ),
               ),
+              if (titleTrailing != null) ...[
+                titleTrailing,
+                const SizedBox(width: 8),
+              ],
               Text(
                 label,
                 // [深色主题 Batch A-1] 滑杆数值 #8E8E93 → onSurfaceVariant

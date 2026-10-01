@@ -53,6 +53,21 @@ mixin _$ReadConfig {
   @JsonKey(name: 'playSpeed')
   double get playSpeed => throw _privateConstructorUsedError;
 
+  /// [漫画设置作用域 2026-10-01] 书级翻页模式覆盖（null = 未覆盖，跟随
+  /// 全局 [MangaConfigKeys.scrollMode]）。对齐参考版 `Book.ReadConfig.mangaScrollMode`
+  /// 与 MangaReaderViewModel 有效值优先级 `book?.scrollMode ?: settings.scrollMode`。
+  @JsonKey(name: 'mangaScrollMode')
+  int? get mangaScrollMode => throw _privateConstructorUsedError;
+
+  /// [漫画设置作用域 2026-10-01] 书级条漫侧边留白覆盖（null = 未覆盖，
+  /// 跟随全局 [MangaConfigKeys.sidePadding]）。
+  ///
+  /// 键名对齐参考版 `Book.ReadConfig.webtoonSidePaddingDp`，但数值沿用
+  /// Flutter 既有百分比口径 0..45（每侧留白 = 视口宽 × p/100），与参考版
+  /// 字段仅做作用域对齐，**不做 dp/百分比换算**（无明确换算规则前禁止混用单位）。
+  @JsonKey(name: 'webtoonSidePaddingDp')
+  int? get webtoonSidePaddingDp => throw _privateConstructorUsedError;
+
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
   $ReadConfigCopyWith<ReadConfig> get copyWith =>
@@ -81,7 +96,9 @@ abstract class $ReadConfigCopyWith<$Res> {
       @JsonKey(name: 'openCredits') int openCredits,
       @JsonKey(name: 'closeCredits') int closeCredits,
       @JsonKey(name: 'playMode') int playMode,
-      @JsonKey(name: 'playSpeed') double playSpeed});
+      @JsonKey(name: 'playSpeed') double playSpeed,
+      @JsonKey(name: 'mangaScrollMode') int? mangaScrollMode,
+      @JsonKey(name: 'webtoonSidePaddingDp') int? webtoonSidePaddingDp});
 }
 
 /// @nodoc
@@ -113,6 +130,8 @@ class _$ReadConfigCopyWithImpl<$Res, $Val extends ReadConfig>
     Object? closeCredits = null,
     Object? playMode = null,
     Object? playSpeed = null,
+    Object? mangaScrollMode = freezed,
+    Object? webtoonSidePaddingDp = freezed,
   }) {
     return _then(_value.copyWith(
       reverseToc: null == reverseToc
@@ -179,6 +198,14 @@ class _$ReadConfigCopyWithImpl<$Res, $Val extends ReadConfig>
           ? _value.playSpeed
           : playSpeed // ignore: cast_nullable_to_non_nullable
               as double,
+      mangaScrollMode: freezed == mangaScrollMode
+          ? _value.mangaScrollMode
+          : mangaScrollMode // ignore: cast_nullable_to_non_nullable
+              as int?,
+      webtoonSidePaddingDp: freezed == webtoonSidePaddingDp
+          ? _value.webtoonSidePaddingDp
+          : webtoonSidePaddingDp // ignore: cast_nullable_to_non_nullable
+              as int?,
     ) as $Val);
   }
 }
@@ -207,7 +234,9 @@ abstract class _$$ReadConfigImplCopyWith<$Res>
       @JsonKey(name: 'openCredits') int openCredits,
       @JsonKey(name: 'closeCredits') int closeCredits,
       @JsonKey(name: 'playMode') int playMode,
-      @JsonKey(name: 'playSpeed') double playSpeed});
+      @JsonKey(name: 'playSpeed') double playSpeed,
+      @JsonKey(name: 'mangaScrollMode') int? mangaScrollMode,
+      @JsonKey(name: 'webtoonSidePaddingDp') int? webtoonSidePaddingDp});
 }
 
 /// @nodoc
@@ -237,6 +266,8 @@ class __$$ReadConfigImplCopyWithImpl<$Res>
     Object? closeCredits = null,
     Object? playMode = null,
     Object? playSpeed = null,
+    Object? mangaScrollMode = freezed,
+    Object? webtoonSidePaddingDp = freezed,
   }) {
     return _then(_$ReadConfigImpl(
       reverseToc: null == reverseToc
@@ -303,6 +334,14 @@ class __$$ReadConfigImplCopyWithImpl<$Res>
           ? _value.playSpeed
           : playSpeed // ignore: cast_nullable_to_non_nullable
               as double,
+      mangaScrollMode: freezed == mangaScrollMode
+          ? _value.mangaScrollMode
+          : mangaScrollMode // ignore: cast_nullable_to_non_nullable
+              as int?,
+      webtoonSidePaddingDp: freezed == webtoonSidePaddingDp
+          ? _value.webtoonSidePaddingDp
+          : webtoonSidePaddingDp // ignore: cast_nullable_to_non_nullable
+              as int?,
     ));
   }
 }
@@ -326,7 +365,9 @@ class _$ReadConfigImpl implements _ReadConfig {
       @JsonKey(name: 'openCredits') this.openCredits = 0,
       @JsonKey(name: 'closeCredits') this.closeCredits = 0,
       @JsonKey(name: 'playMode') this.playMode = 0,
-      @JsonKey(name: 'playSpeed') this.playSpeed = 1.0});
+      @JsonKey(name: 'playSpeed') this.playSpeed = 1.0,
+      @JsonKey(name: 'mangaScrollMode') this.mangaScrollMode,
+      @JsonKey(name: 'webtoonSidePaddingDp') this.webtoonSidePaddingDp});
 
   factory _$ReadConfigImpl.fromJson(Map<String, dynamic> json) =>
       _$$ReadConfigImplFromJson(json);
@@ -380,9 +421,26 @@ class _$ReadConfigImpl implements _ReadConfig {
   @JsonKey(name: 'playSpeed')
   final double playSpeed;
 
+  /// [漫画设置作用域 2026-10-01] 书级翻页模式覆盖（null = 未覆盖，跟随
+  /// 全局 [MangaConfigKeys.scrollMode]）。对齐参考版 `Book.ReadConfig.mangaScrollMode`
+  /// 与 MangaReaderViewModel 有效值优先级 `book?.scrollMode ?: settings.scrollMode`。
+  @override
+  @JsonKey(name: 'mangaScrollMode')
+  final int? mangaScrollMode;
+
+  /// [漫画设置作用域 2026-10-01] 书级条漫侧边留白覆盖（null = 未覆盖，
+  /// 跟随全局 [MangaConfigKeys.sidePadding]）。
+  ///
+  /// 键名对齐参考版 `Book.ReadConfig.webtoonSidePaddingDp`，但数值沿用
+  /// Flutter 既有百分比口径 0..45（每侧留白 = 视口宽 × p/100），与参考版
+  /// 字段仅做作用域对齐，**不做 dp/百分比换算**（无明确换算规则前禁止混用单位）。
+  @override
+  @JsonKey(name: 'webtoonSidePaddingDp')
+  final int? webtoonSidePaddingDp;
+
   @override
   String toString() {
-    return 'ReadConfig(reverseToc: $reverseToc, pageAnim: $pageAnim, reSegment: $reSegment, imageStyle: $imageStyle, useReplaceRule: $useReplaceRule, delTag: $delTag, ttsEngine: $ttsEngine, splitLongChapter: $splitLongChapter, readSimulating: $readSimulating, startDate: $startDate, startChapter: $startChapter, dailyChapters: $dailyChapters, openCredits: $openCredits, closeCredits: $closeCredits, playMode: $playMode, playSpeed: $playSpeed)';
+    return 'ReadConfig(reverseToc: $reverseToc, pageAnim: $pageAnim, reSegment: $reSegment, imageStyle: $imageStyle, useReplaceRule: $useReplaceRule, delTag: $delTag, ttsEngine: $ttsEngine, splitLongChapter: $splitLongChapter, readSimulating: $readSimulating, startDate: $startDate, startChapter: $startChapter, dailyChapters: $dailyChapters, openCredits: $openCredits, closeCredits: $closeCredits, playMode: $playMode, playSpeed: $playSpeed, mangaScrollMode: $mangaScrollMode, webtoonSidePaddingDp: $webtoonSidePaddingDp)';
   }
 
   @override
@@ -420,7 +478,11 @@ class _$ReadConfigImpl implements _ReadConfig {
             (identical(other.playMode, playMode) ||
                 other.playMode == playMode) &&
             (identical(other.playSpeed, playSpeed) ||
-                other.playSpeed == playSpeed));
+                other.playSpeed == playSpeed) &&
+            (identical(other.mangaScrollMode, mangaScrollMode) ||
+                other.mangaScrollMode == mangaScrollMode) &&
+            (identical(other.webtoonSidePaddingDp, webtoonSidePaddingDp) ||
+                other.webtoonSidePaddingDp == webtoonSidePaddingDp));
   }
 
   @JsonKey(ignore: true)
@@ -442,7 +504,9 @@ class _$ReadConfigImpl implements _ReadConfig {
       openCredits,
       closeCredits,
       playMode,
-      playSpeed);
+      playSpeed,
+      mangaScrollMode,
+      webtoonSidePaddingDp);
 
   @JsonKey(ignore: true)
   @override
@@ -475,7 +539,10 @@ abstract class _ReadConfig implements ReadConfig {
       @JsonKey(name: 'openCredits') final int openCredits,
       @JsonKey(name: 'closeCredits') final int closeCredits,
       @JsonKey(name: 'playMode') final int playMode,
-      @JsonKey(name: 'playSpeed') final double playSpeed}) = _$ReadConfigImpl;
+      @JsonKey(name: 'playSpeed') final double playSpeed,
+      @JsonKey(name: 'mangaScrollMode') final int? mangaScrollMode,
+      @JsonKey(name: 'webtoonSidePaddingDp')
+      final int? webtoonSidePaddingDp}) = _$ReadConfigImpl;
 
   factory _ReadConfig.fromJson(Map<String, dynamic> json) =
       _$ReadConfigImpl.fromJson;
@@ -528,6 +595,23 @@ abstract class _ReadConfig implements ReadConfig {
   @override
   @JsonKey(name: 'playSpeed')
   double get playSpeed;
+  @override
+
+  /// [漫画设置作用域 2026-10-01] 书级翻页模式覆盖（null = 未覆盖，跟随
+  /// 全局 [MangaConfigKeys.scrollMode]）。对齐参考版 `Book.ReadConfig.mangaScrollMode`
+  /// 与 MangaReaderViewModel 有效值优先级 `book?.scrollMode ?: settings.scrollMode`。
+  @JsonKey(name: 'mangaScrollMode')
+  int? get mangaScrollMode;
+  @override
+
+  /// [漫画设置作用域 2026-10-01] 书级条漫侧边留白覆盖（null = 未覆盖，
+  /// 跟随全局 [MangaConfigKeys.sidePadding]）。
+  ///
+  /// 键名对齐参考版 `Book.ReadConfig.webtoonSidePaddingDp`，但数值沿用
+  /// Flutter 既有百分比口径 0..45（每侧留白 = 视口宽 × p/100），与参考版
+  /// 字段仅做作用域对齐，**不做 dp/百分比换算**（无明确换算规则前禁止混用单位）。
+  @JsonKey(name: 'webtoonSidePaddingDp')
+  int? get webtoonSidePaddingDp;
   @override
   @JsonKey(ignore: true)
   _$$ReadConfigImplCopyWith<_$ReadConfigImpl> get copyWith =>

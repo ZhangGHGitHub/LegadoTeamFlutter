@@ -1044,6 +1044,10 @@ void main() {
       );
       expect(find.text('其他'), findsOneWidget,
           reason: '「其他」区块渲染（滚入视野后构建）');
+      // [漫画设置作用域 2026-10-01] 阅读模式卡新增作用域行使后续区块整体
+      // 下移，dragUntilVisible 尾部 ensureVisible 为 jump（无动画）→
+      // 落定后再取坐标点击（否则读到滚动前坐标导致 tap 落空）
+      await tester.pumpAndSettle();
       // 禁用点击翻页（默认 false → true）
       await tester.tap(find.text('禁用点击翻页'));
       await tester.pump();

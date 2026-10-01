@@ -159,7 +159,9 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   /// false = 书级错误（书籍信息/目录获取失败），重试走整书重载 [_loadBook]
   bool _errorChapterLevel = false;
 
-  /// [P4-3 E1] 翻页模式（对齐参考版 MangaScrollMode；默认条漫 4）
+  /// [P4-3 E1] 翻页模式（**有效值**，对齐参考版 MangaScrollMode；默认条漫 4）
+  ///
+  /// [漫画设置作用域] 有效值 = 书级覆盖 ?? 全局值（[_applyEffectiveMangaScope]）
   int _scrollMode = MangaScrollModes.defaultValue;
 
   /// [P4-3 E1] 单页式 PageController（模式/章节/初始页变化时重建）
@@ -220,11 +222,35 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
   /// 对齐参考版 Contract L121）
   int _pageScaleType = MangaPageScaleType.defaultValue;
 
-  /// [P4-3 M3 修4] 条漫侧边留白百分比 0..45（持久化，默认 0；仅条漫渲染
+  /// [P4-3 M3 修4] 条漫侧边留白百分比 0..45（**有效值**，默认 0；仅条漫渲染
   /// 路径消费：每侧 padding = 视口宽 × p/100，对齐参考版 MangaReaderScreen
   /// fraction = 1 - p×2/100 ⇔ itemWidth = 视口宽 × (1 - 2p/100)；
   /// 单页式路径不生效，设置面板仅 isWebtoon 显示此滑杆）
+  ///
+  /// [漫画设置作用域] 有效值 = 书级覆盖 ?? 全局值（[_applyEffectiveMangaScope]）
   int _sidePadding = 0;
+
+  // ---------------------------------------------------------------------------
+  // [漫画设置作用域 2026-10-01] 本书覆盖 + 全局回退（参考版仅 scrollMode 与
+  // webtoon side padding 两项具备书级覆盖；长按存图/自动速度/九区点击动作
+  // 保持全局，见 MangaConfigKeys 注释）。有效值优先级对齐参考版
+  // MangaReaderViewModel L1332-1334 `book?.scrollMode ?: settings.scrollMode`。
+  // ---------------------------------------------------------------------------
+
+  /// 全局翻页模式（书级覆盖为空时的回退源；MangaConfigKeys.scrollMode）
+  int _globalScrollMode = MangaScrollModes.defaultValue;
+
+  /// 当前书书级翻页模式覆盖（`book.readConfig.mangaScrollMode`；
+  /// null = 未覆盖，跟随全局）
+  int? _bookScrollMode;
+
+  /// 全局条漫侧边留白百分比 0..45（书级覆盖为空时的回退源；
+  /// MangaConfigKeys.sidePadding）
+  int _globalSidePadding = 0;
+
+  /// 当前书书级条漫侧边留白覆盖（`book.readConfig.webtoonSidePaddingDp`；
+  /// null = 未覆盖，跟随全局；数值沿用 Flutter 百分比口径 0..45）
+  int? _bookSidePadding;
 
   // ---------------------------------------------------------------------------
   // [P4-3 M4 批2] 行为开关组（键名对齐原版 PreferKey，AppConfig.kt 默认值
@@ -362,10 +388,12 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
         _enableEInk = eInk == 'true';
         _enableGray = gray == 'true';
         _eInkThreshold = int.tryParse(thr ?? '') ?? 150;
-        _scrollMode = MangaScrollModes.parse(modeRaw);
+        // [漫画设置作用域] 全局值先行装载；有效值由
+        // [_applyEffectiveMangaScope] 按「书级覆盖 ?? 全局」统一计算
+        _globalScrollMode = MangaScrollModes.parse(modeRaw);
         _autoReadSpeed = MangaAutoRead.parse(speedRaw);
         _pageScaleType = MangaPageScaleType.parse(scaleRaw);
-        _sidePadding = int.tryParse(padRaw ?? '')?.clamp(0, 45) ?? 0;
+        _globalSidePadding = int.tryParse(padRaw ?? '')?.clamp(0, 45) ?? 0;
         // 三键缺省 → true（null 时回退默认 true；非 null 按 'true' 判定）
         _disableClickScroll = clickScrollRaw == 'true';
         _disableMangaScale = scaleRaw2 == null ? true : scaleRaw2 == 'true';
@@ -380,25 +408,54 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
         // [P4-3 M5] 九区点击动作（缺省/非法回参考版默认配置）
         _clickActions = MangaClickActions.parse(clickActionsRaw);
       });
-      // [P4-3 E1] 配置可能在图片加载后才生效：同步单页式控制器
-      _applyScrollMode();
+      // [漫画设置作用域] 配置可能在图片加载后才生效：按书级 ?? 全局重算
+      // 有效翻页模式/侧边留白（内部同步单页式控制器与自动翻页定时器）
+      _applyEffectiveMangaScope();
       // [P4-3 M5] 音量键捕获同步（开关开启时注册，对齐原版阅读器内拦截）
       _syncVolumeKeyCapture();
       await _applyBrightness(_colorFilter.l);
     } catch (_) {}
   }
 
-  /// [P4-3 E1] 持久化翻页模式并即时应用
-  Future<void> _persistScrollMode(int mode) async {
-    _scrollMode =
-        MangaScrollModes.valid.contains(mode) ? mode : MangaScrollModes.defaultValue;
+  /// [漫画设置作用域] 重算并应用有效漫画设置：书级覆盖 > 全局 > 默认。
+  ///
+  /// - 翻页模式：`book.readConfig.mangaScrollMode` 非 null 优先，否则回退
+  ///   全局 [MangaConfigKeys.scrollMode]（对齐参考版 MangaReaderViewModel
+  ///   L1332 `book?.scrollMode ?: settings.scrollMode`）；
+  /// - 条漫侧边留白：`book.readConfig.webtoonSidePaddingDp` 非 null 优先，
+  ///   否则回退全局 [MangaConfigKeys.sidePadding]；数值沿用 Flutter 既有
+  ///   百分比口径 0..45（与参考版 dp 字段仅作用域对齐，不做单位换算）。
+  ///
+  /// 模式变化时同步单页式控制器与自动翻页定时器；仅留白变化时 setState
+  /// 重建条漫列表即生效。
+  void _applyEffectiveMangaScope() {
+    final mode = _bookScrollMode ?? _globalScrollMode;
+    final padding = _bookSidePadding ?? _globalSidePadding;
+    final modeChanged = mode != _scrollMode;
+    final paddingChanged = padding != _sidePadding;
+    if (!modeChanged && !paddingChanged) return;
+    _scrollMode = mode;
+    _sidePadding = padding;
     if (mounted) setState(() {});
-    _applyScrollMode();
-    // [P4-3 E3] 翻页模式决定自动定时器语义（单页/条漫），变更后重启
-    _restartAutoReadTimer();
+    if (modeChanged) {
+      _applyScrollMode();
+      // [P4-3 E3] 翻页模式决定自动定时器语义（单页/条漫），变更后重启
+      _restartAutoReadTimer();
+    }
+  }
+
+  /// [漫画设置作用域] 持久化**全局**翻页模式并即时应用（作用域 = 全局时
+  /// 的写入路径；书级覆盖存在时仅更新全局回退值，不改变屏内有效值——
+  /// 对齐参考版 MangaSettings.scrollMode 与书级 `mangaScrollMode` 分层）
+  Future<void> _persistScrollMode(int mode) async {
+    final v = MangaScrollModes.valid.contains(mode)
+        ? mode
+        : MangaScrollModes.defaultValue;
+    _globalScrollMode = v;
+    _applyEffectiveMangaScope();
     try {
       await ref.read(bookApiProvider)
-          .setConfig(MangaConfigKeys.scrollMode, '$_scrollMode');
+          .setConfig(MangaConfigKeys.scrollMode, '$v');
     } catch (_) {}
   }
 
@@ -477,17 +534,75 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     } catch (_) {}
   }
 
-  /// [P4-3 M3 修4] 持久化条漫侧边留白（0..45%，越限收敛；仅条漫渲染
-  /// 路径生效——条漫 ListView 包水平 padding，单页式不受影响；
-  /// setState 即时重建条漫子树使滑杆拖动实时生效）
+  /// [漫画设置作用域] 持久化**全局**条漫侧边留白（0..45%，越限收敛；
+  /// 作用域 = 全局时的写入路径；仅条漫渲染路径生效——条漫 ListView 包
+  /// 水平 padding，单页式不受影响；setState 即时重建条漫子树使滑杆拖动
+  /// 实时生效）
   Future<void> _persistSidePadding(int value) async {
     final v = value.clamp(0, 45);
-    if (v == _sidePadding) return;
-    if (mounted) setState(() => _sidePadding = v);
+    _globalSidePadding = v;
+    _applyEffectiveMangaScope();
     try {
       await ref.read(bookApiProvider)
-          .setConfig(MangaConfigKeys.sidePadding, '$_sidePadding');
+          .setConfig(MangaConfigKeys.sidePadding, '$v');
     } catch (_) {}
+  }
+
+  /// [漫画设置作用域] 写入/清除当前书**书级**翻页模式覆盖。
+  ///
+  /// [value] null = 清除覆盖（删 `readConfig.mangaScrollMode` 键，跟随全局；
+  /// 对齐参考版「跟随全局」语义——不写入默认值冒充清除）。
+  Future<void> _persistBookScrollMode(int? value) async {
+    final v = value == null
+        ? null
+        : (MangaScrollModes.valid.contains(value)
+            ? value
+            : MangaScrollModes.defaultValue);
+    if (!await _updateBookReadConfigField('mangaScrollMode', v)) return;
+    _bookScrollMode = v;
+    _applyEffectiveMangaScope();
+  }
+
+  /// [漫画设置作用域] 写入/清除当前书**书级**条漫侧边留白覆盖
+  /// （百分比口径 0..45，越限收敛；键名 `webtoonSidePaddingDp` 对齐参考版，
+  /// 数值不做 dp 换算）。[value] null = 清除覆盖，跟随全局。
+  Future<void> _persistBookSidePadding(int? value) async {
+    final v = value?.clamp(0, 45);
+    if (!await _updateBookReadConfigField('webtoonSidePaddingDp', v)) return;
+    _bookSidePadding = v;
+    _applyEffectiveMangaScope();
+  }
+
+  /// [漫画设置作用域] 单字段局部更新当前书 readConfig（保留其他 readConfig
+  /// 成员、章节与进度字段，避免整书陈旧快照覆盖）：
+  /// 1. 先重取当前书（`_activeBookUrl`）拿最新快照；
+  /// 2. 仅在 readConfig JSON 上增/删目标键（null = 删键清除书级覆盖）；
+  /// 3. 经现有 [BookApi.updateBook] + [Book.copyWith] 落库，并同步屏内
+  ///    [_book] 缓存供后续写入使用。
+  ///
+  /// 返回是否写入成功（失败不改变屏内书级覆盖态）。
+  Future<bool> _updateBookReadConfigField(String key, int? value) async {
+    try {
+      final api = ref.read(bookApiProvider);
+      final fresh = await api.getBook(_activeBookUrl);
+      if (fresh == null) return false;
+      final map = Map<String, dynamic>.from(
+        fresh.readConfig?.toJson() ?? const <String, dynamic>{},
+      );
+      if (value == null) {
+        map.remove(key);
+      } else {
+        map[key] = value;
+      }
+      final updated = fresh.copyWith(
+        readConfig: map.isEmpty ? null : ReadConfig.fromJson(map),
+      );
+      await api.updateBook(updated);
+      _book = updated;
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   /// [P4-3 M4 批2] 持久化行为开关（8 键通用：setState 即时生效 +
@@ -825,6 +940,16 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       // [P4-3 M3 修4] 条漫侧边留白（条漫专属滑杆，0..45% 持久化）
       sidePadding: _sidePadding,
       onSidePaddingChanged: (v) => unawaited(_persistSidePadding(v)),
+      // [漫画设置作用域] 翻页模式 / 侧边留白的「跟随全局 / 本书」作用域控件
+      // 接线：有当前书时才渲染（无书仅全局路径）；书级写入经 updateBook，
+      // 清除覆盖 = 回调传 null（不写入默认值冒充清除）
+      hasCurrentBook: _book != null,
+      bookScrollMode: _bookScrollMode,
+      globalScrollMode: _globalScrollMode,
+      onBookScrollModeChanged: (v) => unawaited(_persistBookScrollMode(v)),
+      bookSidePadding: _bookSidePadding,
+      globalSidePadding: _globalSidePadding,
+      onBookSidePaddingChanged: (v) => unawaited(_persistBookSidePadding(v)),
       // [P4-3 M4 批2] 行为开关组（8 布尔键 + 背景色；键名对齐原版
       // PreferKey，持久化经 _persistMangaBool / _persistMangaBgColor）
       disableClickScroll: _disableClickScroll,
@@ -1001,6 +1126,18 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
         });
         return;
       }
+
+      // [漫画设置作用域] 重装当前书书级覆盖（切书/换源/整书重载统一入口：
+      // 书级非 null 覆盖全局、null 回退全局；非法模式/越界留白按归一规则
+      // 降级为「未覆盖」，避免旧屏幕状态污染新书）
+      final bookReadConfig = _book!.readConfig;
+      final rawScrollMode = bookReadConfig?.mangaScrollMode;
+      _bookScrollMode =
+          (rawScrollMode != null && MangaScrollModes.valid.contains(rawScrollMode))
+              ? rawScrollMode
+              : null;
+      _bookSidePadding = bookReadConfig?.webtoonSidePaddingDp?.clamp(0, 45);
+      _applyEffectiveMangaScope();
 
       // 获取章节列表。对齐原版 / reader_notifier / toc_screen：
       // 本地库无目录的在线书（搜索进详情未落库章节、或 notShelf 临时书）

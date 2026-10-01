@@ -65,6 +65,24 @@ pub struct ReadConfig {
     /// 对齐上游 Kotlin `Book.ReadConfig.useGlobalAudioSkip`（非空 Boolean，默认 false）
     #[serde(default, rename = "useGlobalAudioSkip")]
     pub use_global_audio_skip: bool,
+    /// [漫画设置作用域 2026-10-01] 书级翻页模式覆盖（`None` = 未覆盖，跟随全局）
+    ///
+    /// 对齐参考版（legado-with-MD3）`Book.ReadConfig.mangaScrollMode` 与
+    /// MangaReaderViewModel 有效值优先级 `book?.scrollMode ?: settings.scrollMode`；
+    /// 加法式字段：旧 JSON / 旧数据库无此键 → `None`，既有行为不变。
+    #[serde(skip_serializing_if = "Option::is_none", rename = "mangaScrollMode")]
+    pub manga_scroll_mode: Option<i32>,
+    /// [漫画设置作用域 2026-10-01] 书级条漫侧边留白覆盖（`None` = 未覆盖，跟随全局）
+    ///
+    /// 字段名对齐参考版 `Book.ReadConfig.webtoonSidePaddingDp`，但**单位不是 dp**：
+    /// 沿用 Flutter 现有百分比口径 **0..45**（每侧留白 = 视口宽 × p/100），
+    /// 与参考版字段仅做作用域对齐、**不做 dp/百分比换算**（转换规则未裁决前
+    /// 禁止混用单位）。加法式字段：旧 JSON / 旧数据库无此键 → `None`。
+    #[serde(
+        skip_serializing_if = "Option::is_none",
+        rename = "webtoonSidePaddingDp"
+    )]
+    pub webtoon_side_padding_dp: Option<i32>,
 }
 
 fn default_true() -> bool {
@@ -407,6 +425,53 @@ mod tests {
         assert!(rc.use_global_audio_skip);
         let json = serde_json::to_string(&rc).unwrap();
         assert!(json.contains("useGlobalAudioSkip"));
+    }
+
+    /// [漫画设置作用域 2026-10-01] 书级字段 round-trip：
+    /// `mangaScrollMode` / `webtoonSidePaddingDp` JSON → 结构体 → JSON 不丢失
+    #[test]
+    fn test_read_config_manga_scope_roundtrip() {
+        let json = r#"{"mangaScrollMode":3,"webtoonSidePaddingDp":20}"#;
+        let rc: ReadConfig = serde_json::from_str(json).unwrap();
+        assert_eq!(rc.manga_scroll_mode, Some(3));
+        assert_eq!(rc.webtoon_side_padding_dp, Some(20));
+
+        let out = serde_json::to_string(&rc).unwrap();
+        assert!(out.contains(r#""mangaScrollMode":3"#), "out={out}");
+        assert!(out.contains(r#""webtoonSidePaddingDp":20"#), "out={out}");
+        // 回写 JSON 可再次解析且值一致（updateBook 回写链不丢字段）
+        let back: ReadConfig = serde_json::from_str(&out).unwrap();
+        assert_eq!(back.manga_scroll_mode, Some(3));
+        assert_eq!(back.webtoon_side_padding_dp, Some(20));
+    }
+
+    /// [漫画设置作用域 2026-10-01] 旧 JSON / 旧数据库无书级键 → `None`（存量兼容）；
+    /// 未覆盖时序列化省略，空 readConfig JSON 形态不变
+    #[test]
+    fn test_read_config_manga_scope_absent_is_none() {
+        let rc: ReadConfig = serde_json::from_str("{}").unwrap();
+        assert!(rc.manga_scroll_mode.is_none());
+        assert!(rc.webtoon_side_padding_dp.is_none());
+
+        let out = serde_json::to_string(&rc).unwrap();
+        assert!(!out.contains("mangaScrollMode"), "out={out}");
+        assert!(!out.contains("webtoonSidePaddingDp"), "out={out}");
+    }
+
+    /// [漫画设置作用域 2026-10-01] 单项覆盖：只写一个书级键时另一项保持 `None`
+    /// （作用域按字段独立，翻页模式与侧边留白互不牵连）
+    #[test]
+    fn test_read_config_manga_scope_partial_independent() {
+        let rc: ReadConfig = serde_json::from_str(r#"{"webtoonSidePaddingDp":45}"#).unwrap();
+        assert!(rc.manga_scroll_mode.is_none());
+        assert_eq!(rc.webtoon_side_padding_dp, Some(45));
+
+        // 0 是合法覆盖值（区别于未覆盖的 None），序列化必须保留
+        let zero: ReadConfig = serde_json::from_str(r#"{"mangaScrollMode":0}"#).unwrap();
+        assert_eq!(zero.manga_scroll_mode, Some(0));
+        assert!(serde_json::to_string(&zero)
+            .unwrap()
+            .contains(r#""mangaScrollMode":0"#));
     }
 
     #[test]

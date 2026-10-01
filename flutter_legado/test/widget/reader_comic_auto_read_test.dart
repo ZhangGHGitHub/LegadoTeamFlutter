@@ -285,6 +285,10 @@ void main() {
         matching: find.byType(Slider),
       );
       expect(slider, findsOneWidget, reason: '开关打开后应出现速度滑杆');
+      // [漫画设置作用域 2026-10-01] 阅读模式卡新增作用域行后自动速度区
+      // 可能落到视口下沿外 → 先滚入视野再拖（断言不变）
+      await tester.ensureVisible(slider);
+      await tester.pumpAndSettle();
       // 拖到最右 → 15 档
       await tester.drag(slider, const Offset(600, 0));
       await tester.pumpAndSettle();
