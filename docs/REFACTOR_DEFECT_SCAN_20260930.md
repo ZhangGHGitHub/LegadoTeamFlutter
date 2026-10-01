@@ -43,6 +43,16 @@
 
 - P2-E 注意：4 屏行为差异（welcome 全局 navigatorKey、home_tab 简化版）**须保持调用点行为等价**，只收敛实现不改行为；隔壁对话在做 P4-3 M5（reader_comic/平台通道），文件不重叠。
 
+### 独立审查 P2 尾项处置（745d715742）
+
+| 编号 | 处置状态 | 记录 |
+|---|---|---|
+| P2-1 | **已关闭** | 完成 legado-fetcher 测试夹具迁移：`source_shoujixiaoshuo_sjshuku.json`、`jhsu_book4cc_source.json`、`fixtures_95590_ch9.html`、`qmao_play_full.html` 从 `legado-ffi/tests/fixtures` 迁至 `legado-fetcher/tests/fixtures`，fetcher 源码改用本地路径，ffi 中 4 个零引用原件删除。`qmao_min_source.json` 因 ffi 仍有自身测试引用而保留，fetcher 另留独立副本，README 规定双同步。 |
+| P2-2 | **已关闭** | 在 `rust/legado-ffi/src/api/source_rate_limit.rs` 与 `rust/legado-server/src/handlers/web_book.rs` 增加双宿主 `concurrentRate` registry 互认注释，明确当前不同进程/使用形态无实际双实例；未来同进程并用时若窗口分叉，统一改为静态 registry 或宿主注入 `Arc`。 |
+| P2-3 | **已知开销，不立项** | REST JSON 序列化往返属于当前架构已知开销，独立审查确认不改实现、不新增任务。 |
+
+后续 P2 候选：`rust/legado-js/src/host_api/quickjs_impl.rs:5976` 仍读取 `../legado-ffi/tests/fixtures/songhe`，属于同类跨 crate fixture 引用；本次仅登记，不实施。
+
 ## 四、裁决记录（2026-09-30 用户三项决定）
 
 1. **P1 立项**（P5-1/P5-2）——本报告 §二。
