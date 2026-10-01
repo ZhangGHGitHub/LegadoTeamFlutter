@@ -22,12 +22,30 @@ impl RoomImporter {
     /// ```
     ///
     /// 返回成功导入的记录数。
+    ///
+    /// [P1-1 | 2026-10-01] 整批写入原子化：解析后的全部条目在**同一事务**中
+    /// 校验/插入，任一条失败回滚整批（含此前已执行的 INSERT OR REPLACE），
+    /// 全部成功提交后才返回 `Ok(count)`——调用方看到 Err 时库内零改动，
+    /// 不再有「前 k-1 条已入库但整体报错」的部分成功态（该状态下调用方
+    /// 不会刷新书源限速注册表，导致 DB 与 limiter 分叉）。
+    /// 调用方若已持有外层事务，则自动复用（不再嵌套 BEGIN）。
     pub fn import_book_sources(conn: &Connection, json: &str) -> LegadoResult<usize> {
         let values: Vec<Value> = serde_json::from_str(json)
             .map_err(|e| LegadoError::Database(format!("解析书源 JSON 失败: {e}")))?;
 
+        crate::connection::in_transaction(conn, "导入书源", |conn| {
+            Self::insert_source_values(conn, &values)
+        })
+    }
+
+    /// 逐条校验并写入书源（**不自开事务**：事务边界由
+    /// [`crate::connection::in_transaction`] 提供，与 FFI 批量导入共享同一实现）
+    ///
+    /// 与 [`Self::import_book_sources`] 共用同一循环体；调用方保证任一条
+    /// 失败时整体回滚、全部成功时统一提交。
+    fn insert_source_values(conn: &Connection, values: &[Value]) -> LegadoResult<usize> {
         let mut count = 0;
-        for item in &values {
+        for item in values {
             let obj = item
                 .as_object()
                 .ok_or_else(|| LegadoError::Database("书源条目不是 JSON 对象".into()))?;
@@ -525,5 +543,56 @@ mod tests {
             )
             .unwrap();
         assert_eq!(name, "Name2");
+    }
+
+    /// [P1-1] 批量导入整批原子：第 1/2 条合法写入后第 3 条非法（非 JSON
+    /// 对象）→ 整批失败回滚，新增零残留、存量行被还原（同事务内 REPLACE
+    /// 也不得越出失败批次）
+    #[test]
+    fn test_import_book_sources_failure_rolls_back_whole_batch() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+
+        // 存量行：批次第 1 条会以同 URL REPLACE 覆盖它
+        RoomImporter::import_book_sources(
+            conn,
+            r#"[{"bookSourceUrl":"https://p11-rollback.example","bookSourceName":"存量名称","bookSourceType":0}]"#,
+        )
+        .unwrap();
+
+        let json = r#"[
+            {"bookSourceUrl":"https://p11-rollback.example","bookSourceName":"批次新名称","bookSourceType":0},
+            {"bookSourceUrl":"https://p11-rollback-new.example","bookSourceName":"新增源","bookSourceType":0},
+            42
+        ]"#;
+        let err = RoomImporter::import_book_sources(conn, json).unwrap_err();
+        assert!(
+            matches!(err, LegadoError::Database(_)),
+            "非法条目应报 Database 错误"
+        );
+
+        // 批次内已执行的 REPLACE 被回滚：存量行保持原值
+        let name: String = conn
+            .query_row(
+                "SELECT bookSourceName FROM book_sources WHERE bookSourceUrl='https://p11-rollback.example'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(name, "存量名称", "整批失败时第 1 条 REPLACE 必须回滚");
+
+        // 零新增：第 2 条新增 URL 无残留，总量不变
+        let new_rows: i32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM book_sources WHERE bookSourceUrl='https://p11-rollback-new.example'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(new_rows, 0, "整批失败时后续条目不得残留");
+        let total: i32 = conn
+            .query_row("SELECT COUNT(*) FROM book_sources", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(total, 1);
     }
 }

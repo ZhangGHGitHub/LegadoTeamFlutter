@@ -170,6 +170,26 @@ impl<'a> BookSourceRepository<'a> {
             .map_err(|e| LegadoError::Database(format!("更新书源变量失败: {e}")))?;
         Ok(affected > 0)
     }
+
+    /// 批量写入书源（单事务原子，P1-1 批量导入原子性）
+    ///
+    /// 复用 [`Repository::insert`]（INSERT OR REPLACE 全列 upsert，与
+    /// add_source/update_source 同一写实现）逐条写入，并通过
+    /// [`crate::connection::in_transaction`] 包成单个 DB 事务：
+    /// 任一条失败回滚整批（调用方看到 Err 时库内零改动，不出现前 k-1 条
+    /// 已提交的部分成功态）；全部成功提交后才返回 Ok。
+    ///
+    /// 与 `RoomImporter::import_book_sources` 共享同一事务边界实现；
+    /// 调用方若已持有外层事务则自动复用（不嵌套 BEGIN），提交/回滚由外层负责。
+    pub fn insert_batch(&self, items: &[BookSource]) -> LegadoResult<()> {
+        crate::connection::in_transaction(self.conn, "批量写入书源", |conn| {
+            let repo = BookSourceRepository::new(conn);
+            for item in items {
+                repo.insert(item)?;
+            }
+            Ok(())
+        })
+    }
 }
 
 impl<'a> Repository<BookSource> for BookSourceRepository<'a> {
@@ -580,5 +600,55 @@ mod tests {
 
         // 书源不存在 → false
         assert!(!repo.update_variable("不存在", "x").unwrap());
+    }
+
+    // ─── 批量写入原子性（P1-1） ──────────────────────────────────────────
+
+    /// 成功批次整体提交：2 条均入库
+    #[test]
+    fn test_insert_batch_commits_all_on_success() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookSourceRepository::new(db.connection());
+        let items = vec![
+            make_source("https://batch-ok-1.example", "批量一"),
+            make_source("https://batch-ok-2.example", "批量二"),
+        ];
+        repo.insert_batch(&items).unwrap();
+        assert_eq!(repo.count().unwrap(), 2);
+        assert!(repo
+            .find_by_url("https://batch-ok-1.example")
+            .unwrap()
+            .is_some());
+        assert!(repo
+            .find_by_url("https://batch-ok-2.example")
+            .unwrap()
+            .is_some());
+    }
+
+    /// 行级失败整批回滚：第 1 条合法、第 2 条被临时触发器 ABORT（确定性
+    /// 注入行级 SQL 失败，等价于唯一键冲突场景）→ 第 1 条也必须回滚，
+    /// 库内零新增
+    #[test]
+    fn test_insert_batch_rolls_back_on_row_failure() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        conn.execute_batch(
+            "CREATE TRIGGER trg_bs_batch_bomb BEFORE INSERT ON book_sources
+             WHEN NEW.bookSourceName = 'batch-bomb'
+             BEGIN SELECT RAISE(ABORT, 'batch-bomb'); END;",
+        )
+        .unwrap();
+
+        let repo = BookSourceRepository::new(conn);
+        let items = vec![
+            make_source("https://batch-rollback-ok.example", "batch-ok"),
+            make_source("https://batch-rollback-bomb.example", "batch-bomb"),
+        ];
+        let err = repo.insert_batch(&items).unwrap_err();
+        assert!(
+            matches!(err, LegadoError::Database(_)),
+            "第 2 条触发器 ABORT 应报 Database 错误"
+        );
+        assert_eq!(repo.count().unwrap(), 0, "第 2 条失败必须回滚第 1 条");
     }
 }

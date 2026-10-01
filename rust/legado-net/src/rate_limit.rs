@@ -180,6 +180,19 @@ struct IntervalState {
 impl IntervalRateLimiter {
     /// 按 concurrentRate 字符串解析；空/"0"/非法返回 None
     pub fn parse(concurrent_rate: &str) -> Option<Self> {
+        Self::parse_rate(concurrent_rate)
+            .map(|(access_limit, interval_ms)| Self::new(access_limit, interval_ms))
+    }
+
+    /// 解析 concurrentRate 为 `(accessLimit, interval 毫秒)`，不构造限流器
+    ///
+    /// 语义与 [`Self::parse`] 一致：`"N/interval"` → `(N, interval)`；
+    /// 纯 `"N"` → `(1, N)`；空 / `"0"` / 非法（含 0 值与负数）→ `None`。
+    ///
+    /// 供 `legado-fetcher` 的 `RateLimiterRegistry` 在书源 `concurrentRate`
+    /// 编辑后，用 [`Self::update_rate`] 原地刷新既有 limiter 配置
+    /// （保留当前窗口状态，而不是 remove 后重建）。
+    pub fn parse_rate(concurrent_rate: &str) -> Option<(u32, u64)> {
         let rate = concurrent_rate.trim();
         if rate.is_empty() || rate == "0" {
             return None;
@@ -190,14 +203,26 @@ impl IntervalRateLimiter {
             if access_limit == 0 || interval_ms == 0 {
                 return None;
             }
-            Some(Self::new(access_limit, interval_ms))
+            Some((access_limit, interval_ms))
         } else {
             let interval_ms: u64 = rate.parse().ok()?;
             if interval_ms == 0 {
                 return None;
             }
-            Some(Self::new(1, interval_ms))
+            Some((1, interval_ms))
         }
+    }
+
+    /// 原地更新访问上限与窗口间隔，保留当前固定窗口的起点与已用次数
+    ///
+    /// 对齐上游 Kotlin `ConcurrentRateLimiter.updateConcurrentRate` 的
+    /// `record.time / record.frequency` 保留语义（不重置窗口）；调用方
+    /// 需保证 `access_limit` / `interval_ms` 均大于 0（[`Self::parse_rate`]
+    /// 已校验）。
+    pub fn update_rate(&self, access_limit: u32, interval_ms: u64) {
+        let mut s = self.state.lock().unwrap();
+        s.access_limit = access_limit;
+        s.interval = Duration::from_millis(interval_ms);
     }
 
     /// 直接以 access_limit / interval 毫秒构造

@@ -232,6 +232,38 @@ impl Database {
     }
 }
 
+/// 在单个数据库事务内执行批量写入闭包（批量导入共享事务边界，P1-1）
+///
+/// 语义：
+/// - **autocommit 连接**：`BEGIN` → 执行闭包 → 成功 `COMMIT` 后才返回 `Ok`；
+///   闭包返回 `Err` 时 `Transaction` 在 drop 中回滚，调用方观察到 `Err` 且
+///   库内零改动（不会出现前 k-1 条已提交、第 k 条失败的部分成功态）。
+/// - **已处于外层显式事务内**（`is_autocommit() == false`）：不再发起
+///   `BEGIN`，直接在既有事务内执行闭包，避免 "cannot start a transaction
+///   within a transaction" 嵌套错误；提交/回滚由外层事务负责（组合语义）。
+///
+/// 背景：rusqlite 0.31 的 `Connection::transaction` 需要 `&mut Connection`，
+/// 而本项目连接经 r2d2 池共享为 `&Connection`，故沿用项目既有的
+/// `unchecked_transaction()` 模式（见 source_switch / reader / toc_update）。
+pub fn in_transaction<T, F>(conn: &Connection, context: &str, f: F) -> LegadoResult<T>
+where
+    F: FnOnce(&Connection) -> LegadoResult<T>,
+{
+    if !conn.is_autocommit() {
+        // 外层事务已生效（unchecked_transaction 的 BEGIN 已执行）：复用之，
+        // 不再嵌套 BEGIN；本层失败不替外层决定提交或回滚
+        return f(conn);
+    }
+
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| LegadoError::Database(format!("{context}: 开启事务失败: {e}")))?;
+    let result = f(conn)?;
+    tx.commit()
+        .map_err(|e| LegadoError::Database(format!("{context}: 提交事务失败: {e}")))?;
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -360,5 +392,79 @@ mod tests {
         drop(db);
         let _ = std::fs::remove_file(&db_path);
         let _ = std::fs::remove_dir(&dir);
+    }
+
+    // ─── 共享事务边界 in_transaction（P1-1 批量导入原子性） ───────────────
+
+    /// 闭包返回 Err：已执行的插入必须整体回滚，库内零改动
+    #[test]
+    fn test_in_transaction_rolls_back_on_error() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+        conn.execute_batch("CREATE TEMP TABLE tx_probe (id INTEGER)")
+            .unwrap();
+
+        let err = in_transaction(conn, "回滚测试", |conn| -> LegadoResult<()> {
+            conn.execute("INSERT INTO tx_probe (id) VALUES (1)", [])
+                .map_err(|e| LegadoError::Database(format!("插入失败: {e}")))?;
+            Err(LegadoError::Database("模拟第 2 条失败".into()))
+        })
+        .unwrap_err();
+        assert!(matches!(err, LegadoError::Database(_)));
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tx_probe", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 0, "闭包失败须回滚此前已执行的插入");
+    }
+
+    /// 闭包成功：整体提交，写入全部可见
+    #[test]
+    fn test_in_transaction_commits_on_success() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+        conn.execute_batch("CREATE TEMP TABLE tx_probe (id INTEGER)")
+            .unwrap();
+
+        in_transaction(conn, "提交测试", |conn| {
+            for id in 1..=2 {
+                conn.execute(
+                    "INSERT INTO tx_probe (id) VALUES (?1)",
+                    rusqlite::params![id],
+                )
+                .map_err(|e| LegadoError::Database(format!("插入失败: {e}")))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tx_probe", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    /// 已在外层事务内：复用外层事务而非嵌套 BEGIN（否则报
+    /// "cannot start a transaction within a transaction"）
+    #[test]
+    fn test_in_transaction_reuses_outer_transaction() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+        conn.execute_batch("CREATE TEMP TABLE tx_probe (id INTEGER)")
+            .unwrap();
+
+        let tx = conn.unchecked_transaction().unwrap();
+        in_transaction(conn, "内层", |conn| {
+            conn.execute("INSERT INTO tx_probe (id) VALUES (7)", [])
+                .map_err(|e| LegadoError::Database(format!("插入失败: {e}")))?;
+            Ok(())
+        })
+        .expect("外层事务内调用不得嵌套 BEGIN");
+        tx.commit().unwrap();
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tx_probe", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1, "内层写入应随外层提交落库");
     }
 }

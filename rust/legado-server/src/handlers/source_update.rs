@@ -278,6 +278,19 @@ pub async fn execute_update(
         let db = state.db.lock().await;
         match RoomImporter::import_book_sources(db.connection(), &import_json) {
             Ok(count) => {
+                // 整批写库成功后按本次实际导入书源（含 concurrentRate）刷新
+                // server registry；写库失败不刷新（避免未落库配置提前生效）
+                for item in &sources_to_import {
+                    let url = item
+                        .get("bookSourceUrl")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    let rate = item
+                        .get("concurrentRate")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    crate::handlers::web_book::refresh_source_rate_limit(url, rate);
+                }
                 // 区分新增和更新
                 for item in &sources_to_import {
                     let url = item
@@ -667,6 +680,82 @@ mod tests {
 
         // 应该返回错误（网络不可达），但不是 404
         assert_ne!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// execute_update 经 RoomImporter 批量导入后刷新本次书源：
+    /// 既有 limiter 由旧率 1/10000 更新为远端新率 3/10000，旧快照 acquire 立即放行
+    /// （未刷新会沿用旧率等满 10s 窗口 → 300ms 超时失败）
+    #[tokio::test]
+    async fn test_execute_update_refreshes_rate_limiter() {
+        use std::time::Duration;
+
+        use legado_core::models::BookSource;
+
+        let state = make_test_state();
+        let url = "https://server-ratelimit-batch.example/";
+
+        // 本地已有旧率书源，并让 server registry 对其建立 limiter（窗口已用 1 次）
+        {
+            let db = state.db.lock().await;
+            RoomImporter::import_book_sources(
+                db.connection(),
+                &json!([{
+                    "bookSourceUrl": url,
+                    "bookSourceName": "旧书源",
+                    "concurrentRate": "1/10000"
+                }])
+                .to_string(),
+            )
+            .expect("本地书源播种应成功");
+        }
+        let stale = BookSource {
+            book_source_url: url.to_string(),
+            concurrent_rate: Some("1/10000".to_string()),
+            ..BookSource::default()
+        };
+        crate::handlers::web_book::rate_limiter()
+            .acquire(&stale)
+            .await;
+
+        // 回环仓库返回同 URL 新率 3/10000（只更新已有书源）
+        let remote = json!([{
+            "bookSourceUrl": url,
+            "bookSourceName": "新书源",
+            "concurrentRate": "3/10000",
+            "lastUpdateTime": 9999
+        }])
+        .to_string();
+        let addr = spawn_source_repo_mock(4, vec![("/repo.json".to_string(), remote)]);
+
+        let app = create_router(state);
+        let body = serde_json::to_string(&json!({
+            "repo_url": format!("http://{addr}/repo.json"),
+            "only_update_existing": false
+        }))
+        .unwrap();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sources/update")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "回环仓库可达，更新应成功");
+
+        // 刷新后：旧快照 acquire 立即放行
+        let passed = tokio::time::timeout(
+            Duration::from_millis(300),
+            crate::handlers::web_book::rate_limiter().acquire(&stale),
+        )
+        .await;
+        assert!(
+            passed.is_ok(),
+            "execute_update 批量导入成功后必须刷新 server registry"
+        );
     }
 
     #[test]
