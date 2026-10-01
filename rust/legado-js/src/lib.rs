@@ -25,9 +25,14 @@ pub mod engine;
 #[cfg(feature = "quickjs")]
 pub mod engine_cache;
 pub mod engine_pool;
+/// QuickJS 执行器适配（P5 下沉：原 ffi `js_executor::quickjs_impl`）
+#[cfg(feature = "quickjs")]
+pub mod executor;
 pub mod host_api;
 pub mod js_source;
 pub mod jslib_normalize;
+/// loginCheckJs 响应解析内核（P5 下沉：ffi/server 共享单一实现）
+pub mod login_check;
 pub mod sandbox;
 pub mod scope;
 pub mod source_engine;
