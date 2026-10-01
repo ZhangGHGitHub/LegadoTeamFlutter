@@ -51,7 +51,7 @@
 | P2-2 | **已关闭** | 在 `rust/legado-ffi/src/api/source_rate_limit.rs` 与 `rust/legado-server/src/handlers/web_book.rs` 增加双宿主 `concurrentRate` registry 互认注释，明确当前不同进程/使用形态无实际双实例；未来同进程并用时若窗口分叉，统一改为静态 registry 或宿主注入 `Arc`。 |
 | P2-3 | **已知开销，不立项** | REST JSON 序列化往返属于当前架构已知开销，独立审查确认不改实现、不新增任务。 |
 
-后续 P2 候选：`rust/legado-js/src/host_api/quickjs_impl.rs:5976` 仍读取 `../legado-ffi/tests/fixtures/songhe`，属于同类跨 crate fixture 引用；本次仅登记，不实施。
+后续 P2 候选已关闭（提交 `1d81363591`）：将 `legado-js` QuickJS 测试使用的 `detail.json`、`chapters.json` 从 `rust/legado-ffi/tests/fixtures/songhe/` 迁入 `rust/legado-js/tests/fixtures/songhe/`，并将 `quickjs_impl.rs` 改为 crate-local 路径，新增夹具存在性与路径守卫；因 FFI 零引用，原 FFI `detail.json`、`chapters.json` 已删除。`search.json` 因 FFI examples 仍有依赖，在 FFI 保留原件并在 `legado-js` 保留同源副本；`source.json` 继续保留在 FFI，供 FFI examples 使用，未迁移。两份 `search.json` 必须双处同步，夹具清单、来源、sha256 与双同步纪律以 `rust/legado-js/tests/fixtures/README.md` 为准。
 
 ## 四、裁决记录（2026-09-30 用户三项决定）
 
