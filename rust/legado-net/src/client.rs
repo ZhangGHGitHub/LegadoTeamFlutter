@@ -200,9 +200,14 @@ impl LegadoClient {
             builder = builder.danger_accept_invalid_certs(true);
         }
 
-        // 重定向策略
+        // 重定向策略（P2-19）：跟随链显式放宽到 20 跳，对齐上游 OkHttp
+        // 默认（`MAX_FOLLOW_UPS = 20`）。reqwest `Policy::default()` 仅 10 跳
+        // （`Policy::limited(10)`），长重定向链（站点跳登录页再跳回等）会
+        // 在第 11 跳提前报 "error following redirect"。
+        // 第 21 跳仍会停止：`Policy::limited(20)` 在 `previous.len() > 20`
+        // 时报 TooManyRedirects（previous 含初始 URL），即最多跟随 20 跳。
         if config.follow_redirects {
-            builder = builder.redirect(Policy::default());
+            builder = builder.redirect(Policy::limited(20));
         } else {
             builder = builder.redirect(Policy::none());
         }
@@ -1705,6 +1710,193 @@ mod tests {
             !body.contains("user-agent: null"),
             "UA=\"null\" 不应下发（沿用旧拦截器跳过语义）: {}",
             resp.body
+        );
+    }
+
+    // ─── P2-19：重定向上限 20 跳（对齐上游 OkHttp） ─────────────
+
+    /// 本地重定向链服务器（离线回环，不依赖公网）
+    ///
+    /// 路径约定（`N` 为链内序号）：
+    /// - `/a/N`：`N < 20` → 302 `Location: /a/{N+1}`；`N == 20` → 200 `chain-a-final`
+    ///   —— 恰好 20 跳后到达终态；
+    /// - `/b/N`：`N <= 20` → 302 `Location: /b/{N+1}`；`N >= 21` → 200 `chain-b-final`
+    ///   —— 第 21 跳目标存在但不应被客户端触达（若被触达则计数暴露）。
+    ///
+    /// 返回 `(监听地址, 总请求计数, /b/21 命中计数)`；计数在响应写出**前**
+    /// 递增，故客户端收到响应时计数必已更新，断言无竞态。
+    async fn spawn_redirect_chain_server() -> (
+        std::net::SocketAddr,
+        Arc<std::sync::atomic::AtomicUsize>,
+        Arc<std::sync::atomic::AtomicUsize>,
+    ) {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        fn chain_index(path: &str, prefix: &str) -> Option<usize> {
+            path.strip_prefix(prefix)?.parse().ok()
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let total = Arc::new(AtomicUsize::new(0));
+        let b21_hits = Arc::new(AtomicUsize::new(0));
+        let total_srv = Arc::clone(&total);
+        let b21_srv = Arc::clone(&b21_hits);
+
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                let total = Arc::clone(&total_srv);
+                let b21 = Arc::clone(&b21_srv);
+                tokio::spawn(async move {
+                    // 读取请求头至 \r\n\r\n（GET 无请求体）
+                    let mut head: Vec<u8> = Vec::new();
+                    loop {
+                        let mut b = [0u8; 1];
+                        match sock.read(&mut b).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(_) => {}
+                        }
+                        head.push(b[0]);
+                        if head.ends_with(b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    let head_str = String::from_utf8_lossy(&head);
+                    let path = head_str
+                        .lines()
+                        .next()
+                        .and_then(|l| l.split_whitespace().nth(1))
+                        .unwrap_or("/")
+                        .to_string();
+                    total.fetch_add(1, Ordering::SeqCst);
+
+                    let (status_line, location, body) = if let Some(n) = chain_index(&path, "/a/") {
+                        if n < 20 {
+                            ("302 Found", Some(format!("/a/{}", n + 1)), String::new())
+                        } else {
+                            ("200 OK", None, "chain-a-final".to_string())
+                        }
+                    } else if let Some(n) = chain_index(&path, "/b/") {
+                        if n >= 21 {
+                            b21.fetch_add(1, Ordering::SeqCst);
+                        }
+                        if n <= 20 {
+                            ("302 Found", Some(format!("/b/{}", n + 1)), String::new())
+                        } else {
+                            ("200 OK", None, "chain-b-final".to_string())
+                        }
+                    } else {
+                        ("404 Not Found", None, "not-found".to_string())
+                    };
+
+                    let mut resp = format!("HTTP/1.1 {status_line}\r\n");
+                    if let Some(loc) = location {
+                        resp.push_str(&format!("Location: {loc}\r\n"));
+                    }
+                    resp.push_str(&format!(
+                        "Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    ));
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                    let _ = sock.shutdown().await;
+                });
+            }
+        });
+
+        (addr, total, b21_hits)
+    }
+
+    /// P2-19：`follow_redirects=true` 必须能跟随 20 跳（reqwest 旧默认 10 跳会中途失败）
+    ///
+    /// 链 `/a/0 → ... → /a/20`：恰好 20 次 302 后到达终态 200。若上限仍为
+    /// `Policy::default()`（= `limited(10)`），客户端会在 `/a/10` 处返回
+    /// "error following redirect"，本用例必红。
+    #[tokio::test]
+    async fn test_follow_redirects_follows_20_hops() {
+        let (addr, total, _b21) = spawn_redirect_chain_server().await;
+        // no_proxy=true：回环测试流量不得经系统/环境变量代理路由
+        let client = LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
+
+        let resp = client
+            .get(&format!("http://{addr}/a/0"), None)
+            .await
+            .expect("20 跳重定向链应成功（Policy::limited(20)）");
+
+        assert_eq!(resp.status, 200, "20 跳后应到达终态 200");
+        assert_eq!(resp.body, "chain-a-final");
+        assert!(
+            resp.url.ends_with("/a/20"),
+            "最终 URL 应为第 20 跳目标 /a/20: {}",
+            resp.url
+        );
+        assert_eq!(
+            total.load(std::sync::atomic::Ordering::SeqCst),
+            21,
+            "应恰好发出 21 次请求（初始 /a/0 + 20 次重定向）"
+        );
+    }
+
+    /// P2-19：重定向链超过 20 跳时必须停止，第 21 跳目标不得被请求
+    ///
+    /// 链 `/b/0 → ... → /b/21`（`/b/21` 为终态 200）：客户端在收到 `/b/20`
+    /// 的 302 时判定第 21 跳超限并返回 "error following redirect"。若上限被
+    /// 放宽到 >= 21，请求会成功到达 `/b/21`（命中计数暴露），本用例必红。
+    #[tokio::test]
+    async fn test_follow_redirects_stops_at_21st_hop() {
+        let (addr, total, b21_hits) = spawn_redirect_chain_server().await;
+        let client = LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
+
+        let err = client
+            .get(&format!("http://{addr}/b/0"), None)
+            .await
+            .expect_err("第 21 跳必须被判超限而失败");
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("redirect"),
+            "错误应来自重定向策略（error following redirect）: {msg}"
+        );
+        assert_eq!(
+            b21_hits.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "第 21 跳目标 /b/21 不得被请求"
+        );
+        assert_eq!(
+            total.load(std::sync::atomic::Ordering::SeqCst),
+            21,
+            "应恰好请求 /b/0../b/20 共 21 次后停止"
+        );
+    }
+
+    /// P2-19 回归：`follow_redirects=false` 仍为 `Policy::none()`——302 原样返回
+    #[tokio::test]
+    async fn test_no_follow_redirects_returns_302_unchanged() {
+        let (addr, total, _b21) = spawn_redirect_chain_server().await;
+        let client = LegadoClient::new(LegadoClientConfig {
+            follow_redirects: false,
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
+
+        let resp = client
+            .get(&format!("http://{addr}/a/0"), None)
+            .await
+            .expect("Policy::none() 下 302 应作为普通响应返回");
+        assert_eq!(resp.status, 302, "不跟随策略下应返回 302 原响应");
+        assert_eq!(
+            total.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "Policy::none() 不得发出第 2 次请求"
         );
     }
 }
