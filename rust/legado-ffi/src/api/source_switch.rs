@@ -487,7 +487,7 @@ pub async fn run_change_source_stream<F>(
             &sources,
             accumulated,
             &options,
-            super::web_book::RealBookSourceFetcher::new,
+            super::web_book::real_fetcher,
         )
         .await
         .unwrap_or_default()
@@ -653,7 +653,7 @@ pub fn switch_book_source(
     new_source_url: &str,
     new_book_url: &str,
 ) -> LegadoResult<String> {
-    let fetcher = super::web_book::RealBookSourceFetcher::new()?;
+    let fetcher = super::web_book::real_fetcher()?;
     switch_book_source_with(&fetcher, book_url, new_source_url, new_book_url)
 }
 
@@ -1093,7 +1093,7 @@ pub fn switch_book_source_prefetch(
     new_source_url: &str,
     new_book_url: &str,
 ) -> LegadoResult<String> {
-    let fetcher = super::web_book::RealBookSourceFetcher::new()?;
+    let fetcher = super::web_book::real_fetcher()?;
     switch_book_source_prefetch_with(&fetcher, book_url, new_source_url, new_book_url)
 }
 
@@ -1350,7 +1350,7 @@ fn enrich_switch_candidates(
         sources,
         candidates,
         options,
-        super::web_book::RealBookSourceFetcher::new,
+        super::web_book::real_fetcher,
     ))
 }
 
@@ -1367,7 +1367,7 @@ fn enrich_switch_candidates(
 ///   `primaryStr()`），选中源时 [`switch_book_source_prefetch`] 命中免抓取。
 ///
 /// `make_fetcher` 为可注入 fetcher 工厂：生产路径传
-/// `|_| RealBookSourceFetcher::new()`；单测注入 Mock 验证并发上限/
+/// `|_| real_fetcher()`；单测注入 Mock 验证并发上限/
 /// 失败隔离/顺序恢复（生产行为不变）。
 async fn enrich_switch_candidates_async<F, MF>(
     sources: &[BookSource],

@@ -11,6 +11,8 @@ legado-core = { path = "../legado-core" }
 legado-parser = { path = "../legado-parser" }
 legado-net = { path = "../legado-net" }
 legado-js = { path = "../legado-js" }
+# [P5 子批 2a | 2026-10-01] 书源抓取本体（web_book/js 适配/限流表/book_type）
+legado-fetcher = { path = "../legado-fetcher" }
 legado-book = { path = "../legado-book" }
 legado-db = { path = "../legado-db" }
 legado-server = { path = "../legado-server" }
@@ -41,7 +43,9 @@ libc = "0.2"
 
 [features]
 default = []
-quickjs = ["legado-js/quickjs"]
+# quickjs 透传 legado-js 与 legado-fetcher：两 crate 的 JS 构造档必须一致，
+# 否则 ffi 侧 re-export 会取到 fetcher 的非 quickjs 降级实现
+quickjs = ["legado-js/quickjs", "legado-fetcher/quickjs"]
 
 # 调试 example 依赖 quickjs 路径的 QuickJsExecutor：无 quickjs 构建时跳过编译
 [[example]]

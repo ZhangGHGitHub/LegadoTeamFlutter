@@ -1130,20 +1130,10 @@ pub(crate) const SWITCH_SOURCE_TIMEOUT: Duration = Duration::from_secs(60);
 /// （Parser/JSON/XPath/put/模板等）维持既有 `unwrap_or_default()` 吞错语义
 /// → 空列表 → S0-E 空列表详情回退路径保持可达。
 /// 此前 `map_err` 全类放行使非 JS 错误也把整源打成失败、超出注释声明。
-pub(crate) fn book_list_elements_or_default(
-    result: LegadoResult<Vec<String>>,
-) -> LegadoResult<Vec<String>> {
-    match result {
-        Ok(list) => Ok(list),
-        Err(LegadoError::JsEngine(msg)) => Err(LegadoError::JsEngine(format!(
-            "搜索结果列表解析失败: {msg}"
-        ))),
-        Err(other) => {
-            eprintln!("[bookList] 非 JS 错误维持吞错语义（空列表）: {other}");
-            Ok(Vec::new())
-        }
-    }
-}
+///
+/// P5 子批 2a：实现随 web_book 抓取本体下沉 `legado_fetcher::web_book`
+/// （fetch 解析路径共用）；此处 re-export 保持调用点零改动。
+pub(crate) use legado_fetcher::web_book::book_list_elements_or_default;
 
 pub(crate) async fn search_single_source(
     client: &LegadoClient,
@@ -1396,7 +1386,7 @@ fn parse_search_response_ex(
             base_url,
         )
     {
-        let info = crate::api::web_book::RealBookSourceFetcher::parse_book_info_from_body(
+        let info = crate::api::web_book::parse_book_info_from_body(
             source,
             body.to_string(),
             base_url,
@@ -1404,7 +1394,7 @@ fn parse_search_response_ex(
             true,
             "",
             "",
-        );
+        )?;
         return Ok(if info.name.is_empty() {
             vec![]
         } else {
@@ -1479,7 +1469,7 @@ fn parse_search_response_ex(
         if has_pattern {
             return Ok(Vec::new());
         }
-        let info = crate::api::web_book::RealBookSourceFetcher::parse_book_info_from_body(
+        let info = crate::api::web_book::parse_book_info_from_body(
             source,
             body.to_string(),
             base_url,
@@ -1487,7 +1477,7 @@ fn parse_search_response_ex(
             true,
             "",
             "",
-        );
+        )?;
         return Ok(if info.name.is_empty() {
             vec![]
         } else {
@@ -2091,32 +2081,15 @@ mod s0e_tests {
     }
 }
 
-/// BookType 位标志（对齐原版 `io.legado.app.constant.BookType`）
-pub(crate) mod book_type {
-    /// 4 视频
-    pub const VIDEO: i32 = 0b100;
-    /// 8 文本
-    pub const TEXT: i32 = 0b1000;
-    /// 32 音频
-    pub const AUDIO: i32 = 0b100000;
-    /// 64 图片（漫画）
-    pub const IMAGE: i32 = 0b1000000;
-    /// 128 只提供下载服务的网站
-    pub const WEB_FILE: i32 = 0b10000000;
-}
-
-/// 书源类型 → BookType（对齐原版 `BookSource.getBookType()`：
-/// file→text|webFile、image→image、audio→audio、video→video、其余→text）
-pub(crate) fn book_type_of_source(source_type: i32) -> i32 {
-    use legado_core::models::book_source_type as st;
-    match source_type {
-        st::FILE => book_type::TEXT | book_type::WEB_FILE,
-        st::IMAGE => book_type::IMAGE,
-        st::AUDIO => book_type::AUDIO,
-        st::VIDEO => book_type::VIDEO,
-        _ => book_type::TEXT,
-    }
-}
+/// BookType 位标志与书源类型换算（对齐原版 `io.legado.app.constant.BookType`）
+///
+/// P5 子批 2a：常量与换算函数已随迁 `legado_fetcher::book_type`（共享 crate
+/// 单一实现）；此处 re-export 保持 `book_type::TEXT` / `book_type_of_source`
+/// 路径与签名不变（explore_api 等调用方零改动）。`book_type` 模块仅测试引用
+/// （生产转换一律经 `book_type_of_source`），故按测试编译门控。
+#[cfg(test)]
+pub(crate) use legado_fetcher::book_type;
+pub(crate) use legado_fetcher::book_type::book_type_of_source;
 
 /// 字数格式化（对齐原版 `StringUtils.wordCountFormat(String)`：
 /// 纯数字 >10000 → 「x.x万字」；>0 → 「n字」；非数字原样；空/<=0 → None）

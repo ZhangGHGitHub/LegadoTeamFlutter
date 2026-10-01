@@ -102,22 +102,10 @@ pub fn eval_js_non_strict(guard: &legado_js::QuickJsEngine, code: &str) -> Resul
 /// 移除 jsLib 中 Rhino 特有行（`importClass`/`importPackage`/`Packages.` 行首），
 /// 使 QuickJS 可**完整**加载 jsLib 并保留全部函数定义（含截断点之后的
 /// `getConfig`/`getServerHost` 等）— 发现页修复（书山聚合等聚合源 ERROR）
-pub fn sanitize_js_lib_for_quickjs(js_lib: &str) -> String {
-    let mut out = String::with_capacity(js_lib.len() + 64);
-    for line in js_lib.lines() {
-        let t = line.trim_start();
-        if t.starts_with("importClass(")
-            || t.starts_with("importPackage(")
-            || t.starts_with("Packages.")
-        {
-            out.push_str("// [legado] Rhino 特有行已移除（QuickJS 兼容）\n");
-        } else {
-            out.push_str(line);
-            out.push('\n');
-        }
-    }
-    out
-}
+///
+/// P5 子批 2a：实现已随迁 `legado_fetcher::js_adapter`（共享 crate 单一实现），
+/// 本处保留同名 re-export（本模块内部调用与 ffi 调用方零改动）。
+pub use legado_fetcher::js_adapter::sanitize_js_lib_for_quickjs;
 
 /// explore/callback 上下文加载 jsLib：URL 映射（cap 3）→ 完整 → sanitize 后完整 →
 /// QuickJS 前缀 → 仅 host 声明

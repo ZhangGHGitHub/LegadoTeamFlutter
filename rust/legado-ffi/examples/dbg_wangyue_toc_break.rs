@@ -28,7 +28,6 @@
 
 use legado_core::models::BookSource;
 use legado_core::web_book::BookSourceFetcher;
-use legado_ffi::api::web_book::RealBookSourceFetcher;
 use legado_parser::HtmlParser;
 use std::collections::HashMap;
 use std::fs;
@@ -204,7 +203,7 @@ fn main() {
 
     // ── 2. 详情解析（公开 API，对齐换源 2a） ───────────────────────────────
     println!("\n############ 2. 公开 API 详情解析（tocUrl 推导） ############");
-    let fetcher = RealBookSourceFetcher::new().expect("fetcher new");
+    let fetcher = legado_ffi::api::web_book::real_fetcher().expect("fetcher new");
     let info = legado_ffi::runtime::block_on(async {
         fetcher
             .get_book_info_with_existing_and_vars(

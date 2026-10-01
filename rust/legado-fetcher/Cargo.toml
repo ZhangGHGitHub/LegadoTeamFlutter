@@ -1,0 +1,28 @@
+[package]
+name = "legado-fetcher"
+version = "0.2.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+legado-core = { path = "../legado-core" }
+legado-parser = { path = "../legado-parser" }
+legado-net = { path = "../legado-net" }
+legado-js = { path = "../legado-js" }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+regex = { workspace = true }
+futures = "0.3"
+
+[dev-dependencies]
+encoding_rs = "0.8"
+base64 = { workspace = true }
+# 测试支撑面（与 legado-ffi 同款）：cookie_store 等 test-support 门控 API
+legado-js = { path = "../legado-js", features = ["test-support"] }
+
+[features]
+default = []
+quickjs = ["legado-js/quickjs"]

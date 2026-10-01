@@ -1911,6 +1911,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "legado-fetcher"
+version = "0.2.0"
+dependencies = [
+ "base64",
+ "encoding_rs",
+ "futures",
+ "legado-core",
+ "legado-js",
+ "legado-net",
+ "legado-parser",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "legado-ffi"
 version = "0.2.0"
 dependencies = [
@@ -1922,6 +1939,7 @@ dependencies = [
  "legado-book",
  "legado-core",
  "legado-db",
+ "legado-fetcher",
  "legado-js",
  "legado-net",
  "legado-parser",

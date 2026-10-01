@@ -20,7 +20,7 @@
 //!
 //! 2026-09-19：全链路本即离线（127.0.0.1 记录型夹具服务器 + 纯 JSONPath
 //! 规则，不发外网请求），移除陈旧的 `#[ignore = "requires network access"]`。
-//! 注意：`RealBookSourceFetcher::new()` 内部走 `http_state::shared_client()`
+//! 注意：`real_fetcher()` 内部走 `http_state::shared_client()`
 //! （默认配置，随宿主 env/系统代理路由）——无代理环境全离线可跑；代理环境
 //! 下回环流量可能被劫持（需经 http_state / web_book 注入 no_proxy 客户端，
 //! 两文件在本次文件避让范围内，属后续项）。
@@ -32,7 +32,6 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 
-use crate::api::web_book::RealBookSourceFetcher;
 use legado_core::models::book_source::BookSource;
 #[cfg_attr(not(feature = "quickjs"), allow(unused_imports))]
 use legado_core::models::rule::{BookInfoRule, SearchRule, TocRule};
@@ -162,7 +161,7 @@ async fn get_chapters_with_vars_fetches_passed_toc_url_without_rederive() {
         ..BookSource::default()
     };
 
-    let fetcher = RealBookSourceFetcher::new().expect("real fetcher");
+    let fetcher = crate::api::web_book::real_fetcher().expect("real fetcher");
     let mut vars = HashMap::new();
     vars.insert("bookId".to_string(), "1100468021".to_string());
 
@@ -233,7 +232,7 @@ async fn known_toc_login_check_js_blocks_when_not_logged_in() {
         ..BookSource::default()
     };
 
-    let fetcher = RealBookSourceFetcher::new().expect("real fetcher");
+    let fetcher = crate::api::web_book::real_fetcher().expect("real fetcher");
     let vars = HashMap::new();
     let err = fetcher
         .get_chapters_with_vars(&source, &format!("{base}/all-chapter"), &vars)
@@ -267,7 +266,7 @@ async fn known_toc_login_check_js_degrades_without_quickjs() {
         ..BookSource::default()
     };
 
-    let fetcher = RealBookSourceFetcher::new().expect("real fetcher");
+    let fetcher = crate::api::web_book::real_fetcher().expect("real fetcher");
     let vars = HashMap::new();
     let chapters = fetcher
         .get_chapters_with_vars(&source, &format!("{base}/all-chapter"), &vars)
@@ -301,7 +300,7 @@ async fn known_toc_js_chapter_list_reads_book_name_hint() {
         ..BookSource::default()
     };
 
-    let fetcher = RealBookSourceFetcher::new().expect("real fetcher");
+    let fetcher = crate::api::web_book::real_fetcher().expect("real fetcher");
     let vars = HashMap::new();
 
     // hint 存在：章节标题 = 详情步解析出的书名
@@ -354,7 +353,7 @@ async fn toc_embedded_in_detail_page_url() {
         ..BookSource::default()
     };
 
-    let fetcher = RealBookSourceFetcher::new().expect("real fetcher");
+    let fetcher = crate::api::web_book::real_fetcher().expect("real fetcher");
     let chapters = fetcher
         .get_chapters_with_vars(&source, &format!("{base}/detail"), &HashMap::new())
         .await
@@ -445,7 +444,7 @@ async fn e2e_fetch_page_path_carries_request_domain_js_cookie() {
         ..BookSource::default()
     };
 
-    let fetcher = RealBookSourceFetcher::new().expect("real fetcher");
+    let fetcher = crate::api::web_book::real_fetcher().expect("real fetcher");
     let books = fetcher
         .search(&source, "k", 1)
         .await
@@ -505,7 +504,7 @@ async fn e2e_fetch_simple_cached_path_carries_request_domain_js_cookie() {
         ..BookSource::default()
     };
 
-    let fetcher = RealBookSourceFetcher::new().expect("real fetcher");
+    let fetcher = crate::api::web_book::real_fetcher().expect("real fetcher");
     let chapters = fetcher
         .get_chapters_with_vars(&source, &write_url, &HashMap::new())
         .await
