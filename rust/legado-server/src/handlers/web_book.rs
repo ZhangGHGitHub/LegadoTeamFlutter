@@ -5,8 +5,30 @@
 //! - POST /api/webbook/info     — 获取书籍详情
 //! - POST /api/webbook/chapters — 获取章节列表
 //! - POST /api/webbook/content  — 获取章节内容
+//!
+//! [P5-1 链 b] 抓取本体改用共享 crate `legado-fetcher`（与 App/ffi 主链路
+//! 同一 `RealBookSourceFetcher` 实现）：本文件此前的本地阉割分叉版（无
+//! rate limit 门控/webView 通道/charset 三级解码/重定向 final_url/data: URI
+//! 等）已整体删除。宿主注入面经 [`server_deps`] 组装：进程级限速注册表
+//! （REST 端点获得源级限速门控的关键）+ server 原构造语义的 HTTP 客户端。
+//! `login_header`/`book_variable`/`source_context` 起步不注入（方案登记的
+//! 「行为无损起点」）。
+//!
+//! [P5-1 链 b2] 四个 handler 改调共享 fetcher 的**自由入口**
+//! （`legado_fetcher::web_book::webbook_search/info/chapters/content`），
+//! 与 App/ffi 主链路完整对齐。引擎入口（[`build_engine`]）不可达的路径
+//! 由此在 REST 上打通：
+//! - mainJs JS 书源分派（JS 源经 REST 可用；quickjs 档真执行）；
+//! - `begin_book_flow` 流程生命周期（flow scope 写入进程级单槽）与详情/
+//!   目录阶段的 book 元信息、章节→book 缓存记录；
+//! - 详情/目录的 DB `books.variable` `{{key}}` 变量链**落点**——但 server
+//!   注入面 `book_variable` 保持 None（server 侧未接 DB 书籍变量缓存模块），
+//!   该链在 server 无值可读，维持优雅降级（见 [`server_deps`] 边界说明）。
+//!
+//! [`build_engine`] 保留：reader/audio/toc_update 兄弟 handler 仍经引擎入口
+//! 复用同一注入面。
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use axum::extract::State;
 use axum::Json;
@@ -15,9 +37,15 @@ use serde::{Deserialize, Serialize};
 use crate::error::ApiError;
 use crate::state::AppState;
 use legado_core::models::BookSource;
-use legado_core::web_book::{
-    BookSourceFetcher, WebBookEngine, WebBookInfo, WebChapter, WebSearchResult,
-};
+use legado_core::web_book::{WebBookEngine, WebBookInfo, WebChapter, WebSearchResult};
+use legado_core::{LegadoError, LegadoResult};
+use legado_fetcher::deps::FetcherDeps;
+use legado_fetcher::rate_limit::RateLimiterRegistry;
+use legado_net::{LegadoClient, LegadoClientConfig};
+
+/// 共享 fetcher 类型（P5-1 链 b）：`toc_update` 等兄弟模块经本路径引用
+/// （与 ffi 侧 `pub use legado_fetcher::web_book::RealBookSourceFetcher` 同款收口）
+pub(crate) use legado_fetcher::web_book::RealBookSourceFetcher;
 
 // ─── 请求/响应类型 ─────────────────────────────────────────────────────────────
 
@@ -83,681 +111,70 @@ pub struct WebBookContentResponse {
     pub chapter_title: String,
 }
 
-// ─── 真实 Fetcher 实现 ─────────────────────────────────────────────────────────
+// ─── 宿主注入面（P5-1 链 b：共享 fetcher 接入） ───────────────────────────────────
 
-use legado_net::{LegadoClient, LegadoClientConfig};
-use legado_parser::{AnalyzeRule, AnalyzeUrl, RequestMethod};
+/// 进程级限速注册表（对齐 ffi `api::source_rate_limit::registry`）：
+/// 跨请求保持各书源 `concurrentRate` 窗口状态。旧 server 本地分叉版
+/// 零限速，切换后 REST 端点获得与 App 主链路一致的源级限速门控。
+static RATE_LIMITER: OnceLock<Arc<RateLimiterRegistry>> = OnceLock::new();
 
-/// 真实书源数据抓取器
+fn rate_limiter() -> Arc<RateLimiterRegistry> {
+    Arc::clone(RATE_LIMITER.get_or_init(|| Arc::new(RateLimiterRegistry::new())))
+}
+
+/// 组装 server 宿主注入面
 ///
-/// 基于 legado-net HTTP 客户端 + legado-parser 规则解析引擎，
-/// 实现完整的搜索→详情→目录→正文链路。
-pub(crate) struct RealBookSourceFetcher {
-    client: LegadoClient,
+/// - `client`：按 server 原构造语义新建 `LegadoClientConfig::default()`
+///   客户端（原 P2-A 后为单次构造 + panic；本次保留单次构造语义但
+///   改为错误上报 → handler 500，不 panic）；
+/// - `rate_limiter`：进程级注册表（见 [`rate_limiter`]）；
+/// - `login_header` / `book_variable` / `source_context`：起步不注入
+///   （方案登记的「行为无损起点」：server 侧无等价的登录头/书籍变量
+///   DB 缓存模块与书源 JS setup 构造器），链 b2 改走自由入口后依旧保持：
+///   - `login_header`（经 `parse_source_headers`）与 `source_context`
+///     （经 setup 脚本）在共享 fetcher 路径即时生效——None 即不注入；
+///   - `book_variable` 是自由入口详情/目录 `{{key}}` 变量链的落点：
+///     **JS 书源分派已可用（mainJs 不依赖该闭包）**，而 DB 变量链因
+///     server 未接书籍变量缓存模块保持 None（无值可读 → `@put` 导出
+///     兜底，行为=不注入），后续接 DB 时在此补闭包即可。
+fn server_deps() -> LegadoResult<FetcherDeps> {
+    let client = LegadoClient::new(LegadoClientConfig::default())
+        .map_err(|e| LegadoError::Internal(format!("LegadoClient init: {e}")))?;
+    Ok(FetcherDeps::new(client).with_rate_limiter(rate_limiter()))
 }
 
-impl RealBookSourceFetcher {
-    fn new() -> Self {
-        let client = LegadoClient::new(LegadoClientConfig::default()).expect("LegadoClient init");
-        Self { client }
-    }
-
-    /// 解析书源 header 字段为请求头
-    fn parse_source_headers(
-        source: &BookSource,
-    ) -> Option<std::collections::HashMap<String, String>> {
-        source
-            .header
-            .as_ref()
-            .and_then(|h| serde_json::from_str::<std::collections::HashMap<String, String>>(h).ok())
-    }
-
-    /// 根据 AnalyzeUrl 解析结果发起 HTTP 请求，返回响应体文本
-    async fn fetch_url(
-        &self,
-        analyze_url: &AnalyzeUrl,
-        source_headers: Option<&std::collections::HashMap<String, String>>,
-    ) -> legado_core::LegadoResult<String> {
-        let url = analyze_url.url();
-        if url.is_empty() {
-            return Err(legado_core::LegadoError::Internal(
-                "AnalyzeUrl 解析后 URL 为空".into(),
-            ));
-        }
-
-        // 合并请求头：书源全局 header + AnalyzeUrl 解析出的 header
-        let mut headers = source_headers.cloned().unwrap_or_default();
-        headers.extend(analyze_url.headers().clone());
-        let headers_opt = if headers.is_empty() {
-            None
-        } else {
-            Some(headers)
-        };
-
-        let response = match analyze_url.method() {
-            RequestMethod::Post => {
-                let body = analyze_url.request_body();
-                self.client.post(url, body, headers_opt).await?
-            }
-            _ => self.client.get(url, headers_opt).await?,
-        };
-
-        if !response.is_success() {
-            return Err(legado_core::LegadoError::Network(format!(
-                "HTTP {} for {}",
-                response.status, url
-            )));
-        }
-
-        Ok(response.body)
-    }
-
-    /// 直接 GET 一个 URL（用于章节内容等简单场景）
-    async fn fetch_simple(
-        &self,
-        url: &str,
-        source_headers: Option<&std::collections::HashMap<String, String>>,
-    ) -> legado_core::LegadoResult<String> {
-        let headers_opt = source_headers.cloned();
-        let response = self.client.get(url, headers_opt).await?;
-        if !response.is_success() {
-            return Err(legado_core::LegadoError::Network(format!(
-                "HTTP {} for {}",
-                response.status, url
-            )));
-        }
-        Ok(response.body)
-    }
-}
-
-impl BookSourceFetcher for RealBookSourceFetcher {
-    async fn search(
-        &self,
-        source: &BookSource,
-        query: &str,
-        page: i32,
-    ) -> legado_core::LegadoResult<Vec<WebSearchResult>> {
-        let search_url = source.search_url.as_deref().unwrap_or("");
-        if search_url.is_empty() {
-            return Err(legado_core::LegadoError::Internal(
-                "书源未配置 searchUrl".into(),
-            ));
-        }
-
-        let source_headers = Self::parse_source_headers(source);
-
-        // 1. 解析搜索 URL 模板
-        let analyze_url = AnalyzeUrl::new(
-            search_url,
-            Some(query),
-            Some(page.max(1) as u32),
-            &source.book_source_url,
-            source_headers.clone(),
-        );
-
-        // 2. 发起 HTTP 请求
-        let body = self
-            .fetch_url(&analyze_url, source_headers.as_ref())
-            .await?;
-
-        // [STAGE4-P36] 采用 loginCheckJs 修改后的响应（分叉点3，对齐原版
-        // analyzeBookList(baseUrl=res.url, body=res.body)）
-        let login_outcome =
-            crate::login_check::execute_login_check(source, &body, analyze_url.url(), 200)?;
-
-        // 3. 使用搜索规则解析结果
-        let search_rule = source.rule_search.as_ref();
-        let book_list_rule = search_rule
-            .and_then(|r| r.book_list.as_deref())
-            .unwrap_or("");
-
-        let base_url = login_outcome.url.clone();
-        let analyzer = AnalyzeRule::new(login_outcome.body, base_url.clone());
-
-        // 获取书籍列表元素
-        let elements = if book_list_rule.is_empty() {
-            // 无 bookList 规则时，尝试整体作为 JSON 解析
-            vec![analyzer.content().to_string()]
-        } else {
-            analyzer.get_elements(book_list_rule).unwrap_or_default()
-        };
-
-        let mut results = Vec::new();
-        for elem in elements.iter().take(50) {
-            let elem_analyzer = AnalyzeRule::new(elem.clone(), base_url.clone());
-
-            let name_rule = search_rule.and_then(|r| r.name.as_deref()).unwrap_or("");
-            let author_rule = search_rule.and_then(|r| r.author.as_deref()).unwrap_or("");
-            let book_url_rule = search_rule
-                .and_then(|r| r.book_url.as_deref())
-                .unwrap_or("");
-            let cover_url_rule = search_rule
-                .and_then(|r| r.cover_url.as_deref())
-                .unwrap_or("");
-            let intro_rule = search_rule.and_then(|r| r.intro.as_deref()).unwrap_or("");
-            let last_chapter_rule = search_rule
-                .and_then(|r| r.last_chapter.as_deref())
-                .unwrap_or("");
-            let kind_rule = search_rule.and_then(|r| r.kind.as_deref()).unwrap_or("");
-            let word_count_rule = search_rule
-                .and_then(|r| r.word_count.as_deref())
-                .unwrap_or("");
-
-            let name = elem_analyzer.get_string(name_rule).unwrap_or_default();
-            if name.is_empty() {
-                continue;
-            }
-
-            let author = elem_analyzer.get_string(author_rule).unwrap_or_default();
-            let book_url = elem_analyzer.get_string(book_url_rule).unwrap_or_default();
-            let cover_url = {
-                let v = elem_analyzer.get_string(cover_url_rule).unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            };
-            let intro = {
-                let v = elem_analyzer.get_string(intro_rule).unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            };
-            let latest_chapter = {
-                let v = elem_analyzer
-                    .get_string(last_chapter_rule)
-                    .unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            };
-            let kind = {
-                let v = elem_analyzer.get_string(kind_rule).unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            };
-            let word_count = {
-                let v = elem_analyzer
-                    .get_string(word_count_rule)
-                    .unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            };
-
-            results.push(WebSearchResult {
-                name,
-                author,
-                book_url,
-                cover_url,
-                intro,
-                latest_chapter,
-                source_url: source.book_source_url.clone(),
-                kind,
-                word_count,
-                // server 端点非类型分流主链路，恒 0（文本）；app 内 explore 走
-                // legado-ffi book_type_of_source 填充（发现页修复 A8）
-                book_type: 0,
-            });
-        }
-
-        Ok(results)
-    }
-
-    async fn get_book_info(
-        &self,
-        source: &BookSource,
-        book_url: &str,
-    ) -> legado_core::LegadoResult<WebBookInfo> {
-        let source_headers = Self::parse_source_headers(source);
-
-        // 1. 请求书籍详情页
-        let body = self.fetch_simple(book_url, source_headers.as_ref()).await?;
-
-        // 1.5 loginCheckJs（[STAGE4-P36] 采用 JS 修改后的响应体（分叉点3），
-        // 对齐原版 analyzeBookInfo(baseUrl=book.bookUrl, redirectUrl=res.url,
-        // body=res.body)，WebBook.kt:253-260：base URL 保持原详情页 URL，
-        // 仅 body 采用 JS 修改值；无配置/非 quickjs 直通时与原 body 等价）
-        let login_outcome = crate::login_check::execute_login_check(source, &body, book_url, 200)?;
-        let body = login_outcome.body;
-
-        // 2. 使用 bookInfo 规则解析
-        let info_rule = source.rule_book_info.as_ref();
-        let analyzer = AnalyzeRule::new(body, book_url.to_string());
-
-        let name = info_rule
-            .and_then(|r| r.name.as_deref())
-            .map(|rule| analyzer.get_string(rule).unwrap_or_default())
-            .unwrap_or_default();
-        let author = info_rule
-            .and_then(|r| r.author.as_deref())
-            .map(|rule| analyzer.get_string(rule).unwrap_or_default())
-            .unwrap_or_default();
-        let intro = info_rule
-            .and_then(|r| r.intro.as_deref())
-            .map(|rule| {
-                let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            })
-            .unwrap_or(None);
-        let cover_url = info_rule
-            .and_then(|r| r.cover_url.as_deref())
-            .map(|rule| {
-                let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            })
-            .unwrap_or(None);
-        let toc_url = info_rule
-            .and_then(|r| r.toc_url.as_deref())
-            .map(|rule| {
-                let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() {
-                    book_url.to_string()
-                } else {
-                    v
-                }
-            })
-            .unwrap_or_else(|| book_url.to_string());
-        let last_chapter = info_rule
-            .and_then(|r| r.last_chapter.as_deref())
-            .map(|rule| {
-                let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            })
-            .unwrap_or(None);
-        let categories = info_rule
-            .and_then(|r| r.kind.as_deref())
-            .map(|rule| {
-                let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() {
-                    vec![]
-                } else {
-                    v.split([',', '，', ' '])
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty())
-                        .collect()
-                }
-            })
-            .unwrap_or_default();
-        let word_count = info_rule
-            .and_then(|r| r.word_count.as_deref())
-            .map(|rule| {
-                let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            })
-            .unwrap_or(None);
-        let kind = info_rule
-            .and_then(|r| r.kind.as_deref())
-            .map(|rule| {
-                let v = analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() {
-                    None
-                } else {
-                    Some(v)
-                }
-            })
-            .unwrap_or(None);
-
-        Ok(WebBookInfo {
-            name,
-            author,
-            cover_url,
-            intro,
-            categories,
-            last_chapter,
-            book_url: book_url.to_string(),
-            toc_url,
-            word_count,
-            kind,
-            variable: None,
-            // [P2-15 ②] 加法式新字段（WebBookInfo.book_type）编译必需：
-            // server 本地 fetcher 无 JS `book.type` 写路径，恒 0（= 改造前
-            // 无该字段、serde default 的等价语义），不改变 server 行为
-            book_type: 0,
-        })
-    }
-
-    async fn get_chapters(
-        &self,
-        source: &BookSource,
-        book_url: &str,
-    ) -> legado_core::LegadoResult<Vec<WebChapter>> {
-        let source_headers = Self::parse_source_headers(source);
-
-        // 1. 先获取详情页以确定 toc_url
-        let info_body = self.fetch_simple(book_url, source_headers.as_ref()).await?;
-
-        // 1.5 loginCheckJs（[STAGE4-P36] 采用 JS 修改后的响应体（分叉点3），
-        // 对齐原版 analyzeChapterList(baseUrl=book.tocUrl, redirectUrl=res.url,
-        // body=res.body)，WebBook.kt:353-360：base URL 保持原请求 URL，
-        // 仅 body 采用 JS 修改值；无配置/非 quickjs 直通时与原 body 等价）
-        let login_outcome =
-            crate::login_check::execute_login_check(source, &info_body, book_url, 200)?;
-        let info_body = login_outcome.body;
-        let info_rule = source.rule_book_info.as_ref();
-        let info_analyzer = AnalyzeRule::new(info_body, book_url.to_string());
-
-        let toc_url = info_rule
-            .and_then(|r| r.toc_url.as_deref())
-            .map(|rule| {
-                let v = info_analyzer.get_string(rule).unwrap_or_default();
-                if v.is_empty() {
-                    book_url.to_string()
-                } else {
-                    v
-                }
-            })
-            .unwrap_or_else(|| book_url.to_string());
-
-        // 2. 请求目录页（如果 toc_url 与 book_url 相同则复用已有 body）
-        let toc_body = if toc_url == book_url {
-            // 复用详情页内容
-            let info_rule2 = source.rule_book_info.as_ref();
-            let _ = info_rule2;
-            // 重新获取（因为 info_body 已 move）
-            self.fetch_simple(&toc_url, source_headers.as_ref()).await?
-        } else {
-            self.fetch_simple(&toc_url, source_headers.as_ref()).await?
-        };
-
-        // 3. 解析目录
-        let toc_rule = source.rule_toc.as_ref();
-        let chapter_list_rule = toc_rule
-            .and_then(|r| r.chapter_list.as_deref())
-            .unwrap_or("");
-
-        let analyzer = AnalyzeRule::new(toc_body, toc_url.clone());
-
-        let elements = if chapter_list_rule.is_empty() {
-            vec![analyzer.content().to_string()]
-        } else {
-            analyzer.get_elements(chapter_list_rule)?
-        };
-
-        let mut chapters = Vec::new();
-        for (index, elem) in elements.iter().enumerate() {
-            let elem_analyzer = AnalyzeRule::new(elem.clone(), toc_url.clone());
-
-            let name_rule = toc_rule
-                .and_then(|r| r.chapter_name.as_deref())
-                .unwrap_or("");
-            let url_rule = toc_rule
-                .and_then(|r| r.chapter_url.as_deref())
-                .unwrap_or("");
-            let vip_rule = toc_rule.and_then(|r| r.is_vip.as_deref()).unwrap_or("");
-
-            let title = elem_analyzer.get_string(name_rule).unwrap_or_default();
-            if title.is_empty() {
-                continue;
-            }
-
-            let url = elem_analyzer.get_string(url_rule).unwrap_or_default();
-            let is_vip = if vip_rule.is_empty() {
-                false
-            } else {
-                let v = elem_analyzer.get_string(vip_rule).unwrap_or_default();
-                v == "true" || v == "1"
-            };
-
-            chapters.push(WebChapter {
-                index: index as i32,
-                title,
-                url,
-                is_vip,
-                is_volume: false,
-                variable: None,
-                word_count: None,
-            });
-        }
-
-        Ok(chapters)
-    }
-
-    async fn get_content(
-        &self,
-        source: &BookSource,
-        chapter: &WebChapter,
-    ) -> legado_core::LegadoResult<String> {
-        let source_headers = Self::parse_source_headers(source);
-
-        // 1. 请求章节页面
-        let body = self
-            .fetch_simple(&chapter.url, source_headers.as_ref())
-            .await?;
-
-        // [STAGE4-P36] 采用 JS 修改后的响应体（分叉点3），对齐原版
-        // analyzeContent(baseUrl=chapter.getAbsoluteURL(), redirectUrl=res.url,
-        // body=res.body)，WebBook.kt:483-492：base URL 保持原章节 URL，
-        // 仅 body 采用 JS 修改值；无配置/非 quickjs 直通时与原 body 等价
-        let login_outcome =
-            crate::login_check::execute_login_check(source, &body, &chapter.url, 200)?;
-        let body = login_outcome.body;
-
-        // 2. 使用正文规则解析首页（Task #135：含 nextContentUrl 分页规则提取）
-        let content_rule = source.rule_content.as_ref();
-        let content_rule_str = content_rule
-            .and_then(|r| r.content.as_deref())
-            .unwrap_or("");
-        let next_url_rule = content_rule
-            .and_then(|r| r.next_content_url.as_deref())
-            .unwrap_or("");
-
-        // 音频/视频书源获取的是链接，不需要 HTML 格式化
-        let is_media = source.book_source_type
-            == legado_core::models::book_source::book_source_type::AUDIO
-            || source.book_source_type == legado_core::models::book_source::book_source_type::VIDEO;
-
-        let (first_content, next_urls) = parse_content_page(
-            body,
-            content_rule_str,
-            next_url_rule,
-            &chapter.url,
-            is_media,
-        );
-
-        // 3. Task #135（R3）：nextContentUrl 分页抓取，分页书源正文按页拼接
-        let source_headers_clone = source_headers.clone();
-        let content = fetch_paginated_content(
-            first_content,
-            next_urls,
-            &chapter.url,
-            content_rule_str,
-            next_url_rule,
-            is_media,
-            |url: String| {
-                let headers = source_headers_clone.clone();
-                async move { self.fetch_simple(&url, headers.as_ref()).await }
-            },
-        )
-        .await;
-
-        Ok(content)
-    }
-}
-
-/// Task #135（R3）：nextContentUrl 分页最大页数保护
+/// 构建 WebBookEngine（共享 fetcher + server 注入面）
 ///
-/// 对齐 legado-ffi 同名常量（Kotlin 原版无显式上限，依赖 nextUrl 重复/空终止，
-/// Rust 轨加法式加固以防恶意/异常规则导致死循环）。
-const MAX_CONTENT_PAGES: usize = 99;
-
-/// 解析单页正文，返回（净化后正文，下一页 URL 列表）
+/// [P5-1 链 b2] 保留给 reader/audio/toc_update 兄弟 handler 的引擎入口调用
+/// （4 个 webbook handler 已改走自由入口，不经本函数）。
 ///
-/// Task #135（R3）：legado-ffi `api/web_book.rs` 中的 `parse_content_page` 为
-/// crate 私有函数，无法跨 crate 调用（任务约束仅改 legado-server），
-/// 此处实现同款等价逻辑，对标 Kotlin `BookContent.analyzeContent` 单页处理：
-/// - 正文规则提取 + HtmlFormatter 净化管线（音视频源跳过格式化）
-/// - next_url_rule 非空时解析下一页 URL 列表并基于本页 URL 绝对化
-fn parse_content_page(
-    body: String,
-    content_rule_str: &str,
-    next_url_rule: &str,
-    page_url: &str,
-    is_media: bool,
-) -> (String, Vec<String>) {
-    let analyzer = AnalyzeRule::new(body, page_url.to_string());
-
-    let raw_content = if content_rule_str.is_empty() {
-        // 无规则时返回 body 原文（保持既有单页行为）
-        analyzer.content().to_string()
-    } else {
-        analyzer.get_string(content_rule_str).unwrap_or_default()
-    };
-
-    // 正文净化管线（对标 Kotlin BookContent.analyzeContent）
-    let content = if is_media {
-        raw_content
-    } else {
-        // HtmlFormatter.formatKeepImg（保留 img 标签 + 按本页 URL 绝对化）
-        let cleaned = legado_core::html_formatter::format_keep_img(&raw_content, page_url);
-        // unescapeHtml4（实体反转义）
-        legado_core::html_formatter::unescape_html4(&cleaned)
-    };
-
-    // 解析下一页 URL 规则
-    let next_urls = if next_url_rule.is_empty() {
-        Vec::new()
-    } else {
-        analyzer
-            .get_strings(next_url_rule)
-            .unwrap_or_default()
-            .into_iter()
-            .map(|u| u.trim().to_string())
-            .filter(|u| !u.is_empty())
-            .map(|u| AnalyzeUrl::get_absolute_url(page_url, &u))
-            .collect()
-    };
-
-    (content, next_urls)
+/// 出错上报（而非旧版 `expect` panic）：与 ffi 侧
+/// `web_book::build_engine() -> LegadoResult<_>` 同形态，构造失败由
+/// 调用方映射为 5xx。
+pub(crate) fn build_engine() -> LegadoResult<WebBookEngine<RealBookSourceFetcher>> {
+    Ok(legado_fetcher::web_book::build_engine(server_deps()?))
 }
 
-/// nextContentUrl 分页循环（抓取后续页并按页拼接）
-///
-/// Task #135（R3）：legado-ffi `api/web_book.rs` 中的 `fetch_paginated_content`
-/// 为 crate 私有函数，无法跨 crate 调用（任务约束仅改 legado-server），
-/// 此处实现同款等价逻辑，对标 Kotlin `BookContent.analyzeContent` 分页循环：
-/// - 单个下一页 URL：串行循环直到为空/重复
-/// - 多个下一页 URL：逐页抓取且不再继续分页（对标原版 `getNextPageUrl = false`）
-/// - 防死循环保护：已访问 URL 去重（含首章 URL）+ 最大页数上限
-///
-/// `fetch_page` 可注入，便于单测以脚本化响应验证多页拼接（不走真实网络）。
-async fn fetch_paginated_content<F, Fut>(
-    first_content: String,
-    next_urls: Vec<String>,
-    chapter_url: &str,
-    content_rule_str: &str,
-    next_url_rule: &str,
-    is_media: bool,
-    mut fetch_page: F,
-) -> String
-where
-    F: FnMut(String) -> Fut,
-    Fut: std::future::Future<Output = legado_core::LegadoResult<String>>,
-{
-    let mut content_list = vec![first_content];
-
-    if !next_url_rule.is_empty() && !next_urls.is_empty() {
-        let mut visited = std::collections::HashSet::new();
-        visited.insert(chapter_url.to_string());
-
-        if next_urls.len() > 1 {
-            // 对标 Kotlin `contentData.second.size > 1` 分支：仅解析正文，不递归分页
-            for raw_url in next_urls {
-                if content_list.len() >= MAX_CONTENT_PAGES {
-                    break;
-                }
-                if !visited.insert(raw_url.clone()) {
-                    continue;
-                }
-                match fetch_page(raw_url.clone()).await {
-                    Ok(next_body) => {
-                        let (page_content, _) = parse_content_page(
-                            next_body,
-                            content_rule_str,
-                            "", // getNextPageUrl = false
-                            &raw_url,
-                            is_media,
-                        );
-                        content_list.push(page_content);
-                    }
-                    Err(e) => {
-                        tracing::warn!("[web_book] 分页正文抓取失败 {raw_url}: {e}");
-                    }
-                }
-            }
-        } else {
-            let mut next_url = next_urls.into_iter().next().unwrap_or_default();
-            while !next_url.is_empty()
-                && visited.insert(next_url.clone())
-                && content_list.len() < MAX_CONTENT_PAGES
-            {
-                let next_body = match fetch_page(next_url.clone()).await {
-                    Ok(b) => b,
-                    Err(e) => {
-                        tracing::warn!("[web_book] 分页正文抓取失败 {next_url}: {e}");
-                        break;
-                    }
-                };
-                let (page_content, mut page_next_urls) = parse_content_page(
-                    next_body,
-                    content_rule_str,
-                    next_url_rule,
-                    &next_url,
-                    is_media,
-                );
-                content_list.push(page_content);
-                next_url = page_next_urls.pop().unwrap_or_default();
-            }
-        }
-    }
-
-    content_list.join("\n")
-}
-
-/// 构建 WebBookEngine（使用真实 HTTP + 规则解析实现）
-pub(crate) fn build_engine() -> WebBookEngine<RealBookSourceFetcher> {
-    WebBookEngine::new(RealBookSourceFetcher::new())
-}
-
-// ─── 处理器函数 ────────────────────────────────────────────────────────────────
+// ─── 处理器函数（P5-1 链 b2：自由入口直连） ────────────────────────────────────
 
 /// POST /api/webbook/search — 搜索书籍
+///
+/// [P5-1 链 b2] 改走自由入口（`source` 序列化为 `source_json` 传入）：
+/// JS 书源（mainJs）经编排器分派，规则书源在自由入口内委托
+/// `WebBookEngine::search`（前置校验语义不变：空 searchUrl/空关键词
+/// → Parser 400）。响应 schema 不变。
 pub async fn search_books(
     State(_state): State<Arc<AppState>>,
     Json(req): Json<WebBookSearchRequest>,
 ) -> Result<Json<WebBookSearchResponse>, ApiError> {
-    let engine = build_engine();
+    let source_json = serde_json::to_string(&req.source).map_err(LegadoError::Serialization)?;
     let page = req.page.unwrap_or(1);
-    let results = engine
-        .search(&req.source, &req.query, page)
-        .await
-        .map_err(ApiError::from)?;
+    // 自由入口返回 `Vec<WebSearchResult>` JSON 数组字符串（与 ffi 同形态）
+    let raw =
+        legado_fetcher::web_book::webbook_search(server_deps()?, &source_json, &req.query, page)
+            .await?;
+    let results: Vec<WebSearchResult> =
+        serde_json::from_str(&raw).map_err(LegadoError::Serialization)?;
     let total = results.len();
     Ok(Json(WebBookSearchResponse {
         results,
@@ -768,44 +185,65 @@ pub async fn search_books(
 }
 
 /// POST /api/webbook/info — 获取书籍详情
+///
+/// [P5-1 链 b2] 改走自由入口：JS 书源分派 + 规则源变量链落点
+/// （`book_variable` 注入为 None → 变量表为空，见 [`server_deps`] 边界）。
+/// 响应 schema 不变（`WebBookInfo`）。
 pub async fn get_book_info(
     State(_state): State<Arc<AppState>>,
     Json(req): Json<WebBookInfoRequest>,
 ) -> Result<Json<WebBookInfo>, ApiError> {
-    let engine = build_engine();
-    let info = engine
-        .get_book_info(&req.source, &req.book_url)
-        .await
-        .map_err(ApiError::from)?;
+    let source_json = serde_json::to_string(&req.source).map_err(LegadoError::Serialization)?;
+    // 自由入口返回 `WebBookInfo` JSON 字符串（与 ffi 同形态）
+    let raw =
+        legado_fetcher::web_book::webbook_info(server_deps()?, &source_json, &req.book_url).await?;
+    let info: WebBookInfo = serde_json::from_str(&raw).map_err(LegadoError::Serialization)?;
     Ok(Json(info))
 }
 
 /// POST /api/webbook/chapters — 获取章节列表
+///
+/// [P5-1 链 b2] 改走自由入口：JS 书源分派 + 规则源变量链/缓存记录。
+/// REST 请求体无 `tocUrl`/`bookName` 字段 → 传空串（自由入口内部 trim
+/// 空转 None，目录地址由 `book_url` 经详情/init→tocUrl 规则重推，与
+/// 链 b 引擎入口语义一致）。响应 schema 不变（`WebBookChaptersResponse`）。
 pub async fn get_chapters(
     State(_state): State<Arc<AppState>>,
     Json(req): Json<WebBookChaptersRequest>,
 ) -> Result<Json<WebBookChaptersResponse>, ApiError> {
-    let engine = build_engine();
-    let chapters = engine
-        .get_chapters(&req.source, &req.book_url)
-        .await
-        .map_err(ApiError::from)?;
+    let source_json = serde_json::to_string(&req.source).map_err(LegadoError::Serialization)?;
+    // 自由入口返回 `Vec<WebChapter>` JSON 数组字符串（与 ffi 同形态）
+    let raw = legado_fetcher::web_book::webbook_chapters(
+        server_deps()?,
+        &source_json,
+        &req.book_url,
+        "",
+        "",
+    )
+    .await?;
+    let chapters: Vec<WebChapter> =
+        serde_json::from_str(&raw).map_err(LegadoError::Serialization)?;
     let total = chapters.len();
     Ok(Json(WebBookChaptersResponse { chapters, total }))
 }
 
 /// POST /api/webbook/content — 获取章节内容
+///
+/// [P5-1 链 b2] 改走自由入口：JS 书源分派（`chapter` 整体序列化为
+/// `chapter_json`，含 index/title/url/is_vip；规则源仍经
+/// `WebBookEngine::get_content` 的正文规则/空 URL 校验）。响应 schema
+/// 不变（`WebBookContentResponse`）。
 pub async fn get_content(
     State(_state): State<Arc<AppState>>,
     Json(req): Json<WebBookContentRequest>,
 ) -> Result<Json<WebBookContentResponse>, ApiError> {
-    let engine = build_engine();
     let chapter_url = req.chapter.url.clone();
     let chapter_title = req.chapter.title.clone();
-    let content = engine
-        .get_content(&req.source, &req.chapter)
-        .await
-        .map_err(ApiError::from)?;
+    let source_json = serde_json::to_string(&req.source).map_err(LegadoError::Serialization)?;
+    let chapter_json = serde_json::to_string(&req.chapter).map_err(LegadoError::Serialization)?;
+    let content =
+        legado_fetcher::web_book::webbook_content(server_deps()?, &source_json, &chapter_json)
+            .await?;
     Ok(Json(WebBookContentResponse {
         content,
         chapter_url,
@@ -853,7 +291,7 @@ mod tests {
         .unwrap()
     }
 
-    /// 无 searchUrl 的书源 → 触发 Internal 错误
+    /// 无 searchUrl 的书源 → 引擎前置校验触发 Parser 错误（400）
     fn make_source_no_search_url() -> String {
         serde_json::to_string(&BookSource {
             book_source_url: "https://example.com".to_string(),
@@ -862,6 +300,22 @@ mod tests {
             ..BookSource::default()
         })
         .unwrap()
+    }
+
+    /// [P5-1 链 b] 注入面装配钉死：client 可构造（不 panic）、限速注册表
+    /// 进程级共享（跨 build/每请求调用同一 Arc——限速窗口状态跨请求保持的
+    /// 关键）、启动期未注入的宿主闭包保持 None（行为无损起点）。
+    #[test]
+    fn test_server_deps_shares_process_rate_limiter() {
+        let a = server_deps().expect("server deps 可构造（默认客户端）");
+        let b = server_deps().expect("server deps 可构造（默认客户端）");
+        assert!(
+            Arc::ptr_eq(&a.rate_limiter, &b.rate_limiter),
+            "限速注册表必须进程级共享（否则每个请求重置窗口 = 无限速）"
+        );
+        assert!(a.login_header.is_none(), "启动期登录头闭包应为 None");
+        assert!(a.book_variable.is_none(), "启动期书籍变量闭包应为 None");
+        assert!(a.source_context.is_none(), "启动期书源 setup 闭包应为 None");
     }
 
     #[tokio::test]
@@ -923,11 +377,15 @@ mod tests {
             .await
             .unwrap();
 
-        // 无 searchUrl → 错误响应（400 或 500）
-        assert!(
-            resp.status().is_client_error() || resp.status().is_server_error(),
-            "expected error status, got: {}",
-            resp.status()
+        // [P5-1 链 b2 期望对齐] 自由入口路径下仍为 400：该源无 mainJs
+        // （build_js_orchestrator 返回 None）→ 规则源分支委托
+        // `WebBookEngine::search`，空 searchUrl 由引擎前置校验拦截
+        // （`LegadoError::Parser("搜索url不能为空")` → 400）。链 b 引擎入口
+        // 与链 b2 自由入口的该校验语义一致，断言无需翻转、继续钉死。
+        assert_eq!(
+            resp.status(),
+            StatusCode::BAD_REQUEST,
+            "无 searchUrl 应返回 400 Parser（自由入口规则分支委托引擎前置校验）"
         );
     }
 
@@ -1056,194 +514,174 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
     }
 
-    // ─── Task #135（R3）：nextContentUrl 分页单测（离线脚本化响应，不走真实网络） ───
+    // ─── [P5-1 链 b2] 自由入口接入的行为/并发回归 ─────────────────────────────
 
-    const PAGE1_HTML: &str = "<html><body>\
-<div class='content'><p>第一页正文</p></div>\
-<a class='next' href='/chap/1_2.html'>下一页</a>\
-</body></html>";
+    /// 并发探测用回环 mock 搜索服务：`/search/{src}?q=…` 返回该源独有的
+    /// 书名「{src}-{key}」，供「并发请求结果不串源」断言。返回 base URL
+    /// （随机端口，测试结束随进程/任务回收）。
+    async fn start_mock_search_server() -> String {
+        use axum::extract::{Path, Query};
+        use axum::response::Html;
+        use axum::routing::get;
+        use std::collections::HashMap;
 
-    const PAGE2_HTML: &str = "<html><body>\
-<div class='content'><p>第二页正文</p></div>\
-<a class='next' href='/chap/1_3.html'>下一页</a>\
-</body></html>";
+        async fn mock_search(
+            Path(src): Path<String>,
+            Query(params): Query<HashMap<String, String>>,
+        ) -> Html<String> {
+            let key = params.get("q").cloned().unwrap_or_default();
+            Html(format!(
+                "<html><body>\
+                 <div class=\"result\">\
+                 <span class=\"name\">{src}-{key}</span>\
+                 <span class=\"author\">作者{src}</span>\
+                 <a class=\"book\" href=\"/book/{src}\">详情</a>\
+                 </div></body></html>"
+            ))
+        }
 
-    /// 第三页 next 指回第一页（构造循环，验证去重终止）
-    const PAGE3_HTML: &str = "<html><body>\
-<div class='content'><p>第三页正文</p></div>\
-<a class='next' href='/chap/1.html'>下一页</a>\
-</body></html>";
-
-    /// 首页返回两个下一页 URL（验证多页分支且不递归）
-    const PAGE_MULTI_HTML: &str = "<html><body>\
-<div class='content'><p>多页首屏正文</p></div>\
-<a class='next' href='/chap/2_a.html'>下一页</a>\
-<a class='alt' href='/chap/2_b.html'>下一页</a>\
-</body></html>";
-
-    #[test]
-    fn test_parse_content_page_single_next_url() {
-        let (content, next_urls) = parse_content_page(
-            PAGE1_HTML.to_string(),
-            ".content@html",
-            ".next@href",
-            "https://example.com/chap/1.html",
-            false,
-        );
-        assert!(content.contains("第一页正文"));
-        // 相对 URL 基于本页 URL 绝对化
-        assert_eq!(
-            next_urls,
-            vec!["https://example.com/chap/1_2.html".to_string()]
-        );
+        let app = axum::Router::new().route("/search/{src}", get(mock_search));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("mock 搜索服务可绑定回环端口");
+        let addr = listener.local_addr().expect("mock 服务地址");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        format!("http://{addr}")
     }
 
-    #[test]
-    fn test_parse_content_page_empty_next_rule() {
-        let (_, next_urls) = parse_content_page(
-            PAGE1_HTML.to_string(),
-            ".content@html",
-            "",
-            "https://example.com/chap/1.html",
-            false,
-        );
-        assert!(next_urls.is_empty());
+    /// 构造指向 mock 服务的规则书源（src_id 决定 mock 响应中的专属标记）
+    fn make_mock_source(base: &str, src_id: u32) -> Value {
+        json!({
+            "bookSourceUrl": format!("{base}/src{src_id}"),
+            "bookSourceName": format!("并发源{src_id}"),
+            "searchUrl": format!("{base}/search/{src_id}?q={{key}}"),
+            "ruleSearch": {
+                "bookList": "class.result",
+                "name": "class.name@text",
+                "author": "class.author@text",
+                "bookUrl": "class.book@href"
+            }
+        })
     }
 
-    #[test]
-    fn test_parse_content_page_media_skips_formatting() {
-        // 音视频源：正文原样返回，不走 HTML 净化
-        let raw = "https://media.example.com/audio/1.mp3";
-        let (content, _) = parse_content_page(
-            raw.to_string(),
-            "",
-            "",
-            "https://example.com/chap/1.html",
-            true,
-        );
-        assert_eq!(content, raw);
-    }
+    /// [P5-1 链 b2] flow scope 并发风险探测：4 路并发（不同书源）调 REST
+    /// `/api/webbook/search`。自由入口每请求执行 `begin_book_flow`（写入
+    /// 进程级单槽 flow scope：后启动者清先启动者的会话键前缀），本用例在
+    /// 单槽竞态下断言各请求仍**各自完整可达**：
+    /// - 全部 200，且各响应 results[0].name = 本源专属标记（无跨源串数据）、
+    ///   total 与本源 mock 响应一致；
+    /// - 无 panic（tokio 任务 join 成功）。
+    ///
+    /// 竞态结论说明：`set_flow_scope` 为进程级单槽（与上游 WebBook.kt 全局
+    /// 流程键同构，server 多源搜索此前即以警告接受）。两流程真并行且都用
+    /// 会话变量（`lgflow::*`）时，后启动者会清掉先启动者的会话键——本测试
+    /// 的规则源不写会话变量，故竞态不产生跨源数据串扰；断言不做放宽
+    /// （不允许结果缺失/串名），仅以此钉死「单槽竞态下 REST 结果完整性」。
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_webbook_search_concurrent_requests_flow_scope_no_crosstalk() {
+        let base = start_mock_search_server().await;
+        let state = make_test_state();
+        let app = create_router(state);
 
-    /// 脚本化响应的抓取闭包（离线模拟多页，不走真实网络）
-    fn scripted_fetch(
-        pages: std::collections::HashMap<String, String>,
-    ) -> impl FnMut(
-        String,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = legado_core::LegadoResult<String>> + Send>,
-    > {
-        move |url: String| {
-            let body = pages.get(&url).cloned();
-            Box::pin(async move {
-                body.ok_or_else(|| legado_core::LegadoError::Network(format!("404 for {url}")))
-            })
+        let mut handles = Vec::new();
+        for src_id in 0..4u32 {
+            let app = app.clone();
+            let base = base.clone();
+            handles.push(tokio::spawn(async move {
+                let body = serde_json::to_string(&json!({
+                    "source": make_mock_source(&base, src_id),
+                    "query": "并发",
+                    "page": 1
+                }))
+                .unwrap();
+                let resp = app
+                    .oneshot(
+                        Request::builder()
+                            .method(Method::POST)
+                            .uri("/api/webbook/search")
+                            .header("Content-Type", "application/json")
+                            .body(Body::from(body))
+                            .unwrap(),
+                    )
+                    .await
+                    .expect("oneshot 调用成功");
+                (src_id, resp)
+            }));
+        }
+
+        for handle in handles {
+            let (src_id, resp) = handle.await.expect("并发搜索任务不得 panic");
+            assert_eq!(
+                resp.status(),
+                StatusCode::OK,
+                "源 {src_id} 并发搜索应 200（flow scope 单槽竞态下仍完整可达）"
+            );
+            let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+                .await
+                .expect("读取响应体");
+            let body: Value = serde_json::from_slice(&bytes).expect("响应为 JSON");
+            assert_eq!(body["total"], 1, "源 {src_id} 结果数");
+            // 响应 schema 契约（链 b2 后未变）：results/total/query/page 字段齐备
+            assert_eq!(body["query"], "并发", "源 {src_id} 响应回显 query");
+            assert_eq!(body["page"], 1, "源 {src_id} 响应回显 page");
+            assert_eq!(
+                body["results"][0]["name"],
+                format!("{src_id}-并发"),
+                "源 {src_id} 结果必须来自本源 mock 响应（无跨源串数据）"
+            );
         }
     }
 
-    fn pagination_pages() -> std::collections::HashMap<String, String> {
-        let mut pages = std::collections::HashMap::new();
-        pages.insert(
-            "https://example.com/chap/1_2.html".to_string(),
-            PAGE2_HTML.to_string(),
-        );
-        pages.insert(
-            "https://example.com/chap/1_3.html".to_string(),
-            PAGE3_HTML.to_string(),
-        );
-        pages
-    }
-
+    /// [P5-1 链 b2] REST 端点获得 mainJs JS 书源分派（链 b 引擎入口不可达）：
+    /// JS 源（searchUrl 为空、仅 mainJs）经 `/api/webbook/search` 返回脚本
+    /// 结果，证明自由入口的 JS 分支在 server 侧可用。仅 quickjs 档真执行
+    /// （默认档 JsSourceEngine 为 stub，不产生结果）。
+    #[cfg(feature = "quickjs")]
     #[tokio::test]
-    async fn test_next_content_url_pagination_concatenates_pages() {
-        // 首页解析出下一页 → 串行拓三页（第三页 next 指回首页，去重终止）
-        let (first_content, next_urls) = parse_content_page(
-            PAGE1_HTML.to_string(),
-            ".content@html",
-            ".next@href",
-            "https://example.com/chap/1.html",
-            false,
-        );
-        let result = fetch_paginated_content(
-            first_content,
-            next_urls,
-            "https://example.com/chap/1.html",
-            ".content@html",
-            ".next@href",
-            false,
-            scripted_fetch(pagination_pages()),
-        )
-        .await;
-        // 多页拼接（顺序 + \n 连接）
-        let parts: Vec<&str> = result.split('\n').collect();
-        assert_eq!(parts.len(), 3);
-        assert!(parts[0].contains("第一页正文"));
-        assert!(parts[1].contains("第二页正文"));
-        assert!(parts[2].contains("第三页正文"));
-        // 循环终止：首页正文仅出现一次（next 指回自身被去重拦截）
-        assert_eq!(result.matches("第一页正文").count(), 1);
-    }
+    async fn test_webbook_search_js_source_dispatch_via_rest() {
+        let state = make_test_state();
+        let app = create_router(state);
 
-    #[tokio::test]
-    async fn test_pagination_empty_next_rule_stops_at_first_page() {
-        let (first_content, next_urls) = parse_content_page(
-            PAGE1_HTML.to_string(),
-            ".content@html",
-            "", // 无 nextContentUrl 规则 → 单页行为不变
-            "https://example.com/chap/1.html",
-            false,
-        );
-        let result = fetch_paginated_content(
-            first_content,
-            next_urls,
-            "https://example.com/chap/1.html",
-            ".content@html",
-            "",
-            false,
-            scripted_fetch(pagination_pages()),
-        )
-        .await;
-        assert!(result.contains("第一页正文"));
-        assert!(!result.contains("第二页正文"));
-    }
+        let body = serde_json::to_string(&json!({
+            "source": {
+                "bookSourceUrl": "https://js-rest.example.com",
+                "bookSourceName": "JS 分派测试源",
+                "mainJs": "function search(key, page) { return JSON.stringify([{name: 'js-' + key, author: '作者', bookUrl: 'https://js-rest.example.com/book/1'}]); }"
+            },
+            "query": "三体",
+            "page": 1
+        }))
+        .unwrap();
 
-    #[tokio::test]
-    async fn test_pagination_multi_next_urls_fetch_each_without_recursion() {
-        // 首页解析出两个下一页 URL → 各抓一页且不递归（对标原版 getNextPageUrl=false）
-        let mut pages = std::collections::HashMap::new();
-        pages.insert(
-            "https://example.com/chap/2_a.html".to_string(),
-            "<html><body><div class='content'><p>分卷A正文</p></div><a class='next' href='/chap/2_c.html'>下一页</a></body></html>"
-                .to_string(),
-        );
-        pages.insert(
-            "https://example.com/chap/2_b.html".to_string(),
-            "<html><body><div class='content'><p>分卷B正文</p></div></body></html>".to_string(),
-        );
-        // 若递归则需抓 2_c.html，此处故意不提供（验证不递归）
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/webbook/search")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
 
-        let (first_content, next_urls) = parse_content_page(
-            PAGE_MULTI_HTML.to_string(),
-            ".content@html",
-            ".next@href&&.alt@href",
-            "https://example.com/chap/2.html",
-            false,
+        assert_eq!(
+            resp.status(),
+            StatusCode::OK,
+            "JS 书源经 REST 应走 mainJs 分派并成功"
         );
-        assert_eq!(next_urls.len(), 2);
-
-        let result = fetch_paginated_content(
-            first_content,
-            next_urls,
-            "https://example.com/chap/2.html",
-            ".content@html",
-            ".next@href&&.alt@href",
-            false,
-            scripted_fetch(pages),
-        )
-        .await;
-        let parts: Vec<&str> = result.split('\n').collect();
-        assert_eq!(parts.len(), 3);
-        assert!(parts[0].contains("多页首屏正文"));
-        assert!(parts[1].contains("分卷A正文"));
-        assert!(parts[2].contains("分卷B正文"));
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("读取响应体");
+        let body: Value = serde_json::from_slice(&bytes).expect("响应为 JSON");
+        assert_eq!(body["total"], 1, "JS 源搜索结果数");
+        assert_eq!(body["results"][0]["name"], "js-三体", "JS mainJs 返回值");
+        assert_eq!(
+            body["results"][0]["source_url"],
+            "https://js-rest.example.com",
+            "JS 结果 source_url 应回填书源 URL"
+        );
     }
 }

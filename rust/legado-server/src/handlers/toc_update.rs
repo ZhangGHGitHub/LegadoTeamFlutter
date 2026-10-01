@@ -290,7 +290,7 @@ pub async fn update_single_toc(
     State(state): State<Arc<AppState>>,
     Json(body): Json<SingleTocUpdateBody>,
 ) -> Result<(StatusCode, Json<Value>), ApiError> {
-    let engine = build_engine();
+    let engine = build_engine().map_err(ApiError::from)?;
     match update_one_toc(
         state,
         &engine,
@@ -359,7 +359,7 @@ pub async fn start_toc_update(
     let total = requests.len();
 
     // 后台执行批量调度（worker 闭包：每本书独立走单本更新链路）
-    let engine = Arc::new(build_engine());
+    let engine = Arc::new(build_engine().map_err(ApiError::from)?);
     let worker = move |req: TocUpdateRequest| {
         let state = Arc::clone(&state);
         let engine = Arc::clone(&engine);

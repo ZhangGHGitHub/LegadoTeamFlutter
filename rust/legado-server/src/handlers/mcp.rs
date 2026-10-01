@@ -1097,7 +1097,8 @@ async fn call_get_cookies(
 /// 保护域：取 D（按域写通道，`legado_net::cookie_store::domain_write_lock`）
 /// 与 C（本锁：进程内 cookie 行读-改-写串行化）、P（DB 池），全局锁序
 /// D→C→P（链状无环）。当前进程 cookie 行尚无生产写方（server 的 cookie
-/// 层是 DB 持久层，JS 宿主 store 进程内无写入方——见 `login_check` 备注），
+/// 层是 DB 持久层；JS 宿主 store 的属域 cookie 经共享 fetcher 请求路径
+/// 只读合并，不落库、无 DB 行写入方），
 /// 本锁是删除侧按保护域纪律应持有的位置：未来引入 server 侧写方（如 JS
 /// cookie 持久化下沉）时，其 RMW 必须也落在本锁内，否则删行可被夹在
 /// RMW 中间、旧视图写回复活已删行（FFI 侧红态回归

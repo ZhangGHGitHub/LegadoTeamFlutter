@@ -487,8 +487,8 @@ mod tests {
     /// 测试专用：本地回环书源仓库 mock（`default_repos` 两个外部仓库的确定性替身）
     ///
     /// 在指定路径提供 bookSource JSON 数组（200），其余路径 404。
-    /// std `TcpListener` 模式（与 `login_check` 的 cookie 回显服务器、legado-js 的
-    /// `spawn_httpbin_mock` 同款；测试不引入 tokio-net 依赖）。
+    /// std `TcpListener` 模式（与 legado-ffi/legado-js 的 cookie 回显服务器、
+    /// legado-js 的 `spawn_httpbin_mock` 同款；测试不引入 tokio-net 依赖）。
     fn spawn_source_repo_mock(
         max_conns: usize,
         routes: Vec<(String, String)>,

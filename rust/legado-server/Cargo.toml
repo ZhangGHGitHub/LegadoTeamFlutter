@@ -6,11 +6,12 @@ edition = "2021"
 [dependencies]
 legado-core = { path = "../legado-core" }
 legado-db = { path = "../legado-db" }
-legado-parser = { path = "../legado-parser" }
 legado-net = { path = "../legado-net" }
 legado-book = { path = "../legado-book" }
 # MCP eval_js 工具依赖的书源 JS 引擎（quickjs 为可选透传 feature）
 legado-js = { path = "../legado-js" }
+# [P5-1 链 b] 书源抓取共享实现（server/ffi 单一来源；quickjs 透传见 features）
+legado-fetcher = { path = "../legado-fetcher" }
 
 axum = { version = "0.8", features = ["ws", "json"] }
 tokio = { workspace = true }
@@ -25,8 +26,9 @@ tracing-subscriber = "0.3"
 
 [features]
 default = []
-# 透传 legado-js 的 quickjs feature：启用后 MCP eval_js 工具可真实执行 JS 脚本
-quickjs = ["legado-js/quickjs"]
+# 透传 legado-js 的 quickjs feature：启用后 MCP eval_js 工具可真实执行 JS 脚本；
+# 同步透传 legado-fetcher/quickjs（书源 JS 分派/loginCheckJs 真执行）
+quickjs = ["legado-js/quickjs", "legado-fetcher/quickjs"]
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

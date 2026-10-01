@@ -34,13 +34,7 @@
 
 pub mod error;
 pub mod handlers;
-pub mod login_check;
 pub mod routes;
 pub mod server;
 pub mod state;
 pub mod ws;
-
-/// 测试支撑：全局 cookie store 的进程级状态锁（仅测试编译；回环域名键
-/// `127.0.0.1` 的 cookie 用例持锁串行防串键）
-#[cfg(test)]
-pub(crate) mod test_support;
