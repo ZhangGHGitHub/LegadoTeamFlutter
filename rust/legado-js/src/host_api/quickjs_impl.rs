@@ -5969,12 +5969,35 @@ cipher.decryptStr(b64);
     }
 
     // ===== P2-6(e) java.getString 规则分派：绑定级回归测试 =====
-    // fixture 位于 workspace 内 rust/legado-ffi/tests/fixtures/songhe/（书源 + curl 生成的真实响应体）。
+    // fixture 为 legado-js 自持：rust/legado-js/tests/fixtures/songhe/
+    // （书源 + curl 生成的真实响应体）；原跨 crate 引用
+    // ../legado-ffi/tests/fixtures/songhe 已于 P2 夹具迁移中消除，
+    // 清单与来源见 tests/fixtures/README.md。
 
     fn fixture_path(name: &str) -> std::path::PathBuf {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../legado-ffi/tests/fixtures/songhe")
+            .join("tests/fixtures/songhe")
             .join(name)
+    }
+
+    /// P2 夹具迁移守卫：songhe 夹具必须随本 crate 提交、位于 crate 目录内，
+    /// 防止日后回退为跨 crate 相对路径（`../legado-ffi/...`）。
+    /// 干净检出（仅 clone legado-js 所需路径）下本测试必须通过。
+    #[test]
+    fn test_songhe_fixtures_local_and_present() {
+        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .canonicalize()
+            .expect("canonicalize crate dir");
+        for name in ["detail.json", "chapters.json", "search.json"] {
+            let path = fixture_path(name);
+            assert!(path.is_file(), "缺少本 crate 夹具文件: {}", path.display());
+            let canonical = path.canonicalize().expect("canonicalize fixture");
+            assert!(
+                canonical.starts_with(&crate_dir),
+                "夹具路径逃逸 legado-js crate 目录: {}",
+                canonical.display()
+            );
+        }
     }
 
     /// 类1：JSON 内容 + `$.a` 顶层 JSONPath 取值（数值/布尔归一为字符串）
