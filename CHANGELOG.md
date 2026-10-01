@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.341] - 2026-10-01
+
+### Changed
+- [UI] GLOBALCOMP B3：输入框统一为参考版实测 filled 底线式（主题层三态 UnderlineInputBorder——未聚焦细底线/聚焦主题色 2dp 加粗/顶 4dp 圆底直角填充盒，四边无描边）；39 处局部描边覆盖清理恢复主题继承；6 处沉浸搜索胶囊补无边框声明防底线渗入。装机像素验证：旧四边描边清零、与参考版几何对齐。
+
 ## [2.0.340] - 2026-10-01
 
 ### Changed
