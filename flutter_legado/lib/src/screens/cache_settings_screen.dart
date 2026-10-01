@@ -285,7 +285,6 @@ class _CacheSettingsScreenState extends ConsumerState<CacheSettingsScreen> {
           DropdownButtonFormField<int>(
             initialValue: _expireDays,
             decoration: const InputDecoration(
-              border: OutlineInputBorder(),
               prefixIcon: Icon(Symbols.schedule_rounded),
               labelText: '缓存过期时间',
             ),

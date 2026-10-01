@@ -799,7 +799,6 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
           controller: ctrl,
           decoration: const InputDecoration(
             hintText: '用于 JS 书源调用外部 API 的令牌',
-            border: OutlineInputBorder(),
           ),
         ),
         actions: [
@@ -1232,7 +1231,6 @@ class _CheckSourceConfigDialogState extends State<_CheckSourceConfigDialog> {
                 decoration: const InputDecoration(
                   labelText: '搜索关键词',
                   hintText: '默认：我的',
-                  border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 12),
@@ -1383,7 +1381,6 @@ class _McpPortDialogState extends State<_McpPortDialog> {
             keyboardType: TextInputType.number,
             decoration: const InputDecoration(
               hintText: '1024 ~ 65530，0 停止',
-              border: OutlineInputBorder(),
             ),
           ),
           if (_error != null)
@@ -1458,7 +1455,6 @@ class _CustomHostsDialogState extends State<_CustomHostsDialog> {
               maxLines: 12,
               decoration: const InputDecoration(
                 hintText: '{"example.com": "1.2.3.4"}',
-                border: OutlineInputBorder(),
               ),
             ),
           ),

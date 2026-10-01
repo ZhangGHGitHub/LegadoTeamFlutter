@@ -375,7 +375,6 @@ class _TextSelectionPanelState extends ConsumerState<TextSelectionPanel> {
                 maxLines: 3,
                 decoration: const InputDecoration(
                   labelText: '笔记（可选）',
-                  border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 16),

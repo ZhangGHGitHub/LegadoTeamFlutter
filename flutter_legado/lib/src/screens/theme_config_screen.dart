@@ -1964,7 +1964,6 @@ class _CoverRuleConfigDialogState extends State<_CoverRuleConfigDialog> {
                       decoration: const InputDecoration(
                         labelText: '搜索 URL',
                         hintText: '支持 {{key}} 模板',
-                        border: OutlineInputBorder(),
                       ),
                       minLines: 2,
                       maxLines: 4,
@@ -1974,7 +1973,6 @@ class _CoverRuleConfigDialogState extends State<_CoverRuleConfigDialog> {
                       controller: _coverRuleController,
                       decoration: const InputDecoration(
                         labelText: '封面提取规则',
-                        border: OutlineInputBorder(),
                       ),
                       minLines: 2,
                       maxLines: 6,
@@ -1992,7 +1990,6 @@ class _CoverRuleConfigDialogState extends State<_CoverRuleConfigDialog> {
                             controller: _nameController,
                             decoration: const InputDecoration(
                               hintText: '输入书名',
-                              border: OutlineInputBorder(),
                             ),
                             onSubmitted: (_) => _search(),
                           ),

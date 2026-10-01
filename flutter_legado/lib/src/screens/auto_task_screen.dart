@@ -366,7 +366,6 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                   decoration: const InputDecoration(
                     labelText: '任务名称',
                     hintText: '例如：每日刷新',
-                    border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -374,7 +373,6 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                   initialValue: taskType,
                   decoration: const InputDecoration(
                     labelText: '任务类型',
-                    border: OutlineInputBorder(),
                   ),
                   items: const [
                     DropdownMenuItem(
@@ -393,7 +391,6 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                   decoration: const InputDecoration(
                     labelText: 'Cron 表达式',
                     hintText: '0 8 * * *',
-                    border: OutlineInputBorder(),
                     helperText: '标准5位 cron 表达式（分 时 日 月 周）',
                   ),
                 ),
@@ -535,7 +532,6 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                   controller: nameController,
                   decoration: const InputDecoration(
                     labelText: '任务名称',
-                    border: OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -543,7 +539,6 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                   initialValue: taskType,
                   decoration: const InputDecoration(
                     labelText: '任务类型',
-                    border: OutlineInputBorder(),
                   ),
                   items: const [
                     DropdownMenuItem(
@@ -561,7 +556,6 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
                   controller: cronController,
                   decoration: const InputDecoration(
                     labelText: 'Cron 表达式',
-                    border: OutlineInputBorder(),
                     helperText: '标准5位 cron 表达式（分 时 日 月 周）',
                   ),
                 ),
@@ -649,7 +643,6 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
           decoration: const InputDecoration(
             labelText: 'URL',
             hintText: 'https://example.com/autoTask.json',
-            border: OutlineInputBorder(),
           ),
         ),
         actions: [
@@ -940,7 +933,6 @@ class _BookUpdateTaskDialogState extends State<_BookUpdateTaskDialog> {
               controller: _nameController,
               decoration: const InputDecoration(
                 labelText: '任务名称',
-                border: OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),

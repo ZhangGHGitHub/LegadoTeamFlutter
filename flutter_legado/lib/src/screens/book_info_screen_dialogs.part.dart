@@ -144,7 +144,6 @@ class _VariableDialogState extends State<_VariableDialog> {
               maxLines: null,
               decoration: const InputDecoration(
                 labelText: 'variable',
-                border: OutlineInputBorder(),
               ),
             ),
           ],

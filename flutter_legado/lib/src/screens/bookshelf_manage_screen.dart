@@ -323,6 +323,16 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
                 borderRadius: BorderRadius.circular(35),
                 borderSide: BorderSide.none,
               ),
+              // [B3] 搜索胶囊：参考版实测「无描边无底线、聚焦零变化」。
+              // 显式声明 enabled/focused，防止主题新的底部指示线渗入。
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(35),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(35),
+                borderSide: BorderSide.none,
+              ),
             ),
           ),
         ),

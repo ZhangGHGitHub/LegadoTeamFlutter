@@ -233,6 +233,16 @@ class _FileManageScreenState extends State<FileManageScreen> {
                 borderRadius: BorderRadius.circular(35),
                 borderSide: BorderSide.none,
               ),
+              // [B3] 搜索胶囊：无描边无底线、聚焦零变化
+              // （显式声明防主题底部指示线渗入）
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(35),
+                borderSide: BorderSide.none,
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(35),
+                borderSide: BorderSide.none,
+              ),
             ),
           ),
         ),

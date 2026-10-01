@@ -493,7 +493,6 @@ class _BrowserScreenState extends State<BrowserScreen> {
           decoration: const InputDecoration(
             labelText: '执行结果',
             hintText: '将控制台输出粘贴到此处',
-            border: OutlineInputBorder(),
             alignLabelWithHint: true,
           ),
         ),

@@ -162,7 +162,6 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                 decoration: const InputDecoration(
                   hintText: '筛选 • 远程书籍',
                   prefixIcon: Icon(Symbols.search_rounded),
-                  border: OutlineInputBorder(),
                   isDense: true,
                 ),
                 onChanged: notifier.setFilter,

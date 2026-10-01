@@ -162,7 +162,6 @@ class _BookmarkScreenState extends ConsumerState<BookmarkScreen> {
           controller: _searchController,
           decoration: const InputDecoration(
             hintText: '输入关键词搜索书签',
-            border: OutlineInputBorder(),
           ),
           autofocus: true,
           onSubmitted: (value) {

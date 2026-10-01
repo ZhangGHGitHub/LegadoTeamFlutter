@@ -289,7 +289,6 @@ class _TtsEditDialogState extends State<_TtsEditDialog> {
                 decoration: const InputDecoration(
                   labelText: '名称 *',
                   hintText: '例如：Edge TTS',
-                  border: OutlineInputBorder(),
                   isDense: true,
                 ),
                 validator: (v) =>
@@ -301,7 +300,6 @@ class _TtsEditDialogState extends State<_TtsEditDialog> {
                 decoration: const InputDecoration(
                   labelText: 'URL *',
                   hintText: 'http://localhost:1234/tts?text={{text}}',
-                  border: OutlineInputBorder(),
                   isDense: true,
                 ),
                 keyboardType: TextInputType.url,
@@ -317,7 +315,6 @@ class _TtsEditDialogState extends State<_TtsEditDialog> {
                 decoration: const InputDecoration(
                   labelText: 'Content-Type',
                   hintText: '可选，例如 audio/mpeg',
-                  border: OutlineInputBorder(),
                   isDense: true,
                 ),
               ),
@@ -327,7 +324,6 @@ class _TtsEditDialogState extends State<_TtsEditDialog> {
                 decoration: const InputDecoration(
                   labelText: '请求头 (JSON)',
                   hintText: '可选，例如 {"Authorization":"Bearer xxx"}',
-                  border: OutlineInputBorder(),
                   isDense: true,
                 ),
                 maxLines: 2,

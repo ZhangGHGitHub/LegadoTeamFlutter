@@ -50,7 +50,6 @@ class _CustomGroupDialogState extends State<CustomGroupDialog> {
             controller: _controller,
             decoration: const InputDecoration(
               labelText: '分组名称',
-              border: OutlineInputBorder(),
             ),
           ),
         ],

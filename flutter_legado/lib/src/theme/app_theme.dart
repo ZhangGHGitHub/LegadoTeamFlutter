@@ -72,6 +72,13 @@ class AppTheme {
   /// 圆角：输入框 / 菜单 / 小控件
   static const double _controlRadius = 12.0;
 
+  /// 输入框填充盒形状：顶角 4dp 圆、底角直角（参考版 B3 实测）。
+  /// 用于 [UnderlineInputBorder.borderRadius]——它同时定义填充底色与底线
+  /// 两端的形状；显式声明防止未来 SDK 默认值变化导致形态漂移。
+  static const BorderRadius _fieldFillRadius = BorderRadius.vertical(
+    top: Radius.circular(4),
+  );
+
   /// 圆角：弹窗 / 底部抽屉（M3 extraLarge 28）
   static const double _extraLargeRadius = 28.0;
 
@@ -334,22 +341,32 @@ class AppTheme {
         ),
       ),
 
-      // 输入框主题 —— M3 填充式（surfaceContainerHighest 底）
+      // 输入框主题 —— 参考版实测形态：填充盒+底部指示线（聚焦主题色加粗），
+      // 四边无描边（B3 取证 2026-10-01）
+      //
+      // [B3] 参考版 kazusa 实测：未聚焦=深色细底线（实测 (75,71,57)，即
+      // 调色板 onSurfaceVariant 角色；非浅色 outlineVariant）、聚焦=主题色
+      // 底线约 2dp；填充盒顶角 4dp 圆、底角直角，四边（含顶边）均无描边。
+      // Flutter 侧对应 UnderlineInputBorder：只绘制底线，且其 borderRadius
+      // 同时决定填充底色形状（SDK 文档：the border radius defines the shape
+      // of the background fill as well as the bottom edges of the underline）。
+      // 注意不可用 OutlineInputBorder+borderSide：它会四边整圈描边，正是
+      // B3 要修掉的偏离形态。
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
         fillColor: colorScheme.surfaceContainerHighest,
         isDense: true,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(_controlRadius),
-          borderSide: BorderSide.none,
+        border: UnderlineInputBorder(
+          borderRadius: _fieldFillRadius,
+          borderSide: BorderSide(color: colorScheme.onSurfaceVariant, width: 1),
         ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(_controlRadius),
-          borderSide: BorderSide.none,
+        enabledBorder: UnderlineInputBorder(
+          borderRadius: _fieldFillRadius,
+          borderSide: BorderSide(color: colorScheme.onSurfaceVariant, width: 1),
         ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(_controlRadius),
-          borderSide: BorderSide(color: colorScheme.primary, width: 1.5),
+        focusedBorder: UnderlineInputBorder(
+          borderRadius: _fieldFillRadius,
+          borderSide: BorderSide(color: colorScheme.primary, width: 2),
         ),
         hintStyle: AppTypography.lightTextTheme.bodyMedium?.copyWith(
           color: colorScheme.onSurfaceVariant,

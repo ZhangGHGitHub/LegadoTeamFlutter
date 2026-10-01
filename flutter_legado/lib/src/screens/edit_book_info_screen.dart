@@ -107,7 +107,6 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
                       controller: _nameCtrl,
                       decoration: const InputDecoration(
                         labelText: '书名',
-                        border: OutlineInputBorder(),
                       ),
                       textInputAction: TextInputAction.next,
                       validator: (v) => (v == null || v.trim().isEmpty)
@@ -119,7 +118,6 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
                       controller: _authorCtrl,
                       decoration: const InputDecoration(
                         labelText: '作者',
-                        border: OutlineInputBorder(),
                       ),
                       textInputAction: TextInputAction.next,
                     ),
@@ -129,7 +127,6 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
                       decoration: const InputDecoration(
                         labelText: '封面地址',
                         hintText: '输入封面图片 URL',
-                        border: OutlineInputBorder(),
                       ),
                       textInputAction: TextInputAction.next,
                     ),
@@ -139,7 +136,6 @@ class _EditBookInfoScreenState extends ConsumerState<EditBookInfoScreen> {
                       decoration: const InputDecoration(
                         labelText: '简介',
                         alignLabelWithHint: true,
-                        border: OutlineInputBorder(),
                       ),
                       minLines: 4,
                       maxLines: 10,

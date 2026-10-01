@@ -247,7 +247,6 @@ class _ExportDialogState extends State<ExportDialog> {
           controller: _fileNameCtrl,
           decoration: const InputDecoration(
             hintText: '{name}',
-            border: OutlineInputBorder(),
             isDense: true,
           ),
         ),
@@ -278,7 +277,6 @@ class _ExportDialogState extends State<ExportDialog> {
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                   labelText: '起始',
-                  border: OutlineInputBorder(),
                   isDense: true,
                 ),
               ),
@@ -293,7 +291,6 @@ class _ExportDialogState extends State<ExportDialog> {
                 keyboardType: TextInputType.number,
                 decoration: const InputDecoration(
                   labelText: '结束',
-                  border: OutlineInputBorder(),
                   isDense: true,
                 ),
               ),

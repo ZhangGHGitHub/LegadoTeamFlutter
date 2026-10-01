@@ -223,7 +223,6 @@ class _ExploreFilterDialogState extends State<_ExploreFilterDialog> {
             decoration: const InputDecoration(
               hintText: '关键字（留空=不过滤）',
               isDense: true,
-              border: OutlineInputBorder(),
             ),
             onSubmitted: (v) => Navigator.of(context).pop(v),
           ),

@@ -1351,7 +1351,6 @@ class _ResultFilterDialogState extends State<_ResultFilterDialog> {
             autofocus: true,
             decoration: const InputDecoration(
               hintText: '屏蔽词（每行一个）',
-              border: OutlineInputBorder(),
             ),
           ),
         ],

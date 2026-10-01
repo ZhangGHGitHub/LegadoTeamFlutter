@@ -229,7 +229,6 @@ class _VerificationCodeDialogState
             autofocus: true,
             decoration: const InputDecoration(
               hintText: '输入验证码',
-              border: OutlineInputBorder(),
             ),
             onSubmitted: (_) => _submit(),
           ),

@@ -101,7 +101,6 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
                 autofocus: true,
                 decoration: const InputDecoration(
                   labelText: '分组名称',
-                  border: OutlineInputBorder(),
                 ),
               ),
               const SizedBox(height: 12),
@@ -109,7 +108,6 @@ class _BookGroupScreenState extends ConsumerState<BookGroupScreen> {
                 controller: coverController,
                 decoration: const InputDecoration(
                   labelText: '封面图片 URL（可选）',
-                  border: OutlineInputBorder(),
                 ),
               ),
             ],

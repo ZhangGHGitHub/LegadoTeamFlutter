@@ -51,7 +51,6 @@ class _SourceVariableDialogState extends State<_SourceVariableDialog> {
               autofocus: true,
               decoration: const InputDecoration(
                 hintText: '输入源变量（空则清除）',
-                border: OutlineInputBorder(),
               ),
             ),
           ],
