@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.342] - 2026-10-01
+
+### Fixed
+- [UI] 新增高亮规则弹窗颜色行窄屏溢出（RIGHT OVERFLOWED BY 16 PIXELS）修复：色块行改 Wrap，360dp 设备视觉零变化、更窄屏自动换行。
+
+### Changed
+- [UI] B3 尾项：9 处刻意无边框输入场（沉浸编辑区/顶栏搜索框/胶囊等）补 enabled+focused 无边框显式声明，消除主题底线渗入；换源筛选胶囊补无边框胶囊声明。
+
 ## [2.0.341] - 2026-10-01
 
 ### Changed
