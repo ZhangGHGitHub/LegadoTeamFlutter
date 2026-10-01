@@ -4564,7 +4564,7 @@ mod tests {
         // P2-4：夹具经 include_str! 编译期入库——干净检出必然存在（此前读
         // 未跟踪的 .tmp/source_1270.json，缺失时 eprintln + return 静默通过）
         let source: BookSource = serde_json::from_str(include_str!(
-            "../../legado-ffi/tests/fixtures/source_shoujixiaoshuo_sjshuku.json"
+            "../tests/fixtures/source_shoujixiaoshuo_sjshuku.json"
         ))
         .expect("手机小说书源 JSON（夹具逐字提取，见 tests/fixtures）");
         variable_store::clear_variables().expect("清全局变量表");
@@ -5884,7 +5884,7 @@ mod tests {
         // 读 overlay）→ 持 crate 级 test_support 锁串行防串表
         let _lock = crate::test_support::lock_global_store();
         let source: BookSource = serde_json::from_str(include_str!(
-            "../../legado-ffi/tests/fixtures/jhsu_book4cc_source.json"
+            "../tests/fixtures/jhsu_book4cc_source.json"
         ))
         .expect("聚合书库书源 JSON（q9.db 逐字）");
         // 离线 fixture 详情页响应体：单行 `book={…}`（init 正则
@@ -6434,7 +6434,8 @@ mod tests {
     /// 从而将「正文为空」根因锁定为数据/换源匹配错书（章节 URL 指向异书），而非解析代码 bug。
     #[test]
     fn test_parse_content_page_real_95590_entry_content() {
-        let html = include_str!("../../legado-ffi/tests/fixtures_95590_ch9.html");
+        // P2-1：夹具自 legado-ffi/tests/ 迁入本 crate tests/fixtures/（原名保留）
+        let html = include_str!("../tests/fixtures/fixtures_95590_ch9.html");
         let (content, _next) = parse_content_page(
             html.to_string(),
             ".entry-content@html",
@@ -6948,10 +6949,11 @@ mod tests {
     fn qmao_js_rule_extracts_m3u8_from_saved_html() {
         let html_path = concat!(
             env!("CARGO_MANIFEST_DIR"),
-            "/../legado-ffi/tests/fixtures/qmao_play_full.html"
+            "/tests/fixtures/qmao_play_full.html"
         );
         let html = std::fs::read_to_string(html_path).expect("qmao_play_full.html");
-        let json = include_str!("../../legado-ffi/tests/fixtures/qmao_min_source.json");
+        // 与 legado-ffi/src/api/web_book.rs 测试同源副本，改动须双同步（见 tests/fixtures/README.md）
+        let json = include_str!("../tests/fixtures/qmao_min_source.json");
         let source: BookSource = serde_json::from_str(json).unwrap();
         let rule = source
             .rule_content

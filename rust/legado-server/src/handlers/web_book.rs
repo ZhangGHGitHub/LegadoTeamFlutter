@@ -116,6 +116,11 @@ pub struct WebBookContentResponse {
 /// 进程级限速注册表（对齐 ffi `api::source_rate_limit::registry`）：
 /// 跨请求保持各书源 `concurrentRate` 窗口状态。旧 server 本地分叉版
 /// 零限速，切换后 REST 端点获得与 App 主链路一致的源级限速门控。
+///
+/// [P2 互认] ffi 侧另有一份同名 static（`api::source_rate_limit::REGISTRY`）。
+/// 当前 server 与 ffi 分属不同进程/使用形态，无双实例；若未来同进程同时
+/// 启用 ffi 抓取路径与 REST 端点，concurrentRate 窗口将按路径分叉（弱于
+/// 真单例）——届时须收敛为单例（句柄经共享 crate 静态化或宿主注入同一 Arc）。
 static RATE_LIMITER: OnceLock<Arc<RateLimiterRegistry>> = OnceLock::new();
 
 fn rate_limiter() -> Arc<RateLimiterRegistry> {
