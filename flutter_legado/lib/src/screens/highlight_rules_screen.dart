@@ -421,25 +421,31 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
             const SizedBox(height: 16),
             Text('高亮颜色', style: theme.textTheme.bodyMedium),
             const SizedBox(height: 8),
-            Row(
+            // [窄屏溢出修复 | 2026-10-01] 原 Row 固定色块行（8×32dp 色块 +
+            // 每块右侧 10dp = 336dp）在 360dp 设备上超出内容可用宽 320dp，
+            // 实机报 RIGHT OVERFLOWED BY 16 PIXELS（MuMu 取证
+            // .tmp/b3_ours_hl_dialog.png）。改 Wrap 换行，形态对齐项目内
+            // 色板先例（theme_config_screen.dart _showColorPicker、
+            // reader_settings_sheet.dart 自定义配色）：色块与间距等宽 =
+            // 8×32 + 7×8 = 312dp ≤ 320dp，360dp 上仍单行，更窄时自动换行。
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 for (final color in presetColors)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 10),
-                    child: GestureDetector(
-                      onTap: () => setState(() => _color = color.toARGB32()),
-                      child: Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: color,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: _color == color.toARGB32()
-                                ? cs.primary
-                                : Colors.transparent,
-                            width: 3,
-                          ),
+                  GestureDetector(
+                    onTap: () => setState(() => _color = color.toARGB32()),
+                    child: Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: _color == color.toARGB32()
+                              ? cs.primary
+                              : Colors.transparent,
+                          width: 3,
                         ),
                       ),
                     ),

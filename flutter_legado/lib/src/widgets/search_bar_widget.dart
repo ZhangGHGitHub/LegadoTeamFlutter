@@ -72,7 +72,10 @@ class _SearchBarWidgetState extends State<SearchBarWidget> {
               onSubmitted: _handleSubmit,
               decoration: InputDecoration(
                 hintText: widget.hintText,
+                // [B3] 搜索胶囊：三态显式无边框，防主题底线式渗入
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(vertical: 8),
               ),

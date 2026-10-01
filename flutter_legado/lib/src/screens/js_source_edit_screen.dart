@@ -408,7 +408,10 @@ class _JsSourceEditScreenState extends ConsumerState<JsSourceEditScreen> {
                           color: cs.onSurface,
                         ),
                         decoration: const InputDecoration(
+                          // [B3] 沉浸 JS 编辑区：三态显式无边框，防主题底线式渗入
                           border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
                           contentPadding: EdgeInsets.all(14),
                           hintText: '在此编写 JS 书源脚本…',
                         ),

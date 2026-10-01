@@ -757,7 +757,10 @@ class _TextChipState extends ConsumerState<_TextChip> {
             color: colorScheme.onSurfaceVariant,
             fontSize: 14,
           ),
+          // [B3] 探索分类胶囊内嵌输入：三态显式无边框，防主题底线式渗入
           border: InputBorder.none,
+          enabledBorder: InputBorder.none,
+          focusedBorder: InputBorder.none,
           isDense: true,
           contentPadding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
         ),

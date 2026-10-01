@@ -320,7 +320,10 @@ class _CodeEditScreenState extends State<CodeEditScreen> {
                       height: 1.4,
                     ),
                     decoration: const InputDecoration(
+                      // [B3] 沉浸代码编辑区：三态显式无边框，防主题底线式渗入
                       border: InputBorder.none,
+                      enabledBorder: InputBorder.none,
+                      focusedBorder: InputBorder.none,
                       contentPadding: EdgeInsets.all(14),
                     ),
                     onChanged: (_) => setState(() {}),

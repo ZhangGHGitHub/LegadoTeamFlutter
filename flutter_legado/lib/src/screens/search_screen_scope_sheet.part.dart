@@ -290,7 +290,10 @@ class _SearchScopeSheetState extends ConsumerState<_SearchScopeSheet> {
                     fontSize: 14, color: scheme.onSurface.withValues(alpha: 0.5)),
                 prefixIcon: Icon(Symbols.search_rounded, size: 20,
                     color: scheme.onSurface.withValues(alpha: 0.5)),
+                // [B3] 弹层内筛选框：三态显式无边框，防主题底线式渗入
                 border: InputBorder.none,
+                enabledBorder: InputBorder.none,
+                focusedBorder: InputBorder.none,
                 isDense: true,
                 contentPadding: const EdgeInsets.symmetric(
                     horizontal: 12, vertical: 8),

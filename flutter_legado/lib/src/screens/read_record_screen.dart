@@ -95,7 +95,10 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
           decoration: InputDecoration(
             isDense: true,
             hintText: '搜索',
+            // [B3] 顶栏沉浸搜索框：三态显式无边框，防主题底线式渗入
             border: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            focusedBorder: InputBorder.none,
             hintStyle: TextStyle(
               color: colorScheme.onSurface.withValues(alpha: 0.45),
             ),

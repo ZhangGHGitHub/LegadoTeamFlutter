@@ -310,7 +310,10 @@ class _BottomBarSkinAssignScreenState extends State<BottomBarSkinAssignScreen> {
                         child: TextField(
                           controller: _nameCtrl,
                           decoration: const InputDecoration(
+                            // [B3] 分组卡行内名称输入：三态显式无边框，防主题底线式渗入
                             border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
                             hintText: '图集名称',
                           ),
                         ),

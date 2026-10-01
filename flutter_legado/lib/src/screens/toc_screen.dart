@@ -681,7 +681,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
                 autofocus: true,
                 decoration: const InputDecoration(
                   hintText: '搜索...',
+                  // [B3] 顶栏沉浸搜索框：三态显式无边框，防主题底线式渗入
                   border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
                 ),
                 onChanged: _onSearchChanged,
               )
