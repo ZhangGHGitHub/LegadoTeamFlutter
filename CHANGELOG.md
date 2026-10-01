@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.343] - 2026-10-01
+
+### Added
+- [UI] 漫画阅读设置支持翻页模式与条漫侧边留白的本书覆盖/跟随全局；其他漫画设置保持全局。
+
+### Fixed
+- [Rust] `updateBook` 全行回写静默丢弃书级漫画设置：`ReadConfig` 类型化结构体补 `mangaScrollMode`/`webtoonSidePaddingDp` 加法式接收与回写链（旧 JSON/旧库缺键回退全局），新增核心/DB/FFI 回归测试；零 FFI 签名与方法计数变化。
+
 ## [2.0.342] - 2026-10-01
 
 ### Fixed
