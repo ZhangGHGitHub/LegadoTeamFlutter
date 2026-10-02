@@ -26,7 +26,8 @@ pub fn add_source(source_json: &str) -> LegadoResult<BookSource> {
         repo.insert(&source)?;
         Ok(source)
     })?;
-    // 写库成功后才刷新既有 limiter（写库失败经 `?` 提前返回，不触发刷新）
+    // 写库成功后才刷新限速注册表（写库失败经 `?` 提前返回，不触发刷新）；
+    // 空值（这里的 `None`/空串）经 refresh 走清除路径，合法值原位刷新
     crate::api::source_rate_limit::refresh_source_rate_limit(
         &saved.book_source_url,
         saved.concurrent_rate.as_deref().unwrap_or(""),
@@ -42,7 +43,8 @@ pub fn update_source(source_json: &str) -> LegadoResult<()> {
         let repo = BookSourceRepository::new(db.connection());
         repo.update(&source)
     })?;
-    // 写库成功后才刷新既有 limiter（失败经 `?` 提前返回，不触发刷新）
+    // 写库成功后才刷新限速注册表（失败经 `?` 提前返回，不触发刷新）；
+    // 保存显式 null/空串 → 清除路径（移除该 key 的 limiter），合法值原位刷新
     crate::api::source_rate_limit::refresh_source_rate_limit(
         &source.book_source_url,
         source.concurrent_rate.as_deref().unwrap_or(""),
@@ -245,6 +247,43 @@ mod tests {
         let v2 = test_source(url, Some("3/10000"));
         update_source(&serde_json::to_string(&v2).unwrap()).unwrap();
         crate::runtime::block_on(assert_stale_acquire_passes(&registry, &v1));
+
+        delete_source(url).unwrap();
+    }
+
+    /// update 清除 concurrentRate（缺省 None 或空串）：registry 移除该 key 的
+    /// limiter，旧快照下一次 acquire 立即放行（不再受已用满的旧窗口约束）
+    #[test]
+    fn test_update_source_clears_rate_limiter_when_rate_removed() {
+        let _db_guard = setup_test_db();
+        let url = "https://ffi-ratelimit-clear.example";
+        let registry = crate::api::source_rate_limit::registry();
+
+        let v1 = test_source(url, Some("1/10000"));
+        add_source(&serde_json::to_string(&v1).unwrap()).unwrap();
+        crate::runtime::block_on(registry.acquire(&v1)); // 旧率窗口已用 1 次
+
+        // 保存时 concurrentRate 缺省（None）→ DB 清空 + registry 移除
+        let cleared = test_source(url, None);
+        update_source(&serde_json::to_string(&cleared).unwrap()).unwrap();
+        let found = list_sources()
+            .unwrap()
+            .into_iter()
+            .find(|s| s.book_source_url == url)
+            .expect("书源仍存在");
+        assert!(
+            found.concurrent_rate.is_none(),
+            "缺省保存应清空 DB 内 concurrentRate"
+        );
+        crate::runtime::block_on(assert_stale_acquire_passes(&registry, &v1));
+
+        // 空串同样走清除路径（registry 移除既有 limiter）
+        let v2 = test_source(url, Some("2/10000"));
+        update_source(&serde_json::to_string(&v2).unwrap()).unwrap();
+        crate::runtime::block_on(registry.acquire(&v2)); // 新窗口已用 1 次
+        let empty = test_source(url, Some(""));
+        update_source(&serde_json::to_string(&empty).unwrap()).unwrap();
+        crate::runtime::block_on(assert_stale_acquire_passes(&registry, &v2));
 
         delete_source(url).unwrap();
     }

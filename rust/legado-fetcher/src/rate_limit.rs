@@ -6,10 +6,16 @@
 //! 实例，语义与下沉前一致。
 //!
 //! 配置单写者（对齐上游 `ConcurrentRateLimiter` 的职责切分）：
-//! - [`RateLimiterRegistry::update`]（宿主书源保存路径调用，对应上游
-//!   `updateConcurrentRate`）是唯一配置写入者：已有 limiter 时原地替换
-//!   `accessLimit / interval` 并保留当前窗口的 time / frequency；空 / `"0"`
-//!   / 非法不改动；无既有记录不预创建。
+//! - [`RateLimiterRegistry::refresh`]（宿主书源保存路径统一入口，对应上游
+//!   `updateConcurrentRate` 的保存侧语义）：空 / `"0"`（忽略首尾空白）→
+//!   [`RateLimiterRegistry::remove`]（对齐原版「空即不限流」，清掉既有
+//!   limiter）；其余值转 [`RateLimiterRegistry::update`]。
+//! - [`RateLimiterRegistry::update`] 是合法 rate 的配置写入者：已有 limiter
+//!   时原地替换 `accessLimit / interval` 并保留当前窗口的 time / frequency；
+//!   非法不改动；无既有记录不预创建。
+//! - [`RateLimiterRegistry::remove`] 是清除原语：map 锁内移除条目；已取走
+//!   `Arc` 的在途请求落在被移除实例上自然跑完，后续 acquire 按当前快照
+//!   重新惰性创建。
 //! - [`RateLimiterRegistry::acquire`] 只读既有配置，仅在 key 缺失时按当前
 //!   快照惰性创建 limiter（对应上游 fetchStart 的 computeIfAbsent）。
 //!
@@ -22,14 +28,15 @@
 //! 比较的方案都无法为旧/新快照定序，故最小且与上游同构的方案是配置单写者。
 //!
 //! 已知残余（任务约束「未注册 key 更新不创建项」所致）：key 从未注册、
-//! 编辑保存（此时 update 空转）之后，若首个 acquire 来自编辑前的旧快照，
-//! 仍会以旧率创建 limiter（上游以 update 预建 record 关闭该窗口）。关闭需
-//! 增加「未建 limiter 的待用配置」小条目，与上述约束冲突，留待裁决。
+//! 编辑保存（合法值经 refresh → update 空转、不预创建）之后，若首个 acquire
+//! 来自编辑前的旧快照，仍会以旧率创建 limiter（上游以 update 预建 record
+//! 关闭该窗口）。关闭需增加「未建 limiter 的待用配置」小条目，与上述约束
+//! 冲突，留待裁决。
 //!
 //! 锁序约定：registry 的 `limiters` map 锁（M）与 limiter 内部 `state` 锁
-//! （S）从不嵌套——acquire / update 均先在 M 内取出/插入 `Arc` 并释放 M，
-//! 之后才调用 limiter 方法（`acquire` / `update_rate`）。limiter 不感知 M，
-//! 两者互为叶子，无锁环；禁止在持 M 时调用任何 limiter 方法。
+//! （S）从不嵌套——acquire / update / remove / refresh 均只在 M 内取出/插入/
+//! 移除 `Arc` 并释放 M，之后才调用 limiter 方法（`acquire` / `update_rate`）。
+//! limiter 不感知 M，两者互为叶子，无锁环；禁止在持 M 时调用任何 limiter 方法。
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
@@ -69,12 +76,12 @@ impl RateLimiterRegistry {
         limiter.acquire().await;
     }
 
-    /// 书源 `concurrentRate` 编辑后刷新既有 limiter 配置（唯一配置写入者）
+    /// 书源 `concurrentRate` 编辑后刷新既有 limiter 配置（合法 rate 的配置写入者）
     ///
     /// 对齐上游 `ConcurrentRateLimiter.updateConcurrentRate(key, concurrentRate)`：
     /// - 已有该 key 的 limiter：原地更新 `accessLimit / interval`，保留当前
     ///   窗口的 time/frequency（不重置已用次数）；
-    /// - 空 / `"0"` / 非法输入：不改动既有记录；
+    /// - 非法输入：不改动既有记录；
     /// - 无既有记录：不预创建 limiter（延迟到首次 [`Self::acquire`]）。
     pub fn update(&self, source_url: &str, concurrent_rate: &str) {
         let Some((access_limit, interval_ms)) = IntervalRateLimiter::parse_rate(concurrent_rate)
@@ -88,6 +95,32 @@ impl RateLimiterRegistry {
         };
         if let Some(limiter) = existing {
             limiter.update_rate(access_limit, interval_ms);
+        }
+    }
+
+    /// 移除指定 key 的 limiter（书源保存路径清空 `concurrentRate` 时调用）
+    ///
+    /// 对齐原版「空即不限流」：清掉既有窗口记录，使后续访问立即放行。
+    /// 在 map 锁内 `remove` 后不再触碰该 limiter；被移除前已经取走 `Arc`
+    /// 的在途请求落在原实例上自然跑完（窗口状态独立于注册表），下一次
+    /// [`Self::acquire`] 会按当前快照重新惰性创建。未注册 key 为 no-op。
+    pub fn remove(&self, source_url: &str) {
+        let mut guard = self.limiters.lock().unwrap_or_else(|p| p.into_inner());
+        guard.remove(source_url);
+    }
+
+    /// 书源保存路径的统一配置刷新入口（合法值更新 / 空值清除）
+    ///
+    /// - 空 / `"0"`（忽略首尾空白）→ [`Self::remove`]：对齐原版「空=不限流」，
+    ///   清掉既有 limiter，避免编辑保存清空后仍沿用旧限速；
+    /// - 其余值 → [`Self::update`]：合法率原地刷新并保留窗口，非法率不改动
+    ///   （解析规则见 [`IntervalRateLimiter::parse_rate`]）。
+    pub fn refresh(&self, source_url: &str, concurrent_rate: &str) {
+        let rate = concurrent_rate.trim();
+        if rate.is_empty() || rate == "0" {
+            self.remove(source_url);
+        } else {
+            self.update(source_url, rate);
         }
     }
 
@@ -370,5 +403,92 @@ mod tests {
             tokio::time::timeout(Duration::from_millis(1000), registry.acquire(&stale)).await;
         assert!(passed.is_ok(), "并发结束后配置必须保持为 update 写入的新率");
         assert_eq!(tracked(&registry), 1, "并发过程不得产生重复条目");
+    }
+
+    // ─── remove / refresh（保存路径空值清除语义） ─────────────────────────────
+
+    /// remove 丢弃记录：下次 acquire 按当前快照重新惰性创建（新窗口立即放行）
+    #[tokio::test]
+    async fn remove_drops_record_and_next_acquire_recreates() {
+        let registry = RateLimiterRegistry::new();
+        let src = source("https://rate-remove.example", Some("1/10000"));
+        registry.acquire(&src).await; // 窗口已用 1 次（继续访问会被挡）
+        assert_eq!(tracked(&registry), 1);
+
+        registry.remove(&src.book_source_url);
+        assert_eq!(tracked(&registry), 0, "remove 必须丢弃既有条目");
+
+        let passed = tokio::time::timeout(Duration::from_millis(500), registry.acquire(&src)).await;
+        assert!(passed.is_ok(), "remove 后重新惰性创建，新窗口应立即放行");
+        assert_eq!(tracked(&registry), 1, "重新 acquire 应重建条目");
+    }
+
+    /// remove 不影响在途 Arc：已取走的 limiter 实例按原窗口继续约束
+    #[tokio::test]
+    async fn remove_keeps_in_flight_arc_alive() {
+        let registry = RateLimiterRegistry::new();
+        let src = source("https://rate-remove-inflight.example", Some("1/10000"));
+        registry.acquire(&src).await; // 窗口已用 1 次
+
+        let inflight = {
+            let guard = registry.limiters.lock().unwrap_or_else(|p| p.into_inner());
+            Arc::clone(guard.get(&src.book_source_url).expect("已注册"))
+        };
+        registry.remove(&src.book_source_url);
+
+        // 在途实例仍持原窗口：继续 acquire 被挡
+        let blocked = tokio::time::timeout(Duration::from_millis(300), inflight.acquire()).await;
+        assert!(
+            blocked.is_err(),
+            "在途 Arc 必须按原窗口继续约束，不受 remove 影响"
+        );
+        // 注册表侧已是新实例：立即放行
+        let passed = tokio::time::timeout(Duration::from_millis(500), registry.acquire(&src)).await;
+        assert!(passed.is_ok(), "remove 后注册表应按快照重建新窗口");
+    }
+
+    /// remove 未注册 key 为 no-op（不 panic、不产生条目）
+    #[tokio::test]
+    async fn remove_unregistered_key_is_noop() {
+        let registry = RateLimiterRegistry::new();
+        registry.remove("https://rate-remove-absent.example");
+        assert_eq!(tracked(&registry), 0);
+    }
+
+    /// refresh 分发：空 / `"0"`（含空白）→ 移除；非法 → 不改动既有记录；
+    /// 合法 → 原地刷新且不新建条目
+    #[tokio::test]
+    async fn refresh_empty_or_zero_removes_and_invalid_keeps() {
+        let registry = RateLimiterRegistry::new();
+        let src = source("https://rate-refresh.example", Some("2/10000"));
+        registry.acquire(&src).await;
+        registry.acquire(&src).await; // 窗口已用满 2 次
+
+        // 非法值不改动既有记录（仍受旧限制约束）
+        registry.refresh(&src.book_source_url, "abc");
+        let blocked =
+            tokio::time::timeout(Duration::from_millis(300), registry.acquire(&src)).await;
+        assert!(blocked.is_err(), "非法值 refresh 不得改变既有记录");
+
+        // 空白串 → 移除（原版空即不限流）
+        registry.refresh(&src.book_source_url, "  ");
+        assert_eq!(tracked(&registry), 0, "空值 refresh 必须移除既有条目");
+        let passed = tokio::time::timeout(Duration::from_millis(500), registry.acquire(&src)).await;
+        assert!(passed.is_ok(), "清除后应立即放行");
+
+        // "0" → 同样移除
+        registry.acquire(&src).await;
+        registry.acquire(&src).await; // 2/10000 窗口再次用满
+        registry.refresh(&src.book_source_url, "0");
+        assert_eq!(tracked(&registry), 0, "\"0\" refresh 必须移除既有条目");
+        let passed = tokio::time::timeout(Duration::from_millis(500), registry.acquire(&src)).await;
+        assert!(passed.is_ok(), "\"0\" 清除后应立即放行");
+
+        // 合法值 → 既有记录被原地刷新且不新建条目
+        registry.acquire(&src).await; // 重建条目（窗口已用 1 次）
+        registry.refresh(&src.book_source_url, "3/10000");
+        assert_eq!(tracked(&registry), 1, "合法值 refresh 必须原地刷新");
+        let passed = tokio::time::timeout(Duration::from_millis(500), registry.acquire(&src)).await;
+        assert!(passed.is_ok(), "升额到 3 且保留已用 1 次后应立即放行");
     }
 }

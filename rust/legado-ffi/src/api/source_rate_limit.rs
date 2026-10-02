@@ -15,10 +15,10 @@ pub use legado_fetcher::rate_limit::RateLimiterRegistry;
 /// `RATE_LIMITER`）。ffi 与 server 可同进程并存（同一进程同时启用 ffi 抓取
 /// 路径与 REST 端点），但两者各持独立 static registry，本批不做共享单例
 /// 收敛；源编辑保存会在各自保存路径刷新各自 registry（ffi `source.rs`
-/// add/update/import；server handlers/source_update.rs 批量导入；REST
-/// create/update 请求体无 concurrentRate，未接线）。REST/FFI 同时抓取同一源
-/// 时窗口仍会分叉（弱于真单例）——收敛为单例（如注册表句柄经共享 crate
-/// 静态化或宿主注入同一份 Arc）留待后续裁决。
+/// add/update/import；server handlers/source_update.rs 批量导入与 REST
+/// create/update）。REST/FFI 同时抓取同一源时窗口仍会分叉（弱于真单例）
+/// ——收敛为单例（如注册表句柄经共享 crate 静态化或宿主注入同一份 Arc）
+/// 留待后续裁决。
 static REGISTRY: OnceLock<Arc<RateLimiterRegistry>> = OnceLock::new();
 
 /// 取进程级注册表（装配 `FetcherDeps.rate_limiter` 用）
@@ -28,11 +28,13 @@ pub(crate) fn registry() -> Arc<RateLimiterRegistry> {
 
 /// 书源保存成功后的限速配置刷新入口（宿主保存路径：source add/update/import 调用）
 ///
-/// 只刷新既有 limiter（[`RateLimiterRegistry::update`] 语义：空/"0"/非法 rate
-/// 与未注册 key 均不改动），可在写库成功后无条件调用；写库失败不得调用
-/// （避免未落库的配置提前生效）。
+/// 走 [`RateLimiterRegistry::refresh`] 的保存侧分发：空 / `"0"`（忽略首尾
+/// 空白）→ 移除既有 limiter（对齐原版「空即不限流」，保存显式 null/空串后
+/// 不再沿用旧限速）；合法 rate → 原位刷新；非法 rate 与未注册 key → 不改动/
+/// 不预创建。可在写库成功后无条件调用；写库失败不得调用（避免未落库的配置
+/// 提前生效）。
 pub(crate) fn refresh_source_rate_limit(source_url: &str, concurrent_rate: &str) {
-    registry().update(source_url, concurrent_rate);
+    registry().refresh(source_url, concurrent_rate);
 }
 
 /// 按书源 `concurrentRate` 获取访问许可（空/"0"/非法 → 立即返回）

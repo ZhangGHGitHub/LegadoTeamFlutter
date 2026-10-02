@@ -120,23 +120,25 @@ pub struct WebBookContentResponse {
 /// [P2 互认] ffi 侧另有一份同名 static（`api::source_rate_limit::REGISTRY`）。
 /// ffi 与 server 可同进程并存（同一进程同时启用 ffi 抓取路径与 REST 端点），
 /// 但两者各持独立 static registry，本批不做共享单例收敛；源编辑保存在各自
-/// 保存路径刷新各自 registry（server `handlers/source_update.rs` 批量导入；
-/// ffi `api/source.rs` add/update/import；REST create/update 请求体无
-/// concurrentRate，未接线）。REST/FFI 同时抓取同一源时窗口仍会分叉（弱于
-/// 真单例）——收敛为单例（注册表句柄经共享 crate 静态化或宿主注入同一份
-/// Arc）留待后续裁决。
+/// 保存路径刷新各自 registry（server `handlers/source_update.rs` 批量导入与
+/// REST `/api/sources` create/update；ffi `api/source.rs` add/update/import）。
+/// REST/FFI 同时抓取同一源时窗口仍会分叉（弱于真单例）——收敛为单例（注册表
+/// 句柄经共享 crate 静态化或宿主注入同一份 Arc）留待后续裁决。
 static RATE_LIMITER: OnceLock<Arc<RateLimiterRegistry>> = OnceLock::new();
 
 pub(crate) fn rate_limiter() -> Arc<RateLimiterRegistry> {
     Arc::clone(RATE_LIMITER.get_or_init(|| Arc::new(RateLimiterRegistry::new())))
 }
 
-/// 书源保存成功后的限速配置刷新入口（当前接线：`source_update` 批量导入）
+/// 书源保存成功后的限速配置刷新入口（接线：`source_update` 批量导入与
+/// REST `/api/sources` create/update）
 ///
-/// 只刷新既有 limiter（空/"0"/非法 rate 与未注册 key 均不改动），写库成功后
+/// 走 [`RateLimiterRegistry::refresh`] 的保存侧分发：空 / `"0"`（忽略首尾
+/// 空白）→ 移除既有 limiter（对齐原版「空即不限流」）；合法 rate → 原位
+/// 刷新既有 limiter；非法 rate 与未注册 key → 不改动/不预创建。写库成功后
 /// 方可调用；写库失败不得调用（避免未落库的配置提前生效）。
 pub(crate) fn refresh_source_rate_limit(source_url: &str, concurrent_rate: &str) {
-    rate_limiter().update(source_url, concurrent_rate);
+    rate_limiter().refresh(source_url, concurrent_rate);
 }
 
 /// 组装 server 宿主注入面
