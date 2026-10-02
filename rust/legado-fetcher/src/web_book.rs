@@ -872,7 +872,22 @@ fn fetch_data_uri_content(url: &str) -> Option<LegadoResult<String>> {
 /// - 同名键的固有风险与上游一致：书源 header 自带 `CookieJar` 键会被判定
 ///   为启用（跟随上游同名机制，不另造私有变体）。
 pub fn apply_cookie_jar_marker(headers: &mut HashMap<String, String>, source: &BookSource) {
-    if source.enabled_cookie_jar != Some(true) {
+    apply_cookie_jar_marker_by_flag(headers, source.enabled_cookie_jar);
+}
+
+/// 按**显式开关值**补写侧门控标记头（`Some(true)` 才补，只补不覆盖）
+///
+/// 供不持 [`BookSource`] 但持等价源开关的调用点复用（批 2 收尾：封面规则
+/// `BookCover.CoverRule.enabledCookieJar`，上游 `AnalyzeUrl(source = config)`
+/// 同口径）；语义与 [`apply_cookie_jar_marker`] 完全一致：
+/// - 非 `Some(true)`（false / None）不补（None 按关，对齐上游
+///   `source?.enabledCookieJar == true` 的 null→false）；
+/// - headers 已有同名键（大小写不敏感）时保持原值（只补不覆盖）。
+pub fn apply_cookie_jar_marker_by_flag(
+    headers: &mut HashMap<String, String>,
+    enabled: Option<bool>,
+) {
+    if enabled != Some(true) {
         return;
     }
     if headers
@@ -7479,6 +7494,43 @@ mod tests {
             Some("rule-val"),
             "规则 header 优先：标记头只补不覆盖"
         );
+    }
+
+    /// 显式开关版标记 helper（批 2 收尾，封面规则链复用）三态：
+    /// Some(true) → 补；Some(false)/None → 不补；同名键 → 只补不覆盖。
+    #[test]
+    fn test_apply_cookie_jar_marker_by_flag_three_states() {
+        // 开 → 补（空 headers 也产出标记）
+        let mut headers = HashMap::new();
+        apply_cookie_jar_marker_by_flag(&mut headers, Some(true));
+        assert_eq!(
+            headers
+                .get(legado_net::COOKIE_JAR_HEADER)
+                .map(String::as_str),
+            Some("1"),
+            "Some(true) 必须补标记"
+        );
+
+        // 关 / None → 不补
+        for disabled in [Some(false), None] {
+            let mut headers = HashMap::new();
+            apply_cookie_jar_marker_by_flag(&mut headers, disabled);
+            assert!(
+                headers.is_empty(),
+                "非 Some(true) 不得补标记（None 按关）: {disabled:?}"
+            );
+        }
+
+        // 同名键（大小写不敏感）→ 只补不覆盖
+        let mut headers = HashMap::new();
+        headers.insert("cookiejar".to_string(), "rule-val".to_string());
+        apply_cookie_jar_marker_by_flag(&mut headers, Some(true));
+        assert_eq!(
+            headers.get("cookiejar").map(String::as_str),
+            Some("rule-val"),
+            "已有同名键必须保持原值（只补不覆盖）"
+        );
+        assert_eq!(headers.len(), 1, "不得追加第二个标记键");
     }
 
     /// 写侧门控端到端（批 1，回环离线）：

@@ -40,6 +40,18 @@ struct CoverRuleConfig {
     /// 封面提取规则（AnalyzeRule getString isUrl=true 语义）
     #[serde(default)]
     cover_rule: String,
+    /// 响应 Set-Cookie 写回开关（对齐上游 `BookCover.CoverRule.enabledCookieJar`）
+    ///
+    /// 上游 `BookCover.searchCover` 以 CoverRule 自身作 `AnalyzeUrl(source=…)`，
+    /// 按 `source?.enabledCookieJar == true` 决定是否下发写侧标记头；上游字段
+    /// 默认 false（官方对话框亦不暴露设置），故缺省/显式 null 均按关处理
+    /// （`None` → 不补标记），与既有行为一致。
+    #[serde(
+        default,
+        rename = "enabledCookieJar",
+        skip_serializing_if = "Option::is_none"
+    )]
+    enabled_cookie_jar: Option<bool>,
 }
 
 fn default_true() -> bool {
@@ -76,6 +88,8 @@ pub fn get_cover_rule() -> LegadoResult<String> {
                         enable: row.enable,
                         search_url: String::new(),
                         cover_rule: row.rule.clone(),
+                        // 非 JSON 配置无开关字段 → 按关（上游默认 false 同口径）
+                        enabled_cookie_jar: None,
                     }
                 }
             }
@@ -99,10 +113,14 @@ pub fn save_cover_rule(rule_json: &str) -> LegadoResult<bool> {
     if !crate::db_state::is_initialized() {
         return Err(LegadoError::Internal("数据库未初始化".into()));
     }
-    let inner = serde_json::json!({
+    let mut inner = serde_json::json!({
         "searchUrl": config.search_url,
         "coverRule": config.cover_rule,
     });
+    // 保留显式 enabledCookieJar（对齐上游整对象保存；缺省不写键，运行时按关）
+    if let Some(enabled) = config.enabled_cookie_jar {
+        inner["enabledCookieJar"] = serde_json::json!(enabled);
+    }
     with_database(|db| {
         let repo = CoverRuleRepository::new(db.connection());
         // 单配置语义：清空后写入主配置行（与 Dialog 一致）
@@ -187,11 +205,14 @@ fn search_one_cover_rule(rule: &CoverRule, key: &str) -> Result<Option<String>, 
     // 2. searchUrl 模板渲染（复用 build_search_url：{{key}}/{{JS}}/searchKey）
     let analyze_url = crate::js_executor::build_search_url(search_url, key, 1, search_url);
 
-    // 3. 取响应 body（复用 dict_api 取体链路，含 data: URI / 超时保护）
+    // 3. 取响应 body（复用 dict_api 取体链路，含 data: URI / 超时保护）；
+    // 写侧 CookieJar 门控（批 2 收尾）：上游 BookCover.searchCover 以
+    // CoverRule 作 AnalyzeUrl(source=…) → 按本配置 enabledCookieJar 补标记
+    //（缺省/None 按关，与上游字段默认 false 一致）。
     let body = crate::runtime::block_on(async {
         match tokio::time::timeout(
             Duration::from_secs(COVER_RULE_TIMEOUT_SECS),
-            crate::api::dict_api::fetch_body(&analyze_url),
+            crate::api::dict_api::fetch_body(&analyze_url, config.enabled_cookie_jar),
         )
         .await
         {
@@ -269,6 +290,33 @@ mod tests {
         assert!(delete_cover_rule().unwrap());
         let after_del: CoverRuleConfig = serde_json::from_str(&get_cover_rule().unwrap()).unwrap();
         assert_eq!(after_del.search_url, default_cfg.search_url);
+    }
+
+    /// F4 + 批 2 收尾：`enabledCookieJar` 经 save/get 往返保留，
+    /// 缺省时 None（运行时按关，对齐上游字段默认 false）。
+    #[test]
+    fn test_cover_rule_enabled_cookie_jar_roundtrip() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_cover_rules();
+
+        // 缺省（Dart 对话框现有 JSON 形态）→ None
+        assert!(save_cover_rule(
+            r#"{"enable":true,"searchUrl":"https://s.example/{{key}}","coverRule":"$.cover"}"#
+        )
+        .unwrap());
+        let cfg: CoverRuleConfig = serde_json::from_str(&get_cover_rule().unwrap()).unwrap();
+        assert_eq!(cfg.enabled_cookie_jar, None, "缺省应保持 None（按关）");
+
+        // 显式 true → save/get 往返保留（门控接线可被配置驱动）
+        assert!(save_cover_rule(
+            r#"{"enable":true,"searchUrl":"https://s.example/{{key}}","coverRule":"$.cover","enabledCookieJar":true}"#
+        )
+        .unwrap());
+        let cfg: CoverRuleConfig = serde_json::from_str(&get_cover_rule().unwrap()).unwrap();
+        assert_eq!(cfg.enabled_cookie_jar, Some(true));
+
+        clear_cover_rules();
     }
 
     /// F4：空 searchUrl/coverRule 拒绝保存

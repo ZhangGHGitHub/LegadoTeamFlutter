@@ -33,19 +33,21 @@
 //!   `fetch_toc_page_optional` / 分页正文闭包）：不持 AnalyzeUrl，无 urlOption
 //!   可消费，天然不属本汇聚点范围。
 //!
-//! ## 写侧 CookieJar 门控残差（批 2 登记，下一批接线清单）
+//! ## 写侧 CookieJar 门控接线状态（批 2 尾批，2026-10-03）
 //!
-//! 以下两条直发路径处于书源/规则上下文、可判定 `enabledCookieJar`，但当前
-//! 未携带 [`legado_net::COOKIE_JAR_HEADER`] 标记 → 响应 `Set-Cookie` 恒不
-//! 写回（读侧按域 cookie 注入不受影响）。本批仅登记，未改其行为：
-//! - `legado_ffi::api::tts_speak_api::tts_speak`（`tts_speak_api.rs:64`）：
-//!   httpTTS 表有 `enabledCookieJar` 列，上游 `HttpReadAloudService` 经
-//!   `AnalyzeUrl(source = …)` 门控写回；接线时把该列值带入本次请求头即可
-//!   （不改 FFI 签名，内部查询）。
-//! - `legado_ffi::api::dict_api::fetch_body`（`dict_api.rs:371`）及其复用方
-//!   `cover_api`（契约 §2.4.8 `searchCoverRules`）：词典/封面规则执行处于
-//!   书源上下文，但 `AnalyzeUrl` 未携带 source 引用（仅规则 URL），需在调用
-//!   侧按书源开关补标记（或为 `AnalyzeUrl` 增加 source 透传）。
+//! - `legado_ffi::api::dict_api::fetch_body`（`dict_api.rs:385`）及其复用方
+//!   `cover_api`（契约 §2.4.8 `searchCoverRules`）：**已接线**——`fetch_body`
+//!   新增 `cookie_jar_enabled: Option<bool>` 参数；封面规则按上游
+//!   `BookCover.CoverRule.enabledCookieJar`（`BookCover.kt:215` 以 CoverRule
+//!   作 `AnalyzeUrl(source = config)`，字段 :253 默认 false）传入；词典两处
+//!   （`search_dict_rule` / 导入 `fetch_url_body`）恒 `None`——`DictRule` 无该
+//!   字段，上游 `DictRule.search` 构造 `AnalyzeUrl` 亦不传 source。
+//! - `legado_ffi::api::tts_speak_api::tts_speak`（`tts_speak_api.rs:74`）：
+//!   **仍为残差**——上游 `HttpReadAloudService` 经 `AnalyzeUrl(source = httpTts)`
+//!   门控写回，但本 FFI 入口仅接收 `engine_url`（不持 HttpTTS 对象/id），
+//!   运行面 `legado_db::HttpTts` 亦未暴露 `enabledCookieJar` 列（列在 httpTTS
+//!   表内、SELECT 不含）→ 无源上下文可判定，保持无标记；接线需先扩展 FFI
+//!   入口签名（跨轨契约变更，未在本批范围）。
 
 use std::collections::HashMap;
 use std::future::Future;

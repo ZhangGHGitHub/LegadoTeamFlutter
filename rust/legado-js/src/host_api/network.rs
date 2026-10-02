@@ -1916,6 +1916,9 @@ mod tests {
 
     /// 批 2 门控用例服务器：记录每个请求头全文，响应 200 +
     /// `Set-Cookie: p219_jsgate=GATE-VAL; Path=/` + JSON 体
+    ///
+    /// POST/PUT 入口（表驱动用例）按 `Content-Length` 读尽请求体后再响应，
+    /// 避免服务端未读 body 即关闭连接触发 RST 吞掉响应；HEAD 入口响应体为空。
     fn spawn_gate_recording_server(
         max_conns: usize,
     ) -> (std::net::SocketAddr, Arc<std::sync::Mutex<Vec<String>>>) {
@@ -1938,10 +1941,31 @@ mod tests {
                         break;
                     }
                 }
-                if let Ok(mut guard) = seen_srv.lock() {
-                    guard.push(String::from_utf8_lossy(&head).to_string());
+                let head_str = String::from_utf8_lossy(&head).into_owned();
+                // POST/PUT 请求体读尽（GET/HEAD Content-Length 缺省 0）
+                let content_length = head_str
+                    .lines()
+                    .find_map(|line| {
+                        let (k, v) = line.split_once(':')?;
+                        k.eq_ignore_ascii_case("content-length")
+                            .then(|| v.trim().parse::<usize>().ok())
+                            .flatten()
+                    })
+                    .unwrap_or(0);
+                if content_length > 0 {
+                    let mut body_buf = vec![0u8; content_length];
+                    if sock.read_exact(&mut body_buf).is_err() {
+                        continue;
+                    }
                 }
-                let body = r#"{"ok":true}"#;
+                let is_head = head_str
+                    .lines()
+                    .next()
+                    .is_some_and(|l| l.to_ascii_uppercase().starts_with("HEAD "));
+                if let Ok(mut guard) = seen_srv.lock() {
+                    guard.push(head_str);
+                }
+                let body = if is_head { "" } else { r#"{"ok":true}"# };
                 let resp = format!(
                     "HTTP/1.1 200 OK\r\nSet-Cookie: p219_jsgate=GATE-VAL; Path=/\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()
@@ -2021,6 +2045,121 @@ mod tests {
             None,
             "未绑定书源 ajax 响应 Set-Cookie 不得落库（未注册/查不到按关）"
         );
+
+        // 收尾：清共享实例并重置池（不留残留给后续用例）
+        fake.clear();
+        reset_shared_client_pools();
+    }
+
+    /// 批 2 收尾：JS 桥其余 9 个网络入口的表驱动写侧门控三态用例
+    ///
+    /// 入口：`http_get` / `http_post` / `http_head` / `ajax_request_body` /
+    /// `ajax_all` / `connect_full` / `connect_no_redirect` / `head_full` /
+    /// `post_full`（`ajax` 标准 JSON 路径已有深度用例；其 "url,{json}" 分支
+    /// 由本表的 `ajax_request_body` 直调覆盖）。每个入口断言三态：
+    /// - 开（tag → enabledCookieJar=true）→ 响应 Set-Cookie 落库，
+    ///   且内部标记头 wire 上不存在（发送前剥离）；
+    /// - 关（false）→ 不落库；
+    /// - 未绑定 tag → 不落库。
+    ///
+    /// 本用例只钉「接线存在性 + 门控行为」，不做入口各自的深度行为断言。
+    #[test]
+    fn test_js_network_entrypoints_cookie_jar_gate_three_states_table() {
+        use crate::host_api::current_source;
+
+        let _lock = lock_pool_test();
+        register_test_persistence();
+        register_test_source_cookie_jar_lookup();
+        let fake = test_persistence();
+
+        const TAG_ON: &str = "https://jsgate-table-on.example.com/";
+        const TAG_OFF: &str = "https://jsgate-table-off.example.com/";
+        {
+            let mut gates = test_source_gates()
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            gates.insert(TAG_ON.to_string(), true);
+            gates.insert(TAG_OFF.to_string(), false);
+        }
+
+        /// 入口调用表：名称 +（url → Result）；闭包内只做一行调用，
+        /// 钉各入口到 `apply_source_cookie_jar_gate` 的接线存在性。
+        type EntryCall = fn(&str) -> Result<String, String>;
+        let entries: &[(&str, EntryCall)] = &[
+            ("http_get", |url| http_get(url, None)),
+            ("http_post", |url| http_post(url, "a=1", None)),
+            ("http_head", |url| http_head(url)),
+            ("ajax_request_body", |url| {
+                ajax_request_body(&HttpOptions {
+                    url: url.to_string(),
+                    ..Default::default()
+                })
+            }),
+            ("ajax_all", |url| {
+                ajax_all(&serde_json::json!([url]).to_string())
+            }),
+            ("connect_full", |url| {
+                connect_full(url, Some("GET"), None, None, Some(10_000))
+            }),
+            ("connect_no_redirect", |url| {
+                connect_no_redirect(url, Some("GET"), None, None)
+            }),
+            ("head_full", |url| head_full(url, None)),
+            ("post_full", |url| post_full(url, "a=1", None)),
+        ];
+
+        for (name, call) in entries {
+            // ① 开（enabledCookieJar=true）：Set-Cookie 落库 + 标记不出网
+            fake.clear();
+            reset_shared_client_pools();
+            let (addr_on, seen_on) = spawn_gate_recording_server(2);
+            let url_on = format!("http://{addr_on}/echo");
+            current_source::with_current_source_tag(TAG_ON, || {
+                call(&url_on).unwrap_or_else(|e| panic!("{name} 开态调用失败: {e}"));
+            });
+            assert!(
+                fake.get("127.0.0.1")
+                    .unwrap_or_default()
+                    .contains("p219_jsgate=GATE-VAL"),
+                "{name} 开态（enabledCookieJar=true）响应 Set-Cookie 必须落库"
+            );
+            let head_on = seen_on
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .join("\n")
+                .to_ascii_lowercase();
+            assert!(
+                !head_on.contains("cookiejar:"),
+                "{name} 内部标记头必须发送前剥离（不得出网）: {head_on}"
+            );
+
+            // ② 关（false）：不落库
+            fake.clear();
+            reset_shared_client_pools();
+            let (addr_off, _seen_off) = spawn_gate_recording_server(2);
+            let url_off = format!("http://{addr_off}/echo");
+            current_source::with_current_source_tag(TAG_OFF, || {
+                call(&url_off).unwrap_or_else(|e| panic!("{name} 关态调用失败: {e}"));
+            });
+            assert_eq!(
+                fake.get("127.0.0.1"),
+                None,
+                "{name} 关态（enabledCookieJar=false）响应 Set-Cookie 不得落库"
+            );
+
+            // ③ 未绑定 tag：不落库
+            fake.clear();
+            reset_shared_client_pools();
+            let (addr_unbound, _seen_unbound) = spawn_gate_recording_server(2);
+            let url_unbound = format!("http://{addr_unbound}/echo");
+            current_source::clear_current_source_tag();
+            call(&url_unbound).unwrap_or_else(|e| panic!("{name} 未绑定态调用失败: {e}"));
+            assert_eq!(
+                fake.get("127.0.0.1"),
+                None,
+                "{name} 未绑定书源响应 Set-Cookie 不得落库（查不到按关）"
+            );
+        }
 
         // 收尾：清共享实例并重置池（不留残留给后续用例）
         fake.clear();

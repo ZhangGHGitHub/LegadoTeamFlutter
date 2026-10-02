@@ -257,10 +257,12 @@ fn fetch_url_body(url: &str) -> LegadoResult<String> {
     // 纯 URL（非规则模板）：构建单变量请求走既有取体链路
     let analyze_url = AnalyzeUrl::parse(url, &HashMap::new(), 1)
         .map_err(|e| LegadoError::Database(format!("解析导入 URL 失败: {e}")))?;
+    // 写侧 CookieJar 门控：导入动作无源上下文（上游 ImportDictRuleDialog
+    // 同为显式导入、不经 BaseSource），恒不补标记。
     let body = crate::runtime::block_on(async {
         match tokio::time::timeout(
             Duration::from_secs(DICT_RULE_TIMEOUT_SECS),
-            fetch_body(&analyze_url),
+            fetch_body(&analyze_url, None),
         )
         .await
         {
@@ -318,10 +320,12 @@ pub(crate) fn search_dict_rule(rule: &DictRule, key: &str) -> Result<String, Str
     let analyze_url = build_request(rule, key)?;
 
     // 2. 取响应 body（单规则超时保护）
+    // 写侧 CookieJar 门控：DictRule 无 enabledCookieJar 字段（上游
+    // DictRule.search 构造 AnalyzeUrl 不传 source），恒不补标记。
     let body = crate::runtime::block_on(async {
         match tokio::time::timeout(
             Duration::from_secs(DICT_RULE_TIMEOUT_SECS),
-            fetch_body(&analyze_url),
+            fetch_body(&analyze_url, None),
         )
         .await
         {
@@ -368,7 +372,20 @@ fn build_request(rule: &DictRule, key: &str) -> Result<AnalyzeUrl, String> {
 /// 取响应 body：data: URI 直接解码，否则发起 HTTP 请求
 ///
 /// `pub(crate)`：cover_api（契约 §2.4.8 searchCoverRules）复用同一取体链路。
-pub(crate) async fn fetch_body(analyze_url: &AnalyzeUrl) -> Result<String, String> {
+///
+/// `cookie_jar_enabled`：写侧 CookieJar 门控开关（批 2 收尾接线）——
+/// `Some(true)` 时经 `web_book::apply_cookie_jar_marker_by_flag` 补内部标记头
+/// （只补不覆盖），响应 `Set-Cookie` 才写回；`None`/`Some(false)` 不补。
+/// 调用方逐个核对（上游同口径）：
+/// - [`search_dict_rule`]：`DictRule` 无 `enabledCookieJar` 字段，上游
+///   `DictRule.search` 构造 `AnalyzeUrl` 亦不传 source → 恒 `None`；
+/// - [`fetch_url_body`]：导入动作无源上下文 → 恒 `None`；
+/// - `cover_api::search_one_cover_rule`：上游 `BookCover.searchCover` 以
+///   `CoverRule`（: BaseSource，含 `enabledCookieJar`）作 source → 传该开关。
+pub(crate) async fn fetch_body(
+    analyze_url: &AnalyzeUrl,
+    cookie_jar_enabled: Option<bool>,
+) -> Result<String, String> {
     // data: URI（如百度汉语规则的 data:;base64,{{...}}）无需网络
     if analyze_url.is_data_uri() {
         return analyze_url
@@ -383,11 +400,7 @@ pub(crate) async fn fetch_body(analyze_url: &AnalyzeUrl) -> Result<String, Strin
     }
 
     let client = crate::http_state::shared_client().map_err(|e| e.to_string())?;
-    let headers = if analyze_url.headers().is_empty() {
-        None
-    } else {
-        Some(analyze_url.headers().clone())
-    };
+    let headers = compose_fetch_headers(analyze_url, cookie_jar_enabled);
 
     // P2-19 批3：urlOption followRedirects / retry 经 fetcher 汇聚点发送
     //（文本路径；method 仍由 AnalyzeUrl 决定，语义与改前一致）
@@ -398,6 +411,25 @@ pub(crate) async fn fetch_body(analyze_url: &AnalyzeUrl) -> Result<String, Strin
         return Err(format!("HTTP {}", response.status));
     }
     Ok(response.body)
+}
+
+/// 组装取体请求头：AnalyzeUrl 规则 headers + 按源开关补写侧 CookieJar 标记
+///
+/// 独立成纯函数便于单测（接线存在性）：无 headers 且未补标记时返回 `None`，
+/// 保持改前「空 headers → None」的发送形态。
+fn compose_fetch_headers(
+    analyze_url: &AnalyzeUrl,
+    cookie_jar_enabled: Option<bool>,
+) -> Option<HashMap<String, String>> {
+    let mut headers = analyze_url.headers().clone();
+    // 写侧门控（批 2 残差接线）：`Some(true)` 补内部标记头，发送前由
+    // legado-net 剥离（绝不出网）；None/false 按关。
+    legado_fetcher::web_book::apply_cookie_jar_marker_by_flag(&mut headers, cookie_jar_enabled);
+    if headers.is_empty() {
+        None
+    } else {
+        Some(headers)
+    }
 }
 
 // ─── showRule 解析 ──────────────────────────────────────────────
@@ -806,6 +838,56 @@ mod tests {
             .unwrap();
         assert_eq!(rules.len(), 1);
         assert_eq!(rules[0].name, "B");
+    }
+
+    /// 取体请求头组装（批 2 残差接线）：None/false → 不补且空 headers 维持
+    /// `None` 形态；Some(true) → 补标记；规则 headers 保留、同名键只补不覆盖。
+    #[test]
+    fn test_compose_fetch_headers_cookie_jar_gate() {
+        let plain = AnalyzeUrl::parse("http://example.com/x", &HashMap::new(), 1).unwrap();
+        assert!(compose_fetch_headers(&plain, None).is_none());
+        assert!(compose_fetch_headers(&plain, Some(false)).is_none());
+
+        let headers = compose_fetch_headers(&plain, Some(true)).expect("Some(true) 应产出标记头");
+        assert_eq!(
+            headers
+                .get(legado_net::COOKIE_JAR_HEADER)
+                .map(String::as_str),
+            Some("1")
+        );
+
+        // 规则 headers 保留 + 标记追加
+        let with_rule = AnalyzeUrl::parse(
+            r#"http://example.com/x,{"headers":{"X-Test":"1"}}"#,
+            &HashMap::new(),
+            1,
+        )
+        .unwrap();
+        let headers = compose_fetch_headers(&with_rule, None).unwrap();
+        assert_eq!(headers.get("X-Test").map(String::as_str), Some("1"));
+        let headers = compose_fetch_headers(&with_rule, Some(true)).unwrap();
+        assert_eq!(headers.get("X-Test").map(String::as_str), Some("1"));
+        assert_eq!(
+            headers
+                .get(legado_net::COOKIE_JAR_HEADER)
+                .map(String::as_str),
+            Some("1")
+        );
+
+        // 同名键只补不覆盖（跟随上游同名机制）
+        let same_name = AnalyzeUrl::parse(
+            r#"http://example.com/x,{"headers":{"CookieJar":"rule"}}"#,
+            &HashMap::new(),
+            1,
+        )
+        .unwrap();
+        let headers = compose_fetch_headers(&same_name, Some(true)).unwrap();
+        assert_eq!(
+            headers
+                .get(legado_net::COOKIE_JAR_HEADER)
+                .map(String::as_str),
+            Some("rule")
+        );
     }
 
     // ─── CRUD 全流程（经 API 层，DB 隔离）────────────────────────────────

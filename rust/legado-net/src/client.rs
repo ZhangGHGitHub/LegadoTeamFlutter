@@ -2252,6 +2252,117 @@ mod tests {
         );
     }
 
+    /// 写侧标记头跨重定向不得复活（批 1 补强）：302 → 302 → 200 多跳夹具，
+    /// 记录每一跳请求头全文；首发请求带 `CookieJar` 标记时——
+    /// - 所有跳（含第 2 跳及其后续）请求头都不得出现 `cookiejar:` 键
+    ///   （标记在首发前由 `apply_headers_and_cookies` 剥离，reqwest 跟随
+    ///   重定向沿用已剥离集合）；
+    /// - 终态响应 `Set-Cookie` 仍按首发标记写回（门控语义不被重定向破坏）。
+    #[tokio::test]
+    async fn test_cookie_jar_marker_stays_stripped_across_redirect_hops() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let seen: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let seen_srv = Arc::clone(&seen);
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                let seen = Arc::clone(&seen_srv);
+                tokio::spawn(async move {
+                    // 读取请求头至 \r\n\r\n（GET 无请求体）
+                    let mut head: Vec<u8> = Vec::new();
+                    loop {
+                        let mut b = [0u8; 1];
+                        match sock.read(&mut b).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(_) => {}
+                        }
+                        head.push(b[0]);
+                        if head.ends_with(b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    let head_str = String::from_utf8_lossy(&head).into_owned();
+                    let path = head_str
+                        .lines()
+                        .next()
+                        .and_then(|l| l.split_whitespace().nth(1))
+                        .unwrap_or("/")
+                        .to_string();
+                    if let Ok(mut guard) = seen.lock() {
+                        guard.push(head_str);
+                    }
+                    let (status_line, location, body, set_cookie) = match path.as_str() {
+                        "/start" => ("302 Found", Some("/hop2"), String::new(), ""),
+                        "/hop2" => ("302 Found", Some("/final"), String::new(), ""),
+                        _ => (
+                            "200 OK",
+                            None,
+                            "final-hit".to_string(),
+                            "Set-Cookie: gate_srv=srv1\r\n",
+                        ),
+                    };
+                    let mut resp = format!("HTTP/1.1 {status_line}\r\n");
+                    if let Some(loc) = location {
+                        resp.push_str(&format!("Location: {loc}\r\n"));
+                    }
+                    resp.push_str(set_cookie);
+                    resp.push_str(&format!(
+                        "Content-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    ));
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                    let _ = sock.shutdown().await;
+                });
+            }
+        });
+
+        let persistence = Arc::new(MockPersistence::default());
+        let client = LegadoClient::with_cookie_persistence(
+            LegadoClientConfig {
+                no_proxy: true,
+                ..LegadoClientConfig::default()
+            },
+            persistence.clone(),
+        )
+        .unwrap();
+
+        let resp = client
+            .get(&format!("http://{addr}/start"), Some(marker_headers()))
+            .await
+            .expect("302→302→200 重定向链应成功");
+
+        assert_eq!(resp.status, 200);
+        assert_eq!(resp.body, "final-hit");
+        assert!(resp.url.ends_with("/final"), "最终 URL: {}", resp.url);
+
+        let heads = seen.lock().unwrap().clone();
+        assert_eq!(heads.len(), 3, "应恰好 3 次请求（/start → /hop2 → /final）");
+        for (i, head) in heads.iter().enumerate() {
+            let lower = head.to_ascii_lowercase();
+            assert!(
+                !lower.contains("cookiejar:"),
+                "第 {} 跳请求头不得携带内部标记（首发前剥离，跟随重定向不得复活）: {head}",
+                i + 1
+            );
+        }
+
+        // 写回仍由首发标记决定：终态（reqwest 内部消化中间 302）Set-Cookie 落库
+        let saved = persistence
+            .data
+            .lock()
+            .unwrap()
+            .get("127.0.0.1")
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            saved.contains("gate_srv=srv1"),
+            "有标记时终态响应 Set-Cookie 必须落库: {saved:?}"
+        );
+    }
+
     /// 标记头识别大小写不敏感（HTTP 头名不区分大小写；对齐上游
     /// `request.header(cookieJarHeader) != null` 语义）
     #[test]

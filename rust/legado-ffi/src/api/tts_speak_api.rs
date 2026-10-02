@@ -61,6 +61,16 @@ pub fn tts_speak(text: &str, engine_url: &str, speed: f64) -> LegadoResult<TtsSp
         // 同步签名适配：FFI 调用线程内 block_on 共享 tokio runtime（同 rss.rs 模式）
         let raw = crate::runtime::block_on(async {
             let client = crate::http_state::shared_client()?;
+            // 写侧 CookieJar 门控残差核实（批 2 收尾）：上游
+            // `HttpReadAloudService.getSpeakStream` 以 `AnalyzeUrl(source = httpTts)`
+            // 按 `HttpTTS.enabledCookieJar` 门控写回；但本 FFI 入口签名仅接收
+            // `engine_url`（ffi.rs:2013 / bridge.rs:1263 / Dart ffi.dart:1551），
+            // 调用点不持 HttpTTS 对象或 id，运行面 `legado_db::HttpTts`
+            // （http_tts_repository.rs:10）亦未暴露 enabledCookieJar 列
+            // （列在 httpTTS 表内但 SELECT 不含）——无源上下文可判定，
+            // 故保持无标记（None headers）：响应 Set-Cookie 不写回，
+            // 读侧按域 cookie 注入不受影响。接线需先扩展 FFI 入口传
+            // HttpTTS id/开关（跨轨契约变更，超出本批）。
             client.get_raw(url, None).await
         })?;
         Ok(SpeakResponse {
