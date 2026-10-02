@@ -859,6 +859,31 @@ fn fetch_data_uri_content(url: &str) -> Option<LegadoResult<String>> {
     }
 }
 
+/// 按书源 `enabledCookieJar` 补写侧门控标记头（批 1，对齐上游 `AnalyzeUrl.setCookie`）
+///
+/// - `source.enabled_cookie_jar == Some(true)` 时补 `CookieJar: 1`；
+///   `Some(false)` / `None` 不补（None 按关，对齐上游
+///   `source?.enabledCookieJar == true` 的 null→false 语义）；
+/// - **只补不覆盖**：headers 已有同名键（大小写不敏感）时保持原值——
+///   规则/登录 header 优先，标记头不得覆盖规则值；
+/// - 该头是内部标记：`legado-net` 写侧按「存在即启用」决定响应 `Set-Cookie`
+///   是否写回，并在发送前剥离（绝不出网），语义见
+///   [`legado_net::COOKIE_JAR_HEADER`]。
+/// - 同名键的固有风险与上游一致：书源 header 自带 `CookieJar` 键会被判定
+///   为启用（跟随上游同名机制，不另造私有变体）。
+pub fn apply_cookie_jar_marker(headers: &mut HashMap<String, String>, source: &BookSource) {
+    if source.enabled_cookie_jar != Some(true) {
+        return;
+    }
+    if headers
+        .keys()
+        .any(|k| k.eq_ignore_ascii_case(legado_net::COOKIE_JAR_HEADER))
+    {
+        return;
+    }
+    headers.insert(legado_net::COOKIE_JAR_HEADER.to_string(), "1".to_string());
+}
+
 /// 基于 legado-net HTTP 客户端 + legado-parser 规则解析引擎，
 /// 实现完整的搜索→详情→目录→正文链路（对标 Kotlin WebBook 对象）。
 pub struct RealBookSourceFetcher {
@@ -894,6 +919,10 @@ impl RealBookSourceFetcher {
     /// `cookie_store::cookies_for_url`，cookie 属于域名而非书源，同域 cookie 跨书源
     /// 共享），与 JS `java.ajax` 路径共用同一底层函数与单一真源
     /// `legado_net::cookie_store::cookie_domain_key`。
+    ///
+    /// 写侧 CookieJar 门控（批 1）：`enabled_cookie_jar == Some(true)` 时经
+    /// [`apply_cookie_jar_marker`] 补内部标记头（只补不覆盖），随 headers 流入
+    /// `fetch_page` / `fetch_simple_cached` / 目录分页并发分支等全链路请求。
     pub fn parse_source_headers(&self, source: &BookSource) -> Option<HashMap<String, String>> {
         let mut headers: HashMap<String, String> = source
             .header
@@ -906,6 +935,11 @@ impl RealBookSourceFetcher {
                 headers.extend(map);
             }
         }
+
+        // 写侧 CookieJar 门控标记（批 1）：开启源补内部标记头；发送前由
+        // legado-net 剥离，绝不出网。读侧 DB cookie 注入（fetch_page 层）
+        // 无条件、与本标记无关。
+        apply_cookie_jar_marker(&mut headers, source);
 
         if headers.is_empty() {
             None
@@ -6165,10 +6199,9 @@ mod tests {
         // 真实书源 JS（java./book. 绑定读写全局变量表，book 绑定 IIFE 构造
         // 读 overlay）→ 持 crate 级 test_support 锁串行防串表
         let _lock = crate::test_support::lock_global_store();
-        let source: BookSource = serde_json::from_str(include_str!(
-            "../tests/fixtures/jhsu_book4cc_source.json"
-        ))
-        .expect("聚合书库书源 JSON（q9.db 逐字）");
+        let source: BookSource =
+            serde_json::from_str(include_str!("../tests/fixtures/jhsu_book4cc_source.json"))
+                .expect("聚合书库书源 JSON（q9.db 逐字）");
         // 离线 fixture 详情页响应体：单行 `book={…}`（init 正则
         // `book=(\{.*\})` 不跨行）+ `.book-img img`（java.getString）
         // + `load_js('…')`（dir 规则）
@@ -7318,5 +7351,251 @@ mod tests {
         // 无字数文本不匹配
         assert!(re.captures("2026-01-01").is_none());
         assert!(re.captures("").is_none());
+    }
+
+    // ─── 写侧 CookieJar 门控（批 1：标记头机制） ─────────────────────
+
+    /// 测试用记录型 Cookie 持久化后端（写侧落库断言）
+    #[derive(Default)]
+    struct RecordingPersistence {
+        data: Mutex<HashMap<String, String>>,
+    }
+
+    impl legado_net::CookiePersistence for RecordingPersistence {
+        fn load_all(&self) -> Vec<(String, String)> {
+            self.data
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        }
+
+        fn save(&self, tag: &str, cookie: &str) {
+            self.data
+                .lock()
+                .unwrap()
+                .insert(tag.to_string(), cookie.to_string());
+        }
+    }
+
+    /// 回环服务器：记录每个请求的头全文，响应 200 + `Set-Cookie` + 最小 HTML。
+    ///
+    /// 返回 `(端口, 收到的请求头列表)`；头在写响应前记录，断言无竞态。
+    fn spawn_set_cookie_html_server() -> (u16, Arc<Mutex<Vec<String>>>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_srv = Arc::clone(&seen);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                if let Ok(mut guard) = seen_srv.lock() {
+                    guard.push(String::from_utf8_lossy(&head).to_string());
+                }
+                let body = r#"<html><body><div id="content">正文内容</div></body></html>"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nSet-Cookie: gate_e2e=on\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (port, seen)
+    }
+
+    /// 主链路标记注入单测（`parse_source_headers` 是 fetch_page/fetch_simple/
+    /// 目录分页全链路的书源头来源）：
+    /// 开（缺键 JSON 导入 → Some(true)）→ 补标记；关/None → 不补；
+    /// 规则 header 已有同名键 → 只补不覆盖。
+    #[test]
+    fn test_parse_source_headers_injects_cookie_jar_marker_by_gate() {
+        let fetcher = test_fetcher();
+
+        // 开：缺键 JSON 导入 → Some(true)（与 core serde 测试联动）
+        let source: BookSource = serde_json::from_str(
+            r#"{"bookSourceUrl":"https://gated-on.test","bookSourceName":"开"}"#,
+        )
+        .unwrap();
+        assert_eq!(source.enabled_cookie_jar, Some(true));
+        let headers = fetcher
+            .parse_source_headers(&source)
+            .expect("开启源应产出 headers（含标记头）");
+        assert_eq!(
+            headers
+                .get(legado_net::COOKIE_JAR_HEADER)
+                .map(String::as_str),
+            Some("1"),
+            "开启源必须补写侧标记头"
+        );
+
+        // 关：Some(false) → 不补（无其他 header 时返回 None）
+        let source = BookSource {
+            book_source_url: "https://gated-off.test".into(),
+            book_source_name: "关".into(),
+            enabled_cookie_jar: Some(false),
+            ..BookSource::default()
+        };
+        assert!(fetcher.parse_source_headers(&source).is_none());
+
+        // None（DB 旧行 NULL / 显式 null）→ 按关，不补
+        let source = BookSource {
+            book_source_url: "https://gated-none.test".into(),
+            book_source_name: "None".into(),
+            enabled_cookie_jar: None,
+            ..BookSource::default()
+        };
+        assert!(fetcher.parse_source_headers(&source).is_none());
+
+        // 规则 header 已有同名键 → 只补不覆盖（值保持原样；存在即门控开启，
+        // 与上游「存在即启用」判定一致）
+        let source = BookSource {
+            book_source_url: "https://gated-rule.test".into(),
+            book_source_name: "规则同名".into(),
+            enabled_cookie_jar: Some(true),
+            header: Some(r#"{"CookieJar":"rule-val"}"#.into()),
+            ..BookSource::default()
+        };
+        let headers = fetcher.parse_source_headers(&source).unwrap();
+        assert_eq!(
+            headers
+                .get(legado_net::COOKIE_JAR_HEADER)
+                .map(String::as_str),
+            Some("rule-val"),
+            "规则 header 优先：标记头只补不覆盖"
+        );
+    }
+
+    /// 写侧门控端到端（批 1，回环离线）：
+    /// - 开（缺键 JSON 导入 → Some(true)）源 + Set-Cookie → 落库，标记头不出网，
+    ///   读侧 DB cookie 注入不变；
+    /// - 关（Some(false)）源 → 不落库，读侧注入不变。
+    #[test]
+    fn test_cookie_jar_gate_end_to_end_fetcher() {
+        // ① 开：缺键 JSON 导入 → Some(true) → 落库
+        let (port_on, seen_on) = spawn_set_cookie_html_server();
+        let persistence_on = Arc::new(RecordingPersistence::default());
+        persistence_on
+            .data
+            .lock()
+            .unwrap()
+            .insert("127.0.0.1".to_string(), "dbcookie=fromDB".to_string());
+        let client_on = LegadoClient::with_cookie_persistence(
+            legado_net::LegadoClientConfig {
+                no_proxy: true,
+                ..legado_net::LegadoClientConfig::default()
+            },
+            persistence_on.clone(),
+        )
+        .expect("测试客户端");
+        let fetcher_on = RealBookSourceFetcher::new(client_on);
+        let source_on: BookSource = serde_json::from_str(&format!(
+            r#"{{"bookSourceUrl":"http://127.0.0.1:{port_on}","bookSourceName":"开"}}"#
+        ))
+        .unwrap();
+        assert_eq!(source_on.enabled_cookie_jar, Some(true));
+        block_on(
+            fetcher_on.get_book_info(&source_on, &format!("http://127.0.0.1:{port_on}/book/1")),
+        )
+        .expect("开启源详情请求应成功");
+        let saved_on = persistence_on
+            .data
+            .lock()
+            .unwrap()
+            .get("127.0.0.1")
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            saved_on.contains("gate_e2e=on"),
+            "开启源响应 Set-Cookie 必须落库: {saved_on:?}"
+        );
+        assert!(
+            saved_on.contains("dbcookie=fromDB"),
+            "落库为 jar 全量视图（含读侧预载 DB cookie）: {saved_on:?}"
+        );
+        let head_on = seen_on
+            .lock()
+            .unwrap()
+            .first()
+            .cloned()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        assert!(
+            !head_on.contains("cookiejar:"),
+            "标记头不得发往真实服务器: {head_on}"
+        );
+        assert!(
+            head_on.contains("cookie: dbcookie=fromdb"),
+            "读侧 DB cookie 注入不受门控影响: {head_on}"
+        );
+
+        // ② 关：Some(false) → 不落库
+        let (port_off, seen_off) = spawn_set_cookie_html_server();
+        let persistence_off = Arc::new(RecordingPersistence::default());
+        persistence_off
+            .data
+            .lock()
+            .unwrap()
+            .insert("127.0.0.1".to_string(), "offcookie=fromDB".to_string());
+        let client_off = LegadoClient::with_cookie_persistence(
+            legado_net::LegadoClientConfig {
+                no_proxy: true,
+                ..legado_net::LegadoClientConfig::default()
+            },
+            persistence_off.clone(),
+        )
+        .expect("测试客户端");
+        let fetcher_off = RealBookSourceFetcher::new(client_off);
+        let source_off = BookSource {
+            book_source_url: format!("http://127.0.0.1:{port_off}"),
+            book_source_name: "关".into(),
+            enabled_cookie_jar: Some(false),
+            ..BookSource::default()
+        };
+        block_on(
+            fetcher_off.get_book_info(&source_off, &format!("http://127.0.0.1:{port_off}/book/1")),
+        )
+        .expect("关闭源详情请求应成功");
+        let saved_off = persistence_off
+            .data
+            .lock()
+            .unwrap()
+            .get("127.0.0.1")
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(
+            saved_off, "offcookie=fromDB",
+            "关闭源响应 Set-Cookie 不得落库"
+        );
+        let head_off = seen_off
+            .lock()
+            .unwrap()
+            .first()
+            .cloned()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        assert!(
+            !head_off.contains("cookiejar:"),
+            "关闭源不得出现标记头: {head_off}"
+        );
+        assert!(
+            head_off.contains("cookie: offcookie=fromdb"),
+            "关闭源读侧 DB cookie 仍必须注入: {head_off}"
+        );
     }
 }

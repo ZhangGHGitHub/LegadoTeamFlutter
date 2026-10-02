@@ -32,6 +32,20 @@
 //! - `web_book.rs:1017/:1060/:2772` 等裸 URL 直发点（`fetch_simple_cached` /
 //!   `fetch_toc_page_optional` / 分页正文闭包）：不持 AnalyzeUrl，无 urlOption
 //!   可消费，天然不属本汇聚点范围。
+//!
+//! ## 写侧 CookieJar 门控残差（批 2 登记，下一批接线清单）
+//!
+//! 以下两条直发路径处于书源/规则上下文、可判定 `enabledCookieJar`，但当前
+//! 未携带 [`legado_net::COOKIE_JAR_HEADER`] 标记 → 响应 `Set-Cookie` 恒不
+//! 写回（读侧按域 cookie 注入不受影响）。本批仅登记，未改其行为：
+//! - `legado_ffi::api::tts_speak_api::tts_speak`（`tts_speak_api.rs:64`）：
+//!   httpTTS 表有 `enabledCookieJar` 列，上游 `HttpReadAloudService` 经
+//!   `AnalyzeUrl(source = …)` 门控写回；接线时把该列值带入本次请求头即可
+//!   （不改 FFI 签名，内部查询）。
+//! - `legado_ffi::api::dict_api::fetch_body`（`dict_api.rs:371`）及其复用方
+//!   `cover_api`（契约 §2.4.8 `searchCoverRules`）：词典/封面规则执行处于
+//!   书源上下文，但 `AnalyzeUrl` 未携带 source 引用（仅规则 URL），需在调用
+//!   侧按书源开关补标记（或为 `AnalyzeUrl` 增加 source 透传）。
 
 use std::collections::HashMap;
 use std::future::Future;

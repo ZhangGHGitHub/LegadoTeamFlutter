@@ -505,6 +505,10 @@ async fn explore_books_async(
     // ——对齐上游 `AnalyzeUrl.setCookie` → `CookieManager.mergeCookies` 语义。
     legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, &final_url);
 
+    // 写侧 CookieJar 门控（批 2）：开启源补内部标记头（只补不覆盖；
+    // 发送前由 legado-net 剥离、绝不出网）；读侧 cookie 注入不受影响。
+    legado_fetcher::web_book::apply_cookie_jar_marker(&mut headers, source);
+
     let headers_opt = if headers.is_empty() {
         None
     } else {

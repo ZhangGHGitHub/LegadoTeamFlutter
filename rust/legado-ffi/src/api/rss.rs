@@ -5,6 +5,7 @@
 //! 新增函数（如 `update_rss_source`）改走 `legado_db::RssSourceRepository`。
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 use legado_core::models::RssSource;
 use legado_core::{LegadoError, LegadoResult};
@@ -160,16 +161,24 @@ pub fn clear_rss_articles(source_url: &str) -> LegadoResult<()> {
 /// - `cacheFirst`：优先返回本地 rssArticles 缓存
 /// - 网络拉取后解析 RSS/Atom（legado-net），并写入本地缓存
 pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
-    let (feed_url, cache_first) = with_database(|db| {
+    // 批 2 写侧门控：读取 RSS 源的 enabledCookieJar 开关（与 feedUrl 同查，
+    // 免二次查询）——开启时 feed 请求携带内部标记头，响应 Set-Cookie 落库；
+    // 关闭/NULL → 无标记（不写回，对齐上游 AnalyzeUrl(source=rssSource) 门控）。
+    let (feed_url, cache_first, cookie_jar_enabled) = with_database(|db| {
         let conn = db.connection();
         let mut stmt = conn
             .prepare(
-                "SELECT sourceUrl, COALESCE(cacheFirst, 0) FROM rssSources WHERE sourceUrl = ?1",
+                "SELECT sourceUrl, COALESCE(cacheFirst, 0), COALESCE(enabledCookieJar, 0) \
+                 FROM rssSources WHERE sourceUrl = ?1",
             )
             .map_err(|e| LegadoError::Database(format!("查询 RSS 源失败: {e}")))?;
         let mut rows = stmt
             .query_map(rusqlite::params![source_url], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)? != 0))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i32>(1)? != 0,
+                    row.get::<_, i32>(2)? != 0,
+                ))
             })
             .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?;
         match rows.next() {
@@ -199,7 +208,16 @@ pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
 
     let articles = runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
-        let response = client.get(&feed_url, None).await?;
+        // 写侧门控（批 2）：开启源补内部标记头（只补不覆盖；发送前由
+        // legado-net 剥离、绝不出网）；读侧 cookie 注入不受影响。
+        let headers_opt = if cookie_jar_enabled {
+            let mut headers = HashMap::new();
+            headers.insert(legado_net::COOKIE_JAR_HEADER.to_string(), "1".to_string());
+            Some(headers)
+        } else {
+            None
+        };
+        let response = client.get(&feed_url, headers_opt).await?;
         if !response.is_success() {
             return Err(LegadoError::Network(format!(
                 "获取 RSS 内容失败: HTTP {}",

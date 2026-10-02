@@ -417,6 +417,44 @@ pub fn register_js_client_cookie_persistence() {
     legado_js::host_api::network::reset_shared_client_pools();
 }
 
+/// 注册 JS 桥书源 `enabledCookieJar` 查询（批 2 写侧门控）
+///
+/// JS 桥（`java.ajax`/`connect(NR)`/`get`/`post`/`head`/`ajaxAll`）发送前按
+/// **当前书源开关**决定是否给请求头补 `COOKIE_JAR_HEADER` 标记：开启 →
+/// 响应 `Set-Cookie` 写回并按域持久化；关闭/未绑定 → 不写回（**读侧**按
+/// 请求 URL 属域的 cookie 注入无条件，不受影响）。对齐上游
+/// `JsExtensions.kt:532-534/559-561/586-588` 的 `getSource()?.enabledCookieJar`
+/// 门控。
+///
+/// `legado-js` 不依赖 DB，本注册把查询实现注入其 first-wins 钩子：按
+/// `book_source_url` 查 [`legado_db::BookSourceRepository`]，返回书源
+/// `enabled_cookie_jar`（DB 未就绪/查不到/字段 NULL = None → 按关，对齐上游
+/// `source?.enabledCookieJar == true` 的 null→false）。
+///
+/// 由 [`crate::ffi::Bridge::db_open`] 在 DB 初始化后调用（仅 quickjs 档，
+/// 与 [`register_js_client_cookie_persistence`] 同点）；零 FFI 方法变更。
+#[cfg(feature = "quickjs")]
+pub fn register_js_source_cookie_jar_lookup() {
+    let _ = legado_js::host_api::network::set_source_cookie_jar_lookup(Arc::new(
+        lookup_source_cookie_jar,
+    ));
+}
+
+/// 按书源 URL（current_source tag）查 `enabledCookieJar`（批 2 写侧门控）
+///
+/// DB 未就绪/书源不存在 → `None`（JS 桥按关）；字段 NULL → `None`（按关，
+/// 对齐上游 `source?.enabledCookieJar == true` 的 null→false）。
+#[cfg(feature = "quickjs")]
+fn lookup_source_cookie_jar(tag: &str) -> Option<bool> {
+    crate::db_state::with_database(|db| {
+        let repo = legado_db::BookSourceRepository::new(db.connection());
+        repo.find_by_url(tag)
+    })
+    .ok()
+    .flatten()
+    .and_then(|source| source.enabled_cookie_jar)
+}
+
 // ─── 测试 ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -551,6 +589,64 @@ mod tests {
         assert!(
             !loaded.iter().any(|(tag, _)| tag == "roundtrip.com"),
             "delete 后 load_all 不应再包含该条目"
+        );
+    }
+
+    // ─── 批 2：JS 桥书源开关注册表（db_open 注册）测试 ──────────────────────
+
+    /// 批 2：current_source tag（book_source_url）→ `enabledCookieJar` 解析
+    ///
+    /// 覆盖：缺键 JSON 导入 → `Some(true)`（与 legado-core serde 默认联动）；
+    /// 显式 false → `Some(false)`；库中不存在 → `None`（JS 桥按关）。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_lookup_source_cookie_jar_from_db() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let _db_guard = crate::db_state::ensure_test_db();
+        use legado_db::repository::Repository;
+
+        const TAG_ON: &str = "https://jsgate-lookup-on.test/";
+        const TAG_OFF: &str = "https://jsgate-lookup-off.test/";
+
+        // 缺键 JSON：enabledCookieJar 由 serde default 补 Some(true)
+        let source_on: legado_core::models::BookSource = serde_json::from_str(
+            r#"{"bookSourceUrl":"https://jsgate-lookup-on.test/","bookSourceName":"开"}"#,
+        )
+        .expect("书源 JSON");
+        assert_eq!(
+            source_on.enabled_cookie_jar,
+            Some(true),
+            "缺键应默认 Some(true)"
+        );
+        crate::db_state::with_database(|db| {
+            let repo = legado_db::BookSourceRepository::new(db.connection());
+            repo.insert(&source_on)
+        })
+        .expect("插入开启源");
+
+        let mut source_off = source_on.clone();
+        source_off.book_source_url = TAG_OFF.to_string();
+        source_off.enabled_cookie_jar = Some(false);
+        crate::db_state::with_database(|db| {
+            let repo = legado_db::BookSourceRepository::new(db.connection());
+            repo.insert(&source_off)
+        })
+        .expect("插入关闭源");
+
+        assert_eq!(
+            lookup_source_cookie_jar(TAG_ON),
+            Some(true),
+            "开启源应解析为 Some(true)"
+        );
+        assert_eq!(
+            lookup_source_cookie_jar(TAG_OFF),
+            Some(false),
+            "关闭源应解析为 Some(false)"
+        );
+        assert_eq!(
+            lookup_source_cookie_jar("https://jsgate-lookup-missing.test/"),
+            None,
+            "库中不存在 → None（JS 桥按关）"
         );
     }
 

@@ -1241,6 +1241,10 @@ pub(crate) async fn search_single_source(
     // AppConfig.userAgent：书源未配置 UA 时补充 Chrome UA（默认 Legado/1.0
     // 会被反爬站点识别为非浏览器而拒绝/返回空列表）
     ensure_default_user_agent(&mut headers);
+    // 写侧 CookieJar 门控（批 1）：开启源补内部标记头（只补不覆盖；
+    // None/Some(false) 不补），发送前由 legado-net 剥离、绝不出网；
+    // 读侧 DB cookie 注入由 legado-net 无条件完成，与此无关。
+    legado_fetcher::web_book::apply_cookie_jar_marker(&mut headers, source);
     let headers_opt = if headers.is_empty() {
         None
     } else {
@@ -2378,6 +2382,187 @@ mod tests {
             hits.load(Ordering::SeqCst),
             3,
             "retry=2 → 服务器精确收到 3 次请求（2 次 500 + 1 次 200）"
+        );
+    }
+
+    /// 测试用记录型 Cookie 持久化后端（写侧门控落库断言）
+    #[derive(Default)]
+    struct GateRecordingPersistence {
+        data: std::sync::Mutex<std::collections::HashMap<String, String>>,
+    }
+
+    impl legado_net::CookiePersistence for GateRecordingPersistence {
+        fn load_all(&self) -> Vec<(String, String)> {
+            self.data
+                .lock()
+                .unwrap()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
+        }
+
+        fn save(&self, tag: &str, cookie: &str) {
+            self.data
+                .lock()
+                .unwrap()
+                .insert(tag.to_string(), cookie.to_string());
+        }
+    }
+
+    /// 搜索主链路写侧门控端到端（批 1，回环离线）：
+    /// - 开（Some(true)）源 + Set-Cookie → 落库 + 读侧 DB cookie 注入 + 服务器
+    ///   收到的头上无标记头（内部头已剥离）；
+    /// - 关（Some(false)）源 → 不落库 + 读侧注入不变。
+    #[test]
+    fn test_search_single_source_cookie_jar_gate_end_to_end() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        /// 回环服务器：记录每个请求头全文，响应 200 + Set-Cookie + 可解析 HTML
+        fn spawn_gate_server() -> (u16, Arc<std::sync::Mutex<Vec<String>>>) {
+            let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+            let port = listener.local_addr().unwrap().port();
+            let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+            let seen_srv = Arc::clone(&seen);
+            std::thread::spawn(move || {
+                for stream in listener.incoming() {
+                    let Ok(mut stream) = stream else { continue };
+                    let mut head: Vec<u8> = Vec::new();
+                    let mut byte = [0u8; 1];
+                    while !head.ends_with(b"\r\n\r\n") {
+                        match stream.read(&mut byte) {
+                            Ok(1) => head.push(byte[0]),
+                            _ => break,
+                        }
+                        if head.len() > 16 * 1024 {
+                            break;
+                        }
+                    }
+                    if let Ok(mut guard) = seen_srv.lock() {
+                        guard.push(String::from_utf8_lossy(&head).to_string());
+                    }
+                    let body = r#"<html><body><div class="book"><a class="name" href="/b/1">斗破苍穹</a><span class="author">天蚕土豆</span></div></body></html>"#;
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nSet-Cookie: search_gate=on\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = stream.write_all(resp.as_bytes());
+                    let _ = stream.flush();
+                }
+            });
+            (port, seen)
+        }
+
+        fn make_source(port: u16, enabled: Option<bool>) -> BookSource {
+            BookSource {
+                book_source_url: format!("http://127.0.0.1:{port}"),
+                book_source_name: "门控源".to_string(),
+                search_url: Some(format!("http://127.0.0.1:{port}/s?q=searchKey")),
+                rule_search: Some(SearchRule {
+                    book_list: Some(".book".to_string()),
+                    name: Some(".name".to_string()),
+                    author: Some(".author".to_string()),
+                    book_url: Some(".name@href".to_string()),
+                    ..SearchRule::default()
+                }),
+                enabled_cookie_jar: enabled,
+                ..BookSource::default()
+            }
+        }
+
+        // ① 开：Some(true) → 落库；内部标记头必须在发送前剥离
+        let (port_on, seen_on) = spawn_gate_server();
+        let persistence_on = Arc::new(GateRecordingPersistence::default());
+        persistence_on
+            .data
+            .lock()
+            .unwrap()
+            .insert("127.0.0.1".to_string(), "dbs_on=1".to_string());
+        let client_on = LegadoClient::with_cookie_persistence(
+            LegadoClientConfig {
+                no_proxy: true,
+                ..LegadoClientConfig::default()
+            },
+            persistence_on.clone(),
+        )
+        .unwrap();
+        let source_on = make_source(port_on, Some(true));
+        let results_on = crate::runtime::block_on(async {
+            search_single_source(&client_on, &source_on, "斗破", 1, false).await
+        })
+        .expect("开启源搜索应成功");
+        assert_eq!(results_on.len(), 1, "开启源应解析出 1 条结果");
+        let saved_on = persistence_on
+            .data
+            .lock()
+            .unwrap()
+            .get("127.0.0.1")
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            saved_on.contains("search_gate=on"),
+            "开启源搜索响应 Set-Cookie 必须落库: {saved_on:?}"
+        );
+        let head_on = seen_on
+            .lock()
+            .unwrap()
+            .first()
+            .cloned()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        assert!(
+            !head_on.contains("cookiejar:"),
+            "内部标记头不得发往真实服务器: {head_on}"
+        );
+        assert!(
+            head_on.contains("cookie: dbs_on=1"),
+            "读侧 DB cookie 注入不受门控影响: {head_on}"
+        );
+
+        // ② 关：Some(false) → 不落库；读侧注入不变
+        let (port_off, seen_off) = spawn_gate_server();
+        let persistence_off = Arc::new(GateRecordingPersistence::default());
+        persistence_off
+            .data
+            .lock()
+            .unwrap()
+            .insert("127.0.0.1".to_string(), "dbs_off=1".to_string());
+        let client_off = LegadoClient::with_cookie_persistence(
+            LegadoClientConfig {
+                no_proxy: true,
+                ..LegadoClientConfig::default()
+            },
+            persistence_off.clone(),
+        )
+        .unwrap();
+        let source_off = make_source(port_off, Some(false));
+        let results_off = crate::runtime::block_on(async {
+            search_single_source(&client_off, &source_off, "斗破", 1, false).await
+        })
+        .expect("关闭源搜索应成功");
+        assert_eq!(results_off.len(), 1, "关闭源应解析出 1 条结果");
+        let saved_off = persistence_off
+            .data
+            .lock()
+            .unwrap()
+            .get("127.0.0.1")
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(saved_off, "dbs_off=1", "关闭源搜索响应 Set-Cookie 不得落库");
+        let head_off = seen_off
+            .lock()
+            .unwrap()
+            .first()
+            .cloned()
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        assert!(
+            !head_off.contains("cookiejar:"),
+            "关闭源不得出现内部标记头: {head_off}"
+        );
+        assert!(
+            head_off.contains("cookie: dbs_off=1"),
+            "关闭源读侧 DB cookie 仍必须注入: {head_off}"
         );
     }
 

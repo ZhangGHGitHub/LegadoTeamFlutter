@@ -27,7 +27,15 @@ pub struct RssSource {
     #[serde(skip_serializing_if = "Option::is_none", rename = "jsLib")]
     pub js_lib: Option<String>,
     /// 启用okhttp CookieJar 自动保存每次请求的cookie
-    #[serde(skip_serializing_if = "Option::is_none", rename = "enabledCookieJar")]
+    ///
+    /// 缺键 → `Some(true)`（对齐 Kotlin `RssSource` 构造默认 true；复用
+    /// [`super::book_source::default_true_opt`]）；显式 null → `None`
+    /// （运行时按关，DB 旧行 NULL 同此路径）。
+    #[serde(
+        default = "super::book_source::default_true_opt",
+        skip_serializing_if = "Option::is_none",
+        rename = "enabledCookieJar"
+    )]
     pub enabled_cookie_jar: Option<bool>,
     /// 并发率
     #[serde(skip_serializing_if = "Option::is_none", rename = "concurrentRate")]
@@ -202,5 +210,46 @@ mod tests {
         assert_eq!(rss.source_name, "Test");
         assert!(rss.enabled);
         assert!(rss.enable_js);
+    }
+
+    /// 批 2 收尾：`enabledCookieJar` 三态（与 BookSource 同口径）
+    /// - 缺键 → `Some(true)`（对齐 Kotlin RssSource 构造默认 true）；
+    /// - 显式 false → `Some(false)`；
+    /// - 显式 null → `None`（运行时按关，DB 旧行 NULL 同此路径）。
+    #[test]
+    fn test_rss_enabled_cookie_jar_missing_key_defaults_true() {
+        let json = r#"{"sourceUrl":"https://rss.example.com","sourceName":"Test"}"#;
+        let rss: RssSource = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            rss.enabled_cookie_jar,
+            Some(true),
+            "RSS 源缺键应默认 Some(true)（对齐 Kotlin 构造默认）"
+        );
+    }
+
+    #[test]
+    fn test_rss_enabled_cookie_jar_explicit_false_and_null() {
+        let json = r#"{
+            "sourceUrl": "https://rss.example.com",
+            "sourceName": "Test",
+            "enabledCookieJar": false
+        }"#;
+        let rss: RssSource = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            rss.enabled_cookie_jar,
+            Some(false),
+            "显式 false 应为 Some(false)"
+        );
+
+        let json = r#"{
+            "sourceUrl": "https://rss.example.com",
+            "sourceName": "Test",
+            "enabledCookieJar": null
+        }"#;
+        let rss: RssSource = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            rss.enabled_cookie_jar, None,
+            "显式 null 应为 None（运行时按关，与 DB 旧行 NULL 同语义）"
+        );
     }
 }

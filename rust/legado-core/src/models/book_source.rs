@@ -118,8 +118,15 @@ pub struct BookSource {
     #[serde(skip_serializing_if = "Option::is_none", rename = "jsLib")]
     pub js_lib: Option<String>,
     /// 启用okhttp CookieJar 自动保存每次请求的cookie
+    ///
+    /// - 缺键 → `Some(true)`：对齐 Kotlin `BookSource` 构造默认值 true
+    ///   （上游 `AnalyzeUrl.kt:126` `source?.enabledCookieJar == true` 才放
+    ///   CookieJar 标记头；本仓写侧门控同口径，见 `legado_net::COOKIE_JAR_HEADER`）；
+    /// - 显式 null → `None`：运行时按**关**（保留 null→false 语义；DB 旧行
+    ///   NULL 读回同此路径，不受 default_true 影响）；
+    /// - 显式 false → `Some(false)`。
     #[serde(
-        default,
+        default = "default_true_opt",
         skip_serializing_if = "Option::is_none",
         rename = "enabledCookieJar",
         deserialize_with = "lenient_opt_bool"
@@ -225,6 +232,19 @@ fn default_true() -> bool {
     true
 }
 
+/// `Option<bool>` 版 default_true：JSON 缺键 → `Some(true)`
+///
+/// 对齐 Kotlin `BookSource.enabledCookieJar` 构造默认 true；显式 null 仍由
+/// `lenient_opt_bool` 解析为 `None`（运行时按关），故不能直接用 `default_true`
+/// （返回类型为 `bool`，与 `Option<bool>` 字段不匹配）。
+///
+/// `pub(crate)`：`RssSource.enabled_cookie_jar`（`models::rss_source`）经
+/// serde `default = "super::book_source::default_true_opt"` 复用同一口径
+/// （上游 RssSource 同为构造默认 true）。
+pub(crate) fn default_true_opt() -> Option<bool> {
+    Some(true)
+}
+
 fn default_respond_time() -> i64 {
     180000
 }
@@ -291,6 +311,50 @@ mod tests {
         assert!(bs.enabled);
         assert!(bs.enabled_explore);
         assert_eq!(bs.respond_time, 180000);
+        // 缺键 → Some(true)（对齐 Kotlin 构造默认 true；写侧 CookieJar 门控基准）
+        assert_eq!(bs.enabled_cookie_jar, Some(true));
+    }
+
+    /// enabledCookieJar 反序列化口径（写侧门控批 1）：
+    /// - 缺键 → Some(true)，对齐 Kotlin `BookSource` 构造默认值 true；
+    /// - 显式 false → Some(false)；
+    /// - 显式 null → None（运行时按关，对齐上游 `source?.enabledCookieJar == true`
+    ///   的 null→false 语义；DB 旧行 NULL 读回同此路径）。
+    #[test]
+    fn test_enabled_cookie_jar_missing_key_defaults_true() {
+        let json = r#"{"bookSourceUrl":"https://example.com","bookSourceName":"Test"}"#;
+        let bs: BookSource = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            bs.enabled_cookie_jar,
+            Some(true),
+            "缺键应默认 Some(true)（对齐 Kotlin 构造默认）"
+        );
+    }
+
+    #[test]
+    fn test_enabled_cookie_jar_explicit_false_and_null() {
+        let json = r#"{
+            "bookSourceUrl": "https://example.com",
+            "bookSourceName": "Test",
+            "enabledCookieJar": false
+        }"#;
+        let bs: BookSource = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            bs.enabled_cookie_jar,
+            Some(false),
+            "显式 false 应为 Some(false)"
+        );
+
+        let json = r#"{
+            "bookSourceUrl": "https://example.com",
+            "bookSourceName": "Test",
+            "enabledCookieJar": null
+        }"#;
+        let bs: BookSource = serde_json::from_str(json).unwrap();
+        assert_eq!(
+            bs.enabled_cookie_jar, None,
+            "显式 null 应为 None（运行时按关，与 DB 旧行 NULL 同语义）"
+        );
     }
 
     /// 第三方书源（如 yckceo 订阅）常把数字/布尔字段写成字符串或

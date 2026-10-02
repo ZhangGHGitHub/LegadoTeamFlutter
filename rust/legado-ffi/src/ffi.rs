@@ -178,7 +178,12 @@ pub mod ffi {
         // quickjs 档（池机制在该档的 network 模块内）；零 FFI 方法变更
         // （不加/不改导出函数签名）
         #[cfg(feature = "quickjs")]
-        crate::http_state::register_js_client_cookie_persistence();
+        {
+            crate::http_state::register_js_client_cookie_persistence();
+            // 批 2 写侧门控：注册书源 enabledCookieJar 查询——JS 桥按当前
+            // 书源开关决定是否补 COOKIE_JAR_HEADER 标记（读侧不受影响）
+            crate::http_state::register_js_source_cookie_jar_lookup();
+        }
         // 启动时恢复配置（契约 §2.20.3 / §2.22.5，Task #73）：
         // 读回 customHosts 映射与独立 MCP 端口，尽力而为（失败仅记日志）
         crate::api::net_api::restore_custom_hosts();

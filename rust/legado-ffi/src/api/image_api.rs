@@ -228,6 +228,9 @@ pub fn fetch_image_with_decode(url: &str, source_json: &str) -> LegadoResult<Str
             headers.insert("Referer".to_string(), referer);
         }
     }
+    // 写侧 CookieJar 门控（批 2）：开启源补内部标记头（只补不覆盖；
+    // 发送前由 legado-net 剥离、绝不出网）；读侧 cookie 注入不受影响。
+    legado_fetcher::web_book::apply_cookie_jar_marker(&mut headers, &source);
 
     let resp = crate::runtime::block_on(async {
         let client = crate::http_state::shared_client()?;

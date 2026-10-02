@@ -347,11 +347,7 @@ impl SourceChecker {
         let url = self.build_search_url(search_url, &self.effective_keyword(source));
 
         // 发起请求
-        let resp = match self
-            .client
-            .get(&url, parse_headers(source.header.as_deref()))
-            .await
-        {
+        let resp = match self.client.get(&url, source_request_headers(source)).await {
             Ok(r) => r,
             Err(e) => {
                 result.search_error = Some(format!("search request failed: {}", e));
@@ -397,7 +393,7 @@ impl SourceChecker {
 
         let resp = self
             .client
-            .get(&url, parse_headers(source.header.as_deref()))
+            .get(&url, source_request_headers(source))
             .await
             .map_err(|e| format!("search request failed: {}", e))?;
 
@@ -418,7 +414,7 @@ impl SourceChecker {
     async fn do_toc_check(&self, source: &BookSource, book_url: &str) -> Result<String, String> {
         let resp = self
             .client
-            .get(book_url, parse_headers(source.header.as_deref()))
+            .get(book_url, source_request_headers(source))
             .await
             .map_err(|e| format!("toc request failed: {}", e))?;
 
@@ -439,7 +435,7 @@ impl SourceChecker {
     async fn do_content_check(&self, source: &BookSource, chapter_url: &str) -> Result<(), String> {
         let resp = self
             .client
-            .get(chapter_url, parse_headers(source.header.as_deref()))
+            .get(chapter_url, source_request_headers(source))
             .await
             .map_err(|e| format!("content request failed: {}", e))?;
 
@@ -680,6 +676,34 @@ fn parse_headers(header: Option<&str>) -> Option<std::collections::HashMap<Strin
     }
 }
 
+/// 书源请求头 + 写侧 CookieJar 门控标记（批 2）
+///
+/// `enabled_cookie_jar == Some(true)` 时在 [`parse_headers`] 结果上补
+/// [`crate::client::COOKIE_JAR_HEADER`]（只补不覆盖；`Some(false)`/`None`
+/// 不补，对齐上游 `source?.enabledCookieJar == true`）。该头由写侧
+/// （[`crate::client::LegadoClient`]）消费并在发送前剥离（绝不出网）；
+/// 读侧按域 cookie 注入无条件，不受影响。
+fn source_request_headers(
+    source: &BookSource,
+) -> Option<std::collections::HashMap<String, String>> {
+    let mut headers = parse_headers(source.header.as_deref()).unwrap_or_default();
+    if source.enabled_cookie_jar == Some(true)
+        && !headers
+            .keys()
+            .any(|k| k.eq_ignore_ascii_case(crate::client::COOKIE_JAR_HEADER))
+    {
+        headers.insert(
+            crate::client::COOKIE_JAR_HEADER.to_string(),
+            "1".to_string(),
+        );
+    }
+    if headers.is_empty() {
+        None
+    } else {
+        Some(headers)
+    }
+}
+
 /// 从 URL 提取主机名（用于重定向检测对比）
 fn extract_host(url: &str) -> String {
     // 尝试使用 url crate 解析
@@ -838,6 +862,54 @@ mod tests {
     fn test_parse_headers_none() {
         assert!(parse_headers(None).is_none());
         assert!(parse_headers(Some("")).is_none());
+    }
+
+    /// 批 2 写侧门控：书源校验请求头按 `enabledCookieJar` 补标记
+    ///（开 → 补；false/None → 不补；规则已有同名键 → 只补不覆盖）
+    #[test]
+    fn test_source_request_headers_cookie_jar_gate() {
+        // 开：Some(true) 且无其他 header → 仅标记头
+        let source = BookSource {
+            book_source_url: "https://gate-on.test".to_string(),
+            enabled_cookie_jar: Some(true),
+            ..BookSource::default()
+        };
+        let headers = source_request_headers(&source).expect("开启源应产出标记头");
+        assert_eq!(
+            headers
+                .get(crate::client::COOKIE_JAR_HEADER)
+                .map(String::as_str),
+            Some("1")
+        );
+
+        // 关：Some(false) / None → 无标记（无其他 header → None）
+        for gate in [Some(false), None] {
+            let source = BookSource {
+                book_source_url: "https://gate-off.test".to_string(),
+                enabled_cookie_jar: gate,
+                ..BookSource::default()
+            };
+            assert!(
+                source_request_headers(&source).is_none(),
+                "关闭/NULL 源不得补标记"
+            );
+        }
+
+        // 规则已有同名键 → 只补不覆盖（值保持原样）
+        let source = BookSource {
+            book_source_url: "https://gate-rule.test".to_string(),
+            enabled_cookie_jar: Some(true),
+            header: Some(r#"{"CookieJar":"rule-val"}"#.to_string()),
+            ..BookSource::default()
+        };
+        let headers = source_request_headers(&source).expect("应保留规则头");
+        assert_eq!(
+            headers
+                .get(crate::client::COOKIE_JAR_HEADER)
+                .map(String::as_str),
+            Some("rule-val"),
+            "规则 header 优先：标记头只补不覆盖"
+        );
     }
 
     #[tokio::test]

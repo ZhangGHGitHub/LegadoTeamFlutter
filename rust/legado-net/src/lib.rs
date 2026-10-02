@@ -44,7 +44,7 @@ pub mod webdav;
 mod socks5_e2e;
 
 // 常用类型重导出
-pub use client::{LegadoClient, LegadoClientConfig};
+pub use client::{cookie_jar_marker_present, LegadoClient, LegadoClientConfig, COOKIE_JAR_HEADER};
 pub use cookie_store::{CookiePersistence, CookieStore};
 pub use cover::CoverCache;
 pub use custom_hosts::{

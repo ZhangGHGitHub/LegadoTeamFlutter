@@ -94,6 +94,9 @@ pub fn review_get_summary(source_json: &str, request_json: &str) -> LegadoResult
         .and_then(|h| serde_json::from_str(h).ok());
     let mut headers = source_headers.unwrap_or_default();
     headers.extend(analyze_url.headers().clone());
+    // 写侧 CookieJar 门控（批 2）：开启源补内部标记头（只补不覆盖；
+    // 发送前由 legado-net 剥离、绝不出网）；读侧 cookie 注入不受影响。
+    legado_fetcher::web_book::apply_cookie_jar_marker(&mut headers, &source);
     let headers_opt = if headers.is_empty() {
         None
     } else {
@@ -289,6 +292,9 @@ pub fn review_get_detail(source_json: &str, request_json: &str, page: i32) -> Le
         .and_then(|h| serde_json::from_str(h).ok());
     let mut headers = source_headers.unwrap_or_default();
     headers.extend(analyze_url.headers().clone());
+    // 写侧 CookieJar 门控（批 2）：开启源补内部标记头（只补不覆盖；
+    // 发送前由 legado-net 剥离、绝不出网）；读侧 cookie 注入不受影响。
+    legado_fetcher::web_book::apply_cookie_jar_marker(&mut headers, &source);
     let headers_opt = if headers.is_empty() {
         None
     } else {
@@ -492,6 +498,9 @@ pub fn review_get_replies(
         .and_then(|h| serde_json::from_str(h).ok());
     let mut headers = source_headers.unwrap_or_default();
     headers.extend(analyze_url.headers().clone());
+    // 写侧 CookieJar 门控（批 2）：开启源补内部标记头（只补不覆盖；
+    // 发送前由 legado-net 剥离、绝不出网）；读侧 cookie 注入不受影响。
+    legado_fetcher::web_book::apply_cookie_jar_marker(&mut headers, &source);
     let headers_opt = if headers.is_empty() {
         None
     } else {

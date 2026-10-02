@@ -48,6 +48,32 @@ use crate::user_agent::{UserAgentMiddleware, UserAgentRotator};
 pub const DEFAULT_USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
+/// 写侧 CookieJar 门控标记头（对齐上游 `CookieManager.cookieJarHeader = "CookieJar"`）
+///
+/// **语义（对齐上游 `AnalyzeUrl.setCookie` + `HttpHelper` 网络拦截器）**：
+/// - 请求头中存在该键（存在即启用，值不参与判定）→ 响应 `Set-Cookie` 写回
+///   内存 CookieStore 并按域持久化（[`LegadoClient::collect_response`] /
+///   [`LegadoClient::collect_raw_response`]）；
+/// - 不存在该键 → 写侧整体跳过（响应 cookie 不进内存 jar、不落 DB）；
+/// - 该头是**内部标记**，发送前在 [`apply_headers_and_cookies`] 中剥离，
+///   绝不发往真实服务器（对齐上游拦截器 `requestBuilder.removeHeader`）；
+/// - 读侧（DB cookie 注入，[`apply_headers_and_cookies`] 的 Cookie 合并）
+///   **无条件**，不受本标记影响。
+///
+/// **同名风险（跟随上游）**：书源 header/规则 header 若自带同名 `CookieJar`
+/// 键会被判定为启用（上游 `AnalyzeUrl` 在关闭时移除该键、启用时覆写为 "1"；
+/// 本实现为「只补不覆盖」）。此为上游同名机制固有风险，不另造私有变体。
+pub const COOKIE_JAR_HEADER: &str = "CookieJar";
+
+/// 请求头中是否存在写侧 CookieJar 标记（键名大小写不敏感，存在即启用）
+///
+/// 对齐上游 `HttpHelper.kt:86` `request.header(cookieJarHeader) != null`。
+pub fn cookie_jar_marker_present(headers: Option<&HashMap<String, String>>) -> bool {
+    headers
+        .map(|h| h.keys().any(|k| k.eq_ignore_ascii_case(COOKIE_JAR_HEADER)))
+        .unwrap_or(false)
+}
+
 /// HTTP 客户端配置
 ///
 /// 默认值参考 `HttpHelper.kt` 中 `okHttpClient` 的构建参数。
@@ -378,6 +404,8 @@ impl LegadoClient {
     ) -> LegadoResult<LegadoResponse> {
         let client = self.client.clone();
         let cookie_store = self.cookie_store.clone();
+        // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie（读侧不受影响）
+        let save_cookies = cookie_jar_marker_present(headers.as_ref());
         let headers = Arc::new(headers);
         let url = url.to_string();
         let url_for_retry = url.clone();
@@ -395,7 +423,7 @@ impl LegadoClient {
             }
         };
 
-        self.execute_with_retry_and_limit(url_for_retry.as_str(), factory)
+        self.execute_with_retry_and_limit(url_for_retry.as_str(), save_cookies, factory)
             .await
     }
 
@@ -421,6 +449,8 @@ impl LegadoClient {
     ) -> LegadoResult<crate::response::LegadoRawResponse> {
         let client = self.client.clone();
         let cookie_store = self.cookie_store.clone();
+        // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
+        let save_cookies = cookie_jar_marker_present(headers.as_ref());
         let headers = Arc::new(headers);
         let url = url.to_string();
         let url_for_retry = url.clone();
@@ -455,7 +485,8 @@ impl LegadoClient {
             factory().await.map_err(map_reqwest_error)?
         };
 
-        self.collect_raw_response(response, &url_for_retry).await
+        self.collect_raw_response(response, &url_for_retry, save_cookies)
+            .await
     }
 
     /// 发送 POST 请求并返回无损原始字节（供 charset=gbk 等响应解码）
@@ -467,6 +498,8 @@ impl LegadoClient {
     ) -> LegadoResult<crate::response::LegadoRawResponse> {
         let client = self.client.clone();
         let cookie_store = self.cookie_store.clone();
+        // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
+        let save_cookies = cookie_jar_marker_present(headers.as_ref());
         let headers = Arc::new(headers);
         let url = url.to_string();
         let body = body.to_string();
@@ -502,7 +535,8 @@ impl LegadoClient {
             factory().await.map_err(map_reqwest_error)?
         };
 
-        self.collect_raw_response(response, &url_for_retry).await
+        self.collect_raw_response(response, &url_for_retry, save_cookies)
+            .await
     }
 
     /// 发送 POST 请求
@@ -514,6 +548,8 @@ impl LegadoClient {
     ) -> LegadoResult<LegadoResponse> {
         let client = self.client.clone();
         let cookie_store = self.cookie_store.clone();
+        // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
+        let save_cookies = cookie_jar_marker_present(headers.as_ref());
         let headers = Arc::new(headers);
         let url = url.to_string();
         let body = body.to_string();
@@ -533,7 +569,7 @@ impl LegadoClient {
             }
         };
 
-        self.execute_with_retry_and_limit(url_for_retry.as_str(), factory)
+        self.execute_with_retry_and_limit(url_for_retry.as_str(), save_cookies, factory)
             .await
     }
 
@@ -545,6 +581,8 @@ impl LegadoClient {
     ) -> LegadoResult<LegadoResponse> {
         let client = self.client.clone();
         let cookie_store = self.cookie_store.clone();
+        // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
+        let save_cookies = cookie_jar_marker_present(headers.as_ref());
         let headers = Arc::new(headers);
         let url = url.to_string();
         let url_for_retry = url.clone();
@@ -562,7 +600,7 @@ impl LegadoClient {
             }
         };
 
-        self.execute_with_retry_and_limit(url_for_retry.as_str(), factory)
+        self.execute_with_retry_and_limit(url_for_retry.as_str(), save_cookies, factory)
             .await
     }
 
@@ -577,6 +615,8 @@ impl LegadoClient {
         let url = request.url.clone();
         let body = request.body.clone();
         let timeout = request.timeout;
+        // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
+        let save_cookies = cookie_jar_marker_present(Some(&request.headers));
         let headers = Arc::new(Some(request.headers.clone()));
 
         let factory = move || {
@@ -600,7 +640,7 @@ impl LegadoClient {
             }
         };
 
-        self.execute_with_retry_and_limit(&request.url, factory)
+        self.execute_with_retry_and_limit(&request.url, save_cookies, factory)
             .await
     }
 
@@ -663,6 +703,7 @@ impl LegadoClient {
     async fn execute_with_retry_and_limit<F, Fut>(
         &self,
         url: &str,
+        save_cookies: bool,
         factory: F,
     ) -> LegadoResult<LegadoResponse>
     where
@@ -692,7 +733,9 @@ impl LegadoClient {
         let ttfb = t0.elapsed();
         let remote = raw_response.remote_addr();
 
-        let response = self.collect_response(raw_response, url).await?;
+        let response = self
+            .collect_response(raw_response, url, save_cookies)
+            .await?;
 
         let body_dur = t0.elapsed() - ttfb;
         crate::timing::emit_request(url, ttfb, body_dur, remote);
@@ -701,10 +744,15 @@ impl LegadoClient {
     }
 
     /// 收集响应数据并保存 Cookie
+    ///
+    /// `save_cookies`：写侧门控（请求头带 [`COOKIE_JAR_HEADER`] 标记时为 true）。
+    /// false 时响应 `Set-Cookie` 整体跳过（不进内存 jar、不落 DB）；读侧注入
+    /// 由 [`apply_headers_and_cookies`] 无条件完成，与此无关。
     async fn collect_response(
         &self,
         response: reqwest::Response,
         original_url: &str,
+        save_cookies: bool,
     ) -> LegadoResult<LegadoResponse> {
         let final_url = response.url().to_string();
         let status = response.status().as_u16();
@@ -717,8 +765,10 @@ impl LegadoClient {
             }
         }
 
-        // 保存 Set-Cookie 到 CookieStore
-        self.save_cookies_from_response(original_url, &final_url, &headers);
+        // 保存 Set-Cookie 到 CookieStore（仅带写侧标记的请求）
+        if save_cookies {
+            self.save_cookies_from_response(original_url, &final_url, &headers);
+        }
 
         // 读取响应体
         let body = response
@@ -735,10 +785,13 @@ impl LegadoClient {
     }
 
     /// 收集二进制响应数据并保存 Cookie（Task #113：无损字节读取，对照 [`collect_response`](Self::collect_response)）
+    ///
+    /// `save_cookies` 语义同 [`Self::collect_response`]（写侧门控）。
     async fn collect_raw_response(
         &self,
         response: reqwest::Response,
         original_url: &str,
+        save_cookies: bool,
     ) -> LegadoResult<crate::response::LegadoRawResponse> {
         let final_url = response.url().to_string();
         let status = response.status().as_u16();
@@ -751,8 +804,10 @@ impl LegadoClient {
             }
         }
 
-        // 保存 Set-Cookie 到 CookieStore
-        self.save_cookies_from_response(original_url, &final_url, &headers);
+        // 保存 Set-Cookie 到 CookieStore（仅带写侧标记的请求）
+        if save_cookies {
+            self.save_cookies_from_response(original_url, &final_url, &headers);
+        }
 
         // 读取原始字节（不经 UTF-8 解码）
         let body = response
@@ -920,6 +975,11 @@ fn apply_headers_and_cookies(
         for (name, value) in hdrs {
             if name.to_lowercase() == "cookie" {
                 continue; // Cookie 单独合并注入，避免整体替换
+            }
+            // 写侧门控标记头：内部头，发送前剥离（对齐上游 HttpHelper 网络
+            // 拦截器 `requestBuilder.removeHeader(cookieJarHeader)`）
+            if name.eq_ignore_ascii_case(COOKIE_JAR_HEADER) {
+                continue;
             }
             // 特殊处理: UA 为 "null" 时移除（对应 Kotlin 拦截器逻辑）
             if name.to_lowercase() == "user-agent" && value == "null" {
@@ -1981,5 +2041,225 @@ mod tests {
             22,
             "原客户端仍跟随 20 跳（1 + 21 次请求）"
         );
+    }
+
+    // ─── 写侧 CookieJar 门控（标记头机制，批 1） ─────────────
+
+    /// 回环服务器：记录收到的请求头全文，响应 200 + `Set-Cookie: gate_srv=...`
+    ///
+    /// 返回 `(地址, 最近一次请求头全文)`；请求头在写响应**之前**记录，故客户端
+    /// 收到响应时记录必已就绪（无竞态）。
+    async fn spawn_set_cookie_recorder() -> (std::net::SocketAddr, Arc<Mutex<String>>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        use tokio::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let seen = Arc::new(Mutex::new(String::new()));
+        let seen_srv = Arc::clone(&seen);
+        tokio::spawn(async move {
+            while let Ok((mut sock, _)) = listener.accept().await {
+                let seen = Arc::clone(&seen_srv);
+                tokio::spawn(async move {
+                    // 读取请求头至 \r\n\r\n（GET 无请求体）
+                    let mut head: Vec<u8> = Vec::new();
+                    loop {
+                        let mut b = [0u8; 1];
+                        match sock.read(&mut b).await {
+                            Ok(0) | Err(_) => return,
+                            Ok(_) => {}
+                        }
+                        head.push(b[0]);
+                        if head.ends_with(b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                    if let Ok(mut guard) = seen.lock() {
+                        *guard = String::from_utf8_lossy(&head).to_string();
+                    }
+                    let body = "ok";
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nSet-Cookie: gate_srv=srv1\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                    let _ = sock.write_all(resp.as_bytes()).await;
+                    let _ = sock.shutdown().await;
+                });
+            }
+        });
+        (addr, seen)
+    }
+
+    fn marker_headers() -> HashMap<String, String> {
+        let mut headers = HashMap::new();
+        headers.insert(COOKIE_JAR_HEADER.to_string(), "1".to_string());
+        headers
+    }
+
+    /// 有标记（`CookieJar: 1`）→ 响应 Set-Cookie 落库；标记头**不得发往服务器**；
+    /// 读侧 DB cookie 注入无条件保留（两态回归，见下一用例）。
+    #[tokio::test]
+    async fn test_cookie_jar_marker_enables_writeback_and_is_stripped() {
+        let (addr, seen) = spawn_set_cookie_recorder().await;
+        let persistence = Arc::new(MockPersistence::default());
+        persistence.save("127.0.0.1", "dbcookie=fromDB");
+        let client = LegadoClient::with_cookie_persistence(
+            LegadoClientConfig {
+                no_proxy: true,
+                ..LegadoClientConfig::default()
+            },
+            persistence.clone(),
+        )
+        .unwrap();
+
+        let resp = client
+            .get(&format!("http://{addr}/"), Some(marker_headers()))
+            .await
+            .expect("带标记请求应成功");
+        assert_eq!(resp.status, 200);
+
+        // 写侧：Set-Cookie 应写回持久化后端（含预载 DB cookie）
+        let saved = persistence
+            .data
+            .lock()
+            .unwrap()
+            .get("127.0.0.1")
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            saved.contains("gate_srv=srv1"),
+            "有标记时 Set-Cookie 必须落库: {saved:?}"
+        );
+        assert!(
+            saved.contains("dbcookie=fromDB"),
+            "落库行为 jar 全量视图（含预载 DB cookie）: {saved:?}"
+        );
+
+        // 标记头不得出网；读侧 DB cookie 无条件注入
+        let head = seen.lock().unwrap().clone();
+        let lower = head.to_ascii_lowercase();
+        assert!(
+            !lower.contains("cookiejar:"),
+            "写侧门控标记头是内部头，必须发送前剥离: {head}"
+        );
+        assert!(
+            lower.contains("cookie: dbcookie=fromdb"),
+            "读侧 DB cookie 注入不受标记影响: {head}"
+        );
+    }
+
+    /// 无标记 → 响应 Set-Cookie 跳过写回（内存 jar 与持久化后端均不落）；
+    /// 读侧 DB cookie 仍无条件注入（回归断言）。
+    #[tokio::test]
+    async fn test_without_cookie_jar_marker_skips_writeback_read_side_unchanged() {
+        let (addr, seen) = spawn_set_cookie_recorder().await;
+        let persistence = Arc::new(MockPersistence::default());
+        persistence.save("127.0.0.1", "dbcookie=fromDB");
+        let client = LegadoClient::with_cookie_persistence(
+            LegadoClientConfig {
+                no_proxy: true,
+                ..LegadoClientConfig::default()
+            },
+            persistence.clone(),
+        )
+        .unwrap();
+
+        let resp = client
+            .get(&format!("http://{addr}/"), None)
+            .await
+            .expect("无标记请求应成功");
+        assert_eq!(resp.status, 200);
+
+        // 无标记：Set-Cookie 不落持久化后端（行仍为预载值）
+        let saved = persistence
+            .data
+            .lock()
+            .unwrap()
+            .get("127.0.0.1")
+            .cloned()
+            .unwrap_or_default();
+        assert_eq!(saved, "dbcookie=fromDB", "无标记时响应 Set-Cookie 不得落库");
+
+        // 内存 jar 同样不写入（写侧整体跳过）
+        {
+            let store = client.cookie_store().read().unwrap();
+            assert!(
+                store.get_key("127.0.0.1", "gate_srv").is_none(),
+                "无标记时内存 jar 也不得写入响应 cookie"
+            );
+        }
+
+        // 读侧无条件注入不变
+        let head = seen.lock().unwrap().clone();
+        assert!(
+            head.to_ascii_lowercase()
+                .contains("cookie: dbcookie=fromdb"),
+            "无标记时读侧 DB cookie 仍必须注入: {head}"
+        );
+    }
+
+    /// `get_raw`（二进制通道，collect_raw_response）同样受门控：
+    /// 带标记落库；无标记不落库。
+    #[tokio::test]
+    async fn test_cookie_jar_gate_applies_to_raw_response_collect() {
+        // 有标记 → 落库
+        let (addr_on, _seen_on) = spawn_set_cookie_recorder().await;
+        let persistence_on = Arc::new(MockPersistence::default());
+        let client_on = LegadoClient::with_cookie_persistence(
+            LegadoClientConfig {
+                no_proxy: true,
+                ..LegadoClientConfig::default()
+            },
+            persistence_on.clone(),
+        )
+        .unwrap();
+        let raw = client_on
+            .get_raw(&format!("http://{addr_on}/"), Some(marker_headers()))
+            .await
+            .expect("get_raw 带标记应成功");
+        assert_eq!(raw.status, 200);
+        let saved_on = persistence_on
+            .data
+            .lock()
+            .unwrap()
+            .get("127.0.0.1")
+            .cloned()
+            .unwrap_or_default();
+        assert!(
+            saved_on.contains("gate_srv=srv1"),
+            "get_raw 有标记时 Set-Cookie 必须落库: {saved_on:?}"
+        );
+
+        // 无标记 → 不落库
+        let (addr_off, _seen_off) = spawn_set_cookie_recorder().await;
+        let persistence_off = Arc::new(MockPersistence::default());
+        let client_off = LegadoClient::with_cookie_persistence(
+            LegadoClientConfig {
+                no_proxy: true,
+                ..LegadoClientConfig::default()
+            },
+            persistence_off.clone(),
+        )
+        .unwrap();
+        let raw_off = client_off
+            .get_raw(&format!("http://{addr_off}/"), None)
+            .await
+            .expect("get_raw 无标记应成功");
+        assert_eq!(raw_off.status, 200);
+        assert!(
+            persistence_off.data.lock().unwrap().is_empty(),
+            "get_raw 无标记时响应 Set-Cookie 不得落库"
+        );
+    }
+
+    /// 标记头识别大小写不敏感（HTTP 头名不区分大小写；对齐上游
+    /// `request.header(cookieJarHeader) != null` 语义）
+    #[test]
+    fn test_cookie_jar_marker_presence_is_case_insensitive() {
+        let mut headers = HashMap::new();
+        headers.insert("cookiejar".to_string(), "anything".to_string());
+        assert!(cookie_jar_marker_present(Some(&headers)));
+        assert!(!cookie_jar_marker_present(None));
+        assert!(!cookie_jar_marker_present(Some(&HashMap::new())));
     }
 }

@@ -12,6 +12,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 use crate::host_api::runtime_bridge::block_on;
 use legado_net::{
     CookiePersistence, CookieStore, LegadoClient, LegadoClientConfig, LegadoRequest, Method,
+    COOKIE_JAR_HEADER,
 };
 
 /// 默认请求超时（毫秒），与 Kotlin 端一致
@@ -278,6 +279,65 @@ pub fn set_client_cookie_store(store: Arc<RwLock<CookieStore>>) -> bool {
     CLIENT_COOKIE_STORE.set(store).is_ok()
 }
 
+/// 书源 `enabledCookieJar` 查询钩子（批 2 写侧门控）
+///
+/// JS 桥（`java.ajax` / `java.connect(NR)` / `java.get/post/head` / `ajaxAll`
+/// / `httpGet`/`httpPost`/`httpHead`）在发送前按**当前书源开关**决定是否给
+/// 请求头补 [`COOKIE_JAR_HEADER`] 标记：
+/// - 开启（`Some(true)`）→ 宿主写侧（legado-net）把响应 `Set-Cookie` 写回
+///   内存 jar 并按域持久化；
+/// - 关闭 / 未绑定书源 / 查不到 → 不写回；**读侧**按请求 URL 属域的 cookie
+///   注入（`merge_js_cookies` / `cookies_for_url`）**无条件**，不受本开关影响。
+///
+/// 对齐上游 `JsExtensions.kt:532-534/559-561/586-588`：`java.get/post/head`
+/// 仅 `getSource()?.enabledCookieJar == true` 才放 `cookieJarHeader`；
+/// `java.ajax`/`connect` 与主链路同（读无条件、写门控）。
+///
+/// tag（book_source_url）→ 开关的解析由宿主注入（first-wins，仿
+/// [`set_client_cookie_persistence`]）：`legado-ffi::ffi::Bridge::db_open`
+/// 注册基于 `BookSourceRepository` 的 DB 查询（legado-js 自身不依赖 DB）。
+/// 未注册（CLI/测试路径）或查不到 → None = 按关（对齐上游
+/// `source?.enabledCookieJar == true` 的 null→false）。
+/// 书源开关查询闭包类型（tag → `enabledCookieJar`）
+pub type SourceCookieJarLookup = Arc<dyn Fn(&str) -> Option<bool> + Send + Sync>;
+
+static SOURCE_COOKIE_JAR_LOOKUP: OnceLock<SourceCookieJarLookup> = OnceLock::new();
+
+/// 注册书源开关查询（first-wins）
+///
+/// 返回本次注册是否生效：重复注册忽略并返回 `false`（不覆盖首个实例）。
+pub fn set_source_cookie_jar_lookup(f: SourceCookieJarLookup) -> bool {
+    SOURCE_COOKIE_JAR_LOOKUP.set(f).is_ok()
+}
+
+/// 当前线程书源是否开启 CookieJar 写侧门控（无绑定/未注册/查不到 → false）
+///
+/// 由 [`apply_source_cookie_jar_gate`] 在各 JS 网络入口统一消费；
+/// `legado-ffi` 侧同名语义入口见 `web_book::apply_cookie_jar_marker`。
+pub(crate) fn current_source_cookie_jar_enabled() -> bool {
+    let Some(tag) = crate::host_api::current_source::current_source_tag() else {
+        return false;
+    };
+    SOURCE_COOKIE_JAR_LOOKUP
+        .get()
+        .and_then(|lookup| lookup(&tag))
+        == Some(true)
+}
+
+/// 按当前书源开关向请求头补写侧标记（只补不覆盖：显式同名键保持原值）
+fn apply_source_cookie_jar_gate(headers: &mut HashMap<String, String>) {
+    if !current_source_cookie_jar_enabled() {
+        return;
+    }
+    if headers
+        .keys()
+        .any(|k| k.eq_ignore_ascii_case(COOKIE_JAR_HEADER))
+    {
+        return;
+    }
+    headers.insert(COOKIE_JAR_HEADER.to_string(), "1".to_string());
+}
+
 /// 重置全部 4 个池槽位（仿 `legado-ffi::http_state::reset_shared_client`）
 ///
 /// 置空后下次 [`shared_client`] 调用按当前配置重建（构建时读取此刻已
@@ -373,7 +433,14 @@ pub fn http_get(url: &str, headers: Option<&str>) -> Result<String, String> {
         // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变；
         // 进程级共享池（2026-09-24 性能专项：不再每调用新建连接池）
         let client = shared_client_for_url(url)?;
-        let header_map = parse_headers(headers);
+        // 写侧门控（批 2）：按当前书源开关补标记（读侧不受影响）
+        let mut header_map = parse_headers(headers).unwrap_or_default();
+        apply_source_cookie_jar_gate(&mut header_map);
+        let header_map = if header_map.is_empty() {
+            None
+        } else {
+            Some(header_map)
+        };
         let resp = client
             .get(url, header_map)
             .await
@@ -390,7 +457,14 @@ pub fn http_post(url: &str, body: &str, headers: Option<&str>) -> Result<String,
         // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变；
         // 进程级共享池（2026-09-24 性能专项：不再每调用新建连接池）
         let client = shared_client_for_url(url)?;
-        let header_map = parse_headers(headers);
+        // 写侧门控（批 2）：按当前书源开关补标记
+        let mut header_map = parse_headers(headers).unwrap_or_default();
+        apply_source_cookie_jar_gate(&mut header_map);
+        let header_map = if header_map.is_empty() {
+            None
+        } else {
+            Some(header_map)
+        };
         let resp = client
             .post(url, body, header_map)
             .await
@@ -407,8 +481,16 @@ pub fn http_head(url: &str) -> Result<String, String> {
         // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变；
         // 进程级共享池（2026-09-24 性能专项：不再每调用新建连接池）
         let client = shared_client_for_url(url)?;
+        // 写侧门控（批 2）：按当前书源开关补标记（上游 head 同门控）
+        let mut header_map = HashMap::new();
+        apply_source_cookie_jar_gate(&mut header_map);
+        let header_map = if header_map.is_empty() {
+            None
+        } else {
+            Some(header_map)
+        };
         let resp = client
-            .head(url, None)
+            .head(url, header_map)
             .await
             .map_err(|e| format!("httpHead error: {}", e))?;
         serde_json::to_string(&resp.headers).map_err(|e| format!("httpHead serialize error: {}", e))
@@ -479,10 +561,12 @@ pub fn ajax(input: &str) -> Result<String, String> {
         let client = shared_client_for_url(&url)?;
 
         // Cookie 合并须在 url move 进 LegadoRequest 前完成（新签名按请求 URL 取 cookie）
-        let headers = ensure_json_content_type(
+        let mut headers = ensure_json_content_type(
             merge_global_cookie(opts.headers.clone().unwrap_or_default(), &url),
             &opts.body,
         );
+        // 写侧门控（批 2）：按当前书源开关补标记（读侧不受影响）
+        apply_source_cookie_jar_gate(&mut headers);
         let request = LegadoRequest {
             url,
             method,
@@ -613,10 +697,12 @@ fn ajax_request_body(opts: &HttpOptions) -> Result<String, String> {
         // 共享池（有效超时由逐请求 timeout 决定，与修复前一致）
         let client = shared_client_for_url(&url)?;
         // Cookie 合并须在 url move 进 LegadoRequest 前完成（新签名按请求 URL 取 cookie）
-        let headers = ensure_json_content_type(
+        let mut headers = ensure_json_content_type(
             merge_global_cookie(opts.headers.clone().unwrap_or_default(), &url),
             &opts.body,
         );
+        // 写侧门控（批 2）：按当前书源开关补标记
+        apply_source_cookie_jar_gate(&mut headers);
         let request = LegadoRequest {
             url,
             method,
@@ -664,7 +750,15 @@ pub fn ajax_all(urls_json: &str) -> Result<String, String> {
                     client.clone()
                 };
                 async move {
-                    c.get(&url, None)
+                    // 写侧门控（批 2）：每个 URL 按当前书源开关补标记
+                    let mut headers = HashMap::new();
+                    apply_source_cookie_jar_gate(&mut headers);
+                    let headers = if headers.is_empty() {
+                        None
+                    } else {
+                        Some(headers)
+                    };
+                    c.get(&url, headers)
                         .await
                         .map(|resp| resp.body)
                         .unwrap_or_default()
@@ -700,6 +794,9 @@ pub fn connect_full(
     let headers: HashMap<String, String> = headers_json
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or_default();
+    // 写侧门控（批 2，UrlOption 前置）：按当前书源开关补标记
+    let mut headers = headers;
+    apply_source_cookie_jar_gate(&mut headers);
 
     block_on(async {
         // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变；
@@ -752,6 +849,9 @@ pub fn connect_no_redirect(
         &mut headers,
         body_owned.as_ref().is_some_and(|b| !b.is_empty()),
     );
+    // 写侧门控（批 2）：java.get/post/head 走 connectNR；按当前书源开关补标记
+    //（对齐上游 JsExtensions.kt:532-534/559-561/586-588 的 getSource 门控）
+    apply_source_cookie_jar_gate(&mut headers);
     block_on(async {
         // 不跟随重定向共享池（回环/非回环分池）：
         // - `follow_redirects=false`：拦截 302 取 Location 头（jsoup 语义）
@@ -787,9 +887,11 @@ pub fn connect_no_redirect(
 /// 对应 Kotlin: `head(urlStr, headers): Connection.Response`
 /// 返回包含 statusCode / body / headers 的完整响应 JSON。
 pub fn head_full(url: &str, headers_json: Option<&str>) -> Result<String, String> {
-    let headers: HashMap<String, String> = headers_json
+    let mut headers: HashMap<String, String> = headers_json
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or_default();
+    // 写侧门控（批 2）：按当前书源开关补标记（上游 head 同门控）
+    apply_source_cookie_jar_gate(&mut headers);
 
     block_on(async {
         // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变；
@@ -821,9 +923,11 @@ pub fn head_full(url: &str, headers_json: Option<&str>) -> Result<String, String
 /// 对应 Kotlin: `post(urlStr, body, headers): Connection.Response`
 /// 返回包含 statusCode / body / headers 的完整响应 JSON。
 pub fn post_full(url: &str, body: &str, headers_json: Option<&str>) -> Result<String, String> {
-    let headers: HashMap<String, String> = headers_json
+    let mut headers: HashMap<String, String> = headers_json
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or_default();
+    // 写侧门控（批 2）：按当前书源开关补标记（上游 post 同门控）
+    apply_source_cookie_jar_gate(&mut headers);
 
     block_on(async {
         // 回环 URL 直连豁免代理（P2-17 约定），真实主机行为不变；
@@ -1455,6 +1559,39 @@ mod tests {
         let _ = set_client_cookie_persistence(test_persistence());
     }
 
+    /// 写侧门控标记头（批 2）：客户端级用例显式模拟生产注入口
+    ///
+    /// 生产环境标记由主链路（fetch_page/search）或 JS 桥（按当前书源开关）
+    /// 注入；本 helper 仅供直接驱动 `LegadoClient` 的池/冷启动/脑裂机制用例
+    /// 显式开启写回。
+    fn cookie_jar_marker_headers() -> Option<HashMap<String, String>> {
+        let mut headers = HashMap::new();
+        headers.insert(COOKIE_JAR_HEADER.to_string(), "1".to_string());
+        Some(headers)
+    }
+
+    /// 测试用书源开关注册表（tag → enabledCookieJar）
+    ///
+    /// `set_source_cookie_jar_lookup` 为 first-wins 全局钩子：全 crate 测试
+    /// 共享同一实例（仿 `TEST_PERSISTENCE`），各用例用唯一 tag 避免串扰。
+    static TEST_SOURCE_GATES: OnceLock<std::sync::Mutex<std::collections::HashMap<String, bool>>> =
+        OnceLock::new();
+
+    fn test_source_gates() -> &'static std::sync::Mutex<std::collections::HashMap<String, bool>> {
+        TEST_SOURCE_GATES.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+    }
+
+    /// 注册测试用书源开关查询（幂等；first-wins 返回值忽略）
+    fn register_test_source_cookie_jar_lookup() {
+        let _ = set_source_cookie_jar_lookup(Arc::new(|tag: &str| {
+            test_source_gates()
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .get(tag)
+                .copied()
+        }));
+    }
+
     /// 进程级共享测试 store 实例（脑裂修复用例的共享罐；仿
     /// `TEST_PERSISTENCE`——first-wins 钩子下所有触碰池的用例必须
     /// 共享同一实例）
@@ -1586,9 +1723,11 @@ mod tests {
         let url = format!("http://{addr}/waf");
 
         // ① 初始态（无 cookie）：WAF 挑战 403 + Set-Cookie 种状态机
+        //（批 2 写侧门控：本用例直接驱动客户端机制，显式携带标记头模拟生产
+        //  注入；无标记 = 不写回为现行不变式，由 net/fetcher 套件钉死）
         let client1 = shared_client(true, false).expect("回环池（首次构建）");
-        let resp1 =
-            block_on(async { client1.get(&url, None).await }).expect("首请求应成功（403 非错误）");
+        let resp1 = block_on(async { client1.get(&url, cookie_jar_marker_headers()).await })
+            .expect("首请求应成功（403 非错误）");
         assert_eq!(
             resp1.status, 403,
             "无状态机 cookie 时 WAF 应回 403 挑战: {}",
@@ -1708,7 +1847,8 @@ mod tests {
         );
 
         // ① client1 首请求：无 WAF cookie → 403 挑战 + Set-Cookie 重种
-        let resp1 = block_on(async { client1.get(&url, None).await })
+        //（批 2 写侧门控：显式携带标记头模拟生产注入口，同冷启动用例）
+        let resp1 = block_on(async { client1.get(&url, cookie_jar_marker_headers()).await })
             .expect("client1 首请求应成功（403 非错误）");
         assert_eq!(
             resp1.status, 403,
@@ -1749,7 +1889,8 @@ mod tests {
             .write()
             .unwrap_or_else(|p| p.into_inner())
             .remove_domain("127.0.0.1");
-        let resp3 = block_on(async { client2.get(&url, None).await })
+        // 批 2 写侧门控：清除后的 403 重种请求同样显式携带标记头
+        let resp3 = block_on(async { client2.get(&url, cookie_jar_marker_headers()).await })
             .expect("清除后 client2 再挑战请求应成功");
         assert_eq!(
             resp3.status, 403,
@@ -1770,6 +1911,119 @@ mod tests {
             .write()
             .unwrap_or_else(|p| p.into_inner())
             .remove_domain("127.0.0.1");
+        reset_shared_client_pools();
+    }
+
+    /// 批 2 门控用例服务器：记录每个请求头全文，响应 200 +
+    /// `Set-Cookie: p219_jsgate=GATE-VAL; Path=/` + JSON 体
+    fn spawn_gate_recording_server(
+        max_conns: usize,
+    ) -> (std::net::SocketAddr, Arc<std::sync::Mutex<Vec<String>>>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+        let addr = listener.local_addr().expect("local_addr");
+        let seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_srv = Arc::clone(&seen);
+        std::thread::spawn(move || {
+            for stream in listener.incoming().take(max_conns) {
+                let Ok(mut sock) = stream else { continue };
+                let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    if sock.read_exact(&mut byte).is_err() {
+                        break;
+                    }
+                    head.push(byte[0]);
+                    if head.len() > 65_536 {
+                        break;
+                    }
+                }
+                if let Ok(mut guard) = seen_srv.lock() {
+                    guard.push(String::from_utf8_lossy(&head).to_string());
+                }
+                let body = r#"{"ok":true}"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nSet-Cookie: p219_jsgate=GATE-VAL; Path=/\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = sock.write_all(resp.as_bytes());
+            }
+        });
+        (addr, seen)
+    }
+
+    /// 批 2：JS 桥（`ajax` 路径）写侧门控开/关/未绑定三态
+    ///
+    /// - 开（tag 对应源 `enabledCookieJar=true`）→ 响应 `Set-Cookie` 落库，
+    ///   且标记头发送前剥离（服务器收到的请求头不含 `CookieJar`）；
+    /// - 关（false）→ 不落库；
+    /// - 未绑定 tag → 查不到 → 不落库。
+    #[test]
+    fn test_ajax_cookie_jar_gate_by_current_source() {
+        use crate::host_api::current_source;
+
+        let _lock = lock_pool_test();
+        register_test_persistence();
+        register_test_source_cookie_jar_lookup();
+        let fake = test_persistence();
+        fake.clear();
+        reset_shared_client_pools();
+
+        const TAG_ON: &str = "https://jsgate-on.example.com/";
+        const TAG_OFF: &str = "https://jsgate-off.example.com/";
+        {
+            let mut gates = test_source_gates()
+                .lock()
+                .unwrap_or_else(|p| p.into_inner());
+            gates.insert(TAG_ON.to_string(), true);
+            gates.insert(TAG_OFF.to_string(), false);
+        }
+
+        // ① 开：响应 Set-Cookie 落库 + 标记头剥离
+        let (addr_on, seen_on) = spawn_gate_recording_server(2);
+        current_source::with_current_source_tag(TAG_ON, || {
+            ajax(&format!(r#"{{"url":"http://{addr_on}/echo"}}"#)).expect("开态 ajax 应成功")
+        });
+        let saved_on = fake.get("127.0.0.1").unwrap_or_default();
+        assert!(
+            saved_on.contains("p219_jsgate=GATE-VAL"),
+            "开态（书源 enabledCookieJar=true）ajax 响应 Set-Cookie 必须落库: {saved_on:?}"
+        );
+        let head_on = seen_on
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .join("\n")
+            .to_ascii_lowercase();
+        assert!(
+            !head_on.contains("cookiejar:"),
+            "内部标记头必须发送前剥离（不得出网）: {head_on}"
+        );
+
+        // ② 关：tag → false → 不落库
+        fake.clear();
+        let (addr_off, _seen_off) = spawn_gate_recording_server(2);
+        current_source::with_current_source_tag(TAG_OFF, || {
+            ajax(&format!(r#"{{"url":"http://{addr_off}/echo"}}"#)).expect("关态 ajax 应成功")
+        });
+        assert_eq!(
+            fake.get("127.0.0.1"),
+            None,
+            "关态（enabledCookieJar=false）ajax 响应 Set-Cookie 不得落库"
+        );
+
+        // ③ 未绑定 tag（None）→ 不落库
+        fake.clear();
+        let (addr_unbound, _seen_unbound) = spawn_gate_recording_server(2);
+        current_source::clear_current_source_tag();
+        ajax(&format!(r#"{{"url":"http://{addr_unbound}/echo"}}"#)).expect("未绑定 ajax 应成功");
+        assert_eq!(
+            fake.get("127.0.0.1"),
+            None,
+            "未绑定书源 ajax 响应 Set-Cookie 不得落库（未注册/查不到按关）"
+        );
+
+        // 收尾：清共享实例并重置池（不留残留给后续用例）
+        fake.clear();
         reset_shared_client_pools();
     }
 

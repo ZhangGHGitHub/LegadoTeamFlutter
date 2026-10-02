@@ -73,8 +73,16 @@ impl RoomImporter {
             let js_lib = obj.get("jsLib").and_then(|v| v.as_str());
             let enabled_cookie_jar = obj
                 .get("enabledCookieJar")
-                .and_then(|v| v.as_i64())
-                .unwrap_or(0) as i32;
+                .map(|v| {
+                    // 批 2 收尾：缺键 → true（对齐 Kotlin 构造默认 true，与
+                    // FFI serde `default_true_opt` 统一口径）；兼容布尔与
+                    // 0/1 数字两种形态（旧实现只认 as_i64，显式布尔 true
+                    // 被丢成 0 的子缺陷一并修复）。
+                    v.as_bool()
+                        .or_else(|| v.as_i64().map(|n| n != 0))
+                        .unwrap_or(true)
+                })
+                .unwrap_or(true) as i32;
             let concurrent_rate = obj.get("concurrentRate").and_then(|v| v.as_str());
             let header = obj.get("header").and_then(|v| v.as_str());
             let login_url = obj.get("loginUrl").and_then(|v| v.as_str());
@@ -350,6 +358,40 @@ mod tests {
             )
             .unwrap();
         assert_eq!(name, "Test Source");
+    }
+
+    /// 批 2 收尾：enabledCookieJar 导入口径统一（缺键 → 1，对齐 Kotlin
+    /// 构造默认 true / FFI serde `default_true_opt`）；兼容布尔与 0/1 数字
+    /// 形态——旧实现 `and_then(as_i64).unwrap_or(0)` 会把缺键与显式布尔
+    /// true 都写成 0，导致 server source_update 与 FFI import_sources 分叉。
+    #[test]
+    fn test_import_enabled_cookie_jar_three_states() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+
+        let json = r#"[
+            {"bookSourceUrl":"https://gate-missing.test","bookSourceName":"缺键"},
+            {"bookSourceUrl":"https://gate-true.test","bookSourceName":"布尔真","enabledCookieJar":true},
+            {"bookSourceUrl":"https://gate-false.test","bookSourceName":"布尔假","enabledCookieJar":false},
+            {"bookSourceUrl":"https://gate-zero.test","bookSourceName":"显式零","enabledCookieJar":0},
+            {"bookSourceUrl":"https://gate-one.test","bookSourceName":"显式一","enabledCookieJar":1}
+        ]"#;
+        let count = RoomImporter::import_book_sources(conn, json).unwrap();
+        assert_eq!(count, 5);
+
+        let read = |url: &str| -> i64 {
+            conn.query_row(
+                "SELECT enabledCookieJar FROM book_sources WHERE bookSourceUrl = ?1",
+                rusqlite::params![url],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|e| panic!("读取 {url} 的 enabledCookieJar 失败: {e}"))
+        };
+        assert_eq!(read("https://gate-missing.test"), 1, "缺键 → 1");
+        assert_eq!(read("https://gate-true.test"), 1, "显式布尔 true → 1");
+        assert_eq!(read("https://gate-false.test"), 0, "显式布尔 false → 0");
+        assert_eq!(read("https://gate-zero.test"), 0, "显式 0 → 0");
+        assert_eq!(read("https://gate-one.test"), 1, "显式 1 → 1");
     }
 
     #[test]
