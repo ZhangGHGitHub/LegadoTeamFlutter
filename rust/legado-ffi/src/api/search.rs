@@ -20,6 +20,9 @@ use legado_db::repository::read_record_repository::decode_read_record_authors;
 use legado_db::ReadRecordRepository;
 use legado_net::client::DEFAULT_USER_AGENT;
 use legado_net::LegadoClient;
+// P2-19 尾项后 lib 侧不再直接使用 AnalyzeUrl（响应解码已收敛到 fetcher 四级
+// 入口）；仅 `#[cfg(test)] build_search_url` 的返回类型仍需，测试期导入
+#[cfg(test)]
 use legado_parser::AnalyzeUrl;
 
 use crate::api::source as source_api;
@@ -1245,35 +1248,43 @@ pub(crate) async fn search_single_source(
     };
 
     // 4. 发送 HTTP 请求
-    // charset=gbk 等：原始字节 + 指定编码解码，避免书名乱码导致精确匹配失败。— Reasonix
+    // P2-19 尾项：统一走原始字节 + 四级解码入口（显式 charset → Content-Type →
+    // HTML meta → chardetng 统计探测 → lossy UTF-8）。改前非 explicit 分支经
+    // reqwest `.text()`（只认 Content-Type），meta-only / 无标识 GBK 页书名乱码；
+    // 显式 charset 语义不变（入口内部最高优先），final_url/resp_code 仍取
+    // raw.url/raw.status（与改前两分支逐字一致）。
     // [S0-E | AnalyzeUrl.kt:499-534] 对齐原版：不校验 HTTP 状态码，
     // 非 2xx 响应体仍进入解析（通常得空列表），仅日志留痕。
-    let (body, final_url, resp_code) = if analyze_url.needs_charset_decode() {
-        // P2-19 批3：urlOption followRedirects / retry 经 fetcher 汇聚点发送
-        let raw =
-            legado_fetcher::analyze_request::send_raw(client, &analyze_url, headers_opt).await?;
-        if !(200..300).contains(&raw.status) {
-            eprintln!(
-                "[search] 非 2xx HTTP {} url={}",
-                raw.status,
-                analyze_url.url()
-            );
-        }
-        let decoded = AnalyzeUrl::decode_response_bytes(&raw.body, analyze_url.charset());
-        (decoded, raw.url, raw.status)
-    } else {
-        // P2-19 批3：同上（文本路径，重试循环与 raw 路径共用）
-        let response =
-            legado_fetcher::analyze_request::send_text(client, &analyze_url, headers_opt).await?;
-        if !response.is_success() {
-            eprintln!(
-                "[search] 非 2xx HTTP {} url={}",
-                response.status,
-                analyze_url.url()
-            );
-        }
-        (response.body, response.url, response.status)
-    };
+    // P2-19 批3：urlOption followRedirects / retry 经 fetcher 汇聚点发送
+    //（send_raw 与 send_text 共用 send_with_options，两分支行为一致）。
+    let raw = legado_fetcher::analyze_request::send_raw(client, &analyze_url, headers_opt).await?;
+    // [P2-19 尾项审查 P1-1] 3xx 留痕：改前 raw（显式 charset）分支条件为
+    // `!(200..300)`（3xx 亦留痕），文本分支 `!is_success()`（3xx 不留痕）；
+    // 两分支统一 send_raw 后恢复 raw 分支的 3xx 可见性。审查单条件
+    // `!(200..400)`（文案「非 2xx/3xx」）与其验收句「followRedirects=false 的
+    // 302 应能看到日志」互斥（302 ∈ 200..400 会被静默），故拆两条：4xx/5xx 按
+    // 建议口径留痕，未跟随/不可跟随的 3xx 单独留痕——合取等价于原 raw 分支
+    // `!(200..300)` 的完整语义，登记为行为变化。
+    if !(200..400).contains(&raw.status) {
+        eprintln!(
+            "[search] 非 2xx/3xx HTTP {} url={}",
+            raw.status,
+            analyze_url.url()
+        );
+    }
+    if (300..400).contains(&raw.status) {
+        eprintln!(
+            "[search] 未跟随 3xx HTTP {} url={}",
+            raw.status,
+            analyze_url.url()
+        );
+    }
+    let body = legado_fetcher::web_book::decode_web_response(
+        &raw.body,
+        &raw.headers,
+        analyze_url.charset(),
+    );
+    let (final_url, resp_code) = (raw.url, raw.status);
     if phase_on {
         eprintln!(
             "[phase] http={}ms src={}",
@@ -2370,7 +2381,238 @@ mod tests {
         );
     }
 
-    // ─── 测试 1: HTML 搜索结果解析 ────────────────────────────────────────────
+    /// [P2-19 尾项] 回环单响应搜索：`body_bytes` 原样返回（可为非 UTF-8 字节），
+    /// `content_type` 决定响应头，`search_url_suffix` 追加 urlOption（如
+    /// `,{"charset":"gbk"}`）。返回解析后的搜索结果（响应体走真实四级解码链）。
+    fn search_loopback(
+        body_bytes: Vec<u8>,
+        content_type: &str,
+        search_url_suffix: &str,
+    ) -> Vec<SearchResult> {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        let content_type = content_type.to_string();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body_bytes.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(&body_bytes);
+                let _ = stream.flush();
+            }
+        });
+
+        let mut source = make_source_with_rules(
+            ".book",
+            ".name",
+            ".author",
+            ".name@href",
+            ".cover@src",
+            ".intro",
+            ".last",
+        );
+        source.book_source_url = format!("http://127.0.0.1:{port}");
+        source.search_url = Some(format!("http://127.0.0.1:{port}/s{search_url_suffix}"));
+
+        let client = LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
+
+        crate::runtime::block_on(async {
+            search_single_source(&client, &source, "斗破", 1, false).await
+        })
+        .expect("搜索应成功")
+    }
+
+    /// [P2-19 尾项 a] 搜索链四级解码：仅 HTML meta 声明 GBK（Content-Type 无
+    /// charset）。改前非 explicit 分支走 reqwest `.text()`（只认 Content-Type）
+    /// → UTF-8 lossy 书名乱码；修复后经 meta 级按 GBK 正确解码。
+    #[test]
+    fn test_search_single_source_decodes_meta_only_gbk() {
+        let html = r#"<html><head><meta charset="gbk"></head><body><div class="book"><a class="name" href="/b/1">斗破苍穹</a><span class="author">天蚕土豆</span></div></body></html>"#;
+        let (bytes, _, _) = encoding_rs::GBK.encode(html);
+
+        let results = search_loopback(bytes.into_owned(), "text/html", "");
+
+        assert_eq!(results.len(), 1, "meta-only GBK 页应解析出 1 条");
+        assert_eq!(
+            results[0].book_name, "斗破苍穹",
+            "meta charset=gbk 应被采纳"
+        );
+        assert_eq!(results[0].author, "天蚕土豆");
+    }
+
+    /// [P2-19 尾项 b] 四级全无标识（无显式 / 无 Content-Type charset / 无 meta）
+    /// 的 GBK 搜索页经 chardetng 统计探测救回。
+    #[test]
+    fn test_search_single_source_detects_undeclared_gbk() {
+        let html = r#"<html><body><div class="book"><a class="name" href="/b/1">斗破苍穹</a><span class="author">天蚕土豆</span></div><p>第一章 陨落的天才，这里是没有任何编码标识的中文搜索页，斗气大陆强者如云。</p></body></html>"#;
+        let (bytes, _, _) = encoding_rs::GBK.encode(html);
+
+        let results = search_loopback(bytes.into_owned(), "text/html", "");
+
+        assert_eq!(results.len(), 1, "无标识 GBK 页应解析出 1 条");
+        assert_eq!(
+            results[0].book_name, "斗破苍穹",
+            "第四级探测应救回 GBK 书名"
+        );
+        assert_eq!(results[0].author, "天蚕土豆");
+
+        // [P2-19 尾项审查 P2-3] 负向锚：同字节的 lossy UTF-8（改前 reqwest
+        // 路径的代表性输出）会产出乱码书名；探测退化回 lossy 时该断言先失败，
+        // 防止正向断言被巧合满足
+        let (gbk_name, _, _) = encoding_rs::GBK.encode("斗破苍穹");
+        let lossy_name = String::from_utf8_lossy(&gbk_name).into_owned();
+        assert_ne!(
+            results[0].book_name, lossy_name,
+            "第四级探测不得退化回 lossy UTF-8"
+        );
+    }
+
+    /// [P2-19 尾项 c] 对抗：urlOption 显式 charset=gbk，但字节实为 UTF-8——
+    /// 必须按显式声明以 GBK 解释（探测/meta/头不得覆盖；对齐上游 encode 参数
+    /// 最高优先）。
+    #[test]
+    fn test_search_single_source_explicit_charset_wins_over_detection() {
+        let html = r#"<html><body><div class="book"><a class="name" href="/b/1">斗破苍穹</a><span class="author">天蚕土豆</span></div></body></html>"#;
+        let (expected_name, _, _) = encoding_rs::GBK.decode("斗破苍穹".as_bytes());
+        let (expected_author, _, _) = encoding_rs::GBK.decode("天蚕土豆".as_bytes());
+
+        let results = search_loopback(
+            html.as_bytes().to_vec(),
+            "text/html",
+            r#",{"charset":"gbk"}"#,
+        );
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(
+            results[0].book_name, expected_name,
+            "显式 charset=gbk 应优先于 UTF-8 探测结果"
+        );
+        assert_eq!(results[0].author, expected_author);
+        assert_ne!(results[0].book_name, "斗破苍穹", "不得被探测按 UTF-8 覆盖");
+    }
+
+    /// [P2-19 尾项 d] 无标识合法 UTF-8 搜索页无回归（探测允许 UTF-8：
+    /// 行为与改前 reqwest `.text()` 的 UTF-8 解码逐字一致）。
+    #[test]
+    fn test_search_single_source_utf8_undeclared_no_regression() {
+        let html = r#"<html><body><div class="book"><a class="name" href="/b/1">斗破苍穹</a><span class="author">天蚕土豆</span></div></body></html>"#;
+
+        let results = search_loopback(html.as_bytes().to_vec(), "text/html", "");
+
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].book_name, "斗破苍穹");
+        assert_eq!(results[0].author, "天蚕土豆");
+    }
+
+    /// [P2-19 尾项审查 P2-1] 302 → 目标 GBK 页：统一 send_raw 后下游解析基于
+    /// 重定向后 final_url（`raw.url`）。断言两件事：1) 目标页无编码标识 GBK
+    /// 经四级链正确解码；2) 结果相对链接以 final_url 为基解析——bookUrl 落在
+    /// `/target/` 下，而非原请求路径 `/s` 的目录（改前文本分支同样基于
+    /// response.url，属改善但此前未钉住）。
+    #[test]
+    fn test_search_single_source_uses_final_url_after_redirect() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let (gbk_bytes, _, _) = encoding_rs::GBK.encode(
+            r#"<html><body><div class="book"><a class="name" href="b/1">斗破苍穹</a><span class="author">天蚕土豆</span></div></body></html>"#,
+        );
+        let gbk_bytes = gbk_bytes.into_owned();
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let head_str = String::from_utf8_lossy(&head);
+                let path = head_str.split_whitespace().nth(1).unwrap_or("").to_string();
+                let (resp, payload): (String, Vec<u8>) = if path == "/s" {
+                    (
+                        "HTTP/1.1 302 Found\r\nLocation: /target/gbk\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                            .to_string(),
+                        Vec::new(),
+                    )
+                } else {
+                    (
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                            gbk_bytes.len()
+                        ),
+                        gbk_bytes.clone(),
+                    )
+                };
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(&payload);
+                let _ = stream.flush();
+            }
+        });
+
+        let mut source = make_source_with_rules(
+            ".book",
+            ".name",
+            ".author",
+            ".name@href",
+            ".cover@src",
+            ".intro",
+            ".last",
+        );
+        source.book_source_url = format!("http://127.0.0.1:{port}");
+        source.search_url = Some(format!("http://127.0.0.1:{port}/s"));
+
+        let client = LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
+
+        let results = crate::runtime::block_on(async {
+            search_single_source(&client, &source, "斗破", 1, false).await
+        })
+        .expect("302 后目标页搜索应成功");
+
+        assert_eq!(results.len(), 1, "302 后目标 GBK 页应解析出 1 条");
+        assert_eq!(
+            results[0].book_name, "斗破苍穹",
+            "重定向后目标页应经探测正确解码"
+        );
+        assert_eq!(
+            results[0].book_url,
+            format!("http://127.0.0.1:{port}/target/b/1"),
+            "相对链接应以最终 URL（/target/gbk）为基解析"
+        );
+    }
 
     #[test]
     fn test_parse_origin_order_from_custom_order() {

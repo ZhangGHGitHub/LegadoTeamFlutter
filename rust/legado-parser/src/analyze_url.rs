@@ -1621,6 +1621,13 @@ new Function('__legadoCode', 'return eval(__legadoCode);')({block_lit})"
     }
 
     /// 按 UrlOption.charset 解码响应字节（对齐原版搜索 GBK 站正确书名）
+    ///
+    /// [HTTP P2-19 尾项评估] 第四级统计探测**不**加在本函数：web 响应解码的
+    /// 唯一入口是 `legado_fetcher::web_book::decode_web_response`（显式 charset
+    /// → Content-Type → HTML meta → chardetng 探测 → lossy UTF-8），抓取链与
+    /// 搜索链均走该入口。本函数保留为「声明 charset 解码原语」及其
+    /// `None` → lossy UTF-8 最终兜底，避免在共享原语上叠加统计探测造成
+    /// 双份实现与隐式语义扩散。
     pub fn decode_response_bytes(bytes: &[u8], charset: Option<&str>) -> String {
         match charset {
             Some(cs) if Self::is_non_utf8_charset(Some(cs)) => {

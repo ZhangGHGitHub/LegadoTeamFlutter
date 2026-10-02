@@ -10,6 +10,8 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use chardetng::{EncodingDetector, Iso2022JpDetection, Utf8Detection};
+use encoding_rs::Encoding;
 use legado_core::models::BookSource;
 use legado_core::models::{Book, BookChapter};
 use legado_core::web_book::{
@@ -30,8 +32,17 @@ use crate::js_adapter::{
     sanitize_js_lib_for_quickjs,
 };
 
-/// 对齐原版 OkHttpUtils.ResponseBody.text：显式 charset 优先，随后 HTTP 头，最后 HTML meta。
-fn decode_web_response(
+/// 四级响应解码：显式 charset → Content-Type 头 → HTML meta → 统计探测
+///
+/// 前三级对齐原版 OkHttpUtils.ResponseBody.text：`explicit`（UrlOption.charset）
+/// 最高优先，随后 `contentType()?.charset()`，再 `EncodingDetect.getHtmlEncode`
+/// 的 meta 扫描；第四级对齐其 meta 无果后的 ICU4J `CharsetDetector` 统计探测
+/// （探测失败回 UTF-8，见 [`decode_detected_or_lossy`]）。
+///
+/// `pub`（HTTP P2-19 尾项）：抓取链（[`RealBookSourceFetcher`]）与搜索链
+/// （`legado_ffi::api::search`）共用本入口——探测实现仅此一处，避免双份代码。
+/// 显式 charset 优先级不回退：头/meta/探测均不可能覆盖 `explicit`。
+pub fn decode_web_response(
     bytes: &[u8],
     headers: &HashMap<String, String>,
     explicit: Option<&str>,
@@ -41,7 +52,51 @@ fn decode_web_response(
         .map(str::to_string)
         .or_else(|| charset_from_content_type(headers))
         .or_else(|| charset_from_html_meta(bytes));
-    AnalyzeUrl::decode_response_bytes(bytes, charset.as_deref())
+    match charset {
+        // 前三级：按声明编码解码（未知标签在 decode_response_bytes 内回退 UTF-8）
+        Some(charset) => AnalyzeUrl::decode_response_bytes(bytes, Some(&charset)),
+        // 第四级：统计探测；探测为 UTF-8 / 无损解码失败 → 既有 lossy UTF-8 兜底
+        None => decode_detected_or_lossy(bytes),
+    }
+}
+
+/// 第四级自动探测解码（chardetng：encoding_rs 同作者的纯 Rust 探测器）
+///
+/// - TLD hint 传 `None`（对齐上游无域名线索口径）；
+/// - `Utf8Detection::Allow`：上游 ICU4J 对合法 UTF-8 会检出 UTF-8；若按浏览器
+///   规则 `Deny` 会把无标识的中文 UTF-8 页误判为 windows-1252（乱码回归）；
+/// - ISO-2022-JP 按 chardetng 对可执行脚本的 Web 内容指引设 `Deny`；
+/// - 含 BOM：BOM 直接决定编码并去 BOM 后解码（对齐上游
+///   `Utf8BomUtils.removeUTF8BOM`，顺带支持标准 UTF-16 BOM 嗅探）；
+/// - 无 BOM：探测结果非 UTF-8 时走 encoding_rs 无损 API
+///   （`decode_without_bom_handling_and_without_replacement`，不注入替换字符）；
+///   chardetng 不暴露置信度接口，故不设置信阈值（对齐上游无阈值）——无损解码
+///   失败（探测结果与字节不符）即视为探测失败，回 lossy UTF-8；猜测为 UTF-8
+///   同样交回 lossy UTF-8，保证既有 UTF-8 页行为逐字不变。
+/// - 已知边界（P2-19 尾项审查 P2-2）：猜中 GBK/GB18030 族时无损 API 对混合
+///   非法字节几乎总成功（GBK 码位覆盖极广），个别乱码正文会以有损结果进入
+///   规则解析——与上游「无置信阈值」口径一致的选择；JSON 等纯 ASCII 响应
+///   不受影响（UTF-8 猜测直接走 lossy UTF-8，ASCII 解码逐字一致）。
+fn decode_detected_or_lossy(bytes: &[u8]) -> String {
+    if let Some((encoding, bom_len)) = Encoding::for_bom(bytes) {
+        // BOM 权威：decode_without_bom_handling 为有损替换解码（对齐上游
+        // `String(bytes, Charset.forName(BOM 编码))`）
+        return encoding
+            .decode_without_bom_handling(&bytes[bom_len..])
+            .0
+            .into_owned();
+    }
+
+    let mut detector = EncodingDetector::new(Iso2022JpDetection::Deny);
+    let _ = detector.feed(bytes, true);
+    let guessed = detector.guess(None, Utf8Detection::Allow);
+    if guessed == encoding_rs::UTF_8 {
+        return String::from_utf8_lossy(bytes).into_owned();
+    }
+    match guessed.decode_without_bom_handling_and_without_replacement(bytes) {
+        Some(decoded) => decoded.into_owned(),
+        None => String::from_utf8_lossy(bytes).into_owned(),
+    }
 }
 
 fn charset_from_content_type(headers: &HashMap<String, String>) -> Option<String> {
@@ -4841,6 +4896,130 @@ mod tests {
 
         let fake = b"<html><body><script>var charset = gbk;</script>plain utf8</body></html>";
         assert_eq!(charset_from_html_meta(fake), None);
+    }
+
+    /// [P2-19 尾项] 第四级统计探测：三级全无标识（无显式 / 无 Content-Type
+    /// charset / 无 HTML meta）的 GBK 页经 chardetng 救回；UTF-8 无标识页
+    /// 无回归；显式 charset 优先级不被探测覆盖。
+    #[test]
+    fn test_decode_web_response_fourth_level_detection() {
+        // b) 无任何标识的 GBK 字节页 → 探测按 GBK 无损解码
+        let text =
+            "无标识中文页面探测定界：斗破苍穹 天蚕土豆 第一章 陨落的天才，斗气大陆强者如云。";
+        let (gbk_bytes, _, _) = encoding_rs::GBK.encode(text);
+        assert_eq!(
+            decode_web_response(&gbk_bytes, &HashMap::new(), None),
+            text,
+            "三级全无果时应由第四级探测按 GBK 解码"
+        );
+
+        // d) 无标识合法 UTF-8 页：与既有 lossy UTF-8 行为逐字一致
+        let utf8_bytes = text.as_bytes();
+        assert_eq!(
+            decode_web_response(utf8_bytes, &HashMap::new(), None),
+            text,
+            "合法 UTF-8 页经第四级不得改变既有解码结果"
+        );
+
+        // c) 对抗：显式 charset=GBK 但字节实为 UTF-8（头/meta 又声称 utf-8）
+        // → 必须按显式声明解码，探测/头/meta 均不得覆盖
+        let (gbk_decoded, _, _) = encoding_rs::GBK.decode(utf8_bytes);
+        let mut utf8_headers = HashMap::new();
+        utf8_headers.insert(
+            "Content-Type".to_string(),
+            "text/html; charset=utf-8".to_string(),
+        );
+        let decoded = decode_web_response(utf8_bytes, &utf8_headers, Some("gbk"));
+        assert_eq!(
+            decoded, gbk_decoded,
+            "显式 charset 最高优先，头/meta/探测不得覆盖"
+        );
+        assert_ne!(decoded, text, "不得被 UTF-8 头或 UTF-8 探测结果覆盖");
+    }
+
+    /// [P2-19 尾项] 第四级探测路径的 BOM 处理：BOM 直接决定编码并去除 BOM
+    /// （上游 `Utf8BomUtils.removeUTF8BOM`；UTF-16 BOM 为同机制附带支持）。
+    #[test]
+    fn test_decode_web_response_detection_handles_bom() {
+        let text = "带 BOM 的中文正文";
+        let mut utf8_bom = vec![0xEF, 0xBB, 0xBF];
+        utf8_bom.extend_from_slice(text.as_bytes());
+        assert_eq!(
+            decode_web_response(&utf8_bom, &HashMap::new(), None),
+            text,
+            "UTF-8 BOM 页应去 BOM 解码，不得残留 U+FEFF"
+        );
+
+        // 注：Encoding Standard 中 UTF-16 系为 decode-only，`UTF_16LE.encode`
+        // 输出的编码器是 UTF-8；手工生成 LE 字节对
+        let mut utf16_bom = vec![0xFF, 0xFE];
+        for unit in text.encode_utf16() {
+            utf16_bom.extend_from_slice(&unit.to_le_bytes());
+        }
+        assert_eq!(
+            decode_web_response(&utf16_bom, &HashMap::new(), None),
+            text,
+            "UTF-16LE BOM 页应按 BOM 指定编码解码"
+        );
+    }
+
+    /// [P2-19 尾项 e] fetch_page 路径端到端：无任何编码标识的 GBK 正文页
+    /// 经第四级探测正确解码（改前 `from_utf8_lossy` → 乱码）。
+    #[test]
+    fn test_fetch_page_detects_undeclared_gbk() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let text = "斗破苍穹 天蚕土豆 第一章 陨落的天才：这里是没有任何编码标识的正文页。";
+        let (gbk_bytes, _, _) = encoding_rs::GBK.encode(text);
+        let gbk_bytes = gbk_bytes.into_owned();
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                // 读请求头至 \r\n\r\n（本用例为 GET，无请求体）
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    gbk_bytes.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(&gbk_bytes);
+                let _ = stream.flush();
+            }
+        });
+
+        let client = LegadoClient::new(legado_net::LegadoClientConfig {
+            no_proxy: true,
+            ..legado_net::LegadoClientConfig::default()
+        })
+        .expect("test http client");
+        let fetcher = RealBookSourceFetcher::new(client);
+        let analyze_url = AnalyzeUrl::parse(
+            &format!("http://127.0.0.1:{port}/plain"),
+            &HashMap::new(),
+            1,
+        )
+        .expect("解析普通正文 URL");
+
+        let body = block_on(fetcher.fetch_url(&analyze_url, None)).expect("fetch_url 应成功");
+
+        assert!(
+            body.contains("斗破苍穹"),
+            "无标识 GBK 正文页应经第四级探测正确解码，实际: {body:?}"
+        );
     }
 
     /// 得间小说 {{host}} 全局变量离线回归：jsLib 定义 host，{{host}} 需 JS 求值。

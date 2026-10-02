@@ -16,9 +16,12 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 regex = { workspace = true }
 futures = "0.3"
+encoding_rs = "0.8"
+# [P2-19 尾项 | 2026-10-01 用户批准] charset 第四级统计探测（HTTP 三级无果时
+# 兜底：显式 charset → Content-Type → HTML meta → chardetng 探测 → lossy UTF-8）
+chardetng = "1.0"
 
 [dev-dependencies]
-encoding_rs = "0.8"
 base64 = { workspace = true }
 # 测试支撑面（与 legado-ffi 同款）：cookie_store 等 test-support 门控 API
 legado-js = { path = "../legado-js", features = ["test-support"] }
