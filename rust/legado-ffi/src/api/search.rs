@@ -20,7 +20,7 @@ use legado_db::repository::read_record_repository::decode_read_record_authors;
 use legado_db::ReadRecordRepository;
 use legado_net::client::DEFAULT_USER_AGENT;
 use legado_net::LegadoClient;
-use legado_parser::{AnalyzeUrl, RequestMethod};
+use legado_parser::AnalyzeUrl;
 
 use crate::api::source as source_api;
 use crate::runtime;
@@ -1249,14 +1249,9 @@ pub(crate) async fn search_single_source(
     // [S0-E | AnalyzeUrl.kt:499-534] 对齐原版：不校验 HTTP 状态码，
     // 非 2xx 响应体仍进入解析（通常得空列表），仅日志留痕。
     let (body, final_url, resp_code) = if analyze_url.needs_charset_decode() {
-        let raw = match analyze_url.method() {
-            RequestMethod::Post => {
-                client
-                    .post_raw(analyze_url.url(), analyze_url.request_body(), headers_opt)
-                    .await?
-            }
-            _ => client.get_raw(analyze_url.url(), headers_opt).await?,
-        };
+        // P2-19 批3：urlOption followRedirects / retry 经 fetcher 汇聚点发送
+        let raw =
+            legado_fetcher::analyze_request::send_raw(client, &analyze_url, headers_opt).await?;
         if !(200..300).contains(&raw.status) {
             eprintln!(
                 "[search] 非 2xx HTTP {} url={}",
@@ -1267,13 +1262,9 @@ pub(crate) async fn search_single_source(
         let decoded = AnalyzeUrl::decode_response_bytes(&raw.body, analyze_url.charset());
         (decoded, raw.url, raw.status)
     } else {
-        let response = match analyze_url.method() {
-            RequestMethod::Post => {
-                let body = analyze_url.request_body();
-                client.post(analyze_url.url(), body, headers_opt).await?
-            }
-            _ => client.get(analyze_url.url(), headers_opt).await?,
-        };
+        // P2-19 批3：同上（文本路径，重试循环与 raw 路径共用）
+        let response =
+            legado_fetcher::analyze_request::send_text(client, &analyze_url, headers_opt).await?;
         if !response.is_success() {
             eprintln!(
                 "[search] 非 2xx HTTP {} url={}",
@@ -2271,6 +2262,7 @@ mod tests {
     use legado_core::models::rule::SearchRule;
     use legado_core::SourceSearcher;
     use legado_net::LegadoClientConfig;
+    use legado_parser::RequestMethod;
 
     /// 构造带搜索规则的书源
     fn make_source_with_rules(
@@ -2298,6 +2290,84 @@ mod tests {
             }),
             ..BookSource::default()
         }
+    }
+
+    /// P2-19 批3 接线回归：searchUrl 携带 `{"retry":2}` 时非 2xx/3xx 响应重发
+    /// （前 2 次 500 → 第 3 次 200 成功）；服务器精确收到 3 次请求。
+    #[test]
+    fn test_search_single_source_consumes_retry_option() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        // 回环脚本服务器：前 2 次 500，第 3 次起 200 + 可解析 HTML
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        let hits = Arc::new(AtomicUsize::new(0));
+        let hits_srv = Arc::clone(&hits);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut buf = Vec::new();
+                let mut byte = [0u8; 1];
+                while !buf.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => buf.push(byte[0]),
+                        _ => break,
+                    }
+                    if buf.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let n = hits_srv.fetch_add(1, Ordering::SeqCst);
+                let (status, body) = if n < 2 {
+                    ("500 Internal Server Error", "boom".to_string())
+                } else {
+                    (
+                        "200 OK",
+                        r#"<html><body><div class="book"><a class="name" href="/b/1">斗破苍穹</a><span class="author">天蚕土豆</span></div></body></html>"#.to_string(),
+                    )
+                };
+                let resp = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+
+        let mut source = make_source_with_rules(
+            ".book",
+            ".name",
+            ".author",
+            ".name@href",
+            ".cover@src",
+            ".intro",
+            ".last",
+        );
+        source.book_source_url = format!("http://127.0.0.1:{port}");
+        source.search_url = Some(format!("http://127.0.0.1:{port}/s,{{\"retry\":2}}"));
+
+        let client = LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
+
+        let results = crate::runtime::block_on(async {
+            search_single_source(&client, &source, "斗破", 1, false).await
+        })
+        .expect("重发第 3 次应成功");
+
+        assert_eq!(results.len(), 1, "应解析出 1 条结果");
+        assert_eq!(results[0].book_name, "斗破苍穹");
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            3,
+            "retry=2 → 服务器精确收到 3 次请求（2 次 500 + 1 次 200）"
+        );
     }
 
     // ─── 测试 1: HTML 搜索结果解析 ────────────────────────────────────────────

@@ -13,7 +13,7 @@
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, OnceLock, RwLock};
 use std::time::{Duration, Instant};
 
 use reqwest::redirect::Policy;
@@ -128,6 +128,9 @@ pub struct LegadoClient {
     cookie_persistence: Option<Arc<dyn CookiePersistence>>,
     /// 实例 ID（构建时取号；clone 共享同一 ID，见 [`Self::client_id`]）
     client_id: u64,
+    /// 不跟随重定向的派生客户端（惰性构建 + 实例级缓存，见
+    /// [`Self::no_redirect_variant`]；clone 共享缓存）
+    no_redirect: Arc<OnceLock<LegadoClient>>,
 }
 
 impl LegadoClient {
@@ -320,6 +323,7 @@ impl LegadoClient {
             proxy_pool,
             cookie_persistence,
             client_id: CLIENT_BUILD_COUNTER.fetch_add(1, Ordering::SeqCst),
+            no_redirect: Arc::new(OnceLock::new()),
         })
     }
 
@@ -613,6 +617,41 @@ impl LegadoClient {
             self.cookie_persistence.clone(),
             Some(self.cookie_store.clone()),
         )
+    }
+
+    /// 派生「不跟随重定向」客户端（P2-19 批3，urlOption `followRedirects=false`）
+    ///
+    /// 除 `follow_redirects=false` 外沿用本实例配置，并复用**同一**
+    /// CookieStore 与持久化后端（Set-Cookie 写回/共享罐语义不变）。首次构建
+    /// 后缓存于本实例（clone 共享同一 `OnceLock`），后续请求复用该连接池
+    /// ——对齐上游 `AnalyzeUrl.getClient()` → `buildRequestClient`
+    /// （OkHttp `newBuilder()` 派生客户端共享连接池/调度器）；reqwest 无共享
+    /// 池 API，故以实例级缓存第二池等价（FFI 主链路共享客户端 clone 四处
+    /// 复用 → 进程级第二池）。
+    ///
+    /// 并发首次构建时先装入者胜（同配置、构建无副作用）。`follow_redirects`
+    /// 为 `true`/缺省时调用方不应使用本方法（沿用原客户端即可，20 跳策略
+    /// 见 [`Self::build_with_store`]）。
+    ///
+    /// **构建权衡（审查 P3 确认）**：首次派生复用 [`Self::build_with_store`]，
+    /// 携带持久化后端时会再执行一次 `load_all` 合并预载（DB I/O；内存值同名
+    /// 冲突时胜出、幂等，且不持任何池槽位锁）——一次性成本，缓存后不再发生；
+    /// 取舍与 `http_state::shared_client` 主客户端构建同款（重启/重建场景以
+    /// DB 兜底补齐内存缺口，避免第二池冷启动丢持久化 Cookie）。
+    pub fn no_redirect_variant(&self) -> LegadoResult<Self> {
+        if let Some(client) = self.no_redirect.get() {
+            return Ok(client.clone());
+        }
+        let mut config = self.config.clone();
+        config.follow_redirects = false;
+        let variant = Self::build_with_store(
+            config,
+            self.cookie_persistence.clone(),
+            Some(Arc::clone(&self.cookie_store)),
+        )?;
+        let _ = self.no_redirect.set(variant.clone());
+        // 并发竞争时返回先装入者（同配置，等价）
+        Ok(self.no_redirect.get().cloned().unwrap_or(variant))
     }
 
     // ---------- 内部方法 ----------
@@ -1897,6 +1936,50 @@ mod tests {
             total.load(std::sync::atomic::Ordering::SeqCst),
             1,
             "Policy::none() 不得发出第 2 次请求"
+        );
+    }
+
+    /// P2-19 批3：`no_redirect_variant` 实例级缓存、复用同一 CookieStore，
+    /// 且不改变原客户端策略（原客户端仍跟随 20 跳）
+    #[tokio::test]
+    async fn test_no_redirect_variant_caches_and_shares_cookie_store() {
+        let (addr, total, _b21) = spawn_redirect_chain_server().await;
+        let client = LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
+
+        let v1 = client.no_redirect_variant().unwrap();
+        let v2 = client.no_redirect_variant().unwrap();
+        assert_eq!(
+            v1.client_id(),
+            v2.client_id(),
+            "两次派生应命中同一缓存实例（第二池复用）"
+        );
+        assert_ne!(v1.client_id(), client.client_id(), "派生客户端是独立实例");
+        assert!(
+            Arc::ptr_eq(v1.cookie_store(), client.cookie_store()),
+            "派生客户端必须复用同一 CookieStore（Set-Cookie/共享罐语义不变）"
+        );
+
+        let no_redirect_resp = v1.get(&format!("http://{addr}/a/0"), None).await.unwrap();
+        assert_eq!(no_redirect_resp.status, 302, "派生客户端不跟随重定向");
+        assert_eq!(
+            total.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "派生客户端不得跟随（仅 1 次请求）"
+        );
+
+        let default_resp = client
+            .get(&format!("http://{addr}/a/0"), None)
+            .await
+            .unwrap();
+        assert_eq!(default_resp.status, 200, "原客户端策略不受影响");
+        assert_eq!(
+            total.load(std::sync::atomic::Ordering::SeqCst),
+            22,
+            "原客户端仍跟随 20 跳（1 + 21 次请求）"
         );
     }
 }

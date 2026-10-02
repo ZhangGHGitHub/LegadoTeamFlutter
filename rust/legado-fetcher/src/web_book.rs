@@ -20,7 +20,7 @@ use legado_js::host_api::variable_store;
 use legado_js::js_source::js_source_book::JsSourceBookOrchestrator;
 use legado_js::JsSourceConfig;
 use legado_net::LegadoClient;
-use legado_parser::{compile_regex_safe, set_global_variable_reader, AnalyzeUrl, RequestMethod};
+use legado_parser::{compile_regex_safe, set_global_variable_reader, AnalyzeUrl};
 
 use crate::book_type::book_type_of_source;
 use crate::deps::FetcherDeps;
@@ -922,7 +922,19 @@ impl RealBookSourceFetcher {
         // G12: response_type（如 "hex"）→ 原始字节 hex 编码返回（对齐原版
         // AnalyzeUrl.getStrResponse 的 type!=null 分支：HexUtil.encodeHexStr(getByteArrayAwait)）
         if analyze_url.response_type().is_some() {
-            let raw = self.deps.client.get_raw(url, headers_opt.clone()).await?;
+            // P2-19 批3：urlOption followRedirects / retry 经唯一汇聚点发送。
+            // **行为登记（审查 P2-1）**：改前本分支无条件 `get_raw`（hex+POST
+            // 书源也发 GET）；上游 `type != null` → `getByteArrayAwait` →
+            // `getResponseAwait` 的 `when (method)` 按 method 派发
+            //（AnalyzeUrl.kt:443 与 577-597），故 hex+POST 现按 POST 发送
+            // ——对齐上游的既有行为变化，非回归；端到端用例见
+            // `test_fetch_page_hex_post_dispatches_post`。
+            let raw = crate::analyze_request::send_raw(
+                &self.deps.client,
+                analyze_url,
+                headers_opt.clone(),
+            )
+            .await?;
             if !raw.is_success() {
                 return Err(LegadoError::Network(format!(
                     "HTTP {} for {}",
@@ -943,15 +955,10 @@ impl RealBookSourceFetcher {
 
         // 原始字节响应：对齐原版 ResponseBody.text()，避免目录/正文 HTML 的
         // meta charset=gbk 在 reqwest UTF-8 默认解码后不可逆乱码（七步阁等）。
-        let response = match analyze_url.method() {
-            RequestMethod::Post => {
-                self.deps
-                    .client
-                    .post_raw(url, analyze_url.request_body(), headers_opt)
-                    .await?
-            }
-            _ => self.deps.client.get_raw(url, headers_opt).await?,
-        };
+        // P2-19 批3：urlOption followRedirects=false / retry 由汇聚点统一消费
+        //（不跟随客户端 + 非 2xx/3xx 即时重发）。
+        let response =
+            crate::analyze_request::send_raw(&self.deps.client, analyze_url, headers_opt).await?;
 
         if !response.is_success() {
             return Err(LegadoError::Network(format!(
@@ -4401,6 +4408,102 @@ mod tests {
     /// 注入式 fetcher（无宿主态：DB 书籍变量/登录头/书源 setup 全关）
     fn test_fetcher() -> RealBookSourceFetcher {
         RealBookSourceFetcher::with_deps(test_deps())
+    }
+
+    /// [P2-19 批3 审查 P2-1] hex（`type != null`）+ POST 端到端：
+    /// 改前该分支无条件 `get_raw`（POST 也发 GET）；接线后按 method 派发
+    /// （上游 AnalyzeUrl.kt:443 → getByteArrayAwait → getResponseAwait
+    /// `when (method)`，hex+POST 真实发 POST）。回环断言：HTTP 方法为 POST、
+    /// 响应字节按 hex 编码返回。
+    #[test]
+    fn test_fetch_page_hex_post_dispatches_post() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        let posts = Arc::new(AtomicUsize::new(0));
+        let gets = Arc::new(AtomicUsize::new(0));
+        let posts_srv = Arc::clone(&posts);
+        let gets_srv = Arc::clone(&gets);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                // 读请求头至 \r\n\r\n
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let head_str = String::from_utf8_lossy(&head);
+                let method = head_str.split_whitespace().next().unwrap_or("").to_string();
+                // 读 Content-Length 请求体（POST 空 body 为 0），避免客户端写阻塞
+                let content_len = head_str
+                    .lines()
+                    .find_map(|l| {
+                        let (k, v) = l.split_once(':')?;
+                        if k.eq_ignore_ascii_case("content-length") {
+                            v.trim().parse::<usize>().ok()
+                        } else {
+                            None
+                        }
+                    })
+                    .unwrap_or(0);
+                if content_len > 0 {
+                    let mut body = vec![0u8; content_len];
+                    let _ = stream.read_exact(&mut body);
+                }
+                if method == "POST" {
+                    posts_srv.fetch_add(1, Ordering::SeqCst);
+                } else {
+                    gets_srv.fetch_add(1, Ordering::SeqCst);
+                }
+                let payload: [u8; 2] = [0xAB, 0xCD];
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    payload.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(&payload);
+                let _ = stream.flush();
+            }
+        });
+
+        // 独立客户端：no_proxy 直连回环（test_deps 默认配置可能经系统代理）
+        let client = LegadoClient::new(legado_net::LegadoClientConfig {
+            no_proxy: true,
+            ..legado_net::LegadoClientConfig::default()
+        })
+        .expect("test http client");
+        let fetcher = RealBookSourceFetcher::new(client);
+        let analyze_url = AnalyzeUrl::parse(
+            &format!("http://127.0.0.1:{port}/hex,{{\"method\":\"POST\",\"type\":\"hex\"}}"),
+            &std::collections::HashMap::new(),
+            1,
+        )
+        .expect("解析 hex+POST 模板");
+
+        let body = block_on(fetcher.fetch_url(&analyze_url, None)).expect("hex 分支应成功");
+
+        assert_eq!(body, "abcd", "hex 分支应返回响应字节的 hex 编码");
+        assert_eq!(
+            posts.load(Ordering::SeqCst),
+            1,
+            "hex+POST 应按 method 以 POST 发送（对齐上游）"
+        );
+        assert_eq!(
+            gets.load(Ordering::SeqCst),
+            0,
+            "不得再以 GET 发送（改前无条件 get_raw 的旧行为）"
+        );
     }
 
     /// [P2-9 ③] 端到端：全局变量 store → 桥读取器 → `AnalyzeRule::get` 兜底。

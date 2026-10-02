@@ -13,6 +13,7 @@
 //! `quickjs` feature 透传 `legado-js/quickjs`：无 feature 时 JS 相关构造
 //! 全部退化为无执行器（与既有非 quickjs 构建行为一致）。
 
+pub mod analyze_request;
 pub mod book_type;
 pub mod deps;
 pub mod js_adapter;

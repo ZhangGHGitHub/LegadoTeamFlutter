@@ -55,7 +55,7 @@ use serde::Serialize;
 
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::{DictRule, DictRuleRepository};
-use legado_parser::{AnalyzeRule, AnalyzeUrl, JsExecutor, RequestMethod};
+use legado_parser::{AnalyzeRule, AnalyzeUrl, JsExecutor};
 
 use crate::db_state::with_database;
 
@@ -389,11 +389,11 @@ pub(crate) async fn fetch_body(analyze_url: &AnalyzeUrl) -> Result<String, Strin
         Some(analyze_url.headers().clone())
     };
 
-    let response = match analyze_url.method() {
-        RequestMethod::Post => client.post(url, analyze_url.request_body(), headers).await,
-        _ => client.get(url, headers).await,
-    };
-    let response = response.map_err(|e| format!("网络请求失败: {e}"))?;
+    // P2-19 批3：urlOption followRedirects / retry 经 fetcher 汇聚点发送
+    //（文本路径；method 仍由 AnalyzeUrl 决定，语义与改前一致）
+    let response = legado_fetcher::analyze_request::send_text(&client, analyze_url, headers)
+        .await
+        .map_err(|e| format!("网络请求失败: {e}"))?;
     if !response.is_success() {
         return Err(format!("HTTP {}", response.status));
     }
