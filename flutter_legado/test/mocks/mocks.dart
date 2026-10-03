@@ -3,7 +3,7 @@
 /// 使用 mocktail 生成 RustApi / AudioService / http.Client 的 mock 实例，
 /// 供 Providers / Services 层测试使用。
 library;
-import 'package:flutter/foundation.dart';
+
 import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
 
@@ -29,6 +29,8 @@ class FakeStreamAudioPlayer implements StreamAudioPlayer {
   int pauseCount = 0;
   int resumeCount = 0;
   int disposeCount = 0;
+  int seekCount = 0;
+  Duration? lastSeekPosition;
 
   @override
   bool isInitialized = false;
@@ -41,9 +43,18 @@ class FakeStreamAudioPlayer implements StreamAudioPlayer {
   @override
   String? currentUrl;
   @override
-  VoidCallback? onCompleted;
+  void Function(Object? tag)? onCompleted;
   @override
-  void Function(Duration position, Duration duration)? onProgress;
+  void Function(Duration position, Duration duration, Object? tag)? onProgress;
+
+  /// 当前装载绑定的归属标识（模拟真实播放器闭包捕获的 tag，stop 后清空）
+  Object? currentTag;
+
+  /// 每次 playUrl/playLocalFile 绑定的归属标识（供测试取旧章 tag 模拟迟到回调）
+  final List<Object?> playedTags = [];
+
+  /// 置为非零后，playUrl/playLocalFile 时模拟播放器已解析出的媒体时长
+  Duration loadedDuration = Duration.zero;
 
   /// 置为非空后 [playLocalFile] 抛出该异常（模拟本地文件播放失败）
   Object? playLocalError;
@@ -52,20 +63,30 @@ class FakeStreamAudioPlayer implements StreamAudioPlayer {
   Object? playUrlError;
 
   @override
-  Future<void> playUrl(String url, {double speed = 1.0}) async {
+  Future<void> playUrl(String url, {double speed = 1.0, Object? tag}) async {
     final err = playUrlError;
     if (err != null) throw err;
     playedUrls.add(url);
+    playedTags.add(tag);
+    currentTag = tag;
+    duration = loadedDuration;
     isPlaying = true;
     isInitialized = true;
     currentUrl = url;
   }
 
   @override
-  Future<void> playLocalFile(String path, {double speed = 1.0}) async {
+  Future<void> playLocalFile(
+    String path, {
+    double speed = 1.0,
+    Object? tag,
+  }) async {
     final err = playLocalError;
     if (err != null) throw err;
     playedLocalFiles.add((path: path, speed: speed));
+    playedTags.add(tag);
+    currentTag = tag;
+    duration = loadedDuration;
     isPlaying = true;
     isInitialized = true;
     currentUrl = path;
@@ -88,6 +109,8 @@ class FakeStreamAudioPlayer implements StreamAudioPlayer {
 
   @override
   Future<void> seek(Duration position) async {
+    seekCount++;
+    lastSeekPosition = position;
     this.position = position;
   }
 
@@ -97,6 +120,7 @@ class FakeStreamAudioPlayer implements StreamAudioPlayer {
     isPlaying = false;
     isInitialized = false;
     currentUrl = null;
+    currentTag = null;
   }
 
   @override
@@ -106,17 +130,32 @@ class FakeStreamAudioPlayer implements StreamAudioPlayer {
     isInitialized = false;
   }
 
-  /// 模拟当前音频自然播完（video_player 完成事件 → onCompleted 回调）
+  /// 模拟当前音频自然播完（video_player 完成事件 → onCompleted 回调，
+  /// 携带本次装载的归属标识）
   void completePlayback() {
     isPlaying = false;
-    onCompleted?.call();
+    onCompleted?.call(currentTag);
   }
 
-  /// 模拟播放器上报进度（video_player 位置回调 → onProgress）
+  /// 模拟迟到的旧章完成回调（携带旧章归属标识，不改变当前归属）
+  void completePlaybackForTag(Object? tag) {
+    isPlaying = false;
+    onCompleted?.call(tag);
+  }
+
+  /// 模拟播放器上报进度（video_player 位置回调 → onProgress，
+  /// 携带本次装载的归属标识）
   void emitProgress(Duration position, Duration duration) {
     this.position = position;
     this.duration = duration;
-    onProgress?.call(position, duration);
+    onProgress?.call(position, duration, currentTag);
+  }
+
+  /// 模拟迟到的旧章进度回调（携带旧章归属标识，不改变当前归属）
+  void emitProgressForTag(Object? tag, Duration position, Duration duration) {
+    this.position = position;
+    this.duration = duration;
+    onProgress?.call(position, duration, tag);
   }
 }
 

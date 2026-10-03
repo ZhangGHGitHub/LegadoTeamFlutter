@@ -14,8 +14,15 @@ import 'local_media_source.dart';
 class StreamAudioPlayer {
   VideoPlayerController? _controller;
   VoidCallback? _listener;
-  void Function()? onCompleted;
-  void Function(Duration position, Duration duration)? onProgress;
+
+  /// 播放完成回调，携带本次装载绑定的归属标识 [tag]（原样回传，播放器不解释）
+  void Function(Object? tag)? onCompleted;
+
+  /// 进度回调，携带本次装载绑定的归属标识 [tag]（原样回传，播放器不解释）
+  ///
+  /// [tag] 用途见 [playUrl]：听书路径传 (bookUrl, chapterIndex)，调用方据此
+  /// 丢弃切章后迟到的旧章事件（P1 竞态修复）。
+  void Function(Duration position, Duration duration, Object? tag)? onProgress;
 
   /// 底层 media3 播放器选项：关闭其自带音频焦点处理（单应用单焦点所有者）。
   ///
@@ -44,7 +51,12 @@ class StreamAudioPlayer {
   bool _completionFired = false;
 
   /// 加载并播放网络媒体 URL（http/https）
-  Future<void> playUrl(String url, {double speed = 1.0}) async {
+  ///
+  /// [tag] 为本次装载的归属标识（听书路径传 (bookUrl, chapterIndex)），播放器
+  /// 不做任何解释，仅在 [onProgress]/[onCompleted] 中原样回传；调用方据此校验
+  /// 事件归属——切章后旧播放器 stop 前迟到的回调不会再被误认为新章事件
+  /// （P1 竞态修复：旧章最终位置不得写入新章进度键）。
+  Future<void> playUrl(String url, {double speed = 1.0, Object? tag}) async {
     final trimmed = url.trim();
     if (trimmed.isEmpty) {
       throw ArgumentError('播放地址为空');
@@ -56,7 +68,7 @@ class StreamAudioPlayer {
       Uri.parse(trimmed),
       videoPlayerOptions: playbackOptions,
     );
-    await _start(c, speed);
+    await _start(c, speed, tag);
   }
 
   /// 加载并播放本地音频文件（TTS 合成产物 audioPath）
@@ -64,8 +76,12 @@ class StreamAudioPlayer {
   /// 支持绝对路径与 `file://` URI（平台差异见局部导入的
   /// `local_media_source_io.dart` / `_web.dart`）。
   /// [speed] 默认 1.0：TTS 语速已由合成侧（engineUrl 模板 speakSpeed）
-  /// 应用，播放侧不再二次变速。
-  Future<void> playLocalFile(String path, {double speed = 1.0}) async {
+  /// 应用，播放侧不再二次变速。[tag] 语义同 [playUrl]（TTS 路径一般为 null）。
+  Future<void> playLocalFile(
+    String path, {
+    double speed = 1.0,
+    Object? tag,
+  }) async {
     final trimmed = path.trim();
     if (trimmed.isEmpty) {
       throw ArgumentError('本地播放路径为空');
@@ -77,18 +93,23 @@ class StreamAudioPlayer {
       trimmed,
       videoPlayerOptions: playbackOptions,
     );
-    await _start(c, speed);
+    await _start(c, speed, tag);
   }
 
   /// 初始化控制器 → 挂完成监听 → 开始播放（网络/本地共用）
-  Future<void> _start(VideoPlayerController c, double speed) async {
+  Future<void> _start(
+    VideoPlayerController c,
+    double speed,
+    Object? tag,
+  ) async {
     _controller = c;
     await c.initialize();
     await c.setPlaybackSpeed(speed <= 0 ? 1.0 : speed);
     _listener = () {
       if (_controller != c) return;
       final v = c.value;
-      onProgress?.call(v.position, v.duration);
+      // tag 随本次装载的监听闭包捕获：旧控制器的事件带旧归属
+      onProgress?.call(v.position, v.duration, tag);
       if (!_completionFired &&
           v.isInitialized &&
           v.duration > Duration.zero &&
@@ -96,7 +117,7 @@ class StreamAudioPlayer {
               v.position >= v.duration - const Duration(milliseconds: 200)) &&
           !v.isPlaying) {
         _completionFired = true;
-        onCompleted?.call();
+        onCompleted?.call(tag);
       }
     };
     c.addListener(_listener!);

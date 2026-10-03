@@ -40,6 +40,27 @@ const int kMaxSleepTimerMinutes = 180;
 /// （ChapterStopTimer.kt:3）[A4 | 2026-10-03]
 const int kMaxChapterStopCount = 99;
 
+/// 恢复进度「接近章尾」容差（毫秒）
+///
+/// [P1 竞态修复 | 2026-10-03] 存量进度 ≥ duration - 该值 时视为「本章已播完」，
+/// 恢复时不再 seek（否则 seek 到章尾会立即触发完成回调 → 秒完切章级联）。
+/// 依据：原版无对应恢复判定——完成的章不落可恢复位置：AudioPlay.next() 在
+/// completeCurrentChapter 之后立即把 durChapterPos 清零；末章播完由
+/// isPlayToEnd() 走 playNew() 从头播（AudioPlay.kt:615-621、752-778）。
+/// 故按最小防护取「从头播」。取 1s：覆盖本应用完成判定
+/// （stream_audio_player.dart：position ≥ duration-200ms 且停止）写入的完成值，
+/// 并给真机时长/位置上报粒度留余量；不取 95% 比例阈值，避免长章节尾部真实
+/// 续听位置（如 3 小时章的最后 2 分钟）被误判为播完。
+const int kStreamRestoreNearEndToleranceMs = 1000;
+
+/// 流媒体章节归属标识
+///
+/// [_playAudioBookStream] 发起 `playUrl` 时绑定，[StreamAudioPlayer] 在进度/
+/// 完成回调中原样回传；回调先与当前 state.bookUrl/currentIndex 比对，归属
+/// 不一致（切章后迟到的旧章事件）整条丢弃——旧章最终位置不得写进新章进度键，
+/// 这是 P1 级联跳章的根因修复。[P1 竞态修复 | 2026-10-03]
+typedef StreamChapterTag = ({String bookUrl, int chapterIndex});
+
 /// 听书播放器 Riverpod Notifier
 ///
 /// 双路径：
@@ -173,16 +194,23 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     _audioService = ref.read(audioServiceProvider);
     _streamPlayer = ref.read(streamAudioPlayerProvider);
     // 完成回调按当前模式分发：音频书 → 下一章；TTS → 下一段
-    _streamPlayer.onCompleted = () {
+    _streamPlayer.onCompleted = (tag) {
       if (_disposed) return;
       if (state.isStreamMode) {
+        // [P1] 迟到的旧章完成事件（切章后才送达）：丢弃，避免误触发再切一章
+        if (!_isCurrentStreamChapter(tag)) return;
         unawaited(_onStreamCompleted());
         return;
       }
       unawaited(_onTtsParagraphCompleted());
     };
-    _streamPlayer.onProgress = (pos, dur) {
+    _streamPlayer.onProgress = (pos, dur, tag) {
       if (_disposed || !state.isStreamMode) return;
+      // [P1] 回调必须归属当前章：切章瞬间旧播放器 stop 前送达的最终回调
+      // （position≈旧章时长）若按 state.currentIndex 归属会写进新章进度键，
+      // 恢复逻辑随即 seek 到新章章尾 → 秒完 → 再切章，形成自持级联；
+      // 归属不一致则整条丢弃（不写库、不刷新 UI）。
+      if (!_isCurrentStreamChapter(tag)) return;
       // [A3] 播放中周期写进度：显式传入回调位置，位置增量 <5s 时仅内存比较不写库
       unawaited(_persistStreamPosition(positionMs: pos.inMilliseconds));
       final now = DateTime.now().millisecondsSinceEpoch;
@@ -441,7 +469,13 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
           lyric: (lyric == null || lyric.isEmpty) ? null : lyric,
           state: PlayerState.playing,
         );
-        await _streamPlayer.playUrl(mediaUrl, speed: state.config.speed);
+        // [P1] 绑定本章归属：播放器在进度/完成回调中原样回传，切章后旧播放器
+        // 迟到的回调据此被丢弃，不会写进新章进度键
+        await _streamPlayer.playUrl(
+          mediaUrl,
+          speed: state.config.speed,
+          tag: (bookUrl: state.bookUrl, chapterIndex: index),
+        );
         if (token != _playToken || _disposed) return;
         await _syncMediaSession();
         _introSkipEvaluated = false;
@@ -452,7 +486,13 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
           final progress = await _api.getAudioProgress(state.bookUrl, index);
           restoredPos = (progress?['position'] as num?)?.toInt() ?? 0;
           if (restoredPos > 1500 && token == _playToken && !_disposed) {
-            await _streamPlayer.seek(Duration(milliseconds: restoredPos));
+            if (_isNearChapterEnd(restoredPos)) {
+              // [P1 辅修] 历史污染值/完成值按「本章已播完」处理：不 seek，
+              // 从头播（依据见 kStreamRestoreNearEndToleranceMs 注释）
+              restoredPos = 0;
+            } else {
+              await _streamPlayer.seek(Duration(milliseconds: restoredPos));
+            }
           }
         } catch (e) {
           debugPrint('恢复音频进度失败: $e');
@@ -468,6 +508,24 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
         state: PlayerState.error,
       );
     }
+  }
+
+  /// 回调归属校验：tag 是否为当前播放章节（bookUrl + chapterIndex 双匹配）
+  ///
+  /// 仅流媒体路径的进度/完成回调需要校验（TTS 本地播放不传 tag，恒不匹配）。
+  bool _isCurrentStreamChapter(Object? tag) {
+    if (tag is! StreamChapterTag) return false;
+    return tag.bookUrl == state.bookUrl &&
+        tag.chapterIndex == state.currentIndex;
+  }
+
+  /// 存量进度是否已到本章末尾（视为已播完）
+  ///
+  /// 时长未知（未初始化）时不做判定，保持既有恢复行为。
+  bool _isNearChapterEnd(int positionMs) {
+    final durationMs = _streamPlayer.duration.inMilliseconds;
+    if (durationMs <= 0) return false;
+    return positionMs >= durationMs - kStreamRestoreNearEndToleranceMs;
   }
 
   Future<void> _onStreamCompleted() async {
@@ -1230,6 +1288,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   /// ≥ [kStreamProgressSaveDeltaMs] 时写库（onProgress 高频回调下只做内存
   /// 比较）；[force] 用于生命周期节点（暂停/停止/完成/切章/退出）。
   /// 位置优先取播放器实际位置，未初始化时回退 state.positionMs。
+  ///
+  /// 写入归属恒为调用时刻的 state.currentIndex；播放器回调路径（onProgress）
+  /// 必须先在回调入口经 [_isCurrentStreamChapter] 校验归属，切章后迟到的旧章
+  /// 回调不得进入本方法。[P1 竞态修复]
   Future<void> _persistStreamPosition({int? positionMs, bool force = false}) async {
     if (!state.isStreamMode) return; // TTS 无毫秒时间轴，不写该键（避免污染流媒体恢复）
     final bookUrl = state.bookUrl;
