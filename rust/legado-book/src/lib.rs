@@ -1,4 +1,4 @@
-//! legado-book: 书籍格式解析器（EPUB/MOBI/TXT/PDF/UMD）
+//! legado-book: 书籍格式解析器（EPUB/MOBI/TXT/PDF/UMD/CBZ）
 //!
 //! 提供统一的本地书籍解析接口，支持多种格式：
 //!
@@ -7,6 +7,7 @@
 //! - [`mobi`] — MOBI/AZW 格式解析（PDB + EXTH 元数据）
 //! - [`pdf`] — PDF 格式解析（基于 lopdf）
 //! - [`umd`] — UMD 格式解析
+//! - [`cbz`] — CBZ 漫画格式解析（ZIP + 图片页，整包 = 一本漫画）
 //! - [`export`] — 书籍导出（TXT/EPUB/HTML）
 //! - [`txt_search`] — 本地 TXT 分词搜索
 //!
@@ -25,6 +26,7 @@
 //! ```
 
 pub mod archive;
+pub mod cbz;
 pub mod encoding;
 pub mod epub;
 pub mod export;
@@ -73,6 +75,8 @@ pub enum BookFormat {
     Txt,
     Pdf,
     Umd,
+    /// CBZ 漫画包（ZIP + 图片页，整包 = 一本漫画）
+    Cbz,
 }
 
 impl BookFormat {
@@ -83,6 +87,7 @@ impl BookFormat {
             BookFormat::Txt => "txt",
             BookFormat::Pdf => "pdf",
             BookFormat::Umd => "umd",
+            BookFormat::Cbz => "cbz",
         }
     }
 }
@@ -92,9 +97,17 @@ pub struct LocalBook;
 
 impl LocalBook {
     /// 根据文件扩展名检测格式
+    ///
+    /// 扩展名优先于魔数兜底：`.cbz` 必须先于 `detect_format_by_magic` 的 PK 魔数
+    /// 判定命中，否则含 PK 头的漫画包会被误判为 EPUB。
+    ///
+    /// `.zip` / `.cbz` 双语义：`.zip` 保持压缩容器行为（交由 `archive` 模块导入），
+    /// `.cbz` 则整包视为一本漫画。
     pub fn detect_format(path: &str) -> LegadoResult<BookFormat> {
         let lower = path.to_lowercase();
-        if lower.ends_with(".epub") {
+        if lower.ends_with(".cbz") {
+            Ok(BookFormat::Cbz)
+        } else if lower.ends_with(".epub") {
             Ok(BookFormat::Epub)
         } else if lower.ends_with(".mobi") || lower.ends_with(".azw") || lower.ends_with(".azw3") {
             Ok(BookFormat::Mobi)
@@ -118,6 +131,7 @@ impl LocalBook {
             BookFormat::Mobi => mobi::MobiParser::parse(path),
             BookFormat::Pdf => pdf::PdfParser::parse(path),
             BookFormat::Umd => umd::UmdParser::parse(path),
+            BookFormat::Cbz => cbz::CbzFile::open(path)?.metadata(),
         }
     }
 
@@ -130,6 +144,7 @@ impl LocalBook {
             BookFormat::Mobi => mobi::MobiParser::get_chapters(path),
             BookFormat::Pdf => pdf::PdfParser::get_chapters(path),
             BookFormat::Umd => umd::UmdParser::get_chapters(path),
+            BookFormat::Cbz => cbz::CbzFile::open(path)?.get_chapters(),
         }
     }
 
@@ -142,6 +157,7 @@ impl LocalBook {
             BookFormat::Mobi => mobi::MobiParser::get_chapter_content(path, chapter),
             BookFormat::Pdf => pdf::PdfParser::get_chapter_content(path, chapter),
             BookFormat::Umd => umd::UmdParser::get_chapter_content(path, chapter),
+            BookFormat::Cbz => cbz::CbzFile::open(path)?.get_chapter_content(chapter.index),
         }
     }
 }
@@ -178,6 +194,7 @@ mod tests {
         assert_eq!(BookFormat::Txt.as_str(), "txt");
         assert_eq!(BookFormat::Pdf.as_str(), "pdf");
         assert_eq!(BookFormat::Umd.as_str(), "umd");
+        assert_eq!(BookFormat::Cbz.as_str(), "cbz");
     }
 
     #[test]
@@ -248,6 +265,72 @@ mod tests {
             LocalBook::detect_format("FILE.PDF").unwrap(),
             BookFormat::Pdf
         );
+    }
+
+    #[test]
+    fn test_detect_format_cbz() {
+        assert_eq!(
+            LocalBook::detect_format("comic.cbz").unwrap(),
+            BookFormat::Cbz
+        );
+        assert_eq!(
+            LocalBook::detect_format("COMIC.CBZ").unwrap(),
+            BookFormat::Cbz
+        );
+        assert_eq!(
+            LocalBook::detect_format(r"books\漫画 合集.Cbz").unwrap(),
+            BookFormat::Cbz
+        );
+    }
+
+    /// 回归：`.cbz` 扩展名必须优先于 PK 魔数兜底，含 PK 头的漫画包不得判为 EPUB
+    #[test]
+    fn test_detect_format_cbz_extension_beats_pk_magic() {
+        use std::fs;
+
+        // 构造含 PK 文件头的假 CBZ / ZIP（长度需 >= 8 字节以通过 read_exact）
+        let pk_header = b"PK\x03\x04\x14\x00\x00\x00";
+        let dir = std::env::temp_dir().join("legado_test_detect_cbz_magic");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        let cbz_path = dir.join("fake.cbz");
+        fs::write(&cbz_path, pk_header).unwrap();
+
+        // .cbz 命中扩展名分支，绝不落入 PK 魔数 → EPUB
+        assert_eq!(
+            LocalBook::detect_format(cbz_path.to_str().unwrap()).unwrap(),
+            BookFormat::Cbz
+        );
+
+        // 同名同内容的 .zip 保持容器语义（无已知扩展名 → PK 魔数兜底为 EPUB）
+        let zip_path = dir.join("fake.zip");
+        fs::write(&zip_path, pk_header).unwrap();
+        assert_eq!(
+            LocalBook::detect_format(zip_path.to_str().unwrap()).unwrap(),
+            BookFormat::Epub
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 回归：扩展名未知且无 PK/PDF 魔数时仍兜底为 TXT
+    #[test]
+    fn test_detect_format_txt_fallback() {
+        use std::fs;
+
+        let dir = std::env::temp_dir().join("legado_test_detect_txt_fallback");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("plain.bin");
+        fs::write(&path, b"plain text content").unwrap();
+
+        assert_eq!(
+            LocalBook::detect_format(path.to_str().unwrap()).unwrap(),
+            BookFormat::Txt
+        );
+
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
