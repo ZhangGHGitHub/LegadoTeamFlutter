@@ -33,7 +33,9 @@ import java.io.OutputStream
  * Dart 侧回退文档目录兜底——永远不假成功。
  *
  * 支持方法：
- * - saveImageToDownloads: 参数 {fileName: String, bytes: List<Int>}；
+ * - saveImageToDownloads: 参数 {fileName: String, bytes: ByteArray | List<Int>}；
+ *   Dart 侧 Uint8List 经 StandardMessageCodec 落地为 Java byte[]（主形态），
+ *   历史整数列表形态亦兼容（见 [parseBytesArgument]）；
  *   成功（已读回校验）返回相对路径 "Download/legado/<fileName>"；
  *   API < 29 / 参数错误 / 写入失败 / 读回校验失败均返回 error
  *   （调用方回退文档目录）。
@@ -48,6 +50,35 @@ class StorageBridge {
 
         /// [D3] 读回校验的首部比对字节数
         private const val HEAD_VERIFY_BYTES = 8
+
+        /**
+         * [P1-2 | 2026-10-03] 解析 bytes 参数，兼容两种形态：
+         * - [ByteArray]：Dart `Uint8List` 经 StandardMessageCodec 的标准落地
+         *   形态（真机 logcat 证据：旧代码 `call.argument<List<Int>>`
+         *   泛型 checkcast 必抛 `ClassCastException: byte[] cannot be
+         *   cast to java.util.List` → 保存图片恒失败回退文档目录）；
+         * - [List]（元素为 [Number]）：兼容历史/测试调用方按整数列表传入。
+         *
+         * 经 [MethodCall.arguments] 原始值以 `is` 判定，不产生泛型 checkcast；
+         * 非法形态返回 null（由调用方回 INVALID_ARGS），绝不抛 CCE。
+         */
+        internal fun parseBytesArgument(call: MethodCall): ByteArray? =
+            bytesFromArgument(call.argument("bytes"))
+
+        /** [parseBytesArgument] 的纯函数内核（JVM 单测覆盖，
+         * 见 android/app/src/test/.../StorageBridgeBytesArgumentTest.kt）。 */
+        internal fun bytesFromArgument(raw: Any?): ByteArray? = when (raw) {
+            is ByteArray -> raw
+            is List<*> -> {
+                val out = ByteArray(raw.size)
+                for (i in raw.indices) {
+                    val value = raw[i] as? Number ?: return null
+                    out[i] = value.toByte()
+                }
+                out
+            }
+            else -> null
+        }
     }
 
     fun handleMethodCall(call: MethodCall, result: MethodChannel.Result, activity: Activity) {
@@ -72,14 +103,15 @@ class StorageBridge {
             return
         }
         val fileName = call.argument<String>("fileName")
-        val bytes = call.argument<List<Int>>("bytes")
-        if (fileName.isNullOrEmpty() || bytes.isNullOrEmpty()) {
+        // [P1-2] 兼容 byte[]（Dart Uint8List 主形态）与 List<Int>（历史形态），
+        // 详见 [parseBytesArgument]；解析失败/空字节 → INVALID_ARGS 回退文档目录
+        val bytes = parseBytesArgument(call)
+        if (fileName.isNullOrEmpty() || bytes == null || bytes.isEmpty()) {
             result.error("INVALID_ARGS", "fileName and bytes are required", null)
             return
         }
 
         val resolver = activity.contentResolver
-        val data = ByteArray(bytes.size) { i -> bytes[i].toByte() }
         var uri: Uri? = null
         var output: OutputStream? = null
         var written = false
@@ -94,14 +126,14 @@ class StorageBridge {
                 ?: throw IOException("MediaStore insert returned null")
             output = resolver.openOutputStream(uri)
                 ?: throw IOException("openOutputStream returned null for $uri")
-            output.write(data)
+            output.write(bytes)
             output.flush()
             output.close()
             output = null
             written = true
             // [D3] 写后读回校验：部分 ROM 对 MediaStore 写入静默丢弃（幻影写入，
             // 全链路无异常但文件未落盘）→ 校验不通过必须回 error，不得假成功
-            verifyWritten(resolver, uri, data)
+            verifyWritten(resolver, uri, bytes)
             result.success("$RELATIVE_DIR$fileName")
             succeeded = true
         } catch (e: Exception) {

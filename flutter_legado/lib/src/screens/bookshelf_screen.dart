@@ -827,15 +827,34 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     // 实际只剩 epub/txt/pdf 可选，而 Rust 内核支持 MOBI 解析——收窄扩展名
     // 列表会让 iOS 丢失 Android 已有的 mobi 导入能力。故 iOS 回落
     // FileType.any（全部文件可选，不可导入的格式由下方失败 SnackBar 显式
-    // 报告）；Android 保持原列表不变。
+    // 报告）；Android 保持 custom 列表过滤（列表内容见下方注释）。
     // 注意：file_picker 8.3.7 Dart 侧在 type != custom 且 allowedExtensions
     // 非空时抛 ArgumentError，any 分支不得传列表。
+    //
+    // [cbz P1-1 | 2026-10-03] Android 白名单与导入页 import_screen.dart 的
+    // _supportedFormats **同序同集合**（epub/txt/mobi/azw3/azw/pdf/umd/cbz，
+    // 两处需同步维护，互指注释）：
+    // · cbz 为「整本导入」格式（Rust 按 LOCAL|image 图片漫画包处理，
+    //   不解压），缺失则该格式在 Android file_picker（FileType.custom）
+    //   经 MimeTypeMap 过滤后被 DocumentsUI 置灰、无法选择（P1-1 回归，
+    //   真机验证：本机 MimeTypeMap 将 .cbz 映射为 application/x-cbz）；
+    // · zip/rar/7z 为压缩包格式，走导入页解压导入链路（_archiveFormats），
+    //   不属于整本导入白名单。
     final result = Platform.isIOS
         ? await FilePicker.platform.pickFiles(
             type: FileType.any, allowMultiple: true)
         : await FilePicker.platform.pickFiles(
             type: FileType.custom,
-            allowedExtensions: const ['epub', 'txt', 'mobi', 'pdf', 'umd'],
+            allowedExtensions: const [
+              'epub',
+              'txt',
+              'mobi',
+              'azw3',
+              'azw',
+              'pdf',
+              'umd',
+              'cbz',
+            ],
             allowMultiple: true,
           );
     if (result == null || result.files.isEmpty) return;
@@ -895,14 +914,25 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     // [iOS 视角F C2] UI 提示：any 选择器下选到不可导入的扩展名时，
     // 显式说明「显示全部文件、仅电子书格式可导入」，避免静默困惑
     if (Platform.isIOS) {
-      const importable = {'epub', 'txt', 'mobi', 'pdf', 'umd'};
+      // 与上方 Android 白名单及 import_screen.dart::_supportedFormats
+      // 同集合（azw3/azw 为 KF8 MOBI、cbz 为整本导入漫画包，均可导入）
+      const importable = {
+        'epub',
+        'txt',
+        'mobi',
+        'azw3',
+        'azw',
+        'pdf',
+        'umd',
+        'cbz',
+      };
       final pickedExts = result.files
           .map((f) => f.name.split('.').last.toLowerCase())
           .where((e) => e.isNotEmpty)
           .toSet();
       if (pickedExts.difference(importable).isNotEmpty) {
         messages.add(
-            'iOS 选择器显示全部文件，仅电子书格式（epub/txt/mobi/pdf/umd）可导入');
+            'iOS 选择器显示全部文件，仅电子书格式（epub/txt/mobi/azw3/azw/pdf/umd/cbz）可导入');
       }
     }
     if (messages.isEmpty) return;

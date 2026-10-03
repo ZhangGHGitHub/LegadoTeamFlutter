@@ -996,7 +996,11 @@ class PlatformBridgeService {
   /// 成功返回相对路径（如 `Download/legado/manga-x.png`）；非 Android
   /// （分派不走通道）、通道未注册或原生端写入失败时返回 null，
   /// 调用方回退应用文档目录兜底。
-  Future<String?> saveImageToDownloads(String fileName, List<int> bytes) async {
+  ///
+  /// [P1-2] [bytes] 固定 [Uint8List]（= StandardMessageCodec 的 byte[]
+  /// 快速通道，Java 侧为 byte[]）；Kotlin 端兼容历史 `List<Int>` 形态，
+  /// 详见 StorageBridge.parseBytesArgument。
+  Future<String?> saveImageToDownloads(String fileName, Uint8List bytes) async {
     if (!useMediaStoreDownloads) return null;
     return PlatformChannel.saveImageToDownloads(fileName: fileName, bytes: bytes);
   }

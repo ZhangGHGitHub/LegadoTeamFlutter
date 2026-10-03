@@ -1294,6 +1294,16 @@ void main() {
         equals(const [0x89, 0x50, 0x4E, 0x47]),
         reason: '通道参数 bytes 为页面图片 PNG 字节',
       );
+      // [P1-2 回归] 通道实参类型钉住：Uint8List 经 StandardMessageCodec
+      // 编为 Java byte[]（Kotlin StorageBridge 主形态）。若退化为普通
+      // List<int>，编码为整数列表、Java 侧得到 List → 旧代码
+      // call.argument<List<Int>> 泛型 checkcast 在 byte[] 形态抛
+      // ClassCastException（真机 logcat_full.txt:1619 根因）。
+      expect(
+        args['bytes'],
+        isA<Uint8List>(),
+        reason: '[P1-2] 送入通道的 bytes 必须是 Uint8List（→ Java byte[]）',
+      );
       expect(fake.capturedBytes, isNull,
           reason: 'Android 分支不走 file_picker（D2 绕开 SAF）');
     });

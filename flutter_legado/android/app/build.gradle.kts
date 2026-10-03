@@ -62,6 +62,9 @@ dependencies {
     implementation("androidx.media:media:1.7.0")
     // core library desugaring（flutter_local_notifications 18.x 强制要求，AGP 8.11）
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    // [P1-2] 本地 JVM 单测（StorageBridge bytes 参数解析回归）：
+    // ./gradlew :app:testDebugUnitTest --tests "io.legado.flutter.StorageBridgeBytesArgumentTest"
+    testImplementation("junit:junit:4.12")
 }
 
 // ========== Rust FFI content hash 校验（根治「引擎初始化失败」）==========

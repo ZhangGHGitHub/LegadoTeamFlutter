@@ -198,9 +198,14 @@ class PlatformChannel {
   /// 成功返回相对路径（如 `Download/legado/manga-x.png`）；通道未注册、
   /// API < 29 或原生端写入失败（result.error）时返回 null，由调用方回退
   /// 文档目录兜底。纯通道调用（无平台判断，分派在调用方/服务层）。
+  ///
+  /// [P1-2] [bytes] 固定 [Uint8List]：StandardMessageCodec 将其编为
+  /// Java `byte[]`（Kotlin 侧 StorageBridge.parseBytesArgument 主形态；
+  /// 旧 `List<int>` 形态亦兼容）；普通 `List<int>` 会被编成整数列表，
+  /// 不再是 byte[] 快速通道，故类型层直接收窄。
   static Future<String?> saveImageToDownloads({
     required String fileName,
-    required List<int> bytes,
+    required Uint8List bytes,
   }) async {
     try {
       return await storage.invokeMethod<String>('saveImageToDownloads', {
