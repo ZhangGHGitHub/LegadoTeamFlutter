@@ -18,6 +18,18 @@ enum AudioPlayMode {
   shuffle,
 }
 
+/// 定时停止模式（A4 批：计时下沉 Notifier，供听书页与阅读器等入口共享）
+enum SleepTimerMode {
+  /// 未启用
+  off,
+
+  /// 分钟倒计时（到点停止播放）
+  duration,
+
+  /// 按章停止（自然播完 N 章后停止）
+  chapters,
+}
+
 /// TTS 配置
 class TtsConfig {
   String engineUrl;

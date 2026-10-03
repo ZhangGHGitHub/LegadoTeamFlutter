@@ -32,6 +32,14 @@ const int kStreamProgressSaveDeltaMs = 5000;
 /// 书级语速写库防抖窗口（滑条拖动期间合并为一次写库）[A2 | 2026-10-03]
 const Duration kSpeedPersistDebounce = Duration(milliseconds: 600);
 
+/// 分钟倒计时上限——对齐原版 SleepTimerDialog.MAX_MINUTES = 180
+/// [A4 | 2026-10-03]
+const int kMaxSleepTimerMinutes = 180;
+
+/// 按章停止上限——对齐原版 MAX_CHAPTER_STOP_COUNT = 99
+/// （ChapterStopTimer.kt:3）[A4 | 2026-10-03]
+const int kMaxChapterStopCount = 99;
+
 /// 听书播放器 Riverpod Notifier
 ///
 /// 双路径：
@@ -87,6 +95,34 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   ({String bookUrl, double speed})? _pendingSpeedPersist;
   String _lastSpeedPersistKey = '';
   double? _lastSpeedPersistValue;
+
+  /// A4：定时停止（下沉 Notifier，退出听书页不失效）
+  ///
+  /// 分钟倒计时剩余秒数（>0 时 duration 模式生效）
+  int _sleepRemainingSeconds = 0;
+
+  /// 按章停止剩余章数（>0 时 chapters 模式生效）
+  int _chaptersToStopRemaining = 0;
+
+  /// 分钟倒计时 ticker：1s 粒度仅用于 UI 展示；递减语义对齐原版
+  /// doDs 的 60s 循环（`if (!pause)` 守卫，暂停期间冻结）
+  Timer? _sleepTicker;
+
+  /// 定时停止模式（分钟与按章互斥；均未启用为 off）
+  SleepTimerMode get sleepTimerMode {
+    if (_chaptersToStopRemaining > 0) return SleepTimerMode.chapters;
+    if (_sleepRemainingSeconds > 0) return SleepTimerMode.duration;
+    return SleepTimerMode.off;
+  }
+
+  /// 是否启用了定时停止（分钟倒计时或按章停止）
+  bool get isSleepTimerActive => sleepTimerMode != SleepTimerMode.off;
+
+  /// 分钟倒计时剩余秒数（未启用时为 0）
+  int get sleepRemainingSeconds => _sleepRemainingSeconds;
+
+  /// 按章停止剩余章数（未启用时为 0）
+  int get chaptersToStopRemaining => _chaptersToStopRemaining;
 
   int get currentParagraphIndex => _paragraphIndex;
   int get paragraphCount => _paragraphs.length;
@@ -145,6 +181,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       // [A3] 容器销毁（退出听书/应用生命周期结束）尽力写一次当前进度
       _saveStreamProgressOnDispose();
       _speedPersistTimer?.cancel();
+      // [A4] 定时停止 ticker 随容器销毁清理
+      _sleepTicker?.cancel();
       _disposed = true;
       _mediaButtonSub?.cancel();
       _audioFocusSub?.cancel();
@@ -410,6 +448,12 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
 
   Future<void> _onStreamCompleted() async {
     if (!state.isStreamMode || state.state != PlayerState.playing) return;
+    // [A4] 章自然播完：按章停止计数（单曲循环每次完成同样计数，
+    // 对齐原版 STATE_ENDED → completeCurrentChapter → onChapterCompleted）
+    if (_consumeChapterStopAtBoundary()) {
+      stop(); // stop 内 force 写当前章进度（A3）
+      return;
+    }
     if (state.mode == AudioPlayMode.singleLoop) {
       // [A3] 单曲循环从章首重播：显式清零进度，避免周期写入导致「循环回到结尾」
       await _resetStreamProgress();
@@ -626,6 +670,11 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       await _speakCurrentParagraph(_playToken);
       return;
     }
+    // [A4] 章末（末段播完）：按章停止计数，归零则在章末停止而不切章
+    if (_consumeChapterStopAtBoundary()) {
+      stop();
+      return;
+    }
     if (state.mode == AudioPlayMode.singleLoop) {
       _paragraphIndex = 0;
       notifyListeners();
@@ -763,6 +812,83 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     );
   }
 
+  // ===== 定时停止（A4 批：计时下沉，退出听书页不失效）=====
+
+  /// 启动分钟倒计时：到点停止播放并保存进度（流媒体经 A3 force 写）
+  ///
+  /// 与按章停止互斥（对齐原版 setTimer → chapterStopTimer.clear()，
+  /// BaseReadAloudService.kt:553-559）。递减仅在播放中进行（对齐原版
+  /// doDs 的 `if (!pause)` 守卫，BaseReadAloudService.kt:586-601）：
+  /// 暂停期间剩余时间冻结，恢复播放后继续。
+  void startSleepTimer(int minutes) {
+    final normalized = minutes.clamp(0, kMaxSleepTimerMinutes).toInt();
+    _clearSleepTimerState();
+    if (normalized > 0) {
+      _sleepRemainingSeconds = normalized * 60;
+      _ensureSleepTicker();
+    }
+    notifyListeners();
+  }
+
+  /// 启动按章停止：自然播完 [chapters] 章后在章末停止（不再进入下一章）
+  ///
+  /// 语义对齐原版 [ChapterStopTimer.onChapterCompleted]（ChapterStopTimer.kt:29-33）：
+  /// 每自然播完一章计数减一，归零触发停止；手动切章不计（原版仅在
+  /// nextChapter(auto=true) / completeCurrentChapter 中计数）。
+  void startChapterStop(int chapters) {
+    final normalized = chapters.clamp(0, kMaxChapterStopCount).toInt();
+    _clearSleepTimerState();
+    if (normalized > 0) {
+      _chaptersToStopRemaining = normalized;
+    }
+    notifyListeners();
+  }
+
+  /// 取消定时停止（分钟倒计时与按章停止同时清空）
+  void cancelSleepTimer() {
+    if (!isSleepTimerActive) return;
+    _clearSleepTimerState();
+    notifyListeners();
+  }
+
+  void _clearSleepTimerState() {
+    _sleepTicker?.cancel();
+    _sleepTicker = null;
+    _sleepRemainingSeconds = 0;
+    _chaptersToStopRemaining = 0;
+  }
+
+  void _ensureSleepTicker() {
+    if (_sleepTicker != null) return;
+    _sleepTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (_disposed) return;
+      // 对齐原版：暂停期间不计时（唤醒恢复后从剩余时间继续）
+      if (!state.isPlaying) return;
+      if (_sleepRemainingSeconds <= 0) return;
+      _sleepRemainingSeconds--;
+      if (_sleepRemainingSeconds <= 0) {
+        _clearSleepTimerState();
+        notifyListeners();
+        stop();
+        return;
+      }
+      notifyListeners();
+    });
+  }
+
+  /// 章末边界计数：返回 true 表示已到按章停止点（调用方应停止而非切章）
+  ///
+  /// 仅在「章自然播完」路径调用（流媒体完成回调 / TTS 末段完成）；手动
+  /// next()/jumpTo 不计数，保持与原版一致。
+  bool _consumeChapterStopAtBoundary() {
+    if (_chaptersToStopRemaining <= 0) return false;
+    _chaptersToStopRemaining--;
+    final shouldStop = _chaptersToStopRemaining <= 0;
+    if (shouldStop) _chaptersToStopRemaining = 0;
+    notifyListeners();
+    return shouldStop;
+  }
+
   void pause() {
     if (state.state == PlayerState.playing) {
       _paragraphTimer?.cancel();
@@ -794,6 +920,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
 
   void stop() {
     _paragraphTimer?.cancel();
+    // [A4] 停止即结束本次定时（对齐原版 TTS 服务 onDestroy 清空
+    // timeMinute/chapterStopTimer，BaseReadAloudService.kt:309-313）
+    _clearSleepTimerState();
     // [A3] 停止前写一次当前进度（必须在重置 state 之前发起）
     unawaited(_persistStreamPosition(force: true));
     // A4：停止视为朗读会话结束，下次朗读允许再次提示无引擎
@@ -1107,6 +1236,7 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   void dispose() {
     _saveStreamProgressOnDispose();
     _speedPersistTimer?.cancel();
+    _sleepTicker?.cancel();
     _disposed = true;
     _paragraphTimer?.cancel();
     unawaited(_streamPlayer.dispose());

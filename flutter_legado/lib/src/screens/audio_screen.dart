@@ -25,6 +25,9 @@ import 'source_login_screen.dart';
 /// 预设定时时长（分钟）
 const List<int> _kPresetMinutes = [5, 10, 15, 30];
 
+/// 预设按章停止章数（对齐原版 SleepTimerDialog.CHAPTER_PRESETS = [1,2,3,5]）
+const List<int> _kPresetChapters = [1, 2, 3, 5];
+
 /// 听书播放页面
 class AudioScreen extends ConsumerStatefulWidget {
   /// 书籍对象（路由参数规范化：优先使用 Book 对象）
@@ -58,15 +61,16 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
   bool _wakeLock = false;
 
   // ===== 定时停止相关状态 =====
+  //
+  // [A4 | 2026-10-03] 计时已下沉 AudioNotifier（不随听书页销毁而失效），
+  // 本页只订阅展示剩余时间/开关状态；不再持有本地 Timer。
 
-  /// 定时器实例
-  Timer? _stopTimer;
-
-  /// 剩余秒数，为 0 表示未启用定时
-  int _remainingSeconds = 0;
-
-  /// 自定义时长输入控制器
+  /// 自定义分钟输入控制器
   final TextEditingController _customMinutesController =
+      TextEditingController();
+
+  /// 自定义按章数输入控制器
+  final TextEditingController _customChaptersController =
       TextEditingController();
 
   @override
@@ -94,9 +98,10 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
 
   @override
   void dispose() {
-    // 页面销毁时清理定时器和媒体会话
-    _stopTimer?.cancel();
+    // 页面销毁只清理输入控制器；定时停止计时归 Notifier 所有
+    // （[A4] 退出听书页后倒计时/按章停止继续生效）
     _customMinutesController.dispose();
+    _customChaptersController.dispose();
     // 释放媒体会话资源（后台播放/焦点）
     // [UI-fix v2.0.11 | 2026-08-10] 防御卸载时序边界：element 已 dispose
     // 时（快速连续导航/测试环境树卸载）ref.read 会抛
@@ -107,45 +112,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
     super.dispose();
   }
 
-  // ===== 定时停止逻辑 =====
-
-  /// 是否正在倒计时
-  bool get _isTimerActive => _remainingSeconds > 0;
-
-  /// 启动定时停止
-  void _startTimer(int minutes) {
-    // 取消已有定时器
-    _stopTimer?.cancel();
-
-    final totalSeconds = minutes * 60;
-    setState(() => _remainingSeconds = totalSeconds);
-
-    // 每秒更新倒计时
-    _stopTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      setState(() {
-        _remainingSeconds--;
-        if (_remainingSeconds <= 0) {
-          // 倒计时结束，暂停播放
-          timer.cancel();
-          _remainingSeconds = 0;
-          if (mounted) {
-            ref.read(audioNotifierProvider.notifier).pause();
-          }
-        }
-      });
-    });
-  }
-
-  /// 取消定时停止
-  void _cancelTimer() {
-    _stopTimer?.cancel();
-    _stopTimer = null;
-    setState(() => _remainingSeconds = 0);
-  }
+  // ===== 定时停止 UI（逻辑在 AudioNotifier）=====
 
   /// 格式化倒计时文本 mm:ss
   String _formatCountdown(int totalSeconds) {
@@ -154,67 +121,121 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
-  /// 显示定时选择底部弹窗
+  /// 显示定时选择底部弹窗（分钟倒计时 + 按章停止，对齐原版 SleepTimerDialog）
   void _showTimerPicker() {
+    final notifier = ref.read(audioNotifierProvider.notifier);
     showModalBottomSheet<void>(
       context: context,
       builder: (sheetContext) {
         return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 16),
-                child: Text(
-                  '定时停止',
-                  style: Theme.of(context).textTheme.titleMedium,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  child: Text(
+                    '定时停止',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
                 ),
-              ),
-              // 预设时间选项
-              ..._kPresetMinutes.map(
-                (minutes) => ListTile(
-                  leading: const Icon(Symbols.timer_rounded),
-                  title: Text('$minutes 分钟'),
-                  onTap: () {
-                    Navigator.pop(sheetContext);
-                    _startTimer(minutes);
-                  },
+                // 预设时间选项
+                ..._kPresetMinutes.map(
+                  (minutes) => ListTile(
+                    leading: const Icon(Symbols.timer_rounded),
+                    title: Text('$minutes 分钟'),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      notifier.startSleepTimer(minutes);
+                    },
+                  ),
                 ),
-              ),
-              // 自定义时长
-              ListTile(
-                leading: const Icon(Symbols.edit_rounded),
-                title: Row(
-                  children: [
-                    const Text('自定义'),
-                    const SizedBox(width: 8),
-                    SizedBox(
-                      width: 60,
-                      child: TextField(
-                        controller: _customMinutesController,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          hintText: '分钟',
-                          isDense: true,
-                          border: UnderlineInputBorder(),
+                // 自定义时长（1~180 分钟）
+                ListTile(
+                  leading: const Icon(Symbols.edit_rounded),
+                  title: Row(
+                    children: [
+                      const Text('自定义'),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 60,
+                        child: TextField(
+                          controller: _customMinutesController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            hintText: '分钟',
+                            isDense: true,
+                            border: UnderlineInputBorder(),
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text('分钟'),
-                  ],
+                      const SizedBox(width: 8),
+                      const Text('分钟'),
+                    ],
+                  ),
+                  onTap: () {
+                    final value =
+                        int.tryParse(_customMinutesController.text) ?? 0;
+                    if (value > 0 && value <= kMaxSleepTimerMinutes) {
+                      Navigator.pop(sheetContext);
+                      notifier.startSleepTimer(value);
+                    }
+                  },
                 ),
-                onTap: () {
-                  final value =
-                      int.tryParse(_customMinutesController.text) ?? 0;
-                  if (value > 0 && value <= 180) {
-                    Navigator.pop(sheetContext);
-                    _startTimer(value);
-                  }
-                },
-              ),
-              const SizedBox(height: 8),
-            ],
+                const Divider(height: 1),
+                // 按章停止（对齐原版：自然播完 N 章后于章末停止）
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 12, 16, 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text('按章停止'),
+                  ),
+                ),
+                ..._kPresetChapters.map(
+                  (chapters) => ListTile(
+                    leading: const Icon(Symbols.menu_book_rounded),
+                    title: Text('$chapters 章'),
+                    onTap: () {
+                      Navigator.pop(sheetContext);
+                      notifier.startChapterStop(chapters);
+                    },
+                  ),
+                ),
+                // 自定义按章数（1~99 章）
+                ListTile(
+                  leading: const Icon(Symbols.edit_rounded),
+                  title: Row(
+                    children: [
+                      const Text('自定义'),
+                      const SizedBox(width: 8),
+                      SizedBox(
+                        width: 60,
+                        child: TextField(
+                          controller: _customChaptersController,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            hintText: '章数',
+                            isDense: true,
+                            border: UnderlineInputBorder(),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text('章'),
+                    ],
+                  ),
+                  onTap: () {
+                    final value =
+                        int.tryParse(_customChaptersController.text) ?? 0;
+                    if (value > 0 && value <= kMaxChapterStopCount) {
+                      Navigator.pop(sheetContext);
+                      notifier.startChapterStop(value);
+                    }
+                  },
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
           ),
         );
       },
@@ -233,8 +254,8 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
       topBar: LegadoAppBar(
         title: Text(widget.effectiveBookName.isNotEmpty ? widget.effectiveBookName : '听书'),
         actions: [
-          // 定时停止按钮
-          _buildTimerButton(),
+          // 定时停止按钮（状态来自 Notifier，退出页面后仍生效）
+          _buildTimerButton(notifier),
           IconButton(
             icon: const Icon(Symbols.settings_rounded),
             // [LAYOUT_PLAN P3] 沉浸域仅顶栏动作行规范：补 tooltip（本体不动）
@@ -278,13 +299,13 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
           ),
         ],
       ),
-      body: _buildBody(provider),
+      body: _buildBody(provider, notifier),
     ),
     );
   }
 
   /// 听书主体（根据状态展示 loading/error/内容三态）
-  Widget _buildBody(AudioState provider) {
+  Widget _buildBody(AudioState provider, AudioNotifier notifier) {
     if (provider.isLoading && !provider.hasChapters) {
       // [STAGE-UI-P43UNIFY2 B3] 裸环换接统一封装（默认参数视觉等价）
       return const Center(child: AppCircularProgressIndicator());
@@ -317,8 +338,8 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
         _buildProgressBar(provider),
         // 播放控制
         _buildControls(provider),
-        // 倒计时显示（定时激活时）
-        if (_isTimerActive) _buildCountdownBar(),
+        // 定时停止显示（激活时）：分钟倒计时或按章剩余
+        if (notifier.isSleepTimerActive) _buildCountdownBar(notifier),
         const Divider(),
         // 设置面板：音频书仅保留语速；TTS 保留完整引擎配置
         if (_showSettings) _buildSettingsPanel(provider),
@@ -331,16 +352,17 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
   }
 
   /// 定时停止按钮（AppBar 中）
-  Widget _buildTimerButton() {
+  Widget _buildTimerButton(AudioNotifier notifier) {
+    final active = notifier.isSleepTimerActive;
     return IconButton(
       icon: Icon(
-        _isTimerActive ? Symbols.timer_rounded : Symbols.timer_rounded,
-        color: _isTimerActive ? Theme.of(context).colorScheme.error : null,
+        Symbols.timer_rounded,
+        color: active ? Theme.of(context).colorScheme.error : null,
       ),
-      tooltip: _isTimerActive ? '取消定时' : '定时停止',
+      tooltip: active ? '取消定时' : '定时停止',
       onPressed: () {
-        if (_isTimerActive) {
-          _cancelTimer();
+        if (active) {
+          notifier.cancelSleepTimer();
         } else {
           _showTimerPicker();
         }
@@ -348,8 +370,11 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
     );
   }
 
-  /// 倒计时显示条（控制区域下方，红色文字突出）
-  Widget _buildCountdownBar() {
+  /// 定时停止显示条（控制区域下方，红色文字突出）
+  Widget _buildCountdownBar(AudioNotifier notifier) {
+    final text = notifier.sleepTimerMode == SleepTimerMode.chapters
+        ? '按章停止 剩余 ${notifier.chaptersToStopRemaining} 章'
+        : '定时停止 ${_formatCountdown(notifier.sleepRemainingSeconds)}';
     return Container(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -358,7 +383,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
           Icon(Symbols.timer_rounded, size: 18, color: Theme.of(context).colorScheme.error),
           const SizedBox(width: 6),
           Text(
-            '定时停止 ${_formatCountdown(_remainingSeconds)}',
+            text,
             style: TextStyle(
               color: Theme.of(context).colorScheme.error,
               fontSize: 16,
@@ -367,7 +392,7 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
           ),
           const SizedBox(width: 12),
           GestureDetector(
-            onTap: _cancelTimer,
+            onTap: notifier.cancelSleepTimer,
             child: Icon(Symbols.close_rounded, size: 18, color: Theme.of(context).colorScheme.error),
           ),
         ],
