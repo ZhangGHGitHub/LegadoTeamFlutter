@@ -297,7 +297,7 @@ void main() {
             pitch: any(named: 'pitch'),
             volume: any(named: 'volume'),
             voiceName: any(named: 'voiceName'),
-          )).thenAnswer((_) async {});
+          )).thenAnswer((_) async => null);
     });
 
     test('play 无章节时不执行', () async {

@@ -17,12 +17,12 @@ export 'audio_state.dart';
 ///
 /// 双路径：
 /// - 音频书（BookType.audio）：getAudioChapterMedia 取址 → StreamAudioPlayer
-/// - TTS 朗读：段落化 audioSpeak（阅读器朗读入口）
+/// - TTS 朗读：段落化 audioSpeak → 合成产物本地文件播放，完成回调驱动段落推进
 ///
-/// — Auto + UI｜2026-08-12（P0-2 流媒体接线）
+/// — Auto + UI｜2026-08-12（P0-2 流媒体接线；A1 批 TTS 真实播放 2026-10-03）
 class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   late final AudioService _audioService;
-  final StreamAudioPlayer _streamPlayer = StreamAudioPlayer();
+  late final StreamAudioPlayer _streamPlayer;
 
   StreamSubscription<MediaButtonEvent>? _mediaButtonSub;
   StreamSubscription<AudioFocusEvent>? _audioFocusSub;
@@ -38,6 +38,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   int _paragraphIndex = 0;
   Timer? _paragraphTimer;
   int _playToken = 0;
+
+  /// 段落级合成/播放代数：手动切段时使旧的在途合成失效，避免旧段覆盖新段
+  int _speakGeneration = 0;
   int? _pendingParagraphIndex;
   bool _introSkipEvaluated = false;
   AudioSkipWindow? _skipWindow;
@@ -70,9 +73,15 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   @override
   AudioState build() {
     _audioService = ref.read(audioServiceProvider);
+    _streamPlayer = ref.read(streamAudioPlayerProvider);
+    // 完成回调按当前模式分发：音频书 → 下一章；TTS → 下一段
     _streamPlayer.onCompleted = () {
-      if (_disposed || !state.isStreamMode) return;
-      unawaited(_onStreamCompleted());
+      if (_disposed) return;
+      if (state.isStreamMode) {
+        unawaited(_onStreamCompleted());
+        return;
+      }
+      unawaited(_onTtsParagraphCompleted());
     };
     _streamPlayer.onProgress = (pos, dur) {
       if (_disposed || !state.isStreamMode) return;
@@ -357,6 +366,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   Future<void> _playTtsParagraphs({int? paragraphIndex}) async {
     state = state.copyWith(state: PlayerState.loading);
     final token = ++_playToken;
+    // 切章/重播入口先停掉上一段残留音频：新段合成期间保持静默而非叠音
+    await _streamPlayer.stop();
     try {
       final content = await _ensureChapterContent(state.currentIndex);
       if (token != _playToken || _disposed) return;
@@ -437,14 +448,31 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     return index;
   }
 
+  /// 合成并播放当前段落（A1 批主路径）
+  ///
+  /// 链路：audioSpeak（Rust 合成 MD5 缓存落盘）→ StreamAudioPlayer.playLocalFile
+  /// → 播放完成回调（onCompleted）驱动 [_onParagraphFinished] 推进下一段。
+  /// 估算时长 Timer 仅在合成/播放失败降级时使用，且失败经
+  /// [AudioState.errorMessage] 给用户可见提示（不静默）。
+  ///
+  /// 段间串行：上一段音频停止后才发起下一段合成，避免新旧音频叠放；
+  /// ttsSpeak 为同步 FFI，长段落合成会带来段间短暂静默（预期，未额外
+  /// 引入预取，避免扩大本批改动面）。
   Future<void> _speakCurrentParagraph(int token) async {
     _paragraphTimer?.cancel();
     if (_paragraphs.isEmpty) return;
+    final gen = ++_speakGeneration;
+    // 先停掉上一段残留音频（手动切段/切章时避免叠音）
+    await _streamPlayer.stop();
+    if (_isSpeakStale(token, gen)) return;
+
     final text = _paragraphs[_paragraphIndex];
     final config = state.config;
+    String? audioPath;
+    Object? failure;
     if (config.engineUrl.isNotEmpty) {
       try {
-        await _api.audioSpeak(
+        audioPath = await _api.audioSpeak(
           text: text,
           engineUrl: config.engineUrl,
           speed: config.speed,
@@ -453,13 +481,54 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
           voiceName: config.voiceName,
         );
       } catch (e) {
-        debugPrint('audioSpeak 失败（不影响朗读 UI 状态）: $e');
+        failure = e;
+      }
+      if (failure == null && (audioPath == null || audioPath.trim().isEmpty)) {
+        failure = StateError('TTS 合成未返回音频文件（引擎或缓存异常）');
       }
     }
-    if (token != _playToken || _disposed) return;
+    if (_isSpeakStale(token, gen)) return;
 
-    final speed = config.speed <= 0 ? 1.0 : config.speed;
-    final seconds = text.length / (_kCharsPerSecond * speed);
+    if (failure == null && audioPath != null && audioPath.trim().isNotEmpty) {
+      try {
+        // 语速已由合成侧应用（engineUrl 模板 speakSpeed），播放侧固定 1.0
+        await _streamPlayer.playLocalFile(audioPath.trim(), speed: 1.0);
+        if (_isSpeakStale(token, gen)) return;
+        if (state.errorMessage != null) {
+          // 上一段降级提示在恢复真实播放后清除
+          state = state.copyWith(errorMessage: null);
+        }
+        // 正常路径到此为止：推进由 onCompleted 回调触发（见 build 分发）
+        return;
+      } catch (e) {
+        failure = e;
+      }
+    }
+    if (_isSpeakStale(token, gen)) return;
+
+    // 降级：合成/播放失败 → 估算时长推进 + 用户可见提示
+    // （无引擎配置时保持既有静默估算行为，不视为失败）
+    if (failure != null && config.engineUrl.isNotEmpty) {
+      state = state.copyWith(
+        errorMessage: '朗读音频不可用，本段按估算时长继续：$failure',
+      );
+    }
+    _scheduleEstimateAdvance(text, config.speed, token, gen);
+  }
+
+  /// 段落级失效判定：播放会话 token 或合成代数任一变化即视为过期
+  bool _isSpeakStale(int token, int gen) =>
+      token != _playToken || gen != _speakGeneration || _disposed;
+
+  /// 降级推进：按字符数估算当前段时长，到点后推进下一段
+  void _scheduleEstimateAdvance(
+    String text,
+    double speed,
+    int token,
+    int gen,
+  ) {
+    final s = speed <= 0 ? 1.0 : speed;
+    final seconds = text.length / (_kCharsPerSecond * s);
     var duration = Duration(milliseconds: (seconds * 1000).round());
     if (duration < _kMinParagraphDuration) {
       duration = _kMinParagraphDuration;
@@ -467,9 +536,15 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       duration = _kMaxParagraphDuration;
     }
     _paragraphTimer = Timer(duration, () {
-      if (token != _playToken || _disposed) return;
+      if (_isSpeakStale(token, gen)) return;
       unawaited(_onParagraphFinished());
     });
+  }
+
+  /// TTS 段落音频自然播完 → 推进下一段（由 StreamAudioPlayer.onCompleted 驱动）
+  Future<void> _onTtsParagraphCompleted() async {
+    if (state.isStreamMode || state.state != PlayerState.playing) return;
+    await _onParagraphFinished();
   }
 
   Future<void> _onParagraphFinished() async {
@@ -631,6 +706,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
         );
       } else {
         _playToken++;
+        // TTS 本地播放：立即停掉当前段音频（恢复时由 play() 重播当前段）
+        unawaited(_streamPlayer.stop());
       }
       state = state.copyWith(state: PlayerState.paused);
       _audioService.notifyPaused();
@@ -737,4 +814,10 @@ final audioNotifierProvider = NotifierProvider<AudioNotifier, AudioState>(
 
 final audioServiceProvider = Provider<AudioService>(
   (ref) => AudioService.instance,
+);
+
+/// StreamAudioPlayer 注入点（单元测试 override 为 Fake/Mock；
+/// 生产环境单实例，TTS 与音频书路径共用）
+final streamAudioPlayerProvider = Provider<StreamAudioPlayer>(
+  (ref) => StreamAudioPlayer(),
 );

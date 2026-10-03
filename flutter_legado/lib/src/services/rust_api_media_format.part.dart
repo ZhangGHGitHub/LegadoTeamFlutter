@@ -337,12 +337,13 @@ mixin RustApiMediaFormat on RustApiDecode implements BookApi {
   /// engineUrl 模板原样透传——占位符替换（{{speakText}}/{{text}}/
   /// {{speakSpeed}}/{{speed}}）、HTTP 音频拉取、Content-Type 校验与
   /// MD5 文件缓存均由 Rust 侧完成，Dart 不再预替换模板。
-  /// 返回语义保持 `Future<void>`（调用方 AudioNotifier.play 不消费返回值）；
-  /// 合成产物 audioPath 由 Rust 缓存落盘，供后续本地播放接线。
+  /// [A1 批 2026-10-03] 返回合成产物绝对路径 audioPath，供 AudioNotifier
+  /// 本地文件播放接线；降级探活（合成管线异常但引擎可达）无本地产物，
+  /// 返回 null 由调用方按估算时长降级。
   /// ttsSpeak 异常时降级为原探活逻辑（模板替换 + http.get），
   /// 保持 audio_notifier 既有 try/catch 保护语义不变。
   @override
-  Future<void> audioSpeak({
+  Future<String?> audioSpeak({
     required String text,
     required String engineUrl,
     double speed = 1.0,
@@ -359,10 +360,12 @@ mixin RustApiMediaFormat on RustApiDecode implements BookApi {
       // 解析合成结果（camelCase）：audioPath / fromCache / contentType
       final result = (jsonDecode(resultJson) as Map<String, dynamic>)
           .cast<String, dynamic>();
+      final audioPath = (result['audioPath'] as String?)?.trim() ?? '';
       debugPrint(
-        'ttsSpeak 合成完成: audioPath=${result['audioPath']} '
+        'ttsSpeak 合成完成: audioPath=$audioPath '
         'fromCache=${result['fromCache']} contentType=${result['contentType']}',
       );
+      return audioPath.isEmpty ? null : audioPath;
     } catch (e) {
       // 降级探活：真实管线异常（引擎不可达/正文为空/缓存目录未就绪等）
       // 时保留原模板替换 + http.get 探活行为，失败仍向上抛出由调用方保护
@@ -381,6 +384,7 @@ mixin RustApiMediaFormat on RustApiDecode implements BookApi {
       if (!probe.isSuccess) {
         throw StateError('HTTP ${probe.statusCode}');
       }
+      return null; // 探活成功但无本地缓存产物，调用方按估算时长降级
     }
   }
 

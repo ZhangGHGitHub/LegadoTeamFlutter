@@ -234,14 +234,14 @@ mixin MockBookApiMediaFormat on MockBookApiStore implements BookApi {
   // ========== 音频播放 ==========
 
   @override
-  Future<void> audioSpeak({
+  Future<String?> audioSpeak({
     required String text,
     required String engineUrl,
     double speed = 1.0,
     double pitch = 1.0,
     double volume = 1.0,
     String? voiceName,
-  }) async {}
+  }) async => null; // Mock 无合成产物：调用方按估算时长降级
 
   @override
   Future<Map<String, dynamic>> ttsSpeak({

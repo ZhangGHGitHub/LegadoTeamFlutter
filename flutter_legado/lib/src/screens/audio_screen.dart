@@ -406,6 +406,20 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
                   color: scheme.onSurfaceVariant,
                 ),
           ),
+          // [A1 批 2026-10-03] TTS 合成/播放失败降级提示（播放中可见，不静默）
+          if (provider.errorMessage != null &&
+              provider.state != PlayerState.error) ...[
+            const SizedBox(height: 8),
+            Text(
+              provider.errorMessage!,
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: scheme.error,
+                  ),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
           if (provider.isStreamMode &&
               (provider.lyric?.trim().isNotEmpty ?? false)) ...[
             const SizedBox(height: 10),

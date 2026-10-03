@@ -367,6 +367,10 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 _buildHeader(context, audio, notifier, theme),
+                // [A1 批 2026-10-03] 合成/播放失败降级提示（errorMessage 为
+                // 播放中仍可见的非致命提示；error 态另有状态文案） — Auto
+                if (audio.errorMessage != null)
+                  _buildErrorBanner(audio, theme),
                 _buildTransport(context, audio, notifier, theme),
                 _buildSpeedRow(context, audio, notifier),
                 _buildBottomActions(context, audio),
@@ -457,6 +461,33 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
             icon: const Icon(Icons.expand_more),
             tooltip: '收起朗读面板',
             onPressed: widget.onDismiss,
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 失败降级提示条（合成/播放失败按估算时长继续时展示，不静默）
+  Widget _buildErrorBanner(AudioState audio, ThemeData theme) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 2, 16, 2),
+      child: Row(
+        children: [
+          Icon(
+            Icons.warning_amber_rounded,
+            size: 14,
+            color: theme.colorScheme.error,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              audio.errorMessage!,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.labelSmall?.copyWith(
+                color: theme.colorScheme.error,
+              ),
+            ),
           ),
         ],
       ),

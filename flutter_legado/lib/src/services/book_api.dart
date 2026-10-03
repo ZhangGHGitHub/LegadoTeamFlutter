@@ -1105,8 +1105,12 @@ abstract class BookApi {
 
   // ========== 音频播放 ==========
 
-  /// TTS 朗读
-  Future<void> audioSpeak({
+  /// TTS 朗读：真实合成并返回本地缓存音频路径（audioPath）
+  ///
+  /// 返回 Rust 侧合成产物绝对路径（MD5 缓存命中直接复用），调用方
+  /// （AudioNotifier）据此做本地文件播放；降级探活路径（合成管线异常
+  /// 但引擎可达）无本地落盘产物，返回 null，由调用方按估算时长降级。
+  Future<String?> audioSpeak({
     required String text,
     required String engineUrl,
     double speed = 1.0,
