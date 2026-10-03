@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.348] - 2026-10-03
+
+### Added
+- [UI] 听书定时停止新增按章节停止（预设 1/2/3/5 章与自定义）。
+- [UI] 退出听书页后定时停止继续在后台生效。
+
+### Fixed
+- [UI] 修复听书定时停止在退出页面后失效。
+
 ## [2.0.347] - 2026-10-03
 
 ### Added
