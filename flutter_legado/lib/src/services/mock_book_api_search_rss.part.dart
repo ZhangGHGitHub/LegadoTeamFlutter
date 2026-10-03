@@ -417,6 +417,10 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
   @override
   Future<Book> importLocalBook(String filePath) async {
     await _ensureBooksLoaded();
+    // [cbz 批 C | 2026-10-03] 与 Rust `import_local_book` 对齐：`.cbz` 图片
+    // 漫画包额外带 image(64) 媒体位（LOCAL|image=0x1040），其余本地格式仅
+    // LOCAL；位域语义见 BookType（book.dart），勿用 == 单值比较。
+    final isCbz = filePath.toLowerCase().endsWith('.cbz');
     final book = Book(
       bookUrl: 'file://$filePath',
       name: filePath
@@ -424,7 +428,7 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
           .last
           .replaceAll(RegExp(r'\.\w+$'), ''),
       author: '本地导入',
-      bookType: BookType.local,
+      bookType: isCbz ? BookType.local | BookType.image : BookType.local,
     );
     _books.add(book);
     return book;

@@ -182,6 +182,50 @@ void main() {
     expect(observer.lastArguments, isNull);
     expect(reader.openedBook, book);
   });
+
+  // [cbz 批 C | 2026-10-03] cbz 漫画包开书路由钉住：Rust importLocalBook
+  // 对 .cbz 返回 bookType=LOCAL|image(0x1040)，BookOpenUtils 位域路由须
+  // 进 /reader-comic（零代码改动，补测试防回归）。
+  test('类型位常量：LOCAL|image=0x1040（与 Rust book_type LOCAL|IMAGE_BIT 对齐）',
+      () {
+    expect(BookType.local, 0x1000);
+    expect(BookType.image, 64);
+    expect(BookType.local | BookType.image, 0x1040);
+    expect(
+      BookOpenUtils.routeForTypeBits(BookType.image),
+      AppRoutes.readerComic,
+    );
+  });
+
+  testWidgets('本地 cbz（LOCAL|image=0x1040）→ 漫画阅读器 /reader-comic（参数 bookUrl）',
+      (tester) async {
+    const book = Book(
+      bookUrl: 'file:///storage/books/本地漫画.cbz',
+      name: '本地漫画',
+      origin: BookType.localTag,
+      bookType: BookType.local | BookType.image,
+      durChapterIndex: 1,
+      durChapterPos: 0,
+    );
+    final api = MockRustApi();
+    final reader = _RecordingReaderNotifier();
+
+    await tester.pumpWidget(harness(
+      book: book,
+      api: api,
+      readerNotifier: reader,
+    ));
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+
+    // 本地书不做书源匹配；媒体位 image 直接路由漫画阅读器并传 bookUrl
+    expect(BookOpenUtils.typeBitsOf(book), BookType.image);
+    expect(observer.lastName, AppRoutes.readerComic);
+    expect(observer.lastArguments, book.bookUrl);
+    // 不走文本阅读器装载（needsReaderNotifier=false）
+    expect(reader.openedBook, isNull);
+    verifyNever(() => api.getBookSources());
+  });
 }
 
 /// 路由日志观察者：断言最终 push 的路由名与参数

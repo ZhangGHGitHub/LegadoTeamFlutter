@@ -78,6 +78,33 @@ void main() {
       final book = await api.getBook('mock://book/1');
       expect(book!.group, 5);
     });
+
+    // [cbz 批 C | 2026-10-03] mock importLocalBook 与 Rust 行为对齐：
+    // .cbz → LOCAL|image(0x1040)；其余本地格式仅 LOCAL 无媒体位。
+    test('importLocalBook cbz 返回 LOCAL|image(0x1040)，与 Rust 对齐', () async {
+      final book = await api.importLocalBook('/books/本地漫画.cbz');
+      expect(book.bookType, 0x1040, reason: 'cbz 应为 LOCAL|image 位域组合');
+      expect(book.bookType & BookType.local, BookType.local);
+      expect(book.bookType & BookType.image, BookType.image);
+      expect(book.origin, BookType.localTag);
+      expect(book.name, '本地漫画');
+    });
+
+    test('importLocalBook cbz 扩展名大小写不敏感', () async {
+      final book = await api.importLocalBook(r'D:\Books\Comic.CBZ');
+      expect(book.bookType, BookType.local | BookType.image);
+      expect(book.bookType & BookType.image, BookType.image);
+    });
+
+    test('importLocalBook 非 cbz（txt/epub）保持 LOCAL 无媒体位', () async {
+      final txt = await api.importLocalBook('/books/小说.txt');
+      expect(txt.bookType, BookType.local);
+      expect(txt.bookType & BookType.image, 0);
+
+      final epub = await api.importLocalBook('/books/小说.epub');
+      expect(epub.bookType, BookType.local);
+      expect(epub.bookType & BookType.image, 0);
+    });
   });
 
   group('书源操作', () {

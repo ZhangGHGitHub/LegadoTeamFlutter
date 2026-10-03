@@ -17,10 +17,12 @@ import '../widgets/loading_indicator.dart';
 import '../utils/error_message.dart';
 import 'archive_import_dialog.dart';
 
-/// 支持的导入格式（azw3/azw 为 KF8 MOBI，Rust LocalBook 已支持）
-const _supportedFormats = ['epub', 'txt', 'mobi', 'azw3', 'azw', 'pdf', 'umd'];
+/// 支持的导入格式（azw3/azw 为 KF8 MOBI，Rust LocalBook 已支持；
+/// [cbz 批 C | 2026-10-03] cbz 图片漫画包：Rust 侧整本导入
+/// bookType=LOCAL|image(0x1040)，不按压缩包解压，故列此处而非 [_archiveFormats]）
+const _supportedFormats = ['epub', 'txt', 'mobi', 'azw3', 'azw', 'pdf', 'umd', 'cbz'];
 
-/// 支持的压缩包格式
+/// 支持的压缩包格式（cbz 漫画包不在此列：走整本导入而非解压路径）
 const _archiveFormats = ['zip', 'rar', '7z'];
 
 /// 所有可浏览格式（书籍 + 压缩包）
