@@ -346,7 +346,7 @@ pub async fn get_chapter_media(
         word_count: None,
     };
 
-    let engine = crate::handlers::web_book::build_engine().map_err(ApiError::from)?;
+    let engine = crate::handlers::web_book::build_engine(&state).map_err(ApiError::from)?;
     let content = engine
         .get_content(&source, &web_chapter)
         .await

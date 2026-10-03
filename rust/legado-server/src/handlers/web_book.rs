@@ -9,10 +9,7 @@
 //! [P5-1 链 b] 抓取本体改用共享 crate `legado-fetcher`（与 App/ffi 主链路
 //! 同一 `RealBookSourceFetcher` 实现）：本文件此前的本地阉割分叉版（无
 //! rate limit 门控/webView 通道/charset 三级解码/重定向 final_url/data: URI
-//! 等）已整体删除。宿主注入面经 [`server_deps`] 组装：进程级限速注册表
-//! （REST 端点获得源级限速门控的关键）+ server 原构造语义的 HTTP 客户端。
-//! `login_header`/`book_variable`/`source_context` 起步不注入（方案登记的
-//! 「行为无损起点」）。
+//! 等）已整体删除。
 //!
 //! [P5-1 链 b2] 四个 handler 改调共享 fetcher 的**自由入口**
 //! （`legado_fetcher::web_book::webbook_search/info/chapters/content`），
@@ -20,13 +17,21 @@
 //! 由此在 REST 上打通：
 //! - mainJs JS 书源分派（JS 源经 REST 可用；quickjs 档真执行）；
 //! - `begin_book_flow` 流程生命周期（flow scope 写入进程级单槽）与详情/
-//!   目录阶段的 book 元信息、章节→book 缓存记录；
-//! - 详情/目录的 DB `books.variable` `{{key}}` 变量链**落点**——但 server
-//!   注入面 `book_variable` 保持 None（server 侧未接 DB 书籍变量缓存模块），
-//!   该链在 server 无值可读，维持优雅降级（见 [`server_deps`] 边界说明）。
+//!   目录阶段的 book 元信息、章节→book 缓存记录。
 //!
-//! [`build_engine`] 保留：reader/audio/toc_update 兄弟 handler 仍经引擎入口
-//! 复用同一注入面。
+//! [P5 尾项] 宿主注入面 [`server_deps`] 三闭包全量接入 AppState DB（与
+//! ffi `ffi_deps` 同语义、同缓存键口径，数据面为 server 自身 DB 单例）：
+//! - `login_header`：`caches` 表键 `loginHeader_<书源URL>`，请求经
+//!   `parse_source_headers` 合并登录头；
+//! - `book_variable`：`books.variable`（`find_by_url` → `originBookUrl`
+//!   反查两路，同 ffi `db_book_variable`），详情/目录 `{{key}}` 变量链
+//!   从「无值可读」变为可读用户持久化变量；
+//! - `source_context`：setup 脚本（共享 [`legado_fetcher::source_setup`]
+//!   生成），宿主数据取同一 DB 的 `infoMap_<书源URL>` / 登录缓存键，
+//!   书源 JS 上下文（source/cookie/loginUrl/header 规则）对 REST 请求生效。
+//!
+//! [`build_engine`] 保留：reader/audio/toc_update 兄弟 handler 亦经引擎入口
+//! 复用同一注入面（已接入 state）。
 
 use std::sync::{Arc, OnceLock};
 
@@ -39,6 +44,7 @@ use crate::state::AppState;
 use legado_core::models::BookSource;
 use legado_core::web_book::{WebBookEngine, WebBookInfo, WebChapter, WebSearchResult};
 use legado_core::{LegadoError, LegadoResult};
+use legado_db::{BookRepository, CacheRepository};
 use legado_fetcher::deps::FetcherDeps;
 use legado_fetcher::rate_limit::RateLimiterRegistry;
 use legado_net::{LegadoClient, LegadoClientConfig};
@@ -141,25 +147,109 @@ pub(crate) fn refresh_source_rate_limit(source_url: &str, concurrent_rate: &str)
     rate_limiter().refresh(source_url, concurrent_rate);
 }
 
+/// 同步读取 AppState DB（宿主注入闭包的执行面）
+///
+/// `FetcherDeps` 闭包是同步签名，不能 `.await` tokio Mutex。分级策略：
+/// 1. 快路径 `try_lock`：REST handler 自身「查完即放」后才调 fetcher，绝大多数
+///    调用零等待命中；
+/// 2. 锁被并发 handler 持有时，多线程 runtime（生产 `#[tokio::main]` 默认档）
+///    转入 `block_in_place` 阻塞等待——不阻塞其它 worker，语义=正确读到库值；
+/// 3. current_thread runtime（`#[tokio::test]` 默认档）被持有时不等待
+///    （持锁任务无法推进，等待即死锁），返回 `None` 优雅降级=无值可读。
+///
+/// 调用纪律（code-reviewer P2-1 禁令，违反会死锁/panic，勿移除）：
+/// - **持有 `state.db` guard 的任务内不得进入 fetcher/webbook 链**——同任务
+///   重入会经 `blocking_lock` 等待自己持有的锁，多线程档永久挂死；
+/// - **不得在 `Runtime::block_on` 根 future 直调 webbook 链**——该线程无
+///   worker ctx，`block_in_place` 直通不清 entered 标志，随后 `blocking_lock`
+///   无法进入 blocking region → panic（tokio 1.53.1 `worker.rs`/`block_on.rs`）。
+///   当前全部接线点均为 axum handler/MT worker/spawn_blocking，不可达此两态。
+fn with_state_db<T>(
+    state: &AppState,
+    f: impl FnOnce(&legado_db::Database) -> Option<T>,
+) -> Option<T> {
+    if let Ok(guard) = state.db.try_lock() {
+        return f(&guard);
+    }
+    let multi_thread = tokio::runtime::Handle::try_current()
+        .map(|h| h.runtime_flavor() == tokio::runtime::RuntimeFlavor::MultiThread)
+        .unwrap_or(false);
+    if multi_thread {
+        return tokio::task::block_in_place(|| f(&state.db.blocking_lock()));
+    }
+    None
+}
+
 /// 组装 server 宿主注入面
 ///
 /// - `client`：按 server 原构造语义新建 `LegadoClientConfig::default()`
 ///   客户端（原 P2-A 后为单次构造 + panic；本次保留单次构造语义但
 ///   改为错误上报 → handler 500，不 panic）；
 /// - `rate_limiter`：进程级注册表（见 [`rate_limiter`]）；
-/// - `login_header` / `book_variable` / `source_context`：起步不注入
-///   （方案登记的「行为无损起点」：server 侧无等价的登录头/书籍变量
-///   DB 缓存模块与书源 JS setup 构造器），链 b2 改走自由入口后依旧保持：
-///   - `login_header`（经 `parse_source_headers`）与 `source_context`
-///     （经 setup 脚本）在共享 fetcher 路径即时生效——None 即不注入；
-///   - `book_variable` 是自由入口详情/目录 `{{key}}` 变量链的落点：
-///     **JS 书源分派已可用（mainJs 不依赖该闭包）**，而 DB 变量链因
-///     server 未接书籍变量缓存模块保持 None（无值可读 → `@put` 导出
-///     兜底，行为=不注入），后续接 DB 时在此补闭包即可。
-fn server_deps() -> LegadoResult<FetcherDeps> {
+/// - `login_header`：按书源 URL 查 `caches` 表 `loginHeader_<url>`（与 ffi
+///   `source_login_cache::get_login_header` 同键口径）；
+/// - `book_variable`：按书籍取址点查 `books.variable`（`find_by_url` 未命中
+///   再按 `originBookUrl` 反查，与 ffi `db_book_variable` 逐行同语义）；
+/// - `source_context`：按书源生成 JS setup 脚本（共享
+///   [`legado_fetcher::source_setup`]），宿主数据取同一 DB 的
+///   `infoMap_<url>` / `loginHeader_<url>` / `userInfo_<url>` 缓存键
+///   （与 ffi `explore_info_map` / `source_login_cache` 同键）。
+///
+/// 三闭包经 [`with_state_db`] 同步读 AppState DB（`Arc<AppState>` 捕获，
+/// 调用时点取库值而非装配时快照）。
+fn server_deps(state: &Arc<AppState>) -> LegadoResult<FetcherDeps> {
     let client = LegadoClient::new(LegadoClientConfig::default())
         .map_err(|e| LegadoError::Internal(format!("LegadoClient init: {e}")))?;
-    Ok(FetcherDeps::new(client).with_rate_limiter(rate_limiter()))
+
+    let login_header_state = Arc::clone(state);
+    let book_variable_state = Arc::clone(state);
+    let source_context_state = Arc::clone(state);
+
+    Ok(FetcherDeps::new(client)
+        .with_rate_limiter(rate_limiter())
+        .with_login_header(Arc::new(move |source_url: &str| {
+            let key = format!("loginHeader_{source_url}");
+            with_state_db(&login_header_state, |db| {
+                CacheRepository::new(db.connection())
+                    .get(&key)
+                    .ok()
+                    .flatten()
+            })
+        }))
+        .with_book_variable(Arc::new(move |book_url: &str| {
+            with_state_db(&book_variable_state, |db| {
+                let repo = BookRepository::new(db.connection());
+                let found = match repo.find_by_url(book_url).ok()? {
+                    Some(book) => Some(book),
+                    None => repo.find_by_origin_book_url(book_url).ok()?,
+                };
+                found.and_then(|b| b.variable)
+            })
+        }))
+        .with_source_context(Arc::new(move |source: &BookSource| {
+            let tag = source.book_source_url.clone();
+            with_state_db(&source_context_state, |db| {
+                let repo = CacheRepository::new(db.connection());
+                let info_map = repo
+                    .get(&format!("infoMap_{tag}"))
+                    .ok()
+                    .flatten()
+                    .and_then(|json| {
+                        serde_json::from_str::<std::collections::HashMap<String, String>>(&json)
+                            .ok()
+                    })
+                    .unwrap_or_default();
+                let login_header = repo.get(&format!("loginHeader_{tag}")).ok().flatten();
+                let login_info = repo.get(&format!("userInfo_{tag}")).ok().flatten();
+                legado_fetcher::source_setup::book_source_js_setup_script(
+                    source,
+                    &info_map,
+                    login_header.as_deref(),
+                    login_info.as_deref(),
+                )
+                .ok()
+            })
+        })))
 }
 
 /// 构建 WebBookEngine（共享 fetcher + server 注入面）
@@ -167,11 +257,15 @@ fn server_deps() -> LegadoResult<FetcherDeps> {
 /// [P5-1 链 b2] 保留给 reader/audio/toc_update 兄弟 handler 的引擎入口调用
 /// （4 个 webbook handler 已改走自由入口，不经本函数）。
 ///
+/// [P5 尾项] 注入面含 AppState DB 闭包 → 需传入请求级 state。
+///
 /// 出错上报（而非旧版 `expect` panic）：与 ffi 侧
 /// `web_book::build_engine() -> LegadoResult<_>` 同形态，构造失败由
 /// 调用方映射为 5xx。
-pub(crate) fn build_engine() -> LegadoResult<WebBookEngine<RealBookSourceFetcher>> {
-    Ok(legado_fetcher::web_book::build_engine(server_deps()?))
+pub(crate) fn build_engine(
+    state: &Arc<AppState>,
+) -> LegadoResult<WebBookEngine<RealBookSourceFetcher>> {
+    Ok(legado_fetcher::web_book::build_engine(server_deps(state)?))
 }
 
 // ─── 处理器函数（P5-1 链 b2：自由入口直连） ────────────────────────────────────
@@ -183,15 +277,19 @@ pub(crate) fn build_engine() -> LegadoResult<WebBookEngine<RealBookSourceFetcher
 /// `WebBookEngine::search`（前置校验语义不变：空 searchUrl/空关键词
 /// → Parser 400）。响应 schema 不变。
 pub async fn search_books(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<WebBookSearchRequest>,
 ) -> Result<Json<WebBookSearchResponse>, ApiError> {
     let source_json = serde_json::to_string(&req.source).map_err(LegadoError::Serialization)?;
     let page = req.page.unwrap_or(1);
     // 自由入口返回 `Vec<WebSearchResult>` JSON 数组字符串（与 ffi 同形态）
-    let raw =
-        legado_fetcher::web_book::webbook_search(server_deps()?, &source_json, &req.query, page)
-            .await?;
+    let raw = legado_fetcher::web_book::webbook_search(
+        server_deps(&state)?,
+        &source_json,
+        &req.query,
+        page,
+    )
+    .await?;
     let results: Vec<WebSearchResult> =
         serde_json::from_str(&raw).map_err(LegadoError::Serialization)?;
     let total = results.len();
@@ -206,16 +304,18 @@ pub async fn search_books(
 /// POST /api/webbook/info — 获取书籍详情
 ///
 /// [P5-1 链 b2] 改走自由入口：JS 书源分派 + 规则源变量链落点
-/// （`book_variable` 注入为 None → 变量表为空，见 [`server_deps`] 边界）。
+/// （[P5 尾项] `book_variable` 已接 AppState DB，用户持久化变量可读；
+/// 无书行/空值仍回退 `@put` 导出兜底）。
 /// 响应 schema 不变（`WebBookInfo`）。
 pub async fn get_book_info(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<WebBookInfoRequest>,
 ) -> Result<Json<WebBookInfo>, ApiError> {
     let source_json = serde_json::to_string(&req.source).map_err(LegadoError::Serialization)?;
     // 自由入口返回 `WebBookInfo` JSON 字符串（与 ffi 同形态）
     let raw =
-        legado_fetcher::web_book::webbook_info(server_deps()?, &source_json, &req.book_url).await?;
+        legado_fetcher::web_book::webbook_info(server_deps(&state)?, &source_json, &req.book_url)
+            .await?;
     let info: WebBookInfo = serde_json::from_str(&raw).map_err(LegadoError::Serialization)?;
     Ok(Json(info))
 }
@@ -227,13 +327,13 @@ pub async fn get_book_info(
 /// 空转 None，目录地址由 `book_url` 经详情/init→tocUrl 规则重推，与
 /// 链 b 引擎入口语义一致）。响应 schema 不变（`WebBookChaptersResponse`）。
 pub async fn get_chapters(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<WebBookChaptersRequest>,
 ) -> Result<Json<WebBookChaptersResponse>, ApiError> {
     let source_json = serde_json::to_string(&req.source).map_err(LegadoError::Serialization)?;
     // 自由入口返回 `Vec<WebChapter>` JSON 数组字符串（与 ffi 同形态）
     let raw = legado_fetcher::web_book::webbook_chapters(
-        server_deps()?,
+        server_deps(&state)?,
         &source_json,
         &req.book_url,
         "",
@@ -253,16 +353,19 @@ pub async fn get_chapters(
 /// `WebBookEngine::get_content` 的正文规则/空 URL 校验）。响应 schema
 /// 不变（`WebBookContentResponse`）。
 pub async fn get_content(
-    State(_state): State<Arc<AppState>>,
+    State(state): State<Arc<AppState>>,
     Json(req): Json<WebBookContentRequest>,
 ) -> Result<Json<WebBookContentResponse>, ApiError> {
     let chapter_url = req.chapter.url.clone();
     let chapter_title = req.chapter.title.clone();
     let source_json = serde_json::to_string(&req.source).map_err(LegadoError::Serialization)?;
     let chapter_json = serde_json::to_string(&req.chapter).map_err(LegadoError::Serialization)?;
-    let content =
-        legado_fetcher::web_book::webbook_content(server_deps()?, &source_json, &chapter_json)
-            .await?;
+    let content = legado_fetcher::web_book::webbook_content(
+        server_deps(&state)?,
+        &source_json,
+        &chapter_json,
+    )
+    .await?;
     Ok(Json(WebBookContentResponse {
         content,
         chapter_url,
@@ -321,20 +424,181 @@ mod tests {
         .unwrap()
     }
 
-    /// [P5-1 链 b] 注入面装配钉死：client 可构造（不 panic）、限速注册表
-    /// 进程级共享（跨 build/每请求调用同一 Arc——限速窗口状态跨请求保持的
-    /// 关键）、启动期未注入的宿主闭包保持 None（行为无损起点）。
+    /// [P5-1 链 b + P5 尾项] 注入面装配钉死：client 可构造（不 panic）、
+    /// 限速注册表进程级共享（跨 build/每请求调用同一 Arc——限速窗口状态跨
+    /// 请求保持的关键）、三宿主闭包全量接入（AppState DB 读）。
     #[test]
-    fn test_server_deps_shares_process_rate_limiter() {
-        let a = server_deps().expect("server deps 可构造（默认客户端）");
-        let b = server_deps().expect("server deps 可构造（默认客户端）");
+    fn test_server_deps_shares_process_rate_limiter_and_injects_host_closures() {
+        let state = make_test_state();
+        let a = server_deps(&state).expect("server deps 可构造（默认客户端）");
+        let b = server_deps(&state).expect("server deps 可构造（默认客户端）");
         assert!(
             Arc::ptr_eq(&a.rate_limiter, &b.rate_limiter),
             "限速注册表必须进程级共享（否则每个请求重置窗口 = 无限速）"
         );
-        assert!(a.login_header.is_none(), "启动期登录头闭包应为 None");
-        assert!(a.book_variable.is_none(), "启动期书籍变量闭包应为 None");
-        assert!(a.source_context.is_none(), "启动期书源 setup 闭包应为 None");
+        assert!(a.login_header.is_some(), "登录头闭包应已注入（DB 读）");
+        assert!(a.book_variable.is_some(), "书籍变量闭包应已注入（DB 读）");
+        assert!(a.source_context.is_some(), "书源 setup 闭包应已注入");
+    }
+
+    /// [P5 尾项] `login_header_for`：读 DB `caches` 表 `loginHeader_<url>`
+    /// 键（与 ffi `source_login_cache::get_login_header` 同键）；未命中 →
+    /// None 优雅降级。闭包按调用时点读库（装配后播种也可读到）。
+    #[tokio::test]
+    async fn test_server_deps_login_header_from_db() {
+        let state = make_test_state();
+        let deps = server_deps(&state).expect("server deps");
+        assert!(
+            deps.login_header_for("https://login-unseeded.example.com")
+                .is_none(),
+            "未种数据的书源应无登录头（优雅降级）"
+        );
+        {
+            let db = state.db.lock().await;
+            CacheRepository::new(db.connection())
+                .put(
+                    "loginHeader_https://login.example.com",
+                    r#"{"X-Login-Token":"secret"}"#,
+                    0,
+                )
+                .expect("种登录头");
+        }
+        assert_eq!(
+            deps.login_header_for("https://login.example.com")
+                .as_deref(),
+            Some(r#"{"X-Login-Token":"secret"}"#),
+            "闭包应读到装配后种入的登录头（调用时点取库，非装配快照）"
+        );
+    }
+
+    /// [P5 尾项] `book_variable_for`：读 `books.variable`；未换源书直查
+    /// bookUrl，换源书按 `originBookUrl` 反查（与 ffi `db_book_variable`
+    /// 两路逐行同语义）；无行/空值 → None（deps 层再过滤空白串）。
+    #[tokio::test]
+    async fn test_server_deps_book_variable_from_db() {
+        use legado_db::repository::Repository;
+
+        let state = make_test_state();
+        let deps = server_deps(&state).expect("server deps");
+        {
+            let db = state.db.lock().await;
+            let repo = BookRepository::new(db.connection());
+            repo.insert(&legado_core::models::Book {
+                book_url: "https://book-variable.example.com/1".to_string(),
+                name: "变量书".to_string(),
+                author: "作者".to_string(),
+                variable: Some(r#"{"custom":"db-val"}"#.to_string()),
+                ..legado_core::models::Book::default()
+            })
+            .expect("插入未换源书");
+            repo.insert(&legado_core::models::Book {
+                book_url: "https://old-source.example.com/1".to_string(),
+                name: "换源书".to_string(),
+                author: "作者".to_string(),
+                variable: Some(r#"{"custom":"switched"}"#.to_string()),
+                origin_book_url: "https://book-variable.example.com/switched".to_string(),
+                ..legado_core::models::Book::default()
+            })
+            .expect("插入换源书");
+            repo.insert(&legado_core::models::Book {
+                book_url: "https://book-variable.example.com/empty".to_string(),
+                name: "空变量书".to_string(),
+                author: "作者".to_string(),
+                variable: Some("   ".to_string()),
+                ..legado_core::models::Book::default()
+            })
+            .expect("插入空变量书");
+        }
+        assert_eq!(
+            deps.book_variable_for("https://book-variable.example.com/1")
+                .as_deref(),
+            Some(r#"{"custom":"db-val"}"#),
+            "未换源书直查 bookUrl"
+        );
+        assert_eq!(
+            deps.book_variable_for("https://book-variable.example.com/switched")
+                .as_deref(),
+            Some(r#"{"custom":"switched"}"#),
+            "换源书按 originBookUrl 反查"
+        );
+        assert!(
+            deps.book_variable_for("https://book-variable.example.com/empty")
+                .is_none(),
+            "空白变量应过滤（对齐 ffi db_book_variable）"
+        );
+        assert!(
+            deps.book_variable_for("https://book-variable.example.com/missing")
+                .is_none(),
+            "无书行 → None"
+        );
+    }
+
+    /// [P5 尾项] `setup_script_for`：宿主数据取 DB `infoMap_<url>` /
+    /// `loginHeader_<url>` / `userInfo_<url>`（与 ffi 同键），生成脚本含
+    /// source/baseUrl/loginUrl 绑定、infoMap 快照与登录缓存预置。
+    #[tokio::test]
+    async fn test_server_deps_source_context_from_db() {
+        let state = make_test_state();
+        let deps = server_deps(&state).expect("server deps");
+        let source = BookSource {
+            book_source_url: "https://setup.example.com".to_string(),
+            book_source_name: "setup 源".to_string(),
+            login_url: Some("https://setup.example.com/login".to_string()),
+            ..BookSource::default()
+        };
+        {
+            let db = state.db.lock().await;
+            let repo = CacheRepository::new(db.connection());
+            repo.put("infoMap_https://setup.example.com", r#"{"榜类":"推荐"}"#, 0)
+                .expect("种 infoMap");
+            repo.put(
+                "loginHeader_https://setup.example.com",
+                r#"{"X-Token":"abc"}"#,
+                0,
+            )
+            .expect("种登录头");
+            repo.put(
+                "userInfo_https://setup.example.com",
+                r#"{"邮箱":"a@b.c"}"#,
+                0,
+            )
+            .expect("种用户信息");
+        }
+        let script = deps
+            .setup_script_for(&source)
+            .expect("setup 脚本应生成（DB 闭包已注入）");
+        assert!(
+            script.contains(r#"globalThis.baseUrl = "https://setup.example.com";"#),
+            "脚本应绑定书源 baseUrl"
+        );
+        assert!(
+            script.contains(r#"globalThis.loginUrl = "https://setup.example.com/login";"#),
+            "脚本应绑定书源 loginUrl"
+        );
+        assert!(
+            script.contains(r#"__infoData = {"榜类":"推荐"}"#),
+            "infoMap 快照应入脚本（DB infoMap_<url> 键）"
+        );
+        assert!(
+            script.contains("__loginHeaderSeed") && script.contains("X-Token"),
+            "登录头预置应入脚本（DB loginHeader_<url> 键）"
+        );
+        assert!(
+            script.contains("__loginInfoSeed") && script.contains("邮箱"),
+            "用户信息预置应入脚本（DB userInfo_<url> 键）"
+        );
+        assert!(
+            script.contains("__mountBookSourceApi"),
+            "脚本应挂载 BookSource API"
+        );
+        // 未命中任何缓存键的书源：仍生成基础脚本（宿主数据为空值，不报错）
+        let bare = deps
+            .setup_script_for(&BookSource {
+                book_source_url: "https://setup-bare.example.com".to_string(),
+                ..BookSource::default()
+            })
+            .expect("无缓存数据也应生成基础 setup");
+        assert!(bare.contains("https://setup-bare.example.com"));
     }
 
     #[tokio::test]
@@ -653,6 +917,140 @@ mod tests {
         }
     }
 
+    /// [P5 尾项] REST 端到端：登录头经 DB 注入并发往源站。
+    ///
+    /// mock 源站仅在请求携带 `X-Login-Token: secret` 时返回 1 条结果。状态
+    /// DB 种入 `loginHeader_<bookSourceUrl>` 后请求得结果，未种数据的同构
+    /// 书源得 0 条——证明 `server_deps` 的 login_header 闭包在 REST webbook
+    /// 链路真实被调用且生效（装配断言之外的链路可达证明）。
+    async fn start_mock_login_gated_server() -> String {
+        use axum::extract::Query;
+        use axum::http::HeaderMap;
+        use axum::response::Html;
+        use axum::routing::get;
+        use std::collections::HashMap;
+
+        async fn mock_search(
+            Query(params): Query<HashMap<String, String>>,
+            headers: HeaderMap,
+        ) -> Html<String> {
+            let key = params.get("q").cloned().unwrap_or_default();
+            let authed =
+                headers.get("X-Login-Token").and_then(|v| v.to_str().ok()) == Some("secret");
+            if authed {
+                Html(format!(
+                    "<html><body>\
+                     <div class=\"result\">\
+                     <span class=\"name\">已登录-{key}</span>\
+                     <span class=\"author\">作者</span>\
+                     <a class=\"book\" href=\"/book/1\">详情</a>\
+                     </div></body></html>"
+                ))
+            } else {
+                Html("<html><body></body></html>".to_string())
+            }
+        }
+
+        let app = axum::Router::new().route("/search", get(mock_search));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("mock 登录门控服务可绑定回环端口");
+        let addr = listener.local_addr().expect("mock 服务地址");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        format!("http://{addr}")
+    }
+
+    #[tokio::test]
+    async fn test_webbook_search_rest_injects_login_header_from_db() {
+        let base = start_mock_login_gated_server().await;
+        let state = make_test_state();
+        {
+            let db = state.db.lock().await;
+            CacheRepository::new(db.connection())
+                .put(
+                    &format!("loginHeader_{base}"),
+                    r#"{"X-Login-Token":"secret"}"#,
+                    0,
+                )
+                .expect("种登录头");
+        }
+        let app = create_router(state);
+
+        // 已种登录头：mock 源站放行 → 1 条结果
+        let seeded_body = serde_json::to_string(&json!({
+            "source": {
+                "bookSourceUrl": base,
+                "bookSourceName": "登录门控源",
+                "searchUrl": format!("{base}/search?q={{key}}"),
+                "ruleSearch": {
+                    "bookList": "class.result",
+                    "name": "class.name@text",
+                    "author": "class.author@text",
+                    "bookUrl": "class.book@href"
+                }
+            },
+            "query": "三体",
+            "page": 1
+        }))
+        .unwrap();
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/webbook/search")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(seeded_body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "搜索应 200");
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("读取响应体");
+        let body: Value = serde_json::from_slice(&bytes).expect("响应为 JSON");
+        assert_eq!(body["total"], 1, "携带登录头应得 1 条结果");
+        assert_eq!(body["results"][0]["name"], "已登录-三体");
+
+        // 未种登录头的同构书源：mock 源站拒绝 → 0 条（差异来自 DB 登录头注入）
+        let unseeded_body = serde_json::to_string(&json!({
+            "source": {
+                "bookSourceUrl": format!("{base}/unseeded"),
+                "bookSourceName": "未登录源",
+                "searchUrl": format!("{base}/search?q={{key}}"),
+                "ruleSearch": {
+                    "bookList": "class.result",
+                    "name": "class.name@text",
+                    "author": "class.author@text",
+                    "bookUrl": "class.book@href"
+                }
+            },
+            "query": "三体",
+            "page": 1
+        }))
+        .unwrap();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/webbook/search")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(unseeded_body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "未种源搜索也应 200");
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("读取响应体");
+        let body: Value = serde_json::from_slice(&bytes).expect("响应为 JSON");
+        assert_eq!(body["total"], 0, "无登录头应 0 条（mock 未放行）");
+    }
+
     /// [P5-1 链 b2] REST 端点获得 mainJs JS 书源分派（链 b 引擎入口不可达）：
     /// JS 源（searchUrl 为空、仅 mainJs）经 `/api/webbook/search` 返回脚本
     /// 结果，证明自由入口的 JS 分支在 server 侧可用。仅 quickjs 档真执行
@@ -698,8 +1096,7 @@ mod tests {
         assert_eq!(body["total"], 1, "JS 源搜索结果数");
         assert_eq!(body["results"][0]["name"], "js-三体", "JS mainJs 返回值");
         assert_eq!(
-            body["results"][0]["source_url"],
-            "https://js-rest.example.com",
+            body["results"][0]["source_url"], "https://js-rest.example.com",
             "JS 结果 source_url 应回填书源 URL"
         );
     }

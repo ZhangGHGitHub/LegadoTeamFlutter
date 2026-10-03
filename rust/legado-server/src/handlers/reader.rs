@@ -89,8 +89,8 @@ pub async fn get_chapter_content(
         }
     };
 
-    // 2. 复用 web_book 同款正文抓取链路（含分页）
-    let engine = crate::handlers::web_book::build_engine().map_err(ApiError::from)?;
+    // 2. 复用 web_book 同款正文抓取链路（含分页；[P5 尾项] 注入面含 AppState DB 闭包）
+    let engine = crate::handlers::web_book::build_engine(&state).map_err(ApiError::from)?;
     let web_chapter = WebChapter::new(chapter.index, chapter.title.clone(), chapter.url.clone());
     let content = engine
         .get_content(&source, &web_chapter)

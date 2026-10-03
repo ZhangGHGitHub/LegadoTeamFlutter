@@ -2,8 +2,9 @@
 //!
 //! 共享 crate 不持有任何宿主（ffi/server）状态：HTTP 客户端、限流注册表、
 //! 登录头缓存、DB 书籍变量、explore snapshot 驱动的书源 setup 脚本全部经
-//! [`FetcherDeps`] 注入。字段为 `None` 时对应能力关闭——行为等于「旧 server
-//! 版能力起点」（server 下批接入时以 `|_| None` 起步，再按需补齐）。
+//! [`FetcherDeps`] 注入。字段为 `None` 时对应能力关闭（测试/最小宿主可用
+//! `FetcherDeps::new` 起步）；ffi 与 server 两宿主均已全量注入（server 侧
+//! 见 `handlers/web_book.rs::server_deps`，数据面为 AppState DB）。
 
 use std::sync::Arc;
 

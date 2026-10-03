@@ -12,6 +12,36 @@
 
 use legado_parser::{AnalyzeRule, AnalyzeUrl};
 
+/// 从书源 jsLib 提取 `var host = [...];`（大灰狼等聚合源 explore 依赖）
+///
+/// [P5 尾项] 自 `legado-ffi/src/api/source_js_bindings.rs` 平移（ffi 侧保留
+/// 同名 re-export），供 `source_setup` 的 host 兜底与 ffi explore 路径共用。
+pub fn extract_js_lib_host_decl(js_lib: &str) -> Option<String> {
+    let trimmed = js_lib.trim();
+    let start = trimmed.find("var host")?;
+    let slice = &trimmed[start..];
+    let bracket = slice.find('[')?;
+    let mut depth = 0usize;
+    for (i, ch) in slice[bracket..].char_indices() {
+        match ch {
+            '[' => depth += 1,
+            ']' => {
+                depth = depth.saturating_sub(1);
+                if depth == 0 {
+                    let end = bracket + i + 1;
+                    let mut decl_end = end;
+                    if slice[end..].starts_with(';') {
+                        decl_end = end + 1;
+                    }
+                    return Some(slice[..decl_end].trim().to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
 /// 构造规则解析器并注入书源 jsLib（规则 `<js>`/`@js:` 模板执行前先加载库）
 ///
 /// [UI-fix 2026-08-10 | Reasonix] yckceo 书源的 searchUrl/ruleContent 模板
