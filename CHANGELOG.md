@@ -9,6 +9,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - [UI] 本地 CBZ 漫画包内 `.bmp` 页魔数补齐识别（此前会落错误占位）。
+- [UI] 书架「添加本地」支持选择 `.cbz` 漫画包（此前 .cbz 在系统文件选择器中置灰不可选）。
+- [UI] 修复保存漫画图片在部分设备上失败的问题（保存失败时自动回退到应用文档目录并提示实际路径）。
 
 ## [2.0.343] - 2026-10-01
 
