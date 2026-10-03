@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-10-03 | **cbz 本地漫画批 B：FFI 契约冻结 + bookType 位域 + is_local_book 白名单（E9 参考版扩展，用户已授权；加法式，+1 纯 FFI 方法）**：**契约先于代码**——本条目及同批文档改动先于 Rust 代码落盘（工作树顺序：契约先行，代码随后；若同批提交则契约条目提交在前，见提交记录）。**新增 FFI 方法**（§2.34 压缩包导入 7→**8**，附录合计 286→**287**，BookApi 口径 283 不变——纯 FFI，待 UI 轨后续封装）：`cbzReadPage(path, entry) → Future<String>`（Rust `ffi::cbz_read_page`，实现 `legado-ffi/src/api/cbz_api.rs`；仅走 frb 主链路）——CBZ 本地漫画按条目读取图片字节，返回 JSON `{base64, len}`（与 §2.20 `fetchImageWithDecode` / §2.46 图片缓存的 `{base64,len}` 惯例对齐，§1.3 复杂类型 JSON 约定）；`entry` 兼容带/不带 `cbz://` 前缀（剥前缀后按 ZIP 条目名精确匹配，中文/空格条目名原样，不 URL 编解码）；`path` 为本地书 `bookUrl` 形态（绝对路径原样；相对可迁移标识经 `resolve_local_book_path` 同语义解析，与 §2.9 本地书链路一致）；错误语义：文件不存在 / ZIP 解析失败 / 条目不存在 / 包内无图片条目 → 抛 BridgeError。**bookType 语义补记**：`importLocalBook` 导入 `.cbz` 时 `bookType = LOCAL(0x1000) \| IMAGE_BIT(64)`（位域，对齐 Kotlin `BookType` 位语义）；其余本地格式（txt/epub/mobi/azw/azw3/pdf/umd）保持 `LOCAL` 无媒体位；`origin=loc_book` / `book_url` 相对标识语义不变。**命名域警告（必读）**：新增常量 `legado_core::models::book::book_type::IMAGE_BIT = 64` 属 `Book.bookType` **位域**；既有 `book_type::IMAGE = 2` 属 **BookSourceType 数值域**（书源类型「图片源」），两域禁止混用。**is_local_book 白名单**：新增 `.cbz`（`reader::is_local_book` 后缀判定，与 `.epub/.txt/.text/.mobi/.azw/.azw3/.pdf` 同列）；`.zip` **不加入**（保持压缩容器行为，`archiveImportZip` 路径不变）。**链路衔接**：`.cbz` 加入白名单后，`getChapters` 懒加载经 `LocalBook` → `CbzFile`（批 A `1e7dd3abb3`）解析并入库，`getChapterContent` 返回 `cbz://<条目名>` 行列表，Dart 侧逐行调 `cbzReadPage` 取图渲染 |
 | 2026-10-02 | **P5 尾项 server 注入面接入关闭（setup 生成器平移 + `server_deps` 三闭包全量接入；零 FFI 签名变更、零 REST schema 变化、不新增端点；方法表与方法计数全部不变）**：提交 `aa49874137`。**调研翻盘（前批边界登记已被补齐）**：P5 关闭时登记「`login_header`/`book_variable`/`source_context` server 侧注入 None（server 无 DB/登录端点/setup 构造器，行为无损起点，接真实现即生效）」（见本表 2026-10-01 条目⑤及 REFACTORING_ACTIVE_PLAN P5 关闭记录尾项）——本批全部接入真实现，server 注入面不再有 None 占位。**setup 脚本生成器平移**：`legado-fetcher` 新增共享 `source_setup.rs`（宿主数据参数化），ffi `source_js_bindings.rs` 改薄壳 re-export——与 HEAD 逐字一致、diff 为空（code-reviewer 证实）；non-quickjs 档行为保持（返回空串）。**server 三闭包全量接入（`server_deps(state: &Arc<AppState>)`）**：① `login_header`——caches 表 `loginHeader_<source_url>`（与 ffi `source_login_cache::get_login_header` 同键）；② `book_variable`——`find_by_url` → `find_by_origin_book_url` 反查 `books.variable`（与 ffi `db_book_variable` 同语义）；③ `source_context`——`infoMap_<url>`/`loginHeader_<url>`/`userInfo_<url>` 三键 + 共享生成器（与 ffi `explore_info_map`/登录缓存同键）。**`with_state_db` 三级锁**：try_lock 快路径 → 多线程 runtime `block_in_place`（源码级证实慢路径无死锁风险）→ current_thread 测试档 None 降级（=批前行为等价）；code-reviewer 建议的两条禁令已注释（持 guard 任务不得进 fetcher 链、`Runtime::block_on` 根 future 不得直调 webbook 链）。**行为变化范围（接线）**：`build_engine(state)` 签名改动，reader/audio/toc_update 全端点接线；REST `/api/webbook/{search,info,chapters,content}`、`/api/books/:id/chapters/:index/content`、audio、toc_update 对需登录/带变量/需 setup 的书源从「能力关闭（None）」变为「可用」（登录头合并、`books.variable` 变量链、setup 脚本注入 JS 上下文）；不新增端点、不改 schema。**边界登记（未改）**：server 无 login/webView 写入面，登录头/变量生效依赖 server DB 已有行（App/桌面端写同库或外部写库）；`PUT /api/books/{id}` 以 `..Book::default()` 重建行会清空 variable（存量边界）。**测试与门禁**：server 5 新（deps 装配/login_header 种库/book_variable 反查/source_context 内容/REST 端到端 login_header 种→1 条未种→0 条）+ fetcher source_setup 2；回归 server 179、fetcher 84、ffi 403、ffi quickjs 467、server quickjs 180 全绿；clippy 三 crate `--all-targets -D warnings` 通过。**独立审查（code-reviewer）**：pass（无阻塞；P2-1 锁禁令已注释、P3 `leave_native`）。零 FFI 签名/REST schema/方法表变化，§2 方法表与方法计数全部不变 |
 | 2026-10-02 | **HTTP P2-19 阻塞项关闭——`enabledCookieJar` 写侧门控（用户裁决方案 A「标记头机制」；零 FFI 签名变更、零 REST schema 变化、零 codegen，方法表与方法计数全部不变）**：提交 `62b04d9998`。**调研翻盘（推翻 2026-09-22 登记前提）**：原登记「打通需 FFI 签名/契约变更 + parser 变更，触碰契约先行红线」不成立——P5 fetcher 下沉后主链路调用点全部持 `BookSource`（共享 `legado-fetcher`），实现零 FFI 导出变更、零 codegen、零方法表变更。**上游真实语义（实读）**：请求**读侧**（携带 DB cookie）在主链路**无条件**（`AnalyzeUrl.kt:126/735-757`）；门控只在**写侧**（`Set-Cookie` 落 DB）——`enabledCookieJar==true` 才由 `AnalyzeUrl.kt` 放置 `CookieJar:1` 标记头，`HttpHelper.kt:84-100` 拦截器按标记头门控 `CookieManager.saveResponse` 写回，`null→false` 判定在 `AnalyzeUrl.kt:126`，Jsoup `get`/`post`/`head` 仅开关开启时补标记（`JsExtensions.kt:532-534/559-561/586-588`）。我方真实缺口仅为**写侧无条件落库**，读侧现状已对齐、逐行未动。**批1（Rust 写侧门控）**：serde 三态 `default_true_opt`（缺键→`Some(true)`、显式 `false`→`Some(false)`、显式 `null`/DB NULL→`None`→按关）；`legado-net` 写侧门控（`COOKIE_JAR_HEADER` 常量 + 6 个发送方法透传 `save_cookies` + `collect_*` 按标记门控 + 唯一建请求点剥离标记头；读侧 `apply_headers_and_cookies` 逐行未动）；`legado-fetcher` `parse_source_headers` 一处覆盖全部主链路调用点（`apply_cookie_jar_marker` 只补不覆盖）+ `search_single_source` 接线。**批2（JS 桥与直发点）**：first-wins 注入钩子 `SourceCookieJarLookup`（tag→`Option<bool>`），ffi `db_open` 与 cookie persistence 同点注册（基于 `BookSourceRepository::find_by_url`）；10 个 JS 网络发送入口按当前书源开关补标记（`http_get`/`http_post`/`http_head`/`ajax`/`ajax_request_body`/`ajax_all`/`connect_full`/`connect_no_redirect`/`head_full`/`post_full`）；读侧 `merge_js_cookies`/`cookies_for_url` 逐行未动；`review`×3/`explore`/`image`/`rss`/`source_checker` 直发点接线；无 source 语境的通用下载路径（`ffi_http_get/post`、`http_get_bytes`、TTS、font、`file_utils`、`jslib_loader`、dict、net rss/cover）保持无标记=不写回（对齐上游），已登记。**审查收尾（code-reviewer 初判 needs changes、无 P0 → 3 项全部闭环转 pass）**：P1 RoomImporter 解析统一（`as_bool().or_else(as_i64.map(n!=0)).unwrap_or(true)`，缺键→1、布尔 `true`→1，消除 server `source_update` 与 FFI `import_sources` 口径分叉及布尔 true 丢失）；P2-1 `RssSource` 同款 `default_true_opt`（core 的 `default_true_opt` 提升 `pub(crate)` 复用）——新导入/保存的 RSS 缺键现在按开（行为变化），库中既有 NULL 行仍按关（不迁移）；P2-2 残差仅登记（`tts_speak_api.rs:64` 与 dict/cover 恒不写，列入下一批接线清单）。**行为变化（均已登记）**：JS 桥每请求一次 `find_by_url` DB 查询（单行索引、不持锁进网络路径，保证运行中开关切换即时生效）；导出再导入 NULL→`Some(true)` 语义翻转（`default_true` 副作用）；同名 `CookieJar` 键自带 header 会被判开（上游同风险，只补不覆盖）；`httpGet`/`httpPost`/`httpHead` 纳入门控为上游超集（方向安全）。**测试（红→绿已做）**：core 4（`BookSource` 缺键/false/null、`RssSource` 同款）+ net 5（标记写回/无标记跳过/raw 两态/大小写/剥离）+ fetcher 2（parse 注入、e2e 缺键导入落库）+ search e2e 2 态 + JS 桥 3（gate 三态 + 2 原失败用例恢复）+ db 5 例三态（缺键/true/false/0/1→1/1/0/0/1 SELECT 断言）。**门禁（实现者+审查+主代理三方）**：db 322 / core 830 / net 257 / fetcher 81 / ffi 401+21 ignored / ffi quickjs 465+42 ignored / legado-js quickjs 657+2 ignored（连续 5 次）全绿；workspace 与 quickjs 档 clippy `--all-targets -D warnings` 通过。**P3 `leave_native`（登记不修）**：关源+规则同名 `CookieJar` 头 fail-open 半边、重定向后续跳无剥离断言、JS 桥其余 9 入口表驱动用例可补、`find_by_url` 每请求开销。**P2-19 至此全部关闭（backlog 五项 + 阻塞项 `enabledCookieJar`）**。零 FFI 签名/REST schema/方法表变化，§2 方法表与方法计数全部不变 |
 | 2026-10-02 | **HTTP P2-19 尾项 charset 第四级统计探测（chardetng，零 FFI 签名变更、零 REST schema 变化；方法表与方法计数全部不变）**：提交 `f83b891ed6`。**依赖批准记录**：用户已批准引入 `chardetng` 1.0（纯 Rust、Apache-2.0 OR MIT、依赖仅 `encoding_rs`/`memchr`/`cfg-if`），`legado-fetcher` 的 `Cargo.toml` 带批准注释（2026-10-01 批准）；`encoding_rs` 0.8 由 dev-dependency 升为正式依赖。**四级解码语义表**：`decode_web_response`（`rust/legado-fetcher/src/web_book.rs`，改 pub，抓取链+搜索链唯一入口）按序为 ① 显式 charset（最高优先，不被探测覆盖；对抗用例双证：fetcher 单测 + 搜索级）→ ② `Content-Type` 头 → ③ HTML meta → ④ `chardetng` 统计探测；均未命中走 lossy UTF-8 兜底。对齐上游 `OkHttpUtils.kt:80-96` → `EncodingDetect.kt:18-44`（ICU4J `CharsetDetector`，无阈值）。**第四级细节**：BOM 优先（`Encoding::for_bom`，UTF-8/UTF-16 均支持，上游仅剥 UTF-8 BOM、属合理超集）；`guess(None, Utf8Detection::Allow)`（Allow 必须，Deny 会把无标识中文 UTF-8 误判 windows-1252，审查代理 scratch 实测）；`Iso2022JpDetection::Deny`（Web 内容指引）；探测猜非 UTF-8 走无损解码，失败或猜 UTF-8 回 lossy UTF-8。**搜索链收敛**：`search_single_source` 两分支（needs_charset_decode raw 分支 + 文本分支）统一为 `send_raw` + `decode_web_response`——补齐 meta 级与探测级（改前文本分支 reqwest `.text()` 只认 header）；retry/followRedirects 语义不变（共用 `send_with_options`）。**行为变化（已登记）**：3xx 日志拆两条（4xx/5xx「非 2xx/3xx」+ 未跟随 3xx 单独留痕，合取等价改前 raw 分支完整语义）；重定向后 `final_url` 作为相对链接解析基（改善，302→GBK 目标页用例钉住）。**parser 侧**：`decode_response_bytes` 保持声明解码原语 + lossy 兜底，不加探测（评估注释：避免共享原语语义扩散，探测只在 fetcher 一处）。**已知边界（注释登记）**：猜中 GBK/GB18030 族时无损解码对混合非法字节几乎总成功，个别乱码正文会有损解码进入规则解析（对齐上游无阈值）；JSON 纯 ASCII 不受影响。**测试 8 例**：fetcher 3（四级探测单测含对抗/UTF-8 回归、BOM 处理含 UTF-16LE、fetch_page 无标识 GBK 端到端）+ ffi 5（meta-only GBK、无标识 GBK+负向锚、显式 charset 对抗、UTF-8 回归、302→final_url）；红→绿已做。**门禁（实现者+审查+主代理三方）**：fetcher 79 / ffi 400+21 ignored / parser 314，0 failed；三 crate clippy `--all-targets -D warnings` 通过。**独立审查（code-reviewer）**：初判 needs changes（无阻塞，核心实现经 scratch 实测确认），4 项收尾全部闭环（P1-1 3xx 日志双条、P2-1 final_url 用例、P2-2 误判边界注释、P2-3 负向锚）→ 转 **pass**；P3 `leave_native`（显式 charset=utf-8 + BOM 极端角落保留 U+FEFF）。零 FFI 签名/REST schema 变化，§2 方法表与方法计数全部不变 |
@@ -173,7 +174,7 @@
 
 > 共 **43 个方法模块**（§2.1–§2.46，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
 > BookApi 接口当前共 **283 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计）。
-> 附录 §2.x 行合计 **286** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
+> 附录 §2.x 行合计 **287** = §2.x 实际方法行总数；其中 3 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource` / `cbzReadPage`，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -317,10 +318,12 @@
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
-| `importLocalBook(String filePath)` | filePath | `Future<Book>` | 导入本地书籍 |
+| `importLocalBook(String filePath)` | filePath | `Future<Book>` | 导入本地书籍。**`.cbz` 本地漫画（2026-10-03 批 B 补记）**：`bookType = LOCAL(0x1000) \| IMAGE_BIT(64)`（位域，对齐 Kotlin `BookType` 位语义；`IMAGE_BIT` 常量见 `legado-core` `book_type`，**勿与 BookSourceType 数值域的 `IMAGE=2` 混淆**）；其余本地格式（txt/epub/mobi/azw/azw3/pdf/umd）仍为 `LOCAL` 无媒体位；`origin=loc_book`、`book_url` 存传入标识（相对标识语义不变） |
 | `scanLocalBooks(String dirPath)` | dirPath | `Future<List<Map<String, dynamic>>>` | 扫描本地书籍，返回 `{path, name, size, lastModified}` |
 | `detectFormat(String filePath)` | filePath | `Future<String>` | 检测书籍文件格式 |
 | `parseMetadata(String filePath)` | filePath | `Future<String>` | 解析书籍元数据（返回 JSON） |
+
+> ℹ️ **本地书白名单与 CBZ 懒加载链路（2026-10-03 批 B）**：`reader::is_local_book` 后缀白名单 = `.epub / .txt / .text / .mobi / .azw / .azw3 / .pdf / .cbz`（本次新增 `.cbz`）；`.zip` **不在**白名单（保持压缩容器语义，走 §2.34 导入路径，行为不变）。`.cbz` 命中白名单后：`getChapters` 首次调用懒解析（`LocalBook` → `CbzFile`，整包 1 章、章节 `url` 置空）并入库（含 B-13b 派生字段同步）；`getChapterContent` 返回 `cbz://<条目名>` 行列表（自然排序、仅图片条目）；图片字节经 §2.34 `cbzReadPage` 按条目读取。
 
 ### 2.7 书签操作（7 个方法）
 
@@ -603,7 +606,7 @@
 | `audioWithPlayMode({String? readConfig, required int playMode})` | readConfig(可选), playMode | `Future<String>` | 将播放模式写入 readConfig JSON |
 | `audioResolvePlayBook({String? requestedBookUrl, String? cachedBookJson})` | requestedBookUrl(可选), cachedBookJson(可选) | `Future<Map<String, dynamic>?>` | 解析听书书籍 |
 
-### 2.34 压缩包导入（7 个方法）
+### 2.34 压缩包导入（8 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -614,6 +617,7 @@
 | `archiveDetectEncoding({required String filePath})` | filePath | `Future<Map<String, dynamic>>` | 检测 TXT 文件编码 |
 | `archiveConvertEncoding({required String filePath, required String fromEncoding, required String toEncoding})` | filePath, fromEncoding, toEncoding | `Future<Map<String, dynamic>>` | 转换 TXT 文件编码 |
 | `archiveIsArchive({required String filePath})` | filePath | `Future<bool>` | 判断文件是否为压缩包格式 |
+| `cbzReadPage({required String path, required String entry})` | path: 本地 CBZ 书 `bookUrl`（绝对路径，或相对可迁移标识——经 `resolve_local_book_path` 同语义解析）；entry: ZIP 条目名（兼容带/不带 `cbz://` 前缀，中文/空格原样） | `Future<String>` | **2026-10-03 批 B 加法式新增（E9 参考版扩展，用户已授权；纯 FFI，尚未封装进 BookApi）**：读取 CBZ 漫画单页图片字节，返回 JSON `{base64, len}`（与 `fetchImageWithDecode`/图片缓存同惯例）。配合 §2.6 链路：`getChapterContent` 返回 `cbz://<条目名>` 行列表，Dart 侧逐行调用本方法取图。错误语义：文件不存在 / ZIP 解析失败 / 条目不存在 / 包内无图片条目 → 抛 BridgeError |
 
 ### 2.35 RSS 已读记录（7 个方法）
 
@@ -1007,7 +1011,7 @@
 | 31 | 书籍导出 | 2 |
 | 32 | 自动任务 | 14 |
 | 33 | 音频播放模式 | 2 |
-| 34 | 压缩包导入 | 7 |
+| 34 | 压缩包导入 | 8 |
 | 35 | RSS 已读记录 | 7 |
 | 36 | 正文高亮 | 11 |
 | 37 | JS 单文件书源配置 | 3 |
@@ -1019,11 +1023,11 @@
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 10 |
 | 44 | 字典规则操作 | 7 |
 | 45 | 图片磁盘缓存 | 2 |
-| | **合计（§2.x 附录行合计）** | **286** |
+| | **合计（§2.x 附录行合计）** | **287** |
 
-> 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`、2026-09-28 STAGE3-C2B 增 §2.16 单章缓存失效 1 方法 `clearChapterCache`、2026-09-28 P2-28c 增 §2.43 目录实时刷新 1 方法 `listCachedChapters`、2026-09-29 P2-29 增 §2.43 目录下载中态查询 1 方法 `listDownloadingChapters`、2026-09-29 P4-2a 增 §2.46 图片磁盘缓存 2 方法 `saveImageCache`/`getImageCache`，取代人工统计）：
-> - 附录行合计 **286** = §2.x 实际方法行总数；其中与 BookApi 同名 271（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2）、§1.7 命名等价对的 FFI 登记名 9
+> 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`、2026-09-28 STAGE3-C2B 增 §2.16 单章缓存失效 1 方法 `clearChapterCache`、2026-09-28 P2-28c 增 §2.43 目录实时刷新 1 方法 `listCachedChapters`、2026-09-29 P2-29 增 §2.43 目录下载中态查询 1 方法 `listDownloadingChapters`、2026-09-29 P4-2a 增 §2.46 图片磁盘缓存 2 方法 `saveImageCache`/`getImageCache`、2026-10-03 cbz 批 B 增 §2.34 本地漫画页读取 1 方法 `cbzReadPage`，取代人工统计）：
+> - 附录行合计 **287** = §2.x 实际方法行总数；其中与 BookApi 同名 271（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2）、§1.7 命名等价对的 FFI 登记名 9
 >   （对应 8 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
->   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
+>   尚未封装进 BookApi 的纯 FFI 3（`chapterPayAction` / `rssUpdateSource` / `cbzReadPage`）。
 > - BookApi 代码计数 **283** = 271 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2）+ 8 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。
