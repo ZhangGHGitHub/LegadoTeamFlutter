@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.344] - 2026-10-03
+
+### Added
+- [UI] 支持导入并阅读本地 CBZ 漫画包（导入页识别 cbz、漫画阅读器逐页渲染、支持长按保存/分享）。
+
+### Fixed
+- [UI] 本地 CBZ 漫画包内 `.bmp` 页魔数补齐识别（此前会落错误占位）。
+
 ## [2.0.343] - 2026-10-01
 
 ### Added
