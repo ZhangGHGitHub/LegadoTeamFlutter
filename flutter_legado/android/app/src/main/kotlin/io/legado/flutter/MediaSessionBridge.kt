@@ -366,6 +366,11 @@ class MediaSessionBridge {
             .putText(MediaMetadataCompat.METADATA_KEY_ALBUM, album)
             .build()
         mediaSession?.setMetadata(metadata)
+        // [听书定时第2项 | 2026-10-03] 元数据变化 → 重发前台通知：
+        // 定时剩余量（分钟整数/剩余章数）随 ARTIST 变化即时刷新通知标题，
+        // 复刻原版 upReadAloudNotification 在 upMediaMetadata 后重发通知的行为
+        // （BaseReadAloudService.kt:768-777）。服务未运行时为空操作。
+        PlaybackForegroundService.refreshNotification()
     }
 
     /**

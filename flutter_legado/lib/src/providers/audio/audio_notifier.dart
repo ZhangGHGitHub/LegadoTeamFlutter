@@ -86,6 +86,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   /// A4：无可用引擎提示是否已在本朗读会话展示（一次性语义）
   bool _noEngineHintShown = false;
 
+  /// [第2项] 最近一次推送到通知/锁屏的媒体元数据签名（去重节流，见
+  /// [_pushMediaSessionMetadata]）
+  String _lastMediaMetadataSignature = '';
+
   /// A3：流媒体进度写库节流状态（bookUrl:chapterIndex → 最近写入位置）
   String _lastProgressSaveKey = '';
   int _lastProgressSavedPosMs = 0;
@@ -123,6 +127,24 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
 
   /// 按章停止剩余章数（未启用时为 0）
   int get chaptersToStopRemaining => _chaptersToStopRemaining;
+
+  /// 定时剩余量展示文案（通知标题/锁屏副标题组合用；未启用时为空串）
+  ///
+  /// 形态对齐原版通知标题的括号段（BaseReadAloudService.kt:701-707、
+  /// AudioPlayService.kt:873-879）：分钟倒计时为「剩余 N 分钟」，按章停止为
+  /// 「剩余 N 章」。分钟数向上取整——与原版 timeMinute 每分钟减一的展示
+  /// 节奏一致（开始 5 分钟先显示 5，走过 1 分钟后显示 4）。
+  /// 未启用定时时必须为空串，不得让标题出现「剩余 0」字样。[第2项 | 2026-10-03]
+  String get sleepTimerRemainingLabel {
+    switch (sleepTimerMode) {
+      case SleepTimerMode.chapters:
+        return '剩余 $_chaptersToStopRemaining 章';
+      case SleepTimerMode.duration:
+        return '剩余 ${(_sleepRemainingSeconds + 59) ~/ 60} 分钟';
+      case SleepTimerMode.off:
+        return '';
+    }
+  }
 
   int get currentParagraphIndex => _paragraphIndex;
   int get paragraphCount => _paragraphs.length;
@@ -238,6 +260,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     _audioFocusSub?.cancel();
     _audioFocusSub = null;
     await _audioService.dispose();
+    // 会话释放后原生元数据清空：[第2项] 重置签名，避免下次初始化误跳过推送
+    _lastMediaMetadataSignature = '';
     state = state.copyWith(isMediaSessionReady: false);
   }
 
@@ -723,14 +747,42 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   Future<void> _syncMediaSession() async {
     if (!state.isMediaSessionReady) return;
     await _audioService.requestAudioFocus();
-    final chapter = state.currentChapter;
-    final artistPrefix = state.isStreamMode ? '正在播放' : '正在朗读';
-    await _audioService.updateMetadata(
-      title: chapter?.title ?? '',
-      artist: state.bookName.isNotEmpty ? '$artistPrefix: ${state.bookName}' : '',
-      album: state.bookName,
-    );
+    await _pushMediaSessionMetadata();
     await _audioService.notifyPlaying();
+  }
+
+  /// 组装并推送媒体元数据（通知标题/锁屏副标题）
+  ///
+  /// [第2项 | 2026-10-03] 方案：metadata ARTIST 承载组合标题，TITLE 保持章节
+  /// 标题（对齐原版 TTS upMediaMetadata 的字段语义，BaseReadAloudService.kt:
+  /// 700-720）；Kotlin 侧 PlaybackForegroundService 以 ARTIST 作通知标题、
+  /// TITLE 作通知文本（原版 createNotification 形态）。这样通知标题与锁屏
+  /// 副标题都能看到剩余量，锁屏标题仍是章节标题、不被污染。
+  ///
+  /// 去重节流：以「章节标题 + 组合标题 + 书名」为签名，签名未变不调平台
+  /// 通道——分钟倒计时每秒 tick 但剩余分钟整数未变时、同章重复同步时均
+  /// 不会重推，避免通知频繁重建。
+  Future<void> _pushMediaSessionMetadata() async {
+    if (!state.isMediaSessionReady) return;
+    final title = state.currentChapter?.title ?? '';
+    final artist = _composePlaybackLabel();
+    final album = state.bookName;
+    final signature = '$title\u0001$artist\u0001$album';
+    if (signature == _lastMediaMetadataSignature) return;
+    _lastMediaMetadataSignature = signature;
+    await _audioService.updateMetadata(title: title, artist: artist, album: album);
+  }
+
+  /// 通知标题/锁屏副标题文案：正在播放/朗读[(剩余 N 章|分钟)]: 书名
+  ///
+  /// 未启用定时时为原形态「正在播放/朗读: 书名」；书名未知时返回空串
+  /// （保持既有降级行为，由 Kotlin 侧回退为章节标题）。
+  String _composePlaybackLabel() {
+    if (state.bookName.isEmpty) return '';
+    final prefix = state.isStreamMode ? '正在播放' : '正在朗读';
+    final remaining = sleepTimerRemainingLabel;
+    if (remaining.isEmpty) return '$prefix: ${state.bookName}';
+    return '$prefix($remaining): ${state.bookName}';
   }
 
   /// 绑定当前书籍（片头/片尾读 readConfig）
@@ -828,6 +880,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       _ensureSleepTicker();
     }
     notifyListeners();
+    // [第2项] 定时启用/关闭立即反映到通知标题（签名去重）
+    unawaited(_pushMediaSessionMetadata());
   }
 
   /// 启动按章停止：自然播完 [chapters] 章后在章末停止（不再进入下一章）
@@ -842,6 +896,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       _chaptersToStopRemaining = normalized;
     }
     notifyListeners();
+    // [第2项] 剩余章数立即反映到通知标题（签名去重）
+    unawaited(_pushMediaSessionMetadata());
   }
 
   /// 取消定时停止（分钟倒计时与按章停止同时清空）
@@ -849,6 +905,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     if (!isSleepTimerActive) return;
     _clearSleepTimerState();
     notifyListeners();
+    // [第2项] 取消后标题恢复原形态并刷新通知
+    unawaited(_pushMediaSessionMetadata());
   }
 
   void _clearSleepTimerState() {
@@ -873,6 +931,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
         return;
       }
       notifyListeners();
+      // [第2项] 每秒 tick 均尝试刷新，内部按签名去重——
+      // 仅剩余分钟整数变化时才真正重推通知（节流）
+      unawaited(_pushMediaSessionMetadata());
     });
   }
 
@@ -886,6 +947,9 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     final shouldStop = _chaptersToStopRemaining <= 0;
     if (shouldStop) _chaptersToStopRemaining = 0;
     notifyListeners();
+    // [第2项] 剩余章数在章末即时上通知（停止路径 stop() 再推一次，
+    // 签名去重不会重复触发）
+    unawaited(_pushMediaSessionMetadata());
     return shouldStop;
   }
 
@@ -923,6 +987,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     // [A4] 停止即结束本次定时（对齐原版 TTS 服务 onDestroy 清空
     // timeMinute/chapterStopTimer，BaseReadAloudService.kt:309-313）
     _clearSleepTimerState();
+    // [第2项] 定时清空后标题恢复原形态（无剩余量）并刷新通知
+    unawaited(_pushMediaSessionMetadata());
     // [A3] 停止前写一次当前进度（必须在重置 state 之前发起）
     unawaited(_persistStreamPosition(force: true));
     // A4：停止视为朗读会话结束，下次朗读允许再次提示无引擎
