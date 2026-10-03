@@ -17,6 +17,24 @@ class StreamAudioPlayer {
   void Function()? onCompleted;
   void Function(Duration position, Duration duration)? onProgress;
 
+  /// 底层 media3 播放器选项：关闭其自带音频焦点处理（单应用单焦点所有者）。
+  ///
+  /// [D1 | 2026-10-03 真机] 音频焦点唯一所有者是 MediaSessionBridge
+  /// （对齐原版：BaseReadAloudService 负责 requestFocus，ExoPlayerHelper
+  /// 构建的 ExoPlayer 未调用 setAudioAttributes，即 media3 默认
+  /// `handleAudioFocus=false`）。若底层播放器也请求焦点，同一应用两个焦点
+  /// 客户端互相抢占：后请求的播放器获胜，先请求的桥收到
+  /// onAudioFocusChange(-1)[LOSS] → Dart 焦点监听误判为外部抢占并立即
+  /// pause（真机播放 20ms 即被暂停）。
+  ///
+  /// video_player Android 实现把 `mixWithOthers=true` 映射为
+  /// `ExoPlayer.setAudioAttributes(attrs, handleAudioFocus=false)`：
+  /// 播放器不请求焦点、也不因焦点变化自行暂停；外部应用抢占焦点仍会送达
+  /// 桥，Dart 侧 pause 语义不变（听书流模式与 TTS 路径同源受益）。
+  @visibleForTesting
+  static final VideoPlayerOptions playbackOptions =
+      VideoPlayerOptions(mixWithOthers: true);
+
   bool get isInitialized => _controller?.value.isInitialized ?? false;
   bool get isPlaying => _controller?.value.isPlaying ?? false;
   Duration get position => _controller?.value.position ?? Duration.zero;
@@ -34,7 +52,10 @@ class StreamAudioPlayer {
     await stop();
     _currentUrl = trimmed;
     _completionFired = false;
-    final c = VideoPlayerController.networkUrl(Uri.parse(trimmed));
+    final c = VideoPlayerController.networkUrl(
+      Uri.parse(trimmed),
+      videoPlayerOptions: playbackOptions,
+    );
     await _start(c, speed);
   }
 
@@ -52,7 +73,10 @@ class StreamAudioPlayer {
     await stop();
     _currentUrl = trimmed;
     _completionFired = false;
-    final c = createLocalFileController(trimmed);
+    final c = createLocalFileController(
+      trimmed,
+      videoPlayerOptions: playbackOptions,
+    );
     await _start(c, speed);
   }
 

@@ -125,6 +125,9 @@ class FakeBook extends Fake implements Book {}
 /// RssSource 的 Fake 实现
 class FakeRssSource extends Fake implements RssSource {}
 
+/// HttpTts 的 Fake 实现（D3 种子导入测试的 any() fallback）
+class FakeHttpTts extends Fake implements HttpTts {}
+
 /// BookSource 的 Fake 实现
 class FakeBookSource extends Fake implements BookSource {}
 
@@ -141,6 +144,7 @@ class FakeUri extends Fake implements Uri {}
 void registerFallbacks() {
   registerFallbackValue(FakeBook());
   registerFallbackValue(FakeRssSource());
+  registerFallbackValue(FakeHttpTts());
   registerFallbackValue(FakeBookSource());
   registerFallbackValue(FakeBookmark());
   registerFallbackValue(FakeReplaceRule());

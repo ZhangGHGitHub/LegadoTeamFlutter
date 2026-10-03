@@ -25,6 +25,16 @@ import '../widgets/video_settings_dialog.dart';
 /// - 视频源（bookSourceType=4）：章节列表、正文经 [resolveVideoPlayTarget]
 ///   （相对 URL / 复合 UrlOption header / MPD）后播放，上一集/下一集跳过卷标题
 /// — Reasonix
+///
+/// [D1 | 2026-10-03] video_player Android 插件的 `mixWithOthers` 存在
+/// 插件级 sharedOptions 并作用于其后创建的所有播放器；听书/TTS 链路
+/// （StreamAudioPlayer）为消除焦点自抢占会置 true。本页必须显式置 false，
+/// 否则同进程听过音频后再进视频页，播放器会继承 true 而不再请求/响应
+/// 音频焦点（失去外部抢占暂停语义）——即恢复本页原有默认行为。
+@visibleForTesting
+final VideoPlayerOptions videoPlaybackOptions =
+    VideoPlayerOptions(mixWithOthers: false);
+
 class VideoScreen extends StatefulWidget {
   /// 视频播放地址
   final String videoUrl;
@@ -381,7 +391,10 @@ class _VideoScreenState extends State<VideoScreen> {
   /// 初始化视频播放器（网络或本地 MPD 文件）
   void _initPlayer({String? networkUrl, String? filePath}) {
     if (filePath != null && filePath.isNotEmpty) {
-      _controller = VideoPlayerController.file(File(filePath));
+      _controller = VideoPlayerController.file(
+        File(filePath),
+        videoPlayerOptions: videoPlaybackOptions,
+      );
       _wireControllerInit();
       return;
     }
@@ -391,7 +404,10 @@ class _VideoScreenState extends State<VideoScreen> {
     if (networkUrl != null) _currentPlayUrl = networkUrl;
     final uri = Uri.tryParse(videoUrl);
     if (uri == null || videoUrl.isEmpty) {
-      _controller = VideoPlayerController.networkUrl(Uri.parse(''));
+      _controller = VideoPlayerController.networkUrl(
+        Uri.parse(''),
+        videoPlayerOptions: videoPlaybackOptions,
+      );
       _initializeVideoPlayerFuture = Future<void>.error(
         Exception('无效的视频地址'),
       );
@@ -401,6 +417,7 @@ class _VideoScreenState extends State<VideoScreen> {
     _controller = VideoPlayerController.networkUrl(
       uri,
       httpHeaders: _videoHeaders,
+      videoPlayerOptions: videoPlaybackOptions,
     );
     _wireControllerInit();
   }

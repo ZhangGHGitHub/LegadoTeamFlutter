@@ -46,6 +46,21 @@ class MediaSessionBridge {
         /// [体检 §一.2] 当前活跃桥(前台服务构建媒体通知时读取 session token)
         @Volatile
         var active: MediaSessionBridge? = null
+
+        /**
+         * [D2 | 2026-10-03 真机] 兼容解析 Dart 侧数值参数。
+         *
+         * Dart `int` 经 StandardMessageCodec 落地形态取决于位宽：小整数为
+         * Java `Integer`（`position` 默认 0 即此形态），大整数才是 `Long`。
+         * 旧代码 `call.argument<Long>("position")` 的泛型 checkcast 对小整数
+         * 必抛 `ClassCastException: Integer cannot be cast to Long`
+         * （真机 logcat：MediaSessionBridge.kt:131，playbackState 未发布）。
+         * 按 [MethodCall.arguments] 原始值 `is` 判定（不产生泛型 checkcast），
+         * 兼容 Integer/Long 及其它 Number 形态。
+         */
+        @JvmStatic
+        internal fun longFromArgument(raw: Any?): Long =
+            (raw as? Number)?.toLong() ?: 0L
     }
 
     private var mediaSession: MediaSessionCompat? = null
@@ -128,7 +143,8 @@ class MediaSessionBridge {
             "abandonAudioFocus" -> abandonAudioFocus(result)
             "updatePlaybackState" -> {
                 val state = call.argument<String>("state") ?: "paused"
-                val position = call.argument<Long>("position") ?: 0L
+                // 勿直接 argument<Long>：Dart 小整数落地为 Integer（见 longFromArgument）
+                val position = longFromArgument(call.argument("position"))
                 updatePlaybackState(state, position)
                 result.success(null)
             }

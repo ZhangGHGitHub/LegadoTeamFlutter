@@ -5,6 +5,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
 
 import '../models/models.dart';
+import '../providers/audio/http_tts_seed.dart';
 import '../providers/providers.dart';
 import '../widgets/app_progress_indicator.dart';
 import '../widgets/help/help_assets.dart';
@@ -34,6 +35,9 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
     setState(() => _loading = true);
     try {
       final api = ref.read(bookApiProvider);
+      // [D3 | 2026-10-03] 首启导入原版 httpTTS 种子（版本门控），
+      // 与 dict/rss/txtToc 对齐：进入配置页即可见默认数据
+      await ensureDefaultHttpTts(api);
       final list = await api.getHttpTts();
       setState(() {
         _engines = list;

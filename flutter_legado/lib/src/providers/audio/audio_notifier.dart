@@ -10,6 +10,7 @@ import '../../services/stream_audio_player.dart';
 import '../../utils/audio_skip_policy.dart';
 import '../providers.dart';
 import 'audio_state.dart';
+import 'http_tts_seed.dart';
 
 export 'audio_state.dart';
 
@@ -268,11 +269,18 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
 
   Future<void> _ensureDefaultEngine() async {
     try {
+      // [D3 | 2026-10-03] 首启/升级导入原版 httpTTS 种子（版本门控；
+      // 失败不阻塞，仍按无引擎降级估算）。
+      await ensureDefaultHttpTts(_api);
       final list = await _api.getHttpTts();
       if (list.isEmpty) return;
-      final raw = list.first.url;
-      final commaIndex = raw.indexOf(',');
-      final url = commaIndex > 0 ? raw.substring(0, commaIndex) : raw;
+      // [D3] 种子依赖 Rust 合成管线不支持的能力（POST/@js/loginUrl），
+      // 自动选默认时只接受「GET + 文本占位符」兼容模板——
+      // 避免把失效引擎当作可用（QA 实测种子「1.百度」返回错误 JSON）。
+      final compatible =
+          list.where((e) => isCompatibleHttpTtsEngineUrl(e.url));
+      if (compatible.isEmpty) return;
+      final url = compatible.first.url.trim();
       if (url.isNotEmpty) updateConfig(engineUrl: url);
     } catch (e) {
       debugPrint('获取默认朗读引擎失败: $e');
