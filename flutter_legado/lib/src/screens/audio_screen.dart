@@ -77,6 +77,11 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
       // 音频书 → 流媒体；否则保持 TTS（阅读器朗读入口会强制 TTS）
       notifier.setAudioBookMode(_canCopyPlayUrl);
       notifier.bindBook(widget.book);
+      // [A2] 读回并应用书级播放模式/语速（打开听书页/切换书籍）
+      unawaited(notifier.applyBookPreferences(
+        widget.book,
+        fallbackBookUrl: widget.effectiveBookUrl,
+      ));
       notifier.initMediaSession(bookName: widget.effectiveBookName);
       unawaited(notifier.isWakeLockEnabled().then((v) {
         if (mounted) setState(() => _wakeLock = v);

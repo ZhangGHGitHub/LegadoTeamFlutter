@@ -111,6 +111,13 @@ class FakeStreamAudioPlayer implements StreamAudioPlayer {
     isPlaying = false;
     onCompleted?.call();
   }
+
+  /// 模拟播放器上报进度（video_player 位置回调 → onProgress）
+  void emitProgress(Duration position, Duration duration) {
+    this.position = position;
+    this.duration = duration;
+    onProgress?.call(position, duration);
+  }
 }
 
 /// http.Client 的 mock 实现

@@ -15,7 +15,8 @@ mixin MockBookApiContentExt on MockBookApiStore implements BookApi {
     final config = readConfig != null && readConfig.isNotEmpty
         ? (jsonDecode(readConfig) as Map<String, dynamic>)
         : <String, dynamic>{};
-    config['audioPlayMode'] = playMode;
+    // 键名对齐 Rust `with_audio_play_mode` 与 ReadConfig.playMode
+    config['playMode'] = playMode;
     return jsonEncode(config);
   }
 

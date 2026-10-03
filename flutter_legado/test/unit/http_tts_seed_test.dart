@@ -271,7 +271,8 @@ void main() {
       final state = container.read(audioNotifierProvider);
       expect(state.config.engineUrl, isEmpty);
       expect(state.state, PlayerState.playing);
-      // 无引擎路径不调用合成（降级估算），也不报错
+      // 无可用引擎：不调用合成（降级估算），并给用户可见的一次性提示
+      // [A4 批 2026-10-03] 由「静默降级」改为「温和提示」（用户裁决）
       verifyNever(() => api.audioSpeak(
             text: any(named: 'text'),
             engineUrl: any(named: 'engineUrl'),
@@ -280,7 +281,7 @@ void main() {
             volume: any(named: 'volume'),
             voiceName: any(named: 'voiceName'),
           ));
-      expect(state.errorMessage, isNull);
+      expect(state.errorMessage, kNoUsableEngineHint);
     });
 
     test('库中含兼容引擎 → 跳过不兼容项选中兼容项', () async {
