@@ -7,7 +7,7 @@
 // - parseComicImageUrls：正则四分支（复合 src 双/单引号、data-src/
 //   data-original/data-srcset、普通双引号 src、其它 data-*/src）+ 行解析兜底
 // - isImageDominantContent：空内容 / 无图 URL / 文本残留 <24 阈值边界
-// - looksLikeImageBytes：JPEG/PNG/GIF/WEBP 魔数 + 短字节 / 非图片负例
+// - looksLikeImageBytes：JPEG/PNG/GIF/WEBP/BMP 魔数 + 短字节 / 非图片负例
 //
 // 历史回归组（必应漫画样例等）保留于 book_open_and_comic_url_test.dart，
 // 本文件为函数级全分支矩阵（STAGE-UI-P41B · C5 Dart 侧）。
@@ -275,7 +275,7 @@ http://a/2.jpg
   });
 
   group('looksLikeImageBytes 魔数', () {
-    test('JPEG/PNG/GIF/WEBP 魔数识别', () {
+    test('JPEG/PNG/GIF/WEBP/BMP 魔数识别', () {
       expect(looksLikeImageBytes([0xFF, 0xD8, 0xFF, 0xE0]), isTrue);
       expect(looksLikeImageBytes([0x89, 0x50, 0x4E, 0x47]), isTrue);
       expect(looksLikeImageBytes([0x47, 0x49, 0x46, 0x38]), isTrue);
@@ -285,6 +285,8 @@ http://a/2.jpg
         ]),
         isTrue,
       );
+      // [cbz 批 D] BMP "BM"（与 Rust CBZ 白名单 .bmp 对齐，2 字节同 JPEG 精度）
+      expect(looksLikeImageBytes([0x42, 0x4D, 0x36, 0x00]), isTrue);
     });
 
     test('不足 4 字节 → 否', () {

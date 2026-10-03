@@ -32,6 +32,14 @@ mixin MockBookApiMediaFormat on MockBookApiStore implements BookApi {
   Future<String> fetchImageWithDecode(String url, String sourceJson) async =>
       '{"base64": "", "len": 0}';
 
+  /// 读取本地 cbz 漫画单页图片字节（Mock 默认空结果；测试子类按需覆写）
+  ///
+  /// [cbz 批 D | 2026-10-03] 与 Rust FFI `cbz_read_page` 同返回形态
+  /// （JSON：{ base64, len }）。
+  @override
+  Future<String> cbzReadPage({required String path, required String entry}) async =>
+      '{"base64": "", "len": 0}';
+
   // ========== JS 引擎 ==========
 
   @override

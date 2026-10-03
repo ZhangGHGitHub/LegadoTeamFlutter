@@ -33,6 +33,14 @@ mixin RustApiMediaFormat on RustApiDecode implements BookApi {
   Future<String> fetchImageWithDecode(String url, String sourceJson) =>
       bridge.fetchImageWithDecode(url: url, sourceJson: sourceJson);
 
+  /// 读取本地 cbz 漫画单页图片字节（返回 JSON：{ base64, len }）
+  ///
+  /// [cbz 批 D | 2026-10-03] 与 FFI `cbz_read_page` 对齐：漫画阅读器对
+  /// `cbz://<条目名>` 伪 URL 逐页调用本方法取图（zip 条目读取在 Rust 侧）。
+  @override
+  Future<String> cbzReadPage({required String path, required String entry}) =>
+      bridge.cbzReadPage(path: path, entry: entry);
+
   // ========== JS 引擎 ==========
 
   /// 执行 JS 脚本

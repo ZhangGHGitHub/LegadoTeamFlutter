@@ -24,17 +24,39 @@ class MangaPageImageBytes {
 /// 3. FFI `fetchImageWithDecode` 回退（仅 [sourceJson] 非 null 时；
 ///    与正常渲染管道同一 FFI 链路，非 HTTP 旁路重下）。
 ///
+/// [cbz 批 D | 2026-10-03] 本地 cbz 页（[cbzPath] 非 null 且 url 为
+/// `cbz://<条目名>` 伪 URL）：内存未命中 → FFI `cbz_read_page` 读 ZIP
+/// 条目（cbz:// 无磁盘缓存/网络链路），字节经魔数校验后返回。
+///
 /// 全部未命中 / 解码无效时返回 null（调用方负责降级提示）。
 Future<MangaPageImageBytes?> resolveMangaPageImageBytes({
   required BookApi api,
   required String bookUrl,
   required String url,
   String? sourceJson,
+  String? cbzPath,
   Uint8List? memoryCached,
 }) async {
   // 1. 内存缓存命中：零 IO 直接返回
   if (memoryCached != null && looksLikeImageBytes(memoryCached)) {
     return MangaPageImageBytes(memoryCached, _imageSuffixOf(memoryCached));
+  }
+  // 1b. 本地 cbz 页：cbzReadPage 读条目（与渲染链 _LocalCbzImage 同字节源）
+  if (cbzPath != null && url.startsWith('cbz://')) {
+    try {
+      final json = await api.cbzReadPage(path: cbzPath, entry: url);
+      final decoded = jsonDecode(json) as Map<String, dynamic>;
+      final b64 = decoded['base64'] as String? ?? '';
+      if (b64.isEmpty) return null;
+      final bytes = base64Decode(b64);
+      if (!looksLikeImageBytes(bytes)) return null;
+      return MangaPageImageBytes(
+        Uint8List.fromList(bytes),
+        _imageSuffixOf(bytes),
+      );
+    } catch (_) {
+      return null;
+    }
   }
   // 2. 磁盘缓存命中（对齐 _DecodedComicImage 的本地优先语义）
   try {

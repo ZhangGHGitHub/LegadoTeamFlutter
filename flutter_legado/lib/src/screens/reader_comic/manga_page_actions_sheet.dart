@@ -13,16 +13,19 @@ import 'package:flutter/material.dart';
 ///
 /// 动作执行由调用方通过回调注入（先关菜单再执行，对齐参考版
 /// executePageAction 先 `activeSheet = null` 再 launchAction）。
+///
+/// [cbz 批 D | 2026-10-03] [onCopy] 可空：本地 cbz 页的「复制链接」对象是
+/// `cbz://<条目名>` 伪 URL（非可消费链接），调用方传 null 隐藏该项。
 class MangaPageActionsSheet extends StatelessWidget {
   final Future<void> Function() onSave;
   final Future<void> Function() onShare;
-  final Future<void> Function() onCopy;
+  final Future<void> Function()? onCopy;
 
   const MangaPageActionsSheet({
     super.key,
     required this.onSave,
     required this.onShare,
-    required this.onCopy,
+    this.onCopy,
   });
 
   @override
@@ -35,8 +38,9 @@ class MangaPageActionsSheet extends StatelessWidget {
           _tile(context, Icons.save, '保存图片', onSave),
           _tile(context, Icons.share, '分享图片', onShare),
           // [P4-3 W2-fix P2-4] 本实现复制的是图片链接文本（URI 复制降级），
-          // 文案对齐实际行为：「复制链接」
-          _tile(context, Icons.content_copy, '复制链接', onCopy),
+          // 文案对齐实际行为：「复制链接」；onCopy 为 null（cbz 页）时隐藏
+          if (onCopy != null)
+            _tile(context, Icons.content_copy, '复制链接', onCopy!),
         ],
       ),
     );
@@ -80,12 +84,13 @@ class MangaPageActionsSheet extends StatelessWidget {
 ///
 /// [onSave] 保存图片（用户选目录写入，对齐原版）；
 /// [onShare] 分享图片（系统分享面板，对齐参考版 share 临时文件）；
-/// [onCopy] 复制链接（图片链接文本，参考版 URI 复制的降级实现）。
+/// [onCopy] 复制链接（图片链接文本，参考版 URI 复制的降级实现）；
+/// 为 null 时隐藏「复制链接」项（本地 cbz 页伪 URL 无消费价值）。
 Future<void> showMangaPageActionsSheet(
   BuildContext context, {
   required Future<void> Function() onSave,
   required Future<void> Function() onShare,
-  required Future<void> Function() onCopy,
+  Future<void> Function()? onCopy,
 }) {
   return showModalBottomSheet<void>(
     context: context,

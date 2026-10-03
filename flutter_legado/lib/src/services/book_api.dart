@@ -999,6 +999,16 @@ abstract class BookApi {
   /// 返回原始图片 base64。[sourceJson] 为书源 JSON（单对象）。
   Future<String> fetchImageWithDecode(String url, String sourceJson);
 
+  /// 读取本地 cbz 漫画单页图片字节（返回 JSON：{ base64, len }）
+  ///
+  /// [cbz 批 D | 2026-10-03] 与 Rust FFI `cbz_read_page` 对齐：本地 `.cbz`
+  /// 书（bookType=LOCAL|image=0x1040）章节正文为 `cbz://<条目名>` 行列表，
+  /// 漫画阅读器逐行调用本方法取图后渲染。
+  ///
+  /// - [path] — 本地书 bookUrl（绝对路径，或相对可迁移标识）
+  /// - [entry] — ZIP 条目名（兼容带/不带 `cbz://` 前缀）
+  Future<String> cbzReadPage({required String path, required String entry});
+
   // ========== JS 引擎 ==========
 
   /// 执行 JS 脚本

@@ -1242,7 +1242,11 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
 
       // 相对路径转绝对（对齐原版 BookHelp.flowImages：
       // NetworkUtils.getAbsoluteURL(bookChapter.url, src)）— Reasonix
-      if (_imageUrls.any((u) => !u.startsWith('http'))) {
+      // [cbz 批 D] 本地 cbz 页为 `cbz://` 伪 URL：不参与相对路径换算
+      //（cbz 章节 url 为空，换算会把伪 URL 破坏成 `/cbz://...`）
+      if (_imageUrls.any(
+        (u) => !u.startsWith('http') && !u.startsWith('cbz://'),
+      )) {
         _imageUrls = _imageUrls
             .map((u) => _resolveImageUrl(chapter.url, u))
             .toList();
@@ -1309,7 +1313,29 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
 
   /// 从章节内容中解析图片 URL 列表（复合 URL 对齐原版 HtmlFormatter）
   /// — Reasonix + UI
-  List<String> _parseImageUrls(String content) => parseComicImageUrls(content);
+  ///
+  /// [cbz 批 D | 2026-10-03] 本地 `.cbz` 书正文是 Rust `get_chapter_content`
+  /// 产出的 `cbz://<条目名>` 行列表；共享解析器 [parseComicImageUrls] 的行
+  /// 解析要求 `http` 前缀（comic_image_utils.dart L82），不认 cbz scheme。
+  /// 在屏内先按行提取 `cbz://` 伪 URL 直用（改动最小：不引入本地书语义
+  /// 到共享解析器，避免影响文本阅读器兜底 isImageDominantContent 的
+  /// 既有 http 行为）。— 全栈工程师 + UI
+  List<String> _parseImageUrls(String content) {
+    final cbzEntries = _extractCbzEntries(content);
+    if (cbzEntries.isNotEmpty) return cbzEntries;
+    return parseComicImageUrls(content);
+  }
+
+  /// 提取 `cbz://` 行（逐行 trim；保持 Rust 自然排序与原始条目名）
+  List<String> _extractCbzEntries(String content) {
+    if (!content.contains('cbz://')) return const [];
+    final entries = <String>[];
+    for (final line in content.split('\n')) {
+      final trimmed = line.trim();
+      if (trimmed.startsWith('cbz://')) entries.add(trimmed);
+    }
+    return entries;
+  }
 
   /// 相对路径转绝对（以章节 URL 为 base，对齐原版 NetworkUtils.getAbsoluteURL）
   String _resolveImageUrl(String chapterUrl, String url) {
@@ -1477,7 +1503,12 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       if (!_preloadedIndices.contains(i)) {
         _preloadedIndices.add(i);
         final url = _imageUrls[i];
-        if (useFfi) {
+        // [cbz 批 D] 本地 cbz 页：cbz:// 伪 URL 走 cbzReadPage 预载
+        //（须先于 useFfi/直连分支判定；本地书无书源且 CachedNetworkImage
+        // 无法处理 cbz scheme）
+        if (url.startsWith('cbz://')) {
+          unawaited(_preloadCbzPage(url));
+        } else if (useFfi) {
           unawaited(_preloadViaFfi(url));
         } else if (isCompositeImageUrl(url)) {
           // 无书源却含复合 URL：无法直连预加载，跳过（正式渲染亦可能失败）
@@ -1532,6 +1563,25 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
           // 磁盘缓存写失败静默降级（契约 §2.46 降级语义）
         }
       }
+    } catch (_) {
+      // 预加载失败静默；正式渲染会再试并展示错误态
+    }
+  }
+
+  /// 本地 cbz 页预加载（[cbz 批 D | 2026-10-03]）：与 [_LocalCbzImage]
+  /// 共用 [ComicImageDecodeCache]（缓存键 = 活跃 bookUrl + 条目名，本地书
+  /// 无书源，用 bookUrl 隔离不同 cbz 包的同名条目），已命中直接跳过；
+  /// 失败静默，正式渲染会再试并展示错误态。— 全栈工程师 + UI
+  Future<void> _preloadCbzPage(String url) async {
+    final book = _book;
+    if (book == null || !mounted) return;
+    try {
+      await ComicImageDecodeCache.preloadCbz(
+        api: ref.read(bookApiProvider),
+        path: book.bookUrl,
+        cacheKey: _activeBookUrl,
+        entry: url,
+      );
     } catch (_) {
       // 预加载失败静默；正式渲染会再试并展示错误态
     }
@@ -1805,26 +1855,39 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     // [P4-3 W2-fix P2-1] 底栏打开期间自动翻页暂停（对齐参考版
     // LaunchedEffect 依赖 activeSheet；关闭时复位）
     _pageActionsOpen = true;
+    // [cbz 批 D] 本地 cbz 页伪 URL（cbz://<条目名>）不是可消费链接 →
+    // 隐藏「复制链接」项；保存/分享走 cbzReadPage 字节（见 _resolvePageImage）
+    final isCbz = _imageUrls[index].startsWith('cbz://');
     showMangaPageActionsSheet(
       context,
       onSave: () => _savePageImage(index),
       onShare: () => _sharePageImage(index),
-      onCopy: () => _copyPageImage(index),
+      onCopy: isCbz ? null : () => _copyPageImage(index),
     ).whenComplete(() {
       if (mounted) _pageActionsOpen = false;
     });
   }
 
   /// 解析当前页图片字节（内存缓存 → 磁盘缓存 → FFI 解码回退）
+  ///
+  /// [cbz 批 D | 2026-10-03] 本地 cbz 页：内存缓存键 = 活跃 bookUrl
+  /// （与渲染/预载一致，非 origin），字节源经 [cbzPath] 走 cbzReadPage。
+  /// — 全栈工程师 + UI
   Future<MangaPageImageBytes?> _resolvePageImage(int index) async {
     final url = _imageUrls[index];
+    final isCbz = url.startsWith('cbz://');
     return resolveMangaPageImageBytes(
       api: ref.read(bookApiProvider),
       bookUrl: _activeBookUrl,
       url: url,
       // 有书源才走 FFI 解码链路（对齐 _DecodedComicImage 的分发条件）
       sourceJson: _bookSource == null ? null : jsonEncode(_bookSource!.toJson()),
-      memoryCached: ComicImageDecodeCache.get(_book?.origin ?? '', url),
+      // 本地 cbz 页：cbzReadPage 读条目（无书源，无磁盘/网络链路）
+      cbzPath: isCbz ? _book?.bookUrl : null,
+      memoryCached: ComicImageDecodeCache.get(
+        isCbz ? _activeBookUrl : (_book?.origin ?? ''),
+        url,
+      ),
     );
   }
 
@@ -2186,6 +2249,39 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
     if (isFailed) {
       // 图片加载失败，显示重试按钮
       return _buildImageErrorPlaceholder(index, url);
+    }
+
+    // [cbz 批 D | 2026-10-03] 本地 cbz 页：`cbz://<条目名>` 伪 URL 优先于
+    // 书源判定分发（本地书 origin=loc_book，_bookSource 恒 null；若落下方
+    //「有 origin 却未命中书源」分支会直接进失败占位）。
+    // 渲染挂接与 _DecodedComicImage 同构：_wrapImageFilter（灰度/色彩滤镜
+    // 外层包裹）+ _MangaImageFade（_buildImageItem 统一包裹）+ 可选电子纸。
+    if (url.startsWith('cbz://')) {
+      final book = _book;
+      if (book == null) {
+        return _buildImageErrorPlaceholder(index, url);
+      }
+      return _wrapImageFilter(
+        _LocalCbzImage(
+          path: book.bookUrl,
+          entry: url,
+          // 缓存键 = 活跃 bookUrl（本地书无书源；bookUrl 唯一标识 cbz 包，
+          // 避免不同包同名条目命中同一内存缓存）
+          cacheKey: _activeBookUrl,
+          // [P4-3 E2] 分页适配类型映射的 BoxFit（条漫恒 fitWidth）
+          fit: _imageFit,
+          eInkThreshold: _enableEInk ? _eInkThreshold : null,
+          onError: () {
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted && !_failedIndices.contains(index)) {
+                setState(() {
+                  _failedIndices.add(index);
+                });
+              }
+            });
+          },
+        ),
+      );
     }
 
     // 统一走 FFI 下载：Rust fetchImageWithDecode 支持书源 header 防盗链与
@@ -2625,6 +2721,26 @@ class ComicImageDecodeCache {
     put(bookSourceUrl, url, bytes);
   }
 
+  /// 本地 cbz 页预加载（[cbz 批 D | 2026-10-03]）：调用
+  /// [BookApi.cbzReadPage] 并写入缓存（已命中则跳过）；与 [_LocalCbzImage]
+  /// 正式渲染共用同一缓存键（[cacheKey] = 活跃 bookUrl + 条目名）。
+  /// — 全栈工程师 + UI
+  static Future<void> preloadCbz({
+    required BookApi api,
+    required String path,
+    required String cacheKey,
+    required String entry,
+  }) async {
+    if (_cache.containsKey(keyOf(cacheKey, entry))) return;
+    final json = await api.cbzReadPage(path: path, entry: entry);
+    final decoded = jsonDecode(json) as Map<String, dynamic>;
+    final b64 = decoded['base64'] as String? ?? '';
+    if (b64.isEmpty) return;
+    final bytes = base64Decode(b64);
+    if (!looksLikeImageBytes(bytes)) return;
+    put(cacheKey, entry, bytes);
+  }
+
   /// 测试用：清空缓存
   @visibleForTesting
   static void clearForTest() => _cache.clear();
@@ -2914,6 +3030,234 @@ class _DecodedComicImageState extends ConsumerState<_DecodedComicImage> {
             const SizedBox(height: 16),
             // [STAGE-UI-P43UNIFY2 B4] 重试按钮 0xFF444444 → MD3 主题化
             // OutlinedButton（对齐参考版 MediumOutlinedButton，调研报告 §2.5）
+            OutlinedButton.icon(
+              onPressed: _load,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('重试'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 本地 cbz 漫画页图片项（[cbz 批 D | 2026-10-03]）
+///
+/// 图片 URL 为 `cbz://<ZIP 条目名>` 伪 URL（Rust `get_chapter_content` 对
+/// `.cbz` 本地书产出）：经 [BookApi.cbzReadPage]（FFI `cbz_read_page`）读取
+/// 条目字节 → base64 解码 → [looksLikeImageBytes] 魔数校验 → [Image.memory]
+/// 显示（校验不过的字节不送图片解码器）。
+///
+/// 与 [_DecodedComicImage] 同构：
+/// - 内存缓存 [ComicImageDecodeCache] 优先（预载
+///   [ComicImageDecodeCache.preloadCbz] 与正式渲染共用，命中零重复 FFI）；
+/// - 加载态 = 0.6 屏高 + 主题加载环；失败态 = 55% 黑罩错误占位 + 重试，
+///   并同时经 [onError] 回调节点进屏幕 [_failedIndices] 失败占位重试链路；
+/// - [eInkThreshold] 非 null 时做真像素电子纸二值化（对齐 _DecodedComicImage）。
+/// — 全栈工程师 + UI
+class _LocalCbzImage extends ConsumerStatefulWidget {
+  const _LocalCbzImage({
+    required this.path,
+    required this.entry,
+    required this.cacheKey,
+    required this.onError,
+    this.eInkThreshold,
+    this.fit = BoxFit.fitWidth,
+  });
+
+  /// 本地 cbz 文件路径（book.bookUrl；FFI 侧兼容绝对路径与相对可迁移标识）
+  final String path;
+
+  /// ZIP 条目名（`cbz://` 伪 URL；FFI 侧兼容带/不带前缀）
+  final String entry;
+
+  /// 内存缓存键（本地书无书源，用活跃 bookUrl 隔离不同 cbz 包的同名条目）
+  final String cacheKey;
+
+  final VoidCallback onError;
+
+  /// 非 null 时做真像素电子纸二值化（对齐 EpaperTransformation）
+  final int? eInkThreshold;
+
+  /// [P4-3 E2] 图片渲染 BoxFit（调用方按分页适配类型映射传入）
+  final BoxFit fit;
+
+  @override
+  ConsumerState<_LocalCbzImage> createState() => _LocalCbzImageState();
+}
+
+class _LocalCbzImageState extends ConsumerState<_LocalCbzImage> {
+  bool _loading = true;
+  Uint8List? _bytes;
+  ui.Image? _epaperImage;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final hit = ComicImageDecodeCache.get(widget.cacheKey, widget.entry);
+    if (hit != null) {
+      _bytes = hit;
+      _loading = false;
+      unawaited(_applyEpaperIfNeeded(hit));
+    } else {
+      unawaited(_load());
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _LocalCbzImage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.entry != widget.entry ||
+        oldWidget.cacheKey != widget.cacheKey) {
+      // 条目/缓存键变化（切章/换书复用同索引元素）：重置重载
+      final hit = ComicImageDecodeCache.get(widget.cacheKey, widget.entry);
+      if (hit != null) {
+        _bytes = hit;
+        _loading = false;
+        _error = null;
+        unawaited(_applyEpaperIfNeeded(hit));
+      } else {
+        _bytes = null;
+        unawaited(_load());
+      }
+    } else if (oldWidget.eInkThreshold != widget.eInkThreshold &&
+        _bytes != null) {
+      unawaited(_applyEpaperIfNeeded(_bytes!));
+    }
+  }
+
+  @override
+  void dispose() {
+    _epaperImage?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _applyEpaperIfNeeded(Uint8List bytes) async {
+    final thr = widget.eInkThreshold;
+    if (thr == null) {
+      _epaperImage?.dispose();
+      if (mounted) setState(() => _epaperImage = null);
+      return;
+    }
+    try {
+      final img = await mangaEpaperFromBytes(bytes, threshold: thr);
+      if (!mounted) {
+        img.dispose();
+        return;
+      }
+      _epaperImage?.dispose();
+      setState(() => _epaperImage = img);
+    } catch (e) {
+      debugPrint('电子纸二值化失败: $e');
+    }
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final api = ref.read(bookApiProvider);
+      // 内存缓存（预载/其它实例已解码）命中 → 直接渲染，零重复 FFI 调用
+      final hit = ComicImageDecodeCache.get(widget.cacheKey, widget.entry);
+      if (hit != null) {
+        if (!mounted) return;
+        setState(() {
+          _bytes = hit;
+          _loading = false;
+        });
+        await _applyEpaperIfNeeded(hit);
+        return;
+      }
+      final json = await api.cbzReadPage(path: widget.path, entry: widget.entry);
+      final decoded = jsonDecode(json) as Map<String, dynamic>;
+      final b64 = decoded['base64'] as String? ?? '';
+      if (b64.isEmpty) {
+        throw Exception('CBZ 页数据为空');
+      }
+      final bytes = base64Decode(b64);
+      if (!looksLikeImageBytes(bytes)) {
+        throw Exception('CBZ 页数据不是有效图片');
+      }
+      if (!mounted) return;
+      ComicImageDecodeCache.put(widget.cacheKey, widget.entry, bytes);
+      setState(() {
+        _bytes = bytes;
+        _loading = false;
+      });
+      await _applyEpaperIfNeeded(bytes);
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = '$e';
+        _loading = false;
+      });
+      widget.onError();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      // 加载态与 _DecodedComicImage 同口径（B2：无整面硬编码底色 + 主题环）
+      // 保留 Container 作 widget 测试取证位，见该处注释
+      // ignore: sized_box_for_whitespace
+      return Container(
+        height: MediaQuery.of(context).size.height * 0.6,
+        child: const Center(
+          child: AppCircularProgressIndicator(strokeWidth: 2),
+        ),
+      );
+    }
+    final epaper = _epaperImage;
+    if (widget.eInkThreshold != null && epaper != null) {
+      return RawImage(
+        image: epaper,
+        fit: widget.fit,
+        width: double.infinity,
+      );
+    }
+    final bytes = _bytes;
+    if (bytes != null) {
+      return Image.memory(
+        bytes,
+        fit: widget.fit,
+        width: double.infinity,
+        gaplessPlayback: true,
+        errorBuilder: (context, _, _) => _errorPlaceholder(),
+      );
+    }
+    return _errorPlaceholder();
+  }
+
+  Widget _errorPlaceholder() {
+    // 失败态与 _DecodedComicImage._errorPlaceholder 同口径（55% 黑罩 +
+    // 素材图 + 重试；屏幕 _failedIndices 链路随后接管为页面级失败占位）
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.4,
+      color: Colors.black.withValues(alpha: 0.55),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Image.asset(
+              'assets/images/image_loading_error.png',
+              width: 64,
+              height: 64,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              _error ?? '图片加载失败',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 12,
+              ),
+            ),
+            const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: _load,
               icon: const Icon(Icons.refresh, size: 18),

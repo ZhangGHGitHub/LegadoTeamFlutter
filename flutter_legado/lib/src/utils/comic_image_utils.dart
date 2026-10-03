@@ -105,8 +105,12 @@ bool isImageDominantContent(String content) {
   return textOnly.length < 24;
 }
 
-/// JPEG/PNG/GIF/WEBP 魔数探测（解密结果校验，避免密文进 Image.memory）
-/// — Reasonix + UI
+/// JPEG/PNG/GIF/WEBP/BMP 魔数探测（解密结果校验，避免密文进 Image.memory）
+///
+/// [cbz 批 D] 补 BMP（"BM" 2 字节，与既有 JPEG 2 字节魔数同精度）：
+/// Rust CBZ 图片白名单 `IMAGE_EXTENSIONS` 已收 `.bmp`，Dart 校验不认会
+/// 把合法 BMP 页判为「不是有效图片」落错误占位，两端口径须一致。
+/// — Reasonix + UI / 全栈工程师 + UI
 bool looksLikeImageBytes(List<int> bytes) {
   if (bytes.length < 4) return false;
   // JPEG
@@ -137,5 +141,7 @@ bool looksLikeImageBytes(List<int> bytes) {
       bytes[11] == 0x50) {
     return true;
   }
+  // BMP: "BM"
+  if (bytes[0] == 0x42 && bytes[1] == 0x4D) return true;
   return false;
 }
