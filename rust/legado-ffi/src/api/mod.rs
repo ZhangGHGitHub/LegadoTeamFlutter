@@ -13,6 +13,8 @@ pub mod bookmark_api;
 pub mod bookshelf;
 pub mod cache_api;
 pub mod cache_download_api;
+/// [cbz 批 B | 2026-10-03] CBZ 本地漫画页读取（E9 参考版扩展，用户已授权）
+pub mod cbz_api;
 pub mod config_api;
 pub mod cover_api;
 pub mod dict_api;

@@ -4,11 +4,24 @@ use serde::{Deserialize, Serialize};
 pub mod book_type {
     pub const TEXT: i32 = 0;
     pub const AUDIO: i32 = 1;
+    /// BookSourceType **数值域**（书源类型「图片/漫画源」），非位标志。
+    /// 勿与 [`IMAGE_BIT`]（`Book.bookType` 位域）混用。
     pub const IMAGE: i32 = 2;
     pub const FILE: i32 = 3;
     pub const VIDEO: i32 = 4;
     pub const LOCAL: i32 = 0x1000;
     pub const ALL_BOOK_TYPE_LOCAL: i32 = 0x1000;
+    /// 本地漫画媒体位（`Book.bookType` **位域**）；对齐 Kotlin `BookType` 位语义
+    ///
+    /// [cbz 批 B | 2026-10-03] 导入 `.cbz` 本地漫画时与 [`LOCAL`] 按位或组合：
+    /// `bookType = LOCAL(0x1000) | IMAGE_BIT(64)`；其余本地格式（txt/epub/
+    /// mobi/azw/azw3/pdf/umd）保持 `LOCAL` 无媒体位。
+    ///
+    /// **命名域警告（必读）**：本常量属 `Book.bookType` **位标志域**，与上方
+    /// [`IMAGE`]（= 2，**BookSourceType 数值域**：书源类型「图片/漫画源」）
+    /// 语义域不同，禁止互相替代或混用（两者数值恰好都含「图片」语义，
+    /// 是本项目易踩坑点）。
+    pub const IMAGE_BIT: i32 = 64;
     /// 未入书架的临时书（对齐 Kotlin `BookType.notShelf = 0b100_0000_0000`）
     /// 用于「搜索/发现打开在线书阅读但未加入书架」的临时记录：落库以支撑阅读器
     /// 按 bookUrl/origin 取正文，但书架列表须按此位过滤，避免污染书架。
@@ -498,5 +511,9 @@ mod tests {
         assert_eq!(book_type::FILE, 3);
         assert_eq!(book_type::VIDEO, 4);
         assert_eq!(book_type::LOCAL, 0x1000);
+        // cbz 批 B：本地漫画媒体位（位域），与数值域 IMAGE(=2) 分离
+        assert_eq!(book_type::IMAGE_BIT, 64);
+        assert_eq!(book_type::LOCAL | book_type::IMAGE_BIT, 0x1040);
+        assert_ne!(book_type::IMAGE, book_type::IMAGE_BIT);
     }
 }

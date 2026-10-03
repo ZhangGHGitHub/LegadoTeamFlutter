@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use legado_book::{BookMetadata, LocalBook};
+use legado_book::{BookFormat, BookMetadata, LocalBook};
 use legado_core::models::Book;
 use legado_core::LegadoResult;
 use legado_db::repository::Repository;
@@ -63,7 +63,7 @@ pub fn import_local_book(file_path: &str) -> LegadoResult<ImportResult> {
     let real_path = resolve_local_book_path(file_path);
 
     // 检测格式（用于验证文件是否为支持的格式）
-    let _format = LocalBook::detect_format(&real_path)?;
+    let format = LocalBook::detect_format(&real_path)?;
 
     // 解析元数据
     let metadata = match LocalBook::parse(&real_path) {
@@ -93,7 +93,16 @@ pub fn import_local_book(file_path: &str) -> LegadoResult<ImportResult> {
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default();
-    book.book_type = legado_core::models::book::book_type::LOCAL;
+    // 书类型：本地书基础位 LOCAL；[cbz 批 B | 2026-10-03] `.cbz` 漫画包
+    // 额外带 IMAGE_BIT(64) 媒体位（位域组合，对齐 Kotlin `BookType` 位语义；
+    // 与 BookSourceType 数值域的 `book_type::IMAGE=2` 不同域，勿混用）。
+    // 其余本地格式（txt/epub/mobi/azw/azw3/pdf/umd）保持 LOCAL 无媒体位。
+    book.book_type = if format == BookFormat::Cbz {
+        legado_core::models::book::book_type::LOCAL
+            | legado_core::models::book::book_type::IMAGE_BIT
+    } else {
+        legado_core::models::book::book_type::LOCAL
+    };
     book.last_check_time = now;
 
     // 插入数据库
@@ -113,5 +122,83 @@ pub fn import_local_book(file_path: &str) -> LegadoResult<ImportResult> {
             book: None,
             error: Some(format!("导入数据库失败: {e}")),
         }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use legado_core::models::book::book_type;
+
+    /// 在临时目录中程序化造一个 CBZ，返回文件路径
+    fn make_cbz(dir_name: &str, file_name: &str, entries: &[(&str, &[u8])]) -> String {
+        use std::io::Write as _;
+        let dir = std::env::temp_dir().join(dir_name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cbz_path = dir.join(file_name);
+        let file = std::fs::File::create(&cbz_path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, data) in entries {
+            writer.start_file(*name, options).unwrap();
+            writer.write_all(data).unwrap();
+        }
+        writer.finish().unwrap();
+        cbz_path.to_string_lossy().into_owned()
+    }
+
+    /// a) `.cbz` 导入：bookType = LOCAL(0x1000) | IMAGE_BIT(64)，origin 语义不变
+    #[test]
+    fn import_cbz_sets_local_image_bit() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let path = make_cbz(
+            "legado_test_import_cbz",
+            "本地漫画.cbz",
+            &[("01.jpg", b"one"), ("02 续.png", b"two")],
+        );
+
+        let res = import_local_book(&path).unwrap();
+        assert!(res.success, "导入失败: {:?}", res.error);
+        let book = res.book.expect("成功时应有 book");
+        assert_eq!(
+            book.book_type,
+            book_type::LOCAL | book_type::IMAGE_BIT,
+            "cbz 应为 LOCAL|IMAGE_BIT"
+        );
+        assert_eq!(book.book_type, 0x1040);
+        assert_ne!(
+            book.book_type,
+            book_type::IMAGE,
+            "位域不得混用数值域 IMAGE=2"
+        );
+        assert_eq!(book.origin, book_type::LOCAL_TAG, "origin 仍为 loc_book");
+        assert_eq!(book.book_url, path, "book_url 应存传入路径");
+        assert_eq!(book.name, "本地漫画");
+
+        // 收尾清理共享内存库
+        with_database(|db| BookRepository::new(db.connection()).delete_by_url(&path)).unwrap();
+        let _ = std::fs::remove_dir_all(std::env::temp_dir().join("legado_test_import_cbz"));
+    }
+
+    /// 回归：非 cbz 本地格式（txt）保持 LOCAL 无媒体位
+    #[test]
+    fn import_txt_keeps_local_without_image_bit() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let dir = std::env::temp_dir().join("legado_test_import_txt_regress");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let txt = dir.join("普通小说.txt");
+        std::fs::write(&txt, "第一章 开始\n正文内容。\n").unwrap();
+        let path = txt.to_string_lossy().into_owned();
+
+        let res = import_local_book(&path).unwrap();
+        assert!(res.success, "导入失败: {:?}", res.error);
+        let book = res.book.expect("成功时应有 book");
+        assert_eq!(book.book_type, book_type::LOCAL, "txt 应保持 LOCAL");
+        assert_eq!(book.book_type & book_type::IMAGE_BIT, 0, "不应带图片位");
+
+        with_database(|db| BookRepository::new(db.connection()).delete_by_url(&path)).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

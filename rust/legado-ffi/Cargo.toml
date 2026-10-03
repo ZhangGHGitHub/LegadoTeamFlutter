@@ -33,6 +33,8 @@ flutter_rust_bridge = "=2.11.1"
 
 [dev-dependencies]
 encoding_rs = "0.8"
+# [cbz 批 B | 2026-10-03] 测试造 CBZ 夹具（与 legado-book 同版本 zip，仅测试用）
+zip = "2"
 # 提示 1：lib 单测（http_state.rs）与 tests/ 集成二进制使用
 # `cookie_store::test_clear_memory_only`——该面仅 test-support feature 下可见
 legado-js = { path = "../legado-js", features = ["test-support"] }

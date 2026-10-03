@@ -1904,6 +1904,18 @@ Future<String> archiveConvertEncoding({
 Future<bool> archiveIsArchive({required String filePath}) =>
     RustLib.instance.api.crateFfiFfiArchiveIsArchive(filePath: filePath);
 
+/// 读取 CBZ 本地漫画单页图片字节（返回 JSON：{ base64, len }）
+///
+/// [cbz 批 B | 2026-10-03] E9 参考版扩展（用户已授权），加法式新增，
+/// 与 `fetch_image_with_decode` 同返回形态。配合阅读链路：
+/// `get_chapter_content` 对 `.cbz` 返回 `cbz://<条目名>` 行列表，
+/// Dart 侧逐行调用本方法取图后渲染。
+///
+/// - `path` — 本地书 `bookUrl`（绝对路径，或相对可迁移标识）
+/// - `entry` — ZIP 条目名（兼容带/不带 `cbz://` 前缀）
+Future<String> cbzReadPage({required String path, required String entry}) =>
+    RustLib.instance.api.crateFfiFfiCbzReadPage(path: path, entry: entry);
+
 /// 构建书籍更新定时任务（返回 AutoTaskRule JSON）
 Future<String> autoTaskBuildBookUpdate({
   required String bookUrl,

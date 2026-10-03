@@ -348,6 +348,11 @@ fn get_chapter_content_inner(
 }
 
 /// 判断是否为本地书籍
+///
+/// [cbz 批 B | 2026-10-03] 白名单新增 `.cbz`（本地漫画包，E9 参考版扩展：
+/// 命中后 `get_chapters` 懒解析经 `LocalBook` → `CbzFile`，正文返回
+/// `cbz://<条目名>` 行列表，图片字节经 `cbz_api::cbz_read_page` 读取）。
+/// `.zip` **不加入**：保持压缩容器语义（`archiveImportZip` 路径不变）。
 pub fn is_local_book(book_url: &str) -> bool {
     let lower = book_url.to_lowercase();
     lower.ends_with(".epub")
@@ -357,6 +362,7 @@ pub fn is_local_book(book_url: &str) -> bool {
         || lower.ends_with(".azw")
         || lower.ends_with(".azw3")
         || lower.ends_with(".pdf")
+        || lower.ends_with(".cbz")
 }
 
 /// 将 BookChapter 转换为 legado-book 的 ChapterInfo
@@ -1234,6 +1240,91 @@ mod tests {
             Ok(())
         })
         .unwrap();
+    }
+
+    // ─── [cbz 批 B | 2026-10-03] 本地漫画白名单与懒解析链路 ────────────────
+
+    /// c) `is_local_book` 白名单含 `.cbz`；`.zip` 仍为 false（压缩容器回归）
+    #[test]
+    fn is_local_book_includes_cbz_excludes_zip() {
+        // cbz（大小写不敏感）
+        assert!(is_local_book("/books/本地漫画.cbz"));
+        assert!(is_local_book("/books/COMIC.CBZ"));
+        // .zip 保持压缩容器语义：不在本地书白名单（回归）
+        assert!(!is_local_book("/books/archive.zip"));
+        assert!(!is_local_book("/books/ARCHIVE.ZIP"));
+        // 既有白名单回归
+        assert!(is_local_book("/books/a.epub"));
+        assert!(is_local_book("/books/a.txt"));
+        assert!(is_local_book("/books/a.text"));
+        assert!(is_local_book("/books/a.mobi"));
+        assert!(is_local_book("/books/a.azw"));
+        assert!(is_local_book("/books/a.azw3"));
+        assert!(is_local_book("/books/a.pdf"));
+        assert!(!is_local_book("/books/a.umd"));
+        assert!(!is_local_book("/books/a.epub.bak"));
+    }
+
+    /// `.cbz` 加入白名单后端到端：懒解析目录（1 章、url 置空）→ 正文为
+    /// `cbz://` 条目行（批 A `CbzFile` 接线回归；cbz_api 单测另验字节读取）
+    #[test]
+    fn cbz_local_book_lazy_toc_and_content_end_to_end() {
+        use std::io::Write as _;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CTR: AtomicUsize = AtomicUsize::new(0);
+        let n = CTR.fetch_add(1, Ordering::SeqCst);
+        let dir = std::env::temp_dir().join(format!("legado_cbz_e2e_{}_{}", std::process::id(), n));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let cbz_path = dir.join("本地 漫画.cbz");
+        {
+            let file = std::fs::File::create(&cbz_path).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default();
+            for (name, data) in [
+                ("02.jpg", b"page-two".as_slice()),
+                ("01 封面.jpg", b"page-one".as_slice()),
+                ("readme.txt", b"ignored".as_slice()),
+            ] {
+                writer.start_file(name, options).unwrap();
+                writer.write_all(data).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        let book_url = cbz_path.to_string_lossy().into_owned();
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        // books 行（书架入口语义；懒加载分支会同步 B-13b 派生字段）
+        let book_json = serde_json::json!({
+            "bookUrl": book_url,
+            "name": "本地 漫画",
+            "origin": "loc_book"
+        })
+        .to_string();
+        crate::api::bookshelf::add_book(&book_json).expect("本地漫画入库");
+
+        // 懒解析：整包 1 章、章节 url 置空、标题 = 文件名去扩展名
+        let chapters = get_chapters(&book_url).expect("cbz 章节懒解析");
+        assert_eq!(chapters.total, 1, "CBZ 整包应固定 1 章");
+        assert_eq!(chapters.chapters[0].url, "", "CBZ 章节 url 应置空");
+        assert_eq!(chapters.chapters[0].title, "本地 漫画");
+
+        // 正文：自然排序的 cbz:// 行列表（仅图片条目）
+        let content = get_chapter_content(&book_url, 0).expect("cbz 正文");
+        let lines: Vec<&str> = content.lines().collect();
+        assert_eq!(lines.len(), 2, "content={content}");
+        assert_eq!(lines[0], "cbz://01 封面.jpg");
+        assert_eq!(lines[1], "cbz://02.jpg");
+        assert!(!content.contains("readme.txt"));
+
+        // 收尾清理：章节行 + 书行 + 文件
+        with_database(|db| {
+            BookChapterRepository::new(db.connection()).delete_by_book_url(&book_url)?;
+            BookRepository::new(db.connection()).delete_by_url(&book_url)?;
+            Ok(())
+        })
+        .unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     // ─── [iOS 视角F C1] 本地书「相对可迁移标识」读写回环 ─────────────────────
