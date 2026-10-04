@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-10-05 | **P2-29c 后续：失败章查询契约冻结（加法式，零破坏，+1 方法，契约先行本批不改代码）**：§2.43 新增 `cacheDownloadFailedChapters(bookUrl) → Future<String>`（§2.43.8）：单次只读查询返回该书批量下载**已失败**章节 index 的 JSON 整型数组（升序、0-based；无失败为空数组）；数据链=任务表 `TaskInner` 与持久化快照新增失败章索引集合（对齐参考版 `CacheDownloadStateStore.kt:35-57` 的 `markFailed`（加入）/`markSuccess`（移除）语义，任务启动清空、恢复回读一并恢复、`persist_snapshot` 含集合）；目录页 ERROR 态（红色重试图标可重试，P2-29c 已落 UI、数据源恒空待接）由此接通。§2.43 方法数 10→**11**，附录合计 293→**294**，BookApi 口径 290→**291**（契约先行，实现批封装后程序化计数转齐） |
 | 2026-10-03 | **B2 音频预下载写入面契约冻结（加法式，+2 写面方法；契约先于代码，本批不改任何代码）**：§2.48 新增（补齐 §2.47 只读/清理面所缺写入面，对齐原版 `AudioCacheService` 服务编排 + `AudioCacheManager.cacheChapter` 写入本体）：`audioCacheDownload({bookUrl, chapterIndex, chapterUrl, chapterTitle, playUrl}) → Future<String>`（Rust `ffi::audio_cache_download`，async + spawn_blocking 非阻塞）——单章下载安装，**幂等**（已提交缓存直接返回 `already_cached` 不重下，对齐原版服务循环 `AudioCacheService.kt:216` 跳过语义）；playUrl 由 Dart 经既有 `audioGetChapterMedia`（§2.26 播放取址链）的 `mediaUrl` 解析传入——**修订说明（2026-10-04，主代理据实现批反馈修正）**：初稿写 `getChapterContentFull`，但该链会应用替换规则与简繁转换（`reader.rs:1034,1111`）**可能污染 URL**；原版 `cacheChapterLocked:139-144` 实为播放链 `WebBook.getContentAwait` 输出，与我方 `getAudioChapterMedia` 同源，实现取后者更贴原版；Rust 自 DB 载入 Book/BookSource/BookChapter 后以 `legado-parser::AnalyzeUrl` 等价语义发起下载（headers/cookie/JS/重试全在 Rust；**字节不穿 FFI**——音频可达数十 MB，禁止 base64，系 §2.46 base64 惯例的反例登记，先例 `tts_speak`/`webdavDownloadFile`）；流程逐条对齐 `AudioCacheManager.kt:132-199`：五段式命名（`AudioCachePolicy.kt:67-98`）→ 陈旧未提交清理（1 小时阈值 `:302-314`）→ 流式写 `tmp_*.part`（块级取消检查）→ size 校验 → rename 安装（失败退复制）→ 写 `.complete` 并回读校验 → 同 key 旧版本清理；失败 **Err 上抛不降级**（有意区别于 §2.47 读面降级风格：写入是显式用户动作，错误须驱动 Dart 循环 failCount）。`audioCacheCancel() → Future<bool>`——取消在途下载（进程级取消代数单槽，对齐原版服务单 worker + stop 语义；中止流式拷贝并删部分文件）。**不设**批量队列/进度查询方法（Dart 循环逐章自持进度，原版服务编排不上 FFI）；**不设**容量上限/自动清理（原版无此功能，重构红线禁新增）；**不设**导入/导出（用户已裁决）；原版前台服务保活语义不复制（进程死即停、已装文件保留，登记为已知边界）。决策策略（键计算/文件名/扩展名探测/.complete 安装/已缓存跳过）全部落 Rust，UI 层零业务逻辑。§2.48 方法数 **2**，方法模块 44→**45**，附录合计 291→**293**，BookApi 口径 288→**290**（契约先行，代码未实现，`api_contract_test.dart` BookApi 总数项按预期红、实现批封装后转绿） |
 | 2026-10-03 | **cbz 本地漫画批 B：FFI 契约冻结 + bookType 位域 + is_local_book 白名单（E9 参考版扩展，用户已授权；加法式，+1 纯 FFI 方法）**：**契约先于代码**——本条目及同批文档改动先于 Rust 代码落盘（工作树顺序：契约先行，代码随后；若同批提交则契约条目提交在前，见提交记录）。**新增 FFI 方法**（§2.34 压缩包导入 7→**8**，附录合计 286→**287**，BookApi 口径 283 不变——纯 FFI，待 UI 轨后续封装）：`cbzReadPage(path, entry) → Future<String>`（Rust `ffi::cbz_read_page`，实现 `legado-ffi/src/api/cbz_api.rs`；仅走 frb 主链路）——CBZ 本地漫画按条目读取图片字节，返回 JSON `{base64, len}`（与 §2.20 `fetchImageWithDecode` / §2.46 图片缓存的 `{base64,len}` 惯例对齐，§1.3 复杂类型 JSON 约定）；`entry` 兼容带/不带 `cbz://` 前缀（剥前缀后按 ZIP 条目名精确匹配，中文/空格条目名原样，不 URL 编解码）；`path` 为本地书 `bookUrl` 形态（绝对路径原样；相对可迁移标识经 `resolve_local_book_path` 同语义解析，与 §2.9 本地书链路一致）；错误语义：文件不存在 / ZIP 解析失败 / 条目不存在 / 包内无图片条目 → 抛 BridgeError。**bookType 语义补记**：`importLocalBook` 导入 `.cbz` 时 `bookType = LOCAL(0x1000) \| IMAGE_BIT(64)`（位域，对齐 Kotlin `BookType` 位语义）；其余本地格式（txt/epub/mobi/azw/azw3/pdf/umd）保持 `LOCAL` 无媒体位；`origin=loc_book` / `book_url` 相对标识语义不变。**命名域警告（必读）**：新增常量 `legado_core::models::book::book_type::IMAGE_BIT = 64` 属 `Book.bookType` **位域**；既有 `book_type::IMAGE = 2` 属 **BookSourceType 数值域**（书源类型「图片源」），两域禁止混用。**is_local_book 白名单**：新增 `.cbz`（`reader::is_local_book` 后缀判定，与 `.epub/.txt/.text/.mobi/.azw/.azw3/.pdf` 同列）；`.zip` **不加入**（保持压缩容器行为，`archiveImportZip` 路径不变）。**链路衔接**：`.cbz` 加入白名单后，`getChapters` 懒加载经 `LocalBook` → `CbzFile`（批 A `1e7dd3abb3`）解析并入库，`getChapterContent` 返回 `cbz://<条目名>` 行列表，Dart 侧逐行调 `cbzReadPage` 取图渲染 |
 | 2026-10-02 | **P5 尾项 server 注入面接入关闭（setup 生成器平移 + `server_deps` 三闭包全量接入；零 FFI 签名变更、零 REST schema 变化、不新增端点；方法表与方法计数全部不变）**：提交 `aa49874137`。**调研翻盘（前批边界登记已被补齐）**：P5 关闭时登记「`login_header`/`book_variable`/`source_context` server 侧注入 None（server 无 DB/登录端点/setup 构造器，行为无损起点，接真实现即生效）」（见本表 2026-10-01 条目⑤及 REFACTORING_ACTIVE_PLAN P5 关闭记录尾项）——本批全部接入真实现，server 注入面不再有 None 占位。**setup 脚本生成器平移**：`legado-fetcher` 新增共享 `source_setup.rs`（宿主数据参数化），ffi `source_js_bindings.rs` 改薄壳 re-export——与 HEAD 逐字一致、diff 为空（code-reviewer 证实）；non-quickjs 档行为保持（返回空串）。**server 三闭包全量接入（`server_deps(state: &Arc<AppState>)`）**：① `login_header`——caches 表 `loginHeader_<source_url>`（与 ffi `source_login_cache::get_login_header` 同键）；② `book_variable`——`find_by_url` → `find_by_origin_book_url` 反查 `books.variable`（与 ffi `db_book_variable` 同语义）；③ `source_context`——`infoMap_<url>`/`loginHeader_<url>`/`userInfo_<url>` 三键 + 共享生成器（与 ffi `explore_info_map`/登录缓存同键）。**`with_state_db` 三级锁**：try_lock 快路径 → 多线程 runtime `block_in_place`（源码级证实慢路径无死锁风险）→ current_thread 测试档 None 降级（=批前行为等价）；code-reviewer 建议的两条禁令已注释（持 guard 任务不得进 fetcher 链、`Runtime::block_on` 根 future 不得直调 webbook 链）。**行为变化范围（接线）**：`build_engine(state)` 签名改动，reader/audio/toc_update 全端点接线；REST `/api/webbook/{search,info,chapters,content}`、`/api/books/:id/chapters/:index/content`、audio、toc_update 对需登录/带变量/需 setup 的书源从「能力关闭（None）」变为「可用」（登录头合并、`books.variable` 变量链、setup 脚本注入 JS 上下文）；不新增端点、不改 schema。**边界登记（未改）**：server 无 login/webView 写入面，登录头/变量生效依赖 server DB 已有行（App/桌面端写同库或外部写库）；`PUT /api/books/{id}` 以 `..Book::default()` 重建行会清空 variable（存量边界）。**测试与门禁**：server 5 新（deps 装配/login_header 种库/book_variable 反查/source_context 内容/REST 端到端 login_header 种→1 条未种→0 条）+ fetcher source_setup 2；回归 server 179、fetcher 84、ffi 403、ffi quickjs 467、server quickjs 180 全绿；clippy 三 crate `--all-targets -D warnings` 通过。**独立审查（code-reviewer）**：pass（无阻塞；P2-1 锁禁令已注释、P3 `leave_native`）。零 FFI 签名/REST schema/方法表变化，§2 方法表与方法计数全部不变 |
@@ -175,8 +176,8 @@
 ## 2. 方法清单
 
 > 共 **45 个方法模块**（§2.1–§2.48，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
-> BookApi 接口当前共 **290 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计；2026-10-04 B1 将音频缓存 4 方法封装进 BookApi：284→288；2026-10-03 B2 冻结音频预下载写入面 2 方法，契约先行、待实现批封装进 BookApi：288→290）。
-> 附录 §2.x 行合计 **293** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
+> BookApi 接口当前共 **291 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计；2026-10-04 B1 将音频缓存 4 方法封装进 BookApi：284→288；2026-10-03 B2 冻结音频预下载写入面 2 方法，契约先行、待实现批封装进 BookApi：288→290；2026-10-05 P2-29c 后续批冻结失败章查询 1 方法，契约先行、待实现批封装进 BookApi：290→291）。
+> 附录 §2.x 行合计 **294** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -743,7 +744,7 @@
 | `ttsSpeak({required String text, required String engineUrl, double speed = 1.0})` | text: 朗读文本，engineUrl: 引擎 URL 模板，speed: 语速 | `Future<Map<String, dynamic>>` | TTS 真实合成。返回字段（camelCase）：`audioPath: String`（本地音频文件绝对路径）/ `fromCache: bool`（是否缓存命中）/ `contentType: String`（音频 MIME 类型）。服务器返回 json/text 时以响应体文本抛出 BridgeError |
 | `ttsSetCacheDir(String path)` | path: 缓存目录绝对路径 | `Future<bool>` | 设置 TTS 音频缓存目录（全局生效） |
 
-### 2.43 缓存写/购买/批量下载/导出扩展（Task #136 R5+R6+R7+R8，10 个方法）
+### 2.43 缓存写/购买/批量下载/导出扩展（Task #136 R5+R6+R7+R8，11 个方法）
 
 > Task #136 合并批次，均为**加法式**新增（不改既有签名/行为）。仅走 frb 主链路（`ffi.rs`），
 > 旧式 C ABI（`bridge.rs`）已按 Task #136 R12 冻结新增并标注 DEPRECATED，故本批不在 C ABI 面暴露。
@@ -841,6 +842,7 @@
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
 | `cacheDownloadRunningChapters({required String bookUrl})` | bookUrl | `Future<String>` | 该书批量下载（§2.43.3）当前在途章节 index 的 JSON 整型数组（升序、0-based；无活跃任务为空数组 `[]`）；Dart 侧 `RustApi.listDownloadingChapters` 解析为 `List<int>` 供目录页 DOWNLOADING 态动画 |
+| `cacheDownloadFailedChapters({required String bookUrl})` | bookUrl | `Future<String>` | 该书批量下载**已失败**章节 index 的 JSON 整型数组（升序、0-based；无失败为空数组 `[]`）；Dart 侧 `RustApi.listFailedChapters` 解析为 `List<int>` 供目录页 ERROR 态（红色重试图标，可点击重试）。**数据链（P2-29c 后续，2026-10-05 用户裁决）**：`TaskInner` 与持久化快照（`cacheDownloadTask:` kv）新增**失败章索引集合**（对齐参考版 `CacheDownloadStateStore.markFailed/markSuccess` 语义：失败加入、成功/重试移除、任务启动清空）；`run_download` 失败分支从仅递增 `failed` 计数改为同时记入集合，成功分支从集合移除；恢复回读（`ensure_restored`）一并恢复失败集合；`persist_snapshot` 序列化含集合。查询为**纯任务表读 + 恢复回读**，零额外写入 |
 
 ---
 
@@ -1060,16 +1062,16 @@
 | 40 | 本地 TXT 全文搜索 | 4 |
 | 41 | 契约外已实现 FFI 补登记（§2.41，待 BookApi 封装） | 5 |
 | 42 | TTS 真实合成管线 | 2 |
-| 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 10 |
+| 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 11 |
 | 44 | 字典规则操作 | 7 |
 | 45 | 图片磁盘缓存 | 2 |
 | 46 | 音频章节文件缓存 | 4 |
 | 47 | 音频章节预下载 | 2 |
-| | **合计（§2.x 附录行合计）** | **293** |
+| | **合计（§2.x 附录行合计）** | **294** |
 
 > 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`、2026-09-28 STAGE3-C2B 增 §2.16 单章缓存失效 1 方法 `clearChapterCache`、2026-09-28 P2-28c 增 §2.43 目录实时刷新 1 方法 `listCachedChapters`、2026-09-29 P2-29 增 §2.43 目录下载中态查询 1 方法 `listDownloadingChapters`、2026-09-29 P4-2a 增 §2.46 图片磁盘缓存 2 方法 `saveImageCache`/`getImageCache`、2026-10-03 cbz 批 B 增 §2.34 本地漫画页读取 1 方法 `cbzReadPage`、2026-10-04 B1 增 §2.47 音频章节文件缓存 4 方法、2026-10-03 B2 增 §2.48 音频章节预下载写入 2 方法 `audioCacheDownload`/`audioCacheCancel`，取代人工统计）：
-> - 附录行合计 **293** = §2.x 实际方法行总数；其中与 BookApi 同名 278（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2）、§1.7 命名等价对的 FFI 登记名 9
+> - 附录行合计 **294** = §2.x 实际方法行总数；其中与 BookApi 同名 279（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 失败章查询 1）、§1.7 命名等价对的 FFI 登记名 9
 >   （对应 8 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
 >   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
-> - BookApi 代码计数 **290** = 278 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2）+ 8 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系（§2.48 2 方法为契约先行，`book_api.dart` 实现批封装后程序化计数转齐）。
+> - BookApi 代码计数 **291** = 279 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 失败章查询 1）+ 8 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系（§2.48 2 方法为契约先行，`book_api.dart` 实现批封装后程序化计数转齐）。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。
