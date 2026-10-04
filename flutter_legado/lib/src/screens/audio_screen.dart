@@ -1,9 +1,4 @@
 ﻿import 'dart:async';
-import 'dart:io';
-
-import '../services/bridge_http.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:saf/saf.dart';
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -262,10 +257,15 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
             tooltip: '设置',
             onPressed: () => setState(() => _showSettings = !_showSettings),
           ),
-          // [UI-fix v2.0.2 | 2026-08-06] 听书溢出菜单（对标原版 audio_play.xml：
-          // 换源/登录/复制播放地址/缓存目录选择/缓存范围/清当前章缓存/
-          // 听书溢出菜单可用项：换源/登录/复制地址/编辑书源/日志。
-          // P0-2：片头/wakelock/缓存目录(SAF)/缓存范围已诚实接通。
+          // [UI-fix v2.0.2 | 2026-08-06] 听书溢出菜单（对标原版 audio_play.xml）。
+          // [B1 P1 收口 | 2026-10-04] 缓存目录/缓存范围入口下线：原版写入只发生
+          // 于预下载前台服务 AudioCacheService（AudioCacheService.kt:217 全仓唯一
+          // cacheChapter 调用），播放只读同一目录同键（AudioPlay.kt:388-413、
+          // AudioCacheManager.kt:205-230）；我方旧实现为页面内循环 + 旧孤儿键 +
+          // 无 .complete + support/SAF 目录，与新读面（契约 §2.47：应用私有
+          // cache/audio_cache + 五段式 + .complete）三重不匹配且永远命中不到。
+          // 本批按方案 B 如实收口（入口下线、旧写入删除），待专门预下载服务批次
+          // 按原版语义恢复（含通知与 AUDIO_CACHE_CHANGED 事件）。
           PopupMenuButton<String>(
             tooltip: '更多',
             // [LAYOUT_PLAN P3] 沉浸域仅顶栏动作行规范：菜单在顶栏下方展开（本体不动）
@@ -280,10 +280,6 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
                   value: 'copyAudioUrl',
                   child: Text('复制播放地址'),
                 ),
-              if (_canCopyPlayUrl)
-                const PopupMenuItem(value: 'cacheFolder', child: Text('缓存目录')),
-              if (_canCopyPlayUrl)
-                const PopupMenuItem(value: 'cacheRange', child: Text('缓存范围')),
               if (_canCopyPlayUrl)
                 CheckedPopupMenuItem(
                   value: 'wakeLock',
@@ -783,10 +779,6 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
         await _openLogin();
       case 'copyAudioUrl':
         await _copyAudioUrl();
-      case 'cacheFolder':
-        await _pickAudioCacheFolder();
-      case 'cacheRange':
-        await _showAudioCacheRange();
       case 'wakeLock':
         final next = !_wakeLock;
         await ref.read(audioNotifierProvider.notifier).setWakeLockEnabled(next);
@@ -901,126 +893,24 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
   }
 
 
-  Future<void> _pickAudioCacheFolder() async {
-    try {
-      // 优先 SAF v2（持久化写权限）；失败再降级 MethodChannel
-      String? uri;
-      try {
-        final dir = await Saf().pickDirectory(writePermission: true);
-        uri = dir?.uri;
-      } catch (_) {
-        const channel = MethodChannel('legado/file_picker');
-        uri = await channel.invokeMethod<String>('pickDirectory');
-      }
-      if (uri == null || uri.isEmpty) return;
-      await ref.read(bookApiProvider).setConfig(kAudioCacheTreeUriKey, uri);
-      if (mounted) _snack('已选择缓存目录');
-    } catch (e) {
-      if (mounted) _snack('选择目录失败: $e');
-    }
-  }
-
-  Future<void> _showAudioCacheRange() async {
-    final audio = ref.read(audioNotifierProvider);
-    final total = audio.chapters.length;
-    if (total <= 0) {
-      _snack('暂无章节');
-      return;
-    }
-    final from = audio.currentIndex + 1;
-    final toCtrl = TextEditingController(text: '$total');
-    final ok = await showModalBottomSheet<bool>(
-      context: context,
-      showDragHandle: true,
-      builder: (ctx) {
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 8,
-            bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text('缓存范围', style: Theme.of(ctx).textTheme.titleMedium),
-              const SizedBox(height: 8),
-              Text('从第 $from 章缓存到：'),
-              TextField(
-                controller: toCtrl,
-                keyboardType: TextInputType.number,
-                decoration: const InputDecoration(hintText: '结束章节序号'),
-              ),
-              const SizedBox(height: 12),
-              FilledButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('开始缓存'),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    if (ok != true || !mounted) return;
-    final to = int.tryParse(toCtrl.text.trim()) ?? total;
-    final end = to.clamp(from, total);
-    _snack('开始缓存第 $from-$end 章…');
-    unawaited(_cacheAudioRange(from - 1, end - 1));
-  }
-
-  Future<void> _cacheAudioRange(int fromIndex, int toIndex) async {
-    final api = ref.read(bookApiProvider);
-    final bookUrl = widget.effectiveBookUrl;
-    // F1：优先写入用户自选 SAF DocumentFile tree；无 tree 时回退应用 audio_cache
-    final treeUri = (await api.getConfig(kAudioCacheTreeUriKey))?.trim() ?? '';
-    final useSaf = treeUri.isNotEmpty && Platform.isAndroid;
-    Directory? fallbackDir;
-    if (!useSaf) {
-      final base = await getApplicationSupportDirectory();
-      fallbackDir =
-          Directory('${base.path}${Platform.pathSeparator}audio_cache');
-      if (!fallbackDir.existsSync()) {
-        fallbackDir.createSync(recursive: true);
-      }
-    }
-    final saf = useSaf ? Saf() : null;
-    var okCount = 0;
-    for (var i = fromIndex; i <= toIndex; i++) {
-      try {
-        final media = await api.getAudioChapterMedia(bookUrl, i);
-        final url = (media['mediaUrl'] as String?)?.trim() ?? '';
-        if (url.isEmpty || !url.startsWith('http')) continue;
-        final fetched = await bridgeHttpGetBytes(api, url);
-        if (fetched.statusCode < 200 || fetched.statusCode >= 300) continue;
-        // [B1 | 2026-10-04] 遗留孤儿写入（契约 §2.47 已裁决「旧键默认不读不迁移」）：
-        // 此命名 `${bookUrl.hashCode}_$i.audio` 不匹配原版五段式缓存文件名、无
-        // `.complete` 标记，新的 audioCacheQuery/audioCacheList 数据面永远不会命中
-        // 它；保留仅为不在本批改动预下载 UI（UI 接线/去留由下一批裁决），
-        // 新增代码请勿读取该目录。
-        final name = '${bookUrl.hashCode}_$i.audio';
-        if (saf != null) {
-          await saf.writeFileBytes(
-            treeUri,
-            name,
-            'application/octet-stream',
-            Uint8List.fromList(fetched.bytes),
-            overwrite: true,
-          );
-        } else {
-          final file = File(
-            '${fallbackDir!.path}${Platform.pathSeparator}$name',
-          );
-          await file.writeAsBytes(fetched.bytes, flush: true);
-        }
-        okCount++;
-      } catch (_) {}
-    }
-    if (mounted) {
-      final where = useSaf ? '所选缓存目录' : '应用本地目录';
-      _snack(okCount > 0 ? '已缓存 $okCount 章到$where' : '未缓存到可用章节');
-    }
-  }
+  // [B1 P1 收口 | 2026-10-04] 预下载入口下线 + 旧写入路径清理（方案 B）。
+  //
+  // 原版语义（app/src/main/java/io/legado/app/）：写入与读取同目录同键——
+  // 预下载写 AudioCacheManager.cacheChapter（AudioCacheService.kt:217 为全仓
+  // 唯一调用方，前台服务），播放第一步读 getCachedAudio（AudioPlay.kt:388-413），
+  // 键均为 AudioCacheKey.from(chapter)（AudioCacheKey.kt:20-23），目录均为
+  // {缓存根}/LegadoAudioCache/book_{md5Encode16(bookUrl)}（AudioCacheManager.kt:205-230），
+  // .complete 标记在下载完成并通过 size 校验后才写（AudioCacheManager.kt:174-189）。
+  //
+  // 我方旧实现为页面内循环：写旧孤儿键（hashCode + 章节下标，无 .complete），
+  // 落盘在 support/audio_cache（桌面）或用户 SAF 目录（Android）；而新读面
+  // （契约 §2.47）读应用私有 cache/audio_cache 下五段式文件名并要求 .complete，
+  // 目录/键/标记三重不匹配，UI 却提示「已缓存」——用户每次触发净耗流量。
+  // 契约 §2.47 明确不设写入面（原版写入只发生于独立预下载服务，写入链路另行
+  // 冻结），加写入 FFI 属契约改动。本批按方案 B 如实收口：下线入口、删除旧写入
+  // 路径（旧键按用户裁决默认不读、不迁移），待专门预下载服务批次按原版语义
+  // 恢复（缓存目录/缓存范围/清除当前章缓存 + 通知 + AUDIO_CACHE_CHANGED 事件）。
+  // 配置键 kAudioCacheTreeUriKey 保留（供后续批次裁决），当前无读取方。
 
   Future<void> _showSkipCreditsSheet() async {
     final api = ref.read(bookApiProvider);
