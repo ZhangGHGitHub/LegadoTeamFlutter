@@ -175,37 +175,100 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
     return hit == null ? null : List<int>.of(hit);
   }
 
-  // ========== 音频章节文件缓存（契约 §2.47，Mock 无写入面 → 缓存面恒空） ==========
+  // ========== 音频章节文件缓存（契约 §2.47 读面 + §2.48 写入面，Mock 内存态） ==========
 
-  /// [B1 | 2026-10-04] mock 音频缓存查询：契约 §2.47 只读/清理面**无写入方法**
-  /// （写入仅发生于真实 Rust 侧扫描的应用私有目录，Mock 不模拟落盘），
-  /// 故恒返回 `false`（按未缓存处理，播放链回落在线取流）。
+  /// mock 音频缓存（bookUrl → 章节下标集合；仅会话内存态，不落盘）
+  final Map<String, Set<int>> _audioCacheIndexes = {};
+
+  /// mock 已缓存章节的 playUrl（.complete 标记内地址的等价物）
+  final Map<String, Map<int, String>> _audioCachePlayUrls = {};
+
+  /// [B1 | 2026-10-04] mock 音频缓存查询：按内存态判定（无缓存 → false，
+  /// 播放链回落在线取流）。键以章节下标简化（真实键规则在 Rust 侧）。
   @override
   Future<bool> audioCacheQuery({
     required String bookUrl,
     required int chapterIndex,
     required String chapterUrl,
     required String chapterTitle,
-  }) async => false;
+  }) async => _audioCacheIndexes[bookUrl]?.contains(chapterIndex) ?? false;
 
-  /// [B1 | 2026-10-04] mock 音频缓存列举：无写入面 → 恒返回空数组（无缓存章节）。
+  /// [B1 | 2026-10-04] mock 音频缓存列举：内存态已缓存章节下标升序。
   @override
   Future<List<int>> audioCacheList({required String bookUrl}) async =>
-      const <int>[];
+      (_audioCacheIndexes[bookUrl]?.toList() ?? <int>[])..sort();
 
-  /// [B1 | 2026-10-04] mock 音频单章清理：无写入面 → 恒返回 0（幂等：
-  /// 不存在与已删同义）。
+  /// [B1 | 2026-10-04] mock 音频单章清理：返回删除数据文件数（0/1，幂等）。
   @override
   Future<int> audioCacheClearChapter({
     required String bookUrl,
     required int chapterIndex,
     required String chapterUrl,
     required String chapterTitle,
-  }) async => 0;
+  }) async {
+    final indexes = _audioCacheIndexes[bookUrl];
+    final removed = indexes?.remove(chapterIndex) ?? false;
+    _audioCachePlayUrls[bookUrl]?.remove(chapterIndex);
+    return removed ? 1 : 0;
+  }
 
-  /// [B1 | 2026-10-04] mock 音频整书清理：无写入面 → 恒返回 0（幂等）。
+  /// [B1 | 2026-10-04] mock 音频整书清理：返回删除数据文件数（幂等）。
   @override
-  Future<int> audioCacheClearBook({required String bookUrl}) async => 0;
+  Future<int> audioCacheClearBook({required String bookUrl}) async {
+    final count = _audioCacheIndexes.remove(bookUrl)?.length ?? 0;
+    _audioCachePlayUrls.remove(bookUrl);
+    return count;
+  }
+
+  /// [B2 | 2026-10-03] mock 单章预下载：内存态记录（已缓存 → already_cached；
+  /// 否则 installed），JSON 形状与 Rust 侧一致。mock 无网络/无字节。
+  @override
+  Future<String> audioCacheDownload({
+    required String bookUrl,
+    required int chapterIndex,
+    required String chapterUrl,
+    required String chapterTitle,
+    required String playUrl,
+  }) async {
+    final indexes = _audioCacheIndexes.putIfAbsent(bookUrl, () => <int>{});
+    final playUrls =
+        _audioCachePlayUrls.putIfAbsent(bookUrl, () => <int, String>{});
+    if (indexes.contains(chapterIndex)) {
+      return jsonEncode({
+        'status': 'already_cached',
+        'path': '',
+        'sizeBytes': 0,
+        'extension': _mockExtension(playUrl),
+      });
+    }
+    indexes.add(chapterIndex);
+    playUrls[chapterIndex] = playUrl;
+    return jsonEncode({
+      'status': 'installed',
+      'path': '',
+      'sizeBytes': 0,
+      'extension': _mockExtension(playUrl),
+    });
+  }
+
+  /// [B2 | 2026-10-03] mock 取消：无在途下载 → false（同步语义等价）。
+  @override
+  Future<bool> audioCacheCancel() async => false;
+
+  /// mock 扩展名探测（对齐原版三级探测的 URL 后缀分支，仅用于 JSON 形状）
+  static String _mockExtension(String playUrl) {
+    final path = playUrl.split('?').first.split('#').first;
+    final dot = path.lastIndexOf('.');
+    if (dot >= 0) {
+      final ext = path.substring(dot + 1).toLowerCase();
+      const whitelist = {
+        'mp3', 'm4a', 'm4b', 'aac', 'ogg', 'oga', 'opus',
+        'wav', 'flac', 'webm', 'amr', '3gp',
+      };
+      if (whitelist.contains(ext)) return ext;
+    }
+    return 'audio';
+  }
 
   // ========== 章节购买 ==========
 

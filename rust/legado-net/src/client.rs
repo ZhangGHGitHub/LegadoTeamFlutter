@@ -644,6 +644,81 @@ impl LegadoClient {
             .await
     }
 
+    /// 发送通用请求并返回**流式**原始字节响应（大文件：字节流直写盘）
+    ///
+    /// 与 [`Self::send`] 同语义：URL/方法/请求体/超时/默认头/Cookie 注入与写侧
+    /// 门控（`CookieJar` 标记）/客户端级重试/按域名限流/UA 轮换与代理中间件
+    /// 逐项一致；差异仅在于响应体**不在此处读取**——返回
+    /// [`crate::response::LegadoStreamResponse`] 供调用方经
+    /// [`crate::response::LegadoStreamResponse::next_chunk`] 逐块消费（音频文件
+    /// 可达数十 MB，禁止整文件入内存）。域名限流许可随响应持有至流结束/结构
+    /// 丢弃，与 [`Self::get_raw`] 在响应体读完后释放等价。
+    ///
+    /// **timing 事件**：本路径不产生 `timing::emit_request`（TTFB 与 body 时长
+    /// 的分界要在调用方消费完响应体后才可知，此处不伪造 body 时长）。
+    pub async fn send_stream(
+        &self,
+        request: &crate::request::LegadoRequest,
+    ) -> LegadoResult<crate::response::LegadoStreamResponse> {
+        let client = self.client.clone();
+        let cookie_store = self.cookie_store.clone();
+        let method = request.method.to_reqwest();
+        let url = request.url.clone();
+        let body = request.body.clone();
+        let timeout = request.timeout;
+        // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie（读侧不受影响）
+        let save_cookies = cookie_jar_marker_present(Some(&request.headers));
+        let headers = Arc::new(Some(request.headers.clone()));
+        // cookie 写回需要原始请求 URL（closure 消费 url 之后仍可用）
+        let original_url = url.clone();
+
+        let factory = move || {
+            let client = client.clone();
+            let cookie_store = cookie_store.clone();
+            let headers = Arc::clone(&headers);
+            let url = url.clone();
+            let body = body.clone();
+            let method = method.clone();
+            async move {
+                let mut req = client.request(method, &url);
+                if let Some(ref b) = body {
+                    req = req.body(b.clone());
+                }
+                if let Some(t) = timeout {
+                    req = req.timeout(t);
+                }
+                req = apply_default_headers_static(req);
+                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
+                req.send().await
+            }
+        };
+
+        // 限流：获取域名许可（持有至响应体消费结束——随响应结构一并释放）
+        let permit = if let Some(ref limiter) = self.domain_rate_limiter {
+            let domain = crate::rate_limit::extract_domain(&request.url);
+            let slot = limiter.get_or_create(&domain);
+            Some(slot.acquire().await?)
+        } else {
+            None
+        };
+
+        let raw_response = if let Some(ref executor) = self.retry_executor {
+            executor
+                .execute_with_retry(|| async { factory().await.map_err(map_reqwest_error) })
+                .await?
+        } else {
+            factory().await.map_err(map_reqwest_error)?
+        };
+
+        let stream = crate::response::LegadoStreamResponse::new(raw_response, permit);
+        // 写侧 CookieJar 门控：Set-Cookie 随响应头到达，立即写回（与 get_raw
+        // 在响应体读完后写回的可见结果一致；流式路径不能等 body 结束）
+        if save_cookies {
+            self.save_cookies_from_response(&original_url, stream.url(), stream.headers());
+        }
+        Ok(stream)
+    }
+
     /// 创建使用自定义代理的客户端副本（对应 Kotlin `getProxyClient`）
     ///
     /// 保留原客户端的 Cookie 持久化后端（共享同一 `Arc`）与既有

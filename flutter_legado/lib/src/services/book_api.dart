@@ -915,6 +915,36 @@ abstract class BookApi {
   /// [B1 | 2026-10-04] 加法式新增（契约 §2.47 audio_cache FFI）。
   Future<int> audioCacheClearBook({required String bookUrl});
 
+  // ========== 音频章节预下载写入面（对齐原版 AudioCacheService + AudioCacheManager，契约 §2.48） ==========
+
+  /// 单章音频预下载安装（幂等，契约 §2.48 `audioCacheDownload`）
+  ///
+  /// Rust 全权执行下载安装（对齐 `AudioCacheManager.cacheChapter:132-199`）：
+  /// 已提交缓存（key16 + `.complete` + size>0）直接返回 `already_cached` 不重下；
+  /// 否则以 [playUrl] 经 AnalyzeUrl + 书源 headers/cookie/重试/限流语义**流式**
+  /// 下载（字节零穿越 FFI），安装为五段式文件名 + `.complete` 标记。
+  /// [chapterUrl]/[chapterTitle] 参与缓存键计算（同 [audioCacheQuery]）。
+  /// 返回 JSON：`{"status":"installed"|"already_cached","path":…,"sizeBytes":N,
+  /// "extension":…}`。**失败上抛异常不降级**（写入是显式用户动作，错误须驱动
+  /// 调用方循环 failCount——有意区别于 §2.47 只读面的降级风格）。
+  /// [B2 | 2026-10-03] 加法式新增（契约 §2.48 audio_cache 写入面）。
+  Future<String> audioCacheDownload({
+    required String bookUrl,
+    required int chapterIndex,
+    required String chapterUrl,
+    required String chapterTitle,
+    required String playUrl,
+  });
+
+  /// 取消在途音频预下载（契约 §2.48 `audioCacheCancel`）
+  ///
+  /// 进程级取消代数 +1：在途下载在流式块边界中止并删除部分文件（对齐原版
+  /// 服务 stop 语义单槽化）。返回 `true` = 置位时快照到在途下载（尽力提示，
+  /// 不作同步保证）；`false` = 当前无在途。调用方循环侧取消 = 调用本方法 +
+  /// 停止发起后续章节调用。
+  /// [B2 | 2026-10-03] 加法式新增（契约 §2.48 audio_cache 写入面）。
+  Future<bool> audioCacheCancel();
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）

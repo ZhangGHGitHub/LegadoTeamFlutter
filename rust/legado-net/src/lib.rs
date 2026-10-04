@@ -54,7 +54,7 @@ pub use middleware::{Middleware, MiddlewareChain};
 pub use proxy::{parse_proxy_config, ProxyConfig, ProxyCredentials, ProxyPool, ProxyType};
 pub use rate_limit::{DomainRateLimiter, RateLimiter};
 pub use request::{LegadoRequest, Method};
-pub use response::{LegadoRawResponse, LegadoResponse};
+pub use response::{LegadoRawResponse, LegadoResponse, LegadoStreamResponse};
 pub use retry::{RetryConfig, RetryExecutor};
 pub use rss::{fetch_feed, parse_feed, RssArticle, RssFeed};
 pub use rule_update_client::{

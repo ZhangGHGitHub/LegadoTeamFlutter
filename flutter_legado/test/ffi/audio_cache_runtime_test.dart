@@ -1,4 +1,4 @@
-/// B1 音频章节文件缓存 Dart↔Rust 真实数据链运行时验证（契约 §2.47）
+/// B1/B2 音频章节文件缓存 Dart↔Rust 真实数据链运行时验证（契约 §2.47/§2.48）
 ///
 /// 加载 rust/target/debug/legado_ffi.dll（解析策略对齐
 /// ffi_stream_sink_runtime_test.dart），注入临时缓存根，按原版五段式命名
@@ -6,9 +6,12 @@
 ///
 /// - audioCacheQuery：命中三条件（key 匹配 + `.complete` 存在 + size>0）
 /// - audioCacheList：已缓存章节下标升序
-/// - audioCacheClearChapter / ClearBook：实际删除数（含标记）与幂等
+/// - audioCacheClearChapter / ClearBook：实际删除数（**仅数据文件，不计
+///   `.complete` 标记**，契约 §2.47 口径修正）与幂等
 /// - set_audio_cache_dir 注入目录生效
 /// - chapterUrl 空白时退回 chapterTitle（原版 ifBlank 语义）
+/// - B2 写入面 FFI 可达：audioCacheCancel 无在途 false；audioCacheDownload
+///   失败上抛不降级（本运行时测试未注入 DB 书源上下文，走错误路径）
 ///
 /// 键向量为硬编码固定输入（md5Encode16 逐字节口径已在 Rust 单测
 /// rust/legado-ffi/src/api/audio_cache_api.rs 钉死）：
@@ -16,6 +19,7 @@
 /// - chapterUrl = "hello" → key bc4b2a76b9719d91
 /// - chapterTitle = "中文"（key 9fcdcb3a067903d8，用于 ifBlank 回退验证）
 ///
+/// 写入面全链路（本地回环服务器 + DB 夹具）由 Rust 单测覆盖（不联网）。
 /// 前置条件：先在 rust/ 下构建 DLL（cargo build -p legado-ffi --features quickjs）。
 @Timeout(Duration(minutes: 3))
 library;
@@ -176,7 +180,7 @@ void main() {
     );
   });
 
-  test('清理单章：返回删除数（数据+标记）、幂等、不触碰其他章节', () async {
+  test('清理单章：返回删除数（仅数据文件，不计 .complete）、幂等、不触碰其他章节', () async {
     final target = dataName(1, _kKey16, 'mp3');
     final otherKey = _kTitleKey16;
     final other = dataName(2, otherKey, 'mp3');
@@ -189,7 +193,8 @@ void main() {
       chapterUrl: _kChapterUrl,
       chapterTitle: '第一章',
     );
-    expect(deleted, 2, reason: '应删除数据文件与 .complete 标记各 1 个');
+    expect(deleted, 1,
+        reason: '仅统计数据文件（契约 §2.47 口径修正；.complete 照删不计）');
     expect(
       await api.audioCacheQuery(
         bookUrl: _kBookUrl,
@@ -225,9 +230,30 @@ void main() {
   test('清理整书：全删（含标记）并移除目录，幂等', () async {
     await writeCacheFile(dataName(1, _kKey16, 'mp3'), marker: true);
     await writeCacheFile(dataName(3, _kTitleKey16, 'm4a'), marker: true);
-    expect(await api.audioCacheClearBook(bookUrl: _kBookUrl), 4);
+    expect(await api.audioCacheClearBook(bookUrl: _kBookUrl), 2,
+        reason: '仅统计数据文件（.complete 照删不计，契约 §2.47 口径修正）');
     expect(bookDir().existsSync(), isFalse, reason: '书目录应一并移除');
     expect(await api.audioCacheList(bookUrl: _kBookUrl), isEmpty);
     expect(await api.audioCacheClearBook(bookUrl: _kBookUrl), 0, reason: '幂等');
+  });
+
+  test('B2 写入面 FFI 可达：取消无在途返回 false（同步语义）', () async {
+    expect(await api.audioCacheCancel(), isFalse,
+        reason: '运行时测试无在途下载，置位应返回 false');
+  });
+
+  test('B2 写入面失败上抛不降级（无 DB 书籍上下文 → 异常）', () async {
+    // 本运行时测试未 db_open 注入书籍/书源夹具：写入面必须上抛
+    // （契约 §2.48 有意区别于 §2.47 读面降级）
+    await expectLater(
+      api.audioCacheDownload(
+        bookUrl: 'no-such-book',
+        chapterIndex: 0,
+        chapterUrl: 'hello',
+        chapterTitle: '第一章',
+        playUrl: 'https://cdn.example/a.mp3',
+      ),
+      throwsA(anything),
+    );
   });
 }

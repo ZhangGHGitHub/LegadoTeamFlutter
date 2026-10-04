@@ -407,6 +407,33 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
     }
   }
 
+  // ========== 音频章节预下载写入面（契约 §2.48） ==========
+
+  /// [B2 | 2026-10-03] 接通 audio_cache_download FFI（契约 §2.48）：
+  /// 直通返回安装结果 JSON（`installed`/`already_cached`）。
+  /// **不做 catch 降级**——写入是显式用户动作，失败必须上抛驱动批量循环
+  /// 计 failCount（契约 §2.48「失败语义」有意区别于 §2.47 读面）。
+  @override
+  Future<String> audioCacheDownload({
+    required String bookUrl,
+    required int chapterIndex,
+    required String chapterUrl,
+    required String chapterTitle,
+    required String playUrl,
+  }) => bridge.audioCacheDownload(
+    bookUrl: bookUrl,
+    chapterIndex: chapterIndex,
+    chapterUrl: chapterUrl,
+    chapterTitle: chapterTitle,
+    playUrl: playUrl,
+  );
+
+  /// [B2 | 2026-10-03] 接通 audio_cache_cancel FFI（契约 §2.48）：
+  /// 取消在途下载（进程级取消代数单槽）。同步立即返回；
+  /// `true` = 置位时快照到在途下载（尽力提示），`false` = 当前无在途。
+  @override
+  Future<bool> audioCacheCancel() => bridge.audioCacheCancel();
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）

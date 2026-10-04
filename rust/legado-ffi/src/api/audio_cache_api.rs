@@ -1,4 +1,5 @@
-//! 音频章节文件缓存（B1，契约 §2.47，对齐原版 AudioCacheManager / AudioCachePolicy）
+//! 音频章节文件缓存（B1 契约 §2.47 只读/清理面 + B2 契约 §2.48 写入面，
+//! 对齐原版 AudioCacheManager / AudioCachePolicy）
 //!
 //! 原版取证（`app/src/main/java/io/legado/app/`）：
 //! - `model/AudioCacheKey.kt:20-23`：键 = `MD5Utils.md5Encode16(chapterUrl.ifBlank { chapterTitle })`
@@ -12,28 +13,46 @@
 //! - `help/audio/AudioCachePolicy.kt:11-13,100-110`：五段式文件名
 //!   `^([0-9]{5,})_([0-9a-f]{16})_.+_([0-9a-f]{16})_([0-9a-f]{8})\.([a-z0-9]{2,6})$`
 //!   + 扩展名白名单（`audio` 或音频后缀，`:15-18`）；title / playUrlHash / rev 三段不参与命中
-//! - `help/audio/AudioCacheManager.kt:338-356`：清理按 key 删数据文件与 `.complete` 标记
+//! - `help/audio/AudioCacheManager.kt:338-356`：清理按 key 删数据文件与 `.complete` 标记，
+//!   **返回计数只统计 dataTargets（数据文件，含 tmp 部分文件），不计标记**
 //!
 //! 本书口径（契约 §2.47，用户 2026-10-04 裁决）：
-//! - **只读面 + 清理面，不设写入面**：原版写入仅发生于预下载服务
+//! - 只读面 + 清理面，**写入面见契约 §2.48（B2）**：原版写入仅发生于预下载服务
 //!   `AudioCacheService.kt:217`（全仓唯一 `cacheChapter` 调用方），播放链从不写
 //!   （`AudioPlay.kt:388-413` 第一步查缓存、命中完全跳网络）
 //! - 缓存根经 [`set_cache_dir`] 进程注入（FFI `set_audio_cache_dir`，与
 //!   `image_cache_api` 同型）：env [`CACHE_DIR_ENV`]（非空，测试隔离用；`cfg(test)`
 //!   下由显式测试槽整体旁路）> 宿主注入目录 > `<temp_dir>/legado-audio-cache`
 //!   （回落时一次性告警）
-//! - **失败一律降级**（查询 false、列举空数组、清理返回实际删除计数），不抛 FFI
-//!   异常——缓存是加速器不是数据源（同 §2.46 口径）
+//! - 只读/清理面**失败一律降级**（查询 false、列举空数组、清理返回实际删除计数），
+//!   不抛 FFI 异常——缓存是加速器不是数据源（同 §2.46 口径）；**写入面（§2.48）
+//!   有意相反**：失败上抛 BridgeError 不降级（显式用户动作，错误须驱动 Dart
+//!   循环 failCount，契约 §2.48「失败语义」双向登记）
 //! - 旧键 `${bookUrl.hashCode}_$i.audio`（重构版自创、无读取方）不读不迁移：
 //!   不匹配五段式正则且无 `.complete`，扫描时天然跳过
+//!
+//! B2 写入面（契约 §2.48，逐条对齐 `AudioCacheManager.kt:132-199`）：
+//! - [`audio_cache_download`]：单章下载安装（幂等；流式落盘，字节零穿越 FFI）；
+//!   原版服务编排（ArrayDeque 队列/前台通知/START_NOT_STICKY）不上 FFI，由
+//!   Dart 循环逐章调用自持进度（`AudioCacheService.kt:275-301` 计数等价）
+//! - [`audio_cache_cancel`]：进程级取消代数单槽（对齐原版服务单 worker + stop，
+//!   `AudioCacheService.kt:145-185,259-266`）；在途下载于每个流式块边界检查
+//!   代数（对齐 `copyCancellable:397-412` 的 ensureActive），变更即中止并清理
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
-use std::io;
+use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, OnceLock};
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use legado_core::{LegadoError, LegadoResult};
+use legado_db::{BookChapterRepository, BookRepository, BookSourceRepository};
+use legado_net::{LegadoClient, LegadoRequest, Method};
+use legado_parser::{AnalyzeUrl, TemplateContext};
+
+use crate::db_state::with_database;
 
 /// 音频缓存磁盘目录环境变量名（测试隔离用，非空即覆盖）
 pub const CACHE_DIR_ENV: &str = "LEGADO_AUDIO_CACHE_DIR";
@@ -54,6 +73,27 @@ const CACHE_FILE_PATTERN: &str =
 const AUDIO_EXTENSIONS: &[&str] = &[
     "mp3", "m4a", "m4b", "aac", "ogg", "oga", "opus", "wav", "flac", "webm", "amr", "3gp",
 ];
+
+/// 陈旧未提交文件保留阈值（对齐原版 `AudioCacheManager.STALE_PARTIAL_AGE_MILLIS:43`）
+const STALE_PARTIAL_AGE_MILLIS: u64 = 60 * 60 * 1000;
+
+/// 暂存部分文件前缀/后缀（对齐原版 `isTemporaryFile:385-389`：
+/// `tmp_{key16}_*.part`）
+const TMP_PREFIX: &str = "tmp_";
+const PART_SUFFIX: &str = ".part";
+
+/// 进程级取消代数（B2，契约 §2.48）：[`audio_cache_cancel`] 递增，
+/// 在途下载在每个流式块边界比对开局快照，不等即中止并清理部分文件
+/// （对齐原版服务 stop → Job.cancel → copyCancellable ensureActive 路径）
+static CANCEL_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// 进程级在途下载计数（B2）：>0 时 [`audio_cache_cancel`] 返回 true。
+/// 与 [`CANCEL_GEN`] 无关联于既有 `_speakGeneration` 等 Dart 侧机制
+/// （本取消为 Rust 进程级单槽，对齐原版「单 worker 至多一个在途下载」）
+static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
+
+/// 随机十六进制串计数器（rev8 / tmp 文件名 token；非密码学随机，仅防并发同名）
+static RANDOM_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 /// 宿主注入的音频缓存根目录（B1，FFI `set_audio_cache_dir` 目标）
 static INJECTED_DIR: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
@@ -155,13 +195,16 @@ fn book_dir(book_url: &str) -> PathBuf {
     cache_root().join(format!("book_{}", md5_mid16(book_url)))
 }
 
-/// 五段式缓存文件名解析结果（title / playUrlHash / rev 三段不参与命中判定）
+/// 五段式缓存文件名解析结果（title / playUrlHash / rev 三段不参与命中判定；
+/// extension 供 `already_cached` 返回与安装流程复用）
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct ParsedCacheFileName {
     /// 章节序号（正则第一段，`toIntOrNull` 溢出即视为不匹配）
     chapter_index: i32,
     /// 缓存键（正则第二段，小写 16 hex）
     key16: String,
+    /// 扩展名（正则第五段，白名单内）
+    extension: String,
 }
 
 /// 解析五段式缓存文件名（对齐原版 `AudioCachePolicy.parseFileName`）：
@@ -180,6 +223,7 @@ fn parse_cache_file_name(name: &str) -> Option<ParsedCacheFileName> {
     Some(ParsedCacheFileName {
         chapter_index,
         key16,
+        extension: extension.to_string(),
     })
 }
 
@@ -234,13 +278,13 @@ fn is_committed(names: &HashSet<&str>, name: &str, meta: &fs::Metadata) -> bool 
     names.contains(marker.as_str())
 }
 
-/// 该书目录下指定 key 的最新已提交缓存数据文件名
+/// 该书目录下指定 key 的最新已提交缓存数据文件（文件名 + 元数据）
 /// （对齐原版 `findCachedFile` L201-203：`maxByOrNull { it.lastModified }`；
 /// `lastModified` 不可得时按 UNIX_EPOCH 参与比较，不 panic）
-fn latest_committed_file(dir: &Path, key16: &str) -> Option<String> {
+fn latest_committed_file(dir: &Path, key16: &str) -> Option<(String, fs::Metadata)> {
     let files = read_dir_entries(dir);
     let names: HashSet<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
-    let mut best: Option<(String, SystemTime)> = None;
+    let mut best: Option<(String, SystemTime, fs::Metadata)> = None;
     for (name, meta) in &files {
         let Some(parsed) = parse_cache_file_name(name) else {
             continue;
@@ -249,11 +293,11 @@ fn latest_committed_file(dir: &Path, key16: &str) -> Option<String> {
             continue;
         }
         let modified = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
-        if best.as_ref().is_none_or(|(_, t)| modified > *t) {
-            best = Some((name.clone(), modified));
+        if best.as_ref().is_none_or(|(_, t, _)| modified > *t) {
+            best = Some((name.clone(), modified, meta.clone()));
         }
     }
-    best.map(|(name, _)| name)
+    best.map(|(name, _, meta)| (name, meta))
 }
 
 /// 查询某章是否已缓存（契约 §2.47 `audioCacheQuery`，只读、幂等）
@@ -300,8 +344,11 @@ pub fn audio_cache_list(book_url: &str) -> Vec<i32> {
 
 /// 清理某章缓存（契约 §2.47 `audioCacheClearChapter`，幂等）
 ///
-/// 只删该 `key16` 下的音频文件与 `.complete` 标记（不触碰同目录其他章节），
-/// 返回实际删除的文件数（含标记）；不存在/已删返回 `0`，IO 失败按已删数返回，不抛异常。
+/// 只删该 `key16` 下的音频文件、暂存部分文件与 `.complete` 标记（不触碰同目录
+/// 其他章节），返回**实际删除的数据文件数**（仅统计 dataTargets——数据文件与
+/// `tmp_*.part`，**不计 `.complete` 标记**，对齐原版 `removeCacheFiles:338-356`
+/// 的 `return dataTargets.size`；标记照删）。不存在/已删返回 `0`，IO 失败按
+/// 已删数返回，不抛异常。
 pub fn audio_cache_clear_chapter(
     book_url: &str,
     _chapter_index: i32,
@@ -310,36 +357,685 @@ pub fn audio_cache_clear_chapter(
 ) -> i32 {
     let key16 = cache_key16(chapter_url, chapter_title);
     let dir = book_dir(book_url);
-    let files = read_dir_entries(&dir);
-    let mut deleted = 0i32;
-    for (name, _meta) in &files {
-        let is_data = parse_cache_file_name(name).is_some_and(|p| p.key16 == key16);
-        let is_marker = name
-            .strip_suffix(COMPLETE_SUFFIX)
-            .and_then(parse_cache_file_name)
-            .is_some_and(|p| p.key16 == key16);
-        if (is_data || is_marker) && fs::remove_file(dir.join(name)).is_ok() {
-            deleted += 1;
-        }
-    }
-    deleted
+    remove_cache_files(&dir, &key16, None)
 }
 
 /// 清理该书全部缓存（契约 §2.47 `audioCacheClearBook`，幂等）
 ///
-/// 删除书级目录内全部文件（含 `.complete`），返回实际删除数；书目录一并尝试
-/// 移除（非空/被占用则忽略）。不跨书（目录按 `md5_16(bookUrl)` 隔离），不抛异常。
+/// 删除书级目录内全部文件（含 `.complete`），返回实际删除数（**仅统计数据
+/// 文件，`tmp_*.part` 计入、`.complete` 标记不计**——与单章清理同口径，对齐
+/// 原版 `removeCacheFiles` 的 dataTargets 计数语义）；书目录一并尝试移除
+/// （非空/被占用则忽略）。不跨书（目录按 `md5_16(bookUrl)` 隔离），不抛异常。
 pub fn audio_cache_clear_book(book_url: &str) -> i32 {
     let dir = book_dir(book_url);
     let files = read_dir_entries(&dir);
     let mut deleted = 0i32;
     for (name, _meta) in &files {
+        if name.ends_with(COMPLETE_SUFFIX) {
+            continue; // 标记照删、不计入返回值
+        }
         if fs::remove_file(dir.join(name)).is_ok() {
             deleted += 1;
         }
     }
+    // 标记文件单独删（不计数）
+    for (name, _meta) in &files {
+        if name.ends_with(COMPLETE_SUFFIX) {
+            let _ = fs::remove_file(dir.join(name));
+        }
+    }
     let _ = fs::remove_dir(&dir);
     deleted
+}
+
+// ─── B2 写入面（契约 §2.48，对齐 AudioCacheManager.cacheChapter 132-199） ──────
+
+/// ISO 控制符判定（对齐 Kotlin `Char.isISOControl`）：C0（U+0000..=U+001F）
+/// 与 C1（U+007F..=U+009F）
+fn is_iso_control(c: char) -> bool {
+    matches!(c, '\u{0000}'..='\u{001F}' | '\u{007F}'..='\u{009F}')
+}
+
+/// 标题 → 安全文件名段（对齐原版 `AudioCachePolicy.buildFileName:79-87`）：
+/// 非法文件名字符（`[\\/:*?"<>|]`，对齐 `AppPattern.fileNameRegex2:35`
+/// / `StringExtensions.normalizeFileName:162-164`）替换 `_` → 去 ISO 控制符 →
+/// trim（Kotlin `Char.isWhitespace` 语义，NBSP 不算）→ 去首尾 `_` → 空则
+/// `"chapter"` → 截 40 字符 → 去尾部 `.`/空格 → 空则 `"chapter"`。
+///
+/// 已知边界：Kotlin `take(40)` 按 UTF-16 code unit 截断（非 BMP 字符可截出
+/// 孤立代理项）；本实现按 Unicode scalar（`chars()`）截断以避免产出非法
+/// UTF-8/文件名——仅当标题前 40 个 UTF-16 单元内含非 BMP 字符时与 Kotlin
+/// 结果不同（章标题场景极罕见），登记为有意差异。
+fn safe_title(chapter_title: &str) -> String {
+    let replaced: String = chapter_title
+        .chars()
+        .map(|c| match c {
+            '\\' | '/' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            other => other,
+        })
+        .collect();
+    let filtered: String = replaced.chars().filter(|c| !is_iso_control(*c)).collect();
+    let trimmed = filtered
+        .trim_matches(kotlin_char_is_whitespace)
+        .trim_matches('_');
+    let non_blank = if kotlin_is_blank(trimmed) {
+        "chapter".to_string()
+    } else {
+        trimmed.to_string()
+    };
+    let limited: String = non_blank.chars().take(40).collect();
+    let trimmed_end = limited.trim_end_matches(['.', ' ']);
+    if kotlin_is_blank(trimmed_end) {
+        "chapter".to_string()
+    } else {
+        trimmed_end.to_string()
+    }
+}
+
+/// URL → 音频扩展名（对齐原版 `AudioCachePolicy.extensionFromUrl:121-128`）：
+/// 截 `?`/`#` 后取最后一个 `.` 之后部分小写；须 ∈ 音频扩展名白名单，否则 None。
+/// 注：Kotlin `substringAfterLast('.', "")` 无 `.` 时为空串（Rust `rsplit` 会
+/// 返回整串，故此处显式用 `rfind` 对齐）
+fn extension_from_url(url: &str) -> Option<String> {
+    let path = url
+        .split('?')
+        .next()
+        .unwrap_or("")
+        .split('#')
+        .next()
+        .unwrap_or("");
+    let idx = path.rfind('.')?;
+    let ext = path[idx + 1..].to_lowercase();
+    AUDIO_EXTENSIONS.contains(&ext.as_str()).then_some(ext)
+}
+
+/// HLS 判定（对齐原版 `AudioCachePolicy.isHlsUrl:116-119`）：截 `?`/`#` 后
+/// 以 `.m3u8`/`.m3u` 结尾（大小写不敏感）
+fn is_hls_url(url: &str) -> bool {
+    let path = url
+        .split('?')
+        .next()
+        .unwrap_or("")
+        .split('#')
+        .next()
+        .unwrap_or("");
+    let lower = path.to_lowercase();
+    lower.ends_with(".m3u8") || lower.ends_with(".m3u")
+}
+
+/// JSON 数组形态判定（对齐原版 `StringExtensions.isJsonArray:64-68`：
+/// `trim()` 后首 `[` 尾 `]`）
+fn is_json_array(s: &str) -> bool {
+    let t = s.trim();
+    t.starts_with('[') && t.ends_with(']')
+}
+
+/// playUrl 可缓存性校验（对齐原版 `AudioCachePolicy.requireCacheablePlayUrl:25-33`）：
+/// 空 / JSON 数组多段 / HLS → Err（原文案，写入面上抛不降级）
+fn require_cacheable_play_url(play_url: &str) -> LegadoResult<()> {
+    if kotlin_is_blank(play_url) {
+        return Err(LegadoError::Ffi("播放链接为空".into()));
+    }
+    if is_json_array(play_url) {
+        return Err(LegadoError::Ffi("暂不支持缓存多段音频".into()));
+    }
+    if is_hls_url(play_url) {
+        return Err(LegadoError::Ffi("暂不支持缓存 HLS 音频".into()));
+    }
+    Ok(())
+}
+
+/// 扩展名三级探测（对齐原版 `AudioCachePolicy.detectExtension:35-65`）：
+/// Content-Type（截 `;`/trim/小写）→ 最终 URL 后缀 → playUrl 后缀 → 缺省
+/// `"audio"`；Content-Type 含 `mpegurl` 或最终 URL 为 HLS → Err「暂不支持
+/// 缓存 HLS 音频」（`:45-47`）。
+fn detect_extension(
+    content_type: Option<&str>,
+    final_url: &str,
+    play_url: &str,
+) -> LegadoResult<String> {
+    require_cacheable_play_url(play_url)?;
+    let normalized =
+        content_type.map(|ct| ct.split(';').next().unwrap_or("").trim().to_lowercase());
+    if normalized
+        .as_deref()
+        .is_some_and(|ct| ct.contains("mpegurl"))
+        || is_hls_url(final_url)
+    {
+        return Err(LegadoError::Ffi("暂不支持缓存 HLS 音频".into()));
+    }
+    let ext = match normalized.as_deref() {
+        // Content-Type 缺失（None）：直接由 URL 三级兜底（对齐 Kotlin when 第一支）
+        None => extension_from_url(final_url)
+            .or_else(|| extension_from_url(play_url))
+            .unwrap_or_else(|| "audio".to_string()),
+        Some(ct) => {
+            if ct.contains("mpeg") || ct.contains("mp3") {
+                "mp3".to_string()
+            } else if ct.contains("m4a") || ct.contains("mp4") {
+                "m4a".to_string()
+            } else if ct.contains("aac") {
+                "aac".to_string()
+            } else if ct.contains("ogg") {
+                "ogg".to_string()
+            } else if ct.contains("opus") {
+                "opus".to_string()
+            } else if ct.contains("wav") {
+                "wav".to_string()
+            } else if ct.contains("flac") {
+                "flac".to_string()
+            } else if ct.contains("webm") {
+                "webm".to_string()
+            } else if ct.contains("amr") {
+                "amr".to_string()
+            } else if ct.contains("3gpp") {
+                "3gp".to_string()
+            } else {
+                extension_from_url(final_url)
+                    .or_else(|| extension_from_url(play_url))
+                    .unwrap_or_else(|| "audio".to_string())
+            }
+        }
+    };
+    Ok(ext)
+}
+
+/// 五段式文件名生成（对齐原版 `AudioCachePolicy.buildFileName:67-98`）：
+/// `%05d_{key16}_{safeTitle}_{playUrlHash16}_{rev8}.{ext}`；
+/// 各段先决条件不满足 → Err（对齐 Kotlin `require`，服务按章计 fail）
+fn build_file_name(
+    chapter_index: i32,
+    key16: &str,
+    chapter_title: &str,
+    play_url_hash: &str,
+    revision: &str,
+    extension: &str,
+) -> LegadoResult<String> {
+    let is_hex = |s: &str, len: usize| {
+        s.len() == len
+            && s.chars()
+                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
+    };
+    if chapter_index < 0 {
+        return Err(LegadoError::Ffi("章节序号非法".into()));
+    }
+    if !is_hex(play_url_hash, 16) {
+        return Err(LegadoError::Ffi("playUrl 哈希非法".into()));
+    }
+    if !is_hex(revision, 8) {
+        return Err(LegadoError::Ffi("修订号非法".into()));
+    }
+    if extension != "audio" && !AUDIO_EXTENSIONS.contains(&extension) {
+        return Err(LegadoError::Ffi(format!("扩展名非法: {extension}")));
+    }
+    Ok(format!(
+        "{:05}_{key16}_{safe_title}_{play_url_hash}_{revision}.{extension}",
+        chapter_index,
+        safe_title = safe_title(chapter_title),
+    ))
+}
+
+/// `.complete` 元数据编码（对齐原版 `AudioCacheMetadata.encode:141-143`）：
+/// UTF-8 三行 `1\n{md5_16(playUrl)}\n{playUrl}`
+fn encode_metadata(play_url: &str) -> String {
+    format!("1\n{}\n{}", md5_mid16(play_url), play_url)
+}
+
+/// `.complete` 元数据解码/校验（对齐原版 `AudioCacheMetadata.decode:145-152`）：
+/// 恰好 3 行（limit=3，第 3 行保留含换行的 playUrl 原文）、版本为 `1`、
+/// playUrl 非空白且 md5_16 匹配 → Some(playUrl)，否则 None
+fn decode_metadata(metadata: &str) -> Option<String> {
+    let parts: Vec<&str> = metadata.splitn(3, '\n').collect();
+    if parts.len() != 3 || parts[0] != "1" {
+        return None;
+    }
+    let play_url = parts[2];
+    if !kotlin_is_blank(play_url) && md5_mid16(play_url) == parts[1] {
+        Some(play_url.to_string())
+    } else {
+        None
+    }
+}
+
+/// 完整文件判定（对齐原版 `AudioCachePolicy.isCompleteFile:112-114`）：
+/// `actualSize > 0 && (expectedSize == None || actualSize == expectedSize)`
+fn require_complete_size(actual: u64, expected: Option<u64>) -> LegadoResult<()> {
+    if actual == 0 {
+        return Err(LegadoError::Ffi("音频文件为空".into()));
+    }
+    if expected.is_some_and(|e| actual != e) {
+        return Err(LegadoError::Ffi("音频文件不完整".into()));
+    }
+    Ok(())
+}
+
+/// 随机小写十六进制串（rev8 对齐原版 `UUID.randomUUID().toString()
+/// .replace("-","").take(8)`；tmp 文件名 token 为 32 位）。用进程内计数器 +
+/// 纳秒时钟 + 随机种子哈希合成——仅用于防并发同名，非密码学随机。
+fn random_hex(len: usize) -> String {
+    use std::hash::{BuildHasher, Hasher};
+    let mut out = String::with_capacity(len + 16);
+    while out.len() < len {
+        let n = RANDOM_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let mut hasher = std::collections::hash_map::RandomState::new().build_hasher();
+        hasher.write_u128(nanos);
+        hasher.write_u64(n);
+        out.push_str(&format!("{:016x}", hasher.finish()));
+    }
+    out.truncate(len);
+    out
+}
+
+/// 暂存部分文件判定（对齐原版 `AudioCacheManager.isTemporaryFile:385-389`：
+/// `!isDir && name.startsWith("tmp_{key}_") && name.endsWith(".part")`）
+fn is_temporary_file(name: &str, key16: &str) -> bool {
+    name.starts_with(&format!("{TMP_PREFIX}{key16}_")) && name.ends_with(PART_SUFFIX)
+}
+
+/// 五段式数据文件判定（对齐原版 `isCacheFile:391-395`）
+fn is_cache_file_name(name: &str, key16: &str) -> bool {
+    parse_cache_file_name(name).is_some_and(|p| p.key16 == key16)
+}
+
+/// 陈旧未提交文件清理（对齐原版 `cleanupUncommittedFiles:302-314`）：
+/// 本 key 下的 `tmp_*.part` 与无 `.complete` 的五段式文件，`lastModified`
+/// 位于 `[1, now - 1h]` 区间者删除（lastModified 为 0/不可得者不删）。
+/// 失败静默（写入流程随后自会处理）。
+fn cleanup_uncommitted_files(dir: &Path, key16: &str) {
+    let files = read_dir_entries(dir);
+    let complete_names: HashSet<&str> = files
+        .iter()
+        .filter(|(n, _)| n.ends_with(COMPLETE_SUFFIX))
+        .map(|(n, _)| n.strip_suffix(COMPLETE_SUFFIX).unwrap_or(n.as_str()))
+        .collect();
+    let now = SystemTime::now();
+    let stale_before_ms = now
+        .checked_sub(Duration::from_millis(STALE_PARTIAL_AGE_MILLIS))
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis())
+        .unwrap_or(0);
+    for (name, meta) in &files {
+        let uncommitted = is_temporary_file(name, key16)
+            || (is_cache_file_name(name, key16) && !complete_names.contains(name.as_str()));
+        if !uncommitted {
+            continue;
+        }
+        let modified_ms = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        if modified_ms >= 1 && modified_ms <= stale_before_ms {
+            let _ = fs::remove_file(dir.join(name));
+        }
+    }
+}
+
+/// 按 key 清理数据文件/暂存文件/标记（对齐原版
+/// `removeCacheFiles:338-356`）：`except_name` 为本次新安装文件名（保留）；
+/// 返回 **dataTargets 计数**——`tmp_*.part` 与五段式数据文件（不含 `.complete`），
+/// 标记照删不计。
+fn remove_cache_files(dir: &Path, key16: &str, except_name: Option<&str>) -> i32 {
+    let files = read_dir_entries(dir);
+    let mut data_targets: Vec<String> = Vec::new();
+    let mut marker_targets: Vec<String> = Vec::new();
+    for (name, _meta) in &files {
+        let is_data = is_cache_file_name(name, key16) || is_temporary_file(name, key16);
+        if is_data && except_name != Some(name.as_str()) {
+            data_targets.push(name.clone());
+        }
+        if let Some(base) = name.strip_suffix(COMPLETE_SUFFIX) {
+            if except_name != Some(base) && is_cache_file_name(base, key16) {
+                marker_targets.push(name.clone());
+            }
+        }
+    }
+    let count = data_targets.len() as i32;
+    for name in data_targets.into_iter().chain(marker_targets) {
+        let _ = fs::remove_file(dir.join(name));
+    }
+    count
+}
+
+/// 在途下载 RAII 计数（进程级；drop 时递减，保证任何提前返回都复位）
+struct InFlightGuard;
+
+impl InFlightGuard {
+    fn new() -> Self {
+        IN_FLIGHT.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+
+impl Drop for InFlightGuard {
+    fn drop(&mut self) {
+        IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// 取消代数是否已变更（在途下载中止判据）
+fn cancel_generation_changed(snapshot: u64) -> bool {
+    CANCEL_GEN.load(Ordering::SeqCst) != snapshot
+}
+
+/// 取消当前在途下载（契约 §2.48 `audioCacheCancel`，对齐原版服务 stop 语义单槽化）
+///
+/// 原版单 worker 逐章处理（`AudioCacheService.kt:145-185`），全局同时至多一个
+/// 在途下载；本方法将进程级取消代数 +1，在途下载在每个流式块边界检查代数
+/// （对齐 `copyCancellable` 的 ensureActive），不匹配即中止拷贝并删除部分文件
+/// （对齐原版 CancellationException 清理路径 `AudioCacheManager.kt:190-197`）。
+/// 返回 `true` = 置位时快照到在途下载（尽力提示，不作同步保证）；`false` =
+/// 当前无在途。同步立即返回。
+pub fn audio_cache_cancel() -> LegadoResult<bool> {
+    if IN_FLIGHT.load(Ordering::SeqCst) == 0 {
+        return Ok(false);
+    }
+    CANCEL_GEN.fetch_add(1, Ordering::SeqCst);
+    Ok(true)
+}
+
+/// 单章下载安装（契约 §2.48 `audioCacheDownload`，同步阻塞实现，FFI 侧经
+/// spawn_blocking 包装为非阻塞）
+///
+/// 逐条对齐 `AudioCacheManager.cacheChapter:107-199`：
+/// ① 前置校验（bookUrl 空白 / book 不在 DB / chapter 不在 DB / isVolume /
+///    playUrl 空 / JSON 数组 / HLS / 书源不在 DB → Err）
+/// ② 幂等：已提交缓存（key16 + `.complete` + size>0）→ `already_cached` JSON
+/// ③ 清理本 key 陈旧未提交文件（1 小时阈值）
+/// ④ AnalyzeUrl + 书源 headers/cookie 语义流式下载（块级取消检查）
+/// ⑤ size 校验 → rename 安装（失败退整文件复制后复验）
+/// ⑥ `.complete` 三行元数据写入并回读校验
+/// ⑦ 清理同 key 其他文件与标记（保留新装文件）
+/// ⑧ 任一步失败删除已安装文件 + 标记 + tmp
+///
+/// 返回 JSON：`{"status":"installed"|"already_cached","path":…,"sizeBytes":N,
+/// "extension":…}`。失败 **Err 上抛不降级**（有意区别于 §2.47 读面）。
+pub fn audio_cache_download(
+    book_url: &str,
+    chapter_index: i32,
+    chapter_url: &str,
+    chapter_title: &str,
+    play_url: &str,
+) -> LegadoResult<String> {
+    let client = crate::http_state::shared_client()?;
+    audio_cache_download_with_client(
+        &client,
+        book_url,
+        chapter_index,
+        chapter_url,
+        chapter_title,
+        play_url,
+    )
+}
+
+/// [`audio_cache_download`] 的客户端注入版（测试经本地回环服务器驱动）
+fn audio_cache_download_with_client(
+    client: &LegadoClient,
+    book_url: &str,
+    chapter_index: i32,
+    chapter_url: &str,
+    chapter_title: &str,
+    play_url: &str,
+) -> LegadoResult<String> {
+    // ① 前置校验
+    if kotlin_is_blank(book_url) {
+        return Err(LegadoError::Ffi("书籍 URL 为空".into()));
+    }
+    let book = with_database(|db| BookRepository::new(db.connection()).find_by_url(book_url))?
+        .ok_or_else(|| LegadoError::Database(format!("书籍不存在: {book_url}")))?;
+    let chapter = with_database(|db| {
+        BookChapterRepository::new(db.connection())
+            .find_by_book_url_and_index(book_url, chapter_index)
+    })?
+    .ok_or_else(|| LegadoError::Database(format!("章节 {chapter_index} 不存在")))?;
+    if chapter.is_volume {
+        return Err(LegadoError::Ffi("分卷章节不支持缓存".into()));
+    }
+    let source =
+        with_database(|db| BookSourceRepository::new(db.connection()).find_by_url(&book.origin))?
+            .ok_or_else(|| LegadoError::Database(format!("书源不存在: {}", book.origin)))?;
+    require_cacheable_play_url(play_url)?;
+
+    let key16 = cache_key16(chapter_url, chapter_title);
+    let dir = book_dir(book_url);
+
+    // ② 幂等：已提交缓存直接返回（对齐原版服务循环 `AudioCacheService.kt:216` 跳过语义）
+    if let Some((name, meta)) = latest_committed_file(&dir, &key16) {
+        let extension = parse_cache_file_name(&name)
+            .map(|p| p.extension)
+            .unwrap_or_else(|| "audio".to_string());
+        return Ok(serde_json::json!({
+            "status": "already_cached",
+            "path": dir.join(&name).to_string_lossy(),
+            "sizeBytes": meta.len(),
+            "extension": extension,
+        })
+        .to_string());
+    }
+
+    // ③ 目录就绪 + 陈旧未提交文件清理
+    fs::create_dir_all(&dir).map_err(|e| {
+        LegadoError::Io(io::Error::new(
+            e.kind(),
+            format!("音频缓存目录不可用 {dir:?}: {e}"),
+        ))
+    })?;
+    cleanup_uncommitted_files(&dir, &key16);
+
+    // 取消代数快照 + 在途登记（覆盖从发起到清理的全部路径）
+    let cancel_snapshot = CANCEL_GEN.load(Ordering::SeqCst);
+    let _inflight = InFlightGuard::new();
+
+    // ④ AnalyzeUrl 解析 + 书源请求头/Cookie 语义（对齐原版构造
+    // `AnalyzeUrl(playUrl, source=bookSource, ruleData=book, chapter=chapter)`：
+    // 变量表 = book.variable ⊕ chapter.variable（章节优先），内置书名/标题/作者
+    // 经 parse_with_context 注入；headers 合并顺序复用 fetch_page 全链路——
+    // 书源 header+登录头（parse_source_headers 已含 CookieJar 写侧标记）→
+    // AnalyzeUrl 解析头 → 请求 URL 属域 JS cookie）
+    let merged_variable = crate::api::web_book::merge_variables_json(
+        book.variable.as_deref(),
+        chapter.variable.as_deref(),
+    );
+    let variables = crate::api::web_book::chapter_url_variables(merged_variable.as_deref());
+    let context = TemplateContext {
+        book_name: Some(book.name.clone()),
+        title: Some(chapter.title.clone()),
+        author: Some(book.author.clone()),
+        extra: HashMap::new(),
+    };
+    let analyze_url = AnalyzeUrl::parse_with_context(play_url, &variables, &context, 1)?;
+
+    let fetcher = crate::api::web_book::real_fetcher()?;
+    let mut headers = fetcher.parse_source_headers(&source).unwrap_or_default();
+    headers.extend(analyze_url.headers().clone());
+    legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, analyze_url.url());
+
+    let body = analyze_url.request_body();
+    let request = LegadoRequest {
+        url: analyze_url.url().to_string(),
+        method: match analyze_url.method() {
+            legado_parser::RequestMethod::Post => Method::Post,
+            legado_parser::RequestMethod::Head => Method::Head,
+            legado_parser::RequestMethod::Get => Method::Get,
+        },
+        headers,
+        body: if body.is_empty() {
+            None
+        } else {
+            Some(body.to_string())
+        },
+        timeout: analyze_url.timeout().map(Duration::from_millis),
+    };
+
+    // urlOption followRedirects/retry 语义（对齐 analyze_request::send_with_options：
+    // 不跟随走派生客户端；非 2xx/3xx 且 retry>0 时立即重发，至多 retry 次）
+    let effective = if analyze_url.follow_redirects() == Some(false) {
+        client.no_redirect_variant()?
+    } else {
+        client.clone()
+    };
+    let mut retries_remaining = analyze_url.retry();
+    let mut response = loop {
+        let resp = crate::runtime::block_on(effective.send_stream(&request))?;
+        if (200..400).contains(&resp.status()) || retries_remaining == 0 {
+            break resp;
+        }
+        retries_remaining -= 1;
+    };
+    if !response.is_success() {
+        return Err(LegadoError::Network(format!(
+            "网络请求失败({})",
+            response.status()
+        )));
+    }
+
+    // 扩展名三级探测（下载响应 Content-Type/最终 URL 或 HLS → 拒绝）
+    let final_url = response.url().to_string();
+    let extension = detect_extension(
+        response.content_type().map(|s| s.as_str()),
+        &final_url,
+        play_url,
+    )?;
+    let expected_size = response.content_length().filter(|n| *n > 0);
+
+    let revision = random_hex(8);
+    let final_name = build_file_name(
+        chapter_index,
+        &key16,
+        chapter_title,
+        &md5_mid16(play_url),
+        &revision,
+        &extension,
+    )?;
+    let staged_path = dir.join(format!("tmp_{key16}_{revision}_{}.part", random_hex(32)));
+    let final_path = dir.join(&final_name);
+    let marker_path = dir.join(format!("{final_name}{COMPLETE_SUFFIX}"));
+
+    let result: LegadoResult<u64> = (|| {
+        // ④ 流式落盘（字节直写盘；块级取消检查对齐 copyCancellable:397-412）
+        {
+            let file = fs::File::create(&staged_path)?;
+            let mut writer = io::BufWriter::new(file);
+            loop {
+                if cancel_generation_changed(cancel_snapshot) {
+                    return Err(LegadoError::Ffi("音频缓存下载已取消".into()));
+                }
+                match crate::runtime::block_on(response.next_chunk())? {
+                    None => break,
+                    Some(chunk) => writer.write_all(&chunk)?,
+                }
+            }
+            writer.flush()?;
+            if cancel_generation_changed(cancel_snapshot) {
+                return Err(LegadoError::Ffi("音频缓存下载已取消".into()));
+            }
+        }
+
+        // ⑤ size 校验 + 安装（优先 rename，失败退整文件复制后复验）
+        let staged_len = fs::metadata(&staged_path)?.len();
+        require_complete_size(staged_len, expected_size)?;
+        let installed_len = install_staged_file(&staged_path, &final_path, expected_size)?;
+
+        // ⑥ 写 `.complete` 并回读校验（校验失败删标记报错）
+        if cancel_generation_changed(cancel_snapshot) {
+            return Err(LegadoError::Ffi("音频缓存下载已取消".into()));
+        }
+        write_complete_marker(&marker_path, play_url)?;
+
+        // ⑦ 清理同 key 其他文件与标记（保留新安装文件；计数不参与返回值）
+        let _ = remove_cache_files(&dir, &key16, Some(&final_name));
+
+        Ok(installed_len)
+    })();
+
+    let installed_size = match result {
+        Ok(size) => size,
+        Err(e) => {
+            // ⑧ 失败清理：已安装文件 + 标记 + tmp（对齐 :190-197）
+            let _ = fs::remove_file(&final_path);
+            let _ = fs::remove_file(&marker_path);
+            let _ = fs::remove_file(&staged_path);
+            return Err(e);
+        }
+    };
+    Ok(serde_json::json!({
+        "status": "installed",
+        "path": final_path.to_string_lossy(),
+        "sizeBytes": installed_size,
+        "extension": extension,
+    })
+    .to_string())
+}
+
+/// 暂存文件安装（对齐原版 `installStagedFile:232-264`）：优先同目录 rename，
+/// 失败退整文件流式复制（块级取消检查）后复验 size；失败删除目标并上抛。
+/// 返回安装后文件大小。
+fn install_staged_file(
+    staged_path: &Path,
+    final_path: &Path,
+    expected_size: Option<u64>,
+) -> LegadoResult<u64> {
+    match fs::rename(staged_path, final_path) {
+        Ok(()) => {
+            let len = fs::metadata(final_path)?.len();
+            if let Err(e) = require_complete_size(len, expected_size) {
+                let _ = fs::remove_file(final_path);
+                return Err(e);
+            }
+            Ok(len)
+        }
+        Err(_) => {
+            // SAF rename 失败（跨卷/被占用等）：整文件复制后复验
+            let installed: LegadoResult<u64> = (|| {
+                let mut input = fs::File::open(staged_path)?;
+                let output = fs::File::create(final_path)?;
+                let mut writer = io::BufWriter::new(output);
+                io::copy(&mut input, &mut writer)?;
+                writer.flush()?;
+                let len = fs::metadata(final_path)?.len();
+                require_complete_size(len, expected_size)?;
+                Ok(len)
+            })();
+            match installed {
+                Ok(len) => {
+                    let _ = fs::remove_file(staged_path);
+                    Ok(len)
+                }
+                Err(e) => {
+                    let _ = fs::remove_file(final_path);
+                    Err(e)
+                }
+            }
+        }
+    }
+}
+
+/// 写 `.complete` 标记并回读校验（对齐原版 `createCompleteMarker:266-281`）：
+/// UTF-8 三行 `1\n{md5_16(playUrl)}\n{playUrl}`；写后 `decode == playUrl`
+/// 否则删标记并 Err「音频缓存完成标记校验失败」
+fn write_complete_marker(marker_path: &Path, play_url: &str) -> LegadoResult<()> {
+    let write_result = (|| -> io::Result<()> {
+        let mut file = fs::File::create(marker_path)?;
+        file.write_all(encode_metadata(play_url).as_bytes())?;
+        file.flush()
+    })();
+    if let Err(e) = write_result {
+        let _ = fs::remove_file(marker_path);
+        return Err(LegadoError::Io(e));
+    }
+    let read_back = fs::read_to_string(marker_path)
+        .ok()
+        .and_then(|s| decode_metadata(&s));
+    if read_back.as_deref() != Some(play_url) {
+        let _ = fs::remove_file(marker_path);
+        return Err(LegadoError::Ffi("音频缓存完成标记校验失败".into()));
+    }
+    Ok(())
 }
 
 // ─── 测试 ─────────────────────────────────────────────────────────────────────
@@ -347,6 +1043,8 @@ pub fn audio_cache_clear_book(book_url: &str) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use legado_core::models::BookSource;
+    use legado_db::repository::Repository;
     use std::sync::atomic::AtomicUsize;
     use std::time::Duration;
 
@@ -516,8 +1214,8 @@ mod tests {
             .set_modified(new_time)
             .unwrap();
         assert_eq!(
-            latest_committed_file(&dir, KEY_HELLO).as_deref(),
-            Some(new_name.as_str())
+            latest_committed_file(&dir, KEY_HELLO).map(|(n, _)| n),
+            Some(new_name.clone())
         );
         assert!(audio_cache_query(
             "https://a.com/book/2",
@@ -561,10 +1259,10 @@ mod tests {
         let other = valid_name(2, &other_key, "mp3");
         write_cache_file(&dir, &hit, 8, true);
         write_cache_file(&dir, &other, 8, true);
-        // 删除数 = 数据文件 + .complete 标记
+        // 删除数 = 数据文件（**不含** .complete 标记，契约 §2.47 口径修正）
         assert_eq!(
             audio_cache_clear_chapter("https://a.com/book/4", 1, "hello", "第一章"),
-            2
+            1
         );
         assert!(!audio_cache_query(
             "https://a.com/book/4",
@@ -598,7 +1296,8 @@ mod tests {
         write_cache_file(&dir_a, &valid_name(1, KEY_HELLO, "mp3"), 8, true);
         write_cache_file(&dir_a, &valid_name(2, KEY_HELLO, "mp3"), 8, true);
         write_cache_file(&dir_b, &valid_name(1, KEY_HELLO, "mp3"), 8, true);
-        assert_eq!(audio_cache_clear_book("https://a.com/book/A"), 4);
+        // 删除数 = 两个数据文件（**不含** .complete 标记，契约 §2.47 口径修正）
+        assert_eq!(audio_cache_clear_book("https://a.com/book/A"), 2);
         assert!(!dir_a.exists(), "书目录应一并移除");
         assert!(
             audio_cache_query("https://a.com/book/B", 1, "hello", "第一章"),
@@ -689,11 +1388,754 @@ mod tests {
         assert!(root
             .join(format!("book_{}", md5_mid16("https://a.com/book/5")))
             .exists());
-        assert_eq!(audio_cache_clear_book("https://a.com/book/5"), 2);
+        // 删除数 = 数据文件（不含 .complete 标记）
+        assert_eq!(audio_cache_clear_book("https://a.com/book/5"), 1);
         // 复位注入槽为 None（不污染其他测试）
         if let Ok(mut guard) = INJECTED_DIR.get_or_init(|| Mutex::new(None)).lock() {
             *guard = None;
         }
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    // ─── B2 写入面（契约 §2.48）─────────────────────────────────────────────
+
+    /// 本地回环 HTTP 服务器（不联网）：按请求序号返回固定响应
+    struct ServerReply {
+        status: u16,
+        content_type: &'static str,
+        body: Vec<u8>,
+        /// 覆盖 Content-Length 声明（默认实际 body 长度）
+        declared_len: Option<u64>,
+    }
+
+    impl ServerReply {
+        fn ok(content_type: &'static str, body: Vec<u8>) -> Self {
+            Self {
+                status: 200,
+                content_type,
+                body,
+                declared_len: None,
+            }
+        }
+    }
+
+    /// 启动一次性回环服务器（请求序号从 0 起；线程随测试进程退出）
+    fn spawn_server<F>(responder: F) -> (u16, std::sync::Arc<std::sync::atomic::AtomicUsize>)
+    where
+        F: Fn(usize) -> ServerReply + Send + Sync + 'static,
+    {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::atomic::AtomicUsize;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("绑定回环端口");
+        let port = listener.local_addr().unwrap().port();
+        let hits = std::sync::Arc::new(AtomicUsize::new(0));
+        let hits_srv = std::sync::Arc::clone(&hits);
+        let responder = std::sync::Arc::new(responder);
+        std::thread::spawn(move || {
+            let mut idx = 0usize;
+            for stream in listener.incoming() {
+                let Ok(mut sock) = stream else { continue };
+                let reply = responder(idx);
+                idx += 1;
+                hits_srv.fetch_add(1, Ordering::SeqCst);
+                // 读请求头至 \r\n\r\n（不解析请求体；本路径均为 GET）
+                let mut head = Vec::new();
+                let mut b = [0u8; 1];
+                while let Ok(1) = sock.read(&mut b) {
+                    head.push(b[0]);
+                    if head.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let reason = if (200..300).contains(&reply.status) {
+                    "OK"
+                } else {
+                    "Error"
+                };
+                let mut out = format!("HTTP/1.1 {} {reason}\r\n", reply.status);
+                out.push_str(&format!("Content-Type: {}\r\n", reply.content_type));
+                out.push_str(&format!(
+                    "Content-Length: {}\r\n",
+                    reply.declared_len.unwrap_or(reply.body.len() as u64)
+                ));
+                out.push_str("Connection: close\r\n\r\n");
+                let _ = sock.write_all(out.as_bytes());
+                let _ = sock.write_all(&reply.body);
+                let _ = sock.flush();
+                let _ = sock.shutdown(std::net::Shutdown::Both);
+            }
+        });
+        (port, hits)
+    }
+
+    /// 回环测试客户端（no_proxy：测试流量不得经系统/环境代理路由）
+    fn test_client() -> LegadoClient {
+        LegadoClient::new(legado_net::LegadoClientConfig {
+            no_proxy: true,
+            ..legado_net::LegadoClientConfig::default()
+        })
+        .expect("构建测试 HTTP 客户端")
+    }
+
+    /// 插入音频书 + 书源 + 单章（测试 DB，唯一 bookUrl 隔离）
+    fn insert_audio_book(
+        book_url: &str,
+        source_url: &str,
+        chapter_url: &str,
+        chapter_title: &str,
+        is_volume: bool,
+    ) {
+        with_database(|db| {
+            let book = legado_core::models::Book {
+                book_url: book_url.to_string(),
+                // name 随 bookUrl 唯一：books 表有 (name, author) 唯一索引
+                // （schema.rs:646），同名会被 INSERT OR REPLACE 顶掉
+                name: format!("听书写入面测试-{book_url}"),
+                author: String::new(),
+                origin: source_url.to_string(),
+                ..Default::default()
+            };
+            BookRepository::new(db.connection()).insert(&book)?;
+            let source = BookSource {
+                book_source_url: source_url.to_string(),
+                book_source_name: "测试音频源".into(),
+                ..BookSource::default()
+            };
+            BookSourceRepository::new(db.connection()).insert(&source)?;
+            let chapter = legado_core::models::BookChapter {
+                book_url: book_url.to_string(),
+                index: 0,
+                title: chapter_title.to_string(),
+                url: chapter_url.to_string(),
+                is_volume,
+                ..Default::default()
+            };
+            BookChapterRepository::new(db.connection()).insert(&chapter)?;
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    /// safeTitle 归一（对齐 AudioCachePolicy.kt:79-87 各边界）
+    #[test]
+    fn safe_title_normalization() {
+        // 非法文件名字符替换 `_`（fileNameRegex2 不含 `.`，故 `.` 保留）；
+        // 末尾 `?`→`_` 后被 trim('_') 去掉
+        assert_eq!(safe_title("第一章:测试?"), "第一章_测试");
+        assert_eq!(safe_title(r#"a\b/c*d"e<f>g|h"#), "a_b_c_d_e_f_g_h");
+        assert_eq!(safe_title("第1.5章"), "第1.5章");
+        // ISO 控制符去除（C0 + C1）
+        assert_eq!(safe_title("a\u{0000}b\u{001F}c\u{007F}d\u{009F}e"), "abcde");
+        // trim（Kotlin isWhitespace 语义）+ trim('_') 顺序
+        assert_eq!(safe_title("  __标题__  "), "标题");
+        assert_eq!(safe_title("__ 标题 __"), " 标题");
+        // 空/全空白/全下划线 → chapter
+        assert_eq!(safe_title(""), "chapter");
+        assert_eq!(safe_title("   "), "chapter");
+        assert_eq!(safe_title("___"), "chapter");
+        // 截 40 字符后去尾部 `.`/空格；全被去除后回退 chapter
+        let long = format!("{}..", "a".repeat(50));
+        assert_eq!(safe_title(&long), "a".repeat(40));
+        let dots = ".".repeat(45);
+        assert_eq!(safe_title(&dots), "chapter");
+        let mixed = format!("{}  ", "b".repeat(40));
+        assert_eq!(safe_title(&mixed), "b".repeat(40));
+        // NBSP 不属 Kotlin 空白 → 不被 trim 掉（Java 语义纠偏）
+        assert_eq!(safe_title("\u{00A0}"), "\u{00A0}");
+    }
+
+    /// 扩展名三级探测与 HLS/多段拒绝（对齐 AudioCachePolicy.kt:25-65）
+    #[test]
+    fn extension_detection_and_rejections() {
+        // playUrl 校验
+        assert!(require_cacheable_play_url("")
+            .unwrap_err()
+            .to_string()
+            .contains("播放链接为空"));
+        assert!(require_cacheable_play_url("   ").is_err());
+        assert!(require_cacheable_play_url("[{\"url\":\"a\"}]")
+            .unwrap_err()
+            .to_string()
+            .contains("暂不支持缓存多段音频"));
+        assert!(require_cacheable_play_url("https://x.com/a.M3U8?t=1")
+            .unwrap_err()
+            .to_string()
+            .contains("暂不支持缓存 HLS 音频"));
+        assert!(require_cacheable_play_url("https://x.com/a.m3u#frag").is_err());
+        assert!(require_cacheable_play_url("https://x.com/a.mp3").is_ok());
+
+        // Content-Type 优先映射
+        assert_eq!(
+            detect_extension(
+                Some("audio/mpeg; charset=utf-8"),
+                "https://x/a",
+                "https://x/a"
+            )
+            .unwrap(),
+            "mp3"
+        );
+        assert_eq!(
+            detect_extension(Some("audio/mp4"), "https://x/a.m4b", "https://x/a.m4b").unwrap(),
+            "m4a"
+        );
+        assert_eq!(
+            detect_extension(Some("audio/x-flac"), "https://x/a", "https://x/a").unwrap(),
+            "flac"
+        );
+        // Content-Type 缺失 → 最终 URL → playUrl → audio
+        assert_eq!(
+            detect_extension(None, "https://x.com/f.mp3?sign=1", "https://y/a").unwrap(),
+            "mp3"
+        );
+        assert_eq!(
+            detect_extension(None, "https://x.com/stream", "https://y.com/b.ogg#z").unwrap(),
+            "ogg"
+        );
+        assert_eq!(
+            detect_extension(None, "https://x.com/stream", "https://y/stream").unwrap(),
+            "audio"
+        );
+        // Content-Type 存在但无已知子串（空串同）→ URL 兜底
+        assert_eq!(
+            detect_extension(Some(""), "https://x.com/f.aac", "https://y/a").unwrap(),
+            "aac"
+        );
+        assert_eq!(
+            detect_extension(
+                Some("application/octet-stream"),
+                "https://x.com/f",
+                "https://y/a"
+            )
+            .unwrap(),
+            "audio"
+        );
+        // HLS 拒绝：Content-Type 含 mpegurl / 最终 URL 为 m3u8
+        assert!(detect_extension(
+            Some("application/vnd.apple.mpegurl"),
+            "https://x/a",
+            "https://x/a"
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("暂不支持缓存 HLS 音频"));
+        assert!(detect_extension(None, "https://x/live.m3u8", "https://x/live").is_err());
+        // URL 无点 → 不误判（substringAfterLast 缺省空串语义）
+        assert_eq!(extension_from_url("https://x.com/stream"), None);
+        assert_eq!(
+            extension_from_url("https://x.com/a.MP3").as_deref(),
+            Some("mp3")
+        );
+    }
+
+    /// 五段式文件名与 `.complete` 元数据往返
+    #[test]
+    fn file_name_and_metadata_roundtrip() {
+        let name = build_file_name(
+            42,
+            KEY_HELLO,
+            "第一章",
+            &md5_mid16("https://x/a.mp3"),
+            "9f8e7d6c",
+            "mp3",
+        )
+        .unwrap();
+        assert!(name.starts_with("00042_bc4b2a76b9719d91_第一章_"));
+        assert!(name.ends_with("_9f8e7d6c.mp3"));
+        let parsed = parse_cache_file_name(&name).unwrap();
+        assert_eq!(parsed.chapter_index, 42);
+        assert_eq!(parsed.key16, KEY_HELLO);
+        assert_eq!(parsed.extension, "mp3");
+        // 先决条件不满足 → Err（对齐 Kotlin require）
+        assert!(build_file_name(-1, KEY_HELLO, "t", &md5_mid16("x"), "9f8e7d6c", "mp3").is_err());
+        assert!(build_file_name(1, KEY_HELLO, "t", "XYZ", "9f8e7d6c", "mp3").is_err());
+        assert!(
+            build_file_name(1, KEY_HELLO, "t", &md5_mid16("x"), "TOO_LONG_REV", "mp3").is_err()
+        );
+        assert!(build_file_name(1, KEY_HELLO, "t", &md5_mid16("x"), "9f8e7d6c", "txt").is_err());
+
+        // 元数据编解码：三行、md5 校验、限 3 段（playUrl 可含换行）
+        let url = "https://x.com/a.mp3?q=1";
+        let encoded = encode_metadata(url);
+        assert_eq!(encoded.lines().count(), 3);
+        assert_eq!(decode_metadata(&encoded).as_deref(), Some(url));
+        assert!(decode_metadata("1\nbad\nx").is_none());
+        assert!(decode_metadata("2\nx\ny").is_none());
+        assert!(decode_metadata("1\nx\n").is_none());
+        let two_line_url = "https://x/a\nb";
+        assert_eq!(
+            decode_metadata(&encode_metadata(two_line_url)).as_deref(),
+            Some(two_line_url)
+        );
+    }
+
+    /// 陈旧未提交清理：1 小时阈值 + 已提交文件豁免
+    #[test]
+    fn cleanup_stale_threshold() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let root = unique_root("stale");
+        set_test_root(&root);
+        let key = KEY_HELLO;
+        let dir = book_dir("https://a.com/book/stale");
+        fs::create_dir_all(&dir).unwrap();
+        let old = UNIX_EPOCH + Duration::from_secs(1_000_000);
+        let recent = SystemTime::now();
+
+        let stale_tmp = format!("tmp_{key}_abc.part");
+        let fresh_tmp = format!("tmp_{key}_def.part");
+        let stale_uncommitted = valid_name(1, key, "mp3");
+        let fresh_uncommitted = valid_name(2, key, "mp3");
+        let stale_committed = valid_name(3, key, "mp3");
+        for name in [
+            &stale_tmp,
+            &fresh_tmp,
+            &stale_uncommitted,
+            &fresh_uncommitted,
+            &stale_committed,
+        ] {
+            fs::write(dir.join(name), vec![7u8; 8]).unwrap();
+        }
+        fs::write(
+            dir.join(format!("{stale_committed}{COMPLETE_SUFFIX}")),
+            b"1\nx\nx",
+        )
+        .unwrap();
+        for (name, t) in [
+            (&stale_tmp, old),
+            (&stale_uncommitted, old),
+            (&stale_committed, old),
+            (&fresh_tmp, recent),
+            (&fresh_uncommitted, recent),
+        ] {
+            fs::OpenOptions::new()
+                .write(true)
+                .open(dir.join(name))
+                .unwrap()
+                .set_modified(t)
+                .unwrap();
+        }
+
+        cleanup_uncommitted_files(&dir, key);
+        assert!(!dir.join(&stale_tmp).exists(), "陈旧 tmp 应删除");
+        assert!(
+            !dir.join(&stale_uncommitted).exists(),
+            "陈旧未提交五段式应删除"
+        );
+        assert!(dir.join(&stale_committed).exists(), "已提交文件不得删除");
+        assert!(dir.join(&fresh_tmp).exists(), "未到 1 小时的 tmp 保留");
+        assert!(
+            dir.join(&fresh_uncommitted).exists(),
+            "未到 1 小时的未提交文件保留"
+        );
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 前置校验：bookUrl/书籍/章节/分卷/书源/playUrl 全部门禁（不触网）
+    #[test]
+    fn download_validation_errors() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("download-validation");
+        set_test_root(&root);
+        let client = test_client();
+
+        // bookUrl 空白
+        assert!(
+            audio_cache_download_with_client(&client, "  ", 0, "u", "t", "https://x/a.mp3")
+                .unwrap_err()
+                .to_string()
+                .contains("书籍 URL 为空")
+        );
+        // 书籍不存在
+        assert!(audio_cache_download_with_client(
+            &client,
+            "https://a.com/no-book",
+            0,
+            "u",
+            "t",
+            "https://x/a.mp3"
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("书籍不存在"));
+        // 章节不存在
+        let book_url = "https://a.com/book/dl-val";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        assert!(audio_cache_download_with_client(
+            &client,
+            book_url,
+            9,
+            "hello",
+            "第一章",
+            "https://x/a.mp3"
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("章节 9 不存在"));
+        // 分卷章节拒绝（原版文案）
+        let vol_url = "https://a.com/book/dl-vol";
+        insert_audio_book(
+            vol_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            true,
+        );
+        assert!(audio_cache_download_with_client(
+            &client,
+            vol_url,
+            0,
+            "hello",
+            "第一章",
+            "https://x/a.mp3"
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("分卷章节不支持缓存"));
+        // playUrl 空 / JSON 多段 / HLS
+        for (play, msg) in [
+            ("", "播放链接为空"),
+            ("[{\"url\":\"x\"}]", "暂不支持缓存多段音频"),
+            ("https://x/live.m3u8", "暂不支持缓存 HLS 音频"),
+        ] {
+            let err =
+                audio_cache_download_with_client(&client, book_url, 0, "hello", "第一章", play)
+                    .unwrap_err()
+                    .to_string();
+            assert!(err.contains(msg), "playUrl={play:?} 应报 {msg}: {err}");
+        }
+        // 书源不在 DB（origin 指向未入库的书源 URL；不入书源行）
+        let no_src_url = "https://a.com/book/dl-nosrc";
+        with_database(|db| {
+            let book = legado_core::models::Book {
+                book_url: no_src_url.to_string(),
+                name: "无书源测试".into(),
+                origin: "https://source.example/never-inserted".into(),
+                ..Default::default()
+            };
+            BookRepository::new(db.connection()).insert(&book)?;
+            let chapter = legado_core::models::BookChapter {
+                book_url: no_src_url.to_string(),
+                index: 0,
+                title: "第一章".into(),
+                url: "hello".into(),
+                ..Default::default()
+            };
+            BookChapterRepository::new(db.connection()).insert(&chapter)?;
+            Ok(())
+        })
+        .unwrap();
+        assert!(audio_cache_download_with_client(
+            &client,
+            no_src_url,
+            0,
+            "hello",
+            "第一章",
+            "https://x/a.mp3"
+        )
+        .unwrap_err()
+        .to_string()
+        .contains("书源不存在"));
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 幂等：已提交缓存直接 already_cached（不发网络请求）
+    #[test]
+    fn download_idempotent_already_cached() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("download-idem");
+        set_test_root(&root);
+        let book_url = "https://a.com/book/dl-idem";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let dir = book_dir(book_url);
+        write_cache_file(&dir, &valid_name(0, KEY_HELLO, "mp3"), 2048, true);
+
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            "https://x/a.mp3",
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["status"], "already_cached");
+        assert_eq!(json["sizeBytes"], 2048);
+        assert_eq!(json["extension"], "mp3");
+        assert!(json["path"].as_str().unwrap().ends_with(".mp3"));
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 下载安装全链路：流式落盘 + rename 安装 + `.complete` 回读 + 旧版本清理 + 幂等
+    #[test]
+    fn download_installs_and_cleans_old_versions() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("download-install");
+        set_test_root(&root);
+        let body = vec![0xABu8; 64 * 1024];
+        let (port, hits) =
+            spawn_server(move |_i| ServerReply::ok("audio/mpeg; charset=utf-8", body.clone()));
+        let book_url = "https://a.com/book/dl-install";
+        let play_url = format!("http://127.0.0.1:{port}/media.mp3");
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        // 预置同 key 旧版本（未提交）+ tmp 残留：安装后应仅保留新文件
+        let dir = book_dir(book_url);
+        write_cache_file(&dir, &valid_name(0, KEY_HELLO, "m4a"), 8, false);
+        fs::write(dir.join(format!("tmp_{KEY_HELLO}_old.part")), b"stale").unwrap();
+
+        let out = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .unwrap();
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["status"], "installed");
+        assert_eq!(json["sizeBytes"], 64 * 1024);
+        assert_eq!(json["extension"], "mp3");
+        let path = json["path"].as_str().unwrap();
+        assert!(path.ends_with(".mp3"));
+        assert_eq!(fs::metadata(path).unwrap().len(), 64 * 1024);
+        // `.complete` 三行元数据 + 回读校验
+        let marker = format!("{path}{COMPLETE_SUFFIX}");
+        let meta = fs::read_to_string(&marker).unwrap();
+        assert_eq!(meta, encode_metadata(&play_url));
+        assert_eq!(decode_metadata(&meta).as_deref(), Some(play_url.as_str()));
+        // 旧版本与 tmp 已清理，仅剩 1 数据 + 1 标记
+        let names: Vec<String> = super::read_dir_entries(&dir)
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(names.len(), 2, "目录应只剩新文件与标记: {names:?}");
+        assert!(audio_cache_query(book_url, 0, "hello", "第一章"));
+        assert_eq!(audio_cache_list(book_url), vec![0]);
+        // 幂等：二次调用不再发请求
+        let out2 = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &play_url,
+        )
+        .unwrap();
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&out2).unwrap()["status"],
+            "already_cached"
+        );
+        assert_eq!(hits.load(Ordering::SeqCst), 1, "已缓存不得重下");
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 失败清理：HTTP 非 2xx / 空体 / 流中断后不留残file
+    #[test]
+    fn download_failures_leave_no_residue() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("download-fail");
+        set_test_root(&root);
+        let book_url = "https://a.com/book/dl-fail";
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let dir = book_dir(book_url);
+
+        // HTTP 500 → 网络请求失败(500)
+        let (port_500, _) = spawn_server(|_i| ServerReply {
+            status: 500,
+            content_type: "text/plain",
+            body: b"boom".to_vec(),
+            declared_len: None,
+        });
+        let err = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &format!("http://127.0.0.1:{port_500}/x.mp3"),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("网络请求失败(500)"), "err={err}");
+
+        // 空体（Content-Length: 0）→ 音频文件为空
+        let (port_empty, _) = spawn_server(|_i| ServerReply::ok("audio/mpeg", Vec::new()));
+        let err = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &format!("http://127.0.0.1:{port_empty}/x.mp3"),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("音频文件为空"), "err={err}");
+
+        // 声明 100 但只发 10（连接关闭）→ 读流失败，且无任何残file
+        let (port_short, _) = spawn_server(|_i| ServerReply {
+            status: 200,
+            content_type: "audio/mpeg",
+            body: vec![1u8; 10],
+            declared_len: Some(100),
+        });
+        let err = audio_cache_download_with_client(
+            &test_client(),
+            book_url,
+            0,
+            "hello",
+            "第一章",
+            &format!("http://127.0.0.1:{port_short}/x.mp3"),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(!err.is_empty());
+
+        // 三次失败后目录不得有任何残留（tmp/数据/标记）
+        let names: Vec<String> = super::read_dir_entries(&dir)
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.is_empty(), "失败后不得残留文件: {names:?}");
+        assert!(!audio_cache_query(book_url, 0, "hello", "第一章"));
+
+        // 纯函数 size 校验分支（流中断以外的「不完整」判据）
+        assert!(require_complete_size(0, None)
+            .unwrap_err()
+            .to_string()
+            .contains("音频文件为空"));
+        assert!(require_complete_size(10, Some(100))
+            .unwrap_err()
+            .to_string()
+            .contains("音频文件不完整"));
+        assert!(require_complete_size(100, Some(100)).is_ok());
+        assert!(require_complete_size(10, None).is_ok());
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 取消：无在途返回 false；在途置位后流式拷贝中止并清理
+    #[test]
+    fn cancel_aborts_inflight_download() {
+        use std::io::Read as _;
+        use std::io::Write as _;
+        use std::net::TcpListener;
+
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("download-cancel");
+        set_test_root(&root);
+
+        // 慢速服务器：每 30ms 发 32KB，共 64 块（≈2MB）——足够长以观测取消
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut sock) = stream else { continue };
+                let mut head = Vec::new();
+                let mut b = [0u8; 1];
+                while let Ok(1) = sock.read(&mut b) {
+                    head.push(b[0]);
+                    if head.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let total = 64 * 32 * 1024u64;
+                let _ = sock.write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                );
+                let chunk = vec![9u8; 32 * 1024];
+                for _ in 0..64 {
+                    if sock.write_all(&chunk).is_err() {
+                        break;
+                    }
+                    let _ = sock.flush();
+                    std::thread::sleep(Duration::from_millis(30));
+                }
+                let _ = sock.shutdown(std::net::Shutdown::Both);
+            }
+        });
+
+        // 无在途 → false（本测试持 TEST_LOCK，其他下载测试不会并发在途）
+        assert!(!audio_cache_cancel().unwrap(), "无在途下载应返回 false");
+
+        let book_url = "https://a.com/book/dl-cancel";
+        let play_url = format!("http://127.0.0.1:{port}/slow.mp3");
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+        let dir = book_dir(book_url);
+        let worker = std::thread::spawn(move || {
+            let client = test_client();
+            audio_cache_download_with_client(&client, book_url, 0, "hello", "第一章", &play_url)
+        });
+
+        // 等待在途登记（下载线程在发起网络前即 +1）
+        let mut waited_ms = 0u32;
+        while IN_FLIGHT.load(Ordering::SeqCst) == 0 && waited_ms < 3000 {
+            std::thread::sleep(Duration::from_millis(10));
+            waited_ms += 10;
+        }
+        assert_eq!(IN_FLIGHT.load(Ordering::SeqCst), 1, "在途计数应为 1");
+        std::thread::sleep(Duration::from_millis(120));
+
+        assert!(audio_cache_cancel().unwrap(), "置位时应快照到在途下载");
+        let err = worker.join().unwrap().unwrap_err().to_string();
+        assert!(err.contains("音频缓存下载已取消"), "err={err}");
+
+        // 部分文件必须清理（无 tmp、无数据、无标记）
+        let names: Vec<String> = super::read_dir_entries(&dir)
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.is_empty(), "取消后不得残留部分文件: {names:?}");
+        assert_eq!(IN_FLIGHT.load(Ordering::SeqCst), 0, "在途计数应复位");
+
         clear_test_root();
         let _ = fs::remove_dir_all(&root);
     }

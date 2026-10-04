@@ -55,6 +55,20 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
   bool _showSettings = false;
   bool _wakeLock = false;
 
+  // ===== 音频章节预下载批量状态（契约 §2.48，对齐原版 AudioCacheService 计数）=====
+  //
+  // 原版为前台服务（ArrayDeque 队列 + 通知 + START_NOT_STICKY，服务编排不上
+  // FFI，契约 §2.48 已裁决）：本页循环逐章调用 audioCacheDownload 并自持
+  // done/total/fail 计数（与原版通知计数 AudioCacheService.kt:275-301 等价），
+  // 「停止」= audioCacheCancel + 停止后续章节调用（对齐 stopAndClear:259-266）。
+  bool _audioCacheRunning = false;
+  int _audioCacheDone = 0;
+  int _audioCacheTotal = 0;
+  int _audioCacheFail = 0;
+
+  /// 批次令牌：自增即取消（停止发起后续章节调用）
+  int _audioCacheRunToken = 0;
+
   // ===== 定时停止相关状态 =====
   //
   // [A4 | 2026-10-03] 计时已下沉 AudioNotifier（不随听书页销毁而失效），
@@ -258,14 +272,18 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
             onPressed: () => setState(() => _showSettings = !_showSettings),
           ),
           // [UI-fix v2.0.2 | 2026-08-06] 听书溢出菜单（对标原版 audio_play.xml）。
-          // [B1 P1 收口 | 2026-10-04] 缓存目录/缓存范围入口下线：原版写入只发生
-          // 于预下载前台服务 AudioCacheService（AudioCacheService.kt:217 全仓唯一
-          // cacheChapter 调用），播放只读同一目录同键（AudioPlay.kt:388-413、
-          // AudioCacheManager.kt:205-230）；我方旧实现为页面内循环 + 旧孤儿键 +
-          // 无 .complete + support/SAF 目录，与新读面（契约 §2.47：应用私有
-          // cache/audio_cache + 五段式 + .complete）三重不匹配且永远命中不到。
-          // 本批按方案 B 如实收口（入口下线、旧写入删除），待专门预下载服务批次
-          // 按原版语义恢复（含通知与 AUDIO_CACHE_CHANGED 事件）。
+          // [B1 P1 收口 | 2026-10-04] 预下载入口曾下线（旧页面内循环写旧孤儿键，
+          // 与新读面目录/键/标记三重不匹配）。
+          // [B2 | 2026-10-03] 按契约 §2.48 恢复「缓存章节范围」「清除本章缓存」
+          // 两入口（对齐原版 audio_play.xml menu_audio_cache_range /
+          // menu_clear_current_audio_cache，AudioPlayActivity.kt:235-237,281-349）：
+          // 批量循环逐章调 audioCacheDownload（写入在 Rust、字节零穿越 FFI），
+          // 进度计 done/total/fail（对齐原版通知计数 AudioCacheService.kt:275-301），
+          // 「停止」调 audioCacheCancel。旧孤儿键写入路径保持删除、不迁移。
+          // 「缓存目录」（原版 SAF 目录选择）**不在本批**：契约 §2.47/§2.48 已冻结
+          // 缓存根为 set_audio_cache_dir 注入的应用私有 cache/audio_cache，SAF
+          // content:// 树无法作为 Rust std::fs 路径，选择结果对读写面均无效果——
+          // 加回入口会误导用户（详见本批报告「SAF 目录与私有缓存根不一致」）。
           PopupMenuButton<String>(
             tooltip: '更多',
             // [LAYOUT_PLAN P3] 沉浸域仅顶栏动作行规范：菜单在顶栏下方展开（本体不动）
@@ -279,6 +297,17 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
                 const PopupMenuItem(
                   value: 'copyAudioUrl',
                   child: Text('复制播放地址'),
+                ),
+              // 原版菜单顺序：copy_audio_url → cache_range → clear_current_audio_cache
+              if (_canCopyPlayUrl)
+                const PopupMenuItem(
+                  value: 'cacheRange',
+                  child: Text('缓存章节范围'),
+                ),
+              if (_canCopyPlayUrl)
+                const PopupMenuItem(
+                  value: 'clearCurrentCache',
+                  child: Text('清除本章缓存'),
                 ),
               if (_canCopyPlayUrl)
                 CheckedPopupMenuItem(
@@ -328,6 +357,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
 
     return Column(
       children: [
+        // 音频预下载进度条（对齐原版前台通知标题/文案/停止动作；
+        // 契约 §2.48 已知边界：不做常驻通知，进程死即停）
+        if (_audioCacheRunning) _buildAudioCacheProgressBar(),
         // 当前章节信息
         _buildNowPlayingCard(provider),
         // 进度条
@@ -396,10 +428,49 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
     );
   }
 
+  /// 音频预下载进度条（对齐原版前台通知的标题/文案/停止动作：
+  /// `audio_cache_notification_title`「音频缓存」+
+  /// `audio_cache_notification_text`「《%1$s》已缓存 %2$d/%3$d，失败 %4$d」+
+  /// 停止动作 `stop`，AudioCacheService.kt:86-98,275-301）。
+  /// 契约 §2.48 已知边界：不做常驻通知/保活（进程死即停，已装文件保留）。
+  Widget _buildAudioCacheProgressBar() {
+    final scheme = Theme.of(context).colorScheme;
+    final progress =
+        _audioCacheTotal <= 0 ? null : _audioCacheDone / _audioCacheTotal;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+      color: scheme.surfaceContainerHighest,
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('音频缓存', style: Theme.of(context).textTheme.labelLarge),
+                const SizedBox(height: 2),
+                Text(
+                  '《${widget.effectiveBookName}》已缓存 '
+                  '$_audioCacheDone/$_audioCacheTotal，失败 $_audioCacheFail',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 6),
+                LinearProgressIndicator(value: progress),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: _cancelAudioCacheBatch,
+            child: const Text('停止'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildNowPlayingCard(AudioState provider) {
     final chapter = provider.currentChapter;
-    final scheme = Theme.of(context).colorScheme;
-    return Padding(
+    final scheme = Theme.of(context).colorScheme;    return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
       child: Column(
         children: [
@@ -779,6 +850,10 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
         await _openLogin();
       case 'copyAudioUrl':
         await _copyAudioUrl();
+      case 'cacheRange':
+        await _showAudioCacheRange();
+      case 'clearCurrentCache':
+        await _clearCurrentAudioCache();
       case 'wakeLock':
         final next = !_wakeLock;
         await ref.read(audioNotifierProvider.notifier).setWakeLockEnabled(next);
@@ -893,24 +968,241 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
   }
 
 
-  // [B1 P1 收口 | 2026-10-04] 预下载入口下线 + 旧写入路径清理（方案 B）。
+  // ===== 音频章节预下载（契约 §2.48，对齐原版 AudioCacheService 批量循环）=====
   //
   // 原版语义（app/src/main/java/io/legado/app/）：写入与读取同目录同键——
   // 预下载写 AudioCacheManager.cacheChapter（AudioCacheService.kt:217 为全仓
   // 唯一调用方，前台服务），播放第一步读 getCachedAudio（AudioPlay.kt:388-413），
-  // 键均为 AudioCacheKey.from(chapter)（AudioCacheKey.kt:20-23），目录均为
-  // {缓存根}/LegadoAudioCache/book_{md5Encode16(bookUrl)}（AudioCacheManager.kt:205-230），
-  // .complete 标记在下载完成并通过 size 校验后才写（AudioCacheManager.kt:174-189）。
+  // 键均为 AudioCacheKey.from(chapter)（AudioCacheKey.kt:20-23），.complete
+  // 标记在下载完成并通过 size 校验后才写（AudioCacheManager.kt:174-189）。
+  // 我方旧实现（B1 批已删除）写旧孤儿键（hashCode + 章节下标，无 .complete）
+  // 落 support/SAF 目录，与新读面三重不匹配——旧写入路径**保持删除、不迁移**
+  // （旧键按用户裁决默认不读）。
   //
-  // 我方旧实现为页面内循环：写旧孤儿键（hashCode + 章节下标，无 .complete），
-  // 落盘在 support/audio_cache（桌面）或用户 SAF 目录（Android）；而新读面
-  // （契约 §2.47）读应用私有 cache/audio_cache 下五段式文件名并要求 .complete，
-  // 目录/键/标记三重不匹配，UI 却提示「已缓存」——用户每次触发净耗流量。
-  // 契约 §2.47 明确不设写入面（原版写入只发生于独立预下载服务，写入链路另行
-  // 冻结），加写入 FFI 属契约改动。本批按方案 B 如实收口：下线入口、删除旧写入
-  // 路径（旧键按用户裁决默认不读、不迁移），待专门预下载服务批次按原版语义
-  // 恢复（缓存目录/缓存范围/清除当前章缓存 + 通知 + AUDIO_CACHE_CHANGED 事件）。
-  // 配置键 kAudioCacheTreeUriKey 保留（供后续批次裁决），当前无读取方。
+  // [B2 | 2026-10-03] 写入面下沉 Rust（契约 §2.48：audioCacheDownload 流式
+  // 下载安装 + `.complete` 标记，字节零穿越 FFI），本页只做原版服务循环的
+  // 等价编排：逐章调 audioCacheDownload 并自持 done/total/fail（AudioCacheService
+  // .kt:211-233）；playUrl 取播放链同源 `getAudioChapterMedia.mediaUrl`
+  // （AudioPlay.kt:458 WebBook.getContent；**不用** getChapterContentFull——
+  // 该路径会应用替换规则/简繁转换，URL 会被污染，见本批报告契约措辞偏差）；
+  // 已缓存跳过 = audioCacheList 预取 + Rust 幂等 already_cached 双保险。
+  // 「缓存目录」入口不在本批（SAF 与冻结私有缓存根冲突，见报告）。
+
+  /// 「缓存章节范围」入口（对标原版 menu_audio_cache_range →
+  /// AudioPlayActivity.showAudioCacheRange:281-316）
+  Future<void> _showAudioCacheRange() async {
+    final api = ref.read(bookApiProvider);
+    final bookUrl = widget.effectiveBookUrl;
+    if (bookUrl.isEmpty) return;
+    List<BookChapter> chapters;
+    try {
+      chapters = await api.getChapters(bookUrl);
+    } catch (e) {
+      // 原版 ensureChapterList 失败 → 静默中止整段范围（AudioCacheService.kt:199,236-257）
+      debugPrint('[audio-cache] 获取章节列表失败（中止缓存范围）：$e');
+      return;
+    }
+    final chapterCount = chapters.length;
+    // 原版 chapterCount <= 0 直接 return（AudioPlayActivity.kt:285）
+    if (chapterCount <= 0 || !mounted) return;
+    final fromIndex =
+        (ref.read(audioNotifierProvider).currentIndex + 1).clamp(1, chapterCount);
+    final startCtrl = TextEditingController(text: '$fromIndex');
+    final endCtrl = TextEditingController(text: '$chapterCount');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        // 文案逐字对齐原版 values-zh：audio_cache_range / chapter / start / to / end
+        title: const Text('缓存章节范围'),
+        content: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('章'),
+            const SizedBox(width: 6),
+            SizedBox(
+              width: 64,
+              child: TextField(
+                controller: startCtrl,
+                keyboardType: TextInputType.number,
+                maxLength: 5,
+                decoration: const InputDecoration(
+                  hintText: '开始',
+                  isDense: true,
+                  counterText: '',
+                ),
+              ),
+            ),
+            const SizedBox(width: 8),
+            const Text('至'),
+            const SizedBox(width: 8),
+            SizedBox(
+              width: 64,
+              child: TextField(
+                controller: endCtrl,
+                keyboardType: TextInputType.number,
+                maxLength: 5,
+                decoration: const InputDecoration(
+                  hintText: '结束',
+                  isDense: true,
+                  counterText: '',
+                ),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    // 原版 1-based 输入 → 0-based，toIntOrNull 失败按 -1（AudioPlayActivity.kt:293-299）
+    final start = (int.tryParse(startCtrl.text.trim()) ?? 0) - 1;
+    final end = (int.tryParse(endCtrl.text.trim()) ?? 0) - 1;
+    final range = _normalizeAudioCacheRange(start, end, chapterCount);
+    if (range == null) {
+      _snack('请输入正确的范围'); // error_scope_input
+      return;
+    }
+    unawaited(_runAudioCacheBatch(chapters, range.$1, range.$2));
+    _snack('已加入音频缓存队列'); // audio_cache_start_range
+  }
+
+  /// 范围规范化（对齐原版 `AudioCachePolicy.normalizeRange:20-23`）：
+  /// `start < 0 || endInclusive < start || start >= chapterCount` → null；
+  /// 否则 end 截到末章（含端点，0-based 返回 Record）。
+  (int, int)? _normalizeAudioCacheRange(
+    int start,
+    int endInclusive,
+    int chapterCount,
+  ) {
+    if (start < 0 || endInclusive < start || start >= chapterCount) return null;
+    final end = endInclusive < chapterCount - 1 ? endInclusive : chapterCount - 1;
+    return (start, end);
+  }
+
+  /// 批量缓存循环（对齐原版 `AudioCacheService.processTask:187-234`）：
+  /// 逐章取址 → audioCacheDownload；分卷跳过不计失败、已缓存跳过；
+  /// 每章 done++、失败 fail++；「停止」经令牌中止后续调用。
+  Future<void> _runAudioCacheBatch(
+    List<BookChapter> chapters,
+    int start,
+    int end,
+  ) async {
+    final api = ref.read(bookApiProvider);
+    final bookUrl = widget.effectiveBookUrl;
+    final token = ++_audioCacheRunToken;
+    setState(() {
+      _audioCacheRunning = true;
+      _audioCacheDone = 0;
+      _audioCacheTotal = end - start + 1;
+      _audioCacheFail = 0;
+    });
+    // 已缓存章节跳过（原版 listCachedChapterKeys 语义，AudioCacheService.kt:208-216）；
+    // 查询失败按无缓存处理（Rust 侧幂等 already_cached 兜底，不多耗流量）
+    var cachedIndexes = <int>{};
+    try {
+      cachedIndexes = (await api.audioCacheList(bookUrl: bookUrl)).toSet();
+    } catch (e) {
+      debugPrint('[audio-cache] 列举已缓存章节失败（按无缓存处理）：$e');
+    }
+
+    for (var index = start; index <= end; index++) {
+      if (!mounted || token != _audioCacheRunToken) return;
+      final chapter = index < chapters.length ? chapters[index] : null;
+      if (chapter == null) {
+        _bumpAudioCacheProgress(fail: true);
+        continue;
+      }
+      // 分卷章节：原版服务循环跳过且不计失败（AudioCacheService.kt:214）
+      if (chapter.isVolume || cachedIndexes.contains(index)) {
+        _bumpAudioCacheProgress();
+        continue;
+      }
+      var failed = false;
+      try {
+        // playUrl 取内容链（与播放链同源：AudioPlay.kt:458 WebBook.getContent →
+        // 我方 getAudioChapterMedia.mediaUrl，含缓存命中路径与空源回退）
+        final media = await api.getAudioChapterMedia(bookUrl, index);
+        final playUrl = (media['mediaUrl'] as String? ?? '').trim();
+        await api.audioCacheDownload(
+          bookUrl: bookUrl,
+          chapterIndex: index,
+          chapterUrl: chapter.url,
+          chapterTitle: chapter.title,
+          playUrl: playUrl,
+        );
+        cachedIndexes.add(index);
+      } catch (e) {
+        // 写入面上抛不降级（契约 §2.48）：逐章计 failCount，循环继续
+        debugPrint('[audio-cache] 第 ${index + 1} 章缓存失败：$e');
+        failed = true;
+      }
+      if (!mounted || token != _audioCacheRunToken) return;
+      _bumpAudioCacheProgress(fail: failed);
+    }
+    if (!mounted || token != _audioCacheRunToken) return;
+    setState(() => _audioCacheRunning = false);
+  }
+
+  /// 进度计数（对齐原版通知 done/total/fail，AudioCacheService.kt:275-301）
+  void _bumpAudioCacheProgress({bool fail = false}) {
+    if (!mounted) return;
+    setState(() {
+      _audioCacheDone++;
+      if (fail) _audioCacheFail++;
+    });
+  }
+
+  /// 停止批量缓存（对齐原版通知 stop 动作 → stopAndClear:259-266）：
+  /// 令牌自增停止后续章节调用 + Rust audioCacheCancel 中止在途流式拷贝。
+  Future<void> _cancelAudioCacheBatch() async {
+    _audioCacheRunToken++;
+    if (mounted) setState(() => _audioCacheRunning = false);
+    try {
+      await ref.read(bookApiProvider).audioCacheCancel();
+    } catch (e) {
+      debugPrint('[audio-cache] 取消在途下载失败：$e');
+    }
+  }
+
+  /// 「清除本章缓存」入口（对标原版 menu_clear_current_audio_cache →
+  /// AudioPlayActivity.clearCurrentAudioCache:318-349；toast 文案逐字对齐
+  /// audio_cache_current_chapter_cleared / _not_found）
+  Future<void> _clearCurrentAudioCache() async {
+    final api = ref.read(bookApiProvider);
+    final bookUrl = widget.effectiveBookUrl;
+    final currentIndex = ref.read(audioNotifierProvider).currentIndex;
+    if (bookUrl.isEmpty) return;
+    BookChapter? chapter;
+    try {
+      final chapters = await api.getChapters(bookUrl);
+      chapter = chapters.where((c) => c.index == currentIndex).firstOrNull;
+    } catch (e) {
+      debugPrint('[audio-cache] 清除本章缓存前获取章节失败：$e');
+      return;
+    }
+    if (chapter == null) return;
+    // 返回数据文件删除数：>0 → 已清除；0 → 本章没有缓存（幂等语义）
+    final removed = await api.audioCacheClearChapter(
+      bookUrl: bookUrl,
+      chapterIndex: currentIndex,
+      chapterUrl: chapter.url,
+      chapterTitle: chapter.title,
+    );
+    if (removed > 0) {
+      _snack('已清除本章缓存');
+    } else {
+      _snack('本章没有缓存');
+    }
+  }
 
   Future<void> _showSkipCreditsSheet() async {
     final api = ref.read(bookApiProvider);

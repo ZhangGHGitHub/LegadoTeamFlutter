@@ -1497,6 +1497,41 @@ Future<int> audioCacheClearChapter({
 Future<int> audioCacheClearBook({required String bookUrl}) =>
     RustLib.instance.api.crateFfiFfiAudioCacheClearBook(bookUrl: bookUrl);
 
+/// 单章音频预下载安装（B2，API_CONTRACT §2.48）
+///
+/// Rust 全权执行下载安装（对齐 `AudioCacheManager.cacheChapter:132-199`）：
+/// 已提交缓存幂等返回 `already_cached`；否则按 playUrl 经 AnalyzeUrl +
+/// 书源 headers/cookie/重试/限流语义**流式**下载（字节零穿越 FFI，禁止
+/// base64——音频可达数十 MB，系 §2.46 base64 惯例的反例登记）并安装为
+/// 五段式文件名 + `.complete` 标记；前置校验（分卷/playUrl 空/JSON 多段/
+/// HLS/书源缺失）全部落 Rust。async + spawn_blocking 非阻塞，对齐
+/// `run_webbook_blocking` 先例（§2.17 webbook*）。
+/// 失败 **Err 上抛不降级**（有意区别于 §2.47 读面：写入是显式用户动作，
+/// 错误须驱动 Dart 循环 failCount）。
+Future<String> audioCacheDownload({
+  required String bookUrl,
+  required int chapterIndex,
+  required String chapterUrl,
+  required String chapterTitle,
+  required String playUrl,
+}) => RustLib.instance.api.crateFfiFfiAudioCacheDownload(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+  chapterUrl: chapterUrl,
+  chapterTitle: chapterTitle,
+  playUrl: playUrl,
+);
+
+/// 取消在途音频预下载（B2，API_CONTRACT §2.48）
+///
+/// 进程级取消代数 +1（对齐原版服务 stop 语义单槽化）：在途下载在流式块
+/// 边界检查代数，变更即中止拷贝并删除部分文件（对齐 `copyCancellable`
+/// ensureActive + CancellationException 清理路径）。返回 `true` = 置位时
+/// 快照到在途下载（尽力提示，不作同步保证）；`false` = 当前无在途。
+/// 同步立即返回。
+Future<bool> audioCacheCancel() =>
+    RustLib.instance.api.crateFfiFfiAudioCacheCancel();
+
 /// 写入/覆盖单章缓存（Task #136 R5，API_CONTRACT §2.43.1）
 ///
 /// `title` / `chapter_url` 为空串时从 DB 章节表回填；
