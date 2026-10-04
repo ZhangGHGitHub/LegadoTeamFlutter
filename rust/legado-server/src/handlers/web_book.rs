@@ -19,8 +19,9 @@
 //! - `begin_book_flow` 流程生命周期（flow scope 写入进程级单槽）与详情/
 //!   目录阶段的 book 元信息、章节→book 缓存记录。
 //!
-//! [P5 尾项] 宿主注入面 [`server_deps`] 三闭包全量接入 AppState DB（与
-//! ffi `ffi_deps` 同语义、同缓存键口径，数据面为 server 自身 DB 单例）：
+//! [P5 尾项] 宿主注入面 [`server_deps`] 全量接入 AppState DB（cookie 持久化
+//! 与三宿主闭包，与 ffi `ffi_deps` 同语义、同缓存键口径，数据面为 server
+//! 自身 DB 单例）：
 //! - `login_header`：`caches` 表键 `loginHeader_<书源URL>`，请求经
 //!   `parse_source_headers` 合并登录头；
 //! - `book_variable`：`books.variable`（`find_by_url` → `originBookUrl`
@@ -32,6 +33,14 @@
 //!
 //! [`build_engine`] 保留：reader/audio/toc_update 兄弟 handler 亦经引擎入口
 //! 复用同一注入面（已接入 state）。
+//!
+//! [cookie 批] 抓取链客户端接 DB cookie 存储（[`ServerCookiePersistence`]）：
+//! 修复前 `server_deps` 每请求 `LegadoClient::new`（空 jar、无持久化）——
+//! 响应 Set-Cookie 用完即弃、不落库，App 已登录书源（cookie 在 DB）到 Web
+//! 书架抓取时丢登录态。修复后客户端经 `LegadoClient::with_cookie_persistence`
+//! 构建：读侧构建时全量预载 `cookies` 表并按域附加，写侧响应 Set-Cookie
+//! 合并写落库。对齐原版 WebService 与主进程同 CookieStore 的语义基线
+//!（`WebService.kt:42,204`；审计 `docs/S28_DUAL_DB_AUDIT_20261004.md` §3.5）。
 
 use std::sync::{Arc, OnceLock};
 
@@ -44,7 +53,7 @@ use crate::state::AppState;
 use legado_core::models::BookSource;
 use legado_core::web_book::{WebBookEngine, WebBookInfo, WebChapter, WebSearchResult};
 use legado_core::{LegadoError, LegadoResult};
-use legado_db::{BookRepository, CacheRepository};
+use legado_db::{BookRepository, CacheRepository, CookieRepository};
 use legado_fetcher::deps::FetcherDeps;
 use legado_fetcher::rate_limit::RateLimiterRegistry;
 use legado_net::{LegadoClient, LegadoClientConfig};
@@ -180,11 +189,91 @@ fn with_state_db<T>(
     None
 }
 
+// ─── Cookie 持久化（本批修复：Web 抓取链接通 DB cookie 存储）───────────────────
+
+/// 合并两段 cookie 串（键集并集、同名 `incoming` 胜、按键名排序）
+///
+/// 与 ffi `http_state.rs::merge_cookie_strings`（legado-ffi）逐语义同款：
+/// 同一 [`legado_net::CookieStore::cookie_string_to_map`] 解析口径；排序保证
+/// 行内容稳定（HashMap 迭代序不保证，裸拼接会让同一内容产生不同行串）。
+///
+/// 为何不直接调用 ffi 同款函数：`legado-ffi → legado-server` 依赖方向
+/// （server 是 ffi 的依赖）使 server 无法引用 ffi 模块；共享原语为
+/// `legado_net::CookieStore` 的解析/合并 API（两侧同源）。
+fn merge_cookie_strings(existing: &str, incoming: &str) -> String {
+    let mut map = legado_net::CookieStore::cookie_string_to_map(existing);
+    map.extend(legado_net::CookieStore::cookie_string_to_map(incoming));
+    let mut parts: Vec<String> = map.iter().map(|(k, v)| format!("{k}={v}")).collect();
+    parts.sort();
+    parts.join("; ")
+}
+
+/// 基于 AppState DB `cookies` 表的 server Cookie 持久化后端
+///
+/// 对齐原版「同进程共享同一 CookieStore」（`WebService.kt:42,204` 控制器
+/// 直查 Room 单例）：读侧——客户端构建时 `CookiePersistence::load_all`
+/// 全量预载，请求按 URL 属域经 `apply_headers_and_cookies` 附加；写侧——
+/// 响应 Set-Cookie 经 `CookiePersistence::save` 落库。
+///
+/// 与 ffi 路径 `http_state::DbCookiePersistence`（legado-ffi）语义对齐
+/// （本批无法直接复用其类型，见 [`merge_cookie_strings`] 依赖方向说明）：
+/// - `load_all` / 合并 `save` 均经 `legado_db::CookieRepository` 读写
+///   `cookies` 表，行键为 ETLD+1 域键（与 ffi jar 写回 / JS 宿主下沉同表同键）；
+/// - App 内嵌模式下 AppState DB 即 ffi `db_state` 全局池的同一 SQLite
+///   单库（§二.8 单池修复），故读写与 App 登录态天然同存储；
+/// - `save` 为**合并 upsert**（读现有行 → 按键并集、同名新值胜 → 落库）：
+///   同一域行与 JS 宿主下沉（`legado-js` 全局 `CookieSink`，db_open 注册）
+///   共享，裸 upsert 会以 server 侧视图抹掉 JS 侧已写入的键。
+///
+/// 失败策略：DB 未初始化 / 锁竞争降级 / 读写失败仅记日志，绝不向网络
+/// 请求传播（与 net 层 `CookiePersistence` trait 文档的宽容失败一致）。
+struct ServerCookiePersistence {
+    state: Arc<AppState>,
+}
+
+impl legado_net::CookiePersistence for ServerCookiePersistence {
+    fn load_all(&self) -> Vec<(String, String)> {
+        with_state_db(&self.state, |db| {
+            CookieRepository::new(db.connection()).find_all().ok()
+        })
+        .unwrap_or_default()
+    }
+
+    fn save(&self, tag: &str, cookie: &str) {
+        if cookie.is_empty() {
+            return;
+        }
+        let tag_owned = tag.to_string();
+        let incoming = cookie.to_string();
+        let outcome = with_state_db(&self.state, |db| -> Option<()> {
+            let repo = CookieRepository::new(db.connection());
+            let merged = match repo.get_by_tag(&tag_owned).ok().flatten() {
+                Some(existing) if existing != incoming => {
+                    merge_cookie_strings(&existing, &incoming)
+                }
+                _ => incoming.clone(),
+            };
+            if merged.is_empty() {
+                return Some(()); // 防御分支：空串不产生行（与 ffi 同款跳过）
+            }
+            repo.upsert(&tag_owned, &merged).ok()?;
+            Some(())
+        });
+        if outcome.is_none() {
+            // DB 不可用 / 锁竞争降级 / 写失败：仅记日志（持久化失败不得阻断请求）
+            tracing::warn!("server cookie 持久化 '{tag}' 写入跳过或失败（降级为内存态）");
+        }
+    }
+}
+
 /// 组装 server 宿主注入面
 ///
-/// - `client`：按 server 原构造语义新建 `LegadoClientConfig::default()`
-///   客户端（原 P2-A 后为单次构造 + panic；本次保留单次构造语义但
-///   改为错误上报 → handler 500，不 panic）；
+/// - `client`：`LegadoClientConfig::default()` + **DB-backed cookie 持久化**
+///   （[`ServerCookiePersistence`]，本批修复）：构建时从 AppState DB
+///   `cookies` 表全量预载（读侧按域附加），响应 Set-Cookie 合并写落库
+///   （写侧）。每请求一次构造 = 每请求取库内最新 cookie（App 登录态对
+///   Web 抓取立即可见）；本次调用内多请求共享同一客户端 jar（同源内
+///   Set-Cookie 续命，对齐原版单 CookieStore 语义）；
 /// - `rate_limiter`：进程级注册表（见 [`rate_limiter`]）；
 /// - `login_header`：按书源 URL 查 `caches` 表 `loginHeader_<url>`（与 ffi
 ///   `source_login_cache::get_login_header` 同键口径）；
@@ -195,11 +284,21 @@ fn with_state_db<T>(
 ///   `infoMap_<url>` / `loginHeader_<url>` / `userInfo_<url>` 缓存键
 ///   （与 ffi `explore_info_map` / `source_login_cache` 同键）。
 ///
-/// 三闭包经 [`with_state_db`] 同步读 AppState DB（`Arc<AppState>` 捕获，
-/// 调用时点取库值而非装配时快照）。
+/// 四闭包（cookie 持久化 + 三宿主注入）经 [`with_state_db`] 同步读 AppState
+/// DB（`Arc<AppState>` 捕获，调用时点取库值而非装配时快照）。
+///
+/// **未做进程级客户端复用（如实登记）**：复用会冻结构建时的 cookie 预载
+/// 快照（App 后续登录对 Web 不可见），且进程级槽位无法安全绑定可重启/
+/// 多实例的 AppState（测试多库、服务重启场景）；本批只修 cookie 语义，
+/// 连接池开销维持现状（每请求一池），留待后续裁决。
 fn server_deps(state: &Arc<AppState>) -> LegadoResult<FetcherDeps> {
-    let client = LegadoClient::new(LegadoClientConfig::default())
-        .map_err(|e| LegadoError::Internal(format!("LegadoClient init: {e}")))?;
+    let client = LegadoClient::with_cookie_persistence(
+        LegadoClientConfig::default(),
+        Arc::new(ServerCookiePersistence {
+            state: Arc::clone(state),
+        }),
+    )
+    .map_err(|e| LegadoError::Internal(format!("LegadoClient init: {e}")))?;
 
     let login_header_state = Arc::clone(state);
     let book_variable_state = Arc::clone(state);
@@ -380,6 +479,7 @@ mod tests {
     use super::*;
     use axum::body::Body;
     use axum::http::{Method, Request, StatusCode};
+    use legado_net::CookiePersistence;
     use serde_json::{json, Value};
     use std::sync::atomic::AtomicBool;
     use tokio::sync::Mutex;
@@ -1098,6 +1198,255 @@ mod tests {
         assert_eq!(
             body["results"][0]["source_url"], "https://js-rest.example.com",
             "JS 结果 source_url 应回填书源 URL"
+        );
+    }
+
+    // ─── [本批修复] server 抓取链 cookie 存储接线（对齐原版同进程同存储） ─────
+
+    /// 回环 mock 源站：记录每个请求的 `Cookie` 头；`require_cookie` 非空时
+    /// 仅当 Cookie 头包含该子串才返回结果（模拟登录门控）；`set_cookie`
+    /// 非空时在响应附带该 `Set-Cookie`（写回落库断言用）。
+    ///
+    /// 返回 `(base URL, 已见 Cookie 头列表)`；源站绑定随机回环端口，
+    /// 测试结束随进程/任务回收。
+    async fn start_mock_cookie_source(
+        require_cookie: Option<&'static str>,
+        set_cookie: Option<&'static str>,
+    ) -> (String, Arc<std::sync::Mutex<Vec<Option<String>>>>) {
+        use axum::extract::Query;
+        use axum::http::HeaderMap;
+        use axum::routing::get;
+        use std::collections::HashMap;
+
+        type Seen = Arc<std::sync::Mutex<Vec<Option<String>>>>;
+
+        async fn mock_search(
+            State((seen, require_cookie, set_cookie)): State<(
+                Seen,
+                Option<&'static str>,
+                Option<&'static str>,
+            )>,
+            Query(params): Query<HashMap<String, String>>,
+            headers: HeaderMap,
+        ) -> axum::response::Response {
+            let cookie = headers
+                .get("cookie")
+                .and_then(|v| v.to_str().ok())
+                .map(str::to_string);
+            let pass = require_cookie
+                .map(|needle| cookie.as_deref().is_some_and(|c| c.contains(needle)))
+                .unwrap_or(true);
+            seen.lock().unwrap().push(cookie);
+            let key = params.get("q").cloned().unwrap_or_default();
+            let html = if pass {
+                format!(
+                    "<html><body>\
+                     <div class=\"result\">\
+                     <span class=\"name\">cookie-{key}</span>\
+                     <span class=\"author\">作者</span>\
+                     <a class=\"book\" href=\"/book/1\">详情</a>\
+                     </div></body></html>"
+                )
+            } else {
+                "<html><body></body></html>".to_string()
+            };
+            let mut builder = axum::response::Response::builder()
+                .header("content-type", "text/html; charset=utf-8");
+            if let Some(sc) = set_cookie {
+                builder = builder.header("set-cookie", sc);
+            }
+            builder
+                .body(axum::body::Body::from(html))
+                .expect("mock 响应构造")
+        }
+
+        let seen: Seen = Arc::new(std::sync::Mutex::new(Vec::new()));
+        let app = axum::Router::new()
+            .route("/search", get(mock_search))
+            .with_state((Arc::clone(&seen), require_cookie, set_cookie));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("mock cookie 源站可绑定回环端口");
+        let addr = listener.local_addr().expect("mock 服务地址");
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, app).await;
+        });
+        (format!("http://{addr}"), seen)
+    }
+
+    /// mock 源站域名键：IP 字面量以自身为键（对齐
+    /// `legado_net::cookie_store::cookie_domain_key` 与 ffi 行键口径）
+    const MOCK_COOKIE_DOMAIN: &str = "127.0.0.1";
+
+    /// 构造指向 mock 源站的规则书源（bookSourceUrl = base；`enabledCookieJar`
+    /// 缺键 → serde 默认 `Some(true)`，写侧 CookieJar 门控开启）
+    fn make_cookie_mock_source(base: &str) -> Value {
+        json!({
+            "bookSourceUrl": base,
+            "bookSourceName": "cookie 存储测试源",
+            "searchUrl": format!("{base}/search?q={{key}}"),
+            "ruleSearch": {
+                "bookList": "class.result",
+                "name": "class.name@text",
+                "author": "class.author@text",
+                "bookUrl": "class.book@href"
+            }
+        })
+    }
+
+    /// [本批修复] 读侧：DB 已有该书源域 cookie → server 抓取请求头携带。
+    /// 修复前 `server_deps` 每请求 `LegadoClient::new`（空 jar）→ 请求无
+    /// Cookie 头 → mock 门控返回空 → 0 条（红）；修复后 DB cookie 预载入
+    /// 客户端 jar → 请求带 `session=dbval` → 1 条（绿）。
+    #[tokio::test]
+    async fn test_webbook_search_rest_sends_db_cookie_to_source() {
+        let (base, seen) = start_mock_cookie_source(Some("session=dbval"), None).await;
+        let state = make_test_state();
+        {
+            let db = state.db.lock().await;
+            legado_db::CookieRepository::new(db.connection())
+                .upsert(MOCK_COOKIE_DOMAIN, "session=dbval")
+                .expect("种 DB cookie（App 登录态）");
+        }
+        let app = create_router(state);
+
+        let body = serde_json::to_string(&json!({
+            "source": make_cookie_mock_source(&base),
+            "query": "三体",
+            "page": 1
+        }))
+        .unwrap();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/webbook/search")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "搜索应 200");
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .expect("读取响应体");
+        let parsed: Value = serde_json::from_slice(&bytes).expect("响应为 JSON");
+        assert_eq!(
+            parsed["total"], 1,
+            "DB 会话 cookie 必须随 server 抓取请求发出（mock 登录门控放行）"
+        );
+        let cookies = seen.lock().unwrap().clone();
+        assert_eq!(cookies.len(), 1, "应恰好发出一次搜索请求");
+        let sent = cookies[0].as_deref().unwrap_or("");
+        assert!(
+            sent.contains("session=dbval"),
+            "请求头 Cookie 必须包含 DB 中的会话 cookie，实际: {sent:?}"
+        );
+    }
+
+    /// [本批修复] 写侧：server 抓取响应 Set-Cookie → 落库；下一次请求
+    /// 经 DB 预载回读携带（对齐原版「同一存储」：App 与 Web 共享
+    /// CookieStore 读写）。同时钉死合并写语义：不得抹除 App 侧既有键。
+    #[tokio::test]
+    async fn test_webbook_search_rest_persists_set_cookie_to_db() {
+        let (base, seen) = start_mock_cookie_source(None, Some("srv=1; Path=/")).await;
+        let state = make_test_state();
+        {
+            let db = state.db.lock().await;
+            legado_db::CookieRepository::new(db.connection())
+                .upsert(MOCK_COOKIE_DOMAIN, "app=1")
+                .expect("预置 App 侧既有 cookie 行（合并写不得抹除）");
+        }
+        let app = create_router(state.clone());
+
+        let body = serde_json::to_string(&json!({
+            "source": make_cookie_mock_source(&base),
+            "query": "三体",
+            "page": 1
+        }))
+        .unwrap();
+        // 第一次请求：响应 Set-Cookie 应合并落库（App 既有键保留）
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/webbook/search")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body.clone()))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "第一次搜索应 200");
+        {
+            let db = state.db.lock().await;
+            let row = legado_db::CookieRepository::new(db.connection())
+                .get_by_tag(MOCK_COOKIE_DOMAIN)
+                .expect("读 DB cookie 行")
+                .unwrap_or_default();
+            assert!(
+                row.contains("srv=1"),
+                "响应 Set-Cookie 必须落库，实际行: {row:?}"
+            );
+            assert!(
+                row.contains("app=1"),
+                "合并写不得抹除既有键，实际行: {row:?}"
+            );
+        }
+        // 第二次请求：新客户端经 DB 预载 → 携带上一轮响应 cookie
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method(Method::POST)
+                    .uri("/api/webbook/search")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "第二次搜索应 200");
+        let cookies = seen.lock().unwrap().clone();
+        assert_eq!(cookies.len(), 2, "应发出两次搜索请求");
+        let second = cookies[1].as_deref().unwrap_or("");
+        assert!(
+            second.contains("srv=1"),
+            "第二次请求必须携带上一轮落库的 cookie，实际: {second:?}"
+        );
+    }
+
+    /// [本批修复] 合并写钉死：既有键保留、同名键新值胜（与 ffi
+    /// `persist_cookie_row_merged` 同语义；防 server 写回抹掉 JS/App 键）。
+    #[test]
+    fn test_server_cookie_persistence_merged_upsert() {
+        let state = make_test_state();
+        let persistence = ServerCookiePersistence {
+            state: Arc::clone(&state),
+        };
+        {
+            let db = state.db.try_lock().expect("测试无并发持锁");
+            CookieRepository::new(db.connection())
+                .upsert(MOCK_COOKIE_DOMAIN, "a=1; keep=1")
+                .expect("预置既有行");
+        }
+        persistence.save(MOCK_COOKIE_DOMAIN, "a=9; b=2");
+
+        let row = {
+            let db = state.db.try_lock().expect("测试无并发持锁");
+            CookieRepository::new(db.connection())
+                .get_by_tag(MOCK_COOKIE_DOMAIN)
+                .expect("读行")
+                .unwrap_or_default()
+        };
+        let map = legado_net::CookieStore::cookie_string_to_map(&row);
+        assert_eq!(map.get("a").map(String::as_str), Some("9"), "同名键新值胜");
+        assert_eq!(map.get("b").map(String::as_str), Some("2"), "新键写入");
+        assert_eq!(
+            map.get("keep").map(String::as_str),
+            Some("1"),
+            "既有键保留（合并写不得覆盖）"
         );
     }
 }
