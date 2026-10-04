@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.350] - 2026-10-03
+
+### Fixed
+- [UI] 修复选择朗读引擎后仍无法出声（引擎地址被存成带名称的复合串，合成请求带名称前缀必然失败；现改存裸 URL，并对存量复合串在消费端归一）。
+- [UI] 移除朗读引擎种子导入时对无效字段的写入（原版 `HttpTTS` 与 Flutter 模型均无 `isEnabled` 概念，写入列无消费方；可用性仍由兼容性判定把关）。
+
 ## [2.0.349] - 2026-10-03
 
 ### Added
