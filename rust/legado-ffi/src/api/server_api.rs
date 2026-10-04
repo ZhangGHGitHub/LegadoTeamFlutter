@@ -97,6 +97,12 @@ fn lock_handle_slot(
 ///
 /// 在独立 tokio runtime 中启动 HTTP 服务器。
 /// 返回 "Server started on port {port}"。
+///
+/// DB 前置条件（§二.8 修复，审计 S28_DUAL_DB_AUDIT §五修法 A）：
+/// Web 服务与主应用复用 `db_state` 当前 DB 文件（不再硬编码相对路径
+/// `"legado.db"`——Android 上会打不开或在 cwd 生成第二个空库）。
+/// 未初始化 / 路径未记录 / 数据库打开失败均**同步**返回 Err，
+/// 不再 spawn 前返回「已启动」而把失败吞进任务内 eprintln。
 pub fn server_start(port: u16) -> LegadoResult<String> {
     if SERVER_RUNNING.load(Ordering::SeqCst) {
         return Ok(format!(
@@ -105,16 +111,25 @@ pub fn server_start(port: u16) -> LegadoResult<String> {
         ));
     }
 
+    // DB 必须已初始化（与 mcp_start_internal 同型守卫）
+    if !crate::db_state::is_initialized() {
+        return Err(LegadoError::Internal(
+            "Web 服务启动失败：数据库未初始化，请先调用 db_open".into(),
+        ));
+    }
+    let db_path = crate::db_state::current_db_path().ok_or_else(|| {
+        LegadoError::Internal("Web 服务启动失败：DB 路径未记录，请先调用 db_open".into())
+    })?;
+
+    // 同步打开数据库（与主应用同一文件，WAL 并发安全）；失败即 Err、不置 running
+    let db = legado_db::init_database(&db_path).map_err(|e| {
+        LegadoError::Internal(format!("Web 服务数据库初始化失败（{db_path}）: {e}"))
+    })?;
+
     let runtime = get_server_runtime()?;
 
     let handle = runtime.spawn(async move {
-        let config = legado_server::server::ServerConfig {
-            host: "127.0.0.1".to_string(),
-            port,
-            db_path: "legado.db".to_string(),
-        };
-
-        if let Err(e) = legado_server::server::start_server(config).await {
+        if let Err(e) = legado_server::server::start_server_with_db("127.0.0.1", port, db).await {
             eprintln!("Server error: {e}");
         }
 

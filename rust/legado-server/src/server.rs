@@ -38,10 +38,24 @@ impl Default for ServerConfig {
     }
 }
 
-/// 启动 HTTP 服务器
+/// 启动 HTTP 服务器（自行打开数据库；供独立二进制/测试使用）
 pub async fn start_server(config: ServerConfig) -> Result<(), Box<dyn std::error::Error>> {
     // 初始化数据库（含 schema 迁移）
     let db = legado_db::init_database(&config.db_path)?;
+    start_server_with_db(&config.host, config.port, db).await
+}
+
+/// 启动 HTTP 服务器（复用调用方注入的数据库连接；§二.8 单池路径）
+///
+/// 与 [`start_server`] 的差异：不再按 `config.db_path` 自开第二连接池，
+/// 数据面完全由注入的 `db` 决定——App 内 Web 服务与主应用复用同一
+/// `db_state` 全局池（单池单文件身份，消除跨池 BUSY 面与启动重跑迁移）。
+/// handler 侧零改动：注入结果仍是 `AppState.db: Mutex<Database>`。
+pub async fn start_server_with_db(
+    host: &str,
+    port: u16,
+    db: legado_db::Database,
+) -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(AppState {
         db: Mutex::new(db),
         search_cancelled: Arc::new(AtomicBool::new(false)),
@@ -50,7 +64,7 @@ pub async fn start_server(config: ServerConfig) -> Result<(), Box<dyn std::error
 
     let router = create_router(state);
 
-    let addr = format!("{}:{}", config.host, config.port).parse::<SocketAddr>()?;
+    let addr = format!("{host}:{port}").parse::<SocketAddr>()?;
     tracing::info!("Legado server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
