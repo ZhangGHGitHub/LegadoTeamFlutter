@@ -34,7 +34,10 @@ fn server_start_without_db_open_returns_err() {
         "应为 Internal 可读错误: {err:?}"
     );
     let msg = err.to_string();
-    assert!(msg.contains("未初始化"), "错误消息应说明 DB 未初始化: {msg}");
+    assert!(
+        msg.contains("未初始化"),
+        "错误消息应说明 DB 未初始化: {msg}"
+    );
     assert!(
         msg.contains("db_open"),
         "错误消息应提示先调用 db_open: {msg}"

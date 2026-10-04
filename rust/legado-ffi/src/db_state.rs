@@ -92,6 +92,22 @@ pub fn is_initialized() -> bool {
     DB_POOL.get().is_some()
 }
 
+/// 从全局连接池构造 `Database`（复用主应用连接池，不新建第二连接池）
+///
+/// §二.8 双 DB 修复（P2）：Web 服务 / 独立 MCP 服务与主应用复用同一
+/// r2d2 全局池——单池、单文件身份，消除跨池写-写 BUSY 面与启动重跑
+/// 迁移（对齐原版 `WebService` 同进程直查 Room 单例的语义基线）。
+///
+/// 未初始化（未调用 `db_open`）时返回可读错误。
+/// 注意：返回的 `Database` 持有池中一条连接（生产文件池 max_size=16），
+/// 调用方需自行管理其生命周期。
+pub fn database_from_pool() -> LegadoResult<Database> {
+    let pool = DB_POOL
+        .get()
+        .ok_or_else(|| LegadoError::Database("数据库尚未初始化，请先调用 db_open".into()))?;
+    Database::from_pool(pool)
+}
+
 /// 以不可变方式访问数据库，执行闭包
 ///
 /// 每次调用从连接池获取独立连接，包装为 `Database`，支持多线程并发访问。
@@ -100,10 +116,7 @@ pub fn with_database<F, R>(f: F) -> LegadoResult<R>
 where
     F: FnOnce(&Database) -> LegadoResult<R>,
 {
-    let pool = DB_POOL
-        .get()
-        .ok_or_else(|| LegadoError::Database("数据库尚未初始化，请先调用 db_open".into()))?;
-    let db = Database::from_pool(pool)?;
+    let db = database_from_pool()?;
     f(&db)
 }
 
@@ -132,7 +145,15 @@ pub fn ensure_test_db() -> std::sync::MutexGuard<'static, ()> {
     /// 测试串行锁：所有共享内存库的 DB 测试须持锁执行
     static TEST_DB_LOCK: Mutex<()> = Mutex::new(());
     INIT.call_once(|| {
-        let db = legado_db::init_in_memory_database().expect("Failed to init test database");
+        // 共享测试库使用**文件库**（临时目录、进程内唯一）而非 :memory:：
+        // §二.8 P2 单池化后，server 启动会长期持有共享池的一条连接，
+        // 而 :memory: 池容量固定为 1（每条连接是独立内存库，无法扩容共享），
+        // 会导致主侧 with_database 饿死（connection_timeout 10s 超时）。
+        // 文件池容量 16，主侧仍有余量。
+        let path =
+            std::env::temp_dir().join(format!("legado_ffi_shared_test_{}.db", std::process::id()));
+        let path_str = path.to_str().expect("测试 DB 路径含非 UTF-8 字符");
+        let db = legado_db::init_database(path_str).expect("Failed to init test database");
         init_database(db).expect("Failed to set global database");
     });
     // 中毒（前一个持锁测试 panic）时直接恢复：我们只需要串行语义，

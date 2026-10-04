@@ -98,11 +98,11 @@ fn lock_handle_slot(
 /// 在独立 tokio runtime 中启动 HTTP 服务器。
 /// 返回 "Server started on port {port}"。
 ///
-/// DB 前置条件（§二.8 修复，审计 S28_DUAL_DB_AUDIT §五修法 A）：
-/// Web 服务与主应用复用 `db_state` 当前 DB 文件（不再硬编码相对路径
-/// `"legado.db"`——Android 上会打不开或在 cwd 生成第二个空库）。
-/// 未初始化 / 路径未记录 / 数据库打开失败均**同步**返回 Err，
-/// 不再 spawn 前返回「已启动」而把失败吞进任务内 eprintln。
+/// DB 前置条件（§二.8 修复，审计 S28_DUAL_DB_AUDIT §五修法 A/B）：
+/// Web 服务与主应用复用 `db_state` 全局连接池（单池）——不再硬编码相对
+/// 路径 `"legado.db"`（Android 上会打不开或在 cwd 生成第二个空库），也
+/// 不再二次建池。未初始化 / 取连接失败均**同步**返回 Err，不再 spawn 前
+/// 返回「已启动」而把失败吞进任务内 eprintln。
 pub fn server_start(port: u16) -> LegadoResult<String> {
     if SERVER_RUNNING.load(Ordering::SeqCst) {
         return Ok(format!(
@@ -117,14 +117,11 @@ pub fn server_start(port: u16) -> LegadoResult<String> {
             "Web 服务启动失败：数据库未初始化，请先调用 db_open".into(),
         ));
     }
-    let db_path = crate::db_state::current_db_path().ok_or_else(|| {
-        LegadoError::Internal("Web 服务启动失败：DB 路径未记录，请先调用 db_open".into())
-    })?;
 
-    // 同步打开数据库（与主应用同一文件，WAL 并发安全）；失败即 Err、不置 running
-    let db = legado_db::init_database(&db_path).map_err(|e| {
-        LegadoError::Internal(format!("Web 服务数据库初始化失败（{db_path}）: {e}"))
-    })?;
+    // 复用主应用全局池取连接（P2 单池，与独立 MCP 服务路径统一）；
+    // 失败即 Err、不置 running
+    let db = crate::db_state::database_from_pool()
+        .map_err(|e| LegadoError::Internal(format!("Web 服务数据库连接失败: {e}")))?;
 
     let runtime = get_server_runtime()?;
 
@@ -200,7 +197,8 @@ static MCP_STATE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 /// - F5：监听 `0.0.0.0`（LAN 可达，对齐原版 McpService）；启动前置要求
 ///   `config:jsSourceApiToken` 非空；独立端口 `/mcp/*` 校验 `X-Legado-Token`；
 /// - 要求数据库已初始化（先 db_open），独立服务与主应用复用同一
-///   DB 文件（WAL 并发安全）；DB 未初始化返回 `Internal` 可读错误；
+///   全局连接池（P2 单池，与 Web 服务路径统一）；DB 未初始化返回
+///   `Internal` 可读错误；
 /// - 成功后持久化到 caches 表 `config:mcpPort`。
 pub fn set_mcp_port(port: i32) -> LegadoResult<()> {
     // port <= 0：停止独立 MCP 服务
@@ -238,15 +236,13 @@ fn mcp_start_internal(port: i32) -> LegadoResult<()> {
     // 状态机全程互斥（Task #76 Med1）
     let _guard = mcp_state_lock();
 
-    // DB 必须已初始化：独立服务与主应用复用同一 DB 文件（Task #76 C2）
+    // DB 必须已初始化：独立服务与主应用复用同一全局连接池（Task #76 C2；
+    // P2 单池化后与 Web 服务路径统一，不再二次建池/重跑迁移）
     if !crate::db_state::is_initialized() {
         return Err(LegadoError::Internal(
             "独立 MCP 服务启动失败：数据库未初始化，请先调用 db_open".into(),
         ));
     }
-    let db_path = crate::db_state::current_db_path().ok_or_else(|| {
-        LegadoError::Internal("独立 MCP 服务启动失败：DB 路径未记录，请先调用 db_open".into())
-    })?;
 
     // F5：对齐原版 — jsSourceApiToken 非空才允许启动
     let token = crate::api::config_api::get_config("jsSourceApiToken")
@@ -263,11 +259,10 @@ fn mcp_start_internal(port: i32) -> LegadoResult<()> {
     // 端口变更自动重启：先停旧服务（abort 后等待旧监听器释放）
     mcp_stop_internal();
 
-    // 同步初始化数据库（同文件 WAL 并发安全，二次连接池可接受）；
-    // 初始化失败风险同步化：失败即 Err、不置 running（Task #76 Med1）
-    let db = legado_db::init_database(&db_path).map_err(|e| {
-        LegadoError::Internal(format!("独立 MCP 服务数据库初始化失败（{db_path}）: {e}"))
-    })?;
+    // 从全局池取连接（P2 单池）；失败风险同步化：失败即 Err、不置 running
+    // （Task #76 Med1）
+    let db = crate::db_state::database_from_pool()
+        .map_err(|e| LegadoError::Internal(format!("独立 MCP 服务数据库连接失败: {e}")))?;
 
     let runtime = get_server_runtime()?;
 
@@ -409,8 +404,9 @@ mod tests {
             .expect("写入测试 token");
     }
 
-    /// 为独立 MCP 服务设置临时 DB 文件路径（Task #76 C2：避免 cwd 残留
-    /// 文件；serve_mcp 会自行在该路径初始化二次连接池）
+    /// 记录一个临时 DB 文件路径（Task #76 C2；P2 单池化后连接来自
+    /// `db_state` 全局池，此路径仅保留「db_open 已记录路径」的真实时序，
+    /// 不再用于二次建池——文件本身不会被创建）
     fn setup_temp_db_path() -> std::path::PathBuf {
         let dir = std::env::temp_dir().join(format!("legado_mcp_test_{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);

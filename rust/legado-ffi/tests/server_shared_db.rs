@@ -120,8 +120,14 @@ fn server_and_ffi_share_same_database() {
     wait_server_ready(port);
 
     // 1) HTTP 写入（POST /api/books）→ ffi 侧立即可读
-    let body = r#"{"book_url":"https://example.com/s28-http-write","name":"单池验证","author":"测试"}"#;
-    let resp = http_request(&format!("127.0.0.1:{port}"), "POST", "/api/books", Some(body));
+    let body =
+        r#"{"book_url":"https://example.com/s28-http-write","name":"单池验证","author":"测试"}"#;
+    let resp = http_request(
+        &format!("127.0.0.1:{port}"),
+        "POST",
+        "/api/books",
+        Some(body),
+    );
     assert!(
         resp.starts_with("HTTP/1.1 201") || resp.starts_with("HTTP/1.0 201"),
         "POST /api/books 应返回 201，实际响应: {}",
@@ -143,7 +149,8 @@ fn server_and_ffi_share_same_database() {
     })
     .expect("ffi 侧读库失败");
     assert_eq!(
-        count, 1,
+        count,
+        1,
         "HTTP 写入必须落在 db_state 当前库（{}）——不得是 cwd 下的分裂库",
         db_path.display()
     );
