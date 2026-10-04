@@ -250,7 +250,7 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
   }
 
   /// 引擎选择对话框（getHttpTts 列表，对标原版引擎下拉）
-  Future<void> _showEngineDialog(AudioState audio) async {
+  Future<void> _showEngineDialog() async {
     List<HttpTts> engines;
     try {
       engines = await ref.read(bookApiProvider).getHttpTts();
@@ -263,18 +263,24 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
       _snack('暂无朗读引擎，请到「朗读设置」添加 HTTP TTS 引擎');
       return;
     }
-    // [P0 | 2026-10-03] engineUrl 统一存裸 URL：当前项按 URL 匹配引擎名做
-    // 高亮；存量「名称,URL」复合形态经 normalizeTtsEngineUrl 归一后比对。
-    final currentUrl = normalizeTtsEngineUrl(audio.config.engineUrl);
+    // [引擎双持久化 | 2026-10-04] 当前值取「有效引擎」（书级优先、空则全局
+    // 回退），对齐原版对话框 `ttsEngine = ReadAloud.ttsEngine`
+    // （SpeakEngineDialog.kt:57）；此前只看全局内存值，书级生效时会高亮错误项。
+    final notifier = ref.read(audioNotifierProvider.notifier);
+    final currentUrl = normalizeTtsEngineUrl(notifier.resolveTtsEngineUrl());
     String? currentName;
+    HttpTts? currentEngine;
     if (currentUrl.isNotEmpty) {
       for (final engine in engines) {
         if (normalizeTtsEngineUrl(engine.url) == currentUrl) {
           currentName = engine.name;
+          currentEngine = engine;
           break;
         }
       }
     }
+    // 双持久化按钮作用的引擎（dialog 回调闭包捕获需 final）
+    final selectedEngine = currentEngine;
     showDialog<void>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
@@ -292,10 +298,13 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
               final engine = engines.firstWhere((e) => e.name == name);
               Navigator.pop(dialogContext);
               // [P0 | 2026-10-03] 只存裸 URL：合成管线（Rust tts_speak）把
-              // engineUrl 当 URL 模板与缓存键，存「名称,URL」必然合成失败
-              ref
-                  .read(audioNotifierProvider.notifier)
-                  .updateConfig(engineUrl: engine.url);
+              // engineUrl 当 URL 模板与缓存键，存「名称,URL」必然合成失败。
+              // [引擎双持久化 | 2026-10-04] 快捷切换按原版「全局」语义落库
+              // （先清书级覆盖再写全局，SpeakEngineDialog.kt:171-177）：书级
+              // 优先下若只写全局内存值，该书仍会继续用书级引擎，切换不生效。
+              unawaited(
+                notifier.setGlobalTtsEngine(engine.url),
+              );
               _snack('已切换引擎：${engine.name}');
             },
             child: Column(
@@ -314,9 +323,75 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
               ],
             ),
           ),
+          // [引擎双持久化 | 2026-10-04] 底部动作对齐原版 SpeakEngineDialog
+          // 布局（dialog_recycler_view.xml:94-141：左侧「书」，右侧「取消」
+          // 「全局」）与文案（values-zh/strings.xml：book=书:264、
+          // general=全局:1207）。语义照原版按钮 onClick（:164-177）：
+          // 「书」只写当前书 readConfig.ttsEngine；「全局」先清书级再写全局。
+          const Divider(height: 1),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+            child: Row(
+              children: [
+                TextButton(
+                  onPressed: selectedEngine == null
+                      ? null
+                      : () => _applyEngine(
+                            dialogContext,
+                            selectedEngine,
+                            bookLevel: true,
+                          ),
+                  child: const Text('书'),
+                ),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('取消'),
+                ),
+                TextButton(
+                  onPressed: selectedEngine == null
+                      ? null
+                      : () => _applyEngine(
+                            dialogContext,
+                            selectedEngine,
+                            bookLevel: false,
+                          ),
+                  child: const Text('全局'),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
+  }
+
+  /// 双击持久化路径的落库动作
+  ///
+  /// [bookLevel] true = 「书」按钮：只写当前书 readConfig.ttsEngine（原版
+  /// `ReadBook.book?.setTtsEngine(ttsEngine)`，SpeakEngineDialog.kt:164-170）；
+  /// false = 「全局」按钮：先清书级覆盖再写全局（原版 :171-177）。
+  Future<void> _applyEngine(
+    BuildContext dialogContext,
+    HttpTts engine, {
+    required bool bookLevel,
+  }) async {
+    final navigator = Navigator.of(dialogContext);
+    final notifier = ref.read(audioNotifierProvider.notifier);
+    var ok = true;
+    if (bookLevel) {
+      ok = await notifier.setBookTtsEngine(engine.url);
+    } else {
+      await notifier.setGlobalTtsEngine(engine.url);
+    }
+    if (!mounted) return;
+    navigator.pop();
+    if (bookLevel && !ok) {
+      // 对齐原版空安全语义：无当前书时不写、如实告知（不静默假装成功）
+      _snack('未打开书籍，无法设为本书引擎');
+      return;
+    }
+    _snack(bookLevel ? '已设为本书引擎：${engine.name}' : '已设为全局引擎：${engine.name}');
   }
 
   void _snack(String msg) {
@@ -602,7 +677,7 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
           IconButton(
             icon: const Icon(Icons.record_voice_over_outlined),
             tooltip: '选择朗读引擎',
-            onPressed: () => _showEngineDialog(audio),
+            onPressed: () => _showEngineDialog(),
           ),
         ],
       ),

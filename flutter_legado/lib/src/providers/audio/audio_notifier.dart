@@ -73,6 +73,16 @@ const int kMaxSleepTimerMinutes = 180;
 /// （ChapterStopTimer.kt:3）[A4 | 2026-10-03]
 const int kMaxChapterStopCount = 99;
 
+/// 全局朗读引擎持久化键
+///
+/// 对齐原版 `PreferKey.ttsEngine = "appTtsEngine"`（app/.../constant/PreferKey.kt:46
+/// → `AppConfig.ttsEngine`，app/.../help/config/AppConfig.kt:506-509）：原版
+/// 「全局」按钮把所选引擎写入该键，「书」按钮只写书级 `readConfig.ttsEngine`。
+/// 本项目全局值经既有 config 存储（[BookApi.setConfig]）持久化，书级值经
+/// `Book.copyWith(readConfig:)` + [BookApi.updateBook] 落 `books.readConfig` 列。
+/// [引擎双持久化 | 2026-10-04]
+const String kTtsEngineConfigKey = 'appTtsEngine';
+
 /// 恢复进度「接近章尾」容差（毫秒）
 ///
 /// [P1 竞态修复 | 2026-10-03] 存量进度 ≥ duration - 该值 时视为「本章已播完」，
@@ -437,7 +447,19 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     }
     if (state.chapters.isEmpty) return;
 
-    if (state.config.engineUrl.isEmpty) {
+    // [引擎双持久化 | 2026-10-04] 绑定当前书：书级引擎（readConfig.ttsEngine）
+    // 的解析依赖当前书对象。此前阅读器入口不绑定（仅听书页 bindBook/
+    // applyBookPreferences 绑定），书级值不会生效；同时顺带修正片头/片尾
+    // 跳过取陈旧书配置的隐患（_resolveSkipWindow）。
+    await _bindBookForEngine(bookUrl);
+
+    // 解析层级对齐原版 ReadAloud.ttsEngine = 书级 ?: 全局（ReadAloud.kt:41 →
+    // AppConfig.kt:506-509）：书级为空时先读回持久化的全局值（原版
+    // AppConfig.ttsEngine 重启保留），仍为空才自动选默认引擎（我方降级路径）。
+    if (resolveTtsEngineUrl().isEmpty) {
+      await _restorePersistedGlobalEngine();
+    }
+    if (resolveTtsEngineUrl().isEmpty) {
       await _ensureDefaultEngine();
     }
 
@@ -496,11 +518,154 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     }
   }
 
+  // ===== 朗读引擎双持久化（书级 / 全局）=====
+  //
+  // 对齐原版 SpeakEngineDialog（app/.../ui/book/read/config/SpeakEngineDialog.kt）：
+  // - 解析：书级 `Book.getTtsEngine()` 优先、空则全局 `AppConfig.ttsEngine`
+  //   （ReadAloud.kt:41 → AppConfig.kt:506-509）；
+  // - 「书」按钮:164-170 = 只写书级（`ReadBook.book?.setTtsEngine(ttsEngine)`），
+  //   不改全局；
+  // - 「全局」按钮:171-177 = 先清书级（`setTtsEngine(null)`）再写全局；
+  // - 行点击:315-326 = 仅对话框内选中态（upTts），不持久化。
+
+  /// 当前生效朗读引擎 URL：书级优先、空则全局回退（**单点解析**）
+  ///
+  /// 书级值取当前绑定书籍的 `readConfig.ttsEngine`（原版 Book.setTtsEngine，
+  /// Book.kt:267-272 / 字段 :501）；全局值取 [AudioState.config] 的 engineUrl
+  /// （用户经朗读条/管理页选择，见 [setGlobalTtsEngine]）。两个来源都经
+  /// [normalizeTtsEngineUrl] 归一，历史「名称,URL」形态不会破坏解析。
+  /// 播放链（[_speakCurrentParagraph]）与默认引擎判定（[startReadAloud]）
+  /// 都必须走本方法，禁止在别处重复判断层级。
+  String resolveTtsEngineUrl() {
+    final bookLevel = normalizeTtsEngineUrl(_book?.readConfig?.ttsEngine ?? '');
+    if (bookLevel.isNotEmpty) return bookLevel;
+    return normalizeTtsEngineUrl(state.config.engineUrl);
+  }
+
+  /// 是否存在可写书级的当前书（UI「书」按钮可用性判定）
+  bool get hasCurrentBook => _currentBookUrl().isNotEmpty;
+
+  /// 书级引擎写入（对齐原版「书」按钮，SpeakEngineDialog.kt:164-170）
+  ///
+  /// 只写当前书的 `readConfig.ttsEngine`，不改全局值；写库复用既有
+  /// `Book.copyWith(readConfig:)` + [BookApi.updateBook] 链路（同
+  /// [_persistPlayMode]/[_persistSpeed] 先例），Rust 侧 `update_book` 全行
+  /// 回写 readConfig 列（rust/legado-ffi/src/api/bookshelf.rs:68，
+  /// rust/legado-db/.../book_repository.rs update）。无当前书返回 false
+  /// （对齐原版 `ReadBook.book?.` 空安全语义，不静默假装成功）。
+  Future<bool> setBookTtsEngine(String engineUrl) async {
+    final url = normalizeTtsEngineUrl(engineUrl);
+    if (url.isEmpty) return false;
+    final book = await _currentBookForEngine();
+    if (book == null) return false;
+    try {
+      final cfg = book.readConfig ?? const ReadConfig();
+      final updated = book.copyWith(readConfig: cfg.copyWith(ttsEngine: url));
+      _book = updated;
+      await _api.updateBook(updated);
+      return true;
+    } catch (e) {
+      debugPrint('保存书级朗读引擎失败: $e');
+      return false;
+    }
+  }
+
+  /// 清书级引擎（对齐原版「全局」按钮的 `ReadBook.book?.setTtsEngine(null)`）
+  ///
+  /// 书级值本就为空时跳过写库（避免无意义 IO）；无当前书时静默跳过。
+  Future<void> clearBookTtsEngine() async {
+    final book = await _currentBookForEngine();
+    if (book == null) return;
+    if ((book.readConfig?.ttsEngine ?? '').isEmpty) return;
+    try {
+      final cfg = book.readConfig ?? const ReadConfig();
+      final updated = book.copyWith(readConfig: cfg.copyWith(ttsEngine: null));
+      _book = updated;
+      await _api.updateBook(updated);
+    } catch (e) {
+      debugPrint('清除书级朗读引擎失败: $e');
+    }
+  }
+
+  /// 全局引擎写入（对齐原版「全局」按钮，SpeakEngineDialog.kt:171-177）
+  ///
+  /// 同步策略照原版：先清当前书书级覆盖，再把所选引擎写全局。全局值双写——
+  /// 内存 [AudioState.config].engineUrl（既有消费路径不变）+ config 存储
+  /// [kTtsEngineConfigKey]（重启后由 [_restorePersistedGlobalEngine] 读回，
+  /// 对齐原版 AppConfig.ttsEngine 持久化语义）。
+  Future<void> setGlobalTtsEngine(String engineUrl) async {
+    final url = normalizeTtsEngineUrl(engineUrl);
+    if (url.isEmpty) return;
+    await clearBookTtsEngine();
+    updateConfig(engineUrl: url);
+    try {
+      await _api.setConfig(kTtsEngineConfigKey, url);
+    } catch (e) {
+      debugPrint('持久化全局朗读引擎失败: $e');
+    }
+  }
+
+  /// 有效引擎读回（管理页/朗读条对话框初始化选中态用）
+  ///
+  /// 顺序与 [resolveTtsEngineUrl] 一致；仅当书级与内存全局都为空时，才读回
+  /// 持久化全局值（读到则同步应用到内存）。
+  Future<String> loadEffectiveTtsEngineUrl() async {
+    await _bindBookForEngine(_currentBookUrl());
+    final resolved = resolveTtsEngineUrl();
+    if (resolved.isNotEmpty) return resolved;
+    return _restorePersistedGlobalEngine();
+  }
+
+  /// 取当前书的 URL（优先已绑定书，其次当前播放会话的 bookUrl）
+  String _currentBookUrl() {
+    final bound = _book?.bookUrl ?? '';
+    if (bound.isNotEmpty) return bound;
+    return state.bookUrl;
+  }
+
+  /// 取当前书对象（写书级引擎用；无书返回 null）
+  Future<Book?> _currentBookForEngine() async {
+    await _bindBookForEngine(_currentBookUrl());
+    return _book;
+  }
+
+  /// 绑定当前书（仅换书时经 API 补读；失败置空，书级解析回退全局）
+  Future<void> _bindBookForEngine(String bookUrl) async {
+    if (bookUrl.isEmpty) return;
+    if (_book?.bookUrl == bookUrl) return;
+    _book = null;
+    try {
+      _book = await _api.getBook(bookUrl);
+    } catch (e) {
+      debugPrint('读取书级朗读引擎配置失败: $e');
+    }
+  }
+
+  /// 读回持久化全局引擎并应用到内存（空/失败不改状态）
+  Future<String> _restorePersistedGlobalEngine() async {
+    try {
+      final raw = await _api.getConfig(kTtsEngineConfigKey);
+      final url = normalizeTtsEngineUrl(raw ?? '');
+      if (url.isEmpty) return '';
+      updateConfig(engineUrl: url);
+      return url;
+    } catch (e) {
+      debugPrint('读取持久化朗读引擎失败: $e');
+      return '';
+    }
+  }
+
   Future<void> play({int? paragraphIndex}) async {
     if (state.chapters.isEmpty) return;
     if (state.isStreamMode) {
       await _playAudioBookStream();
       return;
+    }
+    // [引擎双持久化 | 2026-10-04] 听书页 TTS 入口（非 startReadAloud 路径）
+    // 同样读回持久化全局引擎：原版 AppConfig.ttsEngine 对所有朗读入口生效；
+    // 此处只读回、不自动选默认（默认选择仍归 startReadAloud，保持既有语义）。
+    if (resolveTtsEngineUrl().isEmpty) {
+      await _restorePersistedGlobalEngine();
     }
     await _playTtsParagraphs(paragraphIndex: paragraphIndex);
   }
@@ -762,9 +927,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
 
     final text = _paragraphs[_paragraphIndex];
     final config = state.config;
-    // [P0] 消费端归一：历史「名称,URL」复合形态在此还原为裸 URL 模板，
-    // 避免 Rust tts_speak 把名称前缀当 URL/缓存键（见 normalizeTtsEngineUrl）。
-    final engineUrl = normalizeTtsEngineUrl(config.engineUrl);
+    // [引擎双持久化 | 2026-10-04] 消费端单点解析：书级优先、空则全局回退
+    // （对齐原版 ReadAloud.kt:41）；归一仍在此完成，历史「名称,URL」复合形态
+    // 不会破坏解析（见 normalizeTtsEngineUrl）。
+    final engineUrl = resolveTtsEngineUrl();
     if (engineUrl.isEmpty) {
       // [A4] 无可用引擎：温和一次性提示（复用 errorMessage 展示面）后按
       // 估算节奏朗读；不视为失败，无正文时前面的空段落判定已提前返回。
