@@ -153,6 +153,11 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
   Future<List<int>> listDownloadingChapters(String bookUrl) async =>
       const <int>[];
 
+  // [P2-29c 后续 | 2026-10-05] mock 无批量下载失败记录（失败章集合恒空，
+  // 契约 §2.43.8 cacheDownloadFailedChapters）
+  @override
+  Future<List<int>> listFailedChapters(String bookUrl) async => const <int>[];
+
   // ========== 图片磁盘缓存（契约 §2.46，Mock 以内存 Map 模拟落盘） ==========
 
   /// [P4-2a | 2026-09-29] mock 图片磁盘缓存写侧：存入内存 Map（模拟 Rust

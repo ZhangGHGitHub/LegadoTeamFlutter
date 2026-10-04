@@ -10,7 +10,7 @@
 //! - worker 运行于独立系统线程：正文抓取内部含 `runtime::block_on`，
 //!   不可在 tokio worker 内嵌套执行。
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::sync::{Arc, LazyLock, Mutex};
 
@@ -46,6 +46,9 @@ struct TaskInner {
     next_index: AtomicI32,
     cancel: AtomicBool,
     status: Mutex<String>,
+    /// 任务内已失败章节 index 集合（对齐参考版 `CacheDownloadStateStore`
+    /// 的 `failedIndices`：失败加入、成功移除、恢复回读；查询按书跨任务合并）
+    failed_chapters: Mutex<HashSet<i32>>,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -71,6 +74,10 @@ struct PersistedTask {
     failed: i32,
     next_index: i32,
     status: String,
+    /// 失败章索引集合（升序存储）。`#[serde(default)]` 兼容旧快照：
+    /// 契约冻结前落库的 `cacheDownloadTask:` JSON 无此字段，读为未失败
+    #[serde(default)]
+    failed_chapters: Vec<i32>,
 }
 
 fn persist_key(task_id: u64) -> String {
@@ -93,6 +100,7 @@ fn persist_snapshot(task_id: u64, task: &TaskInner) {
         failed: task.failed.load(Ordering::SeqCst),
         next_index: task.next_index.load(Ordering::SeqCst),
         status,
+        failed_chapters: failed_indices(task),
     };
     let Ok(json) = serde_json::to_string(&row) else {
         return;
@@ -114,6 +122,64 @@ fn persist_snapshot(task_id: u64, task: &TaskInner) {
         repo.put(PERSIST_NEXT_ID, &next.to_string(), 0)?;
         Ok(())
     });
+}
+
+/// 任务失败章索引（升序；锁中毒时降级空集合）。对齐参考版
+/// `CacheDownloadStateStore.failedIndices`（`CacheDownloadStateStore.kt:45`）
+fn failed_indices(task: &TaskInner) -> Vec<i32> {
+    let mut out: Vec<i32> = task
+        .failed_chapters
+        .lock()
+        .map(|set| set.iter().copied().collect())
+        .unwrap_or_default();
+    out.sort_unstable();
+    out
+}
+
+/// 记入失败章（对齐参考版 `markFailed`：`CacheDownloadStateStore.kt:48-57`
+/// 失败加入 `failedIndices`）
+fn mark_failed(task: &TaskInner, index: i32) {
+    if let Ok(mut set) = task.failed_chapters.lock() {
+        set.insert(index);
+    }
+}
+
+/// 清除本任务失败章标记（对齐参考版 `markSuccess`
+/// `CacheDownloadStateStore.kt:35-46` 成功从 `failedIndices` 移除）
+fn clear_failed(task: &TaskInner, index: i32) {
+    if let Ok(mut set) = task.failed_chapters.lock() {
+        set.remove(&index);
+    }
+}
+
+/// 跨任务清除某书某章的失败标记：参考版失败集合是**单书一份**
+/// （`CacheDownloadStateStore` 按 bookUrl 聚合），该书任一任务重新取到该章
+/// 开始下载即清除之前任何一次任务的失败记录（对齐参考版
+/// `CacheBookModel.kt:571-573` 在 `nextDownloadCandidate` 取到章时
+/// `clearFailure`，即「任务启动清空/重试移除」语义；我方失败集合按任务
+/// 存储，故需跨任务清除以保持单书可观测语义一致）。
+fn clear_failed_for_book(book_url: &str, index: i32) {
+    if let Ok(map) = TASKS.lock() {
+        for task in map.values().filter(|t| t.book_url == book_url) {
+            clear_failed(task, index);
+        }
+    }
+}
+
+/// 由落库快照构建任务内存态（`ensure_restored` 回读复用；失败集合一并恢复）
+fn task_from_persisted(row: PersistedTask) -> Arc<TaskInner> {
+    Arc::new(TaskInner {
+        book_url: row.book_url,
+        start_chapter: row.start_chapter,
+        end_chapter: row.end_chapter,
+        total: row.total,
+        completed: AtomicI32::new(row.completed),
+        failed: AtomicI32::new(row.failed),
+        next_index: AtomicI32::new(row.next_index.max(row.start_chapter)),
+        cancel: AtomicBool::new(false),
+        status: Mutex::new("running".to_string()),
+        failed_chapters: Mutex::new(row.failed_chapters.into_iter().collect()),
+    })
 }
 
 fn ensure_restored() {
@@ -149,17 +215,10 @@ fn ensure_restored() {
         }
         let task_id = row.task_id;
         NEXT_TASK_ID.fetch_max(task_id + 1, Ordering::SeqCst);
-        let task = Arc::new(TaskInner {
-            book_url: row.book_url,
-            start_chapter: row.start_chapter,
-            end_chapter: row.end_chapter,
-            total: row.total,
-            completed: AtomicI32::new(row.completed),
-            failed: AtomicI32::new(row.failed),
-            next_index: AtomicI32::new(row.next_index.max(row.start_chapter)),
-            cancel: AtomicBool::new(false),
-            status: Mutex::new("running".to_string()),
-        });
+        // 恢复回读：失败章集合一并恢复（对齐参考版 `clearRuntimeState`
+        // 重启/关闭时保留 `failedIndices` 供展示与重试，
+        // `CacheDownloadStateStore.kt:103-121`）
+        let task = task_from_persisted(row);
         if let Ok(mut map) = TASKS.lock() {
             if map.contains_key(&task_id) {
                 continue;
@@ -230,6 +289,7 @@ pub fn cache_download_start(
         next_index: AtomicI32::new(start),
         cancel: AtomicBool::new(false),
         status: Mutex::new("running".to_string()),
+        failed_chapters: Mutex::new(HashSet::new()),
     });
 
     TASKS
@@ -257,12 +317,23 @@ fn run_download(task_id: u64, task: Arc<TaskInner>) {
             return;
         }
 
+        // 取到该章开始下载即清除其失败标记（对齐参考版
+        // `CacheBookModel.kt:571-573` nextDownloadCandidate 的 clearFailure，
+        // 「任务启动清空/重试移除」）；若本次再失败，下方失败分支重新记入
+        clear_failed_for_book(&book_url, index);
         match download_one(&book_url, index) {
             Ok(()) => {
                 task.completed.fetch_add(1, Ordering::SeqCst);
+                // 成功分支从集合移除（对齐参考版 markSuccess
+                // `CacheDownloadStateStore.kt:35-46`；取章时已清，此处二次兜底）
+                clear_failed(&task, index);
             }
             Err(_) => {
                 task.failed.fetch_add(1, Ordering::SeqCst);
+                // 失败分支除计数外同步记入失败集合（契约 §2.43.8）：
+                // 目录页 ERROR 态数据来源（对齐参考版 markFailed
+                // `CacheDownloadStateStore.kt:48-57`）
+                mark_failed(&task, index);
             }
         }
         index += 1;
@@ -415,6 +486,30 @@ pub fn cache_download_running_chapters(book_url: &str) -> LegadoResult<Vec<i32>>
             let next = t.next_index.load(Ordering::SeqCst);
             (next >= t.start_chapter && next <= t.end_chapter).then_some(next)
         })
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    Ok(out)
+}
+
+/// 本书批量下载**已失败**章节 index 集合（API_CONTRACT §2.43.8，
+/// 纯任务表读 + `ensure_restored` 落库恢复回读，**零写入**）
+///
+/// 对齐参考版 `CacheBook.errorIndices(bookUrl)`（`CacheBook.kt:192-194`
+/// 读 `stateStore.bookState(bookUrl)?.failedIndices`）的单书语义：
+/// 合并该书全部任务（进行中/已完成/已取消）的失败集合
+/// （`markFailed` 记入后任务终态仍保留，供目录页 ERROR 态展示与重试；
+/// 成功/重试由 `run_download` 取章清空，见 `clear_failed_for_book`）。
+/// 返回升序去重（0-based；无失败/未知书为空集合）。
+pub fn cache_download_failed_chapters(book_url: &str) -> LegadoResult<Vec<i32>> {
+    ensure_restored();
+    let map = TASKS
+        .lock()
+        .map_err(|e| LegadoError::Ffi(format!("任务表加锁失败: {e}")))?;
+    let mut out: Vec<i32> = map
+        .values()
+        .filter(|t| t.book_url == book_url)
+        .flat_map(|t| failed_indices(t))
         .collect();
     out.sort_unstable();
     out.dedup();
@@ -665,5 +760,194 @@ mod tests {
         .unwrap();
         crate::api::cache_api::clear_cache().unwrap();
         let _ = std::fs::remove_file(&txt_path);
+    }
+
+    /// 轮询等待任务进入终态（上限 5s）
+    fn wait_terminal(task_id: u64) -> CacheDownloadTask {
+        for _ in 0..200 {
+            let p = cache_download_progress(task_id).unwrap();
+            if p.status != "running" {
+                return p;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        }
+        panic!("任务超时未进入终态");
+    }
+
+    /// 构造本地 TXT 书并解析章节目录（返回 book_url 与入库章节）
+    fn make_local_txt_book(
+        dir_name: &str,
+        file_name: &str,
+        book_name: &str,
+        chapter_count: usize,
+    ) -> (String, Vec<legado_core::models::BookChapter>) {
+        let dir = std::env::temp_dir().join(dir_name);
+        std::fs::create_dir_all(&dir).unwrap();
+        let txt_path = dir.join(file_name);
+        let mut content = String::new();
+        for i in 0..chapter_count {
+            content.push_str(&format!("第{i}章 标题\n\n这是第{i}章的正文。\n\n"));
+        }
+        std::fs::write(&txt_path, &content).unwrap();
+        let book_url = txt_path.to_string_lossy().to_string();
+        let book_json = serde_json::json!({
+            "bookUrl": book_url,
+            "name": book_name,
+            "author": "",
+            "origin": "loc_book"
+        })
+        .to_string();
+        crate::api::bookshelf::add_book(&book_json).unwrap();
+        let chapters = crate::api::reader::get_chapters(&book_url).unwrap();
+        assert_eq!(chapters.total, chapter_count as i32, "TXT 章节数应匹配");
+        let rows = with_database(|db| {
+            BookChapterRepository::new(db.connection()).find_by_book_url(&book_url)
+        })
+        .unwrap();
+        (book_url, rows)
+    }
+
+    /// §2.43.8：失败记入集合（成功不入）、按书查询升序去重、重试/任务启动
+    /// 取章清空（跨任务）、无任务书空集合、重复查询纯读
+    #[test]
+    fn test_failed_chapters_recorded_and_cleared_on_retry() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        crate::api::cache_api::clear_cache().unwrap();
+
+        let (book_url, chapters) = make_local_txt_book(
+            "legado_p2438_failed_test",
+            "p2438_failed.txt",
+            "失败章查询测试",
+            3,
+        );
+
+        // 删除第 0 章行 → 该章抓取必然失败（本地章节不存在），其余章成功。
+        // 注意：删后 count=2，任务 0..2 的 end 会按末章截断为 1，
+        // 恰好覆盖「缺失的第 0 章 + 正常第 1 章」
+        let missing: Vec<_> = chapters.iter().filter(|c| c.index == 0).cloned().collect();
+        assert_eq!(missing.len(), 1);
+        // [B-7] delete_by_book_url 事务外为 no-op，须包 unchecked_transaction
+        with_database(|db| {
+            let conn = db.connection();
+            let repo = BookChapterRepository::new(conn);
+            let tx = conn
+                .unchecked_transaction()
+                .map_err(|e| legado_core::LegadoError::Database(format!("开启事务失败: {e}")))?;
+            repo.delete_by_book_url(&book_url)?;
+            let kept: Vec<_> = chapters.into_iter().filter(|c| c.index != 0).collect();
+            repo.insert_batch_no_tx(&kept)?;
+            tx.commit()
+                .map_err(|e| legado_core::LegadoError::Database(format!("提交事务失败: {e}")))?;
+            Ok(())
+        })
+        .unwrap();
+
+        let task_id = cache_download_start(&book_url, 0, 2).unwrap();
+        let final_progress = wait_terminal(task_id);
+        assert_eq!(final_progress.status, "completed");
+        assert_eq!(final_progress.completed, 1, "一章应成功（第 1 章）");
+        assert_eq!(final_progress.failed, 1, "一章应失败（第 0 章）");
+
+        // 失败记入集合：仅第 0 章（成功章不入集）；重复查询结果恒定（纯读）
+        assert_eq!(
+            cache_download_failed_chapters(&book_url).unwrap(),
+            vec![0],
+            "失败章集合应为升序 [0]"
+        );
+        assert_eq!(cache_download_failed_chapters(&book_url).unwrap(), vec![0]);
+        // 无任务书籍恒空
+        assert!(
+            cache_download_failed_chapters("http://no-task-book.example.com")
+                .unwrap()
+                .is_empty(),
+            "无任务书籍应返回空集合"
+        );
+
+        // 恢复第 0 章行 → 新任务重试该章：取章即清失败标记（任务启动清空/
+        // 重试移除，跨任务清除），成功后集合为空
+        with_database(|db| BookChapterRepository::new(db.connection()).insert_batch(&missing))
+            .unwrap();
+        let task2 = cache_download_start(&book_url, 0, 0).unwrap();
+        let p2 = wait_terminal(task2);
+        assert_ne!(task2, task_id, "终态任务不应复用，应新建任务");
+        assert_eq!(p2.status, "completed");
+        assert_eq!(p2.failed, 0);
+        assert!(
+            cache_download_failed_chapters(&book_url)
+                .unwrap()
+                .is_empty(),
+            "重试成功后失败集合应清空（跨任务清除）"
+        );
+
+        // 清理
+        with_database(|db| {
+            let conn = db.connection();
+            BookChapterRepository::new(conn).delete_by_book_url(&book_url)?;
+            BookRepository::new(conn).delete_by_url(&book_url)
+        })
+        .unwrap();
+        crate::api::cache_api::clear_cache().unwrap();
+        let _ = std::fs::remove_file(&book_url);
+    }
+
+    /// §2.43.8：持久化往返（集合升序序列化）、旧快照无字段可读（serde
+    /// default）、恢复回读（task_from_persisted）一并恢复集合、查询零写入
+    #[test]
+    fn test_failed_chapters_persistence_roundtrip_and_legacy_snapshot() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        // 旧快照（契约冻结前落库，无 failedChapters 字段）可读 → 空集合
+        let legacy_json = r#"{"taskId":99991,"bookUrl":"http://legacy-book.example.com","startChapter":0,"endChapter":2,"total":3,"completed":1,"failed":1,"nextIndex":2,"status":"completed"}"#;
+        let legacy_row: PersistedTask = serde_json::from_str(legacy_json).unwrap();
+        assert!(
+            legacy_row.failed_chapters.is_empty(),
+            "旧快照无 failedChapters 字段应读为空集合"
+        );
+        let legacy_task = task_from_persisted(legacy_row);
+        assert!(
+            failed_indices(&legacy_task).is_empty(),
+            "恢复回读旧快照 → 空失败集合"
+        );
+
+        // 新快照往返：集合升序序列化，恢复回读一并恢复
+        let task_id = NEXT_TASK_ID.fetch_add(1, Ordering::SeqCst);
+        let task = Arc::new(TaskInner {
+            book_url: "http://persist-roundtrip.example.com".to_string(),
+            start_chapter: 0,
+            end_chapter: 5,
+            total: 6,
+            completed: AtomicI32::new(4),
+            failed: AtomicI32::new(2),
+            next_index: AtomicI32::new(6),
+            cancel: AtomicBool::new(false),
+            status: Mutex::new("completed".to_string()),
+            failed_chapters: Mutex::new([5, 3].iter().copied().collect()),
+        });
+        persist_snapshot(task_id, &task);
+        let json =
+            with_database(|db| CacheRepository::new(db.connection()).get(&persist_key(task_id)))
+                .unwrap()
+                .expect("快照应落库");
+        let row: PersistedTask = serde_json::from_str(&json).unwrap();
+        assert_eq!(row.failed_chapters, vec![3, 5], "失败集合应按升序序列化");
+        let restored = task_from_persisted(row);
+        assert_eq!(
+            failed_indices(&restored),
+            vec![3, 5],
+            "恢复回读应一并恢复失败集合"
+        );
+
+        // 查询零写入：查询前后该任务落库快照逐字不变
+        let before = json;
+        assert!(
+            cache_download_failed_chapters("http://no-task-book-2.example.com")
+                .unwrap()
+                .is_empty()
+        );
+        let after =
+            with_database(|db| CacheRepository::new(db.connection()).get(&persist_key(task_id)))
+                .unwrap()
+                .unwrap();
+        assert_eq!(after, before, "查询不得改写任务快照（零写入）");
     }
 }

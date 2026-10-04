@@ -34,9 +34,9 @@ import '../mocks/mocks.dart';
 /// - ④ SUCCESS（已缓存且无胶囊，如字数开关关）→ Icons.Default.CheckCircle
 ///   （secondary 着色）→ 我方 Icons.check_circle（16px）
 /// - ⑤ ERROR → 红色重试图标（Icons.refresh，error 着色）可点击 → 单章重下
-///   cacheDownloadStart(bookUrl, idx, idx)；数据链留项：Rust 任务表仅
-///   failed 计数、无逐章失败记录 → 生产恒空恒不显示（不伪造），
-///   本文件经 TocScreen.failedChapterIndicesForTest 注入缝驱动该分支
+///   cacheDownloadStart(bookUrl, idx, idx)；数据经 BookApi.listFailedChapters
+///   （契约 §2.43.8，P2-29c 后续批接通，与下载中同周期 1s 轮询；注入缝
+///   failedChapterIndicesForTest 已移除），本文件经 stub 真实数据源驱动
 /// - ⑥ NONE（未缓存网络章）→ Icons.Outlined.DownloadForOffline
 ///   （outline 50% 着色）→ 我方 Icons.download_for_offline_outlined
 /// - ⑦ LOCAL（本地书无字数且非当前章）→ when 链无分支命中，渲染空
@@ -174,6 +174,7 @@ void main() {
     List<BookChapter> chapters,
     List<String> cachedUrls, {
     List<int> downloading = const [],
+    List<int> failed = const [],
   }) {
     when(() => mockApi.getBook(any())).thenAnswer((_) async => makeBook());
     when(() => mockApi.getChapters(bookUrl)).thenAnswer(
@@ -185,6 +186,11 @@ void main() {
     // [P2-29] 下载中集合（契约 §2.43.7）：初始加载与 1s 轮询均经此 stub
     when(() => mockApi.listDownloadingChapters(bookUrl)).thenAnswer(
       (_) async => downloading,
+    );
+    // [P2-29c 后续] 失败章集合（契约 §2.43.8）：初始加载与 1s 轮询均经此
+    // stub（真实数据源，ERROR 态不再依赖 UI 注入缝）
+    when(() => mockApi.listFailedChapters(bookUrl)).thenAnswer(
+      (_) async => failed,
     );
     when(() => mockApi.highlightListByBook(bookUrl: bookUrl))
         .thenAnswer((_) async => '[]');
@@ -650,21 +656,14 @@ void main() {
 
   testWidgets('[P2-29] 失败章红色重试图标，点击触发单章重下（start==end 单章语义）',
       (tester) async {
-    // 缓存 u0；ERROR 态经注入缝（failedChapterIndicesForTest）驱动：
-    // 第三章（index 2）失败。生产无失败记录数据源（恒空恒不显示，不伪造），
-    // 本用例仅验证 UI 分支：红色重试图标 + 点击 → cacheDownloadStart(idx, idx)
-    stubCommon(makeChapters(), const ['u0']);
+    // 缓存 u0；失败集合经 listFailedChapters（契约 §2.43.8）真实数据源返回：
+    // 第三章（index 2）失败（[P2-29c 后续] 注入缝已移除）。本用例验证 UI 分支：
+    // 红色重试图标 + 点击 → cacheDownloadStart(idx, idx)
+    stubCommon(makeChapters(), const ['u0'], failed: const [2]);
     when(() => mockApi.cacheDownloadStart(bookUrl, 2, 2))
         .thenAnswer((_) async => 7);
 
-    await tester.pumpWidget(
-      wrap(
-        TocScreen(
-          book: makeBook(dur: 3),
-          failedChapterIndicesForTest: const {2},
-        ),
-      ),
-    );
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
     await settleInitial(tester);
 
     // 失败章「第三章」：红色重试图标（替代 ⬇；ERROR 态优先于 NONE 态）
@@ -694,6 +693,75 @@ void main() {
     verify(() => mockApi.cacheDownloadStart(bookUrl, 2, 2)).called(1);
     expect(
       find.textContaining('已加入重新下载队列'),
+      findsOneWidget,
+    );
+    // 卸载：dispose 取消轮询定时器（在线书）
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('[P2-29c 后续] 失败集合经 1s 轮询真实出现/清除（契约 §2.43.8）',
+      (tester) async {
+    // 数据链闭环：初始无失败 → 轮询拉取到 [2] → 红色重试图标出现；
+    // 重试后（任务取章清除失败标记）下一轮轮询集合空 → 图标消失
+    var hasFailure = false;
+    when(() => mockApi.getBook(any())).thenAnswer((_) async => makeBook());
+    when(() => mockApi.getChapters(bookUrl))
+        .thenAnswer((_) async => makeChapters());
+    when(() => mockApi.listCachedChapterUrls(bookUrl))
+        .thenAnswer((_) async => const ['u0']);
+    when(() => mockApi.listCachedChapters(bookUrl))
+        .thenAnswer((_) async => const <String, String>{'u0': '1200'});
+    when(() => mockApi.listDownloadingChapters(bookUrl))
+        .thenAnswer((_) async => const <int>[]);
+    when(() => mockApi.listFailedChapters(bookUrl)).thenAnswer(
+      (_) async => hasFailure ? const [2] : const <int>[],
+    );
+    when(() => mockApi.highlightListByBook(bookUrl: bookUrl))
+        .thenAnswer((_) async => '[]');
+    when(() => mockApi.getBookmarksByBook('测试书', '作者A'))
+        .thenAnswer((_) async => const <Bookmark>[]);
+
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
+    await settleInitial(tester);
+    // 初始无失败：第三章为 NONE 态 ⬇，无红色重试图标
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byIcon(Icons.refresh),
+      ),
+      findsNothing,
+    );
+
+    // 失败集合出现 → 1s 轮询翻转 ERROR 态（红色重试图标）
+    hasFailure = true;
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byIcon(Icons.refresh),
+      ),
+      findsOneWidget,
+    );
+
+    // 重试清除（Rust 取章清失败标记）→ 下一轮轮询回到 ⬇（NONE 态）
+    hasFailure = false;
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byIcon(Icons.refresh),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
+      ),
       findsOneWidget,
     );
     // 卸载：dispose 取消轮询定时器（在线书）
@@ -919,6 +987,10 @@ void main() {
     when(() => mockApi.listDownloadingChapters(bookUrl)).thenAnswer(
       (_) async => tapped && !done ? const [2] : const <int>[],
     );
+    // [P2-29c 后续] 失败章集合（契约 §2.43.8）恒空 stub：轮询链新增查询，
+    // 缺省会被轮询外层 catch 吞掉而截断后续刷新
+    when(() => mockApi.listFailedChapters(bookUrl))
+        .thenAnswer((_) async => const <int>[]);
     when(() => mockApi.listCachedChapters(bookUrl)).thenAnswer(
       // 轮询 URL 集合取本接口 keys（契约 §2.43.6；wordCount 未回填为空串，
       // Rust 侧空值仍收录 key）——done 后 u2 落缓存 → ⬇ 翻转对勾
@@ -991,9 +1063,10 @@ void main() {
       (tester) async {
     // 参考版依据：TocViewModel.kt rawDataFlow :510-514 状态判定顺序
     // running → error → cached → none；StatusIcon :1146-1157 字数胶囊
-    // 仅 LOCAL/SUCCESS 态命中。本用例注入「同时已缓存且在失败集合」的
-    // 章节（注入缝驱动，生产失败数据源仍为留项）：修前 isCached 分支
-    // 先行 → 显示对勾/胶囊（红），修后 ERROR 分支先行 → 红色重试图标。
+    // 仅 LOCAL/SUCCESS 态命中。本用例经 listFailedChapters（契约 §2.43.8）
+    // 真实数据源返回「同时已缓存且在失败集合」的章节（[P2-29c 后续] 注入缝
+    // 已移除）：修前 isCached 分支先行 → 显示对勾/胶囊（红），修后 ERROR
+    // 分支先行 → 红色重试图标。
     final chapters = [
       const BookChapter(
           url: 'u0',
@@ -1010,16 +1083,9 @@ void main() {
       const BookChapter(
           url: 'u3', title: '第四章', index: 3, bookUrl: bookUrl),
     ];
-    stubCommon(chapters, const ['u0', 'u2']);
+    stubCommon(chapters, const ['u0', 'u2'], failed: const [2]);
 
-    await tester.pumpWidget(
-      wrap(
-        TocScreen(
-          book: makeBook(dur: 3),
-          failedChapterIndicesForTest: const {2},
-        ),
-      ),
-    );
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
     await settleInitial(tester);
 
     expect(

@@ -2058,6 +2058,14 @@ pub mod ffi {
         to_json(&indices)
     }
 
+    /// P2-29c 后续（API_CONTRACT §2.43.8）：该书批量下载**已失败**章节 index
+    /// 的 JSON 整型数组（升序、0-based；无失败为空数组 `[]`）。只读：
+    /// 纯任务表读 + `ensure_restored` 落库恢复回读，零写入。
+    pub fn cache_download_failed_chapters(book_url: String) -> Result<String, BridgeError> {
+        let indices = crate::api::cache_download_api::cache_download_failed_chapters(&book_url)?;
+        to_json(&indices)
+    }
+
     // ─── 章节购买动作（Task #136 R6，API_CONTRACT §2.43.2）─────
 
     /// 执行章节购买动作（对照 Kotlin ReadBookActivity.payAction）

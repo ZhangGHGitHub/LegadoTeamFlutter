@@ -41,7 +41,8 @@ import '../utils/book_open_utils.dart';
 ///   当前章→定位图标 location_on（替代 check_circle）/ 下载中→16px 加载
 ///   指示（数据经 BookApi.listDownloadingChapters，契约 §2.43.7，1s 轮询
 ///   同周期刷新）/ 失败→红色重试图标（点击单章重下，复用
-///   cacheDownloadStart(idx, idx)；失败记录数据源留项恒空，恒不显示）/
+///   cacheDownloadStart(idx, idx)；数据经 BookApi.listFailedChapters，
+///   契约 §2.43.8，与下载中同周期 1s 轮询）/
 ///   未缓存→⬇ / 已缓存→无图标（本地书恒视为已缓存，无图标）
 /// - [P2-29b] 状态元素互斥分支与着色修正（用户指正：参考版当前章没有
 ///   红色定位图标，只有高亮胶囊）：行右侧状态元素改为对齐参考版
@@ -63,9 +64,9 @@ import '../utils/book_open_utils.dart';
 ///   running > error > cached 判定序；StatusIcon :1146-1157 字数胶囊仅
 ///   LOCAL/SUCCESS 态命中）；③ 两态图标按钮统一 shrinkWrap 触控尺寸，
 ///   保持 16px 图标几何不变（沿用 P2-28/29 行高适配口径）；④ 失败态数据源
-///   留项不变：Rust 任务表仅 failed 计数、无逐章失败记录（补数据链需扩展
-///   只读 FFI + 任务表写路径，属契约变更；本批零契约，待主代理冻结后补，
-///   不伪造）
+///   于 P2-29c 后续批接通：Rust 任务表/持久化快照新增失败章索引集合，
+///   只读 FFI cacheDownloadFailedChapters（契约 §2.43.8）→ BookApi.listFailedChapters，
+///   本页 1s 轮询同周期拉取（见 [_failedIndices]），注入缝已移除
 /// - [P2-28b] 页面打开期间每秒轮询缓存状态（对齐原版 ChapterListFragment
 ///   订阅 EventBus.SAVE_CONTENT 的行刷新语义）：批量离线缓存下载中，每章正文
 ///   保存后对应行 ⬇ 图标实时变为字数胶囊/无图标，无需退出重进
@@ -83,17 +84,9 @@ class TocScreen extends ConsumerStatefulWidget {
   /// 书籍对象（路由参数规范化：优先使用 Book 对象）
   final Book book;
 
-  /// [P2-29] 测试注入缝：失败章节 index 集合（ERROR 态）。生产恒 null——
-  /// Rust 批量下载任务表仅 failed 计数、无逐章失败记录（补齐需任务表写
-  /// 路径改动，超出本批授权；契约 §2.43.7 ERROR 留项：分支先落、数据源
-  /// 恒空恒不显示，不伪造）；单测经此参数驱动 ERROR 分支（红色重试图标
-  /// + 单章重下点击 → cacheDownloadStart(bookUrl, idx, idx)）。
-  final Set<int>? failedChapterIndicesForTest;
-
   const TocScreen({
     super.key,
     required this.book,
-    this.failedChapterIndicesForTest,
   });
 
   @override
@@ -180,13 +173,13 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// 徽标刷新无需等待 1s 轮询；dispose 必须取消订阅（防销毁后回调泄漏）。
   StreamSubscription<AudioCacheChanged>? _audioCacheChangeSub;
 
-  /// [P2-29] 失败章节 index 集合（ERROR 态，对齐参考版 failedIndices——
-  /// 源自 `CacheBook.downloadStateFlow`）。数据链留项：Rust 批量下载任务表
-  /// 仅 failed 计数、无逐章失败记录（补齐需任务表写路径改动，超出本批
-  /// 授权；契约 §2.43.7 ERROR 留项：ERROR 分支先落、数据源恒空恒不显示，
-  /// 不伪造），单测经 [TocScreen.failedChapterIndicesForTest] 注入驱动。
-  Set<int> get _failedIndices =>
-      widget.failedChapterIndicesForTest ?? const {};
+  /// [P2-29c 后续] 本书批量下载已失败章节 index 集合（ERROR 态，对齐参考版
+  /// failedIndices——源自 `CacheBook.downloadStateFlow`）。数据源经
+  /// [BookApi.listFailedChapters]（契约 §2.43.8 cacheDownloadFailedChapters）：
+  /// 初始加载 + 1s 轮询（与 [_downloadingIndices] 同周期）刷新；失败记录随
+  /// 任务终态保留（供展示与重试），任务重新取到该章开始下载时清除（对齐
+  /// 参考版 CacheDownloadStateStore.markFailed/markSuccess 语义）。
+  Set<int> _failedIndices = const {};
 
   /// 标注列表（BookHighlight JSON 解析后的 Map，经 BookApi.highlightListByBook）
   List<Map<String, dynamic>> _highlights = [];
@@ -301,6 +294,16 @@ class _TocScreenState extends ConsumerState<TocScreen>
       final downloadingChanged = downloadingSet.difference(_downloadingIndices)
               .isNotEmpty ||
           _downloadingIndices.difference(downloadingSet).isNotEmpty;
+      // [P2-29c 后续] 失败章集合（契约 §2.43.8）：与缓存态/下载中同周期拉取，
+      // 驱动失败行红色重试图标（ERROR 态）；单项查询失败保留旧态
+      Set<int> failed;
+      try {
+        failed = (await api.listFailedChapters(_book.bookUrl)).toSet();
+      } catch (_) {
+        failed = _failedIndices;
+      }
+      final failedChanged = failed.difference(_failedIndices).isNotEmpty ||
+          _failedIndices.difference(failed).isNotEmpty;
       // [B1-TOC] 音频书音频缓存下标集合（契约 §2.47 audioCacheList）：与文本
       // 缓存/下载中同周期拉取，仅非本地音频书调用（对齐原版
       // ChapterListFragment.kt:155 的 `if (book.isAudio)` 分支——非音频书
@@ -322,6 +325,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
       if (!urlsChanged &&
           !wordCountsChanged &&
           !downloadingChanged &&
+          !failedChanged &&
           !audioChanged) {
         return;
       }
@@ -331,6 +335,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
           ..clear()
           ..addAll(entries);
         _downloadingIndices = downloading.toSet();
+        _failedIndices = failed;
         _audioCachedIndices = audioCached;
       });
     } catch (_) {
@@ -417,6 +422,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
       // 恒视为已缓存（对齐原版 isLocalBook），跳过查询。
       Set<String> cachedUrls = const {};
       List<int> downloading = const [];
+      // [P2-29c 后续] 音频书初始加载已失败章节集合（契约 §2.43.8
+      // cacheDownloadFailedChapters）：首帧即可渲染失败章红色重试图标
+      // （对齐参考版打开目录即见 ERROR 态）；失败降级空集（后续 1s 轮询自愈）
+      List<int> failed = const [];
       // [B1-TOC] 音频书初始加载已缓存章节下标集合（契约 §2.47
       // audioCacheList）：首帧即可渲染音频已缓存章的「已缓存」徽标
       // （对齐原版 cacheFileJob 建页即 listCachedChapterKeys + 全量刷行）；
@@ -435,6 +444,11 @@ class _TocScreenState extends ConsumerState<TocScreen>
         try {
           downloading = await api.listDownloadingChapters(_book.bookUrl);
         } catch (_) {}
+        // [P2-29c 后续] 初始加载失败章节集合（契约 §2.43.8）：使首帧即可
+        // 渲染 ERROR 态红色重试图标；查询失败降级为空集（后续 1s 轮询自愈）
+        try {
+          failed = await api.listFailedChapters(_book.bookUrl);
+        } catch (_) {}
         if (_isAudioBook) {
           try {
             audioCached =
@@ -449,6 +463,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
         _chapters = chapters;
         _cachedUrls = cachedUrls;
         _downloadingIndices = downloading.toSet();
+        _failedIndices = failed.toSet();
         _audioCachedIndices = audioCached;
         _chaptersLoading = false;
       });
@@ -956,7 +971,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// 复用 [BookApi.cacheDownloadStart]（契约 §2.43.3 闭区间语义 start==end
   /// 即单章；同书在途任务复用语义不变）启动下载；启动成功后 1s 轮询
   /// （P2-28b/c）自动把该行翻为下载中 16px 加载指示，完成后翻为对勾/
-  /// 字数胶囊，失败（数据源补齐后）翻为红色重试图标。
+  /// 字数胶囊，失败翻为红色重试图标（失败集合经契约 §2.43.8
+  /// listFailedChapters 轮询，取章重下即清、再失败重新记入）。
   /// [retry] 仅影响用户反馈文案：ERROR 重下 / NONE 首次下载。
   Future<void> _downloadChapter(
     int chapterIndex, {

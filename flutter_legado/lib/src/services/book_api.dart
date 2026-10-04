@@ -847,6 +847,16 @@ abstract class BookApi {
   /// 供目录页 1s 轮询（P2-28b/c）驱动下载中行 16px 加载指示动画。
   Future<List<int>> listDownloadingChapters(String bookUrl);
 
+  /// 查询某本书批量下载**已失败**章节 index 集合（目录页 ERROR 态红色重试图标）
+  /// [P2-29c 后续 | 2026-10-05] 加法式新增（契约 §2.43.8
+  /// cacheDownloadFailedChapters）：只读（纯任务表读 + `ensure_restored`
+  /// 落库恢复回读，零写入），返回该书批量下载（§2.43.3）已失败章节 index
+  /// （0-based 升序；无失败为空集合）；失败记录随任务终态保留（供展示与
+  /// 重试），任务重新取到该章开始下载时清除（对齐参考版
+  /// CacheDownloadStateStore.markFailed/markSuccess 语义）。供目录页 1s 轮询
+  /// （P2-28b/c）驱动 ERROR 态红色重试图标（点击单章重下）。
+  Future<List<int>> listFailedChapters(String bookUrl);
+
   // ========== 图片磁盘缓存（对齐原版 BookHelp.saveImage/getImage，契约 §2.46） ==========
 
   /// 将图片字节落盘缓存（对齐原版 `BookHelp.writeImage`，契约 §2.46）

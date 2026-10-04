@@ -295,6 +295,32 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
     return list;
   }
 
+  /// 查询某本书批量下载已失败章节 index 集合（目录页 ERROR 态红色重试图标）
+  ///
+  /// [P2-29c 后续 | 2026-10-05] 接通 cacheDownloadFailedChapters FFI
+  /// （契约 §2.43.8）：解析 Rust 返回的 JSON 整型数组（0-based 升序；
+  /// 无失败为空数组）为 `List<int>`（非数组/非整型条目跳过，降级空集合，
+  /// 与 listDownloadingChapters 同款解析口径）。
+  @override
+  Future<List<int>> listFailedChapters(String bookUrl) async {
+    final json = await bridge.cacheDownloadFailedChapters(bookUrl: bookUrl);
+    final decoded = jsonDecode(json);
+    final list = <int>[];
+    if (decoded is List) {
+      for (final e in decoded) {
+        if (e is int) {
+          list.add(e);
+        } else {
+          final v = int.tryParse(e.toString());
+          if (v != null) {
+            list.add(v);
+          }
+        }
+      }
+    }
+    return list;
+  }
+
   // ========== 图片磁盘缓存（对齐原版 BookHelp.saveImage/getImage，契约 §2.46） ==========
 
   /// [P4-2a | 2026-09-29] 接通 save_image_cache FFI（契约 §2.46 image_cache）：

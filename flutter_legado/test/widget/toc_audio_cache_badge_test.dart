@@ -123,6 +123,9 @@ void main() {
         .thenAnswer((_) async => const <String, String>{});
     when(() => mockApi.listDownloadingChapters(bookUrl))
         .thenAnswer((_) async => const <int>[]);
+    // [P2-29c 后续] 失败章集合（契约 §2.43.8）：轮询链新增查询，恒空 stub
+    when(() => mockApi.listFailedChapters(bookUrl))
+        .thenAnswer((_) async => const <int>[]);
     // 恒 stub（即便预期零调用），确保 verify/计数断言不会因 MissingStub
     // 抛错吞掉而失真
     when(() => mockApi.audioCacheList(bookUrl: any(named: 'bookUrl')))

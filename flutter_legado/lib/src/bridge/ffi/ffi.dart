@@ -1591,6 +1591,14 @@ Future<String> cacheDownloadRunningChapters({required String bookUrl}) =>
       bookUrl: bookUrl,
     );
 
+/// P2-29c 后续（API_CONTRACT §2.43.8）：该书批量下载**已失败**章节 index
+/// 的 JSON 整型数组（升序、0-based；无失败为空数组 `[]`）。只读：
+/// 纯任务表读 + `ensure_restored` 落库恢复回读，零写入。
+Future<String> cacheDownloadFailedChapters({required String bookUrl}) => RustLib
+    .instance
+    .api
+    .crateFfiFfiCacheDownloadFailedChapters(bookUrl: bookUrl);
+
 /// 执行章节购买动作（对照 Kotlin ReadBookActivity.payAction）
 ///
 /// 返回 JSON：`{"kind": "url"/"success"/"none", "value": "<JS 返回原文>"}`；
