@@ -52,6 +52,20 @@ import '../utils/book_open_utils.dart';
 ///   高亮改参考行色（背景 secondaryContainer + 标题 onSecondaryContainer）；
 ///   字数胶囊改 isDur 分色（当前章 primaryContainer/onPrimaryContainer，
 ///   普通章 surfaceContainer/onSurfaceVariant，8sp、圆角 8）
+/// - [P2-29c] 目录缓存交互补齐（P2-29b 增量需求登记落地，零契约）：
+///   ① NONE 态 ⬇ 图标可点击单章下载（对齐参考版 TocScreen.kt ChapterItem
+///   :879-881 `canDownload = downloadState == NONE || ERROR` + :958-965
+///   状态图标 Box 挂 onDownloadClick + :808 onDownloadClick →
+///   TocViewModel.kt downloadChapter :863-869 按章索引单章下载）——复用
+///   [BookApi.cacheDownloadStart]（契约 §2.43.3 闭区间 start==end 单章，
+///   与 ERROR 重试同路径）；② ERROR 分支优先级提到已缓存之前 + showCount
+///   排除 ERROR（对齐参考版 TocViewModel.kt rawDataFlow :510-514
+///   running > error > cached 判定序；StatusIcon :1146-1157 字数胶囊仅
+///   LOCAL/SUCCESS 态命中）；③ 两态图标按钮统一 shrinkWrap 触控尺寸，
+///   保持 16px 图标几何不变（沿用 P2-28/29 行高适配口径）；④ 失败态数据源
+///   留项不变：Rust 任务表仅 failed 计数、无逐章失败记录（补数据链需扩展
+///   只读 FFI + 任务表写路径，属契约变更；本批零契约，待主代理冻结后补，
+///   不伪造）
 /// - [P2-28b] 页面打开期间每秒轮询缓存状态（对齐原版 ChapterListFragment
 ///   订阅 EventBus.SAVE_CONTENT 的行刷新语义）：批量离线缓存下载中，每章正文
 ///   保存后对应行 ⬇ 图标实时变为字数胶囊/无图标，无需退出重进
@@ -935,12 +949,19 @@ class _TocScreenState extends ConsumerState<TocScreen>
     }
   }
 
-  /// [P2-29] 单章重下（ERROR 态红色重试图标点击；对齐参考版 canDownload =
-  /// NONE || ERROR 时的单章下载动作，重试语义对齐原版 download_chapter）：
+  /// [P2-29/P2-29c] 单章下载（NONE 态 ⬇ 点击）/ 单章重下（ERROR 态红色
+  /// 重试图标点击）。对齐参考版 canDownload = NONE || ERROR 时点击状态图标
+  /// （TocScreen.kt :879-881 + :958-965）→ TocIntent.DownloadChapter →
+  /// TocViewModel.downloadChapter :863-869 按章索引单章下载；
   /// 复用 [BookApi.cacheDownloadStart]（契约 §2.43.3 闭区间语义 start==end
-  /// 即单章；同书在途任务复用语义不变）重下失败章；启动成功后 1s 轮询
-  /// （P2-28b/c）将自动把该行翻为下载中 16px 加载指示。
-  Future<void> _retryChapterDownload(int chapterIndex) async {
+  /// 即单章；同书在途任务复用语义不变）启动下载；启动成功后 1s 轮询
+  /// （P2-28b/c）自动把该行翻为下载中 16px 加载指示，完成后翻为对勾/
+  /// 字数胶囊，失败（数据源补齐后）翻为红色重试图标。
+  /// [retry] 仅影响用户反馈文案：ERROR 重下 / NONE 首次下载。
+  Future<void> _downloadChapter(
+    int chapterIndex, {
+    required bool retry,
+  }) async {
     try {
       await ref
           .read(bookApiProvider)
@@ -957,15 +978,17 @@ class _TocScreenState extends ConsumerState<TocScreen>
         SnackBar(
           content: Text(
             title.isNotEmpty
-                ? '「$title」已加入重新下载队列'
-                : '第 ${chapterIndex + 1} 章已加入重新下载队列',
+                ? '「$title」${retry ? '已加入重新下载队列' : '已加入缓存队列'}'
+                : '第 ${chapterIndex + 1} 章${retry ? '已加入重新下载队列' : '已加入缓存队列'}',
           ),
         ),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('重新下载启动失败：$e')),
+        SnackBar(
+          content: Text('${retry ? '重新下载' : '缓存'}启动失败：$e'),
+        ),
       );
     }
   }
@@ -1039,8 +1062,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// 替代此前 primary 10% 淡底；[PARITY C2 T5]）；右侧状态元素为
   /// **互斥分支**（[P2-29b] 对齐参考版 ReaderSheetChapterStatus :1039-1096 单
   /// when 链，优先级从高到低，字数胶囊短路全部状态图标）：
-  /// - ① showCount（加载字数开关开 && wordCount 非空 && (本地书 || 已缓存)，
-  ///   对齐参考版 :1039-1041）→ 字数胶囊：当前章 = primaryContainer 底 +
+  /// - ① showCount（加载字数开关开 && wordCount 非空 && (本地书 || 已缓存)
+  ///   && 非 ERROR，[P2-29c] 排除 ERROR 对齐参考版 StatusIcon :1146-1157
+  ///   字数分支仅 LOCAL/SUCCESS 态）→ 字数胶囊：当前章 = primaryContainer 底 +
   ///   onPrimaryContainer 字；普通章 = surfaceContainer 底 + onSurfaceVariant
   ///   字；8sp labelSmallEmphasized，padding 横 6 纵 2，圆角 8
   ///   （当前章有字数时只显示高亮胶囊，无定位图标）
@@ -1051,17 +1075,22 @@ class _TocScreenState extends ConsumerState<TocScreen>
   ///   BookApi.listDownloadingChapters 契约 §2.43.7，对齐参考版 LOADING 态
   ///   `AppContainedLoadingIndicator` 16dp 形态）→ 16px 加载指示
   ///   （SizedBox 16 + CircularProgressIndicator strokeWidth 2，着色 primary）
-  /// - ④ 已缓存且无胶囊（非音频书 url ∈ _cachedUrls；音频书
+  /// - ④ 失败（index ∈ _failedIndices，对齐参考版 ERROR 态）→ 红色重试图标
+  ///   （Icons.refresh，error 着色）可点击 → 单章重下复用
+  ///   cacheDownloadStart(bookUrl, idx, idx)；[P2-29c] 优先级提到已缓存之前
+  ///   （对齐参考版 TocViewModel rawDataFlow :510-514 running > error >
+  ///   cached 判定序：失败章不显示成 SUCCESS 对勾）；数据链留项：Rust 任务表
+  ///   仅 failed 计数、无逐章失败记录 → 生产恒空恒不显示（不伪造，契约
+  ///   §2.43.7 ERROR 留项）
+  /// - ⑤ 已缓存且无胶囊（非音频书 url ∈ _cachedUrls；音频书
   ///   chapter.index ∈ _audioCachedIndices，契约 §2.47，[B1-TOC]；如字数
   ///   开关关或 wordCount 空）→ 对勾图标（参考版 SUCCESS 态 :1069-1071
   ///   CheckCircle，secondary 色）
-  /// - ⑤ 失败（index ∈ _failedIndices，对齐参考版 ERROR 态）→ 红色重试图标
-  ///   （Icons.refresh，error 着色）可点击 → 单章重下复用
-  ///   cacheDownloadStart(bookUrl, idx, idx)（契约 §2.43.3 闭区间单章语义）；
-  ///   数据链留项：Rust 任务表仅 failed 计数、无逐章失败记录 → 生产恒空
-  ///   恒不显示（不伪造，契约 §2.43.7 ERROR 留项）
   /// - ⑥ 未缓存网络章 → 离线下载图标 ⬇（Icons.Outlined.DownloadForOffline →
-  ///   Icons.download_for_offline_outlined，着色 outline 50% 透明度）
+  ///   Icons.download_for_offline_outlined，着色 outline 50% 透明度）；
+  ///   [P2-29c] 可点击单章下载（对齐参考版 canDownload = NONE || ERROR
+  ///   :879-881 + :958-965 → downloadChapter :863-869）：复用
+  ///   cacheDownloadStart(bookUrl, idx, idx)（契约 §2.43.3 闭区间单章语义）
   /// - ⑦ 本地书章节（无胶囊且非当前章）→ 无显示（参考版 LOCAL 态：showCount
   ///   假且非 isDur 时 when 链无分支命中，渲染空；本地书不等同网络书 SUCCESS
   ///   态，故也不显示对勾图标；卷标题行走 _buildVolumeRow，不参与判定）
@@ -1085,17 +1114,21 @@ class _TocScreenState extends ConsumerState<TocScreen>
         (_isAudioBook
             ? _audioCachedIndices.contains(chapter.index)
             : _cachedUrls.contains(chapter.url));
+    // [P2-29c] 下载中/失败标记先于 showCount 判定：失败章不显示字数胶囊
+    // （对齐参考版 StatusIcon :1146-1157 字数分支仅 LOCAL/SUCCESS 态命中）
+    final bool isDownloading = _downloadingIndices.contains(chapter.index);
+    final bool isError = _failedIndices.contains(chapter.index);
     // [P2-29b] 字数胶囊条件对齐参考版 showCount（:1039-1041）：
-    // 开关开 && wordCount 非空 && (本地书 || 网络书已缓存)
+    // 开关开 && wordCount 非空 && (本地书 || 网络书已缓存)；
+    // [P2-29c] && !isError（ERROR 态优先于 SUCCESS/字数）
     final showCount =
         _loadWordCount &&
         (wordCount?.isNotEmpty ?? false) &&
-        (_isLocal || isCached);
+        (_isLocal || isCached) &&
+        !isError;
     // [P2-29b] 状态元素互斥分支（对齐参考版单 when 链，①~⑥ 至多渲染一个；
     // size 16 沿用 P2-28 行高适配；内容带取整行 48 保证图标居中可命中，见
     // 下方 contentPadding 注释）
-    final bool isDownloading = _downloadingIndices.contains(chapter.index);
-    final bool isError = _failedIndices.contains(chapter.index);
     final Widget? statusTrailing;
     if (showCount) {
       // ① 字数胶囊（isDur 分色；短路全部状态图标——当前章不再与定位图标并存）
@@ -1135,28 +1168,50 @@ class _TocScreenState extends ConsumerState<TocScreen>
           color: cs.primary,
         ),
       );
-    } else if (isCached) {
-      // ④ 已缓存且无胶囊（字数开关关或 wordCount 空）：对勾图标
-      // （参考版 SUCCESS 态 :1069-1071 CheckCircle，secondary 色）；
-      // [B1-TOC] 音频书的已缓存判定来自音频缓存下标集合（契约 §2.47）
-      statusTrailing = Icon(Icons.check_circle, size: 16, color: cs.secondary);
     } else if (isError) {
-      // ⑤ 失败：红色重试图标可点击 → 单章重下（复用 §2.43.3 闭区间单章语义）
+      // ④ 失败（[P2-29c] 优先级先于已缓存，对齐参考版 rawDataFlow
+      // :510-514 running > error > cached 判定序）：红色重试图标可点击 →
+      // 单章重下复用 cacheDownloadStart(bookUrl, idx, idx)（契约 §2.43.3
+      // 闭区间单章语义）；shrinkWrap 保持 16px 图标几何（P2-28/29 行高
+      // 适配口径），不改变行内状态元素对齐
       statusTrailing = IconButton(
         icon: Icon(Icons.refresh, size: 16, color: cs.error),
         iconSize: 16,
         visualDensity: VisualDensity.compact,
         padding: EdgeInsets.zero,
         constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+        style: IconButton.styleFrom(
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
         tooltip: '重新下载本章',
-        onPressed: () => _retryChapterDownload(chapter.index),
+        onPressed: () => _downloadChapter(chapter.index, retry: true),
       );
+    } else if (isCached) {
+      // ⑤ 已缓存且无胶囊（字数开关关或 wordCount 空）：对勾图标
+      // （参考版 SUCCESS 态 :1069-1071 CheckCircle，secondary 色）；
+      // [B1-TOC] 音频书的已缓存判定来自音频缓存下标集合（契约 §2.47）
+      statusTrailing = Icon(Icons.check_circle, size: 16, color: cs.secondary);
     } else if (!_isLocal && !isCached) {
-      // ⑥ 未缓存网络章：离线下载图标 ⬇（参考版 NONE 态 outline 色）
-      statusTrailing = Icon(
-        Icons.download_for_offline_outlined,
-        size: 16,
-        color: cs.outline.withValues(alpha: 0.5),
+      // ⑥ 未缓存网络章：离线下载图标 ⬇（参考版 NONE 态 outline 色）；
+      // [P2-29c] 可点击单章下载（对齐参考版 canDownload = NONE || ERROR
+      // :879-881 + :958-965 状态图标挂 onDownloadClick → downloadChapter
+      // :863-869），复用 cacheDownloadStart(bookUrl, idx, idx)（契约
+      // §2.43.3 闭区间单章语义）；shrinkWrap 保持 16px 图标几何
+      statusTrailing = IconButton(
+        icon: Icon(
+          Icons.download_for_offline_outlined,
+          size: 16,
+          color: cs.outline.withValues(alpha: 0.5),
+        ),
+        iconSize: 16,
+        visualDensity: VisualDensity.compact,
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+        style: IconButton.styleFrom(
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
+        tooltip: '下载本章',
+        onPressed: () => _downloadChapter(chapter.index, retry: false),
       );
     } else {
       // ⑦ 本地书章节（无胶囊且非当前章）：无显示（参考版 LOCAL 态渲染空，

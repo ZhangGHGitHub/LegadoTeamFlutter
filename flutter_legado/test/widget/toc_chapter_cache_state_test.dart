@@ -859,4 +859,187 @@ void main() {
     // 卸载：dispose 取消轮询定时器（在线书）
     await tester.pumpWidget(const SizedBox());
   });
+
+  // ===== [P2-29c] 目录缓存交互补齐（增量需求登记落地） =====
+
+  testWidgets(
+      '[P2-29c] 未缓存章 ⬇ 可点：单章下载 cacheDownloadStart(idx, idx) + '
+      '反馈，且不冒泡触发行跳转（参考版 canDownload = NONE || ERROR）',
+      (tester) async {
+    // 参考版依据：TocScreen.kt ChapterItem :879-881 canDownload 含 NONE；
+    // :958-965 状态图标 Box 挂 onDownloadClick；:808 onDownloadClick →
+    // TocIntent.DownloadChapter → TocViewModel.kt downloadChapter :863-869
+    // 按章索引单章下载。我方复用既有 cacheDownloadStart（契约 §2.43.3
+    // 闭区间 start==end 单章），与 ERROR 重试同路径（零契约）。
+    stubCommon(makeChapters(), const ['u0']);
+    when(() => mockApi.cacheDownloadStart(bookUrl, 2, 2))
+        .thenAnswer((_) async => 7);
+
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
+    await settleInitial(tester);
+
+    final downloadIcon = find.descendant(
+      of: chapterRow('第三章'),
+      matching: find.byIcon(Icons.download_for_offline_outlined),
+    );
+    expect(downloadIcon, findsOneWidget);
+    // 修前：⬇ 为纯 Icon 无手势（不可点）；修后为 IconButton，且
+    // shrinkWrap 保持 16px 图标几何不变（P2-28/29 行高适配口径）
+    final tappable = find.descendant(
+      of: chapterRow('第三章'),
+      matching: find.byType(IconButton),
+    );
+    expect(tappable, findsOneWidget);
+    expect(tester.getSize(tappable), const Size.square(16));
+
+    // 点击图标 → 单章下载（不得冒泡到 ListTile onTap 触发章节跳转）
+    await tester.tap(downloadIcon);
+    await tester.pump();
+    await tester.pump();
+    verify(() => mockApi.cacheDownloadStart(bookUrl, 2, 2)).called(1);
+    expect(find.byType(TocScreen), findsOneWidget, reason: '点击不得触发行跳转');
+    expect(find.textContaining('已加入缓存队列'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      '[P2-29c] 点击 ⬇ 后 1s 轮询进入下载中动画，完成后徽标翻转为对勾',
+      (tester) async {
+    // 全链闭环：点击 → cacheDownloadStart → 轮询拾取在途章 [2] → 16px
+    // 加载指示（参考版 LOADING 态）→ 完成后章节落入缓存集合 → 对勾
+    // （参考版 SUCCESS 态 :1069-1071）
+    var tapped = false;
+    var done = false;
+    when(() => mockApi.getBook(any())).thenAnswer((_) async => makeBook());
+    when(() => mockApi.getChapters(bookUrl))
+        .thenAnswer((_) async => makeChapters());
+    when(() => mockApi.listCachedChapterUrls(bookUrl)).thenAnswer(
+      (_) async => done ? const ['u0', 'u2'] : const ['u0'],
+    );
+    when(() => mockApi.listDownloadingChapters(bookUrl)).thenAnswer(
+      (_) async => tapped && !done ? const [2] : const <int>[],
+    );
+    when(() => mockApi.listCachedChapters(bookUrl)).thenAnswer(
+      // 轮询 URL 集合取本接口 keys（契约 §2.43.6；wordCount 未回填为空串，
+      // Rust 侧空值仍收录 key）——done 后 u2 落缓存 → ⬇ 翻转对勾
+      (_) async => done
+          ? const <String, String>{'u0': '1200', 'u2': ''}
+          : const <String, String>{'u0': '1200'},
+    );
+    when(() => mockApi.highlightListByBook(bookUrl: bookUrl))
+        .thenAnswer((_) async => '[]');
+    when(() => mockApi.getBookmarksByBook('测试书', '作者A'))
+        .thenAnswer((_) async => const <Bookmark>[]);
+    when(() => mockApi.cacheDownloadStart(bookUrl, 2, 2))
+        .thenAnswer((_) async => 7);
+
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook(dur: 3))));
+    await settleInitial(tester);
+
+    tapped = true;
+    await tester.tap(find.descendant(
+      of: chapterRow('第三章'),
+      matching: find.byType(IconButton),
+    ));
+    await tester.pump();
+    await tester.pump();
+
+    // 轮询拾取在途集合 → 16px 加载指示替代 ⬇（LOADING 态）
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byIcon(Icons.download_for_offline_outlined),
+      ),
+      findsNothing,
+    );
+
+    // 下载完成：下一轮轮询翻转为对勾（SUCCESS 态）
+    done = true;
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    await tester.pump();
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byIcon(Icons.check_circle),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byType(CircularProgressIndicator),
+      ),
+      findsNothing,
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets(
+      '[P2-29c] ERROR 优先于已缓存：失败章不显示对勾/字数胶囊（对齐参考版 '
+      'running > error > cached；字数仅 LOCAL/SUCCESS）',
+      (tester) async {
+    // 参考版依据：TocViewModel.kt rawDataFlow :510-514 状态判定顺序
+    // running → error → cached → none；StatusIcon :1146-1157 字数胶囊
+    // 仅 LOCAL/SUCCESS 态命中。本用例注入「同时已缓存且在失败集合」的
+    // 章节（注入缝驱动，生产失败数据源仍为留项）：修前 isCached 分支
+    // 先行 → 显示对勾/胶囊（红），修后 ERROR 分支先行 → 红色重试图标。
+    final chapters = [
+      const BookChapter(
+          url: 'u0',
+          title: '第一章',
+          index: 0,
+          bookUrl: bookUrl,
+          wordCount: '1200'),
+      const BookChapter(
+          url: 'u2',
+          title: '第三章',
+          index: 2,
+          bookUrl: bookUrl,
+          wordCount: '2500'),
+      const BookChapter(
+          url: 'u3', title: '第四章', index: 3, bookUrl: bookUrl),
+    ];
+    stubCommon(chapters, const ['u0', 'u2']);
+
+    await tester.pumpWidget(
+      wrap(
+        TocScreen(
+          book: makeBook(dur: 3),
+          failedChapterIndicesForTest: const {2},
+        ),
+      ),
+    );
+    await settleInitial(tester);
+
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byIcon(Icons.refresh),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: chapterRow('第三章'),
+        matching: find.byIcon(Icons.check_circle),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.descendant(of: chapterRow('第三章'), matching: find.text('2500')),
+      findsNothing,
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
 }
