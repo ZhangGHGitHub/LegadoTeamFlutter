@@ -23,7 +23,6 @@
 
 pub mod app_log;
 pub mod audio;
-pub mod audio_cache;
 pub mod audio_preload;
 pub mod audio_skip_policy;
 pub mod auto_task;

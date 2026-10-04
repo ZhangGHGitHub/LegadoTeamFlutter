@@ -993,6 +993,11 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
         if (url.isEmpty || !url.startsWith('http')) continue;
         final fetched = await bridgeHttpGetBytes(api, url);
         if (fetched.statusCode < 200 || fetched.statusCode >= 300) continue;
+        // [B1 | 2026-10-04] 遗留孤儿写入（契约 §2.47 已裁决「旧键默认不读不迁移」）：
+        // 此命名 `${bookUrl.hashCode}_$i.audio` 不匹配原版五段式缓存文件名、无
+        // `.complete` 标记，新的 audioCacheQuery/audioCacheList 数据面永远不会命中
+        // 它；保留仅为不在本批改动预下载 UI（UI 接线/去留由下一批裁决），
+        // 新增代码请勿读取该目录。
         final name = '${bookUrl.hashCode}_$i.audio';
         if (saf != null) {
           await saf.writeFileBytes(

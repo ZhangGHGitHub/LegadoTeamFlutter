@@ -60,6 +60,16 @@ Future<void> setCacheDir({required String dir}) =>
 Future<void> setImageCacheDir({required String dir}) =>
     RustLib.instance.api.crateFfiFfiSetImageCacheDir(dir: dir);
 
+/// 注入音频章节文件缓存目录（B1，契约 §2.47；与 `set_image_cache_dir` 同型）
+///
+/// Flutter 侧启动时传应用私有缓存目录（Dart `getApplicationCacheDirectory()`）
+/// 下 `audio_cache` 子目录，使 `audio_cache_query`/`audio_cache_list`/
+/// `audio_cache_clear_*`（对齐原版 `AudioCacheManager`，§2.47）落应用私有
+/// 存储；未注入时 Rust 侧回落 `<temp_dir>/legado-audio-cache`（一次性告警，
+/// 对齐 cache_store/image_cache 先例）。
+Future<void> setAudioCacheDir({required String dir}) =>
+    RustLib.instance.api.crateFfiFfiSetAudioCacheDir(dir: dir);
+
 /// 获取版本号
 Future<String> version() => RustLib.instance.api.crateFfiFfiVersion();
 
@@ -1438,6 +1448,54 @@ Future<bool> saveImageCache({
 /// `BookHelp.getImage`/`isImageExist` 的「本地存在才用，否则走网络」语义。
 Future<String?> getImageCache({required String bookUrl, required String url}) =>
     RustLib.instance.api.crateFfiFfiGetImageCache(bookUrl: bookUrl, url: url);
+
+/// 查询音频章节是否已缓存（B1，API_CONTRACT §2.47）
+///
+/// 按原版键规则 `md5Encode16(chapterUrl.ifBlank { chapterTitle })` 在
+/// `{注入缓存根}/book_{md5_16(bookUrl)}` 下判定：key 匹配 + `.complete`
+/// 存在 + 文件 size > 0。只读、幂等；目录不存在/无权限/解析异常一律降级
+/// `Ok(false)`（不抛异常——缓存是加速器不是数据源）。
+Future<bool> audioCacheQuery({
+  required String bookUrl,
+  required int chapterIndex,
+  required String chapterUrl,
+  required String chapterTitle,
+}) => RustLib.instance.api.crateFfiFfiAudioCacheQuery(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+  chapterUrl: chapterUrl,
+  chapterTitle: chapterTitle,
+);
+
+/// 列出音频书已缓存章节下标（B1，API_CONTRACT §2.47）
+///
+/// 扫描书目录五段式文件名，仅收录通过 `.complete` + size>0 校验的条目，
+/// 返回章节下标升序数组（去重）；无缓存/失败降级 `Ok(vec![])`。
+Future<Int32List> audioCacheList({required String bookUrl}) =>
+    RustLib.instance.api.crateFfiFfiAudioCacheList(bookUrl: bookUrl);
+
+/// 清理音频单章缓存（B1，API_CONTRACT §2.47）
+///
+/// 只删该 `key16` 下的音频文件与 `.complete` 标记，返回实际删除数
+/// （幂等：不存在返回 0；不抛异常）。
+Future<int> audioCacheClearChapter({
+  required String bookUrl,
+  required int chapterIndex,
+  required String chapterUrl,
+  required String chapterTitle,
+}) => RustLib.instance.api.crateFfiFfiAudioCacheClearChapter(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+  chapterUrl: chapterUrl,
+  chapterTitle: chapterTitle,
+);
+
+/// 清理音频整书缓存（B1，API_CONTRACT §2.47）
+///
+/// 删除该书 `book_{md5_16(bookUrl)}` 目录内全部文件（含标记），返回实际
+/// 删除数并尝试移除目录（幂等：不存在返回 0；不跨书；不抛异常）。
+Future<int> audioCacheClearBook({required String bookUrl}) =>
+    RustLib.instance.api.crateFfiFfiAudioCacheClearBook(bookUrl: bookUrl);
 
 /// 写入/覆盖单章缓存（Task #136 R5，API_CONTRACT §2.43.1）
 ///

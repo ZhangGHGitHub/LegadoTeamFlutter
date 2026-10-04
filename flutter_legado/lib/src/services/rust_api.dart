@@ -82,6 +82,11 @@ class RustApi
     // 替代 Rust 侧系统 temp 回落目录
     await _initImageCacheDir();
 
+    // [B1 | 2026-10-04] 音频章节文件缓存目录初始化接线（契约 §2.47，
+    // 与 set_image_cache_dir 同型）：audio_cache_* 查询/清理落应用私有
+    // 缓存目录下的 audio_cache 子目录，替代 Rust 侧系统 temp 回落目录
+    await _initAudioCacheDir();
+
     // 注入真实设备 ID（书山聚合等源登录登记设备 + 正文 X-Device-Id 校验；
     // 对齐原版 AppConst.androidId = Settings.Secure.ANDROID_ID）
     await _injectDeviceId();
@@ -282,6 +287,30 @@ class RustApi
       debugPrint('[RustApi] setImageCacheDir -> ${dir.path}');
     } catch (e) {
       debugPrint('[RustApi] setImageCacheDir 初始化失败，保留 Rust 默认目录：$e');
+    }
+  }
+
+  /// 设置音频章节文件缓存目录（应用初始化时调用）— B1（契约 §2.47，
+  /// 与 [_initImageCacheDir] 同型）
+  ///
+  /// Rust 侧 `audio_cache` 未注入时回落 `<temp_dir>/legado-audio-cache`
+  /// （系统 temp 目录，可能被系统清理，音频缓存随清理丢失）。这里指向
+  /// 应用私有缓存目录（Android `Context.getCacheDir()` 等价，Dart
+  /// `getApplicationCacheDirectory()`）下的 audio_cache 子目录，使
+  /// `audio_cache_query`/`audio_cache_list`/`audio_cache_clear_*`（对齐
+  /// 原版 `AudioCacheManager`）查询/清理落应用私有存储；取不到路径时
+  /// 保留 Rust 默认并仅记日志，不阻断初始化。
+  Future<void> _initAudioCacheDir() async {
+    try {
+      final base = await getApplicationCacheDirectory();
+      final dir = Directory('${base.path}${Platform.pathSeparator}audio_cache');
+      if (!dir.existsSync()) {
+        dir.createSync(recursive: true);
+      }
+      await bridge.setAudioCacheDir(dir: dir.path);
+      debugPrint('[RustApi] setAudioCacheDir -> ${dir.path}');
+    } catch (e) {
+      debugPrint('[RustApi] setAudioCacheDir 初始化失败，保留 Rust 默认目录：$e');
     }
   }
 

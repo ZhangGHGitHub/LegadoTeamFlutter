@@ -4,6 +4,8 @@
 
 pub mod archive_import_api;
 pub mod audio_api;
+/// [B1 | 2026-10-04] 音频章节文件缓存只读/清理面（契约 §2.47）
+pub mod audio_cache_api;
 pub mod auto_task_api;
 pub mod backup_api;
 pub mod book_export;

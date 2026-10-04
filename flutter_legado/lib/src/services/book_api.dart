@@ -870,6 +870,51 @@ abstract class BookApi {
   /// [P4-2a | 2026-09-29] 加法式新增（契约 §2.46 image_cache FFI）。
   Future<List<int>?> getImageCache(String bookUrl, String url);
 
+  // ========== 音频章节文件缓存（对齐原版 AudioCacheManager，契约 §2.47） ==========
+
+  /// 查询某章音频是否已缓存（只读、幂等，契约 §2.47 `audioCacheQuery`）
+  ///
+  /// 键规则严格对齐原版 `AudioCacheKey.from`：
+  /// `md5Encode16(chapterUrl.ifBlank { chapterTitle })`（MD5 小写 hex 中段
+  /// 16 字符、UTF-8、不 trim、大小写敏感；不含 bookUrl）。命中 = 键匹配
+  /// **且** `.complete` 标记存在 **且** 音频文件 size > 0。
+  /// 目录不存在/无权限/解析异常一律返回 `false`（失败降级，**不抛异常**
+  /// ——缓存是加速器不是数据源）。[chapterIndex] 不参与键计算（对齐原版），
+  /// 仅为与清理面保持同形签名。
+  /// [B1 | 2026-10-04] 加法式新增（契约 §2.47 audio_cache FFI）。
+  Future<bool> audioCacheQuery({
+    required String bookUrl,
+    required int chapterIndex,
+    required String chapterUrl,
+    required String chapterTitle,
+  });
+
+  /// 列出该书已缓存音频章节的下标数组（只读、幂等，契约 §2.47 `audioCacheList`）
+  ///
+  /// 扫描 `{缓存根}/book_{md5_16(bookUrl)}` 内五段式文件名，仅收录通过
+  /// `.complete` + size>0 校验的条目，章节下标去重升序；无缓存/失败返回空数组。
+  /// [B1 | 2026-10-04] 加法式新增（契约 §2.47 audio_cache FFI）。
+  Future<List<int>> audioCacheList({required String bookUrl});
+
+  /// 清理某章音频缓存（幂等，契约 §2.47 `audioCacheClearChapter`）
+  ///
+  /// 只删该章键下的音频文件与 `.complete` 标记，不触碰同目录其他章节；
+  /// 返回实际删除的文件数（含标记）；不存在/已删返回 `0`，不抛异常。
+  /// [B1 | 2026-10-04] 加法式新增（契约 §2.47 audio_cache FFI）。
+  Future<int> audioCacheClearChapter({
+    required String bookUrl,
+    required int chapterIndex,
+    required String chapterUrl,
+    required String chapterTitle,
+  });
+
+  /// 清理该书全部音频缓存（幂等，契约 §2.47 `audioCacheClearBook`）
+  ///
+  /// 删除书级目录内全部文件（含标记）并尝试移除目录，返回实际删除的文件数；
+  /// 不存在返回 `0`，不跨书、不抛异常。
+  /// [B1 | 2026-10-04] 加法式新增（契约 §2.47 audio_cache FFI）。
+  Future<int> audioCacheClearBook({required String bookUrl});
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）

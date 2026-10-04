@@ -175,6 +175,38 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
     return hit == null ? null : List<int>.of(hit);
   }
 
+  // ========== 音频章节文件缓存（契约 §2.47，Mock 无写入面 → 缓存面恒空） ==========
+
+  /// [B1 | 2026-10-04] mock 音频缓存查询：契约 §2.47 只读/清理面**无写入方法**
+  /// （写入仅发生于真实 Rust 侧扫描的应用私有目录，Mock 不模拟落盘），
+  /// 故恒返回 `false`（按未缓存处理，播放链回落在线取流）。
+  @override
+  Future<bool> audioCacheQuery({
+    required String bookUrl,
+    required int chapterIndex,
+    required String chapterUrl,
+    required String chapterTitle,
+  }) async => false;
+
+  /// [B1 | 2026-10-04] mock 音频缓存列举：无写入面 → 恒返回空数组（无缓存章节）。
+  @override
+  Future<List<int>> audioCacheList({required String bookUrl}) async =>
+      const <int>[];
+
+  /// [B1 | 2026-10-04] mock 音频单章清理：无写入面 → 恒返回 0（幂等：
+  /// 不存在与已删同义）。
+  @override
+  Future<int> audioCacheClearChapter({
+    required String bookUrl,
+    required int chapterIndex,
+    required String chapterUrl,
+    required String chapterTitle,
+  }) async => 0;
+
+  /// [B1 | 2026-10-04] mock 音频整书清理：无写入面 → 恒返回 0（幂等）。
+  @override
+  Future<int> audioCacheClearBook({required String bookUrl}) async => 0;
+
   // ========== 章节购买 ==========
 
   @override
