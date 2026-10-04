@@ -81,9 +81,15 @@ void main() {
         reason: '停止必须调 audioCacheCancel 中止在途下载',
       );
       expect(
-        src.contains('audioCacheList'),
+        src.contains('audioCacheQuery'),
         isTrue,
-        reason: '已缓存跳过应复用读面列举（原版 listCachedChapterKeys 语义）',
+        reason: '已缓存跳过应按 key 逐章判定（原版 cachedKeys 键语义；'
+            'audioCacheList 的下标在 TOC 重排后会错位漏下，P2-4）',
+      );
+      expect(
+        src.contains('audioCacheList(bookUrl'),
+        isFalse,
+        reason: '批量循环不得再调 audioCacheList 按下标跳过（P2-4）',
       );
     });
 
@@ -184,8 +190,13 @@ void main() {
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => chapters);
       when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
       when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
-      when(() => mockApi.audioCacheList(bookUrl: any(named: 'bookUrl')))
-          .thenAnswer((_) async => <int>[]);
+      // P2-4：已缓存跳过改为逐章按 key 查询（audioCacheList 下标会错位）
+      when(() => mockApi.audioCacheQuery(
+            bookUrl: any(named: 'bookUrl'),
+            chapterIndex: any(named: 'chapterIndex'),
+            chapterUrl: any(named: 'chapterUrl'),
+            chapterTitle: any(named: 'chapterTitle'),
+          )).thenAnswer((_) async => false);
       when(() => mockApi.getAudioChapterMedia(any(), any())).thenAnswer(
         (inv) async => {
           'mediaUrl': 'https://cdn.example/${inv.positionalArguments[1]}.mp3',
@@ -236,6 +247,123 @@ void main() {
       expect(find.text('音频缓存'), findsNothing);
     });
 
+    testWidgets('P2-4：TOC 重排后已缓存下标错位不得跳过本章（按 key 判定）', (tester) async {
+      final chapters = [
+        const BookChapter(title: '第一章', index: 0, url: 'https://x/new-key'),
+      ];
+      when(() => mockApi.getChapters(any())).thenAnswer((_) async => chapters);
+      when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+      // 旧实现按下标跳过：audioCacheList 报告下标 0 已缓存 → 会漏下本章
+      when(() => mockApi.audioCacheList(bookUrl: any(named: 'bookUrl')))
+          .thenAnswer((_) async => <int>[0]);
+      // 新实现按 (chapterUrl→key) 判定：本章键未命中 → 必须下载
+      when(() => mockApi.audioCacheQuery(
+            bookUrl: any(named: 'bookUrl'),
+            chapterIndex: any(named: 'chapterIndex'),
+            chapterUrl: any(named: 'chapterUrl'),
+            chapterTitle: any(named: 'chapterTitle'),
+          )).thenAnswer((_) async => false);
+      when(() => mockApi.getAudioChapterMedia(any(), any())).thenAnswer(
+        (_) async => {'mediaUrl': 'https://cdn.example/new-key.mp3'},
+      );
+      when(() => mockApi.audioCacheDownload(
+            bookUrl: any(named: 'bookUrl'),
+            chapterIndex: any(named: 'chapterIndex'),
+            chapterUrl: any(named: 'chapterUrl'),
+            chapterTitle: any(named: 'chapterTitle'),
+            playUrl: any(named: 'playUrl'),
+          )).thenAnswer((_) async => '{"status":"installed"}');
+
+      await pumpScreen(tester);
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('缓存章节范围'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+
+      verify(() => mockApi.audioCacheQuery(
+            bookUrl: 'url',
+            chapterIndex: 0,
+            chapterUrl: 'https://x/new-key',
+            chapterTitle: '第一章',
+          )).called(1);
+      verify(() => mockApi.audioCacheDownload(
+            bookUrl: 'url',
+            chapterIndex: 0,
+            chapterUrl: 'https://x/new-key',
+            chapterTitle: '第一章',
+            playUrl: 'https://cdn.example/new-key.mp3',
+          )).called(1);
+      verifyNever(() => mockApi.audioCacheList(bookUrl: any(named: 'bookUrl')));
+    });
+
+    testWidgets('P1-1：批量运行中拒绝启动第二批（防同章并发）', (tester) async {
+      final gate = Completer<String>();
+      when(() => mockApi.getChapters(any())).thenAnswer(
+        (_) async => [
+          const BookChapter(title: '第一章', index: 0, url: 'https://x/1'),
+          const BookChapter(title: '第二章', index: 1, url: 'https://x/2'),
+        ],
+      );
+      when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+      when(() => mockApi.audioCacheQuery(
+            bookUrl: any(named: 'bookUrl'),
+            chapterIndex: any(named: 'chapterIndex'),
+            chapterUrl: any(named: 'chapterUrl'),
+            chapterTitle: any(named: 'chapterTitle'),
+          )).thenAnswer((_) async => false);
+      when(() => mockApi.getAudioChapterMedia(any(), any())).thenAnswer(
+        (_) async => {'mediaUrl': 'https://cdn.example/0.mp3'},
+      );
+      // 第一批第一章挂在 Completer 上（在途）
+      when(() => mockApi.audioCacheDownload(
+            bookUrl: any(named: 'bookUrl'),
+            chapterIndex: any(named: 'chapterIndex'),
+            chapterUrl: any(named: 'chapterUrl'),
+            chapterTitle: any(named: 'chapterTitle'),
+            playUrl: any(named: 'playUrl'),
+          )).thenAnswer((_) => gate.future);
+
+      await pumpScreen(tester);
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('缓存章节范围'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确定'));
+      await tester.pump();
+      await tester.pump();
+      expect(find.text('音频缓存'), findsOneWidget, reason: '第一批应在运行中');
+
+      // 运行中再次发起批次 → 守卫拒绝（对齐原版单 worker 串行）
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('缓存章节范围'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确定'));
+      await tester.pump();
+      // 第一批的「已加入音频缓存队列」提示先退场（SnackBar 4s），第二条提示才可见
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+
+      expect(find.text('已有缓存任务在运行'), findsOneWidget);
+      // 第二批未发起任何章节取址（守卫在循环启动前拦截）
+      verify(() => mockApi.getAudioChapterMedia(any(), any())).called(1);
+      // 第一批第一章只发起一次，第二批未产生任何下载
+      verify(() => mockApi.audioCacheDownload(
+            bookUrl: any(named: 'bookUrl'),
+            chapterIndex: 0,
+            chapterUrl: any(named: 'chapterUrl'),
+            chapterTitle: any(named: 'chapterTitle'),
+            playUrl: any(named: 'playUrl'),
+          )).called(1);
+
+      gate.complete('{"status":"installed"}');
+      await tester.pumpAndSettle();
+    });
+
     testWidgets('停止：audioCacheCancel 中止在途下载并停发后续章节', (tester) async {
       final gate = Completer<String>();
       when(() => mockApi.getChapters(any())).thenAnswer(
@@ -246,8 +374,12 @@ void main() {
       );
       when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
       when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
-      when(() => mockApi.audioCacheList(bookUrl: any(named: 'bookUrl')))
-          .thenAnswer((_) async => <int>[]);
+      when(() => mockApi.audioCacheQuery(
+            bookUrl: any(named: 'bookUrl'),
+            chapterIndex: any(named: 'chapterIndex'),
+            chapterUrl: any(named: 'chapterUrl'),
+            chapterTitle: any(named: 'chapterTitle'),
+          )).thenAnswer((_) async => false);
       when(() => mockApi.getAudioChapterMedia(any(), any())).thenAnswer(
         (_) async => {'mediaUrl': 'https://cdn.example/0.mp3'},
       );

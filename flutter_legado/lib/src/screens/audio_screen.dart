@@ -470,7 +470,8 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
 
   Widget _buildNowPlayingCard(AudioState provider) {
     final chapter = provider.currentChapter;
-    final scheme = Theme.of(context).colorScheme;    return Padding(
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
       padding: const EdgeInsets.fromLTRB(20, 24, 20, 8),
       child: Column(
         children: [
@@ -985,7 +986,9 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
   // .kt:211-233）；playUrl 取播放链同源 `getAudioChapterMedia.mediaUrl`
   // （AudioPlay.kt:458 WebBook.getContent；**不用** getChapterContentFull——
   // 该路径会应用替换规则/简繁转换，URL 会被污染，见本批报告契约措辞偏差）；
-  // 已缓存跳过 = audioCacheList 预取 + Rust 幂等 already_cached 双保险。
+  // 已缓存跳过 = 逐章 audioCacheQuery 按 key 判定（对齐原版 cachedKeys 键
+  // 语义，AudioCacheService.kt:208-216）+ Rust 幂等 already_cached 双保险；
+  // 运行中防重入（对齐原版单 worker 串行，AudioCacheService.kt:151-158）。
   // 「缓存目录」入口不在本批（SAF 与冻结私有缓存根冲突，见报告）。
 
   /// 「缓存章节范围」入口（对标原版 menu_audio_cache_range →
@@ -1071,6 +1074,14 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
       _snack('请输入正确的范围'); // error_scope_input
       return;
     }
+    // P1-1 防重入：原版由前台服务单 worker 串行承担（AudioCacheService.kt:151-158
+    // startWorkerLocked 在 worker 存活时不再起第二个），本页无服务队列，运行中拒绝
+    // 启动第二批（Rust 侧 (bookUrl,key16) 分片锁为并发兜底）。原版菜单**无**禁用态
+    // （AudioPlayActivity.kt:235-237 无 onPrepareOptionsMenu/isEnabled），故不新增禁用。
+    if (_audioCacheRunning) {
+      _snack('已有缓存任务在运行');
+      return;
+    }
     unawaited(_runAudioCacheBatch(chapters, range.$1, range.$2));
     _snack('已加入音频缓存队列'); // audio_cache_start_range
   }
@@ -1105,15 +1116,6 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
       _audioCacheTotal = end - start + 1;
       _audioCacheFail = 0;
     });
-    // 已缓存章节跳过（原版 listCachedChapterKeys 语义，AudioCacheService.kt:208-216）；
-    // 查询失败按无缓存处理（Rust 侧幂等 already_cached 兜底，不多耗流量）
-    var cachedIndexes = <int>{};
-    try {
-      cachedIndexes = (await api.audioCacheList(bookUrl: bookUrl)).toSet();
-    } catch (e) {
-      debugPrint('[audio-cache] 列举已缓存章节失败（按无缓存处理）：$e');
-    }
-
     for (var index = start; index <= end; index++) {
       if (!mounted || token != _audioCacheRunToken) return;
       final chapter = index < chapters.length ? chapters[index] : null;
@@ -1122,7 +1124,27 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
         continue;
       }
       // 分卷章节：原版服务循环跳过且不计失败（AudioCacheService.kt:214）
-      if (chapter.isVolume || cachedIndexes.contains(index)) {
+      if (chapter.isVolume) {
+        _bumpAudioCacheProgress();
+        continue;
+      }
+      // 已缓存跳过：逐章按 key 判定（对齐原版 `key !in cachedKeys`，
+      // AudioCacheService.kt:208-216；键只由 chapterUrl/title 决定）。不用
+      // audioCacheList 的下标——它记录的是下载时刻的文件名下标，TOC 重排后
+      // 按下标跳过会漏下本章（P2-4）。查询失败按未缓存处理（Rust 侧幂等
+      // already_cached 兜底，最多多一次取址）。
+      var cached = false;
+      try {
+        cached = await api.audioCacheQuery(
+          bookUrl: bookUrl,
+          chapterIndex: index,
+          chapterUrl: chapter.url,
+          chapterTitle: chapter.title,
+        );
+      } catch (e) {
+        debugPrint('[audio-cache] 查询第 ${index + 1} 章缓存失败（按未缓存处理）：$e');
+      }
+      if (cached) {
         _bumpAudioCacheProgress();
         continue;
       }
@@ -1139,7 +1161,6 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
           chapterTitle: chapter.title,
           playUrl: playUrl,
         );
-        cachedIndexes.add(index);
       } catch (e) {
         // 写入面上抛不降级（契约 §2.48）：逐章计 failCount，循环继续
         debugPrint('[audio-cache] 第 ${index + 1} 章缓存失败：$e');

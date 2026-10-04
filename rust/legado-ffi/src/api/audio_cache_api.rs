@@ -38,6 +38,9 @@
 //! - [`audio_cache_cancel`]：进程级取消代数单槽（对齐原版服务单 worker + stop，
 //!   `AudioCacheService.kt:145-185,259-266`）；在途下载于每个流式块边界检查
 //!   代数（对齐 `copyCancellable:397-412` 的 ensureActive），变更即中止并清理
+//! - [`chapter_lock`]：同 `(bookUrl, key16)` 分片互斥（对齐原版
+//!   `AudioCacheManager.chapterLocks:44` + `chapterLock:414-416`，16 片），
+//!   覆盖下载幂等检查→失败清理整段（P1-1 修复，详见该函数文档）
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
@@ -723,6 +726,49 @@ fn cancel_generation_changed(snapshot: u64) -> bool {
     CANCEL_GEN.load(Ordering::SeqCst) != snapshot
 }
 
+/// 章节锁分片数（对齐原版 `AudioCacheManager.chapterLocks:44`：`Array(16)`）
+const CHAPTER_LOCK_SHARDS: usize = 16;
+
+/// Java `String.hashCode()`（UTF-16 code unit 累加，`h = 31*h + c` 以 i32 截断），
+/// 供分片索引与原版 `bookUrl.hashCode()` / `AudioCacheKey.hashCode()`
+/// （即 16 hex 串的 `String.hashCode`）逐值对齐
+fn java_string_hash(s: &str) -> i32 {
+    let mut h: i32 = 0;
+    for unit in s.encode_utf16() {
+        h = h.wrapping_mul(31).wrapping_add(unit as i32);
+    }
+    h
+}
+
+/// 语义同 Java `Math.floorMod(x, m)`（m > 0，负值取非负余数）
+fn java_floor_mod(x: i32, m: i32) -> i32 {
+    x.rem_euclid(m)
+}
+
+/// 按 `(bookUrl, key16)` 取章节分片锁（对齐原版 `chapterLock:414-416`：
+/// `chapterLocks[Math.floorMod(31 * bookUrl.hashCode() + key.hashCode(), 16)]`；
+/// 同 key 同分片串行，异 key 最多 16 路并行——与原版碰撞粒度一致）。
+///
+/// 使用范围（原版对照）：覆盖 `audio_cache_download_with_client` 的
+/// ② 幂等检查 → ⑧ 失败清理整段，对齐原版 `cacheChapter:117-118`
+/// `chapterLock(...).withLock { cacheChapterLocked(...) }` 的临界区
+/// （含 `cleanupUncommittedFiles` / 安装 / 写标记 / `removeCacheFiles`
+/// 步骤⑦，`AudioCacheManager.kt:139-199`）——修复同章并发两条下载互删
+/// 产物/在写 tmp 的静默缓存丢失。
+///
+/// 有意差异登记：原版 `removeCachedChapter:87-101` 同样取此锁；我方清理面
+/// FFI 为**同步**调用（在 UI isolate 执行，不能阻塞在途下载至多 60s），
+/// 故本批清理面不取锁（清-下载交叠只会导致下载报错或删除失败，不会静默
+/// 丢缓存），留待契约/FFI 异步化裁决。
+fn chapter_lock(book_url: &str, key16: &str) -> &'static Mutex<()> {
+    static CHAPTER_LOCKS: OnceLock<[Mutex<()>; CHAPTER_LOCK_SHARDS]> = OnceLock::new();
+    let locks = CHAPTER_LOCKS.get_or_init(|| std::array::from_fn(|_| Mutex::new(())));
+    let combined = 31i32
+        .wrapping_mul(java_string_hash(book_url))
+        .wrapping_add(java_string_hash(key16));
+    &locks[java_floor_mod(combined, CHAPTER_LOCK_SHARDS as i32) as usize]
+}
+
 /// 取消当前在途下载（契约 §2.48 `audioCacheCancel`，对齐原版服务 stop 语义单槽化）
 ///
 /// 原版单 worker 逐章处理（`AudioCacheService.kt:145-185`），全局同时至多一个
@@ -745,6 +791,8 @@ pub fn audio_cache_cancel() -> LegadoResult<bool> {
 /// 逐条对齐 `AudioCacheManager.cacheChapter:107-199`：
 /// ① 前置校验（bookUrl 空白 / book 不在 DB / chapter 不在 DB / isVolume /
 ///    playUrl 空 / JSON 数组 / HLS / 书源不在 DB → Err）
+/// ②–⑧ 在 `(bookUrl, key16)` 分片锁内串行（[`chapter_lock`]，对齐原版
+///    `chapterLock(...).withLock`：`AudioCacheManager.kt:44,117,414-416`）：
 /// ② 幂等：已提交缓存（key16 + `.complete` + size>0）→ `already_cached` JSON
 /// ③ 清理本 key 陈旧未提交文件（1 小时阈值）
 /// ④ AnalyzeUrl + 书源 headers/cookie 语义流式下载（块级取消检查）
@@ -803,6 +851,13 @@ fn audio_cache_download_with_client(
 
     let key16 = cache_key16(chapter_url, chapter_title);
     let dir = book_dir(book_url);
+
+    // ②–⑧ 临界区：同 (bookUrl, key16) 分片锁串行（对齐原版 `chapterLock`
+    // `AudioCacheManager.kt:44,117,414-416` 的 `withLock` 范围）。无锁时两条
+    // 同章下载会互相删除对方在写 tmp / 已装文件与标记，双方均报 installed
+    // 但缓存净丢失（P1-1）。
+    let chapter_shard = chapter_lock(book_url, &key16);
+    let _chapter_guard = chapter_shard.lock().unwrap_or_else(|e| e.into_inner());
 
     // ② 幂等：已提交缓存直接返回（对齐原版服务循环 `AudioCacheService.kt:216` 跳过语义）
     if let Some((name, meta)) = latest_committed_file(&dir, &key16) {
@@ -2136,6 +2191,156 @@ mod tests {
         assert!(names.is_empty(), "取消后不得残留部分文件: {names:?}");
         assert_eq!(IN_FLIGHT.load(Ordering::SeqCst), 0, "在途计数应复位");
 
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// P1-1：同 `(bookUrl, key16)` 并发下载被分片锁串行化——恰好一个
+    /// `installed`、一个 `already_cached`，最终缓存真实存在且可被读面命中，
+    /// 无残留 tmp。修复前：两任务各自越过幂等检查（慢速服务器拉长窗口）互删
+    /// 产物，双 `installed` 且第二个请求重下（hits=2）。
+    #[test]
+    fn concurrent_same_key_downloads_are_serialized() {
+        use std::io::Read as _;
+        use std::io::Write as _;
+        use std::net::TcpListener;
+
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("download-concurrent");
+        set_test_root(&root);
+
+        // 慢速服务器：32KB/块 × 64 块、每块 24ms（≈1.5s）——修复前第二个任务
+        // 在第一个安装完成前即越过幂等检查并独立下载（互删对方 tmp/已装文件）；
+        // 修复后第二个任务阻塞在分片锁上，解锁后幂等命中，全程仅 1 个请求
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let hits = std::sync::Arc::new(AtomicUsize::new(0));
+        let hits_srv = std::sync::Arc::clone(&hits);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut sock) = stream else { continue };
+                hits_srv.fetch_add(1, Ordering::SeqCst);
+                let mut head = Vec::new();
+                let mut b = [0u8; 1];
+                while let Ok(1) = sock.read(&mut b) {
+                    head.push(b[0]);
+                    if head.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let total = 64 * 32 * 1024u64;
+                let _ = sock.write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                );
+                let chunk = vec![5u8; 32 * 1024];
+                for _ in 0..64 {
+                    if sock.write_all(&chunk).is_err() {
+                        break;
+                    }
+                    let _ = sock.flush();
+                    std::thread::sleep(Duration::from_millis(24));
+                }
+                let _ = sock.shutdown(std::net::Shutdown::Both);
+            }
+        });
+
+        let book_url = "https://a.com/book/dl-concurrent";
+        let play_url = format!("http://127.0.0.1:{port}/same.mp3");
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+
+        // 两个线程同时对同一 (bookUrl, 章节 key) 发起下载
+        let handles: Vec<_> = (0..2)
+            .map(|_| {
+                let play = play_url.clone();
+                std::thread::spawn(move || {
+                    let client = test_client();
+                    audio_cache_download_with_client(&client, book_url, 0, "hello", "第一章", &play)
+                })
+            })
+            .collect();
+        let results: Vec<LegadoResult<String>> =
+            handles.into_iter().map(|h| h.join().unwrap()).collect();
+
+        let mut statuses = Vec::new();
+        let mut paths = Vec::new();
+        for r in &results {
+            let out = r.as_ref().expect("并发下载均应成功返回");
+            let json: serde_json::Value = serde_json::from_str(out).unwrap();
+            statuses.push(json["status"].as_str().unwrap().to_string());
+            paths.push(json["path"].as_str().unwrap().to_string());
+        }
+        statuses.sort();
+        assert_eq!(
+            statuses,
+            vec!["already_cached", "installed"],
+            "同 key 并发应收敛为一次实装 + 一次幂等命中（修复前为双 installed）"
+        );
+        assert_eq!(
+            hits.load(Ordering::SeqCst),
+            1,
+            "第二个任务应在锁内幂等命中，不得重复发请求"
+        );
+        // 实装结果与幂等命中指向同一份文件，且文件真实存在
+        assert_eq!(paths[0], paths[1], "already_cached 应指向 installed 的文件");
+        assert!(
+            std::path::Path::new(&paths[0]).exists(),
+            "installed 返回的 path 必须真实存在（修复前可能已被对方清理）"
+        );
+        // 缓存可被读面命中（无静默丢失），无残留 tmp
+        assert!(audio_cache_query(book_url, 0, "hello", "第一章"));
+        assert_eq!(audio_cache_list(book_url), vec![0]);
+        let names: Vec<String> = super::read_dir_entries(&book_dir(book_url))
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert_eq!(
+            names.len(),
+            2,
+            "并发结束后目录应只剩 1 数据 + 1 标记: {names:?}"
+        );
+        assert!(
+            names.iter().all(|n| !n.ends_with(PART_SUFFIX)),
+            "不得残留 tmp: {names:?}"
+        );
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// P2-5 残态取证：目录仅剩孤儿 `.complete`（无同名数据文件）时，
+    /// `audio_cache_clear_chapter` 按冻结口径返回 `0`（仅统计数据文件），
+    /// 但标记照删——对齐原版 `removeCacheFiles:338-356`（标记照删）与
+    /// `hasCacheFiles:374-383`（含标记 → 原版 UI 报「已清除本章缓存」）。
+    /// Dart 提示由返回值 0 驱动 → 与原文案相反，已登记待裁决。
+    #[test]
+    fn clear_chapter_removes_orphan_marker_with_zero_count() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let root = unique_root("clear-orphan-marker");
+        set_test_root(&root);
+        let dir = book_dir("https://a.com/book/orphan");
+        let name = valid_name(1, KEY_HELLO, "mp3");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(dir.join(format!("{name}{COMPLETE_SUFFIX}")), b"1\nx\nx").unwrap();
+
+        assert_eq!(
+            audio_cache_clear_chapter("https://a.com/book/orphan", 1, "hello", "第一章"),
+            0,
+            "冻结口径：返回值只统计数据文件（不含标记）"
+        );
+        assert!(
+            !dir.join(format!("{name}{COMPLETE_SUFFIX}")).exists(),
+            "孤儿标记应被删除（对齐原版 removeCacheFiles 标记照删）"
+        );
         clear_test_root();
         let _ = fs::remove_dir_all(&root);
     }
