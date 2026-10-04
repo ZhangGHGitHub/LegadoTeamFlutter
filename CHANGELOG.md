@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.357] - 2026-10-05
+
+### Fixed
+- [UI] 目录页章节下载/重试图标的点击区域偏小的问题（命中区域对齐参考版，视觉大小不变）。
+
 ## [2.0.356] - 2026-10-05
 
 ### Added
