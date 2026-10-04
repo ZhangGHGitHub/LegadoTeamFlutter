@@ -306,8 +306,13 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
           RadioGroup<String>(
             groupValue: currentName,
             onChanged: (v) {
-              if (v == null) return;
-              final engine = engines.firstWhere((e) => e.name == v);
+              // [UX 修复 | 2026-10-03] 未选中项：RadioGroup 回传新值；已选中项：
+              // RadioListTile 开启 toggleable 后回传 null（点已选项不产生新值）。
+              // 两种点击都要关闭对话框——对齐原版 SpeakEngineDialog 点击任意项
+              // 均 upTts（已选项为幂等重确认），此前已选项点击走不到关闭逻辑。
+              final name = v ?? currentName;
+              if (name == null) return;
+              final engine = engines.firstWhere((e) => e.name == name);
               Navigator.pop(dialogContext);
               // [P0 | 2026-10-03] 只存裸 URL：合成管线（Rust tts_speak）把
               // engineUrl 当 URL 模板与缓存键，存「名称,URL」必然合成失败
@@ -323,6 +328,11 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
                   RadioListTile<String>(
                     title: Text(engine.name),
                     value: engine.name,
+                    // 已选中项默认吞掉点击（Flutter _handleListTileTap 对
+                    // checked 且非 toggleable 直接 return，本版 RadioListTile
+                    // 未暴露 onTap 参数）；toggleable 让已选项点击回传 null，
+                    // 交给上面的 onChanged 统一处理
+                    toggleable: true,
                   ),
               ],
             ),

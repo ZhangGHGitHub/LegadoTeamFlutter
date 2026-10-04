@@ -136,7 +136,7 @@ void main() {
       (_) async => [const BookChapter(title: '第一章', index: 0)],
     );
     when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
-    when(() => mockApi.getChapterContent(any(), any()))
+    when(() => mockApi.getChapterContentFull(any(), any()))
         .thenAnswer((_) async => '第一段文本内容。');
     when(() => mockApi.audioSpeak(
           text: any(named: 'text'),

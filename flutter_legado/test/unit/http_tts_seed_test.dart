@@ -229,7 +229,7 @@ void main() {
         (_) async => [const BookChapter(title: '第一章', index: 0)],
       );
       when(() => api.getBook(any())).thenAnswer((_) async => null);
-      when(() => api.getChapterContent(any(), any()))
+      when(() => api.getChapterContentFull(any(), any()))
           .thenAnswer((_) async => '正文内容。');
       when(() => api.audioSpeak(
             text: any(named: 'text'),

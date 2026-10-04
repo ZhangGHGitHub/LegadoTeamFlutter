@@ -288,7 +288,7 @@ void main() {
       ];
       when(() => mockApi.getChapters(any())).thenAnswer((_) async => chapters);
       when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
-      when(() => mockApi.getChapterContent(any(), any()))
+      when(() => mockApi.getChapterContentFull(any(), any()))
           .thenAnswer((_) async => '章节正文内容');
       when(() => mockApi.audioSpeak(
             text: any(named: 'text'),
@@ -329,11 +329,11 @@ void main() {
       await readNotifier().play();
 
       // 验证 getChapterContent 被调用
-      verify(() => mockApi.getChapterContent('url', 0)).called(1);
+      verify(() => mockApi.getChapterContentFull('url', 0)).called(1);
     });
 
     test('play 失败时进入 error 状态', () async {
-      when(() => mockApi.getChapterContent(any(), any()))
+      when(() => mockApi.getChapterContentFull(any(), any()))
           .thenThrow(Exception('内容加载失败'));
 
       await readNotifier().loadChapters('url');

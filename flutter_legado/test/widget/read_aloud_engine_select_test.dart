@@ -123,6 +123,25 @@ void main() {
     await settleSnackBar(tester);
   });
 
+  testWidgets('点击已选中的引擎项：对话框关闭（已项不再吞点击）', (tester) async {
+    await pumpBar(tester);
+    container.read(audioNotifierProvider.notifier).updateConfig(
+          engineUrl: engineUrl,
+        );
+    await tester.pump();
+
+    await openEngineDialog(tester);
+    expect(find.text('选择朗读引擎'), findsOneWidget);
+
+    // 已选中项：RadioListTile 默认对 checked 直接 return（本版无 onTap 参数）；
+    // 修复后（toggleable + onChanged 兜底当前项）点击应关闭对话框
+    await tester.tap(find.text(engineName));
+    await tester.pumpAndSettle();
+
+    expect(find.text('选择朗读引擎'), findsNothing);
+    await settleSnackBar(tester);
+  });
+
   testWidgets('存量「名称,URL」形态：显示侧归一并正确高亮', (tester) async {
     await pumpBar(tester);
     container.read(audioNotifierProvider.notifier).updateConfig(

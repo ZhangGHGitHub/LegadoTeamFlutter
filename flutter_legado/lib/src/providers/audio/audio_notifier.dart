@@ -94,6 +94,30 @@ const int kStreamRestoreNearEndToleranceMs = 1000;
 /// 这是 P1 级联跳章的根因修复。[P1 竞态修复 | 2026-10-03]
 typedef StreamChapterTag = ({String bookUrl, int chapterIndex});
 
+/// 本地书籍 URL 判定（扩展名白名单）
+///
+/// 镜像 Rust `reader::is_local_book`（rust/legado-ffi/src/api/reader.rs）：
+/// 该函数正是 Rust 侧选择「本地解析」还是「在线返回章节 URL JSON 元数据」
+/// 的判据。朗读取正文据此选链路：
+/// - 本地书：维持 [BookApi.getChapterContent]（本地解析 + 净化，行为不变；
+///   `getChapterContentFull` 的本地分支不做「相对可迁移标识 → 真实路径」
+///   还原，见 Rust `get_chapter_content_inner` 与 `get_chapter_content_full`
+///   本地分支差异，故不切换）；
+/// - 在线书：[BookApi.getChapterContentFull]（DB 缓存 → 联网抓取 → 净化，
+///   始终返回纯正文；`getChapterContent` 在线分支只返回含 chapter_url /
+///   need_fetch 的 URL JSON 占位元数据，送进 TTS 就是读 JSON）。
+bool isLocalBookUrl(String bookUrl) {
+  final lower = bookUrl.toLowerCase();
+  return lower.endsWith('.epub') ||
+      lower.endsWith('.txt') ||
+      lower.endsWith('.text') ||
+      lower.endsWith('.mobi') ||
+      lower.endsWith('.azw') ||
+      lower.endsWith('.azw3') ||
+      lower.endsWith('.pdf') ||
+      lower.endsWith('.cbz');
+}
+
 /// 听书播放器 Riverpod Notifier
 ///
 /// 双路径：
@@ -127,6 +151,14 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   int _paragraphIndex = 0;
   Timer? _paragraphTimer;
   int _playToken = 0;
+
+  /// 在途章节正文抓取（key: 'bookUrl\u0001chapterIndex'）
+  ///
+  /// 在线书取正文需联网：快速切章/连点会对同一章并发调用
+  /// [_ensureChapterContent]，此处复用同一 Future，避免重复抓取；
+  /// 结果只写入其所属 (bookUrl, 章号) 缓存位置（[_cacheFetchedChapterContent]
+  /// 校验归属），播放侧另有 [_playToken] 失效校验。[P0 | 2026-10-03]
+  final Map<String, Future<String>> _inFlightChapterContent = {};
 
   /// 段落级合成/播放代数：手动切段时使旧的在途合成失效，避免旧段覆盖新段
   int _speakGeneration = 0;
@@ -414,6 +446,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       state = state.copyWith(currentIndex: target);
     }
     _pendingParagraphIndex = null;
+    // [P0 | 2026-10-03] 在线书首次取正文可能联网（getChapterContentFull）：
+    // 复用既有 loading 状态提前给出「加载中」反馈（不新增 UI；原版朗读读的是
+    // 阅读器已加载的 curTextChapter，无此等待，故原版无对应 loading 可对齐）
+    state = state.copyWith(state: PlayerState.loading, errorMessage: null);
     try {
       final content = await _ensureChapterContent(state.currentIndex);
       final pos = startChapterPos;
@@ -613,8 +649,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
       if (token != _playToken || _disposed) return;
       await _speakCurrentParagraph(token);
     } catch (e) {
+      // [P0 | 2026-10-03] 在线书正文抓取失败（网络/书源失效等）必须有用户
+      // 可见提示：errorMessage 由朗读条警示条/听书页错误行展示（不静默）
       state = state.copyWith(
-        errorMessage: e.toString(),
+        errorMessage: '章节正文获取失败，无法朗读：$e',
         state: PlayerState.error,
       );
     }
@@ -623,15 +661,50 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
   Future<String> _ensureChapterContent(int chapterIndex) async {
     final chapter = state.chapters[chapterIndex];
     if (chapter.text.isNotEmpty) return chapter.text;
-    final content = await _api.getChapterContent(state.bookUrl, chapterIndex);
+    final bookUrl = state.bookUrl;
+    final key = '$bookUrl\u0001$chapterIndex';
+    final inFlight = _inFlightChapterContent[key];
+    if (inFlight != null) return inFlight;
+    final future = _fetchChapterContent(bookUrl, chapterIndex).then((content) {
+      _cacheFetchedChapterContent(bookUrl, chapterIndex, content);
+      return content;
+    });
+    _inFlightChapterContent[key] = future;
+    try {
+      return await future;
+    } finally {
+      _inFlightChapterContent.remove(key);
+    }
+  }
+
+  /// 按书籍类型选正文链路（本地书保持原链路，在线书走 full 取纯正文）
+  Future<String> _fetchChapterContent(String bookUrl, int chapterIndex) {
+    if (isLocalBookUrl(bookUrl)) {
+      return _api.getChapterContent(bookUrl, chapterIndex);
+    }
+    return _api.getChapterContentFull(bookUrl, chapterIndex);
+  }
+
+  /// 抓取结果写回章节缓存
+  ///
+  /// 仅当书籍未切换且章号仍在范围内时写入：旧书/旧章的迟到结果不得污染
+  /// 新书章节列表（在线抓取耗时更长，该窗口更宽）。
+  void _cacheFetchedChapterContent(
+    String bookUrl,
+    int chapterIndex,
+    String content,
+  ) {
+    if (_disposed || state.bookUrl != bookUrl) return;
+    if (chapterIndex < 0 || chapterIndex >= state.chapters.length) return;
     final chapters = [...state.chapters];
+    final chapter = chapters[chapterIndex];
+    if (chapter.text.isNotEmpty) return; // 已有缓存不覆盖
     chapters[chapterIndex] = AudioChapter(
       index: chapter.index,
       title: chapter.title,
       text: content,
     );
     state = state.copyWith(chapters: chapters);
-    return content;
   }
 
   static List<({int start, String text})> _splitParagraphsWithOffsets(
