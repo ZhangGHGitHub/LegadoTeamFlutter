@@ -40,7 +40,10 @@
 //!   代数（对齐 `copyCancellable:397-412` 的 ensureActive），变更即中止并清理
 //! - [`chapter_lock`]：同 `(bookUrl, key16)` 分片互斥（对齐原版
 //!   `AudioCacheManager.chapterLocks:44` + `chapterLock:414-416`，16 片），
-//!   覆盖下载幂等检查→失败清理整段（P1-1 修复，详见该函数文档）
+//!   覆盖下载幂等检查→失败清理整段（P1-1 修复，详见该函数文档）；
+//!   `audio_cache_clear_chapter` 亦取此锁（对齐原版
+//!   `removeCachedChapter:92-105` 的 `withLock`），FFI 侧 async 化
+//!   （spawn_blocking）后清理可等比等待在途下载且不阻塞 UI isolate
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
@@ -352,6 +355,13 @@ pub fn audio_cache_list(book_url: &str) -> Vec<i32> {
 /// `tmp_*.part`，**不计 `.complete` 标记**，对齐原版 `removeCacheFiles:338-356`
 /// 的 `return dataTargets.size`；标记照删）。不存在/已删返回 `0`，IO 失败按
 /// 已删数返回，不抛异常。
+///
+/// 与下载共用同一把 `(bookUrl, key16)` 章节分片锁（对齐原版
+/// `removeCachedChapter:92-105` 的 `chapterLock(bookUrl, key).withLock`——
+/// 原版该函数为 `suspend`，清理与在途下载互斥，避免互删对方产物）。
+/// 本函数为**阻塞实现**，FFI 侧经 spawn_blocking 包装为非阻塞
+/// （`audio_cache_clear_chapter` async 导出）：清理等待在途下载完成
+/// （最坏受下载自身时长约束），UI isolate 不被阻塞。
 pub fn audio_cache_clear_chapter(
     book_url: &str,
     _chapter_index: i32,
@@ -360,6 +370,8 @@ pub fn audio_cache_clear_chapter(
 ) -> i32 {
     let key16 = cache_key16(chapter_url, chapter_title);
     let dir = book_dir(book_url);
+    let chapter_shard = chapter_lock(book_url, &key16);
+    let _chapter_guard = chapter_shard.lock().unwrap_or_else(|e| e.into_inner());
     remove_cache_files(&dir, &key16, None)
 }
 
@@ -749,17 +761,17 @@ fn java_floor_mod(x: i32, m: i32) -> i32 {
 /// `chapterLocks[Math.floorMod(31 * bookUrl.hashCode() + key.hashCode(), 16)]`；
 /// 同 key 同分片串行，异 key 最多 16 路并行——与原版碰撞粒度一致）。
 ///
-/// 使用范围（原版对照）：覆盖 `audio_cache_download_with_client` 的
-/// ② 幂等检查 → ⑧ 失败清理整段，对齐原版 `cacheChapter:117-118`
-/// `chapterLock(...).withLock { cacheChapterLocked(...) }` 的临界区
-/// （含 `cleanupUncommittedFiles` / 安装 / 写标记 / `removeCacheFiles`
-/// 步骤⑦，`AudioCacheManager.kt:139-199`）——修复同章并发两条下载互删
-/// 产物/在写 tmp 的静默缓存丢失。
-///
-/// 有意差异登记：原版 `removeCachedChapter:87-101` 同样取此锁；我方清理面
-/// FFI 为**同步**调用（在 UI isolate 执行，不能阻塞在途下载至多 60s），
-/// 故本批清理面不取锁（清-下载交叠只会导致下载报错或删除失败，不会静默
-/// 丢缓存），留待契约/FFI 异步化裁决。
+/// 使用范围（原版对照）：
+/// - 写入面：覆盖 `audio_cache_download_with_client` 的 ② 幂等检查 → ⑧ 失败
+///   清理整段，对齐原版 `cacheChapter:117-118`
+///   `chapterLock(...).withLock { cacheChapterLocked(...) }` 的临界区
+///   （含 `cleanupUncommittedFiles` / 安装 / 写标记 / `removeCacheFiles`
+///   步骤⑦，`AudioCacheManager.kt:139-199`）——修复同章并发两条下载互删
+///   产物/在写 tmp 的静默缓存丢失。
+/// - 清理面：覆盖 `audio_cache_clear_chapter` 整段（对齐原版
+///   `removeCachedChapter:92-105` 同样取此锁的 `withLock`；原版为 suspend，
+///   我方 FFI 经 spawn_blocking 异步化后语义等价：等待在途下载完成再清理，
+///   不阻塞 UI isolate）。
 fn chapter_lock(book_url: &str, key16: &str) -> &'static Mutex<()> {
     static CHAPTER_LOCKS: OnceLock<[Mutex<()>; CHAPTER_LOCK_SHARDS]> = OnceLock::new();
     let locks = CHAPTER_LOCKS.get_or_init(|| std::array::from_fn(|_| Mutex::new(())));
@@ -2312,6 +2324,109 @@ mod tests {
             names.iter().all(|n| !n.ends_with(PART_SUFFIX)),
             "不得残留 tmp: {names:?}"
         );
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 任务一（清理面取锁）：下载在途时清理同章必须**等待下载完成**再删
+    /// （对齐原版 `removeCachedChapter:92-105` 的 suspend + `chapterLock`
+    /// `withLock`），两者结果自洽：下载 `installed`，清理随后删除其安装产物
+    /// （返回 1），读面转为未命中，目录无残留 tmp/标记。
+    ///
+    /// 修复前（清理不取锁，实测取证）：清理在下载流式写入期间删除在写
+    /// tmp（计数含 tmp 返回 1），下载随后安装 rename 失败报错 NotFound
+    /// ——两者互删不自洽（红）；加锁后清理等比等待，下载完整安装后清理
+    /// 再删除（绿）。
+    #[test]
+    fn clear_chapter_waits_inflight_download_and_wins() {
+        use std::io::Read as _;
+        use std::io::Write as _;
+        use std::net::TcpListener;
+
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("clear-concurrent");
+        set_test_root(&root);
+
+        // 慢速服务器：32KB/块 × 64 块、每块 24ms（≈1.5s）——给清理一个
+        // 确定的「下载持锁在途」窗口
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut sock) = stream else { continue };
+                let mut head = Vec::new();
+                let mut b = [0u8; 1];
+                while let Ok(1) = sock.read(&mut b) {
+                    head.push(b[0]);
+                    if head.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let total = 64 * 32 * 1024u64;
+                let _ = sock.write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nContent-Length: {total}\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                );
+                let chunk = vec![3u8; 32 * 1024];
+                for _ in 0..64 {
+                    if sock.write_all(&chunk).is_err() {
+                        break;
+                    }
+                    let _ = sock.flush();
+                    std::thread::sleep(Duration::from_millis(24));
+                }
+                let _ = sock.shutdown(std::net::Shutdown::Both);
+            }
+        });
+
+        let book_url = "https://a.com/book/dl-clear-concurrent";
+        let play_url = format!("http://127.0.0.1:{port}/slow.mp3");
+        insert_audio_book(
+            book_url,
+            "https://source.example/audio",
+            "hello",
+            "第一章",
+            false,
+        );
+
+        let play = play_url.clone();
+        let worker = std::thread::spawn(move || {
+            let client = test_client();
+            audio_cache_download_with_client(&client, book_url, 0, "hello", "第一章", &play)
+        });
+
+        // 等待在途登记：下载在锁内、发起网络前 +1 → 此刻锁已被下载持有
+        let mut waited_ms = 0u32;
+        while IN_FLIGHT.load(Ordering::SeqCst) == 0 && waited_ms < 3000 {
+            std::thread::sleep(Duration::from_millis(10));
+            waited_ms += 10;
+        }
+        assert_eq!(IN_FLIGHT.load(Ordering::SeqCst), 1, "下载应在途持锁");
+        std::thread::sleep(Duration::from_millis(100));
+
+        // 清理在分片锁上等待下载完成，随后删除其安装产物（返回数据文件数 1）
+        let removed = audio_cache_clear_chapter(book_url, 0, "hello", "第一章");
+        let out = worker.join().unwrap().expect("在途下载应成功完成");
+        let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(json["status"].as_str().unwrap(), "installed");
+        assert_eq!(
+            removed, 1,
+            "清理应删除下载安装的 1 个数据文件（.complete 标记照删不计）"
+        );
+        assert!(
+            !audio_cache_query(book_url, 0, "hello", "第一章"),
+            "清理后读面应未命中（无互删残留）"
+        );
+        assert!(audio_cache_list(book_url).is_empty());
+        let names: Vec<String> = super::read_dir_entries(&book_dir(book_url))
+            .into_iter()
+            .map(|(n, _)| n)
+            .collect();
+        assert!(names.is_empty(), "清理后不得残留 tmp/数据/标记: {names:?}");
 
         clear_test_root();
         let _ = fs::remove_dir_all(&root);

@@ -1914,18 +1914,29 @@ pub mod ffi {
     ///
     /// 只删该 `key16` 下的音频文件与 `.complete` 标记，返回实际删除数
     /// （幂等：不存在返回 0；不抛异常）。
-    pub fn audio_cache_clear_chapter(
+    ///
+    /// async + spawn_blocking 非阻塞（对齐 `audio_cache_download` 先例）：
+    /// api 层清理与下载共用同一把 `(bookUrl, key16)` 章节分片锁（对齐原版
+    /// `removeCachedChapter:92-105` 的 suspend + `withLock`），在途下载持锁
+    /// 期间清理在阻塞线程上等比等待，UI isolate 立即返回、不被阻塞。
+    pub async fn audio_cache_clear_chapter(
         book_url: String,
         chapter_index: i32,
         chapter_url: String,
         chapter_title: String,
     ) -> Result<i32, BridgeError> {
-        Ok(crate::api::audio_cache_api::audio_cache_clear_chapter(
-            &book_url,
-            chapter_index,
-            &chapter_url,
-            &chapter_title,
-        ))
+        tokio::task::spawn_blocking(move || {
+            crate::api::audio_cache_api::audio_cache_clear_chapter(
+                &book_url,
+                chapter_index,
+                &chapter_url,
+                &chapter_title,
+            )
+        })
+        .await
+        .map_err(|e| BridgeError {
+            message: format!("audio_cache_clear_chapter 任务异常：{e}"),
+        })
     }
 
     /// 清理音频整书缓存（B1，API_CONTRACT §2.47）

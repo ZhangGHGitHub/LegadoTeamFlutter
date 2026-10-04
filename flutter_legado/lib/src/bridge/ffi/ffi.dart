@@ -1478,6 +1478,11 @@ Future<Int32List> audioCacheList({required String bookUrl}) =>
 ///
 /// 只删该 `key16` 下的音频文件与 `.complete` 标记，返回实际删除数
 /// （幂等：不存在返回 0；不抛异常）。
+///
+/// async + spawn_blocking 非阻塞（对齐 `audio_cache_download` 先例）：
+/// api 层清理与下载共用同一把 `(bookUrl, key16)` 章节分片锁（对齐原版
+/// `removeCachedChapter:92-105` 的 suspend + `withLock`），在途下载持锁
+/// 期间清理在阻塞线程上等比等待，UI isolate 立即返回、不被阻塞。
 Future<int> audioCacheClearChapter({
   required String bookUrl,
   required int chapterIndex,

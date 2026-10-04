@@ -601,7 +601,7 @@ fn wire__crate__ffi__ffi__audio_cache_clear_chapter_impl(
     rust_vec_len_: i32,
     data_len_: i32,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "audio_cache_clear_chapter",
             port: Some(port_),
@@ -622,16 +622,20 @@ fn wire__crate__ffi__ffi__audio_cache_clear_chapter_impl(
             let api_chapter_url = <String>::sse_decode(&mut deserializer);
             let api_chapter_title = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            move |context| {
-                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
-                    let output_ok = crate::ffi::ffi::audio_cache_clear_chapter(
-                        api_book_url,
-                        api_chapter_index,
-                        api_chapter_url,
-                        api_chapter_title,
-                    )?;
-                    Ok(output_ok)
-                })())
+            move |context| async move {
+                transform_result_sse::<_, crate::ffi::BridgeError>(
+                    (move || async move {
+                        let output_ok = crate::ffi::ffi::audio_cache_clear_chapter(
+                            api_book_url,
+                            api_chapter_index,
+                            api_chapter_url,
+                            api_chapter_title,
+                        )
+                        .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )
