@@ -36,6 +36,7 @@ import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/audio/audio_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/audio_screen.dart';
+import 'package:flutter_legado/src/services/audio_cache_events.dart';
 
 import '../mocks/mocks.dart';
 
@@ -245,6 +246,55 @@ void main() {
       verifyNever(() => mockApi.audioCacheCancel());
       // 完成后进度条隐藏（等价原版服务结束移除通知）
       expect(find.text('音频缓存'), findsNothing);
+    });
+
+    testWidgets('[B2-EVT] 每章缓存成功后发进程内事件；失败章不发', (tester) async {
+      final events = <AudioCacheChanged>[];
+      final sub = AudioCacheEvents.instance.stream.listen(events.add);
+      addTearDown(sub.cancel);
+
+      when(() => mockApi.getChapters(any())).thenAnswer(
+        (_) async => [
+          const BookChapter(title: '第一章', index: 0, url: 'https://x/1'),
+          const BookChapter(title: '第二章', index: 1, url: 'https://x/2'),
+        ],
+      );
+      when(() => mockApi.getBook(any())).thenAnswer((_) async => null);
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+      when(() => mockApi.audioCacheQuery(
+            bookUrl: any(named: 'bookUrl'),
+            chapterIndex: any(named: 'chapterIndex'),
+            chapterUrl: any(named: 'chapterUrl'),
+            chapterTitle: any(named: 'chapterTitle'),
+          )).thenAnswer((_) async => false);
+      when(() => mockApi.getAudioChapterMedia(any(), any())).thenAnswer(
+        (_) async => {'mediaUrl': 'https://cdn.example/0.mp3'},
+      );
+      // 第一章成功、第二章失败（原版仅成功分支 postEvent，
+      // AudioCacheService.kt:222-225）
+      when(() => mockApi.audioCacheDownload(
+            bookUrl: any(named: 'bookUrl'),
+            chapterIndex: any(named: 'chapterIndex'),
+            chapterUrl: any(named: 'chapterUrl'),
+            chapterTitle: any(named: 'chapterTitle'),
+            playUrl: any(named: 'playUrl'),
+          )).thenAnswer((inv) async {
+        final index = inv.namedArguments[#chapterIndex] as int;
+        if (index == 1) throw Exception('模拟下载失败');
+        return '{"status":"installed"}';
+      });
+
+      await pumpScreen(tester);
+      await tester.tap(find.byTooltip('更多'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('缓存章节范围'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('确定'));
+      await tester.pumpAndSettle();
+
+      expect(events.length, 1, reason: '仅成功章发事件（失败章不发）');
+      expect(events.single.bookUrl, 'url');
+      expect(events.single.chapterIndex, 0);
     });
 
     testWidgets('P2-4：TOC 重排后已缓存下标错位不得跳过本章（按 key 判定）', (tester) async {

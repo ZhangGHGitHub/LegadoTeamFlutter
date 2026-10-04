@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/toc_screen.dart';
+import 'package:flutter_legado/src/services/audio_cache_events.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
@@ -406,6 +407,118 @@ void main() {
       reason: '音频集合未变化时轮询不应触发 setState',
     );
     await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('[B2-EVT] 缓存成功事件到达即重查并亮徽标（不等 1s 轮询）',
+      (tester) async {
+    // 建页首次查询空集；此后按调用序返回 [0]（事件到达时立即重查命中）
+    var polls = 0;
+    stubBook(
+      book: makeBook(),
+      chapters: makeAudioChapters(),
+      audioCachedByCall: () {
+        polls++;
+        return polls == 1 ? const <int>[] : const <int>[0];
+      },
+    );
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook())));
+    await settleInitial(tester);
+    await tester.pump();
+    final callsBefore = audioListCalls;
+    expect(
+      find.descendant(
+        of: chapterRow('第一章'),
+        matching: find.byIcon(Icons.check_circle),
+      ),
+      findsNothing,
+    );
+
+    // 他书事件：不得触发重查（目录页按 bookUrl 过滤）
+    AudioCacheEvents.instance.notifyChapterCached(
+      bookUrl: 'https://src.com/audio-book/other',
+      chapterIndex: 0,
+    );
+    await tester.pump();
+    expect(audioListCalls, callsBefore, reason: '他书事件不应重查本书缓存');
+
+    // 本书事件：立即重查 audioCacheList（不推进 1s 定时器）并亮起对勾徽标
+    AudioCacheEvents.instance.notifyChapterCached(
+      bookUrl: bookUrl,
+      chapterIndex: 0,
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    expect(
+      audioListCalls,
+      greaterThan(callsBefore),
+      reason: '本书事件应触发立即重查（对齐原版 AUDIO_CACHE_CHANGED 订阅）',
+    );
+    expect(
+      find.descendant(
+        of: chapterRow('第一章'),
+        matching: find.byIcon(Icons.check_circle),
+      ),
+      findsOneWidget,
+      reason: '事件到达后徽标应即时出现，无需等待 1s 轮询',
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('[B2-EVT] 事件与轮询结果一致时不 setState（复用无变化守卫）',
+      (tester) async {
+    stubBook(
+      book: makeBook(),
+      chapters: makeAudioChapters(),
+      audioCached: const [0],
+    );
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook())));
+    await settleInitial(tester);
+    await tester.pump();
+
+    final beforeEvent = rowTitleWidget(tester, '第一章');
+    final callsBefore = audioListCalls;
+    // 事件到达：重查结果仍为 [0]（与当前一致）→ 守卫跳过 setState
+    AudioCacheEvents.instance.notifyChapterCached(
+      bookUrl: bookUrl,
+      chapterIndex: 0,
+    );
+    await tester.pump();
+    await tester.pump();
+    await tester.pump();
+    expect(audioListCalls, greaterThan(callsBefore), reason: '事件应触发一次重查');
+    expect(
+      identical(beforeEvent, rowTitleWidget(tester, '第一章')),
+      isTrue,
+      reason: '事件重查结果与轮询一致时不应触发 setState 重建',
+    );
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('[B2-EVT] 目录页 dispose 后取消订阅：事件不再触发重查（无泄漏）',
+      (tester) async {
+    stubBook(
+      book: makeBook(),
+      chapters: makeAudioChapters(),
+      audioCached: const [],
+    );
+    await tester.pumpWidget(wrap(TocScreen(book: makeBook())));
+    await settleInitial(tester);
+
+    // 卸载（dispose 取消轮询定时器与事件订阅）
+    await tester.pumpWidget(const SizedBox());
+    final callsAfterDispose = audioListCalls;
+    AudioCacheEvents.instance.notifyChapterCached(
+      bookUrl: bookUrl,
+      chapterIndex: 0,
+    );
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 2));
+    expect(
+      audioListCalls,
+      callsAfterDispose,
+      reason: 'dispose 后不得再响应事件重查（订阅须取消，防泄漏）',
+    );
   });
 
   testWidgets('本地音频书：不显示徽标且零查询（无书源不可缓存 + 原版 isLocalBook 恒 cached）',

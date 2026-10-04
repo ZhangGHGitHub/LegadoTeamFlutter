@@ -14,6 +14,7 @@ import '../models/models.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
+import '../services/audio_cache_events.dart';
 import '../services/book_api.dart';
 import '../services/bookmark_export.dart';
 import '../services/settings_service.dart';
@@ -159,6 +160,12 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// 变为字数胶囊/无图标。
   Timer? _cachePollTimer;
 
+  /// [B2-EVT] 音频缓存变更事件订阅（进程内 broadcast，对齐原版
+  /// EventBus.AUDIO_CACHE_CHANGED 订阅，ChapterListFragment.kt:196-208）：
+  /// 听书页批量预下载每章成功即触发本页立即重查 audioCacheList，
+  /// 徽标刷新无需等待 1s 轮询；dispose 必须取消订阅（防销毁后回调泄漏）。
+  StreamSubscription<AudioCacheChanged>? _audioCacheChangeSub;
+
   /// [P2-29] 失败章节 index 集合（ERROR 态，对齐参考版 failedIndices——
   /// 源自 `CacheBook.downloadStateFlow`）。数据链留项：Rust 批量下载任务表
   /// 仅 failed 计数、无逐章失败记录（补齐需任务表写路径改动，超出本批
@@ -186,6 +193,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
     _loadHighlights();
     // [P2-28b] 页面打开期间每秒轮询缓存状态（本地书恒视为已缓存，免轮询）
     _startCachePolling();
+    // [B2-EVT] 订阅进程内音频缓存变更事件（听书页每章缓存成功后立即重查，
+    // 早于 1s 轮询；本页 dispose 时取消订阅）
+    _audioCacheChangeSub =
+        AudioCacheEvents.instance.stream.listen(_onAudioCacheChanged);
     // 书签按书名+作者加载（对齐原版 bookmarkDao.getByBook，规避同名书混入，
     // 契约 §2.7 getBookmarksByBook，台账 §5.14-2，Task #65）
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -236,6 +247,17 @@ class _TocScreenState extends ConsumerState<TocScreen>
       if (!mounted) return;
       _pollCachedUrls();
     });
+  }
+
+  /// [B2-EVT] 音频缓存变更事件回调（对齐原版 ChapterListFragment.kt:196-208
+  /// 的 AUDIO_CACHE_CHANGED 订阅）：仅供当前书的非本地音频书使用——
+  /// 命中后立即重查 [_pollCachedUrls]（内含 audioCacheList），徽标刷新不等
+  /// 1s 轮询；复用其「无变化跳过 setState」守卫，事件与轮询结果一致时零重建。
+  void _onAudioCacheChanged(AudioCacheChanged event) {
+    if (!mounted) return;
+    if (event.bookUrl != _book.bookUrl) return;
+    if (_isLocal || !_isAudioBook) return;
+    unawaited(_pollCachedUrls());
   }
 
   /// [P2-28b→P2-28c] 轮询缓存态（升级为字数刷新数据链）：单次调用
@@ -306,6 +328,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
   void dispose() {
     appRouteObserver.unsubscribe(this);
     _cachePollTimer?.cancel();
+    // [B2-EVT] 取消事件订阅（防页面销毁后事件回调泄漏）
+    _audioCacheChangeSub?.cancel();
     _debounce?.cancel();
     _tabController.dispose();
     _tocScrollController.dispose();

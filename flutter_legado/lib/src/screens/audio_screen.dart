@@ -14,6 +14,7 @@ import '../providers/audio/audio_notifier.dart';
 import '../providers/providers.dart';
 import '../utils/audio_skip_policy.dart';
 import '../routes.dart';
+import '../services/audio_cache_events.dart';
 import 'source_edit_screen.dart';
 import 'source_login_screen.dart';
 
@@ -1168,6 +1169,16 @@ class _AudioScreenState extends ConsumerState<AudioScreen> {
       }
       if (!mounted || token != _audioCacheRunToken) return;
       _bumpAudioCacheProgress(fail: failed);
+      // [B2-EVT] 每章缓存成功后发进程内事件（对齐原版循环成功分支
+      // postEvent(AUDIO_CACHE_CHANGED)，AudioCacheService.kt:222-225）：
+      // 目录页订阅后立即重查 audioCacheList 亮起徽标，不必等 1s 轮询；
+      // 失败章不发（原版仅 error == null 分支发事件）
+      if (!failed) {
+        AudioCacheEvents.instance.notifyChapterCached(
+          bookUrl: bookUrl,
+          chapterIndex: index,
+        );
+      }
     }
     if (!mounted || token != _audioCacheRunToken) return;
     setState(() => _audioCacheRunning = false);
