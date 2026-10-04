@@ -131,7 +131,7 @@
 
 ### 1.6.1 进程注入型 FFI（void，不经 BookApi，MD3 对齐 2026-09-04）
 
-以下 5 个 `ffi.rs` 导出为 Flutter→Rust 单向进程级注入（返回 void，经 `bridge.*` 直调，不进 `BookApi` 抽象层与方法计数）：
+以下 6 个 `ffi.rs` 导出为 Flutter→Rust 单向进程级注入（返回 void，经 `bridge.*` 直调，不进 `BookApi` 抽象层与方法计数）：
 
 | FFI 函数 | 入参 | 说明 |
 |----------|------|------|
@@ -140,6 +140,7 @@
 | `set_theme_mode` | mode（"0"=跟随系统/"1"=亮/"2"=暗，对齐 Kotlin themeMode） | Batch 0 R2 + R 批 R3：`setThemeMode` 时注入，JS `getThemeMode()` 映射为 auto/light/dark（"0"→auto；未注入回退 light） |
 | `set_read_book_config` | read_json（`get_read_book_config` 同形 JSON） | R 批 R4：阅读配置变更时注入当前阅读配置，JS `getReadBookConfig()` 优先返回注入值，未注入回退硬编码默认 |
 | `set_image_cache_dir` | dir（应用缓存目录下 `image_cache` 子目录，P4-2a） | 与 `set_cache_dir` 同型的进程注入（`set_cache_dir` 服务 JS 缓存）：`saveImageCache`/`getImageCache`（§2.46）图片磁盘缓存落应用私有缓存目录；未注入时回落 `<temp_dir>/legado-image-cache`（一次性告警）。Dart 侧 `RustApi.initialize` 经 `path_provider` 注入 |
+| `set_audio_cache_dir` | dir（应用缓存目录下 `audio_cache` 子目录，B1） | 与 `set_image_cache_dir` 同型：`audioCacheQuery`/`audioCacheList`/`audioCacheClearChapter`/`audioCacheClearBook`（§2.47）音频章节文件缓存的读取根目录；未注入时回落 `<temp_dir>/legado-audio-cache`（一次性告警）。Dart 侧 `RustApi.initialize` 经 `path_provider` 注入 |
 
 > 注入键集合约定（R 批 R5 登记）：`set_theme_config` JSON 必需键 `themeName/isNightTheme/primaryColor/accentColor/backgroundColor/bottomBackground/statusBarColor/navigationBarColor`；可选透传键 `paletteId/背景图路径/blur/圆角覆写` 等（Rust 不解释，原样透传 JS）；注入为进程内存级（RwLock），重启需 Flutter 在 `RustApi.init` 重注，注入前 JS 调用拿到 wh 默认。
 >
@@ -172,9 +173,9 @@
 
 ## 2. 方法清单
 
-> 共 **43 个方法模块**（§2.1–§2.46，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
-> BookApi 接口当前共 **284 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计；2026-10-03 cbz 批 D 将 `cbzReadPage` 封装进 BookApi：283→284）。
-> 附录 §2.x 行合计 **287** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
+> 共 **44 个方法模块**（§2.1–§2.47，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
+> BookApi 接口当前共 **288 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计；2026-10-04 B1 将音频缓存 4 方法封装进 BookApi：284→288）。
+> 附录 §2.x 行合计 **291** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -874,10 +875,30 @@
 
 ---
 
+### 2.47 音频章节文件缓存（audio_cache FFI，4 个方法）
+
+> [B1 | 2026-10-04] 加法式新增（不改既有签名/行为）：**音频章节音频文件的磁盘缓存只读面与清理面**，对齐原版 `AudioCacheManager` / `AudioPlay` 语义。
+> **缓存键规则（严格对齐原版 `app/.../model/AudioCacheKey.kt:20-23`）**：`AudioCacheKey(MD5Utils.md5Encode16(chapterUrl.ifBlank { chapterTitle }))` —— 取**章节 URL**（为空才退回章节标题）的 MD5 小写 hex 中段 16 字符；**不含** `url + "|" + title` 拼接、**不含** bookUrl。`md5Encode16` 口径 = hutool MD5、小写 hex、`hex[8..24)`、UTF-8 字节、**不 trim、大小写敏感**（`MD5Utils.kt:29-33`；Rust 侧逐字节对齐先例见 `image_cache_api.rs:148` / `encoding.rs:36`）。
+> **书级目录**：`{缓存根}/book_{md5Encode16(bookUrl)}`（原版 `AudioCacheManager.kt:210,228`，**即时计算、原版无映射表亦无 DB 记录**）→ 故 bookUrl 必须逐字符一致才能归位，跨应用不可直读原版目录（沙箱不继承 SAF 授权）。
+> **命中判定（简化自原版 `AudioCacheManager.kt:201-203,358-373`）**：命中 = `key16` 匹配 **且** `.complete` 标记文件存在 **且** 音频文件 `size > 0`；同名多条取 `lastModified` 最新者。文件名五段式中的 title / playUrlHash / rev 三段**不参与命中判定**，仅过正则（`AudioCachePolicy.kt:11-13`）。**`.complete` 必须随行校验**：缺标记者原版眼中即不存在，导入/读取一律跳过。
+> **只读面 + 清理面（不设写入面）**：按用户裁决（2026-10-04）「按原版做法」——原版写入只发生于预下载服务 `AudioCacheService`（`AudioCacheService.kt:217` 为全仓唯一 `cacheChapter` 调用方），**播放链从不写**（`AudioPlay.kt:388-413` 播放第一步查缓存、命中完全跳网络）。故本节**不登记任何写入方法**。
+> **不纳入应用内备份**：原版官方备份产物为单一 zip（`help/storage/Backup.kt:122-131,416`，备份项见 `:52-98`），**不含音频缓存**（`help/storage` 包与备份 UI 中 `AudioCache*`/`LegadoAudioCache` 零命中；prefs 快照仅携带 `audioCacheTreeUri` 目录 URI 字符串，`BackupConfig.kt:101-116`）。按用户裁决（2026-10-04）**我方备份同样不含音频缓存**，故本节**不登记导入/导出方法**。
+> 旧键 `${bookUrl.hashCode}_$i.audio`（重构版自创，`audio_screen.dart:996` 唯一引用、**无读取方**）按用户裁决**默认不读、不迁移**（按下标命名，目录重排后必错位且 `hashCode` 碰撞无从校验）。
+> 失败一律降级（查询/列举返回空、清理返回实际删除数），**不抛 FFI 异常**——缓存是加速器不是数据源（同 §2.46 口径）。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `audioCacheQuery({required String bookUrl, required int chapterIndex, required String chapterUrl, required String chapterTitle})` | bookUrl / chapterIndex / chapterUrl / chapterTitle | `Future<bool>` | 查询某章是否已缓存（**只读、幂等**）：按原版键规则计算 `key16` → 在 `{缓存根}/book_{md5_16(bookUrl)}` 下判定 `key16` 匹配 + `.complete` 存在 + size>0。`chapterUrl` 为空时用 `chapterTitle`（原版 `ifBlank` 语义）。目录不存在/无权限/解析异常一律返回 `false`（不抛异常）。Rust FFI 面为 `audio_cache_query(bookUrl, chapterIndex, chapterUrl, chapterTitle) -> Result<bool, BridgeError>` |
+| `audioCacheList({required String bookUrl})` | bookUrl | `Future<List<int>>` | 列出该书**已缓存章节的章节下标数组**（**只读、幂等**）：扫描书目录内文件名，按原版五段式正则解析出章节序号与 `key16`（过不了正则的文件跳过并计数），仅返回通过 `.complete` + size>0 校验的条目，按章节下标升序。无缓存返回空数组 |
+| `audioCacheClearChapter({required String bookUrl, required int chapterIndex, required String chapterUrl, required String chapterTitle})` | 同 `audioCacheQuery` | `Future<int>` | 清理某章缓存，返回**实际删除的文件数**（含 `.complete`，**幂等**：不存在或已删返回 `0`，不抛异常）。只删该 `key16` 下的音频文件与标记，不触碰同目录其他章节 |
+| `audioCacheClearBook({required String bookUrl})` | bookUrl | `Future<int>` | 清理该书**全部**缓存，返回实际删除的文件数（**幂等**）；书目录一并尝试移除。**不跨书**（目录按 `md5_16(bookUrl)` 隔离，不同书互不影响） |
+
+---
+
 ### 2.44 数据层实现备注（不涉契约签名）
 
 > 本节登记数据层内部实现变更预告，均不改变任何契约签名，仅供 Rust 轨实施与双轨知会。
-> 本节不含方法，不计入方法模块数与附录统计（方法模块为 43 个，§2.1–§2.46，编号跳过 2.24/2.27）。
+> 本节不含方法，不计入方法模块数与附录统计（方法模块为 44 个，§2.1–§2.47，编号跳过 2.24/2.27）。
 >
 > ℹ️ **BookRepository::insert 级联删除隐患（第三批后置项，Task #63）**：`BookRepository::insert` 当前走
 > INSERT OR REPLACE，存在外键级联删除隐患；将在本批改为 upsert 链路（内部实现变更，不涉契约签名，不改任何 FFI 行为）。
@@ -1023,11 +1044,12 @@
 | 43 | 缓存写/购买/批量下载/导出扩展（§2.43，Task #136） | 10 |
 | 44 | 字典规则操作 | 7 |
 | 45 | 图片磁盘缓存 | 2 |
-| | **合计（§2.x 附录行合计）** | **287** |
+| 46 | 音频章节文件缓存 | 4 |
+| | **合计（§2.x 附录行合计）** | **291** |
 
-> 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`、2026-09-28 STAGE3-C2B 增 §2.16 单章缓存失效 1 方法 `clearChapterCache`、2026-09-28 P2-28c 增 §2.43 目录实时刷新 1 方法 `listCachedChapters`、2026-09-29 P2-29 增 §2.43 目录下载中态查询 1 方法 `listDownloadingChapters`、2026-09-29 P4-2a 增 §2.46 图片磁盘缓存 2 方法 `saveImageCache`/`getImageCache`、2026-10-03 cbz 批 B 增 §2.34 本地漫画页读取 1 方法 `cbzReadPage`，取代人工统计）：
-> - 附录行合计 **287** = §2.x 实际方法行总数；其中与 BookApi 同名 272（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1）、§1.7 命名等价对的 FFI 登记名 9
+> 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`、2026-09-28 STAGE3-C2B 增 §2.16 单章缓存失效 1 方法 `clearChapterCache`、2026-09-28 P2-28c 增 §2.43 目录实时刷新 1 方法 `listCachedChapters`、2026-09-29 P2-29 增 §2.43 目录下载中态查询 1 方法 `listDownloadingChapters`、2026-09-29 P4-2a 增 §2.46 图片磁盘缓存 2 方法 `saveImageCache`/`getImageCache`、2026-10-03 cbz 批 B 增 §2.34 本地漫画页读取 1 方法 `cbzReadPage`、2026-10-04 B1 增 §2.47 音频章节文件缓存 4 方法，取代人工统计）：
+> - 附录行合计 **291** = §2.x 实际方法行总数；其中与 BookApi 同名 276（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4）、§1.7 命名等价对的 FFI 登记名 9
 >   （对应 8 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
 >   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
-> - BookApi 代码计数 **284** = 272 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1）+ 8 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
+> - BookApi 代码计数 **288** = 276 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4）+ 8 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。
