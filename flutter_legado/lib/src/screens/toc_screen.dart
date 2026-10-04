@@ -1195,7 +1195,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
         iconSize: 16,
         visualDensity: VisualDensity.compact,
         padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+        // 命中区 24×24 对齐参考版（视觉仍 16；16×16 仅参考版面积的
+        // 44%。不上 48：参考版未做，且占满行高有 P2-29 中心裁切回归风险）
+        constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
         style: IconButton.styleFrom(
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
@@ -1222,7 +1224,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
         iconSize: 16,
         visualDensity: VisualDensity.compact,
         padding: EdgeInsets.zero,
-        constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+        // 命中区 24×24 对齐参考版（视觉仍 16；同上不上 48 的理由）
+        constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
         style: IconButton.styleFrom(
           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         ),
