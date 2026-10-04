@@ -286,8 +286,18 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
       _snack('暂无朗读引擎，请到「朗读设置」添加 HTTP TTS 引擎');
       return;
     }
-    // engineUrl 存储格式 "name,url"（与朗读设置页一致），取逗号前部分匹配
-    final currentName = audio.config.engineUrl.split(',').first;
+    // [P0 | 2026-10-03] engineUrl 统一存裸 URL：当前项按 URL 匹配引擎名做
+    // 高亮；存量「名称,URL」复合形态经 normalizeTtsEngineUrl 归一后比对。
+    final currentUrl = normalizeTtsEngineUrl(audio.config.engineUrl);
+    String? currentName;
+    if (currentUrl.isNotEmpty) {
+      for (final engine in engines) {
+        if (normalizeTtsEngineUrl(engine.url) == currentUrl) {
+          currentName = engine.name;
+          break;
+        }
+      }
+    }
     showDialog<void>(
       context: context,
       builder: (dialogContext) => SimpleDialog(
@@ -299,9 +309,11 @@ class _ReadAloudBarState extends ConsumerState<ReadAloudBar> {
               if (v == null) return;
               final engine = engines.firstWhere((e) => e.name == v);
               Navigator.pop(dialogContext);
+              // [P0 | 2026-10-03] 只存裸 URL：合成管线（Rust tts_speak）把
+              // engineUrl 当 URL 模板与缓存键，存「名称,URL」必然合成失败
               ref
                   .read(audioNotifierProvider.notifier)
-                  .updateConfig(engineUrl: '${engine.name},${engine.url}');
+                  .updateConfig(engineUrl: engine.url);
               _snack('已切换引擎：${engine.name}');
             },
             child: Column(

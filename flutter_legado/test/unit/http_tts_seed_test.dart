@@ -9,7 +9,8 @@
 // 本文件钉住修复契约：
 // 1. 种子资产存在且非空（确实存在才导入）；
 // 2. syncDefaultHttpTts 只导入 name/url 非空条目、幂等、失败不抛；
-// 3. 导入即置 isEnabled=false（失效引擎不当可用）；
+// 3. 种子按原版形态全量导入、不做启用态标记（原版 HttpTTS.kt 无 isEnabled
+//    概念；可用性由 URL 兼容性判定在自动选默认引擎时把关，写入启用态列无效）；
 // 4. ensureDefaultHttpTts 版本门控；
 // 5. 自动选默认引擎跳过不兼容模板，只接受 GET+文本占位符。
 import 'dart:convert';
@@ -56,13 +57,11 @@ void main() {
   group('syncDefaultHttpTts 导入', () {
     late MockRustApi api;
     late List<HttpTts> added;
-    late List<({int id, bool enabled})> enableCalls;
     var nextId = 100;
 
     setUp(() {
       api = MockRustApi();
       added = [];
-      enableCalls = [];
       nextId = 100;
       when(() => api.getHttpTts()).thenAnswer((_) async => []);
       when(() => api.addHttpTts(any())).thenAnswer((invocation) async {
@@ -70,17 +69,9 @@ void main() {
         added.add(tts);
         return tts.copyWith(id: nextId++);
       });
-      when(() => api.httpTtsSetEnabled(any(), any()))
-          .thenAnswer((invocation) async {
-        enableCalls.add((
-          id: invocation.positionalArguments[0] as int,
-          enabled: invocation.positionalArguments[1] as bool,
-        ));
-        return true;
-      });
     });
 
-    test('非空种子：导入 name/url 并置 isEnabled=false（如实登记不可用）', () async {
+    test('非空种子：按原版形态导入 name/url（不做启用态标记）', () async {
       final json = jsonEncode([
         {
           'id': -100,
@@ -101,10 +92,9 @@ void main() {
       expect(count, 2);
       expect(added.map((e) => e.name), ['1.百度', '2.阿里云语音']);
       expect(added.first.url, _seedBaiduUrl);
-      expect(enableCalls, [
-        (id: 100, enabled: false),
-        (id: 101, enabled: false),
-      ]);
+      // 不做启用态写入：原版 HttpTTS.kt 无 isEnabled 概念（Dart 侧模型亦无
+      // 该字段），写 httpTTS.isEnabled 列无消费方，属无效调用
+      verifyNever(() => api.httpTtsSetEnabled(any(), any()));
     });
 
     test('空种子 / 空串 / 非法 JSON：返回 0 且不写库、不抛出', () async {
@@ -155,8 +145,6 @@ void main() {
         (invocation) async =>
             (invocation.positionalArguments[0] as HttpTts).copyWith(id: 1),
       );
-      when(() => api.httpTtsSetEnabled(any(), any()))
-          .thenAnswer((_) async => true);
     });
 
     test('首启导入一次并写版本号，再次调用不再导入', () async {
@@ -165,6 +153,7 @@ void main() {
 
       await ensureDefaultHttpTts(api, jsonOverride: json);
       verify(() => api.addHttpTts(any())).called(1);
+      verifyNever(() => api.httpTtsSetEnabled(any(), any()));
 
       await ensureDefaultHttpTts(api, jsonOverride: json);
       verifyNever(() => api.addHttpTts(any()));

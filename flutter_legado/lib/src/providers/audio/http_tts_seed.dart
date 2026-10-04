@@ -42,9 +42,12 @@ bool isCompatibleHttpTtsEngineUrl(String url) {
 /// 「种子确实存在且不为空」才导入：资源缺失/为空/解析失败均返回 0，不抛异常。
 /// 幂等：按 name+url 跳过库中已有行；库为空时逐条经 FFI 落库。
 ///
-/// 可用性如实登记：种子模板依赖当前合成管线不支持的能力（见
-/// [isCompatibleHttpTtsEngineUrl]），导入后统一置 `isEnabled=false`，
-/// 既保留原版数据形态，又不让失效引擎被当作可用。
+/// 种子按原版形态全量导入、不做启用态标记（原版亦无该概念）：`HttpTTS.kt`
+/// 无 `isEnabled` 字段，Flutter `HttpTts` 模型（models/misc.dart）同样没有；
+/// 此前导入后调用的 `httpTtsSetEnabled(id,false)` 只会写 Rust 侧超集列
+/// `httpTTS.isEnabled`，而无任何消费方（列表走 find_all、合成不读该列）——
+/// 属无效写入，已移除。可用性由 [isCompatibleHttpTtsEngineUrl] 在自动选
+/// 默认引擎时按 URL 模板能力把关。
 Future<int> syncDefaultHttpTts(BookApi api, {String? jsonOverride}) async {
   String text;
   if (jsonOverride != null) {
@@ -91,10 +94,7 @@ Future<int> syncDefaultHttpTts(BookApi api, {String? jsonOverride}) async {
     final url = (seed['url'] as String).trim();
     if (!existing.add('$name\u0000$url')) continue;
     try {
-      final added = await api.addHttpTts(HttpTts(name: name, url: url));
-      if (added.id > 0) {
-        await api.httpTtsSetEnabled(added.id, false);
-      }
+      await api.addHttpTts(HttpTts(name: name, url: url));
       imported++;
     } catch (e) {
       debugPrint('httpTTS 种子导入失败（$name）: $e');

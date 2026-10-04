@@ -22,6 +22,39 @@ export 'audio_state.dart';
 /// [A4 | 2026-10-03]
 const String kNoUsableEngineHint = '未配置可用朗读引擎，将按估算节奏朗读';
 
+/// 朗读引擎 URL 归一：把历史「名称,URL」复合形态还原为裸 URL 模板
+///
+/// [P0 | 2026-10-03] 朗读条引擎选择器曾把 `'名称,URL'` 复合串写入
+/// [TtsConfig.engineUrl]（read_aloud_bar.dart），而 Rust `tts_speak` 把该值
+/// 原样当 URL 模板与缓存键（rust/legado-ffi/src/api/tts_speak_api.rs:57-59），
+/// 请求以「名称」开头必然失败 → 选完引擎合成仍报错、朗读落降级提示。
+/// 选择器已改为只存裸 URL；本函数是消费端（audioSpeak 前）的向后兼容兜底，
+/// 兼容同一进程内残留的旧形态状态。
+///
+/// 归一策略（测试钉死）：
+/// - 整串已以 `http://`/`https://` 开头 → 原样返回（URL 自身含逗号也不拆）；
+/// - 否则取「首个其后紧跟 http(s):// 的逗号」之后的部分——名称本身含逗号
+///   （`甲,乙,http://…`）时仍能定位真正的 URL 起点；
+/// - 逗号后不是 http(s) 开头（如原版 POST 模板 `url,{json}`）→ 原样返回，
+///   不做猜测性截断，交由合成管线报错。
+///
+/// 不采用「首个逗号硬拆」：名称可能含逗号，硬拆会把名称残段混进 URL。
+String normalizeTtsEngineUrl(String engineUrl) {
+  final trimmed = engineUrl.trim();
+  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+    return trimmed;
+  }
+  var index = trimmed.indexOf(',');
+  while (index >= 0) {
+    final rest = trimmed.substring(index + 1).trim();
+    if (rest.startsWith('http://') || rest.startsWith('https://')) {
+      return rest;
+    }
+    index = trimmed.indexOf(',', index + 1);
+  }
+  return trimmed;
+}
+
 /// 流媒体进度写库的位置增量阈值（毫秒）
 ///
 /// 播放中高频 onProgress 回调下仅做内存比较，累计播放位置增量达到该阈值
@@ -656,7 +689,10 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
 
     final text = _paragraphs[_paragraphIndex];
     final config = state.config;
-    if (config.engineUrl.trim().isEmpty) {
+    // [P0] 消费端归一：历史「名称,URL」复合形态在此还原为裸 URL 模板，
+    // 避免 Rust tts_speak 把名称前缀当 URL/缓存键（见 normalizeTtsEngineUrl）。
+    final engineUrl = normalizeTtsEngineUrl(config.engineUrl);
+    if (engineUrl.isEmpty) {
       // [A4] 无可用引擎：温和一次性提示（复用 errorMessage 展示面）后按
       // 估算节奏朗读；不视为失败，无正文时前面的空段落判定已提前返回。
       _showNoEngineHintOnce();
@@ -665,22 +701,20 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     }
     String? audioPath;
     Object? failure;
-    if (config.engineUrl.isNotEmpty) {
-      try {
-        audioPath = await _api.audioSpeak(
-          text: text,
-          engineUrl: config.engineUrl,
-          speed: config.speed,
-          pitch: config.pitch,
-          volume: config.volume,
-          voiceName: config.voiceName,
-        );
-      } catch (e) {
-        failure = e;
-      }
-      if (failure == null && (audioPath == null || audioPath.trim().isEmpty)) {
-        failure = StateError('TTS 合成未返回音频文件（引擎或缓存异常）');
-      }
+    try {
+      audioPath = await _api.audioSpeak(
+        text: text,
+        engineUrl: engineUrl,
+        speed: config.speed,
+        pitch: config.pitch,
+        volume: config.volume,
+        voiceName: config.voiceName,
+      );
+    } catch (e) {
+      failure = e;
+    }
+    if (failure == null && (audioPath == null || audioPath.trim().isEmpty)) {
+      failure = StateError('TTS 合成未返回音频文件（引擎或缓存异常）');
     }
     if (_isSpeakStale(token, gen)) return;
 
@@ -704,8 +738,8 @@ class AudioNotifier extends Notifier<AudioState> with ChangeNotifier {
     if (_isSpeakStale(token, gen)) return;
 
     // 降级：合成/播放失败 → 估算时长推进 + 用户可见提示
-    // （无引擎配置时保持既有静默估算行为，不视为失败）
-    if (failure != null && config.engineUrl.isNotEmpty) {
+    // （无引擎配置时已在上面的空判定提前返回，保持既有静默估算行为）
+    if (failure != null) {
       state = state.copyWith(
         errorMessage: '朗读音频不可用，本段按估算时长继续：$failure',
       );
