@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.352] - 2026-10-04
+
+### Fixed
+- [UI] 修复听书页「缓存目录/缓存范围」下载提示与实际缓存读取不一致的问题（提示已缓存但播放时从不读取，等于每次白下载一遍流量；该入口已下线，待按原版预下载服务补齐后恢复）。
+
 ## [2.0.351] - 2026-10-04
 
 ### Fixed
