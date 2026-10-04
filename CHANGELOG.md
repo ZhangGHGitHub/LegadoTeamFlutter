@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.356] - 2026-10-05
+
+### Added
+- [UI] 目录页批量缓存下载失败的章节现在显示红色失败标记（可点击重试），不再静默无提示（对齐参考版失败态）。
+
+### Fixed
+- [Rust] 修复 Web 服务（浏览器书架）搜索/加载时丢失书源登录状态的问题（App 内已登录的书源在 Web 书架现在共享同一登录态，响应的 Cookie 也会写回数据库）。
+
 ## [2.0.355] - 2026-10-04
 
 ### Added
