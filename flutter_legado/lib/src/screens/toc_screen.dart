@@ -54,6 +54,16 @@ import '../utils/book_open_utils.dart';
 /// - [P2-28b] 页面打开期间每秒轮询缓存状态（对齐原版 ChapterListFragment
 ///   订阅 EventBus.SAVE_CONTENT 的行刷新语义）：批量离线缓存下载中，每章正文
 ///   保存后对应行 ⬇ 图标实时变为字数胶囊/无图标，无需退出重进
+/// - [B1-TOC] 音频书章节「已缓存」徽标接线（2026-10-04）：音频书的已缓存
+///   判定改取 BookApi.audioCacheList（契约 §2.47，返回已缓存章节下标集合），
+///   对齐原版 ChapterListFragment.kt:154-184（仅 `if (book.isAudio)` 经
+///   AudioCacheManager.listCachedChapterKeys 取缓存键集合）+
+///   ChapterListAdapter.kt:192-198（音频书 `audioCacheKeys.contains(
+///   AudioCacheKey.from(chapter))`）；1s 轮询同周期追加 audioCacheList
+///   （**仅非本地音频书**，非音频书不消耗此 FFI 调用），无变化与文本缓存
+///   同样跳过 setState、查询失败保留旧态。非音频书仍走
+///   listCachedChapterUrls 文本缓存判定（§2.43.5）不受影响；本地书恒无
+///   徽标（原版 isLocalBook 恒视为已缓存 + 本地书无书源不可缓存）。
 class TocScreen extends ConsumerStatefulWidget {
   /// 书籍对象（路由参数规范化：优先使用 Book 对象）
   final Book book;
@@ -118,6 +128,15 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// 契约 §2.43.5；对齐原版 cacheFileNames.contains(chapter.getFileName()) 判定。
   /// 本地书恒视为已缓存（对齐原版 isLocalBook），不发起查询）
   Set<String> _cachedUrls = const {};
+
+  /// [B1-TOC] 本书已缓存音频章节下标集合（经 BookApi.audioCacheList，
+  /// 契约 §2.47，返回 `List<int>` 已缓存章节下标）。**仅非本地音频书**使用：
+  /// 对齐原版 ChapterListFragment.kt:154-184 的 `if (book.isAudio)` 分支
+  /// （只有音频书经 AudioCacheManager.listCachedChapterKeys 取键，
+  /// ChapterListAdapter.kt:192-198 以 audioCacheKeys 判「已缓存」）；
+  /// 非音频书不走此数据链（不浪费一次 FFI 调用），本地书无书源不可缓存
+  /// 且原版 isLocalBook 恒视为已缓存 → 亦不查询、不显示徽标。
+  Set<int> _audioCachedIndices = const {};
 
   /// [P2-28c] 轮询获得的字数映射（url → wordCount，取 chapters 表当前值，
   /// 仅含非空项）：行渲染时优先于章节数据 wordCount，使新缓存章的字数
@@ -246,8 +265,28 @@ class _TocScreenState extends ConsumerState<TocScreen>
       final downloadingChanged = downloadingSet.difference(_downloadingIndices)
               .isNotEmpty ||
           _downloadingIndices.difference(downloadingSet).isNotEmpty;
+      // [B1-TOC] 音频书音频缓存下标集合（契约 §2.47 audioCacheList）：与文本
+      // 缓存/下载中同周期拉取，仅非本地音频书调用（对齐原版
+      // ChapterListFragment.kt:155 的 `if (book.isAudio)` 分支——非音频书
+      // 不浪费这次 FFI 调用）；单项查询失败保留旧态，不影响目录展示
+      Set<int> audioCached = _audioCachedIndices;
+      if (_isAudioBook && !_isLocal) {
+        try {
+          audioCached =
+              (await api.audioCacheList(bookUrl: _book.bookUrl)).toSet();
+        } catch (_) {
+          audioCached = _audioCachedIndices;
+        }
+      }
+      // 无变化跳过 setState 守卫纳入音频集合（集合为空且未变时同样完全
+      // 跳过，不引入每秒空转重建；长度相等且无新增即等价集合相等）
+      final audioChanged = audioCached.length != _audioCachedIndices.length ||
+          audioCached.difference(_audioCachedIndices).isNotEmpty;
       if (!mounted) return;
-      if (!urlsChanged && !wordCountsChanged && !downloadingChanged) {
+      if (!urlsChanged &&
+          !wordCountsChanged &&
+          !downloadingChanged &&
+          !audioChanged) {
         return;
       }
       setState(() {
@@ -256,6 +295,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
           ..clear()
           ..addAll(entries);
         _downloadingIndices = downloading.toSet();
+        _audioCachedIndices = audioCached;
       });
     } catch (_) {
       // 查询失败保留旧态（不影响目录展示）
@@ -339,6 +379,11 @@ class _TocScreenState extends ConsumerState<TocScreen>
       // 恒视为已缓存（对齐原版 isLocalBook），跳过查询。
       Set<String> cachedUrls = const {};
       List<int> downloading = const [];
+      // [B1-TOC] 音频书初始加载已缓存章节下标集合（契约 §2.47
+      // audioCacheList）：首帧即可渲染音频已缓存章的「已缓存」徽标
+      // （对齐原版 cacheFileJob 建页即 listCachedChapterKeys + 全量刷行）；
+      // 仅非本地音频书查询，失败降级空集（后续 1s 轮询自愈）
+      Set<int> audioCached = const {};
       if (!_isLocal) {
         try {
           cachedUrls =
@@ -352,12 +397,21 @@ class _TocScreenState extends ConsumerState<TocScreen>
         try {
           downloading = await api.listDownloadingChapters(_book.bookUrl);
         } catch (_) {}
+        if (_isAudioBook) {
+          try {
+            audioCached =
+                (await api.audioCacheList(bookUrl: _book.bookUrl)).toSet();
+          } catch (_) {
+            // 查询失败降级为空集，不阻断目录展示（后续 1s 轮询自愈）
+          }
+        }
         if (!mounted) return;
       }
       setState(() {
         _chapters = chapters;
         _cachedUrls = cachedUrls;
         _downloadingIndices = downloading.toSet();
+        _audioCachedIndices = audioCached;
         _chaptersLoading = false;
       });
       // 初次进入自动滚动定位当前章节（按 index 估算偏移）
@@ -456,6 +510,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
       _isLocal &&
       (_book.originName.toLowerCase().endsWith('.txt') ||
           _book.bookUrl.toLowerCase().endsWith('.txt'));
+
+  /// 音频书（位标记判定，对齐原版 Book.isAudio = isType(BookType.audio)；
+  /// bookType 为位标记，须用 `&` 而非 `==`，同 book_open_utils 分流先例）
+  bool get _isAudioBook => (_book.bookType & BookType.audio) != 0;
 
   // ===== 目录展示列表（搜索过滤 + 倒序，保留原始章节 index 供跳转） =====
 
@@ -969,8 +1027,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
   ///   BookApi.listDownloadingChapters 契约 §2.43.7，对齐参考版 LOADING 态
   ///   `AppContainedLoadingIndicator` 16dp 形态）→ 16px 加载指示
   ///   （SizedBox 16 + CircularProgressIndicator strokeWidth 2，着色 primary）
-  /// - ④ 已缓存且无胶囊（网络书 url ∈ _cachedUrls，如字数开关关或 wordCount
-  ///   空）→ 对勾图标（参考版 SUCCESS 态 :1069-1071 CheckCircle，secondary 色）
+  /// - ④ 已缓存且无胶囊（非音频书 url ∈ _cachedUrls；音频书
+  ///   chapter.index ∈ _audioCachedIndices，契约 §2.47，[B1-TOC]；如字数
+  ///   开关关或 wordCount 空）→ 对勾图标（参考版 SUCCESS 态 :1069-1071
+  ///   CheckCircle，secondary 色）
   /// - ⑤ 失败（index ∈ _failedIndices，对齐参考版 ERROR 态）→ 红色重试图标
   ///   （Icons.refresh，error 着色）可点击 → 单章重下复用
   ///   cacheDownloadStart(bookUrl, idx, idx)（契约 §2.43.3 闭区间单章语义）；
@@ -991,7 +1051,16 @@ class _TocScreenState extends ConsumerState<TocScreen>
     final isCurrent = chapter.index == _book.durChapterIndex;
     // [P2-28c] 优先取轮询字数映射（新缓存章胶囊同帧出现），回退章节数据值
     final wordCount = _polledWordCounts[chapter.url] ?? chapter.wordCount;
-    final isCached = !_isLocal && _cachedUrls.contains(chapter.url);
+    // [B1-TOC] 已缓存判定分型（对齐原版 ChapterListAdapter.kt:192-198）：
+    // 音频书取音频缓存下标集合（契约 §2.47 audioCacheList，原版
+    // `audioCacheKeys.contains(AudioCacheKey.from(chapter))`）；非音频书
+    // 沿用文本缓存 URL 判定（契约 §2.43.5 cacheFileNames 等价）。本地书
+    // 恒视为已缓存不显示徽标（原版 isLocalBook → cached=true → 图标隐藏；
+    // 且本地书无书源不可缓存）。分卷章节行走 _buildVolumeRow，不进入本行。
+    final isCached = !_isLocal &&
+        (_isAudioBook
+            ? _audioCachedIndices.contains(chapter.index)
+            : _cachedUrls.contains(chapter.url));
     // [P2-29b] 字数胶囊条件对齐参考版 showCount（:1039-1041）：
     // 开关开 && wordCount 非空 && (本地书 || 网络书已缓存)
     final showCount =
@@ -1044,7 +1113,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
       );
     } else if (isCached) {
       // ④ 已缓存且无胶囊（字数开关关或 wordCount 空）：对勾图标
-      // （参考版 SUCCESS 态 :1069-1071 CheckCircle，secondary 色）
+      // （参考版 SUCCESS 态 :1069-1071 CheckCircle，secondary 色）；
+      // [B1-TOC] 音频书的已缓存判定来自音频缓存下标集合（契约 §2.47）
       statusTrailing = Icon(Icons.check_circle, size: 16, color: cs.secondary);
     } else if (isError) {
       // ⑤ 失败：红色重试图标可点击 → 单章重下（复用 §2.43.3 闭区间单章语义）
