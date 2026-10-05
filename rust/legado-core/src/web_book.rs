@@ -276,6 +276,43 @@ pub trait BookSourceFetcher: Send + Sync {
             .await
     }
 
+    /// 带 book 主键身份的目录获取（目录抓取链 bookUrl 脏值修正，2026-10-05）
+    ///
+    /// 与 [`Self::get_chapters_with_hints_and_vars`] 的唯一差异：`book_url` 仍是
+    /// **本次请求取址点**（详情页 URL，或刷新目录链上调用方解析出的 tocUrl /
+    /// 书籍页取址点），另增 `book_key` 为书籍**稳定主键**。
+    ///
+    /// 对齐原版 `WebBook.getChapterListAwait(bookSource, book)` 的二元语义：
+    /// `book.bookUrl` 恒为主键（`AnalyzeRule` 的 `book` 绑定、章节映射登记、
+    /// `books.variable` 反查均用它），`book.tocUrl` 才是抓取地址；刷新目录链上
+    /// 两者不同（DB `books.tocUrl` 是取址点，主键仍是 `books.bookUrl`）。
+    /// 真实实现须以 `book_key` 作 meta 缓存键、`book` 绑定 bookUrl、DB 变量
+    /// 反查与章节反查登记键，**禁止**把取址点回填为 bookUrl——否则刷新链会把
+    /// tocUrl 写成“书籍取址点”经章节反查泄漏到正文阶段的 `book` 绑定与媒体
+    /// 副内容 sink（弹幕/歌词落库键）。
+    ///
+    /// 默认实现忽略 `book_key`，退化为
+    /// [`Self::get_chapters_with_hints_and_vars`]（Mock/测试实现无需感知）。
+    async fn get_chapters_with_book_key_and_vars(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        book_key: &str,
+        known_toc_url: Option<&str>,
+        book_name_hint: Option<&str>,
+        variables: &std::collections::HashMap<String, String>,
+    ) -> LegadoResult<Vec<WebChapter>> {
+        let _ = book_key;
+        self.get_chapters_with_hints_and_vars(
+            source,
+            book_url,
+            known_toc_url,
+            book_name_hint,
+            variables,
+        )
+        .await
+    }
+
     /// 获取章节正文内容
     ///
     /// - `source`: 书源配置
@@ -552,6 +589,42 @@ impl<F: BookSourceFetcher> WebBookEngine<F> {
             .get_chapters_with_hints_and_vars(
                 source,
                 book_url,
+                known_toc_url,
+                book_name_hint,
+                variables,
+            )
+            .await?;
+        for (i, ch) in chapters.iter_mut().enumerate() {
+            ch.index = i as i32;
+        }
+        Ok(chapters)
+    }
+
+    /// 带 book 主键身份的目录获取（目录抓取链 bookUrl 脏值修正）
+    ///
+    /// 委托 fetcher 的 [`BookSourceFetcher::get_chapters_with_book_key_and_vars`]，
+    /// 章节序号语义与 [`Self::get_chapters`] 一致（从 0 重编号）。`book_url` 为
+    /// 本次请求取址点、`book_key` 为书籍稳定主键（见 trait 方法文档）。
+    pub async fn get_chapters_with_book_key_and_vars(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        book_key: &str,
+        known_toc_url: Option<&str>,
+        book_name_hint: Option<&str>,
+        variables: &std::collections::HashMap<String, String>,
+    ) -> LegadoResult<Vec<WebChapter>> {
+        if book_url.is_empty() {
+            return Err(LegadoError::Parser(
+                "书籍详情页地址为空，无法获取目录（该书源搜索/发现规则未解析出详情链接）".into(),
+            ));
+        }
+        let mut chapters = self
+            .fetcher
+            .get_chapters_with_book_key_and_vars(
+                source,
+                book_url,
+                book_key,
                 known_toc_url,
                 book_name_hint,
                 variables,

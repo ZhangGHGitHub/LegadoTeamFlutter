@@ -2046,9 +2046,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
     /// （原私有具体方法，2026-09-18 提升为 trait 方法使 `webbook_chapters`
     /// 规则路径与 `refresh_toc` 能经泛型/引擎注入 DB `books.variable`）。
     ///
-    /// 对齐原版 getChapterListAwait：目录/详情请求 AnalyzeUrl 以 `ruleData = book`
-    /// 构建（WebBook.kt:312-318），tocUrl/bookUrl 的 `{{key}}` 模板与 `,{json}`
-    /// 请求选项用 book.variable（换源时=候选 ⊕ 详情导出合并值）展开。
+    /// [目录抓取链 bookUrl 脏值修正 2026-10-05] 本方法语义 = 取址点即主键
+    /// （`book_key = book_url`），实际逻辑在
+    /// [`Self::get_chapters_with_book_key_and_vars`]；刷新目录链
+    /// （ffi `refresh_toc`，取址点 = DB `books.tocUrl` ≠ 主键 `books.bookUrl`）
+    /// 经后者显式传入「主键 + 取址点」两个值，不再把取址点回填为 bookUrl。
     async fn get_chapters_with_hints_and_vars(
         &self,
         source: &BookSource,
@@ -2057,6 +2059,48 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         book_name_hint: Option<&str>,
         variables: &std::collections::HashMap<String, String>,
     ) -> LegadoResult<Vec<WebChapter>> {
+        self.get_chapters_with_book_key_and_vars(
+            source,
+            book_url,
+            book_url,
+            known_toc_url,
+            book_name_hint,
+            variables,
+        )
+        .await
+    }
+
+    /// 身份/取址点分离的目录获取核心（覆盖 trait 同名方法）
+    ///
+    /// 对齐原版 getChapterListAwait：目录/详情请求 AnalyzeUrl 以 `ruleData = book`
+    /// 构建（WebBook.kt:312-318），tocUrl/bookUrl 的 `{{key}}` 模板与 `,{json}`
+    /// 请求选项用 book.variable（换源时=候选 ⊕ 详情导出合并值）展开。
+    ///
+    /// - `book_url`：本次请求取址点（详情页 URL / 刷新链 DB `books.tocUrl` /
+    ///   书籍页取址点），仅用于抓取与 base 解析；
+    /// - `book_key`：书籍稳定主键（对齐原版 `book.bookUrl`——`AnalyzeRule` 的
+    ///   `book` 绑定、book meta 缓存键、`books.variable` 反查、章节反查登记键），
+    ///   刷新目录链上 = DB `books.bookUrl`，与取址点不同。空白时退化为
+    ///   `book_url`（历史调用形态：参数即书籍取址点）。
+    ///
+    /// 禁止把取址点回填为 `book_meta.book_url`——否则刷新链会把 tocUrl 当
+    /// “书籍取址点”经 (书源, 章节) 反查泄漏到正文阶段的 `book` 绑定与媒体
+    /// 副内容 sink（弹幕/歌词落库键）。
+    async fn get_chapters_with_book_key_and_vars(
+        &self,
+        source: &BookSource,
+        book_url: &str,
+        book_key: &str,
+        known_toc_url: Option<&str>,
+        book_name_hint: Option<&str>,
+        variables: &std::collections::HashMap<String, String>,
+    ) -> LegadoResult<Vec<WebChapter>> {
+        // 归一：主键空白 → 退化为取址点（参数即书籍取址点的历史调用形态）
+        let book_key = if book_key.trim().is_empty() {
+            book_url
+        } else {
+            book_key.trim()
+        };
         self.deps.rate_limiter.acquire(source).await;
         let source_headers = self.parse_source_headers(source);
         // 书山聚合等聚合源详情/目录 `<js>` 脚本依赖 jsLib 函数（getServerHost 等）
@@ -2085,6 +2129,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 self.fetch_known_toc_body(
                     source,
                     book_url,
+                    book_key,
                     raw_toc,
                     variables,
                     source_headers.as_ref(),
@@ -2097,6 +2142,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 self.fetch_detail_and_derive_toc_body(
                     source,
                     book_url,
+                    book_key,
                     variables,
                     source_headers.as_ref(),
                     js_lib_sanitized.as_deref(),
@@ -2108,15 +2154,17 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         // P2-9 ②：合并详情/目录阶段记录的 book 元信息（缓存里的
         // variable/last_chapter 等字段本次未产出时保留；本次非空字段优先）
-        let mut book_meta = lookup_book_meta_by_book_url(book_url).unwrap_or_default();
+        // [bookUrl 脏值修正] 查/写均以书籍主键 `book_key` 为准（历史语义：
+        // 取址点即主键时二者相同，行为不变）
+        let mut book_meta = lookup_book_meta_by_book_url(book_key).unwrap_or_default();
         if !book_name.trim().is_empty() {
             book_meta.name = book_name.trim().to_string();
         }
         if !book_author.trim().is_empty() {
             book_meta.author = book_author.trim().to_string();
         }
-        if !book_url.trim().is_empty() {
-            book_meta.book_url = book_url.to_string();
+        if !book_key.trim().is_empty() {
+            book_meta.book_url = book_key.to_string();
         }
         if !toc_url.trim().is_empty() {
             book_meta.toc_url = toc_url.trim().to_string();
@@ -2129,7 +2177,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .as_deref()
             .is_none_or(|v| v.trim().is_empty())
         {
-            book_meta.variable = db_book_variable(&self.deps, book_url);
+            book_meta.variable = db_book_variable(&self.deps, book_key);
         }
 
         let chapters = self
@@ -2147,9 +2195,10 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             .await?;
         // P2-9 ②：记录章节 URL → book 映射 + book 元信息（正文阶段反查用）
         // [P2-11 §193] 复合键 (书源 URL, 章节 URL)，同章节 URL 不同书源不串键
+        // [bookUrl 脏值修正] 登记键 = 书籍主键（不得用取址点）
         record_chapter_list_cache(
             &self.deps,
-            book_url,
+            book_key,
             &source.book_source_url,
             &toc_url,
             &book_name,
@@ -2261,11 +2310,15 @@ impl RealBookSourceFetcher {
     /// 解析）。返回（最终目录地址, 目录响应体, 作者, 目录页重定向后最终
     /// URL——[B-11] 经 fetch_page 取 FetchedPage.final_url，供首抓页
     /// redirect 基准贯通）。
+    ///
+    /// `book_key`：书籍稳定主键（仅供 `book` JS 绑定的 bookUrl 字段；
+    /// 抓取与 base 解析仍用取址点 `book_url`）。
     #[allow(clippy::too_many_arguments)] // 逐字迁移原分支参数集，暂不拆结构体
     async fn fetch_known_toc_body(
         &self,
         source: &BookSource,
         book_url: &str,
+        book_key: &str,
         raw_toc: &str,
         variables: &std::collections::HashMap<String, String>,
         source_headers: Option<&HashMap<String, String>>,
@@ -2310,7 +2363,7 @@ impl RealBookSourceFetcher {
                 .with_js_binding(
                     "book",
                     &detail_book_binding(
-                        book_url,
+                        book_key,
                         book_name.as_str(),
                         book_type_of_source(source.book_source_type),
                     ),
@@ -2368,11 +2421,15 @@ impl RealBookSourceFetcher {
     /// 目录页经 302 重定向到更深地址时，首抓页分析器的 redirect 基准必须
     /// 是最终 URL（对齐原版 WebBook.kt:357 `redirectUrl = res.url`），
     /// 否则相对章节/nextTocUrl 链接会拼到重定向前地址上 404。
+    ///
+    /// `book_key`：书籍稳定主键（仅供 `book` JS 绑定的 bookUrl 字段；
+    /// 抓取与 base 解析仍用取址点 `book_url`）。
     #[allow(clippy::too_many_arguments)] // 逐字迁移原分支参数集，暂不拆结构体
     async fn fetch_detail_and_derive_toc_body(
         &self,
         source: &BookSource,
         book_url: &str,
+        book_key: &str,
         variables: &std::collections::HashMap<String, String>,
         source_headers: Option<&HashMap<String, String>>,
         js_lib_sanitized: Option<&str>,
@@ -2408,7 +2465,7 @@ impl RealBookSourceFetcher {
         info_analyzer = info_analyzer.with_js_binding(
             "book",
             &detail_book_binding(
-                book_url,
+                book_key,
                 book_name.as_str(),
                 book_type_of_source(source.book_source_type),
             ),
@@ -5305,6 +5362,97 @@ mod tests {
         assert_eq!(meta_b.book_url, book_b);
         // 第三书源（未记录）反查同章节 URL → None（回退空 name 绑定）
         assert!(lookup_book_meta_for_chapter(src_c, shared_chapter).is_none());
+    }
+
+    /// [目录抓取链 bookUrl 脏值修正 2026-10-05] 刷新目录链端到端：取址点
+    /// （DB `books.tocUrl`，模拟七猫等 tocUrl ≠ bookUrl 的源）与书籍主键
+    /// （DB `books.bookUrl`）不同时，目录阶段 meta 缓存与 (书源, 章节) 反查
+    /// 登记必须用**主键**——修复前 `get_chapters_with_hints_and_vars` 无条件
+    /// 把取址点回填 `book_meta.book_url` 并把章节映射登记到取址点，正文阶段
+    /// 反查即得脏值（V-B1 审查登记的弹幕 sink 静默丢弹幕面根因）。
+    ///
+    /// 对齐原版 WebBook.getChapterListAwait：`book.bookUrl` 恒为主键、
+    /// `book.tocUrl` 才是抓取地址（WebBook.kt:310-326）。
+    #[test]
+    fn test_refresh_chain_uses_book_key_not_fetch_url() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let body = r#"{"rows":[{"url":"/c/1","name":"第一章"},{"url":"/c/2","name":"第二章"}]}"#;
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(body.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+
+        // 刷新链取址点 = DB tocUrl（≠ 主键）；书籍主键 = DB bookUrl
+        let fetch_url = format!("http://127.0.0.1:{port}/toc-page");
+        let book_key = "https://dirty-key-test.example.com/book/1";
+        let source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": "https://dirty-key-test.example.com",
+            "bookSourceName": "脏值回归源",
+            "ruleToc": {
+                "chapterList": "$.rows",
+                "chapterName": "$.name",
+                "chapterUrl": "$.url"
+            }
+        }))
+        .expect("source json");
+
+        let fetcher = test_fetcher();
+        let chapters = block_on(fetcher.get_chapters_with_book_key_and_vars(
+            &source,
+            &fetch_url,
+            book_key,
+            None,
+            None,
+            &HashMap::new(),
+        ))
+        .expect("目录抓取应成功");
+        assert_eq!(chapters.len(), 2, "应解析到 2 个章节");
+
+        // 1) meta 缓存在书籍主键下可命中，且 bookUrl 为主键（非取址点）
+        let meta = lookup_book_meta_by_book_url(book_key).expect("主键应命中 meta");
+        assert_eq!(
+            meta.book_url, book_key,
+            "meta.book_url 必须是书籍主键，不得被取址点覆盖"
+        );
+        assert_eq!(meta.toc_url, fetch_url, "meta.toc_url 才是取址点");
+
+        // 2) 取址点键下不得残留“书籍取址点”脏值
+        assert!(
+            lookup_book_meta_by_book_url(&fetch_url).is_none(),
+            "取址点不得作为书籍主键入缓存（修复前此处即脏值 entry）"
+        );
+
+        // 3) 正文阶段 (书源, 章节) 反查必须得到主键身份
+        let chapter_url = format!("http://127.0.0.1:{port}/c/1");
+        let by_chapter = lookup_book_meta_for_chapter(&source.book_source_url, &chapter_url)
+            .expect("章节 URL 应能反查到 meta");
+        assert_eq!(
+            by_chapter.book_url, book_key,
+            "章节反查身份必须是书籍主键（弹幕/歌词 sink 落库键）"
+        );
     }
 
     /// P2-11 §199：BookMeta 容量判定——更新既有键**不清空**

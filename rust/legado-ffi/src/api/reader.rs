@@ -481,9 +481,24 @@ fn refresh_toc_with_fetcher<F: BookSourceFetcher>(
     );
 
     // 2. 使用 WebBookEngine 从网络获取章节列表（变量表见上方 P2-12 注释）
+    // [bookUrl 脏值修正 2026-10-05] 身份/取址点分离：本入口的 `book_url` 入参
+    // 是书籍稳定主键（DB `find_by_url` 查询键），`fetch_url` 只是取址点
+    //（tocUrl / 书籍页取址点 / 回退 bookUrl）。旧调用把取址点当 book_url 传给
+    // fetcher → 目录阶段 meta 缓存把 tocUrl 记成“书籍取址点”并经 (书源, 章节)
+    // 反查泄漏到正文阶段 `book` 绑定与媒体副内容 sink（弹幕/歌词落库键，
+    // V-B1 审查已登记的静默丢弹幕面）。对齐原版 WebBook.getChapterListAwait
+    //（book.bookUrl 主键 + book.tocUrl 取址点二元语义，WebBook.kt:310-326）。
+    let book_key = book_url;
     let mut web_chapters: Vec<WebChapter> = runtime::block_on(async {
         engine
-            .get_chapters_with_hints_and_vars(&source, &fetch_url, None, None, &toc_variables)
+            .get_chapters_with_book_key_and_vars(
+                &source,
+                &fetch_url,
+                book_key,
+                None,
+                None,
+                &toc_variables,
+            )
             .await
     })?;
 
@@ -502,11 +517,13 @@ fn refresh_toc_with_fetcher<F: BookSourceFetcher>(
         if let Some(retry_url) = retry_url {
             // [P2-12] 重试同样携 DB 变量表（retry_url 为书籍页取址点，
             // 可能含 {{key}} 模板）
+            // [bookUrl 脏值修正] 重试仍以 `book_url` 为主键、retry_url 为取址点
             match runtime::block_on(async {
                 engine
-                    .get_chapters_with_hints_and_vars(
+                    .get_chapters_with_book_key_and_vars(
                         &source,
                         &retry_url,
+                        book_key,
                         None,
                         None,
                         &toc_variables,
@@ -1870,6 +1887,124 @@ mod tests {
             vars[0].get("tok").map(String::as_str),
             Some("TK777"),
             "tok 应自 DB books.variable 传入 fetcher（修复前恒空表）"
+        );
+
+        // 收尾清理，避免污染共享测试库
+        with_database(|db| {
+            let _ = BookChapterRepository::new(db.connection()).delete_by_book_url(book_url);
+            let _ = BookRepository::new(db.connection()).delete(book_url);
+            Ok(())
+        })
+        .ok();
+    }
+
+    // ─── [bookUrl 脏值修正 2026-10-05] 目录抓取链身份/取址点分离测试 ────────
+
+    /// 捕获 refresh_toc 传给 fetcher 的（取址点, 书籍主键）二元组
+    struct KeyCapturingTocFetcher {
+        captured: std::sync::Arc<std::sync::Mutex<Vec<(String, String)>>>,
+    }
+
+    impl BookSourceFetcher for KeyCapturingTocFetcher {
+        async fn search(
+            &self,
+            _source: &BookSource,
+            _query: &str,
+            _page: i32,
+        ) -> LegadoResult<Vec<legado_core::web_book::WebSearchResult>> {
+            Err(LegadoError::Internal("mock: search unused".into()))
+        }
+
+        async fn get_book_info(
+            &self,
+            _source: &BookSource,
+            _book_url: &str,
+        ) -> LegadoResult<legado_core::web_book::WebBookInfo> {
+            Err(LegadoError::Internal("mock: get_book_info unused".into()))
+        }
+
+        async fn get_chapters(
+            &self,
+            _source: &BookSource,
+            _book_url: &str,
+        ) -> LegadoResult<Vec<WebChapter>> {
+            // 旧调用形态（未传书籍主键）落到这里：返回空让红态可见
+            Ok(Vec::new())
+        }
+
+        async fn get_content(
+            &self,
+            _source: &BookSource,
+            _chapter: &WebChapter,
+        ) -> LegadoResult<String> {
+            Err(LegadoError::Internal("mock: content unused".into()))
+        }
+
+        async fn get_chapters_with_book_key_and_vars(
+            &self,
+            _source: &BookSource,
+            book_url: &str,
+            book_key: &str,
+            _known_toc_url: Option<&str>,
+            _book_name_hint: Option<&str>,
+            _variables: &std::collections::HashMap<String, String>,
+        ) -> LegadoResult<Vec<WebChapter>> {
+            self.captured
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .push((book_url.to_string(), book_key.to_string()));
+            Ok(vec![WebChapter {
+                index: 0,
+                title: "第一章".to_string(),
+                url: format!("{book_url}/c1"),
+                is_vip: false,
+                is_volume: false,
+                variable: None,
+                word_count: None,
+            }])
+        }
+    }
+
+    /// [bookUrl 脏值修正] 刷新目录链（入库书）：fetcher 收到的取址点必须是
+    /// DB `books.tocUrl`、书籍主键必须是 DB `books.bookUrl`——修复前旧调用只
+    /// 传 fetch_url（tocUrl）当 book_url，meta 缓存把 tocUrl 记成“书籍取址点”
+    /// → 正文阶段 (书源, 章节) 反查拿到脏值交弹幕 sink（B1 落库侧兜底）。
+    #[test]
+    fn test_refresh_toc_passes_book_key_not_fetch_url() {
+        use std::sync::{Arc, Mutex};
+
+        let book_url = "https://bookkey-not-fetch.example.com/book/1";
+        let source_url = "https://bookkey-not-fetch-src.example.com";
+        let toc_url = "https://bookkey-not-fetch.example.com/toc-page";
+
+        let _db_guard = setup_db_and_source(source_url);
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&legado_core::models::Book {
+                book_url: book_url.to_string(),
+                origin: source_url.to_string(),
+                origin_name: "测试书源".to_string(),
+                name: "主键书".to_string(),
+                toc_url: toc_url.to_string(),
+                ..legado_core::models::Book::default()
+            })?;
+            Ok(())
+        })
+        .expect("初始数据写入失败");
+
+        let captured = Arc::new(Mutex::new(Vec::new()));
+        let fetcher = KeyCapturingTocFetcher {
+            captured: Arc::clone(&captured),
+        };
+        let engine = WebBookEngine::new(fetcher);
+        let resp = refresh_toc_with_fetcher(book_url, source_url, &engine).expect("目录刷新应成功");
+        assert_eq!(resp.total, 1, "应解析到 1 个章节");
+
+        let got = captured.lock().unwrap_or_else(|e| e.into_inner()).clone();
+        assert_eq!(
+            got,
+            vec![(toc_url.to_string(), book_url.to_string())],
+            "刷新链须向 fetcher 传（取址点 = DB tocUrl, 主键 = DB bookUrl）两个值；\
+             修复前只传取址点当 book_url → meta 缓存 bookUrl 脏值"
         );
 
         // 收尾清理，避免污染共享测试库
