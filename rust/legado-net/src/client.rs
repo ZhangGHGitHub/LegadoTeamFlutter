@@ -987,13 +987,35 @@ impl LegadoClient {
 }
 
 /// 将 reqwest::Error 映射为 LegadoError
+///
+/// **错误链必须透传**（V-B 网络排查教训）：reqwest `Display` 只含最外层
+/// （"error sending request for url"），DNS 解析失败 / TCP 拒绝 / TLS 握手
+/// 失败等真因全在 `source()` 链里。600 域名全挂时只看最外层无法区分
+/// 「宿主无网」「DNS 污染」「TLS 证书」三类故障，故逐级拼出完整链。
+fn reqwest_error_chain(e: &reqwest::Error) -> String {
+    let mut msg = e.to_string();
+    let mut src: Option<&dyn std::error::Error> = std::error::Error::source(e);
+    let mut depth = 0;
+    while let Some(s) = src {
+        depth += 1;
+        msg.push_str(&format!(" <- {}", s));
+        if depth >= 5 {
+            break;
+        }
+        src = s.source();
+    }
+    msg
+}
+
+/// 将 reqwest::Error 映射为 LegadoError
 fn map_reqwest_error(e: reqwest::Error) -> LegadoError {
+    let chain = reqwest_error_chain(&e);
     if e.is_timeout() {
-        LegadoError::Timeout(format!("Request timeout: {}", e))
+        LegadoError::Timeout(format!("Request timeout: {chain}"))
     } else if e.is_connect() {
-        LegadoError::Network(format!("Connection failed: {}", e))
+        LegadoError::Network(format!("Connection failed: {chain}"))
     } else {
-        LegadoError::Network(format!("Request failed: {}", e))
+        LegadoError::Network(format!("Request failed: {chain}"))
     }
 }
 

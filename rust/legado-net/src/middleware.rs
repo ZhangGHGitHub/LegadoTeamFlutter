@@ -108,12 +108,25 @@ pub fn make_send_handler(_client: reqwest::Client) -> Next {
     Arc::new(move |req: RequestBuilder| {
         Box::pin(async move {
             req.send().await.map_err(|e| {
+                // 错误链透传（对齐 client.rs::map_reqwest_error）：reqwest
+                // Display 只含最外层，DNS/TCP/TLS 真因在 source() 链里
+                let mut chain = e.to_string();
+                let mut src: Option<&dyn std::error::Error> = std::error::Error::source(&e);
+                let mut depth = 0;
+                while let Some(s) = src {
+                    depth += 1;
+                    chain.push_str(&format!(" <- {}", s));
+                    if depth >= 5 {
+                        break;
+                    }
+                    src = s.source();
+                }
                 if e.is_timeout() {
-                    LegadoError::Timeout(format!("Request timeout: {}", e))
+                    LegadoError::Timeout(format!("Request timeout: {chain}"))
                 } else if e.is_connect() {
-                    LegadoError::Network(format!("Connection failed: {}", e))
+                    LegadoError::Network(format!("Connection failed: {chain}"))
                 } else {
-                    LegadoError::Network(format!("Request failed: {}", e))
+                    LegadoError::Network(format!("Request failed: {chain}"))
                 }
             })
         })
