@@ -448,6 +448,12 @@ class VideoFloatWindowCoordinator {
       case 'onSkipPrevious':
         await _advance(-1, call.arguments);
         return null;
+      case 'onReturnToFullscreen':
+        // [V-B3] 悬浮窗「全屏」→ MainActivity onNewIntent deliverReturn →
+        // 本分支（热路径）；冷启动走 getInitialFloatReturn → handleReturnState。
+        // round1 B3 缺此 case 致热路径静默丢弃、停留书架不回播放页。
+        await handleReturnState(call.arguments);
+        return null;
       case 'onError':
         final msg = (call.arguments is Map)
             ? '${(call.arguments as Map)['message'] ?? ''}'

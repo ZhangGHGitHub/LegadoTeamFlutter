@@ -383,6 +383,42 @@ void main() {
       expect(coord.isCapturing, isFalse);
     });
 
+    test('handleNativeEvent onReturnToFullscreen 分发到 handleReturnState（热路径）', () async {
+      final bridge = _FakeBridge();
+      final coord = VideoFloatWindowCoordinator(bridge: bridge);
+      final api = _FakeBookApi();
+      final book = Book(name: '书', bookUrl: 'book://1', origin: 'o');
+      await coord.enterWindow(
+        state: _state(bookUrl: 'book://1'),
+        book: book,
+        chapters: [BookChapter(url: 'c1', title: '第1集')],
+        api: api,
+      );
+      VideoFloatWindowState? captured;
+      Book? capturedBook;
+      coord.openFullscreen = (state, b) {
+        captured = state;
+        capturedBook = b;
+      };
+
+      // round1 B3 阻塞项回归：Kotlin deliverReturn 发 onReturnToFullscreen，
+      // 修复前 handleNativeEvent 无此 case 静默丢弃（停留书架不回播放页）。
+      await coord.handleNativeEvent(MethodCall('onReturnToFullscreen', {
+        'url': 'https://cdn.example/1.m3u8',
+        'bookUrl': 'book://1',
+        'chapterIndex': 0,
+        'positionMs': 5000,
+        'playing': true,
+      }));
+
+      expect(captured, isNotNull, reason: '热路径必须分发到 handleReturnState');
+      expect(captured!.positionMs, 5000);
+      expect(captured!.playing, isTrue);
+      expect(capturedBook?.bookUrl, 'book://1');
+      expect(api.progressCalls, isNotEmpty);
+      expect(coord.isCapturing, isFalse);
+    });
+
     test('probeAndTakeOver 同源接管 / 异源关闭并落库', () async {
       final bridge = _FakeBridge();
       final coord = VideoFloatWindowCoordinator(bridge: bridge);
