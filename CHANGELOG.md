@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.361] - 2026-10-05
+
+### Fixed
+- [UI] 修复悬浮窗点「全屏」后停留书架、不回到视频播放页的问题（热路径分发缺失）。
+- [UI] 修复从悬浮窗冷启动应用时视频页被书架页替换的问题（路由时序竞争）。
+
 ## [2.0.360] - 2026-10-05
 
 ### Added
