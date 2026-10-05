@@ -121,3 +121,46 @@ fn url_map_jslib_routes_to_fresh_path() {
         "from-map"
     );
 }
+
+/// ⑥ W2（审查建议项 2，2026-10-06）：JS 源链构造（`JsSourceEngine::new_quickjs`
+/// ← `build_js_orchestrator`）此前丢弃 js_lib_ok 静默降级；对齐上游
+/// `JsSourceEngine.buildScope` → `getShareScope` → `evaluateJsLib` 失败直接抛，
+/// 现与主链同口径带原因上抛。
+#[test]
+fn js_source_engine_construction_surfaces_jslib_failure() {
+    let _guard = cache_guard();
+    engine_cache::clear_for_tests();
+    let config = legado_js::JsSourceConfig::new(
+        "p0b-js-source".to_string(),
+        "function search() { return 'x'; }".to_string(),
+    )
+    .with_js_lib(bad_lib());
+    let err = match legado_js::JsSourceEngine::new_quickjs(config) {
+        Ok(_) => panic!("JS 源构造期 jsLib 求值失败应上抛（不得静默降级）"),
+        Err(e) => e,
+    };
+    let msg = err.to_string();
+    assert!(
+        msg.contains("jsLib 求值失败"),
+        "错误应带根因前缀「jsLib 求值失败」: {msg}"
+    );
+    assert!(
+        msg.contains("__p0b_missing_lib__"),
+        "错误应保留原始失败原因（台账 last_jslib_error）: {msg}"
+    );
+}
+
+/// ⑥b 对照组（同一修复面）：JS 源 jsLib 正常时构造不受上抛改动影响
+#[test]
+fn js_source_engine_valid_jslib_still_constructs() {
+    let _guard = cache_guard();
+    engine_cache::clear_for_tests();
+    let config = legado_js::JsSourceConfig::new(
+        "p0b-js-source-ok".to_string(),
+        "function search() { return libMarker(); }".to_string(),
+    )
+    .with_js_lib("function libMarker(){ return 'ok'; }".to_string());
+    let engine =
+        legado_js::JsSourceEngine::new_quickjs(config).expect("正常 jsLib 的 JS 源构造不得受影响");
+    assert!(engine.is_main_js_loaded(), "构造期 mainJs 应已 eval 成功");
+}

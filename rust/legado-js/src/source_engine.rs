@@ -142,7 +142,8 @@ impl JsSourceEngine {
         // 副作用（如 mainJs 顶层 `java.ajax`）须携带本源 JS 宿主 cookie；不绑定
         // 则落入「未归属上下文」，连本源自己的 cookie 也不携带（回归面）。
         // 缓存键含 source_url：命中时 get_or_create 为 no-op，包裹恒正确。
-        let (pooled_engine, _js_lib_ok, main_js_status) =
+        // 元组顺序为 (engine, main_js_ok, js_lib_ok)（engine_cache.rs:132/160/182）
+        let (pooled_engine, main_js_ok, js_lib_ok) =
             crate::host_api::current_source::with_current_source_tag(&config.source_url, || {
                 crate::engine_cache::get_or_create(
                     &cache_key,
@@ -151,9 +152,31 @@ impl JsSourceEngine {
                     Some(&config.main_js),
                 )
             })?;
+        // W2（审查建议项 2，2026-10-06）：构造期 jsLib 求值失败 → 带原因上抛，
+        // 与 e73cf37d8f 主链（executor.rs `js_lib_ok == Some(false)` 分支）同口径。
+        // 上游 JS 源链同样硬失败：`JsSourceEngine.buildScope` 每次调用经
+        // `source.getShareScope()`（BaseSourceExtensions.kt:13-15）→
+        // `SharedJsScope.getScope` → `evaluateJsLib`（SharedJsScope.kt:231-258，
+        // 无 catch 直接抛）；本构造是 Rust 侧 jsLib 唯一求值点，静默则缺库函数
+        // 只会推迟到 mainJs/调用表达式引用点爆 `xxx is not defined`（点位后移、
+        // 文案失真——正是 P0-B 修复要消除的形态）。原因取台账最后错误摘要
+        //（engine_cache::init_engine 已按本缓存键 record_jslib_load_failure）；
+        // jsLib 内容变化会触发缓存条目重建，失败不粘滞（engine_cache.rs:148-161）。
+        //
+        // 附带纠正：此前解构把第 2/3 位当成了 (js_lib_ok, main_js_status)，
+        // 实际顺序是 (main_js_ok, js_lib_ok)——导致 main_js_loaded 由 jsLib
+        // 状态驱动（mainJs 构造期失败时反而跳过首次带 bindings 重评，与下方
+        // 注释声明的语义相反）。现按真实语义消费（jsLib 失败已在上方上抛，
+        // 此处 main_js_loaded 只由 mainJs 状态决定）。
+        if js_lib_ok == Some(false) {
+            let reason = crate::host_api::capability_ledger::last_jslib_error(&cache_key)
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| "原因未记录（见 capability_ledger）".to_string());
+            return Err(LegadoError::JsEngine(format!("jsLib 求值失败: {reason}")));
+        }
         // 构建时 mainJs eval 失败（如顶层引用注入变量）→ 不标记 loaded，
         // 首次 invoke 走既有带 bindings 重评路径（与旧实现错误语义一致）。
-        let main_js_loaded = !matches!(main_js_status, Some(false));
+        let main_js_loaded = !matches!(main_js_ok, Some(false));
         Ok(Self {
             engine: None,
             engine_pool: None,
@@ -607,5 +630,34 @@ function search(q) {{ return q; }}"#
         );
         cookie_store::clear_cookies(&echo_url);
         drop(_lock);
+    }
+
+    /// W2 附带纠正（2026-10-06）：`engine_cache::get_or_create` 元组为
+    /// `(engine, main_js_ok, js_lib_ok)`，旧解构错位导致 `main_js_loaded`
+    /// 实际由 jsLib 状态驱动——构造期 mainJs 失败（如顶层引用仅调用期注入
+    /// 的绑定）时反而跳过首次带 bindings 重评。现按真实语义消费：
+    /// mainJs 构造期失败 → 不标记 loaded → 首次 call_function 重评后可用。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn construction_main_js_failure_retries_with_bindings_on_first_call() {
+        let _guard = crate::engine_cache::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        crate::engine_cache::clear_for_tests();
+        // 顶层引用 baseUrl：构造期无 bindings 必失败；调用期 bindings 注入
+        // baseUrl=source_url，重评可恢复（旧行为会跳过重评 → search 未定义）
+        let config = JsSourceConfig::new(
+            "w2-mainjs-retry".to_string(),
+            "var __top = baseUrl;\nfunction search(){ return __top; }".to_string(),
+        );
+        let mut engine = JsSourceEngine::new_quickjs(config).expect("jsLib 为空，不受 W2 上抛影响");
+        assert!(
+            !engine.is_main_js_loaded(),
+            "构造期 mainJs 求值失败必须不标记 loaded（带 bindings 重评路径）"
+        );
+        let out = engine
+            .call_function("search", &[])
+            .expect("首次调用应带 bindings 重评 mainJs");
+        assert_eq!(out.as_deref(), Some("w2-mainjs-retry"));
     }
 }

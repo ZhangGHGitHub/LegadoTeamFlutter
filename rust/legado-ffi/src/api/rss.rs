@@ -217,6 +217,14 @@ pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
         } else {
             None
         };
+        // data URI 短路豁免登记（审查 2026-10-06 建议项 3，不改行为）：
+        // feed_url 来自 rssSources.sourceUrl —— RSS 源的唯一标识/用户显式配置
+        // 项，上游 RSS 源均为 http(s)，不经书源 jsLib/规则生成，故不属于
+        // 「书源规则面」；data: 形态不构成现实缺陷面，此处不做统一短路。
+        // 书源规则面直连路径（fetch_page / fetch_simple_cached / search
+        // send_raw / dict send_text / explore）均已在 fd04ee1154 批次接入
+        // `data_uri_content_of` 同款短路。若未来 RSS 源支持 jsLib 或规则
+        // 生成 feedUrl，再评估接入，勿重复排查此点。
         let response = client.get(&feed_url, headers_opt).await?;
         if !response.is_success() {
             return Err(LegadoError::Network(format!(

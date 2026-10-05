@@ -17,9 +17,56 @@
 
 #![cfg(feature = "quickjs")]
 
-use legado_js::engine::{JsEngine, QuickJsEngine};
+use std::io::{Read, Write};
+
+use legado_js::engine::{JsEngine, JsValue, QuickJsEngine};
 use legado_js::host_api::current_source;
 use legado_js::sandbox::SandboxConfig;
+
+/// 最小本地回环 HTTP/1.1 服务（模式同 `str_response_tianlai_loopback.rs`）：
+/// 仅为 W1 用例按请求线路由 `/first`、`/second` 返回可区分的正文。
+fn spawn_first_element_loopback_server(max_conns: usize) -> std::net::SocketAddr {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind 127.0.0.1:0");
+    let addr = listener.local_addr().expect("local_addr");
+    std::thread::spawn(move || {
+        for stream in listener.incoming().take(max_conns) {
+            let Ok(mut sock) = stream else { continue };
+            let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+            let mut buf: Vec<u8> = Vec::new();
+            let mut byte = [0u8; 1];
+            let mut ok = true;
+            while !buf.ends_with(b"\r\n\r\n") {
+                if sock.read_exact(&mut byte).is_err() {
+                    ok = false;
+                    break;
+                }
+                buf.push(byte[0]);
+            }
+            if !ok {
+                continue;
+            }
+            let head = String::from_utf8_lossy(&buf);
+            let path = head
+                .lines()
+                .next()
+                .and_then(|line| line.split_whitespace().nth(1))
+                .unwrap_or_default()
+                .to_string();
+            let body = match path.as_str() {
+                "/first" => "first-body",
+                "/second" => "second-body",
+                _ => "other",
+            };
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = sock.write_all(resp.as_bytes());
+        }
+    });
+    addr
+}
 
 /// 与生产 `QuickJsExecutor` fresh 路径同源的引擎配置
 fn production_engine() -> QuickJsEngine {
@@ -136,6 +183,36 @@ fn scalar_string_params_coerce_js_values_like_rhino() {
             });
             assert_eq!(out, expect, "{expr}（{why}）");
         }
+    });
+}
+
+/// W1（审查建议项 1，2026-10-06）：`java.ajax(数组)` 取**首元素**请求
+///
+/// 上游 `JsExtensions.kt:130-137` 对 `List<*>` 形参取
+/// `firstOrNull().toString()` 后按单个 URL 请求（原版书源可用形态）；
+/// 修复前本引擎通用 RhinoStr 把数组 join(',') 拼成 `"url1,url2"` 逗号粘连
+/// URL → 请求落到错误路由（红态实测首元素路由未命中）。修复后必须请求
+/// 首元素——本地回环断言首元素路由的正文。
+#[test]
+fn ajax_array_arg_requests_first_element() {
+    let addr = spawn_first_element_loopback_server(4);
+    let engine = production_engine();
+    let url1 = format!("http://{addr}/first");
+    let url2 = format!("http://{addr}/second");
+    current_source::with_current_source_tag("e2e.ajax-first-element", || {
+        let out: String = JsEngine::eval_with_bindings(
+            &engine,
+            "java.ajax([u1, u2])",
+            &[
+                ("u1", JsValue::String(url1.clone())),
+                ("u2", JsValue::String(url2.clone())),
+            ],
+        )
+        .expect("数组入参不得抛转换错误（上游原版可用形态）");
+        assert_eq!(
+            out, "first-body",
+            "应请求数组首元素（对齐上游 firstOrNull()）；观测: {out}"
+        );
     });
 }
 

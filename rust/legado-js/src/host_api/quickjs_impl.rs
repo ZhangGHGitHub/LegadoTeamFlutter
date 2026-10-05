@@ -118,6 +118,39 @@ impl<'js> rquickjs::FromJs<'js> for LooseStrList {
     }
 }
 
+/// `java.ajax` 单数形式的入参（数组 → 取首元素，对齐上游
+/// `JsExtensions.kt:130-137`：`if (url is List<*>) url.firstOrNull().toString()`
+/// `else url.toString()`）。
+///
+/// 背景（审查建议项 1，2026-10-06）：`java.ajax([url1, url2])` 在上游原版
+/// 实际请求 `url1`（`firstOrNull()` 后按单 URL 处理）；通用 [`RhinoStr`] 的
+/// 数组语义是 Rhino `ToString` 的 `join(',')`（见 `coerce.rs` 探针表），会把
+/// 数组拼成 `"url1,url2"` 的逗号粘连 URL → 请求落到错误目标（原版可用的
+/// 形态在我方失败）。故仅本 API 用「数组 → 首元素」收敛；
+/// `ajaxAll`/`ajaxTestAll` 等上游 `Array<String>` 契约点继续走
+/// [`LooseStrList`]（JSON 数组文本），两者互不牵连。
+///
+/// 边界：空数组 / 首元素 null → `"null"`（对齐 Kotlin `firstOrNull().toString()`
+/// 的 `Any?.toString()` 语义）；其余首元素与 [`RhinoStr`] 同款 JS `ToString`。
+struct AjaxUrlStr(String);
+
+impl<'js> rquickjs::FromJs<'js> for AjaxUrlStr {
+    fn from_js(ctx: &rquickjs::Ctx<'js>, value: rquickjs::Value<'js>) -> rquickjs::Result<Self> {
+        if let Some(arr) = value.as_array() {
+            let first: rquickjs::Value<'js> = arr.get(0)?;
+            if first.is_undefined() || first.is_null() {
+                return Ok(AjaxUrlStr("null".to_string()));
+            }
+            return Ok(AjaxUrlStr(
+                rquickjs::Coerced::<String>::from_js(ctx, first)?.0,
+            ));
+        }
+        Ok(AjaxUrlStr(
+            rquickjs::Coerced::<String>::from_js(ctx, value)?.0,
+        ))
+    }
+}
+
 /// 将所有宿主 API 注册到 QuickJS 全局上下文
 ///
 /// 每个函数同时挂载到 `java` 命名空间对象和裸全局，
@@ -2579,13 +2612,15 @@ fn register_network_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // ajax(options_json) -> String（HttpResponse JSON）
+    // ajax(url | options_json) -> String
+    // 入参经 AjaxUrlStr 收敛：数组 → 首元素（对齐上游 JsExtensions.kt:133）；
+    // 非数组（裸 URL 串 / JSON options）与 RhinoStr 同款 JS ToString。
     mount_dual(
         java,
         globals,
         "ajax",
-        rquickjs::Function::new(ctx.clone(), |options: RhinoStr| -> String {
-            network::ajax(&options).unwrap_or_else(|e| format!("[ERROR] {}", e))
+        rquickjs::Function::new(ctx.clone(), |options: AjaxUrlStr| -> String {
+            network::ajax(&options.0).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
