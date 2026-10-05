@@ -1251,6 +1251,14 @@ abstract class BookApi {
     required int chapterIndex,
   });
 
+  /// 解析 B 站弹幕 XML 为结构化弹幕项（契约 §2.50，V-B2 视频弹幕解析）
+  ///
+  /// 纯函数（Rust 侧 `parse_video_danmaku`）：`<d p="时间秒,类型,字号,颜色,...">`
+  /// → [VideoDanmakuItem] 列表（按 timeMs 升序）；类型 2/3/8 静默丢弃对齐原版；
+  /// type7 保留 JSON 属性原文（V-B2 不渲染，登记边界）；解析失败/非 XML/空
+  /// → `null`（对齐原版 SAX 失败→null 静默无弹幕）。Dart 侧仅 JSON 解码。
+  Future<List<VideoDanmakuItem>?> parseVideoDanmaku({required String raw});
+
   // ========== WebDAV 云同步 ==========
 
   /// WebDAV 列出远程目录

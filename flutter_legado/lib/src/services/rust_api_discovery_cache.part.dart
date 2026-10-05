@@ -484,6 +484,32 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
     }
   }
 
+  // ========== 视频弹幕解析（契约 §2.50，V-B2） ==========
+
+  /// 解析 B 站弹幕 XML（Rust 纯函数；降级路径返回 null）
+  ///
+  /// 直通 FFI 后仅做 JSON 解码 + 模型映射，不含 XML 语义逻辑（p 属性、
+  /// 类型过滤、实体解码均在 Rust）。FFI 不可用 / 返回 null / JSON 形状
+  /// 异常统一降级 `null`（弹幕是增强层不是数据源，对齐 §2.50 口径）。
+  @override
+  Future<List<VideoDanmakuItem>?> parseVideoDanmaku({
+    required String raw,
+  }) async {
+    try {
+      final json = await bridge.parseVideoDanmaku(raw: raw);
+      if (json == null) return null;
+      final decoded = jsonDecode(json);
+      if (decoded is! List) return null;
+      return decoded
+          .whereType<Map<String, dynamic>>()
+          .map(VideoDanmakuItem.fromJson)
+          .toList();
+    } catch (e) {
+      debugPrint('[RustApi] parseVideoDanmaku 失败（降级 null）：$e');
+      return null;
+    }
+  }
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）

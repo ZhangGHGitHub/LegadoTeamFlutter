@@ -29,6 +29,8 @@ rusqlite = { version = "0.31", features = ["bundled"] }
 r2d2 = "0.8"
 r2d2_sqlite = "0.24"
 chrono = "0.4"
+# [V-B2 | 2026-10-05] B 站弹幕 XML 解析（契约 §2.50）；与 legado-book/legado-net 同版本
+quick-xml = "0.42"
 flutter_rust_bridge = "=2.11.1"
 
 [dev-dependencies]

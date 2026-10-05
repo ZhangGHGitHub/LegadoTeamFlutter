@@ -202,4 +202,36 @@ void main() {
       await server.close(force: true);
     }
   });
+
+  test('parseVideoDanmaku（§2.50）：真实 DLL 解析 B 站 XML → 结构化弹幕项；非法 → null', () async {
+    const xml = '<i>'
+        '<d p="2.0,5,25,16711680">顶部</d>'
+        '<d p="0.5,1,25,16777215">滚动</d>'
+        '<d p="1,2,25,0">类型2丢弃</d>'
+        '</i>';
+
+    // RustApi 通道：JSON → 模型列表（升序、类型过滤、字段口径）
+    final items = await api.parseVideoDanmaku(raw: xml);
+    expect(items, isNotNull, reason: '真实 DLL 应返回解析结果');
+    expect(items!.length, 2, reason: 'type2 应静默丢弃');
+    final first = items.first;
+    expect(first.timeMs, 500);
+    expect(first.type, 1);
+    expect(first.textSizeRaw, 25.0);
+    expect(first.color, -1); // 0xFFFFFFFF as i32
+    expect(first.text, '滚动');
+    expect(items.last.type, 5);
+    expect(items.last.timeMs, 2000);
+
+    // bridge 直通道与 RustApi 结果一致（同一纯函数）
+    final json = await bridge.parseVideoDanmaku(raw: xml);
+    expect(json, isNotNull);
+    final decoded = (jsonDecode(json!) as List).cast<Map<String, dynamic>>();
+    expect(decoded.length, 2);
+    expect(decoded.first['text'], '滚动');
+
+    // 非 XML / 空 → null（对齐原版 SAX 无容错）
+    expect(await api.parseVideoDanmaku(raw: '不是XML'), isNull);
+    expect(await api.parseVideoDanmaku(raw: ''), isNull);
+  });
 }

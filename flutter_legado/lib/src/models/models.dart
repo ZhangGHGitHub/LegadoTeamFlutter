@@ -13,4 +13,6 @@ export 'rss_source.dart';
 export 'rule_sub.dart';
 export 'search_result.dart';
 export 'source_match.dart';
+// [V-B2 | 2026-10-05] 视频弹幕项（契约 §2.50）
+export 'video_danmaku_item.dart';
 export 'rule/rule.dart';

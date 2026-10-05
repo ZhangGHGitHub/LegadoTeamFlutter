@@ -1959,6 +1959,7 @@ dependencies = [
  "libc",
  "log",
  "md5",
+ "quick-xml",
  "r2d2",
  "r2d2_sqlite",
  "regex",

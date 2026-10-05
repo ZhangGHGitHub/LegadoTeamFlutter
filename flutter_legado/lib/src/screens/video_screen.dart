@@ -11,8 +11,10 @@ import 'package:video_player/video_player.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../services/book_api.dart';
 import '../utils/video_play_utils.dart';
 import '../widgets/app_progress_indicator.dart';
+import '../widgets/video_danmaku_layer.dart';
 import '../widgets/video_settings_dialog.dart';
 
 /// 视频播放页面
@@ -101,6 +103,18 @@ class _VideoScreenState extends State<VideoScreen> {
   /// 当前播放倍速（会话级，对齐原版 VideoPlayer.playSpeed：
   /// 视图级成员、切集保留、不持久化；1.0 = 正常）
   double _playbackSpeed = 1.0;
+
+  // ===== [V-B2 | 2026-10-05] 视频弹幕（契约 §2.49 数据 + §2.50 解析） =====
+
+  /// 当前章节弹幕项（Rust 解析结果；空 = 无弹幕或解析失败）
+  List<VideoDanmakuItem> _danmakuItems = const [];
+
+  /// 当前章节是否有弹幕原文（对齐原版 VideoPlayer.kt:266-272：
+  /// 原文为空 → 开关 GONE；原文非空但解析失败 → 开关保留、画面为空）
+  bool _danmakuAvailable = false;
+
+  /// 弹幕显隐开关（对齐原版 VideoPlay.danmakuShow，默认 true、会话级保持）
+  bool _danmakuShow = true;
 
   /// 浮层提示文案（对齐原版 tip_view / showOverlayTip）
   String? _tipText;
@@ -248,6 +262,44 @@ class _VideoScreenState extends State<VideoScreen> {
     }
   }
 
+  /// 加载当前章弹幕：§2.49 原文 → §2.50 Rust 纯函数解析 → 渲染层数据
+  ///
+  /// 无记录/读失败/解析失败一律降级为空列表（弹幕是增强层）；[raw] 非空
+  /// 即显示开关（对齐原版 VideoPlayer.kt:266-272：原文非空但解析失败时
+  /// 开关仍在、画面无弹幕）。
+  Future<void> _loadDanmakuForChapter(BookApi api, int index) async {
+    final book = widget.book;
+    if (book == null) return;
+    String? raw;
+    try {
+      raw = await api.getVideoDanmaku(
+        bookUrl: book.bookUrl,
+        chapterIndex: index,
+      );
+    } catch (_) {
+      raw = null;
+    }
+    if (!mounted) return;
+    if (raw == null || raw.trim().isEmpty) {
+      setState(() {
+        _danmakuAvailable = false;
+        _danmakuItems = const [];
+      });
+      return;
+    }
+    List<VideoDanmakuItem>? items;
+    try {
+      items = await api.parseVideoDanmaku(raw: raw);
+    } catch (_) {
+      items = null;
+    }
+    if (!mounted) return;
+    setState(() {
+      _danmakuAvailable = true;
+      _danmakuItems = items ?? const [];
+    });
+  }
+
   /// 播放指定章节：正文 → [resolveVideoPlayTarget] → 播放器
   Future<void> _playChapter(int index) async {
     final book = widget.book!;
@@ -276,6 +328,8 @@ class _VideoScreenState extends State<VideoScreen> {
           ? await api.fetchChapterContent(
               book.bookUrl, chapter.url, book.origin)
           : await api.getChapterContent(book.bookUrl, index);
+      // [V-B2] 弹幕与正文同链加载：§2.49 原文 → §2.50 Rust 解析
+      await _loadDanmakuForChapter(api, index);
       final target = resolveVideoPlayTarget(
         content: content,
         chapterUrl: chapter.url,
@@ -725,6 +779,15 @@ class _VideoScreenState extends State<VideoScreen> {
             fit: StackFit.expand,
             children: [
               VideoPlayer(_controller),
+              // [V-B2] 弹幕层：视频之上、控制层之下（对齐原版
+              // video_layout_controller.xml 中 danmaku_view 的层序）
+              if (_danmakuAvailable)
+                VideoDanmakuLayer(
+                  items: _danmakuItems,
+                  player: _controller,
+                  show: _danmakuShow,
+                  playbackSpeed: _playbackSpeed,
+                ),
               if (_showControls) _buildOverlayControls(),
               // [P4-3 波次1b V3] 原版 tip_view：画面居中提示（如「1.5倍播放中」）
               if (_tipText != null)
@@ -842,6 +905,20 @@ class _VideoScreenState extends State<VideoScreen> {
                       color: _isFullScreen ? Colors.white70 : null,
                     ),
                   ),
+                  // [V-B2] 弹幕开关（对齐原版控制器条 toggle_danmaku：
+                  // 仅一个文本按钮「关弹幕/开弹幕」，无弹幕时 GONE）
+                  if (_danmakuAvailable)
+                    TextButton(
+                      onPressed: () =>
+                          setState(() => _danmakuShow = !_danmakuShow),
+                      child: Text(
+                        _danmakuShow ? '关弹幕' : '开弹幕',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: _isFullScreen ? Colors.white : null,
+                        ),
+                      ),
+                    ),
                   const Spacer(),
                   // [P4-3 波次1b V3] 选集/倍速入口。原版二者仅存在于全屏控制器
                   // （video_layout_controller_full.xml 的 episode_list /

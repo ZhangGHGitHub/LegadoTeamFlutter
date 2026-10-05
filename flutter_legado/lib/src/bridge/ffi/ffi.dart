@@ -1554,6 +1554,18 @@ Future<String?> getVideoDanmaku({
   chapterIndex: chapterIndex,
 );
 
+/// 解析 B 站弹幕 XML（V-B2，API_CONTRACT §2.50）
+///
+/// **纯函数、无 IO/DB**：`<d p="时间秒,类型,字号,颜色,...">文本</d>` →
+/// JSON 数组 `[{"timeMs":int,"type":int,"textSizeRaw":double,"color":int,
+/// "text":String}]`，按 timeMs 稳定升序。类型映射对齐 DanmakuFlameMaster
+/// 0.9.25（1/4/5/6/7 保留，2/3/8 及范围外静默丢弃）；type7 仅保留 JSON
+/// 属性原文（V-B2 不渲染，登记边界）；解析失败/非 XML/空 → `Ok(None)`
+/// （对齐原版 SAX 失败→null 静默无弹幕）；单行 p 畸形跳过该行继续
+/// （原版此处会抛运行时异常——宿主安全偏离，已在 video_api 注释登记）。
+Future<String?> parseVideoDanmaku({required String raw}) =>
+    RustLib.instance.api.crateFfiFfiParseVideoDanmaku(raw: raw);
+
 /// 写入/覆盖单章缓存（Task #136 R5，API_CONTRACT §2.43.1）
 ///
 /// `title` / `chapter_url` 为空串时从 DB 章节表回填；
