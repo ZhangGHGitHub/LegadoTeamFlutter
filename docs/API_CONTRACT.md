@@ -176,9 +176,9 @@
 
 ## 2. 方法清单
 
-> 共 **45 个方法模块**（§2.1–§2.48，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
-> BookApi 接口当前共 **291 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计；2026-10-04 B1 将音频缓存 4 方法封装进 BookApi：284→288；2026-10-03 B2 冻结音频预下载写入面 2 方法，契约先行、待实现批封装进 BookApi：288→290；2026-10-05 P2-29c 后续批冻结失败章查询 1 方法，契约先行、待实现批封装进 BookApi：290→291）。
-> 附录 §2.x 行合计 **294** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
+> 共 **46 个方法模块**（§2.1–§2.49，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
+> BookApi 接口当前共 **292 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计；2026-10-04 B1 将音频缓存 4 方法封装进 BookApi：284→288；2026-10-03 B2 冻结音频预下载写入面 2 方法，契约先行、待实现批封装进 BookApi：288→290；2026-10-05 P2-29c 后续批冻结失败章查询 1 方法，契约先行、待实现批封装进 BookApi：290→291；2026-10-05 V-B1 冻结视频弹幕查询 1 方法，契约先行、待实现批封装进 BookApi：291→292）。
+> 附录 §2.x 行合计 **295** = §2.x 实际方法行总数；其中 2 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction` / `rssUpdateSource`，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -917,10 +917,24 @@
 
 ---
 
+### 2.49 视频弹幕数据链（video_danmaku FFI，1 个方法）
+
+> [V-B1 | 2026-10-05] 加法式新增（不改既有签名/行为；**契约先于代码**，本批不改任何代码）：**视频弹幕数据链**——把书源内容规则副内容（`contentRule.subContent`）从「抓到即丢」接通到「捕获→落库→查询」，对齐原版 `BookContent` 弹幕链（`app/.../help/bookContent/BookContent.kt:156` `putDanmaku` → 章节变量 `danmaku`，`<10000` 字符进 variable 列、`≥10000` 走 `RuleBigDataHelp` 文件，`RuleDataInterface.kt:16`）与读取侧（`app/.../model/VideoPlay.kt:279` 读出 → `BiliDanmukuParser` 解析 B 站 XML）。
+> **现状缺口（调研 `docs/VIDEO_TRACK_SURVEY_20261005.md` 实测）**：`rust/legado-fetcher/src/web_book.rs:3777-3783` `merge_sub_content_into_body` 在 `is_media`（视频/音频书）时**直接丢弃 subContent**——但提取链（含「http 开头则二次请求」语义，`:3731-3771` + 4 单测）**已完整实现**，缺的只是媒体分支的捕获与落库。**休眠资产激活**：`rust/legado-core/src/video_state.rs`（774 行，含 `DanmakuSource` 的 `Inline/File/None` 三态状态机 + 测试）当前零引用，本批激活为弹幕源归一入口。
+> **方法取舍（仅 1 方法）**：查询面 `getVideoDanmaku`；**写入面不上 FFI**——捕获落库发生在 Rust 抓取链内部（fetcher 提取 subContent → 写章节 variable），与既有 `getChapterContentFull` 落库缓存同型，属数据链内部行为而非用户显式动作（对比 §2.48 音频缓存写入是用户显式动作故上抛 FFI）。**弹幕 XML 解析不在本节**：`BiliDanmukuParser` 的解析与渲染属 B2 渲染批（解析器归属另裁）。
+> **字段模板**：对齐 §2.26 `getAudioChapterMedia` 的 `lyric` 字段先例（`audio_api.rs:44` `Option<String>` + `skip_serializing_if`）。
+> **失败降级**：无弹幕返回 `null`（书源无 subContent / 未抓到 / 解析为空均同面）；查询异常降级为 `null` 不抛（弹幕是增强层不是数据源，对齐 §2.46 口径）。**幂等**：重复查询读同一落库值。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `getVideoDanmaku({required String bookUrl, required int chapterIndex})` | bookUrl / chapterIndex | `Future<String?>` | 查询某章弹幕数据（**只读、幂等**）：读章节 variable 列 `danmaku` 键（对齐原版 `putDanmaku` 落点）；`<10000` 字符直返原文（B 站 XML 或内联文本）；**≥10000 字符走文件存储**（对齐 `RuleBigDataHelp`，落点与文件名规则对齐原版实现，调研报告 §3.1）；无记录/书或章不在 DB/读失败 → `null`（降级不抛）。Rust FFI 面为 `pub fn get_video_danmaku(book_url: String, chapter_index: i32) -> Result<Option<String>, BridgeError>`。**数据链写入侧（本批一并实现，不上 FFI）**：fetcher 媒体分支从「丢弃 subContent」改为「捕获 → 按 `<10000`/`≥10000` 分流落库（variable 列 / 大数据文件）」；写失败降级仅记日志不阻断正文返回（对齐原版 putDanmaku 的非致命语义） |
+
+---
+
 ### 2.44 数据层实现备注（不涉契约签名）
 
 > 本节登记数据层内部实现变更预告，均不改变任何契约签名，仅供 Rust 轨实施与双轨知会。
-> 本节不含方法，不计入方法模块数与附录统计（方法模块为 45 个，§2.1–§2.48，编号跳过 2.24/2.27）。
+> 本节不含方法，不计入方法模块数与附录统计（方法模块为 46 个，§2.1–§2.49，编号跳过 2.24/2.27）。
 >
 > ℹ️ **BookRepository::insert 级联删除隐患（第三批后置项，Task #63）**：`BookRepository::insert` 当前走
 > INSERT OR REPLACE，存在外键级联删除隐患；将在本批改为 upsert 链路（内部实现变更，不涉契约签名，不改任何 FFI 行为）。
@@ -1068,11 +1082,12 @@
 | 45 | 图片磁盘缓存 | 2 |
 | 46 | 音频章节文件缓存 | 4 |
 | 47 | 音频章节预下载 | 2 |
-| | **合计（§2.x 附录行合计）** | **294** |
+| 49 | 视频弹幕数据链 | 1 |
+| | **合计（§2.x 附录行合计）** | **295** |
 
 > 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`、2026-09-28 STAGE3-C2B 增 §2.16 单章缓存失效 1 方法 `clearChapterCache`、2026-09-28 P2-28c 增 §2.43 目录实时刷新 1 方法 `listCachedChapters`、2026-09-29 P2-29 增 §2.43 目录下载中态查询 1 方法 `listDownloadingChapters`、2026-09-29 P4-2a 增 §2.46 图片磁盘缓存 2 方法 `saveImageCache`/`getImageCache`、2026-10-03 cbz 批 B 增 §2.34 本地漫画页读取 1 方法 `cbzReadPage`、2026-10-04 B1 增 §2.47 音频章节文件缓存 4 方法、2026-10-03 B2 增 §2.48 音频章节预下载写入 2 方法 `audioCacheDownload`/`audioCacheCancel`，取代人工统计）：
-> - 附录行合计 **294** = §2.x 实际方法行总数；其中与 BookApi 同名 278（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2；失败章查询经 §1.7 命名等价对登记）、§1.7 命名等价对的 FFI 登记名 10
+> - 附录行合计 **295** = §2.x 实际方法行总数；其中与 BookApi 同名 279（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 1；失败章查询经 §1.7 命名等价对登记）、§1.7 命名等价对的 FFI 登记名 10
 >   （对应 9 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
 >   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
-> - BookApi 代码计数 **291** = 278 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2；失败章查询经 §1.7 命名等价对登记）+ 9 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系（§2.48 2 方法为契约先行，`book_api.dart` 实现批封装后程序化计数转齐）。
+> - BookApi 代码计数 **292** = 279 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 1；失败章查询经 §1.7 命名等价对登记）+ 9 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系（§2.48 2 方法为契约先行，`book_api.dart` 实现批封装后程序化计数转齐）。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。
