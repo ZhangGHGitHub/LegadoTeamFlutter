@@ -123,6 +123,17 @@ class _VideoScreenState extends State<VideoScreen> {
   /// 视频控制器
   late VideoPlayerController _controller;
 
+  /// 控制器是否已创建（[VideoPlayerController] 为 late 字段，未创建时直接
+  /// 读 `_controller` 会抛 LateInitializationError；`value.isInitialized`
+  /// 只能表达「已创建但未就绪」，无法区分「字段未赋值」）
+  bool _controllerCreated = false;
+
+  /// 未创建时返回 null 的安全只读兜底（默认悬浮窗首播在控制器创建前即
+  /// 判定移交：对齐原版 VideoPlayerActivity.kt:179-193，Activity 不建
+  /// 播放器而直接转发 VideoPlayService，位置/播放态取持久化状态）
+  VideoPlayerController? get _safeController =>
+      _controllerCreated ? _controller : null;
+
   /// 控制器初始化 Future
   late Future<void> _initializeVideoPlayerFuture;
 
@@ -391,9 +402,11 @@ class _VideoScreenState extends State<VideoScreen> {
     final store = _directPosStore;
     if (store == null || widget.book != null) return;
     var pos = 0;
+    // 页面可能在控制器创建前退出（dispose 落盘路径）
+    final live = _safeController;
     try {
-      pos = _controller.value.isInitialized
-          ? _controller.value.position.inMilliseconds
+      pos = (live != null && live.value.isInitialized)
+          ? live.value.position.inMilliseconds
           : 0;
     } catch (_) {
       pos = 0;
@@ -603,10 +616,15 @@ class _VideoScreenState extends State<VideoScreen> {
   Future<void> _startFromTarget(VideoPlayTarget target) async {
     // [V-B3] 默认悬浮窗播放：首次解析成功即移交（不起 Flutter 播放器）
     if (await _maybeAutoEnterFloat(target)) return;
-    try {
-      _controller.removeListener(_onPlayerValueChanged);
-      _controller.dispose();
-    } catch (_) {}
+    // 首次起播时控制器尚未创建（_safeController == null）：跳过一次性的
+    // 旧控制器回收；换集/重试时控制器必然已存在
+    final previous = _safeController;
+    if (previous != null) {
+      try {
+        previous.removeListener(_onPlayerValueChanged);
+        previous.dispose();
+      } catch (_) {}
+    }
     // 换集/重试重建控制器：completed 边沿状态归零
     _wasCompleted = false;
     await _clearMpdTemp();
@@ -680,10 +698,13 @@ class _VideoScreenState extends State<VideoScreen> {
         ? File(mpdPath).uri.toString()
         : target.url;
     if (playUrl.isEmpty) return false;
+    // 控制器可能尚未创建（默认悬浮窗首播）：未创建/未就绪时位置取持久化
+    // 进度（对齐原版 VideoPlayService 转发路径 startPlay 的 seekOnStart，
+    // VideoPlay.kt:143 直链 video_pos_ / :166 书籍 durChapterPos）
+    final live = _safeController;
+    final liveReady = live?.value.isInitialized ?? false;
     final pos = positionMs ??
-        (_controller.value.isInitialized
-            ? _controller.value.position.inMilliseconds
-            : _pendingResumeMs);
+        (liveReady ? live!.value.position.inMilliseconds : _pendingResumeMs);
     final title = book != null &&
             _chapters.isNotEmpty &&
             _chapterIndex >= 0 &&
@@ -696,10 +717,11 @@ class _VideoScreenState extends State<VideoScreen> {
       bookName: book?.name ?? '',
       headers: Map<String, String>.from(target.headers),
       positionMs: pos,
+      // 未创建/未就绪：播放态取 autoPlay（对齐原版 startPlay 内部
+      // `if (autoPlay) player.startPlayLogic()`，VideoPlay.kt:157）；
+      // 已就绪则保持当前播放态（用户手动移交的 clonePlayState 语义）
       playing: _resumePlayingOverride ??
-          (_controller.value.isInitialized
-              ? _controller.value.isPlaying
-              : true),
+          (liveReady ? live!.value.isPlaying : _playSettings.autoPlay),
       speed: _playbackSpeed,
       bookUrl: book?.bookUrl,
       chapterIndex: _chapterIndex,
@@ -729,9 +751,10 @@ class _VideoScreenState extends State<VideoScreen> {
     // [W1] 移交前确定性暂停本页播放器：原生 ExoPlayer 为异步 prepare，而本页
     // 要等 pop 转场结束才 dispose；不暂停则存在双播放器并行发声窗口（此前
     // 仅靠音频焦点仲裁兜底，非确定性）。播放态/位置已捕获进 state，不受影响。
+    // 控制器未创建（默认悬浮窗首播）时无本页播放器可暂停，直接跳过。
     try {
-      if (_controller.value.isInitialized && _controller.value.isPlaying) {
-        await _controller.pause();
+      if (liveReady && live!.value.isPlaying) {
+        await live.pause();
       }
     } catch (_) {}
     final coordinator = VideoFloatWindowCoordinator.instance;
@@ -833,9 +856,11 @@ class _VideoScreenState extends State<VideoScreen> {
       final api = ProviderScope.containerOf(context).read(bookApiProvider);
       var pos = chapterPos;
       if (pos == null) {
+        // 加载中退出页面（PopScope 落盘）时控制器可能尚未创建
+        final live = _safeController;
         try {
-          pos = _controller.value.isInitialized
-              ? _controller.value.position.inMilliseconds
+          pos = (live != null && live.value.isInitialized)
+              ? live.value.position.inMilliseconds
               : 0;
         } catch (_) {
           pos = 0;
@@ -880,6 +905,9 @@ class _VideoScreenState extends State<VideoScreen> {
 
   /// 初始化视频播放器（网络或本地 MPD 文件）
   void _initPlayer({String? networkUrl, String? filePath}) {
+    // 本函数所有分支都会给 _controller 赋值；先置创建标记，
+    // 供 [_safeController] 区分「字段未赋值」与「播放器未就绪」
+    _controllerCreated = true;
     if (filePath != null && filePath.isNotEmpty) {
       _controller = VideoPlayerController.file(
         File(filePath),
@@ -1028,10 +1056,14 @@ class _VideoScreenState extends State<VideoScreen> {
         DeviceOrientation.landscapeRight,
       ]);
     }
-    try {
-      _controller.removeListener(_onPlayerValueChanged);
-      _controller.dispose();
-    } catch (_) {}
+    // 控制器未创建时退出（默认悬浮窗首播移交后 / 加载中返回）无需回收
+    final live = _safeController;
+    if (live != null) {
+      try {
+        live.removeListener(_onPlayerValueChanged);
+        live.dispose();
+      } catch (_) {}
+    }
     unawaited(_clearMpdTemp());
     super.dispose();
   }
@@ -1076,6 +1108,10 @@ class _VideoScreenState extends State<VideoScreen> {
     return PopScope(
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop) return;
+        // 移交悬浮窗时进度已在移交前落库（_handOffToFloatWindow）；此处
+        // 若继续读「已无本地控制器」的位置会把进度覆盖成 0
+        //（默认悬浮窗首播移交后本页从未创建控制器）
+        if (_handedToFloat) return;
         if (widget.book != null) {
           unawaited(_saveProgress());
         } else {
