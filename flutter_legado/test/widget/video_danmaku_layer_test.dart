@@ -144,6 +144,79 @@ void main() {
     );
   });
 
+  testWidgets('player 实例替换：重订阅新控制器、旧控制器监听失效（切集）', (tester) async {
+    // [P0-1] 切集时 video_screen 会 dispose 旧控制器并新建实例；
+    // 相邻两集均有弹幕时弹幕层持续挂载，必须随 widget.player 更换重订阅
+    final playerA = ValueNotifier(_value(positionMs: 0, playing: true));
+    final playerB = ValueNotifier(_value(positionMs: 60000, playing: false));
+    addTearDown(playerA.dispose);
+    addTearDown(playerB.dispose);
+    final items = [
+      _item(DanmakuType.scrollR2L, timeMs: 0, text: 'old'),
+      _item(DanmakuType.scrollR2L, timeMs: 60000, text: 'new'),
+    ];
+    await tester.pumpWidget(_host(playerA, items));
+    final state =
+        tester.state<VideoDanmakuLayerState>(find.byType(VideoDanmakuLayer));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(state.debugClockMs, greaterThan(0), reason: '旧控制器播放中推进');
+
+    // 切集：host 以新控制器重建（同类型同位置 → State 保留）
+    await tester.pumpWidget(_host(playerB, items));
+    expect(state.debugClockMs, 60000, reason: '时间轴重锚到新控制器位置');
+    expect(
+      state.debugPlacements(viewSize).single.item.text,
+      'new',
+      reason: '绘制窗口随新控制器时间轴切换',
+    );
+
+    // 新控制器暂停 → 冻结（不得退化为墙钟漂移）
+    await tester.pump(const Duration(seconds: 2));
+    expect(state.debugClockMs, 60000, reason: '新控制器暂停时时钟冻结');
+
+    // 旧控制器事件不得再驱动本层
+    playerA.value = _value(positionMs: 5000, playing: true);
+    await tester.pump();
+    expect(state.debugClockMs, 60000, reason: '旧控制器监听已解除');
+
+    // 新控制器播放 → 恢复推进
+    playerB.value = _value(positionMs: 60000, playing: true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(state.debugClockMs, greaterThan(60000), reason: '新控制器播放恢复推进');
+  });
+
+  testWidgets('倍速变化：行分配按新时长口径重排（P2）', (tester) async {
+    final player = ValueNotifier(_value(positionMs: 1000, playing: false));
+    addTearDown(player.dispose);
+    final items = [
+      _item(DanmakuType.scrollR2L, timeMs: 0, text: 'AAAAAAAA'), // 宽 160
+      _item(DanmakuType.scrollR2L, timeMs: 1000, text: 'AAAA'), // 宽 80
+    ];
+    await tester.pumpWidget(_host(player, items, speed: 1.0));
+    final state =
+        tester.state<VideoDanmakuLayerState>(find.byType(VideoDanmakuLayer));
+    expect(state.debugPlacements(viewSize).length, 2);
+    expect(
+      state
+          .debugPlacements(viewSize)
+          .firstWhere((p) => p.item.timeMs == 1000)
+          .lane,
+      1,
+      reason: '1x：间隔 1000ms < minGap 4560×160/560≈1302.9ms → 换轨',
+    );
+
+    await tester.pumpWidget(_host(player, items, speed: 3.0));
+    expect(
+      state
+          .debugPlacements(viewSize)
+          .firstWhere((p) => p.item.timeMs == 1000)
+          .lane,
+      0,
+      reason: '3x：时长缩至 3293ms，间隔 1000ms ≥ minGap≈941ms → 重排进 0 轨',
+    );
+  });
+
   testWidgets('开关显隐：show=false 时绘制项为空（时间轴照常推进）', (tester) async {
     final player = ValueNotifier(_value(positionMs: 0, playing: true));
     addTearDown(player.dispose);

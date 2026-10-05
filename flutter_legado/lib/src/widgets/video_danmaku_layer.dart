@@ -56,7 +56,14 @@ class DanmakuPlacement {
 /// - 字号 = 原值 × (density - 0.6)（`BiliDanmukuParser.kt:104`），并换算为
 ///   Flutter 逻辑像素（×(dpr-0.6)/dpr）；
 /// - 行分配在弹幕进入时刻确定并按生命周期保持（避免中途换行闪烁）；
-///   行满则丢弃该条（对齐库 MaxLinesFilter 超出隐藏语义）。
+///   行满则丢弃该条（对齐库 MaxLinesFilter 超出隐藏语义）；
+/// - 左→右滚动不设 5 行上限：原版 `maxLinesPair` 仅登记
+///   `TYPE_SCROLL_RL=5`（`VideoPlayer.kt:287`），L2R 本就未限行，
+///   本实现与之一致（对齐说明，非偏离）；
+/// - 四类弹幕（含底部固定）统一执行同轨防重叠：原版 `preventOverlapping`
+///   仅显式配置 `TYPE_SCROLL_RL` 与 `TYPE_FIX_TOP`（`VideoPlayer.kt:294-297`），
+///   底部固定允许重叠——本实现更严格，登记为有意偏离（效果：底部密集时
+///   多余条目按行满语义丢弃，而非重叠绘制）。
 class DanmakuLayoutEngine {
   DanmakuLayoutEngine({required this.items});
 
@@ -145,12 +152,19 @@ class DanmakuLayoutEngine {
     final lineHeight = fontSizeOf(_lineSizeRaw, dpr) * _lineHeightRatio;
     final viewportLanes = math.max(1, (size.height / lineHeight).floor());
 
-    // 跳过已过期前缀（保守：仅当该项按自身时长已过期才前移）
+    // 跳过已过期前缀（保守：仅当该项按自身时长已过期才前移），
+    // 并同步裁剪行分配/宽度缓存（P0-2）：items 按 timeMs 升序、index 连续，
+    // 每个条目只会被裁剪一次（O(1) 摊销），同时把 _assignLane 的扫描集
+    // 限定在活跃窗口内，避免长视频 UI 线程千万级 Map 访问/秒。
+    // 回退 seek <700ms 时被裁剪项若重入窗口会重新分配行号，属可接受代价
+    // （>700ms 本就全量重排）。
     while (_scanStart < items.length) {
       final item = items[_scanStart];
       if (item.timeMs + durationMsOf(item, playbackSpeed) >= positionMs) {
         break;
       }
+      _laneOf.remove(_scanStart);
+      _widthCache.remove(_scanStart);
       _scanStart++;
     }
 
@@ -213,6 +227,17 @@ class DanmakuLayoutEngine {
 
   /// 进入时刻分配行号：同类弹幕从 0 行起找首个占用区间不重叠的行；
   /// 行满返回 -1（该条整生命期丢弃）
+  ///
+  /// 滚动弹幕同轨判据（P1-3 修正）：滚动速度 = (W + width) / duration 与
+  /// 自身宽度成正比，旧实现只要求后车晚于「前车尾部完全入场」，等宽成立、
+  /// 异宽不成立（长后车更快，巡航期必然追及重叠）。精确不追尾条件：两车
+  /// 共存期间最小横向间距 ≥ 0，其极值取在前车完全离场时刻（前车尾缘恰在
+  /// 出场侧屏缘），化简得最小入场间隔
+  /// `duration × max(W前, W后) / (W + max(W前, W后))`：
+  /// 两车等宽时退化为原判据；后车更长时要求更晚，极端下收敛于「前车完全
+  /// 离场」（duration）。R2L/L2R 推导对称，同式成立。
+  /// 固定弹幕按整时长 [start, start+duration) 区间占用；底部固定同样参与
+  /// 防重叠（原版仅 R2L/TOP 显式开启，见类头注释的偏离登记）。
   int _assignLane(
     int index, {
     required Size size,
@@ -228,12 +253,9 @@ class DanmakuLayoutEngine {
     final duration = durationMsOf(item, playbackSpeed);
     final isScroll = item.type == DanmakuType.scrollR2L ||
         item.type == DanmakuType.scrollL2R;
-    // 滚动弹幕占用到「尾部完全进入画面」为止（此前的同轨后车会追尾）
-    final enterRatio = isScroll
-        ? _widthOf(index, fontSizeOf(item.textSizeRaw, _lastDpr)) /
-            (size.width + _widthOf(index, fontSizeOf(item.textSizeRaw, _lastDpr)))
+    final newWidth = isScroll
+        ? _widthOf(index, fontSizeOf(item.textSizeRaw, _lastDpr))
         : 0.0;
-    final occupancyEnd = start + duration * (isScroll ? enterRatio : 1.0);
 
     for (var lane = 0; lane < laneCount; lane++) {
       var free = true;
@@ -242,20 +264,22 @@ class DanmakuLayoutEngine {
         final other = items[entry.key];
         if (other.type != item.type) continue;
         final otherStart = other.timeMs.toDouble();
-        final otherDuration = durationMsOf(other, playbackSpeed);
-        final otherIsScroll = other.type == DanmakuType.scrollR2L ||
-            other.type == DanmakuType.scrollL2R;
-        final otherEnd = otherIsScroll
-            ? otherStart +
-                otherDuration *
-                    (_widthOf(entry.key, fontSizeOf(other.textSizeRaw, _lastDpr)) /
-                        (size.width +
-                            _widthOf(entry.key,
-                                fontSizeOf(other.textSizeRaw, _lastDpr))))
-            : otherStart + otherDuration;
-        if (start < otherEnd && otherStart < occupancyEnd) {
-          free = false;
-          break;
+        if (isScroll) {
+          // 同轨滚动：按两车较宽者取最小入场间隔（见方法注释推导）
+          final otherWidth =
+              _widthOf(entry.key, fontSizeOf(other.textSizeRaw, _lastDpr));
+          final maxWidth = math.max(otherWidth, newWidth);
+          final minGap = duration * maxWidth / (size.width + maxWidth);
+          if ((start - otherStart).abs() < minGap) {
+            free = false;
+            break;
+          }
+        } else {
+          final otherEnd = otherStart + durationMsOf(other, playbackSpeed);
+          if (start < otherEnd && otherStart < start + duration) {
+            free = false;
+            break;
+          }
         }
       }
       if (free) return lane;
@@ -270,6 +294,20 @@ class DanmakuLayoutEngine {
     _widthCache[index] = width;
     return width;
   }
+
+  /// 作废行分配（P2：倍速变化时占用时长口径改变，旧区间失效 → 重排；
+  /// 文本宽度与倍速无关，宽度缓存保留）
+  void resetLaneAssignments() {
+    _laneOf.clear();
+  }
+
+  /// 测试辅助：行分配缓存条目数（P0-B 有界性断言）
+  @visibleForTesting
+  int get debugLaneCacheSize => _laneOf.length;
+
+  /// 测试辅助：文本宽度缓存条目数（P0-B 有界性断言）
+  @visibleForTesting
+  int get debugWidthCacheSize => _widthCache.length;
 
   /// 测试辅助：清空内部布局缓存
   @visibleForTesting
@@ -347,15 +385,9 @@ class VideoDanmakuLayerState extends State<VideoDanmakuLayer>
     super.initState();
     _engine = DanmakuLayoutEngine(items: widget.items)
       ..measureText = _measureTextWidth;
-    final value = widget.player.value;
-    _anchorPositionMs = value.position.inMilliseconds;
-    _clockMs.value = _anchorPositionMs;
-    _wasPlaying = value.isPlaying;
-    widget.player.addListener(_onPlayerChanged);
     _ticker = createTicker(_onTick);
-    if (_wasPlaying) {
-      _ticker.start();
-    }
+    widget.player.addListener(_onPlayerChanged);
+    _rebindToPlayer(widget.player.value);
   }
 
   @override
@@ -365,11 +397,46 @@ class VideoDanmakuLayerState extends State<VideoDanmakuLayer>
       _engine = DanmakuLayoutEngine(items: widget.items)
         ..measureText = _measureTextWidth;
     }
+    if (!identical(oldWidget.player, widget.player)) {
+      // [P0-1] 切集换控制器：video_screen 会 dispose 旧实例并新建，
+      // 相邻两集均有弹幕时本层持续挂载，必须重订阅：否则监听已 dispose
+      // 的旧控制器 → 播放中弹幕退化为墙钟漂移（暂停/seek 失效），
+      // 暂停中切集则永久冻结。
+      oldWidget.player.removeListener(_onPlayerChanged);
+      widget.player.addListener(_onPlayerChanged);
+      _rebindToPlayer(widget.player.value);
+    }
     if (oldWidget.playbackSpeed != widget.playbackSpeed) {
       // 倍速变化：以当前插值位置为新锚点，避免时间轴跳变
       _anchorPositionMs = _clockMs.value;
       _anchorElapsed =
           _ticker.isActive ? _lastTickElapsed : Duration.zero;
+      // [P2] 行占用区间按旧 duration 计算已失效 → 作废重排
+      _engine.resetLaneAssignments();
+    }
+  }
+
+  /// 以控制器当前值重锚时间轴并同步 Ticker（初挂与切集换控制器共用）。
+  ///
+  /// Ticker 已在跑且新控制器在播放时，从最近一次 tick 的 elapsed 继续插值，
+  /// 避免把累计 elapsed 重新计入新锚点造成时钟跳变。
+  void _rebindToPlayer(VideoPlayerValue value) {
+    _anchorPositionMs = value.position.inMilliseconds;
+    _clockMs.value = _anchorPositionMs;
+    _wasPlaying = value.isPlaying;
+    if (_wasPlaying) {
+      if (_ticker.isActive) {
+        _anchorElapsed = _lastTickElapsed;
+      } else {
+        _anchorElapsed = Duration.zero;
+        _lastTickElapsed = Duration.zero;
+        _ticker.start();
+      }
+    } else {
+      _anchorElapsed = _ticker.isActive ? _lastTickElapsed : Duration.zero;
+      if (_ticker.isActive) {
+        _ticker.stop();
+      }
     }
   }
 

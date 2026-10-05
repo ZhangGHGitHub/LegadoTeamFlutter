@@ -214,5 +214,87 @@ void main() {
       );
       expect(atStart.length, 5, reason: '第 6 条起始时 5 行均被占用 → 丢弃');
     });
+
+    test('异宽同轨防追尾：长后车按旧判据获准入轨但必然重叠（P1-3）', () {
+      // 前车宽 40 @0ms；后车宽 160 @500ms。
+      // 旧判据仅要求后车晚于前车尾部入场 4560×40/440≈414.5ms → 500ms 放行同轨；
+      // 滚动速度与宽度成正比（后车更快）→ 巡航期追尾重叠。
+      final items = [
+        _item(DanmakuType.scrollR2L, timeMs: 0, text: 'AA'), // 宽 40
+        _item(DanmakuType.scrollR2L, timeMs: 500, text: 'AAAAAAAA'), // 宽 160
+      ];
+      final engine = _engine(items);
+      final at1000 = engine.placementsAt(
+        positionMs: 1000,
+        size: size,
+        dpr: 3,
+        playbackSpeed: 1,
+      );
+      expect(at1000.length, 2);
+      final front = at1000.firstWhere((p) => p.item.text == 'AA');
+      final rear = at1000.firstWhere((p) => p.item.text == 'AAAAAAAA');
+      expect(
+        rear.lane,
+        isNot(front.lane),
+        reason: '长后车若与前车同轨必然追尾（新判据：入场间隔 ≥ dur×max(W)/'
+            '(W+max(W)) = 4560×160/560 ≈ 1302.9ms > 500ms）',
+      );
+
+      // 几何复核：整个共存窗口内同轨矩形不得相交
+      for (var t = 500; t <= 4560; t += 100) {
+        final frame = engine.placementsAt(
+          positionMs: t,
+          size: size,
+          dpr: 3,
+          playbackSpeed: 1,
+        );
+        for (var i = 0; i < frame.length; i++) {
+          for (var j = i + 1; j < frame.length; j++) {
+            final p = frame[i];
+            final q = frame[j];
+            if (p.lane != q.lane) continue;
+            final pw = p.item.text.length * p.fontSize;
+            final qw = q.item.text.length * q.fontSize;
+            final overlapX = p.x < q.x + qw && q.x < p.x + pw;
+            expect(
+              overlapX,
+              isFalse,
+              reason: 't=${t}ms 同轨横向重叠：${p.item.text} vs ${q.item.text}',
+            );
+          }
+        }
+      }
+    });
+  });
+
+  group('行分配状态有界性（P0-2）', () {
+    test('行分配/宽度缓存随扫描窗口前移裁剪，长视频不无界增长', () {
+      // 200 条、每 1s 一条、单条时长 4560ms；以 500ms 步进推进 200s。
+      // 步进 < 700ms 不触发 seek 重排，旧实现每条首次出现即永久驻留；
+      // 新实现随 _scanStart 前移同步 prune，尺寸应恒等于活跃窗口（约 5 条）。
+      final items = [
+        for (var i = 0; i < 200; i++)
+          _item(DanmakuType.scrollR2L, timeMs: i * 1000, text: 'AAAA'),
+      ];
+      final engine = _engine(items);
+      for (var t = 0; t <= 200000; t += 500) {
+        engine.placementsAt(
+          positionMs: t,
+          size: size,
+          dpr: 3,
+          playbackSpeed: 1,
+        );
+      }
+      expect(
+        engine.debugLaneCacheSize,
+        lessThanOrEqualTo(20),
+        reason: '行分配缓存只保留活跃窗口，不得随历史总量增长',
+      );
+      expect(
+        engine.debugWidthCacheSize,
+        lessThanOrEqualTo(20),
+        reason: '宽度缓存同样随窗口裁剪',
+      );
+    });
   });
 }
