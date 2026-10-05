@@ -35,6 +35,7 @@
 //!
 //! 数组专用入参（上游 Kotlin `Array<String>`，如 `ajaxAll` / `ajaxTestAll`）
 //! 语义不同：数组元素逐项转换，见 `quickjs_impl::LooseStrList`。
+// 实测证据：docs/RHINO_STRING_PARAM_PROBE_20261006.md（原版引擎 JAR 探针）
 
 use std::ops::Deref;
 

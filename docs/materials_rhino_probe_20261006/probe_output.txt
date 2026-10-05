@@ -1,0 +1,128 @@
+=== Rhino String-parameter coercion probe ===
+java.version = 17.0.19
+java.vendor  = Eclipse Adoptium
+rhino.impl   = Rhino Snapshot
+classpath engine = htmlunit-core-js (org.htmlunit.corejs.javascript)
+
+--- CASE 1: setup: define plain object objPlain = {} ---
+    JS> var objPlain = {};
+    JS result: undefined
+
+--- CASE 2: setup: define objCustom with custom toString ---
+    JS> var objCustom = { toString: function () { return "CUSTOM_TO_STRING"; } };
+    JS result: undefined
+
+--- CASE 3: scalar String param <- JS array ['a','b'] ---
+    JS> probe.takeString(["a","b"])
+      [java] takeString(String) reached: s = "a,b" (len=3)
+    JS result: undefined
+
+--- CASE 4: scalar String param <- JS array [1,2,3] ---
+    JS> probe.takeString([1,2,3])
+      [java] takeString(String) reached: s = "1,2,3" (len=5)
+    JS result: undefined
+
+--- CASE 5: scalar String param <- empty JS array [] ---
+    JS> probe.takeString([])
+      [java] takeString(String) reached: s = "" (len=0)
+    JS result: undefined
+
+--- CASE 6: scalar String param <- nested array [['a'],'b'] ---
+    JS> probe.takeString([["a"],"b"])
+      [java] takeString(String) reached: s = "a,b" (len=3)
+    JS result: undefined
+
+--- CASE 7: scalar String param <- nested array [[1,2],[3]] ---
+    JS> probe.takeString([[1,2],[3]])
+      [java] takeString(String) reached: s = "1,2,3" (len=5)
+    JS result: undefined
+
+--- CASE 8: scalar String param <- plain object {} ---
+    JS> probe.takeString(objPlain)
+      [java] takeString(String) reached: s = "[object Object]" (len=15)
+    JS result: undefined
+
+--- CASE 9: scalar String param <- object with custom toString ---
+    JS> probe.takeString(objCustom)
+      [java] takeString(String) reached: s = "CUSTOM_TO_STRING" (len=16)
+    JS result: undefined
+
+--- CASE 10: scalar String param <- number 42 ---
+    JS> probe.takeString(42)
+      [java] takeString(String) reached: s = "42" (len=2)
+    JS result: undefined
+
+--- CASE 11: scalar String param <- number 1.5 ---
+    JS> probe.takeString(1.5)
+      [java] takeString(String) reached: s = "1.5" (len=3)
+    JS result: undefined
+
+--- CASE 12: scalar String param <- boolean true ---
+    JS> probe.takeString(true)
+      [java] takeString(String) reached: s = "true" (len=4)
+    JS result: undefined
+
+--- CASE 13: scalar String param <- undefined ---
+    JS> probe.takeString(undefined)
+      [java] takeString(String) reached: s = "undefined" (len=9)
+    JS result: undefined
+
+--- CASE 14: scalar String param <- null ---
+    JS> probe.takeString(null)
+      [java] takeString(String) reached: s = <JAVA_NULL>
+    JS result: undefined
+
+--- CASE 15: scalar String param <- missing argument ---
+    JS> probe.takeString()
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoStringParamProbe$HostApi.takeString()”。 (probe-case-15#1)
+
+--- CASE 16: scalar String param <- null into simulated Kotlin non-null param ---
+    JS> probe.takeStringKotlinNonNull(null)
+    ERROR (wrapped Java exception): java.lang.NullPointerException: Parameter specified as non-null is null: method HostApi.takeStringKotlinNonNull, parameter s
+
+--- CASE 17: String[] param <- JS array ['a','b'] ---
+    JS> probe.takeArray(["a","b"])
+      [java] takeArray(String[]) reached: arr(len=2) = ["a" (len=1), "b" (len=1)]
+    JS result: undefined
+
+--- CASE 18: String[] param <- empty JS array [] ---
+    JS> probe.takeArray([])
+      [java] takeArray(String[]) reached: arr(len=0) = []
+    JS result: undefined
+
+--- CASE 19: String[] param <- mixed elements ['a',null,undefined,42,true] ---
+    JS> probe.takeArray(["a",null,undefined,42,true])
+      [java] takeArray(String[]) reached: arr(len=5) = ["a" (len=1), <JAVA_NULL>, "undefined" (len=9), "42" (len=2), "true" (len=4)]
+    JS result: undefined
+
+--- CASE 20: String[] param <- nested array [[1,2],[3]] ---
+    JS> probe.takeArray([[1,2],[3]])
+      [java] takeArray(String[]) reached: arr(len=2) = ["1,2" (len=3), "3" (len=1)]
+    JS result: undefined
+
+--- CASE 21: String[] param <- plain string 'a,b' ---
+    JS> probe.takeArray("a,b")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoStringParamProbe$HostApi.takeArray(string)”。 (probe-case-21#1)
+
+--- CASE 22: String[] param <- number 42 ---
+    JS> probe.takeArray(42)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoStringParamProbe$HostApi.takeArray(number)”。 (probe-case-22#1)
+
+--- CASE 23: String[] param <- undefined ---
+    JS> probe.takeArray(undefined)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoStringParamProbe$HostApi.takeArray(org.htmlunit.corejs.javascript.Undefined)”。 (probe-case-23#1)
+
+--- CASE 24: String[] param <- null ---
+    JS> probe.takeArray(null)
+      [java] takeArray(String[]) reached: arr = <JAVA_NULL>
+    JS result: undefined
+
+--- CASE 25: String[] param <- null into simulated Kotlin non-null param ---
+    JS> probe.takeArrayKotlinNonNull(null)
+    ERROR (wrapped Java exception): java.lang.NullPointerException: Parameter specified as non-null is null: method HostApi.takeArrayKotlinNonNull, parameter arr
+
+--- CASE 26: String[] param <- missing argument ---
+    JS> probe.takeArray()
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoStringParamProbe$HostApi.takeArray()”。 (probe-case-26#1)
+
+=== probe finished ===
