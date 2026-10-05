@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'dart:io' show File;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -120,6 +121,57 @@ class LegadoApp extends ConsumerStatefulWidget {
     attempt(0);
   }
 
+  /// [V-B3-ROUTE 2026-10-05] 悬浮窗回全屏导航调度：等闪屏 /welcome 退出
+  /// 栈顶后再压栈。
+  ///
+  /// 缺陷（round2 真机 2/2 复现，`.tmp/video_qa/round2/c2_*.png`）：冷启动
+  /// 经 [AppRoutes.welcome] 闪屏；MainActivity.onCreate 把悬浮窗播放状态经
+  /// Intent 交给 Dart（[VideoFloatWindowBridge.attach] →
+  /// `_consumeInitialReturn`），回全屏导航在首帧附近触发。此时直接
+  /// `pushNamed(video)` 会把 /video 压在 /welcome 之上，而 [WelcomeScreen]
+  /// 延后执行的 `pushReplacementNamed(home)` 替换的是**当时栈顶**——刚压入
+  /// 的 /video 被一并替换：可见播放页闪现后被书架顶掉、播放中断。
+  ///
+  /// 门控条件取「路由栈顶已非 /welcome」（[TopRouteWatcher] 的
+  /// `didChangeTop` 由框架在路由栈变化时同步更新，天然无竞态）：
+  /// - 热路径（App 已存活，onNewIntent 回全屏）：栈顶非 welcome →
+  ///   [push] 同步执行，零额外延迟；
+  /// - 冷启动（Navigator 未就绪或闪屏未退出）：按 [interval] 轮询，
+  ///   至多 [maxAttempts] 次（默认 50ms × 60 = 3s）后放弃并回调
+  ///   [onTimeout]——宁可不导航（停留当前页），也不重演「压栈后被欢迎页
+  ///   替换」的错误导航。
+  ///
+  /// 不用「[WelcomeScreen] `_goNext` 的 `await pushReplacementNamed` 之后
+  /// 置标志」：`Navigator.pushReplacement` 返回的是**新路由的 popped
+  /// future**（Flutter 3.44 `navigator.dart` `return newRoute.popped;`），
+  /// home 不弹栈该 await 永不完成，手写标志将永不置位（本批探针测试已实证）。
+  /// 路由栈本身才是权威信号，故经 [TopRouteWatcher] 观察。
+  static void scheduleFloatReturnNavigation({
+    required TopRouteWatcher watcher,
+    required NavigatorState? Function() navigator,
+    required void Function(NavigatorState navigator) push,
+    int maxAttempts = 60,
+    Duration interval = const Duration(milliseconds: 50),
+    VoidCallback? onTimeout,
+  }) {
+    void attempt(int attemptNo) {
+      final nav = navigator();
+      final welcomeGone = watcher.didObserveTopChange &&
+          watcher.topRouteName != AppRoutes.welcome;
+      if (nav != null && welcomeGone) {
+        push(nav);
+        return;
+      }
+      if (attemptNo >= maxAttempts) {
+        onTimeout?.call();
+        return;
+      }
+      Timer(interval, () => attempt(attemptNo + 1));
+    }
+
+    attempt(0);
+  }
+
   @override
   ConsumerState<LegadoApp> createState() => _LegadoAppState();
 }
@@ -146,8 +198,11 @@ class TopRouteWatcher extends NavigatorObserver {
 }
 
 class _LegadoAppState extends ConsumerState<LegadoApp> {
-  /// [P2-13b] 崩溃弹窗调度用的栈顶路由观察器（注册进
-  /// `MaterialApp(navigatorObservers:)`，见 [build]）
+  /// 栈顶路由观察器（注册进 `MaterialApp(navigatorObservers:)`，见
+  /// [build]），两个只读消费者：
+  /// - [P2-13b] 崩溃弹窗调度（[scheduleCrashLogDialog]）；
+  /// - [V-B3-ROUTE] 悬浮窗回全屏门控（[scheduleFloatReturnNavigation]）——
+  ///   确认闪屏 /welcome 已被替换出栈顶后才压入 /video。
   final TopRouteWatcher _topRouteWatcher = TopRouteWatcher();
 
   @override
@@ -189,6 +244,10 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
   }
 
   /// [V-B3] 悬浮窗「全屏」/通知点击回传：导航到视频页从交回位置续播
+  ///
+  /// [V-B3-ROUTE] 冷启动时须等闪屏 /welcome 退出栈顶后再压栈，否则会与
+  /// `pushReplacementNamed(home)` 竞争、刚压入的 /video 被整体替换
+  /// （round2 真机 2/2；详见 [scheduleFloatReturnNavigation]）。
   void _openVideoFromFloatWindow(VideoFloatWindowState state, Book? book) {
     final args = VideoScreenArgs(
       videoUrl: state.directUrl ?? book?.bookUrl ?? '',
@@ -204,16 +263,17 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
       initialSpeed: state.speed,
       initialPlaying: state.playing,
     );
-    final navigator = PlatformBridgeService.navigatorKey.currentState;
-    if (navigator != null) {
-      navigator.pushNamed(AppRoutes.video, arguments: args);
-      return;
-    }
-    // 冷启动首帧前 Navigator 尚未就绪：推迟到首帧后
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      PlatformBridgeService.navigatorKey.currentState
-          ?.pushNamed(AppRoutes.video, arguments: args);
-    });
+    // 统一就绪循环覆盖两段等待：冷启动首帧前 Navigator 未装配（原
+    // addPostFrameCallback 推迟逻辑）+ 闪屏 /welcome 未退出栈顶（本批修复）。
+    LegadoApp.scheduleFloatReturnNavigation(
+      watcher: _topRouteWatcher,
+      navigator: () => PlatformBridgeService.navigatorKey.currentState,
+      push: (navigator) =>
+          navigator.pushNamed(AppRoutes.video, arguments: args),
+      onTimeout: () => debugPrint(
+        '[VideoFloat] 闪屏未在等待窗口内退出，放弃本次回全屏导航（停留当前页）',
+      ),
+    );
   }
 
   /// [V-B3] 悬浮窗用户可见提示（经全局 Navigator context）
