@@ -11,6 +11,9 @@ pub mod cache_store;
 /// 能力受限台账：未知 Java 符号 + jsLib 加载失败登记（队列④，无 feature 门控）
 pub mod capability_ledger;
 pub mod chinese_utils;
+/// 宿主 API 入参的 Rhino LiveConnect 宽松转换（`RhinoStr` / `RhinoOptStr`）
+#[cfg(feature = "quickjs")]
+pub mod coerce;
 pub mod concurrency_api;
 pub mod config_api;
 pub mod cookie_store;

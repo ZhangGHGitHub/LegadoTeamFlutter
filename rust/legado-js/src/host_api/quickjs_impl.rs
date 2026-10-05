@@ -25,6 +25,7 @@
 
 #![cfg(feature = "quickjs")]
 
+use crate::host_api::coerce::{RhinoOptStr, RhinoStr};
 use legado_core::LegadoError;
 
 use crate::host_api::{
@@ -60,6 +61,60 @@ impl<'js> rquickjs::FromJs<'js> for NullBool {
             return Ok(NullBool(None));
         }
         Ok(NullBool(Some(bool::from_js(_ctx, value)?)))
+    }
+}
+
+/// 「JS 数组 / JSON 字符串」双兼容入参（对齐 Rhino LiveConnect 对上游
+/// Kotlin `Array<String>` 入参的宽松转换：JS Array → 元素列表；
+/// 元素逐个按 JS `ToString` 收敛，与 Kotlin 侧 `Array<String>` 元素转换同义）。
+///
+/// 我方宿主 API 以 JSON 数组字符串为内部表示（`ajaxAll` / `ajaxTestAll`），
+/// 故 JS 数组在这里序列化为 JSON 数组文本（而非 `String(array)` 的逗号
+/// 连接——逗号串不是合法 JSON，会被下游 parse 拒绝）；字符串入参按既有
+/// 契约原样透传；null / undefined 收敛为空串（该 API 的空值语义 = 空列表，
+/// 由 `network::ajax_all` / `misc_api::ajax_test_all` 按空输入处理）。
+///
+/// 背景（iOS 实机搜索失败分析 2026-10-06，晋江文学 bookList JS 第 10 行
+/// `java.ajaxAll(urls)`）：严格 `String` 入参抛
+/// `Error converting from js 'array' into type 'string'`，整条列表解析失败；
+/// 原版 `JsExtensions.kt:154 ajaxAll(urlList: Array<String>)` 经 Rhino
+/// LiveConnect 元素级转换不会报错。— 2026-10-06
+///
+/// 与 core-js 探针（见 `coerce.rs` 模块文档）的对照与偏差：
+/// - 数组元素：非空值逐个 JS ToString（`[1,false]` → `["1","false"]`，实测一致）；
+/// - 元素 `undefined`：探针为 `"undefined"` 字面量，本实现取空串（下游按无效
+///   URL 处理，避免把字面量 "undefined" 当 URL 请求）——有意偏差；
+/// - 元素 `null`：探针为 Java `null` 元素（Kotlin 侧随后 NPE），Rust 侧无从
+///   表达，取空串近似——有意偏差；
+/// - 整体 `null`：探针为 Java null（Kotlin NPE），取空列表（`NullStr` 先例的
+///   容错口径）；整体 `undefined`：探针为「方法不存在」错误，取空列表（同前）。
+///
+/// 以上偏差方向均为「比原版更宽容」，只会把原版的失败变成空结果，不会把
+/// 原版可用的书源变失败（不影响兼容性），且均属边缘形态。
+struct LooseStrList(String);
+
+impl<'js> rquickjs::FromJs<'js> for LooseStrList {
+    fn from_js(ctx: &rquickjs::Ctx<'js>, value: rquickjs::Value<'js>) -> rquickjs::Result<Self> {
+        if value.is_undefined() || value.is_null() {
+            return Ok(LooseStrList(String::new()));
+        }
+        if let Some(arr) = value.as_array() {
+            let mut items: Vec<String> = Vec::with_capacity(arr.len());
+            for item in arr.iter::<rquickjs::Value<'js>>() {
+                let item = item?;
+                if item.is_undefined() || item.is_null() {
+                    items.push(String::new());
+                } else {
+                    // JS ToString 强转（int/bool/对象均按 Rhino Context.toString 语义）
+                    items.push(rquickjs::Coerced::<String>::from_js(ctx, item)?.0);
+                }
+            }
+            let json = serde_json::to_string(&items).unwrap_or_else(|_| "[]".to_string());
+            return Ok(LooseStrList(json));
+        }
+        Ok(LooseStrList(
+            rquickjs::Coerced::<String>::from_js(ctx, value)?.0,
+        ))
     }
 }
 
@@ -122,7 +177,7 @@ pub fn register_all_apis<'js>(
     // reportUnknownSymbol 同时写进 globalThis，污染全局作用域，可能与书源
     // jsLib / 用户脚本中的同名标识符碰撞。shim 内所有调用点均为
     // `java.reportUnknownSymbol`（trap / Java.type / importClass），java 专用即可。
-    let report_unknown_symbol = rquickjs::Function::new(ctx.clone(), |sym: String| -> () {
+    let report_unknown_symbol = rquickjs::Function::new(ctx.clone(), |sym: RhinoStr| -> () {
         capability_ledger::record_unknown_java_symbol(&sym);
     })
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
@@ -1277,7 +1332,7 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "md5Encode",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             encoding::md5_encode(&s)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1288,7 +1343,7 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "md5Encode16",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             encoding::md5_encode_16(&s)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1299,7 +1354,7 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "base64Encode",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             encoding::base64_encode(&s)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1310,7 +1365,7 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "base64Decode",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             encoding::base64_decode(&s).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1322,7 +1377,7 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "base64Decoder",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             encoding::base64_decode(&s).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1338,7 +1393,7 @@ fn register_encoding_apis<'js>(
         rquickjs::Function::new(
             ctx.clone(),
             |ctx: rquickjs::Ctx<'js>,
-             s: String,
+             s: RhinoStr,
              flags: Opt<i32>|
              -> rquickjs::Result<rquickjs::Value<'js>> {
                 use rquickjs::IntoJs;
@@ -1370,7 +1425,7 @@ fn register_encoding_apis<'js>(
         "hexDecodeToByteArray",
         rquickjs::Function::new(
             ctx.clone(),
-            |ctx: rquickjs::Ctx<'js>, s: String| -> rquickjs::Result<rquickjs::Value<'js>> {
+            |ctx: rquickjs::Ctx<'js>, s: RhinoStr| -> rquickjs::Result<rquickjs::Value<'js>> {
                 use rquickjs::IntoJs;
                 if s.trim().is_empty() {
                     return Ok(rquickjs::Value::new_null(ctx.clone()));
@@ -1393,7 +1448,7 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "hexEncode",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             encoding::hex_encode(&s)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1405,7 +1460,7 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "hexEncodeToString",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             encoding::hex_encode(&s)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1416,11 +1471,11 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "hexDecode",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             // 容错：非合法 hex 原样返回（书山等源可能传入已解码文本）
             match encoding::hex_decode(&s) {
                 Ok(v) => v,
-                Err(_) => s,
+                Err(_) => s.0,
             }
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1431,8 +1486,10 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "sha256",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String { encoding::sha256(&s) })
-            .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
+            encoding::sha256(&s)
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
     // encodeURI(str, enc?) -> String（对齐原版双参重载：燃文等源
@@ -1441,7 +1498,7 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "encodeURI",
-        rquickjs::Function::new(ctx.clone(), |s: String, enc: Opt<String>| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr, enc: RhinoOptStr| -> String {
             match enc.0 {
                 Some(e) => encoding::encode_uri_charset(&s, &e),
                 None => encoding::encode_uri(&s),
@@ -1478,7 +1535,7 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "hmacMd5",
-        rquickjs::Function::new(ctx.clone(), |data: String, key: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |data: RhinoStr, key: RhinoStr| -> String {
             encoding::hmac_md5(&data, &key).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1489,7 +1546,7 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "hmacSha256",
-        rquickjs::Function::new(ctx.clone(), |data: String, key: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |data: RhinoStr, key: RhinoStr| -> String {
             encoding::hmac_sha256(&data, &key).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1500,9 +1557,12 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "digestHex",
-        rquickjs::Function::new(ctx.clone(), |data: String, algorithm: String| -> String {
-            encoding::digest_hex(&data, &algorithm).unwrap_or_else(|e| format!("[ERROR] {}", e))
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            |data: RhinoStr, algorithm: RhinoStr| -> String {
+                encoding::digest_hex(&data, &algorithm).unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -1511,10 +1571,13 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "digestBase64Str",
-        rquickjs::Function::new(ctx.clone(), |data: String, algorithm: String| -> String {
-            encoding::digest_base64_str(&data, &algorithm)
-                .unwrap_or_else(|e| format!("[ERROR] {}", e))
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            |data: RhinoStr, algorithm: RhinoStr| -> String {
+                encoding::digest_base64_str(&data, &algorithm)
+                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -1525,7 +1588,7 @@ fn register_encoding_apis<'js>(
         "hmacHex",
         rquickjs::Function::new(
             ctx.clone(),
-            |data: String, algorithm: String, key: String| -> String {
+            |data: RhinoStr, algorithm: RhinoStr, key: RhinoStr| -> String {
                 encoding::hmac_hex(&data, &algorithm, &key)
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
@@ -1540,7 +1603,7 @@ fn register_encoding_apis<'js>(
         "hmacBase64",
         rquickjs::Function::new(
             ctx.clone(),
-            |data: String, algorithm: String, key: String| -> String {
+            |data: RhinoStr, algorithm: RhinoStr, key: RhinoStr| -> String {
                 encoding::hmac_base64(&data, &algorithm, &key)
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
@@ -1559,7 +1622,7 @@ fn register_encoding_apis<'js>(
         "HMacBase64",
         rquickjs::Function::new(
             ctx.clone(),
-            |data: String, algorithm: String, key: String| -> String {
+            |data: RhinoStr, algorithm: RhinoStr, key: RhinoStr| -> String {
                 encoding::hmac_base64(&data, &algorithm, &key)
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
@@ -1572,7 +1635,7 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "strToBytes",
-        rquickjs::Function::new(ctx.clone(), |s: String, charset: Opt<String>| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr, charset: RhinoOptStr| -> String {
             encoding::str_to_bytes(&s, charset.0.as_deref())
                 .unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
@@ -1586,7 +1649,7 @@ fn register_encoding_apis<'js>(
         "bytesToStr",
         rquickjs::Function::new(
             ctx.clone(),
-            |bytes_json: String, charset: Opt<String>| -> String {
+            |bytes_json: RhinoStr, charset: RhinoOptStr| -> String {
                 encoding::bytes_to_str(&bytes_json, charset.0.as_deref())
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
@@ -1614,10 +1677,10 @@ fn register_encoding_apis<'js>(
         java,
         globals,
         "hexDecodeToString",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             match encoding::hex_decode(&s) {
                 Ok(v) => v,
-                Err(_) => s,
+                Err(_) => s.0,
             }
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1636,7 +1699,7 @@ fn register_string_apis<'js>(
         java,
         globals,
         "urlencode",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             string_utils::urlencode(&s)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1646,7 +1709,7 @@ fn register_string_apis<'js>(
         java,
         globals,
         "urldecode",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             string_utils::urldecode(&s)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1656,7 +1719,7 @@ fn register_string_apis<'js>(
         java,
         globals,
         "trimStart",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             string_utils::trim_start(&s)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1666,7 +1729,7 @@ fn register_string_apis<'js>(
         java,
         globals,
         "trimEnd",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             string_utils::trim_end(&s)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1676,7 +1739,7 @@ fn register_string_apis<'js>(
         java,
         globals,
         "substringBefore",
-        rquickjs::Function::new(ctx.clone(), |s: String, d: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr, d: RhinoStr| -> String {
             string_utils::substring_before(&s, &d).to_string()
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1686,7 +1749,7 @@ fn register_string_apis<'js>(
         java,
         globals,
         "substringAfter",
-        rquickjs::Function::new(ctx.clone(), |s: String, d: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr, d: RhinoStr| -> String {
             string_utils::substring_after(&s, &d).to_string()
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1698,7 +1761,7 @@ fn register_string_apis<'js>(
         "replaceFirst",
         rquickjs::Function::new(
             ctx.clone(),
-            |s: String, old: String, new: String| -> String {
+            |s: RhinoStr, old: RhinoStr, new: RhinoStr| -> String {
                 string_utils::replace_first(&s, &old, &new)
             },
         )
@@ -1711,7 +1774,7 @@ fn register_string_apis<'js>(
         "replaceAll",
         rquickjs::Function::new(
             ctx.clone(),
-            |s: String, old: String, new: String| -> String {
+            |s: RhinoStr, old: RhinoStr, new: RhinoStr| -> String {
                 string_utils::replace_all(&s, &old, &new)
             },
         )
@@ -1723,7 +1786,7 @@ fn register_string_apis<'js>(
         java,
         globals,
         "toNumChapter",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             string_utils::to_num_chapter(&s)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1742,7 +1805,7 @@ fn register_json_apis<'js>(
         java,
         globals,
         "jsonPath",
-        rquickjs::Function::new(ctx.clone(), |json: String, path: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |json: RhinoStr, path: RhinoStr| -> String {
             match json_utils::json_path(&json, &path) {
                 Ok(results) => results.join("\n"),
                 Err(e) => format!("[ERROR] {}", e),
@@ -1755,7 +1818,7 @@ fn register_json_apis<'js>(
         java,
         globals,
         "jsonGetString",
-        rquickjs::Function::new(ctx.clone(), |json: String, key: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |json: RhinoStr, key: RhinoStr| -> String {
             json_utils::json_get_string(&json, &key).unwrap_or_default()
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1765,7 +1828,7 @@ fn register_json_apis<'js>(
         java,
         globals,
         "toJson",
-        rquickjs::Function::new(ctx.clone(), |json: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |json: RhinoStr| -> String {
             json_utils::to_json(&json).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1786,7 +1849,7 @@ fn register_regex_apis<'js>(
         "regExp",
         rquickjs::Function::new(
             ctx.clone(),
-            |text: String, pattern: String, group: i32| -> String {
+            |text: RhinoStr, pattern: RhinoStr, group: i32| -> String {
                 regex_utils::reg_exp(&text, &pattern, group as usize).unwrap_or_default()
             },
         )
@@ -1799,7 +1862,7 @@ fn register_regex_apis<'js>(
         "regExpReplace",
         rquickjs::Function::new(
             ctx.clone(),
-            |text: String, pattern: String, replacement: String| -> String {
+            |text: RhinoStr, pattern: RhinoStr, replacement: RhinoStr| -> String {
                 regex_utils::reg_exp_replace(&text, &pattern, &replacement)
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
@@ -1811,7 +1874,7 @@ fn register_regex_apis<'js>(
         java,
         globals,
         "regExpFindAll",
-        rquickjs::Function::new(ctx.clone(), |text: String, pattern: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |text: RhinoStr, pattern: RhinoStr| -> String {
             regex_utils::reg_exp_find_all(&text, &pattern)
                 .map(|v| v.join("\n"))
                 .unwrap_or_default()
@@ -1832,7 +1895,7 @@ fn register_time_apis<'js>(
         java,
         globals,
         "formatTime",
-        rquickjs::Function::new(ctx.clone(), |ts: i64, format: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |ts: i64, format: RhinoStr| -> String {
             let fmt = if format.is_empty() {
                 None
             } else {
@@ -1861,15 +1924,19 @@ fn register_time_apis<'js>(
         java,
         globals,
         "timeFormatUTC",
-        rquickjs::Function::new(ctx.clone(), |ts: i64, format: String, sh: i32| -> String {
-            // 对齐 Kotlin SimpleTimeZone(sh, "UTC")：sh 为毫秒偏移
-            let fmt = if format.is_empty() {
-                None
-            } else {
-                Some(format.as_str())
-            };
-            time_utils::format_time_utc(ts, fmt, sh).unwrap_or_else(|e| format!("[ERROR] {}", e))
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            |ts: i64, format: RhinoStr, sh: i32| -> String {
+                // 对齐 Kotlin SimpleTimeZone(sh, "UTC")：sh 为毫秒偏移
+                let fmt = if format.is_empty() {
+                    None
+                } else {
+                    Some(format.as_str())
+                };
+                time_utils::format_time_utc(ts, fmt, sh)
+                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -1885,7 +1952,7 @@ fn register_time_apis<'js>(
         java,
         globals,
         "parseTime",
-        rquickjs::Function::new(ctx.clone(), |time_str: String, format: String| -> i64 {
+        rquickjs::Function::new(ctx.clone(), |time_str: RhinoStr, format: RhinoStr| -> i64 {
             let fmt = if format.is_empty() {
                 None
             } else {
@@ -1909,7 +1976,7 @@ fn register_file_apis<'js>(
         java,
         globals,
         "readFile",
-        rquickjs::Function::new(ctx.clone(), |path: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |path: RhinoStr| -> String {
             file_utils::read_file(&path).unwrap_or_default()
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1919,7 +1986,7 @@ fn register_file_apis<'js>(
         java,
         globals,
         "writeFile",
-        rquickjs::Function::new(ctx.clone(), |path: String, content: String| -> bool {
+        rquickjs::Function::new(ctx.clone(), |path: RhinoStr, content: RhinoStr| -> bool {
             file_utils::write_file(&path, &content).is_ok()
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1929,7 +1996,7 @@ fn register_file_apis<'js>(
         java,
         globals,
         "fileExists",
-        rquickjs::Function::new(ctx.clone(), |path: String| -> bool {
+        rquickjs::Function::new(ctx.clone(), |path: RhinoStr| -> bool {
             file_utils::file_exists(&path).unwrap_or(false)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1939,7 +2006,7 @@ fn register_file_apis<'js>(
         java,
         globals,
         "deleteFile",
-        rquickjs::Function::new(ctx.clone(), |path: String| -> bool {
+        rquickjs::Function::new(ctx.clone(), |path: RhinoStr| -> bool {
             file_utils::delete_file(&path).unwrap_or(false)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1952,7 +2019,7 @@ fn register_file_apis<'js>(
         "readTxtFile",
         rquickjs::Function::new(
             ctx.clone(),
-            |path: String, charset: Opt<String>| -> String {
+            |path: RhinoStr, charset: RhinoOptStr| -> String {
                 file_utils::read_txt_file(&path, charset.0.as_deref()).unwrap_or_default()
             },
         )
@@ -1966,7 +2033,7 @@ fn register_file_apis<'js>(
         java,
         globals,
         "downloadFile",
-        rquickjs::Function::new(ctx.clone(), |arg1: String, arg2: Opt<String>| -> String {
+        rquickjs::Function::new(ctx.clone(), |arg1: RhinoStr, arg2: RhinoOptStr| -> String {
             match arg2.0.as_deref() {
                 None => file_utils::download_file(&arg1, None)
                     .unwrap_or_else(|e| format!("[ERROR] {}", e)),
@@ -1992,7 +2059,7 @@ fn register_file_apis<'js>(
         java,
         globals,
         "getFile",
-        rquickjs::Function::new(ctx.clone(), |ctx, path: String| {
+        rquickjs::Function::new(ctx.clone(), |ctx, path: RhinoStr| {
             let abs = match file_utils::resolve_safe_path(&path) {
                 Ok(p) => p,
                 Err(e) => {
@@ -2039,7 +2106,7 @@ fn register_file_apis<'js>(
         java,
         globals,
         "cacheFile",
-        rquickjs::Function::new(ctx.clone(), |url: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |url: RhinoStr| -> String {
             file_utils::cache_file(&url).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2050,7 +2117,7 @@ fn register_file_apis<'js>(
         java,
         globals,
         "importScript",
-        rquickjs::Function::new(ctx.clone(), |url: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |url: RhinoStr| -> String {
             file_utils::import_script(&url).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2061,7 +2128,7 @@ fn register_file_apis<'js>(
         java,
         globals,
         "getTxtInFolder",
-        rquickjs::Function::new(ctx.clone(), |folder_path: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |folder_path: RhinoStr| -> String {
             file_utils::get_txt_in_folder(&folder_path).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2080,7 +2147,7 @@ fn register_variable_apis<'js>(
         java,
         globals,
         "getVariable",
-        rquickjs::Function::new(ctx.clone(), |key: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |key: RhinoStr| -> String {
             variable_store::get_variable(&key)
                 .ok()
                 .flatten()
@@ -2093,7 +2160,7 @@ fn register_variable_apis<'js>(
         java,
         globals,
         "setVariable",
-        rquickjs::Function::new(ctx.clone(), |key: String, value: String| -> bool {
+        rquickjs::Function::new(ctx.clone(), |key: RhinoStr, value: RhinoStr| -> bool {
             variable_store::set_variable(&key, &value).is_ok()
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2103,7 +2170,7 @@ fn register_variable_apis<'js>(
         java,
         globals,
         "removeVariable",
-        rquickjs::Function::new(ctx.clone(), |key: String| -> bool {
+        rquickjs::Function::new(ctx.clone(), |key: RhinoStr| -> bool {
             variable_store::remove_variable(&key)
                 .ok()
                 .flatten()
@@ -2127,9 +2194,9 @@ fn register_variable_apis<'js>(
         java,
         globals,
         "put",
-        rquickjs::Function::new(ctx.clone(), |key: String, value: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |key: RhinoStr, value: RhinoStr| -> String {
             let _ = variable_store::set_variable(&key, &value);
-            value
+            value.0
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -2138,7 +2205,7 @@ fn register_variable_apis<'js>(
         java,
         globals,
         "get",
-        rquickjs::Function::new(ctx.clone(), |key: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |key: RhinoStr| -> String {
             variable_store::get_variable(&key)
                 .ok()
                 .flatten()
@@ -2151,7 +2218,7 @@ fn register_variable_apis<'js>(
         java,
         globals,
         "setLocal",
-        rquickjs::Function::new(ctx.clone(), |key: String, value: String| -> bool {
+        rquickjs::Function::new(ctx.clone(), |key: RhinoStr, value: RhinoStr| -> bool {
             variable_store::set_variable(&key, &value).is_ok()
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2172,14 +2239,14 @@ fn register_variable_apis<'js>(
     // 跨书源/跨书会话键互不可见（P1-2）。未设 scope 的直用引擎/残留
     // 入口回落裸键（与 P2-9 ③ 引入前一致）。裸 `put`/`get`/`setVariable`
     // 等源上下文挂载（source.put/cache.put 等持久键写入者）保持不变。
-    let store_put = rquickjs::Function::new(ctx.clone(), |key: String, value: String| {
+    let store_put = rquickjs::Function::new(ctx.clone(), |key: RhinoStr, value: RhinoStr| {
         let _ = variable_store::put_flow_variable(&key, &value);
     })
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     java.set("__lgStorePut", store_put)
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
-    let store_get = rquickjs::Function::new(ctx.clone(), |key: String| -> String {
+    let store_get = rquickjs::Function::new(ctx.clone(), |key: RhinoStr| -> String {
         variable_store::get_flow_variable(&key).unwrap_or_default()
     })
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
@@ -2235,7 +2302,7 @@ fn register_book_binding_bridges<'js>(
 ) -> Result<(), LegadoError> {
     let var_set = rquickjs::Function::new(
         ctx.clone(),
-        |book_url: String, key: String, value: String| {
+        |book_url: RhinoStr, key: RhinoStr, value: RhinoStr| {
             let _ = variable_store::set_variable(
                 &variable_store::book_var_key(&book_url, &key),
                 &value,
@@ -2246,7 +2313,7 @@ fn register_book_binding_bridges<'js>(
     java.set("__lgBookVarSet", var_set)
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
-    let var_del = rquickjs::Function::new(ctx.clone(), |book_url: String, key: String| {
+    let var_del = rquickjs::Function::new(ctx.clone(), |book_url: RhinoStr, key: RhinoStr| {
         let _ = variable_store::remove_variable(&variable_store::book_var_key(&book_url, &key));
     })
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
@@ -2255,28 +2322,32 @@ fn register_book_binding_bridges<'js>(
 
     // P2-15：读桥——IIFE `book.getVariable` 本地字面量未命中时回读本层
     // （同阶段跨规则可见性；未命中/锁失败返回空串，不抛错）
-    let var_get = rquickjs::Function::new(ctx.clone(), |book_url: String, key: String| -> String {
-        variable_store::get_variable(&variable_store::book_var_key(&book_url, &key))
-            .ok()
-            .flatten()
-            .unwrap_or_default()
-    })
-    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    let var_get =
+        rquickjs::Function::new(ctx.clone(), |book_url: RhinoStr, key: RhinoStr| -> String {
+            variable_store::get_variable(&variable_store::book_var_key(&book_url, &key))
+                .ok()
+                .flatten()
+                .unwrap_or_default()
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     java.set("__lgBookVarGet", var_get)
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
-    let set_type = rquickjs::Function::new(ctx.clone(), |book_url: String, value: String| {
+    let set_type = rquickjs::Function::new(ctx.clone(), |book_url: RhinoStr, value: RhinoStr| {
         let _ = variable_store::set_variable(&variable_store::book_type_key(&book_url), &value);
     })
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     java.set("__lgBookSetType", set_type)
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
-    let set_reverse_toc = rquickjs::Function::new(ctx.clone(), |book_url: String, flag: String| {
-        let _ =
-            variable_store::set_variable(&variable_store::book_reverse_toc_key(&book_url), &flag);
-    })
-    .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
+    let set_reverse_toc =
+        rquickjs::Function::new(ctx.clone(), |book_url: RhinoStr, flag: RhinoStr| {
+            let _ = variable_store::set_variable(
+                &variable_store::book_reverse_toc_key(&book_url),
+                &flag,
+            );
+        })
+        .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
     java.set("__lgBookSetReverseToc", set_reverse_toc)
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
@@ -2305,9 +2376,9 @@ fn register_utility_apis<'js>(
         java,
         globals,
         "log",
-        rquickjs::Function::new(ctx.clone(), |msg: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |msg: RhinoStr| -> String {
             eprintln!("[legado-js] {}", msg);
-            msg
+            msg.0
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -2472,10 +2543,13 @@ fn register_network_apis<'js>(
         java,
         globals,
         "httpGet",
-        rquickjs::Function::new(ctx.clone(), |url: String, headers: Opt<String>| -> String {
-            network::http_get(&url, headers.0.as_deref())
-                .unwrap_or_else(|e| format!("[ERROR] {}", e))
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: RhinoStr, headers: RhinoOptStr| -> String {
+                network::http_get(&url, headers.0.as_deref())
+                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -2486,7 +2560,7 @@ fn register_network_apis<'js>(
         "httpPost",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: String, body: String, headers: Opt<String>| -> String {
+            |url: RhinoStr, body: RhinoStr, headers: RhinoOptStr| -> String {
                 network::http_post(&url, &body, headers.0.as_deref())
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
@@ -2499,7 +2573,7 @@ fn register_network_apis<'js>(
         java,
         globals,
         "httpHead",
-        rquickjs::Function::new(ctx.clone(), |url: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |url: RhinoStr| -> String {
             network::http_head(&url).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2510,7 +2584,7 @@ fn register_network_apis<'js>(
         java,
         globals,
         "ajax",
-        rquickjs::Function::new(ctx.clone(), |options: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |options: RhinoStr| -> String {
             network::ajax(&options).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2523,7 +2597,7 @@ fn register_network_apis<'js>(
         java,
         globals,
         "putGlobalHeaders",
-        rquickjs::Function::new(ctx.clone(), |headers_json: String| -> bool {
+        rquickjs::Function::new(ctx.clone(), |headers_json: RhinoStr| -> bool {
             match serde_json::from_str::<std::collections::HashMap<String, String>>(&headers_json) {
                 Ok(map) => {
                     let tag =
@@ -2563,21 +2637,23 @@ fn register_network_apis<'js>(
         java,
         globals,
         "headerMapPut",
-        rquickjs::Function::new(ctx.clone(), |key: String, value: String| -> bool {
-            legado_parser::analyze_url::push_pending_request_header(key, value);
+        rquickjs::Function::new(ctx.clone(), |key: RhinoStr, value: RhinoStr| -> bool {
+            legado_parser::analyze_url::push_pending_request_header(key.0, value.0);
             true
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // ajaxAll(urls_json) -> String（JSON 数组，并发请求多个 URL）
+    // ajaxAll(urls) -> String（JSON 数组，并发请求多个 URL）
     // 对应 Kotlin: ajaxAll(urlList: Array<String>): Array<StrResponse>
+    // 入参经 LooseStrList 宽松收敛：JS 数组（晋江文学 bookList `java.ajaxAll(urls)`）
+    // → 元素级 ToString 后的 JSON 数组文本；null/undefined → 空串（空列表）。
     mount_dual(
         java,
         globals,
         "ajaxAll",
-        rquickjs::Function::new(ctx.clone(), |urls: String| -> String {
-            network::ajax_all(&urls).unwrap_or_else(|e| format!("[ERROR] {}", e))
+        rquickjs::Function::new(ctx.clone(), |urls: LooseStrList| -> String {
+            network::ajax_all(&urls.0).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -2591,10 +2667,10 @@ fn register_network_apis<'js>(
         "connect",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: String,
-             method: Opt<String>,
-             headers: Opt<String>,
-             body: Opt<String>,
+            |url: RhinoStr,
+             method: RhinoOptStr,
+             headers: RhinoOptStr,
+             body: RhinoOptStr,
              timeout_ms: Opt<i64>|
              -> String {
                 network::connect_full(
@@ -2618,7 +2694,11 @@ fn register_network_apis<'js>(
         "connectNR",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: String, method: Opt<String>, headers: Opt<String>, body: Opt<String>| -> String {
+            |url: RhinoStr,
+             method: RhinoOptStr,
+             headers: RhinoOptStr,
+             body: RhinoOptStr|
+             -> String {
                 network::connect_no_redirect(
                     &url,
                     method.0.as_deref(),
@@ -2637,10 +2717,13 @@ fn register_network_apis<'js>(
         java,
         globals,
         "head",
-        rquickjs::Function::new(ctx.clone(), |url: String, headers: Opt<String>| -> String {
-            network::head_full(&url, headers.0.as_deref())
-                .unwrap_or_else(|e| format!("[ERROR] {}", e))
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: RhinoStr, headers: RhinoOptStr| -> String {
+                network::head_full(&url, headers.0.as_deref())
+                    .unwrap_or_else(|e| format!("[ERROR] {}", e))
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -2652,7 +2735,7 @@ fn register_network_apis<'js>(
         "post",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: String, body: String, headers: Opt<String>| -> String {
+            |url: RhinoStr, body: RhinoStr, headers: RhinoOptStr| -> String {
                 network::post_full(&url, &body, headers.0.as_deref())
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
@@ -2680,7 +2763,7 @@ fn register_cookie_apis<'js>(
         java,
         globals,
         "getCookie",
-        rquickjs::Function::new(ctx.clone(), |url: String, key: Opt<String>| -> String {
+        rquickjs::Function::new(ctx.clone(), |url: RhinoStr, key: RhinoOptStr| -> String {
             match key.0 {
                 Some(k) => cookie_store::get_cookie_by_key(&url, &k),
                 None => cookie_store::get_cookie(&url),
@@ -2701,7 +2784,7 @@ fn register_cookie_apis<'js>(
         java,
         globals,
         "setCookie",
-        rquickjs::Function::new(ctx.clone(), |url: String, cookie_str: String| -> bool {
+        rquickjs::Function::new(ctx.clone(), |url: RhinoStr, cookie_str: RhinoStr| -> bool {
             cookie_store::set_cookie_str(&url, &cookie_str);
             true
         })
@@ -2713,7 +2796,7 @@ fn register_cookie_apis<'js>(
         java,
         globals,
         "clearCookies",
-        rquickjs::Function::new(ctx.clone(), |url: String| -> bool {
+        rquickjs::Function::new(ctx.clone(), |url: RhinoStr| -> bool {
             cookie_store::clear_cookies(&url);
             true
         })
@@ -2729,7 +2812,7 @@ fn register_cookie_apis<'js>(
         java,
         globals,
         "removeCookie",
-        rquickjs::Function::new(ctx.clone(), |url: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |url: RhinoStr| -> String {
             cookie_store::clear_cookies(&url);
             String::new()
         })
@@ -2745,10 +2828,13 @@ fn register_cookie_apis<'js>(
         java,
         globals,
         "replaceCookie",
-        rquickjs::Function::new(ctx.clone(), |url: String, cookie_str: String| -> String {
-            cookie_store::replace_cookie_str(&url, &cookie_str);
-            String::new()
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            |url: RhinoStr, cookie_str: RhinoStr| -> String {
+                cookie_store::replace_cookie_str(&url, &cookie_str);
+                String::new()
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -2761,7 +2847,7 @@ fn register_cookie_apis<'js>(
         java,
         globals,
         "cookieToMap",
-        rquickjs::Function::new(ctx.clone(), |cookie_str: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |cookie_str: RhinoStr| -> String {
             let pairs = cookie_store::cookie_str_to_map(&cookie_str);
             let body = pairs
                 .iter()
@@ -2787,7 +2873,7 @@ fn register_cookie_apis<'js>(
         java,
         globals,
         "mapToCookie",
-        rquickjs::Function::new(ctx.clone(), |map_json: String| -> Option<String> {
+        rquickjs::Function::new(ctx.clone(), |map_json: RhinoStr| -> Option<String> {
             let value: serde_json::Value = serde_json::from_str(&map_json).ok()?;
             let obj = value.as_object()?;
             let pairs: Vec<(String, String)> = obj
@@ -2830,7 +2916,7 @@ fn register_crypto_apis<'js>(
              data: rquickjs::TypedArray<u8>,
              key: rquickjs::TypedArray<u8>,
              iv: Opt<rquickjs::TypedArray<u8>>,
-             transformation: Opt<String>|
+             transformation: RhinoOptStr|
              -> rquickjs::Result<rquickjs::Value<'js>> {
                 use rquickjs::IntoJs;
                 let t = transformation
@@ -2860,7 +2946,7 @@ fn register_crypto_apis<'js>(
         "aesEncrypt",
         rquickjs::Function::new(
             ctx.clone(),
-            |data: String, key: String, iv: Opt<String>| -> String {
+            |data: RhinoStr, key: RhinoStr, iv: RhinoOptStr| -> String {
                 crypto_api::aes_encrypt(&data, &key, iv.0.as_deref())
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
@@ -2875,7 +2961,7 @@ fn register_crypto_apis<'js>(
         "aesDecrypt",
         rquickjs::Function::new(
             ctx.clone(),
-            |data: String, key: String, iv: Opt<String>| -> String {
+            |data: RhinoStr, key: RhinoStr, iv: RhinoOptStr| -> String {
                 crypto_api::aes_decrypt(&data, &key, iv.0.as_deref())
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
@@ -2890,7 +2976,7 @@ fn register_crypto_apis<'js>(
         "desEncrypt",
         rquickjs::Function::new(
             ctx.clone(),
-            |data: String, key: String, iv: Opt<String>| -> String {
+            |data: RhinoStr, key: RhinoStr, iv: RhinoOptStr| -> String {
                 crypto_api::des_encrypt(&data, &key, iv.0.as_deref())
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
@@ -2905,7 +2991,7 @@ fn register_crypto_apis<'js>(
         "desDecrypt",
         rquickjs::Function::new(
             ctx.clone(),
-            |data: String, key: String, iv: Opt<String>| -> String {
+            |data: RhinoStr, key: RhinoStr, iv: RhinoOptStr| -> String {
                 crypto_api::des_decrypt(&data, &key, iv.0.as_deref())
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
@@ -2918,7 +3004,7 @@ fn register_crypto_apis<'js>(
         java,
         globals,
         "rc4Encrypt",
-        rquickjs::Function::new(ctx.clone(), |data: String, key: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |data: RhinoStr, key: RhinoStr| -> String {
             crypto_api::rc4_encrypt(&data, &key).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2929,7 +3015,7 @@ fn register_crypto_apis<'js>(
         java,
         globals,
         "rc4Decrypt",
-        rquickjs::Function::new(ctx.clone(), |data: String, key: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |data: RhinoStr, key: RhinoStr| -> String {
             crypto_api::rc4_decrypt(&data, &key).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2946,7 +3032,7 @@ fn register_crypto_apis<'js>(
         rquickjs::Function::new(
             ctx.clone(),
             |ctx: rquickjs::Ctx<'js>,
-             transformation: String,
+             transformation: RhinoStr,
              key: rquickjs::Value<'js>,
              iv: Opt<rquickjs::Value<'js>>|
              -> rquickjs::Result<rquickjs::Object<'js>> {
@@ -2971,7 +3057,12 @@ fn register_crypto_apis<'js>(
         "tripleDESEncodeBase64Str",
         rquickjs::Function::new(
             ctx.clone(),
-            |data: String, key: String, mode: String, padding: String, iv: String| -> String {
+            |data: RhinoStr,
+             key: RhinoStr,
+             mode: RhinoStr,
+             padding: RhinoStr,
+             iv: RhinoStr|
+             -> String {
                 crypto_api::triple_des_encode_base64_str(&data, &key, &mode, &padding, &iv)
                     .unwrap_or_else(|e| format!("[ERROR] {e}"))
             },
@@ -2987,7 +3078,7 @@ fn register_crypto_apis<'js>(
         "aesBase64DecodeToString",
         rquickjs::Function::new(
             ctx.clone(),
-            |data: String, key: String, transformation: String, iv: String| -> String {
+            |data: RhinoStr, key: RhinoStr, transformation: RhinoStr, iv: RhinoStr| -> String {
                 symmetric_crypto::aes_base64_decode_to_string(&data, &key, &transformation, &iv)
                     .unwrap_or_else(|e| format!("[ERROR] {e}"))
             },
@@ -3002,7 +3093,7 @@ fn register_crypto_apis<'js>(
         "aesDecodeToString",
         rquickjs::Function::new(
             ctx.clone(),
-            |data: String, key: String, transformation: String, iv: String| -> String {
+            |data: RhinoStr, key: RhinoStr, transformation: RhinoStr, iv: RhinoStr| -> String {
                 // 非 Base64 原始密文场景较少；与 aesBase64 共用入口时先试 Base64
                 symmetric_crypto::aes_base64_decode_to_string(&data, &key, &transformation, &iv)
                     .unwrap_or_else(|e| format!("[ERROR] {e}"))
@@ -3021,7 +3112,7 @@ fn register_crypto_apis<'js>(
         rquickjs::Function::new(
             ctx.clone(),
             |ctx: rquickjs::Ctx<'js>,
-             transformation: String|
+             transformation: RhinoStr|
              -> rquickjs::Result<rquickjs::Object<'js>> {
                 asymmetric_crypto::build_asymmetric_crypto_object(ctx, &transformation)
             },
@@ -3039,7 +3130,7 @@ fn register_crypto_apis<'js>(
         rquickjs::Function::new(
             ctx.clone(),
             |ctx: rquickjs::Ctx<'js>,
-             algorithm: String|
+             algorithm: RhinoStr|
              -> rquickjs::Result<rquickjs::Object<'js>> {
                 asymmetric_crypto::build_sign_object(ctx, &algorithm)
             },
@@ -3073,7 +3164,7 @@ fn register_message_digest_apis<'js>(
         java,
         globals,
         "messageDigestValidate",
-        rquickjs::Function::new(ctx.clone(), |algo: String| -> bool {
+        rquickjs::Function::new(ctx.clone(), |algo: RhinoStr| -> bool {
             message_digest::is_supported_algorithm(&algo)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3087,7 +3178,7 @@ fn register_message_digest_apis<'js>(
         rquickjs::Function::new(
             ctx.clone(),
             |ctx: rquickjs::Ctx<'js>,
-             algo: String,
+             algo: RhinoStr,
              data: rquickjs::TypedArray<u8>|
              -> rquickjs::Result<rquickjs::Value<'js>> {
                 use rquickjs::IntoJs;
@@ -3122,7 +3213,7 @@ fn register_html_apis<'js>(
         java,
         globals,
         "htmlFormat",
-        rquickjs::Function::new(ctx.clone(), |html: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |html: RhinoStr| -> String {
             html_format::html_format(&html)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3135,7 +3226,7 @@ fn register_html_apis<'js>(
         "htmlFormatWithTags",
         rquickjs::Function::new(
             ctx.clone(),
-            |html: String, keep_tags: Opt<String>| -> String {
+            |html: RhinoStr, keep_tags: RhinoOptStr| -> String {
                 html_format::html_format_with_tags(&html, keep_tags.0.as_deref())
             },
         )
@@ -3161,9 +3252,9 @@ fn register_html_parse_apis<'js>(
         "getElement",
         rquickjs::Function::new(
             ctx.clone(),
-            |ctx: rquickjs::Ctx<'js>, css: String| -> rquickjs::Result<rquickjs::Array<'js>> {
+            |ctx: rquickjs::Ctx<'js>, css: RhinoStr| -> rquickjs::Result<rquickjs::Array<'js>> {
                 let src = ctx.globals().get::<_, String>("src").unwrap_or_default();
-                html_parse::get_element(&ctx, css, src).map_err(|e| rquickjs::Error::FromJs {
+                html_parse::get_element(&ctx, css.0, src).map_err(|e| rquickjs::Error::FromJs {
                     from: "String",
                     to: "Array<Element>",
                     message: Some(e.to_string()),
@@ -3179,9 +3270,9 @@ fn register_html_parse_apis<'js>(
         "getElements",
         rquickjs::Function::new(
             ctx.clone(),
-            |ctx: rquickjs::Ctx<'js>, css: String| -> rquickjs::Result<rquickjs::Array<'js>> {
+            |ctx: rquickjs::Ctx<'js>, css: RhinoStr| -> rquickjs::Result<rquickjs::Array<'js>> {
                 let src = ctx.globals().get::<_, String>("src").unwrap_or_default();
-                html_parse::get_elements(&ctx, css, src).map_err(|e| rquickjs::Error::FromJs {
+                html_parse::get_elements(&ctx, css.0, src).map_err(|e| rquickjs::Error::FromJs {
                     from: "String",
                     to: "Array<Element>",
                     message: Some(e.to_string()),
@@ -3199,9 +3290,9 @@ fn register_html_parse_apis<'js>(
         "getString",
         rquickjs::Function::new(
             ctx.clone(),
-            |ctx: rquickjs::Ctx<'js>, css: String, m_content: Opt<String>| -> String {
+            |ctx: rquickjs::Ctx<'js>, css: RhinoStr, m_content: RhinoOptStr| -> String {
                 let src = ctx.globals().get::<_, String>("src").unwrap_or_default();
-                html_parse::get_string(&ctx, css, m_content, src)
+                html_parse::get_string(&ctx, css.0, Opt(m_content.0), src)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3213,9 +3304,9 @@ fn register_html_parse_apis<'js>(
         "getStrings",
         rquickjs::Function::new(
             ctx.clone(),
-            |ctx: rquickjs::Ctx<'js>, css: String, m_content: Opt<String>| -> String {
+            |ctx: rquickjs::Ctx<'js>, css: RhinoStr, m_content: RhinoOptStr| -> String {
                 let src = ctx.globals().get::<_, String>("src").unwrap_or_default();
-                html_parse::get_strings(&ctx, css, m_content, src)
+                html_parse::get_strings(&ctx, css.0, Opt(m_content.0), src)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3239,11 +3330,11 @@ fn register_html_parse_apis<'js>(
         rquickjs::Function::new(
             ctx.clone(),
             |ctx: rquickjs::Ctx<'js>,
-             rule: String,
-             m_content: Opt<String>|
+             rule: RhinoStr,
+             m_content: RhinoOptStr|
              -> rquickjs::Result<rquickjs::Value<'js>> {
                 let src = ctx.globals().get::<_, String>("src").unwrap_or_default();
-                let items = html_parse::get_string_list(&ctx, rule, m_content, src);
+                let items = html_parse::get_string_list(&ctx, rule.0, Opt(m_content.0), src);
                 match items {
                     None => Ok(rquickjs::Value::new_null(ctx)),
                     Some(items) => {
@@ -3329,10 +3420,10 @@ fn register_html_parse_apis<'js>(
         rquickjs::Function::new(
             ctx.clone(),
             |ctx: rquickjs::Ctx<'js>,
-             content: String,
-             base_url: Opt<String>|
+             content: RhinoStr,
+             base_url: RhinoOptStr|
              -> rquickjs::Result<()> {
-                ctx.globals().set("src", content)?;
+                ctx.globals().set("src", content.0)?;
                 if let Some(b) = base_url.0 {
                     ctx.globals().set("baseUrl", b)?;
                 }
@@ -3348,7 +3439,7 @@ fn register_html_parse_apis<'js>(
         "jsoupAttr",
         rquickjs::Function::new(
             ctx.clone(),
-            |html: String, css: String, attr: String| -> String {
+            |html: RhinoStr, css: RhinoStr, attr: RhinoStr| -> String {
                 html_parse::jsoup_attr(&html, &css, &attr)
             },
         )
@@ -3358,7 +3449,7 @@ fn register_html_parse_apis<'js>(
 
     java.set(
         "jsoupText",
-        rquickjs::Function::new(ctx.clone(), |html: String, css: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |html: RhinoStr, css: RhinoStr| -> String {
             html_parse::jsoup_text(&html, &css)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3367,7 +3458,7 @@ fn register_html_parse_apis<'js>(
 
     java.set(
         "jsoupHtml",
-        rquickjs::Function::new(ctx.clone(), |html: String, css: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |html: RhinoStr, css: RhinoStr| -> String {
             html_parse::jsoup_html(&html, &css)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3379,7 +3470,7 @@ fn register_html_parse_apis<'js>(
     // `rows.size()` 此前因缺失抛 `not a function`）
     java.set(
         "jsoupSize",
-        rquickjs::Function::new(ctx.clone(), |html: String, css: String| -> u32 {
+        rquickjs::Function::new(ctx.clone(), |html: RhinoStr, css: RhinoStr| -> u32 {
             html_parse::jsoup_size(&html, &css)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3392,7 +3483,7 @@ fn register_html_parse_apis<'js>(
         "jsoupAttrN",
         rquickjs::Function::new(
             ctx.clone(),
-            |html: String, css: String, i: i64, attr: String| -> String {
+            |html: RhinoStr, css: RhinoStr, i: i64, attr: RhinoStr| -> String {
                 html_parse::jsoup_attr_n(&html, &css, i, &attr)
             },
         )
@@ -3403,9 +3494,12 @@ fn register_html_parse_apis<'js>(
     // java.jsoupTextN(html, css, i) — 第 i 个匹配元素文本
     java.set(
         "jsoupTextN",
-        rquickjs::Function::new(ctx.clone(), |html: String, css: String, i: i64| -> String {
-            html_parse::jsoup_text_n(&html, &css, i)
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            |html: RhinoStr, css: RhinoStr, i: i64| -> String {
+                html_parse::jsoup_text_n(&html, &css, i)
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
@@ -3413,9 +3507,12 @@ fn register_html_parse_apis<'js>(
     // java.jsoupHtmlN(html, css, i) — 第 i 个匹配元素 innerHTML
     java.set(
         "jsoupHtmlN",
-        rquickjs::Function::new(ctx.clone(), |html: String, css: String, i: i64| -> String {
-            html_parse::jsoup_html_n(&html, &css, i)
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            |html: RhinoStr, css: RhinoStr, i: i64| -> String {
+                html_parse::jsoup_html_n(&html, &css, i)
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
@@ -3427,7 +3524,7 @@ fn register_html_parse_apis<'js>(
         "jsoupHtmlNExcluded",
         rquickjs::Function::new(
             ctx.clone(),
-            |html: String, css: String, i: i64, excludes: String| -> String {
+            |html: RhinoStr, css: RhinoStr, i: i64, excludes: RhinoStr| -> String {
                 html_parse::jsoup_html_n_excluded(&html, &css, i, &excludes)
             },
         )
@@ -3440,7 +3537,7 @@ fn register_html_parse_apis<'js>(
     // 77读书正文规则 `Parser.unescapeEntities(htm, true)`）
     java.set(
         "jsoupUnescapeEntities",
-        rquickjs::Function::new(ctx.clone(), |s: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |s: RhinoStr| -> String {
             html_parse::jsoup_unescape_entities(&s)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3480,7 +3577,7 @@ fn register_cache_apis<'js>(
             rquickjs::Function::new(
                 ctx.clone(),
                 |ctx: rquickjs::Ctx<'js>,
-                 key: String,
+                 key: RhinoStr,
                  value: rquickjs::Value<'js>,
                  save_time: Opt<i64>|
                  -> bool {
@@ -3498,7 +3595,7 @@ fn register_cache_apis<'js>(
             "putMemory",
             rquickjs::Function::new(
                 ctx.clone(),
-                |ctx: rquickjs::Ctx<'js>, key: String, value: rquickjs::Value<'js>| -> () {
+                |ctx: rquickjs::Ctx<'js>, key: RhinoStr, value: rquickjs::Value<'js>| -> () {
                     cache_store::put_memory(&key, &stringify_cache_value(&ctx, &value));
                 },
             )
@@ -3512,7 +3609,9 @@ fn register_cache_apis<'js>(
             "getFromMemory",
             rquickjs::Function::new(
                 ctx.clone(),
-                |ctx: rquickjs::Ctx<'js>, key: String| -> rquickjs::Result<rquickjs::Value<'js>> {
+                |ctx: rquickjs::Ctx<'js>,
+                 key: RhinoStr|
+                 -> rquickjs::Result<rquickjs::Value<'js>> {
                     cache_value_or_null(&ctx, cache_store::get_from_memory(&key))
                 },
             )
@@ -3524,9 +3623,12 @@ fn register_cache_apis<'js>(
     cache
         .set(
             "deleteMemory",
-            rquickjs::Function::new(ctx.clone(), |_ctx: rquickjs::Ctx<'js>, key: String| -> () {
-                cache_store::delete_memory(&key);
-            })
+            rquickjs::Function::new(
+                ctx.clone(),
+                |_ctx: rquickjs::Ctx<'js>, key: RhinoStr| -> () {
+                    cache_store::delete_memory(&key);
+                },
+            )
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
@@ -3543,7 +3645,7 @@ fn register_cache_apis<'js>(
         "cachePutMemory",
         rquickjs::Function::new(
             ctx.clone(),
-            |ctx: rquickjs::Ctx<'js>, key: String, value: rquickjs::Value<'js>| -> () {
+            |ctx: rquickjs::Ctx<'js>, key: RhinoStr, value: rquickjs::Value<'js>| -> () {
                 cache_store::put_memory(&key, &stringify_cache_value(&ctx, &value));
             },
         )
@@ -3557,7 +3659,7 @@ fn register_cache_apis<'js>(
         "cacheGetFromMemory",
         rquickjs::Function::new(
             ctx.clone(),
-            |ctx: rquickjs::Ctx<'js>, key: String| -> rquickjs::Result<rquickjs::Value<'js>> {
+            |ctx: rquickjs::Ctx<'js>, key: RhinoStr| -> rquickjs::Result<rquickjs::Value<'js>> {
                 cache_value_or_null(&ctx, cache_store::get_from_memory(&key))
             },
         )
@@ -3568,7 +3670,7 @@ fn register_cache_apis<'js>(
         java,
         globals,
         "cacheDeleteMemory",
-        rquickjs::Function::new(ctx.clone(), |key: String| -> () {
+        rquickjs::Function::new(ctx.clone(), |key: RhinoStr| -> () {
             cache_store::delete_memory(&key);
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3581,7 +3683,7 @@ fn register_cache_apis<'js>(
             rquickjs::Function::new(
                 ctx.clone(),
                 |ctx: rquickjs::Ctx<'js>,
-                 key: String,
+                 key: RhinoStr,
                  only_disk: Opt<bool>|
                  -> rquickjs::Result<rquickjs::Value<'js>> {
                     cache_value_or_null(&ctx, cache_store::get(&key, only_disk.0.unwrap_or(false)))
@@ -3597,7 +3699,7 @@ fn register_cache_apis<'js>(
             "putFile",
             rquickjs::Function::new(
                 ctx.clone(),
-                |ctx: rquickjs::Ctx<'js>, key: String, value: rquickjs::Value<'js>| -> bool {
+                |ctx: rquickjs::Ctx<'js>, key: RhinoStr, value: rquickjs::Value<'js>| -> bool {
                     cache_store::put_file(&key, &stringify_cache_value(&ctx, &value))
                 },
             )
@@ -3611,7 +3713,9 @@ fn register_cache_apis<'js>(
             "getFile",
             rquickjs::Function::new(
                 ctx.clone(),
-                |ctx: rquickjs::Ctx<'js>, key: String| -> rquickjs::Result<rquickjs::Value<'js>> {
+                |ctx: rquickjs::Ctx<'js>,
+                 key: RhinoStr|
+                 -> rquickjs::Result<rquickjs::Value<'js>> {
                     cache_value_or_null(&ctx, cache_store::get_file(&key))
                 },
             )
@@ -3623,9 +3727,12 @@ fn register_cache_apis<'js>(
     cache
         .set(
             "delete",
-            rquickjs::Function::new(ctx.clone(), |_ctx: rquickjs::Ctx<'js>, key: String| -> () {
-                cache_store::delete(&key);
-            })
+            rquickjs::Function::new(
+                ctx.clone(),
+                |_ctx: rquickjs::Ctx<'js>, key: RhinoStr| -> () {
+                    cache_store::delete(&key);
+                },
+            )
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
@@ -3698,7 +3805,7 @@ fn register_chinese_apis<'js>(
         java,
         globals,
         "t2s",
-        rquickjs::Function::new(ctx.clone(), |text: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |text: RhinoStr| -> String {
             chinese_utils::t2s(&text)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3709,7 +3816,7 @@ fn register_chinese_apis<'js>(
         java,
         globals,
         "s2t",
-        rquickjs::Function::new(ctx.clone(), |text: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |text: RhinoStr| -> String {
             chinese_utils::s2t(&text)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3820,8 +3927,8 @@ fn register_concurrency_apis<'js>(
         "singleFlight",
         rquickjs::Function::new(
             ctx.clone(),
-            |key: String, wait_ms: i64, f_js: String| -> String {
-                concurrency_api::single_flight(key, wait_ms, f_js)
+            |key: RhinoStr, wait_ms: i64, f_js: RhinoStr| -> String {
+                concurrency_api::single_flight(key.0, wait_ms, f_js.0)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3832,8 +3939,8 @@ fn register_concurrency_apis<'js>(
         java,
         globals,
         "lock",
-        rquickjs::Function::new(ctx.clone(), |key: String, wait_ms: i64| -> bool {
-            concurrency_api::lock(key, wait_ms)
+        rquickjs::Function::new(ctx.clone(), |key: RhinoStr, wait_ms: i64| -> bool {
+            concurrency_api::lock(key.0, wait_ms)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -3843,8 +3950,8 @@ fn register_concurrency_apis<'js>(
         java,
         globals,
         "tick",
-        rquickjs::Function::new(ctx.clone(), |key: String| -> i64 {
-            concurrency_api::tick(key)
+        rquickjs::Function::new(ctx.clone(), |key: RhinoStr| -> i64 {
+            concurrency_api::tick(key.0)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -3867,7 +3974,7 @@ fn register_misc_apis<'js>(
         java,
         globals,
         "getSource",
-        rquickjs::Function::new(ctx.clone(), |source_url: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |source_url: RhinoStr| -> String {
             misc_api::get_source(&source_url)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3878,19 +3985,20 @@ fn register_misc_apis<'js>(
         java,
         globals,
         "getTag",
-        rquickjs::Function::new(ctx.clone(), |tag_name: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |tag_name: RhinoStr| -> String {
             misc_api::get_tag(&tag_name)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // ajaxTestAll(urls) -> String
+    // ajaxTestAll(urls) -> String（入参宽松收敛同 ajaxAll：上游 Kotlin
+    // `ajaxTestAll(urlList: Array<String>, timeout: Int)`，JsExtensions.kt:173）
     mount_dual(
         java,
         globals,
         "ajaxTestAll",
-        rquickjs::Function::new(ctx.clone(), |urls: String| -> String {
-            misc_api::ajax_test_all(&urls)
+        rquickjs::Function::new(ctx.clone(), |urls: LooseStrList| -> String {
+            misc_api::ajax_test_all(&urls.0)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -3900,9 +4008,12 @@ fn register_misc_apis<'js>(
         java,
         globals,
         "toUrl",
-        rquickjs::Function::new(ctx.clone(), |path: String, query: Opt<String>| -> String {
-            misc_api::to_url(&path, query.0.as_deref().unwrap_or(""))
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            |path: RhinoStr, query: RhinoOptStr| -> String {
+                misc_api::to_url(&path, query.0.as_deref().unwrap_or(""))
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
@@ -3911,7 +4022,7 @@ fn register_misc_apis<'js>(
         java,
         globals,
         "toast",
-        rquickjs::Function::new(ctx.clone(), |msg: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |msg: RhinoStr| -> String {
             misc_api::toast(&msg)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3924,7 +4035,7 @@ fn register_misc_apis<'js>(
         java,
         globals,
         "longToast",
-        rquickjs::Function::new(ctx.clone(), |msg: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |msg: RhinoStr| -> String {
             misc_api::long_toast(&msg)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3939,8 +4050,8 @@ fn register_misc_apis<'js>(
         rquickjs::Function::new(
             ctx.clone(),
             |ctx: rquickjs::Ctx<'js>,
-             url_str: String,
-             base_url: Opt<String>|
+             url_str: RhinoStr,
+             base_url: RhinoOptStr|
              -> rquickjs::Result<rquickjs::Object<'js>> {
                 let parts = misc_api::parse_js_url(&url_str, base_url.0.as_deref().unwrap_or(""))
                     .map_err(|e| rquickjs::Error::FromJs {
@@ -3976,7 +4087,7 @@ fn register_misc_apis<'js>(
         java,
         globals,
         "logType",
-        rquickjs::Function::new(ctx.clone(), |value: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |value: RhinoStr| -> String {
             misc_api::log_type(&value)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3991,7 +4102,7 @@ fn register_misc_apis<'js>(
         "openVideoPlayer",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: String, title: Opt<String>, is_float: Opt<bool>| -> String {
+            |url: RhinoStr, title: RhinoOptStr, is_float: Opt<bool>| -> String {
                 platform::open_video_player(
                     &url,
                     title.0.as_deref().unwrap_or(""),
@@ -4035,10 +4146,10 @@ fn register_misc_apis<'js>(
         "webViewGetSource",
         rquickjs::Function::new(
             ctx.clone(),
-            |html: Opt<String>,
-             url: Opt<String>,
-             js: Opt<String>,
-             source_regex: Opt<String>,
+            |html: RhinoOptStr,
+             url: RhinoOptStr,
+             js: RhinoOptStr,
+             source_regex: RhinoOptStr,
              cache_first: Opt<bool>,
              delay_time: Opt<i64>|
              -> String {
@@ -4065,10 +4176,10 @@ fn register_misc_apis<'js>(
         "webViewGetOverrideUrl",
         rquickjs::Function::new(
             ctx.clone(),
-            |html: Opt<String>,
-             url: Opt<String>,
-             js: Opt<String>,
-             override_url_regex: String,
+            |html: RhinoOptStr,
+             url: RhinoOptStr,
+             js: RhinoOptStr,
+             override_url_regex: RhinoStr,
              cache_first: Opt<bool>,
              delay_time: Opt<i64>|
              -> String {
@@ -4094,10 +4205,10 @@ fn register_misc_apis<'js>(
         "showBrowser",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: String,
-             html: Opt<String>,
-             preload_js: Opt<String>,
-             config: Opt<String>|
+            |url: RhinoStr,
+             html: RhinoOptStr,
+             preload_js: RhinoOptStr,
+             config: RhinoOptStr|
              -> String {
                 platform::show_browser(
                     &url,
@@ -4142,7 +4253,7 @@ fn register_misc_apis<'js>(
         java,
         globals,
         "copyText",
-        rquickjs::Function::new(ctx.clone(), |text: String| {
+        rquickjs::Function::new(ctx.clone(), |text: RhinoStr| {
             crate::host_api::ui_action_queue::source_login_ext::copy_text(&text);
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -4183,7 +4294,7 @@ fn register_misc_apis<'js>(
         "startBrowser",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: String, title: Opt<String>, html: Opt<String>| -> String {
+            |url: RhinoStr, title: RhinoOptStr, html: RhinoOptStr| -> String {
                 platform::start_browser(
                     &url,
                     title.0.as_deref().unwrap_or(""),
@@ -4202,7 +4313,7 @@ fn register_misc_apis<'js>(
         "openUrl",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: String, mime_type: Opt<String>| -> String {
+            |url: RhinoStr, mime_type: RhinoOptStr| -> String {
                 platform::open_url(&url, mime_type.0.as_deref().unwrap_or(""))
             },
         )
@@ -4215,7 +4326,7 @@ fn register_misc_apis<'js>(
         java,
         globals,
         "getVerificationCode",
-        rquickjs::Function::new(ctx.clone(), |image_url: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |image_url: RhinoStr| -> String {
             platform::get_verification_code(&image_url)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -4230,10 +4341,10 @@ fn register_misc_apis<'js>(
         "startBrowserAwait",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: String,
-             title: Opt<String>,
+            |url: RhinoStr,
+             title: RhinoOptStr,
              _refetch_after_success: Opt<bool>,
-             _html: Opt<String>|
+             _html: RhinoOptStr|
              -> String {
                 platform::start_browser_await(&url, title.0.as_deref().unwrap_or(""))
             },
@@ -4256,7 +4367,7 @@ fn register_archive_apis<'js>(
 ) -> Result<(), LegadoError> {
     // unzipFile / unArchiveFile(zipPath) -> String（解压目标目录）
     // 对应 Kotlin: unzipFile → unArchiveFile；空路径返回空串
-    let unarchive = rquickjs::Function::new(ctx.clone(), |zip_path: String| -> String {
+    let unarchive = rquickjs::Function::new(ctx.clone(), |zip_path: RhinoStr| -> String {
         if zip_path.is_empty() {
             return String::new();
         }
@@ -4283,7 +4394,7 @@ fn register_archive_apis<'js>(
         "getZipStringContent",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: String, entry: String, charset: Opt<String>| -> String {
+            |url: RhinoStr, entry: RhinoStr, charset: RhinoOptStr| -> String {
                 get_zip_string_content_js(&url, &entry, charset.0.as_deref())
             },
         )
@@ -4298,7 +4409,7 @@ fn register_archive_apis<'js>(
         "un7zFile",
         rquickjs::Function::new(
             ctx.clone(),
-            |seven_z_path: String, output_path: Opt<String>| -> String {
+            |seven_z_path: RhinoStr, output_path: RhinoOptStr| -> String {
                 archive_utils::un7z_file(&seven_z_path, output_path.0.as_deref())
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
@@ -4314,7 +4425,7 @@ fn register_archive_apis<'js>(
         "unrarFile",
         rquickjs::Function::new(
             ctx.clone(),
-            |rar_path: String, output_path: Opt<String>| -> String {
+            |rar_path: RhinoStr, output_path: RhinoOptStr| -> String {
                 archive_utils::unrar_file(&rar_path, output_path.0.as_deref())
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
@@ -4331,7 +4442,7 @@ fn register_archive_apis<'js>(
         "get7zStringContent",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: String, entry: String, charset: Opt<String>| -> String {
+            |url: RhinoStr, entry: RhinoStr, charset: RhinoOptStr| -> String {
                 get_7z_string_content_js(&url, &entry, charset.0.as_deref())
             },
         )
@@ -4347,7 +4458,7 @@ fn register_archive_apis<'js>(
         "getRarStringContent",
         rquickjs::Function::new(
             ctx.clone(),
-            |url: String, entry: String, charset: Opt<String>| -> String {
+            |url: RhinoStr, entry: RhinoStr, charset: RhinoOptStr| -> String {
                 get_rar_string_content_js(&url, &entry, charset.0.as_deref())
             },
         )
@@ -4489,7 +4600,7 @@ fn register_font_apis<'js>(
         "queryTTF",
         rquickjs::Function::new(
             ctx.clone(),
-            |data: String, use_cache: Opt<bool>| -> String {
+            |data: RhinoStr, use_cache: Opt<bool>| -> String {
                 font_api::query_ttf(&data, use_cache.0.unwrap_or(true))
             },
         )
@@ -4502,7 +4613,7 @@ fn register_font_apis<'js>(
         java,
         globals,
         "queryBase64TTF",
-        rquickjs::Function::new(ctx.clone(), |data: String| -> String {
+        rquickjs::Function::new(ctx.clone(), |data: RhinoStr| -> String {
             font_api::query_base64_ttf(&data)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -4516,7 +4627,11 @@ fn register_font_apis<'js>(
         "replaceFont",
         rquickjs::Function::new(
             ctx.clone(),
-            |text: String, error_font: String, correct_font: String, filter: Opt<bool>| -> String {
+            |text: RhinoStr,
+             error_font: RhinoStr,
+             correct_font: RhinoStr,
+             filter: Opt<bool>|
+             -> String {
                 font_api::replace_font(&text, &error_font, &correct_font, filter.0.unwrap_or(false))
             },
         )

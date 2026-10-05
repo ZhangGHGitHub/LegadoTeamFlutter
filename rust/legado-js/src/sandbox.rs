@@ -153,12 +153,17 @@ mod quickjs_sandbox {
             rquickjs::Object::new(ctx.clone()).map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
         // console.log(...args) -> noop（在生产环境中可接入日志收集）
+        // 入参用 Coerced 宽松收敛：noop 不得因任意 JS 值（数组/对象）抛转换错误
+        // （与宿主 API 的 Rhino LiveConnect 宽松转换同口径，2026-10-06 P0-A）
         console
             .set(
                 "log",
-                rquickjs::Function::new(ctx.clone(), |_args: rquickjs::function::Rest<String>| {
-                    // 静默消费参数，避免 JS 报错
-                })
+                rquickjs::Function::new(
+                    ctx.clone(),
+                    |_args: rquickjs::function::Rest<rquickjs::Coerced<String>>| {
+                        // 静默消费参数，避免 JS 报错
+                    },
+                )
                 .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
             )
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
@@ -167,8 +172,11 @@ mod quickjs_sandbox {
         console
             .set(
                 "warn",
-                rquickjs::Function::new(ctx.clone(), |_args: rquickjs::function::Rest<String>| {})
-                    .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+                rquickjs::Function::new(
+                    ctx.clone(),
+                    |_args: rquickjs::function::Rest<rquickjs::Coerced<String>>| {},
+                )
+                .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
             )
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
@@ -176,8 +184,11 @@ mod quickjs_sandbox {
         console
             .set(
                 "error",
-                rquickjs::Function::new(ctx.clone(), |_args: rquickjs::function::Rest<String>| {})
-                    .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
+                rquickjs::Function::new(
+                    ctx.clone(),
+                    |_args: rquickjs::function::Rest<rquickjs::Coerced<String>>| {},
+                )
+                .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
             )
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 

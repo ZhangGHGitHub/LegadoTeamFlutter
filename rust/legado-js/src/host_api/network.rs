@@ -723,6 +723,11 @@ fn ajax_request_body(opts: &HttpOptions) -> Result<String, String> {
 /// 输入为 JSON 数组（URL 列表），返回 JSON 数组（每个 URL 的响应体，失败为空字符串）。
 /// 使用 `futures::stream::buffer_unordered` 实现有界并发（默认 4）。
 pub fn ajax_all(urls_json: &str) -> Result<String, String> {
+    // 空输入 = 空列表（宿主入参宽松收敛：JS null/undefined → 空串，见
+    // quickjs_impl::LooseStrList；空数组 `[]` 同样命中），不视为 parse 错误
+    if urls_json.trim().is_empty() {
+        return Ok("[]".to_string());
+    }
     block_on(async {
         let urls: Vec<String> =
             serde_json::from_str(urls_json).map_err(|e| format!("ajaxAll parse error: {}", e))?;

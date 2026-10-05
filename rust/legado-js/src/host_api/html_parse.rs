@@ -31,6 +31,7 @@
 
 #![cfg(feature = "quickjs")]
 
+use crate::host_api::coerce::RhinoStr;
 use legado_core::LegadoError;
 use legado_parser::{
     AnalyzeRule, JsonPathParser, RegexEngine, RuleAnalyzer, RuleType, XPathParser,
@@ -553,7 +554,7 @@ fn build_element_object<'js>(
     let outer_snap = snap.outer.clone();
     obj.set(
         "attr",
-        rquickjs::Function::new(ctx.clone(), move |name: String| -> Option<String> {
+        rquickjs::Function::new(ctx.clone(), move |name: RhinoStr| -> Option<String> {
             ElementSnapshot::from_outer(outer_snap.clone()).attr(&name)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -567,7 +568,7 @@ fn build_element_object<'js>(
         "select",
         rquickjs::Function::new(
             ctx.clone(),
-            move |ctx: Ctx<'js>, sub: String| -> rquickjs::Result<rquickjs::Object<'js>> {
+            move |ctx: Ctx<'js>, sub: RhinoStr| -> rquickjs::Result<rquickjs::Object<'js>> {
                 build_elements_collection(&ctx, outer_sel.clone(), sub.trim_start().to_string())
                     .map_err(js_err)
             },
@@ -666,7 +667,7 @@ fn build_elements_collection<'js>(
         let c = css.clone();
         obj.set(
             "attr",
-            rquickjs::Function::new(ctx.clone(), move |name: String| {
+            rquickjs::Function::new(ctx.clone(), move |name: RhinoStr| {
                 jsoup_attr_n(&s, &c, 0, &name)
             })
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -785,7 +786,7 @@ fn build_elements_collection<'js>(
             "select",
             rquickjs::Function::new(
                 ctx.clone(),
-                move |ctx: Ctx<'js>, sub: String| -> rquickjs::Result<rquickjs::Object<'js>> {
+                move |ctx: Ctx<'js>, sub: RhinoStr| -> rquickjs::Result<rquickjs::Object<'js>> {
                     build_elements_collection(&ctx, s.clone(), join_css_chain(&c, &sub))
                         .map_err(js_err)
                 },

@@ -100,6 +100,9 @@ quickjs = [
 # dev-dep 特征仅在测试目标构建中生效，workspace resolver v2 语义）
 [dev-dependencies]
 legado-js = { path = ".", features = ["test-support"] }
+# P0-B 集成测试需经 `JsExecutor` trait 调用 `QuickJsExecutor::execute_js`
+# （trait 定义在 legado-parser；普通依赖不对 tests/ 集成目标可见，须显式声明）
+legado-parser = { path = "../legado-parser" }
 
 # [iOS 轨 P1] CI 全平台走 bindgen 运行时生成（linux/macos 自带 libclang；
 # 无 iOS 目标——apple 平台启用 bindgen 运行时生成（CI macOS runner 自带 libclang；

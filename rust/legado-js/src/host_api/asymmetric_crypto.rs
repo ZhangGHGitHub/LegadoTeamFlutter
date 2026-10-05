@@ -20,6 +20,7 @@
 //! 密钥格式：支持 PEM（PKCS#1 / PKCS#8 / X.509 SPKI）与 Base64 DER，
 //! 与 hutool `KeyUtil.generatePublicKey/generatePrivateKey` 的接受范围对齐。
 
+use crate::host_api::coerce::RhinoStr;
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -557,7 +558,7 @@ pub fn build_asymmetric_crypto_object<'js>(
         let f = rquickjs::Function::new(
             ctx.clone(),
             move |this: rquickjs::function::This<rquickjs::Object<'js>>,
-                  key: String|
+                  key: RhinoStr|
                   -> rquickjs::Result<rquickjs::Object<'js>> {
                 let pk = parse_public_key(&key).map_err(js_err)?;
                 st.borrow_mut().public = Some(pk);
@@ -573,7 +574,7 @@ pub fn build_asymmetric_crypto_object<'js>(
         let f = rquickjs::Function::new(
             ctx.clone(),
             move |this: rquickjs::function::This<rquickjs::Object<'js>>,
-                  key: String|
+                  key: RhinoStr|
                   -> rquickjs::Result<rquickjs::Object<'js>> {
                 let k = parse_private_key(&key).map_err(js_err)?;
                 st.borrow_mut().private = Some(k);
@@ -751,7 +752,7 @@ pub fn build_sign_object<'js>(
         let f = rquickjs::Function::new(
             ctx.clone(),
             move |this: rquickjs::function::This<rquickjs::Object<'js>>,
-                  key: String|
+                  key: RhinoStr|
                   -> rquickjs::Result<rquickjs::Object<'js>> {
                 let k = parse_private_key(&key).map_err(js_err)?;
                 st.borrow_mut().private = Some(k);
@@ -767,7 +768,7 @@ pub fn build_sign_object<'js>(
         let f = rquickjs::Function::new(
             ctx.clone(),
             move |this: rquickjs::function::This<rquickjs::Object<'js>>,
-                  key: String|
+                  key: RhinoStr|
                   -> rquickjs::Result<rquickjs::Object<'js>> {
                 let pk = parse_public_key(&key).map_err(js_err)?;
                 st.borrow_mut().public = Some(pk);
