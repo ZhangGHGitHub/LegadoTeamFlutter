@@ -3,6 +3,7 @@
 // 对齐 2026-08-13「我的」设置树（pref_main / pref_config_other）：
 // - SettingsScreen：字典规则、备份与恢复全页、无导出日志
 // - OtherSettingsScreen：语言/主界面/清理缓存；无创意「阅读/网络」分组
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -96,6 +97,65 @@ void main() {
       expect(find.text('书签'), findsOneWidget);
       expect(find.text('阅读记录'), findsOneWidget);
       expect(find.text('关于'), findsOneWidget);
+    });
+
+    // [2026-10-06 登记待修] iOS 实机开启 Web 服务不可用 → 用户裁决先「标记
+    // 不可用」；本用例钉死标记形态（副题提示 + 开关禁用），修复批移除门控时
+    // 本用例须同步改为「iOS 可用」断言。
+    testWidgets('Web 服务卡：iOS 标记暂不可用且开关禁用', (tester) async {
+      // debugDefaultTargetPlatformOverride 须在测试体内复位（框架在
+      // addTearDown 之前校验 foundation 调试变量已归位），故用 try/finally。
+      debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+      try {
+        await tester.pumpWidget(wrap(const SettingsScreen()));
+        await tester.pumpAndSettle();
+        await dragTo(tester, 'Web 服务');
+        await tester.pumpAndSettle();
+
+        expect(find.text('暂不可用，将在后续版本修复'), findsOneWidget);
+        expect(find.text('用浏览器写源或看书'), findsNothing);
+        final card = find
+            .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
+            .first;
+        expect(
+          tester
+              .widget<Switch>(
+                find.descendant(of: card, matching: find.byType(Switch)),
+              )
+              .onChanged,
+          isNull,
+          reason: 'iOS 上 Web 服务开关应禁用',
+        );
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    testWidgets('Web 服务卡：非 iOS 维持原形态（副题与开关可用）', (tester) async {
+      // 明示 android 防上一用例平台残留；try/finally 理由同上
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      try {
+        await tester.pumpWidget(wrap(const SettingsScreen()));
+        await tester.pumpAndSettle();
+        await dragTo(tester, 'Web 服务');
+        await tester.pumpAndSettle();
+
+        expect(find.text('用浏览器写源或看书'), findsOneWidget);
+        expect(find.text('暂不可用，将在后续版本修复'), findsNothing);
+        final card = find
+            .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
+            .first;
+        expect(
+          tester
+              .widget<Switch>(
+                find.descendant(of: card, matching: find.byType(Switch)),
+              )
+              .onChanged,
+          isNotNull,
+        );
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
 
     testWidgets('点击主题模式弹出选择对话框并可切换（全局生效）', (tester) async {
