@@ -48,13 +48,70 @@
 //!   运行面 `legado_db::HttpTts` 亦未暴露 `enabledCookieJar` 列（列在 httpTTS
 //!   表内、SELECT 不含）→ 无源上下文可判定，保持无标记；接线需先扩展 FFI
 //!   入口签名（跨轨契约变更，未在本批范围）。
+//!
+//! ## data: URI 短路（P2-15，2026-10-06）
+//!
+//! 上游 `AnalyzeUrl.getByteArrayAwait`（AnalyzeUrl.kt:680-687）对 data: URI
+//! 一律本地解码、不发请求；`getStrResponseAwait` 在 `type != null` 时返回
+//! hex 编码正文（:442-444）。我方 `web_book::fetch_page` / `fetch_simple_cached`
+//! / `dict_api` / `explore_api` 各自已有 data URI 分支，但**搜索路径
+//! `search_single_source` 经本模块 `send_raw` 直发**，漏判空 mime 形态
+//! `data:;base64,<b64>`（猫眼看书，实机 15 号 `builder error for url
+//! (data:;base64,...)`——reqwest 不支持 data: 协议）。修复：`send_raw` /
+//! `send_text` 入口统一短路本地解码（判定与解码仍由 `legado-parser`
+//! `AnalyzeUrl::is_data_uri` / `get_byte_array_if_data_uri` 单一真源，
+//! 空 mime 与原版 `^data:.*?;base64,(.*)` 同样命中）。
 
 use std::collections::HashMap;
 use std::future::Future;
 
-use legado_core::LegadoResult;
+use legado_core::{LegadoError, LegadoResult};
 use legado_net::{LegadoClient, LegadoRawResponse, LegadoResponse};
 use legado_parser::{AnalyzeUrl, RequestMethod};
+
+/// 小写 hex 编码（对齐 Kotlin `HexUtil.encodeHexStr`；与
+/// `web_book::hex_encode` 同实现，供 data: URI `type` 分支使用）
+fn hex_encode(bytes: &[u8]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        s.push(HEX[(b >> 4) as usize] as char);
+        s.push(HEX[(b & 0xf) as usize] as char);
+    }
+    s
+}
+
+/// data: URI 本地解码（`None` = 非 data URI，调用方继续网络路径）
+///
+/// 单一真源 `legado-parser`：判定 `AnalyzeUrl::is_data_uri`、解码
+/// `get_byte_array_if_data_uri`（空 mime `data:;base64,` 与原版
+/// `^data:.*?;base64,(.*)` 同样命中）。正文口径：
+/// - `urlOption.type` 非空 → hex 文本（上游 `getStrResponseAwait` 的
+///   `type != null → HexUtil.encodeHexStr(getByteArrayAwait())`，AnalyzeUrl.kt:442-444）；
+/// - 否则 → 解码原始字节（`send_raw` 无损；`send_text` 再按 lossy UTF-8 转文本）。
+///
+/// 解码失败维持 Internal（与 `web_book::fetch_page` 现状一致：非法 base64
+/// 数据段报「data: URI 内容解码失败」，绝不退化为 reqwest builder error）。
+fn data_uri_body(analyze_url: &AnalyzeUrl) -> Option<LegadoResult<Vec<u8>>> {
+    if !analyze_url.is_data_uri() {
+        return None;
+    }
+    let Some(bytes) = analyze_url.get_byte_array_if_data_uri() else {
+        return Some(Err(LegadoError::Internal("data: URI 内容解码失败".into())));
+    };
+    let body = if analyze_url.response_type().is_some() {
+        hex_encode(&bytes).into_bytes()
+    } else {
+        bytes
+    };
+    Some(Ok(body))
+}
+
+/// data: URI 的合成响应头（无网络响应，status 固定 200；headers 为空，
+/// 交由调用方的四级解码兜底）
+fn data_uri_headers() -> HashMap<String, String> {
+    HashMap::new()
+}
 
 /// 响应是否已到「终态」（不再重发）：2xx 或 3xx
 fn is_settled_status(status: u16) -> bool {
@@ -84,6 +141,15 @@ pub async fn send_raw(
     analyze_url: &AnalyzeUrl,
     headers: Option<HashMap<String, String>>,
 ) -> LegadoResult<LegadoRawResponse> {
+    // data: URI 短路：本地解码、绝不进 reqwest（P2-15，实机 builder error）
+    if let Some(result) = data_uri_body(analyze_url) {
+        return Ok(LegadoRawResponse {
+            status: 200,
+            headers: data_uri_headers(),
+            body: result?,
+            url: analyze_url.url().to_string(),
+        });
+    }
     let url = analyze_url.url().to_string();
     let body = analyze_url.request_body().to_string();
     let is_post = *analyze_url.method() == RequestMethod::Post;
@@ -110,6 +176,15 @@ pub async fn send_text(
     analyze_url: &AnalyzeUrl,
     headers: Option<HashMap<String, String>>,
 ) -> LegadoResult<LegadoResponse> {
+    // data: URI 短路：本地解码、绝不进 reqwest（P2-15，实机 builder error）
+    if let Some(result) = data_uri_body(analyze_url) {
+        return Ok(LegadoResponse {
+            status: 200,
+            headers: data_uri_headers(),
+            body: String::from_utf8_lossy(&result?).to_string(),
+            url: analyze_url.url().to_string(),
+        });
+    }
     let url = analyze_url.url().to_string();
     let body = analyze_url.request_body().to_string();
     let is_post = *analyze_url.method() == RequestMethod::Post;
@@ -564,5 +639,120 @@ mod tests {
         assert_eq!(resp.status, 200);
         assert_eq!(resp.body, "ok");
         assert_eq!(log.total(), 3);
+    }
+
+    // ─── P2-15：data: URI 不得进 reqwest（搜索路径经本汇聚点直发） ─────────
+    //
+    // 实机 15 号（猫眼看书）报 `builder error for url (data:;base64,...)`：
+    // 搜索路径 `search_single_source` 不经 `web_book::fetch_page` 的 data URI
+    // 分支，直接调用本模块 `send_raw` → reqwest 不支持 data: 协议 → builder
+    // error。断言口径：空 mime（`data:;base64,`）与有 mime 形态都须本地解码、
+    // 绝不发起请求；解码失败保持 Internal（与 fetch_page 现状一致）。
+
+    /// base64 编码（测试夹具）
+    fn b64(s: &str) -> String {
+        use base64::Engine as _;
+        base64::engine::general_purpose::STANDARD.encode(s)
+    }
+
+    /// 空 mime（实机精确形态）：send_raw 本地解码，状态 200、url 为 data URI。
+    #[tokio::test]
+    async fn test_p2_15_send_raw_empty_mime_data_uri_decoded_locally() {
+        let client = test_client();
+        let url = format!("data:;base64,{}", b64(r#"{"name":"ok"}"#));
+
+        let raw = send_raw(&client, &analyze(&url), None)
+            .await
+            .expect("空 mime data URI 应本地解码，不得进 reqwest（15 号 builder error）");
+
+        assert_eq!(raw.status, 200);
+        assert_eq!(raw.body, br#"{"name":"ok"}"#);
+        assert_eq!(raw.url, url, "url 保持 data URI 原值");
+    }
+
+    /// 空 mime + `,{"type":...}` 选项 → hex 编码正文（对齐上游 type != null
+    /// 分支 `HexUtil.encodeHexStr`，书源再 hexDecodeToString 还原）。
+    #[tokio::test]
+    async fn test_p2_15_send_raw_empty_mime_type_option_returns_hex() {
+        let client = test_client();
+        let payload = "/novel?sort=1&page=1";
+        let url = format!(
+            "data:;base64,{},{{\"type\":\"maoyankanshu\"}}",
+            b64(payload)
+        );
+
+        let raw = send_raw(&client, &analyze(&url), None)
+            .await
+            .expect("带 type 选项的空 mime data URI 应本地解码");
+
+        let hex: String = payload.bytes().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(String::from_utf8(raw.body).unwrap(), hex);
+        // url 为分离选项后的 URL 本体（对齐上游 urlNoOption 语义）
+        assert_eq!(raw.url, format!("data:;base64,{}", b64(payload)));
+    }
+
+    /// 有 mime（`data:application/json;base64,`）经 send_text 本地解码，不回归。
+    #[tokio::test]
+    async fn test_p2_15_send_text_mime_data_uri_decoded_locally() {
+        let client = test_client();
+        let url = format!("data:application/json;base64,{}", b64(r#"{"name":"ok"}"#));
+
+        let resp = send_text(&client, &analyze(&url), None)
+            .await
+            .expect("有 mime data URI 应本地解码");
+
+        assert_eq!(resp.status, 200);
+        assert_eq!(resp.body, r#"{"name":"ok"}"#);
+        assert_eq!(resp.url, url);
+    }
+
+    /// 非 base64（`data:text/plain,hello`）与 parser 侧同口径：本地按 URL 编码
+    /// 文本解码（已登记超集），同样不得进 reqwest（reqwest 对 data: 协议必失败）。
+    #[tokio::test]
+    async fn test_p2_15_send_text_non_base64_data_uri_decoded_locally() {
+        let client = test_client();
+        let url = "data:text/plain,hello";
+
+        let resp = send_text(&client, &analyze(url), None)
+            .await
+            .expect("非 base64 data URI 应按已登记超集本地解码");
+
+        assert_eq!(resp.body, "hello");
+    }
+
+    /// 非法 base64 数据段：保持 Internal 语义（与 fetch_page 现状一致），
+    /// 不得退化成 reqwest builder error。
+    #[tokio::test]
+    async fn test_p2_15_invalid_base64_is_internal_not_reqwest() {
+        let client = test_client();
+        let url = "data:;base64,!!!!not-base64!!!!";
+
+        let err = send_raw(&client, &analyze(url), None)
+            .await
+            .expect_err("非法 base64 应报解码失败");
+
+        let msg = err.to_string();
+        assert!(
+            msg.contains("解码失败"),
+            "解码失败应保持 Internal 文案: {msg}"
+        );
+        assert!(
+            !msg.contains("builder error"),
+            "不得把 data: URI 喂给 reqwest: {msg}"
+        );
+    }
+
+    /// 回归：普通 http URL 不受 data URI 短路影响（仍走回环网络路径）。
+    #[tokio::test]
+    async fn test_p2_15_http_url_still_goes_through_client() {
+        let (addr, log) = spawn_server(|_i, _p| (200, None, "http-ok".to_string())).await;
+        let client = test_client();
+
+        let raw = send_raw(&client, &analyze(&format!("http://{addr}/plain")), None)
+            .await
+            .unwrap();
+
+        assert_eq!(String::from_utf8_lossy(&raw.body), "http-ok");
+        assert_eq!(log.total(), 1, "http URL 仍走网络路径");
     }
 }

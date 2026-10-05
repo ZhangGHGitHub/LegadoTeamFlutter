@@ -2360,6 +2360,114 @@ mod tests {
         assert!(url.get_byte_array_if_data_uri().is_none());
     }
 
+    // --- P2-15：`data:;base64,`（空 mime）复现矩阵（parser 侧） ---
+    //
+    // 原版对照：`AppPattern.dataUriRegex = ^data:.*?;base64,(.*)`（大小写敏感，
+    // `.*?` 可匹配空 mime）+ `AnalyzeUrl.getByteArrayIfDataUri` 前置
+    // `urlNoQuery.startsWith("data:")`（AnalyzeUrl.kt:666-677）。
+    // 设备报错文案来自 reqwest，说明漏判不在本层；本组用例钉死 parser 侧
+    // 各形态的判定/解码语义，防止修复时误改。
+
+    /// 矩阵 1：空 mime（`data:;base64,`，猫眼看书形态）必须识别为 data URI
+    /// 且可本地解码（原版 `.*?` 匹配空 mime，同理命中）。
+    #[test]
+    fn test_p2_15_empty_mime_base64_recognized_and_decoded() {
+        let b64 = "eyJuYW1lIjoib2sifQ=="; // {"name":"ok"}
+        let url = AnalyzeUrl::parse(&format!("data:;base64,{b64}"), &HashMap::new(), 1).unwrap();
+        assert!(url.is_data_uri(), "空 mime 也须识别为 data URI");
+        assert_eq!(
+            url.url(),
+            format!("data:;base64,{b64}"),
+            "data URI 不得拼到书源域名"
+        );
+        let bytes = url
+            .get_byte_array_if_data_uri()
+            .expect("空 mime base64 应可本地解码");
+        assert_eq!(bytes, br#"{"name":"ok"}"#);
+    }
+
+    /// 矩阵 1b：空 mime + `,{"type":...}` 选项（猫眼分类 URL 精确形态）：
+    /// 选项须能分离、data 段不受选项逗号污染。
+    #[test]
+    fn test_p2_15_empty_mime_with_type_option_split() {
+        let b64 = "L25vdmVsP3NvcnQ9MSZwYWdlPTE="; // /novel?sort=1&page=1
+        let template = format!("data:;base64,{b64},{{\"type\":\"maoyankanshu\"}}");
+        let url = AnalyzeUrl::parse(&template, &HashMap::new(), 1).unwrap();
+        assert!(url.is_data_uri());
+        assert_eq!(url.response_type(), Some("maoyankanshu"));
+        let bytes = url
+            .get_byte_array_if_data_uri()
+            .expect("带选项的空 mime base64 应可解码");
+        assert_eq!(String::from_utf8_lossy(&bytes), "/novel?sort=1&page=1");
+    }
+
+    /// 矩阵 2：有 mime（`data:application/json;base64,`）现状应 OK，不回归。
+    #[test]
+    fn test_p2_15_mime_base64_still_ok() {
+        let b64 = "eyJuYW1lIjoib2sifQ==";
+        let url = AnalyzeUrl::parse(
+            &format!("data:application/json;base64,{b64}"),
+            &HashMap::new(),
+            1,
+        )
+        .unwrap();
+        assert!(url.is_data_uri());
+        let bytes = url.get_byte_array_if_data_uri().unwrap();
+        assert_eq!(bytes, br#"{"name":"ok"}"#);
+        let parsed =
+            AnalyzeUrl::parse_data_uri(&format!("data:application/json;base64,{b64}")).unwrap();
+        assert_eq!(parsed.mime_type, "application/json");
+        assert!(parsed.is_base64);
+    }
+
+    /// 矩阵 3：非 base64（`data:text/plain,hello`）——**已登记的超集差异**：
+    /// 原版 dataUriRegex 要求 `;base64,`，不匹配 → `getByteArrayIfDataUri`
+    /// 返回 null → 走网络路径（OkHttp 对 data: 协议同样报错）；
+    /// 我方 `parse_data_uri` 按 URL 编码纯文本本地解码（dict/cover 规则依赖，
+    /// 见 `test_data_uri_html_payload_not_mangled_by_page_replace`）。
+    /// 此处钉死我方现状：识别 + 本地解码（更宽松，非 15 号漏判点，不改）。
+    #[test]
+    fn test_p2_15_non_base64_documented_superset_behavior() {
+        let url = AnalyzeUrl::parse("data:text/plain,hello", &HashMap::new(), 1).unwrap();
+        assert!(
+            url.is_data_uri(),
+            "前缀命中即判 data URI（与原版 guard 同口径）"
+        );
+        let bytes = url.get_byte_array_if_data_uri().unwrap();
+        assert_eq!(
+            bytes, b"hello",
+            "非 base64 形态我方按 URL 编码纯文本解码（超集）"
+        );
+    }
+
+    /// 矩阵 4：大小写敏感度核对（两版均小写敏感；此处记录差异面）。
+    #[test]
+    fn test_p2_15_case_sensitivity_matches_upstream() {
+        // `DATA:;BASE64,`：原版 startsWith("data:") 即不命中 → 网络路径；
+        // 我方 starts_with 同样不命中 → 非 data URI（按相对路径处理）。
+        let upper = AnalyzeUrl::parse("DATA:;BASE64,aGVsbG8=", &HashMap::new(), 1).unwrap();
+        assert!(!upper.is_data_uri(), "大写 scheme 两版一致不判 data URI");
+
+        // `data:;BASE64,`：前缀命中但 base64 标记大小写不匹配——
+        // 原版正则 `.*?;base64,` 不命中 → 网络路径；我方落非 base64 分支
+        // （URL 编码文本解码）。已登记超集差异：不把 `MQ==` 解成 base64。
+        let parsed = AnalyzeUrl::parse_data_uri("data:;BASE64,MQ==").unwrap();
+        assert!(!parsed.is_base64, "base64 标记大小写敏感（对齐原版正则）");
+        assert_eq!(parsed.data, b"MQ==", "不得按 base64 解码为 M");
+    }
+
+    /// 矩阵 5：前导/尾随空白——原版 `getAbsoluteURL` 内 `relativePath.trim()`，
+    /// 我方 `analyze_url()` 对 rule_url trim；两版均应正常识别解码。
+    #[test]
+    fn test_p2_15_surrounding_whitespace_trimmed() {
+        let b64 = "aGVsbG8="; // hello
+        let url =
+            AnalyzeUrl::parse(&format!("  \tdata:;base64,{b64}  "), &HashMap::new(), 1).unwrap();
+        assert!(url.is_data_uri(), "前导/尾随空白应被裁剪后识别");
+        let bytes = url.get_byte_array_if_data_uri().unwrap();
+        assert_eq!(bytes, b"hello");
+    }
+
     // --- 18. WebView 选项解析 ---
     #[test]
     fn test_webview_option_true() {
