@@ -58,6 +58,15 @@ const String _kKey16 = 'bc4b2a76b9719d91';
 const String _kTitleKey16 = '9fcdcb3a067903d8';
 
 void main() {
+  // 该测试依赖 Windows 构建的 DLL 产物（rust/target/debug），
+  // CI（ubuntu/macOS）无产物：注册阶段整体跳过（对齐
+  // ffi_stream_sink_runtime_test.dart / cache_download_failed_chapters_
+  // runtime_test.dart 的既有守卫——本文件 B1 批新增时漏抄，致 CI 红）
+  if (!Platform.isWindows) {
+    test("跳过音频缓存 FFI 运行时测试：需要 Windows DLL 产物（仅本机验证）", () {});
+    return;
+  }
+
   late Directory root;
   late RustApi api;
 
