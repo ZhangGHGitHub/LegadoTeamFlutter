@@ -622,6 +622,42 @@ mod tests {
         assert!(url.contains("p=2"), "page=2 应注入 JS 全局: {url}");
     }
 
+    /// 修复批 修2 端到端：jsLib 求值失败经 searchUrl 链路**带原因上抛**
+    ///
+    /// `@js:` searchUrl 模板 + 坏 jsLib → 求值错误应含「jsLib 求值失败: <原始
+    /// 错误>」（经 `legado-js-error://` 占位 URL 编解码还原），而非静默降级后
+    /// 由脚本引用点报误导性的 `source is not defined`（iOS 实机 1/2 号根因链）；
+    /// 错误经 `LegadoError::JsEngine` 通道传递，仅该源失败、不影响 App。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_build_search_url_jslib_failure_surfaces_reason() {
+        let _guard = legado_js::engine_cache::TEST_LOCK.lock().unwrap();
+        legado_js::engine_cache::clear_for_tests();
+        let bad_lib = "var __probe = __probe_missing_jslib__();";
+        let analyzed = build_search_url_with_setup(
+            "@js:'https://example.com/search?q=' + encodeURIComponent(key)",
+            "斗破苍穹",
+            1,
+            "jslib_fail_search_tag",
+            Some(bad_lib),
+            None,
+        );
+        let rule = analyzed.rule_url();
+        assert!(
+            rule.starts_with("legado-js-error://"),
+            "@js: 模板求值失败应编码为错误占位 URL: {rule}"
+        );
+        let detail = decode_js_error_url(rule).unwrap_or_default();
+        assert!(
+            detail.contains("jsLib 求值失败"),
+            "错误详情应含「jsLib 求值失败」根因: {detail}"
+        );
+        assert!(
+            detail.contains("__probe_missing_jslib__"),
+            "错误详情应保留原始错误文本: {detail}"
+        );
+    }
+
     /// 队列④ favcomic 口径：`validate_js_lib`（quickjs 档）复用引擎缓存
     /// （key `executor:<source_tag>`），jsLib 求值失败时返回带可读文案的
     /// `LegadoError::JsEngine`（「书源 jsLib 加载失败(...)：书源脚本能力

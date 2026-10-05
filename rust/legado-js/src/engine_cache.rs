@@ -25,8 +25,9 @@ struct Entry {
     /// 失败时调用方可选择带 bindings 重评（旧路径语义自洽）。
     main_js_ok: Option<bool>,
     /// 构建时 jsLib eval 是否成功（None = 无 jsLib）；
-    /// 失败已降级继续（对齐原版 evaluateJsLib 无 catch），
-    /// 队列④ 由调用方据此上抛「书源脚本能力不可用」并登记台账。
+    /// 失败时台账已登记（`record_jslib_load_failure`），调用方据此
+    /// **带原因上抛**（对齐原版 `SharedJsScope.evaluateJsLib` 失败直接抛，
+    /// SharedJsScope.kt:251/:258；`validate_js_lib` / `QuickJsExecutor` 两处）。
     js_lib_ok: Option<bool>,
 }
 struct Store {

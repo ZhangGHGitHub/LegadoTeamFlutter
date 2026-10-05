@@ -98,48 +98,49 @@ impl JsExecutor for QuickJsExecutor {
                         // 直接跳过 eval（原始 JSON 非合法 JS，不回退原始级联）
                         if let Some(script) = &url_map_script {
                             if let Err(e) = crate::JsEngine::eval(&engine, script) {
-                                eprintln!(
-                                    "[legado-js] 书源 {} URL 映射 jsLib eval 失败（降级继续）: {e}",
-                                    self.source_tag
-                                );
+                                // 队列④：登记台账后**带原因上抛**（对齐原版
+                                // SharedJsScope.evaluateJsLib 失败直接抛，
+                                // SharedJsScope.kt:251/:258）。此前静默降级会让
+                                // 失败推迟到主脚本引用点，报出误导性
+                                // `source is not defined`（iOS 实机 1/2 号根因链）
                                 crate::host_api::capability_ledger::record_jslib_load_failure(
                                     &ledger_tag,
                                     &e.to_string(),
                                 );
+                                return Err(format!("jsLib 求值失败: {e}"));
                             }
                         }
                     } else if let Err(e) = crate::JsEngine::eval(&engine, lib) {
                         // 仅对语法错误尝试 Rhino 宽容语法归一化后重试一次（与 engine_cache
                         // 缓存路径一致；对齐原版 corejs-Rhino 宽松解析——B 站 jsLib 的
-                        // let 参数影子重声明、data..item_null 双点笔误等）；运行时错误按原样降级。
-                        if engine.check_syntax(lib).is_err() {
+                        // let 参数影子重声明、data..item_null 双点笔误等）。
+                        // 归一化仍失败 / 运行时错误：登记台账后带原因上抛（不再静默降级）
+                        let recovered = if engine.check_syntax(lib).is_err() {
                             let (normalized, changed) = crate::jslib_normalize::normalize(lib);
                             if changed && crate::JsEngine::eval(&engine, &normalized).is_ok() {
                                 eprintln!(
                                         "[legado-js] 书源 {} jsLib 经 Rhino 宽容语法归一化后加载成功（原错误: {e}）",
                                         self.source_tag
                                     );
+                                true
                             } else {
-                                eprintln!(
-                                    "[legado-js] 书源 {} jsLib 加载失败（降级继续）: {e}",
-                                    self.source_tag
-                                );
-                                // 队列④：jsLib 加载失败登记能力受限台账
-                                // （键与缓存路径一致：executor:<source_tag>）
-                                crate::host_api::capability_ledger::record_jslib_load_failure(
-                                    &ledger_tag,
-                                    &e.to_string(),
-                                );
+                                false
                             }
                         } else {
+                            false
+                        };
+                        if !recovered {
                             eprintln!(
-                                "[legado-js] 书源 {} jsLib 加载失败（降级继续）: {e}",
+                                "[legado-js] 书源 {} jsLib 加载失败（带原因上抛）: {e}",
                                 self.source_tag
                             );
+                            // 队列④：jsLib 加载失败登记能力受限台账
+                            // （键与缓存路径一致：executor:<source_tag>）
                             crate::host_api::capability_ledger::record_jslib_load_failure(
                                 &ledger_tag,
                                 &e.to_string(),
                             );
+                            return Err(format!("jsLib 求值失败: {e}"));
                         }
                     }
                 }
@@ -171,17 +172,37 @@ impl JsExecutor for QuickJsExecutor {
                 crate::JsEngine::eval(&engine, js_code).map_err(|e| e.to_string())
             })
         };
-        if is_lexical {
+        // URL 映射形态 jsLib（值为 URL 的 JSON 对象）一律走 fresh 路径：
+        // 缓存路径 `engine_cache::init_engine` 对 jsLib 原样 eval，而映射 JSON
+        // 不是合法 JS，会误报「jsLib 求值失败」——B1 硬上抛后该误报会被放大成
+        // 整源失败。上游语义是逐条拉取 URL 映射（SharedJsScope.parseJsLibMap），
+        // 故映射形态必须交给 fresh 路径的加载器（jslib_loader：拉取 + 进程缓存
+        // + 逐条降级台账）。非映射形态仍走缓存路径。
+        let js_lib_is_url_map = self
+            .js_lib
+            .as_deref()
+            .map(|lib| crate::host_api::jslib_loader::parse_js_lib_url_map(lib).is_some())
+            .unwrap_or(false);
+        if is_lexical || js_lib_is_url_map {
             return run_fresh();
         }
         let key = format!("executor:{}", self.source_tag);
-        let (cached, _, _) = crate::engine_cache::get_or_create(
+        let (cached, _, js_lib_ok) = crate::engine_cache::get_or_create(
             &key,
             self.js_lib.as_deref(),
             self.setup_script.as_deref(),
             None,
         )
         .map_err(|e| e.to_string())?;
+        // 缓存引擎构造期 jsLib 求值失败 → 带原因上抛（与 fresh 路径同一语义；
+        // 原版 SharedJsScope.evaluateJsLib 失败直接抛）。原因取台账最后错误摘要
+        // （engine_cache::init_engine 已登记 `record_jslib_load_failure`）。
+        if js_lib_ok == Some(false) {
+            let reason = crate::host_api::capability_ledger::last_jslib_error(&key)
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or_else(|| "原因未记录（见 capability_ledger）".to_string());
+            return Err(format!("jsLib 求值失败: {reason}"));
+        }
         let result =
             crate::host_api::current_source::with_current_source_tag(&self.source_tag, || {
                 cached
@@ -245,6 +266,20 @@ mod tests {
         let script = "const regression_value = 41; regression_value + 1";
         assert_eq!(executor.execute_js(script).unwrap(), "42");
         assert_eq!(executor.execute_js(script).unwrap(), "42");
+    }
+
+    /// jsLib 求值失败 → 带原因上抛（对齐原版 SharedJsScope.evaluateJsLib
+    /// 失败直接抛，SharedJsScope.kt:251/:258），不得静默降级后由主脚本引用点
+    /// 报误导性 `xxx is not defined`（iOS 实机 1/2 号 source 失真的根因链）。
+    /// 契约与红绿证据由集成测试 `tests/jslib_failure_visible.rs` 锁定
+    /// （覆盖缓存路径 / fresh 路径 / 不使用库函数场景）。
+    #[test]
+    fn test_valid_jslib_still_loads_and_runs() {
+        let _guard = crate::engine_cache::TEST_LOCK.lock().unwrap();
+        crate::engine_cache::clear_for_tests();
+        let executor = QuickJsExecutor::new("jslib_ok_tag")
+            .with_js_lib(Some("function marker(){ return 'ok'; }".to_string()));
+        assert_eq!(executor.execute_js("marker()").unwrap(), "ok");
     }
 
     #[test]
