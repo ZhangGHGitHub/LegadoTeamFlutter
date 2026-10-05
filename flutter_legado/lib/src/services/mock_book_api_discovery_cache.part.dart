@@ -260,6 +260,15 @@ mixin MockBookApiDiscoveryCache on MockBookApiStore implements BookApi {
   @override
   Future<bool> audioCacheCancel() async => false;
 
+  // ========== 视频弹幕（契约 §2.49，V-B1） ==========
+
+  /// mock 查询：默认无弹幕 → null（对齐 Rust 侧「无记录降级 null」语义）
+  @override
+  Future<String?> getVideoDanmaku({
+    required String bookUrl,
+    required int chapterIndex,
+  }) async => null;
+
   /// mock 扩展名探测（对齐原版三级探测的 URL 后缀分支，仅用于 JSON 形状）
   static String _mockExtension(String playUrl) {
     final path = playUrl.split('?').first.split('#').first;

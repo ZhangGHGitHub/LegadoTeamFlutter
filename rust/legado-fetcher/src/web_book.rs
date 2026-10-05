@@ -1991,7 +1991,30 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             )
             .await
             {
-                merge_sub_content_into_body(&mut content, &sub, is_media);
+                if is_media {
+                    // [V-B1 | 契约 §2.49] 媒体分支从「丢弃 subContent」改为
+                    // 「捕获 → 宿主落库」：对齐原版 BookContent.kt L138-155
+                    // （音频 putLyric / 视频 putDanmaku），禁止拼进播放链接正文。
+                    // bookUrl 取详情/目录阶段 meta 缓存（当前书的取址点）；
+                    // 未命中（如 refreshToc 目录链）时传 None + sourceUrl，
+                    // sink 侧按 (sourceUrl, chapterUrl) DB 兜底反查后落库。
+                    let key = if source.book_source_type
+                        == legado_core::models::book_source::book_source_type::VIDEO
+                    {
+                        "danmaku"
+                    } else {
+                        "lyric"
+                    };
+                    self.deps.capture_media_sub_content(
+                        book_meta.as_ref().map(|m| m.book_url.as_str()),
+                        &source.book_source_url,
+                        &chapter.url,
+                        key,
+                        &sub,
+                    );
+                } else {
+                    merge_sub_content_into_body(&mut content, &sub, is_media);
+                }
             }
         }
 
@@ -7126,6 +7149,194 @@ mod tests {
         let mut text_body = "第一章正文".to_string();
         merge_sub_content_into_body(&mut text_body, "作者有话说", false);
         assert_eq!(text_body, "第一章正文\n作者有话说");
+    }
+
+    // ─── [V-B1 §2.49] 媒体副内容捕获接线端到端（本地回环服务器） ─────────
+
+    /// 启动一次性回环 HTTP 服务器，所有请求固定返回 `html`（GET，无请求体）
+    fn spawn_html_server(html: String) -> u16 {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    html.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(html.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        port
+    }
+
+    /// 测试用捕获 sink：记录 (bookUrl, sourceUrl, chapterUrl, key, value) 调用
+    type CapturedSubContent = Arc<Mutex<Vec<(String, String, String, String, String)>>>;
+
+    #[test]
+    fn test_get_content_video_does_not_merge_sub_content_but_captures() {
+        let html = "<html><body><div class='content'>https://cdn.example/v.mp4</div>\
+                    <div class='sub'>{\"danmaku\":[]}</div></body></html>";
+        let port = spawn_html_server(html.to_string());
+        let source_url = format!("http://127.0.0.1:{port}");
+        let book_url = format!("{source_url}/book");
+        let chapter_url = format!("{source_url}/chap/1.html");
+
+        let client = LegadoClient::new(legado_net::LegadoClientConfig {
+            no_proxy: true,
+            ..legado_net::LegadoClientConfig::default()
+        })
+        .expect("test http client");
+        let captured: CapturedSubContent = Arc::new(Mutex::new(Vec::new()));
+        let sink_captured = Arc::clone(&captured);
+        let deps = FetcherDeps::new(client).with_media_sub_content_sink(Arc::new(
+            move |book, source, chapter, key, value| {
+                sink_captured.lock().unwrap().push((
+                    book.unwrap_or_default().to_string(),
+                    source.to_string(),
+                    chapter.to_string(),
+                    key.to_string(),
+                    value.to_string(),
+                ));
+            },
+        ));
+        let fetcher = RealBookSourceFetcher::with_deps(deps.clone());
+        // 播种 (书源, 章节) → 书 映射（等价详情/目录阶段已走过的进程内 meta 缓存）
+        record_chapter_list_cache(
+            &deps,
+            &book_url,
+            &source_url,
+            "",
+            "视频测试书",
+            "测试作者",
+            &[WebChapter {
+                index: 0,
+                title: "第1集".to_string(),
+                url: chapter_url.clone(),
+                is_vip: false,
+                is_volume: false,
+                variable: None,
+                word_count: None,
+            }],
+        );
+
+        let source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": source_url,
+            "bookSourceName": "V-B1 视频捕获测试源",
+            "bookSourceType": 4,
+            "ruleContent": {
+                "content": ".content@html",
+                "subContent": ".sub@html"
+            }
+        }))
+        .expect("视频源 json");
+        let chapter = WebChapter {
+            index: 0,
+            title: "第1集".to_string(),
+            url: chapter_url.clone(),
+            is_vip: false,
+            is_volume: false,
+            variable: None,
+            word_count: None,
+        };
+
+        let content = block_on(fetcher.get_content(&source, &chapter)).expect("正文抓取应成功");
+        assert!(
+            !content.contains("danmaku"),
+            "媒体分支副内容不得拼进播放链接正文: {content:?}"
+        );
+        assert!(
+            content.contains("cdn.example/v.mp4"),
+            "正文应保留播放链接: {content:?}"
+        );
+
+        let got = captured.lock().unwrap();
+        assert_eq!(got.len(), 1, "sink 应恰好收到一次捕获: {got:?}");
+        assert_eq!(got[0].0, book_url, "bookUrl 应取目录/详情阶段 meta 记录值");
+        assert_eq!(got[0].1, source_url, "sourceUrl 应原样传给宿主供兜底反查");
+        assert_eq!(got[0].2, chapter_url);
+        assert_eq!(got[0].3, "danmaku", "视频源键名应为 danmaku");
+        assert!(
+            got[0].4.contains("danmaku"),
+            "捕获值应为副内容原文: {:?}",
+            got[0].4
+        );
+    }
+
+    #[test]
+    fn test_get_content_text_still_merges_sub_content_without_capture() {
+        // 非媒体书源行为不变：副内容仍拼进正文，且不触发捕获 sink
+        let html = "<html><body><div class='content'>第一章正文</div>\
+                    <div class='sub'>作者有话说</div></body></html>";
+        let port = spawn_html_server(html.to_string());
+        let source_url = format!("http://127.0.0.1:{port}");
+        let chapter_url = format!("{source_url}/chap/1.html");
+
+        let client = LegadoClient::new(legado_net::LegadoClientConfig {
+            no_proxy: true,
+            ..legado_net::LegadoClientConfig::default()
+        })
+        .expect("test http client");
+        let captured: CapturedSubContent = Arc::new(Mutex::new(Vec::new()));
+        let sink_captured = Arc::clone(&captured);
+        let deps = FetcherDeps::new(client).with_media_sub_content_sink(Arc::new(
+            move |book, source, chapter, key, value| {
+                sink_captured.lock().unwrap().push((
+                    book.unwrap_or_default().to_string(),
+                    source.to_string(),
+                    chapter.to_string(),
+                    key.to_string(),
+                    value.to_string(),
+                ));
+            },
+        ));
+        let fetcher = RealBookSourceFetcher::with_deps(deps);
+
+        let source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": source_url,
+            "bookSourceName": "V-B1 文本测试源",
+            "bookSourceType": 0,
+            "ruleContent": {
+                "content": ".content@html",
+                "subContent": ".sub@html"
+            }
+        }))
+        .expect("文本源 json");
+        let chapter = WebChapter {
+            index: 0,
+            title: "第1章".to_string(),
+            url: chapter_url,
+            is_vip: false,
+            is_volume: false,
+            variable: None,
+            word_count: None,
+        };
+
+        let content = block_on(fetcher.get_content(&source, &chapter)).expect("正文抓取应成功");
+        assert!(
+            content.contains("作者有话说"),
+            "文本源副内容应仍拼进正文: {content:?}"
+        );
+        assert!(
+            captured.lock().unwrap().is_empty(),
+            "文本源不得触发媒体副内容捕获"
+        );
     }
 
     // ─── R2 replaceRegex 单测（Task #134，对标 BookContent.kt L166-175） ────

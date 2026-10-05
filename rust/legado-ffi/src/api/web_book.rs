@@ -50,7 +50,8 @@ pub(crate) fn db_book_variable(book_url: &str) -> Option<String> {
     .filter(|v| !v.trim().is_empty())
 }
 
-/// 组装 ffi 宿主注入面（共享客户端 + 进程级限流注册表 + 登录头/DB 变量/setup）
+/// 组装 ffi 宿主注入面（共享客户端 + 进程级限流注册表 + 登录头/DB 变量/setup
+/// + 媒体副内容落库 sink）
 pub(crate) fn ffi_deps() -> LegadoResult<FetcherDeps> {
     Ok(FetcherDeps {
         client: crate::http_state::shared_client()?,
@@ -62,6 +63,26 @@ pub(crate) fn ffi_deps() -> LegadoResult<FetcherDeps> {
         source_context: Some(Arc::new(|source: &BookSource| {
             crate::api::source_js_bindings::book_source_js_setup_script(source).ok()
         })),
+        // [V-B1 §2.49] 媒体副内容捕获 sink：抓取链捕获 subContent 后按
+        // Kotlin RuleDataInterface 分流落库（章节 variable / 大数据文件）。
+        // bookUrl 未命中 meta 缓存（如 refreshToc 目录链）时按
+        // (sourceUrl, chapterUrl) DB 兜底反查；失败在 put_media_sub_content*
+        // 内降级为日志，不阻断正文返回。
+        media_sub_content: Some(Arc::new(
+            |book_url: Option<&str>,
+             source_url: &str,
+             chapter_url: &str,
+             key: &str,
+             value: &str| {
+                crate::api::video_api::put_media_sub_content_from_capture(
+                    book_url,
+                    source_url,
+                    chapter_url,
+                    key,
+                    value,
+                );
+            },
+        )),
     })
 }
 

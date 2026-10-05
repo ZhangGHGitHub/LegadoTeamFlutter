@@ -1537,6 +1537,23 @@ Future<String> audioCacheDownload({
 Future<bool> audioCacheCancel() =>
     RustLib.instance.api.crateFfiFfiAudioCacheCancel();
 
+/// 查询某章弹幕数据（V-B1，API_CONTRACT §2.49）
+///
+/// **只读、幂等**：读章节 variable 列 `danmaku` 键（对齐原版
+/// `BookChapter.putDanmaku` 落点）→ `<10000` 字符直返原文（B 站 XML
+/// 或内联文本）；否则读 `RuleBigDataHelp` 同构大数据文件（`RuleBigDataManager`
+/// `book/{md5(bookUrl)}/{md5(chapterUrl)}/{md5("danmaku")}.txt`）。
+/// 无记录 / 书或章不在 DB / 读失败 → `Ok(None)`（降级不抛——弹幕是
+/// 增强层不是数据源，对齐 §2.46 口径）。写入侧（fetcher 抓取链内部
+/// 捕获落库）不经本 FFI 面。
+Future<String?> getVideoDanmaku({
+  required String bookUrl,
+  required int chapterIndex,
+}) => RustLib.instance.api.crateFfiFfiGetVideoDanmaku(
+  bookUrl: bookUrl,
+  chapterIndex: chapterIndex,
+);
+
 /// 写入/覆盖单章缓存（Task #136 R5，API_CONTRACT §2.43.1）
 ///
 /// `title` / `chapter_url` 为空串时从 DB 章节表回填；

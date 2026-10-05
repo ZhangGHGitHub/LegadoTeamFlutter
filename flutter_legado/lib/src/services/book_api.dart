@@ -1236,6 +1236,21 @@ abstract class BookApi {
     int positionMs,
   );
 
+  // ========== 视频弹幕 ==========
+
+  /// 查询某章弹幕数据（契约 §2.49，V-B1 视频弹幕数据链）
+  ///
+  /// 只读、幂等：读章节 variable 列 `danmaku` 键（对齐原版
+  /// `BookChapter.putDanmaku`）；`<10000` 字符直返原文（B 站 XML 或
+  /// 内联文本），`≥10000` 字符走大数据文件读回（`RuleBigDataHelp` 同构）。
+  /// 无记录 / 书或章不在 DB / 读失败 → `null`（降级不抛——弹幕是增强层
+  /// 不是数据源）。写入侧在 Rust 抓取链内部完成（媒体分支副内容捕获），
+  /// 不经本接口。
+  Future<String?> getVideoDanmaku({
+    required String bookUrl,
+    required int chapterIndex,
+  });
+
   // ========== WebDAV 云同步 ==========
 
   /// WebDAV 列出远程目录

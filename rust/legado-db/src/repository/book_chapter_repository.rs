@@ -64,6 +64,94 @@ impl<'a> BookChapterRepository<'a> {
         }
     }
 
+    /// 根据 bookUrl + chapterUrl 查询指定章节（复合主键精确查找）
+    ///
+    /// 视频弹幕写入链（契约 §2.49）用：抓取链捕获的副内容按
+    /// (bookUrl, chapterUrl) 落库，与 `chapters` 表复合主键
+    /// `(url, bookUrl)` 对应，避免仅按 index 查找时的目录重排错位。
+    pub fn find_by_book_url_and_chapter_url(
+        &self,
+        book_url: &str,
+        chapter_url: &str,
+    ) -> LegadoResult<Option<BookChapter>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT url, title, isVolume, baseUrl, bookUrl, \"index\", isVip, isPay,
+                        resourceUrl, tag, wordCount, start, end, startFragmentId,
+                        endFragmentId, variable, imgUrl
+                 FROM chapters WHERE bookUrl = ?1 AND url = ?2",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+
+        let mut rows = stmt
+            .query_map(params![book_url, chapter_url], row_to_chapter)
+            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?;
+
+        match rows.next() {
+            Some(Ok(ch)) => Ok(Some(ch)),
+            Some(Err(e)) => Err(LegadoError::Database(format!("行解析失败: {e}"))),
+            None => Ok(None),
+        }
+    }
+
+    /// 按 (书源 URL, 章节 URL) 反查书籍取址点（V-B1 §2.49 媒体副内容落库兜底）
+    ///
+    /// 目录链 `refresh_toc` 不经 fetcher 的「章节 → 书」进程内映射，正文
+    /// 阶段按 (sourceUrl, chapterUrl) 反查 meta 未命中时用本查询兜底；
+    /// `books.origin` 即书源 URL。命中多行（同源多书共用章节 URL）视为
+    /// 歧义返回 `None`（宁可不落库也不串书）。
+    pub fn find_book_url_by_source_and_chapter_url(
+        &self,
+        source_url: &str,
+        chapter_url: &str,
+    ) -> LegadoResult<Option<String>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT c.bookUrl FROM chapters c
+                 JOIN books b ON b.bookUrl = c.bookUrl
+                 WHERE c.url = ?1 AND b.origin = ?2
+                 LIMIT 2",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备反查失败: {e}")))?;
+        let mut rows = stmt
+            .query_map(params![chapter_url, source_url], |row| {
+                row.get::<_, String>(0)
+            })
+            .map_err(|e| LegadoError::Database(format!("反查失败: {e}")))?;
+        let mut found: Vec<String> = Vec::new();
+        for row in rows.by_ref() {
+            match row {
+                Ok(url) => found.push(url),
+                Err(e) => return Err(LegadoError::Database(format!("行解析失败: {e}"))),
+            }
+        }
+        Ok(if found.len() == 1 { found.pop() } else { None })
+    }
+
+    /// 仅更新章节 `variable` 单列（对齐原版 `BookChapterDao.update` 写 variable
+    /// 的语义，规避全行 INSERT OR REPLACE 风险）
+    ///
+    /// 视频弹幕写入链（契约 §2.49）用：`danmaku` 键在章节 variable JSON 中
+    /// 合并后写回本列；返回是否实际命中行。方法口径对齐
+    /// `BookSourceRepository::update_variable`（书源变量单列更新先例）。
+    pub fn update_variable(
+        &self,
+        book_url: &str,
+        chapter_url: &str,
+        variable: &str,
+    ) -> LegadoResult<bool> {
+        let affected = self
+            .conn
+            .execute(
+                "UPDATE chapters SET variable = ?3 WHERE bookUrl = ?1 AND url = ?2",
+                params![book_url, chapter_url, variable],
+            )
+            .map_err(|e| LegadoError::Database(format!("章节变量更新失败: {e}")))?;
+        Ok(affected > 0)
+    }
+
     /// 获取指定书籍的章节数量
     pub fn count_by_book_url(&self, book_url: &str) -> LegadoResult<i64> {
         let count: i64 = self
@@ -355,6 +443,130 @@ mod tests {
         let ch = repo.find_by_book_url_and_index("book1", 5).unwrap();
         assert!(ch.is_some());
         assert_eq!(ch.unwrap().title, "第6章");
+    }
+
+    #[test]
+    fn test_find_by_book_url_and_chapter_url() {
+        let db = crate::init_in_memory_database().unwrap();
+        insert_parent_book(db.connection(), "book1");
+        let repo = BookChapterRepository::new(db.connection());
+        repo.insert(&make_chapter("book1", 0, "第1章")).unwrap();
+        repo.insert(&make_chapter("book1", 5, "第6章")).unwrap();
+
+        let ch = repo
+            .find_by_book_url_and_chapter_url("book1", "book1/ch5")
+            .unwrap()
+            .expect("复合键应命中第6章");
+        assert_eq!(ch.index, 5);
+        assert_eq!(ch.title, "第6章");
+
+        // 未命中章节 / 未命中书 → None（不报错）
+        assert!(repo
+            .find_by_book_url_and_chapter_url("book1", "book1/ch9")
+            .unwrap()
+            .is_none());
+        assert!(repo
+            .find_by_book_url_and_chapter_url("book2", "book1/ch0")
+            .unwrap()
+            .is_none());
+    }
+
+    /// [V-B1 §2.49] 按 (书源, 章节 URL) 反查书籍取址点：唯一命中 → Some；
+    /// 同源多书共用章节 URL → 歧义 None；无匹配 → None
+    #[test]
+    fn test_find_book_url_by_source_and_chapter_url() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let repo = BookChapterRepository::new(conn);
+
+        // book1（origin = src1）与 book2（origin = src2）
+        let book1 = Book {
+            book_url: "book1".to_string(),
+            origin: "src1".to_string(),
+            name: "书1".to_string(),
+            ..Book::default()
+        };
+        BookRepository::new(conn).insert(&book1).unwrap();
+        let book2 = Book {
+            book_url: "book2".to_string(),
+            origin: "src2".to_string(),
+            name: "书2".to_string(),
+            ..Book::default()
+        };
+        BookRepository::new(conn).insert(&book2).unwrap();
+
+        let mut ch1 = make_chapter("book1", 0, "第1章");
+        ch1.url = "https://sp.example/ch/1".to_string();
+        repo.insert(&ch1).unwrap();
+        // book2 的另一章 URL 不同
+        let mut ch2 = make_chapter("book2", 0, "第1章");
+        ch2.url = "https://sp.example/ch/2".to_string();
+        repo.insert(&ch2).unwrap();
+
+        assert_eq!(
+            repo.find_book_url_by_source_and_chapter_url("src1", "https://sp.example/ch/1")
+                .unwrap()
+                .as_deref(),
+            Some("book1"),
+            "唯一命中应返回 bookUrl"
+        );
+        // 书源不匹配 / 章节 URL 不存在 → None
+        assert_eq!(
+            repo.find_book_url_by_source_and_chapter_url("src2", "https://sp.example/ch/1")
+                .unwrap(),
+            None
+        );
+        assert_eq!(
+            repo.find_book_url_by_source_and_chapter_url("src1", "https://sp.example/none")
+                .unwrap(),
+            None
+        );
+
+        // 歧义：book3（origin = src1）与 book1 共用同一章节 URL → None
+        let book3 = Book {
+            book_url: "book3".to_string(),
+            origin: "src1".to_string(),
+            name: "书3".to_string(),
+            ..Book::default()
+        };
+        BookRepository::new(conn).insert(&book3).unwrap();
+        let mut ch3 = make_chapter("book3", 0, "第1章");
+        ch3.url = "https://sp.example/ch/1".to_string();
+        repo.insert(&ch3).unwrap();
+        assert_eq!(
+            repo.find_book_url_by_source_and_chapter_url("src1", "https://sp.example/ch/1")
+                .unwrap(),
+            None,
+            "同源多书共用章节 URL 属歧义，应返回 None（不得串书）"
+        );
+    }
+
+    /// [V-B1 §2.49] update_variable 单列更新：命中行写回且可回读；
+    /// 未命中返回 false 不报错（不产生新行）
+    #[test]
+    fn test_update_variable() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        insert_parent_book(conn, "book1");
+        let repo = BookChapterRepository::new(conn);
+        repo.insert(&make_chapter("book1", 0, "第1章")).unwrap();
+
+        assert!(repo
+            .update_variable("book1", "book1/ch0", r#"{"danmaku":"<xml/>"}"#)
+            .unwrap());
+        let saved = repo
+            .find_by_book_url_and_chapter_url("book1", "book1/ch0")
+            .unwrap()
+            .unwrap();
+        assert_eq!(saved.variable.as_deref(), Some(r#"{"danmaku":"<xml/>"}"#));
+
+        // 未命中章节 → false（仅影响行数为 0，非错误）
+        assert!(!repo
+            .update_variable("book1", "book1/ch9", r#"{"a":"b"}"#)
+            .unwrap());
+        assert!(!repo
+            .update_variable("no-such-book", "book1/ch0", r#"{"a":"b"}"#)
+            .unwrap());
     }
 
     #[test]

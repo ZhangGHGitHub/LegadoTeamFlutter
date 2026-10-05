@@ -460,6 +460,30 @@ mixin RustApiDiscoveryCache on RustApiDecode implements BookApi {
   @override
   Future<bool> audioCacheCancel() => bridge.audioCacheCancel();
 
+  // ========== 视频弹幕（契约 §2.49，V-B1） ==========
+
+  /// 查询某章弹幕数据（只读、幂等；降级路径返回 null）
+  ///
+  /// 直通 FFI：Rust 侧已完成「章节 variable inline → 大数据文件」归一
+  /// （`DanmakuSource` 三态），Dart 侧无需解析，原样透传 `String?`。
+  /// FFI 不可用/调用异常统一降级 `null`（弹幕是增强层不是数据源，
+  /// 对齐 §2.46 口径）；Rust 侧本身也已对内部失败降级 `null`。
+  @override
+  Future<String?> getVideoDanmaku({
+    required String bookUrl,
+    required int chapterIndex,
+  }) async {
+    try {
+      return await bridge.getVideoDanmaku(
+        bookUrl: bookUrl,
+        chapterIndex: chapterIndex,
+      );
+    } catch (e) {
+      debugPrint('[RustApi] getVideoDanmaku 失败（降级 null）：$e');
+      return null;
+    }
+  }
+
   // ========== 章节购买 ==========
 
   /// 执行章节购买动作（契约 §2.43.2，对照 Kotlin ReadBookActivity.payAction）

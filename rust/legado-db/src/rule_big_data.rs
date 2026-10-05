@@ -154,14 +154,7 @@ impl RuleBigDataManager {
         chapter_url: &str,
         key: &str,
     ) -> Result<Option<String>, String> {
-        let md5_book_url = Self::md5(book_url);
-        let md5_chapter_url = Self::md5(chapter_url);
-        let md5_key = Self::md5(key);
-        let file = self
-            .book_data_dir
-            .join(&md5_book_url)
-            .join(&md5_chapter_url)
-            .join(format!("{md5_key}.txt"));
+        let file = self.chapter_variable_path(book_url, chapter_url, key);
         if file.exists() {
             Ok(Some(
                 std::fs::read_to_string(&file).map_err(|e| e.to_string())?,
@@ -169,6 +162,17 @@ impl RuleBigDataManager {
         } else {
             Ok(None)
         }
+    }
+
+    /// 章节变量文件路径（对应 Kotlin `RuleBigDataHelp.getDanmakuFile` 的定位规则）
+    ///
+    /// `book/{md5(bookUrl)}/{md5(chapterUrl)}/{md5(key)}.txt`；文件是否存在
+    /// 由调用方自行判定（视频弹幕 `DanmakuSource::File` 语义需要路径本身）。
+    pub fn chapter_variable_path(&self, book_url: &str, chapter_url: &str, key: &str) -> PathBuf {
+        self.book_data_dir
+            .join(Self::md5(book_url))
+            .join(Self::md5(chapter_url))
+            .join(format!("{}.txt", Self::md5(key)))
     }
 
     // ─── RSS Variables ────────────────────────────────────────────────
@@ -385,6 +389,17 @@ mod tests {
             .get_chapter_variable("http://b.com", "http://c1", "content")
             .unwrap();
         assert_eq!(val, Some("chapter text".to_string()));
+        // 路径定位规则：book/{md5(bookUrl)}/{md5(chapterUrl)}/{md5(key)}.txt
+        let path = mgr.chapter_variable_path("http://b.com", "http://c1", "content");
+        assert!(path.exists(), "写入后 chapter_variable_path 应指向实际文件");
+        assert_eq!(
+            path.file_name().unwrap().to_string_lossy(),
+            format!("{:x}.txt", md5::compute("content"))
+        );
+        // 未写入的键 → 路径确定但文件不存在
+        assert!(!mgr
+            .chapter_variable_path("http://b.com", "http://c1", "danmaku")
+            .exists());
         let _ = fs::remove_dir_all(&dir);
     }
 
