@@ -8,11 +8,12 @@ use legado_core::audio::{
     with_audio_play_mode as core_with_audio_play_mode,
 };
 use legado_core::cache_book::CachedChapter;
-use legado_core::models::Book;
+use legado_core::models::{Book, BookChapter};
 use legado_core::web_book::WebChapter;
 use legado_core::{LegadoError, LegadoResult};
 #[cfg(test)]
 use legado_db::repository::Repository; // 测试模块的 Book/BookChapter Repository::insert 需要此 trait
+use legado_db::rule_big_data::RuleBigDataManager;
 use legado_db::{
     BookChapterRepository, BookRepository, BookSourceRepository, CacheBookRepository,
     CacheRepository,
@@ -119,6 +120,27 @@ fn lyric_from_variable(variable: &Option<String>) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
+/// 解析章节歌词：variable 直存优先，未命中回退大数据文件（P2-2 收口）
+///
+/// 对齐原版 `RuleDataInterface.getVariable`（`variableMap[key] ?: getBigVariable(key)`，
+/// `AudioPlay.kt:408` `chapter.getVariable("lyric")`）：歌词 ≥10000 字符时
+/// 写入侧（`put_media_sub_content`）与弹幕同链落 `RuleBigDataHelp` 文件，
+/// 读取侧必须补 File 回退，否则长歌词读不回。文件读失败降级无歌词（不抛）。
+fn lyric_for_chapter(book_url: &str, chapter: &BookChapter) -> Option<String> {
+    if let Some(inline) = lyric_from_variable(&chapter.variable) {
+        return Some(inline);
+    }
+    let manager = RuleBigDataManager::new(&super::video_api::rule_data_dir());
+    match manager.get_chapter_variable(book_url, &chapter.url, super::video_api::LYRIC_KEY) {
+        Ok(Some(content)) if !content.is_empty() => Some(content),
+        Ok(_) => None,
+        Err(e) => {
+            log::warn!("[audio_lyric] 大数据歌词文件读取失败（降级无歌词）: {e}");
+            None
+        }
+    }
+}
+
 /// 音频章节取址（对齐 `AudioPlay.loadRemotePlayUrl` + `contentLoadFinish`）
 ///
 /// 1. 查章节；卷章返回 `isVolume=true`、空 `mediaUrl`
@@ -135,7 +157,7 @@ pub fn get_audio_chapter_media(
     })?
     .ok_or_else(|| LegadoError::Database(format!("章节 {chapter_index} 不存在")))?;
 
-    let lyric = lyric_from_variable(&chapter.variable);
+    let lyric = lyric_for_chapter(book_url, &chapter);
     let resource_url = chapter.resource_url.clone();
 
     if chapter.is_volume {
@@ -292,7 +314,6 @@ fn save_audio_content_cache(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use legado_core::models::BookChapter;
 
     #[test]
     fn test_audio_progress() {
@@ -454,5 +475,88 @@ mod tests {
         );
         assert!(lyric_from_variable(&None).is_none());
         assert!(lyric_from_variable(&Some("{}".into())).is_none());
+    }
+
+    /// 临时规则数据目录 env 守卫（Drop 恢复原值）
+    ///
+    /// 本模块测试与 video_api 测试同持 `ensure_test_db` 串行锁，env 不会被
+    /// 并发改写；锁序遵循 test_support 全局锁序不变式。
+    struct LyricRuleDataDirGuard {
+        dir: std::path::PathBuf,
+        prev: Option<String>,
+    }
+
+    impl LyricRuleDataDirGuard {
+        fn new() -> Self {
+            let dir = std::env::temp_dir()
+                .join(format!("legado_audio_lyric_test_{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            let prev = std::env::var(crate::api::video_api::RULE_DATA_DIR_ENV).ok();
+            std::env::set_var(crate::api::video_api::RULE_DATA_DIR_ENV, &dir);
+            Self { dir, prev }
+        }
+    }
+
+    impl Drop for LyricRuleDataDirGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(v) => std::env::set_var(crate::api::video_api::RULE_DATA_DIR_ENV, v),
+                None => std::env::remove_var(crate::api::video_api::RULE_DATA_DIR_ENV),
+            }
+            let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+
+    /// [P2-2] ≥10000 字符歌词落大数据文件后应能读回：
+    /// `getAudioChapterMedia` 的 lyric 须补 File 回退
+    /// （对齐原版 `RuleDataInterface.getVariable` = variableMap[key] ?:
+    /// getBigVariable(key)，`AudioPlay.kt:408`）。
+    #[test]
+    fn test_get_audio_chapter_media_large_lyric_file_fallback() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let _rule_dir = LyricRuleDataDirGuard::new();
+        let book_url = "http://test.audio/large-lyric-book";
+        let chapter_url = "http://test.audio/ch/large-lyric";
+        let big_lyric = "词".repeat(10000); // UTF-16 10000 → 写入侧走大文件分支
+
+        with_database(|db| {
+            let book_repo = BookRepository::new(db.connection());
+            book_repo.insert(&Book {
+                book_url: book_url.to_string(),
+                name: "长歌词听书".into(),
+                origin: String::new(), // 无书源 → 取址走章 URL 回退，不触网
+                ..Default::default()
+            })?;
+            let ch_repo = BookChapterRepository::new(db.connection());
+            ch_repo.insert(&BookChapter {
+                book_url: book_url.to_string(),
+                index: 0,
+                title: "第1集".into(),
+                url: chapter_url.to_string(),
+                ..Default::default()
+            })?;
+            Ok(())
+        })
+        .unwrap();
+
+        // 经捕获落库（写侧与弹幕同链分流）：≥10000 → lyric 落大数据文件
+        crate::api::video_api::put_media_sub_content(
+            book_url,
+            chapter_url,
+            crate::api::video_api::LYRIC_KEY,
+            &big_lyric,
+        );
+        let file = legado_db::rule_big_data::RuleBigDataManager::new(
+            &crate::api::video_api::rule_data_dir(),
+        )
+        .chapter_variable_path(book_url, chapter_url, crate::api::video_api::LYRIC_KEY);
+        assert!(file.is_file(), "长歌词应落大数据文件: {file:?}");
+
+        let media = get_audio_chapter_media(book_url, 0).unwrap();
+        assert_eq!(
+            media.lyric.as_deref(),
+            Some(big_lyric.as_str()),
+            "variable 未命中时应回退大数据文件读回长歌词"
+        );
     }
 }

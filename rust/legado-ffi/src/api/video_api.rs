@@ -37,6 +37,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use legado_core::models::BookChapter;
 use legado_core::video_state::{DanmakuSource, VideoPlayerState};
+use legado_core::LegadoError;
 use legado_db::rule_big_data::RuleBigDataManager;
 use legado_db::BookChapterRepository;
 
@@ -247,56 +248,68 @@ pub fn put_media_sub_content(book_url: &str, chapter_url: &str, key: &str, value
     }
 }
 
-/// 落库本体：返回错误由调用方降级为日志
+/// 落库本体：章节 variable 的读-改-写包进单事务（BEGIN IMMEDIATE），
+/// 同章并发捕获在写锁上排队、依次读到最新 JSON，避免后写覆盖前写；
+/// 返回错误由调用方降级为日志
+///
+/// 事务选择（P2-1 收口）：项目 DB 层为 r2d2 连接池、连接以 `&Connection`
+/// 共享，沿用既有 `unchecked_transaction` 先例；但本处是「先读后写」的
+/// 读-改-写，DEFERRED 起事务会在快照过期时触发 `SQLITE_BUSY_SNAPSHOT`
+/// （busy_timeout 不重试），故用 `TransactionBehavior::Immediate`
+/// （BEGIN IMMEDIATE）在事务起点即取写锁，并在 busy_timeout(5s) 内排队。
+/// 大数据文件同步在事务提交后执行（文件系统不参与 DB 事务，与原版
+/// `putVariable` 的「先更新列、后写/删文件」顺序一致）。
 fn put_media_sub_content_inner(
     book_url: &str,
     chapter_url: &str,
     key: &str,
     value: &str,
 ) -> Result<(), String> {
-    let chapter = with_database(|db| {
-        BookChapterRepository::new(db.connection())
-            .find_by_book_url_and_chapter_url(book_url, chapter_url)
+    let is_small = kotlin_str_len(value) < LARGE_VALUE_THRESHOLD;
+
+    with_database(|db| {
+        let conn = db.connection();
+        let tx =
+            rusqlite::Transaction::new_unchecked(conn, rusqlite::TransactionBehavior::Immediate)
+                .map_err(|e| {
+                    LegadoError::Database(format!("副内容写事务开启失败（BEGIN IMMEDIATE）: {e}"))
+                })?;
+
+        let chapter = BookChapterRepository::new(conn)
+            .find_by_book_url_and_chapter_url(book_url, chapter_url)?
+            .ok_or_else(|| LegadoError::Database("章节不在 DB（无法落库副内容）".to_string()))?;
+
+        let mut map: serde_json::Map<String, serde_json::Value> = match chapter.variable.as_deref()
+        {
+            Some(raw) if !raw.trim().is_empty() => serde_json::from_str(raw).unwrap_or_default(),
+            _ => serde_json::Map::new(),
+        };
+
+        if is_small {
+            // 小数据分支（对齐 putVariable：value.length < 10000）
+            // variableMap[key] = value；putBigVariable(key, null) 删除文件
+            map.insert(
+                key.to_string(),
+                serde_json::Value::String(value.to_string()),
+            );
+            let serialized = serde_json::Value::Object(map).to_string();
+            BookChapterRepository::new(conn).update_variable(book_url, chapter_url, &serialized)?;
+        } else if map.remove(key).is_some() {
+            // 大数据分支（对齐 putVariable：else 分支，仅键存在时重写列）
+            let serialized = serde_json::Value::Object(map).to_string();
+            BookChapterRepository::new(conn).update_variable(book_url, chapter_url, &serialized)?;
+        }
+
+        tx.commit()
+            .map_err(|e| LegadoError::Database(format!("副内容写事务提交失败: {e}")))?;
+        Ok(())
     })
-    .map_err(|e| e.to_string())?
-    .ok_or_else(|| "章节不在 DB（无法落库副内容）".to_string())?;
+    .map_err(|e| e.to_string())?;
 
-    let mut map: serde_json::Map<String, serde_json::Value> = match chapter.variable.as_deref() {
-        Some(raw) if !raw.trim().is_empty() => serde_json::from_str(raw).unwrap_or_default(),
-        _ => serde_json::Map::new(),
-    };
-
-    if kotlin_str_len(value) < LARGE_VALUE_THRESHOLD {
-        // 小数据分支（对齐 putVariable：value.length < 10000）
-        // variableMap[key] = value；putBigVariable(key, null) 删除文件
-        map.insert(
-            key.to_string(),
-            serde_json::Value::String(value.to_string()),
-        );
-        let serialized = serde_json::Value::Object(map).to_string();
-        with_database(|db| {
-            BookChapterRepository::new(db.connection()).update_variable(
-                book_url,
-                chapter_url,
-                &serialized,
-            )
-        })
-        .map_err(|e| e.to_string())?;
+    // 事务提交后再同步大数据文件（与原版「先更新列、后写/删文件」顺序一致）
+    if is_small {
         big_data_manager().put_chapter_variable(book_url, chapter_url, key, None)?;
     } else {
-        // 大数据分支（对齐 putVariable：else 分支）
-        // variableMap.remove(key)；putBigVariable(key, value)
-        if map.remove(key).is_some() {
-            let serialized = serde_json::Value::Object(map).to_string();
-            with_database(|db| {
-                BookChapterRepository::new(db.connection()).update_variable(
-                    book_url,
-                    chapter_url,
-                    &serialized,
-                )
-            })
-            .map_err(|e| e.to_string())?;
-        }
         big_data_manager().put_chapter_variable(book_url, chapter_url, key, Some(value))?;
     }
     Ok(())
@@ -595,5 +608,126 @@ mod tests {
             "不应落库",
         );
         assert_eq!(get_video_danmaku(book_url, 0).as_deref(), Some(xml2));
+    }
+
+    /// [P2-1] 同章并发落库不得丢键：variable 读-改-写须包进单事务
+    ///
+    /// 确定性交错构造：测试侧连接先 `BEGIN IMMEDIATE` 独占写锁，再放行 N 个
+    /// 并发捕获线程（各写不同键；WAL 下 SELECT 不阻塞，持锁 500ms 保证各线程
+    /// 读阶段全部完成）——
+    /// - 旧实现（读-改-写无事务）：N 个线程各自读到同一旧状态，UPDATE 排队
+    ///   后互相覆盖（后写赢），最终只剩最后一个键 → 断言必败（红）；
+    /// - 事务化后：各线程 `BEGIN IMMEDIATE` 先排队，锁释放后依次读到前者
+    ///   已提交的最新 variable，全部键保留 → 断言通过（绿）。
+    #[test]
+    fn test_concurrent_same_chapter_capture_keeps_all_keys() {
+        use std::sync::mpsc;
+        use std::time::Duration;
+
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let _dir = RuleDataDirGuard::new("concurrent");
+        let book_url = "https://v-b1-concurrent.example/book";
+        let chapter_url = "https://v-b1-concurrent.example/ch/1";
+        seed_chapter(book_url, chapter_url, Some(r#"{"keep":"base"}"#));
+
+        const N: usize = 8;
+        let (started_tx, started_rx) = mpsc::channel::<()>();
+
+        with_database(|db| {
+            let conn = db.connection();
+            // 测试侧先占据写锁：保证并发线程的「读」全部先于任何一个「写」
+            let tx = rusqlite::Transaction::new_unchecked(
+                conn,
+                rusqlite::TransactionBehavior::Immediate,
+            )
+            .map_err(|e| legado_core::LegadoError::Database(format!("测试持锁失败: {e}")))?;
+
+            let handles: Vec<std::thread::JoinHandle<()>> = (0..N)
+                .map(|i| {
+                    let ready = started_tx.clone();
+                    let book = book_url.to_string();
+                    let chapter = chapter_url.to_string();
+                    std::thread::spawn(move || {
+                        let _ = ready.send(());
+                        put_media_sub_content(&book, &chapter, &format!("k{i}"), &format!("v{i}"));
+                    })
+                })
+                .collect();
+            drop(started_tx);
+
+            for _ in 0..N {
+                started_rx.recv().map_err(|e| {
+                    legado_core::LegadoError::Database(format!("并发线程就绪失败: {e}"))
+                })?;
+            }
+            // 持锁期间留足时间让各线程完成 SELECT（旧实现此刻阻塞在 UPDATE）
+            std::thread::sleep(Duration::from_millis(500));
+            tx.commit().map_err(|e| {
+                legado_core::LegadoError::Database(format!("释放测试写锁失败: {e}"))
+            })?;
+
+            for h in handles {
+                h.join().map_err(|_| {
+                    legado_core::LegadoError::Database("并发落库线程 panic".to_string())
+                })?;
+            }
+            Ok(())
+        })
+        .expect("并发落库编排失败");
+
+        let variable = chapter_variable(book_url, chapter_url).expect("variable 应存在");
+        let map: serde_json::Map<String, serde_json::Value> =
+            serde_json::from_str(&variable).expect("variable 应为 JSON 对象");
+        for i in 0..N {
+            assert!(
+                map.contains_key(&format!("k{i}")),
+                "并发落库键 k{i} 丢失（读-改-写未串行化）: {variable}"
+            );
+        }
+        assert!(
+            map.contains_key("keep"),
+            "原有变量键不得被并发写覆盖: {variable}"
+        );
+    }
+
+    /// [P0-1 附注] 阈值口径增补平面钉死：emoji（UTF-16 代理对，1 字符 = 2 码元）
+    /// - 4999 个 emoji = 9998 UTF-16 码元 < 10000 → 不触发文件分支；
+    /// - 5000 个 emoji = 10000 UTF-16 码元 → 必须走文件分支
+    ///   （若实现误用 `chars().count()`，5000 < 10000 会误进 variable → 红）。
+    #[test]
+    fn test_threshold_counts_supplementary_plane_by_utf16_units() {
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let _dir = RuleDataDirGuard::new("threshold_emoji");
+        let book_url = "https://v-b1-threshold-emoji.example/book";
+        let chapter_url = "https://v-b1-threshold-emoji.example/ch/1";
+        seed_chapter(book_url, chapter_url, None);
+
+        let file = big_data_manager().chapter_variable_path(book_url, chapter_url, DANMAKU_KEY);
+
+        // 4999 个 emoji（UTF-16 = 9998 < 10000）→ 进 variable
+        let under = "😀".repeat(4999);
+        put_media_sub_content(book_url, chapter_url, DANMAKU_KEY, &under);
+        assert!(!file.exists(), "9998 UTF-16 码元不应触发文件分支: {file:?}");
+        assert_eq!(
+            get_video_danmaku(book_url, 0).as_deref(),
+            Some(under.as_str())
+        );
+
+        // 5000 个 emoji（UTF-16 = 10000 ≥ 10000）→ 走文件分支
+        let exact = "😀".repeat(5000);
+        put_media_sub_content(book_url, chapter_url, DANMAKU_KEY, &exact);
+        assert!(file.is_file(), "10000 UTF-16 码元应走文件分支: {file:?}");
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), exact);
+        assert_eq!(
+            get_video_danmaku(book_url, 0).as_deref(),
+            Some(exact.as_str())
+        );
+        let variable = chapter_variable(book_url, chapter_url).unwrap_or_default();
+        assert!(
+            !variable.contains("\"danmaku\""),
+            "文件分支 variable 不应含 danmaku 键: {variable}"
+        );
     }
 }
