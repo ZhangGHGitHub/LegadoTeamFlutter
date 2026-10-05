@@ -848,15 +848,29 @@ fn hex_encode(bytes: &[u8]) -> String {
 /// - 否则 → UTF-8 文本
 fn fetch_data_uri_content(url: &str) -> Option<LegadoResult<String>> {
     let parsed = AnalyzeUrl::parse(url, &std::collections::HashMap::new(), 1).ok()?;
+    data_uri_content_of(&parsed)
+}
+
+/// 已解析 [`AnalyzeUrl`] 的 data: URI 本地解码（`pub`）
+///
+/// data: URL 一律本地解码、不进 reqwest（reqwest 不支持 data: 协议 →
+/// 「builder error for url (data:...)」）。语义同 [`fetch_data_uri_content`]，
+/// 供**已持有解析结果**的调用方（发现页 `explore_api`）复用：直接消费
+/// `response_type` 等 URL 选项，避免二次 parse 丢失 `,{"type":...}` 的
+/// hex 语义（书源 JS 依赖 `java.hexDecodeToString(result)` 还原）。
+/// 非 data: URI → `None`；是 data: URI 但解码失败 → `Some(Err(Internal))`。
+pub fn data_uri_content_of(parsed: &AnalyzeUrl) -> Option<LegadoResult<String>> {
     if !parsed.is_data_uri() {
         return None;
     }
-    let bytes = parsed.get_byte_array_if_data_uri()?;
-    if parsed.response_type().is_some() {
-        Some(Ok(hex_encode(&bytes)))
-    } else {
-        Some(Ok(String::from_utf8_lossy(&bytes).to_string()))
-    }
+    Some(match parsed.get_byte_array_if_data_uri() {
+        Some(bytes) => Ok(if parsed.response_type().is_some() {
+            hex_encode(&bytes)
+        } else {
+            String::from_utf8_lossy(&bytes).to_string()
+        }),
+        None => Err(LegadoError::Internal("data: URI 内容解码失败".into())),
+    })
 }
 
 /// 按书源 `enabledCookieJar` 补写侧门控标记头（批 1，对齐上游 `AnalyzeUrl.setCookie`）

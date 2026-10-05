@@ -516,6 +516,37 @@ mod quickjs_engine {
             }
         }
 
+        /// 超时中断（eval 预算耗尽）时的可读错误文案
+        ///
+        /// 保留 `interrupted` 关键字便于日志检索；中文说明对齐实机可读性诉求
+        /// （iOS 实机 11 号缺陷：裸 `interrupted` 用户无法理解）。预算值取自
+        /// [`SandboxConfig::max_execution_time`]（书源路径默认 5s），此处只改
+        /// 文案、不改预算。
+        ///
+        /// 与原版的语义差异（已登记，2026-10-06 分析报告 §四）：
+        /// 原版 Rhino 引擎**没有任何单次求值时间预算**（`RhinoScriptEngine.kt:294`
+        /// instructionObserverThreshold=10000 仅作协程取消检查点、
+        /// `RhinoContext.kt:336-343` ensureActive；递归深度 ≤10 于 :345-350），
+        /// 同段死循环/正则回溯在原版会挂到外层搜索超时（30s 口径）才被协程
+        /// 取消；我方 5s 预算按设计主动中断。本批只做文案可读化，不改预算
+        /// （5s 已覆盖正常书源；原版同场景是无限挂起，体验更差）。
+        fn interrupted_message(&self) -> String {
+            format!(
+                "脚本执行超时被中断（interrupted，单次求值预算 {} ms）：书源脚本运行过长，可能存在死循环或正则回溯爆炸",
+                self.config.max_execution_time.as_millis()
+            )
+        }
+
+        /// 异常消息提取：中断标志置位时优先输出可读文案，否则取原始异常
+        /// （message + stack）。仅本引擎实例的 eval 路径使用；
+        /// [`Self::check_syntax_in_ctx`] 走独立 Runtime，无中断标志。
+        fn exception_message(&self, ctx: &rquickjs::Ctx<'_>) -> String {
+            if self.interrupted.load(Ordering::SeqCst) {
+                return self.interrupted_message();
+            }
+            Self::take_exception_message(ctx)
+        }
+
         /// 提取当前挂起异常的信息（message + stack），不抛出
         fn take_exception_message(ctx: &rquickjs::Ctx<'_>) -> String {
             let exc_val = ctx.catch();
@@ -564,7 +595,7 @@ mod quickjs_engine {
                 // 原版 Rhino 异常文案，便于书源规则排错）— Reasonix
                 match ctx.eval_with_options::<rquickjs::Value, _>(code, options) {
                     Ok(result) => Ok(Self::result_to_string(&ctx, &result)),
-                    Err(_) => Err(LegadoError::JsEngine(Self::take_exception_message(&ctx))),
+                    Err(_) => Err(LegadoError::JsEngine(self.exception_message(&ctx))),
                 }
             })
         }
@@ -583,7 +614,7 @@ mod quickjs_engine {
                 options.global = true;
                 match ctx.eval_with_options::<rquickjs::Value, _>(code, options) {
                     Ok(result) => Ok(Self::result_to_string(&ctx, &result)),
-                    Err(_) => Err(LegadoError::JsEngine(Self::take_exception_message(&ctx))),
+                    Err(_) => Err(LegadoError::JsEngine(self.exception_message(&ctx))),
                 }
             })
         }
@@ -598,9 +629,7 @@ mod quickjs_engine {
                 options.global = true;
                 let result: rquickjs::Value = match ctx.eval_with_options(code, options) {
                     Ok(v) => v,
-                    Err(_) => {
-                        return Err(LegadoError::JsEngine(Self::take_exception_message(&ctx)))
-                    }
+                    Err(_) => return Err(LegadoError::JsEngine(self.exception_message(&ctx))),
                 };
                 // 结果必须是 Uint8Array（对齐原版 evalJS 返回 ByteArray 语义）
                 let arr: rquickjs::TypedArray<u8> = result.get().map_err(|e| {
@@ -1112,7 +1141,8 @@ mod quickjs_tests {
         let result = engine.eval("while(true) {}");
         let elapsed = start.elapsed();
 
-        // 必须返回错误（被中断）
+        // 必须返回错误（被中断）；可读文案契约由集成测试
+        // `tests/interrupted_message.rs` 锁定（11 号实机缺陷）
         assert!(
             result.is_err(),
             "Infinite loop should be interrupted by timeout, got: {:?}",

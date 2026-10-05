@@ -490,42 +490,59 @@ async fn explore_books_async(
         return Err(LegadoError::Internal("解析后发现 URL 为空".into()));
     }
 
-    // 发起 HTTP 请求（复用进程共享客户端单例）
-    let client = crate::http_state::shared_client()?;
+    // data: URI（猫眼看书分类 URL 形态 `data:;base64,<b64>,{"type":"maoyankanshu"}`）
+    // 一律本地解码、不进 reqwest——reqwest 不支持 data: 协议，直接发送会报
+    // 「builder error for url (data:...)」（iOS 实机 15 号缺陷）。
+    // 语义与 `web_book::fetch_page` / `fetch_simple_cached` 的 data URI 分支
+    // 统一（单一实现 `legado_fetcher::web_book::data_uri_content_of`，直接消费
+    // 已解析 AnalyzeUrl 的 response_type：type 非空 → hex 编码字节，否则
+    // UTF-8 文本）；本地解码无网络响应，status 按 200 参与后续 loginCheckJs 链路。
+    let (response_body, response_url, response_status) =
+        match legado_fetcher::web_book::data_uri_content_of(&analyze_url) {
+            Some(result) => {
+                let body = result?;
+                (body, final_url.clone(), 200)
+            }
+            None => {
+                // 发起 HTTP 请求（复用进程共享客户端单例）
+                let client = crate::http_state::shared_client()?;
 
-    // 合并请求头：书源全局 header + AnalyzeUrl 解析出的 header
-    let mut headers = source_headers.clone().unwrap_or_default();
-    headers.extend(analyze_url.headers().clone());
+                // 合并请求头：书源全局 header + AnalyzeUrl 解析出的 header
+                let mut headers = source_headers.clone().unwrap_or_default();
+                headers.extend(analyze_url.headers().clone());
 
-    // JS `java.setCookie` 写入的 cookie：按**请求 URL**（解析后的 final_url）
-    // 属域取——cookie 属于域名而非书源（同域跨书源共享，不相关域名绝不
-    // 携带）；`cookies_for_url` 内部归一为 `getSubDomain(url)` 等价域名键
-    // （单一真源 `legado_net::cookie_store::cookie_domain_key`）。**按键合并**
-    // 进已有 Cookie 头（已有同名键胜、非冲突键追加；键查找大小写不敏感）
-    // ——对齐上游 `AnalyzeUrl.setCookie` → `CookieManager.mergeCookies` 语义。
-    legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, &final_url);
+                // JS `java.setCookie` 写入的 cookie：按**请求 URL**（解析后的 final_url）
+                // 属域取——cookie 属于域名而非书源（同域跨书源共享，不相关域名绝不
+                // 携带）；`cookies_for_url` 内部归一为 `getSubDomain(url)` 等价域名键
+                // （单一真源 `legado_net::cookie_store::cookie_domain_key`）。**按键合并**
+                // 进已有 Cookie 头（已有同名键胜、非冲突键追加；键查找大小写不敏感）
+                // ——对齐上游 AnalyzeUrl.setCookie → CookieManager.mergeCookies 语义。
+                legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, &final_url);
 
-    // 写侧 CookieJar 门控（批 2）：开启源补内部标记头（只补不覆盖；
-    // 发送前由 legado-net 剥离、绝不出网）；读侧 cookie 注入不受影响。
-    legado_fetcher::web_book::apply_cookie_jar_marker(&mut headers, source);
+                // 写侧 CookieJar 门控（批 2）：开启源补内部标记头（只补不覆盖；
+                // 发送前由 legado-net 剥离、绝不出网）；读侧 cookie 注入不受影响。
+                legado_fetcher::web_book::apply_cookie_jar_marker(&mut headers, source);
 
-    let headers_opt = if headers.is_empty() {
-        None
-    } else {
-        Some(headers)
-    };
+                let headers_opt = if headers.is_empty() {
+                    None
+                } else {
+                    Some(headers)
+                };
 
-    let response = client
-        .get(&final_url, headers_opt)
-        .await
-        .map_err(|e| LegadoError::Network(format!("请求发现页失败: {e}")))?;
+                let response = client
+                    .get(&final_url, headers_opt)
+                    .await
+                    .map_err(|e| LegadoError::Network(format!("请求发现页失败: {e}")))?;
 
-    if !response.is_success() {
-        return Err(LegadoError::Network(format!(
-            "HTTP {} for {}",
-            response.status, final_url
-        )));
-    }
+                if !response.is_success() {
+                    return Err(LegadoError::Network(format!(
+                        "HTTP {} for {}",
+                        response.status, final_url
+                    )));
+                }
+                (response.body, response.url, response.status)
+            }
+        };
 
     // loginCheckJs 登录检测（对齐原版 WebBook.exploreBookAwait:148-172 的
     // `evalJS(checkJs, it) as StrResponse` 双路径 + 采用修改响应，与搜索链
@@ -541,9 +558,9 @@ async fn explore_books_async(
     // — full-stack-engineer + Bridge（STAGE4-P36 语义对齐 F1 三叉点）
     let login_outcome = crate::api::web_book::RealBookSourceFetcher::execute_login_check(
         source,
-        &response.body,
-        &response.url,
-        response.status,
+        &response_body,
+        &response_url,
+        response_status,
     )?;
 
     let body = login_outcome.body;
@@ -1981,6 +1998,74 @@ JSON.stringify(qtsj.concat([{title: base_url + '榜', url: '/rank'}]));
                 assert!(!msg.contains("404"), "页码未替换导致的 404 回归: {msg}");
                 panic!("网络/解析失败（非占位符问题）: {msg}");
             }
+        }
+        legado_js::host_api::variable_store::clear_flow_scope().expect("复位 flow scope");
+    }
+
+    /// 猫眼看书形态回归（15 号实机缺陷）：空 mime data URI
+    /// （`data:;base64,<b64>`，书源实际形态带 `,{"type":"maoyankanshu"}` 选项）
+    /// 必须本地解码、绝不进 reqwest（reqwest 不支持 data: 协议 → 实机
+    /// 「builder error for url (data:;base64,...)」）。
+    ///
+    /// 修复前：client.get(data: URI) → `请求发现页失败: builder error...`；
+    /// 修复后：本地解码出书籍 JSON → 源「能出结果」（书名可解析）。
+    #[test]
+    fn test_explore_fetch_data_uri_empty_mime_decoded_locally() {
+        let _lock = crate::test_support::lock_global_store();
+        // base64(`[{"name":"解码成功"}]`)——空 mime 形态（无 type 选项 → 文本语义）
+        let url = "data:;base64,W3sibmFtZSI6Iuino+eggeaIkOWKnyJ9XQ==";
+        let source = serde_json::json!({
+            "bookSourceUrl": "https://data-uri-explore.test",
+            "bookSourceName": "data URI 回归",
+            "bookSourceType": 0,
+            "ruleExplore": {
+                "bookList": "$[*]",
+                "name": "$.name"
+            }
+        });
+        let out = explore_fetch_books(&source.to_string(), url, 1);
+        match out {
+            Ok(json) => {
+                assert!(
+                    json.contains("解码成功"),
+                    "空 mime data URI 应本地解码出书籍（不发起请求）: {json}"
+                );
+            }
+            Err(e) => {
+                panic!("空 mime data URI 不得进 reqwest（builder error 回归，实机 15 号形态）: {e}")
+            }
+        }
+        legado_js::host_api::variable_store::clear_flow_scope().expect("复位 flow scope");
+    }
+
+    /// 带 `,{"type":...}` 选项的空 mime data URI（猫眼分类 URL 精确形态）：
+    /// type 非空 → 按上游语义回 hex 编码字节（书源 JS 再 hexDecodeToString
+    /// 还原，`{$.type}` 消费点），同样不得进 reqwest；同时锁定「直接消费已
+    /// 解析 AnalyzeUrl 的 response_type」不回退成纯文本（二次 parse 丢失
+    /// 选项会退化为文本 → hexDecodeToString 解不出 JSON）。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_explore_fetch_data_uri_with_type_option_decoded_locally() {
+        let _lock = crate::test_support::lock_global_store();
+        // base64(`[{"name":"解码成功"}]`) + type 选项
+        let url = "data:;base64,W3sibmFtZSI6Iuino+eggeaIkOWKnyJ9XQ==,{\"type\":\"maoyankanshu\"}";
+        let source = serde_json::json!({
+            "bookSourceUrl": "https://data-uri-explore-type.test",
+            "bookSourceName": "data URI type 回归",
+            "bookSourceType": 0,
+            "ruleExplore": {
+                // 书源侧消费语义：hexDecodeToString(hex 文本) 还原 JSON 列表
+                "bookList": "<js>java.hexDecodeToString(result)</js>\n$[*]",
+                "name": "$.name"
+            }
+        });
+        let out = explore_fetch_books(&source.to_string(), url, 1);
+        match out {
+            Ok(json) => assert!(
+                json.contains("解码成功"),
+                "type 非空应回 hex 编码字节并经 hexDecodeToString 还原（非纯文本）: {json}"
+            ),
+            Err(e) => panic!("带 type 选项的空 mime data URI 不得进 reqwest: {e}"),
         }
         legado_js::host_api::variable_store::clear_flow_scope().expect("复位 flow scope");
     }
