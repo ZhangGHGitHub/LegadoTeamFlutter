@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -9,8 +10,10 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../routes.dart';
 import '../utils/legado_deep_link.dart';
+import '../utils/video_play_utils.dart';
 import 'deep_link_service.dart';
 import 'platform_channel.dart';
+import 'video_float_window.dart';
 
 /// webView 类载荷执行结果：结果串 + WebView 侧域 cookie 回流（项 B/B1）
 ///
@@ -192,7 +195,7 @@ class PlatformBridgeService {
         );
         return '';
       case 'openVideoPlayer':
-        _openVideoPlayer(
+        await _openVideoPlayer(
           url: (payload['url'] ?? '').toString(),
           title: (payload['title'] ?? '').toString(),
           isFloat: payload['isFloat'] == true,
@@ -943,25 +946,44 @@ class PlatformBridgeService {
 
   /// openVideoPlayer → 内置视频播放页（video_player 已接通）
   ///
-  /// isFloat（悬浮窗）当前无对应组件，降级为全屏播放并提示。
-  void _openVideoPlayer({
+  /// [V-B3] isFloat=true 对齐原版 SourceHelp.openVideoPlayer(isFloat=true)
+  /// （SourceHelp.kt:188-206）：直链经 `resolveVideoPlayTarget` 解析
+  /// header/复合 URL 后直接拉起原生悬浮窗，不进播放页；
+  /// 无悬浮窗权限时引导系统设置页并停留（不静默降级）。
+  /// 非 Android / MPD 文本 / 无法解析时回退全屏播放页。
+  Future<void> _openVideoPlayer({
     required String url,
     required String title,
     required bool isFloat,
-  }) {
+  }) async {
     if (url.isEmpty) return;
     final navigator = _navigator;
     if (navigator == null) {
       debugPrint('[PlatformBridge] openVideoPlayer：Navigator 未装配，忽略');
       return;
     }
+    if (isFloat && !kIsWeb && Platform.isAndroid) {
+      final target = resolveVideoPlayTarget(content: url, chapterUrl: url);
+      if (!target.isMpd && target.url.isNotEmpty) {
+        final displayTitle = title.isNotEmpty ? title : '视频播放';
+        final ok =
+            await VideoFloatWindowBridge.instance.show(VideoFloatWindowState(
+          url: target.url,
+          title: displayTitle,
+          headers: target.headers,
+          directUrl: url,
+          playing: true,
+        ));
+        if (ok) return;
+        await VideoFloatWindowBridge.instance.requestOverlayPermission();
+        _showSnackBar('请允许「显示在其他应用上层」后重试');
+        return;
+      }
+    }
     navigator.pushNamed(AppRoutes.video, arguments: <String, String>{
       'videoUrl': url,
       'title': title.isNotEmpty ? title : '视频播放',
     });
-    if (isFloat) {
-      _showSnackBar('悬浮窗播放暂不支持，已改为全屏播放');
-    }
   }
 
   /// 全局 SnackBar（经 navigatorKey 上下文）

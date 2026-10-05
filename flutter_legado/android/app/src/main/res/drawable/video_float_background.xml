@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- [V-B3] 视频悬浮窗圆角底（对齐原版 floating_rounded_background：窗口裁剪圆角） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#FF000000" />
+    <corners android:radius="8dp" />
+</shape>

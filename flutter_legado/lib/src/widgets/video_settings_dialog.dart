@@ -10,6 +10,7 @@ class VideoPlaySettings {
   static const startFullKey = '$_ns.startFull';
   static const longPressSpeedKey = '$_ns.longPressSpeed';
   static const fullBottomProgressKey = '$_ns.fullBottomProgressBar';
+  static const defaultFloatWindowKey = '$_ns.defaultFloatWindow';
 
   bool autoPlay;
   bool startFull;
@@ -17,11 +18,16 @@ class VideoPlaySettings {
   int longPressSpeed;
   bool fullBottomProgressBar;
 
+  /// [V-B3] 默认悬浮窗播放（对齐原版 VideoPlay.defaultFloatWindow /
+  /// SettingsDialog.kt:26,30 的 cbDefaultFloatWindow；默认 false 同原版）
+  bool defaultFloatWindow;
+
   VideoPlaySettings({
     this.autoPlay = true,
     this.startFull = false,
     this.longPressSpeed = 30,
     this.fullBottomProgressBar = true,
+    this.defaultFloatWindow = false,
   });
 
   double get pressSpeedFactor => longPressSpeed / 10.0;
@@ -33,6 +39,7 @@ class VideoPlaySettings {
       startFull: p.getBool(startFullKey) ?? false,
       longPressSpeed: p.getInt(longPressSpeedKey) ?? 30,
       fullBottomProgressBar: p.getBool(fullBottomProgressKey) ?? true,
+      defaultFloatWindow: p.getBool(defaultFloatWindowKey) ?? false,
     );
   }
 
@@ -42,6 +49,7 @@ class VideoPlaySettings {
     await p.setBool(startFullKey, startFull);
     await p.setInt(longPressSpeedKey, longPressSpeed);
     await p.setBool(fullBottomProgressKey, fullBottomProgressBar);
+    await p.setBool(defaultFloatWindowKey, defaultFloatWindow);
   }
 }
 
@@ -106,6 +114,19 @@ class _VideoSettingsDialogState extends State<_VideoSettingsDialog> {
                     value: s.autoPlay,
                     onChanged: (v) {
                       setState(() => s.autoPlay = v);
+                      _persist();
+                    },
+                  ),
+                  // [V-B3] 默认悬浮窗播放（对齐原版 dialog_video_settings.xml:
+                  // 43-63 cb_default_float_window「默认悬浮窗播放」，默认 false；
+                  // 开启后新开播放页解析出目标即转悬浮窗，对齐
+                  // VideoPlayerActivity.kt:177-193 的 defaultFloatWindow 转发）
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('默认悬浮窗播放'),
+                    value: s.defaultFloatWindow,
+                    onChanged: (v) {
+                      setState(() => s.defaultFloatWindow = v);
                       _persist();
                     },
                   ),

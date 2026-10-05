@@ -24,6 +24,7 @@ open class MainActivity : FlutterActivity() {
     private val cookieBridge = CookieBridge()
     private val storageBridge = StorageBridge()
     private val readerKeysBridge = ReaderKeysBridge()
+    private val videoFloatBridge = VideoFloatWindowBridge()
 
     private var deepLinkChannel: MethodChannel? = null
     private var autoTaskJobChannel: MethodChannel? = null
@@ -173,6 +174,10 @@ open class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 LauncherIconBridge.handleMethodCall(call, result, this)
             }
+
+        // [V-B3] 视频悬浮窗通道（原生服务承载 overlay + Media3 ExoPlayer；
+        // 回全屏经 MainActivity Intent → onReturnToFullscreen）
+        videoFloatBridge.register(flutterEngine, this)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -182,6 +187,8 @@ open class MainActivity : FlutterActivity() {
             intent?.getBooleanExtra(AutoTaskJobBridge.EXTRA_AUTO_TASK_DUE, false) == true
         pendingAutoTaskMinimize =
             intent?.getBooleanExtra(AutoTaskJobBridge.EXTRA_AUTO_TASK_MINIMIZE, false) == true
+        // [V-B3] 冷启动：悬浮窗「全屏」拉起 MainActivity 时携带播放状态
+        videoFloatBridge.setPendingReturn(intent)
         applySystemBarFromState()
     }
 
@@ -192,6 +199,8 @@ open class MainActivity : FlutterActivity() {
         if (!link.isNullOrEmpty()) {
             deepLinkChannel?.invokeMethod("onLink", link)
         }
+        // [V-B3] 悬浮窗「全屏」/通知点击回到已存活 Activity
+        videoFloatBridge.deliverReturn(intent)
         if (intent.getBooleanExtra(AutoTaskJobBridge.EXTRA_AUTO_TASK_DUE, false)) {
             pendingAutoTaskMinimize =
                 intent.getBooleanExtra(AutoTaskJobBridge.EXTRA_AUTO_TASK_MINIMIZE, false)
@@ -331,5 +340,6 @@ open class MainActivity : FlutterActivity() {
         ttsBridge.release()
         webViewBridge.destroy()
         mediaSessionBridge.release()
+        videoFloatBridge.dispose()
     }
 }

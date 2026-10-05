@@ -60,6 +60,11 @@ flutter {
 dependencies {
     // AndroidX Media（MediaSessionCompat + 音频焦点管理）
     implementation("androidx.media:media:1.7.0")
+    // [V-B3] 视频悬浮窗服务自建播放器（VideoPlayService）：
+    // Flutter video_player 的纹理归 Flutter 引擎渲染面，无法进入系统 overlay，
+    // 故原生 side 直接使用 Media3 ExoPlayer + SurfaceView（对齐原版 GSYVideoPlayer 形态）。
+    // 版本与工程解析图一致（video_player_android 2.9.5 声明 1.8.0，本工程已解析至 1.9.2）。
+    implementation("androidx.media3:media3-exoplayer:1.9.2")
     // core library desugaring（flutter_local_notifications 18.x 强制要求，AGP 8.11）
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     // [P1-2] 本地 JVM 单测（StorageBridge bytes 参数解析回归）：

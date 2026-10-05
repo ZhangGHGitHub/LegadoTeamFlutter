@@ -22,13 +22,20 @@ class VideoPlayTarget {
   /// MPD/DASH 清单原文（非空时需写临时文件后以 file 播放）
   final String? mpdContent;
 
+  /// [V-B3] 已落盘的 MPD 临时清单路径（悬浮窗回全屏时由原生移交所有权，
+  /// 直接以 file 播放，不再重写文件）
+  final String? mpdFilePath;
+
   const VideoPlayTarget({
     required this.url,
     this.headers = const {},
     this.mpdContent,
+    this.mpdFilePath,
   });
 
-  bool get isMpd => mpdContent != null && mpdContent!.isNotEmpty;
+  bool get isMpd =>
+      (mpdContent != null && mpdContent!.isNotEmpty) ||
+      (mpdFilePath != null && mpdFilePath!.isNotEmpty);
 }
 
 /// 音视频正文准备：去掉副内容污染行；MPD 保留完整 XML。

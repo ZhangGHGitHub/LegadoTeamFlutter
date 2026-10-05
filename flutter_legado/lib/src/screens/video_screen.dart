@@ -12,10 +12,12 @@ import 'package:video_player/video_player.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/book_api.dart';
+import '../services/video_float_window.dart';
 import '../utils/video_play_utils.dart';
 import '../utils/video_progress.dart';
 import '../widgets/app_progress_indicator.dart';
 import '../widgets/video_danmaku_layer.dart';
+import '../widgets/video_float_window_button.dart';
 import '../widgets/video_long_press_speed.dart';
 import '../widgets/video_settings_dialog.dart';
 
@@ -39,6 +41,33 @@ import '../widgets/video_settings_dialog.dart';
 final VideoPlayerOptions videoPlaybackOptions =
     VideoPlayerOptions(mixWithOthers: false);
 
+/// [V-B3] 悬浮窗回全屏的路由参数（app.dart 从原生交回状态组装）
+class VideoScreenArgs {
+  final String videoUrl;
+  final String title;
+  final Book? book;
+  final String? presetUrl;
+  final Map<String, String> presetHeaders;
+  final String? presetMpdPath;
+  final int initialResumeMs;
+  final int? initialChapterIndex;
+  final double initialSpeed;
+  final bool initialPlaying;
+
+  const VideoScreenArgs({
+    this.videoUrl = '',
+    this.title = '视频播放',
+    this.book,
+    this.presetUrl,
+    this.presetHeaders = const {},
+    this.presetMpdPath,
+    this.initialResumeMs = 0,
+    this.initialChapterIndex,
+    this.initialSpeed = 1.0,
+    this.initialPlaying = true,
+  });
+}
+
 class VideoScreen extends StatefulWidget {
   /// 视频播放地址
   final String videoUrl;
@@ -49,11 +78,41 @@ class VideoScreen extends StatefulWidget {
   /// 视频源书籍（非空时启用章节列表与切换）
   final Book? book;
 
+  // ===== [V-B3] 悬浮窗回全屏的续播参数（对齐原版 isNew=false 转移） =====
+
+  /// 已解析的播放地址（悬浮窗原生层交回；null = 按常规流程解析）
+  final String? presetUrl;
+
+  /// 与 [presetUrl] 配套的 header
+  final Map<String, String> presetHeaders;
+
+  /// 与 [presetUrl] 配套的 MPD 临时文件路径（所有权随回全屏交回本页）
+  final String? presetMpdPath;
+
+  /// 续播位置（毫秒）
+  final int initialResumeMs;
+
+  /// 书籍模式续播的绝对章节索引
+  final int? initialChapterIndex;
+
+  /// 会话倍速（悬浮窗切回后保持，对齐原版 playSpeed 视图级语义）
+  final double initialSpeed;
+
+  /// 悬浮窗内的播放态（false = 回到页面后保持暂停）
+  final bool initialPlaying;
+
   const VideoScreen({
     super.key,
     required this.videoUrl,
     this.title = '视频播放',
     this.book,
+    this.presetUrl,
+    this.presetHeaders = const {},
+    this.presetMpdPath,
+    this.initialResumeMs = 0,
+    this.initialChapterIndex,
+    this.initialSpeed = 1.0,
+    this.initialPlaying = true,
   });
 
   @override
@@ -91,12 +150,29 @@ class _VideoScreenState extends State<VideoScreen> {
   /// MPD 临时文件（切换章/退出时清理）
   File? _mpdTempFile;
 
-  /// 是否已在 didChangeDependencies 调度过书籍视频加载
-  ///
+  /// 是否已调度起播引导（原分书籍/直链两个调度标记，V-B3 合并为引导入口；
   /// `ProviderScope.containerOf(context)` 依赖 InheritedWidget，不可在
   /// `initState` 完成前调用（2.0.34 回归：dependOnInheritedWidget… before
   /// initState completed）。— Reasonix
-  bool _bookVideoLoadScheduled = false;
+  bool _bootstrapStarted = false;
+
+  // ===== [V-B3] 悬浮窗移交状态 =====
+
+  /// 悬浮窗回全屏/接管后的预置播放目标（不重新解析章节正文）
+  VideoPlayTarget? _presetTarget;
+
+  /// 状态已移交悬浮窗（页面正在退出；禁止再 setState/起播）
+  bool _handedToFloat = false;
+
+  /// 默认悬浮窗播放：首次解析成功后只判定一次
+  /// （对齐原版仅 Activity 创建时转发，VideoPlayerActivity.kt:177-193）
+  bool _autoFloatPending = true;
+
+  /// 悬浮窗回全屏的播放态覆写（null = 沿用 autoPlay 设置）
+  bool? _resumePlayingOverride;
+
+  /// 悬浮窗回全屏时书籍续播的绝对章节索引
+  int? _resumeChapterIndex;
 
   VideoPlaySettings _playSettings = VideoPlaySettings();
 
@@ -114,10 +190,6 @@ class _VideoScreenState extends State<VideoScreen> {
   /// 本次起播要恢复的位置（毫秒）：直链 = video_pos_ 读值；
   /// 书籍 = 初始章的 durChapterPos（换集 saveRead(0) 后归零，对齐原版）
   int _pendingResumeMs = 0;
-
-  /// 直链模式是否已在 didChangeDependencies 调度起播（先读进度再起播，
-  /// 对齐原版 seekOnStart；不可在 initState 读 ProviderScope）
-  bool _directPlayScheduled = false;
 
   /// 直链进度定期落盘定时器（原版仅 onDestroy/onError 落盘，此处加固；
   /// 进程被杀时减少进度丢失）
@@ -207,11 +279,15 @@ class _VideoScreenState extends State<VideoScreen> {
   @override
   void initState() {
     super.initState();
-    unawaited(_loadPlaySettings());
+    _playSettingsLoaded = _loadPlaySettings();
     // 直链模式起播需先读 video_pos_ 进度（对齐原版 seekOnStart），
     // ProviderScope 依赖 InheritedWidget，统一在 didChangeDependencies 调度
     _loadingChapter = true;
   }
+
+  /// 设置加载 Future：起播引导需在「默认悬浮窗」判定前完成（对齐原版
+  /// SharedPreferences 同步读取语义）
+  late final Future<void> _playSettingsLoaded;
 
   Future<void> _loadPlaySettings() async {
     final s = await VideoPlaySettings.load();
@@ -225,31 +301,84 @@ class _VideoScreenState extends State<VideoScreen> {
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // 书籍模式：InheritedWidget 就绪后再读 bookApiProvider
-    if (widget.book != null && !_bookVideoLoadScheduled) {
-      _bookVideoLoadScheduled = true;
-      unawaited(_loadBookVideo());
-    }
-    // 直链模式：先读 video_pos_ 进度再起播（V-B4）
-    if (widget.book == null && !_directPlayScheduled) {
-      _directPlayScheduled = true;
-      unawaited(_startDirectPlayback());
+    if (_bootstrapStarted) return;
+    _bootstrapStarted = true;
+    // [V-B3] 先探测/接管活动悬浮窗，再走书籍/直链既有解析链
+    // （对齐原版 Activity 创建即停服务 + VideoPlay 静态状态接管语义）
+    unawaited(_bootstrapPlayback());
+  }
+
+  /// 起播引导：显式预置（app.dart 经路由参数回全屏）或探测活动悬浮窗
+  Future<void> _bootstrapPlayback() async {
+    await _playSettingsLoaded;
+    if (!mounted || _handedToFloat) return;
+    await _applyExplicitOrActiveFloatState();
+    if (!mounted || _handedToFloat) return;
+    if (widget.book != null) {
+      await _loadBookVideo();
+    } else {
+      await _startDirectPlayback();
     }
   }
+
+  /// 悬浮窗状态接入：
+  /// - 路由显式携带 preset（回全屏导航）→ 直接采用；
+  /// - 否则探测活动悬浮窗：同源 → 接管（停服 + 取最终位置），
+  ///   异源 → 落库旧内容进度并关闭（probeAndTakeOver 内处理）。
+  Future<void> _applyExplicitOrActiveFloatState() async {
+    if (widget.presetUrl != null) {
+      _applyFloatState(VideoFloatWindowState(
+        url: widget.presetUrl!,
+        headers: widget.presetHeaders,
+        positionMs: widget.initialResumeMs,
+        playing: widget.initialPlaying,
+        speed: widget.initialSpeed,
+        bookUrl: widget.book?.bookUrl,
+        chapterIndex: widget.initialChapterIndex ?? -1,
+        mpdTempPath: widget.presetMpdPath,
+      ));
+      return;
+    }
+    final taken = await VideoFloatWindowCoordinator.instance.probeAndTakeOver(
+      bookUrl: widget.book?.bookUrl,
+      videoUrl: widget.book == null ? widget.videoUrl : null,
+      api: _readApi(),
+    );
+    if (taken != null && mounted) _applyFloatState(taken);
+  }
+
+  /// 把悬浮窗状态转为本页续播参数（原版 clonePlayState 语义）
+  void _applyFloatState(VideoFloatWindowState state) {
+    if (state.positionMs > 0) _pendingResumeMs = state.positionMs;
+    _playbackSpeed = state.speed.clamp(0.5, 3.0);
+    _resumePlayingOverride = state.playing;
+    _videoHeaders = Map<String, String>.from(state.headers);
+    if (state.chapterIndex >= 0) _resumeChapterIndex = state.chapterIndex;
+    _presetTarget = VideoPlayTarget(
+      url: state.url,
+      headers: Map<String, String>.from(state.headers),
+      mpdFilePath: state.mpdTempPath,
+    );
+  }
+
+  BookApi _readApi() => ProviderScope.containerOf(context).read(bookApiProvider);
 
   /// 直链起播：读 20 天内进度 → 解析播放（对齐 VideoPlay.kt:143 seekOnStart）
   Future<void> _startDirectPlayback() async {
     final api = ProviderScope.containerOf(context).read(bookApiProvider);
     final store = VideoPosStore(api);
     _directPosStore = store;
-    try {
-      _pendingResumeMs = await store.read(widget.videoUrl);
-    } catch (_) {
-      _pendingResumeMs = 0;
+    // [V-B3] 悬浮窗回全屏：位置/URL 已随状态交回，不再读 video_pos_
+    if (_presetTarget == null) {
+      try {
+        _pendingResumeMs = await store.read(widget.videoUrl);
+      } catch (_) {
+        _pendingResumeMs = 0;
+      }
     }
-    if (!mounted) return;
+    if (!mounted || _handedToFloat) return;
     await _playDirectUrl(widget.videoUrl);
-    if (!mounted) return;
+    if (!mounted || _handedToFloat) return;
     // 定期落盘（原版仅 onDestroy/onError，此处加固防进程被杀丢进度）
     _directPosTimer ??= Timer.periodic(
       const Duration(seconds: 5),
@@ -275,22 +404,24 @@ class _VideoScreenState extends State<VideoScreen> {
     } catch (_) {}
   }
 
-  /// 直链模式：同样走复合 URL / header / MPD 解析
+  /// 直链模式：同样走复合 URL / header / MPD 解析；
+  /// [V-B3] 悬浮窗回全屏时直接用交回的目标，不重复解析正文
   Future<void> _playDirectUrl(String raw) async {
     setState(() {
       _loadingChapter = true;
       _chapterError = null;
     });
     try {
-      final target = resolveVideoPlayTarget(
-        content: raw,
-        chapterUrl: raw,
-        sourceHeaders: _sourceHeaders,
-      );
+      final target = _presetTarget ??
+          resolveVideoPlayTarget(
+            content: raw,
+            chapterUrl: raw,
+            sourceHeaders: _sourceHeaders,
+          );
       await _startFromTarget(target);
-      if (mounted) setState(() => _loadingChapter = false);
+      if (mounted && !_handedToFloat) setState(() => _loadingChapter = false);
     } catch (e) {
-      if (mounted) {
+      if (mounted && !_handedToFloat) {
         setState(() {
           _loadingChapter = false;
           _chapterError = '$e';
@@ -329,14 +460,34 @@ class _VideoScreenState extends State<VideoScreen> {
         });
         return;
       }
-      final index = findPlayableChapterIndex(
-        _chapters.map((c) => c.isVolume).toList(),
-        book.durChapterIndex,
-      );
+      final preset = _presetTarget;
+      final presetIndex = _resumeChapterIndex;
+      final index = (preset != null &&
+              presetIndex != null &&
+              presetIndex >= 0 &&
+              presetIndex < _chapters.length)
+          ? presetIndex
+          : findPlayableChapterIndex(
+              _chapters.map((c) => c.isVolume).toList(),
+              book.durChapterIndex,
+            );
       _chapterIndex = index;
+      if (preset != null) {
+        // [V-B3] 悬浮窗回全屏：URL/位置/header 已交回，仅补弹幕数据后直接续播
+        if (!mounted || _handedToFloat) return;
+        final api = _readApi();
+        await _loadDanmakuForChapter(api, index);
+        if (!mounted || _handedToFloat) return;
+        await _startFromTarget(preset);
+        if (mounted && !_handedToFloat) {
+          setState(() => _loadingChapter = false);
+        }
+        return;
+      }
       // 初始章恢复书籍进度（对齐 VideoPlay.startPlay durChapterPos → seekOnStart）
       await _playChapter(index, resumeMs: book.durChapterPos);
     } catch (e) {
+      if (!mounted || _handedToFloat) return;
       setState(() {
         _loadingChapter = false;
         _chapterError = '$e';
@@ -433,12 +584,14 @@ class _VideoScreenState extends State<VideoScreen> {
       );
       _pendingResumeMs = resumeMs;
       await _startFromTarget(target);
+      if (!mounted || _handedToFloat) return;
       setState(() {
         _loadingChapter = false;
         _chapterIndex = index;
       });
       unawaited(_saveProgress(chapterPos: 0));
     } catch (e) {
+      if (!mounted || _handedToFloat) return;
       setState(() {
         _loadingChapter = false;
         _chapterError = '$e';
@@ -448,6 +601,8 @@ class _VideoScreenState extends State<VideoScreen> {
 
   /// 将 [VideoPlayTarget] 落到播放器（含 MPD 落盘）
   Future<void> _startFromTarget(VideoPlayTarget target) async {
+    // [V-B3] 默认悬浮窗播放：首次解析成功即移交（不起 Flutter 播放器）
+    if (await _maybeAutoEnterFloat(target)) return;
     try {
       _controller.removeListener(_onPlayerValueChanged);
       _controller.dispose();
@@ -457,6 +612,15 @@ class _VideoScreenState extends State<VideoScreen> {
     await _clearMpdTemp();
 
     _videoHeaders = Map<String, String>.from(target.headers);
+
+    // [V-B3] 悬浮窗回全屏：MPD 临时文件已由原生移交所有权，直接播放
+    if (target.mpdFilePath != null && target.mpdFilePath!.isNotEmpty) {
+      final file = File(target.mpdFilePath!);
+      _mpdTempFile = file;
+      _currentPlayUrl = file.uri.toString();
+      _initPlayer(filePath: file.path);
+      return;
+    }
 
     if (target.isMpd) {
       final dir = await getTemporaryDirectory();
@@ -472,6 +636,144 @@ class _VideoScreenState extends State<VideoScreen> {
 
     _currentPlayUrl = target.url;
     _initPlayer(networkUrl: target.url);
+  }
+
+  /// 默认悬浮窗播放（对齐原版 VideoPlayerActivity.kt:177-193）：
+  /// 仅在首次解析成功后判定一次，成功移交返回 true（页面随即退出）。
+  Future<bool> _maybeAutoEnterFloat(VideoPlayTarget target) async {
+    if (!_autoFloatPending) return false;
+    _autoFloatPending = false;
+    if (!_playSettings.defaultFloatWindow ||
+        _handedToFloat ||
+        widget.presetUrl != null) {
+      return false;
+    }
+    return _handOffToFloatWindow(target);
+  }
+
+  /// [V-B3] 移交悬浮窗：Dart 保存 url/header/位置/倍速/播放态 → 原生服务
+  /// 新建 Media3 ExoPlayer 续播（对齐原版 `VideoPlay.savePlayState` /
+  /// `clonePlayState` 的「状态克隆」语义，VideoPlay.kt:386-398）。
+  ///
+  /// [positionMs] 省略时取 Flutter 控制器当前位置。
+  Future<bool> _handOffToFloatWindow(
+    VideoPlayTarget target, {
+    int? positionMs,
+  }) async {
+    if (!mounted || _handedToFloat) return false;
+    final book = widget.book;
+    var mpdPath = target.mpdFilePath;
+    if (target.isMpd && (mpdPath == null || mpdPath.isEmpty)) {
+      final dir = await getTemporaryDirectory();
+      final name =
+          'legado_video_float_${DateTime.now().millisecondsSinceEpoch}.mpd';
+      final file = File('${dir.path}/$name');
+      await file.writeAsString(target.mpdContent!);
+      await _clearMpdTemp();
+      _mpdTempFile = file;
+      mpdPath = file.path;
+    }
+    final playUrl = (mpdPath != null && mpdPath.isNotEmpty)
+        ? File(mpdPath).uri.toString()
+        : target.url;
+    if (playUrl.isEmpty) return false;
+    final pos = positionMs ??
+        (_controller.value.isInitialized
+            ? _controller.value.position.inMilliseconds
+            : _pendingResumeMs);
+    final title = book != null &&
+            _chapters.isNotEmpty &&
+            _chapterIndex >= 0 &&
+            _chapterIndex < _chapters.length
+        ? _chapters[_chapterIndex].title
+        : widget.title;
+    final state = VideoFloatWindowState(
+      url: playUrl,
+      title: title,
+      bookName: book?.name ?? '',
+      headers: Map<String, String>.from(target.headers),
+      positionMs: pos,
+      playing: _resumePlayingOverride ??
+          (_controller.value.isInitialized
+              ? _controller.value.isPlaying
+              : true),
+      speed: _playbackSpeed,
+      bookUrl: book?.bookUrl,
+      chapterIndex: _chapterIndex,
+      chapterTitle: title,
+      directUrl: book == null ? widget.videoUrl : null,
+      hasPrev: book != null && _chapters.isNotEmpty
+          ? _chapterHasPlayable(_chapterIndex, -1)
+          : false,
+      hasNext: book != null && _chapters.isNotEmpty
+          ? _chapterHasPlayable(_chapterIndex, 1)
+          : false,
+      mpdTempPath: mpdPath,
+    );
+    // 进度先落库（对齐原版 startFloatingWindow → savePlayState 即时保存语义）
+    if (pos > 0) {
+      if (book != null) {
+        await _saveProgress(chapterPos: pos);
+      } else {
+        final store = _directPosStore;
+        if (store != null) {
+          try {
+            await store.write(widget.videoUrl, pos);
+          } catch (_) {}
+        }
+      }
+    }
+    final ok = await VideoFloatWindowCoordinator.instance.enterWindow(
+      state: state,
+      book: book,
+      chapters: book != null ? _chapters : null,
+      sourceHeaders: _sourceHeaders,
+      api: _readApi(),
+    );
+    if (!ok) {
+      await VideoFloatWindowBridge.instance.requestOverlayPermission();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请允许「显示在其他应用上层」后重试')),
+        );
+      }
+      return false;
+    }
+    _handedToFloat = true;
+    _mpdTempFile = null; // 所有权移交原生服务（关闭时按语义删除/交回）
+    if (mounted) Navigator.of(context).pop();
+    return true;
+  }
+
+  bool _chapterHasPlayable(int from, int delta) {
+    var i = from + delta;
+    while (i >= 0 && i < _chapters.length) {
+      if (!_chapters[i].isVolume) return true;
+      i += delta;
+    }
+    return false;
+  }
+
+  /// 悬浮窗入口（对齐原版 menu_float_window → startFloatingWindow）：
+  /// 在当前播放内容上转全局悬浮窗
+  Future<void> _enterFloatWindow() async {
+    if (_handedToFloat || _loadingChapter) return;
+    final target = _currentFloatTarget();
+    if (target == null) return;
+    await _handOffToFloatWindow(target);
+  }
+
+  VideoPlayTarget? _currentFloatTarget() {
+    final mpd = _mpdTempFile;
+    if (mpd != null && _currentPlayUrl.isNotEmpty) {
+      return VideoPlayTarget(
+        url: _currentPlayUrl,
+        headers: _videoHeaders,
+        mpdFilePath: mpd.path,
+      );
+    }
+    if (_currentPlayUrl.isEmpty) return null;
+    return VideoPlayTarget(url: _currentPlayUrl, headers: _videoHeaders);
   }
 
   Future<void> _clearMpdTemp() async {
@@ -599,7 +901,10 @@ class _VideoScreenState extends State<VideoScreen> {
         } catch (_) {}
       }
       setState(() {});
-      if (_playSettings.autoPlay) {
+      // [V-B3] 悬浮窗回全屏时保持其播放态；否则沿用 autoPlay 设置
+      final shouldPlay = _resumePlayingOverride ?? _playSettings.autoPlay;
+      _resumePlayingOverride = null;
+      if (shouldPlay) {
         await _controller.play();
       }
       // [P4-3 波次1b V3] 换集重建控制器后恢复会话级倍速
@@ -762,6 +1067,13 @@ class _VideoScreenState extends State<VideoScreen> {
                 ),
                 // [LAYOUT_PLAN P3] 沉浸域仅顶栏动作行规范：动作顺序上一集/下一集/设置/全屏（本体不动）
                 actions: [
+                  // [V-B3] 悬浮窗入口（对齐原版 menu_float_window：视频页菜单
+                  // 第一组 always 动作；解析出播放地址后可用）
+                  VideoFloatWindowButton(
+                    onPressed: (_currentPlayUrl.isNotEmpty && !_loadingChapter)
+                        ? () => unawaited(_enterFloatWindow())
+                        : null,
+                  ),
                   if (widget.book != null && _chapters.isNotEmpty) ...[
                     IconButton(
                       icon: const Icon(Symbols.skip_previous_rounded),

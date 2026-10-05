@@ -5,14 +5,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
+import 'src/models/models.dart';
 import 'src/providers/providers.dart';
 import 'src/providers/ui_settings/ui_settings_notifier.dart';
 import 'src/providers/theme/theme_colors_notifier.dart';
 import 'src/providers/theme/theme_notifier.dart';
 import 'src/routes.dart';
+import 'src/screens/video_screen.dart';
 import 'src/services/auto_task_scheduler.dart';
 import 'src/services/deep_link_service.dart';
 import 'src/services/platform_bridge_service.dart';
+import 'src/services/video_float_window.dart';
 import 'src/theme/app_theme.dart';
 import 'src/theme/theme_engine_parameterized.dart';
 import 'package:dynamic_color/dynamic_color.dart';
@@ -177,6 +180,48 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       DeepLinkService.instance.attach(PlatformBridgeService.navigatorKey);
     });
+    // [V-B3] 视频悬浮窗：注册原生事件处理与回全屏导航后 attach
+    // （attach 会拉取冷启动经 MainActivity Intent 带回的播放状态）
+    VideoFloatWindowCoordinator.instance
+      ..openFullscreen = _openVideoFromFloatWindow
+      ..onNotice = _showFloatWindowNotice;
+    VideoFloatWindowBridge.instance.attach();
+  }
+
+  /// [V-B3] 悬浮窗「全屏」/通知点击回传：导航到视频页从交回位置续播
+  void _openVideoFromFloatWindow(VideoFloatWindowState state, Book? book) {
+    final args = VideoScreenArgs(
+      videoUrl: state.directUrl ?? book?.bookUrl ?? '',
+      title: state.chapterTitle?.isNotEmpty == true
+          ? state.chapterTitle!
+          : (state.title.isNotEmpty ? state.title : '视频播放'),
+      book: book,
+      presetUrl: state.url,
+      presetHeaders: state.headers,
+      presetMpdPath: state.mpdTempPath,
+      initialResumeMs: state.positionMs,
+      initialChapterIndex: state.chapterIndex >= 0 ? state.chapterIndex : null,
+      initialSpeed: state.speed,
+      initialPlaying: state.playing,
+    );
+    final navigator = PlatformBridgeService.navigatorKey.currentState;
+    if (navigator != null) {
+      navigator.pushNamed(AppRoutes.video, arguments: args);
+      return;
+    }
+    // 冷启动首帧前 Navigator 尚未就绪：推迟到首帧后
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      PlatformBridgeService.navigatorKey.currentState
+          ?.pushNamed(AppRoutes.video, arguments: args);
+    });
+  }
+
+  /// [V-B3] 悬浮窗用户可见提示（经全局 Navigator context）
+  void _showFloatWindowNotice(String message) {
+    final context = PlatformBridgeService.navigatorKey.currentContext;
+    if (context == null) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override

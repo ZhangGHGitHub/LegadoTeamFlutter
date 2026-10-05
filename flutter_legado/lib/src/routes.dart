@@ -406,6 +406,21 @@ class AppRoutes {
     },
     video: (context) {
       final args = ModalRoute.of(context)?.settings.arguments;
+      // [V-B3] 悬浮窗回全屏：原生交回已解析 URL/位置，直接续播
+      if (args is VideoScreenArgs) {
+        return VideoScreen(
+          videoUrl: args.videoUrl,
+          title: args.title,
+          book: args.book,
+          presetUrl: args.presetUrl,
+          presetHeaders: args.presetHeaders,
+          presetMpdPath: args.presetMpdPath,
+          initialResumeMs: args.initialResumeMs,
+          initialChapterIndex: args.initialChapterIndex,
+          initialSpeed: args.initialSpeed,
+          initialPlaying: args.initialPlaying,
+        );
+      }
       if (args is Map<String, String>) {
         return VideoScreen(
           videoUrl: args['videoUrl'] ?? '',

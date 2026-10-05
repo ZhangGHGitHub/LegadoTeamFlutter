@@ -21,6 +21,10 @@
 
     <!-- 唤醒锁（阅读时常亮 / 听书 PARTIAL_WAKE_LOCK） -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- [V-B3] 视频悬浮窗：全局 overlay（对齐原版 AndroidManifest.xml:26）。
+         属特殊权限，需运行时经 Settings.canDrawOverlays 检查 + 设置页引导 -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <!-- 定时任务 JobScheduler 持久化（对齐原版 setPersisted） -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
@@ -173,6 +177,15 @@
              FOREGROUND_SERVICE_MEDIA_PLAYBACK 权限配套（Android 14 要求） -->
         <service
             android:name=".PlaybackForegroundService"
+            android:foregroundServiceType="mediaPlayback"
+            android:exported="false" />
+
+        <!-- [V-B3] 视频悬浮窗服务：全局 overlay 承载原生 Media3 ExoPlayer
+             （对齐原版 VideoPlayService.kt + manifest:555-557；与听书服务
+             并行、互不共用 session——原版音频 AudioPlayService 与视频
+             VideoPlayService 即双服务形态） -->
+        <service
+            android:name=".VideoPlayService"
             android:foregroundServiceType="mediaPlayback"
             android:exported="false" />
 
