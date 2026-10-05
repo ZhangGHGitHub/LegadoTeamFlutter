@@ -257,6 +257,10 @@ String speedEntryLabel(double speed) =>
 /// 长按倍速 tip「X倍速播放中」见 VideoPlayer.kt:112，勿混）
 String speedTipLabel(double speed) => '$speed倍播放中';
 
+/// 长按倍速 tip 文案（对齐原版 VideoPlayer.kt:112「X倍速播放中」；
+/// 按住期间显示，松手 touchSurfaceUp 隐藏）
+String longPressSpeedTipLabel(double speed) => '$speed倍速播放中';
+
 /// 选集对话框（对齐原版 ChoiceEpisodeDialog）
 ///
 /// 返回被选中的绝对章节索引；点屏障/系统返回关闭时返回 null。

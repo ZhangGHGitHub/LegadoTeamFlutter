@@ -13,8 +13,10 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../services/book_api.dart';
 import '../utils/video_play_utils.dart';
+import '../utils/video_progress.dart';
 import '../widgets/app_progress_indicator.dart';
 import '../widgets/video_danmaku_layer.dart';
+import '../widgets/video_long_press_speed.dart';
 import '../widgets/video_settings_dialog.dart';
 
 /// 视频播放页面
@@ -104,6 +106,39 @@ class _VideoScreenState extends State<VideoScreen> {
   /// 视图级成员、切集保留、不持久化；1.0 = 正常）
   double _playbackSpeed = 1.0;
 
+  // ===== [V-B4] 直链进度（video_pos_）与自然播完连播 =====
+
+  /// 直链进度存取（仅直链模式；经既有 config/caches 通道，20 天 TTL）
+  VideoPosStore? _directPosStore;
+
+  /// 本次起播要恢复的位置（毫秒）：直链 = video_pos_ 读值；
+  /// 书籍 = 初始章的 durChapterPos（换集 saveRead(0) 后归零，对齐原版）
+  int _pendingResumeMs = 0;
+
+  /// 直链模式是否已在 didChangeDependencies 调度起播（先读进度再起播，
+  /// 对齐原版 seekOnStart；不可在 initState 读 ProviderScope）
+  bool _directPlayScheduled = false;
+
+  /// 直链进度定期落盘定时器（原版仅 onDestroy/onError 落盘，此处加固；
+  /// 进程被杀时减少进度丢失）
+  Timer? _directPosTimer;
+
+  /// 上一帧 completed 态：自然播完只在「未完成 → 完成」边沿触发一次连播
+  bool _wasCompleted = false;
+
+  // ===== [V-B4] 长按倍速 =====
+
+  /// 是否正处于长按临时提速（对齐原版 isLongPressSpeed）
+  bool _isLongPressSpeed = false;
+
+  /// 当前生效倍速：长按期间 = 设置的长按档位，否则 = 会话倍速
+  /// （对齐 VideoPlayer.kt:108-133；弹幕层与控制器共用该值）
+  double get _effectivePlaybackSpeed => effectiveVideoSpeed(
+        sessionSpeed: _playbackSpeed,
+        longPressActive: _isLongPressSpeed,
+        longPressSpeed: _playSettings.pressSpeedFactor,
+      );
+
   // ===== [V-B2 | 2026-10-05] 视频弹幕（契约 §2.49 数据 + §2.50 解析） =====
 
   /// 当前章节弹幕项（Rust 解析结果；空 = 无弹幕或解析失败）
@@ -129,6 +164,12 @@ class _VideoScreenState extends State<VideoScreen> {
     _tipTimer = Timer(Duration(milliseconds: durationMs), () {
       if (mounted) setState(() => _tipText = null);
     });
+  }
+
+  /// 原版 showOverlayTip()（无参）：立即隐藏提示（长按松手时调用）
+  void _hideTip() {
+    _tipTimer?.cancel();
+    if (_tipText != null && mounted) setState(() => _tipText = null);
   }
 
   /// 选集（对齐原版 showEpisodeDialog：选集 → chapterInVolumeIndex=position
@@ -167,12 +208,9 @@ class _VideoScreenState extends State<VideoScreen> {
   void initState() {
     super.initState();
     unawaited(_loadPlaySettings());
-    // 直链模式不依赖 Riverpod，可在 initState 启动
-    if (widget.book == null) {
-      unawaited(_playDirectUrl(widget.videoUrl));
-    } else {
-      _loadingChapter = true;
-    }
+    // 直链模式起播需先读 video_pos_ 进度（对齐原版 seekOnStart），
+    // ProviderScope 依赖 InheritedWidget，统一在 didChangeDependencies 调度
+    _loadingChapter = true;
   }
 
   Future<void> _loadPlaySettings() async {
@@ -192,6 +230,49 @@ class _VideoScreenState extends State<VideoScreen> {
       _bookVideoLoadScheduled = true;
       unawaited(_loadBookVideo());
     }
+    // 直链模式：先读 video_pos_ 进度再起播（V-B4）
+    if (widget.book == null && !_directPlayScheduled) {
+      _directPlayScheduled = true;
+      unawaited(_startDirectPlayback());
+    }
+  }
+
+  /// 直链起播：读 20 天内进度 → 解析播放（对齐 VideoPlay.kt:143 seekOnStart）
+  Future<void> _startDirectPlayback() async {
+    final api = ProviderScope.containerOf(context).read(bookApiProvider);
+    final store = VideoPosStore(api);
+    _directPosStore = store;
+    try {
+      _pendingResumeMs = await store.read(widget.videoUrl);
+    } catch (_) {
+      _pendingResumeMs = 0;
+    }
+    if (!mounted) return;
+    await _playDirectUrl(widget.videoUrl);
+    if (!mounted) return;
+    // 定期落盘（原版仅 onDestroy/onError，此处加固防进程被杀丢进度）
+    _directPosTimer ??= Timer.periodic(
+      const Duration(seconds: 5),
+      (_) => unawaited(_saveDirectProgress()),
+    );
+  }
+
+  /// 直链进度落盘（毫秒；未起播/读到 0 时跳过）
+  Future<void> _saveDirectProgress() async {
+    final store = _directPosStore;
+    if (store == null || widget.book != null) return;
+    var pos = 0;
+    try {
+      pos = _controller.value.isInitialized
+          ? _controller.value.position.inMilliseconds
+          : 0;
+    } catch (_) {
+      pos = 0;
+    }
+    if (pos <= 0) return;
+    try {
+      await store.write(widget.videoUrl, pos);
+    } catch (_) {}
   }
 
   /// 直链模式：同样走复合 URL / header / MPD 解析
@@ -253,7 +334,8 @@ class _VideoScreenState extends State<VideoScreen> {
         book.durChapterIndex,
       );
       _chapterIndex = index;
-      await _playChapter(index);
+      // 初始章恢复书籍进度（对齐 VideoPlay.startPlay durChapterPos → seekOnStart）
+      await _playChapter(index, resumeMs: book.durChapterPos);
     } catch (e) {
       setState(() {
         _loadingChapter = false;
@@ -301,7 +383,10 @@ class _VideoScreenState extends State<VideoScreen> {
   }
 
   /// 播放指定章节：正文 → [resolveVideoPlayTarget] → 播放器
-  Future<void> _playChapter(int index) async {
+  ///
+  /// [resumeMs] 仅初始章携带书籍进度；换集（手动选集/自动连播）对齐原版
+  /// `saveRead(0) → startPlay`，从 0 起播。
+  Future<void> _playChapter(int index, {int resumeMs = 0}) async {
     final book = widget.book!;
     final chapter = _chapters[index];
     if (chapter.isVolume) {
@@ -346,6 +431,7 @@ class _VideoScreenState extends State<VideoScreen> {
         '[VideoPlay] chapter=${chapter.title} url=${target.url} '
         'mpd=${target.isMpd} headers=${target.headers.keys.toList()}',
       );
+      _pendingResumeMs = resumeMs;
       await _startFromTarget(target);
       setState(() {
         _loadingChapter = false;
@@ -363,8 +449,11 @@ class _VideoScreenState extends State<VideoScreen> {
   /// 将 [VideoPlayTarget] 落到播放器（含 MPD 落盘）
   Future<void> _startFromTarget(VideoPlayTarget target) async {
     try {
+      _controller.removeListener(_onPlayerValueChanged);
       _controller.dispose();
     } catch (_) {}
+    // 换集/重试重建控制器：completed 边沿状态归零
+    _wasCompleted = false;
     await _clearMpdTemp();
 
     _videoHeaders = Map<String, String>.from(target.headers);
@@ -439,7 +528,23 @@ class _VideoScreenState extends State<VideoScreen> {
       }
       return;
     }
-    unawaited(_playDirectUrl(widget.videoUrl));
+    unawaited(_retryDirectPlayback());
+  }
+
+  /// 直链错误重试：先落盘当前位置再恢复播放
+  /// （对齐原版 onError → saveRead() → mSeekOnStart = durChapterPos）
+  Future<void> _retryDirectPlayback() async {
+    await _saveDirectProgress();
+    final store = _directPosStore;
+    if (store != null) {
+      try {
+        _pendingResumeMs = await store.read(widget.videoUrl);
+      } catch (_) {
+        _pendingResumeMs = 0;
+      }
+    }
+    if (!mounted) return;
+    await _playDirectUrl(widget.videoUrl);
   }
 
   /// 初始化视频播放器（网络或本地 MPD 文件）
@@ -478,6 +583,7 @@ class _VideoScreenState extends State<VideoScreen> {
 
   /// 初始化后恢复进度并自动播放（对齐 VideoPlay.seekOnStart）
   void _wireControllerInit() {
+    _controller.addListener(_onPlayerValueChanged);
     _initializeVideoPlayerFuture = _controller.initialize().then((_) async {
       if (!mounted) return;
       debugPrint(
@@ -486,10 +592,10 @@ class _VideoScreenState extends State<VideoScreen> {
         'duration=${_controller.value.duration} '
         'url=$_currentPlayUrl',
       );
-      final book = widget.book;
-      if (book != null && book.durChapterPos > 0) {
+      // 恢复位置：直链 = video_pos_ 读值；书籍 = 初始章 durChapterPos
+      if (_pendingResumeMs > 0) {
         try {
-          await _controller.seekTo(Duration(milliseconds: book.durChapterPos));
+          await _controller.seekTo(Duration(milliseconds: _pendingResumeMs));
         } catch (_) {}
       }
       setState(() {});
@@ -498,10 +604,12 @@ class _VideoScreenState extends State<VideoScreen> {
       }
       // [P4-3 波次1b V3] 换集重建控制器后恢复会话级倍速
       // （对齐原版 playSpeed 为视图级成员，跨集保持）
-      if (_playbackSpeed != 1.0) {
-        _controller.setPlaybackSpeed(_playbackSpeed);
+      if (_effectivePlaybackSpeed != 1.0) {
+        _controller.setPlaybackSpeed(_effectivePlaybackSpeed);
       }
       if (!mounted) return;
+      // 起播后刷新一次：长按倍速手势区的 enabled 依赖 isPlaying
+      setState(() {});
       debugPrint(
         '[VideoPlay] after play '
         'isPlaying=${_controller.value.isPlaying} '
@@ -514,9 +622,69 @@ class _VideoScreenState extends State<VideoScreen> {
     });
   }
 
+  /// 播放器值变化：仅在自然播完边沿触发连播
+  /// （对齐 onAutoCompletion，VideoPlayer.kt:185-188）
+  void _onPlayerValueChanged() {
+    final completed = _controller.value.isCompleted;
+    if (shouldAdvanceOnCompletion(
+      wasCompleted: _wasCompleted,
+      isCompleted: completed,
+    )) {
+      _wasCompleted = true;
+      unawaited(_onPlaybackCompleted());
+    } else if (!completed) {
+      _wasCompleted = false;
+    }
+  }
+
+  /// 自然播完：自动切下一集；无下一集 → 提示「已播放完」
+  ///
+  /// 对齐 VideoPlay.upDurIndex(1)（VideoPlay.kt:474-490）：越界 toast
+  /// 「已播放完」；推进后是否自动开始播放仍由 autoPlay 决定
+  /// （原版 startPlay 内 `if (autoPlay) player.startPlayLogic()`）。
+  /// 用户主动停止/错误不产生 completed 边沿，自然不连播
+  /// （对齐 onCompletion，VideoPlayer.kt:190-193）。
+  Future<void> _onPlaybackCompleted() async {
+    if (!mounted || widget.book == null || _loadingChapter) return;
+    final next = nextPlayableChapterIndex(
+      _chapters.map((c) => c.isVolume).toList(),
+      _chapterIndex,
+    );
+    if (next == null) {
+      _showTip('已播放完');
+      return;
+    }
+    await _playChapter(next);
+  }
+
+  /// 长按倍速：播放中长按 → 临时提速到设置档位
+  /// （对齐 VideoPlayer.kt:108-115：setVideoSpeed + tip + isLongPressSpeed）
+  void _startLongPressSpeed() {
+    if (_isLongPressSpeed || !_controller.value.isPlaying) return;
+    final speed = _playSettings.pressSpeedFactor;
+    setState(() => _isLongPressSpeed = true);
+    _controller.setPlaybackSpeed(speed);
+    _showTip(longPressSpeedTipLabel(speed));
+    // 弹幕层经 _effectivePlaybackSpeed 联动（对齐 setVideoSpeed 内
+    // danmakuSpeed-(speed-1)/6，见 VideoPlayer.kt:135-141）
+  }
+
+  /// 松手恢复会话倍速并隐藏提示（对齐 touchSurfaceUp，VideoPlayer.kt:124-133）
+  void _endLongPressSpeed() {
+    if (!_isLongPressSpeed) return;
+    setState(() => _isLongPressSpeed = false);
+    _controller.setPlaybackSpeed(_playbackSpeed);
+    _hideTip();
+    // 原版 resolveDanmakuStart(当前位置)：弹幕层在倍速 prop 变更时
+    // 以当前插值位置重锚（video_danmaku_layer.dart didUpdateWidget）
+  }
+
   @override
   void dispose() {
     _tipTimer?.cancel();
+    _directPosTimer?.cancel();
+    // 直链进度落盘（对齐原版 VideoPlayerActivity.onDestroy → saveRead()）
+    unawaited(_saveDirectProgress());
     if (_isFullScreen) {
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setPreferredOrientations([
@@ -527,6 +695,7 @@ class _VideoScreenState extends State<VideoScreen> {
       ]);
     }
     try {
+      _controller.removeListener(_onPlayerValueChanged);
       _controller.dispose();
     } catch (_) {}
     unawaited(_clearMpdTemp());
@@ -572,8 +741,12 @@ class _VideoScreenState extends State<VideoScreen> {
   Widget build(BuildContext context) {
     return PopScope(
       onPopInvokedWithResult: (didPop, result) {
-        if (didPop && widget.book != null) {
+        if (!didPop) return;
+        if (widget.book != null) {
           unawaited(_saveProgress());
+        } else {
+          // 直链退出落盘（对齐原版 onDestroy → saveRead）
+          unawaited(_saveDirectProgress());
         }
       },
       child: Scaffold(
@@ -765,7 +938,10 @@ class _VideoScreenState extends State<VideoScreen> {
     return Center(
       child: AspectRatio(
         aspectRatio: aspectRatio,
-        child: GestureDetector(
+        child: VideoLongPressSpeedArea(
+          enabled: _controller.value.isPlaying,
+          onSpeedUp: _startLongPressSpeed,
+          onRestore: _endLongPressSpeed,
           onTap: () => setState(() => _showControls = !_showControls),
           onDoubleTap: () {
             setState(() {
@@ -786,7 +962,8 @@ class _VideoScreenState extends State<VideoScreen> {
                   items: _danmakuItems,
                   player: _controller,
                   show: _danmakuShow,
-                  playbackSpeed: _playbackSpeed,
+                  // [V-B4] 长按期间随临时倍速联动（VideoPlayer.kt:135-141）
+                  playbackSpeed: _effectivePlaybackSpeed,
                 ),
               if (_showControls) _buildOverlayControls(),
               // [P4-3 波次1b V3] 原版 tip_view：画面居中提示（如「1.5倍播放中」）

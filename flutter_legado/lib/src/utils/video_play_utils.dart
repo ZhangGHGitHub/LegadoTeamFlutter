@@ -192,6 +192,44 @@ Map<String, String> parseSourceHeaderMap(String header) {
   return map;
 }
 
+/// 自然播完后的下一可播章节索引；无下一集（越界）返回 null。
+///
+/// 对齐原版 `VideoPlay.upDurIndex(1)`（VideoPlay.kt:474-490）：下一集
+/// index 越界 → toast「已播放完」；卷标题不参与播放（原版 episodes 列表
+/// 本身已剔除卷标题，此侧以 isVolume 标记跳过）。
+int? nextPlayableChapterIndex(List<bool> isVolumeFlags, int current) {
+  var next = current + 1;
+  while (next < isVolumeFlags.length && isVolumeFlags[next]) {
+    next++;
+  }
+  if (next >= isVolumeFlags.length || next <= current) return null;
+  return next;
+}
+
+/// 自然播完的边沿判定：仅「未完成 → 完成」跳变触发一次连播。
+///
+/// 对齐原版 onAutoCompletion（VideoPlayer.kt:185-188）：只有自然播完
+/// （GSY 的 auto completion）才 upDurIndex；用户主动停止/错误走
+/// onCompletion（:190-193）不连播——`video_player` 的 isCompleted
+/// 即自然播完态。边沿判定同时防止同一集 completed 持续为真导致重复切集，
+/// seek 回看后再次播完可正常触发。
+bool shouldAdvanceOnCompletion({
+  required bool wasCompleted,
+  required bool isCompleted,
+}) =>
+    isCompleted && !wasCompleted;
+
+/// 长按倍速期间的生效倍速：长按中 = 长按档位，否则 = 会话倍速。
+///
+/// 对齐原版 VideoPlayer.kt:108-133：长按（播放中）setVideoSpeed(
+/// longPressSpeed/10.0f)，松手 touchSurfaceUp 恢复 playSpeed。
+double effectiveVideoSpeed({
+  required double sessionSpeed,
+  required bool longPressActive,
+  required double longPressSpeed,
+}) =>
+    longPressActive ? longPressSpeed : sessionSpeed;
+
 /// 在目录中选可播放章节索引（跳过卷标题，对齐 VideoPlay.upEpisodes）
 int findPlayableChapterIndex(List<bool> isVolumeFlags, int preferred) {
   if (isVolumeFlags.isEmpty) return 0;
