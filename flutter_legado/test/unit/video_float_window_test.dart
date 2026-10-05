@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_legado/src/models/models.dart';
@@ -16,13 +19,24 @@ class _FakeBridge extends VideoFloatWindowBridge {
   final List<VideoFloatWindowState> shown = [];
   final List<String> calls = [];
   bool showResult = true;
+
+  /// show 失败时回填的错误码（模拟 Kotlin 侧返回值）
+  String? showErrorCode;
+
+  /// takeOver 恒返回 null（模拟 getState 与 takeOver 之间服务已停止）
+  bool takeOverFails = false;
   VideoFloatWindowState? probeState;
 
   @override
   Future<bool> show(VideoFloatWindowState state) async {
     shown.add(state);
     calls.add('show');
-    return showResult;
+    if (showResult) {
+      lastShowError = null;
+      return true;
+    }
+    lastShowError = showErrorCode;
+    return false;
   }
 
   @override
@@ -34,6 +48,7 @@ class _FakeBridge extends VideoFloatWindowBridge {
   @override
   Future<VideoFloatWindowState?> takeOver() async {
     calls.add('takeOver');
+    if (takeOverFails) return null;
     final state = probeState;
     probeState = null;
     return state;
@@ -56,10 +71,15 @@ class _FakeBookApi implements BookApi {
   final List<Map<Symbol, dynamic>> progressCalls = [];
   final List<Map<Symbol, dynamic>> configWrites = [];
 
+  /// 非空时 fetchChapterContent 挂起，直到测试主动 complete（模拟慢源）
+  Completer<String>? fetchGate;
+
   @override
   dynamic noSuchMethod(Invocation invocation) {
     final name = invocation.memberName.toString();
     if (name == 'Symbol("fetchChapterContent")') {
+      final gate = fetchGate;
+      if (gate != null) return gate.future;
       final url = invocation.positionalArguments[1].toString();
       return Future<String>.value(chapterContents[url] ?? '');
     }
@@ -112,6 +132,8 @@ VideoFloatWindowState _state({
     );
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('VideoFloatWindowState', () {
     test('toMap/fromMap 往返保留全部字段', () {
       final state = VideoFloatWindowState(
@@ -386,6 +408,181 @@ void main() {
 
       bridge.probeState = null;
       expect(await coord.probeAndTakeOver(bookUrl: 'book://1'), isNull);
+    });
+
+    test('enterWindow 失败透传错误码（W2/W4 分流依据）', () async {
+      final bridge = _FakeBridge()
+        ..showResult = false
+        ..showErrorCode = 'background_start_rejected';
+      final coord = VideoFloatWindowCoordinator(bridge: bridge);
+      expect(
+        await coord.enterWindow(state: _state(), api: _FakeBookApi()),
+        isFalse,
+      );
+      expect(coord.lastEnterError, 'background_start_rejected');
+      expect(coord.isCapturing, isFalse);
+    });
+
+    test('enterWindow 成功清空上次错误码', () async {
+      final bridge = _FakeBridge()
+        ..showResult = false
+        ..showErrorCode = 'no_overlay_permission';
+      final coord = VideoFloatWindowCoordinator(bridge: bridge);
+      await coord.enterWindow(state: _state(), api: _FakeBookApi());
+      expect(coord.lastEnterError, 'no_overlay_permission');
+      bridge.showResult = true;
+      await coord.enterWindow(state: _state(), api: _FakeBookApi());
+      expect(coord.lastEnterError, isNull);
+    });
+
+    test('W3 连播解析迟到且会话已关 → 不产生孤儿续播', () async {
+      final bridge = _FakeBridge();
+      final coord = VideoFloatWindowCoordinator(bridge: bridge);
+      final api = _FakeBookApi()..fetchGate = Completer<String>();
+      await coord.enterWindow(
+        state: _state(bookUrl: 'book://1', chapterIndex: 0),
+        book: Book(name: '书', bookUrl: 'book://1', origin: 'o'),
+        chapters: [
+          BookChapter(url: 'c1', title: '第1集'),
+          BookChapter(url: 'c2', title: '第2集'),
+        ],
+        api: api,
+      );
+
+      final advance = coord.handleNativeEvent(MethodCall('onCompleted', {
+        'url': 'https://cdn.example/1.m3u8',
+        'bookUrl': 'book://1',
+        'chapterIndex': 0,
+        'positionMs': 60000,
+      }));
+      // 模拟原生 10s 完播退出：onClosed 清会话（慢源回调仍在途中）
+      await coord.handleNativeEvent(MethodCall('onClosed', {
+        'url': 'https://cdn.example/1.m3u8',
+        'bookUrl': 'book://1',
+        'chapterIndex': 0,
+        'positionMs': 60000,
+      }));
+      api.fetchGate!.complete('https://cdn.example/2.m3u8');
+      await advance;
+
+      expect(bridge.calls.where((c) => c == 'show'), hasLength(1));
+      expect(coord.isCapturing, isFalse);
+    });
+
+    test('W3 旧会话迟到回执不覆盖新会话（会话标识复核）', () async {
+      final bridge = _FakeBridge();
+      final coord = VideoFloatWindowCoordinator(bridge: bridge);
+      final api = _FakeBookApi()..fetchGate = Completer<String>();
+      final chapters = [
+        BookChapter(url: 'c1', title: '第1集'),
+        BookChapter(url: 'c2', title: '第2集'),
+      ];
+      await coord.enterWindow(
+        state: _state(bookUrl: 'book://1', chapterIndex: 0),
+        book: Book(name: '书', bookUrl: 'book://1', origin: 'o'),
+        chapters: chapters,
+        api: api,
+      );
+      final advance =
+          coord.handleNativeEvent(const MethodCall('onSkipNext', null));
+      // 页面接管后再次移交 → 新会话
+      coord.resetForTest();
+      await coord.enterWindow(
+        state: _state(url: 'https://cdn.example/new.m3u8', bookUrl: 'book://1'),
+        book: Book(name: '书', bookUrl: 'book://1', origin: 'o'),
+        chapters: chapters,
+        api: _FakeBookApi(),
+      );
+      api.fetchGate!.complete('https://cdn.example/2.m3u8');
+      await advance;
+
+      expect(bridge.calls.where((c) => c == 'show'), hasLength(2));
+      expect(bridge.shown.last.url, 'https://cdn.example/new.m3u8');
+      expect(coord.isCapturing, isTrue);
+    });
+
+    test('W5 takeOver 丢失且 probe 指向已删除 MPD → 丢弃接管', () async {
+      final bridge = _FakeBridge()
+        ..takeOverFails = true
+        ..probeState = VideoFloatWindowState(
+          url: 'file:///nonexistent/legado_deleted.mpd',
+          bookUrl: 'book://1',
+          chapterIndex: 0,
+          positionMs: 9000,
+          mpdTempPath: '${Directory.systemTemp.path}'
+              '${Platform.pathSeparator}legado_gone_'
+              '${DateTime.now().microsecondsSinceEpoch}.mpd',
+        );
+      final coord = VideoFloatWindowCoordinator(bridge: bridge);
+      final taken = await coord.probeAndTakeOver(
+        bookUrl: 'book://1',
+        api: _FakeBookApi(),
+      );
+      expect(taken, isNull);
+      expect(bridge.calls, contains('takeOver'));
+      expect(coord.isCapturing, isFalse);
+    });
+
+    test('W5 takeOver 丢失但 probe 非 MPD → 仍回退 probe（保留进度）', () async {
+      final bridge = _FakeBridge()
+        ..takeOverFails = true
+        ..probeState = _state(bookUrl: 'book://1', positionMs: 9000);
+      final coord = VideoFloatWindowCoordinator(bridge: bridge);
+      final taken = await coord.probeAndTakeOver(
+        bookUrl: 'book://1',
+        api: _FakeBookApi(),
+      );
+      expect(taken, isNotNull);
+      expect(taken!.positionMs, 9000);
+      expect(coord.isCapturing, isFalse);
+    });
+
+    test('W6 连播 show 失败 → 清理刚落盘的孤儿 MPD 临时文件', () async {
+      final tempDir = Directory.systemTemp.createTempSync('legado_float_w6');
+      addTearDown(() {
+        if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+      });
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        (call) async => tempDir.path,
+      );
+      addTearDown(() => TestDefaultBinaryMessengerBinding
+          .instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+        const MethodChannel('plugins.flutter.io/path_provider'),
+        null,
+      ));
+
+      final bridge = _FakeBridge();
+      final coord = VideoFloatWindowCoordinator(bridge: bridge);
+      final api = _FakeBookApi()
+        ..chapterContents['c2'] =
+            '<MPD xmlns="urn:mpeg:dash:schema:mpd:2011"></MPD>';
+      await coord.enterWindow(
+        state: _state(bookUrl: 'book://1', chapterIndex: 0),
+        book: Book(name: '书', bookUrl: 'book://1', origin: 'o'),
+        chapters: [
+          BookChapter(url: 'c1', title: '第1集'),
+          BookChapter(url: 'c2', title: '第2集'),
+        ],
+        api: api,
+      );
+      // 连播的 replace 提交失败（模拟无权限 / 服务启动被拒）
+      bridge.showResult = false;
+
+      await coord.handleNativeEvent(MethodCall('onCompleted', {
+        'url': 'https://cdn.example/1.m3u8',
+        'bookUrl': 'book://1',
+        'chapterIndex': 0,
+        'positionMs': 60000,
+      }));
+
+      expect(bridge.calls.where((c) => c == 'show').length, 2);
+      final leakedPath = bridge.shown.last.mpdTempPath;
+      expect(leakedPath, isNotNull);
+      expect(File(leakedPath!).existsSync(), isFalse);
+      expect(coord.isCapturing, isFalse);
     });
   });
 }

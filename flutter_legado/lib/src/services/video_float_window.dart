@@ -204,6 +204,14 @@ class VideoFloatWindowBridge {
 
   bool get isSupported => supportedOverride ?? (!kIsWeb && Platform.isAndroid);
 
+  /// 最近一次 [show] 失败的原始错误码（供调用方分流提示；成功/未调用为 null）
+  ///
+  /// 与 `VideoFloatWindowBridge.kt` 的 `show` 返回约定对齐：
+  /// - `no_overlay_permission`：无 SYSTEM_ALERT_WINDOW 权限；
+  /// - `background_start_rejected`：Android 12+ 后台启动前台服务被系统拒绝；
+  /// - `start_service_failed` / `channel_unavailable` / `unsupported`：其他失败。
+  String? lastShowError;
+
   /// 是否有悬浮窗权限（Settings.canDrawOverlays）
   Future<bool> canDrawOverlays() async {
     if (!isSupported) return false;
@@ -222,12 +230,24 @@ class VideoFloatWindowBridge {
     } catch (_) {}
   }
 
-  /// 显示/替换悬浮窗内容；false = 无权限或通道不可用
+  /// 显示/替换悬浮窗内容；false = 启动失败（原因见 [lastShowError]）
+  ///
+  /// 原生返回 `true`（已提交启动）或错误码字符串（失败）。
   Future<bool> show(VideoFloatWindowState state) async {
-    if (!isSupported) return false;
+    if (!isSupported) {
+      lastShowError = 'unsupported';
+      return false;
+    }
     try {
-      return await channel.invokeMethod<bool>('show', state.toMap()) ?? false;
+      final raw = await channel.invokeMethod<dynamic>('show', state.toMap());
+      if (raw == true) {
+        lastShowError = null;
+        return true;
+      }
+      lastShowError = raw is String ? raw : 'start_service_failed';
+      return false;
     } catch (_) {
+      lastShowError = 'channel_unavailable';
       return false;
     }
   }
@@ -303,6 +323,18 @@ class VideoFloatWindowCoordinator {
   VideoFloatWindowBridge get bridge =>
       _bridgeOverride ?? VideoFloatWindowBridge.instance;
 
+  /// 平台/桥可用性（非 Android 一律 false，调用方据此降级全屏页）
+  bool get isSupported => bridge.isSupported;
+
+  /// 最近一次 [enterWindow] 失败原因码（供 UI 分流提示；成功/未调用为 null）
+  ///
+  /// 取值为 [VideoFloatWindowBridge.lastShowError] 的错误码集合。
+  String? lastEnterError;
+
+  /// 打开系统「显示在其他应用上层」设置页（[enterWindow] 因无权限失败时调用）
+  Future<void> requestOverlayPermission() =>
+      bridge.requestOverlayPermission();
+
   /// app.dart 注入：把回传状态导航到视频播放页（Book 为交接会话捕获的上下文）
   void Function(VideoFloatWindowState state, Book? book)? openFullscreen;
 
@@ -317,6 +349,11 @@ class VideoFloatWindowCoordinator {
   double _speed = 1.0;
   bool _active = false;
 
+  /// 会话标识：每次成功进入 / 清除会话时自增，用于连播异步链的失效复核。
+  /// [W3]：慢源回调迟到时可能已经换了会话，仅复核 `_active` 不足以区分
+  /// 「同一会话」与「已重建的新会话」。
+  int _sessionId = 0;
+
   @visibleForTesting
   bool get isCapturing => _active;
 
@@ -328,6 +365,7 @@ class VideoFloatWindowCoordinator {
     Map<String, String>? sourceHeaders,
     BookApi? api,
   }) async {
+    lastEnterError = null;
     final ok = await bridge.show(state);
     if (ok) {
       _book = book;
@@ -337,6 +375,10 @@ class VideoFloatWindowCoordinator {
       _chapterIndex = state.chapterIndex;
       _speed = state.speed;
       _active = true;
+      _sessionId++;
+    } else {
+      // [W2/W4] 失败原因透传：权限缺失 / FGS 后台启动受限 / 其他
+      lastEnterError = bridge.lastShowError ?? 'start_service_failed';
     }
     return ok;
   }
@@ -354,6 +396,15 @@ class VideoFloatWindowCoordinator {
     if (probe == null) return null;
     if (probe.isSameContent(bookUrl: bookUrl, videoUrl: videoUrl)) {
       final taken = await bridge.takeOver() ?? probe;
+      // [W5] getState 与 takeOver 之间服务可能已自行停止（播完 10s 退出 /
+      // returnToFullscreen 等），其 onDestroy 会删除 MPD 临时文件；此时
+      // 回退的 probe 指向不存在的 file:// 清单，直接丢弃本次接管（返回
+      // null）交由页面常规解析，避免必然失败的起播
+      final mpd = taken.mpdTempPath;
+      if (mpd != null && mpd.isNotEmpty && !await File(mpd).exists()) {
+        _clearCapture();
+        return null;
+      }
       _clearCapture();
       return taken;
     }
@@ -433,6 +484,7 @@ class VideoFloatWindowCoordinator {
   /// 目标索引越界 → 提示「已播放完」并结束；解析成功 → ACTION_REPLACE 续播。
   Future<void> _advance(int delta, Object? fallbackRaw) async {
     if (!_active) return;
+    final session = _sessionId;
     final fallback = VideoFloatWindowState.fromMap(fallbackRaw);
     final api = _api;
     final book = _book;
@@ -468,6 +520,13 @@ class VideoFloatWindowCoordinator {
       final materialized = await _materializeTarget(target);
       // 切换前落库旧集进度（对齐原版 saveRead 的「离集即存」语义）
       if (fallback != null) await writeProgressForState(api, fallback);
+      if (!_active || session != _sessionId) {
+        // [W3] 慢源解析/落库期间会话可能已清除（原生 10s 完播退出）或
+        // 已被新会话取代（页面接管后再次移交）：静默丢弃本次推进，不产生
+        // 无上下文的孤儿续播；刚落盘的 MPD 一并清理
+        await _deleteMpdQuietly(materialized.mpdPath);
+        return;
+      }
       final state = VideoFloatWindowState(
         url: materialized.url,
         title: chapter.title,
@@ -485,6 +544,9 @@ class VideoFloatWindowCoordinator {
       );
       final ok = await bridge.show(state);
       if (!ok) {
+        // [W6] show 失败（无权限/服务启动被拒）时原生从未接手该 MPD 文件，
+        // 服务 onDestroy 也不会删（deleteMpdOnDestroy 仅在装载后生效）
+        await _deleteMpdQuietly(materialized.mpdPath);
         onNotice?.call('悬浮窗已停止');
         await _finish(fallback);
         return;
@@ -518,6 +580,15 @@ class VideoFloatWindowCoordinator {
     return (url: file.uri.toString(), mpdPath: file.path);
   }
 
+  /// 静默删除 MPD 临时文件（[W3] 会话失效丢弃 / [W6] show 失败清孤儿清单）
+  Future<void> _deleteMpdQuietly(String? path) async {
+    if (path == null || path.isEmpty) return;
+    try {
+      final f = File(path);
+      if (await f.exists()) await f.delete();
+    } catch (_) {}
+  }
+
   Future<void> _finish(VideoFloatWindowState? fallback) async {
     final api = _api;
     if (fallback != null && api != null) {
@@ -535,6 +606,7 @@ class VideoFloatWindowCoordinator {
     _chapterIndex = -1;
     _speed = 1.0;
     _active = false;
+    _sessionId++;
   }
 
   @visibleForTesting

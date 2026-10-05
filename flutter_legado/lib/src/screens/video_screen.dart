@@ -661,6 +661,9 @@ class _VideoScreenState extends State<VideoScreen> {
     int? positionMs,
   }) async {
     if (!mounted || _handedToFloat) return false;
+    // [W2] 非 Android 无全局悬浮窗概念：静默降级全屏播放页
+    //（对齐 JS 入口 `!kIsWeb && Platform.isAndroid` 的既有降级语义）
+    if (!VideoFloatWindowCoordinator.instance.isSupported) return false;
     final book = widget.book;
     var mpdPath = target.mpdFilePath;
     if (target.isMpd && (mpdPath == null || mpdPath.isEmpty)) {
@@ -723,7 +726,16 @@ class _VideoScreenState extends State<VideoScreen> {
         }
       }
     }
-    final ok = await VideoFloatWindowCoordinator.instance.enterWindow(
+    // [W1] 移交前确定性暂停本页播放器：原生 ExoPlayer 为异步 prepare，而本页
+    // 要等 pop 转场结束才 dispose；不暂停则存在双播放器并行发声窗口（此前
+    // 仅靠音频焦点仲裁兜底，非确定性）。播放态/位置已捕获进 state，不受影响。
+    try {
+      if (_controller.value.isInitialized && _controller.value.isPlaying) {
+        await _controller.pause();
+      }
+    } catch (_) {}
+    final coordinator = VideoFloatWindowCoordinator.instance;
+    final ok = await coordinator.enterWindow(
       state: state,
       book: book,
       chapters: book != null ? _chapters : null,
@@ -731,10 +743,27 @@ class _VideoScreenState extends State<VideoScreen> {
       api: _readApi(),
     );
     if (!ok) {
-      await VideoFloatWindowBridge.instance.requestOverlayPermission();
-      if (mounted) {
+      // [W2/W4] 失败提示按原因分流：权限缺失 → 引导授权；FGS 后台启动受限
+      // → 引导回应用内重试；其他 → 中性失败提示
+      final reason = coordinator.lastEnterError;
+      if (reason == 'no_overlay_permission') {
+        await coordinator.requestOverlayPermission();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('请允许「显示在其他应用上层」后重试')),
+          );
+        }
+      } else if (reason == 'background_start_rejected') {
+        // 原版此类失败仅日志记录、无用户文案（BaseService
+        // tryStartForegroundNotification），此处用中性描述
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('请回到应用内后重试')),
+          );
+        }
+      } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('请允许「显示在其他应用上层」后重试')),
+          const SnackBar(content: Text('悬浮窗启动失败，请重试')),
         );
       }
       return false;
@@ -1067,13 +1096,17 @@ class _VideoScreenState extends State<VideoScreen> {
                 ),
                 // [LAYOUT_PLAN P3] 沉浸域仅顶栏动作行规范：动作顺序上一集/下一集/设置/全屏（本体不动）
                 actions: [
-                  // [V-B3] 悬浮窗入口（对齐原版 menu_float_window：视频页菜单
-                  // 第一组 always 动作；解析出播放地址后可用）
-                  VideoFloatWindowButton(
-                    onPressed: (_currentPlayUrl.isNotEmpty && !_loadingChapter)
-                        ? () => unawaited(_enterFloatWindow())
-                        : null,
-                  ),
+                  // [V-B3][W2] 悬浮窗入口（对齐原版 menu_float_window：视频页
+                  // 菜单第一组 always 动作；解析出播放地址后可用）。
+                  // 仅 Android 提供：桌面/Web 无全局悬浮窗概念，与 JS 入口
+                  // 一致降级为全屏播放页。
+                  if (VideoFloatWindowCoordinator.instance.isSupported)
+                    VideoFloatWindowButton(
+                      onPressed:
+                          (_currentPlayUrl.isNotEmpty && !_loadingChapter)
+                              ? () => unawaited(_enterFloatWindow())
+                              : null,
+                    ),
                   if (widget.book != null && _chapters.isNotEmpty) ...[
                     IconButton(
                       icon: const Icon(Symbols.skip_previous_rounded),

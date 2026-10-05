@@ -949,7 +949,8 @@ class PlatformBridgeService {
   /// [V-B3] isFloat=true 对齐原版 SourceHelp.openVideoPlayer(isFloat=true)
   /// （SourceHelp.kt:188-206）：直链经 `resolveVideoPlayTarget` 解析
   /// header/复合 URL 后直接拉起原生悬浮窗，不进播放页；
-  /// 无悬浮窗权限时引导系统设置页并停留（不静默降级）。
+  /// 启动失败按原因提示并停留（权限缺失 → 引导系统设置页；FGS 后台启动
+  /// 受限 → 引导回应用内重试；不静默降级）。
   /// 非 Android / MPD 文本 / 无法解析时回退全屏播放页。
   Future<void> _openVideoPlayer({
     required String url,
@@ -975,8 +976,18 @@ class PlatformBridgeService {
           playing: true,
         ));
         if (ok) return;
-        await VideoFloatWindowBridge.instance.requestOverlayPermission();
-        _showSnackBar('请允许「显示在其他应用上层」后重试');
+        // [W2/W4] 失败按原因分流：权限缺失 → 引导授权；FGS 后台启动受限 →
+        // 引导回应用内重试；其他 → 中性失败提示（不再一律误报权限问题）
+        final reason = VideoFloatWindowBridge.instance.lastShowError;
+        if (reason == 'no_overlay_permission') {
+          await VideoFloatWindowBridge.instance.requestOverlayPermission();
+          _showSnackBar('请允许「显示在其他应用上层」后重试');
+        } else if (reason == 'background_start_rejected') {
+          // 原版此类失败仅日志记录、无用户文案，此处用中性描述
+          _showSnackBar('请回到应用内后重试');
+        } else {
+          _showSnackBar('悬浮窗启动失败，请重试');
+        }
         return;
       }
     }

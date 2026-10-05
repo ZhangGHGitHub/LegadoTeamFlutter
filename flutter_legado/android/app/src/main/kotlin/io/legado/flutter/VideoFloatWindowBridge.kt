@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.util.Log
 import androidx.core.content.ContextCompat
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
@@ -37,6 +38,14 @@ class VideoFloatWindowBridge {
 
     companion object {
         const val CHANNEL = "legado/video_float"
+
+        private const val TAG = "VideoFloatWindowBridge"
+
+        /** show 失败错误码（与 Dart `VideoFloatWindowBridge.lastShowError` 对齐） */
+        const val ERR_NO_PERMISSION = "no_overlay_permission"
+        const val ERR_BACKGROUND_START_REJECTED = "background_start_rejected"
+        const val ERR_START_FAILED = "start_service_failed"
+        const val ERR_CHANNEL_UNAVAILABLE = "channel_unavailable"
 
         @Volatile
         private var instance: VideoFloatWindowBridge? = null
@@ -156,13 +165,15 @@ class VideoFloatWindowBridge {
     /**
      * 启动/替换悬浮窗内容。
      *
-     * @return false = 无悬浮窗权限（Dart 侧应调用 requestOverlayPermission 引导）
+     * @return `true` = 已提交启动；`String` = 失败错误码（Dart 侧按类型分流
+     * 提示）：[ERR_NO_PERMISSION] / [ERR_BACKGROUND_START_REJECTED] /
+     * [ERR_START_FAILED] / [ERR_CHANNEL_UNAVAILABLE]。
      */
-    private fun show(rawArgs: Any?): Boolean {
-        val ctx = activity ?: return false
-        if (!canDrawOverlays()) return false
-        val map = rawArgs as? Map<*, *> ?: return false
-        val state = VideoFloatState.fromMap(map) ?: return false
+    private fun show(rawArgs: Any?): Any {
+        val ctx = activity ?: return ERR_CHANNEL_UNAVAILABLE
+        if (!canDrawOverlays()) return ERR_NO_PERMISSION
+        val map = rawArgs as? Map<*, *> ?: return ERR_START_FAILED
+        val state = VideoFloatState.fromMap(map) ?: return ERR_START_FAILED
         val action = if (VideoPlayService.active != null) {
             VideoPlayService.ACTION_REPLACE
         } else {
@@ -176,8 +187,36 @@ class VideoFloatWindowBridge {
             ContextCompat.startForegroundService(ctx, intent)
             true
         } catch (e: Exception) {
-            emit("onError", mapOf("message" to (e.message ?: "start_service_failed")))
-            false
+            // [W4] 后台启动 FGS 被系统限制（Android 12+）与权限缺失分流：
+            // 前者异常类型为 ForegroundServiceStartNotAllowedException
+            // （IllegalStateException 子类，低版本无该类，按类名链判定，
+            // 对齐原版 ContextExtensions.isForegroundServiceStartDenied）
+            if (e.isForegroundServiceStartDenied()) {
+                Log.w(TAG, "startForegroundService rejected in background", e)
+                ERR_BACKGROUND_START_REJECTED
+            } else {
+                Log.e(TAG, "startForegroundService failed", e)
+                ERR_START_FAILED
+            }
         }
     }
+}
+
+/**
+ * [W4] 判定异常链中是否含 Android 12+ 的 FGS 后台启动限制异常。
+ * 按类名判定避免低版本加载不存在的类（对齐原版 ContextExtensions.kt:163-175）。
+ */
+private fun Throwable.isForegroundServiceStartDenied(): Boolean {
+    var current: Throwable? = this
+    while (current != null) {
+        val name = current.javaClass.name
+        if (name == "android.app.ForegroundServiceStartNotAllowedException" ||
+            current.javaClass.simpleName == "ForegroundServiceStartNotAllowedException"
+        ) {
+            return true
+        }
+        val cause = current.cause
+        current = cause?.takeUnless { it === current }
+    }
+    return false
 }
