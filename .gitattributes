@@ -1,0 +1,10 @@
+# Web 静态资产字节锁定（Web 页对齐批审查 SUG-6 | 2026-10-07）
+#
+# `rust/legado-server/web-dist/**` 由 `rust/legado-server/build.rs` 以
+# `include_bytes!` 编译期嵌入（构建产物 = 资产字节的函数，要求工作区字节与
+# 原版 `app/src/main/assets/web/` 的 git blob 逐字节一致；审查实证 67 文件
+# 零差异，其中 `vue/index.html` 等文本在仓库内本就存 CRLF）。
+# 本机 `core.autocrlf=true`：若该路径按文本处理，重新 checkout / 归一化会把
+# 工作区文件转成 LF，嵌入字节随之漂移（构建产物哈希变化）。
+# `-text` 关闭该路径的行尾转换，锁死 blob 与工作区字节。
+rust/legado-server/web-dist/** -text

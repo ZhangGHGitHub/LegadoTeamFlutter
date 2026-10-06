@@ -11,12 +11,12 @@
 //! |---|---|---|
 //! | GET `/getBookshelf` | `BookController.bookshelf`（:65-83） | 空书架 errorMsg「还没有添加小说」；排序默认分支 durChapterTime 降序 |
 //! | GET `/getChapterList?url=` | `BookController.getChapterList`（:182-193） | 空目录回退 refreshToc（含本地书解析 / 网络抓取） |
-//! | GET `/getBookContent?url=&index=` | `BookController.getBookContent`（:198-246） | 缓存优先 → 本地文件 → 网络抓取，均经净化（includeTitle=false） |
+//! | GET `/getBookContent?url=&index=` | `BookController.getBookContent`（:198-246） | 缓存优先 → 本地文件 → 网络抓取，均经净化（includeTitle=false；替换规则按 `Book.getUseReplaceRule()` 门控） |
 //! | POST `/saveBookProgress` | `BookController.saveBookProgress`（:276-301） | 原版为 **POST**（HttpServer.kt:90；前端 `W.post` + `sendBeacon`），非 GET |
 //! | GET `/getReadConfig` | `BookController.getWebReadConfig`（:346-351） | 无配置 errorMsg「没有配置」 |
 //! | POST `/saveReadConfig` | `BookController.saveWebReadConfig`（:335-341） | 原样字符串入 `caches` 表（CacheManager「webReadConfig」键） |
-//! | GET `/cover?path=` | `BookController.getCover`（:88-113） | 图片代理（网络 URL/本地文件直读） |
-//! | GET `/image?path=&url=&width=` | `BookController.getImg`（:118-140） | 正文图片代理 |
+//! | GET `/cover?path=` | `BookController.getCover`（:88-113） | 图片代理（网络 URL 直取；本地路径经白名单：目录 + 扩展名 + 魔数） |
+//! | GET `/image?path=&url=&width=` | `BookController.getImg`（:118-140） | 正文图片代理（本地路径同 `/cover` 白名单） |
 //!
 //! 未纳入本批（下一批 B3/B4）：`/saveBook`、`/deleteBook`、`/addLocalBook`
 //! （写端点）、书源/订阅源/替换规则/HTTP 日志系列、`/refreshToc` 独立入口、

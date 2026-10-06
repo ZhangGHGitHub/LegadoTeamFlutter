@@ -3,8 +3,15 @@
 //! 数据层复用 `db_state` 全局单池（[`AppState.db`]，S28 红线：不新建连接池）
 //! 与既有 `legado-db` repositories；抓取链复用 `handlers::web_book::build_engine`
 //! （与 `/api/*`、FFI 主链路同一 `RealBookSourceFetcher` 注入面）。
+//!
+//! Web 页对齐批审查（2026-10-07）收口项：
+//! - P1-2：`/cover`、`/image` 本地路径读取白名单（目录 + 扩展名 + 魔数），
+//!   见 `read_local_image`；
+//! - P1-3：净化替换规则按 `Book.getUseReplaceRule()` 门控（epub/图片书默认
+//!   关闭），见 `use_replace_rule`。
 
 use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use axum::body::Bytes;
@@ -43,6 +50,9 @@ const LOCAL_BOOK_EXTS: &[&str] = &[
     ".epub", ".txt", ".text", ".mobi", ".azw", ".azw3", ".pdf", ".cbz",
 ];
 
+/// 本地图片扩展名白名单（P1-2 安全加固；对齐 `guess_image_mime` 的常见图片集）
+const LOCAL_IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp"];
+
 /// 对齐 Kotlin `Book.isLocal`（BookExtensions.kt:49-55）
 fn is_local_book(book: &Book) -> bool {
     if book.book_type == 0 {
@@ -51,6 +61,39 @@ fn is_local_book(book: &Book) -> bool {
     }
     book.book_type & book_type::LOCAL > 0
 }
+
+/// 对齐 Kotlin `Book.isEpub`（BookExtensions.kt:61-62：本地书 + 文件名 .epub）
+fn is_epub_book(book: &Book) -> bool {
+    is_local_book(book) && book.origin_name.to_lowercase().ends_with(".epub")
+}
+
+/// 对齐 Kotlin `Book.isImage`（BookExtensions.kt:47-48：`type and BookType.image > 0`）
+fn is_image_book(book: &Book) -> bool {
+    book.book_type & book_type::IMAGE_BIT > 0
+}
+
+/// 原版 `Book.getUseReplaceRule()`（Book.kt:226-236）
+///
+/// - `readConfig.useReplaceRule` 非空 → 取该值（含 false）；
+/// - 否则图片类书源 / epub 本地书默认**关闭**净化；
+/// - 其余回退 `AppConfig.replaceEnableDefault`（AppConfig.kt:680，默认 true；
+///   Rust Web 服务无 Android 偏好读取桥，固定取其默认值——登记差异）。
+fn use_replace_rule(book: &Book) -> bool {
+    if let Some(value) = book
+        .read_config
+        .as_ref()
+        .and_then(|config| config.use_replace_rule)
+    {
+        return value;
+    }
+    if is_image_book(book) || is_epub_book(book) {
+        return false;
+    }
+    REPLACE_ENABLE_DEFAULT
+}
+
+/// `AppConfig.replaceEnableDefault` 的 Kotlin 默认值（AppConfig.kt:680 第二参 true）
+const REPLACE_ENABLE_DEFAULT: bool = true;
 
 fn is_local_path(path: &str) -> bool {
     let lower = path.to_lowercase();
@@ -438,12 +481,17 @@ async fn get_book_content_inner(
 /// 关闭（Rust 侧未桥接 `chineseConverterType` 配置，登记差异）。规则作用域
 ///（scope/excludeScope/scopeContent）交由 `ContentProcessor` 内建过滤，
 /// 语义对齐 Kotlin DAO 的 LIKE 判定。
+///
+/// 替换规则按 `Book.getUseReplaceRule()` 门控（对齐 `ContentProcessor.kt:116`
+/// 的 `useReplace && book.getUseReplaceRule()`）：epub 本地书 / 图片书默认不
+/// 应用规则；去重复标题不受该门控（原版第一分支恒执行）。
 async fn purify_content(
     state: &Arc<AppState>,
     book: &Book,
     chapter_title: &str,
     raw_content: &str,
 ) -> String {
+    let replace_enabled = use_replace_rule(book);
     let rules = {
         let db = state.db.lock().await;
         ReplaceRuleRepository::new(db.connection()).get_enabled_rules()
@@ -457,7 +505,7 @@ async fn purify_content(
         remove_duplicate_title: true,
         re_segment: false,
         chinese_convert: None,
-        apply_replace_rules: true,
+        apply_replace_rules: replace_enabled,
         indent_spaces: 0,
         trim_empty_lines: false,
     };
@@ -589,12 +637,16 @@ pub async fn save_read_config(
 /// GET `/cover?path=` — 封面（BookController.kt:88-113）
 ///
 /// 原版经 Glide 预置 84x112 centerCrop 后以 PNG 回传，失败回退默认封面。
-/// 本实现为字节级代理：网络 URL 经 [`LegadoClient`] 直取、本地文件直读，
-/// 原样回传字节 + 嗅探 Content-Type。
+/// 本实现为字节级代理：网络 URL 经 [`LegadoClient`] 直取、本地文件经
+/// [`read_local_image`] 白名单读取（P1-2），原样回传字节 + 嗅探 Content-Type。
 ///
-/// 登记差异：不做 84x112 裁切/重编码 PNG，也不回退内置默认封面（原版
-/// `BookCover.defaultDrawable` 为 App 资源，Rust 侧无对应物）；失败回
-/// `ReturnData` 错误信封（原版此时回默认封面 PNG）。
+/// 登记差异：
+/// - 不做 84x112 裁切/重编码 PNG，也不回退内置默认封面（原版
+///   `BookCover.defaultDrawable` 为 App 资源，Rust 侧无对应物）；失败回
+///   `ReturnData` 错误信封（原版此时回默认封面 PNG）；
+/// - 本地 `path` 白名单（P1-2）：仅书库登记的本地书目录内 / 书籍登记的本地
+///   封面文件可读，且扩展名与魔数双校验（原版依赖 Android 沙箱，Rust 侧
+///   绑 `0.0.0.0` 必须自行收口）。
 pub async fn get_cover(
     State(state): State<Arc<AppState>>,
     Query(params): Query<HashMap<String, String>>,
@@ -619,6 +671,7 @@ pub async fn get_cover(
 ///
 /// 校验顺序与错误文案与原版一致（bookUrl 为空 → 图片链接为空 → bookUrl 不对）。
 /// 本实现按直链抓取（相对地址以书籍地址为基准解析）；`width` 仅解析不缩放。
+/// 解析结果落在本地路径时与 `/cover` 同走 [`read_local_image`] 白名单。
 ///
 /// 登记差异：原版经书源「正文图片」规则（`ImageProvider.getImage`）解析并
 /// 重编码 PNG，本实现为 HTTP 代理（回上游字节与 Content-Type）。
@@ -685,10 +738,10 @@ fn resolve_image_url(book_url: &str, path: &str) -> Option<String> {
 }
 
 /// 图片字节抓取（网络直链或本地文件）→ (字节, Content-Type)
-async fn fetch_image_bytes(
-    _state: &Arc<AppState>,
-    path: &str,
-) -> Result<(Vec<u8>, String), String> {
+///
+/// 本地分支经 [`read_local_image`] 白名单收口（P1-2）：只有书库登记的本地书
+/// 目录内、或书籍登记的本地封面文件才能被读出，且扩展名 + 魔数双重校验。
+async fn fetch_image_bytes(state: &Arc<AppState>, path: &str) -> Result<(Vec<u8>, String), String> {
     if path.starts_with("http://") || path.starts_with("https://") {
         let client = LegadoClient::new(LegadoClientConfig::default()).map_err(|e| e.to_string())?;
         let resp = client
@@ -705,12 +758,124 @@ async fn fetch_image_bytes(
             .unwrap_or_else(|| guess_image_mime(&resp.body, path));
         Ok((resp.body, mime))
     } else {
-        let bytes = tokio::fs::read(path)
-            .await
-            .map_err(|e| format!("读取本地图片失败: {e}"))?;
-        let mime = guess_image_mime(&bytes, path);
-        Ok((bytes, mime))
+        read_local_image(state, path).await
     }
+}
+
+// ---------------------------------------------------------------------------
+// P1-2：本地图片读取白名单
+//
+// 背景：原版 `/cover`、`/image` 的本地路径经 Glide / ImageProvider 读取，运行在
+// Android 沙箱内（应用私有目录 + MediaStore 可读范围）；Rust 侧 Web 服务绑
+// `0.0.0.0`（`legado-ffi/src/api/server_api.rs`），进程权限直读等于把本机文件
+// 暴露给局域网。故非 http(s) 的 `path` 必须命中「目录白名单 + 扩展名白名单 +
+// 魔数校验」三重门（原审查 S-1）。
+// ---------------------------------------------------------------------------
+
+/// 本地图片扩展名判定（去 query/fragment 后取末段后缀，忽略大小写）
+fn has_local_image_ext(path: &str) -> bool {
+    let clean = path.split(['?', '#']).next().unwrap_or(path);
+    let ext = clean.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    LOCAL_IMAGE_EXTS.contains(&ext.as_str())
+}
+
+/// 受支持图片的魔数校验（与 [`LOCAL_IMAGE_EXTS`] 同集：PNG/JPEG/GIF/WEBP）
+fn has_image_magic(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0x89, b'P', b'N', b'G'])
+        || bytes.starts_with(&[0xFF, 0xD8, 0xFF])
+        || bytes.starts_with(b"GIF8")
+        || (bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP")
+}
+
+/// 绝对本地路径 → canonical（`None` = URL / 相对标识 / 不存在）
+///
+/// 相对路径（iOS 可迁移标识 `books/x.epub`）不纳入白名单：相对基准是本进程
+/// 工作目录，不可信也不稳定，无法据此做前缀判定。
+fn canonical_local_path(raw: &str) -> Option<PathBuf> {
+    let raw = raw.trim();
+    if raw.is_empty() || raw.contains("://") {
+        return None;
+    }
+    let path = Path::new(raw);
+    if !path.is_absolute() {
+        return None;
+    }
+    std::fs::canonicalize(path).ok()
+}
+
+/// 采集允许本地读取的路径白名单（全部来自 `books` 表真实登记值）
+///
+/// - 本地书（对齐 `Book.isLocal`）正文文件所在**目录**：目录前缀放行
+///   （本地书目录内的图片属书库内容，含 manga 分目录形态）；
+/// - `coverUrl` / `customCoverUrl` 指向的本地**文件**：精确放行（用户自选封面）。
+///
+/// 说明（不虚构目录）：Android 端封面缓存（`BookHelp.saveImage` 的
+/// `downloadDir/book_cache/{folderName}/covers|images`）与 FFI 图片缓存根
+/// （`legado-ffi/src/api/image_cache_api.rs`，Dart 经 `set_image_cache_dir`
+/// 注入后由 `set_cache_dir` 持有）均不在本白名单内——二者属 `legado-ffi`
+/// crate，依赖方向为 `legado-ffi → legado-server`，server 侧不可反向引用；
+/// 且原版 Web 阅读页封面/正文图走的是书籍 `coverUrl`/正文图片 URL，不消费该
+/// 缓存。若要纳入，需由 FFI 在构造服务时注入目录（跨 crate 改动，另批裁决）。
+///
+/// 性能：每次本地读取查一次 `books` 单表（仅对本地封面做 canonicalize），
+/// 书架页并发取封面时可接受；若后续成为热点可加短 TTL 缓存。
+async fn local_read_allowlist(state: &Arc<AppState>) -> Vec<PathBuf> {
+    let books = {
+        let db = state.db.lock().await;
+        match BookRepository::new(db.connection()).find_all() {
+            Ok(books) => books,
+            Err(_) => return Vec::new(),
+        }
+    };
+    let mut roots: Vec<PathBuf> = Vec::new();
+    for book in &books {
+        if is_local_book(book) {
+            if let Some(real) = canonical_local_path(&book.book_url) {
+                let dir = if real.is_dir() {
+                    Some(real)
+                } else {
+                    real.parent().map(Path::to_path_buf)
+                };
+                if let Some(dir) = dir {
+                    roots.push(dir);
+                }
+            }
+        }
+        for cover in [book.cover_url.as_deref(), book.custom_cover_url.as_deref()]
+            .into_iter()
+            .flatten()
+        {
+            if let Some(file) = canonical_local_path(cover) {
+                roots.push(file);
+            }
+        }
+    }
+    roots
+}
+
+/// 本地图片读取（P1-2 白名单：扩展名 → 目录/文件 → 魔数）
+async fn read_local_image(state: &Arc<AppState>, path: &str) -> Result<(Vec<u8>, String), String> {
+    if !has_local_image_ext(path) {
+        return Err("本地图片格式不允许（仅支持 png/jpg/jpeg/gif/webp）".to_string());
+    }
+    let canonical = tokio::fs::canonicalize(path)
+        .await
+        .map_err(|e| format!("读取本地图片失败: {e}"))?;
+    let allowlist = local_read_allowlist(state).await;
+    let allowed = allowlist
+        .iter()
+        .any(|root| canonical == *root || canonical.starts_with(root));
+    if !allowed {
+        return Err("本地路径不在书库允许的图片目录内".to_string());
+    }
+    let bytes = tokio::fs::read(&canonical)
+        .await
+        .map_err(|e| format!("读取本地图片失败: {e}"))?;
+    if !has_image_magic(&bytes) {
+        return Err("本地文件不是受支持的图片格式".to_string());
+    }
+    let mime = guess_image_mime(&bytes, path);
+    Ok((bytes, mime))
 }
 
 /// 图片 MIME：魔数优先，其次扩展名，最后 `application/octet-stream`
@@ -799,11 +964,19 @@ mod tests {
         };
         assert!(is_local_book(&book));
 
+        // 原版 WebDav 标记为 `webDav::`（BookType.kt:76）
+        book = Book {
+            origin: "webDav::https://x/book.epub".to_string(),
+            ..Book::default()
+        };
+        assert!(is_local_book(&book));
+
+        // 旧值 `dav:` 非原版标记 → 不判本地（P2 常量修正）
         book = Book {
             origin: "dav:/x".to_string(),
             ..Book::default()
         };
-        assert!(is_local_book(&book));
+        assert!(!is_local_book(&book));
 
         book = Book {
             origin: "https://src".to_string(),
@@ -818,6 +991,105 @@ mod tests {
             ..Book::default()
         };
         assert!(!is_local_book(&book));
+    }
+
+    /// P1-3：`Book.getUseReplaceRule()`（Book.kt:226-236）对齐
+    #[test]
+    fn test_use_replace_rule_gating() {
+        // 未设置：普通在线文字书 → 回退 AppConfig.replaceEnableDefault(true)
+        let text = Book {
+            origin: "https://src".to_string(),
+            book_type: book_type::TEXT,
+            ..Book::default()
+        };
+        assert!(use_replace_rule(&text));
+
+        // epub 本地书 → 默认关闭
+        let epub = Book {
+            origin: "loc_book".to_string(),
+            origin_name: "book.epub".to_string(),
+            book_type: book_type::LOCAL,
+            ..Book::default()
+        };
+        assert!(is_epub_book(&epub));
+        assert!(!use_replace_rule(&epub));
+
+        // 本地图片书（IMAGE_BIT 位域）→ 默认关闭
+        let image = Book {
+            origin: "loc_book".to_string(),
+            book_type: book_type::LOCAL | book_type::IMAGE_BIT,
+            ..Book::default()
+        };
+        assert!(is_image_book(&image));
+        assert!(!use_replace_rule(&image));
+
+        // 在线图片书源（type 数值域 IMAGE=2 不属位域 64）→ 不误判
+        let online_image = Book {
+            origin: "https://src".to_string(),
+            book_type: book_type::IMAGE,
+            ..Book::default()
+        };
+        assert!(!is_image_book(&online_image));
+        assert!(use_replace_rule(&online_image));
+
+        // readConfig.useReplaceRule 非空 → 取该值（含对 epub 显式开启）
+        let epub_on = Book {
+            read_config: Some(legado_core::models::ReadConfig {
+                use_replace_rule: Some(true),
+                ..Default::default()
+            }),
+            ..epub.clone()
+        };
+        assert!(use_replace_rule(&epub_on));
+
+        let text_off = Book {
+            read_config: Some(legado_core::models::ReadConfig {
+                use_replace_rule: Some(false),
+                ..Default::default()
+            }),
+            ..text
+        };
+        assert!(!use_replace_rule(&text_off));
+    }
+
+    /// P1-2：本地图片扩展名白名单
+    #[test]
+    fn test_has_local_image_ext() {
+        assert!(has_local_image_ext("D:/x/cover.PNG"));
+        assert!(has_local_image_ext("/a/b.jpg?raw=1"));
+        assert!(has_local_image_ext("/a/b.webp#frag"));
+        assert!(!has_local_image_ext("/etc/passwd"));
+        assert!(!has_local_image_ext("/a/b.txt"));
+        assert!(!has_local_image_ext("/a/b.png.txt"));
+    }
+
+    /// P1-2：图片魔数校验（防扩展名伪造）
+    #[test]
+    fn test_has_image_magic() {
+        assert!(has_image_magic(&[0x89, b'P', b'N', b'G', 0x0D, 0x0A]));
+        assert!(has_image_magic(&[0xFF, 0xD8, 0xFF, 0xE0]));
+        assert!(has_image_magic(b"GIF89a"));
+        let mut webp = b"RIFF".to_vec();
+        webp.extend_from_slice(&[0, 0, 0, 0]);
+        webp.extend_from_slice(b"WEBP");
+        assert!(has_image_magic(&webp));
+        assert!(!has_image_magic(b"plain text"));
+        assert!(!has_image_magic(
+            b"<svg xmlns=\"http://www.w3.org/2000/svg\">"
+        ));
+    }
+
+    /// P1-2：URL / 相对标识不进入白名单（不可信基准）
+    #[test]
+    fn test_canonical_local_path_scope() {
+        assert!(canonical_local_path("https://x/a.png").is_none());
+        assert!(canonical_local_path("books/a.epub").is_none());
+        assert!(canonical_local_path("").is_none());
+        // 存在的绝对路径可解析（canonical 化）
+        let path = std::env::temp_dir();
+        assert!(canonical_local_path(&path.to_string_lossy()).is_some());
+        // 不存在的绝对路径 → None
+        assert!(canonical_local_path("Z:/definitely/not/exist/x.png").is_none());
     }
 
     #[test]

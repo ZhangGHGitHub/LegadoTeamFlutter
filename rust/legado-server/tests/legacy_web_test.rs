@@ -230,7 +230,8 @@ async fn test_options_preflight() {
 // B2 只读端点
 // ---------------------------------------------------------------------------
 
-/// Kotlin `Book.kt` 经项目 GSON（含 @Ignore 类体字段）序列化的完整键集
+/// Kotlin `Book.kt` 经项目 GSON 序列化的完整键集（`GsonExtensions.kt:28-51`
+/// 未调 `serializeNulls()` → null 字段省略；本表为「全字段非空」上界）
 const KOTLIN_BOOK_KEYS: &[&str] = &[
     "bookUrl",
     "tocUrl",
@@ -272,7 +273,42 @@ const KOTLIN_BOOK_KEYS: &[&str] = &[
     "folderName",
 ];
 
-/// Kotlin `BookChapter.kt` 经项目 GSON 序列化的完整键集
+/// Kotlin `Book.kt` 非空字段（GSON 恒输出；P1-1 后最小投影的键集）
+const KOTLIN_BOOK_REQUIRED_KEYS: &[&str] = &[
+    "bookUrl",
+    "tocUrl",
+    "origin",
+    "originName",
+    "name",
+    "author",
+    "type",
+    "group",
+    "latestChapterTime",
+    "lastCheckTime",
+    "lastCheckCount",
+    "totalChapterNum",
+    "durChapterIndex",
+    "durVolumeIndex",
+    "chapterInVolumeIndex",
+    "durChapterPos",
+    "durChapterTime",
+    "canUpdate",
+    "order",
+    "originOrder",
+    "syncTime",
+];
+
+/// Rust 侧无数据来源、恒 null 的 4 个 Room/私有字段（原版由库载入时同样为
+/// null → GSON 省略）+ Rust 库缺失的 `persistedCoverUrl` 列（登记差异）
+const KOTLIN_BOOK_ALWAYS_NULL_KEYS: &[&str] = &[
+    "persistedCoverUrl",
+    "infoHtml",
+    "tocHtml",
+    "downloadUrls",
+    "folderName",
+];
+
+/// Kotlin `BookChapter.kt` 经项目 GSON 序列化的完整键集（同上，全字段非空上界）
 const KOTLIN_CHAPTER_KEYS: &[&str] = &[
     "url",
     "title",
@@ -294,6 +330,18 @@ const KOTLIN_CHAPTER_KEYS: &[&str] = &[
     "titleMD5",
 ];
 
+/// Kotlin `BookChapter.kt` 非空字段（P1-1 后最小投影的键集）
+const KOTLIN_CHAPTER_REQUIRED_KEYS: &[&str] = &[
+    "url", "title", "isVolume", "baseUrl", "bookUrl", "index", "isVip", "isPay",
+];
+
+/// 可空字段全为 null 的 Book：键集必须等于非空字段集（GSON 省略 null）
+fn assert_book_null_fields_omitted(book: &serde_json::Map<String, Value>) {
+    for key in KOTLIN_BOOK_ALWAYS_NULL_KEYS {
+        assert!(!book.contains_key(*key), "恒 null 字段 {key} 不应出现");
+    }
+}
+
 #[tokio::test]
 async fn test_get_bookshelf_empty_error_msg() {
     let app = create_router(make_test_state());
@@ -304,6 +352,7 @@ async fn test_get_bookshelf_empty_error_msg() {
     assert!(json["data"].is_null());
 }
 
+/// 全字段非空书籍：键集必须与 Kotlin `Book.kt` 全字段集一致（除恒 null 的 5 键）
 #[tokio::test]
 async fn test_get_bookshelf_full_kotlin_field_shape() {
     let state = make_test_state();
@@ -317,10 +366,28 @@ async fn test_get_bookshelf_full_kotlin_field_shape() {
                 origin_name: "示例源".to_string(),
                 name: "示例书".to_string(),
                 author: "示例作者".to_string(),
+                kind: Some("玄幻".to_string()),
+                custom_tag: Some("我的标签".to_string()),
                 cover_url: Some("https://example.com/cover.jpg".to_string()),
+                custom_cover_url: Some("https://example.com/my-cover.jpg".to_string()),
+                intro: Some("简介".to_string()),
+                custom_intro: Some("自定义简介".to_string()),
+                charset: Some("UTF-8".to_string()),
+                latest_chapter_title: Some("最新章".to_string()),
+                dur_chapter_title: Some("第三章".to_string()),
+                word_count: Some("10万字".to_string()),
+                variable: Some("{}".to_string()),
+                read_config: Some(legado_core::models::ReadConfig {
+                    page_anim: Some(1),
+                    image_style: Some("FULL".to_string()),
+                    use_replace_rule: Some(true),
+                    tts_engine: Some("engine".to_string()),
+                    start_date: Some("2026-01-01".to_string()),
+                    start_chapter: Some(2),
+                    ..Default::default()
+                }),
                 dur_chapter_index: 3,
                 dur_chapter_pos: 100,
-                dur_chapter_title: Some("第三章".to_string()),
                 dur_chapter_time: 1_700_000_000_000,
                 total_chapter_num: 10,
                 ..Book::default()
@@ -340,12 +407,17 @@ async fn test_get_bookshelf_full_kotlin_field_shape() {
 
     let mut actual: Vec<&str> = book.keys().map(|k| k.as_str()).collect();
     actual.sort_unstable();
-    let mut expected: Vec<&str> = KOTLIN_BOOK_KEYS.to_vec();
+    let mut expected: Vec<&str> = KOTLIN_BOOK_KEYS
+        .iter()
+        .filter(|k| !KOTLIN_BOOK_ALWAYS_NULL_KEYS.contains(k))
+        .copied()
+        .collect();
     expected.sort_unstable();
     assert_eq!(
         actual, expected,
-        "getBookshelf data 元素键集必须与 Kotlin Book.kt 一致"
+        "全字段非空时键集应等于 Kotlin Book.kt 全字段集（GSON 省略 null）"
     );
+    assert_book_null_fields_omitted(book);
 
     assert_eq!(book["bookUrl"], "https://example.com/book/1");
     assert_eq!(book["name"], "示例书");
@@ -354,9 +426,53 @@ async fn test_get_bookshelf_full_kotlin_field_shape() {
     assert_eq!(book["durChapterPos"], 100);
     assert_eq!(book["durChapterTitle"], "第三章");
     assert_eq!(book["totalChapterNum"], 10);
+    assert_eq!(book["readConfig"]["useReplaceRule"], true);
     // Rust 侧额外列（originBookUrl/coverOrigin）不得出现在原版 JSON 形状中
     assert!(book.get("originBookUrl").is_none());
     assert!(book.get("coverOrigin").is_none());
+}
+
+/// 先红后绿（P1-1）：GSON 默认省略 null —— 仅填非空字段的书籍，可空键不得出现
+#[tokio::test]
+async fn test_get_bookshelf_omits_null_fields_like_gson_default() {
+    let state = make_test_state();
+    {
+        let db = state.db.lock().await;
+        BookRepository::new(db.connection())
+            .insert(&Book {
+                book_url: "https://example.com/book/1".to_string(),
+                origin: "https://example.com".to_string(),
+                name: "最小书".to_string(),
+                ..Book::default()
+            })
+            .unwrap();
+    }
+    let app = create_router(state);
+    let (_, json) = get_json(app, "/getBookshelf").await;
+    let book = json["data"][0].as_object().unwrap();
+
+    let mut actual: Vec<&str> = book.keys().map(|k| k.as_str()).collect();
+    actual.sort_unstable();
+    let mut expected: Vec<&str> = KOTLIN_BOOK_REQUIRED_KEYS.to_vec();
+    expected.sort_unstable();
+    assert_eq!(
+        actual, expected,
+        "可空字段为 null 时应按 GSON 默认省略（实际键集 {actual:?}）"
+    );
+    for key in [
+        "kind",
+        "customTag",
+        "coverUrl",
+        "intro",
+        "readConfig",
+        "persistedCoverUrl",
+        "folderName",
+    ] {
+        assert!(
+            !book.contains_key(key),
+            "null 字段 {key} 不应出现在 JSON 中"
+        );
+    }
 }
 
 #[tokio::test]
@@ -426,12 +542,14 @@ async fn test_get_chapter_list_full_kotlin_field_shape() {
     let chapter = chapters[0].as_object().unwrap();
     let mut actual: Vec<&str> = chapter.keys().map(|k| k.as_str()).collect();
     actual.sort_unstable();
-    let mut expected: Vec<&str> = KOTLIN_CHAPTER_KEYS.to_vec();
+    let mut expected: Vec<&str> = KOTLIN_CHAPTER_REQUIRED_KEYS.to_vec();
     expected.sort_unstable();
     assert_eq!(
         actual, expected,
-        "getChapterList 元素键集必须与 Kotlin BookChapter.kt 一致"
+        "可空字段为 null 时应按 GSON 默认省略（实际键集 {actual:?}）"
     );
+    // 有值的可空字段键必须出现（全字段上界减去本用例可空字段即可）
+    assert!(KOTLIN_CHAPTER_KEYS.contains(&"titleMD5"));
     assert_eq!(chapter["url"], "book1/ch0");
     assert_eq!(chapter["index"], 0);
 }
@@ -517,6 +635,142 @@ async fn test_get_book_content_from_cache() {
     assert_eq!(json["data"], "正文第一段\n正文第二段");
 }
 
+/// P1-3 先红后绿：净化按 `Book.getUseReplaceRule()` 门控
+///
+/// 原版依据：`Book.kt:226-236`（readConfig.useReplaceRule 非空取该值；否则
+/// 图片类 / epub 本地书返回 false；其余回退 `AppConfig.replaceEnableDefault`
+/// 默认 true）→ `ContentProcessor.kt:116` `useReplace && book.getUseReplaceRule()`。
+#[tokio::test]
+async fn test_get_book_content_replace_rule_gated_by_use_replace_rule() {
+    let state = make_test_state();
+    {
+        let db = state.db.lock().await;
+        let books = BookRepository::new(db.connection());
+        // 普通在线文字书（未设置 useReplaceRule → 回退默认 true）
+        books
+            .insert(&Book {
+                book_url: "text-book".to_string(),
+                origin: "https://src.example.com".to_string(),
+                name: "文字书".to_string(),
+                book_type: legado_core::models::book_type::TEXT,
+                ..Book::default()
+            })
+            .unwrap();
+        // epub 本地书（未设置 → 默认关闭净化）
+        books
+            .insert(&Book {
+                book_url: "epub-book".to_string(),
+                origin: "loc_book".to_string(),
+                origin_name: "book.epub".to_string(),
+                name: "epub书".to_string(),
+                book_type: legado_core::models::book_type::LOCAL,
+                ..Book::default()
+            })
+            .unwrap();
+        // 本地图片书（cbz，未设置 → 默认关闭净化）
+        books
+            .insert(&Book {
+                book_url: "image-book".to_string(),
+                origin: "loc_book".to_string(),
+                origin_name: "book.cbz".to_string(),
+                name: "图片书".to_string(),
+                book_type: legado_core::models::book_type::LOCAL
+                    | legado_core::models::book_type::IMAGE_BIT,
+                ..Book::default()
+            })
+            .unwrap();
+        // epub 本地书 + 显式开启净化（用户显式设置优先于类型默认）
+        books
+            .insert(&Book {
+                book_url: "epub-book-forced".to_string(),
+                origin: "loc_book".to_string(),
+                origin_name: "forced.epub".to_string(),
+                name: "epub显式".to_string(),
+                book_type: legado_core::models::book_type::LOCAL,
+                read_config: Some(legado_core::models::ReadConfig {
+                    use_replace_rule: Some(true),
+                    ..Default::default()
+                }),
+                ..Book::default()
+            })
+            .unwrap();
+
+        let chapters = BookChapterRepository::new(db.connection());
+        let cached = CacheBookRepository::new(db.connection());
+        for book_url in ["text-book", "epub-book", "image-book", "epub-book-forced"] {
+            chapters
+                .insert(&BookChapter {
+                    url: format!("{book_url}/ch0"),
+                    title: "第一章".to_string(),
+                    book_url: book_url.to_string(),
+                    index: 0,
+                    ..BookChapter::default()
+                })
+                .unwrap();
+            cached
+                .insert(&CachedChapter {
+                    id: 0,
+                    book_url: book_url.to_string(),
+                    chapter_index: 0,
+                    chapter_title: "第一章".to_string(),
+                    chapter_url: format!("{book_url}/ch0"),
+                    content: "正文广告内容".to_string(),
+                    cached_at: 0,
+                    size_bytes: 0,
+                })
+                .unwrap();
+        }
+
+        // 全局启用的正文替换规则：广告 → 空
+        legado_db::ReplaceRuleRepository::new(db.connection())
+            .insert(&legado_core::models::ReplaceRule {
+                name: "去广告".to_string(),
+                pattern: "广告".to_string(),
+                replacement: String::new(),
+                is_regex: false,
+                scope_content: true,
+                is_enabled: true,
+                ..Default::default()
+            })
+            .unwrap();
+    }
+
+    let get_content = |book_url: &str| {
+        let app = create_router(state.clone());
+        let uri = format!("/getBookContent?url={book_url}&index=0");
+        async move {
+            let (_, json) = get_json(app, &uri).await;
+            json
+        }
+    };
+
+    // 普通文字书：净化生效
+    let json = get_content("text-book").await;
+    assert_eq!(json["isSuccess"], true, "json={json}");
+    assert_eq!(json["data"], "正文内容");
+
+    // epub 本地书：默认关闭净化（原版 getUseReplaceRule 回退 false）
+    let json = get_content("epub-book").await;
+    assert_eq!(json["isSuccess"], true, "json={json}");
+    assert_eq!(
+        json["data"], "正文广告内容",
+        "epub 本地书默认不应应用替换规则（P1-3）"
+    );
+
+    // 本地图片书：默认关闭净化
+    let json = get_content("image-book").await;
+    assert_eq!(json["isSuccess"], true, "json={json}");
+    assert_eq!(
+        json["data"], "正文广告内容",
+        "图片书默认不应应用替换规则（P1-3）"
+    );
+
+    // epub + 显式 useReplaceRule=true：按显式值净化
+    let json = get_content("epub-book-forced").await;
+    assert_eq!(json["isSuccess"], true, "json={json}");
+    assert_eq!(json["data"], "正文内容");
+}
+
 #[tokio::test]
 async fn test_save_book_progress_beacon_text_plain() {
     let state = make_test_state();
@@ -588,24 +842,293 @@ async fn test_read_config_roundtrip() {
     assert_eq!(json["data"], payload);
 }
 
-#[tokio::test]
-async fn test_cover_serves_local_file_bytes() {
-    let png: Vec<u8> = {
-        let mut v = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
-        v.extend_from_slice(b"fake-png-payload");
-        v
-    };
-    let path = std::env::temp_dir().join(format!("legado-cover-test-{}.png", std::process::id()));
-    std::fs::write(&path, &png).unwrap();
+// ---------------------------------------------------------------------------
+// P1-2 本地图片读取白名单（/cover /image）
+// ---------------------------------------------------------------------------
 
-    let app = create_router(make_test_state());
-    let uri = format!("/cover?path={}", enc(&path.to_string_lossy()));
+/// P1-2 测试夹具：独立临时目录（Drop 清理），目录内造「书库目录 / 登记封面 /
+/// 白名单外敏感文件」三类素材
+struct CoverFixture {
+    root: std::path::PathBuf,
+}
+
+impl CoverFixture {
+    fn new(tag: &str) -> Self {
+        let root = std::env::temp_dir().join(format!(
+            "legado-cover-p12-{tag}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(&root).unwrap();
+        Self { root }
+    }
+
+    /// 写入文件（自动建父目录），返回路径字符串
+    fn write(&self, rel: &str, bytes: &[u8]) -> String {
+        let path = self.root.join(rel);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(&path, bytes).unwrap();
+        path.to_string_lossy().into_owned()
+    }
+
+    fn path(&self, rel: &str) -> std::path::PathBuf {
+        self.root.join(rel)
+    }
+}
+
+impl Drop for CoverFixture {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.root);
+    }
+}
+
+/// 带 PNG 魔数的字节（内容含 payload，便于断言未泄漏）
+fn png_bytes(payload: &[u8]) -> Vec<u8> {
+    let mut v = vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A];
+    v.extend_from_slice(payload);
+    v
+}
+
+/// 断言响应不是「读取成功」（本地读取被拒时回 ReturnData 错误信封）
+fn assert_local_read_rejected(body: &[u8], secret: &[u8], context: &str) {
+    assert!(
+        !body.windows(secret.len()).any(|w| w == secret),
+        "{context}: 敏感文件内容泄漏"
+    );
+    let json: Value = serde_json::from_slice(body).unwrap_or(Value::Null);
+    assert_eq!(
+        json["isSuccess"], false,
+        "{context}: 应回错误信封（实际 {json}）"
+    );
+}
+
+/// 合法用例（修前修后均绿）：书籍登记的本地自定义封面文件（精确文件白名单）
+#[tokio::test]
+async fn test_cover_serves_registered_local_cover_file() {
+    let fx = CoverFixture::new("registered-cover");
+    let png = png_bytes(b"registered-cover-payload");
+    let cover = fx.write("covers/c.png", &png);
+
+    let state = make_test_state();
+    {
+        let db = state.db.lock().await;
+        BookRepository::new(db.connection())
+            .insert(&Book {
+                book_url: "https://example.com/book/1".to_string(),
+                origin: "https://example.com".to_string(),
+                name: "书一".to_string(),
+                custom_cover_url: Some(cover.clone()),
+                ..Book::default()
+            })
+            .unwrap();
+    }
+    let app = create_router(state);
+    let uri = format!("/cover?path={}", enc(&cover));
     let (status, headers, body) = get(app, &uri).await;
+
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(header_str(&headers, "content-type"), "image/png");
+    assert_eq!(body, png, "登记的本地封面应按原字节回传");
+}
+
+/// 合法用例（修前修后均绿）：本地书目录（书库正文目录）内的图片
+#[tokio::test]
+async fn test_cover_serves_image_in_registered_local_book_dir() {
+    let fx = CoverFixture::new("local-book-dir");
+    let book_file = fx.write("lib/book.txt", b"book body");
+    let png = png_bytes(b"local-book-dir-payload");
+    let image = fx.write("lib/images/a.png", &png);
+
+    let state = make_test_state();
+    {
+        let db = state.db.lock().await;
+        BookRepository::new(db.connection())
+            .insert(&Book {
+                book_url: book_file.clone(),
+                origin: "loc_book".to_string(),
+                origin_name: "book.txt".to_string(),
+                name: "本地书".to_string(),
+                book_type: legado_core::models::book_type::LOCAL,
+                ..Book::default()
+            })
+            .unwrap();
+    }
+    let app = create_router(state);
+    let uri = format!("/cover?path={}", enc(&image));
+    let (status, headers, body) = get(app, &uri).await;
+
     assert_eq!(status, StatusCode::OK);
     assert_eq!(header_str(&headers, "content-type"), "image/png");
     assert_eq!(body, png);
+}
 
-    let _ = std::fs::remove_file(&path);
+/// 先红后绿（P1-2）：书库目录之外的本地图片必须拒绝（直读与 `../` 穿越、
+/// URL 编码变体三形态同断言）
+#[tokio::test]
+async fn test_cover_rejects_local_paths_outside_whitelist() {
+    let fx = CoverFixture::new("outside-whitelist");
+    let book_file = fx.write("lib/book.txt", b"book body");
+    let secret_payload = b"TOP-SECRET-OUTSIDE-WHITELIST";
+    let secret = fx.write("secret.png", &png_bytes(secret_payload));
+
+    let state = make_test_state();
+    {
+        let db = state.db.lock().await;
+        BookRepository::new(db.connection())
+            .insert(&Book {
+                book_url: book_file.clone(),
+                origin: "loc_book".to_string(),
+                origin_name: "book.txt".to_string(),
+                name: "本地书".to_string(),
+                book_type: legado_core::models::book_type::LOCAL,
+                ..Book::default()
+            })
+            .unwrap();
+    }
+
+    // 直读白名单外文件（同格式 PNG：拒绝只可能来自目录白名单）
+    let app = create_router(state.clone());
+    let (_, _, body) = get(app, &format!("/cover?path={}", enc(&secret))).await;
+    assert_local_read_rejected(&body, secret_payload, "直读白名单外图片");
+
+    // `../` 穿越（原始形态）
+    let traversal = fx.path("lib/../secret.png").to_string_lossy().into_owned();
+    let app = create_router(state.clone());
+    let (_, _, body) = get(app, &format!("/cover?path={}", enc(&traversal))).await;
+    assert_local_read_rejected(&body, secret_payload, "../ 穿越");
+
+    // `../` 穿越（URL 编码变体：%2E%2E%2F）
+    let encoded_traversal = format!(
+        "{}/lib/%2E%2E%2Fsecret%2Epng",
+        enc(&fx.root.to_string_lossy())
+    );
+    let app = create_router(state.clone());
+    let (_, _, body) = get(app, &format!("/cover?path={encoded_traversal}")).await;
+    assert_local_read_rejected(&body, secret_payload, "URL 编码 ../ 穿越");
+
+    // 空库（无任何登记书籍）→ 一律拒绝
+    let app = create_router(make_test_state());
+    let (_, _, body) = get(app, &format!("/cover?path={}", enc(&secret))).await;
+    assert_local_read_rejected(&body, secret_payload, "空书库直读本地文件");
+}
+
+/// 先红后绿（P1-2）：系统敏感路径必须拒绝（含 `../` 相对穿越与 URL 编码变体）
+#[tokio::test]
+async fn test_cover_rejects_system_file_paths() {
+    for path in [
+        "/etc/passwd",
+        "/etc/shadow",
+        "C:\\Windows\\win.ini",
+        "../../../../etc/passwd",
+        "..\\..\\..\\..\\Windows\\win.ini",
+    ] {
+        let app = create_router(make_test_state());
+        let (_, _, body) = get(app, &format!("/cover?path={}", enc(path))).await;
+        let json: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+        assert_eq!(
+            json["isSuccess"], false,
+            "系统路径 {path} 必须被拒绝（实际 {json}）"
+        );
+    }
+
+    // URL 编码穿越变体（%2E%2E%2F 解码后仍是 `../`）
+    let app = create_router(make_test_state());
+    let (_, _, body) = get(app, "/cover?path=..%2F..%2F..%2F..%2Fetc%2Fpasswd").await;
+    let json: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    assert_eq!(json["isSuccess"], false, "URL 编码穿越必须被拒绝");
+}
+
+/// 先红后绿（P1-2）：扩展名白名单与魔数校验（防把任意文件当图片直读）
+#[tokio::test]
+async fn test_cover_rejects_non_image_extension_and_forged_magic() {
+    let fx = CoverFixture::new("ext-magic");
+    // 登记为封面但扩展名非图片 → 拒绝
+    let txt = fx.write("note.txt", b"plain-text-secret");
+    // 登记为封面、扩展名 .png 但内容非图片（魔数不匹配）→ 拒绝
+    let forged = fx.write("forged.png", b"not-an-image-at-all");
+
+    let state = make_test_state();
+    {
+        let db = state.db.lock().await;
+        BookRepository::new(db.connection())
+            .insert(&Book {
+                book_url: "https://example.com/book/1".to_string(),
+                origin: "https://example.com".to_string(),
+                name: "书一".to_string(),
+                custom_cover_url: Some(txt.clone()),
+                ..Book::default()
+            })
+            .unwrap();
+        BookRepository::new(db.connection())
+            .insert(&Book {
+                book_url: "https://example.com/book/2".to_string(),
+                origin: "https://example.com".to_string(),
+                name: "书二".to_string(),
+                custom_cover_url: Some(forged.clone()),
+                ..Book::default()
+            })
+            .unwrap();
+    }
+
+    let app = create_router(state.clone());
+    let (_, _, body) = get(app, &format!("/cover?path={}", enc(&txt))).await;
+    assert_local_read_rejected(&body, b"plain-text-secret", "非图片扩展名");
+
+    let app = create_router(state.clone());
+    let (_, _, body) = get(app, &format!("/cover?path={}", enc(&forged))).await;
+    assert_local_read_rejected(&body, b"not-an-image-at-all", "伪造图片扩展名");
+}
+
+/// 先红后绿（P1-2）：`/image` 的本地 path 分支同样受白名单约束
+#[tokio::test]
+async fn test_image_local_path_whitelist_enforced() {
+    let fx = CoverFixture::new("image-endpoint");
+    let secret_payload = b"IMAGE-ENDPOINT-SECRET";
+    let secret = fx.write("secret.png", &png_bytes(secret_payload));
+    let book_file = fx.write("lib/book.txt", b"book body");
+    let legit = fx.write("lib/images/ok.png", &png_bytes(b"legit-image"));
+
+    let state = make_test_state();
+    {
+        let db = state.db.lock().await;
+        let repo = BookRepository::new(db.connection());
+        repo.insert(&Book {
+            book_url: "https://src.example.com/book/1".to_string(),
+            origin: "https://src.example.com".to_string(),
+            name: "在线书".to_string(),
+            ..Book::default()
+        })
+        .unwrap();
+        repo.insert(&Book {
+            book_url: book_file.clone(),
+            origin: "loc_book".to_string(),
+            origin_name: "book.txt".to_string(),
+            name: "本地书".to_string(),
+            book_type: legado_core::models::book_type::LOCAL,
+            ..Book::default()
+        })
+        .unwrap();
+    }
+
+    // 在线书籍 + 本地绝对路径（原审查实测的拖库形态）→ 必须拒绝
+    let app = create_router(state.clone());
+    let uri = format!(
+        "/image?url={}&path={}",
+        enc("https://src.example.com/book/1"),
+        enc(&secret)
+    );
+    let (_, _, body) = get(app, &uri).await;
+    assert_local_read_rejected(&body, secret_payload, "/image 本地绝对路径直读");
+
+    // 本地书目录内的图片 → 放行（保绿：不破坏正常图片代理）
+    let app = create_router(state.clone());
+    let uri = format!("/image?url={}&path={}", enc(&book_file), enc(&legit));
+    let (status, _, body) = get(app, &uri).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body, png_bytes(b"legit-image"));
 }
 
 #[tokio::test]

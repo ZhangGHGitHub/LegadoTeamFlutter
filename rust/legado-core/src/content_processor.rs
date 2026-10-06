@@ -1,8 +1,20 @@
 //! 内容处理管线
-//! 移植自 Kotlin ContentProcessor.kt (224行)
+//! 移植自 Kotlin ContentProcessor.kt (239行)
 //!
 //! 编排完整的内容后处理管线：
 //! 去重复标题 → 段落重排 → 简繁转换 → 替换规则 → 段落缩进
+//!
+//! ## 去重复标题（P1-4 对齐原版 `sameTitleLineMatcher`）
+//!
+//! 对齐 `ContentProcessor.kt:25-32 / 123-148`：行首（空白 | Unicode 标点 |
+//! 书名）* + 章节标题（标题内空白弹性 = `spaceRegex` → `\s*`）+ 行尾空白 +
+//!（换行 | 输入结束），命中即从 `matcher.end()` 截断（标题行与后续换行/空白
+//! 整段消费）。登记差异：
+//! - 第二分支（标题替换规则后的 displayTitle 再匹配，:132-145）未实现——
+//!   调用方未注入标题规则/ReplaceBook 上下文；
+//! - `removeSameTitleCache`（`nr` 章节缓存文件跳过去重，:83-90/:125）未移植——
+//!   Rust 侧章节正文存 DB，无文件级标记，改由 `ProcessorConfig
+//!   ::remove_duplicate_title` 作章级开关。
 //!
 //! ## 替换规则引擎（P1-3 增强）
 //!
@@ -232,19 +244,33 @@ impl ContentProcessor {
         (processed, stats)
     }
 
-    /// 去除重复标题（章节内容开头的与标题相同的文本）
+    /// 去除重复标题（对齐原版 `ContentProcessor.kt:123-148` 第一分支）
+    ///
+    /// 原版用 `sameTitleLineMatcher`（ContentProcessor.kt:25-32）匹配「行首
+    /// （空白/标点/书名）* + 标题（空白弹性）+ 行尾空白 +（换行 | 输入结束）」，
+    /// 命中即从 `matcher.end()` 截断——标题行与随后的换行/空白整段消费。
+    /// 第二分支（标题替换规则后的 displayTitle 再匹配，ContentProcessor.kt:132-145）
+    /// 依赖标题规则与 replaceBook 上下文，本实现的调用方未注入标题规则
+    /// （Web 净化链只传正文规则），登记差异不实现。
+    ///
+    /// 原版 `removeSameTitleCache`（以 `nr` 结尾的章节缓存文件跳过去重，
+    /// ContentProcessor.kt:83-90、125）未移植：Rust 侧章节正文存 DB
+    /// （`cached_chapters`），无文件级标记；章级开关由上层
+    /// `ProcessorConfig.remove_duplicate_title` 承载。
+    ///
+    /// 书名取自 [`ScopeContext::book_name`]（原版 `Pattern.quote(book.name)`）。
     fn remove_duplicate_title(&self, content: &str, chapter_name: &str) -> String {
         if chapter_name.is_empty() {
             return content.to_string();
         }
-        let trimmed = content.trim_start();
-        if let Some(after) = trimmed.strip_prefix(chapter_name) {
-            // 去除标题后紧跟的空白和标点
-            let after =
-                after.trim_start_matches(|c: char| c.is_whitespace() || c == '\n' || c == '\r');
-            after.to_string()
-        } else {
-            content.to_string()
+        let book_name = self
+            .scope_context
+            .as_ref()
+            .map(|ctx| ctx.book_name.as_str())
+            .unwrap_or("");
+        match match_title_line(content, book_name, chapter_name) {
+            Some(end) => content[end..].to_string(),
+            None => content.to_string(),
         }
     }
 
@@ -327,6 +353,52 @@ impl ContentProcessor {
         }
         result.join("\n")
     }
+}
+
+// ─── 去重复标题：原版 sameTitleLineMatcher 对齐（P1-4）────────
+
+/// Java `Pattern` 默认（无 UNICODE_CHARACTER_CLASS）的 `\s` 字符类
+const JAVA_WHITESPACE_CLASS: &str = "[ \\t\\n\\x0B\\x0C\\r]";
+
+/// Java `\p{Zs}`（Unicode 空格分隔符）显式列举——避免依赖正则引擎的
+/// Unicode 属性表可用性，同时保持与原版字符集一致
+const JAVA_ZS_CLASS: &str = "\\x{20}\\x{A0}\\x{1680}\\x{2000}-\\x{200A}\\x{202F}\\x{205F}\\x{3000}";
+
+/// 构造原版 `sameTitleLineMatcher` 的题名模式
+///
+/// 对应 Kotlin：`chapter.title.escapeRegex().replace(spaceRegex, "\\\\s*")`
+/// （ContentProcessor.kt:127；`spaceRegex = "\\s+"`，AppPattern.kt:68），即
+/// 转义正则元字符后把空白串替换为 `\s*`（标题内空白弹性匹配）。
+fn title_line_pattern(title: &str) -> String {
+    let escaped = regex::escape(title);
+    let space_run = regex::Regex::new(r"\s+").expect("字面量正则 `\\s+` 必然可编译");
+    space_run
+        .replace_all(&escaped, format!("{JAVA_WHITESPACE_CLASS}*").as_str())
+        .to_string()
+}
+
+/// 原版 `sameTitleLineMatcher` 的匹配入口：命中返回 `matcher.end()` 字节偏移
+///
+/// 模式：`^(\s|\p{P}|namePattern)*titlePattern[\t\x0B\f\p{Zs}]*(?:(?:\r\n|\r|\n)\s*|$)`
+/// （ContentProcessor.kt:25-32）。`^` 无 MULTILINE 语义 → 只在输入起点匹配，
+/// 等价原版 `matcher.find()` 的 anchored 行为。
+fn match_title_line(content: &str, book_name: &str, chapter_title: &str) -> Option<usize> {
+    let name_alt = if book_name.is_empty() {
+        String::new()
+    } else {
+        format!("|{}", regex::escape(book_name))
+    };
+    let title = title_line_pattern(chapter_title);
+    let pattern = format!(
+        "^(?:{ws}|\\p{{P}}{name})*{title}[\\t\\x0B\\x0C{zs}]*\
+         (?:(?:\\r\\n|\\r|\\n){ws}*|$)",
+        ws = JAVA_WHITESPACE_CLASS,
+        zs = JAVA_ZS_CLASS,
+        name = name_alt,
+        title = title,
+    );
+    let regex = regex::Regex::new(&pattern).ok()?;
+    regex.find(content).map(|m| m.end())
 }
 
 // ─── 替换规则引擎（自由函数 API）───────────────────────────
@@ -962,6 +1034,116 @@ mod tests {
         let content = "这是正文内容";
         let result = processor.process(content, "", &no_rules());
         assert_eq!(result, "这是正文内容");
+    }
+
+    // ─── 去重复标题：对齐原版 sameTitleLineMatcher（P1-4）─────
+
+    /// 标题空白弹性匹配（原版 `spaceRegex = "\\s+"` → 标题内空白替换为 `\s*`）
+    #[test]
+    fn test_remove_duplicate_title_whitespace_tolerant() {
+        let config = ProcessorConfig {
+            remove_duplicate_title: true,
+            ..noop_config()
+        };
+        let processor = ContentProcessor::new(config);
+        let content = "第一章   测试\n正文内容";
+        let result = processor.process(content, "第一章 测试", &no_rules());
+        assert_eq!(
+            result, "正文内容",
+            "标题空白差异应弹性匹配（原版 spaceRegex）"
+        );
+    }
+
+    /// 书名前缀（原版 namePattern = `Pattern.quote(book.name)`，经 ScopeContext 传入）
+    #[test]
+    fn test_remove_duplicate_title_book_name_prefix() {
+        let config = ProcessorConfig {
+            remove_duplicate_title: true,
+            ..noop_config()
+        };
+        let processor = ContentProcessor::new(config)
+            .with_scope_context(ScopeContext::new("示例书", "https://src.example.com"));
+        let content = "示例书 第一章 测试\n正文内容";
+        let result = processor.process(content, "第一章 测试", &no_rules());
+        assert_eq!(result, "正文内容", "书名前缀应被行首组吸收");
+    }
+
+    /// 标点前缀（原版行首组 `(\s|\p{P}|namePattern)*`）
+    #[test]
+    fn test_remove_duplicate_title_punctuation_prefix() {
+        let config = ProcessorConfig {
+            remove_duplicate_title: true,
+            ..noop_config()
+        };
+        let processor = ContentProcessor::new(config);
+        let content = "、第一章 测试\n正文内容";
+        let result = processor.process(content, "第一章 测试", &no_rules());
+        assert_eq!(result, "正文内容", "行首标点应被吸收（p-P 分类）");
+    }
+
+    /// 标题行/空行被整体消费（原版 `(?:(?:\r\n|\r|\n)\s*|$)`）
+    #[test]
+    fn test_remove_duplicate_title_consumes_blank_lines() {
+        let config = ProcessorConfig {
+            remove_duplicate_title: true,
+            ..noop_config()
+        };
+        let processor = ContentProcessor::new(config);
+        let content = "第一章 测试\n\n\n正文内容";
+        let result = processor.process(content, "第一章 测试", &no_rules());
+        assert_eq!(result, "正文内容");
+    }
+
+    /// 行首非整行标题不得剥离（原版要求标题后为行尾/换行，弱实现会误删前缀）
+    #[test]
+    fn test_remove_duplicate_title_requires_line_end() {
+        let config = ProcessorConfig {
+            remove_duplicate_title: true,
+            ..noop_config()
+        };
+        let processor = ContentProcessor::new(config);
+        let content = "第一章的内容还在继续";
+        let result = processor.process(content, "第一章", &no_rules());
+        assert_eq!(
+            result, "第一章的内容还在继续",
+            "标题后紧跟正文（非行尾）时不得剥离"
+        );
+    }
+
+    /// 标题在行首但后接标点（非行尾）→ 不剥离
+    #[test]
+    fn test_remove_duplicate_title_no_line_end_after_punct() {
+        let config = ProcessorConfig {
+            remove_duplicate_title: true,
+            ..noop_config()
+        };
+        let processor = ContentProcessor::new(config);
+        let content = "第一章：正文开始";
+        let result = processor.process(content, "第一章", &no_rules());
+        assert_eq!(result, "第一章：正文开始");
+    }
+
+    /// 只有标题行（无正文）→ 全部消费为空
+    #[test]
+    fn test_remove_duplicate_title_only_title_line() {
+        let config = ProcessorConfig {
+            remove_duplicate_title: true,
+            ..noop_config()
+        };
+        let processor = ContentProcessor::new(config);
+        let result = processor.process("第一章 测试", "第一章 测试", &no_rules());
+        assert_eq!(result, "");
+    }
+
+    /// 题名模式形态：元字符转义 + 空白串 → Java `\s*`（原版 spaceRegex 语义）
+    #[test]
+    fn test_title_line_pattern_shape() {
+        assert_eq!(
+            title_line_pattern("第一章 测试"),
+            "第一章[ \\t\\n\\x0B\\x0C\\r]*测试"
+        );
+        assert_eq!(title_line_pattern("第1章(上)"), "第1章\\(上\\)");
+        assert_eq!(title_line_pattern("a+b"), "a\\+b");
     }
 
     #[test]

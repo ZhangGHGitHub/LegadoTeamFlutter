@@ -27,7 +27,16 @@ pub mod book_type {
     /// 按 bookUrl/origin 取正文，但书架列表须按此位过滤，避免污染书架。
     pub const NOT_SHELF: i32 = 0b100_0000_0000;
     pub const LOCAL_TAG: &str = "loc_book";
-    pub const WEB_DAV_TAG: &str = "dav:";
+    /// 书源以 webDav:: 开头的书籍（对齐 Kotlin `BookType.webDavTag`，
+    /// `app/src/main/java/io/legado/app/constant/BookType.kt:76`）：
+    /// 可从 webDav 更新或重新下载；`Book.isLocal`（BookExtensions.kt:50-56）
+    /// 与 `Book.getRemoteUrl`（:194-199）按该前缀判定。
+    ///
+    /// [Web 页审查 P2 | 2026-10-07] 修正历史值 `"dav:"` → `"webDav::"`：
+    /// 旧值与原版常量不一致，导致导入原版 WebDav 备份（origin=`webDav::...`）
+    /// 的书不被判为本地书。全仓消费方：`legado-server/src/legacy/book_api.rs`
+    /// 的 `is_local_book`（唯一生产消费方，旧值仅此一处定义）。
+    pub const WEB_DAV_TAG: &str = "webDav::";
 }
 
 /// 阅读配置
