@@ -1042,7 +1042,7 @@ mod quickjs_tests {
     // 上游 quickjs-ng 0.15.1（rquickjs-sys 0.12.2 内置）已修复 OOM 重入 UAF
     // （e1c1e416 / Fixes #1469：build_backtrace 二次 OOM 不再先行释放在途异常），
     // 原配方的进程级 SIGSEGV（WSL 5/5，find_own_property quickjs.c:5337，rax=0）
-    // 应变为干净的 OOM 异常：返回 Err 且不崩进程，OOM 后引擎仍可用。
+    // 应变为干净的 OOM 异常：返回 Err 且不崩进程。
     //
     // [P2-16 CI 修正 2026-09-19，Rust CI run 35459493775] OOM 报错有两种合法形态，
     // 取决于触顶发生在哪个阶段（跨环境刀锋条件，哪个阶段先 OOM 由本机余量决定）：
@@ -1054,6 +1054,40 @@ mod quickjs_tests {
     //      runner 命中的即此形态——进程未崩、正常返回 Err，恰是 UAF 修复生效的表现）。
     // 故消息断言接受两种形态；核心回归断言不变：Err + OOM 后引擎仍可用（UAF 回归本身，
     // 旧 quickjs-ng 0.8 在此处会进程级 SIGSEGV）。
+    //
+    // ---- 2026-10-06 加固：最后一条「OOM 后引擎仍可复用」断言偶发失败（flaky）----
+    // 【形态订正】上面第 2 条的「编译期 OOM 退化」归因有误。源码定位：JS_ThrowError2
+    // （quickjs-ng quickjs.c:8012-8023）在 JS_MakeError 自身失败时 `obj = JS_NULL` 再
+    // JS_Throw；rquickjs 的 ctx.catch() 于是拿到非对象，引擎 take_exception_message 的
+    // 兜底默认值「语法错误」（engine.rs:553）被原样返回。即该形态 =「连 OOM 错误对象都
+    // 建不出来的紧余量」，与编译期无关。实测该形态与可复用性无相关性（372~405KB 逐 KB
+    // 扫描：373/386/390/403/404 档该形态且可复用，385/402 档该形态且不可复用；下方大分配
+    // 配方在 389/480 档同样退化却可复用）→ 任何「按消息形态分支」的放宽都不成立，判据只能是余量。
+    // 【机理（实测，非推断）】该断言的真判据是「触顶后的残留余量 ≥ 下一次求值成本」，
+    // 而非引擎状态。残留余量 = 内存上限 − 触顶时账本占用，呈周期 ≈ 17_000B 的锯齿
+    // （= 每次迭代 new Array(1000) 元素缓冲 16_000B + MALLOC_OVERHEAD/可用尺寸取整），
+    // 坏窗口宽仅 300~400B（≈ 编译并执行 "1 + 1" 的成本）：
+    //   · 上限扫描（372_000..405_000 步长 1000；400_000..405_000 步长 100）：
+    //     坏窗口 = 385_000 与 [402_000, 402_300]，间距 17_000B；400_000 档距坏窗口仅 2.0KB。
+    //   · 窗口随基线 1:1 平移：先预占用 'x'.repeat(N) 再跑配方，坏窗口 →
+    //     N=1000:[403_300,403_500]、N=2000:[404_300,404_500]、N=4000:[406_300,406_500]
+    //     （含字符串开销 ≈ +300B）→ 任何 KB 级基线漂移都会把坏窗口推到 400_000 档。
+    //   · 基线量级：最小可创建引擎的内存上限 ≈ 366_400B（Runtime + Context + 宿主 API
+    //     注册的 JS 侧账本），400_000 档留给脚本的余量仅 ≈ 33.6KB ≈ 1.7 次循环迭代
+    //     （每次 ≈16KB）→ 触顶相位必然由几百字节级差异决定（平台分配器 usable-size
+    //     取整差异、注册面增减等；本机 60 次定向 + 20 次全套 + 并发下 2000 次进程内
+    //     引擎迭代 0 失败，而 402_000~402_300 档 4/4 档 100% 失败 → 本机恰处「偶然安全」相位）。
+    //   · 排除并行干扰：QuickJS 内存账本是 per-Runtime 的，与宿主内存压力/测试并发无关
+    //     （上述 2000 次即在全套并发环境下跑；隔离 60 次同样 0 失败）。
+    //   · 排除状态损坏：失败档把 Runtime 上限抬高 4 倍后同一引擎立刻恢复求值
+    //     （retry_before=false → retry_after_limit_x4=true）→ 引擎内部状态完好，仅预算耗尽。
+    // 【加固】历史配方与 400KB 档保持不变（UAF 配方与触顶条件不变），保留：
+    //   Err + 进程不崩 + 双形态消息 +「OOM 后再调用必须正常返回且失败须为 OOM 形态」
+    //   （不得是状态损坏类错误）+ 新引擎可创建执行；「可复用」的严格断言改由下一个测试
+    //   用确定性配方承担（见 test_sandbox_oom_engine_reusable_with_headroom）。
+    // 【真回归仍被捕获】0.8 的进程级 SIGSEGV → 本测试与下一个测试都会让测试进程直接崩死；
+    // OOM 不返回 Err → 两测试首断言；引擎状态被破坏（挂起异常/账本损坏）→ 本测试
+    // 「失败必须是 OOM 形态」+「新引擎可创建执行」；大余量下不可复用 → 下一测试严格断言。
     #[test]
     fn test_sandbox_memory_limit_oom_backtrace_regression() {
         // 400KB 上限 + 十万次循环每次 push ~9KB 数组：约前 20~30 次迭代必然触顶 OOM
@@ -1067,19 +1101,84 @@ mod quickjs_tests {
             "400KB 上限下原崩溃配方应 OOM 返回 Err，got: {result:?}"
         );
         // 消息断言接受两种合法 OOM 形态（见上方注释）：运行期 out-of-memory，
-        // 或编译期 OOM 退化的「语法错误」（中英文错误面各一）。
+        // 或连 OOM 错误对象都建不出时的兜底串（中英文错误面各一）。
         let msg = result.unwrap_err().to_string().to_lowercase();
         assert!(
             msg.contains("out of memory")
                 || msg.contains("syntax error")
                 || msg.contains("语法错误"),
-            "期望干净的 OOM 错误（out-of-memory 或编译期 OOM 退化的语法错误），实际: {msg}"
+            "期望干净的 OOM 错误（out-of-memory 或错误对象建不出时的兜底串），实际: {msg}"
         );
-        // UAF 回归核心断言：进程未崩，OOM 之后引擎仍可正常执行
+        // UAF 防线（不退化）：OOM 后再次调用同一引擎必须「正常返回」，不得进程级崩溃/挂死
+        // （0.8 正是在这一步 SIGSEGV）。结果允许 Ok 或 Err：400KB 档触顶后的残留余量可能
+        // 不足再编译任何脚本，此时 Err 由内存预算决定（见上方机理），若返回 Err 也必须是
+        // OOM 形态 —— 出现其它错误文案即说明引擎状态被破坏，属真回归。
         match engine.eval("1 + 1") {
-            Ok(v) => assert_eq!(v, "2", "OOM 后引擎仍应可用且计算正确"),
-            Err(e) => panic!("OOM 后引擎应仍可用，实际返回错误: {e}"),
+            Ok(v) => assert_eq!(v, "2", "OOM 后引擎仍可用时结果必须正确"),
+            Err(e) => {
+                let m = e.to_string().to_lowercase();
+                assert!(
+                    m.contains("out of memory")
+                        || m.contains("syntax error")
+                        || m.contains("语法错误"),
+                    "OOM 后若仍失败，必须只是余量不足的 OOM（而非引擎状态损坏），实际: {m}"
+                );
+            }
         }
+        // 新引擎（同配置）可创建并执行：本次触顶不得污染进程级状态
+        let fresh = QuickJsEngine::new(SandboxConfig::strict().with_memory_limit(400_000)).unwrap();
+        assert_eq!(
+            fresh.eval("1 + 1").unwrap(),
+            "2",
+            "OOM 后新引擎应可正常创建并求值"
+        );
+    }
+
+    /// OOM 后引擎可复用（确定性配方，2026-10-06 加固新增）
+    ///
+    /// 与上一个测试的历史配方（逐次 16KB 填满 → 触顶相位决定残留余量，故可复用性只能在
+    /// 300~400B 的坏窗口外成立）不同，这里让**一次超大分配**直接触顶：数组长度 100_000
+    /// （元素缓冲 100_000 × 16B = 1.6MB）远大于 400KB 上限，quickjs 的分配前置检查
+    /// （quickjs.c:1645 `malloc_size + size > malloc_limit - 1`）直接拒绝且**不计账**，
+    /// 故残留余量 ≈ 上限 − 基线 ≈ 33.6KB，是「再编译并执行一个小脚本」成本
+    /// （由上一个测试的坏窗口宽反推 ≈ 300~400B）的约 80 倍 → 可复用性由构造保证，
+    /// 不再依赖触顶相位。实测：上限 372_000..412_000 步长 100（401 档）+ 372_000..640_000
+    /// 步长 1000（269 档）全部「Err + 同引擎可复用」；失败点与历史配方同一 JS 调用点
+    /// （Array.prototype.fill，消息列号同为 eval_script:1:76/74 附近），仅请求规模不同。
+    /// 本条同时覆盖 UAF 修复所在路径：OOM 异常对象 + 引擎侧 `.stack()` 触发 build_backtrace
+    /// （消息形如 "out of memory (at <eval> (eval_script:1:76))"）。
+    #[test]
+    fn test_sandbox_oom_engine_reusable_with_headroom() {
+        // 400KB 上限 + 单次 1.6MB 请求：脚本编译（约 90B）必然通过，触顶必然在运行期
+        let config = SandboxConfig::strict().with_memory_limit(400_000);
+        let engine = QuickJsEngine::new(config).unwrap();
+        let result = engine.eval(
+            "var arr = []; for (var i = 0; i < 100000; i++) { arr.push(new Array(100000).fill('x')); } arr.length;",
+        );
+        assert!(
+            result.is_err(),
+            "单次 1.6MB 分配应触发 400KB 上限的 OOM，got: {result:?}"
+        );
+        let msg = result.unwrap_err().to_string().to_lowercase();
+        assert!(
+            msg.contains("out of memory")
+                || msg.contains("syntax error")
+                || msg.contains("语法错误"),
+            "期望干净的 OOM 错误，实际: {msg}"
+        );
+        // UAF 回归核心断言（确定性）：OOM 之后同一引擎仍可求值且结果正确
+        assert_eq!(
+            engine.eval("1 + 1").unwrap(),
+            "2",
+            "OOM 后引擎应仍可用（残留余量 ≈33KB ≫ 求值成本）"
+        );
+        assert_eq!(
+            engine
+                .eval("var s = 0; for (var i = 0; i < 100; i++) { s += i; } s")
+                .unwrap(),
+            "4950",
+            "OOM 后引擎应能继续执行稍复杂的脚本"
+        );
     }
 
     #[test]
