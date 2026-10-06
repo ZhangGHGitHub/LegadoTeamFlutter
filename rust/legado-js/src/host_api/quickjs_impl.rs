@@ -25,7 +25,9 @@
 
 #![cfg(feature = "quickjs")]
 
-use crate::host_api::coerce::{RhinoOptStr, RhinoStr};
+use crate::host_api::coerce::{
+    RhinoInt, RhinoLong, RhinoOptInt, RhinoOptLong, RhinoOptStr, RhinoStr,
+};
 use legado_core::LegadoError;
 
 use crate::host_api::{
@@ -1419,6 +1421,8 @@ fn register_encoding_apis<'js>(
     // base64DecodeToByteArray(str, flags?) -> Uint8Array（字节数组）
     // 对应 Kotlin: base64DecodeToByteArray(str?, flags=0): ByteArray?
     // 空白输入返回 null（对齐 Kotlin 的 null 返回）；flags 兼容 Android URL_SAFE(8)
+    // flags 上游为非空 Int（:648）：按 Rhino 原始 int 语义宽松（字符串数字可），
+    // 缺参 → None → 默认 0（W4 / 探针 CASE 2/4/21）。
     mount_dual(
         java,
         globals,
@@ -1427,7 +1431,7 @@ fn register_encoding_apis<'js>(
             ctx.clone(),
             |ctx: rquickjs::Ctx<'js>,
              s: RhinoStr,
-             flags: Opt<i32>|
+             flags: RhinoOptInt|
              -> rquickjs::Result<rquickjs::Value<'js>> {
                 use rquickjs::IntoJs;
                 if s.trim().is_empty() {
@@ -1882,8 +1886,10 @@ fn register_regex_apis<'js>(
         "regExp",
         rquickjs::Function::new(
             ctx.clone(),
-            |text: RhinoStr, pattern: RhinoStr, group: i32| -> String {
-                regex_utils::reg_exp(&text, &pattern, group as usize).unwrap_or_default()
+            // group 建模为原始 Int（上游式签名）：按 Rhino int 语义宽松
+            // （字符串数字可，NaN/越界/bool/null/undefined 抛错 — W4 探针）
+            |text: RhinoStr, pattern: RhinoStr, group: RhinoInt| -> String {
+                regex_utils::reg_exp(&text, &pattern, group.0 as usize).unwrap_or_default()
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1928,13 +1934,14 @@ fn register_time_apis<'js>(
         java,
         globals,
         "formatTime",
-        rquickjs::Function::new(ctx.clone(), |ts: i64, format: RhinoStr| -> String {
+        // ts 建模为原始 Long：按 Rhino long 语义宽松（字符串数字可 — W4 探针）
+        rquickjs::Function::new(ctx.clone(), |ts: RhinoLong, format: RhinoStr| -> String {
             let fmt = if format.is_empty() {
                 None
             } else {
                 Some(format.as_str())
             };
-            time_utils::format_time(ts, fmt).unwrap_or_else(|e| format!("[ERROR] {}", e))
+            time_utils::format_time(ts.0, fmt).unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -1942,12 +1949,13 @@ fn register_time_apis<'js>(
     // timeFormat(ts) -> String
     // 对应 Kotlin: timeFormat(time: Long)，格式为 AppConst.dateFormat "yyyy/MM/dd HH:mm"。
     // 保留上方 formatTime(ts, format) 注册名，兼容已按该名调用的现有书源。
+    // ts 上游为非空 Long（:698）：Rhino 原始 long 宽松（W4 探针）
     mount_dual(
         java,
         globals,
         "timeFormat",
-        rquickjs::Function::new(ctx.clone(), |ts: i64| -> String {
-            time_utils::format_time(ts, Some("%Y/%m/%d %H:%M"))
+        rquickjs::Function::new(ctx.clone(), |ts: RhinoLong| -> String {
+            time_utils::format_time(ts.0, Some("%Y/%m/%d %H:%M"))
                 .unwrap_or_else(|e| format!("[ERROR] {}", e))
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -1959,14 +1967,15 @@ fn register_time_apis<'js>(
         "timeFormatUTC",
         rquickjs::Function::new(
             ctx.clone(),
-            |ts: i64, format: RhinoStr, sh: i32| -> String {
+            // ts/sh 上游为非空 Long/Int（:686）：Rhino 原始数值宽松（W4 探针）
+            |ts: RhinoLong, format: RhinoStr, sh: RhinoInt| -> String {
                 // 对齐 Kotlin SimpleTimeZone(sh, "UTC")：sh 为毫秒偏移
                 let fmt = if format.is_empty() {
                     None
                 } else {
                     Some(format.as_str())
                 };
-                time_utils::format_time_utc(ts, fmt, sh)
+                time_utils::format_time_utc(ts.0, fmt, sh.0)
                     .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },
         )
@@ -2473,12 +2482,13 @@ fn register_utility_apis<'js>(
     // 由 Packages shim 的 lang.Thread.sleep 委托到本宿主方法。
     // std::thread::sleep 阻塞当前执行线程（与上游 JS 线程语义一致）；
     // 上限 30s 防止书源写死超大 sleep 卡死引擎（降级，已文档化）。
+    // ms 建模为原始 long（java.lang.Thread.sleep(long)）：Rhino 宽松（W4 探针）
     mount_dual(
         java,
         globals,
         "threadSleep",
-        rquickjs::Function::new(ctx.clone(), |ms: i64| -> () {
-            let ms = ms.clamp(0, 30_000);
+        rquickjs::Function::new(ctx.clone(), |ms: RhinoLong| -> () {
+            let ms = ms.0.clamp(0, 30_000);
             std::thread::sleep(std::time::Duration::from_millis(ms as u64));
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2492,8 +2502,8 @@ fn register_utility_apis<'js>(
         java,
         globals,
         "sleep",
-        rquickjs::Function::new(ctx.clone(), |ms: i64| -> () {
-            let ms = ms.clamp(0, 30_000);
+        rquickjs::Function::new(ctx.clone(), |ms: RhinoLong| -> () {
+            let ms = ms.0.clamp(0, 30_000);
             std::thread::sleep(std::time::Duration::from_millis(ms as u64));
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -2696,6 +2706,8 @@ fn register_network_apis<'js>(
     // connect(url, method?, headers?, body?, timeoutMs?) -> String（完整响应 JSON）
     // 对应 Kotlin: connect(urlStr, header, callTimeout): StrResponse
     // 增强：支持指定 HTTP 方法（GET/POST/HEAD/PUT/DELETE）
+    // timeout_ms 上游为可空 Int?（callTimeout）：装箱数值 + Rhino 探针实测严格
+    // （字符串数字报「方法不存在」），故**保持** `Opt<i64>` 严格转换（W4 边界）
     mount_dual(
         java,
         globals,
@@ -3392,23 +3404,26 @@ fn register_html_parse_apis<'js>(
                         })?;
                         arr.clone().into_object().set("size", size_fn)?;
                         // `list.get(i)`——Java List.get(i) 别名：越界（含负数）
-                        // 抛错（JDK List.get → IndexOutOfBoundsException）
+                        // 抛错（JDK List.get → IndexOutOfBoundsException）。
+                        // i 建模为原始 int（List.get(int)）：Rhino 宽松（W4 探针，
+                        // 字符串数字下标可）
                         let get_fn = rquickjs::Function::new(
                             ctx.clone(),
                             |this: rquickjs::prelude::This<rquickjs::Array>,
-                             i: i64|
+                             i: RhinoLong|
                              -> rquickjs::Result<String> {
                                 let len = this.0.len();
-                                if i < 0 || (i as usize) >= len {
+                                if i.0 < 0 || (i.0 as usize) >= len {
                                     return Err(rquickjs::Error::FromJs {
                                         from: "IndexOutOfBoundsException",
                                         to: "List.get",
                                         message: Some(format!(
-                                            "Index {i} out of bounds for length {len}"
+                                            "Index {} out of bounds for length {len}",
+                                            i.0
                                         )),
                                     });
                                 }
-                                this.0.get(i as usize)
+                                this.0.get(i.0 as usize)
                             },
                         )
                         .map_err(|e| rquickjs::Error::FromJs {
@@ -3513,13 +3528,14 @@ fn register_html_parse_apis<'js>(
     .map_err(|e| LegadoError::JsEngine(e.to_string()))?;
 
     // java.jsoupAttrN(html, css, i, attr) — 第 i 个匹配元素属性
-    // （shim `rows.get(i).attr(name)`；i 为 i64，负数按 0、越界空串）
+    // （shim `rows.get(i).attr(name)`；下标建模为 Java Elements.get(int)，
+    // Rhino 原始 int 宽松：字符串数字可；负数按 0、越界空串 — W4 探针）
     java.set(
         "jsoupAttrN",
         rquickjs::Function::new(
             ctx.clone(),
-            |html: RhinoStr, css: RhinoStr, i: i64, attr: RhinoStr| -> String {
-                html_parse::jsoup_attr_n(&html, &css, i, &attr)
+            |html: RhinoStr, css: RhinoStr, i: RhinoLong, attr: RhinoStr| -> String {
+                html_parse::jsoup_attr_n(&html, &css, i.0, &attr)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3531,8 +3547,8 @@ fn register_html_parse_apis<'js>(
         "jsoupTextN",
         rquickjs::Function::new(
             ctx.clone(),
-            |html: RhinoStr, css: RhinoStr, i: i64| -> String {
-                html_parse::jsoup_text_n(&html, &css, i)
+            |html: RhinoStr, css: RhinoStr, i: RhinoLong| -> String {
+                html_parse::jsoup_text_n(&html, &css, i.0)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3544,8 +3560,8 @@ fn register_html_parse_apis<'js>(
         "jsoupHtmlN",
         rquickjs::Function::new(
             ctx.clone(),
-            |html: RhinoStr, css: RhinoStr, i: i64| -> String {
-                html_parse::jsoup_html_n(&html, &css, i)
+            |html: RhinoStr, css: RhinoStr, i: RhinoLong| -> String {
+                html_parse::jsoup_html_n(&html, &css, i.0)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3559,8 +3575,8 @@ fn register_html_parse_apis<'js>(
         "jsoupHtmlNExcluded",
         rquickjs::Function::new(
             ctx.clone(),
-            |html: RhinoStr, css: RhinoStr, i: i64, excludes: RhinoStr| -> String {
-                html_parse::jsoup_html_n_excluded(&html, &css, i, &excludes)
+            |html: RhinoStr, css: RhinoStr, i: RhinoLong, excludes: RhinoStr| -> String {
+                html_parse::jsoup_html_n_excluded(&html, &css, i.0, &excludes)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
@@ -3606,6 +3622,8 @@ fn register_cache_apis<'js>(
 
     // put(key, value, saveTime?) -> bool
     // saveTime<=0 语义对齐 CacheManager.kt:60-98：仅内存、无过期
+    // saveTime 上游为非空 Int（:60，@JvmOverloads 缺省 0）：Rhino 原始 int
+    // 宽松（字符串数字可；缺参 → None → 0 — W4 探针）
     cache
         .set(
             "put",
@@ -3614,7 +3632,7 @@ fn register_cache_apis<'js>(
                 |ctx: rquickjs::Ctx<'js>,
                  key: RhinoStr,
                  value: rquickjs::Value<'js>,
-                 save_time: Opt<i64>|
+                 save_time: RhinoOptLong|
                  -> bool {
                     let v = stringify_cache_value(&ctx, &value);
                     cache_store::put(&key, &v, save_time.0.unwrap_or(0))
@@ -3712,6 +3730,8 @@ fn register_cache_apis<'js>(
     )?;
 
     // get(key, onlyDisk?) -> String | null
+    // onlyDisk 上游为非空 Boolean（:108）：Rhino 布尔严格（数字/字符串不转，
+    // 探针 CASE 133-142），故**保持** `Opt<bool>` 严格转换（W4 边界）
     cache
         .set(
             "get",
@@ -3956,26 +3976,28 @@ fn register_concurrency_apis<'js>(
     globals: &rquickjs::Object<'js>,
 ) -> Result<(), LegadoError> {
     // singleFlight(key, waitMs, fJs) -> String
+    // waitMs 上游为非空 Long（:1250）：Rhino 原始 long 宽松（W4 探针）
     mount_dual(
         java,
         globals,
         "singleFlight",
         rquickjs::Function::new(
             ctx.clone(),
-            |key: RhinoStr, wait_ms: i64, f_js: RhinoStr| -> String {
-                concurrency_api::single_flight(key.0, wait_ms, f_js.0)
+            |key: RhinoStr, wait_ms: RhinoLong, f_js: RhinoStr| -> String {
+                concurrency_api::single_flight(key.0, wait_ms.0, f_js.0)
             },
         )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
     // lock(key, waitMs) -> Boolean
+    // waitMs 上游为非空 Long（:1270）：Rhino 原始 long 宽松（W4 探针）
     mount_dual(
         java,
         globals,
         "lock",
-        rquickjs::Function::new(ctx.clone(), |key: RhinoStr, wait_ms: i64| -> bool {
-            concurrency_api::lock(key.0, wait_ms)
+        rquickjs::Function::new(ctx.clone(), |key: RhinoStr, wait_ms: RhinoLong| -> bool {
+            concurrency_api::lock(key.0, wait_ms.0)
         })
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
@@ -4131,6 +4153,7 @@ fn register_misc_apis<'js>(
     // openVideoPlayer(url, title?, isFloat?) -> String
     // 对齐 Kotlin JsExtensions.openVideoPlayer：返回结构化桥接载荷，
     // 由 Flutter / 平台侧拦截并拉起内置视频播放器。
+    // isFloat 上游为非空 Boolean（:343）：Rhino 布尔严格（W4 探针），保持 Opt<bool>
     mount_dual(
         java,
         globals,
@@ -4175,6 +4198,8 @@ fn register_misc_apis<'js>(
     )?;
 
     // webViewGetSource(html?, url?, js?, sourceRegex?, cacheFirst?, delayTime?)
+    // cacheFirst 上游为非空 Boolean（严格，W4 探针）；delayTime 上游为非空
+    // Long（:271/:277 重载，Rhino 原始 long 宽松 — W4 探针）
     mount_dual(
         java,
         globals,
@@ -4186,7 +4211,7 @@ fn register_misc_apis<'js>(
              js: RhinoOptStr,
              source_regex: RhinoOptStr,
              cache_first: Opt<bool>,
-             delay_time: Opt<i64>|
+             delay_time: RhinoOptLong|
              -> String {
                 platform::web_view_get_source_ex(
                     html.0.as_deref().unwrap_or(""),
@@ -4205,6 +4230,7 @@ fn register_misc_apis<'js>(
     // -> String（桥接载荷）
     // 对应 Kotlin: webViewGetOverrideUrl(html, url, js, overrideUrlRegex, cacheFirst, delayTime)
     // Rust 无头运行时返回桥接载荷，由 Flutter 侧用真实 WebView 拦截跳转 URL
+    // cacheFirst 严格 / delayTime 宽松，同 webViewGetSource（W4 探针）
     mount_dual(
         java,
         globals,
@@ -4216,7 +4242,7 @@ fn register_misc_apis<'js>(
              js: RhinoOptStr,
              override_url_regex: RhinoStr,
              cache_first: Opt<bool>,
-             delay_time: Opt<i64>|
+             delay_time: RhinoOptLong|
              -> String {
                 platform::web_view_get_override_url(
                     html.0.as_deref().unwrap_or(""),
@@ -4370,6 +4396,7 @@ fn register_misc_apis<'js>(
     // startBrowserAwait(url, title, refetchAfterSuccess?, html?) -> String
     // 对应 Kotlin: startBrowserAwait 三个重载（useBrowser=true）；
     // 桌面端无内置浏览器，一律降级为图片验证码流程（Task #90）
+    // refetchAfterSuccess 上游为非空 Boolean（:368）：Rhino 布尔严格（W4 探针）
     mount_dual(
         java,
         globals,
@@ -4629,6 +4656,7 @@ fn register_font_apis<'js>(
 ) -> Result<(), LegadoError> {
     // queryTTF(data, useCache?) -> String（字体句柄 JSON）
     // 对应 Kotlin: queryTTF(data: Any?, useCache: Boolean): QueryTTF?
+    // useCache 上游为非空 Boolean（:1014）：Rhino 布尔严格（W4 探针）
     mount_dual(
         java,
         globals,
@@ -4656,6 +4684,7 @@ fn register_font_apis<'js>(
 
     // replaceFont(text, errorFontData, correctFontData, filter?) -> String
     // 对应 Kotlin: replaceFont(text, errorQueryTTF, correctQueryTTF, filter): String
+    // filter 上游为非空 Boolean（:1068/:1105）：Rhino 布尔严格（W4 探针）
     mount_dual(
         java,
         globals,

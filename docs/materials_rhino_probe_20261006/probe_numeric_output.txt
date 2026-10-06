@@ -1,0 +1,745 @@
+=== Rhino numeric/boolean parameter coercion probe ===
+java.version = 17.0.19
+java.vendor  = Eclipse Adoptium
+rhino.impl   = Rhino Snapshot
+classpath engine = htmlunit-core-js (org.htmlunit.corejs.javascript)
+
+--- CASE 1: int param <- 5000 ---
+    JS> probe.takeInt(5000)
+      [java] takeInt(int) reached: v = 5000
+    JS result: undefined
+
+--- CASE 2: int param <- "5000" ---
+    JS> probe.takeInt("5000")
+      [java] takeInt(int) reached: v = 5000
+    JS result: undefined
+
+--- CASE 3: int param <- 5000.7 ---
+    JS> probe.takeInt(5000.7)
+      [java] takeInt(int) reached: v = 5000
+    JS result: undefined
+
+--- CASE 4: int param <- "5000.7" ---
+    JS> probe.takeInt("5000.7")
+      [java] takeInt(int) reached: v = 5000
+    JS result: undefined
+
+--- CASE 5: int param <- -5000.7 ---
+    JS> probe.takeInt(-5000.7)
+      [java] takeInt(int) reached: v = -5000
+    JS result: undefined
+
+--- CASE 6: int param <- "-42" ---
+    JS> probe.takeInt("-42")
+      [java] takeInt(int) reached: v = -42
+    JS result: undefined
+
+--- CASE 7: int param <- true ---
+    JS> probe.takeInt(true)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeInt(boolean)”。 (probe-case-7#1)
+
+--- CASE 8: int param <- false ---
+    JS> probe.takeInt(false)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeInt(boolean)”。 (probe-case-8#1)
+
+--- CASE 9: int param <- undefined ---
+    JS> probe.takeInt(undefined)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeInt(org.htmlunit.corejs.javascript.Undefined)”。 (probe-case-9#1)
+
+--- CASE 10: int param <- null ---
+    JS> probe.takeInt(null)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeInt(null)”。 (probe-case-10#1)
+
+--- CASE 11: int param <- "abc" ---
+    JS> probe.takeInt("abc")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 abc 转换为 java.lang.Integer (probe-case-11#1)
+
+--- CASE 12: int param <- "" ---
+    JS> probe.takeInt("")
+      [java] takeInt(int) reached: v = 0
+    JS result: undefined
+
+--- CASE 13: int param <- " 42 " ---
+    JS> probe.takeInt(" 42 ")
+      [java] takeInt(int) reached: v = 42
+    JS result: undefined
+
+--- CASE 14: int param <- "1e3" ---
+    JS> probe.takeInt("1e3")
+      [java] takeInt(int) reached: v = 1000
+    JS result: undefined
+
+--- CASE 15: int param <- NaN ---
+    JS> probe.takeInt(NaN)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 NaN 转换为 java.lang.Integer (probe-case-15#1)
+
+--- CASE 16: int param <- Infinity ---
+    JS> probe.takeInt(Infinity)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 Infinity 转换为 java.lang.Integer (probe-case-16#1)
+
+--- CASE 17: int param <- [] ---
+    JS> probe.takeInt([])
+      [java] takeInt(int) reached: v = 0
+    JS result: undefined
+
+--- CASE 18: int param <- [5000] ---
+    JS> probe.takeInt([5000])
+      [java] takeInt(int) reached: v = 5000
+    JS result: undefined
+
+--- CASE 19: int param <- [5000.7] ---
+    JS> probe.takeInt([5000.7])
+      [java] takeInt(int) reached: v = 5000
+    JS result: undefined
+
+--- CASE 20: int param <- {} ---
+    JS> probe.takeInt({})
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 [object Object] 转换为 java.lang.Integer (probe-case-20#1)
+
+--- CASE 21: int param <- 5000000000 ---
+    JS> probe.takeInt(5000000000)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 5000000000 转换为 java.lang.Integer (probe-case-21#1)
+
+--- CASE 22: int param <- "5000000000" ---
+    JS> probe.takeInt("5000000000")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 5000000000 转换为 java.lang.Integer (probe-case-22#1)
+
+--- CASE 23: long param <- 5000 ---
+    JS> probe.takeLong(5000)
+      [java] takeLong(long) reached: v = 5000
+    JS result: undefined
+
+--- CASE 24: long param <- "5000" ---
+    JS> probe.takeLong("5000")
+      [java] takeLong(long) reached: v = 5000
+    JS result: undefined
+
+--- CASE 25: long param <- 5000.7 ---
+    JS> probe.takeLong(5000.7)
+      [java] takeLong(long) reached: v = 5000
+    JS result: undefined
+
+--- CASE 26: long param <- "5000.7" ---
+    JS> probe.takeLong("5000.7")
+      [java] takeLong(long) reached: v = 5000
+    JS result: undefined
+
+--- CASE 27: long param <- -5000.7 ---
+    JS> probe.takeLong(-5000.7)
+      [java] takeLong(long) reached: v = -5000
+    JS result: undefined
+
+--- CASE 28: long param <- "-42" ---
+    JS> probe.takeLong("-42")
+      [java] takeLong(long) reached: v = -42
+    JS result: undefined
+
+--- CASE 29: long param <- true ---
+    JS> probe.takeLong(true)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLong(boolean)”。 (probe-case-29#1)
+
+--- CASE 30: long param <- false ---
+    JS> probe.takeLong(false)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLong(boolean)”。 (probe-case-30#1)
+
+--- CASE 31: long param <- undefined ---
+    JS> probe.takeLong(undefined)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLong(org.htmlunit.corejs.javascript.Undefined)”。 (probe-case-31#1)
+
+--- CASE 32: long param <- null ---
+    JS> probe.takeLong(null)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLong(null)”。 (probe-case-32#1)
+
+--- CASE 33: long param <- "abc" ---
+    JS> probe.takeLong("abc")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 abc 转换为 java.lang.Long (probe-case-33#1)
+
+--- CASE 34: long param <- "" ---
+    JS> probe.takeLong("")
+      [java] takeLong(long) reached: v = 0
+    JS result: undefined
+
+--- CASE 35: long param <- " 42 " ---
+    JS> probe.takeLong(" 42 ")
+      [java] takeLong(long) reached: v = 42
+    JS result: undefined
+
+--- CASE 36: long param <- "1e3" ---
+    JS> probe.takeLong("1e3")
+      [java] takeLong(long) reached: v = 1000
+    JS result: undefined
+
+--- CASE 37: long param <- NaN ---
+    JS> probe.takeLong(NaN)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 NaN 转换为 java.lang.Long (probe-case-37#1)
+
+--- CASE 38: long param <- Infinity ---
+    JS> probe.takeLong(Infinity)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 Infinity 转换为 java.lang.Long (probe-case-38#1)
+
+--- CASE 39: long param <- [] ---
+    JS> probe.takeLong([])
+      [java] takeLong(long) reached: v = 0
+    JS result: undefined
+
+--- CASE 40: long param <- [5000] ---
+    JS> probe.takeLong([5000])
+      [java] takeLong(long) reached: v = 5000
+    JS result: undefined
+
+--- CASE 41: long param <- [5000.7] ---
+    JS> probe.takeLong([5000.7])
+      [java] takeLong(long) reached: v = 5000
+    JS result: undefined
+
+--- CASE 42: long param <- {} ---
+    JS> probe.takeLong({})
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 [object Object] 转换为 java.lang.Long (probe-case-42#1)
+
+--- CASE 43: long param <- 5000000000 ---
+    JS> probe.takeLong(5000000000)
+      [java] takeLong(long) reached: v = 5000000000
+    JS result: undefined
+
+--- CASE 44: long param <- "5000000000" ---
+    JS> probe.takeLong("5000000000")
+      [java] takeLong(long) reached: v = 5000000000
+    JS result: undefined
+
+--- CASE 45: double param <- 5000 ---
+    JS> probe.takeDouble(5000)
+      [java] takeDouble(double) reached: v = 5000.0
+    JS result: undefined
+
+--- CASE 46: double param <- "5000" ---
+    JS> probe.takeDouble("5000")
+      [java] takeDouble(double) reached: v = 5000.0
+    JS result: undefined
+
+--- CASE 47: double param <- 5000.7 ---
+    JS> probe.takeDouble(5000.7)
+      [java] takeDouble(double) reached: v = 5000.7
+    JS result: undefined
+
+--- CASE 48: double param <- "5000.7" ---
+    JS> probe.takeDouble("5000.7")
+      [java] takeDouble(double) reached: v = 5000.7
+    JS result: undefined
+
+--- CASE 49: double param <- -5000.7 ---
+    JS> probe.takeDouble(-5000.7)
+      [java] takeDouble(double) reached: v = -5000.7
+    JS result: undefined
+
+--- CASE 50: double param <- "-42" ---
+    JS> probe.takeDouble("-42")
+      [java] takeDouble(double) reached: v = -42.0
+    JS result: undefined
+
+--- CASE 51: double param <- true ---
+    JS> probe.takeDouble(true)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeDouble(boolean)”。 (probe-case-51#1)
+
+--- CASE 52: double param <- false ---
+    JS> probe.takeDouble(false)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeDouble(boolean)”。 (probe-case-52#1)
+
+--- CASE 53: double param <- undefined ---
+    JS> probe.takeDouble(undefined)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeDouble(org.htmlunit.corejs.javascript.Undefined)”。 (probe-case-53#1)
+
+--- CASE 54: double param <- null ---
+    JS> probe.takeDouble(null)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeDouble(null)”。 (probe-case-54#1)
+
+--- CASE 55: double param <- "abc" ---
+    JS> probe.takeDouble("abc")
+      [java] takeDouble(double) reached: v = NaN
+    JS result: undefined
+
+--- CASE 56: double param <- "" ---
+    JS> probe.takeDouble("")
+      [java] takeDouble(double) reached: v = 0.0
+    JS result: undefined
+
+--- CASE 57: double param <- " 42 " ---
+    JS> probe.takeDouble(" 42 ")
+      [java] takeDouble(double) reached: v = 42.0
+    JS result: undefined
+
+--- CASE 58: double param <- "1e3" ---
+    JS> probe.takeDouble("1e3")
+      [java] takeDouble(double) reached: v = 1000.0
+    JS result: undefined
+
+--- CASE 59: double param <- NaN ---
+    JS> probe.takeDouble(NaN)
+      [java] takeDouble(double) reached: v = NaN
+    JS result: undefined
+
+--- CASE 60: double param <- Infinity ---
+    JS> probe.takeDouble(Infinity)
+      [java] takeDouble(double) reached: v = Infinity
+    JS result: undefined
+
+--- CASE 61: double param <- [] ---
+    JS> probe.takeDouble([])
+      [java] takeDouble(double) reached: v = 0.0
+    JS result: undefined
+
+--- CASE 62: double param <- [5000] ---
+    JS> probe.takeDouble([5000])
+      [java] takeDouble(double) reached: v = 5000.0
+    JS result: undefined
+
+--- CASE 63: double param <- [5000.7] ---
+    JS> probe.takeDouble([5000.7])
+      [java] takeDouble(double) reached: v = 5000.7
+    JS result: undefined
+
+--- CASE 64: double param <- {} ---
+    JS> probe.takeDouble({})
+      [java] takeDouble(double) reached: v = NaN
+    JS result: undefined
+
+--- CASE 65: double param <- 5000000000 ---
+    JS> probe.takeDouble(5000000000)
+      [java] takeDouble(double) reached: v = 5.0E9
+    JS result: undefined
+
+--- CASE 66: double param <- "5000000000" ---
+    JS> probe.takeDouble("5000000000")
+      [java] takeDouble(double) reached: v = 5.0E9
+    JS result: undefined
+
+--- CASE 67: Integer(boxed) param <- 5000 ---
+    JS> probe.takeIntObj(5000)
+      [java] takeIntObj(Integer) reached: v = 5000
+    JS result: undefined
+
+--- CASE 68: Integer(boxed) param <- "5000" ---
+    JS> probe.takeIntObj("5000")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(string)”。 (probe-case-68#1)
+
+--- CASE 69: Integer(boxed) param <- 5000.7 ---
+    JS> probe.takeIntObj(5000.7)
+      [java] takeIntObj(Integer) reached: v = 5000
+    JS result: undefined
+
+--- CASE 70: Integer(boxed) param <- "5000.7" ---
+    JS> probe.takeIntObj("5000.7")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(string)”。 (probe-case-70#1)
+
+--- CASE 71: Integer(boxed) param <- -5000.7 ---
+    JS> probe.takeIntObj(-5000.7)
+      [java] takeIntObj(Integer) reached: v = -5000
+    JS result: undefined
+
+--- CASE 72: Integer(boxed) param <- "-42" ---
+    JS> probe.takeIntObj("-42")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(string)”。 (probe-case-72#1)
+
+--- CASE 73: Integer(boxed) param <- true ---
+    JS> probe.takeIntObj(true)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(boolean)”。 (probe-case-73#1)
+
+--- CASE 74: Integer(boxed) param <- false ---
+    JS> probe.takeIntObj(false)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(boolean)”。 (probe-case-74#1)
+
+--- CASE 75: Integer(boxed) param <- undefined ---
+    JS> probe.takeIntObj(undefined)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(org.htmlunit.corejs.javascript.Undefined)”。 (probe-case-75#1)
+
+--- CASE 76: Integer(boxed) param <- null ---
+    JS> probe.takeIntObj(null)
+      [java] takeIntObj(Integer) reached: v = <JAVA_NULL>
+    JS result: undefined
+
+--- CASE 77: Integer(boxed) param <- "abc" ---
+    JS> probe.takeIntObj("abc")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(string)”。 (probe-case-77#1)
+
+--- CASE 78: Integer(boxed) param <- "" ---
+    JS> probe.takeIntObj("")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(string)”。 (probe-case-78#1)
+
+--- CASE 79: Integer(boxed) param <- " 42 " ---
+    JS> probe.takeIntObj(" 42 ")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(string)”。 (probe-case-79#1)
+
+--- CASE 80: Integer(boxed) param <- "1e3" ---
+    JS> probe.takeIntObj("1e3")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(string)”。 (probe-case-80#1)
+
+--- CASE 81: Integer(boxed) param <- NaN ---
+    JS> probe.takeIntObj(NaN)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 NaN 转换为 java.lang.Integer (probe-case-81#1)
+
+--- CASE 82: Integer(boxed) param <- Infinity ---
+    JS> probe.takeIntObj(Infinity)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 Infinity 转换为 java.lang.Integer (probe-case-82#1)
+
+--- CASE 83: Integer(boxed) param <- [] ---
+    JS> probe.takeIntObj([])
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(object)”。 (probe-case-83#1)
+
+--- CASE 84: Integer(boxed) param <- [5000] ---
+    JS> probe.takeIntObj([5000])
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(object)”。 (probe-case-84#1)
+
+--- CASE 85: Integer(boxed) param <- [5000.7] ---
+    JS> probe.takeIntObj([5000.7])
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(object)”。 (probe-case-85#1)
+
+--- CASE 86: Integer(boxed) param <- {} ---
+    JS> probe.takeIntObj({})
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(object)”。 (probe-case-86#1)
+
+--- CASE 87: Integer(boxed) param <- 5000000000 ---
+    JS> probe.takeIntObj(5000000000)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 5000000000 转换为 java.lang.Integer (probe-case-87#1)
+
+--- CASE 88: Integer(boxed) param <- "5000000000" ---
+    JS> probe.takeIntObj("5000000000")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeIntObj(string)”。 (probe-case-88#1)
+
+--- CASE 89: Long(boxed) param <- 5000 ---
+    JS> probe.takeLongObj(5000)
+      [java] takeLongObj(Long) reached: v = 5000
+    JS result: undefined
+
+--- CASE 90: Long(boxed) param <- "5000" ---
+    JS> probe.takeLongObj("5000")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(string)”。 (probe-case-90#1)
+
+--- CASE 91: Long(boxed) param <- 5000.7 ---
+    JS> probe.takeLongObj(5000.7)
+      [java] takeLongObj(Long) reached: v = 5000
+    JS result: undefined
+
+--- CASE 92: Long(boxed) param <- "5000.7" ---
+    JS> probe.takeLongObj("5000.7")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(string)”。 (probe-case-92#1)
+
+--- CASE 93: Long(boxed) param <- -5000.7 ---
+    JS> probe.takeLongObj(-5000.7)
+      [java] takeLongObj(Long) reached: v = -5000
+    JS result: undefined
+
+--- CASE 94: Long(boxed) param <- "-42" ---
+    JS> probe.takeLongObj("-42")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(string)”。 (probe-case-94#1)
+
+--- CASE 95: Long(boxed) param <- true ---
+    JS> probe.takeLongObj(true)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(boolean)”。 (probe-case-95#1)
+
+--- CASE 96: Long(boxed) param <- false ---
+    JS> probe.takeLongObj(false)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(boolean)”。 (probe-case-96#1)
+
+--- CASE 97: Long(boxed) param <- undefined ---
+    JS> probe.takeLongObj(undefined)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(org.htmlunit.corejs.javascript.Undefined)”。 (probe-case-97#1)
+
+--- CASE 98: Long(boxed) param <- null ---
+    JS> probe.takeLongObj(null)
+      [java] takeLongObj(Long) reached: v = <JAVA_NULL>
+    JS result: undefined
+
+--- CASE 99: Long(boxed) param <- "abc" ---
+    JS> probe.takeLongObj("abc")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(string)”。 (probe-case-99#1)
+
+--- CASE 100: Long(boxed) param <- "" ---
+    JS> probe.takeLongObj("")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(string)”。 (probe-case-100#1)
+
+--- CASE 101: Long(boxed) param <- " 42 " ---
+    JS> probe.takeLongObj(" 42 ")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(string)”。 (probe-case-101#1)
+
+--- CASE 102: Long(boxed) param <- "1e3" ---
+    JS> probe.takeLongObj("1e3")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(string)”。 (probe-case-102#1)
+
+--- CASE 103: Long(boxed) param <- NaN ---
+    JS> probe.takeLongObj(NaN)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 NaN 转换为 java.lang.Long (probe-case-103#1)
+
+--- CASE 104: Long(boxed) param <- Infinity ---
+    JS> probe.takeLongObj(Infinity)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 Infinity 转换为 java.lang.Long (probe-case-104#1)
+
+--- CASE 105: Long(boxed) param <- [] ---
+    JS> probe.takeLongObj([])
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(object)”。 (probe-case-105#1)
+
+--- CASE 106: Long(boxed) param <- [5000] ---
+    JS> probe.takeLongObj([5000])
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(object)”。 (probe-case-106#1)
+
+--- CASE 107: Long(boxed) param <- [5000.7] ---
+    JS> probe.takeLongObj([5000.7])
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(object)”。 (probe-case-107#1)
+
+--- CASE 108: Long(boxed) param <- {} ---
+    JS> probe.takeLongObj({})
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(object)”。 (probe-case-108#1)
+
+--- CASE 109: Long(boxed) param <- 5000000000 ---
+    JS> probe.takeLongObj(5000000000)
+      [java] takeLongObj(Long) reached: v = 5000000000
+    JS result: undefined
+
+--- CASE 110: Long(boxed) param <- "5000000000" ---
+    JS> probe.takeLongObj("5000000000")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj(string)”。 (probe-case-110#1)
+
+--- CASE 111: Long(boxed) param <- missing argument ---
+    JS> probe.takeLongObj()
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObj()”。 (probe-case-111#1)
+
+--- CASE 112: Long(boxed) param <- null into simulated Kotlin non-null param ---
+    JS> probe.takeLongObjKotlinNonNull(null)
+    ERROR (wrapped Java exception): java.lang.NullPointerException: Parameter specified as non-null is null: method HostApi.takeLongObjKotlinNonNull, parameter v
+
+--- CASE 113: Long(boxed) param <- undefined into simulated Kotlin non-null param ---
+    JS> probe.takeLongObjKotlinNonNull(undefined)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeLongObjKotlinNonNull(org.htmlunit.corejs.javascript.Undefined)”。 (probe-case-113#1)
+
+--- CASE 114: boolean param <- true ---
+    JS> probe.takeBool(true)
+      [java] takeBool(boolean) reached: v = true
+    JS result: undefined
+
+--- CASE 115: boolean param <- false ---
+    JS> probe.takeBool(false)
+      [java] takeBool(boolean) reached: v = false
+    JS result: undefined
+
+--- CASE 116: boolean param <- 1 ---
+    JS> probe.takeBool(1)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(number)”。 (probe-case-116#1)
+
+--- CASE 117: boolean param <- 0 ---
+    JS> probe.takeBool(0)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(number)”。 (probe-case-117#1)
+
+--- CASE 118: boolean param <- 2 ---
+    JS> probe.takeBool(2)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(number)”。 (probe-case-118#1)
+
+--- CASE 119: boolean param <- -1 ---
+    JS> probe.takeBool(-1)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(number)”。 (probe-case-119#1)
+
+--- CASE 120: boolean param <- "true" ---
+    JS> probe.takeBool("true")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(string)”。 (probe-case-120#1)
+
+--- CASE 121: boolean param <- "false" ---
+    JS> probe.takeBool("false")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(string)”。 (probe-case-121#1)
+
+--- CASE 122: boolean param <- "" ---
+    JS> probe.takeBool("")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(string)”。 (probe-case-122#1)
+
+--- CASE 123: boolean param <- "0" ---
+    JS> probe.takeBool("0")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(string)”。 (probe-case-123#1)
+
+--- CASE 124: boolean param <- "1" ---
+    JS> probe.takeBool("1")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(string)”。 (probe-case-124#1)
+
+--- CASE 125: boolean param <- "abc" ---
+    JS> probe.takeBool("abc")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(string)”。 (probe-case-125#1)
+
+--- CASE 126: boolean param <- undefined ---
+    JS> probe.takeBool(undefined)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(org.htmlunit.corejs.javascript.Undefined)”。 (probe-case-126#1)
+
+--- CASE 127: boolean param <- null ---
+    JS> probe.takeBool(null)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(null)”。 (probe-case-127#1)
+
+--- CASE 128: boolean param <- [] ---
+    JS> probe.takeBool([])
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(object)”。 (probe-case-128#1)
+
+--- CASE 129: boolean param <- [1] ---
+    JS> probe.takeBool([1])
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(object)”。 (probe-case-129#1)
+
+--- CASE 130: boolean param <- {} ---
+    JS> probe.takeBool({})
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBool(object)”。 (probe-case-130#1)
+
+--- CASE 131: Boolean(boxed) param <- true ---
+    JS> probe.takeBoolObj(true)
+      [java] takeBoolObj(Boolean) reached: v = true
+    JS result: undefined
+
+--- CASE 132: Boolean(boxed) param <- false ---
+    JS> probe.takeBoolObj(false)
+      [java] takeBoolObj(Boolean) reached: v = false
+    JS result: undefined
+
+--- CASE 133: Boolean(boxed) param <- 1 ---
+    JS> probe.takeBoolObj(1)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj(number)”。 (probe-case-133#1)
+
+--- CASE 134: Boolean(boxed) param <- 0 ---
+    JS> probe.takeBoolObj(0)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj(number)”。 (probe-case-134#1)
+
+--- CASE 135: Boolean(boxed) param <- 2 ---
+    JS> probe.takeBoolObj(2)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj(number)”。 (probe-case-135#1)
+
+--- CASE 136: Boolean(boxed) param <- -1 ---
+    JS> probe.takeBoolObj(-1)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj(number)”。 (probe-case-136#1)
+
+--- CASE 137: Boolean(boxed) param <- "true" ---
+    JS> probe.takeBoolObj("true")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj(string)”。 (probe-case-137#1)
+
+--- CASE 138: Boolean(boxed) param <- "false" ---
+    JS> probe.takeBoolObj("false")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj(string)”。 (probe-case-138#1)
+
+--- CASE 139: Boolean(boxed) param <- "" ---
+    JS> probe.takeBoolObj("")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj(string)”。 (probe-case-139#1)
+
+--- CASE 140: Boolean(boxed) param <- "0" ---
+    JS> probe.takeBoolObj("0")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj(string)”。 (probe-case-140#1)
+
+--- CASE 141: Boolean(boxed) param <- "1" ---
+    JS> probe.takeBoolObj("1")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj(string)”。 (probe-case-141#1)
+
+--- CASE 142: Boolean(boxed) param <- "abc" ---
+    JS> probe.takeBoolObj("abc")
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj(string)”。 (probe-case-142#1)
+
+--- CASE 143: Boolean(boxed) param <- undefined ---
+    JS> probe.takeBoolObj(undefined)
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj(org.htmlunit.corejs.javascript.Undefined)”。 (probe-case-143#1)
+
+--- CASE 144: Boolean(boxed) param <- null ---
+    JS> probe.takeBoolObj(null)
+      [java] takeBoolObj(Boolean) reached: v = <JAVA_NULL>
+    JS result: undefined
+
+--- CASE 145: Boolean(boxed) param <- [] ---
+    JS> probe.takeBoolObj([])
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj(object)”。 (probe-case-145#1)
+
+--- CASE 146: Boolean(boxed) param <- [1] ---
+    JS> probe.takeBoolObj([1])
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj(object)”。 (probe-case-146#1)
+
+--- CASE 147: Boolean(boxed) param <- {} ---
+    JS> probe.takeBoolObj({})
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj(object)”。 (probe-case-147#1)
+
+--- CASE 148: Boolean(boxed) param <- missing argument ---
+    JS> probe.takeBoolObj()
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 找不到方法 “RhinoNumericParamProbe$HostApi.takeBoolObj()”。 (probe-case-148#1)
+
+--- CASE 149: ajaxSim(Object) <- ["a","b"] ---
+    JS> String(probe.ajaxSim(["a","b"]))
+      [java] ajaxSim(Object) reached: class = org.htmlunit.corejs.javascript.NativeArray
+    JS result: a
+
+--- CASE 150: ajaxSim(Object) <- [] ---
+    JS> String(probe.ajaxSim([]))
+      [java] ajaxSim(Object) reached: class = org.htmlunit.corejs.javascript.NativeArray
+    JS result: null
+
+--- CASE 151: ajaxSim(Object) <- [undefined] ---
+    JS> String(probe.ajaxSim([undefined]))
+      [java] ajaxSim(Object) reached: class = org.htmlunit.corejs.javascript.NativeArray
+    JS result: null
+
+--- CASE 152: ajaxSim(Object) <- [null] ---
+    JS> String(probe.ajaxSim([null]))
+      [java] ajaxSim(Object) reached: class = org.htmlunit.corejs.javascript.NativeArray
+    JS result: null
+
+--- CASE 153: ajaxSim(Object) <- ["a"] ---
+    JS> String(probe.ajaxSim(["a"]))
+      [java] ajaxSim(Object) reached: class = org.htmlunit.corejs.javascript.NativeArray
+    JS result: a
+
+--- CASE 154: ajaxSim(Object) <- "str" ---
+    JS> String(probe.ajaxSim("str"))
+      [java] ajaxSim(Object) reached: class = java.lang.String
+    JS result: str
+
+--- CASE 155: ajaxSim(Object) <- 42 ---
+    JS> String(probe.ajaxSim(42))
+      [java] ajaxSim(Object) reached: class = java.lang.Double
+    JS result: 42.0
+
+--- CASE 156: ajaxSim(Object) <- true ---
+    JS> String(probe.ajaxSim(true))
+      [java] ajaxSim(Object) reached: class = java.lang.Boolean
+    JS result: true
+
+--- CASE 157: ajaxSim(Object) <- {} ---
+    JS> String(probe.ajaxSim({}))
+      [java] ajaxSim(Object) reached: class = org.htmlunit.corejs.javascript.NativeObject
+    JS result: [object Object]
+
+--- CASE 158: ajaxSim(Object) <- null ---
+    JS> String(probe.ajaxSim(null))
+      [java] ajaxSim(Object) reached: class = <JAVA_NULL>
+    JS result: null
+
+--- CASE 159: ajaxSim(Object) <- undefined ---
+    JS> String(probe.ajaxSim(undefined))
+      [java] ajaxSim(Object) reached: class = java.lang.String
+    JS result: undefined
+
+--- CASE 160: ajaxSim(Object) <- [["x"],"y"] ---
+    JS> String(probe.ajaxSim([["x"],"y"]))
+      [java] ajaxSim(Object) reached: class = org.htmlunit.corejs.javascript.NativeArray
+    JS result: org.htmlunit.corejs.javascript.NativeArray@3270d194
+
+--- CASE 161: setup: define objNumeric with custom toString -> "5000" ---
+    JS> var objNumeric = { toString: function () { return "5000"; } };
+    JS result: undefined
+
+--- CASE 162: int param <- object with toString -> "5000" ---
+    JS> probe.takeInt(objNumeric)
+      [java] takeInt(int) reached: v = 5000
+    JS result: undefined
+
+--- CASE 163: long param <- object with toString -> "5000" ---
+    JS> probe.takeLong(objNumeric)
+      [java] takeLong(long) reached: v = 5000
+    JS result: undefined
+
+--- CASE 164: int param <- array [5000,6000] ---
+    JS> probe.takeInt([5000,6000])
+    ERROR (org.htmlunit.corejs.javascript.EvaluatorException): 无法将 5000,6000 转换为 java.lang.Integer (probe-case-164#1)
+
+--- CASE 165: int param <- "0x10" ---
+    JS> probe.takeInt("0x10")
+      [java] takeInt(int) reached: v = 16
+    JS result: undefined
+
+--- CASE 166: long param <- whitespace string "\t42\n" ---
+    JS> probe.takeLong("\t42\n")
+      [java] takeLong(long) reached: v = 42
+    JS result: undefined
+
+=== numeric probe finished ===

@@ -1,4 +1,4 @@
-# Rhino 字符串形参转换探针证据（2026-10-06）
+# Rhino 形参转换探针证据（字符串 / 数值 / 布尔，2026-10-06）
 
 > W-1 落实。来源：`docs/SEARCH_FIX_BATCH_CODE_REVIEW_20261006.md:133`——「Rhino 探针（JDK17 实测）无源码/输出入库」。
 > 本文固化探针源码、可复现命令与原始输出，作为 `rust/legado-js/src/host_api/coerce.rs` 转换表
@@ -6,6 +6,11 @@
 > 数组形参叙述、以及 P0-A 三处有意偏差的**可复核实测依据**。
 >
 > 本探针只测引擎（原版 Rhino LiveConnect）的转换行为，不测 Rust 实现；仅新增证据与文档，零运行时行为变更。
+>
+> **2026-10-06 W4 补充（§9）**：新增数值/布尔形参 + `java.ajax(Object)` 边界探针
+> （`RhinoNumericParamProbe.java`，实跑输出 `probe_numeric_output.txt`）。§1-§8 为字符串形参部分
+> （原始运行，不变）；§9 的实测结论已驱动 `coerce.rs` 数值转换层（`RhinoInt`/`RhinoLong`/
+> `RhinoOptInt`/`RhinoOptLong`）与 17 个 API / 18 个形参的实现变更（见 §9.4）。
 
 ## 1. 目的
 
@@ -433,3 +438,174 @@ classpath engine = htmlunit-core-js (org.htmlunit.corejs.javascript)
   经本文更新为**可复核**：源码 + 命令 + 原始输出 + 文件哈希齐备。
 - 界限：探针模拟宿主对象与 Kotlin 非空检查（非真实 Kotlin 字节码）；`RhinoOptStr`
   的「先例口径」（`null`/`undefined` → `None`）属实现侧设计选择，不在引擎探针范围内。
+
+---
+
+## 9. W4 数值 / 布尔形参探针（2026-10-06 补充，实跑）
+
+### 9.1 目的与范围
+
+W4（`docs/JS_ENGINE_COERCE_CODE_REVIEW_20261006.md` 建议项 4 + 后续批）原假设
+「Rhino LiveConnect 对 Java `int`/`long`/`boolean` 形参同样宽松（`"5000"`→5000、
+`1`→true）」。本探针按**形参 JVM 声明类型**逐类实测，回答三个问题：
+
+1. 非空原始 `int`/`long`/`double` 形参收字符串数字/浮点/布尔/`undefined`/`null`/非数字串
+   时的实际到达值或抛错形态；
+2. `boolean`/`Boolean` 形参收 `true`/`1`/`0`/`"true"`/`""`/`undefined`/`null`/`"abc"` 的行为；
+3. `java.ajax(url: Any)` 的 List 分支边界（`[]` / `[undefined]` / `[null]`），以及 JS 数组
+   实际以什么 Java 类型到达 `Object` 形参。
+
+**预期证伪记录（先于实现，如实登记）**：
+
+- 「`1`→true」**被证伪**：Rhino 布尔形参（原始与装箱）只接受 JS `true`/`false`，
+  数字/字符串一律「找不到方法」。故 W4 **未**对任何布尔形参做宽松化（§9.4 B 组）。
+- 「装箱数值同样宽松」**被证伪**：Kotlin 可空 `Int?`/`Long?` → JVM `Integer`/`Long`，
+  只接受 JS number（`null` → Java null），字符串数字一律「找不到方法」。故 `connect` 的
+  `timeout_ms`（上游 `callTimeout: Int?`，help/jsHelp.md:212）等可空数值形参**保持严格**。
+- 「非空原始 `int`/`long` 收字符串数字宽松」**被证实**：`"5000"`→5000、`""`→0、
+  `" 42 "`→42、`"0x10"`→16、浮点向零截断；NaN/Infinity/越界/非数字串抛错。
+  这正是 W4 实际改码的方向（§9.4 A 组 18 个形参）。
+
+### 9.2 环境、文件与复现命令
+
+环境同 §2：JDK `17.0.19+10`（Temurin）、引擎 JAR
+`third_party/maven/org/htmlunit/htmlunit-core-js/5.3.0-legado.4/htmlunit-core-js-5.3.0-legado.4.jar`
+（md5 `28e9486663d87d96178c9b918df4b32f`，本次重跑复核一致）。
+
+| 文件 | sha256 |
+|---|---|
+| `docs/materials_rhino_probe_20261006/RhinoNumericParamProbe.java` | `3f8a110ed9b027119a368ac5bbb5e2c621e0ebb521ee5edfdcc1cfa9b928ae20` |
+| `docs/materials_rhino_probe_20261006/run_numeric_probe.sh` | `d414d4989411a289c17e61a9fa5bb95cdc3677624feadbe0708ade595bf32a0f` |
+| `docs/materials_rhino_probe_20261006/probe_numeric_output.txt`（原始输出，166 个 case） | `80cb9c922c2ec825fcc595dccbcb46c46f24bc3aee22162d33fb11f0b9cf218e` |
+
+```bash
+bash docs/materials_rhino_probe_20261006/run_numeric_probe.sh \
+    > docs/materials_rhino_probe_20261006/probe_numeric_output.txt 2>&1
+```
+
+补充说明：`javap` 复核确认本 fork 的
+`org.htmlunit.corejs.javascript.NativeArray implements java.util.List`
+——即 JS 数组传入 Java `Object` 形参后 `url instanceof List` 为真，上游
+`JsExtensions.kt:130-137` 的 `firstOrNull()` 分支对 JS 数组确实生效（CASE 149-153）。
+
+### 9.3 实测结果（关键行；完整输出见 `probe_numeric_output.txt`）
+
+**A. 非空原始 `int`（CASE 1-22）/ `long`（CASE 23-44）——宽松**
+
+| JS 实参 | `int` 到达值 | `long` 到达值 | case |
+|---|---|---|---|
+| `5000` | 5000 | 5000 | 1 / 23 |
+| `"5000"` | **5000** | **5000** | 2 / 24 |
+| `5000.7` | 5000 | 5000 | 3 / 25 |
+| `"5000.7"` | **5000** | **5000** | 4 / 26 |
+| `-5000.7` / `"-42"` | -5000 / -42（向零截断） | 同 | 5-6 / 27-28 |
+| `true` / `false` | 找不到方法（抛错） | 找不到方法 | 7-8 / 29-30 |
+| `undefined` / `null` | 找不到方法（抛错） | 找不到方法 | 9-10 / 31-32 |
+| `"abc"` | 无法将 abc 转换（抛错） | 同 | 11 / 33 |
+| `""` / `" 42 "` / `"1e3"` / `"0x10"` | 0 / 42 / 1000 / 16 | 0 / 42 / 1000 / 16 | 12-14 / 34-36 / 165 / 166 |
+| `NaN` / `Infinity` | 抛错 | 抛错 | 15-16 / 37-38 |
+| `[]` / `[5000]` / `[5000.7]` | 0 / 5000 / 5000（ToString→ToNumber） | 0 / 5000 / 5000 | 17-19 / 39-41 |
+| `{}` / `[5000,6000]` | 抛错（`[object Object]`/`"5000,6000"` → NaN） | 同 | 20 / 164 / 42 |
+| `5000000000` / `"5000000000"` | **抛错（int 越界）** | 5000000000（不越界） | 21-22 / 43-44 |
+| 自定义 `toString` → `"5000"` 的对象 | 5000 | 5000 | 162-163 |
+
+`double` 形参（CASE 45-66）为对照：同样宽松但接受 NaN/Infinity（非本批 Rust 面）。
+
+**B. 装箱 `Integer`（CASE 67-88）/ `Long`（CASE 89-113）——严格**
+
+| JS 实参 | `Integer`/`Long` 到达 | case |
+|---|---|---|
+| `5000` / `5000.7` | 5000（截断） | 67/69/89/91 |
+| `"5000"` / `"5000.7"` / `"-42"` / `""` / `"1e3"` / `"abc"` | **找不到方法（抛错）** | 68/70/72/78-80/90/92/94/99-102 |
+| `true` / `false` / `[]` / `[5000]` / `{}` | 找不到方法 | 73-74/83-86/95-96/105-108 |
+| `undefined` | 找不到方法（**不落 null**） | 75 / 97 |
+| `null` | **Java null** | 76 / 98 |
+| `NaN` / `Infinity` / `5000000000`(int 越界) | 抛错 | 81-82/87 / 103-104 |
+| 装箱 `null` 入模拟 Kotlin 非空形参 | NPE | 112 |
+
+**C. `boolean`（CASE 114-130）/ `Boolean`（CASE 131-148）——严格**
+
+| JS 实参 | `boolean` | `Boolean` |
+|---|---|---|
+| `true` / `false` | true / false | true / false |
+| `1` / `0` / `2` / `-1` | **找不到方法** | **找不到方法** |
+| `"true"` / `"false"` / `""` / `"0"` / `"1"` / `"abc"` | **找不到方法** | **找不到方法** |
+| `undefined` | 找不到方法 | 找不到方法 |
+| `null` | 找不到方法 | **Java null** |
+| `[]` / `[1]` / `{}` | 找不到方法 | 找不到方法 |
+
+**D. `java.ajax(Object)` 边界（CASE 149-160）**
+
+| JS 实参 | 到达 Java 类型 | `firstOrNull().toString()` 结果 | case |
+|---|---|---|---|
+| `["a","b"]` / `["a"]` | NativeArray（implements List） | `"a"` | 149 / 153 |
+| `[]` | NativeArray（List） | `"null"`（Java null → valueOf） | 150 |
+| `[undefined]` | NativeArray（List） | **`"null"`**（`get(0)` → Java null） | 151 |
+| `[null]` | NativeArray（List） | **`"null"`** | 152 |
+| `[["x"],"y"]` | NativeArray（List） | 首元素为 NativeArray → `NativeArray@<hash>` | 160 |
+| `"str"` | java.lang.String | `"str"` | 154 |
+| `42` | java.lang.Double | **`"42.0"`**（Java Double.toString） | 155 |
+| `true` / `{}` | Boolean / NativeObject | `"true"` / `"[object Object]"` | 156-157 |
+| `null` / `undefined` | Java null / java.lang.String | `"null"` / `"undefined"` | 158-159 |
+
+### 9.4 与实现对照（W4 改码清单）
+
+**A 组：确认宽松 → 已实现（17 API / 18 形参）**
+
+新增 `coerce.rs` 的 `RhinoInt`/`RhinoLong`（含 `RhinoOptInt`/`RhinoOptLong` 可选 arity 版）：
+`bool`/`undefined`/`null` 与 Rhino 同向抛错；其余值走 QuickJS `JS_ToFloat64`
+（= JS `ToNumber`），并显式拒绝 NaN/Infinity/越界——修复了 rquickjs
+`i64::from_js` 对 `NaN` 静默转 0 的既有偏差（红测实测：改前 `java.timeFormat(NaN)`
+返回 `1970/01/01 08:00`）。
+
+| API（上游签名） | 形参 | 改前 | 改后 |
+|---|---|---|---|
+| `base64DecodeToByteArray`（JsExtensions.kt:648） | `flags: Int` | `Opt<i32>` 严格 | `RhinoOptInt` |
+| `regExp`（宿主兼容 shim，模型 `group: Int`） | `group` | `i32` 严格 | `RhinoInt` |
+| `formatTime`（宿主兼容 shim，模型 `ts: Long`） | `ts` | `i64` 严格 | `RhinoLong` |
+| `timeFormat`（:698） | `ts: Long` | `i64` 严格 | `RhinoLong` |
+| `timeFormatUTC`（:686） | `ts: Long` / `sh: Int` | `i64`/`i32` 严格 | `RhinoLong`/`RhinoInt` |
+| `threadSleep`/`sleep`（模型 `Thread.sleep(long)`） | `ms` | `i64` 严格 | `RhinoLong` |
+| `List.get(i)` 垫片（模型 JDK `List.get(int)`） | `i` | `i64` 严格 | `RhinoLong` |
+| `jsoupAttrN`/`jsoupTextN`/`jsoupHtmlN`/`jsoupHtmlNExcluded`（模型 `Elements.get(int)`） | `i` | `i64` 严格 | `RhinoLong` |
+| `cache.put`（CacheManager.kt:60，`@JvmOverloads`） | `saveTime: Int` | `Opt<i64>` 严格 | `RhinoOptLong` |
+| `singleFlight`/`lock`（:1250/:1270） | `timeoutMs: Long` | `i64` 严格 | `RhinoLong` |
+| `webViewGetSource`/`webViewGetOverrideUrl`（:271/:306） | `delayTime: Long` | `Opt<i64>` 严格 | `RhinoOptLong` |
+
+**B 组：探针证明严格 → 保持原签名（6 API / 8 形参）**
+
+| API（上游签名） | 形参 | 保持 | 探针依据 |
+|---|---|---|---|
+| `connect`（help/jsHelp.md:212，`callTimeout: Int?` 装箱） | `timeout_ms` | `Opt<i64>` | CASE 68/90 字符串→找不到方法 |
+| `cache.get`（CacheManager.kt:108） | `onlyDisk: Boolean` | `Opt<bool>` | CASE 133-142 |
+| `openVideoPlayer`（:343） | `isFloat: Boolean` | `Opt<bool>` | CASE 116-125 |
+| `webViewGetSource`/`webViewGetOverrideUrl`（:271/:306） | `cacheFirst: Boolean` | `Opt<bool>` | CASE 120-125 |
+| `startBrowserAwait`（:368） | `refetchAfterSuccess: Boolean` | `Opt<bool>` | CASE 120-125 |
+| `queryTTF`（:1014） | `useCache: Boolean` | `Opt<bool>` | CASE 116-125 |
+| `replaceFont`（:1105） | `filter: Boolean` | `Opt<bool>` | CASE 116-125 |
+
+**登记偏差（宽容侧，与 P0-A `RhinoOptStr` 先例一致）**：`RhinoOptInt`/`RhinoOptLong`
+把显式 `null`/`undefined` 收敛为 `None`（缺省），而 Rhino 原始数值形参收二者是「找不到方法」；
+布尔 `Opt<bool>` 同样对 `null` 收敛 `None`（上游 `Boolean` 装箱为 Java null、原始为抛错）。
+方向均为宽容，不会把原版可用书源变失败。
+
+**`AjaxUrlStr` 复核结论（审查余量项①）**：CASE 149-152 证实
+`[]`/`[undefined]`/`[null]` 三者在原版都收敛为字符串 `"null"`（Kotlin
+`firstOrNull().toString()`），与 `quickjs_impl.rs` 现行 `AjaxUrlStr` 完全一致，
+**无需微调**（`rust/legado-js/tests/host_api_numeric_arg.rs` 已锁定）。
+附带登记一处标量偏差：`java.ajax(42)` 原版经 Java `Double.toString` 得 `"42.0"`，
+我方 `RhinoStr` 得 `"42"`——非数组、非常见书源形态，本次不改，仅登记。
+
+### 9.5 实现侧验证与界限
+
+- 先红后绿：`rust/legado-js/tests/host_api_numeric_arg.rs`（6 例）在改码前 4 例红
+  （字符串数字报 `Error converting from js 'string' into type 'i32'/'f64'`；`NaN` 静默为 0），
+  实现后 6 例全绿；`cargo test -p legado-js --features quickjs` 全量通过
+  （lib 660 passed / 0 failed，含本文件 6 例）。
+- 界限：探针以普通 Java 宿主对象模拟 Kotlin 形参（非真实 Kotlin 字节码）；
+  `regExp`/`formatTime`/`threadSleep`/`sleep`/`List.get`/`jsoup*N` 在上游基线中
+  无同名 Kotlin 方法（宿主兼容 shim / Packages 桥），其「原始数值」建模依据是
+  同形 Java 方法（`Thread.sleep(long)`、`List.get(int)`、`Elements.get(int)`）与
+  Rhino 声明类型分流实测，不对上游符号存在性作声明。
+- 探针重跑命令、文件哈希、原始输出如上；JAR md5 与 §2 记载一致。
+
