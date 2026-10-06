@@ -1467,6 +1467,35 @@ mod tests {
     /// 同一共享客户端连发 N 次 → 服务端仅 1 次 accept（池内 keep-alive 复用）；
     /// 每请求新建 LegadoClient → N 次 accept（修复前行为，回归对照）。
     /// HTTP 层计数等价反映 TLS 层成本：每新建连接 = 1 次 TCP + 1 次 TLS 握手。
+    ///
+    /// # 偶发失败加固（2026-10-07）
+    ///
+    /// **偶发证据**：`b7ffa8365f` 轮 Rust CI（job 112368502807 首次尝试）红于
+    /// ①断言（实测 2 次 accept）；同作业重跑绿、最新轮绿、本地连跑 10 次全绿。
+    /// CI 日志可读出测试体耗时 ≈10.08s（共享池锁释放 16:08:10.2768 → panic
+    /// 16:08:20.3559），与 mock 服务器 10s 读超时吻合。
+    ///
+    /// **机理**（本地实测复现；产品代码无缺陷）：
+    /// - 触发源（客户端连接池，良性）：reqwest/hyper-util `one_connection_for`
+    ///   固定让 `checkout` 与 `connect_to` 赛跑；若上一响应连接的异步归还
+    ///   （`try_send_request` 的 `on_idle` 任务落池）尚未完成，checkout 为
+    ///   Pending，客户端会额外开一条 TCP 连接（该连接照常入池复用）。本地
+    ///   20 万次无间隔连续请求实测 6 次幻影连接（≈3e-5/请求，逐连接请求数
+    ///   如 [11304, 8696]、[20000, 0]）——CI 每轮 4 次请求转换，量级相符。
+    /// - 放大器（测试夹具）：原夹具单线程串行 accept，第二条连接要等第一条
+    ///   连接读超时（10s `SO_RCVTIMEO`）才被 accept → 落在新连接上的请求被
+    ///   卡 ≈10s（仍成功：客户端读超时 60s）。确定性演示：第二条连接发起
+    ///   请求后 9.9986s 收到响应、accept=2——与 CI 的「2 次 accept + 测试体
+    ///   ~10s」签名一致。
+    ///
+    /// **加固**（回归区分度不退让：修复前「每请求新建客户端」= 5 次 accept 必红）：
+    /// - ① 请求间插入 `POOL_RETURN_GAP`（10ms）：等上一响应连接归还连接池后
+    ///   再发下一请求 ⇒ checkout 首轮即 Ready ⇒ hyper-util 不启动 `connect_to`。
+    ///   实测：无间隔 6 幻影/20 万请求 → 1ms 间隔 0 幻影/20 万请求；加固后
+    ///   形状回放 1000 轮（5 请求/轮 + 10ms 间隔）0 失败。
+    /// - ② 夹具改并发 accept（每连接独立线程）：残余竞争即时呈现为
+    ///   「accept=2 断言失败」，不再被 10s 读超时放大成停顿/掩盖失败时序。
+    /// - 断言口径不变：①恰 1 次 accept；②恰 N 次新增 accept（1+N 总数）。
     #[test]
     fn test_shared_pool_reuses_keep_alive() {
         let _lock = lock_pool_test();
@@ -1478,7 +1507,11 @@ mod tests {
         // ① 共享客户端（回环池）连发 N 次：应仅 1 次 accept
         let client = shared_client_for_url(&base).expect("共享池");
         block_on(async {
-            for _ in 0..N {
+            for i in 0..N {
+                if i > 0 {
+                    // 见上方加固①②：留给上一响应连接归还连接池的时间窗
+                    tokio::time::sleep(POOL_RETURN_GAP).await;
+                }
                 let resp = client.get(&base, None).await.expect("共享池 GET 应成功");
                 assert!(resp.status == 200, "状态码应为 200: {}", resp.status);
             }
@@ -1509,8 +1542,19 @@ mod tests {
         );
     }
 
+    /// 共享池连续请求的最小间隔（加固①②：等上一响应连接归还连接池再发
+    /// 下一请求，规避 hyper-util checkout/connect 竞争产生的幻影连接；
+    /// 实测 1ms 已 0/20 万，取 10 倍余量）
+    const POOL_RETURN_GAP: std::time::Duration = std::time::Duration::from_millis(10);
+
     /// 最小 keep-alive 计数服务器：统计 accept 次数（连接数证据），
     /// 同一连接循环处理多个请求（HTTP/1.1 keep-alive）
+    ///
+    /// **并发 accept（2026-10-07 加固②）**：每连接独立线程处理；原串行
+    /// 版本中第二条连接会滞留内核 backlog，直到第一条连接读超时（10s）
+    /// 才被 accept，把客户端侧良性的一次性重连放大成「10s 停顿 + accept
+    /// 计数 2」（`test_shared_pool_reuses_keep_alive` 偶发失败根因）。
+    /// 并发版让 accept 计数只反映「客户端是否真的开了第二条连接」。
     fn spawn_counting_keep_alive_server(
         max_conns: usize,
     ) -> (
@@ -1525,23 +1569,25 @@ mod tests {
             for stream in listener.incoming().take(max_conns) {
                 let Ok(mut sock) = stream else { continue };
                 counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-                let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
-                // keep-alive：同一连接循环处理请求，直到客户端关闭
-                while let Some(req) = read_mock_http_request(&mut sock) {
-                    let _body = if req.method == "HEAD" {
-                        String::new()
-                    } else {
-                        "ok".to_string()
-                    };
-                    let resp = format!(
-                        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n{}",
-                        _body.len(),
-                        _body
-                    );
-                    if sock.write_all(resp.as_bytes()).is_err() {
-                        break;
+                std::thread::spawn(move || {
+                    let _ = sock.set_read_timeout(Some(std::time::Duration::from_secs(10)));
+                    // keep-alive：同一连接循环处理请求，直到客户端关闭
+                    while let Some(req) = read_mock_http_request(&mut sock) {
+                        let _body = if req.method == "HEAD" {
+                            String::new()
+                        } else {
+                            "ok".to_string()
+                        };
+                        let resp = format!(
+                            "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: {}\r\nConnection: keep-alive\r\n\r\n{}",
+                            _body.len(),
+                            _body
+                        );
+                        if sock.write_all(resp.as_bytes()).is_err() {
+                            break;
+                        }
                     }
-                }
+                });
             }
         });
         (addr, accepts)
