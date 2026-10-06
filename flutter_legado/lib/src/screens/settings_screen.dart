@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
@@ -167,13 +166,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Widget _buildWebServiceCard(BuildContext context) {
     final theme = Theme.of(context);
     final cs = theme.colorScheme;
-    // [2026-10-06 登记待修] iOS 实机开启 Web 服务不可用（Active 计划已登记：
-    // 现象=设置内开启不可用、根因待取证；候选方向 server_start 前置校验在
-    // iOS 的 db_open 时序、tokio TCP 监听在 iOS 沙箱行为）。用户裁决先「标记
-    // 不可用」、修复排期后移除本门控。用 defaultTargetPlatform 而非
-    // Platform.isIOS，使 widget 测试可经 debugDefaultTargetPlatformOverride 覆盖。
-    final webServiceUnsupported =
-        !kIsWeb && defaultTargetPlatform == TargetPlatform.iOS;
+    // [2026-10-06 登记待修 → 本批已修复] 原「iOS 标记暂不可用」门控（副题
+    // 「暂不可用，将在后续版本修复」+ Switch 禁用）已整体移除：根因见
+    // docs/IOS_WEB_SERVICE_ROOT_CAUSE_SURVEY_20261006.md（缺陷 A 绑定
+    // 127.0.0.1、缺陷 B bind 失败假成功、缺陷 C 缺本地网络用途描述），
+    // 三处已随本批修复，iOS 与其他平台恢复统一形态。
     // [A-5 | 2026-09-20 用户裁决] AppColors 整体删除，本卡启用态 accent
     // 改 MD3 scheme 取值。槽位映射（保持"开启态强调"视觉语义）：
     //   AppColors.iosGreenLight / iosGreenDark（iOS 系统绿，按亮暗双取值）
@@ -181,7 +178,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     // 对齐参考版 SwitchSettingItem：开关 checked 色即 colorScheme.primary，
     // 同卡内 Switch 与卡描边/图标槽同源，主题切换无残留绿。
     final green = cs.primary;
-    final enabled = _webService && !webServiceUnsupported;
+    final enabled = _webService;
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
@@ -224,9 +221,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    webServiceUnsupported
-                        ? '暂不可用，将在后续版本修复'
-                        : enabled && _webServiceStatus.isNotEmpty
+                    enabled && _webServiceStatus.isNotEmpty
                         ? _webServiceStatus
                         : '用浏览器写源或看书',
                     style: theme.textTheme.bodySmall?.copyWith(
@@ -244,10 +239,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : Switch(
-                    value: _webService && !webServiceUnsupported,
-                    onChanged: webServiceUnsupported
-                        ? null
-                        : _toggleWebService,
+                    value: _webService,
+                    onChanged: _toggleWebService,
                   ),
           ],
         ),

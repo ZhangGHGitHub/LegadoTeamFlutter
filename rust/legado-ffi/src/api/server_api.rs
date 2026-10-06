@@ -103,6 +103,16 @@ fn lock_handle_slot(
 /// 路径 `"legado.db"`（Android 上会打不开或在 cwd 生成第二个空库），也
 /// 不再二次建池。未初始化 / 取连接失败均**同步**返回 Err，不再 spawn 前
 /// 返回「已启动」而把失败吞进任务内 eprintln。
+///
+/// 缺陷 A/B 修复（调研 IOS_WEB_SERVICE_ROOT_CAUSE_SURVEY_20261006 §一.3/4）：
+/// - 绑定地址 `0.0.0.0`（全接口，LAN 可达）——对齐原版 `HttpServer.kt`
+///   `NanoHTTPD(port)`（hostname=null → 绑全接口）与本文件 MCP 路径（F5）；
+///   旧实现 `127.0.0.1` 使 PC 浏览器永远无法经 `http://<设备IP>:1122`
+///   写源/看书（Android 侧此前靠 adb forward 掩蔽）。
+/// - spawn **之前**同步 bind，端口占用等失败立即返回
+///   `Internal("Web 服务端口 {port} 绑定失败: …")` 且不置运行态——
+///   旧实现 spawn 后才 bind，失败仅任务内 eprintln，函数仍假成功返回 Ok。
+///   成功后把已绑定 listener 交给 `serve_web`（对齐 mcp_start_internal）。
 pub fn server_start(port: u16) -> LegadoResult<String> {
     if SERVER_RUNNING.load(Ordering::SeqCst) {
         return Ok(format!(
@@ -125,8 +135,15 @@ pub fn server_start(port: u16) -> LegadoResult<String> {
 
     let runtime = get_server_runtime()?;
 
+    // 缺陷 A/B 修复：spawn 前同步绑定 0.0.0.0（全接口，LAN 可达；对齐
+    // 原版 HttpServer.kt 的 NanoHTTPD(port) 与本文件 MCP 路径 F5），
+    // 失败即 Err、不置 running——不再 spawn 后 bind 造成「假成功」
+    let listener = runtime
+        .block_on(tokio::net::TcpListener::bind(("0.0.0.0", port)))
+        .map_err(|e| LegadoError::Internal(format!("Web 服务端口 {port} 绑定失败: {e}")))?;
+
     let handle = runtime.spawn(async move {
-        if let Err(e) = legado_server::server::start_server_with_db("127.0.0.1", port, db).await {
+        if let Err(e) = legado_server::server::serve_web(listener, db).await {
             eprintln!("Server error: {e}");
         }
 

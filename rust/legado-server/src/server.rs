@@ -51,9 +51,27 @@ pub async fn start_server(config: ServerConfig) -> Result<(), Box<dyn std::error
 /// 数据面完全由注入的 `db` 决定——App 内 Web 服务与主应用复用同一
 /// `db_state` 全局池（单池单文件身份，消除跨池 BUSY 面与启动重跑迁移）。
 /// handler 侧零改动：注入结果仍是 `AppState.db: Mutex<Database>`。
+///
+/// 内部按 `host:port` 自行 bind 后委托 [`serve_web`]；FFI 路径不使用本
+/// 函数（其改为 spawn 前预绑定以避免「假成功」），本函数保留给独立
+/// 二进制/测试，签名与行为不变。
 pub async fn start_server_with_db(
     host: &str,
     port: u16,
+    db: legado_db::Database,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let addr = format!("{host}:{port}").parse::<SocketAddr>()?;
+    let listener = tokio::net::TcpListener::bind(addr).await?;
+    serve_web(listener, db).await
+}
+
+/// 在调用方预绑定的监听器上提供 Web 服务（与 [`start_server_with_db`] 同构）
+///
+/// 差异仅在监听器由调用方持有：FFI 路径在 spawn 前同步
+/// `TcpListener::bind`（失败即同步 Err，消除「假成功」，对齐
+/// `serve_mcp` 形态），成功后把已绑定的 listener 交给本函数 serve。
+pub async fn serve_web(
+    listener: tokio::net::TcpListener,
     db: legado_db::Database,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(AppState {
@@ -64,10 +82,9 @@ pub async fn start_server_with_db(
 
     let router = create_router(state);
 
-    let addr = format!("{host}:{port}").parse::<SocketAddr>()?;
+    let addr = listener.local_addr()?;
     tracing::info!("Legado server listening on {}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, router).await?;
 
     Ok(())

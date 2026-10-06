@@ -68,6 +68,13 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>需要相机权限以扫描二维码导入书源</string>
+	<!-- [Web 服务局域网可达修复] iOS 14+ 本地网络隐私（TCC）：App 监听
+	     0.0.0.0 供局域网内 PC 浏览器连入时，系统要求本地网络用途说明。
+	     缺本键时系统无法弹授权框、入站连接被静默拒绝。只用按 IP 直连，
+	     不做 Bonjour 广播/发现，故不加 NSBonjourServices。
+	     根因调研：docs/IOS_WEB_SERVICE_ROOT_CAUSE_SURVEY_20261006.md §一.5。 -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Web 服务需要在本地网络中供电脑浏览器访问，用于在局域网内写书源、看书与传书</string>
 	<!-- [iOS 视角F A1] WKWebView 加载明文 http:// 书源/登录页被 ATS 拦截
 	     （iOS 默认 NSAllowsArbitraryLoadsInWebContent=NO）。此处只放开「WebView
 	     内容」的任意加载：NSAllowsArbitraryLoadsInWebContent=YES。

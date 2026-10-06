@@ -99,10 +99,11 @@ void main() {
       expect(find.text('关于'), findsOneWidget);
     });
 
-    // [2026-10-06 登记待修] iOS 实机开启 Web 服务不可用 → 用户裁决先「标记
-    // 不可用」；本用例钉死标记形态（副题提示 + 开关禁用），修复批移除门控时
-    // 本用例须同步改为「iOS 可用」断言。
-    testWidgets('Web 服务卡：iOS 标记暂不可用且开关禁用', (tester) async {
+    // [2026-10-06 登记待修 → 本批已修复] iOS 实机开启 Web 服务不可用：
+    // 根因见 docs/IOS_WEB_SERVICE_ROOT_CAUSE_SURVEY_20261006.md（缺陷 A/B/C
+    // 已随本批修复：绑定前置+0.0.0.0、Info.plist 补本地网络用途描述）。
+    // 原「iOS 标记暂不可用」用例按登记要求改为本「iOS 可用」断言。
+    testWidgets('Web 服务卡：iOS 可用（副题为正常文案，开关可用）', (tester) async {
       // debugDefaultTargetPlatformOverride 须在测试体内复位（框架在
       // addTearDown 之前校验 foundation 调试变量已归位），故用 try/finally。
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
@@ -112,8 +113,8 @@ void main() {
         await dragTo(tester, 'Web 服务');
         await tester.pumpAndSettle();
 
-        expect(find.text('暂不可用，将在后续版本修复'), findsOneWidget);
-        expect(find.text('用浏览器写源或看书'), findsNothing);
+        expect(find.text('用浏览器写源或看书'), findsOneWidget);
+        expect(find.text('暂不可用，将在后续版本修复'), findsNothing);
         final card = find
             .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
             .first;
@@ -123,8 +124,8 @@ void main() {
                 find.descendant(of: card, matching: find.byType(Switch)),
               )
               .onChanged,
-          isNull,
-          reason: 'iOS 上 Web 服务开关应禁用',
+          isNotNull,
+          reason: 'iOS 上 Web 服务开关应可用（门控已移除）',
         );
       } finally {
         debugDefaultTargetPlatformOverride = null;
