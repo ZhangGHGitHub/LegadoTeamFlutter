@@ -2706,7 +2706,8 @@ fn register_network_apis<'js>(
     // connect(url, method?, headers?, body?, timeoutMs?) -> String（完整响应 JSON）
     // 对应 Kotlin: connect(urlStr, header, callTimeout): StrResponse
     // 增强：支持指定 HTTP 方法（GET/POST/HEAD/PUT/DELETE）
-    // timeout_ms 上游为可空 Int?（callTimeout）：装箱数值 + Rhino 探针实测严格
+    // timeout_ms 上游为可空 Long?（JsExtensions.kt:214 `callTimeout: Long?`；
+    // jsHelp.md:212 的 `Int?` 系过时文档）：装箱数值 + Rhino 探针实测严格
     // （字符串数字报「方法不存在」），故**保持** `Opt<i64>` 严格转换（W4 边界）
     mount_dual(
         java,
@@ -3622,8 +3623,10 @@ fn register_cache_apis<'js>(
 
     // put(key, value, saveTime?) -> bool
     // saveTime<=0 语义对齐 CacheManager.kt:60-98：仅内存、无过期
-    // saveTime 上游为非空 Int（:60，@JvmOverloads 缺省 0）：Rhino 原始 int
-    // 宽松（字符串数字可；缺参 → None → 0 — W4 探针）
+    // saveTime 上游为非空原始 Int（CacheManager.kt:60；WebCacheManager.put :172
+    // 同为 `saveTime: Int = 0`，@JvmOverloads 缺省 0）：按 Rhino 原始 int 语义
+    // 宽松（字符串数字可；缺参 → None → 0 — W4 探针），域判定与 int 同
+    //（P2-3 收口：改前 RhinoOptLong 按 i64 误收 5e9，现与原版一致抛错）
     cache
         .set(
             "put",
@@ -3632,10 +3635,10 @@ fn register_cache_apis<'js>(
                 |ctx: rquickjs::Ctx<'js>,
                  key: RhinoStr,
                  value: rquickjs::Value<'js>,
-                 save_time: RhinoOptLong|
+                 save_time: RhinoOptInt|
                  -> bool {
                     let v = stringify_cache_value(&ctx, &value);
-                    cache_store::put(&key, &v, save_time.0.unwrap_or(0))
+                    cache_store::put(&key, &v, save_time.0.map(|s| s as i64).unwrap_or(0))
                 },
             )
             .map_err(|e| LegadoError::JsEngine(e.to_string()))?,

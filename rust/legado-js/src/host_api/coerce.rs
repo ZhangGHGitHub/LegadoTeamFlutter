@@ -58,12 +58,17 @@
 //! | `undefined` | 方法不存在（抛错） | **方法不存在（抛错，不落 null）** | 方法不存在 |
 //! | `null` | 方法不存在（抛错） | Java `null` | `Boolean` → Java `null`；`boolean` → 方法不存在 |
 //!
+//! 越界判定与上游 `NativeJavaObject.toInteger` 同口径：**先向零截断（ToInteger），
+//! 再比较截断值**（字节码常量域：int `[-2^31, 2^31-1]`、long `[-2^63, 2^63-1024]`）
+//! ——`2147483647.5` → `2147483647` 接受、`2147483648` 抛错（P2-1 收口，2026-10-06）。
+//!
 //! 结论：只有**非空原始 `int`/`long`** 一列是「字符串数字宽松」；装箱数值
 //! （本项目 `Opt<i32>`/`Opt<i64>` 所对应的上游可空类型）与布尔形参都严格。
 //! 因此 [`RhinoInt`]/[`RhinoLong`] 仅用于上游非空原始类型形参；`Opt<i32>` /
-//! `Opt<i64>` / `Opt<bool>`（如 `connect` 的 `callTimeout: Int?`、`cache.get`
-//! 的 `onlyDisk: Boolean`）保持既有严格转换——越权宽松化会引入原版不存在的
-//! 行为（探针同形在主基线抛「找不到方法」）。
+//! `Opt<i64>` / `Opt<bool>`（如 `connect` 的 `callTimeout: Long?`，
+//! JsExtensions.kt:214；jsHelp.md:212 的 `Int?` 系过时文档、
+//! `cache.get` 的 `onlyDisk: Boolean`）保持既有严格转换——越权宽松化会引入原版
+//! 不存在的行为（探针同形在主基线抛「找不到方法」）。
 //!
 //! 注意 rquickjs 的 `i64::from_js` **不能**直接充当宽松转换：它只接受 JS
 //! `number`（字符串拒绝，方向正确），但 `number_match_range` 对 `NaN` 的
@@ -185,7 +190,14 @@ pub struct RhinoInt(pub i32);
 impl<'js> rquickjs::FromJs<'js> for RhinoInt {
     fn from_js(ctx: &rquickjs::Ctx<'js>, value: rquickjs::Value<'js>) -> rquickjs::Result<Self> {
         let n = rhino_number_f64(ctx, &value)?;
-        if n < i32::MIN as f64 || n > i32::MAX as f64 {
+        // P2-1（2026-10-06 收口）：与上游 `NativeJavaObject.toInteger` 同口径——
+        // 先向零截断（上游字节码 `d > 0 ? floor(d) : ceil(d)`），再判截断值是否
+        // 越界（int 域常量 `[-2^31, 2^31-1]`）。直接比较原始 n 会在
+        // `(i32::MAX, 2^31)` / `(-2^31-1, i32::MIN)` 开区间的浮点毫厘值上误拒：
+        // 原版实测 `2147483647.5`→2147483647、`-2147483648.5`→-2147483648 接受，
+        // `2147483648` / `-2147483649` 抛错（同一 JAR 独立边界探针）。
+        let truncated = n.trunc();
+        if truncated < i32::MIN as f64 || truncated > i32::MAX as f64 {
             return Err(rquickjs::Error::FromJs {
                 from: value.type_of().as_str(),
                 to: "java.lang.Integer",
@@ -194,7 +206,7 @@ impl<'js> rquickjs::FromJs<'js> for RhinoInt {
                 )),
             });
         }
-        Ok(RhinoInt(n as i32))
+        Ok(RhinoInt(truncated as i32))
     }
 }
 
@@ -214,7 +226,12 @@ pub struct RhinoLong(pub i64);
 impl<'js> rquickjs::FromJs<'js> for RhinoLong {
     fn from_js(ctx: &rquickjs::Ctx<'js>, value: rquickjs::Value<'js>) -> rquickjs::Result<Self> {
         let n = rhino_number_f64(ctx, &value)?;
-        // ±2^63（f64 可精确表示），上界取开区间：i64::MAX 不能被 f64 表示
+        // 上游同口径为「先向零截断再判域」，long 域常量为 `[-2^63, 2^63-1024]`
+        // （max 取 2^63 以下最大可表示 f64）。f64 在 2^63 邻域粒度为 2048，
+        // 可表示值中不存在「截断后落域内但原值在 ±2^63 外」的中间值，
+        // 故直接按 `[-2^63, 2^63)` 判定与上游逐值等价（P2-1 同法核对，
+        // 无需改动）；上界仍取开区间：i64::MAX 不能被 f64 表示，2^63 as i64
+        // 会饱和回 i64::MAX 造成假通过。
         const I64_MIN_F64: f64 = -9_223_372_036_854_775_808.0;
         const I64_UPPER_EXCL_F64: f64 = 9_223_372_036_854_775_808.0;
         if !(I64_MIN_F64..I64_UPPER_EXCL_F64).contains(&n) {

@@ -461,7 +461,8 @@ W4（`docs/JS_ENGINE_COERCE_CODE_REVIEW_20261006.md` 建议项 4 + 后续批）�
   数字/字符串一律「找不到方法」。故 W4 **未**对任何布尔形参做宽松化（§9.4 B 组）。
 - 「装箱数值同样宽松」**被证伪**：Kotlin 可空 `Int?`/`Long?` → JVM `Integer`/`Long`，
   只接受 JS number（`null` → Java null），字符串数字一律「找不到方法」。故 `connect` 的
-  `timeout_ms`（上游 `callTimeout: Int?`，help/jsHelp.md:212）等可空数值形参**保持严格**。
+  `timeout_ms`（上游 `callTimeout: Long?`，JsExtensions.kt:214；help/jsHelp.md:212 的
+  `Int?` 为过时文档，与代码不一致）等可空数值形参**保持严格**。
 - 「非空原始 `int`/`long` 收字符串数字宽松」**被证实**：`"5000"`→5000、`""`→0、
   `" 42 "`→42、`"0x10"`→16、浮点向零截断；NaN/Infinity/越界/非数字串抛错。
   这正是 W4 实际改码的方向（§9.4 A 组 18 个形参）。
@@ -568,15 +569,18 @@ bash docs/materials_rhino_probe_20261006/run_numeric_probe.sh \
 | `threadSleep`/`sleep`（模型 `Thread.sleep(long)`） | `ms` | `i64` 严格 | `RhinoLong` |
 | `List.get(i)` 垫片（模型 JDK `List.get(int)`） | `i` | `i64` 严格 | `RhinoLong` |
 | `jsoupAttrN`/`jsoupTextN`/`jsoupHtmlN`/`jsoupHtmlNExcluded`（模型 `Elements.get(int)`） | `i` | `i64` 严格 | `RhinoLong` |
-| `cache.put`（CacheManager.kt:60，`@JvmOverloads`） | `saveTime: Int` | `Opt<i64>` 严格 | `RhinoOptLong` |
+| `cache.put`（CacheManager.kt:60，`@JvmOverloads`） | `saveTime: Int` | `Opt<i64>` 严格 | `RhinoOptInt` |
 | `singleFlight`/`lock`（:1250/:1270） | `timeoutMs: Long` | `i64` 严格 | `RhinoLong` |
 | `webViewGetSource`/`webViewGetOverrideUrl`（:271/:306） | `delayTime: Long` | `Opt<i64>` 严格 | `RhinoOptLong` |
+
+> P2-3 收口（2026-10-06）：`cache.put` 的 `saveTime` 实现由 `RhinoOptLong` 收窄为
+> `RhinoOptInt`（与上游原始 `Int` 同域：`5e9` 现与原版一致抛错，改前按 i64 误收）。
 
 **B 组：探针证明严格 → 保持原签名（6 API / 8 形参）**
 
 | API（上游签名） | 形参 | 保持 | 探针依据 |
 |---|---|---|---|
-| `connect`（help/jsHelp.md:212，`callTimeout: Int?` 装箱） | `timeout_ms` | `Opt<i64>` | CASE 68/90 字符串→找不到方法 |
+| `connect`（JsExtensions.kt:214，`callTimeout: Long?` 装箱；help/jsHelp.md:212 的 `Int?` 为过时文档） | `timeout_ms` | `Opt<i64>` | CASE 68/90 字符串→找不到方法 |
 | `cache.get`（CacheManager.kt:108） | `onlyDisk: Boolean` | `Opt<bool>` | CASE 133-142 |
 | `openVideoPlayer`（:343） | `isFloat: Boolean` | `Opt<bool>` | CASE 116-125 |
 | `webViewGetSource`/`webViewGetOverrideUrl`（:271/:306） | `cacheFirst: Boolean` | `Opt<bool>` | CASE 120-125 |

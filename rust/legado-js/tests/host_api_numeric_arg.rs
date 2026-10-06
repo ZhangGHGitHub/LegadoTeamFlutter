@@ -17,7 +17,8 @@
 //!    /bool/undefined/null 抛错（与探针一致）；
 //! 2) 可选数值形参（`RhinoOptInt`/`RhinoOptLong`）保留可选 arity（缺参 →
 //!    None），显式 null/undefined → None，其余按 1) 宽松转换；
-//! 3) 装箱数值（`connect` 的 `timeout_ms: Opt<i64>`，上游 `callTimeout: Int?`）
+//! 3) 装箱数值（`connect` 的 `timeout_ms: Opt<i64>`，上游 `callTimeout: Long?`，
+//!    JsExtensions.kt:214；jsHelp.md:212 的 `Int?` 系过时文档）
 //!    与全部布尔形参**保持严格**（探针实测原版即抛错）——越权宽松化会引入
 //!    原版没有的行为，本文件同时锁定这两类「不得变宽」。
 //! 4) `java.ajax` 数组取首元素边界（探针 CASE 149-152）：`[]`/`[undefined]`
@@ -223,6 +224,79 @@ fn primitive_int_params_coerce_and_check_range() {
     assert_err(&engine, "java.timeFormatUTC(0, \"yyyy\", \"5000000000\")");
 }
 
+/// P2-1 收口：i32 越界判定改为「先向零截断、再判截断值越界」（与上游
+/// `NativeJavaObject.toInteger` 一致——字节码：`d > 0 ? floor(d) : ceil(d)`
+/// 后比较 `[-2^31, 2^31-1]`），原版实测接受 `(i32::MAX, 2^31)` /
+/// `(-2^31-1, i32::MIN)` 开区间内的浮点毫厘值；精确越界 `2147483648` /
+/// `-2147483649` 仍抛错。
+///
+/// i64 对应边界（同法核对，无需改动）：上游域为 `[-2^63, 2^63-1024]`
+/// （min 常量即 -2^63，max 为 2^63 以下最大可表示 f64），与本实现
+/// `[-2^63, 2^63)` 在所有 f64 可表示值上等价——`2^63-1024` 与 `-2^63`
+/// 均接受，`2^63`（含 `9223372036854775807` / `"9223372036854775806"`
+/// 的舍入值）与 `-2^63-2048` 均抛错。
+#[test]
+fn truncation_then_range_check_matches_rhino_boundaries() {
+    let engine = production_engine();
+
+    // 正值毫厘区间 (i32::MAX, 2^31)：截断后落 i32::MAX，接受（改前误拒）
+    assert_eq!(
+        eval_ok(
+            &engine,
+            "String(java.base64DecodeToByteArray(\"aGVsbG8=\", 2147483647.5)[0])"
+        ),
+        "104",
+        "2147483647.5 应向零截断为 2147483647 后接受（原版同形实测）"
+    );
+    assert_eq!(
+        eval_ok(
+            &engine,
+            "String(java.base64DecodeToByteArray(\"aGVsbG8=\", \"2147483647.5\")[0])"
+        ),
+        "104",
+        "字符串形态同样 ToNumber→截断后接受（探针 CASE 4 口径）"
+    );
+
+    // 负值毫厘区间 (-2^31-1, i32::MIN)：截断后落 i32::MIN，接受（改前误拒）
+    assert_eq!(
+        eval_ok(
+            &engine,
+            "String(cache.put(\"numeric-arg-bound-neg\", \"v\", -2147483648.5))"
+        ),
+        "true",
+        "-2147483648.5 应向零截断为 -2147483648 后接受（saveTime<=0 仅内存）"
+    );
+
+    // 精确越界仍抛错（上界开区间 2^31、下界开区间 -2^31-1）
+    assert_err(
+        &engine,
+        "java.base64DecodeToByteArray(\"aGVsbG8=\", 2147483648)",
+    );
+    assert_err(
+        &engine,
+        "java.base64DecodeToByteArray(\"aGVsbG8=\", \"2147483648\")",
+    );
+    assert_err(
+        &engine,
+        "java.base64DecodeToByteArray(\"aGVsbG8=\", -2147483649)",
+    );
+
+    // i64 对应边界：2^63-1024（最大可表示上界值）与 -2^63 接受；
+    // 2^63 舍入值（字面量 9223372036854775807 / 字符串 9223372036854775806）
+    // 抛错——与现状实现一致，此用例锁定不得回退。
+    assert!(
+        eval(&engine, "String(java.timeFormat(9223372036854774784))").is_ok(),
+        "9223372036854774784（= 2^63-1024，最大可表示下界值）应接受转换"
+    );
+    assert!(
+        eval(&engine, "String(java.timeFormat(-9223372036854775808))").is_ok(),
+        "-9223372036854775808（= -2^63）应接受转换"
+    );
+    assert_err(&engine, "java.timeFormat(9223372036854775807)");
+    assert_err(&engine, "java.timeFormat(\"9223372036854775806\")");
+    assert_err(&engine, "java.timeFormat(-9223372036854777856)");
+}
+
 /// 可选数值形参（RhinoOptInt/RhinoOptLong）：缺参 → 缺省，显式 null/undefined
 /// → 缺省，出现值按宽松转换（探针 CASE 24 + Kotlin `@JvmOverloads` 口径）
 #[test]
@@ -244,6 +318,17 @@ fn optional_numeric_params_keep_arity_and_coerce_when_present() {
         "saveTime 字符串数字应宽松"
     );
     assert_err(&engine, "cache.put(\"numeric-arg-put-c\", \"v\", \"abc\")");
+    // P2-3 收口：saveTime 上游为原始 `Int`（CacheManager.kt:60；
+    // WebCacheManager.put :172），i32 域外的 5e9 应与原版一致抛错
+    //（改前 `RhinoOptLong` 按 i64 域误收）
+    assert_err(
+        &engine,
+        "cache.put(\"numeric-arg-put-d\", \"v\", 5000000000)",
+    );
+    assert_err(
+        &engine,
+        "cache.put(\"numeric-arg-put-d\", \"v\", \"5000000000\")",
+    );
 
     // webViewGetSource(..., cacheFirst?: Boolean, delayTime?: Long)（上游 :271
     // 重载 4/5/6 参，delayTime 非空 Long）
@@ -276,7 +361,8 @@ fn optional_numeric_params_keep_arity_and_coerce_when_present() {
 fn boxed_numeric_and_boolean_params_stay_strict() {
     let engine = production_engine();
 
-    // connect(url, header, callTimeout: Int?)：上游 callTimeout 为可空 Int? —
+    // connect(url, header, callTimeout: Long?)：上游 JsExtensions.kt:214 为
+    // 可空 `Long?`（jsHelp.md:212 的 `Int?` 系过时文档）—
     // 探针 CASE 68/90：装箱 Integer/Long 收字符串 = 方法不存在。
     // 注：`java.connect` 有 JS 垫片（quickjs_impl RESPONSE_BRIDGE_JS），
     // 按上游 3 参形态 (url, header=null, timeout) 调用可直达原生第 5 参。
