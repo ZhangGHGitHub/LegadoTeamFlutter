@@ -159,6 +159,103 @@ void main() {
       }
     });
 
+    // [Web 端口缺陷修复 | 2026-10-06] 开关启动须使用「其他设置 → Web 服务端口」
+    // 配置（PrefKeys.webPort）：原实现在此调 startServer() 不传参，恒用默认
+    // 1122，设置页端口形同虚设（对齐原版 WebService.kt:244 启动读配置端口）。
+    testWidgets('Web 服务开关：启动使用配置端口 webPort=8080', (tester) async {
+      SharedPreferences.setMockInitialValues({'webPort': 8080});
+      final startedPorts = <int>[];
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
+      when(
+        () => mockApi.startServer(port: any(named: 'port')),
+      ).thenAnswer((inv) async {
+        startedPorts.add(inv.namedArguments[#port] as int);
+      });
+      when(() => mockApi.getServerStatus())
+          .thenAnswer((_) async => 'running on port 8080');
+
+      await tester.pumpWidget(wrap(const SettingsScreen()));
+      await tester.pumpAndSettle();
+      await dragTo(tester, 'Web 服务');
+      await tester.pumpAndSettle();
+
+      final card = find
+          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
+          .first;
+      final switchFinder = find.descendant(
+        of: card,
+        matching: find.byType(Switch),
+      );
+      // 直接触发 onChanged（等价用户点开关）：NestedScrollView 下
+      // ensureVisible/tap 会把卡片滚出视口导致 finder 失效
+      tester.widget<Switch>(switchFinder).onChanged!(true);
+      await tester.pumpAndSettle();
+
+      expect(startedPorts, [8080], reason: '应把「其他设置」配置端口传给 startServer');
+    });
+
+    testWidgets('Web 服务开关：未配置端口回落默认 1122', (tester) async {
+      final startedPorts = <int>[];
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
+      when(
+        () => mockApi.startServer(port: any(named: 'port')),
+      ).thenAnswer((inv) async {
+        startedPorts.add(inv.namedArguments[#port] as int);
+      });
+      when(() => mockApi.getServerStatus())
+          .thenAnswer((_) async => 'running on port 1122');
+
+      await tester.pumpWidget(wrap(const SettingsScreen()));
+      await tester.pumpAndSettle();
+      await dragTo(tester, 'Web 服务');
+      await tester.pumpAndSettle();
+
+      final card = find
+          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
+          .first;
+      final switchFinder = find.descendant(
+        of: card,
+        matching: find.byType(Switch),
+      );
+      tester.widget<Switch>(switchFinder).onChanged!(true);
+      await tester.pumpAndSettle();
+
+      expect(startedPorts, [1122], reason: '未设置 webPort 时默认 1122（对齐原版）');
+    });
+
+    testWidgets('Web 服务开关：越界 webPort 回落默认 1122（防手改 prefs）', (tester) async {
+      SharedPreferences.setMockInitialValues({'webPort': 500});
+      final startedPorts = <int>[];
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
+      when(
+        () => mockApi.startServer(port: any(named: 'port')),
+      ).thenAnswer((inv) async {
+        startedPorts.add(inv.namedArguments[#port] as int);
+      });
+      when(() => mockApi.getServerStatus())
+          .thenAnswer((_) async => 'running on port 1122');
+
+      await tester.pumpWidget(wrap(const SettingsScreen()));
+      await tester.pumpAndSettle();
+      await dragTo(tester, 'Web 服务');
+      await tester.pumpAndSettle();
+
+      final card = find
+          .ancestor(of: find.text('Web 服务'), matching: find.byType(Row))
+          .first;
+      final switchFinder = find.descendant(
+        of: card,
+        matching: find.byType(Switch),
+      );
+      tester.widget<Switch>(switchFinder).onChanged!(true);
+      await tester.pumpAndSettle();
+
+      expect(startedPorts, [1122], reason: '越界端口（<1024）按默认 1122 兜底');
+    });
+
     testWidgets('点击主题模式弹出选择对话框并可切换（全局生效）', (tester) async {
       await tester.pumpWidget(wrap(const SettingsScreen()));
       await tester.pumpAndSettle();

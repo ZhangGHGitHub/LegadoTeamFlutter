@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../l10n/app_strings.dart';
 import '../routes.dart';
+import '../constants/pref_keys.dart';
 import '../services/auto_task_scheduler.dart';
 import '../providers/providers.dart';
 import '../providers/theme/theme_notifier.dart';
@@ -44,6 +45,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _webServiceStatus = '';
   int _mcpPort = 0;
 
+  /// 端口越界兜底日志只记一次（防手改 prefs 反复刷日志）
+  bool _webPortFallbackLogged = false;
+
   @override
   void initState() {
     super.initState();
@@ -78,13 +82,51 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  /// 读取「其他设置 → Web 服务端口」配置（PrefKeys.webPort，默认 1122）
+  ///
+  /// [2026-10-06 缺陷修复] 对齐原版 `WebService.kt:244`
+  /// `var port = getPrefInt(PreferKey.webPort, 1122)` → `:215 HttpServer(port)`：
+  /// 启动时使用用户配置端口。此前本页调 `api.startServer()` 不传端口，恒用
+  /// 默认 1122，使「其他设置」中的端口配置形同虚设。
+  ///
+  /// 读取写法对齐 other_settings_screen.dart 既有 `getIntPref`（同键同默认值；
+  /// getIntPref 内部已对异常回落默认值）。越界兜底：设置页已校验
+  /// 1024~60000（other_settings_screen.dart `_showWebPortDialog`），此处仅为
+  /// 防手改 prefs 绕过校验导致启动失败，越界回落 1122 并只记一次日志。
+  Future<int> _readWebPort() async {
+    const defaultPort = 1122;
+    final port = await ref
+        .read(settingsProvider)
+        .getIntPref(PrefKeys.webPort, defaultValue: defaultPort);
+    if (port < 1024 || port > 60000) {
+      if (!_webPortFallbackLogged) {
+        _webPortFallbackLogged = true;
+        debugPrint('Web 服务端口配置越界（$port），回落默认 $defaultPort');
+      }
+      return defaultPort;
+    }
+    return port;
+  }
+
+  /// Web 服务开关（对标原版 pref_main SwitchPreference）
+  ///
+  /// [iOS 前台约束 | 2026-10-06 登记] iOS 无前台服务（平台通道侧
+  /// `startForegroundService` 在 iOS 为空实现）：App 退至后台或被系统挂起后，
+  /// 监听 socket 不再被调度服务（切到 Safari 即触发挂起）——真机验证须让
+  /// App 保持前台，由同局域网设备经 `http://<设备IP>:<端口>` 访问。
+  /// Android 侧本仓库虽有前台服务机制（platform_channel），但 Web 服务当前
+  /// 未接入保活：`webServiceWakeLock` 偏好仅持久化未接线，既有前台服务仅用于
+  /// 视频/听书播放（VideoPlayService / PlaybackForegroundService），故 Android
+  /// 后台存活同样不作保证（如实登记，未夸大）。
   Future<void> _toggleWebService(bool v) async {
     if (_webServiceBusy) return;
     setState(() => _webServiceBusy = true);
     final api = ref.read(bookApiProvider);
     try {
       if (v) {
-        await api.startServer();
+        // 启动端口取用户配置（PrefKeys.webPort），越界按 1122 兜底
+        final port = await _readWebPort();
+        await api.startServer(port: port);
         final status = await api.getServerStatus();
         await api.setConfig('webService', 'true');
         if (!mounted) return;
