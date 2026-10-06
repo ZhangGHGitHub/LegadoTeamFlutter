@@ -673,6 +673,14 @@ pub async fn get_cover(
 /// 本实现按直链抓取（相对地址以书籍地址为基准解析）；`width` 仅解析不缩放。
 /// 解析结果落在本地路径时与 `/cover` 同走 [`read_local_image`] 白名单。
 ///
+/// 地址解析失败（本地书 `bookUrl` 为文件路径、`bookUrl` 为无法解析的垃圾串等）
+/// 时不再直接报错，而是把原始 `path` 交给 [`fetch_image_bytes`]：http(s) 走网络
+/// 代理，其余一律走 [`read_local_image`] 的 P1-2 三重门（扩展名 + 目录/文件
+/// 白名单 + 魔数）。安全性由白名单保证，而非由「必须先解析成 URL」保证；
+/// 白名单外的本地路径（含垃圾串场景）仍会被拒绝。
+/// 注：Linux 上 `Url::parse("/abs/path/book.txt")` 必然失败（无 scheme），
+/// 此入口是本地书图片代理的唯一通路。
+///
 /// 登记差异：原版经书源「正文图片」规则（`ImageProvider.getImage`）解析并
 /// 重编码 PNG，本实现为 HTTP 代理（回上游字节与 Content-Type）。
 pub async fn get_image(
@@ -714,17 +722,13 @@ pub async fn get_image(
         );
     }
 
-    let target = resolve_image_url(&book_url, &path);
-    match target {
-        None => to_response(
-            &ReturnData::error("图片地址不是有效的 http(s) 链接"),
-            "/image",
-            origin.as_deref(),
-        ),
-        Some(target) => match fetch_image_bytes(&state, &target).await {
-            Ok((bytes, mime)) => bytes_response(bytes, &mime, "/image", origin.as_deref()),
-            Err(msg) => to_response(&ReturnData::error(msg), "/image", origin.as_deref()),
-        },
+    // 解析失败（本地书路径、相对标识、垃圾 bookUrl 等）→ 原样交给
+    // fetch_image_bytes：http(s) 走网络代理，其余走 P1-2 白名单三重门。
+    // 白名单拒绝即安全（原实现此处直接报错，Linux 上本地书路径永远走不通）。
+    let target = resolve_image_url(&book_url, &path).unwrap_or_else(|| path.clone());
+    match fetch_image_bytes(&state, &target).await {
+        Ok((bytes, mime)) => bytes_response(bytes, &mime, "/image", origin.as_deref()),
+        Err(msg) => to_response(&ReturnData::error(msg), "/image", origin.as_deref()),
     }
 }
 

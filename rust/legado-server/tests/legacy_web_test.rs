@@ -1111,6 +1111,14 @@ async fn test_image_local_path_whitelist_enforced() {
             ..Book::default()
         })
         .unwrap();
+        // bookUrl 为无法解析的非 URL 垃圾串：解析失败后同样只能走白名单
+        repo.insert(&Book {
+            book_url: "not-a-valid-url".to_string(),
+            origin: "junk".to_string(),
+            name: "垃圾地址书".to_string(),
+            ..Book::default()
+        })
+        .unwrap();
     }
 
     // 在线书籍 + 本地绝对路径（原审查实测的拖库形态）→ 必须拒绝
@@ -1122,6 +1130,16 @@ async fn test_image_local_path_whitelist_enforced() {
     );
     let (_, _, body) = get(app, &uri).await;
     assert_local_read_rejected(&body, secret_payload, "/image 本地绝对路径直读");
+
+    // bookUrl 为垃圾串（解析必失败）+ 白名单外本地路径 → 仍必须拒绝（安全不降级）
+    let app = create_router(state.clone());
+    let uri = format!(
+        "/image?url={}&path={}",
+        enc("not-a-valid-url"),
+        enc(&secret)
+    );
+    let (_, _, body) = get(app, &uri).await;
+    assert_local_read_rejected(&body, secret_payload, "/image 垃圾 bookUrl + 白名单外路径");
 
     // 本地书目录内的图片 → 放行（保绿：不破坏正常图片代理）
     let app = create_router(state.clone());
