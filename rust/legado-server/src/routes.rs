@@ -1,5 +1,7 @@
 //! 路由组装
 
+use axum::http::header;
+use axum::response::IntoResponse;
 use axum::routing::{delete, get, post, put};
 use axum::Router;
 use std::sync::Arc;
@@ -9,6 +11,32 @@ use crate::handlers;
 use crate::state::AppState;
 use crate::ws;
 
+/// Web UI 首页内容（编译期嵌入）
+///
+/// 为何编译期嵌入：设备（Android/iOS）运行时没有仓库工作目录保证，`web-dist`
+/// 这类相对路径资源目录在设备上并不存在 —— `GET /` 落到 [`ServeDir`] fallback
+/// 只能得到 404（浏览器打开 Web 服务页面失败）。改用 `include_str!` 把首页 HTML
+/// 打进二进制后，任何工作目录下都能返回页面。
+///
+/// 与 fallback 的关系：本路由只覆盖首页 `/`；`ServeDir::new("web-dist")` 的
+/// fallback 继续保留，本机开发时其它静态资源仍从磁盘读取（改完刷新即可，无需
+/// 重编译）。显式路由优先于 fallback，故 `/` 恒定走嵌入内容（设备与开发机一致）。
+///
+/// 路径基准：`include_str!` 相对本文件（`src/routes.rs`），`../web-dist/index.html`
+/// 即 crate 根下的 `web-dist/index.html`；文件缺失会在编译期报错，而非运行时 404。
+const INDEX_HTML: &str = include_str!("../web-dist/index.html");
+
+/// `GET /` — 返回编译期嵌入的书架页面
+///
+/// `Content-Type` 显式带 `charset=utf-8`，与页面 `<meta charset="UTF-8">` 对齐
+/// （磁盘 fallback 的 mime_guess 只给 `text/html`，中文可能被浏览器按错误编码解码）。
+async fn web_index() -> impl IntoResponse {
+    (
+        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+        INDEX_HTML,
+    )
+}
+
 /// 创建完整的应用路由，注入共享状态
 pub fn create_router(state: Arc<AppState>) -> Router {
     Router::new()
@@ -16,7 +44,17 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         // MCP API（顶层路径，不在 /api 前缀下）
         .route("/mcp/tools", get(handlers::mcp::get_tools))
         .route("/mcp/call", post(handlers::mcp::call_tool))
-        // 静态文件服务 — 提供 Web 前端资源（fallback 处理非 API 请求）
+        // Web UI 首页（编译期嵌入；显式路由优先于下方 fallback）
+        //
+        // 不挂 SPA 通配回退：页面无 history API / hash 前端路由（视图切换纯内存），
+        // 未知非 API 路径保持 404 语义即可，无需把 index 回给任意路径。
+        .route("/", get(web_index))
+        // 静态文件服务 — 开发机上的其它 Web 前端资源（fallback 处理非 API 请求）
+        //
+        // 目录不存在无噪音日志：tower-http 0.6 的 ServeDir 把 io::NotFound 直接映射为
+        // 404 响应（services/fs/serve_dir/mod.rs 文档与 try_call），唯一的 tracing::error!
+        // 在 `#[cfg(feature = "tracing")]` 下；本 crate 只启用 tower-http 的
+        // ["cors", "fs"]，未启用该 feature，故设备侧不会刷日志。保留原样即可。
         .fallback_service(ServeDir::new("web-dist"))
         .with_state(state)
 }
@@ -253,6 +291,63 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .uri("/api/nonexistent")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+    }
+
+    /// Web UI 首页必须由编译期嵌入的 HTML 提供（设备端无 web-dist 目录也能访问）
+    ///
+    /// 断言三件事：HTTP 200；`Content-Type` 为 `text/html; charset=utf-8`
+    /// （对齐页面 `<meta charset="UTF-8">`；磁盘 fallback 的 mime_guess 只给
+    /// `text/html`，不带 charset）；正文含页面标记 `<title>Legado`。
+    #[tokio::test]
+    async fn test_index_route_serves_embedded_html() {
+        let state = make_test_state();
+        let app = create_router(state);
+
+        let resp = app
+            .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+            .await
+            .unwrap();
+
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let content_type = resp
+            .headers()
+            .get(axum::http::header::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or_default()
+            .to_string();
+        assert_eq!(
+            content_type, "text/html; charset=utf-8",
+            "首页 Content-Type 应为 text/html; charset=utf-8"
+        );
+
+        let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let html = String::from_utf8(body.to_vec()).unwrap();
+        assert!(
+            html.contains("<title>Legado"),
+            "首页正文应含页面标记 <title>Legado"
+        );
+    }
+
+    /// 未知非 API 路径仍返回 404（页面无 history/hash 前端路由，故不挂 SPA 通配回退）
+    #[tokio::test]
+    async fn test_unknown_non_api_path_404() {
+        let state = make_test_state();
+        let app = create_router(state);
+
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/no-such-page")
                     .body(Body::empty())
                     .unwrap(),
             )
