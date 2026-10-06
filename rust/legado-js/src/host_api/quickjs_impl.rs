@@ -2622,16 +2622,30 @@ fn register_network_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // ajax(url | options_json) -> String
-    // 入参经 AjaxUrlStr 收敛：数组 → 首元素（对齐上游 JsExtensions.kt:133）；
+    // ajax(url | options_json, callTimeout?) -> String
+    // 首参经 AjaxUrlStr 收敛：数组 → 首元素（对齐上游 JsExtensions.kt:133）；
     // 非数组（裸 URL 串 / JSON options）与 RhinoStr 同款 JS ToString。
+    // 第二参 callTimeout 透传为逐请求超时（对齐上游 JsExtensions.kt:134
+    // `ajax(url: Any, callTimeout: Long?)` → OkHttp callTimeout，单位毫秒；
+    // null/0/越界边界见 network::call_timeout_to_request_timeout）。
+    // 类型选 RhinoOptLong：上游为装箱可空 `Long?`，Rhino 探针（coerce.rs
+    // 数值表）显示装箱数值严格转换（字符串数字抛「方法不存在」），与
+    // connect 的 `Opt<i64>`（同为上游 `callTimeout: Long?`）同款；缺参/显式
+    // null → None（arity 由 FromParam::optional 保留，单参形态不回归）。
     mount_dual(
         java,
         globals,
         "ajax",
-        rquickjs::Function::new(ctx.clone(), |options: AjaxUrlStr| -> String {
-            network::ajax(&options.0).unwrap_or_else(|e| format!("[ERROR] {}", e))
-        })
+        rquickjs::Function::new(
+            ctx.clone(),
+            |options: AjaxUrlStr, call_timeout: RhinoOptLong| -> String {
+                match network::call_timeout_to_request_timeout(call_timeout.0) {
+                    Ok(timeout_ms) => network::ajax_with_timeout(&options.0, timeout_ms)
+                        .unwrap_or_else(|e| format!("[ERROR] {}", e)),
+                    Err(e) => format!("[ERROR] {}", e),
+                }
+            },
+        )
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 

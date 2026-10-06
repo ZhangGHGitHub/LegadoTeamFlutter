@@ -497,7 +497,45 @@ pub fn http_head(url: &str) -> Result<String, String> {
     })
 }
 
-/// ajax(options) → 通用 AJAX 请求
+/// `java.ajax(url, callTimeout)` 第二参 → 逐请求超时（毫秒）
+///
+/// 原版语义（`JsExtensions.kt:134 ajax(url: Any, callTimeout: Long?)` →
+/// `AnalyzeUrl` 链路到 OkHttp `callTimeout(it, TimeUnit.MILLISECONDS)`，
+/// `AnalyzeUrlNetworkOptions.kt:117-119`）：
+/// - `null` / 缺省 → `None`（沿用全局默认，行为与单参形态一致）；
+/// - `0` → OkHttp 语义「不设 call timeout」（0 合法、不立即超时）——
+///   本实现最接近映射为 `None`（不覆盖默认请求超时）；**不得**下传
+///   `Duration::ZERO`（reqwest 对零时长 sleep 立即到期，会把原版可用形态
+///   变成必失败）；
+/// - `1..=Integer.MAX_VALUE` → `Some(ms)`；
+/// - `< 0` 或 `> Integer.MAX_VALUE` → Err：原版 OkHttp `checkDuration`
+///   抛 IllegalArgumentException，被 `ajax` 的 `runCatching` 捕获后返回
+///   `stackTraceStr`（错误文本，非抛到 JS）；本实现以既有 `[ERROR]` 惯例承载。
+pub fn call_timeout_to_request_timeout(
+    call_timeout_ms: Option<i64>,
+) -> Result<Option<u64>, String> {
+    match call_timeout_ms {
+        None => Ok(None),
+        Some(0) => Ok(None),
+        Some(t) if t < 0 => Err(format!(
+            "ajax: callTimeout {t} 非法（原版 OkHttp checkDuration: timeout < 0）"
+        )),
+        Some(t) if t > i64::from(i32::MAX) => Err(format!(
+            "ajax: callTimeout {t} 超过原版 OkHttp 上限 Integer.MAX_VALUE 毫秒"
+        )),
+        Some(t) => Ok(Some(t as u64)),
+    }
+}
+
+/// 显式第二参覆盖 options 内 timeout_ms（`url,{json}` 里的 timeout_ms 让位；
+/// 显式调用参数优先）；`None` 不覆盖。
+fn apply_call_timeout(opts: &mut HttpOptions, call_timeout_ms: Option<u64>) {
+    if let Some(t) = call_timeout_ms {
+        opts.timeout_ms = Some(t);
+    }
+}
+
+/// ajax(options) → 通用 AJAX 请求（无显式 callTimeout，保持既有行为）
 ///
 /// 支持两种输入（对齐原版 JsExtensions.ajax）：
 /// 1. 标准 JSON：`{"url":..., "method":..., "headers":..., "body":...}` → 返回 HttpResponse JSON
@@ -505,6 +543,14 @@ pub fn http_head(url: &str) -> Result<String, String> {
 ///    `https://api?... ,{"method":"GET","headers":{...}}` → 返回**纯响应体文本**
 ///    （原版 ajax 返回 StrResponse.body；七猫 qmParse 直接 JSON.parse 响应体）
 pub fn ajax(input: &str) -> Result<String, String> {
+    ajax_with_timeout(input, None)
+}
+
+/// 带调用方显式超时的 ajax 入口（`java.ajax` 第二参透传路径）。
+///
+/// 逐请求超时语义与边界见 [`call_timeout_to_request_timeout`]；
+/// `call_timeout_ms = None` 时与 [`ajax`] 完全等价。
+pub fn ajax_with_timeout(input: &str, call_timeout_ms: Option<u64>) -> Result<String, String> {
     let input = input.trim();
     // 原版「url,{json}」格式：不以 `{` 开头且含 `,{`，逗号前为 URL、逗号后为 option JSON
     if !input.starts_with('{') {
@@ -517,7 +563,8 @@ pub fn ajax(input: &str) -> Result<String, String> {
                         "url".to_string(),
                         serde_json::Value::String(url_part.to_string()),
                     );
-                    if let Ok(opts) = serde_json::from_value::<HttpOptions>(v) {
+                    if let Ok(mut opts) = serde_json::from_value::<HttpOptions>(v) {
+                        apply_call_timeout(&mut opts, call_timeout_ms);
                         return ajax_request_body(&opts);
                     }
                 }
@@ -529,19 +576,22 @@ pub fn ajax(input: &str) -> Result<String, String> {
     // java.ajax(source.key+"/user/search.html?q="+key) 依赖）
     // — 2026-08-17
     if !input.starts_with('{') {
-        let opts = HttpOptions {
+        let mut opts = HttpOptions {
             url: input.to_string(),
             ..Default::default()
         };
+        apply_call_timeout(&mut opts, call_timeout_ms);
         return ajax_request_body(&opts);
     }
     // 标准 JSON 输入
-    let opts: HttpOptions =
+    let mut opts: HttpOptions =
         serde_json::from_str(input).map_err(|e| format!("ajax parse options error: {}", e))?;
 
     if opts.url.is_empty() {
         return Err("ajax: url is required".to_string());
     }
+    // 显式第二参优先于 options JSON 内 timeout_ms
+    apply_call_timeout(&mut opts, call_timeout_ms);
     let url = sanitize_request_url(&opts.url);
     if url.is_empty() {
         return Err("ajax: url is required".to_string());
@@ -611,6 +661,27 @@ mod http_options_tests {
         let opts: HttpOptions =
             serde_json::from_str(r#"{"method":"POST","body":"key=val"}"#).unwrap();
         assert_eq!(opts.body.as_deref(), Some("key=val"));
+    }
+
+    /// `java.ajax(url, callTimeout)` 边界映射（原版 OkHttp checkDuration 语义）
+    #[test]
+    fn test_call_timeout_to_request_timeout_boundaries() {
+        // null/缺省 与 0 均不覆盖默认
+        assert_eq!(call_timeout_to_request_timeout(None).unwrap(), None);
+        assert_eq!(call_timeout_to_request_timeout(Some(0)).unwrap(), None);
+        // 正超时原样透传（毫秒）
+        assert_eq!(
+            call_timeout_to_request_timeout(Some(300)).unwrap(),
+            Some(300)
+        );
+        // 原版 OkHttp 上限 Integer.MAX_VALUE 毫秒（含）
+        assert_eq!(
+            call_timeout_to_request_timeout(Some(i64::from(i32::MAX))).unwrap(),
+            Some(i32::MAX as u64)
+        );
+        // < 0 / > Integer.MAX_VALUE：原版抛 IllegalArgumentException（错误文本）
+        assert!(call_timeout_to_request_timeout(Some(-1)).is_err());
+        assert!(call_timeout_to_request_timeout(Some(i64::from(i32::MAX) + 1)).is_err());
     }
 }
 
