@@ -71,6 +71,18 @@ class AudioService {
   /// 是否已注册通道回调
   bool _handlerRegistered = false;
 
+  /// 真实音频（听书/TTS）播放态广播流控制器
+  ///
+  /// [iOS Web 服务保活 | 2026-10-07] Web 服务运行期间 iOS 用近静音音轨维持
+  /// 后台存活；真实音频播放时静音音轨应暂停（音频会话本身即保活），停止后
+  /// 恢复。播放态经 notifyPlaying / notifyPaused / notifyStopped 汇聚
+  /// （audio_notifier 的全部播放态变更都走这三个便捷方法），此处以广播流
+  /// 暴露，供 WebKeepAliveService 决策，与平台通道是否初始化无关。
+  final StreamController<bool> _playbackActiveController =
+      StreamController<bool>.broadcast();
+
+  bool _playbackActive = false;
+
   // ===== 公开属性 =====
 
   /// 音频焦点事件流
@@ -82,6 +94,12 @@ class AudioService {
 
   /// 是否已初始化
   bool get isInitialized => _initialized;
+
+  /// 真实音频（听书/TTS）播放态流（Web 服务保活共存判断用）
+  Stream<bool> get playbackActiveStream => _playbackActiveController.stream;
+
+  /// 真实音频（听书/TTS）当前是否正在播放
+  bool get playbackActive => _playbackActive;
 
   // ===== 生命周期方法 =====
 
@@ -242,20 +260,30 @@ class AudioService {
 
   /// 通知系统当前正在播放
   Future<void> notifyPlaying({int position = 0}) async {
+    _setPlaybackActive(true);
     await setPlaying(true);
     await updatePlaybackState(state: 'playing', position: position);
   }
 
   /// 通知系统当前已暂停
   Future<void> notifyPaused({int position = 0}) async {
+    _setPlaybackActive(false);
     await setPlaying(false);
     await updatePlaybackState(state: 'paused', position: position);
   }
 
   /// 通知系统当前已停止
   Future<void> notifyStopped() async {
+    _setPlaybackActive(false);
     await setPlaying(false);
     await updatePlaybackState(state: 'stopped');
+  }
+
+  /// 更新真实音频播放态（值变化才广播；供 Web 保活共存的启停判断）
+  void _setPlaybackActive(bool active) {
+    if (_playbackActive == active) return;
+    _playbackActive = active;
+    _playbackActiveController.add(active);
   }
 
   // ===== 内部方法 =====

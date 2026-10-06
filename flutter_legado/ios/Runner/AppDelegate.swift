@@ -33,5 +33,10 @@ import UIKit
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "LauncherIconBridge") {
       LauncherIconBridge.shared.attach(messenger: registrar.messenger())
     }
+    // [2026-10-07 | iOS Web 服务后台保活] 注册近静音音频会话保活通道
+    //（legado/web_keepalive；对应原版 WebService WakeLock 的「防睡眠」目的）
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "WebKeepAlive") {
+      WebKeepAlive.shared.attach(messenger: registrar.messenger())
+    }
   }
 }

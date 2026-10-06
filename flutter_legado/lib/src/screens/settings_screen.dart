@@ -9,6 +9,7 @@ import '../l10n/app_strings.dart';
 import '../routes.dart';
 import '../constants/pref_keys.dart';
 import '../services/auto_task_scheduler.dart';
+import '../services/web_keep_alive_service.dart';
 import '../providers/providers.dart';
 import '../providers/theme/theme_notifier.dart';
 import '../widgets/app_scaffold.dart';
@@ -42,6 +43,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   bool _mcpService = false;
   bool _webServiceBusy = false;
   bool _mcpServiceBusy = false;
+
+  /// iOS 后台保活不可用（start 失败回退「仅前台可用」时，卡片副题提示）
+  bool _webKeepAliveUnavailable = false;
   String _webServiceStatus = '';
   int _mcpPort = 0;
 
@@ -55,6 +59,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   /// 恢复服务开关持久化状态（config 键 webService / autoTaskService / mcpPort）
+  ///
+  /// [iOS 特性 | 2026-10-07 保活批核实] `webService=true` 只是 UI 镜像态
+  /// （对齐原版：原版无开机/启动自拉起，见调研报告 §二.4）：App 进程重启后
+  /// 进程内 Rust server 并不存在，此处也**不**自动 `startServer`、**不**启动
+  /// 后台保活（没有服务可保；保活生命周期严格绑定 startServer 成功）。
   Future<void> _initServiceStates() async {
     final api = ref.read(bookApiProvider);
     try {
@@ -110,14 +119,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   /// Web 服务开关（对标原版 pref_main SwitchPreference）
   ///
-  /// [iOS 前台约束 | 2026-10-06 登记] iOS 无前台服务（平台通道侧
-  /// `startForegroundService` 在 iOS 为空实现）：App 退至后台或被系统挂起后，
-  /// 监听 socket 不再被调度服务（切到 Safari 即触发挂起）——真机验证须让
-  /// App 保持前台，由同局域网设备经 `http://<设备IP>:<端口>` 访问。
+  /// [iOS Web 服务后台保活 | 2026-10-07 用户批准方案 C+A] iOS 无前台服务，
+  /// 平台等价物是 `UIBackgroundModes: audio` + 近静音音频会话（对应原版
+  /// WakeLock 的「防睡眠」目的，见 docs/WEB_SERVICE_KEEPALIVE_SURVEY_20261007.md）：
+  /// 启动成功后接[WebKeepAliveService.start]，停止成功后接 stop，让 App
+  /// 退后台/锁屏时局域网浏览器仍可访问。保活启动失败仅记日志并回退
+  /// 「仅前台可用」（卡片副题提示），不阻断服务开关。
+  ///
   /// Android 侧本仓库虽有前台服务机制（platform_channel），但 Web 服务当前
   /// 未接入保活：`webServiceWakeLock` 偏好仅持久化未接线，既有前台服务仅用于
   /// 视频/听书播放（VideoPlayService / PlaybackForegroundService），故 Android
-  /// 后台存活同样不作保证（如实登记，未夸大）。
+  /// 后台存活同样不作保证（如实登记，未夸大；本批按红线不动 Android）。
   Future<void> _toggleWebService(bool v) async {
     if (_webServiceBusy) return;
     setState(() => _webServiceBusy = true);
@@ -128,19 +140,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         final port = await _readWebPort();
         await api.startServer(port: port);
         final status = await api.getServerStatus();
+        // 服务成功即接保活（iOS 专用；其它平台 no-op）
+        final keepAlive = await WebKeepAliveService.instance.start();
         await api.setConfig('webService', 'true');
         if (!mounted) return;
         setState(() {
           _webService = true;
           _webServiceStatus = status;
+          _webKeepAliveUnavailable = keepAlive == WebKeepAliveStatus.failed;
         });
       } else {
         await api.stopServer();
+        // 服务停止必须同步停保活（否则静音音轨会让进程继续存活）
+        await WebKeepAliveService.instance.stop();
         await api.setConfig('webService', 'false');
         if (!mounted) return;
         setState(() {
           _webService = false;
           _webServiceStatus = '';
+          _webKeepAliveUnavailable = false;
         });
       }
     } catch (e) {
@@ -221,6 +239,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     // 同卡内 Switch 与卡描边/图标槽同源，主题切换无残留绿。
     final green = cs.primary;
     final enabled = _webService;
+    final baseSubtitle = enabled && _webServiceStatus.isNotEmpty
+        ? _webServiceStatus
+        : '用浏览器写源或看书';
+    // [2026-10-07 保活批 | 方案 A 兜底] 保活启动失败 → 回退「仅前台可用」，
+    // 仅副题提示（对齐需求：不阻断服务、UI 主形态不变）。
+    final subtitle = enabled && _webKeepAliveUnavailable
+        ? '$baseSubtitle · 后台保活不可用，请保持 App 打开'
+        : baseSubtitle;
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 8),
       decoration: BoxDecoration(
@@ -263,9 +289,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    enabled && _webServiceStatus.isNotEmpty
-                        ? _webServiceStatus
-                        : '用浏览器写源或看书',
+                    subtitle,
                     style: theme.textTheme.bodySmall?.copyWith(
                       color: cs.onSurfaceVariant,
                     ),
