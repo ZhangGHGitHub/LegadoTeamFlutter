@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.364] - 2026-10-06
+
+### Fixed
+- [JS] 修复书源调用 `java.ajax(url, 超时毫秒)` 时超时参数被忽略的问题（现按原版语义生效；`0` 表示不覆盖默认超时，负值/超界与原版一致报错）。
+
 ## [2.0.363] - 2026-10-06
 
 ### Fixed
