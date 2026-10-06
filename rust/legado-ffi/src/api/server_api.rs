@@ -93,6 +93,33 @@ fn lock_handle_slot(
     slot.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// 中止服务器任务并等待其真正结束（W-1）
+///
+/// `abort` 是异步的：任务在其下一个 await 点才被取消，`abort()` 返回时
+/// 任务栈帧（含 moved 进闭包的 `TcpListener`）可能尚未析构、OS 监听端口
+/// 尚未释放。若 `server_stop` 只 abort 不等待，紧随其后的同端口
+/// `server_start` 会在 spawn 前的同步 bind 处报 `AddrInUse`（审查报告
+/// `docs/WEB_SERVICE_REACHABILITY_CODE_REVIEW_20261006.md` §W-1 探针实测：
+/// 10 轮 stop→立即同端口 start 第 2 轮即 `os error 10048`；加 200ms 等待后
+/// 10/10 过；本仓库新增集成测试在旧实现下第 1 轮即红）。此处对齐同文件
+/// `mcp_stop_internal`（Task #76 M1）的既有解法：abort 后
+/// `rt.block_on(handle)`——JoinHandle 在任务完全结束（栈帧析构）后才
+/// resolve，返回即端口已释放。
+///
+/// 死锁分析（调用上下文核实）：本函数仅由 FFI 导出（`ffi_server_stop` /
+/// FRB `server_stop`，运行在 Dart/FFI 调用线程）与测试线程进入，从不在
+/// SERVER_RUNTIME 的任务内执行；即便未来从该 runtime 内部误调，tokio 的
+/// `block_on` 会 panic（禁止 runtime 内嵌套阻塞，被 bridge 的
+/// `catch_unwind` 捕获）而非静默死锁——依赖方向 legado-ffi → legado-server
+/// 亦保证服务端代码不存在回调进本模块的路径。故无需 `block_in_place`。
+fn abort_and_wait(handle: JoinHandle<()>) {
+    handle.abort();
+    if let Ok(rt) = get_server_runtime() {
+        // 等待任务实际结束（JoinError::Cancelled 属预期，忽略）
+        let _ = rt.block_on(handle);
+    }
+}
+
 /// 启动 legado-server
 ///
 /// 在独立 tokio runtime 中启动 HTTP 服务器。
@@ -150,10 +177,21 @@ pub fn server_start(port: u16) -> LegadoResult<String> {
         SERVER_RUNNING.store(false, Ordering::SeqCst);
     });
 
-    // 保存句柄
+    // 保存句柄（W-2）：写槽前先清槽内陈值（异常路径残留，如任务自结束
+    // 后无人 take、或上轮启动中途失败），take 出锁外 abort+等待，避免
+    // 悬留旧句柄、也避免后续停止路径 block_on 一个语义含混的陈句柄
     let slot = get_handle_slot();
-    let mut guard = lock_handle_slot(slot);
-    *guard = Some(handle);
+    let stale = {
+        let mut guard = lock_handle_slot(slot);
+        guard.take()
+    };
+    if let Some(stale) = stale {
+        abort_and_wait(stale);
+    }
+    {
+        let mut guard = lock_handle_slot(slot);
+        *guard = Some(handle);
+    }
 
     SERVER_RUNNING.store(true, Ordering::SeqCst);
     SERVER_PORT.store(port, Ordering::SeqCst);
@@ -163,16 +201,23 @@ pub fn server_start(port: u16) -> LegadoResult<String> {
 
 /// 停止服务器
 ///
-/// 中止服务器任务，返回 "Server stopped"。
+/// 中止服务器任务并**等待任务真正结束**（listener 随之 drop、监听端口
+/// 释放）后再返回（W-1，对齐 `mcp_stop_internal`）——否则紧随其后的
+/// 同端口 `server_start` 会因 `AddrInUse` 同步失败（UI「关闭后马上重开」
+/// 场景用户可见；审查报告 §W-1 探针实测确证）。返回 "Server stopped"。
 pub fn server_stop() -> String {
     if !SERVER_RUNNING.load(Ordering::SeqCst) {
         return "Server not running".to_string();
     }
 
-    let slot = get_handle_slot();
-    let mut guard = lock_handle_slot(slot);
-    if let Some(handle) = guard.take() {
-        handle.abort();
+    // 先 take 出句柄、释放锁，再 abort+等待（持锁等待会阻塞其它持锁方）
+    let handle = {
+        let slot = get_handle_slot();
+        let mut guard = lock_handle_slot(slot);
+        guard.take()
+    };
+    if let Some(handle) = handle {
+        abort_and_wait(handle);
     }
 
     SERVER_RUNNING.store(false, Ordering::SeqCst);
