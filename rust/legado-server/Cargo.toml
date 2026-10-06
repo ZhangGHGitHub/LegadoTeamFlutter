@@ -21,6 +21,9 @@ reqwest = { version = "0.12", default-features = false, features = ["json", "rus
 base64 = { workspace = true }
 urlencoding = "2.1"
 tower-http = { version = "0.6", features = ["cors", "fs"] }
+# 静态资产开发机磁盘兜底（web_assets::serve_static 内以 ServiceExt::oneshot
+# 调用 ServeDir）；tower 亦是 axum 的传递依赖与既有 dev-dependency，无新增外部 crate
+tower = { version = "0.5", features = ["util"] }
 tracing = "0.1"
 tracing-subscriber = "0.3"
 
@@ -31,6 +34,5 @@ default = []
 quickjs = ["legado-js/quickjs", "legado-fetcher/quickjs"]
 
 [dev-dependencies]
-tower = { version = "0.5", features = ["util"] }
 tokio-tungstenite = "0.26"
 futures-util = "0.3"

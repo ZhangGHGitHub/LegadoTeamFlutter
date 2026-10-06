@@ -1,61 +1,36 @@
 //! 路由组装
 
-use axum::http::header;
-use axum::response::IntoResponse;
 use axum::routing::{delete, get, post, put};
 use axum::Router;
 use std::sync::Arc;
-use tower_http::services::ServeDir;
 
 use crate::handlers;
+use crate::legacy;
 use crate::state::AppState;
+use crate::web_assets;
 use crate::ws;
 
-/// Web UI 首页内容（编译期嵌入）
-///
-/// 为何编译期嵌入：设备（Android/iOS）运行时没有仓库工作目录保证，`web-dist`
-/// 这类相对路径资源目录在设备上并不存在 —— `GET /` 落到 [`ServeDir`] fallback
-/// 只能得到 404（浏览器打开 Web 服务页面失败）。改用 `include_str!` 把首页 HTML
-/// 打进二进制后，任何工作目录下都能返回页面。
-///
-/// 与 fallback 的关系：本路由只覆盖首页 `/`；`ServeDir::new("web-dist")` 的
-/// fallback 继续保留，本机开发时其它静态资源仍从磁盘读取（改完刷新即可，无需
-/// 重编译）。显式路由优先于 fallback，故 `/` 恒定走嵌入内容（设备与开发机一致）。
-///
-/// 路径基准：`include_str!` 相对本文件（`src/routes.rs`），`../web-dist/index.html`
-/// 即 crate 根下的 `web-dist/index.html`；文件缺失会在编译期报错，而非运行时 404。
-const INDEX_HTML: &str = include_str!("../web-dist/index.html");
-
-/// `GET /` — 返回编译期嵌入的书架页面
-///
-/// `Content-Type` 显式带 `charset=utf-8`，与页面 `<meta charset="UTF-8">` 对齐
-/// （磁盘 fallback 的 mime_guess 只给 `text/html`，中文可能被浏览器按错误编码解码）。
-async fn web_index() -> impl IntoResponse {
-    (
-        [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
-        INDEX_HTML,
-    )
-}
-
 /// 创建完整的应用路由，注入共享状态
+///
+/// 顶层路由分三层：
+/// 1. `/api/*`（自研 REST）与 `/mcp/*`（MCP）——保持原有行为不变；
+/// 2. [`legacy::legacy_routes`]（原版 Web 端点，原版路径 + `ReturnData` 信封）；
+/// 3. 兜底静态服务 [`web_assets::serve_static`]（嵌入优先 + 开发机磁盘兜底）
+///    与方法兜底 [`web_assets::method_not_allowed_or_preflight`]
+///    （对齐原版「任意路径 OPTIONS 预检 200」语义）。
 pub fn create_router(state: Arc<AppState>) -> Router {
     Router::new()
         .nest("/api", api_routes())
         // MCP API（顶层路径，不在 /api 前缀下）
         .route("/mcp/tools", get(handlers::mcp::get_tools))
         .route("/mcp/call", post(handlers::mcp::call_tool))
-        // Web UI 首页（编译期嵌入；显式路由优先于下方 fallback）
-        //
-        // 不挂 SPA 通配回退：页面无 history API / hash 前端路由（视图切换纯内存），
-        // 未知非 API 路径保持 404 语义即可，无需把 index 回给任意路径。
-        .route("/", get(web_index))
-        // 静态文件服务 — 开发机上的其它 Web 前端资源（fallback 处理非 API 请求）
-        //
-        // 目录不存在无噪音日志：tower-http 0.6 的 ServeDir 把 io::NotFound 直接映射为
-        // 404 响应（services/fs/serve_dir/mod.rs 文档与 try_call），唯一的 tracing::error!
-        // 在 `#[cfg(feature = "tracing")]` 下；本 crate 只启用 tower-http 的
-        // ["cors", "fs"]，未启用该 feature，故设备侧不会刷日志。保留原样即可。
-        .fallback_service(ServeDir::new("web-dist"))
+        // 原版 Web 端点（`/getBookshelf` 等；与 /api/* 并存互不影响）
+        .merge(legacy::legacy_routes())
+        // 静态资产兜底：未匹配任何路由的路径走原版 Web 资产服务
+        // （`/` → index.html、`/vue/*` 原版产物、`/help/*`、`/uploadBook/*`）
+        .fallback(web_assets::serve_static)
+        // 方法兜底：已匹配路径上的 OPTIONS 预检照原版返回 200
+        .method_not_allowed_fallback(web_assets::method_not_allowed_or_preflight)
         .with_state(state)
 }
 
@@ -300,13 +275,17 @@ mod tests {
         assert_eq!(resp.status(), StatusCode::NOT_FOUND);
     }
 
-    /// Web UI 首页必须由编译期嵌入的 HTML 提供（设备端无 web-dist 目录也能访问）
+    /// 根路径必须由编译期嵌入的原版导航页提供（设备端无 web-dist 目录也能访问）
     ///
-    /// 断言三件事：HTTP 200；`Content-Type` 为 `text/html; charset=utf-8`
-    /// （对齐页面 `<meta charset="UTF-8">`；磁盘 fallback 的 mime_guess 只给
-    /// `text/html`，不带 charset）；正文含页面标记 `<title>Legado`。
+    /// 断言三件事：HTTP 200；`Content-Type` 为 `text/html`（对齐原版
+    /// `AssetsWeb.kt` 的 MIME 表，不加 charset —— 页面自带
+    /// `<meta charset="utf-8">`）；正文为原版 `assets/web/index.html`
+    /// （特征标记 `<title>Legado web 导航</title>`）。
+    ///
+    /// 嵌入优先语义：本测试经由 [`web_assets::serve_static`] 的嵌入表分支
+    /// （不依赖磁盘 web-dist 是否存在），即设备端同一代码路径。
     #[tokio::test]
-    async fn test_index_route_serves_embedded_html() {
+    async fn test_index_route_serves_embedded_legacy_page() {
         let state = make_test_state();
         let app = create_router(state);
 
@@ -324,8 +303,8 @@ mod tests {
             .unwrap_or_default()
             .to_string();
         assert_eq!(
-            content_type, "text/html; charset=utf-8",
-            "首页 Content-Type 应为 text/html; charset=utf-8"
+            content_type, "text/html",
+            "首页 Content-Type 应为原版 AssetsWeb 的 text/html"
         );
 
         let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
@@ -333,8 +312,8 @@ mod tests {
             .unwrap();
         let html = String::from_utf8(body.to_vec()).unwrap();
         assert!(
-            html.contains("<title>Legado"),
-            "首页正文应含页面标记 <title>Legado"
+            html.contains("<title>Legado web 导航</title>"),
+            "首页正文应为原版导航页"
         );
     }
 

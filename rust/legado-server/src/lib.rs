@@ -3,8 +3,10 @@
 //! 提供完整的 REST API 服务，包括：
 //!
 //! - [`server`] — 服务器启动与生命周期管理
-//! - [`routes`] — 路由注册（53+ REST 端点 + 5 WS 端点）
+//! - [`routes`] — 路由注册（53+ REST 端点 + 5 WS 端点 + 原版 Web 端点）
 //! - [`handlers`] — 请求处理器（书架/章节/书源/搜索/下载/任务等）
+//! - [`legacy`] — 原版 Web API（原版路径 + `ReturnData{isSuccess,errorMsg,data}` 信封）
+//! - [`web_assets`] — 原版 Web 静态资产（编译期嵌入 + 原版静态服务行为）
 //! - [`ws`] — WebSocket 实时通道（搜索进度/调试日志）
 //! - [`state`] — 共享应用状态（数据库/配置）
 //! - [`error`] — HTTP 错误响应映射
@@ -34,7 +36,9 @@
 
 pub mod error;
 pub mod handlers;
+pub mod legacy;
 pub mod routes;
 pub mod server;
 pub mod state;
+pub mod web_assets;
 pub mod ws;
