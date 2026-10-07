@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../l10n/app_strings.dart';
 import '../routes.dart';
 import '../constants/pref_keys.dart';
+import '../utils/error_message.dart';
 import '../services/auto_task_scheduler.dart';
 import '../services/web_keep_alive_service.dart';
 import '../providers/providers.dart';
@@ -49,6 +50,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _webServiceStatus = '';
   int _mcpPort = 0;
 
+  /// Web 书源访问令牌（config:jsSourceApiToken）是否已配置。
+  ///
+  /// [2026-10-06 iOS 实测修复] MCP 独立服务的 Rust 启动守卫要求该配置非空
+  /// （`mcp_start_internal`，rust/legado-ffi/src/api/server_api.rs），未配置时
+  /// 开关必然失败——卡片副题提前给出「需先配置」提示，用户不必先点开关
+  /// 撞错误。默认 true（乐观值）：配置读取完成前不误报「未配置」。
+  bool _mcpTokenConfigured = true;
+
   /// 端口越界兜底日志只记一次（防手改 prefs 反复刷日志）
   bool _webPortFallbackLogged = false;
 
@@ -70,6 +79,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       final web = await api.getConfig('webService');
       final autoTask = await api.getConfig('autoTaskService');
       final mcpPortRaw = await api.getConfig('mcpPort');
+      final mcpToken = await api.getConfig('jsSourceApiToken');
       final mcpPort = int.tryParse(mcpPortRaw ?? '') ?? 0;
       if (!mounted) return;
       setState(() {
@@ -77,6 +87,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _autoTaskService = autoTask == 'true';
         _mcpPort = mcpPort;
         _mcpService = mcpPort > 0;
+        _mcpTokenConfigured = (mcpToken ?? '').trim().isNotEmpty;
       });
       if (_webService) {
         final status = await api.getServerStatus();
@@ -163,12 +174,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Web 服务切换失败: $e')));
+      // [2026-10-06 iOS 实测修复] 裸插值 $e 对 Rust BridgeError 只会显示
+      // "Instance of 'BridgeError'"，改用统一提取器暴露 Rust 侧可读原因
+      // （如「数据库未初始化」「端口绑定失败」）。
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Web 服务切换失败: ${errorMessage(e)}')),
+      );
     } finally {
       if (mounted) setState(() => _webServiceBusy = false);
     }
+  }
+
+  /// MCP 卡片副题：运行中显示端口；未运行且未配置访问令牌时给出前置条件
+  /// 提示（见 [_mcpTokenConfigured]）——「需先配置什么」直接写在卡片上，
+  /// 而不是让用户点开关撞「Instance of BridgeError」后再猜。
+  String get _mcpServiceSubtitle {
+    if (_mcpService && _mcpPort > 0) {
+      return '端口 $_mcpPort（带令牌保护的书源开发工具）';
+    }
+    if (!_mcpTokenConfigured) {
+      return '需先配置「Web 书源访问令牌」（设置 → 高级 → 其他设置）';
+    }
+    return '带令牌保护的书源开发工具';
   }
 
   Future<void> _toggleMcpService(bool v) async {
@@ -194,9 +221,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('MCP 服务切换失败: $e')));
+      // [2026-10-06 iOS 实测修复] 同 Web 开关：BridgeError 取 message，
+      // 暴露 Rust 侧真实失败原因（token 未配置 / 端口占用 / 端口越界）。
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('MCP 服务切换失败: ${errorMessage(e)}')),
+      );
     } finally {
       if (mounted) setState(() => _mcpServiceBusy = false);
     }
@@ -425,9 +454,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             ).colorScheme.onSurfaceVariant,
                           ),
                     title: 'MCP 服务',
-                    subtitle: _mcpService && _mcpPort > 0
-                        ? '端口 $_mcpPort（带令牌保护的书源开发工具）'
-                        : '带令牌保护的书源开发工具',
+                    subtitle: _mcpServiceSubtitle,
                     value: _mcpService,
                     onChanged: _mcpServiceBusy ? null : _toggleMcpService,
                   ),
