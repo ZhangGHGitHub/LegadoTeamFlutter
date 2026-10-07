@@ -1158,3 +1158,195 @@ async fn test_image_requires_params() {
     let (_, json) = get_json(app, "/image?url=book1").await;
     assert_eq!(json["errorMsg"], "图片链接为空");
 }
+
+// ---------------------------------------------------------------------------
+// 调研取证（2026-10-07）：Web 读正文「后端连接失败」失败面三态复现
+//
+// 背景：用户 iOS 实机 + PC 浏览器读正文弹红色横幅（原版 Vue 固有文案）。
+// 前端该横幅仅在 axios reject（HTTP 非 2xx / 网络层失败 / 120s 超时）时出现，
+// `isSuccess=false` 信封会正常落入页面错误位（errorMsg 可见）。本组用例
+// 覆盖三种正文路径的响应形态，确认服务端信封语义与底层 errorMsg 可读性：
+//
+//   态1 在线书 + 书源缺失  → errorMsg「未找到书源」（与用户现象同型的
+//       候选之一：书不在 server 端 DB / origin 不匹配时前端虽能显示
+//       errorMsg，但根因不可读，只能看到笼统失败）；
+//   态2 在线书 + 源可用（回环 mock 源站）→ 正文成功；
+//   态3 本地书 → 文件解析正文成功。
+//
+// — 调研员 ｜ 2026-10-07
+// ---------------------------------------------------------------------------
+
+/// 态1：在线书 + 书源缺失（server 端 DB 无 `book.origin` 对应书源行）
+///
+/// 前端行为推演（BookChapter-DRyeLtSm.js:45199 附近）：`getBookContent`
+/// HTTP 200 + `isSuccess=false` → 页面错误位显示 errorMsg「未找到书源」，
+/// 不触发红色横幅。若用户横幅出现，说明失败发生在更早的 HTTP 层
+/// （或 /getChapterList 阶段），需实机 F12 定位。
+#[tokio::test]
+async fn test_survey_content_online_book_source_missing_error_shape() {
+    let state = make_test_state();
+    {
+        let db = state.db.lock().await;
+        BookRepository::new(db.connection())
+            .insert(&Book {
+                book_url: "https://src.example.com/book/1".to_string(),
+                origin: "https://src.example.com".to_string(),
+                name: "在线书".to_string(),
+                ..Book::default()
+            })
+            .unwrap();
+        BookChapterRepository::new(db.connection())
+            .insert(&BookChapter {
+                url: "https://src.example.com/book/1/ch0".to_string(),
+                title: "第一章".to_string(),
+                book_url: "https://src.example.com/book/1".to_string(),
+                index: 0,
+                ..BookChapter::default()
+            })
+            .unwrap();
+    }
+    let app = create_router(state);
+    let (_, json) = get_json(
+        app,
+        "/getBookContent?url=https%3A%2F%2Fsrc.example.com%2Fbook%2F1&index=0",
+    )
+    .await;
+    assert_eq!(json["isSuccess"], false, "json={json}");
+    assert_eq!(json["errorMsg"], "未找到书源", "json={json}");
+    assert!(json["data"].is_null());
+}
+
+/// 回环 mock 源站：正文页 `div.content` 内含可提取文本（态2 用）
+async fn start_mock_content_source() -> String {
+    use axum::response::Html;
+    use axum::routing::get;
+
+    async fn chapter() -> Html<String> {
+        Html(
+            "<html><body>\
+             <div class=\"content\">调研态2正文第一段</div>\
+             </body></html>"
+                .to_string(),
+        )
+    }
+
+    let app = axum::Router::new().route("/chapter/0", get(chapter));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("mock 正文源站可绑定回环端口");
+    let addr = listener.local_addr().expect("mock 源站地址");
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    format!("http://{addr}")
+}
+
+/// 态2：在线书 + 源可用（回环 mock 源站，规则源 css 正文规则）→ 正文成功
+///
+/// 证明 server 端 getBookContent 的网络抓取链（书源 DB 读取 → build_engine
+/// → legado-fetcher get_content → 净化）在本机环境下完整可用；结合态1，
+/// 若用户实测三态同型均正常，则失败面收敛到用户侧书源/网络环境。
+#[tokio::test]
+async fn test_survey_content_online_book_with_mock_source_succeeds() {
+    let base = start_mock_content_source().await;
+    let state = make_test_state();
+    {
+        let db = state.db.lock().await;
+        legado_db::BookSourceRepository::new(db.connection())
+            .insert(&legado_core::models::BookSource {
+                book_source_url: base.clone(),
+                book_source_name: "调研 mock 源".to_string(),
+                rule_content: Some(legado_core::models::rule::ContentRule {
+                    content: Some("class.content@html".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            })
+            .unwrap();
+        BookRepository::new(db.connection())
+            .insert(&Book {
+                book_url: format!("{base}/book/1"),
+                origin: base.clone(),
+                name: "在线书可用源".to_string(),
+                ..Book::default()
+            })
+            .unwrap();
+        BookChapterRepository::new(db.connection())
+            .insert(&BookChapter {
+                url: format!("{base}/chapter/0"),
+                title: "第一章".to_string(),
+                book_url: format!("{base}/book/1"),
+                index: 0,
+                ..BookChapter::default()
+            })
+            .unwrap();
+    }
+    let app = create_router(state);
+    let (_, json) = get_json(
+        app,
+        &format!(
+            "/getBookContent?url={}&index=0",
+            enc(&format!("{base}/book/1"))
+        ),
+    )
+    .await;
+    assert_eq!(json["isSuccess"], true, "json={json}");
+    assert!(
+        json["data"].as_str().unwrap_or_default().contains("调研态2正文"),
+        "mock 源正文应经规则提取返回，json={json}"
+    );
+}
+
+/// 态3：本地书 → 文件解析正文成功（不走书源与网络）
+#[tokio::test]
+async fn test_survey_content_local_book_succeeds() {
+    let dir = std::env::temp_dir().join(format!("legado-survey-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).expect("创建临时书库目录");
+    let book_file = dir.join("survey-book.txt");
+    std::fs::write(&book_file, "调研态3本地正文第一段\n\n调研态3本地正文第二段")
+        .expect("写临时本地书");
+
+    let state = make_test_state();
+    {
+        let db = state.db.lock().await;
+        BookRepository::new(db.connection())
+            .insert(&Book {
+                book_url: book_file.to_string_lossy().to_string(),
+                origin: "loc_book".to_string(),
+                origin_name: "survey-book.txt".to_string(),
+                name: "本地书".to_string(),
+                author: "作者".to_string(),
+                book_type: legado_core::models::book_type::LOCAL,
+                ..Book::default()
+            })
+            .unwrap();
+    }
+    // 本地书目录为空 → getChapterList 回退 refresh_local_toc 解析文件落库
+    let app = create_router(state);
+    let (_, toc) = get_json(
+        app.clone(),
+        &format!("/getChapterList?url={}", enc(&book_file.to_string_lossy())),
+    )
+    .await;
+    assert_eq!(toc["isSuccess"], true, "toc={toc}");
+    assert!(
+        toc["data"].as_array().map(|a| !a.is_empty()).unwrap_or(false),
+        "本地书目录应解析出章节，toc={toc}"
+    );
+
+    let (_, json) = get_json(
+        app,
+        &format!(
+            "/getBookContent?url={}&index=0",
+            enc(&book_file.to_string_lossy())
+        ),
+    )
+    .await;
+    assert_eq!(json["isSuccess"], true, "json={json}");
+    assert!(
+        json["data"].as_str().unwrap_or_default().contains("调研态3本地正文"),
+        "本地书正文应解析返回，json={json}"
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
+}
