@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.369] - 2026-10-07
+
+### Fixed
+- [UI] 修复 MCP 服务与 Web 服务开关失败时错误提示不可读的问题（原显示「Instance of BridgeError」，现显示具体原因，如「需先配置 Web 书源访问令牌」）。
+- [Rust] MCP 服务启动失败的提示改为指向 App 内配置入口（原版同款令牌前置语义不变）。
+
 ## [2.0.368] - 2026-10-07
 
 ### Added
