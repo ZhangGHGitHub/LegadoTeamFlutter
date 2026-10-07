@@ -307,13 +307,17 @@ fn mcp_start_internal(port: i32) -> LegadoResult<()> {
     }
 
     // F5：对齐原版 — jsSourceApiToken 非空才允许启动
+    //
+    // [2026-10-06 iOS 实测修复] 文案只改可读性（指向 App 内可见的条目名
+    // 「Web 书源访问令牌」，路径对齐设置页：设置 → 高级 → 其他设置），
+    // 校验语义与行为不变。
     let token = crate::api::config_api::get_config("jsSourceApiToken")
         .unwrap_or_default()
         .trim()
         .to_string();
     if token.is_empty() {
         return Err(LegadoError::Internal(
-            "独立 MCP 服务启动失败：请先在其他设置中配置 JS 书源 API Token（jsSourceApiToken）"
+            "独立 MCP 服务启动失败：请先在「设置 → 高级 → 其他设置」配置「Web 书源访问令牌」（config:jsSourceApiToken）"
                 .into(),
         ));
     }
@@ -524,6 +528,11 @@ mod tests {
         assert!(
             err.to_string().contains("Token") || err.to_string().contains("token"),
             "应提示需配置 token: {err}"
+        );
+        // [2026-10-06] 文案须指向 App 内可见条目名，用户照做即可配置
+        assert!(
+            err.to_string().contains("Web 书源访问令牌"),
+            "应提示 App 内配置入口「Web 书源访问令牌」: {err}"
         );
         cleanup_temp_db(&db_path);
     }
