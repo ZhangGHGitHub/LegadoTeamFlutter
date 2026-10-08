@@ -10,12 +10,19 @@ import Flutter
 /// （Info.plist 已声明）+ 后台播放近静音音频：Web 服务运行期间循环播放一段
 /// **近静音** PCM，系统因音频后台模式不挂起进程，局域网浏览器可持续访问。
 ///
-/// ## 近静音取舍（待实机验证）
+/// ## 近静音取舍（2026-10-08 振幅下调，实机反馈驱动）
 /// 纯数字静音（全 0 采样）可能被系统识别为「无音频输出」而在锁屏后被掐，
-/// 故生成低幅正弦（默认 200Hz / 4s / 振幅 0.02 ≈ -34dBFS，非 0 采样；
-/// 4s × 200Hz = 整数周期，循环点无缝）。振幅经验区间 0.01~0.05：过低可能
-/// 退化为数字静音、过高可闻；本值**待真机验证**（验收口径见调研报告 §五）。
-/// 若实机仍被系统掐断，退路为上调振幅或插入周期性非静音帧（本批未实现）。
+/// 故生成低幅正弦（200Hz / 4s / 振幅 0.0005 ≈ -66dBFS，非 0 采样；
+/// 4s × 200Hz = 整数周期，循环点无缝）。
+/// - 原值 0.02（≈ -34dBFS）经用户 iPhone 实机验证**明显可闻**（用户原话
+///   「有声音而且很明显」），判定不可接受；
+/// - 现值 0.0005（≈ -66dBFS）：低于典型环境底噪、贴近设备实际输出下限，
+///   预期听感为「无感」（-66dBFS 已低于多数安静环境本底与低音量档可辨阈值）；
+/// - **保留非 0 采样是有意取舍**：纯 0 采样有被系统判静音掐断的登记风险
+///   （调研报告 §四「已知代价」），故不做真静音；若把振幅压到 0 会自毁保活；
+/// - 反向取舍登记：若实机复验发现下调后「保活被系统掐」（退后台/锁屏后快速
+///   挂起、curl 快速超时），则回退上调振幅并记录实测值（复现口径见
+///   `docs/WEB_SERVICE_KEEPALIVE_SURVEY_20261007.md` §五）。
 ///
 /// ## 会话与 NowPlaying
 /// - 会话不切类别/模式（AppDelegate 已设 `.playback` + `.spokenAudio`，
@@ -36,7 +43,7 @@ import Flutter
 /// 通道：`legado/web_keepalive`，方法 `setEnabled{enabled: bool}` → `bool`
 /// （true=静音音轨已运行/已停止；false=启动失败，Dart 侧记日志并回退提示）。
 ///
-/// — 全栈工程师 ｜ 2026-10-07
+/// — 全栈工程师 ｜ 2026-10-07（2026-10-08 振幅下调至 0.0005）
 @objc class WebKeepAlive: NSObject {
   static let shared = WebKeepAlive()
 
@@ -51,8 +58,9 @@ import Flutter
     static let durationSeconds: Double = 4.0
     /// 正弦频率（Hz，低频、低可闻性）
     static let frequency: Double = 200
-    /// 振幅（相对满刻度，≈ -34dBFS；报告建议 0.01~0.05，纯 0 可能被系统掐）
-    static let amplitude: Double = 0.02
+    /// 振幅（相对满刻度，≈ -66dBFS）：0.02（≈ -34dBFS）实机明显可闻已下调；
+    /// 保非 0 是防「纯静音被系统掐」，取值依据与反向取舍见类注释
+    static let amplitude: Double = 0.0005
   }
 
   private var channel: FlutterMethodChannel?
@@ -111,7 +119,7 @@ import Flutter
       }
       player = p
       NSLog(
-        "[WebKeepAlive] 保活启动：近静音循环 %.0fHz/%.0fs/振幅%.2f",
+        "[WebKeepAlive] 保活启动：近静音循环 %.0fHz/%.0fs/振幅%.4f",
         WebKeepAlive.NearSilentSpec.frequency, WebKeepAlive.NearSilentSpec.durationSeconds,
         WebKeepAlive.NearSilentSpec.amplitude)
       return true

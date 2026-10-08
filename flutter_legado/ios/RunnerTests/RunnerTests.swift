@@ -40,8 +40,9 @@ class RunnerTests: XCTestCase {
   }
 
   /// 近静音不是数字静音：存在非 0 采样，且峰值受设定振幅约束
+  /// （2026-10-08 振幅下调至 0.0005 后改用生产默认值，避免断言与实现脱钩）
   func testNearSilentSamplesNonZeroAndBounded() {
-    let amplitude = 0.02
+    let amplitude = WebKeepAlive.NearSilentSpec.amplitude
     let data = WebKeepAlive.makeNearSilentWavData(
       durationSeconds: 0.1, amplitude: amplitude)
     let frames = (data.count - 44) / 2
