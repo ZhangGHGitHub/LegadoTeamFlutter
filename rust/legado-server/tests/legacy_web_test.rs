@@ -1292,7 +1292,10 @@ async fn test_survey_content_online_book_with_mock_source_succeeds() {
     .await;
     assert_eq!(json["isSuccess"], true, "json={json}");
     assert!(
-        json["data"].as_str().unwrap_or_default().contains("调研态2正文"),
+        json["data"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("调研态2正文"),
         "mock 源正文应经规则提取返回，json={json}"
     );
 }
@@ -1330,7 +1333,10 @@ async fn test_survey_content_local_book_succeeds() {
     .await;
     assert_eq!(toc["isSuccess"], true, "toc={toc}");
     assert!(
-        toc["data"].as_array().map(|a| !a.is_empty()).unwrap_or(false),
+        toc["data"]
+            .as_array()
+            .map(|a| !a.is_empty())
+            .unwrap_or(false),
         "本地书目录应解析出章节，toc={toc}"
     );
 
@@ -1344,7 +1350,10 @@ async fn test_survey_content_local_book_succeeds() {
     .await;
     assert_eq!(json["isSuccess"], true, "json={json}");
     assert!(
-        json["data"].as_str().unwrap_or_default().contains("调研态3本地正文"),
+        json["data"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("调研态3本地正文"),
         "本地书正文应解析返回，json={json}"
     );
 
