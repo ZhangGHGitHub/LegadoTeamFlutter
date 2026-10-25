@@ -49,6 +49,169 @@ pub fn set_global_variable_reader(reader: Option<GlobalVariableReader>) {
     }
 }
 
+// ─── P2-2：@webjs 无订阅者回退台账（可观测性，不改返回值语义）───────────────
+//
+// 缺陷（2026-10-26 全面审查 P2-2）：无 WebView 订阅者时 `@webjs` 静默走无头
+// QuickJS 近似（无 `document`/`window`，与原版 BackstageWebView 真渲染存在
+// 能力差），执行器缺失时返回空串且无任何痕迹——批量下载/校验等场景拿到空
+// 结果无从排查。原版对照：`AnalyzeRule.kt:179-200 getWebJsResult` 恒走
+// BackstageWebView 真渲染；「无订阅者回退」是本项目已知架构边界，本台账
+// 只补可观测性，**不改变返回值语义**。
+//
+// 模式对齐 `legado-js` 的 `host_api::capability_ledger`（`Mutex<BTreeMap>` +
+// 截断 + 容量上限 + 首次登记日志 + 测试串行锁）。因 legado-parser 不能依赖
+// legado-js（反向依赖成环，先例见上方 `GLOBAL_VAR_FALLBACK`），表体落在
+// 本文件，由 legado-js 台账模块 re-export 统一查询入口。
+//
+// 幂等语义：以「规则片段摘要」为键去重——同一规则首次登记输出告警日志，
+// 重复执行仅累计次数并刷新最近来源 URL，不刷屏。
+pub mod webjs_no_subscriber_ledger {
+    use std::collections::BTreeMap;
+    use std::sync::Mutex;
+
+    /// 登记表：规则片段摘要（去重键，≤120 字符）→ (累计回退次数, 最近来源 URL)
+    static WEBJS_FALLBACKS: Mutex<BTreeMap<String, (u64, String)>> = Mutex::new(BTreeMap::new());
+
+    /// 单条字段登记前截断上限（按字符计，非字节；对齐
+    /// capability_ledger::MAX_ENTRY_LEN），防病态超长规则灌大条目。
+    const MAX_ENTRY_LEN: usize = 120;
+
+    /// 登记表容量上限：满时丢弃新键（既有键照常累计/刷新），防病态规则
+    /// 用海量不同片段把表灌到内存膨胀（对齐 capability_ledger::MAX_LEDGER_ENTRIES）。
+    const MAX_LEDGER_ENTRIES: usize = 256;
+
+    /// 测试串行锁：台账为进程级全局状态，所有触碰台账的测试（含既有
+    /// `test_webjs_headless`——无订阅者执行 @webjs 会登记）必须在此串行，
+    /// 避免并行互踩。无条件导出（非 `#[cfg(test)]`），依赖 crate 的测试
+    /// 同样可见（对齐 capability_ledger::LEDGER_TEST_LOCK）。
+    pub static WEBJS_LEDGER_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    /// 截断辅助：保留前 120 个字符（`char` 边界安全，不截半多字节字符）。
+    fn truncate_to_cap(s: &str) -> String {
+        s.chars().take(MAX_ENTRY_LEN).collect()
+    }
+
+    /// 登记一次「@webjs 无 WebView 订阅者 → 无头 QuickJS 回退」事件。
+    ///
+    /// - `rule`：规则 JS 片段（去重键，trim 后截断至 120 字符；空白规则以
+    ///   `(空规则)` 占位键登记，保证空规则回退同样可观测）
+    /// - `source_url`：来源 URL（如有上下文；重复登记时刷新为最近值，
+    ///   空值不覆盖既有 URL）
+    ///
+    /// 首次登记输出告警日志；同一规则重复执行仅累计次数，不重复输出
+    /// （勿刷屏）。线程安全；台账为诊断设施，锁中毒按语义恢复不雪崩。
+    pub fn record(rule: &str, source_url: &str) {
+        let key = match rule.trim() {
+            "" => "(空规则)".to_string(),
+            trimmed => truncate_to_cap(trimmed),
+        };
+        let url = truncate_to_cap(source_url.trim());
+        let mut guard = WEBJS_FALLBACKS.lock().unwrap_or_else(|e| e.into_inner());
+        match guard.get_mut(&key) {
+            Some((count, last_url)) => {
+                *count += 1;
+                if !url.is_empty() {
+                    *last_url = url;
+                }
+            }
+            None => {
+                if guard.len() >= MAX_LEDGER_ENTRIES {
+                    return; // 表满：丢弃新键，既有登记不受影响
+                }
+                eprintln!(
+                    "[legado-parser] 能力受限登记: @webjs 无 WebView 订阅者，已回退无头 QuickJS 近似（无 document/window，结果可能异于原版；规则片段: {key}）"
+                );
+                guard.insert(key, (1, url));
+            }
+        }
+    }
+
+    /// 当前登记快照（按规则片段升序），每项为 (规则片段, 累计次数, 最近来源 URL)。
+    pub fn records() -> Vec<(String, u64, String)> {
+        let guard = WEBJS_FALLBACKS.lock().unwrap_or_else(|e| e.into_inner());
+        guard
+            .iter()
+            .map(|(k, (c, u))| (k.clone(), *c, u.clone()))
+            .collect()
+    }
+
+    /// 累计回退事件总数（所有规则求和）。
+    pub fn total_count() -> u64 {
+        let guard = WEBJS_FALLBACKS.lock().unwrap_or_else(|e| e.into_inner());
+        guard.values().map(|(c, _)| *c).sum()
+    }
+
+    /// 清空登记表（仅测试用）。
+    pub fn reset() {
+        let mut guard = WEBJS_FALLBACKS.lock().unwrap_or_else(|e| e.into_inner());
+        guard.clear();
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        /// 登记去重幂等：同规则只占一键、次数累计、URL 刷新；空规则占位键。
+        #[test]
+        fn test_record_dedup_and_count() {
+            let _lock = WEBJS_LEDGER_TEST_LOCK.lock().unwrap();
+            reset();
+            assert!(records().is_empty());
+            assert_eq!(total_count(), 0);
+
+            record("java.get('a')", "https://a.example/book/1");
+            record("java.get('a')", "https://a.example/book/2");
+            record("java.get('a')", ""); // 空 URL 不覆盖既有值
+            record("   ", "https://b.example"); // 空白规则 → 占位键
+            record("   ", "https://b.example");
+
+            let snap = records();
+            assert_eq!(snap.len(), 2, "同规则去重后应只有 2 个键");
+            let hit = snap.iter().find(|(k, _, _)| k == "java.get('a')").unwrap();
+            assert_eq!(hit.1, 3, "同规则 3 次执行次数应累计");
+            assert_eq!(
+                hit.2, "https://a.example/book/2",
+                "重复登记应刷新为最近非空 URL"
+            );
+            let empty_hit = snap.iter().find(|(k, _, _)| k == "(空规则)").unwrap();
+            assert_eq!(empty_hit.1, 2, "空白规则应落占位键且可观测");
+            assert_eq!(total_count(), 5);
+            reset();
+            assert!(records().is_empty());
+        }
+
+        /// 截断与容量上限：超长片段截断至 120 字符；表满丢弃新键。
+        #[test]
+        fn test_record_truncation_and_capacity() {
+            let _lock = WEBJS_LEDGER_TEST_LOCK.lock().unwrap();
+            reset();
+
+            let long_rule = "r".repeat(500);
+            record(&long_rule, "https://cap.example");
+            let snap = records();
+            assert_eq!(snap.len(), 1);
+            assert_eq!(snap[0].0.len(), MAX_ENTRY_LEN, "规则片段应截断至 120 字符");
+
+            // 灌满至容量上限（1 + 255 = 256 键）
+            for i in 0..(MAX_LEDGER_ENTRIES - 1) {
+                record(&format!("fill-{i:03}"), "");
+            }
+            assert_eq!(records().len(), MAX_LEDGER_ENTRIES);
+            // 表满：新键丢弃，既有键照常累计
+            record("brand-new-rule", "");
+            assert_eq!(records().len(), MAX_LEDGER_ENTRIES, "表满时应丢弃新键");
+            record(&long_rule, "");
+            let snap = records();
+            let hit = snap
+                .iter()
+                .find(|(k, _, _)| k.len() == MAX_ENTRY_LEN)
+                .unwrap();
+            assert_eq!(hit.1, 2, "表满时既有键累计不受影响");
+            reset();
+        }
+    }
+}
+
 /// JavaScript 执行器 trait
 ///
 /// 由调用方注入具体实现（如 legado-js 的 QuickJS 引擎），
@@ -1869,7 +2032,8 @@ impl AnalyzeRule {
     ///（变量读写与精简同步 API；ajax 等网络类仍建议无头宿主）。
     fn execute_web_js_rule(&self, js_code: &str) -> LegadoResult<String> {
         // 1) DOM 通道（对齐 AnalyzeRule.getWebJsResult → BackstageWebView isRule）
-        if legado_core::webview_channel::has_subscribers() {
+        let dom_available = legado_core::webview_channel::has_subscribers();
+        if dom_available {
             let result_json =
                 serde_json::to_string(&self.content).unwrap_or_else(|_| "\"\"".into());
             let req = legado_core::webview_channel::WebViewRequest {
@@ -1912,6 +2076,14 @@ impl AnalyzeRule {
         }
 
         // 2) 无头 QuickJS 近似
+        // P2-2 可观测性：无 WebView 订阅者时的无头回退登记台账（同一规则按
+        // 片段摘要去重幂等登记，重复执行不刷屏；返回值语义不变——台账只在
+        // 此登记，不改写下方任何返回路径）。口径边界：仅「无订阅者」回退
+        // 登记；有订阅者但 DOM 通道未得有效结果的回退已有独立日志（上方
+        // 「DOM 通道未得有效结果」分支），不属本台账。
+        if !dom_available {
+            webjs_no_subscriber_ledger::record(js_code, &self.base_url);
+        }
         let Some(executor) = self.js_executor.as_ref() else {
             return Ok(String::new());
         };
@@ -3499,8 +3671,14 @@ mod tests {
     }
 
     /// @webjs 无头近似（注入 executor）
+    ///
+    /// [P2-2] 无订阅者执行会登记 webjs 回退台账（进程级全局状态），
+    /// 须持台账测试锁串行，避免与其他台账测试并行互踩。
     #[test]
     fn test_webjs_headless() {
+        let _ledger_lock = webjs_no_subscriber_ledger::WEBJS_LEDGER_TEST_LOCK
+            .lock()
+            .unwrap();
         struct EchoHtml;
         impl JsExecutor for EchoHtml {
             fn execute_js(&self, js_code: &str) -> Result<String, String> {
@@ -3518,6 +3696,70 @@ mod tests {
         );
         let out = rule.get_string("@webjs:return html;").unwrap();
         assert_eq!(out, "<p>from-webjs</p>");
+    }
+
+    /// [P2-2 回归] 无订阅者执行 @webjs（执行器缺失）→ 台账有条目、返回值仍为空串
+    ///
+    /// 缺陷背景：批量下载/校验场景 @webjs 静默拿空结果且无任何痕迹；
+    /// 修复只加可观测性，不改返回值语义。
+    #[test]
+    fn test_webjs_no_subscriber_recorded_in_ledger() {
+        let _ledger_lock = webjs_no_subscriber_ledger::WEBJS_LEDGER_TEST_LOCK
+            .lock()
+            .unwrap();
+        webjs_no_subscriber_ledger::reset();
+
+        let rule = AnalyzeRule::new(
+            "<html><body>x</body></html>".into(),
+            "https://source.example/book/1".into(),
+        );
+        let out = rule.get_string("@webjs:java.get('k');").unwrap();
+        assert!(
+            out.is_empty(),
+            "执行器缺失时返回值语义不变（空串），实际: {out:?}"
+        );
+
+        let snap = webjs_no_subscriber_ledger::records();
+        assert_eq!(
+            snap.len(),
+            1,
+            "无订阅者执行 @webjs 后台账应有恰好 1 条登记: {snap:?}"
+        );
+        assert_eq!(snap[0].0, "java.get('k');", "登记键应为规则片段摘要");
+        assert_eq!(snap[0].1, 1, "首次登记计数应为 1");
+        assert_eq!(
+            snap[0].2, "https://source.example/book/1",
+            "登记应含来源 URL（取自 baseUrl 上下文）"
+        );
+        webjs_no_subscriber_ledger::reset();
+    }
+
+    /// [P2-2 回归] 同一规则重复执行幂等登记（勿刷屏）：只占一键、次数累计
+    #[test]
+    fn test_webjs_no_subscriber_ledger_idempotent_per_rule() {
+        let _ledger_lock = webjs_no_subscriber_ledger::WEBJS_LEDGER_TEST_LOCK
+            .lock()
+            .unwrap();
+        webjs_no_subscriber_ledger::reset();
+
+        for _ in 0..3 {
+            let rule = AnalyzeRule::new("<html/>".into(), "https://source.example/batch".into());
+            rule.get_string("@webjs:result;").unwrap();
+        }
+        // 另一条不同规则：应独立成键
+        let rule2 = AnalyzeRule::new("<html/>".into(), "https://source.example/other".into());
+        rule2.get_string("@webjs:document.title;").unwrap();
+
+        let snap = webjs_no_subscriber_ledger::records();
+        assert_eq!(snap.len(), 2, "两条不同规则应各占一键: {snap:?}");
+        let repeated = snap.iter().find(|(k, _, _)| k == "result;").unwrap();
+        assert_eq!(repeated.1, 3, "同一规则 3 次执行只登记 1 键、次数累计 3");
+        assert_eq!(
+            repeated.2, "https://source.example/batch",
+            "重复登记应刷新最近来源 URL"
+        );
+        assert_eq!(webjs_no_subscriber_ledger::total_count(), 4);
+        webjs_no_subscriber_ledger::reset();
     }
 
     /// 变量导出 / 注入 JSON（章节 variable 列）

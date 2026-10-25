@@ -20,6 +20,14 @@
 use std::collections::BTreeMap;
 use std::sync::Mutex;
 
+// ─── P2-2 接入点：跨 crate 台账统一查询入口 ─────────────────────────────────
+// legado-parser 的「@webjs 无 WebView 订阅者 → 无头 QuickJS 回退」台账（P2-2）
+// 表体落在 `legado_parser::analyze_rule::webjs_no_subscriber_ledger`：规则回退
+// 决策在彼处做出，且 legado-parser 不能依赖本 crate（反向依赖成环，先例见
+// 其 `GLOBAL_VAR_FALLBACK`）。此处 re-export，使诊断查询经本模块即可见全部
+// 能力受限登记，避免台账查询入口分裂（单实现原则）。
+pub use legado_parser::analyze_rule::webjs_no_subscriber_ledger as webjs_fallback_ledger;
+
 /// 未知 Java 符号登记表：符号全名 → 累计命中次数
 static UNKNOWN_SYMBOLS: Mutex<BTreeMap<String, u64>> = Mutex::new(BTreeMap::new());
 
@@ -273,5 +281,28 @@ mod tests {
             "长标签查询经同口径截断应命中"
         );
         reset_jslib_load_failures();
+    }
+
+    /// [P2-2] legado-parser 的 @webjs 回退台账经本模块 re-export 统一可查
+    ///
+    /// 接入点回归：`webjs_fallback_ledger` 别名可用、登记/查询互通——
+    /// 表体在 `legado_parser::analyze_rule::webjs_no_subscriber_ledger`
+    /// （legado-parser 不能依赖本 crate，反向依赖成环），经此处 re-export
+    /// 保持台账统一查询入口（单实现原则）。
+    #[test]
+    fn test_webjs_fallback_ledger_visible_via_reexport() {
+        let _lock = LEDGER_TEST_LOCK.lock().unwrap();
+        // webjs 表体在 legado-parser，有自己的测试串行锁
+        let _webjs_lock = webjs_fallback_ledger::WEBJS_LEDGER_TEST_LOCK
+            .lock()
+            .unwrap();
+        webjs_fallback_ledger::reset();
+        webjs_fallback_ledger::record("reexport-probe;", "https://probe.example");
+        let snap = webjs_fallback_ledger::records();
+        assert_eq!(snap.len(), 1, "经 re-export 登记应可查");
+        assert_eq!(snap[0].0, "reexport-probe;");
+        assert_eq!(snap[0].1, 1);
+        assert_eq!(snap[0].2, "https://probe.example");
+        webjs_fallback_ledger::reset();
     }
 }
