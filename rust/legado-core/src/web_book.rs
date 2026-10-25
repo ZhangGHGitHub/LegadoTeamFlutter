@@ -1216,7 +1216,6 @@ mod tests {
     ///（源字段全非默认 → 目标逐字段相等；base_url/book_url 落稳定主键）
     #[test]
     fn test_web_chapters_to_book_chapters_full_field_passthrough() {
-        use std::sync::{Arc, Mutex};
         let web = WebChapter {
             index: 3,
             title: "第二卷".to_string(),
@@ -1258,7 +1257,7 @@ mod tests {
     /// URL）不携带标题链产物；Mock 默认实现只回正文（title/img_url 恒 None）
     #[tokio::test]
     async fn test_engine_get_content_with_meta_fallback_and_mock() {
-        let mut fetcher = MockBookSourceFetcher::default();
+        let fetcher = MockBookSourceFetcher::default();
         fetcher.push_content(Ok("正文".to_string()));
         let engine = WebBookEngine::new(fetcher);
 
@@ -1271,7 +1270,7 @@ mod tests {
         assert!(meta.title_override.is_none() && meta.img_url.is_none());
 
         // Mock fetcher 默认路径：正文透传，标题链产物恒 None
-        let mut fetcher2 = MockBookSourceFetcher::default();
+        let fetcher2 = MockBookSourceFetcher::default();
         fetcher2.push_content(Ok("正文".to_string()));
         let engine2 = WebBookEngine::new(fetcher2);
         let mut source2 = make_test_source();

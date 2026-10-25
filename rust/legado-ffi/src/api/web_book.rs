@@ -1668,6 +1668,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
                 kind: None,
                 variable: Some(r#"{"custom":"put-export"}"#.into()),
                 book_type: 0,
+                download_urls: None,
             },
         );
         // 第二次详情（同 URL，生产路径）：meta 命中 → IIFE 绑定 →
@@ -1695,6 +1696,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
                 kind: None,
                 variable: Some(r#"{"custom":"put-export"}"#.into()),
                 book_type: 0,
+                download_urls: None,
             },
         );
         let info3 = parse_info(&source, body.clone(), url_no, url_no, true, "", "");
@@ -1726,6 +1728,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
                 kind: None,
                 variable: Some(r#"{"custom":"put-export"}"#.into()),
                 book_type: 0,
+                download_urls: None,
             },
         );
         let info4 = parse_info(&source, body, url_empty, url_empty, true, "", "");

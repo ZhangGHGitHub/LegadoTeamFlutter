@@ -6001,6 +6001,7 @@ mod tests {
                     kind: None,
                     variable: None,
                     book_type: 0,
+                    download_urls: None,
                 },
             );
         };
@@ -6018,7 +6019,9 @@ mod tests {
         }))
         .expect("IMAGE 源 json");
         seed_meta(url_a, "type 回流测试书");
-        let info_a = test_fetcher().parse_book_info_from_body().unwrap();
+        let info_a = test_fetcher()
+            .parse_book_info_from_body(&image_source, body.clone(), url_a, url_a, true, "", "")
+            .unwrap();
 
         assert_eq!(
             info_a.book_type, 64,
@@ -6043,7 +6046,9 @@ mod tests {
         }))
         .expect("TEXT 源 json");
         seed_meta(url_b, "type 覆盖测试书");
-        let info_b = test_fetcher().parse_book_info_from_body().unwrap();
+        let info_b = test_fetcher()
+            .parse_book_info_from_body(&text_source, body.clone(), url_b, url_b, true, "", "")
+            .unwrap();
 
         assert_eq!(
             info_b.book_type, 64,
@@ -6068,7 +6073,9 @@ mod tests {
         }))
         .expect("TEXT 源 json");
         seed_meta(url_c, "type 回落测试书");
-        let info_c = test_fetcher().parse_book_info_from_body().unwrap();
+        let info_c = test_fetcher()
+            .parse_book_info_from_body(&text_source_c, body, url_c, url_c, true, "", "")
+            .unwrap();
 
         assert_eq!(
             info_c.book_type, 8,
@@ -6502,9 +6509,12 @@ mod tests {
                 kind: None,
                 variable: Some(r#"{"custom":"3"}"#.into()),
                 book_type: 0,
+                download_urls: None,
             },
         );
-        let info = test_fetcher().parse_book_info_from_body().unwrap();
+        let info = test_fetcher()
+            .parse_book_info_from_body(&source, body, book_url_after, book_url_after, true, "", "")
+            .unwrap();
 
         assert_eq!(info.name, "聚合书库测试书", "补后：书名应来自 init 产出");
         assert_eq!(info.author, "测试作者");
@@ -6513,7 +6523,17 @@ mod tests {
         // —— 补前：未播种 bookUrl → 字面量绑定回退（等价 HEAD 执行路径）
         // → init 方法调用抛错被跳过 → 原始响应体上 $.n 为空
         let book_url_before = "https://jhsu-binding-test.example.com/b/before";
-        let info2 = test_fetcher().parse_book_info_from_body().unwrap();
+        let info2 = test_fetcher()
+            .parse_book_info_from_body(
+                &source,
+                "<html><body>raw detail body</body></html>".to_string(),
+                book_url_before,
+                book_url_before,
+                true,
+                "",
+                "",
+            )
+            .unwrap();
 
         assert!(
             info2.name.is_empty(),
@@ -6578,9 +6598,20 @@ mod tests {
                 kind: None,
                 variable: Some(r#"{"custom":"2"}"#.into()),
                 book_type: 0,
+                download_urls: None,
             },
         );
-        let info = test_fetcher().parse_book_info_from_body().unwrap();
+        let info = test_fetcher()
+            .parse_book_info_from_body(
+                &source,
+                body.to_string(),
+                url_after,
+                url_after,
+                true,
+                "",
+                "",
+            )
+            .unwrap();
 
         assert_eq!(
             info.name, "测试书",
@@ -6619,7 +6650,17 @@ mod tests {
         // —— 补前：未播种 bookUrl → 字面量回退（等价 HEAD 执行路径）
         // → init 的 book.getVariable 方法调用抛错被跳过 → 书名为空
         let url_before = "https://book4.cc/AU文学/1/102";
-        let info2 = test_fetcher().parse_book_info_from_body().unwrap();
+        let info2 = test_fetcher()
+            .parse_book_info_from_body(
+                &source,
+                body.to_string(),
+                url_before,
+                url_before,
+                true,
+                "",
+                "",
+            )
+            .unwrap();
 
         assert!(
             info2.name.is_empty(),
@@ -7825,7 +7866,8 @@ mod tests {
         let rule = source
             .rule_content
             .as_ref()
-            .and_then(|r| r.content.as_deref());
+            .and_then(|r| r.content.as_deref())
+            .unwrap();
 
         let analyzer = crate::js_adapter::construct_analyzer_with_js_lib(
             html,
