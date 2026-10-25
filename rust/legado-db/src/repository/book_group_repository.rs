@@ -50,6 +50,31 @@ impl<'a> BookGroupRepository<'a> {
         Ok(group.group_id)
     }
 
+    /// 全列 upsert 分组（INSERT OR REPLACE，主键 groupId 冲突时整行替换）
+    ///
+    /// 供备份恢复使用（对齐原版 `BookGroupDao.insert` 的 REPLACE 语义）；
+    /// 与 [`insert`] 的区别：主键已存在时替换而非报错。
+    pub fn upsert(&self, group: &BookGroup) -> LegadoResult<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO book_groups (groupId, groupName, cover, \"order\",
+                 enableRefresh, show, bookSort, onlyUpdateRead)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    group.group_id,
+                    group.group_name,
+                    group.cover,
+                    group.order,
+                    group.enable_refresh as i32,
+                    group.show as i32,
+                    group.book_sort,
+                    group.only_update_read as i32,
+                ],
+            )
+            .map_err(|e| LegadoError::Database(format!("恢复分组失败: {e}")))?;
+        Ok(())
+    }
+
     /// 获取所有分组（按 order 升序）
     pub fn find_all(&self) -> LegadoResult<Vec<BookGroup>> {
         let mut stmt = self
@@ -265,5 +290,40 @@ mod tests {
         assert_eq!(repo.count().unwrap(), 2);
         repo.delete(1).unwrap();
         assert_eq!(repo.count().unwrap(), 1);
+    }
+
+    /// 恢复路径全列 upsert：主键冲突整行替换，全 8 列逐列读回
+    #[test]
+    fn test_upsert_replaces_all_columns() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookGroupRepository::new(db.connection());
+
+        let group = BookGroup {
+            group_id: 42,
+            group_name: "恢复分组".to_string(),
+            cover: Some("cover.png".to_string()),
+            order: 7,
+            enable_refresh: false,
+            show: false,
+            book_sort: 3,
+            only_update_read: true,
+        };
+        repo.upsert(&group).unwrap();
+
+        let found = repo.find_by_id(42).unwrap().unwrap();
+        assert_eq!(found.group_name, "恢复分组");
+        assert_eq!(found.cover.as_deref(), Some("cover.png"));
+        assert_eq!(found.order, 7);
+        assert!(!found.enable_refresh);
+        assert!(!found.show);
+        assert_eq!(found.book_sort, 3);
+        assert!(found.only_update_read);
+
+        // 同 id 重复恢复：整行替换不重复
+        let mut again = group.clone();
+        again.group_name = "改后".to_string();
+        repo.upsert(&again).unwrap();
+        assert_eq!(repo.count().unwrap(), 1);
+        assert_eq!(repo.find_by_id(42).unwrap().unwrap().group_name, "改后");
     }
 }

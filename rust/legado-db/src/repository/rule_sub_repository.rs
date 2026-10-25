@@ -118,6 +118,42 @@ impl<'a> RuleSubRepository<'a> {
         Ok(self.conn.last_insert_rowid())
     }
 
+    /// 全字段 upsert（INSERT OR REPLACE，id > 0 时显式携带主键）
+    ///
+    /// 供备份恢复使用：与 [`insert`]（id 恒由自增分配）不同，恢复路径需
+    /// 保留备份中的行 id（对齐原版 `@Insert(onConflict = REPLACE)` 的
+    /// 全实体写入语义）；id <= 0 时主键交由 SQLite 自增分配。
+    /// url 为 UNIQUE 列，主键或 url 任一冲突均按 REPLACE 整行替换。
+    pub fn upsert(&self, record: &RuleSubRecord) -> LegadoResult<()> {
+        let id: Option<i64> = if record.id > 0 { Some(record.id) } else { None };
+        self.conn
+            .execute(
+                r#"INSERT OR REPLACE INTO ruleSubs (
+                    id, url, name, type, "update", version, isEnabled, createdAt,
+                    customOrder, autoUpdate, updateInterval, silentUpdate, js, showRule, sourceUrl)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)"#,
+                params![
+                    id,
+                    record.url,
+                    record.name,
+                    sub_type_to_int(&record.sub_type),
+                    record.last_update,
+                    record.version,
+                    record.is_enabled,
+                    record.created_at,
+                    record.custom_order,
+                    record.auto_update,
+                    record.update_interval,
+                    record.silent_update,
+                    record.js,
+                    record.show_rule,
+                    record.source_url,
+                ],
+            )
+            .map_err(|e| LegadoError::Database(format!("恢复 ruleSubs 失败: {e}")))?;
+        Ok(())
+    }
+
     /// 根据 ID 查询
     pub fn find_by_id(&self, id: i64) -> LegadoResult<Option<RuleSubRecord>> {
         let sql = format!("SELECT {SELECT_COLS} FROM ruleSubs WHERE id = ?1");
@@ -593,5 +629,63 @@ mod tests {
         assert_eq!(int_to_sub_type(0), "bookSource");
         assert_eq!(int_to_sub_type(1), "rssSource");
         assert_eq!(int_to_sub_type(3), "replaceRule");
+    }
+
+    /// 恢复路径 upsert：显式 id 整行替换，不产生重复行、不重排 id
+    #[test]
+    fn test_upsert_preserves_id() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RuleSubRepository::new(db.connection());
+
+        let mut record = make_sub("https://example.com/up.json", "恢复订阅", "rssSource");
+        record.id = 42;
+        record.custom_order = 9;
+        record.auto_update = true;
+        record.update_interval = 6;
+        record.silent_update = true;
+        record.js = Some("js()".to_string());
+        record.show_rule = Some("$.list".to_string());
+        record.source_url = Some("https://example.com/src.json".to_string());
+        record.version = "1.2.3".to_string();
+        record.last_update = 1700009999999;
+        record.is_enabled = false;
+        repo.upsert(&record).unwrap();
+
+        let found = repo.find_by_id(42).unwrap().unwrap();
+        assert_eq!(found.name, "恢复订阅");
+        assert_eq!(found.sub_type, "rssSource");
+        assert_eq!(found.custom_order, 9);
+        assert!(found.auto_update);
+        assert_eq!(found.update_interval, 6);
+        assert!(found.silent_update);
+        assert_eq!(found.js.as_deref(), Some("js()"));
+        assert_eq!(found.show_rule.as_deref(), Some("$.list"));
+        assert_eq!(
+            found.source_url.as_deref(),
+            Some("https://example.com/src.json")
+        );
+        assert_eq!(found.version, "1.2.3");
+        assert_eq!(found.last_update, 1700009999999);
+        assert!(!found.is_enabled);
+
+        // 同 id 重复恢复：整行替换；同 url 不同 id 亦被 REPLACE 归一
+        let mut again = record.clone();
+        again.name = "改后".to_string();
+        repo.upsert(&again).unwrap();
+        assert_eq!(repo.find_all().unwrap().len(), 1);
+        assert_eq!(repo.find_by_id(42).unwrap().unwrap().name, "改后");
+    }
+
+    /// id <= 0 的恢复记录：主键交由 SQLite 自增分配
+    #[test]
+    fn test_upsert_autoassigns_id_when_zero() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RuleSubRepository::new(db.connection());
+        let record = make_sub("https://example.com/auto.json", "自增订阅", "bookSource");
+        repo.upsert(&record).unwrap();
+
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 1);
+        assert!(all[0].id > 0);
     }
 }

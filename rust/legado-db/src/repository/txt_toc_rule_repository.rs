@@ -1,20 +1,35 @@
 //! TxtTocRule Repository - txtTocRules 表 CRUD
 
 use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
 
 use legado_core::{LegadoError, LegadoResult};
 
 /// TXT 目录规则记录（v101 补齐 replacement，对齐 Room 99.json）
-#[derive(Debug, Clone, Default)]
+///
+/// serde 键名对齐 Room 列（camelCase）与原版 txtTocRule.json 备份，
+/// 供备份收集/恢复直接序列化使用。
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TxtTocRuleRecord {
+    #[serde(default)]
     pub id: i64,
+    #[serde(default)]
     pub name: String,
+    #[serde(default)]
     pub rule: String,
     /// 替换内容（对齐 Kotlin TxtTocRule.replacement，默认空串）
+    #[serde(default)]
     pub replacement: String,
+    #[serde(default, rename = "serialNumber")]
     pub serial_number: i32,
+    #[serde(default = "default_enable")]
     pub enable: bool,
+    #[serde(default)]
     pub example: Option<String>,
+}
+
+fn default_enable() -> bool {
+    true
 }
 
 /// TXT 目录规则数据访问层
@@ -47,6 +62,31 @@ impl<'a> TxtTocRuleRepository<'a> {
             )
             .map_err(|e| LegadoError::Database(format!("插入 TXT 目录规则失败: {e}")))?;
         Ok(self.conn.last_insert_rowid())
+    }
+
+    /// 全字段 upsert（INSERT OR REPLACE，id > 0 时显式携带主键，供备份恢复使用）
+    ///
+    /// 与 [`insert_with_replacement`]（id/enable/example 落列默认值）不同：
+    /// 恢复路径需原样保留备份中的全部列；id <= 0 时主键交由 SQLite 自增分配。
+    pub fn upsert(&self, record: &TxtTocRuleRecord) -> LegadoResult<()> {
+        let id: Option<i64> = if record.id > 0 { Some(record.id) } else { None };
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO txtTocRules
+                 (id, name, rule, replacement, serialNumber, enable, example)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                params![
+                    id,
+                    record.name,
+                    record.rule,
+                    record.replacement,
+                    record.serial_number,
+                    record.enable as i32,
+                    record.example,
+                ],
+            )
+            .map_err(|e| LegadoError::Database(format!("恢复 TXT 目录规则失败: {e}")))?;
+        Ok(())
     }
 
     /// 查询所有规则（按 serialNumber 升序）
@@ -254,5 +294,58 @@ mod tests {
         let all = repo.find_all().unwrap();
         assert_eq!(all[0].name, "旧接口规则-改");
         assert_eq!(all[0].replacement, "");
+    }
+
+    /// 恢复路径全列 upsert：id/enable/example/replacement 逐列保留，id 不重排
+    #[test]
+    fn test_upsert_full_columns_roundtrip() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = TxtTocRuleRepository::new(db.connection());
+
+        let record = TxtTocRuleRecord {
+            id: 11,
+            name: "恢复规则".to_string(),
+            rule: r"^序章".to_string(),
+            replacement: "[序]".to_string(),
+            serial_number: 3,
+            enable: false,
+            example: Some("序章 示例".to_string()),
+        };
+        repo.upsert(&record).unwrap();
+
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, 11);
+        assert_eq!(all[0].name, "恢复规则");
+        assert_eq!(all[0].rule, r"^序章");
+        assert_eq!(all[0].replacement, "[序]");
+        assert_eq!(all[0].serial_number, 3);
+        assert!(!all[0].enable);
+        assert_eq!(all[0].example.as_deref(), Some("序章 示例"));
+
+        // 同 id 重复恢复：整行替换，不产生重复行
+        let mut again = record.clone();
+        again.name = "恢复规则-改".to_string();
+        repo.upsert(&again).unwrap();
+        assert_eq!(repo.count().unwrap(), 1);
+        assert_eq!(repo.find_all().unwrap()[0].name, "恢复规则-改");
+    }
+
+    /// id <= 0 的恢复记录：主键交由 SQLite 自增分配
+    #[test]
+    fn test_upsert_autoassigns_id_when_zero() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = TxtTocRuleRepository::new(db.connection());
+        repo.upsert(&TxtTocRuleRecord {
+            id: 0,
+            name: "自增规则".to_string(),
+            rule: r"^第.+卷".to_string(),
+            ..Default::default()
+        })
+        .unwrap();
+
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 1);
+        assert!(all[0].id > 0);
     }
 }

@@ -2,6 +2,7 @@
 
 use rusqlite::{params, Connection};
 
+use legado_core::models::SearchKeyword;
 use legado_core::{LegadoError, LegadoResult};
 
 /// 搜索关键词数据访问层
@@ -29,6 +30,47 @@ impl<'a> SearchKeywordRepository<'a> {
                 params![keyword, now],
             )
             .map_err(|e| LegadoError::Database(format!("插入搜索关键词失败: {e}")))?;
+        Ok(())
+    }
+
+    /// 获取全部搜索关键词（含 usage/lastUseTime，供备份收集）
+    ///
+    /// 与 [`find_recent`] 不同：本方法不做条数截断、返回全字段记录。
+    pub fn find_all(&self) -> LegadoResult<Vec<SearchKeyword>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT word, usage, lastUseTime FROM search_keywords
+                 ORDER BY lastUseTime DESC",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(SearchKeyword {
+                    word: row.get(0)?,
+                    usage: row.get::<_, Option<i32>>(1)?.unwrap_or(1),
+                    last_use_time: row.get(2)?,
+                })
+            })
+            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(rows)
+    }
+
+    /// 全字段 upsert 搜索关键词（INSERT OR REPLACE，供备份恢复使用）
+    ///
+    /// 与 [`insert`] 的「usage+1 刷新」语义不同：恢复路径需原样保留
+    /// 备份中的 usage 与 lastUseTime，不做计数累加。
+    pub fn upsert_record(&self, record: &SearchKeyword) -> LegadoResult<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO search_keywords (word, usage, lastUseTime)
+                 VALUES (?1, ?2, ?3)",
+                params![record.word, record.usage, record.last_use_time],
+            )
+            .map_err(|e| LegadoError::Database(format!("恢复搜索关键词失败: {e}")))?;
         Ok(())
     }
 
@@ -136,5 +178,52 @@ mod tests {
         assert_eq!(recent.len(), 2);
         let prefix = repo.find_by_prefix("斗").unwrap();
         assert_eq!(prefix.len(), 2);
+    }
+
+    /// find_all：返回全量关键词且包含 usage/lastUseTime（备份收集路径）
+    #[test]
+    fn test_find_all_full_fields() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = SearchKeywordRepository::new(db.connection());
+        repo.insert("仙侠", "").unwrap();
+        repo.insert("仙侠", "").unwrap(); // usage 累加到 2
+
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].word, "仙侠");
+        assert_eq!(all[0].usage, 2);
+        assert!(all[0].last_use_time > 0);
+    }
+
+    /// 恢复路径 upsert_record：usage/lastUseTime 原样落库，不做 usage+1 累加
+    #[test]
+    fn test_upsert_record_preserves_usage_and_time() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = SearchKeywordRepository::new(db.connection());
+
+        repo.upsert_record(&SearchKeyword {
+            word: "玄幻".to_string(),
+            usage: 7,
+            last_use_time: 1700000000000,
+        })
+        .unwrap();
+
+        assert_eq!(repo.count().unwrap(), 1);
+        let all = repo.find_all().unwrap();
+        assert_eq!(all[0].word, "玄幻");
+        assert_eq!(all[0].usage, 7, "恢复不得累加 usage");
+        assert_eq!(all[0].last_use_time, 1700000000000);
+
+        // 同词重复恢复：整行替换
+        repo.upsert_record(&SearchKeyword {
+            word: "玄幻".to_string(),
+            usage: 3,
+            last_use_time: 1700000001000,
+        })
+        .unwrap();
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].usage, 3);
+        assert_eq!(all[0].last_use_time, 1700000001000);
     }
 }

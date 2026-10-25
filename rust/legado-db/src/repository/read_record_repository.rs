@@ -8,18 +8,24 @@ use serde::{Deserialize, Serialize};
 use legado_core::{LegadoError, LegadoResult};
 
 /// 阅读记录
+///
+/// serde 键名对齐 Room 列（camelCase）与原版备份 readRecord.json；
+/// `alias` 兼容历史备份的 snake_case 旧键（备份格式 v1 时期由仓库结构体
+/// 无 rename 直出，book_name/read_time/last_read 三键），恢复时双形态均可解析。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ReadRecord {
     /// 设备标识（v101 补齐 Room 基线 deviceId 列，当前单设备 Rust 侧固定空串）
-    #[serde(default, rename = "deviceId")]
+    #[serde(default, rename = "deviceId", alias = "device_id")]
     pub device_id: String,
+    #[serde(default, rename = "bookName", alias = "book_name")]
     pub book_name: String,
     /// 作者（同书名的多本书共用一条记录时，以作者集合形式合并存储）
     #[serde(default)]
     pub author: String,
+    #[serde(default, rename = "readTime", alias = "read_time")]
     pub read_time: i64,
     /// 最后阅读位置/章节索引（v101 补齐 Room 基线 lastRead 列）
-    #[serde(default, rename = "lastRead")]
+    #[serde(default, rename = "lastRead", alias = "last_read")]
     pub last_read: i64,
 }
 
@@ -134,6 +140,109 @@ impl<'a> ReadRecordRepository<'a> {
                 params![device_id, book_name, author, read_time, last_read],
             )
             .map_err(|e| LegadoError::Database(format!("更新阅读记录失败: {e}")))?;
+        Ok(())
+    }
+
+    /// 恢复合并写入（对齐原版 `Restore.kt:366-376` 的 ReadRecord 恢复语义）
+    ///
+    /// 原版语义（本机 deviceId 在 Rust 侧固定为空串，与 [`upsert`] 一致）：
+    /// - 库内无同键 (deviceId, bookName) 记录 → 直接整行写入（author 与库内合并）；
+    /// - 非本机记录（deviceId != 本机）→ 直接整行 REPLACE（author 与库内合并）；
+    /// - 本机记录：仅当库内 readTime < 传入 readTime 时整行覆盖；
+    ///   否则若传入 author 非空白，仅合并作者（readTime/lastRead 保留库内值，
+    ///   对齐原版 `current.copy(author = readRecord.author)` 分支）；
+    ///   两者皆不满足时不写入。
+    ///
+    /// 供备份恢复使用；不触碰 readRecordDaily 热力图聚合面（恢复不产生阅读时长）。
+    pub fn upsert_restore(&self, record: &ReadRecord) -> LegadoResult<()> {
+        let current = self.get_by_device_pk(&record.device_id, &record.book_name)?;
+        match current {
+            // 库内无同键记录：直接整行写入（author 先与空值合并归一）
+            None => self.insert_row_merged(record),
+            Some(current) => {
+                if record.device_id != Self::LOCAL_DEVICE_ID || current.read_time < record.read_time
+                {
+                    // 非本机记录直接插入；本机记录较新者胜
+                    self.insert_row_merged(record)
+                } else if !record.author.trim().is_empty() {
+                    // 本机且库内较新：仅合并作者，readTime/lastRead 保留库内值
+                    let author_only = ReadRecord {
+                        device_id: current.device_id,
+                        book_name: current.book_name,
+                        author: record.author.clone(),
+                        read_time: current.read_time,
+                        last_read: current.last_read,
+                    };
+                    self.insert_row_merged(&author_only)
+                } else {
+                    // 本机且库内较新且传入无作者信息：不写入
+                    Ok(())
+                }
+            }
+        }
+    }
+
+    /// 本机 deviceId（与 upsert/insert_with_author 一致；Rust 侧单设备固定空串）
+    const LOCAL_DEVICE_ID: &'static str = "";
+
+    /// 按完整主键 (deviceId, bookName) 查询记录（对齐原版 `ReadRecordDao.getRecord`）
+    ///
+    /// 区别于 [`get_record`]（仅按 bookName，不带 deviceId 过滤），
+    /// 本方法为恢复合并语义的精确读取路径。
+    fn get_by_device_pk(
+        &self,
+        device_id: &str,
+        book_name: &str,
+    ) -> LegadoResult<Option<ReadRecord>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT bookName, author, readTime, deviceId, lastRead
+                 FROM readRecord WHERE deviceId = ?1 AND bookName = ?2",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+        let record = stmt
+            .query_row(params![device_id, book_name], |row| {
+                Ok(ReadRecord {
+                    device_id: row.get(3)?,
+                    book_name: row.get(0)?,
+                    author: row.get(1)?,
+                    read_time: row.get(2)?,
+                    last_read: row.get(4)?,
+                })
+            })
+            .optional()
+            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?;
+        Ok(record)
+    }
+
+    /// 整行写入（作者先与库内同键记录合并，对齐原版 `ReadRecordDao.insert` 事务）
+    fn insert_row_merged(&self, record: &ReadRecord) -> LegadoResult<()> {
+        let existing_author: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT author FROM readRecord WHERE deviceId = ?1 AND bookName = ?2",
+                params![record.device_id, record.book_name],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|e| LegadoError::Database(format!("查询 author 失败: {e}")))?;
+        let merged =
+            merge_read_record_authors(existing_author.as_deref().unwrap_or(""), &record.author);
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO readRecord
+                 (deviceId, bookName, author, readTime, lastRead)
+                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![
+                    record.device_id,
+                    record.book_name,
+                    merged,
+                    record.read_time,
+                    record.last_read
+                ],
+            )
+            .map_err(|e| LegadoError::Database(format!("恢复阅读记录失败: {e}")))?;
         Ok(())
     }
 
@@ -647,5 +756,113 @@ mod tests {
         let rows_2025 = repo.list_daily_year(2025).unwrap();
         assert_eq!(rows_2025, vec![("2025-12-31".to_string(), 999)]);
         assert!(repo.list_daily_year(2024).unwrap().is_empty());
+    }
+
+    // ─── 恢复合并语义（upsert_restore，对齐原版 Restore.kt:366-376）──────────────
+
+    /// 非本机记录直接整行插入：deviceId 归属正确，author/lastRead 落库
+    #[test]
+    fn test_restore_foreign_device_row_inserted() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+
+        // 本机已有同书名记录（不同 deviceId，互不干扰）
+        repo.upsert_full("", "书A", "作者甲", 100, 10).unwrap();
+
+        repo.upsert_restore(&ReadRecord {
+            device_id: "device-A".to_string(),
+            book_name: "书A".to_string(),
+            author: "作者甲".to_string(),
+            read_time: 500,
+            last_read: 50,
+        })
+        .unwrap();
+
+        assert_eq!(repo.count().unwrap(), 2);
+        // find_all 读回全表，按 deviceId 定位非本机行
+        let all = repo.find_all().unwrap();
+        let foreign = all.iter().find(|r| r.device_id == "device-A").unwrap();
+        assert_eq!(foreign.book_name, "书A");
+        assert_eq!(foreign.read_time, 500);
+        assert_eq!(foreign.last_read, 50);
+        assert_eq!(foreign.author, "作者甲");
+        // 本机记录不受非本机记录影响
+        let local = all.iter().find(|r| r.device_id.is_empty()).unwrap();
+        assert_eq!(local.read_time, 100);
+    }
+
+    /// 本机记录传入较旧：readTime/lastRead 保留库内值，仅合并作者
+    #[test]
+    fn test_restore_local_older_incoming_merges_author_only() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+
+        repo.upsert_full("", "书B", "作者乙", 200, 20).unwrap();
+        repo.upsert_restore(&ReadRecord {
+            device_id: "".to_string(),
+            book_name: "书B".to_string(),
+            author: "作者丙".to_string(),
+            read_time: 100,
+            last_read: 5,
+        })
+        .unwrap();
+
+        assert_eq!(repo.count().unwrap(), 1);
+        let row = repo.get_record("书B").unwrap().unwrap();
+        assert_eq!(row.read_time, 200, "库内较新 readTime 不得被旧值覆盖");
+        assert_eq!(row.last_read, 20, "lastRead 保留库内值");
+        // 作者合并为集合编码（含两作者）
+        let arr: Vec<String> = serde_json::from_str(
+            row.author
+                .strip_prefix(AUTHORS_PREFIX)
+                .unwrap_or(&row.author),
+        )
+        .unwrap_or_default();
+        assert!(arr.contains(&"作者乙".to_string()));
+        assert!(arr.contains(&"作者丙".to_string()));
+    }
+
+    /// 本机记录传入较新：整行覆盖（readTime/lastRead 以传入为准）
+    #[test]
+    fn test_restore_local_incoming_newer_overwrites() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+
+        repo.upsert_full("", "书C", "作者丁", 50, 5).unwrap();
+        repo.upsert_restore(&ReadRecord {
+            device_id: "".to_string(),
+            book_name: "书C".to_string(),
+            author: String::new(),
+            read_time: 999,
+            last_read: 99,
+        })
+        .unwrap();
+
+        assert_eq!(repo.count().unwrap(), 1);
+        let row = repo.get_record("书C").unwrap().unwrap();
+        assert_eq!(row.read_time, 999);
+        assert_eq!(row.last_read, 99);
+        assert_eq!(row.author, "作者丁", "传入作者为空时保留库内作者");
+    }
+
+    /// 库内无同键记录：直接整行写入（author 归一、lastRead 落库）
+    #[test]
+    fn test_restore_missing_row_inserted() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ReadRecordRepository::new(db.connection());
+
+        repo.upsert_restore(&ReadRecord {
+            device_id: "".to_string(),
+            book_name: "书D".to_string(),
+            author: "作者戊".to_string(),
+            read_time: 42,
+            last_read: 7,
+        })
+        .unwrap();
+
+        let row = repo.get_record("书D").unwrap().unwrap();
+        assert_eq!(row.author, "作者戊");
+        assert_eq!(row.read_time, 42);
+        assert_eq!(row.last_read, 7);
     }
 }
