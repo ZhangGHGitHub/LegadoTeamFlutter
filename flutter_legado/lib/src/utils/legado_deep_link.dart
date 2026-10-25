@@ -1,5 +1,18 @@
 import '../providers/association/association_state.dart';
 
+/// 入站 URI 分类（P1-4：深链 / 外部书籍文件 / 其他）
+enum IncomingUriKind {
+  /// legado:// / yuedu:// 关联导入深链（走关联导入确认框）
+  importScheme,
+
+  /// 外部书籍文件（content:// / file://，走本地导入链；对齐原版
+  /// FileAssociationActivity 的 ACTION_VIEW 文件分发）
+  bookFile,
+
+  /// 不消费（交由原链路/忽略）
+  none,
+}
+
 /// `legado://` / `yuedu://` 深链解析结果（对齐原版 OnLineImportActivity）
 ///
 /// 典型格式：`legado://import/bookSource?src=https://...`
@@ -27,6 +40,23 @@ class LegadoDeepLink {
   static bool isImportScheme(String url) {
     final lower = url.trim().toLowerCase();
     return lower.startsWith('legado://') || lower.startsWith('yuedu://');
+  }
+
+  /// P1-4：入站 URI 分类（VIEW intent dataString 统一判定入口）
+  ///
+  /// - legado:// / yuedu:// → [IncomingUriKind.importScheme]
+  /// - content:// / file:// → [IncomingUriKind.bookFile]（外部书籍文件，
+  ///   manifest 已声明 epub/txt/pdf 的 VIEW intent-filter）
+  /// - 其余（http(s) 等）→ [IncomingUriKind.none]
+  static IncomingUriKind classifyIncomingUri(String? url) {
+    final trimmed = url?.trim() ?? '';
+    if (trimmed.isEmpty) return IncomingUriKind.none;
+    if (isImportScheme(trimmed)) return IncomingUriKind.importScheme;
+    final lower = trimmed.toLowerCase();
+    if (lower.startsWith('content://') || lower.startsWith('file://')) {
+      return IncomingUriKind.bookFile;
+    }
+    return IncomingUriKind.none;
   }
 
   /// 解析失败返回 null（缺 src 或非法 URI）

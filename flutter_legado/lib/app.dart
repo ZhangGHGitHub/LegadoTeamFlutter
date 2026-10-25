@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import 'src/models/models.dart';
+import 'src/providers/bookshelf/bookshelf_notifier.dart';
 import 'src/providers/providers.dart';
 import 'src/providers/ui_settings/ui_settings_notifier.dart';
 import 'src/providers/theme/theme_colors_notifier.dart';
@@ -231,9 +232,14 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     //（Task #146，对齐原版 App.kt 启动时 AutoTaskScheduler.refresh；
     // 引擎已在 main.dart 先行初始化，此处可直接注入 BookApi） — QoderCN
     AutoTaskScheduler.instance.attach(ref.read(bookApiProvider));
-    // P1-11：监听系统 legado:// / yuedu:// 深链 → Association
+    // P1-11：监听系统 legado:// / yuedu:// 深链 → Association；
+    // P1-4：注入本地书籍导入器，消费外部书籍文件 VIEW intent（content://）
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      DeepLinkService.instance.attach(PlatformBridgeService.navigatorKey);
+      DeepLinkService.instance.attach(
+        PlatformBridgeService.navigatorKey,
+        importLocalBook: (path) =>
+            ref.read(bookshelfNotifierProvider.notifier).importLocalBook(path),
+      );
     });
     // [V-B3] 视频悬浮窗：注册原生事件处理与回全屏导航后 attach
     // （attach 会拉取冷启动经 MainActivity Intent 带回的播放状态）

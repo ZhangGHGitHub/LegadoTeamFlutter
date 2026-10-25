@@ -1,9 +1,12 @@
 package io.legado.flutter
 
 import android.content.Intent
+import android.database.Cursor
 import android.graphics.Color
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.OpenableColumns
 import android.view.KeyEvent
 import android.view.View
 import android.view.WindowInsetsController
@@ -12,6 +15,8 @@ import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.io.File
+import java.io.FileOutputStream
 
 // open：供图标变体桩类 Launcher1~6 继承（对齐原版 WelcomeActivity ×6 子类机制）
 open class MainActivity : FlutterActivity() {
@@ -29,6 +34,9 @@ open class MainActivity : FlutterActivity() {
     private var deepLinkChannel: MethodChannel? = null
     private var autoTaskJobChannel: MethodChannel? = null
     private var initialDeepLink: String? = null
+
+    /** P1-4：外部书籍文件 VIEW intent（content:// / file://），冷启动暂存待 Dart 拉取 */
+    private var initialFileUri: String? = null
     private var pendingAutoTaskDue = false
     private var pendingAutoTaskMinimize = false
 
@@ -128,6 +136,11 @@ open class MainActivity : FlutterActivity() {
         deepLinkChannel?.setMethodCallHandler { call, result ->
             when (call.method) {
                 "getInitialLink" -> result.success(initialDeepLink)
+                // P1-4：冷启动外部书籍文件 URI 拉取
+                "getInitialFileUri" -> result.success(initialFileUri)
+                // P1-4：content:// / file:// 经 ContentResolver 拷入应用
+                // 私有持久目录（files/external_import），返回落盘路径供导入链
+                "copyContentUri" -> handleCopyContentUri(call, result)
                 else -> result.notImplemented()
             }
         }
@@ -182,7 +195,17 @@ open class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        initialDeepLink = intent?.dataString
+        // P1-4：VIEW intent 区分深链与外部书籍文件——legado:// / yuedu://
+        // 走深链（getInitialLink），content:// / file:// 走文件打开
+        //（getInitialFileUri），互不串扰（DeepLinkService 分别消费）
+        when (val dataString = intent?.dataString) {
+            null -> {}
+            else -> if (isImportSchemeUri(dataString)) {
+                initialDeepLink = dataString
+            } else if (intent?.action == Intent.ACTION_VIEW) {
+                initialFileUri = dataString
+            }
+        }
         pendingAutoTaskDue =
             intent?.getBooleanExtra(AutoTaskJobBridge.EXTRA_AUTO_TASK_DUE, false) == true
         pendingAutoTaskMinimize =
@@ -197,7 +220,12 @@ open class MainActivity : FlutterActivity() {
         setIntent(intent)
         val link = intent.dataString
         if (!link.isNullOrEmpty()) {
-            deepLinkChannel?.invokeMethod("onLink", link)
+            if (isImportSchemeUri(link)) {
+                deepLinkChannel?.invokeMethod("onLink", link)
+            } else if (intent.action == Intent.ACTION_VIEW) {
+                // P1-4：外部书籍文件（文件管理器「用阅读打开」热路径）
+                deepLinkChannel?.invokeMethod("onFileUri", link)
+            }
         }
         // [V-B3] 悬浮窗「全屏」/通知点击回到已存活 Activity
         videoFloatBridge.deliverReturn(intent)
@@ -219,6 +247,77 @@ open class MainActivity : FlutterActivity() {
                 moveTaskToBack(true)
             } catch (_: Exception) {
             }
+        }
+    }
+
+    /** P1-4：是否 legado:// / yuedu:// 关联导入协议（与 Dart LegadoDeepLink.isImportScheme 同判） */
+    private fun isImportSchemeUri(uri: String): Boolean {
+        val lower = uri.trim().lowercase()
+        return lower.startsWith("legado://") || lower.startsWith("yuedu://")
+    }
+
+    /**
+     * P1-4：把 content:// / file:// 书籍文件拷入应用私有持久目录。
+     *
+     * 拷贝在后台线程执行（MethodChannel.Result 须回主线程）；目标目录用
+     * filesDir/external_import 而非 cache：导入链（importLocalBook）以该路径
+     * 作为 bookUrl 落库，系统清缓存不应使已导入书籍断链（原版
+     * LocalBook.importFile 亦复制进书籍保存目录）。同名文件覆盖（重复打开
+     * 同一文件时刷新内容，对齐原版 FileAssociationActivity lastModified
+     * 比较后覆盖写入的语义）。
+     */
+    private fun handleCopyContentUri(call: MethodCall, result: MethodChannel.Result) {
+        val uriStr = call.argument<String>("uri")
+        if (uriStr.isNullOrEmpty()) {
+            result.error("EINVAL", "uri 参数缺失", null)
+            return
+        }
+        Thread {
+            var failure: Pair<String, String>? = null
+            var copiedPath: String? = null
+            try {
+                val uri = Uri.parse(uriStr)
+                val fileName = queryContentFileName(uri)
+                    ?: "external-book-${System.currentTimeMillis()}"
+                // 文件名净化：拦截路径分隔与非法字符
+                val safeName = fileName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
+                val dir = File(filesDir, "external_import").apply { mkdirs() }
+                val dest = File(dir, safeName)
+                contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(dest).use { output ->
+                        input.copyTo(output)
+                        output.flush()
+                    }
+                } ?: throw IllegalStateException("无法读取所选文件")
+                copiedPath = dest.absolutePath
+            } catch (e: Exception) {
+                failure = "ECOPY" to (e.message ?: e.javaClass.simpleName)
+            }
+            val finalPath = copiedPath
+            val finalFailure = failure
+            runOnUiThread {
+                if (finalFailure != null) {
+                    result.error(finalFailure.first, finalFailure.second, null)
+                } else {
+                    result.success(finalPath)
+                }
+            }
+        }.start()
+    }
+
+    /** P1-4：查询 content URI 显示文件名（OpenableColumns；file:// 取路径段） */
+    private fun queryContentFileName(uri: Uri): String? {
+        if (uri.scheme == "file") {
+            return uri.path?.let { File(it).name }?.takeIf { it.isNotBlank() }
+        }
+        return try {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                ?.use { cursor: Cursor ->
+                    val idx = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                    if (idx >= 0 && cursor.moveToFirst()) cursor.getString(idx) else null
+                }?.takeIf { it.isNotBlank() }
+        } catch (_: Exception) {
+            null
         }
     }
 
