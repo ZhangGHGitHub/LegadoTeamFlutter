@@ -11,7 +11,7 @@ use std::sync::{LazyLock, Mutex};
 
 use futures::stream::{self, StreamExt};
 
-use legado_core::models::{Book, BookChapter, BookSource};
+use legado_core::models::{Book, BookSource};
 use legado_core::source_matcher::{SearchCandidate, SourceMatch, SourceMatcher};
 use legado_core::web_book::{BookSourceFetcher, WebBookInfo, WebChapter};
 use legado_core::{LegadoError, LegadoResult};
@@ -847,28 +847,10 @@ fn commit_source_switch(
     // 3. 转换为 BookChapter，base_url/book_url 均落稳定的原 bookUrl
     //    [T1] 保留解析值 variable/is_volume：章节级 @put 变量（翻页 token 类）
     //    与卷章标记是正文请求/去重的前置输入，写死 None/false 会导致换源后正文错误
-    let book_chapters: Vec<BookChapter> = web_chapters
-        .iter()
-        .map(|wc| BookChapter {
-            url: wc.url.clone(),
-            title: wc.title.clone(),
-            is_volume: wc.is_volume,
-            base_url: book_url.to_string(),
-            book_url: book_url.to_string(),
-            index: wc.index,
-            is_vip: wc.is_vip,
-            is_pay: false,
-            resource_url: None,
-            tag: None,
-            word_count: None,
-            start: None,
-            end: None,
-            start_fragment_id: None,
-            end_fragment_id: None,
-            variable: wc.variable.clone(),
-            img_url: None,
-        })
-        .collect();
+    // P1-1/P2-1：目录转换统一走 core 单一实现（与 refresh_toc / server 同语义，
+    // 卷章/付费/附加信息全量透传，禁止 false/None 兜底——防复发规定 1/3）
+    let book_chapters =
+        legado_core::web_book::web_chapters_to_book_chapters(&web_chapters, book_url);
 
     // 4. 将书源字段更新 + 清旧缓存/旧章节 + 写入新章节，全部包进单个 DB 事务：
     //    全部成功才提交；中途失败自动回滚，保留原书源与原章节，
@@ -904,6 +886,14 @@ fn commit_source_switch(
     }
     if info.word_count.is_some() {
         book.word_count = info.word_count;
+    }
+    // P1-3：文件类书源（type=3）下载地址随详情合并落库（对标原版
+    // changeSource → getBookInfoAwait → analyzeBookInfo 的 downloadUrls
+    // 写入；Option 只在有值时覆盖，避免普通书源换源清空既有值）
+    if let Some(urls) = &info.download_urls {
+        if !urls.is_empty() {
+            book.download_urls = Some(serde_json::to_string(urls).unwrap_or_default());
+        }
     }
     // [目录派生字段同步] 对齐上游 BookChapterList.updateBookTocInfo（目录成功
     // 后 totalChapterNum/latestChapterTitle 以目录结果写入；详情 lastChapter
@@ -1600,7 +1590,10 @@ async fn apply_word_count_sample(
         title: chapter.title.clone(),
         index: chapter.index,
         is_vip: chapter.is_vip,
+        // P1-1：透传 DB 章节卷章/付费标记与章节附加信息
         is_volume: chapter.is_volume,
+        is_pay: chapter.is_pay,
+        tag: chapter.tag.clone(),
         variable: chapter.variable.clone(),
         word_count: None,
     };
@@ -2200,6 +2193,7 @@ mod tests {
                 word_count: Some("123456".to_string()),
                 kind: Some("玄幻".to_string()),
                 book_type: 0,
+                download_urls: None,
             }),
             chapters: Ok(vec![WebChapter {
                 index: 0,
@@ -2207,6 +2201,8 @@ mod tests {
                 url: format!("{new_toc}/c1"),
                 is_vip: false,
                 is_volume: true,
+                is_pay: false,
+                tag: None,
                 variable: Some(r#"{"token":"abc123"}"#.to_string()),
                 word_count: None,
             }]),
@@ -2351,6 +2347,7 @@ mod tests {
                 word_count: None,
                 kind: None,
                 book_type: 0,
+                download_urls: None,
             }),
             chapters: Ok(test_web_chapters(5, new_toc)),
             chapters_requested: std::sync::Mutex::new(Vec::new()),
@@ -2583,6 +2580,7 @@ mod tests {
                 word_count: None,
                 kind: None,
                 book_type: 0,
+                download_urls: None,
             }),
             chapters: Ok(vec![WebChapter {
                 index: 0,
@@ -2590,6 +2588,8 @@ mod tests {
                 url: format!("{new_detail}/c1"),
                 is_vip: false,
                 is_volume: false,
+                is_pay: false,
+                tag: None,
                 variable: None,
                 word_count: None,
             }]),
@@ -2736,6 +2736,8 @@ mod tests {
                 url: "https://t2f-new.example.com/c1".to_string(),
                 is_vip: false,
                 is_volume: false,
+                is_pay: false,
+                tag: None,
                 variable: None,
                 word_count: None,
             }]),
@@ -2830,6 +2832,7 @@ mod tests {
                 word_count: None,
                 kind: None,
                 book_type: 0,
+                download_urls: None,
             }),
             chapters: Ok(vec![WebChapter {
                 index: 0,
@@ -2837,6 +2840,8 @@ mod tests {
                 url: format!("{new_toc}/c1"),
                 is_vip: false,
                 is_volume: false,
+                is_pay: false,
+                tag: None,
                 variable: None,
                 word_count: None,
             }]),
@@ -2950,6 +2955,7 @@ mod tests {
                     word_count: None,
                     kind: None,
                     book_type: 0,
+                    download_urls: None,
                 }),
                 chapters: Ok(vec![WebChapter {
                     index: 0,
@@ -2957,6 +2963,8 @@ mod tests {
                     url: format!("{detail}/c1"),
                     is_vip: false,
                     is_volume: false,
+                    is_pay: false,
+                    tag: None,
                     variable: None,
                     word_count: None,
                 }]),
@@ -3182,6 +3190,7 @@ mod tests {
             word_count: Some("9999".to_string()),
             kind: None,
             book_type: 0,
+            download_urls: None,
         }
     }
 
@@ -3194,6 +3203,8 @@ mod tests {
                 url: format!("{base}/c{i}"),
                 is_vip: false,
                 is_volume: false,
+                is_pay: false,
+                tag: None,
                 variable: None,
                 word_count: None,
             })
@@ -3345,6 +3356,7 @@ mod tests {
                 word_count: None,
                 kind: None,
                 book_type: 0,
+                download_urls: None,
             })
         }
 

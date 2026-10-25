@@ -574,29 +574,10 @@ fn refresh_toc_with_fetcher<F: BookSourceFetcher>(
     }
 
     // 3. 转换为 BookChapter 并存入数据库
-    let book_chapters: Vec<BookChapter> = web_chapters
-        .iter()
-        .map(|wc| BookChapter {
-            url: wc.url.clone(),
-            title: wc.title.clone(),
-            is_volume: false,
-            base_url: book_url.to_string(),
-            book_url: book_url.to_string(),
-            index: wc.index,
-            is_vip: wc.is_vip,
-            is_pay: false,
-            resource_url: None,
-            tag: None,
-            // N5: 字数透传（WebChapter.word_count 来自 updateTime 规则/JS 源）
-            word_count: wc.word_count.clone(),
-            start: None,
-            end: None,
-            start_fragment_id: None,
-            end_fragment_id: None,
-            variable: wc.variable.clone(),
-            img_url: None,
-        })
-        .collect();
+    //    P1-1/P2-1：卷章/付费标记与章节附加信息全量透传（统一走
+    //    web_chapters_to_book_chapters，与换源/server 链共用同一转换语义）
+    let book_chapters =
+        legado_core::web_book::web_chapters_to_book_chapters(&web_chapters, book_url);
 
     // [目录派生字段同步] 对齐上游 updateBookTocInfo：刷新成功后 books 行
     // totalChapterNum = 新目录章数 / latestChapterTitle = 末章标题（截断保留
@@ -717,7 +698,7 @@ pub fn fetch_chapter_content(
     // 取得真实章节序号与标题（供去重复标题与缓存使用）
     // [B-12] 第 4 项 known_chapter：未知章节 URL 时不得回退 (0, "") 并写
     // index=0 缓存行（污染缓存且目录云图标错位）
-    let (chapter_index, chapter_title, chapter_variable, known_chapter) =
+    let (chapter_index, chapter_title, chapter_variable, known_chapter, is_volume, is_vip) =
         get_chapter_index_title_variable(book_url, chapter_url)?;
     fetch_chapter_content_inner(
         book_url,
@@ -727,6 +708,8 @@ pub fn fetch_chapter_content(
         &chapter_title,
         chapter_variable.as_deref(),
         known_chapter,
+        is_volume,
+        is_vip,
     )
 }
 
@@ -735,6 +718,7 @@ pub fn fetch_chapter_content(
 /// 由 [`fetch_chapter_content`] 和 [`get_chapter_content_full`] 共用：
 /// - `fetch_chapter_content` 先查询章节序号/标题再调用本函数
 /// - `get_chapter_content_full` 已持有章节信息，直接调用本函数避免冗余查询
+#[allow(clippy::too_many_arguments)]
 fn fetch_chapter_content_inner(
     book_url: &str,
     chapter_url: &str,
@@ -743,6 +727,8 @@ fn fetch_chapter_content_inner(
     chapter_title: &str,
     chapter_variable: Option<&str>,
     known_chapter: bool,
+    is_volume: bool,
+    is_vip: bool,
 ) -> LegadoResult<String> {
     // 1. 检查 DB 缓存
     // Task #16 P0：按 (book_url, chapter_url) 复合键查找，避免不同书籍共用
@@ -802,29 +788,72 @@ fn fetch_chapter_content_inner(
     let merged_variable =
         super::web_book::merge_variables_json(book_variable.as_deref(), chapter_variable);
 
+    // P1-1：卷章/VIP 标记随正文链透传（WebChapter 由 DB 章节构造，
+    // 不再硬编码 false——卷章豁免空正文检查、音频链跳章均依赖该标记）
     let web_chapter = WebChapter {
         index: chapter_index,
         title: chapter_title.to_string(),
         url: chapter_url.to_string(),
-        is_vip: false,
-        is_volume: false,
+        is_vip,
+        is_volume,
+        is_pay: false,
+        tag: None,
         variable: merged_variable,
         word_count: None,
     };
 
     let engine = super::web_book::build_engine()?;
-    let content = runtime::block_on(async { engine.get_content(&source, &web_chapter).await })?;
+    // P1-2：标题规则链随正文抓取返回（标题覆盖值 + 标题内段评图）
+    let meta =
+        runtime::block_on(async { engine.get_content_with_meta(&source, &web_chapter).await })?;
+    let content = meta.content;
+
+    // P1-2：标题覆盖 / 段评图落库（对标 BookContent.kt:180-191 副作用：
+    // bookChapter.title = title; bookChapter.imgUrl = group2）。
+    // 已知章节才写（未知 URL 落库会污染目录）；写失败仅告警不传播。
+    // 授权边界注：本批不新增 legado-db 仓库方法，收敛为单列 UPDATE 于
+    // ffi 内部完成（与 up_word_count 同族单列更新语义）。
+    let effective_title =
+        if known_chapter && (meta.title_override.is_some() || meta.img_url.is_some()) {
+            let updated: LegadoResult<usize> = with_database(|db| {
+                db.connection()
+                .execute(
+                    "UPDATE chapters SET title = ?3, imgUrl = ?4 WHERE bookUrl = ?1 AND url = ?2",
+                    rusqlite::params![
+                        book_url,
+                        chapter_url,
+                        meta.title_override.as_deref().unwrap_or(chapter_title),
+                        meta.img_url,
+                    ],
+                )
+                .map_err(|e| LegadoError::Database(format!("章节标题回写失败: {e}")))
+            });
+            match updated {
+                Ok(_) => meta
+                    .title_override
+                    .clone()
+                    .unwrap_or_else(|| chapter_title.to_string()),
+                Err(e) => {
+                    log::warn!("章节标题/段评图回写失败（已忽略，不影响阅读）: {e}");
+                    chapter_title.to_string()
+                }
+            }
+        } else {
+            chapter_title.to_string()
+        };
 
     // 3. 抓取成功后写入 DB 缓存（对齐原版 BookContent.analyzeContent
     //    L207-209 `needSave → BookHelp.saveContent` 的「获取成功即写」时机）。
     //    写失败仅告警不传播——缓存写入失败不得导致阅读获取失败。
+    //    P1-2：缓存行携带标题链覆盖后的章节标题（对齐原版 saveContent 保存
+    //    bookChapter 覆盖后标题）。
     // [B-12] 未知章节 URL（不在当前目录）不写缓存：上游按目录定位章节，
     // 回退 (0, "") 写出的 index=0 缓存行会污染目录云图标与后续读取
     if known_chapter {
         save_chapter_cache(
             book_url,
             chapter_index,
-            chapter_title,
+            &effective_title,
             chapter_url,
             &content,
         );
@@ -834,7 +863,7 @@ fn fetch_chapter_content_inner(
     Ok(apply_content_processing_chapter(
         book_url,
         &content,
-        chapter_title,
+        &effective_title,
         chapter_index,
     ))
 }
@@ -1019,6 +1048,7 @@ pub fn get_chapter_content_full(book_url: &str, chapter_index: i32) -> LegadoRes
 
     // 直接调用 inner，复用已持有的章节信息，避免冗余的 get_chapter_index_and_title 查询
     // （章节经 find_by_book_url_and_index 定位，必然已知 → known_chapter=true）
+    // P1-1：正文链透传 DB 章节卷章/VIP 标记（卷章豁免空正文检查依赖此值）
     fetch_chapter_content_inner(
         book_url,
         &chapter.url,
@@ -1027,6 +1057,8 @@ pub fn get_chapter_content_full(book_url: &str, chapter_index: i32) -> LegadoRes
         &chapter.title,
         chapter.variable.as_deref(),
         true,
+        chapter.is_volume,
+        chapter.is_vip,
     )
 }
 
@@ -1215,14 +1247,22 @@ fn process_content_with_rules_inner(
 fn get_chapter_index_title_variable(
     book_url: &str,
     chapter_url: &str,
-) -> LegadoResult<(i32, String, Option<String>, bool)> {
+) -> LegadoResult<(i32, String, Option<String>, bool, bool, bool)> {
     let chapters = with_database(|db| {
         let repo = BookChapterRepository::new(db.connection());
         repo.find_by_book_url(book_url)
     })?;
     Ok(match chapters.iter().find(|ch| ch.url == chapter_url) {
-        Some(ch) => (ch.index, ch.title.clone(), ch.variable.clone(), true),
-        None => (0, String::new(), None, false),
+        Some(ch) => (
+            ch.index,
+            ch.title.clone(),
+            ch.variable.clone(),
+            true,
+            // P1-1：卷章/VIP 标记随正文链透传（卷章豁免空正文检查 + 音频跳章）
+            ch.is_volume,
+            ch.is_vip,
+        ),
+        None => (0, String::new(), None, false, false, false),
     })
 }
 
@@ -1580,6 +1620,8 @@ mod tests {
                         url: format!("{detail_url}/c1"),
                         is_vip: false,
                         is_volume: false,
+                        is_pay: false,
+                        tag: None,
                         variable: None,
                         word_count: None,
                     }],
@@ -1720,6 +1762,8 @@ mod tests {
                         url: format!("{toc_url}/c{i}"),
                         is_vip: false,
                         is_volume: false,
+                        is_pay: false,
+                        tag: None,
                         variable: None,
                         word_count: None,
                     })
@@ -1825,6 +1869,8 @@ mod tests {
                     .unwrap_or_else(|| "https://p212.example.com/c1".to_string()),
                 is_vip: false,
                 is_volume: false,
+                is_pay: false,
+                tag: None,
                 variable: None,
                 word_count: None,
             }])
@@ -1959,6 +2005,8 @@ mod tests {
                 url: format!("{book_url}/c1"),
                 is_vip: false,
                 is_volume: false,
+                is_pay: false,
+                tag: None,
                 variable: None,
                 word_count: None,
             }])
@@ -2958,5 +3006,280 @@ mod tests {
         toggle_same_title_removed(book_url, 0, false).unwrap();
 
         cleanup_toggle_test_data(book_url);
+    }
+    // ─── P1-1/P2-1 目录字段族透传 + 卷章落库测试 ────────────────────────────
+
+    /// P1-1/P2-1：refresh_toc 落库断言——卷章/付费/附加信息/字数写入
+    /// chapters 表（此前 is_volume 恒 false、tag 恒 None）
+    #[test]
+    fn test_refresh_toc_persists_volume_pay_and_tag() {
+        use std::sync::{Arc, Mutex};
+        let _lock = crate::test_support::lock_global_store();
+        let source_url = "https://toc-fields-ffi.test";
+        let book_url = "https://toc-fields-ffi.test/book/1";
+        let toc_url = "https://toc-fields-ffi.test/toc";
+        let _db_guard = setup_db_and_source(source_url);
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&legado_core::models::Book {
+                book_url: book_url.to_string(),
+                origin: source_url.to_string(),
+                origin_name: "字段族书源".to_string(),
+                name: "字段族书".to_string(),
+                toc_url: toc_url.to_string(),
+                ..legado_core::models::Book::default()
+            })?;
+            Ok(())
+        })
+        .expect("初始书籍写入失败");
+
+        let fetcher = ScriptedTocFetcher {
+            chapters_by_url: vec![(
+                toc_url.to_string(),
+                vec![
+                    WebChapter {
+                        index: 0,
+                        title: "第二卷".to_string(),
+                        url: format!("{toc_url}/v/2"),
+                        is_vip: false,
+                        is_volume: true,
+                        is_pay: false,
+                        tag: Some("2024-01-01".to_string()),
+                        variable: None,
+                        word_count: None,
+                    },
+                    WebChapter {
+                        index: 1,
+                        title: "第一章".to_string(),
+                        url: format!("{toc_url}/c/1"),
+                        is_vip: true,
+                        is_volume: false,
+                        is_pay: true,
+                        tag: Some("2024-01-02 12:00".to_string()),
+                        variable: None,
+                        word_count: Some("13.5万字".to_string()),
+                    },
+                ],
+            )],
+            requested: Arc::new(Mutex::new(Vec::new())),
+            seed_progress_book_url: None,
+        };
+        let engine = WebBookEngine::new(fetcher);
+        let resp = refresh_toc_with_fetcher(book_url, source_url, &engine).expect("目录刷新应成功");
+        assert_eq!(resp.total, 2);
+
+        with_database(|db| {
+            let rows = BookChapterRepository::new(db.connection()).find_by_book_url(book_url)?;
+            assert_eq!(rows.len(), 2);
+            let (v, c) = (&rows[0], &rows[1]);
+            assert!(v.is_volume, "卷章标记应落库（修复前恒 false）");
+            assert_eq!(
+                v.tag.as_deref(),
+                Some("2024-01-01"),
+                "卷章附加信息应落库（修复前恒 None）"
+            );
+            assert!(c.is_pay, "付费标记应落库（修复前恒 false）");
+            assert!(c.is_vip);
+            assert_eq!(c.tag.as_deref(), Some("2024-01-02 12:00"));
+            assert_eq!(c.word_count.as_deref(), Some("13.5万字"));
+            Ok(())
+        })
+        .expect("落库断言失败");
+    }
+
+    // ─── P1-2/P1-1 正文链标题规则 + 卷章豁免端到端测试 ───────────────────────
+
+    /// 回环静态 HTML 服务器（正文链 fixture）
+    fn spawn_chapter_html_server(html: String) -> u16 {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    html.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(html.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        port
+    }
+
+    /// 播种「正文规则 + 标题规则」书源与指定章节（章节 URL 指向回环服务器）
+    fn seed_title_chain_fixture(
+        book_url: &str,
+        source_url: &str,
+        chapter_url: &str,
+        is_volume: bool,
+        title: &str,
+    ) {
+        use legado_core::models::rule::ContentRule;
+        with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: source_url.to_string(),
+                book_source_name: "标题链测试源".to_string(),
+                rule_content: Some(ContentRule {
+                    content: Some("class.content@text".to_string()),
+                    title: Some("class.title@text".to_string()),
+                    ..ContentRule::default()
+                }),
+                ..BookSource::default()
+            })?;
+            BookRepository::new(db.connection()).insert(&legado_core::models::Book {
+                book_url: book_url.to_string(),
+                origin: source_url.to_string(),
+                origin_name: "标题链测试源".to_string(),
+                name: "标题链书".to_string(),
+                ..legado_core::models::Book::default()
+            })?;
+            BookChapterRepository::new(db.connection()).insert(&BookChapter {
+                book_url: book_url.to_string(),
+                index: 0,
+                title: title.to_string(),
+                url: chapter_url.to_string(),
+                is_volume,
+                base_url: chapter_url.to_string(),
+                ..BookChapter::default()
+            })?;
+            Ok(())
+        })
+        .expect("标题链 fixture 写入失败");
+    }
+
+    /// P1-2 端到端：title 规则 + 标题内段评图 → 标题覆盖 chapters.title、
+    /// img_url 落 chapters.imgUrl（修复前两列均无写入来源）
+    #[test]
+    fn test_content_title_rule_overrides_title_and_persists_img_url() {
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let html = "<html><body>\
+                    <div class='title'>第一章 http://img.test/1.jpg</div>\
+                    <div class='content'>正文段落</div>\
+                    </body></html>"
+            .to_string();
+        let port = spawn_chapter_html_server(html);
+        let source_url = format!("http://127.0.0.1:{port}");
+        let book_url = format!("{source_url}/b/1");
+        let chapter_url = format!("{source_url}/c/1");
+        seed_title_chain_fixture(&book_url, &source_url, &chapter_url, false, "第一章");
+
+        let content = get_chapter_content_full(&book_url, 0).expect("正文获取应成功");
+        assert!(content.contains("正文段落"));
+
+        with_database(|db| {
+            let row = BookChapterRepository::new(db.connection())
+                .find_by_book_url_and_index(&book_url, 0)?
+                .expect("章节行应存在");
+            assert_eq!(
+                row.title.trim(),
+                "第一章",
+                "标题规则应覆盖 chapters.title（imgRegex group1 余量）"
+            );
+            assert_eq!(
+                row.img_url.as_deref(),
+                Some("http://img.test/1.jpg"),
+                "标题内段评图应落 chapters.imgUrl"
+            );
+            Ok(())
+        })
+        .expect("标题链落库断言失败");
+    }
+
+    /// P1-2 无回归：无 title 规则的书源不覆盖标题（存量行为不变）
+    #[test]
+    fn test_content_without_title_rule_keeps_chapter_title() {
+        use legado_core::models::rule::ContentRule;
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        let html = "<html><body><div class='content'>正文段落</div></body></html>".to_string();
+        let port = spawn_chapter_html_server(html);
+        let source_url = format!("http://127.0.0.1:{port}");
+        let book_url = format!("{source_url}/b/2");
+        let chapter_url = format!("{source_url}/c/1");
+        with_database(|db| {
+            BookSourceRepository::new(db.connection()).insert(&BookSource {
+                book_source_url: source_url.clone(),
+                book_source_name: "无标题规则源".to_string(),
+                rule_content: Some(ContentRule {
+                    content: Some("class.content@text".to_string()),
+                    ..ContentRule::default()
+                }),
+                ..BookSource::default()
+            })?;
+            BookRepository::new(db.connection()).insert(&legado_core::models::Book {
+                book_url: book_url.clone(),
+                origin: source_url.clone(),
+                origin_name: "无标题规则源".to_string(),
+                name: "无规则书".to_string(),
+                ..legado_core::models::Book::default()
+            })?;
+            BookChapterRepository::new(db.connection()).insert(&BookChapter {
+                book_url: book_url.clone(),
+                index: 0,
+                title: "原标题".to_string(),
+                url: chapter_url.clone(),
+                base_url: chapter_url.clone(),
+                ..BookChapter::default()
+            })?;
+            Ok(())
+        })
+        .expect("fixture 写入失败");
+
+        get_chapter_content_full(&book_url, 0).expect("正文获取应成功");
+        with_database(|db| {
+            let row = BookChapterRepository::new(db.connection())
+                .find_by_book_url_and_index(&book_url, 0)?
+                .expect("章节行应存在");
+            assert_eq!(row.title, "原标题", "无 title 规则不得改写标题");
+            assert!(row.img_url.is_none(), "无 title 规则不得写 imgUrl");
+            Ok(())
+        })
+        .expect("无回归断言失败");
+    }
+
+    /// P1-1 端到端：卷章空正文豁免「章节正文为空」错误（修复前正文链
+    /// 构造 WebChapter 硬编码 is_volume:false，卷章抓空正文直接报错）
+    #[test]
+    fn test_volume_chapter_empty_content_is_exempt() {
+        let _lock = crate::test_support::lock_global_store();
+        let _db_guard = crate::db_state::ensure_test_db();
+        // 页面 content 节点为空元素 → 解析正文为空（规则命中但文本空）
+        let html = "<html><body><div class='content'></div></body></html>".to_string();
+        let port = spawn_chapter_html_server(html);
+        let source_url = format!("http://127.0.0.1:{port}");
+        let book_url = format!("{source_url}/b/3");
+        let chapter_url = format!("{source_url}/c/1");
+        seed_title_chain_fixture(&book_url, &source_url, &chapter_url, true, "第一卷");
+
+        // 卷章：空正文不报错（豁免，正文为空串返回）
+        let content = get_chapter_content_full(&book_url, 0).expect("卷章空正文应豁免");
+        assert!(
+            content.trim().is_empty(),
+            "空 content 节点解析结果应为空正文，实际: {content}"
+        );
+
+        // 对照：普通章同页空正文仍报「章节正文为空」
+        let book_url2 = format!("{source_url}/b/4");
+        seed_title_chain_fixture(&book_url2, &source_url, &chapter_url, false, "第一章");
+        let err = get_chapter_content_full(&book_url2, 0).expect_err("普通章空正文应报错");
+        assert!(
+            err.to_string().contains("正文为空"),
+            "普通章空正文错误信息，实际: {err}"
+        );
     }
 }

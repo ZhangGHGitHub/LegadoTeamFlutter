@@ -341,7 +341,10 @@ pub async fn get_chapter_media(
         title: chapter.title.clone(),
         url: chapter.url.clone(),
         is_vip: chapter.is_vip,
+        // P1-1：透传 DB 章节卷章/付费标记（此前 is_volume 已透传、is_pay 为本批新字段）
         is_volume: chapter.is_volume,
+        is_pay: chapter.is_pay,
+        tag: chapter.tag.clone(),
         variable: chapter.variable.clone(),
         word_count: None,
     };

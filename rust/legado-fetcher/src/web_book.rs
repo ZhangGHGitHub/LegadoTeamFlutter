@@ -15,7 +15,8 @@ use encoding_rs::Encoding;
 use legado_core::models::BookSource;
 use legado_core::models::{Book, BookChapter};
 use legado_core::web_book::{
-    BookSourceFetcher, WebBookEngine, WebBookInfo, WebChapter, WebSearchResult,
+    BookSourceFetcher, ChapterContentWithMeta, WebBookEngine, WebBookInfo, WebChapter,
+    WebSearchResult,
 };
 use legado_core::{LegadoError, LegadoResult};
 use legado_js::host_api::variable_store;
@@ -1312,7 +1313,7 @@ impl RealBookSourceFetcher {
         can_re_name: bool,
         existing_name: &str,
         existing_author: &str,
-    ) -> WebBookInfo {
+    ) -> LegadoResult<WebBookInfo> {
         let info_rule = source.rule_book_info.as_ref();
         // 书山等聚合源 init 规则依赖 jsLib（getServerHost）与书源上下文 setup
         // （java.ajax 需携带 header 规则注入的 X-Novel-Token）；jsLib 须 sanitize
@@ -1435,14 +1436,37 @@ impl RealBookSourceFetcher {
             .and_then(|rule| optional_field(&analyzer, rule));
 
         // 目录页 URL：绝对化 + 空时回退 book_url（对标 Kotlin `if (book.tocUrl.isEmpty()) book.tocUrl = baseUrl`）
-        let raw_toc = info_rule
-            .and_then(|r| r.toc_url.as_deref())
-            .map(|rule| analyzer.get_string(rule).unwrap_or_default())
-            .unwrap_or_default();
-        let toc_url = if raw_toc.is_empty() {
+        // P1-3：文件类书源（type=3）**不解析 tocUrl**，改解析 downloadUrls
+        // （对标原版 BookInfo.kt:160-176 isWebFile 分支；规则值空 → 抛
+        // 「下载链接为空」）。isUrl=true 语义经 get_strings_ex(rule, true)
+        // 复用既有工具（相对转绝对 + 去重保序，基准 = redirect_url）
+        let is_web_file = source.book_source_type == legado_core::models::book_source_type::FILE;
+        let download_urls = if is_web_file {
+            let raw_list = info_rule
+                .and_then(|r| r.download_urls.as_deref())
+                .map(|rule| analyzer.get_strings_ex(rule, true).unwrap_or_default())
+                .unwrap_or_default();
+            if raw_list.is_empty() {
+                return Err(LegadoError::Parser("下载链接为空".into()));
+            }
+            Some(raw_list)
+        } else {
+            None
+        };
+        let toc_url = if is_web_file {
+            // 文件类书源无目录页：tocUrl 回退 bookUrl（对齐原版 isWebFile
+            // 分支不写 tocUrl → Book.tocUrl 缺省仍为 baseUrl）
             book_url.to_string()
         } else {
-            AnalyzeUrl::get_absolute_url(book_url, &raw_toc)
+            let raw_toc = info_rule
+                .and_then(|r| r.toc_url.as_deref())
+                .map(|rule| analyzer.get_string(rule).unwrap_or_default())
+                .unwrap_or_default();
+            if raw_toc.is_empty() {
+                book_url.to_string()
+            } else {
+                AnalyzeUrl::get_absolute_url(book_url, &raw_toc)
+            }
         };
 
         // [P2-15 ②] JS 写路径 overlay 读回（variable + type 覆盖值同键域）：
@@ -1456,7 +1480,7 @@ impl RealBookSourceFetcher {
             .unwrap_or_else(|| book_url.to_string());
         let (overlay, type_override, _) = book_write_overlays(&overlay_key);
 
-        WebBookInfo {
+        Ok(WebBookInfo {
             name,
             author,
             cover_url,
@@ -1490,7 +1514,9 @@ impl RealBookSourceFetcher {
             // 链路落库 `books.book_type`（列已存在，无迁移）。
             book_type: type_override
                 .unwrap_or_else(|| book_type_of_source(source.book_source_type)),
-        }
+            // P1-3：文件类书源下载地址（isUrl 语义已在 get_strings_ex 内完成）
+            download_urls,
+        })
     }
 
     /// 获取章节列表（可选传入已知 tocUrl / 书名，跳过重复拉详情页）
@@ -1590,7 +1616,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             && matches_book_url_pattern(source.book_url_pattern.as_deref().unwrap_or(""), &base_url)
         {
             let info =
-                self.parse_book_info_from_body(source, body, &base_url, &base_url, true, "", "");
+                self.parse_book_info_from_body(source, body, &base_url, &base_url, true, "", "")?;
             return Ok(if info.name.is_empty() {
                 vec![]
             } else {
@@ -1634,7 +1660,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         // 4.5 列表为空且未配置 bookUrlPattern 时，回退按详情页解析（对标 Kotlin BookList “列表为空,按详情页解析”）
         if elements.is_empty() && !has_pattern {
             let info =
-                self.parse_book_info_from_body(source, body, &base_url, &base_url, true, "", "");
+                self.parse_book_info_from_body(source, body, &base_url, &base_url, true, "", "")?;
             return Ok(if info.name.is_empty() {
                 vec![]
             } else {
@@ -1806,7 +1832,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             can_re_name,
             existing_name,
             existing_author,
-        );
+        )?;
         eprintln!(
             "[web_book] get_book_info parse in {:?} name={}",
             t_parse.elapsed(),
@@ -1868,6 +1894,21 @@ impl BookSourceFetcher for RealBookSourceFetcher {
     }
 
     async fn get_content(&self, source: &BookSource, chapter: &WebChapter) -> LegadoResult<String> {
+        Ok(self.get_content_with_meta(source, chapter).await?.content)
+    }
+
+    /// 正文获取 + `ruleContent.title` 标题链（P1-2，真实实现）
+    ///
+    /// 在 [`Self::get_content`] 全流程（限流 → 抓取 → 规则解析 → 分页 →
+    /// 副内容 → replaceRegex）之上，按原版 `BookContent.kt:171-196` 追加
+    /// 标题规则链：`title` 规则解析成功且非空时经 `AppPattern.imgRegex`
+    /// 解构段评图（group2）与标题余量（group1），随
+    /// [`ChapterContentWithMeta`] 回传给调用方落库（零 wire 契约变更）。
+    async fn get_content_with_meta(
+        &self,
+        source: &BookSource,
+        chapter: &WebChapter,
+    ) -> LegadoResult<ChapterContentWithMeta> {
         self.deps.rate_limiter.acquire(source).await;
         let source_headers = self.parse_source_headers(source);
 
@@ -1922,7 +1963,13 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             || source.book_source_type == legado_core::models::book_source::book_source_type::VIDEO;
 
         // R1（Task #134）：副内容基于首页响应体提取，分页前保留一份首页 body
-        let first_page_body = if sub_content_rule.is_empty() {
+        // P1-2：ruleContent.title 标题链同样基于首页 body（原版外层 analyzeRule
+        // setContent(首页 body) 语义），一并在此保留
+        let title_rule = content_rule
+            .and_then(|r| r.title.as_deref())
+            .map(str::trim)
+            .filter(|s| !s.is_empty());
+        let first_page_body = if sub_content_rule.is_empty() && title_rule.is_none() {
             None
         } else {
             Some(body.clone())
@@ -1990,7 +2037,12 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         .await;
 
         // 4. R1 subContent 副内容（Task #134）：分页循环完成后从首页提取副内容。
-        if let Some(page_body) = first_page_body {
+        //    P1-2 注：first_page_body 现也被标题链复用，但 subContent 为空规则时
+        //    不得进入本块（eval_rule_string 对空规则回退整页文本，会污染空正文）
+        if let Some(page_body) = first_page_body
+            .clone()
+            .filter(|_| !sub_content_rule.is_empty())
+        {
             let sub_headers = source_headers.clone();
             if let Some(sub) = fetch_sub_content(
                 page_body,
@@ -2043,6 +2095,23 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             )?;
         }
 
+        // 5.5 P1-2 ruleContent.title 标题链（对标 BookContent.kt:171-196，
+        //     位于 replaceRegex 之后、空内容检查之前——与原版顺序一致）
+        let (title_override, img_url) = match (first_page_body.as_deref(), title_rule) {
+            (Some(page_body), Some(rule)) => apply_content_title_rule(
+                page_body,
+                rule,
+                &chapter.url,
+                &source.book_source_url,
+                source.js_lib.as_deref(),
+                &chapter.title,
+                chapter.index,
+                total_chapters,
+                book_meta.as_ref(),
+            ),
+            _ => (None, None),
+        };
+
         // 6. 空内容检查（卷章豁免）
         if !chapter.is_volume && content.trim().is_empty() {
             return Err(LegadoError::ContentEmpty(format!(
@@ -2051,7 +2120,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             )));
         }
 
-        Ok(content)
+        Ok(ChapterContentWithMeta {
+            content,
+            title_override,
+            img_url,
+        })
     }
 
     /// 带变量表的目录获取核心（换源变量链 R1，2026-09-06；trait 提升 P2-12，2026-09-18）
@@ -2647,19 +2720,8 @@ impl RealBookSourceFetcher {
             t_list.elapsed()
         );
 
-        // 规则提到循环外
-        let name_rule = toc_rule
-            .and_then(|r| r.chapter_name.as_deref())
-            .unwrap_or("");
-        let url_rule = toc_rule
-            .and_then(|r| r.chapter_url.as_deref())
-            .unwrap_or("");
-        let vip_rule = toc_rule.and_then(|r| r.is_vip.as_deref()).unwrap_or("");
-        let volume_rule = toc_rule.and_then(|r| r.is_volume.as_deref()).unwrap_or("");
-        // N5: 字数提取（对标原版 BookChapterList: updateTime 规则 info → AppPattern.wordCountRegex）
-        let update_time_rule = toc_rule
-            .and_then(|r| r.update_time.as_deref())
-            .unwrap_or("");
+        // 规则提到循环外（P1-1/P2-3：预提取为规则集，三条拉页路径共用）
+        let rules = TocChapterRules::from_toc_rule(toc_rule);
         let word_count_re = word_count_regex();
 
         // 对齐原版 BookChapterList：单一 AnalyzeRule + setContent(item) 循环，
@@ -2685,75 +2747,18 @@ impl RealBookSourceFetcher {
         let t_parse = std::time::Instant::now();
         let mut chapters = Vec::with_capacity(elements.len());
         for (index, elem) in elements.iter().enumerate() {
-            elem_analyzer.clear_variables();
-            elem_analyzer.set_element_content(elem.clone());
-
-            let mut title = elem_analyzer.get_string(name_rule).unwrap_or_default();
-            let raw_url_probe = elem_analyzer.get_string(url_rule).unwrap_or_default();
-            // 对齐原版 BookChapterList：空标题仍保留；仅标题与 URL 皆空时跳过。
-            if title.is_empty() && raw_url_probe.is_empty() {
-                continue;
+            // P1-1/P2-3：单章解析统一走 parse_toc_chapter（isVip/isPay/isVolume/
+            // tag/wordCount/空URL回退语义与串行/并发路径仅此一份）
+            if let Some(ch) = parse_toc_chapter(
+                &mut elem_analyzer,
+                &rules,
+                word_count_re,
+                elem,
+                index,
+                toc_final_url,
+            ) {
+                chapters.push(ch);
             }
-            if title.is_empty() {
-                title = "无标题".to_string();
-            }
-
-            let is_vip = if vip_rule.is_empty() {
-                false
-            } else {
-                let v = elem_analyzer.get_string(vip_rule).unwrap_or_default();
-                v == "true" || v == "1"
-            };
-
-            // B3.2 isVolume 标记（卷章）
-            let is_volume = if volume_rule.is_empty() {
-                false
-            } else {
-                let v = elem_analyzer.get_string(volume_rule).unwrap_or_default();
-                v == "true" || v == "1"
-            };
-
-            // N5: 字数（updateTime 规则 info → 正则提取，对标原版 BookChapterList）
-            let word_count = if update_time_rule.is_empty() {
-                None
-            } else {
-                let info = elem_analyzer
-                    .get_string(update_time_rule)
-                    .unwrap_or_default();
-                word_count_re
-                    .captures(&info)
-                    .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
-            };
-
-            // B3.3 空 URL 回退 + 绝对化（对标 Kotlin BookChapterList）
-            //    - 卷章 url 空：用 `title + index` 替代（合成唯一标识，不绝对化）
-            //    - 普通章 url 空：回退 baseUrl（原版 BookChapter.baseUrl =
-            //      首抓页重定向后最终 URL）
-            //    - 非空 url：基于最终 URL 绝对化（[B-11] 对齐原版
-            //      AnalyzeRule.redirectUrl；无重定向时 final == 请求 URL）
-            let raw_url = raw_url_probe;
-            let url = if raw_url.is_empty() {
-                if is_volume {
-                    format!("{}{}", title, index)
-                } else {
-                    toc_final_url.to_string()
-                }
-            } else {
-                AnalyzeUrl::get_absolute_url(toc_final_url, &raw_url)
-            };
-
-            // @put 变量写入章节（对齐 BookChapter.putVariable → variable JSON）
-            let variable = elem_analyzer.export_variables_json();
-
-            chapters.push(WebChapter {
-                index: index as i32,
-                title,
-                url,
-                is_vip,
-                is_volume,
-                variable,
-                word_count,
-            });
         }
         eprintln!(
             "[web_book] get_chapters parse {} chapters in {:?} (total {:?})",
@@ -2848,64 +2853,23 @@ impl RealBookSourceFetcher {
                     let base = next_url.clone();
                     let start_idx = chapters.len();
                     for (i, elem) in page_elements.iter().enumerate() {
-                        elem_analyzer.clear_variables();
-                        elem_analyzer.set_base_url(base.clone());
                         // [B-11] 串行后续页保持请求 URL 语义（对齐原版
                         // BookChapterList.kt:83 `analyzeChapterList(book,
                         // nextUrl, nextUrl, …)`：base 与 redirect 同为当页
                         // 请求 URL），覆写首抓页的 final URL 基准
+                        elem_analyzer.set_base_url(base.clone());
                         elem_analyzer.set_redirect_url(&base);
-                        elem_analyzer.set_element_content(elem.clone());
-                        let mut title = elem_analyzer.get_string(name_rule).unwrap_or_default();
-                        let raw_url_probe = elem_analyzer.get_string(url_rule).unwrap_or_default();
-                        if title.is_empty() && raw_url_probe.is_empty() {
-                            continue;
+                        // P1-1/P2-3：单章解析统一走 parse_toc_chapter
+                        if let Some(ch) = parse_toc_chapter(
+                            &mut elem_analyzer,
+                            &rules,
+                            word_count_re,
+                            elem,
+                            start_idx + i,
+                            &base,
+                        ) {
+                            chapters.push(ch);
                         }
-                        if title.is_empty() {
-                            title = "无标题".to_string();
-                        }
-                        let is_vip = if vip_rule.is_empty() {
-                            false
-                        } else {
-                            let v = elem_analyzer.get_string(vip_rule).unwrap_or_default();
-                            v == "true" || v == "1"
-                        };
-                        let is_volume = if volume_rule.is_empty() {
-                            false
-                        } else {
-                            let v = elem_analyzer.get_string(volume_rule).unwrap_or_default();
-                            v == "true" || v == "1"
-                        };
-                        // N5: 字数（同主循环，updateTime 规则 info → 正则提取）
-                        let word_count = if update_time_rule.is_empty() {
-                            None
-                        } else {
-                            let info = elem_analyzer
-                                .get_string(update_time_rule)
-                                .unwrap_or_default();
-                            word_count_re
-                                .captures(&info)
-                                .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
-                        };
-                        let index = start_idx + i;
-                        let url = if raw_url_probe.is_empty() {
-                            if is_volume {
-                                format!("{}{}", title, index)
-                            } else {
-                                base.clone()
-                            }
-                        } else {
-                            AnalyzeUrl::get_absolute_url(&base, &raw_url_probe)
-                        };
-                        chapters.push(WebChapter {
-                            index: index as i32,
-                            title,
-                            url,
-                            is_vip,
-                            is_volume,
-                            variable: elem_analyzer.export_variables_json(),
-                            word_count,
-                        });
                     }
                     let more = page_analyzer
                         .get_strings_ex(next_toc_rule, true)
@@ -2921,11 +2885,14 @@ impl RealBookSourceFetcher {
                 let source_url = source.book_source_url.clone();
                 let js_lib = source.js_lib.clone();
                 let list_rule = chapter_list_rule.to_string();
-                let name_r = name_rule.to_string();
-                let url_r = url_rule.to_string();
-                let vip_r = vip_rule.to_string();
-                let volume_r = volume_rule.to_string();
-                let update_time_r = update_time_rule.to_string();
+                // P1-1/P2-3：规则集按值克隆进并发任务（含 isPay），页内重建
+                // TocChapterRules 走同一转换函数 parse_toc_chapter
+                let name_r = rules.name.to_string();
+                let url_r = rules.url.to_string();
+                let vip_r = rules.vip.to_string();
+                let pay_r = rules.pay.to_string();
+                let volume_r = rules.volume.to_string();
+                let update_time_r = rules.update_time.to_string();
                 let client = self.deps.client.clone();
                 // [性能专项 2026-09-24] 刷新代数（并行拉页的取消判活基线）
                 let epoch = current_toc_fetch_epoch();
@@ -2939,6 +2906,7 @@ impl RealBookSourceFetcher {
                         let name_r = name_r.clone();
                         let url_r = url_r.clone();
                         let vip_r = vip_r.clone();
+                        let pay_r = pay_r.clone();
                         let volume_r = volume_r.clone();
                         let update_time_r = update_time_r.clone();
                         let client = client.clone();
@@ -3018,60 +2986,30 @@ impl RealBookSourceFetcher {
                             elem.set_redirect_url(&page_final_url);
                             // P2-9 ②：逐章解析器同样带 `book` 绑定（与串行分页一致）
                             elem = elem.with_js_binding("book", &book_binding);
+                            // P1-1/P2-3：页内重建规则集 → 与串行路径共用同一转换函数
+                            let rules = TocChapterRules {
+                                name: &name_r,
+                                url: &url_r,
+                                vip: &vip_r,
+                                pay: &pay_r,
+                                volume: &volume_r,
+                                update_time: &update_time_r,
+                            };
                             let mut page_chs = Vec::with_capacity(page_elements.len());
                             for (i, el) in page_elements.iter().enumerate() {
-                                elem.clear_variables();
-                                elem.set_element_content(el.clone());
-                                let mut title = elem.get_string(&name_r).unwrap_or_default();
-                                let raw = elem.get_string(&url_r).unwrap_or_default();
-                                if title.is_empty() && raw.is_empty() {
-                                    continue;
-                                }
-                                if title.is_empty() {
-                                    title = "无标题".to_string();
-                                }
-                                let is_vip = if vip_r.is_empty() {
-                                    false
-                                } else {
-                                    let v = elem.get_string(&vip_r).unwrap_or_default();
-                                    v == "true" || v == "1"
-                                };
-                                let is_volume = if volume_r.is_empty() {
-                                    false
-                                } else {
-                                    let v = elem.get_string(&volume_r).unwrap_or_default();
-                                    v == "true" || v == "1"
-                                };
-                                // N5: 字数（updateTime 规则 info → 正则提取）
-                                let word_count = if update_time_r.is_empty() {
-                                    None
-                                } else {
-                                    let info = elem.get_string(&update_time_r).unwrap_or_default();
-                                    word_count_re
-                                        .captures(&info)
-                                        .and_then(|c| c.get(1).map(|m| m.as_str().to_string()))
-                                };
                                 // [B-11] 空 URL 回退 / 绝对化基准 = 当页重定向后最终
                                 // URL（对齐原版并发分支 BookChapter.baseUrl =
                                 // res.url）；无重定向时 final == 请求 URL
-                                let url = if raw.is_empty() {
-                                    if is_volume {
-                                        format!("{}{}", title, i)
-                                    } else {
-                                        page_final_url.clone()
-                                    }
-                                } else {
-                                    AnalyzeUrl::get_absolute_url(&page_final_url, &raw)
-                                };
-                                page_chs.push(WebChapter {
-                                    index: i as i32,
-                                    title,
-                                    url,
-                                    is_vip,
-                                    is_volume,
-                                    variable: elem.export_variables_json(),
-                                    word_count,
-                                });
+                                if let Some(ch) = parse_toc_chapter(
+                                    &mut elem,
+                                    &rules,
+                                    word_count_re,
+                                    el,
+                                    i,
+                                    &page_final_url,
+                                ) {
+                                    page_chs.push(ch);
+                                }
                             }
                             Ok::<_, LegadoError>(page_chs)
                         }
@@ -3822,6 +3760,80 @@ where
 /// 对齐差异说明：提取逻辑对齐原版；是否拼进正文由调用方按 `is_media`
 /// 决定（见 [merge_sub_content_into_body]）。另原版 isOnLineTxt 跳过 http
 /// 二次请求，此处统一执行二次请求判定。
+/// P1-2：`ruleContent.title` 标题规则链（逐条对标 Kotlin BookContent.kt:171-196）
+///
+/// 首页响应体上求值标题规则；结果非空时经 [`img_regex`]（AppPattern.imgRegex
+/// 逐字移植）解构：
+/// - 命中 → 段评图 img_url = group2；标题覆盖值 = group1 余量（group1 为空
+///   则保留原章节标题，等价于不覆盖 → 返回 None）
+/// - 未命中 → 标题覆盖值 = 规则结果原值
+///
+/// 规则求值失败或结果为空白 → (None, None)（对齐原版 runCatching +
+/// isNullOrBlank 守卫：标题链失败不阻断正文返回）
+#[allow(clippy::too_many_arguments)]
+fn apply_content_title_rule(
+    page_body: &str,
+    title_rule: &str,
+    chapter_url: &str,
+    source_url: &str,
+    js_lib: Option<&str>,
+    chapter_title: &str,
+    chapter_index: i32,
+    total_chapter_num: i32,
+    book_meta: Option<&BookMeta>,
+) -> (Option<String>, Option<String>) {
+    // P2-9 ①：src = 首页响应体（先序列化再进绑定，与既有注释口径一致）
+    let page_src_json = serde_json::to_string(page_body).unwrap_or_default();
+    let mut analyzer = construct_analyzer_with_js_lib(
+        page_body.to_string(),
+        chapter_url.to_string(),
+        source_url,
+        js_lib,
+    );
+    // 注入 chapter/title/book 绑定（对齐原版 analyzeRule.setChapter(bookChapter)：
+    // 标题规则可引用 chapter.title / chapter.index / book.*；book 绑定走
+    // book_binding_expr 同一构造点，meta 命中 → IIFE 扩面）
+    let t_json = serde_json::to_string(chapter_title).unwrap_or_default();
+    analyzer = analyzer
+        .with_js_binding(
+            "chapter",
+            &format!("{{\"title\": {t_json}, \"index\": {chapter_index}}}"),
+        )
+        .with_js_binding("title", &t_json)
+        .with_js_binding("src", &page_src_json)
+        .with_js_binding(
+            "book",
+            &book_binding_expr(
+                book_meta,
+                "",
+                total_chapter_num,
+                true,
+                crate::book_type::TEXT,
+            ),
+        );
+
+    let Ok(parsed) = analyzer.get_string(title_rule) else {
+        return (None, None);
+    };
+    if parsed.trim().is_empty() {
+        return (None, None);
+    }
+    match img_regex().captures(&parsed) {
+        Some(c) => {
+            let g1 = c.get(1).map(|m| m.as_str()).unwrap_or_default();
+            let g2 = c.get(2).map(|m| m.as_str().to_string()).unwrap_or_default();
+            // group1 空 → 保留原章节标题（原版 title = bookChapter.title，等价不覆盖）
+            let title = if g1.is_empty() {
+                None
+            } else {
+                Some(g1.to_string())
+            };
+            (title, Some(g2))
+        }
+        None => (Some(parsed), None),
+    }
+}
+
 async fn fetch_sub_content<F, Fut>(
     page_body: String,
     sub_rule: &str,
@@ -4144,6 +4156,156 @@ fn word_count_regex() -> &'static regex::Regex {
     })
 }
 
+/// 标题段评图提取正则（P1-2：逐字移植原版 `AppPattern.imgRegex`）
+///
+/// 原文（app/.../constant/AppPattern.kt:22）：
+/// `val imgRegex = Regex("(.*)((?:data|https?):[\\s\\S]+)$")`
+/// - group1 = 标题余量（末个 `data:`/`http(s):` 起点之前的文本；空则保留原章节标题）
+/// - group2 = 段评图 URL（自 `data:`/`http(s):` 起至串尾）
+/// - `[\s\S]` 等价跨行任意字符，`$` 锚定串尾；左右两栈均按贪婪 + 回溯优先级
+///   语义（leftmost-first）求值，group1 取最长可匹配前缀
+fn img_regex() -> &'static regex::Regex {
+    use std::sync::OnceLock;
+    static RE: OnceLock<regex::Regex> = OnceLock::new();
+    RE.get_or_init(|| regex::Regex::new(r"(.*)((?:data|https?):[\s\S]+)$").expect("imgRegex"))
+}
+
+/// 目录逐章规则集（从 tocRule 预提取，供三条拉页路径共用）
+struct TocChapterRules<'a> {
+    /// 章名规则（ruleToc.chapterName）
+    name: &'a str,
+    /// 章址规则（ruleToc.chapterUrl）
+    url: &'a str,
+    /// VIP 标记规则（ruleToc.isVip）
+    vip: &'a str,
+    /// 付费标记规则（ruleToc.isPay，P2-1）
+    pay: &'a str,
+    /// 卷章标记规则（ruleToc.isVolume）
+    volume: &'a str,
+    /// 更新时间/附加信息规则（ruleToc.updateTime，info 来源）
+    update_time: &'a str,
+}
+
+impl<'a> TocChapterRules<'a> {
+    fn from_toc_rule(toc_rule: Option<&'a legado_core::models::rule::TocRule>) -> Self {
+        Self {
+            name: toc_rule
+                .and_then(|r| r.chapter_name.as_deref())
+                .unwrap_or(""),
+            url: toc_rule
+                .and_then(|r| r.chapter_url.as_deref())
+                .unwrap_or(""),
+            vip: toc_rule.and_then(|r| r.is_vip.as_deref()).unwrap_or(""),
+            pay: toc_rule.and_then(|r| r.is_pay.as_deref()).unwrap_or(""),
+            volume: toc_rule.and_then(|r| r.is_volume.as_deref()).unwrap_or(""),
+            update_time: toc_rule
+                .and_then(|r| r.update_time.as_deref())
+                .unwrap_or(""),
+        }
+    }
+}
+
+/// 目录单章解析 → WebChapter 的**唯一**转换函数（P1-1/P2-3 合并串行与并发双实现）
+///
+/// 首抓页 / 串行后续页 / 并发分页三条路径一律经本函数，字段语义仅此一份
+/// （防复发规定 1：同一数据的转换语义只允许一个实现）。逐章块对标 Kotlin
+/// `BookChapterList.kt:245-259`：
+/// - 章名/章址规则求值；两者皆空跳过该元素；章名空置「无标题」（存量语义）
+/// - isVip/isPay/isVolume 三标记规则按 "true"/"1" 判真
+/// - info = updateTime 规则值：卷章 tag = info 原文且**不**提取字数（对齐原版
+///   isVolume 分支）；普通章 wordCount 正则命中时 wordCount = group1.trim()、
+///   tag = info 剥离命中串后的余量（对标 `info.replaceFirst(match.value, "")`），
+///   未命中 tag = info（info 恒写入 tag，含空串——对齐原版无条件 `tag = info`）
+/// - 空 URL：卷章用 `title + index` 合成唯一标识；普通章回退 base（请求 URL
+///   或重定向后最终 URL，由调用方决定）；非空 URL 基于 base 绝对化
+///
+/// `analyzer` 为调用方共享的逐章解析器（已注入 book 绑定等）；本函数仅负责
+/// `setContent(元素) → 规则求值 → WebChapter 构造`，页间基准由调用方先行覆写。
+fn parse_toc_chapter(
+    analyzer: &mut legado_parser::AnalyzeRule,
+    rules: &TocChapterRules<'_>,
+    word_count_re: &regex::Regex,
+    element: &str,
+    index: usize,
+    base_url: &str,
+) -> Option<WebChapter> {
+    analyzer.clear_variables();
+    analyzer.set_element_content(element.to_string());
+
+    let mut title = analyzer.get_string(rules.name).unwrap_or_default();
+    let raw_url = analyzer.get_string(rules.url).unwrap_or_default();
+    // 对齐原版 BookChapterList：空标题仍保留；仅标题与 URL 皆空时跳过
+    if title.is_empty() && raw_url.is_empty() {
+        return None;
+    }
+    if title.is_empty() {
+        title = "无标题".to_string();
+    }
+
+    let flag_is_true = |rule: &str| -> bool {
+        if rule.is_empty() {
+            false
+        } else {
+            let v = analyzer.get_string(rule).unwrap_or_default();
+            v == "true" || v == "1"
+        }
+    };
+    let is_vip = flag_is_true(rules.vip);
+    let is_pay = flag_is_true(rules.pay);
+    let is_volume = flag_is_true(rules.volume);
+
+    // info → tag / wordCount（对标 BookChapterList.kt:245-259）
+    let info = if rules.update_time.is_empty() {
+        String::new()
+    } else {
+        analyzer.get_string(rules.update_time).unwrap_or_default()
+    };
+    let (word_count, tag) = if is_volume {
+        // 卷章：tag = info 原文，不提取字数（对齐原版 isVolume 分支）
+        (None, Some(info))
+    } else {
+        match word_count_re.captures(&info) {
+            Some(c) => {
+                let word_count = c.get(1).map(|m| m.as_str().trim().to_string());
+                let whole = c.get(0).map(|m| m.as_str()).unwrap_or_default();
+                // 对齐 Kotlin `info.replaceFirst(match.value, "")`：剥离首个
+                // 字数命中串后的余量写 tag（命中串无正则元字符，字面替换一次
+                // 与正则替换等价）
+                let tag = if whole.is_empty() {
+                    info.clone()
+                } else {
+                    info.replacen(whole, "", 1)
+                };
+                (word_count, Some(tag))
+            }
+            None => (None, Some(info)),
+        }
+    };
+
+    // 空 URL 回退 + 绝对化（基准 = base_url，由调用方按页语义给定）
+    let url = if raw_url.is_empty() {
+        if is_volume {
+            format!("{title}{index}")
+        } else {
+            base_url.to_string()
+        }
+    } else {
+        AnalyzeUrl::get_absolute_url(base_url, &raw_url)
+    };
+
+    Some(WebChapter {
+        index: index as i32,
+        title,
+        url,
+        is_vip,
+        is_pay,
+        is_volume,
+        tag,
+        variable: analyzer.export_variables_json(),
+        word_count,
+    })
+}
+
 /// 将 JS 编排器章节列表（serde_json::Value）转换为 WebChapter 列表
 fn convert_js_chapters(values: Vec<serde_json::Value>) -> Vec<WebChapter> {
     values
@@ -4168,12 +4330,23 @@ fn convert_js_chapters(values: Vec<serde_json::Value>) -> Vec<WebChapter> {
                 .get("isVip")
                 .and_then(|vip| vip.as_bool())
                 .unwrap_or(false);
+            // P1-1/P2-1：JS 源章节 JSON 补齐 isVolume/isPay/tag 键
+            //（对齐 JsSourceMarshaller::JsChapter 字段面，camelCase 键名）
+            let is_volume = v.get("isVolume").and_then(|x| x.as_bool()).unwrap_or(false);
+            let is_pay = v.get("isPay").and_then(|x| x.as_bool()).unwrap_or(false);
+            let tag = v
+                .get("tag")
+                .and_then(|x| x.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string());
             WebChapter {
                 index,
                 title,
                 url,
                 is_vip,
-                is_volume: false,
+                is_pay,
+                is_volume,
+                tag,
                 variable: v
                     .get("variable")
                     .and_then(|x| x.as_str())
@@ -4359,6 +4532,8 @@ pub async fn webbook_info(
             // 同一取值），不劣于改造前（恒 0）；JS 源的 bookType 主来源
             // 仍是入架时搜索候选/书源声明值。
             book_type: book_type_of_source(source.book_source_type),
+            // P1-3：JS 源详情透传 downloadUrls（JsBookInfo.marshalled 字段已备）
+            download_urls: js_info.download_urls,
         };
         // P2-9 ②：记录 book 元信息（目录/正文阶段 `book` 绑定扩面反查用）
         record_book_meta_from_info(&deps, book_url, &info);
@@ -4949,7 +5124,8 @@ mod tests {
                             </html>"
                     .to_string();
                 Ok(test_fetcher()
-                    .parse_book_info_from_body(source, body, book_url, book_url, true, "", ""))
+                    .parse_book_info_from_body(source, body, book_url, book_url, true, "", "")
+                    .unwrap())
             }
         }
         let fetcher = P29OfflineFetcher;
@@ -5271,6 +5447,7 @@ mod tests {
             kind: None,
             variable: Some(r#"{"a":"1"}"#.into()),
             book_type: 0,
+            download_urls: None,
         };
         record_book_meta_from_info(&test_deps(), book_url, &info);
         let chapters = vec![
@@ -5280,6 +5457,8 @@ mod tests {
                 index: 0,
                 is_vip: false,
                 is_volume: false,
+                is_pay: false,
+                tag: None,
                 variable: None,
                 word_count: None,
             },
@@ -5289,6 +5468,8 @@ mod tests {
                 index: 1,
                 is_vip: false,
                 is_volume: false,
+                is_pay: false,
+                tag: None,
                 variable: None,
                 word_count: None,
             },
@@ -5343,6 +5524,8 @@ mod tests {
             index: 0,
             is_vip: false,
             is_volume: false,
+            is_pay: false,
+            tag: None,
             variable: None,
             word_count: None,
         }];
@@ -5543,6 +5726,8 @@ mod tests {
             index: n as i32,
             is_vip: false,
             is_volume: false,
+            is_pay: false,
+            tag: None,
             variable: None,
             word_count: None,
         };
@@ -5561,6 +5746,8 @@ mod tests {
             index: 999999,
             is_vip: false,
             is_volume: false,
+            is_pay: false,
+            tag: None,
             variable: None,
             word_count: None,
         });
@@ -5831,15 +6018,8 @@ mod tests {
         }))
         .expect("IMAGE 源 json");
         seed_meta(url_a, "type 回流测试书");
-        let info_a = test_fetcher().parse_book_info_from_body(
-            &image_source,
-            body.clone(),
-            url_a,
-            url_a,
-            true,
-            "",
-            "",
-        );
+        let info_a = test_fetcher().parse_book_info_from_body().unwrap();
+
         assert_eq!(
             info_a.book_type, 64,
             "A：JS book.type=64 写值应回流 WebBookInfo.book_type（调用点回归硬编码 0 则本断言失败）"
@@ -5863,15 +6043,8 @@ mod tests {
         }))
         .expect("TEXT 源 json");
         seed_meta(url_b, "type 覆盖测试书");
-        let info_b = test_fetcher().parse_book_info_from_body(
-            &text_source,
-            body.clone(),
-            url_b,
-            url_b,
-            true,
-            "",
-            "",
-        );
+        let info_b = test_fetcher().parse_book_info_from_body().unwrap();
+
         assert_eq!(
             info_b.book_type, 64,
             "B：JS 写值 64 应覆盖书源换算 8（overlay 分支）"
@@ -5895,15 +6068,8 @@ mod tests {
         }))
         .expect("TEXT 源 json");
         seed_meta(url_c, "type 回落测试书");
-        let info_c = test_fetcher().parse_book_info_from_body(
-            &text_source_c,
-            body,
-            url_c,
-            url_c,
-            true,
-            "",
-            "",
-        );
+        let info_c = test_fetcher().parse_book_info_from_body().unwrap();
+
         assert_eq!(
             info_c.book_type, 8,
             "C：无 JS 写 → 回落书源 bookSourceType=0 换算 TEXT(8)，而非 0"
@@ -6338,15 +6504,8 @@ mod tests {
                 book_type: 0,
             },
         );
-        let info = test_fetcher().parse_book_info_from_body(
-            &source,
-            body,
-            book_url_after,
-            book_url_after,
-            true,
-            "",
-            "",
-        );
+        let info = test_fetcher().parse_book_info_from_body().unwrap();
+
         assert_eq!(info.name, "聚合书库测试书", "补后：书名应来自 init 产出");
         assert_eq!(info.author, "测试作者");
         assert_eq!(info.toc_url, "https://jhsu-binding-test.example.com/toc/1");
@@ -6354,15 +6513,8 @@ mod tests {
         // —— 补前：未播种 bookUrl → 字面量绑定回退（等价 HEAD 执行路径）
         // → init 方法调用抛错被跳过 → 原始响应体上 $.n 为空
         let book_url_before = "https://jhsu-binding-test.example.com/b/before";
-        let info2 = test_fetcher().parse_book_info_from_body(
-            &source,
-            "<html><body>raw detail body</body></html>".to_string(),
-            book_url_before,
-            book_url_before,
-            true,
-            "",
-            "",
-        );
+        let info2 = test_fetcher().parse_book_info_from_body().unwrap();
+
         assert!(
             info2.name.is_empty(),
             "补前：init 失败应回退原始响应体（书名为空），实际: {:?}",
@@ -6428,15 +6580,8 @@ mod tests {
                 book_type: 0,
             },
         );
-        let info = test_fetcher().parse_book_info_from_body(
-            &source,
-            body.to_string(),
-            url_after,
-            url_after,
-            true,
-            "",
-            "",
-        );
+        let info = test_fetcher().parse_book_info_from_body().unwrap();
+
         assert_eq!(
             info.name, "测试书",
             "补后：init getVariable(\"custom\")=2 → origin[1].book_name"
@@ -6474,15 +6619,8 @@ mod tests {
         // —— 补前：未播种 bookUrl → 字面量回退（等价 HEAD 执行路径）
         // → init 的 book.getVariable 方法调用抛错被跳过 → 书名为空
         let url_before = "https://book4.cc/AU文学/1/102";
-        let info2 = test_fetcher().parse_book_info_from_body(
-            &source,
-            body.to_string(),
-            url_before,
-            url_before,
-            true,
-            "",
-            "",
-        );
+        let info2 = test_fetcher().parse_book_info_from_body().unwrap();
+
         assert!(
             info2.name.is_empty(),
             "补前：init 失败应回退原始响应体（$.book_name 为空），实际: {:?}",
@@ -6627,15 +6765,18 @@ mod tests {
             }),
             ..source
         };
-        let info = test_fetcher().parse_book_info_from_body(
-            &source,
-            body.to_string(),
-            "https://example.com/book/1",
-            "https://example.com/book/1",
-            false,
-            "旧名",
-            "旧作者",
-        );
+        let info = test_fetcher()
+            .parse_book_info_from_body(
+                &source,
+                body.to_string(),
+                "https://example.com/book/1",
+                "https://example.com/book/1",
+                false,
+                "旧名",
+                "旧作者",
+            )
+            .unwrap();
+
         let variable = info.variable.expect("@put 变量应被导出");
         let v: serde_json::Value = serde_json::from_str(&variable).unwrap();
         assert_eq!(v["token"], serde_json::json!("abc123"));
@@ -6738,57 +6879,69 @@ mod tests {
     fn test_parse_book_info_can_rename_gating() {
         // 规则 canReName 为空 + 已有书名非空 → 不覆盖（保留已有）
         let source = make_info_source(None);
-        let info = test_fetcher().parse_book_info_from_body(
-            &source,
-            INFO_HTML.to_string(),
-            "https://example.com/book/1",
-            "https://example.com/book/1",
-            true,
-            "已有书名",
-            "已有作者",
-        );
+        let info = test_fetcher()
+            .parse_book_info_from_body(
+                &source,
+                INFO_HTML.to_string(),
+                "https://example.com/book/1",
+                "https://example.com/book/1",
+                true,
+                "已有书名",
+                "已有作者",
+            )
+            .unwrap();
+
         assert_eq!(info.name, "已有书名");
         assert_eq!(info.author, "已有作者");
 
         // 规则 canReName 非空 + can_re_name=true + 已有非空 → 覆盖
         let source2 = make_info_source(Some("true"));
-        let info2 = test_fetcher().parse_book_info_from_body(
-            &source2,
-            INFO_HTML.to_string(),
-            "https://example.com/book/1",
-            "https://example.com/book/1",
-            true,
-            "已有书名",
-            "已有作者",
-        );
+        let info2 = test_fetcher()
+            .parse_book_info_from_body(
+                &source2,
+                INFO_HTML.to_string(),
+                "https://example.com/book/1",
+                "https://example.com/book/1",
+                true,
+                "已有书名",
+                "已有作者",
+            )
+            .unwrap();
+
         assert_eq!(info2.name, "解析书名");
         assert_eq!(info2.author, "解析作者");
 
         // 已有书名为空 → 无论 canReName 均填充
-        let info3 = test_fetcher().parse_book_info_from_body(
-            &source,
-            INFO_HTML.to_string(),
-            "https://example.com/book/1",
-            "https://example.com/book/1",
-            true,
-            "",
-            "",
-        );
+        let info3 = test_fetcher()
+            .parse_book_info_from_body(
+                &source,
+                INFO_HTML.to_string(),
+                "https://example.com/book/1",
+                "https://example.com/book/1",
+                true,
+                "",
+                "",
+            )
+            .unwrap();
+
         assert_eq!(info3.name, "解析书名");
     }
 
     #[test]
     fn test_parse_book_info_fields_and_absolutize() {
         let source = make_info_source(None);
-        let info = test_fetcher().parse_book_info_from_body(
-            &source,
-            INFO_HTML.to_string(),
-            "https://example.com/book/1",
-            "https://example.com/book/1",
-            true,
-            "",
-            "",
-        );
+        let info = test_fetcher()
+            .parse_book_info_from_body(
+                &source,
+                INFO_HTML.to_string(),
+                "https://example.com/book/1",
+                "https://example.com/book/1",
+                true,
+                "",
+                "",
+            )
+            .unwrap();
+
         // kind 原始字符串 + 拆分 categories
         assert_eq!(info.kind.as_deref(), Some("科幻,悬疑"));
         assert_eq!(
@@ -6822,15 +6975,18 @@ mod tests {
 <meta property="og:novel:book_name" content="一念永恒">
 <meta property="og:novel:author" content="耳根">
 </head></html>"#;
-        let info = test_fetcher().parse_book_info_from_body(
-            &source,
-            html.into(),
-            "http://www.shushun.cc/read_81/",
-            "http://www.shushun.cc/read_81/",
-            true,
-            "",
-            "",
-        );
+        let info = test_fetcher()
+            .parse_book_info_from_body(
+                &source,
+                html.to_string(),
+                "http://www.shushun.cc/read_81/",
+                "http://www.shushun.cc/read_81/",
+                true,
+                "",
+                "",
+            )
+            .unwrap();
+
         assert_eq!(info.name, "一念永恒");
         assert_eq!(info.author, "耳根");
         assert_eq!(info.book_url, "http://www.shushun.cc/read_81/");
@@ -7393,6 +7549,8 @@ mod tests {
                 url: chapter_url.clone(),
                 is_vip: false,
                 is_volume: false,
+                is_pay: false,
+                tag: None,
                 variable: None,
                 word_count: None,
             }],
@@ -7414,6 +7572,8 @@ mod tests {
             url: chapter_url.clone(),
             is_vip: false,
             is_volume: false,
+            is_pay: false,
+            tag: None,
             variable: None,
             word_count: None,
         };
@@ -7486,6 +7646,8 @@ mod tests {
             url: chapter_url,
             is_vip: false,
             is_volume: false,
+            is_pay: false,
+            tag: None,
             variable: None,
             word_count: None,
         };
@@ -7581,6 +7743,7 @@ mod tests {
             None,
         )
         .unwrap();
+
         assert_eq!(result, "第一行\n第二行");
     }
 
@@ -7595,6 +7758,7 @@ mod tests {
             None,
         )
         .unwrap();
+
         assert_eq!(result, "正文");
     }
 
@@ -7661,8 +7825,8 @@ mod tests {
         let rule = source
             .rule_content
             .as_ref()
-            .and_then(|r| r.content.as_deref())
-            .unwrap();
+            .and_then(|r| r.content.as_deref());
+
         let analyzer = crate::js_adapter::construct_analyzer_with_js_lib(
             html,
             "https://www.qmao.net/vodplay/27017-1-1.html".into(),
@@ -8022,5 +8186,392 @@ mod tests {
             head_off.contains("cookie: offcookie=fromdb"),
             "关闭源读侧 DB cookie 仍必须注入: {head_off}"
         );
+    }
+    // ─── P1-1/P2-1/P2-3 目录字段族（isVolume/isPay/tag + 单一转换函数）测试 ───
+
+    /// 构造 ruleToc 字段族 fixture 源
+    fn make_toc_fields_source() -> BookSource {
+        serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": "https://toc-fields.test",
+            "bookSourceName": "字段族测试源",
+            "ruleToc": {
+                "chapterList": "$.rows[*]",
+                "chapterName": "$.name",
+                "chapterUrl": "$.url",
+                "isVip": "$.vip",
+                "isPay": "$.pay",
+                "isVolume": "$.vol",
+                "updateTime": "$.ut"
+            }
+        }))
+        .expect("字段族测试源 json")
+    }
+
+    /// P1-1/P2-1：卷章/付费/字数/附加信息全字段解析（对标 BookChapterList
+    /// .kt:245-259——卷章 tag=info 原文且不提取字数；普通章字数剥离余量写 tag）
+    #[test]
+    fn test_parse_toc_volume_pay_tag_full_fields() {
+        let source = make_toc_fields_source();
+        let body = r#"{"rows":[
+            {"url":"/v/1","name":"第一卷","vip":"0","pay":"0","vol":"1","ut":"2024-01-01"},
+            {"url":"/c/1","name":"第一章","vip":"1","pay":"1","vol":"0","ut":"2024-01-02 12:00 13.5万字"}
+        ]}"#
+        .to_string();
+        let fetcher = test_fetcher();
+        let chapters = block_on(fetcher.parse_chapters_from_toc_body(
+            &source,
+            None,
+            "https://toc-fields.test/toc",
+            body,
+            "测试书",
+            None,
+            None,
+            std::time::Instant::now(),
+            "https://toc-fields.test/toc",
+        ))
+        .expect("章节解析应成功");
+        assert_eq!(chapters.len(), 2);
+        let v = &chapters[0];
+        assert!(v.is_volume, "卷章标记应为 true");
+        assert!(!v.is_pay);
+        assert_eq!(v.tag.as_deref(), Some("2024-01-01"), "卷章 tag = info 原文");
+        assert!(
+            v.word_count.is_none(),
+            "卷章不提取字数（对齐原版 isVolume 分支）"
+        );
+        assert_eq!(v.url, "https://toc-fields.test/v/1", "非空 URL 绝对化");
+        let c = &chapters[1];
+        assert!(!c.is_volume);
+        assert!(c.is_pay, "isPay 规则 '1' 判真（P2-1）");
+        assert!(c.is_vip);
+        assert_eq!(c.word_count.as_deref(), Some("13.5万字"));
+        assert_eq!(
+            c.tag.as_deref(),
+            Some("2024-01-02 12:00"),
+            "字数命中串剥离后余量"
+        );
+    }
+
+    /// 按路径分发的回环静态服务器（路由键 = 精确路径；%HOST% 占位符替换为本机 base）
+    fn spawn_route_server(routes: Vec<(String, String)>) -> u16 {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let req = String::from_utf8_lossy(&head);
+                let path = req.split_whitespace().nth(1).unwrap_or("/").to_string();
+                let host_base = format!("http://127.0.0.1:{port}");
+                let body = routes
+                    .iter()
+                    .find(|(p, _)| *p == path)
+                    .map(|(_, b)| b.replace("%HOST%", &host_base))
+                    .unwrap_or_default();
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(body.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        port
+    }
+
+    /// P2-3：串行（逐页单 next）与并发（一次多 next）拉页结果一致性——
+    /// 两形态共用 parse_toc_chapter 单一转换函数，逐字段应完全一致
+    #[test]
+    fn test_serial_and_concurrent_toc_pages_consistent() {
+        let mk_row = |i: usize, vol: &str| {
+            format!(
+                r#"{{"url":"/c/{i}","name":"第{i}章","vip":"0","pay":"1","vol":"{vol}","ut":"2024-01-0{i} 9千字"}}"#
+            )
+        };
+        let page = |rows: String, next: &str| -> String {
+            format!(r#"{{"rows":[{rows}],"next":"{next}"}}"#)
+        };
+        let page_end = |rows: String| -> String { format!(r#"{{"rows":[{rows}],"next":""}}"#) };
+        let fetcher = test_fetcher();
+
+        // 串行：p1 →(单 next)→ p2 →(单 next)→ p3
+        let port_s = spawn_route_server(vec![
+            (
+                "/toc".into(),
+                page(
+                    format!("{},{}", mk_row(1, "0"), mk_row(2, "1")),
+                    "%HOST%/p2",
+                ),
+            ),
+            ("/p2".into(), page(mk_row(3, "0"), "%HOST%/p3")),
+            ("/p3".into(), page_end(mk_row(4, "0"))),
+        ]);
+        let base_s = format!("http://127.0.0.1:{port_s}");
+        let body_s = format!(
+            r#"{{"rows":[{},{}],"next":"{base_s}/p2"}}"#,
+            mk_row(1, "0"),
+            mk_row(2, "1")
+        );
+        let serial_source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": base_s,
+            "bookSourceName": "串行源",
+            "ruleToc": {
+                "chapterList": "$.rows[*]",
+                "chapterName": "$.name",
+                "chapterUrl": "$.url",
+                "isPay": "$.pay",
+                "isVolume": "$.vol",
+                "updateTime": "$.ut",
+                "nextTocUrl": "$.next"
+            }
+        }))
+        .unwrap();
+        let serial = block_on(fetcher.parse_chapters_from_toc_body(
+            &serial_source,
+            None,
+            &format!("{base_s}/toc"),
+            body_s,
+            "串并一致",
+            None,
+            None,
+            std::time::Instant::now(),
+            &format!("{base_s}/toc"),
+        ))
+        .expect("串行拉页应成功");
+        assert_eq!(serial.len(), 4, "串行 3 页共 4 章");
+        assert!(serial[1].is_volume);
+        assert!(serial[0].is_pay);
+        assert_eq!(
+            serial[0].tag.as_deref(),
+            Some("2024-01-01"),
+            "9千字 剥离后余量"
+        );
+        assert_eq!(serial[0].word_count.as_deref(), Some("9千字"));
+    }
+
+    /// P2-3（并发形态）：nextTocUrl 一次展开两页 → 并发分支；字段与串行
+    /// 同一转换函数产出一致（同一 fixture 逐字段复用串行用例断言面）
+    #[test]
+    fn test_concurrent_toc_pages_same_field_semantics() {
+        let mk_row = |i: usize, vol: &str| {
+            format!(
+                r#"{{"url":"/c/{i}","name":"第{i}章","vip":"0","pay":"1","vol":"{vol}","ut":"2024-01-0{i} 9千字"}}"#
+            )
+        };
+        let page_end = |rows: String| -> String { format!(r#"{{"rows":[{rows}],"next":""}}"#) };
+        let fetcher = test_fetcher();
+        let port = spawn_route_server(vec![
+            ("/p2".into(), page_end(mk_row(3, "0"))),
+            ("/p3".into(), page_end(mk_row(4, "0"))),
+        ]);
+        let base = format!("http://127.0.0.1:{port}");
+        let body = format!(
+            r#"{{"rows":[{},{}],"nextList":["{base}/p2","{base}/p3"]}}"#,
+            mk_row(1, "0"),
+            mk_row(2, "1")
+        );
+        let source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": base,
+            "bookSourceName": "并发源",
+            "ruleToc": {
+                "chapterList": "$.rows[*]",
+                "chapterName": "$.name",
+                "chapterUrl": "$.url",
+                "isPay": "$.pay",
+                "isVolume": "$.vol",
+                "updateTime": "$.ut",
+                "nextTocUrl": "$.nextList[*]"
+            }
+        }))
+        .unwrap();
+        let chapters = block_on(fetcher.parse_chapters_from_toc_body(
+            &source,
+            None,
+            &format!("{base}/toc"),
+            body,
+            "串并一致",
+            None,
+            None,
+            std::time::Instant::now(),
+            &format!("{base}/toc"),
+        ))
+        .expect("并发拉页应成功");
+        assert_eq!(chapters.len(), 4, "并发 3 页共 4 章");
+        // 并发分支字段语义与串行一致（同一 parse_toc_chapter 转换）
+        assert!(chapters[1].is_volume);
+        assert!(chapters[0].is_pay);
+        assert_eq!(chapters[0].tag.as_deref(), Some("2024-01-01"));
+        assert_eq!(chapters[0].word_count.as_deref(), Some("9千字"));
+        for ch in &chapters {
+            assert!(ch.is_pay, "并发分支 isPay 同样透传");
+        }
+    }
+
+    /// P1-3：文件类书源（type=3）详情解析 downloadUrls（isUrl 语义 =
+    /// 相对转绝对 + 去重保序，对标 BookInfo.kt:165 getStringList(isUrl=true)）
+    #[test]
+    fn test_file_source_detail_parses_download_urls() {
+        let source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": "https://file.test",
+            "bookSourceName": "文件源",
+            "bookSourceType": 3,
+            "ruleBookInfo": { "downloadUrls": "$.files[*]" }
+        }))
+        .unwrap();
+        let body =
+            r#"{"files":["/f/1.zip","https://cdn.file.test/f/2.zip","/f/1.zip"]}"#.to_string();
+        let info = test_fetcher()
+            .parse_book_info_from_body(
+                &source,
+                body,
+                "https://file.test/b/1",
+                "https://file.test/b/1",
+                true,
+                "",
+                "",
+            )
+            .expect("文件源详情应解析成功");
+        let urls = info.download_urls.expect("download_urls 应有值");
+        assert_eq!(
+            urls,
+            vec![
+                "https://file.test/f/1.zip".to_string(),
+                "https://cdn.file.test/f/2.zip".to_string(),
+            ],
+            "相对转绝对 + 去重保序"
+        );
+    }
+
+    /// P1-3：文件源下载链接为空 → 报错（对标原版 NoStackTraceException("下载链接为空")）
+    #[test]
+    fn test_file_source_empty_download_urls_errors() {
+        let source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": "https://file-empty.test",
+            "bookSourceName": "空文件源",
+            "bookSourceType": 3,
+            "ruleBookInfo": { "downloadUrls": "$.files[*]" }
+        }))
+        .unwrap();
+        let err = test_fetcher()
+            .parse_book_info_from_body(
+                &source,
+                r#"{"files":[]}"#.to_string(),
+                "https://file-empty.test/b/1",
+                "https://file-empty.test/b/1",
+                true,
+                "",
+                "",
+            )
+            .expect_err("空下载链接应报错");
+        assert!(err.to_string().contains("下载链接为空"));
+    }
+
+    /// P1-3：普通文本源不受 downloadUrls 影响（tocUrl 主路径不变）
+    #[test]
+    fn test_text_source_keeps_toc_url_path() {
+        let source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": "https://text-dl.test",
+            "bookSourceName": "文本源",
+            "bookSourceType": 0,
+            "ruleBookInfo": { "tocUrl": "$.toc", "downloadUrls": "$.files[*]" }
+        }))
+        .unwrap();
+        let body = r#"{"toc":"/toc/1","files":["/f/1.zip"]}"#.to_string();
+        let info = test_fetcher()
+            .parse_book_info_from_body(
+                &source,
+                body,
+                "https://text-dl.test/b/1",
+                "https://text-dl.test/b/1",
+                true,
+                "",
+                "",
+            )
+            .expect("文本源详情应解析成功");
+        assert!(info.download_urls.is_none(), "非文件源不解析 downloadUrls");
+        assert_eq!(
+            info.toc_url, "https://text-dl.test/toc/1",
+            "tocUrl 主路径不变"
+        );
+    }
+
+    /// P1-2：AppPattern.imgRegex 逐字移植语义（group1 = 末个 data:/http(s):
+    /// 起点前的最长余量；group2 = 自该起点至串尾；未命中不覆盖）
+    #[test]
+    fn test_img_regex_last_occurrence_semantics() {
+        let re = img_regex();
+        let c = re.captures("第一章 http://img.test/1.jpg").expect("应命中");
+        assert_eq!(c.get(1).unwrap().as_str(), "第一章 ");
+        assert_eq!(c.get(2).unwrap().as_str(), "http://img.test/1.jpg");
+        let c = re
+            .captures("a http://x.test/1 https://y.test/2")
+            .expect("应命中");
+        assert_eq!(c.get(1).unwrap().as_str(), "a http://x.test/1 ");
+        assert_eq!(c.get(2).unwrap().as_str(), "https://y.test/2");
+        let c = re
+            .captures("封面 data:image/png;base64,AAAA")
+            .expect("应命中");
+        assert_eq!(c.get(1).unwrap().as_str(), "封面 ");
+        assert_eq!(c.get(2).unwrap().as_str(), "data:image/png;base64,AAAA");
+        assert!(re.captures("纯文字标题").is_none());
+    }
+
+    /// P1-2：标题规则链（对标 BookContent.kt:171-196）——命中解构 img_url
+    /// 与标题余量；规则失败/空不覆盖；纯文字标题用规则值
+    #[test]
+    fn test_apply_content_title_rule_chain() {
+        let (title, img) = apply_content_title_rule(
+            "<html><body><div class='t'>第一章 http://img.test/1.jpg</div></body></html>",
+            "class.t@text",
+            "https://book.test/c/1",
+            "https://book.test",
+            None,
+            "原章节标题",
+            0,
+            10,
+            None,
+        );
+        assert_eq!(img.as_deref(), Some("http://img.test/1.jpg"));
+        assert_eq!(title.as_deref().map(str::trim), Some("第一章"));
+
+        let (title, img) = apply_content_title_rule(
+            "<html><body></body></html>",
+            "class.t@text",
+            "https://book.test/c/1",
+            "https://book.test",
+            None,
+            "原章节标题",
+            0,
+            10,
+            None,
+        );
+        assert!(title.is_none() && img.is_none(), "规则落空不覆盖标题");
+
+        let (title, img) = apply_content_title_rule(
+            "<html><body><div class='t'>纯文字标题</div></body></html>",
+            "class.t@text",
+            "https://book.test/c/1",
+            "https://book.test",
+            None,
+            "原章节标题",
+            0,
+            10,
+            None,
+        );
+        assert!(img.is_none());
+        assert_eq!(title.as_deref().map(str::trim), Some("纯文字标题"));
     }
 }

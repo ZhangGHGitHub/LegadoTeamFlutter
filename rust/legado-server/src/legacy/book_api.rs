@@ -242,28 +242,8 @@ async fn refresh_toc(state: &Arc<AppState>, book_url: &str) -> Result<Vec<BookCh
         return Ok(Vec::new());
     }
 
-    let chapters: Vec<BookChapter> = web_chapters
-        .iter()
-        .map(|wc| BookChapter {
-            url: wc.url.clone(),
-            title: wc.title.clone(),
-            is_volume: wc.is_volume,
-            base_url: book_url.to_string(),
-            book_url: book_url.to_string(),
-            index: wc.index,
-            is_vip: wc.is_vip,
-            is_pay: false,
-            resource_url: None,
-            tag: None,
-            word_count: wc.word_count.clone(),
-            start: None,
-            end: None,
-            start_fragment_id: None,
-            end_fragment_id: None,
-            variable: wc.variable.clone(),
-            img_url: None,
-        })
-        .collect();
+    // P1-1/P2-1：目录转换统一走 core 单一实现（与 refresh_toc / 换源同语义）
+    let chapters = legado_core::web_book::web_chapters_to_book_chapters(&web_chapters, book_url);
 
     persist_chapters(state, book_url, &chapters, Some(fetch_url))
         .await

@@ -111,7 +111,7 @@ pub(crate) fn parse_book_info_from_body(
     existing_name: &str,
     existing_author: &str,
 ) -> LegadoResult<WebBookInfo> {
-    Ok(real_fetcher()?.parse_book_info_from_body(
+    real_fetcher()?.parse_book_info_from_body(
         source,
         body,
         book_url,
@@ -119,7 +119,7 @@ pub(crate) fn parse_book_info_from_body(
         can_re_name,
         existing_name,
         existing_author,
-    ))
+    )
 }
 
 // ─── 公开入口：同步包装（ffi.rs:1280-1336 调用点零改动）──────────────────────
@@ -1909,6 +1909,8 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
             url: "https://www.qmao.net/vodplay/27017-1-1.html".into(),
             is_vip: false,
             is_volume: false,
+            is_pay: false,
+            tag: None,
             variable: None,
             word_count: None,
         };
@@ -2011,6 +2013,7 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
                 kind: None,
                 variable: None,
                 book_type: 0,
+                download_urls: None,
             })
         }
 
@@ -2040,6 +2043,8 @@ url += String(uri).replace('?', 'index.php?page=0&');"#
                 url: format!("{}/c1", req.url()),
                 is_vip: false,
                 is_volume: false,
+                is_pay: false,
+                tag: None,
                 variable: None,
                 word_count: None,
             }])

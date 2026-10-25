@@ -247,7 +247,10 @@ pub fn get_audio_chapter_media(
         title: chapter.title.clone(),
         url: chapter.url.clone(),
         is_vip: chapter.is_vip,
+        // P1-1：透传 DB 章节卷章/付费标记与章节附加信息
         is_volume: chapter.is_volume,
+        is_pay: chapter.is_pay,
+        tag: chapter.tag.clone(),
         variable: merged_variable,
         word_count: None,
     };

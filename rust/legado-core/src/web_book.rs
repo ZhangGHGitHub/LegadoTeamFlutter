@@ -58,6 +58,13 @@ pub struct WebChapter {
     /// 是否卷章（卷章不检查空内容）
     #[serde(default)]
     pub is_volume: bool,
+    /// 是否付费章节（P1-1/P2-1：ruleToc.isPay 解析结果，对齐 BookChapter.isPay）
+    #[serde(default)]
+    pub is_pay: bool,
+    /// 章节附加信息（对齐 BookChapter.tag）：卷章 = updateTime 规则 info 原文；
+    /// 普通章 = info 剥离 wordCount 命中串后的余量（原版 `info.replaceFirst(match.value,"")`）
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tag: Option<String>,
     /// 规则变量 JSON（对齐 BookChapter.variable；@put 写入）
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub variable: Option<String>,
@@ -105,6 +112,15 @@ pub struct WebBookInfo {
     /// （reader / reader-comic / audio / video）随值切换。
     #[serde(default, skip_serializing_if = "is_zero", rename = "type")]
     pub book_type: i32,
+    /// 文件类书源（type=3）下载地址列表（P1-3，对标 Kotlin Book.downloadUrls：
+    /// `getStringList(infoRule.downloadUrls, isUrl = true)` = 相对转绝对 + 去重；
+    /// JSON 传输为数组，落库时序列化 JSON 字符串写 books.downloadUrls）
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "downloadUrls"
+    )]
+    pub download_urls: Option<Vec<String>>,
 }
 
 // ─── Fetcher trait ────────────────────────────────────────────────────────────
@@ -318,6 +334,81 @@ pub trait BookSourceFetcher: Send + Sync {
     /// - `source`: 书源配置
     /// - `chapter`: 目标章节（含 URL 等信息）
     async fn get_content(&self, source: &BookSource, chapter: &WebChapter) -> LegadoResult<String>;
+
+    /// 获取章节正文 + `ruleContent.title` 标题链产物（P1-2）
+    ///
+    /// 默认实现退化为 [`Self::get_content`]（Mock 等实现无需感知，签名不变，
+    /// title/img_url 恒 None）；真实实现覆盖以携带标题覆盖值与段评图，
+    /// 实现 `AppPattern.imgRegex` 解构（imgUrl=group2、标题=group1 余量）。
+    async fn get_content_with_meta(
+        &self,
+        source: &BookSource,
+        chapter: &WebChapter,
+    ) -> LegadoResult<ChapterContentWithMeta> {
+        let content = self.get_content(source, chapter).await?;
+        Ok(ChapterContentWithMeta {
+            content,
+            title_override: None,
+            img_url: None,
+        })
+    }
+}
+
+/// 章节正文抓取产物（P1-2：正文 + `ruleContent.title` 标题链解构产物）
+///
+/// 对标 Kotlin `BookContent.analyzeContent` 的标题链副作用：`contentRule.title`
+/// 非空时解析标题，`AppPattern.imgRegex` 命中后 `imgUrl = group2`、标题 = group1
+/// 余量（group1 空则保留原章节标题）。产物经 [`BookSourceFetcher::get_content_with_meta`]
+/// 回传，由调用方（ffi reader 链）写入 DB 章节（`chapters.title` / `chapters.imgUrl`）。
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct ChapterContentWithMeta {
+    /// 净化前的章节正文文本
+    pub content: String,
+    /// title 规则解析出的标题覆盖值（无 title 规则 / 解析为空 → None，不覆盖）
+    pub title_override: Option<String>,
+    /// 标题内解构出的段评图 URL（`AppPattern.imgRegex` group2，未命中 → None）
+    pub img_url: Option<String>,
+}
+
+/// WebChapter → DB 章节实体（BookChapter）的**唯一**目录转换函数（P1-1/P2-1）
+///
+/// refresh_toc（ffi）/ 换源（ffi source_switch）/ server legacy 目录刷新三条
+/// 路径一律经本函数，字段语义仅此一份（防复发规定 1：同一数据的写库/转换
+/// 语义只允许一个实现）：
+/// - is_volume / is_vip / is_pay / tag / word_count / variable 全量透传，
+///   禁止任何 `false`/`None` 兜底硬编码（防复发规定 3）
+/// - base_url / book_url 落稳定主键 book_url（目录转换的既有语义）
+pub fn web_chapters_to_book_chapters(
+    web_chapters: &[WebChapter],
+    book_url: &str,
+) -> Vec<crate::models::BookChapter> {
+    web_chapters
+        .iter()
+        .map(|wc| crate::models::BookChapter {
+            url: wc.url.clone(),
+            title: wc.title.clone(),
+            is_volume: wc.is_volume,
+            base_url: book_url.to_string(),
+            book_url: book_url.to_string(),
+            index: wc.index,
+            is_vip: wc.is_vip,
+            // P2-1：ruleToc.isPay 解析结果透传（对标原版 BookChapter.isPay）
+            is_pay: wc.is_pay,
+            resource_url: None,
+            // P1-1：章节附加信息透传（卷章 = updateTime 原文；普通章 =
+            // 字数命中串剥离后的余量，语义见 fetcher parse_toc_chapter）
+            tag: wc.tag.clone(),
+            // N5：字数透传（WebChapter.word_count 来自 updateTime 规则/JS 源）
+            word_count: wc.word_count.clone(),
+            start: None,
+            end: None,
+            start_fragment_id: None,
+            end_fragment_id: None,
+            variable: wc.variable.clone(),
+            // 章节标题内段评图（P1-2）：仅正文标题链写入，目录阶段恒空
+            img_url: None,
+        })
+        .collect()
 }
 
 // ─── Mock Fetcher ─────────────────────────────────────────────────────────────
@@ -663,6 +754,37 @@ impl<F: BookSourceFetcher> WebBookEngine<F> {
         }
         self.fetcher.get_content(source, chapter).await
     }
+
+    /// 获取章节正文 + `ruleContent.title` 标题链产物（P1-2，透传 fetcher）
+    ///
+    /// 引擎侧仅转发：URL/规则校验与直链回退语义与 [`Self::get_content`]
+    /// 完全一致（同一入口守卫），产物由调用方决定落库。
+    pub async fn get_content_with_meta(
+        &self,
+        source: &BookSource,
+        chapter: &WebChapter,
+    ) -> LegadoResult<ChapterContentWithMeta> {
+        if chapter.url.is_empty() {
+            return Err(LegadoError::Parser("章节URL不能为空".into()));
+        }
+        // 校验正文规则（JS 书源由脚本直接返回内容，豁免规则校验）
+        if !source.is_js_source() {
+            let has_content_rule = source
+                .rule_content
+                .as_ref()
+                .is_some_and(|r| r.content.as_ref().is_some_and(|c| !c.is_empty()));
+            if !has_content_rule {
+                // 对齐 Kotlin：正文规则为空时回退章节链接（听书/直链源关键路径）；
+                // 直链回退不携带标题链产物（原版标题链仅在规则链内生效）
+                return Ok(ChapterContentWithMeta {
+                    content: chapter.url.clone(),
+                    title_override: None,
+                    img_url: None,
+                });
+            }
+        }
+        self.fetcher.get_content_with_meta(source, chapter).await
+    }
 }
 
 // ─── 辅助构造函数 ──────────────────────────────────────────────────────────────
@@ -697,6 +819,8 @@ impl WebChapter {
             url: url.into(),
             is_vip: false,
             is_volume: false,
+            is_pay: false,
+            tag: None,
             variable: None,
             word_count: None,
         }
@@ -723,6 +847,7 @@ impl WebBookInfo {
             kind: None,
             variable: None,
             book_type: 0,
+            download_urls: None,
         }
     }
 }
@@ -909,6 +1034,7 @@ mod tests {
             variable: None,
             // P2-15 ②：type 回流（非零 → JSON 携带 `type` 键）
             book_type: 64,
+            download_urls: None,
         };
         let json = serde_json::to_string(&info).unwrap();
         assert!(json.contains(r#""type":64"#), "非零 type 应序列化进 JSON");
@@ -1085,5 +1211,76 @@ mod tests {
         assert_eq!(de.index, 5);
         assert_eq!(de.title, "第五章");
         assert!(!de.is_vip);
+    }
+    /// P1-1/P2-1（防复发规定 3）：WebChapter → BookChapter 全字段透传断言
+    ///（源字段全非默认 → 目标逐字段相等；base_url/book_url 落稳定主键）
+    #[test]
+    fn test_web_chapters_to_book_chapters_full_field_passthrough() {
+        use std::sync::{Arc, Mutex};
+        let web = WebChapter {
+            index: 3,
+            title: "第二卷".to_string(),
+            url: "https://src.test/v/2".to_string(),
+            is_vip: true,
+            is_volume: true,
+            is_pay: true,
+            tag: Some("2024-01-01".to_string()),
+            variable: Some(r#"{"k":"v"}"#.to_string()),
+            word_count: Some("1000字".to_string()),
+        };
+        let bcs = web_chapters_to_book_chapters(std::slice::from_ref(&web), "https://src.test");
+        assert_eq!(bcs.len(), 1);
+        let bc = &bcs[0];
+        assert_eq!(bc.url, web.url);
+        assert_eq!(bc.title, web.title);
+        assert_eq!(bc.index, web.index);
+        assert_eq!(bc.is_vip, web.is_vip);
+        assert_eq!(bc.is_volume, web.is_volume, "卷章标记透传（禁 false 兜底）");
+        assert_eq!(bc.is_pay, web.is_pay, "付费标记透传（禁 false 兜底）");
+        assert_eq!(bc.tag, web.tag, "章节附加信息透传（禁 None 兜底）");
+        assert_eq!(bc.variable, web.variable);
+        assert_eq!(bc.word_count, web.word_count);
+        assert_eq!(bc.base_url, "https://src.test");
+        assert_eq!(bc.book_url, "https://src.test");
+    }
+
+    /// P1-1/P2-1：WebChapter 旧 JSON（无 isPay/tag 键）反序列化兼容——
+    /// serde default 缺省，老调用方（Dart 侧拼装 JSON 等）不破
+    #[test]
+    fn test_web_chapter_legacy_json_without_new_fields() {
+        let json = r#"{"index":0,"title":"t","url":"u","is_vip":false,"is_volume":false}"#;
+        let ch: WebChapter = serde_json::from_str(json).unwrap();
+        assert!(!ch.is_pay);
+        assert!(ch.tag.is_none());
+    }
+
+    /// 引擎 get_content_with_meta：默认直链回退（正文规则为空 → 返回章节
+    /// URL）不携带标题链产物；Mock 默认实现只回正文（title/img_url 恒 None）
+    #[tokio::test]
+    async fn test_engine_get_content_with_meta_fallback_and_mock() {
+        let mut fetcher = MockBookSourceFetcher::default();
+        fetcher.push_content(Ok("正文".to_string()));
+        let engine = WebBookEngine::new(fetcher);
+
+        let mut source = make_test_source();
+        // 正文规则为空 → 回退章节 URL（听书/直链源关键路径），meta 恒 None
+        source.rule_content = Some(crate::models::rule::ContentRule::default());
+        let ch = WebChapter::new(0, "第一章", "https://src.test/c/1");
+        let meta = engine.get_content_with_meta(&source, &ch).await.unwrap();
+        assert_eq!(meta.content, "https://src.test/c/1");
+        assert!(meta.title_override.is_none() && meta.img_url.is_none());
+
+        // Mock fetcher 默认路径：正文透传，标题链产物恒 None
+        let mut fetcher2 = MockBookSourceFetcher::default();
+        fetcher2.push_content(Ok("正文".to_string()));
+        let engine2 = WebBookEngine::new(fetcher2);
+        let mut source2 = make_test_source();
+        source2.rule_content = Some(crate::models::rule::ContentRule {
+            content: Some("class.content@text".to_string()),
+            ..crate::models::rule::ContentRule::default()
+        });
+        let meta2 = engine2.get_content_with_meta(&source2, &ch).await.unwrap();
+        assert_eq!(meta2.content, "正文");
+        assert!(meta2.title_override.is_none() && meta2.img_url.is_none());
     }
 }
