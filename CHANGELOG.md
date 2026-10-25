@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.372] - 2026-10-26
+
+### Added
+- [UI] 支持从文件管理器「用阅读打开」txt/epub/pdf 直接导入（对齐原版文件关联语义；审查 P1-4）。
+- [UI] 文件类书源（type=3）详情页显示文件下载列表，支持下载并导入（对齐原版 loadWebFile；审查 P1-3 UI 侧）。
+- [UI] 关于页「创建堆转储」真实现（Android，落盘后系统分享；审查 P1-5）。
+- [Rust] 高亮规则补 uuid/applyToBody 字段与导入合并语义（对齐原版 v101 迁移；数据库升级至 v110；审查 P2-11）。
+### Fixed
+- [UI] 书源 JS `openUrl` 外跳统一增加确认对话（http 与自定义协议；深链直达不变；审查 P2-15）。
+
 ## [2.0.371] - 2026-10-26
 
 ### Fixed
