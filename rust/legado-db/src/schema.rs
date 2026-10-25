@@ -31,7 +31,11 @@ use legado_core::{LegadoError, LegadoResult};
 /// - v109：books 补 `originBookUrl` 列（P2-8 换源根因修复：当前书源下该书的
 ///   详情页地址，换源事务写入；换源后 bookUrl 稳定主键保持旧源地址，
 ///   「抓取书籍页」路径优先用本列，为空回退 bookUrl，Migration108To109）
-pub const SCHEMA_VERSION: u32 = 109;
+/// - v110：highlightRules 补 `uuid`/`applyToBody` 两列（P2-11，对齐原版
+///   `HighlightRule.kt:21,27,40`：uuid 为规则身份 + 导入去重唯一索引，
+///   applyToBody 控制正文匹配、与 applyToTitle 组成双开关；存量行 uuid
+///   按 `DatabaseMigrations.kt:46-68` 同构随机回填，Migration109To110）
+pub const SCHEMA_VERSION: u32 = 110;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -623,12 +627,16 @@ CREATE TABLE IF NOT EXISTS highlights (
 CREATE INDEX IF NOT EXISTS index_highlights_bookUrl ON highlights (bookUrl);
 ";
 
-/// highlightRules 表（对齐 Room schema 98.json/99.json）
+/// highlightRules 表（对齐 Room schema 99.json + 原版 v101 增列）
 ///
-/// 自动高亮规则：支持正则/普通文本匹配，scope 限定生效书籍范围。
+/// 自动高亮规则：支持正则/普通文本匹配，scope 限定生效书籍范围；
+/// uuid 为规则身份（唯一索引，导入按其去重，原版 DatabaseMigrations v100→101），
+/// applyToBody 控制正文侧匹配（applyToTitle 控制标题侧，双开关缺一会把
+/// 标题规则错误应用到正文，对齐原版 HighlightRule.kt:38-40）。
 pub const CREATE_HIGHLIGHT_RULES: &str = "
 CREATE TABLE IF NOT EXISTS highlightRules (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    uuid TEXT NOT NULL DEFAULT '',
     name TEXT NOT NULL,
     pattern TEXT NOT NULL,
     isRegex INTEGER NOT NULL,
@@ -637,8 +645,11 @@ CREATE TABLE IF NOT EXISTS highlightRules (
     style TEXT NOT NULL,
     sortOrder INTEGER NOT NULL,
     timeoutMillisecond INTEGER NOT NULL,
-    applyToTitle INTEGER NOT NULL DEFAULT 0
+    applyToTitle INTEGER NOT NULL DEFAULT 0,
+    applyToBody INTEGER NOT NULL DEFAULT 1
 );
+CREATE UNIQUE INDEX IF NOT EXISTS index_highlightRules_uuid
+    ON highlightRules(uuid);
 ";
 
 /// 索引定义

@@ -1905,6 +1905,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-util",
+ "uuid",
 ]
 
 [[package]]
@@ -1919,6 +1920,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "uuid",
 ]
 
 [[package]]

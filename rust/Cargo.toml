@@ -23,3 +23,5 @@ ecb = "0.1"
 des = "0.8"
 base64 = "0.22"
 regex = "1"
+# UUID 生成/解析（highlightRules.uuid 对齐原版 UUID.randomUUID()；lock 中既有 1.x，零新增传递依赖）
+uuid = { version = "1", features = ["v4"] }

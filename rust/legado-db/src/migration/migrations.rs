@@ -899,11 +899,11 @@ mod tests {
 
         // 第一次迁移
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 109);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 110);
 
         // 第二次迁移（已是最新版本，应为 no-op 不报错）
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 109);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 110);
 
         // 幂等修复函数重复执行也不报错
         repair_legacy_columns(conn).unwrap();
@@ -1052,7 +1052,7 @@ mod tests {
     fn test_fresh_db_reaches_v101_with_deviation_columns() {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 109);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 110);
         assert!(table_exists(conn, "highlights").unwrap());
         assert!(table_exists(conn, "highlightRules").unwrap());
         assert!(column_exists(conn, "highlights", "bookUrl"));
@@ -1238,7 +1238,7 @@ mod tests {
 
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 109);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 110);
         assert!(column_exists(conn, "rssArticles", "group"));
         assert!(column_exists(conn, "readRecord", "lastRead"));
     }
@@ -1505,7 +1505,7 @@ mod tests {
 
         let registry = MigrationRegistry::new();
         registry.migrate_to_latest(conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 109);
+        assert_eq!(MigrationRegistry::current_version(conn).unwrap(), 110);
         assert!(column_exists(conn, "book_sources", "variable"));
     }
 }

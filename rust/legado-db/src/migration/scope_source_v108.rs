@@ -108,8 +108,8 @@ mod tests {
         registry.migrate_to_latest(&conn).unwrap();
         assert_eq!(
             MigrationRegistry::current_version(&conn).unwrap(),
-            109,
-            "注册表路径应推进版本到最新（当前 109）"
+            110,
+            "注册表路径应推进版本到最新（当前 110）"
         );
         assert_eq!(scope_column_count(&conn), 1, "注册表路径只补列一次");
     }

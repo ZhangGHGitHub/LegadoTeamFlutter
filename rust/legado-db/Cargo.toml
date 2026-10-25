@@ -12,3 +12,5 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 regex = { workspace = true }
 md5 = "0.7"
+# 迁移存量 highlightRules 行 uuid 随机回填（P2-11，对齐原版 UUID.randomUUID()）
+uuid = { workspace = true }

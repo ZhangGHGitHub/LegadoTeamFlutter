@@ -198,7 +198,9 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             .filter_map(|h| serde_json::to_value(&h).ok())
             .collect();
 
-        // 高亮规则（已知限制：uuid/applyToBody 列缺失，待审查批3补列后随之纳入）
+        // 高亮规则（P2-11：uuid/applyToBody 随 HighlightRule serde 全字段往返，
+        // 旧备份 JSON 缺 uuid/applyToBody 时 serde 默认值兜底——uuid 随机生成、
+        // applyToBody=true 对齐原版实体默认）
         let highlight_rules: Vec<serde_json::Value> = HighlightRuleRepository::new(conn)
             .find_all()?
             .into_iter()
@@ -464,8 +466,8 @@ fn restore_backup_in_tx(conn: &Connection, backup: &BackupData) -> LegadoResult<
         }
     }
 
-    // 高亮规则（主键 id 显式 REPLACE；已知限制：uuid/applyToBody 列缺失，
-    // 备份覆盖面为现有 10 列，待审查批3补列后同步扩展）
+    // 高亮规则（主键 id 显式 REPLACE；P2-11 补列后 uuid/applyToBody 随模型
+    // serde 全字段往返，旧备份缺字段时 serde 默认值兜底，不破坏可恢复性）
     let highlight_rule_repo = HighlightRuleRepository::new(conn);
     for value in &backup.highlight_rules {
         match serde_json::from_value::<legado_core::models::HighlightRule>(value.clone()) {
@@ -1205,6 +1207,9 @@ mod tests {
             sortOrder: -2,
             timeoutMillisecond: 1500,
             applyToTitle: true,
+            // [P2-11] uuid/applyToBody 全字段往返（uuid 唯一、applyToBody 仅正文）
+            uuid: "44444444-4444-4444-8444-444444444444".to_string(),
+            applyToBody: false,
         };
         let seed_keyword = legado_core::models::SearchKeyword {
             word: "往返关键词".to_string(),
@@ -1345,8 +1350,14 @@ mod tests {
             assert_eq!(
                 serde_json::to_value(&rule).unwrap(),
                 serde_json::to_value(&seed_rule).unwrap(),
-                "highlightRules 往返逐列不一致（已知限制：uuid/applyToBody 列待批3补齐）"
+                "highlightRules 往返逐列不一致"
             );
+            // [P2-11] uuid/applyToBody 两列显式断言
+            assert_eq!(
+                rule.uuid, "44444444-4444-4444-8444-444444444444",
+                "uuid 应随备份往返保留"
+            );
+            assert!(!rule.applyToBody, "applyToBody 应随备份往返保留");
 
             // 5. search_keywords（usage/lastUseTime 原样保留）
             let keywords = SearchKeywordRepository::new(conn).find_all().unwrap();

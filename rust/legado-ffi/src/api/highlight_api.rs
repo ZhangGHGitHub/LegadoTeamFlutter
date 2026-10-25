@@ -242,6 +242,50 @@ mod tests {
         assert!(!highlight_rule_delete(id).unwrap());
     }
 
+    /// [P2-11] uuid/applyToBody 随 JSON 通道全字段往返（旧调用方不传两字段时
+    /// serde 默认值兜底：uuid 随机、applyToBody=true，对齐原版实体默认）
+    #[test]
+    fn test_highlight_rule_uuid_and_apply_to_body_roundtrip() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        // 带 uuid/applyToBody 的字面量保存 → 读回一致
+        let json = r#"{
+            "uuid": "44444444-4444-4444-8444-444444444444",
+            "name": "双开关规则",
+            "pattern": "关键词",
+            "isRegex": false,
+            "isEnabled": true,
+            "style": "{}",
+            "sortOrder": 1,
+            "timeoutMillisecond": 3000,
+            "applyToTitle": true,
+            "applyToBody": false
+        }"#;
+        let id = highlight_rule_save(json).unwrap();
+        let rules = highlight_rule_list().unwrap();
+        let rule = rules.iter().find(|r| r.id == id).unwrap();
+        assert_eq!(rule.uuid, "44444444-4444-4444-8444-444444444444");
+        assert!(rule.applyToTitle);
+        assert!(!rule.applyToBody, "applyToBody=false 应经 JSON 往返保留");
+        assert!(highlight_rule_delete(id).unwrap());
+
+        // 旧形态 JSON（缺 uuid/applyToBody）不报错且默认值对齐原版实体
+        let legacy_id =
+            highlight_rule_save(r#"{"name": "旧形态规则", "pattern": "p", "style": "{}"}"#)
+                .unwrap();
+        let rules = highlight_rule_list().unwrap();
+        let legacy = rules.iter().find(|r| r.id == legacy_id).unwrap();
+        assert!(!legacy.uuid.is_empty(), "缺 uuid 时应生成随机 uuid");
+        assert!(
+            legacy.applyToBody,
+            "缺 applyToBody 时应默认 true（原版实体默认）"
+        );
+        assert!(
+            !legacy.applyToTitle,
+            "缺 applyToTitle 时应默认 false（原版实体默认）"
+        );
+    }
+
     #[test]
     fn test_highlight_add_invalid_json() {
         let _db_guard = crate::db_state::ensure_test_db();

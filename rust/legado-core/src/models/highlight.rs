@@ -96,6 +96,12 @@ pub struct HighlightRule {
     /// 规则 ID（自增主键，0 表示未保存）
     #[serde(default)]
     pub id: i64,
+    /// 规则身份 UUID（唯一索引，导入按其去重）
+    ///
+    /// 对齐 Kotlin `HighlightRule.uuid`：实体默认值为 `UUID.randomUUID()`，
+    /// 旧 JSON 缺失该字段时同样生成随机 UUID（保证唯一索引可用）。
+    #[serde(default = "default_uuid")]
+    pub uuid: String,
     /// 规则名称
     #[serde(default)]
     pub name: String,
@@ -120,9 +126,14 @@ pub struct HighlightRule {
     /// 匹配超时毫秒数
     #[serde(default = "default_timeout")]
     pub timeoutMillisecond: i64,
-    /// 是否应用到标题
+    /// 是否应用到标题（对齐 Kotlin `applyToTitle`，默认 false）
     #[serde(default)]
     pub applyToTitle: bool,
+    /// 是否应用到正文（对齐 Kotlin `applyToBody`，默认 true；
+    /// 与 applyToTitle 双开关共同决定标题/正文两侧匹配，缺一会导致
+    /// 「标题规则被错误应用到正文」）
+    #[serde(default = "default_true")]
+    pub applyToBody: bool,
 }
 
 fn default_true() -> bool {
@@ -133,10 +144,38 @@ fn default_timeout() -> i64 {
     DEFAULT_TIMEOUT_MILLISECONDS
 }
 
+/// 规则身份默认值：随机 UUID（对齐 Kotlin `UUID.randomUUID().toString()`）
+fn default_uuid() -> String {
+    uuid::Uuid::new_v4().to_string()
+}
+
+impl HighlightRule {
+    /// 导入前规整（对齐 Kotlin `HighlightRule.normalizeForRestore`）
+    ///
+    /// - uuid 非法（无法按 UUID 解析）时重新生成随机 UUID；
+    /// - name/pattern/style 为空规整为空串；
+    /// - timeoutMillisecond <= 0 时回退默认超时。
+    ///
+    /// 原版同时会把空白 style 替换为默认 `HighlightStyle().normalized()`，
+    /// 我方 Rust 侧无 HighlightStyle 模型且样式读取方（原版 `styleObj()`）
+    /// 对空样式本就回退默认样式，故此处保留空串不动。
+    pub fn normalize_for_restore(&mut self) {
+        self.uuid = match uuid::Uuid::parse_str(self.uuid.trim()) {
+            Ok(valid) => valid.to_string(),
+            Err(_) => uuid::Uuid::new_v4().to_string(),
+        };
+        // name/pattern/style 为 String 非 null，无需原版 (x as String?).orEmpty() 等价处理
+        if self.timeoutMillisecond <= 0 {
+            self.timeoutMillisecond = DEFAULT_TIMEOUT_MILLISECONDS;
+        }
+    }
+}
+
 impl Default for HighlightRule {
     fn default() -> Self {
         Self {
             id: 0,
+            uuid: default_uuid(),
             name: String::new(),
             pattern: String::new(),
             isRegex: false,
@@ -146,6 +185,7 @@ impl Default for HighlightRule {
             sortOrder: 0,
             timeoutMillisecond: DEFAULT_TIMEOUT_MILLISECONDS,
             applyToTitle: false,
+            applyToBody: true,
         }
     }
 }
@@ -201,10 +241,13 @@ mod tests {
             sortOrder: 2,
             timeoutMillisecond: 3000,
             applyToTitle: true,
+            ..HighlightRule::default()
         };
         let json = serde_json::to_string(&rule).unwrap();
         assert!(json.contains("\"sortOrder\""));
         assert!(json.contains("\"timeoutMillisecond\""));
+        assert!(json.contains("\"uuid\""));
+        assert!(json.contains("\"applyToBody\""));
         let decoded: HighlightRule = serde_json::from_str(&json).unwrap();
         assert_eq!(decoded, rule);
     }
@@ -214,6 +257,36 @@ mod tests {
         let decoded: HighlightRule = serde_json::from_str(r#"{"pattern": "abc"}"#).unwrap();
         assert!(decoded.isEnabled);
         assert_eq!(decoded.timeoutMillisecond, DEFAULT_TIMEOUT_MILLISECONDS);
+        // [P2-11] 双开关默认值对齐原版实体：applyToTitle=false、applyToBody=true
         assert!(!decoded.applyToTitle);
+        assert!(decoded.applyToBody);
+        // 旧 JSON 缺 uuid 时生成随机 UUID（对齐 Kotlin 实体默认值 UUID.randomUUID()）
+        assert!(!decoded.uuid.is_empty());
+        assert!(uuid::Uuid::parse_str(&decoded.uuid).is_ok());
+    }
+
+    /// [P2-11] uuid 缺省随机生成保证唯一索引可用：两次反序列化不撞 uuid
+    #[test]
+    fn test_highlight_rule_missing_uuid_generates_unique() {
+        let a: HighlightRule = serde_json::from_str("{}").unwrap();
+        let b: HighlightRule = serde_json::from_str("{}").unwrap();
+        assert_ne!(a.uuid, b.uuid);
+    }
+
+    /// [P2-11] normalize_for_restore 对齐原版：非法 uuid 重生成、超时回退默认
+    #[test]
+    fn test_highlight_rule_normalize_for_restore() {
+        // 非法 uuid → 随机重生成
+        let mut rule: HighlightRule =
+            serde_json::from_str(r#"{"uuid": "not-a-uuid", "timeoutMillisecond": -5}"#).unwrap();
+        rule.normalize_for_restore();
+        assert!(uuid::Uuid::parse_str(&rule.uuid).is_ok());
+        assert_eq!(rule.timeoutMillisecond, DEFAULT_TIMEOUT_MILLISECONDS);
+
+        // 大写合法 uuid → 规范化为小写形式（对齐 UUID.fromString().toString()）
+        let mut rule2: HighlightRule =
+            serde_json::from_str(r#"{"uuid": "0B946E46-A08B-4C41-BC61-0C57C31C93F8"}"#).unwrap();
+        rule2.normalize_for_restore();
+        assert_eq!(rule2.uuid, "0b946e46-a08b-4c41-bc61-0c57c31c93f8");
     }
 }
