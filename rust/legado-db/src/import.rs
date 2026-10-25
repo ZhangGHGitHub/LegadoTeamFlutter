@@ -310,7 +310,12 @@ impl RoomImporter {
             let order = obj.get("order").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             let origin_order = obj.get("originOrder").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             let variable = obj.get("variable").and_then(|v| v.as_str());
-            let read_config = obj.get("readConfig").and_then(|v| v.as_str());
+            // readConfig 双形态归一（审查批1 P1-8）：原版 bookshelf.json 与
+            // 本仓 legacy 导出（legacy/book_json.rs）的 readConfig 均为嵌套
+            // 对象，旧实现只认字符串形态 → 对象形态被静默丢成 None，导入后
+            // reverseToc/pageAnim/ttsEngine 等阅读配置全部回默认。现统一归一
+            // 为字符串再走既有解析（backup_api serde 路径同语义）。
+            let read_config = normalize_dual_form("readConfig", obj.get("readConfig"))?;
             let sync_time = obj.get("syncTime").and_then(|v| v.as_i64()).unwrap_or(0);
 
             // 台账 §5.14-3（评审 W1）：裸 INSERT OR REPLACE 改走
@@ -817,5 +822,88 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM book_sources", [], |row| row.get(0))
             .unwrap();
         assert_eq!(total, 0, "形态不符报错后不得残留半截导入");
+    }
+
+    // ─── 审查批1 P1-8：import_books readConfig 双形态归一 ────────────────
+
+    /// 对象形态 readConfig（原版 bookshelf.json / 本仓 legacy 导出形态）
+    /// 导入后 reverseToc/pageAnim/ttsEngine/delTag 等必须落库——旧实现只认
+    /// 字符串形态，对象形态被静默丢成 None（阅读配置全回默认）。
+    #[test]
+    fn test_import_books_read_config_object_form() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+
+        let json = json!([{
+            "bookUrl": "https://example.com/book/rc-obj",
+            "name": "对象配置书",
+            "readConfig": {
+                "reverseToc": true,
+                "pageAnim": 2,
+                "ttsEngine": "system",
+                "delTag": 3,
+                "splitLongChapter": false
+            }
+        }])
+        .to_string();
+        RoomImporter::import_books(conn, &json).unwrap();
+
+        let stored: String = conn
+            .query_row(
+                "SELECT readConfig FROM books WHERE bookUrl = 'https://example.com/book/rc-obj'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let cfg: Value = serde_json::from_str(&stored).unwrap();
+        assert_eq!(cfg["reverseToc"], true, "reverseToc 必须落库");
+        assert_eq!(cfg["pageAnim"], 2, "pageAnim 必须落库");
+        assert_eq!(cfg["ttsEngine"], "system", "ttsEngine 必须落库");
+        assert_eq!(cfg["delTag"], 3, "delTag 必须落库");
+        assert_eq!(cfg["splitLongChapter"], false, "splitLongChapter 必须落库");
+    }
+
+    /// 字符串形态 readConfig（Room 导出格式）不回归：归一逻辑对字符串
+    /// 原样透传，既有解析路径保持可用。
+    #[test]
+    fn test_import_books_read_config_string_form_unchanged() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+
+        let json = r#"[{
+            "bookUrl": "https://example.com/book/rc-str",
+            "name": "字符串配置书",
+            "readConfig": "{\"reverseToc\":true,\"pageAnim\":1,\"ttsEngine\":\"local\"}"
+        }]"#;
+        RoomImporter::import_books(conn, json).unwrap();
+
+        let stored: String = conn
+            .query_row(
+                "SELECT readConfig FROM books WHERE bookUrl = 'https://example.com/book/rc-str'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let cfg: Value = serde_json::from_str(&stored).unwrap();
+        assert_eq!(cfg["reverseToc"], true);
+        assert_eq!(cfg["pageAnim"], 1);
+        assert_eq!(cfg["ttsEngine"], "local");
+    }
+
+    /// readConfig 形态不符（数组）显式报错（防复发规定 4）
+    #[test]
+    fn test_import_books_read_config_malformed_form_errors() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+
+        let err = RoomImporter::import_books(
+            conn,
+            r#"[{"bookUrl":"https://example.com/book/rc-bad","readConfig":[1,2]}]"#,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, LegadoError::Database(ref msg) if msg.contains("形态不符")),
+            "数组形态 readConfig 应显式报错: {err:?}"
+        );
     }
 }
