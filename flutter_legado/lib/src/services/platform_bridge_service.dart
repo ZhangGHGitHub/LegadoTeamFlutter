@@ -11,6 +11,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../routes.dart';
 import '../utils/legado_deep_link.dart';
 import '../utils/video_play_utils.dart';
+import '../widgets/open_url_confirm_dialog.dart';
 import 'deep_link_service.dart';
 import 'platform_channel.dart';
 import 'video_float_window.dart';
@@ -914,18 +915,40 @@ class PlatformBridgeService {
     }
   }
 
-  /// openUrl → http/https 走应用内浏览器；legado:// / yuedu:// 走关联导入；
-  /// 其他协议交由系统处理。
+  /// openUrl → 一律先弹外跳确认（P2-15，对齐原版 JsExtensions.openUrl
+  /// 一律经 OpenUrlConfirmActivity）；legado:// / yuedu:// 关联导入不经
+  /// 确认（原版 openUrl 对此协议同样直进 OnLineImportActivity 不弹窗）。
+  /// 确认后分流：http(s) 进应用内浏览器；其他协议交系统 launchUrl。
+  ///
+  /// 来源标注：原版弹窗带 source.getTag()（书源名）；Rust openUrl 桥载荷
+  /// 仅 url/mimeType（legado-js/src/host_api/platform.rs:240），无 sourceName
+  /// 字段——本批登记缺口，待载荷扩展后回填。
   void _openUrl({required String url, required String mimeType}) {
     if (url.isEmpty) return;
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      _showBrowser(url: url, html: '');
-      return;
-    }
     if (LegadoDeepLink.isImportScheme(url)) {
       // 忽略未 await：深链导航为 fire-and-forget UI 动作
       // ignore: unawaited_futures
       DeepLinkService.instance.handleUrl(url);
+      return;
+    }
+    final navigator = _navigator;
+    if (navigator == null) {
+      debugPrint('[PlatformBridge] openUrl：Navigator 未装配，忽略 url=$url');
+      return;
+    }
+    // 忽略未 await：确认对话框为 fire-and-forget UI 动作
+    // ignore: unawaited_futures
+    _confirmAndOpenUrl(url, mimeType);
+  }
+
+  /// P2-15：确认后按协议分流打开（http(s) 内置浏览器 / 其他系统处理）
+  Future<void> _confirmAndOpenUrl(String url, String mimeType) async {
+    final navigator = _navigator;
+    if (navigator == null) return;
+    final ok = await showOpenUrlConfirmDialog(navigator.context, url: url);
+    if (!ok) return;
+    if (url.startsWith('http://') || url.startsWith('https://')) {
+      _showBrowser(url: url, html: '');
       return;
     }
     final uri = Uri.tryParse(url);
