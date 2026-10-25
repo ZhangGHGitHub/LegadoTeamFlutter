@@ -279,6 +279,21 @@ String get icon {
 ### 现有文档
 根目录原有的过程/报告类文档（UI_FIX 系列、KOTLIN 系列、REFACTORING_FIX_REPORT.md、TASK_76_SUMMARY.md、VERSION_CONTROL.md、DEVELOPMENT.md、api.md 等）已统一迁移至 `docs/`，详见 [README.md](README.md) 索引；历史计划类材料归档于 `docs/过期文档/`。
 
+## 🛡️ 防复发工程规定（2026-10-26 审查派生）
+
+> 来源：`docs/REFACTORING_FULL_AUDIT_REPORT_20261026.md` §八；每条对应本次全面审查实证缺陷的根因模式，适用于全部后续批次。
+
+1. **单实现原则**：同一数据的写库/转换语义只允许一个实现；新入口必须复用既有实现，禁止旁路复制。（根因：`RoomImporter` 与 serde 主链分叉致 Server 书源更新丢全部规则；目录串行/并发双实现漂移。）
+2. **禁止沉默空置**：新增 Rust/FFI API 必须同批接入 Dart 调用点，或在 `API_CONTRACT.md`（§1.6.1/§1.7）登记「预留（未接线）」及接线批次；禁止既不接线也不登记。配套：`api_contract_test.dart` 增加「绑定全库零调用」自动检测（随审查批实施）。（根因：`sourceLoginV1` 等 3 个死接线、`downloadUrls` 链断裂。）
+3. **转换层字段透传断言**：跨层结构体转换禁止 `false`/`None` 兜底硬编码；每个转换函数配「全字段透传测试」（源全字段非默认 → 目标逐字段相等）。（根因：`is_volume`/`is_pay`/`tag` 在 `reader.rs` 转换点丢失。）
+4. **形态不符必须显式**：解析外部 JSON 时区分「合法缺省」与「形态不符」；后者必须报错或登记 capability_ledger 告警，禁止静默吞掉。（根因：规则对象 `as_str()` 得 `None`、`readConfig` 只认字符串、`@webjs` 无订阅静默空串。）
+5. **往返测试义务**：导入/导出/备份/恢复类功能必须附「导出→清库→恢复→逐字段 diff」往返测试；测试 fixture 必须用真实抓包 JSON（含嵌套对象形态），将「Mock 数据真实 JSON」规范延伸到测试种子。（根因：RSS 恢复仅写 7 列、测试种子过干净致单测假绿。）
+6. **平台声明与实现同步**：AndroidManifest/Info.plist 声明的入口必须有对应处理链路与验证用例；下线功能必须同批删除声明。（根因：VIEW intent-filter 无消费方断链。）
+7. **文档回销义务与 hash 不过批**：批次关闭时必须回查 `REFACTORING_ACTIVE_PLAN.md` 正文旧段是否需改状态，不得只追加尾部日志；「提交 hash 待补记」必须当批补齐；发现第二状态源文件立即加失效横幅并修活链。（根因：正文滞后 8 条、hash 欠账 3 个、rust/PROGRESS.md 被活链引用。）
+8. **周期性零引用清理**：每约 10 个批次跑一次零引用审计（FFI 符号、路由名、manifest 声明、Rust pub 项四类）；判「零引用」须按裸名全仓重搜。（根因：`direct_link_upload`、`/cache_settings`、`update_last_read` 死代码积累。）
+9. **备份格式版本化**：备份/导出结构必须携带版本字段，恢复器按版本兼容降级；扩表不得破坏旧备份可恢复性。（根因：`BackupData` 无版本字段。）
+10. **双基准清单关门**：功能面缺口须同时核对 Android 原版与参考版两侧再关门；任一侧存在即登记，不得凭印象或文档关门。（根因：RSS 屏幕「未做」传言靠逐屏对照排除；`highlightRules` 列缺失长期未被发现。）
+
 ## 📚 参考资源
 
 - [Dart语言指南](https://dart.dev/guides/language)
@@ -287,5 +302,5 @@ String get icon {
 
 ---
 
-**最后更新**: 2026-09-27（自 `.qoder/rules/legado-dev-conventions.md` 迁移；原文件历史修订记录保留于 Git 历史）
+**最后更新**: 2026-10-26（新增「🛡️ 防复发工程规定」章，来源 2026-10-26 全面审查；初版 2026-09-27 自 `.qoder/rules/legado-dev-conventions.md` 迁移）
 **维护者**: Legado 开发团队

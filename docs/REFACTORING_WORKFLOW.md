@@ -117,7 +117,8 @@
 2. 高风险改动确认有 `code-reviewer` 结论后方可提交；一般小修不强制评审。
 3. 按项目 Conventional Commit 规范提交；代码批次按规则同步版本、CHANGELOG 和应用内更新日志。文档批次按文档署名与日期规则办理。
 4. 关闭 Active 项时记录提交/CI/测试/QA/截图证据及限制。工程完成但外部素材缺失时，只关闭工程部分，验收仍为待素材。
-5. 阶段结束核对 Active、专题证据、docs 索引与 Git 状态；下一阶段只从 Active 开放队列启动。
+5. 关闭批次时按 `DEVELOPMENT_CONVENTIONS.md`「🛡️ 防复发工程规定」执行回销检查：ACTIVE_PLAN 正文旧段回销与提交 hash 补记不过批；导入/导出/备份类改动须附往返测试；新增 Rust/FFI API 不得沉默空置。
+6. 阶段结束核对 Active、专题证据、docs 索引与 Git 状态；下一阶段只从 Active 开放队列启动。
 
 ## 6. 总体阶段与进入/退出条件
 
