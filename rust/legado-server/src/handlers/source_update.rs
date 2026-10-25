@@ -8,13 +8,13 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
+use legado_core::models::BookSource;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::Arc;
 
 use legado_db::repository::book_source_repository::BookSourceRepository;
 use legado_db::repository::Repository;
-use legado_db::RoomImporter;
 
 use crate::error::ApiError;
 use crate::state::AppState;
@@ -229,8 +229,14 @@ pub async fn execute_update(
         .await
         .map_err(|e| legado_core::LegadoError::Network(format!("读取响应失败: {e}")))?;
 
-    // 解析远程书源 JSON
-    let remote_sources: Vec<Value> = serde_json::from_str(&body)
+    // 解析远程书源 JSON（审查批1 P0-1）：改走与 FFI `import_sources` 同一
+    // serde 主链（`BookSource` 模型 lenient 反序列化，规则嵌套对象与
+    // `variable` 全量透传），不再经 `RoomImporter::import_book_sources`——
+    // 其按 Room 导出格式把规则字段当字符串读取（`as_str`），标准书源仓库
+    // JSON 的嵌套对象规则必得 None 落 NULL，且 INSERT 列集不含 `variable`
+    // （REPLACE 清空登录态）。证据：docs/REFACTORING_FULL_AUDIT_REPORT_20261026.md
+    // §一 P0-1。形态不符在此显式报错（防复发规定 4），整批拒绝而非静默丢字段。
+    let remote_sources: Vec<BookSource> = serde_json::from_str(&body)
         .map_err(|e| legado_core::LegadoError::Internal(format!("解析书源 JSON 失败: {e}")))?;
 
     // 获取本地书源 URL 集合
@@ -248,18 +254,14 @@ pub async fn execute_update(
     let mut errors: Vec<String> = Vec::new();
 
     // 筛选需要导入的书源
-    let sources_to_import: Vec<&Value> = remote_sources
+    let sources_to_import: Vec<BookSource> = remote_sources
         .iter()
         .filter(|item| {
-            let url = item
-                .get("bookSourceUrl")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
-            if url.is_empty() {
+            if item.book_source_url.is_empty() {
                 skipped += 1;
                 return false;
             }
-            let exists = local_urls.contains(url);
+            let exists = local_urls.contains(&item.book_source_url);
             if exists {
                 true // 更新已有
             } else if req.only_update_existing {
@@ -269,43 +271,34 @@ pub async fn execute_update(
                 true // 导入新增
             }
         })
+        .cloned()
         .collect();
 
     if !sources_to_import.is_empty() {
-        let import_json = serde_json::to_string(&sources_to_import)
-            .map_err(|e| legado_core::LegadoError::Internal(format!("序列化书源失败: {e}")))?;
-
         let db = state.db.lock().await;
-        match RoomImporter::import_book_sources(db.connection(), &import_json) {
-            Ok(count) => {
+        // 落库与 FFI import_sources 共用同一批量方法：`insert_batch` 单事务
+        // 原子写入，底层 `Repository::insert` 为 INSERT OR REPLACE 全列
+        // upsert——**以导入为准覆盖**（含 `variable`），与 FFI 主路径、原版
+        // Room REPLACE 语义一致；任一条失败整批回滚，调用方看到 Err 时库内
+        // 零改动。不新增旁路写实现（防复发规定 1：单实现原则）。
+        match BookSourceRepository::new(db.connection()).insert_batch(&sources_to_import) {
+            Ok(()) => {
                 // 整批写库成功后按本次实际导入书源（含 concurrentRate）刷新
                 // server registry；写库失败不刷新（避免未落库配置提前生效）
+                // ——43a5096376 引入的刷新语义原样保留
                 for item in &sources_to_import {
-                    let url = item
-                        .get("bookSourceUrl")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    let rate = item
-                        .get("concurrentRate")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    crate::handlers::web_book::refresh_source_rate_limit(url, rate);
+                    crate::handlers::web_book::refresh_source_rate_limit(
+                        &item.book_source_url,
+                        item.concurrent_rate.as_deref().unwrap_or(""),
+                    );
                 }
                 // 区分新增和更新
                 for item in &sources_to_import {
-                    let url = item
-                        .get("bookSourceUrl")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    if local_urls.contains(url) {
+                    if local_urls.contains(&item.book_source_url) {
                         updated += 1;
                     } else {
                         added += 1;
                     }
-                }
-                // 如果 count 与预期不符，记录差异
-                if count < sources_to_import.len() {
-                    failed = sources_to_import.len() - count;
                 }
             }
             Err(e) => {
@@ -472,6 +465,41 @@ mod tests {
         })
     }
 
+    /// 测试播种：与 FFI `import_sources` / 生产 `execute_update` 同一 serde
+    /// 链路写入书源（审查批1 P0-1 后本文件不再引用 RoomImporter，防复发
+    /// 规定 1：测试与生产走同一写实现，杜绝种子旁路掩盖链路缺陷）。
+    fn seed_book_sources(db: &legado_db::Database, json: &str) {
+        let sources: Vec<BookSource> =
+            serde_json::from_str(json).expect("测试种子应可解析为 BookSource 数组");
+        BookSourceRepository::new(db.connection())
+            .insert_batch(&sources)
+            .expect("测试播种应写入成功");
+    }
+
+    /// 直读书源 TEXT 单列（断言落库值用）
+    fn read_source_column(db: &legado_db::Database, url: &str, column: &str) -> Option<String> {
+        // 列名由本文件测试常量传入（非外部输入），白名单校验防误用
+        assert!(
+            [
+                "ruleSearch",
+                "ruleToc",
+                "ruleContent",
+                "ruleBookInfo",
+                "variable",
+                "concurrentRate"
+            ]
+            .contains(&column),
+            "不允许查询列: {column}"
+        );
+        db.connection()
+            .query_row(
+                &format!("SELECT {column} FROM book_sources WHERE bookSourceUrl = ?1"),
+                [url],
+                |row| row.get(0),
+            )
+            .unwrap_or_else(|e| panic!("读取 {url}.{column} 失败: {e}"))
+    }
+
     #[tokio::test]
     async fn test_list_repos() {
         let state = make_test_state();
@@ -560,11 +588,10 @@ mod tests {
         // Mock New1 / Mock New2 本地不存在 → 应计为新增
         {
             let db = state.db.lock().await;
-            RoomImporter::import_book_sources(
-                db.connection(),
+            seed_book_sources(
+                &db,
                 r#"[{"bookSourceUrl":"https://mock-a.example/","bookSourceName":"Mock A","lastUpdateTime":1000}]"#,
-            )
-            .expect("本地书源播种应成功");
+            );
         }
 
         let repo1 = json!([
@@ -682,7 +709,7 @@ mod tests {
         assert_ne!(resp.status(), StatusCode::NOT_FOUND);
     }
 
-    /// execute_update 经 RoomImporter 批量导入后刷新本次书源：
+    /// execute_update 批量导入后刷新本次书源：
     /// 既有 limiter 由旧率 1/10000 更新为远端新率 3/10000，旧快照 acquire 立即放行
     /// （未刷新会沿用旧率等满 10s 窗口 → 300ms 超时失败）
     #[tokio::test]
@@ -694,19 +721,21 @@ mod tests {
         let state = make_test_state();
         let url = "https://server-ratelimit-batch.example/";
 
-        // 本地已有旧率书源，并让 server registry 对其建立 limiter（窗口已用 1 次）
+        // 本地已有旧率书源（含嵌套规则的真实形态种子），并让 server registry
+        // 对其建立 limiter（窗口已用 1 次）
         {
             let db = state.db.lock().await;
-            RoomImporter::import_book_sources(
-                db.connection(),
+            seed_book_sources(
+                &db,
                 &json!([{
                     "bookSourceUrl": url,
                     "bookSourceName": "旧书源",
-                    "concurrentRate": "1/10000"
+                    "concurrentRate": "1/10000",
+                    "variable": "{\"old\":\"local\"}",
+                    "ruleSearch": {"bookList": "class.old", "name": "tag.h3@text"}
                 }])
                 .to_string(),
-            )
-            .expect("本地书源播种应成功");
+            );
         }
         let stale = BookSource {
             book_source_url: url.to_string(),
@@ -717,11 +746,13 @@ mod tests {
             .acquire(&stale)
             .await;
 
-        // 回环仓库返回同 URL 新率 3/10000（只更新已有书源）
+        // 回环仓库返回同 URL 新率 3/10000（只更新已有书源；真实形态含嵌套规则）
         let remote = json!([{
             "bookSourceUrl": url,
             "bookSourceName": "新书源",
             "concurrentRate": "3/10000",
+            "variable": "{\"new\":\"remote\"}",
+            "ruleSearch": {"bookList": "class.new", "name": "tag.h4@text"},
             "lastUpdateTime": 9999
         }])
         .to_string();
@@ -755,6 +786,277 @@ mod tests {
         assert!(
             passed.is_ok(),
             "execute_update 批量导入成功后必须刷新 server registry"
+        );
+    }
+
+    /// 审查批1 P0-1 回归①：真实形态书源 JSON（规则为嵌套对象 + variable
+    /// 非空 + enabledCookieJar 混合形态）经 /api/sources/update 落库后，
+    /// ruleSearch/ruleToc/ruleContent/variable 非空且与种子一致——旧链路
+    /// （RoomImporter `as_str()`）会把嵌套对象规则静默丢成 NULL。
+    #[tokio::test]
+    async fn test_execute_update_persists_nested_rules_and_variable() {
+        let state = make_test_state();
+
+        let rule_search = json!({
+            "bookList": "class.result||class.bookbox",
+            "name": "tag.h3@text",
+            "author": "tag.span.0@text",
+            "bookUrl": "tag.a.0@href"
+        });
+        let rule_toc = json!({
+            "chapterList": "class.chapter",
+            "chapterName": "text",
+            "chapterUrl": "href"
+        });
+        let rule_content = json!({"content": "id.content@textNodes"});
+        let variable = "{\"token\":\"abc123\",\"user\":\"tester\"}";
+        let remote = json!([
+            {
+                "bookSourceUrl": "https://real-form-a.example/",
+                "bookSourceName": "真实形态A",
+                "bookSourceGroup": "审查批1",
+                "bookSourceType": 0,
+                "enabled": true,
+                "enabledCookieJar": true,
+                "concurrentRate": "2/10000",
+                "lastUpdateTime": 1729900000000i64,
+                "respondTime": 180000,
+                "variable": variable,
+                "searchUrl": "https://real-form-a.example/search?q={{key}}",
+                "ruleSearch": rule_search,
+                "ruleToc": rule_toc,
+                "ruleContent": rule_content
+            },
+            {
+                "bookSourceUrl": "https://real-form-b.example/",
+                "bookSourceName": "真实形态B",
+                "enabledCookieJar": false
+            }
+        ])
+        .to_string();
+        let addr = spawn_source_repo_mock(4, vec![("/repo.json".to_string(), remote)]);
+
+        let app = create_router(state.clone());
+        let body = serde_json::to_string(&json!({
+            "repo_url": format!("http://{addr}/repo.json"),
+            "only_update_existing": false
+        }))
+        .unwrap();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sources/update")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "回环仓库可达，更新应成功");
+
+        // 落库断言：规则为 JSON 字符串且与种子对象语义相等；variable 原样；
+        // enabledCookieJar 混合形态（true/false）各自落对
+        let db = state.db.lock().await;
+        let stored_search = read_source_column(&db, "https://real-form-a.example/", "ruleSearch")
+            .expect("ruleSearch 应落库（旧链路此处为 NULL）");
+        assert_eq!(
+            serde_json::from_str::<Value>(&stored_search).unwrap(),
+            rule_search,
+            "ruleSearch 落库值应与种子对象一致"
+        );
+        let stored_toc = read_source_column(&db, "https://real-form-a.example/", "ruleToc")
+            .expect("ruleToc 应落库");
+        assert_eq!(
+            serde_json::from_str::<Value>(&stored_toc).unwrap(),
+            rule_toc
+        );
+        let stored_content = read_source_column(&db, "https://real-form-a.example/", "ruleContent")
+            .expect("ruleContent 应落库");
+        assert_eq!(
+            serde_json::from_str::<Value>(&stored_content).unwrap(),
+            rule_content
+        );
+        assert_eq!(
+            read_source_column(&db, "https://real-form-a.example/", "variable").unwrap(),
+            variable,
+            "variable（登录态）应原样落库"
+        );
+        let read_jar = |conn_url: &str| -> i64 {
+            db.connection()
+                .query_row(
+                    "SELECT enabledCookieJar FROM book_sources WHERE bookSourceUrl = ?1",
+                    [conn_url],
+                    |row| row.get(0),
+                )
+                .unwrap()
+        };
+        assert_eq!(read_jar("https://real-form-a.example/"), 1, "显式 true → 1");
+        assert_eq!(
+            read_jar("https://real-form-b.example/"),
+            0,
+            "显式 false → 0"
+        );
+    }
+
+    /// 审查批1 P0-1 回归②：对已存在书源（本地 variable/concurrentRate/规则）
+    /// 重跑仓库更新——覆盖语义与 FFI `import_sources` 一致（`insert_batch`
+    /// 全列 INSERT OR REPLACE：**以导入为准覆盖**，含 variable），且
+    /// server registry 刷新发生（43a5096376 语义不回归）。
+    #[tokio::test]
+    async fn test_execute_update_reimport_overwrites_existing_like_ffi() {
+        use std::time::Duration;
+
+        let state = make_test_state();
+        let url = "https://reimport.example/";
+
+        // 本地存量：登录态 variable + 旧限速 + 旧规则
+        {
+            let db = state.db.lock().await;
+            seed_book_sources(
+                &db,
+                &json!([{
+                    "bookSourceUrl": url,
+                    "bookSourceName": "存量书源",
+                    "concurrentRate": "1/10000",
+                    "variable": "{\"token\":\"local-login\"}",
+                    "ruleSearch": {"bookList": "class.old", "name": "tag.old@text"}
+                }])
+                .to_string(),
+            );
+        }
+
+        // 预先在 registry 建立旧率 limiter 并用掉窗口（复用确定性断言模式：
+        // 未刷新则旧快照 acquire 需等满 10s 窗口，300ms 内必超时）
+        let stale = BookSource {
+            book_source_url: url.to_string(),
+            concurrent_rate: Some("1/10000".to_string()),
+            ..BookSource::default()
+        };
+        crate::handlers::web_book::rate_limiter()
+            .acquire(&stale)
+            .await;
+
+        // 远端同 URL：variable / concurrentRate / 规则全部为新值
+        let rule_search_remote = json!({"bookList": "class.fresh", "name": "tag.fresh@text"});
+        let remote = json!([{
+            "bookSourceUrl": url,
+            "bookSourceName": "更新书源",
+            "concurrentRate": "2/5000",
+            "variable": "{\"token\":\"remote-login\"}",
+            "ruleSearch": rule_search_remote,
+            "lastUpdateTime": 8888
+        }])
+        .to_string();
+        let addr = spawn_source_repo_mock(4, vec![("/repo.json".to_string(), remote)]);
+
+        let app = create_router(state.clone());
+        let body = serde_json::to_string(&json!({
+            "repo_url": format!("http://{addr}/repo.json"),
+            "only_update_existing": false
+        }))
+        .unwrap();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sources/update")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK, "回环仓库可达，更新应成功");
+
+        let resp_body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let result: Value = serde_json::from_slice(&resp_body).unwrap();
+        assert_eq!(result["updated"], 1, "同 URL 应回计为 updated");
+        assert_eq!(result["failed"], 0);
+
+        // 覆盖语义断言：以导入为准（与 FFI import_sources / 原版 Room REPLACE 同语义）
+        let db = state.db.lock().await;
+        assert_eq!(
+            read_source_column(&db, url, "variable").unwrap(),
+            "{\"token\":\"remote-login\"}",
+            "远端带 variable 时应以导入为准覆盖本地登录态（FFI 同语义）"
+        );
+        assert_eq!(
+            read_source_column(&db, url, "concurrentRate").unwrap(),
+            "2/5000"
+        );
+        let stored = read_source_column(&db, url, "ruleSearch").unwrap();
+        assert_eq!(
+            serde_json::from_str::<Value>(&stored).unwrap(),
+            rule_search_remote,
+            "规则应整体被远端覆盖"
+        );
+        drop(db);
+
+        // registry 刷新断言：旧率快照 acquire 立即放行（未刷新会等满旧窗口）
+        let passed = tokio::time::timeout(
+            Duration::from_millis(300),
+            crate::handlers::web_book::rate_limiter().acquire(&stale),
+        )
+        .await;
+        assert!(passed.is_ok(), "更新成功后必须刷新 server registry");
+    }
+
+    /// 审查批1 P0-1 语义锁定：远端 JSON 不带 variable 键时与 FFI
+    /// `import_sources` 既有行为一致——反序列化缺键得空串（lenient_string），
+    /// 全列覆盖后本地 variable 清空；不发明「保留本地登录态」的新语义。
+    #[tokio::test]
+    async fn test_execute_update_variable_absent_clears_local_like_ffi() {
+        let state = make_test_state();
+        let url = "https://no-var.example/";
+
+        {
+            let db = state.db.lock().await;
+            seed_book_sources(
+                &db,
+                &json!([{
+                    "bookSourceUrl": url,
+                    "bookSourceName": "有登录态",
+                    "variable": "{\"token\":\"keep-me\"}"
+                }])
+                .to_string(),
+            );
+        }
+
+        let remote = json!([{
+            "bookSourceUrl": url,
+            "bookSourceName": "无变量远端",
+            "lastUpdateTime": 6666
+        }])
+        .to_string();
+        let addr = spawn_source_repo_mock(4, vec![("/repo.json".to_string(), remote)]);
+
+        let app = create_router(state.clone());
+        let body = serde_json::to_string(&json!({
+            "repo_url": format!("http://{addr}/repo.json"),
+            "only_update_existing": false
+        }))
+        .unwrap();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sources/update")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let db = state.db.lock().await;
+        assert_eq!(
+            read_source_column(&db, url, "variable").unwrap(),
+            "",
+            "远端缺 variable 键 → 清空（与 FFI import_sources 同语义）"
         );
     }
 

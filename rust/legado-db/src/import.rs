@@ -13,6 +13,31 @@ use crate::repository::Repository;
 /// 从 Room 导出的 JSON 数据导入
 pub struct RoomImporter;
 
+/// 双形态字段归一（审查批1 P0-1/P1-8，防复发规定 4：形态不符必须显式）
+///
+/// 同一字段在外部 JSON 中存在两种合法形态：
+/// - **Room 导出格式**：字段值为 JSON 字符串（Room 实体经 TypeConverter
+///   把对象列存为字符串后由 Gson 导出）；
+/// - **标准/原版格式**：字段值为嵌套 JSON 对象（原版 `bookshelf.json`、
+///   标准书源仓库 JSON、本仓 legacy 导出）。
+///
+/// 归一规则：缺键/显式 null → `None`（合法缺省，落 NULL）；字符串原样；
+/// 对象 → `serde_json::to_string` 归一为字符串；**其他形态（数组/数字/布尔）
+/// 显式报错**——禁止 `as_str()` 静默吞成 `None` 落 NULL 的旧行为
+/// （审查报告 §一 P0-1 根因：对象形态规则键全部静默丢失）。
+fn normalize_dual_form(key: &str, value: Option<&Value>) -> LegadoResult<Option<String>> {
+    match value {
+        None | Some(Value::Null) => Ok(None),
+        Some(Value::String(s)) => Ok(Some(s.clone())),
+        Some(v @ Value::Object(_)) => serde_json::to_string(v)
+            .map(Some)
+            .map_err(|e| LegadoError::Database(format!("字段 {key} 序列化失败: {e}"))),
+        Some(other) => Err(LegadoError::Database(format!(
+            "字段 {key} 形态不符（期望字符串或嵌套对象，实际: {other}）"
+        ))),
+    }
+}
+
 impl RoomImporter {
     /// 导入书源数据（JSON 数组格式）
     ///
@@ -22,6 +47,12 @@ impl RoomImporter {
     /// ```
     ///
     /// 返回成功导入的记录数。
+    ///
+    /// 定位（审查批1 P0-1）：**Room 导出格式兼容入口**。Server 书源仓库
+    /// 更新（`legado-server` source_update）已改走 FFI `import_sources` 同一
+    /// serde 主链（`BookSource` 模型 + `BookSourceRepository::insert_batch`，
+    /// 规则对象/variable 全量透传），不再经由本入口；本入口按防复发规定 4
+    /// 加固——规则键/variable 双形态归一（含对象形态），形态不符显式报错。
     ///
     /// [P1-1 | 2026-10-01] 整批写入原子化：解析后的全部条目在**同一事务**中
     /// 校验/插入，任一条失败回滚整批（含此前已执行的 INSERT OR REPLACE），
@@ -99,13 +130,25 @@ impl RoomImporter {
             let weight = obj.get("weight").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             let explore_url = obj.get("exploreUrl").and_then(|v| v.as_str());
             let explore_screen = obj.get("exploreScreen").and_then(|v| v.as_str());
-            let rule_explore = obj.get("ruleExplore").and_then(|v| v.as_str());
+            // 规则键双形态归一（审查批1 P0-1）：本入口保留为 Room 导出格式
+            // 兼容链路，但输入若为标准书源 JSON（规则为嵌套对象）也必须归一
+            // 落库，禁止旧实现 `as_str()` 把对象形态静默丢成 NULL。
+            let rule_explore = normalize_dual_form("ruleExplore", obj.get("ruleExplore"))?;
             let search_url = obj.get("searchUrl").and_then(|v| v.as_str());
-            let rule_search = obj.get("ruleSearch").and_then(|v| v.as_str());
-            let rule_book_info = obj.get("ruleBookInfo").and_then(|v| v.as_str());
-            let rule_toc = obj.get("ruleToc").and_then(|v| v.as_str());
-            let rule_content = obj.get("ruleContent").and_then(|v| v.as_str());
-            let rule_review = obj.get("ruleReview").and_then(|v| v.as_str());
+            let rule_search = normalize_dual_form("ruleSearch", obj.get("ruleSearch"))?;
+            let rule_book_info = normalize_dual_form("ruleBookInfo", obj.get("ruleBookInfo"))?;
+            let rule_toc = normalize_dual_form("ruleToc", obj.get("ruleToc"))?;
+            let rule_content = normalize_dual_form("ruleContent", obj.get("ruleContent"))?;
+            let rule_review = normalize_dual_form("ruleReview", obj.get("ruleReview"))?;
+            // variable 列补齐（审查批1 P0-1）：INSERT 列集此前不含该列，
+            // INSERT OR REPLACE 后登录态被列默认值清空。口径与 FFI serde
+            // `lenient_string` 统一：缺键/显式 null → 空串、字符串原样、
+            // 其他标量 Gson 式 to_string（ Room 导出中 variable 恒为字符串）。
+            let variable = match obj.get("variable") {
+                None | Some(Value::Null) => String::new(),
+                Some(Value::String(s)) => s.clone(),
+                Some(other) => other.to_string(),
+            };
             let main_js = obj.get("mainJs").and_then(|v| v.as_str());
             let event_listener = obj
                 .get("eventListener")
@@ -125,12 +168,13 @@ impl RoomImporter {
                     bookSourceComment, variableComment, lastUpdateTime, respondTime,
                     weight, exploreUrl, exploreScreen, ruleExplore,
                     searchUrl, ruleSearch, ruleBookInfo, ruleToc,
-                    ruleContent, ruleReview, mainJs, eventListener, customButton
+                    ruleContent, ruleReview, mainJs, eventListener, customButton,
+                    variable
                 ) VALUES (
                     ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10,
                     ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20,
                     ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30,
-                    ?31, ?32, ?33
+                    ?31, ?32, ?33, ?34
                 )",
                 rusqlite::params![
                     book_source_url,
@@ -166,6 +210,7 @@ impl RoomImporter {
                     main_js,
                     event_listener,
                     custom_button,
+                    variable,
                 ],
             )
             .map_err(|e| LegadoError::Database(format!("插入书源失败: {e}")))?;
@@ -273,7 +318,7 @@ impl RoomImporter {
             // insert_replace），避免重复导入同 bookUrl 时删旧行触发 chapters
             // ON DELETE CASCADE 级联清空目录；列集统一为仓储全列（导入源
             // 缺失的 infoHtml/tocHtml/downloadUrls/coverOrigin 取模型缺省空值）。
-            let read_config_obj = read_config.and_then(|s| serde_json::from_str(s).ok());
+            let read_config_obj = read_config.and_then(|s| serde_json::from_str(&s).ok());
             let book = legado_core::models::Book {
                 book_url: book_url.to_string(),
                 toc_url: toc_url.to_string(),
@@ -323,6 +368,7 @@ impl RoomImporter {
 mod tests {
     use super::*;
     use crate::connection::Database;
+    use serde_json::json;
 
     #[test]
     fn test_import_book_sources() {
@@ -636,5 +682,140 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM book_sources", [], |row| row.get(0))
             .unwrap();
         assert_eq!(total, 1);
+    }
+
+    // ─── 审查批1 P0-1：RoomImporter 书源入口双形态归一防回归 ─────────────
+
+    /// 真实形态书源 JSON（规则为嵌套对象 + variable 非空 + enabledCookieJar
+    /// 混合形态）经 Room 兼容入口导入：规则键必须归一为 JSON 字符串落库
+    /// （旧实现 `as_str()` 对象形态必得 None → 落 NULL），variable 落库
+    /// （旧 INSERT 列集不含该列 → REPLACE 后登录态被列默认值清空）。
+    #[test]
+    fn test_import_book_sources_object_rules_normalized() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+
+        let rule_search = json!({
+            "bookList": "class.result||class.bookbox",
+            "name": "tag.h3@text",
+            "bookUrl": "tag.a.0@href"
+        });
+        let rule_toc = json!({
+            "chapterList": "class.chapter",
+            "chapterName": "text",
+            "chapterUrl": "href"
+        });
+        let rule_content = json!({"content": "id.content@textNodes"});
+        let variable = "{\"token\":\"abc123\",\"user\":\"tester\"}";
+        let json = json!([
+            {
+                "bookSourceUrl": "https://room-compat-a.example/",
+                "bookSourceName": "Room兼容A",
+                "bookSourceGroup": "审查批1",
+                "enabled": true,
+                "enabledCookieJar": true,
+                "concurrentRate": "2/10000",
+                "variable": variable,
+                "ruleSearch": rule_search,
+                "ruleToc": rule_toc,
+                "ruleContent": rule_content
+            },
+            {
+                "bookSourceUrl": "https://room-compat-b.example/",
+                "bookSourceName": "Room兼容B",
+                "enabledCookieJar": false
+            }
+        ])
+        .to_string();
+
+        let count = RoomImporter::import_book_sources(conn, &json).unwrap();
+        assert_eq!(count, 2);
+
+        let read_text = |url: &str, column: &str| -> String {
+            conn.query_row(
+                &format!("SELECT {column} FROM book_sources WHERE bookSourceUrl = ?1"),
+                rusqlite::params![url],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .unwrap()
+            .unwrap_or_else(|| panic!("{url}.{column} 应非 NULL"))
+        };
+        // 规则列：非空且与种子对象语义一致（归一为字符串后落库）
+        let stored_search = read_text("https://room-compat-a.example/", "ruleSearch");
+        assert!(!stored_search.is_empty(), "ruleSearch 不得落空");
+        assert_eq!(
+            serde_json::from_str::<Value>(&stored_search).unwrap(),
+            rule_search,
+            "ruleSearch 归一后应与种子对象一致"
+        );
+        let stored_toc = read_text("https://room-compat-a.example/", "ruleToc");
+        assert_eq!(
+            serde_json::from_str::<Value>(&stored_toc).unwrap(),
+            rule_toc
+        );
+        let stored_content = read_text("https://room-compat-a.example/", "ruleContent");
+        assert_eq!(
+            serde_json::from_str::<Value>(&stored_content).unwrap(),
+            rule_content
+        );
+        // variable 列：原样落库
+        assert_eq!(
+            read_text("https://room-compat-a.example/", "variable"),
+            variable,
+            "variable（登录态）应原样落库"
+        );
+        // 无 variable 键的条目 → 空串（与 FFI lenient_string 同口径，非 NULL）
+        assert_eq!(
+            read_text("https://room-compat-b.example/", "variable"),
+            "",
+            "缺 variable 键应落空串（find_by_url 读 String 不可遇 NULL）"
+        );
+        // enabledCookieJar 混合形态（沿用 62b04d9998 三态口径）
+        let read_jar = |url: &str| -> i64 {
+            conn.query_row(
+                "SELECT enabledCookieJar FROM book_sources WHERE bookSourceUrl = ?1",
+                rusqlite::params![url],
+                |row| row.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(read_jar("https://room-compat-a.example/"), 1);
+        assert_eq!(read_jar("https://room-compat-b.example/"), 0);
+    }
+
+    /// 形态不符必须显式（防复发规定 4）：规则键为数组/数字等非法形态时
+    /// 显式报错，禁止静默吞掉落 NULL。
+    #[test]
+    fn test_import_book_sources_malformed_rule_key_errors() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.connection();
+
+        // 数字形态
+        let err = RoomImporter::import_book_sources(
+            conn,
+            r#"[{"bookSourceUrl":"https://bad-1.example","ruleSearch":42}]"#,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, LegadoError::Database(ref msg) if msg.contains("形态不符")),
+            "数字形态规则键应显式报错: {err:?}"
+        );
+
+        // 数组形态
+        let err = RoomImporter::import_book_sources(
+            conn,
+            r#"[{"bookSourceUrl":"https://bad-2.example","ruleToc":["a","b"]}]"#,
+        )
+        .unwrap_err();
+        assert!(
+            matches!(err, LegadoError::Database(ref msg) if msg.contains("形态不符")),
+            "数组形态规则键应显式报错: {err:?}"
+        );
+
+        // 显式报错的批次不得留半截数据
+        let total: i32 = conn
+            .query_row("SELECT COUNT(*) FROM book_sources", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(total, 0, "形态不符报错后不得残留半截导入");
     }
 }
