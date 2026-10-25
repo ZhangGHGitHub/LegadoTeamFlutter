@@ -16,6 +16,7 @@
 use std::fs;
 use std::path::Path;
 
+use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
 use legado_core::models::{Book, BookSource, Bookmark, RssSource};
@@ -287,6 +288,21 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
 /// 从备份文件恢复
 ///
 /// 读取 JSON 文件，逐条恢复各表数据，返回恢复统计。
+///
+/// [P1-A 加固（2026-10-26 审查批2）] 恢复体整体包进单事务
+/// （[`legado_db::connection::in_transaction`]）：此前恢复体在
+/// `with_database` 内逐条 autocommit，崩溃/断电会留下「前 k-1 条已恢复、
+/// 其余未恢复」的部分恢复态。事务语义与批 1 审查口径一致：
+/// - **条目级错误照常提交**：解析失败 / UNIQUE 撞名等条目错误仍在恢复体
+///   内 warn 跳过（见 [`restore_backup_in_tx`] 各 match 分支，不上抛），
+///   闭包返回 `Ok` → 事务照常 COMMIT，跳过条目不影响其余条目落库；
+/// - **仅未捕获 `Err` 触发整体回滚**：恢复体经 `?` 上抛的错误（如未来
+///   新增表写入漏捕获、SQLite 级故障）使事务在 drop 中 ROLLBACK，库内
+///   零残留（不会出现部分恢复态）；
+/// - 复用 legado-db 共享事务边界实现（与批量导入 `insert_batch` 同一
+///   入口，单实现原则）；池化 `&Connection` 为不可变借用，经
+///   `unchecked_transaction()` 开启事务（rusqlite 0.31 `transaction()`
+///   需 `&mut Connection`，缘由见 legado-db connection.rs 文档）。
 pub fn backup_restore(path: &str) -> LegadoResult<String> {
     let content = fs::read_to_string(path)
         .map_err(|e| LegadoError::Io(std::io::Error::other(format!("读取备份文件失败: {e}"))))?;
@@ -296,233 +312,244 @@ pub fn backup_restore(path: &str) -> LegadoResult<String> {
 
     let stats = with_database(|db| {
         let conn = db.connection();
-        let mut stats = RestoreStats {
-            books: 0,
-            bookmarks: 0,
-            replace_rules: 0,
-            book_sources: 0,
-            rss_sources: 0,
-            read_records: 0,
-        };
-
-        // 恢复书籍
-        // 评审 W3：失败不再静默吞错——UNIQUE 撞名等写入失败记 warn 日志，
-        // 便于排查「恢复数量少于备份数量」类问题（RestoreStats 仅含成功计数，
-        // 失败不入统计以免变更 FFI 返回结构）
-        let book_repo = BookRepository::new(conn);
-        for value in &backup.books {
-            if let Ok(book) = serde_json::from_value::<Book>(value.clone()) {
-                match book_repo.insert(&book) {
-                    Ok(()) => stats.books += 1,
-                    Err(e) => log::warn!("恢复书籍失败（已跳过）: {} - {e}", book.book_url),
-                }
-            }
-        }
-
-        // 恢复书签
-        let bookmark_repo = BookmarkRepository::new(conn);
-        for value in &backup.bookmarks {
-            if let Ok(bm) = serde_json::from_value::<Bookmark>(value.clone()) {
-                match bookmark_repo.insert(&bm) {
-                    Ok(_) => stats.bookmarks += 1,
-                    Err(e) => log::warn!("恢复书签失败（已跳过）: {} - {e}", bm.book_name),
-                }
-            }
-        }
-
-        // 恢复替换规则
-        let rule_repo = ReplaceRuleRepository::new(conn);
-        for value in &backup.replace_rules {
-            if let Ok(rule) =
-                serde_json::from_value::<legado_core::models::ReplaceRule>(value.clone())
-            {
-                match rule_repo.insert(&rule) {
-                    Ok(_) => stats.replace_rules += 1,
-                    Err(e) => log::warn!("恢复替换规则失败（已跳过）: {} - {e}", rule.name),
-                }
-            }
-        }
-
-        // 恢复书源
-        let source_repo = BookSourceRepository::new(conn);
-        for value in &backup.book_sources {
-            if let Ok(source) = serde_json::from_value::<BookSource>(value.clone()) {
-                match source_repo.insert(&source) {
-                    Ok(()) => stats.book_sources += 1,
-                    Err(e) => {
-                        log::warn!("恢复书源失败（已跳过）: {} - {e}", source.book_source_url)
-                    }
-                }
-            }
-        }
-
-        // 恢复 RSS 源（v2：走 RssSourceRepository 全 44 列写入，替代旧 7 列旁路；
-        // v1 备份的整数布尔先经 normalize_v1_rss_entry 归一后再解析）
-        let rss_repo = RssSourceRepository::new(conn);
-        for value in &backup.rss_sources {
-            let normalized = normalize_v1_rss_entry(value);
-            let parsed: Result<RssSource, _> = serde_json::from_value(normalized);
-            match parsed {
-                Ok(source) => {
-                    if source.source_url.trim().is_empty() {
-                        log::warn!("恢复 RSS 源失败（已跳过）: sourceUrl 为空，形态不符");
-                        continue;
-                    }
-                    match rss_repo.insert(&source) {
-                        Ok(_) => stats.rss_sources += 1,
-                        Err(e) => {
-                            log::warn!("恢复 RSS 源失败（已跳过）: {} - {e}", source.source_url)
-                        }
-                    }
-                }
-                Err(e) => log::warn!("恢复 RSS 源解析失败（已跳过）: {e}"),
-            }
-        }
-
-        // 恢复阅读记录（v2：全字段 + 原版 Restore.kt「同键较新者胜 + 作者合并」语义；
-        // 旧实现仅 upsert(book_name, read_time) 且 JSON 键不匹配，等于丢数据）
-        let record_repo = ReadRecordRepository::new(conn);
-        for value in &backup.read_records {
-            match serde_json::from_value::<ReadRecord>(value.clone()) {
-                Ok(record) => match record_repo.upsert_restore(&record) {
-                    Ok(()) => stats.read_records += 1,
-                    Err(e) => {
-                        log::warn!("恢复阅读记录失败（已跳过）: {} - {e}", record.book_name)
-                    }
-                },
-                Err(e) => log::warn!("恢复阅读记录解析失败（已跳过）: {e}"),
-            }
-        }
-
-        // ─── v2 扩表恢复（逐表走各自 repository，单实现原则）────────────
-
-        // 书籍分组（对齐原版 bookGroupDao.insert 的 REPLACE 语义）
-        let group_repo = BookGroupRepository::new(conn);
-        for value in &backup.book_groups {
-            match serde_json::from_value::<legado_core::models::BookGroup>(value.clone()) {
-                Ok(group) => match group_repo.upsert(&from_core_book_group(group)) {
-                    Ok(()) => {}
-                    Err(e) => log::warn!("恢复书籍分组失败（已跳过）: {e}"),
-                },
-                Err(e) => log::warn!("恢复书籍分组解析失败（已跳过）: {e}"),
-            }
-        }
-
-        // RSS 收藏（对齐原版 rssStarDao.insert 的 REPLACE 语义）
-        let star_repo = RssStarRepository::new(conn);
-        for value in &backup.rss_stars {
-            match serde_json::from_value::<legado_core::models::RssStar>(value.clone()) {
-                Ok(star) => match star_repo.add_star(&from_core_rss_star(star)) {
-                    Ok(()) => {}
-                    Err(e) => log::warn!("恢复 RSS 收藏失败（已跳过）: {e}"),
-                },
-                Err(e) => log::warn!("恢复 RSS 收藏解析失败（已跳过）: {e}"),
-            }
-        }
-
-        // 高亮记录（主键 time，INSERT OR REPLACE）
-        let highlight_repo = HighlightRepository::new(conn);
-        for value in &backup.highlights {
-            match serde_json::from_value::<legado_core::models::BookHighlight>(value.clone()) {
-                Ok(highlight) => match highlight_repo.insert(&highlight) {
-                    Ok(()) => {}
-                    Err(e) => log::warn!("恢复高亮记录失败（已跳过）: {e}"),
-                },
-                Err(e) => log::warn!("恢复高亮记录解析失败（已跳过）: {e}"),
-            }
-        }
-
-        // 高亮规则（主键 id 显式 REPLACE；已知限制：uuid/applyToBody 列缺失，
-        // 备份覆盖面为现有 10 列，待审查批3补列后同步扩展）
-        let highlight_rule_repo = HighlightRuleRepository::new(conn);
-        for value in &backup.highlight_rules {
-            match serde_json::from_value::<legado_core::models::HighlightRule>(value.clone()) {
-                Ok(rule) => match highlight_rule_repo.insert(&rule) {
-                    Ok(_) => {}
-                    Err(e) => log::warn!("恢复高亮规则失败（已跳过）: {e}"),
-                },
-                Err(e) => log::warn!("恢复高亮规则解析失败（已跳过）: {e}"),
-            }
-        }
-
-        // 搜索历史（原样保留 usage/lastUseTime，不走 find 的 usage+1 语义）
-        let keyword_repo = SearchKeywordRepository::new(conn);
-        for value in &backup.search_history {
-            match serde_json::from_value::<legado_core::models::SearchKeyword>(value.clone()) {
-                Ok(keyword) => match keyword_repo.upsert_record(&keyword) {
-                    Ok(()) => {}
-                    Err(e) => log::warn!("恢复搜索历史失败（已跳过）: {e}"),
-                },
-                Err(e) => log::warn!("恢复搜索历史解析失败（已跳过）: {e}"),
-            }
-        }
-
-        // 规则订阅（保留备份行 id，整行 REPLACE）
-        let rule_sub_repo = RuleSubRepository::new(conn);
-        for value in &backup.rule_subs {
-            match serde_json::from_value::<RuleSubRecord>(value.clone()) {
-                Ok(sub) => match rule_sub_repo.upsert(&sub) {
-                    Ok(()) => {}
-                    Err(e) => log::warn!("恢复规则订阅失败（已跳过）: {e}"),
-                },
-                Err(e) => log::warn!("恢复规则订阅解析失败（已跳过）: {e}"),
-            }
-        }
-
-        // TXT 目录规则（全列 upsert，保留 id/enable/example）
-        let txt_toc_repo = TxtTocRuleRepository::new(conn);
-        for value in &backup.txt_toc_rules {
-            match serde_json::from_value::<legado_core::models::TxtTocRule>(value.clone()) {
-                Ok(rule) => match txt_toc_repo.upsert(&from_core_txt_toc_rule(rule)) {
-                    Ok(()) => {}
-                    Err(e) => log::warn!("恢复 TXT 目录规则失败（已跳过）: {e}"),
-                },
-                Err(e) => log::warn!("恢复 TXT 目录规则解析失败（已跳过）: {e}"),
-            }
-        }
-
-        // 在线朗读引擎（全 14 列，保留 header/loginUrl 等扩展列）
-        let tts_repo = HttpTtsRepository::new(conn);
-        for value in &backup.http_tts {
-            match serde_json::from_value::<HttpTts>(value.clone()) {
-                Ok(tts) => match tts_repo.upsert(&tts) {
-                    Ok(_) => {}
-                    Err(e) => log::warn!("恢复朗读引擎失败（已跳过）: {e}"),
-                },
-                Err(e) => log::warn!("恢复朗读引擎解析失败（已跳过）: {e}"),
-            }
-        }
-
-        // 词典规则（按 name UNIQUE 列 REPLACE 保留原 id，对齐原版 DictRuleDao 语义）
-        let dict_repo = DictRuleRepository::new(conn);
-        for value in &backup.dict_rules {
-            match serde_json::from_value::<legado_core::models::DictRule>(value.clone()) {
-                Ok(rule) => match dict_repo.upsert_by_name(&from_core_dict_rule(rule)) {
-                    Ok(_) => {}
-                    Err(e) => log::warn!("恢复词典规则失败（已跳过）: {e}"),
-                },
-                Err(e) => log::warn!("恢复词典规则解析失败（已跳过）: {e}"),
-            }
-        }
-
-        // 键盘辅助规则（主键 (type, key)，INSERT OR REPLACE）
-        let assist_repo = KeyboardAssistRepository::new(conn);
-        for value in &backup.keyboard_assists {
-            match serde_json::from_value::<KeyboardAssist>(value.clone()) {
-                Ok(assist) => match assist_repo.insert_record(&assist) {
-                    Ok(()) => {}
-                    Err(e) => log::warn!("恢复键盘辅助规则失败（已跳过）: {e}"),
-                },
-                Err(e) => log::warn!("恢复键盘辅助规则解析失败（已跳过）: {e}"),
-            }
-        }
-
-        Ok(stats)
+        legado_db::connection::in_transaction(conn, "备份恢复", |conn| {
+            restore_backup_in_tx(conn, &backup)
+        })
     })?;
 
     let result = serde_json::to_string(&stats)
         .map_err(|e| LegadoError::Internal(format!("统计序列化失败: {e}")))?;
     Ok(result)
+}
+
+/// 恢复体：各表逐条恢复（单事务闭包内容，条目级错误 warn 跳过继续）
+///
+/// 从 [`backup_restore`] 拆出以匹配 `in_transaction` 闭包签名，并供测试
+/// 直接构造「恢复中未捕获错误 → 整体回滚」场景（外部备份数据无法构造
+/// 逃逸条目捕获网的 Err——全部条目级错误均在下方 match 分支内被 warn
+/// 吞掉，回滚路径只能以闭包内直接上抛 `Err` 的方式验证）。
+fn restore_backup_in_tx(conn: &Connection, backup: &BackupData) -> LegadoResult<RestoreStats> {
+    let mut stats = RestoreStats {
+        books: 0,
+        bookmarks: 0,
+        replace_rules: 0,
+        book_sources: 0,
+        rss_sources: 0,
+        read_records: 0,
+    };
+
+    // 恢复书籍
+    // 评审 W3：失败不再静默吞错——UNIQUE 撞名等写入失败记 warn 日志，
+    // 便于排查「恢复数量少于备份数量」类问题（RestoreStats 仅含成功计数，
+    // 失败不入统计以免变更 FFI 返回结构）
+    let book_repo = BookRepository::new(conn);
+    for value in &backup.books {
+        if let Ok(book) = serde_json::from_value::<Book>(value.clone()) {
+            match book_repo.insert(&book) {
+                Ok(()) => stats.books += 1,
+                Err(e) => log::warn!("恢复书籍失败（已跳过）: {} - {e}", book.book_url),
+            }
+        }
+    }
+
+    // 恢复书签
+    let bookmark_repo = BookmarkRepository::new(conn);
+    for value in &backup.bookmarks {
+        if let Ok(bm) = serde_json::from_value::<Bookmark>(value.clone()) {
+            match bookmark_repo.insert(&bm) {
+                Ok(_) => stats.bookmarks += 1,
+                Err(e) => log::warn!("恢复书签失败（已跳过）: {} - {e}", bm.book_name),
+            }
+        }
+    }
+
+    // 恢复替换规则
+    let rule_repo = ReplaceRuleRepository::new(conn);
+    for value in &backup.replace_rules {
+        if let Ok(rule) = serde_json::from_value::<legado_core::models::ReplaceRule>(value.clone())
+        {
+            match rule_repo.insert(&rule) {
+                Ok(_) => stats.replace_rules += 1,
+                Err(e) => log::warn!("恢复替换规则失败（已跳过）: {} - {e}", rule.name),
+            }
+        }
+    }
+
+    // 恢复书源
+    let source_repo = BookSourceRepository::new(conn);
+    for value in &backup.book_sources {
+        if let Ok(source) = serde_json::from_value::<BookSource>(value.clone()) {
+            match source_repo.insert(&source) {
+                Ok(()) => stats.book_sources += 1,
+                Err(e) => {
+                    log::warn!("恢复书源失败（已跳过）: {} - {e}", source.book_source_url)
+                }
+            }
+        }
+    }
+
+    // 恢复 RSS 源（v2：走 RssSourceRepository 全 44 列写入，替代旧 7 列旁路；
+    // v1 备份的整数布尔先经 normalize_v1_rss_entry 归一后再解析）
+    let rss_repo = RssSourceRepository::new(conn);
+    for value in &backup.rss_sources {
+        let normalized = normalize_v1_rss_entry(value);
+        let parsed: Result<RssSource, _> = serde_json::from_value(normalized);
+        match parsed {
+            Ok(source) => {
+                if source.source_url.trim().is_empty() {
+                    log::warn!("恢复 RSS 源失败（已跳过）: sourceUrl 为空，形态不符");
+                    continue;
+                }
+                match rss_repo.insert(&source) {
+                    Ok(_) => stats.rss_sources += 1,
+                    Err(e) => {
+                        log::warn!("恢复 RSS 源失败（已跳过）: {} - {e}", source.source_url)
+                    }
+                }
+            }
+            Err(e) => log::warn!("恢复 RSS 源解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // 恢复阅读记录（v2：全字段 + 原版 Restore.kt「同键较新者胜 + 作者合并」语义；
+    // 旧实现仅 upsert(book_name, read_time) 且 JSON 键不匹配，等于丢数据）
+    let record_repo = ReadRecordRepository::new(conn);
+    for value in &backup.read_records {
+        match serde_json::from_value::<ReadRecord>(value.clone()) {
+            Ok(record) => match record_repo.upsert_restore(&record) {
+                Ok(()) => stats.read_records += 1,
+                Err(e) => {
+                    log::warn!("恢复阅读记录失败（已跳过）: {} - {e}", record.book_name)
+                }
+            },
+            Err(e) => log::warn!("恢复阅读记录解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // ─── v2 扩表恢复（逐表走各自 repository，单实现原则）────────────
+
+    // 书籍分组（对齐原版 bookGroupDao.insert 的 REPLACE 语义）
+    let group_repo = BookGroupRepository::new(conn);
+    for value in &backup.book_groups {
+        match serde_json::from_value::<legado_core::models::BookGroup>(value.clone()) {
+            Ok(group) => match group_repo.upsert(&from_core_book_group(group)) {
+                Ok(()) => {}
+                Err(e) => log::warn!("恢复书籍分组失败（已跳过）: {e}"),
+            },
+            Err(e) => log::warn!("恢复书籍分组解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // RSS 收藏（对齐原版 rssStarDao.insert 的 REPLACE 语义）
+    let star_repo = RssStarRepository::new(conn);
+    for value in &backup.rss_stars {
+        match serde_json::from_value::<legado_core::models::RssStar>(value.clone()) {
+            Ok(star) => match star_repo.add_star(&from_core_rss_star(star)) {
+                Ok(()) => {}
+                Err(e) => log::warn!("恢复 RSS 收藏失败（已跳过）: {e}"),
+            },
+            Err(e) => log::warn!("恢复 RSS 收藏解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // 高亮记录（主键 time，INSERT OR REPLACE）
+    let highlight_repo = HighlightRepository::new(conn);
+    for value in &backup.highlights {
+        match serde_json::from_value::<legado_core::models::BookHighlight>(value.clone()) {
+            Ok(highlight) => match highlight_repo.insert(&highlight) {
+                Ok(()) => {}
+                Err(e) => log::warn!("恢复高亮记录失败（已跳过）: {e}"),
+            },
+            Err(e) => log::warn!("恢复高亮记录解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // 高亮规则（主键 id 显式 REPLACE；已知限制：uuid/applyToBody 列缺失，
+    // 备份覆盖面为现有 10 列，待审查批3补列后同步扩展）
+    let highlight_rule_repo = HighlightRuleRepository::new(conn);
+    for value in &backup.highlight_rules {
+        match serde_json::from_value::<legado_core::models::HighlightRule>(value.clone()) {
+            Ok(rule) => match highlight_rule_repo.insert(&rule) {
+                Ok(_) => {}
+                Err(e) => log::warn!("恢复高亮规则失败（已跳过）: {e}"),
+            },
+            Err(e) => log::warn!("恢复高亮规则解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // 搜索历史（原样保留 usage/lastUseTime，不走 find 的 usage+1 语义）
+    let keyword_repo = SearchKeywordRepository::new(conn);
+    for value in &backup.search_history {
+        match serde_json::from_value::<legado_core::models::SearchKeyword>(value.clone()) {
+            Ok(keyword) => match keyword_repo.upsert_record(&keyword) {
+                Ok(()) => {}
+                Err(e) => log::warn!("恢复搜索历史失败（已跳过）: {e}"),
+            },
+            Err(e) => log::warn!("恢复搜索历史解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // 规则订阅（保留备份行 id，整行 REPLACE）
+    let rule_sub_repo = RuleSubRepository::new(conn);
+    for value in &backup.rule_subs {
+        match serde_json::from_value::<RuleSubRecord>(value.clone()) {
+            Ok(sub) => match rule_sub_repo.upsert(&sub) {
+                Ok(()) => {}
+                Err(e) => log::warn!("恢复规则订阅失败（已跳过）: {e}"),
+            },
+            Err(e) => log::warn!("恢复规则订阅解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // TXT 目录规则（全列 upsert，保留 id/enable/example）
+    let txt_toc_repo = TxtTocRuleRepository::new(conn);
+    for value in &backup.txt_toc_rules {
+        match serde_json::from_value::<legado_core::models::TxtTocRule>(value.clone()) {
+            Ok(rule) => match txt_toc_repo.upsert(&from_core_txt_toc_rule(rule)) {
+                Ok(()) => {}
+                Err(e) => log::warn!("恢复 TXT 目录规则失败（已跳过）: {e}"),
+            },
+            Err(e) => log::warn!("恢复 TXT 目录规则解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // 在线朗读引擎（全 14 列，保留 header/loginUrl 等扩展列）
+    let tts_repo = HttpTtsRepository::new(conn);
+    for value in &backup.http_tts {
+        match serde_json::from_value::<HttpTts>(value.clone()) {
+            Ok(tts) => match tts_repo.upsert(&tts) {
+                Ok(_) => {}
+                Err(e) => log::warn!("恢复朗读引擎失败（已跳过）: {e}"),
+            },
+            Err(e) => log::warn!("恢复朗读引擎解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // 词典规则（按 name UNIQUE 列 REPLACE 保留原 id，对齐原版 DictRuleDao 语义）
+    let dict_repo = DictRuleRepository::new(conn);
+    for value in &backup.dict_rules {
+        match serde_json::from_value::<legado_core::models::DictRule>(value.clone()) {
+            Ok(rule) => match dict_repo.upsert_by_name(&from_core_dict_rule(rule)) {
+                Ok(_) => {}
+                Err(e) => log::warn!("恢复词典规则失败（已跳过）: {e}"),
+            },
+            Err(e) => log::warn!("恢复词典规则解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // 键盘辅助规则（主键 (type, key)，INSERT OR REPLACE）
+    let assist_repo = KeyboardAssistRepository::new(conn);
+    for value in &backup.keyboard_assists {
+        match serde_json::from_value::<KeyboardAssist>(value.clone()) {
+            Ok(assist) => match assist_repo.insert_record(&assist) {
+                Ok(()) => {}
+                Err(e) => log::warn!("恢复键盘辅助规则失败（已跳过）: {e}"),
+            },
+            Err(e) => log::warn!("恢复键盘辅助规则解析失败（已跳过）: {e}"),
+        }
+    }
+
+    Ok(stats)
 }
 
 /// 列出备份文件
@@ -1456,6 +1483,109 @@ mod tests {
         assert!(backup_restore(no_version_path.to_str().unwrap()).is_ok());
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [P1-A 回归] 恢复体单事务——条目级错误 warn 跳过照常提交
+    ///
+    /// 语义锚点：条目错误在恢复体闭包内被捕获（warn 跳过），闭包返回 Ok，
+    /// 事务必须照常 COMMIT——合法条目不受同批垃圾条目牵连。
+    #[test]
+    fn test_restore_entry_level_warn_still_commits() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        // 一条合法书源 + 一条解析必败条目（字符串形态，非对象 →
+        // serde_json::from_value::<BookSource> 失败走 warn 跳过分支）
+        let mut backup = empty_backup();
+        backup.book_sources = vec![
+            serde_json::json!({
+                "bookSourceUrl": "https://tx.example/source-a",
+                "bookSourceName": "事务源A",
+            }),
+            serde_json::json!("不是对象的垃圾条目"),
+        ];
+
+        with_database(|db| {
+            let conn = db.connection();
+            let stats = legado_db::connection::in_transaction(conn, "测试恢复", |conn| {
+                restore_backup_in_tx(conn, &backup)
+            })
+            .unwrap();
+            assert_eq!(
+                stats.book_sources, 1,
+                "仅合法条目计入统计，垃圾条目 warn 跳过"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        // 事务已提交：合法条目在库
+        with_database(|db| {
+            let restored = BookSourceRepository::new(db.connection())
+                .find_by_url("https://tx.example/source-a")
+                .unwrap();
+            assert!(
+                restored.is_some(),
+                "warn 跳过路径应照常提交，合法条目应落库"
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    /// [P1-A 回归] 恢复体未捕获 Err → 整体回滚零残留
+    ///
+    /// 说明：全部条目级错误均在恢复体 match 分支内被 warn 吞掉，外部备份
+    /// 数据无法构造逃逸捕获网的 Err（见 restore_backup_in_tx 文档）；故以
+    /// 拆出的可测函数 + 闭包内直接上抛 Err 模拟「恢复中未捕获错误」
+    /// （如未来新增表写入漏捕获、SQLite 级故障），验证事务包裹的回滚语义。
+    #[test]
+    fn test_restore_uncaught_error_rolls_back_all() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let mut backup = empty_backup();
+        backup.book_sources = vec![serde_json::json!({
+            "bookSourceUrl": "https://rb.example/source-b",
+            "bookSourceName": "回滚源B",
+        })];
+        backup.books = vec![serde_json::json!({
+            "bookUrl": "https://rb.example/book-b",
+            "name": "回滚书B",
+        })];
+
+        with_database(|db| {
+            let conn = db.connection();
+            let err = legado_db::connection::in_transaction(
+                conn,
+                "回滚测试",
+                |conn| -> LegadoResult<RestoreStats> {
+                    // 先经恢复体正常写入一批（若无事务包裹，此处已 autocommit 落库）
+                    let stats = restore_backup_in_tx(conn, &backup).unwrap();
+                    assert_eq!(stats.book_sources, 1);
+                    assert_eq!(stats.books, 1);
+                    // 模拟恢复体后续未捕获错误（条目捕获网之外的 Err）
+                    Err(LegadoError::Internal("模拟恢复中未捕获错误".into()))
+                },
+            )
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("模拟恢复中未捕获错误"),
+                "应上抛模拟错误: {err}"
+            );
+
+            // 整体回滚：恢复体写入的全部条目零残留
+            let source = BookSourceRepository::new(conn)
+                .find_by_url("https://rb.example/source-b")
+                .unwrap();
+            assert!(source.is_none(), "回滚后书源不得残留");
+            let book = BookRepository::new(conn)
+                .find_by_url("https://rb.example/book-b")
+                .unwrap();
+            assert!(book.is_none(), "回滚后书籍不得残留");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
     }
 
     #[test]
