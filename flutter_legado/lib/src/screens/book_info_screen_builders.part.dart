@@ -839,6 +839,9 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         SliverToBoxAdapter(
           child: _buildSummaryPanel(context, book),
         ),
+        // [批3 P1-3 余项] webFile 书「下载并导入文件」列表（目录区位置；
+        // 对齐原版 showWebFileDownloadAlert 列表形态，非 webFile 书不渲染）
+        ..._buildWebFileSection(context, book),
         // 底部续铺纯色：内容不足一屏时填满剩余视口，避免透出封面虚化层
         SliverFillRemaining(
           hasScrollBody: false,
@@ -1227,7 +1230,12 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         RegExp(r'^(已完结|完本|已完本|连载中|暂停更新|停更|断更)$');
     final latestRaw = (book.latestChapterTitle ?? '').trim();
     var latestTitle = latestRaw;
-    if (latestStatusRe.hasMatch(latestTitle)) {
+    // [批3 P1-3 余项] webFile 书对齐原版 loadWebFile onSuccess：
+    // latestChapterTitle 固定「已下载」（文件列表就绪即展示）
+    if (BookOpenUtils.isWebFileBook(book) &&
+        BookOpenUtils.buildWebFileList(book).isNotEmpty) {
+      latestTitle = '已下载';
+    } else if (latestStatusRe.hasMatch(latestTitle)) {
       final tocTotal =
           book.totalChapterNum > 0 ? book.totalChapterNum : chapters.length;
       final tocIdx = tocTotal > 0 ? tocTotal - 1 : chapters.length - 1;
@@ -1256,8 +1264,11 @@ extension _BookInfoBuilders on _BookInfoScreenState {
   /// Row + 4×Expanded 等分（卡宽 (360-26-30)/4=76dp，间距 10dp，边距
   /// 13dp）；图标 20dp + 间距 10dp + 标签 11sp（图标/标签字号随卡宽
   /// 比例微调，标签保持可读，与 ref 字宽 33px/墨高 34px≈11sp 一致）
+  /// [批3 P1-3 余项] webFile 书对齐原版：llToc.gone（查看目录卡隐藏）、
+  /// 加书架 → showWebFileDownloadAlert 同形选择。
   Widget _buildActionCards(BuildContext context, Book book) {
     final cs = Theme.of(context).colorScheme;
+    final isWebFile = BookOpenUtils.isWebFileBook(book);
     Widget card(IconData icon, String label, VoidCallback onTap) {
       // [H1] 宽由 Expanded 等分（≈76dp）；高 69dp 固定（ref 207px≈69dp）
       return SizedBox(
@@ -1308,18 +1319,24 @@ extension _BookInfoBuilders on _BookInfoScreenState {
                   ? Symbols.playlist_remove_rounded
                   : Symbols.playlist_add_rounded,
               _inBookshelf ? '已在书架' : '加书架',
-              () => _toggleShelf(book),
+              // webFile 书对齐原版 tv_shelf：先弹文件选择再导入
+              () => isWebFile && !_inBookshelf
+                  ? _showWebFilePicker()
+                  : _toggleShelf(book),
             ),
           ),
           const SizedBox(width: 10),
-          Expanded(
-            child: card(
-              Symbols.format_list_bulleted_rounded,
-              '查看目录',
-              _openTocScreen,
+          // webFile 书无目录（原版 llToc.gone）
+          if (!isWebFile) ...[
+            Expanded(
+              child: card(
+                Symbols.format_list_bulleted_rounded,
+                '查看目录',
+                _openTocScreen,
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
+            const SizedBox(width: 10),
+          ],
           Expanded(
             child: card(
               Symbols.swap_horiz_rounded,
@@ -1984,5 +2001,198 @@ extension _BookInfoBuilders on _BookInfoScreenState {
         arguments: book.copyWith(bookUrl: newBookUrl),
       );
     }
+  }
+
+  // ===== [批3 P1-3 余项] webFile 书下载导入（对齐原版 loadWebFile /
+  // showWebFileDownloadAlert / importOrDownloadWebFile 语义） =====
+
+  /// 「下载并导入文件」选择弹窗（原版 alert items 同形：标题 + 文件名列表）。
+  /// [openReaderAfter] 对齐原版 tvRead 回调（导入成功后 readBook）。
+  Future<void> _showWebFilePicker({bool openReaderAfter = false}) async {
+    final book = _loadedBook;
+    if (book == null) return;
+    final files = BookOpenUtils.buildWebFileList(book);
+    if (files.isEmpty) {
+      _snack('Unexpected webFileData');
+      return;
+    }
+    if (!mounted) return;
+    final picked = await showDialog<({String url, String name, bool isSupported, bool isArchive})>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('下载并导入文件'),
+        children: [
+          for (final f in files)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, f),
+              child: Row(
+                children: [
+                  Icon(
+                    f.isArchive
+                        ? Symbols.folder_zip_rounded
+                        : Symbols.insert_drive_file_rounded,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      f.name,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    if (picked == null || !mounted) return;
+    await _downloadAndImportWebFile(picked, openReader: openReaderAfter);
+  }
+
+  /// 下载并导入（原版 importOrDownloadWebFile）：
+  /// - 书籍文件（isSupported）→ 下载 → importLocalBook → 详情页切换为
+  ///   本地书（原版 changeToLocalBook）→ [openReader] 时 readBook；
+  /// - 压缩包（isArchive）→ 下载 → 既有 ArchiveImportDialog 解压选择导入
+  ///   （对齐原版 getArchiveFilesName → importArchiveBook 链）；
+  /// - 其余类型 → 页面列表已按支持格式过滤入口，此处兜底提示不支持
+  ///   （原版「仅下载后打开」依赖 openFileUri 通道，本轨无对应物，登记缺口）。
+  Future<void> _downloadAndImportWebFile(
+    ({String url, String name, bool isSupported, bool isArchive}) entry, {
+    bool openReader = false,
+  }) async {
+    if (_webFileImportingUrl != null) return;
+    final messenger = ScaffoldMessenger.of(context);
+    setState(() => _webFileImportingUrl = entry.url);
+    try {
+      final headers = BookOpenUtils.parseSourceHeaderMap(
+        _bookSource?.header ?? '',
+      );
+      final path = await BookOpenUtils.downloadWebFile(
+        entry.url,
+        headers: headers,
+        fileName: entry.name,
+      );
+      if (!mounted) return;
+      if (entry.isArchive) {
+        setState(() => _webFileImportingUrl = null);
+        // 经 FFI 确认压缩包形态（对齐 import_screen 既有守卫）
+        var isArchive = true;
+        try {
+          isArchive = await ref
+              .read(bookApiProvider)
+              .archiveIsArchive(filePath: path);
+        } catch (_) {}
+        if (!mounted) return;
+        if (!isArchive) {
+          _snack('该文件不是有效的压缩包格式');
+          return;
+        }
+        await showDialog<void>(
+          context: context,
+          builder: (_) => ArchiveImportDialog(archivePath: path),
+        );
+        return;
+      }
+      if (!entry.isSupported) {
+        setState(() => _webFileImportingUrl = null);
+        _snack('文件类型不支持：${entry.name}');
+        return;
+      }
+      final local = await ref
+          .read(bookshelfNotifierProvider.notifier)
+          .importLocalBook(path);
+      if (!mounted) return;
+      setState(() {
+        _webFileImportingUrl = null;
+        // changeToLocalBook 语义：详情页切换为导入后的本地书
+        _loadedBook = local;
+        _inBookshelf = true;
+        _chapters = const [];
+      });
+      messenger.showSnackBar(
+        SnackBar(content: Text('《${local.name}》已导入书架')),
+      );
+      if (openReader) {
+        await _openReader(context, local, 0);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _webFileImportingUrl = null);
+      }
+      messenger.showSnackBar(SnackBar(content: Text('ImportWebFileError\n$e')));
+    }
+  }
+
+  /// webFile 书「文件下载列表」区（批2登记口径：展示在详情页目录区位置；
+  /// 列表形态对齐原版 showWebFileDownloadAlert items）。无文件不渲染。
+  List<Widget> _buildWebFileSection(BuildContext context, Book book) {
+    if (!BookOpenUtils.isWebFileBook(book)) return const [];
+    final files = BookOpenUtils.buildWebFileList(book);
+    if (files.isEmpty) return const [];
+    final cs = Theme.of(context).colorScheme;
+    final importing = _webFileImportingUrl;
+    return [
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
+          child: Text('下载并导入文件', style: Theme.of(context).textTheme.titleMedium),
+        ),
+      ),
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 0),
+          child: Column(
+            children: [
+              for (final f in files)
+                InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: importing == null
+                      ? () => _downloadAndImportWebFile(f)
+                      : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 8, vertical: 12),
+                    child: Row(
+                      children: [
+                        Icon(
+                          f.isArchive
+                              ? Symbols.folder_zip_rounded
+                              : Symbols.insert_drive_file_rounded,
+                          size: 20,
+                          color: cs.primary,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            f.name,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodyMedium,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (importing == f.url)
+                          const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        else
+                          Icon(
+                            Symbols.download_rounded,
+                            size: 20,
+                            color: cs.onSurfaceVariant,
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    ];
   }
 }

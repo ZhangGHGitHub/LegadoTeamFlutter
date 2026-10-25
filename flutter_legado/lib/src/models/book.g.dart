@@ -88,6 +88,7 @@ _$BookImpl _$$BookImplFromJson(Map<String, dynamic> json) => _$BookImpl(
           : ReadConfig.fromJson(json['readConfig'] as Map<String, dynamic>),
       syncTime: (json['syncTime'] as num?)?.toInt() ?? 0,
       originBookUrl: json['originBookUrl'] as String? ?? '',
+      downloadUrls: json['downloadUrls'] as String?,
     );
 
 Map<String, dynamic> _$$BookImplToJson(_$BookImpl instance) =>
@@ -126,4 +127,5 @@ Map<String, dynamic> _$$BookImplToJson(_$BookImpl instance) =>
       'readConfig': instance.readConfig?.toJson(),
       'syncTime': instance.syncTime,
       'originBookUrl': instance.originBookUrl,
+      'downloadUrls': instance.downloadUrls,
     };

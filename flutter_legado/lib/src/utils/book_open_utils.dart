@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
@@ -17,6 +20,15 @@ import '../services/platform_bridge_service.dart';
 /// — Reasonix + UI
 class BookOpenUtils {
   BookOpenUtils._();
+
+  /// 文件类书源可整本导入的扩展名（对齐原版 AppPattern.bookFileRegex：
+  /// txt/epub/umd/pdf/mobi/azw3/azw）
+  static final RegExp _bookFileRegex =
+      RegExp(r'\.(txt|epub|umd|pdf|mobi|azw3|azw)$', caseSensitive: false);
+
+  /// 压缩包扩展名（对齐原版 AppPattern.archiveFileRegex：zip/rar/7z）
+  static final RegExp _archiveFileRegex =
+      RegExp(r'\.(zip|rar|7z)$', caseSensitive: false);
 
   /// 媒体/文本类型位掩码（不含 local / notShelf）
   static const int typeMask = BookType.video |
@@ -423,6 +435,11 @@ class BookOpenUtils {
       // [P2-15 ②] 详情解析 type 回流：非零覆盖媒体位（JS 写值胜出），
       // 零值/缺键保留现有值（对齐上方 refresh 更新式合并的非空覆盖口径）
       final freshType = (decoded['type'] as num?)?.toInt() ?? 0;
+      // [批3 P1-3 UI 余项] downloadUrls 更新式合并：WebBookInfo 数组非空
+      // 即覆盖（详情解析是文件列表权威来源，对齐原版 loadWebFile 每次重建）；
+      // 缺键保留现有值（freezed copyWith 显式传 null 会清空可空字段，
+      // 必须回传原值而非 null）
+      final freshUrls = _decodeDownloadUrls(decoded);
       return book.copyWith(
         coverUrl: freshCover ?? book.coverUrl,
         intro: freshIntro ?? book.intro,
@@ -433,6 +450,8 @@ class BookOpenUtils {
         name: freshName,
         author: freshAuthor ?? book.author,
         bookType: mergeBookType(book.bookType, freshType),
+        downloadUrls:
+            freshUrls != null ? jsonEncode(freshUrls) : book.downloadUrls,
       );
     }
 
@@ -449,6 +468,9 @@ class BookOpenUtils {
     // （二合一文本源入架时 bookType=8，详情 JS 写 64 → 必须覆盖切漫画
     // 模式），故非零新值同样覆盖媒体位；零值/缺键保留现有值
     final freshType = (decoded['type'] as num?)?.toInt() ?? 0;
+    // [批3 P1-3 UI 余项] downloadUrls 补全缺失（首屏合并语义）；无新值时
+    // 回传原值（freezed copyWith 显式传 null 会清空可空字段）
+    final freshUrls = _decodeDownloadUrls(decoded);
     return book.copyWith(
       coverUrl: hasCover ? book.coverUrl : pick('cover_url'),
       intro: hasIntro ? book.intro : pick('intro'),
@@ -461,6 +483,9 @@ class BookOpenUtils {
       name: book.name.isNotEmpty ? book.name : (name ?? book.name),
       author: book.author.isNotEmpty ? book.author : (author ?? book.author),
       bookType: mergeBookType(book.bookType, freshType),
+      downloadUrls: (book.downloadUrls == null || book.downloadUrls!.isEmpty)
+          ? (freshUrls != null ? jsonEncode(freshUrls) : book.downloadUrls)
+          : book.downloadUrls,
     );
   }
 
@@ -480,5 +505,160 @@ class BookOpenUtils {
             isVip: e['is_vip'] == true,
           ),
     ];
+  }
+
+  // ===== [批3 P1-3 UI 余项] 文件类书源（type=3）下载列表 =====
+
+  /// WebBookInfo JSON `downloadUrls`（数组）→ 字符串列表；
+  /// 缺键/形态不符/空数组返回 null（不用空覆盖）
+  static List<String>? _decodeDownloadUrls(Map<Object?, Object?> decoded) {
+    final raw = decoded['downloadUrls'];
+    if (raw is! List) return null;
+    final urls = [
+      for (final e in raw)
+        if (e != null) e.toString(),
+    ].where((u) => u.trim().isNotEmpty).toList();
+    return urls.isEmpty ? null : urls;
+  }
+
+  /// 是否文件类书源书（对齐 Kotlin Book.isWebFile: isType(BookType.webFile)）
+  static bool isWebFileBook(Book book) =>
+      (book.bookType & BookType.webFile) != 0;
+
+  /// 解析 books.downloadUrls（JSON 数组字符串）→ 字符串列表；
+  /// 空/坏 JSON 容错返回空列表
+  static List<String> parseDownloadUrls(String? json) {
+    if (json == null || json.trim().isEmpty) return const [];
+    try {
+      final decoded = jsonDecode(json);
+      if (decoded is! List) return const [];
+      return [
+        for (final e in decoded)
+          if (e != null) e.toString(),
+      ].where((u) => u.trim().isNotEmpty).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// 书源 header 字符串 → 请求头 Map（JSON 对象或 key: value 行；
+  /// webFile 下载防盗链用。与 reader_comic_screen._parseHeaderMap 同源
+  /// 语义——公共化挂本处，漫画侧私有实现待统一，登记）
+  static Map<String, String> parseSourceHeaderMap(String header) {
+    final trimmed = header.trim();
+    if (trimmed.isEmpty) return const {};
+    if (trimmed.startsWith('{')) {
+      try {
+        final decoded = jsonDecode(trimmed);
+        if (decoded is Map) {
+          return decoded.map((k, v) => MapEntry(k.toString(), v.toString()));
+        }
+      } catch (_) {
+        // JSON 解析失败走行解析
+      }
+    }
+    final map = <String, String>{};
+    for (final line in trimmed.split('\n')) {
+      final idx = line.indexOf(':');
+      if (idx > 0) {
+        map[line.substring(0, idx).trim()] = line.substring(idx + 1).trim();
+      }
+    }
+    return map;
+  }
+
+  /// URL 路径文件名（对齐原版 UrlUtil.getFileName 的路径分支：
+  /// 取末段含扩展名者；不做 HEAD 响应头取名——登记缺口）。
+  /// 文件名取自 downloadUrls 列表构建，非网络行为。
+  /// 注意：`Uri.pathSegments` 已完成百分号解码，直接取原始段即可
+  ///（手动 decodeComponent 会把含 `%` 的原样文件名误判为非法编码）。
+  static String? fileNameFromUrl(String url) {
+    final uri = Uri.tryParse(url);
+    final segments = uri?.pathSegments ?? const <String>[];
+    for (var i = segments.length - 1; i >= 0; i--) {
+      final seg = segments[i];
+      if (seg.contains('.') && seg.trim().isNotEmpty) return seg;
+    }
+    return null;
+  }
+
+  /// 文件类书源下载条目（对齐原版 BookInfoViewModel.WebFile(url, name)）
+  static ({String url, String name, bool isSupported, bool isArchive})
+      buildWebFileEntry(Book book, String url) {
+    final urlFileName = fileNameFromUrl(url);
+    // 原版 fallback：author 空取书名，否则「书名 作者：作者」
+    final fallback = book.author.isEmpty
+        ? book.name
+        : '${book.name} 作者：${book.author}';
+    final name = (urlFileName?.trim().isNotEmpty ?? false)
+        ? urlFileName!
+        : fallback;
+    return (
+      url: url,
+      name: name,
+      isSupported: _bookFileRegex.hasMatch(name),
+      isArchive: _archiveFileRegex.hasMatch(name),
+    );
+  }
+
+  /// 详情页文件下载列表（对齐原版 loadWebFile：book.downloadUrls 逐条
+  /// 建 WebFile(url, name)；空列表表示无文件可下载）
+  static List<({String url, String name, bool isSupported, bool isArchive})>
+      buildWebFileList(Book book) {
+    return [
+      for (final url in parseDownloadUrls(book.downloadUrls))
+        buildWebFileEntry(book, url),
+    ];
+  }
+
+  /// 下载在线文件到临时目录，返回落盘路径（对齐原版 importOrDownloadWebFile
+  /// 的取文件步骤）。
+  ///
+  /// [headers] 供需防盗链的下载地址透传书源 header（JSON 对象形态）。
+  /// 已知缺口（原版 AnalyzeUrl 全量能力，本批不实现）：URL option 的
+  /// type/webView/charset 解析、响应头取文件名。下载经既有 http 依赖，
+  /// 不新增包、不动 FFI。
+  static Future<String> downloadWebFile(
+    String url, {
+    Map<String, String> headers = const {},
+    String? fileName,
+  }) async {
+    final uri = Uri.tryParse(url);
+    if (uri == null || !uri.hasScheme) {
+      throw ArgumentError('无效的下载地址：$url');
+    }
+    final tempDir = await getTemporaryDirectory();
+    final dir = Directory('${tempDir.path}/webFileImport');
+    if (!dir.existsSync()) dir.createSync(recursive: true);
+    final name = (fileName != null && fileName.trim().isNotEmpty)
+        ? fileName.trim().replaceAll(RegExp(r'[\\/:*?"<>|]'), '_')
+        : 'web-file-${DateTime.now().millisecondsSinceEpoch}';
+    final dest = File('${dir.path}/$name');
+    final client = http.Client();
+    try {
+      final request = http.Request('GET', uri)
+        ..followRedirects = true
+        ..maxRedirects = 5;
+      headers.forEach((k, v) => request.headers[k] = v);
+      final response = await client.send(request);
+      if (response.statusCode != 200) {
+        throw StateError('下载失败：HTTP ${response.statusCode}');
+      }
+      final sink = dest.openWrite();
+      try {
+        await response.stream.pipe(sink);
+      } catch (_) {
+        await sink.close();
+        if (dest.existsSync()) dest.deleteSync();
+        rethrow;
+      }
+    } finally {
+      client.close();
+    }
+    if (!dest.existsSync() || dest.lengthSync() == 0) {
+      if (dest.existsSync()) dest.deleteSync();
+      throw StateError('下载失败：文件为空');
+    }
+    return dest.path;
   }
 }

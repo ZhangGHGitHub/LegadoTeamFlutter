@@ -35,6 +35,7 @@ import '../utils/meaningful_text_guard.dart'; // [U4 | 台账 0917] 详情页渲
 // 行移除而不再使用（工具本身保留：book_list_item 仍用，单测保留）
 import '../utils/source_login_entry.dart';
 import '../utils/source_login_prompt.dart';
+import 'archive_import_dialog.dart'; // [批3 P1-3 余项] webFile 压缩包下载后解压导入
 import '../widgets/book_cover.dart';
 import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4 收尾] 详情下拉 M3 化
 import '../widgets/error_view.dart';
@@ -109,6 +110,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   static final Map<String, BookSource?> _sourceByOriginCache = {};
   SettingsService get _settingsService => ref.read(settingsProvider);
   bool _deleteBookAlert = true;
+  /// [批3 P1-3 余项] webFile 书下载导入进行中的条目 URL（null=空闲；
+  /// 对齐原版 waitDialog「下载中」互斥）
+  String? _webFileImportingUrl;
 
   @override
   void initState() {
@@ -160,6 +164,8 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
   /// 标签固定「阅读」（原「继续阅读」文案移除，参考即固定「阅读」）；
   /// 阅读跳转链路 _openReader 行为不变，续读位置仍取 durChapterIndex，
   /// 加书架/移出书架入口保留在操作区第一卡）
+  /// [批3 P1-3 余项] webFile 书对齐原版 tvRead：先弹「下载并导入文件」
+  /// 选择，导入成功后 readBook。
   Widget _buildReadFab() {
     final book = _loadedBook;
     if (book == null) return const SizedBox.shrink();
@@ -168,7 +174,9 @@ class _BookInfoScreenState extends ConsumerState<BookInfoScreen> {
       foregroundColor: const Color(0xFF0B5130),
       icon: const Icon(Symbols.menu_book_rounded),
       label: const Text('阅读'),
-      onPressed: () => _openReader(context, book, book.durChapterIndex),
+      onPressed: () => BookOpenUtils.isWebFileBook(book)
+          ? _showWebFilePicker(openReaderAfter: true)
+          : _openReader(context, book, book.durChapterIndex),
     );
   }
 

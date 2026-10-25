@@ -101,6 +101,12 @@ class Book with _$Book {
     /// 稳定主键不变，换源后可能仍是旧源地址）。为空时「抓取书籍页」
     /// 路径回退 bookUrl（未换源书籍与存量库行为不变，向后兼容）。
     @Default('') @JsonKey(name: 'originBookUrl') String originBookUrl,
+    /// [批3 P1-3 UI 余项] 文件类书源（type=3）下载地址列表，JSON 数组
+    /// 字符串形态。对齐 Kotlin `Book.downloadUrls: List<String>`，本轨
+    /// 落库/往返形态对齐 Rust Book serde（`downloadUrls: Option<String>`，
+    /// JSON 数组字符串），由 BookOpenUtils.mergeWebInfo 将 WebBookInfo 的
+    /// 数组 jsonEncode 写入；详情页文件下载列表消费。
+    @JsonKey(name: 'downloadUrls') String? downloadUrls,
   }) = _Book;
 
   factory Book.fromJson(Map<String, dynamic> json) => _$BookFromJson(json);

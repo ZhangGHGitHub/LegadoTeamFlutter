@@ -688,6 +688,14 @@ mixin _$Book {
   @JsonKey(name: 'originBookUrl')
   String get originBookUrl => throw _privateConstructorUsedError;
 
+  /// [批3 P1-3 UI 余项] 文件类书源（type=3）下载地址列表，JSON 数组
+  /// 字符串形态。对齐 Kotlin `Book.downloadUrls: List<String>`，本轨
+  /// 落库/往返形态对齐 Rust Book serde（`downloadUrls: Option<String>`，
+  /// JSON 数组字符串），由 BookOpenUtils.mergeWebInfo 将 WebBookInfo 的
+  /// 数组 jsonEncode 写入；详情页文件下载列表消费。
+  @JsonKey(name: 'downloadUrls')
+  String? get downloadUrls => throw _privateConstructorUsedError;
+
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
   $BookCopyWith<Book> get copyWith => throw _privateConstructorUsedError;
@@ -732,7 +740,8 @@ abstract class $BookCopyWith<$Res> {
       String? variable,
       @JsonKey(name: 'readConfig') ReadConfig? readConfig,
       @JsonKey(name: 'syncTime') int syncTime,
-      @JsonKey(name: 'originBookUrl') String originBookUrl});
+      @JsonKey(name: 'originBookUrl') String originBookUrl,
+      @JsonKey(name: 'downloadUrls') String? downloadUrls});
 
   $ReadConfigCopyWith<$Res>? get readConfig;
 }
@@ -784,6 +793,7 @@ class _$BookCopyWithImpl<$Res, $Val extends Book>
     Object? readConfig = freezed,
     Object? syncTime = null,
     Object? originBookUrl = null,
+    Object? downloadUrls = freezed,
   }) {
     return _then(_value.copyWith(
       bookUrl: null == bookUrl
@@ -922,6 +932,10 @@ class _$BookCopyWithImpl<$Res, $Val extends Book>
           ? _value.originBookUrl
           : originBookUrl // ignore: cast_nullable_to_non_nullable
               as String,
+      downloadUrls: freezed == downloadUrls
+          ? _value.downloadUrls
+          : downloadUrls // ignore: cast_nullable_to_non_nullable
+              as String?,
     ) as $Val);
   }
 
@@ -979,7 +993,8 @@ abstract class _$$BookImplCopyWith<$Res> implements $BookCopyWith<$Res> {
       String? variable,
       @JsonKey(name: 'readConfig') ReadConfig? readConfig,
       @JsonKey(name: 'syncTime') int syncTime,
-      @JsonKey(name: 'originBookUrl') String originBookUrl});
+      @JsonKey(name: 'originBookUrl') String originBookUrl,
+      @JsonKey(name: 'downloadUrls') String? downloadUrls});
 
   @override
   $ReadConfigCopyWith<$Res>? get readConfig;
@@ -1029,6 +1044,7 @@ class __$$BookImplCopyWithImpl<$Res>
     Object? readConfig = freezed,
     Object? syncTime = null,
     Object? originBookUrl = null,
+    Object? downloadUrls = freezed,
   }) {
     return _then(_$BookImpl(
       bookUrl: null == bookUrl
@@ -1167,6 +1183,10 @@ class __$$BookImplCopyWithImpl<$Res>
           ? _value.originBookUrl
           : originBookUrl // ignore: cast_nullable_to_non_nullable
               as String,
+      downloadUrls: freezed == downloadUrls
+          ? _value.downloadUrls
+          : downloadUrls // ignore: cast_nullable_to_non_nullable
+              as String?,
     ));
   }
 }
@@ -1208,7 +1228,8 @@ class _$BookImpl implements _Book {
       this.variable,
       @JsonKey(name: 'readConfig') this.readConfig,
       @JsonKey(name: 'syncTime') this.syncTime = 0,
-      @JsonKey(name: 'originBookUrl') this.originBookUrl = ''});
+      @JsonKey(name: 'originBookUrl') this.originBookUrl = '',
+      @JsonKey(name: 'downloadUrls') this.downloadUrls});
 
   factory _$BookImpl.fromJson(Map<String, dynamic> json) =>
       _$$BookImplFromJson(json);
@@ -1316,9 +1337,18 @@ class _$BookImpl implements _Book {
   @JsonKey(name: 'originBookUrl')
   final String originBookUrl;
 
+  /// [批3 P1-3 UI 余项] 文件类书源（type=3）下载地址列表，JSON 数组
+  /// 字符串形态。对齐 Kotlin `Book.downloadUrls: List<String>`，本轨
+  /// 落库/往返形态对齐 Rust Book serde（`downloadUrls: Option<String>`，
+  /// JSON 数组字符串），由 BookOpenUtils.mergeWebInfo 将 WebBookInfo 的
+  /// 数组 jsonEncode 写入；详情页文件下载列表消费。
+  @override
+  @JsonKey(name: 'downloadUrls')
+  final String? downloadUrls;
+
   @override
   String toString() {
-    return 'Book(bookUrl: $bookUrl, tocUrl: $tocUrl, origin: $origin, originName: $originName, name: $name, author: $author, kind: $kind, customTag: $customTag, coverUrl: $coverUrl, customCoverUrl: $customCoverUrl, intro: $intro, customIntro: $customIntro, charset: $charset, bookType: $bookType, group: $group, latestChapterTitle: $latestChapterTitle, latestChapterTime: $latestChapterTime, lastCheckTime: $lastCheckTime, lastCheckCount: $lastCheckCount, totalChapterNum: $totalChapterNum, durChapterTitle: $durChapterTitle, durChapterIndex: $durChapterIndex, durVolumeIndex: $durVolumeIndex, chapterInVolumeIndex: $chapterInVolumeIndex, durChapterPos: $durChapterPos, durChapterTime: $durChapterTime, wordCount: $wordCount, canUpdate: $canUpdate, order: $order, originOrder: $originOrder, variable: $variable, readConfig: $readConfig, syncTime: $syncTime, originBookUrl: $originBookUrl)';
+    return 'Book(bookUrl: $bookUrl, tocUrl: $tocUrl, origin: $origin, originName: $originName, name: $name, author: $author, kind: $kind, customTag: $customTag, coverUrl: $coverUrl, customCoverUrl: $customCoverUrl, intro: $intro, customIntro: $customIntro, charset: $charset, bookType: $bookType, group: $group, latestChapterTitle: $latestChapterTitle, latestChapterTime: $latestChapterTime, lastCheckTime: $lastCheckTime, lastCheckCount: $lastCheckCount, totalChapterNum: $totalChapterNum, durChapterTitle: $durChapterTitle, durChapterIndex: $durChapterIndex, durVolumeIndex: $durVolumeIndex, chapterInVolumeIndex: $chapterInVolumeIndex, durChapterPos: $durChapterPos, durChapterTime: $durChapterTime, wordCount: $wordCount, canUpdate: $canUpdate, order: $order, originOrder: $originOrder, variable: $variable, readConfig: $readConfig, syncTime: $syncTime, originBookUrl: $originBookUrl, downloadUrls: $downloadUrls)';
   }
 
   @override
@@ -1383,7 +1413,9 @@ class _$BookImpl implements _Book {
             (identical(other.syncTime, syncTime) ||
                 other.syncTime == syncTime) &&
             (identical(other.originBookUrl, originBookUrl) ||
-                other.originBookUrl == originBookUrl));
+                other.originBookUrl == originBookUrl) &&
+            (identical(other.downloadUrls, downloadUrls) ||
+                other.downloadUrls == downloadUrls));
   }
 
   @JsonKey(ignore: true)
@@ -1423,7 +1455,8 @@ class _$BookImpl implements _Book {
         variable,
         readConfig,
         syncTime,
-        originBookUrl
+        originBookUrl,
+        downloadUrls
       ]);
 
   @JsonKey(ignore: true)
@@ -1475,7 +1508,8 @@ abstract class _Book implements Book {
       final String? variable,
       @JsonKey(name: 'readConfig') final ReadConfig? readConfig,
       @JsonKey(name: 'syncTime') final int syncTime,
-      @JsonKey(name: 'originBookUrl') final String originBookUrl}) = _$BookImpl;
+      @JsonKey(name: 'originBookUrl') final String originBookUrl,
+      @JsonKey(name: 'downloadUrls') final String? downloadUrls}) = _$BookImpl;
 
   factory _Book.fromJson(Map<String, dynamic> json) = _$BookImpl.fromJson;
 
@@ -1576,6 +1610,15 @@ abstract class _Book implements Book {
   /// 路径回退 bookUrl（未换源书籍与存量库行为不变，向后兼容）。
   @JsonKey(name: 'originBookUrl')
   String get originBookUrl;
+  @override
+
+  /// [批3 P1-3 UI 余项] 文件类书源（type=3）下载地址列表，JSON 数组
+  /// 字符串形态。对齐 Kotlin `Book.downloadUrls: List<String>`，本轨
+  /// 落库/往返形态对齐 Rust Book serde（`downloadUrls: Option<String>`，
+  /// JSON 数组字符串），由 BookOpenUtils.mergeWebInfo 将 WebBookInfo 的
+  /// 数组 jsonEncode 写入；详情页文件下载列表消费。
+  @JsonKey(name: 'downloadUrls')
+  String? get downloadUrls;
   @override
   @JsonKey(ignore: true)
   _$$BookImplCopyWith<_$BookImpl> get copyWith =>
