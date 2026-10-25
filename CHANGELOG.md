@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.371] - 2026-10-26
+
+### Fixed
+- [Rust] 修复卷章被当作普通章抓取正文报「章节正文为空」、音频源播到卷章报错不跳章的问题（isVolume/isPay/tag 全链落库，章节更新时间等附加信息恢复展示；审查 P1-1）。
+- [Rust] 实现正文规则 `title` 标题覆盖与标题内段评图提取（对齐原版 AppPattern.imgRegex；审查 P1-2）。
+- [Rust] 实现文件类书源（type=3）详情页下载链接解析（对齐原版「下载链接为空」报错语义；引擎侧落库，详情页文件列表 UI 随后续批；审查 P1-3）。
+- [Rust] `@webjs` 规则在无 WebView 场景回退时登记能力台账告警，不再完全无痕（审查 P2-2）。
+- [Rust] 备份恢复整体包进单事务：意外中断不再残留半恢复状态（批1审查 P1-A）。
+
 ## [2.0.370] - 2026-10-26
 
 ### Fixed
