@@ -59,6 +59,7 @@ open class MainActivity : FlutterActivity() {
         private const val CHANNEL_DEVICE_ID = "legado/device_id"
         private const val CHANNEL_COOKIE = "legado/cookie"
         private const val CHANNEL_LAUNCHER_ICON = LauncherIconBridge.CHANNEL
+        private const val CHANNEL_HEAP_DUMP = "legado/heap_dump"
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -144,6 +145,17 @@ open class MainActivity : FlutterActivity() {
                 else -> result.notImplemented()
             }
         }
+
+        // P1-5：创建堆转储（对齐原版 AboutFragment.createHeapDump →
+        // CrashHandler.doHeapDump：Debug.dumpHprofData 落应用缓存目录，
+        // 每次清空 heapDump 目录重建、文件名 heap-dump-manually-<时间戳>.hprof）
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_HEAP_DUMP)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "dump" -> handleHeapDump(result)
+                    else -> result.notImplemented()
+                }
+            }
 
         // P1-16：定时任务 JobScheduler 真后台桥
         autoTaskJobChannel = MethodChannel(
@@ -254,6 +266,39 @@ open class MainActivity : FlutterActivity() {
     private fun isImportSchemeUri(uri: String): Boolean {
         val lower = uri.trim().lowercase()
         return lower.startsWith("legado://") || lower.startsWith("yuedu://")
+    }
+
+    /**
+     * P1-5：创建堆转储（对齐原版 CrashHandler.doHeapDump(manually=true)）。
+     *
+     * 落点 externalCacheDir/heapDump（原版 appCtx.externalCache/heapDump），
+     * 每次清空目录重建（对齐 createFolderReplace）；dumpHprofData 为阻塞 IO，
+     * 放后台线程，结果回主线程。
+     */
+    private fun handleHeapDump(result: MethodChannel.Result) {
+        Thread {
+            var failure: Pair<String, String>? = null
+            var dumpPath: String? = null
+            try {
+                val heapDir = File(externalCacheDir ?: cacheDir, "heapDump")
+                heapDir.deleteRecursively()
+                heapDir.mkdirs()
+                val heapFile = File(heapDir, "heap-dump-manually-${System.currentTimeMillis()}.hprof")
+                android.os.Debug.dumpHprofData(heapFile.absolutePath)
+                dumpPath = heapFile.absolutePath
+            } catch (e: Throwable) {
+                failure = "EDUMP" to (e.message ?: e.javaClass.simpleName)
+            }
+            val finalPath = dumpPath
+            val finalFailure = failure
+            runOnUiThread {
+                if (finalFailure != null) {
+                    result.error(finalFailure.first, finalFailure.second, null)
+                } else {
+                    result.success(finalPath)
+                }
+            }
+        }.start()
     }
 
     /**

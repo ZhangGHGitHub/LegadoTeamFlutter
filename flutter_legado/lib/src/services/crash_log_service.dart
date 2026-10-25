@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -38,6 +39,11 @@ class CrashLogService {
 
   /// 单例实例
   static final CrashLogService instance = CrashLogService._();
+
+  /// [测试专用] 平台判定覆盖（null = 按 `Platform.isAndroid` 实测；
+  /// Windows 宿主跑测试时 dart:io 恒为 false，Android 成功路径须覆写验证）
+  @visibleForTesting
+  static bool? platformIsAndroidOverride;
 
   /// 崩溃日志文件
   File? _crashLogFile;
@@ -457,6 +463,30 @@ class CrashLogService {
   Future<void> setRecordHeapDump(bool value) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyRecordHeapDump, value);
+  }
+
+  /// 创建堆转储（P1-5，对齐原版 AboutFragment.createHeapDump →
+  /// CrashHandler.doHeapDump(manually=true)）
+  ///
+  /// 经原生通道 `legado/heap_dump` 调 `android.os.Debug.dumpHprofData`
+  /// 落 externalCacheDir/heapDump/heap-dump-manually-<时间戳>.hprof，返回落盘
+  /// 路径（调用层弹分享）。仅 Android 实现；iOS/桌面端原生通道不存在
+  ///（MissingPluginException），统一归一为 [UnsupportedError] 由调用层提示。
+  Future<String> createHeapDump() async {
+    final isAndroid = platformIsAndroidOverride ?? Platform.isAndroid;
+    if (kIsWeb || !isAndroid) {
+      throw UnsupportedError('当前平台不支持创建堆转储');
+    }
+    try {
+      final path = await const MethodChannel('legado/heap_dump')
+          .invokeMethod<String>('dump');
+      if (path == null || path.isEmpty) {
+        throw StateError('堆转储未返回文件路径');
+      }
+      return path;
+    } on MissingPluginException {
+      throw UnsupportedError('当前平台不支持创建堆转储');
+    }
   }
 
   // ===== 内存诊断（对应 Android 原版 CrashHandler.doHeapDump） =====

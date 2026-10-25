@@ -4,6 +4,7 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../routes.dart';
@@ -184,12 +185,45 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
     }
   }
 
-  void _createHeapDumpPlaceholder() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('创建堆转储暂不可用（需 Android 堆转储能力；请先开启「记录堆转储」）'),
-      ),
-    );
+  /// 创建堆转储（P1-5 真实现，对齐原版 AboutFragment.createHeapDump）：
+  /// ① 未开启「记录堆转储」先提示（原版 toast 后仍继续转储）；② 「开始创建
+  /// 堆转储」；③ Debug.dumpHprofData 落盘（原生通道）；④ 落盘路径弹系统分享
+  ///（原版为复制到备份目录，本轨以分享承载「取出文件」，批3裁决口径）。
+  /// iOS/桌面无对应物：UnsupportedError → 明确文案（平台裁决口径）。
+  Future<void> _createHeapDump() async {
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      final recordHeapDump =
+          await CrashLogService.instance.getRecordHeapDump();
+      if (!recordHeapDump) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('未开启堆转储记录，请去其他设置里打开记录堆转储'),
+          ),
+        );
+      }
+      messenger.showSnackBar(const SnackBar(content: Text('开始创建堆转储')));
+      final path = await CrashLogService.instance.createHeapDump();
+      if (!mounted) return;
+      // 分享承载「取出堆转储文件」（share_plus 为既有依赖）
+      await Share.shareXFiles(
+        [XFile(path)],
+        subject: '堆转储文件',
+        text: '应用堆转储（诊断用）',
+      );
+      if (!mounted) return;
+      messenger.showSnackBar(SnackBar(content: Text('堆转储已生成：$path')));
+    } on UnsupportedError catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.message ?? '当前平台不支持创建堆转储')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('创建堆转储失败：$e')),
+      );
+    }
   }
 
   @override
@@ -245,7 +279,7 @@ class _AboutScreenState extends ConsumerState<AboutScreen> {
                 ),
                 IosListTile(
                   title: '创建堆转储',
-                  onTap: _createHeapDumpPlaceholder,
+                  onTap: _createHeapDump,
                 ),
                 IosListTile(
                   title: '用户隐私与协议',
