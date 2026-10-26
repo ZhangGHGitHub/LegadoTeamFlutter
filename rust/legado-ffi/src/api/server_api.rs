@@ -138,7 +138,12 @@ fn abort_and_wait(handle: JoinHandle<()>) {
 ///   SAF 预置目录语义，改取**本仓既有实现**的真实本地书目录：Dart
 ///   `LocalBookStore` 把本地书持久化到 `Documents/books/`，Rust
 ///   `db_state::resolve_local_book_path` 亦以 DB 父目录（Documents）为基解析
-///   `books/*` 相对标识。两者同源，上传书因此与 App 本地书落在同一目录。
+///   `books/*` 相对标识。
+/// - **目录同源 + 身份同源（C1/O2）**：注入根恒为「DB 父目录/books」，故
+///   `legacy/book_api.rs` 上传落库的 `bookUrl` 与 FFI `import_local_book` /
+///   iOS 导入一致，均为相对可迁移标识 `books/<fileName>`（文件仍落本根下的
+///   绝对路径）；读侧在 server 内以本注入根还原。这样上传书不再把 iOS 容器
+///   UUID 固化进主键，重签名/重装后仍可读取。
 /// - DB 未记录路径（未走 `db_open`）时返回 `None`，服务端保持既有
 ///   「没有设置书籍保存位置!」分支，行为不变。
 fn local_book_root(db_path: Option<&str>) -> Option<PathBuf> {

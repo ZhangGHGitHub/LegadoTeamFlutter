@@ -54,6 +54,10 @@ const LOCAL_BOOK_EXTS: &[&str] = &[
     ".epub", ".txt", ".text", ".mobi", ".azw", ".azw3", ".pdf", ".cbz",
 ];
 
+/// 本地书保存子目录名（对齐 FFI `server_api.rs::LOCAL_BOOK_SUB_DIR` 与
+/// Dart `LocalBookStore.subDir`；`bookUrl` 相对可迁移标识的首段）
+const LOCAL_BOOK_SUB_DIR: &str = "books";
+
 /// 本地图片扩展名白名单（P1-2 安全加固；对齐 `guess_image_mime` 的常见图片集）
 const LOCAL_IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp"];
 
@@ -102,6 +106,69 @@ const REPLACE_ENABLE_DEFAULT: bool = true;
 fn is_local_path(path: &str) -> bool {
     let lower = path.to_lowercase();
     LOCAL_BOOK_EXTS.iter().any(|ext| lower.ends_with(ext))
+}
+
+/// 保存根是否为「本地书标准保存根」（末段目录名 = `books`）
+///
+/// FFI 注入的 `local_book_root` 恒由 DB 路径父目录推导为 `{Documents}/books`
+/// （`legado-ffi/src/api/server_api.rs::local_book_root`），与 Dart
+/// `LocalBookStore`、FFI `db_state::resolve_local_book_path` 的 `books/*`
+/// 相对标识同源。满足该形态时上传书 `bookUrl` 才能安全写相对身份。
+fn is_local_book_sub_dir(root: &Path) -> bool {
+    root.file_name()
+        .and_then(|name| name.to_str())
+        .map(|name| name == LOCAL_BOOK_SUB_DIR)
+        .unwrap_or(false)
+}
+
+/// 上传落盘后的 `bookUrl` 身份（C1 可迁移口径）
+///
+/// - 保存根为标准 `books` 目录（由 DB 父目录推导）→ 相对可迁移标识
+///   `books/<fileName>`，与 FFI `book_import::import_local_book` 写入身份一致，
+///   iOS 容器 UUID 变化后仍可按 DB 父目录重建；
+/// - 自定义根（测试/非标准宿主）→ 绝对路径，保持既有语义。
+fn uploaded_book_identity(root: &Path, target: &Path, file_name: &str) -> String {
+    if is_local_book_sub_dir(root) {
+        format!("{LOCAL_BOOK_SUB_DIR}/{file_name}")
+    } else {
+        target.to_string_lossy().into_owned()
+    }
+}
+
+/// 相对可迁移标识（`books/<file>`）→ 当前注入保存根下的真实路径
+///
+/// 与 FFI `db_state::resolve_local_book_path` 同语义（以 DB 父目录为基），
+/// 但 server 进程无 DB 路径访问权，故以宿主注入的本地书保存根为基——二者
+/// 同源（保存根 = DB 父目录/books）。Web URL / 绝对路径原样返回；未注入
+/// 保存根或首段不匹配时原样返回（由调用方按文件不存在优雅降级）。
+fn resolve_local_book_file(state: &AppState, book_url: &str) -> String {
+    if book_url.contains("://") {
+        return book_url.to_string();
+    }
+    let path = Path::new(book_url);
+    if path.is_absolute() {
+        return book_url.to_string();
+    }
+    let Some(root) = state.injected_paths.local_book_root.as_ref() else {
+        return book_url.to_string();
+    };
+    let mut components = path.components();
+    let first = match components.next() {
+        Some(std::path::Component::Normal(segment)) => segment,
+        _ => return book_url.to_string(),
+    };
+    let Some(root_name) = root.file_name() else {
+        return book_url.to_string();
+    };
+    if root_name != first {
+        return book_url.to_string();
+    }
+    let rest: std::path::PathBuf = components.collect();
+    if rest.as_os_str().is_empty() {
+        root.to_string_lossy().into_owned()
+    } else {
+        root.join(rest).to_string_lossy().into_owned()
+    }
 }
 
 fn now_millis() -> i64 {
@@ -270,9 +337,14 @@ fn toc_fetch_url(book: &Book, book_url: &str) -> String {
 }
 
 /// 本地书目录解析 + 落库（对齐 `LocalBook.getChapterList` + del/insert/update）
+///
+/// `bookUrl` 可能为相对可迁移标识（`books/x.epub`，Web 上传/iOS 导入）：
+/// 文件解析前经 [`resolve_local_book_file`] 还原真实路径，章节行的
+/// `book_url`/`base_url` 仍存原始标识（主键一致）。
 async fn refresh_local_toc(state: &Arc<AppState>, book: &Book) -> Result<Vec<BookChapter>, String> {
+    let real_path = resolve_local_book_file(state, &book.book_url);
     let chapter_infos =
-        legado_book::LocalBook::get_chapters(&book.book_url).map_err(|e| e.to_string())?;
+        legado_book::LocalBook::get_chapters(&real_path).map_err(|e| e.to_string())?;
     let chapters: Vec<BookChapter> = chapter_infos
         .iter()
         .map(|ci| BookChapter {
@@ -405,8 +477,10 @@ async fn get_book_content_inner(
 
     // 2) 本地书：文件解析（对齐 BookHelp.getContent 的本地书分支）
     if is_local_book(&book) || is_local_path(book_url) {
+        // 相对可迁移标识 → 当前保存根真实路径（绝对路径原样）
+        let real_path = resolve_local_book_file(state, &book.book_url);
         let content = legado_book::LocalBook::get_chapter_content(
-            &book.book_url,
+            &real_path,
             &legado_book::ChapterInfo {
                 url: chapter.url.clone(),
                 title: chapter.title.clone(),
@@ -821,7 +895,9 @@ async fn local_read_allowlist(state: &Arc<AppState>) -> Vec<PathBuf> {
     let mut roots: Vec<PathBuf> = Vec::new();
     for book in &books {
         if is_local_book(book) {
-            if let Some(real) = canonical_local_path(&book.book_url) {
+            // 相对可迁移标识先还原到当前保存根，再做白名单前缀判定
+            let real_path = resolve_local_book_file(state, &book.book_url);
+            if let Some(real) = canonical_local_path(&real_path) {
                 let dir = if real.is_dir() {
                     Some(real)
                 } else {
@@ -1349,7 +1425,10 @@ async fn stream_field_to_temp(mut field: Field<'_>) -> Result<PathBuf, String> {
 /// `EmptyFileException`（LocalBook.kt:287）。
 ///
 /// 导入语义对齐 `LocalBook.importFile`（LocalBook.kt:283-320）：
-/// - `bookUrl` = 落盘后的文件路径；已有同 `bookUrl` 书籍 → 更新链：**行保持
+/// - `bookUrl` = 落盘文件的**身份标识**：标准 `books` 保存根（由 DB 父目录
+///   推导，C1/O2）下为相对可迁移标识 `books/<fileName>`（与 FFI
+///   `import_local_book`、Dart `LocalBookStore` 同源；文件仍落绝对路径），
+///   非标准根回退绝对路径；已有同 `bookUrl` 书籍 → 更新链：**行保持
 ///   不变**，仅删目录（`delByBook`）+ 清书籍缓存（`deleteBook(book,false)` 的
 ///   `BookHelp.clearCache` 对应我方 `cached_chapters` 行）；原版更新分支同样
 ///   不回写 books 行（upBookInfo 只改内存对象）；
@@ -1484,21 +1563,41 @@ async fn import_uploaded_book(
         return Err("保存书籍错误\nUnexpected empty File".to_string());
     }
     std::fs::copy(temp_path, &target).map_err(|_| "需重新设置书籍保存位置!".to_string())?;
-    let book_url = target.to_string_lossy().into_owned();
+    // bookUrl 身份：标准 books 保存根下写相对可迁移标识（C1），
+    // 文件仍落 target 绝对路径位置；读侧经 resolve_local_book_file 还原。
+    let book_url = uploaded_book_identity(root, &target, file_name);
     let latest_chapter_time = file_mtime_millis(&target);
 
     // —— 导入（importFile 语义）——
     let db = state.db.lock().await;
     let repo = BookRepository::new(db.connection());
-    let existing = repo.find_by_url(&book_url).map_err(|e| e.to_string())?;
-    if existing.is_some() {
+    // 兼容存量：旧版本上传书以容器绝对路径为主键；同一文件重传时仍按旧行
+    // 走更新链（不新增重复行、不改写旧行主键），读侧对绝对路径原样兼容。
+    let absolute_url = target.to_string_lossy().into_owned();
+    let existing_url = if repo
+        .find_by_url(&book_url)
+        .map_err(|e| e.to_string())?
+        .is_some()
+    {
+        Some(book_url.clone())
+    } else if book_url != absolute_url
+        && repo
+            .find_by_url(&absolute_url)
+            .map_err(|e| e.to_string())?
+            .is_some()
+    {
+        Some(absolute_url)
+    } else {
+        None
+    };
+    if let Some(existing_url) = existing_url {
         // 更新链：行保持不变（原版更新分支不回写 books 行），删目录 + 清
         // 章节内容缓存（BookHelp.clearCache 对应物）
         BookChapterRepository::new(db.connection())
-            .delete_by_book_url(&book_url)
+            .delete_by_book_url(&existing_url)
             .map_err(|e| e.to_string())?;
         CacheBookRepository::new(db.connection())
-            .delete_by_book(&book_url)
+            .delete_by_book(&existing_url)
             .map_err(|e| e.to_string())?;
         return Ok(Value::Bool(true));
     }
@@ -1506,7 +1605,8 @@ async fn import_uploaded_book(
     // 新书：analyzeNameAuthor → upBookInfo 对齐
     let (mut name, mut author) = analyze_name_author(file_name);
     let mut intro: Option<String> = None;
-    let format = LocalBook::detect_format(&book_url).ok();
+    // 格式检测/元数据解析用真实文件路径（bookUrl 可能是相对标识）
+    let format = LocalBook::detect_format(&target.to_string_lossy()).ok();
     let book_type_value = match &format {
         // 我方扩展：cbz 漫画包附加 IMAGE_BIT（对齐 FFI 导入口径）
         Some(BookFormat::Cbz) => book_type::LOCAL | book_type::IMAGE_BIT,
@@ -1526,7 +1626,7 @@ async fn import_uploaded_book(
                 | BookFormat::Cbz
         )
     ) {
-        if let Ok(meta) = LocalBook::parse(&book_url) {
+        if let Ok(meta) = LocalBook::parse(&target.to_string_lossy()) {
             if !meta.title.trim().is_empty() {
                 name = meta.title;
             }
@@ -1878,5 +1978,155 @@ mod tests {
         book.order = 5;
         repo.insert(&book).unwrap();
         assert_eq!(min_order(&repo), 5);
+    }
+
+    // ─── P1-3：addLocalBook 相对身份（C1 可迁移口径） ─────────────────────
+
+    /// 测试用 AppState（内存库 + 可选本地书保存根）
+    fn make_state(local_book_root: Option<PathBuf>) -> Arc<AppState> {
+        let db = legado_db::init_in_memory_database().unwrap();
+        Arc::new(AppState {
+            db: tokio::sync::Mutex::new(db),
+            search_cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            download_manager: tokio::sync::Mutex::new(
+                legado_core::download_manager::DownloadManager::new(3),
+            ),
+            injected_paths: crate::state::InjectedPaths {
+                image_cache_root: None,
+                local_book_root,
+            },
+            legacy_review: Default::default(),
+        })
+    }
+
+    /// 身份函数：标准 books 根 → 相对标识；自定义根 → 绝对路径回退
+    #[test]
+    fn test_uploaded_book_identity() {
+        let books_root = Path::new("D:/docs/books");
+        assert_eq!(
+            uploaded_book_identity(books_root, Path::new("D:/docs/books/a.txt"), "a.txt"),
+            "books/a.txt"
+        );
+        let custom_root = Path::new("D:/tmp/upload");
+        assert_eq!(
+            uploaded_book_identity(custom_root, Path::new("D:/tmp/upload/a.txt"), "a.txt"),
+            "D:/tmp/upload/a.txt"
+        );
+    }
+
+    /// 解析器：books/<file> → 注入根拼接；绝对路径/URL 原样
+    #[test]
+    fn test_resolve_local_book_file() {
+        let base =
+            std::env::temp_dir().join(format!("legado_resolve_books_{}", std::process::id()));
+        let root = base.join("books");
+        let state = make_state(Some(root.clone()));
+
+        let resolved = resolve_local_book_file(&state, "books/a.epub");
+        assert_eq!(Path::new(&resolved), root.join("a.epub"));
+
+        // 非 books 首段 / Web URL / 绝对路径 → 原样
+        assert_eq!(
+            resolve_local_book_file(&state, "other/a.epub"),
+            "other/a.epub"
+        );
+        assert_eq!(
+            resolve_local_book_file(&state, "https://x/a.epub"),
+            "https://x/a.epub"
+        );
+        let abs = root.join("a.epub");
+        assert_eq!(
+            resolve_local_book_file(&state, &abs.to_string_lossy()),
+            abs.to_string_lossy()
+        );
+    }
+
+    /// 上传导入落库相对身份 + 目录/正文读链可解析（addLocalBook 核心回归）
+    #[tokio::test]
+    async fn test_import_uploaded_book_relative_identity_and_reader_chain() {
+        let base = std::env::temp_dir().join(format!(
+            "legado_upload_identity_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let books = base.join("books");
+        std::fs::create_dir_all(&books).unwrap();
+        let temp = base.join("upload.tmp");
+        std::fs::write(&temp, "第一章\n正文一\n\n第二章\n正文二\n").unwrap();
+        let state = make_state(Some(books.clone()));
+
+        import_uploaded_book(&state, &books, "测试书.txt", &temp)
+            .await
+            .unwrap();
+
+        // 1) books 表身份为相对可迁移标识（非容器绝对路径）
+        let book_url = {
+            let db = state.db.lock().await;
+            let books_rows = BookRepository::new(db.connection()).find_all().unwrap();
+            assert_eq!(books_rows.len(), 1);
+            assert_eq!(
+                books_rows[0].book_url, "books/测试书.txt",
+                "bookUrl 应存相对可迁移标识（iOS 容器 UUID 变化后仍可解析）"
+            );
+            books_rows[0].book_url.clone()
+        };
+        // 2) 文件仍落在注入保存根的绝对位置
+        assert!(books.join("测试书.txt").is_file(), "上传文件应落绝对保存根");
+
+        // 3) 读链：目录 + 正文均经 resolve_local_book_file 还原真实路径
+        let chapters = refresh_toc(&state, &book_url).await.unwrap();
+        assert!(!chapters.is_empty(), "相对标识应能解析出目录");
+        let content = get_book_content_inner(&state, &book_url, 0).await.unwrap();
+        assert!(
+            content.contains("正文一"),
+            "相对标识应能读到正文：{content}"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 存量兼容：旧版本以绝对路径落库的同名文件重传 → 走旧行更新链，
+    /// 不新增重复行、不改写旧主键（读侧绝对路径原样兼容）
+    #[tokio::test]
+    async fn test_import_uploaded_book_legacy_absolute_row_reupload_updates() {
+        let base = std::env::temp_dir().join(format!(
+            "legado_upload_legacy_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let books = base.join("books");
+        std::fs::create_dir_all(&books).unwrap();
+        let temp = base.join("upload.tmp");
+        std::fs::write(&temp, "第一章\n旧书正文\n").unwrap();
+        let state = make_state(Some(books.clone()));
+
+        let absolute_url = books.join("旧书.txt").to_string_lossy().into_owned();
+        {
+            let db = state.db.lock().await;
+            BookRepository::new(db.connection())
+                .insert(&Book {
+                    book_url: absolute_url.clone(),
+                    name: "旧书".to_string(),
+                    origin: book_type::LOCAL_TAG.to_string(),
+                    book_type: book_type::TEXT | book_type::LOCAL,
+                    ..Book::default()
+                })
+                .unwrap();
+        }
+
+        import_uploaded_book(&state, &books, "旧书.txt", &temp)
+            .await
+            .unwrap();
+
+        let db = state.db.lock().await;
+        let rows = BookRepository::new(db.connection()).find_all().unwrap();
+        assert_eq!(rows.len(), 1, "重传不应产生重复书行");
+        assert_eq!(rows[0].book_url, absolute_url, "旧行主键保持不变");
     }
 }
