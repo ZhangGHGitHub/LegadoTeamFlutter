@@ -24,6 +24,8 @@ pub mod download_api;
 pub mod explore_api;
 pub mod explore_info_map;
 pub mod highlight_api;
+/// [批11 | 2026-10-26] HTTP 采集开关（契约 §2.10 / legado-net 采集点接线）
+pub mod http_log_api;
 pub mod http_tts_api;
 pub mod image_api;
 pub mod image_cache_api;

@@ -61,7 +61,15 @@
 //! | POST `/deleteReplaceRule` | `ReplaceRuleController.delete`（:48-59） | **令牌保护**；同上 |
 //! | POST `/testReplaceRule` | `ReplaceRuleController.testRule`（:68-107） | **令牌保护**；不落库；复用 content_processor 单实现 |
 //!
-//! 剩余独立入口：`/refreshToc`（GET，未纳入）。
+//! B10 批（2026-10-26，ACTIVE_PLAN「/refreshToc 独立入口 + HTTP 采集接线」）：
+//!
+//! | 端点 | 原版实现 | 备注 |
+//! |---|---|---|
+//! | GET `/refreshToc?url=` | `BookController.refreshToc`（:145-177） | 复用 `refresh_toc` 单实现（本地书解析 / 网络书详情补全 + 目录抓取 + 删旧插新）；返回刷新后的章节列表；**无令牌**（不在两个 PROTECTED 集合内） |
+//!
+//! HTTP 采集：`legado-net` 统一请求出口新增可插拔采集点（trait + 运行期开关），
+//! 本 crate 的 `legacy::http_log::StoreHttpLogRecorder` 注册为进程级实现，
+//! `/getHttpLogs`、`/getHttpLog` 读取面零改动。
 //!
 //! B5 批（2026-10-26，ACTIVE_PLAN「WS 原版路径别名」登记项）：
 //! 原版 WebSocket 调试通道已在**主服务 port+1** 的独立监听上落地
@@ -192,6 +200,8 @@ pub fn legacy_routes() -> Router<Arc<AppState>> {
     Router::new()
         .route("/getBookshelf", get(book_api::get_bookshelf))
         .route("/getChapterList", get(book_api::get_chapter_list))
+        // B10：独立目录刷新入口（原版 GET /refreshToc，无令牌）
+        .route("/refreshToc", get(book_api::refresh_toc_endpoint))
         .route("/getBookContent", get(book_api::get_book_content))
         // 原版 saveBookProgress 为 POST（HttpServer.kt:90）；GET 在原版会落到
         // 静态资产分支（webAssets 无此文件 → 500），故不提供 GET 别名。

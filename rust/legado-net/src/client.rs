@@ -22,6 +22,7 @@ use reqwest::ClientBuilder;
 use legado_core::{LegadoError, LegadoResult};
 
 use crate::cookie_store::{CookiePersistence, CookieStore};
+use crate::http_log::HttpLogCapture;
 use crate::middleware::MiddlewareChain;
 use crate::proxy::{ProxyConfig, ProxyMiddleware, ProxyPool};
 use crate::rate_limit::DomainRateLimiter;
@@ -406,6 +407,8 @@ impl LegadoClient {
         let cookie_store = self.cookie_store.clone();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie（读侧不受影响）
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
+        // HTTP 日志采集上下文（开关关闭时为 None，零额外开销；原版拦截器同款门控）
+        let log = HttpLogCapture::start("GET", url, headers.as_ref(), "");
         let headers = Arc::new(headers);
         let url = url.to_string();
         let url_for_retry = url.clone();
@@ -423,7 +426,7 @@ impl LegadoClient {
             }
         };
 
-        self.execute_with_retry_and_limit(url_for_retry.as_str(), save_cookies, factory)
+        self.execute_with_retry_and_limit(url_for_retry.as_str(), save_cookies, log, factory)
             .await
     }
 
@@ -451,6 +454,7 @@ impl LegadoClient {
         let cookie_store = self.cookie_store.clone();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
+        let log = HttpLogCapture::start("GET", url, headers.as_ref(), "");
         let headers = Arc::new(headers);
         let url = url.to_string();
         let url_for_retry = url.clone();
@@ -477,15 +481,25 @@ impl LegadoClient {
             None
         };
 
-        let response = if let Some(ref executor) = self.retry_executor {
+        let result = if let Some(ref executor) = self.retry_executor {
             executor
                 .execute_with_retry(|| async { factory().await.map_err(map_reqwest_error) })
-                .await?
+                .await
         } else {
-            factory().await.map_err(map_reqwest_error)?
+            factory().await.map_err(map_reqwest_error)
+        };
+        let response = match result {
+            Ok(response) => response,
+            Err(e) => {
+                // 失败只记一条（重试耗尽后一次性提交，对齐原版单次调用单记录）
+                if let Some(capture) = log {
+                    capture.finish_failure(e.to_string());
+                }
+                return Err(e);
+            }
         };
 
-        self.collect_raw_response(response, &url_for_retry, save_cookies)
+        self.collect_raw_response(response, &url_for_retry, save_cookies, log)
             .await
     }
 
@@ -500,6 +514,7 @@ impl LegadoClient {
         let cookie_store = self.cookie_store.clone();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
+        let log = HttpLogCapture::start("POST", url, headers.as_ref(), body);
         let headers = Arc::new(headers);
         let url = url.to_string();
         let body = body.to_string();
@@ -527,15 +542,24 @@ impl LegadoClient {
             None
         };
 
-        let response = if let Some(ref executor) = self.retry_executor {
+        let result = if let Some(ref executor) = self.retry_executor {
             executor
                 .execute_with_retry(|| async { factory().await.map_err(map_reqwest_error) })
-                .await?
+                .await
         } else {
-            factory().await.map_err(map_reqwest_error)?
+            factory().await.map_err(map_reqwest_error)
+        };
+        let response = match result {
+            Ok(response) => response,
+            Err(e) => {
+                if let Some(capture) = log {
+                    capture.finish_failure(e.to_string());
+                }
+                return Err(e);
+            }
         };
 
-        self.collect_raw_response(response, &url_for_retry, save_cookies)
+        self.collect_raw_response(response, &url_for_retry, save_cookies, log)
             .await
     }
 
@@ -550,6 +574,7 @@ impl LegadoClient {
         let cookie_store = self.cookie_store.clone();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
+        let log = HttpLogCapture::start("POST", url, headers.as_ref(), body);
         let headers = Arc::new(headers);
         let url = url.to_string();
         let body = body.to_string();
@@ -569,7 +594,7 @@ impl LegadoClient {
             }
         };
 
-        self.execute_with_retry_and_limit(url_for_retry.as_str(), save_cookies, factory)
+        self.execute_with_retry_and_limit(url_for_retry.as_str(), save_cookies, log, factory)
             .await
     }
 
@@ -583,6 +608,7 @@ impl LegadoClient {
         let cookie_store = self.cookie_store.clone();
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
         let save_cookies = cookie_jar_marker_present(headers.as_ref());
+        let log = HttpLogCapture::start("HEAD", url, headers.as_ref(), "");
         let headers = Arc::new(headers);
         let url = url.to_string();
         let url_for_retry = url.clone();
@@ -600,7 +626,7 @@ impl LegadoClient {
             }
         };
 
-        self.execute_with_retry_and_limit(url_for_retry.as_str(), save_cookies, factory)
+        self.execute_with_retry_and_limit(url_for_retry.as_str(), save_cookies, log, factory)
             .await
     }
 
@@ -617,6 +643,13 @@ impl LegadoClient {
         let timeout = request.timeout;
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie
         let save_cookies = cookie_jar_marker_present(Some(&request.headers));
+        let method_label = request.method.as_str();
+        let log = HttpLogCapture::start(
+            method_label,
+            &request.url,
+            Some(&request.headers),
+            request.body.as_deref().unwrap_or(""),
+        );
         let headers = Arc::new(Some(request.headers.clone()));
 
         let factory = move || {
@@ -640,7 +673,7 @@ impl LegadoClient {
             }
         };
 
-        self.execute_with_retry_and_limit(&request.url, save_cookies, factory)
+        self.execute_with_retry_and_limit(&request.url, save_cookies, log, factory)
             .await
     }
 
@@ -668,6 +701,12 @@ impl LegadoClient {
         let timeout = request.timeout;
         // 写侧门控：请求头携带 CookieJar 标记才写回响应 cookie（读侧不受影响）
         let save_cookies = cookie_jar_marker_present(Some(&request.headers));
+        let log = HttpLogCapture::start(
+            request.method.as_str(),
+            &request.url,
+            Some(&request.headers),
+            request.body.as_deref().unwrap_or(""),
+        );
         let headers = Arc::new(Some(request.headers.clone()));
         // cookie 写回需要原始请求 URL（closure 消费 url 之后仍可用）
         let original_url = url.clone();
@@ -702,15 +741,29 @@ impl LegadoClient {
             None
         };
 
-        let raw_response = if let Some(ref executor) = self.retry_executor {
+        let result = if let Some(ref executor) = self.retry_executor {
             executor
                 .execute_with_retry(|| async { factory().await.map_err(map_reqwest_error) })
-                .await?
+                .await
         } else {
-            factory().await.map_err(map_reqwest_error)?
+            factory().await.map_err(map_reqwest_error)
+        };
+        let raw_response = match result {
+            Ok(response) => response,
+            Err(e) => {
+                if let Some(capture) = log {
+                    capture.finish_failure(e.to_string());
+                }
+                return Err(e);
+            }
         };
 
         let stream = crate::response::LegadoStreamResponse::new(raw_response, permit);
+        // 流式路径响应体尚未读取（无 peep 能力）：只记录响应头/状态，body 留空
+        if let Some(capture) = log {
+            let content_type = stream.content_type().map(String::as_str);
+            capture.finish_success(stream.status() as i32, stream.headers(), "", content_type);
+        }
         // 写侧 CookieJar 门控：Set-Cookie 随响应头到达，立即写回（与 get_raw
         // 在响应体读完后写回的可见结果一致；流式路径不能等 body 结束）
         if save_cookies {
@@ -775,10 +828,14 @@ impl LegadoClient {
     ///
     /// `factory` 是一个请求工厂：每次调用时重建 RequestBuilder 并发送，
     /// 以支持重试时重新发起请求（`RequestBuilder` 在 `send()` 后被消费）。
+    ///
+    /// `log` 为 HTTP 日志采集上下文（开关关闭时为 None）：**重试耗尽后只在
+    /// 最终结果处提交一条**（成功或失败），对齐原版拦截器「一次调用一条记录」。
     async fn execute_with_retry_and_limit<F, Fut>(
         &self,
         url: &str,
         save_cookies: bool,
+        log: Option<HttpLogCapture>,
         factory: F,
     ) -> LegadoResult<LegadoResponse>
     where
@@ -796,12 +853,21 @@ impl LegadoClient {
             None
         };
 
-        let raw_response = if let Some(ref executor) = self.retry_executor {
+        let result = if let Some(ref executor) = self.retry_executor {
             executor
                 .execute_with_retry(|| async { factory().await.map_err(map_reqwest_error) })
-                .await?
+                .await
         } else {
-            factory().await.map_err(map_reqwest_error)?
+            factory().await.map_err(map_reqwest_error)
+        };
+        let raw_response = match result {
+            Ok(response) => response,
+            Err(e) => {
+                if let Some(capture) = log {
+                    capture.finish_failure(e.to_string());
+                }
+                return Err(e);
+            }
         };
 
         // 分段计时：TTFB=发送到收到响应头；对端地址用于判断 IPv4/IPv6
@@ -809,7 +875,7 @@ impl LegadoClient {
         let remote = raw_response.remote_addr();
 
         let response = self
-            .collect_response(raw_response, url, save_cookies)
+            .collect_response(raw_response, url, save_cookies, log)
             .await?;
 
         let body_dur = t0.elapsed() - ttfb;
@@ -823,11 +889,14 @@ impl LegadoClient {
     /// `save_cookies`：写侧门控（请求头带 [`COOKIE_JAR_HEADER`] 标记时为 true）。
     /// false 时响应 `Set-Cookie` 整体跳过（不进内存 jar、不落 DB）；读侧注入
     /// 由 [`apply_headers_and_cookies`] 无条件完成，与此无关。
+    ///
+    /// `log`：HTTP 日志采集上下文（成功/响应体读取失败时在此提交一条）。
     async fn collect_response(
         &self,
         response: reqwest::Response,
         original_url: &str,
         save_cookies: bool,
+        log: Option<HttpLogCapture>,
     ) -> LegadoResult<LegadoResponse> {
         let final_url = response.url().to_string();
         let status = response.status().as_u16();
@@ -846,10 +915,21 @@ impl LegadoClient {
         }
 
         // 读取响应体
-        let body = response
-            .text()
-            .await
-            .map_err(|e| LegadoError::Network(format!("Failed to read response body: {}", e)))?;
+        let body = match response.text().await {
+            Ok(body) => body,
+            Err(e) => {
+                let msg = format!("Failed to read response body: {}", e);
+                if let Some(capture) = log {
+                    capture.finish_failure(msg.clone());
+                }
+                return Err(LegadoError::Network(msg));
+            }
+        };
+
+        if let Some(capture) = log {
+            let content_type = response_header(&headers, "content-type");
+            capture.finish_success(status as i32, &headers, &body, content_type);
+        }
 
         Ok(LegadoResponse {
             status,
@@ -862,11 +942,14 @@ impl LegadoClient {
     /// 收集二进制响应数据并保存 Cookie（Task #113：无损字节读取，对照 [`collect_response`](Self::collect_response)）
     ///
     /// `save_cookies` 语义同 [`Self::collect_response`]（写侧门控）。
+    /// `log` 同 [`Self::collect_response`]：仅在采集开启时把字节按有损 UTF-8
+    /// 解码进日志（二进制体由上层按 `Content-Type` 判为 `[binary body omitted]`）。
     async fn collect_raw_response(
         &self,
         response: reqwest::Response,
         original_url: &str,
         save_cookies: bool,
+        log: Option<HttpLogCapture>,
     ) -> LegadoResult<crate::response::LegadoRawResponse> {
         let final_url = response.url().to_string();
         let status = response.status().as_u16();
@@ -885,11 +968,22 @@ impl LegadoClient {
         }
 
         // 读取原始字节（不经 UTF-8 解码）
-        let body = response
-            .bytes()
-            .await
-            .map_err(|e| LegadoError::Network(format!("Failed to read response bytes: {}", e)))?
-            .to_vec();
+        let body = match response.bytes().await {
+            Ok(bytes) => bytes.to_vec(),
+            Err(e) => {
+                let msg = format!("Failed to read response bytes: {}", e);
+                if let Some(capture) = log {
+                    capture.finish_failure(msg.clone());
+                }
+                return Err(LegadoError::Network(msg));
+            }
+        };
+
+        if let Some(capture) = log {
+            let text = String::from_utf8_lossy(&body);
+            let content_type = response_header(&headers, "content-type");
+            capture.finish_success(status as i32, &headers, &text, content_type);
+        }
 
         Ok(crate::response::LegadoRawResponse {
             status,
@@ -1017,6 +1111,17 @@ fn map_reqwest_error(e: reqwest::Error) -> LegadoError {
     } else {
         LegadoError::Network(format!("Request failed: {chain}"))
     }
+}
+
+/// 取响应头值（键名不区分大小写；缺失返回 None）
+///
+/// HTTP 日志采集用：`Content-Type` 决定响应体是否按二进制省略
+/// （对齐原版 `HttpLogSanitizer.isText(mediaType)`）。
+fn response_header<'a>(headers: &'a HashMap<String, String>, name: &str) -> Option<&'a str> {
+    headers
+        .iter()
+        .find(|(key, _)| key.eq_ignore_ascii_case(name))
+        .map(|(_, value)| value.as_str())
 }
 
 /// 应用默认请求头（静态版本，不依赖 &self）

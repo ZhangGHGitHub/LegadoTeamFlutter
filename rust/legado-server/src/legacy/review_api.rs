@@ -39,8 +39,10 @@
 //!   `result`（脚本常用面），其余按 QuickJS 宿主 API 既有面提供（登记）；
 //! - 非 quickjs 构建下 JS 书源路径/legacy 脚本求值返回引擎占位错误（与既有
 //!   非 quickjs 构建行为一致）；
-//! - 段评抓取请求按 `config:recordHttpLog` 写入 `legacy/http_log.rs` 存储
-//!   （原版由 OkHttp 拦截器全量采集；App 全量采集点属 legado-net，禁改未接线）；
+//! - 段评抓取请求的 HTTP 日志由 `legado-net` 统一采集点写入
+//!   `legacy/http_log.rs` 存储（批11 起全量接线；本链**不再手工记录**，避免
+//!   双记录。开关真源 `config:recordHttpLog`，经 FFI `setHttpLogRecording` 或
+//!   服务启动回填写入 `legado_net::http_log` 运行期开关）；
 //! - 抓取非 2xx 直接回错误 `HTTP {status} for {url}`（沿用 ffi review_api
 //!   同款判定）；原版 OkHttp 不因状态码抛错，会把错误页交给解析器（登记）；
 //! - POST 请求体解析失败文案为「数据格式错误: {serde 错误}」；原版透传
@@ -48,7 +50,6 @@
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Instant;
 
 use axum::extract::{Query, State};
 use axum::http::{header, HeaderMap, HeaderName, HeaderValue};
@@ -69,7 +70,6 @@ use legado_parser::{AnalyzeUrl, RequestMethod};
 use crate::handlers::web_book::server_deps;
 use crate::state::AppState;
 
-use super::http_log;
 use super::source_api::{load_js_source_api_config, token_error_response};
 use super::{origin_of, to_response, ReturnData};
 
@@ -361,8 +361,8 @@ async fn fetch_review_body(
 
     let deps = server_deps(state).map_err(|e| e.to_string())?;
     let client = &deps.client;
-    let recording = super::source_api::record_http_log_enabled(state).await;
-    let started = Instant::now();
+    // HTTP 日志由 legado-net 统一采集点（LegadoClient 出口）写入同一 ring，
+    // 本链不再手工 record_*，避免双记录（单实现原则）；开关见模块注释。
 
     let outcome = match method {
         RequestMethod::Post => {
@@ -372,28 +372,9 @@ async fn fetch_review_body(
         }
         _ => client.get(&final_url, Some(headers.clone())).await,
     };
-    let duration_ms = started.elapsed().as_millis() as i64;
 
     match outcome {
         Ok(resp) => {
-            if recording {
-                let content_type = resp.header("content-type").cloned();
-                http_log::record_success(
-                    if matches!(method, RequestMethod::Post) {
-                        "POST"
-                    } else {
-                        "GET"
-                    },
-                    &final_url,
-                    &headers,
-                    &post_body,
-                    resp.status as i32,
-                    &resp.headers,
-                    &resp.body,
-                    content_type.as_deref(),
-                    duration_ms,
-                );
-            }
             if !resp.is_success() {
                 return Err(format!("HTTP {} for {}", resp.status, final_url));
             }
@@ -404,23 +385,7 @@ async fn fetch_review_body(
             };
             Ok((resp.body, base_url))
         }
-        Err(e) => {
-            if recording {
-                http_log::record_failure(
-                    if matches!(method, RequestMethod::Post) {
-                        "POST"
-                    } else {
-                        "GET"
-                    },
-                    &final_url,
-                    &headers,
-                    &post_body,
-                    &e.to_string(),
-                    duration_ms,
-                );
-            }
-            Err(format!("请求段评{stage}失败: {e}"))
-        }
+        Err(e) => Err(format!("请求段评{stage}失败: {e}")),
     }
 }
 

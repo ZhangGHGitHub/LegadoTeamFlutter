@@ -199,6 +199,9 @@ pub mod ffi {
         // 读回 customHosts 映射与独立 MCP 端口，尽力而为（失败仅记日志）
         crate::api::net_api::restore_custom_hosts();
         crate::api::server_api::restore_mcp_port();
+        // 批11（契约 §2.10）：注册 HTTP 采集实现并按 config:recordHttpLog
+        // 回填运行期开关（App 侧请求与 Web 端日志写入同一 ring）
+        crate::api::http_log_api::restore_http_log_recording();
         Ok(())
     }
 
@@ -2145,6 +2148,17 @@ pub mod ffi {
     pub fn config_get_all() -> Result<String, BridgeError> {
         let config = crate::api::config_api::get_all_config()?;
         to_json(&config)
+    }
+
+    /// 设置 HTTP 请求日志采集开关（契约 §2.10，批11 加法式）
+    ///
+    /// 对齐原版 `HttpLogController.setRecording`：持久化 `config:recordHttpLog`
+    /// 并立即切换 `legado-net` 统一请求出口的采集开关；返回生效值。
+    /// App 侧请求与 Web 端 `/getHttpLogs` 共享同一进程级 ring（对齐原版
+    /// App/Web 共享 `HttpLogStore` 单例）。
+    pub fn set_http_log_recording(enabled: bool) -> Result<bool, BridgeError> {
+        let applied = crate::api::http_log_api::set_http_log_recording(enabled)?;
+        Ok(applied)
     }
 
     // ─── HTTP TTS 朗读源 ───────────────────────────────────

@@ -46,6 +46,19 @@ impl Method {
             Method::Options => reqwest::Method::OPTIONS,
         }
     }
+
+    /// 方法名字符串（HTTP 日志采集用，与 `to_reqwest().as_str()` 同值）
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Method::Get => "GET",
+            Method::Post => "POST",
+            Method::Head => "HEAD",
+            Method::Put => "PUT",
+            Method::Delete => "DELETE",
+            Method::Patch => "PATCH",
+            Method::Options => "OPTIONS",
+        }
+    }
 }
 
 /// HTTP 请求结构

@@ -1666,6 +1666,15 @@ Future<bool> configSet({required String key, required String value}) =>
 /// 获取所有配置（JSON 对象）
 Future<String> configGetAll() => RustLib.instance.api.crateFfiFfiConfigGetAll();
 
+/// 设置 HTTP 请求日志采集开关（契约 §2.10，批11 加法式）
+///
+/// 对齐原版 `HttpLogController.setRecording`：持久化 `config:recordHttpLog`
+/// 并立即切换 `legado-net` 统一请求出口的采集开关；返回生效值。
+/// App 侧请求与 Web 端 `/getHttpLogs` 共享同一进程级 ring（对齐原版
+/// App/Web 共享 `HttpLogStore` 单例）。
+Future<bool> setHttpLogRecording({required bool enabled}) =>
+    RustLib.instance.api.crateFfiFfiSetHttpLogRecording(enabled: enabled);
+
 /// 获取所有 HTTP TTS 源（JSON 数组）
 Future<String> httpTtsList() => RustLib.instance.api.crateFfiFfiHttpTtsList();
 

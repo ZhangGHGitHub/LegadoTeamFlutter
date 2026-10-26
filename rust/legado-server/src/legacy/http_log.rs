@@ -9,19 +9,33 @@
 //!   `[redacted]`，二进制体 `[binary body omitted]`。
 //!
 //! Rust 侧落点：[`HttpLogStore`] 进程级单例（`OnceLock`，对齐 Kotlin object 单例）。
+//! 对齐 `HttpLogStore.add` 的 `AppLog.put(record.summary)`：每条记录同时向
+//! `legado_core::app_log` 追加一条级别 `http` 的单行摘要（应用日志页可见）。
 //!
-//! **生产者接线范围（如实登记）**：本批唯一新增的服务端出站 HTTP 是段评
-//! 抓取链（`legacy/review_api.rs` 的 summary/detail/replies 三处 `AnalyzeUrl`
-//! 请求），已按 `config:recordHttpLog` 门控写入本存储。App 全量 HTTP 采集
-//! （对齐原版 `HttpLogInterceptor` 挂 OkHttp 客户端）需在 `legado-net`
-//! `LegadoClient` 内挂拦截器——`legado-net` 属本批禁改范围，登记为「预留
-//! （未接线）」，接线批在 `LegadoClient` 执行点调用 [`record_request_pair`]
-//! 同款语义即可，读取端点零改动。
+//! **生产者接线范围（2026-10-26 批11 起全量接线）**：原版 `HttpLogInterceptor`
+//! 挂在 App 单例 OkHttp 客户端上，所有出站 HTTP（书源/搜索/正文/图片/TTS…）
+//! 按 `AppConfig.recordHttpLog` 采集。我方与之对应的唯一统一出入口是
+//! `legado_net::LegadoClient`（含 FFI 主链路、JS 桥共享池、服务端抓取链、
+//! 段评/发现/RSS 等），故本批：
+//!
+//! - `legado-net` 新增 [`legado_net::http_log`] 采集接口（trait + 开关 + 单槽
+//!   注册，不依赖本 crate——依赖方向硬约束）；
+//! - 本模块提供存储实现 [`StoreHttpLogRecorder`] 并注册到 `legado-net`
+//!   （[`install_http_log_recorder`]，FFI `db_open` 与服务启动各自调用，幂等）；
+//! - 段评抓取链（`legacy/review_api.rs`）删除手工 `record_*` 调用，避免与
+//!   net 层采集**双记录**（单实现原则）；
+//! - 开关真源统一为 `config:recordHttpLog`：FFI `setHttpLogRecording` 落库并
+//!   切换运行期开关；服务启动经 [`apply_recording_config`] 从库回填。
+//!
+//! **已知边界（登记）**：`legado-net` 内直接用 `reqwest::Client` 的旁路
+//! （`webdav.rs`、`remote_book.rs`）与 `legado-server` handler 内的裸 reqwest
+//! （TTS/音频/源更新下载）不经过 `LegadoClient`，不在本采集面内。
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::atomic::{AtomicI64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
+use legado_net::{HttpLogEntry, HttpLogRecorder};
 use regex::Regex;
 use serde::Serialize;
 
@@ -107,6 +121,28 @@ impl HttpLogRecord {
             error: self.error.clone(),
         }
     }
+
+    /// 单行摘要（对齐 Kotlin `HttpLogRecord.summary`，`HttpLogStore.add` 同时
+    /// 写入 `AppLog` 用）：
+    /// `[HTTP#id] METHOD path -> status durationms`，失败追加 ` | error`。
+    pub fn summary_line(&self) -> String {
+        let path = if self.path.is_empty() {
+            "/"
+        } else {
+            self.path.as_str()
+        };
+        let mut line = format!(
+            "[HTTP#{}] {} {} -> {} {}ms",
+            self.id, self.method, path, self.status_code, self.duration
+        );
+        if let Some(error) = self.error.as_deref() {
+            if !error.is_empty() {
+                line.push_str(" | ");
+                line.push_str(error);
+            }
+        }
+        line
+    }
 }
 
 struct StoreInner {
@@ -189,6 +225,66 @@ impl HttpLogStore {
 
 // ─── 采集侧（生产者入口） ───────────────────────────────────────────────────
 
+/// `legado-net` 采集实现：把统一请求入口的采集记录写入本进程级 ring
+///
+/// 脱敏/截断/容量全部复用既有 [`record_success`] / [`record_failure`] 单实现。
+pub struct StoreHttpLogRecorder;
+
+impl HttpLogRecorder for StoreHttpLogRecorder {
+    fn record(&self, entry: HttpLogEntry) {
+        match entry.error {
+            Some(error) => record_failure(
+                &entry.method,
+                &entry.url,
+                &entry.request_headers,
+                &entry.request_body,
+                &error,
+                entry.duration_ms,
+            ),
+            None => record_success(
+                &entry.method,
+                &entry.url,
+                &entry.request_headers,
+                &entry.request_body,
+                entry.status_code,
+                &entry.response_headers,
+                &entry.response_body,
+                entry.response_content_type.as_deref(),
+                entry.duration_ms,
+            ),
+        }
+    }
+}
+
+/// 注册进程级采集实现（幂等；FFI `db_open` 与服务启动各自调用）
+///
+/// `legado-net` 侧为 first-wins 单槽：重复注册保留首次实现并忽略后续，
+/// 因此 FFI 与服务同进程时不会重复写入（同一 store 单例）。
+pub fn install_http_log_recorder() {
+    legado_net::http_log::install_recorder(Arc::new(StoreHttpLogRecorder));
+}
+
+/// 按 caches 存储值（`config:recordHttpLog`）解析并注入 `legado-net` 运行期开关
+///
+/// 语义对齐 `AppConfig.recordHttpLog`：缺省/空/其他值 → false，`"true"`/`"1"`
+/// → true。返回生效值（供调用方回写响应/日志）。
+pub fn apply_recording_config(value: Option<&str>) -> bool {
+    let enabled = value
+        .map(|raw| matches!(raw.trim(), "true" | "1"))
+        .unwrap_or(false);
+    legado_net::http_log::set_recording_enabled(enabled);
+    enabled
+}
+
+/// 写入 ring 并同步一条 `AppLog`（级别 http）
+///
+/// 对齐 Kotlin `HttpLogStore.add`：`records.addFirst` 后
+/// `AppLog.put(record.summary)`——应用日志页与 HTTP 日志页都能看到该请求。
+fn store_record(record: HttpLogRecord) {
+    legado_core::app_log::push_log(legado_core::app_log::LogLevel::Http, record.summary_line());
+    http_log_store().add(record);
+}
+
 /// 记录一次成功的请求/响应对（对齐 `HttpLogInterceptor` 成功分支）
 ///
 /// `headers` 为合并后的请求头；`request_body` 为请求体文本；响应字段取自
@@ -219,7 +315,7 @@ pub fn record_success(
         response_body: capture_body(response_body, response_content_type),
         error: None,
     };
-    http_log_store().add(record);
+    store_record(record);
 }
 
 /// 记录一次失败的请求（对齐 `HttpLogInterceptor` 异常分支：statusCode=-1、
@@ -246,7 +342,7 @@ pub fn record_failure(
         response_body: String::new(),
         error: Some(error.to_string()),
     };
-    http_log_store().add(record);
+    store_record(record);
 }
 
 fn now_millis() -> i64 {
@@ -298,14 +394,15 @@ pub fn format_headers(headers: &HashMap<String, String>) -> String {
     lines.join("\n")
 }
 
-/// URL 脱敏（对齐 `HttpLogSanitizer.redactUrl` 的子集）：
+/// URL 脱敏（对齐 `HttpLogSanitizer.redactUrl`）：
 /// - userinfo（`scheme://user:pass@host`）→ `[redacted]`；
 /// - 敏感查询参数值 → `[redacted]`；
-/// - 路径段形似凭据（恰 2 个 `.` 且长度 ≥ 32，对齐 `isCredentialLike`）→
-///   `[redacted]`。
+/// - 路径段：敏感名路径段的下一段（`/token/abc`）与形似凭据段（恰 2 个 `.`
+///   且长度 ≥ 32，对齐 `isCredentialLike`）→ `[redacted]`。
 ///
 /// 差异：原版经 okhttp HttpUrl 重建（编码规范化），此处按字符串分段处理，
-/// 不做百分号重编码。
+/// 不做百分号重编码；userinfo 整体替换为单个 `[redacted]`（原版分别替换
+/// 用户名/密码，形如 `[redacted]:[redacted]@host`）。
 pub fn redact_url(url: &str) -> String {
     let (before_query, query) = match url.split_once('?') {
         Some((b, q)) => (b, Some(q)),
@@ -347,16 +444,7 @@ pub fn redact_url(url: &str) -> String {
     let path = if path.is_empty() {
         path
     } else {
-        path.split('/')
-            .map(|segment| {
-                if segment.matches('.').count() == 2 && segment.len() >= 32 {
-                    REDACTED.to_string()
-                } else {
-                    segment.to_string()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("/")
+        redact_path_segments(&path)
     };
 
     // 查询参数脱敏
@@ -387,16 +475,38 @@ pub fn redact_path(url: &str) -> String {
     if path.is_empty() {
         return "/".to_string();
     }
-    path.split('/')
-        .map(|segment| {
-            if segment.matches('.').count() == 2 && segment.len() >= 32 {
+    redact_path_segments(path)
+}
+
+/// 路径段脱敏（对齐 `HttpLogSanitizer.redactHttpUrl` 的 `pathSegments` 循环）
+///
+/// 两条规则（与原先补齐）：
+/// 1. **敏感名路径段的下一段** → `[redacted]`（如 `/token/abc`、`/api/sign/xyz`；
+///    上一段名按 [`is_sensitive_name`] 判定，含 `token`/`password`/`secret` 等
+///    及其后缀形态）——审查批4 P2-4 补齐项；
+/// 2. 段形似凭据（恰 2 个 `.` 且长度 ≥ 32，对齐 `isCredentialLike`）→
+///    `[redacted]`（JWT 等）。
+fn redact_path_segments(path: &str) -> String {
+    let segments: Vec<&str> = path.split('/').collect();
+    segments
+        .iter()
+        .enumerate()
+        .map(|(index, segment)| {
+            let sensitive_previous = index > 0 && is_sensitive_name(segments[index - 1]);
+            if sensitive_previous || is_credential_like(segment) {
                 REDACTED.to_string()
             } else {
-                segment.to_string()
+                (*segment).to_string()
             }
         })
         .collect::<Vec<_>>()
         .join("/")
+}
+
+/// 路径段是否形似凭据（对齐 `HttpLogSanitizer.isCredentialLike`：恰 2 个 `.`
+/// 且长度 ≥ 32，覆盖 JWT `header.payload.signature` 形态）
+fn is_credential_like(value: &str) -> bool {
+    value.matches('.').count() == 2 && value.len() >= 32
 }
 
 /// 自由文本脱敏（对齐 `HttpLogSanitizer.redactFreeText` 五条正则：
@@ -611,6 +721,121 @@ mod tests {
         );
         // 普通路径不动
         assert_eq!(redact_path("https://x.example.com/book/1"), "/book/1");
+    }
+
+    /// 审查批4 P2-4：敏感名路径段的下一段必须脱敏（对齐
+    /// `HttpLogSanitizer.redactHttpUrl` 的 `pathSegments` 循环）
+    #[test]
+    fn test_redact_path_sensitive_segment_next() {
+        assert_eq!(
+            redact_url("https://x.example.com/token/abc?page=2"),
+            "https://x.example.com/token/[redacted]?page=2"
+        );
+        assert_eq!(
+            redact_path("https://x.example.com/token/abc"),
+            "/token/[redacted]"
+        );
+        assert_eq!(
+            redact_path("https://x.example.com/api/accessToken/secret-value/x"),
+            "/api/accessToken/[redacted]/x",
+            "大小写变体（accessToken）同样命中敏感名"
+        );
+        assert_eq!(
+            redact_path("https://x.example.com/api/sign/xyz"),
+            "/api/sign/[redacted]",
+            "sign 后缀敏感名同样命中"
+        );
+        // 敏感名段自身保留（原版只脱敏下一段）
+        assert_eq!(
+            redact_path("https://x.example.com/password/only"),
+            "/password/[redacted]"
+        );
+        // 普通路径不受影响
+        assert_eq!(
+            redact_path("https://x.example.com/tokens/abc"),
+            "/tokens/abc",
+            "非敏感名（tokens）不得触发下一段脱敏"
+        );
+    }
+
+    /// 采集实现落存储：成功/失败字段逐项透传（含脱敏与状态码）
+    #[test]
+    fn test_store_recorder_writes_entry() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let store = http_log_store();
+        store.clear();
+
+        let mut request_headers = HashMap::new();
+        request_headers.insert("CookieJar".to_string(), "1".to_string());
+        request_headers.insert("Authorization".to_string(), "Bearer x".to_string());
+        let mut response_headers = HashMap::new();
+        response_headers.insert("Content-Type".to_string(), "application/json".to_string());
+
+        StoreHttpLogRecorder.record(HttpLogEntry {
+            method: "POST".to_string(),
+            url: "https://x.example.com/token/abc?page=2".to_string(),
+            request_headers,
+            request_body: "{\"token\":\"secret\"}".to_string(),
+            status_code: 201,
+            response_headers,
+            response_body: "{\"ok\":true}".to_string(),
+            response_content_type: Some("application/json".to_string()),
+            duration_ms: 12,
+            error: None,
+        });
+        let record = store.latest(1).pop().expect("应写入一条记录");
+        assert_eq!(record.method, "POST");
+        assert_eq!(record.status_code, 201);
+        assert_eq!(record.path, "/token/[redacted]");
+        assert!(
+            !record.url.contains("abc"),
+            "敏感名下一段不得出现在 url：{}",
+            record.url
+        );
+        assert!(record.request_headers.contains("Authorization: [redacted]"));
+        assert!(!record.request_headers.contains("Bearer x"));
+        assert!(!record.request_body.contains("secret"));
+        assert!(record.error.is_none());
+        assert_eq!(
+            record.summary_line(),
+            format!("[HTTP#{}] POST /token/[redacted] -> 201 12ms", record.id),
+            "AppLog 摘要行对齐 Kotlin HttpLogRecord.summary"
+        );
+
+        StoreHttpLogRecorder.record(HttpLogEntry {
+            method: "GET".to_string(),
+            url: "https://x.example.com/fail".to_string(),
+            request_headers: HashMap::new(),
+            request_body: String::new(),
+            status_code: -1,
+            response_headers: HashMap::new(),
+            response_body: String::new(),
+            response_content_type: None,
+            duration_ms: 3,
+            error: Some("Connection failed".to_string()),
+        });
+        let failure = store.latest(1).pop().expect("应写入失败记录");
+        assert_eq!(failure.status_code, -1);
+        assert_eq!(failure.error.as_deref(), Some("Connection failed"));
+        assert!(
+            failure.summary_line().ends_with(" | Connection failed"),
+            "失败摘要应追加 error：{}",
+            failure.summary_line()
+        );
+        store.clear();
+    }
+
+    /// 开关解析：缺省/空/其他 → false；"true"/"1"（含空白）→ true
+    #[test]
+    fn test_apply_recording_config() {
+        let _g = TEST_LOCK.lock().unwrap();
+        assert!(!apply_recording_config(None));
+        assert!(!apply_recording_config(Some("")));
+        assert!(!apply_recording_config(Some("false")));
+        assert!(apply_recording_config(Some("true")));
+        assert!(apply_recording_config(Some(" 1 ")));
+        // 复位，避免影响同进程其他用例（缺省关闭）
+        assert!(!apply_recording_config(None));
     }
 
     #[test]

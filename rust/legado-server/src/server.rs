@@ -114,6 +114,10 @@ pub async fn serve_web_with_injected_paths(
         legacy_review: Default::default(),
     });
 
+    // 批11：接线 HTTP 日志采集——注册进程级存储实现（幂等，与 FFI 共用同一
+    // store）并按 caches `config:recordHttpLog` 回填运行期开关
+    init_http_log(&state).await;
+
     let router = create_router(Arc::clone(&state));
     // P2-2（批10 审查）：源写 10 条路由的令牌前置中间件——在 handler 提取
     // body 之前校验 `x-legado-token`，未授权请求不读取请求体。
@@ -230,6 +234,27 @@ async fn mcp_token_middleware(
     next.run(request).await
 }
 
+/// 启动期 HTTP 日志初始化（批11：采集接线 + 开关回填）
+///
+/// 1. 注册 `legado-net` 采集实现（进程级单槽，first-wins；FFI 与服务同进程时
+///    共享同一个 `HttpLogStore`）；
+/// 2. 从 caches 表 `config:recordHttpLog` 回填运行期开关（对齐
+///    `AppConfig.recordHttpLog` 重启后保持；FFI `setHttpLogRecording` 同键写入）。
+///
+/// 读库失败时保持缺省关闭（仅告警，不阻断启动）。
+async fn init_http_log(state: &Arc<AppState>) {
+    crate::legacy::http_log::install_http_log_recorder();
+    let raw = {
+        let db = state.db.lock().await;
+        legado_db::repository::cache_repository::CacheRepository::new(db.connection())
+            .get(crate::legacy::source_api::CONFIG_RECORD_HTTP_LOG)
+            .ok()
+            .flatten()
+    };
+    let enabled = crate::legacy::http_log::apply_recording_config(raw.as_deref());
+    tracing::info!("HTTP 日志采集开关（config:recordHttpLog）: {enabled}");
+}
+
 /// 对齐原版 `BookSourceController.matchesJsSourceApiToken`（字节级相等）
 ///
 /// B4 起亦为 legacy 域令牌校验（`legacy/source_api.rs`）的单一比较实现。
@@ -274,6 +299,9 @@ pub async fn serve_mcp(
         injected_paths: Default::default(),
         legacy_review: Default::default(),
     });
+
+    // 独立 MCP 服务的 eval_js 等链路同样经 LegadoClient 出站：采集面一并接线
+    init_http_log(&state).await;
 
     let router = create_mcp_router(state, Arc::new(expected_token));
 

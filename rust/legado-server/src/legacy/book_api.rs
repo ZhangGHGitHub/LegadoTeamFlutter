@@ -263,6 +263,51 @@ pub async fn get_chapter_list(
     to_response(&rd, "/getChapterList", origin.as_deref())
 }
 
+/// GET `/refreshToc?url=` — 独立目录刷新入口（`BookController.refreshToc`，
+/// BookController.kt:145-177；HttpServer.kt GET 路由表 `/refreshToc`）
+///
+/// 与 [`get_chapter_list`] 的空目录回退**共用同一刷新实现** [`refresh_toc`]
+/// （单实现原则，不复制刷新语义）：本地书解析 / 网络书「tocUrl 为空先抓详情」+
+/// 目录抓取 + 删旧插新 + 目录派生字段更新，返回刷新后的章节目录。
+///
+/// 错误文案逐条对齐原版：
+/// - url 缺失或空串 → 「参数url不能为空，请指定书籍地址」；
+/// - 书不存在 → 「未在数据库找到对应书籍，请先添加」；
+/// - 网络书缺源 → 「未找到对应书源,请换源」；
+/// - 抓取/落库异常 → 错误串（原版取 `e.localizedMessage`，其兜底文案
+///   「refresh toc error」仅在该值为 null 时出现；Rust 错误必有 message，登记）。
+///
+/// 令牌：原版 `PROTECTED_SOURCE_WRITE_ROUTES` / `PROTECTED_HTTP_LOG_READ_ROUTES`
+/// 均不含 `/refreshToc`，故本端点不校验令牌（与原版一致）。
+pub async fn refresh_toc_endpoint(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+) -> Response {
+    let origin = origin_of(&headers);
+    let book_url = params.get("url").cloned().unwrap_or_default();
+    let rd = refresh_toc_return_data(&state, &book_url).await;
+    to_response(&rd, "/refreshToc", origin.as_deref())
+}
+
+/// `/refreshToc` 的 ReturnData 组装（提取为纯函数便于单测）
+async fn refresh_toc_return_data(state: &Arc<AppState>, book_url: &str) -> ReturnData {
+    if book_url.is_empty() {
+        return ReturnData::error("参数url不能为空，请指定书籍地址");
+    }
+    match refresh_toc(state, book_url).await {
+        Ok(list) => {
+            let projection: Vec<LegacyBookChapter> =
+                list.iter().map(LegacyBookChapter::from).collect();
+            match serde_json::to_value(projection) {
+                Ok(value) => ReturnData::success(value),
+                Err(e) => ReturnData::error(e.to_string()),
+            }
+        }
+        Err(msg) => ReturnData::error(msg),
+    }
+}
+
 /// 原版 `refreshToc`（BookController.kt:145-177）语义的目录重抓
 ///
 /// - 书籍不存在 → 「未在数据库找到对应书籍，请先添加」
@@ -309,7 +354,12 @@ async fn refresh_toc(state: &Arc<AppState>, book_url: &str) -> Result<Vec<BookCh
         .map_err(|e| e.to_string())?;
 
     if web_chapters.is_empty() {
-        // 原版：`getChapterListAwait(...).getOrThrow()` 空列表不抛错 → setData(空)
+        // 原版空列表不抛错，但随后仍执行 `delByBook` + `insert(*toc)` + update()
+        // → 旧目录被清空并返回空列表。独立 `/refreshToc` 入口会暴露该语义，
+        // 故此处走同一持久化链（删旧 + 更新派生字段为 0），而不是保留旧目录。
+        persist_chapters(state, book_url, &[], Some(fetch_url))
+            .await
+            .map_err(|e| e.to_string())?;
         return Ok(Vec::new());
     }
 
@@ -2128,5 +2178,230 @@ mod tests {
         let rows = BookRepository::new(db.connection()).find_all().unwrap();
         assert_eq!(rows.len(), 1, "重传不应产生重复书行");
         assert_eq!(rows[0].book_url, absolute_url, "旧行主键保持不变");
+    }
+
+    // ─── B10：GET /refreshToc 独立入口 ────────────────────────────────────
+
+    /// 缺参：错误文案对齐原版 `refreshToc`（BookController.kt:148-151）
+    #[tokio::test]
+    async fn test_refresh_toc_endpoint_missing_url() {
+        let state = make_state(None);
+        let rd = refresh_toc_return_data(&state, "").await;
+        assert!(!rd.is_success);
+        assert_eq!(rd.error_msg, "参数url不能为空，请指定书籍地址");
+        assert!(rd.data.is_null());
+    }
+
+    /// 书不存在：错误文案对齐原版（:152-153）
+    #[tokio::test]
+    async fn test_refresh_toc_endpoint_book_not_found() {
+        let state = make_state(None);
+        let rd = refresh_toc_return_data(&state, "https://x.example/book/1").await;
+        assert!(!rd.is_success);
+        assert_eq!(rd.error_msg, "未在数据库找到对应书籍，请先添加");
+    }
+
+    /// 网络书缺源：错误文案对齐原版（:161-162）
+    #[tokio::test]
+    async fn test_refresh_toc_endpoint_source_missing() {
+        let state = make_state(None);
+        let book_url = "https://x.example/book/1";
+        {
+            let db = state.db.lock().await;
+            BookRepository::new(db.connection())
+                .insert(&Book {
+                    book_url: book_url.to_string(),
+                    name: "无源书".to_string(),
+                    origin: "https://x.example/src".to_string(),
+                    toc_url: "https://x.example/toc".to_string(),
+                    book_type: book_type::TEXT,
+                    ..Book::default()
+                })
+                .unwrap();
+        }
+        let rd = refresh_toc_return_data(&state, book_url).await;
+        assert!(!rd.is_success);
+        assert_eq!(rd.error_msg, "未找到对应书源,请换源");
+    }
+
+    /// 正例（本地书）：刷新解析目录并落库，返回目录数组
+    #[tokio::test]
+    async fn test_refresh_toc_endpoint_local_book_success() {
+        let base = std::env::temp_dir().join(format!(
+            "legado_refresh_toc_local_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let books = base.join("books");
+        std::fs::create_dir_all(&books).unwrap();
+        std::fs::write(
+            books.join("刷新书.txt"),
+            "第一章 开端\n正文一\n\n第二章 终章\n正文二\n",
+        )
+        .unwrap();
+        let state = make_state(Some(books.clone()));
+        let book_url = "books/刷新书.txt";
+        {
+            let db = state.db.lock().await;
+            BookRepository::new(db.connection())
+                .insert(&Book {
+                    book_url: book_url.to_string(),
+                    name: "刷新书".to_string(),
+                    origin: book_type::LOCAL_TAG.to_string(),
+                    book_type: book_type::TEXT | book_type::LOCAL,
+                    ..Book::default()
+                })
+                .unwrap();
+        }
+
+        let rd = refresh_toc_return_data(&state, book_url).await;
+        assert!(rd.is_success, "本地书刷新应成功: {}", rd.error_msg);
+        let chapters = rd.data.as_array().expect("data 应为章节数组");
+        assert_eq!(chapters.len(), 2, "应解析出两章: {chapters:?}");
+
+        let persisted = {
+            let db = state.db.lock().await;
+            BookChapterRepository::new(db.connection())
+                .find_by_book_url(book_url)
+                .unwrap()
+        };
+        assert_eq!(persisted.len(), 2, "刷新后目录应落库");
+        assert!(!persisted[0].title.is_empty(), "章节标题不应为空");
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 正例（网络书 + 回环目录页）：详情→目录抓取→删旧插新，返回目录数组
+    #[tokio::test]
+    async fn test_refresh_toc_endpoint_network_success() {
+        use axum::response::Html;
+        use axum::routing::get;
+        use legado_core::models::BookSource;
+
+        async fn toc_page() -> Html<&'static str> {
+            Html(
+                r#"<html><body>
+                <div class="ch"><a href="/c/1">第一章</a></div>
+                <div class="ch"><a href="/c/2">第二章</a></div>
+                </body></html>"#,
+            )
+        }
+
+        let mock = axum::Router::new().route("/toc", get(toc_page));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            let _ = axum::serve(listener, mock).await;
+        });
+
+        let state = make_state(None);
+        let source_url = format!("http://{addr}/src");
+        let book_url = format!("http://{addr}/book/1");
+        {
+            let db = state.db.lock().await;
+            let source: BookSource = serde_json::from_value(serde_json::json!({
+                "bookSourceUrl": source_url,
+                "bookSourceName": "回环刷新源",
+                "ruleToc": {
+                    "chapterList": "class.ch",
+                    "chapterName": "tag.a@text",
+                    "chapterUrl": "tag.a@href"
+                }
+            }))
+            .unwrap();
+            BookSourceRepository::new(db.connection())
+                .insert(&source)
+                .unwrap();
+            BookRepository::new(db.connection())
+                .insert(&Book {
+                    book_url: book_url.clone(),
+                    name: "回环书".to_string(),
+                    origin: source_url,
+                    toc_url: format!("http://{addr}/toc"),
+                    book_type: book_type::TEXT,
+                    ..Book::default()
+                })
+                .unwrap();
+        }
+
+        let rd = refresh_toc_return_data(&state, &book_url).await;
+        assert!(rd.is_success, "网络书刷新应成功: {}", rd.error_msg);
+        let chapters = rd.data.as_array().expect("data 应为章节数组");
+        assert_eq!(chapters.len(), 2, "应抓取到两章: {chapters:?}");
+
+        let (persisted, total_chapters) = {
+            let db = state.db.lock().await;
+            let chapters = BookChapterRepository::new(db.connection())
+                .find_by_book_url(&book_url)
+                .unwrap();
+            let book = BookRepository::new(db.connection())
+                .find_by_url(&book_url)
+                .unwrap()
+                .expect("书籍行仍在");
+            (chapters, book.total_chapter_num)
+        };
+        assert_eq!(persisted.len(), 2, "刷新后目录应落库");
+        assert_eq!(total_chapters, 2, "目录派生字段应同步（book.update 等价）");
+    }
+
+    /// 路由注册：GET /refreshToc 经完整 router 可达且返回原版信封
+    #[tokio::test]
+    async fn test_refresh_toc_route_registered() {
+        use axum::body::Body;
+        use axum::http::{Method, StatusCode};
+        use tower::ServiceExt;
+
+        let base = std::env::temp_dir().join(format!(
+            "legado_refresh_toc_route_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let books = base.join("books");
+        std::fs::create_dir_all(&books).unwrap();
+        std::fs::write(books.join("路由书.txt"), "第一章\n正文\n").unwrap();
+        let state = make_state(Some(books.clone()));
+        {
+            let db = state.db.lock().await;
+            BookRepository::new(db.connection())
+                .insert(&Book {
+                    book_url: "books/路由书.txt".to_string(),
+                    name: "路由书".to_string(),
+                    origin: book_type::LOCAL_TAG.to_string(),
+                    book_type: book_type::TEXT | book_type::LOCAL,
+                    ..Book::default()
+                })
+                .unwrap();
+        }
+
+        let app = crate::routes::create_router(state);
+        let resp = app
+            .oneshot(
+                axum::http::Request::builder()
+                    .method(Method::GET)
+                    .uri("/refreshToc?url=books/%E8%B7%AF%E7%94%B1%E4%B9%A6.txt")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .expect("oneshot 调用成功");
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let body: Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(body["isSuccess"], Value::Bool(true), "响应: {body}");
+        assert_eq!(body["data"].as_array().map(Vec::len), Some(1));
+        assert!(
+            body["errorMsg"].as_str().unwrap_or_default().is_empty(),
+            "成功时 errorMsg 应为空"
+        );
+
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

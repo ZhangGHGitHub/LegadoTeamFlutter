@@ -10,6 +10,7 @@
 //! - [`url_template`] — URL 模板解析引擎
 //! - [`rss`] — RSS/Atom Feed 解析器
 //! - [`cover`] — 封面图片下载与缓存
+//! - [`http_log`] — HTTP 请求日志采集接口（可插拔实现，对齐原版 `HttpLogInterceptor`）
 //! - [`middleware`] — 请求中间件框架
 //! - [`retry`] — 请求重试机制（指数退避）
 //! - [`rate_limit`] — 请求限流器（按域名）
@@ -22,6 +23,7 @@ pub mod cookie_store;
 pub mod cover;
 pub mod custom_hosts;
 pub mod direct_link_upload;
+pub mod http_log;
 pub mod middleware;
 pub mod proxy;
 pub mod rate_limit;
@@ -49,6 +51,10 @@ pub use cookie_store::{CookiePersistence, CookieStore};
 pub use cover::CoverCache;
 pub use custom_hosts::{
     apply_custom_hosts, clear_custom_hosts, lookup_ips, resolver, CustomHostsResolver,
+};
+pub use http_log::{
+    install_recorder, is_recording_enabled, recorder_installed, set_recording_enabled,
+    HttpLogCapture, HttpLogEntry, HttpLogRecorder,
 };
 pub use middleware::{Middleware, MiddlewareChain};
 pub use proxy::{parse_proxy_config, ProxyConfig, ProxyCredentials, ProxyPool, ProxyType};
