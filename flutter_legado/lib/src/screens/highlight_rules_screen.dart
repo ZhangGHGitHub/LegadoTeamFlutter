@@ -105,6 +105,12 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
   ///
   /// 本页暂无原版的选择栏批量模式，菜单项导出当前全部规则；空列表按原版
   /// `highlight_rule_empty` 语义提示。
+  ///
+  /// [批16e 回修 | P1-1] 导出必须保留完整字段（uuid / order /
+  /// timeoutMillisecond / applyToBody）：原实现直接 `toJson()` 只输出
+  /// 8 个字段，本应用关联导入会因 uuid 缺失抛「uuid 非法」，且用户设置的
+  /// 正文高亮开关/匹配超时全部丢失。现统一走 [HighlightRule.toExportJson]
+  /// （字段名对齐原版实体，`order` 为原版排序字段名），不再凭空生成 uuid。
   Future<void> _exportRules() async {
     final rules = ref.read(highlightRulesNotifierProvider).rules;
     if (rules.isEmpty) {
@@ -115,7 +121,7 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     }
     final json = const JsonEncoder.withIndent('  ').convert({
       'type': 'highlightRule',
-      'rules': rules.map((r) => r.toJson()).toList(),
+      'rules': rules.map((r) => r.toExportJson()).toList(),
     });
     final result = await showExportFileSheet(
       context,
@@ -382,8 +388,11 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     }
     final scope = _scopeCtrl.text.trim();
     final base = widget.rule;
+    // [批16e 回修 | P1-1] 编辑保存保留 uuid/order/超时/正文开关：
+    // 缺失 uuid 会让 Rust 每次保存都重新生成身份，导入去重随之失效。
     final rule = HighlightRule(
       id: base?.id ?? 0,
+      uuid: base?.uuid ?? '',
       name: _nameCtrl.text.trim(),
       pattern: pattern,
       isRegex: _isRegex,
@@ -391,6 +400,10 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
       scope: scope.isEmpty ? null : scope,
       isEnabled: base?.isEnabled ?? true,
       style: jsonEncode({'textColor': _color}),
+      sortOrder: base?.sortOrder ?? 0,
+      timeoutMillisecond:
+          base?.timeoutMillisecond ?? HighlightRule.defaultTimeoutMilliseconds,
+      applyToBody: base?.applyToBody ?? true,
     );
     Navigator.pop(context, rule);
   }
