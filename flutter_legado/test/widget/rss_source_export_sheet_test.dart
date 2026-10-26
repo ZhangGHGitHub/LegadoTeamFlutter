@@ -22,6 +22,7 @@ import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/rss_source_manage_screen.dart';
 import 'package:flutter_legado/src/services/direct_link_upload_rule_service.dart';
 import 'package:flutter_legado/src/services/export_file_service.dart';
+import 'package:flutter_legado/src/services/file_save_channel.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
 
 /// 捕获 directLinkUpload 入参的 Mock（其余能力沿用 MockBookApi）
@@ -62,13 +63,14 @@ class _FakeExportFileService extends ExportFileService {
   int saveCalls = 0;
 
   @override
-  Future<String?> saveToLocal({
+  Future<SaveFileResult?> saveToLocal({
     required String fileName,
     required String content,
   }) async {
     saveCalls++;
     lastSaveFileName = fileName;
-    return savePath;
+    final path = savePath;
+    return path == null ? null : SaveFileResult(location: path);
   }
 
   @override

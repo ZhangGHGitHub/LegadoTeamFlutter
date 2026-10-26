@@ -25,9 +25,11 @@ import '../providers/theme/theme_colors_notifier.dart';
 import '../providers/theme/theme_notifier.dart';
 import '../providers/ui_settings/ui_settings_notifier.dart';
 import '../routes.dart';
+import '../services/export_file_service.dart';
 import '../services/launcher_icon_service.dart';
 import '../services/settings_service.dart';
 import '../theme/md3_colors.dart';
+import '../utils/error_message.dart';
 import '../widgets/ios_widgets.dart';
 
 /// 主题设置页面（对齐原版 ThemeConfigFragment）
@@ -1487,19 +1489,23 @@ class _ThemeConfigScreenState extends ConsumerState<ThemeConfigScreen> {
         'bottomBackground': colors.bottomBackgroundNight,
       },
     };
-    final path = await FilePicker.platform.saveFile(
-      dialogTitle: '导出主题',
-      fileName: 'legado_theme.json',
-    );
-    if (path == null || !mounted) return;
+    final content = const JsonEncoder.withIndent('  ').convert(payload);
+    // [D1 回修 P2-4] 迁移到统一系统另存服务：Android 走自建 SAF 通道
+    //（原生写字节 + 异常捕获 + DownloadsProvider 回退），iOS 由插件写
+    // bytes，桌面端由服务写盘；禁止裸调 FilePicker.saveFile 不传 bytes
+    //（Android/iOS 抛 ArgumentError「Bytes are required」）
+    const fileName = 'legado_theme.json';
+    const service = ExportFileService();
     try {
-      await File(path).writeAsString(
-        const JsonEncoder.withIndent('  ').convert(payload),
+      final saved = await service.saveToLocal(
+        fileName: fileName,
+        content: content,
       );
-      _toast('主题已导出');
+      if (saved == null || !mounted) return; // 用户取消
+      _toast(service.savedMessage(saved: saved, requestedFileName: fileName));
     } catch (e) {
       debugPrint('ThemeConfigScreen._exportTheme 写入异常: $e');
-      if (mounted) _toast('导出失败：$e');
+      if (mounted) _toast('导出失败：${errorMessage(e)}');
     }
   }
 

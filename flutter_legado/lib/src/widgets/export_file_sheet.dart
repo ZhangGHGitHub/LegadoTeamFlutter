@@ -32,6 +32,7 @@ import 'package:path_provider/path_provider.dart';
 import '../providers/providers.dart';
 import '../services/direct_link_upload_rule_service.dart';
 import '../services/export_file_service.dart';
+import '../services/file_save_channel.dart';
 import '../utils/error_message.dart';
 import 'ios_widgets.dart';
 
@@ -349,10 +350,10 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
       _error = null;
       _errorDetail = null;
     });
-    String? path;
+    SaveFileResult? saved;
     try {
       final filePath = widget.filePath;
-      path = filePath == null
+      saved = filePath == null
           ? await _fileService.saveToLocal(
               fileName: widget.fileName,
               content: widget.content!,
@@ -373,7 +374,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     }
     if (!mounted) return;
     setState(() => _saving = false);
-    if (path == null) {
+    if (saved == null) {
       // 用户在系统另存对话框取消：关闭 Sheet，不提示
       Navigator.pop(context);
       return;
@@ -381,10 +382,10 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     Navigator.pop(
       context,
       ExportFileResult.savedLocal(
-        path,
+        saved.location,
         message: _fileService.savedMessage(
-          path: path,
-          fileName: widget.fileName,
+          saved: saved,
+          requestedFileName: widget.fileName,
         ),
       ),
     );

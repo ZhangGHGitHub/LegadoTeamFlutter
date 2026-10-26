@@ -25,6 +25,7 @@ import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/services/direct_link_upload_rule_service.dart';
 import 'package:flutter_legado/src/services/export_file_service.dart';
+import 'package:flutter_legado/src/services/file_save_channel.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
 import 'package:flutter_legado/src/widgets/export_file_sheet.dart';
 
@@ -75,7 +76,7 @@ class _FakeExportFileService extends ExportFileService {
   String? lastSourcePath;
 
   @override
-  Future<String?> saveToLocal({
+  Future<SaveFileResult?> saveToLocal({
     required String fileName,
     required String content,
   }) async {
@@ -84,11 +85,12 @@ class _FakeExportFileService extends ExportFileService {
     lastContent = content;
     final error = saveError;
     if (error != null) throw error;
-    return savePath;
+    final path = savePath;
+    return path == null ? null : SaveFileResult(location: path);
   }
 
   @override
-  Future<String?> saveExistingFile({
+  Future<SaveFileResult?> saveExistingFile({
     required String sourcePath,
     required String fileName,
   }) async {
@@ -97,7 +99,8 @@ class _FakeExportFileService extends ExportFileService {
     lastFileName = fileName;
     final error = existingSaveError;
     if (error != null) throw error;
-    return existingSavePath;
+    final path = existingSavePath;
+    return path == null ? null : SaveFileResult(location: path);
   }
 }
 
@@ -625,7 +628,7 @@ void main() {
           sourcePath: source.path,
           fileName: 'saved.zip',
         );
-        expect(saved, destPath);
+        expect(saved?.location, destPath);
         expect(File(destPath).readAsBytesSync(), const [9, 8, 7, 6]);
       } finally {
         debugDefaultTargetPlatformOverride = null;

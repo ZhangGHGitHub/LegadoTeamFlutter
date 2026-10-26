@@ -19,13 +19,15 @@ import 'package:flutter_legado/src/services/file_save_channel.dart';
 /// 记录调用的假通道
 class _FakeFileSaveChannel extends FileSaveChannel {
   final List<Map<String, Object?>> calls = [];
-  String? result =
-      'content://com.android.providers.downloads.documents/document/42';
+  SaveFileResult? result = const SaveFileResult(
+    location: 'content://com.android.providers.downloads.documents/document/42',
+    fileName: 'bookSource_QA (1).json',
+  );
   Object? error;
   bool cancelled = false;
 
   @override
-  Future<String?> saveFile({
+  Future<SaveFileResult?> saveFile({
     required String fileName,
     required Uint8List bytes,
     String? mimeType,
@@ -59,12 +61,12 @@ void main() {
   });
 
   test('文本另存：走通道并回传 content URI，MIME 按扩展名推断', () async {
-    final path = await service.saveToLocal(
+    final saved = await service.saveToLocal(
       fileName: 'bookSource_QA.json',
       content: '{"a":1}',
     );
 
-    expect(path, channel.result);
+    expect(saved, channel.result);
     expect(channel.calls, hasLength(1));
     final call = channel.calls.single;
     expect(call['fileName'], 'bookSource_QA.json');
@@ -78,12 +80,12 @@ void main() {
     final source = File('${dir.path}${Platform.pathSeparator}skin.zip')
       ..writeAsBytesSync(<int>[0x50, 0x4b, 0x03, 0x04, 0x00]);
 
-    final path = await service.saveExistingFile(
+    final saved = await service.saveExistingFile(
       sourcePath: source.path,
       fileName: 'skin.zip',
     );
 
-    expect(path, channel.result);
+    expect(saved, channel.result);
     final call = channel.calls.single;
     expect(call['mimeType'], 'application/zip');
     expect((call['bytes']! as Uint8List).toList(), <int>[
@@ -103,10 +105,11 @@ void main() {
     );
   });
 
-  test('通道异常：上抛可读的 FileSaveException', () async {
+  test('通道异常：上抛可读的 FileSaveException（保留技术详情）', () async {
     channel.error = const FileSaveException(
       code: 'SAVE_FAILED',
-      message: '写入文件失败（x.json）：Permission Denial',
+      message: '无法写入所选位置，请换一个文件夹重试',
+      detail: 'Permission Denial: requires android.permission.MANAGE_DOCUMENTS',
     );
 
     await expectLater(
@@ -117,7 +120,12 @@ void main() {
             .having(
               (e) => e.toString(),
               'message',
-              contains('Permission Denial'),
+              '无法写入所选位置，请换一个文件夹重试',
+            )
+            .having(
+              (e) => e.detail,
+              'detail',
+              contains('MANAGE_DOCUMENTS'),
             ),
       ),
     );
@@ -139,11 +147,29 @@ void main() {
     expect((channel.calls.single['bytes']! as Uint8List), isEmpty);
   });
 
-  test('提示文案：移动端只显示文件名（content URI 不展示给用户）', () {
+  test('提示文案：使用原生回传的实际文件名（重名 (1) 与磁盘一致）', () {
     expect(
-      service.savedMessage(path: channel.result!, fileName: 'a.json'),
+      service.savedMessage(
+        saved: channel.result!,
+        requestedFileName: 'bookSource_QA.json',
+      ),
+      '已保存：bookSource_QA (1).json',
+    );
+  });
+
+  test('提示文案：原生未回传文件名时回落请求名', () {
+    expect(
+      service.savedMessage(
+        saved: const SaveFileResult(location: 'content://x/y'),
+        requestedFileName: 'a.json',
+      ),
       '已保存：a.json',
     );
+  });
+
+  test('文件名净化：非法字符在进入通道前替换为下划线', () async {
+    await service.saveToLocal(fileName: 'a/b:c*d?.json', content: '{}');
+    expect(channel.calls.single['fileName'], 'a_b_c_d_.json');
   });
 
   test('非 Android 不使用自建通道（保持 iOS/桌面既有分派）', () async {

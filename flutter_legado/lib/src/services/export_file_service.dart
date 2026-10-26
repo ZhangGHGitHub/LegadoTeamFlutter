@@ -33,14 +33,15 @@ class ExportFileService {
   /// Android 系统另存通道（测试注入假实现，默认走 `legado/file_save`）
   final FileSaveChannel fileSaveChannel;
 
-  /// 系统另存文本内容：返回实际保存路径；用户取消时返回 null。
+  /// 系统另存文本内容：返回实际保存结果；用户取消时返回 null。
   ///
-  /// - Android：自建 SAF 通道创建文档并写字节，返回 content:// URI；
+  /// - Android：自建 SAF 通道创建文档并写字节，返回 content:// URI 与
+  ///   provider 实际文件名（重名时可能为 `xxx (1).json`）；
   /// - iOS：file_picker 要求传入 [bytes] 并由插件写入；
   /// - Windows / macOS / Linux：插件只返回用户选择的路径，内容由本方法写入；
-  /// - 写入失败时上抛异常，由调用方展示真实原因（Android 端原生已清理
-  ///   失败时残留的空文档）。
-  Future<String?> saveToLocal({
+  /// - 写入失败时上抛异常，由调用方展示真实原因（Android 端原生只清理
+  ///   本次创建/截断的文档，不误删用户已有文件）。
+  Future<SaveFileResult?> saveToLocal({
     required String fileName,
     required String content,
   }) {
@@ -54,12 +55,12 @@ class ExportFileService {
   ///
   /// 用于二进制/已落盘内容（如书源单源 `.js`、底栏皮肤 `.zip`）：
   /// 读取 [sourcePath] 后走同一套系统另存流程（Android 走自建通道、
-  /// iOS 由 file_picker 写字节、桌面端由本方法写盘）。返回保存路径；
+  /// iOS 由 file_picker 写字节、桌面端由本方法写盘）。返回保存结果；
   /// 用户取消返回 null。
   ///
   /// 只读取源文件，不移动/删除它；临时文件清理由调用方决定（见
   /// `showExportFileSheet(deleteTempFileOnClose:)`）。
-  Future<String?> saveExistingFile({
+  Future<SaveFileResult?> saveExistingFile({
     required String sourcePath,
     required String fileName,
   }) async {
@@ -147,25 +148,30 @@ class ExportFileService {
   /// [D1] Android 不再经过 file_picker：走 [fileSaveChannel] 自建 SAF 通道，
   /// 原生端负责写字节、捕异常、失败清理；iOS 仍由 file_picker 写字节；
   /// 桌面端插件只选路径，内容由本方法写盘。
-  Future<String?> _saveBytes({
+  ///
+  /// [P3-5] 文件名统一先经 [normalizeFileName] 净化（`[\\/:*?"<>|]` →
+  /// `_`），避免桌面端路径解析失败与 Android provider 拒收非法名字。
+  Future<SaveFileResult?> _saveBytes({
     required String fileName,
     required Uint8List bytes,
   }) async {
+    final safeName = normalizeFileName(fileName);
+    final effectiveName = safeName.isEmpty ? 'export' : safeName;
     if (defaultTargetPlatform == TargetPlatform.android) {
       return fileSaveChannel.saveFile(
-        fileName: fileName,
+        fileName: effectiveName,
         bytes: bytes,
-        mimeType: _mimeTypeOf(fileName),
+        mimeType: _mimeTypeOf(effectiveName),
       );
     }
 
     // 仅 iOS 插件负责写字节；桌面端（含 macOS，插件不支持 bytes）自行写盘
     final pluginWritesBytes = defaultTargetPlatform == TargetPlatform.iOS;
-    final extension = _extensionOf(fileName);
+    final extension = _extensionOf(effectiveName);
 
     final path = await FilePicker.platform.saveFile(
-      dialogTitle: '保存 $fileName',
-      fileName: fileName,
+      dialogTitle: '保存 $effectiveName',
+      fileName: effectiveName,
       type: extension == null ? FileType.any : FileType.custom,
       allowedExtensions: extension == null ? null : <String>[extension],
       bytes: pluginWritesBytes ? bytes : null,
@@ -174,18 +180,24 @@ class ExportFileService {
     if (!pluginWritesBytes) {
       await File(path).writeAsBytes(bytes, flush: true);
     }
-    return path;
+    return SaveFileResult(location: path, fileName: effectiveName);
   }
 
   /// 保存成功提示文案
   ///
   /// 移动端（Android/iOS）返回的是 content URI / Downloads 展示路径，
-  /// 用户难以据此定位文件，只提示文件名；桌面端路径可直接用于查找，提示完整路径。
-  String savedMessage({required String path, required String fileName}) {
+  /// 用户难以据此定位文件，只提示实际文件名（P3-2：优先用原生回传的
+  /// provider 实际名字，重名 `(1)` 时提示仍与磁盘一致）；桌面端路径可
+  /// 直接用于查找，提示完整路径。
+  String savedMessage({
+    required SaveFileResult saved,
+    required String requestedFileName,
+  }) {
     final mobile =
         defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS;
-    return mobile ? '已保存：$fileName' : '已保存到：$path';
+    final name = saved.fileName ?? normalizeFileName(requestedFileName);
+    return mobile ? '已保存：$name' : '已保存到：${saved.location}';
   }
 
   /// 写入临时目录并返回可分享的文件（对齐原版 share(file)）

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
@@ -17,6 +18,7 @@ import '../providers/rss_history/rss_history_notifier.dart';
 import '../services/bridge_http.dart';
 import '../services/platform_bridge_service.dart';
 import '../services/rss_header.dart';
+import '../utils/error_message.dart';
 import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4] 下拉 M3 化
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
@@ -149,27 +151,99 @@ Future<void> showRssPhotoViewer(
   return showDialog<void>(
     context: context,
     barrierColor: Colors.black,
-    builder: (_) => _RssPhotoViewer(url: url, title: title, headers: headers),
+    builder: (_) => RssPhotoViewer(url: url, title: title, headers: headers),
   );
 }
 
+/// 图片保存动作：返回提示文案；null 表示无需提示（已取消/已关闭）
+typedef RssPhotoSaver = Future<String?> Function(
+  Uint8List bytes,
+  String fileName,
+);
+
+/// RSS 图片保存分派（D1 回修 P2-4，可注入测试）
+///
+/// - Android（[useMediaStore]）：MediaStore Downloads 直写；返回 null
+///   （通道不可用/API < 29/写入被拒）时**禁止回退
+///   `FilePicker.platform.saveFile(bytes:)`**——该链路会在 onActivityResult
+///   内裸写 SAF URI，命中原始崩溃路径且 Future 可能永久挂起；改为写应用
+///   文档目录并明确提示完整路径（对齐 reader_comic_screen 既有做法）。
+/// - iOS/桌面：file_picker 系统另存（必须传 bytes）；用户取消时写文档目录
+///   兜底（保持既有语义）。
+///
+/// 返回提示文案；保存动作可被页面关闭/取消打断（调用方检查 mounted）。
+@visibleForTesting
+Future<String?> saveRssImageBytes({
+  required Uint8List bytes,
+  required String fileName,
+  bool? useMediaStore,
+  Future<String?> Function(String fileName, Uint8List bytes)? saveToDownloads,
+  Future<String?> Function(String fileName, Uint8List bytes)? pickSaveFile,
+  Future<Directory> Function()? documentsDirectory,
+}) async {
+  final mediaStore =
+      useMediaStore ?? PlatformBridgeService.instance.useMediaStoreDownloads;
+  final docsDir = documentsDirectory ?? getApplicationDocumentsDirectory;
+
+  if (mediaStore) {
+    final downloads = saveToDownloads ??
+        (name, data) =>
+            PlatformBridgeService.instance.saveImageToDownloads(name, data);
+    final saved = await downloads(fileName, bytes);
+    if (saved != null) return '已保存: $saved';
+    // [D1 回修] Android 禁止回退 file_picker：直接写应用文档目录并提示位置
+    final dir = await docsDir();
+    final file = File('${dir.path}${Platform.pathSeparator}$fileName')
+      ..writeAsBytesSync(bytes, flush: true);
+    return '已保存到文档目录: ${file.path}';
+  }
+
+  final picker = pickSaveFile ??
+      (name, data) => FilePicker.platform.saveFile(
+            dialogTitle: '保存图片',
+            fileName: name,
+            bytes: data,
+          );
+  final path = await picker(fileName, bytes);
+  if (path != null) {
+    final file = File(path)..writeAsBytesSync(bytes);
+    return '已保存: ${file.path}';
+  }
+  // iOS/桌面取消选择 → 文档目录兜底（既有行为）
+  final dir = await docsDir();
+  final file = File('${dir.path}${Platform.pathSeparator}$fileName')
+    ..writeAsBytesSync(bytes);
+  return '已保存到文档目录: ${file.path}';
+}
+
 /// 全屏图片查看器（`InteractiveViewer` 缩放 + MediaStore/文件选择器保存）
-class _RssPhotoViewer extends ConsumerStatefulWidget {
+class RssPhotoViewer extends ConsumerStatefulWidget {
+  const RssPhotoViewer({
+    super.key,
+    required this.url,
+    this.title = '',
+    this.headers = const {},
+    this.fetchBytes,
+    this.saver,
+  });
+
   final String url;
   final String title;
   final Map<String, String> headers;
 
-  const _RssPhotoViewer({
-    required this.url,
-    required this.title,
-    required this.headers,
-  });
+  /// 测试注入：抓取图片字节（默认经 Bridge HTTP）
+  @visibleForTesting
+  final Future<Uint8List> Function()? fetchBytes;
+
+  /// 测试注入：保存动作（默认走 [saveRssImageBytes] 真实分派）
+  @visibleForTesting
+  final RssPhotoSaver? saver;
 
   @override
-  ConsumerState<_RssPhotoViewer> createState() => _RssPhotoViewerState();
+  ConsumerState<RssPhotoViewer> createState() => _RssPhotoViewerState();
 }
 
-class _RssPhotoViewerState extends ConsumerState<_RssPhotoViewer> {
+class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
   bool _saving = false;
 
   /// 图片后缀（URL 末段 `.` 后 1-5 位字母数字，否则 jpg）
@@ -183,51 +257,47 @@ class _RssPhotoViewerState extends ConsumerState<_RssPhotoViewer> {
     return '.jpg';
   }
 
-  /// 保存图片（Android 优先 MediaStore，其余走 file_picker + 文档目录兜底）
+  /// 抓取图片字节（测试可注入，避免依赖真实网络/FFI）
+  Future<Uint8List> _fetchBytes() async {
+    final override = widget.fetchBytes;
+    if (override != null) return override();
+    final api = ref.read(bookApiProvider);
+    final data = await bridgeHttpGetBytes(
+      api,
+      widget.url,
+      headers: widget.headers.isEmpty ? null : widget.headers,
+    );
+    if (data.statusCode < 200 || data.statusCode >= 300) {
+      throw Exception('HTTP ${data.statusCode}');
+    }
+    if (data.bytes.isEmpty) {
+      throw Exception('图片为空');
+    }
+    return data.bytes;
+  }
+
+  /// 保存图片（平台分派见 [saveRssImageBytes]）
+  ///
+  /// 对话框被关闭（mounted=false）后不再弹提示，避免「关闭后仍提示」。
   Future<void> _save() async {
     if (_saving) return;
     setState(() => _saving = true);
     final messenger = ScaffoldMessenger.maybeOf(context);
     try {
-      final api = ref.read(bookApiProvider);
-      final data = await bridgeHttpGetBytes(
-        api,
-        widget.url,
-        headers: widget.headers.isEmpty ? null : widget.headers,
-      );
-      if (data.statusCode < 200 || data.statusCode >= 300) {
-        throw Exception('HTTP ${data.statusCode}');
-      }
-      if (data.bytes.isEmpty) {
-        throw Exception('图片为空');
-      }
-      final fileName = 'rss-${DateTime.now().millisecondsSinceEpoch}${_suffix()}';
-      final service = PlatformBridgeService.instance;
-      if (service.useMediaStoreDownloads) {
-        final saved = await service.saveImageToDownloads(fileName, data.bytes);
-        if (saved != null) {
-          messenger?.showSnackBar(SnackBar(content: Text('已保存: $saved')));
-          return;
-        }
-      }
-      final path = await FilePicker.platform.saveFile(
-        dialogTitle: '保存图片',
-        fileName: fileName,
-        bytes: data.bytes,
-      );
-      if (path != null) {
-        File(path).writeAsBytesSync(data.bytes);
-        messenger?.showSnackBar(SnackBar(content: Text('已保存: $path')));
-      } else {
-        final dir = await getApplicationDocumentsDirectory();
-        final file = File('${dir.path}/$fileName')
-          ..writeAsBytesSync(data.bytes);
-        messenger?.showSnackBar(
-          SnackBar(content: Text('已保存到文档目录: ${file.path}')),
-        );
-      }
+      final bytes = await _fetchBytes();
+      if (!mounted) return;
+      final fileName =
+          'rss-${DateTime.now().millisecondsSinceEpoch}${_suffix()}';
+      final saver = widget.saver ??
+          (data, name) => saveRssImageBytes(bytes: data, fileName: name);
+      final message = await saver(bytes, fileName);
+      if (!mounted || message == null) return;
+      messenger?.showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {
-      messenger?.showSnackBar(SnackBar(content: Text('保存图片失败：$e')));
+      if (!mounted) return;
+      messenger?.showSnackBar(
+        SnackBar(content: Text('保存图片失败：${errorMessage(e)}')),
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }

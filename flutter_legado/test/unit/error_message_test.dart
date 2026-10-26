@@ -9,6 +9,7 @@ library;
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_legado/src/bridge/ffi.dart';
+import 'package:flutter_legado/src/services/file_save_channel.dart';
 import 'package:flutter_legado/src/utils/error_message.dart';
 
 void main() {
@@ -89,6 +90,87 @@ void main() {
         'Request failed: builder error',
       );
       expect(friendlyErrorMessage('  '), kUnknownErrorMessage);
+    });
+  });
+
+  // P3-1：映射改为「整串形态锚定」——含中文的业务文案一律不改写，
+  // 避免「上传超时(timeout)」被吞成「网络连接超时」。
+  group('errorMessage D4 锚定匹配（P3-1）', () {
+    test('业务文案含 timeout 不被吞（中文业务前缀跳过映射）', () {
+      expect(
+        friendlyErrorMessage('上传超时，请重试（timeout）'),
+        '上传超时，请重试（timeout）',
+      );
+      expect(
+        errorMessage(const BridgeError(message: 'Network error: 上传超时(timeout)，请重试')),
+        '上传超时(timeout)，请重试',
+      );
+      expect(
+        friendlyErrorMessage('下载失败：connection refused，请检查网络'),
+        '下载失败：connection refused，请检查网络',
+      );
+    });
+
+    test('纯 ASCII 低层连接错误仍按整串形态映射', () {
+      expect(
+        friendlyErrorMessage(
+          'error sending request for url (http://127.0.0.1:1/api): '
+          'error trying to connect: tcp connect error: Connection refused '
+          '(os error 111)',
+        ),
+        kConnectionRefusedMessage,
+      );
+      expect(
+        friendlyErrorMessage('operation timed out (os error 110)'),
+        kConnectionTimeoutMessage,
+      );
+    });
+
+    test('英文业务文案不命中低层标记时原样保留', () {
+      expect(
+        friendlyErrorMessage('Request failed: builder error'),
+        'Request failed: builder error',
+      );
+    });
+  });
+
+  // P2-3：权限拒绝/系统另存失败的主文案为中文短句，技术详情可复制
+  group('errorMessage 权限与另存失败（P2-3）', () {
+    test('Permission Denial / SecurityException → 没有写入权限', () {
+      expect(
+        friendlyErrorMessage(
+          'Permission Denial: writing com.android.providers.downloads.'
+          'DownloadStorageProvider uri content://com.android.providers.'
+          'downloads.documents/document/7 from pid=1, uid=2 requires '
+          'android.permission.MANAGE_DOCUMENTS, or grantUriPermission()',
+        ),
+        kPermissionDeniedMessage,
+      );
+      expect(
+        friendlyErrorMessage('java.lang.SecurityException: nope'),
+        kPermissionDeniedMessage,
+      );
+    });
+
+    test('FileSaveException：主文案中文，技术详情走 errorDetailMessage', () {
+      const e = FileSaveException(
+        code: 'SAVE_FAILED',
+        message: '无法写入所选位置，请换一个文件夹重试',
+        detail: 'Permission Denial: requires '
+            'android.permission.MANAGE_DOCUMENTS',
+      );
+      expect(errorMessage(e), '无法写入所选位置，请换一个文件夹重试');
+      expect(errorDetailMessage(e), contains('MANAGE_DOCUMENTS'));
+      expect(errorDetailMessage(e), isNot(contains('无法写入')));
+    });
+
+    test('FileSaveException 无 detail 时详情回落到中文文案', () {
+      const e = FileSaveException(
+        code: 'EMPTY_BYTES',
+        message: '导出内容为空，未创建文件',
+      );
+      expect(errorMessage(e), '导出内容为空，未创建文件');
+      expect(errorDetailMessage(e), '导出内容为空，未创建文件');
     });
   });
 }
