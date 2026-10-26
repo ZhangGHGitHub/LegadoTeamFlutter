@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-10-26 | **审查批5 文档修整：§1.7 命名等价对补登记（纯文档，零 FFI 签名/方法计数变化）**：原表 A 仅登记 15 对改名等价；本批以 `rust/legado-ffi/src/ffi.rs` 的 284 个 `pub fn` 导出面 × `flutter_legado/lib/src/services/rust_api*.dart` 的 `bridge.<fn>` 调用面程序化提取，补表 B **123 对**「BookApi 同名方法 ↔ Rust 模块前缀导出名」（示例 `getBooks ↔ bookshelf_list`、`getBookSources ↔ source_list`；含 3 条跨导出复合实现 `initialize`/`updateBookmark`/`parseEpub` 与 2 条无前缀命名 `initialize`/`getVersion`）。§1.7 等价对总数 15→**138**（改名等价 15 + 同名 FFI 映射 123）；§2.x 方法行、附录合计 296、BookApi 口径 293 全部不变。同步勘误附录口径：`rssUpdateSource` 已由 BookApi `updateRssSource` 封装（`rust_api_search_rss.part.dart:246-247`），纯 FFI 仅剩 `chapterPayAction` 1 个。证据：`docs/REFACTORING_FULL_AUDIT_REPORT_20261026.md` §四-4 / P2-7；`flutter_legado/test/unit/api_contract_test.dart` §1.7 解析校验全绿 |
 | 2026-10-05 | **P2-29c 后续：失败章查询契约冻结（加法式，零破坏，+1 方法，契约先行本批不改代码）**：§2.43 新增 `cacheDownloadFailedChapters(bookUrl) → Future<String>`（§2.43.8）：单次只读查询返回该书批量下载**已失败**章节 index 的 JSON 整型数组（升序、0-based；无失败为空数组）；数据链=任务表 `TaskInner` 与持久化快照新增失败章索引集合（对齐参考版 `CacheDownloadStateStore.kt:35-57` 的 `markFailed`（加入）/`markSuccess`（移除）语义，任务启动清空、恢复回读一并恢复、`persist_snapshot` 含集合）；目录页 ERROR 态（红色重试图标可重试，P2-29c 已落 UI、数据源恒空待接）由此接通。§2.43 方法数 10→**11**，附录合计 293→**294**，BookApi 口径 290→**291**（契约先行，实现批封装后程序化计数转齐） |
 | 2026-10-03 | **B2 音频预下载写入面契约冻结（加法式，+2 写面方法；契约先于代码，本批不改任何代码）**：§2.48 新增（补齐 §2.47 只读/清理面所缺写入面，对齐原版 `AudioCacheService` 服务编排 + `AudioCacheManager.cacheChapter` 写入本体）：`audioCacheDownload({bookUrl, chapterIndex, chapterUrl, chapterTitle, playUrl}) → Future<String>`（Rust `ffi::audio_cache_download`，async + spawn_blocking 非阻塞）——单章下载安装，**幂等**（已提交缓存直接返回 `already_cached` 不重下，对齐原版服务循环 `AudioCacheService.kt:216` 跳过语义）；playUrl 由 Dart 经既有 `audioGetChapterMedia`（§2.26 播放取址链）的 `mediaUrl` 解析传入——**修订说明（2026-10-04，主代理据实现批反馈修正）**：初稿写 `getChapterContentFull`，但该链会应用替换规则与简繁转换（`reader.rs:1034,1111`）**可能污染 URL**；原版 `cacheChapterLocked:139-144` 实为播放链 `WebBook.getContentAwait` 输出，与我方 `getAudioChapterMedia` 同源，实现取后者更贴原版；Rust 自 DB 载入 Book/BookSource/BookChapter 后以 `legado-parser::AnalyzeUrl` 等价语义发起下载（headers/cookie/JS/重试全在 Rust；**字节不穿 FFI**——音频可达数十 MB，禁止 base64，系 §2.46 base64 惯例的反例登记，先例 `tts_speak`/`webdavDownloadFile`）；流程逐条对齐 `AudioCacheManager.kt:132-199`：五段式命名（`AudioCachePolicy.kt:67-98`）→ 陈旧未提交清理（1 小时阈值 `:302-314`）→ 流式写 `tmp_*.part`（块级取消检查）→ size 校验 → rename 安装（失败退复制）→ 写 `.complete` 并回读校验 → 同 key 旧版本清理；失败 **Err 上抛不降级**（有意区别于 §2.47 读面降级风格：写入是显式用户动作，错误须驱动 Dart 循环 failCount）。`audioCacheCancel() → Future<bool>`——取消在途下载（进程级取消代数单槽，对齐原版服务单 worker + stop 语义；中止流式拷贝并删部分文件）。**不设**批量队列/进度查询方法（Dart 循环逐章自持进度，原版服务编排不上 FFI）；**不设**容量上限/自动清理（原版无此功能，重构红线禁新增）；**不设**导入/导出（用户已裁决）；原版前台服务保活语义不复制（进程死即停、已装文件保留，登记为已知边界）。决策策略（键计算/文件名/扩展名探测/.complete 安装/已缓存跳过）全部落 Rust，UI 层零业务逻辑。§2.48 方法数 **2**，方法模块 44→**45**，附录合计 291→**293**，BookApi 口径 288→**290**（契约先行，代码未实现，`api_contract_test.dart` BookApi 总数项按预期红、实现批封装后转绿） |
 | 2026-10-03 | **cbz 本地漫画批 B：FFI 契约冻结 + bookType 位域 + is_local_book 白名单（E9 参考版扩展，用户已授权；加法式，+1 纯 FFI 方法）**：**契约先于代码**——本条目及同批文档改动先于 Rust 代码落盘（工作树顺序：契约先行，代码随后；若同批提交则契约条目提交在前，见提交记录）。**新增 FFI 方法**（§2.34 压缩包导入 7→**8**，附录合计 286→**287**，BookApi 口径 283 不变——纯 FFI，待 UI 轨后续封装）：`cbzReadPage(path, entry) → Future<String>`（Rust `ffi::cbz_read_page`，实现 `legado-ffi/src/api/cbz_api.rs`；仅走 frb 主链路）——CBZ 本地漫画按条目读取图片字节，返回 JSON `{base64, len}`（与 §2.20 `fetchImageWithDecode` / §2.46 图片缓存的 `{base64,len}` 惯例对齐，§1.3 复杂类型 JSON 约定）；`entry` 兼容带/不带 `cbz://` 前缀（剥前缀后按 ZIP 条目名精确匹配，中文/空格条目名原样，不 URL 编解码）；`path` 为本地书 `bookUrl` 形态（绝对路径原样；相对可迁移标识经 `resolve_local_book_path` 同语义解析，与 §2.9 本地书链路一致）；错误语义：文件不存在 / ZIP 解析失败 / 条目不存在 / 包内无图片条目 → 抛 BridgeError。**bookType 语义补记**：`importLocalBook` 导入 `.cbz` 时 `bookType = LOCAL(0x1000) \| IMAGE_BIT(64)`（位域，对齐 Kotlin `BookType` 位语义）；其余本地格式（txt/epub/mobi/azw/azw3/pdf/umd）保持 `LOCAL` 无媒体位；`origin=loc_book` / `book_url` 相对标识语义不变。**命名域警告（必读）**：新增常量 `legado_core::models::book::book_type::IMAGE_BIT = 64` 属 `Book.bookType` **位域**；既有 `book_type::IMAGE = 2` 属 **BookSourceType 数值域**（书源类型「图片源」），两域禁止混用。**is_local_book 白名单**：新增 `.cbz`（`reader::is_local_book` 后缀判定，与 `.epub/.txt/.text/.mobi/.azw/.azw3/.pdf` 同列）；`.zip` **不加入**（保持压缩容器行为，`archiveImportZip` 路径不变）。**链路衔接**：`.cbz` 加入白名单后，`getChapters` 懒加载经 `LocalBook` → `CbzFile`（批 A `1e7dd3abb3`）解析并入库，`getChapterContent` 返回 `cbz://<条目名>` 行列表，Dart 侧逐行调 `cbzReadPage` 取图渲染 |
@@ -152,7 +153,7 @@
 
 ### 1.7 BookApi / FFI 命名等价表（F3-10，2026-08-14）
 
-以下 15 对 Dart `BookApi` 方法名与契约/FFI 登记名不一致，语义等价，计数时勿重复：
+以下 **15 对** Dart `BookApi` 方法名与契约 §2.x 登记名不一致（改名等价对）；另有 **123 对**方法名与 Rust FFI 导出名不一致、但 §2.x 按 BookApi 同名登记（机械映射见表 B）。两类合计 **138 对**，语义等价，计数时勿重复：
 
 | BookApi（Dart） | 契约 §2.x / FFI 登记名 |
 |-----------------|------------------------|
@@ -171,6 +172,138 @@
 | `getLoginInfo` | `sourceGetLoginInfo`（§2.3） |
 | `putLoginHeader` | `sourcePutLoginHeader`（§2.3） |
 | `putLoginInfo` | `sourcePutLoginInfo`（§2.3） |
+
+**表 B：Rust FFI 导出 ↔ BookApi 方法机械映射（2026-10-26 审查批5 补登记，123 对）**
+
+> 生成口径：以 `rust/legado-ffi/src/ffi.rs` 的 `pub fn` 导出面与本仓 `rust_api*.dart` 实现中的 `bridge.<fn>` 调用点为源，取「BookApi 方法名 ≠ Rust FFI 导出名」且未在表 A 登记的对。一个 FFI 导出可被多个 BookApi 方法复用（如 `bookshelf_update`），复合实现列出全部调用；`initialize`/`getVersion` 无模块前缀但同属命名差异，一并登记。本表为纯登记（不新增方法、不改 §2.x 计数口径）。
+
+| BookApi（Dart） | 契约 §2.x 登记名 | Rust FFI 导出（ffi.rs pub fn） |
+|---|---|---|
+| `getAudioChapterMedia` | `getAudioChapterMedia`（§2.26） | `audio_get_chapter_media` |
+| `getAudioProgress` | `getAudioProgress`（§2.26） | `audio_get_progress` |
+| `saveAudioProgress` | `saveAudioProgress`（§2.26） | `audio_save_progress` |
+| `autoTaskBuildBookUpdateTask` | `autoTaskBuildBookUpdateTask`（§2.32） | `auto_task_build_book_update` |
+| `autoTaskCanRefreshBookToc` | `autoTaskCanRefreshBookToc`（§2.32） | `auto_task_can_refresh_toc` |
+| `autoTaskFindBookUpdateTask` | `autoTaskFindBookUpdateTask`（§2.32） | `auto_task_find_book_update` |
+| `backup` | `backup`（§2.11） | `backup_create` |
+| `restore` | `restore`（§2.11） | `backup_restore` |
+| `addBookGroup` | `addBookGroup`（§2.14） | `book_group_add` |
+| `deleteBookGroup` | `deleteBookGroup`（§2.14） | `book_group_delete` |
+| `getBookGroups` | `getBookGroups`（§2.14） | `book_group_list` |
+| `updateBookGroup` | `updateBookGroup`（§2.14） | `book_group_update` |
+| `addBookmark` | `addBookmark`（§2.7） | `bookmark_add` |
+| `deleteBookmark` | `deleteBookmark`（§2.7） | `bookmark_delete` |
+| `getAllBookmarks` | `getAllBookmarks`（§2.7） | `bookmark_list` |
+| `getBookmarks` | `getBookmarks`（§2.7） | `bookmark_get_all` |
+| `searchBookmarks` | `searchBookmarks`（§2.7） | `bookmark_search` |
+| `updateBookmark` | `updateBookmark`（§2.7） | `bookmark_delete` + `bookmark_add` |
+| `addBook` | `addBook`（§2.2） | `bookshelf_add` |
+| `deleteBook` | `deleteBook`（§2.2） | `bookshelf_delete` |
+| `getBook` | `getBook`（§2.2） | `bookshelf_get` |
+| `getBooks` | `getBooks`（§2.2） | `bookshelf_list` |
+| `importBooks` | `importBooks`（§2.2） | `bookshelf_import` |
+| `reorderBooks` | `reorderBooks`（§2.2） | `bookshelf_reorder_orders` |
+| `setBookGroup` | `setBookGroup`（§2.2） | `bookshelf_update` |
+| `topBook` | `topBook`（§2.2） | `bookshelf_update` |
+| `unTopBook` | `unTopBook`（§2.2） | `bookshelf_update` |
+| `updateBook` | `updateBook`（§2.2） | `bookshelf_update` |
+| `clearBookCache` | `clearBookCache`（§2.16） | `cache_clear_book` |
+| `clearCache` | `clearCache`（§2.16） | `cache_clear` |
+| `clearCacheBefore` | `clearCacheBefore`（§2.16） | `cache_clear_before` |
+| `clearChapterCache` | `clearChapterCache`（§2.16） | `cache_clear_chapter` |
+| `getCacheBookCount` | `getCacheBookCount`（§2.16） | `cache_get_book_count` |
+| `getCacheChapterCount` | `getCacheChapterCount`（§2.16） | `cache_get_chapter_count` |
+| `getCacheSize` | `getCacheSize`（§2.16） | `cache_get_size` |
+| `shrinkDatabase` | `shrinkDatabase`（§2.16） | `cache_shrink_database` |
+| `deleteConfig` | `deleteConfig`（§2.10） | `config_set` |
+| `getAllConfigs` | `getAllConfigs`（§2.10） | `config_get_all` |
+| `getConfig` | `getConfig`（§2.10） | `config_get` |
+| `setConfig` | `setConfig`（§2.10） | `config_set` |
+| `setServerPort` | `setServerPort`（§2.22） | `config_set` |
+| `sortBookSources` | `sortBookSources`（§2.3） | `config_set` |
+| `cancelDebugBookSource` | `cancelDebugBookSource`（§2.17） | `debug_book_source_cancel` |
+| `addHttpTts` | `addHttpTts`（§2.25） | `http_tts_add` |
+| `deleteHttpTts` | `deleteHttpTts`（§2.25） | `http_tts_delete` |
+| `getHttpTts` | `getHttpTts`（§2.25） | `http_tts_list` |
+| `importHttpTts` | `importHttpTts`（§2.25） | `http_tts_add` |
+| `updateHttpTts` | `updateHttpTts`（§2.25） | `http_tts_update` |
+| `detectFormat` | `detectFormat`（§2.6） | `import_detect_format` |
+| `parseEpub` | `parseEpub`（§2.23） | `import_local_book` + `reader_get_chapters` |
+| `parseMetadata` | `parseMetadata`（§2.6） | `import_parse_metadata` |
+| `initialize` | `initialize`（§2.1） | `init` + `db_open` |
+| `evalJs` | `evalJs`（§2.21） | `js_eval` |
+| `getJsEngineVersion` | `getJsEngineVersion`（§2.21） | `js_eval` |
+| `clearReadRecords` | `clearReadRecords`（§2.12） | `read_record_clear` |
+| `deleteReadRecord` | `deleteReadRecord`（§2.12） | `read_record_delete` |
+| `getReadRecords` | `getReadRecords`（§2.12） | `read_record_list` |
+| `putReadRecord` | `putReadRecord`（§2.12） | `read_record_upsert` |
+| `recordReadingTime` | `recordReadingTime`（§2.12） | `read_record_upsert` |
+| `canRemoveSameTitle` | `canRemoveSameTitle`（§2.9） | `reader_can_remove_same_title` |
+| `fetchChapterContent` | `fetchChapterContent`（§2.9） | `reader_fetch_content` |
+| `getChapterContent` | `getChapterContent`（§2.9） | `reader_get_content` |
+| `getChapterContentFull` | `getChapterContentFull`（§2.9） | `reader_get_content_full` |
+| `getChapterContentRaw` | `getChapterContentRaw`（§2.9） | `reader_get_content_raw` |
+| `getChapters` | `getChapters`（§2.9） | `reader_get_chapters` |
+| `getChineseConvertType` | `getChineseConvertType`（§2.9） | `reader_get_chinese_convert` |
+| `getSameTitleRemoved` | `getSameTitleRemoved`（§2.9） | `reader_get_same_title_removed` |
+| `refreshToc` | `refreshToc`（§2.9） | `reader_refresh_toc` |
+| `setChineseConvertType` | `setChineseConvertType`（§2.9） | `reader_set_chinese_convert` |
+| `toggleSameTitleRemoved` | `toggleSameTitleRemoved`（§2.9） | `reader_toggle_same_title_removed` |
+| `updateReadingProgress` | `updateReadingProgress`（§2.9） | `reader_update_progress` |
+| `addReplaceRule` | `addReplaceRule`（§2.8） | `replace_rule_add` |
+| `deleteReplaceRule` | `deleteReplaceRule`（§2.8） | `replace_rule_delete` |
+| `getEnabledReplaceRules` | `getEnabledReplaceRules`（§2.8） | `replace_rule_enabled` |
+| `getReplaceRules` | `getReplaceRules`（§2.8） | `replace_rule_list` |
+| `previewReplaceRule` | `previewReplaceRule`（§2.8） | `replace_rule_preview` |
+| `setReplaceRuleEnabled` | `setReplaceRuleEnabled`（§2.8） | `replace_rule_set_enabled` |
+| `updateReplaceRule` | `updateReplaceRule`（§2.8） | `replace_rule_update` |
+| `addRssSource` | `addRssSource`（§2.5） | `rss_add_source` |
+| `addRssStar` | `addRssStar`（§2.13） | `rss_star_add` |
+| `deleteRssSource` | `deleteRssSource`（§2.5） | `rss_delete_source` |
+| `deleteRssStar` | `deleteRssStar`（§2.13） | `rss_star_delete` |
+| `getRssArticles` | `getRssArticles`（§2.5） | `rss_fetch_articles` |
+| `getRssSources` | `getRssSources`（§2.5） | `rss_list_sources` |
+| `getRssStars` | `getRssStars`（§2.13） | `rss_star_list` |
+| `isStarred` | `isStarred`（§2.13） | `rss_star_is_starred` |
+| `updateRssSource` | `updateRssSource`（§2.5） | `rss_update_source` |
+| `addSearchKeyword` | `addSearchKeyword`（§2.15） | `search_history_add` |
+| `cancelSearch` | `cancelSearch`（§2.4） | `search_cancel` |
+| `clearSearchHistory` | `clearSearchHistory`（§2.15） | `search_history_clear` |
+| `deleteSearchKeyword` | `deleteSearchKeyword`（§2.15） | `search_history_delete` |
+| `getSearchHistory` | `getSearchHistory`（§2.15） | `search_history_list` |
+| `pauseSearch` | `pauseSearch`（§2.4） | `search_pause` |
+| `resumeSearch` | `resumeSearch`（§2.4） | `search_resume` |
+| `getServerStatus` | `getServerStatus`（§2.22） | `server_status` |
+| `startServer` | `startServer`（§2.22） | `server_start` |
+| `stopServer` | `stopServer`（§2.22） | `server_stop` |
+| `addBookSource` | `addBookSource`（§2.3） | `source_add` |
+| `cancelCheckSources` | `cancelCheckSources`（§2.3） | `source_check_cancel` |
+| `cancelSwitchSourceApply` | `cancelSwitchSourceApply`（§2.4） | `source_switch_apply_cancel` |
+| `checkSource` | `checkSource`（§2.3） | `source_check` |
+| `checkSourcesStream` | `checkSourcesStream`（§2.3） | `source_check_stream` |
+| `deleteBookSource` | `deleteBookSource`（§2.3） | `source_delete` |
+| `disableBookSource` | `disableBookSource`（§2.3） | `source_disable` |
+| `disableRssSource` | `disableRssSource`（§2.5） | `source_disable` ⚠ |
+| `enableBookSource` | `enableBookSource`（§2.3） | `source_enable` |
+| `enableRssSource` | `enableRssSource`（§2.5） | `source_enable` ⚠ |
+| `exportBookSources` | `exportBookSources`（§2.3） | `source_export` |
+| `getBookSources` | `getBookSources`（§2.3） | `source_list` |
+| `getEnabledBookSources` | `getEnabledBookSources`（§2.3） | `source_list_enabled` |
+| `importBookSources` | `importBookSources`（§2.3） | `source_import` |
+| `searchSource` | `searchSource`（§2.4） | `source_switch_search` |
+| `searchSourceStream` | `searchSourceStream`（§2.4） | `source_switch_search_stream` |
+| `switchSource` | `switchSource`（§2.4） | `source_switch_apply` |
+| `switchSourcePrefetch` | `switchSourcePrefetch`（§2.4） | `source_switch_apply_prefetch` |
+| `updateBookSource` | `updateBookSource`（§2.3） | `source_update` |
+| `audioSpeak` | `audioSpeak`（§2.26） | `tts_speak` |
+| `cancelVerificationRequest` | `cancelVerificationRequest`（§2.3） | `verification_cancel` |
+| `submitVerificationResult` | `submitVerificationResult`（§2.3） | `verification_submit` |
+| `getVersion` | `getVersion`（§2.1） | `version` |
+| `cancelWebviewRequest` | `cancelWebviewRequest`（§2.3） | `webview_cancel` |
+| `submitWebviewResult` | `submitWebviewResult`（§2.3） | `webview_submit` |
+| `submitWebviewResultWithCookies` | `submitWebviewResultWithCookies`（§2.3） | `webview_submit_result_with_cookies` |
+
+> ⚠ **提取中发现的真实缺口（非等价对，未按设计意图登记）**：`enableRssSource` / `disableRssSource` 当前分别调用 `source_enable` / `source_disable`（`rust/legado-ffi/src/api/source.rs:64-71` 走 `BookSourceRepository`），而 RSS 源有独立的 `RssSourceRepository::set_enabled`（`rss_source_repository.rs:282`）却无对应 FFI 导出——对 RSS-only 源（URL 不在书源表）会报「书源不存在」，若同 URL 恰有书源则误改书源。已登记为待后续批处理的真实缺口（审查批5 仅登记，不改业务代码）。
 
 ---
 
@@ -1106,6 +1239,7 @@
 > 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`、2026-09-28 STAGE3-C2B 增 §2.16 单章缓存失效 1 方法 `clearChapterCache`、2026-09-28 P2-28c 增 §2.43 目录实时刷新 1 方法 `listCachedChapters`、2026-09-29 P2-29 增 §2.43 目录下载中态查询 1 方法 `listDownloadingChapters`、2026-09-29 P4-2a 增 §2.46 图片磁盘缓存 2 方法 `saveImageCache`/`getImageCache`、2026-10-03 cbz 批 B 增 §2.34 本地漫画页读取 1 方法 `cbzReadPage`、2026-10-04 B1 增 §2.47 音频章节文件缓存 4 方法、2026-10-03 B2 增 §2.48 音频章节预下载写入 2 方法 `audioCacheDownload`/`audioCacheCancel`，取代人工统计）：
 > - 附录行合计 **296** = §2.x 实际方法行总数；其中与 BookApi 同名 280（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 2；失败章查询经 §1.7 命名等价对登记）、§1.7 命名等价对的 FFI 登记名 10
 >   （对应 9 个未同名登记的 BookApi 方法，`getCachedChapter` 另在 §2.16 同名登记）、登录四方法的 FFI 登记名 4（§1.7）、
->   尚未封装进 BookApi 的纯 FFI 2（`chapterPayAction` / `rssUpdateSource`）。
+>   尚未封装进 BookApi 的纯 FFI 1（`chapterPayAction`）；`rssUpdateSource` 已由 BookApi `updateRssSource` 封装接通（`rust_api_search_rss.part.dart:246-247`，2026-10-26 审查批5 勘误：原记「纯 FFI 2」过时）。
 > - BookApi 代码计数 **293** = 281 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 2；失败章查询经 §1.7 命名等价对登记）+ 9 命名等价（§1.7）+ 4 登录（§1.7）；测试自动强制两口径与闭合关系（§2.48 2 方法为契约先行，`book_api.dart` 实现批封装后程序化计数转齐）。
+> - 2026-10-26 审查批5：§1.7 表 B 新增 **123 条**「Rust FFI 导出 ↔ BookApi 同名方法」机械映射（`ffi.rs` pub fn 面 × `rust_api*.dart` 调用面程序化提取，含 3 条跨导出复合实现 `initialize`/`updateBookmark`/`parseEpub` 与 2 条无前缀命名 `initialize`/`getVersion`）；§1.7 等价对总数 15→**138**（改名等价 15 + 同名 FFI 映射 123）。该表不改变 §2.x 行数与 BookApi 计数，仅补齐命名等价登记债。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。
