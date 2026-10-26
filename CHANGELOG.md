@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.379] - 2026-10-26
+
+### Added
+- [Rust] JS 书源段评回复能力补齐（getReviewReplies 编排器：6 参数绑定、嵌套回复扁平化、hasMore 语义对齐原版；段评详情「查看回复」对 JS 源可用）。
+### Fixed
+- [Rust] 修复 JS 可选函数存在性探测恒失败的问题（QuickJS 异常文案与旧判定不匹配，导致 get_book_info 等可选函数缺失被误报为引擎错误）。
+
 ## [2.0.378] - 2026-10-26
 
 ### Added
