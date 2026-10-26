@@ -948,6 +948,19 @@ pub mod ffi {
         Ok(())
     }
 
+    /// 启用/禁用 RSS 源（更新 `rssSources.enabled`，返回是否实际命中行）
+    ///
+    /// 契约 §2.5 `rssSourceSetEnabled`（2026-10-26 审查批6，加法式）：
+    /// 走 `RssSourceRepository::set_enabled` 单实现，只更新 `rssSources` 表；
+    /// 源不存在返回 `false`（对齐原版 `RssSourceDao.enable` 的 Room UPDATE
+    /// 静默语义），不报错、不触碰书源表。
+    pub fn rss_source_set_enabled(source_url: String, enabled: bool) -> Result<bool, BridgeError> {
+        Ok(crate::api::rss::set_rss_source_enabled(
+            &source_url,
+            enabled,
+        )?)
+    }
+
     /// 获取 RSS 源的文章列表（JSON 数组）
     pub fn rss_fetch_articles(source_url: String) -> Result<String, BridgeError> {
         let articles = crate::api::rss::fetch_rss_articles(&source_url)?;

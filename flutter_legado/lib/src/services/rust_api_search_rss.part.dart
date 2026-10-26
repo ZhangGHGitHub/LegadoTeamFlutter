@@ -265,15 +265,26 @@ mixin RustApiSearchRss on RustApiDecode implements BookApi {
   Future<void> deleteRssSource(String sourceUrl) =>
       bridge.rssDeleteSource(sourceUrl: sourceUrl);
 
-  /// 启用 RSS 源（复用书源启用接口）
+  /// 启用 RSS 源（委托契约 §2.5 rssSourceSetEnabled，只更新 rssSources 表）
   @override
-  Future<void> enableRssSource(String sourceUrl) =>
-      bridge.sourceEnable(sourceUrl: sourceUrl);
+  Future<void> enableRssSource(String sourceUrl) async {
+    await rssSourceSetEnabled(sourceUrl, true);
+  }
 
-  /// 禁用 RSS 源（复用书源禁用接口）
+  /// 禁用 RSS 源（委托契约 §2.5 rssSourceSetEnabled，只更新 rssSources 表）
   @override
-  Future<void> disableRssSource(String sourceUrl) =>
-      bridge.sourceDisable(sourceUrl: sourceUrl);
+  Future<void> disableRssSource(String sourceUrl) async {
+    await rssSourceSetEnabled(sourceUrl, false);
+  }
+
+  /// 设置 RSS 源启用状态（Rust `rss_source_set_enabled`，
+  /// 走 `RssSourceRepository::set_enabled` 单实现）
+  ///
+  /// 2026-10-26 审查批6 修复：此前误接书源 `source_enable` / `source_disable`，
+  /// RSS-only 源报「书源不存在」、同 URL 有书源时误改书源。
+  @override
+  Future<bool> rssSourceSetEnabled(String sourceUrl, bool enabled) =>
+      bridge.rssSourceSetEnabled(sourceUrl: sourceUrl, enabled: enabled);
 
   /// 导入 RSS 源（契约 importRssSources）
   ///

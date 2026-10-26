@@ -381,6 +381,12 @@ abstract class BookApi {
   /// 禁用 RSS 源
   Future<void> disableRssSource(String sourceUrl);
 
+  /// 设置 RSS 源启用状态（按 sourceUrl 更新 rssSources.enabled，返回是否实际命中行）
+  ///
+  /// 源不存在返回 false（不抛错，对齐原版 RssSourceDao.enable 的 Room UPDATE
+  /// 静默语义）；只更新 rssSources 表，不触碰书源表（契约 §2.5）。
+  Future<bool> rssSourceSetEnabled(String sourceUrl, bool enabled);
+
   /// 导入 RSS 源
   Future<int> importRssSources(String jsonArray);
 

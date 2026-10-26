@@ -685,6 +685,20 @@ Future<String> rssUpdateSource({required String sourceJson}) =>
 Future<void> rssDeleteSource({required String sourceUrl}) =>
     RustLib.instance.api.crateFfiFfiRssDeleteSource(sourceUrl: sourceUrl);
 
+/// 启用/禁用 RSS 源（更新 `rssSources.enabled`，返回是否实际命中行）
+///
+/// 契约 §2.5 `rssSourceSetEnabled`（2026-10-26 审查批6，加法式）：
+/// 走 `RssSourceRepository::set_enabled` 单实现，只更新 `rssSources` 表；
+/// 源不存在返回 `false`（对齐原版 `RssSourceDao.enable` 的 Room UPDATE
+/// 静默语义），不报错、不触碰书源表。
+Future<bool> rssSourceSetEnabled({
+  required String sourceUrl,
+  required bool enabled,
+}) => RustLib.instance.api.crateFfiFfiRssSourceSetEnabled(
+  sourceUrl: sourceUrl,
+  enabled: enabled,
+);
+
 /// 获取 RSS 源的文章列表（JSON 数组）
 Future<String> rssFetchArticles({required String sourceUrl}) =>
     RustLib.instance.api.crateFfiFfiRssFetchArticles(sourceUrl: sourceUrl);

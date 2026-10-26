@@ -122,6 +122,26 @@ pub fn delete_rss_source(source_url: &str) -> LegadoResult<()> {
     })
 }
 
+/// 设置 RSS 源启用/禁用状态（按 `sourceUrl` 单条 UPDATE `rssSources.enabled`）
+///
+/// 契约 §2.5 `rssSourceSetEnabled`（2026-10-26 审查批6，加法式）。
+///
+/// 语义对照原版 Android `RssSourceDao.enable(sourceUrl, enable)`
+/// （`@Query("update rssSources set enabled = :enable where sourceUrl = :sourceUrl")`）：
+/// Room UPDATE 按主键静默执行——**源不存在时不报错、不写书源表**。
+/// 因此本函数以 `bool` 返回是否实际命中行（`false` = 源不存在），
+/// 仅 DB 故障才返回 `Err`；绝不触碰 `book_sources` 表
+/// （历史缺陷：Dart 侧误接书源 `source_enable`/`source_disable`）。
+///
+/// DB 层写入统一走 [`RssSourceRepository::set_enabled`] 单实现。
+pub fn set_rss_source_enabled(source_url: &str, enabled: bool) -> LegadoResult<bool> {
+    with_database(|db| {
+        let repo = RssSourceRepository::new(db.connection());
+        repo.set_enabled(source_url, enabled)
+            .map_err(|e| LegadoError::Database(format!("更新 RSS 源启用状态失败: {e}")))
+    })
+}
+
 /// 原子更新 RSS 源（按 sourceUrl 主键单条 UPDATE）
 ///
 /// 缺口④ rssUpdateSource 原子更新（审计 2026-08-06，加法式）：
@@ -373,5 +393,83 @@ mod tests {
         assert_eq!(n, 1);
         let _ = delete_rss_source("https://www.yuque.com/legado");
         let _ = delete_rss_source("https://pan.miaogongzi.net");
+    }
+
+    /// 审查批6：RSS 源开关只更新 `rssSources` 表，书源表零触碰；
+    /// 源不存在返回 `false`（不报错），对齐原版 `RssSourceDao.enable`
+    /// 的 Room `@Query` UPDATE 静默语义（`RssSourceDao.kt:152-153`）。
+    #[test]
+    fn set_rss_source_enabled_updates_only_rss_sources() {
+        use legado_db::repository::Repository;
+
+        let _guard = crate::db_state::ensure_test_db();
+        let url = "https://rss-toggle.example.com/feed";
+
+        // 缺陷复现前提：同 URL 同时存在 RSS 源与书源（旧实现会误改书源）
+        add_rss_source(&format!(
+            r#"{{"sourceUrl":"{url}","sourceName":"开关测试","enabled":false}}"#
+        ))
+        .expect("add rss source");
+        let book_source = legado_core::models::BookSource {
+            book_source_url: url.to_string(),
+            book_source_name: "同 URL 书源".to_string(),
+            enabled: true,
+            ..Default::default()
+        };
+        with_database(|db| {
+            legado_db::BookSourceRepository::new(db.connection()).insert(&book_source)
+        })
+        .expect("add book source");
+
+        // 正例：启用 RSS 源返回 true，且只有 rssSources 变化
+        assert!(set_rss_source_enabled(url, true).expect("enable rss source"));
+        let rss_enabled = list_rss_sources()
+            .expect("list rss")
+            .into_iter()
+            .find(|s| s.source_url == url)
+            .expect("rss source exists")
+            .enabled;
+        assert!(rss_enabled, "RSS 源应被启用");
+        let book_source_after = with_database(|db| {
+            legado_db::BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .expect("find book source")
+        .expect("book source exists");
+        assert!(book_source_after.enabled, "同 URL 书源不得被 RSS 开关改动");
+
+        // 禁用同样只影响 RSS 源
+        assert!(set_rss_source_enabled(url, false).expect("disable rss source"));
+        let rss_enabled = list_rss_sources()
+            .expect("list rss")
+            .into_iter()
+            .find(|s| s.source_url == url)
+            .expect("rss source exists")
+            .enabled;
+        assert!(!rss_enabled, "RSS 源应被禁用");
+        let book_source_after = with_database(|db| {
+            legado_db::BookSourceRepository::new(db.connection()).find_by_url(url)
+        })
+        .expect("find book source")
+        .expect("book source exists");
+        assert!(book_source_after.enabled, "禁用 RSS 源不得改动同 URL 书源");
+
+        // 负例：源不存在返回 false，不报错、不新建行
+        assert!(
+            !set_rss_source_enabled("https://rss-toggle.example.com/missing", true)
+                .expect("missing source returns false"),
+            "源不存在应返回 false"
+        );
+        assert!(
+            list_rss_sources()
+                .expect("list rss")
+                .iter()
+                .all(|s| s.source_url != "https://rss-toggle.example.com/missing"),
+            "源不存在时不得静默插入新行"
+        );
+
+        // 清理（共享测试库）
+        let _ = delete_rss_source(url);
+        let _ =
+            with_database(|db| legado_db::BookSourceRepository::new(db.connection()).delete(url));
     }
 }

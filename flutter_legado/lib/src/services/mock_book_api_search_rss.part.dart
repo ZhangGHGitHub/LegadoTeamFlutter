@@ -319,14 +319,24 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
 
   @override
   Future<void> enableRssSource(String sourceUrl) async {
-    final idx = _rssSources.indexWhere((s) => s.sourceUrl == sourceUrl);
-    if (idx >= 0) _rssSources[idx] = _rssSources[idx].copyWith(enabled: true);
+    await rssSourceSetEnabled(sourceUrl, true);
   }
 
   @override
   Future<void> disableRssSource(String sourceUrl) async {
+    await rssSourceSetEnabled(sourceUrl, false);
+  }
+
+  /// 设置 RSS 源启用状态（契约 §2.5）
+  ///
+  /// 源不存在返回 false（对齐 Rust 侧 `RssSourceRepository::set_enabled`
+  /// 未命中行的语义），不抛错。
+  @override
+  Future<bool> rssSourceSetEnabled(String sourceUrl, bool enabled) async {
     final idx = _rssSources.indexWhere((s) => s.sourceUrl == sourceUrl);
-    if (idx >= 0) _rssSources[idx] = _rssSources[idx].copyWith(enabled: false);
+    if (idx < 0) return false;
+    _rssSources[idx] = _rssSources[idx].copyWith(enabled: enabled);
+    return true;
   }
 
   @override
