@@ -761,6 +761,23 @@ Future<String> rssLoadMoreArticles({
   key: key,
 );
 
+/// 拉取 RSS 文章正文（契约 §2.5 `rssFetchContent`，2026-10-26 批15c，加法式）
+///
+/// 对齐 `ReadRssViewModel.loadContent` + `Rss.getContentAwait`：按源
+/// `ruleContent` 抓取 `link`，`nextContentUrl` 多页拼接（单链顺序 / 多链
+/// 保序并发），成功后写回 `rssArticles.description` 与 `rssStars.description`。
+/// `sort` 用于 `(origin, link, sort)` 主键定位写回行、并取出文章 `type`
+/// 参与分页门控（缺省按 link 取首行，对齐原版 `getByLink`）。
+Future<String> rssFetchContent({
+  required String sourceUrl,
+  required String link,
+  String? sort,
+}) => RustLib.instance.api.crateFfiFfiRssFetchContent(
+  sourceUrl: sourceUrl,
+  link: link,
+  sort: sort,
+);
+
 /// 获取所有 RSS 收藏（JSON 数组）
 Future<String> rssStarList() => RustLib.instance.api.crateFfiFfiRssStarList();
 

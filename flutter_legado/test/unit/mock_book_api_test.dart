@@ -293,6 +293,27 @@ void main() {
       // 清缓存为 no-op（Mock 无缓存）
       await api.rssClearSortCache(url);
     });
+
+    test('rssFetchContent 命中假文章返回正文、未命中返回空串', () async {
+      const url = 'https://mock.example.com/rss3';
+      await api.addRssSource(
+        const RssSource(
+          sourceUrl: url,
+          sourceName: '正文源',
+          ruleContent: '.content',
+        ),
+      );
+      final articles = await api.getRssArticles(url);
+      final first = articles.first;
+
+      final content = await api.rssFetchContent(url, first.url);
+      expect(content, first.content);
+      expect(content, isNotEmpty);
+
+      // 非假文章链接（历史记录/外链）→ 空串（Rust 侧同为空正文语义）
+      final missing = await api.rssFetchContent(url, 'mock://rss/missing');
+      expect(missing, isEmpty);
+    });
   });
 
   group('阅读器操作', () {

@@ -379,6 +379,11 @@ mixin RustApiSearchRss on RustApiDecode implements BookApi {
         key: key,
       );
 
+  /// 拉取 RSS 文章正文（契约 §2.5 `rssFetchContent`，批15c）
+  @override
+  Future<String> rssFetchContent(String sourceUrl, String link, {String? sort}) =>
+      bridge.rssFetchContent(sourceUrl: sourceUrl, link: link, sort: sort);
+
   // ========== RSS 已读记录 ==========
 
   /// 标记 RSS 文章为已读

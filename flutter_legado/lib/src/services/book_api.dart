@@ -433,6 +433,18 @@ abstract class BookApi {
     String? key,
   });
 
+  /// 拉取 RSS 文章正文（契约 §2.5 `rssFetchContent`，批15c）
+  ///
+  /// 对齐 `ReadRssViewModel.loadContent` + `Rss.getContentAwait`：按源
+  /// `ruleContent` 抓取 [link]，`nextContentUrl` 多页拼接（单链顺序 / 多链
+  /// 保序并发），成功后 Rust 侧写回 `rssArticles.description` 与
+  /// `rssStars.description`。返回正文 HTML/文本；源规则为空或正文为空返回
+  /// 空串；首屏/任一后续页失败抛异常。
+  ///
+  /// [sort] 用于 `(origin, link, sort)` 主键定位写回行并取文章 `type`，
+  /// 缺省按 link 取首行（对齐原版 `getByLink`）。
+  Future<String> rssFetchContent(String sourceUrl, String link, {String? sort});
+
   // ========== RSS 已读记录 ==========
 
   /// 标记 RSS 文章为已读

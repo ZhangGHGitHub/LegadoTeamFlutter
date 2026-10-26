@@ -52,6 +52,13 @@ class _RssArticleDetailScreenState
   /// 当前是否使用 WebView 模式（可切换为纯文本）
   bool _useWebView = true;
 
+  // [批15c | 2026-10-26] 规则正文拉取（对齐 ReadRssViewModel.loadContent）：
+  // article.description 为空且源配置 ruleContent 时，经 `rssFetchContent`
+  // 抓取正文（Rust 侧负责抓取/分页/写回）；自带 content 仅作显示回退。
+  bool _isContentLoading = false;
+  String? _contentError;
+  String? _fetchedContent;
+
   // [UI-fix v2.0.2 | 2026-08-06] 详情收藏（对标原版 RssFavoritesDialog：
   // 接通 addRssStar/deleteRssStar/isStarred FFI） — Qoder
   bool _isStarred = false;
@@ -68,8 +75,14 @@ class _RssArticleDetailScreenState
     return false;
   }
 
-  /// 获取文章 HTML 内容（优先 content，其次 description）
+  /// 获取文章 HTML 内容
+  ///
+  /// 优先规则抓取结果（仅在 `description` 为空时发起），其次文章自带
+  /// `content`，最后 `description`。抓取失败时回落到自带内容，不影响阅读。
   String? get _articleHtml {
+    if (_fetchedContent != null && _fetchedContent!.isNotEmpty) {
+      return _fetchedContent;
+    }
     if (widget.article.content != null && widget.article.content!.isNotEmpty) {
       return widget.article.content;
     }
@@ -90,6 +103,82 @@ class _RssArticleDetailScreenState
       _isWebLoading = false;
     }
     _loadStarState();
+    // [批15c] description 为空时按源正文规则拉取
+    _maybeLoadRuleContent();
+  }
+
+  /// `description` 为空且源配置 `ruleContent` 时拉取规则正文
+  ///
+  /// 对齐原版 `ReadRssViewModel.resolveRssReadLoadTarget`（`ReadRssViewModel.kt:46-59`）：
+  /// - `description` 非空 → 直接显示，不再请求；
+  /// - `ruleContent` 为空 → 走原文 URL（本页空态「在浏览器中查看原文」）；
+  /// - 否则按规则抓取正文（Rust `rssFetchContent`，成功后 Rust 侧写回
+  ///   `rssArticles.description` / `rssStars.description`）。
+  ///
+  /// 本页渲染优先级为「规则正文 → 自带 content → description」：自带
+  /// `content` 有值时仍会按 `description` 判定发请求（对齐原版读路径只认
+  /// description），失败时回落显示自带 content。
+  ///
+  /// 历史记录入口只带 `sourceName` 不含 `sourceUrl`，无从判定源规则，
+  /// 保持既有行为（空态 + 浏览器打开原文）。
+  Future<void> _maybeLoadRuleContent() async {
+    if (widget.sourceUrl.isEmpty) return;
+    if (widget.article.description?.isNotEmpty ?? false) return;
+
+    // 源正文规则非空才触发（避免对无规则源发无意义请求）
+    String? ruleContent;
+    try {
+      final sources = await ref.read(bookApiProvider).getRssSources();
+      for (final source in sources) {
+        if (source.sourceUrl == widget.sourceUrl) {
+          ruleContent = source.ruleContent;
+          break;
+        }
+      }
+    } catch (_) {
+      // 源读取失败不阻断页面：按无规则处理（显示空态/自带内容）
+      return;
+    }
+    if (!mounted) return;
+    if (ruleContent == null || ruleContent.trim().isEmpty) return;
+    await _loadRuleContent();
+  }
+
+  /// 调用 `rssFetchContent` 拉取正文（加载态/失败提示/成功渲染）
+  Future<void> _loadRuleContent() async {
+    setState(() {
+      _isContentLoading = true;
+      _contentError = null;
+    });
+    try {
+      final content = await ref
+          .read(bookApiProvider)
+          .rssFetchContent(widget.sourceUrl, widget.article.url);
+      if (!mounted) return;
+      setState(() {
+        _isContentLoading = false;
+        // 空正文：原版交给 UI 显示空白，这里回落「暂无内容」空态/自带内容
+        _fetchedContent = content.isEmpty ? null : content;
+      });
+      // 规则正文就绪后（重新）初始化 WebView，加载新内容
+      if (_fetchedContent != null && _isWebViewSupported && _useWebView) {
+        _isWebLoading = true;
+        _initWebView();
+      }
+    } catch (e) {
+      if (!mounted) return;
+      final hasFallback = widget.article.content?.isNotEmpty ?? false;
+      setState(() {
+        _isContentLoading = false;
+        _contentError = '$e';
+      });
+      // 自带 content 可用时继续阅读自带内容，仅用轻提示告知规则正文失败
+      if (hasFallback) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('正文加载失败，已显示文章自带内容')),
+        );
+      }
+    }
   }
 
   /// 加载收藏状态（isStarred FFI，失败静默保持未收藏）
@@ -471,6 +560,74 @@ $htmlContent
     ColorScheme colorScheme,
     String? html,
   ) {
+    // [批15c] 规则正文加载中：仅在无可展示内容时占用内容区；
+    // 自带 content 可用时继续显示自带内容，不打断阅读。
+    if (_isContentLoading && html == null) {
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(
+              width: 28,
+              height: 28,
+              child: CircularProgressIndicator(strokeWidth: 2.5),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '正在加载正文…',
+              style: theme.textTheme.bodyMedium?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // [批15c] 规则正文加载失败：提示 + 重试 + 浏览器打开原文
+    if (_contentError != null && html == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Symbols.error_rounded, size: 48, color: colorScheme.error),
+              const SizedBox(height: 12),
+              Text(
+                '加载正文失败',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  color: colorScheme.error,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _contentError!,
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: colorScheme.onSurfaceVariant,
+                ),
+                textAlign: TextAlign.center,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _loadRuleContent,
+                icon: const Icon(Symbols.refresh_rounded),
+                label: const Text('重试'),
+              ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _openInBrowser,
+                icon: const Icon(Symbols.open_in_browser_rounded),
+                label: const Text('在浏览器中查看原文'),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     // 无内容时显示空状态
     // [LAYOUT_PLAN P4 收尾] 自绘空态并入 EmptyState（保留「浏览器查看原文」动作）
     if (html == null) {

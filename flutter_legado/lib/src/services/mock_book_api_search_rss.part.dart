@@ -459,6 +459,26 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
     });
   }
 
+  /// 拉取 RSS 文章正文（Mock：按 link 取假文章的 content/description）
+  ///
+  /// Mock 无网络与规则引擎，无法真实抓取正文：命中假文章链接时返回其
+  /// `content`（缺失回退 `description`），否则返回空串（与 Rust 侧
+  /// 「空正文 → 空串」的返回形态一致；不伪造正文，避免 UI 假数据）。
+  @override
+  Future<String> rssFetchContent(
+    String sourceUrl,
+    String link, {
+    String? sort,
+  }) async {
+    final articles = await getRssArticles(sourceUrl);
+    for (final article in articles) {
+      if (article.url == link) {
+        return article.content ?? article.description ?? '';
+      }
+    }
+    return '';
+  }
+
   // ========== RSS 已读记录 ==========
 
   final Set<String> _rssReadLinks = {};
