@@ -324,6 +324,7 @@ mixin RustApiSearchRss on RustApiDecode implements BookApi {
       return RssFeedArticle(
         title: m['title'] as String? ?? '',
         url: m['link'] as String? ?? m['url'] as String? ?? '',
+        sort: m['sort'] as String? ?? '',
         description: m['description'] as String?,
         pubDate: m['pubDate'] as String?,
         imageUrl: m['image'] as String? ?? m['imageUrl'] as String?,

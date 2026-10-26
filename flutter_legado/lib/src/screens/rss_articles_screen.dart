@@ -31,6 +31,14 @@ class RssArticlesScreen extends ConsumerStatefulWidget {
 class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
   final Set<String> _readArticles = {};
 
+  /// 详情页规则正文抓取成功后的内存回填（审查 P2-7）
+  ///
+  /// Rust `rssFetchContent` 已把正文写回 `rssArticles.description`，但列表页
+  /// 当前无「只读 DB」FFI（`getRssArticles` 是网络刷新，会用 feed 摘要
+  /// REPLACE 覆盖刚抓到的正文），故由详情页回调把正文带回列表内存态；
+  /// 返回列表立即可见，DB 仍是真源（DB-only 查询登记 15d 待补）。
+  final Map<String, String> _fetchedDescriptions = {};
+
   // [UI-fix v2.0.2 | 2026-08-06] 布局切换本地态（对标原版 articleStyle 0-4
   // 循环；Flutter 端支持两种渲染：0=列表，其他=双列网格） — Qoder
   late int _articleStyle = widget.source.articleStyle;
@@ -152,6 +160,9 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
       BuildContext context, RssFeedArticle article, bool isRead) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    // 详情页抓取成功后回填的正文优先于列表摘要（审查 P2-7）
+    final description =
+        _fetchedDescriptions[article.url] ?? article.description;
 
     // 稳定 ValueKey（文章 url）+ RepaintBoundary 隔离列表项重绘区域
     final item = InkWell(
@@ -235,10 +246,9 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
                     ),
                   ),
                   const SizedBox(height: 4),
-                  if (article.description != null &&
-                      article.description!.isNotEmpty)
+                  if (description != null && description.isNotEmpty)
                     Text(
-                      article.description!,
+                      description,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: theme.textTheme.bodySmall?.copyWith(
@@ -302,9 +312,19 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
           article: article,
           sourceName: widget.source.sourceName,
           sourceUrl: widget.source.sourceUrl,
+          // 审查 P2-7：详情页抓到规则正文后回填列表内存态
+          onContentFetched: (description) {
+            if (!mounted) return;
+            setState(() => _fetchedDescriptions[article.url] = description);
+          },
         ),
       ),
-    );
+    ).then((_) {
+      // 从详情返回列表时刷新一次：详情在途期间可能已回填正文/标记已读。
+      // 注：列表无 DB-only 查询 FFI（getRssArticles 为网络刷新），故这里
+      // 按内存回填刷新；DB 真源由 Rust 写回，15d 补 DB 查询后改为重查。
+      if (mounted) setState(() {});
+    });
   }
 
   /// 网格布局文章项（布局切换 articleStyle≠0 时使用）

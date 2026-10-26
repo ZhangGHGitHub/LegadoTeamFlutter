@@ -26,11 +26,19 @@ class RssArticleDetailScreen extends ConsumerStatefulWidget {
   /// 订阅源 URL（收藏记录 origin；新增入参保持向后兼容，默认空）
   final String sourceUrl;
 
+  /// 规则正文抓取成功回调（审查 P2-7）
+  ///
+  /// Rust 侧已把正文写回 `rssArticles.description`；列表页当前无「只读
+  /// DB」FFI，故由本页把正文回填给列表页内存态，返回列表即可看到新正文。
+  /// 为 null 时（如阅读记录入口）仅本页使用。
+  final void Function(String description)? onContentFetched;
+
   const RssArticleDetailScreen({
     super.key,
     required this.article,
     this.sourceName = '',
     this.sourceUrl = '',
+    this.onContentFetched,
   });
 
   @override
@@ -79,15 +87,16 @@ class _RssArticleDetailScreenState
   ///
   /// 优先规则抓取结果（仅在 `description` 为空时发起），其次文章自带
   /// `content`，最后 `description`。抓取失败时回落到自带内容，不影响阅读。
+  ///
+  /// 空判定统一按 `isNullOrBlank` 口径（trim 后为空算空，审查 P2-3）。
   String? get _articleHtml {
-    if (_fetchedContent != null && _fetchedContent!.isNotEmpty) {
+    if (_fetchedContent != null && _fetchedContent!.trim().isNotEmpty) {
       return _fetchedContent;
     }
-    if (widget.article.content != null && widget.article.content!.isNotEmpty) {
+    if (widget.article.content?.trim().isNotEmpty ?? false) {
       return widget.article.content;
     }
-    if (widget.article.description != null &&
-        widget.article.description!.isNotEmpty) {
+    if (widget.article.description?.trim().isNotEmpty ?? false) {
       return widget.article.description;
     }
     return null;
@@ -110,20 +119,21 @@ class _RssArticleDetailScreenState
   /// `description` 为空且源配置 `ruleContent` 时拉取规则正文
   ///
   /// 对齐原版 `ReadRssViewModel.resolveRssReadLoadTarget`（`ReadRssViewModel.kt:46-59`）：
-  /// - `description` 非空 → 直接显示，不再请求；
+  /// - `description` 为空（`isNullOrBlank`，trim 后为空，审查 P2-3）→ 拉取；
   /// - `ruleContent` 为空 → 走原文 URL（本页空态「在浏览器中查看原文」）；
   /// - 否则按规则抓取正文（Rust `rssFetchContent`，成功后 Rust 侧写回
   ///   `rssArticles.description` / `rssStars.description`）。
   ///
   /// 本页渲染优先级为「规则正文 → 自带 content → description」：自带
   /// `content` 有值时仍会按 `description` 判定发请求（对齐原版读路径只认
-  /// description），失败时回落显示自带 content。
+  /// description，审查 P2-1），失败时回落显示自带 content。
   ///
   /// 历史记录入口只带 `sourceName` 不含 `sourceUrl`，无从判定源规则，
-  /// 保持既有行为（空态 + 浏览器打开原文）。
+  /// 保持既有行为（空态 + 浏览器打开原文）；「历史入口暂不抓规则正文」的
+  /// 收敛属批15d/15f（契约 §2.5 批15c 注，审查 P2-5）。
   Future<void> _maybeLoadRuleContent() async {
     if (widget.sourceUrl.isEmpty) return;
-    if (widget.article.description?.isNotEmpty ?? false) return;
+    if (widget.article.description?.trim().isNotEmpty ?? false) return;
 
     // 源正文规则非空才触发（避免对无规则源发无意义请求）
     String? ruleContent;
@@ -151,15 +161,23 @@ class _RssArticleDetailScreenState
       _contentError = null;
     });
     try {
-      final content = await ref
-          .read(bookApiProvider)
-          .rssFetchContent(widget.sourceUrl, widget.article.url);
+      final content = await ref.read(bookApiProvider).rssFetchContent(
+            widget.sourceUrl,
+            widget.article.url,
+            // 审查 P2-4：透传分类名，按 (origin, link, sort) 主键精确写回；
+            // 空串按缺省（FFI 侧 order DESC 取首行）处理。
+            sort: widget.article.sort.isEmpty ? null : widget.article.sort,
+          );
       if (!mounted) return;
       setState(() {
         _isContentLoading = false;
         // 空正文：原版交给 UI 显示空白，这里回落「暂无内容」空态/自带内容
-        _fetchedContent = content.isEmpty ? null : content;
+        _fetchedContent = content.trim().isEmpty ? null : content;
       });
+      // 审查 P2-7：回填列表页内存态（DB 已由 Rust 写回）
+      if (_fetchedContent != null) {
+        widget.onContentFetched?.call(_fetchedContent!);
+      }
       // 规则正文就绪后（重新）初始化 WebView，加载新内容
       if (_fetchedContent != null && _isWebViewSupported && _useWebView) {
         _isWebLoading = true;
@@ -167,15 +185,19 @@ class _RssArticleDetailScreenState
       }
     } catch (e) {
       if (!mounted) return;
-      final hasFallback = widget.article.content?.isNotEmpty ?? false;
+      final hasFallback = widget.article.content?.trim().isNotEmpty ?? false;
       setState(() {
         _isContentLoading = false;
         _contentError = '$e';
       });
-      // 自带 content 可用时继续阅读自带内容，仅用轻提示告知规则正文失败
+      // 自带 content 可用时继续阅读自带内容，仅用轻提示告知规则正文失败；
+      // 审查 P2-8：降级态同样提供「重试」入口。
       if (hasFallback) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('正文加载失败，已显示文章自带内容')),
+          SnackBar(
+            content: const Text('正文加载失败，已显示文章自带内容'),
+            action: SnackBarAction(label: '重试', onPressed: _loadRuleContent),
+          ),
         );
       }
     }
@@ -201,15 +223,20 @@ class _RssArticleDetailScreenState
         await api.deleteRssStar(widget.article.url);
       } else {
         final article = widget.article;
+        // 审查 P2-6：抓取成功后的收藏使用抓取到的正文（对齐
+        // ReadRssViewModel.kt:157-162 的「收藏描述 = body」口径）。
+        // 注：Rust `rssStarAdd` 当前只取 origin/title/link（其余默认，契约
+        // §2.5 批15c 注），此处传递保证 Mock/后续扩展行为一致。
+        final fetched = _fetchedContent;
         await api.addRssStar(
           RssStar(
             origin: widget.sourceUrl,
-            sort: '',
+            sort: article.sort,
             title: article.title,
             starTime: DateTime.now().millisecondsSinceEpoch,
             link: article.url,
             pubDate: article.pubDate,
-            description: article.description,
+            description: fetched ?? article.description,
             content: article.content,
             image: article.imageUrl,
             group: widget.sourceName.isEmpty ? '默认分组' : widget.sourceName,
@@ -284,8 +311,21 @@ class _RssArticleDetailScreenState
       );
 
     // 构造带样式的 HTML 页面并加载
+    // 审查 P1-2：补 baseUrl = 文章链接（对齐上游 ReadRssActivity.kt:406-411
+    // 的 `loadDataWithBaseURL(baseUrl, html, …)`），否则相对图片/链接无法解析。
+    // 上游对 link 做 `substringBefore("@js")` 归一；`loadWithBaseUrl == false`
+    // 时上游传 null，该源字段接线属批15f（契约 §2.5 批15c 注交叉引用）。
+    final baseUrl = _htmlBaseUrl(widget.article.url);
     final styledHtml = _wrapHtmlWithStyle(html);
-    _webViewController!.loadHtmlString(styledHtml);
+    _webViewController!.loadHtmlString(styledHtml, baseUrl: baseUrl);
+  }
+
+  /// WebView baseUrl（文章链接去掉规则尾巴；空串回退 null）
+  ///
+  /// 对齐上游 `NetworkUtils.getAbsoluteURL(it.origin, it.link).substringBefore("@js")`。
+  static String? _htmlBaseUrl(String link) {
+    final normalized = link.split('@js').first.trim();
+    return normalized.isEmpty ? null : normalized;
   }
 
   /// 为 HTML 内容注入响应式样式
