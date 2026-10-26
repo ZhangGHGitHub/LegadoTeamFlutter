@@ -88,6 +88,10 @@ pub struct RssSource {
     /// 正文规则
     #[serde(skip_serializing_if = "Option::is_none", rename = "ruleContent")]
     pub rule_content: Option<String>,
+    /// 正文下一页规则（对齐原版 `RssSource.nextContentUrl`，
+    /// Room 104.json 同名列 TEXT 可空；RSS 正文分页抓取用）
+    #[serde(skip_serializing_if = "Option::is_none", rename = "nextContentUrl")]
+    pub next_content_url: Option<String>,
     /// 正文url白名单
     #[serde(skip_serializing_if = "Option::is_none", rename = "contentWhitelist")]
     pub content_whitelist: Option<String>,
@@ -188,6 +192,22 @@ mod tests {
         assert!(!json.contains("sourceComment"));
         assert!(!json.contains("jsLib"));
         assert!(!json.contains("loginUrl"));
+        // P1-2：nextContentUrl 为 None 时按既有口径省略
+        assert!(!json.contains("nextContentUrl"));
+    }
+
+    /// P1-2：nextContentUrl（原版 RssSource.kt:73「正文下一页规则」）读写口径
+    #[test]
+    fn test_rss_source_next_content_url_serde() {
+        let json = r#"{
+            "sourceUrl": "https://rss.example.com",
+            "sourceName": "Test",
+            "nextContentUrl": ".next@href"
+        }"#;
+        let rss: RssSource = serde_json::from_str(json).unwrap();
+        assert_eq!(rss.next_content_url.as_deref(), Some(".next@href"));
+        let value = serde_json::to_value(&rss).unwrap();
+        assert_eq!(value["nextContentUrl"], ".next@href");
     }
 
     #[test]

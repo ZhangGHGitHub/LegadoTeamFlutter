@@ -118,8 +118,8 @@ mod tests {
         registry.migrate_to_latest(&conn).unwrap();
         assert_eq!(
             MigrationRegistry::current_version(&conn).unwrap(),
-            110,
-            "注册表路径应推进版本到 110"
+            111,
+            "注册表路径应推进版本到 111"
         );
         assert_eq!(
             origin_book_url_column_count(&conn),

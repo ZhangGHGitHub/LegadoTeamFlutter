@@ -28,7 +28,7 @@ impl<'a> RssSourceRepository<'a> {
                         loginCheckJs, coverDecodeJs, concurrentRate,
                         ruleArticles, ruleNextPage, ruleTitle, rulePubDate,
                         ruleDescription, ruleImage, ruleLink, ruleContent,
-                        style, articleStyle, singleUrl,
+                        nextContentUrl, style, articleStyle, singleUrl,
                         jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
                         shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
                         startStyle, startJs, showWebLog, type, preload, cacheFirst,
@@ -56,7 +56,7 @@ impl<'a> RssSourceRepository<'a> {
                         loginCheckJs, coverDecodeJs, concurrentRate,
                         ruleArticles, ruleNextPage, ruleTitle, rulePubDate,
                         ruleDescription, ruleImage, ruleLink, ruleContent,
-                        style, articleStyle, singleUrl,
+                        nextContentUrl, style, articleStyle, singleUrl,
                         jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
                         shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
                         startStyle, startJs, showWebLog, type, preload, cacheFirst,
@@ -87,7 +87,7 @@ impl<'a> RssSourceRepository<'a> {
                         loginCheckJs, coverDecodeJs, concurrentRate,
                         ruleArticles, ruleNextPage, ruleTitle, rulePubDate,
                         ruleDescription, ruleImage, ruleLink, ruleContent,
-                        style, articleStyle, singleUrl,
+                        nextContentUrl, style, articleStyle, singleUrl,
                         jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
                         shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
                         startStyle, startJs, showWebLog, type, preload, cacheFirst,
@@ -120,14 +120,15 @@ impl<'a> RssSourceRepository<'a> {
               loginCheckJs, coverDecodeJs, concurrentRate,
               ruleArticles, ruleNextPage, ruleTitle, rulePubDate,
               ruleDescription, ruleImage, ruleLink, ruleContent,
-              style, articleStyle, singleUrl,
+              nextContentUrl, style, articleStyle, singleUrl,
               jsLib, enabledCookieJar, contentWhitelist, contentBlacklist,
               shouldOverrideUrlLoading, injectJs, preloadJs, startHtml,
               startStyle, startJs, showWebLog, type, preload, cacheFirst,
               searchUrl)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,
                      ?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,
-                     ?30,?31,?32,?33,?34,?35,?36,?37,?38,?39,?40,?41,?42,?43,?44)",
+                     ?30,?31,?32,?33,?34,?35,?36,?37,?38,?39,?40,?41,?42,?43,?44,
+                     ?45)",
                 params![
                     source.source_url,
                     source.source_name,
@@ -155,6 +156,7 @@ impl<'a> RssSourceRepository<'a> {
                     source.rule_image,
                     source.rule_link,
                     source.rule_content,
+                    source.next_content_url,
                     source.style,
                     source.article_style,
                     source.single_url,
@@ -204,12 +206,13 @@ impl<'a> RssSourceRepository<'a> {
                     loginUrl = ?14, loginUi = ?15, loginCheckJs = ?16, coverDecodeJs = ?17,
                     concurrentRate = ?18, ruleArticles = ?19, ruleNextPage = ?20, ruleTitle = ?21,
                     rulePubDate = ?22, ruleDescription = ?23, ruleImage = ?24, ruleLink = ?25,
-                    ruleContent = ?26, style = ?27, articleStyle = ?28,
-                    singleUrl = ?29, jsLib = ?30, enabledCookieJar = ?31,
-                    contentWhitelist = ?32, contentBlacklist = ?33,
-                    shouldOverrideUrlLoading = ?34, injectJs = ?35, preloadJs = ?36,
-                    startHtml = ?37, startStyle = ?38, startJs = ?39, showWebLog = ?40,
-                    type = ?41, preload = ?42, cacheFirst = ?43, searchUrl = ?44
+                    ruleContent = ?26, nextContentUrl = ?27, style = ?28,
+                    articleStyle = ?29, singleUrl = ?30, jsLib = ?31,
+                    enabledCookieJar = ?32, contentWhitelist = ?33,
+                    contentBlacklist = ?34, shouldOverrideUrlLoading = ?35,
+                    injectJs = ?36, preloadJs = ?37, startHtml = ?38,
+                    startStyle = ?39, startJs = ?40, showWebLog = ?41,
+                    type = ?42, preload = ?43, cacheFirst = ?44, searchUrl = ?45
                  WHERE sourceUrl = ?1",
                 params![
                     source.source_url,
@@ -238,6 +241,7 @@ impl<'a> RssSourceRepository<'a> {
                     source.rule_image,
                     source.rule_link,
                     source.rule_content,
+                    source.next_content_url,
                     source.style,
                     source.article_style,
                     source.single_url,
@@ -296,7 +300,7 @@ impl<'a> RssSourceRepository<'a> {
     }
 }
 
-/// 将 rusqlite Row 转换为 RssSource（v104：无 enableCookieJar 冗余列，共 44 列）
+/// 将 rusqlite Row 转换为 RssSource（v111：含 nextContentUrl，共 45 列）
 fn row_to_rss_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssSource> {
     Ok(RssSource {
         source_url: row.get(0)?,
@@ -325,24 +329,25 @@ fn row_to_rss_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssSource> {
         rule_image: row.get(23)?,
         rule_link: row.get(24)?,
         rule_content: row.get(25)?,
-        style: row.get(26)?,
-        article_style: row.get(27)?,
-        single_url: row.get(28)?,
-        js_lib: row.get(29)?,
-        enabled_cookie_jar: row.get(30)?,
-        content_whitelist: row.get(31)?,
-        content_blacklist: row.get(32)?,
-        should_override_url_loading: row.get(33)?,
-        inject_js: row.get(34)?,
-        preload_js: row.get(35)?,
-        start_html: row.get(36)?,
-        start_style: row.get(37)?,
-        start_js: row.get(38)?,
-        show_web_log: row.get(39)?,
-        rss_type: row.get(40)?,
-        preload: row.get(41)?,
-        cache_first: row.get(42)?,
-        search_url: row.get(43)?,
+        next_content_url: row.get(26)?,
+        style: row.get(27)?,
+        article_style: row.get(28)?,
+        single_url: row.get(29)?,
+        js_lib: row.get(30)?,
+        enabled_cookie_jar: row.get(31)?,
+        content_whitelist: row.get(32)?,
+        content_blacklist: row.get(33)?,
+        should_override_url_loading: row.get(34)?,
+        inject_js: row.get(35)?,
+        preload_js: row.get(36)?,
+        start_html: row.get(37)?,
+        start_style: row.get(38)?,
+        start_js: row.get(39)?,
+        show_web_log: row.get(40)?,
+        rss_type: row.get(41)?,
+        preload: row.get(42)?,
+        cache_first: row.get(43)?,
+        search_url: row.get(44)?,
     })
 }
 
@@ -436,6 +441,7 @@ mod tests {
         src.source_name = "新名".to_string();
         src.source_group = Some("新分组".to_string());
         src.rule_content = Some("新规则".to_string());
+        src.next_content_url = Some("a.next@href".to_string());
         src.enabled = false;
         src.article_style = 3;
         let existed = repo.update_fields(&src).unwrap();
@@ -445,6 +451,11 @@ mod tests {
         assert_eq!(found.source_name, "新名");
         assert_eq!(found.source_group, Some("新分组".to_string()));
         assert_eq!(found.rule_content, Some("新规则".to_string()));
+        assert_eq!(
+            found.next_content_url.as_deref(),
+            Some("a.next@href"),
+            "原子更新应落 nextContentUrl"
+        );
         assert!(!found.enabled);
         assert_eq!(found.article_style, 3);
         // 行数不变（原地更新，无删后重插）
@@ -472,6 +483,8 @@ mod tests {
         src.preload = true;
         src.cache_first = true;
         src.search_url = Some("search?q={{key}}".to_string());
+        // P1-2：nextContentUrl 必须随全字段写入/读回
+        src.next_content_url = Some(".next@href".to_string());
         repo.insert(&src).unwrap();
 
         let found = repo
@@ -479,6 +492,11 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(found.js_lib, src.js_lib);
+        assert_eq!(
+            found.next_content_url.as_deref(),
+            Some(".next@href"),
+            "nextContentUrl 应随 insert 落库并读回"
+        );
         assert_eq!(found.enabled_cookie_jar, Some(true));
         assert_eq!(found.content_whitelist, src.content_whitelist);
         assert_eq!(found.content_blacklist, src.content_blacklist);

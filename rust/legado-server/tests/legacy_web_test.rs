@@ -1672,28 +1672,22 @@ async fn test_add_local_book_success_end_to_end() {
     assert!(saved.exists(), "文件应落盘到保存根");
     assert_eq!(std::fs::read(&saved).unwrap(), txt.as_bytes());
 
-    // 书架可见：书名 = 文件名解析（analyzeNameAuthor）、order = minOrder-1 = -1
+    // 书架可见：bookUrl = 相对可迁移标识（C1/O2；文件仍落绝对保存根）、
+    // 书名 = 文件名解析（analyzeNameAuthor）、order = minOrder-1 = -1
     let (_, shelf) = get_json(app.clone(), "/getBookshelf").await;
     let arr = shelf["data"].as_array().unwrap();
     assert_eq!(arr.len(), 1);
     assert_eq!(arr[0]["name"], "测试之书");
     assert_eq!(arr[0]["originName"], "测试之书.txt");
     assert_eq!(arr[0]["order"], -1, "minOrder(空表0)-1");
-    assert!(
-        arr[0]["bookUrl"]
-            .as_str()
-            .unwrap_or_default()
-            .ends_with("测试之书.txt"),
-        "bookUrl 应为落盘路径：{}",
-        arr[0]["bookUrl"]
+    assert_eq!(
+        arr[0]["bookUrl"], "books/测试之书.txt",
+        "bookUrl 应存相对可迁移标识（与 FFI/Dart 本地书身份同源）"
     );
 
-    // 目录可解析（txt 本地解析链）
-    let (_, toc) = get_json(
-        app,
-        &format!("/getChapterList?url={}", enc(&saved.to_string_lossy())),
-    )
-    .await;
+    // 目录可解析（txt 本地解析链；相对标识经注入保存根还原真实路径）
+    let book_url = arr[0]["bookUrl"].as_str().unwrap().to_string();
+    let (_, toc) = get_json(app, &format!("/getChapterList?url={}", enc(&book_url))).await;
     assert_eq!(toc["isSuccess"], true, "toc={toc}");
     assert!(
         toc["data"]
@@ -2050,7 +2044,13 @@ async fn start_mock_review_source() -> String {
             }))
         } else {
             axum::Json(json!({
-                "comments": [{"id": "c1", "user": "甲", "text": "好看", "tag": "作者"}],
+                // content 为内容协议 JSON：对齐原版段评规则常见形态，
+                // replyToName 由 ReviewRuleParser.parseContentProtocol 解析
+                "comments": [{
+                    "id": "c1", "user": "甲",
+                    "text": "{\"text\":\"好看\",\"replyToName\":\"楼主\",\"time\":\"昨天\"}",
+                    "tag": "作者"
+                }],
                 "next": "/review/detail?page=2"
             }))
         }
@@ -2059,7 +2059,8 @@ async fn start_mock_review_source() -> String {
     async fn reply() -> axum::Json<Value> {
         axum::Json(json!({
             "data": {"reply_list": [
-                {"uid": "r1", "avatar": "/a/1.jpg", "nick": "读者甲", "tag": "沙发", "text": "写得真好"},
+                {"uid": "r1", "avatar": "/a/1.jpg", "nick": "读者甲", "tag": "沙发",
+                 "text": "{\"text\":\"写得真好\",\"replyToName\":\"楼主\"}"},
                 {"uid": "r2", "avatar": "https://img.com/2.jpg", "nick": "读者乙", "tag": "", "text": "同意楼上"}
             ]}
         }))
@@ -2194,6 +2195,8 @@ async fn test_b4_rss_source_reads_and_empty_message() {
                 source_url: "https://rss.example.com/0".into(),
                 source_name: "订阅零".into(),
                 custom_order: 1,
+                // P1-2 parity：nextContentUrl 必须出现在 /getRssSources 响应
+                next_content_url: Some(".next@href".into()),
                 ..Default::default()
             })
             .unwrap();
@@ -2202,6 +2205,10 @@ async fn test_b4_rss_source_reads_and_empty_message() {
     let (_, _, rd) = get_json_with_headers(app.clone(), "/getRssSources", &[]).await;
     assert_eq!(rd["isSuccess"], true, "rd={rd}");
     assert_eq!(rd["data"][0]["sourceName"], "订阅零", "customOrder 升序");
+    assert_eq!(
+        rd["data"][0]["nextContentUrl"], ".next@href",
+        "RSS 源响应应含原版 nextContentUrl 键"
+    );
 
     let (_, _, rd) = get_json_with_headers(app.clone(), "/getRssSource", &[]).await;
     assert_eq!(rd["errorMsg"], "参数url不能为空，请指定书源地址");
@@ -2484,6 +2491,9 @@ async fn test_b4_review_detail_cursor_roundtrip() {
     assert_eq!(rd["data"]["items"].as_array().unwrap().len(), 1);
     assert_eq!(rd["data"]["items"][0]["id"], "c1");
     assert_eq!(rd["data"]["items"][0]["content"], "好看");
+    // P1-1 parity：内容协议 replyToName/time 必须出现在线上响应（原版 DetailItem 同名键）
+    assert_eq!(rd["data"]["items"][0]["replyToName"], "楼主");
+    assert_eq!(rd["data"]["items"][0]["time"], "昨天");
     assert_eq!(rd["data"]["items"][0]["badges"][0], "作者");
     assert_eq!(rd["data"]["hasMore"], true);
     let cursor = rd["data"]["nextCursor"]
@@ -2557,7 +2567,11 @@ async fn test_b4_review_replies_rule_source_fixture() {
     assert_eq!(items[0]["id"], "r1");
     assert_eq!(items[0]["name"], "读者甲");
     assert_eq!(items[0]["content"], "写得真好");
+    // P1-1 parity：回复条目的内容协议 replyToName 同样透传
+    assert_eq!(items[0]["replyToName"], "楼主");
     assert!(items[0]["avatar"].as_str().unwrap().ends_with("/a/1.jpg"));
+    // 纯文本回复不携带 replyToName 键（skip_serializing_if）
+    assert!(items[1].get("replyToName").is_none());
     assert_eq!(items[1]["avatar"], "https://img.com/2.jpg");
     assert_eq!(rd["data"]["hasMore"], true);
 

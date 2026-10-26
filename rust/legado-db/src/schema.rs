@@ -35,7 +35,10 @@ use legado_core::{LegadoError, LegadoResult};
 ///   `HighlightRule.kt:21,27,40`：uuid 为规则身份 + 导入去重唯一索引，
 ///   applyToBody 控制正文匹配、与 applyToTitle 组成双开关；存量行 uuid
 ///   按 `DatabaseMigrations.kt:46-68` 同构随机回填，Migration109To110）
-pub const SCHEMA_VERSION: u32 = 110;
+/// - v111：rssSources 补 `nextContentUrl` 列（审查批4 P1-2，对齐原版 Room
+///   v104.json `rssSources.nextContentUrl`（TEXT 可空）与 `RssSource.kt:73`
+///   「正文下一页规则」；Migration110To111）
+pub const SCHEMA_VERSION: u32 = 111;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -319,6 +322,7 @@ CREATE TABLE IF NOT EXISTS rssSources (
     ruleImage TEXT,
     ruleLink TEXT,
     ruleContent TEXT,
+    nextContentUrl TEXT,
     style TEXT,
     articleStyle INTEGER NOT NULL DEFAULT 0,
     singleUrl INTEGER NOT NULL DEFAULT 0,

@@ -10,6 +10,7 @@ pub mod highlight_rule_columns_v110;
 pub mod migrations;
 pub mod origin_book_url_v109;
 pub mod room_align_v105;
+pub mod rss_next_content_url_v111;
 pub mod schema_align_v104;
 pub mod scope_source_v108;
 pub mod search_book_score_v106;
@@ -71,6 +72,7 @@ impl MigrationRegistry {
         self.register(Box::new(scope_source_v108::Migration107To108));
         self.register(Box::new(origin_book_url_v109::Migration108To109));
         self.register(Box::new(highlight_rule_columns_v110::Migration109To110));
+        self.register(Box::new(rss_next_content_url_v111::Migration110To111));
     }
 
     /// 注册单个迁移
@@ -305,7 +307,7 @@ mod tests {
     fn test_migration_registry_list() {
         let registry = MigrationRegistry::new();
         let list = registry.list_migrations();
-        assert_eq!(list.len(), 20);
+        assert_eq!(list.len(), 21);
         assert_eq!(list[0].0, 90);
         assert_eq!(list[0].1, 91);
     }
@@ -421,7 +423,7 @@ mod tests {
         let db = Database::open_in_memory().unwrap();
         let conn = db.connection();
         let version = MigrationRegistry::current_version(conn).unwrap();
-        assert_eq!(version, 110);
+        assert_eq!(version, 111);
         assert!(table_exists(conn, "auto_task_rules").unwrap());
         assert!(column_exists(conn, "book_sources", "mainJs"));
         assert!(table_exists(conn, "dictRules").unwrap());
@@ -434,6 +436,8 @@ mod tests {
         // [P2-11] highlightRules 补 uuid/applyToBody 双列（导入去重 + 正文匹配开关）
         assert!(column_exists(conn, "highlightRules", "uuid"));
         assert!(column_exists(conn, "highlightRules", "applyToBody"));
+        // [P1-2] rssSources 补 nextContentUrl（原版正文下一页规则）
+        assert!(column_exists(conn, "rssSources", "nextContentUrl"));
     }
 
     #[test]

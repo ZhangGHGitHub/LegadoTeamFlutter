@@ -957,6 +957,8 @@ mod tests {
             rule_image: Some("img@src".to_string()),
             rule_link: Some("a@href".to_string()),
             rule_content: Some(".content@textNodes".to_string()),
+            // P1-2：原版 RssSource.nextContentUrl（正文下一页规则）必须随备份往返
+            next_content_url: Some(".nextPage@href".to_string()),
             style: Some("body{margin:0}".to_string()),
             article_style: 2,
             single_url: true,
@@ -1029,6 +1031,11 @@ mod tests {
         );
         // 关键列具名断言（失败信息可读性）
         assert_eq!(restored.rule_articles.as_deref(), Some("class.item"));
+        assert_eq!(
+            restored.next_content_url.as_deref(),
+            Some(".nextPage@href"),
+            "nextContentUrl 应随备份往返保留（原版 RssSource 正文下一页规则）"
+        );
         assert_eq!(restored.search_url.as_deref(), Some("search?q={{key}}"));
         assert_eq!(
             restored.login_url.as_deref(),
