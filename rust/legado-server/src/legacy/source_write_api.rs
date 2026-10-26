@@ -383,9 +383,12 @@ pub async fn delete_book_sources(
                     Ok(())
                 }) {
                     Ok(()) => {
-                        // 对齐 SourceHelp.deleteBookSourceKeys：事务成功后整体清
-                        // 内存 5 族（AppCacheManager.clearSourceVariables）
-                        let _ = legado_js::host_api::variable_store::clear_source_variables();
+                        // 对齐 SourceHelp.deleteBookSourceKeys：非空删除且事务成功后
+                        // 整体清内存 5 族（AppCacheManager.clearSourceVariables；
+                        // 原版空 keys 早退，不做内存清理）
+                        if !urls.is_empty() {
+                            let _ = legado_js::host_api::variable_store::clear_source_variables();
+                        }
                         ReturnData::success(Value::String("已执行".to_string()))
                     }
                     Err(e) => ReturnData::error(e.to_string()),
