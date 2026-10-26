@@ -10,8 +10,9 @@
 //!   `RssSourceRepository` 模型序列化（布尔为真 bool、None 字段省略）。
 //! - version=3（批8，用户裁决②）：新增 `servers`（原版 `servers.json`
 //!   实体数组形态），承载 WebDAV 同步/远程书库服务器配置。
-//! - version=4（批16f）：新增 `directLinkUploadRule`（字符串，值为 caches 配置键
-//!   `directLinkUploadRule` 的原始 JSON 文本；形态为 4 字段 camelCase 对象
+//! - version=4（批16f）：新增 `directLinkUploadRule`（字符串，值为短键
+//!   `directLinkUploadRule`（落库 `config:` 前缀，即 `config:directLinkUploadRule`）
+//!   的原始 JSON 文本；形态为 4 字段 camelCase 对象
 //!   `uploadUrl`/`downloadUrlRule`/`summary`/`compress`，对齐原版
 //!   `DirectLinkUpload.ruleFileName = "directLinkUploadRule.json"`），承载直链上传规则。
 //!
@@ -41,7 +42,7 @@
 //!   `dictRule.json`、`autoTask.json`、`servers.json`、`directLinkUploadRule.json`
 //!   （明文 JSON 对象，**未经 `BackupAES` 加密**，证据见 `Backup.kt` 的
 //!   `DirectLinkUpload.getConfig()?.let { ... writeText(GSON.toJson(it)) }`；
-//!   我方映射到 caches 配置键 `directLinkUploadRule`，为第三方加密产物保留
+//!   我方映射到短键 `directLinkUploadRule`（落库 `config:` 前缀），为第三方加密产物保留
 //!   空密码解密回退）
 //! - 历史：`readRecord.json`、`searchHistory.json`
 //! - 设置：`readConfig.json`、`shareReadConfig.json`、`themeConfig.json`、`coverRule.json`、
@@ -317,10 +318,13 @@ fn json_value_kind(value: &serde_json::Value) -> &'static str {
     }
 }
 
-/// 文本的 JSON 类型名（非法 JSON 返回固定文案；日志辅助，不输出原文）
-fn json_text_kind(text: &str) -> &'static str {
-    match serde_json::from_str::<serde_json::Value>(text) {
-        Ok(value) => json_value_kind(&value),
+/// 解析结果的类型名（`Ok` → 值类型名；`Err` → 「非法 JSON」）
+///
+/// 供需要「先判定类型、再按类型出日志」的调用方复用：对象判定与日志
+/// 共享同一次解析结果，避免对同一文本重复解析（P3 收口）。
+fn json_parse_kind(parsed: &Result<serde_json::Value, serde_json::Error>) -> &'static str {
+    match parsed {
+        Ok(value) => json_value_kind(value),
         Err(_) => "非法 JSON",
     }
 }
@@ -482,7 +486,8 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             .filter_map(|s| serde_json::to_value(&s).ok())
             .collect();
 
-        // 直链上传规则（v4：caches 配置键 `directLinkUploadRule` 的原始 JSON 文本）。
+        // 直链上传规则（v4：短键 `directLinkUploadRule`（落库 `config:` 前缀）
+        // 的原始 JSON 文本）。
         // 不存在/空串 → None（序列化时省略该键，备份形状保持旧版兼容）
         let direct_link_upload_rule = CacheRepository::new(conn)
             .get(&direct_link_upload_rule_cache_key())?
@@ -673,7 +678,8 @@ const ZIP_DATA_FILES: [&str; 21] = [
     "dictRule.json",
     "autoTask.json",
     "servers.json",
-    // 直链上传规则（批16f 映射：明文 JSON 对象 → caches 配置键 directLinkUploadRule）
+    // 直链上传规则（批16f 映射：明文 JSON 对象 → 短键 directLinkUploadRule，
+    // 落库 config: 前缀）
     "directLinkUploadRule.json",
     "cookies.json",
     "runtimeSourceCache.json",
@@ -1185,7 +1191,10 @@ fn zip_direct_link_upload_rule(archive: &ZipBackupArchive) -> Option<String> {
         log::warn!("{NAME} 为空文件（已跳过，库内既有直链规则保持不变）");
         return None;
     }
-    if is_json_object_text(text) {
+    // P3 收口：对象判定与「非对象类型」日志共用同一次解析结果，
+    // 避免同一文本被 serde_json 解析两遍
+    let parsed = serde_json::from_str::<serde_json::Value>(text);
+    if matches!(&parsed, Ok(serde_json::Value::Object(_))) {
         return Some(text.to_string());
     }
     // 明文但不是 JSON 对象：先做低成本 base64 形态检查（P3-6）——非 base64 形态
@@ -1194,7 +1203,7 @@ fn zip_direct_link_upload_rule(archive: &ZipBackupArchive) -> Option<String> {
         log::warn!(
             "{NAME} 是明文但不是 JSON 对象（类型 {}，长度 {} 字节，已跳过，\
              库内既有直链规则保持不变）",
-            json_text_kind(text),
+            json_parse_kind(&parsed),
             text.len()
         );
         return None;
@@ -1203,15 +1212,17 @@ fn zip_direct_link_upload_rule(archive: &ZipBackupArchive) -> Option<String> {
     match decrypt_backup_payload(text) {
         Ok(plain) => {
             let plain = plain.trim();
-            if is_json_object_text(plain) {
-                Some(plain.to_string())
-            } else {
-                log::warn!(
-                    "{NAME} 解密成功但不是 JSON 对象（类型 {}，已跳过，\
-                     库内既有直链规则保持不变）",
-                    json_text_kind(plain)
-                );
-                None
+            let parsed = serde_json::from_str::<serde_json::Value>(plain);
+            match parsed {
+                Ok(serde_json::Value::Object(_)) => Some(plain.to_string()),
+                other => {
+                    log::warn!(
+                        "{NAME} 解密成功但不是 JSON 对象（类型 {}，已跳过，\
+                         库内既有直链规则保持不变）",
+                        json_parse_kind(&other)
+                    );
+                    None
+                }
             }
         }
         Err(e) => {
@@ -1221,19 +1232,14 @@ fn zip_direct_link_upload_rule(archive: &ZipBackupArchive) -> Option<String> {
     }
 }
 
-/// 文本是否为 JSON 对象（`{...}`；数组/标量/null 均不算）
-fn is_json_object_text(text: &str) -> bool {
-    matches!(
-        serde_json::from_str::<serde_json::Value>(text),
-        Ok(serde_json::Value::Object(_))
-    )
-}
-
 /// 文本是否具备 Base64 形态（仅字符集与长度检查，**不做解码**）
 ///
 /// 用于解密前的低成本分流：原版该文件本为明文，只有第三方加密产物才需要走
 /// 解密；非 base64 形态的输入直接判定「明文非对象」，避免大输入触发完整解码
 /// 与 AES 解密的分配。
+///
+/// **仅用于日志分流，不作为可解密性判据**：字符集与长度合规的文本仍可能
+/// 解码/解密失败，最终结果一律由 [`decrypt_backup_payload`] 的返回值为准。
 fn looks_like_base64(text: &str) -> bool {
     let bytes = text.as_bytes();
     if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
@@ -4041,6 +4047,106 @@ mod tests {
         set_direct_link_rule_config(None);
     }
 
+    /// [批16f P3 收口] zip 内 `directLinkUploadRule.json` 为明文数组 `[1,2]`：
+    /// warn 跳过且保留库内既有配置
+    ///
+    /// 数组不是规则对象；且 `[1,2]` 不具备 Base64 形态（含 `[`/`,`），
+    /// 直接走「明文非对象」分支，不进入解密流水线。
+    #[test]
+    fn test_restore_zip_plain_array_direct_link_rule_skipped() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        set_direct_link_rule_config(Some(DIRECT_LINK_RULE_SEED));
+
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_direct_link_plain_array",
+            &[("directLinkUploadRule.json", b"[1,2]".as_slice())],
+        );
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.books, 0, "负例不得中断整次恢复");
+        assert_eq!(
+            read_direct_link_rule_config().as_deref(),
+            Some(DIRECT_LINK_RULE_SEED),
+            "明文数组不是规则对象，应跳过且保留库内既有配置"
+        );
+
+        set_direct_link_rule_config(None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批16f P3 收口] zip 内为合法 AES 密文、但明文是数组 `[1,2]`：
+    /// 解密成功仍判非对象，warn 跳过且保留库内既有配置
+    #[test]
+    fn test_restore_zip_encrypted_array_direct_link_rule_skipped() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        set_direct_link_rule_config(Some(DIRECT_LINK_RULE_SEED));
+
+        // 复用现有测试加密辅助：空密码派生密钥 + AES-128-ECB/PKCS7 + Base64
+        let ciphertext = AesCrypto::encrypt_ecb(&backup_aes_key(""), b"[1,2]").unwrap();
+        let encrypted = base64::engine::general_purpose::STANDARD.encode(ciphertext);
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_direct_link_encrypted_array",
+            &[("directLinkUploadRule.json", encrypted.as_bytes())],
+        );
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.books, 0, "负例不得中断整次恢复");
+        assert_eq!(
+            read_direct_link_rule_config().as_deref(),
+            Some(DIRECT_LINK_RULE_SEED),
+            "解密成功但明文为数组时应跳过且保留库内既有配置"
+        );
+
+        set_direct_link_rule_config(None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批16f P3 收口] 字段为内联对象（多键且含 `expiryDate`）：键不丢、不剥除
+    ///
+    /// 内联对象经宽容反序列化转为紧凑文本落库；`serde_json` 未启用
+    /// `preserve_order`，允许紧凑化与键重排，但键集合与值必须完整保留
+    /// （含原版未建模的 `expiryDate`）。
+    #[test]
+    fn test_restore_direct_link_rule_inline_object_keeps_all_keys() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        set_direct_link_rule_config(None);
+
+        let inline = serde_json::json!({
+            "uploadUrl": "https://upload.example/api",
+            "downloadUrlRule": "$.data.url",
+            "summary": "多键内联",
+            "compress": false,
+            "expiryDate": 1_700_000_000_000i64,
+        });
+        let backup_json = serde_json::json!({
+            "version": BACKUP_VERSION,
+            "directLinkUploadRule": inline.clone(),
+        });
+        let (dir, path) = write_json_backup_file(
+            "legado_backup_direct_link_inline_object",
+            "inline_multikey.json",
+            &backup_json.to_string(),
+        );
+
+        assert!(backup_restore(&path).is_ok());
+        let stored = read_direct_link_rule_config().expect("内联对象应写入配置");
+        let stored_json: serde_json::Value = serde_json::from_str(&stored).unwrap();
+        assert_eq!(
+            stored_json, inline,
+            "内联对象键值应完整保留（允许紧凑化与键重排）: {stored}"
+        );
+        assert!(
+            stored_json
+                .as_object()
+                .is_some_and(|map| map.contains_key("expiryDate")),
+            "原版 expiryDate 不得被剥除: {stored}"
+        );
+
+        set_direct_link_rule_config(None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// [批16f] 空文件/空白内容/空串/null：跳过且不清库内既有直链配置
     #[test]
     fn test_restore_empty_direct_link_rule_skipped() {
@@ -4552,8 +4658,14 @@ mod tests {
         assert_eq!(json_value_kind(&serde_json::json!(1)), "number");
         assert_eq!(json_value_kind(&serde_json::json!(true)), "bool");
         assert_eq!(json_value_kind(&serde_json::Value::Null), "null");
-        assert_eq!(json_text_kind("[1,2,3]"), "array");
-        assert_eq!(json_text_kind("not-json"), "非法 JSON");
+        assert_eq!(
+            json_parse_kind(&serde_json::from_str::<serde_json::Value>("[1,2,3]")),
+            "array"
+        );
+        assert_eq!(
+            json_parse_kind(&serde_json::from_str::<serde_json::Value>("not-json")),
+            "非法 JSON"
+        );
 
         // base64 形态：长度 4 的倍数 + 仅 base64 字符集
         assert!(looks_like_base64("QUJDRA=="));
