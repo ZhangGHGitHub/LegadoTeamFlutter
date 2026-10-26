@@ -202,6 +202,26 @@ mixin RustApiSyncTools on RustApiDecode implements BookApi {
     return _decodeMap(json, 'bookApi');
   }
 
+  /// 直链上传并返回下载直链 URL（契约 §2.51，批16a）
+  ///
+  /// 直通 FFI（规则解析 / 压缩 / multipart / 下载规则求值全在 Rust）。
+  /// **不做 catch 降级**：上传是显式用户动作，失败须上抛驱动 UI 提示
+  /// （契约 §2.51 错误语义）。
+  @override
+  Future<String> directLinkUpload({
+    required String ruleJson,
+    required String fileName,
+    required String contentType,
+    String? content,
+    String? filePath,
+  }) => bridge.directLinkUpload(
+    ruleJson: ruleJson,
+    fileName: fileName,
+    contentType: contentType,
+    content: content,
+    filePath: filePath,
+  );
+
   // ========== 自动任务（auto_task FFI） ==========
 
   /// 构建书籍更新定时任务（返回 AutoTaskRule JSON）

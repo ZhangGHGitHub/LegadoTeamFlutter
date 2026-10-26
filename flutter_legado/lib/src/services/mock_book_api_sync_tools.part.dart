@@ -253,6 +253,43 @@ mixin MockBookApiSyncTools on MockBookApiStore implements BookApi {
     };
   }
 
+  /// 直链上传（契约 §2.51，批16a）
+  ///
+  /// Mock：不发网络请求，按上传语义构造可验证的直链（文件名 + 标记 +
+  /// 压缩后缀），便于 UI 流程测试；规则非法（上传 URL/下载规则为空、
+  /// content/filePath 非二选一）抛 [ArgumentError] 对齐 Rust 错误语义。
+  @override
+  Future<String> directLinkUpload({
+    required String ruleJson,
+    required String fileName,
+    required String contentType,
+    String? content,
+    String? filePath,
+  }) async {
+    final rule = jsonDecode(ruleJson);
+    if (rule is! Map) {
+      throw ArgumentError('直链上传规则 JSON 形态非法');
+    }
+    final uploadUrl = (rule['uploadUrl'] ?? rule['upload_url'] ?? '')
+        .toString()
+        .trim();
+    final downloadRule =
+        (rule['downloadUrlRule'] ?? rule['download_url_rule'] ?? '')
+            .toString()
+            .trim();
+    if (uploadUrl.isEmpty) throw StateError('上传 URL 未配置');
+    if (downloadRule.isEmpty) throw StateError('下载链接规则未配置');
+    if ((content == null) == (filePath == null)) {
+      throw ArgumentError('content 与 filePath 必须二选一');
+    }
+    final compress = rule['compress'] == true && contentType != 'application/zip';
+    final uploadName = compress ? '$fileName.zip' : fileName;
+    final source = content ?? filePath!;
+    return 'https://mock.direct-link.local/$uploadName'
+        '?rule=${Uri.encodeComponent(downloadRule)}'
+        '&size=${source.length}';
+  }
+
   // ========== 自动任务 ==========
 
   @override

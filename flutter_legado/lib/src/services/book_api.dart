@@ -1474,6 +1474,22 @@ abstract class BookApi {
     required String format,
   });
 
+  /// 直链上传并返回下载直链 URL（契约 §2.51 `directLinkUpload`，批16a）
+  ///
+  /// 规则 JSON 为 4 字段（参考版口径，camelCase，兼容 snake_case）：
+  /// `uploadUrl` / `downloadUrlRule` / `summary` / `compress`。
+  /// [content] 与 [filePath] **二选一**（文本内容 / 本地文件路径，单文件上限
+  /// 100 MiB）。上传语义（逗号选项 / `fileRequest` 文件部件 / 内存 zip 压缩 /
+  /// 下载规则 `@js:` 级联）全部在 Rust 侧执行；失败上抛异常不降级。
+  /// 消费方：16b 直链规则配置 Sheet、16c 通用导出目标 Sheet。
+  Future<String> directLinkUpload({
+    required String ruleJson,
+    required String fileName,
+    required String contentType,
+    String? content,
+    String? filePath,
+  });
+
   // ========== 自动任务（auto_task FFI） ==========
 
   /// 构建书籍更新定时任务
