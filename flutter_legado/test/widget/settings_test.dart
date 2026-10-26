@@ -26,7 +26,7 @@ import 'package:flutter_legado/src/services/web_keep_alive_service.dart';
 import '../mocks/mocks.dart';
 
 void main() {
-  late MockRustApi mockApi;
+  late FakeServersRustApi mockApi;
   late ProviderContainer container;
 
   setUpAll(() {
@@ -35,7 +35,7 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-    mockApi = MockRustApi();
+    mockApi = FakeServersRustApi();
     container = ProviderContainer(
       overrides: [bookApiProvider.overrideWithValue(mockApi)],
     );

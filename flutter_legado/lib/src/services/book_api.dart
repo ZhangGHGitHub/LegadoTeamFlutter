@@ -1307,6 +1307,23 @@ abstract class BookApi {
     String localSources,
   );
 
+  /// 列出 servers 表全部服务器（契约 §2.28，批8 用户裁决②）
+  ///
+  /// 返回**裸 JSON 数组**（元素为原版 `Server` 实体：`id`/`name`/`type`/
+  /// `config`/`sortNumber`），按 `sortNumber` 升序。对齐原版 `ServerDao.all`。
+  Future<String> webdavServersList();
+
+  /// 保存服务器配置（全字段 upsert，契约 §2.28，批8）
+  ///
+  /// [serverJson] 为 `Server` JSON，返回实际落库 id：id 为 0 时由 Rust
+  /// 按当前毫秒分配；负数 id 原样保留（`-1` = 默认 WebDAV 同步账号）。
+  Future<int> webdavServerSave(String serverJson);
+
+  /// 删除服务器配置（契约 §2.28，批8）
+  ///
+  /// 返回是否命中行；目标不存在返回 `false`（不抛错）。
+  Future<bool> webdavServerDelete(int id);
+
   // ========== 下载管理器 ==========
 
   /// 添加下载任务

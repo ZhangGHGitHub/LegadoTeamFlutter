@@ -113,6 +113,7 @@ void stubOpenBook(MockRustApi api, {String content = '旧正文（缓存）'}) {
 }
 
 ProviderContainer makeContainer(MockRustApi mockApi) {
+  stubEmptyWebdavServers(mockApi);
   return ProviderContainer(
     overrides: [bookApiProvider.overrideWithValue(mockApi)],
   );

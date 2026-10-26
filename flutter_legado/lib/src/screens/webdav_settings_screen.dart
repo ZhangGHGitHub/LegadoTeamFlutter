@@ -77,6 +77,11 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     _loadAll();
   }
 
+  /// 加载页面配置
+  ///
+  /// 批8：WebDAV 账号三要素由 `SyncNotifier.loadConfig()` 从 DB `servers` 表
+  /// 读取（首次调用顺带完成旧偏好一次性迁移）；子目录/设备名与备份开关
+  /// 仍读偏好。
   Future<void> _loadAll() async {
     final notifier = ref.read(syncNotifierProvider.notifier);
     await notifier.loadConfig();

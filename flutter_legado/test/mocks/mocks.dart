@@ -4,6 +4,8 @@
 /// 供 Providers / Services 层测试使用。
 library;
 
+import 'dart:convert';
+
 import 'package:http/http.dart' as http;
 import 'package:mocktail/mocktail.dart';
 
@@ -15,8 +17,87 @@ import 'package:flutter_legado/src/models/models.dart';
 /// RustApi 的 mock 实现
 class MockRustApi extends Mock implements RustApi {}
 
+/// 带 servers 表内存实现的 RustApi Mock（批8）
+///
+/// 契约 §2.28 的 `webdavServersList` / `webdavServerSave` / `webdavServerDelete`
+/// 以内存列表模拟 DB（REPLACE by id；id=0 分配当前毫秒；负数 id 原样保留），
+/// 其余方法仍走 mocktail（需调用方自行 `when`）。
+class FakeServersRustApi extends MockRustApi {
+  final List<Map<String, dynamic>> servers = [];
+
+  @override
+  Future<String> webdavServersList() async {
+    final sorted = [...servers]..sort((a, b) {
+        final bySort = ((a['sortNumber'] as num?)?.toInt() ?? 0)
+            .compareTo((b['sortNumber'] as num?)?.toInt() ?? 0);
+        if (bySort != 0) return bySort;
+        return ((a['id'] as num?)?.toInt() ?? 0)
+            .compareTo((b['id'] as num?)?.toInt() ?? 0);
+      });
+    return jsonEncode(sorted);
+  }
+
+  @override
+  Future<int> webdavServerSave(String serverJson) async {
+    final map = Map<String, dynamic>.from(jsonDecode(serverJson) as Map);
+    var id = (map['id'] as num?)?.toInt() ?? 0;
+    if (id == 0) {
+      id = DateTime.now().millisecondsSinceEpoch;
+      while (servers.any((e) => (e['id'] as num?)?.toInt() == id)) {
+        id++;
+      }
+    }
+    map['id'] = id;
+    map.putIfAbsent('name', () => '');
+    map.putIfAbsent('type', () => 'WEBDAV');
+    map.putIfAbsent('sortNumber', () => 0);
+    final idx = servers.indexWhere((e) => (e['id'] as num?)?.toInt() == id);
+    if (idx >= 0) {
+      servers[idx] = map;
+    } else {
+      servers.add(map);
+    }
+    return id;
+  }
+
+  @override
+  Future<bool> webdavServerDelete(int id) async {
+    final before = servers.length;
+    servers.removeWhere((e) => (e['id'] as num?)?.toInt() == id);
+    return servers.length < before;
+  }
+
+  /// 预置一条服务器行（测试种子）
+  void seedServer({
+    int id = -1,
+    String name = '默认 WebDAV',
+    String type = 'WEBDAV',
+    String? config,
+    int sortNumber = 0,
+  }) {
+    servers.add({
+      'id': id,
+      'name': name,
+      'type': type,
+      'config': config,
+      'sortNumber': sortNumber,
+    });
+  }
+}
+
 /// AudioService 的 mock 实现
 class MockAudioService extends Mock implements AudioService {}
+
+/// 为 `MockRustApi` 桩空 servers 表（批8）
+///
+/// `ReaderTopBar` 等组件 initState 会触发 `SyncNotifier.loadConfig()`，
+/// 其内部调用 `webdavServersList()`；未桩会抛 mocktail「missing stub」。
+/// 空表 + 空偏好 → 不迁移、不写入，等价「未配置 WebDAV」。
+void stubEmptyWebdavServers(MockRustApi api) {
+  when(() => api.webdavServersList()).thenAnswer((_) async => '[]');
+  when(() => api.webdavServerSave(any())).thenAnswer((_) async => -1);
+  when(() => api.webdavServerDelete(any())).thenAnswer((_) async => true);
+}
 
 /// StreamAudioPlayer 的 Fake 实现（A1 批 TTS 本地播放链测试）
 ///

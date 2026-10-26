@@ -59,7 +59,7 @@ void main() {
   });
 
   group('RemoteBookNotifier.refresh / import', () {
-    late MockRustApi mockApi;
+    late FakeServersRustApi mockApi;
     late ProviderContainer container;
 
     setUpAll(registerFallbacks);
@@ -73,7 +73,7 @@ void main() {
         'remote_server_id': -1,
         'remote_servers': '[]',
       });
-      mockApi = MockRustApi();
+      mockApi = FakeServersRustApi();
       container = ProviderContainer(
         overrides: [bookApiProvider.overrideWithValue(mockApi)],
       );

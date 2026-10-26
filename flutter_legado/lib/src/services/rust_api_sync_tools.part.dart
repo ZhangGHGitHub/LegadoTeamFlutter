@@ -63,6 +63,19 @@ mixin RustApiSyncTools on RustApiDecode implements BookApi {
     localSources: localSources,
   );
 
+  /// 列出 servers 表全部服务器（契约 §2.28，批8）
+  @override
+  Future<String> webdavServersList() => bridge.webdavServersList();
+
+  /// 保存服务器配置（契约 §2.28，批8）
+  @override
+  Future<int> webdavServerSave(String serverJson) =>
+      bridge.webdavServerSave(serverJson: serverJson);
+
+  /// 删除服务器配置（契约 §2.28，批8）
+  @override
+  Future<bool> webdavServerDelete(int id) => bridge.webdavServerDelete(id: id);
+
   // ========== 下载管理器 ==========
 
   /// 添加下载任务

@@ -88,6 +88,7 @@ void stubOpenBook(MockRustApi api) {
 }
 
 ProviderContainer makeContainer(MockRustApi mockApi) {
+  stubEmptyWebdavServers(mockApi);
   return ProviderContainer(
     overrides: [bookApiProvider.overrideWithValue(mockApi)],
   );

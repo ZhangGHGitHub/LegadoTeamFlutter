@@ -15,12 +15,12 @@ import 'package:flutter_legado/src/widgets/ios_widgets.dart';
 import '../mocks/mocks.dart';
 
 void main() {
-  late MockRustApi mockApi;
+  late FakeServersRustApi mockApi;
   late ProviderContainer container;
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-    mockApi = MockRustApi();
+    mockApi = FakeServersRustApi();
     container = ProviderContainer(
       overrides: [bookApiProvider.overrideWithValue(mockApi)],
     );

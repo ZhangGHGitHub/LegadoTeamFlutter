@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../../models/book.dart';
 import '../../models/misc.dart';
 import '../../services/settings_service.dart';
+import '../../services/webdav_server_service.dart';
 import '../providers.dart';
 import 'sync_state.dart';
 
@@ -17,6 +18,10 @@ export 'sync_state.dart';
 /// 对接真实的 BookApi WebDAV 契约（webdavFullSync / importBookSources），
 /// 对齐 Android 原版 BackupConfigFragment 的 WebDAV 设置组
 /// （服务器地址/账号/密码/子目录/设备名/同步书籍进度）。
+///
+/// 批8（用户裁决②）：账号三要素以 DB `servers` 表为权威（`id = -1` 的
+/// WEBDAV 行，读经 `webdavServersList`、写经 `webdavServerSave`）；
+/// 旧偏好 `sync_webdav_*` 首次加载时一次性迁移，之后不再读写。
 class SyncNotifier extends Notifier<SyncState> {
   final SettingsService _settings = SettingsService();
 
@@ -66,19 +71,27 @@ class SyncNotifier extends Notifier<SyncState> {
       remoteDir: remoteDir,
       deviceName: device,
     );
-    await _settings.setWebDavUrl(webDavUrl);
-    await _settings.setWebDavUsername(webDavUsername);
-    await _settings.setWebDavPassword(password);
+    // 批8：url/username/password 写入 DB servers 表（id = -1 的 WEBDAV 行）；
+    // 子目录/设备名仍为偏好（原版 AppConfig.webDavDir/webDavDeviceName 同为偏好）
+    await _webDavServerService().saveSyncServer(
+      url: webDavUrl,
+      username: webDavUsername,
+      password: password,
+    );
     await _settings.setWebDavRemoteDir(remoteDir);
     await _settings.setWebDavDeviceName(device);
   }
 
   /// 加载已保存的 WebDAV 配置
+  ///
+  /// 批8：账号三要素改从 DB servers 表读取（首次调用触发旧偏好一次性迁移）；
+  /// 子目录/设备名/同步开关仍读偏好。
   Future<void> loadConfig() async {
+    final server = await _webDavServerService().loadSyncServer();
     state = state.copyWith(
-      webDavUrl: await _settings.getWebDavUrl(),
-      webDavUsername: await _settings.getWebDavUsername(),
-      webDavPassword: await _settings.getWebDavPassword(),
+      webDavUrl: server.url,
+      webDavUsername: server.username,
+      webDavPassword: server.password,
       remoteDir: await _settings.getWebDavRemoteDir(),
       deviceName: await _settings.getWebDavDeviceName(),
       syncBookProgress: await _settings.getSyncBookProgress(),
@@ -87,6 +100,12 @@ class SyncNotifier extends Notifier<SyncState> {
       lastSyncTime: await _settings.getLastSyncTime(),
     );
   }
+
+  /// servers 表服务（每次按当前 BookApi 实例构造，轻量无状态）
+  WebDavServerService _webDavServerService() => WebDavServerService(
+        api: ref.read(bookApiProvider),
+        settings: _settings,
+      );
 
   /// 切换自动同步
   Future<void> toggleAutoSync(bool enabled) async {

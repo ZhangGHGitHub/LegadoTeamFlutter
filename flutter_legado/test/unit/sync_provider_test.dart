@@ -16,7 +16,7 @@ import 'package:flutter_legado/src/models/models.dart';
 import '../mocks/mocks.dart';
 
 void main() {
-  late MockRustApi mockApi;
+  late FakeServersRustApi mockApi;
   late ProviderContainer container;
 
   setUpAll(() {
@@ -25,7 +25,7 @@ void main() {
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-    mockApi = MockRustApi();
+    mockApi = FakeServersRustApi();
     container = ProviderContainer(
       overrides: [bookApiProvider.overrideWithValue(mockApi)],
     );
@@ -145,7 +145,7 @@ void main() {
       );
     });
 
-    test('loadConfig 从 SharedPreferences 加载（含新字段）', () async {
+    test('loadConfig 首次迁移旧偏好到 DB 并加载（含新字段）', () async {
       final now = DateTime.now();
       SharedPreferences.setMockInitialValues({
         'sync_webdav_url': 'https://loaded.com',

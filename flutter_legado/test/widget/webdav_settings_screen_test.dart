@@ -19,14 +19,14 @@ import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
 import '../mocks/mocks.dart';
 
 void main() {
-  late MockRustApi mockApi;
+  late FakeServersRustApi mockApi;
 
   setUpAll(registerFallbacks);
 
   setUp(() {
     // 页面 initState 会触发 SyncNotifier.loadConfig 与 CrashLogService 读偏好
     SharedPreferences.setMockInitialValues({});
-    mockApi = MockRustApi();
+    mockApi = FakeServersRustApi();
     when(() => mockApi.getBooks()).thenAnswer((_) async => const []);
     when(() => mockApi.getBookSources()).thenAnswer((_) async => const []);
   });

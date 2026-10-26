@@ -73,13 +73,13 @@ void _useFakeFilePicker(FilePicker fake) {
 }
 
 void main() {
-  late MockRustApi mockApi;
+  late FakeServersRustApi mockApi;
 
   setUpAll(registerFallbacks);
 
   setUp(() {
     SharedPreferences.setMockInitialValues({});
-    mockApi = MockRustApi();
+    mockApi = FakeServersRustApi();
     when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
     when(() => mockApi.getBookSources()).thenAnswer((_) async => <BookSource>[]);
     when(() => mockApi.restore(any())).thenAnswer((_) async {});

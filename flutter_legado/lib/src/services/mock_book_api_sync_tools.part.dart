@@ -53,6 +53,61 @@ mixin MockBookApiSyncTools on MockBookApiStore implements BookApi {
     String localSources,
   ) async => '{"synced": true}';
 
+  /// 列出 servers 表全部服务器（契约 §2.28，批8）
+  ///
+  /// Mock：内存列表，按 sortNumber 升序、同值按 id 升序（对齐原版
+  /// `ServerDao.all` 的 order by sortNumber）。
+  @override
+  Future<String> webdavServersList() async {
+    final sorted = [..._servers]..sort((a, b) {
+      final bySort = ((a['sortNumber'] as num?)?.toInt() ?? 0)
+          .compareTo((b['sortNumber'] as num?)?.toInt() ?? 0);
+      if (bySort != 0) return bySort;
+      return ((a['id'] as num?)?.toInt() ?? 0)
+          .compareTo((b['id'] as num?)?.toInt() ?? 0);
+    });
+    return jsonEncode(sorted);
+  }
+
+  /// 保存服务器配置（契约 §2.28，批8）
+  ///
+  /// Mock：REPLACE by id；id 为 0 时分配当前毫秒（避让既有主键），
+  /// 负数 id 原样保留（-1 = 默认 WebDAV）。
+  @override
+  Future<int> webdavServerSave(String serverJson) async {
+    final decoded = jsonDecode(serverJson);
+    if (decoded is! Map) {
+      throw const FormatException('serverJson 必须为 JSON 对象');
+    }
+    final map = Map<String, dynamic>.from(decoded);
+    var id = (map['id'] as num?)?.toInt() ?? 0;
+    if (id == 0) {
+      id = DateTime.now().millisecondsSinceEpoch;
+      while (_servers.any((e) => (e['id'] as num?)?.toInt() == id)) {
+        id++;
+      }
+    }
+    map['id'] = id;
+    map.putIfAbsent('name', () => '');
+    map.putIfAbsent('type', () => 'WEBDAV');
+    map.putIfAbsent('sortNumber', () => 0);
+    final idx = _servers.indexWhere((e) => (e['id'] as num?)?.toInt() == id);
+    if (idx >= 0) {
+      _servers[idx] = map;
+    } else {
+      _servers.add(map);
+    }
+    return id;
+  }
+
+  /// 删除服务器配置（契约 §2.28，批8）；未命中返回 false
+  @override
+  Future<bool> webdavServerDelete(int id) async {
+    final before = _servers.length;
+    _servers.removeWhere((e) => (e['id'] as num?)?.toInt() == id);
+    return _servers.length < before;
+  }
+
   // ========== 下载管理器 ==========
 
   @override
