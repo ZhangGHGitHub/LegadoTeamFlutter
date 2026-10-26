@@ -406,13 +406,13 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
   @override
   Future<void> rssClearSortCache(String sourceUrl) async {}
 
-  /// 刷新 RSS 列表（Mock：5 篇假文章，恒无下一页）
+  /// 刷新 RSS 列表（Mock：按分类/关键词生成 5 篇假文章，恒有下一页）
   ///
-  /// **联调注意（P2-12）**：Mock 完全忽略 `sortUrl` / `key`，也不按分类读写
-  /// 缓存——不论切到哪个分类、搜索什么关键词，返回的都是同一组假文章。
+  /// **联调注意（批15d 对齐）**：Mock 不执行 `sortUrl` 的 `@js:`/`<js>`
+  /// 脚本，也不请求网络与读写分类缓存；但会按 `sortName` / `key` 生成
+  /// 可区分的标题与链接，并给出 `nextUrl`/`hasMore=true`，使 UI 的
+  /// 「切换分类 / 搜索 / 触底加载更多」链路可在 Mock 模式下走通。
   /// 真实 Rust 侧按 `AnalyzeUrl(sortUrl, page=1, key)` 请求并解析分类列表。
-  /// 因此批15d 联调时，Mock 模式下只能验证「切换分类/搜索」的交互链路与
-  /// 状态流转，不能验证分类数据差异、登录态与分页真值。
   @override
   Future<String> rssRefreshArticles(
     String sourceUrl,
@@ -420,30 +420,18 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
     String sortUrl, {
     String? key,
   }) async {
-    final articles = await getRssArticles(sourceUrl);
+    // sortUrl 仅真实后端消费（Mock 无网络）；保留参数保持接口一致
+    // ignore: unused_local_variable
+    final _ = sortUrl;
+    final keyword = (key ?? '').trim();
     return jsonEncode({
-      'articles': articles
-          .map(
-            (a) => {
-              'title': a.title,
-              'link': a.url,
-              'description': a.description,
-              'pubDate': a.pubDate,
-              'image': a.imageUrl,
-              'content': a.content,
-              'origin': sourceUrl,
-              'sort': sortName,
-              'articleType': 0,
-              'variable': null,
-            },
-          )
-          .toList(),
-      'nextUrl': null,
-      'hasMore': false,
+      'articles': _mockRssArticleMaps(sourceUrl, sortName, keyword, 1),
+      'nextUrl': 'mock://rss/$sourceUrl?page=2',
+      'hasMore': true,
     });
   }
 
-  /// 加载 RSS 下一页（Mock：无下一页）
+  /// 加载 RSS 下一页（Mock：第 2 页后判底）
   @override
   Future<String> rssLoadMoreArticles(
     String sourceUrl,
@@ -452,10 +440,44 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
     int page, {
     String? key,
   }) async {
+    final keyword = (key ?? '').trim();
+    final pageNo = page < 1 ? 1 : page;
+    final hasMore = pageNo < 2;
+    final baseNext =
+        nextUrl.trim().isEmpty ? 'mock://rss/next' : nextUrl.trim();
     return jsonEncode({
-      'articles': <dynamic>[],
-      'nextUrl': null,
-      'hasMore': false,
+      'articles': _mockRssArticleMaps(sourceUrl, sortName, keyword, pageNo),
+      'nextUrl': hasMore ? '$baseNext&next=$pageNo' : null,
+      'hasMore': hasMore,
+    });
+  }
+
+  /// 构造 Mock RSS 列表项（字段对齐 Rust `RssArticleItem` camelCase）
+  List<Map<String, dynamic>> _mockRssArticleMaps(
+    String sourceUrl,
+    String sortName,
+    String keyword,
+    int page,
+  ) {
+    final tag = keyword.isNotEmpty
+        ? '搜索：$keyword'
+        : (sortName.isNotEmpty ? sortName : '默认');
+    return List.generate(5, (i) {
+      final n = (page - 1) * 5 + i + 1;
+      return <String, dynamic>{
+        'title': '【$tag】文章标题 $n',
+        'link': 'mock://rss/article/${Uri.encodeComponent(sourceUrl)}/'
+            '${Uri.encodeComponent(tag)}/$n',
+        'description': '这是「$tag」第 $n 篇文章的摘要描述。',
+        'pubDate':
+            DateTime.now().subtract(Duration(days: n)).toIso8601String(),
+        'image': 'https://via.placeholder.com/300x150?text=Article$n',
+        'content': '<p>这是「$tag」第 $n 篇文章的正文内容。</p>' * 5,
+        'origin': sourceUrl,
+        'sort': sortName,
+        'articleType': 0,
+        'variable': null,
+      };
     });
   }
 

@@ -438,17 +438,30 @@ class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
     }
   }
 
-  /// 点击记录重读（对标原版 ReadRss.readRss：打开文章阅读页）
+  /// 点击记录重读（对标原版 `ReadRss.readRss(record)`：按 record.origin 取源
+  /// 打开文章阅读页，批15d 补传 origin 使规则正文抓取生效）
   void _openRecord(RssReadRecordRow record) {
     Navigator.of(context).pop(); // 对标原版点击后 dismiss
+    final link = record.link ?? '';
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => RssArticleDetailScreen(
-          article: RssFeedArticle(title: record.title, url: record.link ?? ''),
-          sourceName: _hostOf(record.origin),
+          article: RssFeedArticle(title: record.title, url: link),
+          sourceName: _sourceNameOf(record.origin),
+          // 上游 `ReadRssActivity.start(origin=record.origin, link, sort)`：
+          // 详情页据 origin 查源规则抓正文；无链接（legacy 键）时不触发
+          sourceUrl: link.isEmpty ? '' : record.origin,
         ),
       ),
     );
+  }
+
+  /// 源名解析：优先用已加载的源列表，回退 host（对齐原版来源显示）
+  String _sourceNameOf(String origin) {
+    for (final source in ref.read(rssNotifierProvider).sources) {
+      if (source.sourceUrl == origin) return source.sourceName;
+    }
+    return _hostOf(origin);
   }
 
   String _hostOf(String origin) {

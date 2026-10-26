@@ -6,6 +6,8 @@
 // 迁移自原 RssProvider（ChangeNotifier）测试，改为 Riverpod 范式：
 // 使用 ProviderContainer + bookApiProvider.overrideWithValue(mockApi)。
 // 原「触发通知」测试点改为通过 container.listen 断言状态变更会触发监听。
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
@@ -117,25 +119,66 @@ void main() {
       sourceName: '测试源',
     );
 
+    /// 默认分类 + 第 1 页载荷（批15d：selectSource 先 rssSortUrls 再刷新列表）
+    void stubDefaultPage(
+      MockRustApi api,
+      String sourceUrl, {
+      List<Map<String, dynamic>> articles = const [],
+      String? nextUrl,
+      bool hasMore = false,
+    }) {
+      when(() => api.rssSortUrls(sourceUrl)).thenAnswer(
+        (_) async => jsonEncode([
+          {'name': '', 'url': sourceUrl},
+        ]),
+      );
+      when(
+        () => api.rssRefreshArticles(sourceUrl, '', sourceUrl, key: null),
+      ).thenAnswer(
+        (_) async => jsonEncode({
+          'articles': articles,
+          'nextUrl': nextUrl,
+          'hasMore': hasMore,
+        }),
+      );
+    }
+
     test('选择源后加载文章', () async {
-      final articles = [
-        const RssFeedArticle(title: '文章1', url: 'https://a.com/1'),
-        const RssFeedArticle(title: '文章2', url: 'https://a.com/2'),
-      ];
-      when(() => mockApi.getRssArticles(any()))
-          .thenAnswer((_) async => articles);
+      stubDefaultPage(
+        mockApi,
+        'https://rss.com',
+        articles: [
+          {'title': '文章1', 'link': 'https://a.com/1'},
+          {'title': '文章2', 'link': 'https://a.com/2'},
+        ],
+      );
 
       await readNotifier().selectSource(testSource);
 
       expect(readState().selectedSource, equals(testSource));
       expect(readState().articles.length, equals(2));
+      expect(readState().articles.first.title, equals('文章1'));
       expect(readState().isLoadingArticles, isFalse);
       expect(readState().error, isNull);
+      // 分类回退默认单分类
+      expect(readState().sorts.length, equals(1));
+      expect(readState().currentSort?.url, equals('https://rss.com'));
     });
 
     test('选择源失败时设置错误', () async {
-      when(() => mockApi.getRssArticles(any()))
-          .thenThrow(const BridgeError(message: '获取文章失败'));
+      when(() => mockApi.rssSortUrls(any())).thenAnswer(
+        (_) async => jsonEncode([
+          {'name': '', 'url': 'https://rss.com'},
+        ]),
+      );
+      when(
+        () => mockApi.rssRefreshArticles(
+          'https://rss.com',
+          '',
+          'https://rss.com',
+          key: null,
+        ),
+      ).thenThrow(const BridgeError(message: '获取文章失败'));
 
       await readNotifier().selectSource(testSource);
 
@@ -145,8 +188,13 @@ void main() {
     });
 
     test('selectSource 清空旧文章', () async {
-      when(() => mockApi.getRssArticles(any()))
-          .thenAnswer((_) async => [const RssFeedArticle(title: 'a', url: 'u')]);
+      stubDefaultPage(
+        mockApi,
+        'https://rss.com',
+        articles: [
+          {'title': 'a', 'link': 'u'},
+        ],
+      );
 
       await readNotifier().selectSource(testSource);
       expect(readState().articles.length, equals(1));
@@ -154,8 +202,25 @@ void main() {
       // 选择另一个源
       final other =
           const RssSource(sourceUrl: 'https://other.com', sourceName: '其他');
-      when(() => mockApi.getRssArticles('https://other.com'))
-          .thenAnswer((_) async => []);
+      when(() => mockApi.rssSortUrls('https://other.com')).thenAnswer(
+        (_) async => jsonEncode([
+          {'name': '', 'url': 'https://other.com'},
+        ]),
+      );
+      when(
+        () => mockApi.rssRefreshArticles(
+          'https://other.com',
+          '',
+          'https://other.com',
+          key: null,
+        ),
+      ).thenAnswer(
+        (_) async => jsonEncode({
+          'articles': <Map<String, dynamic>>[],
+          'nextUrl': null,
+          'hasMore': false,
+        }),
+      );
       await readNotifier().selectSource(other);
 
       expect(readState().articles, isEmpty);
@@ -173,13 +238,39 @@ void main() {
     test('有选中源时重新加载文章', () async {
       final source =
           const RssSource(sourceUrl: 'https://r.com', sourceName: 'R');
-      when(() => mockApi.getRssArticles(any()))
-          .thenAnswer((_) async => [const RssFeedArticle(title: 'x', url: 'u')]);
+      when(() => mockApi.rssSortUrls('https://r.com')).thenAnswer(
+        (_) async => jsonEncode([
+          {'name': '', 'url': 'https://r.com'},
+        ]),
+      );
+      when(
+        () => mockApi.rssRefreshArticles(
+          'https://r.com',
+          '',
+          'https://r.com',
+          key: null,
+        ),
+      ).thenAnswer(
+        (_) async => jsonEncode({
+          'articles': [
+            {'title': 'x', 'link': 'u'},
+          ],
+          'nextUrl': null,
+          'hasMore': false,
+        }),
+      );
 
       await readNotifier().selectSource(source);
       await readNotifier().refreshArticles();
 
-      verify(() => mockApi.getRssArticles('https://r.com')).called(2);
+      verify(
+        () => mockApi.rssRefreshArticles(
+          'https://r.com',
+          '',
+          'https://r.com',
+          key: null,
+        ),
+      ).called(2);
     });
   });
 
@@ -227,7 +318,25 @@ void main() {
       final source =
           const RssSource(sourceUrl: 'https://a.com', sourceName: 'A');
       when(() => mockApi.getRssSources()).thenAnswer((_) async => [source]);
-      when(() => mockApi.getRssArticles(any())).thenAnswer((_) async => []);
+      when(() => mockApi.rssSortUrls('https://a.com')).thenAnswer(
+        (_) async => jsonEncode([
+          {'name': '', 'url': 'https://a.com'},
+        ]),
+      );
+      when(
+        () => mockApi.rssRefreshArticles(
+          'https://a.com',
+          '',
+          'https://a.com',
+          key: null,
+        ),
+      ).thenAnswer(
+        (_) async => jsonEncode({
+          'articles': <Map<String, dynamic>>[],
+          'nextUrl': null,
+          'hasMore': false,
+        }),
+      );
       when(() => mockApi.deleteRssSource(any())).thenAnswer((_) async {});
 
       await readNotifier().loadSources();
@@ -236,6 +345,8 @@ void main() {
 
       expect(readState().selectedSource, isNull);
       expect(readState().articles, isEmpty);
+      expect(readState().sorts, isEmpty);
+      expect(readState().currentSort, isNull);
     });
 
     test('删除失败时设置错误', () async {
@@ -258,8 +369,27 @@ void main() {
     test('clearSelectedSource 状态变更触发监听', () async {
       final source =
           const RssSource(sourceUrl: 'https://a.com', sourceName: 'A');
-      when(() => mockApi.getRssArticles(any()))
-          .thenAnswer((_) async => [const RssFeedArticle(title: 'a', url: 'u')]);
+      when(() => mockApi.rssSortUrls('https://a.com')).thenAnswer(
+        (_) async => jsonEncode([
+          {'name': '', 'url': 'https://a.com'},
+        ]),
+      );
+      when(
+        () => mockApi.rssRefreshArticles(
+          'https://a.com',
+          '',
+          'https://a.com',
+          key: null,
+        ),
+      ).thenAnswer(
+        (_) async => jsonEncode({
+          'articles': [
+            {'title': 'a', 'link': 'u'},
+          ],
+          'nextUrl': null,
+          'hasMore': false,
+        }),
+      );
       await readNotifier().selectSource(source);
 
       var notified = false;

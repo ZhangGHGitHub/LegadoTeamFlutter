@@ -1,4 +1,4 @@
-﻿import 'package:cached_network_image/cached_network_image.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/app_scaffold.dart';
@@ -19,6 +19,11 @@ import 'rss_source_edit_screen.dart';
 import 'source_login_screen.dart';
 
 /// RSS 文章列表页面
+///
+/// 批15d：分类 Tab / 触底加载更多 / 搜索入口收敛（对齐原版
+/// `RssSortActivity` + `RssArticlesFragment`，视觉对齐参考版 `RssSortScreen`
+/// 的顶栏 TabRow 形态）。本页只渲染 [RssState] 与派发命令，分类解析、
+/// 翻页判底、写库等业务全部在 Rust（契约 §2.5）。
 class RssArticlesScreen extends ConsumerStatefulWidget {
   final RssSource source;
 
@@ -28,7 +33,8 @@ class RssArticlesScreen extends ConsumerStatefulWidget {
   ConsumerState<RssArticlesScreen> createState() => _RssArticlesScreenState();
 }
 
-class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
+class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
+    with TickerProviderStateMixin {
   final Set<String> _readArticles = {};
 
   /// 详情页规则正文抓取成功后的内存回填（审查 P2-7）
@@ -36,38 +42,229 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
   /// Rust `rssFetchContent` 已把正文写回 `rssArticles.description`，但列表页
   /// 当前无「只读 DB」FFI（`getRssArticles` 是网络刷新，会用 feed 摘要
   /// REPLACE 覆盖刚抓到的正文），故由详情页回调把正文带回列表内存态；
-  /// 返回列表立即可见，DB 仍是真源（DB-only 查询登记 15d 待补）。
+  /// 返回列表立即可见，DB 仍是真源（DB-only 查询登记 15d 遗留）。
   final Map<String, String> _fetchedDescriptions = {};
 
   // [UI-fix v2.0.2 | 2026-08-06] 布局切换本地态（对标原版 articleStyle 0-4
   // 循环；Flutter 端支持两种渲染：0=列表，其他=双列网格） — Qoder
   late int _articleStyle = widget.source.articleStyle;
 
+  /// 分类 Tab 控制器（分类数变化时重建；对齐 bookshelf 分组 Tab 做法）
+  TabController? _tabController;
+  int _tabControllerLength = 0;
+
+  /// 列表滚动控制器（触底自动加载更多）
+  final ScrollController _scrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
-    // 加载文章
+    _scrollController.addListener(_onScroll);
+    // 加载分类与文章
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(rssNotifierProvider.notifier).selectSource(widget.source);
     });
   }
 
   @override
+  void dispose() {
+    _scrollController.removeListener(_onScroll);
+    _scrollController.dispose();
+    _tabController?.removeListener(_onTabControllerChanged);
+    _tabController?.dispose();
+    super.dispose();
+  }
+
+  // ===== 分类 Tab =====
+
+  /// 按分类数量维护 TabController（分类数变化时重建）
+  TabController _ensureTabController(int length) {
+    if (_tabController == null || _tabControllerLength != length) {
+      _tabController?.removeListener(_onTabControllerChanged);
+      _tabController?.dispose();
+      _tabController = TabController(length: length, vsync: this);
+      _tabController!.addListener(_onTabControllerChanged);
+      _tabControllerLength = length;
+    }
+    return _tabController!;
+  }
+
+  /// Tab 切换 → 通知分类选择（对齐原版 ViewPager.onPageSelected）
+  void _onTabControllerChanged() {
+    final controller = _tabController;
+    if (controller == null || controller.indexIsChanging) return;
+    final state = ref.read(rssNotifierProvider);
+    if (state.isSearching || state.sorts.length <= 1) return;
+    if (controller.index >= state.sorts.length) return;
+    final sort = state.sorts[controller.index];
+    if (state.currentSort != sort) {
+      ref.read(rssNotifierProvider.notifier).selectSort(sort);
+    }
+  }
+
+  /// 状态选中分类 → 帧后同步到 TabController（避免 build 期间改动）
+  void _syncTabControllerIndex(int index) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final controller = _tabController;
+      if (!mounted || controller == null) return;
+      if (controller.index != index && index < controller.length) {
+        controller.animateTo(index);
+      }
+    });
+  }
+
+  /// 分类 Tab 行（单分类时隐藏，对齐原版 `upFragmentsView` 的 gone 分支）
+  PreferredSizeWidget? _buildSortTabs(RssState state) {
+    final sorts = state.sorts;
+    if (sorts.length <= 1) return null;
+    final controller = _ensureTabController(sorts.length);
+    _syncTabControllerIndex(_currentSortIndex(state));
+    final colorScheme = Theme.of(context).colorScheme;
+    final labelStyle = Theme.of(context)
+        .textTheme
+        .labelLarge
+        ?.copyWith(fontWeight: FontWeight.w500);
+    return PreferredSize(
+      preferredSize: const Size.fromHeight(48),
+      child: SizedBox(
+        width: double.infinity,
+        child: TabBar(
+          controller: controller,
+          isScrollable: true,
+          tabAlignment: TabAlignment.start,
+          padding: const EdgeInsets.only(left: 12),
+          labelPadding: const EdgeInsets.symmetric(horizontal: 12),
+          dividerColor: Colors.transparent,
+          dividerHeight: 0,
+          labelColor: colorScheme.primary,
+          unselectedLabelColor: colorScheme.onSurfaceVariant,
+          labelStyle: labelStyle,
+          unselectedLabelStyle: labelStyle,
+          tabs: [
+            for (final sort in sorts)
+              Tab(text: sort.name.isEmpty ? '默认' : sort.name),
+          ],
+        ),
+      ),
+    );
+  }
+
+  int _currentSortIndex(RssState state) {
+    final current = state.currentSort;
+    if (current == null) return 0;
+    final index = state.sorts.indexOf(current);
+    return index < 0 ? 0 : index;
+  }
+
+  // ===== 加载更多 =====
+
+  /// 触底检测：距底部 240dp 内触发加载下一页（通知器内部幂等防重）
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+    final position = _scrollController.position;
+    if (position.maxScrollExtent <= 0) return;
+    if (position.pixels >= position.maxScrollExtent - 240) {
+      ref.read(rssNotifierProvider.notifier).loadMore();
+    }
+  }
+
+  /// 列表底部加载更多指示（对齐原版 LoadMoreView：加载中 / 没有更多）
+  Widget _buildLoadMoreFooter(RssState state) {
+    final theme = Theme.of(context);
+    if (state.loadingMore) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              '加载中...',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    if (!state.hasMore) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        child: Center(
+          child: Text(
+            '没有更多了',
+            style: theme.textTheme.bodySmall?.copyWith(
+              color: theme.colorScheme.onSurfaceVariant,
+            ),
+          ),
+        ),
+      );
+    }
+    return const SizedBox(height: 16);
+  }
+
+  // ===== 页面 =====
+
+  /// 顶栏标题（对齐原版 `upFragmentsView`：搜索态显示关键词；
+  /// 单分类且分类名非空时显示分类名；否则显示源名）
+  String _screenTitle(RssState state) {
+    if (state.isSearching) return state.key!;
+    final sorts = state.sorts;
+    if (sorts.length == 1 && sorts.first.name.isNotEmpty) {
+      return sorts.first.name;
+    }
+    return widget.source.sourceName;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final state = ref.watch(rssNotifierProvider);
     final notifier = ref.read(rssNotifierProvider.notifier);
+    final hasSearch = (widget.source.searchUrl ?? '').trim().isNotEmpty;
+
+    // 刷新/加载更多失败：列表已有内容时用 SnackBar 提示（空列表由 ErrorView 呈现）
+    ref.listen<String?>(rssNotifierProvider.select((s) => s.error),
+        (previous, next) {
+      if (!mounted || next == null || next == previous) return;
+      if (ref.read(rssNotifierProvider).articles.isEmpty) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(next)),
+      );
+    });
+
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: Text(widget.source.sourceName),
+        title: Text(_screenTitle(state)),
         leading: IconButton(
           icon: const Icon(Symbols.arrow_back_ios_new_rounded),
+          tooltip: state.isSearching ? '退出搜索' : '返回',
           onPressed: () {
+            // 对齐原版返回键：搜索态先退出搜索，非搜索态返回列表
+            if (state.isSearching) {
+              notifier.clearSearch();
+              return;
+            }
             notifier.clearSelectedSource();
             Navigator.pop(context);
           },
         ),
+        // 分类 Tab：单分类隐藏
+        bottom: _buildSortTabs(state),
         actions: [
+          // 搜索入口：仅源配置 searchUrl 时显示（对齐 RssSortActivity.kt:271-284）
+          if (hasSearch)
+            IconButton(
+              icon: const Icon(Symbols.search_rounded),
+              tooltip: '搜索',
+              onPressed: _showSearchDialog,
+            ),
           IconButton(
             icon: const Icon(Symbols.refresh_rounded),
             tooltip: '刷新',
@@ -75,7 +272,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
           ),
           // [UI-fix v2.0.2 | 2026-08-06] 文章列表菜单（对标原版
           // rss_articles.xml：登录/刷新排序/设置源变量/编辑源/切换布局/
-          // 阅读记录/清空，不含搜索） — Qoder
+          // 阅读记录/清空；搜索入口另位于顶栏） — Qoder
           PopupMenuButton<String>(
             tooltip: '更多',
             onSelected: _handleMenu,
@@ -105,7 +302,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
           if (state.error != null && state.articles.isEmpty) {
             return ErrorView(
               message: state.error!,
-              onRetry: () => notifier.selectSource(widget.source),
+              onRetry: () => notifier.refreshArticles(),
             );
           }
 
@@ -122,33 +319,54 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
             onRefresh: () => notifier.refreshArticles(),
             child: _articleStyle == 0
                 ? ListView.separated(
+                    controller: _scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(),
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    itemCount: state.articles.length,
+                    // 末尾附加加载更多指示行（对齐原版 LoadMoreView）
+                    itemCount: state.articles.length + 1,
                     // iOS 风格：分隔线从文字列起始处缩进（16 边距 + 80 缩略图 + 12 间距）
-                    separatorBuilder: (c, i) =>
-                        const Divider(height: 1, indent: 108, endIndent: 16),
+                    separatorBuilder: (c, i) => i >= state.articles.length - 1
+                        ? const SizedBox.shrink()
+                        : const Divider(height: 1, indent: 108, endIndent: 16),
                     itemBuilder: (context, index) {
+                      if (index == state.articles.length) {
+                        return _buildLoadMoreFooter(state);
+                      }
                       final article = state.articles[index];
                       final isRead = _readArticles.contains(article.url);
                       return _buildArticleItem(context, article, isRead);
                     },
                   )
                 // [UI-fix v2.0.2 | 2026-08-06] 布局切换：双列网格渲染 — Qoder
-                : GridView.builder(
-                    padding: const EdgeInsets.all(12),
-                    gridDelegate:
-                        const SliverGridDelegateWithFixedCrossAxisCount(
-                          crossAxisCount: 2,
-                          mainAxisSpacing: 12,
-                          crossAxisSpacing: 12,
-                          childAspectRatio: 0.72,
+                : CustomScrollView(
+                    controller: _scrollController,
+                    physics: const AlwaysScrollableScrollPhysics(),
+                    slivers: [
+                      SliverPadding(
+                        padding: const EdgeInsets.all(12),
+                        sliver: SliverGrid(
+                          gridDelegate:
+                              const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 12,
+                            crossAxisSpacing: 12,
+                            childAspectRatio: 0.72,
+                          ),
+                          delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                              final article = state.articles[index];
+                              final isRead =
+                                  _readArticles.contains(article.url);
+                              return _buildGridItem(context, article, isRead);
+                            },
+                            childCount: state.articles.length,
+                          ),
                         ),
-                    itemCount: state.articles.length,
-                    itemBuilder: (context, index) {
-                      final article = state.articles[index];
-                      final isRead = _readArticles.contains(article.url);
-                      return _buildGridItem(context, article, isRead);
-                    },
+                      ),
+                      SliverToBoxAdapter(
+                        child: _buildLoadMoreFooter(state),
+                      ),
+                    ],
                   ),
           );
         },
@@ -297,6 +515,19 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
 
   // ===== [UI-fix v2.0.2 | 2026-08-06] 菜单处理（对标 rss_articles.xml）— Qoder =====
 
+  /// 搜索（对齐原版 menu_search 的 SearchView 提交：以源 searchUrl 搜索）
+  Future<void> _showSearchDialog() async {
+    final notifier = ref.read(rssNotifierProvider.notifier);
+    final submitted = await showDialog<String>(
+      context: context,
+      builder: (_) => _RssSearchDialog(
+        initialQuery: ref.read(rssNotifierProvider).key ?? '',
+      ),
+    );
+    if (submitted == null) return;
+    await notifier.search(submitted);
+  }
+
   /// 打开文章详情（同时经 rss FFI 标记已读）
   void _openDetail(RssFeedArticle article) {
     // [UI-fix v2.0.2 | 2026-08-06] 接通 rssMarkRead FFI（对标原版
@@ -322,7 +553,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
     ).then((_) {
       // 从详情返回列表时刷新一次：详情在途期间可能已回填正文/标记已读。
       // 注：列表无 DB-only 查询 FFI（getRssArticles 为网络刷新），故这里
-      // 按内存回填刷新；DB 真源由 Rust 写回，15d 补 DB 查询后改为重查。
+      // 按内存回填刷新；DB 真源由 Rust 写回。
       if (mounted) setState(() {});
     });
   }
@@ -422,9 +653,9 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
           ),
         );
       case 'refreshSort':
-        // 对标原版 menu_refresh_sort（清排序缓存后重建）；Flutter 端
-        // 无独立排序缓存，映射为重新拉取文章列表
-        ref.read(rssNotifierProvider.notifier).refreshArticles();
+        // 对标原版 menu_refresh_sort：清分类脚本缓存后重新解析分类，
+        // 再刷新当前分类列表（批15d 替代旧「重新拉列表」伪实现）
+        ref.read(rssNotifierProvider.notifier).refreshSorts();
       case 'setVariable':
         _showSetVariableDialog();
       case 'editSource':
@@ -569,7 +800,59 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen> {
       }
     }
   }
+}
 
+/// 搜索关键词输入对话框（对齐原版 `SearchView` 提交语义）
+///
+/// 自持有 [TextEditingController]，随对话框路由销毁而释放（避免在
+/// `showDialog` 返回后立即 dispose 导致退出动画期间使用已释放控制器）。
+class _RssSearchDialog extends StatefulWidget {
+  final String initialQuery;
+
+  const _RssSearchDialog({required this.initialQuery});
+
+  @override
+  State<_RssSearchDialog> createState() => _RssSearchDialogState();
+}
+
+class _RssSearchDialogState extends State<_RssSearchDialog> {
+  late final TextEditingController _controller =
+      TextEditingController(text: widget.initialQuery);
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() => Navigator.pop(context, _controller.text);
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('搜索'),
+      content: TextField(
+        controller: _controller,
+        autofocus: true,
+        textInputAction: TextInputAction.search,
+        decoration: const InputDecoration(
+          hintText: '输入搜索关键词',
+          border: OutlineInputBorder(),
+        ),
+        onSubmitted: (_) => _submit(),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('搜索'),
+        ),
+      ],
+    );
+  }
 }
 
 /// [UI-fix v2.0.2 | 2026-08-06] 阅读记录对话框（对标原版 ReadRecordDialog：

@@ -315,22 +315,16 @@ mixin RustApiSearchRss on RustApiDecode implements BookApi {
 
   /// 获取 RSS 文章列表（保留兼容；Rust 内部等价
   /// `rssRefreshArticles(sourceUrl, "", sourceUrl, null)`）
+  ///
+  /// 旧调用点（源编辑/调试页）继续使用；列表页走批15d 的
+  /// `rssSortUrls` + `rssRefreshArticles` 分类/分页链路。
   @override
   Future<List<RssFeedArticle>> getRssArticles(String sourceUrl) async {
     final json = await bridge.rssFetchArticles(sourceUrl: sourceUrl);
     final list = _decodeList(json, 'bookApi');
-    return list.map((e) {
-      final m = e as Map<String, dynamic>;
-      return RssFeedArticle(
-        title: m['title'] as String? ?? '',
-        url: m['link'] as String? ?? m['url'] as String? ?? '',
-        sort: m['sort'] as String? ?? '',
-        description: m['description'] as String?,
-        pubDate: m['pubDate'] as String?,
-        imageUrl: m['image'] as String? ?? m['imageUrl'] as String?,
-        content: m['content'] as String?,
-      );
-    }).toList();
+    return list
+        .map((e) => RssFeedArticle.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   /// 清空指定 RSS 源本地文章缓存

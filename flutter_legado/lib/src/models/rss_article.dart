@@ -29,4 +29,51 @@ class RssFeedArticle {
     this.imageUrl,
     this.content,
   });
+
+  /// 解析 Rust `RssArticleItem` / Mock 列表项（camelCase 字段）
+  ///
+  /// 字段口径见契约 §2.5：`link` 为文章链接（旧字段 `url` 兼容）、
+  /// `image` 为封面（旧字段 `imageUrl` 兼容）；类型安全显式转型。
+  factory RssFeedArticle.fromJson(Map<String, dynamic> json) {
+    return RssFeedArticle(
+      title: json['title'] as String? ?? '',
+      url: (json['link'] ?? json['url']) as String? ?? '',
+      sort: json['sort'] as String? ?? '',
+      description: json['description'] as String?,
+      pubDate: json['pubDate'] as String?,
+      imageUrl: (json['image'] ?? json['imageUrl']) as String?,
+      content: json['content'] as String?,
+    );
+  }
+}
+
+/// RSS 分类项（`sortUrl` 解析结果，契约 §2.5 `rssSortUrls`）
+///
+/// 对齐原版 `RssSortActivity` 的 `Pair<name, url>`：`name` 为分类显示名
+/// （默认分类/无配置时为空串），`url` 为分类列表请求地址。
+class RssSort {
+  final String name;
+  final String url;
+
+  const RssSort({required this.name, required this.url});
+
+  /// 解析 `[{"name","url"}]` 数组项（空值归一为空串）
+  factory RssSort.fromJson(Map<String, dynamic> json) {
+    return RssSort(
+      name: (json['name'] as String? ?? '').trim(),
+      url: (json['url'] as String? ?? '').trim(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {'name': name, 'url': url};
+
+  @override
+  bool operator ==(Object other) =>
+      other is RssSort && other.name == name && other.url == url;
+
+  @override
+  int get hashCode => Object.hash(name, url);
+
+  @override
+  String toString() => 'RssSort(name: $name, url: $url)';
 }

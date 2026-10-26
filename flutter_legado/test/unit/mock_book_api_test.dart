@@ -279,16 +279,36 @@ void main() {
       final refreshed =
           jsonDecode(await api.rssRefreshArticles(url, '默认', url)) as Map;
       expect((refreshed['articles'] as List).length, 5);
-      expect(refreshed['nextUrl'], isNull);
-      expect(refreshed['hasMore'], isFalse);
+      // 批15d Mock 对齐：第 1 页给出 nextUrl/hasMore，便于 UI 走通加载更多
+      expect(refreshed['nextUrl'], isNotNull);
+      expect(refreshed['hasMore'], isTrue);
       expect((refreshed['articles'] as List).first['origin'], url);
       expect((refreshed['articles'] as List).first['sort'], '默认');
+      expect(
+        (refreshed['articles'] as List).first['title'],
+        contains('默认'),
+      );
 
       final more = jsonDecode(
-        await api.rssLoadMoreArticles(url, '默认', 'mock://next', 2),
+        await api.rssLoadMoreArticles(
+          url,
+          '默认',
+          refreshed['nextUrl'] as String,
+          2,
+        ),
       ) as Map;
-      expect(more['articles'], isEmpty);
+      expect((more['articles'] as List).length, 5);
       expect(more['hasMore'], isFalse);
+      expect(more['nextUrl'], isNull);
+
+      // 搜索关键词进入 Mock 标题（UI 联调可区分搜索态）
+      final searched = jsonDecode(
+        await api.rssRefreshArticles(url, '搜索', url, key: '红'),
+      ) as Map;
+      expect(
+        (searched['articles'] as List).first['title'],
+        contains('搜索：红'),
+      );
 
       // 清缓存为 no-op（Mock 无缓存）
       await api.rssClearSortCache(url);

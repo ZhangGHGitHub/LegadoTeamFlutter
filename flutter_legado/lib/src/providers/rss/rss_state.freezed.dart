@@ -37,6 +37,27 @@ mixin _$RssState {
   /// 当前选中的分组筛选；null 表示「全部」
   String? get selectedGroup => throw _privateConstructorUsedError;
 
+  /// 当前源的分类列表（搜索态为单条「搜索」分类）
+  List<RssSort> get sorts => throw _privateConstructorUsedError;
+
+  /// 当前选中分类；null 表示尚未开始加载
+  RssSort? get currentSort => throw _privateConstructorUsedError;
+
+  /// 下一页地址（null/空表示没有下一页）
+  String? get nextUrl => throw _privateConstructorUsedError;
+
+  /// 是否还有下一页
+  bool get hasMore => throw _privateConstructorUsedError;
+
+  /// 是否正在加载下一页
+  bool get loadingMore => throw _privateConstructorUsedError;
+
+  /// 搜索关键词；null 表示非搜索态
+  String? get key => throw _privateConstructorUsedError;
+
+  /// 当前已加载到的页码（刷新后为 1）
+  int get page => throw _privateConstructorUsedError;
+
   @JsonKey(ignore: true)
   $RssStateCopyWith<RssState> get copyWith =>
       throw _privateConstructorUsedError;
@@ -54,7 +75,14 @@ abstract class $RssStateCopyWith<$Res> {
       bool isLoadingSources,
       bool isLoadingArticles,
       String? error,
-      String? selectedGroup});
+      String? selectedGroup,
+      List<RssSort> sorts,
+      RssSort? currentSort,
+      String? nextUrl,
+      bool hasMore,
+      bool loadingMore,
+      String? key,
+      int page});
 
   $RssSourceCopyWith<$Res>? get selectedSource;
 }
@@ -79,6 +107,13 @@ class _$RssStateCopyWithImpl<$Res, $Val extends RssState>
     Object? isLoadingArticles = null,
     Object? error = freezed,
     Object? selectedGroup = freezed,
+    Object? sorts = null,
+    Object? currentSort = freezed,
+    Object? nextUrl = freezed,
+    Object? hasMore = null,
+    Object? loadingMore = null,
+    Object? key = freezed,
+    Object? page = null,
   }) {
     return _then(_value.copyWith(
       sources: null == sources
@@ -109,6 +144,34 @@ class _$RssStateCopyWithImpl<$Res, $Val extends RssState>
           ? _value.selectedGroup
           : selectedGroup // ignore: cast_nullable_to_non_nullable
               as String?,
+      sorts: null == sorts
+          ? _value.sorts
+          : sorts // ignore: cast_nullable_to_non_nullable
+              as List<RssSort>,
+      currentSort: freezed == currentSort
+          ? _value.currentSort
+          : currentSort // ignore: cast_nullable_to_non_nullable
+              as RssSort?,
+      nextUrl: freezed == nextUrl
+          ? _value.nextUrl
+          : nextUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      hasMore: null == hasMore
+          ? _value.hasMore
+          : hasMore // ignore: cast_nullable_to_non_nullable
+              as bool,
+      loadingMore: null == loadingMore
+          ? _value.loadingMore
+          : loadingMore // ignore: cast_nullable_to_non_nullable
+              as bool,
+      key: freezed == key
+          ? _value.key
+          : key // ignore: cast_nullable_to_non_nullable
+              as String?,
+      page: null == page
+          ? _value.page
+          : page // ignore: cast_nullable_to_non_nullable
+              as int,
     ) as $Val);
   }
 
@@ -140,7 +203,14 @@ abstract class _$$RssStateImplCopyWith<$Res>
       bool isLoadingSources,
       bool isLoadingArticles,
       String? error,
-      String? selectedGroup});
+      String? selectedGroup,
+      List<RssSort> sorts,
+      RssSort? currentSort,
+      String? nextUrl,
+      bool hasMore,
+      bool loadingMore,
+      String? key,
+      int page});
 
   @override
   $RssSourceCopyWith<$Res>? get selectedSource;
@@ -164,6 +234,13 @@ class __$$RssStateImplCopyWithImpl<$Res>
     Object? isLoadingArticles = null,
     Object? error = freezed,
     Object? selectedGroup = freezed,
+    Object? sorts = null,
+    Object? currentSort = freezed,
+    Object? nextUrl = freezed,
+    Object? hasMore = null,
+    Object? loadingMore = null,
+    Object? key = freezed,
+    Object? page = null,
   }) {
     return _then(_$RssStateImpl(
       sources: null == sources
@@ -194,6 +271,34 @@ class __$$RssStateImplCopyWithImpl<$Res>
           ? _value.selectedGroup
           : selectedGroup // ignore: cast_nullable_to_non_nullable
               as String?,
+      sorts: null == sorts
+          ? _value._sorts
+          : sorts // ignore: cast_nullable_to_non_nullable
+              as List<RssSort>,
+      currentSort: freezed == currentSort
+          ? _value.currentSort
+          : currentSort // ignore: cast_nullable_to_non_nullable
+              as RssSort?,
+      nextUrl: freezed == nextUrl
+          ? _value.nextUrl
+          : nextUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      hasMore: null == hasMore
+          ? _value.hasMore
+          : hasMore // ignore: cast_nullable_to_non_nullable
+              as bool,
+      loadingMore: null == loadingMore
+          ? _value.loadingMore
+          : loadingMore // ignore: cast_nullable_to_non_nullable
+              as bool,
+      key: freezed == key
+          ? _value.key
+          : key // ignore: cast_nullable_to_non_nullable
+              as String?,
+      page: null == page
+          ? _value.page
+          : page // ignore: cast_nullable_to_non_nullable
+              as int,
     ));
   }
 }
@@ -208,9 +313,17 @@ class _$RssStateImpl implements _RssState {
       this.isLoadingSources = false,
       this.isLoadingArticles = false,
       this.error,
-      this.selectedGroup})
+      this.selectedGroup,
+      final List<RssSort> sorts = const [],
+      this.currentSort,
+      this.nextUrl,
+      this.hasMore = false,
+      this.loadingMore = false,
+      this.key,
+      this.page = 1})
       : _sources = sources,
-        _articles = articles;
+        _articles = articles,
+        _sorts = sorts;
 
   /// 全部 RSS 源列表
   final List<RssSource> _sources;
@@ -258,9 +371,48 @@ class _$RssStateImpl implements _RssState {
   @override
   final String? selectedGroup;
 
+  /// 当前源的分类列表（搜索态为单条「搜索」分类）
+  final List<RssSort> _sorts;
+
+  /// 当前源的分类列表（搜索态为单条「搜索」分类）
+  @override
+  @JsonKey()
+  List<RssSort> get sorts {
+    if (_sorts is EqualUnmodifiableListView) return _sorts;
+    // ignore: implicit_dynamic_type
+    return EqualUnmodifiableListView(_sorts);
+  }
+
+  /// 当前选中分类；null 表示尚未开始加载
+  @override
+  final RssSort? currentSort;
+
+  /// 下一页地址（null/空表示没有下一页）
+  @override
+  final String? nextUrl;
+
+  /// 是否还有下一页
+  @override
+  @JsonKey()
+  final bool hasMore;
+
+  /// 是否正在加载下一页
+  @override
+  @JsonKey()
+  final bool loadingMore;
+
+  /// 搜索关键词；null 表示非搜索态
+  @override
+  final String? key;
+
+  /// 当前已加载到的页码（刷新后为 1）
+  @override
+  @JsonKey()
+  final int page;
+
   @override
   String toString() {
-    return 'RssState(sources: $sources, articles: $articles, selectedSource: $selectedSource, isLoadingSources: $isLoadingSources, isLoadingArticles: $isLoadingArticles, error: $error, selectedGroup: $selectedGroup)';
+    return 'RssState(sources: $sources, articles: $articles, selectedSource: $selectedSource, isLoadingSources: $isLoadingSources, isLoadingArticles: $isLoadingArticles, error: $error, selectedGroup: $selectedGroup, sorts: $sorts, currentSort: $currentSort, nextUrl: $nextUrl, hasMore: $hasMore, loadingMore: $loadingMore, key: $key, page: $page)';
   }
 
   @override
@@ -278,7 +430,16 @@ class _$RssStateImpl implements _RssState {
                 other.isLoadingArticles == isLoadingArticles) &&
             (identical(other.error, error) || other.error == error) &&
             (identical(other.selectedGroup, selectedGroup) ||
-                other.selectedGroup == selectedGroup));
+                other.selectedGroup == selectedGroup) &&
+            const DeepCollectionEquality().equals(other._sorts, _sorts) &&
+            (identical(other.currentSort, currentSort) ||
+                other.currentSort == currentSort) &&
+            (identical(other.nextUrl, nextUrl) || other.nextUrl == nextUrl) &&
+            (identical(other.hasMore, hasMore) || other.hasMore == hasMore) &&
+            (identical(other.loadingMore, loadingMore) ||
+                other.loadingMore == loadingMore) &&
+            (identical(other.key, key) || other.key == key) &&
+            (identical(other.page, page) || other.page == page));
   }
 
   @override
@@ -290,7 +451,14 @@ class _$RssStateImpl implements _RssState {
       isLoadingSources,
       isLoadingArticles,
       error,
-      selectedGroup);
+      selectedGroup,
+      const DeepCollectionEquality().hash(_sorts),
+      currentSort,
+      nextUrl,
+      hasMore,
+      loadingMore,
+      key,
+      page);
 
   @JsonKey(ignore: true)
   @override
@@ -307,7 +475,14 @@ abstract class _RssState implements RssState {
       final bool isLoadingSources,
       final bool isLoadingArticles,
       final String? error,
-      final String? selectedGroup}) = _$RssStateImpl;
+      final String? selectedGroup,
+      final List<RssSort> sorts,
+      final RssSort? currentSort,
+      final String? nextUrl,
+      final bool hasMore,
+      final bool loadingMore,
+      final String? key,
+      final int page}) = _$RssStateImpl;
 
   @override
 
@@ -337,6 +512,34 @@ abstract class _RssState implements RssState {
 
   /// 当前选中的分组筛选；null 表示「全部」
   String? get selectedGroup;
+  @override
+
+  /// 当前源的分类列表（搜索态为单条「搜索」分类）
+  List<RssSort> get sorts;
+  @override
+
+  /// 当前选中分类；null 表示尚未开始加载
+  RssSort? get currentSort;
+  @override
+
+  /// 下一页地址（null/空表示没有下一页）
+  String? get nextUrl;
+  @override
+
+  /// 是否还有下一页
+  bool get hasMore;
+  @override
+
+  /// 是否正在加载下一页
+  bool get loadingMore;
+  @override
+
+  /// 搜索关键词；null 表示非搜索态
+  String? get key;
+  @override
+
+  /// 当前已加载到的页码（刷新后为 1）
+  int get page;
   @override
   @JsonKey(ignore: true)
   _$$RssStateImplCopyWith<_$RssStateImpl> get copyWith =>
