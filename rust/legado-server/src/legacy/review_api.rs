@@ -1099,8 +1099,7 @@ fn eval_legacy_review_script(
     // 覆写语义 browserPage = it）
     let browser_page = actions
         .iter()
-        .filter(|a| a.get("action").and_then(|v| v.as_str()) == Some("openBrowser"))
-        .last()
+        .rfind(|a| a.get("action").and_then(|v| v.as_str()) == Some("openBrowser"))
         .map(|a| LegacyBrowserPage {
             url: a
                 .get("url")
