@@ -338,6 +338,53 @@ void main() {
       expect(box.value?.path, r'C:\temp\ok.json');
     });
 
+    // [D4] 展示层最小映射：连接错误中文化，原始底层串作为次要行保留，
+    // 「复制错误」复制原文（排障信息不丢）
+    testWidgets('上传失败：连接错误映射中文并保留原始次要行', (tester) async {
+      final written = mockClipboard(tester);
+      api.uploadError = const BridgeError(
+        message:
+            'Network error: Request failed: connection refused (os error 111)',
+      );
+      final box = await openSheet(tester);
+
+      await tester.tap(find.text('上传直链'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('上传失败'), findsOneWidget);
+      // 主要行：中文映射（不再把 os error 111 直接抛给用户）
+      expect(find.text('无法连接服务器'), findsOneWidget);
+      // 次要行：原始底层串保留
+      expect(find.text('原始错误：'), findsOneWidget);
+      expect(find.textContaining('os error 111'), findsOneWidget);
+
+      await tester.tap(find.text('复制错误'));
+      await tester.pumpAndSettle();
+      expect(written.single, contains('os error 111'));
+
+      // 关闭 Sheet（失败态可取消）
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(box.value, isNull);
+    });
+
+    // [D4] 仅剥离 `FFI error:` 前缀（业务文案原样保留）
+    testWidgets('上传失败：剥离 FFI 前缀且与原文一致时不重复展示次要行', (
+      tester,
+    ) async {
+      api.uploadError = const BridgeError(
+        message: 'FFI error: 上传失败,{"error":"mock"}',
+      );
+      await openSheet(tester);
+
+      await tester.tap(find.text('上传直链'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('上传失败,{"error":"mock"}'), findsOneWidget);
+      expect(find.text('原始错误：'), findsOneWidget);
+      expect(find.textContaining('FFI error:'), findsOneWidget);
+    });
+
     testWidgets('上传成功：入参正确、展示 URL 与规则注释、可复制、完成回传', (
       tester,
     ) async {

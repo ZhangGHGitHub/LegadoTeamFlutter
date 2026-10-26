@@ -211,7 +211,13 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
 
   /// 失败环节与真实错误文本
   _FailureAction? _failedAction;
+
+  /// 面向用户的错误文案（已剥离 FFI 前缀 / 连接错误已映射，见 errorMessage）
   String? _error;
+
+  /// 原始错误文本（含 `FFI error:` / `os error 111` 等底层串，供次要行与
+  /// 「复制错误」排障）。与 [_error] 相同时不重复展示。
+  String? _errorDetail;
 
   /// 错误面板标题
   String get _errorTitle =>
@@ -341,6 +347,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
       _saving = true;
       _failedAction = null;
       _error = null;
+      _errorDetail = null;
     });
     String? path;
     try {
@@ -360,6 +367,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         _saving = false;
         _failedAction = _FailureAction.save;
         _error = errorMessage(e);
+        _errorDetail = errorDetailMessage(e);
       });
       return;
     }
@@ -392,6 +400,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
       _uploading = true;
       _failedAction = null;
       _error = null;
+      _errorDetail = null;
     });
     try {
       final rule = await _ruleService.getEffectiveRule();
@@ -415,6 +424,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         _uploading = false;
         _failedAction = _FailureAction.upload;
         _error = errorMessage(e);
+        _errorDetail = errorDetailMessage(e);
       });
     }
   }
@@ -621,9 +631,15 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     );
   }
 
-  /// 失败：真实错误文本（可复制/重试）
+  /// 失败：面向用户的错误文案 + 原始文本次要行（均可复制/重试）
+  ///
+  /// [errorMessage] 已剥离 `FFI error:` 前缀并把连接类底层错误映射为中文
+  /// （D4）；当原始文本与友好文案不同时，在其下以次要行保留原文（可长按
+  /// 复制，「复制错误」按钮也复制原文）供排障。
   Widget _buildErrorPanel(ThemeData theme) {
     final cs = theme.colorScheme;
+    final detail = _errorDetail;
+    final showDetail = detail != null && detail != _error;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -643,9 +659,32 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
             color: cs.errorContainer,
             borderRadius: BorderRadius.circular(12),
           ),
-          child: SelectableText(
-            _error!,
-            style: TextStyle(color: cs.onErrorContainer),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SelectableText(
+                _error!,
+                style: TextStyle(color: cs.onErrorContainer),
+              ),
+              if (showDetail) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '原始错误：',
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onErrorContainer.withValues(alpha: 0.7),
+                  ),
+                ),
+                const SizedBox(height: 2),
+                SelectableText(
+                  detail,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: cs.onErrorContainer.withValues(alpha: 0.8),
+                    fontFamily: 'Menlo',
+                    fontFamilyFallback: const ['Consolas', 'monospace'],
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ],
@@ -690,7 +729,8 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         children: [
           Expanded(
             child: OutlinedButton.icon(
-              onPressed: () => _copy(_error!),
+              // 复制原文（含底层错误码），排障信息最完整
+              onPressed: () => _copy(_errorDetail ?? _error!),
               icon: Icon(
                 _copied
                     ? Symbols.check_rounded

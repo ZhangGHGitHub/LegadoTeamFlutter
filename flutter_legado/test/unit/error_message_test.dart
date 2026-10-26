@@ -45,4 +45,50 @@ void main() {
       expect(kUnknownErrorMessage, isNot(contains('Instance of')));
     });
   });
+
+  // D4 最小映射：剥离底层前缀 + 连接类错误中文化（原始文本保留在
+  // errorDetailMessage，供失败面板次要行/复制排障）
+  group('errorMessage D4 展示层映射', () {
+    test('剥离 FFI error 前缀，业务文案原样保留', () {
+      const e = BridgeError(
+        message: 'FFI error: 上传失败,{"error": "mock upload failure"}',
+      );
+      expect(errorMessage(e), '上传失败,{"error": "mock upload failure"}');
+      expect(
+        errorDetailMessage(e),
+        'FFI error: 上传失败,{"error": "mock upload failure"}',
+      );
+    });
+
+    test('连接被拒绝（os error 111 / connection refused）→ 无法连接服务器', () {
+      const e = BridgeError(
+        message:
+            'Network error: Request failed: error sending request: connection '
+            'refused (os error 111)',
+      );
+      expect(errorMessage(e), kConnectionRefusedMessage);
+      expect(errorMessage(e), '无法连接服务器');
+      expect(errorDetailMessage(e), contains('os error 111'));
+    });
+
+    test('无需映射的普通错误保持原样', () {
+      expect(errorMessage(const BridgeError(message: '状态码 500')), '状态码 500');
+      final raw = StateError('内部错误');
+      expect(errorMessage(raw), raw.toString());
+      expect(errorDetailMessage(raw), raw.toString());
+    });
+
+    test('重复前缀与中英文冒号均可剥离', () {
+      expect(
+        friendlyErrorMessage('FFI error: Network error：connection refused'),
+        kConnectionRefusedMessage,
+      );
+      expect(friendlyErrorMessage('FFI error: FFI error: 操作失败'), '操作失败');
+      expect(
+        friendlyErrorMessage('Network error: Request failed: builder error'),
+        'Request failed: builder error',
+      );
+      expect(friendlyErrorMessage('  '), kUnknownErrorMessage);
+    });
+  });
 }
