@@ -224,6 +224,55 @@ mod tests {
         assert_eq!(merged[0]["id"], "new1");
     }
 
+    /// P1-3 回归：Dart 传入的 locals 是 camelCase（AutoTaskRule 模型序列化），
+    /// 必须保留 customOrder / lastRunAt 等运行时状态，不能被清零后 REPLACE 覆盖。
+    #[test]
+    fn test_prepare_imported_tasks_camel_case_locals_preserve_runtime_state() {
+        // 与 Dart `AutoTaskRule.toJson()` 同形（camelCase）
+        let local_json = r#"[{
+            "id": "task-1",
+            "name": "本地任务",
+            "enable": true,
+            "cron": "*/30 * * * *",
+            "script": "print(1)",
+            "customOrder": 5,
+            "lastRunAt": 1712345678901,
+            "lastResult": "成功",
+            "lastError": null,
+            "lastLog": "日志"
+        }]"#;
+        let imported_json = r#"[{"id":"task-1","name":"导入任务","enable":false,"cron":"0 8 * * *","script":"print(2)"}]"#;
+        let merged = prepare_imported_tasks(local_json, imported_json).unwrap();
+        assert_eq!(merged.len(), 1);
+        let item = &merged[0];
+        assert_eq!(item["customOrder"], 5, "本地 customOrder 必须保留: {item}");
+        assert_eq!(
+            item["lastRunAt"], 1712345678901_i64,
+            "本地 lastRunAt 必须保留: {item}"
+        );
+        assert_eq!(item["lastResult"], "成功");
+        assert_eq!(item["lastLog"], "日志");
+        // 导入内容（配置字段）以导入数据为准
+        assert_eq!(item["name"], "导入任务");
+        assert_eq!(item["enable"], false);
+    }
+
+    /// P1-3 回归：snake_case 历史 locals 仍可读取（alias 兼容）
+    #[test]
+    fn test_prepare_imported_tasks_snake_case_locals_compatible() {
+        let local_json = r#"[{
+            "id": "legacy-1",
+            "name": "旧本地任务",
+            "custom_order": 9,
+            "last_run_at": 111,
+            "last_result": "旧"
+        }]"#;
+        let imported_json = r#"[{"id":"legacy-1","name":"导入","script":"x"}]"#;
+        let merged = prepare_imported_tasks(local_json, imported_json).unwrap();
+        assert_eq!(merged[0]["customOrder"], 9);
+        assert_eq!(merged[0]["lastRunAt"], 111);
+    }
+
     #[test]
     fn test_execute_task() {
         let protocol = TaskProtocol::refresh_toc("http://book/1");

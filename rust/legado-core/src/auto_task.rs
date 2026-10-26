@@ -357,7 +357,13 @@ impl AutoTaskSchedulePolicy {
 }
 
 /// 自动任务规则（对应 Kotlin AutoTaskRule 实体）
+///
+/// **P1-3**：FFI 边界（Dart 模型 / `legado_core::models::AutoTaskRule`）统一为
+/// camelCase，本结构序列化同形；反序列化保留 snake_case alias，兼容本仓历史
+/// JSON 与内部日志。此前缺 rename 导致 `prepare_imported_tasks` 把 Dart 传入的
+/// `customOrder` / `lastRunAt` 读丢（清零后 REPLACE 覆盖丢运行历史）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AutoTaskRule {
     pub id: String,
     pub name: String,
@@ -366,12 +372,15 @@ pub struct AutoTaskRule {
     pub cron: Option<String>,
     #[serde(default)]
     pub script: String,
-    #[serde(default)]
+    #[serde(default, alias = "custom_order")]
     pub custom_order: i32,
-    #[serde(default)]
+    #[serde(default, alias = "last_run_at")]
     pub last_run_at: i64,
+    #[serde(default, alias = "last_result")]
     pub last_result: Option<String>,
+    #[serde(default, alias = "last_error")]
     pub last_error: Option<String>,
+    #[serde(default, alias = "last_log")]
     pub last_log: Option<String>,
 }
 
@@ -1202,6 +1211,48 @@ mod tests {
     fn test_protocol_backup() {
         let p = TaskProtocol::backup();
         assert_eq!(p.action, TaskAction::Backup);
+    }
+
+    /// P1-3：AutoTaskRule 序列化 camelCase，反序列化兼容 snake_case alias
+    #[test]
+    fn test_auto_task_rule_camel_case_serde_with_snake_alias() {
+        let camel = r#"{
+            "id": "t1",
+            "name": "任务",
+            "enable": false,
+            "cron": "0 8 * * *",
+            "script": "x",
+            "customOrder": 7,
+            "lastRunAt": 12345,
+            "lastResult": "ok",
+            "lastError": "err",
+            "lastLog": "log"
+        }"#;
+        let rule: AutoTaskRule = serde_json::from_str(camel).expect("camelCase 应解析");
+        assert_eq!(rule.custom_order, 7);
+        assert_eq!(rule.last_run_at, 12345);
+        assert_eq!(rule.last_result.as_deref(), Some("ok"));
+        assert_eq!(rule.last_error.as_deref(), Some("err"));
+        assert_eq!(rule.last_log.as_deref(), Some("log"));
+
+        // 序列化同形 camelCase
+        let value = serde_json::to_value(&rule).unwrap();
+        assert_eq!(value["customOrder"], 7);
+        assert_eq!(value["lastRunAt"], 12345);
+        assert!(value.get("custom_order").is_none());
+
+        // snake_case 历史 JSON 仍可读
+        let snake = r#"{
+            "id": "t2",
+            "name": "旧任务",
+            "custom_order": 3,
+            "last_run_at": 999,
+            "last_result": "旧结果"
+        }"#;
+        let rule: AutoTaskRule = serde_json::from_str(snake).expect("snake_case 应解析");
+        assert_eq!(rule.custom_order, 3);
+        assert_eq!(rule.last_run_at, 999);
+        assert_eq!(rule.last_result.as_deref(), Some("旧结果"));
     }
 
     #[test]
