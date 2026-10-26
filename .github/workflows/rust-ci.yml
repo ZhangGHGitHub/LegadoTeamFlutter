@@ -43,6 +43,11 @@ jobs:
       - name: Cargo test (quickjs)
         working-directory: rust
         run: cargo test -p legado-js --features quickjs
+      # [批15b 审查 P2-9] fetcher 的 RSS 规则解析/sortUrl 脚本求值是 quickjs 门控代码，
+      # 默认档覆盖不到；补 quickjs 测试档，避免 CI 漏测。
+      - name: Cargo test legado-fetcher (quickjs)
+        working-directory: rust
+        run: cargo test -p legado-fetcher --features quickjs
       - name: Cargo test legado-ffi full (quickjs)
         working-directory: rust
         run: cargo test -p legado-ffi --features quickjs

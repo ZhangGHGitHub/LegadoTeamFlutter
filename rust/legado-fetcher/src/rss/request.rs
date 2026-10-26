@@ -20,7 +20,10 @@
 //!   [`crate::web_book::strip_proxy_header`] 剔除该键（大小写不敏感），
 //!   既保证代理生效、也保证凭据绝不出网；
 //! - 发送走 [`crate::analyze_request::send_text`]，`followRedirects` / `retry`
-//!   语义与书源搜索、正文一致（`data:` URI 亦沿用该模块的本地解码短路）。
+//!   语义与书源搜索、正文一致（`data:` URI 亦沿用该模块的本地解码短路）；
+//! - **登录头同源门控**（2026-10-26 审查 P1-2）：`loginHeader_<url>` 仅在
+//!   请求 URL 与 `sourceUrl` 同源（scheme + host + port）时合并；跨域
+//!   `nextUrl` / 分类 `sortUrl` 绝不携带登录凭据，见 [`is_same_origin`]。
 //!
 //! 批15b 起在此扩展：`sortUrl` 分类解析、`ruleNextPage` 分页、`loginCheckJs`。
 
@@ -47,9 +50,10 @@ pub struct RssListResponse {
 
 /// 源静态 header（JSON map）→ 请求头（含 CookieJar 写侧门控标记）
 ///
-/// 对齐原版 `BaseSource.getHeaderMap()`：仅解析源静态 `header` 字段；
-/// `hasLoginHeader = false`（`Rss.kt:56` 构造 AnalyzeUrl 时传 `false`，
-/// 登录头合并属批15b）。
+/// 对齐原版 `BaseSource.getHeaderMap()`：仅解析源静态 `header` 字段，
+/// 不含登录头（等价原版 `Rss.kt:56` 构造 AnalyzeUrl 时的
+/// `hasLoginHeader = false`）；登录头由 [`source_headers_with_login`]
+/// 在**同源门控通过后**合并。
 ///
 /// header 非法 JSON 时按空处理（与书源 `parse_source_headers` 同口径）；
 /// `enabledCookieJar == Some(true)` 补 [`legado_net::COOKIE_JAR_HEADER`] 标记，
@@ -66,10 +70,14 @@ pub fn source_headers(source: &RssSource) -> Option<HashMap<String, String>> {
 /// 2. 再合并 `loginHeader_<sourceUrl>`（覆盖同名键，对齐原版 `putAll` 顺序）；
 /// 3. 最后补 CookieJar 写侧门控标记（只补不覆盖）。
 ///
+/// **同源门控（2026-10-26 审查 P1-2）**：`login_header_json` 由调用方
+/// 按 [`is_same_origin`] 判定后再传入（跨域 `nextUrl` 传 `None`），
+/// 本函数自身不再判断目标站点——保证「登录头只在源自身站点出网」。
+///
 /// **已登记超集**：原版 `Rss.kt:56` 构造 `AnalyzeUrl` 时传
 /// `hasLoginHeader = false`，即 RSS 列表请求不合并登录头；批15b 按任务
-/// 要求合并（登录后列表请求需携带登录态），差异登记于
-/// `docs/API_CONTRACT.md` §2.5 批15b 注。
+/// 要求合并（登录后列表请求需携带登录态），且收敛为**仅同源附加**
+/// （跨域不外发），差异登记于 `docs/API_CONTRACT.md` §2.5 批15b 注。
 pub fn source_headers_with_login(
     source: &RssSource,
     login_header_json: Option<&str>,
@@ -94,6 +102,64 @@ pub fn source_headers_with_login(
     } else {
         Some(headers)
     }
+}
+
+/// 判断请求 URL 与源 URL 是否同源（scheme + host + port 全等）
+///
+/// 登录凭据（`loginHeader_<url>` 中的 Authorization/Cookie 等）只允许发往
+/// 源自身站点：RSS `ruleNextPage` / 分类 `sortUrl` 可以指向第三方域名，
+/// 跨域请求一律不附加登录头（2026-10-26 审查 P1-2，收敛方向对齐原版
+/// `Rss.kt:56 hasLoginHeader = false`）。
+///
+/// 端口按 scheme 默认值归一（`http` → 80、`https` → 443），显式写默认端口
+/// 与省略端口视为同源；scheme/host 大小写不敏感。无法解析为绝对 URL
+/// （`data:` URI、相对路径、畸形串）时返回 `false`——宁可不发凭据。
+pub fn is_same_origin(request_url: &str, source_url: &str) -> bool {
+    match (origin_of(request_url), origin_of(source_url)) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
+/// 提取 `(scheme, host, 有效端口)`；scheme/host 小写归一
+fn origin_of(url: &str) -> Option<(String, String, u16)> {
+    let url = url.trim();
+    let sep = url.find("://")?;
+    let scheme = url[..sep].to_ascii_lowercase();
+    let rest = &url[sep + 3..];
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    // 丢弃 userinfo（`user:pass@host:port`）
+    let host_port = authority.rsplit('@').next().unwrap_or(authority);
+    if host_port.is_empty() {
+        return None;
+    }
+    let (host, port_str) = if let Some(after_bracket) = host_port.strip_prefix('[') {
+        // IPv6 字面量：`[::1]:8080`
+        let close = after_bracket.find(']')?;
+        (
+            host_port[..close + 2].to_string(),
+            host_port[close + 2..].strip_prefix(':'),
+        )
+    } else {
+        match host_port.rsplit_once(':') {
+            Some((h, p)) => (h.to_string(), Some(p)),
+            None => (host_port.to_string(), None),
+        }
+    };
+    if host.is_empty() {
+        return None;
+    }
+    let port = match port_str {
+        Some(p) if !p.is_empty() => p.parse::<u16>().ok()?,
+        _ => match scheme.as_str() {
+            "http" => 80,
+            "https" => 443,
+            // 其他 scheme 未显式给端口时无法定义默认值 → 不同源
+            _ => return None,
+        },
+    };
+    Some((scheme, host.to_ascii_lowercase(), port))
 }
 
 /// 构造列表请求（对齐原版 `AnalyzeUrl(sortUrl, page, key, baseUrl = sourceUrl)`）
@@ -236,6 +302,48 @@ mod tests {
             ..legado_net::LegadoClientConfig::default()
         })
         .expect("test http client")
+    }
+
+    /// 同源判定：scheme + host + 有效端口全等才算同源；
+    /// 跨域 / 跨端口 / 跨 scheme / 非绝对 URL 一律不同源（不附加登录头）
+    #[test]
+    fn same_origin_requires_scheme_host_and_port() {
+        assert!(is_same_origin(
+            "https://example.com/feed?p=2",
+            "https://example.com/feed"
+        ));
+        assert!(
+            is_same_origin("https://example.com:443/feed", "https://EXAMPLE.com/feed"),
+            "显式默认端口与省略端口等价，host 大小写不敏感"
+        );
+        assert!(
+            is_same_origin("http://127.0.0.1:8080/a", "http://127.0.0.1:8080/"),
+            "同 host 同端口"
+        );
+        assert!(
+            !is_same_origin("https://other.example.com/feed", "https://example.com/feed"),
+            "跨主机不得同源"
+        );
+        assert!(
+            !is_same_origin("http://127.0.0.1:9090/a", "http://127.0.0.1:8080/"),
+            "同 host 不同端口是不同源"
+        );
+        assert!(
+            !is_same_origin("http://example.com/feed", "https://example.com/feed"),
+            "跨 scheme 不得同源"
+        );
+        assert!(
+            is_same_origin("http://[::1]:8080/a", "http://[::1]:8080/b"),
+            "IPv6 字面量"
+        );
+        assert!(
+            !is_same_origin("data:text/plain,hi", "https://example.com/feed"),
+            "非绝对 URL 解析失败 → 不同源"
+        );
+        assert!(
+            !is_same_origin("/relative?p=2", "https://example.com/feed"),
+            "相对路径解析失败 → 不同源"
+        );
     }
 
     /// `strip_proxy_header` 大小写不敏感：`proxy` / `Proxy` / `PROXY` 全部剔除，

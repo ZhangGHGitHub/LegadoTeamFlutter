@@ -188,7 +188,7 @@ pub fn evaluate_sort_script(
         Err(e) => {
             // 对齐原版 `runCatching { ... }.getOrNull()`：求值失败静默回退，
             // 仅保留诊断日志（失败结果不写缓存）。
-            eprintln!("[rss] sortUrl 脚本求值失败（{}）: {e}", source.source_url);
+            log::warn!("[rss] sortUrl 脚本求值失败（{}）: {e}", source.source_url);
             None
         }
     }

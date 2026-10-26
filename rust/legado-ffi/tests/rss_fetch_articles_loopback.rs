@@ -20,9 +20,11 @@
 //! （`RssParserByRule.kt:32-41` body 空白抛错；`RssParserDefault.kt` 只认 item）。
 
 use std::io::{Read, Write};
-use std::net::TcpListener;
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 /// 回环服务器返回的标准 RSS 2.0（含封面图 / 正文 / 日期）
 const RSS_BODY: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -83,57 +85,110 @@ fn read_request_head(stream: &mut std::net::TcpStream) -> String {
     String::from_utf8_lossy(&head).into_owned()
 }
 
-/// 启动回环 HTTP 服务器：服务 `requests` 次请求后退出；返回端口与请求头日志
-fn spawn_loopback_server(requests: usize) -> (u16, Arc<Mutex<Vec<String>>>) {
-    let listener = TcpListener::bind("127.0.0.1:0").expect("绑定回环端口");
-    let port = listener.local_addr().expect("读取端口").port();
-    let heads = Arc::new(Mutex::new(Vec::new()));
-    let heads_thread = Arc::clone(&heads);
+/// 回环服务器句柄（审查 P2-8：循环 accept + Drop 关闭，替代固定请求数）
+///
+/// 固定次数版本的隐患：断言提前失败时线程永久阻塞在 `accept`；重试逻辑
+/// 多发一次请求时客户端挂起到超时。现改为句柄析构时关闭，且每个连接设
+/// 读超时，请求数与断言解耦。
+struct LoopbackServer {
+    addr: SocketAddr,
+    heads: Arc<Mutex<Vec<String>>>,
+    shutdown: Arc<AtomicBool>,
+    handle: Option<std::thread::JoinHandle<()>>,
+}
 
-    std::thread::spawn(move || {
-        // `/multi` 按请求顺序返回 v1 / v2（同源同 link，模拟 feed 更新）
-        let mut multi_hits = 0usize;
-        for _ in 0..requests {
-            let Ok((mut stream, _)) = listener.accept() else {
-                return;
-            };
-            let head = read_request_head(&mut stream);
-            let path = head
-                .lines()
-                .next()
-                .unwrap_or_default()
-                .split_whitespace()
-                .nth(1)
-                .unwrap_or_default()
-                .to_string();
-            let (status, body) = match path.as_str() {
-                "/feed" => ("200 OK", RSS_BODY),
-                "/multi" => {
-                    let body = if multi_hits == 0 {
-                        RSS_MULTI_V1
-                    } else {
-                        RSS_MULTI_V2
-                    };
-                    multi_hits += 1;
-                    ("200 OK", body)
+impl LoopbackServer {
+    fn spawn() -> Self {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("绑定回环端口");
+        let addr = listener.local_addr().expect("读取端口");
+        let heads = Arc::new(Mutex::new(Vec::new()));
+        let shutdown = Arc::new(AtomicBool::new(false));
+        let heads_thread = Arc::clone(&heads);
+        let shutdown_thread = Arc::clone(&shutdown);
+
+        let handle = std::thread::spawn(move || {
+            // `/multi` 按请求顺序返回 v1 / v2（同源同 link，模拟 feed 更新）
+            let mut multi_hits = 0usize;
+            while !shutdown_thread.load(Ordering::SeqCst) {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    break;
+                };
+                // Drop 唤醒连接：只看关闭标记，不读请求
+                if shutdown_thread.load(Ordering::SeqCst) {
+                    break;
                 }
-                "/html" => ("200 OK", "<html><body>不是 feed</body></html>"),
-                "/empty" => ("200 OK", ""),
-                _ => ("404 Not Found", ""),
-            };
-            heads_thread.lock().unwrap().push(head);
-            let response = format!(
-                "HTTP/1.1 {status}\r\nContent-Type: application/rss+xml; charset=utf-8\r\n\
-                 Content-Length: {}\r\nConnection: close\r\n\r\n{}",
-                body.len(),
-                body
-            );
-            let _ = stream.write_all(response.as_bytes());
-            let _ = stream.flush();
-        }
-    });
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
+                let head = read_request_head(&mut stream);
+                if head.is_empty() {
+                    continue;
+                }
+                let path = head
+                    .lines()
+                    .next()
+                    .unwrap_or_default()
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or_default()
+                    .to_string();
+                let (status, body) = match path.as_str() {
+                    "/feed" => ("200 OK", RSS_BODY),
+                    "/multi" => {
+                        let body = if multi_hits == 0 {
+                            RSS_MULTI_V1
+                        } else {
+                            RSS_MULTI_V2
+                        };
+                        multi_hits += 1;
+                        ("200 OK", body)
+                    }
+                    "/html" => ("200 OK", "<html><body>不是 feed</body></html>"),
+                    "/empty" => ("200 OK", ""),
+                    _ => ("404 Not Found", ""),
+                };
+                heads_thread.lock().unwrap().push(head);
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/rss+xml; charset=utf-8\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
 
-    (port, heads)
+        Self {
+            addr,
+            heads,
+            shutdown,
+            handle: Some(handle),
+        }
+    }
+
+    fn base_url(&self) -> String {
+        format!("http://{}", self.addr)
+    }
+
+    /// 最早的请求头快照（`/feed` 首个请求）
+    fn first_head(&self) -> String {
+        self.heads
+            .lock()
+            .unwrap()
+            .first()
+            .cloned()
+            .unwrap_or_default()
+    }
+}
+
+impl Drop for LoopbackServer {
+    fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::SeqCst);
+        // 唤醒阻塞在 accept 的线程（连接本身不读不写）
+        let _ = TcpStream::connect(self.addr);
+        if let Some(handle) = self.handle.take() {
+            let _ = handle.join();
+        }
+    }
 }
 
 /// 直接读 rssArticles（绕过仓储读路径，验证真实落库）
@@ -182,8 +237,8 @@ fn fetch_rss_articles_loopback_end_to_end() {
     legado_ffi::ffi::ffi::init().expect("ffi init（tokio runtime）");
     legado_ffi::ffi::ffi::db_open(db_path.to_string_lossy().into_owned()).expect("db_open");
 
-    let (port, heads) = spawn_loopback_server(5);
-    let base = format!("http://127.0.0.1:{port}");
+    let server = LoopbackServer::spawn();
+    let base = server.base_url();
 
     // ---- 1) 真实 RSS：解析 + header 透传 + 落库 ----
     let feed_url = format!("{base}/feed");
@@ -219,8 +274,8 @@ fn fetch_rss_articles_loopback_end_to_end() {
 
     // 请求头：源静态 header 透传；CookieJar 标记头只作内部门控、不得出网
     {
-        let heads = heads.lock().unwrap();
-        let head = heads.first().expect("至少 1 次请求");
+        let head = server.first_head();
+        assert!(!head.is_empty(), "至少 1 次请求");
         let lower = head.to_ascii_lowercase();
         assert!(lower.contains("x-rss-test: 1"), "源 header 应透传: {head}");
         assert!(

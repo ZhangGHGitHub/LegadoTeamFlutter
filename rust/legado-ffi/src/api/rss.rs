@@ -405,12 +405,24 @@ pub fn rss_refresh_articles(
 ///
 /// 对齐 `RssArticlesViewModel.loadMore` + `loadMoreSuccess`
 /// （`RssArticlesViewModel.kt:107-166`）：
+/// 0. **空/空白 `nextUrl` → 直接返回 `{articles:[],nextUrl:"",hasMore:false}`**
+///    （审查 P2-4：无翻页目标，不发请求、不查库）；
 /// 1. 请求 `nextUrl`、页码取当前页 + 1（调用方传入）；
 /// 2. 本页**首条与末条**均已在库 → 判到底，不写库；
 /// 3. 否则 `order` 续接该 `(origin, sort)` 最小 order 递减（原版 VM 的
 ///    `order` 字段跨页递减；本 FFI 无会话状态，从 DB 水位反推），
 ///    `INSERT OR IGNORE` 追加（已存在行保持原 order）；
 /// 4. `hasMore = 实际追加 && nextUrl 非空`。
+///
+/// ## 已登记差异：`order` 水位（审查 P2-5）
+///
+/// 原版 `order` 是 VM 会话字段：刷新时取 `System.currentTimeMillis()`，
+/// 翻页时在同一次会话内继续递减；**进程重启后**再次翻页会从新的当前毫秒
+/// 重新计数（新页可能排到旧页之前）。本实现无会话状态，每次翻页都以
+/// `min(order) - 1` 续接，保证新页始终排在旧页之后。对「部分重叠页」
+/// （本页首条已存在、末条为新）两种口径结果一致：已存在条目 `IGNORE`
+/// 保持原 order，新条目接在水位之下（用例见
+/// `tests/rss_rule_pagination_loopback.rs` 的 `/list?p=4` 场景）。
 pub fn rss_load_more_articles(
     source_url: &str,
     sort_name: &str,
@@ -418,6 +430,17 @@ pub fn rss_load_more_articles(
     page: u32,
     key: Option<&str>,
 ) -> LegadoResult<String> {
+    // [审查 P2-4] 空/空白 nextUrl：无翻页目标，直接返回空页载荷，
+    // 不发网络请求、不触碰 DB（源不存在也按空页处理）
+    if next_url.trim().is_empty() {
+        let payload = serde_json::json!({
+            "articles": [],
+            "nextUrl": "",
+            "hasMore": false,
+        });
+        return serde_json::to_string(&payload)
+            .map_err(|e| LegadoError::Ffi(format!("RSS 空页载荷序列化失败: {e}")));
+    }
     let source =
         load_rss_source(source_url)?.ok_or_else(|| LegadoError::Database("RSS 源不存在".into()))?;
     let fetched = fetch_rss_page(&source, sort_name, next_url, Some(page.max(1)), key)?;
@@ -535,6 +558,21 @@ fn row_to_rss_source(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssSource> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 审查 P2-4：空/空白 `nextUrl` 直接返回空页载荷（`nextUrl` 为空串），
+    /// 不发请求、不查库（源不存在也不报错）
+    #[test]
+    fn rss_load_more_blank_next_url_returns_empty_page() {
+        for blank in ["", "   ", "\r\n"] {
+            let json =
+                rss_load_more_articles("https://rss-blank.example.com/missing", "", blank, 2, None)
+                    .unwrap_or_else(|e| panic!("空白 nextUrl 不应失败（{blank:?}）: {e}"));
+            let value: serde_json::Value = serde_json::from_str(&json).expect("解析载荷");
+            assert_eq!(value["articles"], serde_json::json!([]), "{blank:?}");
+            assert_eq!(value["nextUrl"], "", "空白 nextUrl 归一为空串: {json}");
+            assert_eq!(value["hasMore"], false, "{blank:?}");
+        }
+    }
 
     #[test]
     fn add_rss_source_persists_group_and_single_url() {

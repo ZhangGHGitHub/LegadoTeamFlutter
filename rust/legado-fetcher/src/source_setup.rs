@@ -392,6 +392,13 @@ if (typeof setArguments === 'function') {{
 ///
 /// 不包含书源专属的 `book` / `infoMap` / `host` / header 规则求值——
 /// RSS 列表规则无这些绑定面。
+///
+/// **已知限制（审查 P2-7）**：脚本内 `put` / `get` 绑定是**单次 JS 执行的
+/// 进程内变量表**，因此 `source.putLoginHeader` / `source.putLoginInfo`
+/// 只写内存、**不回写 DB**（原版写 `CacheManager`：`loginHeader_<url>` /
+/// `userInfo_<url>`）。RSS 登录 UI 尚未接线（批15d/15f）；接线时必须在这两个
+/// 写入点补 `sync_login_cache_from_js`，把 JS 侧登录态落库，否则登录成功后
+/// 下一条列表请求读不到登录头。
 pub fn rss_source_js_setup_script(
     source: &RssSource,
     login_header: Option<&str>,
@@ -438,6 +445,9 @@ function __mountRssSourceApi(obj) {{
     var v = get(__rssLoginHeaderKey());
     return v ? String(v) : null;
   }};
+  // 审查 P2-7：get/put 是单次 JS 执行的进程内变量表，putLoginHeader/putLoginInfo
+  // 只写内存、不回写 DB。RSS 登录 UI 未接线（15d/15f 接线时在此补
+  // sync_login_cache_from_js，把 loginHeader_/userInfo_ 落库）。
   obj.putLoginHeader = function(header) {{
     put(__rssLoginHeaderKey(), String(header));
     try {{

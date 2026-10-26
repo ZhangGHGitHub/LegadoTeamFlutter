@@ -1936,6 +1936,7 @@ dependencies = [
  "legado-js",
  "legado-net",
  "legado-parser",
+ "log",
  "md5",
  "regex",
  "serde",

@@ -54,10 +54,11 @@ pub use sort_urls::RssSortUrl;
 /// - `sort_name`：分类名（`parse_sort_urls` 的空值回退为 `""`）；
 /// - `sort_url`：列表请求 URL（`AnalyzeUrl(sortUrl, page, key, baseUrl=sourceUrl)`）；
 /// - `page` / `key`：`AnalyzeUrl` 模板变量（刷新 `Some(1)`，翻页为下一页页码）；
-/// - `login_header_json`：宿主从 DB 读取的 `loginHeader_<sourceUrl>`（合并进
-///   请求头并预置到 RSS setup 脚本；`None` = 未登录）；
-/// - `login_info_json`：宿主从 DB 读取的 `userInfo_<sourceUrl>`（仅预置到
-///   RSS setup 脚本，供 `source.getLoginInfo()` 使用）。
+/// - `login_header_json`：宿主从 DB 读取的 `loginHeader_<sourceUrl>`
+///   （**仅同源请求**合并进请求头并预置到 RSS setup 脚本；`None` = 未登录；
+///   跨域 `nextUrl` 不附加，见 [`request::is_same_origin`]）；
+/// - `login_info_json`：宿主从 DB 读取的 `userInfo_<sourceUrl>`（同样仅同源
+///   请求预置到 RSS setup 脚本，供 `source.getLoginInfo()` 使用）。
 ///
 /// 错误语义：
 /// - HTTP 非 2xx → 先走 `loginCheckJs` 错误路径（二次 eval 可放行），否则 `Err`
@@ -101,16 +102,27 @@ pub async fn fetch_articles(
     login_header_json: Option<&str>,
     login_info_json: Option<&str>,
 ) -> LegadoResult<RssListPage> {
-    // 批15b：源静态 header + loginHeader_<url> 合并（登录头覆盖同名键）
-    let headers = request::source_headers_with_login(source, login_header_json);
+    // 批15b：先展开请求 URL（URL 模板与 header 无关），再做同源门控——
+    // 登录头 / 用户信息只在请求 URL 与 sourceUrl 同源（scheme+host+port）时附加，
+    // 跨域 nextUrl（第三方跳转/聚合外链）绝不外发登录凭据（审查 P1-2）。
+    let probe_url = request::build_list_analyze_url(sort_url, page, key, &source.source_url, None)
+        .url()
+        .to_string();
+    let same_origin = request::is_same_origin(&probe_url, &source.source_url);
+    let effective_login_header = login_header_json.filter(|_| same_origin);
+    let effective_login_info = login_info_json.filter(|_| same_origin);
+    // 源静态 header + 同源登录头合并（登录头覆盖同名键）
+    let headers = request::source_headers_with_login(source, effective_login_header);
     let analyze_url =
         request::build_list_analyze_url(sort_url, page, key, &source.source_url, headers.clone());
-    // RSS 源 JS 最小绑定（ruleArticles/loginCheckJs 的 @js:/<js> 可用 source/java）
+    // RSS 源 JS 最小绑定（ruleArticles/loginCheckJs 的 @js:/<js> 可用 source/java；
+    // 登录缓存只注入同源请求的 JS 上下文，跨域页面读不到凭据）
     let setup_script = Some(crate::source_setup::rss_source_js_setup_script(
         source,
-        login_header_json,
-        login_info_json,
+        effective_login_header,
+        effective_login_info,
     )?);
+
     let has_check_js = source
         .login_check_js
         .as_deref()

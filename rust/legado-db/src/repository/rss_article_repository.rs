@@ -152,6 +152,13 @@ impl<'a> RssArticleRepository<'a> {
     /// 空 `link` 兼容：15a 起仓库层把空 link 落为 `legacy:{origin}:{title}:{sort}`
     /// 伪造主键（E4 维持），此处按 `legacy:{origin}:` 前缀判定存在性，
     /// 避免翻页判底对空 link 永远失效。
+    ///
+    /// **不可达说明（审查 P2-6）**：当前唯一调用点
+    /// `rss_load_more_articles` 传入的 `link` 恒非空——规则列表解析在
+    /// link 为空时回退 `sortUrl`（`legado-fetcher::rss::parser_rule`），
+    /// 默认解析也保留 feed 原始 link。因此空前缀分支实际不可达，保留为
+    /// 防御性兜底：未来若新增调用点（如直读 15a 遗留的空 link 数据），
+    /// 判底不会静默失效。注意前缀匹配只用于「是否存在」，不做精确主键比对。
     pub fn find_one(&self, origin: &str, link: &str, sort: &str) -> LegadoResult<bool> {
         let exists: i64 = if link.trim().is_empty() {
             let prefix = format!("legacy:{origin}:");
