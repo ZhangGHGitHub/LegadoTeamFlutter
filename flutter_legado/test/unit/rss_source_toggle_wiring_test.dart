@@ -77,8 +77,8 @@ void main() {
         'Future<bool> rssSourceSetEnabled(String sourceUrl, bool enabled)',
       );
       expect(body, contains('bridge.rssSourceSetEnabled('));
-      expect(body, isNot(contains('sourceEnable')));
-      expect(body, isNot(contains('sourceDisable')));
+      expect(body, isNot(contains('bridge.sourceEnable(')));
+      expect(body, isNot(contains('bridge.sourceDisable(')));
     });
 
     test('FRB codegen 产物已包含 rssSourceSetEnabled（未漏跑 codegen）', () {

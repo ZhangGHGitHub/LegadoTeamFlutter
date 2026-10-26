@@ -174,7 +174,7 @@
 | `putLoginHeader` | `sourcePutLoginHeader`（§2.3） |
 | `putLoginInfo` | `sourcePutLoginInfo`（§2.3） |
 
-**表 B：Rust FFI 导出 ↔ BookApi 方法机械映射（2026-10-26 审查批5 补登记，123 对）**
+**表 B：Rust FFI 导出 ↔ BookApi 方法机械映射（2026-10-26 审查批5 补登记 123 对，审查批6 增 1 对 → 124 对）**
 
 > 生成口径：以 `rust/legado-ffi/src/ffi.rs` 的 `pub fn` 导出面与本仓 `rust_api*.dart` 实现中的 `bridge.<fn>` 调用点为源，取「BookApi 方法名 ≠ Rust FFI 导出名」且未在表 A 登记的对。一个 FFI 导出可被多个 BookApi 方法复用（如 `bookshelf_update`），复合实现列出全部调用；`initialize`/`getVersion` 无模块前缀但同属命名差异，一并登记。本表为纯登记（不新增方法、不改 §2.x 计数口径）。
 

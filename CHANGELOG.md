@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.374] - 2026-10-26
+
+### Fixed
+- [Rust] 修复 RSS 订阅源启用/禁用误改书源的问题（RSS 源此前报「书源不存在」，同 URL 书源会被误改；现按原版语义仅更新订阅源，未命中静默返回；审查批6）。
+
 ## [2.0.373] - 2026-10-26
 
 ### Added
