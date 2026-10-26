@@ -255,6 +255,50 @@ void main() {
     ).called(1);
   });
 
+  testWidgets('搜索态系统返回：先退出搜索而非退页', (tester) async {
+    final api = MockRustApi();
+    const source = RssSource(
+      sourceUrl: sourceUrl,
+      sourceName: '源A',
+      searchUrl: searchUrl,
+    );
+    stubSorts(api, source, const [
+      RssSort(name: '全部', url: sourceUrl),
+      RssSort(name: '科技', url: '$sourceUrl/tech'),
+    ]);
+    when(
+      () => api.rssRefreshArticles(sourceUrl, '全部', sourceUrl, key: null),
+    ).thenAnswer(
+      (_) async => pageJson([article('全部文章', '$sourceUrl/a', sort: '全部')]),
+    );
+    when(
+      () => api.rssRefreshArticles(
+        sourceUrl,
+        '搜索',
+        searchUrl,
+        key: '红',
+      ),
+    ).thenAnswer(
+      (_) async => pageJson([article('搜索结果', '$sourceUrl/s', sort: '搜索')]),
+    );
+
+    final container = await pumpScreen(tester, api, source);
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '红');
+    await tester.tap(find.widgetWithText(FilledButton, '搜索'));
+    await tester.pumpAndSettle();
+    expect(container.read(rssNotifierProvider).key, equals('红'));
+
+    // 系统返回（PopScope 拦截）→ 退出搜索并回到原分类
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.byType(RssArticlesScreen), findsOneWidget);
+    expect(container.read(rssNotifierProvider).key, isNull);
+    expect(container.read(rssNotifierProvider).currentSort?.name, equals('全部'));
+  });
+
   testWidgets('加载失败且无文章：ErrorView 重试', (tester) async {
     final api = MockRustApi();
     const source = RssSource(sourceUrl: sourceUrl, sourceName: '源A');

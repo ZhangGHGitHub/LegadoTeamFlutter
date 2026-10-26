@@ -239,7 +239,7 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
     });
 
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
-    return AppScaffold(
+    final scaffold = AppScaffold(
       topBar: LegadoAppBar(
         title: Text(_screenTitle(state)),
         leading: IconButton(
@@ -371,6 +371,18 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
           );
         },
       ),
+    );
+
+    // 对齐原版 `onBackPressedDispatcher`：搜索态系统返回先退出搜索而非退页
+    return PopScope(
+      canPop: !state.isSearching,
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) return;
+        if (ref.read(rssNotifierProvider).isSearching) {
+          ref.read(rssNotifierProvider.notifier).clearSearch();
+        }
+      },
+      child: scaffold,
     );
   }
 
