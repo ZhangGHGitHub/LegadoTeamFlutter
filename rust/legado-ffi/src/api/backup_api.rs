@@ -970,10 +970,10 @@ fn zip_rule_sub_type(value: i64) -> &'static str {
 /// 恢复后规则顺序与原版不一致（`ReplaceRule.kt:63-65`、`HighlightRule.kt:39-40`）。
 fn normalize_zip_sort_order(mut value: serde_json::Value) -> serde_json::Value {
     if let serde_json::Value::Object(map) = &mut value {
-        if !map.contains_key("sortOrder") {
-            if let Some(order) = map.get("order").cloned() {
-                map.insert("sortOrder".to_string(), order);
-            }
+        // 移除原版 `order` 键后再落 `sortOrder`：模型已为 `sortOrder` 加 alias="order"
+        // （Web 写端点兼容），两键并存会触发 serde duplicate field 错误。
+        if let Some(order) = map.remove("order") {
+            map.entry("sortOrder").or_insert(order);
         }
     }
     value
