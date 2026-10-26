@@ -273,7 +273,8 @@ push 到 `/sdcard/Download/legado/`，长按「恢复」→ 选择该 zip → �
 - RSS 源：`MockRSS`（正式验收用）、`MockRSS2`（复核保存返回行为时新增，URL 带 `?n=2`）。
 - 书源：`QA本地音频B2-导入验收`（场景 G 导入）；书架、其余书源未改动。
 - 文件：`/sdcard/Download/legado/`（备份 JSON、legacy zip、0 字节残留文件）、`/sdcard/Download/BookSource_QA*.json`、`/sdcard/Download/HighlightRules.json`。
-- 设备侧状态：Web 服务已关闭（`config:webService=false`），`adb forward tcp:1122` 已移除；`adb reverse tcp:18080` 仍在（mock 服务运行中）。
+- 设备侧状态：Web 服务已关闭（`config:webService=false`），`adb forward tcp:1122` 已移除；
+  验收结束后 `adb reverse tcp:18080` 已移除、宿主 mock 服务已停止（需要复验时按 §1.3 重新启动并重登 reverse）。
 
 ## 六、结论
 
