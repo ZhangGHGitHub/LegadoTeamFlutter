@@ -188,6 +188,54 @@ impl<'a> RssArticleRepository<'a> {
         Ok(exists != 0)
     }
 
+    /// 按 `(origin, link[, sort])` 查询单篇文章（审查 P2-9）
+    ///
+    /// 对齐原版 `RssArticleDao.getByLink(origin, link)` 与
+    /// `get(origin, link, sort)`：`sort` 给定时按完整主键收窄；未给定时
+    /// 返回该 `origin + link` 下 `order` 最大的一行（`ORDER BY "order" DESC
+    /// LIMIT 1`，与原实现「`find_by_source` 按 order DESC 后取首条」行为
+    /// 一致）。同 link 多分类（多 sort）时缺省取最新一条，调用方应尽量传
+    /// `sort` 精确定位。
+    ///
+    /// 替代 `rss_fetch_content` 原先的 `find_by_source(source, i32::MAX)`
+    /// 全表扫描 + 内存过滤；走主键索引前缀 `(origin, link)`。
+    pub fn find_by_link(
+        &self,
+        origin: &str,
+        link: &str,
+        sort: Option<&str>,
+    ) -> LegadoResult<Option<RssArticleRecord>> {
+        let sql = match sort {
+            Some(_) => {
+                "SELECT origin, sort, title, \"order\", link, pubDate, description,
+                        content, image, \"group\", \"read\", variable, type, durPos
+                 FROM rssArticles WHERE origin = ?1 AND link = ?2 AND sort = ?3
+                 ORDER BY \"order\" DESC LIMIT 1"
+            }
+            None => {
+                "SELECT origin, sort, title, \"order\", link, pubDate, description,
+                        content, image, \"group\", \"read\", variable, type, durPos
+                 FROM rssArticles WHERE origin = ?1 AND link = ?2
+                 ORDER BY \"order\" DESC LIMIT 1"
+            }
+        };
+        let mut stmt = self
+            .conn
+            .prepare(sql)
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+        let mut rows = match sort {
+            Some(sort) => stmt.query_map(params![origin, link, sort], row_to_article),
+            None => stmt.query_map(params![origin, link], row_to_article),
+        }
+        .map_err(|e| LegadoError::Database(format!("查询 RSS 文章失败: {e}")))?;
+        match rows.next() {
+            Some(row) => row
+                .map(Some)
+                .map_err(|e| LegadoError::Database(format!("查询 RSS 文章失败: {e}"))),
+            None => Ok(None),
+        }
+    }
+
     /// 指定分类当前最小 `order`（无行返回 `None`）
     ///
     /// 供翻页写入续接水位：下一次 `append_ignore` 的起始 order 取
@@ -519,6 +567,48 @@ mod tests {
             "空 link 应按 legacy 前缀判定存在"
         );
         assert!(!repo.find_one("https://rss.org", "", "default").unwrap());
+    }
+
+    /// `find_by_link` 按 link 精确命中；sort 给定时收窄；缺省取 order 最大行
+    #[test]
+    fn test_find_by_link_with_and_without_sort() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssArticleRepository::new(db.connection());
+        let url = "https://example.com/a1";
+        let mut first = make_article("https://rss.com", "分类一", 5);
+        first.sort = "科技".to_string();
+        first.link = Some(url.to_string());
+        repo.insert(&first).unwrap();
+        let mut second = make_article("https://rss.com", "分类二", 9);
+        second.sort = "文学".to_string();
+        second.link = Some(url.to_string());
+        repo.insert(&second).unwrap();
+
+        // 给定 sort：完整主键定位
+        let hit = repo
+            .find_by_link("https://rss.com", url, Some("科技"))
+            .unwrap()
+            .expect("命中科技分类");
+        assert_eq!(hit.title, "分类一");
+        assert_eq!(hit.sort, "科技");
+
+        // 缺省 sort：取 order 最大的一行（文学 9 > 科技 5）
+        let hit = repo
+            .find_by_link("https://rss.com", url, None)
+            .unwrap()
+            .expect("缺省取最新行");
+        assert_eq!(hit.title, "分类二");
+        assert_eq!(hit.order, 9);
+
+        // 源或 link 不匹配 → None
+        assert!(repo
+            .find_by_link("https://other.com", url, None)
+            .unwrap()
+            .is_none());
+        assert!(repo
+            .find_by_link("https://rss.com", "https://example.com/missing", None)
+            .unwrap()
+            .is_none());
     }
 
     /// `min_order` 返回分类最小 order，无行返回 None

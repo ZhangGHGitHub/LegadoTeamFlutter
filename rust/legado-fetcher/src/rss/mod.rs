@@ -49,12 +49,16 @@ use legado_core::models::RssSource;
 use legado_core::{LegadoError, LegadoResult};
 use legado_net::LegadoClient;
 
+use crate::rate_limit::RateLimiterRegistry;
+
 pub use models::{RssArticleItem, RssListPage};
 pub use sort_urls::RssSortUrl;
 
 /// 拉取 RSS 列表页（批15b：规则列表 + 登录检测 + 分类/分页请求）
 ///
 /// 参数对齐原版 `Rss.getArticlesAwait(sortName, sortUrl, rssSource, page, key)`：
+/// - `rate_limiter`：宿主注入的源级限流注册表（每次请求前按
+///   `source.concurrent_rate` 取许可，审查 P1-1）；
 /// - `sort_name`：分类名（`parse_sort_urls` 的空值回退为 `""`）；
 /// - `sort_url`：列表请求 URL（`AnalyzeUrl(sortUrl, page, key, baseUrl=sourceUrl)`）；
 /// - `page` / `key`：`AnalyzeUrl` 模板变量（刷新 `Some(1)`，翻页为下一页页码）；
@@ -75,6 +79,18 @@ pub use sort_urls::RssSortUrl;
 ///   抛 `NoStackTraceException`，**不伪造文章**）；
 /// - 正文非空但解析出 0 篇 → `Ok(空列表)`（原版同样如此，畸形 XML 按
 ///   quick-xml 宽容度处理）。
+///
+/// ## 请求语义（审查 P1-1/P1-3）
+///
+/// - **源级限流**：`rate_limiter` 由宿主（ffi）注入进程级
+///   [`crate::rate_limit::RateLimiterRegistry`]；每次请求前按
+///   `RssSource.concurrentRate` 取许可（对齐上游 `AnalyzeUrl` 内
+///   `ConcurrentRateLimiter`，与书源共享 limiter map/窗口语义）。宿主在
+///   源保存（add/update/import）后经 `refresh` 刷新配置；引擎内按当前源
+///   快照惰性创建，与书源路径一致；
+/// - **字符集**：请求取原始字节后经
+///   [`crate::web_book::decode_web_response`] 四级解码（显式 charset →
+///   `Content-Type` → HTML meta → 统计探测），与书源抓取链/搜索链同口径。
 ///
 /// ## 已登记边界差异（对齐原版 `RssParserDefault`，2026-10-26 审查 P2-3/P2-8）
 ///
@@ -98,6 +114,7 @@ pub use sort_urls::RssSortUrl;
 #[allow(clippy::too_many_arguments)] // 参数集与 Kotlin `getArticlesAwait` 入参 + 宿主登录缓存注入对齐，不拆结构体
 pub async fn fetch_articles(
     client: &LegadoClient,
+    rate_limiter: &RateLimiterRegistry,
     source: &RssSource,
     sort_name: &str,
     sort_url: &str,
@@ -130,7 +147,13 @@ pub async fn fetch_articles(
     let request_url = analyze_url.url().to_string();
 
     // [Rss.kt:57-81] 成功/失败两路 loginCheckJs 检测（列表与正文共用门控）
-    let fetched = request::fetch_list(client, &analyze_url, headers).await;
+    let fetched = request::fetch_list(
+        client,
+        &analyze_url,
+        headers,
+        request::RssRateLimit::new(rate_limiter, source),
+    )
+    .await;
     let response = login::gate_login(source, &request_url, setup_script.clone(), fetched)?;
 
     // 对齐原版 `RssParserByRule.parseXML`：body 空白 → 报错（不伪造摘要）

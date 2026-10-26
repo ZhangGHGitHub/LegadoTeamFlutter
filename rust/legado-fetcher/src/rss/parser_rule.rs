@@ -164,6 +164,15 @@ fn parse_item(
     if let Some(variable_json) = variable.as_deref() {
         item_analyzer.seed_variables_json(variable_json);
     }
+    // 原版 `bindings["rssArticle"] = rssArticle`（AnalyzeRule.kt:906）：列表
+    // 元素求值时注入文章基线对象（origin/sort/variable）；「已求值字段逐步
+    // 可见」不逐字段复刻（content.rs 模块文档已登记差异）。
+    let article_seed = serde_json::json!({
+        "origin": source.source_url,
+        "sort": sort_name,
+        "variable": variable,
+    });
+    item_analyzer.add_js_binding("rssArticle", &article_seed.to_string());
 
     // 字段求值顺序逐行对齐原版 `RssParserByRule.getItem`（`RssParserByRule.kt:95-140`）：
     // title → pubDate → description → image → link，**全部求值后**才做

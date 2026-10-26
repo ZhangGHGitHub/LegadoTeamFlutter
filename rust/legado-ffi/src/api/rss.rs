@@ -21,6 +21,9 @@ pub struct RssArticle {
     pub title: String,
     /// 链接
     pub link: String,
+    /// 分类名（`sortName`；缺省空串。审查 P2-4：供详情按
+    /// `(origin, link, sort)` 主键精确写回）
+    pub sort: String,
     /// 描述
     pub description: Option<String>,
     /// 发布日期
@@ -69,8 +72,11 @@ pub fn add_rss_source(source_json: &str) -> LegadoResult<RssSource> {
         let repo = RssSourceRepository::new(db.connection());
         repo.insert(&source)
             .map_err(|e| LegadoError::Database(format!("插入 RSS 源失败: {e}")))?;
-        Ok(source)
-    })
+        Ok(source.clone())
+    })?;
+    // 写库成功后刷新源级 concurrentRate（审查 P1-1；空值清除既有 limiter）
+    refresh_rss_rate_limit(&source);
+    Ok(source)
 }
 
 /// 批量导入 RSS 源（JSON 数组），返回成功写入条数
@@ -85,6 +91,8 @@ pub fn import_rss_sources(json_array: &str) -> LegadoResult<i32> {
         for source in &sources {
             repo.insert(source)
                 .map_err(|e| LegadoError::Database(format!("导入 RSS 源失败: {e}")))?;
+            // 每条写库成功后立即刷新该源限流配置（审查 P1-1）
+            refresh_rss_rate_limit(source);
             imported += 1;
         }
         Ok(imported)
@@ -164,8 +172,11 @@ pub fn update_rss_source(source_json: &str) -> LegadoResult<RssSource> {
                 source.source_url
             )));
         }
-        Ok(source)
-    })
+        Ok(())
+    })?;
+    // 写库成功后刷新源级 concurrentRate（审查 P1-1；空值清除既有 limiter）
+    refresh_rss_rate_limit(&source);
+    Ok(source)
 }
 
 /// 清空指定 RSS 源的本地文章缓存（对齐 RssSortViewModel.clearArticles）
@@ -194,6 +205,43 @@ fn current_millis() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0)
+}
+
+/// RSS 源保存成功后的限流配置刷新（审查 P1-1）
+///
+/// 与书源保存路径同一语义（[`crate::api::source_rate_limit::refresh`]）：
+/// 空 / `"0"` → 移除既有 limiter；合法值 → 原位刷新（保留窗口）；非法值
+/// 与未注册 key 不改动。RSS 与书源共享同一进程级注册表（同一 URL 同窗口）。
+fn refresh_rss_rate_limit(source: &RssSource) {
+    crate::api::source_rate_limit::refresh_source_rate_limit(
+        &source.source_url,
+        source.concurrent_rate.as_deref().unwrap_or(""),
+    );
+}
+
+/// 文章行 → `rssArticle` JS 绑定 JSON（对齐 `AnalyzeRule.kt:906`）
+///
+/// 与 Kotlin `RssArticle` 字段同名（camelCase）：`origin` / `sort` / `title` /
+/// `link` / `pubDate` / `description` / `content` / `image` / `variable` /
+/// `group` / `read` / `type` / `durPos` / `order`。
+fn article_js_json(row: &legado_db::RssArticleRecord) -> String {
+    serde_json::json!({
+        "origin": row.origin,
+        "sort": row.sort,
+        "title": row.title,
+        "order": row.order,
+        "link": row.link,
+        "pubDate": row.pub_date,
+        "description": row.description,
+        "content": row.content,
+        "image": row.image,
+        "variable": row.variable,
+        "group": row.group,
+        "read": row.read,
+        "type": row.article_type,
+        "durPos": row.dur_pos,
+    })
+    .to_string()
 }
 
 /// 读取 RSS 源（全字段；不存在返回 `Ok(None)`）
@@ -237,10 +285,14 @@ fn fetch_rss_page(
     // 登录头：内存缓存优先、DB `loginHeader_<url>` 兜底（source_login_cache 单实现）
     let login_header = crate::api::source_login_cache::get_login_header(&source.source_url);
     let login_info = crate::api::source_login_cache::get_login_info(&source.source_url);
+    // 源级 concurrentRate 限流（审查 P1-1）：进程级注册表与书源共享窗口语义；
+    // 配置在源保存路径 refresh，这里按当前 DB 快照惰性创建/复用 limiter。
+    let rate_limiter = crate::api::source_rate_limit::registry();
     runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
         legado_fetcher::rss::fetch_articles(
             &client,
+            &rate_limiter,
             source,
             sort_name,
             sort_url,
@@ -268,6 +320,7 @@ pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
         .map(|article| RssArticle {
             title: article.title,
             link: article.link,
+            sort: article.sort,
             description: article.description,
             pub_date: article.pub_date,
             image_url: article.image,
@@ -506,10 +559,12 @@ pub fn rss_load_more_articles(
 ///
 /// 1. 源不存在 → `Err`（与批15b 列表方法同口径）；
 /// 2. `ruleContent` 空/空白 → `Ok("")`（不发请求；原版调用方在此前已短路）；
-/// 3. 按 `(origin, link[, sort])` 从 `rssArticles` 取文章行：`type` 参与正文
-///    分页门控、`variable` 作为正文规则 `@get` 初值、行本身是写回目标；
-///    行不存在（如阅读历史入口）按 `type = 0` 处理且跳过文章写回（对齐原版
-///    内存态 `RssArticle(origin, title, title, link = openUrl)`）；
+/// 3. 按 `(origin, link[, sort])` 索引查询文章行（`find_by_link`，审查 P2-9）：
+///    `type` 参与正文分页门控、`variable` 作为正文规则 `@get` 初值、整行
+///    JSON 注入 `rssArticle` JS 绑定（审查 P2-10）、行本身是写回目标；
+///    行不存在（历史入口/未刷新列表）按 `type = 0` 处理且跳过文章写回
+///    （对齐原版内存态 `RssArticle(origin, title, title, link = openUrl)`；
+///    **历史入口暂不抓规则正文的收敛属批15d/15f**）；
 /// 4. 引擎抓取（[`legado_fetcher::rss::content::fetch_content`]）：失败（首屏/
 ///    任一后续页/登录检测）→ `Err`；正文为空 → `Ok("")`；
 /// 5. 成功后写回 `rssArticles.description` 与 `rssStars.description`（仅
@@ -528,31 +583,41 @@ pub fn rss_fetch_content(source_url: &str, link: &str, sort: Option<&str>) -> Le
         return Ok(String::new());
     }
 
-    // 文章行：type / variable / 写回目标（按 link 精确匹配；sort 给定时再收窄）
+    // 文章行：type / variable / rssArticle 绑定 / 写回目标（主键索引查询；
+    // sort 缺省按 order DESC 取首行，对齐原版 `getByLink` 的单行语义）
     let article = with_database(|db| {
         let repo = legado_db::RssArticleRepository::new(db.connection());
-        // 复用既有按源查询（本批不改 rssArticles 仓库）：RSS 单源文章量小，
-        // 逐行筛 link/sort 的 O(n) 成本可接受。
-        let rows = repo.find_by_source(source_url, i32::MAX)?;
-        Ok(rows.into_iter().find(|row| {
-            row.link.as_deref() == Some(link) && sort.map(|s| row.sort == s).unwrap_or(true)
-        }))
+        repo.find_by_link(source_url, link, sort)
     })?;
     let article_type = article.as_ref().map(|row| row.article_type).unwrap_or(0);
     let article_variable = article.as_ref().and_then(|row| row.variable.clone());
+    // 行不存在时仍注入最小对象（历史入口），规则 @js 读 rssArticle 不报错
+    let article_json = article.as_ref().map(article_js_json).unwrap_or_else(|| {
+        serde_json::json!({
+            "origin": source.source_url,
+            "title": "",
+            "link": link,
+            "type": 0,
+        })
+        .to_string()
+    });
 
     // 登录头 / 用户信息：内存缓存优先、DB 兜底（同源门控在引擎内完成）
     let login_header = crate::api::source_login_cache::get_login_header(&source.source_url);
     let login_info = crate::api::source_login_cache::get_login_info(&source.source_url);
+    // 源级 concurrentRate 限流（审查 P1-1）：每次正文/分页请求前取许可
+    let rate_limiter = crate::api::source_rate_limit::registry();
 
     let content = runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
         legado_fetcher::rss::content::fetch_content(
             &client,
+            &rate_limiter,
             &source,
             link,
             article_type,
             article_variable.as_deref(),
+            Some(&article_json),
             login_header.as_deref(),
             login_info.as_deref(),
         )

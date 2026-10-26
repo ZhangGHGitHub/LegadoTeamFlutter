@@ -44,11 +44,19 @@
 //!   源静态 header 始终透传，`loginHeader_<url>` / `userInfo_<url>` 仅当
 //!   目标 URL 与 `sourceUrl` 同源（scheme + host + port 全等）时附加并注入
 //!   JS setup（复用批15b 门控，跨域正文分页不外发凭据）；
+//! - **源级限流**：每次正文请求（含分页）前经
+//!   [`super::request::RssRateLimit`] 取 `RssSource.concurrentRate` 许可，
+//!   复用书源限流注册表的窗口语义（对齐上游 `AnalyzeUrl` 内
+//!   `ConcurrentRateLimiter`，`AnalyzeUrl.kt:129,449`；审查 P1-1）；
+//! - **字符集**：请求取原始字节后经 [`crate::web_book::decode_web_response`]
+//!   四级解码（显式 charset → `Content-Type` → HTML meta → 统计探测），与
+//!   书源抓取链/搜索链同口径（审查 P1-3）；
 //! - **登录检测**：成功响应 / 请求失败两路 `loginCheckJs` 与列表共用
 //!   [`super::login::gate_login`]（逐行对齐 `Rss.kt:186-209`）；
 //! - **正文解析**：`AnalyzeRule::new(body)` + `set_base_url(absolute(sourceUrl,
 //!   当页请求 URL))` + `set_redirect_url(响应最终 URL)` + `get_string(ruleContent)`；
-//!   空规则 → 空串（原版 `getString(null/"") → ""`）；
+//!   空规则 → 空串（原版 `getString(null/"") → ""`）；`rssArticle` JS 绑定
+//!   注入文章 JSON（对齐 `AnalyzeRule.kt:906` 的 `bindings["rssArticle"]`）；
 //! - **正文分页**：`get_strings_ex(nextContentUrl, is_url = true)` 与
 //!   `AnalyzeRule.getStringList(isUrl = true)` 同口径（按重定向最终 URL
 //!   绝对化 + 去重）；单链顺序跟随、多链有界并发保序；
@@ -65,7 +73,18 @@
 //!    中止后续页；
 //! 3. **单链分页不设总页数上限**：与原版一致（同一份逻辑），靠 URL 去环判停；
 //! 4. **非 2xx 严格报错**：沿用批15b `request::fetch_list` 的校验（原版不校验
-//!    状态码），差异与列表请求同一条登记。
+//!    状态码），差异与列表请求同一条登记；
+//! 5. **多链并发度固定 32**：原版取 `AppConfig.threadCount`（用户可配置，
+//!    默认 32）作 `mapAsync` 并发度；FFI 无全局配置面，固定为默认值
+//!    [`CONTENT_PAGE_CONCURRENCY`]，不随用户设置变化；
+//! 6. **登录头合并为已登记超集**：原版 `getContentResponse` 构造
+//!    `AnalyzeUrl(..., hasLoginHeader = false)`，即正文请求不合并登录头；
+//!    本实现仅在**同源**时附加 `loginHeader_<url>` / `userInfo_<url>`
+//!    （跨域一律不附加），收敛方向对齐原版但合并本身仍属超集；
+//! 7. **`rssArticle` 绑定字段范围**：正文页注入库内文章行 JSON（完整字段）；
+//!    列表页逐元素求值时注入 `origin` / `sort` / `variable` 基线对象，原版
+//!    `setRuleData(rssArticle)` 的「已求值字段逐步可见」不逐字段复刻
+//!    （列表规则极少引用 `rssArticle`，已登记）。
 
 use std::collections::HashSet;
 
@@ -76,10 +95,11 @@ use legado_net::LegadoClient;
 use legado_parser::AnalyzeUrl;
 
 use crate::js_adapter::{construct_analyzer_with_source_context, sanitize_js_lib_for_quickjs};
+use crate::rate_limit::RateLimiterRegistry;
 
 use super::login;
 use super::request;
-use super::request::RssListResponse;
+use super::request::{RssListResponse, RssRateLimit};
 
 /// 多链并发上限：对齐原版 `AppConfig.threadCount` 默认值 32
 ///
@@ -102,6 +122,8 @@ struct RssContentPage {
 /// 拉取 RSS 文章正文（对齐 `Rss.getContentAwait`，`Rss.kt:99-169`）
 ///
 /// 参数：
+/// - `rate_limiter`：宿主注入的源级限流注册表（每次正文请求前按
+///   `source.concurrent_rate` 取许可，审查 P1-1）；
 /// - `source`：RSS 源（`ruleContent` / `nextContentUrl` / `type` / header /
 ///   jsLib / loginCheckJs 从这里读取）；
 /// - `link`：文章链接（首屏请求 URL，`AnalyzeUrl` 模板可含 `{{...}}`）；
@@ -109,16 +131,21 @@ struct RssContentPage {
 ///   （原版 `rssArticle.type == 0`）；文章行不存在时按 0 处理；
 /// - `rule_data_variable`：`rssArticles.variable` JSON（原版 `AnalyzeRule(
 ///   ruleData = rssArticle)` 的 `@get` 初值；`None` = 无变量）；
+/// - `article_json`：文章行 JSON（`rssArticle` JS 绑定，对齐
+///   `AnalyzeRule.kt:906`；文章行不存在时由宿主传最小对象）；
 /// - `login_header_json` / `login_info_json`：宿主登录缓存（仅同源附加）。
 ///
 /// 返回正文（多页以 `"\n"` 拼接）；`ruleContent` 空/空白直接返回空串（不发
 /// 请求，原版该分支不会被调用）；首屏或任一后续页失败返回 `Err`。
+#[allow(clippy::too_many_arguments)] // 与 Kotlin getContentAwait 入参 + 宿主注入面对齐
 pub async fn fetch_content(
     client: &LegadoClient,
+    rate_limiter: &RateLimiterRegistry,
     source: &RssSource,
     link: &str,
     article_type: i32,
     rule_data_variable: Option<&str>,
+    article_json: Option<&str>,
     login_header_json: Option<&str>,
     login_info_json: Option<&str>,
 ) -> LegadoResult<String> {
@@ -134,10 +161,12 @@ pub async fn fetch_content(
     // + analyzeContentPage（默认继续跟随下一页）
     let first = fetch_content_page(
         client,
+        rate_limiter,
         source,
         link,
         article_type,
         rule_data_variable,
+        article_json,
         login_header_json,
         login_info_json,
         true,
@@ -153,10 +182,12 @@ pub async fn fetch_content(
         while !next_url.is_empty() && visited_urls.insert(next_url.clone()) {
             let page = fetch_content_page(
                 client,
+                rate_limiter,
                 source,
                 &next_url,
                 article_type,
                 rule_data_variable,
+                article_json,
                 login_header_json,
                 login_info_json,
                 true,
@@ -176,10 +207,12 @@ pub async fn fetch_content(
         let pages = futures::stream::iter(first.next_urls.iter().map(|next_url| {
             fetch_content_page(
                 client,
+                rate_limiter,
                 source,
                 next_url,
                 article_type,
                 rule_data_variable,
+                article_json,
                 login_header_json,
                 login_info_json,
                 false,
@@ -202,10 +235,12 @@ pub async fn fetch_content(
 #[allow(clippy::too_many_arguments)] // 与 `analyzeContentPage` 入参 + 宿主登录缓存注入对齐
 async fn fetch_content_page(
     client: &LegadoClient,
+    rate_limiter: &RateLimiterRegistry,
     source: &RssSource,
     url: &str,
     article_type: i32,
     rule_data_variable: Option<&str>,
+    article_json: Option<&str>,
     login_header_json: Option<&str>,
     login_info_json: Option<&str>,
     get_next_page_url: bool,
@@ -228,8 +263,15 @@ async fn fetch_content_page(
     )?);
     let request_url = analyze_url.url().to_string();
 
-    // [Rss.kt:177-213] 正文页请求 + 登录检测（与列表共用 gate_login）
-    let fetched = request::fetch_list(client, &analyze_url, headers).await;
+    // [Rss.kt:177-213] 正文页请求 + 登录检测（与列表共用 gate_login；
+    // 每次请求前经同一 limiter 取源级许可，审查 P1-1）
+    let fetched = request::fetch_list(
+        client,
+        &analyze_url,
+        headers,
+        RssRateLimit::new(rate_limiter, source),
+    )
+    .await;
     let response = login::gate_login(source, &request_url, setup_script.clone(), fetched)?;
     log::debug!("[rss] ≡获取成功:{}", response.final_url);
 
@@ -242,6 +284,7 @@ async fn fetch_content_page(
         get_next_page_url,
         article_type,
         rule_data_variable,
+        article_json,
         setup_script,
     )
 }
@@ -265,6 +308,7 @@ fn analyze_content_page(
     get_next_page_url: bool,
     article_type: i32,
     rule_data_variable: Option<&str>,
+    article_json: Option<&str>,
     setup_script: Option<String>,
 ) -> LegadoResult<RssContentPage> {
     let base_url = AnalyzeUrl::get_absolute_url(&source.source_url, request_url);
@@ -281,6 +325,11 @@ fn analyze_content_page(
     // 差异见模块文档「正文页 @put 变量不回写」。
     if let Some(variable_json) = rule_data_variable {
         analyzer.seed_variables_json(variable_json);
+    }
+    // 原版 `bindings["rssArticle"] = rssArticle`（AnalyzeRule.kt:906）：
+    // 注入文章行 JSON，规则 @js 可读 rssArticle.title 等字段。
+    if let Some(json) = article_json {
+        analyzer.add_js_binding("rssArticle", json);
     }
 
     let content = analyzer.get_string(rule_content)?;
@@ -435,6 +484,34 @@ mod tests {
         .expect("test http client")
     }
 
+    /// 空限流注册表（正文用例不配置 concurrentRate）
+    fn test_registry() -> RateLimiterRegistry {
+        RateLimiterRegistry::new()
+    }
+
+    /// 原始字节回环服务器（供 GBK 解码用例：固定 Content-Type、可多次请求）
+    fn spawn_raw_server(content_type: &'static str, body: Vec<u8>) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("绑定回环端口");
+        let addr = listener.local_addr().expect("读取端口");
+        std::thread::spawn(move || {
+            while let Ok((mut stream, _)) = listener.accept() {
+                let head = read_request_head(&mut stream);
+                if head.is_empty() {
+                    continue;
+                }
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.write_all(&body);
+                let _ = stream.flush();
+            }
+        });
+        format!("http://{addr}")
+    }
+
     fn content_source(source_url: &str, next_content_url: Option<&str>) -> RssSource {
         RssSource {
             source_url: source_url.to_string(),
@@ -465,9 +542,11 @@ mod tests {
 
         let content = run(fetch_content(
             &test_client(),
+            &test_registry(),
             &source,
             &format!("{base}/article/1"),
             0,
+            None,
             None,
             None,
             None,
@@ -503,9 +582,11 @@ mod tests {
 
         let content = run(fetch_content(
             &test_client(),
+            &test_registry(),
             &source,
             &format!("{base}/a/1"),
             0,
+            None,
             None,
             None,
             None,
@@ -559,9 +640,11 @@ mod tests {
 
         let content = run(fetch_content(
             &test_client(),
+            &test_registry(),
             &source,
             &format!("{base}/m/0"),
             0,
+            None,
             None,
             None,
             None,
@@ -580,7 +663,10 @@ mod tests {
         );
     }
 
-    /// 多链并发确实并行（最慢页 120ms 不应串行叠加到 180ms 以上）
+    /// 多链并发确实并行（两页各 700ms，并发应 < 900ms；串行 ≥ 1400ms）
+    ///
+    /// 阈值放宽（审查 P2-11）：慢 CI 上 300ms/500ms 组合易 flaky，改为
+    /// 700ms 页延迟 + 900ms 上限，仍能区分并发（约 700ms）与串行（1400ms）。
     #[test]
     fn multi_chain_requests_overlap() {
         let routes: Routes = Arc::new(|target: &str| match target {
@@ -596,7 +682,7 @@ mod tests {
             "/p/1" | "/p/2" => (
                 "200 OK".to_string(),
                 "<html><body><div class=\"content\">分页</div></body></html>".to_string(),
-                300,
+                700,
             ),
             _ => ("404 Not Found".to_string(), String::new(), 0),
         });
@@ -607,9 +693,11 @@ mod tests {
         let started = std::time::Instant::now();
         let content = run(fetch_content(
             &test_client(),
+            &test_registry(),
             &source,
             &format!("{base}/p/0"),
             0,
+            None,
             None,
             None,
             None,
@@ -618,8 +706,8 @@ mod tests {
         let elapsed = started.elapsed();
         assert_eq!(content, "首屏\n分页\n分页");
         assert!(
-            elapsed < Duration::from_millis(500),
-            "两页 300ms 应并发完成（串行 ≥600ms），实测 {elapsed:?}"
+            elapsed < Duration::from_millis(900),
+            "两页 700ms 应并发完成（串行 ≥1400ms），实测 {elapsed:?}"
         );
     }
 
@@ -643,9 +731,11 @@ mod tests {
 
         let content = run(fetch_content(
             &test_client(),
+            &test_registry(),
             &source,
             &format!("{base}/img/1"),
             0,
+            None,
             None,
             None,
             None,
@@ -674,9 +764,11 @@ mod tests {
 
         let content = run(fetch_content(
             &test_client(),
+            &test_registry(),
             &source,
             &format!("{base}/v/1"),
             2,
+            None,
             None,
             None,
             None,
@@ -696,9 +788,11 @@ mod tests {
         };
         let content = run(fetch_content(
             &test_client(),
+            &test_registry(),
             &source,
             "http://rss.invalid/a",
             0,
+            None,
             None,
             None,
             None,
@@ -724,9 +818,11 @@ mod tests {
 
         let err = run(fetch_content(
             &test_client(),
+            &test_registry(),
             &source,
             &format!("{base}/bad"),
             0,
+            None,
             None,
             None,
             None,
@@ -755,9 +851,11 @@ mod tests {
 
         let err = run(fetch_content(
             &test_client(),
+            &test_registry(),
             &source,
             &format!("{base}/s/1"),
             0,
+            None,
             None,
             None,
             None,
@@ -783,9 +881,11 @@ mod tests {
 
         let content = run(fetch_content(
             &test_client(),
+            &test_registry(),
             &source,
             &format!("{base}/empty"),
             0,
+            None,
             None,
             None,
             None,
@@ -818,9 +918,11 @@ mod tests {
 
         let content = run(fetch_content(
             &test_client(),
+            &test_registry(),
             &source,
             &format!("{base}/b/1"),
             0,
+            None,
             None,
             None,
             None,
@@ -849,9 +951,11 @@ mod tests {
 
         let content = run(fetch_content(
             &test_client(),
+            &test_registry(),
             &source,
             &format!("{base}/js/1"),
             0,
+            None,
             None,
             None,
             None,
@@ -879,15 +983,77 @@ mod tests {
 
         let content = run(fetch_content(
             &test_client(),
+            &test_registry(),
             &source,
             &format!("{base}/v/1"),
             0,
             Some(r#"{"token":"令牌"}"#),
             None,
             None,
+            None,
         ))
         .expect("variable 种子");
         assert_eq!(content, "令牌:令牌");
+    }
+
+    /// 审查 P1-3：正文页 GBK（HTML meta 声明）经四级解码正确还原
+    ///
+    /// 改前 `send_text` 只认 `Content-Type` charset，无 charset 头时按 lossy
+    /// UTF-8 产出替换字符。本用例服务端只声明 `<meta charset="gbk">`。
+    #[test]
+    fn gbk_content_page_decodes_via_meta_charset() {
+        let html = "<html><head><meta charset=\"gbk\"></head>\
+                    <body><div class=\"content\">中文正文标题</div></body></html>";
+        let (bytes, _, _) = encoding_rs::GBK.encode(html);
+        let base = spawn_raw_server("text/html", bytes.into_owned());
+        let source = content_source(&format!("{base}/feed"), None);
+
+        let content = run(fetch_content(
+            &test_client(),
+            &test_registry(),
+            &source,
+            &format!("{base}/gbk/1"),
+            0,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .expect("GBK 正文");
+        assert_eq!(content, "中文正文标题", "meta 声明的 GBK 正文不得乱码");
+    }
+
+    /// quickjs 门控：`rssArticle` JS 绑定注入文章行 JSON（对齐 AnalyzeRule.kt:906）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn rss_article_binding_exposes_article_json() {
+        let routes: Routes = Arc::new(|target: &str| match target {
+            "/ra/1" => (
+                "200 OK".to_string(),
+                "<html><body><div class=\"content\">正文</div></body></html>".to_string(),
+                0,
+            ),
+            _ => ("404 Not Found".to_string(), String::new(), 0),
+        });
+        let server = LoopbackServer::spawn(routes);
+        let base = server.base_url();
+        let mut source = content_source(&format!("{base}/feed"), None);
+        source.rule_content =
+            Some(r#".content@js:rssArticle.title + "|" + rssArticle.sort"#.to_string());
+
+        let content = run(fetch_content(
+            &test_client(),
+            &test_registry(),
+            &source,
+            &format!("{base}/ra/1"),
+            0,
+            None,
+            Some(r#"{"title":"文章标题","sort":"分类","type":0}"#),
+            None,
+            None,
+        ))
+        .expect("rssArticle 绑定");
+        assert_eq!(content, "文章标题|分类");
     }
 
     /// 计数辅助：确认并发上限与 `AppConfig.threadCount` 默认值一致

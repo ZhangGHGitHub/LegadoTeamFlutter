@@ -182,6 +182,17 @@ fn star_description(db_path: &Path, origin: &str, link: &str) -> Option<String> 
     .flatten()
 }
 
+/// 直连 DB 读文章 `(order, read)`（审查 P2-11：写回不得改动这两列）
+fn article_order_read(db_path: &Path, origin: &str, link: &str) -> (i64, bool) {
+    let conn = rusqlite::Connection::open(db_path).expect("直连临时 DB");
+    conn.query_row(
+        "SELECT \"order\", \"read\" FROM rssArticles WHERE origin = ?1 AND link = ?2",
+        rusqlite::params![origin, link],
+        |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)? != 0)),
+    )
+    .expect("文章行存在")
+}
+
 #[test]
 fn rss_content_pagination_writeback_and_login_end_to_end() {
     let db_path = temp_db_path();
@@ -237,6 +248,21 @@ fn rss_content_pagination_writeback_and_login_end_to_end() {
         article_description(&db_path, &source_url, &link).is_none(),
         "刷新列表后文章描述应为 NULL（正文尚未抓取）"
     );
+    assert_eq!(
+        page["articles"][0]["sort"], "",
+        "列表载荷应透出 sort（refresh 写入 sortName = \"\"）"
+    );
+    // 审查 P2-11：写回前记录 order/read；并把 read 置真以验证写回保留
+    let order_before = article_order_read(&db_path, &source_url, &link).0;
+    assert!(order_before > 0, "刷新写入的 order 应为当前毫秒水位");
+    {
+        let conn = rusqlite::Connection::open(&db_path).expect("直连临时 DB");
+        conn.execute(
+            "UPDATE rssArticles SET \"read\" = 1 WHERE origin = ?1 AND link = ?2",
+            rusqlite::params![&source_url, &link],
+        )
+        .expect("标记已读");
+    }
 
     // 收藏同一篇：正文成功后应同步写回 rssStars.description
     legado_ffi::api::rss_star_api::add_rss_star(&source_url, "正文测试文章", &link)
@@ -258,6 +284,10 @@ fn rss_content_pagination_writeback_and_login_end_to_end() {
         Some("第一页正文\n第二页正文"),
         "已收藏行应同步写回 rssStars.description"
     );
+    // 审查 P2-11：REPLACE 写回必须保留既有 order 与 read
+    let (order_after, read_after) = article_order_read(&db_path, &source_url, &link);
+    assert_eq!(order_after, order_before, "正文写回不得改动 order");
+    assert!(read_after, "正文写回不得清除 read 标记");
 
     // ─── 3.5) sort 参数：refresh 写入 sort=""，按主键定位命中 ──────
     let with_sort = legado_ffi::api::rss::rss_fetch_content(&source_url, &link, Some(""))

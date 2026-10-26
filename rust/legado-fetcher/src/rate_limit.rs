@@ -16,8 +16,12 @@
 //! - [`RateLimiterRegistry::remove`] 是清除原语：map 锁内移除条目；已取走
 //!   `Arc` 的在途请求落在被移除实例上自然跑完，后续 acquire 按当前快照
 //!   重新惰性创建。
-//! - [`RateLimiterRegistry::acquire`] 只读既有配置，仅在 key 缺失时按当前
-//!   快照惰性创建 limiter（对应上游 fetchStart 的 computeIfAbsent）。
+//! - [`RateLimiterRegistry::acquire`] / [`RateLimiterRegistry::acquire_by_source`]
+//!   只读既有配置，仅在 key 缺失时按当前快照惰性创建 limiter（对应上游
+//!   fetchStart 的 computeIfAbsent）。`acquire_by_source` 是「(源 URL, rate
+//!   字符串)」泛化入口，供 RSS 源（`RssSource.concurrentRate`，与书源同字段
+//!   语义）复用同一 limiter map 与固定窗口状态；`acquire(&BookSource)` 为其
+//!   书源薄封装。
 //!
 //! 为何 acquire 不得回写配置（竞态证据见测试
 //! `stale_snapshot_acquire_does_not_revert_updated_config`）：acquire 收到的
@@ -64,14 +68,30 @@ impl RateLimiterRegistry {
     /// [`Self::update`]（宿主保存路径）负责，acquire 不得回写——否则旧
     /// `BookSource` 快照的迟到请求会覆盖已保存的新 concurrentRate。
     pub async fn acquire(&self, source: &BookSource) {
-        let rate = source.concurrent_rate.as_deref().unwrap_or("").trim();
+        self.acquire_by_source(&source.book_source_url, source.concurrent_rate.as_deref())
+            .await;
+    }
+
+    /// 按 `(源 URL, concurrentRate 字符串)` 获取访问许可（泛化入口）
+    ///
+    /// 与 [`Self::acquire`] 共用同一 limiter map 与固定窗口语义，供 RSS 源
+    /// 复用：`RssSource` 与 `BookSource` 的 `concurrentRate` 字段语义一致
+    /// （上游 `ConcurrentRateLimiter(source)` 对 `BaseSource` 子类通用）。
+    ///
+    /// - 空 / `"0"` / 非法 rate → 立即放行（且不注册 limiter）；
+    /// - 合法 rate → key 缺失时惰性创建、存在时复用既有窗口（只读配置，
+    ///   不回写；配置刷新仍走 [`Self::update`] / [`Self::refresh`]）；
+    /// - key 为源 URL（与书源同一命名空间），RSS 源与书源 URL 相同时共享
+    ///   同一窗口（与上游按 source.key 建 limiter 一致）。
+    pub async fn acquire_by_source(&self, source_url: &str, concurrent_rate: Option<&str>) {
+        let rate = concurrent_rate.unwrap_or("").trim();
         if rate.is_empty() || rate == "0" {
             return;
         }
         let Some((access_limit, interval_ms)) = IntervalRateLimiter::parse_rate(rate) else {
             return;
         };
-        let limiter = self.limiter_for(&source.book_source_url, access_limit, interval_ms);
+        let limiter = self.limiter_for(source_url, access_limit, interval_ms);
         // map 锁已在 limiter_for 内释放，此处只可能持有 limiter 自身 state 锁
         limiter.acquire().await;
     }
@@ -329,6 +349,62 @@ mod tests {
             tracked(&registry),
             0,
             "未注册 key 的更新不得预创建 limiter（延迟到首次 acquire）"
+        );
+    }
+
+    /// `acquire_by_source` 泛化入口：同 URL 同 rate 共享固定窗口，
+    /// 第二次访问须等待到窗口结束；不同 URL 相互独立
+    #[tokio::test]
+    async fn acquire_by_source_throttles_same_url_and_isolates_other_url() {
+        let registry = RateLimiterRegistry::new();
+        let url = "https://rss-rate.example/feed";
+
+        let started = std::time::Instant::now();
+        registry.acquire_by_source(url, Some("1/100")).await; // 窗口第 1 次放行
+        registry.acquire_by_source(url, Some("1/100")).await; // 超限 → 等窗口结束
+        let waited = started.elapsed();
+        assert!(
+            waited >= Duration::from_millis(80),
+            "同源第二次访问须等待约 100ms 窗口（实测 {waited:?}）"
+        );
+
+        // 不同源不受该窗口影响：立即放行
+        let other = tokio::time::timeout(
+            Duration::from_millis(50),
+            registry.acquire_by_source("https://rss-rate-other.example/feed", Some("1/10000")),
+        )
+        .await;
+        assert!(other.is_ok(), "不同源 URL 的窗口必须相互独立");
+        assert_eq!(tracked(&registry), 2, "两个源各注册一条 limiter");
+    }
+
+    /// `acquire_by_source` 空 / `"0"` / 非法 rate 一律立即放行且不注册；
+    /// `refresh` 保存侧语义对该入口同样生效（合法率原位刷新）
+    #[tokio::test]
+    async fn acquire_by_source_unlimited_rates_and_refresh_semantics() {
+        let registry = RateLimiterRegistry::new();
+        let url = "https://rss-rate-unlimited.example/feed";
+        for rate in [None, Some(""), Some("  "), Some("0"), Some("abc")] {
+            let passed = tokio::time::timeout(
+                Duration::from_millis(50),
+                registry.acquire_by_source(url, rate),
+            )
+            .await;
+            assert!(passed.is_ok(), "不限流/非法 rate 必须立即放行: {rate:?}");
+        }
+        assert_eq!(tracked(&registry), 0, "不限流来源不得注册 limiter");
+
+        // 合法率建立窗口后，保存路径 refresh 新率须对后续 acquire 生效
+        registry.acquire_by_source(url, Some("5/10000")).await;
+        registry.refresh(url, "1/10000");
+        let blocked = tokio::time::timeout(
+            Duration::from_millis(100),
+            registry.acquire_by_source(url, Some("5/10000")),
+        )
+        .await;
+        assert!(
+            blocked.is_err(),
+            "refresh 写入的 1/10000 必须对 RSS 泛化入口生效（窗口已用 1 次）"
         );
     }
 
