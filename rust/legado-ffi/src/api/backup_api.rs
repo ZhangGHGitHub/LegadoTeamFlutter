@@ -51,6 +51,20 @@
 //! 我方没有等价的阅读主题配置面或封面/背景落盘目录（封面按 URL 直取、不落本地
 //! `covers/`），恢复媒体会写到无人消费的目录并引入路径安全面；书内指向
 //! `.../covers/xxx` 的绝对封面路径按原版 remap 失败语义置空（回落到书源封面 URL）。
+//!
+//! # 批9 审查回修登记（P2，仅登记，本批不实现）
+//!
+//! 以下缺口已由批次9 审查确认，登记于此避免静默，待后续批次立项：
+//! - **P2-3** 原版旧格式 `bookSource.json`（早期 Room 实体的 `ruleSearch` 等
+//!   扁平旧键）回退适配缺失：仅支持当前实体形态，旧源会因规则键不匹配而丢规则；
+//! - **P2-4** `bookshelf.json` 的 `persistedCoverUrl`（原版落盘封面缓存路径）不恢复：
+//!   我方封面按 URL 直取，无本地封面缓存语义；
+//! - **P2-7** 旧高亮 `style` 的 legacy 样式串（原版 `HighlightStyle` 旧编码）缺失
+//!   兼容：仅按新 JSON 样式解析；
+//! - **P2-8** 明文 `cookies.json` / `runtimeSourceCache.json` 跳过：我方无 Cookie
+//!   与书源运行变量持久化面，仅记 warn（不加密码面）；
+//! - **P2-10** 部分恢复对用户不可见：条目级跳过只写日志，FFI `RestoreStats`
+//!   无 warnings 字段。后续立项在统计结构增加 `warnings`（需同步 FFI 契约）。
 
 use std::collections::HashMap;
 use std::fs;
@@ -401,6 +415,16 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
 ///   `unchecked_transaction()` 开启事务（rusqlite 0.31 `transaction()`
 ///   需 `&mut Connection`，缘由见 legado-db connection.rs 文档）。
 pub fn backup_restore(path: &str) -> LegadoResult<String> {
+    // [批9 回修 P1] 先按元数据限制输入包大小，避免把超大文件整体读入内存
+    // （JSON 与 zip 两个入口共用；metadata 失败按读取失败报错）
+    let metadata = fs::metadata(path)
+        .map_err(|e| LegadoError::Io(std::io::Error::other(format!("读取备份文件失败: {e}"))))?;
+    if metadata.len() > MAX_BACKUP_ARCHIVE_BYTES {
+        return Err(LegadoError::Io(std::io::Error::other(format!(
+            "备份文件过大（{} 字节，上限 {MAX_BACKUP_ARCHIVE_BYTES} 字节），已拒绝恢复: {path}",
+            metadata.len()
+        ))));
+    }
     let bytes = fs::read(path)
         .map_err(|e| LegadoError::Io(std::io::Error::other(format!("读取备份文件失败: {e}"))))?;
 
@@ -409,24 +433,67 @@ pub fn backup_restore(path: &str) -> LegadoResult<String> {
         return restore_from_zip(&bytes);
     }
 
+    // [批9 回修 P1] 既非 zip 魔数、又不以 JSON 对象开头的文件（如带 stub 的
+    // 自解压 zip、任意二进制）给出统一可读文案，而不是 UTF-8/serde 的原始报错。
+    // 在 UTF-8 转换前按字节判定（二进制包可能整段不是合法 UTF-8）。
+    let first_non_space = bytes
+        .strip_prefix(&[0xEF, 0xBB, 0xBF]) // UTF-8 BOM
+        .unwrap_or(&bytes)
+        .iter()
+        .find(|b| !b.is_ascii_whitespace());
+    if !matches!(first_non_space, Some(b'{')) {
+        return Err(LegadoError::Internal(
+            "不支持的备份格式：文件既不是原版 zip 备份，也不是本应用的 JSON 备份".to_string(),
+        ));
+    }
+
     let content = String::from_utf8(bytes)
         .map_err(|e| LegadoError::Io(std::io::Error::other(format!("读取备份文件失败: {e}"))))?;
+    let trimmed = content.trim_start_matches('\u{feff}').trim_start();
 
-    let backup: BackupData = serde_json::from_str(&content)
+    let value: serde_json::Value = serde_json::from_str(trimmed)
         .map_err(|e| LegadoError::Internal(format!("备份文件解析失败: {e}")))?;
 
-    restore_backup_data(&backup)
+    // [批9 回修 P2-6] 「先清空再插入」只在该键存在时生效：v1 旧备份没有
+    // highlightRules/keyboardAssists 键，恢复时不得清空库内既有规则
+    let replace_policy = ReplaceTablePolicy {
+        highlight_rules: value.get("highlightRules").is_some(),
+        keyboard_assists: value.get("keyboardAssists").is_some(),
+    };
+
+    let backup: BackupData = serde_json::from_value(value)
+        .map_err(|e| LegadoError::Internal(format!("备份文件解析失败: {e}")))?;
+
+    restore_backup_data(&backup, replace_policy)
+}
+
+/// 恢复「先清空再插入」策略（对齐原版 Restore.kt 的全量替换语义）
+///
+/// 原版只在该 JSON 文件**存在且解析成功**时执行 `replaceAll` /
+/// `deleteAll + insert`（`Restore.kt:310-313`、`359-361`）；文件缺失或损坏时
+/// 不动库内旧行。因此不能以「备份列表是否为空」判断——空列表的语义是清空，
+/// 键缺失的语义是不触碰，两者必须区分，故由输入适配层显式携带策略。
+/// 自有 JSON 按原始 JSON 键是否存在判定，zip 按文件是否存在且解析成功判定。
+#[derive(Debug, Clone, Copy, Default)]
+struct ReplaceTablePolicy {
+    /// 备份显式包含有效的高亮规则集合：恢复时先清空 highlightRules
+    highlight_rules: bool,
+    /// 备份显式包含有效的键盘辅助集合：恢复时先清空 keyboardAssists
+    keyboard_assists: bool,
 }
 
 /// 解析结果落库（JSON 与 zip 两条入口共用，单实现原则）
 ///
 /// 事务边界与错误语义见 [`backup_restore`] 文档：条目级错误 warn 跳过并照常
 /// 提交，未捕获 `Err` 整体回滚。
-fn restore_backup_data(backup: &BackupData) -> LegadoResult<String> {
+fn restore_backup_data(
+    backup: &BackupData,
+    replace_policy: ReplaceTablePolicy,
+) -> LegadoResult<String> {
     let stats = with_database(|db| {
         let conn = db.connection();
         legado_db::connection::in_transaction(conn, "备份恢复", |conn| {
-            restore_backup_in_tx(conn, backup)
+            restore_backup_in_tx(conn, backup, replace_policy)
         })
     })?;
 
@@ -442,7 +509,16 @@ const ZIP_ENTRY_MAGIC: [u8; 4] = *b"PK\x03\x04";
 /// 空 zip（仅中央目录结束记录 `PK\x05\x06`）——同样按 zip 分流
 const ZIP_EMPTY_MAGIC: [u8; 4] = *b"PK\x05\x06";
 /// 单个数据条目解压上限（256 MiB）：原版无上限，本实现为解压炸弹加固
+///
+/// [批9 回修 P1] 该上限必须约束**实际解压字节数**：zip 头里的
+/// `uncompressed_size` 可由构造者任意伪造（zip 2.4 解压按 `compressed_size`
+/// 限流、不校验声明值），仅凭 `entry.size()` 判定会被「声明小/实际大」绕过。
 const MAX_BACKUP_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
+/// 单个备份文件（解压前）大小上限（512 MiB）：JSON 与 zip 入口共用
+const MAX_BACKUP_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
+/// 单次恢复跨条目累计解压上限（512 MiB）：多个「刚好合规」条目叠加也不能
+/// 无限占用内存/CPU，超预算直接中止整次恢复并给出明确错误
+const MAX_BACKUP_TOTAL_BYTES: u64 = 512 * 1024 * 1024;
 
 /// 原版 `Backup.kt` 写出的、本实现会读取的数据文件（其余条目不解压）
 const ZIP_DATA_FILES: [&str; 20] = [
@@ -496,11 +572,16 @@ fn is_zip_backup(bytes: &[u8]) -> bool {
 }
 
 /// 读取 zip 备份：校验条目路径、只解压已知数据文件
+///
+/// [批9 回修 P1] 解压按**实际字节数**限量（[`read_zip_entry_limited`]）：
+/// zip 头的 `uncompressed_size` 不可信，声明值只用于提前日志；跨条目累计
+/// 解压量超过 [`MAX_BACKUP_TOTAL_BYTES`] 时中止整次恢复（明确报错）。
 fn read_zip_backup(bytes: &[u8]) -> LegadoResult<ZipBackupArchive> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
         .map_err(|e| LegadoError::Internal(format!("备份 zip 解析失败: {e}")))?;
     let mut files: HashMap<String, Vec<u8>> = HashMap::new();
     let mut entry_names: Vec<String> = Vec::new();
+    let mut total_decoded: u64 = 0;
 
     for index in 0..archive.len() {
         let mut entry = archive
@@ -520,21 +601,69 @@ fn read_zip_backup(bytes: &[u8]) -> LegadoResult<ZipBackupArchive> {
         if !ZIP_DATA_FILES.contains(&name.as_str()) {
             continue;
         }
-        if entry.size() > MAX_BACKUP_ENTRY_BYTES {
-            log::warn!(
-                "备份条目超过解压上限（已跳过）: {name} 声明 {} 字节（上限 {MAX_BACKUP_ENTRY_BYTES}）",
-                entry.size()
-            );
-            continue;
+        let declared_size = entry.size();
+        match read_zip_entry_limited(
+            &name,
+            declared_size,
+            &mut entry,
+            MAX_BACKUP_ENTRY_BYTES,
+            &mut total_decoded,
+            MAX_BACKUP_TOTAL_BYTES,
+        )? {
+            Some(buf) => {
+                files.insert(name, buf);
+            }
+            None => continue,
         }
-        let mut buf = Vec::with_capacity(entry.size() as usize);
-        entry
-            .read_to_end(&mut buf)
-            .map_err(|e| LegadoError::Internal(format!("读取备份 zip 条目 {name} 失败: {e}")))?;
-        files.insert(name, buf);
     }
 
     Ok(ZipBackupArchive { files, entry_names })
+}
+
+/// 限量读取单个 zip 条目（解压炸弹防护的唯一读取入口）
+///
+/// - `declared_size` 仅用于提前日志（zip 头可伪造），**不作为判定依据**；
+/// - 实际读取经 `take(limit + 1)` 截断：读满 `limit + 1` 字节即说明超限，
+///   返回 `Ok(None)` 表示跳过该条目（不落库、不继续占用内存）；
+/// - 已读取字节累计进 `total_decoded`，超过 `total_limit` 返回明确错误中止
+///   整次恢复（多条目叠加同样受限）。
+///
+/// 截断读取不会读到 deflate 流末尾，因此不会触发 zip crate 的 CRC 校验——
+/// 这正是「伪造声明值」的绕行路径：CRC 正确与否不影响本函数的判定。
+fn read_zip_entry_limited<R: Read>(
+    name: &str,
+    declared_size: u64,
+    reader: R,
+    limit: u64,
+    total_decoded: &mut u64,
+    total_limit: u64,
+) -> LegadoResult<Option<Vec<u8>>> {
+    if declared_size > limit {
+        log::warn!(
+            "备份条目声明大小超过上限（仍按实际解压量校验）: {name} 声明 {declared_size} 字节（上限 {limit}）"
+        );
+    }
+    // 预分配只参考声明值且封顶 1 MiB，避免伪造的巨大声明值直接触发巨额分配
+    let mut buf = Vec::with_capacity(declared_size.min(1024 * 1024) as usize);
+    let mut limited = reader.take(limit.saturating_add(1));
+    limited
+        .read_to_end(&mut buf)
+        .map_err(|e| LegadoError::Internal(format!("读取备份 zip 条目 {name} 失败: {e}")))?;
+
+    *total_decoded = total_decoded.saturating_add(buf.len() as u64);
+    if *total_decoded > total_limit {
+        return Err(LegadoError::Internal(format!(
+            "备份解压总量超过上限（已解压超过 {total_limit} 字节），已中止恢复；\
+             备份包可能异常或为解压炸弹"
+        )));
+    }
+    if buf.len() as u64 > limit {
+        log::warn!(
+            "备份条目实际解压大小超过上限（已跳过）: {name} 实际超过 {limit} 字节（声明 {declared_size} 字节）"
+        );
+        return Ok(None);
+    }
+    Ok(Some(buf))
 }
 
 /// zip 条目路径安全校验（不接受绝对路径、盘符、反斜杠与 `.`/`..` 段）
@@ -559,9 +688,10 @@ fn is_safe_zip_entry_name(name: &str) -> bool {
 fn restore_from_zip(bytes: &[u8]) -> LegadoResult<String> {
     let archive = read_zip_backup(bytes)?;
     ensure_zip_encryption_supported(&archive)?;
-    report_unmapped_zip_entries(&archive);
-    let backup = backup_data_from_zip(&archive);
-    restore_backup_data(&backup)
+    // 返回值仅供回归测试断言告警，恢复流程无需消费
+    let _ = report_unmapped_zip_entries(&archive);
+    let (backup, replace_policy) = backup_data_from_zip(&archive);
+    restore_backup_data(&backup, replace_policy)
 }
 
 /// 加密内容前置校验（对齐原版「无备份密码即拒绝恢复登录信息」语义）
@@ -595,9 +725,18 @@ fn ensure_zip_encryption_supported(archive: &ZipBackupArchive) -> LegadoResult<(
 }
 
 /// 报告未映射内容（媒体目录与配置快照）：只记日志，不落盘
-fn report_unmapped_zip_entries(archive: &ZipBackupArchive) {
-    if archive.files.is_empty() && !archive.entry_names.is_empty() {
-        log::warn!("备份 zip 内未找到原版数据文件（条目可能嵌套在子目录），本次恢复不写入任何表");
+///
+/// 返回是否发出了「未找到原版数据文件」告警（仅供回归测试断言，调用方无需消费）。
+/// [批9 回修 P2-13] 判定只看「是否有可读数据文件」：全部条目被路径校验拒绝
+/// 时 `entry_names` 同样为空，原条件（`files.is_empty() && !entry_names.is_empty()`）
+/// 会漏报，用户会误以为「恢复成功但数据为空」。
+fn report_unmapped_zip_entries(archive: &ZipBackupArchive) -> bool {
+    let mut no_data_warned = false;
+    if archive.files.is_empty() {
+        no_data_warned = true;
+        log::warn!(
+            "备份 zip 内未找到原版数据文件（条目缺失、被拒绝或嵌套在子目录），本次恢复不写入任何表"
+        );
     }
     let mut reported_media: Vec<&str> = Vec::new();
     for name in &archive.entry_names {
@@ -616,67 +755,85 @@ fn report_unmapped_zip_entries(archive: &ZipBackupArchive) {
             log::warn!("备份包含 {name}，当前版本无对应配置面（已跳过）");
         }
     }
+    no_data_warned
 }
 
 /// 原版 zip 文件 → [`BackupData`]（只做输入适配，游标语义对齐原版 `Restore.kt` 顺序）
-fn backup_data_from_zip(archive: &ZipBackupArchive) -> BackupData {
+///
+/// 同时返回 [`ReplaceTablePolicy`]：高亮规则/键盘辅助两表在原版恢复里是
+/// 「文件存在且解析成功 → 全量替换」，zip 适配层必须把该事实显式带出。
+fn backup_data_from_zip(archive: &ZipBackupArchive) -> (BackupData, ReplaceTablePolicy) {
     let mut data = BackupData::empty();
     data.books = zip_json_array(archive, "bookshelf.json")
+        .unwrap_or_default()
         .into_iter()
         .map(normalize_zip_book)
         .collect();
     data.book_groups = zip_json_array(archive, "bookGroup.json")
+        .unwrap_or_default()
         .into_iter()
         .map(normalize_zip_book_group)
         .collect();
-    data.bookmarks = zip_json_array(archive, "bookmark.json");
-    data.highlights = zip_json_array(archive, "highlight.json");
-    data.highlight_rules = zip_json_array(archive, "highlightRule.json")
-        .into_iter()
-        .map(normalize_zip_sort_order)
-        .collect();
-    data.book_sources = zip_json_array(archive, "bookSource.json");
-    data.rss_sources = zip_json_array(archive, "rssSources.json");
-    data.rss_stars = zip_json_array(archive, "rssStar.json");
+    data.bookmarks = zip_json_array(archive, "bookmark.json").unwrap_or_default();
+    data.highlights = zip_json_array(archive, "highlight.json").unwrap_or_default();
+    let mut replace_policy = ReplaceTablePolicy::default();
+    if let Some(rules) = zip_json_array(archive, "highlightRule.json") {
+        replace_policy.highlight_rules = true;
+        data.highlight_rules = rules.into_iter().map(normalize_zip_sort_order).collect();
+    }
+    data.book_sources = zip_json_array(archive, "bookSource.json").unwrap_or_default();
+    data.rss_sources = zip_json_array(archive, "rssSources.json").unwrap_or_default();
+    data.rss_stars = zip_json_array(archive, "rssStar.json").unwrap_or_default();
     data.replace_rules = zip_json_array(archive, "replaceRule.json")
+        .unwrap_or_default()
         .into_iter()
         .map(normalize_zip_sort_order)
         .collect();
-    data.read_records = zip_json_array(archive, "readRecord.json");
-    data.search_history = zip_json_array(archive, "searchHistory.json");
+    // [批9 回修 P2-5] readRecord 的 deviceId 归一为空串（单设备模型）
+    data.read_records = zip_json_array(archive, "readRecord.json")
+        .unwrap_or_default()
+        .into_iter()
+        .map(normalize_zip_read_record)
+        .collect();
+    data.search_history = zip_json_array(archive, "searchHistory.json").unwrap_or_default();
     data.rule_subs = zip_json_array(archive, "sourceSub.json")
+        .unwrap_or_default()
         .into_iter()
         .map(normalize_zip_rule_sub)
         .collect();
-    data.txt_toc_rules = zip_json_array(archive, "txtTocRule.json");
+    data.txt_toc_rules = zip_json_array(archive, "txtTocRule.json").unwrap_or_default();
     data.http_tts = zip_json_array(archive, "httpTTS.json")
+        .unwrap_or_default()
         .into_iter()
         .map(normalize_zip_http_tts)
         .collect();
-    data.dict_rules = zip_json_array(archive, "dictRule.json");
-    data.keyboard_assists = zip_json_array(archive, "keyboardAssists.json");
-    data.auto_tasks = zip_json_array(archive, "autoTask.json");
+    data.dict_rules = zip_json_array(archive, "dictRule.json").unwrap_or_default();
+    if let Some(assists) = zip_json_array(archive, "keyboardAssists.json") {
+        replace_policy.keyboard_assists = true;
+        data.keyboard_assists = assists;
+    }
+    data.auto_tasks = zip_json_array(archive, "autoTask.json").unwrap_or_default();
     data.servers = zip_servers(archive);
-    data
+    (data, replace_policy)
 }
 
 /// 读取并解析一个数据文件为 JSON 数组
 ///
-/// 口径对齐原版 `Restore.fileToListT`：文件不存在 → debug 跳过；解析失败 →
-/// warn 跳过**该类**（不影响其余类别与事务提交）。
-fn zip_json_array(archive: &ZipBackupArchive, name: &str) -> Vec<serde_json::Value> {
+/// 口径对齐原版 `Restore.fileToListT`：文件不存在 → debug 跳过（`None`）；
+/// 解析失败 → warn 跳过**该类**（`None`，不影响其余类别与事务提交）。
+/// 返回 `Option` 是为了让调用方区分「键缺失/损坏」与「合法空数组」——
+/// 前者不得触发全量替换表的清空（见 [`ReplaceTablePolicy`]）。
+fn zip_json_array(archive: &ZipBackupArchive, name: &str) -> Option<Vec<serde_json::Value>> {
     let Some(bytes) = archive.files.get(name) else {
         log::debug!("原版备份不含 {name}，按原版语义跳过该类");
-        return Vec::new();
+        return None;
     };
-    let Some(text) = decode_zip_text(name, bytes) else {
-        return Vec::new();
-    };
+    let text = decode_zip_text(name, bytes)?;
     match serde_json::from_str::<Vec<serde_json::Value>>(text) {
-        Ok(list) => list,
+        Ok(list) => Some(list),
         Err(e) => {
             log::warn!("{name} 解析失败（已跳过该类）: {e}");
-            Vec::new()
+            None
         }
     }
 }
@@ -720,6 +877,27 @@ fn normalize_zip_book_group(mut value: serde_json::Value) -> serde_json::Value {
         if stale_cover {
             map.insert("cover".to_string(), serde_json::Value::Null);
         }
+    }
+    value
+}
+
+/// 阅读记录归一：原版 zip 的 `deviceId`（原设备 androidId）归一为空串
+///
+/// 原版 `Restore.kt:363-376` 用 `readRecord.deviceId != androidId` 判定「他机记录」
+/// 并直接插入——其前提是备份来自另一台设备；本机恢复时 deviceId 恒等于本机
+/// androidId，走「同键较新者胜」。我方为单设备模型（Rust 侧 deviceId 固定空串），
+/// 若不归一：原设备 ID 会被当作他机记录直接插入，与本机既有同书名记录并存两行，
+/// Flutter 阅读记录页按 bookName 合并时把 readTime 相加，阅读时长翻倍。
+/// 归一一律置空串后，恢复走 [`ReadRecordRepository::upsert_restore`] 的
+/// 「本机较新者胜 + 作者合并」路径，对齐原版「同设备比较」意图。
+fn normalize_zip_read_record(mut value: serde_json::Value) -> serde_json::Value {
+    if let serde_json::Value::Object(map) = &mut value {
+        // 兼容理论上的 snake_case 旧键，避免归一后同义键并存
+        map.remove("device_id");
+        map.insert(
+            "deviceId".to_string(),
+            serde_json::Value::String(String::new()),
+        );
     }
     value
 }
@@ -884,7 +1062,11 @@ fn decrypt_backup_payload(text: &str) -> LegadoResult<String> {
 /// 直接构造「恢复中未捕获错误 → 整体回滚」场景（外部备份数据无法构造
 /// 逃逸条目捕获网的 Err——全部条目级错误均在下方 match 分支内被 warn
 /// 吞掉，回滚路径只能以闭包内直接上抛 `Err` 的方式验证）。
-fn restore_backup_in_tx(conn: &Connection, backup: &BackupData) -> LegadoResult<RestoreStats> {
+fn restore_backup_in_tx(
+    conn: &Connection,
+    backup: &BackupData,
+    replace_policy: ReplaceTablePolicy,
+) -> LegadoResult<RestoreStats> {
     let mut stats = RestoreStats {
         books: 0,
         bookmarks: 0,
@@ -1048,9 +1230,17 @@ fn restore_backup_in_tx(conn: &Connection, backup: &BackupData) -> LegadoResult<
         }
     }
 
-    // 高亮规则（主键 id 显式 REPLACE；P2-11 补列后 uuid/applyToBody 随模型
-    // serde 全字段往返，旧备份缺字段时 serde 默认值兜底，不破坏可恢复性）
+    // 高亮规则（P2-6 对齐原版 `Restore.kt:310-313` 的 `highlightRuleDao.replaceAll`：
+    // 「以备份集合为准」——文件/键存在且解析成功时先清空再插入，否则备份外的
+    // 库内旧行会残留。缺失/损坏时不触碰库内旧行（对齐原版 fileToListT 返回 null）。
+    // P2-11 补列后 uuid/applyToBody 随模型 serde 全字段往返，旧备份缺字段时
+    // serde 默认值兜底，不破坏可恢复性）
     let highlight_rule_repo = HighlightRuleRepository::new(conn);
+    if replace_policy.highlight_rules {
+        if let Err(e) = highlight_rule_repo.delete_all() {
+            log::warn!("恢复高亮规则前清空失败（继续逐条写入，可能残留旧行）: {e}");
+        }
+    }
     for value in &backup.highlight_rules {
         match serde_json::from_value::<legado_core::models::HighlightRule>(value.clone()) {
             Ok(rule) => match highlight_rule_repo.insert(&rule) {
@@ -1121,8 +1311,15 @@ fn restore_backup_in_tx(conn: &Connection, backup: &BackupData) -> LegadoResult<
         }
     }
 
-    // 键盘辅助规则（主键 (type, key)，INSERT OR REPLACE）
+    // 键盘辅助规则（P2-6 对齐原版 `Restore.kt:359-361`
+    // `keyboardAssistsDao.deleteAll()` + insert：以备份集合为准）。
+    // 仓库无 delete_all，恢复语义明确要求先清空，故直接执行同表 DELETE。
     let assist_repo = KeyboardAssistRepository::new(conn);
+    if replace_policy.keyboard_assists {
+        if let Err(e) = conn.execute("DELETE FROM keyboardAssists", []) {
+            log::warn!("恢复键盘辅助规则前清空失败（继续逐条写入，可能残留旧行）: {e}");
+        }
+    }
     for value in &backup.keyboard_assists {
         match serde_json::from_value::<KeyboardAssist>(value.clone()) {
             Ok(assist) => match assist_repo.insert_record(&assist) {
@@ -2316,7 +2513,7 @@ mod tests {
         with_database(|db| {
             let conn = db.connection();
             let stats = legado_db::connection::in_transaction(conn, "测试恢复", |conn| {
-                restore_backup_in_tx(conn, &backup)
+                restore_backup_in_tx(conn, &backup, ReplaceTablePolicy::default())
             })
             .unwrap();
             assert_eq!(
@@ -2369,7 +2566,8 @@ mod tests {
                 "回滚测试",
                 |conn| -> LegadoResult<RestoreStats> {
                     // 先经恢复体正常写入一批（若无事务包裹，此处已 autocommit 落库）
-                    let stats = restore_backup_in_tx(conn, &backup).unwrap();
+                    let stats =
+                        restore_backup_in_tx(conn, &backup, ReplaceTablePolicy::default()).unwrap();
                     assert_eq!(stats.book_sources, 1);
                     assert_eq!(stats.books, 1);
                     // 模拟恢复体后续未捕获错误（条目捕获网之外的 Err）
@@ -2843,10 +3041,13 @@ mod tests {
             assert_eq!(rules[0].name, "zip替换规则");
             assert_eq!(rules[0].order, 5, "原版 order 键应归一到 sortOrder");
 
-            // 阅读记录（原版设备 ID 按非本机记录直接写入）
+            // 阅读记录（P2-5：原版设备 ID 归一为单设备空串，走「本机较新者胜」）
             let records = ReadRecordRepository::new(conn).find_all()?;
             assert_eq!(records.len(), 1);
-            assert_eq!(records[0].device_id, "original-device");
+            assert_eq!(
+                records[0].device_id, "",
+                "zip 备份的 deviceId 应归一为空串（单设备模型）"
+            );
             assert_eq!(records[0].read_time, 1700000004000);
             assert_eq!(records[0].last_read, 8);
 
@@ -3012,10 +3213,31 @@ mod tests {
     ///
     /// 对齐原版 `Restore.kt:227-236`：cookies.json 存在且无密码时上抛
     /// 「需设置备份密码」；我方无密码输入面，故返回可读错误而不是静默跳过。
+    ///
+    /// [批9 回修 P2-12] 预置哨兵行：断言拒绝恢复时库内既有数据**未被触碰**，
+    /// 证明「零落库」而不是「恰好表为空」。
     #[test]
     fn test_restore_zip_password_protected_cookies_errors_without_writes() {
         let _db_guard = crate::db_state::ensure_test_db();
         clear_backup_tables();
+
+        // 哨兵：库内既有书 + 书源（拒绝恢复后必须原样保留）
+        with_database(|db| {
+            let conn = db.connection();
+            BookRepository::new(conn).insert(&Book {
+                book_url: "https://zip.example/sentinel".to_string(),
+                name: "哨兵书".to_string(),
+                author: "哨兵作者".to_string(),
+                ..Book::default()
+            })?;
+            BookSourceRepository::new(conn).insert(&BookSource {
+                book_source_url: "https://zip.example/sentinel-source".to_string(),
+                book_source_name: "哨兵源".to_string(),
+                ..BookSource::default()
+            })?;
+            Ok(())
+        })
+        .unwrap();
 
         let bookshelf =
             r#"[{"bookUrl":"https://zip.example/locked","name":"加密书","author":"作者"}]"#;
@@ -3036,11 +3258,100 @@ mod tests {
             "应指出加密文件: {message}"
         );
 
-        // 前置校验失败不得产生部分恢复态
-        let books = with_database(|db| BookRepository::new(db.connection()).find_all()).unwrap();
-        assert!(books.is_empty(), "加密备份拒绝恢复时库内应零残留");
+        // 前置校验失败不得产生部分恢复态，也不得触碰库内既有数据
+        with_database(|db| {
+            let conn = db.connection();
+            let books = BookRepository::new(conn).find_all()?;
+            assert_eq!(books.len(), 1, "哨兵书应原样保留：{books:?}");
+            assert_eq!(books[0].book_url, "https://zip.example/sentinel");
+            let sources = BookSourceRepository::new(conn).find_all()?;
+            assert_eq!(sources.len(), 1, "哨兵源应原样保留：{sources:?}");
+            assert_eq!(
+                sources[0].book_source_url,
+                "https://zip.example/sentinel-source"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批9 回修 P2-12] runtimeSourceCache.json 明文/密文两分支
+    ///
+    /// - 密文（设过备份密码）→ 明确错误文案，且库内哨兵行未被触碰；
+    /// - 明文数组（历史/第三方产出）→ warn 跳过该类，其余表照常恢复。
+    #[test]
+    fn test_restore_zip_runtime_source_cache_branches() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let bookshelf =
+            r#"[{"bookUrl":"https://zip.example/runtime","name":"运行变量书","author":"作者"}]"#;
+
+        // ── 密文分支 ───────────────────────────────────────────
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: "https://zip.example/runtime-sentinel".to_string(),
+                name: "运行变量哨兵".to_string(),
+                author: "哨兵".to_string(),
+                ..Book::default()
+            })?;
+            Ok(())
+        })
+        .unwrap();
+        let (dir_enc, path_enc) = write_upstream_backup_zip(
+            "legado_restore_zip_runtime_encrypted",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                (
+                    "runtimeSourceCache.json",
+                    UPSTREAM_SECRET_PW_SERVERS.as_bytes(),
+                ),
+            ],
+        );
+        let err = backup_restore(&path_enc).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("备份密码"), "应提示备份密码: {message}");
+        assert!(
+            message.contains("runtimeSourceCache.json"),
+            "应指出加密文件: {message}"
+        );
+        with_database(|db| {
+            let books = BookRepository::new(db.connection()).find_all()?;
+            assert_eq!(books.len(), 1, "拒绝恢复时哨兵行不得被触碰: {books:?}");
+            assert_eq!(
+                books[0].book_url, "https://zip.example/runtime-sentinel",
+                "哨兵行内容不得变化"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+        let _ = fs::remove_dir_all(&dir_enc);
+
+        // ── 明文分支 ───────────────────────────────────────────
+        clear_backup_tables();
+        let (dir_plain, path_plain) = write_upstream_backup_zip(
+            "legado_restore_zip_runtime_plaintext",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                ("runtimeSourceCache.json", b"[]"),
+            ],
+        );
+        let stats: RestoreStats =
+            serde_json::from_str(&backup_restore(&path_plain).unwrap()).unwrap();
+        assert_eq!(
+            stats.books, 1,
+            "明文 runtimeSourceCache 只跳过该类，不得影响书架"
+        );
+        with_database(|db| {
+            let books = BookRepository::new(db.connection()).find_all()?;
+            assert_eq!(books.len(), 1);
+            assert_eq!(books[0].book_url, "https://zip.example/runtime");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+        let _ = fs::remove_dir_all(&dir_plain);
     }
 
     /// [批9 加密] 密文用真实密码加密 → servers 跳过，其余表照常恢复（对齐原版 runCatching）
@@ -3092,6 +3403,413 @@ mod tests {
         assert_eq!(servers.len(), 1);
         assert_eq!(servers[0].id, 9);
         assert_eq!(servers[0].name, "明文服务器");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批9 回修 P2-5] 本机既有记录 + zip 备份记录 → 恢复后单行且较新者胜
+    ///
+    /// 原版 zip 的 deviceId 是原设备 androidId；若按「他机记录」直插，会与本机
+    /// 同书名记录并存两行，Flutter 阅读记录页按 bookName 合并会把 readTime 相加
+    /// （阅读时长翻倍）。归一为空串后必须只剩一行，且库内较新值不被覆盖。
+    #[test]
+    fn test_restore_upstream_zip_read_record_single_row_newest_wins() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        // 本机既有记录（较新：readTime 1700000009000）
+        with_database(|db| {
+            ReadRecordRepository::new(db.connection()).upsert_full(
+                "",
+                "zip书一",
+                "作者乙",
+                1_700_000_009_000,
+                90,
+            )
+        })
+        .unwrap();
+
+        // 原版 zip 备份记录（较旧：readTime 1700000004000，deviceId 为原设备）
+        let read_record = r#"[{"deviceId":"original-device","bookName":"zip书一",
+            "author":"作者甲","readTime":1700000004000,"lastRead":8}]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_read_record",
+            &[("readRecord.json", read_record.as_bytes())],
+        );
+
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.read_records, 1);
+
+        with_database(|db| {
+            let rows = ReadRecordRepository::new(db.connection()).find_all()?;
+            assert_eq!(
+                rows.len(),
+                1,
+                "不得因 deviceId 差异产生两行（两行会被 Flutter 合并导致时长翻倍）: {rows:?}"
+            );
+            assert_eq!(rows[0].device_id, "", "zip 记录 deviceId 应归一为空串");
+            assert_eq!(
+                rows[0].read_time, 1_700_000_009_000,
+                "本机较新 readTime 不得被较旧备份覆盖"
+            );
+            assert_eq!(rows[0].last_read, 90, "lastRead 保留库内较新值");
+            let authors = legado_db::repository::read_record_repository::decode_read_record_authors(
+                &rows[0].author,
+            );
+            assert!(
+                authors.contains(&"作者乙".to_string()),
+                "库内作者应保留: {}",
+                rows[0].author
+            );
+            assert!(
+                authors.contains(&"作者甲".to_string()),
+                "备份作者应合并: {}",
+                rows[0].author
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批9 回修 P2-6] 高亮规则/键盘辅助：恢复语义为「以备份集合为准」
+    ///
+    /// 对齐原版 `Restore.kt:310-313`（highlightRuleDao.replaceAll）与
+    /// `:359-361`（keyboardAssists deleteAll + insert）：库内备份外的旧行必须
+    /// 被清掉；备份缺失这两类文件时不触碰库内旧行（对齐原版 fileToListT null）。
+    #[test]
+    fn test_restore_zip_replaces_highlight_rules_and_keyboard_assists() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let make_rule = |id: i64, name: &str| legado_core::models::HighlightRule {
+            id,
+            name: name.to_string(),
+            pattern: "p".to_string(),
+            isRegex: false,
+            scope: None,
+            isEnabled: true,
+            style: "{}".to_string(),
+            sortOrder: 0,
+            timeoutMillisecond: 1000,
+            applyToTitle: false,
+            uuid: format!("0000000{id}-0000-4000-8000-000000000000"),
+            applyToBody: true,
+        };
+        let make_assist = |key: &str| KeyboardAssist {
+            assist_type: 1,
+            key: key.to_string(),
+            value: "v".to_string(),
+            serial_no: 0,
+        };
+
+        // 库内旧行：2 条高亮规则 + 2 条键盘辅助
+        with_database(|db| {
+            let conn = db.connection();
+            HighlightRuleRepository::new(conn).insert(&make_rule(1, "旧规则一"))?;
+            HighlightRuleRepository::new(conn).insert(&make_rule(2, "旧规则二"))?;
+            KeyboardAssistRepository::new(conn).insert_record(&make_assist("old_key_1"))?;
+            KeyboardAssistRepository::new(conn).insert_record(&make_assist("old_key_2"))?;
+            Ok(())
+        })
+        .unwrap();
+
+        // 备份只含 1 条规则 + 1 条辅助（不同键）
+        let highlight_rule = r#"[{"id":77,"uuid":"77777777-7777-4777-8777-777777777777",
+            "name":"备份规则","pattern":"p","isRegex":false,"isEnabled":true,
+            "style":"{}","order":0,"timeoutMillisecond":1000,
+            "applyToTitle":false,"applyToBody":true}]"#;
+        let keyboard_assists = r#"[{"type":1,"key":"new_key","value":"v","serialNo":0}]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_replace_tables",
+            &[
+                ("highlightRule.json", highlight_rule.as_bytes()),
+                ("keyboardAssists.json", keyboard_assists.as_bytes()),
+            ],
+        );
+
+        assert!(backup_restore(&path).is_ok());
+
+        with_database(|db| {
+            let conn = db.connection();
+            let rules = HighlightRuleRepository::new(conn).find_all()?;
+            assert_eq!(rules.len(), 1, "备份外旧规则应被清空: {rules:?}");
+            assert_eq!(rules[0].id, 77);
+            assert_eq!(rules[0].name, "备份规则");
+
+            let assists = KeyboardAssistRepository::new(conn).find_all()?;
+            assert_eq!(assists.len(), 1, "备份外旧辅助规则应被清空: {assists:?}");
+            assert_eq!(assists[0].key, "new_key");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        // 备份缺这两类文件 → 不触碰库内旧行（重新播种后恢复一个无关 zip）
+        with_database(|db| {
+            let conn = db.connection();
+            HighlightRuleRepository::new(conn).insert(&make_rule(8, "保留规则"))?;
+            KeyboardAssistRepository::new(conn).insert_record(&make_assist("keep_key"))?;
+            Ok(())
+        })
+        .unwrap();
+        let bookshelf =
+            r#"[{"bookUrl":"https://zip.example/rules-keep","name":"规则保留书","author":"作者"}]"#;
+        let (dir2, path2) = write_upstream_backup_zip(
+            "legado_restore_zip_rules_absent",
+            &[("bookshelf.json", bookshelf.as_bytes())],
+        );
+        assert!(backup_restore(&path2).is_ok());
+        with_database(|db| {
+            let conn = db.connection();
+            let rules = HighlightRuleRepository::new(conn).find_all()?;
+            assert_eq!(
+                rules.len(),
+                2,
+                "备份缺 highlightRule.json 时不得清空库内规则"
+            );
+            let assists = KeyboardAssistRepository::new(conn).find_all()?;
+            assert_eq!(
+                assists.len(),
+                2,
+                "备份缺 keyboardAssists.json 时不得清空库内辅助规则"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+        let _ = fs::remove_dir_all(&dir2);
+    }
+
+    /// [批9 回修 P2-12] sourceSub.type=1/3 分支：rssSource / replaceRule 映射
+    #[test]
+    fn test_restore_zip_source_sub_type_mapping() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let source_sub = r#"[
+            {"id":1,"name":"书源订阅","url":"https://sub.example/book.json","type":0,
+             "customOrder":1,"autoUpdate":true,"update":1700000001000,
+             "updateInterval":30,"silentUpdate":false},
+            {"id":2,"name":"RSS订阅","url":"https://sub.example/rss.json","type":1,
+             "customOrder":2,"autoUpdate":true,"update":1700000002000,
+             "updateInterval":30,"silentUpdate":false},
+            {"id":3,"name":"替换订阅","url":"https://sub.example/replace.json","type":3,
+             "customOrder":3,"autoUpdate":true,"update":1700000003000,
+             "updateInterval":30,"silentUpdate":false}
+        ]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_sub_types",
+            &[("sourceSub.json", source_sub.as_bytes())],
+        );
+
+        assert!(backup_restore(&path).is_ok());
+
+        with_database(|db| {
+            let repo = RuleSubRepository::new(db.connection());
+            let book = repo
+                .find_by_url("https://sub.example/book.json")?
+                .expect("type=0 应落库");
+            let rss = repo
+                .find_by_url("https://sub.example/rss.json")?
+                .expect("type=1 应落库");
+            let replace = repo
+                .find_by_url("https://sub.example/replace.json")?
+                .expect("type=3 应落库");
+            assert_eq!(book.sub_type, "bookSource");
+            assert_eq!(rss.sub_type, "rssSource", "原版 type=1 应映射订阅源");
+            assert_eq!(
+                replace.sub_type, "replaceRule",
+                "原版 type=3 应映射替换规则"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批9 回修 P2-12/P2-13] 真实 `../bookshelf.json` 条目被拒、零恢复且发出告警
+    #[test]
+    fn test_restore_zip_rejects_parent_dir_entry_and_warns() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let bookshelf =
+            r#"[{"bookUrl":"https://zip.example/escape","name":"逃逸书","author":"作者"}]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_parent_dir",
+            &[("../bookshelf.json", bookshelf.as_bytes())],
+        );
+
+        // 路径校验拒绝该条目：文件内容不解压，entry_names 也为空
+        let bytes = fs::read(&path).unwrap();
+        let archive = read_zip_backup(&bytes).unwrap();
+        assert!(archive.files.is_empty(), "不安全路径条目不得解压");
+        assert!(archive.entry_names.is_empty(), "不安全路径条目不得记入清单");
+        // P2-13：全部条目被拒（entry_names 为空）时同样必须发出「未找到数据文件」告警
+        assert!(
+            report_unmapped_zip_entries(&archive),
+            "全部条目被拒时应报告「未找到原版数据文件」"
+        );
+
+        // 端到端：恢复不报错但零落库
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.books, 0, "被拒条目不得恢复");
+        with_database(|db| {
+            assert!(
+                BookRepository::new(db.connection()).find_all()?.is_empty(),
+                "零恢复：库内不得出现逃逸条目写入的书"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 把 zip 条目的「未压缩大小」声明改写为 `fake_size`（本地头 + 中央目录）
+    ///
+    /// 仅用于构造「声明小 / 实际大」的解压炸弹回归样本：压缩数据与 CRC 保持
+    /// 原样，只有声明值被伪造（zip 2.4 解压按 compressed_size 限流，不校验声明值）。
+    fn forge_zip_uncompressed_size(bytes: &mut [u8], fake_size: u32) {
+        assert_eq!(&bytes[..4], b"PK\x03\x04", "本地文件头魔数不符");
+        // 本地头：signature(4)+version(2)+flags(2)+method(2)+time(2)+date(2)+crc(4)
+        //        +compressedSize(4) = 22 偏移处为 uncompressedSize
+        bytes[22..26].copy_from_slice(&fake_size.to_le_bytes());
+        // 中央目录头：signature(4)+versionMade(2)+versionNeeded(2)+flags(2)
+        //            +method(2)+time(2)+date(2)+crc(4)+compressedSize(4) = 24 偏移
+        let cd = bytes
+            .windows(4)
+            .position(|w| w == b"PK\x01\x02")
+            .expect("zip 中央目录缺失");
+        bytes[cd + 24..cd + 28].copy_from_slice(&fake_size.to_le_bytes());
+    }
+
+    /// [批9 回修 P1] 伪造 uncompressed_size 的超量条目必须按实际读取量跳过
+    ///
+    /// 用 zip 2.4 构造真实条目（数据与 CRC 完好），仅把声明未压缩大小改为 32
+    /// 字节；实际内容 8192 字节。旧实现只看 `entry.size()` 会放行并
+    /// `read_to_end` 无限解压；修复后限量读取按实际字节数判定为超限并跳过。
+    /// 为避免测试真的生成 256 MiB 数据，直接以较小的 `limit` 调用同一防护函数。
+    #[test]
+    fn test_zip_forged_uncompressed_size_entry_skipped() {
+        use std::io::Write as _;
+
+        let dir = std::env::temp_dir().join("legado_restore_zip_forged_size");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let zip_path = dir.join("forged.zip");
+
+        // 合法书架 JSON + 尾部空白填充到 8192 字节（decode_zip_text 会 trim）
+        let mut payload =
+            r#"[{"bookUrl":"https://zip.example/forged","name":"伪造书","author":"作者"}]"#
+                .as_bytes()
+                .to_vec();
+        payload.resize(8192, b' ');
+        {
+            let file = fs::File::create(&zip_path).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            writer
+                .start_file("bookshelf.json", zip::write::SimpleFileOptions::default())
+                .unwrap();
+            writer.write_all(&payload).unwrap();
+            writer.finish().unwrap();
+        }
+        let mut bytes = fs::read(&zip_path).unwrap();
+        forge_zip_uncompressed_size(&mut bytes, 32);
+
+        // 声明值已伪造：entry.size() 返回 32（旧实现的放行条件）
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes[..])).unwrap();
+        let mut entry = archive.by_index(0).unwrap();
+        assert_eq!(entry.size(), 32, "伪造的声明大小应生效");
+
+        // 限量读取（测试上限 1024）→ 实际 8192 字节超限，必须跳过
+        let mut total_decoded = 0u64;
+        let result = read_zip_entry_limited(
+            "bookshelf.json",
+            entry.size(),
+            &mut entry,
+            1024,
+            &mut total_decoded,
+            MAX_BACKUP_TOTAL_BYTES,
+        )
+        .unwrap();
+        assert!(
+            result.is_none(),
+            "声明小/实际大的条目必须按实际解压量判定为超限并跳过"
+        );
+        assert!(
+            total_decoded > 1024,
+            "已读取字节应计入累计预算: {total_decoded}"
+        );
+
+        // 证明条目数据与 CRC 本身完好：不限量读取可读满 8192 字节
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes[..])).unwrap();
+        let mut entry = archive.by_index(0).unwrap();
+        let mut full = Vec::new();
+        entry.read_to_end(&mut full).unwrap();
+        assert_eq!(full.len(), 8192, "条目数据本身完好，跳过原因只能是超限");
+        assert!(full.starts_with(b"["));
+
+        // 累计预算超限：读取量入账后超过预算 → 明确错误中止
+        let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&bytes[..])).unwrap();
+        let mut entry = archive.by_index(0).unwrap();
+        let mut total_decoded = 0u64;
+        let err = read_zip_entry_limited(
+            "bookshelf.json",
+            32,
+            &mut entry,
+            1024,
+            &mut total_decoded,
+            128,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("解压总量超过上限"),
+            "跨条目累计超预算应给出明确错误: {err}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批9 回修 P1] 输入包超过大小上限 → 读取前拒绝（JSON/zip 入口共用）
+    #[test]
+    fn test_restore_rejects_oversized_backup_file() {
+        let dir = std::env::temp_dir().join("legado_restore_oversized");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("oversized.json");
+        // 用 set_len 造稀疏大文件，避免真的写 512 MiB 数据
+        let file = fs::File::create(&path).unwrap();
+        file.set_len(MAX_BACKUP_ARCHIVE_BYTES + 1).unwrap();
+        drop(file);
+
+        let err = backup_restore(path.to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string().contains("备份文件过大"),
+            "超过包大小上限应明确拒绝: {err}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批9 回修 P1] 既非 zip 魔数也非 JSON 对象（如带 stub 的自解压包）→ 统一文案
+    #[test]
+    fn test_restore_rejects_unsupported_format() {
+        let dir = std::env::temp_dir().join("legado_restore_unsupported_format");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("sfx.zip");
+        // 自解压包常见形态：MZ stub 开头，PK 头后移
+        fs::write(&path, b"MZ\x90\x00stub-bytes-then-PK\x03\x04").unwrap();
+
+        let err = backup_restore(path.to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string().contains("不支持的备份格式"),
+            "非 zip 非 JSON 应给出兜底文案: {err}"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
