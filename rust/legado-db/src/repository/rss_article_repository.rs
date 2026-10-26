@@ -292,30 +292,39 @@ impl<'a> RssArticleRepository<'a> {
     /// 按来源（+可选分类）只读查询文章列表（按 order 降序）
     ///
     /// 对齐原版 `RssArticleDao.flowByOriginSort(origin, sortName)`
-    /// （`RssArticleDao.kt`：`where origin = :origin and sort = :sortName
-    /// order by \`order\` desc`）的首屏本地缓存语义：`sort` 为 `Some` 时按
-    /// `(origin, sort)` 过滤，`None` 时返回该源全部分类。**只读、零副作用**，
-    /// 供 `rssListCachedArticles` 在网络刷新前展示本地缓存（批15f）。
+    /// （`RssArticleDao.kt:16-20`：`select t1..., ifNull(t2.read, 0) as read
+    /// from rssArticles as t1 left join rssReadRecords as t2
+    /// on t1.link = t2.record where t1.origin = :origin and t1.sort = :sort
+    /// order by \`order\` desc`）的首屏本地缓存语义：
+    /// - `sort` 为 `Some` 时按 `(origin, sort)` 过滤（**`Some("")` 即过滤
+    ///   空名分类，不是缺省全部分类**，批15f 审查 P1-2）；
+    /// - `None` 时返回该源全部分类（仅供内部/兼容使用）；
+    /// - `read` 不再读 `rssArticles.read`，改由 `rssReadRecords` 派生
+    ///   （`LEFT JOIN` + `ifNull(t2.read, 0)`，批15f 审查 P2-1）。
     ///
-    /// `limit <= 0` 表示不限制；调用方（FFI）传 `i32::MAX` 取全量。
+    /// **只读、零副作用**，供 `rssListCachedArticles` 在网络刷新前展示本地
+    /// 缓存（批15f）。`limit <= 0` 表示不限制。
     pub fn find_by_origin_sort(
         &self,
         origin: &str,
         sort: Option<&str>,
         limit: i32,
     ) -> LegadoResult<Vec<RssArticleRecord>> {
-        const COLUMNS: &str = "SELECT origin, sort, title, \"order\", link, pubDate,
-                        description, content, image, \"group\", \"read\", variable,
-                        type, durPos
-                 FROM rssArticles WHERE origin = ?1";
+        const COLUMNS: &str = "SELECT t1.origin, t1.sort, t1.title, t1.\"order\", t1.link,
+                        t1.pubDate, t1.description, t1.content, t1.image,
+                        t1.\"group\", ifNull(t2.\"read\", 0) AS \"read\", t1.variable,
+                        t1.type, t1.durPos
+                 FROM rssArticles AS t1
+                 LEFT JOIN rssReadRecords AS t2 ON t1.link = t2.record
+                 WHERE t1.origin = ?1";
         let unlimited = limit <= 0;
-        let filter = sort.map(|_| " AND sort = ?2").unwrap_or("");
+        let filter = sort.map(|_| " AND t1.sort = ?2").unwrap_or("");
         let limit_clause = if unlimited { " LIMIT -1" } else { "" };
         let limit_param = if sort.is_some() { "?3" } else { "?2" };
         let tail = if unlimited {
-            format!("{filter} ORDER BY \"order\" DESC{limit_clause}")
+            format!("{filter} ORDER BY t1.\"order\" DESC{limit_clause}")
         } else {
-            format!("{filter} ORDER BY \"order\" DESC LIMIT {limit_param}")
+            format!("{filter} ORDER BY t1.\"order\" DESC LIMIT {limit_param}")
         };
         let sql = format!("{COLUMNS}{tail}");
         let mut stmt = self
@@ -740,5 +749,44 @@ mod tests {
             .find_by_origin_sort("https://missing.com", None, 0)
             .unwrap()
             .is_empty());
+    }
+
+    /// `Some("")` 过滤空名默认分类（审查 P1-2）；`read` 由 `rssReadRecords`
+    /// 派生而非读 `rssArticles.read`（审查 P2-1）
+    #[test]
+    fn test_find_by_origin_sort_empty_name_and_read_join() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssArticleRepository::new(db.connection());
+        // 空名默认分类 + 搜索分类各一行
+        let mut default_article = make_article("https://rss.com", "默认分类", 1);
+        default_article.sort = String::new();
+        default_article.read = true; // 本表 read 列不参与派生，置 true 验证被忽略
+        let mut search_article = make_article("https://rss.com", "搜索分类", 2);
+        search_article.sort = "搜索".to_string();
+        repo.insert(&default_article).unwrap();
+        repo.insert(&search_article).unwrap();
+
+        // Some("") 只命中空名分类（不是「全部分类」）
+        let rows = repo
+            .find_by_origin_sort("https://rss.com", Some(""), 0)
+            .unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].title, "默认分类");
+        assert!(
+            !rows[0].read,
+            "无已读记录时 read 必须为 false，即使 rssArticles.read 列为 true"
+        );
+
+        // 写一条已读记录（record = link）→ read 派生为 true
+        db.connection()
+            .execute(
+                "INSERT INTO rssReadRecords (record) VALUES (?1)",
+                rusqlite::params!["https://example.com/默认分类"],
+            )
+            .unwrap();
+        let rows = repo
+            .find_by_origin_sort("https://rss.com", Some(""), 0)
+            .unwrap();
+        assert!(rows[0].read, "read 由 rssReadRecords LEFT JOIN 派生");
     }
 }

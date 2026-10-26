@@ -3,10 +3,13 @@
 //! 独立测试二进制（独立进程，`db_open` 只初始化一次）。覆盖：
 //!
 //! ```text
-//! ffi::init + db_open(临时 DB) → 直连 rusqlite 灌 5 行
+//! ffi::init + db_open(临时 DB) → 直连 rusqlite 灌 6 行
 //!   → rss_list_cached_articles(origin, Some("科技"))
 //!       ├─ 只命中本源本分类、order DESC
-//!       └─ 全字段（link/pubDate/description/image/type/read/group）透传
+//!       └─ 全字段（link/pubDate/description/image/type/group）透传
+//!   → read 由 rssReadRecords 派生（LEFT JOIN + ifNull(t2.read,0)）
+//!   → rss_list_cached_articles(origin, Some(""))：只命中空名默认分类
+//!       （批15f 审查 P1-2：空串不是「全部分类」）
 //!   → rss_list_cached_articles(origin, None)：本源全部分类
 //!   → rss_list_cached_articles(unknown, None)：空数组
 //!   → 空 link 行按 legacy: 伪主键原样返回
@@ -108,6 +111,33 @@ fn rss_list_cached_articles_reads_db_only() {
             Some("legacy:https://rss.test/feed:空链接:科技"),
             0,
         );
+        // 空名默认分类（UI 默认分类 sort 恒为空串）
+        insert_row(
+            &conn,
+            const_origin,
+            "",
+            "默认分类",
+            30,
+            Some("https://rss.test/default"),
+            0,
+        );
+        // 搜索态分类
+        insert_row(
+            &conn,
+            const_origin,
+            "搜索",
+            "搜索结果",
+            40,
+            Some("https://rss.test/search"),
+            0,
+        );
+        // 已读记录：仅给「空链接」行（该行 rssArticles.read 列为 0，
+        // 用于验证 read 由 rssReadRecords 派生而非读本表列）
+        conn.execute(
+            "INSERT INTO rssReadRecords (record) VALUES (?1)",
+            rusqlite::params!["legacy:https://rss.test/feed:空链接:科技"],
+        )
+        .expect("灌入 rssReadRecords 行");
         // 其他源不受影响
         insert_row(
             &conn,
@@ -139,18 +169,37 @@ fn rss_list_cached_articles_reads_db_only() {
     assert_eq!(rows[0]["image"], "https://img.test/cover.jpg");
     assert_eq!(rows[0]["group"], "科技分组");
     assert_eq!(rows[0]["type"], 2, "类型透传（1 图片 / 2 视频）");
-    assert_eq!(rows[0]["read"], true, "order 偶数行 read=true");
+    assert_eq!(
+        rows[0]["read"], false,
+        "read 不再读 rssArticles.read（该行列为 true），无已读记录 → false"
+    );
+    assert_eq!(
+        rows[2]["read"], true,
+        "read 由 rssReadRecords 派生（LEFT JOIN + ifNull）"
+    );
     assert_eq!(
         rows[2]["link"], "legacy:https://rss.test/feed:空链接:科技",
         "legacy 伪主键原样返回，由 UI 判定无链接"
     );
 
-    // 不指定分类：本源全部分类
+    // 空名默认分类：Some("") 只过滤 sort = ""，不是「全部分类」
+    let json = legado_ffi::ffi::ffi::rss_list_cached_articles(
+        const_origin.to_string(),
+        Some(String::new()),
+    )
+    .expect("缓存查询（空名分类）");
+    let rows: Vec<serde_json::Value> = serde_json::from_str(&json).expect("JSON 数组");
+    assert_eq!(rows.len(), 1, "空串分类只命中 sort='' 行: {json}");
+    assert_eq!(rows[0]["title"], "默认分类");
+    assert_eq!(rows[0]["sort"], "");
+
+    // 不指定分类：本源全部分类（6 行）
     let json = legado_ffi::ffi::ffi::rss_list_cached_articles(const_origin.to_string(), None)
         .expect("缓存查询（全分类）");
     let rows: Vec<serde_json::Value> = serde_json::from_str(&json).expect("JSON 数组");
-    assert_eq!(rows.len(), 4, "本源全部分类: {json}");
-    assert_eq!(rows[0]["title"], "科技-新", "order DESC 全局排序");
+    assert_eq!(rows.len(), 6, "本源全部分类: {json}");
+    assert_eq!(rows[0]["title"], "搜索结果", "order DESC 全局排序");
+    assert_eq!(rows[1]["title"], "默认分类");
 
     // 未知源 → 空数组（不报错）
     let json = legado_ffi::ffi::ffi::rss_list_cached_articles(

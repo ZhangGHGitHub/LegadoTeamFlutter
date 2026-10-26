@@ -192,17 +192,21 @@ pub fn clear_rss_articles(source_url: &str) -> LegadoResult<()> {
 /// 对齐原版 `RssArticleDao.flowByOriginSort(origin, sortName)`
 /// （`RssArticlesFragment.kt:179-218` 首屏先展示本地缓存）：
 /// - **零网络、零写库**；
-/// - `sort_name` 非空 → 按 `(origin, sort)` 过滤，缺省 → 该源全部分类；
+/// - `Some(sort)` → 严格按 `(origin, sort)` 过滤；**`Some("")` 表示过滤
+///   「空名分类」（UI 默认分类，名称恒为空串），不是「全部分类」**
+///   （批15f 审查 P1-2：原先把空串当缺省，默认分类会读出所有分类混排）；
+/// - `None` → 该源全部分类（仅供内部/兼容使用，Dart 侧恒传 `sortName`）；
 /// - `order DESC` 排序（与原版 flow 一致）；
+/// - `read` 由 `rssReadRecords` 派生（`LEFT JOIN` + `ifNull(t2.read,0)`，
+///   对齐 `RssArticleDao.kt:18`；批15f 审查 P2-1）；
 /// - 返回 JSON 数组，字段与列表载荷同族：`origin/sort/title/order/link/
 ///   pubDate/description/content/image/variable/group/read/type`；
 ///   空 `link` 已由仓库层落为 `legacy:` 伪主键（E4），此处原样返回，
 ///   UI 按既有 `hasRssArticleLink` 视为无链接。
 pub fn rss_list_cached_articles(source_url: &str, sort_name: Option<&str>) -> LegadoResult<String> {
-    let sort_filter = sort_name.filter(|value| !value.is_empty());
     let rows = with_database(|db| {
         let repo = legado_db::RssArticleRepository::new(db.connection());
-        repo.find_by_origin_sort(source_url, sort_filter, 0)
+        repo.find_by_origin_sort(source_url, sort_name, 0)
     })?;
     let articles: Vec<serde_json::Value> = rows
         .iter()
