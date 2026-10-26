@@ -194,12 +194,30 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     });
   }
 
-  /// 恢复前确认（恢复为覆盖语义，对齐原版 Restore.kt 全列更新）
+  /// WebDAV 短按「恢复」确认（[批7c] 文案按真实数据方向区分入口）
+  ///
+  /// 短按并不从远端覆盖本地：`restoreFromWebDav` 先经 `webdavFullSync`
+  /// 上传本地书架覆盖远端 `bookshelf.json`，再只消费远端 `sources` 回写
+  /// 书源，本地阅读进度不受影响。确认文案必须如实反映该方向，避免用户
+  /// 误以为会覆盖本地进度。
+  Future<bool> _confirmWebDavSync() {
+    return showConfirmDialog(
+      context,
+      title: '确认同步吗？',
+      content: '将上传本地书架并覆盖远端备份（bookshelf.json），同时回写远端书源；'
+          '不会覆盖本地阅读进度。如需从备份覆盖本地，请使用长按本地恢复。',
+      confirmText: '同步',
+      cancelText: '取消',
+      isDestructive: true,
+    );
+  }
+
+  /// 本地恢复确认（长按「恢复」= 用本地备份覆盖书架）
   ///
   /// [批7b] 恢复会把备份中的阅读进度与书籍信息写回库内，覆盖书架中
   /// 已有书籍的当前进度。确认后执行原恢复链；取消返回 false，调用方
   /// 直接中止，不触发任何恢复动作。
-  Future<bool> _confirmRestore() {
+  Future<bool> _confirmLocalRestore() {
     return showConfirmDialog(
       context,
       title: '确认恢复吗？',
@@ -214,7 +232,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   Future<void> _doRestore() async {
     final sync = ref.read(syncNotifierProvider);
     if (sync.isConfigured) {
-      if (!await _confirmRestore()) return;
+      if (!await _confirmWebDavSync()) return;
       if (!mounted) return;
       await _runWithProgress('恢复中…', () async {
         final message =
@@ -235,17 +253,22 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   }
 
   Future<void> _doRestoreFromLocal() async {
-    if (!await _confirmRestore()) return;
+    // [批7c P2-9] 恢复实现目前只消费 JSON 备份；选择器同步收敛为 .json，
+    // 避免选中原版 zip 备份后走到不支持的恢复链（zip 恢复器批9 立项）。
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: '选择本地备份文件（仅支持 .json，原版 zip 备份待后续版本）',
+      type: FileType.custom,
+      allowedExtensions: ['json'],
+    );
+    final backupPath = result?.files.single.path;
+    if (backupPath == null) return;
+    if (!mounted) return;
+    // [批7c P2-8] 先选文件、后确认：用户看到实际选中的备份再决定是否覆盖，
+    // 取消选择时不弹确认框。
+    if (!await _confirmLocalRestore()) return;
     if (!mounted) return;
     await _runWithProgress('恢复中…', () async {
       final api = ref.read(bookApiProvider);
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['json', 'zip'],
-      );
-      final backupPath = result?.files.single.path;
-      if (backupPath == null) return;
-
       var pathToRestore = backupPath;
       final ignore = await _settings.getRestoreIgnoreConfig();
       if (ignore['localBook'] == true &&
