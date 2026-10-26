@@ -10,7 +10,8 @@
 // customHosts/mcpPort 已于 Task #74 接线（契约 §2.20.3/§2.22.5，
 // 回读经 BookApi.getConfig 读 Rust 持久化 config:customHosts/config:mcpPort）；
 // videoSetting / jsSourceApiToken / clearWebViewData：2026-08-12 已接线；
-// uploadRule（直链上传规则）/ Cronet：缺引擎支撑，诚实不展示空壳；
+// uploadRule（直链上传规则）：批16b 已接通（§2.51 directLinkUpload，规则配置
+// Sheet + 默认 3 条预置）；Cronet：缺引擎支撑，诚实不展示空壳；
 // [Task #40 | 2026-08-09] checkSource 配置入口已接线（§5.13-2，
 // 「校验书源配置」对话框经 CheckSourceNotifier 持久化并入 configJson）；
 // [Task #52 | 2026-08-10] 压缩数据库已接线（§5.13-9，经 BookApi.shrinkDatabase
@@ -29,6 +30,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import '../constants/pref_keys.dart';
 import '../bridge/ffi.dart';
 import '../l10n/app_strings.dart';
+import 'direct_link_upload_settings_sheet.dart';
 import '../providers/main_prefs_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/source_check/check_source_notifier.dart';
@@ -41,7 +43,8 @@ import '../widgets/video_settings_dialog.dart';
 ///
 /// 分组与排序严格对齐原版 pref_config_other.xml：语言 → 主界面 → 其他。
 /// 已移除原版不存在的「默认阅读设置 / 网络设置」创意分组。
-/// Cronet / 直链上传规则：F4-5 按 RESIDUAL「不做」销记，不展示空壳控件。
+/// Cronet：F4-5 按 RESIDUAL「不做」销记，不展示空壳控件。
+/// 直链上传规则：批16b 接通（规则配置 Sheet + 测试上传，契约 §2.51）。
 class OtherSettingsScreen extends ConsumerStatefulWidget {
   const OtherSettingsScreen({super.key});
 
@@ -329,6 +332,12 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 title: '校验设置',
                 subtitle: _checkSourceConfigSummary,
                 onTap: _showCheckSourceConfigDialog,
+              ),
+              // 批16b：直链上传规则（规则配置 Sheet + 测试上传，契约 §2.51）
+              IosListTile(
+                title: '直链上传规则',
+                subtitle: '用于导出书源书单时生成直链 URL',
+                onTap: () => DirectLinkUploadSettingsSheet.show(context),
               ),
               SettingSwitchRow(
                 title: '抗锯齿',
