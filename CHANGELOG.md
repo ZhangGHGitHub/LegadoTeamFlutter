@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.373] - 2026-10-26
+
+### Added
+- [Rust] Web 服务补齐写端点：网页端可保存/删除书架书籍、传书页上传本地书（原版同款路径与文案；审查批4-B3）。
+- [Rust] Web 服务补齐管理读端点：书源/RSS 源/替换规则列表、HTTP 日志（含令牌保护），书源管理页在局域网可用（审查批4-B4）。
+- [Rust] Web 服务补齐段评 legacy 端点（摘要/详情/回复/页面/打开/运行；规则书源全链，JS 源按原版能力降级并登记）。
+- [Rust] WebSocket 调试通道对齐原版 port+1 语义与子协议鉴权（原版 vue 书源调试页可用；审查批4-B5）。
+- [Rust] 宿主路径注入接线：Web 封面/图片白名单纳入 App 图片缓存根，传书落 App 本地书目录（审查批4-FFI）。
+### Fixed
+- [Rust] 段评详情/回复补 `replyToName`（原版「回复 X：」展示与去重恢复）。
+- [Rust] RSS 源补 `nextContentUrl` 列（数据库升级 v111，导入/备份不再丢该规则）。
+- [Rust] Web 上传书改用相对可迁移身份（重装/重签后不再失效；对齐 C1 口径）。
+
 ## [2.0.372] - 2026-10-26
 
 ### Added
