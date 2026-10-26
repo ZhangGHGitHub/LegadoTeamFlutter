@@ -5,6 +5,15 @@
 //!
 //! 另提供 [`parse_default_items`]：逐行对齐原版 `RssParserDefault.kt` 的
 //! **默认列表解析**（只认 `<item>`；Atom `<feed>` 为已登记超集回退）。
+//!
+//! ## 旧兼容 API（仅 REST 调试/兼容保留）
+//!
+//! [`parse_feed`] / [`fetch_feed`] 及内部的 `parse_rss` 面向
+//! `legado-server` 的 RSS 调试接口，语义与 Android 原版 `RssParserDefault`
+//! 不一致（按 local-name 匹配、字段映射口径不同、无 `sort`/`origin` 等默认
+//! 列表字段）；RSS 主链路（FFI 列表取数）一律走 [`parse_default_items`]。
+//! 未加 `#[deprecated]` 是因为 `legado-server` 仍在编译期使用，避免以
+//! `-D warnings` 门禁误伤；接线迁移后再评估下线。
 
 use std::sync::OnceLock;
 
@@ -36,6 +45,10 @@ pub struct RssFeed {
 }
 
 /// 解析 RSS/Atom feed
+///
+/// **仅 REST 调试/兼容保留**（`legado-server` RSS 接口使用）：按
+/// local-name 匹配，语义不等价于 Android 原版 `RssParserDefault`；RSS 主链路
+/// 请使用 [`parse_default_items`]。
 pub fn parse_feed(xml_content: &str) -> LegadoResult<RssFeed> {
     if xml_content.contains("<feed") {
         parse_atom(xml_content)
@@ -44,7 +57,7 @@ pub fn parse_feed(xml_content: &str) -> LegadoResult<RssFeed> {
     }
 }
 
-/// 解析 RSS 2.0
+/// 解析 RSS 2.0（旧兼容路径，仅 [`parse_feed`] 内部使用）
 fn parse_rss(xml: &str) -> LegadoResult<RssFeed> {
     let mut reader = Reader::from_str(xml);
     reader.config_mut().trim_text(true);
@@ -357,6 +370,9 @@ fn parse_atom(xml: &str) -> LegadoResult<RssFeed> {
 }
 
 /// 从 RSS 源 URL 获取并解析 feed
+///
+/// **仅 REST 调试/兼容保留**（`legado-server` RSS 接口使用）。RSS 主链路的
+/// 列表取数走 `legado-fetcher::rss`（默认解析 [`parse_default_items`]）。
 pub async fn fetch_feed(url: &str, client: &crate::client::LegadoClient) -> LegadoResult<RssFeed> {
     let response = client.get(url, None).await?;
     parse_feed(&response.body)
@@ -414,6 +430,20 @@ pub struct DefaultFeedItem {
 /// 原版 `XmlPullParser` 对畸形 XML 抛异常；本实现按 quick-xml 宽容度处理：
 /// 解析出错即停止扫描并返回**已收集**条目（不 panic、不伪造文章）；裸 `&`
 /// （真实 feed 常见的未转义）放行。
+///
+/// ## 已登记边界差异（与 `legado-fetcher::rss` 模块文档同步）
+///
+/// - `pubDate` 内嵌标签：原版 `next()` 后的 `continue@loop` 会让嵌套标签继续被
+///   外层解析（如内嵌 `<time>` 仍生效）；本实现 `read_direct_text` 吞掉嵌套
+///   起始事件后不赋值；
+/// - `time` 元素文本**不 trim**（同原版）；其余文本字段的空白裁剪与 Kotlin
+///   `trim()` 在极端空白字符（NBSP、控制字符）上不完全一致；
+/// - 嵌套 `<item>`：本实现 START item 复位当前文章（原版不复位，内层 item
+///   继承外层字段）；
+/// - 未声明实体按字面保留 `&name;`（原版抛异常）；
+/// - 带命名空间前缀的核心元素（如 `<rss:item>`）: **不识别**（对齐原版
+///   `namespaceAware = false` 的字面名规则）；旧 [`parse_feed`] 用 local-name
+///   匹配，行为不同（旧 API 仅 REST 调试/兼容保留）。
 pub fn parse_default_items(sort_name: &str, xml: &str, source_url: &str) -> Vec<DefaultFeedItem> {
     let mut reader = Reader::from_str(xml);
     {
@@ -822,9 +852,10 @@ mod tests {
     fn test_parse_invalid_xml() {
         let xml = r#"<not valid xml at all"#;
         let result = parse_rss(xml);
-        // quick-xml is lenient; it may still parse partial content
-        // but a completely broken document should error or return empty
-        assert!(result.is_ok() || result.is_err());
+        assert!(
+            result.is_err(),
+            "完全非法的 XML 应报解析错误，不得返回 Ok: {result:?}"
+        );
     }
 
     #[test]

@@ -207,7 +207,11 @@ pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
     })?;
 
     // 写入本地文章缓存（对齐原版 rssArticles；sort 恒空、order 递减）
-    let _ = with_database(|db| {
+    //
+    // 取舍（审查 P2-4）：列表取数本身已成功，缓存写库失败不应让整次调用
+    // 报错（原版写库在独立协程执行，失败也不影响返回列表）；故逐条 `warn`
+    // 记录后继续，不向上抛。DB 未打开等外层错误同样 warn（不再完全静默）。
+    if let Err(e) = with_database(|db| {
         let repo = legado_db::RssArticleRepository::new(db.connection());
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -228,10 +232,18 @@ pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
                 article_type: article.article_type,
                 ..Default::default()
             };
-            let _ = repo.insert(&record);
+            if let Err(e) = repo.insert(&record) {
+                log::warn!(
+                    "RSS 文章缓存写入失败（origin={}, link={:?}）: {e}",
+                    record.origin,
+                    record.link
+                );
+            }
         }
         Ok(())
-    });
+    }) {
+        log::warn!("RSS 文章缓存写入失败（{source_url}）: {e}");
+    }
 
     Ok(page
         .items

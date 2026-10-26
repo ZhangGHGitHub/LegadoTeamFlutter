@@ -445,12 +445,69 @@ fn malformed_xml_other_shapes() {
     );
 }
 
-/// 有 item 的 RSS 文档不得触发 Atom 回退（回退仅限 item 为空 + 根 feed）
+/// 有 item 的 `<feed>` 文档不得触发 Atom 回退（回退仅限 item 为空 + 根 feed）：
+/// 同一文档同时含 `<item>` 与 `<entry>`，只收集字面 item，entry 不得进入结果
 #[test]
-fn atom_fallback_not_triggered_for_rss_items() {
-    let items = parse(r#"<rss><channel><item><title>RSS 篇</title></item></channel></rss>"#);
-    assert_eq!(items.len(), 1);
-    assert_eq!(items[0].title, "RSS 篇");
+fn atom_fallback_not_triggered_when_feed_has_item() {
+    let items = parse(
+        r#"<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>混合 feed</title>
+  <item><title>字面 item</title><link>https://src.example.com/item</link></item>
+  <entry><title>Atom 条目</title><link href="https://src.example.com/entry"/></entry>
+</feed>"#,
+    );
+    assert_eq!(
+        items.len(),
+        1,
+        "只应收集 item，不得因根为 feed 而回退 parse_atom: {items:#?}"
+    );
+    assert_eq!(items[0].title, "字面 item");
+    assert_eq!(items[0].link, "https://src.example.com/item");
+}
+
+/// `time` 与原版一致不做 trim（原版 `nextText()` 直接赋值）
+#[test]
+fn time_value_is_not_trimmed() {
+    let items = parse(
+        r#"<rss><channel><item>
+  <title>不裁剪时间</title>
+  <time>  2024-01-02  </time>
+</item></channel></rss>"#,
+    );
+    assert_eq!(
+        items[0].pub_date.as_deref(),
+        Some("  2024-01-02  "),
+        "time 元素文本应原样保留（不 trim）"
+    );
+}
+
+/// link / image 不做绝对化（原版原样保留相对路径）
+#[test]
+fn relative_link_and_image_are_not_absolutized() {
+    let items = parse(
+        r#"<rss><channel><item>
+  <title>相对路径</title>
+  <link>/post/1</link>
+  <description><![CDATA[<img src="/img/1.jpg">]]></description>
+</item></channel></rss>"#,
+    );
+    assert_eq!(items[0].link, "/post/1");
+    assert_eq!(items[0].image.as_deref(), Some("/img/1.jpg"));
+}
+
+/// 带命名空间前缀的核心元素不识别（对齐原版 `namespaceAware = false` 的
+/// 字面名规则：`xmlPullParser.name` 含前缀，不等于 `item`）
+#[test]
+fn namespaced_rss_core_elements_are_not_parsed() {
+    let items = parse(
+        r#"<rss:rss xmlns:rss="http://purl.org/rss/1.0/"><rss:channel>
+  <rss:item><rss:title>前缀文章</rss:title></rss:item>
+</rss:channel></rss:rss>"#,
+    );
+    assert!(
+        items.is_empty(),
+        "`<rss:item>` 不应按字面名识别: {items:#?}"
+    );
 }
 
 /// 引擎映射：`DefaultFeedItem` → `RssArticleItem` 全字段透传（防复发 #3）
