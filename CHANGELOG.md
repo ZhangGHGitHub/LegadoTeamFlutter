@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.376] - 2026-10-26
+
+### Added
+- [Rust] WebDAV 服务器配置纳入数据库 `servers` 表（对齐原版表结构；数据库升级 v112），备份格式升级 v3 并纳入服务器配置；恢复备份可带回 WebDAV 账号（v1/v2 旧备份走偏好回填、v3 以备份 DB 行为准；用户裁决②）。
+### Fixed
+- [UI] 恢复备份后设置页立即刷新账号信息；恢复/保存失败给出明确提示；保存配置改为先落库后更新界面。
+- [Rust] 恢复备份时保留服务器原始主键（含 id=0），重复恢复不增行。
+
 ## [2.0.375] - 2026-10-26
 
 ### Added
