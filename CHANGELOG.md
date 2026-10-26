@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.378] - 2026-10-26
+
+### Added
+- [Rust] Web 服务补齐源管理写端点 10 条：书源单条/批量保存与删除、JS 书源保存（text/plain 专项校验链）、RSS 源保存/批量/删除、替换规则保存/删除/测试（全部令牌保护，对齐原版）。
+- [Rust] Web 服务补齐 `GET /refreshToc` 独立入口（对齐原版语义，含空目录清空旧目录）。
+- [Rust] HTTP 请求日志全量采集接线：开启「记录 HTTP 请求」后，成功/失败/重试/重定向请求统一入日志（脱敏、环形上限），Web 端 `/getHttpLogs` 不再恒空；开关经新 FFI 与 Rust 侧同步（`setHttpLogRecording`）。
+### Fixed
+- [Rust] 替换规则 `order` 键兼容（Android 备份/第三方工具导入不再丢排序）；删除书源/RSS 源清空全部 5 类源变量缓存（登录头/用户信息/发现映射/按书变量），防同源重导入继承旧凭据。
+- [Rust] `testReplaceRule` 移出 tokio worker（防并发阻塞）并限制超时上限；写端点令牌校验提前到请求体读取前（未授权请求不分配 body 缓冲），令牌比较改常量时间。
+
 ## [2.0.377] - 2026-10-26
 
 ### Added
