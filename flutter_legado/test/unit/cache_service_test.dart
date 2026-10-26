@@ -128,26 +128,4 @@ void main() {
       expect(cleared, equals(0));
     });
   });
-
-  group('CacheService 自动过期天数（SharedPreferences）', () {
-    test('默认自动过期天数为 0（永不过期）', () async {
-      expect(await service.getAutoExpireDays(), equals(0));
-    });
-
-    test('设置并读取自动过期天数', () async {
-      await service.setAutoExpireDays(30);
-      expect(await service.getAutoExpireDays(), equals(30));
-    });
-
-    test('设置为 0 表示永不过期', () async {
-      await service.setAutoExpireDays(30);
-      await service.setAutoExpireDays(0);
-      expect(await service.getAutoExpireDays(), equals(0));
-    });
-
-    test('设置较大天数', () async {
-      await service.setAutoExpireDays(365);
-      expect(await service.getAutoExpireDays(), equals(365));
-    });
-  });
 }

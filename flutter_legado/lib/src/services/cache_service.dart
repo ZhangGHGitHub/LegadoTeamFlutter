@@ -5,13 +5,10 @@ import 'book_api.dart';
 
 /// 缓存管理服务
 ///
-/// 提供缓存统计、清理功能和自动过期策略配置。
+/// 提供缓存统计与清理功能。
 /// 对应 Android 原版 CacheBookService 中的缓存管理功能。
 class CacheService {
   final BookApi _api;
-
-  /// 自动过期天数持久化键
-  static const _keyAutoExpireDays = 'cache_auto_expire_days';
 
   CacheService(this._api);
 
@@ -68,31 +65,6 @@ class CacheService {
       }
     } catch (e) {
       debugPrint('CacheService.clearSameTitleRemovedFlags 异常: $e');
-    }
-  }
-
-  /// 设置自动过期天数
-  ///
-  /// [days] 为 0 表示永不过期。
-  Future<void> setAutoExpireDays(int days) async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setInt(_keyAutoExpireDays, days);
-    } catch (e) {
-      debugPrint('CacheService.setAutoExpireDays 异常: $e');
-    }
-  }
-
-  /// 获取当前自动过期天数配置
-  ///
-  /// 返回 0 表示永不过期，默认值为 0。
-  Future<int> getAutoExpireDays() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getInt(_keyAutoExpireDays) ?? 0;
-    } catch (e) {
-      debugPrint('CacheService.getAutoExpireDays 异常: $e');
-      return 0;
     }
   }
 
