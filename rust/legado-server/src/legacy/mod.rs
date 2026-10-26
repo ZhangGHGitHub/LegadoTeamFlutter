@@ -49,13 +49,20 @@
 //! `saveBookSource(s)`/`saveJsSource`/`deleteBookSources`/`saveRssSource(s)`/
 //! `deleteRssSources`/`saveReplaceRule`/`deleteReplaceRule`/`testReplaceRule`
 //! （原版受 `PROTECTED_SOURCE_WRITE_ROUTES` 保护 + saveJsSource 独立校验链）。
-//! `/refreshToc` 独立入口未纳入。WS 原版路径别名（port+1 `/bookSourceDebug`）
-//! 属 B5。
+//! `/refreshToc` 独立入口未纳入。
+//!
+//! B5 批（2026-10-26，ACTIVE_PLAN「WS 原版路径别名」登记项）：
+//! 原版 WebSocket 调试通道已在**主服务 port+1** 的独立监听上落地
+//! （[`crate::ws::original`]），路径 `/bookSourceDebug`、`/rssSourceDebug`，
+//! 子协议令牌鉴权与关闭码逐条对齐 `WebSocketServer.kt`；主服务同端口的
+//! 自研 `/ws/*` 通道保持不动。未纳入：原版 `/searchBook`（我方既有
+//! `/ws/search` 保留，路径/端口差异登记）；RSS 规则解析引擎与发现页引擎
+//! 在 Rust 侧无可达实现，按可达层级显式降级（见 `ws/original.rs` 文档）。
 //!
 //! 图片缓存根注入白名单（ACTIVE_PLAN「FFI 图片缓存根注入白名单」登记项）：
 //! `/cover`、`/image` 本地白名单纳入宿主注入的 FFI 图片缓存根
-//! （[`crate::state::InjectedPaths`]，构造期注入），FFI 接线登记未接线
-//! （server.rs）。
+//! （[`crate::state::InjectedPaths`]，构造期注入），FFI 侧已于
+//! `ae444743eb` 改调 [`crate::server::serve_web_with_injected_paths`] 完成接线。
 //!
 //! 大列表响应：原版对 List 元素 > 3000 的响应走 chunked 流式 JSON
 //! （HttpServer.kt:183-194）；axum 的 body 天然流式，本实现直接整包序列化，

@@ -73,7 +73,7 @@ pub async fn start_server_with_db(
 ///
 /// 本签名**保持不变**（FFI `server_start` 零改动），注入路径取
 /// [`InjectedPaths::default`]（空）；需要注入图片缓存根 / 本地书保存根的
-/// 调用方（FFI 接线批）改用 [`serve_web_with_injected_paths`]。
+/// 调用方改用 [`serve_web_with_injected_paths`]（FFI 已改调该变体）。
 pub async fn serve_web(
     listener: tokio::net::TcpListener,
     db: legado_db::Database,
@@ -85,11 +85,22 @@ pub async fn serve_web(
 /// 白名单」登记项的接收端）
 ///
 /// `injected_paths` 语义见 [`InjectedPaths`]：FFI 在 spawn 服务任务前把
-/// 图片缓存根（`image_cache_api` 的缓存根）与本地书保存根一并传入。当前
-/// FFI 侧接线**未做**（`legado-ffi/src/api/server_api.rs::server_start` 仍走
-/// [`serve_web`]，legado-ffi 属本批禁改范围）——按防复发规定登记为
-/// 「预留（未接线）」，接线批需在 `server_start` 启动前读取缓存根并改调
-/// 本函数（届时 `image_cache_api` 需补一个缓存根读取入口）。
+/// 图片缓存根（`image_cache_api` 的缓存根）与本地书保存根一并传入
+/// （接线提交 `ae444743eb`，`legado-ffi/src/api/server_api.rs::server_start`
+/// 已改调本函数）。
+///
+/// B5（原版 WebSocket 语义）起同时提供**独立端口**上的原版调试通道：
+/// - 监听地址 = 主 listener 的 IP + `port + 1`（对齐 upstream
+///   `WebService.kt:214-219` 的 `WebSocketServer(port + 1)`；默认 1122→1123）；
+/// - 两个服务用 `tokio::select!` 同生命周期运行：任一方结束即整体结束，
+///   对齐原版 `stopServers()` 同时停止 HttpServer/WebSocketServer；
+/// - **降级点（登记）**：`port+1` 绑定失败时原版 `stopSelf()` 会连主服务一起
+///   停止；本实现因 FFI `server_start` 在 spawn 后立即返回（无法回传 WS 绑定
+///   失败，FFI 属本批禁改范围）改为「主服务继续、原版 WS 不可用」并打印
+///   ERROR 日志，避免主服务假成功后整任务退出。
+///
+/// 主服务 `listener` 已由调用方绑定（FFI 绑 `0.0.0.0`），WS 监听沿用同一
+/// IP；测试/单进程场景主 listener 可能是 `127.0.0.1`，WS 亦只绑回环。
 pub async fn serve_web_with_injected_paths(
     listener: tokio::net::TcpListener,
     db: legado_db::Database,
@@ -103,12 +114,58 @@ pub async fn serve_web_with_injected_paths(
         legacy_review: Default::default(),
     });
 
-    let router = create_router(state);
+    let router = create_router(Arc::clone(&state));
 
     let addr = listener.local_addr()?;
-    tracing::info!("Legado server listening on {}", addr);
 
-    axum::serve(listener, router).await?;
+    // B5：原版 WebSocket 独立端口 = 主服务端口 + 1（同 IP 绑定）
+    let ws_port = addr.port().checked_add(1).ok_or_else(|| {
+        std::io::Error::new(
+            std::io::ErrorKind::AddrNotAvailable,
+            format!(
+                "WebSocket 端口无法由主服务端口 {} 推导（+1 溢出）",
+                addr.port()
+            ),
+        )
+    })?;
+    let ws_addr = SocketAddr::new(addr.ip(), ws_port);
+    let ws_listener = match tokio::net::TcpListener::bind(ws_addr).await {
+        Ok(listener) => Some(listener),
+        Err(e) => {
+            // 原版 `upWebServer()` 在 WS 启动失败时 `stopSelf()`（主服务一并停止）。
+            // 本实现无法在 FFI `server_start` 返回前感知该失败（FFI 属本批禁改
+            // 范围，启动返回语义变更需契约先行），故降级为「主服务继续、原版
+            // WS 通道不可用」并显著告警，避免 spawn 后整任务退出造成主服务
+            // 假成功/随即断连。该降级点已登记于 ws/original.rs 文档。
+            tracing::error!(
+                "原版 WebSocket 端口 {ws_addr} 绑定失败：{e}；主服务继续运行，原版 WS 调试通道不可用"
+            );
+            None
+        }
+    };
+
+    match ws_listener {
+        Some(ws_listener) => {
+            let ws_router = crate::ws::original::legacy_ws_routes(Arc::clone(&state));
+            tracing::info!(
+                "Legado server listening on {} (legacy WebSocket on {})",
+                addr,
+                ws_addr
+            );
+            // 同启停：任一 serve 结束（错误或被取消）都会 drop 另一个
+            tokio::select! {
+                result = axum::serve(listener, router) => result?,
+                result = axum::serve(ws_listener, ws_router) => result?,
+            }
+        }
+        None => {
+            tracing::warn!(
+                "Legado server listening on {}（原版 WebSocket 通道未启动）",
+                addr
+            );
+            axum::serve(listener, router).await?;
+        }
+    }
 
     Ok(())
 }
