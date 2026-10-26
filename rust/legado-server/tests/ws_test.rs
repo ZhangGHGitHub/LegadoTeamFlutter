@@ -20,6 +20,7 @@ async fn start_test_server() -> String {
         search_cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         download_manager: Mutex::new(DownloadManager::new(3)),
         injected_paths: Default::default(),
+        legacy_review: Default::default(),
     });
 
     let app = create_router(state);

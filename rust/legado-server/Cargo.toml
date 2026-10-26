@@ -12,6 +12,10 @@ legado-book = { path = "../legado-book" }
 legado-js = { path = "../legado-js" }
 # [P5-1 链 b] 书源抓取共享实现（server/ffi 单一来源；quickjs 透传见 features）
 legado-fetcher = { path = "../legado-fetcher" }
+# B4 段评 legacy 端点：AnalyzeUrl（URL 规则解析）与 review_rule_parser
+# （parse_summary_with/parse_detail_page_with/parse_reply_page_with）；
+# 与 ffi review_api 同一解析实现（单实现原则），仅依赖方向不同
+legado-parser = { path = "../legado-parser" }
 
 # multipart：B3 POST /addLocalBook（vue 传书页 fileName/fileData 表单）
 axum = { version = "0.8", features = ["ws", "json", "multipart"] }
@@ -23,6 +27,11 @@ base64 = { workspace = true }
 urlencoding = "2.1"
 # B3 /addLocalBook 文件名解析书名作者（对齐原版 LocalBook.nameAuthorPatterns）
 regex = { workspace = true }
+# B4 段评 /legacyReviewPage 的 frame-ancestors origin 解析（对齐 java.net.URI
+# 校验；与 legado-net 同主版本 2，零新增编译单元）
+url = "2"
+# B4 legacy 会话/游标 ID（对齐 UUID.randomUUID()；工作区已登记 uuid 1.x）
+uuid = { workspace = true }
 tower-http = { version = "0.6", features = ["cors", "fs"] }
 # 静态资产开发机磁盘兜底（web_assets::serve_static 内以 ServiceExt::oneshot
 # 调用 ServeDir）；tower 亦是 axum 的传递依赖与既有 dev-dependency，无新增外部 crate

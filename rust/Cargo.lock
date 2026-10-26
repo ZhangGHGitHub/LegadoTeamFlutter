@@ -2064,6 +2064,7 @@ dependencies = [
  "legado-fetcher",
  "legado-js",
  "legado-net",
+ "legado-parser",
  "regex",
  "reqwest",
  "serde",
@@ -2074,7 +2075,9 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "url",
  "urlencoding",
+ "uuid",
 ]
 
 [[package]]

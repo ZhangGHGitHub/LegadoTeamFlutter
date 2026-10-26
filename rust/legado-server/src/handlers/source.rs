@@ -202,6 +202,7 @@ mod tests {
                 legado_core::download_manager::DownloadManager::new(3),
             ),
             injected_paths: Default::default(),
+            legacy_review: Default::default(),
         })
     }
 

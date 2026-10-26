@@ -38,6 +38,7 @@ fn make_test_state() -> Arc<AppState> {
         search_cancelled: Arc::new(AtomicBool::new(false)),
         download_manager: Mutex::new(DownloadManager::new(3)),
         injected_paths: Default::default(),
+        legacy_review: Default::default(),
     })
 }
 
@@ -1436,6 +1437,7 @@ fn make_test_state_with_paths(
             image_cache_root,
             local_book_root,
         },
+        legacy_review: Default::default(),
     })
 }
 
@@ -1900,4 +1902,1009 @@ async fn test_cover_allows_injected_image_cache_root() {
     let secret = outside.write("x.png", &png_bytes(b"secret"));
     let (_, _, body2) = get(app, &format!("/cover?path={}", enc(&secret))).await;
     assert_local_read_rejected(&body2, b"secret", "白名单外路径");
+}
+
+// ---------------------------------------------------------------------------
+// B4：管理读 + 令牌 7 条 + 段评 legacy 6 条
+// （原版依据：HttpServer.kt:128-180/:246-278、BookSourceController.kt:28-35/
+//  :189-205、RssSourceController.kt:15-66、ReplaceRuleController.kt:14-20、
+//  HttpLogController.kt:13-39、ReviewController.kt:181-456）
+// ---------------------------------------------------------------------------
+
+const B4_TOKEN_HEADER: &str = "x-legado-token";
+const B4_TOKEN_ERROR: &str = "Web 书源访问令牌未配置或不正确";
+
+async fn get_with_headers(
+    app: axum::Router,
+    uri: &str,
+    headers: &[(&str, &str)],
+) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+    let mut builder = Request::builder().uri(uri);
+    for (name, value) in headers {
+        builder = builder.header(*name, *value);
+    }
+    let resp = app
+        .oneshot(builder.body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let body = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap()
+        .to_vec();
+    (status, headers, body)
+}
+
+async fn get_json_with_headers(
+    app: axum::Router,
+    uri: &str,
+    headers: &[(&str, &str)],
+) -> (StatusCode, axum::http::HeaderMap, Value) {
+    let (status, headers, body) = get_with_headers(app, uri, headers).await;
+    (status, headers, serde_json::from_slice(&body).unwrap())
+}
+
+async fn post_json_with_headers(
+    app: axum::Router,
+    uri: &str,
+    headers: &[(&str, &str)],
+    body: &str,
+) -> (StatusCode, axum::http::HeaderMap, Value) {
+    let mut builder = Request::builder()
+        .method(Method::POST)
+        .uri(uri)
+        .header("Content-Type", "application/json");
+    for (name, value) in headers {
+        builder = builder.header(*name, *value);
+    }
+    let resp = app
+        .oneshot(builder.body(Body::from(body.to_string())).unwrap())
+        .await
+        .unwrap();
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (status, headers, serde_json::from_slice(&bytes).unwrap())
+}
+
+async fn seed_config(state: &Arc<AppState>, key: &str, value: &str) {
+    let db = state.db.lock().await;
+    legado_db::repository::cache_repository::CacheRepository::new(db.connection())
+        .put(key, value, 0)
+        .unwrap();
+}
+
+async fn seed_book_source(state: &Arc<AppState>, source: legado_core::models::BookSource) {
+    let db = state.db.lock().await;
+    legado_db::BookSourceRepository::new(db.connection())
+        .insert(&source)
+        .unwrap();
+}
+
+/// 段评上下文：书源（origin）+ 书 + 第 0 章
+async fn seed_review_context(
+    state: &Arc<AppState>,
+    source_url: &str,
+    rule: Option<legado_core::models::ReviewRule>,
+    main_js: Option<String>,
+) -> (String, String) {
+    let book_url = format!("{source_url}/book/1");
+    let chapter_url = format!("{source_url}/chapter/0");
+    {
+        let db = state.db.lock().await;
+        legado_db::BookSourceRepository::new(db.connection())
+            .insert(&legado_core::models::BookSource {
+                book_source_url: source_url.to_string(),
+                book_source_name: "段评测试源".to_string(),
+                rule_review: rule,
+                main_js,
+                ..Default::default()
+            })
+            .unwrap();
+        BookRepository::new(db.connection())
+            .insert(&Book {
+                book_url: book_url.clone(),
+                origin: source_url.to_string(),
+                name: "段评测试书".to_string(),
+                author: "作者".to_string(),
+                ..Book::default()
+            })
+            .unwrap();
+        BookChapterRepository::new(db.connection())
+            .insert(&BookChapter {
+                url: chapter_url.clone(),
+                title: "第一章".to_string(),
+                book_url: book_url.clone(),
+                index: 0,
+                ..BookChapter::default()
+            })
+            .unwrap();
+    }
+    (book_url, chapter_url)
+}
+
+/// 规则书源段评 fixture 源站：summary / detail（两页）/ reply
+async fn start_mock_review_source() -> String {
+    use axum::extract::Query;
+    use axum::routing::get;
+
+    async fn summary() -> axum::Json<Value> {
+        axum::Json(json!({
+            "data": [
+                {"idx": 1, "cnt": 5, "token": "p1"},
+                {"idx": 2, "cnt": 0, "token": "p2"},
+                {"idx": 3, "cnt": 12, "token": "p3"}
+            ]
+        }))
+    }
+
+    async fn detail(
+        Query(params): Query<std::collections::HashMap<String, String>>,
+    ) -> axum::Json<Value> {
+        if params.get("page").map(String::as_str) == Some("2") {
+            axum::Json(json!({
+                "comments": [{"id": "c2", "user": "乙", "text": "第二页", "tag": ""}]
+            }))
+        } else {
+            axum::Json(json!({
+                "comments": [{"id": "c1", "user": "甲", "text": "好看", "tag": "作者"}],
+                "next": "/review/detail?page=2"
+            }))
+        }
+    }
+
+    async fn reply() -> axum::Json<Value> {
+        axum::Json(json!({
+            "data": {"reply_list": [
+                {"uid": "r1", "avatar": "/a/1.jpg", "nick": "读者甲", "tag": "沙发", "text": "写得真好"},
+                {"uid": "r2", "avatar": "https://img.com/2.jpg", "nick": "读者乙", "tag": "", "text": "同意楼上"}
+            ]}
+        }))
+    }
+
+    let app = axum::Router::new()
+        .route("/review/summary", get(summary))
+        .route("/review/detail", get(detail))
+        .route("/review/reply", get(reply));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("mock 段评源站可绑定回环端口");
+    let addr = listener.local_addr().expect("mock 段评源站地址");
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    format!("http://{addr}")
+}
+
+fn review_rule_for(base: &str) -> legado_core::models::ReviewRule {
+    legado_core::models::ReviewRule {
+        enabled: true,
+        review_summary_url: Some(format!("{base}/review/summary")),
+        summary_list_rule: Some("$.data".into()),
+        summary_paragraph_index_rule: Some("$.idx".into()),
+        summary_paragraph_data_rule: Some("$.token".into()),
+        summary_count_rule: Some("$.cnt".into()),
+        review_detail_url: Some(format!("{base}/review/detail")),
+        review_detail_next_page_url: Some("$.next".into()),
+        detail_list_rule: Some("$.comments".into()),
+        detail_id_rule: Some("$.id".into()),
+        detail_name_rule: Some("$.user".into()),
+        detail_badge_rule: Some("$.tag".into()),
+        detail_content_rule: Some("$.text".into()),
+        review_quote_url: Some(format!("{base}/review/reply")),
+        reply_list_rule: Some("$.data.reply_list".into()),
+        reply_id_rule: Some("$.uid".into()),
+        reply_avatar_rule: Some("$.avatar".into()),
+        reply_name_rule: Some("$.nick".into()),
+        reply_badge_rule: Some("$.tag".into()),
+        reply_content_rule: Some("$.text".into()),
+        ..Default::default()
+    }
+}
+
+fn b4_review_query(book_url: &str, index: i32) -> String {
+    format!("url={}&index={index}", enc(book_url))
+}
+
+// ─── A 组：getBookSource / getBookSources / getRssSource / getRssSources ────
+
+#[tokio::test]
+async fn test_b4_book_source_reads_and_empty_message() {
+    let state = make_test_state();
+    let app = create_router(state.clone());
+
+    // 空列表 → 原版「设备源列表为空」
+    let (_, _, rd) = get_json_with_headers(app.clone(), "/getBookSources", &[]).await;
+    assert_eq!(rd["isSuccess"], false);
+    assert_eq!(rd["errorMsg"], "设备源列表为空");
+    assert!(rd["data"].is_null());
+
+    // url 缺失 / 未命中错误文案
+    let (_, _, rd) = get_json_with_headers(app.clone(), "/getBookSource", &[]).await;
+    assert_eq!(rd["errorMsg"], "参数url不能为空，请指定源地址");
+    let (_, _, rd) = get_json_with_headers(
+        app.clone(),
+        "/getBookSource?url=https%3A%2F%2Fno.example.com",
+        &[],
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "未找到源，请检查书源地址");
+
+    // customOrder 升序（对齐 bookSourceDao.all）
+    seed_book_source(
+        &state,
+        legado_core::models::BookSource {
+            book_source_url: "https://b.example.com".into(),
+            book_source_name: "后".into(),
+            custom_order: 5,
+            ..Default::default()
+        },
+    )
+    .await;
+    seed_book_source(
+        &state,
+        legado_core::models::BookSource {
+            book_source_url: "https://a.example.com".into(),
+            book_source_name: "前".into(),
+            custom_order: 1,
+            ..Default::default()
+        },
+    )
+    .await;
+
+    let (_, _, rd) = get_json_with_headers(app.clone(), "/getBookSources", &[]).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    let arr = rd["data"].as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0]["bookSourceName"], "前", "应按 customOrder 升序");
+    assert_eq!(arr[0]["customOrder"], 1);
+    assert_eq!(arr[1]["bookSourceName"], "后");
+
+    // 单源读取（字段为 Kotlin 实体 camelCase 名）
+    let (_, _, rd) =
+        get_json_with_headers(app, "/getBookSource?url=https%3A%2F%2Fa.example.com", &[]).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["bookSourceUrl"], "https://a.example.com");
+    assert_eq!(rd["data"]["bookSourceName"], "前");
+}
+
+#[tokio::test]
+async fn test_b4_rss_source_reads_and_empty_message() {
+    let state = make_test_state();
+    let (_, _, rd) =
+        get_json_with_headers(create_router(state.clone()), "/getRssSources", &[]).await;
+    assert_eq!(rd["isSuccess"], false);
+    assert_eq!(rd["errorMsg"], "源列表为空");
+
+    {
+        let db = state.db.lock().await;
+        legado_db::repository::rss_source_repository::RssSourceRepository::new(db.connection())
+            .insert(&legado_core::models::RssSource {
+                source_url: "https://rss.example.com/1".into(),
+                source_name: "订阅一".into(),
+                custom_order: 2,
+                ..Default::default()
+            })
+            .unwrap();
+        legado_db::repository::rss_source_repository::RssSourceRepository::new(db.connection())
+            .insert(&legado_core::models::RssSource {
+                source_url: "https://rss.example.com/0".into(),
+                source_name: "订阅零".into(),
+                custom_order: 1,
+                ..Default::default()
+            })
+            .unwrap();
+    }
+    let app = create_router(state);
+    let (_, _, rd) = get_json_with_headers(app.clone(), "/getRssSources", &[]).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"][0]["sourceName"], "订阅零", "customOrder 升序");
+
+    let (_, _, rd) = get_json_with_headers(app.clone(), "/getRssSource", &[]).await;
+    assert_eq!(rd["errorMsg"], "参数url不能为空，请指定书源地址");
+    let (_, _, rd) = get_json_with_headers(
+        app.clone(),
+        "/getRssSource?url=https%3A%2F%2Fnope.example.com",
+        &[],
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "未找到源，请检查源地址");
+    let (_, _, rd) = get_json_with_headers(
+        app,
+        "/getRssSource?url=https%3A%2F%2Frss.example.com%2F1",
+        &[],
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["sourceName"], "订阅一");
+}
+
+// ─── A 组：getReplaceRules 双层编码 ─────────────────────────────────────────
+
+#[tokio::test]
+async fn test_b4_replace_rules_double_encoded() {
+    let state = make_test_state();
+    let app = create_router(state.clone());
+
+    // 空列表 → data 为字符串 "[]"（原版 setData(GSON.toJson(emptyList))）
+    let (_, _, rd) = get_json_with_headers(app.clone(), "/getReplaceRules", &[]).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    let raw = rd["data"].as_str().expect("data 必须是 JSON 字符串");
+    assert_eq!(raw, "[]");
+
+    {
+        let db = state.db.lock().await;
+        legado_db::ReplaceRuleRepository::new(db.connection())
+            .insert(&legado_core::models::ReplaceRule {
+                name: "后".into(),
+                pattern: "b".into(),
+                replacement: "B".into(),
+                order: 9,
+                ..Default::default()
+            })
+            .unwrap();
+        legado_db::ReplaceRuleRepository::new(db.connection())
+            .insert(&legado_core::models::ReplaceRule {
+                name: "前".into(),
+                pattern: "a".into(),
+                replacement: "A".into(),
+                order: 1,
+                ..Default::default()
+            })
+            .unwrap();
+    }
+    let (_, _, rd) = get_json_with_headers(app, "/getReplaceRules", &[]).await;
+    let raw = rd["data"].as_str().expect("双层编码：data 为字符串");
+    let rules: Value = serde_json::from_str(raw).expect("data 内层应为合法 JSON 数组");
+    let arr = rules.as_array().unwrap();
+    assert_eq!(arr.len(), 2);
+    assert_eq!(arr[0]["name"], "前", "sortOrder 升序");
+    assert_eq!(arr[0]["sortOrder"], 1);
+    assert_eq!(arr[0]["pattern"], "a");
+}
+
+// ─── A 组：令牌保护（红绿对）+ limit clamp + getHttpLog ────────────────────
+
+fn b4_http_log_record(id: i64) -> legado_server::legacy::http_log::HttpLogRecord {
+    legado_server::legacy::http_log::HttpLogRecord {
+        id,
+        time: 1_700_000_000_000 + id,
+        method: "GET".into(),
+        path: "/p".into(),
+        url: format!("https://log.example.com/{id}"),
+        status_code: 200,
+        duration: 5,
+        request_headers: "Accept: */*".into(),
+        request_body: String::new(),
+        response_headers: "Content-Type: application/json".into(),
+        response_body: "{}".into(),
+        error: None,
+    }
+}
+
+#[tokio::test]
+async fn test_b4_http_logs_token_red_green_and_limit_clamp() {
+    use legado_server::legacy::http_log::http_log_store;
+
+    http_log_store().clear();
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let app = create_router(state);
+
+    // 红：无令牌 / 错令牌 → 原版文案 + Connection: close + no-store
+    for headers in [vec![], vec![(B4_TOKEN_HEADER, "wrong")]] {
+        let (status, resp_headers, rd) =
+            get_json_with_headers(app.clone(), "/getHttpLogs", &headers).await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(rd["isSuccess"], false, "rd={rd}");
+        assert_eq!(rd["errorMsg"], B4_TOKEN_ERROR);
+        assert_eq!(header_str(&resp_headers, "connection"), "close");
+        assert_eq!(header_str(&resp_headers, "cache-control"), "no-store");
+    }
+    // 绿：正确令牌 → 成功 + recording=false + no-store
+    let (_, resp_headers, rd) =
+        get_json_with_headers(app.clone(), "/getHttpLogs", &[(B4_TOKEN_HEADER, "secret")]).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["recording"], false);
+    assert_eq!(rd["data"]["logs"].as_array().unwrap().len(), 0);
+    assert_eq!(header_str(&resp_headers, "cache-control"), "no-store");
+
+    // 灌入 60 条（环形容量 50）→ limit 语义逐档断言
+    for id in 1..=60 {
+        http_log_store().add(b4_http_log_record(id));
+    }
+    let auth = [(B4_TOKEN_HEADER, "secret")];
+    let cases = [
+        (None, 50usize, 60i64), // 缺省 → MAX_RECORDS
+        (Some("0"), 1, 60),     // clamp 下界
+        (Some("-5"), 1, 60),    // 负数 → 1（非缺省 50）
+        (Some("999"), 50, 60),  // clamp 上界
+        (Some("abc"), 50, 60),  // 非数字 → 缺省
+        (Some("7"), 7, 60),     // 正常值
+    ];
+    for (limit, expected_len, expected_first_id) in cases {
+        let uri = match limit {
+            Some(limit) => format!("/getHttpLogs?limit={limit}"),
+            None => "/getHttpLogs".to_string(),
+        };
+        let (_, _, rd) = get_json_with_headers(app.clone(), &uri, &auth).await;
+        assert_eq!(rd["isSuccess"], true, "limit={limit:?} rd={rd}");
+        let logs = rd["data"]["logs"].as_array().unwrap();
+        assert_eq!(logs.len(), expected_len, "limit={limit:?}");
+        assert_eq!(logs[0]["id"], expected_first_id, "队首应是最新记录");
+        assert_eq!(logs[0]["statusCode"], 200);
+        assert!(logs[0].get("path").is_none(), "summary 只含七键");
+    }
+
+    // getHttpLog：缺 id / 未命中 / 命中（camelCase 全字段）
+    let (_, _, rd) = get_json_with_headers(app.clone(), "/getHttpLog", &auth).await;
+    assert_eq!(rd["errorMsg"], "参数id不能为空");
+    let (_, _, rd) = get_json_with_headers(app.clone(), "/getHttpLog?id=9999", &auth).await;
+    assert_eq!(rd["errorMsg"], "未找到 HTTP 记录 #9999");
+    let (_, _, rd) = get_json_with_headers(app.clone(), "/getHttpLog?id=60", &auth).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["id"], 60);
+    assert_eq!(rd["data"]["statusCode"], 200);
+    assert_eq!(rd["data"]["requestHeaders"], "Accept: */*");
+    assert_eq!(
+        rd["data"]["responseHeaders"],
+        "Content-Type: application/json"
+    );
+    assert!(rd["data"].get("error").is_none(), "error=null 时 GSON 省略");
+
+    // getHttpLog 亦为受保护面
+    let (_, _, rd) = get_json_with_headers(app, "/getHttpLog?id=60", &[]).await;
+    assert_eq!(rd["errorMsg"], B4_TOKEN_ERROR);
+
+    http_log_store().clear();
+}
+
+// ─── A 组：非保护读端点不因已配置令牌而拒绝（B3 P2-6 红绿对） ───────────────
+
+#[tokio::test]
+async fn test_b4_unprotected_reads_ignore_configured_token() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    seed_book_source(
+        &state,
+        legado_core::models::BookSource {
+            book_source_url: "https://a.example.com".into(),
+            book_source_name: "源".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    {
+        let db = state.db.lock().await;
+        legado_db::repository::rss_source_repository::RssSourceRepository::new(db.connection())
+            .insert(&legado_core::models::RssSource {
+                source_url: "https://rss.example.com/1".into(),
+                source_name: "订阅".into(),
+                ..Default::default()
+            })
+            .unwrap();
+    }
+    let app = create_router(state);
+
+    for uri in [
+        "/getBookSources",
+        "/getRssSources",
+        "/getReplaceRules",
+        "/getJsSourceApiTokenRequired",
+        "/getBookSource?url=https%3A%2F%2Fa.example.com",
+    ] {
+        let (_, _, rd) = get_json_with_headers(app.clone(), uri, &[]).await;
+        assert_eq!(rd["isSuccess"], true, "无令牌应放行 {uri} rd={rd}");
+    }
+    // getJsSourceApiTokenRequired 恒放行且 data 为裸布尔（缺省 true）+ no-store
+    let (_, headers, rd) =
+        get_json_with_headers(app.clone(), "/getJsSourceApiTokenRequired", &[]).await;
+    assert_eq!(rd["data"], Value::Bool(true));
+    assert_eq!(header_str(&headers, "cache-control"), "no-store");
+
+    // 段评只读端点同样无令牌面（非令牌错误文案）
+    let (_, _, rd) = get_json_with_headers(
+        app,
+        "/getReviewSummary?url=https%3A%2F%2Fnone.example.com%2Fbook&index=0",
+        &[],
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], false);
+    assert_eq!(rd["errorMsg"], "未找到书籍");
+    assert_ne!(rd["errorMsg"], B4_TOKEN_ERROR);
+}
+
+#[tokio::test]
+async fn test_b4_js_source_api_token_required_config_override() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiTokenRequired", "false").await;
+    let (_, _, rd) =
+        get_json_with_headers(create_router(state), "/getJsSourceApiTokenRequired", &[]).await;
+    assert_eq!(rd["data"], Value::Bool(false));
+}
+
+// ─── B 组：段评规则书源 fixture 回环 ────────────────────────────────────────
+
+#[tokio::test]
+async fn test_b4_review_summary_rule_source_fixture() {
+    let base = start_mock_review_source().await;
+    let state = make_test_state();
+    let (book_url, _) =
+        seed_review_context(&state, &base, Some(review_rule_for(&base)), None).await;
+    let app = create_router(state);
+    let (_, _, rd) = get_json_with_headers(
+        app.clone(),
+        &format!("/getReviewSummary?{}", b4_review_query(&book_url, 0)),
+        &[],
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["counts"]["1"], 5);
+    assert_eq!(rd["data"]["counts"]["3"], 12);
+    assert!(rd["data"]["counts"].get("2").is_none(), "count=0 不入表");
+    assert_eq!(rd["data"]["keys"]["1"], "p1");
+    assert_eq!(rd["data"]["keys"]["3"], "p3");
+
+    // 规则未启用 → 空摘要成功响应（非异常）
+    let state2 = make_test_state();
+    let mut rule = review_rule_for(&base);
+    rule.enabled = false;
+    let (book_url2, _) = seed_review_context(&state2, &base, Some(rule), None).await;
+    let (_, _, rd) = get_json_with_headers(
+        create_router(state2),
+        &format!("/getReviewSummary?{}", b4_review_query(&book_url2, 0)),
+        &[],
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["counts"], json!({}));
+    assert_eq!(rd["data"]["keys"], json!({}));
+}
+
+#[tokio::test]
+async fn test_b4_review_detail_cursor_roundtrip() {
+    let base = start_mock_review_source().await;
+    let state = make_test_state();
+    let (book_url, _) =
+        seed_review_context(&state, &base, Some(review_rule_for(&base)), None).await;
+    let app = create_router(state);
+    let base_query = format!("{}&paraIndex=1&paraData=1", b4_review_query(&book_url, 0));
+
+    // 第一页：一条 + nextCursor + hasMore
+    let (_, _, rd) = get_json_with_headers(
+        app.clone(),
+        &format!("/getReviewDetail?{base_query}&page=1"),
+        &[],
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["items"].as_array().unwrap().len(), 1);
+    assert_eq!(rd["data"]["items"][0]["id"], "c1");
+    assert_eq!(rd["data"]["items"][0]["content"], "好看");
+    assert_eq!(rd["data"]["items"][0]["badges"][0], "作者");
+    assert_eq!(rd["data"]["hasMore"], true);
+    let cursor = rd["data"]["nextCursor"]
+        .as_str()
+        .expect("第一页应返回 nextCursor")
+        .to_string();
+
+    // 第二页：带游标 → 第二页数据，无 nextCursor / hasMore=false
+    let (_, _, rd) = get_json_with_headers(
+        app.clone(),
+        &format!(
+            "/getReviewDetail?{base_query}&page=2&cursor={}",
+            enc(&cursor)
+        ),
+        &[],
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["items"][0]["id"], "c2");
+    assert_eq!(rd["data"]["hasMore"], false);
+    assert!(rd["data"]["nextCursor"].is_null());
+
+    // 无效游标 / 首页带游标
+    let (_, _, rd) = get_json_with_headers(
+        app.clone(),
+        &format!("/getReviewDetail?{base_query}&page=2&cursor=bogus"),
+        &[],
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "段评分页面游标无效或已过期");
+    let (_, _, rd) = get_json_with_headers(
+        app.clone(),
+        &format!("/getReviewDetail?{base_query}&page=1&cursor=bogus"),
+        &[],
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "首段评页不能使用分页游标");
+
+    // 规则缺失 → 原版文案
+    let state2 = make_test_state();
+    let (book_url2, _) = seed_review_context(&state2, &base, None, None).await;
+    let (_, _, rd) = get_json_with_headers(
+        create_router(state2),
+        &format!(
+            "/getReviewDetail?{}&paraIndex=1&page=1",
+            b4_review_query(&book_url2, 0)
+        ),
+        &[],
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "段评规则未配置");
+}
+
+#[tokio::test]
+async fn test_b4_review_replies_rule_source_fixture() {
+    let base = start_mock_review_source().await;
+    let state = make_test_state();
+    let (book_url, _) =
+        seed_review_context(&state, &base, Some(review_rule_for(&base)), None).await;
+    let app = create_router(state);
+    let query = format!(
+        "{}&paraIndex=1&paraData=1&reviewId=c1&page=1",
+        b4_review_query(&book_url, 0)
+    );
+
+    let (_, _, rd) =
+        get_json_with_headers(app.clone(), &format!("/getReviewReplies?{query}"), &[]).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    let items = rd["data"]["items"].as_array().unwrap();
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0]["id"], "r1");
+    assert_eq!(items[0]["name"], "读者甲");
+    assert_eq!(items[0]["content"], "写得真好");
+    assert!(items[0]["avatar"].as_str().unwrap().ends_with("/a/1.jpg"));
+    assert_eq!(items[1]["avatar"], "https://img.com/2.jpg");
+    assert_eq!(rd["data"]["hasMore"], true);
+
+    // reviewId 缺失 → 原版文案
+    let (_, _, rd) = get_json_with_headers(
+        app,
+        &format!(
+            "/getReviewReplies?{}&paraIndex=1&page=1",
+            b4_review_query(&book_url, 0)
+        ),
+        &[],
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "参数 reviewId 不能为空");
+}
+
+#[tokio::test]
+async fn test_b4_review_context_validation_errors() {
+    let state = make_test_state();
+    let (book_url, _) = seed_review_context(
+        &state,
+        "https://ctx.example.com",
+        Some(review_rule_for("https://ctx.example.com")),
+        None,
+    )
+    .await;
+    let app = create_router(state);
+
+    let cases = [
+        ("/getReviewSummary?index=0".to_string(), "参数 url 不能为空"),
+        (
+            format!("/getReviewSummary?url={}", enc(&book_url)),
+            "参数 index 不能为空",
+        ),
+        (
+            format!("/getReviewSummary?url={}&index=-1", enc(&book_url)),
+            "参数 index 无效",
+        ),
+        (
+            format!(
+                "/getReviewDetail?{}&paraIndex=0&page=1",
+                b4_review_query(&book_url, 0)
+            ),
+            "参数 paraIndex 无效",
+        ),
+        (
+            format!(
+                "/getReviewDetail?{}&paraIndex=1&page=0",
+                b4_review_query(&book_url, 0)
+            ),
+            "参数 page 无效",
+        ),
+        (
+            format!(
+                "/getReviewReplies?{}&paraIndex=1&reviewId=r&page=0",
+                b4_review_query(&book_url, 0)
+            ),
+            "参数 page 无效",
+        ),
+        (
+            format!("/getReviewSummary?url={}&index=9", enc(&book_url)),
+            "未找到章节",
+        ),
+    ];
+    for (uri, expected) in cases {
+        let (_, _, rd) = get_json_with_headers(app.clone(), &uri, &[]).await;
+        assert_eq!(rd["errorMsg"], expected, "uri={uri} rd={rd}");
+    }
+}
+
+// ─── B 组：legacyReviewPage（404 / 注入 / CSP） ─────────────────────────────
+
+#[tokio::test]
+async fn test_b4_legacy_review_page_404_and_headers() {
+    let app = create_router(make_test_state());
+    let (status, headers, body) =
+        get_with_headers(app, "/legacyReviewPage?id=x&nonce=y", &[]).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(String::from_utf8(body).unwrap(), "旧评论会话无效或已过期");
+    assert_eq!(
+        header_str(&headers, "content-type"),
+        "text/plain; charset=utf-8"
+    );
+    assert_eq!(header_str(&headers, "x-content-type-options"), "nosniff");
+    assert_eq!(header_str(&headers, "cache-control"), "no-store");
+    assert_eq!(header_str(&headers, "referrer-policy"), "no-referrer");
+    let csp = header_str(&headers, "content-security-policy");
+    assert!(
+        csp.contains("sandbox allow-scripts allow-modals"),
+        "csp={csp}"
+    );
+    assert!(
+        csp.contains("frame-ancestors 'self'"),
+        "404 无 Origin → 'self'"
+    );
+}
+
+#[tokio::test]
+async fn test_b4_legacy_review_page_injected_session_csp() {
+    use legado_server::legacy::review_api::LegacyReviewSession;
+
+    let state = make_test_state();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    {
+        let mut shared = state.legacy_review.lock().unwrap();
+        shared.put_session(
+            "sess-1".into(),
+            LegacyReviewSession {
+                book_url: "https://src.example.com/book/1".into(),
+                chapter_index: 0,
+                source_key: "https://src.example.com".into(),
+                nonce: "n-1".into(),
+                page_url: "https://src.example.com/review/1".into(),
+                page_html:
+                    "<html><head><title>旧评论</title></head><body><div id=\"viewer\"></div></body></html>"
+                        .into(),
+                preload_js: "window.__legadoPreload = true;".into(),
+                frame_origin: Some("http://127.0.0.1:1122".into()),
+                expires_at: now + 120_000,
+            },
+        );
+        // 过期会话 → 404
+        let expired = LegacyReviewSession {
+            expires_at: now - 1,
+            nonce: "n-old".into(),
+            ..shared.get_session("sess-1").unwrap()
+        };
+        shared.put_session("sess-old".into(), expired);
+    }
+    let app = create_router(state);
+
+    // 命中：桥接脚本 + base + preload + meta CSP；响应头 CSP 回显 Origin
+    let (status, headers, body) = get_with_headers(
+        app.clone(),
+        "/legacyReviewPage?id=sess-1&nonce=n-1",
+        &[("Origin", "http://127.0.0.1:1122")],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        header_str(&headers, "content-type"),
+        "text/html; charset=utf-8"
+    );
+    let html = String::from_utf8(body).unwrap();
+    assert!(html.contains("legado-legacy-review-run"), "缺少桥接脚本");
+    assert!(html.contains("const nonce = \"n-1\""), "nonce 未注入");
+    assert!(
+        html.contains("<base href=\"https://src.example.com/review/1\">"),
+        "base 未注入"
+    );
+    assert!(
+        html.contains("window.__legadoPreload = true;"),
+        "preload 未注入"
+    );
+    assert!(
+        html.contains("<meta http-equiv=\"Content-Security-Policy\""),
+        "meta CSP 未注入"
+    );
+    let csp = header_str(&headers, "content-security-policy");
+    assert!(
+        csp.contains("frame-ancestors http://127.0.0.1:1122"),
+        "csp={csp}"
+    );
+    assert_eq!(
+        header_str(&headers, "access-control-allow-origin"),
+        "http://127.0.0.1:1122"
+    );
+    assert_eq!(header_str(&headers, "cache-control"), "no-store");
+    assert_eq!(header_str(&headers, "referrer-policy"), "no-referrer");
+
+    // nonce 不符 / 过期 / 缺 nonce → 404
+    for uri in [
+        "/legacyReviewPage?id=sess-1&nonce=wrong",
+        "/legacyReviewPage?id=sess-old&nonce=n-old",
+        "/legacyReviewPage?id=sess-1",
+    ] {
+        let (status, _, body) = get_with_headers(app.clone(), uri, &[]).await;
+        assert_eq!(status, StatusCode::NOT_FOUND, "uri={uri}");
+        assert_eq!(String::from_utf8(body).unwrap(), "旧评论会话无效或已过期");
+    }
+}
+
+// ─── B 组：openLegacyReview / runLegacyReview（令牌 + 校验） ────────────────
+
+#[tokio::test]
+async fn test_b4_open_run_legacy_review_token_and_validation() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let (book_url, _) = seed_review_context(&state, "https://src.example.com", None, None).await;
+    let app = create_router(state);
+    let auth = [(B4_TOKEN_HEADER, "secret")];
+
+    // 红：无令牌（两条均在 PROTECTED_SOURCE_WRITE_ROUTES）
+    for (uri, body) in [("/openLegacyReview", "{}"), ("/runLegacyReview", "{}")] {
+        let (_, headers, rd) = post_json_with_headers(app.clone(), uri, &[], body).await;
+        assert_eq!(rd["errorMsg"], B4_TOKEN_ERROR, "uri={uri} rd={rd}");
+        assert_eq!(header_str(&headers, "connection"), "close");
+    }
+
+    // 绿：令牌通过后进入业务校验
+    let (_, _, rd) =
+        post_json_with_headers(app.clone(), "/openLegacyReview", &auth, "not-json").await;
+    assert!(
+        rd["errorMsg"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("数据格式错误"),
+        "rd={rd}"
+    );
+    // 缺省 index = -1（原版默认）→ 参数 index 无效
+    let body = json!({"url": book_url, "src": "cb(),{\"click\":\"getDP(1,2)\"}"}).to_string();
+    let (_, _, rd) = post_json_with_headers(app.clone(), "/openLegacyReview", &auth, &body).await;
+    assert_eq!(rd["errorMsg"], "参数 index 无效", "rd={rd}");
+    // 非法 click 白名单 → 原版文案
+    let body =
+        json!({"url": book_url, "index": 0, "src": "cb(),{\"click\":\"alert(1)\"}"}).to_string();
+    let (_, _, rd) = post_json_with_headers(app.clone(), "/openLegacyReview", &auth, &body).await;
+    assert_eq!(rd["errorMsg"], "不是受支持的旧段评或章评链接", "rd={rd}");
+    // 合法 click 但无 JS 引擎/函数：返回失败（不伪造成功）
+    let body =
+        json!({"url": book_url, "index": 0, "src": "cb(),{\"click\":\"getDP(1,2)\"}"}).to_string();
+    let (_, _, rd) = post_json_with_headers(app.clone(), "/openLegacyReview", &auth, &body).await;
+    assert_eq!(rd["isSuccess"], false, "rd={rd}");
+
+    // run：空脚本 / 超长脚本 / 未知会话
+    for script in ["", "   "] {
+        let body = json!({"id": "x", "script": script}).to_string();
+        let (_, _, rd) =
+            post_json_with_headers(app.clone(), "/runLegacyReview", &auth, &body).await;
+        assert_eq!(rd["errorMsg"], "旧评论脚本为空或过长", "script={script:?}");
+    }
+    let long_script = "a".repeat(64 * 1024 + 1);
+    let body = json!({"id": "x", "script": long_script}).to_string();
+    let (_, _, rd) = post_json_with_headers(app.clone(), "/runLegacyReview", &auth, &body).await;
+    assert_eq!(rd["errorMsg"], "旧评论脚本为空或过长");
+    let body = json!({"id": "no-such-session", "script": "1+1"}).to_string();
+    let (_, _, rd) = post_json_with_headers(app, "/runLegacyReview", &auth, &body).await;
+    assert_eq!(rd["errorMsg"], "旧评论会话无效或已过期");
+}
+
+// ─── B 组：JS 书源降级（能力缺失登记） ──────────────────────────────────────
+
+#[tokio::test]
+async fn test_b4_review_js_source_degradation() {
+    let base = start_mock_review_source().await;
+    let state = make_test_state();
+    let (book_url, _) = seed_review_context(
+        &state,
+        &base,
+        None,
+        Some("function getReviewSummary() { return []; }".into()),
+    )
+    .await;
+    let app = create_router(state);
+
+    // 摘要：JS 函数存在（或引擎不可用被吞）→ 空摘要成功
+    let (_, _, rd) = get_json_with_headers(
+        app.clone(),
+        &format!("/getReviewSummary?{}", b4_review_query(&book_url, 0)),
+        &[],
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], json!({"counts": {}, "keys": {}}));
+
+    // 详情：引擎/函数错误按错误返回（不伪造空页）
+    let (_, _, rd) = get_json_with_headers(
+        app.clone(),
+        &format!(
+            "/getReviewDetail?{}&paraIndex=1&page=1",
+            b4_review_query(&book_url, 0)
+        ),
+        &[],
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], false, "rd={rd}");
+
+    // 回复：编排器无 getReviewReplies 能力 → 原版「函数缺失」空页降级
+    let (_, _, rd) = get_json_with_headers(
+        app,
+        &format!(
+            "/getReviewReplies?{}&paraIndex=1&reviewId=r1&page=1",
+            b4_review_query(&book_url, 0)
+        ),
+        &[],
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], json!({"items": [], "hasMore": false}));
+}
+
+// ─── B 组：legacy 脚本求值端到端（quickjs 门控；默认构建走占位错误分支） ─────
+
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn test_b4_legacy_review_js_end_to_end() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let main_js = "function getDP(a, b) { \
+        java.showBrowser('http://legacy.example.com/page', \
+        '<html><head><title>p</title></head><body><img src=\"https://a.com/1.heic\"></body></html>', \
+        'window.__pre = 1;'); \
+        return a + b; }";
+    let (book_url, _) = seed_review_context(
+        &state,
+        "https://src.example.com",
+        None,
+        Some(main_js.into()),
+    )
+    .await;
+    let app = create_router(state);
+    let auth = [(B4_TOKEN_HEADER, "secret")];
+
+    // open：click 白名单脚本 → java.showBrowser 载荷 → 会话
+    let body = json!({
+        "url": book_url,
+        "index": 0,
+        "src": "cb(),{\"click\":\"getDP(1,2)\"}"
+    })
+    .to_string();
+    let (_, _, rd) = post_json_with_headers(app.clone(), "/openLegacyReview", &auth, &body).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    let id = rd["data"]["id"].as_str().expect("id").to_string();
+    let nonce = rd["data"]["nonce"].as_str().expect("nonce").to_string();
+
+    // 页面：桥接注入 + HEIF 已改写为 /image 代理
+    let (status, _, html) = get_with_headers(
+        app.clone(),
+        &format!("/legacyReviewPage?id={}&nonce={}", enc(&id), enc(&nonce)),
+        &[],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let html = String::from_utf8(html).unwrap();
+    assert!(html.contains("legado-legacy-review-run"));
+    assert!(
+        html.contains("/image?path=https%3A%2F%2Fa.com%2F1.heic"),
+        "open 时应重写 HEIF 图片：{html}"
+    );
+    assert!(html.contains("window.__pre = 1;"));
+
+    // run：脚本求值 → 结果（HEIF 重写链路对普通值原样返回）
+    let body = json!({"id": id, "script": "1 + 1"}).to_string();
+    let (_, _, rd) = post_json_with_headers(app, "/runLegacyReview", &auth, &body).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], "2");
 }

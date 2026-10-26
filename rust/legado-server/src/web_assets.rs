@@ -105,12 +105,23 @@ pub fn with_web_headers(resp: &mut Response, header_path: &str, origin: Option<&
 }
 
 /// 原版 API 响应追加的头（HttpServer.kt:203-204）
+///
+/// B4 对齐 `addWebHeaders`（HttpServer.kt:268-273）的 no-store 分支：
+/// `PROTECTED_HTTP_LOG_READ_ROUTES`（getHttpLogs/getHttpLog）与
+/// `/getJsSourceApiTokenRequired` 追加 `Cache-Control: no-store`。
 pub fn with_api_headers(resp: &mut Response, header_path: &str, origin: Option<&str>) {
     with_web_headers(resp, header_path, origin);
     resp.headers_mut().insert(
         HeaderName::from_static("access-control-allow-methods"),
         HeaderValue::from_static("GET, POST"),
     );
+    if matches!(
+        header_path,
+        "/getHttpLogs" | "/getHttpLog" | "/getJsSourceApiTokenRequired"
+    ) {
+        resp.headers_mut()
+            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+    }
 }
 
 /// 顶层静态兜底：嵌入优先 + 磁盘 `/dev` 兜底（见模块注释）

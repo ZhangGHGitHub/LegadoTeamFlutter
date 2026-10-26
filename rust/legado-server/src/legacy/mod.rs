@@ -26,17 +26,36 @@
 //! | POST `/deleteBook` | `BookController.deleteBook`（:264-271） | 按主键删行（章节外键级联）；**无令牌** |
 //! | POST `/addLocalBook` | `BookController.addLocalBook`（:306-330） | multipart（fileName+fileData）→ 落盘 → importFile 链；**无令牌**；安全封堵登记见 book_api.rs |
 //!
+//! B4 批（2026-10-26，ACTIVE_PLAN L804「管理读+令牌 7 + 段评 legacy 6」）：
+//!
+//! | 端点 | 原版实现 | 备注 |
+//! |---|---|---|
+//! | GET `/getBookSource?url=` | `BookSourceController.getSource`（:196-205） | url 缺失/未命中错误文案对齐；**无令牌** |
+//! | GET `/getBookSources` | `BookSourceController.sources`（:28-35） | 全量书源；空 → 「设备源列表为空」；**无令牌** |
+//! | GET `/getRssSource?url=` | `RssSourceController.getSource`（:57-66） | **无令牌** |
+//! | GET `/getRssSources` | `RssSourceController.sources`（:15-22） | 空 → 「源列表为空」；**无令牌** |
+//! | GET `/getReplaceRules` | `ReplaceRuleController.allRules`（:14-20） | data 为规则数组的 **JSON 字符串**（`setData(GSON.toJson)` 双层编码）；**无令牌** |
+//! | GET `/getJsSourceApiTokenRequired` | `BookSourceController.isJsSourceApiTokenRequired`（:189-194） | data 裸布尔；恒放行；`Cache-Control: no-store` |
+//! | GET `/getHttpLogs?limit=` `/getHttpLog?id=` | `HttpLogController.getLogs/getLog`（:13-39） | **令牌保护**（`PROTECTED_HTTP_LOG_READ_ROUTES`，HttpServer.kt:259-262）；limit clamp(1,50)；no-store |
+//! | GET `/getReviewSummary` `/getReviewDetail` `/getReviewReplies` | `ReviewController.getSummary/getDetail/getReplies`（:181-398） | 规则书源 AnalyzeUrl+parser、JS 书源编排器；detail 分页游标 64 槽；JS 书源 replies 能力缺失 → 空页降级（review_api.rs 登记） |
+//! | POST `/openLegacyReview` `/runLegacyReview` | `ReviewController.openLegacyReview/runLegacyReview`（:400-456） | **令牌保护**（PROTECTED_SOURCE_WRITE_ROUTES）；会话 16 槽 / 2h TTL |
+//! | GET `/legacyReviewPage?id=&nonce=` | `HttpServer.legacyReviewPageResponse`（:280-310） | HTML+桥接注入+CSP；未命中 404「旧评论会话无效或已过期」 |
+//!
+//! 令牌实现（`source_api.rs`）：`x-legado-token` vs caches `config:jsSourceApiToken`
+//! 字节级相等（复用 server.rs MCP 同一比较实现）；`config:jsSourceApiTokenRequired`
+//! 缺省 true；失败文案「Web 书源访问令牌未配置或不正确」+ `Connection: close`。
+//!
+//! 写端点剩余清单（B4 未纳入，ACTIVE_PLAN L804 同批登记项，后续批次）：
+//! `saveBookSource(s)`/`saveJsSource`/`deleteBookSources`/`saveRssSource(s)`/
+//! `deleteRssSources`/`saveReplaceRule`/`deleteReplaceRule`/`testReplaceRule`
+//! （原版受 `PROTECTED_SOURCE_WRITE_ROUTES` 保护 + saveJsSource 独立校验链）。
+//! `/refreshToc` 独立入口未纳入。WS 原版路径别名（port+1 `/bookSourceDebug`）
+//! 属 B5。
+//!
 //! 图片缓存根注入白名单（ACTIVE_PLAN「FFI 图片缓存根注入白名单」登记项）：
 //! `/cover`、`/image` 本地白名单纳入宿主注入的 FFI 图片缓存根
 //! （[`crate::state::InjectedPaths`]，构造期注入），FFI 接线登记未接线
 //! （server.rs）。
-//!
-//! 未纳入（B4：管理读+令牌 7——getBookSource(s)/getRssSource(s)/
-//! getReplaceRules/getJsSourceApiTokenRequired/getHttpLog(s)；B5：段评
-//! legacy 6 与 WS 原版路径别名 port+1 `/bookSourceDebug`）——按 ACTIVE_PLAN
-//! L804 口径，勿按本注释旧 B3/B4 编号（2026-10-26 审计 §四-6 修正）。
-//! 书源/订阅源/替换规则/HTTP 日志写端点（saveBookSources 等）属 B4 同域
-//! 令牌面，亦未纳入。`/refreshToc` 独立入口未纳入。
 //!
 //! 大列表响应：原版对 List 元素 > 3000 的响应走 chunked 流式 JSON
 //! （HttpServer.kt:183-194）；axum 的 body 天然流式，本实现直接整包序列化，
@@ -44,11 +63,14 @@
 
 pub mod book_api;
 pub mod book_json;
+pub mod http_log;
+pub mod review_api;
+pub mod source_api;
 
 use std::sync::Arc;
 
 use axum::body::Body;
-use axum::http::{header, HeaderMap, HeaderValue};
+use axum::http::{header, HeaderMap, HeaderName, HeaderValue};
 use axum::response::Response;
 use axum::routing::{get, post};
 use axum::Router;
@@ -129,6 +151,22 @@ pub fn bytes_response(
     resp
 }
 
+/// 原版 `addWebHeaders`（HttpServer.kt:265-278）在非静态路径上的应用：
+/// nosniff + Origin 回显（`/legacyReviewPage` 专用；其 CSP/no-store 等
+/// 特有头由 review_api 内设置）
+pub fn web_headers_for_legacy_page(resp: &mut Response, origin: Option<&str>) {
+    let headers = resp.headers_mut();
+    headers.insert(
+        HeaderName::from_static("x-content-type-options"),
+        HeaderValue::from_static("nosniff"),
+    );
+    if let Some(origin) = origin {
+        if let Ok(value) = HeaderValue::from_str(origin) {
+            headers.insert(header::ACCESS_CONTROL_ALLOW_ORIGIN, value);
+        }
+    }
+}
+
 /// 原版端点路由（顶层路径，非 `/api` 前缀）
 pub fn legacy_routes() -> Router<Arc<AppState>> {
     Router::new()
@@ -145,6 +183,25 @@ pub fn legacy_routes() -> Router<Arc<AppState>> {
         // B3 写端点（无令牌，对齐原版 PROTECTED_SOURCE_WRITE_ROUTES 不含三者）
         .route("/saveBook", post(book_api::save_book))
         .route("/deleteBook", post(book_api::delete_book))
+        // B4 管理读+令牌（source_api.rs；getHttpLog(s) 受令牌保护）
+        .route("/getBookSource", get(source_api::get_book_source))
+        .route("/getBookSources", get(source_api::get_book_sources))
+        .route("/getRssSource", get(source_api::get_rss_source))
+        .route("/getRssSources", get(source_api::get_rss_sources))
+        .route("/getReplaceRules", get(source_api::get_replace_rules))
+        .route(
+            "/getJsSourceApiTokenRequired",
+            get(source_api::get_js_source_api_token_required),
+        )
+        .route("/getHttpLogs", get(source_api::get_http_logs))
+        .route("/getHttpLog", get(source_api::get_http_log))
+        // B4 段评 legacy（review_api.rs；open/run 受令牌保护）
+        .route("/getReviewSummary", get(review_api::get_review_summary))
+        .route("/getReviewDetail", get(review_api::get_review_detail))
+        .route("/getReviewReplies", get(review_api::get_review_replies))
+        .route("/legacyReviewPage", get(review_api::legacy_review_page))
+        .route("/openLegacyReview", post(review_api::open_legacy_review))
+        .route("/runLegacyReview", post(review_api::run_legacy_review))
         // addLocalBook 单独挂载以放宽 body 上限（axum 默认 2MB 会拒传书；
         // 上限 = 500MB 文件上限 + 1MB multipart 开销余量）
         .merge(

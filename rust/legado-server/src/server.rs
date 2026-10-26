@@ -100,6 +100,7 @@ pub async fn serve_web_with_injected_paths(
         search_cancelled: Arc::new(AtomicBool::new(false)),
         download_manager: Mutex::new(DownloadManager::new(3)),
         injected_paths,
+        legacy_review: Default::default(),
     });
 
     let router = create_router(state);
@@ -156,7 +157,9 @@ async fn mcp_token_middleware(
 }
 
 /// 对齐原版 `BookSourceController.matchesJsSourceApiToken`（字节级相等）
-fn matches_js_source_api_token(expected: &str, actual: Option<&str>) -> bool {
+///
+/// B4 起亦为 legacy 域令牌校验（`legacy/source_api.rs`）的单一比较实现。
+pub(crate) fn matches_js_source_api_token(expected: &str, actual: Option<&str>) -> bool {
     if expected.is_empty() {
         return false;
     }
@@ -180,6 +183,7 @@ pub async fn serve_mcp(
         search_cancelled: Arc::new(AtomicBool::new(false)),
         download_manager: Mutex::new(DownloadManager::new(3)),
         injected_paths: Default::default(),
+        legacy_review: Default::default(),
     });
 
     let router = create_mcp_router(state, Arc::new(expected_token));
@@ -232,6 +236,7 @@ mod tests {
             search_cancelled: Arc::new(AtomicBool::new(false)),
             download_manager: Mutex::new(DownloadManager::new(3)),
             injected_paths: Default::default(),
+            legacy_review: Default::default(),
         });
         let router = create_router(state);
 

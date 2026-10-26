@@ -43,6 +43,9 @@ pub struct AppState {
     pub download_manager: Mutex<DownloadManager>,
     /// 宿主注入的本地路径（图片缓存根 / 本地书保存根；未注入为空）
     pub injected_paths: InjectedPaths,
+    /// 段评 legacy 共享状态（B4：详情分页游标 64 槽 + legacy 会话 16 槽；
+    /// 对齐原版 ReviewController 的两个 LruCache 成员，进程内有效）
+    pub legacy_review: std::sync::Mutex<crate::legacy::review_api::LegacyReviewShared>,
 }
 
 /// 状态类型别名，方便在 handler 签名中使用

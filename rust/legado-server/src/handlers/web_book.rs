@@ -291,7 +291,7 @@ impl legado_net::CookiePersistence for ServerCookiePersistence {
 /// 快照（App 后续登录对 Web 不可见），且进程级槽位无法安全绑定可重启/
 /// 多实例的 AppState（测试多库、服务重启场景）；本批只修 cookie 语义，
 /// 连接池开销维持现状（每请求一池），留待后续裁决。
-fn server_deps(state: &Arc<AppState>) -> LegadoResult<FetcherDeps> {
+pub(crate) fn server_deps(state: &Arc<AppState>) -> LegadoResult<FetcherDeps> {
     let client = LegadoClient::with_cookie_persistence(
         LegadoClientConfig::default(),
         Arc::new(ServerCookiePersistence {
@@ -497,6 +497,7 @@ mod tests {
                 legado_core::download_manager::DownloadManager::new(3),
             ),
             injected_paths: Default::default(),
+            legacy_review: Default::default(),
         })
     }
 
