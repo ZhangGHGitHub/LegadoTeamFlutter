@@ -2815,7 +2815,7 @@ async fn test_b4_open_run_legacy_review_token_and_validation() {
     assert_eq!(rd["errorMsg"], "旧评论会话无效或已过期");
 }
 
-// ─── B 组：JS 书源降级（能力缺失登记） ──────────────────────────────────────
+// ─── B 组：JS 书源（函数缺失 → 空页；非 quickjs → 引擎占位错误） ──────────
 
 #[tokio::test]
 async fn test_b4_review_js_source_degradation() {
@@ -2852,7 +2852,8 @@ async fn test_b4_review_js_source_degradation() {
     .await;
     assert_eq!(rd["isSuccess"], false, "rd={rd}");
 
-    // 回复：编排器无 getReviewReplies 能力 → 原版「函数缺失」空页降级
+    // 回复：脚本未定义 getReviewReplies → 原版 callOptionalFunction 缺失语义
+    // （null → 空页）；非 quickjs 构建无 JS 引擎 → 引擎占位错误
     let (_, _, rd) = get_json_with_headers(
         app,
         &format!(
@@ -2862,8 +2863,71 @@ async fn test_b4_review_js_source_degradation() {
         &[],
     )
     .await;
+    if cfg!(feature = "quickjs") {
+        assert_eq!(rd["isSuccess"], true, "rd={rd}");
+        assert_eq!(rd["data"], json!({"items": [], "hasMore": false}));
+    } else {
+        assert_eq!(rd["isSuccess"], false, "rd={rd}");
+        assert!(
+            rd["errorMsg"]
+                .as_str()
+                .unwrap_or_default()
+                .contains("QuickJS"),
+            "非 quickjs 构建应回引擎占位错误: {rd}"
+        );
+    }
+}
+
+/// JS 书源段评回复（批12）：QuickJS 下脚本实现 getReviewReplies → 扁平化列表 + hasMore
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn test_b4_review_replies_js_source_fixture() {
+    let state = make_test_state();
+    let main_js = r#"
+function getReviewReplies(chapter, book, paraIndex, paraData, reviewId, page) {
+    return JSON.stringify({items: [
+        {id: reviewId, name: "读者甲", avatar: "/a/1.jpg",
+         content: "{\"text\":\"写得真好\",\"replyToName\":\"楼主\"}",
+         replies: [{id: "r2", content: "楼中楼"}]},
+        {id: "r3", name: "读者乙", content: paraData + ":" + page}
+    ]});
+}
+"#;
+    let (book_url, _) = seed_review_context(
+        &state,
+        "https://js-replies.example.com",
+        None,
+        Some(main_js.into()),
+    )
+    .await;
+    let app = create_router(state);
+
+    let (_, _, rd) = get_json_with_headers(
+        app,
+        &format!(
+            "/getReviewReplies?{}&paraIndex=2&paraData=p2&reviewId=c1&page=1",
+            b4_review_query(&book_url, 0)
+        ),
+        &[],
+    )
+    .await;
     assert_eq!(rd["isSuccess"], true, "rd={rd}");
-    assert_eq!(rd["data"], json!({"items": [], "hasMore": false}));
+    let items = rd["data"]["items"].as_array().unwrap();
+    // 顶层两条 + 嵌套一条（嵌套回复扁平化，紧随父级）
+    assert_eq!(items.len(), 3, "rd={rd}");
+    assert_eq!(items[0]["id"], "c1");
+    assert_eq!(items[0]["name"], "读者甲");
+    assert_eq!(items[0]["content"], "写得真好");
+    assert_eq!(items[0]["replyToName"], "楼主");
+    assert!(
+        items[0]["avatar"].as_str().unwrap().ends_with("/a/1.jpg"),
+        "相对 avatar 应绝对化: {rd}"
+    );
+    assert_eq!(items[1]["id"], "r2");
+    assert_eq!(items[2]["content"], "p2:1");
+    // hasMore 对齐原版 items.isNotEmpty()
+    assert_eq!(rd["data"]["hasMore"], true);
+    assert!(rd["data"]["nextCursor"].is_null());
 }
 
 // ─── B 组：legacy 脚本求值端到端（quickjs 门控；默认构建走占位错误分支） ─────

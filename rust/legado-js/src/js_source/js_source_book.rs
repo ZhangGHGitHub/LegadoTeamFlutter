@@ -13,7 +13,7 @@ use crate::engine::JsValue;
 use crate::source_engine::JsSourceEngine;
 
 use super::js_source_marshaller::{JsBookInfo as MarshalledBookInfo, JsSourceMarshaller};
-use super::js_source_review::{JsSourceReview, ReviewDetailPage, ReviewSummary};
+use super::js_source_review::{JsSourceReview, ReviewDetailItem, ReviewDetailPage, ReviewSummary};
 
 /// JS 源搜索请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -362,6 +362,80 @@ impl JsSourceBookOrchestrator {
         };
         JsSourceReview::parse_detail_page(&json, &chapter.url).map_err(LegadoError::Parser)
     }
+
+    /// 段评回复：JS 书源 getReviewRepliesAwait（批12）
+    ///
+    /// 参考 Kotlin `JsSourceReview.kt:102-129`（`getReviewReplies`）与
+    /// `ReviewController.kt:331-345`（JS 分支）：调用 JS
+    /// `getReviewReplies(chapter, book, paraIndex, paraData, reviewId, page)`，
+    /// 返回 JSON 对象 `{items:[...]}`；条目与嵌套 `replies` 按原版
+    /// `flattenReplies` 扁平化，baseUrl 取 `chapter.url`。
+    ///
+    /// 可选函数语义对齐原版 `callOptionalFunction`：函数缺失（或同名全局不是
+    /// 函数）等价于 `exists=false, value=null`，函数返回 null/undefined 等价于
+    /// `call.value == null`；两条分支对调用方同为「无回复」，故统一返回空列表。
+    /// 结构错误仍上抛（原版抛 `NoStackTraceException`）。
+    pub fn get_review_replies(
+        &mut self,
+        book: &Book,
+        chapter: &BookChapter,
+        para_index: i32,
+        para_data: &str,
+        review_id: &str,
+        page: i32,
+    ) -> LegadoResult<Vec<ReviewDetailItem>> {
+        let chapter_json = serde_json::to_string(chapter)?;
+        let book_json = serde_json::to_string(book)?;
+        let value = self.call_optional_function(
+            "getReviewReplies",
+            &[
+                ("chapter", JsValue::String(chapter_json)),
+                ("book", JsValue::String(book_json)),
+                ("paraIndex", JsValue::Int(para_index as i64)),
+                ("paraData", JsValue::String(para_data.to_string())),
+                ("reviewId", JsValue::String(review_id.to_string())),
+                ("page", JsValue::Int(page as i64)),
+            ],
+        )?;
+        let Some(json) = value else {
+            return Ok(Vec::new());
+        };
+        JsSourceReview::parse_reply_items(&json, &chapter.url).map_err(LegadoError::Parser)
+    }
+
+    /// 探测书源脚本是否声明顶层函数
+    ///
+    /// 对齐 Kotlin `JsSourceConfig.declaresReviewRepliesFunction` 的判定语义
+    /// （原版用 Rhino AST 扫描顶层 `function name(){}` / `name = function(){}`）。
+    /// Rust 侧无同款 AST，改为在已装配引擎中求值 `typeof name`
+    /// （同一 mainJs 作用域，覆盖运行时等价的声明形态）；引擎不可用或求值
+    /// 失败时保守回 false。
+    pub fn has_function(&mut self, name: &str) -> bool {
+        let probe = format!("(function () {{ return typeof {name}; }})");
+        matches!(
+            self.engine.call_function(&probe, &[]),
+            Ok(Some(kind)) if kind == "function"
+        )
+    }
+
+    /// 可选顶层函数调用（对齐 Kotlin `JsSourceEngine.callOptionalFunction`）
+    ///
+    /// 不复用 `JsSourceEngine::call_function_if_exists`：后者依赖错误文案
+    /// 「缺少函数」识别缺失，而 QuickJS 执行链
+    /// （`execute_compiled_with_bindings` → rquickjs `Error::Exception` 的
+    /// `Display`）只给出通用文案，判定恒失败。此处改用存在性包裹表达式：
+    /// 同名全局不是函数时调用返回 null 的占位函数，与 Kotlin
+    /// `ScriptableObject.getProperty(scope, name) !is JsFunction` →
+    /// `exists=false, value=null` 的结果一致。
+    fn call_optional_function(
+        &mut self,
+        name: &str,
+        args: &[(&str, JsValue)],
+    ) -> LegadoResult<Option<String>> {
+        let guarded =
+            format!("(typeof {name} === 'function' ? {name} : function () {{ return null; }})");
+        self.engine.call_function(&guarded, args)
+    }
 }
 
 #[cfg(test)]
@@ -594,6 +668,56 @@ mod tests {
         assert!(matches!(err, LegadoError::Parser(_)));
     }
 
+    // ─── 批12 get_review_replies（mock JS 执行） ──────────────────────────
+
+    #[test]
+    fn test_get_review_replies_parses_js_json() {
+        let json = r#"{"items":[
+            {"id":"r1","name":"读者甲","content":"回复内容","avatar":"/r/1.jpg",
+             "replies":[{"id":"r2","content":"嵌套回复"}]},
+            {"id":"r3","content":"平铺回复"}
+        ]}"#;
+        let mut orch = make_review_orchestrator(json);
+        let chapter = BookChapter {
+            url: "http://example.com/ch1".to_string(),
+            ..BookChapter::default()
+        };
+        let items = orch
+            .get_review_replies(&Book::default(), &chapter, 2, "段落数据", "c1", 1)
+            .unwrap();
+        // 顶层两条 + 嵌套一条，扁平化后紧随父级
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0].id.as_deref(), Some("r1"));
+        assert_eq!(items[0].name.as_deref(), Some("读者甲"));
+        assert_eq!(items[1].id.as_deref(), Some("r2"));
+        assert_eq!(items[2].id.as_deref(), Some("r3"));
+        // 相对 avatar 基于 chapter.url 绝对化
+        assert_eq!(
+            items[0].avatar.as_deref(),
+            Some("http://example.com/r/1.jpg")
+        );
+    }
+
+    #[test]
+    fn test_get_review_replies_null_result_returns_empty() {
+        // 函数返回 null/undefined → 原版 `call.value ?: return emptyList()`
+        let mut orch = make_review_orchestrator("null");
+        let items = orch
+            .get_review_replies(&Book::default(), &BookChapter::default(), 1, "", "r", 1)
+            .unwrap();
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_get_review_replies_invalid_json_errors() {
+        // 结构错误必须显式上抛（原版抛 NoStackTraceException），不得静默空页
+        let mut orch = make_review_orchestrator("这不是JSON");
+        let err = orch
+            .get_review_replies(&Book::default(), &BookChapter::default(), 1, "", "r", 1)
+            .unwrap_err();
+        assert!(matches!(err, LegadoError::Parser(_)));
+    }
+
     #[test]
     fn test_filter_valid_chapters() {
         let chapters = vec![
@@ -619,5 +743,68 @@ mod tests {
         let filtered = JsSourceBookManager::filter_valid_chapters(chapters);
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].title, "第一章");
+    }
+
+    // ─── 批12 quickjs 真引擎：getReviewReplies fixture / 缺失函数 ──────────
+
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_get_review_replies_quickjs_fixture_and_missing_function() {
+        // 进程级引擎缓存与 clear_for_tests 共用串行锁（同 source_engine 用例）
+        let _guard = crate::engine_cache::TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+
+        // fixture：实现 getReviewReplies，回显绑定参数并含嵌套回复
+        let main_js = r#"
+function getReviewReplies(chapter, book, paraIndex, paraData, reviewId, page) {
+  return JSON.stringify({items: [
+    {id: reviewId, name: '读者甲', avatar: '/a/1.png',
+     content: paraData + ':' + paraIndex + ':' + page,
+     replies: [{id: 'r2', content: '嵌套回复'}]},
+    {id: 'r3', content: '平铺回复'}
+  ]});
+}"#;
+        let config = JsSourceConfig::new(
+            "https://js-replies-fixture.example.com".to_string(),
+            main_js.into(),
+        );
+        let engine = JsSourceEngine::new_quickjs(config).expect("quickjs 引擎构造");
+        let mut orch = JsSourceBookOrchestrator::new(engine);
+        let chapter = BookChapter {
+            url: "https://example.com/ch/1".to_string(),
+            ..BookChapter::default()
+        };
+        let items = orch
+            .get_review_replies(&Book::default(), &chapter, 3, "pd", "c9", 2)
+            .unwrap();
+        assert_eq!(items.len(), 3, "顶层两条 + 嵌套一条");
+        assert_eq!(items[0].id.as_deref(), Some("c9"), "reviewId 绑定应透传");
+        assert_eq!(
+            items[0].content, "pd:3:2",
+            "paraIndex/paraData/page 绑定应透传"
+        );
+        assert_eq!(
+            items[0].avatar.as_deref(),
+            Some("https://example.com/a/1.png"),
+            "相对 avatar 以 chapter.url 绝对化"
+        );
+        assert_eq!(items[1].id.as_deref(), Some("r2"));
+        assert_eq!(items[2].id.as_deref(), Some("r3"));
+        // 能力探测（ffi hasReplyUrl 真源）：已声明 → true
+        assert!(orch.has_function("getReviewReplies"));
+
+        // 脚本未定义 getReviewReplies → 原版 callOptionalFunction 缺失语义 → 空列表
+        let config = JsSourceConfig::new(
+            "https://js-replies-missing.example.com".to_string(),
+            "function search() { return ''; }".to_string(),
+        );
+        let engine = JsSourceEngine::new_quickjs(config).expect("quickjs 引擎构造");
+        let mut orch = JsSourceBookOrchestrator::new(engine);
+        let items = orch
+            .get_review_replies(&Book::default(), &BookChapter::default(), 1, "", "r1", 1)
+            .unwrap();
+        assert!(items.is_empty(), "未定义函数应回空列表而非报错");
+        assert!(!orch.has_function("getReviewReplies"));
     }
 }

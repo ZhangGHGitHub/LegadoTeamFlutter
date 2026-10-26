@@ -160,6 +160,24 @@ impl JsSourceReview {
         })
     }
 
+    /// 解析书评回复列表（参考 Kotlin `JsSourceReview.parseReplyObject`）
+    ///
+    /// 输入为 JSON 对象，需含 `items` 数组；条目与嵌套 `replies` 一并按
+    /// 原版 `flattenReplies` 的前序顺序扁平化。结构错误文案对齐原版
+    /// `getReviewRepliesAwait` 抛出的 `NoStackTraceException` 文案。
+    pub fn parse_reply_items(json: &str, base_url: &str) -> Result<Vec<ReviewDetailItem>, String> {
+        let parsed: Value = serde_json::from_str(json.trim())
+            .map_err(|_| "JS源 getReviewReplies 返回格式错误".to_string())?;
+        if !parsed.is_object() {
+            return Err("JS源 getReviewReplies 返回格式错误".to_string());
+        }
+        let items = parsed
+            .get("items")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| "JS源 getReviewReplies 返回格式错误,缺少 items 数组".to_string())?;
+        Ok(Self::flatten_replies(items, base_url))
+    }
+
     /// 解析单条评论条目（含嵌套回复扁平化）
     fn parse_detail_item(value: &Value, base_url: &str) -> Option<ReviewDetailItem> {
         if !value.is_object() {
@@ -378,5 +396,59 @@ mod tests {
         let json = r#"{"nextPageUrl":null}"#;
         let result = JsSourceReview::parse_detail_page(json, "http://example.com");
         assert!(result.is_err());
+    }
+
+    // ─── getReviewReplies 回复列表解析（对齐 Kotlin parseReplyObject） ───────
+
+    #[test]
+    fn test_parse_reply_items_flattens_nested_in_order() {
+        let json = r#"{
+            "items": [
+                {"id":"p1","name":"甲","content":"{\"text\":\"父回复\",\"replyToName\":\"楼主\"}",
+                 "avatar":"/a/1.png","badge":"沙发",
+                 "replies":[
+                    {"id":"c1","content":"子回复一"},
+                    {"id":"c2","content":"子回复二","replies":[{"id":"g1","content":"孙回复"}]}
+                 ]},
+                {"id":"p2","content":"平铺回复"}
+            ]
+        }"#;
+        let items = JsSourceReview::parse_reply_items(json, "https://example.com/book/1").unwrap();
+        // 前序展开顺序与 Kotlin flattenReplies 一致：p1 → c1 → c2 → g1 → p2
+        let ids: Vec<&str> = items
+            .iter()
+            .map(|it| it.id.as_deref().unwrap_or_default())
+            .collect();
+        assert_eq!(ids, vec!["p1", "c1", "c2", "g1", "p2"]);
+        // 内容协议字段与相对 avatar 绝对化（baseUrl 取 chapter.url）
+        assert_eq!(items[0].content, "父回复");
+        assert_eq!(items[0].reply_to_name.as_deref(), Some("楼主"));
+        assert_eq!(items[0].badges, vec!["沙发".to_string()]);
+        assert_eq!(
+            items[0].avatar.as_deref(),
+            Some("https://example.com/a/1.png")
+        );
+    }
+
+    #[test]
+    fn test_parse_reply_items_empty_items_array() {
+        let items = JsSourceReview::parse_reply_items(r#"{"items":[]}"#, "").unwrap();
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_parse_reply_items_missing_items_array_errors() {
+        // 对齐原版：「JS源 getReviewReplies 返回格式错误,缺少 items 数组」
+        let err = JsSourceReview::parse_reply_items(r#"{"nextPageUrl":null}"#, "").unwrap_err();
+        assert_eq!(err, "JS源 getReviewReplies 返回格式错误,缺少 items 数组");
+    }
+
+    #[test]
+    fn test_parse_reply_items_non_object_or_invalid_json_errors() {
+        // 数组 / 非法 JSON / 空串均按「格式错误」处理（Gson JsonObject 解析失败同语义）
+        for json in ["[]", "不是JSON", ""] {
+            let err = JsSourceReview::parse_reply_items(json, "").unwrap_err();
+            assert_eq!(err, "JS源 getReviewReplies 返回格式错误", "json={json:?}");
+        }
     }
 }

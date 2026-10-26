@@ -23,11 +23,11 @@
 //! 登记差异：
 //! - 详情分页游标：原版 `LruCache(64)`（LRU 淘汰），我方为容量 64 的
 //!   「最久未使用时间戳淘汰」实现，访问即刷新时间戳，语义等价；
-//! - **JS 书源 `/getReviewReplies` 能力缺失**（依赖方向限制：`getReviewReplies`
-//!   协议在 `legado-js` 编排器未暴露，本批禁改 legado-js）→ 按原版
-//!   `callOptionalFunction` 函数缺失分支降级为空页 `{items:[],hasMore:false}`
-//!   （不硬造：不复用 `getReviewDetail` 的详情条目冒充回复）；参数校验顺序
-//!   与原版一致。后续批次在编排器补 `get_review_replies` 后即恢复；
+//! - JS 书源 `/getReviewReplies`：走 `legado-js` 编排器 `get_review_replies`
+//!   （对齐原版 `JsSourceReview.getReviewRepliesAwait`：参数
+//!   chapter/book/paraIndex/paraData/reviewId/page，返回 `items` 扁平化回复
+//!   列表；函数缺失或返回 null → 空页 `{items:[],hasMore:false}`）；
+//!   `hasMore` 对齐原版 `ReviewController.kt:331-345` 的 `items.isNotEmpty()`；
 //! - `openLegacyReview` 脚本执行环境：原版 Rhino `RssJsExtensions`（`java` 绑定
 //!   仅暴露 showBrowser 等 RSS 扩展），我方 QuickJS 宿主 API 的 `java` 命名空间
 //!   为全集（showBrowser 行为一致：载荷返回 + ui_action_queue 收集）；书源
@@ -784,16 +784,38 @@ pub async fn get_review_replies(
         };
         if source.is_js_source() {
             // JS 书源：原版走 `JsSourceReview.getReviewRepliesAwait`（可选函数
-            // `getReviewReplies`，缺失时回空页）。Rust 编排器（legado-js，本批
-            // 禁改）未暴露该能力 → 按原版「函数缺失」分支降级为空页并登记
-            // （见模块注释）；不复用 getReviewDetail（语义是详情条目而非回复）。
-            require_paragraph_index(&params)?;
-            let review_id = require_parameter(&params, "reviewId")?;
+            // `getReviewReplies`，缺失/返回 null 时为空页）；我方由 legado-js
+            // 编排器 `get_review_replies` 同型实现。参数校验顺序与原版一致。
+            let paragraph_index = require_paragraph_index(&params)?;
+            let paragraph_data = params
+                .get("paraData")
+                .cloned()
+                .unwrap_or_else(|| paragraph_index.to_string());
+            let review_id = require_parameter(&params, "reviewId")?.to_string();
             if review_id.trim().is_empty() {
                 return Err("参数 reviewId 不能为空".to_string());
             }
-            require_int(&params, "page", 1)?;
-            return Ok(review_page_value(Vec::new(), None, false));
+            let page = require_int(&params, "page", 1)?;
+            let book = context.book.clone();
+            let chapter = context.chapter.clone();
+            let items = with_js_orchestrator(&source, move |o| {
+                o.get_review_replies(
+                    &book,
+                    &chapter,
+                    paragraph_index,
+                    &paragraph_data,
+                    &review_id,
+                    page,
+                )
+            })
+            .await?;
+            // 对齐原版 ReviewController.kt:331-345：hasMore = items.isNotEmpty()
+            let has_more = !items.is_empty();
+            return Ok(review_page_value(
+                convert_js_review_items(items),
+                None,
+                has_more,
+            ));
         }
 
         let Some(rule) = source.rule_review.clone() else {

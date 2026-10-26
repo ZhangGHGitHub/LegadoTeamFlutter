@@ -370,13 +370,39 @@ fn js_review_get_detail(
     request_json: &str,
     page: i32,
 ) -> LegadoResult<String> {
-    // 复用回复路径的 JS getReviewDetail 分派（同契约响应，附加 hasReplyUrl=false）
-    let result = js_review_get_replies(source, request_json, page)?;
-    let mut payload: serde_json::Value = serde_json::from_str(&result)
-        .map_err(|e| LegadoError::Internal(format!("JS 详情响应包装失败: {e}")))?;
-    if let Some(obj) = payload.as_object_mut() {
-        obj.insert("hasReplyUrl".into(), serde_json::json!(false));
-    }
+    // JS 详情走原版 JsSourceReview.getReviewDetailAwait（与回复入口分离：
+    // 详情返回整页条目 + nextPageUrl，回复只返回扁平化回复列表）
+    let context = parse_js_review_context(request_json)?;
+    let mut orchestrator = crate::api::web_book::build_js_orchestrator(source)?
+        .ok_or_else(|| LegadoError::Internal("JS 书源 mainJs 为空，无法加载段评详情".into()))?;
+
+    // 对齐原版 ReviewDetailDialog.kt:458-464：JS 书源 hasReplyUrl 取
+    // `JsSourceReview.hasReviewRepliesCapability`（是否声明 getReviewReplies），
+    // 不能恒 false——否则 Dart 侧 `_hasReplyUrl` 门控永不进入按需加载。
+    // 探测与详情共用同一编排器（mainJs 只求值一次）。
+    let has_reply_url = orchestrator.has_function("getReviewReplies");
+
+    let detail_page = crate::runtime::block_on(async {
+        tokio::task::spawn_blocking(move || {
+            orchestrator.get_review_detail(
+                &context.book,
+                &context.chapter,
+                context.para_index,
+                &context.para_data,
+                page,
+            )
+        })
+        .await
+        .map_err(|e| LegadoError::Internal(format!("JS 段评详情任务异常: {e}")))?
+    })?;
+
+    // 转换为与规则路径兼容的响应格式（camelCase 契约，API_CONTRACT.md 已登记）
+    let items = convert_js_review_items(detail_page.items);
+    let payload = serde_json::json!({
+        "items": items,
+        "nextPageUrl": detail_page.next_page_url,
+        "hasReplyUrl": has_reply_url,
+    });
     serde_json::to_string(&payload).map_err(LegadoError::Serialization)
 }
 
@@ -388,9 +414,10 @@ fn js_review_get_detail(
 /// 2. 发起 HTTP 请求获取回复页面；
 /// 3. 以 reply* 规则族解析回复列表。
 ///
-/// JS 书源分支（Task #134）：对标 Kotlin ReviewDetailDialog JS 分支，
-/// 复用 JS 编排器调用 `getReviewDetail`，回复随详情条目嵌套返回
-/// （嵌套回复已扁平化），无独立 reply 请求协议。
+/// JS 书源分支：对标 Kotlin `ReviewDetailDialog.loadReplies` 的 JS 分支，
+/// 调用 JS 编排器 `getReviewReplies`（原版 `JsSourceReview.getReviewRepliesAwait`），
+/// 返回按需加载的扁平化回复列表；函数缺失/返回 null → 空列表
+/// （原版 `callOptionalFunction` 缺失语义）。
 ///
 /// # 参数
 /// - `source_json`: BookSource JSON 字符串（含 ruleReview）
@@ -565,20 +592,22 @@ pub fn review_get_replies(
     serde_json::to_string(&payload).map_err(LegadoError::Serialization)
 }
 
-/// JS 书源段评回复按需加载（Task #134），对标 Kotlin
-/// `ReviewDetailDialog` 的 JS 分支（`JsSourceReview.getReviewDetailAwait`）：
-/// JS 书源回复随 getReviewDetail 条目嵌套返回（嵌套回复已扁平化），
-/// 无独立 reply 请求协议。
+/// JS 段评请求上下文（详情 / 回复共用解析）
+struct JsReviewContext {
+    book: legado_core::models::Book,
+    chapter: legado_core::models::BookChapter,
+    para_index: i32,
+    para_data: String,
+    review_id: String,
+}
+
+/// 解析 JS 段评请求 JSON。
 ///
 /// `request_json` 可选字段：
 /// - `book` / `chapter`：Book/BookChapter JSON 对象（缺失时用默认值，
 ///   chapter.url 以 `chapterUrl` 回填，对标 Kotlin 传入 ReadBook.book/chapter）；
-/// - `paraIndex` / `paraData` / `chapterUrl`：与规则路径同义。
-fn js_review_get_replies(
-    source: &BookSource,
-    request_json: &str,
-    page: i32,
-) -> LegadoResult<String> {
+/// - `paraIndex` / `paraData` / `reviewId` / `chapterUrl`：与规则路径同义。
+fn parse_js_review_context(request_json: &str) -> LegadoResult<JsReviewContext> {
     let request: serde_json::Value = serde_json::from_str(request_json)
         .map_err(|e| LegadoError::Internal(format!("回复请求参数解析失败: {e}")))?;
 
@@ -594,6 +623,15 @@ fn js_review_get_replies(
         .and_then(|v| v.as_str())
         .unwrap_or("")
         .to_string();
+    // reviewId 兼容字符串/数字形态（原版为 String，规则路径同款宽松处理）
+    let review_id = request
+        .get("reviewId")
+        .and_then(|v| match v {
+            serde_json::Value::String(s) => Some(s.clone()),
+            serde_json::Value::Null => None,
+            other => Some(other.to_string()),
+        })
+        .unwrap_or_default();
     let chapter_url = request
         .get("chapterUrl")
         .and_then(|v| v.as_str())
@@ -617,23 +655,50 @@ fn js_review_get_replies(
         chapter.url = chapter_url;
     }
 
+    Ok(JsReviewContext {
+        book,
+        chapter,
+        para_index,
+        para_data,
+        review_id,
+    })
+}
+
+/// JS 书源段评回复按需加载，对标 Kotlin `ReviewDetailDialog.loadReplies`
+/// 的 JS 分支（`JsSourceReview.getReviewRepliesAwait`）与
+/// `ReviewController.getReplies`（:331-345）：
+/// 调用 JS `getReviewReplies(chapter, book, paraIndex, paraData, reviewId, page)`，
+/// 返回 `{items:[扁平化回复列表]}`；函数缺失/返回 null → 空列表。
+/// JS 协议无分页 URL（hasMore 由 items 非空表达），故 nextPageUrl 恒为 null。
+fn js_review_get_replies(
+    source: &BookSource,
+    request_json: &str,
+    page: i32,
+) -> LegadoResult<String> {
+    let context = parse_js_review_context(request_json)?;
     let mut orchestrator = crate::api::web_book::build_js_orchestrator(source)?
         .ok_or_else(|| LegadoError::Internal("JS 书源 mainJs 为空，无法加载段评回复".into()))?;
 
     // JS 分派：spawn_blocking 避免嵌套 runtime 死锁（同 webbook_search 模式）
-    let detail_page = crate::runtime::block_on(async {
+    let items = crate::runtime::block_on(async {
         tokio::task::spawn_blocking(move || {
-            orchestrator.get_review_detail(&book, &chapter, para_index, &para_data, page)
+            orchestrator.get_review_replies(
+                &context.book,
+                &context.chapter,
+                context.para_index,
+                &context.para_data,
+                &context.review_id,
+                page,
+            )
         })
         .await
         .map_err(|e| LegadoError::Internal(format!("JS 段评回复任务异常: {e}")))?
     })?;
 
     // 转换为与规则路径兼容的响应格式（camelCase 契约，API_CONTRACT.md 已登记）
-    let items = convert_js_review_items(detail_page.items);
     let payload = serde_json::json!({
-        "items": items,
-        "nextPageUrl": detail_page.next_page_url,
+        "items": convert_js_review_items(items),
+        "nextPageUrl": serde_json::Value::Null,
     });
     serde_json::to_string(&payload).map_err(LegadoError::Serialization)
 }
@@ -736,15 +801,30 @@ mod tests {
 
     #[test]
     fn test_review_get_replies_js_source_dispatched() {
-        // Task #134：JS 书源不再拒绝，进入 JS 编排器分派路径；
-        // 未启用 quickjs 时占位引擎报错（错误源自 JS 引擎而非"暂不支持"降级）
+        // JS 书源进入编排器 `getReviewReplies` 分派路径：
+        // - quickjs：函数缺失 → 原版 callOptionalFunction 缺失语义 → 空列表；
+        // - 非 quickjs：占位引擎报错（错误源自 JS 引擎而非"暂不支持"降级）。
         let source = BookSource {
             main_js: Some("// js source".into()),
             ..Default::default()
         };
         let source_json = serde_json::to_string(&source).unwrap();
-        let err = review_get_replies(&source_json, "{}", 1).unwrap_err();
-        assert!(!err.to_string().contains("暂不支持"), "降级分支应已移除");
+        if cfg!(feature = "quickjs") {
+            let result = review_get_replies(&source_json, "{}", 1).unwrap();
+            let payload: serde_json::Value = serde_json::from_str(&result).unwrap();
+            assert!(payload["items"].as_array().unwrap().is_empty());
+            assert!(payload["nextPageUrl"].is_null());
+        } else {
+            let err = review_get_replies(&source_json, "{}", 1).unwrap_err();
+            assert!(
+                !err.to_string().contains("暂不支持"),
+                "降级分支应已移除: {err}"
+            );
+            assert!(
+                err.to_string().contains("QuickJS"),
+                "应为引擎占位错误: {err}"
+            );
+        }
     }
 
     #[test]
@@ -813,7 +893,7 @@ mod tests {
     /// 显式 JSON.stringify（书源侧兼容写法）。该引擎层差异待专项对齐。
     #[cfg(feature = "quickjs")]
     #[test]
-    fn test_review_get_replies_js_source_quickjs_e2e() {
+    fn test_review_get_detail_js_source_quickjs_e2e() {
         let source = BookSource {
             main_js: Some(
                 r#"
@@ -840,9 +920,10 @@ mod tests {
         })
         .to_string();
 
-        let result = review_get_replies(&source_json, &request_json, 1).unwrap();
+        let result = review_get_detail(&source_json, &request_json, 1).unwrap();
         let payload: serde_json::Value = serde_json::from_str(&result).unwrap();
         assert_eq!(payload["nextPageUrl"], serde_json::json!("more"));
+        assert_eq!(payload["hasReplyUrl"], serde_json::json!(false));
         let items = payload["items"].as_array().unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0]["id"], "c1");
@@ -853,8 +934,102 @@ mod tests {
         assert_eq!(replies[0]["content"], "一级回复");
 
         // 第二页：nextPageUrl 为 null
-        let result2 = review_get_replies(&source_json, &request_json, 2).unwrap();
+        let result2 = review_get_detail(&source_json, &request_json, 2).unwrap();
         let payload2: serde_json::Value = serde_json::from_str(&result2).unwrap();
         assert!(payload2["nextPageUrl"].is_null());
+    }
+
+    /// quickjs：JS 详情响应 hasReplyUrl 跟随 getReviewReplies 能力
+    /// （对齐原版 ReviewDetailDialog.kt:462 的 hasReviewRepliesCapability）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_js_review_get_detail_has_reply_url_matches_capability() {
+        let with_replies = BookSource {
+            main_js: Some(
+                r#"
+            function getReviewDetail() {
+                return JSON.stringify({items: [{id: "c1", content: "详情"}]});
+            }
+            function getReviewReplies() {
+                return JSON.stringify({items: []});
+            }
+            "#
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+        let source_json = serde_json::to_string(&with_replies).unwrap();
+        let result = review_get_detail(&source_json, "{}", 1).unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(payload["hasReplyUrl"], serde_json::json!(true));
+
+        // 未声明 getReviewReplies → false（Dart 侧沿用详情内嵌回复）
+        let without_replies = BookSource {
+            main_js: Some(
+                "function getReviewDetail() { return JSON.stringify({items: []}); }".to_string(),
+            ),
+            ..Default::default()
+        };
+        let source_json = serde_json::to_string(&without_replies).unwrap();
+        let result = review_get_detail(&source_json, "{}", 1).unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert_eq!(payload["hasReplyUrl"], serde_json::json!(false));
+    }
+
+    /// quickjs 真实引擎端到端：JS getReviewReplies 返回扁平化回复列表
+    /// （批12 对齐原版 `JsSourceReview.getReviewRepliesAwait`）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_review_get_replies_js_source_quickjs_e2e() {
+        let source = BookSource {
+            main_js: Some(
+                r#"
+            function getReviewReplies(chapter, book, paraIndex, paraData, reviewId, page) {
+                return JSON.stringify({
+                    items: [
+                        { id: reviewId, name: "读者甲", avatar: "/r/1.png",
+                          content: "{\"text\":\"回复正文\",\"replyToName\":\"楼主\"}",
+                          replies: [{ id: "r2", content: "楼中楼" }] },
+                        { id: "r3", content: paraData + ":" + page }
+                    ]
+                });
+            }
+            "#
+                .to_string(),
+            ),
+            ..Default::default()
+        };
+        let source_json = serde_json::to_string(&source).unwrap();
+        let request_json = serde_json::json!({
+            "paraIndex": 3,
+            "paraData": "token",
+            "reviewId": "c1",
+            "chapterUrl": "https://example.com/chap/1.html",
+        })
+        .to_string();
+
+        let result = review_get_replies(&source_json, &request_json, 1).unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert!(payload["nextPageUrl"].is_null(), "JS 协议无分页 URL");
+        let items = payload["items"].as_array().unwrap();
+        // 顶层两条 + 嵌套一条（扁平化）
+        assert_eq!(items.len(), 3);
+        assert_eq!(items[0]["id"], "c1");
+        assert_eq!(items[0]["content"], "回复正文");
+        assert_eq!(items[0]["replyToName"], "楼主");
+        assert_eq!(items[0]["avatar"], "https://example.com/r/1.png");
+        assert_eq!(items[1]["id"], "r2");
+        assert_eq!(items[2]["content"], "token:1");
+
+        // 脚本未定义 getReviewReplies → 原版 callOptionalFunction 缺失语义 → 空列表
+        let missing_source = BookSource {
+            main_js: Some("function search() { return ''; }".to_string()),
+            ..Default::default()
+        };
+        let missing_json = serde_json::to_string(&missing_source).unwrap();
+        let result = review_get_replies(&missing_json, &request_json, 1).unwrap();
+        let payload: serde_json::Value = serde_json::from_str(&result).unwrap();
+        assert!(payload["items"].as_array().unwrap().is_empty());
+        assert!(payload["nextPageUrl"].is_null());
     }
 }
