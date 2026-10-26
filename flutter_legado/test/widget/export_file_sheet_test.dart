@@ -5,6 +5,7 @@
 // 上传导入中 / 上传失败（真实错误 + 重试）/ 已保存规则优先。
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -61,6 +62,12 @@ class _FakeExportFileService extends ExportFileService {
   String? lastFileName;
   String? lastContent;
 
+  /// filePath 模式：既有文件另存
+  String? existingSavePath = r'C:\temp\skin.zip';
+  Object? existingSaveError;
+  int existingSaveCalls = 0;
+  String? lastSourcePath;
+
   @override
   Future<String?> saveToLocal({
     required String fileName,
@@ -72,6 +79,19 @@ class _FakeExportFileService extends ExportFileService {
     final error = saveError;
     if (error != null) throw error;
     return savePath;
+  }
+
+  @override
+  Future<String?> saveExistingFile({
+    required String sourcePath,
+    required String fileName,
+  }) async {
+    existingSaveCalls++;
+    lastSourcePath = sourcePath;
+    lastFileName = fileName;
+    final error = existingSaveError;
+    if (error != null) throw error;
+    return existingSavePath;
   }
 }
 
@@ -112,9 +132,12 @@ void main() {
     WidgetTester tester, {
     ExportFileService? fileService,
     DirectLinkUploadRuleService? ruleService,
-    String content = '[]',
+    String? content = '[]',
+    String? filePath,
+    bool deleteTempFileAfterUpload = false,
     String fileName = 'rssSources.json',
     String? uploadFileName,
+    String contentType = 'application/json',
   }) async {
     final box = _ResultBox();
     await tester.pumpWidget(
@@ -130,8 +153,11 @@ void main() {
                     box.value = await showExportFileSheet(
                       context,
                       content: content,
+                      filePath: filePath,
+                      deleteTempFileAfterUpload: deleteTempFileAfterUpload,
                       fileName: fileName,
                       uploadFileName: uploadFileName,
+                      contentType: contentType,
                       subject: '导出文件',
                       fileService: fileService,
                       ruleService: ruleService,
@@ -445,6 +471,108 @@ void main() {
       expect(find.text('保存到本地'), findsNothing);
       expect(box.completed, isTrue);
       expect(box.value, isNull);
+    });
+  });
+
+  group('filePath 模式（批16e）', () {
+    /// 创建真实临时文件（模拟调用方自建文件）
+    File createTempFile(String name, List<int> bytes) {
+      final dir = Directory.systemTemp.createTempSync('export_sheet_test');
+      addTearDown(() {
+        if (dir.existsSync()) dir.deleteSync(recursive: true);
+      });
+      final file = File('${dir.path}${Platform.pathSeparator}$name');
+      file.writeAsBytesSync(bytes);
+      return file;
+    }
+
+    testWidgets('content 与 filePath 互斥：都为空 / 都给均 assert 报错', (tester) async {
+      await tester.pumpWidget(
+        const MaterialApp(home: Scaffold(body: Text('anchor'))),
+      );
+      final context = tester.element(find.text('anchor'));
+
+      expect(
+        () => showExportFileSheet(context, fileName: 'x.json'),
+        throwsAssertionError,
+      );
+      expect(
+        () => showExportFileSheet(
+          context,
+          content: '[]',
+          filePath: 'x.json',
+          fileName: 'x.json',
+        ),
+        throwsAssertionError,
+      );
+    });
+
+    testWidgets('filePath 保存：复制既有文件字节，不回退文本写入', (tester) async {
+      final zip = createTempFile('skin.zip', const [1, 2, 3, 4]);
+      final saver = _FakeExportFileService()
+        ..existingSavePath = r'D:\导出\skin.zip';
+      final box = await openSheet(
+        tester,
+        fileService: saver,
+        content: null,
+        filePath: zip.path,
+        fileName: 'skin.zip',
+        contentType: 'application/zip',
+      );
+
+      expect(find.text('导出文件：skin.zip'), findsOneWidget);
+      await tester.tap(find.text('保存到本地'));
+      await tester.pumpAndSettle();
+
+      expect(saver.existingSaveCalls, 1);
+      expect(saver.lastSourcePath, zip.path);
+      expect(saver.lastFileName, 'skin.zip');
+      // 文本写入分支不得被触发
+      expect(saver.saveCalls, 0);
+      expect(box.value?.outcome, ExportFileOutcome.savedLocal);
+      expect(box.value?.message, '已保存：skin.zip');
+    });
+
+    testWidgets('filePath 上传：按路径上传，成功后删除调用方临时文件', (tester) async {
+      final zip = createTempFile('skin.zip', const [1, 2, 3, 4]);
+      final box = await openSheet(
+        tester,
+        content: null,
+        filePath: zip.path,
+        deleteTempFileAfterUpload: true,
+        fileName: 'skin.zip',
+        contentType: 'application/zip',
+      );
+
+      await tester.tap(find.text('上传直链'));
+      await tester.pumpAndSettle();
+
+      expect(api.uploadCalls, hasLength(1));
+      final call = api.uploadCalls.single;
+      expect(call['filePath'], zip.path);
+      expect(call['content'], isNull);
+      expect(call['contentType'], 'application/zip');
+      expect(call['fileName'], 'skin.zip');
+      // 上传成功后临时文件被清理
+      expect(zip.existsSync(), isFalse);
+      expect(box.completed, isFalse);
+      expect(find.text('上传成功'), findsOneWidget);
+    });
+
+    testWidgets('filePath 上传：未声明清理时保留原文件（避免误删用户文件）', (tester) async {
+      final userFile = createTempFile('user.json', const [123]);
+      await openSheet(
+        tester,
+        content: null,
+        filePath: userFile.path,
+        fileName: 'user.json',
+      );
+
+      await tester.tap(find.text('上传直链'));
+      await tester.pumpAndSettle();
+
+      expect(api.uploadCalls.single['filePath'], userFile.path);
+      expect(userFile.existsSync(), isTrue);
     });
   });
 }

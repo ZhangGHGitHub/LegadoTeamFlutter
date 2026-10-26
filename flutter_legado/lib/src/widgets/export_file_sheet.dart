@@ -11,7 +11,12 @@
 //
 // 返回值 [ExportFileResult] 供调用方统一提示导出结果；null = 用户取消
 // （含系统另存对话框取消、失败后放弃）。
+//
+// 批16e 增加 filePath 模式：二进制/已落盘内容（书源单源 `.js`、底栏皮肤
+// `.zip`）不再转字符串，直接把既有临时文件交给另存/上传两条链路；上传
+// 成功后可按调用方声明删除该临时文件（[deleteTempFileAfterUpload]）。
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -81,25 +86,39 @@ class ExportFileResult {
 
 /// 展示通用导出目标 Sheet
 ///
+/// [content] 与 [filePath] **必须且只能提供一个**（互斥，违反时 assert 报错）：
 /// - [content]：要导出的完整文本内容（JSON 等）；
+/// - [filePath]：已落盘的既有文件路径（`.js` / `.zip` 等二进制或非文本
+///   内容），保存时复制字节到用户选择位置、上传时按路径上传。
+///
+/// 其余参数：
 /// - [fileName]：系统另存使用的文件名（如 `exportRssSource.json`）；
 /// - [uploadFileName]：上传直链使用的文件名（默认与 [fileName] 相同；
 ///   参考版各规则导出统一上传 `export_rules.json`）；
 /// - [contentType]：上传时的内容类型（默认 `application/json`）；
 /// - [subject]：Sheet 标题（默认「选择操作」，对齐参考版 select_operation）；
+/// - [deleteTempFileAfterUpload]：上传成功后删除 [filePath] 指向的文件。
+///   **仅用于调用方自己创建的临时文件**（如书源单源 `.js`、皮肤 `.zip`）；
+///   指向用户文件的路径必须保持 false，避免误删。
 /// - [fileService] / [ruleService]：测试注入口，默认按真实实现构造。
 ///
 /// 返回 null 表示用户取消；成功时返回 [ExportFileResult]。
 Future<ExportFileResult?> showExportFileSheet(
   BuildContext context, {
-  required String content,
+  String? content,
+  String? filePath,
   required String fileName,
   String? uploadFileName,
   String contentType = 'application/json',
   String? subject,
+  bool deleteTempFileAfterUpload = false,
   ExportFileService? fileService,
   DirectLinkUploadRuleService? ruleService,
 }) {
+  assert(
+    (content == null) != (filePath == null),
+    'content 与 filePath 必须且只能提供一个',
+  );
   return showModalBottomSheet<ExportFileResult>(
     context: context,
     // 下拉关闭走 Navigator.pop，绕过 PopScope(canPop:false)：
@@ -110,10 +129,12 @@ Future<ExportFileResult?> showExportFileSheet(
     backgroundColor: Colors.transparent,
     builder: (_) => ExportFileSheet(
       content: content,
+      filePath: filePath,
       fileName: fileName,
       uploadFileName: uploadFileName,
       contentType: contentType,
       subject: subject,
+      deleteTempFileAfterUpload: deleteTempFileAfterUpload,
       fileService: fileService,
       ruleService: ruleService,
     ),
@@ -124,17 +145,25 @@ Future<ExportFileResult?> showExportFileSheet(
 class ExportFileSheet extends ConsumerStatefulWidget {
   const ExportFileSheet({
     super.key,
-    required this.content,
+    this.content,
+    this.filePath,
     required this.fileName,
     this.uploadFileName,
     this.contentType = 'application/json',
     this.subject,
+    this.deleteTempFileAfterUpload = false,
     this.fileService,
     this.ruleService,
-  });
+  }) : assert(
+         (content == null) != (filePath == null),
+         'content 与 filePath 必须且只能提供一个',
+       );
 
-  /// 导出内容
-  final String content;
+  /// 导出内容（文本模式，与 [filePath] 互斥）
+  final String? content;
+
+  /// 既有文件路径（filePath 模式，与 [content] 互斥）
+  final String? filePath;
 
   /// 系统另存使用的文件名
   final String fileName;
@@ -147,6 +176,9 @@ class ExportFileSheet extends ConsumerStatefulWidget {
 
   /// Sheet 标题
   final String? subject;
+
+  /// 上传成功后是否删除 [filePath]（仅限调用方自建临时文件）
+  final bool deleteTempFileAfterUpload;
 
   /// 落盘服务（测试注入）
   final ExportFileService? fileService;
@@ -250,6 +282,8 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
   }
 
   /// 保存到本地（系统另存）
+  ///
+  /// content 模式写文本字节；filePath 模式复制既有文件字节（二进制安全）。
   Future<void> _saveToLocal() async {
     _resetCopyFeedback();
     setState(() {
@@ -259,10 +293,16 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     });
     String? path;
     try {
-      path = await _fileService.saveToLocal(
-        fileName: widget.fileName,
-        content: widget.content,
-      );
+      final filePath = widget.filePath;
+      path = filePath == null
+          ? await _fileService.saveToLocal(
+              fileName: widget.fileName,
+              content: widget.content!,
+            )
+          : await _fileService.saveExistingFile(
+              sourcePath: filePath,
+              fileName: widget.fileName,
+            );
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -292,6 +332,9 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
   }
 
   /// 上传直链（生效规则 → §2.51 directLinkUpload）
+  ///
+  /// filePath 模式下按路径上传（content 传 null），成功后按调用方声明
+  /// 清理自建临时文件。
   Future<void> _upload() async {
     _resetCopyFeedback();
     setState(() {
@@ -301,11 +344,13 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     });
     try {
       final rule = await _ruleService.getEffectiveRule();
+      final filePath = widget.filePath;
       final url = await ref.read(bookApiProvider).directLinkUpload(
         ruleJson: rule.toJsonString(),
         fileName: _uploadFileName,
         contentType: widget.contentType,
-        content: widget.content,
+        content: filePath == null ? widget.content : null,
+        filePath: filePath,
       );
       if (!mounted) return;
       setState(() {
@@ -313,6 +358,10 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         _uploadedUrl = url;
         _uploadedSummary = rule.summary;
       });
+      // 上传成功后才清理：仅限调用方声明的自建临时文件
+      if (widget.deleteTempFileAfterUpload && filePath != null) {
+        _deleteSourceFileQuietly(filePath);
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -320,6 +369,16 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         _failedAction = _FailureAction.upload;
         _error = errorMessage(e);
       });
+    }
+  }
+
+  /// 静默删除临时文件（失败不影响导出结果，仅留调试痕迹）
+  void _deleteSourceFileQuietly(String path) {
+    try {
+      final file = File(path);
+      if (file.existsSync()) file.deleteSync();
+    } catch (e) {
+      debugPrint('导出临时文件清理失败（$path）：$e');
     }
   }
 
