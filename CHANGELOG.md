@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.384] - 2026-10-26
+
+### Added
+- [Rust] RSS 正文规则抓取：按源 `ruleContent` 解析正文，`nextContentUrl` 多页拼接（单链顺序去环/多链保序并发，任一页失败整体报错；对齐原版 `Rss.getContent`）；成功后写回文章与收藏的正文描述（保留既有排序/已读状态）。
+- [FFI] 新增 `rssFetchContent`（正文拉取）；文章详情页在摘要为空时自动拉取规则正文并在 WebView 展示（失败可重试）。
+### Fixed
+- [Rust] RSS 请求接入源级 `concurrentRate` 限速（列表/正文/每一页统一门控），并支持保存源后刷新限速配置。
+- [Rust] RSS 列表/正文使用四级字符集探测（显式 → Content-Type → meta → 统计探测），GBK/GB18030 源不再乱码。
+- [Rust] RSS 规则 JS 环境补 `rssArticle` 绑定（对齐原版）；正文空 `nextUrl` 与空白摘要判定等边界修正。
+- [UI] 规则正文 WebView 补基准 URL（相对图片/链接可正常加载）；详情返回列表时同步展示已抓取的正文摘要；收藏使用抓取后的正文。
+
 ## [2.0.383] - 2026-10-26
 
 ### Added
