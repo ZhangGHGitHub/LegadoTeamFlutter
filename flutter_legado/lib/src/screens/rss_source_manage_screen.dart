@@ -7,10 +7,10 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import '../widgets/md3_fast_scroller.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import '../services/bridge_http.dart';
+import '../services/export_file_service.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -19,6 +19,7 @@ import '../providers/providers.dart';
 import '../providers/rss/rss_notifier.dart' show syncDefaultRssSources;
 import '../routes.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/export_file_sheet.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 import '../widgets/empty_state.dart';
@@ -41,7 +42,13 @@ final RegExp _splitGroupRegex = RegExp(r'[,;，；]');
 /// - 拖拽排序（customOrder）、长按无（拖拽占用），勾选框进入批量模式
 /// - 批量操作：全选/反选/删除 + 更多（启停/分组/置顶置底/导出/分享/区间）
 class RssSourceManageScreen extends ConsumerStatefulWidget {
-  const RssSourceManageScreen({super.key});
+  const RssSourceManageScreen({
+    super.key,
+    this.exportFileService = const ExportFileService(),
+  });
+
+  /// 导出文件服务（测试注入；默认真实落盘/分享实现）
+  final ExportFileService exportFileService;
 
   @override
   ConsumerState<RssSourceManageScreen> createState() =>
@@ -982,30 +989,51 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
     }
   }
 
-  /// 导出选中（对标原版 exportSelection：JSON 复制到剪贴板）
+  /// 导出选中（对标参考版 FilePickerSheet：系统另存 / 上传直链两项）
+  ///
+  /// 参考版已把原版「导出到文件/上传 URL」收敛为同一 Sheet，不再直接写
+  /// 剪贴板；导出内容仍为选中源的完整 JSON 数组。
   Future<void> _exportSelected() async {
-    try {
-      final selectedSources =
-          _sources.where((s) => _selected.contains(s.sourceUrl)).toList();
-      final json = const JsonEncoder.withIndent('  ')
-          .convert(selectedSources.map((s) => s.toJson()).toList());
-      await Clipboard.setData(ClipboardData(text: json));
-      _toast('已导出 ${selectedSources.length} 个订阅源到剪贴板');
-      _exitBatch();
-    } catch (e) {
-      _toast('导出失败：$e');
+    final selectedSources =
+        _sources.where((s) => _selected.contains(s.sourceUrl)).toList();
+    if (selectedSources.isEmpty) {
+      _toast('请先选择订阅源');
+      return;
     }
+    final json = const JsonEncoder.withIndent('  ')
+        .convert(selectedSources.map((s) => s.toJson()).toList());
+    final result = await showExportFileSheet(
+      context,
+      content: json,
+      fileName: 'rssSources.json',
+      subject: '导出订阅源',
+    );
+    if (!mounted || result == null) return;
+    _toast(result.message);
+    _exitBatch();
   }
 
-  /// 分享源（对标原版 shareSource）
+  /// 分享源（对齐原版 share(file)：写临时文件后走系统分享）
   Future<void> _shareSelected() async {
+    final selectedSources =
+        _sources.where((s) => _selected.contains(s.sourceUrl)).toList();
+    if (selectedSources.isEmpty) {
+      _toast('请先选择订阅源');
+      return;
+    }
     try {
-      final selectedSources =
-          _sources.where((s) => _selected.contains(s.sourceUrl)).toList();
-      final json = jsonEncode(selectedSources.map((s) => s.toJson()).toList());
-      await Share.share(json, subject: '订阅源分享（${selectedSources.length} 个）');
+      final json = const JsonEncoder.withIndent('  ')
+          .convert(selectedSources.map((s) => s.toJson()).toList());
+      final file = await widget.exportFileService.writeTempFile(
+        fileName: 'rssSources.json',
+        content: json,
+      );
+      await Share.shareXFiles(
+        [file],
+        subject: '订阅源分享（${selectedSources.length} 个）',
+      );
     } catch (e) {
-      _toast('分享失败：$e');
+      _toast('分享失败：${errorMessage(e)}');
     }
   }
 

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -9,6 +11,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/routes.dart' show AppRoutes;
 import 'package:flutter_legado/src/screens/dict_rule_screen.dart';
+import 'package:flutter_legado/src/services/direct_link_upload_rule_service.dart';
 
 import '../mocks/mocks.dart';
 
@@ -355,6 +358,81 @@ void main() {
             kind: any(named: 'kind'),
           ));
       expect(find.text('未获取到扫码内容'), findsOneWidget);
+    });
+
+    testWidgets('多选导出：打开导出 Sheet，上传直链使用选中规则 JSON',
+        (tester) async {
+      when(() => mockApi.dictRuleList())
+          .thenAnswer((_) async => sampleRows());
+      when(() => mockApi.getConfig(DirectLinkUploadRuleService.configKey))
+          .thenAnswer((_) async => jsonEncode(<String, Object?>{
+                'uploadUrl': 'https://up.example/upload',
+                'downloadUrlRule': r'$.url',
+                'summary': '测试直链',
+                'compress': false,
+              }));
+      Map<String, Object?>? captured;
+      when(() => mockApi.directLinkUpload(
+            ruleJson: any(named: 'ruleJson'),
+            fileName: 'dictRules.json',
+            contentType: 'application/json',
+            content: any(named: 'content'),
+          )).thenAnswer((invocation) async {
+        captured = <String, Object?>{
+          'ruleJson': invocation.namedArguments[#ruleJson],
+          'content': invocation.namedArguments[#content],
+        };
+        return 'https://download.example/dictRules.json';
+      });
+
+      await tester.pumpWidget(wrap(const DictRuleScreen()));
+      await tester.pumpAndSettle();
+
+      // 长按第一行进入多选 → 顶栏「导出选中」
+      await tester.longPress(find.text('海词中文'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('导出选中'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('导出字典规则'), findsOneWidget);
+      expect(find.text('保存到本地'), findsOneWidget);
+      expect(find.text('上传直链'), findsOneWidget);
+      expect(find.text('导出文件：dictRules.json'), findsOneWidget);
+
+      await tester.tap(find.text('上传直链'));
+      await tester.pumpAndSettle();
+
+      expect(captured, isNotNull);
+      final payload =
+          jsonDecode(captured!['content'] as String) as List<dynamic>;
+      expect(payload, hasLength(1));
+      final row = payload.single as Map<String, dynamic>;
+      // 对齐参考版 DictRule 实体字段（不含本地主键 id）
+      expect(row.keys.toSet(), <String>{
+        'name',
+        'urlRule',
+        'showRule',
+        'enabled',
+        'sortNumber',
+      });
+      expect(row['name'], '海词中文');
+      expect(row['urlRule'], 'https://www.haiyachax.com/search/{{key}}');
+      expect(row['enabled'], isTrue);
+      expect(row['sortNumber'], 0);
+
+      expect(find.text('上传成功'), findsOneWidget);
+      expect(
+        find.text('https://download.example/dictRules.json'),
+        findsOneWidget,
+      );
+
+      await tester.tap(find.text('完成'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('上传成功：https://download.example/dictRules.json'),
+        findsOneWidget,
+      );
+      expect(find.text('已选 1 项'), findsNothing);
     });
   });
 }

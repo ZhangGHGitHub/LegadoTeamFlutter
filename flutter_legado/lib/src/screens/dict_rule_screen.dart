@@ -12,6 +12,7 @@ import '../providers/providers.dart';
 import '../routes.dart' show AppRoutes;
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
+import '../widgets/export_file_sheet.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 import '../widgets/app_scaffold.dart';
@@ -322,6 +323,37 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
     }
   }
 
+  /// 导出选中（对标参考版 DictRuleScreen 批量操作「导出」→ 导出目标 Sheet）
+  ///
+  /// 字段对齐参考版 DictRule 实体（name/urlRule/showRule/enabled/sortNumber，
+  /// 不含本地主键 id）；参考版无「分享源」，故不新增分享入口。
+  Future<void> _exportSelected() async {
+    if (_selectedIds.isEmpty) return;
+    final targets = _rows.where((r) => _selectedIds.contains(r.id)).toList();
+    final json = const JsonEncoder.withIndent('  ').convert(
+      targets
+          .map(
+            (r) => {
+              'name': r.name,
+              'urlRule': r.urlRule,
+              'showRule': r.showRule,
+              'enabled': r.enabled,
+              'sortNumber': r.sortNumber,
+            },
+          )
+          .toList(),
+    );
+    final result = await showExportFileSheet(
+      context,
+      content: json,
+      fileName: 'dictRules.json',
+      subject: '导出字典规则',
+    );
+    if (!mounted || result == null) return;
+    _snack(result.message);
+    _exitSelectMode();
+  }
+
   // ========== 编辑弹层（对标 DictRuleEditDialog 三字段） ==========
 
   Future<void> _showRuleEditor({_DictRuleRow? row}) async {
@@ -572,6 +604,11 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
           icon: const Icon(Symbols.remove_circle_outline_rounded),
           tooltip: '禁用选中',
           onPressed: _busy ? null : () => _batchSetEnabled(false),
+        ),
+        IconButton(
+          icon: const Icon(Symbols.save_alt_rounded),
+          tooltip: '导出选中',
+          onPressed: _busy ? null : _exportSelected,
         ),
         IconButton(
           icon: const Icon(Symbols.delete_rounded),
