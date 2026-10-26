@@ -1716,12 +1716,9 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             };
 
             // B1.4 coverUrl 绝对化（对标 Kotlin NetworkUtils.getAbsoluteURL(baseUrl, it)）
-            // 空规则直接 None：`eval_rule_string("")` 会回退元素外层 HTML（上游
-            // AnalyzeRule.kt:202-205 对空规则返回 null → 空串），与其余可选字段
-            // 的 optional_field 口径保持一致。
-            let cover_url = if cover_url_rule.is_empty() {
-                None
-            } else {
+            // 空规则由 `eval_rule_string` 统一早退为空串（对齐上游
+            // `AnalyzeRule.getString` 空规则返回 ""），此处只需判空。
+            let cover_url = {
                 let v = eval_rule_string(&elem_analyzer, cover_url_rule).unwrap_or_default();
                 if v.is_empty() {
                     None
@@ -2043,7 +2040,7 @@ impl BookSourceFetcher for RealBookSourceFetcher {
 
         // 4. R1 subContent 副内容（Task #134）：分页循环完成后从首页提取副内容。
         //    P1-2 注：first_page_body 现也被标题链复用，但 subContent 为空规则时
-        //    不得进入本块（eval_rule_string 对空规则回退整页文本，会污染空正文）
+        //    不进入本块（空规则无副内容可取，省去无谓的解析器构造）
         if let Some(page_body) = first_page_body
             .clone()
             .filter(|_| !sub_content_rule.is_empty())
@@ -3949,10 +3946,18 @@ pub fn split_rule_replace_parts(rule: &str) -> (&str, Option<(&str, &str, bool)>
 /// 执行规则字符串并应用 `##` 替换部分
 ///
 /// 对标 Kotlin `AnalyzeRule.getString` + `SourceRule.replaceRegex` 组合语义：
-/// - 基础规则为空：直接以当前内容为替换对象（replaceRegex 纯替换规则场景）；
+/// - 空规则：直接返回空串，**不回退当前内容**（对齐 `AnalyzeRule.kt:299-301`
+///   的 `if (ruleStr.isNullOrEmpty()) return ""`）；修复前会走下方「基础规则
+///   为空 → 当前内容」分支，把元素外层 HTML/整页文本当作字段值（搜索
+///   name/author/bookUrl/coverUrl 等同类空规则问题）；
+/// - 基础规则为空但整条规则非空：直接以当前内容为替换对象（`##` 纯替换
+///   规则场景，如 `##广告##`）；
 /// - 基础规则非空：先按规则提取，再对提取结果应用替换；
 /// - 替换部分：`apply_regex_replace`（对标 AnalyzeRule.replaceRegex L539-563）。
 pub fn eval_rule_string(analyzer: &legado_parser::AnalyzeRule, rule: &str) -> LegadoResult<String> {
+    if rule.is_empty() {
+        return Ok(String::new());
+    }
     let (base_rule, replace) = split_rule_replace_parts(rule);
     let mut result = if base_rule.is_empty() {
         analyzer.content().to_string()
@@ -4767,7 +4772,7 @@ pub async fn webbook_content(
 mod tests {
     use super::*;
     use crate::test_support::{block_on, GLOBAL_STORE_TEST_LOCK};
-    use legado_core::models::rule::ContentRule;
+    use legado_core::models::rule::{ContentRule, SearchRule};
     use legado_parser::AnalyzeRule;
 
     /// 测试注入面：独立默认 HTTP 客户端（纯离线构造，不触网络探针）+ 宿主
@@ -6919,6 +6924,116 @@ mod tests {
         assert_eq!(r.kind.as_deref(), Some("科幻"));
         assert_eq!(r.word_count.as_deref(), Some("200k"));
         assert_eq!(r.source_url, "https://src");
+    }
+
+    /// [P2-1 批13 审查] 空规则守卫：`eval_rule_string("")` 必须返回空串，
+    /// 不得回退当前内容（对齐上游 `AnalyzeRule.getString` 空规则早退）；
+    /// 整条规则非空的 `##` 纯替换（基础规则为空）语义保持不变。
+    #[test]
+    fn test_eval_rule_string_empty_rule_returns_empty_and_hash_replace_still_applies() {
+        let html = "<html><body><div class=\"book\">正文广告</div></body></html>";
+        let analyzer = construct_analyzer_with_js_lib(
+            html.to_string(),
+            "https://example.com/search".to_string(),
+            "https://example.com",
+            None,
+        );
+
+        assert_eq!(
+            eval_rule_string(&analyzer, "").expect("空规则应成功"),
+            "",
+            "空规则必须返回空串（不得回退元素/页面 HTML）"
+        );
+        assert_eq!(
+            eval_rule_string(&analyzer, "##广告##").expect("纯替换规则应成功"),
+            "<html><body><div class=\"book\">正文</div></body></html>",
+            "整条规则非空的 ## 纯替换仍应作用于当前内容"
+        );
+    }
+
+    /// [P2-1 批13 审查] 搜索字段空规则：author/bookUrl/coverUrl 空规则不得
+    /// 回退元素外层 HTML；bookUrl 空 → 回退响应最终 URL（baseUrl）；
+    /// name 空 → 该元素跳过（对齐上游 `BookList.getSearchItem`）。
+    #[test]
+    fn test_search_empty_field_rules_do_not_leak_element_html() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut buf = Vec::new();
+                let mut byte = [0u8; 1];
+                while !buf.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => buf.push(byte[0]),
+                        _ => break,
+                    }
+                    if buf.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let body = r#"<html><body><div class="book"><a class="name" href="/b/1">斗破苍穹</a></div></body></html>"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+
+        let base = format!("http://127.0.0.1:{port}");
+        let client = LegadoClient::new(legado_net::LegadoClientConfig {
+            no_proxy: true,
+            ..legado_net::LegadoClientConfig::default()
+        })
+        .expect("test http client");
+        let fetcher = RealBookSourceFetcher::new(client);
+        let make_source = |name_rule: &str| BookSource {
+            book_source_url: base.clone(),
+            book_source_name: "P2-1 空规则源".to_string(),
+            search_url: Some(format!("{base}/search?q={{{{key}}}}")),
+            rule_search: Some(SearchRule {
+                book_list: Some("class.book".to_string()),
+                name: Some(name_rule.to_string()),
+                author: Some(String::new()),
+                book_url: Some(String::new()),
+                cover_url: Some(String::new()),
+                intro: Some(String::new()),
+                ..SearchRule::default()
+            }),
+            ..BookSource::default()
+        };
+
+        // author/bookUrl/coverUrl 空规则：不得产出 HTML，bookUrl 回退 baseUrl
+        let results =
+            block_on(fetcher.search(&make_source("class.name@text"), "kw", 1)).expect("搜索应成功");
+        assert_eq!(results.len(), 1, "应解析出 1 条结果");
+        let item = &results[0];
+        assert_eq!(item.name, "斗破苍穹");
+        assert_eq!(item.author, "", "author 空规则应产出空串而非元素 HTML");
+        assert!(
+            !item.author.contains("<div"),
+            "author 不得回退元素外层 HTML: {:?}",
+            item.author
+        );
+        assert_eq!(
+            item.book_url,
+            format!("{base}/search?q=kw"),
+            "bookUrl 空规则应回退响应最终 URL（baseUrl）"
+        );
+        assert!(item.cover_url.is_none(), "coverUrl 空规则应解析为空");
+        assert!(item.intro.is_none(), "intro 空规则应解析为空");
+
+        // name 空规则：元素被跳过（上游 name 为空 → 不产出搜索项）
+        let results = block_on(fetcher.search(&make_source(""), "kw", 1)).expect("搜索应成功");
+        assert!(
+            results.is_empty(),
+            "name 空规则应跳过该元素（不得以元素 HTML 作为书名）: {results:?}"
+        );
     }
 
     #[test]
