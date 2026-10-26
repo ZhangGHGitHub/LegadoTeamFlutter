@@ -11,6 +11,9 @@
 //!       └─ 断言：真实落库（rusqlite 直连 rssArticles）
 //!   → fetch_rss_articles(回环 /html)：解析 0 篇 → 空列表（**不再伪造单条摘要**）
 //!   → fetch_rss_articles(回环 /empty)：响应体空 → 报错（对齐原版 body 空白抛错）
+//!   → fetch_rss_articles(回环 /multi) 两次：
+//!       ├─ 断言：多篇 `order` 严格递减（同次写入 now - i）
+//!       └─ 断言：同 origin+link 二次拉取走 INSERT OR REPLACE（3 行进、3 行出、标题更新）
 //! ```
 //!
 //! 原版对照：`Rss.getArticlesAwait` + `RssParserByRule.parseXML`
@@ -36,6 +39,23 @@ const RSS_BODY: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
     </item>
   </channel>
 </rss>"#;
+
+/// 多篇 feed 第一版（同一 `/multi` 路径首请求返回）
+const RSS_MULTI_V1: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>多篇</title>
+<item><title>第一篇</title><link>http://127.0.0.1/multi/1</link></item>
+<item><title>第二篇</title><link>http://127.0.0.1/multi/2</link></item>
+<item><title>第三篇</title><link>http://127.0.0.1/multi/3</link></item>
+</channel></rss>"#;
+
+/// 多篇 feed 第二版（同一 `/multi` 路径第二次请求返回）：
+/// link（主键）不变、title 全部更新 → 验证 INSERT OR REPLACE 而非追加
+const RSS_MULTI_V2: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>多篇</title>
+<item><title>第一篇（更新）</title><link>http://127.0.0.1/multi/1</link></item>
+<item><title>第二篇（更新）</title><link>http://127.0.0.1/multi/2</link></item>
+<item><title>第三篇（更新）</title><link>http://127.0.0.1/multi/3</link></item>
+</channel></rss>"#;
 
 /// 临时 DB 路径（进程号后缀防并发二进制撞名；开头先清残留）
 fn temp_db_path() -> std::path::PathBuf {
@@ -71,6 +91,8 @@ fn spawn_loopback_server(requests: usize) -> (u16, Arc<Mutex<Vec<String>>>) {
     let heads_thread = Arc::clone(&heads);
 
     std::thread::spawn(move || {
+        // `/multi` 按请求顺序返回 v1 / v2（同源同 link，模拟 feed 更新）
+        let mut multi_hits = 0usize;
         for _ in 0..requests {
             let Ok((mut stream, _)) = listener.accept() else {
                 return;
@@ -86,6 +108,15 @@ fn spawn_loopback_server(requests: usize) -> (u16, Arc<Mutex<Vec<String>>>) {
                 .to_string();
             let (status, body) = match path.as_str() {
                 "/feed" => ("200 OK", RSS_BODY),
+                "/multi" => {
+                    let body = if multi_hits == 0 {
+                        RSS_MULTI_V1
+                    } else {
+                        RSS_MULTI_V2
+                    };
+                    multi_hits += 1;
+                    ("200 OK", body)
+                }
                 "/html" => ("200 OK", "<html><body>不是 feed</body></html>"),
                 "/empty" => ("200 OK", ""),
                 _ => ("404 Not Found", ""),
@@ -107,12 +138,12 @@ fn spawn_loopback_server(requests: usize) -> (u16, Arc<Mutex<Vec<String>>>) {
 
 /// 直接读 rssArticles（绕过仓储读路径，验证真实落库）
 ///
-/// 返回 `(title, link, description, content)`，按 `order` 降序。
-fn query_articles(db_path: &Path, origin: &str) -> Vec<(String, String, String, String)> {
+/// 返回 `(title, link, description, content, order)`，按 `order` 降序。
+fn query_articles(db_path: &Path, origin: &str) -> Vec<(String, String, String, String, i64)> {
     let conn = rusqlite::Connection::open(db_path).expect("rusqlite 直连临时 DB");
     let mut stmt = conn
         .prepare(
-            "SELECT title, link, COALESCE(description, ''), COALESCE(content, '') \
+            "SELECT title, link, COALESCE(description, ''), COALESCE(content, ''), \"order\" \
              FROM rssArticles WHERE origin = ?1 ORDER BY \"order\" DESC",
         )
         .expect("准备查询");
@@ -122,6 +153,7 @@ fn query_articles(db_path: &Path, origin: &str) -> Vec<(String, String, String, 
             row.get::<_, String>(1)?,
             row.get::<_, String>(2)?,
             row.get::<_, String>(3)?,
+            row.get::<_, i64>(4)?,
         ))
     })
     .expect("查询 rssArticles")
@@ -150,16 +182,19 @@ fn fetch_rss_articles_loopback_end_to_end() {
     legado_ffi::ffi::ffi::init().expect("ffi init（tokio runtime）");
     legado_ffi::ffi::ffi::db_open(db_path.to_string_lossy().into_owned()).expect("db_open");
 
-    let (port, heads) = spawn_loopback_server(3);
+    let (port, heads) = spawn_loopback_server(5);
     let base = format!("http://127.0.0.1:{port}");
 
     // ---- 1) 真实 RSS：解析 + header 透传 + 落库 ----
     let feed_url = format!("{base}/feed");
+    // 说明：小写 `proxy` 会被 AnalyzeUrl 提取为代理配置并真的走代理（该语义
+    // 由 legado-fetcher `rss/request.rs` 的回环代理用例覆盖）；此处用大写
+    // `Proxy` 验证「合并后大小写不敏感剔除」在 FFI 全链路同样生效。
     add_source(
         &feed_url,
         serde_json::json!({
             "enabledCookieJar": true,
-            "header": "{\"X-Rss-Test\":\"1\"}",
+            "header": "{\"X-Rss-Test\":\"1\",\"Proxy\":\"http://u:p@h:1\"}",
         }),
     );
 
@@ -189,6 +224,12 @@ fn fetch_rss_articles_loopback_end_to_end() {
         let lower = head.to_ascii_lowercase();
         assert!(lower.contains("x-rss-test: 1"), "源 header 应透传: {head}");
         assert!(
+            !head
+                .lines()
+                .any(|line| line.to_ascii_lowercase().starts_with("proxy:")),
+            "`proxy` 配置键不得作为 HTTP 头发送: {head}"
+        );
+        assert!(
             !lower.contains("cookiejar"),
             "CookieJar 内部标记头不得出网: {head}"
         );
@@ -204,6 +245,48 @@ fn fetch_rss_articles_loopback_end_to_end() {
         "<p>回环描述</p><img src=\"http://127.0.0.1/cover.jpg\">"
     );
     assert_eq!(rows[0].3, "回环正文", "content:encoded 应写入 content 列");
+
+    // ---- 1.5) 多篇：order 递减 + REPLACE 主键替换（同源同 link 更新） ----
+    let multi_url = format!("{base}/multi");
+    add_source(&multi_url, serde_json::json!({}));
+
+    let first = legado_ffi::api::rss::fetch_rss_articles(&multi_url).expect("多篇首次拉取");
+    assert_eq!(first.len(), 3, "首次应解析 3 篇: {first:#?}");
+    let rows_v1 = query_articles(&db_path, &multi_url);
+    assert_eq!(rows_v1.len(), 3, "首次应落库 3 行: {rows_v1:#?}");
+    assert_eq!(
+        rows_v1.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(),
+        vec!["第一篇", "第二篇", "第三篇"],
+        "order 降序应与文档顺序一致"
+    );
+    assert!(
+        rows_v1.windows(2).all(|w| w[0].4 > w[1].4),
+        "同次写入的 order 必须严格递减: {rows_v1:?}"
+    );
+
+    let second = legado_ffi::api::rss::fetch_rss_articles(&multi_url).expect("多篇二次拉取");
+    assert_eq!(second.len(), 3, "二次拉取仍应解析 3 篇: {second:#?}");
+    let rows_v2 = query_articles(&db_path, &multi_url);
+    assert_eq!(
+        rows_v2.len(),
+        3,
+        "主键 (origin, link, sort) 冲突应 INSERT OR REPLACE，而非追加: {rows_v2:#?}"
+    );
+    assert_eq!(
+        rows_v2.iter().map(|r| r.0.as_str()).collect::<Vec<_>>(),
+        vec!["第一篇（更新）", "第二篇（更新）", "第三篇（更新）"],
+        "同 link 文章应被新标题替换"
+    );
+    assert!(
+        rows_v2.windows(2).all(|w| w[0].4 > w[1].4),
+        "二次写入 order 仍须严格递减: {rows_v2:?}"
+    );
+    assert!(
+        rows_v2[0].4 >= rows_v1[0].4,
+        "二次写入时间戳不得回退（v2={}, v1={}）",
+        rows_v2[0].4,
+        rows_v1[0].4
+    );
 
     // ---- 2) 非 XML 正文：解析 0 篇 → 空列表（不伪造单条摘要） ----
     let html_url = format!("{base}/html");
@@ -231,7 +314,7 @@ fn fetch_rss_articles_loopback_end_to_end() {
     );
 
     // 清理共享库中的测试源（DB 文件随进程退出释放）
-    for url in [&feed_url, &html_url, &empty_url] {
+    for url in [&feed_url, &multi_url, &html_url, &empty_url] {
         let _ = legado_ffi::api::rss::delete_rss_source(url);
     }
     let _ = std::fs::remove_file(&db_path);

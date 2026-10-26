@@ -914,6 +914,18 @@ pub fn apply_cookie_jar_marker_by_flag(
     headers.insert(legado_net::COOKIE_JAR_HEADER.to_string(), "1".to_string());
 }
 
+/// 剔除 `proxy` 伪请求头（键名大小写不敏感，单一实现）
+///
+/// 对齐上游 `AnalyzeUrl`（`AnalyzeUrl.kt:142-146`）：源 header 里的 `proxy`
+/// 键是**代理配置**而非 HTTP 头——上游把它提取到独立 `proxy` 字段（随后由
+/// `getProxyClient` 使用）并从 headerMap 删除。我方 `AnalyzeUrl` 只删除自己
+/// 持有的 header 副本，调用方在发送前合并的**原始源 header** 仍可能重新带回
+/// 该键，若不再剔除就会作为普通 HTTP 头发送（既泄漏凭据，也可能被服务端
+/// 拒绝）。凡「源 header + AnalyzeUrl header」合并后、发送前必须调用本函数。
+pub fn strip_proxy_header(headers: &mut HashMap<String, String>) {
+    headers.retain(|key, _| !key.eq_ignore_ascii_case("proxy"));
+}
+
 /// 基于 legado-net HTTP 客户端 + legado-parser 规则解析引擎，
 /// 实现完整的搜索→详情→目录→正文链路（对标 Kotlin WebBook 对象）。
 pub struct RealBookSourceFetcher {
@@ -1004,6 +1016,12 @@ impl RealBookSourceFetcher {
         // 合并请求头：书源全局 header + AnalyzeUrl 解析出的 header
         let mut headers = source_headers.cloned().unwrap_or_default();
         headers.extend(analyze_url.headers().clone());
+        // `proxy` 是源 header 的代理配置键（上游 AnalyzeUrl 提取后即从
+        // headerMap 删除，`AnalyzeUrl.kt:142-146`），不是 HTTP 头；这里
+        // 合并的是原始源 header，必须再剔除一次，防止代理凭据随请求外泄。
+        // 注：书源链路的 per-request 代理接线不在本批范围（仅 RSS 列表
+        // 路径 `rss::request::fetch_list` 已接线），此处只保证不出网。
+        strip_proxy_header(&mut headers);
 
         // JS `java.setCookie` 写入的 cookie：按请求 URL 属域取（`cookies_for_url`
         // 内部归一为 `getSubDomain(url)` 等价域名键，单一真源
@@ -8192,6 +8210,46 @@ mod tests {
                 .map(String::as_str),
             Some("rule-val"),
             "规则 header 优先：标记头只补不覆盖"
+        );
+    }
+
+    /// 审查 P1-1（book 路径）：`fetch_page` 合并源 header 后必须剔除 `proxy`
+    /// 键——它是代理配置而非 HTTP 头（上游 `AnalyzeUrl.kt:142-146` 同样从
+    /// headerMap 删除），不得随请求外泄；其他源 header 照常透传。
+    #[test]
+    fn test_fetch_page_strips_proxy_header_from_source_headers() {
+        let (port, seen) = spawn_set_cookie_html_server();
+        let client = LegadoClient::new(legado_net::LegadoClientConfig {
+            no_proxy: true,
+            ..legado_net::LegadoClientConfig::default()
+        })
+        .expect("test http client");
+        let fetcher = RealBookSourceFetcher::new(client);
+        let source_headers = HashMap::from([
+            ("proxy".to_string(), "http://u:p@h:1".to_string()),
+            ("X-Rss-Test".to_string(), "v".to_string()),
+        ]);
+        let analyze_url = AnalyzeUrl::new(
+            &format!("http://127.0.0.1:{port}/page"),
+            None,
+            None,
+            "http://127.0.0.1/",
+            None,
+        );
+
+        let body = block_on(fetcher.fetch_url(&analyze_url, Some(&source_headers)))
+            .expect("回环取页应成功");
+
+        assert!(body.contains("正文内容"));
+        let seen = seen.lock().unwrap();
+        let head = seen.first().expect("回环服务器应收到 1 次请求");
+        let lower = head.to_ascii_lowercase();
+        assert!(lower.contains("x-rss-test: v"), "源 header 应透传: {head}");
+        assert!(
+            !head
+                .lines()
+                .any(|line| line.to_ascii_lowercase().starts_with("proxy:")),
+            "`proxy` 配置键不得作为 HTTP 头发送: {head}"
         );
     }
 
