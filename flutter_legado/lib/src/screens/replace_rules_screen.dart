@@ -465,9 +465,11 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
   /// HandleFileContract.EXPORT，文件名 `exportReplaceRule.json`，
   /// `application/json`）。
   ///
-  /// 内容形态 = `withSamples` 输出的规则数组（每条规则 JSON 可含
-  /// `previewText`）。本项目未持久化 previewText 样本（仅编辑页复制规则时
-  /// 临时携带），故按现有规则 JSON 导出，字段与 withSamples 一致。
+  /// **已知差异（批16e 回修 P2-3，登记不阻塞）**：原版 `withSamples` 会把
+  /// 编辑页临时保存的 `previewText` 一并写入导出 JSON；本项目未持久化该
+  /// 样本（仅编辑页复制规则时临时携带），因此导出内容不含 `previewText`。
+  /// 除此之外字段与规则数组形态一致，但**不声称与原版 1:1**；如需样本
+  /// 随导出携带，须先补 previewText 的持久化存储（另立任务）。
   Future<void> _exportSelected(List<int> ids) async {
     final rules = ref
         .read(replaceRuleNotifierProvider)

@@ -404,6 +404,8 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
           .where((o) => o.isNotEmpty)
           .toSet();
       if (origins.isEmpty) {
+        // [批16e 回修 | P3-4] 早返回补 mounted 检查：await 后页面可能已卸载
+        if (!mounted) return;
         messenger.showSnackBar(
           const SnackBar(content: Text('当前书架没有使用网络书源的书籍')),
         );
@@ -415,6 +417,8 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
           .map((s) => s.toJson())
           .toList();
       if (used.isEmpty) {
+        // 同上：await 后页面可能已卸载
+        if (!mounted) return;
         messenger.showSnackBar(
           const SnackBar(content: Text('未找到对应书源（可能已删除）')),
         );

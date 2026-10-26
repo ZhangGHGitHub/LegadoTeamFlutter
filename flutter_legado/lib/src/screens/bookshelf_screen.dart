@@ -1077,6 +1077,9 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   /// `exportBookshelf` → HandleFileContract.EXPORT）：内容为 JSON 数组
   /// `[{name,author,intro}]`（2 空格缩进，intro 取显示简介），文件名
   /// `bookshelf.json`、`application/json`。
+  ///
+  /// [批16e 回修 | P3-3] 简介回退对齐 Kotlin `Book.getDisplayIntro()`：
+  /// `customIntro.isNullOrEmpty()` 时回退 `intro`，空串不再覆盖原始简介。
   Future<void> _exportBookshelf() async {
     final books = ref.read(bookshelfNotifierProvider).books;
     if (books.isEmpty) {
@@ -1089,7 +1092,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
         .map((b) => {
               'name': b.name,
               'author': b.author,
-              'intro': b.customIntro ?? b.intro ?? '',
+              'intro': _displayIntro(b),
             })
         .toList();
     final json = const JsonEncoder.withIndent('  ').convert(data);
@@ -1103,6 +1106,14 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(result.message)),
     );
+  }
+
+  /// 显示简介（对齐 Kotlin `Book.getDisplayIntro()`）：
+  /// `customIntro` 为 null 或空串时回退 `intro`。
+  String _displayIntro(Book book) {
+    final custom = book.customIntro;
+    if (custom == null || custom.isEmpty) return book.intro ?? '';
+    return custom;
   }
 
   // ===== [UI-fix v2.0.2 | 2026-08-06] 更新目录 / 添加网址 / 导入书单 — Qoder =====

@@ -257,7 +257,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
   /// `BottomBarSkinManager.buildZipBytes(name)` →
   /// `FileData("$name.zip", bytes, "application/zip")`）：zip 由现有导出
   /// 逻辑生成到临时文件后，以 filePath 模式交给「另存/上传直链」；
-  /// 临时文件由本页创建，上传成功后清理。
+  /// 临时文件由本页创建，Sheet 关闭（含另存取消/上传失败放弃）时清理。
   Future<void> _exportSkin(BuildContext context, String name) async {
     try {
       final bytes = await BottomBarSkinService.instance.buildZipBytes(name);
@@ -272,7 +272,7 @@ class BottomBarSkinScreen extends ConsumerWidget {
         fileName: '$name.zip',
         contentType: 'application/zip',
         subject: '导出底栏皮肤',
-        deleteTempFileAfterUpload: true,
+        deleteTempFileOnClose: true,
       );
       if (!context.mounted || result == null) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -43,13 +43,88 @@ class ExportFileService {
   /// 桌面端由本方法写盘。返回保存路径；用户取消返回 null。
   ///
   /// 只读取源文件，不移动/删除它；临时文件清理由调用方决定（见
-  /// `showExportFileSheet(deleteTempFileAfterUpload:)`）。
+  /// `showExportFileSheet(deleteTempFileOnClose:)`）。
   Future<String?> saveExistingFile({
     required String sourcePath,
     required String fileName,
   }) async {
     final bytes = await File(sourcePath).readAsBytes();
     return _saveBytes(fileName: fileName, bytes: bytes);
+  }
+
+  /// Sheet 关闭时清理调用方自建的临时文件
+  ///
+  /// 安全护栏（批16e 回修 P2-2）：仅当 [path] 位于
+  /// [getTemporaryDirectory] 之下时才删除——调用方即使误把用户目录文件
+  /// 传进来（或路径含 `..` 逃逸），也只会返回 false 而不落删除动作。
+  ///
+  /// 返回 true 表示实际删除了文件；文件不存在、不在临时目录内、路径
+  /// 不可解析或删除失败均返回 false（清理失败不影响导出结果）。
+  Future<bool> deleteTemporaryFile(String path) async {
+    if (path.trim().isEmpty) return false;
+    try {
+      final tempDir = await getTemporaryDirectory();
+      return deleteTemporaryFileSync(
+        tempDirPath: tempDir.path,
+        path: path,
+      );
+    } catch (e) {
+      debugPrint('导出临时文件清理失败（$path）：$e');
+      return false;
+    }
+  }
+
+  /// 同步清理临时文件（调用方已持有系统临时目录根路径时使用）
+  ///
+  /// Sheet 在 initState 预解析临时目录，dispose 中可同步删除，避免
+  /// 「关闭后异步清理尚未落定」的时序问题；护栏口径与
+  /// [deleteTemporaryFile] 完全一致。
+  bool deleteTemporaryFileSync({
+    required String tempDirPath,
+    required String path,
+  }) {
+    if (path.trim().isEmpty) return false;
+    if (!_isUnderDirectory(tempDirPath, path)) {
+      debugPrint('导出临时文件不在系统临时目录内，跳过删除：$path');
+      return false;
+    }
+    try {
+      final file = File(path);
+      if (!file.existsSync()) return false;
+      file.deleteSync();
+      return true;
+    } catch (e) {
+      debugPrint('导出临时文件清理失败（$path）：$e');
+      return false;
+    }
+  }
+
+  /// 判断 [target] 是否位于 [root] 目录之下（不含 root 本身）
+  ///
+  /// 不引入 `path` 依赖：`Uri.normalizePath` 消解 `.`/`..` 相对段；
+  /// Windows 文件系统大小写不敏感，统一转小写后再比较。路径不可解析
+  /// （含非法 URI 字符）时保守返回 false，绝不误删。
+  static bool _isUnderDirectory(String root, String target) {
+    try {
+      final windows = Platform.isWindows;
+      String canonical(String value) {
+        final text = Uri.file(value, windows: windows)
+            .normalizePath()
+            .toFilePath(windows: windows);
+        return windows ? text.toLowerCase() : text;
+      }
+
+      final rootPath = canonical(root);
+      final targetPath = canonical(target);
+      final separator = Platform.pathSeparator;
+      final prefix = rootPath.endsWith(separator)
+          ? rootPath
+          : '$rootPath$separator';
+      return targetPath.startsWith(prefix);
+    } catch (e) {
+      debugPrint('导出临时文件路径解析失败（跳过删除）：$e');
+      return false;
+    }
   }
 
   /// 系统另存公共实现（文本与既有文件共用）

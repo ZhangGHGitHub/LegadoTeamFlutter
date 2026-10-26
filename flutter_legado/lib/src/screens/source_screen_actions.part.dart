@@ -550,7 +550,9 @@ extension _SourceActions on _SourceScreenState {
     ExportFileResult? result;
     try {
       final mainJs = selected.singleOrNull?.mainJs;
-      if (mainJs != null && mainJs.isNotEmpty) {
+      // 对齐原版 `BookSource.isJsSource()`：`mainJs` 非空白才算 JS 源
+      // （纯空白走 JSON 分支，避免导出无意义的 .js）
+      if (mainJs != null && mainJs.trim().isNotEmpty) {
         // 单源 JS：写临时 .js 文件后走 filePath 模式（对齐原版 text/javascript）
         final jsName =
             '${ExportFileService.normalizeFileName(selected.single.bookSourceName)}.js';
@@ -566,8 +568,8 @@ extension _SourceActions on _SourceScreenState {
           fileName: jsName,
           contentType: 'text/javascript',
           subject: '导出书源',
-          // 临时文件由本页创建，上传成功后清理
-          deleteTempFileAfterUpload: true,
+          // 临时文件由本页创建：Sheet 关闭（含另存取消/上传失败放弃）时清理
+          deleteTempFileOnClose: true,
           fileService: fileService,
         );
       } else {

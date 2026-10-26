@@ -221,13 +221,13 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
   ///
   /// 对齐原版 `SpeakEngineDialog.kt:219-232`（menu_export →
   /// `httpTts_${tts.name}.json`、`application/json`）；原版 `currentSelect
-  /// == -1`（选中系统 TTS）时提示 `is_system_tts_no_export`，本页无系统
-  /// TTS 行，未选中即等价场景，沿用同一文案「系统TTS无法导出」。
+  /// == -1`（选中系统 TTS）时提示 `is_system_tts_no_export`（strings.xml:1652
+  /// 「无法导出系统tts」），本页无系统 TTS 行，未选中即等价场景，沿用同一文案。
   Future<void> _exportSelectedEngine() async {
     final engine = _selectedEngine;
     if (engine == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('系统TTS无法导出')),
+        const SnackBar(content: Text('无法导出系统tts')),
       );
       return;
     }
