@@ -51,6 +51,9 @@ pub struct ReviewDetailItem {
     /// 发布者昵称
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
+    /// 被回复者昵称（内容协议 `replyToName`；原版 DetailItem.replyToName）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reply_to_name: Option<String>,
     /// 徽章/标签列表
     #[serde(default)]
     pub badges: Vec<String>,
@@ -80,13 +83,18 @@ pub struct ReviewDetailItem {
 /// 内容协议解析结果（参考 Kotlin `ReviewRuleParser.ContentProtocol`）
 ///
 /// 评论规则返回值形如 `{"text": "...", "img": "...", ...}` 时按协议解析。
-struct ContentProtocol {
-    text: Option<String>,
-    image_url: Option<String>,
-    audio_url: Option<String>,
-    time: Option<String>,
-    like_count: Option<i32>,
-    reply_count: Option<i32>,
+///
+/// 公开导出供 `legado-js` 的 JS 书源解析复用（对齐原版
+/// `JsSourceReview.parseDetailItem` 调用 `ReviewRuleParser.parseContentProtocol`
+/// 的单一实现口径）。
+pub struct ContentProtocol {
+    pub text: Option<String>,
+    pub reply_to_name: Option<String>,
+    pub image_url: Option<String>,
+    pub audio_url: Option<String>,
+    pub time: Option<String>,
+    pub like_count: Option<i32>,
+    pub reply_count: Option<i32>,
 }
 
 /// 解析段评摘要（参考 Kotlin `ReviewRuleParser.parseSummary`）
@@ -390,6 +398,7 @@ fn parse_detail_item(
         id,
         avatar,
         name,
+        reply_to_name: protocol.as_ref().and_then(|p| p.reply_to_name.clone()),
         badges,
         content,
         image_url: protocol.as_ref().and_then(|p| p.image_url.clone()),
@@ -504,9 +513,10 @@ fn should_split_by_comma(value: &str) -> bool {
 
 /// 解析内容协议（参考 Kotlin parseContentProtocol）
 ///
-/// 规则返回值形如 `{"text","img","audio","time","likeCount","replyCount"}` 时
-/// 按协议提取结构化字段，否则返回 None（视为纯文本内容）。
-fn parse_content_protocol(raw: Option<&str>, base_url: &str) -> Option<ContentProtocol> {
+/// 规则返回值形如 `{"text","replyToName","img","audio","time","likeCount","replyCount"}`
+/// 时按协议提取结构化字段，否则返回 None（视为纯文本内容）。
+/// `legado-js` 的 JS 书源解析复用本函数（原版 `JsSourceReview` 同款调用）。
+pub fn parse_content_protocol(raw: Option<&str>, base_url: &str) -> Option<ContentProtocol> {
     let value = raw.map_or("", |s| s.trim());
     if !value.starts_with('{') || !value.ends_with('}') {
         return None;
@@ -514,6 +524,7 @@ fn parse_content_protocol(raw: Option<&str>, base_url: &str) -> Option<ContentPr
     let obj: serde_json::Map<String, Value> = serde_json::from_str(value).ok()?;
 
     let text = string_value(&obj, "text");
+    let reply_to_name = string_value(&obj, "replyToName");
     let image = string_value(&obj, "img");
     let audio = string_value(&obj, "audio");
     let time = string_value(&obj, "time");
@@ -521,6 +532,7 @@ fn parse_content_protocol(raw: Option<&str>, base_url: &str) -> Option<ContentPr
     let reply_count = obj.get("replyCount").and_then(parse_int_value);
 
     if text.is_none()
+        && reply_to_name.is_none()
         && image.is_none()
         && audio.is_none()
         && time.is_none()
@@ -531,6 +543,7 @@ fn parse_content_protocol(raw: Option<&str>, base_url: &str) -> Option<ContentPr
     }
     Some(ContentProtocol {
         text,
+        reply_to_name,
         image_url: image.map(|u| crate::analyze_url::AnalyzeUrl::get_absolute_url(base_url, &u)),
         audio_url: audio.map(|u| crate::analyze_url::AnalyzeUrl::get_absolute_url(base_url, &u)),
         time,
@@ -713,17 +726,44 @@ mod tests {
     #[test]
     fn test_parse_reply_page_content_protocol() {
         let body = r#"{"list": [
-            {"user": "图图", "raw": "{\"text\":\"带图回复\",\"img\":\"/img/p.jpg\",\"time\":\"3分钟前\"}"}
+            {"user": "图图", "raw": "{\"text\":\"带图回复\",\"replyToName\":\"楼主\",\"img\":\"/img/p.jpg\",\"time\":\"3分钟前\"}"}
         ]}"#;
         let rule = reply_rule("$.list", "", "", "$.user", "", "$.raw");
         let replies = parse_reply_page(body, &rule, "http://example.com").unwrap();
         assert_eq!(replies.len(), 1);
         assert_eq!(replies[0].content.as_deref(), Some("带图回复"));
+        // P1-1：内容协议 replyToName 必须透传到条目（原版 DetailItem.replyToName）
+        assert_eq!(replies[0].reply_to_name.as_deref(), Some("楼主"));
         assert_eq!(
             replies[0].image_url.as_deref(),
             Some("http://example.com/img/p.jpg")
         );
         assert_eq!(replies[0].time.as_deref(), Some("3分钟前"));
+    }
+
+    /// P1-1：详情页内容协议 replyToName 透传 + 序列化键为 camelCase
+    #[test]
+    fn test_parse_detail_page_content_protocol_reply_to_name_camel_case() {
+        let body = r#"{
+            "comments": [
+                {"id": "c1", "user": "乙", "raw": "{\"text\":\"同意\",\"replyToName\":\"甲\"}"}
+            ]
+        }"#;
+        let rule = ReviewRule {
+            detail_list_rule: Some("$.comments".into()),
+            detail_id_rule: Some("$.id".into()),
+            detail_name_rule: Some("$.user".into()),
+            detail_content_rule: Some("$.raw".into()),
+            ..Default::default()
+        };
+        let page = parse_detail_page(body, &rule, None, "http://example.com");
+        assert_eq!(page.items.len(), 1);
+        assert_eq!(page.items[0].content.as_deref(), Some("同意"));
+        assert_eq!(page.items[0].reply_to_name.as_deref(), Some("甲"));
+        // 线上契约键名与原版 GSON 输出一致（camelCase）
+        let json = serde_json::to_value(&page.items[0]).unwrap();
+        assert_eq!(json["replyToName"], "甲");
+        assert_eq!(json["content"], "同意");
     }
 
     #[test]
@@ -816,5 +856,16 @@ mod tests {
         );
         assert_eq!(protocol.like_count, Some(12));
         assert!(protocol.text.is_none());
+    }
+
+    /// P1-1：仅含 replyToName 的协议也是有效协议（不能被空判定吞掉）
+    #[test]
+    fn test_parse_content_protocol_reply_to_name_only() {
+        let protocol =
+            parse_content_protocol(Some(r#"{"replyToName": "被回复者"}"#), "http://example.com")
+                .expect("仅 replyToName 也应视为内容协议");
+        assert_eq!(protocol.reply_to_name.as_deref(), Some("被回复者"));
+        assert!(protocol.text.is_none());
+        assert!(protocol.image_url.is_none());
     }
 }

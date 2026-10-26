@@ -80,6 +80,14 @@ impl JsSourceApiConfig {
     }
 }
 
+/// 解析 `config:jsSourceApiTokenRequired` 存储值（对齐
+/// `AppConfig.getPrefBoolean(key, true)` 语义：缺省/空串/其他值 → true）
+///
+/// 提取为生产函数供解析与单测共用，避免测试镜像闭包与实现漂移。
+fn parse_required(raw: &str) -> bool {
+    !matches!(raw.trim(), "false" | "0")
+}
+
 /// 从 caches 表读取令牌配置（`config:jsSourceApiToken` / `config:jsSourceApiTokenRequired`）
 pub async fn load_js_source_api_config(state: &AppState) -> JsSourceApiConfig {
     let db = state.db.lock().await;
@@ -94,7 +102,7 @@ pub async fn load_js_source_api_config(state: &AppState) -> JsSourceApiConfig {
         .get(CONFIG_JS_SOURCE_API_TOKEN_REQUIRED)
         .ok()
         .flatten()
-        .map(|v| !matches!(v.trim(), "false" | "0"))
+        .map(|v| parse_required(&v))
         // 对齐 AppConfig.getPrefBoolean(key, true) 缺省 true
         .unwrap_or(true);
     JsSourceApiConfig { required, token }
@@ -377,17 +385,15 @@ mod tests {
         assert!(!config.has_valid_token(&HeaderMap::new()));
     }
 
+    /// 解析口径直接测生产函数（不再维护测试侧镜像闭包）
     #[test]
     fn test_required_config_default_true() {
-        // 缺省 true 的解析口径：absent → true；"false"/"0" → false
-        let parse = |v: Option<&str>| {
-            v.map(|v| !matches!(v.trim(), "false" | "0"))
-                .unwrap_or(true)
-        };
-        assert!(parse(None));
-        assert!(parse(Some("")));
-        assert!(parse(Some("true")));
-        assert!(!parse(Some("false")));
-        assert!(!parse(Some("0")));
+        // 存储值形态：空串/true/其他 → true；"false"/"0" → false
+        assert!(parse_required(""));
+        assert!(parse_required("  "));
+        assert!(parse_required("true"));
+        assert!(!parse_required("false"));
+        assert!(!parse_required(" 0 "));
+        // 缺省（缓存无键）由 load_js_source_api_config 的 unwrap_or(true) 覆盖
     }
 }

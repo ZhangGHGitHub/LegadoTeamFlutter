@@ -640,8 +640,9 @@ fn js_review_get_replies(
 
 /// js_source_review 条目 → review_rule_parser camelCase 响应条目转换（Task #134）
 ///
-/// JS 书源 getReviewDetail 协议仅含 id/name/content/avatar/badge/replies，
-/// imageUrl/audioUrl/time/likeCount/replyCount 无对应字段置 None。
+/// JS 书源 `content` 为内容协议 JSON 时，`legado-js` 已按原版
+/// `JsSourceReview.parseDetailItem` 解析出 replyToName/imageUrl/audioUrl/time/
+/// likeCount/replyCount；此处逐字段透传（不允许 `None` 兜底丢字段）。
 fn convert_js_review_items(
     items: Vec<legado_js::js_source::js_source_review::ReviewDetailItem>,
 ) -> Vec<legado_parser::review_rule_parser::ReviewDetailItem> {
@@ -651,13 +652,14 @@ fn convert_js_review_items(
             id: it.id,
             avatar: it.avatar,
             name: it.name,
+            reply_to_name: it.reply_to_name,
             badges: it.badges,
             content: Some(it.content),
-            image_url: None,
-            audio_url: None,
-            time: None,
-            like_count: None,
-            reply_count: None,
+            image_url: it.image_url,
+            audio_url: it.audio_url,
+            time: it.time,
+            like_count: it.like_count,
+            reply_count: it.reply_count,
             replies: convert_js_review_items(it.replies),
         })
         .collect()
@@ -765,12 +767,24 @@ mod tests {
             content: "好看".into(),
             avatar: Some("http://img.com/a.jpg".into()),
             badges: vec!["大佬".into()],
+            reply_to_name: Some("楼主".into()),
+            image_url: None,
+            audio_url: None,
+            time: None,
+            like_count: None,
+            reply_count: None,
             replies: vec![ReviewDetailItem {
                 id: Some("r1".into()),
                 name: None,
                 content: "同意".into(),
                 avatar: None,
                 badges: vec![],
+                reply_to_name: Some("用户A".into()),
+                image_url: None,
+                audio_url: None,
+                time: None,
+                like_count: None,
+                reply_count: None,
                 replies: vec![],
             }],
         }];
@@ -779,9 +793,15 @@ mod tests {
         assert_eq!(converted[0].id.as_deref(), Some("c1"));
         assert_eq!(converted[0].content.as_deref(), Some("好看"));
         assert_eq!(converted[0].badges, vec!["大佬".to_string()]);
+        // P1-1：replyToName 必须透传（含嵌套回复）
+        assert_eq!(converted[0].reply_to_name.as_deref(), Some("楼主"));
         // 嵌套回复递归转换且不再嵌套（扁平化已在解析层完成）
         assert_eq!(converted[0].replies.len(), 1);
         assert_eq!(converted[0].replies[0].content.as_deref(), Some("同意"));
+        assert_eq!(
+            converted[0].replies[0].reply_to_name.as_deref(),
+            Some("用户A")
+        );
         assert!(converted[0].image_url.is_none());
         assert!(converted[0].like_count.is_none());
     }

@@ -24,6 +24,11 @@ pub struct ReviewSummary {
 }
 
 /// 书评详情条目（参考 Kotlin ReviewRuleParser.DetailItem）
+///
+/// JS 书源 `content` 若为内容协议 JSON，则按
+/// [`legado_parser::review_rule_parser::parse_content_protocol`] 解析并填充
+/// `reply_to_name`/`image_url`/`audio_url`/`time`/`like_count`/`reply_count`
+/// （对齐原版 `JsSourceReview.parseDetailItem` 调用同一 `parseContentProtocol`）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReviewDetailItem {
     pub id: Option<String>,
@@ -31,6 +36,24 @@ pub struct ReviewDetailItem {
     pub content: String,
     pub avatar: Option<String>,
     pub badges: Vec<String>,
+    /// 被回复者昵称（内容协议 `replyToName`）
+    #[serde(default)]
+    pub reply_to_name: Option<String>,
+    /// 内容协议图片（绝对 URL）
+    #[serde(default)]
+    pub image_url: Option<String>,
+    /// 内容协议音频（绝对 URL）
+    #[serde(default)]
+    pub audio_url: Option<String>,
+    /// 内容协议发布时间文本
+    #[serde(default)]
+    pub time: Option<String>,
+    /// 内容协议点赞数
+    #[serde(default)]
+    pub like_count: Option<i32>,
+    /// 内容协议回复数
+    #[serde(default)]
+    pub reply_count: Option<i32>,
     pub replies: Vec<ReviewDetailItem>,
 }
 
@@ -142,10 +165,19 @@ impl JsSourceReview {
         if !value.is_object() {
             return None;
         }
-        let content = value
+        let raw_content = value
             .get("content")
             .and_then(|v| v.as_str())
             .filter(|s| !s.is_empty())?;
+
+        // 内容协议解析（对齐原版 JsSourceReview.parseDetailItem：
+        // content 为协议 JSON 时取 text 并填充结构化字段）
+        let protocol =
+            legado_parser::review_rule_parser::parse_content_protocol(Some(raw_content), base_url);
+        let content = match &protocol {
+            Some(p) => p.text.clone().unwrap_or_default(),
+            None => raw_content.to_string(),
+        };
 
         let id = value
             .get("id")
@@ -176,9 +208,15 @@ impl JsSourceReview {
         Some(ReviewDetailItem {
             id,
             name,
-            content: content.to_string(),
+            content,
             avatar,
             badges,
+            reply_to_name: protocol.as_ref().and_then(|p| p.reply_to_name.clone()),
+            image_url: protocol.as_ref().and_then(|p| p.image_url.clone()),
+            audio_url: protocol.as_ref().and_then(|p| p.audio_url.clone()),
+            time: protocol.as_ref().and_then(|p| p.time.clone()),
+            like_count: protocol.as_ref().and_then(|p| p.like_count),
+            reply_count: protocol.as_ref().and_then(|p| p.reply_count),
             replies,
         })
     }
@@ -281,7 +319,7 @@ mod tests {
         let json = r#"{
             "items": [
                 {"id":"1","name":"用户A","content":"好看","avatar":"/avatar/1.jpg","badge":"大佬","replies":[
-                    {"id":"2","name":"用户B","content":"同意","avatar":"http://img.com/2.jpg"}
+                    {"id":"2","name":"用户B","content":"{\"text\":\"同意\",\"replyToName\":\"用户A\",\"img\":\"/img/2.png\",\"time\":\"1分钟前\"}","avatar":"http://img.com/2.jpg"}
                 ]},
                 {"id":"3","name":"用户C","content":""}
             ],
@@ -292,9 +330,18 @@ mod tests {
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].name, Some("用户A".to_string()));
         assert_eq!(page.items[0].badges, vec!["大佬".to_string()]);
-        // 嵌套回复应被扁平化
+        // 嵌套回复应被扁平化；协议字段透传（原版 JsSourceReview.parseDetailItem 同款）
         assert_eq!(page.items[0].replies.len(), 1);
         assert_eq!(page.items[0].replies[0].content, "同意");
+        assert_eq!(
+            page.items[0].replies[0].reply_to_name,
+            Some("用户A".to_string())
+        );
+        assert_eq!(
+            page.items[0].replies[0].image_url,
+            Some("http://example.com/img/2.png".to_string())
+        );
+        assert_eq!(page.items[0].replies[0].time, Some("1分钟前".to_string()));
         // 相对路径 avatar 应被解析
         assert_eq!(
             page.items[0].avatar,
@@ -304,6 +351,26 @@ mod tests {
             page.next_page_url,
             Some("http://example.com/page2".to_string())
         );
+    }
+
+    /// P1-1：详情条目内容协议 replyToName / 图片 / 计数透传
+    #[test]
+    fn test_parse_detail_page_content_protocol_fields() {
+        let json = r#"{
+            "items": [
+                {"id":"1","name":"用户A",
+                 "content":"{\"text\":\"回复内容\",\"replyToName\":\"楼主\",\"img\":\"/i.png\",\"audio\":\"/a.mp3\",\"time\":\"昨天\",\"likeCount\":\"7\",\"replyCount\":2}"}
+            ]
+        }"#;
+        let page = JsSourceReview::parse_detail_page(json, "http://example.com").unwrap();
+        let item = &page.items[0];
+        assert_eq!(item.content, "回复内容");
+        assert_eq!(item.reply_to_name, Some("楼主".to_string()));
+        assert_eq!(item.image_url, Some("http://example.com/i.png".to_string()));
+        assert_eq!(item.audio_url, Some("http://example.com/a.mp3".to_string()));
+        assert_eq!(item.time, Some("昨天".to_string()));
+        assert_eq!(item.like_count, Some(7));
+        assert_eq!(item.reply_count, Some(2));
     }
 
     #[test]

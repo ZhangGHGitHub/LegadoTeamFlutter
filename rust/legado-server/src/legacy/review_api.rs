@@ -466,7 +466,8 @@ where
 }
 
 /// js_source_review 条目 → parser ReviewDetailItem（对齐 ffi `convert_js_review_items`
-/// 单实现语义：JS getReviewDetail 协议仅含 id/name/content/avatar/badges/replies）
+/// 单实现语义：JS 书源 content 内容协议已由 `legado-js` 按原版
+/// `JsSourceReview.parseDetailItem` 解析，此处逐字段透传）
 fn convert_js_review_items(
     items: Vec<legado_js::js_source::js_source_review::ReviewDetailItem>,
 ) -> Vec<ReviewDetailItem> {
@@ -476,13 +477,14 @@ fn convert_js_review_items(
             id: it.id,
             avatar: it.avatar,
             name: it.name,
+            reply_to_name: it.reply_to_name,
             badges: it.badges,
             content: Some(it.content),
-            image_url: None,
-            audio_url: None,
-            time: None,
-            like_count: None,
-            reply_count: None,
+            image_url: it.image_url,
+            audio_url: it.audio_url,
+            time: it.time,
+            like_count: it.like_count,
+            reply_count: it.reply_count,
             replies: convert_js_review_items(it.replies),
         })
         .collect()
@@ -1479,7 +1481,10 @@ fn inject_legacy_review_bridge(
         format!("<base href=\"{}\">", escape_html_attribute(page_url))
     };
     let injection = format!("{base}{bridge}");
-    let head_index = page_html.to_lowercase().find("<head");
+    // 注意：必须用 `to_ascii_lowercase`——`to_lowercase` 会在部分非 ASCII 字符
+    // （如 U+0130 `İ` → `i` + 组合点）上改变 UTF-8 字节长度，用其 find 结果去
+    // 切原串会落在非字符边界而 panic；`<head` 全为 ASCII，二者判定等价。
+    let head_index = page_html.to_ascii_lowercase().find("<head");
     if let Some(head_index) = head_index {
         if let Some(head_end) = page_html[head_index..].find('>') {
             let end = head_index + head_end + 1;
@@ -1495,7 +1500,7 @@ fn inject_meta_csp(html: &str) -> String {
     let meta = format!(
         "<meta http-equiv=\"Content-Security-Policy\" content=\"{LEGACY_REVIEW_RESOURCE_POLICY}\">"
     );
-    let lower = html.to_lowercase();
+    let lower = html.to_ascii_lowercase();
     let Some(head_index) = lower.find("<head") else {
         return format!("{meta}{html}");
     };
@@ -1756,5 +1761,67 @@ mod tests {
             "最久未使用者应被淘汰"
         );
         assert!(shared.detail_cursors.contains_key("c-new"));
+    }
+
+    // ─── P1-1：JS 书源条目转换透传 replyToName（及内容协议其余字段） ────────
+
+    #[test]
+    fn test_convert_js_review_items_passthrough_protocol_fields() {
+        let json = r#"{
+            "items": [
+                {"id": "c1", "name": "用户A",
+                 "content": "{\"text\":\"回复内容\",\"replyToName\":\"楼主\",\"img\":\"/i.png\",\"time\":\"昨天\",\"likeCount\":3,\"replyCount\":1}",
+                 "replies": [
+                    {"id": "r1", "name": "用户B",
+                     "content": "{\"text\":\"同意\",\"replyToName\":\"用户A\"}"}
+                 ]}
+            ]
+        }"#;
+        let page = legado_js::js_source::js_source_review::JsSourceReview::parse_detail_page(
+            json,
+            "http://example.com",
+        )
+        .unwrap();
+        let converted = convert_js_review_items(page.items);
+        assert_eq!(converted.len(), 1);
+        assert_eq!(converted[0].content.as_deref(), Some("回复内容"));
+        assert_eq!(converted[0].reply_to_name.as_deref(), Some("楼主"));
+        assert_eq!(
+            converted[0].image_url.as_deref(),
+            Some("http://example.com/i.png")
+        );
+        assert_eq!(converted[0].time.as_deref(), Some("昨天"));
+        assert_eq!(converted[0].like_count, Some(3));
+        assert_eq!(converted[0].reply_count, Some(1));
+        assert_eq!(converted[0].replies.len(), 1);
+        assert_eq!(
+            converted[0].replies[0].reply_to_name.as_deref(),
+            Some("用户A")
+        );
+        // 序列化键名与原版 GSON camelCase 契约一致
+        let value = serde_json::to_value(&converted[0]).unwrap();
+        assert_eq!(value["replyToName"], "楼主");
+    }
+
+    // ─── P2：`to_lowercase` 字节下标切串 panic 回归（含 `İ`） ──────────────
+
+    /// `İ`（U+0130）小写展开为 `i` + 组合点（2 字节 → 3 字节），
+    /// 旧 `to_lowercase().find("<head")` 的字节下标会落到原串非字符边界。
+    #[test]
+    fn test_inject_bridge_handles_dotless_capital_i() {
+        // 7 个 İ（小写侧多出 7 字节）后接 <head> 与多字节字符：
+        // 旧实现下标 21 落在 `中` 的 UTF-8 中间（panic）；新实现无 panic 且位置正确。
+        let page_html = format!("{}<head>中</head>", "İ".repeat(7));
+        let out = inject_legacy_review_bridge("n", "book", "", &page_html, "");
+        assert!(
+            out.starts_with(&format!("{}<head><script>", "İ".repeat(7))),
+            "桥接脚本应紧跟 <head> 注入：{out}"
+        );
+        // meta CSP 注入同一路径
+        let out = inject_meta_csp(&page_html);
+        assert!(
+            out.starts_with(&format!("{}<head><meta http-equiv", "İ".repeat(7))),
+            "meta 应紧跟 <head> 注入：{out}"
+        );
     }
 }
