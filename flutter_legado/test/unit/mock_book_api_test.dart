@@ -240,6 +240,59 @@ void main() {
       expect(articles.length, 5);
       expect(articles[0].title, isNotEmpty);
     });
+
+    test('rssSortUrls 解析 && / 换行分类并回退空配置', () async {
+      const url = 'https://mock.example.com/rss';
+      await api.addRssSource(
+        const RssSource(
+          sourceUrl: url,
+          sourceName: '分类源',
+          sortUrl:
+              '科技::https://mock.example.com/tech\n文学::https://mock.example.com/lit',
+        ),
+      );
+      final parsed = jsonDecode(await api.rssSortUrls(url)) as List<dynamic>;
+      expect(parsed.length, 2);
+      expect(parsed[0]['name'], '科技');
+      expect(parsed[0]['url'], 'https://mock.example.com/tech');
+      expect(parsed[1]['name'], '文学');
+
+      // 脚本配置在 Mock 无 JS 引擎 → 回退 [{"name":"","url":sourceUrl}]
+      await api.updateRssSource(
+        const RssSource(
+          sourceUrl: url,
+          sourceName: '脚本源',
+          sortUrl: '@js:return 1',
+        ),
+      );
+      final fallback = jsonDecode(await api.rssSortUrls(url)) as List<dynamic>;
+      expect(fallback, [
+        {'name': '', 'url': url},
+      ]);
+    });
+
+    test('rssRefreshArticles / rssLoadMoreArticles 返回契约结构', () async {
+      const url = 'https://mock.example.com/rss2';
+      await api.addRssSource(
+        const RssSource(sourceUrl: url, sourceName: '分页源'),
+      );
+      final refreshed =
+          jsonDecode(await api.rssRefreshArticles(url, '默认', url)) as Map;
+      expect((refreshed['articles'] as List).length, 5);
+      expect(refreshed['nextUrl'], isNull);
+      expect(refreshed['hasMore'], isFalse);
+      expect((refreshed['articles'] as List).first['origin'], url);
+      expect((refreshed['articles'] as List).first['sort'], '默认');
+
+      final more = jsonDecode(
+        await api.rssLoadMoreArticles(url, '默认', 'mock://next', 2),
+      ) as Map;
+      expect(more['articles'], isEmpty);
+      expect(more['hasMore'], isFalse);
+
+      // 清缓存为 no-op（Mock 无缓存）
+      await api.rssClearSortCache(url);
+    });
   });
 
   group('阅读器操作', () {

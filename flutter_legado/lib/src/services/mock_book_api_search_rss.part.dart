@@ -375,6 +375,84 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
     // Mock：无本地文章表，空实现即可
   }
 
+  /// 解析 RSS 源分类列表（契约 §2.5 `rssSortUrls` 的内存实现）
+  ///
+  /// 仅做与 Rust 侧同口径的静态解析（`&&`/换行分段、`name::url`）；
+  /// `@js:` / `<js>` 脚本形态在 Mock 无 JS 引擎，按求值失败回退
+  /// `[{"name":"","url":sourceUrl}]`。
+  @override
+  Future<String> rssSortUrls(String sourceUrl) async {
+    final idx = _rssSources.indexWhere((s) => s.sourceUrl == sourceUrl);
+    final configured = idx < 0 ? null : _rssSources[idx].sortUrl;
+    final entries = <Map<String, String>>[];
+    if (configured != null &&
+        !configured.startsWith('@js:') &&
+        !configured.startsWith('<js>')) {
+      for (final item in configured.split(RegExp(r'(?:&&|\r?\n)+'))) {
+        final sep = item.indexOf('::');
+        if (sep < 0) continue;
+        final url = item.substring(sep + 2).trim();
+        if (url.isEmpty) continue;
+        entries.add({'name': item.substring(0, sep).trim(), 'url': url});
+      }
+    }
+    if (entries.isEmpty) {
+      entries.add({'name': '', 'url': sourceUrl});
+    }
+    return jsonEncode(entries);
+  }
+
+  /// 清除 RSS 源分类脚本求值缓存（Mock 无缓存，空实现）
+  @override
+  Future<void> rssClearSortCache(String sourceUrl) async {}
+
+  /// 刷新 RSS 列表（Mock：5 篇假文章，恒无下一页）
+  @override
+  Future<String> rssRefreshArticles(
+    String sourceUrl,
+    String sortName,
+    String sortUrl, {
+    String? key,
+  }) async {
+    final articles = await getRssArticles(sourceUrl);
+    return jsonEncode({
+      'articles': articles
+          .map(
+            (a) => {
+              'title': a.title,
+              'link': a.url,
+              'description': a.description,
+              'pubDate': a.pubDate,
+              'image': a.imageUrl,
+              'content': a.content,
+              'origin': sourceUrl,
+              'sort': sortName,
+              'articleType': 0,
+              'variable': null,
+            },
+          )
+          .toList(),
+      'nextUrl': null,
+      'hasMore': false,
+    });
+  }
+
+  /// 加载 RSS 下一页（Mock：无下一页）
+  @override
+  Future<String> rssLoadMoreArticles(
+    String sourceUrl,
+    String sortName,
+    String nextUrl,
+    int page, {
+    String? key,
+  }) async {
+    return jsonEncode({
+      'articles': <dynamic>[],
+      'nextUrl': null,
+      'hasMore': false,
+    });
+  }
+
   // ========== RSS 已读记录 ==========
 
   final Set<String> _rssReadLinks = {};

@@ -393,11 +393,45 @@ abstract class BookApi {
   /// 导出 RSS 源
   Future<String> exportRssSources();
 
-  /// 获取 RSS 文章列表
+  /// 获取 RSS 文章列表（保留兼容；内部等价
+  /// `rssRefreshArticles(sourceUrl, "", sourceUrl, null)`，契约 §2.5）
   Future<List<RssFeedArticle>> getRssArticles(String sourceUrl);
 
   /// 清空指定 RSS 源本地文章缓存（对齐 clearArticles）
   Future<void> rssClearArticles(String sourceUrl);
+
+  /// 解析 RSS 源分类列表，返回 JSON 数组 `[{"name","url"}]`
+  ///
+  /// 对齐原版 `RssSource.sortUrls()`：`&&`/换行分段、`name::url`、
+  /// `@js:`/`<js>` 求值 + 按源缓存；失败/无配置回退
+  /// `[{"name":"","url":sourceUrl}]`（契约 §2.5，批15b）。
+  Future<String> rssSortUrls(String sourceUrl);
+
+  /// 清除 RSS 源分类脚本求值缓存（对齐 `RssSource.removeSortCache()`）
+  Future<void> rssClearSortCache(String sourceUrl);
+
+  /// 刷新 RSS 列表，返回 JSON `{articles,nextUrl,hasMore}`
+  ///
+  /// 对齐 `RssArticlesViewModel.loadArticles`：`order` 自当前毫秒递减
+  /// REPLACE 写库，`ruleNextPage` 非空时 `clearOld`（契约 §2.5，批15b）。
+  Future<String> rssRefreshArticles(
+    String sourceUrl,
+    String sortName,
+    String sortUrl, {
+    String? key,
+  });
+
+  /// 加载 RSS 下一页，返回 JSON `{articles,nextUrl,hasMore}`
+  ///
+  /// 对齐 `RssArticlesViewModel.loadMore`：本页首条与末条均已在库即判到底，
+  /// 否则 `INSERT OR IGNORE` 追加（契约 §2.5，批15b）。
+  Future<String> rssLoadMoreArticles(
+    String sourceUrl,
+    String sortName,
+    String nextUrl,
+    int page, {
+    String? key,
+  });
 
   // ========== RSS 已读记录 ==========
 

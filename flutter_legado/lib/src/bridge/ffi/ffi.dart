@@ -700,12 +700,66 @@ Future<bool> rssSourceSetEnabled({
 );
 
 /// 获取 RSS 源的文章列表（JSON 数组）
+///
+/// 契约 §2.5：保留兼容，内部等价
+/// `rssRefreshArticles(sourceUrl, "", sourceUrl, null)`（批15b）。
 Future<String> rssFetchArticles({required String sourceUrl}) =>
     RustLib.instance.api.crateFfiFfiRssFetchArticles(sourceUrl: sourceUrl);
 
 /// 清空指定 RSS 源的本地文章缓存（对齐 clearArticles）
 Future<void> rssClearArticles({required String sourceUrl}) =>
     RustLib.instance.api.crateFfiFfiRssClearArticles(sourceUrl: sourceUrl);
+
+/// 解析 RSS 源分类列表（JSON 数组 `[{"name","url"}]`）
+///
+/// 契约 §2.5 `rssSortUrls`（2026-10-26 批15b，加法式）：对齐原版
+/// `RssSource.sortUrls()`——`&&`/换行分段、`name::url`、`@js:`/`<js>`
+/// 求值 + 按源缓存；失败回退 `[{"name":"","url":sourceUrl}]`。
+Future<String> rssSortUrls({required String sourceUrl}) =>
+    RustLib.instance.api.crateFfiFfiRssSortUrls(sourceUrl: sourceUrl);
+
+/// 清除 RSS 源分类脚本求值缓存
+///
+/// 契约 §2.5 `rssClearSortCache`（2026-10-26 批15b，加法式）：对齐原版
+/// `RssSource.removeSortCache()`。
+Future<void> rssClearSortCache({required String sourceUrl}) =>
+    RustLib.instance.api.crateFfiFfiRssClearSortCache(sourceUrl: sourceUrl);
+
+/// 刷新 RSS 列表（JSON `{articles,nextUrl,hasMore}`）
+///
+/// 契约 §2.5 `rssRefreshArticles`（2026-10-26 批15b，加法式）：对齐
+/// `RssArticlesViewModel.loadArticles`——`order` 自当前毫秒递减
+/// REPLACE 写库，`ruleNextPage` 非空时 `clearOld`。
+Future<String> rssRefreshArticles({
+  required String sourceUrl,
+  required String sortName,
+  required String sortUrl,
+  String? key,
+}) => RustLib.instance.api.crateFfiFfiRssRefreshArticles(
+  sourceUrl: sourceUrl,
+  sortName: sortName,
+  sortUrl: sortUrl,
+  key: key,
+);
+
+/// 加载 RSS 下一页（JSON `{articles,nextUrl,hasMore}`）
+///
+/// 契约 §2.5 `rssLoadMoreArticles`（2026-10-26 批15b，加法式）：对齐
+/// `RssArticlesViewModel.loadMore`——首末条均命中即判到底，否则
+/// `INSERT OR IGNORE` 追加。
+Future<String> rssLoadMoreArticles({
+  required String sourceUrl,
+  required String sortName,
+  required String nextUrl,
+  required int page,
+  String? key,
+}) => RustLib.instance.api.crateFfiFfiRssLoadMoreArticles(
+  sourceUrl: sourceUrl,
+  sortName: sortName,
+  nextUrl: nextUrl,
+  page: page,
+  key: key,
+);
 
 /// 获取所有 RSS 收藏（JSON 数组）
 Future<String> rssStarList() => RustLib.instance.api.crateFfiFfiRssStarList();

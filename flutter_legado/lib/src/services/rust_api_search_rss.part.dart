@@ -313,7 +313,8 @@ mixin RustApiSearchRss on RustApiDecode implements BookApi {
     return jsonEncode(sources.map((s) => s.toJson()).toList());
   }
 
-  /// 获取 RSS 文章列表
+  /// 获取 RSS 文章列表（保留兼容；Rust 内部等价
+  /// `rssRefreshArticles(sourceUrl, "", sourceUrl, null)`）
   @override
   Future<List<RssFeedArticle>> getRssArticles(String sourceUrl) async {
     final json = await bridge.rssFetchArticles(sourceUrl: sourceUrl);
@@ -335,6 +336,48 @@ mixin RustApiSearchRss on RustApiDecode implements BookApi {
   @override
   Future<void> rssClearArticles(String sourceUrl) =>
       bridge.rssClearArticles(sourceUrl: sourceUrl);
+
+  /// 解析 RSS 源分类列表（契约 §2.5 `rssSortUrls`）
+  @override
+  Future<String> rssSortUrls(String sourceUrl) =>
+      bridge.rssSortUrls(sourceUrl: sourceUrl);
+
+  /// 清除 RSS 源分类脚本求值缓存（契约 §2.5 `rssClearSortCache`）
+  @override
+  Future<void> rssClearSortCache(String sourceUrl) =>
+      bridge.rssClearSortCache(sourceUrl: sourceUrl);
+
+  /// 刷新 RSS 列表（契约 §2.5 `rssRefreshArticles`）
+  @override
+  Future<String> rssRefreshArticles(
+    String sourceUrl,
+    String sortName,
+    String sortUrl, {
+    String? key,
+  }) =>
+      bridge.rssRefreshArticles(
+        sourceUrl: sourceUrl,
+        sortName: sortName,
+        sortUrl: sortUrl,
+        key: key,
+      );
+
+  /// 加载 RSS 下一页（契约 §2.5 `rssLoadMoreArticles`）
+  @override
+  Future<String> rssLoadMoreArticles(
+    String sourceUrl,
+    String sortName,
+    String nextUrl,
+    int page, {
+    String? key,
+  }) =>
+      bridge.rssLoadMoreArticles(
+        sourceUrl: sourceUrl,
+        sortName: sortName,
+        nextUrl: nextUrl,
+        page: page,
+        key: key,
+      );
 
   // ========== RSS 已读记录 ==========
 
