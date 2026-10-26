@@ -305,7 +305,8 @@ impl<'a> BookRepository<'a> {
     /// 的唯一常规写入口（新书创建经 insert_replace 全列写入除外）：
     /// [`Repository::update`](./trait.Repository.html) 的 UPDATE SET 已结构性
     /// 排除进度列，任何全行快照回写都不得回退进度；进度只经本方法落库
-    /// （`update_reading_progress`）。
+    /// （`update_reading_progress`）。备份恢复的显式覆盖入口见
+    /// [`Self::overwrite_progress_for_restore`]。
     pub fn update_progress(
         &self,
         book_url: &str,
@@ -328,6 +329,37 @@ impl<'a> BookRepository<'a> {
             )
             .map_err(|e| LegadoError::Database(format!("更新阅读进度失败: {e}")))?;
         Ok(())
+    }
+
+    /// [批7b 备份恢复] 恢复路径专用：显式覆盖 4 个阅读进度列
+    ///
+    /// 对齐原版 `Restore.kt:286-288`：备份中的书已存在时执行
+    /// `bookDao.update(book)`（Room `@Update` 全列覆盖），备份里的
+    /// durChapterIndex/durChapterPos/durChapterTitle/durChapterTime 必须
+    /// 原样落库。重构版 [`Repository::update`] 按 [B-3] 结构性排除这 4 列，
+    /// 故恢复链在 `insert`（已存在行 → `update`）之后经本方法补写。
+    ///
+    /// **仅限备份恢复路径调用**：换源/目录刷新/普通全行快照回写仍走
+    /// [`Repository::update`]，不得改用本方法——否则 [B-3] 防陈旧快照
+    /// 回滚进度的既有语义失效。
+    ///
+    /// 复用 [`Self::update_progress`] 的单条 SQL（单实现原则），本方法只
+    /// 承担「恢复路径可显式覆盖」的语义标记与调用边界。
+    pub fn overwrite_progress_for_restore(
+        &self,
+        book_url: &str,
+        chapter_index: i32,
+        chapter_pos: i32,
+        chapter_title: Option<&str>,
+        chapter_time: i64,
+    ) -> LegadoResult<()> {
+        self.update_progress(
+            book_url,
+            chapter_index,
+            chapter_pos,
+            chapter_title,
+            chapter_time,
+        )
     }
 
     /// 更新书籍但保留库内原有 readConfig（对齐上游 `BookDao.updatePreservingReadConfig`）
@@ -861,6 +893,40 @@ mod tests {
         assert_eq!(found.dur_chapter_index, 3);
         assert_eq!(found.dur_chapter_pos, 15);
         assert_eq!(found.dur_chapter_title.as_deref(), Some("第三章"));
+    }
+
+    /// [批7b 备份恢复] `overwrite_progress_for_restore` 显式覆盖 4 个进度列
+    /// （供 backup_restore 对齐原版 Restore.kt 全列语义）；普通 update 的
+    /// [B-3]「不回滚」语义保持不变
+    #[test]
+    fn test_overwrite_progress_for_restore() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+        repo.insert(&make_book("u1", "n1", "a1")).unwrap();
+        repo.update_progress("u1", 3, 15, Some("第三章"), 1_700_000_000_000)
+            .unwrap();
+
+        // 恢复路径：备份内进度 0/0/None/0 显式覆盖库内 3/15
+        repo.overwrite_progress_for_restore("u1", 0, 0, None, 0)
+            .unwrap();
+        let found = repo.find_by_url("u1").unwrap().unwrap();
+        assert_eq!(found.dur_chapter_index, 0);
+        assert_eq!(found.dur_chapter_pos, 0);
+        assert_eq!(found.dur_chapter_title, None);
+        assert_eq!(found.dur_chapter_time, 0);
+
+        // 常规 update 仍结构性排除进度列（[B-3] 防回滚语义不回归）
+        let mut snapshot = found;
+        snapshot.name = "改名".to_string();
+        snapshot.dur_chapter_index = 9;
+        snapshot.dur_chapter_pos = 99;
+        snapshot.dur_chapter_title = Some("第九章".to_string());
+        repo.update(&snapshot).unwrap();
+        let after = repo.find_by_url("u1").unwrap().unwrap();
+        assert_eq!(after.name, "改名");
+        assert_eq!(after.dur_chapter_index, 0, "update 不得写进度列");
+        assert_eq!(after.dur_chapter_pos, 0);
+        assert_eq!(after.dur_chapter_title, None);
     }
 
     /// [漫画设置作用域 2026-10-01] 旧数据库 readConfig JSON（无书级键）兼容：

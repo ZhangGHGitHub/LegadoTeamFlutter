@@ -348,7 +348,28 @@ fn restore_backup_in_tx(conn: &Connection, backup: &BackupData) -> LegadoResult<
     for value in &backup.books {
         if let Ok(book) = serde_json::from_value::<Book>(value.clone()) {
             match book_repo.insert(&book) {
-                Ok(()) => stats.books += 1,
+                Ok(()) => {
+                    // [批7b] 对齐原版 Restore.kt:286-288 的 `bookDao.update(book)`
+                    // 全列覆盖语义：insert 对已存在行走 update，而 update 按 [B-3]
+                    // 结构性排除 4 个进度列（防陈旧快照回滚），故恢复路径在此
+                    // 显式补写备份中的进度。新书插入时 insert_replace 已全列写入，
+                    // 本次覆盖为幂等操作。
+                    //
+                    // 旧备份条目缺进度字段时 serde 默认 0/None——与原版 Gson
+                    // 反序列化缺省值一致（Book 实体 durChapterIndex/Pos=0、
+                    // durChapterTitle=null），随后原版 @Update 同样全列覆盖，
+                    // 因此按原版语义清为默认值，不做「缺字段跳过」特判。
+                    if let Err(e) = book_repo.overwrite_progress_for_restore(
+                        &book.book_url,
+                        book.dur_chapter_index,
+                        book.dur_chapter_pos,
+                        book.dur_chapter_title.as_deref(),
+                        book.dur_chapter_time,
+                    ) {
+                        log::warn!("恢复书籍进度失败: {} - {e}", book.book_url);
+                    }
+                    stats.books += 1;
+                }
                 Err(e) => log::warn!("恢复书籍失败（已跳过）: {} - {e}", book.book_url),
             }
         }
@@ -1147,6 +1168,124 @@ mod tests {
             Ok::<(), LegadoError>(())
         })
         .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批7b 回归] 恢复覆盖已有书进度（对齐原版 Restore.kt:286-288 全列语义）
+    ///
+    /// 场景：备份时书内进度 0/0，之后本地读到 3/15；恢复备份后库内进度
+    /// 必须回到备份值（旧实现经 insert→update，而 update 按 [B-3]
+    /// 结构性排除进度列，导致只有新书生效）。
+    #[test]
+    fn test_restore_overwrites_existing_book_progress() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_restore_progress");
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("progress_override.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let book_url = "https://progress.example/book/1";
+        // 种书：备份时进度为默认 0/0/None/0
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: book_url.to_string(),
+                name: "进度书".to_string(),
+                author: "作者甲".to_string(),
+                ..Book::default()
+            })
+        })
+        .unwrap();
+        backup_create(path_str).unwrap();
+
+        // 备份后本地继续阅读：库内进度推进到 3/15
+        with_database(|db| {
+            BookRepository::new(db.connection()).update_progress(
+                book_url,
+                3,
+                15,
+                Some("第三章"),
+                1_700_000_000_000,
+            )
+        })
+        .unwrap();
+
+        let stats_json = backup_restore(path_str).unwrap();
+        let stats: RestoreStats = serde_json::from_str(&stats_json).unwrap();
+        assert_eq!(stats.books, 1, "已有书应计入恢复统计");
+
+        let restored =
+            with_database(|db| BookRepository::new(db.connection()).find_by_url(book_url))
+                .unwrap()
+                .expect("恢复后书籍应存在");
+        assert_eq!(
+            restored.dur_chapter_index, 0,
+            "恢复应显式覆盖已有书章节索引（对齐原版全列更新）"
+        );
+        assert_eq!(restored.dur_chapter_pos, 0, "恢复应覆盖章节内位置");
+        assert_eq!(restored.dur_chapter_title, None, "恢复应覆盖章节标题");
+        assert_eq!(restored.dur_chapter_time, 0, "恢复应覆盖阅读时间");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批7b 语义锚点] 旧备份条目缺进度字段 → 按原版全列语义覆盖为默认值
+    ///
+    /// 原版判定（Book.kt:94-109 + Restore.kt:286-288）：Gson 反序列化缺字段
+    /// 取实体默认值（durChapterIndex/Pos=0、durChapterTitle=null），随后
+    /// `bookDao.update(book)`（Room @Update）全列覆盖——即原版会清掉库内
+    /// 进度。重构版 serde 缺省同为 0/None，恢复链显式覆盖后行为一致；
+    /// 不做「缺字段跳过」特判（用户 2026-10-26 裁决：对齐原版）。
+    #[test]
+    fn test_restore_legacy_book_without_progress_fields_clears_like_original() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_legacy_progress");
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("legacy_no_progress.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let book_url = "https://legacy.example/book/1";
+        // 库内已有书且带进度 3/15
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            repo.insert(&Book {
+                book_url: book_url.to_string(),
+                name: "旧备份书".to_string(),
+                author: "作者乙".to_string(),
+                ..Book::default()
+            })?;
+            repo.update_progress(book_url, 3, 15, Some("第三章"), 1_700_000_000_000)
+        })
+        .unwrap();
+
+        // 旧备份：books 条目完全不含进度字段（模拟旧版本备份格式）
+        let mut backup = empty_backup();
+        backup.books = vec![serde_json::json!({
+            "bookUrl": book_url,
+            "name": "旧备份书",
+            "author": "作者乙",
+        })];
+        fs::write(path_str, serde_json::to_string(&backup).unwrap()).unwrap();
+
+        let stats_json = backup_restore(path_str).unwrap();
+        let stats: RestoreStats = serde_json::from_str(&stats_json).unwrap();
+        assert_eq!(stats.books, 1);
+
+        let restored =
+            with_database(|db| BookRepository::new(db.connection()).find_by_url(book_url))
+                .unwrap()
+                .expect("恢复后书籍应存在");
+        assert_eq!(
+            restored.dur_chapter_index, 0,
+            "原版缺字段取默认 0 并全列覆盖，恢复后应为 0"
+        );
+        assert_eq!(restored.dur_chapter_pos, 0);
+        assert_eq!(restored.dur_chapter_title, None);
+        assert_eq!(restored.dur_chapter_time, 0);
 
         let _ = fs::remove_dir_all(&dir);
     }
