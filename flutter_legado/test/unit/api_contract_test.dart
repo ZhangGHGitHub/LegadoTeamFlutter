@@ -149,6 +149,83 @@ void main() {
       expect(hasAppTotal, isTrue, reason: 'API_CONTRACT.md 缺少附录合计行');
     });
 
+    test('§1.7 计数自洽：表 A/表 B 行数 == 导语与表题声明，表 A + 表 B == 合计', () {
+      // 定位 §1.7 标题、表 B 标题与章节结束（§2 首个标题）
+      int secIdx = -1;
+      int tableBIdx = -1;
+      int secEnd = dlines.length;
+      for (int i = 0; i < dlines.length; i++) {
+        final l = dlines[i];
+        if (l.startsWith('### 1.7')) {
+          secIdx = i;
+          continue;
+        }
+        if (secIdx >= 0 && i > secIdx) {
+          if (tableBIdx < 0 && l.contains('**表 B：')) {
+            tableBIdx = i;
+            continue;
+          }
+          if (l.startsWith('### ') || l.startsWith('## ')) {
+            secEnd = i;
+            break;
+          }
+        }
+      }
+      expect(secIdx, greaterThanOrEqualTo(0), reason: '缺少 §1.7 标题');
+      expect(tableBIdx, greaterThan(secIdx), reason: '缺少 §1.7 表 B 标题行');
+
+      // 实际行数：数据行形如「| `方法名` | …」（表头/分隔行不计）
+      int tableARows = 0;
+      for (int i = secIdx + 1; i < tableBIdx; i++) {
+        if (_isRow(dlines[i])) tableARows++;
+      }
+      int tableBRows = 0;
+      for (int i = tableBIdx + 1; i < secEnd; i++) {
+        if (_isRow(dlines[i])) tableBRows++;
+      }
+
+      // 导语声明：以下 **N 对** / 另有 **N 对** / 两类合计 **N 对**
+      int introA = -1;
+      int introB = -1;
+      int introTotal = -1;
+      for (int i = secIdx + 1; i < tableBIdx; i++) {
+        final l = dlines[i];
+        if (introA < 0 && l.contains('以下 **')) {
+          introA = _firstNumberAfter(l, '以下 **');
+        }
+        if (introB < 0 && l.contains('另有 **')) {
+          introB = _firstNumberAfter(l, '另有 **');
+        }
+        if (introTotal < 0 && l.contains('两类合计 **')) {
+          introTotal = _firstNumberAfter(l, '两类合计 **');
+        }
+      }
+      // 表题声明：取标题行最后一个数字（「批5 → 123 对；… → 139 对」链式终值）
+      final titleDeclared = _lastNumber(dlines[tableBIdx].replaceAll('*', ''));
+
+      expect(
+        tableARows,
+        introA,
+        reason: '§1.7 表 A 实际 $tableARows 行 ≠ 导语声明 $introA 对',
+      );
+      expect(
+        tableBRows,
+        introB,
+        reason: '§1.7 表 B 实际 $tableBRows 行 ≠ 导语声明 $introB 对',
+      );
+      expect(
+        tableBRows,
+        titleDeclared,
+        reason: '§1.7 表 B 实际 $tableBRows 行 ≠ 表题声明 $titleDeclared 对',
+      );
+      expect(
+        introA + introB,
+        introTotal,
+        reason: '表 A（$introA）+ 表 B（$introB）≠ 导语合计声明 $introTotal',
+      );
+      expect(introA, 15, reason: '表 A 改名等价对数为冻结值 15，变更须走契约评审');
+    });
+
     test('BookApi ⊆ RustApi 且 BookApi ⊆ MockBookApi', () {
       expect(bNames, isNotEmpty, reason: '解析器失效：未提取到任何 BookApi 方法');
       final missingInR = bNames.where((n) => !rNames.contains(n)).toList()
