@@ -542,7 +542,7 @@ async fn test_book_debug_content_stage_runs_real_fetch() {
 /// 断言日志行序列按给定顺序出现（阶段级日志顺序契约）
 ///
 /// 同名行可能出现多次（如搜索首条与详情页都打印 `┌获取简介`），故每次都从
-/// 上一命中位置向后找，保证顺序而不要求唯一。
+/// 上一命中位置的**下一行**向后找，保证严格递增顺序而不要求唯一。
 fn assert_ordered(texts: &[String], needles: &[&str]) {
     let mut last = 0usize;
     for needle in needles {
@@ -553,7 +553,7 @@ fn assert_ordered(texts: &[String], needles: &[&str]) {
             .find(|(_, line)| line.contains(needle))
             .map(|(index, _)| index)
             .unwrap_or_else(|| panic!("自下标 {last} 起缺少日志行「{needle}」: {texts:#?}"));
-        last = index;
+        last = index + 1;
     }
 }
 
@@ -608,6 +608,10 @@ async fn start_full_chain_source() -> String {
 }
 
 /// 四阶段链路 fixture 书源（搜索→详情→目录→正文全部真实抓取）
+///
+/// `rule_search.cover_url` 显式置空串：覆盖 `RealBookSourceFetcher::search`
+/// 的 `eval_rule_string("")` 空规则分支（批13 真实回归点；搜索页无封面元素，
+/// 空规则不得回退元素外层 HTML）。
 fn full_chain_book_source(base: &str) -> BookSource {
     BookSource {
         book_source_url: base.to_string(),
@@ -618,6 +622,7 @@ fn full_chain_book_source(base: &str) -> BookSource {
             name: Some("class.name@text".to_string()),
             author: Some("class.author@text".to_string()),
             book_url: Some("class.name@href".to_string()),
+            cover_url: Some(String::new()),
             ..Default::default()
         }),
         rule_book_info: Some(legado_core::models::rule::BookInfoRule {
@@ -689,6 +694,7 @@ async fn test_book_debug_full_chain_logs_stage_and_request_lines() {
         format!("≡请求 GET {search_url}"),
         "┌获取书名".to_string(),
         "└书一".to_string(),
+        "┌获取封面链接".to_string(),
         "┌获取详情页链接".to_string(),
         format!("└{book_url}"),
         "◇书籍总数:1".to_string(),
@@ -732,6 +738,88 @@ async fn test_book_debug_full_chain_logs_stage_and_request_lines() {
     assert!(
         measure.split(' ').any(|part| part.ends_with("ms")),
         "应输出真实耗时: {measure}"
+    );
+
+    // 4) [P1 批13 审查] ruleSearch.coverUrl = Some("")（空规则）的真实回归：
+    //    搜索与详情两处「┌获取封面链接」后必须紧跟空值行「└」，且日志中不得
+    //    出现元素外层 HTML。覆盖点是 `webbook_search → RealBookSourceFetcher::search`
+    //    的 `eval_rule_string("")` 分支；ffi 用例走 parser 批量字段提取
+    //    （`get_strings_batch` 已跳过空规则），覆盖不到该分支。
+    let cover_positions: Vec<usize> = texts
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.contains("┌获取封面链接"))
+        .map(|(index, _)| index)
+        .collect();
+    assert_eq!(
+        cover_positions.len(),
+        2,
+        "搜索首条与详情页应各打印一次封面字段行: {texts:#?}"
+    );
+    for index in cover_positions {
+        let value = texts
+            .get(index + 1)
+            .unwrap_or_else(|| panic!("封面字段行后应紧跟值行: {texts:#?}"));
+        assert!(
+            value.ends_with("] └"),
+            "空 coverUrl 规则必须输出空值行「└」: {value:?}"
+        );
+    }
+    assert!(
+        !texts.iter().any(|line| line.contains("<div")),
+        "空规则不得回退元素外层 HTML: {texts:#?}"
+    );
+
+    handle.abort();
+}
+
+/// 目录空结果口径：`┌解析目录列表`/`└目录列表解析完成` 仅在有元素时输出；
+/// 空时补 `◇目录总数:0` 与阶段完成行后再报「没有正文章节」
+/// （对齐 `BookChapterList.kt:134` / `Debug.kt:570-592`）。
+#[tokio::test]
+async fn test_book_debug_empty_toc_logs_total_zero_before_no_chapter() {
+    let _lock = DEBUG_SLOT_TEST_LOCK.lock().await;
+    let base = start_full_chain_source().await;
+    let mut source = full_chain_book_source(&base);
+    // 详情页存在、但目录规则匹配不到任何元素 → fetcher 返回空章节列表
+    source.rule_toc = Some(legado_core::models::rule::TocRule {
+        chapter_list: Some("class.none".to_string()),
+        ..Default::default()
+    });
+    let source_for_seed = source.clone();
+    let (_http_addr, ws_addr, handle) = start_server_with(move || {
+        let db = new_db();
+        disable_token(&db);
+        seed_book_source(&db, source_for_seed.clone());
+        db
+    })
+    .await;
+
+    let mut ws = connect(&format!("ws://{ws_addr}/bookSourceDebug"), Some("legado"))
+        .await
+        .unwrap();
+    ws.send(Message::Text(
+        serde_json::json!({ "tag": base, "key": "kw" })
+            .to_string()
+            .into(),
+    ))
+    .await
+    .unwrap();
+    let (texts, close) = collect_until_close(ws).await;
+    assert_eq!(close, Some((1000, "调试结束".to_string())), "{texts:#?}");
+
+    assert!(
+        !texts.iter().any(|line| line.contains("┌解析目录列表")),
+        "空目录不得输出列表解析块: {texts:#?}"
+    );
+    assert_ordered(
+        &texts,
+        &[
+            "︾开始解析目录页",
+            "◇目录总数:0",
+            "︽目录页解析完成",
+            "≡没有正文章节",
+        ],
     );
 
     handle.abort();
@@ -809,7 +897,10 @@ async fn test_debug_request_lines_do_not_touch_global_http_log_store() {
     use legado_server::legacy::http_log::{apply_recording_config, http_log_store};
 
     let _lock = DEBUG_SLOT_TEST_LOCK.lock().await;
-    // 全局开关关闭（与调试观测独立；原版 Debug 与 HttpLogInterceptor 本就是两套机制）
+    // 全局开关关闭（与调试观测独立；原版 Debug 与 HttpLogInterceptor 本就是两套机制）。
+    // 本用例断言的是**开关关闭态**：调试会话仍拿请求行，且不写全局日志环；
+    // 开关开启态的写入/去重/敏感字段脱敏由 legado-net `http_log` 单测覆盖
+    // （test_capture_enabled_records_once_and_strips_cookie_jar_marker 等）。
     apply_recording_config(None);
     let base = start_mock_content_source().await;
     let tag = base.clone();

@@ -39,25 +39,34 @@
 //! | 层级 | 原版依据 | 本实现 |
 //! |---|---|---|
 //! | 阶段标题 | `Debug.kt:456-493`（`⇒开始...`）、`:520-615`（`︾开始解析...`/`︽...解析完成`/空行） | **已覆盖**：真实执行链逐阶段输出同名标记 |
-//! | 请求行 | `BookList.kt:53` / `BookInfo.kt:39` / `BookChapterList.kt:48` / `BookContent.kt:51`（`≡获取成功:<url>`） | **已覆盖**：每个真实 HTTP 请求完成时输出（URL 取自 `LegadoClient` 采集，非规则模板猜测） |
+//! | 请求行 | `BookList.kt:53` / `BookInfo.kt:39` / `BookChapterList.kt:48` / `BookContent.kt:51`（`≡获取成功:<url>`） | **规则书源已覆盖**：每个真实 HTTP 请求完成时输出（URL 取自 `LegadoClient` 采集，非规则模板猜测；打印实际绝对 URL，上游打 `ruleUrl` 规则形态，登记差异）；**JS 书源无请求级日志**（登记：task-local 不跨 `runtime_bridge` 独立 runtime，见下） |
 //! | 请求测量 | 原版无对应行（仅时间前缀体现耗时） | **已覆盖（自有格式）**：`≡请求 <method> <url> -> <status> <耗时>ms <字节数>B`，字段全部来自真实采集记录 |
 //! | 规则字段行 | `BookInfo.kt:67-170` 的 `┌获取书名`/`└<值>` 族、`BookList.kt:219-285` 搜索首条字段族、`BookChapterList.kt:293-303` 首章信息族 | **部分覆盖**：字段名与**求值结果**来自 fetcher 返回结构（真实执行数据）；**逐条 AnalyzeRule 求值细节（单规则命中、合并规则分支、异常字段的 localizedMessage）不可得，登记未覆盖** |
 //! | 结果摘要 | `◇书籍总数`/`◇目录总数`/`◇是否VIP` 等 | **已覆盖**：数量与首章信息取自真实结果 |
-//! | 失败链 | `.onError { log(it.stackTraceStr, state=-1) }`（Kotlin 堆栈） | **已覆盖（降级）**：`LegadoError` 的 `Display` + 逐层 `source()`，非 Kotlin 堆栈 |
+//! | 失败链 | `.onError { log(it.stackTraceStr, state=-1) }`（Kotlin 堆栈） | **已覆盖（降级）**：`LegadoError` 的 `Display`（部分变体附 `source()` 链），非 Kotlin 堆栈 |
 //!
 //! 请求级日志的机制：`legado_net::http_log::scope_debug_request_sink` 以
 //! `tokio::task_local` 把观测回调注入**本调试任务**，`LegadoClient` 同一
 //! 任务内同步调用故可读到；全局 `HttpLogStore` 是 `OnceLock` first-wins 单槽
 //! （不能按会话切换），因此**不碰全局单槽**——调试会话观测与 `recordHttpLog`
 //! 开关相互独立（开关关闭时调试仍可见请求；开关开启时两路各收一次）。
-//! 局限（登记）：`tokio::spawn` 出的新任务不继承作用域；JS 书源经
-//! `spawn_blocking` 且走 JS 桥自身的 HTTP 通道，不在采集面内。
+//! 局限（登记）：`tokio::spawn` 出的新任务不继承作用域；**JS 书源无请求级
+//! 日志**——JS 搜索经 `spawn_blocking` 进入 `runtime_bridge` 的独立 tokio
+//! runtime（`get_runtime()`），task-local 不跨 runtime，采集回调不可见。
+//! 性能登记（可选）：当前每次请求把整包 `HttpLogEntry`（含响应体字符串）
+//! clone 后推给调试前端；会话请求量大时可改为 `Arc`/字段投影，后续批次处理。
 //!
 //! # 未覆盖清单（fetcher 公共结果拿不到，禁止伪造）
 //!
 //! - 逐条 `AnalyzeRule` 求值行（单规则命中、合并规则分支、`@put` 变量落点）；
 //! - `┌获取书籍列表`/`└列表大小:N`：`WebSearchResult` 不返回原始元素数
 //!   （已用 `◇书籍总数:N` 给真实结果数）；
+//! - 目录 `┌获取目录列表`/`└列表大小:N`：`WebChapter` 列表不返回逐页元素数；
+//! - `≡链接为详情页`/`└列表为空,按详情页解析`：`bookUrlPattern` 直连与空列表
+//!   回退分支的结果正确（fetcher 返回结果），但分支过程日志不可得；
+//! - `◇章节列表为空`：目录空结果在 fetcher 层归为空列表/错误，无该行；
+//! - `┌获取章节名称` 取 toc 章节标题（正文页 `title` 规则求值结果 fetcher
+//!   未返回）；`└获取封面链接` 取绝对化后的 URL（上游打印规则原始值）；
 //! - `◇目录总页数`/`◇并发解析目录,总页数`/`◇本章总页数`/`◇并发解析正文,总页数`：
 //!   分页链与并发度在 fetcher 内部，不对外返回；
 //! - `┌获取目录下一页列表`/`└…`、`┌获取正文下一页链接`/`└…`：`nextTocUrl`/
@@ -705,7 +714,7 @@ fn request_failure_line(entry: &HttpLogEntry) -> String {
     )
 }
 
-/// 失败错误链（`Display` + 逐层 `source()`；原版打印 Kotlin 堆栈）
+/// 失败错误链（`Display`，部分变体附逐层 `source()`；原版打印 Kotlin 堆栈）
 fn format_error_chain(error: &legado_core::LegadoError) -> String {
     use std::error::Error as _;
     let mut out = error.to_string();
@@ -944,9 +953,14 @@ async fn toc_stage(
     {
         Ok(json) => match serde_json::from_str::<Vec<legado_core::web_book::WebChapter>>(&json) {
             Ok(chapters) => {
-                // 原版 `BookChapterList.kt:229-291` 的列表解析尾段
-                sink.log("┌解析目录列表");
-                sink.log("└目录列表解析完成");
+                // 原版列表解析尾段仅在有元素时输出（`BookChapterList.kt:227-289`）
+                if !chapters.is_empty() {
+                    sink.log("┌解析目录列表");
+                    sink.log("└目录列表解析完成");
+                }
+                // `◇目录总数` 用 fetcher 去重后的长度（含卷章），对齐
+                // `BookChapterList.kt:127-134` 的 LinkedHashSet 统计口径
+                let total = chapters.len();
                 // 原版过滤卷章：!(isVolume && url.startsWith(title))
                 let toc: Vec<_> = chapters
                     .into_iter()
@@ -956,7 +970,7 @@ async fn toc_stage(
                     Some(first) => {
                         // 原版顺序：首章信息（列表解析尾段）→ 目录总数（外层统计）
                         log_first_chapter(sink, first);
-                        sink.log(format!("◇目录总数:{}", toc.len()));
+                        sink.log(format!("◇目录总数:{total}"));
                         sink.log("︽目录页解析完成");
                         sink.log_plain("");
                         // 保留章节全字段（variable/tag 等），与原版 WebBook 入参一致
@@ -965,7 +979,14 @@ async fn toc_stage(
                             Err(e) => sink.fail(format!("章节序列化失败: {e}")),
                         }
                     }
-                    None => sink.fail("≡没有正文章节"),
+                    None => {
+                        // 空目录：先补目录总数与阶段完成行，再报「没有正文章节」
+                        // （对齐 `BookChapterList.kt:134` 与 `Debug.kt:570-592`）
+                        sink.log(format!("◇目录总数:{total}"));
+                        sink.log("︽目录页解析完成");
+                        sink.log_plain("");
+                        sink.fail("≡没有正文章节");
+                    }
                 }
             }
             Err(e) => sink.fail(format!("目录结果解析失败: {e}")),

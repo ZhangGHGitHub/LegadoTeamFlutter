@@ -2385,8 +2385,15 @@ mod tests {
         );
     }
 
-    /// 批13 回归：ruleSearch 未配置 coverUrl（空规则）时，cover_url 必须为空，
-    /// 不得回退元素外层 HTML（对齐上游 AnalyzeRule.kt:202-205 空规则返回 null）。
+    /// E2E 冒烟：ruleSearch 未配置 coverUrl（空规则）时，经 `search_single_source`
+    /// 返回的 cover_url 为空，不携带元素外层 HTML。
+    ///
+    /// 说明：本用例走 `parse_search_response_ex → get_strings_batch`，parser 层
+    /// 已跳过空规则（`analyze_rule.rs` 的 `rule.is_empty()` continue），因此
+    /// **不是**批13 fetcher 修复的回归；真实回归在
+    /// `legado-server/tests/legacy_ws_test.rs` 的 WS 全链路用例
+    /// （`webbook_search → RealBookSourceFetcher::search` 的
+    /// `eval_rule_string("")` 分支）。本用例保留为公共搜索链的 E2E 冒烟。
     #[test]
     fn test_search_single_source_empty_cover_rule_yields_no_cover() {
         use std::io::{Read, Write};
