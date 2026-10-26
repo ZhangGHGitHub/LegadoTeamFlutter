@@ -180,6 +180,6 @@
 | 原版 Activity | 路径 | Flutter 处置 | 说明 |
 |---|---|---|---|
 | `HandleFileActivity` | `ui/file/` | **N/A** | Android SAF/Intent 统一文件中转（打开方式、分享接收、EXPORT 模式）。Flutter 跨平台各入口已用 `file_picker` / 平台通道等价，不单独移植 Activity（与 GAP_AUDIT P2-14、REMAINING Doc5 一致） |
-| `RssSortActivity` | `ui/rss/article/` | **降级** | 原版 RSS 文章排序页。Flutter `RssArticlesScreen` 保留列表与阅读，**无**独立排序 UI；排序语义暂不提供（非 P0 书源兼容项，后续若需对齐再单独立项） |
+| `RssSortActivity` | `ui/rss/article/` | **已对齐（批15d，2026-10-26）** | 原版 RSS 文章排序页。Flutter `RssArticlesScreen` 已提供分类 TabBar（参考版单行可滚动形态，原版多行 chip 不复刻，已登记）、分页加载更多与搜索入口 |
 
 编写者：Cursor 子代理 ｜ 2026-08-14（F3-16 SOURCE_DIFF 缺口登记）
