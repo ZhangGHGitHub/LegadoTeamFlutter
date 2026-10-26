@@ -8,7 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
-| 2026-10-26 | **审查批7c：§1.6.1 预留状态措辞对齐实际消费面（纯文档，零 FFI 签名/§2.x 计数变化）**：`sourceLoginV1` 仅 `ffi.dart` 封装、无业务调用亦无测试消费，状态由「预留（仅测试消费）」更正为「预留（无消费）」；`verificationPending` / `webviewPending` 保持「预留（仅测试消费）」（`test/ffi/ffi_stream_sink_runtime_test.dart` 消费）。§1.6.1 标题与裁决说明同步改为按实际消费面区分，消除「统一仅测试消费」与「无测试消费」的表述矛盾 |
+| 2026-10-26 | **批8：servers 表契约冻结（用户裁决②「补表+一次性迁移 Flutter prefs+纳入备份」；加法式 +3 方法，契约先行）**：§2.28 新增 `webdavServersList() → Future<String>`（裸 JSON 数组，元素为原版 `Server` 实体 `id`/`name`/`type`/`config`/`sortNumber`，按 `sortNumber` 升序，对齐 `ServerDao.all`）、`webdavServerSave(String serverJson) → Future<int>`（全字段 INSERT OR REPLACE，返回落库 id；id 为 0 按当前毫秒分配、负数 id 原样保留，对齐原版 `Server.id = System.currentTimeMillis()` 默认值）、`webdavServerDelete(int id) → Future<bool>`（按 id 删除，未命中返回 false，对齐 Room DELETE 静默语义）。Rust 实现 `legado-ffi/src/api/webdav_api.rs` → `legado-db::ServerRepository` 单实现；DB `SCHEMA_VERSION` 111→112 建 `servers` 表（DDL 逐列对齐原版 Room v104：`id` INTEGER NOT NULL 主键 / `name` TEXT NOT NULL / `type` TEXT NOT NULL / `config` TEXT / `sortNumber` INTEGER NOT NULL，`Migration111To112` 幂等建表）。备份 `BACKUP_VERSION` 2→3，`BackupData.servers` 纳入该表（形态对齐原版 `servers.json` 实体数组）；恢复按 id REPLACE，旧 v1/v2 备份无该键不触碰库内 servers（对齐原版 `Restore.kt:379-390` 缺文件跳过语义）。Flutter 侧 WebDAV 同步设置（原 `sync_webdav_*` 偏好的 url/username/password）一次性迁移为 `id=-1` 的 `WEBDAV` 行并置 `webdav_servers_migrated` 标记（幂等）；`webdav_api.rs` 既有 `config_json` 入参签名全部不变。§2.28 方法数 7→**10**，附录合计 297→**300**，BookApi 口径 294→**297**；§1.7 表 B 补登记 10 对（既有 WebDAV 7 方法 + 新增 3 方法），同名 FFI 映射 124→**134**、等价对总数 139→**149** || 2026-10-26 | **审查批7c：§1.6.1 预留状态措辞对齐实际消费面（纯文档，零 FFI 签名/§2.x 计数变化）**：`sourceLoginV1` 仅 `ffi.dart` 封装、无业务调用亦无测试消费，状态由「预留（仅测试消费）」更正为「预留（无消费）」；`verificationPending` / `webviewPending` 保持「预留（仅测试消费）」（`test/ffi/ffi_stream_sink_runtime_test.dart` 消费）。§1.6.1 标题与裁决说明同步改为按实际消费面区分，消除「统一仅测试消费」与「无测试消费」的表述矛盾 |
 | 2026-10-26 | **审查批7a：死接线转正登记 + `/cache_settings` 死路由删除 + `direct_link_upload` 保留加注（纯登记/清理，零 FFI 签名、零 codegen；§2.x 方法计数与 §1.7 表全部不变）**：① 按用户裁决（2026-10-26）在 §1.6.1 附加登记 3 个死接线——`sourceLoginV1`（Rust `ffi::source_login_v1` → `source_login_v1_api::eval_login_v1`；V1 登录被 V2 协议 / 经典登录 / WebView 三通路覆盖）、`verificationPending` / `webviewPending`（Rust `ffi::verification_pending` / `ffi::webview_pending`；推送式 `verificationRequestStream` / `webviewRequestStream` 已覆盖 UI 需求），状态均为「预留（仅测试消费）」。Rust 实现完好、Dart 仅 `ffi.dart` 封装：两个 pending 另有 `test/ffi/ffi_stream_sink_runtime_test.dart` 消费，`sourceLoginV1` 无业务调用亦无测试消费（纯预留）；未来接 UI 或移除须走契约变更。⑤ 删除 `/cache_settings` 死路由（原 `routes.dart:90,197`）与 `cache_settings_screen.dart` 及溢出回归测试引用（全库零入口，页面含原版不存在的「自动过期策略」；按重构红线清理，未新增任何功能）。⑦ `rust/legado-net/src/direct_link_upload.rs` 仅加文件头保留注释（原版 DirectLinkUpload 能力对应物，原版消费方全部在 UI 域，待「外部文件处理页」UI 批接线；`extract_download_url` 系我方辅助），逻辑零改动。④ Room v104 拷库直开不支持的登记口径回写 ACTIVE_PLAN（本批不改代码）。验证：`flutter test test/unit/api_contract_test.dart` 7/7、`flutter analyze` 0 issue、`flutter test test/unit` 全绿、`cargo check -p legado-net` 通过、`rg "cacheSettings\|CacheSettingsScreen\|cache_settings" flutter_legado/lib flutter_legado/test` 零命中 |
 | 2026-10-26 | **审查批6：RSS 源启用/禁用误接书源 FFI 修复——契约冻结（加法式，+1 方法；契约先行，本条目提交先于实现代码）**：§2.5 新增 `rssSourceSetEnabled(String sourceUrl, bool enabled) → Future<bool>`（Rust `ffi::rss_source_set_enabled`，核心实现 `legado-ffi/src/api/rss.rs::set_rss_source_enabled` 走 `legado-db::RssSourceRepository::set_enabled` 单实现）。**缺陷**：`enableRssSource` / `disableRssSource` 此前分别调 `source_enable` / `source_disable`（`rust/legado-ffi/src/api/source.rs:64-71` 走 `BookSourceRepository`）——RSS-only 源报「书源不存在」，同 URL 恰有书源时误改书源。**语义对齐原版**（`app/src/main/java/io/legado/app/data/dao/RssSourceDao.kt:152-153`：`@Query("update rssSources set enabled = :enable where sourceUrl = :sourceUrl")`，Room UPDATE 静默执行、源不存在既不报错也不写书源表）：新方法按 `sourceUrl` 单条 UPDATE `rssSources.enabled`，返回是否实际命中行；**源不存在返回 `false`（不抛错）**，书源表零触碰。`enableRssSource` / `disableRssSource` 的 BookApi 签名与「启用/禁用 RSS 源」冻结语义不变，改为委托 `rssSourceSetEnabled(url, true/false)`。§2.5 方法数 11→**12**，附录合计 296→**297**，BookApi 口径 293→**294**；§1.7 表 B 补登记 `rssSourceSetEnabled` 1 对（既有 `enableRssSource` / `disableRssSource` 两对的 FFI 列由误接的 `source_enable` / `source_disable` 更正为 `rss_source_set_enabled`），等价对总数 138→**139**（改名等价 15 + 同名 FFI 映射 124） |
 | 2026-10-26 | **审查批5 文档修整：§1.7 命名等价对补登记（纯文档，零 FFI 签名/方法计数变化）**：原表 A 仅登记 15 对改名等价；本批以 `rust/legado-ffi/src/ffi.rs` 的 284 个 `pub fn` 导出面 × `flutter_legado/lib/src/services/rust_api*.dart` 的 `bridge.<fn>` 调用面程序化提取，补表 B **123 对**「BookApi 同名方法 ↔ Rust 模块前缀导出名」（示例 `getBooks ↔ bookshelf_list`、`getBookSources ↔ source_list`；含 3 条跨导出复合实现 `initialize`/`updateBookmark`/`parseEpub` 与 2 条无前缀命名 `initialize`/`getVersion`）。§1.7 等价对总数 15→**138**（改名等价 15 + 同名 FFI 映射 123）；§2.x 方法行、附录合计 296、BookApi 口径 293 全部不变。同步勘误附录口径：`rssUpdateSource` 已由 BookApi `updateRssSource` 封装（`rust_api_search_rss.part.dart:246-247`），纯 FFI 仅剩 `chapterPayAction` 1 个。证据：`docs/REFACTORING_FULL_AUDIT_REPORT_20261026.md` §四-4 / P2-7；`flutter_legado/test/unit/api_contract_test.dart` §1.7 解析校验全绿 |
@@ -166,7 +166,7 @@
 
 ### 1.7 BookApi / FFI 命名等价表（F3-10，2026-08-14）
 
-以下 **15 对** Dart `BookApi` 方法名与契约 §2.x 登记名不一致（改名等价对）；另有 **124 对**方法名与 Rust FFI 导出名不一致、但 §2.x 按 BookApi 同名登记（机械映射见表 B）。两类合计 **139 对**，语义等价，计数时勿重复：
+以下 **15 对** Dart `BookApi` 方法名与契约 §2.x 登记名不一致（改名等价对）；另有 **134 对**方法名与 Rust FFI 导出名不一致、但 §2.x 按 BookApi 同名登记（机械映射见表 B）。两类合计 **149 对**，语义等价，计数时勿重复：
 
 | BookApi（Dart） | 契约 §2.x / FFI 登记名 |
 |-----------------|------------------------|
@@ -186,7 +186,7 @@
 | `putLoginHeader` | `sourcePutLoginHeader`（§2.3） |
 | `putLoginInfo` | `sourcePutLoginInfo`（§2.3） |
 
-**表 B：Rust FFI 导出 ↔ BookApi 方法机械映射（2026-10-26 审查批5 补登记 123 对，审查批6 增 1 对 → 124 对）**
+**表 B：Rust FFI 导出 ↔ BookApi 方法机械映射（2026-10-26 审查批5 补登记 123 对，审查批6 增 1 对 → 124 对；批8 增 10 对（WebDAV 云同步全量 + servers CRUD）→ 134 对）**
 
 > 生成口径：以 `rust/legado-ffi/src/ffi.rs` 的 `pub fn` 导出面与本仓 `rust_api*.dart` 实现中的 `bridge.<fn>` 调用点为源，取「BookApi 方法名 ≠ Rust FFI 导出名」且未在表 A 登记的对。一个 FFI 导出可被多个 BookApi 方法复用（如 `bookshelf_update`），复合实现列出全部调用；`initialize`/`getVersion` 无模块前缀但同属命名差异，一并登记。本表为纯登记（不新增方法、不改 §2.x 计数口径）。
 
@@ -316,6 +316,16 @@
 | `cancelWebviewRequest` | `cancelWebviewRequest`（§2.3） | `webview_cancel` |
 | `submitWebviewResult` | `submitWebviewResult`（§2.3） | `webview_submit` |
 | `submitWebviewResultWithCookies` | `submitWebviewResultWithCookies`（§2.3） | `webview_submit_result_with_cookies` |
+| `webdavListDir` | `webdavListDir`（§2.28） | `webdav_list_dir` |
+| `webdavUpload` | `webdavUpload`（§2.28） | `webdav_upload` |
+| `webdavUploadFile` | `webdavUploadFile`（§2.28） | `webdav_upload_file` |
+| `webdavDownload` | `webdavDownload`（§2.28） | `webdav_download` |
+| `webdavDownloadFile` | `webdavDownloadFile`（§2.28） | `webdav_download_file` |
+| `webdavDelete` | `webdavDelete`（§2.28） | `webdav_delete` |
+| `webdavFullSync` | `webdavFullSync`（§2.28） | `webdav_full_sync` |
+| `webdavServersList` | `webdavServersList`（§2.28） | `webdav_servers_list` |
+| `webdavServerSave` | `webdavServerSave`（§2.28） | `webdav_server_save` |
+| `webdavServerDelete` | `webdavServerDelete`（§2.28） | `webdav_server_delete` |
 
 > 📌 **2026-10-26 审查批6 已闭环（原 ⚠ 缺口登记销记）**：`enableRssSource` / `disableRssSource` 曾分别调 `source_enable` / `source_disable`（`rust/legado-ffi/src/api/source.rs:64-71` 走 `BookSourceRepository`）——RSS-only 源报「书源不存在」，同 URL 恰有书源时误改书源。现两者委托新增的 `rssSourceSetEnabled`（FFI `rss_source_set_enabled` → `legado-db::RssSourceRepository::set_enabled` 单实现），本表两对的 FFI 列已更正；RSS 源开关写路径不再触碰 `book_sources` 表。
 
@@ -324,8 +334,8 @@
 ## 2. 方法清单
 
 > 共 **47 个方法模块**（§2.1–§2.50，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
-> BookApi 接口当前共 **294 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计；2026-10-04 B1 将音频缓存 4 方法封装进 BookApi：284→288；2026-10-03 B2 冻结音频预下载写入面 2 方法，契约先行、待实现批封装进 BookApi：288→290；2026-10-05 P2-29c 后续批冻结失败章查询 1 方法，契约先行、待实现批封装进 BookApi：290→291；2026-10-05 V-B1 冻结视频弹幕查询 1 方法，契约先行、待实现批封装进 BookApi：291→292；2026-10-05 V-B2 冻结弹幕解析 1 方法，契约先行、待实现批封装进 BookApi：292→293；2026-10-26 审查批6 新增 RSS 源开关 1 方法 `rssSourceSetEnabled`（修复误接书源 FFI，同批封装进 BookApi）：293→294）。
-> 附录 §2.x 行合计 **297** = §2.x 实际方法行总数；其中 1 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction`；`rssUpdateSource` 已由 BookApi `updateRssSource` 封装接通，见附录口径）。
+> BookApi 接口当前共 **297 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计；2026-10-04 B1 将音频缓存 4 方法封装进 BookApi：284→288；2026-10-03 B2 冻结音频预下载写入面 2 方法，契约先行、待实现批封装进 BookApi：288→290；2026-10-05 P2-29c 后续批冻结失败章查询 1 方法，契约先行、待实现批封装进 BookApi：290→291；2026-10-05 V-B1 冻结视频弹幕查询 1 方法，契约先行、待实现批封装进 BookApi：291→292；2026-10-05 V-B2 冻结弹幕解析 1 方法，契约先行、待实现批封装进 BookApi：292→293；2026-10-26 审查批6 新增 RSS 源开关 1 方法 `rssSourceSetEnabled`（修复误接书源 FFI，同批封装进 BookApi）：293→294；2026-10-26 批8 servers 表新增 WebDAV 服务器 CRUD 3 方法 `webdavServersList`/`webdavServerSave`/`webdavServerDelete`（契约先行冻结，同批封装进 BookApi）：294→297）。
+> 附录 §2.x 行合计 **300** = §2.x 实际方法行总数；其中 1 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction`；`rssUpdateSource` 已由 BookApi `updateRssSource` 封装接通，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -542,6 +552,8 @@
 | `restore(String backupPath)` | backupPath | `Future<void>` | 恢复数据。**P2-4（2026-08-13）**：UI 先读 `SettingsService.restoreIgnore`；`localBook` 预过滤备份 JSON 本地书；其余 ignore 键在应用备份内 `appPrefs` 时经 `RestoreIgnorePrefs.keyIsNotIgnore` 跳过（对齐 BackupConfig）；再调用本方法恢复业务表（无需改 FFI 签名） |
 | `importOldData(String dirPath)` | dirPath：含旧版备份文件的目录 | `Future<String>`（统计 JSON） | **P2-4（2026-08-13）**：对齐原版 `ImportOldData.importUri`。读取目录下 `myBookShelf.json` / `myBookSource.json` / `myBookReplaceRule.json`（缺文件不致命，计入 `messages`）；书架字段映射（`noteUrl`→`bookUrl`、`bookInfoBean.*` 等）；书源经 `toNewRule`/`toNewUrl`/`toNewUrls`/`uaToHeader` 迁到 3.x 规则结构；替换规则兼容新格式或旧字段（`regex`/`replaceSummary`/`useTo`/`enable`/`serialNumber`）。已存在 `bookUrl` 的书跳过。返回 JSON：`{books, bookSources, replaceRules, messages: string[]}` |
 
+> **备份 v3 纳入 servers（2026-10-26 批8，方法签名不变）**：`BackupData` 增 `servers` 字段（`BACKUP_VERSION` 2→3），值为 `servers` 表全量实体数组（键 `id`/`name`/`type`/`config`/`sortNumber`，对齐原版 `servers.json` 形态）。恢复器按 `id` REPLACE 写入；**旧 v1/v2 备份无该键时按空列表处理、不触碰库内 servers**（对齐原版 `Restore.kt:379-390` 仅在 `servers.json` 存在时 `serverDao.insert` 的语义）。`RestoreStats` 返回结构不变（不新增计数，失败明细走 warn 日志）。
+
 ### 2.12 阅读记录（6 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
@@ -690,7 +702,7 @@
 | `getAudioProgress(String bookUrl, int chapterIndex)` | bookUrl, chapterIndex | `Future<Map<String, dynamic>?>` | 获取音频播放进度 |
 | `saveAudioProgress(String bookUrl, int chapterIndex, int positionMs)` | bookUrl, chapterIndex, positionMs | `Future<void>` | 保存音频播放进度 |
 
-### 2.28 WebDAV 云同步（7 个方法）
+### 2.28 WebDAV 云同步（10 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|
@@ -701,8 +713,12 @@
 | `webdavFullSync(String configJson, String localBooks, String localSources)` | configJson, localBooks, localSources | `Future<String>` | WebDAV 全量同步 |
 | `webdavUploadFile(String configJson, String path, String localFilePath)` | configJson（与既有 `webdavUpload` 相同，WebDavConfig JSON）；path: 远程目标路径；localFilePath: 本地文件绝对路径 | `Future<void>` | WebDAV 从本地文件路径读取并上传（大文件场景，如书籍上传至远程），区别于既有 `webdavUpload` 的 String data 直传；既有 `webdavUpload` 签名保持不变。错误码：Io（文件不存在/读取失败）/ Net（上传失败）/ Internal（配置解析失败）（台账 §5.11-1 上传至远程，Task #50，加法式新增） |
 | `webdavDownloadFile(String configJson, String path, String localFilePath)` | configJson（WebDavConfig JSON，字段 `url`/`username`/`password`/`remote_dir`）；path: 相对 `remote_dir` 的远程路径；localFilePath: 本地落盘绝对路径 | `Future<void>` | WebDAV 下载**二进制**到本地文件（对齐远程书库 `RemoteBookActivity` 导入；镜像 `webdavUploadFile`）。父目录不存在时创建；错误码：Io（写盘失败）/ Net（下载失败）/ Internal（配置解析失败）。既有 `webdavDownload` 签名保持不变（加法式新增，2026-08-12 P1-5） |
+| `webdavServersList()` | 无 | `Future<String>` | 列出 `servers` 表全部服务器（`sortNumber` 升序、同序按 `id` 升序），返回**裸 JSON 数组**（对齐 §1.4 列表返回铁律）：元素为原版 `Server` 实体形态 `id` / `name` / `type` / `config` / `sortNumber`；`type` 当前仅 `"WEBDAV"`；`config` 为 `{"url","username","password"}` 的 **JSON 字符串**（原版 `Server.config: String?`）。对齐原版 `ServerDao.all`（`order by sortNumber`）。DB 未初始化/读取失败 → 抛 bridge 错误（不静默返回空数组）。**批8（2026-10-26，用户裁决②）**：`servers` 表（DB v112）落地面；Flutter WebDAV 同步设置改由本表承载，备份 v3 纳入 `servers` |
+| `webdavServerSave(String serverJson)` | serverJson：`Server` JSON（`id` 缺省或为 0 时按当前毫秒分配并避让既有主键；**负数 id 原样保留**（`-1` = 默认 WebDAV 同步账号固定身份）；`name` 缺省空串；`type` 缺省 `WEBDAV`；`config` 可空；`sortNumber` 缺省 0） | `Future<int>`（实际落库的 server id） | 全字段 upsert（`INSERT OR REPLACE`，对齐原版 `ServerDao.insert(onConflict = REPLACE)`），返回落库 id。**批8**：Flutter 同步设置保存链路（含 prefs→DB 一次性迁移）唯一写入口；id 为 0 的新建语义对齐原版 `Server.id = System.currentTimeMillis()` 默认值 |
+| `webdavServerDelete(int id)` | id | `Future<bool>` | 按 id 删除服务器（对齐原版 `ServerDao.delete(id)`），返回是否命中行；目标不存在返回 `false`（不抛错，对齐 Room DELETE 静默语义）。**批8** |
 
-> **远程书库服务器列表（非 FFI）**：对齐原版 `servers` 表 + `AppConfig.remoteServerId`。Flutter 侧以 `SettingsService` 持久化 `remote_servers`（JSON 数组：`id`/`name`/`url`/`username`/`password`）与 `remote_server_id`（`-1` = 默认 WebDAV，即同步设置中的账号，根目录相对 path 为 `books/`）。目录浏览复用 `webdavListDir`；导入 = `webdavDownloadFile` → `importLocalBook`。
+> **servers 表（DB v112，2026-10-26 批8 用户裁决②）**：对齐原版 Room `servers` 表（`data/entities/Server.kt`：`id` INTEGER 主键 + `name` / `type` / `config` / `sortNumber`，`ServerDao`：`order by sortNumber`）。本批落地面：① Flutter WebDAV **同步设置**（原 `sync_webdav_*` 偏好中的 url/username/password）一次性迁移为 `id = -1` 的 `WEBDAV` 行（`config` 为 `{"url","username","password"}` JSON 字符串；子目录/设备名仍为 Flutter 偏好，对齐原版 `AppConfig.webDavDir` 亦为偏好而非 servers 列）；迁移幂等（`servers` 表无记录且旧偏好存在时写入一次，置迁移标记后不再重复）；② 备份 v3 纳入 `servers`（键 `servers`，形态为原版 `servers.json` 的实体数组），恢复按 `id` REPLACE、**备份缺该键不清库内 servers**（对齐原版 `Restore.kt:379-390` 仅在文件存在时 insert 的语义）；③ `webdav_api.rs` 的 `config_json` 入参签名全部保持不变，配置来源由 Flutter 从 DB 读取后传入。
+> **远程书库服务器列表（本批未迁移）**：`RemoteBookNotifier` 仍以 `SettingsService` 的 `remote_servers`（JSON 数组：`id`/`name`/`url`/`username`/`password`）与 `remote_server_id`（`-1` = 默认 WebDAV 同步账号，根目录相对 path 为 `books/`）持久化；本批文件边界不含该屏，后续批统一切到 `webdavServersList` / `webdavServerSave` / `webdavServerDelete`（对齐原版 `ServersDialog` / `ServerConfigViewModel`）。目录浏览复用 `webdavListDir`；导入 = `webdavDownloadFile` → `importLocalBook`。
 
 ### 2.29 下载管理器（7 个方法）
 
@@ -1107,6 +1123,8 @@
 > INSERT OR REPLACE，存在外键级联删除隐患；将在本批改为 upsert 链路（内部实现变更，不涉契约签名，不改任何 FFI 行为）。
 >
 > ℹ️ **瞬态 HTML/下载字段（F3-8，2026-08-14）**：`books` 表 `infoHtml` / `tocHtml` / `downloadUrls` 对齐原版 Room 列，存书源详情/目录页原始 HTML 与下载地址缓存，**非用户持久配置**；换源/清缓存时可被覆盖或清空，UI 不应当作权威书元数据。
+>
+> ℹ️ **servers 表（DB v112，2026-10-26 批8）**：`servers` DDL 逐列对齐原版 Room v104 `servers`（`id` INTEGER NOT NULL 主键 / `name` TEXT NOT NULL / `type` TEXT NOT NULL / `config` TEXT / `sortNumber` INTEGER NOT NULL），`Migration111To112` 仅建表（幂等，只创建不写种子）；`ServerRepository` 为 servers 表唯一读写实现（`find_all` 按 `sortNumber` 升序、`upsert` = INSERT OR REPLACE、`delete`），FFI `webdavServersList` / `webdavServerSave` / `webdavServerDelete` 与备份收集/恢复全部委托该仓储。Flutter `sync_webdav_*` 偏好的 url/username/password 经一次性迁移写入 `id = -1` 的 `WEBDAV` 行（`remote_dir`/设备名仍为偏好）；迁移标记 `webdav_servers_migrated` 保证幂等。
 
 ---
 
@@ -1229,7 +1247,7 @@
 | 23 | 书籍格式解析 | 3 |
 | 24 | HTTP TTS | 7 |
 | 25 | 音频播放 | 4 |
-| 26 | WebDAV 云同步 | 7 |
+| 26 | WebDAV 云同步 | 10 |
 | 29 | 下载管理器 | 7 |
 | 30 | 段评（ruleReview） | 3 |
 | 31 | 书籍导出 | 2 |
@@ -1251,11 +1269,11 @@
 | 47 | 音频章节预下载 | 2 |
 | 49 | 视频弹幕数据链 | 1 |
 | 50 | 视频弹幕解析 | 1 |
-| | **合计（§2.x 附录行合计）** | **297** |
+| | **合计（§2.x 附录行合计）** | **300** |
 
 > 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`、2026-09-28 STAGE3-C2B 增 §2.16 单章缓存失效 1 方法 `clearChapterCache`、2026-09-28 P2-28c 增 §2.43 目录实时刷新 1 方法 `listCachedChapters`、2026-09-29 P2-29 增 §2.43 目录下载中态查询 1 方法 `listDownloadingChapters`、2026-09-29 P4-2a 增 §2.46 图片磁盘缓存 2 方法 `saveImageCache`/`getImageCache`、2026-10-03 cbz 批 B 增 §2.34 本地漫画页读取 1 方法 `cbzReadPage`、2026-10-04 B1 增 §2.47 音频章节文件缓存 4 方法、2026-10-03 B2 增 §2.48 音频章节预下载写入 2 方法 `audioCacheDownload`/`audioCacheCancel`，取代人工统计）：
-> - 附录行合计 **297** = §2.x 实际方法行总数；其中与 BookApi 同名行 **280**（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 2 + RSS 源开关 1；失败章查询经 §1.7 命名等价对登记）、§1.7 命名等价对侧的不同名 FFI 行 **14**（3 个 JS 单文件 + 4 个缓存系 + 3 个登录 V2 + 4 个登录方法）、`cacheGetChapter` 独立行 1（§2.41；BookApi `getCachedChapter` 另在 §2.16 同名登记，不重复计数）、
+> - 附录行合计 **300** = §2.x 实际方法行总数；其中与 BookApi 同名行 **283**（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 2 + RSS 源开关 1 + WebDAV 服务器 CRUD 3；失败章查询经 §1.7 命名等价对登记）、§1.7 命名等价对侧的不同名 FFI 行 **14**（3 个 JS 单文件 + 4 个缓存系 + 3 个登录 V2 + 4 个登录方法）、`cacheGetChapter` 独立行 1（§2.41；BookApi `getCachedChapter` 另在 §2.16 同名登记，不重复计数）、
 >   尚未封装进 BookApi 的纯 FFI 1（`chapterPayAction`）；`rssUpdateSource` 独立行 1（已由 BookApi `updateRssSource` 封装接通，`rust_api_search_rss.part.dart:246-247`，2026-10-26 审查批5 勘误：原记「纯 FFI 2」过时）。
-> - BookApi 代码计数 **294** = 280 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 2 + RSS 源开关 1；失败章查询经 §1.7 命名等价对登记）+ 14 命名等价（§1.7：3 个 JS 单文件 + 4 个缓存系 + 3 个登录 V2 + 4 个登录方法）；测试自动强制两口径与闭合关系（§2.48 2 方法为契约先行，`book_api.dart` 实现批封装后程序化计数转齐）。
-> - 2026-10-26 审查批5：§1.7 表 B 新增 **123 条**「Rust FFI 导出 ↔ BookApi 同名方法」机械映射（`ffi.rs` pub fn 面 × `rust_api*.dart` 调用面程序化提取，含 3 条跨导出复合实现 `initialize`/`updateBookmark`/`parseEpub` 与 2 条无前缀命名 `initialize`/`getVersion`）；§1.7 等价对总数 15→**138**（改名等价 15 + 同名 FFI 映射 123）。该表不改变 §2.x 行数与 BookApi 计数，仅补齐命名等价登记债。审查批6 再 +1 对（`rssSourceSetEnabled`，并更正 `enableRssSource` / `disableRssSource` 两对的 FFI 列）：同名 FFI 映射 **124**、总数 **139**。
+> - BookApi 代码计数 **297** = 283 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 2 + RSS 源开关 1 + WebDAV 服务器 CRUD 3；失败章查询经 §1.7 命名等价对登记）+ 14 命名等价（§1.7：3 个 JS 单文件 + 4 个缓存系 + 3 个登录 V2 + 4 个登录方法）；测试自动强制两口径与闭合关系（§2.48 2 方法为契约先行，`book_api.dart` 实现批封装后程序化计数转齐）。
+> - 2026-10-26 审查批5：§1.7 表 B 新增 **123 条**「Rust FFI 导出 ↔ BookApi 同名方法」机械映射（`ffi.rs` pub fn 面 × `rust_api*.dart` 调用面程序化提取，含 3 条跨导出复合实现 `initialize`/`updateBookmark`/`parseEpub` 与 2 条无前缀命名 `initialize`/`getVersion`）；§1.7 等价对总数 15→**138**（改名等价 15 + 同名 FFI 映射 123）。该表不改变 §2.x 行数与 BookApi 计数，仅补齐命名等价登记债。审查批6 再 +1 对（`rssSourceSetEnabled`，并更正 `enableRssSource` / `disableRssSource` 两对的 FFI 列）：同名 FFI 映射 **124**、总数 **139**。批8 再 +10 对（WebDAV 云同步既有 7 方法补登记 + servers CRUD 新增 3 方法）：同名 FFI 映射 **134**、总数 **149**。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。
