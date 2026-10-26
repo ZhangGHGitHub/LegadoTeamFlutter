@@ -10,6 +10,10 @@
 //!   `RssSourceRepository` 模型序列化（布尔为真 bool、None 字段省略）。
 //! - version=3（批8，用户裁决②）：新增 `servers`（原版 `servers.json`
 //!   实体数组形态），承载 WebDAV 同步/远程书库服务器配置。
+//! - version=4（批16f）：新增 `directLinkUploadRule`（字符串，值为 caches 配置键
+//!   `directLinkUploadRule` 的原始 JSON 文本；形态为 4 字段 camelCase 对象
+//!   `uploadUrl`/`downloadUrlRule`/`summary`/`compress`，对齐原版
+//!   `DirectLinkUpload.ruleFileName = "directLinkUploadRule.json"`），承载直链上传规则。
 //!
 //! 兼容语义（防复发规定 9：备份格式版本化）：恢复器按字段驱动解析，
 //! 全部列表字段 `#[serde(default)]`——旧备份（无 version 或 version<2）
@@ -17,6 +21,9 @@
 //! `servers` 缺失（v1/v2 备份）时**不触碰库内 servers**，对齐原版
 //! `Restore.kt:379-390` 仅在 `servers.json` 存在时 insert 的语义；存在时按
 //! 备份中的原主键（含 `id = 0`）REPLACE 写入，不做毫秒重分配。
+//! `directLinkUploadRule` 缺失（v1~v3 备份）或为空时同样**不触碰**库内既有直链
+//! 配置（对齐原版 `Restore.kt:404-408` 仅在该文件存在时 `ACache.put` 的语义）；
+//! 值必须是合法 JSON 对象，解析失败只 warn 跳过，不让整次恢复失败。
 //!
 //! # 原版 zip 备份恢复（批9，用户裁决⑥）
 //!
@@ -29,10 +36,14 @@
 //! - 标注：`bookmark.json`、`highlight.json`（`writeEmpty=true`）、`highlightRule.json`
 //! - 源：`bookSource.json`、`rssSources.json`、`rssStar.json`、`sourceSub.json`
 //! - 规则：`replaceRule.json`、`txtTocRule.json`、`httpTTS.json`、`keyboardAssists.json`、
-//!   `dictRule.json`、`autoTask.json`、`servers.json`
+//!   `dictRule.json`、`autoTask.json`、`servers.json`、`directLinkUploadRule.json`
+//!   （明文 JSON 对象，**未经 `BackupAES` 加密**，证据见 `Backup.kt` 的
+//!   `DirectLinkUpload.getConfig()?.let { ... writeText(GSON.toJson(it)) }`；
+//!   我方映射到 caches 配置键 `directLinkUploadRule`，为第三方加密产物保留
+//!   空密码解密回退）
 //! - 历史：`readRecord.json`、`searchHistory.json`
 //! - 设置：`readConfig.json`、`shareReadConfig.json`、`themeConfig.json`、`coverRule.json`、
-//!   `directLinkUploadRule.json`、`config.xml`、`videoConfig.xml`
+//!   `config.xml`、`videoConfig.xml`
 //! - 可选加密：`cookies.json`、`runtimeSourceCache.json`
 //! - 媒体：`covers/`（可含子目录）、`bg/`
 //!
@@ -46,8 +57,8 @@
 //! - `config.xml` 内的 `webDavPassword` 同密钥加密（本实现跳过整个偏好快照，见下）。
 //!
 //! 未映射项（本批登记，不静默）：`readConfig.json` / `shareReadConfig.json` /
-//! `themeConfig.json` / `coverRule.json` / `directLinkUploadRule.json` /
-//! `config.xml` / `videoConfig.xml` 与媒体目录 `covers/`、`bg/` 只记 warn 日志后跳过——
+//! `themeConfig.json` / `coverRule.json` / `config.xml` / `videoConfig.xml` 与
+//! 媒体目录 `covers/`、`bg/` 只记 warn 日志后跳过——
 //! 我方没有等价的阅读主题配置面或封面/背景落盘目录（封面按 URL 直取、不落本地
 //! `covers/`），恢复媒体会写到无人消费的目录并引入路径安全面；书内指向
 //! `.../covers/xxx` 的绝对封面路径按原版 remap 失败语义置空（回落到书源封面 URL）。
@@ -81,22 +92,26 @@ use legado_core::{LegadoError, LegadoResult};
 use legado_db::repository::Repository;
 use legado_db::{
     AutoTaskRepository, BookGroup, BookGroupRepository, BookRepository, BookSourceRepository,
-    BookmarkRepository, DictRule, DictRuleRepository, HighlightRepository, HighlightRuleRepository,
-    HttpTts, HttpTtsRepository, KeyboardAssist, KeyboardAssistRepository, ReadRecord,
-    ReadRecordRepository, ReplaceRuleRepository, RssSourceRepository, RssStarRecord,
+    BookmarkRepository, CacheRepository, DictRule, DictRuleRepository, HighlightRepository,
+    HighlightRuleRepository, HttpTts, HttpTtsRepository, KeyboardAssist, KeyboardAssistRepository,
+    ReadRecord, ReadRecordRepository, ReplaceRuleRepository, RssSourceRepository, RssStarRecord,
     RssStarRepository, RuleSubRecord, RuleSubRepository, SearchKeywordRepository, ServerRepository,
     TxtTocRuleRecord, TxtTocRuleRepository,
 };
 
+use crate::api::config_api::CONFIG_PREFIX;
 use crate::db_state::with_database;
 
 /// 当前备份格式版本（写入侧；恢复侧按字段兼容，不按版本分叉）
-pub const BACKUP_VERSION: i32 = 3;
+///
+/// v4（批16f）：新增 `directLinkUploadRule`（直链上传规则配置）。
+pub const BACKUP_VERSION: i32 = 4;
 
 /// 备份数据结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupData {
-    /// 备份版本（v1=初版六类；v2=扩表批十类；v3=servers 表，见模块注释的版本语义）
+    /// 备份版本（v1=初版六类；v2=扩表批十类；v3=servers 表；v4=直链上传规则，
+    /// 见模块注释的版本语义）
     #[serde(default = "default_version")]
     pub version: i32,
     /// 备份时间戳（毫秒）
@@ -164,6 +179,18 @@ pub struct BackupData {
     /// （BackupData 版本仍为 v3）。收到该键时按主键 `id` REPLACE 写入。
     #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "autoTasks")]
     pub auto_tasks: Vec<serde_json::Value>,
+    /// 直链上传规则（v4 新增，对齐原版 `directLinkUploadRule.json`）
+    ///
+    /// 值为 caches 配置键 `directLinkUploadRule` 的原始 JSON 文本（4 字段
+    /// camelCase 对象 `uploadUrl`/`downloadUrlRule`/`summary`/`compress`）。
+    /// 配置不存在或为空串时 `None`，序列化时省略该键（保持旧备份形状）；
+    /// 恢复时 `None` 或空值**不清库内既有配置**（对齐原版仅在该文件存在时写入）。
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        rename = "directLinkUploadRule"
+    )]
+    pub direct_link_upload_rule: Option<String>,
 }
 
 impl BackupData {
@@ -190,6 +217,7 @@ impl BackupData {
             keyboard_assists: Vec::new(),
             servers: Vec::new(),
             auto_tasks: Vec::new(),
+            direct_link_upload_rule: None,
         }
     }
 }
@@ -197,6 +225,44 @@ impl BackupData {
 fn default_version() -> i32 {
     // 旧备份（无 version 字段）按 v1 解析
     1
+}
+
+/// 直链上传规则的短配置键（对齐 Dart `DirectLinkUploadRuleService.configKey`）
+///
+/// 原版该规则存放在 `ACache.get(cacheDir=false)` 的 `directLinkUploadRule.json`；
+/// 我方落在 caches 表的 `config:` 前缀键，值同样是单个 JSON 对象文本。
+const DIRECT_LINK_UPLOAD_RULE_CONFIG_KEY: &str = "directLinkUploadRule";
+
+/// 直链上传规则在 caches 表的完整键（`config:directLinkUploadRule`）
+fn direct_link_upload_rule_cache_key() -> String {
+    format!("{CONFIG_PREFIX}{DIRECT_LINK_UPLOAD_RULE_CONFIG_KEY}")
+}
+
+/// 校验并归一待落库的直链上传规则文本
+///
+/// 口径对齐原版 `DirectLinkUpload.getConfig()`：只有 GSON 能解析成**对象**才算
+/// 有效规则（数组/null/标量都不是 Rule）。空白文本与非法 JSON 返回 `None`，
+/// 调用方只记 warn 并跳过——恢复其余数据不受影响（原版 `runCatching` 语义）。
+///
+/// 返回去除首尾空白后的原文（不重排字段、不丢弃未知键如原版 `expiryDate`），
+/// 保证「备份 → 恢复 → 再备份」逐字节稳定。
+fn normalize_direct_link_upload_rule(raw: &str) -> Option<&str> {
+    let text = raw.trim();
+    if text.is_empty() {
+        log::warn!("直链上传规则为空（已跳过，库内既有配置保持不变）");
+        return None;
+    }
+    match serde_json::from_str::<serde_json::Value>(text) {
+        Ok(serde_json::Value::Object(_)) => Some(text),
+        Ok(other) => {
+            log::warn!("直链上传规则不是 JSON 对象（已跳过，实际为 {other}）");
+            None
+        }
+        Err(e) => {
+            log::warn!("直链上传规则 JSON 解析失败（已跳过）: {e}");
+            None
+        }
+    }
 }
 
 /// 恢复统计
@@ -215,9 +281,9 @@ pub struct RestoreStats {
 
 /// 创建备份到指定路径
 ///
-/// 收集 BackupData 全部 17 类数据（v3 覆盖面，对齐原版 `Backup.kt:279-330`
-/// 中所有表已在库的类别 + `servers.json`），统一经各 repository 读取后模型序列化，
-/// 写入 JSON 文件，返回备份文件路径。
+/// 收集 BackupData 全部 18 类数据（v4 覆盖面，对齐原版 `Backup.kt:279-330`
+/// 中所有表已在库的类别 + `servers.json` + `directLinkUploadRule.json`），
+/// 统一经各 repository/配置仓储读取后模型序列化，写入 JSON 文件，返回备份文件路径。
 pub fn backup_create(path: &str) -> LegadoResult<String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -356,6 +422,12 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             .filter_map(|s| serde_json::to_value(&s).ok())
             .collect();
 
+        // 直链上传规则（v4：caches 配置键 `directLinkUploadRule` 的原始 JSON 文本）。
+        // 不存在/空串 → None（序列化时省略该键，备份形状保持旧版兼容）
+        let direct_link_upload_rule = CacheRepository::new(conn)
+            .get(&direct_link_upload_rule_cache_key())?
+            .filter(|raw| !raw.trim().is_empty());
+
         Ok(BackupData {
             version: BACKUP_VERSION,
             backup_time: now,
@@ -377,6 +449,7 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             keyboard_assists,
             servers,
             auto_tasks: Vec::new(),
+            direct_link_upload_rule,
         })
     })?;
 
@@ -521,7 +594,7 @@ const MAX_BACKUP_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_BACKUP_TOTAL_BYTES: u64 = 512 * 1024 * 1024;
 
 /// 原版 `Backup.kt` 写出的、本实现会读取的数据文件（其余条目不解压）
-const ZIP_DATA_FILES: [&str; 20] = [
+const ZIP_DATA_FILES: [&str; 21] = [
     "bookshelf.json",
     "bookmark.json",
     "highlight.json",
@@ -540,17 +613,18 @@ const ZIP_DATA_FILES: [&str; 20] = [
     "dictRule.json",
     "autoTask.json",
     "servers.json",
+    // 直链上传规则（批16f 映射：明文 JSON 对象 → caches 配置键 directLinkUploadRule）
+    "directLinkUploadRule.json",
     "cookies.json",
     "runtimeSourceCache.json",
 ];
 
 /// 原版 zip 内存在、但本实现无对应落库面的文件（只报告不落库，登记见模块注释）
-const ZIP_UNMAPPED_FILES: [&str; 7] = [
+const ZIP_UNMAPPED_FILES: [&str; 6] = [
     "readConfig.json",
     "shareReadConfig.json",
     "themeConfig.json",
     "coverRule.json",
-    "directLinkUploadRule.json",
     "config.xml",
     "videoConfig.xml",
 ];
@@ -814,6 +888,7 @@ fn backup_data_from_zip(archive: &ZipBackupArchive) -> (BackupData, ReplaceTable
     }
     data.auto_tasks = zip_json_array(archive, "autoTask.json").unwrap_or_default();
     data.servers = zip_servers(archive);
+    data.direct_link_upload_rule = zip_direct_link_upload_rule(archive);
     (data, replace_policy)
 }
 
@@ -1029,6 +1104,57 @@ fn zip_servers(archive: &ZipBackupArchive) -> Vec<serde_json::Value> {
             Vec::new()
         }
     }
+}
+
+/// 解析 `directLinkUploadRule.json`：原版以**明文** GSON 对象写出，直接取用
+///
+/// 证据（Android 原版与参考版一致）：`Backup.kt` 中该文件为
+/// `DirectLinkUpload.getConfig()?.let { ...writeText(GSON.toJson(it)) }`，
+/// **不经过** `BackupAES`（同文件内 `servers.json` / `cookies.json` 才调用 `aes`）。
+/// 为兼容第三方工具或历史加密产物，明文不是 JSON 对象时按原版空密码密钥尝试
+/// 解密一次（复用 `servers.json` 同一条 [`decrypt_backup_payload`] 流水线，
+/// 不另写解密实现）。
+///
+/// 文件缺失 / 空文件 / 解密失败 / 仍非 JSON 对象 → `None`（warn 跳过，
+/// 不清库内既有配置，对齐原版 `runCatching` 记日志后继续）。
+fn zip_direct_link_upload_rule(archive: &ZipBackupArchive) -> Option<String> {
+    const NAME: &str = "directLinkUploadRule.json";
+    let bytes = archive.files.get(NAME)?;
+    let text = decode_zip_text(NAME, bytes)?;
+    if text.is_empty() {
+        log::warn!("{NAME} 为空文件（已跳过，库内既有直链规则保持不变）");
+        return None;
+    }
+    if is_json_object_text(text) {
+        return Some(text.to_string());
+    }
+    // 非明文对象：尝试空密码解密（第三方加密产物），失败只 warn 跳过
+    match decrypt_backup_payload(text) {
+        Ok(plain) => {
+            let plain = plain.trim();
+            if is_json_object_text(plain) {
+                Some(plain.to_string())
+            } else {
+                log::warn!("{NAME} 解密后不是 JSON 对象（已跳过，库内既有直链规则保持不变）");
+                None
+            }
+        }
+        Err(e) => {
+            log::warn!(
+                "{NAME} 既不是明文 JSON 对象，也无法用空密码解密（已跳过，\
+                 库内既有直链规则保持不变）: {e}"
+            );
+            None
+        }
+    }
+}
+
+/// 文本是否为 JSON 对象（`{...}`；数组/标量/null 均不算）
+fn is_json_object_text(text: &str) -> bool {
+    matches!(
+        serde_json::from_str::<serde_json::Value>(text),
+        Ok(serde_json::Value::Object(_))
+    )
 }
 
 /// 原版 `BackupAES` 密钥派生：`MD5(password)` 小写十六进制串的前 16 个 ASCII 字节
@@ -1363,6 +1489,24 @@ fn restore_backup_in_tx(
                 }
             }
             Err(e) => log::warn!("恢复自动任务解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // 直链上传规则（v4：写回 caches 配置键）。
+    //
+    // 语义对齐原版 `Restore.kt:404-408`：仅当备份含该键（原版 zip 内该文件存在）
+    // 时写入 `ACache.put`；`None`（旧 v1~v3 备份）不触碰库内既有配置。
+    // 值须为合法 JSON 对象（Dart `DirectLinkUploadRuleService` 按对象解析），
+    // 空白/非法 JSON 只 warn 跳过，不中断整次恢复（原版 runCatching 语义）。
+    if let Some(rule) = backup.direct_link_upload_rule.as_deref() {
+        if let Some(rule) = normalize_direct_link_upload_rule(rule) {
+            if let Err(e) = CacheRepository::new(conn).put(
+                &direct_link_upload_rule_cache_key(),
+                rule,
+                0, // ttl=0 永不过期（与 config_api::set_config 一致）
+            ) {
+                log::warn!("恢复直链上传规则失败（已跳过）: {e}");
+            }
         }
     }
 
@@ -2614,7 +2758,10 @@ mod tests {
         // 验证 JSON 格式与版本
         let content = fs::read_to_string(&backup_path).unwrap();
         let data: BackupData = serde_json::from_str(&content).unwrap();
-        assert_eq!(data.version, BACKUP_VERSION, "新备份应携带当前格式版本 v3");
+        assert_eq!(
+            data.version, BACKUP_VERSION,
+            "新备份应携带当前格式版本（随 BACKUP_VERSION 常量走，不写死版本号）"
+        );
         assert!(data.backup_time > 0);
         assert!(
             content.contains("\"servers\""),
@@ -2787,6 +2934,209 @@ mod tests {
         assert_eq!(restored[0].id, 0);
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ─── 批16f：直链上传规则备份/恢复 ───────────────────────────────────
+
+    /// 直链规则种子（4 字段 camelCase，与 Dart `DirectLinkUploadRule.toJson` 同形；
+    /// uploadUrl 含原版 `url,{options}` 逗号选项形态）
+    const DIRECT_LINK_RULE_SEED: &str = r#"{"uploadUrl":"https://upload.example/api,{\"method\":\"POST\",\"body\":{\"file\":\"fileRequest\"}}","downloadUrlRule":"$.data.url","summary":"往返规则","compress":true}"#;
+
+    /// 读取 caches 中的直链规则配置（None 表示未配置）
+    fn read_direct_link_rule_config() -> Option<String> {
+        with_database(|db| {
+            CacheRepository::new(db.connection()).get(&direct_link_upload_rule_cache_key())
+        })
+        .unwrap()
+    }
+
+    /// 写入（Some）或删除（None）直链规则配置（**不走事务**，供测试预置/清库）
+    fn set_direct_link_rule_config(value: Option<&str>) {
+        with_database(|db| {
+            let repo = CacheRepository::new(db.connection());
+            match value {
+                Some(v) => repo.put(&direct_link_upload_rule_cache_key(), v, 0)?,
+                None => repo.delete(&direct_link_upload_rule_cache_key())?,
+            }
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+    }
+
+    /// 写一个临时备份 JSON 文件并返回 (目录, 路径)
+    fn write_json_backup_file(
+        dir_name: &str,
+        file_name: &str,
+        content: &str,
+    ) -> (std::path::PathBuf, String) {
+        let dir = std::env::temp_dir().join(dir_name);
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join(file_name);
+        fs::write(&path, content).unwrap();
+        let path_str = path.to_str().unwrap().to_string();
+        (dir, path_str)
+    }
+
+    /// [批16f] 自有 JSON 备份往返：配置 → backup_create 含 v4 字段 → 清库 → restore 恢复
+    #[test]
+    fn test_direct_link_upload_rule_backup_restore_roundtrip() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        set_direct_link_rule_config(Some(DIRECT_LINK_RULE_SEED));
+
+        let dir = std::env::temp_dir().join("legado_backup_roundtrip_direct_link");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("direct_link_roundtrip.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        assert_eq!(backup_create(path_str).unwrap(), path_str);
+
+        // 备份 JSON 携带 v4 键，且值与配置文本逐字节一致
+        let content = fs::read_to_string(&backup_path).unwrap();
+        let parsed: BackupData = serde_json::from_str(&content).unwrap();
+        assert_eq!(parsed.version, BACKUP_VERSION);
+        assert_eq!(
+            parsed.direct_link_upload_rule.as_deref(),
+            Some(DIRECT_LINK_RULE_SEED),
+            "备份应原样携带直链规则配置文本"
+        );
+        assert!(
+            content.contains("\"directLinkUploadRule\""),
+            "v4 备份应包含 directLinkUploadRule 字段：{content}"
+        );
+
+        // 清库 → 恢复 → 配置逐字节恢复
+        set_direct_link_rule_config(None);
+        assert!(read_direct_link_rule_config().is_none());
+
+        assert!(backup_restore(path_str).is_ok());
+        assert_eq!(
+            read_direct_link_rule_config().as_deref(),
+            Some(DIRECT_LINK_RULE_SEED),
+            "恢复后配置应与备份文本一致"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批16f] 配置缺失/空串时不写该键（备份形状保持旧版兼容）
+    #[test]
+    fn test_backup_without_direct_link_rule_omits_key() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_direct_link_absent");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("direct_link_absent.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        // 未配置 → 省略键
+        set_direct_link_rule_config(None);
+        assert!(backup_create(path_str).is_ok());
+        let content = fs::read_to_string(&backup_path).unwrap();
+        assert!(
+            !content.contains("\"directLinkUploadRule\""),
+            "未配置直链规则时不得写出该键：{content}"
+        );
+
+        // 空白值同样视为未配置 → 省略键
+        set_direct_link_rule_config(Some("   "));
+        assert!(backup_create(path_str).is_ok());
+        let content = fs::read_to_string(&backup_path).unwrap();
+        assert!(
+            !content.contains("\"directLinkUploadRule\""),
+            "空白直链规则不得写出该键：{content}"
+        );
+        let parsed: BackupData = serde_json::from_str(&content).unwrap();
+        assert!(parsed.direct_link_upload_rule.is_none());
+
+        set_direct_link_rule_config(None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批16f] 旧 v3 备份无该键：恢复不触碰库内既有直链配置
+    ///
+    /// 对齐原版 `Restore.kt:404-408`：仅当备份内 `directLinkUploadRule.json`
+    /// 存在时才 `ACache.put`；缺失即不处理（不 delete）。
+    #[test]
+    fn test_legacy_backup_without_direct_link_rule_keeps_existing_config() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        set_direct_link_rule_config(Some(DIRECT_LINK_RULE_SEED));
+
+        let (dir, path) = write_json_backup_file(
+            "legado_backup_legacy_no_direct_link",
+            "legacy_v3.json",
+            r#"{"version":3,"backupTime":1700000000000,"books":[],"bookSources":[]}"#,
+        );
+
+        // 解析应为 None（serde default）
+        let content = fs::read_to_string(&path).unwrap();
+        let parsed: BackupData = serde_json::from_str(&content).unwrap();
+        assert!(
+            parsed.direct_link_upload_rule.is_none(),
+            "旧 v3 备份缺该键应解析为 None"
+        );
+
+        assert!(backup_restore(&path).is_ok());
+        assert_eq!(
+            read_direct_link_rule_config().as_deref(),
+            Some(DIRECT_LINK_RULE_SEED),
+            "旧备份缺该键不得清空库内既有直链配置"
+        );
+
+        set_direct_link_rule_config(None);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批16f] 非法 JSON 值：warn 跳过且恢复整体成功（其余表照常落库）
+    #[test]
+    fn test_restore_invalid_direct_link_rule_skips_and_keeps_existing() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        set_direct_link_rule_config(Some(DIRECT_LINK_RULE_SEED));
+
+        let book = Book {
+            book_url: "https://direct-link.example/book".to_string(),
+            name: "直链书".to_string(),
+            author: "作者".to_string(),
+            ..Book::default()
+        };
+        for (file_name, invalid) in [
+            ("broken_syntax.json", "not-a-json"),
+            ("json_array.json", "[1,2,3]"),
+            ("json_null.json", "null"),
+        ] {
+            let backup_json = serde_json::json!({
+                "version": BACKUP_VERSION,
+                "books": [serde_json::to_value(&book).unwrap()],
+                "directLinkUploadRule": invalid,
+            });
+            let (dir, path) = write_json_backup_file(
+                "legado_backup_direct_link_invalid",
+                file_name,
+                &backup_json.to_string(),
+            );
+
+            let stats: RestoreStats =
+                serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+            assert_eq!(
+                stats.books, 1,
+                "非法直链规则不得影响其余表恢复（{file_name}）"
+            );
+            assert_eq!(
+                read_direct_link_rule_config().as_deref(),
+                Some(DIRECT_LINK_RULE_SEED),
+                "非法直链规则应跳过并保留库内既有配置（{file_name}）"
+            );
+
+            let _ = fs::remove_dir_all(&dir);
+        }
+
+        set_direct_link_rule_config(None);
     }
 
     #[test]
@@ -3405,6 +3755,109 @@ mod tests {
         assert_eq!(servers[0].name, "明文服务器");
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批16f] 原版 zip 映射：`directLinkUploadRule.json` → caches 配置键
+    ///
+    /// 原版 `Backup.kt` 以 `GSON.toJson` **明文**写出（未走 `BackupAES`），
+    /// `Restore.kt:404-408` 解出后 `ACache.put`；我方映射到
+    /// `config:directLinkUploadRule`（Dart `DirectLinkUploadRuleService.configKey`）。
+    /// 第二段覆盖第三方/历史加密产物的空密码解密回退（同一解密流水线）。
+    #[test]
+    fn test_restore_zip_maps_direct_link_upload_rule_to_config() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        set_direct_link_rule_config(None);
+
+        // 明文（真实原版形态）
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_direct_link_plain",
+            &[(
+                "directLinkUploadRule.json",
+                DIRECT_LINK_RULE_SEED.as_bytes(),
+            )],
+        );
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.books, 0);
+        assert_eq!(
+            read_direct_link_rule_config().as_deref(),
+            Some(DIRECT_LINK_RULE_SEED),
+            "zip 内明文直链规则应映射到 config 键"
+        );
+        let _ = fs::remove_dir_all(&dir);
+
+        // 加密回退（Base64 + AES-128-ECB/PKCS7，空密码派生密钥）
+        let ciphertext =
+            AesCrypto::encrypt_ecb(&backup_aes_key(""), DIRECT_LINK_RULE_SEED.as_bytes()).unwrap();
+        let encrypted = base64::engine::general_purpose::STANDARD.encode(ciphertext);
+        set_direct_link_rule_config(None);
+        let (dir_enc, path_enc) = write_upstream_backup_zip(
+            "legado_restore_zip_direct_link_encrypted",
+            &[("directLinkUploadRule.json", encrypted.as_bytes())],
+        );
+        assert!(backup_restore(&path_enc).is_ok());
+        assert_eq!(
+            read_direct_link_rule_config().as_deref(),
+            Some(DIRECT_LINK_RULE_SEED),
+            "加密直链规则应按空密码密钥解出并写入 config"
+        );
+        let _ = fs::remove_dir_all(&dir_enc);
+
+        set_direct_link_rule_config(None);
+    }
+
+    /// [批16f] 空文件/空白内容/空串/null：跳过且不清库内既有直链配置
+    #[test]
+    fn test_restore_empty_direct_link_rule_skipped() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        set_direct_link_rule_config(Some(DIRECT_LINK_RULE_SEED));
+
+        // zip：空文件与纯空白内容
+        for (dir_name, bytes) in [
+            ("legado_restore_zip_direct_link_empty_file", b"".as_slice()),
+            (
+                "legado_restore_zip_direct_link_blank",
+                b"  \n\t ".as_slice(),
+            ),
+        ] {
+            let (dir, path) =
+                write_upstream_backup_zip(dir_name, &[("directLinkUploadRule.json", bytes)]);
+            let stats: RestoreStats =
+                serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+            assert_eq!(stats.books, 0, "{dir_name} 应整体恢复成功");
+            assert_eq!(
+                read_direct_link_rule_config().as_deref(),
+                Some(DIRECT_LINK_RULE_SEED),
+                "{dir_name} 空内容不得清空库内既有配置"
+            );
+            let _ = fs::remove_dir_all(&dir);
+        }
+
+        // 自有 JSON：空串与 null 同样跳过
+        for (file_name, value) in [
+            ("empty_string.json", serde_json::json!("")),
+            ("null_value.json", serde_json::Value::Null),
+        ] {
+            let backup_json = serde_json::json!({
+                "version": BACKUP_VERSION,
+                "directLinkUploadRule": value,
+            });
+            let (dir, path) = write_json_backup_file(
+                "legado_backup_direct_link_empty",
+                file_name,
+                &backup_json.to_string(),
+            );
+            assert!(backup_restore(&path).is_ok(), "{file_name} 应整体恢复成功");
+            assert_eq!(
+                read_direct_link_rule_config().as_deref(),
+                Some(DIRECT_LINK_RULE_SEED),
+                "{file_name} 空值不得清空库内既有配置"
+            );
+            let _ = fs::remove_dir_all(&dir);
+        }
+
+        set_direct_link_rule_config(None);
     }
 
     /// [批9 回修 P2-5] 本机既有记录 + zip 备份记录 → 恢复后单行且较新者胜

@@ -10,7 +10,10 @@ use legado_db::CacheRepository;
 use crate::db_state::with_database;
 
 /// 配置键前缀
-const CONFIG_PREFIX: &str = "config:";
+///
+/// `pub(crate)`：备份模块（`backup_api`）读写 `directLinkUploadRule` 配置时复用
+/// 同一前缀，避免键格式在两处漂移。
+pub(crate) const CONFIG_PREFIX: &str = "config:";
 
 /// 读配置行失败的一次性告警标记（高频路径，避免逐行刷屏）
 static CONFIG_ROW_FAIL_WARNED: AtomicBool = AtomicBool::new(false);
