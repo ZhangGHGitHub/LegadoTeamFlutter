@@ -1,4 +1,4 @@
-//! RSS 抓取引擎（批15a 默认解析等价 + 批15b 规则列表/分类/登录/分页）
+//! RSS 抓取引擎（批15a 默认解析等价 + 批15b 规则列表/分类/登录/分页 + 批15c 正文）
 //!
 //! 对齐原版 `Rss.getArticlesAwait`（`Rss.kt:39-84`）的列表请求编排：
 //!
@@ -7,7 +7,7 @@
 //!   → loginCheckJs 检测 → RssParserByRule.parseXML → List<RssArticle> + nextUrl
 //! ```
 //!
-//! ## 本批范围（15a + 15b）
+//! ## 本批范围（15a + 15b + 15c）
 //!
 //! - **默认解析**（15a）：原版 `RssParserByRule.parseXML` 在 `ruleArticles`
 //!   为空/空白时走 `RssParserDefault`（`RssParserByRule.kt:32-41`；解析本体在
@@ -17,11 +17,13 @@
 //!   `parse_atom`（登记见 `docs/REFACTORING_ACTIVE_PLAN.md` 批15 拆分）；
 //! - **规则列表 / 分类 / 登录 / 分页**（15b）：[`parser_rule`] 对齐
 //!   `RssParserByRule.kt:22-140`，[`sort_urls`] 对齐
-//!   `RssSourceExtensions.kt:49-113`，[`login`] 对齐 `Rss.kt:57-81`。
+//!   `RssSourceExtensions.kt:49-113`，[`login`] 对齐 `Rss.kt:57-81`；
+//! - **正文规则 / 正文分页**（15c）：[`content`] 对齐 `Rss.kt:99-242`
+//!   （`ruleContent` 求值、`nextContentUrl` 单链顺序 / 多链保序并发、`"\n"`
+//!   拼接；写回由宿主 FFI 完成）。
 //!
 //! ## 后续批次
 //!
-//! - 15c：正文规则（`ruleContent` / `nextContentUrl`）与正文分页；
 //! - 15d：Dart 分类/分页/搜索 UI 收敛；
 //! - 15e：服务端 `/rssSourceDebug` 接引擎；
 //! - 15f：singleUrl / WebView / 图片 header 等增强。
@@ -32,8 +34,10 @@
 //! - [`default_parser`]：默认解析到中立结构的映射
 //! - [`parser_rule`]：规则列表解析与 `ruleNextPage`
 //! - [`sort_urls`]：分类 `sortUrl` 解析、脚本求值与缓存
-//! - [`login`]：`loginCheckJs` 成功/失败两路检测
+//! - [`login`]：`loginCheckJs` 成功/失败两路检测（列表与正文共用）
+//! - [`content`]：正文规则求值与正文分页
 
+pub mod content;
 pub mod default_parser;
 pub mod login;
 pub mod models;
@@ -123,62 +127,11 @@ pub async fn fetch_articles(
         effective_login_info,
     )?);
 
-    let has_check_js = source
-        .login_check_js
-        .as_deref()
-        .map(|js| !js.trim().is_empty())
-        .unwrap_or(false);
     let request_url = analyze_url.url().to_string();
 
-    // [Rss.kt:57-81] 成功/失败两路 loginCheckJs 检测
-    let response = match request::fetch_list(client, &analyze_url, headers).await {
-        Ok(resp) => {
-            if !has_check_js {
-                resp
-            } else {
-                match login::apply_success_check(source, &resp, setup_script.clone()) {
-                    Ok(checked) => checked,
-                    Err(first_err) => {
-                        // 首检失败：errResponse（code 500）二次 eval
-                        match login::apply_error_check(
-                            source,
-                            &first_err,
-                            &request_url,
-                            setup_script.clone(),
-                        ) {
-                            Ok(Some(second)) => second,
-                            Ok(None) => {
-                                return Err(LegadoError::LoginRequired(format!(
-                                    "RSS 源需要登录，请先在订阅源菜单中登录后重试（{first_err}）"
-                                )))
-                            }
-                            Err(second_err) => {
-                                return Err(LegadoError::LoginRequired(format!(
-                                    "RSS 源需要登录，请先在订阅源菜单中登录后重试（{first_err}；二次检测失败: {second_err}）"
-                                )))
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        Err(fetch_err) => {
-            if !has_check_js {
-                return Err(fetch_err);
-            }
-            // 原始请求失败：errResponse（code 500）交给 checkJs（自动登录场景）
-            match login::apply_error_check(
-                source,
-                &fetch_err.to_string(),
-                &request_url,
-                setup_script.clone(),
-            ) {
-                Ok(Some(second)) => second,
-                // 二次仍 500 / 二次执行失败 → 重抛原始错误（对齐 throw throwable）
-                Ok(None) | Err(_) => return Err(fetch_err),
-            }
-        }
-    };
+    // [Rss.kt:57-81] 成功/失败两路 loginCheckJs 检测（列表与正文共用门控）
+    let fetched = request::fetch_list(client, &analyze_url, headers).await;
+    let response = login::gate_login(source, &request_url, setup_script.clone(), fetched)?;
 
     // 对齐原版 `RssParserByRule.parseXML`：body 空白 → 报错（不伪造摘要）
     if response.body.trim().is_empty() {

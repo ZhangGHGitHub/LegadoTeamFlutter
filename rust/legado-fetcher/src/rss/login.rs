@@ -18,9 +18,80 @@
 //! 与纯数据对象两态；其余完成值 → cast 失败）。
 
 use legado_core::models::RssSource;
+use legado_core::{LegadoError, LegadoResult};
 use legado_js::login_check::{LoginCheckEvalError, LoginCheckResponse};
 
 use super::request::RssListResponse;
+
+/// 源是否配置了非空白 `loginCheckJs`
+///
+/// 原版判定为 `!checkJs.isNullOrBlank()`（`Rss.kt:60/188`），列表与正文页
+/// 共用同一入口。
+pub fn has_login_check(source: &RssSource) -> bool {
+    source
+        .login_check_js
+        .as_deref()
+        .map(|js| !js.trim().is_empty())
+        .unwrap_or(false)
+}
+
+/// 请求结果统一登录门控（列表与正文页共用，对齐 `Rss.kt:57-81 / 186-209`）
+///
+/// 输入是「已完成的一次请求」（`Ok` 成功响应 / `Err` 请求失败），输出是
+/// 经 `loginCheckJs` 判定后的响应：
+///
+/// - 无 checkJs：`Ok` 直通、`Err` 直通；
+/// - 成功响应：以响应三元组执行 checkJs，采用返回（可能被修改）的响应；
+///   首检失败时按 `getErrStrResponse`（code 500）二次 eval，二次非 500 则
+///   采用二次结果，仍 500 / 二次执行失败 → `LoginRequired`；
+/// - 请求失败：以错误文本构造 code 500 的 errResponse 二次 eval，二次
+///   非 500 则采用（自动登录等场景），否则重抛**原始请求错误**（对齐
+///   `throw throwable`）。
+///
+/// 调用方负责在请求前完成同源门控与 header/setup 构造（见
+/// [`super::request::source_headers_with_login`]）。
+pub fn gate_login(
+    source: &RssSource,
+    request_url: &str,
+    setup_script: Option<String>,
+    fetched: LegadoResult<RssListResponse>,
+) -> LegadoResult<RssListResponse> {
+    if !has_login_check(source) {
+        return fetched;
+    }
+    match fetched {
+        Ok(resp) => match apply_success_check(source, &resp, setup_script.clone()) {
+            Ok(checked) => Ok(checked),
+            Err(first_err) => match apply_error_check(
+                source,
+                &first_err,
+                request_url,
+                setup_script.clone(),
+            ) {
+                Ok(Some(second)) => Ok(second),
+                Ok(None) => Err(LegadoError::LoginRequired(format!(
+                    "RSS 源需要登录，请先在订阅源菜单中登录后重试（{first_err}）"
+                ))),
+                Err(second_err) => Err(LegadoError::LoginRequired(format!(
+                    "RSS 源需要登录，请先在订阅源菜单中登录后重试（{first_err}；二次检测失败: {second_err}）"
+                ))),
+            },
+        },
+        Err(fetch_err) => {
+            // 原始请求失败：errResponse（code 500）交给 checkJs（自动登录场景）
+            match apply_error_check(
+                source,
+                &fetch_err.to_string(),
+                request_url,
+                setup_script.clone(),
+            ) {
+                Ok(Some(second)) => Ok(second),
+                // 二次仍 500 / 二次执行失败 → 重抛原始错误（对齐 throw throwable）
+                Ok(None) | Err(_) => Err(fetch_err),
+            }
+        }
+    }
+}
 
 /// 成功响应路径的登录检测
 ///

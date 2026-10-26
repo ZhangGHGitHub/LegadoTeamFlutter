@@ -492,6 +492,104 @@ pub fn rss_load_more_articles(
     serialize_page(fetched, has_more)
 }
 
+/// 拉取 RSS 文章正文并写回（契约 §2.5 `rssFetchContent`，批15c）
+///
+/// 对齐原版 `ReadRssViewModel.loadContent`（`ReadRssViewModel.kt:153-168`）：
+///
+/// ```text
+/// Rss.getContent(rssArticle, rssSource.ruleContent, rssSource)
+///   .onSuccess(IO) { body ->
+///     rssArticle.description = body; rssArticleDao.insert(rssArticle)
+///     rssStar?.let { it.description = body; rssStarDao.insert(it) }
+///   }
+/// ```
+///
+/// 1. 源不存在 → `Err`（与批15b 列表方法同口径）；
+/// 2. `ruleContent` 空/空白 → `Ok("")`（不发请求；原版调用方在此前已短路）；
+/// 3. 按 `(origin, link[, sort])` 从 `rssArticles` 取文章行：`type` 参与正文
+///    分页门控、`variable` 作为正文规则 `@get` 初值、行本身是写回目标；
+///    行不存在（如阅读历史入口）按 `type = 0` 处理且跳过文章写回（对齐原版
+///    内存态 `RssArticle(origin, title, title, link = openUrl)`）；
+/// 4. 引擎抓取（[`legado_fetcher::rss::content::fetch_content`]）：失败（首屏/
+///    任一后续页/登录检测）→ `Err`；正文为空 → `Ok("")`；
+/// 5. 成功后写回 `rssArticles.description` 与 `rssStars.description`（仅
+///    `(origin, link)` 已收藏行）。**已登记差异**：写回失败只 `warn`，正文
+///    仍返回（原版写库异常会让整次加载显示失败）。
+pub fn rss_fetch_content(source_url: &str, link: &str, sort: Option<&str>) -> LegadoResult<String> {
+    if link.trim().is_empty() {
+        return Err(LegadoError::Ffi("RSS 文章链接不能为空".into()));
+    }
+    let source =
+        load_rss_source(source_url)?.ok_or_else(|| LegadoError::Database("RSS 源不存在".into()))?;
+
+    // [ReadRssViewModel.kt:52-58] 正文规则空白时原版不会进入 loadContent
+    let rule_content = source.rule_content.as_deref().unwrap_or("");
+    if rule_content.trim().is_empty() {
+        return Ok(String::new());
+    }
+
+    // 文章行：type / variable / 写回目标（按 link 精确匹配；sort 给定时再收窄）
+    let article = with_database(|db| {
+        let repo = legado_db::RssArticleRepository::new(db.connection());
+        // 复用既有按源查询（本批不改 rssArticles 仓库）：RSS 单源文章量小，
+        // 逐行筛 link/sort 的 O(n) 成本可接受。
+        let rows = repo.find_by_source(source_url, i32::MAX)?;
+        Ok(rows.into_iter().find(|row| {
+            row.link.as_deref() == Some(link) && sort.map(|s| row.sort == s).unwrap_or(true)
+        }))
+    })?;
+    let article_type = article.as_ref().map(|row| row.article_type).unwrap_or(0);
+    let article_variable = article.as_ref().and_then(|row| row.variable.clone());
+
+    // 登录头 / 用户信息：内存缓存优先、DB 兜底（同源门控在引擎内完成）
+    let login_header = crate::api::source_login_cache::get_login_header(&source.source_url);
+    let login_info = crate::api::source_login_cache::get_login_info(&source.source_url);
+
+    let content = runtime::block_on(async {
+        let client = crate::http_state::shared_client()?;
+        legado_fetcher::rss::content::fetch_content(
+            &client,
+            &source,
+            link,
+            article_type,
+            article_variable.as_deref(),
+            login_header.as_deref(),
+            login_info.as_deref(),
+        )
+        .await
+    })?;
+
+    // [ReadRssViewModel.kt:157-162] 写回文章描述（REPLACE 全行，保留 order/read 等）
+    if let Some(mut record) = article {
+        record.description = Some(content.clone());
+        if let Err(e) = with_database(|db| {
+            legado_db::RssArticleRepository::new(db.connection()).insert(&record)
+        }) {
+            log::warn!("RSS 正文写回文章描述失败（{source_url}, {link}）: {e}");
+        }
+    } else {
+        log::debug!("RSS 文章不在库中，跳过正文写回（{source_url}, {link}）");
+    }
+
+    // [ReadRssViewModel.kt:159-162] 已收藏时同步收藏描述（未收藏不写）
+    match with_database(|db| {
+        legado_db::RssStarRepository::new(db.connection()).find_by_key(&source.source_url, link)
+    }) {
+        Ok(Some(mut star)) => {
+            star.description = Some(content.clone());
+            if let Err(e) = with_database(|db| {
+                legado_db::RssStarRepository::new(db.connection()).add_star(&star)
+            }) {
+                log::warn!("RSS 正文写回收藏描述失败（{source_url}, {link}）: {e}");
+            }
+        }
+        Ok(None) => {}
+        Err(e) => log::warn!("RSS 收藏查询失败，跳过正文写回（{source_url}, {link}）: {e}"),
+    }
+
+    Ok(content)
+}
+
 /// 列表页 → 契约 JSON 载荷
 fn serialize_page(page: legado_fetcher::rss::RssListPage, has_more: bool) -> LegadoResult<String> {
     let payload = RssArticlesPagePayload {

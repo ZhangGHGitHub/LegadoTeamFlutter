@@ -1037,6 +1037,25 @@ pub mod ffi {
         )?)
     }
 
+    /// 拉取 RSS 文章正文（契约 §2.5 `rssFetchContent`，2026-10-26 批15c，加法式）
+    ///
+    /// 对齐 `ReadRssViewModel.loadContent` + `Rss.getContentAwait`：按源
+    /// `ruleContent` 抓取 `link`，`nextContentUrl` 多页拼接（单链顺序 / 多链
+    /// 保序并发），成功后写回 `rssArticles.description` 与 `rssStars.description`。
+    /// `sort` 用于 `(origin, link, sort)` 主键定位写回行、并取出文章 `type`
+    /// 参与分页门控（缺省按 link 取首行，对齐原版 `getByLink`）。
+    pub fn rss_fetch_content(
+        source_url: String,
+        link: String,
+        sort: Option<String>,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::rss::rss_fetch_content(
+            &source_url,
+            &link,
+            sort.as_deref(),
+        )?)
+    }
+
     // ─── RSS 收藏 ────────────────────────────────────────
 
     /// 获取所有 RSS 收藏（JSON 数组）

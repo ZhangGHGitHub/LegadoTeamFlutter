@@ -102,6 +102,30 @@ impl<'a> RssStarRepository<'a> {
         Ok(())
     }
 
+    /// 按 `(origin, link)` 查询收藏（对齐原版 `RssStarDao.get(origin, link)`）
+    ///
+    /// 供 RSS 正文写回（批15c）定位已收藏行：原版 `ReadRssViewModel.loadContent`
+    /// 取到 `rssStar` 后把正文写进收藏的 `description`；未收藏（`None`）时
+    /// 不写收藏表。
+    pub fn find_by_key(&self, origin: &str, link: &str) -> LegadoResult<Option<RssStarRecord>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT origin, sort, title, starTime, link, pubDate, description,
+                        content, image, \"group\", variable, type, durPos
+                 FROM rssStars WHERE origin = ?1 AND link = ?2",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备收藏查询失败: {e}")))?;
+        let mut rows = stmt
+            .query_map(params![origin, link], row_to_star)
+            .map_err(|e| LegadoError::Database(format!("查询收藏失败: {e}")))?;
+        match rows.next() {
+            Some(Ok(row)) => Ok(Some(row)),
+            Some(Err(e)) => Err(LegadoError::Database(format!("查询收藏失败: {e}"))),
+            None => Ok(None),
+        }
+    }
+
     /// 判断是否已收藏（按 link 匹配）
     pub fn is_starred(&self, link: &str) -> LegadoResult<bool> {
         let count: i64 = self
@@ -278,5 +302,35 @@ mod tests {
         assert_eq!(all[0].group, "默认分组");
         assert_eq!(all[0].star_type, 0);
         assert_eq!(all[0].dur_pos, 0);
+    }
+
+    /// 批15c：`find_by_key(origin, link)` 命中/未命中（RSS 正文写回定位收藏行）
+    #[test]
+    fn test_find_by_key() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssStarRepository::new(db.connection());
+        let mut star = make_star("https://rss.com", "S1", 100);
+        star.description = Some("旧描述".to_string());
+        repo.add_star(&star).unwrap();
+
+        let hit = repo
+            .find_by_key("https://rss.com", "https://link.com/S1")
+            .unwrap()
+            .expect("应命中收藏");
+        assert_eq!(hit.title, "S1");
+        assert_eq!(hit.description.as_deref(), Some("旧描述"));
+
+        assert!(
+            repo.find_by_key("https://rss.com", "https://link.com/不存在")
+                .unwrap()
+                .is_none(),
+            "不同 link 不得命中"
+        );
+        assert!(
+            repo.find_by_key("https://other.com", "https://link.com/S1")
+                .unwrap()
+                .is_none(),
+            "不同 origin 不得命中"
+        );
     }
 }
