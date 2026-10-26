@@ -21,6 +21,7 @@ fn make_test_state() -> Arc<AppState> {
         db: Mutex::new(db),
         search_cancelled: Arc::new(AtomicBool::new(false)),
         download_manager: Mutex::new(DownloadManager::new(3)),
+        injected_paths: Default::default(),
     })
 }
 

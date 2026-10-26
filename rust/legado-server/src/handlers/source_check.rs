@@ -160,6 +160,7 @@ mod tests {
             download_manager: tokio::sync::Mutex::new(
                 legado_core::download_manager::DownloadManager::new(3),
             ),
+            injected_paths: Default::default(),
         })
     }
 

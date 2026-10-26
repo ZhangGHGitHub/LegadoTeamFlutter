@@ -37,6 +37,7 @@ fn make_test_state() -> Arc<AppState> {
         db: Mutex::new(db),
         search_cancelled: Arc::new(AtomicBool::new(false)),
         download_manager: Mutex::new(DownloadManager::new(3)),
+        injected_paths: Default::default(),
     })
 }
 
@@ -1358,4 +1359,545 @@ async fn test_survey_content_local_book_succeeds() {
     );
 
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+// ---------------------------------------------------------------------------
+// B3 写端点：POST /saveBook、/deleteBook、/addLocalBook + 图片缓存根白名单
+// （原版依据：HttpServer.kt:88-94/246-258 + BookController.kt:251-330；
+//   vue 请求形态：assets/web/uploadBook/js/html5_fun.js:137-139）
+// ---------------------------------------------------------------------------
+
+/// 带「任意字节体」的 POST（multipart 场景；响应一律为 ReturnData JSON）
+async fn post_bytes(
+    app: axum::Router,
+    uri: &str,
+    content_type: &str,
+    body: Vec<u8>,
+) -> (StatusCode, Value) {
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri(uri)
+                .header("Content-Type", content_type)
+                .body(Body::from(body))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    let status = resp.status();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
+}
+
+const MP_BOUNDARY: &str = "XLegadoTestBoundaryB3";
+
+/// multipart 文本字段（对齐 vue `fd.append("fileName", file.name)`）
+fn mp_text(name: &str, value: &str) -> Vec<u8> {
+    format!("--{MP_BOUNDARY}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n")
+        .into_bytes()
+}
+
+/// multipart 文件字段（对齐 vue `fd.append("fileData", file)`）
+fn mp_file(name: &str, filename: &str, bytes: &[u8]) -> Vec<u8> {
+    let mut v = format!(
+        "--{MP_BOUNDARY}\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{filename}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+    )
+    .into_bytes();
+    v.extend_from_slice(bytes);
+    v.extend_from_slice(b"\r\n");
+    v
+}
+
+fn mp_finish() -> Vec<u8> {
+    format!("--{MP_BOUNDARY}--\r\n").into_bytes()
+}
+
+fn mp_content_type() -> String {
+    format!("multipart/form-data; boundary={MP_BOUNDARY}")
+}
+
+/// 注入路径可配的测试状态（B3：图片缓存根 / 本地书保存根）
+fn make_test_state_with_paths(
+    image_cache_root: Option<std::path::PathBuf>,
+    local_book_root: Option<std::path::PathBuf>,
+) -> Arc<AppState> {
+    let db = legado_db::init_in_memory_database().unwrap();
+    Arc::new(AppState {
+        db: Mutex::new(db),
+        search_cancelled: Arc::new(AtomicBool::new(false)),
+        download_manager: Mutex::new(DownloadManager::new(3)),
+        injected_paths: legado_server::state::InjectedPaths {
+            image_cache_root,
+            local_book_root,
+        },
+    })
+}
+
+/// vue 书架页保存书的正例 + upsert：整 Book 对象载荷（含 Book 未知的
+/// `respondTime` 键，Gson/serde 均应忽略；BookShelf-*.js `respondTime in e` 判定）
+#[tokio::test]
+async fn test_save_book_upsert_and_bookshelf_visible() {
+    let app = create_router(make_test_state());
+    let body = json!({
+        "bookUrl": "https://src.example.com/book/9",
+        "origin": "https://src.example.com",
+        "originName": "测试书源",
+        "name": "网页保存书",
+        "author": "作者甲",
+        "respondTime": 123
+    })
+    .to_string();
+    let (status, rd) = post_bytes(
+        app.clone(),
+        "/saveBook",
+        "application/json",
+        body.into_bytes(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], "", "原版 setData(\"\")");
+
+    // getBookshelf 立即可见（vue 保存后回书架刷新）
+    let (_, shelf) = get_json(app.clone(), "/getBookshelf").await;
+    assert_eq!(shelf["isSuccess"], true);
+    let arr = shelf["data"].as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["bookUrl"], "https://src.example.com/book/9");
+    assert_eq!(arr[0]["name"], "网页保存书");
+
+    // upsert：同 bookUrl 改书名重存（对齐 Book.save() has→update else insert）
+    let body2 = json!({
+        "bookUrl": "https://src.example.com/book/9",
+        "name": "改名后的书",
+        "author": "作者甲"
+    })
+    .to_string();
+    let (_, rd2) = post_bytes(
+        app.clone(),
+        "/saveBook",
+        "application/json",
+        body2.into_bytes(),
+    )
+    .await;
+    assert_eq!(rd2["isSuccess"], true, "rd2={rd2}");
+    let (_, shelf2) = get_json(app, "/getBookshelf").await;
+    let arr2 = shelf2["data"].as_array().unwrap();
+    assert_eq!(arr2.len(), 1, "同 bookUrl 重存不得重复成行");
+    assert_eq!(arr2[0]["name"], "改名后的书");
+}
+
+/// 解析失败 → 「格式不对」（对齐 fromJsonObject getOrNull 失败分支）
+#[tokio::test]
+async fn test_save_book_bad_format() {
+    let app = create_router(make_test_state());
+    for body in ["", "not-json", "[1,2]", "null"] {
+        let (_, rd) = post_bytes(
+            app.clone(),
+            "/saveBook",
+            "application/json",
+            body.as_bytes().to_vec(),
+        )
+        .await;
+        assert_eq!(rd["isSuccess"], false, "body={body} rd={rd}");
+        assert_eq!(rd["errorMsg"], "格式不对", "body={body}");
+        assert!(rd["data"].is_null());
+    }
+}
+
+/// B-3 登记：saveBook 更新分支不回滚进度列（我方 update 结构性排除进度四列；
+/// 原版 Room @Update 全列覆盖——载荷为陈旧快照，覆盖会丢 App 侧新进度）
+#[tokio::test]
+async fn test_save_book_does_not_rollback_progress() {
+    let state = make_test_state();
+    {
+        let db = state.db.lock().await;
+        let repo = BookRepository::new(db.connection());
+        repo.insert(&Book {
+            book_url: "https://src.example.com/book/7".to_string(),
+            origin: "https://src.example.com".to_string(),
+            name: "进度书".to_string(),
+            author: "作者".to_string(),
+            ..Book::default()
+        })
+        .unwrap();
+        repo.update_progress(
+            "https://src.example.com/book/7",
+            3,
+            15,
+            Some("第三章"),
+            1_700_000_000_000,
+        )
+        .unwrap();
+    }
+    let app = create_router(state.clone());
+    let body = json!({
+        "bookUrl": "https://src.example.com/book/7",
+        "name": "进度书",
+        "durChapterIndex": 0,
+        "durChapterPos": 0
+    })
+    .to_string();
+    let (_, rd) = post_bytes(app, "/saveBook", "application/json", body.into_bytes()).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+
+    // 进度列保持库内值（App 侧新进度不被 web 陈旧快照覆盖）
+    {
+        let db = state.db.lock().await;
+        let book = BookRepository::new(db.connection())
+            .find_by_url("https://src.example.com/book/7")
+            .unwrap()
+            .unwrap();
+        assert_eq!(book.dur_chapter_index, 3, "进度不得被快照回滚");
+        assert_eq!(book.dur_chapter_pos, 15);
+    }
+}
+
+/// POST /deleteBook：按主键删行 + 章节外键级联（对齐 Room onDelete=CASCADE）
+#[tokio::test]
+async fn test_delete_book_removes_row_and_cascades_chapters() {
+    let state = make_test_state();
+    {
+        let db = state.db.lock().await;
+        let repo = BookRepository::new(db.connection());
+        repo.insert(&Book {
+            book_url: "https://src.example.com/book/8".to_string(),
+            origin: "https://src.example.com".to_string(),
+            name: "待删书".to_string(),
+            author: "作者".to_string(),
+            ..Book::default()
+        })
+        .unwrap();
+        let chapters: Vec<BookChapter> = (0..2)
+            .map(|i| BookChapter {
+                url: format!("u8/ch{i}"),
+                title: format!("第{i}章"),
+                book_url: "https://src.example.com/book/8".to_string(),
+                base_url: "https://src.example.com/book/8".to_string(),
+                index: i,
+                ..BookChapter::default()
+            })
+            .collect();
+        BookChapterRepository::new(db.connection())
+            .insert_batch(&chapters)
+            .unwrap();
+    }
+    let app = create_router(state.clone());
+    let body = json!({ "bookUrl": "https://src.example.com/book/8" }).to_string();
+    let (_, rd) = post_bytes(
+        app.clone(),
+        "/deleteBook",
+        "application/json",
+        body.into_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], "");
+
+    // 书架空（原版空书架文案）
+    let (_, shelf) = get_json(app, "/getBookshelf").await;
+    assert_eq!(shelf["isSuccess"], false);
+    assert_eq!(shelf["errorMsg"], "还没有添加小说");
+    // 章节级联清空（cached_chapters 无外键、原版文件缓存同样残留，不在此断言）
+    {
+        let db = state.db.lock().await;
+        assert!(BookChapterRepository::new(db.connection())
+            .find_by_book_url("https://src.example.com/book/8")
+            .unwrap()
+            .is_empty());
+    }
+}
+
+/// POST /deleteBook 解析失败 → 「格式不对」
+#[tokio::test]
+async fn test_delete_book_bad_format() {
+    let app = create_router(make_test_state());
+    let (_, rd) = post_bytes(app, "/deleteBook", "application/json", b"not-json".to_vec()).await;
+    assert_eq!(rd["isSuccess"], false);
+    assert_eq!(rd["errorMsg"], "格式不对");
+}
+
+/// 鉴权对照（原版 HttpServer.kt:246-258）：三写端点不在
+/// PROTECTED_SOURCE_WRITE_ROUTES，**无 X-Legado-Token 也必须成功**
+/// （vue 客户端令牌集合亦不含三者；B4 的书源写端点才有令牌面）
+#[tokio::test]
+async fn test_write_endpoints_require_no_token() {
+    let app = create_router(make_test_state());
+    let save_body =
+        json!({"bookUrl": "https://src.example.com/book/nt", "name": "无令牌书"}).to_string();
+    let (_, rd) = post_bytes(
+        app.clone(),
+        "/saveBook",
+        "application/json",
+        save_body.into_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "无令牌 saveBook 应成功 rd={rd}");
+    let del_body = json!({"bookUrl": "https://src.example.com/book/nt"}).to_string();
+    let (_, rd2) = post_bytes(
+        app,
+        "/deleteBook",
+        "application/json",
+        del_body.into_bytes(),
+    )
+    .await;
+    assert_eq!(rd2["isSuccess"], true, "无令牌 deleteBook 应成功 rd2={rd2}");
+}
+
+/// addLocalBook 正例（真实 vue 形态 multipart：fileName + fileData）→
+/// 落盘 + 书架可见（书名来自文件名解析）+ 目录可解析
+#[tokio::test]
+async fn test_add_local_book_success_end_to_end() {
+    let fx = CoverFixture::new("b3-upload-e2e");
+    let state = make_test_state_with_paths(None, Some(fx.path("books")));
+    let app = create_router(state);
+    let txt = "第一章 开始\n这是正文内容。\n";
+    let mut body = mp_text("fileName", "测试之书.txt");
+    body.extend(mp_file("fileData", "测试之书.txt", txt.as_bytes()));
+    body.extend(mp_finish());
+    let (_, rd) = post_bytes(app.clone(), "/addLocalBook", &mp_content_type(), body).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], true, "原版 setData(true)");
+
+    // 文件落盘（根目录/测试之书.txt，字节一致）
+    let saved = fx.path("books").join("测试之书.txt");
+    assert!(saved.exists(), "文件应落盘到保存根");
+    assert_eq!(std::fs::read(&saved).unwrap(), txt.as_bytes());
+
+    // 书架可见：书名 = 文件名解析（analyzeNameAuthor）、order = minOrder-1 = -1
+    let (_, shelf) = get_json(app.clone(), "/getBookshelf").await;
+    let arr = shelf["data"].as_array().unwrap();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(arr[0]["name"], "测试之书");
+    assert_eq!(arr[0]["originName"], "测试之书.txt");
+    assert_eq!(arr[0]["order"], -1, "minOrder(空表0)-1");
+    assert!(
+        arr[0]["bookUrl"]
+            .as_str()
+            .unwrap_or_default()
+            .ends_with("测试之书.txt"),
+        "bookUrl 应为落盘路径：{}",
+        arr[0]["bookUrl"]
+    );
+
+    // 目录可解析（txt 本地解析链）
+    let (_, toc) = get_json(
+        app,
+        &format!("/getChapterList?url={}", enc(&saved.to_string_lossy())),
+    )
+    .await;
+    assert_eq!(toc["isSuccess"], true, "toc={toc}");
+    assert!(
+        toc["data"]
+            .as_array()
+            .map(|a| !a.is_empty())
+            .unwrap_or(false),
+        "上传的 txt 应解析出章节"
+    );
+}
+
+/// addLocalBook：fileName 缺失 → 「fileName 不能为空」（原版 :311-312）
+#[tokio::test]
+async fn test_add_local_book_requires_file_name() {
+    let state = make_test_state_with_paths(None, Some(std::env::temp_dir()));
+    let app = create_router(state);
+    let mut body = mp_file("fileData", "x.txt", b"data");
+    body.extend(mp_finish());
+    let (_, rd) = post_bytes(app, "/addLocalBook", &mp_content_type(), body).await;
+    assert_eq!(rd["isSuccess"], false, "rd={rd}");
+    assert_eq!(rd["errorMsg"], "fileName 不能为空");
+}
+
+/// addLocalBook：fileName 走 query 参数回退（原版 session.parameters 双来源）
+#[tokio::test]
+async fn test_add_local_book_file_name_via_query_param() {
+    let fx = CoverFixture::new("b3-upload-query");
+    let state = make_test_state_with_paths(None, Some(fx.path("books")));
+    let app = create_router(state);
+    let mut body = mp_file("fileData", "查询书.txt", "第一章 q\n内容\n".as_bytes());
+    body.extend(mp_finish());
+    let uri = format!("/addLocalBook?fileName={}", enc("查询书.txt"));
+    let (_, rd) = post_bytes(app, &uri, &mp_content_type(), body).await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert!(fx.path("books").join("查询书.txt").exists());
+}
+
+/// addLocalBook：fileName 路径逃逸类形态 → 「fileName 格式不正确」
+///（requireSafeUploadedBookFileName 对齐：分隔符/盘符/相对段）
+#[tokio::test]
+async fn test_add_local_book_rejects_unsafe_file_name() {
+    let state = make_test_state_with_paths(None, Some(std::env::temp_dir()));
+    let app = create_router(state);
+    for name in [
+        "../evil.txt",
+        "..\\evil.txt",
+        "a/b.txt",
+        "a\\b.txt",
+        "C:evil.txt",
+        ".",
+    ] {
+        let mut body = mp_text("fileName", name);
+        body.extend(mp_file("fileData", "x.txt", b"z"));
+        body.extend(mp_finish());
+        let (_, rd) = post_bytes(app.clone(), "/addLocalBook", &mp_content_type(), body).await;
+        assert_eq!(rd["isSuccess"], false, "name={name} rd={rd}");
+        assert_eq!(rd["errorMsg"], "fileName 格式不正确", "name={name}");
+    }
+}
+
+/// addLocalBook：fileData 缺失 → 「fileData 不能为空」（原版 :318-319）
+#[tokio::test]
+async fn test_add_local_book_requires_file_data() {
+    let state = make_test_state_with_paths(None, Some(std::env::temp_dir()));
+    let app = create_router(state);
+    let mut body = mp_text("fileName", "a.txt");
+    body.extend(mp_finish());
+    let (_, rd) = post_bytes(app, "/addLocalBook", &mp_content_type(), body).await;
+    assert_eq!(rd["isSuccess"], false, "rd={rd}");
+    assert_eq!(rd["errorMsg"], "fileData 不能为空");
+}
+
+/// addLocalBook：扩展名白名单（封堵口径：原版服务端无、按解析器支持集从严）
+#[tokio::test]
+async fn test_add_local_book_rejects_disallowed_ext() {
+    let fx = CoverFixture::new("b3-upload-ext");
+    let state = make_test_state_with_paths(None, Some(fx.path("books")));
+    let app = create_router(state);
+    let mut body = mp_text("fileName", "evil.exe");
+    body.extend(mp_file("fileData", "evil.exe", b"MZ"));
+    body.extend(mp_finish());
+    let (_, rd) = post_bytes(app, "/addLocalBook", &mp_content_type(), body).await;
+    assert_eq!(rd["isSuccess"], false, "rd={rd}");
+    assert!(
+        rd["errorMsg"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("保存书籍错误"),
+        "rd={rd}"
+    );
+    assert!(
+        !fx.path("books").join("evil.exe").exists(),
+        "白名单外不得落盘"
+    );
+}
+
+/// addLocalBook：空文件 → 「保存书籍错误\nUnexpected empty File」
+///（EmptyFileException，LocalBook.kt:287）
+#[tokio::test]
+async fn test_add_local_book_rejects_empty_file() {
+    let fx = CoverFixture::new("b3-upload-empty");
+    let state = make_test_state_with_paths(None, Some(fx.path("books")));
+    let app = create_router(state);
+    let mut body = mp_text("fileName", "empty.txt");
+    body.extend(mp_file("fileData", "empty.txt", b""));
+    body.extend(mp_finish());
+    let (_, rd) = post_bytes(app, "/addLocalBook", &mp_content_type(), body).await;
+    assert_eq!(rd["isSuccess"], false, "rd={rd}");
+    assert_eq!(rd["errorMsg"], "保存书籍错误\nUnexpected empty File");
+}
+
+/// addLocalBook：未注入本地书保存根 → 对齐原版「未设置书籍保存位置」
+///（NoBooksDirException 文案，values-zh strings.xml:1399）
+#[tokio::test]
+async fn test_add_local_book_without_root_errors() {
+    let app = create_router(make_test_state());
+    let mut body = mp_text("fileName", "a.txt");
+    body.extend(mp_file("fileData", "a.txt", b"data"));
+    body.extend(mp_finish());
+    let (_, rd) = post_bytes(app, "/addLocalBook", &mp_content_type(), body).await;
+    assert_eq!(rd["isSuccess"], false, "rd={rd}");
+    assert_eq!(rd["errorMsg"], "保存书籍错误\n没有设置书籍保存位置!");
+}
+
+/// addLocalBook：同名文件重复上传 → 更新链（行不重复、文件覆盖、成功）
+#[tokio::test]
+async fn test_add_local_book_reupload_updates_existing() {
+    let fx = CoverFixture::new("b3-upload-reup");
+    let state = make_test_state_with_paths(None, Some(fx.path("books")));
+    let app = create_router(state.clone());
+    for (idx, content) in ["第一版第一章\n甲\n", "第二版第一章\n乙\n"]
+        .iter()
+        .enumerate()
+    {
+        let mut body = mp_text("fileName", "重传书.txt");
+        body.extend(mp_file("fileData", "重传书.txt", content.as_bytes()));
+        body.extend(mp_finish());
+        let (_, rd) = post_bytes(app.clone(), "/addLocalBook", &mp_content_type(), body).await;
+        assert_eq!(rd["isSuccess"], true, "第{}次上传 rd={rd}", idx + 1);
+    }
+    // 书仅一行（importFile 更新链：行保持不变、删旧目录）
+    assert_eq!(
+        {
+            let db = state.db.lock().await;
+            BookRepository::new(db.connection()).count().unwrap()
+        },
+        1
+    );
+    // 文件被第二次上传覆盖
+    let saved = fx.path("books").join("重传书.txt");
+    assert_eq!(
+        std::fs::read(&saved).unwrap(),
+        "第二版第一章\n乙\n".as_bytes()
+    );
+}
+
+/// addLocalBook：同名同作者冲突 → 「书架中已存在同名同作者书籍：…」
+///（insertIgnore -1 分支文案，values-zh strings.xml:519）
+#[tokio::test]
+async fn test_add_local_book_identity_conflict() {
+    let fx = CoverFixture::new("b3-upload-conflict");
+    let state = make_test_state_with_paths(None, Some(fx.path("books")));
+    {
+        let db = state.db.lock().await;
+        BookRepository::new(db.connection())
+            .insert(&Book {
+                book_url: "https://elsewhere/book".to_string(),
+                name: "同名书".to_string(),
+                author: String::new(),
+                ..Book::default()
+            })
+            .unwrap();
+    }
+    let app = create_router(state);
+    let mut body = mp_text("fileName", "同名书.txt");
+    body.extend(mp_file(
+        "fileData",
+        "同名书.txt",
+        "第一章 x\ny\n".as_bytes(),
+    ));
+    body.extend(mp_finish());
+    let (_, rd) = post_bytes(app, "/addLocalBook", &mp_content_type(), body).await;
+    assert_eq!(rd["isSuccess"], false, "rd={rd}");
+    assert_eq!(
+        rd["errorMsg"], "书架中已存在同名同作者书籍：同名书 / ",
+        "rd={rd}"
+    );
+}
+
+/// 图片缓存根注入白名单（B3 登记）：注入根内的缓存图片可经 /cover 读取；
+/// 注入不改变白名单外路径的拒绝行为
+#[tokio::test]
+async fn test_cover_allows_injected_image_cache_root() {
+    let fx = CoverFixture::new("b3-imgcache");
+    let png = png_bytes(b"b3-cache-root-payload");
+    let cached = fx.write("bookdir/images/abc.png", &png);
+    let state = make_test_state_with_paths(Some(fx.root.clone()), None);
+    let app = create_router(state);
+    let uri = format!("/cover?path={}", enc(&cached));
+    let (status, headers, body) = get(app.clone(), &uri).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(header_str(&headers, "content-type"), "image/png");
+    assert_eq!(body, png, "注入缓存根内的图片应可读");
+
+    // 白名单外目录（未登记、未注入）仍然拒绝
+    let outside = CoverFixture::new("b3-imgcache-outside");
+    let secret = outside.write("x.png", &png_bytes(b"secret"));
+    let (_, _, body2) = get(app, &format!("/cover?path={}", enc(&secret))).await;
+    assert_local_read_rejected(&body2, b"secret", "白名单外路径");
 }

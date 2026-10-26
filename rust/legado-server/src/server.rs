@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 
 use crate::handlers;
 use crate::routes::create_router;
-use crate::state::AppState;
+use crate::state::{AppState, InjectedPaths};
 use legado_core::download_manager::DownloadManager;
 
 /// 对齐原版 `McpAccess.TOKEN_HEADER`
@@ -70,14 +70,36 @@ pub async fn start_server_with_db(
 /// 差异仅在监听器由调用方持有：FFI 路径在 spawn 前同步
 /// `TcpListener::bind`（失败即同步 Err，消除「假成功」，对齐
 /// `serve_mcp` 形态），成功后把已绑定的 listener 交给本函数 serve。
+///
+/// 本签名**保持不变**（FFI `server_start` 零改动），注入路径取
+/// [`InjectedPaths::default`]（空）；需要注入图片缓存根 / 本地书保存根的
+/// 调用方（FFI 接线批）改用 [`serve_web_with_injected_paths`]。
 pub async fn serve_web(
     listener: tokio::net::TcpListener,
     db: legado_db::Database,
+) -> Result<(), Box<dyn std::error::Error>> {
+    serve_web_with_injected_paths(listener, db, InjectedPaths::default()).await
+}
+
+/// [`serve_web`] 的宿主路径注入变体（B3，ACTIVE_PLAN「FFI 图片缓存根注入
+/// 白名单」登记项的接收端）
+///
+/// `injected_paths` 语义见 [`InjectedPaths`]：FFI 在 spawn 服务任务前把
+/// 图片缓存根（`image_cache_api` 的缓存根）与本地书保存根一并传入。当前
+/// FFI 侧接线**未做**（`legado-ffi/src/api/server_api.rs::server_start` 仍走
+/// [`serve_web`]，legado-ffi 属本批禁改范围）——按防复发规定登记为
+/// 「预留（未接线）」，接线批需在 `server_start` 启动前读取缓存根并改调
+/// 本函数（届时 `image_cache_api` 需补一个缓存根读取入口）。
+pub async fn serve_web_with_injected_paths(
+    listener: tokio::net::TcpListener,
+    db: legado_db::Database,
+    injected_paths: InjectedPaths,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let state = Arc::new(AppState {
         db: Mutex::new(db),
         search_cancelled: Arc::new(AtomicBool::new(false)),
         download_manager: Mutex::new(DownloadManager::new(3)),
+        injected_paths,
     });
 
     let router = create_router(state);
@@ -157,6 +179,7 @@ pub async fn serve_mcp(
         db: Mutex::new(db),
         search_cancelled: Arc::new(AtomicBool::new(false)),
         download_manager: Mutex::new(DownloadManager::new(3)),
+        injected_paths: Default::default(),
     });
 
     let router = create_mcp_router(state, Arc::new(expected_token));
@@ -208,6 +231,7 @@ mod tests {
             db: Mutex::new(db),
             search_cancelled: Arc::new(AtomicBool::new(false)),
             download_manager: Mutex::new(DownloadManager::new(3)),
+            injected_paths: Default::default(),
         });
         let router = create_router(state);
 

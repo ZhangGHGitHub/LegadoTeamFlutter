@@ -18,9 +18,25 @@
 //! | GET `/cover?path=` | `BookController.getCover`（:88-113） | 图片代理（网络 URL 直取；本地路径经白名单：目录 + 扩展名 + 魔数） |
 //! | GET `/image?path=&url=&width=` | `BookController.getImg`（:118-140） | 正文图片代理（本地路径同 `/cover` 白名单） |
 //!
-//! 未纳入本批（下一批 B3/B4）：`/saveBook`、`/deleteBook`、`/addLocalBook`
-//! （写端点）、书源/订阅源/替换规则/HTTP 日志系列、`/refreshToc` 独立入口、
-//! WebSocket（port+1）。
+//! B3 批（2026-10-26）新增写端点：
+//!
+//! | 端点 | 原版实现 | 备注 |
+//! |---|---|---|
+//! | POST `/saveBook` | `BookController.saveBook`（:251-259） | Book JSON upsert（`Book.save()` Book.kt:467-473）；**无令牌**（HttpServer.kt:246-258 保护清单不含） |
+//! | POST `/deleteBook` | `BookController.deleteBook`（:264-271） | 按主键删行（章节外键级联）；**无令牌** |
+//! | POST `/addLocalBook` | `BookController.addLocalBook`（:306-330） | multipart（fileName+fileData）→ 落盘 → importFile 链；**无令牌**；安全封堵登记见 book_api.rs |
+//!
+//! 图片缓存根注入白名单（ACTIVE_PLAN「FFI 图片缓存根注入白名单」登记项）：
+//! `/cover`、`/image` 本地白名单纳入宿主注入的 FFI 图片缓存根
+//! （[`crate::state::InjectedPaths`]，构造期注入），FFI 接线登记未接线
+//! （server.rs）。
+//!
+//! 未纳入（B4：管理读+令牌 7——getBookSource(s)/getRssSource(s)/
+//! getReplaceRules/getJsSourceApiTokenRequired/getHttpLog(s)；B5：段评
+//! legacy 6 与 WS 原版路径别名 port+1 `/bookSourceDebug`）——按 ACTIVE_PLAN
+//! L804 口径，勿按本注释旧 B3/B4 编号（2026-10-26 审计 §四-6 修正）。
+//! 书源/订阅源/替换规则/HTTP 日志写端点（saveBookSources 等）属 B4 同域
+//! 令牌面，亦未纳入。`/refreshToc` 独立入口未纳入。
 //!
 //! 大列表响应：原版对 List 元素 > 3000 的响应走 chunked 流式 JSON
 //! （HttpServer.kt:183-194）；axum 的 body 天然流式，本实现直接整包序列化，
@@ -126,6 +142,18 @@ pub fn legacy_routes() -> Router<Arc<AppState>> {
         .route("/saveReadConfig", post(book_api::save_read_config))
         .route("/cover", get(book_api::get_cover))
         .route("/image", get(book_api::get_image))
+        // B3 写端点（无令牌，对齐原版 PROTECTED_SOURCE_WRITE_ROUTES 不含三者）
+        .route("/saveBook", post(book_api::save_book))
+        .route("/deleteBook", post(book_api::delete_book))
+        // addLocalBook 单独挂载以放宽 body 上限（axum 默认 2MB 会拒传书；
+        // 上限 = 500MB 文件上限 + 1MB multipart 开销余量）
+        .merge(
+            Router::new()
+                .route("/addLocalBook", post(book_api::add_local_book))
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    book_api::UPLOAD_MAX_BYTES as usize + 1024 * 1024,
+                )),
+        )
 }
 
 #[cfg(test)]

@@ -436,6 +436,7 @@ mod tests {
             db: Mutex::new(db),
             search_cancelled: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             download_manager: Mutex::new(DownloadManager::new(3)),
+            injected_paths: Default::default(),
         })
     }
 

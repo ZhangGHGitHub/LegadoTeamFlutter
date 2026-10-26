@@ -12,15 +12,18 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use axum::body::Bytes;
+use axum::extract::multipart::{Field, Multipart, MultipartRejection};
 use axum::extract::{Query, State};
 use axum::http::HeaderMap;
 use axum::response::Response;
+use regex::Regex;
 use serde::Deserialize;
 use serde_json::Value;
 
+use legado_book::{BookFormat, LocalBook};
 use legado_core::cache_book::CachedChapter;
 use legado_core::content_processor::{
     ContentProcessor, ProcessorConfig, ReplaceRuleEntry, ScopeContext,
@@ -36,6 +39,7 @@ use legado_db::repository::replace_rule_repository::ReplaceRuleRepository;
 use legado_db::repository::Repository;
 use legado_db::BookSourceRepository;
 use legado_net::{LegadoClient, LegadoClientConfig};
+use tokio::io::AsyncWriteExt;
 
 use super::book_json::{LegacyBook, LegacyBookChapter};
 use super::{bytes_response, origin_of, to_response, ReturnData};
@@ -787,19 +791,22 @@ fn canonical_local_path(raw: &str) -> Option<PathBuf> {
     std::fs::canonicalize(path).ok()
 }
 
-/// 采集允许本地读取的路径白名单（全部来自 `books` 表真实登记值）
+/// 采集允许本地读取的路径白名单（全部来自 `books` 表真实登记值 + 宿主注入根）
 ///
 /// - 本地书（对齐 `Book.isLocal`）正文文件所在**目录**：目录前缀放行
 ///   （本地书目录内的图片属书库内容，含 manga 分目录形态）；
-/// - `coverUrl` / `customCoverUrl` 指向的本地**文件**：精确放行（用户自选封面）。
+/// - `coverUrl` / `customCoverUrl` 指向的本地**文件**：精确放行（用户自选封面）；
+/// - 宿主注入的**图片缓存根**（`AppState.injected_paths.image_cache_root`，
+///   FFI `image_cache_api` 的磁盘缓存目录，结构 `{root}/{书目录}/images/`）：
+///   目录前缀放行——原版 `/cover`、`/image` 的本地路径运行在 Android 沙箱内，
+///   `BookHelp` 图片缓存对渲染层天然可读；Rust 侧以白名单等价该沙箱语义
+///   （B3，ACTIVE_PLAN「FFI 图片缓存根注入白名单」登记项落地）。
 ///
-/// 说明（不虚构目录）：Android 端封面缓存（`BookHelp.saveImage` 的
-/// `downloadDir/book_cache/{folderName}/covers|images`）与 FFI 图片缓存根
-/// （`legado-ffi/src/api/image_cache_api.rs`，Dart 经 `set_image_cache_dir`
-/// 注入后由 `set_cache_dir` 持有）均不在本白名单内——二者属 `legado-ffi`
-/// crate，依赖方向为 `legado-ffi → legado-server`，server 侧不可反向引用；
-/// 且原版 Web 阅读页封面/正文图走的是书籍 `coverUrl`/正文图片 URL，不消费该
-/// 缓存。若要纳入，需由 FFI 在构造服务时注入目录（跨 crate 改动，另批裁决）。
+/// 原始登记（2026-10 Web 页对齐批）：图片缓存根属 `legado-ffi` crate，依赖
+/// 方向 `legado-ffi → legado-server`，server 不可反向引用，需由 FFI 在构造
+/// 服务时注入目录——本批落地为 [`crate::state::InjectedPaths`] 构造期注入，
+/// FFI 接线（`server_start` 改调 `serve_web_with_injected_paths`）登记为
+/// 未接线（见 server.rs 注释），未注入时本白名单与既有行为完全一致。
 ///
 /// 性能：每次本地读取查一次 `books` 单表（仅对本地封面做 canonicalize），
 /// 书架页并发取封面时可接受；若后续成为热点可加短 TTL 缓存。
@@ -833,6 +840,12 @@ async fn local_read_allowlist(state: &Arc<AppState>) -> Vec<PathBuf> {
                 roots.push(file);
             }
         }
+    }
+    // 宿主注入的图片缓存根：canonicalize 对齐（根目录可能尚不存在——FFI 侧
+    // 首次写缓存时才建目录——失败则按注入原值参与前缀比对）
+    if let Some(root) = &state.injected_paths.image_cache_root {
+        let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| root.clone());
+        roots.push(canonical);
     }
     roots
 }
@@ -902,6 +915,652 @@ fn guess_image_mime(bytes: &[u8], path: &str) -> String {
         _ => "application/octet-stream",
     }
     .to_string()
+}
+
+// ---------------------------------------------------------------------------
+// B3 写端点：POST /saveBook、/deleteBook、/addLocalBook
+//
+// 原版依据（HttpServer.kt:88-94 分派 → BookController.kt:251-330）：
+// - 三端点**不在** PROTECTED_SOURCE_WRITE_ROUTES（HttpServer.kt:246-258）令牌
+//   保护清单内，也无 saveJsSource 式专项校验 → 原版不要求 `x-legado-token`，
+//   本实现同样不做令牌校验（vue 客户端拦截器集合亦不含三者，见
+//   `assets/web/vue/assets/index-*.js` 的 token 集合）；
+// - 请求体经 NanoHTTPD `parseBody` 后以 `files["postData"]` 原文传入
+//   （非 multipart 的 JSON body 原样可取），与 /saveBookProgress 同构，
+//   故按原始字节解析、不校验 Content-Type。
+// ---------------------------------------------------------------------------
+
+/// `/addLocalBook` 上传大小上限（500MB）
+///
+/// 原版服务端无大小限制（BookController.addLocalBook 直接落盘）；vue 传书页
+/// 客户端限制 `fileLimitSize = 500 * 1024 * 1024`
+/// （`assets/web/uploadBook/js/common.js:9`）。按我方封堵口径对齐客户端限制
+/// 从严设为服务端上限（登记差异：原版服务端不限）。pub 供路由注册处计算
+/// body 上限（legacy/mod.rs）。
+pub const UPLOAD_MAX_BYTES: u64 = 500 * 1024 * 1024;
+
+/// `/addLocalBook` 扩展名白名单 = 既有 [`LOCAL_BOOK_EXTS`] + `.umd`
+///
+/// 原版服务端无扩展名白名单（客户端 JS 白名单 `fileTypes =
+/// "txt|epub|umd|pdf|mobi|azw3|azw"`，common.js:6）；本实现按 `legado_book`
+/// 解析器支持集（`LocalBook::detect_format`：epub/txt(.text)/mobi(.azw/.azw3)/
+/// pdf/umd/cbz）从严收口（登记差异：原版服务端不限、由解析链自然拒绝）。
+const UPLOAD_BOOK_EXTS: &[&str] = &[
+    ".epub", ".txt", ".text", ".mobi", ".azw", ".azw3", ".pdf", ".cbz", ".umd",
+];
+
+/// 上传文件名安全校验（逐条对齐原版 `requireSafeUploadedBookFileName`，
+/// BookController.kt:39-48）：空白 / `.` / `..` / 含 `/` 或 `\` / Windows 盘符
+/// 前缀 `^[A-Za-z]:` / ISO 控制字符 → 不安全。
+fn require_safe_uploaded_book_file_name(file_name: &str) -> bool {
+    if file_name.is_empty() || file_name.trim().is_empty() {
+        return false;
+    }
+    if file_name == "." || file_name == ".." {
+        return false;
+    }
+    if file_name.contains('/') || file_name.contains('\\') {
+        return false;
+    }
+    if windows_drive_prefix().is_match(file_name) {
+        return false;
+    }
+    if file_name.chars().any(|c| c.is_control()) {
+        return false;
+    }
+    true
+}
+
+/// Windows 盘符前缀（BookController.kt:37 `^[A-Za-z]:`）
+fn windows_drive_prefix() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new("^[A-Za-z]:").expect("盘符正则编译失败"))
+}
+
+/// 上传扩展名白名单判定（忽略大小写，取文件名末段后缀）
+fn is_allowed_upload_ext(file_name: &str) -> bool {
+    let lower = file_name.to_lowercase();
+    UPLOAD_BOOK_EXTS.iter().any(|ext| lower.ends_with(ext))
+}
+
+/// 文件名解析书名/作者（对齐原版 `LocalBook.analyzeNameAuthor`，
+/// LocalBook.kt:450-488）
+///
+/// 登记差异：原版先执行用户自定义文件名规则脚本
+/// （`AppConfig.bookImportFileName`，JS 引擎），Rust Web 服务无该配置桥，
+/// 固定跳过该分支（与书架排序默认分支同款登记口径）。
+fn analyze_name_author(file_name: &str) -> (String, String) {
+    // `substringBeforeLast(".")`：无点号时取全名
+    let temp = match file_name.rsplit_once('.') {
+        Some((stem, _)) if !stem.is_empty() => stem.to_string(),
+        _ => file_name.to_string(),
+    };
+    for pattern in name_author_patterns() {
+        if let Some(caps) = pattern.captures(&temp) {
+            let name = caps
+                .get(2)
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_default();
+            let group1 = caps.get(1).map(|m| m.as_str()).unwrap_or("");
+            let group3 = caps.get(3).map(|m| m.as_str()).unwrap_or("");
+            let author = format_book_author(&format!("{group1}{group3}"));
+            return (name, author);
+        }
+    }
+    let name = format_book_name(&temp);
+    let author = format_book_author(&temp.replace(&name, ""));
+    // 原版 `takeIf { it.length != tempFileName.length } ?: ""`：净化后长度
+    // 未变（即规则未剥出作者痕迹）→ 作者置空
+    let author = if author.chars().count() == temp.chars().count() {
+        String::new()
+    } else {
+        author
+    };
+    (name, author)
+}
+
+/// 原版 `nameAuthorPatterns`（LocalBook.kt:114-119）
+fn name_author_patterns() -> &'static [Regex] {
+    static PATTERNS: OnceLock<Vec<Regex>> = OnceLock::new();
+    PATTERNS.get_or_init(|| {
+        [
+            "(.*?)《([^《》]+)》.*?作者：(.*)",
+            "(.*?)《([^《》]+)》(.*)",
+            "(^)(.+) 作者：(.+)$",
+            "(^)(.+) by (.+)$",
+        ]
+        .iter()
+        .map(|p| Regex::new(p).expect("文件名解析正则编译失败"))
+        .collect()
+    })
+}
+
+/// `BookHelp.formatBookName`（BookHelp.kt:629-633；`AppPattern.nameRegex`，
+/// AppPattern.kt:32）
+fn format_book_name(name: &str) -> String {
+    name_regex()
+        .replace_all(name, "")
+        .trim_matches(|c: char| c <= ' ')
+        .to_string()
+}
+
+/// `BookHelp.formatBookAuthor`（BookHelp.kt:638-642；`AppPattern.authorRegex`，
+/// AppPattern.kt:33）
+fn format_book_author(author: &str) -> String {
+    author_regex()
+        .replace_all(author, "")
+        .trim_matches(|c: char| c <= ' ')
+        .to_string()
+}
+
+fn name_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"\s+作\s*者.*|\s+\S+\s+著").expect("书名净化正则编译失败"))
+}
+
+fn author_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new(r"^\s*作\s*者[:：\s]+|\s+著").expect("作者净化正则编译失败"))
+}
+
+/// 原版 `appDb.bookDao.minOrder`（BookDao.kt:199-200，`select min("order")
+/// from books`；空表 NULL → Room 映射 0）
+///
+/// 复用既有 `BookRepository::find_all`（单实现原则：不为单端点下沉新
+/// repository 方法），空书架回 0。
+fn min_order(repo: &BookRepository<'_>) -> i32 {
+    repo.find_all()
+        .map(|books| books.iter().map(|b| b.order).min().unwrap_or(0))
+        .unwrap_or(0)
+}
+
+/// 文件修改时间 → 毫秒时间戳（对齐 `FileDoc.lastModified` 作为
+/// `latestChapterTime`；失败回 0）
+fn file_mtime_millis(path: &Path) -> i64 {
+    path.metadata()
+        .ok()
+        .and_then(|m| m.modified().ok())
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Windows `\\?\` verbatim 前缀剥除
+///
+/// Rust `std::fs::canonicalize` 在 Windows 返回 verbatim 路径
+///（`\\?\C:\...` / `\\?\UNC\server\share`）；原版入库的 bookUrl 是
+/// `File.canonicalFile` 的用户可见形态（无 verbatim 前缀），且后续本地
+/// 解析链（`LocalBook::get_chapters` 等）按 bookUrl 找文件需与宿主可见
+/// 路径一致。非 verbatim 路径原样返回。
+fn normalize_verbatim(path: PathBuf) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(rest) = s.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{rest}"));
+    }
+    if let Some(rest) = s.strip_prefix(r"\\?\") {
+        return PathBuf::from(rest.to_string());
+    }
+    path
+}
+
+// ---------------------------------------------------------------------------
+// POST /saveBook
+// ---------------------------------------------------------------------------
+
+/// POST `/saveBook` — 保存书籍（BookController.kt:251-259）
+///
+/// 原版语义：`GSON.fromJsonObject<Book>(postData)` 解析失败（null/坏 JSON/
+/// 形态不符）→ errorMsg「格式不对」；成功则 `book.save()`（Book.kt:467-473，
+/// `has(bookUrl) → update else insert` 的 upsert）→ `setData("")`。
+///
+/// 我方复用 [`BookRepository::insert`]（既有 upsert 实现：按 bookUrl 判存在
+/// → 原地全列 UPDATE / 冲突迁移 / 直插，语义同 Kotlin `Book.save()`）。
+///
+/// 登记差异：
+/// 1. 原版附带 `AppWebDav.uploadBookProgress(book)` 云端上传，未做（与
+///    `/saveBookProgress` 批登记口径一致）；
+/// 2. 更新分支走我方 `update` 的 [B-3] 结构性语义：进度四列
+///    （durChapterIndex/Pos/Title/Time）不被请求快照回滚（原版 Room `@Update`
+///    全列覆盖——web 端载荷为打开书架时的陈旧快照，覆盖会丢 App 侧新进度）；
+/// 3. Gson 对未知字段宽容忽略（vue 搜索书载荷含 `respondTime` 等非 Book 键），
+///    serde 默认同样忽略未知字段；类型不符显式报「格式不对」（防复发第 4 条）。
+pub async fn save_book(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let origin = origin_of(&headers);
+    let parsed: Option<Book> = serde_json::from_slice(&body).ok();
+    let result: Result<Value, String> = match parsed {
+        None => Err("格式不对".to_string()),
+        Some(book) => {
+            let db = state.db.lock().await;
+            BookRepository::new(db.connection())
+                .insert(&book)
+                .map(|_| Value::String(String::new()))
+                .map_err(|e| e.to_string())
+        }
+    };
+    let rd = match result {
+        Ok(data) => ReturnData::success(data),
+        Err(msg) => ReturnData::error(msg),
+    };
+    to_response(&rd, "/saveBook", origin.as_deref())
+}
+
+// ---------------------------------------------------------------------------
+// POST /deleteBook
+// ---------------------------------------------------------------------------
+
+/// POST `/deleteBook` — 删除书籍（BookController.kt:264-271）
+///
+/// 原版语义：解析 Book 失败 → 「格式不对」；成功则 `book.delete()`
+/// （Book.kt:475-480）= 仅 `appDb.bookDao.delete(this)` 按主键删行（书不存在
+/// 时删 0 行亦成功；原版书籍文件/封面缓存清理属 App UI 链
+/// `LocalBook.deleteBook`，Web 端点不做）。我方复用
+/// [`BookRepository::delete_by_url`]；章节经外键
+/// `ON DELETE CASCADE`（schema.rs 与原版 Room `BookChapter.ForeignKey`
+/// 级联一致）随行删除。
+///
+/// 登记差异：`ReadBook.book = null` 为原版 App 进程内存态，Web 服务无对应物。
+pub async fn delete_book(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let origin = origin_of(&headers);
+    let parsed: Option<Book> = serde_json::from_slice(&body).ok();
+    let result: Result<Value, String> = match parsed {
+        None => Err("格式不对".to_string()),
+        Some(book) => {
+            let db = state.db.lock().await;
+            BookRepository::new(db.connection())
+                .delete_by_url(&book.book_url)
+                .map(|_| Value::String(String::new()))
+                .map_err(|e| e.to_string())
+        }
+    };
+    let rd = match result {
+        Ok(data) => ReturnData::success(data),
+        Err(msg) => ReturnData::error(msg),
+    };
+    to_response(&rd, "/deleteBook", origin.as_deref())
+}
+
+// ---------------------------------------------------------------------------
+// POST /addLocalBook
+// ---------------------------------------------------------------------------
+
+/// multipart 收集结果
+struct UploadFields {
+    /// 文本字段 `fileName`（vue `fd.append("fileName", file.name)`，
+    /// html5_fun.js:138；同名多次出现取首个，对齐原版
+    /// `parameters[...]?.firstOrNull()` 语义）
+    file_name: Option<String>,
+    /// 文件字段 `fileData` 流式落盘的临时文件路径（html5_fun.js:139）
+    file_data: Option<PathBuf>,
+    /// `fileData` 流式读取/落盘错误（超限、IO 失败；超限为封堵口径，登记）
+    error: Option<String>,
+}
+
+/// 遍历 multipart 字段：fileName 文本收内存（2KB 上限防滥用，登记从严）、
+/// fileData 流式写临时文件（不整包进内存）、其余字段丢弃。
+///
+/// 原版 NanoHTTPD 把 multipart 文本字段并入 `session.parameters`、文件部件存
+/// 临时文件后把「字段名 → 临时文件路径」放进 `files`（BookController.kt:311/318
+/// 的取值来源）；字段流式处理与原版临时文件形态一致。
+async fn read_upload_fields(multipart: &mut Multipart) -> UploadFields {
+    let mut result = UploadFields {
+        file_name: None,
+        file_data: None,
+        error: None,
+    };
+    while let Ok(Some(field)) = multipart.next_field().await {
+        // 先拷出字段名（借用与后续 move 分离）
+        let name = field.name().map(|s| s.to_string());
+        match name.as_deref() {
+            Some("fileName") if result.file_name.is_none() => {
+                match read_text_field(field, 2048).await {
+                    Ok(text) => result.file_name = Some(text),
+                    Err(e) => {
+                        result.error = Some(format!("保存书籍错误\n{e}"));
+                        return result;
+                    }
+                }
+            }
+            Some("fileData") if result.file_data.is_none() => {
+                match stream_field_to_temp(field).await {
+                    Ok(path) => result.file_data = Some(path),
+                    Err(e) => {
+                        result.error = Some(e);
+                        return result;
+                    }
+                }
+            }
+            _ => {
+                // 其余字段（含重复出现的 fileName/fileData）排空后丢弃
+                let mut field = field;
+                while let Ok(Some(_)) = field.chunk().await {}
+            }
+        }
+    }
+    result
+}
+
+/// 读 multipart 文本字段（超 `max_bytes` 视为滥用拒绝）
+async fn read_text_field(mut field: Field<'_>, max_bytes: usize) -> Result<String, String> {
+    let mut buf: Vec<u8> = Vec::new();
+    while let Some(chunk) = field
+        .chunk()
+        .await
+        .map_err(|e| format!("读取 fileName 失败: {e}"))?
+    {
+        if buf.len() + chunk.len() > max_bytes {
+            return Err("fileName 超过长度上限".to_string());
+        }
+        buf.extend_from_slice(&chunk);
+    }
+    String::from_utf8(buf).map_err(|_| "fileName 不是有效的 UTF-8".to_string())
+}
+
+/// 上传临时文件进程内序号（与 pid/nanos 共同保证并发唯一：并发请求/并行
+/// 测试同时上传时，仅靠时间戳在时钟粒度内可能同名互踩——一处清理会删掉
+/// 另一处尚未读取的临时文件）
+static UPLOAD_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 流式写 multipart 文件字段到临时文件
+///（`temp_dir/legado-web-upload-{pid}-{seq}-{nanos}`）
+///
+/// 逐 chunk 写盘并累计大小，超过 [`UPLOAD_MAX_BYTES`] 立即中止删除（登记：
+/// 原版服务端无上限，按 vue 客户端 fileLimitSize 从严）。
+async fn stream_field_to_temp(mut field: Field<'_>) -> Result<PathBuf, String> {
+    let seq = UPLOAD_SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let temp_path = std::env::temp_dir().join(format!(
+        "legado-web-upload-{}-{seq}-{nanos}",
+        std::process::id()
+    ));
+    let mut file = tokio::fs::File::create(&temp_path).await.map_err(|e| {
+        let _ = std::fs::remove_file(&temp_path);
+        format!("保存书籍错误\n创建临时文件失败: {e}")
+    })?;
+    let mut size: u64 = 0;
+    loop {
+        let chunk = match field.chunk().await {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) => break,
+            Err(e) => {
+                drop(file);
+                let _ = std::fs::remove_file(&temp_path);
+                return Err(format!("保存书籍错误\n读取上传内容失败: {e}"));
+            }
+        };
+        size += chunk.len() as u64;
+        if size > UPLOAD_MAX_BYTES {
+            drop(file);
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(format!(
+                "保存书籍错误\n上传文件超过大小上限（{}MB）",
+                UPLOAD_MAX_BYTES / 1024 / 1024
+            ));
+        }
+        if let Err(e) = file.write_all(&chunk).await {
+            drop(file);
+            let _ = std::fs::remove_file(&temp_path);
+            return Err(format!("保存书籍错误\n写临时文件失败: {e}"));
+        }
+    }
+    // tokio::fs::File 的写入先进内存缓冲（`flush` 前不保证达 OS）；导入链
+    // 随后以 `std::fs` 同步读该临时文件，必须先 flush 排空缓冲，否则并发
+    // 场景下 metadata/read 可能读到 0 字节（集成测试实测竞态）
+    if let Err(e) = file.flush().await {
+        drop(file);
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(format!("保存书籍错误\n刷写临时文件失败: {e}"));
+    }
+    drop(file);
+    Ok(temp_path)
+}
+
+/// POST `/addLocalBook` — 接收上传的本地书文件并导入书架
+/// （HttpServer.kt:91-94 → BookController.kt:306-330）
+///
+/// 请求形态（vue 传书页 `assets/web/uploadBook/js/html5_fun.js:137-139`）：
+/// `POST /addLocalBook`，multipart/form-data，文本字段 `fileName`（原始文件
+/// 名）+ 文件字段 `fileData`（文件字节）。
+///
+/// 原版链路逐段对照：
+/// 1. `parameters["fileName"]` 缺失 → 「fileName 不能为空」（:311-312）；
+/// 2. `requireSafeUploadedBookFileName` 失败 → 「fileName 格式不正确」
+///    （:313-317；守卫逐条对齐 :39-48）；
+/// 3. `files["fileData"]` 缺失 → 「fileData 不能为空」（:318-319）；
+/// 4. `LocalBook.saveBookFile(File(fileData).inputStream(), fileName)` 落盘到
+///    书籍保存位置 + `LocalBook.importFile(uri)` 导入（:320-322）；
+/// 5. SecurityException → 「需重新设置书籍保存位置!」，其余异常 →
+///    「保存书籍错误\n{原因}」（:323-328）；成功 → `setData(true)`。
+///
+/// 落盘语义对齐 `LocalBook.saveBookFile` 文件分支（LocalBook.kt:555-570）：
+/// 根目录 `mkdirs` + `resolveLocalBookOutputFile` 的 canonical 包含检查
+/// （「书籍文件只能保存到指定路径」，LocalBook.kt:89-96）+ 同名覆盖写
+/// （`FileOutputStream` 截断语义）；文件名为空文件时对齐
+/// `EmptyFileException`（LocalBook.kt:287）。
+///
+/// 导入语义对齐 `LocalBook.importFile`（LocalBook.kt:283-320）：
+/// - `bookUrl` = 落盘后的文件路径；已有同 `bookUrl` 书籍 → 更新链：**行保持
+///   不变**，仅删目录（`delByBook`）+ 清书籍缓存（`deleteBook(book,false)` 的
+///   `BookHelp.clearCache` 对应我方 `cached_chapters` 行）；原版更新分支同样
+///   不回写 books 行（upBookInfo 只改内存对象）；
+/// - 新书：`analyzeNameAuthor` 解析名/作者 → `upBookInfo` 对齐（epub/umd/pdf/
+///   mobi 走元数据解析覆盖 name/author/intro；txt 不解析——原版 `when` 分支
+///   不含 txt；cbz 为我方扩展格式，同走解析）→ 书类型 `text|local`
+///   （LocalBook.kt:295；cbz 附加 IMAGE_BIT 对齐 FFI 导入口径）→
+///   `insertIgnore` 冲突（同 name+author）→ 「书架中已存在同名同作者书籍：
+///   {name} / {author}」（values-zh strings.xml:519）→ `order = minOrder - 1`
+///   （LocalBook.kt:301）。
+///
+/// 安全封堵（原版无限制处按我方口径从严并登记）：
+/// - 扩展名白名单 [`UPLOAD_BOOK_EXTS`]（原版服务端无，客户端 JS 有）；
+/// - 大小上限 [`UPLOAD_MAX_BYTES`]（原版服务端无，客户端 500MB）；
+/// - `fileName` 禁路径分隔符/盘符/控制字符（原版 `requireSafeUploadedBookFileName`
+///   逐条对齐）+ 落盘 canonical 包含检查（原版 `resolveLocalBookOutputFile`
+///   对齐）→ 路径不可逃逸。
+///
+/// 登记差异：
+/// 1. 保存根来自宿主注入（`AppState.injected_paths.local_book_root`，对应
+///    原版 `AppConfig.defaultBookTreeUri`）；未注入时按原版「未设置书籍保存
+///    位置」报「保存书籍错误\n没有设置书籍保存位置!」（NoBooksDirException，
+///    values-zh strings.xml:1399）；
+/// 2. 落盘 IO 失败（目录创建/写目标文件）统一映射原版 SecurityException 分支
+///    文案「需重新设置书籍保存位置!」（原版文件分支把 FileNotFoundException
+///    包装为 SecurityException，LocalBook.kt:565-568）；
+/// 3. multipart 本体损坏/非 multipart 请求按「无部件」处理，落 fileName 缺失
+///    分支（原版 NanoHTTPD 对任意 body 宽容 parseBody 后
+///    `files["fileData"] == null` 走同一文案）；
+/// 4. `withParserCacheInvalidated`（epub/mobi/pdf/umd 解析缓存清理）无对应物
+///    ——我方 `LocalBook` 每次全量解析，无持久解析缓存。
+pub async fn add_local_book(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<HashMap<String, String>>,
+    headers: HeaderMap,
+    multipart: Result<Multipart, MultipartRejection>,
+) -> Response {
+    let origin = origin_of(&headers);
+    // multipart 解析失败（非 multipart 请求/本体损坏）按「无上传部件」处理，
+    // 落 fileName 缺失分支（对齐原版 NanoHTTPD 宽容 parseBody 后
+    // `files["fileData"] == null` 的路径；差异登记见本函数文档注释）
+    let mut upload = match multipart {
+        Ok(mut mp) => read_upload_fields(&mut mp).await,
+        Err(_) => UploadFields {
+            file_name: None,
+            file_data: None,
+            error: None,
+        },
+    };
+    // 临时文件清理路径（异步块会 take 走 file_data，先克隆备清理）
+    let temp_for_cleanup = upload.file_data.clone();
+
+    let result: Result<Value, String> = async {
+        // 1) fileName：multipart 文本字段优先，回退 query 参数
+        //    （原版 session.parameters 同时覆盖 query 与表单字段）
+        let raw_file_name = upload
+            .file_name
+            .take()
+            .or_else(|| params.get("fileName").cloned())
+            .ok_or_else(|| "fileName 不能为空".to_string())?;
+        // 2) 文件名安全校验（原版 requireSafeUploadedBookFileName）
+        if !require_safe_uploaded_book_file_name(&raw_file_name) {
+            return Err("fileName 格式不正确".to_string());
+        }
+        // 3) fileData 必须存在（原版 :318-319）
+        let temp_path = upload
+            .file_data
+            .take()
+            .ok_or_else(|| "fileData 不能为空".to_string())?;
+        // 4) 流式读取/落盘期间的硬错误（超限等）在字段校验之后上报
+        if let Some(err) = upload.error.take() {
+            return Err(err);
+        }
+        // 5) 扩展名白名单（封堵口径，登记）
+        if !is_allowed_upload_ext(&raw_file_name) {
+            let exts = UPLOAD_BOOK_EXTS.join(" / ");
+            return Err(format!(
+                "保存书籍错误\n不支持的书籍文件扩展名（允许：{exts}）"
+            ));
+        }
+        // 6) 保存根：宿主注入；未注入对齐原版「未设置书籍保存位置」
+        let root = state
+            .injected_paths
+            .local_book_root
+            .clone()
+            .ok_or_else(|| "保存书籍错误\n没有设置书籍保存位置!".to_string())?;
+        import_uploaded_book(&state, &root, &raw_file_name, &temp_path).await
+    }
+    .await;
+
+    // 临时文件清理（导入为 copy 到目标；成败均清）
+    if let Some(temp) = temp_for_cleanup {
+        let _ = tokio::fs::remove_file(&temp).await;
+    }
+
+    let rd = match result {
+        Ok(data) => ReturnData::success(data),
+        Err(msg) => ReturnData::error(msg),
+    };
+    to_response(&rd, "/addLocalBook", origin.as_deref())
+}
+
+/// 落盘 + 导入链（`LocalBook.saveBookFile` + `importFile` 对齐，见
+/// [`add_local_book`] 文档注释）
+async fn import_uploaded_book(
+    state: &Arc<AppState>,
+    root: &Path,
+    file_name: &str,
+    temp_path: &Path,
+) -> Result<Value, String> {
+    // —— 落盘（原版文件分支：mkdirs + canonical 包含检查 + 同名覆盖写）——
+    std::fs::create_dir_all(root).map_err(|_| "需重新设置书籍保存位置!".to_string())?;
+    let root_canonical =
+        std::fs::canonicalize(root).map_err(|_| "需重新设置书籍保存位置!".to_string())?;
+    let target_raw = root_canonical.join(file_name);
+    if !target_raw.starts_with(&root_canonical) {
+        // 对齐 resolveLocalBookOutputFile 的 SecurityException
+        //（fileName 校验已禁分隔符，此为纵深防御）
+        return Err("需重新设置书籍保存位置!".to_string());
+    }
+    // Windows canonicalize 产出 `\\?\` verbatim 前缀，直接入库会使 bookUrl
+    // 与宿主可见路径不一致（后续 getChapterList/正文读取按 bookUrl 找文件
+    // 也须可读）——剥除之，对齐原版 `File.canonicalFile` 的路径形态
+    //（原版 resolveLocalBookOutputFile 即返回 canonicalFile，LocalBook.kt:89-96）
+    let target = normalize_verbatim(target_raw);
+    // 空文件检查（EmptyFileException「Unexpected empty File」；元数据读取
+    // 失败另报，不与空文件混同）
+    let temp_len = std::fs::metadata(temp_path)
+        .map_err(|e| format!("保存书籍错误\n读取上传内容失败: {e}"))?
+        .len();
+    if temp_len == 0 {
+        return Err("保存书籍错误\nUnexpected empty File".to_string());
+    }
+    std::fs::copy(temp_path, &target).map_err(|_| "需重新设置书籍保存位置!".to_string())?;
+    let book_url = target.to_string_lossy().into_owned();
+    let latest_chapter_time = file_mtime_millis(&target);
+
+    // —— 导入（importFile 语义）——
+    let db = state.db.lock().await;
+    let repo = BookRepository::new(db.connection());
+    let existing = repo.find_by_url(&book_url).map_err(|e| e.to_string())?;
+    if existing.is_some() {
+        // 更新链：行保持不变（原版更新分支不回写 books 行），删目录 + 清
+        // 章节内容缓存（BookHelp.clearCache 对应物）
+        BookChapterRepository::new(db.connection())
+            .delete_by_book_url(&book_url)
+            .map_err(|e| e.to_string())?;
+        CacheBookRepository::new(db.connection())
+            .delete_by_book(&book_url)
+            .map_err(|e| e.to_string())?;
+        return Ok(Value::Bool(true));
+    }
+
+    // 新书：analyzeNameAuthor → upBookInfo 对齐
+    let (mut name, mut author) = analyze_name_author(file_name);
+    let mut intro: Option<String> = None;
+    let format = LocalBook::detect_format(&book_url).ok();
+    let book_type_value = match &format {
+        // 我方扩展：cbz 漫画包附加 IMAGE_BIT（对齐 FFI 导入口径）
+        Some(BookFormat::Cbz) => book_type::LOCAL | book_type::IMAGE_BIT,
+        // 原版 `BookType.text or BookType.local`（LocalBook.kt:295）
+        _ => book_type::TEXT | book_type::LOCAL,
+    };
+    // upBookInfo：原版 when 分支仅 epub/umd/pdf/mobi 走元数据解析；txt 不解析
+    //（cbz 为我方扩展，同走解析）。名称/作者仅在解析出非空值时覆盖，
+    // 简介非空才写入。
+    if matches!(
+        format,
+        Some(
+            BookFormat::Epub
+                | BookFormat::Mobi
+                | BookFormat::Pdf
+                | BookFormat::Umd
+                | BookFormat::Cbz
+        )
+    ) {
+        if let Ok(meta) = LocalBook::parse(&book_url) {
+            if !meta.title.trim().is_empty() {
+                name = meta.title;
+            }
+            if !meta.author.trim().is_empty() {
+                author = meta.author;
+            }
+            if !meta.description.trim().is_empty() {
+                intro = Some(meta.description);
+            }
+        }
+    }
+    // insertIgnore 冲突对齐：同 name+author 唯一冲突 → 显式报错
+    if repo
+        .find_by_name_author(&name, &author)
+        .map_err(|e| e.to_string())?
+        .is_some()
+    {
+        return Err(format!("书架中已存在同名同作者书籍：{name} / {author}"));
+    }
+    let order = min_order(&repo).saturating_sub(1);
+    let book = Book {
+        book_url,
+        name,
+        author,
+        origin_name: file_name.to_string(),
+        origin: book_type::LOCAL_TAG.to_string(),
+        book_type: book_type_value,
+        intro,
+        latest_chapter_time,
+        order,
+        ..Book::default()
+    };
+    repo.insert(&book).map_err(|e| e.to_string())?;
+    Ok(Value::Bool(true))
 }
 
 #[cfg(test)]
@@ -1112,5 +1771,112 @@ mod tests {
         assert_eq!(body.name, "a");
         assert_eq!(body.dur_chapter_index, 0);
         assert!(body.dur_chapter_title.is_none());
+    }
+
+    /// B3：上传文件名安全校验逐条对齐原版 `requireSafeUploadedBookFileName`
+    ///（BookController.kt:39-48）
+    #[test]
+    fn test_require_safe_uploaded_book_file_name() {
+        assert!(require_safe_uploaded_book_file_name("正常书名.txt"));
+        assert!(require_safe_uploaded_book_file_name(
+            "斗破苍穹《新版》.epub"
+        ));
+        // 空白 / `.` / `..`
+        assert!(!require_safe_uploaded_book_file_name(""));
+        assert!(!require_safe_uploaded_book_file_name("   "));
+        assert!(!require_safe_uploaded_book_file_name("."));
+        assert!(!require_safe_uploaded_book_file_name(".."));
+        // 路径分隔符
+        assert!(!require_safe_uploaded_book_file_name("a/b.txt"));
+        assert!(!require_safe_uploaded_book_file_name(r"a\b.txt"));
+        assert!(!require_safe_uploaded_book_file_name("../evil.txt"));
+        // Windows 盘符前缀
+        assert!(!require_safe_uploaded_book_file_name("C:evil.txt"));
+        assert!(!require_safe_uploaded_book_file_name("d:x.txt"));
+        // ISO 控制字符
+        assert!(!require_safe_uploaded_book_file_name("a\u{0001}b.txt"));
+        assert!(!require_safe_uploaded_book_file_name("a\u{007f}b.txt"));
+    }
+
+    /// B3：上传扩展名白名单（解析器支持集；忽略大小写）
+    #[test]
+    fn test_is_allowed_upload_ext() {
+        for name in [
+            "a.txt", "b.TXT", "c.epub", "d.text", "e.mobi", "f.azw", "g.azw3", "h.pdf", "i.umd",
+            "j.cbz",
+        ] {
+            assert!(is_allowed_upload_ext(name), "{name} 应在白名单");
+        }
+        for name in ["a.exe", "b.bat", "c.zip", "d.docx", "e.txt.exe", "noext"] {
+            assert!(!is_allowed_upload_ext(name), "{name} 不应在白名单");
+        }
+    }
+
+    /// B3：文件名解析书名/作者（对齐 `LocalBook.analyzeNameAuthor` 的 4 组
+    /// 正则与兜底；JS 规则分支无配置桥，登记跳过）
+    #[test]
+    fn test_analyze_name_author() {
+        // 《书名》作者：xxx（模式 1；作者 = formatBookAuthor(group1+group3)，
+        // 原版把前缀与作者拼接后再净化——逐字对齐）
+        assert_eq!(
+            analyze_name_author("斗破苍穹《完整版》作者：天蚕土豆.txt"),
+            ("完整版".to_string(), "斗破苍穹天蚕土豆".to_string())
+        );
+        // 「作者《书名》其他」（模式 2 常见形态：前缀即作者）
+        assert_eq!(
+            analyze_name_author("天蚕土豆《斗破苍穹》.txt"),
+            ("斗破苍穹".to_string(), "天蚕土豆".to_string())
+        );
+        // 《书名》其他（模式 2）
+        assert_eq!(
+            analyze_name_author("《三体》刘慈欣.epub"),
+            ("三体".to_string(), "刘慈欣".to_string())
+        );
+        // "书名 作者：xxx"（模式 3，要求书名前空格）
+        assert_eq!(
+            analyze_name_author("遮天 作者：辰东.txt"),
+            ("遮天".to_string(), "辰东".to_string())
+        );
+        // "书名 by xxx"（模式 4）
+        assert_eq!(
+            analyze_name_author("Foundation by Asimov.txt"),
+            ("Foundation".to_string(), "Asimov".to_string())
+        );
+        // 无模式命中：书名取净化后文件名、作者为空
+        assert_eq!(
+            analyze_name_author("三体.txt"),
+            ("三体".to_string(), String::new())
+        );
+        // 无扩展名
+        assert_eq!(
+            analyze_name_author("凡人修仙传"),
+            ("凡人修仙传".to_string(), String::new())
+        );
+    }
+
+    /// B3：`formatBookName`/`formatBookAuthor`（AppPattern.kt:32-33 对齐）
+    #[test]
+    fn test_format_book_name_author() {
+        assert_eq!(format_book_name("三体"), "三体");
+        // nameRegex `\s+\S+\s+著`：剥「空格 词 空格 著」段
+        assert_eq!(format_book_name("某某 李四 著"), "某某");
+        assert_eq!(format_book_author("作者：张三"), "张三");
+        assert_eq!(format_book_author("张三 著"), "张三");
+    }
+
+    /// B3：minOrder 空表回 0（Room NULL→0 对齐）、有书取最小值
+    #[test]
+    fn test_min_order() {
+        let db = legado_db::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+        assert_eq!(min_order(&repo), 0);
+        let mut book = Book {
+            book_url: "u1".to_string(),
+            name: "n1".to_string(),
+            ..Book::default()
+        };
+        book.order = 5;
+        repo.insert(&book).unwrap();
+        assert_eq!(min_order(&repo), 5);
     }
 }
