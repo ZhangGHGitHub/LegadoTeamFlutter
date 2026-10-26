@@ -1,0 +1,218 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/providers/association/association_notifier.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/routes.dart';
+import 'package:flutter_legado/src/services/deep_link_service.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+
+import '../mocks/mocks.dart';
+
+/// 批16d：DeepLinkService 外部文件分流组件测试
+///
+/// 走真实 [DeepLinkService.handleFileUri]，仅替换：
+/// - 平台通道 `legado/deep_link` 的 copyContentUri（返回临时文件路径）；
+/// - associationNotifierProvider（记录 loadFromFile 并给出就绪态）；
+/// - bookApiProvider（MockRustApi，压缩包列表桩）。
+///
+/// 覆盖 JSON → 关联导入、zip → 解压导入、7z → 明确不支持、未知文件 →
+/// 「仍然导入」兜底、书籍文件 → 既有导入确认链。
+class _RecordingAssociationNotifier extends AssociationNotifier {
+  String? loadedFilePath;
+
+  @override
+  AssociationState build() => const AssociationState();
+
+  @override
+  Future<void> loadFromFile(String path, {ImportType? typeHint}) async {
+    loadedFilePath = path;
+    state = const AssociationState(
+      type: ImportType.bookSource,
+      items: [
+        AssociationItem(
+          raw: {'bookSourceName': '外部JSON源', 'bookSourceUrl': 'https://a'},
+          name: '外部JSON源',
+          status: ImportItemStatus.isNew,
+        ),
+      ],
+    );
+  }
+}
+
+void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  const channel = MethodChannel('legado/deep_link');
+  late Directory tempDir;
+  late String copiedPath;
+  late List<String> importedPaths;
+  late GlobalKey<NavigatorState> navKey;
+  late _RecordingAssociationNotifier association;
+  late MockRustApi api;
+  final stagedFiles = <String, String>{};
+  var uriSeed = 0;
+
+  setUp(() async {
+    tempDir = await Directory.systemTemp.createTemp('deep_link_dispatch_');
+    copiedPath = '';
+    importedPaths = [];
+    navKey = GlobalKey<NavigatorState>();
+    association = _RecordingAssociationNotifier();
+    api = MockRustApi();
+    // 真实文件 IO 必须在 testWidgets 之外完成（fake async 下 await 文件
+    // 读写会一直挂起）；用例内只做纯路径赋值
+    Future<void> stage(String name, String content) async {
+      final file = File('${tempDir.path}${Platform.pathSeparator}$name');
+      await file.writeAsString(content);
+      stagedFiles[name] = file.path;
+    }
+
+    await stage(
+      'sources.json',
+      '[{"bookSourceUrl":"https://a","bookSourceName":"源A"}]',
+    );
+    await stage('books.zip', 'PK\u0003\u0004zip');
+    await stage('books.7z', '7z-content');
+    await stage('mystery.bin', 'hello');
+    await stage('book.epub', 'epub-bytes');
+    when(() => api.archiveListZipFiles(zipPath: any(named: 'zipPath')))
+        .thenAnswer((_) async => ['a.txt']);
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (call) async {
+      if (call.method == 'copyContentUri') return copiedPath;
+      return null;
+    });
+    DeepLinkService.instance
+      ..navigatorKey = navKey
+      ..importLocalBook = (path) async {
+        importedPaths.add(path);
+        return Book(name: '外部书籍', bookUrl: 'file://$path');
+      };
+  });
+
+  tearDown(() async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, null);
+    DeepLinkService.instance
+      ..navigatorKey = null
+      ..importLocalBook = null;
+    try {
+      if (await tempDir.exists()) {
+        await tempDir.delete(recursive: true);
+      }
+    } on FileSystemException {
+      // 用例超时等异常路径下文件句柄可能未释放，清理失败不覆盖原始错误
+    }
+  });
+
+  /// 固定步进泵帧（不用 pumpAndSettle：加载指示器等无限动画会拖满超时）
+  Future<void> pumpUi(WidgetTester tester) async {
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pump(const Duration(milliseconds: 400));
+  }
+
+  Future<void> pumpApp(WidgetTester tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          bookApiProvider.overrideWithValue(api),
+          associationNotifierProvider.overrideWith(() => association),
+        ],
+        child: MaterialApp(
+          navigatorKey: navKey,
+          home: const Scaffold(body: SizedBox.shrink()),
+          onGenerateRoute: (settings) => settings.name == AppRoutes.bookInfo
+              ? MaterialPageRoute<void>(
+                  builder: (_) => const Scaffold(body: Text('详情页')),
+                )
+              : null,
+        ),
+      ),
+    );
+    await tester.pump();
+  }
+
+  /// 取 setUp 预置文件路径，并让平台通道返回该路径
+  String stageCopiedFile(String name) {
+    copiedPath = stagedFiles[name]!;
+    return copiedPath;
+  }
+
+  /// 触发一次外部文件打开（URI 唯一，避免单例去重影响用例）
+  Future<void> openFile(WidgetTester tester) async {
+    uriSeed++;
+    unawaited(
+      DeepLinkService.instance.handleFileUri('content://test/$uriSeed'),
+    );
+    await pumpUi(tester);
+  }
+
+  testWidgets('JSON 文件 → 关联导入（loadFromFile + 类型识别）', (tester) async {
+    final path = stageCopiedFile('sources.json');
+    await pumpApp(tester);
+    await openFile(tester);
+
+    expect(association.loadedFilePath, path);
+    expect(find.text('导入书源'), findsOneWidget);
+    expect(find.text('外部JSON源'), findsOneWidget);
+  });
+
+  testWidgets('zip 压缩包 → 解压导入对话框', (tester) async {
+    stageCopiedFile('books.zip');
+    await pumpApp(tester);
+    await openFile(tester);
+
+    expect(find.text('压缩包导入'), findsOneWidget);
+    expect(find.text('a.txt'), findsOneWidget);
+    expect(association.loadedFilePath, isNull);
+  });
+
+  testWidgets('7z 压缩包 → 明确提示暂不支持', (tester) async {
+    stageCopiedFile('books.7z');
+    await pumpApp(tester);
+    await openFile(tester);
+
+    expect(find.text('压缩包导入'), findsOneWidget);
+    expect(find.text('暂不支持 7z，请解压后导入'), findsOneWidget);
+    expect(find.text('a.txt'), findsNothing);
+  });
+
+  testWidgets('未知文件 → 「仍然导入」兜底对话框并强制按书籍导入', (tester) async {
+    final path = stageCopiedFile('mystery.bin');
+    await pumpApp(tester);
+    await openFile(tester);
+
+    expect(find.text('提醒'), findsOneWidget);
+    expect(find.text('文件 mystery.bin 不受支持，是否继续打开？'), findsOneWidget);
+    expect(importedPaths, isEmpty);
+
+    await tester.tap(find.text('仍然导入'));
+    await pumpUi(tester);
+
+    expect(importedPaths, [path]);
+    expect(find.text('详情页'), findsOneWidget);
+  });
+
+  testWidgets('书籍文件 → 既有导入确认链', (tester) async {
+    final path = stageCopiedFile('book.epub');
+    await pumpApp(tester);
+    await openFile(tester);
+
+    expect(find.text('导入本地书籍'), findsOneWidget);
+    expect(find.text('book.epub'), findsOneWidget);
+
+    await tester.tap(find.text('导入'));
+    await pumpUi(tester);
+
+    expect(importedPaths, [path]);
+    expect(find.text('详情页'), findsOneWidget);
+  });
+}
