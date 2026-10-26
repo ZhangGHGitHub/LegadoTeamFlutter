@@ -28,17 +28,47 @@
 //! `/ws/debug/rss-source`（同端口、`/api` 前缀）保持原样不动；本模块只在
 //! 主服务 `port+1` 上新增原版路径，互不影响。
 //!
-//! # 能力降级（如实登记，不伪造响应）
+//! # 日志层级（批13 起：阶段级 + 请求级；规则级如实登记未覆盖）
 //!
-//! 原版调试日志由 App 内 `Debug` 引擎在规则级/请求级逐条打印。Rust server
-//! 的依赖方向（`legado-server → legado-fetcher`）可触达书源抓取四入口
-//! （search/info/chapters/content），但没有 `Debug.Callback` 式的规则级日志
-//! 回调，因此书源调试按**阶段级**真实执行并输出原版同名阶段标记
-//! （`⇒开始...`/`︾开始解析...`/`︽...解析完成`）；错误以 `LegadoError` 文本
-//! 代替原版堆栈。RSS 规则解析（`RssParserByRule`）在 Rust 侧无等价实现，
-//! 订阅源调试仅走完协议（校验/单槽/关闭码），随后显式发送能力缺失说明，
-//! 不执行、不伪造解析结果。发现页调试（`::`）同样无 Rust 发现规则引擎，
-//! 显式说明后结束。`/searchBook` 原版路径本批未挂载（我方 `/ws/search` 保留）。
+//! 原版调试日志由 App 内 `Debug` 引擎（`Debug.kt:63-101`）在三个阶段层级
+//! 逐条打印，全部经 `Debug.Callback.printLog`（WS 连接即回调宿主）推给
+//! 前端。Rust server 的依赖方向（`legado-server → legado-fetcher`）可触达
+//! 书源抓取四入口（search/info/chapters/content），但 fetcher 内部不暴露
+//! `AnalyzeRule` 的逐规则求值回调，因此三层日志的覆盖如实划分：
+//!
+//! | 层级 | 原版依据 | 本实现 |
+//! |---|---|---|
+//! | 阶段标题 | `Debug.kt:456-493`（`⇒开始...`）、`:520-615`（`︾开始解析...`/`︽...解析完成`/空行） | **已覆盖**：真实执行链逐阶段输出同名标记 |
+//! | 请求行 | `BookList.kt:53` / `BookInfo.kt:39` / `BookChapterList.kt:48` / `BookContent.kt:51`（`≡获取成功:<url>`） | **已覆盖**：每个真实 HTTP 请求完成时输出（URL 取自 `LegadoClient` 采集，非规则模板猜测） |
+//! | 请求测量 | 原版无对应行（仅时间前缀体现耗时） | **已覆盖（自有格式）**：`≡请求 <method> <url> -> <status> <耗时>ms <字节数>B`，字段全部来自真实采集记录 |
+//! | 规则字段行 | `BookInfo.kt:67-170` 的 `┌获取书名`/`└<值>` 族、`BookList.kt:219-285` 搜索首条字段族、`BookChapterList.kt:293-303` 首章信息族 | **部分覆盖**：字段名与**求值结果**来自 fetcher 返回结构（真实执行数据）；**逐条 AnalyzeRule 求值细节（单规则命中、合并规则分支、异常字段的 localizedMessage）不可得，登记未覆盖** |
+//! | 结果摘要 | `◇书籍总数`/`◇目录总数`/`◇是否VIP` 等 | **已覆盖**：数量与首章信息取自真实结果 |
+//! | 失败链 | `.onError { log(it.stackTraceStr, state=-1) }`（Kotlin 堆栈） | **已覆盖（降级）**：`LegadoError` 的 `Display` + 逐层 `source()`，非 Kotlin 堆栈 |
+//!
+//! 请求级日志的机制：`legado_net::http_log::scope_debug_request_sink` 以
+//! `tokio::task_local` 把观测回调注入**本调试任务**，`LegadoClient` 同一
+//! 任务内同步调用故可读到；全局 `HttpLogStore` 是 `OnceLock` first-wins 单槽
+//! （不能按会话切换），因此**不碰全局单槽**——调试会话观测与 `recordHttpLog`
+//! 开关相互独立（开关关闭时调试仍可见请求；开关开启时两路各收一次）。
+//! 局限（登记）：`tokio::spawn` 出的新任务不继承作用域；JS 书源经
+//! `spawn_blocking` 且走 JS 桥自身的 HTTP 通道，不在采集面内。
+//!
+//! # 未覆盖清单（fetcher 公共结果拿不到，禁止伪造）
+//!
+//! - 逐条 `AnalyzeRule` 求值行（单规则命中、合并规则分支、`@put` 变量落点）；
+//! - `┌获取书籍列表`/`└列表大小:N`：`WebSearchResult` 不返回原始元素数
+//!   （已用 `◇书籍总数:N` 给真实结果数）；
+//! - `◇目录总页数`/`◇并发解析目录,总页数`/`◇本章总页数`/`◇并发解析正文,总页数`：
+//!   分页链与并发度在 fetcher 内部，不对外返回；
+//! - `┌获取目录下一页列表`/`└…`、`┌获取正文下一页链接`/`└…`：`nextTocUrl`/
+//!   `nextContentUrl` 的求值结果不随结果结构返回；
+//! - `≡检测到重定向(<code>)`/`┌重定向后地址`：`LegadoResponse.url` 是最终 URL，
+//!   中间跳数不可见（请求测量行给的是原始请求 URL + 最终状态）；
+//!
+//! RSS 规则解析（`RssParserByRule`）在 Rust 侧无等价实现，订阅源调试仅走完
+//! 协议（校验/单槽/关闭码），随后显式发送能力缺失说明，不执行、不伪造解析
+//! 结果。发现页调试（`::`）同样无 Rust 发现规则引擎，显式说明后结束。
+//! `/searchBook` 原版路径本批未挂载（我方 `/ws/search` 保留）。
 //! 另：原版书源校验（`Debug.isChecking`）期间拒绝新调试（`tryAcquireCallback`
 //! 返回 false）；Rust server 无该状态机，单槽仅覆盖 WS 调试连接本身。
 //! JS 书源搜索结果若带 `tocUrl`，原版会跳过详情页；Rust `WebSearchResult`
@@ -60,6 +90,7 @@ use tokio::sync::mpsc;
 
 use legado_db::repository::rss_source_repository::RssSourceRepository;
 use legado_db::BookSourceRepository;
+use legado_net::HttpLogEntry;
 
 use crate::handlers::web_book::server_deps;
 use crate::legacy::source_api::{load_js_source_api_config, JsSourceApiConfig};
@@ -452,7 +483,13 @@ async fn handle_book_source_debug(mut socket: WebSocket, state: Arc<AppState>) {
     };
 
     let (tx, rx) = mpsc::unbounded_channel();
-    let task = tokio::spawn(run_book_source_debug(state, source, key, tx));
+    let sink = DebugSink::new(tx);
+    // 请求级日志：把观测回调注入本调试任务的作用域（`legado_net` 任务局部
+    // 槽，独立于全局 HttpLogStore 单槽），任务结束即失效
+    let task = tokio::spawn(legado_net::scope_debug_request_sink(
+        sink.request_sink(),
+        run_book_source_debug(state, source, key, sink),
+    ));
     pump_debug_session(&mut socket, rx, task).await;
     drop(slot);
 }
@@ -575,9 +612,13 @@ async fn pump_debug_session(
     task.abort();
 }
 
-// ─── 书源调试执行（可达层级：legado-fetcher 四入口，阶段级日志）─────────────
+// ─── 书源调试执行（阶段级 + 请求级真实日志）─────────────────────────────────
 
-/// 调试日志发送器（负责原版时间前缀）
+/// 调试日志发送器（负责原版时间前缀 + 请求级观测行）
+///
+/// `Clone` 是为了同时交给调试主流程与 `legado_net` 的任务局部请求观测回调
+/// （同一 `tx`，两条写入路径按完成顺序交错，与真实执行顺序一致）。
+#[derive(Clone)]
 struct DebugSink {
     tx: mpsc::UnboundedSender<DebugEvent>,
     start: Instant,
@@ -611,6 +652,70 @@ impl DebugSink {
         self.log(msg);
         self.done();
     }
+
+    /// 单条 HTTP 请求的观测输出（请求级日志）
+    ///
+    /// - 成功：先输出原版请求行 `≡获取成功:<url>`（`BookList.kt:53` 等四阶段
+    ///   同款），再输出测量行（方法/状态/耗时/响应体字节数）；
+    /// - 失败：输出 `≡请求失败 <method> <url> -> -1 <耗时>ms | <错误摘要>`，
+    ///   随后由阶段错误链给出完整失败原因（对齐原版 `state = -1` 堆栈行）。
+    fn request(&self, entry: &HttpLogEntry) {
+        match entry.error.as_deref() {
+            None => {
+                self.log(success_request_line(&entry.url));
+                self.log(request_measure_line(entry));
+            }
+            Some(_) => self.log(request_failure_line(entry)),
+        }
+    }
+
+    /// 构造注入 `legado_net` 任务局部观测槽的回调（仅本调试任务内生效）
+    fn request_sink(&self) -> legado_net::DebugRequestSink {
+        let sink = self.clone();
+        std::sync::Arc::new(move |entry: HttpLogEntry| sink.request(&entry))
+    }
+}
+
+/// 原版请求行（四阶段解析入口逐请求打印，如 `BookList.kt:53`）
+fn success_request_line(url: &str) -> String {
+    format!("≡获取成功:{url}")
+}
+
+/// 请求测量行：`≡请求 <method> <url> -> <status> <duration>ms <bytes>B`
+///
+/// 全部字段取自 `LegadoClient` 的真实采集记录（重试/重定向链只记最终一次）；
+/// 字节数为响应体文本长度（流式路径采集侧留空 → 0B，见 `legado_net::http_log`）。
+fn request_measure_line(entry: &HttpLogEntry) -> String {
+    format!(
+        "≡请求 {} {} -> {} {}ms {}B",
+        entry.method,
+        entry.url,
+        entry.status_code,
+        entry.duration_ms,
+        entry.response_body.len()
+    )
+}
+
+/// 请求失败行（`statusCode = -1` 对齐 `HttpLogInterceptor` 异常分支）
+fn request_failure_line(entry: &HttpLogEntry) -> String {
+    let error = entry.error.as_deref().unwrap_or("");
+    format!(
+        "≡请求失败 {} {} -> -1 {}ms | {}",
+        entry.method, entry.url, entry.duration_ms, error
+    )
+}
+
+/// 失败错误链（`Display` + 逐层 `source()`；原版打印 Kotlin 堆栈）
+fn format_error_chain(error: &legado_core::LegadoError) -> String {
+    use std::error::Error as _;
+    let mut out = error.to_string();
+    let mut source = error.source();
+    while let Some(inner) = source {
+        out.push_str("\n原因: ");
+        out.push_str(&inner.to_string());
+        source = inner.source();
+    }
+    out
 }
 
 /// `[mm:ss.SSS]`（对齐 `SimpleDateFormat("[mm:ss.SSS]")` 的 elapsed 格式）
@@ -629,14 +734,24 @@ fn is_abs_url(key: &str) -> bool {
     lower.starts_with("http://") || lower.starts_with("https://")
 }
 
-/// 书源调试主流程（`Debug.startDebug(bookSource, key)`，`Debug.kt:452-493`）
+/// 调试用书源上下文（fetcher 四入口入参 + 日志所需的规则存在性判定）
+struct DebugSource {
+    /// 序列化后的书源 JSON（`legado_fetcher::web_book` 四入口入参）
+    json: String,
+    /// 文件类书源（`bookSourceType & WEB_FILE != 0`，对齐原版 `book.isWebFile`）
+    file_source: bool,
+    /// 详情页初始化规则存在且非空白（对齐 `BookInfo.kt:59-62` 的
+    /// `≡执行详情页初始化规则` 门控）
+    has_init_rule: bool,
+}
+
+/// 书源调试主流程（`Debug.startDebug(bookSource, key)`，`Debug.kt:452-496`）
 async fn run_book_source_debug(
     state: Arc<AppState>,
     source: legado_core::models::BookSource,
     key: String,
-    tx: mpsc::UnboundedSender<DebugEvent>,
+    sink: DebugSink,
 ) {
-    let sink = DebugSink::new(tx);
     let source_json = match serde_json::to_string(&source) {
         Ok(json) => json,
         Err(e) => {
@@ -651,14 +766,22 @@ async fn run_book_source_debug(
             return;
         }
     };
-    let file_source = legado_fetcher::book_type::book_type_of_source(source.book_source_type)
-        & legado_fetcher::book_type::WEB_FILE
-        != 0;
+    let ctx = DebugSource {
+        json: source_json,
+        file_source: legado_fetcher::book_type::book_type_of_source(source.book_source_type)
+            & legado_fetcher::book_type::WEB_FILE
+            != 0,
+        has_init_rule: source
+            .rule_book_info
+            .as_ref()
+            .and_then(|rule| rule.init.as_deref())
+            .is_some_and(|init| !init.trim().is_empty()),
+    };
 
     // 分派顺序与原版一致：绝对 URL → 发现 → 目录 → 正文 → 搜索
     if is_abs_url(&key) {
         sink.log(format!("⇒开始访问详情页:{key}"));
-        info_stage(&sink, &deps, &source_json, &key, file_source).await;
+        info_stage(&sink, &deps, &ctx, &key).await;
     } else if key.contains("::") {
         let url = key.split_once("::").map(|(_, url)| url).unwrap_or("");
         sink.log(format!("⇒开始访问发现页:{url}"));
@@ -666,7 +789,7 @@ async fn run_book_source_debug(
         sink.fail("≡服务端未接入发现规则引擎，本次发现页调试未执行");
     } else if let Some(url) = key.strip_prefix("++") {
         sink.log(format!("⇒开始访目录页:{url}"));
-        toc_stage(&sink, &deps, &source_json, url, url, "").await;
+        toc_stage(&sink, &deps, &ctx, url, url, "").await;
     } else if let Some(url) = key.strip_prefix("--") {
         sink.log(format!("⇒开始访正文页:{url}"));
         let chapter = serde_json::json!({
@@ -675,80 +798,136 @@ async fn run_book_source_debug(
             "url": url,
             "is_vip": false,
         });
-        content_stage(&sink, &deps, &source_json, chapter).await;
+        content_stage(&sink, &deps, &ctx, chapter).await;
     } else {
         sink.log(format!("⇒开始搜索关键字:{key}"));
-        search_stage(&sink, &deps, &source_json, &key, file_source).await;
+        search_stage(&sink, &deps, &ctx, &key).await;
     }
 }
 
-/// 搜索阶段（`Debug.searchDebug`，`Debug.kt:530-552`）
+/// 搜索阶段（`Debug.searchDebug`，`Debug.kt:520-540`）
 async fn search_stage(
     sink: &DebugSink,
     deps: &legado_fetcher::deps::FetcherDeps,
-    source_json: &str,
+    source: &DebugSource,
     key: &str,
-    file_source: bool,
 ) {
     sink.log("︾开始解析搜索页");
-    match legado_fetcher::web_book::webbook_search(deps.clone(), source_json, key, 1).await {
+    match legado_fetcher::web_book::webbook_search(deps.clone(), &source.json, key, 1).await {
         Ok(json) => {
             match serde_json::from_str::<Vec<legado_core::web_book::WebSearchResult>>(&json) {
                 Ok(results) if results.is_empty() => sink.fail("︽未获取到书籍"),
                 Ok(results) => {
+                    // 原版 `BookList.getSearchItem` 只对首条打印字段行
+                    // （`log = index == 0`，`BookList.kt:219-285`）
+                    log_search_item(sink, &results[0]);
+                    sink.log(format!("◇书籍总数:{}", results.len()));
                     sink.log("︽搜索页解析完成");
                     sink.log_plain("");
                     let first = &results[0];
-                    info_stage(sink, deps, source_json, &first.book_url, file_source).await;
+                    info_stage(sink, deps, source, &first.book_url).await;
                 }
                 Err(e) => sink.fail(format!("搜索结果解析失败: {e}")),
             }
         }
-        Err(e) => sink.fail(e.to_string()),
+        Err(e) => sink.fail(format_error_chain(&e)),
     }
 }
 
-/// 详情阶段（`Debug.infoDebug`，`Debug.kt:534-565`）
+/// 搜索首条结果的字段行（对齐 `BookList.kt:219-285`：`┌字段名`/`└求值结果`）
+///
+/// 值取自 fetcher 真实返回的 `WebSearchResult`（规则求值产物），缺失字段按
+/// 原版 `?: ""` 口径输出空值行。
+fn log_search_item(sink: &DebugSink, item: &legado_core::web_book::WebSearchResult) {
+    for (title, value) in [
+        ("┌获取书名", item.name.as_str()),
+        ("┌获取作者", item.author.as_str()),
+        ("┌获取分类", item.kind.as_deref().unwrap_or("")),
+        ("┌获取字数", item.word_count.as_deref().unwrap_or("")),
+        (
+            "┌获取最新章节",
+            item.latest_chapter.as_deref().unwrap_or(""),
+        ),
+        ("┌获取简介", item.intro.as_deref().unwrap_or("")),
+        ("┌获取封面链接", item.cover_url.as_deref().unwrap_or("")),
+        ("┌获取详情页链接", item.book_url.as_str()),
+    ] {
+        sink.log(title);
+        sink.log(format!("└{value}"));
+    }
+}
+
+/// 详情阶段（`Debug.infoDebug`，`Debug.kt:542-568`）
 async fn info_stage(
     sink: &DebugSink,
     deps: &legado_fetcher::deps::FetcherDeps,
-    source_json: &str,
+    source: &DebugSource,
     book_url: &str,
-    file_source: bool,
 ) {
     sink.log("︾开始解析详情页");
-    match legado_fetcher::web_book::webbook_info(deps.clone(), source_json, book_url).await {
+    match legado_fetcher::web_book::webbook_info(deps.clone(), &source.json, book_url).await {
         Ok(json) => match serde_json::from_str::<legado_core::web_book::WebBookInfo>(&json) {
             Ok(info) => {
+                log_info_fields(sink, source, &info);
                 sink.log("︽详情页解析完成");
                 sink.log_plain("");
-                if file_source {
+                if source.file_source {
                     sink.log("≡文件类书源跳过解析目录");
                     sink.done();
                 } else {
                     let toc_url = info.toc_url.clone();
-                    toc_stage(
-                        sink,
-                        deps,
-                        source_json,
-                        &info.book_url,
-                        &toc_url,
-                        &info.name,
-                    )
-                    .await;
+                    toc_stage(sink, deps, source, &info.book_url, &toc_url, &info.name).await;
                 }
             }
             Err(e) => sink.fail(format!("详情结果解析失败: {e}")),
         },
-        Err(e) => sink.fail(e.to_string()),
+        Err(e) => sink.fail(format_error_chain(&e)),
     }
 }
 
-/// 目录阶段（`Debug.tocDebug`，`Debug.kt:567-595`）
+/// 详情字段行（对齐 `BookInfo.kt:59-170`）
+///
+/// 字段名与原版一致；值取自 fetcher 真实求值结果 `WebBookInfo`。逐规则
+/// 求值过程（单规则命中/JS 分支/异常字段的 `localizedMessage`）不可得，
+/// 已在模块文档登记为未覆盖。
+fn log_info_fields(
+    sink: &DebugSink,
+    source: &DebugSource,
+    info: &legado_core::web_book::WebBookInfo,
+) {
+    if source.has_init_rule {
+        sink.log("≡执行详情页初始化规则");
+    }
+    for (title, value) in [
+        ("┌获取书名", info.name.as_str()),
+        ("┌获取作者", info.author.as_str()),
+        ("┌获取分类", info.kind.as_deref().unwrap_or("")),
+        ("┌获取字数", info.word_count.as_deref().unwrap_or("")),
+        ("┌获取最新章节", info.last_chapter.as_deref().unwrap_or("")),
+        ("┌获取简介", info.intro.as_deref().unwrap_or("")),
+        ("┌获取封面链接", info.cover_url.as_deref().unwrap_or("")),
+    ] {
+        sink.log(title);
+        sink.log(format!("└{value}"));
+    }
+    if source.file_source {
+        // 原版文件类书源改打印下载链接（`BookInfo.kt:163-176`）
+        sink.log("┌获取文件下载链接");
+        match info.download_urls.as_deref() {
+            Some(urls) if !urls.is_empty() => sink.log(format!("└{}", urls.join("，\n"))),
+            _ => sink.log("└"),
+        }
+    } else {
+        sink.log("┌获取目录链接");
+        sink.log(format!("└{}", info.toc_url));
+    }
+}
+
+/// 目录阶段（`Debug.tocDebug`，`Debug.kt:570-592`）
 async fn toc_stage(
     sink: &DebugSink,
     deps: &legado_fetcher::deps::FetcherDeps,
-    source_json: &str,
+    source: &DebugSource,
     book_url: &str,
     toc_url: &str,
     book_name: &str,
@@ -756,7 +935,7 @@ async fn toc_stage(
     sink.log("︾开始解析目录页");
     match legado_fetcher::web_book::webbook_chapters(
         deps.clone(),
-        source_json,
+        &source.json,
         book_url,
         toc_url,
         book_name,
@@ -765,8 +944,9 @@ async fn toc_stage(
     {
         Ok(json) => match serde_json::from_str::<Vec<legado_core::web_book::WebChapter>>(&json) {
             Ok(chapters) => {
-                sink.log("︽目录页解析完成");
-                sink.log_plain("");
+                // 原版 `BookChapterList.kt:229-291` 的列表解析尾段
+                sink.log("┌解析目录列表");
+                sink.log("└目录列表解析完成");
                 // 原版过滤卷章：!(isVolume && url.startsWith(title))
                 let toc: Vec<_> = chapters
                     .into_iter()
@@ -774,9 +954,14 @@ async fn toc_stage(
                     .collect();
                 match toc.first() {
                     Some(first) => {
+                        // 原版顺序：首章信息（列表解析尾段）→ 目录总数（外层统计）
+                        log_first_chapter(sink, first);
+                        sink.log(format!("◇目录总数:{}", toc.len()));
+                        sink.log("︽目录页解析完成");
+                        sink.log_plain("");
                         // 保留章节全字段（variable/tag 等），与原版 WebBook 入参一致
                         match serde_json::to_value(first) {
-                            Ok(chapter) => content_stage(sink, deps, source_json, chapter).await,
+                            Ok(chapter) => content_stage(sink, deps, source, chapter).await,
                             Err(e) => sink.fail(format!("章节序列化失败: {e}")),
                         }
                     }
@@ -785,26 +970,61 @@ async fn toc_stage(
             }
             Err(e) => sink.fail(format!("目录结果解析失败: {e}")),
         },
-        Err(e) => sink.fail(e.to_string()),
+        Err(e) => sink.fail(format_error_chain(&e)),
     }
 }
 
-/// 正文阶段（`Debug.contentDebug`，`Debug.kt:597-615`）
+/// 首章信息行（对齐 `BookChapterList.kt:293-303`）
+fn log_first_chapter(sink: &DebugSink, chapter: &legado_core::web_book::WebChapter) {
+    sink.log("≡首章信息");
+    sink.log(format!("◇章节名称:{}", chapter.title));
+    sink.log(format!("◇章节链接:{}", chapter.url));
+    match chapter.word_count.as_deref() {
+        Some(word_count) if !word_count.trim().is_empty() => {
+            sink.log(format!(
+                "◇章节信息:{} {word_count}",
+                chapter.tag.as_deref().unwrap_or("")
+            ));
+            sink.log("⇒已识别到章节信息中的字数");
+        }
+        _ => sink.log(format!(
+            "◇章节信息:{}",
+            chapter.tag.as_deref().unwrap_or("")
+        )),
+    }
+    sink.log(format!("◇是否VIP:{}", chapter.is_vip));
+    sink.log(format!("◇是否购买:{}", chapter.is_pay));
+}
+
+/// 正文阶段（`Debug.contentDebug`，`Debug.kt:594-620`）
 async fn content_stage(
     sink: &DebugSink,
     deps: &legado_fetcher::deps::FetcherDeps,
-    source_json: &str,
+    source: &DebugSource,
     chapter: Value,
 ) {
     sink.log("︾开始解析正文页");
-    match legado_fetcher::web_book::webbook_content(deps.clone(), source_json, &chapter.to_string())
-        .await
+    match legado_fetcher::web_book::webbook_content(
+        deps.clone(),
+        &source.json,
+        &chapter.to_string(),
+    )
+    .await
     {
-        Ok(_content) => {
+        Ok(content) => {
+            // 原版 `BookContent.kt:199-203`：章节名称 + 正文全文
+            let title = chapter
+                .get("title")
+                .and_then(Value::as_str)
+                .unwrap_or_default();
+            sink.log("┌获取章节名称");
+            sink.log(format!("└{title}"));
+            sink.log("┌获取正文内容");
+            sink.log(format!("└\n{content}"));
             sink.log("︽正文页解析完成");
             sink.done();
         }
-        Err(e) => sink.fail(e.to_string()),
+        Err(e) => sink.fail(format_error_chain(&e)),
     }
 }
 
@@ -982,6 +1202,97 @@ mod tests {
         assert!(is_abs_url("HTTPS://a"));
         assert!(!is_abs_url("++http://a"));
         assert!(!is_abs_url("https:/a"));
+    }
+
+    /// 构造一条真实形态的采集记录（请求级日志用例）
+    fn log_entry(url: &str, status: i32, duration_ms: i64, body: &str) -> HttpLogEntry {
+        HttpLogEntry {
+            method: "GET".to_string(),
+            url: url.to_string(),
+            request_headers: std::collections::HashMap::new(),
+            request_body: String::new(),
+            status_code: status,
+            response_headers: std::collections::HashMap::new(),
+            response_body: body.to_string(),
+            response_content_type: Some("text/html".to_string()),
+            duration_ms,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn request_lines_match_original_text_and_real_measurements() {
+        // 原版请求行逐字一致（`BookList.kt:53` 等四阶段同款）
+        assert_eq!(
+            success_request_line("https://a.example/search?kw=x"),
+            "≡获取成功:https://a.example/search?kw=x"
+        );
+        // 测量行：方法/URL/状态/耗时/响应体字节数全部来自采集记录
+        let entry = log_entry("https://a.example/search?kw=x", 200, 12, "hello");
+        assert_eq!(
+            request_measure_line(&entry),
+            "≡请求 GET https://a.example/search?kw=x -> 200 12ms 5B"
+        );
+        // 失败行：statusCode=-1（对齐 HttpLogInterceptor 异常分支）+ 错误摘要
+        let mut failure = log_entry("https://a.example/fail", -1, 30, "");
+        failure.error = Some("Connection refused".to_string());
+        assert_eq!(
+            request_failure_line(&failure),
+            "≡请求失败 GET https://a.example/fail -> -1 30ms | Connection refused"
+        );
+    }
+
+    /// 请求级日志：成功请求两行（原版请求行 + 测量行），失败请求一行
+    #[test]
+    fn debug_sink_request_emits_expected_line_sequence() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sink = DebugSink::new(tx);
+        sink.request(&log_entry("https://a.example/x", 200, 7, "abc"));
+        let mut failed = log_entry("https://a.example/y", -1, 9, "");
+        failed.error = Some("boom".to_string());
+        sink.request(&failed);
+
+        let lines: Vec<String> = std::iter::from_fn(|| rx.try_recv().ok())
+            .map(|event| match event {
+                DebugEvent::Log(line) => line,
+                DebugEvent::Done => panic!("不应有结束事件"),
+            })
+            .collect();
+        assert_eq!(lines.len(), 3, "成功两行 + 失败一行: {lines:?}");
+        for line in &lines {
+            // 每行都带原版时间前缀 `[mm:ss.SSS] `
+            assert!(
+                line.starts_with('[')
+                    && line.get(3..4) == Some(":")
+                    && line.get(6..7) == Some(".")
+                    && line.get(10..12) == Some("] "),
+                "时间前缀格式不符: {line}"
+            );
+        }
+        assert!(lines[0].contains("≡获取成功:https://a.example/x"));
+        assert!(lines[1].contains("≡请求 GET https://a.example/x -> 200 7ms 3B"));
+        assert!(lines[2].contains("≡请求失败 GET https://a.example/y -> -1 9ms | boom"));
+    }
+
+    #[test]
+    fn error_chain_appends_source_layers() {
+        use std::error::Error as _;
+        // 无底层 source 的变体：只输出一层
+        let plain = legado_core::LegadoError::Network("boom".to_string());
+        assert_eq!(format_error_chain(&plain), "Network error: boom");
+        // Io 变体带 `#[from]` 的 source：必须追加「原因」层
+        let io = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "连接被拒绝");
+        let err: legado_core::LegadoError = io.into();
+        assert!(
+            err.source().is_some(),
+            "Io 变体应保留底层 source（错误链前提）"
+        );
+        let chain = format_error_chain(&err);
+        assert!(chain.starts_with("IO error: "), "首层应为 Display: {chain}");
+        assert!(
+            chain.contains("\n原因: 连接被拒绝"),
+            "应追加原因层: {chain}"
+        );
     }
 
     #[test]

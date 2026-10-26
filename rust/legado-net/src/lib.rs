@@ -53,8 +53,8 @@ pub use custom_hosts::{
     apply_custom_hosts, clear_custom_hosts, lookup_ips, resolver, CustomHostsResolver,
 };
 pub use http_log::{
-    install_recorder, is_recording_enabled, recorder_installed, set_recording_enabled,
-    HttpLogCapture, HttpLogEntry, HttpLogRecorder,
+    install_recorder, is_recording_enabled, recorder_installed, scope_debug_request_sink,
+    set_recording_enabled, DebugRequestSink, HttpLogCapture, HttpLogEntry, HttpLogRecorder,
 };
 pub use middleware::{Middleware, MiddlewareChain};
 pub use proxy::{parse_proxy_config, ProxyConfig, ProxyCredentials, ProxyPool, ProxyType};

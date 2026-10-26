@@ -537,8 +537,333 @@ async fn test_book_debug_content_stage_runs_real_fetch() {
     handle.abort();
 }
 
-// ─── 7. 调试单槽占用 ────────────────────────────────────────────────────────
+// ─── 6.1 日志层级：阶段级 + 请求级（批13）──────────────────────────────────
 
+/// 断言日志行序列按给定顺序出现（阶段级日志顺序契约）
+///
+/// 同名行可能出现多次（如搜索首条与详情页都打印 `┌获取简介`），故每次都从
+/// 上一命中位置向后找，保证顺序而不要求唯一。
+fn assert_ordered(texts: &[String], needles: &[&str]) {
+    let mut last = 0usize;
+    for needle in needles {
+        let index = texts
+            .iter()
+            .enumerate()
+            .skip(last)
+            .find(|(_, line)| line.contains(needle))
+            .map(|(index, _)| index)
+            .unwrap_or_else(|| panic!("自下标 {last} 起缺少日志行「{needle}」: {texts:#?}"));
+        last = index;
+    }
+}
+
+/// 四阶段回环源站：搜索页 → 详情/目录页 → 正文页
+async fn start_full_chain_source() -> String {
+    use axum::response::Html;
+    use axum::routing::get;
+
+    let app = axum::Router::new()
+        .route(
+            "/search",
+            get(|| async {
+                Html(
+                    "<html><body>\
+                     <div class=\"item\"><a class=\"name\" href=\"/book/1\">书一</a>\
+                     <span class=\"author\">作者一</span></div>\
+                     </body></html>"
+                        .to_string(),
+                )
+            }),
+        )
+        .route(
+            "/book/1",
+            get(|| async {
+                Html(
+                    "<html><body>\
+                     <div class=\"book-name\">书一</div>\
+                     <div class=\"author\">作者一</div>\
+                     <div class=\"intro\">简介一</div>\
+                     <ul><li class=\"chapter\">\
+                     <a class=\"chapter-link\" href=\"/chapter/1\">第一章</a>\
+                     </li></ul>\
+                     </body></html>"
+                        .to_string(),
+                )
+            }),
+        )
+        .route(
+            "/chapter/1",
+            get(|| async {
+                Html(
+                    "<html><body><div class=\"content\">正文内容甲</div></body></html>".to_string(),
+                )
+            }),
+        );
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    format!("http://{addr}")
+}
+
+/// 四阶段链路 fixture 书源（搜索→详情→目录→正文全部真实抓取）
+fn full_chain_book_source(base: &str) -> BookSource {
+    BookSource {
+        book_source_url: base.to_string(),
+        book_source_name: "批13 四阶段源".to_string(),
+        search_url: Some(format!("{base}/search?kw={{{{key}}}}")),
+        rule_search: Some(legado_core::models::rule::SearchRule {
+            book_list: Some("class.item".to_string()),
+            name: Some("class.name@text".to_string()),
+            author: Some("class.author@text".to_string()),
+            book_url: Some("class.name@href".to_string()),
+            ..Default::default()
+        }),
+        rule_book_info: Some(legado_core::models::rule::BookInfoRule {
+            name: Some("class.book-name@text".to_string()),
+            author: Some("class.author@text".to_string()),
+            intro: Some("class.intro@text".to_string()),
+            ..Default::default()
+        }),
+        rule_toc: Some(legado_core::models::rule::TocRule {
+            chapter_list: Some("class.chapter".to_string()),
+            chapter_name: Some("class.chapter-link@text".to_string()),
+            chapter_url: Some("class.chapter-link@href".to_string()),
+            ..Default::default()
+        }),
+        rule_content: Some(ContentRule {
+            content: Some("class.content@text".to_string()),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+/// 四阶段链路：阶段标题 / 请求 URL / 规则字段行 / 结果摘要 / 时间前缀全断言
+#[tokio::test]
+async fn test_book_debug_full_chain_logs_stage_and_request_lines() {
+    let _lock = DEBUG_SLOT_TEST_LOCK.lock().await;
+    let base = start_full_chain_source().await;
+    let source_for_seed = full_chain_book_source(&base);
+    let (_http_addr, ws_addr, handle) = start_server_with(|| {
+        let db = new_db();
+        disable_token(&db);
+        seed_book_source(&db, source_for_seed.clone());
+        db
+    })
+    .await;
+
+    let mut ws = connect(&format!("ws://{ws_addr}/bookSourceDebug"), Some("legado"))
+        .await
+        .unwrap();
+    ws.send(Message::Text(
+        serde_json::json!({ "tag": base, "key": "kw" })
+            .to_string()
+            .into(),
+    ))
+    .await
+    .unwrap();
+    let (texts, close) = collect_until_close(ws).await;
+    assert_eq!(close, Some((1000, "调试结束".to_string())));
+
+    // 1) 时间前缀：所有非空行（阶段间空行是原版 showTime=false 的原样空串）
+    for line in texts.iter().filter(|line| !line.is_empty()) {
+        assert!(
+            line.starts_with('[')
+                && line.get(3..4) == Some(":")
+                && line.get(6..7) == Some(".")
+                && line.get(10..12) == Some("] "),
+            "日志行缺少原版时间前缀: {line}"
+        );
+    }
+
+    // 2) 阶段标题 + 请求行 + 规则字段行 + 结果摘要，按真实执行顺序出现
+    let search_url = format!("{base}/search");
+    let book_url = format!("{base}/book/1");
+    let chapter_url = format!("{base}/chapter/1");
+    let expected: Vec<String> = vec![
+        "⇒开始搜索关键字:kw".to_string(),
+        "︾开始解析搜索页".to_string(),
+        format!("≡获取成功:{search_url}"),
+        format!("≡请求 GET {search_url}"),
+        "┌获取书名".to_string(),
+        "└书一".to_string(),
+        "┌获取详情页链接".to_string(),
+        format!("└{book_url}"),
+        "◇书籍总数:1".to_string(),
+        "︽搜索页解析完成".to_string(),
+        "︾开始解析详情页".to_string(),
+        format!("≡获取成功:{book_url}"),
+        "┌获取简介".to_string(),
+        "└简介一".to_string(),
+        "┌获取目录链接".to_string(),
+        "︽详情页解析完成".to_string(),
+        "︾开始解析目录页".to_string(),
+        "┌解析目录列表".to_string(),
+        "└目录列表解析完成".to_string(),
+        "≡首章信息".to_string(),
+        "◇章节名称:第一章".to_string(),
+        format!("◇章节链接:{chapter_url}"),
+        "◇是否VIP:false".to_string(),
+        "◇目录总数:1".to_string(),
+        "︽目录页解析完成".to_string(),
+        "︾开始解析正文页".to_string(),
+        format!("≡获取成功:{chapter_url}"),
+        "┌获取章节名称".to_string(),
+        "└第一章".to_string(),
+        "┌获取正文内容".to_string(),
+        "正文内容甲".to_string(),
+        "︽正文页解析完成".to_string(),
+    ];
+    let needles: Vec<&str> = expected.iter().map(String::as_str).collect();
+    assert_ordered(&texts, &needles);
+
+    // 3) 请求测量行携带真实状态/耗时/响应体字节数（自有格式，非伪造）
+    let measure = texts
+        .iter()
+        .find(|line| line.contains(&format!("≡请求 GET {chapter_url}")))
+        .expect("正文请求应有测量行");
+    assert!(
+        measure.contains("-> 200 "),
+        "状态码应来自真实响应: {measure}"
+    );
+    assert!(measure.ends_with('B'), "应输出真实响应体字节数: {measure}");
+    assert!(
+        measure.split(' ').any(|part| part.ends_with("ms")),
+        "应输出真实耗时: {measure}"
+    );
+
+    handle.abort();
+}
+
+/// 失败路径：请求失败行 + 阶段错误链（真实连接拒绝），仍以 1000 正常收尾
+#[tokio::test]
+async fn test_book_debug_failure_logs_request_line_and_error_chain() {
+    let _lock = DEBUG_SLOT_TEST_LOCK.lock().await;
+    // 取一个刚释放的回环端口 → 连接必然被拒
+    let dead = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let dead_addr = dead.local_addr().unwrap();
+    drop(dead);
+    let base = format!("http://{dead_addr}");
+    let tag = base.clone();
+    let (_http_addr, ws_addr, handle) = start_server_with(move || {
+        let db = new_db();
+        disable_token(&db);
+        seed_book_source(
+            &db,
+            BookSource {
+                book_source_url: tag.clone(),
+                book_source_name: "批13 失败源".to_string(),
+                rule_content: Some(ContentRule {
+                    content: Some("class.content@html".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+        db
+    })
+    .await;
+
+    let mut ws = connect(&format!("ws://{ws_addr}/bookSourceDebug"), Some("legado"))
+        .await
+        .unwrap();
+    let chapter_url = format!("{base}/chapter/0");
+    ws.send(Message::Text(
+        serde_json::json!({ "tag": base, "key": format!("--{chapter_url}") })
+            .to_string()
+            .into(),
+    ))
+    .await
+    .unwrap();
+    let (texts, close) = collect_until_close(ws).await;
+    assert_eq!(close, Some((1000, "调试结束".to_string())), "{texts:#?}");
+
+    assert_ordered(
+        &texts,
+        &["⇒开始访正文页", "︾开始解析正文页", "≡请求失败 GET "],
+    );
+    let failure = texts
+        .iter()
+        .find(|line| line.contains("≡请求失败 GET "))
+        .expect("失败请求应有请求失败行");
+    assert!(
+        failure.contains(&chapter_url),
+        "失败行应含真实请求 URL: {failure}"
+    );
+    assert!(
+        failure.contains("-> -1 "),
+        "失败行状态码应为 -1（对齐 HttpLogInterceptor 异常分支）: {failure}"
+    );
+    assert!(
+        texts.iter().any(|line| line.contains("Connection failed")),
+        "应输出真实错误链（LegadoError Display）: {texts:#?}"
+    );
+    handle.abort();
+}
+
+/// 请求级日志与全局 HTTP 日志环解耦：调试会话不写全局存储
+#[tokio::test]
+async fn test_debug_request_lines_do_not_touch_global_http_log_store() {
+    use legado_server::legacy::http_log::{apply_recording_config, http_log_store};
+
+    let _lock = DEBUG_SLOT_TEST_LOCK.lock().await;
+    // 全局开关关闭（与调试观测独立；原版 Debug 与 HttpLogInterceptor 本就是两套机制）
+    apply_recording_config(None);
+    let base = start_mock_content_source().await;
+    let tag = base.clone();
+    let (_http_addr, ws_addr, handle) = start_server_with(move || {
+        let db = new_db();
+        disable_token(&db);
+        seed_book_source(
+            &db,
+            BookSource {
+                book_source_url: tag.clone(),
+                book_source_name: "批11/13 解耦源".to_string(),
+                rule_content: Some(ContentRule {
+                    content: Some("class.content@html".to_string()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+        db
+    })
+    .await;
+
+    let mut ws = connect(&format!("ws://{ws_addr}/bookSourceDebug"), Some("legado"))
+        .await
+        .unwrap();
+    ws.send(Message::Text(
+        serde_json::json!({ "tag": base, "key": format!("--{base}/chapter/0") })
+            .to_string()
+            .into(),
+    ))
+    .await
+    .unwrap();
+    let (texts, _close) = collect_until_close(ws).await;
+    assert!(
+        texts.iter().any(|line| line.contains("≡获取成功:")),
+        "开关关闭时调试会话仍应拿到请求行: {texts:#?}"
+    );
+    assert!(
+        texts
+            .iter()
+            .any(|line| line.contains(&format!("≡请求 GET {base}/chapter/0"))),
+        "开关关闭时调试会话仍应拿到测量行: {texts:#?}"
+    );
+    assert!(
+        !http_log_store()
+            .latest(legado_server::legacy::http_log::MAX_RECORDS)
+            .iter()
+            .any(|record| record.url.contains(&base)),
+        "调试会话的请求不得写入全局 HTTP 日志环"
+    );
+    handle.abort();
+}
+
+// ─── 7. 调试单槽占用 ────────────────────────────────────────────────────────
 /// 慢搜索 mock：`/search` 延迟 800ms 后返回空列表
 async fn start_slow_search_source() -> String {
     use axum::response::Html;

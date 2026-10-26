@@ -27,8 +27,25 @@
 //!   合并串不入日志；
 //! - 流式响应（[`crate::LegadoClient::send_stream`]）无法在消费前 peep 响应体，
 //!   响应体字段留空（原版 `peekBody(8192)` 不消费 body；reqwest 无等价 API）。
+//!
+//! ## 调试会话内请求观测（批13：WS 书源调试请求级日志）
+//!
+//! 全局 [`RECORDER`] 是 first-wins 单槽（进程级存储实现只有一个，不能按会话
+//! 切换）；WS 调试通道需要**仅本会话**的请求流，故另设任务局部观测槽
+//! [`DEBUG_SINK`]：
+//!
+//! - [`scope_debug_request_sink`] 把回调注入当前任务的 `task_local` 作用域，
+//!   `LegadoClient` 在同一任务内同步调用，故请求采集上下文经
+//!   [`HttpLogCapture::start`] 建立、[`submit`] 提交时能读到该回调；
+//! - 观测槽**独立于全局开关**：`recordHttpLog` 关闭时调试会话仍能拿到请求
+//!   事件（原版 `Debug` 与 `HttpLogInterceptor` 本来就是两套机制）；
+//! - 两者互不干扰：全局开关打开时，同一条记录既进全局存储、也进调试回调；
+//! - `tokio::spawn` 出的**新任务不继承**该作用域（与 `task_local` 语义一致），
+//!   书源规则链的抓取全部在同任务内 `await`，无遗漏（JS 书源走
+//!   `spawn_blocking`，本身不经 `LegadoClient`，不在采集面内——登记）。
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::Instant;
@@ -71,6 +88,38 @@ pub trait HttpLogRecorder: Send + Sync {
 /// 进程级采集实现单槽（对齐原版 `HttpLogStore` 单例；first-wins）
 static RECORDER: OnceLock<Arc<dyn HttpLogRecorder>> = OnceLock::new();
 
+/// 调试会话请求观测回调类型（由 WS 调试通道注入，逐请求同步调用）
+///
+/// 参数为本次调用的最终采集记录（重试/重定向链只提交一次），实现方可按需
+/// 取 URL/方法/状态码/耗时/响应体大小；实现必须快速返回且不得 panic。
+pub type DebugRequestSink = Arc<dyn Fn(HttpLogEntry) + Send + Sync>;
+
+tokio::task_local! {
+    /// 任务局部调试请求观测槽（与进程级 [`RECORDER`] 相互独立）
+    ///
+    /// 仅在 [`scope_debug_request_sink`] 作用域内存在；作用域外读取返回
+    /// `AccessError`（按无观测者处理，不 panic）。
+    static DEBUG_SINK: DebugRequestSink;
+}
+
+/// 在 `future` 的任务作用域内注入调试请求观测回调
+///
+/// 对齐原版 `Debug.Callback`（`WebSocket` 连接即回调宿主）的「会话内可见」
+/// 语义：只有本任务（含其内部 `await` 链）产生的 `LegadoClient` 请求会被
+/// 回调，进程内其他并发任务不受影响，也不会与全局 [`RECORDER`] 抢占单槽。
+pub fn scope_debug_request_sink<F, T>(sink: DebugRequestSink, future: F) -> impl Future<Output = T>
+where
+    F: Future<Output = T>,
+{
+    DEBUG_SINK.scope(sink, future)
+}
+
+/// 取当前任务的调试观测回调（作用域外为 None）
+fn current_debug_sink() -> Option<DebugRequestSink> {
+    // `try_with` 在作用域外返回 Err（不 panic），对齐「无观测者」语义
+    DEBUG_SINK.try_with(Arc::clone).ok()
+}
+
 /// 运行期开关（对齐原版 `AppConfig.recordHttpLog`，缺省 false）
 static RECORDING: AtomicBool = AtomicBool::new(false);
 
@@ -97,22 +146,32 @@ pub fn is_recording_enabled() -> bool {
     RECORDING.load(Ordering::SeqCst)
 }
 
-/// 是否应采集本次请求（开关开启且已注册实现）
+/// 是否应采集本次请求
+///
+/// 两路独立触发（任一成立即建立采集上下文）：
+/// - 全局开关开启且已注册存储实现（原版 `AppConfig.recordHttpLog` 语义）；
+/// - 当前任务处于调试会话观测作用域（WS 调试通道请求级日志，见模块文档）。
 fn should_record() -> bool {
-    RECORDING.load(Ordering::SeqCst) && RECORDER.get().is_some()
+    (RECORDING.load(Ordering::SeqCst) && RECORDER.get().is_some()) || current_debug_sink().is_some()
 }
 
-/// 提交一条记录（开关关闭/未注册实现时静默丢弃）
+/// 提交一条记录（无全局开关/无观测者时静默丢弃）
+///
+/// 两路消费方互不排斥：调试会话观测槽先收（原样记录），全局存储后收
+/// （自行脱敏/截断/入环）。
 fn submit(entry: HttpLogEntry) {
-    if !RECORDING.load(Ordering::SeqCst) {
-        return;
+    if let Some(sink) = current_debug_sink() {
+        sink(entry.clone());
     }
-    if let Some(recorder) = RECORDER.get() {
-        recorder.record(entry);
+    if RECORDING.load(Ordering::SeqCst) {
+        if let Some(recorder) = RECORDER.get() {
+            recorder.record(entry);
+        }
     }
 }
 
-/// 单次请求的采集上下文（仅开关开启时创建，`Drop` 不自动提交）
+/// 单次请求的采集上下文（仅开关开启或处于调试观测作用域时创建，
+/// `Drop` 不自动提交）
 ///
 /// 用法：请求开始处 [`HttpLogCapture::start`] 取 `Option<Self>`，最终结果处
 /// [`Self::finish_success`] / [`Self::finish_failure`] 提交一次；中途提前返回
@@ -309,5 +368,88 @@ mod tests {
             entries[0].error.as_deref(),
             Some("Connection failed: refused")
         );
+    }
+
+    /// 会话观测槽：全局开关关闭时仍采集，且只回调本任务作用域内的请求
+    ///
+    /// `allow(await_holding_lock)`：串行锁保护的是**进程级**开关/单槽，
+    /// 必须覆盖整个 `async` 用例体（用例各跑在独立 current_thread runtime 上，
+    /// 不存在同 runtime 其他任务被该锁阻塞的情形）。
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn test_debug_sink_captures_inside_scope_only() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let recorder = global_recorder();
+        set_recording_enabled(false);
+
+        #[derive(Default)]
+        struct Seen(Mutex<Vec<HttpLogEntry>>);
+        let seen = Arc::new(Seen::default());
+        let seen_for_sink = Arc::clone(&seen);
+        let sink: DebugRequestSink = Arc::new(move |entry| {
+            seen_for_sink.0.lock().unwrap().push(entry);
+        });
+
+        scope_debug_request_sink(Arc::clone(&sink), async {
+            let capture =
+                HttpLogCapture::start("GET", "https://scope.example/token/abc?page=2", None, "")
+                    .expect("调试作用域内应建立采集上下文（与全局开关无关）");
+            capture.finish_success(200, &HashMap::new(), "ok", Some("text/plain"));
+        })
+        .await;
+
+        let entries = seen.0.lock().unwrap().clone();
+        assert_eq!(entries.len(), 1, "作用域内一次请求应回调一条");
+        assert_eq!(entries[0].method, "GET");
+        assert_eq!(entries[0].status_code, 200);
+        // 观测槽拿到的是原始记录（未脱敏），供调试通道原样展示
+        assert_eq!(
+            entries[0].url, "https://scope.example/token/abc?page=2",
+            "观测槽记录应为原始请求 URL"
+        );
+        assert!(
+            matching(recorder, "scope.example").is_empty(),
+            "全局开关关闭时不得写入全局存储"
+        );
+
+        // 作用域结束后不再观测（同任务内顺序调用）
+        assert!(
+            HttpLogCapture::start("GET", "https://after.example/", None, "").is_none(),
+            "作用域外且开关关闭时不应创建采集上下文"
+        );
+        assert_eq!(seen.0.lock().unwrap().len(), 1);
+    }
+
+    /// 会话观测槽与全局开关并存：一条记录两路各收一次，互不吞并
+    ///
+    /// `allow(await_holding_lock)`：同 [`test_debug_sink_captures_inside_scope_only`]
+    /// 的理由——串行锁保护进程级开关/单槽，需覆盖整个用例体。
+    #[allow(clippy::await_holding_lock)]
+    #[tokio::test]
+    async fn test_debug_sink_and_global_recorder_coexist() {
+        let _g = TEST_LOCK.lock().unwrap();
+        let recorder = global_recorder();
+        set_recording_enabled(true);
+
+        let seen = Arc::new(Mutex::new(Vec::<HttpLogEntry>::new()));
+        let seen_for_sink = Arc::clone(&seen);
+        let sink: DebugRequestSink = Arc::new(move |entry| {
+            seen_for_sink.lock().unwrap().push(entry);
+        });
+
+        scope_debug_request_sink(sink, async {
+            let capture = HttpLogCapture::start("POST", "https://coexist.example/x", None, "body")
+                .expect("开关开启时应建立采集上下文");
+            capture.finish_failure("boom");
+        })
+        .await;
+        set_recording_enabled(false);
+
+        let scoped = seen.lock().unwrap().clone();
+        assert_eq!(scoped.len(), 1, "观测槽应收到一条");
+        assert_eq!(scoped[0].error.as_deref(), Some("boom"));
+        let stored = matching(recorder, "coexist.example");
+        assert_eq!(stored.len(), 1, "全局存储应同时收到一条");
+        assert_eq!(stored[0].error.as_deref(), Some("boom"));
     }
 }
