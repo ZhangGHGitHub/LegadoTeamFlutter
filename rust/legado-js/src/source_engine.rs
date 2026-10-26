@@ -359,17 +359,24 @@ impl JsSourceEngine {
 
     /// 调用可选函数：函数缺失时返回 CallResult::not_found() 而非报错
     ///
-    /// 参考 `JsSourceEngine.callFunctionIfExists()`
+    /// 参考 `JsSourceEngine.callFunctionIfExists()`。存在性用 `typeof` 探测：
+    /// QuickJS 执行链把异常统一映射为 rquickjs 通用 Display 文案，旧实现按
+    /// 「缺少函数」错误串判定恒不命中，会把可选函数缺失误报为引擎错误。
     pub fn call_function_if_exists(
         &mut self,
         name: &str,
         args: &[(&str, JsValue)],
     ) -> LegadoResult<CallResult> {
+        let probe = format!("(function () {{ return typeof {name}; }})");
+        let exists = matches!(
+            self.call_function(&probe, &[]),
+            Ok(Some(kind)) if kind == "function"
+        );
+        if !exists {
+            return Ok(CallResult::not_found());
+        }
         match self.call_function(name, args) {
             Ok(value) => Ok(CallResult::success(value)),
-            Err(LegadoError::JsEngine(msg)) if msg.contains("缺少函数") => {
-                Ok(CallResult::not_found())
-            }
             Err(e) => Err(e),
         }
     }

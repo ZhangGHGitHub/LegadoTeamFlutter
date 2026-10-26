@@ -37,7 +37,7 @@
 //! | GET `/getReplaceRules` | `ReplaceRuleController.allRules`（:14-20） | data 为规则数组的 **JSON 字符串**（`setData(GSON.toJson)` 双层编码）；**无令牌** |
 //! | GET `/getJsSourceApiTokenRequired` | `BookSourceController.isJsSourceApiTokenRequired`（:189-194） | data 裸布尔；恒放行；`Cache-Control: no-store` |
 //! | GET `/getHttpLogs?limit=` `/getHttpLog?id=` | `HttpLogController.getLogs/getLog`（:13-39） | **令牌保护**（`PROTECTED_HTTP_LOG_READ_ROUTES`，HttpServer.kt:259-262）；limit clamp(1,50)；no-store |
-//! | GET `/getReviewSummary` `/getReviewDetail` `/getReviewReplies` | `ReviewController.getSummary/getDetail/getReplies`（:181-398） | 规则书源 AnalyzeUrl+parser、JS 书源编排器；detail 分页游标 64 槽；JS 书源 replies 能力缺失 → 空页降级（review_api.rs 登记） |
+//! | GET `/getReviewSummary` `/getReviewDetail` `/getReviewReplies` | `ReviewController.getSummary/getDetail/getReplies`（:181-398） | 规则书源 AnalyzeUrl+parser、JS 书源编排器；detail 分页游标 64 槽；JS 书源 replies 走 getReviewReplies 编排器（2026-10-26 批12 补齐；函数缺失按原版 callOptionalFunction 空页） |
 //! | POST `/openLegacyReview` `/runLegacyReview` | `ReviewController.openLegacyReview/runLegacyReview`（:400-456） | **令牌保护**（PROTECTED_SOURCE_WRITE_ROUTES）；会话 16 槽 / 2h TTL |
 //! | GET `/legacyReviewPage?id=&nonce=` | `HttpServer.legacyReviewPageResponse`（:280-310） | HTML+桥接注入+CSP；未命中 404「旧评论会话无效或已过期」 |
 //!
