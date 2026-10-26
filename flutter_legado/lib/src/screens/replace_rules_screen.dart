@@ -10,13 +10,13 @@ import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import '../services/bridge_http.dart';
-import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/replace_rule/replace_rule_notifier.dart';
 import '../routes.dart';
+import '../widgets/export_file_sheet.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 import '../widgets/replace_rule_group_manage_dialog.dart';
@@ -458,7 +458,16 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     }
   }
 
-  /// 导出选中规则（对标原版 menu_export_selection：JSON 分享）
+  /// 导出选中规则（批16e：接入统一导出目标 Sheet）
+  ///
+  /// 对齐原版 `ReplaceRuleActivity.kt:297-304`（menu_export_selection →
+  /// `GSON.toJson(ReplacePreviewConfig.withSamples(selection))` →
+  /// HandleFileContract.EXPORT，文件名 `exportReplaceRule.json`，
+  /// `application/json`）。
+  ///
+  /// 内容形态 = `withSamples` 输出的规则数组（每条规则 JSON 可含
+  /// `previewText`）。本项目未持久化 previewText 样本（仅编辑页复制规则时
+  /// 临时携带），故按现有规则 JSON 导出，字段与 withSamples 一致。
   Future<void> _exportSelected(List<int> ids) async {
     final rules = ref
         .read(replaceRuleNotifierProvider)
@@ -468,16 +477,19 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
     if (rules.isEmpty) return;
     final json = const JsonEncoder.withIndent('  ')
         .convert(rules.map((r) => r.toJson()).toList());
-    try {
-      await Share.share(json, subject: 'Legado 替换规则');
-      if (mounted) _exitBatch();
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败：$e')),
-        );
-      }
-    }
+    final result = await showExportFileSheet(
+      context,
+      content: json,
+      fileName: 'exportReplaceRule.json',
+      // 参考版 BaseRuleViewModel.uploadSelectedRules 固定上传该名
+      uploadFileName: 'export_rules.json',
+      subject: '导出替换规则',
+    );
+    if (!mounted || result == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message)),
+    );
+    _exitBatch();
   }
 
   /// [UI-fix v2.0.1 | 2026-08-06] 导入菜单分发

@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
@@ -8,8 +7,6 @@ import '../widgets/legado_app_bar.dart';
 import '../widgets/md3_fast_scroller.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../constants/pref_keys.dart';
 import '../models/models.dart';
@@ -17,9 +14,11 @@ import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/bookshelf_manage/bookshelf_manage_notifier.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
+import '../utils/error_message.dart';
 import '../widgets/app_progress_indicator.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
+import '../widgets/export_file_sheet.dart';
 import '../widgets/loading_indicator.dart';
 
 /// 书架管理页面
@@ -389,7 +388,12 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     }
   }
 
-  /// 导出书架上所有在用书源 JSON（对齐 saveAllUseBookSourceToFile）
+  /// 导出书架上所有在用书源 JSON（批16e：接入统一导出目标 Sheet）
+  ///
+  /// 对齐原版 `BookshelfManageActivity.kt:297-306`
+  /// （menu_export_all_use_book_source → saveAllUseBookSourceToFile →
+  /// HandleFileContract.EXPORT），文件名 `bookSource.json`、
+  /// `application/json`。
   Future<void> _exportAllUsedBookSources() async {
     final messenger = ScaffoldMessenger.of(context);
     try {
@@ -416,16 +420,21 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
         );
         return;
       }
-      final dir = await getTemporaryDirectory();
-      final file = File('${dir.path}/bookSource.json');
-      await file.writeAsString(const JsonEncoder.withIndent('  ').convert(used));
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: 'application/json')],
-        text: '导出 ${used.length} 个在用书源',
+      final json = const JsonEncoder.withIndent('  ').convert(used);
+      if (!mounted) return;
+      final result = await showExportFileSheet(
+        context,
+        content: json,
+        fileName: 'bookSource.json',
+        subject: '导出在用书源',
       );
+      if (!mounted || result == null) return;
+      messenger.showSnackBar(SnackBar(content: Text(result.message)));
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('导出失败：$e')));
+      messenger.showSnackBar(
+        SnackBar(content: Text('导出失败：${errorMessage(e)}')),
+      );
     }
   }
 

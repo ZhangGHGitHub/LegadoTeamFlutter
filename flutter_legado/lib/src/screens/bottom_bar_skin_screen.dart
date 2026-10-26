@@ -12,6 +12,9 @@ import 'package:share_plus/share_plus.dart';
 import '../providers/bottom_bar_skin_notifier.dart';
 import '../services/bottom_bar_skin_format.dart';
 import '../services/bottom_bar_skin_service.dart';
+import '../services/export_file_service.dart';
+import '../utils/error_message.dart';
+import '../widgets/export_file_sheet.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/bottom_sheet_widget.dart';
 import 'bottom_bar_skin_assign_screen.dart';
@@ -248,35 +251,37 @@ class BottomBarSkinScreen extends ConsumerWidget {
     }
   }
 
-  /// 导出图集为 zip（对齐 BottomBarSkinActivity.exportSkin）
+  /// 导出图集为 zip（批16e：接入统一导出目标 Sheet，filePath 模式）
+  ///
+  /// 对齐原版 `BottomBarSkinActivity.kt:190-193`（exportSkin →
+  /// `BottomBarSkinManager.buildZipBytes(name)` →
+  /// `FileData("$name.zip", bytes, "application/zip")`）：zip 由现有导出
+  /// 逻辑生成到临时文件后，以 filePath 模式交给「另存/上传直链」；
+  /// 临时文件由本页创建，上传成功后清理。
   Future<void> _exportSkin(BuildContext context, String name) async {
     try {
       final bytes = await BottomBarSkinService.instance.buildZipBytes(name);
-      final savePath = await FilePicker.platform.saveFile(
-        dialogTitle: '导出底栏皮肤',
+      final zipPath = await const ExportFileService().writeTempFileBytes(
         fileName: '$name.zip',
-        type: FileType.custom,
-        allowedExtensions: ['zip'],
+        bytes: bytes,
       );
-      if (savePath != null) {
-        await File(savePath).writeAsBytes(bytes, flush: true);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('已导出到: $savePath')),
-          );
-        }
-        return;
-      }
-      // 平台无保存对话框时走分享
-      final file = await BottomBarSkinService.instance.cacheShareZip(name);
-      await Share.shareXFiles(
-        [XFile(file.path, mimeType: 'application/zip')],
-        subject: name,
+      if (!context.mounted) return;
+      final result = await showExportFileSheet(
+        context,
+        filePath: zipPath,
+        fileName: '$name.zip',
+        contentType: 'application/zip',
+        subject: '导出底栏皮肤',
+        deleteTempFileAfterUpload: true,
+      );
+      if (!context.mounted || result == null) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(result.message)),
       );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败：$e')),
+          SnackBar(content: Text('导出失败：${errorMessage(e)}')),
         );
       }
     }

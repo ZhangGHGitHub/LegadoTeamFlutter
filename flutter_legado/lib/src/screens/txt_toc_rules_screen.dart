@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+﻿import 'dart:convert';
+
+import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
@@ -8,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/models.dart';
 import '../providers/txt_toc_rules/txt_toc_rules_notifier.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/export_file_sheet.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 import '../utils/error_message.dart';
@@ -134,6 +137,7 @@ It was a dark and stormy night.''';
           onSelected: _onMoreMenuSelected,
           itemBuilder: (_) => const [
             PopupMenuItem(value: 'importDefault', child: Text('导入默认')),
+            PopupMenuItem(value: 'export', child: Text('导出规则')),
             PopupMenuItem(value: 'help', child: Text('帮助')),
           ],
         ),
@@ -141,14 +145,47 @@ It was a dark and stormy night.''';
     );
   }
 
-  /// [台账 4-1 ⑦ | 2.0.274] ⋮ 溢出菜单：保留原版 never 项能力（导入默认/帮助）
+  /// [台账 4-1 ⑦ | 2.0.274] ⋮ 溢出菜单：保留原版 never 项能力
+  /// （导入默认/帮助），批16e 增补「导出规则」。
   void _onMoreMenuSelected(String value) {
     switch (value) {
       case 'help':
         showHelp(context, HelpAssets.txtTocRuleHelp);
       case 'importDefault':
         _importDefault();
+      case 'export':
+        _exportRules();
     }
+  }
+
+  /// 导出 TXT 目录规则（批16e：接入统一导出目标 Sheet）
+  ///
+  /// 对齐原版 `TxtTocRuleActivity.kt:301-308`（menu_export_selection →
+  /// `GSON.toJson(adapter.selection)` → HandleFileContract.EXPORT）：
+  /// 文件名 `exportTxtTocRule.json`、`application/json`，内容为规则数组。
+  /// 本页暂无批量选择模式，菜单项导出全部规则。
+  Future<void> _exportRules() async {
+    final rules = ref.read(txtTocRulesNotifierProvider).rules;
+    if (rules.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('暂无可导出的目录规则')),
+      );
+      return;
+    }
+    final json = const JsonEncoder.withIndent('  ')
+        .convert(rules.map((r) => r.toJson()).toList());
+    final result = await showExportFileSheet(
+      context,
+      content: json,
+      fileName: 'exportTxtTocRule.json',
+      // 参考版 BaseRuleViewModel.uploadSelectedRules 固定上传该名
+      uploadFileName: 'export_rules.json',
+      subject: '导出目录规则',
+    );
+    if (!mounted || result == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message)),
+    );
   }
 
   Future<void> _importDefault() async {

@@ -523,27 +523,93 @@ extension _SourceActions on _SourceScreenState {
     }
   }
 
+  /// 导出选中（批16e：接入统一导出目标 Sheet）
+  ///
+  /// 对齐原版 `BookSourceActivity.kt:505-517`（menu_export_selection →
+  /// `viewModel.saveToFile` → `HandleFileContract.EXPORT`）：
+  /// - 单源 JS（`mainJs` 非空）导出 `{bookSourceName}.js`，内容为 mainJs，
+  ///   contentType `text/javascript`；原版同时以文件形式交给 HANDLE_FILE，
+  ///   本项目改用 Sheet 的 filePath 模式（临时文件 → 另存/上传）；
+  /// - 其余导出 `bookSource_{name}.json`（单源）或
+  ///   `bookSource_yyyyMMddHHmm.json`（多源），contentType `application/json`。
+  ///
+  /// 旧实现直接写剪贴板（原版无此行为），本次改为另存/上传二选一。
   Future<void> _exportBatchSelected(BuildContext context) async {
+    final notifier = ref.read(sourceNotifierProvider.notifier);
+    final state = ref.read(sourceNotifierProvider);
+    final selected = state.sources
+        .where((s) => state.selectedUrls.contains(s.bookSourceUrl))
+        .toList();
+    if (selected.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先选择书源')),
+      );
+      return;
+    }
+    const fileService = ExportFileService();
+    ExportFileResult? result;
     try {
-      final notifier = ref.read(sourceNotifierProvider.notifier);
-      final state = ref.read(sourceNotifierProvider);
-      final json = await notifier.exportSelectedSources();
-
-      await Clipboard.setData(ClipboardData(text: json));
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content:
-                  Text('已导出 ${state.selectedCount} 个书源到剪贴板')),
+      final mainJs = selected.singleOrNull?.mainJs;
+      if (mainJs != null && mainJs.isNotEmpty) {
+        // 单源 JS：写临时 .js 文件后走 filePath 模式（对齐原版 text/javascript）
+        final jsName =
+            '${ExportFileService.normalizeFileName(selected.single.bookSourceName)}.js';
+        final temp = await fileService.writeTempFile(
+          fileName: jsName,
+          content: mainJs,
+          mimeType: 'text/javascript',
+        );
+        if (!context.mounted) return;
+        result = await showExportFileSheet(
+          context,
+          filePath: temp.path,
+          fileName: jsName,
+          contentType: 'text/javascript',
+          subject: '导出书源',
+          // 临时文件由本页创建，上传成功后清理
+          deleteTempFileAfterUpload: true,
+          fileService: fileService,
+        );
+      } else {
+        final json = await notifier.exportSelectedSources();
+        if (!context.mounted) return;
+        result = await showExportFileSheet(
+          context,
+          content: json,
+          fileName: _bookSourceExportFileName(selected),
+          // 参考版 BookSourceViewModel.uploadSources 固定上传 bookSource.json
+          uploadFileName: 'bookSource.json',
+          subject: '导出书源',
+          fileService: fileService,
         );
       }
-      notifier.exitBatchMode();
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('导出失败：$e')),
+          SnackBar(content: Text('导出失败：${errorMessage(e)}')),
         );
       }
+      return;
     }
+    if (!context.mounted || result == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message)),
+    );
+    notifier.exitBatchMode();
+  }
+
+  /// 书源 JSON 导出文件名（对齐原版 BookSourceViewModel.saveToFile）：
+  /// 单源 `bookSource_{name}.json`，多源 `bookSource_yyyyMMddHHmm.json`
+  String _bookSourceExportFileName(List<BookSource> selected) {
+    if (selected.length == 1) {
+      final name =
+          ExportFileService.normalizeFileName(selected.single.bookSourceName);
+      return 'bookSource_$name.json';
+    }
+    final now = DateTime.now();
+    String two(int value) => value.toString().padLeft(2, '0');
+    final timestamp = '${now.year}${two(now.month)}${two(now.day)}'
+        '${two(now.hour)}${two(now.minute)}';
+    return 'bookSource_$timestamp.json';
   }
 }

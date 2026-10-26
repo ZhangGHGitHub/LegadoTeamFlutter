@@ -1,4 +1,6 @@
-﻿import 'package:flutter/material.dart';
+﻿import 'dart:convert';
+
+import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
@@ -9,6 +11,7 @@ import '../providers/audio/audio_notifier.dart';
 import '../providers/audio/http_tts_seed.dart';
 import '../providers/providers.dart';
 import '../widgets/app_progress_indicator.dart';
+import '../widgets/export_file_sheet.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 
@@ -176,6 +179,71 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
     messenger.showSnackBar(const SnackBar(content: Text('已设为全局引擎')));
   }
 
+  /// 当前选中的引擎对象（按裸 URL 匹配；null = 未选中）
+  HttpTts? get _selectedEngine {
+    final url = _selectedUrl;
+    if (url == null) return null;
+    for (final engine in _engines) {
+      if (normalizeTtsEngineUrl(engine.url) == url) return engine;
+    }
+    return null;
+  }
+
+  /// 导出全部朗读引擎（批16e：接入统一导出目标 Sheet）
+  ///
+  /// 对齐原版 `SpeakEngineDialog.kt:211-217`（menu_export_all →
+  /// `GSON.toJson(adapter.getItems())` → HandleFileContract.EXPORT）：
+  /// 文件名 `httpTts.json`、`application/json`。
+  Future<void> _exportAllEngines() async {
+    if (_engines.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('暂无可导出的朗读引擎')),
+      );
+      return;
+    }
+    final json = const JsonEncoder.withIndent('  ')
+        .convert(_engines.map((e) => e.toJson()).toList());
+    final result = await showExportFileSheet(
+      context,
+      content: json,
+      fileName: 'httpTts.json',
+      // 参考版导出 URL 使用 httpTTS.json
+      uploadFileName: 'httpTTS.json',
+      subject: '导出朗读引擎',
+    );
+    if (!mounted || result == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message)),
+    );
+  }
+
+  /// 导出当前选中引擎（批16e：接入统一导出目标 Sheet）
+  ///
+  /// 对齐原版 `SpeakEngineDialog.kt:219-232`（menu_export →
+  /// `httpTts_${tts.name}.json`、`application/json`）；原版 `currentSelect
+  /// == -1`（选中系统 TTS）时提示 `is_system_tts_no_export`，本页无系统
+  /// TTS 行，未选中即等价场景，沿用同一文案「系统TTS无法导出」。
+  Future<void> _exportSelectedEngine() async {
+    final engine = _selectedEngine;
+    if (engine == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('系统TTS无法导出')),
+      );
+      return;
+    }
+    final json = const JsonEncoder.withIndent('  ').convert(engine.toJson());
+    final result = await showExportFileSheet(
+      context,
+      content: json,
+      fileName: 'httpTts_${engine.name}.json',
+      subject: '导出朗读引擎',
+    );
+    if (!mounted || result == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -194,6 +262,23 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
             icon: const Icon(Symbols.refresh_rounded),
             tooltip: '刷新',
             onPressed: _loadEngines,
+          ),
+          // 批16e：导出全部 / 导出当前选中（原版 SpeakEngineDialog 菜单）
+          PopupMenuButton<String>(
+            tooltip: '更多操作',
+            icon: const Icon(Symbols.more_vert_rounded),
+            onSelected: (value) {
+              switch (value) {
+                case 'export_all':
+                  _exportAllEngines();
+                case 'export_selected':
+                  _exportSelectedEngine();
+              }
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'export_all', child: Text('导出全部')),
+              PopupMenuItem(value: 'export_selected', child: Text('导出当前选中')),
+            ],
           ),
         ],
       ),

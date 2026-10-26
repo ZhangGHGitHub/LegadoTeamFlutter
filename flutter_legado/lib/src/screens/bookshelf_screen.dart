@@ -7,7 +7,6 @@ import 'package:material_symbols_icons/symbols.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:share_plus/share_plus.dart';
 
 import '../bridge/ffi.dart' show BridgeError;
 import '../l10n/app_strings.dart';
@@ -27,6 +26,7 @@ import '../widgets/book_list_item.dart';
 import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
+import '../widgets/export_file_sheet.dart';
 import '../widgets/skeleton.dart'; // [LAYOUT_PLAN P4] 首屏 Skeleton 接线
 
 /// 书架页面（Riverpod ConsumerStatefulWidget）
@@ -1071,9 +1071,12 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     }
   }
 
-  /// 导出书单（对标 Kotlin BookshelfViewModel.exportBookshelf）：
-  /// [UI-fix v2.0.2 | 2026-08-06] JSON 数组 [{name,author,intro}] 2 空格缩进，
-  /// 输出 bookshelf.json 供分享（原版行为对齐） — Qoder
+  /// 导出书单（批16e：接入统一导出目标 Sheet）
+  ///
+  /// 对齐原版 `BaseBookshelfFragment.kt:223-229`（menu_export_bookshelf →
+  /// `exportBookshelf` → HandleFileContract.EXPORT）：内容为 JSON 数组
+  /// `[{name,author,intro}]`（2 空格缩进，intro 取显示简介），文件名
+  /// `bookshelf.json`、`application/json`。
   Future<void> _exportBookshelf() async {
     final books = ref.read(bookshelfNotifierProvider).books;
     if (books.isEmpty) {
@@ -1090,13 +1093,16 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
             })
         .toList();
     final json = const JsonEncoder.withIndent('  ').convert(data);
-    await Share.shareXFiles([
-      XFile.fromData(
-        utf8.encode(json),
-        name: 'bookshelf.json',
-        mimeType: 'application/json',
-      ),
-    ]);
+    final result = await showExportFileSheet(
+      context,
+      content: json,
+      fileName: 'bookshelf.json',
+      subject: '导出书单',
+    );
+    if (!mounted || result == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message)),
+    );
   }
 
   // ===== [UI-fix v2.0.2 | 2026-08-06] 更新目录 / 添加网址 / 导入书单 — Qoder =====

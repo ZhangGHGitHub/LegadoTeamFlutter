@@ -10,6 +10,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../providers/highlight_rules/highlight_rules_notifier.dart';
 import '../widgets/empty_state.dart';
+import '../widgets/export_file_sheet.dart';
 import '../widgets/loading_indicator.dart';
 
 /// 高亮规则管理页面
@@ -94,6 +95,42 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
     );
   }
 
+  /// 导出全部高亮规则（批16e：接入统一导出目标 Sheet）
+  ///
+  /// 对齐原版 `HighlightRuleActivity.kt:145-157`（exportRules →
+  /// `HighlightRuleFile(type = HighlightRuleFile.TYPE, rules = rules)` →
+  /// HandleFileContract.EXPORT）：文件名 `HighlightRules.json`、
+  /// `application/json`；`HighlightRuleFile.TYPE` 原版取 `"highlightRule"`
+  /// （`data/entities/HighlightRule.kt:107`）。
+  ///
+  /// 本页暂无原版的选择栏批量模式，菜单项导出当前全部规则；空列表按原版
+  /// `highlight_rule_empty` 语义提示。
+  Future<void> _exportRules() async {
+    final rules = ref.read(highlightRulesNotifierProvider).rules;
+    if (rules.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('暂无高亮规则')),
+      );
+      return;
+    }
+    final json = const JsonEncoder.withIndent('  ').convert({
+      'type': 'highlightRule',
+      'rules': rules.map((r) => r.toJson()).toList(),
+    });
+    final result = await showExportFileSheet(
+      context,
+      content: json,
+      fileName: 'HighlightRules.json',
+      // 参考版 highlightRule 备份/上传文件名
+      uploadFileName: 'highlightRule.json',
+      subject: '导出高亮规则',
+    );
+    if (!mounted || result == null) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(result.message)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final cs = Theme.of(context).colorScheme;
@@ -108,6 +145,18 @@ class _HighlightRulesScreenState extends ConsumerState<HighlightRulesScreen> {
             icon: const Icon(Symbols.add_rounded),
             tooltip: '新增规则',
             onPressed: () => _edit(null),
+          ),
+          // 批16e：导出规则（原版 HighlightRuleActivity 溢出/选择栏导出；
+          // 本页暂无批量选择模式，菜单导出全部规则）
+          PopupMenuButton<String>(
+            tooltip: '更多操作',
+            icon: const Icon(Symbols.more_vert_rounded),
+            onSelected: (value) {
+              if (value == 'export') _exportRules();
+            },
+            itemBuilder: (_) => const [
+              PopupMenuItem(value: 'export', child: Text('导出规则')),
+            ],
           ),
         ],
       ),

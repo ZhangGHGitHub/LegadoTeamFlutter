@@ -8,8 +8,6 @@ import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
-import 'package:path_provider/path_provider.dart';
-import 'package:share_plus/share_plus.dart';
 
 import '../providers/auto_task/auto_task_notifier.dart';
 import '../providers/providers.dart';
@@ -17,6 +15,7 @@ import '../services/bridge_http.dart';
 import '../services/auto_task_scheduler.dart';
 import '../widgets/auto_task_debug_dialog.dart';
 import '../widgets/custom_refresh_indicator.dart';
+import '../widgets/export_file_sheet.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 
@@ -828,7 +827,15 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
   bool _isFiveFieldCron(String cron) =>
       cron.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).length == 5;
 
-  /// 导出任务（对标 menu_export → exportAutoTask.json）
+  /// 导出任务（批16e：接入统一导出目标 Sheet）
+  ///
+  /// 对齐原版 `AutoTaskActivity.kt:201-211`（menu_export →
+  /// `AutoTask.exportJson()` → HandleFileContract.EXPORT），文件名
+  /// `exportAutoTask.json`、`application/json`。
+  ///
+  /// 注：原版另有「选中导出」（`exportAutoTaskSelection.json`，见
+  /// AutoTaskActivity.kt:324-334），本项目定时任务页尚无批量选择模式，
+  /// 故本次只接入全部导出。
   Future<void> _exportTasks(BuildContext context) async {
     final tasks = ref.read(autoTaskNotifierProvider).tasks;
     if (tasks.isEmpty) {
@@ -836,25 +843,14 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       return;
     }
     final json = jsonEncode(tasks.map((t) => t.toJson()).toList());
-    try {
-      // 优先让用户选择保存位置（桌面/移动端支持）
-      final savePath = await FilePicker.platform.saveFile(
-        dialogTitle: '导出定时任务',
-        fileName: 'exportAutoTask.json',
-      );
-      if (savePath != null) {
-        await File(savePath).writeAsString(json);
-        if (context.mounted) _snack(context, '已导出到: $savePath');
-        return;
-      }
-      // 平台不支持保存对话框：写入文档目录并走系统分享
-      final dir = await getApplicationDocumentsDirectory();
-      final file = File('${dir.path}/exportAutoTask.json');
-      await file.writeAsString(json);
-      await Share.shareXFiles([XFile(file.path)], subject: '导出定时任务');
-    } catch (e) {
-      if (context.mounted) _snack(context, '导出失败: $e');
-    }
+    final result = await showExportFileSheet(
+      context,
+      content: json,
+      fileName: 'exportAutoTask.json',
+      subject: '导出定时任务',
+    );
+    if (!context.mounted || result == null) return;
+    _snack(context, result.message);
   }
 
   /// 帮助对话框（对标 menu_help → autoTaskHelp）
