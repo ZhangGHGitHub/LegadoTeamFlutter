@@ -378,34 +378,28 @@ fn eval_explore_action_js(
         .lock()
         .map_err(|e| LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}")))?;
 
-    ui_action_queue::begin_collect();
-    let result = with_current_source_tag(&tag, || {
-        bootstrap_explore_js_context(&guard, source)?;
+    // 每次 action 求值一个独立收集容器（对齐原版每次求值新建 JsExtensions 的
+    // 生命周期；并发 explore 请求/与段评请求互不串流，审查批4 P2-3）
+    let (result, collected) = ui_action_queue::with_collect(|| {
+        with_current_source_tag(&tag, || {
+            bootstrap_explore_js_context(&guard, source)?;
 
-        let raw = guard
-            .eval(action_js)
-            .map_err(|e| LegadoError::JsEngine(format!("explore action JS 执行失败: {e}")))?;
+            let raw = guard
+                .eval(action_js)
+                .map_err(|e| LegadoError::JsEngine(format!("explore action JS 执行失败: {e}")))?;
 
-        sync_info_map_from_js(&guard, &tag)?;
-        sync_login_cache_from_js(&tag);
-
-        let refresh_explore = ui_action_queue::take_refresh_explore_requested();
-        let actions = ui_action_queue::end_collect();
-        Ok(ExploreEvalActionResult {
-            raw,
-            actions,
-            refresh_explore,
+            sync_info_map_from_js(&guard, &tag)?;
+            sync_login_cache_from_js(&tag);
+            Ok(raw)
         })
     });
 
-    match result {
-        Ok(v) => Ok(v),
-        Err(e) => {
-            ui_action_queue::discard_collect();
-            ui_action_queue::take_refresh_explore_requested();
-            Err(e)
-        }
-    }
+    // 失败时 collected 随作用域丢弃（对齐旧 discard_collect 语义）
+    result.map(|raw| ExploreEvalActionResult {
+        raw,
+        actions: collected.actions,
+        refresh_explore: collected.refresh_explore,
+    })
 }
 
 #[cfg(feature = "quickjs")]

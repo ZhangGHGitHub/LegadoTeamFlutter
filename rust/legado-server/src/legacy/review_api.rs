@@ -17,7 +17,10 @@
 //! 引擎链落点（B4 调查结论，全可达）：`legado-parser`（AnalyzeUrl/review_rule_parser）、
 //! `legado-fetcher`（client 注入面 / `apply_cookie_jar_marker` / JS 执行器适配）、
 //! `legado-js`（JS 书源编排器 / QuickJS 宿主 API `java.showBrowser` →
-//! `ui_action_queue`）。与 ffi `review_api.rs` 为同一解析/抓取语义（单实现原则，
+//! `ui_action_queue`，收集容器按每次求值隔离——审查批4 P2-3：并发
+//! `/openLegacyReview`、`/runLegacyReview` 与 App 侧 FFI 求值互不串流，
+//! 对齐原版每次求值新建 `LegacyReviewJsExtensions` 局部回调的生命周期）。
+//! 与 ffi `review_api.rs` 为同一解析/抓取语义（单实现原则，
 //! 仅宿主差异：ffi 用进程共享客户端，server 用 `server_deps` cookie 持久化客户端）。
 //!
 //! 登记差异：
@@ -1077,9 +1080,14 @@ fn eval_legacy_review_script(
         ),
     ];
 
-    legado_js::host_api::ui_action_queue::begin_collect();
-    let eval = engine.eval_with_bindings(script, &bindings);
-    let actions = legado_js::host_api::ui_action_queue::end_collect();
+    // 审查批4 P2-3：每次 legacy 脚本求值一个独立收集容器——HTTP 服务并发处理
+    // `/openLegacyReview`、`/runLegacyReview`（以及与 App 侧 FFI 求值并发）互不
+    // 串流；对齐原版每次求值新建 `LegacyReviewJsExtensions(source, onShowBrowser)`
+    // 的局部回调生命周期（ReviewController.kt:471-487）。
+    let (eval, collected) = legado_js::host_api::ui_action_queue::with_collect(|| {
+        engine.eval_with_bindings(script, &bindings)
+    });
+    let actions = collected.actions;
     let output = eval.map_err(|e| e.to_string())?;
 
     // showBrowser 拦截：取最后一次 openBrowser 载荷（对齐 onShowBrowser 回调

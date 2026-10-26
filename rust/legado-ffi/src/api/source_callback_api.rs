@@ -101,17 +101,8 @@ pub fn source_call_back_btn(
         None => None,
     };
 
-    let raw = eval_call_back_js(&source, &book, chapter.as_ref(), event, result, js_str)?;
-    let actions = {
-        #[cfg(feature = "quickjs")]
-        {
-            legado_js::host_api::ui_action_queue::end_collect()
-        }
-        #[cfg(not(feature = "quickjs"))]
-        {
-            Vec::new()
-        }
-    };
+    let (raw, actions) =
+        eval_call_back_js(&source, &book, chapter.as_ref(), event, result, js_str)?;
 
     Ok(SourceCallBackBtnResult {
         invoked: true,
@@ -129,17 +120,13 @@ fn eval_call_back_js(
     event: &str,
     result: Option<&str>,
     js_str: &str,
-) -> LegadoResult<String> {
+) -> LegadoResult<(String, Vec<serde_json::Value>)> {
     use legado_js::{JsEngine, JsValue};
 
-    legado_js::host_api::ui_action_queue::begin_collect();
-    let engine = crate::js_executor::fresh_engine(&source.book_source_url).inspect_err(|_e| {
-        legado_js::host_api::ui_action_queue::discard_collect();
-    })?;
-    let guard = engine.lock().map_err(|e| {
-        legado_js::host_api::ui_action_queue::discard_collect();
-        LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}"))
-    })?;
+    let engine = crate::js_executor::fresh_engine(&source.book_source_url)?;
+    let guard = engine
+        .lock()
+        .map_err(|e| LegadoError::JsEngine(format!("JS 引擎加锁失败: {e}")))?;
 
     let book_value: serde_json::Value = serde_json::to_value(book)?;
     let chapter_value = match chapter {
@@ -161,16 +148,17 @@ fn eval_call_back_js(
     // P2-19：绑定当前书源 tag（对齐 explore_api / js_executor 主路径）：
     // callBackJs 调用 java.ajax 时 Cookie/全局头按本源 book_source_url 过滤
     // （而非未归属不带、更非全量合并泄漏）。
-    match legado_js::host_api::current_source::with_current_source_tag(
-        &source.book_source_url,
-        || guard.eval_with_bindings(js_str, &bindings),
-    ) {
-        Ok(raw) => Ok(raw),
-        Err(e) => {
-            legado_js::host_api::ui_action_queue::discard_collect();
-            Err(e)
-        }
-    }
+    //
+    // 审查批4 P2-3：每次 callBackBtn 一个独立收集容器，App 侧与 Web 服务侧
+    // 并发求值互不串流（对齐原版每次求值新建 SourceLoginJsExtensions）。
+    let (eval, collected) = legado_js::host_api::ui_action_queue::with_collect(|| {
+        legado_js::host_api::current_source::with_current_source_tag(
+            &source.book_source_url,
+            || guard.eval_with_bindings(js_str, &bindings),
+        )
+    });
+    // 失败时 collected 随作用域丢弃（对齐旧 discard_collect 语义）
+    eval.map(|raw| (raw, collected.actions))
 }
 
 #[cfg(feature = "quickjs")]
@@ -203,7 +191,7 @@ fn eval_call_back_js(
     _event: &str,
     _result: Option<&str>,
     _js_str: &str,
-) -> LegadoResult<String> {
+) -> LegadoResult<(String, Vec<serde_json::Value>)> {
     Err(LegadoError::JsEngine(
         "QuickJS engine not enabled. Build with --features quickjs".into(),
     ))
