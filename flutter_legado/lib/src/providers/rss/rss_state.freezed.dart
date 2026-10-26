@@ -52,6 +52,10 @@ mixin _$RssState {
   /// 是否正在加载下一页
   bool get loadingMore => throw _privateConstructorUsedError;
 
+  /// 加载下一页是否失败（失败后门控，禁止滚动/自动检查连续重发；
+  /// 由用户点「重试」或重新刷新后解除，审查 P2-1）
+  bool get loadMoreFailed => throw _privateConstructorUsedError;
+
   /// 搜索关键词；null 表示非搜索态
   String? get key => throw _privateConstructorUsedError;
 
@@ -81,6 +85,7 @@ abstract class $RssStateCopyWith<$Res> {
       String? nextUrl,
       bool hasMore,
       bool loadingMore,
+      bool loadMoreFailed,
       String? key,
       int page});
 
@@ -112,6 +117,7 @@ class _$RssStateCopyWithImpl<$Res, $Val extends RssState>
     Object? nextUrl = freezed,
     Object? hasMore = null,
     Object? loadingMore = null,
+    Object? loadMoreFailed = null,
     Object? key = freezed,
     Object? page = null,
   }) {
@@ -164,6 +170,10 @@ class _$RssStateCopyWithImpl<$Res, $Val extends RssState>
           ? _value.loadingMore
           : loadingMore // ignore: cast_nullable_to_non_nullable
               as bool,
+      loadMoreFailed: null == loadMoreFailed
+          ? _value.loadMoreFailed
+          : loadMoreFailed // ignore: cast_nullable_to_non_nullable
+              as bool,
       key: freezed == key
           ? _value.key
           : key // ignore: cast_nullable_to_non_nullable
@@ -209,6 +219,7 @@ abstract class _$$RssStateImplCopyWith<$Res>
       String? nextUrl,
       bool hasMore,
       bool loadingMore,
+      bool loadMoreFailed,
       String? key,
       int page});
 
@@ -239,6 +250,7 @@ class __$$RssStateImplCopyWithImpl<$Res>
     Object? nextUrl = freezed,
     Object? hasMore = null,
     Object? loadingMore = null,
+    Object? loadMoreFailed = null,
     Object? key = freezed,
     Object? page = null,
   }) {
@@ -291,6 +303,10 @@ class __$$RssStateImplCopyWithImpl<$Res>
           ? _value.loadingMore
           : loadingMore // ignore: cast_nullable_to_non_nullable
               as bool,
+      loadMoreFailed: null == loadMoreFailed
+          ? _value.loadMoreFailed
+          : loadMoreFailed // ignore: cast_nullable_to_non_nullable
+              as bool,
       key: freezed == key
           ? _value.key
           : key // ignore: cast_nullable_to_non_nullable
@@ -319,6 +335,7 @@ class _$RssStateImpl implements _RssState {
       this.nextUrl,
       this.hasMore = false,
       this.loadingMore = false,
+      this.loadMoreFailed = false,
       this.key,
       this.page = 1})
       : _sources = sources,
@@ -401,6 +418,12 @@ class _$RssStateImpl implements _RssState {
   @JsonKey()
   final bool loadingMore;
 
+  /// 加载下一页是否失败（失败后门控，禁止滚动/自动检查连续重发；
+  /// 由用户点「重试」或重新刷新后解除，审查 P2-1）
+  @override
+  @JsonKey()
+  final bool loadMoreFailed;
+
   /// 搜索关键词；null 表示非搜索态
   @override
   final String? key;
@@ -412,7 +435,7 @@ class _$RssStateImpl implements _RssState {
 
   @override
   String toString() {
-    return 'RssState(sources: $sources, articles: $articles, selectedSource: $selectedSource, isLoadingSources: $isLoadingSources, isLoadingArticles: $isLoadingArticles, error: $error, selectedGroup: $selectedGroup, sorts: $sorts, currentSort: $currentSort, nextUrl: $nextUrl, hasMore: $hasMore, loadingMore: $loadingMore, key: $key, page: $page)';
+    return 'RssState(sources: $sources, articles: $articles, selectedSource: $selectedSource, isLoadingSources: $isLoadingSources, isLoadingArticles: $isLoadingArticles, error: $error, selectedGroup: $selectedGroup, sorts: $sorts, currentSort: $currentSort, nextUrl: $nextUrl, hasMore: $hasMore, loadingMore: $loadingMore, loadMoreFailed: $loadMoreFailed, key: $key, page: $page)';
   }
 
   @override
@@ -438,6 +461,8 @@ class _$RssStateImpl implements _RssState {
             (identical(other.hasMore, hasMore) || other.hasMore == hasMore) &&
             (identical(other.loadingMore, loadingMore) ||
                 other.loadingMore == loadingMore) &&
+            (identical(other.loadMoreFailed, loadMoreFailed) ||
+                other.loadMoreFailed == loadMoreFailed) &&
             (identical(other.key, key) || other.key == key) &&
             (identical(other.page, page) || other.page == page));
   }
@@ -457,6 +482,7 @@ class _$RssStateImpl implements _RssState {
       nextUrl,
       hasMore,
       loadingMore,
+      loadMoreFailed,
       key,
       page);
 
@@ -481,6 +507,7 @@ abstract class _RssState implements RssState {
       final String? nextUrl,
       final bool hasMore,
       final bool loadingMore,
+      final bool loadMoreFailed,
       final String? key,
       final int page}) = _$RssStateImpl;
 
@@ -532,6 +559,11 @@ abstract class _RssState implements RssState {
 
   /// 是否正在加载下一页
   bool get loadingMore;
+  @override
+
+  /// 加载下一页是否失败（失败后门控，禁止滚动/自动检查连续重发；
+  /// 由用户点「重试」或重新刷新后解除，审查 P2-1）
+  bool get loadMoreFailed;
   @override
 
   /// 搜索关键词；null 表示非搜索态

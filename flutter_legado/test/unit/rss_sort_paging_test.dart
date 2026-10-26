@@ -95,6 +95,7 @@ void main() {
       expect(readState().nextUrl, isNull);
       expect(readState().hasMore, isFalse);
       expect(readState().loadingMore, isFalse);
+      expect(readState().loadMoreFailed, isFalse);
       expect(readState().key, isNull);
       expect(readState().page, equals(1));
       expect(readState().isSearching, isFalse);
@@ -163,6 +164,59 @@ void main() {
 
       expect(readState().sorts.length, equals(1));
       expect(readState().sorts.first.url, equals(sourceUrl));
+    });
+
+    test('分类加载中提交搜索：慢分类续体不得回写搜索态（P1-1）', () async {
+      // 分类脚本可控延迟（模拟 @js: 网络求值）
+      final slowSorts = Completer<String>();
+      when(() => mockApi.rssSortUrls(sourceUrl))
+          .thenAnswer((_) => slowSorts.future);
+      stubPage(
+        sortName: '搜索',
+        sortUrl: searchUrl,
+        json: pageJson([article('搜索结果', '$sourceUrl/s1', sort: '搜索')]),
+        key: 'flutter',
+      );
+      stubPage(
+        sortName: '全部',
+        sortUrl: sourceUrl,
+        json: pageJson([article('全部分类文章', '$sourceUrl/all', sort: '全部')]),
+      );
+
+      final selecting = readNotifier().selectSource(source);
+      // 分类在途：界面已进入加载态
+      await Future<void>.delayed(Duration.zero);
+      expect(readState().isLoadingArticles, isTrue);
+      expect(readState().sorts, isEmpty);
+
+      // 分类未返回期间用户提交搜索
+      await readNotifier().search('flutter');
+      expect(readState().key, equals('flutter'));
+      expect(readState().currentSort?.name, equals('搜索'));
+      expect(readState().articles.first.title, equals('搜索结果'));
+
+      // 慢分类返回：selectSource 续体应按请求代次整体丢弃
+      slowSorts.complete(jsonEncode([
+        {'name': '全部', 'url': sourceUrl},
+        {'name': '科技', 'url': '$sourceUrl/tech'},
+      ]));
+      await selecting;
+
+      expect(readState().key, equals('flutter'));
+      expect(readState().isSearching, isTrue);
+      expect(readState().sorts.length, equals(1));
+      expect(readState().sorts.first.name, equals('搜索'));
+      expect(readState().currentSort?.name, equals('搜索'));
+      expect(readState().articles.first.title, equals('搜索结果'));
+      // 不得用「全部」分类覆盖搜索列表
+      verifyNever(
+        () => mockApi.rssRefreshArticles(
+          sourceUrl,
+          '全部',
+          sourceUrl,
+          key: null,
+        ),
+      );
     });
   });
 
@@ -453,8 +507,49 @@ void main() {
 
       expect(readState().error, equals('下一页失败'));
       expect(readState().loadingMore, isFalse);
+      expect(readState().loadMoreFailed, isTrue);
       expect(readState().articles.length, equals(1));
       expect(readState().hasMore, isTrue);
+    });
+
+    test('加载更多失败后门控：滚动重发不请求，retryLoadMore 解除（P2-1）', () async {
+      const next = '$sourceUrl?page=2';
+      await selectFirstPage(
+        firstPageJson: pageJson(
+          [article('a', '$sourceUrl/1')],
+          nextUrl: next,
+          hasMore: true,
+        ),
+      );
+      when(
+        () => mockApi.rssLoadMoreArticles(sourceUrl, '', next, 2, key: null),
+      ).thenThrow(const BridgeError(message: '下一页失败'));
+
+      await readNotifier().loadMore();
+      expect(readState().loadMoreFailed, isTrue);
+
+      // 失败门控：滚动/首屏自动检查再次调用不再发请求
+      await readNotifier().loadMore();
+      verify(
+        () => mockApi.rssLoadMoreArticles(sourceUrl, '', next, 2, key: null),
+      ).called(1);
+
+      // 用户点重试：解除门控并成功追加
+      when(
+        () => mockApi.rssLoadMoreArticles(sourceUrl, '', next, 2, key: null),
+      ).thenAnswer(
+        (_) async => pageJson([article('b', '$sourceUrl/2')]),
+      );
+      await readNotifier().retryLoadMore();
+
+      // mocktail 的 verify 会消费已匹配调用，故重试后按「新增 1 次」校验
+      verify(
+        () => mockApi.rssLoadMoreArticles(sourceUrl, '', next, 2, key: null),
+      ).called(1);
+      expect(readState().loadMoreFailed, isFalse);
+      expect(readState().error, isNull);
+      expect(readState().articles.length, equals(2));
+      expect(readState().page, equals(2));
     });
 
     test('刷新失败保留旧列表并设置错误', () async {
@@ -617,6 +712,9 @@ void main() {
       await readNotifier().refreshSorts();
 
       verify(() => mockApi.rssClearSortCache(sourceUrl)).called(1);
+      // 审查 P2-4：搜索态刷新排序不重新解析分类（对齐原版 upFragments
+      // 的 searchKey != null 分支），rssSortUrls 仅 selectSource 时调用一次
+      verify(() => mockApi.rssSortUrls(sourceUrl)).called(1);
       expect(readState().key, equals('dart'));
       expect(readState().sorts.length, equals(1));
       expect(readState().sorts.first.name, equals('搜索'));
@@ -629,6 +727,56 @@ void main() {
           key: 'dart',
         ),
       ).called(2);
+    });
+
+    test('刷新排序分类解析中提交搜索：慢分类续体不得回写（P1-1）', () async {
+      stubTwoSorts();
+      stubPage(
+        sortName: '全部',
+        sortUrl: sourceUrl,
+        json: pageJson([article('全部文章', '$sourceUrl/all', sort: '全部')]),
+      );
+      stubPage(
+        sortName: '搜索',
+        sortUrl: searchUrl,
+        json: pageJson([article('搜索结果', '$sourceUrl/s1', sort: '搜索')]),
+        key: 'dart',
+      );
+      when(() => mockApi.rssClearSortCache(sourceUrl)).thenAnswer((_) async {});
+
+      await readNotifier().selectSource(source);
+
+      // 第二次 rssSortUrls（刷新排序）挂起，模拟慢分类脚本
+      final slowSorts = Completer<String>();
+      when(() => mockApi.rssSortUrls(sourceUrl))
+          .thenAnswer((_) => slowSorts.future);
+      final refreshing = readNotifier().refreshSorts();
+      await Future<void>.delayed(Duration.zero);
+
+      await readNotifier().search('dart');
+      expect(readState().key, equals('dart'));
+
+      slowSorts.complete(jsonEncode([
+        {'name': '全部', 'url': sourceUrl},
+        {'name': '科技', 'url': '$sourceUrl/tech'},
+      ]));
+      await refreshing;
+
+      // 慢分类结果被丢弃，搜索态与搜索结果保持不变
+      expect(readState().key, equals('dart'));
+      expect(readState().sorts.length, equals(1));
+      expect(readState().sorts.first.name, equals('搜索'));
+      expect(readState().currentSort?.name, equals('搜索'));
+      expect(readState().articles.first.title, equals('搜索结果'));
+      // refreshSorts 的续体没有再触发「全部」分类刷新
+      verify(
+        () => mockApi.rssRefreshArticles(
+          sourceUrl,
+          '全部',
+          sourceUrl,
+          key: null,
+        ),
+      ).called(1);
     });
 
     test('分类重新解析失败设置错误并保留原分类', () async {

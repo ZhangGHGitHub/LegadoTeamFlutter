@@ -42,7 +42,8 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
   /// Rust `rssFetchContent` 已把正文写回 `rssArticles.description`，但列表页
   /// 当前无「只读 DB」FFI（`getRssArticles` 是网络刷新，会用 feed 摘要
   /// REPLACE 覆盖刚抓到的正文），故由详情页回调把正文带回列表内存态；
-  /// 返回列表立即可见，DB 仍是真源（DB-only 查询登记 15d 遗留）。
+  /// 返回列表立即可见，DB 仍是真源（列表页 DB-only 查询改挂后续批次，
+  /// 批15d 审查 P2-7）。
   final Map<String, String> _fetchedDescriptions = {};
 
   // [UI-fix v2.0.2 | 2026-08-06] 布局切换本地态（对标原版 articleStyle 0-4
@@ -55,6 +56,13 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
 
   /// 列表滚动控制器（触底自动加载更多）
   final ScrollController _scrollController = ScrollController();
+
+  /// 已触发首屏自动加载的列表签名（分类|关键词|条数）
+  ///
+  /// 首屏不足一屏时不会产生滚动事件，需要布局完成后主动做一次阈值判断
+  /// （对齐参考版 LoadMoreDetector 的初始发射）；签名避免同一列表状态
+  /// 被重复发射，失败时由 [RssState.loadMoreFailed] 门控（审查 P1-2/P2-1）。
+  int? _autoLoadSignature;
 
   @override
   void initState() {
@@ -162,15 +170,74 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
   void _onScroll() {
     if (!_scrollController.hasClients) return;
     final position = _scrollController.position;
-    if (position.maxScrollExtent <= 0) return;
     if (position.pixels >= position.maxScrollExtent - 240) {
       ref.read(rssNotifierProvider.notifier).loadMore();
     }
   }
 
-  /// 列表底部加载更多指示（对齐原版 LoadMoreView：加载中 / 没有更多）
+  /// 首屏/列表增长后的补一次触底判断（纯滚动触发在不足一屏时失效）
+  ///
+  /// `maxScrollExtent <= 0` 时视口未填满，同样命中阈值；加载更多失败后
+  /// 由 [RssState.loadMoreFailed] 拦住，等待用户点「重试」。
+  void _maybeAutoLoadMore() {
+    if (!mounted || !_scrollController.hasClients) return;
+    final state = ref.read(rssNotifierProvider);
+    if (state.articles.isEmpty ||
+        state.isLoadingArticles ||
+        state.loadingMore ||
+        state.loadMoreFailed ||
+        !state.hasMore) {
+      return;
+    }
+    final signature = Object.hash(
+      state.currentSort?.name,
+      state.key,
+      state.articles.length,
+    );
+    if (_autoLoadSignature == signature) return;
+    final position = _scrollController.position;
+    if (position.pixels < position.maxScrollExtent - 240) return;
+    _autoLoadSignature = signature;
+    ref.read(rssNotifierProvider.notifier).loadMore();
+  }
+
+  /// 列表底部加载更多指示（对齐原版 LoadMoreView：加载中 / 已经到底了）
+  ///
+  /// 审查 P2-1/P2-2：刷新中隐藏 footer；加载更多失败显示错误 + 重试；
+  /// 刷新失败同样显示错误态，避免误显「已经到底了~」。
   Widget _buildLoadMoreFooter(RssState state) {
     final theme = Theme.of(context);
+    final notifier = ref.read(rssNotifierProvider.notifier);
+    final labelStyle = theme.textTheme.bodySmall?.copyWith(
+      color: theme.colorScheme.onSurfaceVariant,
+    );
+
+    // 刷新中：旧列表保留，下拉指示器已承担反馈
+    if (state.isLoadingArticles) return const SizedBox.shrink();
+
+    if (state.loadMoreFailed) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Flexible(
+              child: Text(
+                state.error ?? '加载更多失败',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: labelStyle,
+              ),
+            ),
+            TextButton(
+              onPressed: notifier.retryLoadMore,
+              child: const Text('重试'),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (state.loadingMore) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 16),
@@ -184,29 +251,57 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
             ),
             const SizedBox(width: 8),
             Text(
-              '加载中...',
-              style: theme.textTheme.bodySmall?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
+              '加载中…',
+              style: labelStyle,
             ),
           ],
         ),
       );
     }
-    if (!state.hasMore) {
+
+    // 刷新失败（列表保留旧数据）：错误 + 重试，不误显「已经到底了~」
+    if (state.error != null && state.articles.isNotEmpty) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 16),
-        child: Center(
-          child: Text(
-            '没有更多了',
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Flexible(
+              child: Text(
+                state.error!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: labelStyle,
+              ),
             ),
+            TextButton(
+              onPressed: notifier.refreshArticles,
+              child: const Text('重试'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    // 有下一页时提供可点击兜底（滚动监听失效/不足一屏时仍可手动加载）
+    if (state.hasMore) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Center(
+          child: TextButton(
+            onPressed: notifier.loadMore,
+            child: const Text('加载更多'),
           ),
         ),
       );
     }
-    return const SizedBox(height: 16);
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 16),
+      child: Center(
+        child: Text('已经到底了~', style: labelStyle),
+      ),
+    );
   }
 
   // ===== 页面 =====
@@ -237,6 +332,17 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
         SnackBar(content: Text(next)),
       );
     });
+
+    // 首屏不足一屏时没有滚动事件：布局完成后补一次触底判断
+    // （对齐参考版 LoadMoreDetector 初始发射，审查 P1-2）
+    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeAutoLoadMore());
+    // 新一轮刷新开始后允许重新做首屏自动加载判断（列表可能再次不足一屏）
+    ref.listen<bool>(
+      rssNotifierProvider.select((s) => s.isLoadingArticles),
+      (previous, next) {
+        if (next) _autoLoadSignature = null;
+      },
+    );
 
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     final scaffold = AppScaffold(
@@ -929,6 +1035,9 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
                           );
                           return ListTile(
                             dense: true,
+                            // 审查 P2-6：条目可点击重读，透传 origin 使
+                            // 详情页规则正文抓取/收藏 origin 生效
+                            onTap: () => _openRecord(record),
                             title: Text(
                               record.title,
                               maxLines: 1,
@@ -948,6 +1057,39 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
           child: const Text('关闭'),
         ),
       ],
+    );
+  }
+
+  /// 点击记录重读（同列表页历史入口：透传 origin，legacy/空链接不传）
+  void _openRecord(RssReadRecordRow record) {
+    Navigator.of(context).pop(); // 对标原版点击后 dismiss
+    final link = record.link ?? '';
+    final hasLink = hasRssArticleLink(link);
+    final rssState = ref.read(rssNotifierProvider);
+    final selected = rssState.selectedSource;
+    String sourceName = record.origin;
+    if (selected != null && selected.sourceUrl == record.origin) {
+      sourceName = selected.sourceName;
+    } else {
+      for (final source in rssState.sources) {
+        if (source.sourceUrl == record.origin) {
+          sourceName = source.sourceName;
+          break;
+        }
+      }
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RssArticleDetailScreen(
+          article: RssFeedArticle(
+            title: record.title,
+            url: hasLink ? link : '',
+          ),
+          sourceName: sourceName,
+          // 无链接（空串/legacy 伪主键）不传 origin，避免空 link 抓正文
+          sourceUrl: hasLink ? record.origin : '',
+        ),
+      ),
     );
   }
 }

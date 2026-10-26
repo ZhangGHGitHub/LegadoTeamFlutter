@@ -89,7 +89,7 @@ void main() {
     expect(detail.article.url, equals('$origin/article/1'));
   });
 
-  testWidgets('历史记录无链接（legacy 键）：不传 origin', (tester) async {
+  testWidgets('历史记录无链接（真实 legacy 伪主键）：不传 origin', (tester) async {
     final api = MockRustApi();
     await pumpRssScreen(
       tester,
@@ -98,7 +98,8 @@ void main() {
         {
           'origin': origin,
           'title': '历史文章',
-          'link': null,
+          // Rust 仓库层对空 link 落库的真实形态（E4 维持）
+          'link': 'legacy:$origin:历史文章',
           'read_time': 1700000000000,
         },
       ],
@@ -111,5 +112,7 @@ void main() {
     );
     expect(detail.sourceUrl, isEmpty);
     expect(detail.article.url, isEmpty);
+    // 无链接时不显示浏览器打开入口
+    expect(find.text('在浏览器中查看原文'), findsNothing);
   });
 }

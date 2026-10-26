@@ -443,14 +443,20 @@ class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
   void _openRecord(RssReadRecordRow record) {
     Navigator.of(context).pop(); // 对标原版点击后 dismiss
     final link = record.link ?? '';
+    // 审查 P2-3：空串与 `legacy:` 伪主键都视为无链接——不传 origin
+    // （避免详情页按空 link 触发 rssFetchContent），也不带外链地址。
+    final hasLink = hasRssArticleLink(link);
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => RssArticleDetailScreen(
-          article: RssFeedArticle(title: record.title, url: link),
+          article: RssFeedArticle(
+            title: record.title,
+            url: hasLink ? link : '',
+          ),
           sourceName: _sourceNameOf(record.origin),
           // 上游 `ReadRssActivity.start(origin=record.origin, link, sort)`：
           // 详情页据 origin 查源规则抓正文；无链接（legacy 键）时不触发
-          sourceUrl: link.isEmpty ? '' : record.origin,
+          sourceUrl: hasLink ? record.origin : '',
         ),
       ),
     );

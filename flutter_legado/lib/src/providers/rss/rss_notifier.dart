@@ -119,10 +119,14 @@ class RssNotifier extends Notifier<RssState> {
   /// 1. `rssSortUrls` 解析分类（失败回退默认单分类 `{name:"", url:sourceUrl}`）；
   /// 2. 选中首个分类，经 `rssRefreshArticles` 刷新第 1 页。
   Future<void> selectSource(RssSource source) async {
+    // 分类脚本可能走网络（`@js:`），期间用户提交搜索/切分类时本续体必须
+    // 整体丢弃；仅比对 sourceUrl 不足以识别同一源上的新请求代次（P1-1）
+    final requestId = ++_requestId;
     state = state.copyWith(
       selectedSource: source,
       isLoadingArticles: true,
       loadingMore: false,
+      loadMoreFailed: false,
       error: null,
       articles: const [],
       sorts: const [],
@@ -134,6 +138,7 @@ class RssNotifier extends Notifier<RssState> {
     );
 
     final sorts = await _loadSortsOrFallback(source);
+    if (requestId != _requestId) return;
     if (state.selectedSource?.sourceUrl != source.sourceUrl) return;
     _sourceSorts = sorts;
     _sortBeforeSearch = null;
@@ -163,12 +168,19 @@ class RssNotifier extends Notifier<RssState> {
 
   /// 加载下一页（触底自动触发；对齐原版 `RssArticlesViewModel.loadMore`）
   ///
-  /// 无下一页（`!hasMore` / `nextUrl` 空）或在途请求时直接返回。
+  /// 无下一页（`!hasMore` / `nextUrl` 空）、在途请求、或上次加载失败
+  /// （[RssState.loadMoreFailed]）时直接返回；失败门控避免滚动/首屏自动
+  /// 检查连续重发同一失败请求（审查 P2-1）。
   Future<void> loadMore() async {
     final source = state.selectedSource;
     final sort = state.currentSort;
     if (source == null || sort == null) return;
-    if (state.isLoadingArticles || state.loadingMore || !state.hasMore) return;
+    if (state.isLoadingArticles ||
+        state.loadingMore ||
+        state.loadMoreFailed ||
+        !state.hasMore) {
+      return;
+    }
     final nextUrl = (state.nextUrl ?? '').trim();
     if (nextUrl.isEmpty) return;
 
@@ -198,13 +210,25 @@ class RssNotifier extends Notifier<RssState> {
         nextUrl: page.nextUrl,
         hasMore: page.hasMore,
         loadingMore: false,
+        loadMoreFailed: false,
         page: nextPage,
         error: null,
       );
     } catch (e) {
       if (requestId != _requestId) return;
-      state = state.copyWith(loadingMore: false, error: _mapError(e));
+      state = state.copyWith(
+        loadingMore: false,
+        loadMoreFailed: true,
+        error: _mapError(e),
+      );
     }
+  }
+
+  /// 用户点「重试」：解除加载更多失败门控后重发同一页（审查 P2-1）
+  Future<void> retryLoadMore() async {
+    if (!state.loadMoreFailed) return;
+    state = state.copyWith(loadMoreFailed: false, error: null);
+    await loadMore();
   }
 
   /// 搜索（对齐原版 `menu_search`：以 `searchUrl` 为分类、关键词为 key 刷新）
@@ -233,9 +257,13 @@ class RssNotifier extends Notifier<RssState> {
     final source = state.selectedSource;
     if (source == null || state.key == null) return;
 
+    // 分类列表缺失时需要重新解析（可能走网络脚本），期间再次提交搜索
+    // 或切换源必须丢弃本续体（P1-1）
+    final requestId = ++_requestId;
     var sorts = _sourceSorts;
     if (sorts.isEmpty) {
       sorts = await _loadSortsOrFallback(source);
+      if (requestId != _requestId) return;
       if (state.selectedSource?.sourceUrl != source.sourceUrl) return;
       _sourceSorts = sorts;
     }
@@ -251,10 +279,12 @@ class RssNotifier extends Notifier<RssState> {
   /// 刷新分类（菜单「刷新排序」）
   ///
   /// 对齐原版 `menu_refresh_sort`：`clearSortCache` 后重新 `sortUrls`，
-  /// 再刷新当前分类列表（搜索态保持「搜索」分类，仅重拉结果）。
+  /// 再刷新当前分类列表；搜索态不重新解析分类，只重拉搜索结果
+  /// （对齐原版 `upFragments` 的 `searchKey != null` 分支，审查 P2-4）。
   Future<void> refreshSorts() async {
     final source = state.selectedSource;
     if (source == null) return;
+    final requestId = ++_requestId;
     state = state.copyWith(error: null);
     final api = ref.read(bookApiProvider);
     try {
@@ -262,24 +292,27 @@ class RssNotifier extends Notifier<RssState> {
     } catch (_) {
       // 缓存清理失败不阻断重新解析（对齐原版 removeSortCache 静默语义）
     }
+    if (requestId != _requestId) return;
     if (state.selectedSource?.sourceUrl != source.sourceUrl) return;
+
+    if (state.key != null) {
+      // 搜索态：保持「搜索」分类，仅重拉结果（原版搜索分支不调 sortUrls）
+      await refreshArticles();
+      return;
+    }
 
     List<RssSort> sorts;
     try {
       sorts = await _fetchSorts(source);
     } catch (e) {
+      if (requestId != _requestId) return;
       if (state.selectedSource?.sourceUrl != source.sourceUrl) return;
       state = state.copyWith(error: _mapError(e));
       return;
     }
+    if (requestId != _requestId) return;
     if (state.selectedSource?.sourceUrl != source.sourceUrl) return;
     _sourceSorts = sorts;
-
-    if (state.key != null) {
-      // 搜索态：保持「搜索」分类，仅重拉结果（对齐原版搜索分支）
-      await refreshArticles();
-      return;
-    }
 
     final preferred = state.currentSort;
     final sort = (preferred != null && sorts.contains(preferred))
@@ -302,6 +335,7 @@ class RssNotifier extends Notifier<RssState> {
       nextUrl: null,
       hasMore: false,
       loadingMore: false,
+      loadMoreFailed: false,
       isLoadingArticles: false,
       key: null,
       page: 1,
@@ -352,6 +386,7 @@ class RssNotifier extends Notifier<RssState> {
           nextUrl: null,
           hasMore: false,
           loadingMore: false,
+          loadMoreFailed: false,
           isLoadingArticles: false,
           key: null,
           page: 1,
@@ -381,6 +416,7 @@ class RssNotifier extends Notifier<RssState> {
     state = state.copyWith(
       isLoadingArticles: true,
       loadingMore: false,
+      loadMoreFailed: false,
       error: null,
       articles: clearArticles ? const [] : state.articles,
       nextUrl: null,

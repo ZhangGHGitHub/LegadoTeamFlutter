@@ -5,6 +5,21 @@
 /// 由 `models.dart` 统一导出，UI 层与 `BookApi`/`RustApi` 均经 models 引用。
 library;
 
+/// 历史阅读记录 / 收藏的 `legacy:` 伪主键前缀
+///
+/// Rust 仓库层对空 `link` 落库为 `legacy:{origin}:{title}[:{sort}]`
+/// （E4 维持，契约 §2.5），UI 读取历史记录时必须把这类值视为「无链接」。
+const String kRssLegacyLinkPrefix = 'legacy:';
+
+/// 历史记录 `link` 是否可用于打开原文
+///
+/// 空串与 `legacy:` 伪主键均视为无链接：不传 origin（避免触发规则正文
+/// 抓取）、不发起外链跳转（审查 P2-3/P2-6）。
+bool hasRssArticleLink(String? link) {
+  final value = link?.trim() ?? '';
+  return value.isNotEmpty && !value.startsWith(kRssLegacyLinkPrefix);
+}
+
 /// RSS 文章（用于 UI 展示）
 class RssFeedArticle {
   final String title;

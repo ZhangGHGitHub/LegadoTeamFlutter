@@ -128,9 +128,10 @@ class _RssArticleDetailScreenState
   /// `content` 有值时仍会按 `description` 判定发请求（对齐原版读路径只认
   /// description，审查 P2-1），失败时回落显示自带 content。
   ///
-  /// 历史记录入口只带 `sourceName` 不含 `sourceUrl`，无从判定源规则，
-  /// 保持既有行为（空态 + 浏览器打开原文）；「历史入口暂不抓规则正文」的
-  /// 收敛属批15d/15f（契约 §2.5 批15c 注，审查 P2-5）。
+  /// 历史记录入口按 `link` 形态决定是否传 `sourceUrl`：真实链接由列表页/
+  /// 阅读记录条目透传 origin，从而按源规则抓正文；`legacy:` 伪主键或空
+  /// 链接视为无链接（不传 origin、不发起正文请求，审查 P2-3/P2-6）。
+  /// 无规则源保持空态 + 浏览器打开原文（原文链接为空时隐藏该入口）。
   Future<void> _maybeLoadRuleContent() async {
     if (widget.sourceUrl.isEmpty) return;
     if (widget.article.description?.trim().isNotEmpty ?? false) return;
@@ -674,11 +675,14 @@ $htmlContent
       return EmptyState(
         icon: Symbols.article_rounded,
         title: '暂无内容',
-        action: OutlinedButton.icon(
-          onPressed: _openInBrowser,
-          icon: const Icon(Symbols.open_in_browser_rounded),
-          label: const Text('在浏览器中查看原文'),
-        ),
+        // 无链接（空串/legacy 伪主键）时没有可打开的原文
+        action: widget.article.url.isEmpty
+            ? null
+            : OutlinedButton.icon(
+                onPressed: _openInBrowser,
+                icon: const Icon(Symbols.open_in_browser_rounded),
+                label: const Text('在浏览器中查看原文'),
+              ),
       );
     }
 

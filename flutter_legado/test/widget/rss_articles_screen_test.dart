@@ -19,6 +19,7 @@ import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/rss/rss_notifier.dart';
+import 'package:flutter_legado/src/screens/rss_article_detail_screen.dart';
 import 'package:flutter_legado/src/screens/rss_articles_screen.dart';
 
 import '../mocks/mocks.dart';
@@ -167,8 +168,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    // 加载中指示（对齐原版 LoadMoreView）
-    expect(find.text('加载中...'), findsOneWidget);
+    // 加载中指示（对齐参考版 LoadMoreView 文案）
+    expect(find.text('加载中…'), findsOneWidget);
     verify(
       () => api.rssLoadMoreArticles(sourceUrl, '', nextUrl, 2, key: null),
     ).called(1);
@@ -184,10 +185,224 @@ void main() {
     expect(state.hasMore, isFalse);
     expect(state.loadingMore, isFalse);
     expect(state.isLoadingArticles, isFalse);
-    // 到底提示（列表底部）
+    // 到底提示（列表底部，文案对齐参考版）
     await tester.drag(find.byType(ListView), const Offset(0, -3000));
     await tester.pumpAndSettle();
-    expect(find.text('没有更多了'), findsOneWidget);
+    expect(find.text('已经到底了~'), findsOneWidget);
+  });
+
+  testWidgets('首屏不足一屏且 hasMore=true：布局完成后自动加载下一页（P1-2）',
+      (tester) async {
+    final api = MockRustApi();
+    const source = RssSource(sourceUrl: sourceUrl, sourceName: '源A');
+    stubSorts(api, source, const [RssSort(name: '', url: sourceUrl)]);
+    const nextUrl = '$sourceUrl?page=2';
+    when(
+      () => api.rssRefreshArticles(sourceUrl, '', sourceUrl, key: null),
+    ).thenAnswer(
+      (_) async => pageJson(
+        [
+          article('第 1 篇', '$sourceUrl/1'),
+          article('第 2 篇', '$sourceUrl/2'),
+        ],
+        nextUrl: nextUrl,
+        hasMore: true,
+      ),
+    );
+    when(
+      () => api.rssLoadMoreArticles(sourceUrl, '', nextUrl, 2, key: null),
+    ).thenAnswer(
+      (_) async => pageJson(
+        [
+          article('第 3 篇', '$sourceUrl/3'),
+          article('第 4 篇', '$sourceUrl/4'),
+        ],
+      ),
+    );
+
+    final container = await pumpScreen(tester, api, source);
+
+    // 首屏 2 篇不足一屏，无滚动事件也必须自动发出第 2 页请求
+    verify(
+      () => api.rssLoadMoreArticles(sourceUrl, '', nextUrl, 2, key: null),
+    ).called(1);
+    final state = container.read(rssNotifierProvider);
+    expect(state.articles.length, equals(4));
+    expect(state.page, equals(2));
+    expect(state.hasMore, isFalse);
+    expect(find.text('第 3 篇'), findsOneWidget);
+  });
+
+  testWidgets('加载更多失败：footer 错误态 + 重试按钮（P2-1）', (tester) async {
+    final api = MockRustApi();
+    const source = RssSource(sourceUrl: sourceUrl, sourceName: '源A');
+    stubSorts(api, source, const [RssSort(name: '', url: sourceUrl)]);
+    const nextUrl = '$sourceUrl?page=2';
+    when(
+      () => api.rssRefreshArticles(sourceUrl, '', sourceUrl, key: null),
+    ).thenAnswer(
+      (_) async => pageJson(
+        [for (var i = 1; i <= 20; i++) article('第 $i 篇', '$sourceUrl/$i')],
+        nextUrl: nextUrl,
+        hasMore: true,
+      ),
+    );
+    when(
+      () => api.rssLoadMoreArticles(sourceUrl, '', nextUrl, 2, key: null),
+    ).thenThrow(const BridgeError(message: '下一页失败'));
+
+    final container = await pumpScreen(tester, api, source);
+
+    // 触底触发失败
+    await tester.drag(find.byType(ListView), const Offset(0, -6000));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(container.read(rssNotifierProvider).loadMoreFailed, isTrue);
+    // 关闭 SnackBar，避免与 footer 的同一错误文案重复并遮挡重试按钮
+    ScaffoldMessenger.of(tester.element(find.byType(ListView)))
+        .hideCurrentSnackBar();
+    await tester.pumpAndSettle();
+    expect(find.text('下一页失败'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, '重试'), findsOneWidget);
+
+    // 失败门控：再次触底不重发
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pump();
+    verify(
+      () => api.rssLoadMoreArticles(sourceUrl, '', nextUrl, 2, key: null),
+    ).called(1);
+
+    // 点击重试恢复
+    when(
+      () => api.rssLoadMoreArticles(sourceUrl, '', nextUrl, 2, key: null),
+    ).thenAnswer(
+      (_) async => pageJson(
+        [for (var i = 21; i <= 25; i++) article('第 $i 篇', '$sourceUrl/$i')],
+      ),
+    );
+    await tester.tap(find.widgetWithText(TextButton, '重试'));
+    await tester.pumpAndSettle();
+
+    // mocktail 的 verify 会消费已匹配调用，重试成功后只应新增 1 次请求
+    verify(
+      () => api.rssLoadMoreArticles(sourceUrl, '', nextUrl, 2, key: null),
+    ).called(1);
+    expect(container.read(rssNotifierProvider).articles.length, equals(25));
+    expect(container.read(rssNotifierProvider).loadMoreFailed, isFalse);
+  });
+
+  testWidgets('刷新中隐藏 footer，刷新失败显示错误态（P2-2）', (tester) async {
+    final api = MockRustApi();
+    const source = RssSource(sourceUrl: sourceUrl, sourceName: '源A');
+    stubSorts(api, source, const [RssSort(name: '', url: sourceUrl)]);
+    when(
+      () => api.rssRefreshArticles(sourceUrl, '', sourceUrl, key: null),
+    ).thenAnswer((_) async => pageJson([article('现有文章', '$sourceUrl/a')]));
+
+    final container = await pumpScreen(tester, api, source);
+    expect(find.text('已经到底了~'), findsOneWidget);
+
+    // 刷新挂起：footer 隐藏，不显示「已经到底了~」
+    final refresh = Completer<String>();
+    when(
+      () => api.rssRefreshArticles(sourceUrl, '', sourceUrl, key: null),
+    ).thenAnswer((_) => refresh.future);
+    await tester.tap(find.byTooltip('刷新'));
+    await tester.pump();
+    expect(container.read(rssNotifierProvider).isLoadingArticles, isTrue);
+    expect(find.text('已经到底了~'), findsNothing);
+    expect(find.widgetWithText(TextButton, '加载更多'), findsNothing);
+
+    // 刷新失败：footer 错误态 + 重试，不误显「已经到底了~」
+    refresh.completeError(const BridgeError(message: '刷新失败'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('刷新失败'), findsWidgets);
+    expect(find.text('已经到底了~'), findsNothing);
+    expect(find.widgetWithText(TextButton, '重试'), findsOneWidget);
+    expect(find.text('现有文章'), findsOneWidget);
+    // 收尾：等 SnackBar 动画结束
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('文章页阅读记录：条目可点击并透传 origin（P2-6）', (tester) async {
+    final api = MockRustApi();
+    const source = RssSource(sourceUrl: sourceUrl, sourceName: '源A');
+    stubSorts(api, source, const [RssSort(name: '', url: sourceUrl)]);
+    when(
+      () => api.rssRefreshArticles(sourceUrl, '', sourceUrl, key: null),
+    ).thenAnswer((_) async => pageJson([article('列表文章', '$sourceUrl/a')]));
+    when(() => api.rssListReadRecordsByOrigin(sourceUrl, null)).thenAnswer(
+      (_) async => [
+        {
+          'origin': sourceUrl,
+          'title': '历史文章',
+          'link': '$sourceUrl/article/1',
+          'read_time': 1700000000000,
+        },
+      ],
+    );
+    when(() => api.getRssSources()).thenAnswer((_) async => const [source]);
+    when(() => api.isStarred(any())).thenAnswer((_) async => false);
+
+    await pumpScreen(tester, api, source);
+
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('阅读记录'));
+    await tester.pumpAndSettle();
+    expect(find.text('历史文章'), findsOneWidget);
+
+    await tester.tap(find.text('历史文章'));
+    await tester.pumpAndSettle();
+
+    final detail = tester.widget<RssArticleDetailScreen>(
+      find.byType(RssArticleDetailScreen),
+    );
+    expect(detail.sourceUrl, equals(sourceUrl));
+    expect(detail.sourceName, equals('源A'));
+    expect(detail.article.title, equals('历史文章'));
+    expect(detail.article.url, equals('$sourceUrl/article/1'));
+  });
+
+  testWidgets('文章页阅读记录：legacy 伪主键不传 origin（P2-6）', (tester) async {
+    final api = MockRustApi();
+    const source = RssSource(sourceUrl: sourceUrl, sourceName: '源A');
+    stubSorts(api, source, const [RssSort(name: '', url: sourceUrl)]);
+    when(
+      () => api.rssRefreshArticles(sourceUrl, '', sourceUrl, key: null),
+    ).thenAnswer((_) async => pageJson([article('列表文章', '$sourceUrl/a')]));
+    when(() => api.rssListReadRecordsByOrigin(sourceUrl, null)).thenAnswer(
+      (_) async => [
+        {
+          'origin': sourceUrl,
+          'title': '无链接文章',
+          // Rust 仓库对空 link 落库的 legacy 伪主键
+          'link': 'legacy:$sourceUrl:无链接文章',
+          'read_time': 1700000000000,
+        },
+      ],
+    );
+    when(() => api.isStarred(any())).thenAnswer((_) async => false);
+
+    await pumpScreen(tester, api, source);
+
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('阅读记录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('无链接文章'));
+    await tester.pumpAndSettle();
+
+    final detail = tester.widget<RssArticleDetailScreen>(
+      find.byType(RssArticleDetailScreen),
+    );
+    expect(detail.sourceUrl, isEmpty);
+    expect(detail.article.url, isEmpty);
+    // 无链接时也不应出现「在浏览器中查看原文」入口
+    expect(find.text('在浏览器中查看原文'), findsNothing);
   });
 
   testWidgets('源未配置 searchUrl：不显示搜索入口', (tester) async {
@@ -340,7 +555,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
 
-    expect(find.text('刷新失败'), findsOneWidget);
+    expect(find.text('刷新失败'), findsWidgets);
     expect(find.text('现有文章'), findsOneWidget);
     await tester.pumpAndSettle();
   });

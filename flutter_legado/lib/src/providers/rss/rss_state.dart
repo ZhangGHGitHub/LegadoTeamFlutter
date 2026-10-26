@@ -65,6 +65,10 @@ class RssState with _$RssState {
     /// 是否正在加载下一页
     @Default(false) bool loadingMore,
 
+    /// 加载下一页是否失败（失败后门控，禁止滚动/自动检查连续重发；
+    /// 由用户点「重试」或重新刷新后解除，审查 P2-1）
+    @Default(false) bool loadMoreFailed,
+
     /// 搜索关键词；null 表示非搜索态
     String? key,
 
