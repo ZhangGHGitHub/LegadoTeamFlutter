@@ -1,6 +1,10 @@
+import 'dart:io';
+
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:path_provider/path_provider.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -10,6 +14,9 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/rss/rss_notifier.dart';
 import '../providers/rss_history/rss_history_notifier.dart';
+import '../services/bridge_http.dart';
+import '../services/platform_bridge_service.dart';
+import '../services/rss_header.dart';
 import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4] 下拉 M3 化
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
@@ -17,6 +24,291 @@ import '../widgets/loading_indicator.dart';
 import 'rss_article_detail_screen.dart';
 import 'rss_source_edit_screen.dart';
 import 'source_login_screen.dart';
+import 'video_screen.dart';
+
+/// 打开 RSS 文章（按 `type` 分流，对齐 `ReadRss.kt:48-98`）
+///
+/// - `type == 2`（视频）：打开 [VideoScreen] 播放文章链接；
+/// - `type == 1`（图片）：全屏图片查看（缩放/保存）；源配置 `ruleContent`
+///   时先抓正文并把结果按文章链接绝对化为图片地址（对齐 `readNoHtml`）；
+/// - 其余（0/未知）：进入 [RssArticleDetailScreen]（WebView 阅读链）。
+///
+/// 类型优先级：文章 `type`（列表规则解析已复制源 `type`）→ 源 `type`。
+Future<void> openRssArticle(
+  BuildContext context,
+  WidgetRef ref, {
+  required RssFeedArticle article,
+  RssSource? source,
+  String sourceName = '',
+  String sourceUrl = '',
+  void Function(String description)? onContentFetched,
+}) async {
+  // 空串 / legacy: 伪主键视为无链接：不触发正文抓取、不发起外链
+  final article0 = article;
+  final readable = hasRssArticleLink(article0.url)
+      ? article0
+      : RssFeedArticle(
+          title: article0.title,
+          url: '',
+          sort: article0.sort,
+          description: article0.description,
+          pubDate: article0.pubDate,
+          imageUrl: article0.imageUrl,
+          content: article0.content,
+          type: article0.type,
+        );
+  final type = resolveRssArticleType(
+    articleType: readable.type,
+    sourceType: source?.rssType,
+  );
+  if (type == 2) {
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => VideoScreen(
+          videoUrl: readable.url,
+          title: readable.title,
+        ),
+      ),
+    );
+    return;
+  }
+  if (type == 1) {
+    final imageUrl =
+        await _resolveRssImageUrl(ref, readable, source, sourceUrl);
+    if (!context.mounted) return;
+    await showRssPhotoViewer(
+      context,
+      url: imageUrl,
+      title: readable.title,
+      headers: parseRssHeaderMap(source?.header),
+    );
+    return;
+  }
+  await Navigator.push(
+    context,
+    MaterialPageRoute(
+      builder: (_) => RssArticleDetailScreen(
+        article: readable,
+        source: source,
+        sourceName: sourceName,
+        sourceUrl: sourceUrl,
+        onContentFetched: onContentFetched,
+      ),
+    ),
+  );
+}
+
+/// 图片源地址解析（对齐 `ReadRss.readNoHtml`）
+///
+/// `ruleContent` 非空时先抓正文，正文即图片地址（相对地址按文章链接
+/// 绝对化，对齐 `NetworkUtils.getAbsoluteURL(link, body)`）；抓取失败/
+/// 正文为空回退文章链接本身。
+Future<String> _resolveRssImageUrl(
+  WidgetRef ref,
+  RssFeedArticle article,
+  RssSource? source,
+  String sourceUrl,
+) async {
+  final rule = source?.ruleContent?.trim() ?? '';
+  if (rule.isEmpty || sourceUrl.isEmpty || article.url.isEmpty) {
+    return article.url;
+  }
+  try {
+    final body = await ref.read(bookApiProvider).rssFetchContent(
+          sourceUrl,
+          article.url,
+          sort: article.sort.isEmpty ? null : article.sort,
+        );
+    final trimmed = body.trim();
+    if (trimmed.isEmpty) return article.url;
+    return _absoluteAgainst(article.url, trimmed);
+  } catch (e) {
+    debugPrint('[RSS] 图片源正文抓取失败，回退文章链接: $e');
+    return article.url;
+  }
+}
+
+/// 相对地址绝对化（对齐 `NetworkUtils.getAbsoluteURL(base, value)` 常用分支）
+String _absoluteAgainst(String baseUrl, String value) {
+  final uri = Uri.tryParse(value);
+  if (uri != null && uri.hasScheme) return value;
+  final base = Uri.tryParse(baseUrl);
+  if (base == null || !base.hasScheme) return value;
+  if (value.startsWith('//')) return '${base.scheme}:$value';
+  return base.resolve(value).toString();
+}
+
+/// 全屏图片查看（对齐原版 `PhotoDialog`：缩放 + 保存）
+Future<void> showRssPhotoViewer(
+  BuildContext context, {
+  required String url,
+  String title = '',
+  Map<String, String> headers = const {},
+}) {
+  return showDialog<void>(
+    context: context,
+    barrierColor: Colors.black,
+    builder: (_) => _RssPhotoViewer(url: url, title: title, headers: headers),
+  );
+}
+
+/// 全屏图片查看器（`InteractiveViewer` 缩放 + MediaStore/文件选择器保存）
+class _RssPhotoViewer extends ConsumerStatefulWidget {
+  final String url;
+  final String title;
+  final Map<String, String> headers;
+
+  const _RssPhotoViewer({
+    required this.url,
+    required this.title,
+    required this.headers,
+  });
+
+  @override
+  ConsumerState<_RssPhotoViewer> createState() => _RssPhotoViewerState();
+}
+
+class _RssPhotoViewerState extends ConsumerState<_RssPhotoViewer> {
+  bool _saving = false;
+
+  /// 图片后缀（URL 末段 `.` 后 1-5 位字母数字，否则 jpg）
+  String _suffix() {
+    final path = Uri.tryParse(widget.url)?.path ?? '';
+    final dot = path.lastIndexOf('.');
+    if (dot >= 0 && dot < path.length - 1) {
+      final suffix = path.substring(dot + 1);
+      if (RegExp(r'^[A-Za-z0-9]{1,5}$').hasMatch(suffix)) return '.$suffix';
+    }
+    return '.jpg';
+  }
+
+  /// 保存图片（Android 优先 MediaStore，其余走 file_picker + 文档目录兜底）
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() => _saving = true);
+    final messenger = ScaffoldMessenger.maybeOf(context);
+    try {
+      final api = ref.read(bookApiProvider);
+      final data = await bridgeHttpGetBytes(
+        api,
+        widget.url,
+        headers: widget.headers.isEmpty ? null : widget.headers,
+      );
+      if (data.statusCode < 200 || data.statusCode >= 300) {
+        throw Exception('HTTP ${data.statusCode}');
+      }
+      if (data.bytes.isEmpty) {
+        throw Exception('图片为空');
+      }
+      final fileName = 'rss-${DateTime.now().millisecondsSinceEpoch}${_suffix()}';
+      final service = PlatformBridgeService.instance;
+      if (service.useMediaStoreDownloads) {
+        final saved = await service.saveImageToDownloads(fileName, data.bytes);
+        if (saved != null) {
+          messenger?.showSnackBar(SnackBar(content: Text('已保存: $saved')));
+          return;
+        }
+      }
+      final path = await FilePicker.platform.saveFile(
+        dialogTitle: '保存图片',
+        fileName: fileName,
+        bytes: data.bytes,
+      );
+      if (path != null) {
+        File(path).writeAsBytesSync(data.bytes);
+        messenger?.showSnackBar(SnackBar(content: Text('已保存: $path')));
+      } else {
+        final dir = await getApplicationDocumentsDirectory();
+        final file = File('${dir.path}/$fileName')
+          ..writeAsBytesSync(data.bytes);
+        messenger?.showSnackBar(
+          SnackBar(content: Text('已保存到文档目录: ${file.path}')),
+        );
+      }
+    } catch (e) {
+      messenger?.showSnackBar(SnackBar(content: Text('保存图片失败：$e')));
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog.fullscreen(
+      backgroundColor: Colors.black,
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: InteractiveViewer(
+              minScale: 0.5,
+              maxScale: 5,
+              child: Center(
+                child: CachedNetworkImage(
+                  imageUrl: widget.url,
+                  fit: BoxFit.contain,
+                  httpHeaders:
+                      widget.headers.isEmpty ? null : widget.headers,
+                  placeholder: (_, _) => const Center(
+                    child: CircularProgressIndicator(),
+                  ),
+                  errorWidget: (_, _, _) => const Center(
+                    child: Text(
+                      '图片加载失败',
+                      style: TextStyle(color: Colors.white70),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    onPressed: () => Navigator.pop(context),
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    tooltip: '关闭',
+                  ),
+                  Flexible(
+                    child: Text(
+                      widget.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topRight,
+              child: IconButton(
+                onPressed: _saving ? null : _save,
+                icon: _saving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.download, color: Colors.white),
+                tooltip: '保存图片',
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
 
 /// RSS 文章列表页面
 ///
@@ -27,7 +319,18 @@ import 'source_login_screen.dart';
 class RssArticlesScreen extends ConsumerStatefulWidget {
   final RssSource source;
 
-  const RssArticlesScreen({super.key, required this.source});
+  /// 初始分类覆盖值（批15f，对应原版
+  /// `RssSortActivity.start(context, sortUrl, sourceUrl)`）
+  ///
+  /// 非空时经 `rssSortUrls(sortUrl:)` 解析（JSON `{name:url}` / 非 JSON
+  /// 单条）；当前无 JS `sort` 动作调用方，参数就绪、动作接线随后续。
+  final String? initialSortUrl;
+
+  const RssArticlesScreen({
+    super.key,
+    required this.source,
+    this.initialSortUrl,
+  });
 
   @override
   ConsumerState<RssArticlesScreen> createState() => _RssArticlesScreenState();
@@ -36,6 +339,12 @@ class RssArticlesScreen extends ConsumerStatefulWidget {
 class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
     with TickerProviderStateMixin {
   final Set<String> _readArticles = {};
+
+  /// 源静态请求头（批15f：列表/网格封面图防盗链，复用既有 header 解析）
+  ///
+  /// 动态 `@js:` header 不解析（Dart 无 JS 引擎，登记 15g）。
+  late final Map<String, String> _imageHeaders =
+      parseRssHeaderMap(widget.source.header);
 
   /// 详情页规则正文抓取成功后的内存回填（审查 P2-7）
   ///
@@ -68,9 +377,12 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    // 加载分类与文章
+    // 加载分类与文章（批15f：透传初始 sortUrl 覆盖值）
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(rssNotifierProvider.notifier).selectSource(widget.source);
+      ref.read(rssNotifierProvider.notifier).selectSource(
+            widget.source,
+            sortUrl: widget.initialSortUrl,
+          );
     });
   }
 
@@ -166,11 +478,27 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
 
   // ===== 加载更多 =====
 
-  /// 触底检测：距底部 240dp 内触发加载下一页（通知器内部幂等防重）
+  /// 触底触发阈值（像素）
+  ///
+  /// 普通源距底 240dp 触发；`preload` 源（对齐 `RssArticlesFragment.kt`
+  /// `isPreload`）提前到「距底 5 项」——按当前平均项高折算，下限沿用 240dp，
+  /// 上限 1200dp 防止超长列表一次预取过多。参考版阈值 3/5。
+  double _loadMoreTriggerPixels(RssState state) {
+    if (!widget.source.preload) return 240;
+    if (!_scrollController.hasClients || state.articles.isEmpty) return 240;
+    final position = _scrollController.position;
+    if (position.maxScrollExtent <= 0) return 240;
+    final averageExtent =
+        position.maxScrollExtent / state.articles.length;
+    return (averageExtent * 5).clamp(240, 1200).toDouble();
+  }
+
+  /// 触底检测：距底部阈值内触发加载下一页（通知器内部幂等防重）
   void _onScroll() {
     if (!_scrollController.hasClients) return;
     final position = _scrollController.position;
-    if (position.pixels >= position.maxScrollExtent - 240) {
+    final threshold = _loadMoreTriggerPixels(ref.read(rssNotifierProvider));
+    if (position.pixels >= position.maxScrollExtent - threshold) {
       ref.read(rssNotifierProvider.notifier).loadMore();
     }
   }
@@ -196,7 +524,9 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
     );
     if (_autoLoadSignature == signature) return;
     final position = _scrollController.position;
-    if (position.pixels < position.maxScrollExtent - 240) return;
+    if (position.pixels < position.maxScrollExtent - _loadMoreTriggerPixels(state)) {
+      return;
+    }
     _autoLoadSignature = signature;
     ref.read(rssNotifierProvider.notifier).loadMore();
   }
@@ -526,6 +856,8 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
                           (MediaQuery.maybeOf(context)?.devicePixelRatio ??
                               1.0))
                       .round(),
+                  // 源静态 header 透传（防盗链；对齐原版带源 header 加载封面）
+                  httpHeaders: _imageHeaders.isEmpty ? null : _imageHeaders,
                   placeholder: (_, _) => Container(
                     width: 80,
                     height: 80,
@@ -646,32 +978,34 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
     await notifier.search(submitted);
   }
 
-  /// 打开文章详情（同时经 rss FFI 标记已读）
+  /// 打开文章（批15f：按 type 分流 → WebView 阅读 / 图片查看 / 视频播放）
   void _openDetail(RssFeedArticle article) {
     // [UI-fix v2.0.2 | 2026-08-06] 接通 rssMarkRead FFI（对标原版
     // RssReadViewModel.recordRead），失败不阻断阅读 — Qoder
     ref
         .read(bookApiProvider)
-        .rssMarkRead(widget.source.sourceUrl, article.title, article.url)
+        .rssMarkRead(
+          widget.source.sourceUrl,
+          article.title,
+          hasRssArticleLink(article.url) ? article.url : null,
+        )
         .catchError((_) {});
-    Navigator.push(
+    openRssArticle(
       context,
-      MaterialPageRoute(
-        builder: (_) => RssArticleDetailScreen(
-          article: article,
-          sourceName: widget.source.sourceName,
-          sourceUrl: widget.source.sourceUrl,
-          // 审查 P2-7：详情页抓到规则正文后回填列表内存态
-          onContentFetched: (description) {
-            if (!mounted) return;
-            setState(() => _fetchedDescriptions[article.url] = description);
-          },
-        ),
-      ),
+      ref,
+      article: article,
+      source: widget.source,
+      sourceName: widget.source.sourceName,
+      sourceUrl: widget.source.sourceUrl,
+      // 审查 P2-7：详情页抓到规则正文后回填列表内存态
+      onContentFetched: (description) {
+        if (!mounted) return;
+        setState(() => _fetchedDescriptions[article.url] = description);
+      },
     ).then((_) {
       // 从详情返回列表时刷新一次：详情在途期间可能已回填正文/标记已读。
-      // 注：列表无 DB-only 查询 FFI（getRssArticles 为网络刷新），故这里
-      // 按内存回填刷新；DB 真源由 Rust 写回。
+      // 注：列表页 DB-only 缓存查询在进入/切分类时进行（批15f），返回
+      // 列表时只刷新内存态；DB 真源由 Rust 写回。
       if (mounted) setState(() {});
     });
   }
@@ -700,6 +1034,8 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
                       imageUrl: article.imageUrl!,
                       fit: BoxFit.cover,
                       memCacheWidth: 300,
+                      httpHeaders:
+                          _imageHeaders.isEmpty ? null : _imageHeaders,
                       placeholder: (_, _) =>
                           Container(color: colorScheme.surfaceContainerHighest),
                       errorWidget: (_, _, _) => Container(
@@ -1060,36 +1396,36 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
     );
   }
 
-  /// 点击记录重读（同列表页历史入口：透传 origin，legacy/空链接不传）
+  /// 点击记录重读（同列表页：透传 origin，按源 type 分流阅读）
   void _openRecord(RssReadRecordRow record) {
     Navigator.of(context).pop(); // 对标原版点击后 dismiss
     final link = record.link ?? '';
     final hasLink = hasRssArticleLink(link);
     final rssState = ref.read(rssNotifierProvider);
-    final selected = rssState.selectedSource;
+    RssSource? source;
     String sourceName = record.origin;
-    if (selected != null && selected.sourceUrl == record.origin) {
-      sourceName = selected.sourceName;
-    } else {
-      for (final source in rssState.sources) {
-        if (source.sourceUrl == record.origin) {
-          sourceName = source.sourceName;
-          break;
-        }
+    for (final candidate in rssState.sources) {
+      if (candidate.sourceUrl == record.origin) {
+        source = candidate;
+        sourceName = candidate.sourceName;
+        break;
       }
     }
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => RssArticleDetailScreen(
-          article: RssFeedArticle(
-            title: record.title,
-            url: hasLink ? link : '',
-          ),
-          sourceName: sourceName,
-          // 无链接（空串/legacy 伪主键）不传 origin，避免空 link 抓正文
-          sourceUrl: hasLink ? record.origin : '',
-        ),
+    if (source == null && rssState.selectedSource?.sourceUrl == record.origin) {
+      source = rssState.selectedSource;
+      sourceName = source!.sourceName;
+    }
+    openRssArticle(
+      context,
+      ref,
+      article: RssFeedArticle(
+        title: record.title,
+        url: hasLink ? link : '',
       ),
+      source: source,
+      sourceName: sourceName,
+      // 无链接（空串/legacy 伪主键）不传 origin，避免空 link 抓正文
+      sourceUrl: hasLink ? record.origin : '',
     );
   }
 }

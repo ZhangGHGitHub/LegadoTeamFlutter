@@ -1,4 +1,5 @@
-﻿import 'dart:io';
+﻿import 'dart:async';
+import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -12,13 +13,21 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../services/rss_header.dart';
+import '../services/rss_web_config.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/open_url_confirm_dialog.dart';
 
-/// RSS 文章详情页面
+/// RSS 文章详情 / 阅读页面
 ///
-/// 使用 WebView 渲染文章 HTML 内容（支持 JS 执行）。
-/// 当 WebView 不可用时（如桌面端），降级为纯文本渲染。
+/// 使用 WebView 渲染文章 HTML 内容（支持 JS 执行）。当 WebView 不可用时
+/// （如桌面端），降级为纯文本渲染。
+///
+/// 批15f：阅读链对齐原版 `ReadRssActivity` —— 源配置 `startHtml`/`startJs`/
+/// `injectJs`/`preloadJs`/`style`/`enableJs`/`loadWithBaseUrl`/`showWebLog`/
+/// `contentWhitelist`/`contentBlacklist`/`shouldOverrideUrlLoading` 全部接线；
+/// 无正文且无 `ruleContent` 时按原版 `RssReadLoadTarget.Url` 直接加载文章
+/// 链接（而非只显示空态）。
 class RssArticleDetailScreen extends ConsumerStatefulWidget {
   final RssFeedArticle article;
   final String sourceName;
@@ -26,10 +35,21 @@ class RssArticleDetailScreen extends ConsumerStatefulWidget {
   /// 订阅源 URL（收藏记录 origin；新增入参保持向后兼容，默认空）
   final String sourceUrl;
 
+  /// 已解析的 RSS 源（批15f：列表/历史入口透传，避免重复查库）
+  ///
+  /// 为空时本页按 [sourceUrl] 从 `getRssSources()` 反查（失败按无源处理）。
+  final RssSource? source;
+
+  /// 起始页 HTML（批15f，对齐 `ReadRssActivity.start(startHtml=…)`）
+  ///
+  /// 非空时优先于文章内容渲染（注入 `startJs`、应用 `startStyle ?? style`）；
+  /// 空时回退既有正文/规则正文渲染。
+  final String? startHtml;
+
   /// 规则正文抓取成功回调（审查 P2-7）
   ///
-  /// Rust 侧已把正文写回 `rssArticles.description`；列表页当前无「只读
-  /// DB」FFI，故由本页把正文回填给列表页内存态，返回列表即可看到新正文。
+  /// Rust 侧已把正文写回 `rssArticles.description`；列表页在返回前用本回调
+  /// 回填内存态（批15f 已补 DB-only 查询，DB 仍为真源）。
   /// 为 null 时（如阅读记录入口）仅本页使用。
   final void Function(String description)? onContentFetched;
 
@@ -38,6 +58,8 @@ class RssArticleDetailScreen extends ConsumerStatefulWidget {
     required this.article,
     this.sourceName = '',
     this.sourceUrl = '',
+    this.source,
+    this.startHtml,
     this.onContentFetched,
   });
 
@@ -59,6 +81,16 @@ class _RssArticleDetailScreenState
 
   /// 当前是否使用 WebView 模式（可切换为纯文本）
   bool _useWebView = true;
+
+  /// 已解析的源（widget.source 优先，否则按 sourceUrl 反查）
+  RssSource? _source;
+
+  /// 正在反查源（内容区显示加载态，避免闪「暂无内容」）
+  bool _isResolvingSource = false;
+
+  /// URL 直开模式（无正文/无 ruleContent，按文章链接加载；对齐
+  /// `RssReadLoadTarget.Url`）
+  bool _urlMode = false;
 
   // [批15c | 2026-10-26] 规则正文拉取（对齐 ReadRssViewModel.loadContent）：
   // article.description 为空且源配置 ruleContent 时，经 `rssFetchContent`
@@ -105,15 +137,71 @@ class _RssArticleDetailScreenState
   @override
   void initState() {
     super.initState();
-    // 仅在支持 WebView 的平台且有内容时初始化控制器
-    if (_isWebViewSupported && _articleHtml != null && _useWebView) {
-      _initWebView();
-    } else {
-      _isWebLoading = false;
-    }
+    _isResolvingSource = widget.source == null && widget.sourceUrl.isNotEmpty;
     _loadStarState();
-    // [批15c] description 为空时按源正文规则拉取
-    _maybeLoadRuleContent();
+    // 批15f：先解析源配置，再决定渲染路径（正文 / 规则正文 / URL 直开）
+    unawaited(_bootstrapReading());
+  }
+
+  /// 阅读渲染引导（对齐原版 `ReadRssViewModel.initData` 的 target 分支）
+  ///
+  /// 1. 解析源（widget.source 优先，否则 `getRssSources()` 反查）；
+  /// 2. `startHtml` 非空 → 起始页（注入 `startJs`、`startStyle ?? style`）；
+  /// 3. 自带 `content`/`description` 有值 → 正文 WebView（`description` 为空
+  ///    且 `ruleContent` 非空时并行抓规则正文并替换，审查 P2-1）；
+  /// 4. 否则 `ruleContent` 非空 → 抓规则正文；
+  /// 5. 否则文章链接/源 URL 非空 → URL 直开（`RssReadLoadTarget.Url`）；
+  /// 6. 全都为空 → 空态（浏览器打开原文入口）。
+  Future<void> _bootstrapReading() async {
+    final source = widget.source ?? await _resolveSource();
+    if (!mounted) return;
+    setState(() {
+      _source = source;
+      _isResolvingSource = false;
+    });
+
+    final startHtml = widget.startHtml?.trim() ?? '';
+    if (startHtml.isNotEmpty) {
+      await _initWebView();
+      return;
+    }
+
+    final hasContent = _articleHtml != null;
+    if (hasContent) {
+      await _initWebView();
+    }
+
+    final descriptionBlank =
+        widget.article.description?.trim().isEmpty ?? true;
+    final rule = source?.ruleContent?.trim() ?? '';
+    if (descriptionBlank && rule.isNotEmpty && widget.sourceUrl.isNotEmpty) {
+      await _loadRuleContent();
+      return;
+    }
+    if (hasContent) return;
+
+    // 无正文、无规则 → 按原版直接加载文章链接（空链接回退源 URL）
+    _urlMode = widget.article.url.trim().isNotEmpty ||
+        widget.sourceUrl.trim().isNotEmpty;
+    if (_urlMode) {
+      await _initWebView();
+    } else {
+      setState(() => _isWebLoading = false);
+    }
+  }
+
+  /// 按 `sourceUrl` 反查源（失败返回 null，不阻断页面）
+  Future<RssSource?> _resolveSource() async {
+    if (widget.sourceUrl.isEmpty) return null;
+    try {
+      final sources = await ref.read(bookApiProvider).getRssSources();
+      for (final source in sources) {
+        if (source.sourceUrl == widget.sourceUrl) return source;
+      }
+    } catch (_) {
+      // 源读取失败：按无源处理（既有空态/原文入口）
+    }
+    return null;
   }
 
   /// `description` 为空且源配置 `ruleContent` 时拉取规则正文
@@ -131,31 +219,6 @@ class _RssArticleDetailScreenState
   /// 历史记录入口按 `link` 形态决定是否传 `sourceUrl`：真实链接由列表页/
   /// 阅读记录条目透传 origin，从而按源规则抓正文；`legacy:` 伪主键或空
   /// 链接视为无链接（不传 origin、不发起正文请求，审查 P2-3/P2-6）。
-  /// 无规则源保持空态 + 浏览器打开原文（原文链接为空时隐藏该入口）。
-  Future<void> _maybeLoadRuleContent() async {
-    if (widget.sourceUrl.isEmpty) return;
-    if (widget.article.description?.trim().isNotEmpty ?? false) return;
-
-    // 源正文规则非空才触发（避免对无规则源发无意义请求）
-    String? ruleContent;
-    try {
-      final sources = await ref.read(bookApiProvider).getRssSources();
-      for (final source in sources) {
-        if (source.sourceUrl == widget.sourceUrl) {
-          ruleContent = source.ruleContent;
-          break;
-        }
-      }
-    } catch (_) {
-      // 源读取失败不阻断页面：按无规则处理（显示空态/自带内容）
-      return;
-    }
-    if (!mounted) return;
-    if (ruleContent == null || ruleContent.trim().isEmpty) return;
-    await _loadRuleContent();
-  }
-
-  /// 调用 `rssFetchContent` 拉取正文（加载态/失败提示/成功渲染）
   Future<void> _loadRuleContent() async {
     setState(() {
       _isContentLoading = true;
@@ -182,7 +245,7 @@ class _RssArticleDetailScreenState
       // 规则正文就绪后（重新）初始化 WebView，加载新内容
       if (_fetchedContent != null && _isWebViewSupported && _useWebView) {
         _isWebLoading = true;
-        _initWebView();
+        unawaited(_initWebView());
       }
     } catch (e) {
       if (!mounted) return;
@@ -260,65 +323,240 @@ class _RssArticleDetailScreenState
     }
   }
 
-  /// 初始化 WebView 控制器并加载文章 HTML 内容
-  void _initWebView() {
-    final html = _articleHtml;
-    if (html == null) {
-      _isWebLoading = false;
+  /// 初始化 WebView 控制器并按源配置加载内容（批15f 阅读链）
+  ///
+  /// 对齐 `ReadRssActivity.initLiveData`：
+  /// - HTML 模式：`loadDataWithBaseURL(baseUrl, clHtml(content, style), …)`，
+  ///   `baseUrl = loadWithBaseUrl ? 文章链接（substringBefore("@js")）: null`；
+  /// - `startHtml` 模式：先注入 `startJs`，再 `clHtml(html, startStyle ?? style)`，
+  ///   baseUrl = `loadWithBaseUrl ? sourceUrl : null`；
+  /// - URL 模式：`loadUrl(url, 源 header)`（文章链接优先，空则源 URL）；
+  /// - `enableJs == false` → `JavaScriptMode.disabled`（脚本注入全部跳过）。
+  Future<void> _initWebView() async {
+    if (!_isWebViewSupported) {
+      if (mounted) setState(() => _isWebLoading = false);
       return;
     }
+    final source = _source;
+    final jsEnabled = source?.enableJs ?? true;
+    final controller = WebViewController();
+    _webViewController = controller;
 
-    _webViewController = WebViewController()
-      // 启用 JavaScript 执行（参考 Kotlin 原版 webView.settings.javaScriptEnabled = true）
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      // 页面开始加载回调
-      ..setNavigationDelegate(
-        NavigationDelegate(
-          onPageStarted: (_) {
-            if (mounted) {
-              setState(() {
-                _isWebLoading = true;
-                _webError = null;
-              });
-            }
-          },
-          onPageFinished: (_) {
-            if (mounted) {
-              setState(() => _isWebLoading = false);
-            }
-          },
-          onWebResourceError: (error) {
-            if (mounted) {
-              setState(() {
-                _isWebLoading = false;
-                _webError = error.description;
-              });
-            }
-          },
-          // 拦截外部链接，在系统浏览器中打开
-          onNavigationRequest: (request) {
-            final articleUrl = widget.article.url;
-            // 允许同域导航（文章内链接）
-            if (request.url.startsWith(articleUrl) ||
-                request.url.startsWith('data:') ||
-                request.url.startsWith('about:')) {
-              return NavigationDecision.navigate;
-            }
-            // 外部链接在系统浏览器打开
-            _openUrlExternally(request.url);
-            return NavigationDecision.prevent;
-          },
-        ),
+    await controller.setJavaScriptMode(
+      jsEnabled ? JavaScriptMode.unrestricted : JavaScriptMode.disabled,
+    );
+    final headers = parseRssHeaderMap(source?.header);
+    final userAgent = rssHeaderUserAgent(headers);
+    if (userAgent != null) {
+      await controller.setUserAgent(userAgent);
+    }
+    controller.setNavigationDelegate(
+      NavigationDelegate(
+        onPageStarted: (_) {
+          if (mounted) {
+            setState(() {
+              _isWebLoading = true;
+              _webError = null;
+            });
+          }
+          if (jsEnabled) unawaited(_onPageStartedScripts());
+        },
+        onPageFinished: (_) {
+          if (mounted) {
+            setState(() => _isWebLoading = false);
+          }
+          if (jsEnabled) unawaited(_onPageFinishedScripts());
+        },
+        onUrlChange: (_) {
+          if (jsEnabled && (source?.showWebLog ?? false)) {
+            unawaited(_flushConsoleLogs());
+          }
+        },
+        onWebResourceError: (error) {
+          // 仅主框架错误才算页面加载失败（子资源 404 不打断阅读）
+          if (!(error.isForMainFrame ?? true)) return;
+          if (mounted) {
+            setState(() {
+              _isWebLoading = false;
+              _webError = error.description;
+            });
+          }
+        },
+        onNavigationRequest: _handleNavigationRequest,
+      ),
+    );
+
+    try {
+      final startHtml = widget.startHtml?.trim() ?? '';
+      if (startHtml.isNotEmpty) {
+        // 起始页：注入 startJs → clHtml(startStyle ?? style)
+        final processed = rssClHtml(
+          rssInjectStartJs(startHtml, source?.startJs),
+          style: source?.startStyle ?? source?.style,
+          preloadJs: source?.preloadJs,
+        );
+        final baseUrl = (source?.loadWithBaseUrl ?? true)
+            ? _htmlBaseUrl(widget.sourceUrl)
+            : null;
+        await controller.loadHtmlString(processed, baseUrl: baseUrl);
+        return;
+      }
+      final html = _articleHtml;
+      if (html != null) {
+        // 无源信息时保留既有响应式样式（历史入口/旧数据兼容）
+        final processed = source == null
+            ? _wrapHtmlWithStyle(html)
+            : rssClHtml(
+                html,
+                style: source.style,
+                preloadJs: source.preloadJs,
+              );
+        final baseUrl = source == null || source.loadWithBaseUrl
+            ? _htmlBaseUrl(widget.article.url)
+            : null;
+        await controller.loadHtmlString(processed, baseUrl: baseUrl);
+        return;
+      }
+      if (_urlMode) {
+        final target = widget.article.url.trim().isNotEmpty
+            ? widget.article.url.trim()
+            : widget.sourceUrl.trim();
+        final uri = Uri.tryParse(target);
+        if (uri == null) {
+          if (mounted) {
+            setState(() {
+              _isWebLoading = false;
+              _webError = '无效的文章链接';
+            });
+          }
+          return;
+        }
+        await controller.loadRequest(uri, headers: headers);
+        return;
+      }
+      if (mounted) setState(() => _isWebLoading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isWebLoading = false;
+          _webError = '$e';
+        });
+      }
+    }
+  }
+
+  /// 页面开始：注入预加载 JS / console 钩子 / `java` 桩（仅 enableJs）
+  Future<void> _onPageStartedScripts() async {
+    final controller = _webViewController;
+    final source = _source;
+    if (controller == null) return;
+    try {
+      // URL 模式无法重写主文档 <head>（Flutter WebView 无 shouldInterceptRequest），
+      // 退化为页面开始即执行 preloadJs（已登记差异）
+      final preloadJs = source?.preloadJs?.trim() ?? '';
+      if (_urlMode && preloadJs.isNotEmpty) {
+        await controller.runJavaScript(preloadJs);
+      }
+      if (source?.showWebLog ?? false) {
+        await controller.runJavaScript(kRssConsoleHookScript);
+      }
+      final overrideJs = source?.shouldOverrideUrlLoading?.trim() ?? '';
+      if (overrideJs.isNotEmpty) {
+        await controller.runJavaScript(kRssJavaStubScript);
+      }
+    } catch (e) {
+      debugPrint('[RSS WebView] onPageStarted 脚本注入失败: $e');
+    }
+  }
+
+  /// 页面完成：执行 `injectJs` 并回读 console 日志（`showWebLog`）
+  Future<void> _onPageFinishedScripts() async {
+    final controller = _webViewController;
+    final source = _source;
+    if (controller == null) return;
+    try {
+      final injectJs = source?.injectJs?.trim() ?? '';
+      if (injectJs.isNotEmpty) {
+        await controller.runJavaScript(injectJs);
+      }
+      if (source?.showWebLog ?? false) {
+        await _flushConsoleLogs();
+      }
+    } catch (e) {
+      debugPrint('[RSS WebView] onPageFinished 脚本注入失败: $e');
+    }
+  }
+
+  /// 回读 `console.*` 缓冲并输出（对齐原版 `onConsoleMessage` + `showWebLog`）
+  Future<void> _flushConsoleLogs() async {
+    final controller = _webViewController;
+    if (controller == null) return;
+    try {
+      final raw = await controller.runJavaScriptReturningResult(
+        kRssConsoleFlushScript,
       );
+      final logs = rssParseConsoleLogs(raw);
+      if (logs.isEmpty) return;
+      final tag = _source?.sourceName ?? widget.sourceName;
+      for (final line in logs) {
+        debugPrint('[RSS WebView][$tag] $line');
+      }
+    } catch (e) {
+      debugPrint('[RSS WebView] 读取 console 日志失败: $e');
+    }
+  }
 
-    // 构造带样式的 HTML 页面并加载
-    // 审查 P1-2：补 baseUrl = 文章链接（对齐上游 ReadRssActivity.kt:406-411
-    // 的 `loadDataWithBaseURL(baseUrl, html, …)`），否则相对图片/链接无法解析。
-    // 上游对 link 做 `substringBefore("@js")` 归一；`loadWithBaseUrl == false`
-    // 时上游传 null，该源字段接线属批15f（契约 §2.5 批15c 注交叉引用）。
-    final baseUrl = _htmlBaseUrl(widget.article.url);
-    final styledHtml = _wrapHtmlWithStyle(html);
-    _webViewController!.loadHtmlString(styledHtml, baseUrl: baseUrl);
+  /// 导航请求处理（对齐 `ReadRssActivity.kt:770-808` + 白/黑名单）
+  ///
+  /// 1. `shouldOverrideUrlLoading` 非空 → JS 求值（`url` + `java` 桩），
+  ///    返回 true 拦截；
+  /// 2. 白/黑名单判定（仅主框架；子资源拦截 Flutter 无面，登记差异）；
+  /// 3. http/https → WebView 内导航；`legado:`/`yuedu:` → 交由系统处理；
+  ///    其余 scheme → 确认后外部打开并阻止 WebView 导航。
+  Future<NavigationDecision> _handleNavigationRequest(
+    NavigationRequest request,
+  ) async {
+    final url = request.url;
+    if (url.isEmpty ||
+        url.startsWith('data:') ||
+        url.startsWith('about:')) {
+      return NavigationDecision.navigate;
+    }
+    final source = _source;
+    final controller = _webViewController;
+    final overrideJs = source?.shouldOverrideUrlLoading?.trim() ?? '';
+    if (controller != null &&
+        overrideJs.isNotEmpty &&
+        (source?.enableJs ?? true)) {
+      try {
+        final result = await controller.runJavaScriptReturningResult(
+          rssShouldOverrideScript(overrideJs, url),
+        );
+        if (rssIsTrue(result.toString())) {
+          debugPrint('[RSS WebView] shouldOverrideUrlLoading 拦截: $url');
+          return NavigationDecision.prevent;
+        }
+      } catch (e) {
+        debugPrint('[RSS WebView] shouldOverrideUrlLoading 执行失败: $e');
+      }
+    }
+
+    final rule = rssNavigationRuleDecision(
+      url: url,
+      whitelist: source?.contentWhitelist,
+      blacklist: source?.contentBlacklist,
+    );
+    if (rule == RssNavigationRule.block) {
+      debugPrint('[RSS WebView] 命中内容白/黑名单，已拦截: $url');
+      return NavigationDecision.prevent;
+    }
+
+    final scheme = Uri.tryParse(url)?.scheme.toLowerCase() ?? '';
+    if (scheme == 'http' || scheme == 'https') {
+      return NavigationDecision.navigate;
+    }
+    unawaited(_openUrlExternally(url));
+    return NavigationDecision.prevent;
   }
 
   /// WebView baseUrl（文章链接去掉规则尾巴；空串回退 null）
@@ -329,10 +567,10 @@ class _RssArticleDetailScreenState
     return normalized.isEmpty ? null : normalized;
   }
 
-  /// 为 HTML 内容注入响应式样式
+  /// 为 HTML 内容注入响应式样式（无源信息时的既有降级实现）
   ///
-  /// 参考 Kotlin 原版通过 WebSettings 设置 viewport 和字体大小，
-  /// 这里通过 CSS 实现移动端友好的阅读体验。
+  /// 有源配置时改走 [rssClHtml]（逐行对齐原版 `clHtml`：`style` 语义、
+  /// `preloadJs` 内联、默认移动端样式）。
   String _wrapHtmlWithStyle(String htmlContent) {
     // 如果内容已是完整 HTML 文档，直接注入样式
     if (htmlContent.contains('<html') || htmlContent.contains('<body')) {
@@ -427,7 +665,7 @@ $htmlContent
       _useWebView = !_useWebView;
       if (_useWebView && _webViewController == null) {
         _isWebLoading = true;
-        _initWebView();
+        unawaited(_initWebView());
       }
     });
   }
@@ -506,6 +744,14 @@ $htmlContent
     return (displayWidth * pixelRatio).round();
   }
 
+  /// 封面图请求头（源静态 header；空时返回 null 保持 CachedNetworkImage 默认）
+  Map<String, String>? _coverHeaders() {
+    final headers = parseRssHeaderMap(
+      _source?.header ?? widget.source?.header,
+    );
+    return headers.isEmpty ? null : headers;
+  }
+
   /// 构建文章头部（标题、日期、来源、封面图）
   Widget _buildArticleHeader(ThemeData theme, ColorScheme colorScheme) {
     return Padding(
@@ -570,6 +816,8 @@ $htmlContent
                 fit: BoxFit.cover,
                 // 限制解码宽度为屏幕实际显示像素宽度，避免大图解码
                 memCacheWidth: _coverDecodeWidth(),
+                // 源静态 header 透传（防盗链；coverDecodeJs 解密登记 15g）
+                httpHeaders: _coverHeaders(),
                 placeholder: (_, _) => Container(
                   height: 180,
                   color: colorScheme.surfaceContainerHighest,
@@ -601,6 +849,17 @@ $htmlContent
     ColorScheme colorScheme,
     String? html,
   ) {
+    // [批15f] 源配置解析中：避免先闪「暂无内容」
+    if (_isResolvingSource) {
+      return const Center(
+        child: SizedBox(
+          width: 28,
+          height: 28,
+          child: CircularProgressIndicator(strokeWidth: 2.5),
+        ),
+      );
+    }
+
     // [批15c] 规则正文加载中：仅在无可展示内容时占用内容区；
     // 自带 content 可用时继续显示自带内容，不打断阅读。
     if (_isContentLoading && html == null) {
@@ -669,6 +928,16 @@ $htmlContent
       );
     }
 
+    // [批15f] URL 直开模式（无正文/无 ruleContent，对齐
+    // `RssReadLoadTarget.Url`）：直接渲染文章链接的 WebView 页面
+    if (html == null &&
+        _urlMode &&
+        _isWebViewSupported &&
+        _useWebView &&
+        _webViewController != null) {
+      return _buildWebViewContent(theme, colorScheme);
+    }
+
     // 无内容时显示空状态
     // [LAYOUT_PLAN P4 收尾] 自绘空态并入 EmptyState（保留「浏览器查看原文」动作）
     if (html == null) {
@@ -697,6 +966,20 @@ $htmlContent
 
   /// 构建 WebView 内容区域（含加载指示器和错误回退）
   Widget _buildWebViewContent(ThemeData theme, ColorScheme colorScheme) {
+    final controller = _webViewController;
+    if (controller == null) {
+      return EmptyState(
+        icon: Symbols.article_rounded,
+        title: '暂无内容',
+        action: widget.article.url.isEmpty
+            ? null
+            : OutlinedButton.icon(
+                onPressed: _openInBrowser,
+                icon: const Icon(Symbols.open_in_browser_rounded),
+                label: const Text('在浏览器中查看原文'),
+              ),
+      );
+    }
     if (_webError != null) {
       // WebView 加载失败时显示错误提示和回退选项
       return Center(
@@ -725,10 +1008,29 @@ $htmlContent
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 16),
-              FilledButton.icon(
-                onPressed: _toggleViewMode,
-                icon: const Icon(Symbols.article_rounded),
-                label: const Text('切换为纯文本'),
+              if (_urlMode)
+                FilledButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _isWebLoading = true;
+                      _webError = null;
+                    });
+                    unawaited(_initWebView());
+                  },
+                  icon: const Icon(Symbols.refresh_rounded),
+                  label: const Text('重试'),
+                )
+              else
+                FilledButton.icon(
+                  onPressed: _toggleViewMode,
+                  icon: const Icon(Symbols.article_rounded),
+                  label: const Text('切换为纯文本'),
+                ),
+              const SizedBox(height: 8),
+              OutlinedButton.icon(
+                onPressed: _openInBrowser,
+                icon: const Icon(Symbols.open_in_browser_rounded),
+                label: const Text('在浏览器中打开'),
               ),
             ],
           ),
@@ -739,7 +1041,7 @@ $htmlContent
     return Stack(
       children: [
         // WebView 主体
-        WebViewWidget(controller: _webViewController!),
+        WebViewWidget(controller: controller),
         // 加载指示器覆盖层
         if (_isWebLoading)
           Container(

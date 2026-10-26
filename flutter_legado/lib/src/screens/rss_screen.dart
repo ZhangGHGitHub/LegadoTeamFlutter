@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../l10n/app_strings.dart';
 import '../models/models.dart';
+import '../providers/providers.dart';
 import '../providers/rss/rss_notifier.dart';
 import '../providers/rss_history/rss_history_notifier.dart';
 import '../routes.dart';
@@ -262,43 +263,91 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     );
   }
 
-  /// 打开订阅源（对标 RssFragment.openRss：singleUrl → 阅读页/外链，否则文章列表）
+  /// 打开订阅源（对标 RssFragment.openRss）
+  ///
+  /// - `singleUrl`：先经 `rssSortUrls` 取首项 URL（`@js:`/`::`/缓存已由
+  ///   Rust 处理；对齐 `RssViewModel.getSingleUrl`，`RssViewModel.kt:48-80`），
+  ///   失败回退 `sourceUrl`；http(s) 走应用内浏览器，其余交系统；
+  /// - 非 `singleUrl` 且配置了静态 `startHtml`：直接打开起始页阅读
+  ///   （对齐 `launchRssWithHtml`；`@js:`/`<js>` 求值无 FFI，登记 15g）；
+  /// - 否则进入文章列表。
   Future<void> _openRss(RssSource source) async {
-    if (!source.singleUrl) {
+    if (source.singleUrl) {
+      final url = await _resolveSingleUrl(source);
+      if (!mounted) return;
+      if (url.toLowerCase().startsWith('http://') ||
+          url.toLowerCase().startsWith('https://')) {
+        await Navigator.pushNamed(
+          context,
+          AppRoutes.browser,
+          arguments: url,
+        );
+        return;
+      }
+      final uri = Uri.tryParse(url);
+      if (uri == null) return;
+      try {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } catch (e) {
+        // [UI_SYNC_REFACTOR S5 修 | 2026-09-07] 自定义 scheme（如 snssdk1128://）
+        // 无应用处理时 launchUrl 抛异常，此前被 unawaited 吞掉表现为"点了没反应"，
+        // 现给出失败反馈 — Qoder
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('无法打开链接：$url')),
+          );
+        }
+      }
+      return;
+    }
+
+    final startHtml = (source.startHtml ?? '').trim();
+    if (startHtml.isNotEmpty &&
+        !startHtml.startsWith('@js:') &&
+        !startHtml.startsWith('<js>')) {
       if (!mounted) return;
       await Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => RssArticlesScreen(source: source),
+          builder: (_) => RssArticleDetailScreen(
+            article: RssFeedArticle(
+              title: source.sourceName,
+              url: source.sourceUrl,
+            ),
+            source: source,
+            sourceName: source.sourceName,
+            sourceUrl: source.sourceUrl,
+            startHtml: startHtml,
+          ),
         ),
       );
       return;
     }
-    final url = source.sourceUrl.trim();
-    if (url.toLowerCase().startsWith('http://') ||
-        url.toLowerCase().startsWith('https://')) {
-      if (!mounted) return;
-      await Navigator.pushNamed(
-        context,
-        AppRoutes.browser,
-        arguments: url,
-      );
-      return;
-    }
-    final uri = Uri.tryParse(url);
-    if (uri == null) return;
+
+    if (!mounted) return;
+    await Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => RssArticlesScreen(source: source),
+      ),
+    );
+  }
+
+  /// singleUrl 打开地址（对齐 `RssViewModel.getSingleUrl`）
+  ///
+  /// `rssSortUrls` 返回 `[{"name","url"}]`，取首项 `url`；解析失败/空值
+  /// 回退 `sourceUrl`（原版 `getSingleUrl` 的 `onError` 分支）。
+  Future<String> _resolveSingleUrl(RssSource source) async {
     try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+      final json = await ref.read(bookApiProvider).rssSortUrls(
+            source.sourceUrl,
+          );
+      final firstUrl = firstRssSortUrlFromJson(json);
+      if (firstUrl != null) return firstUrl;
     } catch (e) {
-      // [UI_SYNC_REFACTOR S5 修 | 2026-09-07] 自定义 scheme（如 snssdk1128://）
-      // 无应用处理时 launchUrl 抛异常，此前被 unawaited 吞掉表现为"点了没反应"，
-      // 现给出失败反馈 — Qoder
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('无法打开链接：$url')),
-        );
-      }
+      debugPrint('[RSS] singleUrl 解析失败，回退 sourceUrl: $e');
     }
+    return source.sourceUrl.trim();
   }
 
   /// [UI_SYNC_REFACTOR T1] 头部双卡（对齐参考 GlassCard 双卡：规则订阅|收藏，
@@ -439,26 +488,32 @@ class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
   }
 
   /// 点击记录重读（对标原版 `ReadRss.readRss(record)`：按 record.origin 取源
-  /// 打开文章阅读页，批15d 补传 origin 使规则正文抓取生效）
+  /// 打开文章阅读页；批15f 按源 `type` 分流图片/视频/网页）
   void _openRecord(RssReadRecordRow record) {
     Navigator.of(context).pop(); // 对标原版点击后 dismiss
     final link = record.link ?? '';
     // 审查 P2-3：空串与 `legacy:` 伪主键都视为无链接——不传 origin
     // （避免详情页按空 link 触发 rssFetchContent），也不带外链地址。
     final hasLink = hasRssArticleLink(link);
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => RssArticleDetailScreen(
-          article: RssFeedArticle(
-            title: record.title,
-            url: hasLink ? link : '',
-          ),
-          sourceName: _sourceNameOf(record.origin),
-          // 上游 `ReadRssActivity.start(origin=record.origin, link, sort)`：
-          // 详情页据 origin 查源规则抓正文；无链接（legacy 键）时不触发
-          sourceUrl: hasLink ? record.origin : '',
-        ),
+    RssSource? source;
+    for (final candidate in ref.read(rssNotifierProvider).sources) {
+      if (candidate.sourceUrl == record.origin) {
+        source = candidate;
+        break;
+      }
+    }
+    openRssArticle(
+      context,
+      ref,
+      article: RssFeedArticle(
+        title: record.title,
+        url: hasLink ? link : '',
       ),
+      source: source,
+      sourceName: _sourceNameOf(record.origin),
+      // 上游 `ReadRssActivity.start(origin=record.origin, link, sort)`：
+      // 详情页据 origin 查源规则抓正文；无链接（legacy 键）时不触发
+      sourceUrl: hasLink ? record.origin : '',
     );
   }
 
