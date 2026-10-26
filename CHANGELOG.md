@@ -1868,6 +1868,19 @@ All notable changes to this project will be documented in this file.
 
 - Contributor: Qoder UI
 
+## [2.0.203] - 2026-09-06
+
+### Fixed
+- [UI] 正文右边距安全余量由固定 dp 改为分页宽 5% 缩减（0.98→0.95，比固定 dp 更鲁棒），继续收敛行尾裁字
+- [UI] 「上一章」跳转修复——`currentChapterPos=-1` 哨兵跳末页，并以 postFrameCallback 等 PageView 重建后再 jumpToPage（此前跨章跳页失效）
+- [UI] 阅读器全域 8 处 `showModalBottomSheet` 统一补 `showDragHandle:false`（消弹层双横杠）
+
+### Test
+- flutter analyze 0 issues（commit `b293650872` 自述）
+- 版本 2.0.203+204
+
+- Contributor: Qoder UI
+
 ## [2.0.202] - 2026-09-06
 
 ### Fixed
@@ -1891,6 +1904,17 @@ All notable changes to this project will be documented in this file.
 ### Test
 - flutter analyze 无问题；flutter test 1341 全过
 - 版本 2.0.201+202
+
+- Contributor: Qoder UI
+
+## [2.0.200] - 2026-09-06
+
+### Fixed
+- [UI] 正文右边距裁切加深修复——单页/双页分页宽度安全余量 4→8dp（根因：letterSpacing 0.1em × 字号 18 × 约 15 字/行 ≈ 27px 额外宽度，4dp 不足以覆盖 CJK 字距累积导致的 TextPainter 分行与 Text 渲染差异）
+
+### Test
+- flutter analyze 0 issues（commit `1c273ca60f` 自述；该提交仅改分页宽度计算 2 行，未附 flutter test 记录）
+- 版本 2.0.200+201
 
 - Contributor: Qoder UI
 
