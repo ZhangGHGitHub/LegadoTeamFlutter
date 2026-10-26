@@ -333,9 +333,19 @@ mixin RustApiSearchRss on RustApiDecode implements BookApi {
       bridge.rssClearArticles(sourceUrl: sourceUrl);
 
   /// 解析 RSS 源分类列表（契约 §2.5 `rssSortUrls`）
+  ///
+  /// [sortUrl] 非空时走覆盖解析（批15f，对齐 `RssSortActivity.kt:356-366`）。
   @override
-  Future<String> rssSortUrls(String sourceUrl) =>
-      bridge.rssSortUrls(sourceUrl: sourceUrl);
+  Future<String> rssSortUrls(String sourceUrl, {String? sortUrl}) =>
+      bridge.rssSortUrls(sourceUrl: sourceUrl, sortUrl: sortUrl);
+
+  /// 只读查询本地缓存的 RSS 文章（契约 §2.5 `rssListCachedArticles`，批15f）
+  @override
+  Future<String> rssListCachedArticles(String sourceUrl, {String? sortName}) =>
+      bridge.rssListCachedArticles(
+        sourceUrl: sourceUrl,
+        sortName: sortName,
+      );
 
   /// 清除 RSS 源分类脚本求值缓存（契约 §2.5 `rssClearSortCache`）
   @override

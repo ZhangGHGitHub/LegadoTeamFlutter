@@ -372,16 +372,83 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
 
   @override
   Future<void> rssClearArticles(String sourceUrl) async {
-    // Mock：无本地文章表，空实现即可
+    // Mock：清空本地缓存（批15f 起有内存缓存，需同步清理）
+    _clearMockRssArticles(sourceUrl);
   }
+
+  /// Mock 本地文章缓存（对齐 Rust `rssArticles` 表；批15f 只读查询用）
+  ///
+  /// 按 origin 保存已刷新/已追加的列表项（同 link 同 sort 覆盖，模拟
+  /// `INSERT OR REPLACE`），`rssListCachedArticles` 按 sort 过滤后返回。
+  final Map<String, List<Map<String, dynamic>>> _mockRssArticles = {};
+
+  /// 写入 Mock 缓存（同 link + sort 覆盖，模拟 DB 主键）
+  void _cacheRssArticles(
+    String sourceUrl,
+    List<Map<String, dynamic>> articles,
+  ) {
+    final list = _mockRssArticles.putIfAbsent(sourceUrl, () => []);
+    for (final article in articles) {
+      final link = article['link'] as String? ?? '';
+      final sort = article['sort'] as String? ?? '';
+      final idx = list.indexWhere(
+        (e) => e['link'] == link && (e['sort'] as String? ?? '') == sort,
+      );
+      if (idx >= 0) {
+        list[idx] = article;
+      } else {
+        list.add(article);
+      }
+    }
+    // order DESC：Mock 以写入顺序倒序近似（新刷新项在前）
+    list.sort((a, b) {
+      final aOrder = (a['order'] as num?)?.toInt() ?? 0;
+      final bOrder = (b['order'] as num?)?.toInt() ?? 0;
+      return bOrder.compareTo(aOrder);
+    });
+  }
+
+  /// 清空 Mock 缓存（对应 rssClearArticles）
+  void _clearMockRssArticles(String sourceUrl) =>
+      _mockRssArticles.remove(sourceUrl);
 
   /// 解析 RSS 源分类列表（契约 §2.5 `rssSortUrls` 的内存实现）
   ///
   /// 仅做与 Rust 侧同口径的静态解析（`&&`/换行分段、`name::url`）；
   /// `@js:` / `<js>` 脚本形态在 Mock 无 JS 引擎，按求值失败回退
   /// `[{"name":"","url":sourceUrl}]`。
+  ///
+  /// [sortUrl] 非空时按覆盖值解析（批15f）：JSON `{name:url}` 展开
+  /// （Dart `jsonDecode` 的 Map 保序）、非 JSON 单条、解析失败单条。
   @override
-  Future<String> rssSortUrls(String sourceUrl) async {
+  Future<String> rssSortUrls(String sourceUrl, {String? sortUrl}) async {
+    final override = (sortUrl ?? '').trim();
+    if (override.isNotEmpty) {
+      if (override.startsWith('{')) {
+        try {
+          final decoded = jsonDecode(override);
+          if (decoded is Map<String, dynamic>) {
+            final entries = [
+              for (final entry in decoded.entries)
+                {'name': entry.key, 'url': '${entry.value}'},
+            ];
+            if (entries.isNotEmpty) return jsonEncode(entries);
+          }
+          // 空对象：按 Rust 侧兜底源 URL（已登记差异）
+          return jsonEncode([
+            {'name': '', 'url': sourceUrl},
+          ]);
+        } catch (_) {
+          // 形态不符 → 单条回退（对齐原版 catch 分支）
+          return jsonEncode([
+            {'name': '', 'url': override},
+          ]);
+        }
+      }
+      return jsonEncode([
+        {'name': '', 'url': override},
+      ]);
+    }
     final idx = _rssSources.indexWhere((s) => s.sourceUrl == sourceUrl);
     final configured = idx < 0 ? null : _rssSources[idx].sortUrl;
     final entries = <Map<String, String>>[];
@@ -400,6 +467,17 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
       entries.add({'name': '', 'url': sourceUrl});
     }
     return jsonEncode(entries);
+  }
+
+  /// 只读查询 Mock 缓存（契约 §2.5 `rssListCachedArticles`，批15f）
+  @override
+  Future<String> rssListCachedArticles(String sourceUrl, {String? sortName}) async {
+    final all = _mockRssArticles[sourceUrl] ?? const <Map<String, dynamic>>[];
+    final sort = sortName ?? '';
+    final rows = sort.isEmpty
+        ? all
+        : all.where((e) => (e['sort'] as String? ?? '') == sort).toList();
+    return jsonEncode(rows);
   }
 
   /// 清除 RSS 源分类脚本求值缓存（Mock 无缓存，空实现）
@@ -424,8 +502,10 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
     // ignore: unused_local_variable
     final _ = sortUrl;
     final keyword = (key ?? '').trim();
+    final articles = _mockRssArticleMaps(sourceUrl, sortName, keyword, 1);
+    _cacheRssArticles(sourceUrl, articles);
     return jsonEncode({
-      'articles': _mockRssArticleMaps(sourceUrl, sortName, keyword, 1),
+      'articles': articles,
       'nextUrl': 'mock://rss/$sourceUrl?page=2',
       'hasMore': true,
     });
@@ -445,8 +525,10 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
     final hasMore = pageNo < 2;
     final baseNext =
         nextUrl.trim().isEmpty ? 'mock://rss/next' : nextUrl.trim();
+    final articles = _mockRssArticleMaps(sourceUrl, sortName, keyword, pageNo);
+    _cacheRssArticles(sourceUrl, articles);
     return jsonEncode({
-      'articles': _mockRssArticleMaps(sourceUrl, sortName, keyword, pageNo),
+      'articles': articles,
       'nextUrl': hasMore ? '$baseNext&next=$pageNo' : null,
       'hasMore': hasMore,
     });
@@ -475,6 +557,8 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
         'content': '<p>这是「$tag」第 $n 篇文章的正文内容。</p>' * 5,
         'origin': sourceUrl,
         'sort': sortName,
+        'order': 1000 - n,
+        'type': 0,
         'articleType': 0,
         'variable': null,
       };

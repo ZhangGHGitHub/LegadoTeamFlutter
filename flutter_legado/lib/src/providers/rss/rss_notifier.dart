@@ -59,6 +59,13 @@ class RssNotifier extends Notifier<RssState> {
   /// 进入搜索前选中的分类（退出搜索时优先还原）
   RssSort? _sortBeforeSearch;
 
+  /// 调用方传入的分类覆盖值（批15f，原版 `RssSortActivity.start(sortUrl=…)`）
+  ///
+  /// 非空时分类解析忽略源 `sortUrl` 配置（`rssSortUrls(sortUrl:)`）；
+  /// 刷新排序/退出搜索沿用同一覆盖值（对齐原版 Activity 保存的
+  /// `viewModel.sortUrl`）。
+  String? _sortUrlOverride;
+
   /// 请求序号：切换分类/刷新/搜索时自增，用于丢弃过期响应
   /// （对齐原版 `RssPaginationState.requestSequence`）
   int _requestId = 0;
@@ -118,10 +125,15 @@ class RssNotifier extends Notifier<RssState> {
   /// 对齐原版 `RssSortActivity.upFragments`：
   /// 1. `rssSortUrls` 解析分类（失败回退默认单分类 `{name:"", url:sourceUrl}`）；
   /// 2. 选中首个分类，经 `rssRefreshArticles` 刷新第 1 页。
-  Future<void> selectSource(RssSource source) async {
+  ///
+  /// [sortUrl] 非空时按覆盖值解析分类（批15f，对应原版
+  /// `RssSortActivity.start(context, sortUrl, sourceUrl)`）。
+  Future<void> selectSource(RssSource source, {String? sortUrl}) async {
     // 分类脚本可能走网络（`@js:`），期间用户提交搜索/切分类时本续体必须
     // 整体丢弃；仅比对 sourceUrl 不足以识别同一源上的新请求代次（P1-1）
     final requestId = ++_requestId;
+    final override = (sortUrl ?? '').trim();
+    _sortUrlOverride = override.isEmpty ? null : override;
     state = state.copyWith(
       selectedSource: source,
       isLoadingArticles: true,
@@ -137,7 +149,7 @@ class RssNotifier extends Notifier<RssState> {
       page: 1,
     );
 
-    final sorts = await _loadSortsOrFallback(source);
+    final sorts = await _loadSortsOrFallback(source, sortUrl: _sortUrlOverride);
     if (requestId != _requestId) return;
     if (state.selectedSource?.sourceUrl != source.sourceUrl) return;
     _sourceSorts = sorts;
@@ -145,7 +157,14 @@ class RssNotifier extends Notifier<RssState> {
     final sort = sorts.first;
 
     state = state.copyWith(sorts: sorts, currentSort: sort);
-    await _refreshPage(source, sort, null, clearArticles: true);
+    await _loadCachedArticles(source, sort, requestId);
+    if (requestId != _requestId) return;
+    await _refreshPage(
+      source,
+      sort,
+      null,
+      clearArticles: state.articles.isEmpty,
+    );
   }
 
   /// 切换分类（对齐原版 ViewPager 换页：重建 Fragment 并加载第 1 页）
@@ -154,8 +173,18 @@ class RssNotifier extends Notifier<RssState> {
     if (source == null) return;
     // 原版重复点击同一 tab 不重新加载
     if (state.currentSort == sort) return;
+    // 先自增请求代次：缓存查询在途期间，上一分类的网络响应必须作废
+    final requestId = ++_requestId;
     state = state.copyWith(currentSort: sort);
-    await _refreshPage(source, sort, state.key, clearArticles: true);
+    // 批15f：先展示该分类的本地缓存，再网络刷新（对齐 flowByOriginSort）
+    await _loadCachedArticles(source, sort, requestId);
+    if (requestId != _requestId) return;
+    await _refreshPage(
+      source,
+      sort,
+      state.key,
+      clearArticles: state.articles.isEmpty,
+    );
   }
 
   /// 刷新当前分类的第 1 页（下拉刷新；保留旧列表直到新数据返回）
@@ -262,7 +291,7 @@ class RssNotifier extends Notifier<RssState> {
     final requestId = ++_requestId;
     var sorts = _sourceSorts;
     if (sorts.isEmpty) {
-      sorts = await _loadSortsOrFallback(source);
+      sorts = await _loadSortsOrFallback(source, sortUrl: _sortUrlOverride);
       if (requestId != _requestId) return;
       if (state.selectedSource?.sourceUrl != source.sourceUrl) return;
       _sourceSorts = sorts;
@@ -273,7 +302,14 @@ class RssNotifier extends Notifier<RssState> {
         : sorts.first;
     _sortBeforeSearch = null;
     state = state.copyWith(key: null, sorts: sorts, currentSort: sort);
-    await _refreshPage(source, sort, null, clearArticles: true);
+    await _loadCachedArticles(source, sort, requestId);
+    if (requestId != _requestId) return;
+    await _refreshPage(
+      source,
+      sort,
+      null,
+      clearArticles: state.articles.isEmpty,
+    );
   }
 
   /// 刷新分类（菜单「刷新排序」）
@@ -303,7 +339,7 @@ class RssNotifier extends Notifier<RssState> {
 
     List<RssSort> sorts;
     try {
-      sorts = await _fetchSorts(source);
+      sorts = await _fetchSorts(source, sortUrl: _sortUrlOverride);
     } catch (e) {
       if (requestId != _requestId) return;
       if (state.selectedSource?.sourceUrl != source.sourceUrl) return;
@@ -327,6 +363,7 @@ class RssNotifier extends Notifier<RssState> {
     _requestId++;
     _sourceSorts = const [];
     _sortBeforeSearch = null;
+    _sortUrlOverride = null;
     state = state.copyWith(
       selectedSource: null,
       articles: const [],
@@ -378,6 +415,7 @@ class RssNotifier extends Notifier<RssState> {
         _requestId++;
         _sourceSorts = const [];
         _sortBeforeSearch = null;
+        _sortUrlOverride = null;
         next = next.copyWith(
           selectedSource: null,
           articles: const [],
@@ -447,8 +485,13 @@ class RssNotifier extends Notifier<RssState> {
   }
 
   /// 解析分类列表（失败由调用方决定回退）
-  Future<List<RssSort>> _fetchSorts(RssSource source) async {
-    final json = await ref.read(bookApiProvider).rssSortUrls(source.sourceUrl);
+  ///
+  /// [sortUrl] 非空时走覆盖解析（批15f）：Rust 侧按 JSON `{name:url}` /
+  /// 非 JSON 单条处理，不再读取源 `sortUrl` 配置。
+  Future<List<RssSort>> _fetchSorts(RssSource source, {String? sortUrl}) async {
+    final json = await ref
+        .read(bookApiProvider)
+        .rssSortUrls(source.sourceUrl, sortUrl: sortUrl);
     final decoded = jsonDecode(json);
     if (decoded is! List) {
       throw const FormatException('rssSortUrls 期望 JSON 数组');
@@ -465,21 +508,79 @@ class RssNotifier extends Notifier<RssState> {
       }
       sorts.add(sort);
     }
-    if (sorts.isEmpty) return _defaultSorts(source);
+    if (sorts.isEmpty) {
+      // 覆盖路径空数组兜底：原版为空列表（无 tab），UI 需要至少一个分类
+      if (sortUrl != null && sortUrl.trim().isNotEmpty) {
+        return [RssSort(name: '', url: sortUrl.trim())];
+      }
+      return _defaultSorts(source);
+    }
     return sorts;
   }
 
   /// 分类加载失败回退默认单分类（对齐原版 `sortUrls()` 无配置回退）
-  Future<List<RssSort>> _loadSortsOrFallback(RssSource source) async {
+  ///
+  /// [sortUrl] 非空（覆盖路径）失败时回退 `("", sortUrl)`（对齐原版
+  /// `RssSortActivity.upFragments` 的 `catch → listOf(Pair("", url))`）。
+  Future<List<RssSort>> _loadSortsOrFallback(
+    RssSource source, {
+    String? sortUrl,
+  }) async {
     try {
-      return await _fetchSorts(source);
+      return await _fetchSorts(source, sortUrl: sortUrl);
     } catch (_) {
+      final override = (sortUrl ?? '').trim();
+      if (override.isNotEmpty) {
+        return [RssSort(name: '', url: override)];
+      }
       return _defaultSorts(source);
     }
   }
 
   List<RssSort> _defaultSorts(RssSource source) =>
       [RssSort(name: '', url: source.sourceUrl)];
+
+  /// 首屏先展示本地缓存（批15f，对齐原版 `flowByOriginSort`）
+  ///
+  /// 只读 DB（`rssListCachedArticles`），失败静默（缓存缺失/DB 未就绪
+  /// 不应阻断网络刷新）；返回空列表时保留既有状态。请求代次/分类双重
+  /// 校验，避免慢查询覆盖用户已切换的分类。
+  Future<void> _loadCachedArticles(
+    RssSource source,
+    RssSort sort,
+    int requestId,
+  ) async {
+    try {
+      final json = await ref.read(bookApiProvider).rssListCachedArticles(
+            source.sourceUrl,
+            sortName: sort.name,
+          );
+      if (requestId != _requestId) return;
+      if (state.selectedSource?.sourceUrl != source.sourceUrl) return;
+      if (state.currentSort != sort) return;
+      final cached = _parseCachedArticles(json);
+      if (cached.isEmpty) return;
+      state = state.copyWith(articles: cached);
+    } catch (_) {
+      // 缓存查询失败静默：网络刷新仍继续（DB 真源由 Rust 写回）
+    }
+  }
+
+  /// 解析 `rssListCachedArticles` 的 JSON 数组（形态不符显式抛错）
+  List<RssFeedArticle> _parseCachedArticles(String json) {
+    final decoded = jsonDecode(json);
+    if (decoded is! List) {
+      throw const FormatException('rssListCachedArticles 期望 JSON 数组');
+    }
+    final articles = <RssFeedArticle>[];
+    for (final item in decoded) {
+      if (item is! Map) {
+        throw const FormatException('rssListCachedArticles 项期望 JSON 对象');
+      }
+      articles.add(RssFeedArticle.fromJson(Map<String, dynamic>.from(item)));
+    }
+    return articles;
+  }
 
   /// 解析 `rssRefreshArticles` / `rssLoadMoreArticles` 的 JSON 载荷
   _RssArticlesPage _parseArticlesPage(String json) {

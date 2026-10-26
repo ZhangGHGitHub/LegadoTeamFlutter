@@ -405,7 +405,16 @@ abstract class BookApi {
   /// 对齐原版 `RssSource.sortUrls()`：`&&`/换行分段、`name::url`、
   /// `@js:`/`<js>` 求值 + 按源缓存；失败/无配置回退
   /// `[{"name":"","url":sourceUrl}]`（契约 §2.5，批15b）。
-  Future<String> rssSortUrls(String sourceUrl);
+  ///
+  /// [sortUrl] 非空时按覆盖值解析（批15f，对齐 `RssSortActivity.kt:356-366`）：
+  /// JSON `{name:url}` 保持书写顺序展开，非 JSON 单条 `("", 值)`。
+  Future<String> rssSortUrls(String sourceUrl, {String? sortUrl});
+
+  /// 只读查询本地缓存的 RSS 文章（JSON 数组，按 order 降序）
+  ///
+  /// 零网络，对齐原版 `RssArticleDao.flowByOriginSort(origin, sortName)`
+  /// 的首屏本地缓存语义（契约 §2.5，批15f）。
+  Future<String> rssListCachedArticles(String sourceUrl, {String? sortName});
 
   /// 清除 RSS 源分类脚本求值缓存（对齐 `RssSource.removeSortCache()`）
   Future<void> rssClearSortCache(String sourceUrl);
