@@ -878,6 +878,7 @@ mod tests {
         snapshot.dur_chapter_index = 0;
         snapshot.dur_chapter_pos = 0;
         snapshot.dur_chapter_title = Some("第一章".to_string());
+        snapshot.dur_chapter_time = 0;
         repo.update(&snapshot).unwrap();
 
         let found = repo.find_by_url("u1").unwrap().unwrap();
@@ -893,6 +894,10 @@ mod tests {
         assert_eq!(found.dur_chapter_index, 3);
         assert_eq!(found.dur_chapter_pos, 15);
         assert_eq!(found.dur_chapter_title.as_deref(), Some("第三章"));
+        assert_eq!(
+            found.dur_chapter_time, 1_700_000_000_000,
+            "update 不得用陈旧时间戳回滚进度"
+        );
     }
 
     /// [批7b 备份恢复] `overwrite_progress_for_restore` 显式覆盖 4 个进度列
@@ -921,12 +926,14 @@ mod tests {
         snapshot.dur_chapter_index = 9;
         snapshot.dur_chapter_pos = 99;
         snapshot.dur_chapter_title = Some("第九章".to_string());
+        snapshot.dur_chapter_time = 9_999_999_999_999;
         repo.update(&snapshot).unwrap();
         let after = repo.find_by_url("u1").unwrap().unwrap();
         assert_eq!(after.name, "改名");
         assert_eq!(after.dur_chapter_index, 0, "update 不得写进度列");
         assert_eq!(after.dur_chapter_pos, 0);
         assert_eq!(after.dur_chapter_title, None);
+        assert_eq!(after.dur_chapter_time, 0, "update 不得写进度时间列");
     }
 
     /// [漫画设置作用域 2026-10-01] 旧数据库 readConfig JSON（无书级键）兼容：

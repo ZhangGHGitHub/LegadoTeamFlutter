@@ -344,6 +344,10 @@ fn restore_backup_in_tx(conn: &Connection, backup: &BackupData) -> LegadoResult<
     // 评审 W3：失败不再静默吞错——UNIQUE 撞名等写入失败记 warn 日志，
     // 便于排查「恢复数量少于备份数量」类问题（RestoreStats 仅含成功计数，
     // 失败不入统计以免变更 FFI 返回结构）
+    //
+    // [批7c P2-6] 进度覆盖失败同样不计入成功数：书行虽已插入/更新，但
+    // 备份中的阅读进度未落库，该条目不算完整恢复；成功计数只统计
+    // 「书行 + 4 个进度列」全部写成的条目。
     let book_repo = BookRepository::new(conn);
     for value in &backup.books {
         if let Ok(book) = serde_json::from_value::<Book>(value.clone()) {
@@ -359,16 +363,19 @@ fn restore_backup_in_tx(conn: &Connection, backup: &BackupData) -> LegadoResult<
                     // 反序列化缺省值一致（Book 实体 durChapterIndex/Pos=0、
                     // durChapterTitle=null），随后原版 @Update 同样全列覆盖，
                     // 因此按原版语义清为默认值，不做「缺字段跳过」特判。
-                    if let Err(e) = book_repo.overwrite_progress_for_restore(
+                    match book_repo.overwrite_progress_for_restore(
                         &book.book_url,
                         book.dur_chapter_index,
                         book.dur_chapter_pos,
                         book.dur_chapter_title.as_deref(),
                         book.dur_chapter_time,
                     ) {
-                        log::warn!("恢复书籍进度失败: {} - {e}", book.book_url);
+                        Ok(()) => stats.books += 1,
+                        Err(e) => log::warn!(
+                            "恢复书籍进度失败（本条目不计入成功统计）: {} - {e}",
+                            book.book_url
+                        ),
                     }
-                    stats.books += 1;
                 }
                 Err(e) => log::warn!("恢复书籍失败（已跳过）: {} - {e}", book.book_url),
             }
@@ -1227,6 +1234,77 @@ mod tests {
         assert_eq!(restored.dur_chapter_pos, 0, "恢复应覆盖章节内位置");
         assert_eq!(restored.dur_chapter_title, None, "恢复应覆盖章节标题");
         assert_eq!(restored.dur_chapter_time, 0, "恢复应覆盖阅读时间");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批7c 补向] 备份中的非零进度覆盖本地进度（与上一用例相反方向）
+    ///
+    /// 上一用例只验证「备份 0/0 → 本地 3/15」，无法排除恢复链把进度恒清 0
+    /// 的假通过。本用例备份 5/25/第五章/时间戳、本地先读到 3/15，恢复后
+    /// 必须取备份值（对齐原版 Restore.kt 全列覆盖）。
+    #[test]
+    fn test_restore_overwrites_local_progress_with_backup_values() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_restore_nonzero_progress");
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("nonzero_progress.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let book_url = "https://progress.example/book/2";
+        let backup_time = 1_711_111_111_111_i64;
+        // 本地先有进度 3/15
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            repo.insert(&Book {
+                book_url: book_url.to_string(),
+                name: "非零进度书".to_string(),
+                author: "作者丙".to_string(),
+                ..Book::default()
+            })?;
+            repo.update_progress(book_url, 3, 15, Some("第三章"), 1_700_000_000_000)
+        })
+        .unwrap();
+
+        // 备份内进度 5/25/第五章/时间戳
+        let mut backup = empty_backup();
+        backup.books = vec![serde_json::to_value(Book {
+            book_url: book_url.to_string(),
+            name: "非零进度书".to_string(),
+            author: "作者丙".to_string(),
+            dur_chapter_index: 5,
+            dur_chapter_pos: 25,
+            dur_chapter_title: Some("第五章".to_string()),
+            dur_chapter_time: backup_time,
+            ..Book::default()
+        })
+        .unwrap()];
+        fs::write(path_str, serde_json::to_string(&backup).unwrap()).unwrap();
+
+        let stats_json = backup_restore(path_str).unwrap();
+        let stats: RestoreStats = serde_json::from_str(&stats_json).unwrap();
+        assert_eq!(stats.books, 1, "已有书应计入恢复统计");
+
+        let restored =
+            with_database(|db| BookRepository::new(db.connection()).find_by_url(book_url))
+                .unwrap()
+                .expect("恢复后书籍应存在");
+        assert_eq!(
+            restored.dur_chapter_index, 5,
+            "恢复应写入备份中的章节索引（非零方向）"
+        );
+        assert_eq!(restored.dur_chapter_pos, 25, "恢复应写入备份中的章节内位置");
+        assert_eq!(
+            restored.dur_chapter_title.as_deref(),
+            Some("第五章"),
+            "恢复应写入备份中的章节标题"
+        );
+        assert_eq!(
+            restored.dur_chapter_time, backup_time,
+            "恢复应写入备份中的阅读时间戳"
+        );
 
         let _ = fs::remove_dir_all(&dir);
     }
