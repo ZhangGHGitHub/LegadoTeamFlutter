@@ -984,8 +984,30 @@ pub mod ffi {
     /// 契约 §2.5 `rssSortUrls`（2026-10-26 批15b，加法式）：对齐原版
     /// `RssSource.sortUrls()`——`&&`/换行分段、`name::url`、`@js:`/`<js>`
     /// 求值 + 按源缓存；失败回退 `[{"name":"","url":sourceUrl}]`。
-    pub fn rss_sort_urls(source_url: String) -> Result<String, BridgeError> {
-        Ok(crate::api::rss::rss_sort_urls(&source_url)?)
+    /// 批15f：`sort_url` 非空时按覆盖值解析（JSON `{name:url}` 保序 /
+    /// 非 JSON 单条），对齐 `RssSortActivity.kt:356-366`。
+    pub fn rss_sort_urls(
+        source_url: String,
+        sort_url: Option<String>,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::rss::rss_sort_urls(
+            &source_url,
+            sort_url.as_deref(),
+        )?)
+    }
+
+    /// 只读查询本地缓存的 RSS 文章（JSON 数组，按 order 降序）
+    ///
+    /// 契约 §2.5 `rssListCachedArticles`（2026-10-26 批15f，加法式）：
+    /// 对齐 `RssArticleDao.flowByOriginSort` 的首屏本地缓存语义，零网络。
+    pub fn rss_list_cached_articles(
+        source_url: String,
+        sort_name: Option<String>,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::rss::rss_list_cached_articles(
+            &source_url,
+            sort_name.as_deref(),
+        )?)
     }
 
     /// 清除 RSS 源分类脚本求值缓存

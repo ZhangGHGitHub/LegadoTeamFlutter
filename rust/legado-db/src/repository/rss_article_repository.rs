@@ -289,6 +289,64 @@ impl<'a> RssArticleRepository<'a> {
         Ok(rows)
     }
 
+    /// 按来源（+可选分类）只读查询文章列表（按 order 降序）
+    ///
+    /// 对齐原版 `RssArticleDao.flowByOriginSort(origin, sortName)`
+    /// （`RssArticleDao.kt`：`where origin = :origin and sort = :sortName
+    /// order by \`order\` desc`）的首屏本地缓存语义：`sort` 为 `Some` 时按
+    /// `(origin, sort)` 过滤，`None` 时返回该源全部分类。**只读、零副作用**，
+    /// 供 `rssListCachedArticles` 在网络刷新前展示本地缓存（批15f）。
+    ///
+    /// `limit <= 0` 表示不限制；调用方（FFI）传 `i32::MAX` 取全量。
+    pub fn find_by_origin_sort(
+        &self,
+        origin: &str,
+        sort: Option<&str>,
+        limit: i32,
+    ) -> LegadoResult<Vec<RssArticleRecord>> {
+        const COLUMNS: &str = "SELECT origin, sort, title, \"order\", link, pubDate,
+                        description, content, image, \"group\", \"read\", variable,
+                        type, durPos
+                 FROM rssArticles WHERE origin = ?1";
+        let unlimited = limit <= 0;
+        let filter = sort.map(|_| " AND sort = ?2").unwrap_or("");
+        let limit_clause = if unlimited { " LIMIT -1" } else { "" };
+        let limit_param = if sort.is_some() { "?3" } else { "?2" };
+        let tail = if unlimited {
+            format!("{filter} ORDER BY \"order\" DESC{limit_clause}")
+        } else {
+            format!("{filter} ORDER BY \"order\" DESC LIMIT {limit_param}")
+        };
+        let sql = format!("{COLUMNS}{tail}");
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
+        let rows = match (sort, unlimited) {
+            (Some(sort), true) => stmt
+                .query_map(params![origin, sort], row_to_article)
+                .map_err(|e| LegadoError::Database(format!("查询 RSS 文章失败: {e}")))?
+                .filter_map(|r| r.ok())
+                .collect(),
+            (Some(sort), false) => stmt
+                .query_map(params![origin, sort, limit], row_to_article)
+                .map_err(|e| LegadoError::Database(format!("查询 RSS 文章失败: {e}")))?
+                .filter_map(|r| r.ok())
+                .collect(),
+            (None, true) => stmt
+                .query_map(params![origin], row_to_article)
+                .map_err(|e| LegadoError::Database(format!("查询 RSS 文章失败: {e}")))?
+                .filter_map(|r| r.ok())
+                .collect(),
+            (None, false) => stmt
+                .query_map(params![origin, limit], row_to_article)
+                .map_err(|e| LegadoError::Database(format!("查询 RSS 文章失败: {e}")))?
+                .filter_map(|r| r.ok())
+                .collect(),
+        };
+        Ok(rows)
+    }
+
     /// 按 link 删除文章
     pub fn delete(&self, link: &str) -> LegadoResult<()> {
         self.conn
@@ -632,5 +690,55 @@ mod tests {
             "只统计目标分类"
         );
         assert_eq!(repo.min_order("https://rss.com", "科技").unwrap(), Some(1));
+    }
+
+    /// `find_by_origin_sort`：按源 + 可选分类过滤，order 降序，limit 生效（批15f）
+    #[test]
+    fn test_find_by_origin_sort() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssArticleRepository::new(db.connection());
+        for (title, sort, order) in [
+            ("A-科技-1", "科技", 1),
+            ("A-科技-2", "科技", 5),
+            ("A-文学-1", "文学", 3),
+            ("A-默认-1", "default", 9),
+        ] {
+            let mut article = make_article("https://rss.com", title, order);
+            article.sort = sort.to_string();
+            repo.insert(&article).unwrap();
+        }
+        let mut other = make_article("https://other.com", "B-科技", 99);
+        other.sort = "科技".to_string();
+        repo.insert(&other).unwrap();
+
+        // 指定分类：只命中本源本分类，order 降序
+        let rows = repo
+            .find_by_origin_sort("https://rss.com", Some("科技"), 0)
+            .unwrap();
+        assert_eq!(
+            rows.iter().map(|r| r.title.as_str()).collect::<Vec<_>>(),
+            vec!["A-科技-2", "A-科技-1"],
+            "按 (origin, sort) 过滤且 order DESC"
+        );
+
+        // 不指定分类：本源全部分类
+        let rows = repo
+            .find_by_origin_sort("https://rss.com", None, 0)
+            .unwrap();
+        assert_eq!(rows.len(), 4, "未指定分类返回本源全部");
+        assert_eq!(rows[0].title, "A-默认-1", "order 最大在前");
+
+        // limit 生效（limit<=0 视为不限）
+        let rows = repo
+            .find_by_origin_sort("https://rss.com", None, 2)
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].title, "A-默认-1");
+
+        // 空源
+        assert!(repo
+            .find_by_origin_sort("https://missing.com", None, 0)
+            .unwrap()
+            .is_empty());
     }
 }

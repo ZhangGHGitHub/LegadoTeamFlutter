@@ -398,7 +398,7 @@ fn rss_rule_pagination_sort_cache_and_login_end_to_end() {
     let sort_script =
         format!("@js:(function(){{ return '科技::{base}/tech&&文学::{base}/lit'; }})()");
     add_source(&list_url, list_source_extra(&sort_script));
-    let sorts = decode(&legado_ffi::api::rss::rss_sort_urls(&list_url).expect("分类解析"));
+    let sorts = decode(&legado_ffi::api::rss::rss_sort_urls(&list_url, None).expect("分类解析"));
     assert_eq!(
         sorts,
         serde_json::json!([
@@ -418,7 +418,8 @@ fn rss_rule_pagination_sort_cache_and_login_end_to_end() {
         )
         .expect("篡改缓存");
     }
-    let cached = decode(&legado_ffi::api::rss::rss_sort_urls(&list_url).expect("缓存命中解析"));
+    let cached =
+        decode(&legado_ffi::api::rss::rss_sort_urls(&list_url, None).expect("缓存命中解析"));
     assert_eq!(
         cached,
         serde_json::json!([{"name": "缓存", "url": "https://cached.example.com/x"}]),
@@ -434,7 +435,8 @@ fn rss_rule_pagination_sort_cache_and_login_end_to_end() {
     // 无 sortUrl：回退 [{"name":"","url":sourceUrl}]
     let plain_url = format!("{base}/plain");
     add_source(&plain_url, serde_json::json!({}));
-    let fallback = decode(&legado_ffi::api::rss::rss_sort_urls(&plain_url).expect("无分类回退"));
+    let fallback =
+        decode(&legado_ffi::api::rss::rss_sort_urls(&plain_url, None).expect("无分类回退"));
     assert_eq!(
         fallback,
         serde_json::json!([{"name": "", "url": plain_url}])

@@ -114,7 +114,7 @@ pub fn sort_cache_key(source_url: &str, configured_sort_url: Option<&str>) -> St
     format!("rssSortUrl_{:x}", md5::compute(raw.as_bytes()))
 }
 
-/// 解析分类列表（含脚本求值与缓存）
+/// 解析 `sortUrl` 分类列表（含脚本求值与缓存）
 ///
 /// 语义逐条对齐原版 `sortUrls()`：
 /// 1. 仅脚本形态配置读写缓存；
@@ -156,6 +156,92 @@ where
         other => other.map(str::to_string),
     };
     parse_sort_urls(resolved.as_deref(), source_url)
+}
+
+/// 解析调用方传入的 `sortUrl` 覆盖值（批15f，对齐 `RssSortActivity.kt:356-366`）
+///
+/// 原版 `RssSortActivity.upFragments` / 参考版 `RssSortViewModel.parseSortUrl`：
+///
+/// ```text
+/// url.isNotBlank() →
+///   url.isJsonObject() ? GSONStrict<Map<String,String>> 展开（失败回退单条）
+///                      : listOf("" to url)
+/// ```
+///
+/// - 空/空白 → 按源配置走 [`parse_sort_urls`]（调用方通常不会进来，保留兜底）；
+/// - JSON 对象 → 逐项展开，**保持书写顺序**（serde 默认 BTreeMap 会按 key
+///   排序，此处用有序 visitor 还原 GSON 的插入顺序语义）；
+/// - JSON 形态但解析失败（非对象 / 值非字符串 / 尾随垃圾）→ 单条
+///   `("", 原值)`，对齐原版 `catch → listOf(Pair("", url))`；
+/// - 非 JSON → 单条 `("", 原值)`（**不再按 `::` 分段**，与原版覆盖路径一致）。
+///
+/// **已登记差异**：JSON 对象解析成功但为空 → 返回 `[("", source_url)]`
+/// 兜底（原版返回空列表，UI 无分类可渲染；我方列表页需要至少一个分类）。
+pub fn parse_sort_url_override(value: &str, source_url: &str) -> Vec<RssSortUrl> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return parse_sort_urls(None, source_url);
+    }
+    if trimmed.starts_with('{') {
+        let entries = parse_ordered_json_object(trimmed);
+        return match entries {
+            Some(entries) if !entries.is_empty() => entries,
+            Some(_) => vec![RssSortUrl {
+                name: String::new(),
+                url: source_url.to_string(),
+            }],
+            None => vec![RssSortUrl {
+                name: String::new(),
+                url: trimmed.to_string(),
+            }],
+        };
+    }
+    vec![RssSortUrl {
+        name: String::new(),
+        url: trimmed.to_string(),
+    }]
+}
+
+/// 保序解析 `{name:url}` JSON 对象（值必须为字符串）
+///
+/// `serde_json` 默认 `Map` 为 `BTreeMap`（按 key 排序），会破坏原版 GSON
+/// 的插入顺序；`preserve_order` 特性未启用，故用 visitor 直接收集
+/// `next_entry` 序列。任何形态不符（非对象、值非字符串、尾随字符）→ `None`。
+fn parse_ordered_json_object(value: &str) -> Option<Vec<RssSortUrl>> {
+    use serde::de::{MapAccess, Visitor};
+    use serde::Deserializer;
+
+    struct OrderedPairsVisitor;
+
+    impl<'de> Visitor<'de> for OrderedPairsVisitor {
+        type Value = Vec<(String, String)>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            formatter.write_str("JSON 对象 {name:url}")
+        }
+
+        fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+        where
+            A: MapAccess<'de>,
+        {
+            let mut pairs = Vec::new();
+            while let Some((name, url)) = map.next_entry::<String, String>()? {
+                pairs.push((name, url));
+            }
+            Ok(pairs)
+        }
+    }
+
+    let mut deserializer = serde_json::Deserializer::from_str(value);
+    let pairs = deserializer.deserialize_map(OrderedPairsVisitor).ok()?;
+    // 整串必须消费完（拒绝 `{...}尾随垃圾`）
+    deserializer.end().ok()?;
+    Some(
+        pairs
+            .into_iter()
+            .map(|(name, url)| RssSortUrl { name, url })
+            .collect(),
+    )
 }
 
 /// 源未入库时的分类解析（宿主兜底路径：等价原版 `RssSource(sourceUrl=url)`
@@ -261,6 +347,82 @@ mod tests {
         assert_eq!(
             parse_sort_urls(Some("https://x/only-url"), "https://x/feed")[0].url,
             "https://x/feed"
+        );
+    }
+
+    /// `sortUrl` 覆盖值：JSON 对象展开（保持书写顺序）/ 非 JSON 单条 /
+    /// 解析失败回退单条 / 空对象兜底源 URL（批15f）
+    #[test]
+    fn parse_override_json_object_and_fallbacks() {
+        // JSON 对象：保持书写顺序（serde 默认 BTreeMap 会按 key 排序）
+        let entries = parse_sort_url_override(
+            r#"{"科技":"https://x/tech","文学":"https://x/lit","默认":"https://x"}"#,
+            "https://x/feed",
+        );
+        assert_eq!(
+            entries,
+            vec![
+                RssSortUrl {
+                    name: "科技".into(),
+                    url: "https://x/tech".into()
+                },
+                RssSortUrl {
+                    name: "文学".into(),
+                    url: "https://x/lit".into()
+                },
+                RssSortUrl {
+                    name: "默认".into(),
+                    url: "https://x".into()
+                },
+            ],
+            "JSON 对象必须保持书写顺序"
+        );
+
+        // 非 JSON：单条 ("", url)，不按 :: 分段
+        assert_eq!(
+            parse_sort_url_override("https://x/only", "https://x/feed"),
+            vec![RssSortUrl {
+                name: String::new(),
+                url: "https://x/only".into()
+            }]
+        );
+        assert_eq!(
+            parse_sort_url_override("A::https://x/a", "https://x/feed"),
+            vec![RssSortUrl {
+                name: String::new(),
+                url: "A::https://x/a".into()
+            }],
+            "覆盖路径非 JSON 不走 :: 分段（对齐原版 parseSortUrl）"
+        );
+
+        // JSON 形态但值非字符串 / 尾随垃圾 / 非对象 → 单条回退
+        for malformed in [r#"{"a":1}"#, r#"{"a":"u"}垃圾"#, r#"{bad json}"#] {
+            assert_eq!(
+                parse_sort_url_override(malformed, "https://x/feed"),
+                vec![RssSortUrl {
+                    name: String::new(),
+                    url: malformed.to_string()
+                }],
+                "形态不符应回退单条: {malformed}"
+            );
+        }
+
+        // 空对象：兜底源 URL（原版为空列表，UI 无法渲染，已登记差异）
+        assert_eq!(
+            parse_sort_url_override("{}", "https://x/feed"),
+            vec![RssSortUrl {
+                name: String::new(),
+                url: "https://x/feed".into()
+            }]
+        );
+
+        // 空/空白覆盖值：走源配置兜底路径
+        assert_eq!(
+            parse_sort_url_override("   ", "https://x/feed"),
+            vec![RssSortUrl {
+                name: String::new(),
+                url: "https://x/feed".into()
+            }]
         );
     }
 

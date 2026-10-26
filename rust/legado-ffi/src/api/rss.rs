@@ -187,6 +187,47 @@ pub fn clear_rss_articles(source_url: &str) -> LegadoResult<()> {
     })
 }
 
+/// 只读查询本地缓存的 RSS 文章（契约 §2.5 `rssListCachedArticles`，批15f）
+///
+/// 对齐原版 `RssArticleDao.flowByOriginSort(origin, sortName)`
+/// （`RssArticlesFragment.kt:179-218` 首屏先展示本地缓存）：
+/// - **零网络、零写库**；
+/// - `sort_name` 非空 → 按 `(origin, sort)` 过滤，缺省 → 该源全部分类；
+/// - `order DESC` 排序（与原版 flow 一致）；
+/// - 返回 JSON 数组，字段与列表载荷同族：`origin/sort/title/order/link/
+///   pubDate/description/content/image/variable/group/read/type`；
+///   空 `link` 已由仓库层落为 `legacy:` 伪主键（E4），此处原样返回，
+///   UI 按既有 `hasRssArticleLink` 视为无链接。
+pub fn rss_list_cached_articles(source_url: &str, sort_name: Option<&str>) -> LegadoResult<String> {
+    let sort_filter = sort_name.filter(|value| !value.is_empty());
+    let rows = with_database(|db| {
+        let repo = legado_db::RssArticleRepository::new(db.connection());
+        repo.find_by_origin_sort(source_url, sort_filter, 0)
+    })?;
+    let articles: Vec<serde_json::Value> = rows
+        .iter()
+        .map(|row| {
+            serde_json::json!({
+                "origin": row.origin,
+                "sort": row.sort,
+                "title": row.title,
+                "order": row.order,
+                "link": row.link,
+                "pubDate": row.pub_date,
+                "description": row.description,
+                "content": row.content,
+                "image": row.image,
+                "variable": row.variable,
+                "group": row.group,
+                "read": row.read,
+                "type": row.article_type,
+            })
+        })
+        .collect();
+    serde_json::to_string(&articles)
+        .map_err(|e| LegadoError::Ffi(format!("RSS 缓存文章序列化失败: {e}")))
+}
+
 /// RSS 列表页返回载荷（契约 §2.5：`{"articles":[],"nextUrl":…,"hasMore":…}`）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -328,14 +369,25 @@ pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
         .collect())
 }
 
-/// 解析 RSS 源分类列表（契约 §2.5 `rssSortUrls`，批15b）
+/// 解析 RSS 源分类列表（契约 §2.5 `rssSortUrls`，批15b；批15f 增可选覆盖）
 ///
 /// 对齐原版 `RssSource.sortUrls()`（`RssSourceExtensions.kt:87-107`）：
 /// - `@js:` / `<js>` 配置经 JS 求值（注入 RSS 源 jsLib + setup + source 绑定）；
 /// - 脚本结果按源缓存（`CacheRepository` 键 `rssSortUrl_<md5(sourceUrl+sortUrl)>`，
 ///   对齐原版 ACache 名 `rssSortUrl` + `MD5(sourceUrl+sortUrl)`）；
 /// - 求值失败/无配置 → 回退 `[{"name":"","url":sourceUrl}]`。
-pub fn rss_sort_urls(source_url: &str) -> LegadoResult<String> {
+///
+/// [sort_url_override] 非空时（批15f，对齐 `RssSortActivity.kt:356-366`）
+/// **忽略源配置**，按覆盖值解析：JSON `{name:url}` 保持书写顺序展开，
+/// 非 JSON 单条 `("", 值)`，JSON 解析失败回退单条（见
+/// [`legado_fetcher::rss::sort_urls::parse_sort_url_override`]）。
+pub fn rss_sort_urls(source_url: &str, sort_url_override: Option<&str>) -> LegadoResult<String> {
+    if let Some(override_value) = sort_url_override.filter(|value| !value.trim().is_empty()) {
+        let entries =
+            legado_fetcher::rss::sort_urls::parse_sort_url_override(override_value, source_url);
+        return serde_json::to_string(&entries)
+            .map_err(|e| LegadoError::Ffi(format!("RSS 分类列表序列化失败: {e}")));
+    }
     let entries = match load_rss_source(source_url)? {
         Some(source) => {
             let login_header = crate::api::source_login_cache::get_login_header(&source.source_url);

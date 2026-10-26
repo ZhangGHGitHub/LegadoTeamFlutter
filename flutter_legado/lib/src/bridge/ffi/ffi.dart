@@ -715,8 +715,25 @@ Future<void> rssClearArticles({required String sourceUrl}) =>
 /// 契约 §2.5 `rssSortUrls`（2026-10-26 批15b，加法式）：对齐原版
 /// `RssSource.sortUrls()`——`&&`/换行分段、`name::url`、`@js:`/`<js>`
 /// 求值 + 按源缓存；失败回退 `[{"name":"","url":sourceUrl}]`。
-Future<String> rssSortUrls({required String sourceUrl}) =>
-    RustLib.instance.api.crateFfiFfiRssSortUrls(sourceUrl: sourceUrl);
+/// 批15f：`sort_url` 非空时按覆盖值解析（JSON `{name:url}` 保序 /
+/// 非 JSON 单条），对齐 `RssSortActivity.kt:356-366`。
+Future<String> rssSortUrls({required String sourceUrl, String? sortUrl}) =>
+    RustLib.instance.api.crateFfiFfiRssSortUrls(
+      sourceUrl: sourceUrl,
+      sortUrl: sortUrl,
+    );
+
+/// 只读查询本地缓存的 RSS 文章（JSON 数组，按 order 降序）
+///
+/// 契约 §2.5 `rssListCachedArticles`（2026-10-26 批15f，加法式）：
+/// 对齐 `RssArticleDao.flowByOriginSort` 的首屏本地缓存语义，零网络。
+Future<String> rssListCachedArticles({
+  required String sourceUrl,
+  String? sortName,
+}) => RustLib.instance.api.crateFfiFfiRssListCachedArticles(
+  sourceUrl: sourceUrl,
+  sortName: sortName,
+);
 
 /// 清除 RSS 源分类脚本求值缓存
 ///
