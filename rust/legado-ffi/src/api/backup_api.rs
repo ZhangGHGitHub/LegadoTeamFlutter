@@ -15,7 +15,8 @@
 //! 全部列表字段 `#[serde(default)]`——旧备份（无 version 或 version<2）
 //! 缺失的新表字段按空数组处理，仍可正常恢复；恢复时对 v1 整数布尔做归一整形。
 //! `servers` 缺失（v1/v2 备份）时**不触碰库内 servers**，对齐原版
-//! `Restore.kt:379-390` 仅在 `servers.json` 存在时 insert 的语义。
+//! `Restore.kt:379-390` 仅在 `servers.json` 存在时 insert 的语义；存在时按
+//! 备份中的原主键（含 `id = 0`）REPLACE 写入，不做毫秒重分配。
 
 use std::fs;
 use std::path::Path;
@@ -601,11 +602,13 @@ fn restore_backup_in_tx(conn: &Connection, backup: &BackupData) -> LegadoResult<
 
     // 服务器配置（v3：按 id REPLACE，对齐原版 Restore.kt:379-390 的
     // `serverDao.insert(*it.toTypedArray())`；列表为空 = 备份无该键或空表，
-    // 直接跳过，**不清库内 servers**）
+    // 直接跳过，**不清库内 servers**）。恢复走
+    // `restore_upsert_preserving_id` 保留原主键（含 id = 0），不做毫秒重分配——
+    // 否则同一备份重复恢复会不断产生新行（防复发规定 5：往返逐字段一致）
     let server_repo = ServerRepository::new(conn);
     for value in &backup.servers {
         match serde_json::from_value::<legado_core::models::Server>(value.clone()) {
-            Ok(server) => match server_repo.upsert(&server) {
+            Ok(server) => match server_repo.restore_upsert_preserving_id(&server) {
                 Ok(_) => {}
                 Err(e) => log::warn!("恢复服务器配置失败（已跳过）: {} - {e}", server.name),
             },
@@ -2009,6 +2012,43 @@ mod tests {
             with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
         assert_eq!(restored.len(), 1, "旧备份缺 servers 键不得清空库内配置");
         assert_eq!(restored[0].name, "保留");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批8 回修 P2-2] v3 备份中 `id = 0` 的服务器行恢复后原样保留
+    ///
+    /// 恢复路径不得走 `ServerRepository::upsert` 的「id = 0 → 当前毫秒」
+    /// 新建语义：否则同一备份重复恢复会不断产生新行。
+    #[test]
+    fn test_servers_restore_preserves_zero_id() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_servers_zero_id");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("servers_zero_id.json");
+        fs::write(
+            &backup_path,
+            r#"{"version":3,"backupTime":0,"servers":[{"id":0,"name":"零号","type":"WEBDAV","config":"{\"url\":\"https://zero.example.com/\"}","sortNumber":4}]}"#,
+        )
+        .unwrap();
+        let path_str = backup_path.to_str().unwrap();
+
+        assert!(backup_restore(path_str).is_ok());
+        let restored =
+            with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
+        assert_eq!(restored.len(), 1);
+        assert_eq!(restored[0].id, 0, "恢复应原样保留 id=0，不重分配毫秒主键");
+        assert_eq!(restored[0].sort_number, 4);
+
+        // 重复恢复同一备份：REPLACE 原行，不产生第二条
+        assert!(backup_restore(path_str).is_ok());
+        let restored =
+            with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
+        assert_eq!(restored.len(), 1, "重复恢复不得新增服务器行");
+        assert_eq!(restored[0].id, 0);
 
         let _ = fs::remove_dir_all(&dir);
     }

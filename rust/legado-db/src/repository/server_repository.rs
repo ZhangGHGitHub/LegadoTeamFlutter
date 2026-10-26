@@ -74,6 +74,25 @@ impl<'a> ServerRepository<'a> {
         } else {
             server.id
         };
+        self.write_row(id, server)?;
+        Ok(id)
+    }
+
+    /// 恢复路径 upsert：**原样保留主键**（含 `id == 0`），不做毫秒重分配
+    ///
+    /// 备份「导出 → 清库 → 恢复」须逐字段一致（防复发规定 5）：[`Self::upsert`]
+    /// 的 `id == 0` → 毫秒重分配只适用于新建语义（FFI `webdavServerSave`）。
+    /// 恢复若走该语义，同一备份重复恢复会不断产生新行、备份中的 `id` 也失真。
+    /// 仅备份恢复入口使用本方法（[`legado_ffi::api::backup_api`]）。
+    ///
+    /// 返回原样落库的 id。
+    pub fn restore_upsert_preserving_id(&self, server: &Server) -> LegadoResult<i64> {
+        self.write_row(server.id, server)?;
+        Ok(server.id)
+    }
+
+    /// 整行写入（`INSERT OR REPLACE`；主键由调用方决定）
+    fn write_row(&self, id: i64, server: &Server) -> LegadoResult<()> {
         let type_str = server_type_to_db(&server.server_type)?;
         self.conn
             .execute(
@@ -82,7 +101,7 @@ impl<'a> ServerRepository<'a> {
                 params![id, server.name, type_str, server.config, server.sort_number,],
             )
             .map_err(|e| LegadoError::Database(format!("写入服务器失败: {e}")))?;
-        Ok(id)
+        Ok(())
     }
 
     /// 按 id 删除，返回是否命中行（对齐原版 `ServerDao.delete(id)` 静默语义）
@@ -212,6 +231,32 @@ mod tests {
         }
         let ids: Vec<i64> = repo.find_all().unwrap().iter().map(|s| s.id).collect();
         assert_eq!(ids, vec![2, 3, 1]);
+    }
+
+    /// 恢复路径保留原主键（含 0）：不重分配毫秒 id，重复恢复不新增行
+    #[test]
+    fn test_restore_upsert_preserves_zero_id() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = ServerRepository::new(db.connection());
+        let zero_id_server = Server {
+            id: 0,
+            name: "零号服务器".to_string(),
+            server_type: ServerType::WebDav,
+            config: Some(r#"{"url":"https://zero.example.com/"}"#.to_string()),
+            sort_number: 4,
+        };
+
+        let id = repo.restore_upsert_preserving_id(&zero_id_server).unwrap();
+        assert_eq!(id, 0, "恢复路径应原样保留 id=0（不按毫秒重分配）");
+        let restored = repo.find_by_id(0).unwrap().unwrap();
+        assert_eq!(restored.name, "零号服务器");
+        assert_eq!(restored.sort_number, 4);
+
+        // 重复恢复同一行：REPLACE 覆盖原行，不产生新行
+        repo.restore_upsert_preserving_id(&zero_id_server).unwrap();
+        let all = repo.find_all().unwrap();
+        assert_eq!(all.len(), 1, "重复恢复不应产生新行");
+        assert_eq!(all[0].id, 0);
     }
 
     /// 删除：命中返回 true，不存在返回 false（不抛错）
