@@ -13,10 +13,46 @@ enum IncomingUriKind {
   none,
 }
 
+/// 外部文件分流类型（批16d；对齐原版 FileAssociationViewModel.dispatch）
+///
+/// 原版对非压缩包文件先做 JSON 内容嗅探，再按书籍后缀判定，最后落到
+/// 「文件不支持」对话框；压缩包则在文件名匹配后先解压、只取书籍文件。
+enum IncomingFileKind {
+  /// 书籍文件（txt/epub/umd/pdf/mobi/azw/azw3 → 本地导入确认链）
+  bookFile,
+
+  /// JSON 导入内容（书源/RSS/规则等 → 关联导入确认框）
+  json,
+
+  /// 压缩包（zip/rar/7z → 解压导入对话框；7z 暂不支持解析）
+  archive,
+
+  /// 不支持的文件（弹「仍然导入」兜底框）
+  unsupported,
+}
+
 /// `legado://` / `yuedu://` 深链解析结果（对齐原版 OnLineImportActivity）
 ///
 /// 典型格式：`legado://import/bookSource?src=https://...`
 class LegadoDeepLink {
+  /// 书籍文件后缀（对齐原版 AppPattern.bookFileRegex：
+  /// txt|epub|umd|pdf|mobi|azw3|azw，大小写不敏感）
+  static const Set<String> bookFileExtensions = {
+    'txt',
+    'epub',
+    'umd',
+    'pdf',
+    'mobi',
+    'azw',
+    'azw3',
+  };
+
+  /// 压缩包后缀（对齐原版 AppPattern.archiveFileRegex：zip|rar|7z）
+  static const Set<String> archiveFileExtensions = {'zip', 'rar', '7z'};
+
+  /// JSON 内容嗅探上限（对齐原版 InputStreamExtensions.JSON_SNIFF_LIMIT）
+  static const int jsonSniffLimit = 64 * 1024;
+
   /// 原始 URI
   final String raw;
 
@@ -57,6 +93,75 @@ class LegadoDeepLink {
       return IncomingUriKind.bookFile;
     }
     return IncomingUriKind.none;
+  }
+
+  /// 取路径/文件名后缀（小写、不含点；无后缀返回空串）
+  ///
+  /// 只按最后一个路径段判定，兼容 content:// 文档 URI 的编码路径。
+  static String extensionOf(String pathOrName) {
+    final trimmed = pathOrName.trim();
+    if (trimmed.isEmpty) return '';
+    final slash = trimmed.lastIndexOf(RegExp(r'[/\\]'));
+    final name = slash >= 0 ? trimmed.substring(slash + 1) : trimmed;
+    final dot = name.lastIndexOf('.');
+    if (dot < 0 || dot == name.length - 1) return '';
+    return name.substring(dot + 1).toLowerCase();
+  }
+
+  /// 是否压缩包后缀（zip/rar/7z）
+  static bool isArchivePath(String pathOrName) =>
+      archiveFileExtensions.contains(extensionOf(pathOrName));
+
+  /// 是否 7z（原版可解压，我方无 7z 解析 FFI → 服务层给明确提示）
+  static bool isSevenZipPath(String pathOrName) =>
+      extensionOf(pathOrName) == '7z';
+
+  /// 是否书籍文件后缀
+  static bool isBookFilePath(String pathOrName) =>
+      bookFileExtensions.contains(extensionOf(pathOrName));
+
+  /// 仅按后缀分类（不做内容嗅探；测试与快速判定用）
+  static IncomingFileKind classifyFileExtension(String pathOrName) {
+    final ext = extensionOf(pathOrName);
+    if (archiveFileExtensions.contains(ext)) return IncomingFileKind.archive;
+    if (ext == 'json') return IncomingFileKind.json;
+    if (bookFileExtensions.contains(ext)) return IncomingFileKind.bookFile;
+    return IncomingFileKind.unsupported;
+  }
+
+  /// 按原版 FileAssociationViewModel.dispatch 顺序分类
+  ///
+  /// 1. 压缩包后缀 → [IncomingFileKind.archive]（先于内容嗅探，与原版一致：
+  ///    压缩包不当作 JSON 解析，解压后只取书籍文件）；
+  /// 2. [jsonContent] 为真 → [IncomingFileKind.json]（原版 looksLikeJson：
+  ///    .txt 里装 JSON 也走关联导入）；
+  /// 3. 书籍后缀 → [IncomingFileKind.bookFile]；
+  /// 4. 其余 → [IncomingFileKind.unsupported]（含「.json 后缀但内容不是
+  ///    JSON」——原版同样落到不支持分支）。
+  static IncomingFileKind classifyFile(
+    String pathOrName, {
+    required bool jsonContent,
+  }) {
+    if (isArchivePath(pathOrName)) return IncomingFileKind.archive;
+    if (jsonContent) return IncomingFileKind.json;
+    if (isBookFilePath(pathOrName)) return IncomingFileKind.bookFile;
+    return IncomingFileKind.unsupported;
+  }
+
+  /// JSON 内容嗅探（对齐原版 InputStreamExtensions.looksLikeJson）
+  ///
+  /// 在前 [jsonSniffLimit] 字节内跳过空格/制表/换行/回车，首个字节为
+  /// `{` 或 `[` 视为 JSON；空内容或只有空白返回 false。
+  static bool looksLikeJsonBytes(List<int> bytes) {
+    final limit =
+        bytes.length < jsonSniffLimit ? bytes.length : jsonSniffLimit;
+    for (var i = 0; i < limit; i++) {
+      final b = bytes[i];
+      // 0x20 空格 / 0x09 制表 / 0x0A 换行 / 0x0D 回车
+      if (b == 0x20 || b == 0x09 || b == 0x0A || b == 0x0D) continue;
+      return b == 0x7B || b == 0x5B; // '{' / '['
+    }
+    return false;
   }
 
   /// 解析失败返回 null（缺 src 或非法 URI）

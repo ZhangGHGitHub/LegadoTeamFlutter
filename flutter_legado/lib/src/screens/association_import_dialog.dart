@@ -26,21 +26,34 @@ Future<void> showAssociationImportDialog(
   BuildContext context, {
   String? url,
   ImportType? type,
+  String? filePath,
 }) {
   return showDialog<void>(
     context: context,
-    builder: (_) => AssociationImportDialog(url: url, type: type),
+    builder: (_) => AssociationImportDialog(
+      url: url,
+      type: type,
+      filePath: filePath,
+    ),
   );
 }
 
 class AssociationImportDialog extends ConsumerStatefulWidget {
-  const AssociationImportDialog({super.key, this.url, this.type});
+  const AssociationImportDialog({
+    super.key,
+    this.url,
+    this.type,
+    this.filePath,
+  });
 
   /// 预填内容地址（非空时打开即自动拉取解析）
   final String? url;
 
   /// 深度链接指定的类型提示
   final ImportType? type;
+
+  /// 本地文件路径（批16d：外部 JSON 文件 VIEW 入口，打开即读取解析）
+  final String? filePath;
 
   @override
   ConsumerState<AssociationImportDialog> createState() =>
@@ -77,6 +90,18 @@ class _AssociationImportDialogState
   @override
   void initState() {
     super.initState();
+    final filePath = widget.filePath;
+    if (filePath != null && filePath.isNotEmpty) {
+      // 外部 JSON / 文本文件入口：直接读取本地路径（对齐原版 importJson(uri)）
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(associationNotifierProvider.notifier).loadFromFile(
+              filePath,
+              typeHint: widget.type,
+            );
+      });
+      return;
+    }
     final url = widget.url;
     if (url != null && url.isNotEmpty) {
       _urlController.text = url;
@@ -579,7 +604,7 @@ class _AssociationImportDialogState
           ),
           const SizedBox(height: 16),
           Text(
-            '导入类型由内容格式自动识别：书源 / RSS 源 / 替换规则 / 主题配置 / HTTP TTS / 字典规则 / TXT 目录规则',
+            '导入类型由内容格式自动识别：书源 / RSS 源 / 替换规则 / 主题配置 / HTTP TTS / 字典规则 / TXT 目录规则 / 高亮规则 / 自动任务',
             style: TextStyle(
               fontSize: 13,
               color: Theme.of(context).colorScheme.onSurfaceVariant,

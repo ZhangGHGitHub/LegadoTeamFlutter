@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 
 import '../models/models.dart';
 import '../routes.dart';
+import '../screens/archive_import_dialog.dart';
 import '../screens/association_import_dialog.dart';
 import '../utils/legado_deep_link.dart';
 
@@ -140,12 +141,12 @@ class DeepLinkService {
     ).whenComplete(() => _lastHandled = null);
   }
 
-  /// P1-4：处理外部书籍文件 URI（content:// / file://）
+  /// P1-4 / 批16d：处理外部文件 URI（content:// / file://）
   ///
-  /// 对齐原版 FileAssociationActivity 的 ACTION_VIEW 分发（书籍文件 → 导入
-  /// 并打开）；按批3裁决在导入前弹确认框（原版对 book 文件直接导入，此处
-  /// 偏离经用户裁决登记）。流程：原生拷贝落盘 → 确认框 → importLocalBook →
-  /// 导航详情页（原版 startActivityForBook）。
+  /// 对齐原版 FileAssociationActivity 的 ACTION_VIEW 分发：原生拷贝落盘后
+  /// 按 [LegadoDeepLink.classifyFile] 分流为 JSON / 压缩包 / 书籍文件 /
+  /// 不支持四类。书籍文件沿用批3裁决的「导入前确认框」（原版直接导入，
+  /// 该偏离已登记）。
   Future<void> handleFileUri(String uri) async {
     final kind = LegadoDeepLink.classifyIncomingUri(uri);
     if (kind != IncomingUriKind.bookFile) return;
@@ -161,20 +162,144 @@ class DeepLinkService {
       });
       return;
     }
-    final context = nav.context;
-    final messenger = ScaffoldMessenger.of(context);
+    final messenger = ScaffoldMessenger.of(nav.context);
     try {
       final path = await _copyExternalFile(uri, messenger);
-      if (path == null) {
-        _lastHandledFile = null;
-        return;
-      }
-      await _confirmAndImport(path, messenger);
+      if (path == null) return;
+      await _dispatchCopiedFile(path, messenger);
     } catch (e) {
-      _lastHandledFile = null;
       debugPrint('[DeepLink] 外部文件导入失败：$e');
       messenger.showSnackBar(SnackBar(content: Text('导入书籍失败：$e')));
+    } finally {
+      _lastHandledFile = null;
     }
+  }
+
+  /// 按分流类型处理已落盘文件（原版 dispatchIntent → dispatch 的等价实现）
+  Future<void> _dispatchCopiedFile(
+    String path,
+    ScaffoldMessengerState messenger,
+  ) async {
+    final fileKind = _classifyCopiedFile(path);
+    switch (fileKind) {
+      case IncomingFileKind.json:
+        await _openAssociationImport(path);
+      case IncomingFileKind.archive:
+        await _openArchiveImport(path);
+      case IncomingFileKind.bookFile:
+        await _confirmAndImport(path, messenger);
+      case IncomingFileKind.unsupported:
+        await _confirmUnsupportedImport(path, messenger);
+    }
+  }
+
+  /// 落盘文件分类：先看压缩包后缀，再嗅探 JSON 内容，最后按后缀
+  IncomingFileKind _classifyCopiedFile(String path) {
+    if (LegadoDeepLink.isArchivePath(path)) {
+      return IncomingFileKind.archive;
+    }
+    return LegadoDeepLink.classifyFile(
+      path,
+      jsonContent: _looksLikeJsonFile(path),
+    );
+  }
+
+  /// 读取文件头部做 JSON 嗅探（对齐原版 looksLikeJson；读失败按非 JSON）
+  ///
+  /// 只读前 64KB 且目标为应用私有目录文件，同步读开销可忽略；同步实现
+  /// 同时避免 UI 分流链路多一次异步跳转（原版亦在后台线程做同量级读取）。
+  bool _looksLikeJsonFile(String path) {
+    RandomAccessFile? handle;
+    try {
+      handle = File(path).openSync();
+      final bytes = handle.readSync(LegadoDeepLink.jsonSniffLimit);
+      return LegadoDeepLink.looksLikeJsonBytes(bytes);
+    } catch (e) {
+      debugPrint('[DeepLink] JSON 嗅探失败：$e');
+      return false;
+    } finally {
+      try {
+        handle?.closeSync();
+      } catch (_) {
+        // 关闭失败不影响分类结果
+      }
+    }
+  }
+
+  /// JSON → 关联导入确认框（原版 importJson：类型由内容自动识别）
+  Future<void> _openAssociationImport(String path) async {
+    final nav = navigatorKey?.currentState;
+    if (nav == null) return;
+    await showAssociationImportDialog(nav.context, filePath: path);
+  }
+
+  /// 压缩包 → 解压导入对话框（zip/rar）；7z 无解析 FFI，给明确提示
+  Future<void> _openArchiveImport(String path) async {
+    final nav = navigatorKey?.currentState;
+    if (nav == null) return;
+    if (LegadoDeepLink.isSevenZipPath(path)) {
+      // 登记项：原版支持 7z 解压，我方 Rust 无 7z 解析能力（待另立依赖批）
+      await _showMessageDialog(
+        nav.context,
+        title: '压缩包导入',
+        message: '暂不支持 7z，请解压后导入',
+      );
+      return;
+    }
+    await showDialog<void>(
+      context: nav.context,
+      builder: (_) => ArchiveImportDialog(archivePath: path),
+    );
+  }
+
+  /// 不支持的文件 → 原版式兜底对话框（仍然导入 = 强制按书籍导入）
+  Future<void> _confirmUnsupportedImport(
+    String path,
+    ScaffoldMessengerState messenger,
+  ) async {
+    final nav = navigatorKey?.currentState;
+    if (nav == null) return;
+    final name = displayNameFromPath(path);
+    final confirmed = await showDialog<bool>(
+      context: nav.context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('提醒'),
+        content: Text('文件 $name 不受支持，是否继续打开？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('仍然导入'),
+          ),
+        ],
+      ),
+    ).then((v) => v ?? false);
+    if (!confirmed) return;
+    await _importAndOpen(path, messenger);
+  }
+
+  /// 通用提示对话框（7z 等明确不支持场景）
+  Future<void> _showMessageDialog(
+    BuildContext context, {
+    required String title,
+    required String message,
+  }) {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(title),
+        content: Text(message),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 原生拷贝外部文件到应用持久目录；返回落盘路径，取消/失败返回 null
@@ -205,25 +330,25 @@ class DeepLinkService {
   ) async {
     // 方法首段不做 await 前置，Navigator 判定后立即取 context（无跨 await 引用）
     final nav = navigatorKey?.currentState;
-    if (nav == null) {
-      _lastHandledFile = null;
-      return;
-    }
+    if (nav == null) return;
     final confirmed = await _showImportConfirmDialog(nav.context, path);
-    if (!confirmed) {
-      _lastHandledFile = null;
-      return;
-    }
+    if (!confirmed) return;
+    await _importAndOpen(path, messenger);
+  }
+
+  /// 执行本地书籍导入并导航详情页（确认交互由调用方负责）
+  Future<void> _importAndOpen(
+    String path,
+    ScaffoldMessengerState messenger,
+  ) async {
     final importer = importLocalBook;
     if (importer == null) {
-      _lastHandledFile = null;
       messenger.showSnackBar(
         const SnackBar(content: Text('导入功能未就绪，请稍后重试')),
       );
       return;
     }
     final book = await importer(path);
-    _lastHandledFile = null;
     // 导入后打开详情页（对齐原版 startActivityForBook）
     final currentNav = navigatorKey?.currentState;
     if (currentNav != null) {

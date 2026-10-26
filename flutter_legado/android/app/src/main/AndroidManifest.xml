@@ -60,13 +60,87 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
-            <!-- 处理外部书籍文件打开请求 -->
+            <!-- 外部文件打开（VIEW）：对齐原版 FileAssociationActivity 的
+                 intent-filter。首组按 MIME 匹配（已知媒体类型的来源，如
+                 Gmail/Chrome）；文件管理器常不提供准确 MIME，第二组以
+                 */* + 路径后缀兜底。分流语义见 LegadoDeepLink.classifyFile -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <data android:mimeType="application/epub+zip" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <!-- 文本 / JSON -->
                 <data android:mimeType="text/plain" />
+                <data android:mimeType="application/json" />
+                <!-- EPUB -->
+                <data android:mimeType="application/epub+zip" />
+                <!-- PDF -->
                 <data android:mimeType="application/pdf" />
+                <!-- MOBI -->
+                <data android:mimeType="application/mobi" />
+                <data android:mimeType="application/x-mobipocket-ebook" />
+                <!-- AZW / AZW3 -->
+                <data android:mimeType="application/azw" />
+                <data android:mimeType="application/azw3" />
+                <data android:mimeType="application/x-mobi8-ebook" />
+                <!-- 未知二进制（多数文件管理器对 epub/mobi 的兜底声明） -->
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+            <!-- 未提供 MIME 的来源（如 Dropbox）：*/* + 后缀匹配 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:host="*" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <!-- 必须同时声明 */*，否则仅按后缀不生效 -->
+                <data android:mimeType="*/*" />
+                <!-- TXT -->
+                <data android:pathAdvancedPattern=".*\\.[tT][xX][tT]" />
+                <data android:pathPattern=".*\\.txt" />
+                <data android:pathPattern=".*\\.TXT" />
+                <!-- JSON -->
+                <data android:pathAdvancedPattern=".*\\.[jJ][sS][oO][nN]" />
+                <data android:pathPattern=".*\\.json" />
+                <data android:pathPattern=".*\\.JSON" />
+                <!-- EPUB -->
+                <data android:pathAdvancedPattern=".*\\.[eE][pP][uU][bB]" />
+                <data android:pathPattern=".*\\.epub" />
+                <data android:pathPattern=".*\\.EPUB" />
+                <!-- PDF -->
+                <data android:pathAdvancedPattern=".*\\.[pP][dD][fF]" />
+                <data android:pathPattern=".*\\.pdf" />
+                <data android:pathPattern=".*\\.PDF" />
+                <!-- MOBI -->
+                <data android:pathAdvancedPattern=".*\\.[mM][oO][bB][iI]" />
+                <data android:pathPattern=".*\\.mobi" />
+                <data android:pathPattern=".*\\.MOBI" />
+                <!-- AZW -->
+                <data android:pathAdvancedPattern=".*\\.[aA][zZ][wW]" />
+                <data android:pathPattern=".*\\.azw" />
+                <data android:pathPattern=".*\\.AZW" />
+                <!-- AZW3 -->
+                <data android:pathAdvancedPattern=".*\\.[aA][zZ][wW]3" />
+                <data android:pathPattern=".*\\.azw3" />
+                <data android:pathPattern=".*\\.AZW3" />
+                <!-- UMD -->
+                <data android:pathAdvancedPattern=".*\\.[uU][mM][dD]" />
+                <data android:pathPattern=".*\\.umd" />
+                <data android:pathPattern=".*\\.UMD" />
+                <!-- ZIP -->
+                <data android:pathAdvancedPattern=".*\\.[zZ][iI][pP]" />
+                <data android:pathPattern=".*\\.zip" />
+                <data android:pathPattern=".*\\.ZIP" />
+                <!-- RAR -->
+                <data android:pathAdvancedPattern=".*\\.[rR][aA][rR]" />
+                <data android:pathPattern=".*\\.rar" />
+                <data android:pathPattern=".*\\.RAR" />
+                <!-- 7Z -->
+                <data android:pathAdvancedPattern=".*\\.[7][zZ]" />
+                <data android:pathPattern=".*\\.7z" />
+                <data android:pathPattern=".*\\.7Z" />
             </intent-filter>
             <!-- legado:// / yuedu:// 一键导入（对齐原版 OnLineImportActivity） -->
             <intent-filter>

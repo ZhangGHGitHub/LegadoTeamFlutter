@@ -4,7 +4,7 @@ import '../../services/source_import_service.dart';
 
 part 'association_state.freezed.dart';
 
-/// 导入类型（对应原版 7 类导入对话框；深度链接映射依赖该枚举）
+/// 导入类型（对应原版 9 类导入对话框；深度链接映射依赖该枚举）
 enum ImportType {
   bookSource,
   rssSource,
@@ -13,6 +13,12 @@ enum ImportType {
   httpTts,
   dictRule,
   txtTocRule,
+
+  /// 高亮规则文件（{type:"highlightRule", rules:[...]}）
+  highlightRule,
+
+  /// 自动任务（cron + script）
+  autoTask,
 }
 
 /// 导入条目状态（对应原版 import_status_new / update / exist）
@@ -106,6 +112,8 @@ extension ImportTypeDisplay on ImportType {
         ImportType.httpTts => '导入 HTTP TTS',
         ImportType.dictRule => '导入字典规则',
         ImportType.txtTocRule => '导入 TXT 目录规则',
+        ImportType.highlightRule => '导入高亮规则',
+        ImportType.autoTask => '导入自动任务',
       };
 
   /// 行名取哪个字段（对应原版各适配器 cbSourceName.text）

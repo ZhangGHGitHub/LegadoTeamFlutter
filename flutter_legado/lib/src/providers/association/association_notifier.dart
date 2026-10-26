@@ -147,10 +147,22 @@ class AssociationNotifier extends Notifier<AssociationState> {
       return;
     }
 
-    final type = hint ?? _detectType(maps.first);
+    final type = hint ?? detectType(maps.first);
     if (type == null) {
       // 对应原版「格式不对」
       state = state.copyWith(error: '格式不对', isLoading: false);
+      return;
+    }
+
+    // 高亮规则文件为 {type:"highlightRule", rules:[...]} 包装：候选项取 rules 数组
+    final itemMaps =
+        type == ImportType.highlightRule ? _highlightRuleEntryMaps(maps) : maps;
+    if (itemMaps.isEmpty) {
+      state = state.copyWith(
+        error: '格式错误，未解析到有效条目',
+        items: [],
+        isLoading: false,
+      );
       return;
     }
 
@@ -158,7 +170,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
     final locals = await _fetchLocals(type);
 
     final items = [
-      for (final m in maps)
+      for (final m in itemMaps)
         AssociationItem(
           raw: m,
           name: type.nameFieldOf(m),
@@ -178,7 +190,12 @@ class AssociationNotifier extends Notifier<AssociationState> {
   }
 
   /// 自动识别导入类型（对应原版 BaseAssociationViewModel.importJson 的字段规则）
-  static ImportType? _detectType(Map<String, dynamic> map) {
+  ///
+  /// 顺序与原版逐条对齐：highlightRule（type 字段）→ 书源 → RSS 源 →
+  /// 替换规则 → 主题 → 字典 → TXT 目录规则 → 自动任务（cron+script）→ HTTP TTS。
+  /// 公开为静态方法便于单测直接覆盖字段规则。
+  static ImportType? detectType(Map<String, dynamic> map) {
+    if (map['type'] == 'highlightRule') return ImportType.highlightRule;
     if (map.containsKey('bookSourceUrl')) return ImportType.bookSource;
     if (map.containsKey('sourceUrl')) return ImportType.rssSource;
     if (map.containsKey('pattern')) return ImportType.replaceRule;
@@ -187,10 +204,31 @@ class AssociationNotifier extends Notifier<AssociationState> {
     if (map.containsKey('name') && map.containsKey('rule')) {
       return ImportType.txtTocRule;
     }
+    if (map.containsKey('cron') && map.containsKey('script')) {
+      return ImportType.autoTask;
+    }
     if (map.containsKey('name') && map.containsKey('url')) {
       return ImportType.httpTts;
     }
     return null;
+  }
+
+  /// 高亮规则文件展开：取 rules 数组；兼容直接传入单条规则对象
+  static List<Map<String, dynamic>> _highlightRuleEntryMaps(
+    List<Map<String, dynamic>> maps,
+  ) {
+    final out = <Map<String, dynamic>>[];
+    for (final map in maps) {
+      final rules = map['rules'];
+      if (rules is List) {
+        for (final e in rules) {
+          if (e is Map<String, dynamic>) out.add(Map<String, dynamic>.of(e));
+        }
+      } else if (map.containsKey('uuid')) {
+        out.add(Map<String, dynamic>.of(map));
+      }
+    }
+    return out;
   }
 
   /// 拉取本地快照（按类型返回键值映射或列表；失败返回 null）
@@ -225,6 +263,10 @@ class AssociationNotifier extends Notifier<AssociationState> {
           return await _readConfigList('dict_rules');
         case ImportType.txtTocRule:
           return await _readConfigList('txt_toc_rules');
+        case ImportType.highlightRule:
+          return _decodeMapList(await _api.highlightRuleList());
+        case ImportType.autoTask:
+          return await _api.autoTaskListRules();
         case ImportType.theme:
           // Flutter 端无具名主题仓库，状态按 none 处理（默认全选）
           return null;
@@ -236,19 +278,27 @@ class AssociationNotifier extends Notifier<AssociationState> {
 
   /// 读取配置键中的 JSON 列表（失败返回空列表）
   Future<List<Map<String, dynamic>>> _readConfigList(String key) async {
-    final list = <Map<String, dynamic>>[];
     try {
       final raw = await _api.getConfig(key);
-      if (raw != null && raw.isNotEmpty) {
-        final decoded = jsonDecode(raw);
-        if (decoded is List) {
-          for (final e in decoded) {
-            if (e is Map<String, dynamic>) list.add(e);
-          }
-        }
-      }
-    } catch (_) {}
-    return list;
+      return _decodeMapList(raw);
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  /// 解析 JSON 数组字符串为对象列表（容错：非法条目跳过）
+  static List<Map<String, dynamic>> _decodeMapList(String? raw) {
+    if (raw == null || raw.isEmpty || raw == 'null') return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return [
+        for (final e in decoded)
+          if (e is Map<String, dynamic>) e,
+      ];
+    } catch (_) {
+      return const [];
+    }
   }
 
   /// 逐条计算状态（对应原版各对话框 tvSourceState 规则）
@@ -336,7 +386,99 @@ class AssociationNotifier extends Notifier<AssociationState> {
                 v(item['example']) != v(local['example'])
             ? ImportItemStatus.isUpdate
             : ImportItemStatus.exists;
+
+      case ImportType.highlightRule:
+        // 按 uuid 匹配；规则内容任一字段不同 → 更新（对齐原版
+        // compareImportedHighlightRules：忽略 id/order 后比较全字段）
+        final uuid = (item['uuid']?.toString() ?? '').toLowerCase();
+        Map<String, dynamic>? local;
+        final ruleList = locals as List<Map<String, dynamic>>?;
+        if (ruleList != null && uuid.isNotEmpty) {
+          for (final e in ruleList) {
+            if ((e['uuid']?.toString() ?? '').toLowerCase() == uuid) {
+              local = e;
+              break;
+            }
+          }
+        }
+        if (local == null) return ImportItemStatus.isNew;
+        return _sameHighlightRule(item, local)
+            ? ImportItemStatus.exists
+            : ImportItemStatus.isUpdate;
+
+      case ImportType.autoTask:
+        // 按 id 匹配；任务配置任一字段不同 → 更新
+        final id = item['id']?.toString() ?? '';
+        Map<String, dynamic>? local;
+        final taskList = locals as List<Map<String, dynamic>>?;
+        if (taskList != null && id.isNotEmpty) {
+          for (final e in taskList) {
+            if ((e['id']?.toString() ?? '') == id) {
+              local = e;
+              break;
+            }
+          }
+        }
+        if (local == null) return ImportItemStatus.isNew;
+        return _sameAutoTask(item, local)
+            ? ImportItemStatus.exists
+            : ImportItemStatus.isUpdate;
     }
+  }
+
+  /// 高亮规则内容比较（对齐原版 compareImportedHighlightRules：
+  /// 排除 id/order 后逐字段比较；缺省布尔按 Rust 契约默认值归一）
+  static bool _sameHighlightRule(
+    Map<String, dynamic> a,
+    Map<String, dynamic> b,
+  ) {
+    bool sameBool(String key, {required bool fallback}) =>
+        _boolValue(a[key], fallback) == _boolValue(b[key], fallback);
+    return _text(a['name']) == _text(b['name']) &&
+        _text(a['pattern']) == _text(b['pattern']) &&
+        sameBool('isRegex', fallback: false) &&
+        _text(a['scope']) == _text(b['scope']) &&
+        sameBool('isEnabled', fallback: true) &&
+        _text(a['style']) == _text(b['style']) &&
+        sameBool('applyToTitle', fallback: false) &&
+        sameBool('applyToBody', fallback: true);
+  }
+
+  /// 自动任务配置比较（不含运行历史字段）
+  static bool _sameAutoTask(Map<String, dynamic> a, Map<String, dynamic> b) {
+    const fields = [
+      'name',
+      'cron',
+      'script',
+      'loginUrl',
+      'loginUi',
+      'loginCheckJs',
+      'comment',
+      'header',
+      'jsLib',
+      'concurrentRate',
+    ];
+    for (final f in fields) {
+      if (_text(a[f]) != _text(b[f])) return false;
+    }
+    bool sameBool(String key) =>
+        _boolValue(a[key], true) == _boolValue(b[key], true);
+    return sameBool('enable') && sameBool('enabledCookieJar');
+  }
+
+  /// 文本归一（null → 空串）
+  static String _text(Object? v) => v?.toString() ?? '';
+
+  /// 布尔归一（缺失/非布尔按 [fallback]）
+  static bool _boolValue(Object? v, bool fallback) {
+    if (v is bool) return v;
+    if (v is num) return v != 0;
+    if (v is String) {
+      final lower = v.toLowerCase();
+      if (lower == 'true') return true;
+      if (lower == 'false') return false;
+    }
+    return fallback;
   }
 
   static String _boolStr(bool b) => b.toString();
@@ -350,6 +492,8 @@ class AssociationNotifier extends Notifier<AssociationState> {
         ImportType.httpTts => 'HTTP TTS',
         ImportType.dictRule => '字典规则',
         ImportType.txtTocRule => 'TXT 目录规则',
+        ImportType.highlightRule => '高亮规则',
+        ImportType.autoTask => '自动任务',
       };
 
   // ===== 导入阶段（对应原版各 importSelect）=====
@@ -371,6 +515,8 @@ class AssociationNotifier extends Notifier<AssociationState> {
         ImportType.httpTts => await _importHttpTts(type, items),
         ImportType.dictRule => await _importDictRules(type, items),
         ImportType.txtTocRule => await _importTxtTocRules(type, items),
+        ImportType.highlightRule => await _importHighlightRules(type, items),
+        ImportType.autoTask => await _importAutoTasks(type, items),
       };
       state = state.copyWith(lastResult: result, isLoading: false);
       return result;
@@ -585,6 +731,108 @@ class AssociationNotifier extends Notifier<AssociationState> {
       }
     }
     await _api.setConfig('txt_toc_rules', jsonEncode(existing));
+    return ImportResult(
+      total: items.length,
+      success: success,
+      failed: errors.length,
+      skipped: 0,
+      errors: errors,
+      unit: _unitName(type),
+    );
+  }
+
+  /// 导入高亮规则（按 uuid 命中本地同条则覆盖 id，否则新增）
+  ///
+  /// 对齐原版 HighlightRuleDao.importRules：uuid 为规则身份；id 为本地
+  /// 自增主键，导入时不得沿用来源设备的 id（否则会覆盖无关本地规则）。
+  Future<ImportResult> _importHighlightRules(
+    ImportType type,
+    List<Map<String, dynamic>> items,
+  ) async {
+    final localIdByUuid = <String, int>{};
+    try {
+      for (final rule in _decodeMapList(await _api.highlightRuleList())) {
+        final uuid = (rule['uuid']?.toString() ?? '').toLowerCase();
+        final id = (rule['id'] as num?)?.toInt() ?? 0;
+        if (uuid.isNotEmpty && id > 0) localIdByUuid[uuid] = id;
+      }
+    } catch (_) {
+      // 本地快照不可用时全部按新增处理
+    }
+    var success = 0;
+    final errors = <String>[];
+    for (final item in items) {
+      try {
+        final rule = Map<String, dynamic>.of(item);
+        final uuid = (rule['uuid']?.toString() ?? '').toLowerCase();
+        final localId = localIdByUuid[uuid];
+        if (uuid.isEmpty) {
+          rule.remove('id');
+        } else if (localId != null) {
+          rule['id'] = localId; // 同 uuid → 覆写本地同一条
+        } else {
+          rule.remove('id'); // 新规则：主键交给 Rust 自增
+        }
+        // 原版导出字段为 order，Rust 契约字段为 sortOrder
+        if (!rule.containsKey('sortOrder') && rule['order'] is num) {
+          rule['sortOrder'] = (rule['order'] as num).toInt();
+        }
+        rule.remove('order');
+        await _api.highlightRuleSave(ruleJson: jsonEncode(rule));
+        success++;
+      } catch (e) {
+        errors.add('导入高亮规则「${item['name']}」失败：$e');
+      }
+    }
+    return ImportResult(
+      total: items.length,
+      success: success,
+      failed: errors.length,
+      skipped: 0,
+      errors: errors,
+      unit: _unitName(type),
+    );
+  }
+
+  /// 导入自动任务（FFI 合并本地运行时状态后逐条创建）
+  ///
+  /// 对齐原版 ImportAutoTaskViewModel.importSelect：缺省 id 时生成新 id，
+  /// 名称空白的任务剔除并记入失败明细。
+  Future<ImportResult> _importAutoTasks(
+    ImportType type,
+    List<Map<String, dynamic>> items,
+  ) async {
+    var merged = items;
+    try {
+      final locals = await _api.autoTaskListRules();
+      final prepared = await _api.autoTaskPrepareImported(
+        localTasksJson: jsonEncode(locals),
+        importedJson: jsonEncode(items),
+      );
+      if (prepared.isNotEmpty) merged = prepared;
+    } catch (_) {
+      // FFI 合并不可用时退化为按原样导入
+    }
+    final baseId = DateTime.now().microsecondsSinceEpoch;
+    var success = 0;
+    final errors = <String>[];
+    for (var i = 0; i < merged.length; i++) {
+      final task = Map<String, dynamic>.of(merged[i]);
+      final name = (task['name']?.toString() ?? '').trim();
+      if (name.isEmpty) {
+        errors.add('导入自动任务失败：缺少任务名称');
+        continue;
+      }
+      task['name'] = name;
+      final id = task['id']?.toString() ?? '';
+      if (id.isEmpty) task['id'] = '${baseId}_$i';
+      try {
+        await _api.autoTaskCreateRule(ruleJson: jsonEncode(task));
+        success++;
+      } catch (e) {
+        errors.add('导入自动任务「$name」失败：$e');
+      }
+    }
     return ImportResult(
       total: items.length,
       success: success,
