@@ -13,6 +13,7 @@ import 'package:material_symbols_icons/symbols.dart';
 
 import '../providers/providers.dart';
 import '../services/direct_link_upload_rule_service.dart';
+import '../utils/error_message.dart';
 import '../widgets/ios_widgets.dart';
 
 /// 直链上传规则配置底部 Sheet
@@ -57,6 +58,9 @@ class _DirectLinkUploadSettingsSheetState
 
   bool get _busy => _testing || _saving;
 
+  /// 加载或保存/测试进行中时，表单与菜单统一禁用
+  bool get _interactive => !_loading && !_busy;
+
   @override
   void initState() {
     super.initState();
@@ -79,13 +83,16 @@ class _DirectLinkUploadSettingsSheetState
 
   Future<void> _load() async {
     try {
-      final rule = await _service.getEffectiveRule();
+      final result = await _service.resolveEffectiveRule();
       if (!mounted) return;
-      _fill(rule);
+      _fill(result.rule);
+      if (result.degraded) {
+        _toast('已保存的直链规则无效，已回退默认规则');
+      }
     } on DirectLinkUploadRuleException catch (e) {
       if (mounted) _toast('读取直链上传规则失败：${e.message}');
     } catch (e) {
-      if (mounted) _toast('读取直链上传规则失败：$e');
+      if (mounted) _toast('读取直链上传规则失败：${errorMessage(e)}');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -131,7 +138,7 @@ class _DirectLinkUploadSettingsSheetState
       _toast('读取默认规则失败：${e.message}');
       return;
     } catch (e) {
-      _toast('读取默认规则失败：$e');
+      _toast('读取默认规则失败：${errorMessage(e)}');
       return;
     }
     if (!mounted) return;
@@ -158,14 +165,25 @@ class _DirectLinkUploadSettingsSheetState
 
   Future<void> _copyRule() async {
     final json = _currentRule().toJsonString();
-    await Clipboard.setData(ClipboardData(text: json));
+    try {
+      await Clipboard.setData(ClipboardData(text: json));
+    } catch (e) {
+      _toast('复制失败：${errorMessage(e)}');
+      return;
+    }
     _toast('规则已复制到剪贴板');
   }
 
   Future<void> _pasteRule() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = data?.text ?? '';
-    if (text.trim().isEmpty) {
+    final String? text;
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      text = data?.text;
+    } catch (e) {
+      _toast('读取剪贴板失败：${errorMessage(e)}');
+      return;
+    }
+    if (text == null || text.trim().isEmpty) {
       _toast('剪贴板为空或格式不正确');
       return;
     }
@@ -188,7 +206,7 @@ class _DirectLinkUploadSettingsSheetState
     } on DirectLinkUploadRuleException catch (e) {
       error = e.message;
     } catch (e) {
-      error = '$e';
+      error = errorMessage(e);
     }
     if (!mounted) return;
     setState(() => _testing = false);
@@ -222,7 +240,12 @@ class _DirectLinkUploadSettingsSheetState
         actions: [
           TextButton(
             onPressed: () async {
-              await Clipboard.setData(ClipboardData(text: message));
+              try {
+                await Clipboard.setData(ClipboardData(text: message));
+              } catch (e) {
+                _toast('复制失败：${errorMessage(e)}');
+                return;
+              }
               if (dialogContext.mounted) Navigator.pop(dialogContext);
             },
             child: const Text('复制结果'),
@@ -257,7 +280,9 @@ class _DirectLinkUploadSettingsSheetState
       setState(() => _saving = false);
       messenger
         ..hideCurrentSnackBar()
-        ..showSnackBar(SnackBar(content: Text('保存失败：$e')));
+        ..showSnackBar(
+          SnackBar(content: Text('保存失败：${errorMessage(e)}')),
+        );
     }
   }
 
@@ -307,7 +332,7 @@ class _DirectLinkUploadSettingsSheetState
                           ),
                           PopupMenuButton<_SheetMenuAction>(
                             tooltip: '更多菜单',
-                            enabled: !_loading,
+                            enabled: _interactive,
                             icon: const Icon(Symbols.more_vert_rounded),
                             onSelected: _onMenuSelected,
                             itemBuilder: (_) => const [
@@ -348,6 +373,7 @@ class _DirectLinkUploadSettingsSheetState
                               children: [
                                 TextField(
                                   controller: _uploadUrl,
+                                  enabled: _interactive,
                                   minLines: 2,
                                   maxLines: 4,
                                   autocorrect: false,
@@ -370,6 +396,7 @@ class _DirectLinkUploadSettingsSheetState
                                 const SizedBox(height: 16),
                                 TextField(
                                   controller: _downloadUrlRule,
+                                  enabled: _interactive,
                                   minLines: 3,
                                   maxLines: 8,
                                   autocorrect: false,
@@ -392,6 +419,7 @@ class _DirectLinkUploadSettingsSheetState
                                 const SizedBox(height: 16),
                                 TextField(
                                   controller: _summary,
+                                  enabled: _interactive,
                                   maxLines: 2,
                                   minLines: 1,
                                   decoration: const InputDecoration(
@@ -405,9 +433,9 @@ class _DirectLinkUploadSettingsSheetState
                                   title: const Text('是否压缩'),
                                   subtitle: const Text('上传前压缩为 zip'),
                                   value: _compress,
-                                  onChanged: _busy
-                                      ? null
-                                      : (v) => setState(() => _compress = v),
+                                  onChanged: _interactive
+                                      ? (v) => setState(() => _compress = v)
+                                      : null,
                                 ),
                                 const SizedBox(height: 4),
                                 Row(

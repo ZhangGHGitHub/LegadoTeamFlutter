@@ -3,6 +3,7 @@
 // 覆盖：字段渲染与默认回填、保存写 config、校验失败提示、测试按钮调用
 // 参数与结果对话框（可复制）、导入默认规则、复制/粘贴规则、设置页入口可见
 // 性与跳转。
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/direct_link_upload_settings_sheet.dart';
 import 'package:flutter_legado/src/screens/other_settings_screen.dart';
@@ -23,6 +25,27 @@ class _CapturingBookApi extends MockBookApi {
   final List<Map<String, Object?>> uploadCalls = [];
   Object? uploadError;
   String uploadResult = 'https://download.example/test.json';
+
+  /// 非空时上传挂起，用于断言「测试中」状态
+  Completer<String>? uploadCompleter;
+
+  /// 非空时配置读取/写入抛错（模拟桥接异常）
+  Object? loadError;
+  Object? saveError;
+
+  @override
+  Future<String?> getConfig(String key) async {
+    final error = loadError;
+    if (error != null) throw error;
+    return super.getConfig(key);
+  }
+
+  @override
+  Future<void> setConfig(String key, String value) async {
+    final error = saveError;
+    if (error != null) throw error;
+    return super.setConfig(key, value);
+  }
 
   @override
   Future<String> directLinkUpload({
@@ -39,6 +62,8 @@ class _CapturingBookApi extends MockBookApi {
       'content': content,
       'filePath': filePath,
     });
+    final completer = uploadCompleter;
+    if (completer != null) return completer.future;
     final error = uploadError;
     if (error != null) throw error;
     return uploadResult;
@@ -83,7 +108,10 @@ void main() {
     return written;
   }
 
-  Future<void> openSheet(WidgetTester tester) async {
+  Future<void> openSheet(
+    WidgetTester tester, {
+    DirectLinkUploadRuleService? serviceOverride,
+  }) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [bookApiProvider.overrideWithValue(api)],
@@ -95,7 +123,7 @@ void main() {
                   key: const Key('openSheet'),
                   onPressed: () => DirectLinkUploadSettingsSheet.show(
                     context,
-                    service: service,
+                    service: serviceOverride ?? service,
                   ),
                   child: const Text('打开'),
                 ),
@@ -186,6 +214,41 @@ void main() {
       expect(find.text('已保存直链上传规则'), findsOneWidget);
     });
 
+    testWidgets('坏配置回落：提示已回退默认规则并回填默认第 1 条', (tester) async {
+      await api.setConfig(DirectLinkUploadRuleService.configKey, '{}');
+      await openSheet(tester);
+
+      expect(find.text('已保存的直链规则无效，已回退默认规则'), findsOneWidget);
+      expect(
+        byLabel(tester, '上传 URL').controller?.text,
+        startsWith('https://sy.nyasama.net/shuyuan'),
+      );
+    });
+
+    testWidgets('读取配置失败：BridgeError 展示真实 message', (tester) async {
+      api.loadError = const BridgeError(message: '读取配置失败,真实原因');
+      await openSheet(tester);
+
+      expect(
+        find.text('读取直链上传规则失败：读取配置失败,真实原因'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('Instance of'), findsNothing);
+    });
+
+    testWidgets('导入默认规则资产读取失败：BridgeError 展示真实 message', (tester) async {
+      final broken = DirectLinkUploadRuleService(
+        api,
+        assetLoader: (_) async => throw const BridgeError(message: '资产读取失败,真实原因'),
+      );
+      await openSheet(tester, serviceOverride: broken);
+
+      await tapMenu(tester, '导入默认规则');
+
+      expect(find.text('读取默认规则失败：资产读取失败,真实原因'), findsOneWidget);
+      expect(find.textContaining('Instance of'), findsNothing);
+    });
+
     testWidgets('保存校验失败：提示且不写 config、Sheet 保留', (tester) async {
       await openSheet(tester);
 
@@ -202,6 +265,18 @@ void main() {
         await api.getConfig(DirectLinkUploadRuleService.configKey),
         isNull,
       );
+    });
+
+    testWidgets('保存失败：BridgeError 展示真实 message，Sheet 保留', (tester) async {
+      api.saveError = const BridgeError(message: '保存失败,真实原因');
+      await openSheet(tester);
+
+      await tester.tap(find.text('确认'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('保存失败：保存失败,真实原因'), findsOneWidget);
+      expect(find.textContaining('Instance of'), findsNothing);
+      expect(find.text('直链上传配置'), findsOneWidget);
     });
 
     testWidgets('测试：上传 test.json/{} 并展示结果，可复制', (tester) async {
@@ -225,15 +300,45 @@ void main() {
       expect(find.text('测试结果'), findsNothing);
     });
 
-    testWidgets('测试失败：展示错误对话框', (tester) async {
-      api.uploadError = Exception('上传失败,{"code":500}');
+    testWidgets('测试进行中：显示测试中且表单/菜单禁用，完成后展示结果', (tester) async {
+      api.uploadCompleter = Completer<String>();
+      await openSheet(tester);
+
+      await tester.tap(find.text('测试'));
+      await tester.pump();
+
+      expect(find.text('测试中'), findsOneWidget);
+      final testButton = tester.widget<OutlinedButton>(
+        find.widgetWithText(OutlinedButton, '测试中'),
+      );
+      expect(testButton.onPressed, isNull);
+      expect(
+        tester
+            .widget<TextField>(find.widgetWithText(TextField, '上传 URL').first)
+            .enabled,
+        isFalse,
+      );
+      // 测试进行中菜单禁用：点击后不弹出菜单（测试中按钮有持续动画，
+      // 不能用 pumpAndSettle）
+      await tester.tap(find.byTooltip('更多菜单'));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('导入默认规则'), findsNothing);
+
+      api.uploadCompleter!.complete('https://download.example/test.json');
+      await tester.pumpAndSettle();
+      expect(find.text('测试结果'), findsOneWidget);
+    });
+
+    testWidgets('测试失败：BridgeError 展示真实 message，不出现 Instance of', (tester) async {
+      api.uploadError = const BridgeError(message: '上传失败,真实原因');
       await openSheet(tester);
 
       await tester.tap(find.text('测试'));
       await tester.pumpAndSettle();
 
       expect(find.text('测试失败'), findsOneWidget);
-      expect(find.textContaining('上传失败'), findsOneWidget);
+      expect(find.text('上传失败,真实原因'), findsOneWidget);
+      expect(find.textContaining('Instance of'), findsNothing);
     });
 
     testWidgets('导入默认规则：列出 3 条并回填所选规则', (tester) async {
@@ -303,6 +408,42 @@ void main() {
       await tapMenu(tester, '粘贴规则');
 
       expect(find.text('剪贴板为空或格式不正确'), findsOneWidget);
+    });
+
+    testWidgets('复制规则失败：提示复制失败', (tester) async {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            throw PlatformException(code: 'copy_failed', message: '剪贴板不可用');
+          }
+          return null;
+        },
+      );
+      await openSheet(tester);
+
+      await tapMenu(tester, '复制规则');
+
+      expect(find.textContaining('复制失败'), findsOneWidget);
+      expect(find.text('规则已复制到剪贴板'), findsNothing);
+    });
+
+    testWidgets('粘贴规则读取失败：提示读取剪贴板失败', (tester) async {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.getData') {
+            throw PlatformException(code: 'read_failed', message: '剪贴板不可用');
+          }
+          return null;
+        },
+      );
+      await openSheet(tester);
+
+      await tapMenu(tester, '粘贴规则');
+
+      expect(find.textContaining('读取剪贴板失败'), findsOneWidget);
+      expect(find.text('剪贴板为空或格式不正确'), findsNothing);
     });
   });
 

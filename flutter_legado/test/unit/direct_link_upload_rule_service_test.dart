@@ -80,12 +80,33 @@ void main() {
         'compress',
       });
       expect(rules.every((r) => r.compress == false), isTrue);
+      // summary 为必填字段，内置 3 条规则应全部非空
+      expect(rules.every((r) => r.summary.trim().isNotEmpty), isTrue);
     });
 
-    test('未配置时生效规则 = 默认第 1 条', () async {
-      final effective = await service.getEffectiveRule();
+    test('资产 JSON 非法时包装为规则异常（统一文案体系）', () async {
+      final broken = DirectLinkUploadRuleService(
+        api,
+        assetLoader: (_) async => '{bad json',
+      );
+      await expectLater(
+        broken.loadDefaultRules(),
+        throwsA(
+          isA<DirectLinkUploadRuleException>().having(
+            (e) => e.message,
+            'message',
+            '内置直链上传规则不是有效的 JSON',
+          ),
+        ),
+      );
+    });
+
+    test('未配置时生效规则 = 默认第 1 条，且不标记降级', () async {
+      final result = await service.resolveEffectiveRule();
+      expect(result.degraded, isFalse);
       final defaults = await service.loadDefaultRules();
-      expect(effective, defaults.first);
+      expect(result.rule, defaults.first);
+      expect(await service.getEffectiveRule(), result.rule);
     });
   });
 
@@ -157,8 +178,29 @@ void main() {
         service.loadSavedRule(),
         throwsA(isA<DirectLinkUploadRuleException>()),
       );
-      final effective = await service.getEffectiveRule();
-      expect(effective.summary, contains('喵公子网盘①'));
+      final result = await service.resolveEffectiveRule();
+      expect(result.degraded, isTrue);
+      expect(result.rule.summary, contains('喵公子网盘①'));
+      expect(await service.getEffectiveRule(), result.rule);
+    });
+
+    test('可解析但语义非法的配置（{} / 必填为空）同样回落默认并标记降级', () async {
+      final badConfigs = <String>[
+        '{}',
+        jsonEncode(<String, Object?>{
+          'uploadUrl': 'https://up.example/up',
+          'downloadUrlRule': '',
+          'summary': '',
+          'compress': false,
+        }),
+      ];
+      for (final badConfig in badConfigs) {
+        await api.setConfig(DirectLinkUploadRuleService.configKey, badConfig);
+        final result = await service.resolveEffectiveRule();
+        expect(result.degraded, isTrue, reason: badConfig);
+        final defaults = await service.loadDefaultRules();
+        expect(result.rule, defaults.first, reason: badConfig);
+      }
     });
   });
 
@@ -209,15 +251,16 @@ void main() {
       await expectInvalid('  ', '规则内容为空');
     });
 
-    test('注释可空，上传 Url 逗号选项通过校验', () async {
+    test('注释必填：空注释拒绝', () async {
+      await expectInvalid(ruleJson(summary: '  '), '注释不能为空');
       await service.saveRule(
         ruleJson(
           uploadUrl: 'https://up.example/u,{"method":"POST"}',
-          summary: '',
+          summary: '有注释',
         ),
       );
       final effective = await service.getEffectiveRule();
-      expect(effective.summary, '');
+      expect(effective.summary, '有注释');
     });
   });
 
