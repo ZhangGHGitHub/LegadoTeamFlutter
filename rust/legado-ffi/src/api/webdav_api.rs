@@ -2,9 +2,14 @@
 //!
 //! 暴露 legado-net::webdav 的 WebDavClient + BookSyncManager 到 Flutter 端。
 //! 支持：配置管理、目录列表、文件上传/下载、全量同步、增量同步。
+//!
+//! 批8（用户裁决②）追加 servers 表 CRUD：列表/保存/删除委托
+//! `legado-db::ServerRepository`（单实现），配置 JSON 入参签名全部不变。
 
 use legado_core::{LegadoError, LegadoResult};
 use legado_net::webdav::{BookSyncManager, WebDavClient, WebDavConfig};
+
+use crate::db_state::with_database;
 
 /// 获取 WebDAV 异步运行时句柄（优先当前 tokio 运行时，否则惰性创建兜底 runtime）
 fn webdav_runtime_handle() -> LegadoResult<tokio::runtime::Handle> {
@@ -265,6 +270,33 @@ pub fn webdav_incremental_sync(
     .map_err(|e| legado_core::LegadoError::Internal(format!("序列化失败：{e}")))
 }
 
+// ─── servers 表 CRUD（批8 用户裁决②，契约 §2.28）────────────────
+
+/// 列出 servers 表全部服务器（`sortNumber` 升序），返回**裸 JSON 数组**
+///
+/// 元素形态对齐原版 `Server` 实体（`id`/`name`/`type`/`config`/`sortNumber`）。
+/// 对齐原版 `ServerDao.all`（`order by sortNumber`）。
+pub fn webdav_servers_list() -> LegadoResult<String> {
+    let servers = with_database(|db| legado_db::ServerRepository::new(db.connection()).find_all())?;
+    serde_json::to_string(&servers)
+        .map_err(|e| LegadoError::Internal(format!("服务器列表序列化失败: {e}")))
+}
+
+/// 保存服务器配置（全字段 `INSERT OR REPLACE`），返回实际落库 id
+///
+/// 主键语义见 `ServerRepository::upsert`：id 为 0 时按当前毫秒分配；
+/// 负数 id 原样保留（`-1` = 默认 WebDAV 同步账号固定身份）。
+pub fn webdav_server_save(server_json: &str) -> LegadoResult<i64> {
+    let server: legado_core::models::Server = serde_json::from_str(server_json)
+        .map_err(|e| LegadoError::Internal(format!("服务器配置解析失败: {e}")))?;
+    with_database(|db| legado_db::ServerRepository::new(db.connection()).upsert(&server))
+}
+
+/// 按 id 删除服务器配置；未命中返回 `false`（对齐 Room DELETE 静默语义）
+pub fn webdav_server_delete(id: i64) -> LegadoResult<bool> {
+    with_database(|db| legado_db::ServerRepository::new(db.connection()).delete(id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -299,6 +331,62 @@ mod tests {
         assert!(
             matches!(err, legado_core::LegadoError::Io(_)),
             "文件不存在应为 Io 错误，实际: {err:?}"
+        );
+    }
+
+    /// 清空 servers 表（共享测试库；调用方须持 ensure_test_db 串行锁）
+    fn clear_servers() {
+        with_database(|db| {
+            db.connection()
+                .execute("DELETE FROM servers", [])
+                .map_err(|e| LegadoError::Database(format!("清空 servers 失败: {e}")))?;
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    /// [批8] 保存→列表→删除全链路（裸 JSON 数组 + 负数主键保留 + 全字段往返）
+    #[test]
+    fn test_servers_crud_roundtrip() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_servers();
+
+        let seed = serde_json::json!({
+            "id": -1,
+            "name": "默认 WebDAV",
+            "type": "WEBDAV",
+            "config": "{\"url\":\"https://dav.example.com/\",\"username\":\"u\",\"password\":\"p\"}",
+            "sortNumber": 1
+        });
+        let id = webdav_server_save(&seed.to_string()).unwrap();
+        assert_eq!(id, -1, "负数主键应原样保留");
+
+        let raw = webdav_servers_list().unwrap();
+        let value: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert!(value.is_array(), "列表必须为裸 JSON 数组（§1.4 铁律）");
+        let servers: Vec<legado_core::models::Server> = serde_json::from_str(&raw).unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "默认 WebDAV");
+        assert_eq!(servers[0].sort_number, 1);
+
+        assert!(webdav_server_delete(-1).unwrap());
+        assert!(!webdav_server_delete(-1).unwrap(), "重复删除应返回 false");
+        assert_eq!(webdav_servers_list().unwrap(), "[]", "删除后列表应为空数组");
+    }
+
+    /// [批8] 非法 JSON / 未知 type 显式报错（不静默落库）
+    #[test]
+    fn test_server_save_rejects_invalid_shape() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_servers();
+
+        let err = webdav_server_save("{invalid").expect_err("非法 JSON 应报错");
+        assert!(matches!(err, LegadoError::Internal(_)));
+
+        let err = webdav_server_save(r#"{"id":1,"type":"FTP"}"#).expect_err("未知 type 应报错");
+        assert!(
+            matches!(err, LegadoError::Internal(_)),
+            "未知 type 应为 Internal（serde 解析失败），实际: {err:?}"
         );
     }
 }

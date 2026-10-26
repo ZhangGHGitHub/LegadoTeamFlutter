@@ -135,11 +135,11 @@ mod tests {
         registry.migrate_to_latest(&conn).unwrap();
         assert_eq!(
             MigrationRegistry::current_version(&conn).unwrap(),
-            111,
-            "注册表路径应推进版本到 111"
+            112,
+            "注册表路径应推进版本到 112"
         );
         registry.migrate_to_latest(&conn).unwrap();
-        assert_eq!(MigrationRegistry::current_version(&conn).unwrap(), 111);
+        assert_eq!(MigrationRegistry::current_version(&conn).unwrap(), 112);
     }
 
     /// 全新库 init_schema 建表已含该列，up 应为空操作

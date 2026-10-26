@@ -26,6 +26,7 @@ pub mod rss_star_repository;
 pub mod rule_sub_repository;
 pub mod search_book_repository;
 pub mod search_keyword_repository;
+pub mod server_repository;
 pub mod txt_toc_rule_repository;
 
 use legado_core::LegadoResult;

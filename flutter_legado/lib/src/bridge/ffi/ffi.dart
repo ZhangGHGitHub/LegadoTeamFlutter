@@ -1876,6 +1876,25 @@ Future<String> webdavFullSync({
   localSources: localSources,
 );
 
+/// 列出 servers 表全部服务器（契约 §2.28，批8）
+///
+/// 返回裸 JSON 数组（元素为原版 Server 实体），按 sortNumber 升序。
+Future<String> webdavServersList() =>
+    RustLib.instance.api.crateFfiFfiWebdavServersList();
+
+/// 保存服务器配置（全字段 upsert，契约 §2.28，批8）
+///
+/// 入参为 Server JSON；返回实际落库 id（id 为 0 时按当前毫秒分配，
+/// 负数 id 原样保留）。
+Future<PlatformInt64> webdavServerSave({required String serverJson}) =>
+    RustLib.instance.api.crateFfiFfiWebdavServerSave(serverJson: serverJson);
+
+/// 删除服务器配置（契约 §2.28，批8）
+///
+/// 返回是否命中行；不存在返回 false（不抛错）。
+Future<bool> webdavServerDelete({required PlatformInt64 id}) =>
+    RustLib.instance.api.crateFfiFfiWebdavServerDelete(id: id);
+
 /// 添加下载任务，返回任务 ID
 Future<String> downloadAddTask({
   required String bookUrl,

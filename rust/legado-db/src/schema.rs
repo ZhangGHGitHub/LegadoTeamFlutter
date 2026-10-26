@@ -38,7 +38,11 @@ use legado_core::{LegadoError, LegadoResult};
 /// - v111：rssSources 补 `nextContentUrl` 列（审查批4 P1-2，对齐原版 Room
 ///   v104.json `rssSources.nextContentUrl`（TEXT 可空）与 `RssSource.kt:73`
 ///   「正文下一页规则」；Migration110To111）
-pub const SCHEMA_VERSION: u32 = 111;
+/// - v112：新增 `servers` 表（批8 用户裁决②，逐列对齐原版 Room v104.json
+///   `servers`：`id` INTEGER 主键 / `name` / `type` / `config` / `sortNumber`；
+///   Flutter WebDAV 同步设置由偏好一次性迁移至该表，备份 v3 纳入；
+///   Migration111To112）
+pub const SCHEMA_VERSION: u32 = 112;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -96,6 +100,8 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
         .map_err(|e| LegadoError::Database(format!("创建 highlights 表失败：{e}")))?;
     conn.execute_batch(CREATE_HIGHLIGHT_RULES)
         .map_err(|e| LegadoError::Database(format!("创建 highlightRules 表失败：{e}")))?;
+    conn.execute_batch(CREATE_SERVERS)
+        .map_err(|e| LegadoError::Database(format!("创建 servers 表失败：{e}")))?;
 
     // 创建索引
     conn.execute_batch(INDEXES)
@@ -654,6 +660,22 @@ CREATE TABLE IF NOT EXISTS highlightRules (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS index_highlightRules_uuid
     ON highlightRules(uuid);
+";
+
+/// servers 表（v112，逐列对齐原版 Room v104.json `servers`）
+///
+/// 原版 `data/entities/Server.kt`：`id` 主键（默认 `System.currentTimeMillis()`）、
+/// `name`、`type`（枚举 `WEBDAV`）、`config`（WebDavConfig JSON 字符串，可空）、
+/// `sortNumber`。Room createSql 无 DEFAULT 子句，此处保持一致。
+pub const CREATE_SERVERS: &str = "
+CREATE TABLE IF NOT EXISTS servers (
+    id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    type TEXT NOT NULL,
+    config TEXT,
+    sortNumber INTEGER NOT NULL,
+    PRIMARY KEY(id)
+);
 ";
 
 /// 索引定义

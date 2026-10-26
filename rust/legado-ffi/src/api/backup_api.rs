@@ -4,14 +4,18 @@
 //! 备份格式为单文件 JSON（BackupData）：
 //! - version=1（历史格式）：books/bookmarks/replaceRules/bookSources/rssSources/readRecords
 //!   六类；其中 rssSources 为 `SELECT *` 直出（布尔列为 0/1 整数形态）。
-//! - version=2（本批，对齐原版 `Backup.kt:279-330` 的表覆盖面）：新增
+//! - version=2（扩表批，对齐原版 `Backup.kt:279-330` 的表覆盖面）：新增
 //!   bookGroups/rssStars/highlights/highlightRules/searchHistory/ruleSubs/
 //!   txtTocRules/httpTTS/dictRules/keyboardAssists 十类；rssSources 改由
 //!   `RssSourceRepository` 模型序列化（布尔为真 bool、None 字段省略）。
+//! - version=3（批8，用户裁决②）：新增 `servers`（原版 `servers.json`
+//!   实体数组形态），承载 WebDAV 同步/远程书库服务器配置。
 //!
 //! 兼容语义（防复发规定 9：备份格式版本化）：恢复器按字段驱动解析，
 //! 全部列表字段 `#[serde(default)]`——旧备份（无 version 或 version<2）
 //! 缺失的新表字段按空数组处理，仍可正常恢复；恢复时对 v1 整数布尔做归一整形。
+//! `servers` 缺失（v1/v2 备份）时**不触碰库内 servers**，对齐原版
+//! `Restore.kt:379-390` 仅在 `servers.json` 存在时 insert 的语义。
 
 use std::fs;
 use std::path::Path;
@@ -27,18 +31,19 @@ use legado_db::{
     DictRule, DictRuleRepository, HighlightRepository, HighlightRuleRepository, HttpTts,
     HttpTtsRepository, KeyboardAssist, KeyboardAssistRepository, ReadRecord, ReadRecordRepository,
     ReplaceRuleRepository, RssSourceRepository, RssStarRecord, RssStarRepository, RuleSubRecord,
-    RuleSubRepository, SearchKeywordRepository, TxtTocRuleRecord, TxtTocRuleRepository,
+    RuleSubRepository, SearchKeywordRepository, ServerRepository, TxtTocRuleRecord,
+    TxtTocRuleRepository,
 };
 
 use crate::db_state::with_database;
 
 /// 当前备份格式版本（写入侧；恢复侧按字段兼容，不按版本分叉）
-pub const BACKUP_VERSION: i32 = 2;
+pub const BACKUP_VERSION: i32 = 3;
 
 /// 备份数据结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupData {
-    /// 备份版本（v1=初版六类；v2=扩表批十类，见模块注释的版本语义）
+    /// 备份版本（v1=初版六类；v2=扩表批十类；v3=servers 表，见模块注释的版本语义）
     #[serde(default = "default_version")]
     pub version: i32,
     /// 备份时间戳（毫秒）
@@ -92,6 +97,13 @@ pub struct BackupData {
     /// 键盘辅助规则列表（v2 新增，对齐原版 keyboardAssists.json）
     #[serde(default, rename = "keyboardAssists")]
     pub keyboard_assists: Vec<serde_json::Value>,
+    /// 服务器配置列表（v3 新增，对齐原版 servers.json 实体数组）
+    ///
+    /// 元素形态为 `legado_core::models::Server`（`id`/`name`/`type`/`config`/
+    /// `sortNumber`）。旧备份缺该键时解析为空数组——恢复器据空数组跳过，
+    /// 不清库内既有 servers（对齐原版 Restore 缺 servers.json 不处理）。
+    #[serde(default)]
+    pub servers: Vec<serde_json::Value>,
 }
 
 fn default_version() -> i32 {
@@ -115,8 +127,8 @@ pub struct RestoreStats {
 
 /// 创建备份到指定路径
 ///
-/// 收集 BackupData 全部 16 类数据（v2 覆盖面，对齐原版 `Backup.kt:279-330`
-/// 中所有表已在库的类别），统一经各 repository 读取后模型序列化，
+/// 收集 BackupData 全部 17 类数据（v3 覆盖面，对齐原版 `Backup.kt:279-330`
+/// 中所有表已在库的类别 + `servers.json`），统一经各 repository 读取后模型序列化，
 /// 写入 JSON 文件，返回备份文件路径。
 pub fn backup_create(path: &str) -> LegadoResult<String> {
     let now = std::time::SystemTime::now()
@@ -249,6 +261,13 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             .filter_map(|k| serde_json::to_value(&k).ok())
             .collect();
 
+        // 服务器配置（v3：servers 表全量，形态对齐原版 servers.json）
+        let servers: Vec<serde_json::Value> = ServerRepository::new(conn)
+            .find_all()?
+            .into_iter()
+            .filter_map(|s| serde_json::to_value(&s).ok())
+            .collect();
+
         Ok(BackupData {
             version: BACKUP_VERSION,
             backup_time: now,
@@ -268,6 +287,7 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             http_tts,
             dict_rules,
             keyboard_assists,
+            servers,
         })
     })?;
 
@@ -576,6 +596,20 @@ fn restore_backup_in_tx(conn: &Connection, backup: &BackupData) -> LegadoResult<
                 Err(e) => log::warn!("恢复键盘辅助规则失败（已跳过）: {e}"),
             },
             Err(e) => log::warn!("恢复键盘辅助规则解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // 服务器配置（v3：按 id REPLACE，对齐原版 Restore.kt:379-390 的
+    // `serverDao.insert(*it.toTypedArray())`；列表为空 = 备份无该键或空表，
+    // 直接跳过，**不清库内 servers**）
+    let server_repo = ServerRepository::new(conn);
+    for value in &backup.servers {
+        match serde_json::from_value::<legado_core::models::Server>(value.clone()) {
+            Ok(server) => match server_repo.upsert(&server) {
+                Ok(_) => {}
+                Err(e) => log::warn!("恢复服务器配置失败（已跳过）: {} - {e}", server.name),
+            },
+            Err(e) => log::warn!("恢复服务器配置解析失败（已跳过）: {e}"),
         }
     }
 
@@ -923,6 +957,7 @@ mod tests {
             http_tts: vec![],
             dict_rules: vec![],
             keyboard_assists: vec![],
+            servers: vec![],
         }
     }
 
@@ -947,6 +982,7 @@ mod tests {
                 "httpTTS",
                 "dictRules",
                 "keyboardAssists",
+                "servers",
             ] {
                 conn.execute(&format!("DELETE FROM {table}"), [])
                     .map_err(|e| LegadoError::Database(format!("清空 {table} 失败: {e}")))?;
@@ -1843,14 +1879,137 @@ mod tests {
         // 验证 JSON 格式与版本
         let content = fs::read_to_string(&backup_path).unwrap();
         let data: BackupData = serde_json::from_str(&content).unwrap();
-        assert_eq!(data.version, BACKUP_VERSION, "新备份应携带当前格式版本 v2");
+        assert_eq!(data.version, BACKUP_VERSION, "新备份应携带当前格式版本 v3");
         assert!(data.backup_time > 0);
+        assert!(
+            content.contains("\"servers\""),
+            "v3 备份应包含 servers 字段：{content}"
+        );
 
         // 恢复备份
         let restore_result = backup_restore(path_str);
         assert!(restore_result.is_ok());
 
         // 清理
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批8] servers 备份→清库→恢复→逐字段 diff
+    ///
+    /// 对齐原版 `Backup.kt:304-311`（servers.json = serverDao.all）与
+    /// `Restore.kt:379-390`（按 id REPLACE insert）。
+    #[test]
+    fn test_servers_backup_restore_roundtrip() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_roundtrip_servers");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("servers_roundtrip.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        // 种子：默认 WebDAV（负数主键）+ 用户自建服务器
+        let default_server = legado_core::models::Server {
+            id: legado_db::DEFAULT_WEBDAV_SERVER_ID,
+            name: legado_db::DEFAULT_WEBDAV_SERVER_NAME.to_string(),
+            server_type: legado_core::models::ServerType::WebDav,
+            config: Some(
+                r#"{"url":"https://dav.example.com/","username":"u","password":"p"}"#.to_string(),
+            ),
+            sort_number: 1,
+        };
+        let custom_server = legado_core::models::Server {
+            id: 1700000000123,
+            name: "网盘B".to_string(),
+            server_type: legado_core::models::ServerType::WebDav,
+            config: Some(
+                r#"{"url":"https://dav2.example.com/","username":"u2","password":"p2"}"#
+                    .to_string(),
+            ),
+            sort_number: 2,
+        };
+        with_database(|db| {
+            let repo = ServerRepository::new(db.connection());
+            repo.upsert(&default_server)?;
+            repo.upsert(&custom_server)?;
+            Ok(())
+        })
+        .unwrap();
+
+        // 备份 → 清库 → 恢复
+        assert!(backup_create(path_str).is_ok());
+        with_database(|db| {
+            db.connection()
+                .execute("DELETE FROM servers", [])
+                .map_err(|e| LegadoError::Database(format!("清空 servers 失败: {e}")))?;
+            Ok(())
+        })
+        .unwrap();
+        assert!(backup_restore(path_str).is_ok());
+
+        let restored =
+            with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
+        assert_eq!(restored.len(), 2, "应恢复 2 条服务器配置");
+        assert_eq!(
+            serde_json::to_value(&restored[0]).unwrap(),
+            serde_json::to_value(&default_server).unwrap(),
+            "默认 WebDAV 服务器全字段应往返一致（含负数主键）"
+        );
+        assert_eq!(
+            serde_json::to_value(&restored[1]).unwrap(),
+            serde_json::to_value(&custom_server).unwrap(),
+            "自建服务器全字段应往返一致"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批8] 旧 v1/v2 备份无 servers 键：恢复不崩、且不清库内既有 servers
+    ///
+    /// 对齐原版 `Restore.kt:379-390`：仅当 `servers.json` 文件存在才 insert；
+    /// 缺失即不处理（不 delete-all）。
+    #[test]
+    fn test_legacy_backup_without_servers_keeps_existing_rows() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        // 库内已有服务器配置（恢复旧备份不得清除）
+        with_database(|db| {
+            ServerRepository::new(db.connection()).upsert(&legado_core::models::Server {
+                id: legado_db::DEFAULT_WEBDAV_SERVER_ID,
+                name: "保留".to_string(),
+                server_type: legado_core::models::ServerType::WebDav,
+                config: Some(r#"{"url":"https://keep.example.com/"}"#.to_string()),
+                sort_number: 0,
+            })?;
+            Ok(())
+        })
+        .unwrap();
+
+        let dir = std::env::temp_dir().join("legado_backup_legacy_no_servers");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("legacy_v2.json");
+        // 真实旧 v2 备份形态：无 servers 键
+        fs::write(
+            &backup_path,
+            r#"{"version":2,"backupTime":1700000000000,"books":[],"bookSources":[]}"#,
+        )
+        .unwrap();
+
+        // 解析应为空 servers（serde default）
+        let content = fs::read_to_string(&backup_path).unwrap();
+        let parsed: BackupData = serde_json::from_str(&content).unwrap();
+        assert!(parsed.servers.is_empty());
+
+        // 恢复不崩，库内行保留
+        assert!(backup_restore(backup_path.to_str().unwrap()).is_ok());
+        let restored =
+            with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
+        assert_eq!(restored.len(), 1, "旧备份缺 servers 键不得清空库内配置");
+        assert_eq!(restored[0].name, "保留");
+
         let _ = fs::remove_dir_all(&dir);
     }
 

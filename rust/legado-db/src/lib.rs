@@ -3,8 +3,8 @@
 //! 提供完整的 SQLite 数据库访问能力，包括：
 //!
 //! - [`connection`] — 连接管理与 PRAGMA 配置（含自动迁移）
-//! - [`schema`] — 全量表结构 DDL（v99，27 张表）
-//! - [`repository`] — Repository 模式的数据访问层（27 个 Repository）
+//! - [`schema`] — 全量表结构 DDL（v112，28 张表）
+//! - [`repository`] — Repository 模式的数据访问层（28 个 Repository）
 //! - [`migration`] — 基于版本号的增量迁移框架（MigrationRegistry）
 //! - [`import`] — Room JSON 数据导入工具
 //! - [`default_data`] — 默认数据导入（JSON 格式）
@@ -64,6 +64,9 @@ pub use repository::rss_star_repository::{RssStarRecord, RssStarRepository};
 pub use repository::rule_sub_repository::{RuleSubRecord, RuleSubRepository};
 pub use repository::search_book_repository::SearchBookRepository;
 pub use repository::search_keyword_repository::SearchKeywordRepository;
+pub use repository::server_repository::{
+    ServerRepository, DEFAULT_WEBDAV_SERVER_ID, DEFAULT_WEBDAV_SERVER_NAME,
+};
 pub use repository::txt_toc_rule_repository::{TxtTocRuleRecord, TxtTocRuleRepository};
 pub use schema::SCHEMA_VERSION;
 

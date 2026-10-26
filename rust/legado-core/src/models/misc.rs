@@ -250,6 +250,45 @@ mod tests {
         assert_eq!(de, ServerType::WebDav);
     }
 
+    /// 原版 servers.json 实体形态往返（批8：备份 v3 / Room 导入共用键名）
+    ///
+    /// 对齐 `data/entities/Server.kt`（Gson 键 `id`/`name`/`type`/`config`/
+    /// `sortNumber`）与 `Server.WebDavConfig`（`url`/`username`/`password`）。
+    #[test]
+    fn test_server_room_json_roundtrip() {
+        let raw = r#"{
+            "id": 1711111111111,
+            "name": "网盘",
+            "type": "WEBDAV",
+            "config": "{\"url\":\"https://dav.example.com/\",\"username\":\"u\",\"password\":\"p\"}",
+            "sortNumber": 2
+        }"#;
+        let server: Server = serde_json::from_str(raw).unwrap();
+        assert_eq!(server.id, 1711111111111);
+        assert_eq!(server.name, "网盘");
+        assert_eq!(server.server_type, ServerType::WebDav);
+        assert_eq!(server.sort_number, 2);
+        let config: WebDavConfig = serde_json::from_str(server.config.as_deref().unwrap()).unwrap();
+        assert_eq!(config.url, "https://dav.example.com/");
+        assert_eq!(config.username, "u");
+        assert_eq!(config.password, "p");
+
+        // 序列化回原版键名（备份/往返路径）
+        let value = serde_json::to_value(&server).unwrap();
+        assert_eq!(value["type"], "WEBDAV");
+        assert_eq!(value["sortNumber"], 2);
+        assert_eq!(value["id"], 1711111111111i64);
+    }
+
+    /// 缺省字段按原版默认值解析（config 可空、sortNumber=0、type=WEBDAV）
+    #[test]
+    fn test_server_defaults() {
+        let server: Server = serde_json::from_str(r#"{"id":-1,"name":"默认"}"#).unwrap();
+        assert_eq!(server.server_type, ServerType::WebDav);
+        assert_eq!(server.sort_number, 0);
+        assert!(server.config.is_none());
+    }
+
     #[test]
     fn test_rss_article_default_group() {
         let json = "{}";
