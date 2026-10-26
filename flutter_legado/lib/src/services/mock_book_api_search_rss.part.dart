@@ -407,6 +407,12 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
   Future<void> rssClearSortCache(String sourceUrl) async {}
 
   /// 刷新 RSS 列表（Mock：5 篇假文章，恒无下一页）
+  ///
+  /// **联调注意（P2-12）**：Mock 完全忽略 `sortUrl` / `key`，也不按分类读写
+  /// 缓存——不论切到哪个分类、搜索什么关键词，返回的都是同一组假文章。
+  /// 真实 Rust 侧按 `AnalyzeUrl(sortUrl, page=1, key)` 请求并解析分类列表。
+  /// 因此批15d 联调时，Mock 模式下只能验证「切换分类/搜索」的交互链路与
+  /// 状态流转，不能验证分类数据差异、登录态与分页真值。
   @override
   Future<String> rssRefreshArticles(
     String sourceUrl,
