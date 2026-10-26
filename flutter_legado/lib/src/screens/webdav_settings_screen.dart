@@ -280,12 +280,13 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   }
 
   Future<void> _doRestoreFromLocal() async {
-    // [批7c P2-9] 恢复实现目前只消费 JSON 备份；选择器同步收敛为 .json，
-    // 避免选中原版 zip 备份后走到不支持的恢复链（zip 恢复器批9 立项）。
+    // [批9] 本地恢复支持两种容器：我方单文件 JSON 备份与原版多文件 zip 备份
+    // （Rust 侧按文件魔数 PK\x03\x04 分流，FFI 签名不变）。原版 zip 内的
+    // 偏好快照 config.xml 与媒体目录不恢复（见 webdav 恢复登记项）。
     final result = await FilePicker.platform.pickFiles(
-      dialogTitle: '选择本地备份文件（仅支持 .json，原版 zip 备份待后续版本）',
+      dialogTitle: '选择本地备份文件（支持 .json 备份与 .zip 原版备份）',
       type: FileType.custom,
-      allowedExtensions: ['json'],
+      allowedExtensions: ['json', 'zip'],
     );
     final backupPath = result?.files.single.path;
     if (backupPath == null) return;

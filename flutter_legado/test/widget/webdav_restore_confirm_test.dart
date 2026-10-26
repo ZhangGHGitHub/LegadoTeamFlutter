@@ -223,10 +223,11 @@ void main() {
     expect(find.text('恢复中…'), findsNothing);
   });
 
-  testWidgets('确认本地恢复：选择器仅允许 .json，选择文件后调用 restore', (tester) async {
+  testWidgets('确认本地恢复：选择器允许 .json/.zip，选择文件后调用 restore', (tester) async {
     // widget 测试的 FakeAsync 不驱动真实文件 IO：走 .json 备份会触发
-    // RestoreIgnorePrefs 的真实读取而挂起，故恢复执行链用 .zip 桩路径；
-    // 选择器约束改由 lastType/lastAllowedExtensions 直接断言。
+    // RestoreIgnorePrefs 的真实读取而挂起，故恢复执行链用 .zip 桩路径
+    //（批9 起 .zip 为真实支持的原版备份容器）；选择器约束由
+    // lastType/lastAllowedExtensions 直接断言。
     final backupPath = fakeBackupPath('legado_backup_ok.zip');
     final picker = _FakeFilePicker(
       FilePickerResult([
@@ -243,7 +244,7 @@ void main() {
 
     expect(picker.pickCalls, 1);
     expect(picker.lastType, FileType.custom);
-    expect(picker.lastAllowedExtensions, ['json']);
+    expect(picker.lastAllowedExtensions, ['json', 'zip']);
     verify(() => mockApi.restore(backupPath)).called(1);
   });
 }

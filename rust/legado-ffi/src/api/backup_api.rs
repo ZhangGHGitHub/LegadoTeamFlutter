@@ -17,23 +17,61 @@
 //! `servers` 缺失（v1/v2 备份）时**不触碰库内 servers**，对齐原版
 //! `Restore.kt:379-390` 仅在 `servers.json` 存在时 insert 的语义；存在时按
 //! 备份中的原主键（含 `id = 0`）REPLACE 写入，不做毫秒重分配。
+//!
+//! # 原版 zip 备份恢复（批9，用户裁决⑥）
+//!
+//! 入口按**文件魔数**分流：`PK\x03\x04` / `PK\x05\x06` 走 zip 分支，其余按自有
+//! 单文件 JSON 解析（[`BackupData`]）。zip 分支只做「读包 + 逐文件转 [`BackupData`]」，
+//! 落库仍走同一个 [`restore_backup_in_tx`]（单实现原则，不复制第二套写库逻辑）。
+//!
+//! 原版 `Backup.kt` 写出的文件清单（`selectedBackupFileNames` + 固定写出项）：
+//! - 书架/分组：`bookshelf.json`、`bookGroup.json`
+//! - 标注：`bookmark.json`、`highlight.json`（`writeEmpty=true`）、`highlightRule.json`
+//! - 源：`bookSource.json`、`rssSources.json`、`rssStar.json`、`sourceSub.json`
+//! - 规则：`replaceRule.json`、`txtTocRule.json`、`httpTTS.json`、`keyboardAssists.json`、
+//!   `dictRule.json`、`autoTask.json`、`servers.json`
+//! - 历史：`readRecord.json`、`searchHistory.json`
+//! - 设置：`readConfig.json`、`shareReadConfig.json`、`themeConfig.json`、`coverRule.json`、
+//!   `directLinkUploadRule.json`、`config.xml`、`videoConfig.xml`
+//! - 可选加密：`cookies.json`、`runtimeSourceCache.json`
+//! - 媒体：`covers/`（可含子目录）、`bg/`
+//!
+//! 加密口径（`BackupAES` + hutool 5.8 `new AES(key)`）：
+//! - 密钥 = `MD5(password)` 小写十六进制串的**前 16 个 ASCII 字符**（不做 hex 解码）；
+//! - 算法 = **AES-128-ECB / PKCS5Padding**（hutool `AES(byte[])` 默认 ECB）；
+//! - `servers.json` **总是**先尝试加密（失败才退回明文）、恢复侧以「是否 JSON 数组」
+//!   判别明文；`cookies.json` / `runtimeSourceCache.json` 仅在设置备份密码时写出，
+//!   因此**文件存在即说明备份设过密码**——我方无密码输入面，直接给出明确错误文案
+//!   （对齐原版 `Restore.kt` 在 cookies 存在且密码为空时上抛的语义）；
+//! - `config.xml` 内的 `webDavPassword` 同密钥加密（本实现跳过整个偏好快照，见下）。
+//!
+//! 未映射项（本批登记，不静默）：`readConfig.json` / `shareReadConfig.json` /
+//! `themeConfig.json` / `coverRule.json` / `directLinkUploadRule.json` /
+//! `config.xml` / `videoConfig.xml` 与媒体目录 `covers/`、`bg/` 只记 warn 日志后跳过——
+//! 我方没有等价的阅读主题配置面或封面/背景落盘目录（封面按 URL 直取、不落本地
+//! `covers/`），恢复媒体会写到无人消费的目录并引入路径安全面；书内指向
+//! `.../covers/xxx` 的绝对封面路径按原版 remap 失败语义置空（回落到书源封面 URL）。
 
+use std::collections::HashMap;
 use std::fs;
+use std::io::Read;
 use std::path::Path;
 
+use base64::Engine as _;
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 
+use legado_core::crypto::AesCrypto;
 use legado_core::models::{Book, BookSource, Bookmark, RssSource};
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::repository::Repository;
 use legado_db::{
-    BookGroup, BookGroupRepository, BookRepository, BookSourceRepository, BookmarkRepository,
-    DictRule, DictRuleRepository, HighlightRepository, HighlightRuleRepository, HttpTts,
-    HttpTtsRepository, KeyboardAssist, KeyboardAssistRepository, ReadRecord, ReadRecordRepository,
-    ReplaceRuleRepository, RssSourceRepository, RssStarRecord, RssStarRepository, RuleSubRecord,
-    RuleSubRepository, SearchKeywordRepository, ServerRepository, TxtTocRuleRecord,
-    TxtTocRuleRepository,
+    AutoTaskRepository, BookGroup, BookGroupRepository, BookRepository, BookSourceRepository,
+    BookmarkRepository, DictRule, DictRuleRepository, HighlightRepository, HighlightRuleRepository,
+    HttpTts, HttpTtsRepository, KeyboardAssist, KeyboardAssistRepository, ReadRecord,
+    ReadRecordRepository, ReplaceRuleRepository, RssSourceRepository, RssStarRecord,
+    RssStarRepository, RuleSubRecord, RuleSubRepository, SearchKeywordRepository, ServerRepository,
+    TxtTocRuleRecord, TxtTocRuleRepository,
 };
 
 use crate::db_state::with_database;
@@ -105,6 +143,41 @@ pub struct BackupData {
     /// 不清库内既有 servers（对齐原版 Restore 缺 servers.json 不处理）。
     #[serde(default)]
     pub servers: Vec<serde_json::Value>,
+    /// 自动任务列表（批9 新增，对齐原版 `autoTask.json`）
+    ///
+    /// 仅用于「恢复原版 zip 备份」：我方 `backup_create` 尚未收集该表，
+    /// 序列化时按 `skip_serializing_if` 省略，故自有 JSON 备份形状不变
+    /// （BackupData 版本仍为 v3）。收到该键时按主键 `id` REPLACE 写入。
+    #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "autoTasks")]
+    pub auto_tasks: Vec<serde_json::Value>,
+}
+
+impl BackupData {
+    /// 构造空备份（全部列表为空；供 zip 适配与测试使用）
+    pub fn empty() -> Self {
+        Self {
+            version: BACKUP_VERSION,
+            backup_time: 0,
+            books: Vec::new(),
+            bookmarks: Vec::new(),
+            replace_rules: Vec::new(),
+            book_sources: Vec::new(),
+            rss_sources: Vec::new(),
+            read_records: Vec::new(),
+            book_groups: Vec::new(),
+            rss_stars: Vec::new(),
+            highlights: Vec::new(),
+            highlight_rules: Vec::new(),
+            search_history: Vec::new(),
+            rule_subs: Vec::new(),
+            txt_toc_rules: Vec::new(),
+            http_tts: Vec::new(),
+            dict_rules: Vec::new(),
+            keyboard_assists: Vec::new(),
+            servers: Vec::new(),
+            auto_tasks: Vec::new(),
+        }
+    }
 }
 
 fn default_version() -> i32 {
@@ -289,6 +362,7 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             dict_rules,
             keyboard_assists,
             servers,
+            auto_tasks: Vec::new(),
         })
     })?;
 
@@ -327,22 +401,481 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
 ///   `unchecked_transaction()` 开启事务（rusqlite 0.31 `transaction()`
 ///   需 `&mut Connection`，缘由见 legado-db connection.rs 文档）。
 pub fn backup_restore(path: &str) -> LegadoResult<String> {
-    let content = fs::read_to_string(path)
+    let bytes = fs::read(path)
+        .map_err(|e| LegadoError::Io(std::io::Error::other(format!("读取备份文件失败: {e}"))))?;
+
+    // 批9：按魔数分流——原版 zip 多文件备份 vs 自有单文件 JSON
+    if is_zip_backup(&bytes) {
+        return restore_from_zip(&bytes);
+    }
+
+    let content = String::from_utf8(bytes)
         .map_err(|e| LegadoError::Io(std::io::Error::other(format!("读取备份文件失败: {e}"))))?;
 
     let backup: BackupData = serde_json::from_str(&content)
         .map_err(|e| LegadoError::Internal(format!("备份文件解析失败: {e}")))?;
 
+    restore_backup_data(&backup)
+}
+
+/// 解析结果落库（JSON 与 zip 两条入口共用，单实现原则）
+///
+/// 事务边界与错误语义见 [`backup_restore`] 文档：条目级错误 warn 跳过并照常
+/// 提交，未捕获 `Err` 整体回滚。
+fn restore_backup_data(backup: &BackupData) -> LegadoResult<String> {
     let stats = with_database(|db| {
         let conn = db.connection();
         legado_db::connection::in_transaction(conn, "备份恢复", |conn| {
-            restore_backup_in_tx(conn, &backup)
+            restore_backup_in_tx(conn, backup)
         })
     })?;
 
     let result = serde_json::to_string(&stats)
         .map_err(|e| LegadoError::Internal(format!("统计序列化失败: {e}")))?;
     Ok(result)
+}
+
+// ─── 原版 zip 备份恢复（批9）──────────────────────────────────────────
+
+/// zip 本地文件头魔数（`PK\x03\x04`）
+const ZIP_ENTRY_MAGIC: [u8; 4] = *b"PK\x03\x04";
+/// 空 zip（仅中央目录结束记录 `PK\x05\x06`）——同样按 zip 分流
+const ZIP_EMPTY_MAGIC: [u8; 4] = *b"PK\x05\x06";
+/// 单个数据条目解压上限（256 MiB）：原版无上限，本实现为解压炸弹加固
+const MAX_BACKUP_ENTRY_BYTES: u64 = 256 * 1024 * 1024;
+
+/// 原版 `Backup.kt` 写出的、本实现会读取的数据文件（其余条目不解压）
+const ZIP_DATA_FILES: [&str; 20] = [
+    "bookshelf.json",
+    "bookmark.json",
+    "highlight.json",
+    "highlightRule.json",
+    "bookGroup.json",
+    "bookSource.json",
+    "rssSources.json",
+    "rssStar.json",
+    "replaceRule.json",
+    "readRecord.json",
+    "searchHistory.json",
+    "sourceSub.json",
+    "txtTocRule.json",
+    "httpTTS.json",
+    "keyboardAssists.json",
+    "dictRule.json",
+    "autoTask.json",
+    "servers.json",
+    "cookies.json",
+    "runtimeSourceCache.json",
+];
+
+/// 原版 zip 内存在、但本实现无对应落库面的文件（只报告不落库，登记见模块注释）
+const ZIP_UNMAPPED_FILES: [&str; 7] = [
+    "readConfig.json",
+    "shareReadConfig.json",
+    "themeConfig.json",
+    "coverRule.json",
+    "directLinkUploadRule.json",
+    "config.xml",
+    "videoConfig.xml",
+];
+
+/// 原版 zip 备份读取结果
+///
+/// 只解压 [`ZIP_DATA_FILES`] 命中条目的内容；`entry_names` 保留全部文件条目名，
+/// 用于报告媒体目录与未映射文件（**不解压、不落盘**，因此不存在路径逃逸面）。
+struct ZipBackupArchive {
+    /// 数据文件内容（键为 zip 内相对路径，如 `bookshelf.json`）
+    files: HashMap<String, Vec<u8>>,
+    /// 全部文件条目名
+    entry_names: Vec<String>,
+}
+
+/// 是否原版 zip 备份（按魔数判定，见模块注释）
+fn is_zip_backup(bytes: &[u8]) -> bool {
+    bytes.starts_with(&ZIP_ENTRY_MAGIC) || bytes.starts_with(&ZIP_EMPTY_MAGIC)
+}
+
+/// 读取 zip 备份：校验条目路径、只解压已知数据文件
+fn read_zip_backup(bytes: &[u8]) -> LegadoResult<ZipBackupArchive> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
+        .map_err(|e| LegadoError::Internal(format!("备份 zip 解析失败: {e}")))?;
+    let mut files: HashMap<String, Vec<u8>> = HashMap::new();
+    let mut entry_names: Vec<String> = Vec::new();
+
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|e| LegadoError::Internal(format!("读取备份 zip 条目失败: {e}")))?;
+        if entry.is_dir() {
+            continue;
+        }
+        // 部分第三方打包工具会给条目加 `./` 前缀；去掉后再做安全校验
+        //（`./` 不属于 `..` 逃逸，且去前缀后仍须通过 [`is_safe_zip_entry_name`]）
+        let name = entry.name().trim_start_matches("./").to_string();
+        if !is_safe_zip_entry_name(&name) {
+            log::warn!("跳过路径不安全的备份 zip 条目: {name}");
+            continue;
+        }
+        entry_names.push(name.clone());
+        if !ZIP_DATA_FILES.contains(&name.as_str()) {
+            continue;
+        }
+        if entry.size() > MAX_BACKUP_ENTRY_BYTES {
+            log::warn!(
+                "备份条目超过解压上限（已跳过）: {name} 声明 {} 字节（上限 {MAX_BACKUP_ENTRY_BYTES}）",
+                entry.size()
+            );
+            continue;
+        }
+        let mut buf = Vec::with_capacity(entry.size() as usize);
+        entry
+            .read_to_end(&mut buf)
+            .map_err(|e| LegadoError::Internal(format!("读取备份 zip 条目 {name} 失败: {e}")))?;
+        files.insert(name, buf);
+    }
+
+    Ok(ZipBackupArchive { files, entry_names })
+}
+
+/// zip 条目路径安全校验（不接受绝对路径、盘符、反斜杠与 `.`/`..` 段）
+///
+/// 本实现不从 zip 解包到磁盘，此处为纵深防御：路径不合法的条目连内容都不读。
+fn is_safe_zip_entry_name(name: &str) -> bool {
+    if name.is_empty() || name.contains('\\') || name.contains('\0') {
+        return false;
+    }
+    if name.starts_with('/') {
+        return false;
+    }
+    if name.get(1..3).is_some_and(|s| s.starts_with(":/")) {
+        return false;
+    }
+    !name
+        .split('/')
+        .any(|segment| segment == "." || segment == "..")
+}
+
+/// zip 恢复入口：读包 → 加密前置校验 → 报告未映射项 → 转 [`BackupData`] → 同一恢复体落库
+fn restore_from_zip(bytes: &[u8]) -> LegadoResult<String> {
+    let archive = read_zip_backup(bytes)?;
+    ensure_zip_encryption_supported(&archive)?;
+    report_unmapped_zip_entries(&archive);
+    let backup = backup_data_from_zip(&archive);
+    restore_backup_data(&backup)
+}
+
+/// 加密内容前置校验（对齐原版「无备份密码即拒绝恢复登录信息」语义）
+///
+/// `cookies.json` / `runtimeSourceCache.json` 只在原版设置备份密码时写出
+/// （`Backup.kt` 在密码为空且启用这两类内容时直接抛错），因此：
+/// - 文件存在且内容不是明文 JSON 数组 → 备份设过密码，我方无密码输入面，
+///   返回明确错误（不静默跳过）；此时**不启动事务**，库内零残留；
+/// - 明文 JSON 数组 → 历史/第三方产出的明文包，登记后跳过该类（不静默）。
+fn ensure_zip_encryption_supported(archive: &ZipBackupArchive) -> LegadoResult<()> {
+    for (name, label) in [
+        ("cookies.json", "登录信息"),
+        ("runtimeSourceCache.json", "书源运行变量"),
+    ] {
+        let Some(bytes) = archive.files.get(name) else {
+            continue;
+        };
+        let Some(text) = decode_zip_text(name, bytes) else {
+            continue;
+        };
+        if text.starts_with('[') {
+            log::warn!("备份包含 {name}（{label}），当前版本不恢复该表（已跳过）");
+            continue;
+        }
+        return Err(LegadoError::Internal(format!(
+            "该备份包含原版加密的{label}文件 {name}，说明备份时设置过备份密码；\
+             当前版本不支持输入备份密码，无法恢复。请在原版 App 的备份设置中清除备份密码后重新备份。"
+        )));
+    }
+    Ok(())
+}
+
+/// 报告未映射内容（媒体目录与配置快照）：只记日志，不落盘
+fn report_unmapped_zip_entries(archive: &ZipBackupArchive) {
+    if archive.files.is_empty() && !archive.entry_names.is_empty() {
+        log::warn!("备份 zip 内未找到原版数据文件（条目可能嵌套在子目录），本次恢复不写入任何表");
+    }
+    let mut reported_media: Vec<&str> = Vec::new();
+    for name in &archive.entry_names {
+        if let Some(prefix) = ["covers/", "bg/"]
+            .iter()
+            .find(|prefix| name.starts_with(**prefix))
+        {
+            let dir = prefix.trim_end_matches('/');
+            if !reported_media.contains(&dir) {
+                reported_media.push(dir);
+                log::warn!("备份包含媒体目录 {dir}/，当前版本不恢复图片文件（已跳过）");
+            }
+            continue;
+        }
+        if ZIP_UNMAPPED_FILES.contains(&name.as_str()) {
+            log::warn!("备份包含 {name}，当前版本无对应配置面（已跳过）");
+        }
+    }
+}
+
+/// 原版 zip 文件 → [`BackupData`]（只做输入适配，游标语义对齐原版 `Restore.kt` 顺序）
+fn backup_data_from_zip(archive: &ZipBackupArchive) -> BackupData {
+    let mut data = BackupData::empty();
+    data.books = zip_json_array(archive, "bookshelf.json")
+        .into_iter()
+        .map(normalize_zip_book)
+        .collect();
+    data.book_groups = zip_json_array(archive, "bookGroup.json")
+        .into_iter()
+        .map(normalize_zip_book_group)
+        .collect();
+    data.bookmarks = zip_json_array(archive, "bookmark.json");
+    data.highlights = zip_json_array(archive, "highlight.json");
+    data.highlight_rules = zip_json_array(archive, "highlightRule.json")
+        .into_iter()
+        .map(normalize_zip_sort_order)
+        .collect();
+    data.book_sources = zip_json_array(archive, "bookSource.json");
+    data.rss_sources = zip_json_array(archive, "rssSources.json");
+    data.rss_stars = zip_json_array(archive, "rssStar.json");
+    data.replace_rules = zip_json_array(archive, "replaceRule.json")
+        .into_iter()
+        .map(normalize_zip_sort_order)
+        .collect();
+    data.read_records = zip_json_array(archive, "readRecord.json");
+    data.search_history = zip_json_array(archive, "searchHistory.json");
+    data.rule_subs = zip_json_array(archive, "sourceSub.json")
+        .into_iter()
+        .map(normalize_zip_rule_sub)
+        .collect();
+    data.txt_toc_rules = zip_json_array(archive, "txtTocRule.json");
+    data.http_tts = zip_json_array(archive, "httpTTS.json")
+        .into_iter()
+        .map(normalize_zip_http_tts)
+        .collect();
+    data.dict_rules = zip_json_array(archive, "dictRule.json");
+    data.keyboard_assists = zip_json_array(archive, "keyboardAssists.json");
+    data.auto_tasks = zip_json_array(archive, "autoTask.json");
+    data.servers = zip_servers(archive);
+    data
+}
+
+/// 读取并解析一个数据文件为 JSON 数组
+///
+/// 口径对齐原版 `Restore.fileToListT`：文件不存在 → debug 跳过；解析失败 →
+/// warn 跳过**该类**（不影响其余类别与事务提交）。
+fn zip_json_array(archive: &ZipBackupArchive, name: &str) -> Vec<serde_json::Value> {
+    let Some(bytes) = archive.files.get(name) else {
+        log::debug!("原版备份不含 {name}，按原版语义跳过该类");
+        return Vec::new();
+    };
+    let Some(text) = decode_zip_text(name, bytes) else {
+        return Vec::new();
+    };
+    match serde_json::from_str::<Vec<serde_json::Value>>(text) {
+        Ok(list) => list,
+        Err(e) => {
+            log::warn!("{name} 解析失败（已跳过该类）: {e}");
+            Vec::new()
+        }
+    }
+}
+
+/// 解出 zip 条目文本（UTF-8，容忍 BOM）；非 UTF-8 时 warn 并返回 `None`
+fn decode_zip_text<'a>(name: &str, bytes: &'a [u8]) -> Option<&'a str> {
+    match std::str::from_utf8(bytes) {
+        Ok(text) => Some(text.trim_start_matches('\u{feff}').trim()),
+        Err(e) => {
+            log::warn!("{name} 不是 UTF-8 文本（已跳过该类）: {e}");
+            None
+        }
+    }
+}
+
+/// 书内封面路径归一：原版绝对 `<...>/covers/<file>` 路径在未恢复媒体时置空
+///
+/// 对齐原版 `Restore.remapRestoredCoverPath`：目标封面文件不存在时返回 null。
+/// 我方媒体目录不落盘（模块注释），故这类路径必然悬空，置空后书架回落到
+/// 书源 `coverUrl`。
+fn normalize_zip_book(mut value: serde_json::Value) -> serde_json::Value {
+    if let serde_json::Value::Object(map) = &mut value {
+        let stale_cover = matches!(
+            map.get("customCoverUrl"),
+            Some(serde_json::Value::String(path)) if is_absolute_cover_path(path)
+        );
+        if stale_cover {
+            map.insert("customCoverUrl".to_string(), serde_json::Value::Null);
+        }
+    }
+    value
+}
+
+/// 分组封面路径归一（同 [`normalize_zip_book`]，键为 `cover`）
+fn normalize_zip_book_group(mut value: serde_json::Value) -> serde_json::Value {
+    if let serde_json::Value::Object(map) = &mut value {
+        let stale_cover = matches!(
+            map.get("cover"),
+            Some(serde_json::Value::String(path)) if is_absolute_cover_path(path)
+        );
+        if stale_cover {
+            map.insert("cover".to_string(), serde_json::Value::Null);
+        }
+    }
+    value
+}
+
+/// 是否为原版绝对封面路径（`/.../covers/<file>` 或 `C:/.../covers/<file>`）
+fn is_absolute_cover_path(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    let absolute =
+        normalized.starts_with('/') || normalized.get(1..3).is_some_and(|s| s.starts_with(":/"));
+    if !absolute {
+        return false;
+    }
+    normalized
+        .rsplit_once('/')
+        .map(|(parent, _)| parent.rsplit('/').next() == Some("covers"))
+        .unwrap_or(false)
+}
+
+/// 规则订阅条目归一：原版 `RuleSub` 键 → 我方 [`RuleSubRecord`] 键
+///
+/// 原版实体（`RuleSub.kt`）：`id`/`name`/`url`/`type`（Int：0 书源、1 订阅源、
+/// 3 替换规则）/`customOrder`/`autoUpdate`/`update`（毫秒）/`updateInterval`/
+/// `silentUpdate`/`js`/`showRule`/`sourceUrl`；**无** `version`/`isEnabled`/
+/// `createdAt` 列，故按 Room 默认值补齐（version 空串、启用、createdAt 取 update）。
+fn normalize_zip_rule_sub(mut value: serde_json::Value) -> serde_json::Value {
+    if let serde_json::Value::Object(map) = &mut value {
+        let sub_type = match map.get("type") {
+            Some(serde_json::Value::Number(n)) => {
+                Some(zip_rule_sub_type(n.as_i64().unwrap_or(0)).to_string())
+            }
+            Some(serde_json::Value::String(s)) => Some(s.clone()),
+            _ => None,
+        };
+        if let Some(sub_type) = sub_type {
+            map.insert("sub_type".to_string(), serde_json::Value::String(sub_type));
+        }
+        if !map.contains_key("last_update") {
+            let update_ms = map
+                .get("update")
+                .and_then(serde_json::Value::as_i64)
+                .unwrap_or(0);
+            map.insert(
+                "last_update".to_string(),
+                serde_json::Value::from(update_ms),
+            );
+            map.insert("created_at".to_string(), serde_json::Value::from(update_ms));
+        }
+        map.entry("version".to_string())
+            .or_insert_with(|| serde_json::Value::String(String::new()));
+        map.entry("is_enabled".to_string())
+            .or_insert(serde_json::Value::Bool(true));
+        map.entry("created_at".to_string())
+            .or_insert(serde_json::Value::from(0));
+    }
+    value
+}
+
+/// Room `ruleSubs.type` 整数 → 我方 `sub_type` 字符串（与 legado-db 映射一致）
+fn zip_rule_sub_type(value: i64) -> &'static str {
+    match value {
+        1 => "rssSource",
+        3 => "replaceRule",
+        _ => "bookSource",
+    }
+}
+
+/// 排序键归一：原版实体属性名为 `order`（Room 列名才是 `sortOrder`），我方模型用 `sortOrder`
+///
+/// 直接影响 `replaceRule.json` / `highlightRule.json`：不改键则排序列全部落到默认值，
+/// 恢复后规则顺序与原版不一致（`ReplaceRule.kt:63-65`、`HighlightRule.kt:39-40`）。
+fn normalize_zip_sort_order(mut value: serde_json::Value) -> serde_json::Value {
+    if let serde_json::Value::Object(map) = &mut value {
+        if !map.contains_key("sortOrder") {
+            if let Some(order) = map.get("order").cloned() {
+                map.insert("sortOrder".to_string(), order);
+            }
+        }
+    }
+    value
+}
+
+/// 在线朗读引擎条目归一：原版 `HttpTTS` 无启用列（引擎始终可用）
+///
+/// 我方 `httpTTS` 表为超集（`isEnabled`），缺键时 serde 默认 false 会把
+/// 引擎全部恢复成停用；这里按原版「无该列即可用」补 `isEnabled = true`。
+fn normalize_zip_http_tts(mut value: serde_json::Value) -> serde_json::Value {
+    if let serde_json::Value::Object(map) = &mut value {
+        map.entry("isEnabled".to_string())
+            .or_insert(serde_json::Value::Bool(true));
+    }
+    value
+}
+
+/// 解析 `servers.json`：明文数组优先，否则按原版空密码密钥解密
+///
+/// 原版 `Backup.kt:304-311` 总是先尝试 `aes.encryptBase64`（失败才落明文），
+/// 恢复侧 `Restore.kt:379-390` 用 `isJsonArray()` 判别明文。无法用空密码
+/// 解密 ⇒ 备份设过密码 ⇒ warn 跳过（对齐原版 `runCatching` 记日志后继续，
+/// 不中断其余表的恢复）。
+fn zip_servers(archive: &ZipBackupArchive) -> Vec<serde_json::Value> {
+    let Some(bytes) = archive.files.get("servers.json") else {
+        return Vec::new();
+    };
+    let Some(text) = decode_zip_text("servers.json", bytes) else {
+        return Vec::new();
+    };
+    if text.starts_with('[') {
+        return match serde_json::from_str::<Vec<serde_json::Value>>(text) {
+            Ok(list) => list,
+            Err(e) => {
+                log::warn!("servers.json 解析失败（已跳过）: {e}");
+                Vec::new()
+            }
+        };
+    }
+    match decrypt_backup_payload(text) {
+        Ok(plain) => match serde_json::from_str::<Vec<serde_json::Value>>(plain.trim()) {
+            Ok(list) => list,
+            Err(e) => {
+                log::warn!("servers.json 解密后解析失败（已跳过）: {e}");
+                Vec::new()
+            }
+        },
+        Err(e) => {
+            log::warn!(
+                "servers.json 无法用空密码解密（原版备份设置过备份密码）；\
+                 当前版本不支持输入备份密码，服务器配置未恢复（已跳过）: {e}"
+            );
+            Vec::new()
+        }
+    }
+}
+
+/// 原版 `BackupAES` 密钥派生：`MD5(password)` 小写十六进制串的前 16 个 ASCII 字节
+///
+/// 注意**不是** hex 解码：Kotlin 侧为 `MD5Utils.md5Encode(password).encodeToByteArray(0, 16)`，
+/// 取的是十六进制字符串前 16 个字符的 UTF-8 字节。
+fn backup_aes_key(password: &str) -> [u8; 16] {
+    let digest = format!("{:x}", md5::compute(password.as_bytes()));
+    let mut key = [0u8; 16];
+    key.copy_from_slice(&digest.as_bytes()[..16]);
+    key
+}
+
+/// 解密原版备份密文（Base64 + AES-128-ECB/PKCS5Padding）
+///
+/// 我方无备份密码输入面，固定按空密码派生密钥：未设密码的原版备份可正常
+/// 解密；设过密码的备份解密失败，由调用方给出明确文案（不静默）。
+fn decrypt_backup_payload(text: &str) -> LegadoResult<String> {
+    let key = backup_aes_key("");
+    let ciphertext = base64::engine::general_purpose::STANDARD
+        .decode(text.trim())
+        .map_err(|e| LegadoError::Internal(format!("备份密文 base64 解码失败: {e}")))?;
+    let plain = AesCrypto::decrypt_ecb(&key, &ciphertext)?;
+    String::from_utf8(plain)
+        .map_err(|e| LegadoError::Internal(format!("备份密文解密结果不是 UTF-8: {e}")))
 }
 
 /// 恢复体：各表逐条恢复（单事务闭包内容，条目级错误 warn 跳过继续）
@@ -613,6 +1146,26 @@ fn restore_backup_in_tx(conn: &Connection, backup: &BackupData) -> LegadoResult<
                 Err(e) => log::warn!("恢复服务器配置失败（已跳过）: {} - {e}", server.name),
             },
             Err(e) => log::warn!("恢复服务器配置解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // 自动任务（批9：原版 autoTask.json；自有 JSON 备份暂无该段，空列表直接跳过）。
+    // 主键为字符串 id（原版 UUID）：缺失/空的条目无法定位行，warn 跳过而非写入
+    // 空主键行（空主键行会与后续同 id 条目互相覆盖）。
+    let auto_task_repo = AutoTaskRepository::new(conn);
+    for value in &backup.auto_tasks {
+        match serde_json::from_value::<legado_core::models::AutoTaskRule>(value.clone()) {
+            Ok(rule) => {
+                if rule.id.trim().is_empty() {
+                    log::warn!("恢复自动任务失败（已跳过）: 缺少 id 主键");
+                    continue;
+                }
+                match auto_task_repo.insert(&rule) {
+                    Ok(_) => {}
+                    Err(e) => log::warn!("恢复自动任务失败（已跳过）: {} - {e}", rule.name),
+                }
+            }
+            Err(e) => log::warn!("恢复自动任务解析失败（已跳过）: {e}"),
         }
     }
 
@@ -941,27 +1494,7 @@ mod tests {
 
     /// 构造全空 BackupData（测试用；按需填入待恢复列表）
     fn empty_backup() -> BackupData {
-        BackupData {
-            version: BACKUP_VERSION,
-            backup_time: 0,
-            books: vec![],
-            bookmarks: vec![],
-            replace_rules: vec![],
-            book_sources: vec![],
-            rss_sources: vec![],
-            read_records: vec![],
-            book_groups: vec![],
-            rss_stars: vec![],
-            highlights: vec![],
-            highlight_rules: vec![],
-            search_history: vec![],
-            rule_subs: vec![],
-            txt_toc_rules: vec![],
-            http_tts: vec![],
-            dict_rules: vec![],
-            keyboard_assists: vec![],
-            servers: vec![],
-        }
+        BackupData::empty()
     }
 
     /// 清空备份覆盖的全部表（共享测试库；调用方须持 ensure_test_db 串行锁）
@@ -986,6 +1519,7 @@ mod tests {
                 "dictRules",
                 "keyboardAssists",
                 "servers",
+                "auto_task_rules",
             ] {
                 conn.execute(&format!("DELETE FROM {table}"), [])
                     .map_err(|e| LegadoError::Database(format!("清空 {table} 失败: {e}")))?;
@@ -1888,6 +2422,10 @@ mod tests {
             content.contains("\"servers\""),
             "v3 备份应包含 servers 字段：{content}"
         );
+        assert!(
+            !content.contains("\"autoTasks\""),
+            "自有 JSON 备份形状不得因批9 autoTasks 字段变化（空列表应省略）：{content}"
+        );
 
         // 恢复备份
         let restore_result = backup_restore(path_str);
@@ -2078,5 +2616,514 @@ mod tests {
     fn test_backup_list_nonexistent_dir() {
         let result = backup_list("/nonexistent/path/that/does/not/exist");
         assert_eq!(result, "[]");
+    }
+
+    // ─── 批9：原版 zip 备份恢复 ─────────────────────────────────────────
+
+    /// 在临时目录写一个原版形态备份 zip（条目名 → 原始字节），返回 (目录, 路径)
+    fn write_upstream_backup_zip(
+        dir_name: &str,
+        entries: &[(&str, &[u8])],
+    ) -> (std::path::PathBuf, String) {
+        use std::io::Write as _;
+
+        let dir = std::env::temp_dir().join(dir_name);
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let zip_path = dir.join("backup2026-10-26.zip");
+        {
+            let file = fs::File::create(&zip_path).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default();
+            for (name, data) in entries {
+                writer.start_file(*name, options).unwrap();
+                writer.write_all(data).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        let path = zip_path.to_str().unwrap().to_string();
+        (dir, path)
+    }
+
+    /// 原版「空密码」密钥加密的 servers.json（openssl AES-128-ECB/PKCS7 独立生成）
+    ///
+    /// 密钥 = MD5("") 小写 hex 前 16 个 ASCII 字符 `d41d8cd98f00b204`；
+    /// 明文 = `[{"id":1700000000002,"name":"网盘B","type":"WEBDAV",
+    /// "config":"{\"url\":\"https://dav.example.com/\"}","sortNumber":3}]`。
+    /// 用外部工具生成可避免「我方加密 + 我方解密」自洽的假绿。
+    const UPSTREAM_EMPTY_PW_SERVERS: &str = "xSIcudYLSog9xFjHp/CQFf0Jhx2/XL8tX/EMThjpDxVc0TnFhOkmarznE9mTpoM4T6O6IY2F5pe/854MstinyYXIYRJ3Z6OelaJOPtVthBUprXzkzcYhGTwfbgDoimWRiaVvuxJolIscFijSJm+Q7IFXilXDqKGnsvqXroY/4Sk=";
+
+    /// 原版「密码 secret」密钥加密的 servers.json（openssl AES-128-ECB/PKCS7 独立生成）
+    ///
+    /// 密钥 = MD5("secret") 小写 hex 前 16 个 ASCII 字符 `5ebe2294ecd0e0f0`。
+    const UPSTREAM_SECRET_PW_SERVERS: &str = "2vU9PxdlMNdJf1ZFkNTKycmGR0xILunMY6nIlKNqGxbBimVUkWjSd0juf6gc/wO5/Gf0BuDDaTzIqpLG1FWHe0kv2jIAZZiIrlG/2gyyyV8Rpnrdkw6KxU0pWcUDah9/dm+xTmldxLQNMeYqaCjXmbCAm8HhRvwnfLB34pV/Hpw=";
+
+    /// [批9 回归] 原版 zip 全类别落库：17 类数据文件 + 加密 servers + 媒体/配置跳过
+    #[test]
+    fn test_restore_upstream_zip_roundtrip_all_tables() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        // 原版 GSON 形态（属性名 camelCase、null 省略、无我方扩展键）
+        let bookshelf = r#"[
+            {"bookUrl":"https://zip.example/book/1","name":"zip书一","author":"作者甲",
+             "kind":"玄幻","origin":"https://zip.example/source","originName":"zip源",
+             "type":0,"group":7,"durChapterIndex":4,"durChapterPos":12,
+             "durChapterTitle":"第五章","durChapterTime":1700000000123,
+             "customCoverUrl":"/storage/emulated/0/Android/data/io.legado.app.release/files/covers/book1.jpg"},
+            {"bookUrl":"https://zip.example/book/2","name":"zip书二","author":"作者乙",
+             "origin":"https://zip.example/source","originName":"zip源","type":0,
+             "customCoverUrl":"https://cdn.example/cover2.jpg"}
+        ]"#;
+        let book_group = r#"[
+            {"groupId":7,"groupName":"zip分组",
+             "cover":"/storage/emulated/0/Android/data/io.legado.app.release/files/covers/g.png",
+             "order":3,"enableRefresh":false,"show":false,"bookSort":2,"onlyUpdateRead":true}
+        ]"#;
+        let bookmark = r#"[{"id":11,"time":1700000001000,"bookName":"zip书一","bookAuthor":"作者甲",
+            "chapterIndex":2,"chapterPos":9,"chapterName":"第三章","bookText":"书签文本","content":"内容"}]"#;
+        let highlight = r#"[{"time":1700000002000,"bookUrl":"https://zip.example/book/1",
+            "chapterUrl":"ch://1","bookName":"zip书一","bookAuthor":"作者甲","chapterIndex":1,
+            "chapterPos":2,"chapterPosEnd":8,"layoutTitleLength":3,"chapterName":"第二章",
+            "bookText":"高亮文本","style":"{\"fill\":1}","note":"笔记"}]"#;
+        let highlight_rule = r#"[{"id":77,"uuid":"77777777-7777-4777-8777-777777777777",
+            "name":"zip高亮规则","pattern":"关键[词]","isRegex":true,"isEnabled":true,
+            "style":"{}","order":2,"timeoutMillisecond":3000,"applyToTitle":false,"applyToBody":true}]"#;
+        let book_source = r#"[{"bookSourceUrl":"https://zip.example/source","bookSourceName":"zip源",
+            "bookSourceGroup":"组","bookSourceType":0,"enabled":true,"enabledExplore":true,
+            "customOrder":1,"weight":0,"respondTime":180000,
+            "searchUrl":"/search?q={{key}}",
+            "ruleSearch":{"bookList":"class.b","name":"a@text","bookUrl":"a@href"}}]"#;
+        let rss_sources = r#"[{"sourceUrl":"https://zip.example/rss","sourceName":"zip RSS",
+            "sourceIcon":"https://zip.example/icon.png","enabled":true,"type":1,
+            "ruleArticles":"class.item","ruleLink":"a@href","ruleTitle":"h1@text"}]"#;
+        let rss_star = r#"[{"origin":"https://zip.example/rss","sort":"default","title":"zip收藏",
+            "starTime":1700000003000,"link":"https://zip.example/rss/a1","group":"",
+            "type":1,"durPos":4}]"#;
+        let replace_rule = r#"[{"id":21,"name":"zip替换规则","pattern":"a","replacement":"b",
+            "scopeTitle":false,"scopeSource":false,"scopeContent":true,"isEnabled":true,
+            "isRegex":true,"timeoutMillisecond":3000,"order":5,"previewText":"样例"}]"#;
+        let read_record = r#"[{"deviceId":"original-device","bookName":"zip书一","author":"作者甲",
+            "readTime":1700000004000,"lastRead":8}]"#;
+        let search_history = r#"[{"word":"zip关键词","usage":2,"lastUseTime":1700000005000}]"#;
+        let source_sub = r#"[{"id":31,"name":"zip订阅","url":"https://zip.example/sub.json",
+            "type":0,"customOrder":2,"autoUpdate":true,"update":1700000006000,
+            "updateInterval":30,"silentUpdate":false}]"#;
+        let txt_toc_rule = r#"[{"id":41,"name":"zip目录规则","rule":"^第","replacement":"",
+            "serialNumber":-1,"enable":true,"example":"第一章"}]"#;
+        let http_tts = r#"[{"id":51,"name":"zip引擎","url":"https://tts.example/?t={{speakText}}",
+            "contentType":"audio/mpeg","pauseDuration":300,"concurrentRate":"1",
+            "enabledCookieJar":false,"lastUpdateTime":1700000007000}]"#;
+        let dict_rule = r#"[{"name":"zip词典","urlRule":"https://dict.example/{{key}}",
+            "showRule":"tag.body@all","enabled":true,"sortNumber":2}]"#;
+        let keyboard_assists = r#"[{"type":1,"key":"zipk","value":"zipv","serialNo":3}]"#;
+        let auto_task = r#"[{"id":"zip-task-1","name":"zip任务","enable":true,
+            "cron":"0 8 * * *","script":"test()","customOrder":1,"lastRunAt":0}]"#;
+
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_upstream_zip",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                ("bookGroup.json", book_group.as_bytes()),
+                ("bookmark.json", bookmark.as_bytes()),
+                ("highlight.json", highlight.as_bytes()),
+                ("highlightRule.json", highlight_rule.as_bytes()),
+                ("bookSource.json", book_source.as_bytes()),
+                ("rssSources.json", rss_sources.as_bytes()),
+                ("rssStar.json", rss_star.as_bytes()),
+                ("replaceRule.json", replace_rule.as_bytes()),
+                ("readRecord.json", read_record.as_bytes()),
+                ("searchHistory.json", search_history.as_bytes()),
+                ("sourceSub.json", source_sub.as_bytes()),
+                ("txtTocRule.json", txt_toc_rule.as_bytes()),
+                ("httpTTS.json", http_tts.as_bytes()),
+                ("dictRule.json", dict_rule.as_bytes()),
+                ("keyboardAssists.json", keyboard_assists.as_bytes()),
+                ("autoTask.json", auto_task.as_bytes()),
+                ("servers.json", UPSTREAM_EMPTY_PW_SERVERS.as_bytes()),
+                // 媒体与配置快照：存在但不落盘（登记跳过），验证不中断恢复
+                ("covers/book1.jpg", b"\xFF\xD8\xFF-fake-jpeg"),
+                ("bg/wall.jpg", b"fake-bg"),
+                ("readConfig.json", b"[]"),
+                ("themeConfig.json", b"[]"),
+                ("config.xml", b"<map />"),
+            ],
+        );
+
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.books, 2);
+        assert_eq!(stats.bookmarks, 1);
+        assert_eq!(stats.replace_rules, 1);
+        assert_eq!(stats.book_sources, 1);
+        assert_eq!(stats.rss_sources, 1);
+        assert_eq!(stats.read_records, 1);
+
+        with_database(|db| {
+            let conn = db.connection();
+
+            // 书架：进度原样、绝对封面路径置空、网络封面保留
+            let book1 = BookRepository::new(conn)
+                .find_by_url("https://zip.example/book/1")?
+                .expect("zip 备份书一应落库");
+            assert_eq!(book1.dur_chapter_index, 4);
+            assert_eq!(book1.dur_chapter_pos, 12);
+            assert_eq!(book1.dur_chapter_title.as_deref(), Some("第五章"));
+            assert_eq!(book1.dur_chapter_time, 1700000000123);
+            assert_eq!(
+                book1.custom_cover_url, None,
+                "原版绝对 covers 路径在未恢复媒体时应置空（对齐 remap 失败语义）"
+            );
+            let book2 = BookRepository::new(conn)
+                .find_by_url("https://zip.example/book/2")?
+                .expect("zip 备份书二应落库");
+            assert_eq!(
+                book2.custom_cover_url.as_deref(),
+                Some("https://cdn.example/cover2.jpg"),
+                "网络封面 URL 不得被清空"
+            );
+
+            // 分组：封面同样置空，其余列原样
+            let group = BookGroupRepository::new(conn)
+                .find_by_id(7)?
+                .expect("分组应落库");
+            assert_eq!(group.group_name, "zip分组");
+            assert_eq!(group.cover, None);
+            assert!(!group.enable_refresh);
+            assert_eq!(group.book_sort, 2);
+            assert!(group.only_update_read);
+
+            // 书签
+            let bookmarks = BookmarkRepository::new(conn).find_all()?;
+            assert_eq!(bookmarks.len(), 1);
+            assert_eq!(bookmarks[0].book_name, "zip书一");
+            assert_eq!(bookmarks[0].chapter_index, 2);
+            assert_eq!(bookmarks[0].book_text, "书签文本");
+
+            // 高亮
+            let highlight = HighlightRepository::new(conn)
+                .find_by_time(1700000002000)?
+                .expect("高亮应落库");
+            assert_eq!(highlight.bookName, "zip书一");
+            assert_eq!(highlight.style, "{\"fill\":1}");
+            assert_eq!(highlight.note, "笔记");
+
+            // 高亮规则：order → sortOrder 归一
+            let rule = HighlightRuleRepository::new(conn)
+                .find_by_id(77)?
+                .expect("高亮规则应落库");
+            assert_eq!(rule.name, "zip高亮规则");
+            assert_eq!(rule.sortOrder, 2, "原版 order 键应归一到 sortOrder");
+            assert_eq!(
+                rule.uuid, "77777777-7777-4777-8777-777777777777",
+                "uuid 应随 zip 备份保留"
+            );
+
+            // 书源
+            let source = BookSourceRepository::new(conn)
+                .find_by_url("https://zip.example/source")?
+                .expect("书源应落库");
+            assert_eq!(source.book_source_name, "zip源");
+            assert!(source.rule_search.is_some(), "搜索规则应随备份落库");
+
+            // RSS 源 / 收藏
+            let rss = RssSourceRepository::new(conn)
+                .find_by_url("https://zip.example/rss")
+                .map_err(LegadoError::Database)?
+                .expect("RSS 源应落库");
+            assert_eq!(rss.rule_articles.as_deref(), Some("class.item"));
+            let stars = RssStarRepository::new(conn).find_all()?;
+            assert_eq!(stars.len(), 1);
+            assert_eq!(stars[0].title, "zip收藏");
+            assert_eq!(stars[0].star_type, 1);
+            assert_eq!(stars[0].dur_pos, 4);
+
+            // 替换规则：order → sortOrder 归一
+            let rules = ReplaceRuleRepository::new(conn).find_all()?;
+            assert_eq!(rules.len(), 1);
+            assert_eq!(rules[0].name, "zip替换规则");
+            assert_eq!(rules[0].order, 5, "原版 order 键应归一到 sortOrder");
+
+            // 阅读记录（原版设备 ID 按非本机记录直接写入）
+            let records = ReadRecordRepository::new(conn).find_all()?;
+            assert_eq!(records.len(), 1);
+            assert_eq!(records[0].device_id, "original-device");
+            assert_eq!(records[0].read_time, 1700000004000);
+            assert_eq!(records[0].last_read, 8);
+
+            // 搜索历史（usage/lastUseTime 原样）
+            let keywords = SearchKeywordRepository::new(conn).find_all()?;
+            assert_eq!(keywords.len(), 1);
+            assert_eq!(keywords[0].word, "zip关键词");
+            assert_eq!(keywords[0].usage, 2);
+            assert_eq!(keywords[0].last_use_time, 1700000005000);
+
+            // 规则订阅：type(int)/update 归一，无 version/isEnabled/createdAt 时补默认
+            let sub = RuleSubRepository::new(conn)
+                .find_by_url("https://zip.example/sub.json")?
+                .expect("规则订阅应落库");
+            assert_eq!(sub.name, "zip订阅");
+            assert_eq!(sub.sub_type, "bookSource");
+            assert_eq!(sub.custom_order, 2);
+            assert!(sub.auto_update);
+            assert_eq!(sub.last_update, 1700000006000);
+            assert_eq!(sub.created_at, 1700000006000);
+            assert_eq!(sub.version, "");
+            assert!(sub.is_enabled);
+
+            // TXT 目录规则
+            let toc_rules = TxtTocRuleRepository::new(conn).find_all()?;
+            assert_eq!(toc_rules.len(), 1);
+            assert_eq!(toc_rules[0].id, 41);
+            assert_eq!(toc_rules[0].serial_number, -1);
+            assert!(toc_rules[0].enable);
+
+            // 朗读引擎：原版无 isEnabled 列 → 归一为启用
+            let tts = HttpTtsRepository::new(conn)
+                .find_by_id(51)?
+                .expect("朗读引擎应落库");
+            assert_eq!(tts.name, "zip引擎");
+            assert!(tts.is_enabled, "原版 HttpTTS 无启用列，恢复后应可用");
+            assert_eq!(tts.created_at, 1700000007000);
+
+            // 词典规则
+            let dict = DictRuleRepository::new(conn)
+                .find_by_name("zip词典")?
+                .expect("词典规则应落库");
+            assert_eq!(dict.sort_order, 2);
+            assert!(dict.is_enabled);
+
+            // 键盘辅助
+            let assist = KeyboardAssistRepository::new(conn)
+                .find_by_pk(1, "zipk")?
+                .expect("键盘辅助应落库");
+            assert_eq!(assist.value, "zipv");
+            assert_eq!(assist.serial_no, 3);
+
+            // 自动任务（批9 新增映射）
+            let tasks = AutoTaskRepository::new(conn).find_all()?;
+            assert_eq!(tasks.len(), 1);
+            assert_eq!(tasks[0].id, "zip-task-1");
+            assert_eq!(tasks[0].name, "zip任务");
+            assert_eq!(tasks[0].cron.as_deref(), Some("0 8 * * *"));
+            assert_eq!(tasks[0].script, "test()");
+
+            // 服务器：原版空密码密文应解密并按主键写入
+            let servers = ServerRepository::new(conn).find_all()?;
+            assert_eq!(servers.len(), 1, "加密 servers.json 应解密恢复");
+            assert_eq!(servers[0].id, 1700000000002);
+            assert_eq!(servers[0].name, "网盘B");
+            assert_eq!(servers[0].sort_number, 3);
+            assert!(
+                servers[0]
+                    .config
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("dav.example.com"),
+                "服务器配置应随解密还原"
+            );
+
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批9 兼容] zip 内缺某文件 → 跳过该类，其余照常恢复（对齐原版 fileToListT 缺文件语义）
+    #[test]
+    fn test_restore_upstream_zip_missing_files_skip_class() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let bookshelf =
+            r#"[{"bookUrl":"https://zip.example/only","name":"仅书架","author":"作者"}]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_missing_files",
+            &[("./bookshelf.json", bookshelf.as_bytes())],
+        );
+
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.books, 1);
+        assert_eq!(stats.bookmarks, 0);
+        assert_eq!(stats.replace_rules, 0);
+        assert_eq!(stats.book_sources, 0);
+        assert_eq!(stats.rss_sources, 0);
+        assert_eq!(stats.read_records, 0);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批9 兼容] 损坏条目类文件 → 该类 warn 跳过，合法条目照常提交
+    #[test]
+    fn test_restore_upstream_zip_broken_entry_skips_only_that_class() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let bookshelf =
+            r#"[{"bookUrl":"https://zip.example/broken-peer","name":"同伴书","author":"作者"}]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_broken_entry",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                ("bookSource.json", b"{not-a-json-array"),
+            ],
+        );
+
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.books, 1, "损坏的 bookSource.json 不得影响书架恢复");
+        assert_eq!(stats.book_sources, 0);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批9 负例] 魔数像 zip 但内容损坏 → 整体报错（对齐原版解压失败即中止）
+    #[test]
+    fn test_restore_broken_zip_errors() {
+        let dir = std::env::temp_dir().join("legado_restore_zip_broken");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("broken.zip");
+        fs::write(&path, b"PK\x03\x04this-is-not-a-real-zip").unwrap();
+
+        let err = backup_restore(path.to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string().contains("zip 解析失败"),
+            "应给出 zip 解析失败文案: {err}"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批9 负例] 空 zip（仅 EOCD）→ 合法但零恢复（对齐原版：无文件即无动作）
+    #[test]
+    fn test_restore_empty_zip_returns_zero_stats() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let (dir, path) = write_upstream_backup_zip("legado_restore_zip_empty", &[]);
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.books, 0);
+        assert_eq!(stats.book_sources, 0);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批9 加密] 含加密 cookies.json（原版设过备份密码）→ 明确错误文案且零落库
+    ///
+    /// 对齐原版 `Restore.kt:227-236`：cookies.json 存在且无密码时上抛
+    /// 「需设置备份密码」；我方无密码输入面，故返回可读错误而不是静默跳过。
+    #[test]
+    fn test_restore_zip_password_protected_cookies_errors_without_writes() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let bookshelf =
+            r#"[{"bookUrl":"https://zip.example/locked","name":"加密书","author":"作者"}]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_encrypted",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                // cookies.json 只有设过备份密码才写出，内容必为密文
+                ("cookies.json", UPSTREAM_SECRET_PW_SERVERS.as_bytes()),
+            ],
+        );
+
+        let err = backup_restore(&path).unwrap_err();
+        let message = err.to_string();
+        assert!(message.contains("备份密码"), "应提示备份密码: {message}");
+        assert!(
+            message.contains("cookies.json"),
+            "应指出加密文件: {message}"
+        );
+
+        // 前置校验失败不得产生部分恢复态
+        let books = with_database(|db| BookRepository::new(db.connection()).find_all()).unwrap();
+        assert!(books.is_empty(), "加密备份拒绝恢复时库内应零残留");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批9 加密] 密文用真实密码加密 → servers 跳过，其余表照常恢复（对齐原版 runCatching）
+    #[test]
+    fn test_restore_zip_secret_password_servers_skipped() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let bookshelf =
+            r#"[{"bookUrl":"https://zip.example/with-secret","name":"密码书","author":"作者"}]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_secret_pw",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                ("servers.json", UPSTREAM_SECRET_PW_SERVERS.as_bytes()),
+            ],
+        );
+
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.books, 1, "服务器配置解密失败不得影响其余表");
+
+        let servers =
+            with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
+        assert!(
+            servers.is_empty(),
+            "空密码解不开的 servers.json 应跳过，不得写入垃圾行"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批9 兼容] 历史版本 servers.json 为明文数组 → 按明文解析（原版 isJsonArray 分支）
+    #[test]
+    fn test_restore_zip_plaintext_servers_supported() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let plain_servers = r#"[{"id":9,"name":"明文服务器","type":"WEBDAV",
+            "config":"{\"url\":\"https://plain.example/\",\"username\":\"u\",\"password\":\"p\"}",
+            "sortNumber":1}]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_plain_servers",
+            &[("servers.json", plain_servers.as_bytes())],
+        );
+
+        assert!(backup_restore(&path).is_ok());
+        let servers =
+            with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].id, 9);
+        assert_eq!(servers[0].name, "明文服务器");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批9 安全] 绝对路径/`..` 条目被拒绝读取，不影响正常条目
+    #[test]
+    fn test_zip_entry_path_guard() {
+        assert!(is_safe_zip_entry_name("bookshelf.json"));
+        assert!(is_safe_zip_entry_name("covers/sub/a.jpg"));
+        assert!(!is_safe_zip_entry_name("../bookshelf.json"));
+        assert!(!is_safe_zip_entry_name("covers/../../evil.json"));
+        assert!(!is_safe_zip_entry_name("/etc/passwd"));
+        assert!(!is_safe_zip_entry_name("C:/Windows/evil.json"));
+        assert!(!is_safe_zip_entry_name("covers\\evil.json"));
+        assert!(!is_safe_zip_entry_name(""));
+    }
+
+    /// [批9 密钥派生锚点] 原版 BackupAES 密钥 = MD5 小写 hex 前 16 个 ASCII 字节
+    #[test]
+    fn test_backup_aes_key_matches_upstream() {
+        assert_eq!(&backup_aes_key("")[..], b"d41d8cd98f00b204");
+        assert_eq!(&backup_aes_key("secret")[..], b"5ebe2294ecd0e0f0");
+
+        // 外部工具（openssl AES-128-ECB/PKCS7）生成的密文必须能被我方解密
+        let plain = decrypt_backup_payload(UPSTREAM_EMPTY_PW_SERVERS).unwrap();
+        assert!(
+            plain.contains("\"name\":\"网盘B\""),
+            "空密码密文应可解密: {plain}"
+        );
+        assert!(
+            decrypt_backup_payload(UPSTREAM_SECRET_PW_SERVERS).is_err(),
+            "设过密码的密文不得被空密码密钥误解出"
+        );
     }
 }

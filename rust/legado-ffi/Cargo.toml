@@ -31,12 +31,14 @@ r2d2_sqlite = "0.24"
 chrono = "0.4"
 # [V-B2 | 2026-10-05] B 站弹幕 XML 解析（契约 §2.50）；与 legado-book/legado-net 同版本
 quick-xml = "0.42"
+# [批9 | 2026-10-26] 原版 zip 备份恢复：读包/条目校验。与 legado-book 同版本，
+# 该 crate 已由其生产依赖编译进产物——本次仅新增 legado-ffi 的直接依赖边，
+# 无新增 crate、无许可变更（Cargo.lock 版本不变）
+zip = "2"
 flutter_rust_bridge = "=2.11.1"
 
 [dev-dependencies]
 encoding_rs = "0.8"
-# [cbz 批 B | 2026-10-03] 测试造 CBZ 夹具（与 legado-book 同版本 zip，仅测试用）
-zip = "2"
 # 提示 1：lib 单测（http_state.rs）与 tests/ 集成二进制使用
 # `cookie_store::test_clear_memory_only`——该面仅 test-support feature 下可见
 legado-js = { path = "../legado-js", features = ["test-support"] }
