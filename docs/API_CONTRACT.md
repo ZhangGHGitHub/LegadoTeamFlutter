@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-10-27 | **批16a：直链上传能力重写 + FFI（契约先行，加法式 +1 方法）**：§2.51 新增 `directLinkUpload(String ruleJson, String fileName, String contentType, {String? content, String? filePath}) → Future<String>`（Rust `ffi::direct_link_upload`，async + spawn_blocking 非阻塞；核心实现 `legado-ffi/src/api/direct_link_upload_api.rs` + `legado-net::direct_link_upload`）。**裁决纪律**：语义对照原版上传链（`help/DirectLinkUpload.kt:26-71` + `AnalyzeUrl.kt:714-729` + `OkHttpUtils.kt:157-191`），**字段集按参考版**——参考版 `legado-with-MD3` 已删除口令与 `expiryDate`，规则对象冻结为 4 字段 `uploadUrl` / `downloadUrlRule` / `summary` / `compress`（兼容 snake_case alias）。**语义要点**：`uploadUrl` 逗号选项 `method`/`headers`/`body`/`type`，上传链恒 POST multipart（对齐原版 `AnalyzeUrl.upload`）；`body` 值 `"fileRequest"` 的键替换为文件部件，其余为普通 form 字段；`compress=true` 且 `contentType != application/zip` 时内存打 zip（条目名=原文件名）并改文件名/类型；下载链接规则以响应体 + 响应 URL 经 `AnalyzeRule` 求值（JSONPath/正则/`@js:` 级联），空结果报「上传失败,{body}」；无 quickjs 构建且规则含 `@js:` → 明确错误「当前构建不支持 JS 下载规则」。§2.51 方法数 **1**，方法模块 47→**48**，附录合计 307→**308**，BookApi 口径 304→**305**，§1.7 表 B 141→**142**（总数 156→**157**）。 |
 | 2026-10-26 | **批15f 审查回修（无新增方法、零 FFI 签名变化）**：① §2.5 `rssListCachedArticles` 语义修正——**`sortName = Some("")` 严格过滤空名默认分类**（此前被 `filter(!is_empty)` 当成缺省，默认分类会读出全部分类混排），`null` 才返回该源全部分类（仅内部/兼容）；`read` 改为 `rssReadRecords` 派生（`LEFT JOIN` + `ifNull(t2.read,0)`，对齐 `RssArticleDao.kt:16-20`）；补「键名差异」说明：缓存/列表载荷分类字段分别为 `type` / `articleType`（同义，Dart 兼容）。② §2.5 `rssSortUrls` 覆盖值边界口径补全：整值先 trim、重复键逐项展开（不复刻 GSON 后者覆盖）、JSON 值非字符串/尾随垃圾/非法 JSON 回退单条 `("", trim 后原值)`、空白值回退源配置。③ Dart 侧同步：`RssNotifier._loadCachedArticles` 返回 `hasCache`，目标分类缓存为空时清空旧分类列表（`selectSource`/`selectSort`/`clearSearch`）；详情页 `startHtml` 起始页独立渲染条件（不再落空态）、`shouldOverrideUrlLoading` 结果归一（Android JSON 字面量去引号，修复恒判 true）、源 header 无 UA 时回落全局 `PrefKeys.userAgent`、`legado:`/`yuedu:` 链接走站内关联导入。④ Mock 同步空串分类过滤语义。 |
 | 2026-10-26 | **批15f：RSS 增强（契约先行，加法式 +1 方法 / 1 方法可选参数）**：① §2.5 `rssSortUrls` 增加可选命名参数 `{String? sortUrl}`（Rust `ffi::rss_sort_urls(source_url, sort_url: Option<String>)`）——非空时按原版 `RssSortActivity.kt:356-366`（参考版 `RssSortViewModel.parseSortUrl`）解析该覆盖值：`sortUrl.isJsonObject()` 为真时按 `{name:url}` 对象展开（保持书写顺序；解析失败按单条 `("", sortUrl)` 回退），否则单条 `("", sortUrl)`；空值保持源配置 `sortUrls()` 原语义（默认参数行为不变）。② §2.5 新增 `rssListCachedArticles(String sourceUrl, {String? sortName}) → Future<String>`（Rust `ffi::rss_list_cached_articles`，核心实现 `legado-ffi/src/api/rss.rs::rss_list_cached_articles` → `legado-db::RssArticleRepository::find_by_origin_sort` 只读查询）——**只读 DB、零网络**，按 `origin`（+可选 `sort`）以 `order DESC` 返回文章 JSON 数组（字段 `origin/sort/title/order/link/pubDate/description/content/image/variable/group/read/type`），对齐原版 `RssArticleDao.flowByOriginSort(origin, sortName)` 的首屏本地缓存语义（`RssArticlesFragment.kt:179-218`）；`legacy:` 伪主键原样返回（UI 按既有 `hasRssArticleLink` 视为无链接）。**接线**：Dart `BookApi`/`RustApi`/`MockBookApi` 同批实现，`RssNotifier.selectSource`/`selectSort` 在网络刷新前先展示缓存（缓存查询失败静默，网络刷新不阻断）。§2.5 17→**18**，附录合计 306→**307**，BookApi 口径 303→**304**，§1.7 表 B 140→**141**（总数 155→**156**）。 |
 | 2026-10-26 | **批15c 审查回修（无新增方法、零 FFI 签名变化；3 P1 + 11 P2 闭环/登记）**：① **P1-1 RSS 源级 `concurrentRate` 接线**——`legado-fetcher::rate_limit::RateLimiterRegistry` 新增 `acquire_by_source(source_url, Option<rate>)` 泛化入口（复用书源 limiter map 与固定窗口语义，`acquire(BookSource)` 改为薄封装）；RSS 列表/正文（含 `nextContentUrl` 每一页）每次请求前经 `RssRateLimit` 取许可（对齐上游 `AnalyzeUrl.kt:129,449`）；FFI `add/import/update_rss_source` 写库成功后 `refresh` 该源限流配置，引擎按当前源快照惰性创建/复用 limiter；测试：rate=`1/200` 时两次列表请求到达间隔 ≥ 200ms + registry 泛化入口单测。② **P1-3 RSS 字符集四级探测**——RSS 列表/正文由 `send_text` 改为 `send_raw` + `decode_web_response`（显式 Charset → `Content-Type` → HTML meta → chardetng 统计探测），与书源抓取链/搜索链同口径；测试：GBK `Content-Type` feed、无 charset 声明 GBK feed（统计探测）、GBK meta 正文三例。③ **P1-2 规则正文 WebView baseUrl**——详情页 `loadHtmlString(styledHtml, baseUrl: article.url.substringBefore("@js"))`，对齐上游 `ReadRssActivity.kt:406-411`；`loadWithBaseUrl` 源字段接线属批15f（下方交叉引用）。④ **P2 修正**：`rssFetchContent` 文章行改 `RssArticleRepository::find_by_link(origin, link, sort?)` 主键索引查询（缺省 `order DESC` 首行，替代 `find_by_source(i32::MAX)` 全表扫描）；正文/列表规则注入 `rssArticle` JS 绑定（DB 行 JSON / 列表基线对象，对齐 `AnalyzeRule.kt:906`）；`RssArticle` DTO 新增 `sort`，Dart `RssFeedArticle.sort` 透传详情；详情页空判定改 trim（`isNullOrBlank` 口径）、抓取成功后收藏使用抓取正文、自带 content 降级也提供重试（SnackBar action）、返回列表回填正文；e2e 补 `order`/`read` 写回保留断言，多链并发阈值放宽至 700ms 页延迟/900ms 上限。⑤ **登记/措辞**：详情触发条件为「`description` 为空即拉取（自带 content 非空也拉）」；收藏元数据「以 `rssArticles` 为准，Dart `addRssStar` 只传 origin/title/link、其余默认」；历史入口暂不抓规则正文（15d/15f）；多链并发固定 32（上游 `AppConfig.threadCount` 可配置）列入已登记差异；登录头同源门控归入「已登记差异」；列表页无 DB-only 查询 FFI，详情正文回填内存态、DB 查询登记 15d。 |
@@ -175,7 +176,7 @@
 
 ### 1.7 BookApi / FFI 命名等价表（F3-10，2026-08-14）
 
-以下 **15 对** Dart `BookApi` 方法名与契约 §2.x 登记名不一致（改名等价对）；另有 **141 对**方法名与 Rust FFI 导出名不一致、但 §2.x 按 BookApi 同名登记（机械映射见表 B）。两类合计 **156 对**，语义等价，计数时勿重复：
+以下 **15 对** Dart `BookApi` 方法名与契约 §2.x 登记名不一致（改名等价对）；另有 **142 对**方法名与 Rust FFI 导出名不一致、但 §2.x 按 BookApi 同名登记（机械映射见表 B）。两类合计 **157 对**，语义等价，计数时勿重复：
 
 | BookApi（Dart） | 契约 §2.x / FFI 登记名 |
 |-----------------|------------------------|
@@ -195,7 +196,7 @@
 | `putLoginHeader` | `sourcePutLoginHeader`（§2.3） |
 | `putLoginInfo` | `sourcePutLoginInfo`（§2.3） |
 
-**表 B：Rust FFI 导出 ↔ BookApi 方法机械映射（2026-10-26 审查批5 补登记 123 对，审查批6 增 1 对 → 124 对；批8 增 10 对（WebDAV 云同步全量 + servers CRUD）→ 134 对；批11 增 1 对（HTTP 日志采集开关 `setHttpLogRecording` ↔ `set_http_log_recording`）→ 135 对；批15b 增 4 对（RSS 列表四方法 `rssSortUrls`/`rssClearSortCache`/`rssRefreshArticles`/`rssLoadMoreArticles`）→ 139 对；批15c 增 1 对（RSS 正文 `rssFetchContent` ↔ `rss_fetch_content`）→ 140 对；批15f 增 1 对（RSS 只读缓存 `rssListCachedArticles` ↔ `rss_list_cached_articles`）→ 141 对）**
+**表 B：Rust FFI 导出 ↔ BookApi 方法机械映射（2026-10-26 审查批5 补登记 123 对，审查批6 增 1 对 → 124 对；批8 增 10 对（WebDAV 云同步全量 + servers CRUD）→ 134 对；批11 增 1 对（HTTP 日志采集开关 `setHttpLogRecording` ↔ `set_http_log_recording`）→ 135 对；批15b 增 4 对（RSS 列表四方法 `rssSortUrls`/`rssClearSortCache`/`rssRefreshArticles`/`rssLoadMoreArticles`）→ 139 对；批15c 增 1 对（RSS 正文 `rssFetchContent` ↔ `rss_fetch_content`）→ 140 对；批15f 增 1 对（RSS 只读缓存 `rssListCachedArticles` ↔ `rss_list_cached_articles`）→ 141 对；批16a 增 1 对（直链上传 `directLinkUpload` ↔ `direct_link_upload`）→ 142 对）**
 
 > 生成口径：以 `rust/legado-ffi/src/ffi.rs` 的 `pub fn` 导出面与本仓 `rust_api*.dart` 实现中的 `bridge.<fn>` 调用点为源，取「BookApi 方法名 ≠ Rust FFI 导出名」且未在表 A 登记的对。一个 FFI 导出可被多个 BookApi 方法复用（如 `bookshelf_update`），复合实现列出全部调用；`initialize`/`getVersion` 无模块前缀但同属命名差异，一并登记。本表为纯登记（不新增方法、不改 §2.x 计数口径）。
 
@@ -342,6 +343,7 @@
 | `webdavServersList` | `webdavServersList`（§2.28） | `webdav_servers_list` |
 | `webdavServerSave` | `webdavServerSave`（§2.28） | `webdav_server_save` |
 | `webdavServerDelete` | `webdavServerDelete`（§2.28） | `webdav_server_delete` |
+| `directLinkUpload` | `directLinkUpload`（§2.51） | `direct_link_upload` |
 
 > 📌 **2026-10-26 审查批6 已闭环（原 ⚠ 缺口登记销记）**：`enableRssSource` / `disableRssSource` 曾分别调 `source_enable` / `source_disable`（`rust/legado-ffi/src/api/source.rs:64-71` 走 `BookSourceRepository`）——RSS-only 源报「书源不存在」，同 URL 恰有书源时误改书源。现两者委托新增的 `rssSourceSetEnabled`（FFI `rss_source_set_enabled` → `legado-db::RssSourceRepository::set_enabled` 单实现），本表两对的 FFI 列已更正；RSS 源开关写路径不再触碰 `book_sources` 表。
 
@@ -349,9 +351,9 @@
 
 ## 2. 方法清单
 
-> 共 **47 个方法模块**（§2.1–§2.50，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
-> BookApi 接口当前共 **304 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计；2026-10-04 B1 将音频缓存 4 方法封装进 BookApi：284→288；2026-10-03 B2 冻结音频预下载写入面 2 方法，契约先行、待实现批封装进 BookApi：288→290；2026-10-05 P2-29c 后续批冻结失败章查询 1 方法，契约先行、待实现批封装进 BookApi：290→291；2026-10-05 V-B1 冻结视频弹幕查询 1 方法，契约先行、待实现批封装进 BookApi：291→292；2026-10-05 V-B2 冻结弹幕解析 1 方法，契约先行、待实现批封装进 BookApi：292→293；2026-10-26 审查批6 新增 RSS 源开关 1 方法 `rssSourceSetEnabled`（修复误接书源 FFI，同批封装进 BookApi）：293→294；2026-10-26 批8 servers 表新增 WebDAV 服务器 CRUD 3 方法 `webdavServersList`/`webdavServerSave`/`webdavServerDelete`（契约先行冻结，同批封装进 BookApi）：294→297；2026-10-26 批11 新增 HTTP 日志采集开关 1 方法 `setHttpLogRecording`（legado-net 采集点接线，同批封装进 BookApi）：297→298；2026-10-26 批15b 新增 RSS 分类/分页 4 方法 `rssSortUrls`/`rssClearSortCache`/`rssRefreshArticles`/`rssLoadMoreArticles`（契约先行冻结，同批封装进 BookApi）：298→302；2026-10-26 批15c 新增 RSS 正文 1 方法 `rssFetchContent`（契约先行冻结，同批封装进 BookApi）：302→303；2026-10-26 批15f 新增 RSS 只读缓存 1 方法 `rssListCachedArticles`（契约先行冻结，同批封装进 BookApi）：303→304）。
-> 附录 §2.x 行合计 **307** = §2.x 实际方法行总数；其中 1 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction`；`rssUpdateSource` 已由 BookApi `updateRssSource` 封装接通，见附录口径）。
+> 共 **48 个方法模块**（§2.1–§2.51，编号跳过 2.24/2.27）+ §2.44 数据层实现备注；计数由 `test/unit/api_contract_test.dart` 自动校验。
+> BookApi 接口当前共 **305 个方法**（2026-08-15 起以 Dart 测试程序化计数为唯一基准，取代人工统计；2026-10-04 B1 将音频缓存 4 方法封装进 BookApi：284→288；2026-10-03 B2 冻结音频预下载写入面 2 方法，契约先行、待实现批封装进 BookApi：288→290；2026-10-05 P2-29c 后续批冻结失败章查询 1 方法，契约先行、待实现批封装进 BookApi：290→291；2026-10-05 V-B1 冻结视频弹幕查询 1 方法，契约先行、待实现批封装进 BookApi：291→292；2026-10-05 V-B2 冻结弹幕解析 1 方法，契约先行、待实现批封装进 BookApi：292→293；2026-10-26 审查批6 新增 RSS 源开关 1 方法 `rssSourceSetEnabled`（修复误接书源 FFI，同批封装进 BookApi）：293→294；2026-10-26 批8 servers 表新增 WebDAV 服务器 CRUD 3 方法 `webdavServersList`/`webdavServerSave`/`webdavServerDelete`（契约先行冻结，同批封装进 BookApi）：294→297；2026-10-26 批11 新增 HTTP 日志采集开关 1 方法 `setHttpLogRecording`（legado-net 采集点接线，同批封装进 BookApi）：297→298；2026-10-26 批15b 新增 RSS 分类/分页 4 方法 `rssSortUrls`/`rssClearSortCache`/`rssRefreshArticles`/`rssLoadMoreArticles`（契约先行冻结，同批封装进 BookApi）：298→302；2026-10-26 批15c 新增 RSS 正文 1 方法 `rssFetchContent`（契约先行冻结，同批封装进 BookApi）：302→303；2026-10-26 批15f 新增 RSS 只读缓存 1 方法 `rssListCachedArticles`（契约先行冻结，同批封装进 BookApi）：303→304；2026-10-27 批16a 新增直链上传 1 方法 `directLinkUpload`（契约先行冻结，同批封装进 BookApi）：304→305）。
+> 附录 §2.x 行合计 **308** = §2.x 实际方法行总数；其中 1 个为尚未封装进 BookApi 的纯 FFI（`chapterPayAction`；`rssUpdateSource` 已由 BookApi `updateRssSource` 封装接通，见附录口径）。
 
 ### 2.1 初始化/版本（2 个方法）
 
@@ -1154,10 +1156,32 @@
 
 ---
 
+### 2.51 直链上传（direct_link_upload FFI，1 个方法）
+
+> [批16a | 2026-10-27] 加法式新增（不改既有签名/行为）：**外部文件/导出直链上传**，逐条对齐原版 `help/DirectLinkUpload.kt:26-71`（`upLoad`）+ `model/analyzeRule/AnalyzeUrl.kt:714-729`（`upload` 选项消费）+ `help/http/OkHttpUtils.kt:157-191`（`postMultipart`）。**字段集按参考版口径**（用户裁决 2026-10-27）：参考版 `legado-with-MD3` 已删除口令与 `expiryDate`，规则对象冻结为 **4 字段** `uploadUrl` / `downloadUrlRule` / `summary` / `compress`（序列化 camelCase；读取兼容 snake_case alias；未知键如原版 `expiryDate` 忽略）。
+>
+> **上传语义（逐条对齐原版）**：
+> - `uploadUrl` 支持逗号选项：`<url>,{"method":"POST","headers":{…},"body":{…},"type":"multipart/form-data"}`（切分等价原版 `\s*,\s*(?=\{)`）；选项 JSON 形态非法 → 明确参数错误（不静默按无选项处理）；
+> - **上传链恒以 POST multipart 发送**（原版 `AnalyzeUrl.upload` 固定 `postMultipart`，`method` 选项仅解析保留、不改变派发）；
+> - `body` 中值为字符串 `"fileRequest"` 的键 → 文件部件（`fileName` / `contentType`），其余键 → 普通文本 form 字段（值字符串化，对齐 `value.toString()`）；
+> - 请求复用 `LegadoClient` 统一出口（默认头 / UA / DB Cookie 合并 / 代理 / 限流 / 重试 / HTTP 日志采集），新增 `post_multipart` 出口；**字节不穿 FFI**（文件内容由 Dart 传路径或文本，Rust 读盘/压缩/上传）；
+> - `compress=true` 且 `contentType != "application/zip"`：内存打 zip（单条目名 = 原文件名、`Deflated`），上传文件名改为 `<fileName>.zip`、类型改为 `application/zip`（对齐 `ZipUtils.zipByteArray` + `upLoad:43-58`）；
+> - 上传成功后以**响应体 + 响应最终 URL** 构造 `AnalyzeRule` 求值 `downloadUrlRule`（JSONPath / 正则 / `@js:` 级联；`result` 绑定前序结果、`baseUrl` 绑定响应 URL，对齐 `AnalyzeRule().setContent(res.body, res.url)`）；结果为空 → 错误「上传失败,{响应体}」。
+>
+> **错误语义（精确文案）**：`uploadUrl` 空 → 「上传 URL 未配置」；`downloadUrlRule` 空 → 「下载链接规则未配置」；规则求值为空 → 「上传失败,{响应体}」；无 quickjs 构建且规则含 `@js:`/`<js>` → 「当前构建不支持 JS 下载规则」（**不静默降级为空**）；`content` 与 `filePath` 未二选一 → 参数错误；`filePath` 不存在/读取失败 → 读取错误；单文件 > 100 MiB → 「文件超过上传上限（100 MiB）」。
+>
+> **已登记差异**：错误文案按本契约中文（原版 Kotlin 为「上传url未配置」「下载地址规则未配置」）；`type` 选项作为 multipart 整体 Content-Type 使用（缺省/`multipart/form-data` 时由实现附加 boundary）；原版 `expiryDate` 不进入契约（参考版已删）；压缩条目名统一取 `fileName` 参数（原版 `filePath` 输入走 `ZipUtils.zipFile` 时用实际文件名作条目名——调用方传 `fileName` = 实际文件名即等价）；用户选项 headers 中的 `Content-Type`/`Content-Length` 会被请求体覆盖（对齐 OkHttp `body.contentType()` 优先语义）。
+
+| 方法 | 入参 | 返回 | 说明 |
+|------|------|------|------|
+| `directLinkUpload(String ruleJson, String fileName, String contentType, {String? content, String? filePath})` | ruleJson（4 字段规则 JSON，camelCase，兼容 snake_case）；fileName（上传文件名，压缩时自动加 `.zip`）；contentType（`application/zip` 时不再压缩）；content / filePath **二选一**（文本内容或本地文件绝对路径） | `Future<String>` | 上传并返回直链 URL（Rust `ffi::direct_link_upload`，async + spawn_blocking 非阻塞）：规则解析 / 压缩 / multipart 构造 / 网络上传落 Rust（`legado-net::direct_link_upload`），下载链接规则求值落 FFI 层（`legado-parser::AnalyzeRule` + QuickJS 执行器）；Dart 侧 `RustApi.directLinkUpload` 直通，**不做降级 catch**（上传是显式用户动作，失败须上抛）。16b 直链规则配置 Sheet 与 16c 通用导出目标 Sheet 为消费方 |
+
+---
+
 ### 2.44 数据层实现备注（不涉契约签名）
 
 > 本节登记数据层内部实现变更预告，均不改变任何契约签名，仅供 Rust 轨实施与双轨知会。
-> 本节不含方法，不计入方法模块数与附录统计（方法模块为 47 个，§2.1–§2.50，编号跳过 2.24/2.27）。
+> 本节不含方法，不计入方法模块数与附录统计（方法模块为 48 个，§2.1–§2.51，编号跳过 2.24/2.27）。
 >
 > ℹ️ **BookRepository::insert 级联删除隐患（第三批后置项，Task #63）**：`BookRepository::insert` 当前走
 > INSERT OR REPLACE，存在外键级联删除隐患；将在本批改为 upsert 链路（内部实现变更，不涉契约签名，不改任何 FFI 行为）。
@@ -1309,13 +1333,15 @@
 | 47 | 音频章节预下载 | 2 |
 | 49 | 视频弹幕数据链 | 1 |
 | 50 | 视频弹幕解析 | 1 |
-| | **合计（§2.x 附录行合计）** | **307** |
+| 51 | 直链上传 | 1 |
+| | **合计（§2.x 附录行合计）** | **308** |
 
 > 口径说明（2026-08-15 程序化计数校准，2026-09-13 C2 批1 增 §2.45 字典规则 7 方法、书源作用域批次增 §2.8 替换规则 1 方法 `applyReplaceRulesToSource`、替换规则预览批次再增 §2.8 1 方法 `previewReplaceRule`、2026-09-24 换源预拉缓存批次增 §2.4 2 方法、2026-09-26 项 B/B1 增 §2.3 1 方法 `submitWebviewResultWithCookies`、2026-09-28 STAGE3-C2B 增 §2.16 单章缓存失效 1 方法 `clearChapterCache`、2026-09-28 P2-28c 增 §2.43 目录实时刷新 1 方法 `listCachedChapters`、2026-09-29 P2-29 增 §2.43 目录下载中态查询 1 方法 `listDownloadingChapters`、2026-09-29 P4-2a 增 §2.46 图片磁盘缓存 2 方法 `saveImageCache`/`getImageCache`、2026-10-03 cbz 批 B 增 §2.34 本地漫画页读取 1 方法 `cbzReadPage`、2026-10-04 B1 增 §2.47 音频章节文件缓存 4 方法、2026-10-03 B2 增 §2.48 音频章节预下载写入 2 方法 `audioCacheDownload`/`audioCacheCancel`，取代人工统计）：
-> - 附录行合计 **307** = §2.x 实际方法行总数；其中与 BookApi 同名行 **290**（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 2 + RSS 源开关 1 + WebDAV 服务器 CRUD 3 + HTTP 日志开关 1 + RSS 列表/分类/分页 4 + RSS 正文 1 + RSS 只读缓存 1；失败章查询经 §1.7 命名等价对登记）、§1.7 命名等价对侧的不同名 FFI 行 **14**（3 个 JS 单文件 + 4 个缓存系 + 3 个登录 V2 + 4 个登录方法）、`cacheGetChapter` 独立行 1（§2.41；BookApi `getCachedChapter` 另在 §2.16 同名登记，不重复计数）、
+> - 附录行合计 **308** = §2.x 实际方法行总数；其中与 BookApi 同名行 **291**（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 2 + RSS 源开关 1 + WebDAV 服务器 CRUD 3 + HTTP 日志开关 1 + RSS 列表/分类/分页 4 + RSS 正文 1 + RSS 只读缓存 1 + 直链上传 1；失败章查询经 §1.7 命名等价对登记）、§1.7 命名等价对侧的不同名 FFI 行 **14**（3 个 JS 单文件 + 4 个缓存系 + 3 个登录 V2 + 4 个登录方法）、`cacheGetChapter` 独立行 1（§2.41；BookApi `getCachedChapter` 另在 §2.16 同名登记，不重复计数）、
 >   尚未封装进 BookApi 的纯 FFI 1（`chapterPayAction`）；`rssUpdateSource` 独立行 1（已由 BookApi `updateRssSource` 封装接通，`rust_api_search_rss.part.dart:246-247`，2026-10-26 审查批5 勘误：原记「纯 FFI 2」过时）。
-> - BookApi 代码计数 **304** = 290 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 2 + RSS 源开关 1 + WebDAV 服务器 CRUD 3 + HTTP 日志开关 1 + RSS 列表/分类/分页 4 + RSS 正文 1 + RSS 只读缓存 1；失败章查询经 §1.7 命名等价对登记）+ 14 命名等价（§1.7：3 个 JS 单文件 + 4 个缓存系 + 3 个登录 V2 + 4 个登录方法）；测试自动强制两口径与闭合关系（§2.48 2 方法为契约先行，`book_api.dart` 实现批封装后程序化计数转齐）。
+> - BookApi 代码计数 **305** = 291 同名行（255 + 字典规则 7 + 书源作用域 1 + 替换规则预览 1 + 换源预拉缓存 2 + WebView cookie 回流 1 + 单章缓存失效 1 + 目录实时刷新 1 + 图片缓存 2 + 本地漫画页读取 1 + 音频缓存 4 + 音频缓存写入 2 + 视频弹幕 2 + RSS 源开关 1 + WebDAV 服务器 CRUD 3 + HTTP 日志开关 1 + RSS 列表/分类/分页 4 + RSS 正文 1 + RSS 只读缓存 1 + 直链上传 1；失败章查询经 §1.7 命名等价对登记）+ 14 命名等价（§1.7：3 个 JS 单文件 + 4 个缓存系 + 3 个登录 V2 + 4 个登录方法）；测试自动强制两口径与闭合关系（§2.48 2 方法为契约先行，`book_api.dart` 实现批封装后程序化计数转齐）。
 > - 2026-10-26 审查批5：§1.7 表 B 新增 **123 条**「Rust FFI 导出 ↔ BookApi 同名方法」机械映射（`ffi.rs` pub fn 面 × `rust_api*.dart` 调用面程序化提取，含 3 条跨导出复合实现 `initialize`/`updateBookmark`/`parseEpub` 与 2 条无前缀命名 `initialize`/`getVersion`）；§1.7 等价对总数 15→**138**（改名等价 15 + 同名 FFI 映射 123）。该表不改变 §2.x 行数与 BookApi 计数，仅补齐命名等价登记债。审查批6 再 +1 对（`rssSourceSetEnabled`，并更正 `enableRssSource` / `disableRssSource` 两对的 FFI 列）：同名 FFI 映射 **124**、总数 **139**。批8 再 +10 对（WebDAV 云同步既有 7 方法补登记 + servers CRUD 新增 3 方法）：同名 FFI 映射 **134**、总数 **149**。批11 再 +1 对（`setHttpLogRecording` ↔ `set_http_log_recording`）：同名 FFI 映射 **135**、总数 **150**。批15b 再 +4 对（`rssSortUrls`/`rssClearSortCache`/`rssRefreshArticles`/`rssLoadMoreArticles`）：同名 FFI 映射 **139**、总数 **154**。批15c 再 +1 对（`rssFetchContent` ↔ `rss_fetch_content`）：同名 FFI 映射 **140**、总数 **155**。批15f 再 +1 对（`rssListCachedArticles` ↔ `rss_list_cached_articles`）：同名 FFI 映射 **141**、总数 **156**。
 > - 2026-10-26 批11（HTTP 采集接线 + `/refreshToc`）：FFI 加法式新增 `setHttpLogRecording`（§2.10），§2.10 4→**5**、附录合计 300→**301**、BookApi 297→**298**、§1.7 表 B 134→**135**（总数 149→**150**）；`legado-net` 新增采集 trait/开关/单槽（`http_log` 模块，不依赖 server），`legado-server` 注册 ring 存储实现并删除段评链手工记录（防双记录）；脱敏补齐「敏感名路径段的下一段」规则（审查批4 P2-4）；Web 端新增 GET `/refreshToc`（复用既有刷新链）。**采集范围登记**：`LegadoClient` 统一出口（含重试/followRedirects 变体/流式）为唯一采集点；`legado-net` 内 `webdav.rs`/`remote_book.rs` 与 `legado-server` handler 内裸 reqwest（TTS/音频/源更新下载）不在采集面内。
+> - 2026-10-27 批16a（直链上传）：§2.51 新增 1 方法 `directLinkUpload`（`legado-net::direct_link_upload` + `legado-ffi/src/api/direct_link_upload_api.rs`）；附录合计 307→**308**、BookApi 304→**305**、§1.7 表 B 141→**142**（等价对总数 156→**157**）；方法模块 47→**48**。参考版字段集裁决：仅 4 字段（无口令/无 `expiryDate`）。
 > - 2026-10-26 批8 审查回修：零 FFI 签名/方法计数变化（§2.x 300、BookApi 297、§1.7 149 对全部不变）；仅登记恢复边界语义（v1/v2 偏好回填 / v3 以 DB 为准）、恢复主键保真（含 `id = 0`）、备份明文安全口径差异与 `webdavServerDelete` 预留状态。
 > - 2026-08-15 之前的人工校准（F3-10 等）已由程序化计数取代，历史演进见 git 历史。
