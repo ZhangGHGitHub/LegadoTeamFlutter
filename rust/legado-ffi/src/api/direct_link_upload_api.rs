@@ -54,12 +54,13 @@ pub fn direct_link_upload(
 
     let payload = load_payload(content, file_path)?;
     let client = crate::http_state::shared_client()?;
+    // P1-2：载荷所有权移交上传层（Vec → Bytes 零拷贝封装，不再整包复制）
     let outcome = crate::runtime::block_on(direct_link_upload::upload(
         &client,
         &rule,
         file_name,
         content_type,
-        &payload,
+        payload,
     ))?;
 
     let download_url = evaluate_download_url(&rule.download_url_rule, &outcome.body, &outcome.url)?;
@@ -71,7 +72,19 @@ pub fn direct_link_upload(
 }
 
 /// 读取上传载荷（`content` 与 `filePath` 二选一）
+///
+/// P1-2：`content` 与 `filePath` 共用同一上限口径（[`MAX_UPLOAD_BYTES`]），
+/// 文本载荷超限同样明确报错——避免仅限制文件路径而让内存内 content 无界。
 pub fn load_payload(content: Option<String>, file_path: Option<String>) -> LegadoResult<Vec<u8>> {
+    load_payload_with_limit(content, file_path, MAX_UPLOAD_BYTES)
+}
+
+/// 带可配置上限的载荷读取（测试以小上限驱动超限分支）
+fn load_payload_with_limit(
+    content: Option<String>,
+    file_path: Option<String>,
+    max_bytes: u64,
+) -> LegadoResult<Vec<u8>> {
     match (content, file_path) {
         (Some(_), Some(_)) => Err(LegadoError::Ffi(
             "content 与 filePath 只能二选一".to_string(),
@@ -79,8 +92,18 @@ pub fn load_payload(content: Option<String>, file_path: Option<String>) -> Legad
         (None, None) => Err(LegadoError::Ffi(
             "content 与 filePath 必须提供其一".to_string(),
         )),
-        (Some(text), None) => Ok(text.into_bytes()),
-        (None, Some(path)) => read_upload_file(&path, MAX_UPLOAD_BYTES),
+        (Some(text), None) => {
+            let len = text.len() as u64;
+            if len > max_bytes {
+                return Err(LegadoError::Ffi(format!(
+                    "上传内容超过上传上限（{}）: {} 字节",
+                    human_size(max_bytes),
+                    len
+                )));
+            }
+            Ok(text.into_bytes())
+        }
+        (None, Some(path)) => read_upload_file(&path, max_bytes),
     }
 }
 
@@ -116,9 +139,13 @@ fn human_size(bytes: u64) -> String {
 }
 
 /// 下载规则是否依赖 JS（`@js:` 链或 `<js>` 块；无 quickjs 构建据此明确报错）
+///
+/// P2-1：大小写不敏感（`@JS:` / `<JS>` 同样会被 AnalyzeRule 当作 JS 规则，
+/// 预检若区分大小写会漏放行到求值阶段）。
 #[cfg(not(feature = "quickjs"))]
 fn rule_requires_js(rule: &str) -> bool {
-    rule.contains("@js:") || rule.contains("<js>")
+    let lower = rule.to_ascii_lowercase();
+    lower.contains("@js:") || lower.contains("<js>")
 }
 
 /// 求值下载链接规则（`AnalyzeRule` 自动路由 JSONPath / 正则 / `@js:` 级联）
@@ -305,6 +332,30 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("只能二选一"), "{err}");
+    }
+
+    /// P1-2：`content` 分支与 filePath 同受上限约束（小上限驱动，避免构造 100 MiB）
+    #[test]
+    fn test_content_payload_size_limit() {
+        let data = load_payload_with_limit(Some("0123456789".to_string()), None, 5)
+            .expect_err("content 超限应报错");
+        assert!(data.to_string().contains("上传内容超过上传上限"), "{data}");
+        // 恰好等于上限允许
+        let data = load_payload_with_limit(Some("01234".to_string()), None, 5)
+            .expect("content 等于上限应允许");
+        assert_eq!(data, b"01234");
+    }
+
+    /// P2-1：无 quickjs 预检对 `@js:` / `<js>` 大小写不敏感
+    #[cfg(not(feature = "quickjs"))]
+    #[test]
+    fn test_rule_requires_js_case_insensitive() {
+        assert!(rule_requires_js("$.data@JS:'x'"));
+        assert!(rule_requires_js("$.data@Js:'x'"));
+        assert!(rule_requires_js("$.data@js:'x'"));
+        assert!(rule_requires_js("<JS>result</JS>"));
+        assert!(rule_requires_js("<js>result</js>"));
+        assert!(!rule_requires_js("$.data.url"));
     }
 
     #[test]

@@ -205,7 +205,7 @@ impl UploadRequest {
         rule: &UploadRule,
         file_name: &str,
         content_type: &str,
-        data: &[u8],
+        data: Vec<u8>,
     ) -> LegadoResult<Self> {
         validate_rule(rule)?;
         let (url, options) = parse_upload_url(&rule.upload_url)?;
@@ -216,11 +216,12 @@ impl UploadRequest {
         // 压缩（对齐原版 upLoad:43-58：仅非 zip 类型且 compress=true）
         let mut upload_name = file_name.to_string();
         let mut upload_type = content_type.to_string();
-        let mut payload: Vec<u8> = data.to_vec();
+        // P1-2：直接接管调用方 Vec 所有权（不再 `to_vec()` 复制整包载荷）
+        let mut payload = data;
         if rule.compress && content_type != ZIP_CONTENT_TYPE {
             upload_name = format!("{file_name}.zip");
             upload_type = ZIP_CONTENT_TYPE.to_string();
-            payload = zip_single_entry(file_name, data)?;
+            payload = zip_single_entry(file_name, &payload)?;
         }
 
         let body = options.body.ok_or_else(|| {
@@ -232,6 +233,9 @@ impl UploadRequest {
             ));
         }
 
+        // P1-2：整包转 `Bytes`，多个 fileRequest 部件共享同一缓冲（clone 仅
+        // 增引用计数），不再逐部件 `payload.clone()` 全量复制。
+        let payload = bytes::Bytes::from(payload);
         let mut parts = Vec::with_capacity(body.len());
         // 先按值是否为 fileRequest 分派（同一文件可占据多个标记键，对齐原版 forEach）
         let mut part_pairs: Vec<(String, MultipartPart)> = Vec::with_capacity(body.len());
@@ -293,7 +297,8 @@ pub fn validate_rule(rule: &UploadRule) -> LegadoResult<()> {
 /// 执行直链上传（不负责下载链接规则求值）
 ///
 /// - `rule`：4 字段规则（`uploadUrl` 中的选项在此解析）；
-/// - `file_name` / `content_type` / `data`：待上传文件载荷（压缩开关见规则）；
+/// - `file_name` / `content_type` / `data`：待上传文件载荷（压缩开关见规则；
+///   `data` 按所有权移交，避免整包复制——见 P1-2）；
 /// - 返回响应状态/最终 URL/响应体，供上层 `AnalyzeRule` 求值下载链接。
 ///
 /// 网络错误经 [`LegadoError::Network`] 上抛（不降级、不重试二次封装——重试
@@ -303,7 +308,7 @@ pub async fn upload(
     rule: &UploadRule,
     file_name: &str,
     content_type: &str,
-    data: &[u8],
+    data: Vec<u8>,
 ) -> LegadoResult<UploadOutcome> {
     let request = UploadRequest::build(rule, file_name, content_type, data)?;
     let response = client
@@ -419,8 +424,13 @@ mod tests {
             r#"https://example.com/up,{"body":{"file":"fileRequest","name":"测试","n":5},"type":"multipart/form-data"}"#,
             "$.url",
         );
-        let request = UploadRequest::build(&rule, "book.json", "application/json", b"{\"a\":1}")
-            .expect("构造应成功");
+        let request = UploadRequest::build(
+            &rule,
+            "book.json",
+            "application/json",
+            b"{\"a\":1}".to_vec(),
+        )
+        .expect("构造应成功");
         assert_eq!(request.parts.len(), 3);
         // 文本字段（按字段名排序：file < n < name → File/Text/Text）
         match &request.parts[0] {
@@ -433,7 +443,7 @@ mod tests {
                 assert_eq!(name, "file");
                 assert_eq!(file_name, "book.json");
                 assert_eq!(content_type.as_deref(), Some("application/json"));
-                assert_eq!(data.as_slice(), b"{\"a\":1}");
+                assert_eq!(data.as_ref(), b"{\"a\":1}");
             }
             other => panic!("首个部件应为文件部件: {other:?}"),
         }
@@ -456,7 +466,7 @@ mod tests {
     #[test]
     fn test_build_parts_missing_body_errors() {
         let rule = rule_with("https://example.com/up", "$.url");
-        let err = UploadRequest::build(&rule, "a.txt", "text/plain", b"x").unwrap_err();
+        let err = UploadRequest::build(&rule, "a.txt", "text/plain", b"x".to_vec()).unwrap_err();
         assert!(err.to_string().contains("缺少 body"), "{err}");
     }
 
@@ -467,7 +477,8 @@ mod tests {
             "$.url",
         );
         rule.compress = true;
-        let payload = "直链上传测试内容".as_bytes();
+        let payload = "直链上传测试内容".as_bytes().to_vec();
+        let expected = payload.clone();
         let request = UploadRequest::build(&rule, "source.json", "application/json", payload)
             .expect("压缩构造应成功");
         match &request.parts[0] {
@@ -487,7 +498,7 @@ mod tests {
                 assert_eq!(entry.name(), "source.json");
                 let mut out = Vec::new();
                 std::io::Read::read_to_end(&mut entry, &mut out).unwrap();
-                assert_eq!(out, payload);
+                assert_eq!(out, expected);
             }
             other => panic!("应为文件部件: {other:?}"),
         }
@@ -500,8 +511,9 @@ mod tests {
             "$.url",
         );
         rule.compress = true;
-        let request = UploadRequest::build(&rule, "pack.zip", ZIP_CONTENT_TYPE, b"PK\x03\x04")
-            .expect("构造应成功");
+        let request =
+            UploadRequest::build(&rule, "pack.zip", ZIP_CONTENT_TYPE, b"PK\x03\x04".to_vec())
+                .expect("构造应成功");
         match &request.parts[0] {
             MultipartPart::File {
                 file_name,
@@ -511,7 +523,7 @@ mod tests {
             } => {
                 assert_eq!(file_name, "pack.zip");
                 assert_eq!(content_type.as_deref(), Some(ZIP_CONTENT_TYPE));
-                assert_eq!(data.as_slice(), b"PK\x03\x04", "已是 zip 不应二次压缩");
+                assert_eq!(data.as_ref(), b"PK\x03\x04", "已是 zip 不应二次压缩");
             }
             other => panic!("应为文件部件: {other:?}"),
         }
@@ -528,11 +540,12 @@ mod tests {
                 name: "file".into(),
                 file_name: "book.json".into(),
                 content_type: Some("application/json".into()),
-                data: b"{\"x\":1}".to_vec(),
+                data: b"{\"x\":1}".to_vec().into(),
             },
         ];
         let (body, content_type) =
-            crate::client::build_multipart_body(&parts, Some("multipart/form-data"), "BOUND");
+            crate::client::build_multipart_body(&parts, Some("multipart/form-data"), "BOUND")
+                .expect("合法部件应构造成功");
         let text = String::from_utf8(body).unwrap();
         assert_eq!(content_type, "multipart/form-data; boundary=BOUND");
         assert!(text.contains("--BOUND\r\n"));
@@ -542,6 +555,40 @@ mod tests {
         assert!(text.contains("filename=\"book.json\""), "{text}");
         assert!(text.contains("Content-Type: application/json"), "{text}");
         assert!(text.ends_with("--BOUND--\r\n"), "{text}");
+    }
+
+    /// P2-10：部件 Content-Type 含 CR/LF（头注入）必须拒绝，整体 type 同样
+    #[test]
+    fn test_build_multipart_body_rejects_header_injection() {
+        let parts = vec![MultipartPart::File {
+            name: "file".into(),
+            file_name: "a.txt".into(),
+            content_type: Some("text/plain\r\nX-Evil: 1".into()),
+            data: bytes::Bytes::from_static(b"x"),
+        }];
+        let err = crate::client::build_multipart_body(&parts, None, "B").unwrap_err();
+        assert!(
+            err.to_string().contains("multipart Content-Type 非法"),
+            "{err}"
+        );
+
+        let err =
+            crate::client::build_multipart_body(&[], Some("multipart/form-data\nX-Evil: 1"), "B")
+                .unwrap_err();
+        assert!(
+            err.to_string().contains("multipart Content-Type 非法"),
+            "{err}"
+        );
+
+        // 空部件 Content-Type 回退 octet-stream（不报错）
+        let parts = vec![MultipartPart::File {
+            name: "file".into(),
+            file_name: "a.txt".into(),
+            content_type: Some("   ".into()),
+            data: bytes::Bytes::from_static(b"x"),
+        }];
+        let (body, _) = crate::client::build_multipart_body(&parts, None, "B").unwrap();
+        assert!(String::from_utf8_lossy(&body).contains("Content-Type: application/octet-stream"));
     }
 
     /// 回环 mock HTTP 服务器：读取完整请求（头 + Content-Length body）后回固定 JSON
@@ -631,9 +678,15 @@ mod tests {
             "$.data.url",
         );
         let client = LegadoClient::new(crate::LegadoClientConfig::default()).unwrap();
-        let outcome = upload(&client, &rule, "sources.json", "application/json", b"[]")
-            .await
-            .expect("上传应成功");
+        let outcome = upload(
+            &client,
+            &rule,
+            "sources.json",
+            "application/json",
+            b"[]".to_vec(),
+        )
+        .await
+        .expect("上传应成功");
 
         assert_eq!(outcome.status, 200);
         assert_eq!(
@@ -683,9 +736,15 @@ mod tests {
         );
         rule.compress = true;
         let client = LegadoClient::new(crate::LegadoClientConfig::default()).unwrap();
-        let outcome = upload(&client, &rule, "rules.json", "application/json", b"[1,2,3]")
-            .await
-            .expect("上传应成功");
+        let outcome = upload(
+            &client,
+            &rule,
+            "rules.json",
+            "application/json",
+            b"[1,2,3]".to_vec(),
+        )
+        .await
+        .expect("上传应成功");
         assert_eq!(outcome.body, "{\"msg\":\"ok\"}");
 
         let (_, body) = server.await.expect("server task");
@@ -707,6 +766,76 @@ mod tests {
         assert_eq!(out, b"[1,2,3]");
     }
 
+    /// P1-1：大载荷上传覆写共享客户端 60s 总超时
+    ///
+    /// 客户端 `read_timeout` 刻意设 100ms、服务端延迟 500ms 响应：若未在
+    /// `post_multipart` 内按载荷覆写单请求超时，请求会以客户端级 100ms 超时
+    /// 失败；覆写后（4KB 载荷 → connect 15s + 传输 1s + 读 100ms）成功。
+    #[tokio::test]
+    async fn test_upload_overrides_client_total_timeout() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind 127.0.0.1:0");
+        let addr = listener.local_addr().expect("local_addr");
+        let server = tokio::spawn(async move {
+            let (mut sock, _) = listener.accept().await.expect("accept");
+            // 读掉完整请求（头 + body），再延迟响应，模拟慢速服务端
+            let mut raw = Vec::new();
+            let mut buf = [0u8; 4096];
+            let header_end = loop {
+                let n = sock.read(&mut buf).await.expect("read");
+                assert!(n > 0, "请求头未完成即断开");
+                raw.extend_from_slice(&buf[..n]);
+                if let Some(pos) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+                    break pos + 4;
+                }
+            };
+            let head = String::from_utf8_lossy(&raw[..header_end]).to_string();
+            let content_length = head
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.trim()
+                        .eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().ok())?
+                })
+                .unwrap_or(0);
+            while raw.len() < header_end + content_length {
+                let n = sock.read(&mut buf).await.expect("read body");
+                assert!(n > 0, "请求体未完成即断开");
+                raw.extend_from_slice(&buf[..n]);
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            let body = r#"{"url":"https://dl.example/f/slow"}"#;
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = sock.write_all(resp.as_bytes()).await;
+        });
+        let rule = rule_with(
+            &format!("http://{addr}/upload,{{\"body\":{{\"file\":\"fileRequest\"}}}}"),
+            "$.url",
+        );
+        let client = LegadoClient::new(crate::LegadoClientConfig {
+            read_timeout: std::time::Duration::from_millis(100),
+            no_proxy: true,
+            ..crate::LegadoClientConfig::default()
+        })
+        .expect("构建客户端");
+        // 4 KiB 载荷：客户端级 100ms 总超时必然失败，上传出口覆写后应成功
+        let payload = vec![b'a'; 4 * 1024];
+        let outcome = upload(&client, &rule, "big.txt", "text/plain", payload)
+            .await
+            .expect("上传出口应覆写客户端级总超时（P1-1）");
+        assert_eq!(outcome.status, 200);
+        assert_eq!(outcome.body, r#"{"url":"https://dl.example/f/slow"}"#);
+        server.await.expect("server task");
+    }
+
     #[tokio::test]
     async fn test_upload_network_error() {
         // 绑定后立刻释放，得到一个确定不可连接的端口
@@ -718,7 +847,7 @@ mod tests {
             "$.url",
         );
         let client = LegadoClient::new(crate::LegadoClientConfig::default()).unwrap();
-        let err = upload(&client, &rule, "a.txt", "text/plain", b"x")
+        let err = upload(&client, &rule, "a.txt", "text/plain", b"x".to_vec())
             .await
             .unwrap_err();
         assert!(

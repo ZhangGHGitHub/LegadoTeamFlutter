@@ -1164,13 +1164,21 @@
 > - `uploadUrl` 支持逗号选项：`<url>,{"method":"POST","headers":{…},"body":{…},"type":"multipart/form-data"}`（切分等价原版 `\s*,\s*(?=\{)`）；选项 JSON 形态非法 → 明确参数错误（不静默按无选项处理）；
 > - **上传链恒以 POST multipart 发送**（原版 `AnalyzeUrl.upload` 固定 `postMultipart`，`method` 选项仅解析保留、不改变派发）；
 > - `body` 中值为字符串 `"fileRequest"` 的键 → 文件部件（`fileName` / `contentType`），其余键 → 普通文本 form 字段（值字符串化，对齐 `value.toString()`）；
-> - 请求复用 `LegadoClient` 统一出口（默认头 / UA / DB Cookie 合并 / 代理 / 限流 / 重试 / HTTP 日志采集），新增 `post_multipart` 出口；**字节不穿 FFI**（文件内容由 Dart 传路径或文本，Rust 读盘/压缩/上传）；
+> - 请求复用 `LegadoClient` 统一出口（默认头 / UA / DB Cookie 合并 / 代理 / 限流 / 重试 / HTTP 日志采集），新增 `post_multipart` 出口；**字节不穿 FFI**（文件内容由 Dart 传路径或文本，Rust 读盘/压缩/上传）；`content` 与 `filePath` 同受 100 MiB 上限约束；
+> - **上传超时口径**：共享客户端在构建期设置 `.timeout(read_timeout)`（默认 60s）是**总请求超时**（连接 + 发送 + 等待响应）；上传出口按 multipart 实际载荷大小覆写单请求超时为 `connect_timeout + 传输预算 + read_timeout`（传输按 256 KiB/s 保守下限估算，100 MiB ≈ 400s），小载荷至少保持 `read_timeout`。原版 OkHttp 仅设 `writeTimeout` 60s/次写操作、无 `callTimeout`（总请求不设上限），本实现采用「按载荷估算的有限总超时」以避免慢链路大文件被 60s 掐断；
 > - `compress=true` 且 `contentType != "application/zip"`：内存打 zip（单条目名 = 原文件名、`Deflated`），上传文件名改为 `<fileName>.zip`、类型改为 `application/zip`（对齐 `ZipUtils.zipByteArray` + `upLoad:43-58`）；
 > - 上传成功后以**响应体 + 响应最终 URL** 构造 `AnalyzeRule` 求值 `downloadUrlRule`（JSONPath / 正则 / `@js:` 级联；`result` 绑定前序结果、`baseUrl` 绑定响应 URL，对齐 `AnalyzeRule().setContent(res.body, res.url)`）；结果为空 → 错误「上传失败,{响应体}」。
 >
-> **错误语义（精确文案）**：`uploadUrl` 空 → 「上传 URL 未配置」；`downloadUrlRule` 空 → 「下载链接规则未配置」；规则求值为空 → 「上传失败,{响应体}」；无 quickjs 构建且规则含 `@js:`/`<js>` → 「当前构建不支持 JS 下载规则」（**不静默降级为空**）；`content` 与 `filePath` 未二选一 → 参数错误；`filePath` 不存在/读取失败 → 读取错误；单文件 > 100 MiB → 「文件超过上传上限（100 MiB）」。
+> **错误语义（精确文案）**：`uploadUrl` 空 → 「上传 URL 未配置」；`downloadUrlRule` 空 → 「下载链接规则未配置」；规则求值为空 → 「上传失败,{响应体}」；无 quickjs 构建且规则含 `@js:`/`<js>`（**大小写不敏感**）→ 「当前构建不支持 JS 下载规则」（**不静默降级为空**）；`content` 与 `filePath` 未二选一 → 参数错误；`filePath` 不存在/读取失败 → 读取错误；`content` > 100 MiB → 「上传内容超过上传上限（100 MiB）」；单文件 > 100 MiB → 「文件超过上传上限（100 MiB）」。
 >
-> **已登记差异**：错误文案按本契约中文（原版 Kotlin 为「上传url未配置」「下载地址规则未配置」）；`type` 选项作为 multipart 整体 Content-Type 使用（缺省/`multipart/form-data` 时由实现附加 boundary）；原版 `expiryDate` 不进入契约（参考版已删）；压缩条目名统一取 `fileName` 参数（原版 `filePath` 输入走 `ZipUtils.zipFile` 时用实际文件名作条目名——调用方传 `fileName` = 实际文件名即等价）；用户选项 headers 中的 `Content-Type`/`Content-Length` 会被请求体覆盖（对齐 OkHttp `body.contentType()` 优先语义）。
+> **已登记差异**（与 Android 原版 `AnalyzeUrl.upload` + `OkHttpUtils.postMultipart` 的实现口径差异，均为已知且当前不逐条对齐）：
+> 1. **上传 URL 的 query 保留**：原版 `upload` 走 `url(urlNoQuery)`（剥离 query，upload 链不把 query 并入 multipart 表单）；本实现按 `uploadUrl` 原文（去选项后）直接请求，query 不剥离、随 URL 发送；
+> 2. **上传 URL 不做模板求值**：原版 `AnalyzeUrl` 构造期执行 `initUrl`（`@js:` / `<js>` / `{{}}` 变量替换、相对 URL 解析）；本实现只做逗号选项切分，URL 原样使用（规则配置方需传入最终 URL）；
+> 3. **headers 仅接受对象形态**：原版 `headers` 经 Gson 支持对象或 JSON 字符串两种形态；本实现 `UploadOptions.headers` 只接受对象（`HashMap<String, Value>`），传字符串形态会被 serde 判为形态不符并报规则解析错误；
+> 4. **对象值字符串化与部件顺序**：原版 `value.toString()` 对 Map 走 Gson `toString`（如 `{a=1}` 的 Java Map 字符串形态），本实现用 JSON 紧凑串（如 `{"a":1}`）；原版按 Gson `LinkedTreeMap` 声明序发送部件，本实现按字段名排序（multipart 字段顺序语义不敏感）；
+> 5. **body 空/缺失错误文案**：原版 `body` 缺失时 `!!` 抛 NPE、`{}` 空表照常发送空 multipart；本实现缺失 → 「上传 URL 选项缺少 body（无法定位 fileRequest 文件字段）」、空表 → 「上传 URL 选项 body 为空（无法定位 fileRequest 文件字段）」。
+>
+> 其余已登记差异：错误文案按本契约中文（原版 Kotlin 为「上传url未配置」「下载地址规则未配置」）；`type` 选项作为 multipart 整体 Content-Type 使用（缺省/`multipart/form-data` 时由实现附加 boundary；含 CR/LF 等控制字符或非 ASCII 的 Content-Type 明确报错）；原版 `expiryDate` 不进入契约（参考版已删）；压缩条目名统一取 `fileName` 参数（原版 `filePath` 输入走 `ZipUtils.zipFile` 时用实际文件名作条目名——调用方传 `fileName` = 实际文件名即等价）；用户选项 headers 中的 `Content-Type`/`Content-Length` 会被请求体覆盖（对齐 OkHttp `body.contentType()` 优先语义）。
 
 | 方法 | 入参 | 返回 | 说明 |
 |------|------|------|------|

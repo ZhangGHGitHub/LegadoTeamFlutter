@@ -620,7 +620,11 @@ impl LegadoClient {
         headers: Option<HashMap<String, String>>,
     ) -> LegadoResult<LegadoResponse> {
         let boundary = generate_multipart_boundary();
-        let (body, content_type) = build_multipart_body(parts, media_type, &boundary);
+        let (body, content_type) = build_multipart_body(parts, media_type, &boundary)?;
+        // P1-1：共享客户端 `.timeout(read_timeout)` 是**总请求**超时（连接 +
+        // 发送 + 等待响应），100 MiB 载荷在慢链路上必然超过 60s。上传出口按
+        // 实际载荷大小覆写单请求超时，避免大文件被客户端级超时提前掐断。
+        let request_timeout = upload_request_timeout(&self.config, body.len());
         // 整体 Content-Type 由请求体决定（对齐 OkHttp：`body.contentType()`
         // 在发送时覆盖手动设置的同名头）；Content-Length 由 reqwest 按实际体长
         // 生成。用户选项里的同名头一并剔除，避免残留旧值导致服务端解析失败。
@@ -655,7 +659,9 @@ impl LegadoClient {
                 let mut req = client
                     .post(&url)
                     .header("Content-Type", content_type.as_str())
-                    .body(body);
+                    .body(body)
+                    // P1-1：覆写客户端级总超时（按载荷大小估算的上传预算）
+                    .timeout(request_timeout);
                 req = apply_default_headers_static(req);
                 req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
                 req.send().await
@@ -1219,8 +1225,8 @@ pub enum MultipartPart {
         file_name: String,
         /// 部件 Content-Type（None → `application/octet-stream`）
         content_type: Option<String>,
-        /// 文件字节
-        data: Vec<u8>,
+        /// 文件字节（`Bytes` 让多部件共享同一载荷仅增引用计数，不逐部件拷贝）
+        data: bytes::Bytes,
     },
 }
 
@@ -1243,19 +1249,78 @@ fn escape_multipart_quoted(value: &str) -> String {
         .replace('\n', "%0A")
 }
 
+/// 校验并归一 multipart 头里的 MIME 值（P2-10）
+///
+/// 拒绝 CR/LF 与非 ASCII 控制字符，防止部件 Content-Type 头注入或畸形头
+/// （`name`/`file_name` 已按 OkHttp 口径百分号转义，MIME 值不允许转义）。
+/// 空/空白值回退 `application/octet-stream`。
+fn validate_multipart_media_type(raw: &str) -> LegadoResult<&str> {
+    let mime = raw.trim();
+    if mime.is_empty() {
+        return Ok("application/octet-stream");
+    }
+    if !mime.is_ascii() || mime.bytes().any(|b| b < 0x20 || b == 0x7f) {
+        return Err(LegadoError::Ffi(format!(
+            "multipart Content-Type 非法（含控制字符或非 ASCII）: {mime:?}"
+        )));
+    }
+    Ok(mime)
+}
+
+/// 上传单请求超时（P1-1）
+///
+/// 共享客户端在构建期设置了 `.timeout(read_timeout)`（总请求超时）；上传
+/// 出口按载荷大小覆写：`connect_timeout + 传输预算 + read_timeout`，传输
+/// 速度按 256 KiB/s 的保守下限估算（100 MiB ≈ 400s）。小载荷至少保持
+/// `read_timeout`，不因覆写缩短既有口径。
+fn upload_request_timeout(config: &LegadoClientConfig, body_len: usize) -> Duration {
+    const UPLOAD_RATE_FLOOR_BYTES_PER_SEC: u64 = 256 * 1024;
+    let len = body_len as u64;
+    let transfer_secs = len.div_ceil(UPLOAD_RATE_FLOOR_BYTES_PER_SEC);
+    (config.connect_timeout + Duration::from_secs(transfer_secs) + config.read_timeout)
+        .max(config.read_timeout)
+}
+
 /// 构造 multipart/form-data 请求体与整体 Content-Type
 ///
 /// 返回 `(body_bytes, content_type)`；`content_type` 形如
 /// `multipart/form-data; boundary=<boundary>`（显式 `media_type` 非空时以其
 /// 为前缀，追加 boundary 参数）。
+///
+/// P1-2/P2-10：一次性按部件字节数预分配请求体容量（避免大载荷反复扩容
+/// 拷贝），并对整体/部件 Content-Type 做头注入校验。
 pub fn build_multipart_body(
     parts: &[MultipartPart],
     media_type: Option<&str>,
     boundary: &str,
-) -> (Vec<u8>, String) {
+) -> LegadoResult<(Vec<u8>, String)> {
     use std::io::Write;
 
-    let mut body = Vec::new();
+    // 预分配：boundary 行 + 各部件头（粗略上界）+ 载荷字节 + 结束行
+    let mut capacity = 0usize;
+    for part in parts {
+        capacity = capacity
+            .saturating_add(boundary.len() + 6)
+            .saturating_add(96);
+        capacity = match part {
+            MultipartPart::Text { name, value } => capacity
+                .saturating_add(name.len())
+                .saturating_add(value.len()),
+            MultipartPart::File {
+                name,
+                file_name,
+                content_type,
+                data,
+            } => capacity
+                .saturating_add(name.len())
+                .saturating_add(file_name.len())
+                .saturating_add(content_type.as_deref().map(str::len).unwrap_or(0))
+                .saturating_add(data.len()),
+        };
+    }
+    capacity = capacity.saturating_add(boundary.len() + 8);
+    let mut body = Vec::with_capacity(capacity);
+
     for part in parts {
         // 每个部件：--boundary CRLF 头 CRLF CRLF 内容 CRLF
         let _ = write!(body, "--{boundary}\r\n");
@@ -1282,8 +1347,8 @@ pub fn build_multipart_body(
                 );
                 let mime = content_type
                     .as_deref()
-                    .map(str::trim)
-                    .filter(|s| !s.is_empty())
+                    .map(validate_multipart_media_type)
+                    .transpose()?
                     .unwrap_or("application/octet-stream");
                 let _ = write!(body, "Content-Type: {mime}\r\n\r\n");
                 body.extend_from_slice(data);
@@ -1293,11 +1358,18 @@ pub fn build_multipart_body(
     }
     let _ = write!(body, "--{boundary}--\r\n");
 
-    let media = media_type
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or("multipart/form-data");
-    (body, format!("{media}; boundary={boundary}"))
+    let media = match media_type {
+        Some(raw) => {
+            let trimmed = raw.trim();
+            if trimmed.is_empty() {
+                "multipart/form-data"
+            } else {
+                validate_multipart_media_type(trimmed)?
+            }
+        }
+        None => "multipart/form-data",
+    };
+    Ok((body, format!("{media}; boundary={boundary}")))
 }
 
 /// 合并 DB Cookie 与规则/自定义 Cookie 头（**按键合并、规则优先**）
