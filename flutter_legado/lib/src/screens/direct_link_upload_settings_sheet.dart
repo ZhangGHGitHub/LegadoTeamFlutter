@@ -5,6 +5,8 @@
 // 测试 / 取消 / 确认。字段集按参考版 4 字段（不展示口令与 expiryDate）。
 // 菜单：导入默认规则（内置 3 条，索引 0 为默认）/ 复制规则 / 粘贴规则。
 // 测试语义对齐原版：上传 `test.json`（`{}`）并展示结果（可复制）。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -30,6 +32,8 @@ class DirectLinkUploadSettingsSheet extends ConsumerStatefulWidget {
   }) {
     return showModalBottomSheet<void>(
       context: context,
+      // 测试/保存进行中拖拽关闭会绕过 _busy 保护并丢失进度，统一禁用手势下拉
+      enableDrag: false,
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
@@ -56,6 +60,11 @@ class _DirectLinkUploadSettingsSheetState
   bool _testing = false;
   bool _saving = false;
 
+  /// 复制反馈文案（Sheet 内联展示，成功短暂显示后自动清除）
+  String? _feedback;
+  bool _feedbackError = false;
+  Timer? _feedbackTimer;
+
   bool get _busy => _testing || _saving;
 
   /// 加载或保存/测试进行中时，表单与菜单统一禁用
@@ -75,6 +84,7 @@ class _DirectLinkUploadSettingsSheetState
 
   @override
   void dispose() {
+    _feedbackTimer?.cancel();
     _uploadUrl.dispose();
     _downloadUrlRule.dispose();
     _summary.dispose();
@@ -120,6 +130,21 @@ class _DirectLinkUploadSettingsSheetState
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  /// 内联反馈：成功文案短暂展示（2 秒）后自动隐藏，失败文案保留到下次操作
+  void _showFeedback(String message, {bool isError = false}) {
+    if (!mounted) return;
+    _feedbackTimer?.cancel();
+    setState(() {
+      _feedback = message;
+      _feedbackError = isError;
+    });
+    if (isError) return;
+    _feedbackTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      setState(() => _feedback = null);
+    });
   }
 
   Future<void> _onMenuSelected(_SheetMenuAction action) {
@@ -168,10 +193,10 @@ class _DirectLinkUploadSettingsSheetState
     try {
       await Clipboard.setData(ClipboardData(text: json));
     } catch (e) {
-      _toast('复制失败：${errorMessage(e)}');
+      _showFeedback('复制失败：${errorMessage(e)}', isError: true);
       return;
     }
-    _toast('规则已复制到剪贴板');
+    _showFeedback('规则已复制到剪贴板');
   }
 
   Future<void> _pasteRule() async {
@@ -224,38 +249,8 @@ class _DirectLinkUploadSettingsSheetState
   }) async {
     await showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text(title),
-        content: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 480, maxHeight: 360),
-          child: SingleChildScrollView(
-            child: SelectableText(
-              message,
-              style: isError
-                  ? TextStyle(color: Theme.of(dialogContext).colorScheme.error)
-                  : null,
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              try {
-                await Clipboard.setData(ClipboardData(text: message));
-              } catch (e) {
-                _toast('复制失败：${errorMessage(e)}');
-                return;
-              }
-              if (dialogContext.mounted) Navigator.pop(dialogContext);
-            },
-            child: const Text('复制结果'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('确认'),
-          ),
-        ],
-      ),
+      builder: (_) =>
+          _ResultDialog(title: title, message: message, isError: isError),
     );
   }
 
@@ -362,6 +357,34 @@ class _DirectLinkUploadSettingsSheetState
                         ],
                       ),
                     ),
+                    // 复制反馈内联展示：不依赖底层 Scaffold 的 SnackBar
+                    if (_feedback != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              _feedbackError
+                                  ? Symbols.error_outline_rounded
+                                  : Symbols.check_circle_outline_rounded,
+                              size: 16,
+                              color: _feedbackError ? cs.error : cs.primary,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                _feedback!,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: _feedbackError
+                                      ? cs.error
+                                      : cs.primary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     Flexible(
                       child: _loading
                           ? const Padding(
@@ -533,6 +556,76 @@ class _MenuRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return Row(
       children: [Icon(icon, size: 20), const SizedBox(width: 12), Text(label)],
+    );
+  }
+}
+
+/// 测试结果对话框（复制结果失败时内联展示原因，不走 SnackBar）
+class _ResultDialog extends StatefulWidget {
+  const _ResultDialog({
+    required this.title,
+    required this.message,
+    required this.isError,
+  });
+
+  final String title;
+  final String message;
+  final bool isError;
+
+  @override
+  State<_ResultDialog> createState() => _ResultDialogState();
+}
+
+class _ResultDialogState extends State<_ResultDialog> {
+  /// 复制失败的真实原因
+  String? _copyError;
+
+  Future<void> _copy() async {
+    try {
+      await Clipboard.setData(ClipboardData(text: widget.message));
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _copyError = '复制失败：${errorMessage(e)}');
+      return;
+    }
+    if (!mounted) return;
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = Theme.of(context).colorScheme;
+    return AlertDialog(
+      title: Text(widget.title),
+      content: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 480, maxHeight: 360),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SelectableText(
+                widget.message,
+                style: widget.isError ? TextStyle(color: cs.error) : null,
+              ),
+              if (_copyError != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  _copyError!,
+                  style: TextStyle(color: cs.error, fontSize: 12),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: _copy, child: const Text('复制结果')),
+        FilledButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('确认'),
+        ),
+      ],
     );
   }
 }

@@ -341,6 +341,35 @@ void main() {
       expect(find.textContaining('Instance of'), findsNothing);
     });
 
+    testWidgets('P1 回归：测试上传中下拉不关闭 Sheet（避免结果丢失）', (tester) async {
+      api.uploadCompleter = Completer<String>();
+      await openSheet(tester);
+
+      await tester.tap(find.text('测试'));
+      await tester.pump();
+      expect(find.text('测试中'), findsOneWidget);
+
+      // 在标题区域下拉：修复前拖拽走 Navigator.pop，进度中可被手势关闭
+      await tester.drag(find.text('直链上传配置'), const Offset(0, 400));
+      // 测试中按钮内进度圈持续动画，不能用 pumpAndSettle
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('直链上传配置'), findsOneWidget);
+      expect(find.text('测试中'), findsOneWidget);
+
+      // 收尾：完成挂起上传并关闭结果对话框
+      api.uploadCompleter!.complete('https://download.example/test.json');
+      await tester.pumpAndSettle();
+      expect(find.text('测试结果'), findsOneWidget);
+      await tester.tap(
+        find.descendant(
+          of: find.byType(AlertDialog),
+          matching: find.text('确认'),
+        ),
+      );
+      await tester.pumpAndSettle();
+    });
+
     testWidgets('导入默认规则：列出 3 条并回填所选规则', (tester) async {
       await openSheet(tester);
 
@@ -374,7 +403,12 @@ void main() {
         'compress',
       });
       expect(copied['summary'], contains('喵公子网盘①'));
+      // 内联反馈：不再依赖底层 SnackBar
       expect(find.text('规则已复制到剪贴板'), findsOneWidget);
+      expect(find.byType(SnackBar), findsNothing);
+      // 成功文案 2 秒后自动隐藏
+      await tester.pump(const Duration(milliseconds: 2100));
+      expect(find.text('规则已复制到剪贴板'), findsNothing);
     });
 
     testWidgets('粘贴规则：剪贴板 JSON 回填表单', (tester) async {
@@ -426,6 +460,7 @@ void main() {
 
       expect(find.textContaining('复制失败'), findsOneWidget);
       expect(find.text('规则已复制到剪贴板'), findsNothing);
+      expect(find.byType(SnackBar), findsNothing);
     });
 
     testWidgets('粘贴规则读取失败：提示读取剪贴板失败', (tester) async {
