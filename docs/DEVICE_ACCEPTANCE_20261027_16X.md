@@ -247,6 +247,7 @@ push 到 `/sdcard/Download/legado/`，长按「恢复」→ 选择该 zip → �
 ## 五、遗留问题与观察
 
 ### D1（P1，阻断发布）「保存到本地」在 Android 15 崩溃并残留 0 字节文件
+> **回修状态**：已修复并真机复验（2026-10-27 第二批回修，见 §七）。原始记录保留作追溯。
 - 现象/栈见 §三 B-2，两个目标目录均可复现，属**共享导出链路的系统性问题**。
 - 根因初判：`file_picker 8.3.7` 在 `onActivityResult` 内对 `DownloadStorageProvider` URI 调
   `openOutputStream` 抛 `SecurityException`（Android 15 要求 `MANAGE_DOCUMENTS` / `grantUriPermission`），异常未捕获直穿 Activity。
@@ -286,3 +287,75 @@ push 到 `/sdcard/Download/legado/`，长按「恢复」→ 选择该 zip → �
 - 另有构建侧风险 D2（armv7 无 quickjs）与本批外的观察 D3、体验项 D4，建议单独立项跟踪。
 
 编写者：QA 代理 ｜ 2026-10-27
+
+## 七、D1 第二批回修与限制登记（2026-10-27）
+
+> 范围：独立复核（1 P1 + 5 P2 + 6 P3）逐项修复。版本号/CHANGELOG/updateLog/ACTIVE_PLAN 由主代理统一收尾，本节只记录修复口径与证据。
+
+### 7.1 修复项与验证方式
+
+| 项 | 修法 | 验证 |
+|---|---|---|
+| P1-1 回退必须落在用户选择的子目录 | 回退前从 SAF 文档 uri 推导 `RELATIVE_PATH`：`raw:`/`primary:` 走路径归一化、`msf:<id>` 走 `MediaStore.Files` 按 `_id` 查询、本 ROM 的 legacy 数字 id 走「显示名 + 最新修改」查询；全部失败时回 `FALLBACK_PATH_UNKNOWN` 中文原因（「无法确定所选文件夹，请选择内部存储 > Download 或子文件夹后重试」），**绝不静默写「下载」根** | JVM 单测 + 真机（§7.3） |
+| P2-1 回退读回严格校验 | SIZE 必须精确等于写入字节数，且首 8 字节一致（参照 `StorageBridge.verifyWritten`）；读不到（null/-1）即判 `SAVE_VERIFY_FAILED` 并清理本次 insert 行 | JVM 单测 + 真机 |
+| P2-2 替换已有文件失败不删 | `openOutputStream` 前查 `COLUMN_SIZE`；仅 `preSize == 0` 允许删除，`preSize > 0`（用户选择「替换」）或未知（null）只报错不删 | JVM 单测 |
+| P2-4 清理新建空文档 | 同上判定；回退成功/失败后依次尝试 DocumentsProvider 删除 → `ContentResolver.delete` → 删除对应 MediaStore 空行 | 真机 `ls -l` 对比：**未达成**（本 ROM provider 连删除也拒绝，见 §7.3.1） |
+| P2-3 API<29 行为 | 见 §7.2（选择方案 ②：明确中文原因 + 本登记） | JVM 单测 + 本节登记 |
+| P3-1 回退触发条件放宽 | `openOutputStream` 返回 null、`FileNotFoundException`/`EACCES`/`permission denied`/`operation not permitted` 均纳入回退候选（异常链逐层判定） | JVM 单测 |
+| P3-3 `viaMediaStoreFallback` 死字段 | 原生成功回传新增 `relativeDir`（如 `Download/legado/`），成功提示改为「已保存到「下载/legado」：xxx.json」；回退到根时为「已保存到「下载」：xxx.json」 | Dart 单测 + 真机 |
+| P3-4 错误映射锚定 | 「含中文即放行」改为「行首锚定底层前缀 + 整串形态匹配」；`Permission Denial … 中文文件名` 仍映射为「没有写入权限，请换一个保存位置」，中文业务前缀文案不被吞 | Dart 单测 |
+| P3-5 `normalizeFileName` 口径 | Dart 侧补 `trim()`，与 Kotlin 对齐（替换非法字符 + 去首尾空白） | Dart/JVM 单测 |
+| P3-6 超时后迟到结果 | 已回 `TIMEOUT` 后迟到的 `onActivityResult` 记 `W` 日志（含 `resultCode` 与 uri），不静默丢弃 | 代码审查 |
+
+JVM 用例：`SaveFileBridgeTest` **30 例**（`./gradlew.bat :app:testDebugUnitTest --tests "*SaveFileBridge*"` 全绿），覆盖回退条件、`shouldDeleteAfterFailure`、相对路径推导、`reasonOf` 中文映射、读回大小严格校验。
+
+### 7.2 限制登记（P2-3，API < 29）
+
+- **结论**：`Build.VERSION.SDK_INT < Q` 时回退分支返回错误码 `LEGACY_NOT_SUPPORTED`，面向用户的中文原因为
+  「Android 10 以下暂不支持保存到下载目录，请选择其他位置」；SAF 直写路径不受影响。
+- **选择方案 ② 的理由**：
+  1. 该分支只在 SAF 写流被拒时触发。本 ROM 的拒写（`MANAGE_DOCUMENTS`）是 Android 15 `DownloadStorageProvider` 的行为；API 24~28 的 SAF 直写不经过该限制，回退属极端异常路径。
+  2. 实现 `Environment.getExternalStoragePublicDirectory(DIRECTORY_DOWNLOADS)` + 运行时 `WRITE_EXTERNAL_STORAGE` 需要 `MainActivity` 转发 `onRequestPermissionsResult`、后台线程等待权限回调并处理授权竞态；当前设备档（Test/Test2 两实例）均为 Android 15，**没有 API<29 设备可复验**，属不可验证代码。
+  3. 按项目完成定义（证据判定）与其交付无法验证的权限流程，不如给出明确中文原因并引导用户换一个位置（SAF 直写仍可完成保存）。
+- **后续**：若要支持 API<29 下载目录回退，建议单独立项，先准备 API 24~28 设备/实例，再实现并复验权限流程。
+
+### 7.3 真机复验（证据：`tmp_debug/device_acceptance_20261027/d1_verify3/`）
+
+- 设备：MuMu「Test测试」实例（`192.168.100.62:5555`，Android 15 / x86_64 / 1080x1920）。
+- APK：`app-release.apk` sha256 `e7740c26…56aa55`（`apk_sha256_final.txt`），`adb install -r` 成功（versionName 2.0.391 / versionCode 392，版本号由主代理收尾）。
+- FATAL EXCEPTION = **0**；SecurityException = 12（全部为 DownloadsProvider 拒写/拒删，符合预期；`full_logcat.txt`）。
+
+| 用例 | 结果 | 证据 |
+|---|---|---|
+| 书源导出 → 系统对话框「下载」根 → 保存 | **PASS**：提示「已保存到「下载」：bookSource_QA本地音频B2 (10).json」；落盘 2100 B，JSON list 长度 1（`bookSourceUrl`/`bookSourceName=QA本地音频B2`）；authority 仍为 DownloadsProvider，写流被拒后回退 MediaStore 行 1000001420，`relativeDir=Download/` | `case1_picker_root.png`、`case1_saved_root.png`、`d1v3_booksource_root.json` |
+| 书源导出 → 「下载」→ `legado` 子目录 → 保存 | **PASS**：提示「已保存到「下载/legado」：bookSource_QA本地音频B2 (2).json」；落盘 `/sdcard/Download/legado/` 2100 B，JSON 可解析；`docId=raw:/storage/emulated/0/Download/legado/…` → `Download/legado/`，回退行 1000001421 | `case2_picker_legado.png`、`case2_saved_legado.png`、`d1v3_booksource_legado.json`、`ls_legado_after_case2.txt` |
+| 高亮规则导出 → 「下载」→ `legado` 子目录 → 保存 | **PASS**：提示「已保存到「下载/legado」：HighlightRules (2).json」；落盘 409 B，`type=highlightRule`、`rules=1`，回退行 1000001423 | `case5_replace_confirm.png`、`d1v3_highlight_legado.json`、`ls_legado_after_case3.txt` |
+| 取消另存（对话框返回） | **PASS**：回到高亮规则页，无提示、无崩溃、无新日志（`onActivityResult` 走取消分支） | `case4_picker_cancel.png`、`case4_after_cancel2.png` |
+| 同名文件保存（替换语义） | **本 ROM 不可达**：`CREATE_DOCUMENT` 对同名文件不弹「替换」确认，而是自动去重（已有 `HighlightRules.json` → 新建 `HighlightRules (1).json`，输出 `HighlightRules (2).json`），因此 `preSize > 0` 分支无法通过系统对话框触发；该分支由 JVM 单测 `shouldDeleteAfterFailure` 覆盖 | `case5_replace_confirm.png` |
+
+**JSON 校验**（宿主侧 Python `json.loads`）：
+
+| 文件 | 大小 | 解析结果 |
+|---|---|---|
+| `d1v3_booksource_root.json` | 2100 B | list，len=1，`bookSourceName=QA本地音频B2` |
+| `d1v3_booksource_legado.json` | 2100 B | list，len=1，`bookSourceName=QA本地音频B2` |
+| `d1v3_highlight_legado.json` | 409 B | dict，键 `rules`/`type` |
+
+#### 7.3.1 残留限制：0 字节 SAF 文档无法删除（P2-4 未达成）
+
+- 现象：本轮 3 次保存各新增 1 个 0 字节 SAF 文档（根 `bookSource_QA本地音频B2 (9).json`、`legado/bookSource_QA本地音频B2 (1).json`、`legado/HighlightRules (1).json`），文件落盘基线见 `zero_before_files.txt`、`zero_after_all.txt`、`zero_legado_after_all.txt`。
+- 根因：该 ROM 的 `DownloadStorageProvider` **对创建请求放行、对写入与删除一并拒绝**（同一 `MANAGE_DOCUMENTS` 限制）：
+  ```
+  DocumentsContract.deleteDocument 失败：Permission Denial: writing … DownloadStorageProvider
+    uri content://…/document/raw:… requires android.permission.MANAGE_DOCUMENTS, or grantUriPermission()
+  ContentResolver.delete 失败：同上
+  ```
+  代码随后按「显示名 + 0 字节 + 同目录」删除对应 MediaStore 行兜底，也查不到可删行（`未找到可删除的 MediaStore 空行`：该行属主为 NULL/DownloadsUI，非本应用）。
+- 影响：每次在「下载」入口保存会留下一个同名 0 字节占位文档（用户可见，但无数据损失），重名计数持续递增。
+- 现有代码已尽力：`shouldDeleteAfterFailure(preSize == 0)` 判定 → DocumentsProvider 删除 → `ContentResolver.delete` → MediaStore 空行删除，三层均失败只记日志、不影响已成功的保存。**这不是应用逻辑缺陷，而是该 ROM provider 的权限模型限制**。
+- 建议后续（需用户裁决，属交互/权限变更）：
+  1. 改用 `ACTION_OPEN_DOCUMENT_TREE` 选文件夹 + `DocumentsContract.createDocument` 自建文档（可完全掌控创建/写入/清理，同时可覆盖 API<29 回退），但保存对话框形态与原版/参考版不一致；
+  2. 申请 `MANAGE_EXTERNAL_STORAGE`（可读写删，但对应用商店合规影响大）。
+- 另注：`legacy` 数字文档 id 判定为「下载」根（§7.1 P1-1）依据本 ROM 实测语义：根目录新建返回 legacy downloads 行 id（`document/12`），子目录新建返回 `raw:/…/legado/…` 或 `msf:<id>`；该判定写 INFO 日志（`legacy downloads 行 id（12）仅对应「下载」根文档`）。若其他 ROM 对数字 id 采用不同语义，存在误判到根目录的风险（已记录为剩余风险）。
+
+编写者：编码代理（Android SAF/MediaStore 回退）｜ 2026-10-27
