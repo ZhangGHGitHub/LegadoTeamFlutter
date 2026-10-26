@@ -56,6 +56,7 @@ void main() {
   late GlobalKey<NavigatorState> navKey;
   late _RecordingAssociationNotifier association;
   late MockRustApi api;
+  late List<Map<Object?, Object?>> copyArgs;
   final stagedFiles = <String, String>{};
   var uriSeed = 0;
 
@@ -63,6 +64,7 @@ void main() {
     tempDir = await Directory.systemTemp.createTemp('deep_link_dispatch_');
     copiedPath = '';
     importedPaths = [];
+    copyArgs = [];
     navKey = GlobalKey<NavigatorState>();
     association = _RecordingAssociationNotifier();
     api = MockRustApi();
@@ -86,11 +88,18 @@ void main() {
         .thenAnswer((_) async => ['a.txt']);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
-      if (call.method == 'copyContentUri') return copiedPath;
+      if (call.method == 'copyContentUri') {
+        copyArgs.add(Map<Object?, Object?>.from(call.arguments as Map));
+        return copiedPath;
+      }
       return null;
     });
     DeepLinkService.instance
       ..navigatorKey = navKey
+      // P2-7：真实嗅探为异步磁盘 IO，testWidgets 的 fake async 不推进真实
+      // 回调 → 注入按后缀判定的纯内存嗅探器（真实读盘由
+      // external_file_open_test.dart 覆盖）
+      ..jsonSniffer = ((path) async => path.toLowerCase().endsWith('.json'))
       ..importLocalBook = (path) async {
         importedPaths.add(path);
         return Book(name: '外部书籍', bookUrl: 'file://$path');
@@ -102,6 +111,7 @@ void main() {
         .setMockMethodCallHandler(channel, null);
     DeepLinkService.instance
       ..navigatorKey = null
+      ..jsonSniffer = null
       ..importLocalBook = null;
     try {
       if (await tempDir.exists()) {
@@ -147,72 +157,91 @@ void main() {
   }
 
   /// 触发一次外部文件打开（URI 唯一，避免单例去重影响用例）
-  Future<void> openFile(WidgetTester tester) async {
+  ///
+  /// [name] 用于让 Dart 侧按后缀决定落盘目录（书籍 → filesDir，
+  /// JSON/压缩包/未知 → cacheDir）；无后缀时按「可能是书籍」持久落盘。
+  Future<void> openFile(WidgetTester tester, {String? name}) async {
     uriSeed++;
-    unawaited(
-      DeepLinkService.instance.handleFileUri('content://test/$uriSeed'),
-    );
+    final uri = name == null
+        ? 'content://test/$uriSeed'
+        : 'content://test/$uriSeed/$name';
+    unawaited(DeepLinkService.instance.handleFileUri(uri));
     await pumpUi(tester);
   }
 
   testWidgets('JSON 文件 → 关联导入（loadFromFile + 类型识别）', (tester) async {
     final path = stageCopiedFile('sources.json');
     await pumpApp(tester);
-    await openFile(tester);
+    await openFile(tester, name: 'sources.json');
 
     expect(association.loadedFilePath, path);
     expect(find.text('导入书源'), findsOneWidget);
     expect(find.text('外部JSON源'), findsOneWidget);
+    // P2-6：JSON 落 cacheDir（persistent=false）
+    expect(copyArgs.single['persistent'], isFalse);
+
+    // 关闭对话框后一次性副本删除
+    await tester.tap(find.text('取消'));
+    await pumpUi(tester);
+    expect(File(path).existsSync(), isFalse);
   });
 
   testWidgets('zip 压缩包 → 解压导入对话框', (tester) async {
     stageCopiedFile('books.zip');
     await pumpApp(tester);
-    await openFile(tester);
+    await openFile(tester, name: 'books.zip');
 
     expect(find.text('压缩包导入'), findsOneWidget);
     expect(find.text('a.txt'), findsOneWidget);
     expect(association.loadedFilePath, isNull);
+    expect(copyArgs.single['persistent'], isFalse);
   });
 
   testWidgets('7z 压缩包 → 明确提示暂不支持', (tester) async {
     stageCopiedFile('books.7z');
     await pumpApp(tester);
-    await openFile(tester);
+    await openFile(tester, name: 'books.7z');
 
     expect(find.text('压缩包导入'), findsOneWidget);
     expect(find.text('暂不支持 7z，请解压后导入'), findsOneWidget);
     expect(find.text('a.txt'), findsNothing);
+    expect(copyArgs.single['persistent'], isFalse);
   });
 
   testWidgets('未知文件 → 「仍然导入」兜底对话框并强制按书籍导入', (tester) async {
     final path = stageCopiedFile('mystery.bin');
     await pumpApp(tester);
-    await openFile(tester);
+    await openFile(tester, name: 'mystery.bin');
 
     expect(find.text('提醒'), findsOneWidget);
     expect(find.text('文件 mystery.bin 不受支持，是否继续打开？'), findsOneWidget);
     expect(importedPaths, isEmpty);
+    expect(copyArgs.single['persistent'], isFalse);
 
     await tester.tap(find.text('仍然导入'));
     await pumpUi(tester);
 
     expect(importedPaths, [path]);
     expect(find.text('详情页'), findsOneWidget);
+    // P2-6：不支持分支强制导入后删除一次性副本
+    expect(File(path).existsSync(), isFalse);
   });
 
   testWidgets('书籍文件 → 既有导入确认链', (tester) async {
     final path = stageCopiedFile('book.epub');
     await pumpApp(tester);
-    await openFile(tester);
+    await openFile(tester, name: 'book.epub');
 
     expect(find.text('导入本地书籍'), findsOneWidget);
     expect(find.text('book.epub'), findsOneWidget);
+    // P2-6：书籍文件落 filesDir（persistent=true），导入后保留
+    expect(copyArgs.single['persistent'], isTrue);
 
     await tester.tap(find.text('导入'));
     await pumpUi(tester);
 
     expect(importedPaths, [path]);
     expect(find.text('详情页'), findsOneWidget);
+    expect(File(path).existsSync(), isTrue);
   });
 }

@@ -282,6 +282,14 @@ mixin MockBookApiSyncTools on MockBookApiStore implements BookApi {
     if ((content == null) == (filePath == null)) {
       throw ArgumentError('content 与 filePath 必须二选一');
     }
+    // 对齐 Rust 载荷校验（§2.51）：空路径与 content 超限明确报错
+    if (filePath != null && filePath.trim().isEmpty) {
+      throw StateError('上传文件路径为空');
+    }
+    const maxUploadBytes = 100 * 1024 * 1024;
+    if (content != null && content.length > maxUploadBytes) {
+      throw StateError('上传内容超过上传上限（100 MiB）');
+    }
     final compress = rule['compress'] == true && contentType != 'application/zip';
     final uploadName = compress ? '$fileName.zip' : fileName;
     final source = content ?? filePath!;

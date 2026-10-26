@@ -30,6 +30,10 @@ class DeepLinkService {
 
   GlobalKey<NavigatorState>? navigatorKey;
 
+  /// JSON 内容嗅探器（测试注入点；默认走 [LegadoDeepLink.looksLikeJsonFile]
+  /// 异步读盘。widget 测试的 fake async 不推进真实 IO，可注入纯内存判定）
+  Future<bool> Function(String path)? jsonSniffer;
+
   /// P1-4：本地书籍导入执行器（由 app.dart 注入 bookshelfNotifier 闭包，
   /// 服务层不依赖 Riverpod；对齐 [attach] 的回调装配模式）
   Future<Book> Function(String filePath)? importLocalBook;
@@ -176,53 +180,69 @@ class DeepLinkService {
   }
 
   /// 按分流类型处理已落盘文件（原版 dispatchIntent → dispatch 的等价实现）
+  ///
+  /// P2-6：JSON/压缩包/不支持三类只消费一次 → 分支用后删除落盘副本
+  /// （书籍文件保留持久副本，导入链以该路径作为 bookUrl）。
   Future<void> _dispatchCopiedFile(
     String path,
     ScaffoldMessengerState messenger,
   ) async {
-    final fileKind = _classifyCopiedFile(path);
+    final fileKind = await _classifyCopiedFile(path);
     switch (fileKind) {
       case IncomingFileKind.json:
-        await _openAssociationImport(path);
+        try {
+          await _openAssociationImport(path);
+        } finally {
+          // P2-6：JSON 只消费一次，用后删除落盘副本
+          _deleteCopiedFile(path);
+        }
       case IncomingFileKind.archive:
-        await _openArchiveImport(path);
+        try {
+          await _openArchiveImport(path);
+        } finally {
+          _deleteCopiedFile(path);
+        }
       case IncomingFileKind.bookFile:
         await _confirmAndImport(path, messenger);
       case IncomingFileKind.unsupported:
-        await _confirmUnsupportedImport(path, messenger);
+        try {
+          await _confirmUnsupportedImport(path, messenger);
+        } finally {
+          _deleteCopiedFile(path);
+        }
     }
   }
 
   /// 落盘文件分类：先看压缩包后缀，再嗅探 JSON 内容，最后按后缀
-  IncomingFileKind _classifyCopiedFile(String path) {
+  Future<IncomingFileKind> _classifyCopiedFile(String path) async {
     if (LegadoDeepLink.isArchivePath(path)) {
       return IncomingFileKind.archive;
     }
     return LegadoDeepLink.classifyFile(
       path,
-      jsonContent: _looksLikeJsonFile(path),
+      jsonContent: await _looksLikeJsonFile(path),
     );
   }
 
   /// 读取文件头部做 JSON 嗅探（对齐原版 looksLikeJson；读失败按非 JSON）
   ///
-  /// 只读前 64KB 且目标为应用私有目录文件，同步读开销可忽略；同步实现
-  /// 同时避免 UI 分流链路多一次异步跳转（原版亦在后台线程做同量级读取）。
-  bool _looksLikeJsonFile(String path) {
-    RandomAccessFile? handle;
+  /// P2-7：默认走 [LegadoDeepLink.looksLikeJsonFile] 异步读；widget 测试可
+  /// 注入 [jsonSniffer] 规避真实 IO（fake async 不推进磁盘回调）。
+  Future<bool> _looksLikeJsonFile(String path) {
+    final sniffer = jsonSniffer;
+    if (sniffer != null) return sniffer(path);
+    return LegadoDeepLink.looksLikeJsonFile(path);
+  }
+
+  /// 删除一次性落盘副本（P2-6；失败仅记录，不影响导入结果）
+  void _deleteCopiedFile(String path) {
     try {
-      handle = File(path).openSync();
-      final bytes = handle.readSync(LegadoDeepLink.jsonSniffLimit);
-      return LegadoDeepLink.looksLikeJsonBytes(bytes);
-    } catch (e) {
-      debugPrint('[DeepLink] JSON 嗅探失败：$e');
-      return false;
-    } finally {
-      try {
-        handle?.closeSync();
-      } catch (_) {
-        // 关闭失败不影响分类结果
+      final file = File(path);
+      if (file.existsSync()) {
+        file.deleteSync();
       }
+    } catch (e) {
+      debugPrint('[DeepLink] 清理外部文件副本失败：$e');
     }
   }
 
@@ -302,15 +322,22 @@ class DeepLinkService {
     );
   }
 
-  /// 原生拷贝外部文件到应用持久目录；返回落盘路径，取消/失败返回 null
+  /// 原生拷贝外部文件到应用私有目录；返回落盘路径，取消/失败返回 null
   ///（失败已提示）。
+  ///
+  /// P2-6：书籍后缀（或无后缀的 content URI，可能是书籍）落 `filesDir`
+  /// 持久目录；已知非书籍后缀（json/zip/rar/7z/其它）落 `cacheDir`，由调用
+  /// 分支用后删除，避免一次性导入文件长期占用持久空间。
   Future<String?> _copyExternalFile(
     String uri,
     ScaffoldMessengerState messenger,
   ) async {
     try {
+      final ext = LegadoDeepLink.extensionOf(uri);
+      final persistent = ext.isEmpty || LegadoDeepLink.isBookFilePath(uri);
       final path = await _channel.invokeMethod<String>('copyContentUri', {
         'uri': uri,
+        'persistent': persistent,
       });
       if (path == null || path.isEmpty) {
         throw StateError('文件拷贝失败：未返回路径');

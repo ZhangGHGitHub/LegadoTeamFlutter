@@ -34,6 +34,25 @@ void main() {
       expect(link!.importType, ImportType.dictRule);
     });
 
+    // P2-8：补齐 highlightRule / autoTask 深链映射
+    test('parses highlightRule path', () {
+      final link = LegadoDeepLink.tryParse(
+        'legado://import/highlightRule?src=https://example.com/highlight.json',
+      );
+      expect(link, isNotNull);
+      expect(link!.pathKey, 'highlightRule');
+      expect(link.importType, ImportType.highlightRule);
+    });
+
+    test('parses autoTask path', () {
+      final link = LegadoDeepLink.tryParse(
+        'legado://import/autoTask?src=https://example.com/auto_task.json',
+      );
+      expect(link, isNotNull);
+      expect(link!.pathKey, 'autoTask');
+      expect(link.importType, ImportType.autoTask);
+    });
+
     test('missing src returns null', () {
       expect(LegadoDeepLink.tryParse('legado://import/bookSource'), isNull);
     });

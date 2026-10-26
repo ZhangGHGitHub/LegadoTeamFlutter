@@ -402,7 +402,7 @@ class AssociationNotifier extends Notifier<AssociationState> {
           }
         }
         if (local == null) return ImportItemStatus.isNew;
-        return _sameHighlightRule(item, local)
+        return isSameHighlightRule(item, local)
             ? ImportItemStatus.exists
             : ImportItemStatus.isUpdate;
 
@@ -427,19 +427,34 @@ class AssociationNotifier extends Notifier<AssociationState> {
   }
 
   /// 高亮规则内容比较（对齐原版 compareImportedHighlightRules：
-  /// 排除 id/order 后逐字段比较；缺省布尔按 Rust 契约默认值归一）
-  static bool _sameHighlightRule(
+  /// 排除 id/order 后逐字段比较；缺省布尔/数值按 Rust 契约默认值归一）
+  ///
+  /// P2-5：补齐 `timeoutMillisecond`（此前遗漏导致仅超时不同的规则被误判
+  /// 为「已存在」而不导入）。
+  static bool isSameHighlightRule(
     Map<String, dynamic> a,
     Map<String, dynamic> b,
   ) {
     bool sameBool(String key, {required bool fallback}) =>
         _boolValue(a[key], fallback) == _boolValue(b[key], fallback);
+    // 导入比较发生在归一之前：按 normalizeForRestore 口径先归一超时/样式
+    int timeoutOf(Object? v) {
+      final value = v is num ? v.toInt() : highlightRuleDefaultTimeoutMs;
+      return value > 0 ? value : highlightRuleDefaultTimeoutMs;
+    }
+
+    String styleOf(Object? v) {
+      final value = v?.toString() ?? '';
+      return value.trim().isEmpty ? highlightRuleDefaultStyle : value;
+    }
+
     return _text(a['name']) == _text(b['name']) &&
         _text(a['pattern']) == _text(b['pattern']) &&
         sameBool('isRegex', fallback: false) &&
         _text(a['scope']) == _text(b['scope']) &&
         sameBool('isEnabled', fallback: true) &&
-        _text(a['style']) == _text(b['style']) &&
+        styleOf(a['style']) == styleOf(b['style']) &&
+        timeoutOf(a['timeoutMillisecond']) == timeoutOf(b['timeoutMillisecond']) &&
         sameBool('applyToTitle', fallback: false) &&
         sameBool('applyToBody', fallback: true);
   }
@@ -741,102 +756,256 @@ class AssociationNotifier extends Notifier<AssociationState> {
     );
   }
 
+  /// 高亮规则默认超时（对齐 Kotlin `HighlightRule.DEFAULT_TIMEOUT_MILLISECONDS`）
+  static const int highlightRuleDefaultTimeoutMs = 3000;
+
+  /// 空白 style 的默认样式（对齐 Kotlin `HighlightStyle()` 的 Gson 序列化形态）
+  static const String highlightRuleDefaultStyle =
+      '{"fill":0,"textColor":0,"bold":false,"italic":false,"fontPath":""}';
+
+  /// 标准 UUID 形态（8-4-4-4-12；大小写不敏感，归一小写）
+  static final RegExp _canonicalUuidPattern = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
+
+  /// 导入 uuid 归一（对齐原版 `UUID.fromString(raw).toString() == raw` 语义：
+  /// 只接受标准形态并归一小写；非法形态明确抛错，不静默改写身份）。
+  static String normalizeHighlightRuleUuid(Object? raw) {
+    final text = (raw?.toString() ?? '').trim();
+    if (!_canonicalUuidPattern.hasMatch(text)) {
+      throw const FormatException('uuid 非法');
+    }
+    return text.toLowerCase();
+  }
+
+  /// 单条高亮规则导入前归一（对齐 Kotlin
+  /// `HighlightRule.normalizeForRestore` + `isValid`）：
+  /// - uuid 归一（非法明确报错）；
+  /// - scope 空白 → null；
+  /// - timeoutMillisecond <= 0 → 3000；
+  /// - style 空白 → 默认样式 JSON；
+  /// - pattern 为空或 isRegex 时正则不可编译 → 报错。
+  static Map<String, dynamic> normalizeHighlightRuleForImport(
+    Map<String, dynamic> item,
+  ) {
+    final rule = Map<String, dynamic>.of(item);
+    rule['uuid'] = normalizeHighlightRuleUuid(rule['uuid']);
+    // 原版导出字段为 order；合并阶段统一写入 Rust 契约字段 sortOrder
+    rule.remove('order');
+
+    final scope = (rule['scope']?.toString() ?? '').trim();
+    if (scope.isEmpty) {
+      rule.remove('scope'); // Rust Option<String>：缺省与 null 等价
+    } else {
+      rule['scope'] = scope;
+    }
+
+    final timeout = rule['timeoutMillisecond'] is num
+        ? (rule['timeoutMillisecond'] as num).toInt()
+        : 0;
+    rule['timeoutMillisecond'] =
+        timeout > 0 ? timeout : highlightRuleDefaultTimeoutMs;
+
+    if ((rule['style']?.toString() ?? '').trim().isEmpty) {
+      rule['style'] = highlightRuleDefaultStyle;
+    }
+
+    final pattern = rule['pattern']?.toString() ?? '';
+    if (pattern.isEmpty) {
+      throw const FormatException('匹配模式为空');
+    }
+    if (_boolValue(rule['isRegex'], false)) {
+      try {
+        RegExp(pattern);
+      } on FormatException {
+        throw FormatException('正则表达式无效: $pattern');
+      }
+    }
+    return rule;
+  }
+
+  /// 合并导入高亮规则（对齐 Kotlin `mergeImportedHighlightRules`）：
+  /// 本地顺序在前（同 uuid 用导入内容覆盖、保留本地 id），新规则按导入顺序
+  /// 追加并清空 id，最后按合并顺序重排 `sortOrder`。
+  static List<Map<String, dynamic>> mergeHighlightRulesForImport(
+    List<Map<String, dynamic>> localRules,
+    List<Map<String, dynamic>> importedRules,
+  ) {
+    final importedByUuid = <String, Map<String, dynamic>>{
+      for (final rule in importedRules)
+        (rule['uuid']?.toString() ?? '').toLowerCase(): rule,
+    };
+    final localUuids = <String>{};
+    final merged = <Map<String, dynamic>>[];
+    for (final local in localRules) {
+      final localUuid = (local['uuid']?.toString() ?? '').toLowerCase();
+      if (localUuid.isNotEmpty) localUuids.add(localUuid);
+      final incoming = importedByUuid[localUuid];
+      if (incoming != null) {
+        merged.add(Map<String, dynamic>.of(incoming)..['id'] = local['id']);
+      } else {
+        merged.add(Map<String, dynamic>.of(local));
+      }
+    }
+    for (final imported in importedRules) {
+      final uuid = (imported['uuid']?.toString() ?? '').toLowerCase();
+      if (!localUuids.contains(uuid)) {
+        merged.add(Map<String, dynamic>.of(imported)..remove('id'));
+      }
+    }
+    for (var i = 0; i < merged.length; i++) {
+      merged[i]['sortOrder'] = i;
+    }
+    return merged;
+  }
+
   /// 导入高亮规则（按 uuid 命中本地同条则覆盖 id，否则新增）
   ///
-  /// 对齐原版 HighlightRuleDao.importRules：uuid 为规则身份；id 为本地
+  /// 对齐原版 `HighlightRuleDao.importRules`：uuid 为规则身份；id 为本地
   /// 自增主键，导入时不得沿用来源设备的 id（否则会覆盖无关本地规则）。
+  /// P2-5：导入前归一（uuid/超时/样式/正则可编译）、去重、合并后按序重排
+  /// `sortOrder`。
   Future<ImportResult> _importHighlightRules(
     ImportType type,
     List<Map<String, dynamic>> items,
   ) async {
-    final localIdByUuid = <String, int>{};
+    var localRules = <Map<String, dynamic>>[];
     try {
-      for (final rule in _decodeMapList(await _api.highlightRuleList())) {
-        final uuid = (rule['uuid']?.toString() ?? '').toLowerCase();
-        final id = (rule['id'] as num?)?.toInt() ?? 0;
-        if (uuid.isNotEmpty && id > 0) localIdByUuid[uuid] = id;
-      }
+      localRules = _decodeMapList(await _api.highlightRuleList());
     } catch (_) {
       // 本地快照不可用时全部按新增处理
     }
-    var success = 0;
+
+    final imported = <Map<String, dynamic>>[];
+    final seenUuids = <String>{};
     final errors = <String>[];
     for (final item in items) {
+      final name = item['name']?.toString() ?? '';
       try {
-        final rule = Map<String, dynamic>.of(item);
-        final uuid = (rule['uuid']?.toString() ?? '').toLowerCase();
-        final localId = localIdByUuid[uuid];
-        if (uuid.isEmpty) {
-          rule.remove('id');
-        } else if (localId != null) {
-          rule['id'] = localId; // 同 uuid → 覆写本地同一条
-        } else {
-          rule.remove('id'); // 新规则：主键交给 Rust 自增
+        final rule = normalizeHighlightRuleForImport(item);
+        final uuid = rule['uuid'] as String;
+        if (!seenUuids.add(uuid)) {
+          throw const FormatException('uuid 重复');
         }
-        // 原版导出字段为 order，Rust 契约字段为 sortOrder
-        if (!rule.containsKey('sortOrder') && rule['order'] is num) {
-          rule['sortOrder'] = (rule['order'] as num).toInt();
-        }
-        rule.remove('order');
-        await _api.highlightRuleSave(ruleJson: jsonEncode(rule));
-        success++;
+        imported.add(rule);
       } catch (e) {
-        errors.add('导入高亮规则「${item['name']}」失败：$e');
+        errors.add('导入高亮规则「$name」失败：$e');
       }
     }
+
+    var success = 0;
+    if (imported.isNotEmpty) {
+      final merged = mergeHighlightRulesForImport(localRules, imported);
+      try {
+        for (final rule in merged) {
+          await _api.highlightRuleSave(ruleJson: jsonEncode(rule));
+          final uuid = (rule['uuid']?.toString() ?? '').toLowerCase();
+          if (seenUuids.contains(uuid)) success++;
+        }
+      } catch (e) {
+        errors.add('写入高亮规则失败：$e');
+      }
+    }
+
     return ImportResult(
       total: items.length,
       success: success,
-      failed: errors.length,
+      failed: items.length - success,
       skipped: 0,
       errors: errors,
       unit: _unitName(type),
     );
   }
 
+  /// 自动任务默认 cron（对齐 Kotlin `AutoTask.DEFAULT_CRON`）
+  static const String autoTaskDefaultCron = '*/30 * * * *';
+
   /// 导入自动任务（FFI 合并本地运行时状态后逐条创建）
   ///
-  /// 对齐原版 ImportAutoTaskViewModel.importSelect：缺省 id 时生成新 id，
-  /// 名称空白的任务剔除并记入失败明细。
+  /// 对齐原版 `ImportAutoTaskViewModel.importSelect` + `validateImportedTask`：
+  /// - P2-3：调用 FFI **前**预生成缺失 id（Rust 合并会跳过空 id 条目，混合批
+  ///   此前会静默丢条目）；
+  /// - P2-4：cron 空白回退默认值、不可解析报错；script 归一后为空报错；
+  /// - 名称空白剔除并记入失败明细。
   Future<ImportResult> _importAutoTasks(
     ImportType type,
     List<Map<String, dynamic>> items,
   ) async {
-    var merged = items;
-    try {
-      final locals = await _api.autoTaskListRules();
-      final prepared = await _api.autoTaskPrepareImported(
-        localTasksJson: jsonEncode(locals),
-        importedJson: jsonEncode(items),
-      );
-      if (prepared.isNotEmpty) merged = prepared;
-    } catch (_) {
-      // FFI 合并不可用时退化为按原样导入
-    }
     final baseId = DateTime.now().microsecondsSinceEpoch;
-    var success = 0;
     final errors = <String>[];
-    for (var i = 0; i < merged.length; i++) {
-      final task = Map<String, dynamic>.of(merged[i]);
+    final normalized = <Map<String, dynamic>>[];
+    for (var i = 0; i < items.length; i++) {
+      final task = Map<String, dynamic>.of(items[i]);
       final name = (task['name']?.toString() ?? '').trim();
       if (name.isEmpty) {
         errors.add('导入自动任务失败：缺少任务名称');
         continue;
       }
       task['name'] = name;
-      final id = task['id']?.toString() ?? '';
-      if (id.isEmpty) task['id'] = '${baseId}_$i';
+
+      // P2-3：FFI 合并按 id 索引，缺 id 条目会被丢弃 → 先补齐
+      if ((task['id']?.toString() ?? '').trim().isEmpty) {
+        task['id'] = '${baseId}_$i';
+      }
+
+      // P2-4：cron 空白回退默认值，不可解析明确失败
+      final cron = (task['cron']?.toString() ?? '').trim();
+      final effectiveCron = cron.isEmpty ? autoTaskDefaultCron : cron;
+      task['cron'] = effectiveCron;
+      final due = await _api.autoTaskNextDueAt(
+        cron: effectiveCron,
+        fromMs: DateTime.now().millisecondsSinceEpoch,
+      );
+      if (due < 0) {
+        errors.add('导入自动任务「$name」失败：请输入有效的五段 Cron 计划');
+        continue;
+      }
+
+      // P2-4：script 非空校验（先按原版口径剥离 @js:/<js> 包裹）
+      final rawScript = task['script']?.toString() ?? '';
+      final normalizedScript =
+          await _api.autoTaskNormalizeScript(script: rawScript);
+      if (normalizedScript.trim().isEmpty) {
+        errors.add('导入自动任务「$name」失败：请输入 JavaScript 任务脚本');
+        continue;
+      }
+      task['script'] = normalizedScript;
+      normalized.add(task);
+    }
+
+    var merged = normalized;
+    if (normalized.isNotEmpty) {
+      try {
+        final locals = await _api.autoTaskListRules();
+        final prepared = await _api.autoTaskPrepareImported(
+          localTasksJson: jsonEncode(locals),
+          importedJson: jsonEncode(normalized),
+        );
+        if (prepared.isNotEmpty) merged = prepared;
+      } catch (_) {
+        // FFI 合并不可用时退化为按原样导入
+      }
+    }
+
+    var success = 0;
+    for (var i = 0; i < merged.length; i++) {
+      final task = Map<String, dynamic>.of(merged[i]);
+      // 防御：合并结果仍缺 id 时补齐（不静默丢条目）
+      if ((task['id']?.toString() ?? '').trim().isEmpty) {
+        task['id'] = '${baseId}_m$i';
+      }
       try {
         await _api.autoTaskCreateRule(ruleJson: jsonEncode(task));
         success++;
       } catch (e) {
-        errors.add('导入自动任务「$name」失败：$e');
+        errors.add('导入自动任务「${task['name']}」失败：$e');
       }
     }
+
     return ImportResult(
       total: items.length,
       success: success,
-      failed: errors.length,
+      failed: items.length - success,
       skipped: 0,
       errors: errors,
       unit: _unitName(type),

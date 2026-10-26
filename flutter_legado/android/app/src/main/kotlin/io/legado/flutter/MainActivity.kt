@@ -302,14 +302,16 @@ open class MainActivity : FlutterActivity() {
     }
 
     /**
-     * P1-4：把 content:// / file:// 书籍文件拷入应用私有持久目录。
+     * P1-4 / P2-6：把 content:// / file:// 外部文件拷入应用私有目录。
      *
-     * 拷贝在后台线程执行（MethodChannel.Result 须回主线程）；目标目录用
-     * filesDir/external_import 而非 cache：导入链（importLocalBook）以该路径
-     * 作为 bookUrl 落库，系统清缓存不应使已导入书籍断链（原版
-     * LocalBook.importFile 亦复制进书籍保存目录）。同名文件覆盖（重复打开
-     * 同一文件时刷新内容，对齐原版 FileAssociationActivity lastModified
-     * 比较后覆盖写入的语义）。
+     * 拷贝在后台线程执行（MethodChannel.Result 须回主线程）。目标目录由
+     * `persistent` 参数决定：
+     * - true（书籍文件）→ filesDir/external_import：导入链以该路径作为
+     *   bookUrl 落库，系统清缓存不应使已导入书籍断链；
+     * - false（JSON/压缩包/不支持等一次性导入）→ cacheDir/external_import，
+     *   Dart 分支用后删除。
+     * 同名文件覆盖（重复打开同一文件时刷新内容，对齐原版
+     * FileAssociationActivity lastModified 比较后覆盖写入的语义）。
      */
     private fun handleCopyContentUri(call: MethodCall, result: MethodChannel.Result) {
         val uriStr = call.argument<String>("uri")
@@ -317,6 +319,7 @@ open class MainActivity : FlutterActivity() {
             result.error("EINVAL", "uri 参数缺失", null)
             return
         }
+        val persistent = call.argument<Boolean>("persistent") ?: true
         Thread {
             var failure: Pair<String, String>? = null
             var copiedPath: String? = null
@@ -326,7 +329,8 @@ open class MainActivity : FlutterActivity() {
                     ?: "external-book-${System.currentTimeMillis()}"
                 // 文件名净化：拦截路径分隔与非法字符
                 val safeName = fileName.replace(Regex("[\\\\/:*?\"<>|]"), "_")
-                val dir = File(filesDir, "external_import").apply { mkdirs() }
+                val baseDir = if (persistent) filesDir else cacheDir
+                val dir = File(baseDir, "external_import").apply { mkdirs() }
                 val dest = File(dir, safeName)
                 contentResolver.openInputStream(uri)?.use { input ->
                     FileOutputStream(dest).use { output ->

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import '../providers/association/association_state.dart';
 
 /// 入站 URI 分类（P1-4：深链 / 外部书籍文件 / 其他）
@@ -164,6 +166,28 @@ class LegadoDeepLink {
     return false;
   }
 
+  /// 异步读取文件头部做 JSON 嗅探（对齐原版 looksLikeJson）
+  ///
+  /// P2-7：`File.open` + `RandomAccessFile.read` 异步读，不在 UI 分流链路
+  /// 同步阻塞；只读前 [jsonSniffLimit] 字节。读失败按非 JSON（原版同样
+  /// 在 IO 异常时静默落到非 JSON 分支）。
+  static Future<bool> looksLikeJsonFile(String path) async {
+    RandomAccessFile? handle;
+    try {
+      handle = await File(path).open();
+      final bytes = await handle.read(jsonSniffLimit);
+      return looksLikeJsonBytes(bytes);
+    } catch (_) {
+      return false;
+    } finally {
+      try {
+        await handle?.close();
+      } catch (_) {
+        // 关闭失败不影响分类结果
+      }
+    }
+  }
+
   /// 解析失败返回 null（缺 src 或非法 URI）
   static LegadoDeepLink? tryParse(String url) {
     final trimmed = url.trim();
@@ -210,6 +234,10 @@ class LegadoDeepLink {
         return ImportType.httpTts;
       case 'dictrule':
         return ImportType.dictRule;
+      case 'highlightrule':
+        return ImportType.highlightRule;
+      case 'autotask':
+        return ImportType.autoTask;
       case 'texttocrule':
       case 'txttocrule':
       case 'txtrule':

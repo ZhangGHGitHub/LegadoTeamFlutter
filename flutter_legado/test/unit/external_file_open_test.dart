@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_legado/src/services/deep_link_service.dart';
 import 'package:flutter_legado/src/utils/legado_deep_link.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -89,6 +91,38 @@ void main() {
 
     test('无分隔符的裸路径原样返回', () {
       expect(DeepLinkService.displayNameFromPath('book.pdf'), 'book.pdf');
+    });
+  });
+
+  group('P2-7 JSON 嗅探异步读', () {
+    test('读取文件头部：空白后 { / [ 视为 JSON，其余非 JSON', () async {
+      final dir = await Directory.systemTemp.createTemp('json_sniff_');
+      addTearDown(() async {
+        try {
+          await dir.delete(recursive: true);
+        } on FileSystemException {
+          // 清理失败不覆盖断言结果
+        }
+      });
+      Future<bool> probe(String name, String content) async {
+        final file = File('${dir.path}${Platform.pathSeparator}$name');
+        await file.writeAsString(content);
+        return LegadoDeepLink.looksLikeJsonFile(file.path);
+      }
+
+      expect(await probe('a.json', '  \n\t[1,2]'), isTrue);
+      expect(await probe('b.json', '{"a":1}'), isTrue);
+      expect(await probe('c.txt', '纯文本'), isFalse);
+      expect(await probe('d.txt', '   '), isFalse);
+    });
+
+    test('文件不存在 → false（读失败按非 JSON）', () async {
+      expect(
+        await LegadoDeepLink.looksLikeJsonFile(
+          '${Directory.systemTemp.path}${Platform.pathSeparator}missing-json-sniff',
+        ),
+        isFalse,
+      );
     });
   });
 }

@@ -149,5 +149,24 @@ void main() {
         throwsA(isA<ArgumentError>()),
       );
     });
+
+    test('filePath 空串 → StateError（对齐 Rust「上传文件路径为空」）', () async {
+      final api = MockBookApi();
+      expect(
+        () => api.directLinkUpload(
+          ruleJson: rule(),
+          fileName: 'a.txt',
+          contentType: 'text/plain',
+          filePath: '   ',
+        ),
+        throwsA(
+          isA<StateError>().having(
+            (e) => e.message,
+            'message',
+            contains('上传文件路径为空'),
+          ),
+        ),
+      );
+    });
   });
 }

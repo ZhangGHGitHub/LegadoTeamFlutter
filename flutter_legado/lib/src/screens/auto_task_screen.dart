@@ -717,24 +717,66 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
         .tasks
         .map((t) => t.toJson())
         .toList();
-    // FFI 合并（合并本地运行时状态）；不可用时退化为原始解析结果
+    // P1-3 / P2-3 / P2-4：调用 FFI 前完成校验与 id 预生成。
+    // - 空 id 条目在 Rust 合并中会被跳过 → 先补 id（混合批不再静默丢失）；
+    // - cron 空白回退默认值、不可解析明确失败（对齐 validateImportedTask）；
+    // - script 归一（去 @js:/<js>）后为空明确失败。
+    final baseId = DateTime.now().microsecondsSinceEpoch;
+    final errors = <String>[];
+    final normalized = <Map<String, dynamic>>[];
+    for (var i = 0; i < imported.length; i++) {
+      final task = Map<String, dynamic>.of(imported[i]);
+      final name = (task['name']?.toString() ?? '').trim();
+      if (name.isEmpty) {
+        errors.add('缺少任务名称');
+        continue;
+      }
+      task['name'] = name;
+      if ((task['id']?.toString() ?? '').trim().isEmpty) {
+        task['id'] = '${baseId}_$i';
+      }
+      final cron = (task['cron']?.toString() ?? '').trim();
+      final effectiveCron = cron.isEmpty ? '*/30 * * * *' : cron;
+      task['cron'] = effectiveCron;
+      final due = await notifier.nextDueAt(cron: effectiveCron);
+      final cronValid = due == null ? _isFiveFieldCron(effectiveCron) : due != -1;
+      if (!cronValid) {
+        errors.add('「$name」请输入有效的五段 Cron 计划');
+        continue;
+      }
+      final rawScript = task['script']?.toString() ?? '';
+      final normalizedScript = await notifier.normalizeScript(rawScript);
+      final script = (normalizedScript ?? rawScript).trim();
+      if (script.isEmpty) {
+        errors.add('「$name」请输入 JavaScript 任务脚本');
+        continue;
+      }
+      task['script'] = normalizedScript ?? rawScript;
+      normalized.add(task);
+    }
+    if (normalized.isEmpty) {
+      if (!context.mounted) return;
+      _snack(
+        context,
+        errors.isEmpty ? '导入失败：任务数据无效' : '导入失败：${errors.join('；')}',
+      );
+      return;
+    }
+
+    // FFI 合并（合并本地运行时状态）；不可用时退化为已归一结果
     final merged = await notifier.prepareImportedTasks(
       localTasks: localTasks,
-      importedJson: raw,
+      importedJson: jsonEncode(normalized),
     );
-    // [UI-fix v2.0.2 | 2026-08-06] 空 id 补充拼接循环下标，避免同一循环内
-    // microsecondsSinceEpoch 重复导致 id 碰撞 — Qoder
-    final validTasks = (merged ?? imported)
-        .map(AutoTask.fromJson)
-        .where((t) => t.name.isNotEmpty)
-        .toList();
-    final baseId = DateTime.now().microsecondsSinceEpoch;
-    final newTasks = <AutoTask>[
-      for (var i = 0; i < validTasks.length; i++)
-        validTasks[i].id.isEmpty
-            ? validTasks[i].copyWith(id: '${baseId}_$i')
-            : validTasks[i],
-    ];
+    final newTasks = <Map<String, dynamic>>[];
+    for (final item in merged ?? normalized) {
+      final task = Map<String, dynamic>.from(item);
+      if ((task['name']?.toString() ?? '').trim().isEmpty) continue;
+      if ((task['id']?.toString() ?? '').trim().isEmpty) {
+        task['id'] = '${baseId}_m${newTasks.length}';
+      }
+      newTasks.add(task);
+    }
     if (newTasks.isEmpty) {
       if (!context.mounted) return;
       _snack(context, '导入失败：任务数据无效');
@@ -764,15 +806,27 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
     var count = 0;
     for (final task in newTasks) {
       try {
-        await notifier.createTask(task);
+        // 用 Raw 入库：保留 customOrder/lastRunAt 等本地运行时字段
+        await notifier.createTaskRaw(jsonEncode(task));
         count++;
       } catch (_) {
         // 单条失败不阻断整体导入
       }
     }
     _resyncScheduler();
-    if (context.mounted) _snack(context, '已导入 $count 个任务');
+    if (context.mounted) {
+      _snack(
+        context,
+        errors.isEmpty
+            ? '已导入 $count 个任务'
+            : '已导入 $count 个任务，跳过 ${errors.length} 个无效任务',
+      );
+    }
   }
+
+  /// 五段 cron 基础校验（FFI 不可用时的降级口径）
+  bool _isFiveFieldCron(String cron) =>
+      cron.split(RegExp(r'\s+')).where((p) => p.isNotEmpty).length == 5;
 
   /// 导出任务（对标 menu_export → exportAutoTask.json）
   Future<void> _exportTasks(BuildContext context) async {
