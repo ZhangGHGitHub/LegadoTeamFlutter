@@ -24,6 +24,7 @@ import '../routes.dart';
 import '../services/crash_log_service.dart';
 import '../services/restore_ignore_prefs.dart';
 import '../services/settings_service.dart';
+import '../widgets/confirm_dialog.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
@@ -193,10 +194,28 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     });
   }
 
+  /// 恢复前确认（恢复为覆盖语义，对齐原版 Restore.kt 全列更新）
+  ///
+  /// [批7b] 恢复会把备份中的阅读进度与书籍信息写回库内，覆盖书架中
+  /// 已有书籍的当前进度。确认后执行原恢复链；取消返回 false，调用方
+  /// 直接中止，不触发任何恢复动作。
+  Future<bool> _confirmRestore() {
+    return showConfirmDialog(
+      context,
+      title: '确认恢复吗？',
+      content: '恢复书架会覆盖现有书架，包括已有书籍的阅读进度与书籍信息。确定继续吗？',
+      confirmText: '恢复',
+      cancelText: '取消',
+      isDestructive: true,
+    );
+  }
+
   /// 默认恢复：优先 WebDAV；失败或未配置则提示（长按走本地）
   Future<void> _doRestore() async {
     final sync = ref.read(syncNotifierProvider);
     if (sync.isConfigured) {
+      if (!await _confirmRestore()) return;
+      if (!mounted) return;
       await _runWithProgress('恢复中…', () async {
         final message =
             await ref.read(syncNotifierProvider.notifier).restoreFromWebDav();
@@ -216,6 +235,8 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   }
 
   Future<void> _doRestoreFromLocal() async {
+    if (!await _confirmRestore()) return;
+    if (!mounted) return;
     await _runWithProgress('恢复中…', () async {
       final api = ref.read(bookApiProvider);
       final result = await FilePicker.platform.pickFiles(
