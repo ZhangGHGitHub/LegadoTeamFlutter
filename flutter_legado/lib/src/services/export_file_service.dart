@@ -49,6 +49,17 @@ class ExportFileService {
     return path;
   }
 
+  /// 保存成功提示文案
+  ///
+  /// 移动端（Android/iOS）系统另存返回的路径多为内容 URI/Downloads 展示路径，
+  /// 用户难以据此定位文件，只提示文件名；桌面端路径可直接用于查找，提示完整路径。
+  String savedMessage({required String path, required String fileName}) {
+    final mobile =
+        defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+    return mobile ? '已保存：$fileName' : '已保存到：$path';
+  }
+
   /// 写入临时目录并返回可分享的文件（对齐原版 share(file)）
   ///
   /// 同名文件直接覆盖；分享面板消费的是临时副本，不污染用户目录。

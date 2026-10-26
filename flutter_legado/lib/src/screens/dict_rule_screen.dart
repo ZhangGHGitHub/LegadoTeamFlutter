@@ -346,7 +346,8 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
     final result = await showExportFileSheet(
       context,
       content: json,
-      fileName: 'dictRules.json',
+      fileName: 'exportDictRule.json',
+      uploadFileName: 'export_rules.json',
       subject: '导出字典规则',
     );
     if (!mounted || result == null) return;

@@ -374,7 +374,7 @@ void main() {
       Map<String, Object?>? captured;
       when(() => mockApi.directLinkUpload(
             ruleJson: any(named: 'ruleJson'),
-            fileName: 'dictRules.json',
+            fileName: 'export_rules.json',
             contentType: 'application/json',
             content: any(named: 'content'),
           )).thenAnswer((invocation) async {
@@ -382,7 +382,7 @@ void main() {
           'ruleJson': invocation.namedArguments[#ruleJson],
           'content': invocation.namedArguments[#content],
         };
-        return 'https://download.example/dictRules.json';
+        return 'https://download.example/export_rules.json';
       });
 
       await tester.pumpWidget(wrap(const DictRuleScreen()));
@@ -397,7 +397,7 @@ void main() {
       expect(find.text('导出字典规则'), findsOneWidget);
       expect(find.text('保存到本地'), findsOneWidget);
       expect(find.text('上传直链'), findsOneWidget);
-      expect(find.text('导出文件：dictRules.json'), findsOneWidget);
+      expect(find.text('导出文件：exportDictRule.json'), findsOneWidget);
 
       await tester.tap(find.text('上传直链'));
       await tester.pumpAndSettle();
@@ -422,14 +422,14 @@ void main() {
 
       expect(find.text('上传成功'), findsOneWidget);
       expect(
-        find.text('https://download.example/dictRules.json'),
+        find.text('https://download.example/export_rules.json'),
         findsOneWidget,
       );
 
       await tester.tap(find.text('完成'));
       await tester.pumpAndSettle();
       expect(
-        find.text('上传成功：https://download.example/dictRules.json'),
+        find.text('上传成功：https://download.example/export_rules.json'),
         findsOneWidget,
       );
       expect(find.text('已选 1 项'), findsNothing);

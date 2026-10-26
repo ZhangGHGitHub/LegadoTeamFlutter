@@ -1005,8 +1005,10 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
     final result = await showExportFileSheet(
       context,
       content: json,
-      fileName: 'rssSources.json',
+      fileName: 'exportRssSource.json',
+      uploadFileName: 'export_rules.json',
       subject: '导出订阅源',
+      fileService: widget.exportFileService,
     );
     if (!mounted || result == null) return;
     _toast(result.message);

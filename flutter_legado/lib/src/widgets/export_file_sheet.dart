@@ -11,6 +11,8 @@
 //
 // 返回值 [ExportFileResult] 供调用方统一提示导出结果；null = 用户取消
 // （含系统另存对话框取消、失败后放弃）。
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -37,22 +39,35 @@ enum ExportFileOutcome {
 class ExportFileResult {
   const ExportFileResult._({
     required this.outcome,
+    required this.message,
     this.path,
     this.url,
     this.summary,
   });
 
-  /// 已保存到本地 [path]
-  const ExportFileResult.savedLocal(String path)
-    : this._(outcome: ExportFileOutcome.savedLocal, path: path);
+  /// 已保存到本地 [path]（[message] 为按平台生成的提示文案）
+  const ExportFileResult.savedLocal(String path, {required String message})
+    : this._(
+        outcome: ExportFileOutcome.savedLocal,
+        path: path,
+        message: message,
+      );
 
   /// 已上传直链 [url]（[summary] 为生效规则的注释）
   const ExportFileResult.uploaded({
     required String url,
     required String summary,
-  }) : this._(outcome: ExportFileOutcome.uploaded, url: url, summary: summary);
+  }) : this._(
+         outcome: ExportFileOutcome.uploaded,
+         url: url,
+         summary: summary,
+         message: '上传成功：$url',
+       );
 
   final ExportFileOutcome outcome;
+
+  /// 调用方统一提示文案（仅成功结果；保存文案按平台区分）
+  final String message;
 
   /// 本地保存路径（[ExportFileOutcome.savedLocal] 时有值）
   final String? path;
@@ -62,18 +77,14 @@ class ExportFileResult {
 
   /// 生效规则注释（[ExportFileOutcome.uploaded] 时有值）
   final String? summary;
-
-  /// 调用方统一提示文案（仅成功结果）
-  String get message => switch (outcome) {
-    ExportFileOutcome.savedLocal => '已保存到：$path',
-    ExportFileOutcome.uploaded => '上传成功：$url',
-  };
 }
 
 /// 展示通用导出目标 Sheet
 ///
 /// - [content]：要导出的完整文本内容（JSON 等）；
-/// - [fileName]：系统另存/上传使用的文件名（如 `rssSources.json`）；
+/// - [fileName]：系统另存使用的文件名（如 `exportRssSource.json`）；
+/// - [uploadFileName]：上传直链使用的文件名（默认与 [fileName] 相同；
+///   参考版各规则导出统一上传 `export_rules.json`）；
 /// - [contentType]：上传时的内容类型（默认 `application/json`）；
 /// - [subject]：Sheet 标题（默认「选择操作」，对齐参考版 select_operation）；
 /// - [fileService] / [ruleService]：测试注入口，默认按真实实现构造。
@@ -83,6 +94,7 @@ Future<ExportFileResult?> showExportFileSheet(
   BuildContext context, {
   required String content,
   required String fileName,
+  String? uploadFileName,
   String contentType = 'application/json',
   String? subject,
   ExportFileService? fileService,
@@ -90,12 +102,16 @@ Future<ExportFileResult?> showExportFileSheet(
 }) {
   return showModalBottomSheet<ExportFileResult>(
     context: context,
+    // 下拉关闭走 Navigator.pop，绕过 PopScope(canPop:false)：
+    // 保存/上传中必须禁用手势，避免结果丢失（关闭按钮/取消键仍受 _busy 保护）
+    enableDrag: false,
     isScrollControlled: true,
     useSafeArea: true,
     backgroundColor: Colors.transparent,
     builder: (_) => ExportFileSheet(
       content: content,
       fileName: fileName,
+      uploadFileName: uploadFileName,
       contentType: contentType,
       subject: subject,
       fileService: fileService,
@@ -110,6 +126,7 @@ class ExportFileSheet extends ConsumerStatefulWidget {
     super.key,
     required this.content,
     required this.fileName,
+    this.uploadFileName,
     this.contentType = 'application/json',
     this.subject,
     this.fileService,
@@ -119,8 +136,11 @@ class ExportFileSheet extends ConsumerStatefulWidget {
   /// 导出内容
   final String content;
 
-  /// 导出文件名
+  /// 系统另存使用的文件名
   final String fileName;
+
+  /// 上传直链使用的文件名（为空时沿用 [fileName]）
+  final String? uploadFileName;
 
   /// 上传内容类型
   final String contentType;
@@ -160,7 +180,17 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
   String? _uploadedUrl;
   String? _uploadedSummary;
 
+  /// 复制反馈：成功时按钮文案短暂变为「已复制」
+  Timer? _copyTimer;
+  bool _copied = false;
+
+  /// 复制失败的真实原因（Sheet 内联展示，不依赖底层 SnackBar）
+  String? _copyError;
+
   bool get _busy => _saving || _uploading;
+
+  /// 上传实际使用的文件名（参考版规则上传固定 export_rules.json）
+  String get _uploadFileName => widget.uploadFileName ?? widget.fileName;
 
   @override
   void initState() {
@@ -171,26 +201,57 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         DirectLinkUploadRuleService(ref.read(bookApiProvider));
   }
 
-  void _toast(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
+  @override
+  void dispose() {
+    _copyTimer?.cancel();
+    super.dispose();
   }
 
-  /// 复制文本到剪贴板（失败给出真实原因）
-  Future<void> _copy(String text, String successMessage) async {
+  /// 清除复制反馈（进入保存/上传前调用，避免旧状态串台）
+  void _resetCopyFeedback() {
+    _copyTimer?.cancel();
+    _copied = false;
+    _copyError = null;
+  }
+
+  /// 复制成功：按钮文案短暂显示「已复制」
+  void _markCopied() {
+    _copyTimer?.cancel();
+    setState(() {
+      _copied = true;
+      _copyError = null;
+    });
+    _copyTimer = Timer(const Duration(milliseconds: 1500), () {
+      if (!mounted) return;
+      setState(() => _copied = false);
+    });
+  }
+
+  /// 复制失败：内联展示真实原因
+  void _markCopyFailed(Object error) {
+    _copyTimer?.cancel();
+    setState(() {
+      _copied = false;
+      _copyError = '复制失败：${errorMessage(error)}';
+    });
+  }
+
+  /// 复制文本到剪贴板（结果以内联反馈呈现）
+  Future<void> _copy(String text) async {
     try {
       await Clipboard.setData(ClipboardData(text: text));
     } catch (e) {
-      _toast('复制失败：${errorMessage(e)}');
+      if (!mounted) return;
+      _markCopyFailed(e);
       return;
     }
-    _toast(successMessage);
+    if (!mounted) return;
+    _markCopied();
   }
 
   /// 保存到本地（系统另存）
   Future<void> _saveToLocal() async {
+    _resetCopyFeedback();
     setState(() {
       _saving = true;
       _failedAction = null;
@@ -218,11 +279,21 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
       Navigator.pop(context);
       return;
     }
-    Navigator.pop(context, ExportFileResult.savedLocal(path));
+    Navigator.pop(
+      context,
+      ExportFileResult.savedLocal(
+        path,
+        message: _fileService.savedMessage(
+          path: path,
+          fileName: widget.fileName,
+        ),
+      ),
+    );
   }
 
   /// 上传直链（生效规则 → §2.51 directLinkUpload）
   Future<void> _upload() async {
+    _resetCopyFeedback();
     setState(() {
       _uploading = true;
       _failedAction = null;
@@ -232,7 +303,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
       final rule = await _ruleService.getEffectiveRule();
       final url = await ref.read(bookApiProvider).directLinkUpload(
         ruleJson: rule.toJsonString(),
-        fileName: widget.fileName,
+        fileName: _uploadFileName,
         contentType: widget.contentType,
         content: widget.content,
       );
@@ -316,6 +387,30 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
                         child: _buildBody(theme),
                       ),
                     ),
+                    // 复制失败内联反馈：Sheet 内不依赖底层 Scaffold 的 SnackBar
+                    if (_copyError != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              Symbols.error_outline_rounded,
+                              size: 16,
+                              color: cs.error,
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                _copyError!,
+                                style: theme.textTheme.bodySmall?.copyWith(
+                                  color: cs.error,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                       child: _buildActions(),
@@ -468,9 +563,14 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         children: [
           Expanded(
             child: OutlinedButton.icon(
-              onPressed: () => _copy(_uploadedUrl!, '已复制链接'),
-              icon: const Icon(Symbols.content_copy_rounded, size: 18),
-              label: const Text('复制链接'),
+              onPressed: () => _copy(_uploadedUrl!),
+              icon: Icon(
+                _copied
+                    ? Symbols.check_rounded
+                    : Symbols.content_copy_rounded,
+                size: 18,
+              ),
+              label: Text(_copied ? '已复制' : '复制链接'),
             ),
           ),
           const SizedBox(width: 8),
@@ -494,9 +594,14 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         children: [
           Expanded(
             child: OutlinedButton.icon(
-              onPressed: () => _copy(_error!, '已复制错误信息'),
-              icon: const Icon(Symbols.content_copy_rounded, size: 18),
-              label: const Text('复制错误'),
+              onPressed: () => _copy(_error!),
+              icon: Icon(
+                _copied
+                    ? Symbols.check_rounded
+                    : Symbols.content_copy_rounded,
+                size: 18,
+              ),
+              label: Text(_copied ? '已复制' : '复制错误'),
             ),
           ),
           const SizedBox(width: 8),

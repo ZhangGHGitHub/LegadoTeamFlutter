@@ -6,6 +6,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -113,6 +114,7 @@ void main() {
     DirectLinkUploadRuleService? ruleService,
     String content = '[]',
     String fileName = 'rssSources.json',
+    String? uploadFileName,
   }) async {
     final box = _ResultBox();
     await tester.pumpWidget(
@@ -129,6 +131,7 @@ void main() {
                       context,
                       content: content,
                       fileName: fileName,
+                      uploadFileName: uploadFileName,
                       subject: '导出文件',
                       fileService: fileService,
                       ruleService: ruleService,
@@ -159,7 +162,7 @@ void main() {
       expect(find.text('取消'), findsOneWidget);
     });
 
-    testWidgets('保存成功：写入内容并回传保存路径', (tester) async {
+    testWidgets('保存成功：移动端提示只显示文件名并回传保存路径', (tester) async {
       final saver = _FakeExportFileService()
         ..savePath = r'D:\导出\rssSources.json';
       final box = await openSheet(tester, fileService: saver, content: '[1]');
@@ -174,7 +177,26 @@ void main() {
       expect(box.completed, isTrue);
       expect(box.value?.outcome, ExportFileOutcome.savedLocal);
       expect(box.value?.path, r'D:\导出\rssSources.json');
-      expect(box.value?.message, r'已保存到：D:\导出\rssSources.json');
+      // widget 测试默认平台为 Android：移动端只提示文件名
+      expect(box.value?.message, '已保存：rssSources.json');
+    });
+
+    testWidgets('保存成功（桌面端）：提示完整路径', (tester) async {
+      // binding 不变量校验先于 tearDown，平台覆写必须在测试体内复位
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      try {
+        final saver = _FakeExportFileService()
+          ..savePath = r'D:\导出\rssSources.json';
+        final box = await openSheet(tester, fileService: saver, content: '[1]');
+
+        await tester.tap(find.text('保存到本地'));
+        await tester.pumpAndSettle();
+
+        expect(box.value?.outcome, ExportFileOutcome.savedLocal);
+        expect(box.value?.message, r'已保存到：D:\导出\rssSources.json');
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
     });
 
     testWidgets('系统另存取消：关闭 Sheet 且不返回结果', (tester) async {
@@ -255,7 +277,12 @@ void main() {
       await tester.tap(find.text('复制链接'));
       await tester.pumpAndSettle();
       expect(written, ['https://download.example/rssSources.json']);
-      expect(find.text('已复制链接'), findsOneWidget);
+      // 内联反馈：按钮短暂变为「已复制」（不再用 SnackBar）
+      expect(find.text('已复制'), findsOneWidget);
+      expect(find.byType(SnackBar), findsNothing);
+      await tester.pump(const Duration(milliseconds: 1600));
+      expect(find.text('已复制'), findsNothing);
+      expect(find.text('复制链接'), findsOneWidget);
 
       await tester.tap(find.text('完成'));
       await tester.pumpAndSettle();
@@ -264,6 +291,62 @@ void main() {
       expect(box.value?.url, 'https://download.example/rssSources.json');
       expect(box.value?.summary, rule['summary']);
       expect(box.value?.message, '上传成功：https://download.example/rssSources.json');
+    });
+
+    testWidgets('uploadFileName：另存用 fileName、上传用 uploadFileName', (
+      tester,
+    ) async {
+      await openSheet(tester, uploadFileName: 'export_rules.json');
+
+      // 选项区展示的仍是另存文件名
+      expect(find.text('导出文件：rssSources.json'), findsOneWidget);
+
+      await tester.tap(find.text('上传直链'));
+      await tester.pumpAndSettle();
+
+      expect(api.uploadCalls, hasLength(1));
+      expect(api.uploadCalls.single['fileName'], 'export_rules.json');
+      expect(find.text('上传成功'), findsOneWidget);
+    });
+
+    testWidgets('复制失败：Sheet 内联展示原因，不弹底层 SnackBar', (tester) async {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            throw PlatformException(code: 'copy_failed', message: '剪贴板不可用');
+          }
+          return null;
+        },
+      );
+      await openSheet(tester);
+
+      await tester.tap(find.text('上传直链'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('复制链接'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('复制失败'), findsOneWidget);
+      expect(find.text('已复制'), findsNothing);
+      // 失败反馈内联在 Sheet 内，不显示底层 SnackBar
+      expect(find.byType(SnackBar), findsNothing);
+    });
+
+    testWidgets('上传失败后取消：返回 null 且调用方不重复提示', (tester) async {
+      api.uploadError = const BridgeError(message: '上传失败,真实原因');
+      final box = await openSheet(tester);
+
+      await tester.tap(find.text('上传直链'));
+      await tester.pumpAndSettle();
+      expect(find.text('上传失败'), findsOneWidget);
+
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+
+      expect(box.completed, isTrue);
+      expect(box.value, isNull);
+      // 失败信息已在 Sheet 内展示，关闭后不应再弹 SnackBar
+      expect(find.byType(SnackBar), findsNothing);
     });
 
     testWidgets('上传进行中：展示「正在上传」并禁用取消', (tester) async {
@@ -284,6 +367,28 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('上传成功'), findsOneWidget);
       expect(find.text('https://download.example/done.json'), findsOneWidget);
+    });
+
+    testWidgets('P1 回归：上传中下拉不关闭 Sheet（避免结果丢失）', (tester) async {
+      api.uploadCompleter = Completer<String>();
+      await openSheet(tester);
+
+      await tester.tap(find.text('上传直链'));
+      await tester.pump();
+      expect(find.text('正在上传…'), findsOneWidget);
+
+      // 在标题区域下拉：修复前拖拽走 Navigator.pop 绕过 PopScope，Sheet 会被关闭
+      await tester.drag(find.text('导出文件'), const Offset(0, 400));
+      // 上传中进度圈持续动画，不能用 pumpAndSettle
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.text('正在上传…'), findsOneWidget);
+      expect(find.text('导出文件'), findsOneWidget);
+
+      // 收尾：完成挂起上传，避免遗留未完成 Future
+      api.uploadCompleter!.complete('https://download.example/done.json');
+      await tester.pumpAndSettle();
+      expect(find.text('上传成功'), findsOneWidget);
     });
 
     testWidgets('上传失败：展示真实错误，重试后成功', (tester) async {

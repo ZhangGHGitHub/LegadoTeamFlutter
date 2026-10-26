@@ -17,6 +17,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 // ignore: depend_on_referenced_packages
 import 'package:share_plus_platform_interface/share_plus_platform_interface.dart';
 
+import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/rss_source_manage_screen.dart';
 import 'package:flutter_legado/src/services/direct_link_upload_rule_service.dart';
@@ -26,6 +27,7 @@ import 'package:flutter_legado/src/services/mock_book_api.dart';
 /// 捕获 directLinkUpload 入参的 Mock（其余能力沿用 MockBookApi）
 class _CapturingBookApi extends MockBookApi {
   final List<Map<String, Object?>> uploadCalls = [];
+  Object? uploadError;
 
   @override
   Future<String> directLinkUpload({
@@ -42,7 +44,9 @@ class _CapturingBookApi extends MockBookApi {
       'content': content,
       'filePath': filePath,
     });
-    return 'https://download.example/rssSources.json';
+    final error = uploadError;
+    if (error != null) throw error;
+    return 'https://download.example/export_rules.json';
   }
 }
 
@@ -51,6 +55,21 @@ class _FakeExportFileService extends ExportFileService {
   _FakeExportFileService(this.tempPath);
 
   final String tempPath;
+
+  /// 系统另存返回路径与入参记录
+  String? savePath;
+  String? lastSaveFileName;
+  int saveCalls = 0;
+
+  @override
+  Future<String?> saveToLocal({
+    required String fileName,
+    required String content,
+  }) async {
+    saveCalls++;
+    lastSaveFileName = fileName;
+    return savePath;
+  }
 
   @override
   Future<XFile> writeTempFile({
@@ -99,7 +118,9 @@ void main() {
     share = _FakeSharePlatform();
 
     tempDir = await Directory.systemTemp.createTemp('rss_export_test_');
-    fileService = _FakeExportFileService(tempDir.path);
+    fileService = _FakeExportFileService(tempDir.path)
+      ..savePath =
+          '${tempDir.path}${Platform.pathSeparator}exportRssSource.json';
 
     final originalShare = SharePlatform.instance;
     SharePlatform.instance = share;
@@ -162,14 +183,16 @@ void main() {
     expect(find.text('导出订阅源'), findsOneWidget);
     expect(find.text('保存到本地'), findsOneWidget);
     expect(find.text('上传直链'), findsOneWidget);
-    expect(find.text('导出文件：rssSources.json'), findsOneWidget);
+    // 另存名对齐参考版 exportRssSource.json
+    expect(find.text('导出文件：exportRssSource.json'), findsOneWidget);
 
     await tester.tap(find.text('上传直链'));
     await tester.pumpAndSettle();
 
     expect(api.uploadCalls, hasLength(1));
     final call = api.uploadCalls.single;
-    expect(call['fileName'], 'rssSources.json');
+    // 上传名对齐参考版 export_rules.json
+    expect(call['fileName'], 'export_rules.json');
     expect(call['contentType'], 'application/json');
     expect(call['filePath'], isNull);
     final payload = jsonDecode(call['content'] as String) as List<dynamic>;
@@ -179,7 +202,10 @@ void main() {
     expect(source['sourceName'], '使用说明');
 
     expect(find.text('上传成功'), findsOneWidget);
-    expect(find.text('https://download.example/rssSources.json'), findsOneWidget);
+    expect(
+      find.text('https://download.example/export_rules.json'),
+      findsOneWidget,
+    );
     // 未点击「复制链接」→ 导出链不再直接写剪贴板
     expect(written, isEmpty);
 
@@ -187,11 +213,51 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(
-      find.text('上传成功：https://download.example/rssSources.json'),
+      find.text('上传成功：https://download.example/export_rules.json'),
       findsOneWidget,
     );
     expect(find.text('已选择 1 项'), findsNothing);
     expect(written, isEmpty);
+  });
+
+  testWidgets('导出选中-保存到本地：走注入的服务落盘、提示并退出批量', (tester) async {
+    await pumpScreen(tester);
+    await selectFirst(tester);
+    await openBatchMenu(tester);
+
+    await tester.tap(find.text('导出选中'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('保存到本地'));
+    await tester.pumpAndSettle();
+
+    expect(fileService.saveCalls, 1);
+    expect(fileService.lastSaveFileName, 'exportRssSource.json');
+    // widget 测试默认平台为 Android：只提示文件名
+    expect(find.text('已保存：exportRssSource.json'), findsOneWidget);
+    expect(find.text('已选择 1 项'), findsNothing);
+  });
+
+  testWidgets('导出选中-上传失败后取消：不退出批量且不重复提示', (tester) async {
+    api.uploadError = const BridgeError(message: '上传失败,真实原因');
+    await pumpScreen(tester);
+    await selectFirst(tester);
+    await openBatchMenu(tester);
+
+    await tester.tap(find.text('导出选中'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('上传直链'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('上传失败'), findsOneWidget);
+    expect(find.text('上传失败,真实原因'), findsOneWidget);
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+
+    // 返回 null：调用方不提示、不退出批量
+    expect(find.byType(SnackBar), findsNothing);
+    expect(find.text('已选择 1 项'), findsOneWidget);
   });
 
   testWidgets('分享源：写临时 JSON 文件并走系统文件分享', (tester) async {
