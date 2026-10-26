@@ -69,6 +69,34 @@ pub fn set_cache_dir(path: &str) {
     }
 }
 
+/// 读取宿主已注入的图片缓存根（未注入返回 `None`）
+///
+/// Web 服务接线（B3）专用最小读取入口：只返回 [`set_cache_dir`] 的注入值，
+/// **不含** env 覆盖与 temp 回落——`legado-server` 的
+/// `InjectedPaths::image_cache_root` 只应放行宿主明确注入的应用私有目录，
+/// 不得把系统临时目录纳入本地图片白名单（未注入时白名单行为与既有完全一致）。
+pub(crate) fn injected_cache_dir() -> Option<PathBuf> {
+    INJECTED_DIR
+        .get_or_init(|| Mutex::new(None))
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+}
+
+/// 注入槽测试锁（`cfg(test)`）：`INJECTED_DIR` 为进程级全局状态，
+/// 本模块测试与 `ffi` 层 Web 服务注入端到端测试须共享同一把锁串行，
+/// 避免一方改写/清空注入值时另一方断言翻车
+#[cfg(test)]
+pub(crate) static INJECTED_DIR_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// 清空注入槽（`cfg(test)`：跨模块测试收尾复位进程级状态）
+#[cfg(test)]
+pub(crate) fn clear_cache_dir_for_test() {
+    if let Ok(mut guard) = INJECTED_DIR.get_or_init(|| Mutex::new(None)).lock() {
+        *guard = None;
+    }
+}
+
 /// 图片缓存根目录（env 覆盖 > 宿主注入 > 缺省 `<temp_dir>/legado-image-cache`）
 fn cache_root() -> PathBuf {
     #[cfg(test)]
@@ -220,11 +248,19 @@ mod tests {
     use super::*;
     use std::path::Path;
     use std::sync::atomic::AtomicUsize;
+    use std::sync::MutexGuard;
+
+    /// 进程级唯一临时目录计数器
+    static COUNTER: AtomicUsize = AtomicUsize::new(0);
 
     /// 测试串行锁：`INJECTED_DIR`/`TEST_DIR_OVERRIDE` 为进程级状态，
-    /// 并行测试互踩 → 触碰进程级目录状态的测试先持锁（对齐 cache_store 先例）
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-    static COUNTER: AtomicUsize = AtomicUsize::new(0);
+    /// 并行测试互踩 → 触碰进程级目录状态的测试先持锁（对齐 cache_store 先例；
+    /// 锁提升到模块级与 ffi 层 Web 注入端到端测试共享）
+    fn test_lock() -> MutexGuard<'static, ()> {
+        INJECTED_DIR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+    }
 
     /// 进程级唯一临时根目录（测试收尾 remove_dir_all 清理）
     fn unique_root(tag: &str) -> PathBuf {
@@ -254,7 +290,7 @@ mod tests {
     // 存/取/命中：roundtrip
     #[test]
     fn save_get_roundtrip() {
-        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = test_lock();
         let root = unique_root("roundtrip");
         set_test_root(&root);
         let bytes: Vec<u8> = (0..256u16).map(|i| (i % 251) as u8).collect();
@@ -271,7 +307,7 @@ mod tests {
     // 未命中：全新目录 get 返回 None
     #[test]
     fn get_miss_returns_none() {
-        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = test_lock();
         let root = unique_root("miss");
         set_test_root(&root);
         assert!(
@@ -285,7 +321,7 @@ mod tests {
     // MD5 命名：文件落在 {root}/{bookdir}/images/{md5_mid16(url)}.{suffix}
     #[test]
     fn md5_naming_layout() {
-        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = test_lock();
         let root = unique_root("md5");
         set_test_root(&root);
         let url = "https://cdn.com/img/page-001.webp?v=2";
@@ -324,7 +360,7 @@ mod tests {
     // 写失败降级：根目录被普通文件占用 → create_dir_all 失败
     #[test]
     fn write_fail_degrades_to_false() {
-        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = test_lock();
         let root = unique_root("writefail");
         fs::create_dir_all(root.parent().unwrap()).unwrap();
         fs::write(&root, b"i-am-a-file").unwrap();
@@ -343,7 +379,7 @@ mod tests {
     // 路径隔离：不同 bookUrl 互不串缓存
     #[test]
     fn path_isolation_by_book_url() {
-        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = test_lock();
         let root = unique_root("isolation");
         set_test_root(&root);
         let url = "https://cdn.com/same.jpg";
@@ -381,7 +417,7 @@ mod tests {
     // set_cache_dir 注入：后续读写落注入目录
     #[test]
     fn injected_dir_used() {
-        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _lock = test_lock();
         let root = unique_root("injected");
         // 前置清空覆盖槽：`cfg(test)` 下覆盖槽优先于注入槽，
         // 若残留前序测试的目录将旁路本测试的断言
@@ -405,10 +441,35 @@ mod tests {
             "文件应落在注入根目录下的书级目录：{book_dir:?}"
         );
         // 复位注入槽为 None（不污染其他测试）
-        if let Ok(mut guard) = INJECTED_DIR.get_or_init(|| Mutex::new(None)).lock() {
-            *guard = None;
-        }
+        clear_cache_dir_for_test();
         clear_test_root();
         let _ = fs::remove_dir_all(&root);
+    }
+
+    // 读取入口（Web 服务注入用）：已注入时返回注入值
+    #[test]
+    fn injected_cache_dir_returns_injected_value() {
+        let _lock = test_lock();
+        clear_cache_dir_for_test();
+        let root = unique_root("getter");
+        set_cache_dir(root.to_str().unwrap());
+        assert_eq!(
+            injected_cache_dir(),
+            Some(root.clone()),
+            "读取入口应返回宿主注入的图片缓存根"
+        );
+        clear_cache_dir_for_test();
+    }
+
+    // 读取入口：未注入时回退 None（不得回落 temp 目录，避免白名单放大）
+    #[test]
+    fn injected_cache_dir_none_when_unset() {
+        let _lock = test_lock();
+        clear_cache_dir_for_test();
+        assert_eq!(
+            injected_cache_dir(),
+            None,
+            "未注入时读取入口必须返回 None（不由 temp 回落伪造注入值）"
+        );
     }
 }

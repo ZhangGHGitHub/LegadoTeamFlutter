@@ -7,6 +7,7 @@
 //! 对齐原版 `McpService.kt` 独立前台服务（默认 1236，合法区间
 //! 1024..65530，≤0 停止），与 Web 服务并存、独立启停。
 
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::OnceLock;
 
@@ -17,6 +18,13 @@ use legado_core::{LegadoError, LegadoResult};
 
 /// 服务器运行时（独立于 FFI 主 runtime）
 static SERVER_RUNTIME: OnceLock<Runtime> = OnceLock::new();
+
+/// App 本地书保存子目录名（对齐 Dart `LocalBookStore.subDir = 'books'`）
+///
+/// App 的 DB 固定落在 `Documents/legado.db`（Dart `rust_api.dart::_defaultDbPath`），
+/// 本地书持久化目录为 `Documents/books/`——两者同基目录，故本地书保存根可由
+/// DB 路径父目录推导（[`local_book_root`]）。
+const LOCAL_BOOK_SUB_DIR: &str = "books";
 
 /// 服务器运行状态
 static SERVER_RUNNING: AtomicBool = AtomicBool::new(false);
@@ -120,6 +128,49 @@ fn abort_and_wait(handle: JoinHandle<()>) {
     }
 }
 
+/// 本地书保存根（由 DB 路径父目录推导 `{Documents}/books`，未记录 DB 路径时 `None`）
+///
+/// 来源调查（B3 接线批，防复发 #1「单一实现/不发明新语义」）：
+/// - 原版 Web `/addLocalBook` 落在 `AppConfig.defaultBookTreeUri`（用户选择的
+///   「默认书籍保存位置」，未设置时抛 `NoBooksDirException`）。
+/// - 本仓该设置只存在于 Dart `PrefKeys.defaultBookTreeUri`（SharedPreferences），
+///   FFI 无对应导出/配置镜像（rg 全仓确认），本批禁改 Dart 与导出面——故不复刻
+///   SAF 预置目录语义，改取**本仓既有实现**的真实本地书目录：Dart
+///   `LocalBookStore` 把本地书持久化到 `Documents/books/`，Rust
+///   `db_state::resolve_local_book_path` 亦以 DB 父目录（Documents）为基解析
+///   `books/*` 相对标识。两者同源，上传书因此与 App 本地书落在同一目录。
+/// - DB 未记录路径（未走 `db_open`）时返回 `None`，服务端保持既有
+///   「没有设置书籍保存位置!」分支，行为不变。
+fn local_book_root(db_path: Option<&str>) -> Option<PathBuf> {
+    db_path
+        .map(Path::new)
+        .and_then(Path::parent)
+        .map(|dir| dir.join(LOCAL_BOOK_SUB_DIR))
+}
+
+/// 构造 Web 服务宿主注入路径（纯函数，便于单测覆盖两来源的「已设置/未设置」）
+///
+/// - `image_cache_root`：`image_cache_api` 的宿主注入缓存根（未注入 `None`）；
+/// - `local_book_root`：见 [`local_book_root`]。
+fn build_injected_paths(
+    image_cache_root: Option<PathBuf>,
+    db_path: Option<&str>,
+) -> legado_server::state::InjectedPaths {
+    legado_server::state::InjectedPaths {
+        image_cache_root,
+        local_book_root: local_book_root(db_path),
+    }
+}
+
+/// 当前进程可注入的宿主路径（`server_start` 调用时快照，注入后进程内不变）
+fn current_injected_paths() -> legado_server::state::InjectedPaths {
+    let db_path = crate::db_state::current_db_path();
+    build_injected_paths(
+        crate::api::image_cache_api::injected_cache_dir(),
+        db_path.as_deref(),
+    )
+}
+
 /// 启动 legado-server
 ///
 /// 在独立 tokio runtime 中启动 HTTP 服务器。
@@ -140,6 +191,17 @@ fn abort_and_wait(handle: JoinHandle<()>) {
 ///   `Internal("Web 服务端口 {port} 绑定失败: …")` 且不置运行态——
 ///   旧实现 spawn 后才 bind，失败仅任务内 eprintln，函数仍假成功返回 Ok。
 ///   成功后把已绑定 listener 交给 `serve_web`（对齐 mcp_start_internal）。
+///
+/// 宿主路径注入（B3 接线批，零 FFI 导出签名变更）：
+/// - 改调 `legado_server::server::serve_web_with_injected_paths`，在构造
+///   `AppState` 时注入 [`legado_server::state::InjectedPaths`]：
+///   `image_cache_root` = Dart `set_image_cache_dir` 已注入的图片缓存根
+///   （[`crate::api::image_cache_api::injected_cache_dir`]），使其进入
+///   `/cover`、`/image` 本地图片读取白名单；
+///   `local_book_root` = App 当前本地书目录 `{Documents}/books`（见
+///   [`local_book_root`]），使 Web `/addLocalBook` 上传真正落盘。
+/// - 两来源均未设置时注入 `None`，服务端行为与本批之前完全一致
+///   （白名单不含缓存根、`/addLocalBook` 报「没有设置书籍保存位置!」）。
 pub fn server_start(port: u16) -> LegadoResult<String> {
     if SERVER_RUNNING.load(Ordering::SeqCst) {
         return Ok(format!(
@@ -169,8 +231,14 @@ pub fn server_start(port: u16) -> LegadoResult<String> {
         .block_on(tokio::net::TcpListener::bind(("0.0.0.0", port)))
         .map_err(|e| LegadoError::Internal(format!("Web 服务端口 {port} 绑定失败: {e}")))?;
 
+    // B3 接线：spawn 前快照宿主路径（图片缓存根 / 本地书保存根），
+    // 随任务 move 进 serve 构造期注入；导出签名与参数不变
+    let injected_paths = current_injected_paths();
+
     let handle = runtime.spawn(async move {
-        if let Err(e) = legado_server::server::serve_web(listener, db).await {
+        if let Err(e) =
+            legado_server::server::serve_web_with_injected_paths(listener, db, injected_paths).await
+        {
             eprintln!("Server error: {e}");
         }
 
@@ -444,11 +512,176 @@ mod tests {
         assert!(json.get("port").is_some());
     }
 
+    /// Web 服务启停测试串行锁（`SERVER_RUNNING`/`SERVER_PORT` 为进程级状态，
+    /// 与 MCP 测试的 `MCP_TEST_LOCK` 同型）
+    static SERVER_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    /// 取 Web 服务测试串行锁（中毒时恢复：仅需串行语义）
+    fn server_test_lock() -> std::sync::MutexGuard<'static, ()> {
+        SERVER_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     #[test]
     fn test_server_stop_when_not_running() {
+        // 与注入端到端测试共享启停状态：先持锁，避免并行停掉对方服务
+        let _g = server_test_lock();
         // 未运行时停止应返回提示
         let result = server_stop();
         assert!(result == "Server not running" || result == "Server stopped");
+    }
+
+    // ─── B3 宿主路径注入（图片缓存根 / 本地书保存根） ────────────
+
+    /// 注入映射：图片缓存根原样透传；本地书根 = DB 父目录 + `books`
+    #[test]
+    fn test_build_injected_paths_maps_roots() {
+        let image = PathBuf::from("/tmp/legado-inject/image_cache");
+        let paths = build_injected_paths(Some(image.clone()), Some("/tmp/legado-inject/legado.db"));
+        assert_eq!(paths.image_cache_root, Some(image), "图片缓存根应原样注入");
+        assert_eq!(
+            paths.local_book_root,
+            Some(Path::new("/tmp/legado-inject").join(LOCAL_BOOK_SUB_DIR)),
+            "本地书根应为 DB 父目录下 books 子目录"
+        );
+    }
+
+    /// 未设置回退：两来源均未设置 → 双 None；仅一来源可用时另一侧保持 None
+    #[test]
+    fn test_build_injected_paths_none_fallbacks() {
+        let empty = build_injected_paths(None, None);
+        assert!(
+            empty.image_cache_root.is_none(),
+            "未注入图片缓存根时必须回退 None"
+        );
+        assert!(
+            empty.local_book_root.is_none(),
+            "未记录 DB 路径时本地书根必须回退 None"
+        );
+
+        // 仅 DB 路径已知：只推导本地书根，不伪造图片缓存根
+        let only_db = build_injected_paths(None, Some("/tmp/legado-inject/legado.db"));
+        assert!(only_db.image_cache_root.is_none());
+        assert_eq!(
+            only_db.local_book_root,
+            Some(Path::new("/tmp/legado-inject").join(LOCAL_BOOK_SUB_DIR))
+        );
+
+        // 仅图片缓存根已注入：本地书根仍 None
+        let only_img = build_injected_paths(Some(PathBuf::from("/tmp/legado-inject/img")), None);
+        assert_eq!(
+            only_img.image_cache_root,
+            Some(PathBuf::from("/tmp/legado-inject/img"))
+        );
+        assert!(only_img.local_book_root.is_none());
+    }
+
+    /// 端到端传递：`server_start` 注入图片缓存根 → 注入根内图片可经
+    /// `/cover` 读取（白名单生效），证明 InjectedPaths 真正传到 AppState
+    #[test]
+    fn test_server_start_injects_image_cache_root_whitelist() {
+        let _server_lock = server_test_lock();
+        // 注入槽为进程级状态：与 image_cache_api 测试共享锁串行
+        let _image_lock = crate::api::image_cache_api::INJECTED_DIR_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        // 夹具：注入根下按 image_cache 目录结构放一张 PNG（魔数即可通过校验）
+        let root = std::env::temp_dir().join(format!(
+            "legado_ffi_server_inject_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let cached = root.join("bookdir").join("images").join("cover.png");
+        std::fs::create_dir_all(cached.parent().expect("缓存文件父目录")).unwrap();
+        let png: Vec<u8> = [
+            vec![0x89, b'P', b'N', b'G', 0x0D, 0x0A, 0x1A, 0x0A],
+            b"b3-injected-proof".to_vec(),
+        ]
+        .concat();
+        std::fs::write(&cached, &png).unwrap();
+        crate::api::image_cache_api::set_cache_dir(
+            root.to_str().expect("图片缓存根路径含非 UTF-8 字符"),
+        );
+
+        // 收尾守卫：即使断言失败也停服并复位注入槽（Drop 顺序 = 声明逆序，
+        // 本守卫最后声明 → 最先析构，仍持有 DB 锁）
+        struct Cleanup {
+            root: PathBuf,
+        }
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = server_stop();
+                crate::api::image_cache_api::clear_cache_dir_for_test();
+                let _ = std::fs::remove_dir_all(&self.root);
+            }
+        }
+        let _cleanup = Cleanup { root: root.clone() };
+
+        let port = pick_free_port();
+        let msg = server_start(port).expect("Web 服务应启动成功");
+        assert!(msg.contains("Server started"), "启动返回: {msg}");
+
+        let query = format!(
+            "/cover?path={}",
+            percent_encode(cached.to_str().expect("缓存文件路径含非 UTF-8 字符"))
+        );
+        let (status, head, body) = http_get_raw(port, &query);
+        assert_eq!(status, 200, "响应头: {head}");
+        assert!(
+            head.to_ascii_lowercase()
+                .contains("content-type: image/png"),
+            "响应头: {head}"
+        );
+        assert!(
+            body.windows(png.len()).any(|w| w == png.as_slice()),
+            "响应体应含注入缓存根内的图片字节"
+        );
+    }
+
+    /// 极简 HTTP/1.1 GET（避免为单测引入 HTTP 客户端依赖）
+    fn http_get_raw(port: u16, path_and_query: &str) -> (u16, String, Vec<u8>) {
+        use std::io::{Read, Write};
+        let mut stream =
+            std::net::TcpStream::connect(("127.0.0.1", port)).expect("连接本机 Web 服务");
+        stream
+            .set_read_timeout(Some(std::time::Duration::from_secs(10)))
+            .expect("设置读超时");
+        let request = format!(
+            "GET {path_and_query} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n"
+        );
+        stream.write_all(request.as_bytes()).expect("发送请求");
+        let mut raw = Vec::new();
+        stream.read_to_end(&mut raw).expect("读取响应");
+        let split = raw
+            .windows(4)
+            .position(|w| w == b"\r\n\r\n")
+            .expect("响应头缺少结束标记");
+        let head = String::from_utf8_lossy(&raw[..split]).to_string();
+        let status = head
+            .split_whitespace()
+            .nth(1)
+            .and_then(|s| s.parse().ok())
+            .expect("响应行缺少状态码");
+        (status, head, raw[split + 4..].to_vec())
+    }
+
+    /// URL 查询值百分号编码（仅保留 unreserved 字符，路径分隔符/盘符全编码）
+    fn percent_encode(value: &str) -> String {
+        let mut out = String::new();
+        for byte in value.bytes() {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.' | b'~') {
+                out.push(byte as char);
+            } else {
+                out.push_str(&format!("%{byte:02X}"));
+            }
+        }
+        out
     }
 
     // ─── 独立 MCP 服务（Task #73） ────────────────────────
