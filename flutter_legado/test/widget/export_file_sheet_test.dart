@@ -10,10 +10,16 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+
+// path_provider 平台接口为传递依赖，测试直引以覆写 instance 保持 hermetic，
+// 不改 pubspec（同 import_screen_cbz_test / export_entries_sheet_test 桩模式）
+// ignore: depend_on_referenced_packages
+import 'package:path_provider_platform_interface/path_provider_platform_interface.dart';
 
 import 'package:flutter_legado/src/bridge/ffi.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
@@ -101,8 +107,57 @@ class _ResultBox {
   bool completed = false;
 }
 
+/// path_provider 平台桩：临时目录指向测试临时目录
+class _FakePathProvider extends PathProviderPlatform {
+  _FakePathProvider(this.tempPath);
+
+  final String tempPath;
+
+  @override
+  Future<String?> getTemporaryPath() async => tempPath;
+}
+
+/// FilePicker 系统另存桩：返回固定目标路径（桌面分支由服务自身写盘）
+class _SaveFilePickerStub extends FilePicker {
+  _SaveFilePickerStub(this.targetPath);
+
+  final String? targetPath;
+
+  @override
+  Future<String?> saveFile({
+    String? dialogTitle,
+    String? fileName,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Uint8List? bytes,
+    bool lockParentWindow = false,
+  }) async {
+    return targetPath;
+  }
+}
+
+/// 注入 FilePicker 平台桩并登记恢复（同 bookshelf_add_local_cbz_test 桩模式）
+void _useFakeSaveFilePicker(FilePicker fake) {
+  FilePicker? original;
+  var initialized = false;
+  try {
+    original = FilePicker.platform;
+    initialized = true;
+  } catch (_) {
+    // 测试宿主未初始化：回退 FilePickerIO
+  }
+  FilePicker.platform = fake;
+  addTearDown(
+    () => FilePicker.platform = initialized ? original! : FilePickerIO(),
+  );
+}
+
 void main() {
   late _CapturingBookApi api;
+  late Directory tempRoot;
+  late Directory tempDir;
+  late PathProviderPlatform originalPathProvider;
 
   setUp(() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -110,6 +165,22 @@ void main() {
     // Future 会永不完成 → 逐用例清除默认规则资产缓存
     rootBundle.evict(DirectLinkUploadRuleService.defaultRulesAsset);
     api = _CapturingBookApi();
+
+    // 临时文件清理（deleteTempFileOnClose）依赖 path_provider：逐用例
+    // 指向独立临时目录，避免真实平台插件在测试宿主不可用
+    tempRoot = Directory.systemTemp.createTempSync('export_sheet_test');
+    tempDir = Directory('${tempRoot.path}${Platform.pathSeparator}tmp')
+      ..createSync(recursive: true);
+    originalPathProvider = PathProviderPlatform.instance;
+    PathProviderPlatform.instance = _FakePathProvider(tempDir.path);
+    addTearDown(() {
+      PathProviderPlatform.instance = originalPathProvider;
+      try {
+        if (tempRoot.existsSync()) tempRoot.deleteSync(recursive: true);
+      } on FileSystemException {
+        // Windows 偶发句柄未释放；临时目录交由系统清理
+      }
+    });
   });
 
   /// mock 系统剪贴板通道（setData 记录写入）
@@ -134,7 +205,7 @@ void main() {
     DirectLinkUploadRuleService? ruleService,
     String? content = '[]',
     String? filePath,
-    bool deleteTempFileAfterUpload = false,
+    bool deleteTempFileOnClose = false,
     String fileName = 'rssSources.json',
     String? uploadFileName,
     String contentType = 'application/json',
@@ -154,7 +225,7 @@ void main() {
                       context,
                       content: content,
                       filePath: filePath,
-                      deleteTempFileAfterUpload: deleteTempFileAfterUpload,
+                      deleteTempFileOnClose: deleteTempFileOnClose,
                       fileName: fileName,
                       uploadFileName: uploadFileName,
                       contentType: contentType,
@@ -475,26 +546,83 @@ void main() {
   });
 
   group('filePath 模式（批16e）', () {
-    /// 创建真实临时文件（模拟调用方自建文件）
-    File createTempFile(String name, List<int> bytes) {
-      final dir = Directory.systemTemp.createTempSync('export_sheet_test');
-      addTearDown(() {
-        if (dir.existsSync()) dir.deleteSync(recursive: true);
-      });
-      final file = File('${dir.path}${Platform.pathSeparator}$name');
+    /// 创建真实临时文件（默认落在 path_provider 临时目录下）
+    File createTempFile(String name, List<int> bytes, {Directory? dir}) {
+      final target = dir ?? tempDir;
+      final file = File('${target.path}${Platform.pathSeparator}$name');
       file.writeAsBytesSync(bytes);
       return file;
     }
 
-    testWidgets('content 与 filePath 互斥：都为空 / 都给均 assert 报错', (tester) async {
+    /// 放行真实事件循环，等待 Sheet dispose 触发的异步清理落定
+    Future<void> waitForCleanup(WidgetTester tester, File file) async {
+      await tester.runAsync(() async {
+        for (var i = 0; i < 100 && file.existsSync(); i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 10));
+        }
+      });
+    }
+
+    // P2-4：saveExistingFile 的假实现不读文件，这里直接验证真实服务
+    // 读取源文件字节并复制到系统另存位置（桌面分支由服务自身写盘）
+    test('saveExistingFile：复制真实源文件字节到目标路径', () async {
+      final source = createTempFile('source.zip', const [9, 8, 7, 6]);
+      final destPath =
+          '${tempDir.path}${Platform.pathSeparator}saved.zip';
+      _useFakeSaveFilePicker(_SaveFilePickerStub(destPath));
+
+      // 桌面分支（服务自行写盘）便于断言真实字节
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      try {
+        final saved = await const ExportFileService().saveExistingFile(
+          sourcePath: source.path,
+          fileName: 'saved.zip',
+        );
+        expect(saved, destPath);
+        expect(File(destPath).readAsBytesSync(), const [9, 8, 7, 6]);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    // P2-2：清理护栏 —— 仅删除系统临时目录内的文件
+    test('deleteTemporaryFile：临时目录内删除，用户目录/.. 逃逸不删除', () async {
+      const service = ExportFileService();
+      final inside = createTempFile('inside.bin', const [1]);
+      expect(await service.deleteTemporaryFile(inside.path), isTrue);
+      expect(inside.existsSync(), isFalse);
+
+      final userDir = Directory.systemTemp.createTempSync('export_user_dir');
+      addTearDown(() {
+        if (userDir.existsSync()) userDir.deleteSync(recursive: true);
+      });
+      final outside = createTempFile('outside.bin', const [2], dir: userDir);
+      expect(await service.deleteTemporaryFile(outside.path), isFalse);
+      expect(outside.existsSync(), isTrue);
+
+      // 路径经 `..` 规范化后仍落在临时目录之外 → 护栏拦截
+      final escapeFile = File(
+        '${tempRoot.path}${Platform.pathSeparator}escape.bin',
+      )..writeAsBytesSync(const [3]);
+      final escaped =
+          '${tempDir.path}${Platform.pathSeparator}..${Platform.pathSeparator}'
+          'escape.bin';
+      expect(await service.deleteTemporaryFile(escaped), isFalse);
+      expect(escapeFile.existsSync(), isTrue);
+    });
+
+    testWidgets('content 与 filePath 互斥：都为空 / 都给均抛 ArgumentError', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         const MaterialApp(home: Scaffold(body: Text('anchor'))),
       );
       final context = tester.element(find.text('anchor'));
 
+      // P3-6：运行时校验常驻（release 下 assert 失效也不会放行）
       expect(
         () => showExportFileSheet(context, fileName: 'x.json'),
-        throwsAssertionError,
+        throwsArgumentError,
       );
       expect(
         () => showExportFileSheet(
@@ -503,7 +631,7 @@ void main() {
           filePath: 'x.json',
           fileName: 'x.json',
         ),
-        throwsAssertionError,
+        throwsArgumentError,
       );
     });
 
@@ -531,15 +659,54 @@ void main() {
       expect(saver.saveCalls, 0);
       expect(box.value?.outcome, ExportFileOutcome.savedLocal);
       expect(box.value?.message, '已保存：skin.zip');
+      // 未声明清理时临时文件保持原样
+      expect(zip.existsSync(), isTrue);
     });
 
-    testWidgets('filePath 上传：按路径上传，成功后删除调用方临时文件', (tester) async {
+    testWidgets('另存成功：Sheet 关闭后清理临时文件', (tester) async {
+      final zip = createTempFile('skin.zip', const [1, 2, 3, 4]);
+      await openSheet(
+        tester,
+        fileService: _FakeExportFileService()
+          ..existingSavePath = r'D:\导出\skin.zip',
+        content: null,
+        filePath: zip.path,
+        deleteTempFileOnClose: true,
+        fileName: 'skin.zip',
+      );
+
+      await tester.tap(find.text('保存到本地'));
+      await tester.pumpAndSettle();
+      await waitForCleanup(tester, zip);
+
+      expect(zip.existsSync(), isFalse);
+    });
+
+    testWidgets('另存取消：Sheet 关闭后同样清理临时文件', (tester) async {
+      final zip = createTempFile('skin.zip', const [1, 2, 3, 4]);
+      await openSheet(
+        tester,
+        fileService: _FakeExportFileService()..existingSavePath = null,
+        content: null,
+        filePath: zip.path,
+        deleteTempFileOnClose: true,
+        fileName: 'skin.zip',
+      );
+
+      await tester.tap(find.text('保存到本地'));
+      await tester.pumpAndSettle();
+      await waitForCleanup(tester, zip);
+
+      expect(zip.existsSync(), isFalse);
+    });
+
+    testWidgets('filePath 上传：成功后文件保留到 Sheet 关闭再清理', (tester) async {
       final zip = createTempFile('skin.zip', const [1, 2, 3, 4]);
       final box = await openSheet(
         tester,
         content: null,
         filePath: zip.path,
-        deleteTempFileAfterUpload: true,
+        deleteTempFileOnClose: true,
         fileName: 'skin.zip',
         contentType: 'application/zip',
       );
@@ -553,10 +720,52 @@ void main() {
       expect(call['content'], isNull);
       expect(call['contentType'], 'application/zip');
       expect(call['fileName'], 'skin.zip');
-      // 上传成功后临时文件被清理
-      expect(zip.existsSync(), isFalse);
+      // 上传成功面板仍需可操作，文件此时尚未删除
+      expect(zip.existsSync(), isTrue);
       expect(box.completed, isFalse);
       expect(find.text('上传成功'), findsOneWidget);
+
+      await tester.tap(find.text('完成'));
+      await tester.pumpAndSettle();
+      await waitForCleanup(tester, zip);
+
+      expect(box.completed, isTrue);
+      expect(box.value?.outcome, ExportFileOutcome.uploaded);
+      expect(zip.existsSync(), isFalse);
+    });
+
+    testWidgets('上传失败：文件保留可重试，关闭 Sheet 后清理', (tester) async {
+      api.uploadError = const BridgeError(message: '上传失败,真实原因');
+      final zip = createTempFile('skin.zip', const [1, 2, 3, 4]);
+      await openSheet(
+        tester,
+        content: null,
+        filePath: zip.path,
+        deleteTempFileOnClose: true,
+        fileName: 'skin.zip',
+      );
+
+      await tester.tap(find.text('上传直链'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('上传失败'), findsOneWidget);
+      // 失败后 Sheet 保持打开供重试：文件必须仍在
+      expect(zip.existsSync(), isTrue);
+
+      api.uploadError = null;
+      api.uploadResult = 'https://download.example/retry.zip';
+      await tester.tap(find.text('重试'));
+      await tester.pumpAndSettle();
+
+      expect(api.uploadCalls, hasLength(2));
+      expect(find.text('上传成功'), findsOneWidget);
+      expect(zip.existsSync(), isTrue);
+
+      await tester.tap(find.text('完成'));
+      await tester.pumpAndSettle();
+      await waitForCleanup(tester, zip);
+
+      expect(zip.existsSync(), isFalse);
     });
 
     testWidgets('filePath 上传：未声明清理时保留原文件（避免误删用户文件）', (tester) async {
@@ -572,6 +781,35 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(api.uploadCalls.single['filePath'], userFile.path);
+      expect(userFile.existsSync(), isTrue);
+    });
+
+    testWidgets('删除护栏：声明清理但文件位于用户目录时不删除', (tester) async {
+      // 用户目录（非 path_provider 临时目录）
+      final userDir = Directory.systemTemp.createTempSync('export_user_dir');
+      addTearDown(() {
+        if (userDir.existsSync()) userDir.deleteSync(recursive: true);
+      });
+      final userFile = createTempFile(
+        'user.json',
+        const [1, 2, 3],
+        dir: userDir,
+      );
+      await openSheet(
+        tester,
+        content: null,
+        filePath: userFile.path,
+        deleteTempFileOnClose: true,
+        fileName: 'user.json',
+      );
+
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      // 放行异步清理，确认护栏拦截（否则会被误删）
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 100)),
+      );
+
       expect(userFile.existsSync(), isTrue);
     });
   });
