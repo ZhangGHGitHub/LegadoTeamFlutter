@@ -393,6 +393,38 @@ mod tests {
         }
     }
 
+    /// quickjs 门控：列表元素求值注入 `rssArticle` 基线对象（审查 P2-10）
+    ///
+    /// 对齐 `AnalyzeRule.kt:906` 的 `bindings["rssArticle"] = rssArticle`：
+    /// 列表页可读 `rssArticle.origin` / `rssArticle.sort`（已求值字段逐步
+    /// 可见不复刻，模块文档已登记）。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn js_item_rule_reads_rss_article_binding() {
+        let source = RssSource {
+            source_url: "https://origin.example.com/feed".to_string(),
+            rule_articles: Some(".item".to_string()),
+            rule_title: Some(
+                r#".title@js:result + "|" + rssArticle.origin + "|" + rssArticle.sort"#.to_string(),
+            ),
+            rule_link: Some(".link@href".to_string()),
+            ..RssSource::default()
+        };
+        let page = parse_rule_list(
+            &source,
+            "科技",
+            "https://feed.example.com/list",
+            "https://feed.example.com/list",
+            HTML_BODY,
+            None,
+        )
+        .expect("rssArticle 绑定列表解析");
+        assert_eq!(
+            page.items[0].title,
+            "标题A|https://origin.example.com/feed|科技"
+        );
+    }
+
     /// ruleNextPage：空 / PAGE（大小写不敏感）/ 相对 / 绝对
     #[test]
     fn next_page_variants() {
