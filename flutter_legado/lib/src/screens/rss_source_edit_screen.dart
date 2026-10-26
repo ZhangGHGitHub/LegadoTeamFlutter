@@ -12,6 +12,7 @@ import 'package:share_plus/share_plus.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../routes.dart';
+import '../utils/error_message.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
@@ -303,6 +304,11 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
     }
 
     setState(() => _saving = true);
+    // [D3] 保存结果用 RssSource 承载：订阅源管理页以 `push<RssSource>` 打开
+    // 本页，`pop(true)` 会在 MaterialRouteTransitionMixin.didPop 触发结果
+    // 类型强转异常，把路由卡在 popping 态（页面不返回、返回键失效）。
+    // 因此 pop 必须回传同类型对象；失败（saved == null）不 pop。
+    RssSource? saved;
     try {
       final api = ref.read(bookApiProvider);
       final source = _buildSource();
@@ -311,22 +317,24 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
       } else {
         await api.addRssSource(source);
       }
-      if (!mounted) return;
-      // 保存成功后更新快照，退出不再提示未保存
-      _initialSnapshotMark = _snapshot();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(_isEdit ? '订阅源已更新' : '订阅源已添加')),
-      );
-      Navigator.of(context).pop(true);
+      saved = source;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('保存失败：$e')),
+          SnackBar(content: Text('保存失败：${errorMessage(e)}')),
         );
       }
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+    if (saved == null || !mounted) return;
+    // 保存成功后更新快照，退出不再提示未保存
+    _initialSnapshotMark = _snapshot();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(_isEdit ? '订阅源已更新' : '订阅源已添加')),
+    );
+    // 只 pop 一次并回传已保存源（强类型路由契约，见方法上方注释）
+    Navigator.of(context).pop(saved);
   }
 
   /// 保存成功后覆盖初始快照的可变标记（late final 无法重赋值，独立持有）
