@@ -291,6 +291,20 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     final backupPath = result?.files.single.path;
     if (backupPath == null) return;
     if (!mounted) return;
+    // [批9 回修 P2-9] zip 备份由 Rust 按原版多文件语义整包恢复，不读取
+    // 恢复忽略项；用户已配置忽略项时必须明示「将按备份内容恢复」，
+    // 避免忽略项对 zip 静默失效（纯提示，不改变恢复行为）。
+    if (backupPath.toLowerCase().endsWith('.zip')) {
+      final ignore = await _settings.getRestoreIgnoreConfig();
+      if (!mounted) return;
+      if (ignore.values.any((enabled) => enabled)) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('zip 备份暂不支持忽略项过滤（将按备份内容恢复）'),
+          ),
+        );
+      }
+    }
     // [批7c P2-8] 先选文件、后确认：用户看到实际选中的备份再决定是否覆盖，
     // 取消选择时不弹确认框。
     if (!await _confirmLocalRestore()) return;

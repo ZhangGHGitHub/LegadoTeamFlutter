@@ -9,6 +9,7 @@
 /// - 确认后执行对应恢复链。
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -22,6 +23,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
+import 'package:flutter_legado/src/services/settings_service.dart';
 
 import '../mocks/mocks.dart';
 
@@ -222,6 +224,35 @@ void main() {
     verifyNever(() => mockApi.restore(any()));
     expect(find.text('恢复中…'), findsNothing);
   });
+
+  testWidgets(
+    '选择 zip 且配置了恢复忽略项：提示忽略项对 zip 不生效、恢复行为不变',
+    (tester) async {
+      // [批9 回修 P2-9] zip 恢复体不读取忽略项：必须明确提示，避免静默失效
+      SharedPreferences.setMockInitialValues({
+        SettingsService.restoreIgnoreStorageKey: jsonEncode({'readConfig': true}),
+      });
+      final backupPath = fakeBackupPath('legado_backup_zip_ignore.zip');
+      final picker = _FakeFilePicker(
+        FilePickerResult([
+          PlatformFile(name: 'backup.zip', size: 0, path: backupPath),
+        ]),
+      );
+      _useFakeFilePicker(picker);
+      await pumpScreen(tester);
+
+      await longPressRestoreTile(tester);
+
+      expect(
+        find.text('zip 备份暂不支持忽略项过滤（将按备份内容恢复）'),
+        findsOneWidget,
+      );
+      // 纯提示：确认后照常执行恢复，且恢复路径未被忽略项改写
+      await tester.tap(dialogButton('恢复'));
+      await tester.pumpAndSettle();
+      verify(() => mockApi.restore(backupPath)).called(1);
+    },
+  );
 
   testWidgets('确认本地恢复：选择器允许 .json/.zip，选择文件后调用 restore', (tester) async {
     // widget 测试的 FakeAsync 不驱动真实文件 IO：走 .json 备份会触发
