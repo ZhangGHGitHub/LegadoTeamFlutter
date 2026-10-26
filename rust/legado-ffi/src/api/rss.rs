@@ -176,63 +176,195 @@ pub fn clear_rss_articles(source_url: &str) -> LegadoResult<()> {
     })
 }
 
-/// 获取 RSS 源的文章列表（对齐原版 `Rss.getArticles` / `getArticlesAwait`）
-///
-/// 编排：读取源（全字段，含 `header` / `enabledCookieJar`）→ `legado-fetcher`
-/// RSS 引擎列表请求（`AnalyzeUrl` + 源 header）→ 默认解析 → 写本地
-/// `rssArticles` 缓存。
-///
-/// 批15a 语义修正（逐条对齐原版）：
-/// - **删除**「解析空/失败伪造单条摘要」：原版 `RssParserByRule.parseXML`
-///   在 body 空白时抛错、解析出 0 篇即空列表，绝不伪造文章；
-/// - **删除** `cacheFirst` 列表短路：原版该字段只作用于阅读页 WebView 缓存，
-///   与列表取数无关（语义还原登记于批15c/15f 评估）；
-/// - 源 `header` 应用到列表请求（含 `enabledCookieJar` 内部标记头）。
-///
-/// `sort` 恒空、`order` 递减写库（分类与分页留批15b）。
-pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
-    // 全字段读取（单一实现：RssSourceRepository::find_by_url）
-    let source = with_database(|db| {
+/// RSS 列表页返回载荷（契约 §2.5：`{"articles":[],"nextUrl":…,"hasMore":…}`）
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RssArticlesPagePayload {
+    /// 本页文章（规则解析或默认解析）
+    articles: Vec<legado_fetcher::rss::RssArticleItem>,
+    /// 下一页 URL（`ruleNextPage` 解析结果；空值已归一为 `None`）
+    next_url: Option<String>,
+    /// 是否还有下一页（文章非空 && nextUrl 非空；loadMore 另要求实际追加）
+    has_more: bool,
+}
+
+/// 当前毫秒时间戳（对齐原版 `System.currentTimeMillis()`）
+fn current_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// 读取 RSS 源（全字段；不存在返回 `Ok(None)`）
+fn load_rss_source(source_url: &str) -> LegadoResult<Option<RssSource>> {
+    with_database(|db| {
         let repo = RssSourceRepository::new(db.connection());
         repo.find_by_url(source_url)
             .map_err(|e| LegadoError::Database(format!("查询 RSS 源失败: {e}")))
-    })?
-    .ok_or_else(|| LegadoError::Database("RSS 源不存在".into()))?;
+    })
+}
 
-    // 批15a：sort 名恒空、列表 URL = sourceUrl
-    // （对齐原版 `parseRssSortUrls` 空值回退 `("" to sourceUrl)`；分类/分页留批15b）
-    let page = runtime::block_on(async {
+/// 中立文章 → DB 记录（`order` 由调用方给定）
+fn to_record(
+    article: &legado_fetcher::rss::RssArticleItem,
+    order: i64,
+) -> legado_db::RssArticleRecord {
+    legado_db::RssArticleRecord {
+        origin: article.origin.clone(),
+        sort: article.sort.clone(),
+        title: article.title.clone(),
+        order,
+        link: Some(article.link.clone()),
+        pub_date: article.pub_date.clone(),
+        description: article.description.clone(),
+        content: article.content.clone(),
+        image: article.image.clone(),
+        variable: article.variable.clone(),
+        article_type: article.article_type,
+        ..Default::default()
+    }
+}
+
+/// 列表请求（源 + 登录头 → fetcher 引擎）
+fn fetch_rss_page(
+    source: &RssSource,
+    sort_name: &str,
+    sort_url: &str,
+    page: Option<u32>,
+    key: Option<&str>,
+) -> LegadoResult<legado_fetcher::rss::RssListPage> {
+    // 登录头：内存缓存优先、DB `loginHeader_<url>` 兜底（source_login_cache 单实现）
+    let login_header = crate::api::source_login_cache::get_login_header(&source.source_url);
+    let login_info = crate::api::source_login_cache::get_login_info(&source.source_url);
+    runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
-        legado_fetcher::rss::fetch_articles(&client, &source, "", source_url, None, None).await
-    })?;
+        legado_fetcher::rss::fetch_articles(
+            &client,
+            source,
+            sort_name,
+            sort_url,
+            page,
+            key,
+            login_header.as_deref(),
+            login_info.as_deref(),
+        )
+        .await
+    })
+}
 
-    // 写入本地文章缓存（对齐原版 rssArticles；sort 恒空、order 递减）
-    //
-    // 取舍（审查 P2-4）：列表取数本身已成功，缓存写库失败不应让整次调用
-    // 报错（原版写库在独立协程执行，失败也不影响返回列表）；故逐条 `warn`
-    // 记录后继续，不向上抛。DB 未打开等外层错误同样 warn（不再完全静默）。
+/// 获取 RSS 源的文章列表（保留兼容；内部等价 `rssRefreshArticles(sourceUrl, "", sourceUrl, null)`）
+///
+/// 契约 §2.5 批15b：`getRssArticles` 保留原签名，行为等价于
+/// `rssRefreshArticles(source_url, "", source_url, None)`——分类空串按
+/// 默认分类（旧数据 `sort=""` 兼容），列表 URL = 源 URL。
+pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
+    let json = rss_refresh_articles(source_url, "", source_url, None)?;
+    let payload: RssArticlesPagePayload = serde_json::from_str(&json)
+        .map_err(|e| LegadoError::Ffi(format!("RSS 列表载荷解析失败: {e}")))?;
+    Ok(payload
+        .articles
+        .into_iter()
+        .map(|article| RssArticle {
+            title: article.title,
+            link: article.link,
+            description: article.description,
+            pub_date: article.pub_date,
+            image_url: article.image,
+        })
+        .collect())
+}
+
+/// 解析 RSS 源分类列表（契约 §2.5 `rssSortUrls`，批15b）
+///
+/// 对齐原版 `RssSource.sortUrls()`（`RssSourceExtensions.kt:87-107`）：
+/// - `@js:` / `<js>` 配置经 JS 求值（注入 RSS 源 jsLib + setup + source 绑定）；
+/// - 脚本结果按源缓存（`CacheRepository` 键 `rssSortUrl_<md5(sourceUrl+sortUrl)>`，
+///   对齐原版 ACache 名 `rssSortUrl` + `MD5(sourceUrl+sortUrl)`）；
+/// - 求值失败/无配置 → 回退 `[{"name":"","url":sourceUrl}]`。
+pub fn rss_sort_urls(source_url: &str) -> LegadoResult<String> {
+    let entries = match load_rss_source(source_url)? {
+        Some(source) => {
+            let login_header = crate::api::source_login_cache::get_login_header(&source.source_url);
+            let login_info = crate::api::source_login_cache::get_login_info(&source.source_url);
+            let setup_script = legado_fetcher::source_setup::rss_source_js_setup_script(
+                &source,
+                login_header.as_deref(),
+                login_info.as_deref(),
+            )
+            .ok();
+            legado_fetcher::rss::sort_urls::resolve_sort_urls_with_cache(
+                &source.source_url,
+                source.sort_url.as_deref(),
+                |key| {
+                    with_database(|db| legado_db::CacheRepository::new(db.connection()).get(key))
+                        .ok()
+                        .flatten()
+                },
+                |key, value| {
+                    if let Err(e) = with_database(|db| {
+                        legado_db::CacheRepository::new(db.connection()).put(key, value, 0)
+                    }) {
+                        log::warn!("RSS sortUrl 缓存写入失败（{key}）: {e}");
+                    }
+                },
+                |script| {
+                    legado_fetcher::rss::sort_urls::evaluate_sort_script(
+                        &source,
+                        script,
+                        setup_script.clone(),
+                    )
+                },
+            )
+        }
+        // 源未入库：等价原版 `RssSource(sourceUrl=url)` 空配置
+        None => legado_fetcher::rss::sort_urls::fallback_sort_urls(source_url),
+    };
+    serde_json::to_string(&entries)
+        .map_err(|e| LegadoError::Ffi(format!("RSS 分类列表序列化失败: {e}")))
+}
+
+/// 清除 RSS 源分类脚本求值缓存（契约 §2.5 `rssClearSortCache`，批15b）
+///
+/// 对齐原版 `RssSource.removeSortCache()`：键 = `rssSortUrl_<md5(sourceUrl+sortUrl)>`
+/// （`sortUrl` 为 null 时按 Kotlin 字符串拼接口径拼字面量 `"null"`）。
+/// 源不存在时按空配置键静默删除（无命中 = no-op）。
+pub fn rss_clear_sort_cache(source_url: &str) -> LegadoResult<()> {
+    let configured = load_rss_source(source_url)?.and_then(|source| source.sort_url);
+    let key = legado_fetcher::rss::sort_urls::sort_cache_key(source_url, configured.as_deref());
+    with_database(|db| legado_db::CacheRepository::new(db.connection()).delete(&key))
+}
+
+/// 刷新 RSS 列表（契约 §2.5 `rssRefreshArticles`，批15b）
+///
+/// 对齐 `RssArticlesViewModel.loadArticles`（`RssArticlesViewModel.kt:66-105`）：
+/// 1. `order = now`，请求 `AnalyzeUrl(sortUrl, page=1, key)`；
+/// 2. 文章逐个 `order = order--` 后 `INSERT OR REPLACE` 写库；
+/// 3. `ruleNextPage` 非空时 `clearOld(origin, sort, order)` 清理旧页；
+/// 4. `hasMore = 文章非空 && nextUrl 非空`。
+///
+/// 取舍（沿用 15a 审查 P2-4）：列表取数成功后写库失败只 `warn`，不向上抛
+/// （原版写库在 IO 协程内，失败不影响返回列表）；但**任一写入失败则跳过
+/// clearOld**，避免误删未能替换的旧行。
+pub fn rss_refresh_articles(
+    source_url: &str,
+    sort_name: &str,
+    sort_url: &str,
+    key: Option<&str>,
+) -> LegadoResult<String> {
+    let source =
+        load_rss_source(source_url)?.ok_or_else(|| LegadoError::Database("RSS 源不存在".into()))?;
+    // 原版 refresh 的 page 从 1 开始（`RssPaginationState.startRefresh`）
+    let page = fetch_rss_page(&source, sort_name, sort_url, Some(1), key)?;
+
+    let now = current_millis();
+    let mut any_write_failed = false;
     if let Err(e) = with_database(|db| {
         let repo = legado_db::RssArticleRepository::new(db.connection());
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0);
         for (i, article) in page.items.iter().enumerate() {
-            let record = legado_db::RssArticleRecord {
-                origin: article.origin.clone(),
-                sort: article.sort.clone(),
-                title: article.title.clone(),
-                order: now - i as i64,
-                link: Some(article.link.clone()),
-                pub_date: article.pub_date.clone(),
-                description: article.description.clone(),
-                content: article.content.clone(),
-                image: article.image.clone(),
-                variable: article.variable.clone(),
-                article_type: article.article_type,
-                ..Default::default()
-            };
+            let record = to_record(article, now - i as i64);
             if let Err(e) = repo.insert(&record) {
+                any_write_failed = true;
                 log::warn!(
                     "RSS 文章缓存写入失败（origin={}, link={:?}）: {e}",
                     record.origin,
@@ -243,19 +375,110 @@ pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
         Ok(())
     }) {
         log::warn!("RSS 文章缓存写入失败（{source_url}）: {e}");
+        any_write_failed = true;
     }
 
-    Ok(page
-        .items
-        .into_iter()
-        .map(|article| RssArticle {
-            title: article.title,
-            link: article.link,
-            description: article.description,
-            pub_date: article.pub_date,
-            image_url: article.image,
-        })
-        .collect())
+    // [RssArticlesViewModel.kt:88-92] ruleNextPage 非空 → 按刷新后水位清理旧页
+    let has_next_page_rule = source
+        .rule_next_page
+        .as_deref()
+        .map(|rule| !rule.is_empty())
+        .unwrap_or(false);
+    if has_next_page_rule && !any_write_failed {
+        let watermark = now - page.items.len() as i64;
+        if let Err(e) = with_database(|db| {
+            legado_db::RssArticleRepository::new(db.connection()).clear_old(
+                &source.source_url,
+                sort_name,
+                watermark,
+            )
+        }) {
+            log::warn!("RSS 旧文章清理失败（{source_url}）: {e}");
+        }
+    }
+
+    let has_more = !page.items.is_empty() && page.next_url.is_some();
+    serialize_page(page, has_more)
+}
+
+/// 加载 RSS 下一页（契约 §2.5 `rssLoadMoreArticles`，批15b）
+///
+/// 对齐 `RssArticlesViewModel.loadMore` + `loadMoreSuccess`
+/// （`RssArticlesViewModel.kt:107-166`）：
+/// 1. 请求 `nextUrl`、页码取当前页 + 1（调用方传入）；
+/// 2. 本页**首条与末条**均已在库 → 判到底，不写库；
+/// 3. 否则 `order` 续接该 `(origin, sort)` 最小 order 递减（原版 VM 的
+///    `order` 字段跨页递减；本 FFI 无会话状态，从 DB 水位反推），
+///    `INSERT OR IGNORE` 追加（已存在行保持原 order）；
+/// 4. `hasMore = 实际追加 && nextUrl 非空`。
+pub fn rss_load_more_articles(
+    source_url: &str,
+    sort_name: &str,
+    next_url: &str,
+    page: u32,
+    key: Option<&str>,
+) -> LegadoResult<String> {
+    let source =
+        load_rss_source(source_url)?.ok_or_else(|| LegadoError::Database("RSS 源不存在".into()))?;
+    let fetched = fetch_rss_page(&source, sort_name, next_url, Some(page.max(1)), key)?;
+
+    let mut added = false;
+    if let (Some(first), Some(last)) = (fetched.items.first(), fetched.items.last()) {
+        // 原版 quirk：末条也用 firstArticle.sort 查询（同页 sort 相同，无行为差异）
+        let (first_exists, last_exists) = with_database(|db| {
+            let repo = legado_db::RssArticleRepository::new(db.connection());
+            Ok((
+                repo.find_one(&first.origin, &first.link, &first.sort)?,
+                repo.find_one(&last.origin, &last.link, &first.sort)?,
+            ))
+        })?;
+
+        if !(first_exists && last_exists) {
+            // order 续接：min(order) - 1（无行则取当前毫秒）
+            let start_order = with_database(|db| {
+                legado_db::RssArticleRepository::new(db.connection())
+                    .min_order(&source.source_url, sort_name)
+            })?
+            .map(|min| min.saturating_sub(1))
+            .unwrap_or_else(current_millis);
+
+            let mut any_write_failed = false;
+            if let Err(e) = with_database(|db| {
+                let repo = legado_db::RssArticleRepository::new(db.connection());
+                for (i, article) in fetched.items.iter().enumerate() {
+                    let record = to_record(article, start_order - i as i64);
+                    if let Err(e) = repo.append_ignore(&record) {
+                        any_write_failed = true;
+                        log::warn!(
+                            "RSS 文章追加失败（origin={}, link={:?}）: {e}",
+                            record.origin,
+                            record.link
+                        );
+                    }
+                }
+                Ok(())
+            }) {
+                log::warn!("RSS 文章追加失败（{source_url}）: {e}");
+                any_write_failed = true;
+            }
+            added = !any_write_failed;
+        }
+    }
+
+    let has_more = added && fetched.next_url.is_some();
+    serialize_page(fetched, has_more)
+}
+
+/// 列表页 → 契约 JSON 载荷
+fn serialize_page(page: legado_fetcher::rss::RssListPage, has_more: bool) -> LegadoResult<String> {
+    let payload = RssArticlesPagePayload {
+        articles: page.items,
+        // 空白 nextUrl 归一为 None（对齐原版 `normalizedPageUrl`）
+        next_url: page.next_url.filter(|url| !url.trim().is_empty()),
+        has_more,
+    };
+    serde_json::to_string(&payload)
+        .map_err(|e| LegadoError::Ffi(format!("RSS 列表载荷序列化失败: {e}")))
 }
 
 /// 将 rusqlite Row 转换为 RssSource

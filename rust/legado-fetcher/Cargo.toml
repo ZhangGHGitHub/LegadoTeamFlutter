@@ -20,6 +20,10 @@ encoding_rs = "0.8"
 # [P2-19 尾项 | 2026-10-01 用户批准] charset 第四级统计探测（HTTP 三级无果时
 # 兜底：显式 charset → Content-Type → HTML meta → chardetng 探测 → lossy UTF-8）
 chardetng = "1.0"
+# [批15b | 2026-10-26] RSS sortUrl 脚本求值缓存键：对齐原版
+# `RssSourceExtensions.getSortUrlsKey()` 的 MD5Utils.md5Encode(sourceUrl + sortUrl)。
+# 与 legado-core / legado-db / legado-ffi 同版本，无新增 crate 版本面。
+md5 = "0.7"
 
 [dev-dependencies]
 base64 = { workspace = true }

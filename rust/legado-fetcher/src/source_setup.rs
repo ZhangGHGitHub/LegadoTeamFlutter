@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 
-use legado_core::models::BookSource;
+use legado_core::models::{BookSource, RssSource};
 use legado_core::LegadoResult;
 
 use crate::js_adapter::extract_js_lib_host_decl;
@@ -375,6 +375,149 @@ if (typeof setArguments === 'function') {{
     ))
 }
 
+/// 生成 RSS 源 JS 最小绑定脚本（批15b）
+///
+/// 原版 `RssParserByRule.parseXML` 用 `AnalyzeRule(ruleData, rssSource)`，
+/// `ruleArticles` / `ruleTitle` 等规则里的 `@js:` / `<js>` 可访问
+/// `source`（RssSource 实例）与 `java`（`BaseSource.evalJS` 绑定
+/// `java = source`、`cookie = CookieStore`、`cache = CacheManager`）。
+///
+/// 本函数只生成与书源 `book_source_js_setup_script` 同谱的**最小面**：
+/// - `source` / `sourceApi` / `baseUrl` / `sourceUrl` 变量；
+/// - RssSource 的 `getKey` / `getTag` / `get` / `put` / `getVariable` /
+///   `setVariable` / 登录头与用户信息读写；
+/// - `cookie` / `cache` 全局的常用方法（底层复用引擎 `java.*` 宿主实现）；
+/// - `login_header` / `login_info` 预置（`loginHeader_<url>` /
+///   `userInfo_<url>`，Host 从 DB 读取后注入）。
+///
+/// 不包含书源专属的 `book` / `infoMap` / `host` / header 规则求值——
+/// RSS 列表规则无这些绑定面。
+pub fn rss_source_js_setup_script(
+    source: &RssSource,
+    login_header: Option<&str>,
+    login_info: Option<&str>,
+) -> LegadoResult<String> {
+    let source_url_json = serde_json::to_string(&source.source_url)?;
+    let source_json = serde_json::to_string(source)?;
+    let login_header_seed = match login_header {
+        Some(header) => serde_json::to_string(header)?,
+        None => "null".to_string(),
+    };
+    let login_info_seed = match login_info {
+        Some(info) => serde_json::to_string(info)?,
+        None => "null".to_string(),
+    };
+
+    Ok(format!(
+        r#"
+// RSS 源 JS 最小绑定（对齐原版 BaseSource.evalJS：java/source/cookie/cache）
+globalThis.baseUrl = {source_url_json};
+globalThis.sourceUrl = {source_url_json};
+globalThis.__rssSrcData = {source_json};
+globalThis.source = Object.assign({{}}, __rssSrcData);
+globalThis.sourceApi = source;
+
+function __rssSourceVarKey(k) {{ return 'v_' + sourceUrl + '_' + k; }}
+function __rssLoginHeaderKey() {{ return 'loginHeader_' + sourceUrl; }}
+function __rssUserInfoKey() {{ return 'userInfo_' + sourceUrl; }}
+function __rssSourceVariableKey() {{ return 'sourceVariable_' + sourceUrl; }}
+
+function __mountRssSourceApi(obj) {{
+  obj.get = function(k) {{ return get(__rssSourceVarKey(k)) || ''; }};
+  obj.getKey = function() {{ return sourceUrl; }};
+  obj.getTag = function() {{ return obj.sourceName || ''; }};
+  obj.getUrl = function() {{ return sourceUrl; }};
+  obj.key = sourceUrl;
+  obj.url = sourceUrl;
+  obj.put = function(k, v) {{ put(__rssSourceVarKey(k), String(v)); return v; }};
+  obj.getVariable = function() {{ return get(__rssSourceVariableKey()) || ''; }};
+  obj.setVariable = function(v) {{ setVariable(__rssSourceVariableKey(), String(v)); return v; }};
+  obj.putVariable = function(v) {{ return obj.setVariable(v); }};
+
+  obj.getLoginHeader = function() {{
+    var v = get(__rssLoginHeaderKey());
+    return v ? String(v) : null;
+  }};
+  obj.putLoginHeader = function(header) {{
+    put(__rssLoginHeaderKey(), String(header));
+    try {{
+      var map = JSON.parse(String(header));
+      var cookieValue = map.Cookie || map.cookie;
+      if (cookieValue && typeof java !== 'undefined') {{
+        java.setCookie(baseUrl, String(cookieValue));
+      }}
+    }} catch (e) {{}}
+    return;
+  }};
+  obj.removeLoginHeader = function() {{ removeVariable(__rssLoginHeaderKey()); }};
+  obj.getLoginHeaderMap = function() {{
+    var raw = obj.getLoginHeader();
+    if (!raw) return null;
+    try {{ return JSON.parse(raw); }} catch (e) {{ return null; }}
+  }};
+
+  obj.getLoginInfo = function() {{
+    var v = get(__rssUserInfoKey());
+    return v ? String(v) : null;
+  }};
+  obj.putLoginInfo = function(info) {{ put(__rssUserInfoKey(), String(info)); return true; }};
+  obj.removeLoginInfo = function() {{ removeVariable(__rssUserInfoKey()); }};
+  obj.getLoginInfoMap = function() {{
+    var data = {{}};
+    var raw = obj.getLoginInfo();
+    if (raw) {{
+      try {{ data = JSON.parse(raw) || {{}}; }} catch (e) {{ data = {{}}; }}
+    }}
+    data.get = function(k) {{ return this[k] ?? null; }};
+    data.put = function(k, v) {{ this[k] = String(v); obj.putLoginInfo(JSON.stringify(this)); return v; }};
+    return data;
+  }};
+  obj.hasLogin = function() {{ return !!(obj.loginUrl || obj.loginUi); }};
+}}
+
+__mountRssSourceApi(source);
+__mountRssSourceApi(sourceApi);
+if (typeof java === 'object' && java !== null) {{
+  __mountRssSourceApi(java);
+}}
+
+// 对齐 BaseSource.evalJS 的 cookie / cache 绑定（宿主实现复用引擎 java.*）
+globalThis.cookie = {{
+  getCookie: function(url, key) {{
+    if (key === undefined || key === null || key === '') {{
+      return java.getCookie(String(url));
+    }}
+    return java.getCookie(String(url), String(key));
+  }},
+  getKey: function(url, key) {{
+    if (key === undefined || key === null || key === '') {{
+      return java.getCookie(String(url));
+    }}
+    return java.getCookie(String(url), String(key));
+  }},
+  setCookie: function(url, value) {{ return java.setCookie(String(url), String(value)); }},
+  clearCookies: function(url) {{ return java.clearCookies(String(url)); }},
+  removeCookie: function(url) {{ return java.removeCookie(String(url)); }}
+}};
+globalThis.cache = {{
+  get: function(k) {{ return get(String(k)) || null; }},
+  put: function(k, v) {{ put(String(k), String(v)); return v; }},
+  remove: function(k) {{ removeVariable(String(k)); return true; }}
+}};
+
+// 登录缓存预置（宿主从 DB 读取 loginHeader_<url> / userInfo_<url>）
+globalThis.__rssLoginHeaderSeed = {login_header_seed};
+if (__rssLoginHeaderSeed) {{
+  put(__rssLoginHeaderKey(), String(__rssLoginHeaderSeed));
+}}
+globalThis.__rssLoginInfoSeed = {login_info_seed};
+if (__rssLoginInfoSeed) {{
+  put(__rssUserInfoKey(), String(__rssLoginInfoSeed));
+}}
+"#
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -441,5 +584,53 @@ mod tests {
             script.contains(r#"globalThis.host = ["https://setup-unit2.example.com"];"#),
             "host 兜底（无 jsLib 时用书源 URL）"
         );
+    }
+
+    /// 批15b：RSS 最小绑定——source/sourceUrl/baseUrl + java/cookie/cache，
+    /// 并预置登录头（`loginHeader_<url>`）
+    #[test]
+    fn test_rss_setup_script_binds_source_and_login_header() {
+        let source = RssSource {
+            source_url: "https://rss-setup.example.com/feed".to_string(),
+            source_name: "RSS 单元源".to_string(),
+            sort_url: Some("科技::https://rss-setup.example.com/tech".to_string()),
+            ..RssSource::default()
+        };
+        let script = rss_source_js_setup_script(
+            &source,
+            Some(r#"{"X-Token":"t"}"#),
+            Some(r#"{"邮箱":"a@b.c"}"#),
+        )
+        .expect("RSS setup 脚本生成");
+        assert!(
+            script.contains(r#"globalThis.baseUrl = "https://rss-setup.example.com/feed";"#),
+            "baseUrl 绑定"
+        );
+        assert!(script.contains("globalThis.source = Object.assign({}, __rssSrcData);"));
+        assert!(script.contains("__mountRssSourceApi(java)"), "java 绑定");
+        assert!(script.contains("globalThis.cookie = {"), "cookie 绑定");
+        assert!(script.contains("globalThis.cache = {"), "cache 绑定");
+        assert!(
+            script.contains(r#"globalThis.__rssLoginHeaderSeed = "{\"X-Token\":\"t\"}";"#),
+            "登录头预置"
+        );
+        assert!(
+            script.contains("globalThis.__rssLoginInfoSeed") && script.contains("邮箱"),
+            "用户信息预置"
+        );
+        assert!(
+            script.contains("科技::https://rss-setup.example.com/tech"),
+            "source JSON 应携带 sortUrl"
+        );
+        // 不含书源专属绑定
+        assert!(!script.contains("globalThis.book ="), "RSS 无 book 绑定");
+        assert!(
+            !script.contains("__mountBookSourceApi"),
+            "RSS 无书源 API 挂载"
+        );
+
+        let script = rss_source_js_setup_script(&source, None, None).expect("无登录头脚本");
+        assert!(script.contains("globalThis.__rssLoginHeaderSeed = null;"));
+        assert!(script.contains("globalThis.__rssLoginInfoSeed = null;"));
     }
 }

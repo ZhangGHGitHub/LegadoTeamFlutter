@@ -965,6 +965,9 @@ pub mod ffi {
     }
 
     /// 获取 RSS 源的文章列表（JSON 数组）
+    ///
+    /// 契约 §2.5：保留兼容，内部等价
+    /// `rssRefreshArticles(sourceUrl, "", sourceUrl, null)`（批15b）。
     pub fn rss_fetch_articles(source_url: String) -> Result<String, BridgeError> {
         let articles = crate::api::rss::fetch_rss_articles(&source_url)?;
         to_json(&articles)
@@ -974,6 +977,64 @@ pub mod ffi {
     pub fn rss_clear_articles(source_url: String) -> Result<(), BridgeError> {
         crate::api::rss::clear_rss_articles(&source_url)?;
         Ok(())
+    }
+
+    /// 解析 RSS 源分类列表（JSON 数组 `[{"name","url"}]`）
+    ///
+    /// 契约 §2.5 `rssSortUrls`（2026-10-26 批15b，加法式）：对齐原版
+    /// `RssSource.sortUrls()`——`&&`/换行分段、`name::url`、`@js:`/`<js>`
+    /// 求值 + 按源缓存；失败回退 `[{"name":"","url":sourceUrl}]`。
+    pub fn rss_sort_urls(source_url: String) -> Result<String, BridgeError> {
+        Ok(crate::api::rss::rss_sort_urls(&source_url)?)
+    }
+
+    /// 清除 RSS 源分类脚本求值缓存
+    ///
+    /// 契约 §2.5 `rssClearSortCache`（2026-10-26 批15b，加法式）：对齐原版
+    /// `RssSource.removeSortCache()`。
+    pub fn rss_clear_sort_cache(source_url: String) -> Result<(), BridgeError> {
+        crate::api::rss::rss_clear_sort_cache(&source_url)?;
+        Ok(())
+    }
+
+    /// 刷新 RSS 列表（JSON `{articles,nextUrl,hasMore}`）
+    ///
+    /// 契约 §2.5 `rssRefreshArticles`（2026-10-26 批15b，加法式）：对齐
+    /// `RssArticlesViewModel.loadArticles`——`order` 自当前毫秒递减
+    /// REPLACE 写库，`ruleNextPage` 非空时 `clearOld`。
+    pub fn rss_refresh_articles(
+        source_url: String,
+        sort_name: String,
+        sort_url: String,
+        key: Option<String>,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::rss::rss_refresh_articles(
+            &source_url,
+            &sort_name,
+            &sort_url,
+            key.as_deref(),
+        )?)
+    }
+
+    /// 加载 RSS 下一页（JSON `{articles,nextUrl,hasMore}`）
+    ///
+    /// 契约 §2.5 `rssLoadMoreArticles`（2026-10-26 批15b，加法式）：对齐
+    /// `RssArticlesViewModel.loadMore`——首末条均命中即判到底，否则
+    /// `INSERT OR IGNORE` 追加。
+    pub fn rss_load_more_articles(
+        source_url: String,
+        sort_name: String,
+        next_url: String,
+        page: u32,
+        key: Option<String>,
+    ) -> Result<String, BridgeError> {
+        Ok(crate::api::rss::rss_load_more_articles(
+            &source_url,
+            &sort_name,
+            &next_url,
+            page,
+            key.as_deref(),
+        )?)
     }
 
     // ─── RSS 收藏 ────────────────────────────────────────

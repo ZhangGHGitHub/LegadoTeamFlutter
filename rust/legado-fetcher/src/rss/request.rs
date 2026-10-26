@@ -55,11 +55,37 @@ pub struct RssListResponse {
 /// `enabledCookieJar == Some(true)` 补 [`legado_net::COOKIE_JAR_HEADER`] 标记，
 /// 只补不覆盖（源显式配置同名头时不重复写入）。
 pub fn source_headers(source: &RssSource) -> Option<HashMap<String, String>> {
+    source_headers_with_login(source, None)
+}
+
+/// 源静态 header + 登录头合并（批15b）
+///
+/// 对齐书源版 `RealBookSourceFetcher::parse_source_headers`
+/// （`web_book.rs:955-988`）：
+/// 1. 先解析源静态 `header`；
+/// 2. 再合并 `loginHeader_<sourceUrl>`（覆盖同名键，对齐原版 `putAll` 顺序）；
+/// 3. 最后补 CookieJar 写侧门控标记（只补不覆盖）。
+///
+/// **已登记超集**：原版 `Rss.kt:56` 构造 `AnalyzeUrl` 时传
+/// `hasLoginHeader = false`，即 RSS 列表请求不合并登录头；批15b 按任务
+/// 要求合并（登录后列表请求需携带登录态），差异登记于
+/// `docs/API_CONTRACT.md` §2.5 批15b 注。
+pub fn source_headers_with_login(
+    source: &RssSource,
+    login_header_json: Option<&str>,
+) -> Option<HashMap<String, String>> {
     let mut headers: HashMap<String, String> = source
         .header
         .as_deref()
         .and_then(|raw| serde_json::from_str::<HashMap<String, String>>(raw).ok())
         .unwrap_or_default();
+
+    if let Some(raw) = login_header_json {
+        if let Ok(login_headers) = serde_json::from_str::<HashMap<String, String>>(raw) {
+            // 登录头覆盖源同名 header（对齐原版 loginHeader putAll 在后）
+            headers.extend(login_headers);
+        }
+    }
 
     crate::web_book::apply_cookie_jar_marker_by_flag(&mut headers, source.enabled_cookie_jar);
 
@@ -267,9 +293,18 @@ mod tests {
         };
         let client = test_client();
 
-        let page = crate::rss::fetch_articles(&client, &source, "", &source.source_url, None, None)
-            .await
-            .expect("应经回环代理取回 feed");
+        let page = crate::rss::fetch_articles(
+            &client,
+            &source,
+            "",
+            &source.source_url,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .expect("应经回环代理取回 feed");
         assert_eq!(page.items.len(), 1);
         assert_eq!(page.items[0].title, "经代理取回");
 
@@ -288,5 +323,63 @@ mod tests {
             request_line.starts_with("GET http://rss.invalid/feed"),
             "请求应经代理（绝对形式请求行）: {request_line}"
         );
+    }
+
+    /// 批15b：`<1,2,3>` 页码列表与 `{{key}}` 搜索词经 AnalyzeUrl 展开
+    #[test]
+    fn analyze_url_expands_page_list_and_search_key() {
+        // 原版 RssSource.sortUrl 支持 `<1,2,3>` 页码与 `{{key}}` 搜索模板
+        let analyze_url = build_list_analyze_url(
+            "https://feed.example.com/list/<1,2,3>?q={{key}}&p={{page}}",
+            Some(2),
+            Some("搜索词"),
+            "https://feed.example.com",
+            None,
+        );
+        assert_eq!(
+            analyze_url.url(),
+            "https://feed.example.com/list/2?q=%E6%90%9C%E7%B4%A2%E8%AF%8D&p=2",
+            "页码列表取第 2 项、{{key}} URL 编码、{{page}} 替换"
+        );
+
+        // 首页（page=1）
+        let analyze_url = build_list_analyze_url(
+            "https://feed.example.com/list/<1,2,3>",
+            Some(1),
+            None,
+            "https://feed.example.com",
+            None,
+        );
+        assert_eq!(analyze_url.url(), "https://feed.example.com/list/1");
+    }
+
+    /// 批15b：登录头覆盖源同名 header，其余源 header 保留；非法 JSON 忽略
+    #[test]
+    fn login_header_overrides_source_header() {
+        let source = RssSource {
+            source_url: "https://rss-header.example.com/feed".to_string(),
+            header: Some(r#"{"X-Token":"source","X-Keep":"1"}"#.to_string()),
+            ..RssSource::default()
+        };
+        let headers =
+            source_headers_with_login(&source, Some(r#"{"X-Token":"login","X-New":"2"}"#))
+                .expect("应产出头");
+        assert_eq!(headers.get("X-Token").map(String::as_str), Some("login"));
+        assert_eq!(headers.get("X-Keep").map(String::as_str), Some("1"));
+        assert_eq!(headers.get("X-New").map(String::as_str), Some("2"));
+
+        // 非法登录头 JSON：忽略，源 header 原样
+        let headers = source_headers_with_login(&source, Some("not-json")).expect("源 header");
+        assert_eq!(headers.get("X-Token").map(String::as_str), Some("source"));
+
+        // 无源 header + 登录头：只产出登录头
+        let source = RssSource {
+            source_url: "https://rss-header.example.com/feed".to_string(),
+            ..RssSource::default()
+        };
+        let headers =
+            source_headers_with_login(&source, Some(r#"{"X-Login":"v"}"#)).expect("登录头");
+        assert_eq!(headers.len(), 1);
+        assert_eq!(headers.get("X-Login").map(String::as_str), Some("v"));
     }
 }

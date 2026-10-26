@@ -1,53 +1,71 @@
-//! RSS 抓取引擎（批15a：默认解析等价 + 引擎骨架）
+//! RSS 抓取引擎（批15a 默认解析等价 + 批15b 规则列表/分类/登录/分页）
 //!
 //! 对齐原版 `Rss.getArticlesAwait`（`Rss.kt:39-84`）的列表请求编排：
 //!
 //! ```text
 //! RssSource → AnalyzeUrl(sortUrl, page, key, baseUrl = sourceUrl) → HTTP
-//!   → RssParserByRule.parseXML → List<RssArticle> + nextUrl
+//!   → loginCheckJs 检测 → RssParserByRule.parseXML → List<RssArticle> + nextUrl
 //! ```
 //!
-//! ## 本批范围（15a）
+//! ## 本批范围（15a + 15b）
 //!
-//! - **默认解析**：原版 `RssParserByRule.parseXML` 在 `ruleArticles` 为空/
-//!   空白时走 `RssParserDefault`（`RssParserByRule.kt:32-41`）；本批只落地
-//!   该路径（解析本体在 `legado-net::rss::parse_default_items`）。
-//! - **Atom 为已登记超集偏离**：原版默认解析只认 `<item>`（Atom 得 0 篇）；
-//!   为保留现有 Atom 订阅用户可用性，item 为空且根为 `<feed>` 时回退
-//!   `parse_atom`（登记见 `docs/REFACTORING_ACTIVE_PLAN.md` 批15 拆分）。
+//! - **默认解析**（15a）：原版 `RssParserByRule.parseXML` 在 `ruleArticles`
+//!   为空/空白时走 `RssParserDefault`（`RssParserByRule.kt:32-41`；解析本体在
+//!   `legado-net::rss::parse_default_items`）；
+//! - **Atom 为已登记超集偏离**（15a）：原版默认解析只认 `<item>`（Atom 得
+//!   0 篇）；为保留现有 Atom 订阅用户可用性，item 为空且根为 `<feed>` 时回退
+//!   `parse_atom`（登记见 `docs/REFACTORING_ACTIVE_PLAN.md` 批15 拆分）；
+//! - **规则列表 / 分类 / 登录 / 分页**（15b）：[`parser_rule`] 对齐
+//!   `RssParserByRule.kt:22-140`，[`sort_urls`] 对齐
+//!   `RssSourceExtensions.kt:49-113`，[`login`] 对齐 `Rss.kt:57-81`。
 //!
 //! ## 后续批次
 //!
-//! - 15b：规则列表解析（`ruleArticles` / `ruleTitle` 等）、分类 `sortUrl`
-//!   （`parseRssSortUrls`）、`ruleNextPage` 分页、`loginCheckJs` / 登录头；
-//! - 15c：正文规则（`ruleContent` / `nextContentUrl`）与正文分页。
+//! - 15c：正文规则（`ruleContent` / `nextContentUrl`）与正文分页；
+//! - 15d：Dart 分类/分页/搜索 UI 收敛；
+//! - 15e：服务端 `/rssSourceDebug` 接引擎；
+//! - 15f：singleUrl / WebView / 图片 header 等增强。
 //!
 //! 模块职责：
 //! - [`models`]：中立数据结构（[`models::RssArticleItem`] / [`models::RssListPage`]）
-//! - [`request`]：`AnalyzeUrl` 构造、源 header / CookieJar 标记头、响应结构
+//! - [`request`]：`AnalyzeUrl` 构造、源 header + 登录头合并、响应结构
 //! - [`default_parser`]：默认解析到中立结构的映射
+//! - [`parser_rule`]：规则列表解析与 `ruleNextPage`
+//! - [`sort_urls`]：分类 `sortUrl` 解析、脚本求值与缓存
+//! - [`login`]：`loginCheckJs` 成功/失败两路检测
 
 pub mod default_parser;
+pub mod login;
 pub mod models;
+pub mod parser_rule;
 pub mod request;
+pub mod sort_urls;
 
 use legado_core::models::RssSource;
 use legado_core::{LegadoError, LegadoResult};
 use legado_net::LegadoClient;
 
 pub use models::{RssArticleItem, RssListPage};
+pub use sort_urls::RssSortUrl;
 
-/// 拉取 RSS 列表页（批15a：仅默认解析路径）
+/// 拉取 RSS 列表页（批15b：规则列表 + 登录检测 + 分类/分页请求）
 ///
 /// 参数对齐原版 `Rss.getArticlesAwait(sortName, sortUrl, rssSource, page, key)`：
-/// - `sort_name`：分类名（批15a 宿主传空串，对齐 `parseRssSortUrls` 空值回退）；
-/// - `sort_url`：列表请求 URL（批15a = 源 `sourceUrl`）；
-/// - `page` / `key`：`AnalyzeUrl` 模板变量（批15a 可为 `None`）。
+/// - `sort_name`：分类名（`parse_sort_urls` 的空值回退为 `""`）；
+/// - `sort_url`：列表请求 URL（`AnalyzeUrl(sortUrl, page, key, baseUrl=sourceUrl)`）；
+/// - `page` / `key`：`AnalyzeUrl` 模板变量（刷新 `Some(1)`，翻页为下一页页码）；
+/// - `login_header_json`：宿主从 DB 读取的 `loginHeader_<sourceUrl>`（合并进
+///   请求头并预置到 RSS setup 脚本；`None` = 未登录）；
+/// - `login_info_json`：宿主从 DB 读取的 `userInfo_<sourceUrl>`（仅预置到
+///   RSS setup 脚本，供 `source.getLoginInfo()` 使用）。
 ///
 /// 错误语义：
-/// - HTTP 非 2xx → `Err`（`request::fetch_list`）。**差异登记（审查 P2-1）**：
-///   上游 `Rss.getArticlesAwait` 不校验状态码，直接把响应体交给解析；
-///   本实现保留既有非 2xx 报错（更严格，避免把错误页当正文）；
+/// - HTTP 非 2xx → 先走 `loginCheckJs` 错误路径（二次 eval 可放行），否则 `Err`
+///   （`request::fetch_list`）。**差异登记（审查 P2-1）**：上游
+///   `Rss.getArticlesAwait` 不校验状态码，直接把响应体交给解析；本实现保留
+///   既有非 2xx 报错（更严格，避免把错误页当正文）；
+/// - `loginCheckJs` 判定未登录 → `Err(LegadoError::LoginRequired)`（对齐原版
+///   「throw throwable」整源失败语义）；
 /// - 响应体空白 → `Err`（原版 `RssParserByRule.parseXML` `body.isNullOrBlank()`
 ///   抛 `NoStackTraceException`，**不伪造文章**）；
 /// - 正文非空但解析出 0 篇 → `Ok(空列表)`（原版同样如此，畸形 XML 按
@@ -72,6 +90,7 @@ pub use models::{RssArticleItem, RssListPage};
 ///   （`namespaceAware = false`，`xmlPullParser.name` 含前缀）**不解析**，
 ///   本实现同样不识别；旧 `parse_feed`（`legado-net`）用 local-name 匹配，
 ///   会识别 `<rss:item>`，两者行为不同（旧 API 仅 REST 调试/兼容保留）。
+#[allow(clippy::too_many_arguments)] // 参数集与 Kotlin `getArticlesAwait` 入参 + 宿主登录缓存注入对齐，不拆结构体
 pub async fn fetch_articles(
     client: &LegadoClient,
     source: &RssSource,
@@ -79,12 +98,75 @@ pub async fn fetch_articles(
     sort_url: &str,
     page: Option<u32>,
     key: Option<&str>,
+    login_header_json: Option<&str>,
+    login_info_json: Option<&str>,
 ) -> LegadoResult<RssListPage> {
-    let headers = request::source_headers(source);
+    // 批15b：源静态 header + loginHeader_<url> 合并（登录头覆盖同名键）
+    let headers = request::source_headers_with_login(source, login_header_json);
     let analyze_url =
         request::build_list_analyze_url(sort_url, page, key, &source.source_url, headers.clone());
+    // RSS 源 JS 最小绑定（ruleArticles/loginCheckJs 的 @js:/<js> 可用 source/java）
+    let setup_script = Some(crate::source_setup::rss_source_js_setup_script(
+        source,
+        login_header_json,
+        login_info_json,
+    )?);
+    let has_check_js = source
+        .login_check_js
+        .as_deref()
+        .map(|js| !js.trim().is_empty())
+        .unwrap_or(false);
+    let request_url = analyze_url.url().to_string();
 
-    let response = request::fetch_list(client, &analyze_url, headers).await?;
+    // [Rss.kt:57-81] 成功/失败两路 loginCheckJs 检测
+    let response = match request::fetch_list(client, &analyze_url, headers).await {
+        Ok(resp) => {
+            if !has_check_js {
+                resp
+            } else {
+                match login::apply_success_check(source, &resp, setup_script.clone()) {
+                    Ok(checked) => checked,
+                    Err(first_err) => {
+                        // 首检失败：errResponse（code 500）二次 eval
+                        match login::apply_error_check(
+                            source,
+                            &first_err,
+                            &request_url,
+                            setup_script.clone(),
+                        ) {
+                            Ok(Some(second)) => second,
+                            Ok(None) => {
+                                return Err(LegadoError::LoginRequired(format!(
+                                    "RSS 源需要登录，请先在订阅源菜单中登录后重试（{first_err}）"
+                                )))
+                            }
+                            Err(second_err) => {
+                                return Err(LegadoError::LoginRequired(format!(
+                                    "RSS 源需要登录，请先在订阅源菜单中登录后重试（{first_err}；二次检测失败: {second_err}）"
+                                )))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        Err(fetch_err) => {
+            if !has_check_js {
+                return Err(fetch_err);
+            }
+            // 原始请求失败：errResponse（code 500）交给 checkJs（自动登录场景）
+            match login::apply_error_check(
+                source,
+                &fetch_err.to_string(),
+                &request_url,
+                setup_script.clone(),
+            ) {
+                Ok(Some(second)) => second,
+                // 二次仍 500 / 二次执行失败 → 重抛原始错误（对齐 throw throwable）
+                Ok(None) | Err(_) => return Err(fetch_err),
+            }
+        }
+    };
 
     // 对齐原版 `RssParserByRule.parseXML`：body 空白 → 报错（不伪造摘要）
     if response.body.trim().is_empty() {
@@ -93,11 +175,13 @@ pub async fn fetch_articles(
         )));
     }
 
-    // 批15a：`ruleArticles` 非空时的规则列表解析留批15b，本批统一走默认解析
-    // （原版 ruleArticles 空 → 默认解析；非空 → 规则解析，差异登记于批15b）。
-    Ok(default_parser::parse_default_list(
+    // 规则列表解析；`ruleArticles` 空/空白时内部回退默认解析
+    parser_rule::parse_rule_list(
+        source,
         sort_name,
+        sort_url,
+        &response.final_url,
         &response.body,
-        &source.source_url,
-    ))
+        setup_script,
+    )
 }

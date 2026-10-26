@@ -63,6 +63,27 @@ impl<'a> RssArticleRepository<'a> {
 
     /// 插入文章（主键冲突时替换），主键 (origin, link, sort)
     pub fn insert(&self, article: &RssArticleRecord) -> LegadoResult<()> {
+        self.insert_with_conflict(article, "REPLACE")?;
+        Ok(())
+    }
+
+    /// 追加文章（主键冲突时忽略），主键 (origin, link, sort)
+    ///
+    /// 对齐原版 `RssArticleDao.append`（`@Insert(onConflict = IGNORE)`，
+    /// `RssArticleDao.kt:30-31`）：`RssArticlesViewModel.loadMoreSuccess` 用其
+    /// 追加下一页，已存在的旧文章保持原 `order`/标题不被覆盖。
+    ///
+    /// 返回是否实际插入（`INSERT OR IGNORE` 命中冲突时为 `false`）。
+    pub fn append_ignore(&self, article: &RssArticleRecord) -> LegadoResult<bool> {
+        self.insert_with_conflict(article, "IGNORE")
+    }
+
+    /// 写库公共实现（`conflict` = `REPLACE` / `IGNORE`）
+    fn insert_with_conflict(
+        &self,
+        article: &RssArticleRecord,
+        conflict: &str,
+    ) -> LegadoResult<bool> {
         // 空分组回退为默认分组（对齐 Kotlin 实体默认值）
         let group = if article.group.is_empty() {
             DEFAULT_RSS_GROUP
@@ -75,12 +96,16 @@ impl<'a> RssArticleRepository<'a> {
             &article.sort,
             article.link.as_deref(),
         );
-        self.conn
+        let sql = format!(
+            "INSERT OR {conflict} INTO rssArticles (origin, sort, title, \"order\", link,
+             pubDate, description, content, image, \"group\", \"read\", variable,
+             type, durPos)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)"
+        );
+        let affected = self
+            .conn
             .execute(
-                "INSERT OR REPLACE INTO rssArticles (origin, sort, title, \"order\", link,
-                 pubDate, description, content, image, \"group\", \"read\", variable,
-                 type, durPos)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                &sql,
                 params![
                     article.origin,
                     article.sort,
@@ -99,7 +124,79 @@ impl<'a> RssArticleRepository<'a> {
                 ],
             )
             .map_err(|e| LegadoError::Database(format!("插入 RSS 文章失败: {e}")))?;
-        Ok(())
+        Ok(affected > 0)
+    }
+
+    /// 删除指定分类下 `order` 小于给定值的旧文章
+    ///
+    /// 逐字对齐原版 `RssArticleDao.clearOld`（`RssArticleDao.kt:36-37`：
+    /// `delete from rssArticles where origin = :origin and sort = :sort and
+    /// \`order\` < :order`）。`RssArticlesViewModel.loadArticles` 在
+    /// `ruleNextPage` 非空时按刷新后的 order 水位清理旧页。
+    pub fn clear_old(&self, origin: &str, sort: &str, order: i64) -> LegadoResult<usize> {
+        let affected = self
+            .conn
+            .execute(
+                "DELETE FROM rssArticles WHERE origin = ?1 AND sort = ?2 AND \"order\" < ?3",
+                params![origin, sort, order],
+            )
+            .map_err(|e| LegadoError::Database(format!("清理 RSS 旧文章失败: {e}")))?;
+        Ok(affected)
+    }
+
+    /// 判断指定主键的文章是否已存在（对齐原版 `RssArticleDao.get`）
+    ///
+    /// `RssArticlesViewModel.loadMoreSuccess` 用本页首条与末条各查一次，
+    /// 两者同时命中即判「已到底」。
+    ///
+    /// 空 `link` 兼容：15a 起仓库层把空 link 落为 `legacy:{origin}:{title}:{sort}`
+    /// 伪造主键（E4 维持），此处按 `legacy:{origin}:` 前缀判定存在性，
+    /// 避免翻页判底对空 link 永远失效。
+    pub fn find_one(&self, origin: &str, link: &str, sort: &str) -> LegadoResult<bool> {
+        let exists: i64 = if link.trim().is_empty() {
+            let prefix = format!("legacy:{origin}:");
+            self.conn
+                .query_row(
+                    "SELECT EXISTS(
+                        SELECT 1 FROM rssArticles
+                        WHERE origin = ?1 AND sort = ?2
+                          AND substr(link, 1, length(?3)) = ?3
+                    )",
+                    params![origin, sort, prefix],
+                    |row| row.get(0),
+                )
+                .map_err(|e| LegadoError::Database(format!("查询 RSS 文章失败: {e}")))?
+        } else {
+            self.conn
+                .query_row(
+                    "SELECT EXISTS(
+                        SELECT 1 FROM rssArticles
+                        WHERE origin = ?1 AND link = ?2 AND sort = ?3
+                    )",
+                    params![origin, link, sort],
+                    |row| row.get(0),
+                )
+                .map_err(|e| LegadoError::Database(format!("查询 RSS 文章失败: {e}")))?
+        };
+        Ok(exists != 0)
+    }
+
+    /// 指定分类当前最小 `order`（无行返回 `None`）
+    ///
+    /// 供翻页写入续接水位：下一次 `append_ignore` 的起始 order 取
+    /// `min_order - 1`，使新页文章排在上一页之后（对齐原版 VM 中
+    /// `order` 字段跨刷新/翻页持续递减的语义；本层无会话状态，故从
+    /// DB 水位反推）。
+    pub fn min_order(&self, origin: &str, sort: &str) -> LegadoResult<Option<i64>> {
+        let order: Option<i64> = self
+            .conn
+            .query_row(
+                "SELECT MIN(\"order\") FROM rssArticles WHERE origin = ?1 AND sort = ?2",
+                params![origin, sort],
+                |row| row.get(0),
+            )
+            .map_err(|e| LegadoError::Database(format!("查询 RSS 最小 order 失败: {e}")))?;
+        Ok(order)
     }
 
     /// 标记文章已读状态（按 origin+title；同标题多 link 时批量更新）
@@ -332,5 +429,111 @@ mod tests {
             .unwrap();
         let articles = repo.find_by_source("https://rss.com", 10).unwrap();
         assert!(articles[0].read);
+    }
+
+    // ─── 批15b：分页写入/清理/判底 ────────────────────────────────
+
+    /// `clear_old` 只删同 (origin, sort) 下 order 小于水位的行
+    #[test]
+    fn test_clear_old_only_below_watermark() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssArticleRepository::new(db.connection());
+        for i in 0..5 {
+            repo.insert(&make_article("https://rss.com", &format!("A{i}"), i))
+                .unwrap();
+        }
+        // 其他分类不受影响
+        let mut other = make_article("https://rss.com", "其他分类", 1);
+        other.sort = "科技".to_string();
+        repo.insert(&other).unwrap();
+
+        let deleted = repo.clear_old("https://rss.com", "default", 3).unwrap();
+        assert_eq!(deleted, 3, "order < 3 的 3 行应被删除");
+        let remaining = repo.find_by_source("https://rss.com", 10).unwrap();
+        assert_eq!(remaining.len(), 3, "本分类剩 2 行 + 其他分类 1 行");
+        assert!(remaining.iter().any(|r| r.sort == "科技"));
+    }
+
+    /// `append_ignore` 命中主键时保持旧行内容（不覆盖标题/order）
+    #[test]
+    fn test_append_ignore_keeps_existing_row() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssArticleRepository::new(db.connection());
+        let original = make_article("https://rss.com", "已有文章", 9);
+        repo.insert(&original).unwrap();
+
+        let mut duplicate = make_article("https://rss.com", "已有文章", 1);
+        duplicate.link = original.link.clone();
+        duplicate.description = Some("新描述".to_string());
+        assert!(!repo.append_ignore(&duplicate).unwrap(), "冲突应被忽略");
+
+        let rows = repo.find_by_source("https://rss.com", 10).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].order, 9, "旧 order 必须保留");
+        assert_eq!(
+            rows[0].description.as_deref(),
+            Some("desc"),
+            "旧描述必须保留"
+        );
+
+        // 新主键正常插入
+        let fresh = make_article("https://rss.com", "新文章", 2);
+        assert!(repo.append_ignore(&fresh).unwrap());
+        assert_eq!(repo.count().unwrap(), 2);
+    }
+
+    /// `find_one` 命中/未命中；空 link 按 `legacy:` 前缀判定
+    #[test]
+    fn test_find_one_and_legacy_empty_link() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssArticleRepository::new(db.connection());
+        repo.insert(&make_article("https://rss.com", "有链接", 1))
+            .unwrap();
+
+        assert!(repo
+            .find_one("https://rss.com", "https://example.com/有链接", "default")
+            .unwrap());
+        assert!(!repo
+            .find_one("https://rss.com", "https://example.com/不存在", "default")
+            .unwrap());
+        assert!(
+            !repo
+                .find_one("https://rss.com", "https://example.com/有链接", "科技")
+                .unwrap(),
+            "分类不匹配不得命中"
+        );
+
+        // 空 link 落库为 legacy: 伪造主键；判底按前缀命中
+        let mut empty_link = make_article("https://rss.com", "空链接", 0);
+        empty_link.link = None;
+        repo.insert(&empty_link).unwrap();
+        assert!(
+            repo.find_one("https://rss.com", "", "default").unwrap(),
+            "空 link 应按 legacy 前缀判定存在"
+        );
+        assert!(!repo.find_one("https://rss.org", "", "default").unwrap());
+    }
+
+    /// `min_order` 返回分类最小 order，无行返回 None
+    #[test]
+    fn test_min_order_watermark() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssArticleRepository::new(db.connection());
+        assert_eq!(repo.min_order("https://rss.com", "default").unwrap(), None);
+
+        repo.insert(&make_article("https://rss.com", "A", 7))
+            .unwrap();
+        repo.insert(&make_article("https://rss.com", "B", 3))
+            .unwrap();
+        let mut other = make_article("https://rss.com", "C", 1);
+        other.sort = "科技".to_string();
+        repo.insert(&other).unwrap();
+
+        assert_eq!(
+            repo.min_order("https://rss.com", "default").unwrap(),
+            Some(3),
+            "只统计目标分类"
+        );
+        assert_eq!(repo.min_order("https://rss.com", "科技").unwrap(), Some(1));
     }
 }
