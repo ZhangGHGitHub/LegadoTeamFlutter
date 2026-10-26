@@ -5,6 +5,7 @@
 // - 缓存查询失败静默，不阻断网络刷新
 // - 初始 sortUrl 覆盖经 rssSortUrls(sortUrl:) 透传
 // - 切换分类同样先展示该分类缓存
+// - 目标分类缓存为空时清空上一分类残留（审查 P1-1）
 // - RssFeedArticle.type 兼容列表载荷 articleType
 import 'dart:async';
 import 'dart:convert';
@@ -60,7 +61,8 @@ void main() {
   }
 
   /// 让事件循环跑完当前微任务链（缓存 → 网络请求进入挂起）
-  Future<void> settle() => Future<void>.delayed(const Duration(milliseconds: 10));
+  Future<void> settle() =>
+      Future<void>.delayed(const Duration(milliseconds: 10));
 
   test('selectSource：先渲染本地缓存，网络返回后替换', () async {
     stubTwoSorts();
@@ -79,12 +81,7 @@ void main() {
     );
     final network = Completer<String>();
     when(
-      () => mockApi.rssRefreshArticles(
-        sourceUrl,
-        '全部',
-        sourceUrl,
-        key: null,
-      ),
+      () => mockApi.rssRefreshArticles(sourceUrl, '全部', sourceUrl, key: null),
     ).thenAnswer((_) => network.future);
 
     final future = readNotifier().selectSource(source);
@@ -92,9 +89,11 @@ void main() {
     expect(readState().articles.single.title, '缓存文章');
     expect(readState().isLoadingArticles, isTrue, reason: '网络刷新仍在途');
 
-    network.complete(pageJson([
-      {'title': '网络文章', 'link': 'https://s.test/online', 'sort': '全部'},
-    ]));
+    network.complete(
+      pageJson([
+        {'title': '网络文章', 'link': 'https://s.test/online', 'sort': '全部'},
+      ]),
+    );
     await future;
     expect(readState().articles.single.title, '网络文章');
     expect(readState().isLoadingArticles, isFalse);
@@ -104,12 +103,7 @@ void main() {
     stubTwoSorts();
     // 不 stub rssListCachedArticles → 抛 MissingStubError，应被静默吞掉
     when(
-      () => mockApi.rssRefreshArticles(
-        sourceUrl,
-        '全部',
-        sourceUrl,
-        key: null,
-      ),
+      () => mockApi.rssRefreshArticles(sourceUrl, '全部', sourceUrl, key: null),
     ).thenAnswer(
       (_) async => pageJson([
         {'title': '网络文章', 'link': 'https://s.test/online', 'sort': '全部'},
@@ -146,8 +140,9 @@ void main() {
     expect(readState().sorts.length, 1);
     expect(readState().currentSort?.name, '科技');
     expect(readState().articles.single.title, '科技文章');
-    verify(() => mockApi.rssSortUrls(sourceUrl, sortUrl: overrideJson))
-        .called(1);
+    verify(
+      () => mockApi.rssSortUrls(sourceUrl, sortUrl: overrideJson),
+    ).called(1);
     verifyNever(() => mockApi.rssSortUrls(sourceUrl));
   });
 
@@ -182,12 +177,7 @@ void main() {
       ]),
     );
     when(
-      () => mockApi.rssRefreshArticles(
-        sourceUrl,
-        '全部',
-        sourceUrl,
-        key: null,
-      ),
+      () => mockApi.rssRefreshArticles(sourceUrl, '全部', sourceUrl, key: null),
     ).thenAnswer(
       (_) async => pageJson([
         {'title': '全部文章', 'link': 'https://s.test/a', 'sort': '全部'},
@@ -210,9 +200,54 @@ void main() {
     expect(readState().articles.single.title, '科技缓存');
     expect(readState().isLoadingArticles, isTrue);
 
-    network.complete(pageJson([
-      {'title': '科技网络', 'link': 'https://s.test/t', 'sort': '科技'},
-    ]));
+    network.complete(
+      pageJson([
+        {'title': '科技网络', 'link': 'https://s.test/t', 'sort': '科技'},
+      ]),
+    );
+    await future;
+    expect(readState().articles.single.title, '科技网络');
+  });
+
+  test('selectSort：目标分类缓存为空时清掉上一分类残留（P1-1）', () async {
+    stubTwoSorts();
+    when(
+      () => mockApi.rssListCachedArticles(sourceUrl, sortName: '全部'),
+    ).thenAnswer((_) async => '[]');
+    when(
+      () => mockApi.rssListCachedArticles(sourceUrl, sortName: '科技'),
+    ).thenAnswer((_) async => '[]');
+    when(
+      () => mockApi.rssRefreshArticles(sourceUrl, '全部', sourceUrl, key: null),
+    ).thenAnswer(
+      (_) async => pageJson([
+        {'title': '全部文章', 'link': 'https://s.test/a', 'sort': '全部'},
+      ]),
+    );
+    final network = Completer<String>();
+    when(
+      () => mockApi.rssRefreshArticles(
+        sourceUrl,
+        '科技',
+        '$sourceUrl/tech',
+        key: null,
+      ),
+    ).thenAnswer((_) => network.future);
+
+    await readNotifier().selectSource(source);
+    expect(readState().articles.single.title, '全部文章');
+
+    final techSort = readState().sorts[1];
+    final future = readNotifier().selectSort(techSort);
+    await settle();
+    expect(readState().articles, isEmpty, reason: '目标分类无缓存时必须清空上一分类列表，避免串分类展示');
+    expect(readState().isLoadingArticles, isTrue, reason: '网络刷新仍在途');
+
+    network.complete(
+      pageJson([
+        {'title': '科技网络', 'link': 'https://s.test/t', 'sort': '科技'},
+      ]),
+    );
     await future;
     expect(readState().articles.single.title, '科技网络');
   });
@@ -223,9 +258,11 @@ void main() {
       2,
     );
     expect(
-      RssFeedArticle.fromJson(
-        {'title': 'a', 'link': 'u', 'articleType': 1},
-      ).type,
+      RssFeedArticle.fromJson({
+        'title': 'a',
+        'link': 'u',
+        'articleType': 1,
+      }).type,
       1,
     );
     expect(RssFeedArticle.fromJson({'title': 'a', 'link': 'u'}).type, 0);

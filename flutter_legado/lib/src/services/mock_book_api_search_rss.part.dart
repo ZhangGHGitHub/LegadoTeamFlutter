@@ -470,13 +470,19 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
   }
 
   /// 只读查询 Mock 缓存（契约 §2.5 `rssListCachedArticles`，批15f）
+  ///
+  /// [sortName] 的 `null` 与空串语义不同（批15f 审查 P1-2）：`null` 返回
+  /// 该源全部分类；**空串是合法分类名（UI 默认分类），按 `sort == ''`
+  /// 过滤**，不能当「全部分类」。
   @override
-  Future<String> rssListCachedArticles(String sourceUrl, {String? sortName}) async {
+  Future<String> rssListCachedArticles(
+    String sourceUrl, {
+    String? sortName,
+  }) async {
     final all = _mockRssArticles[sourceUrl] ?? const <Map<String, dynamic>>[];
-    final sort = sortName ?? '';
-    final rows = sort.isEmpty
+    final rows = sortName == null
         ? all
-        : all.where((e) => (e['sort'] as String? ?? '') == sort).toList();
+        : all.where((e) => (e['sort'] as String? ?? '') == sortName).toList();
     return jsonEncode(rows);
   }
 
@@ -523,8 +529,9 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
     final keyword = (key ?? '').trim();
     final pageNo = page < 1 ? 1 : page;
     final hasMore = pageNo < 2;
-    final baseNext =
-        nextUrl.trim().isEmpty ? 'mock://rss/next' : nextUrl.trim();
+    final baseNext = nextUrl.trim().isEmpty
+        ? 'mock://rss/next'
+        : nextUrl.trim();
     final articles = _mockRssArticleMaps(sourceUrl, sortName, keyword, pageNo);
     _cacheRssArticles(sourceUrl, articles);
     return jsonEncode({
@@ -548,11 +555,11 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
       final n = (page - 1) * 5 + i + 1;
       return <String, dynamic>{
         'title': '【$tag】文章标题 $n',
-        'link': 'mock://rss/article/${Uri.encodeComponent(sourceUrl)}/'
+        'link':
+            'mock://rss/article/${Uri.encodeComponent(sourceUrl)}/'
             '${Uri.encodeComponent(tag)}/$n',
         'description': '这是「$tag」第 $n 篇文章的摘要描述。',
-        'pubDate':
-            DateTime.now().subtract(Duration(days: n)).toIso8601String(),
+        'pubDate': DateTime.now().subtract(Duration(days: n)).toIso8601String(),
         'image': 'https://via.placeholder.com/300x150?text=Article$n',
         'content': '<p>这是「$tag」第 $n 篇文章的正文内容。</p>' * 5,
         'origin': sourceUrl,

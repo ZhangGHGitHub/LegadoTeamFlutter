@@ -157,13 +157,15 @@ class RssNotifier extends Notifier<RssState> {
     final sort = sorts.first;
 
     state = state.copyWith(sorts: sorts, currentSort: sort);
-    await _loadCachedArticles(source, sort, requestId);
+    final hasCache = await _loadCachedArticles(source, sort, requestId);
     if (requestId != _requestId) return;
     await _refreshPage(
       source,
       sort,
       null,
-      clearArticles: state.articles.isEmpty,
+      // [批15f 审查 P1-1] 目标分类缓存为空时必须清掉上一分类的残留列表，
+      // 否则刷新期间会继续展示别的分类文章。
+      clearArticles: !hasCache,
     );
   }
 
@@ -177,13 +179,14 @@ class RssNotifier extends Notifier<RssState> {
     final requestId = ++_requestId;
     state = state.copyWith(currentSort: sort);
     // 批15f：先展示该分类的本地缓存，再网络刷新（对齐 flowByOriginSort）
-    await _loadCachedArticles(source, sort, requestId);
+    final hasCache = await _loadCachedArticles(source, sort, requestId);
     if (requestId != _requestId) return;
     await _refreshPage(
       source,
       sort,
       state.key,
-      clearArticles: state.articles.isEmpty,
+      // 审查 P1-1：缓存为空时清空旧分类列表，避免串分类展示
+      clearArticles: !hasCache,
     );
   }
 
@@ -302,13 +305,14 @@ class RssNotifier extends Notifier<RssState> {
         : sorts.first;
     _sortBeforeSearch = null;
     state = state.copyWith(key: null, sorts: sorts, currentSort: sort);
-    await _loadCachedArticles(source, sort, requestId);
+    final hasCache = await _loadCachedArticles(source, sort, requestId);
     if (requestId != _requestId) return;
     await _refreshPage(
       source,
       sort,
       null,
-      clearArticles: state.articles.isEmpty,
+      // 审查 P1-1：搜索结果缓存为空时清掉残留的搜索/旧分类列表
+      clearArticles: !hasCache,
     );
   }
 
@@ -543,9 +547,12 @@ class RssNotifier extends Notifier<RssState> {
   /// 首屏先展示本地缓存（批15f，对齐原版 `flowByOriginSort`）
   ///
   /// 只读 DB（`rssListCachedArticles`），失败静默（缓存缺失/DB 未就绪
-  /// 不应阻断网络刷新）；返回空列表时保留既有状态。请求代次/分类双重
-  /// 校验，避免慢查询覆盖用户已切换的分类。
-  Future<void> _loadCachedArticles(
+  /// 不应阻断网络刷新）。请求代次/分类双重校验，避免慢查询覆盖用户已
+  /// 切换的分类。
+  ///
+  /// 返回是否命中可用缓存（批15f 审查 P1-1）：调用方据此决定刷新时是否
+  /// 清空旧列表——缓存为空必须清掉上一分类的残留文章。
+  Future<bool> _loadCachedArticles(
     RssSource source,
     RssSort sort,
     int requestId,
@@ -555,14 +562,16 @@ class RssNotifier extends Notifier<RssState> {
             source.sourceUrl,
             sortName: sort.name,
           );
-      if (requestId != _requestId) return;
-      if (state.selectedSource?.sourceUrl != source.sourceUrl) return;
-      if (state.currentSort != sort) return;
+      if (requestId != _requestId) return false;
+      if (state.selectedSource?.sourceUrl != source.sourceUrl) return false;
+      if (state.currentSort != sort) return false;
       final cached = _parseCachedArticles(json);
-      if (cached.isEmpty) return;
+      if (cached.isEmpty) return false;
       state = state.copyWith(articles: cached);
+      return true;
     } catch (_) {
       // 缓存查询失败静默：网络刷新仍继续（DB 真源由 Rust 写回）
+      return false;
     }
   }
 
