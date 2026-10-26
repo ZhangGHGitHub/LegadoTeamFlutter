@@ -60,6 +60,34 @@ pub fn clear_variables() -> Result<(), String> {
     Ok(())
 }
 
+/// 清除全部「源运行时缓存」族键（P1-2，批10 审查）
+///
+/// 逐条对齐原版 `AppCacheManager.clearSourceVariables`
+/// （`app/src/main/java/io/legado/app/help/CacheManager.kt:35-46`）：删除内存
+/// 表中所有以 `v_` / `userInfo_` / `loginHeader_` / `sourceVariable_` /
+/// `infoMap_` 开头的键。**范围是整族而非单源**（原版即如此：DB 侧按源删
+/// `v_{key}_%` 等 5 族后，再整体清一次内存快照）。
+///
+/// 调用方：源删除 / JS 源换 URL 保存成功后由
+/// `legado-server/src/legacy/source_write_api.rs` 调用（与 DB
+/// `CacheRepository::delete_source_variables` 配套）。
+///
+/// 键空间隔离：`lgflow::`、`bookVar::`、`bookType::`、`bookReverseToc::`
+/// 等本轨新增前缀不在 5 族内，不受影响。
+pub fn clear_source_variables() -> Result<(), String> {
+    let mut store = GLOBAL_VARIABLES
+        .lock()
+        .map_err(|e| format!("Lock error: {}", e))?;
+    store.retain(|key, _| {
+        !(key.starts_with("v_")
+            || key.starts_with("userInfo_")
+            || key.starts_with("loginHeader_")
+            || key.starts_with("sourceVariable_")
+            || key.starts_with("infoMap_"))
+    });
+    Ok(())
+}
+
 /// 获取所有变量名
 pub fn list_variable_keys() -> Result<Vec<String>, String> {
     let store = GLOBAL_VARIABLES
@@ -395,6 +423,60 @@ mod tests {
         clear_variables().unwrap();
         assert_eq!(get_variable(key_a).unwrap(), None);
         assert_eq!(get_variable(key_b).unwrap(), None);
+    }
+
+    /// P1-2：`clear_source_variables` 只清 5 族源运行时键，其他键（含本轨
+    /// flow/bookVar 前缀与无关裸键）保留。
+    #[test]
+    fn test_clear_source_variables_clears_five_families_only() {
+        let _lock = lock_variables();
+        let _guard = StoreGuard::new();
+        let url = "https://mem.family.example.com/source";
+        for key in [
+            format!("v_{url}_token"),
+            format!("userInfo_{url}"),
+            format!("loginHeader_{url}"),
+            format!("sourceVariable_{url}"),
+            format!("infoMap_{url}"),
+        ] {
+            set_variable(&key, "v").unwrap();
+        }
+        for key in [
+            "unrelated_bare_key",
+            "bookVar::https://mem.example.com/b/1::k",
+            "bookType::https://mem.example.com/b/1",
+        ] {
+            set_variable(key, "keep").unwrap();
+        }
+        set_flow_scope("mem-clear-scope").unwrap();
+        put_flow_variable("sess", "keep").unwrap();
+
+        clear_source_variables().unwrap();
+
+        for key in [
+            format!("v_{url}_token"),
+            format!("userInfo_{url}"),
+            format!("loginHeader_{url}"),
+            format!("sourceVariable_{url}"),
+            format!("infoMap_{url}"),
+        ] {
+            assert_eq!(get_variable(&key).unwrap(), None, "{key} 应被清除");
+        }
+        assert_eq!(
+            get_variable("unrelated_bare_key").unwrap(),
+            Some("keep".into())
+        );
+        assert_eq!(
+            get_variable("bookVar::https://mem.example.com/b/1::k").unwrap(),
+            Some("keep".into()),
+            "bookVar 前缀不在 5 族内"
+        );
+        assert_eq!(
+            get_variable("bookType::https://mem.example.com/b/1").unwrap(),
+            Some("keep".into())
+        );
+        assert_eq!(get_flow_variable("sess"), Some("keep".into()));
+        clear_flow_scope().unwrap();
     }
 
     #[test]

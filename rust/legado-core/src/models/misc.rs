@@ -106,7 +106,12 @@ pub struct ReplaceRule {
     pub is_regex: bool,
     #[serde(default = "default_timeout", rename = "timeoutMillisecond")]
     pub timeout_millisecond: i64,
-    #[serde(default, rename = "sortOrder")]
+    /// 排序值。JSON 契约兼容两种键名（P1-1，批10 审查）：
+    /// - `order`：Android 原版 `ReplaceRule.kt:63` 的字段名（Gson 序列化键），
+    ///   原版 Web 端 `saveReplaceRule` 按此键提交；
+    /// - `sortOrder`：Room 列名，亦是本轨既有输出键（FFI/Dart 与既有测试依赖，
+    ///   保持输出不漂移）。
+    #[serde(default, rename = "sortOrder", alias = "order")]
     pub order: i32,
 }
 
@@ -187,6 +192,30 @@ mod tests {
         assert_eq!(de.replacement, "world");
         assert!(!de.is_regex);
         assert!(de.scope_source, "scopeSource 应随 JSON 往返保留");
+    }
+
+    /// P1-1（批10 审查）：原版 Gson 以 `order` 为 JSON 键（Room 列名为
+    /// `sortOrder`）；本轨输出保持 `sortOrder` 兼容既有链路，输入两种键名均可。
+    #[test]
+    fn test_replace_rule_order_key_alias() {
+        // 原版契约键：`order`
+        let from_order: ReplaceRule = serde_json::from_str(r#"{"id":9,"order":5}"#).unwrap();
+        assert_eq!(from_order.id, 9);
+        assert_eq!(from_order.order, 5, "原版 order 键必须被识别（P1-1）");
+
+        // 本轨既有键：`sortOrder`
+        let from_sort_order: ReplaceRule =
+            serde_json::from_str(r#"{"id":10,"sortOrder":7}"#).unwrap();
+        assert_eq!(from_sort_order.order, 7);
+
+        // 缺省：serde default = 0（原版实体默认 Int.MIN_VALUE，由端点层补 MAX+1）
+        let missing: ReplaceRule = serde_json::from_str(r#"{"id":11}"#).unwrap();
+        assert_eq!(missing.order, 0);
+
+        // 输出键保持 `sortOrder`（既有轨契约零漂移）
+        let value = serde_json::to_value(&from_order).unwrap();
+        assert_eq!(value["sortOrder"], 5);
+        assert!(value.get("order").is_none(), "输出不得新增 order 键");
     }
 
     #[test]

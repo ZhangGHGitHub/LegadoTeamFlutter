@@ -4189,3 +4189,468 @@ async fn test_b6_test_replace_rule_js_expression() {
     assert_eq!(rd["isSuccess"], true, "rd={rd}");
     assert_eq!(rd["data"], "a!");
 }
+
+// ---------------------------------------------------------------------------
+// 批10 审查回修（2026-10-26）：P1-1 / P1-2 / P1-3 / P2-2 / P2-14
+// ---------------------------------------------------------------------------
+
+/// P1-1：原版契约键 `order` 的排序值必须保留，不得被改写为 MAX+1。
+///
+/// 原版 `ReplaceRule.kt:63` 的实体字段名是 `order`（Gson 序列化键），
+/// 修复前按原版契约提交 `{"order":5}` 会被忽略并按 MAX+1 落库。
+#[tokio::test]
+async fn test_b6_save_replace_rule_upstream_order_key() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    // 既有 order=7 → 若 `order` 被误判缺省，新行会被写成 8
+    seed_replace_rule(
+        &state,
+        &legado_core::models::ReplaceRule {
+            name: "既有规则".to_string(),
+            order: 7,
+            ..Default::default()
+        },
+    )
+    .await;
+    let app = create_router(state.clone());
+    let auth = [(B6_TOKEN, "secret")];
+
+    let body = json!({
+        "id": 9,
+        "name": "order键规则",
+        "pattern": "a",
+        "replacement": "b",
+        "isRegex": false,
+        "order": 5
+    })
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveReplaceRule",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    // 原版成功路径未 setData，保持默认信封
+    assert_eq!(rd["errorMsg"], "未知错误,请联系开发者!", "rd={rd}");
+
+    let rules = {
+        let db = state.db.lock().await;
+        legado_db::repository::replace_rule_repository::ReplaceRuleRepository::new(db.connection())
+            .find_all()
+            .unwrap()
+    };
+    let saved = rules.iter().find(|r| r.name == "order键规则").unwrap();
+    assert_eq!(saved.order, 5, "order 键输入必须保留排序（P1-1）");
+
+    // 对照：`sortOrder` 键（本轨既有契约）仍生效
+    let body = json!({
+        "name": "sortOrder键规则",
+        "pattern": "c",
+        "replacement": "d",
+        "isRegex": false,
+        "sortOrder": 3
+    })
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app,
+        "/saveReplaceRule",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "未知错误,请联系开发者!", "rd={rd}");
+    let rules = {
+        let db = state.db.lock().await;
+        legado_db::repository::replace_rule_repository::ReplaceRuleRepository::new(db.connection())
+            .find_all()
+            .unwrap()
+    };
+    assert_eq!(
+        rules
+            .iter()
+            .find(|r| r.name == "sortOrder键规则")
+            .unwrap()
+            .order,
+        3
+    );
+}
+
+/// P1-2：删除书源必须清 5 族缓存（对齐 `CacheDao.deleteSourceVariables`），
+/// 且同源重导入不继承旧登录头 / 变量。
+#[tokio::test]
+async fn test_b6_delete_book_sources_clears_five_cache_families() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let url = "https://b6.cache-family/1";
+    let family_keys = |url: &str| {
+        [
+            format!("v_{url}_token"),
+            format!("userInfo_{url}"),
+            format!("loginHeader_{url}"),
+            format!("sourceVariable_{url}"),
+            format!("infoMap_{url}"),
+        ]
+    };
+    seed_book_source(
+        &state,
+        legado_core::models::BookSource {
+            book_source_url: url.to_string(),
+            book_source_name: "五族缓存源".to_string(),
+            ..Default::default()
+        },
+    )
+    .await;
+    {
+        let db = state.db.lock().await;
+        let cache = legado_db::repository::cache_repository::CacheRepository::new(db.connection());
+        for key in family_keys(url) {
+            cache.put(&key, "stale", 0).unwrap();
+        }
+        // 对照键：其他源与无关键不得被误删
+        cache
+            .put("v_https://b6.cache-family/other_x", "keep", 0)
+            .unwrap();
+        cache
+            .put("userInfo_https://b6.cache-family/other", "keep", 0)
+            .unwrap();
+        cache.put("cache_unrelated", "keep", 0).unwrap();
+    }
+    let app = create_router(state.clone());
+    let auth = [(B6_TOKEN, "secret")];
+
+    let body = json!([{"bookSourceUrl": url}]).to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/deleteBookSources",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], "已执行");
+
+    {
+        let db = state.db.lock().await;
+        let conn = db.connection();
+        for key in family_keys(url) {
+            let left: i64 = conn
+                .query_row(
+                    &format!("SELECT COUNT(*) FROM caches WHERE key = '{key}'"),
+                    [],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(left, 0, "删除书源应清空 5 族缓存：{key}");
+        }
+        let kept: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM caches WHERE key IN
+                 ('v_https://b6.cache-family/other_x',
+                  'userInfo_https://b6.cache-family/other',
+                  'cache_unrelated')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(kept, 3, "其他源/无关缓存不得误删");
+    }
+
+    // 同源重导入：不得继承旧登录头 / 变量
+    let body = json!({"bookSourceUrl": url, "bookSourceName": "重导入"}).to_string();
+    let (_, _, rd) = post_write_json(
+        app,
+        "/saveBookSource",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    let db = state.db.lock().await;
+    let conn = db.connection();
+    for key in family_keys(url) {
+        let left: i64 = conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM caches WHERE key = '{key}'"),
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(left, 0, "同源重导入不得继承旧缓存：{key}");
+    }
+}
+
+/// P1-2（第三处调用点）：`saveJsSource` 换 URL 保存时清旧 URL 的 5 族缓存。
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn test_b6_save_js_source_url_change_clears_old_cache_families() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let old_url = "https://b6.js-old/1";
+    seed_book_source(
+        &state,
+        legado_core::models::BookSource {
+            book_source_url: old_url.to_string(),
+            book_source_name: "旧源".to_string(),
+            ..Default::default()
+        },
+    )
+    .await;
+    let family_keys = [
+        format!("v_{old_url}_token"),
+        format!("userInfo_{old_url}"),
+        format!("loginHeader_{old_url}"),
+        format!("sourceVariable_{old_url}"),
+        format!("infoMap_{old_url}"),
+    ];
+    {
+        let db = state.db.lock().await;
+        let cache = legado_db::repository::cache_repository::CacheRepository::new(db.connection());
+        for key in &family_keys {
+            cache.put(key, "stale", 0).unwrap();
+        }
+    }
+    let app = create_router(state.clone());
+
+    let script = "var config = {\n  bookSourceUrl: 'https://b6.js-new/1',\n  bookSourceName: '新源'\n};\nfunction search(k){ return k; }\nfunction getChapters(){ return []; }\nfunction getContent(){ return ''; }";
+    let uri = format!("/saveJsSource?openedSourceUrl={}", enc(old_url));
+    let (_, _, rd) = post_js_source_with(
+        app,
+        &uri,
+        Some("secret"),
+        None,
+        Some(script.len()),
+        &[],
+        script.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+
+    let db = state.db.lock().await;
+    let conn = db.connection();
+    for key in &family_keys {
+        let left: i64 = conn
+            .query_row(
+                &format!("SELECT COUNT(*) FROM caches WHERE key = '{key}'"),
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(left, 0, "换 URL 保存应清旧源 5 族缓存：{key}");
+    }
+}
+
+/// P2-14：`deleteBookSources` 同 URL 去重（只删一次）+ 批量删除事务回滚。
+#[tokio::test]
+async fn test_b6_delete_book_sources_dedup_and_rollback() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    for (url, name) in [
+        ("https://b6.dedup/1", "去重一"),
+        ("https://b6.dedup/2", "去重二"),
+        ("https://b6.rollback/1", "回滚一"),
+        ("https://b6.rollback/2", "回滚二"),
+    ] {
+        seed_book_source(
+            &state,
+            legado_core::models::BookSource {
+                book_source_url: url.to_string(),
+                book_source_name: name.to_string(),
+                ..Default::default()
+            },
+        )
+        .await;
+    }
+    {
+        let db = state.db.lock().await;
+        let conn = db.connection();
+        // 删除计数表 + AFTER DELETE 触发器：观察同一 URL 实际执行了几次删除
+        conn.execute("CREATE TABLE b6_delete_log (url TEXT NOT NULL)", [])
+            .unwrap();
+        conn.execute(
+            "CREATE TRIGGER b6_log_book_delete AFTER DELETE ON book_sources
+             BEGIN INSERT INTO b6_delete_log(url) VALUES (OLD.bookSourceUrl); END",
+            [],
+        )
+        .unwrap();
+        // 回滚触发器：删到 rollback/2 时 ABORT
+        conn.execute(
+            "CREATE TRIGGER b6_fail_book_delete BEFORE DELETE ON book_sources
+             WHEN OLD.bookSourceUrl = 'https://b6.rollback/2'
+             BEGIN SELECT RAISE(ABORT, 'b6 delete boom'); END",
+            [],
+        )
+        .unwrap();
+    }
+    let app = create_router(state.clone());
+    let auth = [(B6_TOKEN, "secret")];
+
+    // 去重：同一 URL 在数组中出现两次 → 触发器只记 1 行
+    let body = json!([
+        {"bookSourceUrl": "https://b6.dedup/1"},
+        {"bookSourceUrl": "https://b6.dedup/1"},
+        {"bookSourceUrl": "https://b6.dedup/2"}
+    ])
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/deleteBookSources",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    {
+        let db = state.db.lock().await;
+        let deleted_once: i64 = db
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM b6_delete_log WHERE url = 'https://b6.dedup/1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(deleted_once, 1, "同 URL 只应删除一次（去重）");
+    }
+
+    // 回滚：第二条删除触发 ABORT → 第一条的删除也应回滚
+    let body = json!([
+        {"bookSourceUrl": "https://b6.rollback/1"},
+        {"bookSourceUrl": "https://b6.rollback/2"}
+    ])
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app,
+        "/deleteBookSources",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], false, "rd={rd}");
+    assert!(
+        rd["errorMsg"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("b6 delete boom"),
+        "rd={rd}"
+    );
+    let db = state.db.lock().await;
+    let survived: i64 = db
+        .connection()
+        .query_row(
+            "SELECT COUNT(*) FROM book_sources WHERE bookSourceUrl = 'https://b6.rollback/1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(survived, 1, "批量删除失败应整批回滚");
+}
+
+/// P2-14：`saveBookSources` / `saveRssSources` 跳过空 URL 条目。
+#[tokio::test]
+async fn test_b6_batch_save_skips_empty_url() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let app = create_router(state.clone());
+    let auth = [(B6_TOKEN, "secret")];
+
+    let body = json!([
+        {"bookSourceUrl": "https://b6.empty-book/1", "bookSourceName": "有效"},
+        {"bookSourceUrl": "", "bookSourceName": "空URL"},
+        {"bookSourceUrl": "https://b6.empty-book/2", "bookSourceName": "  "}
+    ])
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveBookSources",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"].as_array().unwrap().len(), 1, "空 URL/空名应跳过");
+
+    let body = json!([
+        {"sourceUrl": "https://b6.empty-rss/1", "sourceName": "有效"},
+        {"sourceUrl": "", "sourceName": "空URL"},
+        {"sourceUrl": "https://b6.empty-rss/2", "sourceName": "  "}
+    ])
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app,
+        "/saveRssSources",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"].as_array().unwrap().len(), 1, "空 URL/空名应跳过");
+
+    let db = state.db.lock().await;
+    let book_count = legado_db::BookSourceRepository::new(db.connection())
+        .count()
+        .unwrap();
+    let rss_count =
+        legado_db::repository::rss_source_repository::RssSourceRepository::new(db.connection())
+            .count()
+            .unwrap();
+    assert_eq!(book_count, 1, "只落库有效书源");
+    assert_eq!(rss_count, 1, "只落库有效 RSS 源");
+}
+
+/// P2-2：路由级令牌前置中间件——未授权请求在 body 提取前被拒绝。
+///
+/// body 流一旦被轮询就 panic，用于证明中间件拒绝路径**不读取请求体**；
+/// 同时用 1 GiB 的 `Content-Length` 声明验证响应是令牌错误而非 413
+/// （即守卫先于 body 限额/提取执行）。
+#[tokio::test]
+async fn test_b6_token_guard_rejects_before_body_read() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let app =
+        legado_server::server::attach_source_write_token_guard(create_router(state.clone()), state);
+
+    let body_stream = futures_util::stream::once(async {
+        if std::hint::black_box(true) {
+            panic!("令牌前置中间件失效：未授权请求读取了请求体");
+        }
+        Ok::<axum::body::Bytes, std::io::Error>(axum::body::Bytes::new())
+    });
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/saveReplaceRule")
+        .header("Content-Type", "application/json")
+        .header("Content-Length", "1073741824")
+        .body(Body::from_stream(body_stream))
+        .unwrap();
+    let resp = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let connection = header_str(resp.headers(), "connection").to_string();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let rd: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(rd["isSuccess"], false, "rd={rd}");
+    assert_eq!(rd["errorMsg"], B4_TOKEN_ERROR, "rd={rd}");
+    assert_eq!(connection, "close", "令牌失败应关闭连接");
+
+    // 对照：正确令牌 + 正常 body → 中间件放行，handler 正常执行
+    let (_, _, rd) = post_write_json(
+        app,
+        "/deleteBookSources",
+        Some("application/json"),
+        &[(B6_TOKEN, "secret")],
+        b"[]",
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], "已执行");
+}

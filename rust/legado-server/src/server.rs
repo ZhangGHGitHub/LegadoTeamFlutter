@@ -7,7 +7,7 @@ use std::sync::Arc;
 use axum::body::Body;
 use axum::extract::Request;
 use axum::http::{header::HeaderName, StatusCode};
-use axum::middleware::{from_fn, Next};
+use axum::middleware::{from_fn, from_fn_with_state, Next};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
@@ -115,6 +115,9 @@ pub async fn serve_web_with_injected_paths(
     });
 
     let router = create_router(Arc::clone(&state));
+    // P2-2（批10 审查）：源写 10 条路由的令牌前置中间件——在 handler 提取
+    // body 之前校验 `x-legado-token`，未授权请求不读取请求体。
+    let router = attach_source_write_token_guard(router, Arc::clone(&state));
 
     let addr = listener.local_addr()?;
 
@@ -170,6 +173,20 @@ pub async fn serve_web_with_injected_paths(
     Ok(())
 }
 
+/// 为 Web 路由挂上源写端点令牌前置中间件（P2-2，批10 审查）
+///
+/// 中间件实现见 [`crate::legacy::source_write_api::source_write_token_guard`]：
+/// 仅对 10 条受保护源写路由生效，未授权时直接返回原版失败信封 +
+/// `Connection: close`，**不读取请求体**。挂载点选在
+/// [`serve_web_with_injected_paths`]（FFI / 独立二进制共用的生产入口），
+/// `create_router` 本体保持无状态可测；handler 内令牌校验保留为纵深防御。
+pub fn attach_source_write_token_guard(router: Router, state: Arc<AppState>) -> Router {
+    router.layer(from_fn_with_state(
+        state,
+        crate::legacy::source_write_api::source_write_token_guard,
+    ))
+}
+
 /// 独立 MCP 服务专用路由（Task #73/76 + F5，契约 §2.22.5）
 ///
 /// 暴露面收敛：仅挂载 MCP 端点 `/mcp/tools`（GET）/ `/mcp/call`（POST）
@@ -216,14 +233,29 @@ async fn mcp_token_middleware(
 /// 对齐原版 `BookSourceController.matchesJsSourceApiToken`（字节级相等）
 ///
 /// B4 起亦为 legacy 域令牌校验（`legacy/source_api.rs`）的单一比较实现。
+///
+/// P2-3（批10 审查）：改为**常量时间**比较——长度与逐字节差异用 XOR/OR
+/// 累积，不在首个不等字节处提前返回，避免远程计时侧信道（不引入新依赖）。
+/// `expected` 为空（未配置令牌）恒拒绝；`actual` 缺失恒拒绝。
 pub(crate) fn matches_js_source_api_token(expected: &str, actual: Option<&str>) -> bool {
     if expected.is_empty() {
         return false;
     }
-    match actual {
-        Some(a) => a.as_bytes() == expected.as_bytes(),
-        None => false,
+    let Some(actual) = actual else {
+        return false;
+    };
+    let expected = expected.as_bytes();
+    let actual = actual.as_bytes();
+    // 长度差异先并入累积器（长度不等时结果必非 0）
+    let mut diff = expected.len() ^ actual.len();
+    let max_len = expected.len().max(actual.len());
+    for index in 0..max_len {
+        // 越界按 0 补齐：短串也走满 max_len 次比较，耗时与内容无关
+        let left = expected.get(index).copied().unwrap_or(0);
+        let right = actual.get(index).copied().unwrap_or(0);
+        diff |= usize::from(left ^ right);
     }
+    diff == 0
 }
 
 /// 启动独立 MCP 服务（Task #73 / F5，契约 §2.22.5 `setMcpPort`）
@@ -263,6 +295,20 @@ mod tests {
         assert!(!matches_js_source_api_token("secret", None));
         assert!(!matches_js_source_api_token("secret", Some("wrong")));
         assert!(matches_js_source_api_token("secret", Some("secret")));
+    }
+
+    /// P2-3：常量时间比较的边界形态（长度差 / 末字节差 / 空值）
+    #[test]
+    fn test_matches_js_source_api_token_constant_time_edges() {
+        assert!(!matches_js_source_api_token("secret", Some("secretx")));
+        assert!(!matches_js_source_api_token("secretx", Some("secret")));
+        assert!(!matches_js_source_api_token("secret", Some("secreu")));
+        assert!(!matches_js_source_api_token("secret", Some("xecret")));
+        assert!(!matches_js_source_api_token("", Some("")));
+        assert!(!matches_js_source_api_token("", None));
+        // 长度相同且逐字节相同 → 通过
+        assert!(matches_js_source_api_token("中文令牌", Some("中文令牌")));
+        assert!(!matches_js_source_api_token("中文令牌", Some("中文令排")));
     }
 
     #[test]

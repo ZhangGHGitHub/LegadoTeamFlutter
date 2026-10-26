@@ -15,14 +15,21 @@
 //! | POST `/deleteReplaceRule` | `ReplaceRuleController.delete`（:48-59） | 按 id 删除；不存在亦成功 |
 //! | POST `/testReplaceRule` | `ReplaceRuleController.testRule`（:68-107） | `{rule, text}`；不落库；正则/字面量/@js: 替换 |
 //!
-//! 令牌面：以上 10 条全部在 `HttpServer.kt:246-258` 的
-//! `PROTECTED_SOURCE_WRITE_ROUTES` 内（该集合另含 B4 已实现的
-//! `/openLegacyReview`、`/runLegacyReview`），复用
-//! [`super::source_api::JsSourceApiConfig::has_valid_token`]（与
+//! 令牌面：本模块 10 条端点全部受保护，但分属两条链（`HttpServer.kt:58-73`）：
+//! - **9 条**在 `PROTECTED_SOURCE_WRITE_ROUTES`（HttpServer.kt:246-258，该集合
+//!   共 11 条，另含 B4 已实现的 `/openLegacyReview`、`/runLegacyReview`）内，
+//!   由 `hasValidJsSourceApiToken` 统一判定；
+//! - **`saveJsSource` 不在该集合**：由独立 [`validate_js_source_headers`] 链
+//!   保护（HttpServer.kt:60-62），该链第一步即令牌校验（对齐
+//!   `BookSourceController.validateJsSourceRequest`），之后才检查
+//!   Transfer-Encoding / Content-Type / Content-Length。
+//!
+//! 两侧共用 [`super::source_api::JsSourceApiConfig::has_valid_token`]（与
 //! `BookSourceController.hasValidJsSourceApiToken` 同一判定）与
 //! [`super::source_api::token_error_response`]（原版失败文案 +
-//! `Connection: close`）。`saveJsSource` 的专项校验链在令牌之后依序执行，
-//! 文案逐条对齐 `validateJsSourceRequest`。
+//! `Connection: close`）。P2-2 起另有路由级中间件
+//! [`source_write_token_guard`] 在 body 提取前前置校验（未授权不读 body），
+//! handler 内校验保留为纵深防御。
 //!
 //! 请求体形态：原版 NanoHTTPD 在 `parseBody` 中以 UTF-8 解码后
 //! `trim()`，空串不会写入 `files["postData"]`（即控制器收到 `null`）。
@@ -54,13 +61,57 @@
 //! 7. `ReplaceRule` 新增行由 SQLite rowid 分配（`ReplaceRuleRepository::insert`
 //!    单实现不写 id）；原版 Room REPLACE 使用请求携带的 id。编辑既有行
 //!    （id 命中）走 `update`，语义与 REPLACE 等价。
+//!
+//! 批10 审查修复项（2026-10-26）：
+//! - **P1-1** `ReplaceRule` JSON 输入同时接受原版 `order` 键与本轨既有
+//!   `sortOrder` 键（模型 `#[serde(alias = "order")]`；输出仍为 `sortOrder`），
+//!   [`parse_replace_rule`] 的「排序缺省」判定两键均识别；
+//! - **P1-2** 源删除 / JS 源换 URL 保存清缓存由「仅 `sourceVariable_{url}`」
+//!   改为原版 5 族（`v_{url}_%` / `userInfo_` / `loginHeader_` /
+//!   `sourceVariable_` / `infoMap_`，`CacheDao.kt:35-42`）+ 内存 5 族清理
+//!   （`AppCacheManager.clearSourceVariables`，`CacheManager.kt:35-46`）；
+//! - **P1-3** `testReplaceRule` 的替换执行移交 `spawn_blocking`，规则超时
+//!   clamp 到服务端上限 [`TEST_REPLACE_RULE_MAX_TIMEOUT_MS`]，避免请求携带
+//!   超大 `timeoutMillisecond` 长期占用 tokio worker / 阻塞线程；
+//! - **P2-1** 令牌面文档修正（见上：9 条集合 + saveJsSource 独立链）；
+//! - **P2-2** [`source_write_token_guard`] 路由级令牌前置（未授权不读 body）；
+//! - **P2-3** 令牌比较改常量时间（`crate::server::matches_js_source_api_token`）。
+//!
+//! 批10 审查登记（P2，暂不修，均为已知边界）：
+//! - **P2-5** `@js:` 替换执行器（quickjs）只注入 `result` 绑定，未提供原版
+//!   Rhino 的 `java.*` 宿主对象；依赖 `java.*` 的替换脚本会报
+//!   「未定义」而非原版可执行。属 JS 宿主面能力缺口，需先定绑定白名单；
+//! - **P2-6** 单条写库失败（如 SQLITE 约束）本实现返回 HTTP 200 +
+//!   `errorMsg`，原版未捕获异常 → HTTP 500（批量面已按防复发「批量原子性」
+//!   统一为 200 + errorMsg；单条面沿用同一信封以便 vue 展示）；
+//! - **P2-7** 空 `pattern` 分支按原版 `setErrorMsg` 后继续执行，但
+//!   `replacement` 以 `@js:` 开头时本实现按字面量插入、不执行 JS（原版
+//!   `RegexExtensions.replace` 在空 pattern 下仍会走 `@js:` 分支）；
+//! - **P2-8** 正则/字面量方言差异：Rust `regex` 不支持反向引用、后行断言、
+//!   占有量词等 Java 特性；`$n` 组引用语义与 Java 基本一致但 `$0`/命名组
+//!   写法不同。命中差异时原版正常替换、本实现返回错误文本（预览可见）；
+//! - **P2-9** 请求体形态：原版 NanoHTTPD `parseBody` 支持
+//!   `application/x-www-form-urlencoded` 与 multipart 并取 `postData` 字段；
+//!   本实现直接 UTF-8 解码原始 body（vue 只发原始 JSON/text，浏览器可见
+//!   语义一致；表单形态客户端不兼容）；
+//! - **P2-10** Gson 宽松转换：原版接受数字/布尔字符串互转、单引号、注释等
+//!   宽松 JSON；serde 严格解析，此类载荷会得到「格式不对/转换源失败」；
+//! - **P2-11** `openedSourceUrl` 查询参数本实现 `trim()` 后空串视为缺省；
+//!   原版直接使用（未 trim），仅带首尾空白的异常 URL 会有差异；
+//! - **P2-12** `ReturnData.data` 为 `null` 时本实现显式序列化 `"data":null`
+//!   （与原版 Gson 默认输出一致）；`saveBookSource`/`saveRssSource` 成功
+//!   的 `data:""` 亦照抄，未做省略优化；
+//! - **P2-13** 请求体超过 [`SOURCE_WRITE_MAX_BODY_BYTES`] 时 axum 返回
+//!   HTTP 413（plain text，非 `ReturnData` 信封）；原版 NanoHTTPD 无显式
+//!   上限。放宽上限与 413 形态均为防 OOM 的安全增强。
 
 use std::collections::HashMap;
 use std::sync::Arc;
 
 use axum::body::{Body, Bytes};
-use axum::extract::{Query, State};
+use axum::extract::{Query, Request, State};
 use axum::http::{header, HeaderMap, HeaderValue, StatusCode};
+use axum::middleware::Next;
 use axum::response::Response;
 use serde_json::{Map, Value};
 
@@ -88,6 +139,64 @@ const JS_SOURCE_SAVE_TIMEOUT: std::time::Duration = std::time::Duration::from_se
 /// 写端点请求体上限（原版 NanoHTTPD 无显式上限；axum 默认 2MB 会拒收
 /// 大批量书源推送，故放宽到 16MB，仅覆盖本模块 10 条路由）
 pub const SOURCE_WRITE_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
+
+/// 受保护源写路由（P2-2，路由级令牌前置中间件使用）
+///
+/// 与原版 `PROTECTED_SOURCE_WRITE_ROUTES`（HttpServer.kt:246-258）中本模块
+/// 的 9 条 + 独立链保护的 `/saveJsSource`（HttpServer.kt:60-62）一致。
+pub const PROTECTED_SOURCE_WRITE_ROUTES: [&str; 10] = [
+    "/saveBookSource",
+    "/saveBookSources",
+    "/deleteBookSources",
+    "/saveJsSource",
+    "/saveRssSource",
+    "/saveRssSources",
+    "/deleteRssSources",
+    "/saveReplaceRule",
+    "/deleteReplaceRule",
+    "/testReplaceRule",
+];
+
+/// 路径是否属于受保护源写端点
+pub fn is_protected_source_write_route(path: &str) -> bool {
+    PROTECTED_SOURCE_WRITE_ROUTES.contains(&path)
+}
+
+/// 路由级令牌前置中间件（P2-2，批10 审查）
+///
+/// 在 handler 提取 `Bytes` / `Query` **之前**校验令牌：未授权请求直接返回
+/// 原版失败信封 + `Connection: close`，不读取请求体（超大
+/// `Content-Length` 不会拖住连接）。handler 内的
+/// [`token_rejection`] 保留为纵深防御。
+///
+/// 只对 [`PROTECTED_SOURCE_WRITE_ROUTES`] 生效；其余路径原样放行。
+/// 挂载点：`crate::server::attach_source_write_token_guard`（生产入口在
+/// `serve_web_with_injected_paths` 组装路由后统一套用）。
+pub async fn source_write_token_guard(
+    State(state): State<Arc<AppState>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let path = request.uri().path();
+    if !is_protected_source_write_route(path) {
+        return next.run(request).await;
+    }
+    let uri = path.to_string();
+    let headers = request.headers().clone();
+    let origin = origin_of(&headers);
+    if let Some(resp) = token_rejection(&state, &headers, &uri, origin.as_deref()).await {
+        return resp;
+    }
+    next.run(request).await
+}
+
+/// `testReplaceRule` 规则超时服务端上限（毫秒）
+///
+/// 原版 `ReplaceRule.getValidTimeoutMillisecond()` 只把 `<=0` 归一到 3000，
+/// **无上限**；Web 端点接受请求携带的任意值，恶意/误配的超大
+/// `timeoutMillisecond` 会让一次替换独占阻塞线程数小时。P1-3 起服务端
+/// clamp 到 5s（登记为安全增强，不改变正常规则的可见结果）。
+pub const TEST_REPLACE_RULE_MAX_TIMEOUT_MS: i64 = 5_000;
 
 /// 原版 `ReturnData` 构造默认值（`isSuccess=false` /
 /// `errorMsg="未知错误,请联系开发者!"` / `data=null`）
@@ -268,11 +377,17 @@ pub async fn delete_book_sources(
                     let cache = CacheRepository::new(conn);
                     for url in &urls {
                         repo.delete(url)?;
-                        cache.delete(&format!("sourceVariable_{url}"))?;
+                        // P1-2：对齐 CacheDao.deleteSourceVariables 的 5 族
+                        cache.delete_source_variables(url)?;
                     }
                     Ok(())
                 }) {
-                    Ok(()) => ReturnData::success(Value::String("已执行".to_string())),
+                    Ok(()) => {
+                        // 对齐 SourceHelp.deleteBookSourceKeys：事务成功后整体清
+                        // 内存 5 族（AppCacheManager.clearSourceVariables）
+                        let _ = legado_js::host_api::variable_store::clear_source_variables();
+                        ReturnData::success(Value::String("已执行".to_string()))
+                    }
                     Err(e) => ReturnData::error(e.to_string()),
                 }
             }
@@ -444,22 +559,29 @@ async fn save_js_source_into_db(
         .as_ref()
         .map(|o| o.book_source_url.clone())
         .filter(|url| *url != source.book_source_url);
+    let removed_old_source = old_url_to_delete.is_some();
     let source_to_save = source;
     let saved = in_transaction(conn, "保存 JS 源", |conn| {
         let repo = BookSourceRepository::new(conn);
         if let Some(old_url) = old_url_to_delete.as_ref() {
-            // SourceHelp.deleteBookSource：删行 + 清 sourceVariable_ 缓存
+            // SourceHelp.deleteBookSource：删行 + 清 5 族缓存（P1-2）
             repo.delete(old_url)?;
-            CacheRepository::new(conn).delete(&format!("sourceVariable_{old_url}"))?;
+            CacheRepository::new(conn).delete_source_variables(old_url)?;
         }
         repo.insert(&source_to_save)?;
         Ok(source_to_save)
     });
     match saved {
-        Ok(source) => match serde_json::to_value(&source) {
-            Ok(value) => ReturnData::success(value),
-            Err(e) => ReturnData::error(e.to_string()),
-        },
+        Ok(source) => {
+            if removed_old_source {
+                // 对齐 SourceHelp.deleteBookSource：删源后整体清内存 5 族
+                let _ = legado_js::host_api::variable_store::clear_source_variables();
+            }
+            match serde_json::to_value(&source) {
+                Ok(value) => ReturnData::success(value),
+                Err(e) => ReturnData::error(e.to_string()),
+            }
+        }
         Err(e) => ReturnData::error(e.to_string()),
     }
 }
@@ -701,11 +823,17 @@ pub async fn delete_rss_sources(
                         repo.delete(&source.source_url)
                             .map_err(LegadoError::Database)?;
                         articles.delete_by_source(&source.source_url)?;
-                        cache.delete(&format!("sourceVariable_{}", source.source_url))?;
+                        // P1-2：对齐 CacheDao.deleteSourceVariables 的 5 族
+                        cache.delete_source_variables(&source.source_url)?;
                     }
                     Ok(())
                 }) {
-                    Ok(()) => ReturnData::success(Value::String("已执行".to_string())),
+                    Ok(()) => {
+                        // 对齐 SourceHelp.deleteRssSources：事务成功后整体清
+                        // 内存 5 族（AppCacheManager.clearSourceVariables）
+                        let _ = legado_js::host_api::variable_store::clear_source_variables();
+                        ReturnData::success(Value::String("已执行".to_string()))
+                    }
                     Err(e) => ReturnData::error(e.to_string()),
                 }
             }
@@ -716,11 +844,15 @@ pub async fn delete_rss_sources(
 
 // ─── POST /saveReplaceRule · /deleteReplaceRule · /testReplaceRule ──────────
 
-/// 解析替换规则 JSON（返回解析后的规则与 `sortOrder` 是否缺省）
+/// 解析替换规则 JSON（返回解析后的规则与排序值是否缺省）
+///
+/// P1-1：排序键兼容原版 `order`（Gson 契约）与本轨既有 `sortOrder`；
+/// 两键皆缺或值等于 `Int.MIN_VALUE` 时视为缺省（端点层补 `MAX+1`）。
 fn parse_replace_rule(text: &str) -> Option<(ReplaceRule, bool)> {
     let value: Value = serde_json::from_str(text).ok()?;
     let order_missing = value
         .get("sortOrder")
+        .or_else(|| value.get("order"))
         .is_none_or(|v| v.as_i64() == Some(i64::from(i32::MIN)));
     let rule: ReplaceRule = serde_json::from_value(value).ok()?;
     Some((rule, order_missing))
@@ -728,10 +860,10 @@ fn parse_replace_rule(text: &str) -> Option<(ReplaceRule, bool)> {
 
 /// POST `/saveReplaceRule`（ReplaceRuleController.saveRule，:23-45）
 ///
-/// 语义：缺参 →「数据不能为空」；坏 JSON →「格式不对」；
-/// `sortOrder` 缺省（Gson 实体默认 `Int.MIN_VALUE`）或显式 `Int.MIN_VALUE`
-/// → `MAX(sortOrder)+1`；id 命中既有行走全列 update（等价 Room REPLACE），
-/// 否则插入新行。
+/// 语义：缺参 →「数据不能为空」；坏 JSON →「格式不对」；排序键（原版
+/// `order` / 本轨 `sortOrder`，P1-1）缺省（Gson 实体默认 `Int.MIN_VALUE`）
+/// 或显式 `Int.MIN_VALUE` → `MAX(sortOrder)+1`；id 命中既有行走全列
+/// update（等价 Room REPLACE），否则插入新行。
 ///
 /// **返回值形态**：原版成功路径未调用 `setData`，信封保持构造默认
 /// （见 [`upstream_default_envelope`]）。
@@ -820,6 +952,8 @@ pub async fn delete_replace_rule(
 ///   [`legado_core::content_processor::preview_single_rule`]（单实现：
 ///   Java 方言适配 + 超时保护 + `@js:` 执行）；规则级错误按原版
 ///   `catch → e.stackTraceStr → setData` 作为成功数据返回；
+/// - P1-3：替换在 blocking 线程池执行，规则超时 clamp 到
+///   [`TEST_REPLACE_RULE_MAX_TIMEOUT_MS`]（服务端 5s 上限）；
 /// - `text` 缺失或非字符串时原版抛未捕获异常 → HTTP 500（见
 ///   [`internal_error_response`]）。
 pub async fn test_replace_rule(
@@ -855,12 +989,55 @@ pub async fn test_replace_rule(
             origin.as_deref(),
         );
     };
-    let output = apply_test_replace_rule(text, &rule);
+    let text = text.clone();
+    // P1-3：替换执行是 CPU 密集阻塞操作（病态正则 / @js: 脚本），经
+    // [`spawn_test_replace_rule`] 移交 blocking 线程池，避免独占 tokio worker
+    let output = match spawn_test_replace_rule(text, rule).await {
+        Ok(output) => output,
+        Err(message) => return internal_error_response(&message, origin.as_deref()),
+    };
     to_response(
         &ReturnData::success(Value::String(output)),
         uri,
         origin.as_deref(),
     )
+}
+
+/// 在 blocking 线程池执行单条替换（P1-3 单实现：handler 与并发测试共用）
+///
+/// 超时先经 [`clamp_test_replace_rule_timeout`] 收敛到服务端上限；`Err`
+/// 仅在 blocking 任务 panic/cancel 时返回（对齐原版未捕获异常 → 500）。
+async fn spawn_test_replace_rule(text: String, mut rule: ReplaceRule) -> Result<String, String> {
+    clamp_test_replace_rule_timeout(&mut rule);
+    run_replace_in_blocking(move || apply_test_replace_rule(&text, &rule)).await
+}
+
+/// 把替换闭包移交 `spawn_blocking`（P1-3）
+///
+/// 独立成泛型便于测试直接验证「任务确在 worker 线程之外执行」与
+/// 「并发数可超过 tokio worker 数」；生产路径经
+/// [`spawn_test_replace_rule`] 复用同一入口。
+async fn run_replace_in_blocking<T, F>(f: F) -> Result<T, String>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static,
+{
+    tokio::task::spawn_blocking(f)
+        .await
+        .map_err(|join_error| format!("替换测试执行失败: {join_error}"))
+}
+
+/// 规则超时 clamp 到服务端上限（P1-3）
+///
+/// 先保留原版 `getValidTimeoutMillisecond` 的 `<=0 → 3000` 归一，再以
+/// [`TEST_REPLACE_RULE_MAX_TIMEOUT_MS`] 封顶。
+fn clamp_test_replace_rule_timeout(rule: &mut ReplaceRule) {
+    let valid = if rule.timeout_millisecond <= 0 {
+        3000
+    } else {
+        rule.timeout_millisecond
+    };
+    rule.timeout_millisecond = valid.min(TEST_REPLACE_RULE_MAX_TIMEOUT_MS);
 }
 
 /// 对给定文本应用单条替换规则（空 pattern 分支对齐原版
@@ -1044,6 +1221,121 @@ mod tests {
         let output = apply_test_replace_rule("text", &rule);
         assert!(!output.is_empty());
         assert_ne!(output, "text");
+    }
+
+    // ── P1-1：原版 `order` 键 ────────────────────────────────────────────
+
+    /// P1-1：按原版契约发 `{"id":9,"order":5}` 必须保留排序 5，
+    /// 不得被识别为「排序缺省」而改写为 MAX+1。
+    #[test]
+    fn test_parse_replace_rule_accepts_upstream_order_key() {
+        let (rule, order_missing) = parse_replace_rule(r#"{"id":9,"order":5}"#).unwrap();
+        assert_eq!(rule.id, 9);
+        assert_eq!(rule.order, 5, "order 键输入必须保留排序（P1-1）");
+        assert!(!order_missing, "显式 order 不视为缺省");
+
+        // 本轨既有键继续有效
+        let (rule, order_missing) = parse_replace_rule(r#"{"id":9,"sortOrder":6}"#).unwrap();
+        assert_eq!(rule.order, 6);
+        assert!(!order_missing);
+
+        // 两键皆缺 → 缺省（端点层补 MAX+1）
+        let (rule, order_missing) = parse_replace_rule(r#"{"id":9}"#).unwrap();
+        assert_eq!(rule.order, 0);
+        assert!(order_missing);
+
+        // 原版实体默认 Int.MIN_VALUE → 缺省
+        let (_, order_missing) = parse_replace_rule(r#"{"id":9,"order":-2147483648}"#).unwrap();
+        assert!(order_missing, "Int.MIN_VALUE 视为缺省");
+
+        // 坏 JSON
+        assert!(parse_replace_rule("not-json").is_none());
+        // 两键同时出现：别名冲突按「格式不对」拒绝，不静默取其一
+        assert!(parse_replace_rule(r#"{"order":1,"sortOrder":2}"#).is_none());
+    }
+
+    // ── P1-3：blocking 线程池 + 超时 clamp ───────────────────────────────
+
+    /// P1-3：`<=0` 沿用原版 3000ms 归一；超大值封顶到服务端常数
+    #[test]
+    fn test_clamp_test_replace_rule_timeout() {
+        let mut huge = ReplaceRule {
+            timeout_millisecond: 600_000,
+            ..ReplaceRule::default()
+        };
+        clamp_test_replace_rule_timeout(&mut huge);
+        assert_eq!(huge.timeout_millisecond, TEST_REPLACE_RULE_MAX_TIMEOUT_MS);
+
+        let mut non_positive = ReplaceRule {
+            timeout_millisecond: -1,
+            ..ReplaceRule::default()
+        };
+        clamp_test_replace_rule_timeout(&mut non_positive);
+        assert_eq!(non_positive.timeout_millisecond, 3000);
+
+        let mut normal = ReplaceRule {
+            timeout_millisecond: 500,
+            ..ReplaceRule::default()
+        };
+        clamp_test_replace_rule_timeout(&mut normal);
+        assert_eq!(normal.timeout_millisecond, 500, "正常值不改写");
+    }
+
+    /// P1-3：替换闭包必须离开 tokio worker 线程执行
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_replace_runs_off_worker_thread() {
+        let worker_thread = std::thread::current().id();
+        let blocking_thread = run_replace_in_blocking(std::thread::current).await.unwrap();
+        assert_ne!(
+            blocking_thread.id(),
+            worker_thread,
+            "替换必须移交 blocking 线程池，不得占用 tokio worker"
+        );
+    }
+
+    /// P1-3：并发数超过 worker 数（current_thread = 1 worker）时，
+    /// 8 个 120ms 的阻塞任务仍应并发完成（串行 ≥960ms，断言 <800ms）
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_blocking_replace_concurrency_exceeds_worker_count() {
+        use std::time::{Duration, Instant};
+        let started = Instant::now();
+        let mut handles = Vec::new();
+        for _ in 0..8 {
+            handles.push(tokio::spawn(run_replace_in_blocking(|| {
+                std::thread::sleep(Duration::from_millis(120));
+            })));
+        }
+        for handle in handles {
+            handle.await.unwrap().unwrap();
+        }
+        let elapsed = started.elapsed();
+        assert!(
+            elapsed < Duration::from_millis(800),
+            "blocking 池应并发执行，实际 {elapsed:?}"
+        );
+    }
+
+    /// P2-2：受保护路由清单与中间件判定一致（10 条）
+    #[test]
+    fn test_protected_source_write_routes() {
+        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 10);
+        for path in [
+            "/saveBookSource",
+            "/saveBookSources",
+            "/deleteBookSources",
+            "/saveJsSource",
+            "/saveRssSource",
+            "/saveRssSources",
+            "/deleteRssSources",
+            "/saveReplaceRule",
+            "/deleteReplaceRule",
+            "/testReplaceRule",
+        ] {
+            assert!(is_protected_source_write_route(path), "{path}");
+        }
+        assert!(!is_protected_source_write_route("/getBookshelf"));
+        assert!(!is_protected_source_write_route("/saveBook"));
+        assert!(!is_protected_source_write_route("/openLegacyReview"));
     }
 
     /// 用户态保留：enabled/enabledExplore/customOrder/weight/respondTime

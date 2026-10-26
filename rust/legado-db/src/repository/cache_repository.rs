@@ -85,6 +85,35 @@ impl<'a> CacheRepository<'a> {
         Ok(())
     }
 
+    /// 删除指定书源 / RSS 源关联的**全部运行时缓存族**（P1-2，批10 审查）
+    ///
+    /// 逐条照抄原版 `CacheDao.deleteSourceVariables`（
+    /// `app/src/main/java/io/legado/app/data/dao/CacheDao.kt:35-42`）：
+    /// - `v_{key}_%`（源级 `source.put`/`cache.put` 持久键，
+    ///   键格式见 `legado-js/src/host_api/variable_store.rs:78-82`）；
+    /// - `userInfo_{key}`（登录用户信息）；
+    /// - `loginHeader_{key}`（登录请求头）；
+    /// - `sourceVariable_{key}`（源级变量）；
+    /// - `infoMap_{key}`（详情页字段映射缓存）。
+    ///
+    /// `key` 为源 URL。`LIKE` 的 `%`/`_` 通配语义与原版 SQL 完全一致
+    /// （URL 含 `_` 时与原版同样可能有多匹配，属上游既有语义，不擅自修正）。
+    ///
+    /// 返回受影响行数（含 0 行；供调用方/测试观察）。
+    pub fn delete_source_variables(&self, key: &str) -> LegadoResult<usize> {
+        self.conn
+            .execute(
+                "DELETE FROM caches
+                 WHERE key LIKE 'v_' || ?1 || '_%'
+                    OR key = 'userInfo_' || ?1
+                    OR key = 'loginHeader_' || ?1
+                    OR key = 'sourceVariable_' || ?1
+                    OR key = 'infoMap_' || ?1",
+                params![key],
+            )
+            .map_err(|e| LegadoError::Database(format!("删除源缓存变量失败: {e}")))
+    }
+
     /// 清理所有过期缓存，返回清理条数
     pub fn cleanup_expired(&self) -> LegadoResult<usize> {
         let now = current_time_millis();
@@ -179,6 +208,63 @@ mod tests {
         repo.put("key1", "value1", 0).unwrap();
         repo.delete("key1").unwrap();
         assert_eq!(repo.get("key1").unwrap(), None);
+    }
+
+    #[test]
+    fn test_delete_source_variables_clears_five_families() {
+        let conn = setup_db();
+        let repo = CacheRepository::new(&conn);
+        let url = "https://cache.family.example.com/source";
+        // 5 族各预置一行（键格式对齐原版 CacheDao.deleteSourceVariables）
+        repo.put(&format!("v_{url}_token"), "t", 0).unwrap();
+        repo.put(&format!("userInfo_{url}"), "u", 0).unwrap();
+        repo.put(&format!("loginHeader_{url}"), "l", 0).unwrap();
+        repo.put(&format!("sourceVariable_{url}"), "s", 0).unwrap();
+        repo.put(&format!("infoMap_{url}"), "i", 0).unwrap();
+        // 同族但不同源 / 其他前缀：不得误删
+        repo.put("v_https://other.example.com_x", "keep", 0)
+            .unwrap();
+        repo.put("userInfo_https://other.example.com", "keep", 0)
+            .unwrap();
+        repo.put("cache_unrelated", "keep", 0).unwrap();
+        // 同源但非 `_` 分界的 v_ 键（原版 LIKE 语义：v_{url}_% 才命中）
+        repo.put(&format!("v_{url}"), "keep-ambiguous", 0).unwrap();
+
+        let deleted = repo.delete_source_variables(url).unwrap();
+        assert_eq!(deleted, 5, "恰好命中 5 族各一行");
+        assert_eq!(repo.get(&format!("v_{url}_token")).unwrap(), None);
+        assert_eq!(repo.get(&format!("userInfo_{url}")).unwrap(), None);
+        assert_eq!(repo.get(&format!("loginHeader_{url}")).unwrap(), None);
+        assert_eq!(repo.get(&format!("sourceVariable_{url}")).unwrap(), None);
+        assert_eq!(repo.get(&format!("infoMap_{url}")).unwrap(), None);
+        assert_eq!(
+            repo.get("v_https://other.example.com_x").unwrap(),
+            Some("keep".to_string())
+        );
+        assert_eq!(
+            repo.get("userInfo_https://other.example.com").unwrap(),
+            Some("keep".to_string())
+        );
+        assert_eq!(
+            repo.get("cache_unrelated").unwrap(),
+            Some("keep".to_string())
+        );
+        assert_eq!(
+            repo.get(&format!("v_{url}")).unwrap(),
+            Some("keep-ambiguous".to_string()),
+            "无 `_` 分界的同源 v_ 键不命中原版 LIKE 谓词"
+        );
+    }
+
+    #[test]
+    fn test_delete_source_variables_no_match_is_ok() {
+        let conn = setup_db();
+        let repo = CacheRepository::new(&conn);
+        assert_eq!(
+            repo.delete_source_variables("https://cache.none.example.com")
+                .unwrap(),
+            0
+        );
     }
 
     #[test]
