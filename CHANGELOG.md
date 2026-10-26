@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.380] - 2026-10-26
+
+### Added
+- [Rust] 书源调试（Web 端 port+1 通道）日志补齐：请求行（`≡获取成功`/`≡请求 … -> 状态 耗时 大小`）、搜索/详情/目录/正文字段行（`┌/└/◇`）、错误链，输出格式对齐原版 Debug；规则书源调试期间请求级日志按会话隔离（不污染全局 HTTP 日志）。
+### Fixed
+- [Rust] 修复空规则解析回退元素外层 HTML 的问题（搜索 name/author/bookUrl/coverUrl 空规则现返回空串/回退 baseUrl，缺规则书源不再产出「书名=HTML」假结果）。
+
 ## [2.0.379] - 2026-10-26
 
 ### Added
