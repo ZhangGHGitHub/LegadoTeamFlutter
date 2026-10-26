@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.383] - 2026-10-26
+
+### Added
+- [Rust] RSS 规则列表解析引擎（对齐原版 `RssParserByRule`）：`ruleArticles`（支持 `-` 反转、空标题丢弃、`@put` 变量跨条目）、`ruleNextPage`（`PAGE`/相对/绝对）、字段规则（标题/时间/描述/封面/链接）；`ruleArticles` 为空时走默认解析。
+- [Rust] RSS 分类（`sortUrl`）解析：`&&`/换行分段、`名称::URL`、`@js:`/`<js>` 脚本与结果缓存（含清除入口）。
+- [Rust] RSS 分页与增量：刷新（时间序递减、REPLACE、按 `ruleNextPage` 清理旧分页）与加载更多（首末命中判底、IGNORE 追加）；`loginCheckJs` 登录检测与登录态请求头。
+- [FFI] 新增 `rssSortUrls`/`rssClearSortCache`/`rssRefreshArticles`/`rssLoadMoreArticles` 四个方法（UI 接线见后续批）。
+### Fixed
+- [Rust] RSS 登录头仅在**同源**请求附加（跨域 `nextUrl` 不外发登录凭据）。
+- [Rust] RSS 规则子字段求值异常按原版上抛（不再逐字段吞错）；描述规则无匹配时保留空串语义；链接规则恢复 HTML 反转义；空 `nextUrl` 的「加载更多」直接判到底不再重复请求首页。
+
 ## [2.0.382] - 2026-10-26
 
 ### Fixed
