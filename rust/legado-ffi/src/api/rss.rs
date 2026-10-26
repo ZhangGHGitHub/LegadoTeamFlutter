@@ -5,7 +5,6 @@
 //! 新增函数（如 `update_rss_source`）改走 `legado_db::RssSourceRepository`。
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 
 use legado_core::models::RssSource;
 use legado_core::{LegadoError, LegadoResult};
@@ -177,126 +176,56 @@ pub fn clear_rss_articles(source_url: &str) -> LegadoResult<()> {
     })
 }
 
-/// 获取 RSS 源的文章列表
+/// 获取 RSS 源的文章列表（对齐原版 `Rss.getArticles` / `getArticlesAwait`）
 ///
-/// - `cacheFirst`：优先返回本地 rssArticles 缓存
-/// - 网络拉取后解析 RSS/Atom（legado-net），并写入本地缓存
+/// 编排：读取源（全字段，含 `header` / `enabledCookieJar`）→ `legado-fetcher`
+/// RSS 引擎列表请求（`AnalyzeUrl` + 源 header）→ 默认解析 → 写本地
+/// `rssArticles` 缓存。
+///
+/// 批15a 语义修正（逐条对齐原版）：
+/// - **删除**「解析空/失败伪造单条摘要」：原版 `RssParserByRule.parseXML`
+///   在 body 空白时抛错、解析出 0 篇即空列表，绝不伪造文章；
+/// - **删除** `cacheFirst` 列表短路：原版该字段只作用于阅读页 WebView 缓存，
+///   与列表取数无关（语义还原登记于批15c/15f 评估）；
+/// - 源 `header` 应用到列表请求（含 `enabledCookieJar` 内部标记头）。
+///
+/// `sort` 恒空、`order` 递减写库（分类与分页留批15b）。
 pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
-    // 批 2 写侧门控：读取 RSS 源的 enabledCookieJar 开关（与 feedUrl 同查，
-    // 免二次查询）——开启时 feed 请求携带内部标记头，响应 Set-Cookie 落库；
-    // 关闭/NULL → 无标记（不写回，对齐上游 AnalyzeUrl(source=rssSource) 门控）。
-    let (feed_url, cache_first, cookie_jar_enabled) = with_database(|db| {
-        let conn = db.connection();
-        let mut stmt = conn
-            .prepare(
-                "SELECT sourceUrl, COALESCE(cacheFirst, 0), COALESCE(enabledCookieJar, 0) \
-                 FROM rssSources WHERE sourceUrl = ?1",
-            )
-            .map_err(|e| LegadoError::Database(format!("查询 RSS 源失败: {e}")))?;
-        let mut rows = stmt
-            .query_map(rusqlite::params![source_url], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    row.get::<_, i32>(1)? != 0,
-                    row.get::<_, i32>(2)? != 0,
-                ))
-            })
-            .map_err(|e| LegadoError::Database(format!("查询失败: {e}")))?;
-        match rows.next() {
-            Some(Ok(v)) => Ok(v),
-            _ => Err(LegadoError::Database("RSS 源不存在".into())),
-        }
-    })?;
+    // 全字段读取（单一实现：RssSourceRepository::find_by_url）
+    let source = with_database(|db| {
+        let repo = RssSourceRepository::new(db.connection());
+        repo.find_by_url(source_url)
+            .map_err(|e| LegadoError::Database(format!("查询 RSS 源失败: {e}")))
+    })?
+    .ok_or_else(|| LegadoError::Database("RSS 源不存在".into()))?;
 
-    if cache_first {
-        let cached = with_database(|db| {
-            let repo = legado_db::RssArticleRepository::new(db.connection());
-            repo.find_by_source(source_url, 500)
-        })?;
-        if !cached.is_empty() {
-            return Ok(cached
-                .into_iter()
-                .map(|a| RssArticle {
-                    title: a.title,
-                    link: a.link.unwrap_or_default(),
-                    description: a.description,
-                    pub_date: a.pub_date,
-                    image_url: a.image,
-                })
-                .collect());
-        }
-    }
-
-    let articles = runtime::block_on(async {
+    // 批15a：sort 名恒空、列表 URL = sourceUrl
+    // （对齐原版 `parseRssSortUrls` 空值回退 `("" to sourceUrl)`；分类/分页留批15b）
+    let page = runtime::block_on(async {
         let client = crate::http_state::shared_client()?;
-        // 写侧门控（批 2）：开启源补内部标记头（只补不覆盖；发送前由
-        // legado-net 剥离、绝不出网）；读侧 cookie 注入不受影响。
-        let headers_opt = if cookie_jar_enabled {
-            let mut headers = HashMap::new();
-            headers.insert(legado_net::COOKIE_JAR_HEADER.to_string(), "1".to_string());
-            Some(headers)
-        } else {
-            None
-        };
-        // data URI 短路豁免登记（审查 2026-10-06 建议项 3，不改行为）：
-        // feed_url 来自 rssSources.sourceUrl —— RSS 源的唯一标识/用户显式配置
-        // 项，上游 RSS 源均为 http(s)，不经书源 jsLib/规则生成，故不属于
-        // 「书源规则面」；data: 形态不构成现实缺陷面，此处不做统一短路。
-        // 书源规则面直连路径（fetch_page / fetch_simple_cached / search
-        // send_raw / dict send_text / explore）均已在 fd04ee1154 批次接入
-        // `data_uri_content_of` 同款短路。若未来 RSS 源支持 jsLib 或规则
-        // 生成 feedUrl，再评估接入，勿重复排查此点。
-        let response = client.get(&feed_url, headers_opt).await?;
-        if !response.is_success() {
-            return Err(LegadoError::Network(format!(
-                "获取 RSS 内容失败: HTTP {}",
-                response.status
-            )));
-        }
-        match legado_net::rss::parse_feed(&response.body) {
-            Ok(feed) if !feed.articles.is_empty() => Ok(feed
-                .articles
-                .into_iter()
-                .map(|a| RssArticle {
-                    title: a.title,
-                    link: a.link,
-                    description: a.description,
-                    pub_date: a.pub_date,
-                    image_url: a.image_url,
-                })
-                .collect::<Vec<_>>()),
-            _ => {
-                // 非标准 XML / 规则源：保留单条摘要回退，避免整页空白
-                Ok(vec![RssArticle {
-                    title: feed_url.clone(),
-                    link: feed_url.clone(),
-                    description: Some(response.body.chars().take(200).collect()),
-                    pub_date: None,
-                    image_url: None,
-                }])
-            }
-        }
+        legado_fetcher::rss::fetch_articles(&client, &source, "", source_url, None, None).await
     })?;
 
-    // 写入本地文章缓存（对齐原版 rssArticles）
+    // 写入本地文章缓存（对齐原版 rssArticles；sort 恒空、order 递减）
     let _ = with_database(|db| {
         let repo = legado_db::RssArticleRepository::new(db.connection());
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis() as i64)
             .unwrap_or(0);
-        for (i, a) in articles.iter().enumerate() {
+        for (i, article) in page.items.iter().enumerate() {
             let record = legado_db::RssArticleRecord {
-                origin: source_url.to_string(),
-                sort: String::new(),
-                title: a.title.clone(),
+                origin: article.origin.clone(),
+                sort: article.sort.clone(),
+                title: article.title.clone(),
                 order: now - i as i64,
-                link: Some(a.link.clone()),
-                pub_date: a.pub_date.clone(),
-                description: a.description.clone(),
-                content: None,
-                image: a.image_url.clone(),
-                variable: None,
+                link: Some(article.link.clone()),
+                pub_date: article.pub_date.clone(),
+                description: article.description.clone(),
+                content: article.content.clone(),
+                image: article.image.clone(),
+                variable: article.variable.clone(),
+                article_type: article.article_type,
                 ..Default::default()
             };
             let _ = repo.insert(&record);
@@ -304,7 +233,17 @@ pub fn fetch_rss_articles(source_url: &str) -> LegadoResult<Vec<RssArticle>> {
         Ok(())
     });
 
-    Ok(articles)
+    Ok(page
+        .items
+        .into_iter()
+        .map(|article| RssArticle {
+            title: article.title,
+            link: article.link,
+            description: article.description,
+            pub_date: article.pub_date,
+            image_url: article.image,
+        })
+        .collect())
 }
 
 /// 将 rusqlite Row 转换为 RssSource

@@ -2,10 +2,16 @@
 //!
 //! 支持 RSS 2.0 和 Atom 格式。
 //! 参考 Kotlin 实现 `RssSource.kt` / `RssArticle.kt`。
+//!
+//! 另提供 [`parse_default_items`]：逐行对齐原版 `RssParserDefault.kt` 的
+//! **默认列表解析**（只认 `<item>`；Atom `<feed>` 为已登记超集回退）。
+
+use std::sync::OnceLock;
 
 use legado_core::{LegadoError, LegadoResult};
-use quick_xml::events::Event;
+use quick_xml::events::{BytesRef, BytesStart, Event};
 use quick_xml::Reader;
+use regex::Regex;
 
 /// RSS 文章
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -354,6 +360,308 @@ fn parse_atom(xml: &str) -> LegadoResult<RssFeed> {
 pub async fn fetch_feed(url: &str, client: &crate::client::LegadoClient) -> LegadoResult<RssFeed> {
     let response = client.get(url, None).await?;
     parse_feed(&response.body)
+}
+
+// ===========================================================================
+// 默认列表解析（对齐原版 RssParserDefault.kt:36-136）
+// ===========================================================================
+
+/// 默认解析产出的一篇文章（字段口径对齐原版 `RssParserDefault.parseXML`
+/// 构造的 `RssArticle`）。
+///
+/// 取值规则（逐行对齐 `RssParserDefault.kt`）：
+/// - `title` / `link`：元素文本 **trim**；
+/// - `description` / `content`：元素文本（description trim 后存储）；
+/// - `image`：`media:thumbnail@url` 与 `enclosure@url`（仅 `type` 含 `image/`）
+///   按**文档顺序**无条件覆盖；`description` / `content:encoded` 仅在 image
+///   仍为空时取**首个** `<img src="...">`（双引号 src、大小写敏感，同原版正则）；
+/// - `pub_date`：`pubDate` **只取直接文本节点**（嵌套标签不取值），`time`
+///   元素文本直接覆盖（原版不 trim）；
+/// - `origin` = 源 URL（`sourceUrl`），`sort` = 分类名（`sortName`）；
+/// - link / image 不做绝对化（原版同样原样保留）。
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DefaultFeedItem {
+    pub title: String,
+    pub link: String,
+    pub description: Option<String>,
+    pub pub_date: Option<String>,
+    pub image: Option<String>,
+    pub content: Option<String>,
+    pub origin: String,
+    pub sort: String,
+}
+
+/// 默认解析 RSS 列表（对齐原版 `RssParserDefault.parseXML`）
+///
+/// 语义要点：
+/// - 只认**字面**标签 `<item>`（等价 `factory.isNamespaceAware = false`：含前缀
+///   标签如 `media:thumbnail` / `content:encoded` 按字面名匹配，标签名与
+///   `item` 收尾判定均大小写不敏感），RSS 2.0 / RDF 均可用；
+/// - 每个 `</item>` 收尾即收集一篇（`origin = source_url`、`sort = sort_name`），
+///   **不做标题过滤**（对齐原版 `articleList.add(currentArticle)`）；
+/// - 恒无下一页（原版返回 `Pair(list, null)`，默认解析无分页）。
+///
+/// ## 已登记的超集偏离：Atom 回退
+///
+/// 原版默认解析只认 `<item>`，Atom `<entry>` 文档得到 0 篇
+/// （`RssParserDefault.kt:89-98` 只处理 `item` 收尾）。本实现为保留现有
+/// Atom 订阅用户可用性：当 item 扫描结果为空**且**文档根元素为 `<feed>` 时，
+/// 回退既有 [`parse_atom`] 并映射为 [`DefaultFeedItem`]。
+///
+/// ## 宽容度（quick-xml，偏离如实登记）
+///
+/// 原版 `XmlPullParser` 对畸形 XML 抛异常；本实现按 quick-xml 宽容度处理：
+/// 解析出错即停止扫描并返回**已收集**条目（不 panic、不伪造文章）；裸 `&`
+/// （真实 feed 常见的未转义）放行。
+pub fn parse_default_items(sort_name: &str, xml: &str, source_url: &str) -> Vec<DefaultFeedItem> {
+    let mut reader = Reader::from_str(xml);
+    {
+        let config = reader.config_mut();
+        // 文本裁剪由本实现按原版逐字段处理（title/link/description/content 显式
+        // trim；pubDate 的 TEXT 分支 trim；`time` 不 trim）
+        config.trim_text(false);
+        // 真实 feed 常见未转义 `&`：原版 kXML 会抛异常，此处放行（已登记超集）
+        config.allow_dangling_amp = true;
+    }
+
+    let mut items: Vec<DefaultFeedItem> = Vec::new();
+    let mut inside_item = false;
+    let mut current = DefaultFeedItem::default();
+    // 根元素名（小写）：仅用于 Atom `<feed>` 回退判定
+    let mut root_name: Option<String> = None;
+
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(e)) => {
+                let name = literal_name(e.name());
+                let lower = name.to_ascii_lowercase();
+                if root_name.is_none() {
+                    root_name = Some(lower.clone());
+                }
+                if lower == "item" {
+                    inside_item = true;
+                    current = DefaultFeedItem::default();
+                    continue;
+                }
+                if !inside_item {
+                    continue;
+                }
+                match lower.as_str() {
+                    "title" => current.title = read_element_text(&mut reader).trim().to_string(),
+                    "link" => current.link = read_element_text(&mut reader).trim().to_string(),
+                    // `media:thumbnail@url`：直接覆盖（原版无条件赋值）
+                    "media:thumbnail" => current.image = attribute_value(&e, "url"),
+                    "enclosure" => {
+                        // 仅 type 含 `image/` 时取 url 作封面（原版 :50-58）
+                        if attribute_value(&e, "type").is_some_and(|t| t.contains("image/")) {
+                            current.image = attribute_value(&e, "url");
+                        }
+                    }
+                    "description" => {
+                        // 原版：description = nextText()，存储时 trim；取图用未 trim 原文
+                        let raw = read_element_text(&mut reader);
+                        if current.image.is_none() {
+                            current.image = get_image_url(&raw);
+                        }
+                        current.description = Some(raw.trim().to_string());
+                    }
+                    "content:encoded" => {
+                        // 原版：content = nextText().trim()，取图同样用 trim 后内容
+                        let content = read_element_text(&mut reader).trim().to_string();
+                        if current.image.is_none() {
+                            current.image = get_image_url(&content);
+                        }
+                        current.content = Some(content);
+                    }
+                    "pubdate" => {
+                        // 原版 :76-85：只取紧随其后的 TEXT，嵌套标签跳过
+                        if let Some(text) = read_direct_text(&mut reader) {
+                            current.pub_date = Some(text);
+                        }
+                    }
+                    // 原版 :86-87：`time` 文本直接覆盖 pubDate（不 trim）
+                    "time" => current.pub_date = Some(read_element_text(&mut reader)),
+                    _ => {}
+                }
+            }
+            Ok(Event::Empty(e)) => {
+                // 自闭合元素：对应原版 START_TAG + 紧随 END_TAG
+                let name = literal_name(e.name());
+                let lower = name.to_ascii_lowercase();
+                if root_name.is_none() {
+                    root_name = Some(lower.clone());
+                }
+                if lower == "item" {
+                    // `<item/>`：原版 START 后立即 END → 收集一条空文章
+                    items.push(finish_item(current, sort_name, source_url));
+                    current = DefaultFeedItem::default();
+                    inside_item = false;
+                    continue;
+                }
+                if !inside_item {
+                    continue;
+                }
+                match lower.as_str() {
+                    "media:thumbnail" => current.image = attribute_value(&e, "url"),
+                    "enclosure" => {
+                        if attribute_value(&e, "type").is_some_and(|t| t.contains("image/")) {
+                            current.image = attribute_value(&e, "url");
+                        }
+                    }
+                    // 原版 nextText() 对空元素返回 "" → 字段被置为 Some("")
+                    "description" => current.description = Some(String::new()),
+                    "content:encoded" => current.content = Some(String::new()),
+                    "time" => current.pub_date = Some(String::new()),
+                    _ => {}
+                }
+            }
+            Ok(Event::End(e)) => {
+                let name = literal_name(e.name());
+                if name.eq_ignore_ascii_case("item") {
+                    items.push(finish_item(current, sort_name, source_url));
+                    current = DefaultFeedItem::default();
+                    inside_item = false;
+                }
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+
+    // Atom 回退（已登记超集）：item 扫描为空且根元素为 `<feed>`
+    if items.is_empty() && root_name.as_deref() == Some("feed") {
+        if let Ok(feed) = parse_atom(xml) {
+            return feed
+                .articles
+                .into_iter()
+                .map(|a| DefaultFeedItem {
+                    title: a.title,
+                    link: a.link,
+                    description: a.description,
+                    pub_date: a.pub_date,
+                    image: a.image_url,
+                    content: a.content,
+                    origin: source_url.to_string(),
+                    sort: sort_name.to_string(),
+                })
+                .collect();
+        }
+    }
+
+    items
+}
+
+/// 收尾收集：补齐 `origin` / `sort`（对齐原版 `</item>` 分支 :93-97）
+fn finish_item(item: DefaultFeedItem, sort_name: &str, source_url: &str) -> DefaultFeedItem {
+    DefaultFeedItem {
+        origin: source_url.to_string(),
+        sort: sort_name.to_string(),
+        ..item
+    }
+}
+
+/// 事件标签名（**含前缀**的字面名，`namespaceAware=false` 口径）
+fn literal_name(name: quick_xml::name::QName<'_>) -> String {
+    name.into_inner().to_string()
+}
+
+/// 读取属性值（按字面名精确匹配，大小写敏感，对齐 `getAttributeValue(null, key)`）
+fn attribute_value(e: &BytesStart<'_>, key: &str) -> Option<String> {
+    e.attributes()
+        .flatten()
+        .find(|attr| attr.key.as_ref() == key)
+        .and_then(|attr| {
+            attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                .ok()
+        })
+        .map(|value| value.into_owned())
+}
+
+/// 读取当前元素到其闭合标签之间的全部文本（含 CDATA；实体引用已还原）
+///
+/// 对应原版 `nextText()`；差异：原版遇到嵌套标签抛异常，这里按 quick-xml
+/// 宽容度把嵌套文本一并拼入（已登记）。
+fn read_element_text(reader: &mut Reader<&[u8]>) -> String {
+    let mut out = String::new();
+    let mut depth = 0usize;
+    loop {
+        match reader.read_event() {
+            Ok(Event::Text(text)) => out.push_str(text.as_ref()),
+            Ok(Event::CData(data)) => out.push_str(data.as_ref()),
+            Ok(Event::GeneralRef(reference)) => push_reference(&mut out, &reference),
+            Ok(Event::Start(_)) => depth += 1,
+            Ok(Event::End(_)) => {
+                if depth == 0 {
+                    break;
+                }
+                depth -= 1;
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    out
+}
+
+/// 读取元素的**直接文本**（遇到嵌套起始标签立即返回已收集文本）
+///
+/// 对齐原版 `pubDate` 分支：`next()` 后仅当事件为 TEXT 才取值；嵌套标签
+/// （START_TAG）视为「跳过」。返回 `None` = 未取到任何文本（字段不赋值）。
+fn read_direct_text(reader: &mut Reader<&[u8]>) -> Option<String> {
+    let mut out = String::new();
+    let mut saw_text = false;
+    loop {
+        match reader.read_event() {
+            Ok(Event::Text(text)) => {
+                saw_text = true;
+                out.push_str(text.as_ref());
+            }
+            Ok(Event::CData(data)) => {
+                saw_text = true;
+                out.push_str(data.as_ref());
+            }
+            Ok(Event::GeneralRef(reference)) => {
+                saw_text = true;
+                push_reference(&mut out, &reference);
+            }
+            // 嵌套元素 / 闭合 / EOF：结束本次取值
+            Ok(Event::Start(_)) | Ok(Event::End(_)) | Ok(Event::Eof) | Err(_) => {
+                return saw_text.then(|| out.trim().to_string());
+            }
+            _ => {}
+        }
+    }
+}
+
+/// 还原实体引用（字符引用 → 字符；预定义实体 → 替换串；未声明实体按字面保留）
+fn push_reference(out: &mut String, reference: &BytesRef<'_>) {
+    if let Ok(Some(ch)) = reference.resolve_char_ref() {
+        out.push(ch);
+    } else if let Some(replacement) = quick_xml::escape::resolve_predefined_entity(reference) {
+        out.push_str(replacement);
+    } else {
+        // 原版 XmlPullParser 对未声明实体会抛异常；这里按字面保留避免丢文本
+        out.push('&');
+        out.push_str(reference);
+        out.push(';');
+    }
+}
+
+/// 取正文中首个 `<img ...>` 的 `src`（对齐原版 `getImageUrl`，`RssParserDefault.kt:122-136`）
+///
+/// 原版正则：`(<img [^>]*>)` + `src\s*=\s*"([^"]+)"` —— 大小写敏感、只认双引号、
+/// `<img` 后必须有空格、src 值 trim。这里逐字保留同一口径。
+fn get_image_url(input: &str) -> Option<String> {
+    static IMG_TAG: OnceLock<Regex> = OnceLock::new();
+    static IMG_SRC: OnceLock<Regex> = OnceLock::new();
+    let tag_pattern =
+        IMG_TAG.get_or_init(|| Regex::new(r"(<img [^>]*>)").expect("img 标签正则应合法"));
+    let src_pattern =
+        IMG_SRC.get_or_init(|| Regex::new(r#"src\s*=\s*"([^"]+)""#).expect("img src 正则应合法"));
+    let tag = tag_pattern.find(input)?.as_str();
+    let url = src_pattern.captures(tag)?.get(1)?.as_str().trim();
+    Some(url.to_string())
 }
 
 #[cfg(test)]

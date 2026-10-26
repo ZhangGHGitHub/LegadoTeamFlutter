@@ -62,7 +62,7 @@ pub use rate_limit::{DomainRateLimiter, RateLimiter};
 pub use request::{LegadoRequest, Method};
 pub use response::{LegadoRawResponse, LegadoResponse, LegadoStreamResponse};
 pub use retry::{RetryConfig, RetryExecutor};
-pub use rss::{fetch_feed, parse_feed, RssArticle, RssFeed};
+pub use rss::{fetch_feed, parse_default_items, parse_feed, DefaultFeedItem, RssArticle, RssFeed};
 pub use rule_update_client::{
     fetch_subscription, merge_subscription, should_update, MergeResult, RuleSubscription,
     UpdateResult,

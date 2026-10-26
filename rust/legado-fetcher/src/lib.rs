@@ -19,6 +19,9 @@ pub mod book_type;
 pub mod deps;
 pub mod js_adapter;
 pub mod rate_limit;
+// [批15a | 2026-10-26] RSS 抓取引擎（默认解析等价 + 骨架）：
+// 列表请求编排对齐原版 `Rss.getArticlesAwait`，解析对齐 `RssParserDefault`。
+pub mod rss;
 pub mod source_setup;
 pub mod web_book;
 
