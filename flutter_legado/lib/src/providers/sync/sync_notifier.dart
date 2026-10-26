@@ -53,6 +53,10 @@ class SyncNotifier extends Notifier<SyncState> {
   // ===== 配置管理 =====
 
   /// 保存 WebDAV 配置
+  ///
+  /// 批8 审查回修 P2-6：先落库、后改内存状态——DB 写入失败时状态不前进，
+  /// 异常上抛给调用方（设置页统一经 SnackBar 提示），避免「界面显示已保存、
+  /// 实际未落库」的假成功。
   Future<void> saveConfig(
     String url,
     String username,
@@ -64,13 +68,6 @@ class SyncNotifier extends Notifier<SyncState> {
     final webDavUsername = username.trim();
     final remoteDir = dir.trim().isEmpty ? '/legado/' : dir.trim();
     final device = deviceName.trim();
-    state = state.copyWith(
-      webDavUrl: webDavUrl,
-      webDavUsername: webDavUsername,
-      webDavPassword: password,
-      remoteDir: remoteDir,
-      deviceName: device,
-    );
     // 批8：url/username/password 写入 DB servers 表（id = -1 的 WEBDAV 行）；
     // 子目录/设备名仍为偏好（原版 AppConfig.webDavDir/webDavDeviceName 同为偏好）
     await _webDavServerService().saveSyncServer(
@@ -80,6 +77,29 @@ class SyncNotifier extends Notifier<SyncState> {
     );
     await _settings.setWebDavRemoteDir(remoteDir);
     await _settings.setWebDavDeviceName(device);
+    state = state.copyWith(
+      webDavUrl: webDavUrl,
+      webDavUsername: webDavUsername,
+      webDavPassword: password,
+      remoteDir: remoteDir,
+      deviceName: device,
+    );
+  }
+
+  /// 本地恢复后按备份格式回填旧偏好账号（批8 审查回修 P1-1）
+  ///
+  /// - 备份含 `servers` 段（v3）：以备份 DB 行为准，**不回读偏好**，返回 false；
+  /// - v1/v2 且备份携带账号键：把恢复所得偏好账号覆盖到 DB `id = -1` 行
+  ///   （三项全空时不写库），返回是否实际写入；
+  /// - 无法判定或备份未携带账号：不回填（避免设备残留偏好覆盖当前配置）。
+  ///
+  /// 对齐原版 `Restore.kt:455-470`：恢复 prefs 后 WebDAV 账号立即生效。
+  Future<bool> applyLegacyWebDavPrefsAfterRestore({
+    required WebDavBackupAccountSource source,
+  }) async {
+    if (source != WebDavBackupAccountSource.legacyPrefs) return false;
+    final applied = await _webDavServerService().applyLegacyPrefsOverwrite();
+    return applied != null;
   }
 
   /// 加载已保存的 WebDAV 配置

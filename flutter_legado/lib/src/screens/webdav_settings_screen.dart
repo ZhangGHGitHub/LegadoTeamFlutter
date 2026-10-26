@@ -24,6 +24,7 @@ import '../routes.dart';
 import '../services/crash_log_service.dart';
 import '../services/restore_ignore_prefs.dart';
 import '../services/settings_service.dart';
+import '../services/webdav_server_service.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/help/help_assets.dart';
@@ -82,40 +83,61 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
   /// 批8：WebDAV 账号三要素由 `SyncNotifier.loadConfig()` 从 DB `servers` 表
   /// 读取（首次调用顺带完成旧偏好一次性迁移）；子目录/设备名与备份开关
   /// 仍读偏好。
+  ///
+  /// 批8 审查回修 P2-5：DB 读取异常不静默——提示中文 SnackBar，页面保持
+  /// 默认值（不崩溃、不吞错）。
   Future<void> _loadAll() async {
-    final notifier = ref.read(syncNotifierProvider.notifier);
-    await notifier.loadConfig();
-    final state = ref.read(syncNotifierProvider);
-    final path = await CrashLogService.instance.getBackupPath() ?? '';
-    final onlyLatest = await _settings.getBoolPref(
-      PrefKeys.onlyLatestBackup,
-      defaultValue: true,
-    );
-    final autoCheck = await _settings.getBoolPref(
-      PrefKeys.autoCheckNewBackup,
-      defaultValue: true,
-    );
-    if (!mounted) return;
-    setState(() {
-      _url = state.webDavUrl;
-      _user = state.webDavUsername;
-      _pass = state.webDavPassword;
-      _dir = state.remoteDir;
-      _device = state.deviceName;
-      _backupPath = path;
-      _onlyLatestBackup = onlyLatest;
-      _autoCheckNewBackup = autoCheck;
-    });
+    try {
+      final notifier = ref.read(syncNotifierProvider.notifier);
+      await notifier.loadConfig();
+      final state = ref.read(syncNotifierProvider);
+      final path = await CrashLogService.instance.getBackupPath() ?? '';
+      final onlyLatest = await _settings.getBoolPref(
+        PrefKeys.onlyLatestBackup,
+        defaultValue: true,
+      );
+      final autoCheck = await _settings.getBoolPref(
+        PrefKeys.autoCheckNewBackup,
+        defaultValue: true,
+      );
+      if (!mounted) return;
+      setState(() {
+        _url = state.webDavUrl;
+        _user = state.webDavUsername;
+        _pass = state.webDavPassword;
+        _dir = state.remoteDir;
+        _device = state.deviceName;
+        _backupPath = path;
+        _onlyLatestBackup = onlyLatest;
+        _autoCheckNewBackup = autoCheck;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(content: Text('加载 WebDAV 配置失败：$e')),
+      );
+    }
   }
 
+  /// 保存 WebDAV 配置
+  ///
+  /// 批8 审查回修 P2-5/P2-6：落库失败以中文 SnackBar 提示（`saveConfig`
+  /// 先落库后改状态，失败时状态不前进）。
   Future<void> _saveWebDav() async {
-    await ref.read(syncNotifierProvider.notifier).saveConfig(
-          _url,
-          _user,
-          _pass,
-          _dir,
-          deviceName: _device,
-        );
+    try {
+      await ref.read(syncNotifierProvider.notifier).saveConfig(
+            _url,
+            _user,
+            _pass,
+            _dir,
+            deviceName: _device,
+          );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('保存 WebDAV 配置失败：$e')),
+      );
+    }
   }
 
   Future<void> _editTextPref({
@@ -275,6 +297,11 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     await _runWithProgress('恢复中…', () async {
       final api = ref.read(bookApiProvider);
       var pathToRestore = backupPath;
+      // 批8 审查回修 P1-1：先判定备份账号来源——v1/v2 备份的 WebDAV 账号
+      // 只在 appPrefs 里，恢复后须回填 DB（原版 prefs 生效语义）；v3 含
+      // servers 段以 DB 为准；无法判定/备份未带账号则不回填。
+      final accountSource =
+          await WebDavServerService.backupAccountSource(backupPath);
       final ignore = await _settings.getRestoreIgnoreConfig();
       if (ignore['localBook'] == true &&
           backupPath.toLowerCase().endsWith('.json')) {
@@ -283,6 +310,11 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
 
       await RestoreIgnorePrefs.applyAppPrefsFromBackupFile(backupPath, ignore);
       await api.restore(pathToRestore);
+      // 偏好已由上面写回本地；v1/v2 备份把恢复所得账号显式覆盖到 DB
+      // （v3 交由恢复器写入的 servers 行，不回读偏好）
+      await ref
+          .read(syncNotifierProvider.notifier)
+          .applyLegacyWebDavPrefsAfterRestore(source: accountSource);
       if (!mounted) return;
       await _reloadPrefsAfterRestore();
       if (!mounted) return;
@@ -340,11 +372,25 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     });
   }
 
+  /// 恢复完成后刷新页面与全局状态
+  ///
+  /// 批8 审查回修 P2-1：`loadConfig()` 从 DB 重读账号（P1-1 的偏好回填已在
+  /// 调用方完成，此处读取回填后的权威值），并同步刷新本页行文案。
   Future<void> _reloadPrefsAfterRestore() async {
+    await ref.read(syncNotifierProvider.notifier).loadConfig();
     await ref.read(themeNotifierProvider.notifier).load();
     ref.invalidate(themeColorsProvider);
     ref.invalidate(mainPrefsProvider);
     ref.invalidate(bookshelfNotifierProvider);
+    if (!mounted) return;
+    final state = ref.read(syncNotifierProvider);
+    setState(() {
+      _url = state.webDavUrl;
+      _user = state.webDavUsername;
+      _pass = state.webDavPassword;
+      _dir = state.remoteDir;
+      _device = state.deviceName;
+    });
   }
 
   Future<String> _backupPathSkippingLocalBooks(String backupPath) async {

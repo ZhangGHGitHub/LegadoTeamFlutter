@@ -3,6 +3,8 @@
 // 覆盖 Phase 5.4 provider→Riverpod 迁移后的 WebDAV 云同步状态管理：
 // 初始状态/配置管理（saveConfig/loadConfig/toggle/setter）/真实同步操作
 // （backupToWebDav/restoreFromWebDav）/lastSyncTimeLabel/SyncStatus 枚举。
+import 'dart:convert';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
@@ -12,8 +14,17 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:flutter_legado/src/providers/sync/sync_notifier.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/services/webdav_server_service.dart';
 
 import '../mocks/mocks.dart';
+
+/// servers 表写入必然失败的 RustApi 桩（回修 P2-6：先落库后改状态）
+class _FailingSaveRustApi extends FakeServersRustApi {
+  @override
+  Future<int> webdavServerSave(String serverJson) async {
+    throw Exception('磁盘写入失败');
+  }
+}
 
 void main() {
   late FakeServersRustApi mockApi;
@@ -253,6 +264,122 @@ void main() {
       expect(readState().status, equals(SyncStatus.success));
       expect(msg, contains('回写 0 条书源'));
       verifyNever(() => mockApi.importBookSources(any()));
+    });
+  });
+
+  group('恢复后旧偏好回填（回修 P1-1）', () {
+    void seedDeviceConfigured() {
+      // DB 已配置 + 迁移标记已置：loadSyncServer 不再回读偏好（死数据场景）
+      mockApi.seedServer(
+        config: jsonEncode({
+          'url': 'https://device.example.com/',
+          'username': 'device-user',
+          'password': 'device-pass',
+        }),
+      );
+      SharedPreferences.setMockInitialValues({
+        WebDavServerService.migratedPrefKey: true,
+        'sync_webdav_url': 'https://backup.example.com/',
+        'sync_webdav_username': 'backup-user',
+        'sync_webdav_password': 'backup-pass',
+      });
+    }
+
+    Future<Map<String, dynamic>> defaultDbConfig() async {
+      final rows = jsonDecode(await mockApi.webdavServersList()) as List;
+      final row = rows
+          .cast<Map<String, dynamic>>()
+          .firstWhere((e) => e['id'] == WebDavServerService.defaultServerId);
+      return jsonDecode(row['config'] as String) as Map<String, dynamic>;
+    }
+
+    test('v1/v2 备份（无 servers）：备份偏好覆盖 DB 行', () async {
+      seedDeviceConfigured();
+
+      final applied = await readNotifier().applyLegacyWebDavPrefsAfterRestore(
+        source: WebDavBackupAccountSource.legacyPrefs,
+      );
+
+      expect(applied, isTrue);
+      final config = await defaultDbConfig();
+      expect(config['url'], 'https://backup.example.com/');
+      expect(config['username'], 'backup-user');
+      expect(config['password'], 'backup-pass');
+    });
+
+    test('v3 备份（含 servers）：以备份 DB 行为准，不回读偏好', () async {
+      seedDeviceConfigured();
+
+      final applied = await readNotifier().applyLegacyWebDavPrefsAfterRestore(
+        source: WebDavBackupAccountSource.serversSection,
+      );
+
+      expect(applied, isFalse, reason: 'v3 不得用偏好覆盖恢复写入的 DB 行');
+      final config = await defaultDbConfig();
+      expect(config['url'], 'https://device.example.com/');
+      expect(config['username'], 'device-user');
+    });
+
+    test('备份未携带账号（无法判定）：不回填设备残留偏好', () async {
+      seedDeviceConfigured();
+
+      final applied = await readNotifier().applyLegacyWebDavPrefsAfterRestore(
+        source: WebDavBackupAccountSource.none,
+      );
+
+      expect(applied, isFalse, reason: '备份无账号时不得用残留偏好覆盖 DB');
+      final config = await defaultDbConfig();
+      expect(config['url'], 'https://device.example.com/');
+    });
+
+    test('恢复所得偏好三项全空：不清 DB 配置', () async {
+      mockApi.seedServer(
+        config: jsonEncode({
+          'url': 'https://keep.example.com/',
+          'username': 'keep-user',
+          'password': 'keep-pass',
+        }),
+      );
+      SharedPreferences.setMockInitialValues({
+        WebDavServerService.migratedPrefKey: true,
+      });
+
+      final applied = await readNotifier().applyLegacyWebDavPrefsAfterRestore(
+        source: WebDavBackupAccountSource.legacyPrefs,
+      );
+
+      expect(applied, isFalse);
+      final config = await defaultDbConfig();
+      expect(config['url'], 'https://keep.example.com/');
+    });
+  });
+
+  group('saveConfig 落库失败（回修 P2-6）', () {
+    test('DB 写入失败时状态不变并上抛异常', () async {
+      final failingApi = _FailingSaveRustApi();
+      final failingContainer = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(failingApi)],
+      );
+      addTearDown(failingContainer.dispose);
+      final notifier = failingContainer.read(syncNotifierProvider.notifier);
+
+      await expectLater(
+        notifier.saveConfig(
+          'https://dav.com',
+          'user',
+          'pass',
+          '/dir/',
+          deviceName: 'dev',
+        ),
+        throwsA(isA<Exception>()),
+      );
+
+      final state = failingContainer.read(syncNotifierProvider);
+      expect(state.webDavUrl, isEmpty, reason: '落库失败不得先改内存状态');
+      expect(state.webDavUsername, isEmpty);
+      expect(state.webDavPassword, isEmpty);
+      expect(state.remoteDir, '/legado/', reason: '偏好值与状态都不得前进');
+      expect(state.deviceName, isEmpty);
     });
   });
 
