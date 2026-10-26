@@ -2922,3 +2922,1270 @@ async fn test_b4_legacy_review_js_end_to_end() {
     assert_eq!(rd["isSuccess"], true, "rd={rd}");
     assert_eq!(rd["data"], "2");
 }
+
+// ---------------------------------------------------------------------------
+// B6：源写端点 10 条 + 令牌红绿 + 批量事务回滚
+// （原版依据：HttpServer.kt:58-110/:246-258、BookSourceController.kt:37-216、
+//  RssSourceController.kt:24-76、ReplaceRuleController.kt:23-107、
+//  JsSourceUpsert.kt:11-129）
+// ---------------------------------------------------------------------------
+
+const B6_TOKEN: &str = B4_TOKEN_HEADER;
+
+async fn post_write_raw(
+    app: axum::Router,
+    uri: &str,
+    content_type: Option<&str>,
+    headers: &[(&str, &str)],
+    body: &[u8],
+) -> (StatusCode, axum::http::HeaderMap, Vec<u8>) {
+    let mut builder = Request::builder().method(Method::POST).uri(uri);
+    if let Some(content_type) = content_type {
+        builder = builder.header("Content-Type", content_type);
+    }
+    for (name, value) in headers {
+        builder = builder.header(*name, *value);
+    }
+    let resp = app
+        .oneshot(builder.body(Body::from(body.to_vec())).unwrap())
+        .await
+        .unwrap();
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap()
+        .to_vec();
+    (status, headers, bytes)
+}
+
+async fn post_write_json(
+    app: axum::Router,
+    uri: &str,
+    content_type: Option<&str>,
+    headers: &[(&str, &str)],
+    body: &[u8],
+) -> (StatusCode, axum::http::HeaderMap, Value) {
+    let (status, headers, bytes) = post_write_raw(app, uri, content_type, headers, body).await;
+    (status, headers, serde_json::from_slice(&bytes).unwrap())
+}
+
+/// `saveJsSource` 专用：默认 `text/plain; charset=utf-8` + 自动 Content-Length
+async fn post_js_source_with(
+    app: axum::Router,
+    uri: &str,
+    token: Option<&str>,
+    content_type: Option<&str>,
+    content_length: Option<usize>,
+    extra: &[(&str, &str)],
+    body: &[u8],
+) -> (StatusCode, axum::http::HeaderMap, Value) {
+    let mut builder = Request::builder().method(Method::POST).uri(uri);
+    builder = builder.header(
+        "Content-Type",
+        content_type.unwrap_or("text/plain; charset=utf-8"),
+    );
+    if let Some(content_length) = content_length {
+        builder = builder.header("Content-Length", content_length.to_string());
+    }
+    if let Some(token) = token {
+        builder = builder.header(B6_TOKEN, token);
+    }
+    for (name, value) in extra {
+        builder = builder.header(*name, *value);
+    }
+    let resp = app
+        .oneshot(builder.body(Body::from(body.to_vec())).unwrap())
+        .await
+        .unwrap();
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    (status, headers, serde_json::from_slice(&bytes).unwrap())
+}
+
+async fn seed_rss_source(state: &Arc<AppState>, source_url: &str, source_name: &str) {
+    let db = state.db.lock().await;
+    legado_db::repository::rss_source_repository::RssSourceRepository::new(db.connection())
+        .insert(&legado_core::models::RssSource {
+            source_url: source_url.to_string(),
+            source_name: source_name.to_string(),
+            ..Default::default()
+        })
+        .unwrap();
+}
+
+async fn seed_replace_rule(state: &Arc<AppState>, rule: &legado_core::models::ReplaceRule) -> i64 {
+    let db = state.db.lock().await;
+    legado_db::repository::replace_rule_repository::ReplaceRuleRepository::new(db.connection())
+        .insert(rule)
+        .unwrap()
+}
+
+/// 10 条写端点全部在 `PROTECTED_SOURCE_WRITE_ROUTES`：无令牌一律拒绝
+#[tokio::test]
+async fn test_b6_all_write_routes_require_token() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let app = create_router(state);
+
+    for uri in [
+        "/saveBookSource",
+        "/saveBookSources",
+        "/deleteBookSources",
+        "/saveJsSource",
+        "/saveRssSource",
+        "/saveRssSources",
+        "/deleteRssSources",
+        "/saveReplaceRule",
+        "/deleteReplaceRule",
+        "/testReplaceRule",
+    ] {
+        let (status, headers, body) =
+            post_write_raw(app.clone(), uri, Some("application/json"), &[], b"{}").await;
+        assert_eq!(status, StatusCode::OK, "{uri}");
+        let rd: Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(rd["isSuccess"], false, "{uri} rd={rd}");
+        assert_eq!(rd["errorMsg"], B4_TOKEN_ERROR, "{uri}");
+        assert_eq!(
+            header_str(&headers, "connection"),
+            "close",
+            "{uri} 令牌失败应关闭连接（原版 shouldCloseConnection）"
+        );
+    }
+
+    // 正确令牌通过令牌面（非令牌错误文案）
+    let (_, headers, rd) = post_write_json(
+        app,
+        "/deleteBookSources",
+        Some("application/json"),
+        &[(B6_TOKEN, "secret")],
+        b"[]",
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_ne!(header_str(&headers, "connection"), "close");
+}
+
+#[tokio::test]
+async fn test_b6_save_book_source_upsert_and_errors() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let app = create_router(state.clone());
+    let auth = [(B6_TOKEN, "secret")];
+
+    // 缺参（空体 → NanoHTTPD postData=null）
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveBookSource",
+        Some("application/json"),
+        &auth,
+        b"",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "数据不能为空", "rd={rd}");
+
+    // 坏 JSON
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveBookSource",
+        Some("application/json"),
+        &auth,
+        b"not-json",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "转换源失败", "rd={rd}");
+
+    // 名称缺失
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveBookSource",
+        Some("application/json"),
+        &auth,
+        br#"{"bookSourceUrl":"https://b6.book/1"}"#,
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "源名称和URL不能为空", "rd={rd}");
+
+    // 正例 + REPLACE upsert
+    let body = r#"{"bookSourceUrl":"https://b6.book/1","bookSourceName":"B6书源"}"#.as_bytes();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveBookSource",
+        Some("application/json"),
+        &auth,
+        body,
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], "");
+
+    let body = r#"{"bookSourceUrl":"https://b6.book/1","bookSourceName":"B6书源改"}"#.as_bytes();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveBookSource",
+        Some("application/json"),
+        &auth,
+        body,
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+
+    let (_, rd) = get_json(
+        app,
+        &format!("/getBookSource?url={}", enc("https://b6.book/1")),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["bookSourceName"], "B6书源改");
+
+    let count = {
+        let db = state.db.lock().await;
+        legado_db::BookSourceRepository::new(db.connection())
+            .count()
+            .unwrap()
+    };
+    assert_eq!(count, 1, "REPLACE 语义：同 URL 只保留一行");
+}
+
+#[tokio::test]
+async fn test_b6_save_book_sources_batch_and_rollback() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    {
+        let db = state.db.lock().await;
+        db.connection()
+            .execute(
+                "CREATE TRIGGER b6_fail_book BEFORE INSERT ON book_sources
+                 WHEN NEW.bookSourceUrl = 'https://b6.batch/boom'
+                 BEGIN SELECT RAISE(ABORT, 'b6 batch boom'); END",
+                [],
+            )
+            .unwrap();
+    }
+    let app = create_router(state.clone());
+    let auth = [(B6_TOKEN, "secret")];
+
+    // 缺参 / 坏 JSON / 空数组
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveBookSources",
+        Some("application/json"),
+        &auth,
+        b"",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "数据为空");
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveBookSources",
+        Some("application/json"),
+        &auth,
+        b"not-json",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "转换源失败");
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveBookSources",
+        Some("application/json"),
+        &auth,
+        b"[]",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "转换源失败");
+
+    // 跳过空名/空 URL，返回成功数组
+    let body = json!([
+        {"bookSourceUrl": "https://b6.batch/1", "bookSourceName": "一"},
+        {"bookSourceUrl": "https://b6.batch/2", "bookSourceName": "  "},
+        {"bookSourceUrl": "https://b6.batch/3", "bookSourceName": "三"}
+    ])
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveBookSources",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"].as_array().unwrap().len(), 2);
+
+    // 事务回滚：第二条触发 ABORT → 整批不落库
+    let body = json!([
+        {"bookSourceUrl": "https://b6.batch/roll-ok", "bookSourceName": "回滚好"},
+        {"bookSourceUrl": "https://b6.batch/boom", "bookSourceName": "回滚炸"}
+    ])
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveBookSources",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], false, "rd={rd}");
+    assert!(
+        rd["errorMsg"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("b6 batch boom"),
+        "rd={rd}"
+    );
+    let (_, rd) = get_json(
+        app,
+        &format!("/getBookSource?url={}", enc("https://b6.batch/roll-ok")),
+    )
+    .await;
+    assert_eq!(
+        rd["errorMsg"], "未找到源，请检查书源地址",
+        "整批应回滚 rd={rd}"
+    );
+}
+
+#[tokio::test]
+async fn test_b6_delete_book_sources_and_errors() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    seed_book_source(
+        &state,
+        legado_core::models::BookSource {
+            book_source_url: "https://b6.del/1".into(),
+            book_source_name: "删一".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    seed_book_source(
+        &state,
+        legado_core::models::BookSource {
+            book_source_url: "https://b6.del/2".into(),
+            book_source_name: "删二".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    {
+        let db = state.db.lock().await;
+        legado_db::repository::cache_repository::CacheRepository::new(db.connection())
+            .put("sourceVariable_https://b6.del/1", "v", 0)
+            .unwrap();
+    }
+    let app = create_router(state.clone());
+    let auth = [(B6_TOKEN, "secret")];
+
+    // 缺参 / 坏 JSON
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/deleteBookSources",
+        Some("application/json"),
+        &auth,
+        b"",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "解析字符串为空");
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/deleteBookSources",
+        Some("application/json"),
+        &auth,
+        b"not-json",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "数据格式错误");
+
+    // 正例：数组去重删除 + 缓存变量清理
+    let body = json!([
+        {"bookSourceUrl": "https://b6.del/1"},
+        {"bookSourceUrl": "https://b6.del/2"},
+        {"bookSourceUrl": "https://b6.del/1"}
+    ])
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/deleteBookSources",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], "已执行");
+
+    {
+        let db = state.db.lock().await;
+        let count = legado_db::BookSourceRepository::new(db.connection())
+            .count()
+            .unwrap();
+        assert_eq!(count, 0);
+        let cache_left: i64 = db
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM caches WHERE key = 'sourceVariable_https://b6.del/1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(cache_left, 0, "删除源应清 sourceVariable_ 缓存");
+    }
+
+    // 空数组：原版同样成功「已执行」
+    let (_, _, rd) = post_write_json(
+        app,
+        "/deleteBookSources",
+        Some("application/json"),
+        &auth,
+        b"[]",
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true);
+    assert_eq!(rd["data"], "已执行");
+}
+
+#[tokio::test]
+async fn test_b6_save_rss_source_and_batch() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    {
+        let db = state.db.lock().await;
+        db.connection()
+            .execute(
+                "CREATE TRIGGER b6_fail_rss BEFORE INSERT ON rssSources
+                 WHEN NEW.sourceUrl = 'https://b6.rss/boom'
+                 BEGIN SELECT RAISE(ABORT, 'b6 rss boom'); END",
+                [],
+            )
+            .unwrap();
+    }
+    let app = create_router(state.clone());
+    let auth = [(B6_TOKEN, "secret")];
+
+    // 单条：缺参 / 坏 JSON / 缺名称 / 正例
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveRssSource",
+        Some("application/json"),
+        &auth,
+        b"",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "数据不能为空");
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveRssSource",
+        Some("application/json"),
+        &auth,
+        b"not-json",
+    )
+    .await;
+    assert!(
+        rd["errorMsg"]
+            .as_str()
+            .unwrap_or_default()
+            .starts_with("转换源失败"),
+        "rd={rd}"
+    );
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveRssSource",
+        Some("application/json"),
+        &auth,
+        br#"{"sourceUrl":"https://b6.rss/1"}"#,
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "源名称和URL不能为空");
+
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveRssSource",
+        Some("application/json"),
+        &auth,
+        r#"{"sourceUrl":"https://b6.rss/1","sourceName":"RSS一"}"#.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], "");
+
+    let (_, rd) = get_json(
+        app.clone(),
+        &format!("/getRssSource?url={}", enc("https://b6.rss/1")),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["sourceName"], "RSS一");
+
+    // 批量：缺参 / 空数组 / 过滤空名 / 事务回滚
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveRssSources",
+        Some("application/json"),
+        &auth,
+        b"",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "数据不能为空");
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveRssSources",
+        Some("application/json"),
+        &auth,
+        b"[]",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "转换源失败");
+
+    let body = json!([
+        {"sourceUrl": "https://b6.rss/b1", "sourceName": "批一"},
+        {"sourceUrl": "https://b6.rss/b2", "sourceName": " "},
+        {"sourceUrl": "https://b6.rss/b3", "sourceName": "批三"}
+    ])
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveRssSources",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"].as_array().unwrap().len(), 2);
+
+    let body = json!([
+        {"sourceUrl": "https://b6.rss/roll-ok", "sourceName": "回滚好"},
+        {"sourceUrl": "https://b6.rss/boom", "sourceName": "回滚炸"}
+    ])
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveRssSources",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], false, "rd={rd}");
+    assert!(
+        rd["errorMsg"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("b6 rss boom"),
+        "rd={rd}"
+    );
+    let (_, rd) = get_json(
+        app,
+        &format!("/getRssSource?url={}", enc("https://b6.rss/roll-ok")),
+    )
+    .await;
+    assert_eq!(
+        rd["errorMsg"], "未找到源，请检查源地址",
+        "整批应回滚 rd={rd}"
+    );
+}
+
+#[tokio::test]
+async fn test_b6_delete_rss_sources_side_effects_and_errors() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    seed_rss_source(&state, "https://b6.rssdel/1", "删RSS").await;
+    {
+        let db = state.db.lock().await;
+        legado_db::repository::rss_article_repository::RssArticleRepository::new(db.connection())
+            .insert(
+                &legado_db::repository::rss_article_repository::RssArticleRecord {
+                    origin: "https://b6.rssdel/1".to_string(),
+                    title: "文章".to_string(),
+                    link: Some("https://b6.rssdel/1/a".to_string()),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+        legado_db::repository::cache_repository::CacheRepository::new(db.connection())
+            .put("sourceVariable_https://b6.rssdel/1", "v", 0)
+            .unwrap();
+    }
+    let app = create_router(state.clone());
+    let auth = [(B6_TOKEN, "secret")];
+
+    // 缺参 / 坏 JSON
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/deleteRssSources",
+        Some("application/json"),
+        &auth,
+        b"",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "没有传递数据");
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/deleteRssSources",
+        Some("application/json"),
+        &auth,
+        b"not-json",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "格式不对");
+
+    let body = json!([{"sourceUrl": "https://b6.rssdel/1"}]).to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/deleteRssSources",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], "已执行");
+
+    {
+        let db = state.db.lock().await;
+        let sources =
+            legado_db::repository::rss_source_repository::RssSourceRepository::new(db.connection())
+                .count()
+                .unwrap();
+        let articles = legado_db::repository::rss_article_repository::RssArticleRepository::new(
+            db.connection(),
+        )
+        .count()
+        .unwrap();
+        let cache_left: i64 = db
+            .connection()
+            .query_row(
+                "SELECT COUNT(*) FROM caches WHERE key = 'sourceVariable_https://b6.rssdel/1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(sources, 0);
+        assert_eq!(
+            articles, 0,
+            "删除 RSS 源应级联删除文章（原版 rssArticleDao.delete）"
+        );
+        assert_eq!(cache_left, 0);
+    }
+}
+
+#[tokio::test]
+async fn test_b6_save_replace_rule_semantics() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let app = create_router(state.clone());
+    let auth = [(B6_TOKEN, "secret")];
+
+    // 缺参 / 坏 JSON
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveReplaceRule",
+        Some("application/json"),
+        &auth,
+        b"",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "数据不能为空");
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveReplaceRule",
+        Some("application/json"),
+        &auth,
+        b"not-json",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "格式不对");
+
+    // 成功路径保留原版默认信封（未调用 setData）
+    let first =
+        json!({"name": "规则一", "pattern": "a", "replacement": "b", "isRegex": false}).to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/saveReplaceRule",
+        Some("application/json"),
+        &auth,
+        first.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], false, "原版默认信封 rd={rd}");
+    assert_eq!(rd["errorMsg"], "未知错误,请联系开发者!");
+    assert!(rd["data"].is_null());
+
+    let second =
+        json!({"name": "规则二", "pattern": "c", "replacement": "d", "isRegex": true}).to_string();
+    post_write_json(
+        app.clone(),
+        "/saveReplaceRule",
+        Some("application/json"),
+        &auth,
+        second.as_bytes(),
+    )
+    .await;
+
+    let rules = {
+        let db = state.db.lock().await;
+        legado_db::repository::replace_rule_repository::ReplaceRuleRepository::new(db.connection())
+            .find_all()
+            .unwrap()
+    };
+    assert_eq!(rules.len(), 2);
+    let first_rule = rules.iter().find(|r| r.name == "规则一").unwrap();
+    let first_id = first_rule.id;
+    assert_eq!(first_rule.order, 1, "sortOrder 缺省 → MAX(sortOrder)+1");
+    assert_eq!(rules.iter().find(|r| r.name == "规则二").unwrap().order, 2);
+
+    // 显式 Int.MIN_VALUE 同缺省
+    let third = json!({
+        "name": "规则三",
+        "pattern": "e",
+        "replacement": "f",
+        "sortOrder": i32::MIN
+    })
+    .to_string();
+    post_write_json(
+        app.clone(),
+        "/saveReplaceRule",
+        Some("application/json"),
+        &auth,
+        third.as_bytes(),
+    )
+    .await;
+    let rules = {
+        let db = state.db.lock().await;
+        legado_db::repository::replace_rule_repository::ReplaceRuleRepository::new(db.connection())
+            .find_all()
+            .unwrap()
+    };
+    assert_eq!(rules.iter().find(|r| r.name == "规则三").unwrap().order, 3);
+
+    // id 命中 → 更新既有行（不新增）
+    let update = json!({
+        "id": first_id,
+        "name": "规则一改",
+        "pattern": "a2",
+        "replacement": "b2",
+        "isRegex": false,
+        "sortOrder": 9
+    })
+    .to_string();
+    post_write_json(
+        app,
+        "/saveReplaceRule",
+        Some("application/json"),
+        &auth,
+        update.as_bytes(),
+    )
+    .await;
+    let rules = {
+        let db = state.db.lock().await;
+        legado_db::repository::replace_rule_repository::ReplaceRuleRepository::new(db.connection())
+            .find_all()
+            .unwrap()
+    };
+    assert_eq!(rules.len(), 3, "id 命中应更新而非新增");
+    let updated = rules.iter().find(|r| r.id == first_id).unwrap();
+    assert_eq!(updated.name, "规则一改");
+    assert_eq!(updated.order, 9);
+}
+
+#[tokio::test]
+async fn test_b6_delete_replace_rule() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let id = seed_replace_rule(
+        &state,
+        &legado_core::models::ReplaceRule {
+            name: "待删".to_string(),
+            pattern: "x".to_string(),
+            ..Default::default()
+        },
+    )
+    .await;
+    let app = create_router(state.clone());
+    let auth = [(B6_TOKEN, "secret")];
+
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/deleteReplaceRule",
+        Some("application/json"),
+        &auth,
+        b"",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "数据不能为空");
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/deleteReplaceRule",
+        Some("application/json"),
+        &auth,
+        b"not-json",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "格式不对");
+
+    let body = json!({"id": id}).to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/deleteReplaceRule",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], false, "原版默认信封 rd={rd}");
+    assert_eq!(rd["errorMsg"], "未知错误,请联系开发者!");
+
+    let count = {
+        let db = state.db.lock().await;
+        legado_db::repository::replace_rule_repository::ReplaceRuleRepository::new(db.connection())
+            .count()
+            .unwrap()
+    };
+    assert_eq!(count, 0);
+
+    // 不存在 id 亦成功（Room @Delete 语义）
+    let (_, _, rd) = post_write_json(
+        app,
+        "/deleteReplaceRule",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "未知错误,请联系开发者!", "rd={rd}");
+}
+
+#[tokio::test]
+async fn test_b6_test_replace_rule_semantics() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let app = create_router(state);
+    let auth = [(B6_TOKEN, "secret")];
+
+    // 缺参 / 坏 JSON / 缺 rule
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/testReplaceRule",
+        Some("application/json"),
+        &auth,
+        b"",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "数据不能为空");
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/testReplaceRule",
+        Some("application/json"),
+        &auth,
+        b"not-json",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "格式不对");
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/testReplaceRule",
+        Some("application/json"),
+        &auth,
+        br#"{"text":"abc"}"#,
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "格式不对");
+
+    // 字面量替换
+    let body = json!({
+        "rule": {"pattern": "abc", "replacement": "X", "isRegex": false},
+        "text": "abcabc"
+    })
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/testReplaceRule",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], "XX");
+
+    // 正则分组替换
+    let body = json!({
+        "rule": {"pattern": "a(b+)c", "replacement": "$1", "isRegex": true},
+        "text": "abbbc"
+    })
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/testReplaceRule",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], "bbb");
+
+    // rule 以 JSON 字符串传入（原版 `it is String` 分支）
+    let rule_json = r#"{"pattern":"a","replacement":"b","isRegex":false}"#;
+    let body = json!({"rule": rule_json, "text": "aa"}).to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/testReplaceRule",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], "bb");
+
+    // 空 pattern：原版 setErrorMsg 后继续执行，被 setData 覆盖为成功
+    let body = json!({
+        "rule": {"pattern": "", "replacement": "X", "isRegex": false},
+        "text": "ab"
+    })
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/testReplaceRule",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], "XaXbX");
+    assert_eq!(rd["errorMsg"], "", "setData 覆盖空 pattern 的 errorMsg");
+
+    // 非法正则：错误文本作为成功数据返回（原版 catch → stackTraceStr）
+    let body = json!({
+        "rule": {"pattern": "(", "replacement": "x", "isRegex": true},
+        "text": "text"
+    })
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app.clone(),
+        "/testReplaceRule",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert!(rd["data"].is_string(), "rd={rd}");
+    assert_ne!(rd["data"], "text");
+
+    // text 缺失/类型不符：原版未捕获异常 → 500 text/plain + close
+    let (status, headers, bytes) = post_write_raw(
+        app,
+        "/testReplaceRule",
+        Some("application/json"),
+        &auth,
+        br#"{"rule":{"pattern":"a","replacement":"b"},"text":123}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert!(
+        header_str(&headers, "content-type").starts_with("text/plain"),
+        "500 应为 text/plain"
+    );
+    assert_eq!(header_str(&headers, "connection"), "close");
+    assert!(!bytes.is_empty());
+}
+
+#[tokio::test]
+async fn test_b6_save_js_source_validation_chain() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let app = create_router(state);
+    let script = b"var config = { bookSourceUrl: 'https://b6.js/1', bookSourceName: 'JS' };";
+
+    // 错误令牌（先于专项校验链）
+    let (_, headers, rd) = post_js_source_with(
+        app.clone(),
+        "/saveJsSource",
+        Some("wrong"),
+        None,
+        Some(script.len()),
+        &[],
+        script,
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], B4_TOKEN_ERROR, "rd={rd}");
+    assert_eq!(header_str(&headers, "connection"), "close");
+
+    // Content-Type 必须 text/plain
+    let (_, headers, rd) = post_js_source_with(
+        app.clone(),
+        "/saveJsSource",
+        Some("secret"),
+        Some("application/json"),
+        Some(script.len()),
+        &[],
+        script,
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "JS源请求 Content-Type 必须为 text/plain");
+    assert_eq!(header_str(&headers, "connection"), "close");
+
+    // Content-Length 必须提供 / 可解析
+    let (_, headers, rd) = post_js_source_with(
+        app.clone(),
+        "/saveJsSource",
+        Some("secret"),
+        None,
+        None,
+        &[],
+        script,
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "JS源请求必须提供 Content-Length");
+    assert_eq!(header_str(&headers, "connection"), "close");
+
+    // 超限
+    let (_, _, rd) = post_js_source_with(
+        app.clone(),
+        "/saveJsSource",
+        Some("secret"),
+        None,
+        Some(1024 * 1024 + 1),
+        &[],
+        script,
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "JS源脚本不能超过 1 MiB");
+
+    // Transfer-Encoding 在 Content-Type 之前拒绝
+    let (_, _, rd) = post_js_source_with(
+        app.clone(),
+        "/saveJsSource",
+        Some("secret"),
+        Some("application/json"),
+        Some(script.len()),
+        &[("Transfer-Encoding", "chunked")],
+        script,
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "JS源请求不支持 Transfer-Encoding");
+
+    // 空体（Content-Length: 0）→ 数据不能为空（控制器错误，不关连接）
+    let (_, headers, rd) = post_js_source_with(
+        app.clone(),
+        "/saveJsSource",
+        Some("secret"),
+        None,
+        Some(0),
+        &[],
+        b"",
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "数据不能为空", "rd={rd}");
+    assert_ne!(header_str(&headers, "connection"), "close");
+
+    // 非法脚本：提取失败文案（非令牌错误）
+    let (_, _, rd) = post_js_source_with(
+        app,
+        "/saveJsSource",
+        Some("secret"),
+        None,
+        Some(script.len()),
+        &[],
+        script,
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], false, "rd={rd}");
+    assert_ne!(rd["errorMsg"], B4_TOKEN_ERROR);
+    assert!(
+        !rd["errorMsg"].as_str().unwrap_or_default().is_empty(),
+        "rd={rd}"
+    );
+}
+
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn test_b6_save_js_source_success_and_upsert_semantics() {
+    const SCRIPT: &str = "var config = {\n  bookSourceUrl: 'https://b6.js/1',\n  bookSourceName: 'JS一'\n};\nfunction search(k){ return k; }\nfunction getChapters(){ return []; }\nfunction getContent(){ return ''; }";
+
+    fn script_for(url: &str, name: &str) -> String {
+        format!(
+            "var config = {{\n  bookSourceUrl: '{url}',\n  bookSourceName: '{name}'\n}};\nfunction search(k){{ return k; }}\nfunction getChapters(){{ return []; }}\nfunction getContent(){{ return ''; }}"
+        )
+    }
+
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let app = create_router(state.clone());
+
+    // 正例：提取 → 落库 → 返回保存后的源
+    let (_, _, rd) = post_js_source_with(
+        app.clone(),
+        "/saveJsSource",
+        Some("secret"),
+        None,
+        Some(SCRIPT.len()),
+        &[],
+        SCRIPT.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["bookSourceUrl"], "https://b6.js/1");
+    assert_eq!(rd["data"]["bookSourceName"], "JS一");
+    assert_eq!(rd["data"]["mainJs"], SCRIPT);
+    let saved_last_update = rd["data"]["lastUpdateTime"].as_i64().unwrap();
+    assert!(saved_last_update > 0, "prepareForSave 应写入时间戳");
+
+    // 同内容再次保存：未变化 → 返回旧对象、时间戳不变
+    let (_, _, rd) = post_js_source_with(
+        app.clone(),
+        "/saveJsSource",
+        Some("secret"),
+        None,
+        Some(SCRIPT.len()),
+        &[],
+        SCRIPT.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["lastUpdateTime"], saved_last_update);
+
+    // openedSourceUrl 不存在 → 原版异常文案
+    let script_two = script_for("https://b6.js/2", "JS二");
+    let (_, _, rd) = post_js_source_with(
+        app.clone(),
+        "/saveJsSource?openedSourceUrl=https%3A%2F%2Fb6.js%2Fmissing",
+        Some("secret"),
+        None,
+        Some(script_two.len()),
+        &[],
+        script_two.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "原书源已不存在，请重新打开后保存");
+
+    // 目标冲突：打开 A、保存目标 B（B 已存在）
+    seed_book_source(
+        &state,
+        legado_core::models::BookSource {
+            book_source_url: "https://b6.js/a".into(),
+            book_source_name: "A".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    seed_book_source(
+        &state,
+        legado_core::models::BookSource {
+            book_source_url: "https://b6.js/b".into(),
+            book_source_name: "B".into(),
+            ..Default::default()
+        },
+    )
+    .await;
+    let script_b = script_for("https://b6.js/b", "B改");
+    let (_, _, rd) = post_js_source_with(
+        app.clone(),
+        "/saveJsSource?openedSourceUrl=https%3A%2F%2Fb6.js%2Fa",
+        Some("secret"),
+        None,
+        Some(script_b.len()),
+        &[],
+        script_b.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["errorMsg"], "目标书源URL已存在，请先删除目标书源");
+
+    // URL 变更：删除旧行、写入新 URL
+    let script_c = script_for("https://b6.js/c", "C");
+    let (_, _, rd) = post_js_source_with(
+        app.clone(),
+        "/saveJsSource?openedSourceUrl=https%3A%2F%2Fb6.js%2Fa",
+        Some("secret"),
+        None,
+        Some(script_c.len()),
+        &[],
+        script_c.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["bookSourceUrl"], "https://b6.js/c");
+    let (_, rd) = get_json(
+        app.clone(),
+        &format!("/getBookSource?url={}", enc("https://b6.js/a")),
+    )
+    .await;
+    assert_eq!(
+        rd["errorMsg"], "未找到源，请检查书源地址",
+        "旧 URL 应删除 rd={rd}"
+    );
+
+    // 保留用户状态：enabled/customOrder/weight/respondTime
+    seed_book_source(
+        &state,
+        legado_core::models::BookSource {
+            book_source_url: "https://b6.js/d".into(),
+            book_source_name: "D旧".into(),
+            enabled: false,
+            enabled_explore: false,
+            custom_order: 7,
+            weight: 9,
+            respond_time: 123,
+            ..Default::default()
+        },
+    )
+    .await;
+    let script_d = script_for("https://b6.js/d", "D新");
+    let (_, _, rd) = post_js_source_with(
+        app.clone(),
+        "/saveJsSource",
+        Some("secret"),
+        None,
+        Some(script_d.len()),
+        &[],
+        script_d.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["bookSourceName"], "D新");
+    assert_eq!(rd["data"]["enabled"], false);
+    assert_eq!(rd["data"]["enabledExplore"], false);
+    assert_eq!(rd["data"]["customOrder"], 7);
+    assert_eq!(rd["data"]["weight"], 9);
+    assert_eq!(rd["data"]["respondTime"], 123);
+
+    // 落库校验
+    let (_, rd) = get_json(
+        app,
+        &format!("/getBookSource?url={}", enc("https://b6.js/1")),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"]["mainJs"], SCRIPT);
+}
+
+#[cfg(feature = "quickjs")]
+#[tokio::test]
+async fn test_b6_test_replace_rule_js_expression() {
+    let state = make_test_state();
+    seed_config(&state, "config:jsSourceApiToken", "secret").await;
+    let app = create_router(state);
+    let auth = [(B6_TOKEN, "secret")];
+
+    let body = json!({
+        "rule": {"pattern": "a", "replacement": "@js:result + '!'", "isRegex": true},
+        "text": "a"
+    })
+    .to_string();
+    let (_, _, rd) = post_write_json(
+        app,
+        "/testReplaceRule",
+        Some("application/json"),
+        &auth,
+        body.as_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["data"], "a!");
+}

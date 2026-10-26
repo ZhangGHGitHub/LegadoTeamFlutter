@@ -45,11 +45,23 @@
 //! 字节级相等（复用 server.rs MCP 同一比较实现）；`config:jsSourceApiTokenRequired`
 //! 缺省 true；失败文案「Web 书源访问令牌未配置或不正确」+ `Connection: close`。
 //!
-//! 写端点剩余清单（B4 未纳入，ACTIVE_PLAN L804 同批登记项，后续批次）：
-//! `saveBookSource(s)`/`saveJsSource`/`deleteBookSources`/`saveRssSource(s)`/
-//! `deleteRssSources`/`saveReplaceRule`/`deleteReplaceRule`/`testReplaceRule`
-//! （原版受 `PROTECTED_SOURCE_WRITE_ROUTES` 保护 + saveJsSource 独立校验链）。
-//! `/refreshToc` 独立入口未纳入。
+//! B6 批（2026-10-26，ACTIVE_PLAN「Web 写端点 9 条」登记项；实为 10 条路径，
+//! 与 `PROTECTED_SOURCE_WRITE_ROUTES` 逐条核对）：
+//!
+//! | 端点 | 原版实现 | 备注 |
+//! |---|---|---|
+//! | POST `/saveBookSource` | `BookSourceController.saveSource`（:37-52） | **令牌保护**；REPLACE upsert；成功 data="" |
+//! | POST `/saveBookSources` | `BookSourceController.saveSources`（:54-70） | **令牌保护**；单事务批量（原版逐条，登记）；返回成功数组 |
+//! | POST `/deleteBookSources` | `BookSourceController.deleteSources`（:207-216） | **令牌保护**；数组去重删行 + sourceVariable 缓存 |
+//! | POST `/saveJsSource` | `BookSourceController.saveJsSource`（:72-96） | **令牌保护 + 独立校验链**（:98-129）；text/plain；保留用户态/冲突校验 |
+//! | POST `/saveRssSource` | `RssSourceController.saveSource`（:24-38） | **令牌保护** |
+//! | POST `/saveRssSources` | `RssSourceController.saveSources`（:40-55） | **令牌保护**；单事务批量 |
+//! | POST `/deleteRssSources` | `RssSourceController.deleteSources`（:68-76） | **令牌保护**；删源 + 文章 + 缓存变量 |
+//! | POST `/saveReplaceRule` | `ReplaceRuleController.saveRule`（:23-45） | **令牌保护**；sortOrder 缺省 → max+1；成功保留原版默认错误信封（登记） |
+//! | POST `/deleteReplaceRule` | `ReplaceRuleController.delete`（:48-59） | **令牌保护**；同上 |
+//! | POST `/testReplaceRule` | `ReplaceRuleController.testRule`（:68-107） | **令牌保护**；不落库；复用 content_processor 单实现 |
+//!
+//! 剩余独立入口：`/refreshToc`（GET，未纳入）。
 //!
 //! B5 批（2026-10-26，ACTIVE_PLAN「WS 原版路径别名」登记项）：
 //! 原版 WebSocket 调试通道已在**主服务 port+1** 的独立监听上落地
@@ -73,6 +85,7 @@ pub mod book_json;
 pub mod http_log;
 pub mod review_api;
 pub mod source_api;
+pub mod source_write_api;
 
 use std::sync::Arc;
 
@@ -209,6 +222,42 @@ pub fn legacy_routes() -> Router<Arc<AppState>> {
         .route("/legacyReviewPage", get(review_api::legacy_review_page))
         .route("/openLegacyReview", post(review_api::open_legacy_review))
         .route("/runLegacyReview", post(review_api::run_legacy_review))
+        // B6 源写端点（source_write_api.rs；10 条全部受令牌保护）。
+        // 单独挂载以放宽请求体上限（axum 默认 2MB 会拒收大批量源推送）
+        .merge(
+            Router::new()
+                .route("/saveBookSource", post(source_write_api::save_book_source))
+                .route(
+                    "/saveBookSources",
+                    post(source_write_api::save_book_sources),
+                )
+                .route(
+                    "/deleteBookSources",
+                    post(source_write_api::delete_book_sources),
+                )
+                .route("/saveJsSource", post(source_write_api::save_js_source))
+                .route("/saveRssSource", post(source_write_api::save_rss_source))
+                .route("/saveRssSources", post(source_write_api::save_rss_sources))
+                .route(
+                    "/deleteRssSources",
+                    post(source_write_api::delete_rss_sources),
+                )
+                .route(
+                    "/saveReplaceRule",
+                    post(source_write_api::save_replace_rule),
+                )
+                .route(
+                    "/deleteReplaceRule",
+                    post(source_write_api::delete_replace_rule),
+                )
+                .route(
+                    "/testReplaceRule",
+                    post(source_write_api::test_replace_rule),
+                )
+                .layer(axum::extract::DefaultBodyLimit::max(
+                    source_write_api::SOURCE_WRITE_MAX_BODY_BYTES,
+                )),
+        )
         // addLocalBook 单独挂载以放宽 body 上限（axum 默认 2MB 会拒传书；
         // 上限 = 500MB 文件上限 + 1MB multipart 开销余量）
         .merge(
