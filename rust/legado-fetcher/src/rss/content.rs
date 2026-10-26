@@ -204,12 +204,17 @@ pub async fn fetch_content(
         // 按列表顺序 await，异常从对应位置抛出，无部分返回）——
         // `buffered` 在异常处短路并丢弃未完成 future，语义等价。
         log::debug!("[rss] ◇并发解析正文,总页数:{}", first.next_urls.len());
-        let pages = futures::stream::iter(first.next_urls.iter().map(|next_url| {
+        // 闭包按值捕获下一页 URL：`iter(...).map(|&String| …)` 会让编译器
+        // 要求闭包对所有生命周期实现 `FnOnce`（Rust 高阶生命周期限制），
+        // 宿主以 `tokio::spawn`（`'static`）驱动本函数时无法满足。改为
+        // 消费 `Vec<String>` + `async move`，请求顺序/并发度/结果零变化。
+        let next_urls = first.next_urls.clone();
+        let pages = futures::stream::iter(next_urls.into_iter().map(|next_url| async move {
             fetch_content_page(
                 client,
                 rate_limiter,
                 source,
-                next_url,
+                &next_url,
                 article_type,
                 rule_data_variable,
                 article_json,
@@ -217,6 +222,7 @@ pub async fn fetch_content(
                 login_info_json,
                 false,
             )
+            .await
         }))
         .buffered(CONTENT_PAGE_CONCURRENCY);
         let mut pages = pages;

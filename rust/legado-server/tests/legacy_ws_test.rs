@@ -428,19 +428,326 @@ async fn test_unknown_rss_source_reports_missing() {
     handle.abort();
 }
 
-// ─── 5. RSS 能力降级（协议走完，显式说明，不伪造解析）──────────────────────
+// ─── 5. 订阅源调试（批15e：接 15a/15b/15c RSS 引擎）────────────────────────
 
+/// 规则列表页：2 篇 + 下一页（描述/图片字段用于首条字段族断言）
+const RSS_LIST_HTML: &str = r#"<html><body>
+<div class="item"><h2 class="title">文章一</h2><a class="link" href="/a/1">一</a><span class="desc">描述一</span></div>
+<div class="item"><h2 class="title">文章二</h2><a class="link" href="/a/2">二</a><span class="desc">描述二</span></div>
+<a class="next" href="/list?p=2">下一页</a>
+</body></html>"#;
+
+/// 分类页：1 篇
+const RSS_TECH_HTML: &str = r#"<html><body>
+<div class="item"><h2 class="title">科技文章</h2><a class="link" href="/a/1">一</a><span class="desc">科技描述</span></div>
+</body></html>"#;
+
+/// 搜索页：1 篇
+const RSS_SEARCH_HTML: &str = r#"<html><body>
+<div class="item"><h2 class="title">搜索结果</h2><a class="link" href="/a/1">一</a><span class="desc">搜索描述</span></div>
+</body></html>"#;
+
+/// 正文页
+const RSS_CONTENT_HTML: &str = r#"<html><body><div class="content">回环正文甲</div></body></html>"#;
+
+/// 默认解析 XML feed（无规则源）
+const RSS_FEED_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0"><channel><title>回环订阅</title>
+<item><title>Feed 文章一</title><link>http://feed.example/1</link><description>Feed 描述一</description></item>
+<item><title>Feed 文章二</title><link>http://feed.example/2</link><description>Feed 描述二</description></item>
+</channel></rss>"#;
+
+/// 回环 RSS 源站（列表 / 分类 / 搜索 / 正文 / feed）
+async fn start_rss_debug_site() -> String {
+    use axum::http::header::CONTENT_TYPE;
+    use axum::response::Html;
+    use axum::routing::get;
+
+    let app = axum::Router::new()
+        // 默认分类（无 sortUrl 配置）按 sourceUrl 请求根路径
+        .route("/", get(|| async { Html(RSS_LIST_HTML.to_string()) }))
+        .route("/list", get(|| async { Html(RSS_LIST_HTML.to_string()) }))
+        .route("/tech", get(|| async { Html(RSS_TECH_HTML.to_string()) }))
+        .route(
+            "/search",
+            get(|| async { Html(RSS_SEARCH_HTML.to_string()) }),
+        )
+        .route("/a/1", get(|| async { Html(RSS_CONTENT_HTML.to_string()) }))
+        .route(
+            "/feed",
+            get(|| async {
+                (
+                    [(CONTENT_TYPE, "application/rss+xml; charset=utf-8")],
+                    RSS_FEED_XML,
+                )
+            }),
+        );
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, app).await;
+    });
+    format!("http://{addr}")
+}
+
+/// 规则列表源：描述规则非空 → 列表调试止步于「存在描述规则」
+fn rss_list_source(base: &str) -> RssSource {
+    RssSource {
+        source_url: base.to_string(),
+        source_name: "批15e 列表源".to_string(),
+        enabled: true,
+        rule_articles: Some(".item".to_string()),
+        rule_next_page: Some(".next@href".to_string()),
+        rule_title: Some(".title@text".to_string()),
+        rule_description: Some(".desc@text".to_string()),
+        rule_link: Some(".link@href".to_string()),
+        ..Default::default()
+    }
+}
+
+/// 正文源：无描述规则 + 正文规则非空 → 列表后解析首篇正文
+fn rss_content_source(base: &str) -> RssSource {
+    RssSource {
+        rule_description: None,
+        rule_content: Some(".content@text".to_string()),
+        ..rss_list_source(base)
+    }
+}
+
+/// 搜索源：`searchUrl` 模板 + 描述规则（避免进入正文阶段）
+fn rss_search_source(base: &str) -> RssSource {
+    RssSource {
+        search_url: Some(format!("{base}/search?kw={{{{key}}}}")),
+        ..rss_list_source(base)
+    }
+}
+
+/// 列表调试：阶段行 + 请求行 + 列表大小/下一页/首条字段族（真实引擎）
 #[tokio::test]
-async fn test_rss_existing_source_degrades_explicitly() {
+async fn test_rss_debug_default_sort_list_logs_stage_and_fields() {
     let _lock = DEBUG_SLOT_TEST_LOCK.lock().await;
-    let (_http_addr, ws_addr, handle) = start_server_with(|| {
+    let base = start_rss_debug_site().await;
+    let base_for_seed = base.clone();
+    let (_http_addr, ws_addr, handle) = start_server_with(move || {
+        let db = new_db();
+        disable_token(&db);
+        seed_rss_source(&db, rss_list_source(&base_for_seed));
+        db
+    })
+    .await;
+
+    let mut ws = connect(&format!("ws://{ws_addr}/rssSourceDebug"), Some("legado"))
+        .await
+        .unwrap();
+    // 原版 RSS WS 首包只有 tag；不带 key → 两参默认分类流程
+    ws.send(Message::Text(
+        serde_json::json!({ "tag": base }).to_string().into(),
+    ))
+    .await
+    .unwrap();
+    let (texts, close) = collect_until_close(ws).await;
+    assert_eq!(close, Some((1000, "调试结束".to_string())), "{texts:#?}");
+
+    // 时间前缀（阶段间空行是原版 showTime=false 的原样空串）
+    for line in texts.iter().filter(|line| !line.is_empty()) {
+        assert!(
+            line.starts_with('[') && line.get(10..12) == Some("] "),
+            "日志行缺少原版时间前缀: {line}"
+        );
+    }
+
+    let expected: Vec<String> = vec![
+        "︾开始解析".to_string(),
+        format!("≡获取成功:{base}"),
+        "┌获取列表".to_string(),
+        "└列表大小:2".to_string(),
+        "┌获取下一页链接".to_string(),
+        format!("└{base}/list?p=2"),
+        "┌获取标题".to_string(),
+        "└文章一".to_string(),
+        "┌获取时间".to_string(),
+        "┌获取描述".to_string(),
+        "└描述一".to_string(),
+        "┌获取图片url".to_string(),
+        "┌获取文章链接".to_string(),
+        format!("└{base}/a/1"),
+        "⇒存在描述规则，不解析内容页".to_string(),
+        "︽解析完成".to_string(),
+    ];
+    let needles: Vec<&str> = expected.iter().map(String::as_str).collect();
+    assert_ordered(&texts, &needles);
+
+    // 无时间/图片规则时值行为原版 `└`（`getString` 空规则 → 空串）
+    for field in ["┌获取时间", "┌获取图片url"] {
+        let index = texts
+            .iter()
+            .position(|line| line.contains(field))
+            .unwrap_or_else(|| panic!("应有字段行 {field}: {texts:#?}"));
+        assert!(
+            texts[index + 1].ends_with("] └"),
+            "{field} 的空规则必须输出空值行: {:?}",
+            texts[index + 1]
+        );
+    }
+
+    handle.abort();
+}
+
+/// 正文调试：列表 → 阶段空行 → 首篇正文（真实 `fetch_content`）
+#[tokio::test]
+async fn test_rss_debug_content_stage_fetches_article_body() {
+    let _lock = DEBUG_SLOT_TEST_LOCK.lock().await;
+    let base = start_rss_debug_site().await;
+    let base_for_seed = base.clone();
+    let (_http_addr, ws_addr, handle) = start_server_with(move || {
+        let db = new_db();
+        disable_token(&db);
+        seed_rss_source(&db, rss_content_source(&base_for_seed));
+        db
+    })
+    .await;
+
+    let mut ws = connect(&format!("ws://{ws_addr}/rssSourceDebug"), Some("legado"))
+        .await
+        .unwrap();
+    ws.send(Message::Text(
+        serde_json::json!({ "tag": base }).to_string().into(),
+    ))
+    .await
+    .unwrap();
+    let (texts, close) = collect_until_close(ws).await;
+    assert_eq!(close, Some((1000, "调试结束".to_string())), "{texts:#?}");
+
+    let expected: Vec<String> = vec![
+        "︾开始解析".to_string(),
+        format!("≡获取成功:{base}"),
+        "┌获取列表".to_string(),
+        "┌获取描述".to_string(),
+        "└描述规则为空，将会解析内容页".to_string(),
+        "︽列表页解析完成".to_string(),
+        "︾开始解析内容页".to_string(),
+        format!("≡获取成功:{base}/a/1"),
+        "回环正文甲".to_string(),
+        "︽内容页解析完成".to_string(),
+    ];
+    let needles: Vec<&str> = expected.iter().map(String::as_str).collect();
+    assert_ordered(&texts, &needles);
+
+    // 原版 `log(debugSource, showTime = false)`：列表完成与正文开始之间的空行
+    let list_done = texts
+        .iter()
+        .position(|line| line.contains("︽列表页解析完成"))
+        .expect("应有列表完成行");
+    assert_eq!(
+        texts.get(list_done + 1).map(String::as_str),
+        Some(""),
+        "列表完成与正文开始之间应有原版空行: {texts:#?}"
+    );
+
+    handle.abort();
+}
+
+/// 搜索调试：首包带 key → 原版三参分流「其它 → 搜索」
+#[tokio::test]
+async fn test_rss_debug_search_path_uses_search_url_and_key() {
+    let _lock = DEBUG_SLOT_TEST_LOCK.lock().await;
+    let base = start_rss_debug_site().await;
+    let base_for_seed = base.clone();
+    let (_http_addr, ws_addr, handle) = start_server_with(move || {
+        let db = new_db();
+        disable_token(&db);
+        seed_rss_source(&db, rss_search_source(&base_for_seed));
+        db
+    })
+    .await;
+
+    let mut ws = connect(&format!("ws://{ws_addr}/rssSourceDebug"), Some("legado"))
+        .await
+        .unwrap();
+    ws.send(Message::Text(
+        serde_json::json!({ "tag": base, "key": "kw" })
+            .to_string()
+            .into(),
+    ))
+    .await
+    .unwrap();
+    let (texts, close) = collect_until_close(ws).await;
+    assert_eq!(close, Some((1000, "调试结束".to_string())), "{texts:#?}");
+
+    let expected: Vec<String> = vec![
+        "⇒开始搜索关键字:kw".to_string(),
+        "︾开始解析搜索页".to_string(),
+        format!("≡获取成功:{base}/search?kw=kw"),
+        "┌获取列表".to_string(),
+        "└列表大小:1".to_string(),
+        "└搜索结果".to_string(),
+        "⇒存在描述规则，不解析内容页".to_string(),
+        "︽解析完成".to_string(),
+    ];
+    let needles: Vec<&str> = expected.iter().map(String::as_str).collect();
+    assert_ordered(&texts, &needles);
+
+    handle.abort();
+}
+
+/// 分类调试：`名称::URL` → 原版三参分流「分类页」
+#[tokio::test]
+async fn test_rss_debug_category_path_uses_given_sort_url() {
+    let _lock = DEBUG_SLOT_TEST_LOCK.lock().await;
+    let base = start_rss_debug_site().await;
+    let base_for_seed = base.clone();
+    let (_http_addr, ws_addr, handle) = start_server_with(move || {
+        let db = new_db();
+        disable_token(&db);
+        seed_rss_source(&db, rss_list_source(&base_for_seed));
+        db
+    })
+    .await;
+
+    let mut ws = connect(&format!("ws://{ws_addr}/rssSourceDebug"), Some("legado"))
+        .await
+        .unwrap();
+    ws.send(Message::Text(
+        serde_json::json!({ "tag": base, "key": format!("科技::{base}/tech") })
+            .to_string()
+            .into(),
+    ))
+    .await
+    .unwrap();
+    let (texts, close) = collect_until_close(ws).await;
+    assert_eq!(close, Some((1000, "调试结束".to_string())), "{texts:#?}");
+
+    let expected: Vec<String> = vec![
+        format!("⇒开始访问分类页:{base}/tech"),
+        "︾开始解析分类页".to_string(),
+        format!("≡获取成功:{base}/tech"),
+        "┌获取列表".to_string(),
+        "└列表大小:1".to_string(),
+        "└科技文章".to_string(),
+        "︽解析完成".to_string(),
+    ];
+    let needles: Vec<&str> = expected.iter().map(String::as_str).collect();
+    assert_ordered(&texts, &needles);
+
+    handle.abort();
+}
+
+/// 无规则源（默认解析 XML feed）：默认规则行 + 原版「存在描述规则」分支
+#[tokio::test]
+async fn test_rss_debug_default_parser_feed_logs_default_rule_line() {
+    let _lock = DEBUG_SLOT_TEST_LOCK.lock().await;
+    let base = start_rss_debug_site().await;
+    let feed_url = format!("{base}/feed");
+    let feed_for_seed = feed_url.clone();
+    let (_http_addr, ws_addr, handle) = start_server_with(move || {
         let db = new_db();
         disable_token(&db);
         seed_rss_source(
             &db,
             RssSource {
-                source_url: "https://rss.example.com/feed".to_string(),
-                source_name: "测试订阅源".to_string(),
+                source_url: feed_for_seed.clone(),
+                source_name: "批15e 默认解析源".to_string(),
+                enabled: true,
                 ..Default::default()
             },
         );
@@ -452,17 +759,79 @@ async fn test_rss_existing_source_degrades_explicitly() {
         .await
         .unwrap();
     ws.send(Message::Text(
-        r#"{"tag":"https://rss.example.com/feed","key":"k"}"#.into(),
+        serde_json::json!({ "tag": feed_url }).to_string().into(),
     ))
     .await
     .unwrap();
     let (texts, close) = collect_until_close(ws).await;
-    assert_eq!(texts.len(), 1, "只应有一条能力缺失说明: {texts:?}");
+    assert_eq!(close, Some((1000, "调试结束".to_string())), "{texts:#?}");
+
+    let expected: Vec<String> = vec![
+        "︾开始解析".to_string(),
+        format!("≡获取成功:{feed_url}"),
+        "⇒列表规则为空, 使用默认规则解析".to_string(),
+        // 原版分支条件只看「ruleArticles 非空 && ruleDescription 空白」，
+        // 默认解析源 ruleArticles 为空 → 走「存在描述规则，不解析内容页」
+        "⇒存在描述规则，不解析内容页".to_string(),
+        "︽解析完成".to_string(),
+    ];
+    let needles: Vec<&str> = expected.iter().map(String::as_str).collect();
+    assert_ordered(&texts, &needles);
+
+    handle.abort();
+}
+
+/// 错误路径：真实连接拒绝 → 请求失败行 + 错误链 → 1000 正常收尾
+#[tokio::test]
+async fn test_rss_debug_failure_logs_request_line_and_error_chain() {
+    let _lock = DEBUG_SLOT_TEST_LOCK.lock().await;
+    // 取一个刚释放的回环端口 → 连接必然被拒
+    let dead = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let dead_addr = dead.local_addr().unwrap();
+    drop(dead);
+    let base = format!("http://{dead_addr}");
+    let base_for_seed = base.clone();
+    let (_http_addr, ws_addr, handle) = start_server_with(move || {
+        let db = new_db();
+        disable_token(&db);
+        seed_rss_source(
+            &db,
+            RssSource {
+                source_url: base_for_seed.clone(),
+                source_name: "批15e 失败源".to_string(),
+                enabled: true,
+                ..Default::default()
+            },
+        );
+        db
+    })
+    .await;
+
+    let mut ws = connect(&format!("ws://{ws_addr}/rssSourceDebug"), Some("legado"))
+        .await
+        .unwrap();
+    ws.send(Message::Text(
+        serde_json::json!({ "tag": base }).to_string().into(),
+    ))
+    .await
+    .unwrap();
+    let (texts, close) = collect_until_close(ws).await;
+    assert_eq!(close, Some((1000, "调试结束".to_string())), "{texts:#?}");
+
+    assert_ordered(&texts, &["︾开始解析", "≡请求失败 GET "]);
+    let failure = texts
+        .iter()
+        .find(|line| line.contains("≡请求失败 GET "))
+        .expect("失败请求应有请求失败行");
     assert!(
-        texts[0].contains("未接入订阅源规则解析引擎"),
-        "必须显式说明降级，不得伪造解析结果: {texts:?}"
+        failure.contains("-> -1 "),
+        "失败行状态码应为 -1（对齐原版 state=-1）: {failure}"
     );
-    assert_eq!(close, Some((1000, "调试结束".to_string())));
+    assert!(
+        texts.iter().any(|line| line.contains("Connection failed")),
+        "应输出真实错误链（LegadoError Display）: {texts:#?}"
+    );
+
     handle.abort();
 }
 

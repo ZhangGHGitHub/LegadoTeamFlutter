@@ -74,9 +74,53 @@
 //! - `≡检测到重定向(<code>)`/`┌重定向后地址`：`LegadoResponse.url` 是最终 URL，
 //!   中间跳数不可见（请求测量行给的是原始请求 URL + 最终状态）；
 //!
-//! RSS 规则解析（`RssParserByRule`）在 Rust 侧无等价实现，订阅源调试仅走完
-//! 协议（校验/单槽/关闭码），随后显式发送能力缺失说明，不执行、不伪造解析
-//! 结果。发现页调试（`::`）同样无 Rust 发现规则引擎，显式说明后结束。
+//! # 订阅源调试（批15e：接 15a/15b/15c RSS 引擎）
+//!
+//! 原版语义逐条对照（`RssSourceDebugWebSocket.kt` / `Debug.kt:309-450` /
+//! `RssParserByRule.kt:36-140`）：
+//!
+//! | 语义 | 原版依据 |
+//! |---|---|
+//! | 首包只读 `tag`（= `sourceUrl`；空/空白 → 「输入不能为空」）；`key` 字段不会被 RSS WS 读取 | `RssSourceDebugWebSocket.kt:87-101` |
+//! | 首包通过后调用**两参** `Debug.startDebug(scope, rssSource)`：打印 `︾开始解析`，取 `sortUrls()` 首项（缺省 `("" to sourceUrl)`）请求第 1 页 | `RssSourceDebugWebSocket.kt:113`；`Debug.kt:309-343` |
+//! | 列表为空 → `⇒列表页解析成功，为空` + `︽解析完成`(1000) | `Debug.kt:317-321` |
+//! | `ruleArticles` 非空且 `ruleDescription` 空白 → `︽列表页解析完成` + 空行；`ruleContent` 空 → `⇒内容规则为空，默认获取整个网页`(1000)，否则解析首篇文章正文 | `Debug.kt:323-331` |
+//! | 其余（含默认规则源）→ `⇒存在描述规则，不解析内容页` + `︽解析完成`(1000) | `Debug.kt:332-336` |
+//! | 正文：`︾开始解析内容页` → 正文整段（带一次时间前缀）→ `︽内容页解析完成`(1000)；失败打印错误链(-1) | `Debug.kt:412-450` |
+//! | 列表解析阶段行：默认规则 `⇒列表规则为空, 使用默认规则解析`；规则列表 `┌获取列表`/`└列表大小:N`、`┌获取下一页链接`/`└<url>`、首条字段族 `┌获取标题`/`┌获取时间`/`┌获取描述`/`┌获取图片url`/`┌获取文章链接` | `RssParserByRule.kt:36-92,95-140` |
+//! | 响应体行 state 10/20/30/40 由 WS 丢弃；`-1`/`1000` 打印后 close 1000「调试结束」 | `RssSourceDebugWebSocket.kt:24,144-156` |
+//! | 三参 `Debug.startDebug(scope, rssSource, key)`：含 `::` → 分类页；绝对 URL → 正文页；其它 → 搜索页（`searchUrl` 空 → `⇒搜索URL为空`(-1)） | `Debug.kt:346-410` |
+//!
+//! 本实现的接线：
+//!
+//! - **无 `key`（原版 WS 首包形态）**逐行复刻两参流程：`︾开始解析` →
+//!   `sortUrls()` 首项 → 列表（15a 默认解析 / 15b 规则列表+登录+分页）→
+//!   空/描述规则/正文三分支；
+//! - **带非空 `key`** 走原版 App 调试页三参分流（分类 / 绝对 URL 正文 /
+//!   搜索）。这是**加法式超集**：原版 RSS WS 类不读取 `key`，但官方
+//!   `api.md`「调试源」声明请求体为 `{key, tag}`，且三路都必须可达；
+//!   `key` 空/缺省时行为与原版 WS 完全一致（服务端只在 key 非空时分流）；
+//! - 引擎调用：`legado_fetcher::rss::fetch_articles`（列表/分类/登录/分页）与
+//!   `legado_fetcher::rss::content::fetch_content`（正文/正文分页）；
+//!   `sortUrls()` 的脚本求值与缓存复用 15b `sort_urls`（缓存键
+//!   `rssSortUrl_<md5>` 与原版 ACache 同口径）；
+//! - 请求级日志沿用批13 的 task-local 观测槽（`≡获取成功:<url>` + 测量行），
+//!   RSS 列表/正文请求都在本调试任务内同步 `await`，可被观测；
+//! - 登录态：`loginHeader_<url>` / `userInfo_<url>` 由服务器 DB 读取后交给
+//!   引擎（同源门控在引擎内完成，跨域 nextUrl 不外发凭据）。
+//!
+//! 未覆盖清单（fetcher 公共结果拿不到，禁止伪造）：
+//!
+//! - `└列表大小:N` 用真实**文章数**（原版打印 `getElements` 原始元素数，
+//!   即标题为空被丢弃前的数量，差异登记）；
+//! - 首条字段族只在文章非空时输出（原版对首元素求值后才判空标题丢弃，
+//!   极端空标题场景会多一组字段行）；
+//! - `第N页完成` / `◇正文总页数` / `◇并发解析正文,总页数` /
+//!   `┌获取正文下一页链接`/`└…`：正文分页与 nextUrl 求值在 fetcher 内部；
+//! - 逐元素字段求值过程（单条规则命中/异常字段的 `localizedMessage`）；
+//! - `≡检测到重定向(<code>)`：只拿得到最终 URL。
+//!
+//! 发现页调试（书源 `::`）同样无 Rust 发现规则引擎，显式说明后结束。
 //! `/searchBook` 原版路径本批未挂载（我方 `/ws/search` 保留）。
 //! 另：原版书源校验（`Debug.isChecking`）期间拒绝新调试（`tryAcquireCallback`
 //! 返回 false）；Rust server 无该状态机，单槽仅覆盖 WS 调试连接本身。
@@ -97,9 +141,15 @@ use base64::Engine as _;
 use serde_json::Value;
 use tokio::sync::mpsc;
 
+use legado_db::repository::cache_repository::CacheRepository;
 use legado_db::repository::rss_source_repository::RssSourceRepository;
 use legado_db::BookSourceRepository;
 use legado_net::HttpLogEntry;
+
+use legado_fetcher::rss::sort_urls::{
+    evaluate_sort_script, is_sort_script, resolve_sort_urls_with_cache, sort_cache_key,
+};
+use legado_fetcher::rss::{RssArticleItem, RssListPage};
 
 use crate::handlers::web_book::server_deps;
 use crate::legacy::source_api::{load_js_source_api_config, JsSourceApiConfig};
@@ -123,7 +173,15 @@ const CLOSE_REASON_DEBUG_FAILED: &str = "调试失败";
 /// 原版 `R.string.cannot_empty` 中文值（`values-zh/strings.xml:738`）
 const MSG_CANNOT_EMPTY: &str = "输入不能为空";
 /// 调试通道占用（`BookSourceDebugWebSocket.kt:104`）
-const MSG_DEBUG_BUSY: &str = "调试通道占用中，请稍后重试";
+pub(crate) const MSG_DEBUG_BUSY: &str = "调试通道占用中，请稍后重试";
+/// 原版 RSS 调试 WS 丢弃的状态码（响应体行，`RssSourceDebugWebSocket.kt:24`）
+///
+/// state 语义：10 = 列表响应体、20 = 正文响应体、30 = 目录响应体、
+/// 40 = 章节正文响应体（`RssParserByRule.kt:37`、`Rss.kt:212`、
+/// `BookChapterList.kt:49`、`BookContent.kt:52`）。这些行原样推给前端会
+/// 淹没阶段日志，故原版 WS 直接丢弃；本实现从不产生这些行，
+/// [`DebugSink::log_state`] 仍按同一口径过滤，保持 state 语义可核对。
+const RSS_NOT_PRINT_STATES: [i32; 4] = [10, 20, 30, 40];
 
 /// WebSocket 关闭码（对齐 `NanoWSD.WebSocketFrame.CloseCode`）
 const CLOSE_NORMAL: u16 = 1000;
@@ -138,13 +196,13 @@ static DEBUG_SLOT: Mutex<Option<u64>> = Mutex::new(None);
 static NEXT_DEBUG_OWNER: AtomicU64 = AtomicU64::new(1);
 
 /// 调试槽占用守卫（Drop 时释放；仅释放自己的槽）
-struct DebugSlot {
+pub(crate) struct DebugSlot {
     owner: u64,
 }
 
 impl DebugSlot {
     /// 尝试占用；已被他人占用返回 `None`（对齐 `Debug.tryAcquireCallback`）
-    fn try_acquire() -> Option<Self> {
+    pub(crate) fn try_acquire() -> Option<Self> {
         let owner = NEXT_DEBUG_OWNER.fetch_add(1, Ordering::Relaxed);
         let mut slot = DEBUG_SLOT
             .lock()
@@ -425,9 +483,12 @@ async fn read_first_message(socket: &mut WebSocket) -> Option<String> {
 // ─── 会话主循环 ─────────────────────────────────────────────────────────────
 
 /// 调试任务 → 连接循环的事件
-enum DebugEvent {
+pub(crate) enum DebugEvent {
     /// 一条原版日志（已含时间前缀，或 `showTime=false` 的原样空行）
     Log(String),
+    /// 失败行（原版 state=-1 的文本；原版通道按普通文本推送后关闭，
+    /// 自研通道据此映射 `debug_error`）
+    Error(String),
     /// 调试结束（state 1000 / -1）
     Done,
 }
@@ -504,12 +565,15 @@ async fn handle_book_source_debug(mut socket: WebSocket, state: Arc<AppState>) {
 }
 
 /// 订阅源调试连接（`RssSourceDebugWebSocket`）
+///
+/// 首包只校验 `tag`（原版 RSS WS 不读取 `key`）；`key` 非空时按原版 App
+/// 调试页三参分流执行（见 [`run_rss_source_debug`]），为空时复刻 WS 两参流程。
 async fn handle_rss_source_debug(mut socket: WebSocket, state: Arc<AppState>) {
     let Some(text) = read_first_message(&mut socket).await else {
         return;
     };
-    let tag = match parse_first_message(&text) {
-        FirstMessage::Parsed { tag, key: _ } => tag,
+    let (tag, key) = match parse_first_message(&text) {
+        FirstMessage::Parsed { tag, key } => (tag, key),
         FirstMessage::InvalidFormat => {
             close_with(&mut socket, CLOSE_POLICY_VIOLATION, CLOSE_REASON_BAD_AUTH).await;
             return;
@@ -527,13 +591,13 @@ async fn handle_rss_source_debug(mut socket: WebSocket, state: Arc<AppState>) {
     }
     let tag = tag.unwrap_or_default();
 
-    let exists = {
+    let source = {
         let db = state.db.lock().await;
         let lookup = RssSourceRepository::new(db.connection()).find_by_url(&tag);
         drop(db);
         match lookup {
-            Ok(Some(_)) => true,
-            Ok(None) => false,
+            Ok(Some(source)) => Some(source),
+            Ok(None) => None,
             Err(e) => {
                 tracing::warn!("WS 订阅源调试读取订阅源失败: {e}");
                 close_with(&mut socket, CLOSE_INTERNAL_ERROR, CLOSE_REASON_DEBUG_FAILED).await;
@@ -541,7 +605,7 @@ async fn handle_rss_source_debug(mut socket: WebSocket, state: Arc<AppState>) {
             }
         }
     };
-    if !exists {
+    let Some(source) = source else {
         send_then_close(
             &mut socket,
             "订阅源不存在",
@@ -550,7 +614,7 @@ async fn handle_rss_source_debug(mut socket: WebSocket, state: Arc<AppState>) {
         )
         .await;
         return;
-    }
+    };
 
     let Some(slot) = DebugSlot::try_acquire() else {
         send_then_close(
@@ -564,15 +628,12 @@ async fn handle_rss_source_debug(mut socket: WebSocket, state: Arc<AppState>) {
     };
 
     let (tx, rx) = mpsc::unbounded_channel();
-    let task = tokio::spawn(async move {
-        // RSS 规则解析引擎（RssParserByRule）在 Rust server 无可达实现：
-        // 不伪造解析结果，只显式说明能力缺失后结束。
-        let _ = tx.send(DebugEvent::Log(
-            "≡服务端未接入订阅源规则解析引擎（RssParserByRule 无 Rust 等价实现），本次调试未执行"
-                .to_string(),
-        ));
-        let _ = tx.send(DebugEvent::Done);
-    });
+    let sink = DebugSink::new(tx);
+    // 与书源调试同一单槽 + 同一 task-local 请求观测面
+    let task = tokio::spawn(legado_net::scope_debug_request_sink(
+        sink.request_sink(),
+        run_rss_source_debug(Arc::clone(&state), source, key, sink),
+    ));
     pump_debug_session(&mut socket, rx, task).await;
     drop(slot);
 }
@@ -592,7 +653,7 @@ async fn pump_debug_session(
         tokio::select! {
             biased;
             event = rx.recv() => match event {
-                Some(DebugEvent::Log(line)) => {
+                Some(DebugEvent::Log(line)) | Some(DebugEvent::Error(line)) => {
                     if send_text(socket, &line).await.is_err() {
                         break;
                     }
@@ -628,13 +689,13 @@ async fn pump_debug_session(
 /// `Clone` 是为了同时交给调试主流程与 `legado_net` 的任务局部请求观测回调
 /// （同一 `tx`，两条写入路径按完成顺序交错，与真实执行顺序一致）。
 #[derive(Clone)]
-struct DebugSink {
+pub(crate) struct DebugSink {
     tx: mpsc::UnboundedSender<DebugEvent>,
     start: Instant,
 }
 
 impl DebugSink {
-    fn new(tx: mpsc::UnboundedSender<DebugEvent>) -> Self {
+    pub(crate) fn new(tx: mpsc::UnboundedSender<DebugEvent>) -> Self {
         Self {
             tx,
             start: Instant::now(),
@@ -642,24 +703,44 @@ impl DebugSink {
     }
 
     /// `Debug.log(showTime = true)`
-    fn log(&self, msg: impl AsRef<str>) {
+    pub(crate) fn log(&self, msg: impl AsRef<str>) {
         let line = format!("{} {}", format_elapsed(self.start.elapsed()), msg.as_ref());
         let _ = self.tx.send(DebugEvent::Log(line));
     }
 
     /// `Debug.log(showTime = false)`（原版用于阶段间空行）
-    fn log_plain(&self, msg: impl AsRef<str>) {
+    pub(crate) fn log_plain(&self, msg: impl AsRef<str>) {
         let _ = self.tx.send(DebugEvent::Log(msg.as_ref().to_string()));
     }
 
-    fn done(&self) {
+    pub(crate) fn done(&self) {
         let _ = self.tx.send(DebugEvent::Done);
     }
 
+    /// 带 state 的原版日志（`Debug.Callback.printLog(state, msg)`）
+    ///
+    /// - state 10/20/30/40（响应体行）直接丢弃（原版 `notPrintState`）；
+    /// - state -1 → 失败行（自研通道映射 `debug_error`）并结束；
+    /// - state 1000 → 结束行（打印后 close 1000「调试结束」）。
+    fn log_state(&self, state: i32, msg: impl AsRef<str>) {
+        if RSS_NOT_PRINT_STATES.contains(&state) {
+            return;
+        }
+        let line = format!("{} {}", format_elapsed(self.start.elapsed()), msg.as_ref());
+        let event = if state == -1 {
+            DebugEvent::Error(line)
+        } else {
+            DebugEvent::Log(line)
+        };
+        let _ = self.tx.send(event);
+        if state == -1 || state == 1000 {
+            self.done();
+        }
+    }
+
     /// 错误分支（原版 state = -1，随后 printLog 关闭连接）
-    fn fail(&self, msg: impl AsRef<str>) {
-        self.log(msg);
-        self.done();
+    pub(crate) fn fail(&self, msg: impl AsRef<str>) {
+        self.log_state(-1, msg);
     }
 
     /// 单条 HTTP 请求的观测输出（请求级日志）
@@ -679,7 +760,7 @@ impl DebugSink {
     }
 
     /// 构造注入 `legado_net` 任务局部观测槽的回调（仅本调试任务内生效）
-    fn request_sink(&self) -> legado_net::DebugRequestSink {
+    pub(crate) fn request_sink(&self) -> legado_net::DebugRequestSink {
         let sink = self.clone();
         std::sync::Arc::new(move |entry: HttpLogEntry| sink.request(&entry))
     }
@@ -1049,6 +1130,334 @@ async fn content_stage(
     }
 }
 
+// ─── 订阅源调试执行（批15e：15a/15b/15c RSS 引擎）────────────────────────────
+
+/// RSS 调试执行上下文（引擎入参 + 宿主登录缓存快照）
+struct RssDebugContext {
+    /// 订阅源（含规则/分类/搜索配置）
+    source: legado_core::models::RssSource,
+    /// 抓取客户端（server_deps 注入：DB cookie 持久化）
+    client: legado_net::LegadoClient,
+    /// 源级限流注册表（与书源共享窗口语义）
+    rate_limiter: Arc<legado_fetcher::rate_limit::RateLimiterRegistry>,
+    /// `loginHeader_<url>`（同源门控在引擎内完成）
+    login_header: Option<String>,
+    /// `userInfo_<url>`
+    login_info: Option<String>,
+}
+
+impl RssDebugContext {
+    /// 组装调试上下文（DB 读在锁内完成，随后立即释放）
+    async fn build(
+        state: &Arc<AppState>,
+        source: legado_core::models::RssSource,
+    ) -> legado_core::LegadoResult<Self> {
+        let legado_fetcher::deps::FetcherDeps {
+            client,
+            rate_limiter,
+            login_header,
+            ..
+        } = server_deps(state)?;
+        let login_header = login_header
+            .as_ref()
+            .and_then(|lookup| lookup(&source.source_url));
+        let login_info = {
+            let db = state.db.lock().await;
+            CacheRepository::new(db.connection())
+                .get(&format!("userInfo_{}", source.source_url))
+                .ok()
+                .flatten()
+        };
+        Ok(Self {
+            source,
+            client,
+            rate_limiter,
+            login_header,
+            login_info,
+        })
+    }
+}
+
+/// `ruleArticles` 非空白（对齐 Kotlin `isNullOrBlank` 取反）
+fn has_rule_articles(source: &legado_core::models::RssSource) -> bool {
+    source
+        .rule_articles
+        .as_deref()
+        .is_some_and(|rule| !rule.trim().is_empty())
+}
+
+/// 规则是否为空/空白（对齐 Kotlin `isNullOrBlank`）
+fn rule_is_blank(rule: Option<&str>) -> bool {
+    rule.map(str::trim).unwrap_or("").is_empty()
+}
+
+/// 订阅源调试执行入口（原版 WS 两参 / App 调试页三参共用，单实现）
+///
+/// - `key` 为空/缺省：`Debug.startDebug(scope, rssSource)`（`Debug.kt:309-343`），
+///   即原版 `/rssSourceDebug` 首包只有 `tag` 时的真实行为；
+/// - `key` 非空：`Debug.startDebug(scope, rssSource, key)`（`Debug.kt:346-410`）
+///   三路分流（`::` 分类 / 绝对 URL 正文 / 其它搜索），供自研通道与
+///   `api.md` 声明的 `{key, tag}` 请求体使用。
+pub(crate) async fn run_rss_source_debug(
+    state: Arc<AppState>,
+    source: legado_core::models::RssSource,
+    key: Option<String>,
+    sink: DebugSink,
+) {
+    let ctx = match RssDebugContext::build(&state, source).await {
+        Ok(ctx) => ctx,
+        Err(e) => {
+            sink.fail(format_error_chain(&e));
+            return;
+        }
+    };
+    let key = key.as_deref().map(str::trim).filter(|key| !key.is_empty());
+    match key {
+        None => rss_default_debug(&state, &sink, &ctx).await,
+        Some(key) => rss_keyed_debug(&sink, &ctx, key).await,
+    }
+}
+
+/// 原版两参入口（`Debug.kt:309-343`）：默认分类首项 → 列表 → 内容
+async fn rss_default_debug(state: &Arc<AppState>, sink: &DebugSink, ctx: &RssDebugContext) {
+    sink.log("︾开始解析");
+    let sorts = resolve_rss_sort_urls(state, ctx).await;
+    // `sortUrls().firstOrNull() ?: ("" to sourceUrl)`
+    let (sort_name, sort_url) = sorts
+        .first()
+        .map(|entry| (entry.name.clone(), entry.url.clone()))
+        .unwrap_or_else(|| (String::new(), ctx.source.source_url.clone()));
+    rss_sort_debug(sink, ctx, &sort_name, &sort_url, None).await;
+}
+
+/// 原版三参入口（`Debug.kt:346-410`）：`::` 分类 / 绝对 URL 正文 / 其它搜索
+async fn rss_keyed_debug(sink: &DebugSink, ctx: &RssDebugContext, key: &str) {
+    if key.contains("::") {
+        // `substringBefore/substringAfter("::")`：不 trim，与原版一致
+        let (name, url) = key.split_once("::").unwrap_or(("", key));
+        sink.log(format!("⇒开始访问分类页:{url}"));
+        sink.log("︾开始解析分类页");
+        rss_sort_debug(sink, ctx, name, url, None).await;
+        return;
+    }
+    if is_abs_url(key) {
+        rss_abs_url_debug(sink, ctx, key).await;
+        return;
+    }
+    let search_url = ctx.source.search_url.as_deref().unwrap_or("");
+    if search_url.is_empty() {
+        // 原版 `⇒搜索URL为空`, state = -1（打印后关闭）
+        sink.fail("⇒搜索URL为空");
+        return;
+    }
+    sink.log(format!("⇒开始搜索关键字:{key}"));
+    sink.log("︾开始解析搜索页");
+    rss_sort_debug(sink, ctx, "搜索", search_url, Some(key)).await;
+}
+
+/// 绝对 URL 调试（`Debug.kt:353-373`）：仅「规则列表源 + 无描述规则」解析正文
+async fn rss_abs_url_debug(sink: &DebugSink, ctx: &RssDebugContext, key: &str) {
+    if !has_rule_articles(&ctx.source) || !rule_is_blank(ctx.source.rule_description.as_deref()) {
+        sink.log("⇒存在描述规则，不解析内容页");
+        sink.log_state(1000, "︽解析完成");
+        return;
+    }
+    let rule_content = ctx.source.rule_content.as_deref().unwrap_or("");
+    if rule_content.is_empty() {
+        sink.log_state(1000, "⇒内容规则为空，默认获取整个网页");
+        return;
+    }
+    sink.log(format!("⇒开始访问内容页:{key}"));
+    // 原版 `RssArticle().apply { origin = sourceUrl; link = key }`（type 默认 0）
+    let article = RssArticleItem {
+        origin: ctx.source.source_url.clone(),
+        link: key.to_string(),
+        ..Default::default()
+    };
+    rss_content_debug(sink, ctx, &article).await;
+}
+
+/// 列表阶段（`Debug.sortDebug`，`Debug.kt:375-427`）
+async fn rss_sort_debug(
+    sink: &DebugSink,
+    ctx: &RssDebugContext,
+    sort_name: &str,
+    sort_url: &str,
+    key: Option<&str>,
+) {
+    let fetched = legado_fetcher::rss::fetch_articles(
+        &ctx.client,
+        ctx.rate_limiter.as_ref(),
+        &ctx.source,
+        sort_name,
+        sort_url,
+        Some(1),
+        key,
+        ctx.login_header.as_deref(),
+        ctx.login_info.as_deref(),
+    )
+    .await;
+    let page = match fetched {
+        Ok(page) => page,
+        Err(e) => {
+            sink.fail(format_error_chain(&e));
+            return;
+        }
+    };
+
+    log_rss_list_parse(sink, ctx, &page);
+
+    if page.items.is_empty() {
+        sink.log("⇒列表页解析成功，为空");
+        sink.log_state(1000, "︽解析完成");
+        return;
+    }
+    if has_rule_articles(&ctx.source) && rule_is_blank(ctx.source.rule_description.as_deref()) {
+        sink.log("︽列表页解析完成");
+        // 原版 `log(debugSource, showTime = false)` 阶段间空行
+        sink.log_plain("");
+        let rule_content = ctx.source.rule_content.as_deref().unwrap_or("");
+        if rule_content.is_empty() {
+            sink.log_state(1000, "⇒内容规则为空，默认获取整个网页");
+        } else {
+            rss_content_debug(sink, ctx, &page.items[0]).await;
+        }
+    } else {
+        sink.log("⇒存在描述规则，不解析内容页");
+        sink.log_state(1000, "︽解析完成");
+    }
+}
+
+/// 列表解析阶段行（对齐 `RssParserByRule.kt:32-92`）
+///
+/// 默认规则分支只有一行 `⇒列表规则为空, 使用默认规则解析`；规则列表分支
+/// 打印列表大小、下一页链接与首条字段族。`└列表大小` 用真实文章数
+/// （原版为去空标题前的原始元素数，已在模块文档登记差异）。
+fn log_rss_list_parse(sink: &DebugSink, ctx: &RssDebugContext, page: &RssListPage) {
+    if !has_rule_articles(&ctx.source) {
+        sink.log("⇒列表规则为空, 使用默认规则解析");
+        return;
+    }
+    sink.log("┌获取列表");
+    sink.log(format!("└列表大小:{}", page.items.len()));
+    if ctx
+        .source
+        .rule_next_page
+        .as_deref()
+        .is_some_and(|rule| !rule.is_empty())
+    {
+        sink.log("┌获取下一页链接");
+        sink.log(format!("└{}", page.next_url.as_deref().unwrap_or("")));
+    }
+    if let Some(first) = page.items.first() {
+        log_rss_first_item(sink, ctx, first);
+    }
+}
+
+/// 首条文章字段族（`RssParserByRule.kt:95-140`，原版仅 `index == 0` 打印）
+fn log_rss_first_item(sink: &DebugSink, ctx: &RssDebugContext, item: &RssArticleItem) {
+    sink.log("┌获取标题");
+    sink.log(format!("└{}", item.title));
+    sink.log("┌获取时间");
+    // 原版 `getString(rulePubDate)` 无规则/无匹配均返回空串（非 null）
+    sink.log(format!("└{}", item.pub_date.as_deref().unwrap_or("")));
+    sink.log("┌获取描述");
+    if rule_is_blank(ctx.source.rule_description.as_deref()) {
+        sink.log("└描述规则为空，将会解析内容页");
+    } else {
+        sink.log(format!("└{}", item.description.as_deref().unwrap_or("")));
+    }
+    sink.log("┌获取图片url");
+    sink.log(format!("└{}", item.image.as_deref().unwrap_or("")));
+    sink.log("┌获取文章链接");
+    sink.log(format!("└{}", item.link));
+}
+
+/// 正文阶段（`Debug.rssContentDebug`，`Debug.kt:412-450`）
+async fn rss_content_debug(sink: &DebugSink, ctx: &RssDebugContext, article: &RssArticleItem) {
+    sink.log("︾开始解析内容页");
+    let article_json = rss_article_js_json(article);
+    let fetched = legado_fetcher::rss::content::fetch_content(
+        &ctx.client,
+        ctx.rate_limiter.as_ref(),
+        &ctx.source,
+        &article.link,
+        article.article_type,
+        article.variable.as_deref(),
+        Some(&article_json),
+        ctx.login_header.as_deref(),
+        ctx.login_info.as_deref(),
+    )
+    .await;
+    match fetched {
+        Ok(content) => {
+            // 原版 `log(debugSource, it)`：正文整段带一次时间前缀（多行原样）
+            sink.log(content);
+            sink.log_state(1000, "︽内容页解析完成");
+        }
+        Err(e) => sink.fail(format_error_chain(&e)),
+    }
+}
+
+/// 文章 → `rssArticle` JS 绑定 JSON（字段名对齐 Kotlin `RssArticle`）
+fn rss_article_js_json(article: &RssArticleItem) -> String {
+    serde_json::json!({
+        "origin": article.origin,
+        "sort": article.sort,
+        "title": article.title,
+        "link": article.link,
+        "pubDate": article.pub_date,
+        "description": article.description,
+        "content": article.content,
+        "image": article.image,
+        "variable": article.variable,
+        "type": article.article_type,
+    })
+    .to_string()
+}
+
+/// `sortUrls()` 解析（15b `sort_urls`）：脚本求值 + DB 缓存
+///
+/// 缓存键 `rssSortUrl_<md5(sourceUrl + configuredSortUrl)>` 与原版 ACache
+/// 同口径；仅在脚本形态配置下读写缓存（同原版）。
+async fn resolve_rss_sort_urls(
+    state: &Arc<AppState>,
+    ctx: &RssDebugContext,
+) -> Vec<legado_fetcher::rss::sort_urls::RssSortUrl> {
+    let configured = ctx.source.sort_url.as_deref();
+    let setup_script = legado_fetcher::source_setup::rss_source_js_setup_script(
+        &ctx.source,
+        ctx.login_header.as_deref(),
+        ctx.login_info.as_deref(),
+    )
+    .ok();
+    let cached = if configured.is_some_and(is_sort_script) {
+        let key = sort_cache_key(&ctx.source.source_url, configured);
+        let db = state.db.lock().await;
+        CacheRepository::new(db.connection())
+            .get(&key)
+            .ok()
+            .flatten()
+    } else {
+        None
+    };
+    let mut pending_write: Option<(String, String)> = None;
+    let entries = resolve_sort_urls_with_cache(
+        &ctx.source.source_url,
+        configured,
+        |_key| cached.clone(),
+        |key, value| pending_write = Some((key.to_string(), value.to_string())),
+        |script| evaluate_sort_script(&ctx.source, script, setup_script.clone()),
+    );
+    if let Some((key, value)) = pending_write {
+        let db = state.db.lock().await;
+        if let Err(e) = CacheRepository::new(db.connection()).put(&key, &value, 0) {
+            tracing::warn!("RSS sortUrl 缓存写入失败（{key}）: {e}");
+        }
+    }
+    entries
+}
+
 // ─── 底层收发 ───────────────────────────────────────────────────────────────
 
 /// 发送一条文本消息
@@ -1276,6 +1685,7 @@ mod tests {
         let lines: Vec<String> = std::iter::from_fn(|| rx.try_recv().ok())
             .map(|event| match event {
                 DebugEvent::Log(line) => line,
+                DebugEvent::Error(line) => panic!("请求观测不应产生失败事件: {line}"),
                 DebugEvent::Done => panic!("不应有结束事件"),
             })
             .collect();
@@ -1326,5 +1736,80 @@ mod tests {
         assert_eq!(DebugSlot::current(), None);
         let second = DebugSlot::try_acquire().expect("释放后应可再次占用");
         drop(second);
+    }
+
+    /// 原版 `notPrintState = [10,20,30,40]`：响应体行丢弃；1000 打印后结束
+    #[test]
+    fn rss_debug_state_semantics_drop_body_lines_and_close_on_terminal() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sink = DebugSink::new(tx);
+        for state in [10, 20, 30, 40] {
+            sink.log_state(state, "响应体");
+        }
+        assert!(rx.try_recv().is_err(), "响应体行必须被丢弃");
+
+        sink.log_state(1, "阶段行");
+        match rx.try_recv().expect("阶段行应推送") {
+            DebugEvent::Log(line) => assert!(line.contains("阶段行"), "{line}"),
+            _ => panic!("state=1 应为普通日志"),
+        }
+
+        sink.log_state(1000, "︽解析完成");
+        match rx.try_recv().expect("结束行应推送") {
+            DebugEvent::Log(line) => assert!(line.contains("︽解析完成"), "{line}"),
+            _ => panic!("state=1000 应打印为普通日志"),
+        }
+        assert!(
+            matches!(rx.try_recv().expect("1000 后应结束"), DebugEvent::Done),
+            "state=1000 打印后必须结束"
+        );
+    }
+
+    /// state=-1：失败行（自研通道映射 debug_error）+ 结束
+    #[test]
+    fn rss_debug_failure_emits_error_then_done() {
+        let (tx, mut rx) = mpsc::unbounded_channel();
+        let sink = DebugSink::new(tx);
+        sink.fail("错误链");
+        match rx.try_recv().expect("失败行应推送") {
+            DebugEvent::Error(line) => assert!(line.contains("错误链"), "{line}"),
+            _ => panic!("state=-1 应为失败事件"),
+        }
+        assert!(
+            matches!(rx.try_recv().expect("-1 后应结束"), DebugEvent::Done),
+            "state=-1 后必须结束"
+        );
+    }
+
+    #[test]
+    fn rss_rule_presence_helpers_match_kotlin_blank_semantics() {
+        let mut source = legado_core::models::RssSource::default();
+        assert!(!has_rule_articles(&source), "None 视为空");
+        source.rule_articles = Some("   ".to_string());
+        assert!(!has_rule_articles(&source), "空白规则视为空");
+        source.rule_articles = Some("-class.item".to_string());
+        assert!(has_rule_articles(&source));
+        assert!(rule_is_blank(None));
+        assert!(rule_is_blank(Some(" \r\n")));
+        assert!(!rule_is_blank(Some("class.desc@text")));
+    }
+
+    #[test]
+    fn rss_article_js_json_uses_kotlin_field_names() {
+        let article = RssArticleItem {
+            origin: "https://rss.example.com/feed".to_string(),
+            sort: "科技".to_string(),
+            title: "标题".to_string(),
+            link: "https://rss.example.com/a/1".to_string(),
+            pub_date: Some("2026-10-26".to_string()),
+            article_type: 1,
+            ..Default::default()
+        };
+        let value: Value = serde_json::from_str(&rss_article_js_json(&article)).unwrap();
+        assert_eq!(value["origin"], "https://rss.example.com/feed");
+        assert_eq!(value["sort"], "科技");
+        assert_eq!(value["pubDate"], "2026-10-26");
+        assert_eq!(value["type"], 1, "type 字段名需对齐 Kotlin RssArticle");
+        assert!(value.get("articleType").is_none());
     }
 }
