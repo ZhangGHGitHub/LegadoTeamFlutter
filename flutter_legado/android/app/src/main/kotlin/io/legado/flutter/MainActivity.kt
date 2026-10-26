@@ -25,6 +25,7 @@ open class MainActivity : FlutterActivity() {
     private val brightnessBridge = BrightnessBridge()
     private val ttsBridge = TtsBridge()
     private val filePickerBridge = FilePickerBridge()
+    private val saveFileBridge = SaveFileBridge()
     private val mediaSessionBridge = MediaSessionBridge()
     private val cookieBridge = CookieBridge()
     private val storageBridge = StorageBridge()
@@ -81,6 +82,14 @@ open class MainActivity : FlutterActivity() {
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL_FILE_PICKER)
             .setMethodCallHandler { call, result ->
                 filePickerBridge.handleMethodCall(call, result, this)
+            }
+
+        // [D1] 系统另存通道：ACTION_CREATE_DOCUMENT + 自建受控写流
+        //（替代 file_picker 在 onActivityResult 内裸写 URI 的崩溃链路，
+        // 异常全部回 result.error，不穿透主线程）
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, SaveFileBridge.CHANNEL)
+            .setMethodCallHandler { call, result ->
+                saveFileBridge.handleMethodCall(call, result, this)
             }
 
         // 注册存储通道（[D2] MediaStore 直写 Download/legado/，绕开
@@ -469,8 +478,22 @@ open class MainActivity : FlutterActivity() {
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
+        // [D1 防御] 第三方插件（如 file_picker 8.3.7）在 onActivityResult 内
+        // 直接写 SAF URI，MuMu Android 15 的 DownloadStorageProvider 会抛
+        // SecurityException 且插件未捕获 → 异常穿透到 ActivityThread 直接
+        // FATAL（进程强杀）。正常另存链路已改走 SaveFileBridge（异常全部
+        // 捕获），此处再兜一层，确保任何插件的回调异常都不会杀死进程。
+        try {
+            super.onActivityResult(requestCode, resultCode, data)
+        } catch (e: Throwable) {
+            android.util.Log.e(
+                "MainActivity",
+                "onActivityResult 插件异常已拦截（D1 防御）：${e.message}",
+                e
+            )
+        }
         filePickerBridge.onActivityResult(requestCode, resultCode, data)
+        saveFileBridge.onActivityResult(requestCode, resultCode, data)
     }
 
     /**
@@ -489,5 +512,7 @@ open class MainActivity : FlutterActivity() {
         webViewBridge.destroy()
         mediaSessionBridge.release()
         videoFloatBridge.dispose()
+        // [D1] 释放未完成的另存请求，避免 Dart Future 永久挂起
+        saveFileBridge.dispose()
     }
 }

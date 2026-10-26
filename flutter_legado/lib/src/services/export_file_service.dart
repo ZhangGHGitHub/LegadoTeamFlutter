@@ -8,6 +8,12 @@
 // 复用；方法可被测试子类覆写，避免测试依赖真实文件对话框。
 // 批16e 起支持 filePath 模式：既有文件（.js/.zip 等）经 [saveExistingFile]
 // 复制到用户选择位置，[writeTempFileBytes] 生成二进制临时文件。
+//
+// [D1 2026-10-27] Android 系统另存改走自建 `legado/file_save` 通道
+// （Kotlin SaveFileBridge）：file_picker 8.3.7 在 onActivityResult 内裸写
+// SAF URI，MuMu Android 15 的 DownloadStorageProvider 抛 SecurityException
+// 未被插件捕获 → 主线程 FATAL。iOS 保留 file_picker（插件负责写字节），
+// 桌面端仍由本服务自行写盘。
 import 'dart:convert';
 import 'dart:io';
 
@@ -16,16 +22,24 @@ import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'file_save_channel.dart';
+
 /// 导出文件服务
 class ExportFileService {
-  const ExportFileService();
+  const ExportFileService({
+    this.fileSaveChannel = const MethodChannelFileSaveChannel(),
+  });
+
+  /// Android 系统另存通道（测试注入假实现，默认走 `legado/file_save`）
+  final FileSaveChannel fileSaveChannel;
 
   /// 系统另存文本内容：返回实际保存路径；用户取消时返回 null。
   ///
-  /// - Android / iOS：file_picker 要求传入 [bytes] 并由插件写入
-  ///   （返回的是 Downloads 下的展示路径，不再二次写盘）；
+  /// - Android：自建 SAF 通道创建文档并写字节，返回 content:// URI；
+  /// - iOS：file_picker 要求传入 [bytes] 并由插件写入；
   /// - Windows / macOS / Linux：插件只返回用户选择的路径，内容由本方法写入；
-  /// - 写入失败时上抛异常，由调用方展示真实原因。
+  /// - 写入失败时上抛异常，由调用方展示真实原因（Android 端原生已清理
+  ///   失败时残留的空文档）。
   Future<String?> saveToLocal({
     required String fileName,
     required String content,
@@ -39,8 +53,9 @@ class ExportFileService {
   /// 系统另存既有文件（批16e filePath 模式）
   ///
   /// 用于二进制/已落盘内容（如书源单源 `.js`、底栏皮肤 `.zip`）：
-  /// 读取 [sourcePath] 后走同一套系统另存流程，移动端由 file_picker 写字节、
-  /// 桌面端由本方法写盘。返回保存路径；用户取消返回 null。
+  /// 读取 [sourcePath] 后走同一套系统另存流程（Android 走自建通道、
+  /// iOS 由 file_picker 写字节、桌面端由本方法写盘）。返回保存路径；
+  /// 用户取消返回 null。
   ///
   /// 只读取源文件，不移动/删除它；临时文件清理由调用方决定（见
   /// `showExportFileSheet(deleteTempFileOnClose:)`）。
@@ -128,14 +143,24 @@ class ExportFileService {
   }
 
   /// 系统另存公共实现（文本与既有文件共用）
+  ///
+  /// [D1] Android 不再经过 file_picker：走 [fileSaveChannel] 自建 SAF 通道，
+  /// 原生端负责写字节、捕异常、失败清理；iOS 仍由 file_picker 写字节；
+  /// 桌面端插件只选路径，内容由本方法写盘。
   Future<String?> _saveBytes({
     required String fileName,
     required Uint8List bytes,
   }) async {
-    // 仅移动端插件负责写字节；桌面端（含 macOS，插件不支持 bytes）自行写盘
-    final pluginWritesBytes =
-        defaultTargetPlatform == TargetPlatform.android ||
-        defaultTargetPlatform == TargetPlatform.iOS;
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      return fileSaveChannel.saveFile(
+        fileName: fileName,
+        bytes: bytes,
+        mimeType: _mimeTypeOf(fileName),
+      );
+    }
+
+    // 仅 iOS 插件负责写字节；桌面端（含 macOS，插件不支持 bytes）自行写盘
+    final pluginWritesBytes = defaultTargetPlatform == TargetPlatform.iOS;
     final extension = _extensionOf(fileName);
 
     final path = await FilePicker.platform.saveFile(
@@ -154,7 +179,7 @@ class ExportFileService {
 
   /// 保存成功提示文案
   ///
-  /// 移动端（Android/iOS）系统另存返回的路径多为内容 URI/Downloads 展示路径，
+  /// 移动端（Android/iOS）返回的是 content URI / Downloads 展示路径，
   /// 用户难以据此定位文件，只提示文件名；桌面端路径可直接用于查找，提示完整路径。
   String savedMessage({required String path, required String fileName}) {
     final mobile =
@@ -202,5 +227,28 @@ class ExportFileService {
     if (dot <= 0 || dot == fileName.length - 1) return null;
     final extension = fileName.substring(dot + 1).trim();
     return extension.isEmpty ? null : extension;
+  }
+
+  /// 按扩展名推断 MIME（Android 保存对话框的文档类型提示）
+  ///
+  /// 与 Kotlin `SaveFileBridge.mimeTypeOf` 保持同口径；未知扩展名回退
+  /// `application/octet-stream`。
+  String _mimeTypeOf(String fileName) {
+    final ext = _extensionOf(fileName)?.toLowerCase();
+    return switch (ext) {
+      'json' => 'application/json',
+      'txt' || 'log' || 'md' => 'text/plain',
+      'js' => 'application/javascript',
+      'xml' || 'html' || 'htm' => 'text/xml',
+      'zip' => 'application/zip',
+      'epub' => 'application/epub+zip',
+      'pdf' => 'application/pdf',
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'gif' => 'image/gif',
+      'webp' => 'image/webp',
+      'bmp' => 'image/bmp',
+      _ => 'application/octet-stream',
+    };
   }
 }
