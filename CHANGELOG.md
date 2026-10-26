@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.381] - 2026-10-26
+
+### Fixed
+- [Rust] 段评/书源回调的 UI 动作收集改为每次求值独立会话（对齐原版粒度）：并发段评请求不再互相串页（A 请求拿到 B 的浏览器页面），App 侧发现/回调也不再收到段评动作；`refreshExplore` 标记随会话隔离不再泄漏到其他请求。
+
 ## [2.0.380] - 2026-10-26
 
 ### Added
