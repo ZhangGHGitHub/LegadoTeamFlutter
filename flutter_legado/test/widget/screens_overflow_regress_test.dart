@@ -36,7 +36,6 @@ import 'package:flutter_legado/src/screens/bottom_bar_skin_assign_screen.dart';
 import 'package:flutter_legado/src/screens/bottom_bar_skin_screen.dart';
 import 'package:flutter_legado/src/screens/browser_screen.dart';
 import 'package:flutter_legado/src/screens/cache_download_screen.dart';
-import 'package:flutter_legado/src/screens/cache_settings_screen.dart';
 import 'package:flutter_legado/src/screens/change_cover_screen.dart';
 import 'package:flutter_legado/src/screens/change_source_screen.dart';
 import 'package:flutter_legado/src/screens/code_edit_screen.dart';
@@ -166,7 +165,6 @@ void main() {
       const BottomBarSkinAssignScreen(sessionId: 's', preferredName: 'p'),
     ),
     ('CacheDownloadScreen', const CacheDownloadScreen()),
-    ('CacheSettingsScreen', const CacheSettingsScreen()),
     (
       'ChangeCoverScreen',
       const ChangeCoverScreen(bookUrl: 'u', bookName: 'book'),

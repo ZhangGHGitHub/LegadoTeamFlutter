@@ -13,7 +13,6 @@ import 'screens/book_group_screen.dart';
 import 'screens/book_info_screen.dart';
 import 'screens/bookshelf_manage_screen.dart';
 import 'screens/cache_download_screen.dart';
-import 'screens/cache_settings_screen.dart';
 import 'screens/offline_cache_screen.dart';
 import 'screens/edit_book_info_screen.dart';
 import 'screens/bookmark_screen.dart';
@@ -87,7 +86,6 @@ class AppRoutes {
   static const otherSettings = '/other_settings';
   // [UI_SYNC_REFACTOR S6 | 2026-09-08] 设置主页（集中化分组入口）— Qoder
   static const settingsHome = '/settings_home';
-  static const cacheSettings = '/cache_settings';
   static const cacheDownloads = '/cache_downloads';
   // [UI-fix v2.0.17 | 2026-08-11] 离线缓存页（对齐原版 CacheActivity 书籍列表）— Reasonix
   static const offlineCache = '/offline_cache';
@@ -194,7 +192,6 @@ class AppRoutes {
     settings: (_) => const SettingsScreen(),
     settingsHome: (_) => const SettingsHomeScreen(),
     otherSettings: (_) => const OtherSettingsScreen(),
-    cacheSettings: (_) => const CacheSettingsScreen(),
     cacheDownloads: (_) => const CacheDownloadScreen(),
     offlineCache: (_) => const OfflineCacheScreen(),
     rss: (_) => const RssScreen(),
