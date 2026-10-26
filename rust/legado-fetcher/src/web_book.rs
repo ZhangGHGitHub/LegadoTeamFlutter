@@ -1716,7 +1716,12 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             };
 
             // B1.4 coverUrl 绝对化（对标 Kotlin NetworkUtils.getAbsoluteURL(baseUrl, it)）
-            let cover_url = {
+            // 空规则直接 None：`eval_rule_string("")` 会回退元素外层 HTML（上游
+            // AnalyzeRule.kt:202-205 对空规则返回 null → 空串），与其余可选字段
+            // 的 optional_field 口径保持一致。
+            let cover_url = if cover_url_rule.is_empty() {
+                None
+            } else {
                 let v = eval_rule_string(&elem_analyzer, cover_url_rule).unwrap_or_default();
                 if v.is_empty() {
                     None

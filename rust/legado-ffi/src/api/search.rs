@@ -2385,6 +2385,71 @@ mod tests {
         );
     }
 
+    /// 批13 回归：ruleSearch 未配置 coverUrl（空规则）时，cover_url 必须为空，
+    /// 不得回退元素外层 HTML（对齐上游 AnalyzeRule.kt:202-205 空规则返回 null）。
+    #[test]
+    fn test_search_single_source_empty_cover_rule_yields_no_cover() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut buf = Vec::new();
+                let mut byte = [0u8; 1];
+                while !buf.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => buf.push(byte[0]),
+                        _ => break,
+                    }
+                    if buf.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let body = r#"<html><body><div class="book"><a class="name" href="/b/1">斗破苍穹</a><span class="author">天蚕土豆</span></div></body></html>"#;
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+
+        let mut source = make_source_with_rules(
+            ".book",
+            ".name",
+            ".author",
+            ".name@href",
+            "",
+            ".intro",
+            ".last",
+        );
+        source.book_source_url = format!("http://127.0.0.1:{port}");
+        source.search_url = Some(format!("http://127.0.0.1:{port}/s?q=x"));
+
+        let client = LegadoClient::new(LegadoClientConfig {
+            no_proxy: true,
+            ..LegadoClientConfig::default()
+        })
+        .unwrap();
+
+        let results = crate::runtime::block_on(async {
+            search_single_source(&client, &source, "斗破", 1, false).await
+        })
+        .expect("搜索应成功");
+
+        assert_eq!(results.len(), 1, "应解析出 1 条结果");
+        let cover = results[0].cover_url.clone().unwrap_or_default();
+        assert!(
+            !cover.contains("<div"),
+            "空 coverUrl 规则不得回退元素外层 HTML：{cover:?}"
+        );
+        assert!(cover.is_empty(), "空 coverUrl 规则应解析为空：{cover:?}");
+    }
+
     /// 测试用记录型 Cookie 持久化后端（写侧门控落库断言）
     #[derive(Default)]
     struct GateRecordingPersistence {
