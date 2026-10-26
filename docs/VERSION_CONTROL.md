@@ -121,7 +121,7 @@ git commit -m "refactor: 清理推荐算法残留，接入发现页 ExploreScree
    - 实现相同的交互逻辑（搜索 + 分组 + CRUD）
 
 3. **文档同步**:
-   - 已更新 [`rust/PROGRESS.md`](file:///d:/OH-WorkSpace/LegadoTeam/legado/rust/PROGRESS.md) — 任务进度跟踪（含发现页后续增强任务）
+   - 已更新 `rust/PROGRESS.md` — 当时（2026-07-30）的任务进度跟踪（含发现页后续增强任务）；该文件已于 2026-08-07 冻结为历史文档，当前状态见 [REFACTORING_ACTIVE_PLAN.md](REFACTORING_ACTIVE_PLAN.md)
    - 已创建本 [`VERSION_CONTROL.md`](file:///d:/OH-WorkSpace/LegadoTeam/legado/VERSION_CONTROL.md) — 版本变更决策记录
 
 ---

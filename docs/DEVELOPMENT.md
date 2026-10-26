@@ -102,7 +102,7 @@ legado/
 │   ├── legado-server/           # HTTP 服务：axum REST + WS + MCP
 │   ├── Cargo.toml               # Workspace 配置
 │   ├── DEVELOPMENT.md           # Rust 端详细开发文档
-│   └── PROGRESS.md              # 任务进度跟踪
+│   └── PROGRESS.md              # 历史进度快照（2026-08-07 冻结，当前状态见 docs/REFACTORING_ACTIVE_PLAN.md）
 ├── flutter_legado/              # Flutter 跨平台 UI
 │   ├── lib/                     # Dart 源码
 │   ├── test/                    # Flutter 测试（24 个文件）
@@ -293,7 +293,7 @@ git commit -m "perf: 优化引擎池化内存占用"
 ## 相关链接
 
 - [Rust 端详细开发文档](../rust/DEVELOPMENT.md) — 架构设计、代码结构、调试技巧
-- [任务进度跟踪](../rust/PROGRESS.md) — 148 个任务完成状态
+- [当前任务与进度](../docs/REFACTORING_ACTIVE_PLAN.md) — 唯一状态源（`rust/PROGRESS.md` 已于 2026-08-07 冻结，仅作历史快照）
 - [更新日志](../CHANGELOG.md) — 版本历史记录
 - [Flutter 客户端](../flutter_legado/README.md) — UI 层文档
 - [上游 Legado 项目](https://github.com/gedoor/legado) — Kotlin 原版

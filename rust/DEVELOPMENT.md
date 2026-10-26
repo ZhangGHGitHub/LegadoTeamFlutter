@@ -753,7 +753,7 @@ git commit -m "perf: 优化引擎池化内存占用"
 ## 项目相关链接
 
 - [Rust README](./README.md) — 架构与 Crate 详细说明
-- [进度跟踪](./PROGRESS.md) — 任务完成状态
+- [当前任务与进度](../docs/REFACTORING_ACTIVE_PLAN.md) — 唯一状态源（`./PROGRESS.md` 已于 2026-08-07 冻结，仅作历史快照）
 - [更新日志](../CHANGELOG.md) — 版本历史记录
 - [Flutter 客户端](../flutter_legado/README.md) — UI 层文档
 - [上游 Legado 项目](https://github.com/gedoor/legado) — Kotlin 原版
