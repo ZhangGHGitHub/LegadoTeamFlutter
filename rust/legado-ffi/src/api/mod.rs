@@ -20,6 +20,8 @@ pub mod cbz_api;
 pub mod config_api;
 pub mod cover_api;
 pub mod dict_api;
+/// [批16a | 2026-10-27] 直链上传（契约 §2.51：上传语义 + 下载链接规则求值）
+pub mod direct_link_upload_api;
 pub mod download_api;
 pub mod explore_api;
 pub mod explore_info_map;

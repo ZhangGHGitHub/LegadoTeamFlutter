@@ -2453,3 +2453,27 @@ Future<String> ruleSubCheckUpdate({required PlatformInt64 id}) =>
 /// 返回字段：id/url/success/itemsAdded/itemsUpdated/itemsRemoved/totalItems/error
 Future<String> ruleSubApplyUpdate({required PlatformInt64 id}) =>
     RustLib.instance.api.crateFfiFfiRuleSubApplyUpdate(id: id);
+
+/// 直链上传并返回下载直链 URL（契约 §2.51 `directLinkUpload`）
+///
+/// 规则 JSON 为 4 字段（参考版口径）：`uploadUrl` / `downloadUrlRule` /
+/// `summary` / `compress`（兼容 snake_case）。上传语义逐条对齐原版
+/// `DirectLinkUpload.kt` + `AnalyzeUrl.upload` + `OkHttpUtils.postMultipart`：
+/// 逗号选项 method/headers/body/type、`fileRequest` 文件部件、compress 内存
+/// zip、下载规则经 `AnalyzeRule` 求值（响应体 + 响应最终 URL）。载荷
+/// `content` / `filePath` 二选一（单文件上限 100 MiB，字节不穿 FFI）。
+/// async + spawn_blocking 非阻塞（读盘 / 压缩 / 上传均在阻塞线程池）。
+/// 失败**上抛不降级**：上传是显式用户动作，错误须驱动 UI 提示。
+Future<String> directLinkUpload({
+  required String ruleJson,
+  required String fileName,
+  required String contentType,
+  String? content,
+  String? filePath,
+}) => RustLib.instance.api.crateFfiFfiDirectLinkUpload(
+  ruleJson: ruleJson,
+  fileName: fileName,
+  contentType: contentType,
+  content: content,
+  filePath: filePath,
+);

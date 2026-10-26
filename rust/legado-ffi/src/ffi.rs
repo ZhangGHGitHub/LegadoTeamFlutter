@@ -3081,4 +3081,35 @@ pub mod ffi {
         let result = crate::api::rule_sub_api::apply_sub_update_db(id)?;
         to_json(&result)
     }
+
+    // ─── 直链上传（批16a，API_CONTRACT §2.51）────────────────────
+
+    /// 直链上传并返回下载直链 URL（契约 §2.51 `directLinkUpload`）
+    ///
+    /// 规则 JSON 为 4 字段（参考版口径）：`uploadUrl` / `downloadUrlRule` /
+    /// `summary` / `compress`（兼容 snake_case）。上传语义逐条对齐原版
+    /// `DirectLinkUpload.kt` + `AnalyzeUrl.upload` + `OkHttpUtils.postMultipart`：
+    /// 逗号选项 method/headers/body/type、`fileRequest` 文件部件、compress 内存
+    /// zip、下载规则经 `AnalyzeRule` 求值（响应体 + 响应最终 URL）。载荷
+    /// `content` / `filePath` 二选一（单文件上限 100 MiB，字节不穿 FFI）。
+    /// async + spawn_blocking 非阻塞（读盘 / 压缩 / 上传均在阻塞线程池）。
+    /// 失败**上抛不降级**：上传是显式用户动作，错误须驱动 UI 提示。
+    pub async fn direct_link_upload(
+        rule_json: String,
+        file_name: String,
+        content_type: String,
+        content: Option<String>,
+        file_path: Option<String>,
+    ) -> Result<String, BridgeError> {
+        super::run_webbook_blocking("direct_link_upload", move || {
+            crate::api::direct_link_upload_api::direct_link_upload(
+                &rule_json,
+                &file_name,
+                &content_type,
+                content,
+                file_path,
+            )
+        })
+        .await
+    }
 }

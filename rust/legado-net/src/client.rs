@@ -598,6 +598,74 @@ impl LegadoClient {
             .await
     }
 
+    /// 发送 multipart/form-data 上传请求（§2.51 直链上传专用出口）
+    ///
+    /// 与 [`Self::post`] 同语义：默认头 / UA / DB Cookie 合并 / 写侧 `CookieJar`
+    /// 门控 / 代理 / 限流 / 客户端级重试 / HTTP 日志采集逐项一致；差异仅在请求体
+    /// ——按 [`MultipartPart`] 列表手工构造 multipart 字节（对齐上游
+    /// `OkHttpUtils.postMultipart`：文本字段 `addFormDataPart(name, value)`，
+    /// 文件部件 `addFormDataPart(name, fileName, requestBody)`）。
+    ///
+    /// `media_type` 对应上游 `MultipartBody.Builder.setType(type)`：缺省或
+    /// `multipart/form-data` 时构造 `multipart/form-data; boundary=…`；显式
+    /// 其它值原样作为整体 Content-Type 前缀（仍追加 boundary）。
+    ///
+    /// **日志不落文件内容**：HTTP 采集只记录「部件数 + 字节数」摘要，避免把
+    /// 数十 MB 上传体写入环形日志。
+    pub async fn post_multipart(
+        &self,
+        url: &str,
+        parts: &[MultipartPart],
+        media_type: Option<&str>,
+        headers: Option<HashMap<String, String>>,
+    ) -> LegadoResult<LegadoResponse> {
+        let boundary = generate_multipart_boundary();
+        let (body, content_type) = build_multipart_body(parts, media_type, &boundary);
+        // 整体 Content-Type 由请求体决定（对齐 OkHttp：`body.contentType()`
+        // 在发送时覆盖手动设置的同名头）；Content-Length 由 reqwest 按实际体长
+        // 生成。用户选项里的同名头一并剔除，避免残留旧值导致服务端解析失败。
+        let mut headers = headers;
+        if let Some(h) = headers.as_mut() {
+            h.retain(|k, _| {
+                !k.eq_ignore_ascii_case("content-type") && !k.eq_ignore_ascii_case("content-length")
+            });
+        }
+        // Bytes 让重试工厂每次 clone 只增引用计数（大文件不重复拷贝）
+        let body = bytes::Bytes::from(body);
+        let save_cookies = cookie_jar_marker_present(headers.as_ref());
+        let log_body = format!(
+            "[multipart 上传体已省略：{} 个部件，{} 字节]",
+            parts.len(),
+            body.len()
+        );
+        let log = HttpLogCapture::start("POST", url, headers.as_ref(), &log_body);
+        let headers = Arc::new(headers);
+        let url = url.to_string();
+        let url_for_retry = url.clone();
+        let content_type = Arc::new(content_type);
+
+        let factory = move || {
+            let client = self.client.clone();
+            let cookie_store = self.cookie_store.clone();
+            let headers = Arc::clone(&headers);
+            let url = url.clone();
+            let body = body.clone();
+            let content_type = Arc::clone(&content_type);
+            async move {
+                let mut req = client
+                    .post(&url)
+                    .header("Content-Type", content_type.as_str())
+                    .body(body);
+                req = apply_default_headers_static(req);
+                req = apply_headers_and_cookies(req, &cookie_store, &url, (*headers).clone());
+                req.send().await
+            }
+        };
+
+        self.execute_with_retry_and_limit(url_for_retry.as_str(), save_cookies, log, factory)
+            .await
+    }
+
     /// 发送 HEAD 请求
     pub async fn head(
         &self,
@@ -1129,6 +1197,107 @@ fn apply_default_headers_static(req: reqwest::RequestBuilder) -> reqwest::Reques
     req.header("Keep-Alive", "300")
         .header("Connection", "Keep-Alive")
         .header("Cache-Control", "no-cache")
+}
+
+// ---------- multipart（§2.51 直链上传） ----------
+
+/// multipart 表单部件（对齐上游 `OkHttpUtils.postMultipart` 的两类部件）
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MultipartPart {
+    /// 普通文本字段：`addFormDataPart(name, value.toString())`
+    Text {
+        /// 表单字段名
+        name: String,
+        /// 字段值（调用方已完成字符串化）
+        value: String,
+    },
+    /// 文件部件：`addFormDataPart(name, fileName, requestBody)`
+    File {
+        /// 表单字段名
+        name: String,
+        /// 上传文件名（压缩时已改为 `<原名>.zip`）
+        file_name: String,
+        /// 部件 Content-Type（None → `application/octet-stream`）
+        content_type: Option<String>,
+        /// 文件字节
+        data: Vec<u8>,
+    },
+}
+
+/// 生成 multipart boundary（进程内单调 + 时间戳，无需额外随机数依赖）
+fn generate_multipart_boundary() -> String {
+    static BOUNDARY_COUNTER: AtomicU64 = AtomicU64::new(0);
+    let seq = BOUNDARY_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    format!("----LegadoBoundary{nanos:032x}{seq:016x}")
+}
+
+/// 转义 multipart 头参数中的引号/换行（对齐 OkHttp 的百分号转义口径）
+fn escape_multipart_quoted(value: &str) -> String {
+    value
+        .replace('"', "%22")
+        .replace('\r', "%0D")
+        .replace('\n', "%0A")
+}
+
+/// 构造 multipart/form-data 请求体与整体 Content-Type
+///
+/// 返回 `(body_bytes, content_type)`；`content_type` 形如
+/// `multipart/form-data; boundary=<boundary>`（显式 `media_type` 非空时以其
+/// 为前缀，追加 boundary 参数）。
+pub fn build_multipart_body(
+    parts: &[MultipartPart],
+    media_type: Option<&str>,
+    boundary: &str,
+) -> (Vec<u8>, String) {
+    use std::io::Write;
+
+    let mut body = Vec::new();
+    for part in parts {
+        // 每个部件：--boundary CRLF 头 CRLF CRLF 内容 CRLF
+        let _ = write!(body, "--{boundary}\r\n");
+        match part {
+            MultipartPart::Text { name, value } => {
+                let _ = write!(
+                    body,
+                    "Content-Disposition: form-data; name=\"{}\"\r\n\r\n",
+                    escape_multipart_quoted(name)
+                );
+                body.extend_from_slice(value.as_bytes());
+            }
+            MultipartPart::File {
+                name,
+                file_name,
+                content_type,
+                data,
+            } => {
+                let _ = write!(
+                    body,
+                    "Content-Disposition: form-data; name=\"{}\"; filename=\"{}\"\r\n",
+                    escape_multipart_quoted(name),
+                    escape_multipart_quoted(file_name)
+                );
+                let mime = content_type
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or("application/octet-stream");
+                let _ = write!(body, "Content-Type: {mime}\r\n\r\n");
+                body.extend_from_slice(data);
+            }
+        }
+        body.extend_from_slice(b"\r\n");
+    }
+    let _ = write!(body, "--{boundary}--\r\n");
+
+    let media = media_type
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("multipart/form-data");
+    (body, format!("{media}; boundary={boundary}"))
 }
 
 /// 合并 DB Cookie 与规则/自定义 Cookie 头（**按键合并、规则优先**）

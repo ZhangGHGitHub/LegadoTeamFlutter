@@ -15,6 +15,12 @@ url = "2"
 regex = "1"
 log = "0.4"
 base64 = { workspace = true }
+# [批16a | 2026-10-27] 直链上传（契约 §2.51）：内存 zip 压缩（单条目、Deflated）。
+# 与 legado-book/legado-ffi 同版本，lock 中既有 crate 零新增传递依赖
+zip = "2"
+# reqwest Body 构造复用 Bytes（重试时 clone 为引用计数拷贝，避免大文件整块复制）；
+# lock 中既有 1.x 传递依赖，此处仅新增直接依赖边
+bytes = "1"
 quick-xml = "0.42"
 urlencoding = "2.1"
 async-trait = "0.1"
