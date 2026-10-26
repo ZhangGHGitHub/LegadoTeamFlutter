@@ -167,9 +167,56 @@ void main() {
     );
   });
 
+  // P1-1 / P3-3：回退写入「下载」子目录时必须回显目录，否则用户只看到
+  // 文件名，无法定位（原 DownloadsProvider 回退写根、提示只有文件名）。
+  test('提示文案：MediaStore 回退带「下载」子目录', () {
+    const saved = SaveFileResult(
+      location: 'content://media/external_primary/file/1000001500',
+      fileName: 'bookSource_QA (1).json',
+      viaMediaStoreFallback: true,
+      downloadDirectory: 'Download/legado/',
+    );
+    expect(
+      service.savedMessage(saved: saved, requestedFileName: 'bookSource_QA.json'),
+      '已保存到「下载/legado」：bookSource_QA (1).json',
+    );
+  });
+
+  test('提示文案：MediaStore 回退到「下载」根', () {
+    const saved = SaveFileResult(
+      location: 'content://media/external_primary/file/1000001501',
+      fileName: 'a.json',
+      viaMediaStoreFallback: true,
+      downloadDirectory: 'Download/',
+    );
+    expect(
+      service.savedMessage(saved: saved, requestedFileName: 'a.json'),
+      '已保存到「下载」：a.json',
+    );
+  });
+
+  test('提示文案：回退但原生未回传目录时退回通用文案', () {
+    const saved = SaveFileResult(
+      location: 'content://media/external_primary/file/1000001502',
+      fileName: 'a.json',
+      viaMediaStoreFallback: true,
+    );
+    expect(
+      service.savedMessage(saved: saved, requestedFileName: 'a.json'),
+      '已保存到下载目录：a.json',
+    );
+  });
+
   test('文件名净化：非法字符在进入通道前替换为下划线', () async {
     await service.saveToLocal(fileName: 'a/b:c*d?.json', content: '{}');
     expect(channel.calls.single['fileName'], 'a_b_c_d_.json');
+  });
+
+  // P3-5：Dart 与 Kotlin 的 normalizeFileName 同为「替换 + trim」
+  test('文件名净化：与原生一致去首尾空白', () async {
+    await service.saveToLocal(fileName: '  a.json  ', content: '{}');
+    expect(channel.calls.single['fileName'], 'a.json');
+    expect(ExportFileService.normalizeFileName('\t a?b.json \n'), 'a_b.json');
   });
 
   test('非 Android 不使用自建通道（保持 iOS/桌面既有分派）', () async {

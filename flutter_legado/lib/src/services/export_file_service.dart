@@ -189,6 +189,10 @@ class ExportFileService {
   /// 用户难以据此定位文件，只提示实际文件名（P3-2：优先用原生回传的
   /// provider 实际名字，重名 `(1)` 时提示仍与磁盘一致）；桌面端路径可
   /// 直接用于查找，提示完整路径。
+  ///
+  /// MediaStore 回退（P1-1/P3-3）写入的是用户在系统对话框里选的「下载」
+  /// 子目录，只给文件名仍难定位 → 额外回显目录（`Download/…/` 显示为
+  /// 「下载/…」）。
   String savedMessage({
     required SaveFileResult saved,
     required String requestedFileName,
@@ -197,7 +201,21 @@ class ExportFileService {
         defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS;
     final name = saved.fileName ?? normalizeFileName(requestedFileName);
+    if (saved.viaMediaStoreFallback) {
+      final directory = _displayDownloadDirectory(saved.downloadDirectory);
+      return directory == null ? '已保存到下载目录：$name' : '已保存到「$directory」：$name';
+    }
     return mobile ? '已保存：$name' : '已保存到：${saved.location}';
+  }
+
+  /// `Download/legado/` → `下载/legado`（提示文案用，失败返回 null）
+  static String? _displayDownloadDirectory(String? relativeDirectory) {
+    final raw = relativeDirectory?.trim() ?? '';
+    if (raw.isEmpty) return null;
+    final text = raw
+        .replaceFirst(RegExp(r'^Download/?', caseSensitive: false), '下载/')
+        .replaceFirst(RegExp(r'/+$'), '');
+    return text.isEmpty ? null : text;
   }
 
   /// 写入临时目录并返回可分享的文件（对齐原版 share(file)）
@@ -229,9 +247,10 @@ class ExportFileService {
   }
 
   /// 规范化文件名中的非法字符（对齐原版 `normalizeFileName`：
-  /// `[\\/:*?"<>|]` 全部替换为 `_`）
+  /// `[\\/:*?"<>|]` 全部替换为 `_`）并去首尾空白（P3-5：与 Kotlin
+  /// `SaveFileBridge.normalizeFileName` 的 trim 口径保持一致）
   static String normalizeFileName(String name) =>
-      name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+      name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_').trim();
 
   /// 取文件后缀（不含点）；无有效后缀返回 null
   String? _extensionOf(String fileName) {

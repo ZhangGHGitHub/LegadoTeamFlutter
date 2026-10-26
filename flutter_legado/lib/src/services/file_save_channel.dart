@@ -13,6 +13,7 @@ class SaveFileResult {
     required this.location,
     this.fileName,
     this.viaMediaStoreFallback = false,
+    this.downloadDirectory,
   });
 
   /// 落盘位置（Android: content URI；其他平台: 文件路径）
@@ -25,20 +26,31 @@ class SaveFileResult {
   /// 用户所选「下载」目录写流被 ROM 拒绝时）
   final bool viaMediaStoreFallback;
 
+  /// 回退写入的「下载」相对目录（如 `Download/legado/`，带尾斜杠）；
+  /// 非回退或原生未回传时为 null
+  final String? downloadDirectory;
+
   @override
   bool operator ==(Object other) =>
       other is SaveFileResult &&
       other.location == location &&
       other.fileName == fileName &&
-      other.viaMediaStoreFallback == viaMediaStoreFallback;
+      other.viaMediaStoreFallback == viaMediaStoreFallback &&
+      other.downloadDirectory == downloadDirectory;
 
   @override
-  int get hashCode => Object.hash(location, fileName, viaMediaStoreFallback);
+  int get hashCode => Object.hash(
+    location,
+    fileName,
+    viaMediaStoreFallback,
+    downloadDirectory,
+  );
 
   @override
   String toString() =>
       'SaveFileResult(location: $location, fileName: $fileName, '
-      'viaMediaStoreFallback: $viaMediaStoreFallback)';
+      'viaMediaStoreFallback: $viaMediaStoreFallback, '
+      'downloadDirectory: $downloadDirectory)';
 }
 
 /// 系统另存平台通道抽象（D1）
@@ -109,7 +121,7 @@ class MethodChannelFileSaveChannel extends FileSaveChannel {
     }
   }
 
-  /// 解析原生回传：`{uri, name, fallback}`（新形态）或字符串 URI（兼容）
+  /// 解析原生回传：`{uri, name, fallback, relativeDir}`（新形态）或字符串 URI（兼容）
   static SaveFileResult? _parseResult(Object? raw) {
     if (raw == null) return null;
     if (raw is String) {
@@ -120,10 +132,12 @@ class MethodChannelFileSaveChannel extends FileSaveChannel {
       final location = raw['uri']?.toString().trim() ?? '';
       if (location.isEmpty) return null;
       final name = raw['name']?.toString().trim();
+      final dir = raw['relativeDir']?.toString().trim();
       return SaveFileResult(
         location: location,
         fileName: (name == null || name.isEmpty) ? null : name,
         viaMediaStoreFallback: raw['fallback']?.toString() == 'mediastore',
+        downloadDirectory: (dir == null || dir.isEmpty) ? null : dir,
       );
     }
     return null;
@@ -138,6 +152,9 @@ class MethodChannelFileSaveChannel extends FileSaveChannel {
     'NO_URI' => '系统未返回保存位置，请重试',
     'TIMEOUT' => '等待系统保存对话框超时，请重试',
     'ACTIVITY_DESTROYED' => '页面已销毁，另存请求中断',
+    'SAVE_VERIFY_FAILED' => '写入校验失败，文件未保存，请重试或换一个文件夹',
+    'FALLBACK_PATH_UNKNOWN' => '无法确定所选文件夹，请选择内部存储 > Download 或子文件夹后重试',
+    'LEGACY_NOT_SUPPORTED' => 'Android 10 以下暂不支持保存到下载目录，请选择其他位置',
     'SAVE_FAILED' => '无法写入所选位置，请换一个文件夹重试',
     _ => '保存失败，请重试',
   };

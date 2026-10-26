@@ -134,6 +134,46 @@ void main() {
     });
   });
 
+  // P3-4：旧规则「含中文即放行」会把带中文文件名的英文权限错误原样
+  // 甩给用户（实测失败面板显示 Permission Denial … bookSource_QA本地音频B2.json）。
+  // 新规则：行首锚定底层前缀 + 整串形态匹配。
+  group('errorMessage 中文文件名 + 底层错误仍映射（P3-4）', () {
+    test('Permission Denial 里带中文文件名仍映射为权限提示', () {
+      expect(
+        friendlyErrorMessage(
+          'Permission Denial: writing com.android.providers.downloads.'
+          'DownloadStorageProvider uri content://com.android.providers.'
+          'downloads.documents/document/8 from pid=28627, uid=10055 requires '
+          'android.permission.MANAGE_DOCUMENTS, or grantUriPermission() '
+          '（目标文件 bookSource_QA本地音频B2.json）',
+        ),
+        kPermissionDeniedMessage,
+      );
+      expect(
+        friendlyErrorMessage(
+          'java.io.FileNotFoundException: /storage/emulated/0/Download/'
+          '高亮规则.json: open failed: EACCES (Permission denied)',
+        ),
+        kPermissionDeniedMessage,
+      );
+    });
+
+    test('中文业务前缀不会被底层映射吞掉', () {
+      expect(
+        friendlyErrorMessage('保存失败：bookSource_QA本地音频B2.json 权限被拒'),
+        '保存失败：bookSource_QA本地音频B2.json 权限被拒',
+      );
+      expect(
+        friendlyErrorMessage('上传超时(timeout)，请重试'),
+        '上传超时(timeout)，请重试',
+      );
+      expect(
+        friendlyErrorMessage('导出完成，但 connection refused'),
+        '导出完成，但 connection refused',
+      );
+    });
+  });
+
   // P2-3：权限拒绝/系统另存失败的主文案为中文短句，技术详情可复制
   group('errorMessage 权限与另存失败（P2-3）', () {
     test('Permission Denial / SecurityException → 没有写入权限', () {
