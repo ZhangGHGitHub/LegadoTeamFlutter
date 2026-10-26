@@ -1,5 +1,7 @@
 # Rust 测试覆盖率提升报告
 
+> ⚠ **历史快照（冻结于 2026-07-30）**：当前状态与开放任务见 [../docs/REFACTORING_ACTIVE_PLAN.md](../docs/REFACTORING_ACTIVE_PLAN.md)；文中测试数量为当时口径，不代表当前 HEAD。
+
 ## 执行摘要
 本报告总结了 Legado 项目 Rust 侧自动化测试覆盖率提升工作的完成情况。通过系统性地补充单元测试，我们已经显著提升了核心模块的测试覆盖率。
 

@@ -1,3 +1,5 @@
+> ⚠ **历史快照（冻结于 2026-07-30）**：当前状态与开放任务见 [../docs/REFACTORING_ACTIVE_PLAN.md](../docs/REFACTORING_ACTIVE_PLAN.md)；实际迁移链以 `rust/legado-db/src/migration/` 与 `SCHEMA_VERSION` 为准。
+
 ## 数据库 Schema 迁移开发流程
 
 当需要修改 `schema.rs`（新增/删除列、新增表）时，必须严格遵循以下步骤：
