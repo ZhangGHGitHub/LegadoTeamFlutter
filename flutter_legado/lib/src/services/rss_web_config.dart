@@ -59,8 +59,9 @@ String rssClHtml(String content, {String? style, String? preloadJs}) {
     return '${html.substring(0, insertAt)}<style>$trimmedStyle</style>'
         '${html.substring(insertAt)}';
   }
-  final finalStyle =
-      trimmedStyle.isEmpty ? kRssDefaultContentStyle : trimmedStyle;
+  final finalStyle = trimmedStyle.isEmpty
+      ? kRssDefaultContentStyle
+      : trimmedStyle;
   final headEndIndex = html.indexOf('</head>');
   if (headEndIndex >= 0) {
     return '${html.substring(0, headEndIndex)}<style>$finalStyle</style>'
@@ -92,8 +93,10 @@ String rssInjectStartJs(String startHtml, String? startJs) {
 bool rssIsTrue(String? value) {
   final text = value?.trim() ?? '';
   if (text.isEmpty || text == 'null') return false;
-  return !RegExp(r'^(?:false|no|not|0|0\.0)$', caseSensitive: false)
-      .hasMatch(text);
+  return !RegExp(
+    r'^(?:false|no|not|0|0\.0)$',
+    caseSensitive: false,
+  ).hasMatch(text);
 }
 
 /// 单条白/黑名单模式是否命中 URL
@@ -159,7 +162,13 @@ RssNavigationRule rssNavigationRuleDecision({
 /// 绑定 `url`（当前导航地址）与 `java`（原版 `RssJsExtensions` 的桩实现，
 /// 见 [kRssJavaStubScript]）。原版 `evalJS` 支持「表达式求值」与「脚本内
 /// return」两种写法：先按 `eval` 求值（表达式语义），失败再按函数体包裹
-/// 执行（`return` 语义），结果统一转字符串。JS 抛错返回空串（按未拦截处理）。
+/// 执行（`return` 语义）。
+///
+/// **返回值保持原始类型**（批15f 审查 P0-2）：不能用 `String(...)` 包裹——
+/// Android 插件会把字符串结果二次编码为 JSON 字面量（JS 返回 `"false"`
+/// 时 Dart 侧收到含引号的 `"\"false\""`），交给 [rssIsTrue] 会恒判 true
+/// 导致所有导航被拦截。无返回值（`undefined`）统一返回 `null`，由
+/// [rssShouldOverrideResult] 归一为「不拦截」；JS 抛错同样返回 `null`。
 String rssShouldOverrideScript(String js, String url) {
   final encodedUrl = jsonEncode(url);
   final encodedJs = jsonEncode(js);
@@ -167,18 +176,64 @@ String rssShouldOverrideScript(String js, String url) {
 (function(){
   var url = $encodedUrl;
   var java = (window.__legadoJava = window.__legadoJava || {});
+  var result;
   try {
-    return String(eval($encodedJs));
+    result = eval($encodedJs);
   } catch (e1) {
     try {
-      return String((function(){\n$js\n})());
+      result = (function(){\n$js\n})();
     } catch (e2) {
       try { console.error('shouldOverrideUrlLoading 执行失败: ' + (e2 && e2.stack ? e2.stack : e2)); } catch (e3) {}
-      return '';
+      return null;
     }
   }
+  return (result === undefined) ? null : result;
 })()
 ''';
+}
+
+/// 归一 `shouldOverrideUrlLoading` 的 JS 求值结果（批15f 审查 P0-2）
+///
+/// 平台返回形态差异：
+/// - Android 插件对 JS 字符串结果返回 **JSON 编码字面量**（如 JS `false`
+///   字符串 → Dart `"\"false\""`，含首尾引号）；布尔/数字返回 JSON 原文
+///   （`true` / `false` / `0` / `1`）；
+/// - iOS/macOS 直接返回原生 `bool` / `num` / `String`。
+///
+/// 归一规则（与 [rssParseConsoleLogs] 的 JSON 字面量处理同先例）：
+/// - `null` / `undefined` / 空串 → `false`（不拦截）；
+/// - `bool` → 原值；`num` → 非 0 为 `true`；
+/// - `String` → 先去掉外层 JSON 字符串字面量引号（`jsonDecode`），再按
+///   [rssIsTrue] 口径（`false/no/not/0/0.0` → false，其余 → true）。
+bool rssShouldOverrideResult(Object? raw) {
+  if (raw == null) return false;
+  if (raw is bool) return raw;
+  if (raw is num) return raw != 0;
+  var text = _unwrapQuotedLiteral(raw.toString());
+  if (text.isEmpty || text == 'null' || text == 'undefined') return false;
+  return rssIsTrue(text);
+}
+
+/// 去掉字符串外层的 JSON 字符串字面量引号（单双引号均兼容）
+///
+/// Android 插件对 JS 字符串结果返回 `"..."` 形态的 JSON 字面量；单引号
+/// 形态（非标准 JSON）仅做去引号，避免非法 JSON 字面量落到语义判定。
+String _unwrapQuotedLiteral(String value) {
+  final trimmed = value.trim();
+  if (trimmed.length < 2) return trimmed;
+  if (trimmed.startsWith('"') && trimmed.endsWith('"')) {
+    try {
+      final decoded = jsonDecode(trimmed);
+      if (decoded is String) return decoded.trim();
+    } catch (_) {
+      // 非法 JSON 字面量：按原文判定
+    }
+    return trimmed;
+  }
+  if (trimmed.startsWith("'") && trimmed.endsWith("'")) {
+    return trimmed.substring(1, trimmed.length - 1).trim();
+  }
+  return trimmed;
 }
 
 /// `java` 桩对象（原版 `RssJsExtensions` 的 Java 绑定）
@@ -241,15 +296,8 @@ const String kRssConsoleFlushScript =
 List<String> rssParseConsoleLogs(Object? raw) {
   final text = raw?.toString().trim() ?? '';
   if (text.isEmpty) return const [];
-  var candidate = text;
   // Android `runJavaScriptReturningResult` 返回 JSON 编码后的字符串字面量
-  if ((candidate.startsWith('"') && candidate.endsWith('"')) ||
-      (candidate.startsWith("'") && candidate.endsWith("'"))) {
-    try {
-      final decoded = jsonDecode(candidate);
-      if (decoded is String) candidate = decoded;
-    } catch (_) {}
-  }
+  final candidate = _unwrapQuotedLiteral(text);
   try {
     final decoded = jsonDecode(candidate);
     if (decoded is List) {

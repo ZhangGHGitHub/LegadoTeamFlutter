@@ -9,7 +9,8 @@ import 'package:flutter_legado/src/services/rss_web_config.dart';
 void main() {
   group('rssClHtml（对齐 ReadRssViewModel.clHtml）', () {
     test('有 </style> 且 style 非空白：紧随其后插入', () {
-      const content = '<html><head><style>a{}</style></head><body>x</body></html>';
+      const content =
+          '<html><head><style>a{}</style></head><body>x</body></html>';
       final html = rssClHtml(content, style: 'p{color:red}');
       expect(
         html,
@@ -19,7 +20,8 @@ void main() {
     });
 
     test('有 </style> 且 style 空白：原样返回', () {
-      const content = '<html><head><style>a{}</style></head><body>x</body></html>';
+      const content =
+          '<html><head><style>a{}</style></head><body>x</body></html>';
       expect(rssClHtml(content), content);
       expect(rssClHtml(content, style: '   '), content);
     });
@@ -40,10 +42,7 @@ void main() {
     });
 
     test('无 </head>：样式插到最前', () {
-      expect(
-        rssClHtml('正文', style: 'p{}'),
-        '<style>p{}</style>正文',
-      );
+      expect(rssClHtml('正文', style: 'p{}'), '<style>p{}</style>正文');
       expect(
         rssClHtml('正文'),
         startsWith('<style>$kRssDefaultContentStyle</style>'),
@@ -51,7 +50,8 @@ void main() {
     });
 
     test('preloadJs：有 <head> 时紧跟其后内联脚本', () {
-      const content = '<html><head><title>t</title></head><body>x</body></html>';
+      const content =
+          '<html><head><title>t</title></head><body>x</body></html>';
       final html = rssClHtml(content, preloadJs: 'window.x=1');
       expect(
         html,
@@ -74,7 +74,10 @@ void main() {
     });
 
     test('preloadJs 空白不注入', () {
-      expect(rssClHtml('<p>x</p>', preloadJs: '  '), isNot(contains('<script>')));
+      expect(
+        rssClHtml('<p>x</p>', preloadJs: '  '),
+        isNot(contains('<script>')),
+      );
     });
   });
 
@@ -219,7 +222,16 @@ void main() {
       expect(script, contains('var java = '));
       expect(script, contains("return url.indexOf('ads') >= 0"));
       expect(script, contains('eval('));
-      expect(script, contains('return String('));
+      expect(
+        script,
+        isNot(contains('return String(')),
+        reason: 'P0-2：不得把结果转字符串（Android 会二次编码导致恒判 true）',
+      );
+      expect(
+        script,
+        contains('return (result === undefined) ? null : result;'),
+        reason: '无返回值统一回 null',
+      );
     });
 
     test('脚本中的引号被 JSON 转义（不破坏外层脚本）', () {
@@ -228,6 +240,47 @@ void main() {
         'https://a.com/"x"',
       );
       expect(script, contains('https://a.com/\\"x\\"'));
+    });
+  });
+
+  group('rssShouldOverrideResult（P0-2 返回结果归一）', () {
+    test('bool/num 直判', () {
+      expect(rssShouldOverrideResult(true), isTrue);
+      expect(rssShouldOverrideResult(false), isFalse);
+      expect(rssShouldOverrideResult(1), isTrue);
+      expect(rssShouldOverrideResult(0), isFalse);
+      expect(rssShouldOverrideResult(0.0), isFalse);
+      expect(rssShouldOverrideResult(2.5), isTrue);
+    });
+
+    test('Android JSON 字面量先去引号再判定', () {
+      expect(rssShouldOverrideResult('false'), isFalse);
+      expect(
+        rssShouldOverrideResult('"false"'),
+        isFalse,
+        reason: 'Android 插件返回含首尾引号的 JSON 字面量（审查 P0-2 根因）',
+      );
+      expect(rssShouldOverrideResult('true'), isTrue);
+      expect(rssShouldOverrideResult('"true"'), isTrue);
+      expect(rssShouldOverrideResult('"0"'), isFalse);
+      expect(rssShouldOverrideResult('"1"'), isTrue);
+    });
+
+    test('null/undefined/空串 → 不拦截', () {
+      expect(rssShouldOverrideResult(null), isFalse);
+      expect(rssShouldOverrideResult(''), isFalse);
+      expect(rssShouldOverrideResult('   '), isFalse);
+      expect(rssShouldOverrideResult('null'), isFalse);
+      expect(rssShouldOverrideResult('"null"'), isFalse);
+      expect(rssShouldOverrideResult('undefined'), isFalse);
+      expect(rssShouldOverrideResult('"undefined"'), isFalse);
+    });
+
+    test('数字字符串按 isTrue 口径', () {
+      expect(rssShouldOverrideResult('0'), isFalse);
+      expect(rssShouldOverrideResult('0.0'), isFalse);
+      expect(rssShouldOverrideResult('1'), isTrue);
+      expect(rssShouldOverrideResult('42'), isTrue);
     });
   });
 
@@ -240,10 +293,10 @@ void main() {
     });
 
     test('rssParseConsoleLogs：JSON 数组 / JSON 字面量 / 纯文本', () {
-      expect(
-        rssParseConsoleLogs('["log: a","error: b"]'),
-        ['log: a', 'error: b'],
-      );
+      expect(rssParseConsoleLogs('["log: a","error: b"]'), [
+        'log: a',
+        'error: b',
+      ]);
       expect(
         rssParseConsoleLogs('"[\\"log: a\\"]"'),
         ['log: a'],

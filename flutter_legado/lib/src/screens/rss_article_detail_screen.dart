@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import '../constants/pref_keys.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -13,8 +15,10 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../services/deep_link_service.dart';
 import '../services/rss_header.dart';
 import '../services/rss_web_config.dart';
+import '../utils/legado_deep_link.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/open_url_confirm_dialog.dart';
 
@@ -52,6 +56,13 @@ class RssArticleDetailScreen extends ConsumerStatefulWidget {
   /// 回填内存态（批15f 已补 DB-only 查询，DB 仍为真源）。
   /// 为 null 时（如阅读记录入口）仅本页使用。
   final void Function(String description)? onContentFetched;
+
+  /// 测试专用：强制 WebView 平台判定（null 表示按真实平台判定）
+  ///
+  /// 桌面测试宿主不支持 webview_flutter，无法真实创建控制器；P0-1 用例
+  /// 通过该开关 + 假 `WebViewPlatform` 验证起始页渲染分支。
+  @visibleForTesting
+  static bool? debugWebViewSupportedOverride;
 
   const RssArticleDetailScreen({
     super.key,
@@ -108,12 +119,17 @@ class _RssArticleDetailScreenState
   ///
   /// webview_flutter 目前支持 Android / iOS / macOS，
   /// Windows / Linux 桌面端暂不支持，降级为纯文本渲染。
-  bool get _isWebViewSupported {
-    if (Platform.isAndroid || Platform.isIOS || Platform.isMacOS) {
-      return true;
-    }
-    return false;
-  }
+  /// 测试可经 [RssArticleDetailScreen.debugWebViewSupportedOverride] 覆盖。
+  bool get _isWebViewSupported =>
+      RssArticleDetailScreen.debugWebViewSupportedOverride ??
+      (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
+
+  /// 是否处于 `startHtml` 起始页模式（批15f 审查 P0-1）
+  ///
+  /// 起始页模式下 [RssArticleDetailScreen.article] 通常没有正文，渲染条件
+  /// 不能只依赖 `_articleHtml != null` 或 `_urlMode`，否则会误落「暂无内容」
+  /// 空态（WebView 实际已初始化）。
+  bool get _startHtmlMode => widget.startHtml?.trim().isNotEmpty ?? false;
 
   /// 获取文章 HTML 内容
   ///
@@ -163,6 +179,9 @@ class _RssArticleDetailScreenState
     final startHtml = widget.startHtml?.trim() ?? '';
     if (startHtml.isNotEmpty) {
       await _initWebView();
+      // [批15f 审查 P0-1] 起始页无 `_articleHtml`，控制器创建后显式重建，
+      // 让内容区从空态切到 WebView（加载事件之外的兜底刷新）。
+      if (mounted) setState(() {});
       return;
     }
 
@@ -346,7 +365,9 @@ class _RssArticleDetailScreenState
       jsEnabled ? JavaScriptMode.unrestricted : JavaScriptMode.disabled,
     );
     final headers = parseRssHeaderMap(source?.header);
-    final userAgent = rssHeaderUserAgent(headers);
+    // [批15f 审查 P2-2] 源 header 无 UA → 回落全局「其他设置 → UserAgent」
+    // （原版 WebView 走全局 UA 设置；全局也未配置则保留系统默认 UA）。
+    final userAgent = rssHeaderUserAgent(headers) ?? await _globalUserAgent();
     if (userAgent != null) {
       await controller.setUserAgent(userAgent);
     }
@@ -509,10 +530,11 @@ class _RssArticleDetailScreenState
   /// 导航请求处理（对齐 `ReadRssActivity.kt:770-808` + 白/黑名单）
   ///
   /// 1. `shouldOverrideUrlLoading` 非空 → JS 求值（`url` + `java` 桩），
-  ///    返回 true 拦截；
+  ///    结果经 [rssShouldOverrideResult] 归一，true 拦截；
   /// 2. 白/黑名单判定（仅主框架；子资源拦截 Flutter 无面，登记差异）；
-  /// 3. http/https → WebView 内导航；`legado:`/`yuedu:` → 交由系统处理；
-  ///    其余 scheme → 确认后外部打开并阻止 WebView 导航。
+  /// 3. http/https → WebView 内导航；`legado:`/`yuedu:` → 站内关联导入
+  ///    （复用 [DeepLinkService.handleUrl]）；其余 scheme → 确认后外部打开
+  ///    并阻止 WebView 导航。
   Future<NavigationDecision> _handleNavigationRequest(
     NavigationRequest request,
   ) async {
@@ -532,7 +554,7 @@ class _RssArticleDetailScreenState
         final result = await controller.runJavaScriptReturningResult(
           rssShouldOverrideScript(overrideJs, url),
         );
-        if (rssIsTrue(result.toString())) {
+        if (rssShouldOverrideResult(result)) {
           debugPrint('[RSS WebView] shouldOverrideUrlLoading 拦截: $url');
           return NavigationDecision.prevent;
         }
@@ -555,8 +577,29 @@ class _RssArticleDetailScreenState
     if (scheme == 'http' || scheme == 'https') {
       return NavigationDecision.navigate;
     }
+    // [批15f 审查 P2-3] legado:/yuedu: 走站内关联导入（复用系统深链入口，
+    // 对齐原版 openUrl 对该协议直进 OnLineImportActivity 不弹外跳确认），
+    // 不再交外部浏览器处理。
+    if (LegadoDeepLink.isImportScheme(url)) {
+      unawaited(DeepLinkService.instance.handleUrl(url));
+      return NavigationDecision.prevent;
+    }
     unawaited(_openUrlExternally(url));
     return NavigationDecision.prevent;
+  }
+
+  /// 全局 UserAgent（`PrefKeys.userAgent`；空/读取失败返回 null 用系统默认）
+  ///
+  /// 批15f 审查 P2-2：源 `header` 未配置 `User-Agent` 时回落用户全局设置，
+  /// 对齐原版 WebView 读取 `AppConfig.userAgent` 的行为。
+  Future<String?> _globalUserAgent() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final value = prefs.getString(PrefKeys.userAgent)?.trim() ?? '';
+      return value.isEmpty ? null : value;
+    } catch (_) {
+      return null;
+    }
   }
 
   /// WebView baseUrl（文章链接去掉规则尾巴；空串回退 null）
@@ -687,8 +730,8 @@ $htmlContent
             tooltip: _isStarred ? '取消收藏' : '收藏',
             onPressed: _starBusy ? null : _toggleStar,
           ),
-          // 切换渲染模式按钮（仅在支持 WebView 且有内容时显示）
-          if (_isWebViewSupported && html != null)
+          // 切换渲染模式按钮（仅在支持 WebView、有正文且非起始页时显示）
+          if (_isWebViewSupported && html != null && !_startHtmlMode)
             IconButton(
               icon: Icon(
                 _useWebView ? Symbols.article_rounded : Symbols.web_rounded,
@@ -928,8 +971,19 @@ $htmlContent
       );
     }
 
+    // [批15f 审查 P0-1] startHtml 起始页优先于文章自带内容渲染（与
+    // `_bootstrapReading` / `_initWebView` 的分支顺序一致）。起始页模式
+    // 通常 `_articleHtml == null`，不能只依赖下方 URL 直开条件，否则控制器
+    // 已初始化却永远显示「暂无内容」空态。
+    if (_startHtmlMode &&
+        _isWebViewSupported &&
+        _useWebView &&
+        _webViewController != null) {
+      return _buildWebViewContent(theme, colorScheme);
+    }
+
     // [批15f] URL 直开模式（无正文/无 ruleContent，对齐
-    // `RssReadLoadTarget.Url`）：直接渲染文章链接的 WebView 页面
+    // `RssReadLoadTarget.Url`）：直接渲染文章链接的 WebView 页面。
     if (html == null &&
         _urlMode &&
         _isWebViewSupported &&
@@ -1008,7 +1062,7 @@ $htmlContent
                 overflow: TextOverflow.ellipsis,
               ),
               const SizedBox(height: 16),
-              if (_urlMode)
+              if (_urlMode || _startHtmlMode)
                 FilledButton.icon(
                   onPressed: () {
                     setState(() {
