@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.389] - 2026-10-27
+
+### Added
+- [UI] 设置 → 其他新增「直链上传规则」配置：上传地址、下载地址规则、注释（必填）、压缩开关，支持「测试」（上传 test.json 并展示/复制结果）、「导入默认规则」（内置 3 条）、复制/粘贴规则；规则持久化并含安全提示。
+### Fixed
+- [UI] 直链配置的错误提示显示真实原因（不再出现「Instance of BridgeError」）；已保存规则无效时回退默认并明确提示；测试/保存过程中表单与菜单锁定防误操作。
+
 ## [2.0.388] - 2026-10-27
 
 ### Added
