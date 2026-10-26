@@ -242,7 +242,14 @@ class SaveFileBridge {
 
         // 写流 + 授权回收全部在后台线程，主线程只负责回 result
         Thread {
-            val outcome = writeOnBackground(activity, uri, bytes, fileName, mimeType)
+            // 最外层兜底（含 Error）：后台线程任何逃逸异常都不能让 Dart
+            // Future 永久挂起（pending 已在回调入口清除，5 分钟超时不再生效）
+            val outcome = try {
+                writeOnBackground(activity, uri, bytes, fileName, mimeType)
+            } catch (t: Throwable) {
+                Log.e(TAG, "另存后台任务异常：${technicalDetail(t)}", t)
+                WriteOutcome(code = "SAVE_FAILED", detail = technicalDetail(t))
+            }
             mainHandler.post {
                 if (outcome.saved != null) {
                     result.success(
