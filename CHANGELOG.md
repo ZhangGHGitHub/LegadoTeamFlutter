@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.382] - 2026-10-26
+
+### Fixed
+- [Rust] RSS 默认解析逐字段对齐原版（`media:thumbnail` 封面、`enclosure` 图片过滤、描述/正文首图提取、`<time>` 标签、`pubDate` 只取文本等），标准订阅源封面与摘要恢复正确。
+- [Rust] RSS 拉取不再在解析失败时伪造「标题=URL」的假文章（对齐原版：空内容报错/空列表）；`cacheFirst` 恢复为原版语义（仅影响阅读页缓存，不再短路文章列表）。
+- [Rust] 订阅源 `header` 配置真实生效（含登录头合并），需 Referer/UA 的源不再 403。
+- [Rust] 修复源 header 中 `proxy` 键被当作 HTTP 请求头发往站点的信息泄漏（书源与订阅源两路径同修），RSS 列表请求的 per-request 代理已接线。
+
 ## [2.0.381] - 2026-10-26
 
 ### Fixed
