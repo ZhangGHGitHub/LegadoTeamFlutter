@@ -1,22 +1,30 @@
 package io.legado.flutter
 
+import java.io.FileNotFoundException
+import java.io.IOException
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
- * [D1 回修 | 2026-10-27] SaveFileBridge 纯函数单测。
+ * [D1 回修 | 2026-10-27，P1-1/P2-1/P2-2/P3-1/P3-5] SaveFileBridge 纯函数单测。
  *
- * 覆盖 P3-4 要求的最小面：
- * 1. 空字节 / 空文件名在弹对话框前被拒绝（不创建 0 字节文档）；
- * 2. MIME 推断（JSON/JS/压缩包/未知扩展名）；
- * 3. 声明 MIME 优先于扩展名推断；
- * 4. 文件名净化（P3-5：`[\\/:*?"<>|]` → `_`）。
+ * 覆盖：
+ * 1. 参数校验 / MIME 推断 / 文件名净化（与 Dart 侧 trim 口径一致）；
+ * 2. 回退目标相对路径推导（`raw:` / `primary:` / RELATIVE_PATH / 无法确定）；
+ * 3. 回退触发条件（openOutputStream 返回 null、权限/文件形态异常）；
+ * 4. 失败后是否删除 SAF 文档（preSize 未知/已有内容/空文档）；
+ * 5. 回退读回大小严格校验（读不到即失败）；
+ * 6. 错误码中文 reason 映射。
  *
  * 纯 JVM JUnit（无 Robolectric）：只测 companion 内的纯函数内核，
  * 不触 Android 框架类（与 StorageBridgeBytesArgumentTest 同风格）。
  */
 class SaveFileBridgeTest {
+
+    // ---------- 参数校验 / MIME / 文件名 ----------
 
     @Test
     fun `empty bytes is rejected before launching the save dialog`() {
@@ -92,5 +100,328 @@ class SaveFileBridgeTest {
             "bookSource_QA.json",
             SaveFileBridge.normalizeFileName("  bookSource_QA.json  ")
         )
+    }
+
+    @Test
+    fun `normalize file name trims like the dart side`() {
+        // Dart `ExportFileService.normalizeFileName` 同为「替换 + trim」，
+        // 避免两端对首尾空白处理不一致（P3-5）
+        assertEquals("a.json", SaveFileBridge.normalizeFileName("\t a.json \n"))
+        assertEquals("", SaveFileBridge.normalizeFileName("   "))
+        assertEquals("有 空格.json", SaveFileBridge.normalizeFileName(" 有 空格.json "))
+        assertEquals("a_b.json", SaveFileBridge.normalizeFileName(" a?b.json "))
+    }
+
+    // ---------- P1-1：回退目标相对路径推导 ----------
+
+    @Test
+    fun `raw document id derives the parent download sub directory`() {
+        assertEquals(
+            "Download/legado/",
+            SaveFileBridge.resolveRelativePath(
+                "raw:/storage/emulated/0/Download/legado/x.json",
+                null,
+                null
+            )
+        )
+        assertEquals(
+            "Download/legado/deep/",
+            SaveFileBridge.resolveRelativePath(
+                "raw:/storage/emulated/0/Download/legado/deep/x.json",
+                null,
+                null
+            )
+        )
+        assertEquals(
+            "Download/",
+            SaveFileBridge.resolveRelativePath(
+                "raw:/storage/emulated/0/Download/x.json",
+                null,
+                null
+            )
+        )
+    }
+
+    @Test
+    fun `raw document id outside download resolves to null`() {
+        assertNull(
+            SaveFileBridge.resolveRelativePath(
+                "raw:/storage/emulated/0/Books/x.json",
+                null,
+                null
+            )
+        )
+        assertNull(
+            SaveFileBridge.resolveRelativePath(
+                "raw:/storage/emulated/0/DownloadX/x.json",
+                null,
+                null
+            )
+        )
+        // 外置 SD 卡无法用 MediaStore Downloads 表达 → 明确报错
+        assertNull(
+            SaveFileBridge.resolveRelativePath(
+                "raw:/storage/1A2B-3C4D/Download/legado/x.json",
+                null,
+                null
+            )
+        )
+    }
+
+    @Test
+    fun `primary document id derives download sub directory`() {
+        assertEquals(
+            "Download/legado/",
+            SaveFileBridge.resolveRelativePath(
+                "primary:Download/legado/x.json",
+                null,
+                null
+            )
+        )
+        assertEquals(
+            "Download/",
+            SaveFileBridge.resolveRelativePath(
+                "primary:Download/x.json",
+                null,
+                null
+            )
+        )
+        assertNull(
+            SaveFileBridge.resolveRelativePath(
+                "primary:Documents/x.json",
+                null,
+                null
+            )
+        )
+    }
+
+    @Test
+    fun `queried relative path wins and is normalized`() {
+        assertEquals(
+            "Download/legado/",
+            SaveFileBridge.resolveRelativePath(
+                "msf:1000001418",
+                null,
+                "Download/legado/"
+            )
+        )
+        // 无尾斜杠 / 前导斜杠 / 反斜杠都需要规范化
+        assertEquals(
+            "Download/legado/",
+            SaveFileBridge.resolveRelativePath(null, null, "/Download/legado")
+        )
+        assertEquals(
+            "Download/a/b/",
+            SaveFileBridge.resolveRelativePath(null, null, "Download\\a\\b")
+        )
+        // 非「下载」目录：拒绝（不得把音乐/文档目录映射成下载回退）
+        assertNull(SaveFileBridge.resolveRelativePath(null, null, "Music/legado/"))
+        assertNull(SaveFileBridge.resolveRelativePath(null, null, "Downloads/x/"))
+    }
+
+    @Test
+    fun `resolved absolute path is used when document id has no path`() {
+        assertEquals(
+            "Download/legado/",
+            SaveFileBridge.resolveRelativePath(
+                "1000001418",
+                "/storage/emulated/0/Download/legado/x.json",
+                null
+            )
+        )
+        assertEquals(
+            "Download/",
+            SaveFileBridge.resolveRelativePath(
+                null,
+                "/sdcard/Download/x.json",
+                null
+            )
+        )
+        assertNull(
+            SaveFileBridge.resolveRelativePath(null, "/storage/emulated/0/Music/x.json", null)
+        )
+    }
+
+    @Test
+    fun `relative path traversal segments are rejected`() {
+        assertNull(SaveFileBridge.resolveRelativePath(null, null, "Download/../../etc/"))
+        assertNull(
+            SaveFileBridge.resolveRelativePath(
+                "raw:/storage/emulated/0/Download/../Download/x.json",
+                null,
+                null
+            )
+        )
+    }
+
+    @Test
+    fun `unknown document id cannot be resolved`() {
+        assertNull(SaveFileBridge.resolveRelativePath(null, null, null))
+        assertNull(SaveFileBridge.resolveRelativePath("", "", ""))
+        assertNull(SaveFileBridge.resolveRelativePath("msd:1000001321", null, null))
+        assertNull(SaveFileBridge.resolveRelativePath("downloads", null, null))
+    }
+
+    @Test
+    fun `media store id is parsed from msf document ids only`() {
+        assertEquals(1000001418L, SaveFileBridge.mediaStoreIdOf("msf:1000001418"))
+        assertEquals(1000001418L, SaveFileBridge.mediaStoreIdOf("MSF:1000001418"))
+        // 纯数字是本 ROM DownloadsProvider 的 legacy downloads 行 id，与
+        // MediaStore `_id` 不同域（document/7 ↔ 行 1000001407）→ 不解析
+        assertNull(SaveFileBridge.mediaStoreIdOf(" 1000001418 "))
+        assertNull(SaveFileBridge.mediaStoreIdOf("7"))
+        // 目录 id / 非法值 / 0 均不当作 MediaStore 行 id
+        assertNull(SaveFileBridge.mediaStoreIdOf("msd:1000001321"))
+        assertNull(SaveFileBridge.mediaStoreIdOf("msf:abc"))
+        assertNull(SaveFileBridge.mediaStoreIdOf("0"))
+        assertNull(SaveFileBridge.mediaStoreIdOf(null))
+    }
+
+    // ---------- P3-1：回退触发条件 ----------
+
+    @Test
+    fun `security exception and file not found trigger fallback`() {
+        assertTrue(SaveFileBridge.isPermissionFailure(SecurityException("denied")))
+        assertTrue(SaveFileBridge.isPermissionFailure(FileNotFoundException("gone")))
+    }
+
+    @Test
+    fun `permission denial and eacces messages trigger fallback`() {
+        assertTrue(
+            SaveFileBridge.isPermissionFailure(
+                IOException(
+                    "open failed: EACCES (Permission denied)",
+                )
+            )
+        )
+        assertTrue(
+            SaveFileBridge.isPermissionFailure(
+                IOException(
+                    "Permission Denial: writing com.android.providers.downloads." +
+                        "DownloadStorageProvider requires " +
+                        "android.permission.MANAGE_DOCUMENTS"
+                )
+            )
+        )
+        assertTrue(SaveFileBridge.isPermissionFailure(IOException("EPERM: operation not permitted")))
+    }
+
+    @Test
+    fun `nested causes are inspected`() {
+        val nested = IOException(
+            "open failed",
+            SecurityException("Permission Denial: requires MANAGE_DOCUMENTS")
+        )
+        assertTrue(SaveFileBridge.isPermissionFailure(nested))
+    }
+
+    @Test
+    fun `unrelated io errors do not trigger fallback`() {
+        assertFalse(SaveFileBridge.isPermissionFailure(IOException("No space left on device")))
+        assertFalse(SaveFileBridge.isPermissionFailure(IllegalStateException("closed")))
+        assertFalse(SaveFileBridge.isPermissionFailure(null))
+    }
+
+    @Test
+    fun `fallback requires an unopened stream`() {
+        // openOutputStream 返回 null：即使没有异常也进入回退候选
+        assertTrue(SaveFileBridge.shouldAttemptFallback(false, true, null))
+        // 权限形态异常
+        assertTrue(
+            SaveFileBridge.shouldAttemptFallback(false, false, SecurityException("denied"))
+        )
+        // 写流已打开后失败：不回退（可能已写入部分内容）
+        assertFalse(
+            SaveFileBridge.shouldAttemptFallback(true, false, SecurityException("denied"))
+        )
+        // 非权限形态异常
+        assertFalse(
+            SaveFileBridge.shouldAttemptFallback(false, false, IOException("disk full"))
+        )
+    }
+
+    // ---------- P2-2 / P2-4：失败后是否删除 SAF 文档 ----------
+
+    @Test
+    fun `existing file is never deleted on failure`() {
+        assertFalse(SaveFileBridge.shouldDeleteAfterFailure(opened = true, preSize = 2100L))
+        assertFalse(SaveFileBridge.shouldDeleteAfterFailure(opened = false, preSize = 2100L))
+    }
+
+    @Test
+    fun `unknown size is never deleted`() {
+        // preSize=null（provider 不提供 SIZE / 查询失败）视为不删
+        assertFalse(SaveFileBridge.shouldDeleteAfterFailure(opened = true, preSize = null))
+        assertFalse(SaveFileBridge.shouldDeleteAfterFailure(opened = false, preSize = null))
+    }
+
+    @Test
+    fun `empty document is deleted whether opened or not`() {
+        // opened=true：本次已新建/截断写流后失败 → 清理残留
+        assertTrue(SaveFileBridge.shouldDeleteAfterFailure(opened = true, preSize = 0L))
+        // opened=false：CREATE_DOCUMENT 新建、写流被拒的空文档（P2-4）
+        assertTrue(SaveFileBridge.shouldDeleteAfterFailure(opened = false, preSize = 0L))
+    }
+
+    // ---------- P2-1：读回大小严格校验 ----------
+
+    @Test
+    fun `readback size must match exactly`() {
+        assertTrue(SaveFileBridge.isReadbackSizeValid(2100, 2100L))
+        assertTrue(SaveFileBridge.isReadbackSizeValid(0, 0L))
+        assertFalse(SaveFileBridge.isReadbackSizeValid(2100, 2099L))
+        assertFalse(SaveFileBridge.isReadbackSizeValid(2100, 2101L))
+    }
+
+    @Test
+    fun `unreadable readback size fails verification`() {
+        // -1（provider 报不可知）与 null（读不到）都必须判失败（P2-1）
+        assertFalse(SaveFileBridge.isReadbackSizeValid(2100, -1L))
+        assertFalse(SaveFileBridge.isReadbackSizeValid(2100, null))
+    }
+
+    // ---------- P2-3：中文 reason 映射 ----------
+
+    @Test
+    fun `fallback path unknown maps to a chinese reason`() {
+        assertEquals(
+            "无法确定所选文件夹，请选择内部存储 > Download 或子文件夹后重试",
+            SaveFileBridge.reasonOf("FALLBACK_PATH_UNKNOWN")
+        )
+    }
+
+    @Test
+    fun `legacy api reason asks the user to pick another folder`() {
+        assertEquals(
+            "Android 10 以下暂不支持保存到下载目录，请选择其他位置",
+            SaveFileBridge.reasonOf("LEGACY_NOT_SUPPORTED")
+        )
+    }
+
+    @Test
+    fun `verify failure and save failure map to chinese reasons`() {
+        assertEquals(
+            "写入校验失败，文件未保存，请重试或换一个文件夹",
+            SaveFileBridge.reasonOf("SAVE_VERIFY_FAILED")
+        )
+        assertEquals(
+            "无法写入所选位置，请换一个文件夹重试",
+            SaveFileBridge.reasonOf("SAVE_FAILED")
+        )
+        assertEquals("保存失败，请重试", SaveFileBridge.reasonOf("UNKNOWN_CODE"))
+    }
+
+    @Test
+    fun `all user facing reasons are chinese`() {
+        val codes = listOf(
+            "INVALID_ARGS", "EMPTY_BYTES", "ALREADY_PENDING", "SAVE_START_FAILED",
+            "NO_URI", "TIMEOUT", "ACTIVITY_DESTROYED", "SAVE_VERIFY_FAILED",
+            "FALLBACK_PATH_UNKNOWN", "LEGACY_NOT_SUPPORTED", "SAVE_FAILED"
+        )
+        val cjk = Regex("[\\u4e00-\\u9fff]")
+        for (code in codes) {
+            val reason = SaveFileBridge.reasonOf(code)
+            assertTrue("$code 缺少中文文案：$reason", cjk.containsMatchIn(reason))
+        }
     }
 }
