@@ -391,6 +391,15 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
     return m.map((k, v) => MapEntry(k, v.toString()));
   }
 
+  /// 设置 HTTP 请求日志采集开关（契约 §2.10，批11）
+  ///
+  /// Rust `set_http_log_recording`：落库 `config:recordHttpLog` + 切换运行期
+  /// 采集开关（失败抛 BridgeError，运行期状态不变）。
+  @override
+  Future<bool> setHttpLogRecording(bool enabled) async {
+    return bridge.setHttpLogRecording(enabled: enabled);
+  }
+
   // ========== 词典操作 ==========
 
   /// 词典查询（本地内置词典）

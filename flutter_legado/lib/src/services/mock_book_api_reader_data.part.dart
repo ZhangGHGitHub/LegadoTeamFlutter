@@ -260,6 +260,13 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
   @override
   Future<Map<String, String>> getAllConfigs() async => Map.from(_configs);
 
+  /// Mock：写入 config:recordHttpLog 并回显生效值（Mock 无真实采集点）
+  @override
+  Future<bool> setHttpLogRecording(bool enabled) async {
+    _configs['recordHttpLog'] = enabled ? 'true' : 'false';
+    return enabled;
+  }
+
   // ========== 词典操作 ==========
 
   /// 内置 Mock 词典（占位数据，字段对齐 Rust `DictEntry`）

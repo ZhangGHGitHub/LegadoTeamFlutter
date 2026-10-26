@@ -644,6 +644,14 @@ abstract class BookApi {
   /// 获取所有配置
   Future<Map<String, String>> getAllConfigs();
 
+  /// 设置 HTTP 请求日志采集开关（契约 §2.10，2026-10-26 批11 加法式）
+  ///
+  /// 对齐原版 `HttpLogController.setRecording`：Rust 侧持久化 caches
+  /// `config:recordHttpLog` 并立即切换 `legado-net` 统一请求出口的采集开关；
+  /// 返回生效值。落库失败抛错且运行期状态不变。App 侧请求与 Web 端
+  /// `/getHttpLogs` 共享同一进程级日志 ring（对齐原版共享 `HttpLogStore`）。
+  Future<bool> setHttpLogRecording(bool enabled);
+
   // ========== 词典操作 ==========
 
   /// 词典查询（本地内置词典）

@@ -292,6 +292,14 @@ void main() {
       expect(all['a'], '1');
       expect(all['b'], '2');
     });
+
+    test('setHttpLogRecording 落 config:recordHttpLog 并回显生效值', () async {
+      // 批11 契约 §2.10：开关真源为 caches config:recordHttpLog
+      expect(await api.setHttpLogRecording(true), isTrue);
+      expect(await api.getConfig('recordHttpLog'), 'true');
+      expect(await api.setHttpLogRecording(false), isFalse);
+      expect(await api.getConfig('recordHttpLog'), 'false');
+    });
   });
 
   group('书签操作', () {

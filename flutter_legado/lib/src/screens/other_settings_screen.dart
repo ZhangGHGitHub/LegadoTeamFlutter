@@ -164,6 +164,8 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
         await s.getBoolPref(PrefKeys.processText, defaultValue: true);
     // 日志开关经 CrashLogService（已接通日志记录行为）
     _recordLog = await CrashLogService.instance.getRecordLog();
+    // HTTP 日志开关：prefs 仅作旧版本兼容回退，真源为 Rust caches
+    // config:recordHttpLog（见下方回读/一次性迁移，2026-10-26 批11）
     _recordHttpLog = await CrashLogService.instance.getRecordHttpLog();
     _recordHeapDump = await CrashLogService.instance.getRecordHeapDump();
     // [Task #40 | 2026-08-09] §5.13-2：校验书源配置（含默认值回落） — Qoder
@@ -177,6 +179,15 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
       _customHostsJson = await api.getConfig('customHosts') ?? '';
       _mcpPort = int.tryParse(await api.getConfig('mcpPort') ?? '') ?? 0;
       _jsSourceApiToken = await api.getConfig('jsSourceApiToken') ?? '';
+      // 批11：HTTP 日志开关以 Rust 为准。旧版本只写 SharedPreferences，
+      // 首次读到空值即用 prefs 值迁移一次（此后 prefs 仅作兼容写入）。
+      final rustRecordHttpLog = await api.getConfig('recordHttpLog') ?? '';
+      if (rustRecordHttpLog.isEmpty) {
+        await api.setHttpLogRecording(_recordHttpLog);
+      } else {
+        _recordHttpLog =
+            rustRecordHttpLog == 'true' || rustRecordHttpLog == '1';
+      }
     } catch (e) {
       debugPrint('OtherSettingsScreen 回读 customHosts/mcpPort 异常: $e');
     }
@@ -511,7 +522,16 @@ class _OtherSettingsScreenState extends ConsumerState<OtherSettingsScreen> {
                 value: _recordHttpLog,
                 onChanged: (v) {
                   setState(() => _recordHttpLog = v);
+                  // 保留 prefs 写入兼容旧版本；同时经 FFI 同步 Rust 持久化
+                  // （config:recordHttpLog）与 legado-net 运行期采集开关
                   CrashLogService.instance.setRecordHttpLog(v);
+                  ref
+                      .read(bookApiProvider)
+                      .setHttpLogRecording(v)
+                      .catchError((Object e) {
+                    debugPrint('同步 HTTP 日志采集开关失败: $e');
+                    return _recordHttpLog;
+                  });
                 },
               ),
               SettingSwitchRow(
