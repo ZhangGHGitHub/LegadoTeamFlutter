@@ -10,7 +10,9 @@
 //! - 请求（客户端 → 服务端，文本帧）：
 //!   - JSON 对象 `{"tag":"<sourceUrl>","key":"<可选>"}`
 //!     （`sourceUrl` 作为 `tag` 的别名同样接受）；
-//!   - 非 JSON 文本按「源 URL」处理（兼容旧 echo 客户端的纯文本输入）。
+//!   - 非 JSON 文本按「源 URL」处理（兼容旧 echo 客户端的纯文本输入）；
+//!   - JSON 解析成功但非对象（数组/字符串/数字等）→ `debug_error`「请求格式错误」
+//!     （形态不符显式报错，不回退成源 URL）。
 //! - 响应：`debug_log`（阶段/请求/字段行，带原版 `[mm:ss.SSS]` 前缀）、
 //!   `debug_error`（state=-1 失败行）、`debug_done`（本次调试结束，连接保持）。
 //!
@@ -98,33 +100,42 @@ struct RssDebugRequest {
 }
 
 /// 解析请求文本（JSON 对象优先，非 JSON 文本按源 URL 兼容旧客户端）
+///
+/// 三种输入形态分开处理，避免把「解析成功但不是对象」误当源 URL：
+/// - JSON 对象 → 取 `tag`/`sourceUrl` 与可选 `key`；
+/// - JSON 解析成功但非对象（数组/字符串/数字/布尔/null）→ 「请求格式错误」；
+/// - JSON 解析失败 → 兼容旧 echo 客户端，整段文本视作源 URL。
 fn parse_request(text: &str) -> Result<RssDebugRequest, &'static str> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Err("输入不能为空");
     }
-    if let Ok(serde_json::Value::Object(map)) = serde_json::from_str::<serde_json::Value>(trimmed) {
-        let tag = ["tag", "sourceUrl"]
-            .iter()
-            .find_map(|field| map.get(*field))
-            .and_then(lenient_string)
-            .unwrap_or_default();
-        let tag = tag.trim().to_string();
-        if tag.is_empty() {
-            return Err("输入不能为空");
+    match serde_json::from_str::<serde_json::Value>(trimmed) {
+        Ok(serde_json::Value::Object(map)) => {
+            let tag = ["tag", "sourceUrl"]
+                .iter()
+                .find_map(|field| map.get(*field))
+                .and_then(lenient_string)
+                .unwrap_or_default();
+            let tag = tag.trim().to_string();
+            if tag.is_empty() {
+                return Err("输入不能为空");
+            }
+            let key = map
+                .get("key")
+                .and_then(lenient_string)
+                .map(|key| key.trim().to_string())
+                .filter(|key| !key.is_empty());
+            Ok(RssDebugRequest { tag, key })
         }
-        let key = map
-            .get("key")
-            .and_then(lenient_string)
-            .map(|key| key.trim().to_string())
-            .filter(|key| !key.is_empty());
-        return Ok(RssDebugRequest { tag, key });
+        // 解析成功但不是 JSON 对象：形态不符必须显式报错，不静默当作 tag
+        Ok(_) => Err("请求格式错误"),
+        // 非 JSON：兼容旧 echo 客户端（整段文本视作源 URL）
+        Err(_) => Ok(RssDebugRequest {
+            tag: trimmed.to_string(),
+            key: None,
+        }),
     }
-    // 非 JSON：兼容旧 echo 客户端（整段文本视作源 URL）
-    Ok(RssDebugRequest {
-        tag: trimmed.to_string(),
-        key: None,
-    })
 }
 
 /// Gson `Map<String, String>` 口径的宽松取值（字符串/数字/布尔）
@@ -318,5 +329,39 @@ mod tests {
             parse_request(r#"{"tag":"  "}"#).unwrap_err(),
             "输入不能为空"
         );
+    }
+
+    #[test]
+    fn parse_request_rejects_non_object_json_instead_of_tag() {
+        // 解析成功但非对象：形态不符显式报错，不得回退成 tag
+        for text in [
+            r#"["a"]"#,
+            r#""https://rss.example.com/feed""#,
+            "123",
+            "true",
+            "null",
+        ] {
+            assert_eq!(
+                parse_request(text).unwrap_err(),
+                "请求格式错误",
+                "非对象 JSON 不应被当作源 URL: {text}"
+            );
+        }
+        // 空对象：缺 tag 按「输入不能为空」
+        assert_eq!(parse_request("{}").unwrap_err(), "输入不能为空");
+    }
+
+    #[test]
+    fn parse_request_treats_empty_key_as_two_param_flow() {
+        // 官方 vue 调试页实测发 `key:""`：必须落回原版两参默认流程
+        // （key 归一为 None，后续不会被判为搜索）
+        for text in [
+            r#"{"tag":"https://rss.example.com/feed","key":""}"#,
+            r#"{"tag":"https://rss.example.com/feed","key":"   "}"#,
+        ] {
+            let request = parse_request(text).unwrap();
+            assert_eq!(request.tag, "https://rss.example.com/feed");
+            assert!(request.key.is_none(), "空/空白 key 必须归一为 None: {text}");
+        }
     }
 }

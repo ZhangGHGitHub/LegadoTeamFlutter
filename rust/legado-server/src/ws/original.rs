@@ -87,7 +87,7 @@
 //! | `ruleArticles` 非空且 `ruleDescription` 空白 → `︽列表页解析完成` + 空行；`ruleContent` 空 → `⇒内容规则为空，默认获取整个网页`(1000)，否则解析首篇文章正文 | `Debug.kt:323-331` |
 //! | 其余（含默认规则源）→ `⇒存在描述规则，不解析内容页` + `︽解析完成`(1000) | `Debug.kt:332-336` |
 //! | 正文：`︾开始解析内容页` → 正文整段（带一次时间前缀）→ `︽内容页解析完成`(1000)；失败打印错误链(-1) | `Debug.kt:412-450` |
-//! | 列表解析阶段行：默认规则 `⇒列表规则为空, 使用默认规则解析`；规则列表 `┌获取列表`/`└列表大小:N`、`┌获取下一页链接`/`└<url>`、首条字段族 `┌获取标题`/`┌获取时间`/`┌获取描述`/`┌获取图片url`/`┌获取文章链接` | `RssParserByRule.kt:36-92,95-140` |
+//! | 列表解析阶段行：默认规则 `⇒列表规则为空, 使用默认规则解析` **+ 默认解析结果首条字段族**（列表非空时 10 行，可空字段字面输出 `null`）；规则列表 `┌获取列表`/`└列表大小:N`、`┌获取下一页链接`/`└<url>`、首条字段族 `┌获取标题`/`┌获取时间`/`┌获取描述`/`┌获取图片url`/`┌获取文章链接` | `RssParserByRule.kt:36-92,95-140`；`RssParserDefault.kt:101-112` |
 //! | 响应体行 state 10/20/30/40 由 WS 丢弃；`-1`/`1000` 打印后 close 1000「调试结束」 | `RssSourceDebugWebSocket.kt:24,144-156` |
 //! | 三参 `Debug.startDebug(scope, rssSource, key)`：含 `::` → 分类页；绝对 URL → 正文页；其它 → 搜索页（`searchUrl` 空 → `⇒搜索URL为空`(-1)） | `Debug.kt:346-410` |
 //!
@@ -105,7 +105,8 @@
 //!   `sortUrls()` 的脚本求值与缓存复用 15b `sort_urls`（缓存键
 //!   `rssSortUrl_<md5>` 与原版 ACache 同口径）；
 //! - 请求级日志沿用批13 的 task-local 观测槽（`≡获取成功:<url>` + 测量行），
-//!   RSS 列表/正文请求都在本调试任务内同步 `await`，可被观测；
+//!   RSS 列表/正文请求都在本调试任务内同步 `await`，可被观测（含正文分页每页，
+//!   原版分页 `printLog = false` 抑制，差异见未覆盖清单）；
 //! - 登录态：`loginHeader_<url>` / `userInfo_<url>` 由服务器 DB 读取后交给
 //!   引擎（同源门控在引擎内完成，跨域 nextUrl 不外发凭据）。
 //!
@@ -113,8 +114,20 @@
 //!
 //! - `└列表大小:N` 用真实**文章数**（原版打印 `getElements` 原始元素数，
 //!   即标题为空被丢弃前的数量，差异登记）；
-//! - 首条字段族只在文章非空时输出（原版对首元素求值后才判空标题丢弃，
-//!   极端空标题场景会多一组字段行）；
+//! - 规则列表首条字段族的取值口径：原版固定对 `collections[0]`（**空标题过滤 /
+//!   `-` 反转之前**的原始首元素）打印；本实现取 `page.items.first()`（过滤且
+//!   反转之后的首条）。可观察差异两处：① 反转规则源原版展示原始首条（反转后
+//!   成为末条），本实现展示原始末条；② 原始首条标题为空时原版照打字段族再丢弃，
+//!   本实现展示第二条（全部标题为空时整组字段族不打印）。默认解析分支无过滤 /
+//!   反转，按 `firstOrNull()` 打印（列表为空不打印、`null` 字面量），与原版一致；
+//! - 正文分页每页的请求级行：原版第 2 页起以 `printLog = false` 调用
+//!   （`Rss.kt:141,161`）抑制 `≡获取成功` 与 `┌获取正文下一页链接` 等行；本实现
+//!   task-local 观测对每页真实 HTTP 请求都输出 `≡获取成功` + `≡请求`，属**额外
+//!   行**（内容为真实请求，非伪造）；
+//! - 请求行 URL 口径：列表页原版打印 `analyzeUrl.ruleUrl`（规则求值后的请求
+//!   URL，`Rss.kt:83`），正文首页打印 `res.url`（重定向后的最终 URL，
+//!   `Rss.kt:211`）；本实现统一打印 `LegadoClient` 采集的**请求 URL**（重定向前）。
+//!   列表页两口径近似一致，正文在重定向场景与上游不同；
 //! - `第N页完成` / `◇正文总页数` / `◇并发解析正文,总页数` /
 //!   `┌获取正文下一页链接`/`└…`：正文分页与 nextUrl 求值在 fetcher 内部；
 //! - 逐元素字段求值过程（单条规则命中/异常字段的 `localizedMessage`）；
@@ -1328,14 +1341,20 @@ async fn rss_sort_debug(
     }
 }
 
-/// 列表解析阶段行（对齐 `RssParserByRule.kt:32-92`）
+/// 列表解析阶段行（对齐 `RssParserByRule.kt:32-92` + `RssParserDefault.kt:101-112`）
 ///
-/// 默认规则分支只有一行 `⇒列表规则为空, 使用默认规则解析`；规则列表分支
+/// 默认规则分支：`⇒列表规则为空, 使用默认规则解析`，随后在默认解析**列表非空**
+/// 时按首条打印同款 10 行字段族（可空字段以 `null` 字面量输出）；规则列表分支
 /// 打印列表大小、下一页链接与首条字段族。`└列表大小` 用真实文章数
 /// （原版为去空标题前的原始元素数，已在模块文档登记差异）。
 fn log_rss_list_parse(sink: &DebugSink, ctx: &RssDebugContext, page: &RssListPage) {
     if !has_rule_articles(&ctx.source) {
         sink.log("⇒列表规则为空, 使用默认规则解析");
+        // `RssParserDefault.kt:101-112`：默认解析在 `parseXML` 返回前对
+        // `firstOrNull()` 打印字段族；列表为空时整组不打印
+        if let Some(first) = page.items.first() {
+            log_rss_default_first_item(sink, first);
+        }
         return;
     }
     sink.log("┌获取列表");
@@ -1369,6 +1388,28 @@ fn log_rss_first_item(sink: &DebugSink, ctx: &RssDebugContext, item: &RssArticle
     }
     sink.log("┌获取图片url");
     sink.log(format!("└{}", item.image.as_deref().unwrap_or("")));
+    sink.log("┌获取文章链接");
+    sink.log(format!("└{}", item.link));
+}
+
+/// 默认解析分支的首条字段族（`RssParserDefault.kt:101-112`）
+///
+/// 原版在 `parseXML` 返回前直接对 `RssArticle` 做 Kotlin 字符串插值：
+/// 可空字段（`pubDate`/`description`/`image`）为 `null` 时字面输出 `null`；
+/// 与规则列表分支的「描述规则为空，将会解析内容页」不同——默认解析不读规则，
+/// 只打印解析结果本身。
+fn log_rss_default_first_item(sink: &DebugSink, item: &RssArticleItem) {
+    sink.log("┌获取标题");
+    sink.log(format!("└{}", item.title));
+    sink.log("┌获取时间");
+    sink.log(format!("└{}", item.pub_date.as_deref().unwrap_or("null")));
+    sink.log("┌获取描述");
+    sink.log(format!(
+        "└{}",
+        item.description.as_deref().unwrap_or("null")
+    ));
+    sink.log("┌获取图片url");
+    sink.log(format!("└{}", item.image.as_deref().unwrap_or("null")));
     sink.log("┌获取文章链接");
     sink.log(format!("└{}", item.link));
 }
