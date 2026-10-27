@@ -10,6 +10,7 @@
 //! 3. 提取书籍文件到指定输出目录（同名 basename 按序号去重，不互相覆盖）
 //! 4. 返回提取后的文件路径列表
 
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
@@ -305,12 +306,17 @@ fn is_multi_volume_7z_path(path: &str) -> bool {
 const SEVEN_Z_SIGNATURE_HEADER_SIZE: usize = 32;
 /// 7z 文件签名（"7z\xBC\xAF\x27\x1C"）
 const SEVEN_Z_SIGNATURE: [u8; 6] = [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C];
-/// 头部大小硬上限（64 MiB）
+/// 头部明文大小硬上限（64 MiB，纵深防御）
 ///
-/// 书籍包头部实际只有几十 KiB；上游 `ArchiveReader::open` 会按头部声明值
-/// 分配缓冲区（`MAX_MEM_LIMIT_KB = usize::MAX/1024` 等于无上限），恶意头可
-/// 声明数 GiB 触发 OOM。此处先自读签名头拒绝超限声明（仅 DoS 面缓解，
-/// 残余风险与边界见 §2.34 批24b 补记与 docs/RESIDUAL_RISKS_2026-08-13.md）。
+/// 上游 `init_archive` 已先拒绝 `next_header_size > reader_len`（声明值不得超过
+/// 实际文件长度），因此该门槛**不是修复某个已知 OOM**，而是纵深防御：把明文
+/// 头部缓冲区进一步限制在 64 MiB 内（书籍包头部实际只有几十 KiB）。
+///
+/// 未缓解向量（与 §2.34 批24c、`docs/RESIDUAL_RISKS_2026-08-13.md` 7Z-1 一致）：
+/// 编码头（EncodedHeader）解码输出经 `take(unpack_size).read_to_end` 按实际解码
+/// 字节增长，恶意流可声明超大 unpack size 解出海量明文；编码头内部的 LZMA 字典
+/// 也在 `ArchiveReader::open` 期间按属性分配，而 `check_7z_archive` 的字典检查
+/// 发生在其后。**仅头部明文缓冲区受限，解码内存未缓解**。
 const SEVEN_Z_MAX_HEADER_SIZE: u64 = 64 * 1024 * 1024;
 
 /// 自读 7z 32 字节签名头，做签名与头部大小预检（在 `ArchiveReader::open` 之前）
@@ -623,15 +629,18 @@ fn open_7z_reader(path: &str) -> LegadoResult<sevenz_rust2::ArchiveReader<File>>
     sevenz_rust2::ArchiveReader::open(path, sevenz_rust2::Password::empty()).map_err(map_7z_error)
 }
 
-/// 输出名比较键（Windows 文件系统大小写不敏感，避免 `A.txt`/`a.txt` 相互覆盖）
-fn output_name_key(name: &str) -> String {
-    #[cfg(windows)]
-    {
-        name.to_lowercase()
-    }
-    #[cfg(not(windows))]
-    {
-        name.to_string()
+/// 输出名去重是否折叠大小写
+///
+/// Windows（NTFS）、macOS（APFS 默认）与 iOS 的默认文件系统均大小写不敏感：
+/// `A.txt` 与 `a.txt` 指向同一目录项，若不折叠会相互覆盖且列表返回重复路径。
+/// Linux/Android 默认大小写敏感，保持原名。
+const FOLD_OUTPUT_NAME_CASE: bool = cfg!(any(windows, target_os = "macos", target_os = "ios"));
+
+/// 拆分文件名与扩展名（保留点号），用于 `name_2.ext` 命名
+fn split_name_ext(base: &str) -> (&str, &str) {
+    match base.rfind('.') {
+        Some(idx) if idx > 0 => (&base[..idx], &base[idx..]),
+        _ => (base, ""),
     }
 }
 
@@ -639,20 +648,70 @@ fn output_name_key(name: &str) -> String {
 ///
 /// 首次出现原样返回；重名依次追加 `_2`/`_3`…（保留扩展名），避免同一包内
 /// 多个同名条目在最终 rename 阶段互相覆盖（批24b P3-2，防数据丢失）。
-fn dedupe_output_name(base: &str, used: &mut std::collections::HashSet<String>) -> String {
-    let mut candidate = base.to_string();
-    let mut seq = 1usize;
+///
+/// `fold_case` 为真时按大小写不敏感比较（Windows/macOS/iOS），否则按原名精确
+/// 比较；`next_seq` 缓存每个基名的下一个候选序号，避免重复线性扫描（批24c P3-5）。
+fn dedupe_output_name(
+    base: &str,
+    used: &mut HashSet<String>,
+    next_seq: &mut HashMap<String, usize>,
+    fold_case: bool,
+) -> String {
+    let fold = |name: &str| {
+        if fold_case {
+            name.to_lowercase()
+        } else {
+            name.to_string()
+        }
+    };
+
+    let base_key = fold(base);
+    if used.insert(base_key.clone()) {
+        next_seq.insert(base_key, 2);
+        return base.to_string();
+    }
+
+    let (stem, ext) = split_name_ext(base);
+    let seq = next_seq.entry(base_key).or_insert(2);
     loop {
-        if used.insert(output_name_key(&candidate)) {
+        let candidate = format!("{stem}_{seq}{ext}");
+        *seq += 1;
+        if used.insert(fold(&candidate)) {
             return candidate;
         }
-        seq += 1;
-        let (stem, ext) = match base.rfind('.') {
-            Some(idx) if idx > 0 => (&base[..idx], &base[idx..]),
-            _ => (base, ""),
-        };
-        candidate = format!("{stem}_{seq}{ext}");
     }
+}
+
+/// 按 `archive.files` 文件序预计算书籍条目的输出名
+///
+/// 返回 `(与 files 索引对齐的输出名, basename → 文件序输出名队列)`。
+/// `for_each_entries` 的访问顺序与文件序不同（有数据的条目先访问，零字节/无流
+/// 条目最后统一访问）；若在解压回调里现场去重，同一 basename 的 `_2`/`_3` 归属
+/// 会与列表不一致。解压时按 basename 队列取预计算结果，保证 list/import 输出名
+/// 集合一致（重复项之间名称对应可互换，列表本就不区分同 basename 条目）。
+fn plan_book_output_names(
+    files: &[sevenz_rust2::ArchiveEntry],
+    fold_case: bool,
+) -> (Vec<Option<String>>, HashMap<String, VecDeque<String>>) {
+    let mut used = HashSet::new();
+    let mut next_seq = HashMap::new();
+    let mut by_index = Vec::with_capacity(files.len());
+    let mut by_base: HashMap<String, VecDeque<String>> = HashMap::new();
+    for entry in files {
+        let base = file_base_name(&entry.name);
+        let is_book = !entry.is_directory && !base.starts_with('.') && is_book_file(base);
+        if !is_book {
+            by_index.push(None);
+            continue;
+        }
+        let out_name = dedupe_output_name(base, &mut used, &mut next_seq, fold_case);
+        by_base
+            .entry(base.to_string())
+            .or_default()
+            .push_back(out_name.clone());
+        by_index.push(Some(out_name));
+    }
+    (by_index, by_base)
 }
 
 /// 列出 7z 压缩包中的书籍文件名（不解压）
@@ -668,17 +727,9 @@ fn list_7z_book_files_with_limits(
     let reader = open_7z_reader(seven_zip_path)?;
     check_7z_archive(reader.archive(), limits)?;
 
-    // 与解压落盘使用同一套去重命名，保证列表中的文件名可被选中导入
-    let mut used = std::collections::HashSet::new();
-    Ok(reader
-        .archive()
-        .files
-        .iter()
-        .filter(|entry| !entry.is_directory)
-        .map(|entry| file_base_name(&entry.name))
-        .filter(|base| !base.starts_with('.') && is_book_file(base))
-        .map(|base| dedupe_output_name(base, &mut used))
-        .collect())
+    // 与解压落盘使用同一套文件序去重规划，保证列表中的文件名可被选中导入
+    let (planned, _) = plan_book_output_names(&reader.archive().files, FOLD_OUTPUT_NAME_CASE);
+    Ok(planned.into_iter().flatten().collect())
 }
 
 /// 导入 7z 压缩包中的书籍文件
@@ -706,7 +757,9 @@ fn import_7z_file_with_limits(
     let mut total_read: u64 = 0;
     let mut failure: Option<LegadoError> = None;
     let mut sequence: usize = 0;
-    let mut used_names = std::collections::HashSet::new();
+    // 输出名按 archive.files 文件序预计算（解压回调的访问顺序与文件序不同）
+    let (_, mut planned_names) =
+        plan_book_output_names(&reader.archive().files, FOLD_OUTPUT_NAME_CASE);
 
     let result = reader.for_each_entries(|entry, stream| {
         let base = file_base_name(&entry.name);
@@ -745,8 +798,16 @@ fn import_7z_file_with_limits(
             return Ok(true);
         }
 
-        // 同名 basename 按序号去重（`novel.txt` / `novel_2.txt`），避免相互覆盖
-        let out_name = dedupe_output_name(base, &mut used_names);
+        // 同名 basename 按序号去重（`novel.txt` / `novel_2.txt`），避免相互覆盖；
+        // 具体名称取自文件序规划队列（见 `plan_book_output_names`）
+        let Some(out_name) = planned_names.get_mut(base).and_then(VecDeque::pop_front) else {
+            failure = Some(LegadoError::BookParse(format!(
+                "7z 输出名规划缺失 [{base}]"
+            )));
+            return Err(sevenz_rust2::Error::from(std::io::Error::other(
+                "legado:7z-plan",
+            )));
+        };
         let out_path = match safe_output_path(output_dir, &out_name) {
             Ok(path) => path,
             Err(e) => {
@@ -1090,6 +1151,20 @@ mod tests {
         vec![EncoderConfiguration::new(EncoderMethod::LZMA2)]
     }
 
+    /// 断言目录内无 `.part` 残留（失败回滚检查）
+    fn assert_no_part_files(dir: &Path) {
+        let parts: Vec<String> = fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .filter_map(|entry| entry.ok())
+                    .map(|entry| entry.file_name().to_string_lossy().to_string())
+                    .filter(|name| name.ends_with(".part"))
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert!(parts.is_empty(), "失败回滚后残留 .part: {parts:?}");
+    }
+
     /// 非 solid 7z 夹具
     fn create_test_7z(
         path: &Path,
@@ -1102,6 +1177,35 @@ mod tests {
             writer
                 .push_archive_entry(SevenZEntry::new_file(name), Some(*content))
                 .unwrap();
+        }
+        writer.finish().unwrap();
+        path.to_path_buf()
+    }
+
+    /// 含「无流零字节」条目的 7z 夹具
+    ///
+    /// `for_each_entries` 先访问各压缩块内的条目，最后统一访问无流零字节条目；
+    /// `None` 内容即生成无流条目，用于回归 list/import 去重命名一致性。
+    fn create_test_7z_with_no_stream_entries(
+        path: &Path,
+        entries: &[(&str, Option<&[u8]>)],
+        methods: Vec<EncoderConfiguration>,
+    ) -> PathBuf {
+        let mut writer = ArchiveWriter::create(path).unwrap();
+        writer.set_content_methods(methods);
+        for (name, content) in entries {
+            match content {
+                Some(bytes) => {
+                    writer
+                        .push_archive_entry(SevenZEntry::new_file(name), Some(*bytes))
+                        .unwrap();
+                }
+                None => {
+                    writer
+                        .push_archive_entry::<Cursor<&[u8]>>(SevenZEntry::new_file(name), None)
+                        .unwrap();
+                }
+            }
         }
         writer.finish().unwrap();
         path.to_path_buf()
@@ -1363,6 +1467,8 @@ mod tests {
             ..ArchiveLimits::default()
         };
         let output = dir.join("out");
+        fs::create_dir_all(&output).unwrap();
+        fs::write(output.join("novel.txt"), b"keep existing").unwrap();
         let err = import_7z_file_with_limits(
             archive.to_str().unwrap(),
             output.to_str().unwrap(),
@@ -1370,7 +1476,13 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("单条目过大"), "{err}");
-        assert!(!output.join("novel.txt").exists());
+        // 失败回滚：既有输出文件不被触碰、无 .part、无半成品
+        assert_eq!(
+            fs::read(output.join("novel.txt")).unwrap(),
+            b"keep existing"
+        );
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 1);
+        assert_no_part_files(&output);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1387,6 +1499,8 @@ mod tests {
             ..ArchiveLimits::default()
         };
         let output = dir.join("out");
+        fs::create_dir_all(&output).unwrap();
+        fs::write(output.join("a.txt"), b"keep existing").unwrap();
         let err = import_7z_file_with_limits(
             archive.to_str().unwrap(),
             output.to_str().unwrap(),
@@ -1394,6 +1508,10 @@ mod tests {
         )
         .unwrap_err();
         assert!(err.to_string().contains("解压总量超限"), "{err}");
+        // 失败回滚：既有输出文件不被触碰、无 .part、无半成品
+        assert_eq!(fs::read(output.join("a.txt")).unwrap(), b"keep existing");
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 1);
+        assert_no_part_files(&output);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1465,10 +1583,19 @@ mod tests {
         let corrupt = dir.join("corrupt2.7z");
         fs::write(&corrupt, &bytes).unwrap();
 
-        let err = import_7z_file(corrupt.to_str().unwrap(), dir.join("out").to_str().unwrap())
-            .unwrap_err();
+        let output = dir.join("out");
+        fs::create_dir_all(&output).unwrap();
+        fs::write(output.join("novel.txt"), b"keep existing").unwrap();
+        let err = import_7z_file(corrupt.to_str().unwrap(), output.to_str().unwrap()).unwrap_err();
         let msg = err.to_string();
         assert!(msg.contains("CRC") || msg.contains("校验"), "{msg}");
+        // 失败回滚：既有输出文件不被触碰、无 .part、无半成品
+        assert_eq!(
+            fs::read(output.join("novel.txt")).unwrap(),
+            b"keep existing"
+        );
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 1);
+        assert_no_part_files(&output);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1636,6 +1763,127 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    #[test]
+    fn test_dedupe_output_name_fold_case_policy() {
+        // 折叠大小写（Windows/macOS/iOS）：A.txt 与 a.txt 视为同名
+        let mut used = HashSet::new();
+        let mut next_seq = HashMap::new();
+        assert_eq!(
+            dedupe_output_name("A.txt", &mut used, &mut next_seq, true),
+            "A.txt"
+        );
+        assert_eq!(
+            dedupe_output_name("a.txt", &mut used, &mut next_seq, true),
+            "a_2.txt"
+        );
+
+        // 精确比较（Linux/Android）：大小写不同互不影响，原样保留
+        let mut used = HashSet::new();
+        let mut next_seq = HashMap::new();
+        assert_eq!(
+            dedupe_output_name("A.txt", &mut used, &mut next_seq, false),
+            "A.txt"
+        );
+        assert_eq!(
+            dedupe_output_name("a.txt", &mut used, &mut next_seq, false),
+            "a.txt"
+        );
+    }
+
+    #[test]
+    fn test_dedupe_output_name_sequence_skips_real_names() {
+        let mut used = HashSet::new();
+        let mut next_seq = HashMap::new();
+        assert_eq!(
+            dedupe_output_name("n.txt", &mut used, &mut next_seq, false),
+            "n.txt"
+        );
+        assert_eq!(
+            dedupe_output_name("n.txt", &mut used, &mut next_seq, false),
+            "n_2.txt"
+        );
+        assert_eq!(
+            dedupe_output_name("n.txt", &mut used, &mut next_seq, false),
+            "n_3.txt"
+        );
+        // 真实条目占用 `n_4.txt` 时跳过该序号（命名规则不变）
+        assert_eq!(
+            dedupe_output_name("n_4.txt", &mut used, &mut next_seq, false),
+            "n_4.txt"
+        );
+        assert_eq!(
+            dedupe_output_name("n.txt", &mut used, &mut next_seq, false),
+            "n_5.txt"
+        );
+    }
+
+    #[test]
+    fn test_list_and_import_case_variant_names() {
+        let dir = unique_7z_dir("case-name");
+        let archive = create_test_7z(
+            &dir.join("books.7z"),
+            &[("A.txt", b"upper"), ("a.txt", b"lower")],
+            lzma2_methods(),
+        );
+
+        let names = list_7z_book_files(archive.to_str().unwrap()).unwrap();
+        if FOLD_OUTPUT_NAME_CASE {
+            // Windows/macOS/iOS：大小写折叠，第二个条目落 `_2`
+            assert_eq!(names, vec!["A.txt", "a_2.txt"]);
+        } else {
+            assert_eq!(names, vec!["A.txt", "a.txt"]);
+        }
+
+        let output = dir.join("out");
+        let files = import_7z_file(archive.to_str().unwrap(), output.to_str().unwrap()).unwrap();
+        let imported: Vec<String> = files
+            .iter()
+            .map(|path| file_base_name(path).to_string())
+            .collect();
+        assert_eq!(imported, names, "import 输出名须与 list 一致");
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 2);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_import_7z_empty_and_nonempty_same_name() {
+        let dir = unique_7z_dir("empty-same-name");
+        // 文件序：无流零字节 a.txt、有流 a.txt、真实 a_2.txt。
+        // `for_each_entries` 先访问有流条目、最后访问无流零字节条目；若在回调里
+        // 现场去重，最后一个条目会得到列表外的 `a_3.txt`（而非 `a_2_2.txt`）。
+        let archive = create_test_7z_with_no_stream_entries(
+            &dir.join("books.7z"),
+            &[
+                ("a.txt", None),
+                ("a.txt", Some(b"content")),
+                ("a_2.txt", Some(b"real")),
+            ],
+            lzma2_methods(),
+        );
+
+        let names = list_7z_book_files(archive.to_str().unwrap()).unwrap();
+        assert_eq!(names, vec!["a.txt", "a_2.txt", "a_2_2.txt"]);
+
+        let output = dir.join("out");
+        let files = import_7z_file(archive.to_str().unwrap(), output.to_str().unwrap()).unwrap();
+        let mut imported: Vec<String> = files
+            .iter()
+            .map(|path| file_base_name(path).to_string())
+            .collect();
+        imported.sort();
+        assert_eq!(imported, vec!["a.txt", "a_2.txt", "a_2_2.txt"]);
+        // 名称集合与列表一致（非空条目优先进驻主名，零字节条目落 `_2`）
+        assert_eq!(fs::read_to_string(output.join("a.txt")).unwrap(), "content");
+        assert_eq!(fs::read(output.join("a_2.txt")).unwrap(), b"");
+        assert_eq!(
+            fs::read_to_string(output.join("a_2_2.txt")).unwrap(),
+            "real"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     #[cfg(windows)]
     #[test]
     fn test_import_7z_rejects_windows_ads_name() {
@@ -1652,7 +1900,8 @@ mod tests {
         let output = dir.join("out");
         let err = import_7z_file(archive.to_str().unwrap(), output.to_str().unwrap()).unwrap_err();
         assert!(err.to_string().contains("备用数据流"), "{err}");
-        assert!(!output.join("ab:cd.txt").exists());
+        // 条目名校验在创建输出目录之前完成，整包拒绝且不落盘
+        assert!(!output.exists());
 
         let _ = fs::remove_dir_all(&dir);
     }
