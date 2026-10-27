@@ -382,6 +382,8 @@ impl WebDavClient {
 /// - 绝对 URL（`http://host:port/dav/`）只取 path 部分；
 /// - 去掉 query/fragment；
 /// - 百分号解码（服务器可能对非 ASCII 目录名编码）；
+/// - 折叠连续 `/`（部分服务器返回归一化 href，如 `/dav//legado/books/`，
+///   不折叠会让自身项比较失效）；此处只处理 path，scheme 后的 `//` 已剥离；
 /// - 去掉末尾 `/`（根路径统一为 `/`）。
 fn normalize_url_path(raw: &str) -> String {
     let path = if let Some(idx) = raw.find("://") {
@@ -397,7 +399,21 @@ fn normalize_url_path(raw: &str) -> String {
     let decoded = urlencoding::decode(path)
         .map(|c| c.into_owned())
         .unwrap_or_else(|_| path.to_string());
-    let trimmed = decoded.trim_end_matches('/');
+    // 折叠连续 `/`（单个 pass，保留首个斜杠）
+    let mut collapsed = String::with_capacity(decoded.len());
+    let mut prev_slash = false;
+    for ch in decoded.chars() {
+        if ch == '/' {
+            if prev_slash {
+                continue;
+            }
+            prev_slash = true;
+        } else {
+            prev_slash = false;
+        }
+        collapsed.push(ch);
+    }
+    let trimmed = collapsed.trim_end_matches('/');
     if trimmed.is_empty() {
         "/".to_string()
     } else {
@@ -1077,6 +1093,11 @@ mod tests {
         assert_eq!(normalize_url_path("http://h"), "/");
         assert_eq!(normalize_url_path("/"), "/");
         assert_eq!(normalize_url_path("/dav/?x=1#f"), "/dav");
+        // [批18d P3] 真实服务器可能返回归一化（重复斜杠）href，须折叠后比较
+        assert_eq!(
+            normalize_url_path("/dav//legado/books/"),
+            "/dav/legado/books"
+        );
     }
 
     #[test]

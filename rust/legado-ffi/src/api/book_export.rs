@@ -15,7 +15,7 @@ use legado_db::repository::cache_book_repository::CacheBookRepository;
 use legado_parser::AnalyzeUrl;
 
 use crate::api::reader::{apply_content_processing_chapter, chapter_to_local_info, is_local_book};
-use crate::db_state::with_database;
+use crate::db_state::{resolve_local_book_path, with_database};
 
 /// 导出结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -170,8 +170,11 @@ fn export_book_inner(
         .filter(|ch| range_ok(ch.index))
         .map(|ch| {
             let raw_content = if local {
-                // 本地书：走解析器读取文件正文（修复仅读缓存导致本地书导出全空的回归）
-                legado_book::LocalBook::get_chapter_content(book_url, &chapter_to_local_info(ch))
+                // 本地书：走解析器读取文件正文（修复仅读缓存导致本地书导出全空的回归）。
+                // [批18d P3] book_url 可能是相对可迁移标识（`books/x.txt`），
+                // 落盘前经 resolver 还原到当前 Documents 下的真实路径。
+                let real_path = resolve_local_book_path(book_url);
+                legado_book::LocalBook::get_chapter_content(&real_path, &chapter_to_local_info(ch))
                     .unwrap_or_default()
             } else {
                 // 在线书：从缓存取原始正文
@@ -389,6 +392,60 @@ mod tests {
         assert!(text.contains("这是第二章的正文"));
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// [批18d P3] 相对可迁移标识（`books/rel.txt`）导出必须经 resolver
+    /// 还原到当前 Documents 下的真实文件；否则 `LocalBook` 按相对路径打开
+    /// 文件失败，导出正文全空。
+    #[test]
+    fn test_export_local_book_relative_identifier() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CTR: AtomicUsize = AtomicUsize::new(0);
+        let n = CTR.fetch_add(1, Ordering::SeqCst);
+        let base =
+            std::env::temp_dir().join(format!("legado_export_rel_{}_{}", std::process::id(), n));
+        let books = base.join("books");
+        std::fs::create_dir_all(&books).unwrap();
+        std::fs::write(
+            books.join("rel.txt"),
+            "第一章 开始\n这是第一章的正文内容。\n第二章 继续\n这是第二章的正文内容。\n",
+        )
+        .unwrap();
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let prev_db_path = crate::db_state::current_db_path();
+        // resolver 以 DB 路径的父目录为 Documents 基
+        crate::db_state::record_db_path(base.join("legado.db").to_str().unwrap());
+
+        let book_url = "books/rel.txt";
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            let _ = repo.delete_by_url(book_url);
+            repo.insert(&Book {
+                book_url: book_url.to_string(),
+                name: "相对路径导出".to_string(),
+                ..Book::default()
+            })
+        })
+        .expect("相对标识书入库失败");
+        let chapters = crate::api::reader::get_chapters(book_url).unwrap();
+        assert!(chapters.total >= 2, "相对标识应能解析出章节");
+
+        let result = export_book(book_url, "txt", false).unwrap();
+        let text = decode_export(&result);
+        assert!(
+            text.contains("这是第一章的正文内容"),
+            "相对标识导出正文不应为空"
+        );
+
+        // 清理共享测试库、恢复 DB 路径并删除临时目录
+        with_database(|db| {
+            BookChapterRepository::new(db.connection()).delete_by_book_url(book_url)?;
+            BookRepository::new(db.connection()).delete_by_url(book_url)
+        })
+        .unwrap();
+        crate::db_state::record_db_path(prev_db_path.as_deref().unwrap_or(""));
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     /// 测试导出应用替换规则净化（与阅读器/Android 对齐）

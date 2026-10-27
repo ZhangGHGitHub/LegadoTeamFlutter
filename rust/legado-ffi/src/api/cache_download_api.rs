@@ -353,8 +353,12 @@ fn download_one(book_url: &str, chapter_index: i32) -> LegadoResult<()> {
                 .find_by_book_url_and_index(book_url, chapter_index)
         })?
         .ok_or_else(|| LegadoError::Database(format!("章节 {chapter_index} 不存在")))?;
+        // [批18d P3] 本地书 book_url 可能是相对可迁移标识（如 `books/x.txt`），
+        // 落盘读取前必须经 resolver 还原为当前 Documents 下的真实路径；
+        // 绝对路径/Web URL 原样透传（与 reader.rs 阅读链路同语义）。
+        let real_path = crate::db_state::resolve_local_book_path(book_url);
         let content = legado_book::LocalBook::get_chapter_content(
-            book_url,
+            &real_path,
             &crate::api::reader::chapter_to_local_info(&chapter),
         )?;
         crate::api::cache_api::save_chapter_content(
@@ -623,6 +627,66 @@ mod tests {
         .unwrap();
         crate::api::cache_api::clear_cache().unwrap();
         let _ = std::fs::remove_file(&txt_path);
+    }
+
+    /// [批18d P3] 相对可迁移标识（`books/rel_cache.txt`）批量缓存必须经
+    /// resolver 还原真实文件，否则本地书每章读取失败、任务以 failed 收尾。
+    #[test]
+    fn test_local_book_relative_identifier_batch_download() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static CTR: AtomicUsize = AtomicUsize::new(0);
+        let n = CTR.fetch_add(1, Ordering::SeqCst);
+        let base =
+            std::env::temp_dir().join(format!("legado_cache_rel_{}_{}", std::process::id(), n));
+        let books = base.join("books");
+        std::fs::create_dir_all(&books).unwrap();
+        std::fs::write(
+            books.join("rel_cache.txt"),
+            "第一章 开始\n\n这是第一章的正文内容。\n\n第二章 继续\n\n这是第二章的正文内容。\n",
+        )
+        .unwrap();
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        let prev_db_path = crate::db_state::current_db_path();
+        // resolver 以 DB 路径的父目录为 Documents 基
+        crate::db_state::record_db_path(base.join("legado.db").to_str().unwrap());
+        crate::api::cache_api::clear_cache().unwrap();
+
+        let book_url = "books/rel_cache.txt";
+        let book_json = serde_json::json!({
+            "bookUrl": book_url,
+            "name": "相对路径缓存",
+            "author": "",
+            "origin": "loc_book"
+        })
+        .to_string();
+        crate::api::bookshelf::add_book(&book_json).unwrap();
+
+        let list = crate::api::reader::get_chapters(book_url).unwrap();
+        assert_eq!(list.total, 2, "TXT 应解析出 2 章");
+
+        let task_id = cache_download_start(book_url, 0, 100).unwrap();
+        let final_progress = loop {
+            let p = cache_download_progress(task_id).unwrap();
+            if p.status != "running" {
+                break p;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        };
+        assert_eq!(final_progress.status, "completed", "相对标识任务应完成");
+        assert_eq!(final_progress.failed, 0, "相对标识不应出现读取失败");
+        assert_eq!(final_progress.completed, 2);
+
+        // 清理共享测试库、缓存、DB 路径与临时目录
+        with_database(|db| {
+            let conn = db.connection();
+            BookChapterRepository::new(conn).delete_by_book_url(book_url)?;
+            BookRepository::new(conn).delete_by_url(book_url)
+        })
+        .unwrap();
+        crate::api::cache_api::clear_cache().unwrap();
+        crate::db_state::record_db_path(prev_db_path.as_deref().unwrap_or(""));
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     /// 取消机制：创建后立即取消，任务不应跑完全量（对照 CHECK_CANCELLED 语义）
