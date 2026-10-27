@@ -14,6 +14,12 @@
 // SAF URI，MuMu Android 15 的 DownloadStorageProvider 抛 SecurityException
 // 未被插件捕获 → 主线程 FATAL。iOS 保留 file_picker（插件负责写字节），
 // 桌面端仍由本服务自行写盘。
+//
+// [批26 2026-10-27] Android 默认改为 SAF 目录树（对齐原版
+// `HandleFileViewModel.saveToLocal`）：首次保存弹「选择文件夹」并记住，
+// 之后直接树内建文件写入，不再依赖 ACTION_CREATE_DOCUMENT 的
+// DownloadsProvider 写流（该 ROM 会留 0 字节占位）。旧链路保留为回退
+// （`useTree: false`）。
 import 'dart:convert';
 import 'dart:io';
 
@@ -35,19 +41,24 @@ class ExportFileService {
 
   /// 系统另存文本内容：返回实际保存结果；用户取消时返回 null。
   ///
-  /// - Android：自建 SAF 通道创建文档并写字节，返回 content:// URI 与
-  ///   provider 实际文件名（重名时可能为 `xxx (1).json`）；
+  /// - Android：自建 SAF 通道创建文档并写字节（默认目录树模式，批26），
+  ///   返回 content:// URI 与 provider 实际文件名（重名时可能为
+  ///   `xxx (1).json`）；
   /// - iOS：file_picker 要求传入 [bytes] 并由插件写入；
   /// - Windows / macOS / Linux：插件只返回用户选择的路径，内容由本方法写入；
   /// - 写入失败时上抛异常，由调用方展示真实原因（Android 端原生只清理
-  ///   本次创建/截断的文档，不误删用户已有文件）。
+  ///   本次创建的文档，不误删用户已有文件）。
   Future<SaveFileResult?> saveToLocal({
     required String fileName,
     required String content,
+    bool useTree = true,
+    bool chooseTree = false,
   }) {
     return _saveBytes(
       fileName: fileName,
       bytes: Uint8List.fromList(utf8.encode(content)),
+      useTree: useTree,
+      chooseTree: chooseTree,
     );
   }
 
@@ -63,10 +74,42 @@ class ExportFileService {
   Future<SaveFileResult?> saveExistingFile({
     required String sourcePath,
     required String fileName,
+    bool useTree = true,
+    bool chooseTree = false,
   }) async {
     final bytes = await File(sourcePath).readAsBytes();
-    return _saveBytes(fileName: fileName, bytes: bytes);
+    return _saveBytes(
+      fileName: fileName,
+      bytes: bytes,
+      useTree: useTree,
+      chooseTree: chooseTree,
+    );
   }
+
+  /// 主动更换 Android 保存文件夹（「换个位置」入口）
+  ///
+  /// 成功后原生记住该目录，后续保存直接使用；用户取消返回 null。
+  /// 非 Android 平台返回 null（iOS/桌面每次另存都由系统对话框决定位置）。
+  Future<SaveTreeSelection?> chooseSaveDirectory() async {
+    if (!_isAndroid) return null;
+    return fileSaveChannel.chooseTree();
+  }
+
+  /// 查询已记住的 Android 保存文件夹（用于展示当前保存位置）
+  ///
+  /// 非 Android 或未记住返回 null；查询失败按「未记住」处理，不打断导出。
+  Future<SaveTreeSelection?> rememberedSaveDirectory() async {
+    if (!_isAndroid) return null;
+    try {
+      return await fileSaveChannel.savedTree();
+    } catch (e) {
+      debugPrint('读取已记住的保存文件夹失败：$e');
+      return null;
+    }
+  }
+
+  static bool get _isAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   /// Sheet 关闭时清理调用方自建的临时文件
   ///
@@ -80,10 +123,7 @@ class ExportFileService {
     if (path.trim().isEmpty) return false;
     try {
       final tempDir = await getTemporaryDirectory();
-      return deleteTemporaryFileSync(
-        tempDirPath: tempDir.path,
-        path: path,
-      );
+      return deleteTemporaryFileSync(tempDirPath: tempDir.path, path: path);
     } catch (e) {
       debugPrint('导出临时文件清理失败（$path）：$e');
       return false;
@@ -124,9 +164,10 @@ class ExportFileService {
     try {
       final windows = Platform.isWindows;
       String canonical(String value) {
-        final text = Uri.file(value, windows: windows)
-            .normalizePath()
-            .toFilePath(windows: windows);
+        final text = Uri.file(
+          value,
+          windows: windows,
+        ).normalizePath().toFilePath(windows: windows);
         return windows ? text.toLowerCase() : text;
       }
 
@@ -149,19 +190,26 @@ class ExportFileService {
   /// 原生端负责写字节、捕异常、失败清理；iOS 仍由 file_picker 写字节；
   /// 桌面端插件只选路径，内容由本方法写盘。
   ///
+  /// [批26] Android 默认目录树模式（[useTree]）：原生已记住目录直接写入，
+  /// 否则先弹目录选择器；[chooseTree] 强制重新选择。iOS/桌面忽略这两个参数。
+  ///
   /// [P3-5] 文件名统一先经 [normalizeFileName] 净化（`[\\/:*?"<>|]` →
   /// `_`），避免桌面端路径解析失败与 Android provider 拒收非法名字。
   Future<SaveFileResult?> _saveBytes({
     required String fileName,
     required Uint8List bytes,
+    bool useTree = true,
+    bool chooseTree = false,
   }) async {
     final safeName = normalizeFileName(fileName);
     final effectiveName = safeName.isEmpty ? 'export' : safeName;
-    if (defaultTargetPlatform == TargetPlatform.android) {
+    if (_isAndroid) {
       return fileSaveChannel.saveFile(
         fileName: effectiveName,
         bytes: bytes,
         mimeType: _mimeTypeOf(effectiveName),
+        useTree: useTree,
+        chooseTree: chooseTree,
       );
     }
 
@@ -190,9 +238,8 @@ class ExportFileService {
   /// provider 实际名字，重名 `(1)` 时提示仍与磁盘一致）；桌面端路径可
   /// 直接用于查找，提示完整路径。
   ///
-  /// MediaStore 回退（P1-1/P3-3）写入的是用户在系统对话框里选的「下载」
-  /// 子目录，只给文件名仍难定位 → 额外回显目录（`Download/…/` 显示为
-  /// 「下载/…」）。
+  /// [批26] 目录树保存回显原生生成的目录（如「下载/legado」），
+  /// 用户才能定位文件；旧 MediaStore 回退仍按「下载」相对目录回显。
   String savedMessage({
     required SaveFileResult saved,
     required String requestedFileName,
@@ -201,11 +248,28 @@ class ExportFileService {
         defaultTargetPlatform == TargetPlatform.android ||
         defaultTargetPlatform == TargetPlatform.iOS;
     final name = saved.fileName ?? normalizeFileName(requestedFileName);
+    if (saved.viaTree) {
+      final directory = _displayTreeDirectory(saved.displayPath);
+      return directory == null ? '已保存：$name' : '已保存到「$directory」：$name';
+    }
     if (saved.viaMediaStoreFallback) {
       final directory = _displayDownloadDirectory(saved.downloadDirectory);
       return directory == null ? '已保存到下载目录：$name' : '已保存到「$directory」：$name';
     }
     return mobile ? '已保存：$name' : '已保存到：${saved.location}';
+  }
+
+  /// 目录树显示路径的提示文案规范化（`Download/legado` → `下载/legado`）
+  ///
+  /// 原生 [treeDisplayPath] 已做中文化；这里再兜一层，兼容旧原生实现或
+  /// 其他 provider 返回的英文 `Download` 前缀。空白返回 null。
+  static String? _displayTreeDirectory(String? displayPath) {
+    final raw = displayPath?.trim() ?? '';
+    if (raw.isEmpty) return null;
+    return raw.replaceFirst(
+      RegExp(r'^Download(?=/|$)', caseSensitive: false),
+      '下载',
+    );
   }
 
   /// `Download/legado/` → `下载/legado`（提示文案用，失败返回 null）

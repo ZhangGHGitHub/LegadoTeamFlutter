@@ -23,8 +23,13 @@
 // 文件」护栏，用户目录文件一律不动。
 // 批16c 初始化；批25 增加「复制口令」：`passphraseType` 非 null 且上传成功
 // 的 URL 可编码时，在上传结果面板展示口令入口（有效期在弹窗内输入）。
+//
+// [批26 2026-10-27] Android 保存改为 SAF 目录树：选项区展示当前保存位置，
+// 并提供「换个保存位置」入口（重选目录后记住）；保存失败面板同样提供
+// 「换个位置」，重选成功后立即重试。iOS/桌面对话框每次自选位置，不展示。
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -251,7 +256,15 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
   /// 系统临时目录根（initState 预解析，供 dispose 同步清理时做护栏判断）
   String? _tempDirPath;
 
+  /// 已记住的 Android 保存文件夹（批26：首次保存弹选择并记住，
+  /// 之后直接写入；「换个保存位置」可随时重选）
+  SaveTreeSelection? _savedTree;
+
   bool get _busy => _saving || _uploading;
+
+  /// 是否 Android（目录树保存位置仅 Android 有）
+  bool get _isAndroid =>
+      !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
 
   /// 上传实际使用的文件名（参考版规则上传固定 export_rules.json）
   String get _uploadFileName => widget.uploadFileName ?? widget.fileName;
@@ -263,11 +276,22 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     _ruleService =
         widget.ruleService ??
         DirectLinkUploadRuleService(ref.read(bookApiProvider));
+    if (_isAndroid) {
+      // 展示当前保存位置（未记住时提示首次保存需选文件夹）
+      unawaited(_loadSavedTree());
+    }
     if (widget.deleteTempFileOnClose &&
         (widget.filePath?.isNotEmpty ?? false)) {
       // 预解析临时目录：dispose 不能 await，提前拿到根路径后可同步清理
       unawaited(_resolveTempDirectory());
     }
+  }
+
+  /// 读取已记住的保存文件夹（失败按「未记住」处理，不打断导出）
+  Future<void> _loadSavedTree() async {
+    final tree = await _fileService.rememberedSaveDirectory();
+    if (!mounted || tree == null) return;
+    setState(() => _savedTree = tree);
   }
 
   /// 解析系统临时目录（失败仅留痕迹，清理时再做一次护栏校验）
@@ -300,10 +324,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     final tempDir = _tempDirPath;
     if (tempDir != null) {
       // 常规路径：同步清理，关闭即完成（含「仅限临时目录内」护栏）
-      _fileService.deleteTemporaryFileSync(
-        tempDirPath: tempDir,
-        path: path,
-      );
+      _fileService.deleteTemporaryFileSync(tempDirPath: tempDir, path: path);
       return;
     }
     // 极端时序（首帧未完成即关闭）：退化为异步清理，护栏不变
@@ -355,7 +376,8 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
   /// 保存到本地（系统另存）
   ///
   /// content 模式写文本字节；filePath 模式复制既有文件字节（二进制安全）。
-  Future<void> _saveToLocal() async {
+  /// [chooseTree] 为 true 时强制重新选择保存文件夹（Android 目录树）。
+  Future<void> _saveToLocal({bool chooseTree = false}) async {
     _resetCopyFeedback();
     setState(() {
       _saving = true;
@@ -370,10 +392,12 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
           ? await _fileService.saveToLocal(
               fileName: widget.fileName,
               content: widget.content!,
+              chooseTree: chooseTree,
             )
           : await _fileService.saveExistingFile(
               sourcePath: filePath,
               fileName: widget.fileName,
+              chooseTree: chooseTree,
             );
     } catch (e) {
       if (!mounted) return;
@@ -388,7 +412,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     if (!mounted) return;
     setState(() => _saving = false);
     if (saved == null) {
-      // 用户在系统另存对话框取消：关闭 Sheet，不提示
+      // 用户在系统另存对话框/目录选择器取消：关闭 Sheet，不提示
       Navigator.pop(context);
       return;
     }
@@ -402,6 +426,33 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         ),
       ),
     );
+  }
+
+  /// 选择/更换 Android 保存文件夹（不立即保存）
+  ///
+  /// 返回用户选中的目录；取消或失败（失败时切到错误面板）返回 null。
+  Future<SaveTreeSelection?> _pickSaveDirectory() async {
+    try {
+      final tree = await _fileService.chooseSaveDirectory();
+      if (!mounted || tree == null) return tree;
+      setState(() => _savedTree = tree);
+      return tree;
+    } catch (e) {
+      if (!mounted) return null;
+      setState(() {
+        _failedAction = _FailureAction.save;
+        _error = errorMessage(e);
+        _errorDetail = errorDetailMessage(e);
+      });
+      return null;
+    }
+  }
+
+  /// 保存失败后「换个位置」：选新目录成功则立即重试保存
+  Future<void> _changeLocationAndRetry() async {
+    final tree = await _pickSaveDirectory();
+    if (!mounted || tree == null) return;
+    await _saveToLocal();
   }
 
   /// 上传直链（生效规则 → §2.51 directLinkUpload）
@@ -419,13 +470,15 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     try {
       final rule = await _ruleService.getEffectiveRule();
       final filePath = widget.filePath;
-      final url = await ref.read(bookApiProvider).directLinkUpload(
-        ruleJson: rule.toJsonString(),
-        fileName: _uploadFileName,
-        contentType: widget.contentType,
-        content: filePath == null ? widget.content : null,
-        filePath: filePath,
-      );
+      final url = await ref
+          .read(bookApiProvider)
+          .directLinkUpload(
+            ruleJson: rule.toJsonString(),
+            fileName: _uploadFileName,
+            contentType: widget.contentType,
+            content: filePath == null ? widget.content : null,
+            filePath: filePath,
+          );
       if (!mounted) return;
       setState(() {
         _uploading = false;
@@ -462,9 +515,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
           constraints: const BoxConstraints(maxWidth: 640),
           child: Material(
             color: cs.surface,
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(16),
-            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
             clipBehavior: Clip.antiAlias,
             child: ConstrainedBox(
               constraints: BoxConstraints(
@@ -570,17 +621,37 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
   }
 
   /// 两个选项（对齐参考版 FilePickerSheet EXPORT：另存 + 上传）
+  ///
+  /// [批26] Android 额外展示当前保存位置并提供「换个保存位置」入口：
+  /// 首次保存由原生弹目录选择器，之后固定在记住的目录写入。
   Widget _buildOptions(ThemeData theme) {
+    final savedDirectory = _displaySavedTree();
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         _OptionTile(
           icon: Symbols.save_alt_rounded,
           title: '保存到本地',
-          subtitle: '通过系统保存对话框选择保存位置',
+          subtitle: !_isAndroid
+              ? '通过系统保存对话框选择保存位置'
+              : savedDirectory == null
+              ? '首次保存需选择保存文件夹，之后沿用'
+              : '保存到「$savedDirectory」',
           onTap: _saveToLocal,
         ),
         const SizedBox(height: 8),
+        if (_isAndroid)
+          _OptionTile(
+            icon: Symbols.drive_file_move_rounded,
+            title: '换个保存位置',
+            subtitle: savedDirectory == null
+                ? '选择文件保存到哪个文件夹'
+                : '当前：$savedDirectory · 点击重新选择文件夹',
+            onTap: () {
+              unawaited(_pickSaveDirectory());
+            },
+          ),
+        if (_isAndroid) const SizedBox(height: 8),
         _OptionTile(
           icon: Symbols.cloud_upload_rounded,
           title: '上传直链',
@@ -599,6 +670,14 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         ),
       ],
     );
+  }
+
+  /// 当前保存目录的展示文案（未记住时回落到 URI/默认文案）
+  String? _displaySavedTree() {
+    final tree = _savedTree;
+    if (tree == null) return null;
+    final display = tree.displayPath?.trim();
+    return (display == null || display.isEmpty) ? tree.location : display;
   }
 
   /// 上传成功：URL + 规则注释（summary）
@@ -662,11 +741,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     final url = _uploadedUrl;
     final type = widget.passphraseType;
     if (url == null || type == null) return;
-    await showSourceSharePassphraseDialog(
-      context,
-      url: url,
-      type: type,
-    );
+    await showSourceSharePassphraseDialog(context, url: url, type: type);
   }
 
   /// 失败：面向用户的错误文案 + 原始文本次要行（均可复制/重试）
@@ -738,9 +813,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
             child: OutlinedButton.icon(
               onPressed: () => _copy(_uploadedUrl!),
               icon: Icon(
-                _copied
-                    ? Symbols.check_rounded
-                    : Symbols.content_copy_rounded,
+                _copied ? Symbols.check_rounded : Symbols.content_copy_rounded,
                 size: 18,
               ),
               label: Text(_copied ? '已复制' : '复制链接'),
@@ -763,34 +836,51 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
       );
     }
     if (_error != null) {
-      return Row(
+      // [批26] 保存失败时提供「换个位置」：重选 Android 保存文件夹后立即
+      // 重试；上传失败不展示（与保存位置无关）
+      final canChangeSaveLocation =
+          _isAndroid && _failedAction == _FailureAction.save;
+      return Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              // 复制原文（含底层错误码），排障信息最完整
-              onPressed: () => _copy(_errorDetail ?? _error!),
-              icon: Icon(
-                _copied
-                    ? Symbols.check_rounded
-                    : Symbols.content_copy_rounded,
-                size: 18,
+          if (canChangeSaveLocation) ...[
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: _changeLocationAndRetry,
+                icon: const Icon(Symbols.drive_file_move_rounded, size: 18),
+                label: const Text('换个位置'),
               ),
-              label: Text(_copied ? '已复制' : '复制错误'),
             ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('取消'),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: FilledButton(
-              onPressed: _retry,
-              child: const Text('重试'),
-            ),
+            const SizedBox(height: 8),
+          ],
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  // 复制原文（含底层错误码），排障信息最完整
+                  onPressed: () => _copy(_errorDetail ?? _error!),
+                  icon: Icon(
+                    _copied
+                        ? Symbols.check_rounded
+                        : Symbols.content_copy_rounded,
+                    size: 18,
+                  ),
+                  label: Text(_copied ? '已复制' : '复制错误'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('取消'),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: FilledButton(onPressed: _retry, child: const Text('重试')),
+              ),
+            ],
           ),
         ],
       );
