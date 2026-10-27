@@ -62,10 +62,12 @@ const LOCAL_BOOK_SUB_DIR: &str = "books";
 const LOCAL_IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp"];
 
 /// 对齐 Kotlin `Book.isLocal`（BookExtensions.kt:49-55）
+///
+/// WebDAV 判定经 [`book_type::is_web_dav_origin`] 双前缀识别：
+/// 原版/参考版 `webDav::` 与本仓库批18b 前的存量 `dav:` 均视为本地书。
 fn is_local_book(book: &Book) -> bool {
     if book.book_type == 0 {
-        return book.origin == book_type::LOCAL_TAG
-            || book.origin.starts_with(book_type::WEB_DAV_TAG);
+        return book.origin == book_type::LOCAL_TAG || book_type::is_web_dav_origin(&book.origin);
     }
     book.book_type & book_type::LOCAL > 0
 }
@@ -1757,19 +1759,26 @@ mod tests {
         };
         assert!(is_local_book(&book));
 
-        // 原版 WebDav 标记为 `webDav::`（BookType.kt:76）
+        // 原版 WebDav 标记为 `webDav::`（BookType.kt:76），可带
+        // `,{"serverID":N}` 属性后缀
         book = Book {
-            origin: "webDav::https://x/book.epub".to_string(),
+            origin: "webDav::https://x/book.epub, {\"serverID\":12}".to_string(),
             ..Book::default()
         };
         assert!(is_local_book(&book));
 
-        // 旧值 `dav:` 非原版标记 → 不判本地（P2 常量修正）
+        // 存量旧值 `dav:` 仍按 WebDAV 本地书读取兼容（批18b 双前缀）
+        book = Book {
+            origin: "dav:https://x/book.epub".to_string(),
+            ..Book::default()
+        };
+        assert!(is_local_book(&book));
+
         book = Book {
             origin: "dav:/x".to_string(),
             ..Book::default()
         };
-        assert!(!is_local_book(&book));
+        assert!(is_local_book(&book));
 
         book = Book {
             origin: "https://src".to_string(),

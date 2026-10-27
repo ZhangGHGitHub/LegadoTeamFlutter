@@ -37,6 +37,20 @@ pub mod book_type {
     /// 的书不被判为本地书。全仓消费方：`legado-server/src/legacy/book_api.rs`
     /// 的 `is_local_book`（唯一生产消费方，旧值仅此一处定义）。
     pub const WEB_DAV_TAG: &str = "webDav::";
+
+    /// 历史遗留 WebDAV origin 前缀（批18b 前本仓库写入的存量数据）。
+    ///
+    /// 仅保留**读取兼容**：新写入统一 [`WEB_DAV_TAG`]，不做存量迁移
+    /// （避免大范围写库）。读取侧经 [`is_web_dav_origin`] 双前缀识别。
+    pub const LEGACY_WEB_DAV_TAG: &str = "dav:";
+
+    /// origin 是否为 WebDAV 书（新 `webDav::` 或存量 `dav:` 双前缀）
+    ///
+    /// 对齐 Kotlin `origin.startsWith(BookType.webDavTag)`，并额外兼容
+    /// 本仓库批18b 前写入的 `dav:` 存量 origin。
+    pub fn is_web_dav_origin(origin: &str) -> bool {
+        origin.starts_with(WEB_DAV_TAG) || origin.starts_with(LEGACY_WEB_DAV_TAG)
+    }
 }
 
 /// 阅读配置
@@ -313,6 +327,25 @@ impl Book {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_is_web_dav_origin_double_prefix() {
+        // 原版/参考版格式（含 serverID 属性后缀）
+        assert!(book_type::is_web_dav_origin(
+            "webDav::https://x/books/a.epub,{\"serverID\":12}"
+        ));
+        // 默认服务器无属性后缀
+        assert!(book_type::is_web_dav_origin(
+            "webDav::https://x/books/a.epub"
+        ));
+        // 存量旧前缀（完整 URL / 相对路径两种历史形态）
+        assert!(book_type::is_web_dav_origin("dav:https://x/books/a.epub"));
+        assert!(book_type::is_web_dav_origin("dav:books/a.epub"));
+        // 非 WebDAV origin
+        assert!(!book_type::is_web_dav_origin("loc_book"));
+        assert!(!book_type::is_web_dav_origin("https://src.example.com"));
+        assert!(!book_type::is_web_dav_origin(""));
+    }
 
     #[test]
     fn test_book_default() {
