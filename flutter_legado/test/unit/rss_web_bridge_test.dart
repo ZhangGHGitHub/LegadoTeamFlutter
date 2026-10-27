@@ -151,10 +151,10 @@ void main() {
       expect(params['channelName'], bridge.channelName);
       expect(params['callbackName'], bridge.callbackName);
       expect(params['ua'], 'UA-X');
-      expect(bridge.channelName, startsWith('__legado_rss_'));
-      expect(bridge.nativeChannelName, startsWith('__legado_rssNative_'));
-      expect(bridge.callbackName, startsWith('__legado_rssCb_'));
-      expect(bridge.nonceCallbackName, startsWith('__legado_rssNonce_'));
+      expect(bridge.channelName, startsWith('__rs_'));
+      expect(bridge.nativeChannelName, startsWith('__rn_'));
+      expect(bridge.callbackName, startsWith('__rc_'));
+      expect(bridge.nonceCallbackName, startsWith('__rk_'));
       expect(
         <String>{
           bridge.channelName,
@@ -459,7 +459,7 @@ void main() {
           // 批21f P2-2：注入单调时钟（fakeAsync 虚拟时间）
           elapsed: () => clock.now().difference(DateTime(2026, 1, 1)),
           runner: (js) async {
-            if (js.contains('__legado_rssNonce_')) {
+            if (js.contains('__rk_')) {
               await blocker.future;
             }
             runLog.add(js);
@@ -491,7 +491,7 @@ void main() {
           handshakeTimeout: const Duration(seconds: 30),
           elapsed: () => elapsed,
           runner: (js) async {
-            if (js.contains('__legado_rssNonce_')) {
+            if (js.contains('__rk_')) {
               await blocker.future;
             }
             runLog.add(js);
@@ -602,7 +602,7 @@ void main() {
       final holders = <Completer<void>>[];
       final bridge = newBridge(runner: (js) async {
         // 只阻塞 nonce 回填，其余（如失败回填）立即完成
-        if (!js.contains('__legado_rssNonce_')) {
+        if (!js.contains('__rk_')) {
           runLog.add(js);
           return;
         }
@@ -851,7 +851,7 @@ void main() {
         includeConsoleHook: true,
       );
 
-      final consoleIndex = composed.indexOf('__legadoConsoleHooked');
+      final consoleIndex = composed.indexOf('__rssConsoleHooked');
       final bootstrapIndex = composed.indexOf('__lgNative');
       final rustIndex = composed.indexOf('RUST_HEAD_MARKER');
       final shimIndex = composed.indexOf('var __lgB64Chars');
@@ -936,7 +936,7 @@ void main() {
         'Object.defineProperty(window, "__lgBridgeTest"',
         'Object.defineProperty(window, "__lgNonceTest"',
         'Object.defineProperty(window, "__lgBootTest"',
-        'configurable: false',
+        'configurable: true',
         'enumerable: false',
         'var __lgMaxQueue = 20',
         '队列已满',
@@ -968,8 +968,20 @@ void main() {
       expect(outputs['helloHook'], isTrue);
       expect(outputs['helloCount'], 1,
           reason: '同文档二次注入必须被幂等标记拦截（不得重发 hello）');
-      expect(outputs['markerConfigurable'], isFalse,
-          reason: '幂等标记必须 configurable:false，页面不可删除');
+      expect(outputs['markerConfigurable'], isTrue,
+          reason: '批21h P1-2：窗口标记必须可删除（转移后即删除）');
+      expect(outputs['markerDeletedAfterTick'], isTrue,
+          reason: '窗口标记必须在首个 tick 后删除（window 上不留宿主命名）');
+      expect(outputs['guardOnCallback'], isTrue,
+          reason: '幂等守卫必须转移到回填回调（非 window 全局）');
+      expect(outputs['helloCountAfterRerun'], 1,
+          reason: 'tick 后重复注入必须由回调守卫拦截，不得重发 hello');
+
+      final afterTick = _runBootstrapInNode(script, rerunAfterTick: true);
+      expect(afterTick['markerDeletedAfterTick'], isTrue);
+      expect(afterTick['guardOnCallback'], isTrue);
+      expect(afterTick['helloCountAfterRerun'], 1,
+          reason: '窗口标记删除后，tick 后重复注入必须由回调守卫拦截');
     });
 
     test('HTML 内联转义 </script（大小写不敏感）', () {
@@ -991,7 +1003,7 @@ void main() {
         'vars': <String, String>{'token': 't1'},
       });
       for (final needle in [
-        'window.__legadoJava',
+        'window.__rssJava',
         'getKey',
         'getTag',
         'getVariable',
@@ -1004,6 +1016,24 @@ void main() {
       // 写入仅本地快照：不出现任何通道/存储调用
       expect(script, isNot(contains('postMessage')));
       expect(script, isNot(contains('__store')));
+    });
+  });
+
+  group('释放', () {
+    test('dispose：页面侧删除回填回调/幂等标记/nonce 回调（批21h P1-2）', () {
+      final bridge = newBridge();
+      bridge.dispose();
+      final release = runLog.where((js) => js.contains('delete window[')).toList();
+      expect(release, hasLength(1), reason: '释放必须下发一次删除脚本');
+      expect(release.single, contains('delete window["${bridge.callbackName}"]'));
+      expect(
+        release.single,
+        contains('delete window["${bridge.bootstrapMarkerName}"]'),
+      );
+      expect(
+        release.single,
+        contains('delete window["${bridge.nonceCallbackName}"]'),
+      );
     });
   });
 
@@ -1116,9 +1146,84 @@ void main() {
       },
     );
 
+    test(
+      '动作通道：java.log/toast/open/... 各发出一条动作（Node 实执行 + Dart 分发）',
+      () async {
+        // 批21h P1-1 回归守卫：同步面**不得**再声明同名两参
+        // `function __lgEmitAction`（会遮蔽桥头单参实现 → 自递归 → 动作丢失）
+        expect(
+          kRssBridgeSyncShimBody,
+          isNot(contains('function __lgEmitAction')),
+          reason: '同步面不得声明与桥头同名的 __lgEmitAction',
+        );
+        expect(kRssBridgeSyncShimBody, contains('function __lgActionEmit'));
+        expect(
+          kRssBridgeSyncShimBody,
+          isNot(contains("__lgEmitAction('")),
+          reason: '同步面不得以两参形式调用桥头的 __lgEmitAction',
+        );
+
+        if (!nodeAvailable) {
+          // Node 缺失时保留结构断言（不静默 skip）
+          return;
+        }
+        final outputs = _runSyncShimInNode();
+        final logActions = outputs['logActions'] as List<dynamic>;
+        final payloads = logActions.whereType<Map>().toList();
+
+        Map<String, dynamic> single(String action, {String? message}) {
+          final matches = payloads.where((item) {
+            if (item['action'] != action) return false;
+            if (message != null && item['message'] != message) return false;
+            return true;
+          }).toList();
+          expect(
+            matches,
+            hasLength(1),
+            reason: '$action/${message ?? ''} 必须恰好发送一次（实际 ${matches.length}）',
+          );
+          return Map<String, dynamic>.from(matches.single);
+        }
+
+        expect(single('log', message: 'L1')['message'], 'L1');
+        expect(single('toast', message: 'T1')['long'], isFalse);
+        expect(single('toast', message: 'LT1')['long'], isTrue);
+        final open = single('open');
+        expect(open['name'], 'sort');
+        expect(open['url'], 'https://u');
+        expect(open['title'], 'title');
+        expect(open['origin'], 'origin');
+        expect(single('searchBook')['key'], 'K1');
+        expect(single('addBook')['url'], 'https://b');
+        expect(single('showPhoto')['src'], 'https://p');
+        expect(single('openUrl')['url'], 'https://o');
+
+        // 组件级：把 Node 实际产出的动作载荷按 `__action` 协议喂给 Dart，
+        // 断言 onAction 回调收到同名动作（模拟页面 → 通道 → 桥分发）
+        final bridge = newBridge();
+        final nonce = await handshake(bridge);
+        var index = 0;
+        for (final payload in payloads) {
+          await bridge.handleMessage(_pageMessage(
+            method: '__action',
+            id: 'act_${index++}',
+            args: jsonEncode(payload),
+            nonce: nonce,
+          ));
+        }
+        expect(actions, hasLength(payloads.length));
+        expect(
+          actions.map((action) => action.name).toList(),
+          payloads.map((item) => item['action'].toString()).toList(),
+        );
+        expect(actions.first.name, 'log');
+        expect(actions.first.message, contains('java.ajax'));
+      },
+    );
+
     test('同步面脚本不使用通道/RPC（纯函数摊平）', () {
       final script = rssBridgeSyncShimScript(
-        bridgeObjectName: '__legado_rssBridge_x',
+        bridgeObjectName: '__rsBridge_x',
         userAgent: 'UA',
       );
       for (final name in [
@@ -1167,6 +1272,7 @@ bool _nodeAvailable() {
 Map<String, dynamic> _runBootstrapInNode(
   String bootstrap, {
   String? rerunBootstrap,
+  bool rerunAfterTick = false,
 }) {
   final harness = r'''
 var window = {};
@@ -1208,12 +1314,35 @@ var flushedQueued = posted.filter(function (m) {
 }).length;
 var nonceAckSent = posted.some(function (m) { return m.method === 'nonceAck'; });
 setTimeout(function () {
+  // 批21h P1-2：窗口标记必须在首个 tick 后删除（getOwnPropertyNames 不可见），
+  // 幂等守卫转移到回填回调上的非枚举属性。
+  var markerDeletedAfterTick = typeof window['__lgBootTest'] === 'undefined';
+  var guardOnCallback = !!(window['__lgCbTest'] &&
+    window['__lgCbTest'].__lgBridgeInstalled === 1);
+  var helloCountAfterRerun = helloCount;
+''' +
+      (rerunAfterTick
+          ? r'''
+  // tick 之后再次注入（窗口标记已删）：必须由回调上的守卫拦截，不得重发 hello
+  window['__lgNativeTest'] = {
+    postMessage: function (m) { posted.push(JSON.parse(m)); }
+  };
+''' +
+              bootstrap +
+              r'''
+  helloCountAfterRerun = posted.filter(function (m) { return m.method === 'hello'; }).length;
+'''
+          : '') +
+      r'''
   process.stdout.write(JSON.stringify({
     nativeDeleted: nativeDeleted,
     bridgeEnumerable: bridgeDesc ? bridgeDesc.enumerable : null,
     nonceEnumerable: nonceDesc ? nonceDesc.enumerable : null,
     markerConfigurable: markerDesc ? markerDesc.configurable : null,
+    markerDeletedAfterTick: markerDeletedAfterTick,
+    guardOnCallback: guardOnCallback,
     helloCount: helloCount,
+    helloCountAfterRerun: helloCountAfterRerun,
     helloFirst: helloFirst,
     flushedQueued: flushedQueued,
     overflowErrors: overflowErrors,
@@ -1253,13 +1382,27 @@ setTimeout(function () {
 }
 
 /// 在 Node 中执行 `kRssBridgeSyncShimBody`，返回结构化结果
+///
+/// 批21h P1-1：外层用**单参** `__lgEmitAction(payload)`（与 Rust 桥头/降级桩
+/// 同签名）复刻桥的外层包装器 `__lgAction`；修复前同步面内的同名两参函数
+/// 声明会提升并遮蔽它，导致 `__lgAction` 自递归、`RangeError` 被吞、动作
+/// 永远发不出去（`actions` 为空）。
 Map<String, dynamic> _runSyncShimInNode() {
   final harness = r'''
 var __lgActions = [];
 var __lgJava = {
   get: function (key) { return 'V:' + String(key); }
 };
-var __lgAction = function (payload) { __lgActions.push(payload); };
+// 与 Rust 桥头 `function __lgEmitAction(payload)` 同签名（单参）
+function __lgEmitAction(payload) { __lgActions.push(payload); }
+// 与 rssBridgeSyncShimScript 的外层包装器同形
+var __lgAction = function (payload) {
+  try {
+    if (typeof __lgEmitAction === 'function') {
+      __lgEmitAction(payload || {});
+    }
+  } catch (e) {}
+};
 var __lgUserAgent = 'UA-Sync';
 ''' +
       kRssBridgeSyncShimBody +
@@ -1282,6 +1425,21 @@ for (var i = 0; i < calls.length; i++) {
     network[calls[i][0]] = String(e && e.message ? e.message : e);
   }
 }
+// 批21h P1-1：动作面每次调用必须产出一条动作消息（不得互相遮蔽/递归）
+var actionCalls = [
+  ['log', function () { return __lgJava.log('L1'); }],
+  ['toast', function () { return __lgJava.toast('T1'); }],
+  ['longToast', function () { return __lgJava.longToast('LT1'); }],
+  ['open', function () { return __lgJava.open('sort', 'https://u', 'title', 'origin'); }],
+  ['searchBook', function () { return __lgJava.searchBook('K1', 'S1'); }],
+  ['addBook', function () { return __lgJava.addBook('https://b'); }],
+  ['showPhoto', function () { return __lgJava.showPhoto('https://p'); }],
+  ['openUrl', function () { return __lgJava.openUrl('https://o'); }]
+];
+var actionReturns = {};
+for (var j = 0; j < actionCalls.length; j++) {
+  actionReturns[actionCalls[j][0]] = actionCalls[j][1]();
+}
 process.stdout.write(JSON.stringify({
   java: {
     base64EncodeHello: __lgJava.base64Encode('hello'),
@@ -1298,6 +1456,7 @@ process.stdout.write(JSON.stringify({
     sourceGet: __lgJava.get('token')
   },
   network: network,
+  actionReturns: actionReturns,
   logActions: __lgActions
 }));
 ''';

@@ -42,7 +42,8 @@
 //! - **脚本自身不写页面全局**：`java`/`source`/`cache` 与 `*Await` 仅存在于
 //!   生成的 IIFE 闭包（`preloadJs` 词法可见），不再写 `window`；页面桥对象
 //!   读取后立即 `delete window[channelName]`；回填回调用
-//!   `Object.defineProperty` 定义（`enumerable:false`、`configurable:false`）。
+//!   `Object.defineProperty` 定义（`enumerable:false`、`configurable:true`，
+//!   批21h P1-2 放宽为可删除，Dart 释放桥时执行 `delete`）。
 //!   **注意**：不可枚举 ≠ 不可发现，`Object.getOwnPropertyNames(window)`
 //!   仍可看到属性名；Android 15 真机实测平台通道在删除前对 `Object.keys`
 //!   也可见、`delete` 后不可见，iOS `webkit.messageHandlers` 待验收
@@ -560,13 +561,14 @@ const PREPARE_SCRIPT_TEMPLATE: &str = r#"(() => {
     } catch (e) {}
     // 通道对象仅本闭包持有：立即从页面全局移除
     try { delete window[__lgChannelName]; } catch (e) {}
-    // 回填回调不可枚举且不可重定义（for..in/Object.keys 不可见；
-    // Object.getOwnPropertyNames 仍可见，见契约 §2.5 批21d 真机结论）
+    // 回填回调不可枚举、不可重写；批21h P1-2 起 `configurable:true`，
+    // 允许 Dart 在桥释放时 `delete window[callbackName]`（文档存活期间
+    // `Object.getOwnPropertyNames` 仍可见属性名，见契约 §2.5 批21d 真机结论）
     try {
       Object.defineProperty(window, __lgCallbackName, {
         value: __lgReply,
         enumerable: false,
-        configurable: false,
+        configurable: true,
         writable: false
       });
     } catch (e) {
@@ -1886,6 +1888,10 @@ globalThis.__probe = {
   callbackType: typeof window["__lgTestCallback"],
   callbackEnumerable: Object.getOwnPropertyDescriptor(window, "__lgTestCallback").enumerable,
   callbackConfigurable: Object.getOwnPropertyDescriptor(window, "__lgTestCallback").configurable,
+  callbackDeleted: (function () {
+    try { return delete window["__lgTestCallback"]; } catch (e) { return false; }
+  })(),
+  callbackTypeAfterDelete: typeof window["__lgTestCallback"],
   callbackInKeys: Object.keys(window).indexOf("__lgTestCallback") >= 0,
   sourceUrl: source.sourceUrl,
   sourceName: source.sourceName,
@@ -1937,9 +1943,14 @@ window["__lgTestChannel"] = {
         assert_eq!(probe["callbackType"], "function");
         assert_eq!(probe["callbackEnumerable"], false, "回填回调必须不可枚举");
         assert_eq!(
-            probe["callbackConfigurable"], false,
-            "回填回调必须不可重定义（批21d P0-B）"
+            probe["callbackConfigurable"], true,
+            "回填回调必须可删除（批21h P1-2：桥释放时 delete 回调）"
         );
+        assert_eq!(
+            probe["callbackDeleted"], true,
+            "回填回调必须可被 delete（桥释放路径）"
+        );
+        assert_eq!(probe["callbackTypeAfterDelete"], "undefined");
         assert_eq!(probe["callbackInKeys"], false);
         assert_eq!(probe["sourceUrl"], url);
         assert_eq!(probe["sourceName"], "宿主桥测试源");

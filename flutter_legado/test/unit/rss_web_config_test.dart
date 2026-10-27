@@ -359,7 +359,7 @@ void main() {
 
   group('console 日志', () {
     test('console 钩子与回读脚本包含关键语句', () {
-      expect(kRssConsoleHookScript, contains('__legadoConsoleLogs'));
+      expect(kRssConsoleHookScript, contains('__rssConsoleLogs'));
       expect(kRssConsoleHookScript, contains("'error'"));
       expect(kRssConsoleHookScript, contains('splice'));
       expect(kRssConsoleFlushScript, contains('JSON.stringify'));

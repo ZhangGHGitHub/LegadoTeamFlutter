@@ -30,7 +30,8 @@
 ///
 /// 批21d 审查修复：
 /// - 通道/桥对象/回填回调 **各自独立随机 token**（互不可推）；回填回调
-///   `configurable:false`；nonce 回调独立随机名、用后删除；
+///   `configurable:true`（批21h 起可删除，桥释放时 `delete`）；nonce 回调
+///   独立随机名、用后删除；
 /// - 握手改为「代数令牌 + 页面 ACK」：回填脚本携带单调代数，页面仅接受
 ///   不旧于当前的 nonce 并回发 `nonceAck`；Dart 以 ACK 置位 `_handshaken`，
 ///   ACK 缺失可经看门狗重试；
@@ -39,8 +40,8 @@
 /// 与 Rust 桥头的约定（契约 §2.5 批21a）：`__prepare` 的 `channelName`
 /// 指向**页面桥对象**（`window[channelName].request(method, argsJson, id)`），
 /// 该对象由 [rssBridgeBootstrapScript] 在 Rust 脚本执行前创建；平台注入的
-/// `JavaScriptChannel` 使用独立随机名（`__legado_rssNative_*`），避免覆盖
-/// 平台注入对象在 iOS/Android 上不可写的问题。
+/// `JavaScriptChannel` 使用独立随机名（`__rn_*`，批21h 起不带 `legado`
+/// 前缀），避免覆盖平台注入对象在 iOS/Android 上不可写的问题。
 library;
 
 import 'dart:async';
@@ -265,12 +266,26 @@ String rssBridgeBootstrapScript({
   var __lgNative = null;
   try { __lgNative = window[$native]; } catch (e) {}
   if (!__lgNative || typeof __lgNative.postMessage !== 'function') return;
-  // [批21e P3-1] 同文档幂等标记：首次注入成功后再写；重复注入直接返回，
-  // 避免二次 defineProperty/重发 hello 造成状态错乱（标记 configurable:false，
-  // 不可被页面删除；新文档 window 重建后自然消失）。
+  // [批21e P3-1 / 批21h P1-2] 同文档幂等守卫：
+  // - 首轮安装期间（到 setTimeout 转移前）用**随机名的窗口标记**防同 tick
+  //   重入；标记 `configurable:true`，转移后立即删除（`getOwnPropertyNames`
+  //   不再可见）；
+  // - 安装完成后守卫转移到回填回调上的非枚举属性 `__lgBridgeInstalled`
+  //   （不是 window 全局），后续重复注入按回调判幂等。
   // 批21f P3-3：标记写入移到通道删除与桥对象安装**之后**——若首轮在安装
   // 途中异常，不能被标记永久判成「已注入」导致同文档无法重试。
-  try { if (window[$bootMarker]) return; } catch (e) {}
+  var __lgInstalled = false;
+  try {
+    var __lgExisting = window[$callback];
+    if (typeof __lgExisting === 'function' &&
+        __lgExisting['__lgBridgeInstalled'] === 1) {
+      __lgInstalled = true;
+    }
+  } catch (e) {}
+  if (!__lgInstalled) {
+    try { if (window[$bootMarker]) __lgInstalled = true; } catch (e) {}
+  }
+  if (__lgInstalled) return;
   // 捕获后立即删除平台注入的全局对象（Android 15 真机实测 delete 生效，
   // 删除后 getOwnPropertyNames 不再可见；iOS 无该全局，以真机结论为准）。
   try { delete window[$native]; } catch (e) {}
@@ -368,7 +383,8 @@ String rssBridgeBootstrapScript({
     __lgRegisterNonceCallback();
     try { __lgSend('hello', '[]', ''); } catch (e) {}
   };
-  // Dart 看门狗重发入口：挂在（不可枚举的）回填回调上，不新增全局
+  // Dart 看门狗重发入口：挂在（不可枚举的）回填回调上，不新增全局；
+  // 批21h P1-2：同一 tick 把同文档幂等守卫转移到回调，并删除窗口标记。
   setTimeout(function () {
     try {
       var reply = window[$callback];
@@ -381,8 +397,17 @@ String rssBridgeBootstrapScript({
             writable: false
           });
         } catch (e) {}
+        try {
+          Object.defineProperty(reply, '__lgBridgeInstalled', {
+            value: 1,
+            enumerable: false,
+            configurable: true,
+            writable: false
+          });
+        } catch (e) {}
       }
     } catch (e) {}
+    try { delete window[$bootMarker]; } catch (e) {}
   }, 0);
   setTimeout(function () {
     if (__lgNonce !== null) return;
@@ -395,11 +420,13 @@ String rssBridgeBootstrapScript({
   }, $timeoutMs);
   // [批21f P3-3] 通道已删除、桥对象/nonce 回调/看门狗入口均已安装成功，
   // 此时才写幂等标记（安装途中异常可重试）。
+  // 批21h P1-2：窗口标记仅作同 tick 重入守卫，`configurable:true` 以便上方
+  // setTimeout 在转移到回调后删除（设备验收要求 window 上不残留宿主命名）。
   try {
     Object.defineProperty(window, $bootMarker, {
       value: 1,
       enumerable: false,
-      configurable: false,
+      configurable: true,
       writable: false
     });
   } catch (e) {
@@ -666,7 +693,12 @@ const String kRssBridgeSyncShimBody = r'''
   };
 
   // ── 动作摊平（经 Dart 内部动作通道 __action 回传） ───────────────────────
-  function __lgEmitAction(name, payload) {
+  // 批21h P1-1：本函数**不得**命名为 `__lgEmitAction`——Rust 桥头在同一
+  // 外层 IIFE 声明了单参 `__lgEmitAction(payload)`，函数声明提升会让
+  // 外层包装器 `__lgAction` 解析到本地两参版本，单参调用 → `payload` 为
+  // undefined → 再次调用 `__lgAction` → 无限互递归 → RangeError 被
+  // try/catch 吞掉，动作永不发送（java.log/toast/open/... 全部静默丢失）。
+  function __lgActionEmit(name, payload) {
     var data = payload || {};
     data.action = name;
     __lgAction(data);
@@ -676,21 +708,21 @@ const String kRssBridgeSyncShimBody = r'''
   }
   __lgJava.log = function (message) {
     var text = (message === null || message === undefined) ? '' : String(message);
-    __lgEmitAction('log', { message: text });
+    __lgActionEmit('log', { message: text });
     return text;
   };
   __lgJava.toast = function (message) {
     var text = (message === null || message === undefined) ? '' : String(message);
-    __lgEmitAction('toast', { message: text, long: false });
+    __lgActionEmit('toast', { message: text, long: false });
     return text;
   };
   __lgJava.longToast = function (message) {
     var text = (message === null || message === undefined) ? '' : String(message);
-    __lgEmitAction('toast', { message: text, long: true });
+    __lgActionEmit('toast', { message: text, long: true });
     return text;
   };
   __lgJava.open = function (name, url, title, origin) {
-    __lgEmitAction('open', {
+    __lgActionEmit('open', {
       name: __lgOptString(name) === null ? '' : __lgOptString(name),
       url: __lgOptString(url),
       title: __lgOptString(title),
@@ -698,23 +730,23 @@ const String kRssBridgeSyncShimBody = r'''
     });
   };
   __lgJava.searchBook = function (key, searchScope) {
-    __lgEmitAction('searchBook', {
+    __lgActionEmit('searchBook', {
       key: __lgOptString(key) === null ? '' : __lgOptString(key),
       scope: __lgOptString(searchScope)
     });
   };
   __lgJava.addBook = function (bookUrl) {
-    __lgEmitAction('addBook', {
+    __lgActionEmit('addBook', {
       url: __lgOptString(bookUrl) === null ? '' : __lgOptString(bookUrl)
     });
   };
   __lgJava.showPhoto = function (src) {
-    __lgEmitAction('showPhoto', {
+    __lgActionEmit('showPhoto', {
       src: __lgOptString(src) === null ? '' : __lgOptString(src)
     });
   };
   __lgJava.openUrl = function (url) {
-    __lgEmitAction('openUrl', {
+    __lgActionEmit('openUrl', {
       url: __lgOptString(url) === null ? '' : __lgOptString(url)
     });
   };
@@ -789,7 +821,7 @@ String rssBridgeOverrideScript(Map<String, dynamic> snapshot) {
   if (typeof window === 'undefined') return;
   var snapshot = $literal;
   var vars = snapshot.vars || {};
-  window.__legadoJava = {
+  window.__rssJava = {
     get: function (key) {
       var k = String(key);
       return Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k]) : '';
@@ -980,6 +1012,25 @@ String rssBridgeNonceScript({
       'finally{try{delete window[$callback];}catch(e){}}';
 }
 
+/// 释放脚本：删除页面侧回填回调 / 幂等标记 / nonce 回调（桥销毁时尽力执行）
+///
+/// 批21h P1-2：回填回调由 Rust 桥头以 `configurable:true` 定义（批21h 起），
+/// 因此桥释放时可在页面侧删除，`Object.getOwnPropertyNames(window)` 不再
+/// 残留宿主命名；桥对象由 bootstrap 定时器与 Rust 桥头删除，nonce 回调每次
+/// 交付后删除，这里仅作兜底。删除失败静默（文档已销毁/平台拒绝）。
+String rssBridgeReleaseScript({
+  required String callbackName,
+  required String bootstrapMarkerName,
+  required String nonceCallbackName,
+}) {
+  final callback = jsonEncode(callbackName);
+  final marker = jsonEncode(bootstrapMarkerName);
+  final nonce = jsonEncode(nonceCallbackName);
+  return 'try{delete window[$callback];}catch(e){}\n'
+      'try{delete window[$marker];}catch(e){}\n'
+      'try{delete window[$nonce];}catch(e){}';
+}
+
 // ─── Cookie 辅助 ─────────────────────────────────────────────────────────────
 
 /// 从 `__prepare` 快照的 `loginHeader`（JSON map）取 `Cookie` 值
@@ -1105,11 +1156,14 @@ class RssWebBridge {
     // 批21d P0-B：通道/桥对象/回填回调/nonce 回调各自独立随机 token，
     // 互不可推（此前四者共用一个 token，页面枚举到一个即可推导其余）。
     // 批21e P2-2：生产环境使用 `Random.secure()`（测试可注入确定性 Random）。
-    channelName = '__legado_rss_${_randomToken(_random, 12)}';
-    nativeChannelName = '__legado_rssNative_${_randomToken(_random, 12)}';
-    callbackName = '__legado_rssCb_${_randomToken(_random, 12)}';
-    nonceCallbackName = '__legado_rssNonce_${_randomToken(_random, 12)}';
-    bootstrapMarkerName = '__legado_rssBoot_${_randomToken(_random, 12)}';
+    // 批21h P1-2：所有注入到 `window` 的名字**不再带 `legado` 前缀**（设备
+    // 验收以 `Object.getOwnPropertyNames(window).filter(/legado/i)` 为口径）；
+    // 随机 token 本身已保证不可推导，前缀只用于调试区分角色。
+    channelName = '__rs_${_randomToken(_random, 12)}';
+    nativeChannelName = '__rn_${_randomToken(_random, 12)}';
+    callbackName = '__rc_${_randomToken(_random, 12)}';
+    nonceCallbackName = '__rk_${_randomToken(_random, 12)}';
+    bootstrapMarkerName = '__rb_${_randomToken(_random, 12)}';
   }
 
   /// 加密安全随机源（Web 等不支持 `Random.secure()` 的平台回落伪随机）
@@ -1549,7 +1603,10 @@ class RssWebBridge {
     }
   }
 
-  /// 清洗并释放：取消所有超时计时器
+  /// 清洗并释放：取消所有超时计时器，并尽力删除页面侧回调/标记
+  ///
+  /// 批21h P1-2：回填回调改为 `configurable:true`，释放时在页面侧删除
+  /// （文档存活时生效；文档已销毁/平台拒绝时静默失败）。
   void dispose() {
     _disposed = true;
     _handshakeToken++;
@@ -1563,6 +1620,19 @@ class RssWebBridge {
       pending.timer?.cancel();
     }
     _pending.clear();
+    try {
+      unawaited(
+        _runJavaScript(
+          rssBridgeReleaseScript(
+            callbackName: callbackName,
+            bootstrapMarkerName: bootstrapMarkerName,
+            nonceCallbackName: nonceCallbackName,
+          ),
+        ).catchError((Object _) {}),
+      );
+    } catch (_) {
+      // 控制器已销毁/释放失败不影响桥状态清理
+    }
   }
 
   // ── 内部 ──────────────────────────────────────────────────────────────────

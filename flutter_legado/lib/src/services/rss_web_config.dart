@@ -736,7 +736,7 @@ String rssShouldOverrideScript(String js, String url) {
   return '''
 (function(){
   var url = $encodedUrl;
-  var java = (window.__legadoJava = window.__legadoJava || {});
+  var java = (window.__rssJava = window.__rssJava || {});
   var result;
   try {
     result = eval($encodedJs);
@@ -804,9 +804,9 @@ String _unwrapQuotedLiteral(String value) {
 /// 「undefined」并使脚本后续逻辑可继续（动作本身不执行，登记 15g）。
 const String kRssJavaStubScript = '''
 (function(){
-  if (window.__legadoJava) return;
+  if (window.__rssJava) return;
   var noop = function(){};
-  window.__legadoJava = {
+  window.__rssJava = {
     open: noop,
     searchBook: noop,
     addBook: noop,
@@ -825,9 +825,9 @@ const String kRssJavaStubScript = '''
 /// 回读。保留原始 console 行为（继续调用原函数）。
 const String kRssConsoleHookScript = '''
 (function(){
-  if (window.__legadoConsoleHooked) return;
-  window.__legadoConsoleHooked = true;
-  window.__legadoConsoleLogs = [];
+  if (window.__rssConsoleHooked) return;
+  window.__rssConsoleHooked = true;
+  window.__rssConsoleLogs = [];
   var levels = ['log', 'info', 'warn', 'error', 'debug'];
   levels.forEach(function(level){
     var original = console[level];
@@ -837,9 +837,9 @@ const String kRssConsoleHookScript = '''
         for (var i = 0; i < arguments.length; i++) {
           try { parts.push(String(arguments[i])); } catch (e) { parts.push('[object]'); }
         }
-        window.__legadoConsoleLogs.push(level + ': ' + parts.join(' '));
-        if (window.__legadoConsoleLogs.length > 200) {
-          window.__legadoConsoleLogs.splice(0, window.__legadoConsoleLogs.length - 200);
+        window.__rssConsoleLogs.push(level + ': ' + parts.join(' '));
+        if (window.__rssConsoleLogs.length > 200) {
+          window.__rssConsoleLogs.splice(0, window.__rssConsoleLogs.length - 200);
         }
       } catch (e) {}
       if (original) { try { original.apply(console, arguments); } catch (e) {} }
@@ -850,8 +850,8 @@ const String kRssConsoleHookScript = '''
 
 /// 回读并清空 console 缓冲（返回 JSON 数组字符串）
 const String kRssConsoleFlushScript =
-    '(function(){var logs=window.__legadoConsoleLogs||[];'
-    'window.__legadoConsoleLogs=[];return JSON.stringify(logs);})()';
+    '(function(){var logs=window.__rssConsoleLogs||[];'
+    'window.__rssConsoleLogs=[];return JSON.stringify(logs);})()';
 
 /// 解析 [kRssConsoleFlushScript] 的返回值（WebView 可能返回带引号串）
 List<String> rssParseConsoleLogs(Object? raw) {

@@ -209,12 +209,12 @@ void main() {
       expect(controller.javaScriptChannels, hasLength(1),
           reason: 'preloadJs 非空必须注册宿主通道');
       expect(controller.javaScriptChannels.single.name,
-          startsWith('__legado_rssNative_'));
+          startsWith('__rn_'));
 
       final html = controller.loadedHtml ?? '';
       expect(html, contains(_preloadMarker));
       expect(html, contains(_rustHeadMarker));
-      final consoleIndex = html.indexOf('__legadoConsoleHooked');
+      final consoleIndex = html.indexOf('__rssConsoleHooked');
       final rustIndex = html.indexOf(_rustHeadMarker);
       final preloadIndex = html.indexOf(_preloadMarker);
       expect(consoleIndex, greaterThanOrEqualTo(0));
@@ -502,7 +502,7 @@ void main() {
           .toList();
       expect(calls, hasLength(1), reason: '二次导航必须重新注入桥');
       expect(calls.single, contains(_rustHeadMarker));
-      expect(calls.single, contains('__legado_rssNative_'));
+      expect(calls.single, contains('__rn_'));
       expect(calls.single.trimRight(), endsWith('})();'));
     });
   });
@@ -580,7 +580,7 @@ void main() {
       await tester.pump();
 
       final overrideCall = controller.javaScriptCalls
-          .firstWhere((js) => js.contains('window.__legadoJava'));
+          .firstWhere((js) => js.contains('window.__rssJava'));
       expect(overrideCall, contains(_sourceUrl));
       expect(overrideCall, contains('getVariable'));
       expect(overrideCall, isNot(contains('postMessage')));
@@ -609,7 +609,7 @@ void main() {
       await tester.pump();
 
       final consoleIndex = controller.javaScriptCalls.indexWhere(
-        (js) => js.contains('__legadoConsoleHooked'),
+        (js) => js.contains('__rssConsoleHooked'),
       );
       final preloadIndex = controller.javaScriptCalls.indexWhere(
         (js) => js.contains(_preloadMarker),
@@ -620,7 +620,7 @@ void main() {
 
       final composed = controller.javaScriptCalls[preloadIndex];
       expect(composed, contains(_rustHeadMarker));
-      expect(composed, contains('__legado_rssNative_'));
+      expect(composed, contains('__rn_'));
       expect(composed, endsWith('})();\n'));
 
       controller.emitPageStarted(_articleUrl);
@@ -632,7 +632,7 @@ void main() {
       );
       expect(
         controller.javaScriptCalls
-            .where((js) => js.contains('__legadoConsoleHooked')),
+            .where((js) => js.contains('__rssConsoleHooked')),
         hasLength(1),
         reason: '同文档重复 onPageStarted 不得重复注入 console 钩子',
       );
