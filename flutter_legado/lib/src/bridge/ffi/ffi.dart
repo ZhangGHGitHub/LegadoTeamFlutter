@@ -795,6 +795,24 @@ Future<String> rssFetchContent({
   sort: sort,
 );
 
+/// RSS 阅读 WebView `preloadJs` 宿主桥单入口（契约 §2.5，批21a，加法式）
+///
+/// `args_json` 为位置参数 JSON 数组；返回 JSON 信封
+/// `{"ok":bool,"value":<any>,"error":String?,"actions":[...]?}`。
+/// 内部方法 `__prepare`（生成 WebView 侧 IIFE 头 + 只读快照）、
+/// `__cookieSet`（WebView Cookie 回流）、`__store`（source 变量 /
+/// 登录缓存 / cache 读写）；对外方法白名单见契约。Rust 在 QuickJS 引擎
+/// （键 `executor:<sourceUrl>`）中执行宿主调用并收集动作。
+Future<String> rssWebViewHostCall({
+  required String sourceUrl,
+  required String method,
+  required String argsJson,
+}) => RustLib.instance.api.crateFfiFfiRssWebViewHostCall(
+  sourceUrl: sourceUrl,
+  method: method,
+  argsJson: argsJson,
+);
+
 /// 获取所有 RSS 收藏（JSON 数组）
 Future<String> rssStarList() => RustLib.instance.api.crateFfiFfiRssStarList();
 
