@@ -1844,8 +1844,22 @@ Future<String> backupCreate({required String path}) =>
     RustLib.instance.api.crateFfiFfiBackupCreate(path: path);
 
 /// 从备份文件恢复，返回恢复统计（JSON）
-Future<String> backupRestore({required String path}) =>
-    RustLib.instance.api.crateFfiFfiBackupRestore(path: path);
+///
+/// 契约 §2.11（批17a）：`password` 仅对原版 zip 备份生效，`None`/空串
+/// 等价空密码；我方单文件 JSON 备份忽略该参数。密码缺失/错误时返回带
+/// `BACKUP_PASSWORD_REQUIRED:` / `BACKUP_PASSWORD_INVALID:` 前缀的错误文本。
+Future<String> backupRestore({required String path, String? password}) =>
+    RustLib.instance.api.crateFfiFfiBackupRestore(
+      path: path,
+      password: password,
+    );
+
+/// 探测备份是否需要密码（契约 §2.11，批17a；只读）
+///
+/// 返回 `{"format":"zip"|"json","passwordRequired":bool,
+/// "passwordProtectedFiles":[string]}`。
+Future<String> backupInspect({required String path}) =>
+    RustLib.instance.api.crateFfiFfiBackupInspect(path: path);
 
 /// 列出备份文件（JSON 数组）
 Future<String> backupList({required String dir}) =>
