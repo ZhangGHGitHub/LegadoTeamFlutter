@@ -38,6 +38,9 @@ open class MainActivity : FlutterActivity() {
 
     /** P1-4：外部书籍文件 VIEW intent（content:// / file://），冷启动暂存待 Dart 拉取 */
     private var initialFileUri: String? = null
+
+    /** 批25：ACTION_SEND / PROCESS_TEXT 分享文本，冷启动暂存待 Dart 拉取（取后清空） */
+    private var initialSharedText: String? = null
     private var pendingAutoTaskDue = false
     private var pendingAutoTaskMinimize = false
 
@@ -148,6 +151,12 @@ open class MainActivity : FlutterActivity() {
                 "getInitialLink" -> result.success(initialDeepLink)
                 // P1-4：冷启动外部书籍文件 URI 拉取
                 "getInitialFileUri" -> result.success(initialFileUri)
+                // 批25：冷启动分享文本拉取（取后清空，避免热重启重复消费）
+                "getInitialSharedText" -> {
+                    val text = initialSharedText
+                    initialSharedText = null
+                    result.success(text)
+                }
                 // P1-4：content:// / file:// 经 ContentResolver 拷入应用
                 // 私有持久目录（files/external_import），返回落盘路径供导入链
                 "copyContentUri" -> handleCopyContentUri(call, result)
@@ -231,6 +240,8 @@ open class MainActivity : FlutterActivity() {
             intent?.getBooleanExtra(AutoTaskJobBridge.EXTRA_AUTO_TASK_DUE, false) == true
         pendingAutoTaskMinimize =
             intent?.getBooleanExtra(AutoTaskJobBridge.EXTRA_AUTO_TASK_MINIMIZE, false) == true
+        // 批25：ACTION_SEND / ACTION_PROCESS_TEXT 冷启动暂存（Dart 首帧后拉取）
+        initialSharedText = extractSharedText(intent)
         // [V-B3] 冷启动：悬浮窗「全屏」拉起 MainActivity 时携带播放状态
         videoFloatBridge.setPendingReturn(intent)
         applySystemBarFromState()
@@ -239,6 +250,16 @@ open class MainActivity : FlutterActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        // 批25：应用已存活时接收 ACTION_SEND / ACTION_PROCESS_TEXT
+        val sharedText = extractSharedText(intent)
+        if (!sharedText.isNullOrEmpty()) {
+            val channel = deepLinkChannel
+            if (channel != null) {
+                channel.invokeMethod("onSharedText", sharedText)
+            } else {
+                initialSharedText = sharedText
+            }
+        }
         val link = intent.dataString
         if (!link.isNullOrEmpty()) {
             if (isImportSchemeUri(link)) {
@@ -275,6 +296,26 @@ open class MainActivity : FlutterActivity() {
     private fun isImportSchemeUri(uri: String): Boolean {
         val lower = uri.trim().lowercase()
         return lower.startsWith("legado://") || lower.startsWith("yuedu://")
+    }
+
+    /**
+     * 批25：提取 ACTION_SEND / ACTION_PROCESS_TEXT 的 text/plain 文本。
+     *
+     * 对齐原版 SharedReceiverActivity：仅接收 `text/plain`（不接收 text 通配），
+     * PROCESS_TEXT 仅 API 23+ 存在。EXTRA_TEXT 可能是 CharSequence（如
+     * Spanned），统一 toString。
+     */
+    private fun extractSharedText(intent: Intent?): String? {
+        if (intent == null) return null
+        return when {
+            intent.action == Intent.ACTION_SEND && intent.type == "text/plain" ->
+                intent.getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString()
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+                intent.action == Intent.ACTION_PROCESS_TEXT &&
+                intent.type == "text/plain" ->
+                intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
+            else -> null
+        }?.takeIf { it.isNotBlank() }
     }
 
     /**

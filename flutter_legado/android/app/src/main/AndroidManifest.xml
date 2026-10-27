@@ -152,6 +152,19 @@
                 <data android:scheme="legado" />
                 <data android:scheme="yuedu" />
             </intent-filter>
+            <!-- 批25：外部分享文本（对齐原版 SharedReceiverActivity 接收面；
+                 原版仅 text/plain，不含 text/*）。Dart 侧分流见
+                 lib/src/utils/shared_text.dart：口令/URL/JSON/不支持 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
         </activity>
 
         <!-- 图标变体（对齐原版 Launcher1~6：默认禁用，LauncherIconBridge
