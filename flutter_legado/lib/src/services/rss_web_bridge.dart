@@ -18,6 +18,14 @@
 /// 注入顺序（拼接到 HTML `<head>` 或 URL 模式 `onPageStarted`）：
 /// console 钩子 → 通道适配/握手 → Rust 桥头 → 同步面 → `preloadJs` → `})();`
 ///
+/// 批21c 安全加固（独立复核 P0）：
+/// - 平台注入的 `JavaScriptChannel` 对象捕获后立即从全局删除（Android）；
+///   页面桥对象不可枚举并在 Rust 桥头读取后删除；`java`/`source`/`cache`/
+///   `*Await` 只在 IIFE 闭包内（Rust 桥头声明），页面脚本无法取得宿主能力；
+/// - nonce 回调不可枚举、交付后立即删除；nonce **不是安全边界**（仅防误用/
+///   重放），隔离依赖「桥模式剥离页面脚本 + 无全局对象」（契约 §2.5 批21c）；
+/// - `__prepare` 失败注入引导式降级桩（明确报错，不因 TypeError 中断）。
+///
 /// 与 Rust 桥头的约定（契约 §2.5 批21a）：`__prepare` 的 `channelName`
 /// 指向**页面桥对象**（`window[channelName].request(method, argsJson, id)`），
 /// 该对象由 [rssBridgeBootstrapScript] 在 Rust 脚本执行前创建；平台注入的
@@ -67,6 +75,15 @@ const Duration kRssWebBridgeDefaultTimeout = Duration(seconds: 30);
 /// 握手超时（未收到 `hello` 或 nonce 无法回填时，排队的调用按失败回填，
 /// 避免页面脚本无限挂起）
 const Duration kRssWebBridgeHandshakeTimeout = Duration(seconds: 10);
+
+/// 握手看门狗（批21c P1-1：导航后 4s 未完成握手 → 重置状态并重发 hello）
+const Duration kRssWebBridgeHandshakeWatchdog = Duration(seconds: 4);
+
+/// 页面动作（`__action`）每秒上限（超出丢弃并限频留痕）
+const int kRssWebBridgeMaxActionsPerSecond = 200;
+
+/// 页面写穿（`__store`）每秒上限（Rust 侧另有同量级硬限）
+const int kRssWebBridgeMaxStoresPerSecond = 300;
 
 /// JS 执行器（由页面传入 `WebViewController.runJavaScript`）
 typedef RssWebBridgeJsRunner = Future<void> Function(String javaScript);
@@ -195,11 +212,16 @@ class RssWebBridgeAction {
 
 /// 通道适配 + 握手脚本（必须在 Rust 桥头之前执行）
 ///
-/// - 用独立桥对象 `window[bridgeObjectName]` 包装平台 `JavaScriptChannel`
-///   （平台注入对象不可安全覆写）；
-/// - 首次 `hello` 由页面主动发出；Dart 校验后经 `window[callbackName_nonce]`
-///   回填 nonce，回填前排队的请求按序放行；10s 未拿到 nonce 时，
-///   排队请求经桥回调按失败结束（避免无限挂起）。
+/// 批21c 安全加固（独立复核 P0-1/P0-3）：
+/// - 平台注入的通道对象捕获后立即从页面全局删除（Android `delete` 有效；
+///   iOS 无该全局、`webkit.messageHandlers` 不可删，靠桥模式剥离页面脚本）；
+/// - 页面桥对象用 `Object.defineProperty(..., enumerable:false)` 定义，
+///   且定时删除（Rust 桥头会先行 `delete`，此为兜底）；
+/// - nonce 回调不可枚举，交付 nonce 后由 [rssBridgeNonceScript] 立即删除；
+/// - 排队请求上限 20，溢出/握手超时按失败回填（不无限挂起）。
+///
+/// **nonce 不是安全边界**：仅防误用/重放；对不可信页面脚本的隔离依赖
+/// 「桥模式剥离页面脚本 + 无全局对象」（契约 §2.5 批21c 补记）。
 String rssBridgeBootstrapScript({
   required String nativeChannelName,
   required String bridgeObjectName,
@@ -213,11 +235,18 @@ String rssBridgeBootstrapScript({
   final timeoutMs = handshakeTimeout.inMilliseconds;
   return '''
 (function(){
-  // [批21b] RSS WebView 宿主桥：通道适配 + hello/nonce 握手
-  var __lgNative = (typeof window !== 'undefined') ? window[$native] : null;
+  // [批21b/21c] RSS WebView 宿主桥：通道适配 + hello/nonce 握手
+  if (typeof window === 'undefined') return;
+  var __lgNative = null;
+  try { __lgNative = window[$native]; } catch (e) {}
   if (!__lgNative || typeof __lgNative.postMessage !== 'function') return;
+  // 捕获后立即删除平台注入的全局对象（Android 可删；iOS 无该全局）
+  try { delete window[$native]; } catch (e) {}
   var __lgNonce = null;
+  var __lgSealed = false;
   var __lgQueue = [];
+  var __lgMaxQueue = 20;
+  var __lgBridgeObject = null;
   var __lgSend = function (method, argsJson, id) {
     __lgNative.postMessage(JSON.stringify({
       nonce: __lgNonce,
@@ -226,22 +255,15 @@ String rssBridgeBootstrapScript({
       args: argsJson
     }));
   };
-  window[$bridge] = {
-    request: function (method, argsJson, id) {
-      var m = (method === null || method === undefined) ? '' : String(method);
-      var a = (argsJson === null || argsJson === undefined) ? '[]' : String(argsJson);
-      var i = (id === null || id === undefined) ? '' : String(id);
-      if (__lgNonce === null) {
-        __lgQueue.push({ id: i, method: m, args: a });
-        return;
-      }
-      try { __lgSend(m, a, i); } catch (e) {}
-    },
-    postMessage: function (message) { return __lgNative.postMessage(message); }
+  // 失败回填：调用 Rust 桥头注册的回填回调（不可枚举；按名访问）
+  var __lgDeliverError = function (id, message) {
+    if (!id) return;
+    try {
+      var reply = window[$callback];
+      if (typeof reply === 'function') reply(String(id), false, String(message));
+    } catch (e) {}
   };
-  window[$nonceCallback] = function (nonce) {
-    if (__lgNonce !== null) return;
-    __lgNonce = String(nonce);
+  var __lgFlushQueue = function () {
     var queue = __lgQueue;
     __lgQueue = [];
     for (var i = 0; i < queue.length; i++) {
@@ -249,25 +271,98 @@ String rssBridgeBootstrapScript({
       try { __lgSend(item.method, item.args, item.id); } catch (e) {}
     }
   };
+  __lgBridgeObject = {
+    request: function (method, argsJson, id) {
+      var m = (method === null || method === undefined) ? '' : String(method);
+      var a = (argsJson === null || argsJson === undefined) ? '[]' : String(argsJson);
+      var i = (id === null || id === undefined) ? '' : String(id);
+      if (__lgNonce === null) {
+        if (__lgSealed) {
+          __lgDeliverError(i, '宿主桥握手超时：未获取 nonce');
+          return;
+        }
+        if (__lgQueue.length >= __lgMaxQueue) {
+          __lgDeliverError(i, '宿主桥请求队列已满（≥' + __lgMaxQueue + '）');
+          return;
+        }
+        __lgQueue.push({ id: i, method: m, args: a });
+        return;
+      }
+      try { __lgSend(m, a, i); } catch (e) { __lgDeliverError(i, String(e)); }
+    },
+    postMessage: function (message) { return __lgNative.postMessage(message); }
+  };
+  // 桥对象不可枚举（页面脚本无法经 for..in / Object.keys 发现）
+  try {
+    Object.defineProperty(window, $bridge, {
+      value: __lgBridgeObject,
+      enumerable: false,
+      configurable: true,
+      writable: false
+    });
+  } catch (e) {
+    try { window[$bridge] = __lgBridgeObject; } catch (e2) {}
+  }
+  // 兜底清理：Rust 桥头读取后会立即 delete；若桥头缺失/抛错，本定时器兜底
+  setTimeout(function () {
+    try { delete window[$bridge]; } catch (e) {}
+  }, 0);
+  var __lgNonceHandler = function (nonce) {
+    if (__lgNonce !== null) return;
+    __lgNonce = String(nonce);
+    if (__lgQueue.length > 0) __lgFlushQueue();
+  };
+  try {
+    Object.defineProperty(window, $nonceCallback, {
+      value: __lgNonceHandler,
+      enumerable: false,
+      configurable: true,
+      writable: false
+    });
+  } catch (e) {
+    try { window[$nonceCallback] = __lgNonceHandler; } catch (e2) {}
+  }
+  var __lgHello = function () {
+    if (__lgNonce !== null) return;
+    try { __lgSend('hello', '[]', ''); } catch (e) {}
+  };
+  // Dart 看门狗重发入口：挂在（不可枚举的）回填回调上，不新增全局
+  setTimeout(function () {
+    try {
+      var reply = window[$callback];
+      if (typeof reply === 'function') {
+        try {
+          Object.defineProperty(reply, '__lgHello', {
+            value: __lgHello,
+            enumerable: false,
+            configurable: true,
+            writable: false
+          });
+        } catch (e) {}
+      }
+    } catch (e) {}
+  }, 0);
   setTimeout(function () {
     if (__lgNonce !== null) return;
+    __lgSealed = true;
     var queue = __lgQueue;
     __lgQueue = [];
     for (var i = 0; i < queue.length; i++) {
-      var item = queue[i];
-      if (!item.id) continue;
-      try {
-        var reply = window[$callback];
-        if (typeof reply === 'function') {
-          reply(item.id, false, '宿主桥握手超时：未收到 nonce');
-        }
-      } catch (e) {}
+      __lgDeliverError(queue[i].id, '宿主桥握手超时：未收到 nonce');
     }
   }, $timeoutMs);
-  try { __lgSend('hello', '[]', ''); } catch (e) {}
+  __lgHello();
 })();
 ''';
 }
+
+/// 看门狗重发 hello（调用挂在回填回调上的非枚举入口；未就绪时静默）
+String rssBridgeHelloScript({required String callbackName}) {
+  final callback = jsonEncode(callbackName);
+  return 'try{var r=window[$callback];'
+      'if(r&&typeof r.__lgHello==="function")r.__lgHello();}catch(e){}';
+}
+
 
 // ─── JS：同步面（纯函数 + 动作摊平，无 RPC） ─────────────────────────────────
 
@@ -601,23 +696,23 @@ const String kRssBridgeSyncShimBody = r'''
 
 /// 同步面注入脚本（Rust 桥头之后、`preloadJs` 之前）
 ///
-/// [bridgeObjectName]：动作通道（`window[bridgeObjectName].request`）；
+/// [bridgeObjectName]：保留参数以兼容既有调用；批21c 起动作通道改为
+/// 闭包内的 `__lgEmitAction`（由 Rust 桥头声明，不残留 `window` 桥对象）。
 /// [userAgent]：`java.getWebViewUA()` 返回值（`__prepare` 注入的 UA）。
 String rssBridgeSyncShimScript({
-  required String bridgeObjectName,
+  String? bridgeObjectName,
   String? userAgent,
 }) {
-  final bridge = jsonEncode(bridgeObjectName);
   return '''
 (function(){
-  var __lgJava = (typeof window !== 'undefined' && window.java) ? window.java : null;
+  // 批21c：java 由 Rust 桥头在**同一 IIFE 闭包**内声明（不写 window）；
+  // 这里经词法作用域直接引用，页面脚本无法取得。
+  var __lgJava = (typeof java !== 'undefined' && java) ? java : null;
   if (!__lgJava) return;
-  var __lgActSeq = 0;
   var __lgAction = function (payload) {
     try {
-      var bridge = (typeof window !== 'undefined') ? window[$bridge] : null;
-      if (bridge && typeof bridge.request === 'function') {
-        bridge.request('__action', JSON.stringify(payload || {}), 'act_' + (++__lgActSeq));
+      if (typeof __lgEmitAction === 'function') {
+        __lgEmitAction(payload || {});
       }
     } catch (e) {}
   };
@@ -675,6 +770,128 @@ String rssBridgeOverrideScript(Map<String, dynamic> snapshot) {
 ''';
 }
 
+// ─── JS：prepare 失败降级桩 ──────────────────────────────────────────────────
+
+/// `__prepare` 失败时的降级注入（批21c P2-9）
+///
+/// 不注入宿主桥（无通道/无机密快照），只提供带明确报错的 `java`/`source`/
+/// `cache` 桩：缺失常用属性会让 `preloadJs` 抛 TypeError 并中断后续语句，
+/// 这里保证「调用存在、失败可读」，同步流程不被中断。
+/// [syncShim] 为同步面（纯函数 + `java.log/toast` 摊平），仍可安全注入。
+String rssBridgeDegradedScript(
+  String preloadJs, {
+  String? syncShim,
+}) {
+  return '''
+(function(){
+  // [批21c] RSS WebView 宿主桥 prepare 失败：引导式降级桩（不写 window 全局）
+  var __lgWarned = Object.create(null);
+  function __lgWarnOnce(key, message) {
+    if (__lgWarned[key]) return;
+    __lgWarned[key] = true;
+    try { console.warn(message); } catch (e) {}
+  }
+  function __lgUnsupported(name) {
+    var msg = 'RSS WebView 宿主桥不可用（prepare 失败）：java.' + name;
+    __lgWarnOnce('unsupported:' + name, msg);
+    throw new Error(msg);
+  }
+  function __lgRejected(name) {
+    var msg = 'RSS WebView 宿主桥不可用（prepare 失败）：' + name;
+    __lgWarnOnce('rejected:' + name, msg);
+    return Promise.reject(new Error(msg));
+  }
+  function __lgNoopAction(payload) { return payload; }
+  var __lgEmitAction = __lgNoopAction;
+  var java = {
+    request: function () {},
+    put: function (k, v) { return String(v); },
+    get: function () { return ''; },
+    ajax: function () { return __lgUnsupported('ajax'); },
+    connect: function () { return __lgUnsupported('connect'); },
+    post: function () { return __lgUnsupported('post'); },
+    head: function () { return __lgUnsupported('head'); },
+    webView: function () { return __lgUnsupported('webView'); },
+    webViewGetSource: function () { return __lgUnsupported('webViewGetSource'); },
+    downloadFile: function () { return __lgUnsupported('downloadFile'); },
+    readTxtFile: function () { return __lgUnsupported('readTxtFile'); },
+    importScript: function () { return __lgUnsupported('importScript'); },
+    getString: function () { return __lgUnsupported('getString'); },
+    getStringList: function () { return __lgUnsupported('getStringList'); },
+    createSymmetricCrypto: function () { return __lgUnsupported('createSymmetricCrypto'); },
+    createSign: function () { return __lgUnsupported('createSign'); },
+    getCookie: function () { return ''; },
+    setCookie: function () {},
+    ajaxAwait: function () { return __lgRejected('ajaxAwait'); },
+    connectAwait: function () { return __lgRejected('connectAwait'); },
+    getAwait: function () { return __lgRejected('getAwait'); },
+    headAwait: function () { return __lgRejected('headAwait'); },
+    postAwait: function () { return __lgRejected('postAwait'); },
+    webViewAwait: function () { return __lgRejected('webViewAwait'); },
+    webViewGetSourceAwait: function () { return __lgRejected('webViewGetSourceAwait'); },
+    decryptStrAwait: function () { return __lgRejected('decryptStrAwait'); },
+    encryptBase64Await: function () { return __lgRejected('encryptBase64Await'); },
+    encryptHexAwait: function () { return __lgRejected('encryptHexAwait'); },
+    createSignHexAwait: function () { return __lgRejected('createSignHexAwait'); },
+    downloadFileAwait: function () { return __lgRejected('downloadFileAwait'); },
+    readTxtFileAwait: function () { return __lgRejected('readTxtFileAwait'); },
+    importScriptAwait: function () { return __lgRejected('importScriptAwait'); },
+    getStringAwait: function () { return __lgRejected('getStringAwait'); },
+    toast: function (msg) { __lgWarnOnce('toast', String(msg)); return String(msg); },
+    longToast: function (msg) { __lgWarnOnce('longToast', String(msg)); return String(msg); },
+    log: function (msg) { __lgWarnOnce('log', String(msg)); return String(msg); },
+    randomUUID: function () { return '00000000-0000-4000-8000-000000000000'; },
+    timeFormat: function () { return ''; },
+    htmlFormat: function (str) { return String(str == null ? '' : str); },
+    t2s: function (text) { return String(text == null ? '' : text); },
+    s2t: function (text) { return String(text == null ? '' : text); }
+  };
+  var source = {
+    get: function () { return ''; },
+    getKey: function () { return ''; },
+    getUrl: function () { return ''; },
+    getTag: function () { return ''; },
+    key: '',
+    url: '',
+    sourceUrl: '',
+    sourceName: '',
+    loginUrl: '',
+    loginUi: '',
+    header: '',
+    put: function (k, v) { return String(v); },
+    getVariable: function () { return ''; },
+    setVariable: function (v) { return String(v); },
+    putVariable: function (v) { return String(v); },
+    getLoginHeader: function () { return null; },
+    putLoginHeader: function () {},
+    removeLoginHeader: function () {},
+    getLoginHeaderMap: function () { return null; },
+    getLoginInfo: function () { return null; },
+    putLoginInfo: function () { return true; },
+    removeLoginInfo: function () {},
+    getLoginInfoMap: function () {
+      var data = {};
+      data.get = function (k) { return this[k] == null ? null : this[k]; };
+      data.put = function (k, v) { this[k] = String(v); return v; };
+      return data;
+    },
+    hasLogin: function () { return false; },
+    login: function () { __lgWarnOnce('login', '宿主桥不可用：source.login() 已忽略'); }
+  };
+  var cache = {
+    get: function () { return null; },
+    put: function (k, v) { return String(v); },
+    remove: function () { return true; },
+    putMemory: function () {},
+    getFromMemory: function () { return null; },
+    deleteMemory: function () { return true; }
+  };
+${syncShim ?? ''}
+$preloadJs
+})();
+''';
+}
+
 // ─── JS：协议回填 ────────────────────────────────────────────────────────────
 
 /// 回填宿主调用结果：`window[callbackName](id, ok, payload)`
@@ -693,14 +910,18 @@ String rssBridgeReplyScript({
   return 'try{window[$callback]($idLiteral, $ok, $payloadLiteral);}catch(e){}';
 }
 
-/// 回填握手 nonce：`window[callbackName_nonce](nonce)`
+/// 回填握手 nonce：`window[callbackName_nonce](nonce)`，交付后立即删除
+///
+/// 批21c P0-3：nonce 回调不可枚举且用后即删，仅防误用/重放，不承担对
+/// 不可信页面脚本的隔离（隔离依赖桥模式剥离页面脚本 + 无全局对象）。
 String rssBridgeNonceScript({
   required String callbackName,
   required String nonce,
 }) {
   final callback = jsonEncode('${callbackName}_nonce');
   final nonceLiteral = jsonEncode(nonce);
-  return 'try{window[$callback]($nonceLiteral);}catch(e){}';
+  return 'try{window[$callback]($nonceLiteral);}catch(e){}'
+      'finally{try{delete window[$callback];}catch(e){}}';
 }
 
 // ─── Cookie 辅助 ─────────────────────────────────────────────────────────────
@@ -766,6 +987,27 @@ class _PendingCall {
   bool completed = false;
 }
 
+/// 固定 1s 窗口计数（页面动作/写穿限频）
+class _PageRateWindow {
+  _PageRateWindow({required this.limit});
+
+  final int limit;
+  DateTime _windowStart = DateTime.fromMillisecondsSinceEpoch(0);
+  int _count = 0;
+
+  /// 允许本次调用返回 true；超限返回 false
+  bool allow() {
+    final now = DateTime.now();
+    if (now.difference(_windowStart) >= const Duration(seconds: 1)) {
+      _windowStart = now;
+      _count = 0;
+    }
+    if (_count >= limit) return false;
+    _count++;
+    return true;
+  }
+}
+
 /// RSS WebView 宿主桥实例（一个阅读页/一个 WebView 控制器一个实例）
 ///
 /// 典型用法（阅读页）：
@@ -791,6 +1033,7 @@ class RssWebBridge {
     required RssWebBridgeJsRunner runJavaScript,
     this.requestTimeout = kRssWebBridgeDefaultTimeout,
     this.handshakeTimeout = kRssWebBridgeHandshakeTimeout,
+    this.handshakeWatchdog = kRssWebBridgeHandshakeWatchdog,
     void Function(RssWebBridgeAction action)? onAction,
     void Function(String message)? onLog,
     Random? random,
@@ -813,6 +1056,9 @@ class RssWebBridge {
 
   /// 握手超时（页面排队请求的失败兜底）
   final Duration handshakeTimeout;
+
+  /// 握手看门狗（批21c P1-1：4s 未握手 → 重置并重发 hello）
+  final Duration handshakeWatchdog;
 
   /// 页面桥对象名（传给 `__prepare` 的 `channelName`）
   late final String channelName;
@@ -837,14 +1083,34 @@ class RssWebBridge {
 
   RssWebBridgePrepareResult? _prepare;
   bool _handshaken = false;
+  bool _handshakeInFlight = false;
   String? _nonce;
   bool _disposed = false;
+
+  /// 导航代数（批21c P1-1）：导航/看门狗重置时自增，旧文档的异步握手结果
+  /// 回到 Dart 时按代数丢弃，避免把新文档误标为已握手。
+  int _generation = 0;
+
+  /// 握手看门狗计时器（每次导航重臂，握手成功取消）
+  Timer? _handshakeWatchdogTimer;
+
+  /// `__prepare` 是否失败（降级为引导式桩；见 [rssBridgeDegradedScript]）
+  bool _prepareFailed = false;
+
+  /// 页面动作/写穿限频窗口（批21c P2-10）
+  final _PageRateWindow _actionRate =
+      _PageRateWindow(limit: kRssWebBridgeMaxActionsPerSecond);
+  final _PageRateWindow _storeRate =
+      _PageRateWindow(limit: kRssWebBridgeMaxStoresPerSecond);
 
   /// `__prepare` 结果（未准备为 null）
   RssWebBridgePrepareResult? get prepareResult => _prepare;
 
   /// 是否完成 hello/nonce 握手
   bool get isHandshaken => _handshaken;
+
+  /// `__prepare` 是否失败（调用方可据此选择降级桩；[composeInjection] 自动处理）
+  bool get isDegraded => _prepareFailed;
 
   /// 当前 nonce（未握手为 null；测试可读）
   @visibleForTesting
@@ -864,6 +1130,7 @@ class RssWebBridge {
       'callbackName': callbackName,
       if ((userAgent ?? '').trim().isNotEmpty) 'ua': userAgent!.trim(),
     };
+    _prepareFailed = false;
     try {
       final raw = await _api.rssWebViewHostCall(
         sourceUrl,
@@ -872,11 +1139,13 @@ class RssWebBridge {
       );
       final envelope = RssWebBridgeEnvelope.parse(raw);
       if (!envelope.ok) {
+        _prepareFailed = true;
         _log('__prepare 失败：${envelope.error ?? '未知错误'}');
         return null;
       }
       final value = envelope.value;
       if (value is! Map) {
+        _prepareFailed = true;
         _log('__prepare 返回格式异常');
         return null;
       }
@@ -891,6 +1160,7 @@ class RssWebBridge {
       _prepare = result;
       return result;
     } catch (e) {
+      _prepareFailed = true;
       _log('__prepare 调用异常：$e');
       return null;
     }
@@ -899,13 +1169,33 @@ class RssWebBridge {
   /// 组合 WebView 注入脚本（不含 HTML 转义）
   ///
   /// 顺序：console 钩子 → 通道适配/握手 → Rust 桥头 → 同步面 → `preloadJs`
-  /// → `})();`。未准备或 Rust 桥头为空时返回裸 `preloadJs`（1:1 旧行为）。
+  /// → `})();`。
+  ///
+  /// 批21c P2-9：`__prepare` 失败时注入**引导式降级桩**（明确报错的
+  /// `java`/`source`/`cache` + 同步面纯函数），不再裸跑 `preloadJs`
+  /// （缺失属性抛 TypeError 会中断后续语句）；未尝试 prepare 时保持裸
+  /// `preloadJs`（1:1 旧行为）。
   String composeInjection(
     String preloadJs, {
     bool includeConsoleHook = false,
   }) {
     final head = preparedScript;
-    if (head.trim().isEmpty) return preloadJs;
+    if (head.trim().isEmpty) {
+      if (_prepareFailed) {
+        _log('宿主桥不可用：注入引导式降级桩');
+        final buffer = StringBuffer();
+        if (includeConsoleHook) buffer.write('$kRssConsoleHookScript\n');
+        buffer.write(rssBridgeDegradedScript(
+          preloadJs,
+          syncShim: rssBridgeSyncShimScript(
+            bridgeObjectName: channelName,
+            userAgent: _prepare?.userAgent ?? '',
+          ),
+        ));
+        return buffer.toString();
+      }
+      return preloadJs;
+    }
     final buffer = StringBuffer();
     if (includeConsoleHook) buffer.write('$kRssConsoleHookScript\n');
     buffer.write(rssBridgeBootstrapScript(
@@ -963,9 +1253,17 @@ class RssWebBridge {
     }
     switch (method) {
       case kRssWebBridgeActionMethod:
+        if (!_actionRate.allow()) {
+          _log('__action 超过每秒上限（$kRssWebBridgeMaxActionsPerSecond），已丢弃');
+          return;
+        }
         _dispatchPageAction(args);
         return;
       case kRssWebBridgeStoreMethod:
+        if (!_storeRate.allow()) {
+          _log('__store 超过每秒上限（$kRssWebBridgeMaxStoresPerSecond），已丢弃');
+          return;
+        }
         _enqueueStore(args);
         return;
       default:
@@ -1011,18 +1309,49 @@ class RssWebBridge {
   /// 拒绝。旧文档的挂起调用按超时语义直接结束（页面已被替换）。
   void beginNavigation() {
     if (_disposed) return;
+    // 批21c P1-1：代数自增，使旧文档在途的 hello 回填结果失效
+    _generation++;
     _handshaken = false;
+    _handshakeInFlight = false;
     _nonce = null;
     for (final pending in _pending.values) {
       pending.completed = true;
       pending.timer?.cancel();
     }
     _pending.clear();
+    _armHandshakeWatchdog();
+  }
+
+  /// 臂握手看门狗（每次导航调用；4s 未握手则重置并重发 hello）
+  void _armHandshakeWatchdog() {
+    _handshakeWatchdogTimer?.cancel();
+    _handshakeWatchdogTimer = Timer(handshakeWatchdog, () {
+      if (_disposed || _handshaken) return;
+      // 重置：让旧 hello 的异步结果失效，并允许重新 hello
+      _generation++;
+      _handshakeInFlight = false;
+      _nonce = null;
+      _log('握手看门狗超时（${handshakeWatchdog.inSeconds}s）：重置并重发 hello');
+      unawaited(_reissueHello());
+    });
+  }
+
+  /// 重发 hello（页面侧挂载在回填回调上的非枚举入口；不可用时静默）
+  Future<void> _reissueHello() async {
+    if (_disposed) return;
+    try {
+      await _runJavaScript(rssBridgeHelloScript(callbackName: callbackName));
+    } catch (e) {
+      _log('重发 hello 失败：$e');
+    }
   }
 
   /// 清洗并释放：取消所有超时计时器
   void dispose() {
     _disposed = true;
+    _generation++;
+    _handshakeWatchdogTimer?.cancel();
+    _handshakeWatchdogTimer = null;
     for (final pending in _pending.values) {
       pending.completed = true;
       pending.timer?.cancel();
@@ -1033,20 +1362,38 @@ class RssWebBridge {
   // ── 内部 ──────────────────────────────────────────────────────────────────
 
   Future<void> _handleHello() async {
-    if (_handshaken) {
+    if (_disposed) return;
+    if (_handshaken || _handshakeInFlight) {
       _log('重复 hello 已被拒绝');
       await _replyError('', '重复 hello');
       return;
     }
-    _handshaken = true;
-    _nonce = _randomToken(_random, 32);
+    final generation = _generation;
+    _handshakeInFlight = true;
+    final nonce = _randomToken(_random, 32);
+    // nonce 先占位（页面尚未知悉），回填失败/导航切换时回滚
+    _nonce = nonce;
     try {
       await _runJavaScript(
-        rssBridgeNonceScript(callbackName: callbackName, nonce: _nonce!),
+        rssBridgeNonceScript(callbackName: callbackName, nonce: nonce),
       );
     } catch (e) {
-      _log('握手 nonce 回填失败：$e');
+      if (generation == _generation) {
+        _handshakeInFlight = false;
+        _handshaken = false;
+        _nonce = null;
+      }
+      _log('握手 nonce 回填失败（可重试 hello）：$e');
+      return;
     }
+    if (generation != _generation) {
+      _log('导航已切换，丢弃旧文档握手结果');
+      return;
+    }
+    _handshakeInFlight = false;
+    _handshaken = true;
+    _handshakeWatchdogTimer?.cancel();
+    _handshakeWatchdogTimer = null;
   }
 
   Future<void> _forwardHostCall(

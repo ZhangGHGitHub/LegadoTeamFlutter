@@ -49,6 +49,57 @@ String? _preloadScriptTag(String? preloadJs, String? preloadScript) {
   return '<script>${rssEscapeScriptBody(js)}</script>';
 }
 
+/// 桥模式页面脚本隔离（批21c P0-2）
+///
+/// 启用宿主桥（源 `preloadJs` 非空且 `enableJs`）时，先把文章/起始页 HTML
+/// 中的**页面脚本**剥离，再由调用方注入应用自己的可信脚本（`startJs`/
+/// 桥组合脚本）。相对原版这是本地加固差异：原版经 `shouldInterceptRequest`
+/// 用外部子资源注入桥（桥不在 DOM），Flutter WebView 无该拦截面，只能内联；
+/// 剥离后页面内不存在可读取 `document.scripts` 的脚本。
+///
+/// 处理项：`<script>` 标签（含自闭合）、`on*=` 内联事件、`javascript:` URL。
+/// 不处理 iframe/object 等嵌入式资源（保留内容；跨源 iframe 无法读取父
+/// 文档，同源嵌入属已知残余风险，已在契约登记）。
+String rssStripPageScripts(String html) {
+  if (html.isEmpty) return html;
+  var out = html;
+  // 1) <script ...>...</script>（大小写不敏感，允许标签内空白与属性）
+  out = out.replaceAll(
+    RegExp(r'<script\b[^>]*>[\s\S]*?</script\s*>', caseSensitive: false),
+    '',
+  );
+  // 自闭合/未闭合的 <script ... />
+  out = out.replaceAll(
+    RegExp(r'<script\b[^>]*/\s*>', caseSensitive: false),
+    '',
+  );
+  // 2) on* 内联事件属性（onclick/onerror/onload/...）
+  out = out.replaceAll(
+    RegExp(
+      r'''\son[a-z0-9_-]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)''',
+      caseSensitive: false,
+    ),
+    '',
+  );
+  // 3) javascript: URL（带引号的 href/src/action/formaction/xlink:href）
+  out = out.replaceAllMapped(
+    RegExp(
+      r'''((?:href|src|action|formaction|xlink:href)\s*=\s*)(["'])\s*javascript:[^"']*\2''',
+      caseSensitive: false,
+    ),
+    (m) => '${m[1]}${m[2]}#${m[2]}',
+  );
+  // 未加引号的 javascript: URL
+  out = out.replaceAllMapped(
+    RegExp(
+      r'''((?:href|src|action|formaction)\s*=\s*)(javascript:[^\s>]*)''',
+      caseSensitive: false,
+    ),
+    (m) => '${m[1]}#',
+  );
+  return out;
+}
+
 /// 正文/起始页 HTML 后处理（对齐 `ReadRssViewModel.clHtml`）
 ///
 /// 1. 预注入脚本非空（[preloadScript] 优先，其次 [preloadJs]）：插入

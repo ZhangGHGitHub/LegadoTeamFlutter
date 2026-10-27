@@ -135,8 +135,9 @@ class _RssArticleDetailScreenState
   /// `__prepare` 结果（桥头 + 只读快照；未准备为 null）
   RssWebBridgePrepareResult? _bridgePrepare;
 
-  /// 是否已注册 `JavaScriptChannel` 且拿到非空桥头
-  bool _bridgeReady = false;
+  /// HTML 模式首文档已内联组合脚本（批21c P1-2：二次导航需在
+  /// `onPageStarted` 重新注入，首文档跳过避免重复执行 preloadJs）
+  bool _htmlPreloadInlined = false;
 
   // [批15c | 2026-10-26] 规则正文拉取（对齐 ReadRssViewModel.loadContent）：
   // article.description 为空且源配置 ruleContent 时，经 `rssFetchContent`
@@ -430,9 +431,12 @@ class _RssArticleDetailScreenState
     final source = _source;
     final jsEnabled = source?.enableJs ?? true;
     final preloadJs = source?.preloadJs?.trim() ?? '';
-    final overrideJs = source?.shouldOverrideUrlLoading?.trim() ?? '';
     final controller = WebViewController();
     _webViewController = controller;
+    _htmlPreloadInlined = false;
+    // 批21c P0-2：桥模式（preloadJs 非空且 enableJs）剥离页面脚本，
+    // 页面内无可读 DOM 的脚本；应用自己的 startJs/桥脚本随后注入。
+    final stripPageScripts = jsEnabled && preloadJs.isNotEmpty;
 
     await controller.setJavaScriptMode(
       jsEnabled ? JavaScriptMode.unrestricted : JavaScriptMode.disabled,
@@ -497,23 +501,29 @@ class _RssArticleDetailScreenState
       source: source,
       jsEnabled: jsEnabled,
       preloadJs: preloadJs,
-      overrideJs: overrideJs,
       userAgent: userAgent,
     );
 
     try {
       final startHtml = widget.startHtml?.trim() ?? '';
       if (startHtml.isNotEmpty) {
-        // 起始页：注入 startJs → clHtml(startStyle ?? style)
+        // 起始页：先剥离页面脚本 → 注入 startJs → clHtml(startStyle ?? style)
+        final safeStartHtml =
+            stripPageScripts ? rssStripPageScripts(startHtml) : startHtml;
+        final injection =
+            jsEnabled ? _bridgeInjectionForHtml(preloadJs) : null;
         final processed = rssClHtml(
-          rssInjectStartJs(startHtml, source?.startJs),
+          rssInjectStartJs(safeStartHtml, source?.startJs),
           style: source?.startStyle ?? source?.style,
           preloadJs: source?.preloadJs,
-          preloadScript: _bridgeInjectionForHtml(preloadJs),
+          preloadScript: injection,
         );
         final baseUrl = (source?.loadWithBaseUrl ?? true)
             ? _htmlBaseUrl(widget.sourceUrl)
             : null;
+        // 批21c P2-4：Cookie 预写不依赖桥是否就绪（prepare 快照即可）
+        if (baseUrl != null) await _prewriteDomainCookies(baseUrl);
+        _htmlPreloadInlined = preloadJs.isNotEmpty;
         await controller.loadHtmlString(processed, baseUrl: baseUrl);
         return;
       }
@@ -534,25 +544,31 @@ class _RssArticleDetailScreenState
           return;
         }
         // 批21b：加载 URL 前预写属域 Cookie（源登录头 Cookie → 原生 jar，
-        // 对齐原版 `CookieManager.applyToWebView(urlState.url)`）
+        // 对齐原版 `CookieManager.applyToWebView(urlState.url)`）；
+        // 批21c P2-4：不依赖 preloadJs/overrideJs 是否存在。
         await _prewriteDomainCookies(target);
         await controller.loadRequest(uri, headers: headers);
         return;
       }
       final html = _articleHtml;
       if (html != null) {
+        final safeHtml =
+            stripPageScripts ? rssStripPageScripts(html) : html;
         // 无源信息时保留既有响应式样式（历史入口/旧数据兼容）
         final processed = source == null
-            ? _wrapHtmlWithStyle(html)
+            ? _wrapHtmlWithStyle(safeHtml)
             : rssClHtml(
-                html,
+                safeHtml,
                 style: source.style,
                 preloadJs: source.preloadJs,
-                preloadScript: _bridgeInjectionForHtml(preloadJs),
+                preloadScript:
+                    jsEnabled ? _bridgeInjectionForHtml(preloadJs) : null,
               );
         final baseUrl = source == null || source.loadWithBaseUrl
             ? _htmlBaseUrl(widget.article.url)
             : null;
+        if (baseUrl != null) await _prewriteDomainCookies(baseUrl);
+        _htmlPreloadInlined = source != null && preloadJs.isNotEmpty;
         await controller.loadHtmlString(processed, baseUrl: baseUrl);
         return;
       }
@@ -570,15 +586,16 @@ class _RssArticleDetailScreenState
   /// 页面开始：注入 console 钩子 / preloadJs 桥 / `java` 快照桩（仅 enableJs）
   ///
   /// 批21b 顺序：console 钩子 → bootstrap/preload（宿主桥）→ 其它
-  /// （`shouldOverrideUrlLoading` 的 `java` 快照桩）。HTML 模式的 preloadJs
-  /// 已内联进 `<head>`（`rssClHtml(preloadScript:)`），此处只补 URL 模式。
+  /// （`shouldOverrideUrlLoading` 的 `java` 快照桩）。
+  /// 批21c P1-2：HTML 模式首文档的组合脚本已内联（`_htmlPreloadInlined`），
+  /// 其后每次主框架导航（点击链接后的新文档）都在 `onPageStarted` 重新注入，
+  /// 避免新文档丢失桥/preloadJs；URL 模式始终在此注入。
   Future<void> _onPageStartedScripts() async {
     final controller = _webViewController;
     final source = _source;
     if (controller == null) return;
     try {
-      // 0) 新文档重新握手（URL 模式每次导航都会重新注入桥脚本；
-      //    HTML 模式仅首文档内联，但 onPageStarted 重置对后续导航同样安全）
+      // 0) 新文档重新握手（每次导航都重新注入桥脚本）
       _rssBridge?.beginNavigation();
       // 1) console 钩子（showWebLog）：先于 preloadJs，预加载脚本的
       //    console 输出同样被采集
@@ -587,15 +604,18 @@ class _RssArticleDetailScreenState
       }
       // 2) preloadJs（URL 模式无法重写主文档 <head>，退化为页面开始即执行，
       //    已登记差异）。宿主桥就绪时注入完整组合脚本（通道/握手/桥头/
-      //    同步面/preloadJs）；不可用时保持 15f 裸执行。
+      //    同步面/preloadJs）；prepare 失败时注入引导式降级桩；
+      //    首文档已内联则跳过重复执行。
       final preloadJs = source?.preloadJs?.trim() ?? '';
-      if (_urlMode && preloadJs.isNotEmpty) {
-        final bridge = _rssBridge;
-        await controller.runJavaScript(
-          _bridgeReady && bridge != null
-              ? bridge.composeInjection(preloadJs)
-              : preloadJs,
-        );
+      if (preloadJs.isNotEmpty) {
+        final skipInline = _htmlPreloadInlined && !_urlMode;
+        _htmlPreloadInlined = false;
+        if (!skipInline) {
+          final bridge = _rssBridge;
+          await controller.runJavaScript(
+            bridge != null ? bridge.composeInjection(preloadJs) : preloadJs,
+          );
+        }
       }
       // 3) shouldOverrideUrlLoading 的 java 快照桩（同步 get/put/getKey/
       //    getTag/getVariable；写入仅本地快照，已登记差异）
@@ -635,22 +655,20 @@ class _RssArticleDetailScreenState
 
   /// 创建并准备宿主桥（源 URL 非空时；JS 关闭仅保留 Cookie 回流）
   ///
-  /// - 只创建桥实例（供 Cookie 回流）不 prepare：无 `preloadJs` 且无
-  ///   `shouldOverrideUrlLoading`；
-  /// - `preloadJs` 非空 → `__prepare` + 注册 `JavaScriptChannel`；
-  /// - 仅 `shouldOverrideUrlLoading` 非空 → 只取快照（不注册通道/不注入桥）。
+  /// - 批21c P2-4：`__prepare` 始终调用（快照用于 Cookie 预写 + 同步面，
+  ///   不依赖 `preloadJs`/`shouldOverrideUrlLoading`，也不依赖 JS 开关）；
+  /// - `preloadJs` 非空且 `enableJs` → 注册 `JavaScriptChannel`；
+  /// - prepare 失败 → `composeInjection` 注入引导式降级桩，不阻断正文。
   Future<void> _setupRssWebBridge(
     WebViewController controller, {
     required RssSource? source,
     required bool jsEnabled,
     required String preloadJs,
-    required String overrideJs,
     required String? userAgent,
   }) async {
     _rssBridge?.dispose();
     _rssBridge = null;
     _bridgePrepare = null;
-    _bridgeReady = false;
     final sourceUrl = widget.sourceUrl.trim();
     if (sourceUrl.isEmpty) return;
     // 桥实例与 JS 开关无关：`__cookieSet` 不依赖 JS 引擎，`enableJs=false`
@@ -663,14 +681,11 @@ class _RssArticleDetailScreenState
       onLog: (message) => debugPrint('[RSS WebView 桥] $message'),
     );
     _rssBridge = bridge;
-    if (!jsEnabled ||
-        source == null ||
-        (preloadJs.isEmpty && overrideJs.isEmpty)) {
-      return;
-    }
+    if (source == null) return;
     final ua = (userAgent ?? '').trim().isNotEmpty
         ? userAgent
         : await _readControllerUserAgent(controller);
+    // 批21c P2-4：快照生成与 quickjs 门控解耦，始终 prepare
     final prepared = await bridge.prepare(userAgent: ua);
     if (!mounted) return;
     _bridgePrepare = prepared;
@@ -679,6 +694,7 @@ class _RssArticleDetailScreenState
       debugPrint('[RSS WebView] 宿主桥准备失败：降级为无宿主绑定');
       return;
     }
+    if (!jsEnabled) return;
     if (preloadJs.isEmpty) return;
     if (prepared.script.trim().isEmpty) {
       debugPrint('[RSS WebView] 桥头为空：不注入宿主桥');
@@ -691,16 +707,20 @@ class _RssArticleDetailScreenState
           unawaited(bridge.handleMessage(message.message));
         },
       );
-      if (mounted) _bridgeReady = true;
     } catch (e) {
       debugPrint('[RSS WebView] 注册 JavaScriptChannel 失败：$e');
     }
   }
 
-  /// HTML 模式的内联桥脚本（未就绪返回 null，走裸 preloadJs）
+  /// HTML 模式的内联桥脚本（不可用返回 null，走裸 preloadJs）
+  ///
+  /// 批21c P2-9：prepare 失败（`bridge.isDegraded`）时返回引导式降级桩，
+  /// 不再裸跑 preloadJs；完全未尝试 prepare（无桥头）才返回 null。
   String? _bridgeInjectionForHtml(String preloadJs) {
     final bridge = _rssBridge;
-    if (!_bridgeReady || bridge == null || preloadJs.isEmpty) return null;
+    if (bridge == null || preloadJs.isEmpty) return null;
+    // 未准备（无桥头）且非降级：保持裸 preloadJs（1:1 旧行为）
+    if (bridge.preparedScript.trim().isEmpty && !bridge.isDegraded) return null;
     return bridge.composeInjection(
       preloadJs,
       includeConsoleHook: _source?.showWebLog ?? false,
