@@ -467,7 +467,8 @@ extension _BookInfoBuilders on _BookInfoScreenState {
   /// - 仅本地书可见（isLocal = localTag 或 webDavTag，菜单已限定）
   /// - 已有远程地址时先确认（sure_upload），否则直接上传
   /// - WebDav PUT 本地书籍文件到远程 books 目录（rootBookUrl + originName）
-  /// - 成功后 book.origin = webDavTag + 远程地址，并刷新 lastCheckTime
+  /// - 成功后 book.origin = `webDav::<完整远程 URL>`（默认服务器无
+  ///   serverID 后缀，对齐原版 CustomUrl 序列化），并刷新 lastCheckTime
   Future<void> _uploadToRemote() async {
     final api = ref.read(bookApiProvider);
     final book = _loadedBook;
@@ -488,7 +489,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       return;
     }
     // 已有远程地址 → 确认是否覆盖（对齐原版 sure_upload 对话框）
-    if (book.origin.startsWith(BookType.webDavTag)) {
+    if (BookType.isWebDavOrigin(book.origin)) {
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
@@ -535,10 +536,17 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       // 回写 book.origin（webDav 标记 + 远程完整地址）；从库中读回完整 Book
       // 再 copyWith，防全行覆盖（与 _setBookVariable 同模式）
       final full = await api.getBook(book.bookUrl) ?? book;
-      final remoteUrl =
-          '${sync.webDavUrl}${syncNotifier.normalizedRemoteDir}$remotePath';
+      // 对齐原版 RemoteBookWebDav.upload：完整远程 URL（根目录 + books/ + 文件名），
+      // 默认 WebDAV 服务器 serverID = null → origin 不带属性后缀
+      final remoteUrl = BookType.joinRemoteUrl(
+        BookType.joinRemoteUrl(
+          sync.webDavUrl,
+          syncNotifier.normalizedRemoteDir,
+        ),
+        remotePath,
+      );
       await api.updateBook(full.copyWith(
-        origin: BookType.webDavTag + remoteUrl,
+        origin: BookType.buildWebDavOrigin(remoteUrl),
         // 对齐原版：刷新最后检查时间，使之比远程书籍的时间新
         lastCheckTime: DateTime.now().millisecondsSinceEpoch,
       ));
@@ -1814,8 +1822,7 @@ extension _BookInfoBuilders on _BookInfoScreenState {
   Future<void> _loginSource() async {
     final book = _loadedBook;
     if (book == null) return;
-    if (book.origin == BookType.localTag ||
-        book.origin.startsWith(BookType.webDavTag)) {
+    if (BookType.isLocalOrigin(book.origin)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('本地书籍不支持书源登录')),
       );

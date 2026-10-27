@@ -561,15 +561,13 @@ class ReaderNotifier extends Notifier<ReaderState> {
   // （对齐换源流程 isApplying/_applying 的防重入形态）。
   //
   // 成功返回 null；失败返回错误原因（保留旧正文，不清空 chapterContent）。
-  // 本地书（origin 为空 / loc_book / dav:）与无书籍/目录/非法索引时
-  // 直接返回说明性原因，不触碰 state 数据（对齐原版：本地书不显示
-  // 换源/刷新菜单，此守卫兜底面板侧入口）。
+  // 本地书（origin 为空 / loc_book / webDav:: / 存量 dav:）与
+  // 无书籍/目录/非法索引时直接返回说明性原因，不触碰 state 数据（对齐
+  // 原版：本地书不显示换源/刷新菜单，此守卫兜底面板侧入口）。
   Future<String?> refreshChapterContent() async {
     final book = state.currentBook;
     if (book == null || state.chapters.isEmpty) return '没有书籍或目录';
-    if (book.origin.isEmpty ||
-        book.origin == BookType.localTag ||
-        book.origin.startsWith(BookType.webDavTag)) {
+    if (book.origin.isEmpty || BookType.isLocalOrigin(book.origin)) {
       return '本地书不支持刷新正文';
     }
     final idx = state.currentChapterIndex;

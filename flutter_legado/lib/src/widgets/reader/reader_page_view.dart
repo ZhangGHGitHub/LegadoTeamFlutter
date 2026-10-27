@@ -655,9 +655,7 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       // [fix Task#24 | 2026-08-08] 正文/章节加载失败（如「正文为空」，多由换源
       // 匹配错书导致）时，除「重试」外引导用户「换源」逃离坏书源（对齐原版）— Qoder
       final isOnline =
-          book != null &&
-          book.origin != BookType.localTag &&
-          !book.origin.startsWith(BookType.webDavTag);
+          book != null && !BookType.isLocalOrigin(book.origin);
       return ErrorView(
         message: state.error!,
         onRetry: () {

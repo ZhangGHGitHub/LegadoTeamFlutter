@@ -988,8 +988,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     if (!isSourceLoginRequiredError(state.error)) return;
     final book = state.currentBook;
     if (book == null) return;
-    if (book.origin == BookType.localTag ||
-        book.origin.startsWith(BookType.webDavTag)) {
+    if (BookType.isLocalOrigin(book.origin)) {
       return;
     }
     BookSource? source;
@@ -1019,8 +1018,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     final book = state.currentBook;
     if (book == null) return;
     // 本地书/WebDAV 书无书源可换（对标原版仅网络书自动换源）
-    if (book.origin == BookType.localTag ||
-        book.origin.startsWith(BookType.webDavTag)) {
+    if (BookType.isLocalOrigin(book.origin)) {
       return;
     }
     if (_autoSwitchBookUrl != book.bookUrl) {

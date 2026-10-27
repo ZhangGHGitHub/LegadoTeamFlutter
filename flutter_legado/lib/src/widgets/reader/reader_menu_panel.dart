@@ -267,12 +267,10 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
     // 章节名 + 书源小字徽标，不再渲染章节链接全文（来源名并入小字行）。
     final sourceName = book?.originName ?? '';
     // [P2-9 | 2026-09-24] 在线书判定（对齐顶栏 isOnline 语义，WebDAV 视作
-    // 本地）：本地书（loc_book/dav:）不显示换源/刷新正文（原版 ReadMenu
+    // 本地）：本地书（loc_book/webDav::/存量 dav:）不显示换源/刷新正文（原版 ReadMenu
     // 对本地书隐藏这两项入口）；notifier 侧守卫兜底
     // （refreshChapterContent 对本地书返回原因、不触网）
-    final isOnline = book != null &&
-        book.origin != BookType.localTag &&
-        !book.origin.startsWith(BookType.webDavTag);
+    final isOnline = book != null && !BookType.isLocalOrigin(book.origin);
     return Material(
       color: barColor,
       child: SafeArea(

@@ -1125,8 +1125,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
     final targets = books
         .where((b) =>
             b.canUpdate &&
-            b.origin != BookType.localTag &&
-            !b.origin.startsWith(BookType.webDavTag))
+            !BookType.isLocalOrigin(b.origin))
         .toList();
     if (targets.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(

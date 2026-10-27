@@ -211,8 +211,7 @@ class _BookshelfManageScreenState extends ConsumerState<BookshelfManageScreen> {
     final candidates = state.books
         .where((b) => state.selectedUrls.contains(b.bookUrl))
         .where((b) =>
-            b.origin != BookType.localTag &&
-            !b.origin.startsWith(BookType.webDavTag) &&
+            !BookType.isLocalOrigin(b.origin) &&
             b.origin != target.bookSourceUrl)
         .toList();
     if (candidates.isEmpty) {

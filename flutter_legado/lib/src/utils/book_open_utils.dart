@@ -79,9 +79,7 @@ class BookOpenUtils {
 
   /// 是否在线书籍（非本地、非 WebDAV）
   static bool isOnlineBook(Book book) =>
-      book.origin.isNotEmpty &&
-      book.origin != BookType.localTag &&
-      !book.origin.startsWith(BookType.webDavTag);
+      book.origin.isNotEmpty && !BookType.isLocalOrigin(book.origin);
 
   /// 实为视频源的启发式（MacCMS / 影视频源误标）。
   ///

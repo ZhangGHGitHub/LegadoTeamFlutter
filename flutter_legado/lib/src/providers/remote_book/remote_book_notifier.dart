@@ -248,8 +248,12 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
       final shelf = await api.getBooks();
       final onShelf = <String>{};
       for (final b in shelf) {
-        if (b.origin.startsWith(BookType.webDavTag)) {
-          onShelf.add(b.origin.substring(BookType.webDavTag.length));
+        // 对齐原版 LocalBook.isOnBookShelf：按远程路径/文件名匹配。
+        // 新 `webDav::` origin 带 `,{"serverID":N}` 属性后缀，须先剥离；
+        // 存量 `dav:` origin 同样兼容（双前缀）。
+        final remotePath = BookType.webDavPathOf(b.origin);
+        if (remotePath != null && remotePath.isNotEmpty) {
+          onShelf.add(remotePath);
         }
         onShelf.add(b.name);
         if (b.originName.isNotEmpty) onShelf.add(b.originName);
@@ -394,6 +398,11 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
     }
     state = state.copyWith(isImporting: true, clearError: true, clearImported: true);
     final api = ref.read(bookApiProvider);
+    // 默认服务器需要同步账号的 url/remote_dir 拼完整远程 URL；
+    // buildActiveConfigJson 已触发 loadConfig，这里再显式加载一次以
+    // 兼容自定义服务器分支（无副作用）。
+    final syncNotifier = ref.read(syncNotifierProvider.notifier);
+    await syncNotifier.loadConfig();
     final dir = Directory('${Directory.systemTemp.path}/legado_remote_books');
     if (!await dir.exists()) {
       await dir.create(recursive: true);
@@ -405,15 +414,17 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
         final localPath = '${dir.path}/${item.filename}';
         await api.webdavDownloadFile(config, item.relativePath, localPath);
         final book = await api.importLocalBook(localPath);
-        // 对齐原版：origin = dav: + 远程路径
-        final syncNotifier = ref.read(syncNotifierProvider.notifier);
-        await syncNotifier.loadConfig();
-        final sync = ref.read(syncNotifierProvider);
-        final remoteUrl = _isDefaultServerActive
-            ? '${sync.webDavUrl}${syncNotifier.normalizedRemoteDir}${item.relativePath}'
-            : item.relativePath;
+        // 对齐原版 RemoteBookViewModel.addToBookshelf：
+        // origin = webDavTag + CustomUrl(remoteBook.path)
+        //          .putAttribute("serverID", serverID)
+        // - remoteBook.path 为完整远程 URL（自定义服务器 = 服务器 url +
+        //   相对路径；默认服务器 = 同步账号 url + remote_dir + 相对路径）；
+        // - 默认服务器 serverID = null → 不追加属性（原版
+        //   AppWebDav.defaultBookWebDav 构造时未传 serverID）。
+        final remoteUrl = _remoteUrlOf(item);
+        final serverId = _isDefaultServerActive ? null : state.serverId;
         await api.updateBook(book.copyWith(
-          origin: BookType.webDavTag + remoteUrl,
+          origin: BookType.buildWebDavOrigin(remoteUrl, serverId: serverId),
           originName: item.filename,
         ));
         ok++;
@@ -431,6 +442,31 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
     if (ok > 0) {
       await refresh();
     }
+  }
+
+  /// 当前服务器下远程文件的完整 URL
+  ///
+  /// 对齐原版 `WebDavFile.path`（RemoteBookWebDav.listFiles 中由
+  /// `NetworkUtils.getAbsoluteURL` 构造的完整 URL）：
+  /// - 默认 WebDAV：同步账号 url + remote_dir + 相对路径；
+  /// - 自定义服务器：服务器 url + 相对路径。
+  String _remoteUrlOf(RemoteBookItem item) {
+    if (_isDefaultServerActive) {
+      final syncNotifier = ref.read(syncNotifierProvider.notifier);
+      final sync = ref.read(syncNotifierProvider);
+      return BookType.joinRemoteUrl(
+        BookType.joinRemoteUrl(
+          sync.webDavUrl,
+          syncNotifier.normalizedRemoteDir,
+        ),
+        item.relativePath,
+      );
+    }
+    final server = _findServer(state.serverId);
+    if (server == null || server.url.trim().isEmpty) {
+      return item.relativePath;
+    }
+    return BookType.joinRemoteUrl(server.url, item.relativePath);
   }
 
   String _mapError(Object e) => errorMessage(e);

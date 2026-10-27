@@ -554,9 +554,7 @@ class _TocScreenState extends ConsumerState<TocScreen>
   // ===== 书籍类型判定（对齐原版 isLocal/isLocalTxt） =====
 
   /// 本地书（含 WebDAV 导入，对齐原版 Book.isLocal）
-  bool get _isLocal =>
-      _book.origin == BookType.localTag ||
-      _book.origin.startsWith(BookType.webDavTag);
+  bool get _isLocal => BookType.isLocalOrigin(_book.origin);
 
   /// 本地 TXT 书（对齐原版 Book.isLocalTxt，控制 TXT 目录规则/拆分长章节显隐）
   bool get _isLocalTxt =>

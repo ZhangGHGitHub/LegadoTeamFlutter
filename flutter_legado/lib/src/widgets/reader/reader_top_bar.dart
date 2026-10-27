@@ -1039,9 +1039,7 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
     }
 
     // 在线书判定（对齐原版 onLine = !book.isLocal，WebDAV 视作本地）
-    final isOnline = book != null &&
-        book.origin != BookType.localTag &&
-        !book.origin.startsWith(BookType.webDavTag);
+    final isOnline = book != null && !BookType.isLocalOrigin(book.origin);
 
     // [UI-fix v2.0.3 | 2026-08-08] 工具栏跟随页面：背景/前景色跟随当前
     // 阅读页配色（对标原版 ReadMenu immersiveMenu：bgColor=页面背景、

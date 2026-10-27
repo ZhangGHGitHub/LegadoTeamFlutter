@@ -1148,8 +1148,7 @@ class _ReaderComicScreenState extends ConsumerState<ReaderComicScreen>
       if (_chapters.isEmpty &&
           _book != null &&
           _book!.origin.isNotEmpty &&
-          !_book!.origin.startsWith(BookType.localTag) &&
-          !_book!.origin.startsWith(BookType.webDavTag)) {
+          !BookType.isLocalOrigin(_book!.origin)) {
         _chapters = await api.refreshToc(_activeBookUrl, _book!.origin);
       }
       if (_chapters.isEmpty) {

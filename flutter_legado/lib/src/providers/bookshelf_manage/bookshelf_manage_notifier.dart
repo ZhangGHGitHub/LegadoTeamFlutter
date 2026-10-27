@@ -121,8 +121,7 @@ class BookshelfManageNotifier extends Notifier<BookshelfManageState> {
     final targets = state.books
         .where((b) => selected.contains(b.bookUrl))
         .where((b) =>
-            b.origin != BookType.localTag &&
-            !b.origin.startsWith(BookType.webDavTag) &&
+            !BookType.isLocalOrigin(b.origin) &&
             b.origin != targetSourceUrl)
         .toList();
     if (targets.isEmpty) return (0, 0);

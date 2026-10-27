@@ -685,8 +685,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       final origin = item['origin']?.toString() ?? '';
       final type = item['type'];
       final typeInt = type is int ? type : int.tryParse('$type') ?? 0;
-      final isLocal = origin == BookType.localTag ||
-          origin.startsWith(BookType.webDavTag) ||
+      final isLocal = BookType.isLocalOrigin(origin) ||
           (typeInt & BookType.local) != 0;
       return !isLocal;
     }).toList();
