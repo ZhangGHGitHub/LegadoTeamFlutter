@@ -1,12 +1,13 @@
 //! 压缩包导入模块
 //!
-//! 支持 ZIP/RAR 格式压缩包中书籍文件的识别与提取。
+//! 支持 ZIP/RAR/7z 格式压缩包中书籍文件的识别与提取。
 //! 对应 Kotlin 原版 `ArchiveUtils` + `LocalBook.importArchiveFile` 逻辑。
 //!
 //! 处理流程：
-//! 1. 打开压缩包（ZIP 使用 `zip` crate，RAR 使用 `unrar` crate）
+//! 1. 打开压缩包（ZIP 使用 `zip` crate，RAR 使用 `unrar` crate，
+//!    7z 使用 `sevenz-rust2`；7z 打开前先做 32 字节签名头预检，见 §2.34 批24b）
 //! 2. 遍历压缩包条目，筛选书籍文件（.txt/.epub/.mobi/.pdf/.umd/.azw3/.azw）
-//! 3. 提取书籍文件到指定输出目录
+//! 3. 提取书籍文件到指定输出目录（同名 basename 按序号去重，不互相覆盖）
 //! 4. 返回提取后的文件路径列表
 
 use std::fs::{self, File};
@@ -300,6 +301,71 @@ fn is_multi_volume_7z_path(path: &str) -> bool {
     path.to_ascii_lowercase().ends_with(".001")
 }
 
+/// 7z 签名头固定长度（规范定义 32 字节）
+const SEVEN_Z_SIGNATURE_HEADER_SIZE: usize = 32;
+/// 7z 文件签名（"7z\xBC\xAF\x27\x1C"）
+const SEVEN_Z_SIGNATURE: [u8; 6] = [0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C];
+/// 头部大小硬上限（64 MiB）
+///
+/// 书籍包头部实际只有几十 KiB；上游 `ArchiveReader::open` 会按头部声明值
+/// 分配缓冲区（`MAX_MEM_LIMIT_KB = usize::MAX/1024` 等于无上限），恶意头可
+/// 声明数 GiB 触发 OOM。此处先自读签名头拒绝超限声明（仅 DoS 面缓解，
+/// 残余风险与边界见 §2.34 批24b 补记与 docs/RESIDUAL_RISKS_2026-08-13.md）。
+const SEVEN_Z_MAX_HEADER_SIZE: u64 = 64 * 1024 * 1024;
+
+/// 自读 7z 32 字节签名头，做签名与头部大小预检（在 `ArchiveReader::open` 之前）
+///
+/// 签名头布局（7z 规范）：
+/// - 0..6   签名 `37 7A BC AF 27 1C`
+/// - 6..8   版本（major/minor）
+/// - 8..12  StartHeaderCRC
+/// - 12..20 NextHeaderOffset（LE u64）
+/// - 20..28 NextHeaderSize（LE u64）
+/// - 28..32 NextHeaderCRC
+///
+/// 只拒绝「签名错误 / 头部不足 / NextHeaderSize 超过 64 MiB」三类，
+/// 其余结构问题仍交给上游给出精确错误。注意：该门槛限制的是头部声明长度，
+/// 不能阻止编码头内部声明超大 LZMA 字典（上游解码期分配），该残余风险已登记。
+fn precheck_7z_signature_header(path: &str) -> LegadoResult<()> {
+    let mut file =
+        File::open(path).map_err(|e| LegadoError::BookParse(format!("无法打开7z文件: {e}")))?;
+    let mut head = [0u8; SEVEN_Z_SIGNATURE_HEADER_SIZE];
+    let mut read = 0usize;
+    while read < head.len() {
+        match file.read(&mut head[read..]) {
+            Ok(0) => break,
+            Ok(n) => read += n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => {
+                return Err(LegadoError::BookParse(format!("7z 头部读取失败: {e}")));
+            }
+        }
+    }
+
+    let signature_end = read.min(SEVEN_Z_SIGNATURE.len());
+    if read < SEVEN_Z_SIGNATURE.len() || head[..SEVEN_Z_SIGNATURE.len()] != SEVEN_Z_SIGNATURE {
+        return Err(LegadoError::BookParse(format!(
+            "不是有效的 7z 文件（签名错误: {:02X?}）",
+            &head[..signature_end]
+        )));
+    }
+    if read < SEVEN_Z_SIGNATURE_HEADER_SIZE {
+        return Err(LegadoError::BookParse(format!(
+            "7z 文件头部不完整（{read} 字节，至少需要 {SEVEN_Z_SIGNATURE_HEADER_SIZE} 字节）"
+        )));
+    }
+
+    let mut size_bytes = [0u8; 8];
+    size_bytes.copy_from_slice(&head[20..28]);
+    let next_header_size = u64::from_le_bytes(size_bytes);
+    if next_header_size > SEVEN_Z_MAX_HEADER_SIZE {
+        return Err(LegadoError::BookParse(format!(
+            "7z 头部过大（声明 {next_header_size} 字节，上限 {SEVEN_Z_MAX_HEADER_SIZE} 字节）"
+        )));
+    }
+    Ok(())
+}
+
 /// 输入大小与分卷前置检查
 fn precheck_7z_input(path: &str, limits: &ArchiveLimits) -> LegadoResult<()> {
     if is_multi_volume_7z_path(path) {
@@ -316,6 +382,7 @@ fn precheck_7z_input(path: &str, limits: &ArchiveLimits) -> LegadoResult<()> {
             limits.max_input_size
         )));
     }
+    precheck_7z_signature_header(path)?;
     Ok(())
 }
 
@@ -348,6 +415,15 @@ fn validate_7z_entry_name(raw: &str) -> LegadoResult<()> {
     if normalized.split('/').any(|component| component == "..") {
         return Err(LegadoError::BookParse(format!(
             "非法 7z 条目名（路径穿越）: {raw}"
+        )));
+    }
+    // Windows 上冒号是备用数据流（ADS）分隔符：`ab:cd.txt` 会被解释为写入
+    // `ab` 的 `cd.txt` 流，既不产生同名文件，也可能被安全软件拦截。
+    // 非 Windows 平台冒号是合法文件名字符，故仅在 Windows 拒绝。
+    #[cfg(windows)]
+    if normalized.contains(':') {
+        return Err(LegadoError::BookParse(format!(
+            "非法 7z 条目名（Windows 不支持冒号，会写入备用数据流）: {raw}"
         )));
     }
     Ok(())
@@ -547,6 +623,38 @@ fn open_7z_reader(path: &str) -> LegadoResult<sevenz_rust2::ArchiveReader<File>>
     sevenz_rust2::ArchiveReader::open(path, sevenz_rust2::Password::empty()).map_err(map_7z_error)
 }
 
+/// 输出名比较键（Windows 文件系统大小写不敏感，避免 `A.txt`/`a.txt` 相互覆盖）
+fn output_name_key(name: &str) -> String {
+    #[cfg(windows)]
+    {
+        name.to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        name.to_string()
+    }
+}
+
+/// 生成包内唯一的输出 basename
+///
+/// 首次出现原样返回；重名依次追加 `_2`/`_3`…（保留扩展名），避免同一包内
+/// 多个同名条目在最终 rename 阶段互相覆盖（批24b P3-2，防数据丢失）。
+fn dedupe_output_name(base: &str, used: &mut std::collections::HashSet<String>) -> String {
+    let mut candidate = base.to_string();
+    let mut seq = 1usize;
+    loop {
+        if used.insert(output_name_key(&candidate)) {
+            return candidate;
+        }
+        seq += 1;
+        let (stem, ext) = match base.rfind('.') {
+            Some(idx) if idx > 0 => (&base[..idx], &base[idx..]),
+            _ => (base, ""),
+        };
+        candidate = format!("{stem}_{seq}{ext}");
+    }
+}
+
 /// 列出 7z 压缩包中的书籍文件名（不解压）
 pub fn list_7z_book_files(seven_zip_path: &str) -> LegadoResult<Vec<String>> {
     list_7z_book_files_with_limits(seven_zip_path, &ArchiveLimits::default())
@@ -560,6 +668,8 @@ fn list_7z_book_files_with_limits(
     let reader = open_7z_reader(seven_zip_path)?;
     check_7z_archive(reader.archive(), limits)?;
 
+    // 与解压落盘使用同一套去重命名，保证列表中的文件名可被选中导入
+    let mut used = std::collections::HashSet::new();
     Ok(reader
         .archive()
         .files
@@ -567,7 +677,7 @@ fn list_7z_book_files_with_limits(
         .filter(|entry| !entry.is_directory)
         .map(|entry| file_base_name(&entry.name))
         .filter(|base| !base.starts_with('.') && is_book_file(base))
-        .map(|base| base.to_string())
+        .map(|base| dedupe_output_name(base, &mut used))
         .collect())
 }
 
@@ -596,6 +706,7 @@ fn import_7z_file_with_limits(
     let mut total_read: u64 = 0;
     let mut failure: Option<LegadoError> = None;
     let mut sequence: usize = 0;
+    let mut used_names = std::collections::HashSet::new();
 
     let result = reader.for_each_entries(|entry, stream| {
         let base = file_base_name(&entry.name);
@@ -634,7 +745,9 @@ fn import_7z_file_with_limits(
             return Ok(true);
         }
 
-        let out_path = match safe_output_path(output_dir, base) {
+        // 同名 basename 按序号去重（`novel.txt` / `novel_2.txt`），避免相互覆盖
+        let out_name = dedupe_output_name(base, &mut used_names);
+        let out_path = match safe_output_path(output_dir, &out_name) {
             Ok(path) => path,
             Err(e) => {
                 failure = Some(e);
@@ -643,8 +756,8 @@ fn import_7z_file_with_limits(
                 )));
             }
         };
-        // 临时名带序号：同名 basename 的多个条目互不覆盖
-        let temp_path = out_path.with_file_name(format!(".legado_{sequence}.{base}.part"));
+        // 临时名带序号：解压期间互不覆盖，整包成功后再统一 rename
+        let temp_path = out_path.with_file_name(format!(".legado_{sequence}.{out_name}.part"));
         sequence += 1;
         let _ = fs::remove_file(&temp_path);
         let mut out_file = match File::create(&temp_path) {
@@ -1430,5 +1543,117 @@ mod tests {
         assert!(check_7z_method(EncoderMethod::ID_LZMA2, &[41], &limits).is_err());
         assert!(check_7z_method(EncoderMethod::ID_LZMA2, &[30], &limits).is_ok());
         assert!(check_7z_method(EncoderMethod::ID_COPY, &[], &limits).is_ok());
+    }
+
+    // ============================================================
+    // 批24b：签名头预检（头解码 OOM 低成本缓解）
+    // ============================================================
+
+    /// 构造仅含 32 字节签名头的伪 7z（NextHeaderSize 可控）
+    fn forged_7z_header(next_header_size: u64) -> Vec<u8> {
+        let mut bytes = vec![0u8; SEVEN_Z_SIGNATURE_HEADER_SIZE];
+        bytes[..SEVEN_Z_SIGNATURE.len()].copy_from_slice(&SEVEN_Z_SIGNATURE);
+        bytes[6] = 0; // version major
+        bytes[7] = 4; // version minor
+        bytes[20..28].copy_from_slice(&next_header_size.to_le_bytes());
+        bytes
+    }
+
+    #[test]
+    fn test_precheck_7z_header_size_boundary() {
+        let dir = unique_7z_dir("header-boundary");
+        let at_limit = dir.join("at_limit.7z");
+        fs::write(&at_limit, forged_7z_header(SEVEN_Z_MAX_HEADER_SIZE)).unwrap();
+        assert!(precheck_7z_signature_header(at_limit.to_str().unwrap()).is_ok());
+
+        let over_limit = dir.join("over_limit.7z");
+        fs::write(&over_limit, forged_7z_header(SEVEN_Z_MAX_HEADER_SIZE + 1)).unwrap();
+        let err = precheck_7z_signature_header(over_limit.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("头部过大"), "{err}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_precheck_7z_header_rejects_bad_signature_and_short_file() {
+        let dir = unique_7z_dir("header-bad");
+
+        let bad_signature = dir.join("bad.7z");
+        fs::write(&bad_signature, b"this is not a 7z archive").unwrap();
+        let err = precheck_7z_signature_header(bad_signature.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("签名错误"), "{err}");
+
+        let short = dir.join("short.7z");
+        fs::write(&short, SEVEN_Z_SIGNATURE).unwrap();
+        let err = precheck_7z_signature_header(short.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("头部不完整"), "{err}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_import_7z_rejects_oversized_header_before_open() {
+        let dir = unique_7z_dir("header-oom");
+        let path = dir.join("evil.7z");
+        fs::write(&path, forged_7z_header(SEVEN_Z_MAX_HEADER_SIZE + 1)).unwrap();
+        let output = dir.join("out");
+
+        let err = list_7z_book_files(path.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("头部过大"), "{err}");
+
+        let err = import_7z_file(path.to_str().unwrap(), output.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("头部过大"), "{err}");
+        // 预检在创建输出目录之前完成，不产生任何落盘
+        assert!(!output.exists());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_import_7z_same_basename_deduped() {
+        let dir = unique_7z_dir("dedupe");
+        let archive = create_test_7z(
+            &dir.join("books.7z"),
+            &[("a/novel.txt", b"first"), ("b/novel.txt", b"second")],
+            lzma2_methods(),
+        );
+
+        let names = list_7z_book_files(archive.to_str().unwrap()).unwrap();
+        assert_eq!(names, vec!["novel.txt", "novel_2.txt"]);
+
+        let output = dir.join("out");
+        let files = import_7z_file(archive.to_str().unwrap(), output.to_str().unwrap()).unwrap();
+        assert_eq!(files.len(), 2);
+        assert_eq!(
+            fs::read_to_string(output.join("novel.txt")).unwrap(),
+            "first"
+        );
+        assert_eq!(
+            fs::read_to_string(output.join("novel_2.txt")).unwrap(),
+            "second"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_import_7z_rejects_windows_ads_name() {
+        let dir = unique_7z_dir("ads");
+        let archive = create_test_7z(
+            &dir.join("books.7z"),
+            &[("ab:cd.txt", b"ads payload")],
+            lzma2_methods(),
+        );
+
+        let err = list_7z_book_files(archive.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("备用数据流"), "{err}");
+
+        let output = dir.join("out");
+        let err = import_7z_file(archive.to_str().unwrap(), output.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("备用数据流"), "{err}");
+        assert!(!output.join("ab:cd.txt").exists());
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }

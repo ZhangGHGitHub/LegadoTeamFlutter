@@ -1,13 +1,21 @@
 //! 压缩包导入与编码检测 FFI API
 //!
-//! 提供 ZIP/RAR 压缩包导入、TXT 编码检测与转换的 FFI 接口。
+//! 提供 ZIP/RAR/7z 压缩包导入、TXT 编码检测与转换的 FFI 接口。
 //! 对应 Kotlin 原版 `ArchiveUtils` + `LocalBook.importArchiveFile` 逻辑。
 
 use serde::{Deserialize, Serialize};
 
 use legado_book::archive;
 use legado_book::encoding;
-use legado_core::LegadoResult;
+use legado_core::{LegadoError, LegadoResult};
+
+/// 取 `LegadoError` 的内层文案（避免 `Book parsing error:` 前缀被重复包装）
+fn inner_error_message(err: &LegadoError) -> String {
+    match err {
+        LegadoError::BookParse(message) => message.clone(),
+        other => other.to_string(),
+    }
+}
 
 /// 压缩包导入结果
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,18 +120,21 @@ pub fn import_7z_file(seven_zip_path: &str, output_dir: &str) -> ArchiveImportRe
         Err(e) => ArchiveImportResult {
             success: false,
             extracted_files: Vec::new(),
-            error: Some(format!("7z导入失败: {e}")),
+            error: Some(format!("7z导入失败: {}", inner_error_message(&e))),
         },
     }
 }
 
 /// 列出 7z 压缩包中的书籍文件名（不解压，§2.34 批24）
 ///
+/// 契约 §2.34：本方法失败时抛 `BridgeError`（外层消息带 `Book parsing error:`
+/// 前缀，内层为 `7z列表失败: …`），与 `archiveImport7z` 的信封返回不同。
+///
 /// # 参数
 /// - `seven_zip_path`: 7z 文件路径
 pub fn list_7z_book_files(seven_zip_path: &str) -> LegadoResult<Vec<String>> {
     archive::list_7z_book_files(seven_zip_path)
-        .map_err(|e| legado_core::LegadoError::BookParse(format!("7z列表失败: {e}")))
+        .map_err(|e| LegadoError::BookParse(format!("7z列表失败: {}", inner_error_message(&e))))
 }
 
 /// 列出 ZIP 压缩包中的书籍文件名（不解压）
