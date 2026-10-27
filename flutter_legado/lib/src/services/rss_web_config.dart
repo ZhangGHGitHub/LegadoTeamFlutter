@@ -19,24 +19,52 @@ const String kRssDefaultContentStyle =
     'video{object-fit:fill; max-width:100% !important; width:auto; height:auto;}'
     'body{word-wrap:break-word; height:auto;max-width: 100%; width:auto;}';
 
+/// HTML 内联 `<script>` 正文转义：`</script` → `<\/script`（大小写不敏感）
+///
+/// 批21b：宿主桥组合脚本可能包含 `</script` 字面量（规则脚本/字符串），
+/// 不转义会提前闭合标签。转义只影响 HTML 解析器，JS 字符串/正则中的
+/// `<\/script` 与原值等价。
+String rssEscapeScriptBody(String javaScript) {
+  if (!javaScript.contains('</')) return javaScript;
+  return javaScript.replaceAll(
+    RegExp(r'</script', caseSensitive: false),
+    r'<\/script',
+  );
+}
+
 /// 预注入脚本在 HTML 中的占位标签（原版经 WebView 资源拦截替换
 /// `JS_URL`；Flutter WebView 无该面，改为直接内联脚本）
-String? _preloadScriptTag(String? preloadJs) {
+///
+/// 批21b：优先使用 [preloadScript]（宿主桥组合脚本：console 钩子 →
+/// 通道/握手 → Rust 桥头 → 同步面 → `preloadJs`）；未提供时回落裸
+/// `preloadJs`（无宿主绑定）。正文统一做 `</script` 转义，避免脚本内容
+/// 提前闭合标签。
+String? _preloadScriptTag(String? preloadJs, String? preloadScript) {
+  final explicit = preloadScript;
+  if (explicit != null && explicit.trim().isNotEmpty) {
+    return '<script>${rssEscapeScriptBody(explicit)}</script>';
+  }
   final js = preloadJs?.trim() ?? '';
   if (js.isEmpty) return null;
-  return '<script>$js</script>';
+  return '<script>${rssEscapeScriptBody(js)}</script>';
 }
 
 /// 正文/起始页 HTML 后处理（对齐 `ReadRssViewModel.clHtml`）
 ///
-/// 1. `preloadJs` 非空：插入 `</head>` 前（有 `<head>` 时在开标签后；
-///    否则补 `<head>…</head>` 到最前）；
+/// 1. 预注入脚本非空（[preloadScript] 优先，其次 [preloadJs]）：插入
+///    `</head>` 前（有 `<head>` 时在开标签后；否则补 `<head>…</head>`
+///    到最前）；
 /// 2. 已存在 `</style>`：`style` 非空白时紧跟其后插入 `<style>{style}</style>`；
 /// 3. 无 `</style>`：`style` 非空白用 `style`，否则用默认移动端样式，
 ///    插入 `</head>` 前；无 `</head>` 则插到最前。
-String rssClHtml(String content, {String? style, String? preloadJs}) {
+String rssClHtml(
+  String content, {
+  String? style,
+  String? preloadJs,
+  String? preloadScript,
+}) {
   final buffer = StringBuffer();
-  final scriptTag = _preloadScriptTag(preloadJs);
+  final scriptTag = _preloadScriptTag(preloadJs, preloadScript);
   if (scriptTag != null) {
     final headIndex = content.indexOf('<head>');
     if (headIndex >= 0) {
