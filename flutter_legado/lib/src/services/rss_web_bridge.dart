@@ -21,10 +21,20 @@
 /// 批21c 安全加固（独立复核 P0）：
 /// - 平台注入的 `JavaScriptChannel` 对象捕获后立即从全局删除（Android）；
 ///   页面桥对象不可枚举并在 Rust 桥头读取后删除；`java`/`source`/`cache`/
-///   `*Await` 只在 IIFE 闭包内（Rust 桥头声明），页面脚本无法取得宿主能力；
-/// - nonce 回调不可枚举、交付后立即删除；nonce **不是安全边界**（仅防误用/
-///   重放），隔离依赖「桥模式剥离页面脚本 + 无全局对象」（契约 §2.5 批21c）；
-/// - `__prepare` 失败注入引导式降级桩（明确报错，不因 TypeError 中断）。
+///   `*Await` 只在 IIFE 闭包内（Rust 桥头声明）。
+/// - nonce 回调使用**独立随机名**，交付后立即删除；nonce **不是安全边界**
+///   （仅防误用/重放）。URL 模式下桥能力与原版等价（页面可信假设），脚本
+///   隔离只对文章 HTML 模式成立（契约 §2.5 批21d）。
+/// - `__prepare` 失败或 `bridgeAvailable:false` 注入引导式降级桩（明确报错，
+///   不因 TypeError 中断）。
+///
+/// 批21d 审查修复：
+/// - 通道/桥对象/回填回调 **各自独立随机 token**（互不可推）；回填回调
+///   `configurable:false`；nonce 回调独立随机名、用后删除；
+/// - 握手改为「代数令牌 + 页面 ACK」：回填脚本携带单调代数，页面仅接受
+///   不旧于当前的 nonce 并回发 `nonceAck`；Dart 以 ACK 置位 `_handshaken`，
+///   ACK 缺失可经看门狗重试；
+/// - 看门狗在回填在途时只顺延、不重置；新 hello 可覆盖在途握手。
 ///
 /// 与 Rust 桥头的约定（契约 §2.5 批21a）：`__prepare` 的 `channelName`
 /// 指向**页面桥对象**（`window[channelName].request(method, argsJson, id)`），
@@ -66,6 +76,7 @@ const Set<String> kRssWebBridgeHostMethods = <String>{
 
 /// Dart 内部协议方法（不进入 Rust 白名单）
 const String kRssWebBridgeHelloMethod = 'hello';
+const String kRssWebBridgeNonceAckMethod = 'nonceAck';
 const String kRssWebBridgeActionMethod = '__action';
 const String kRssWebBridgeStoreMethod = '__store';
 
@@ -145,13 +156,18 @@ class RssWebBridgePrepareResult {
   const RssWebBridgePrepareResult({
     required this.script,
     required this.snapshot,
+    this.bridgeAvailable = true,
   });
 
-  /// Rust 桥头（未闭合 IIFE；为空串表示源未配置 `preloadJs`）
+  /// Rust 桥头（未闭合 IIFE；为空串表示源未配置 `preloadJs` 或桥不可用）
   final String script;
 
   /// 只读快照（`sourceUrl`/`sourceName`/`loginHeader`/`vars`/`userAgent`…）
   final Map<String, dynamic> snapshot;
+
+  /// 宿主桥是否可用（批21d P2-1：非 quickjs 构建返回 `false` + 空 `script`，
+  /// Dart 必须走引导式降级桩，不得裸跑 `preloadJs`）
+  final bool bridgeAvailable;
 
   String get sourceUrl => snapshot['sourceUrl']?.toString() ?? '';
   String get sourceName => snapshot['sourceName']?.toString() ?? '';
@@ -212,41 +228,46 @@ class RssWebBridgeAction {
 
 /// 通道适配 + 握手脚本（必须在 Rust 桥头之前执行）
 ///
-/// 批21c 安全加固（独立复核 P0-1/P0-3）：
-/// - 平台注入的通道对象捕获后立即从页面全局删除（Android `delete` 有效；
-///   iOS 无该全局、`webkit.messageHandlers` 不可删，靠桥模式剥离页面脚本）；
+/// 批21c/21d 安全加固：
+/// - 平台注入的通道对象捕获后立即从页面全局删除（Android `delete` 是否
+///   真正生效、`getOwnPropertyNames` 是否仍可见，以真机结论为准）；
 /// - 页面桥对象用 `Object.defineProperty(..., enumerable:false)` 定义，
 ///   且定时删除（Rust 桥头会先行 `delete`，此为兜底）；
-/// - nonce 回调不可枚举，交付 nonce 后由 [rssBridgeNonceScript] 立即删除；
+/// - **nonce 回调使用独立随机名**（与通道/桥对象/回填回调互不可推），
+///   交付后由 [rssBridgeNonceScript] 删除；每次 hello 前重新注册；
+/// - 页面 nonce handler 接受**不旧于当前**的代数令牌（新 hello 可覆盖在途
+///   握手），接受后回发 `nonceAck`；
 /// - 排队请求上限 20，溢出/握手超时按失败回填（不无限挂起）。
 ///
-/// **nonce 不是安全边界**：仅防误用/重放；对不可信页面脚本的隔离依赖
-/// 「桥模式剥离页面脚本 + 无全局对象」（契约 §2.5 批21c 补记）。
+/// **nonce 不是安全边界**：仅防误用/重放；URL 模式下桥能力与原版等价
+/// （页面可信假设），脚本隔离只对文章 HTML 模式成立（契约 §2.5 批21d）。
 String rssBridgeBootstrapScript({
   required String nativeChannelName,
   required String bridgeObjectName,
   required String callbackName,
+  required String nonceCallbackName,
   Duration handshakeTimeout = kRssWebBridgeHandshakeTimeout,
 }) {
   final native = jsonEncode(nativeChannelName);
   final bridge = jsonEncode(bridgeObjectName);
   final callback = jsonEncode(callbackName);
-  final nonceCallback = jsonEncode('${callbackName}_nonce');
+  final nonceCallback = jsonEncode(nonceCallbackName);
   final timeoutMs = handshakeTimeout.inMilliseconds;
   return '''
 (function(){
-  // [批21b/21c] RSS WebView 宿主桥：通道适配 + hello/nonce 握手
+  // [批21b/21c/21d] RSS WebView 宿主桥：通道适配 + hello/nonce 握手
   if (typeof window === 'undefined') return;
   var __lgNative = null;
   try { __lgNative = window[$native]; } catch (e) {}
   if (!__lgNative || typeof __lgNative.postMessage !== 'function') return;
-  // 捕获后立即删除平台注入的全局对象（Android 可删；iOS 无该全局）
+  // 捕获后立即删除平台注入的全局对象（Android 15 真机实测 delete 生效，
+  // 删除后 getOwnPropertyNames 不再可见；iOS 无该全局，待验收）。
   try { delete window[$native]; } catch (e) {}
   var __lgNonce = null;
+  var __lgNonceGen = -1;
   var __lgSealed = false;
   var __lgQueue = [];
   var __lgMaxQueue = 20;
-  var __lgBridgeObject = null;
   var __lgSend = function (method, argsJson, id) {
     __lgNative.postMessage(JSON.stringify({
       nonce: __lgNonce,
@@ -271,7 +292,7 @@ String rssBridgeBootstrapScript({
       try { __lgSend(item.method, item.args, item.id); } catch (e) {}
     }
   };
-  __lgBridgeObject = {
+  var __lgBridgeObject = {
     request: function (method, argsJson, id) {
       var m = (method === null || method === undefined) ? '' : String(method);
       var a = (argsJson === null || argsJson === undefined) ? '[]' : String(argsJson);
@@ -289,10 +310,9 @@ String rssBridgeBootstrapScript({
         return;
       }
       try { __lgSend(m, a, i); } catch (e) { __lgDeliverError(i, String(e)); }
-    },
-    postMessage: function (message) { return __lgNative.postMessage(message); }
+    }
   };
-  // 桥对象不可枚举（页面脚本无法经 for..in / Object.keys 发现）
+  // 桥对象不可枚举（页面脚本仍可经 getOwnPropertyNames 看到属性名）
   try {
     Object.defineProperty(window, $bridge, {
       value: __lgBridgeObject,
@@ -307,23 +327,34 @@ String rssBridgeBootstrapScript({
   setTimeout(function () {
     try { delete window[$bridge]; } catch (e) {}
   }, 0);
-  var __lgNonceHandler = function (nonce) {
-    if (__lgNonce !== null) return;
+  // 页面 nonce handler：允许更新到最新 nonce（代数令牌单调）；接受后回发
+  // nonceAck（Dart 以 ACK 置位握手状态），随后由 Dart 删除本回调。
+  var __lgNonceHandler = function (nonce, generation) {
+    var gen = Number(generation);
+    if (!isFinite(gen)) gen = 0;
+    if (gen < __lgNonceGen) return;
+    __lgNonceGen = gen;
     __lgNonce = String(nonce);
+    __lgSealed = false;
+    try { __lgSend('nonceAck', String(gen), ''); } catch (e) {}
     if (__lgQueue.length > 0) __lgFlushQueue();
   };
-  try {
-    Object.defineProperty(window, $nonceCallback, {
-      value: __lgNonceHandler,
-      enumerable: false,
-      configurable: true,
-      writable: false
-    });
-  } catch (e) {
-    try { window[$nonceCallback] = __lgNonceHandler; } catch (e2) {}
-  }
+  // 每次 hello 前重新注册（Dart 交付 nonce 后会删除该回调）
+  var __lgRegisterNonceCallback = function () {
+    try {
+      Object.defineProperty(window, $nonceCallback, {
+        value: __lgNonceHandler,
+        enumerable: false,
+        configurable: true,
+        writable: false
+      });
+    } catch (e) {
+      try { window[$nonceCallback] = __lgNonceHandler; } catch (e2) {}
+    }
+  };
+  __lgRegisterNonceCallback();
   var __lgHello = function () {
-    if (__lgNonce !== null) return;
+    __lgRegisterNonceCallback();
     try { __lgSend('hello', '[]', ''); } catch (e) {}
   };
   // Dart 看门狗重发入口：挂在（不可枚举的）回填回调上，不新增全局
@@ -792,12 +823,12 @@ String rssBridgeDegradedScript(
     try { console.warn(message); } catch (e) {}
   }
   function __lgUnsupported(name) {
-    var msg = 'RSS WebView 宿主桥不可用（prepare 失败）：java.' + name;
+    var msg = 'RSS WebView 宿主桥不可用（prepare 失败或桥不可用）：java.' + name;
     __lgWarnOnce('unsupported:' + name, msg);
     throw new Error(msg);
   }
   function __lgRejected(name) {
-    var msg = 'RSS WebView 宿主桥不可用（prepare 失败）：' + name;
+    var msg = 'RSS WebView 宿主桥不可用（prepare 失败或桥不可用）：' + name;
     __lgWarnOnce('rejected:' + name, msg);
     return Promise.reject(new Error(msg));
   }
@@ -910,17 +941,19 @@ String rssBridgeReplyScript({
   return 'try{window[$callback]($idLiteral, $ok, $payloadLiteral);}catch(e){}';
 }
 
-/// 回填握手 nonce：`window[callbackName_nonce](nonce)`，交付后立即删除
+/// 回填握手 nonce：`window[nonceCallback](nonce, generation)`，交付后立即删除
 ///
-/// 批21c P0-3：nonce 回调不可枚举且用后即删，仅防误用/重放，不承担对
-/// 不可信页面脚本的隔离（隔离依赖桥模式剥离页面脚本 + 无全局对象）。
+/// 批21d P0-B/P1-1：nonce 回调用**独立随机名**（不从回填回调名推导），且
+/// 每次交付后删除；页面每次 hello 前会重新注册。代数令牌单调递增，页面只
+/// 接受不旧于当前的 nonce，避免旧文档/慢回填覆盖新状态。
 String rssBridgeNonceScript({
-  required String callbackName,
+  required String nonceCallbackName,
   required String nonce,
+  required int generation,
 }) {
-  final callback = jsonEncode('${callbackName}_nonce');
+  final callback = jsonEncode(nonceCallbackName);
   final nonceLiteral = jsonEncode(nonce);
-  return 'try{window[$callback]($nonceLiteral);}catch(e){}'
+  return 'try{window[$callback]($nonceLiteral, $generation);}catch(e){}'
       'finally{try{delete window[$callback];}catch(e){}}';
 }
 
@@ -1042,10 +1075,12 @@ class RssWebBridge {
         _onAction = onAction,
         _onLog = onLog,
         _random = random ?? Random() {
-    final token = _randomToken(_random, 12);
-    channelName = '__legado_rss_$token';
-    nativeChannelName = '__legado_rssNative_$token';
-    callbackName = '__legado_rssCb_$token';
+    // 批21d P0-B：通道/桥对象/回填回调/nonce 回调各自独立随机 token，
+    // 互不可推（此前四者共用一个 token，页面枚举到一个即可推导其余）。
+    channelName = '__legado_rss_${_randomToken(_random, 12)}';
+    nativeChannelName = '__legado_rssNative_${_randomToken(_random, 12)}';
+    callbackName = '__legado_rssCb_${_randomToken(_random, 12)}';
+    nonceCallbackName = '__legado_rssNonce_${_randomToken(_random, 12)}';
   }
 
   /// RSS 源 URL（宿主调用/落库键）
@@ -1069,6 +1104,9 @@ class RssWebBridge {
   /// Rust 桥头回填回调名（`window[callbackName](id, ok, payload)`）
   late final String callbackName;
 
+  /// 页面 nonce 回调名（独立随机 token，不从 [callbackName] 推导；用后删除）
+  late final String nonceCallbackName;
+
   final BookApi _api;
   final RssWebBridgeJsRunner _runJavaScript;
   final void Function(RssWebBridgeAction action)? _onAction;
@@ -1087,9 +1125,12 @@ class RssWebBridge {
   String? _nonce;
   bool _disposed = false;
 
-  /// 导航代数（批21c P1-1）：导航/看门狗重置时自增，旧文档的异步握手结果
-  /// 回到 Dart 时按代数丢弃，避免把新文档误标为已握手。
-  int _generation = 0;
+  /// 握手代数令牌（批21d P1-1）：每次 hello / 导航自增，随 nonce 回填下发；
+  /// 页面只接受不旧于当前的令牌，Dart 只接受与当前令牌匹配的 `nonceAck`。
+  int _handshakeToken = 0;
+
+  /// 当前等待 ACK 的握手令牌（-1 = 无）
+  int _nonceToken = -1;
 
   /// 握手看门狗计时器（每次导航重臂，握手成功取消）
   Timer? _handshakeWatchdogTimer;
@@ -1115,6 +1156,10 @@ class RssWebBridge {
   /// 当前 nonce（未握手为 null；测试可读）
   @visibleForTesting
   String? get nonce => _nonce;
+
+  /// 当前握手代数令牌（测试可读；-1 = 无在途握手）
+  @visibleForTesting
+  int get handshakeToken => _nonceToken;
 
   /// Rust 桥头脚本（未准备为空串）
   String get preparedScript => _prepare?.script ?? '';
@@ -1153,9 +1198,14 @@ class RssWebBridge {
       final snapshot = map['snapshot'] is Map
           ? Map<String, dynamic>.from(map['snapshot'] as Map)
           : <String, dynamic>{};
+      final script = map['script']?.toString() ?? '';
+      final available = map['bridgeAvailable'] is bool
+          ? map['bridgeAvailable'] as bool
+          : script.trim().isNotEmpty;
       final result = RssWebBridgePrepareResult(
-        script: map['script']?.toString() ?? '',
+        script: script,
         snapshot: snapshot,
+        bridgeAvailable: available,
       );
       _prepare = result;
       return result;
@@ -1171,17 +1221,20 @@ class RssWebBridge {
   /// 顺序：console 钩子 → 通道适配/握手 → Rust 桥头 → 同步面 → `preloadJs`
   /// → `})();`。
   ///
-  /// 批21c P2-9：`__prepare` 失败时注入**引导式降级桩**（明确报错的
-  /// `java`/`source`/`cache` + 同步面纯函数），不再裸跑 `preloadJs`
-  /// （缺失属性抛 TypeError 会中断后续语句）；未尝试 prepare 时保持裸
-  /// `preloadJs`（1:1 旧行为）。
+  /// 批21c P2-9 / 批21d P2-1：`__prepare` 失败、`bridgeAvailable:false`
+  /// （非 quickjs 构建）或桥头为空时注入**引导式降级桩**（明确报错的
+  /// `java`/`source`/`cache` + 同步面纯函数），不得裸跑 `preloadJs`
+  /// （缺失属性抛 TypeError 会中断后续语句）；仅「完全未尝试 prepare」时
+  /// 保持裸 `preloadJs`（1:1 旧行为）。
   String composeInjection(
     String preloadJs, {
     bool includeConsoleHook = false,
   }) {
     final head = preparedScript;
     if (head.trim().isEmpty) {
-      if (_prepareFailed) {
+      // 已尝试 prepare（成功但桥不可用/桥头为空）或失败 → 降级桩
+      final attempted = _prepareFailed || _prepare != null;
+      if (attempted) {
         _log('宿主桥不可用：注入引导式降级桩');
         final buffer = StringBuffer();
         if (includeConsoleHook) buffer.write('$kRssConsoleHookScript\n');
@@ -1202,6 +1255,7 @@ class RssWebBridge {
       nativeChannelName: nativeChannelName,
       bridgeObjectName: channelName,
       callbackName: callbackName,
+      nonceCallbackName: nonceCallbackName,
       handshakeTimeout: handshakeTimeout,
     ));
     buffer.write(head);
@@ -1216,8 +1270,9 @@ class RssWebBridge {
 
   /// 处理页面经 `JavaScriptChannel` 发来的消息
   ///
-  /// 协议：`{nonce,id,method,args}`。首个 `hello` 接受并回填 nonce；
-  /// 其余消息必须携带正确 nonce（错误 nonce / 重复 hello 一律拒绝）。
+  /// 协议：`{nonce,id,method,args}`。`hello` 触发 nonce 回填；页面随后回发
+  /// `nonceAck`（`args` 为握手代数令牌），Dart 以 ACK 置位握手状态；其余
+  /// 消息必须携带正确 nonce（错误 nonce / 握手前消息一律拒绝）。
   Future<void> handleMessage(String raw) async {
     if (_disposed) return;
     Object? decoded;
@@ -1239,6 +1294,10 @@ class RssWebBridge {
 
     if (method == kRssWebBridgeHelloMethod) {
       await _handleHello();
+      return;
+    }
+    if (method == kRssWebBridgeNonceAckMethod) {
+      _handleNonceAck(nonce, args);
       return;
     }
     if (!_handshaken) {
@@ -1309,11 +1368,12 @@ class RssWebBridge {
   /// 拒绝。旧文档的挂起调用按超时语义直接结束（页面已被替换）。
   void beginNavigation() {
     if (_disposed) return;
-    // 批21c P1-1：代数自增，使旧文档在途的 hello 回填结果失效
-    _generation++;
+    // 批21c P1-1 / 批21d：代数自增，使旧文档在途的 hello 回填/ACK 失效
+    _handshakeToken++;
     _handshaken = false;
     _handshakeInFlight = false;
     _nonce = null;
+    _nonceToken = -1;
     for (final pending in _pending.values) {
       pending.completed = true;
       pending.timer?.cancel();
@@ -1322,17 +1382,26 @@ class RssWebBridge {
     _armHandshakeWatchdog();
   }
 
-  /// 臂握手看门狗（每次导航调用；4s 未握手则重置并重发 hello）
+  /// 臂握手看门狗（每次导航/hello 调用；超时未握手则重发 hello）
+  ///
+  /// 批21d P1-1：回填在途时**只顺延、不重置**（重置会让页面已收到的新
+  /// nonce 与 Dart 状态失步）；不在途时清空 nonce 并重发 hello，等页面
+  /// 重新 hello 后换发新 nonce。
   void _armHandshakeWatchdog() {
     _handshakeWatchdogTimer?.cancel();
     _handshakeWatchdogTimer = Timer(handshakeWatchdog, () {
       if (_disposed || _handshaken) return;
-      // 重置：让旧 hello 的异步结果失效，并允许重新 hello
-      _generation++;
-      _handshakeInFlight = false;
+      if (_handshakeInFlight) {
+        _log('握手回填仍在途，看门狗顺延（${handshakeWatchdog.inSeconds}s）');
+        _armHandshakeWatchdog();
+        return;
+      }
+      _handshakeToken++;
       _nonce = null;
+      _nonceToken = -1;
       _log('握手看门狗超时（${handshakeWatchdog.inSeconds}s）：重置并重发 hello');
       unawaited(_reissueHello());
+      _armHandshakeWatchdog();
     });
   }
 
@@ -1349,7 +1418,8 @@ class RssWebBridge {
   /// 清洗并释放：取消所有超时计时器
   void dispose() {
     _disposed = true;
-    _generation++;
+    _handshakeToken++;
+    _nonceToken = -1;
     _handshakeWatchdogTimer?.cancel();
     _handshakeWatchdogTimer = null;
     for (final pending in _pending.values) {
@@ -1363,37 +1433,62 @@ class RssWebBridge {
 
   Future<void> _handleHello() async {
     if (_disposed) return;
-    if (_handshaken || _handshakeInFlight) {
+    if (_handshaken) {
       _log('重复 hello 已被拒绝');
       await _replyError('', '重复 hello');
       return;
     }
-    final generation = _generation;
+    // 批21d P1-1：新 hello 可覆盖在途握手（旧回填的代数更小，
+    // 页面按令牌拒绝旧值；Dart 也只接受最新令牌的 ACK）。
+    final token = ++_handshakeToken;
+    _nonceToken = token;
     _handshakeInFlight = true;
+    _handshaken = false;
     final nonce = _randomToken(_random, 32);
-    // nonce 先占位（页面尚未知悉），回填失败/导航切换时回滚
+    // nonce 先占位（页面尚未知悉），回填失败/被覆盖时回滚
     _nonce = nonce;
+    _armHandshakeWatchdog();
     try {
       await _runJavaScript(
-        rssBridgeNonceScript(callbackName: callbackName, nonce: nonce),
+        rssBridgeNonceScript(
+          nonceCallbackName: nonceCallbackName,
+          nonce: nonce,
+          generation: token,
+        ),
       );
     } catch (e) {
-      if (generation == _generation) {
+      if (token == _nonceToken) {
         _handshakeInFlight = false;
         _handshaken = false;
         _nonce = null;
+        _nonceToken = -1;
       }
       _log('握手 nonce 回填失败（可重试 hello）：$e');
       return;
     }
-    if (generation != _generation) {
-      _log('导航已切换，丢弃旧文档握手结果');
+    if (_disposed || token != _nonceToken) {
+      _log('握手已被更新的 hello/导航覆盖，丢弃旧回填结果');
+      return;
+    }
+    // 回填已完成（不再算「在途」），但握手仍需页面 ACK 才置位；ACK 缺失时
+    // 看门狗会重发 hello（批21d P1-1）。
+    _handshakeInFlight = false;
+    _log('nonce 已回填（token=$token），等待页面 ACK');
+  }
+
+  /// 页面 `nonceAck`：只有最新令牌 + 当前 nonce 才置位握手
+  void _handleNonceAck(String? nonce, String args) {
+    if (_disposed || _handshaken) return;
+    final token = int.tryParse(args.trim());
+    if (nonce == null || nonce != _nonce || token == null || token != _nonceToken) {
+      _log('nonceAck 已过期（token=$args），忽略');
       return;
     }
     _handshakeInFlight = false;
     _handshaken = true;
     _handshakeWatchdogTimer?.cancel();
     _handshakeWatchdogTimer = null;
+    _log('握手 ACK 已确认（token=$token）');
   }
 
   Future<void> _forwardHostCall(

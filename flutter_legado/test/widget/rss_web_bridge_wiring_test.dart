@@ -128,12 +128,14 @@ void main() {
     await tester.pump();
   }
 
-  /// 从 runJavaScript 调用序列提取 nonce
-  String? extractNonce(List<String> calls) {
-    final pattern = RegExp(r'window\["([^"]+_nonce)"\]\("([^"]+)"\)');
+  /// 从 runJavaScript 调用序列提取 nonce 与握手代数令牌
+  ({String nonce, int token})? extractHandshake(List<String> calls) {
+    final pattern = RegExp(r'window\["([^"]+)"\]\("([^"]+)",\s*(\d+)\)');
     for (final call in calls.reversed) {
       final match = pattern.firstMatch(call);
-      if (match != null) return match.group(2);
+      if (match != null) {
+        return (nonce: match.group(2)!, token: int.parse(match.group(3)!));
+      }
     }
     return null;
   }
@@ -145,6 +147,34 @@ void main() {
         'method': 'hello',
         'args': '[]',
       });
+
+  String nonceAckMessage(String nonce, int token) =>
+      jsonEncode(<String, dynamic>{
+        'nonce': nonce,
+        'id': '',
+        'method': 'nonceAck',
+        'args': '$token',
+      });
+
+  /// 完成 hello → nonce 回填 → 页面 ACK
+  Future<({String nonce, int token})> completeHandshake(
+    WidgetTester tester,
+    dynamic channel,
+    FakeWebViewController controller,
+  ) async {
+    channel.onMessageReceived(JavaScriptMessage(message: helloMessage()));
+    await tester.pump();
+    await tester.pump();
+    final handshake = extractHandshake(controller.javaScriptCalls);
+    expect(handshake, isNotNull, reason: '握手必须回填 nonce');
+    channel.onMessageReceived(
+      JavaScriptMessage(
+        message: nonceAckMessage(handshake!.nonce, handshake.token),
+      ),
+    );
+    await tester.pump();
+    return handshake;
+  }
 
   String pageMessage({
     required String method,
@@ -231,6 +261,41 @@ void main() {
     });
   });
 
+  testWidgets('bridgeAvailable:false/空桥头：注入降级桩而非裸 preloadJs（P2-1）', (tester) async {
+    when(() => mockApi.rssWebViewHostCall(any(), '__prepare', any()))
+        .thenAnswer((_) async => jsonEncode(<String, dynamic>{
+              'ok': true,
+              'value': <String, dynamic>{
+                'script': '',
+                'bridgeAvailable': false,
+                'snapshot': <String, dynamic>{
+                  'sourceUrl': _sourceUrl,
+                  'sourceName': '源A',
+                  'loginHeader': '{"Cookie":"sid=1"}',
+                },
+              },
+              'error': null,
+            }));
+    await runWithWebView(() async {
+      final source = RssSource(
+        sourceUrl: _sourceUrl,
+        sourceName: '源A',
+        preloadJs: _preloadMarker,
+      );
+      await pumpScreen(tester, source: source);
+
+      final controller = FakeWebViewController.lastCreated!;
+      expect(controller.javaScriptChannels, isEmpty,
+          reason: 'bridgeAvailable:false 不得注册通道');
+      final html = controller.loadedHtml ?? '';
+      expect(html, contains('正文'));
+      expect(html, contains(_preloadMarker));
+      expect(html, contains('宿主桥不可用（prepare 失败或桥不可用）'),
+          reason: '空桥头/桥不可用必须注入引导式降级桩');
+      expect(html, isNot(contains(_rustHeadMarker)));
+    });
+  });
+
   testWidgets('prepare 失败：注入引导式降级桩，正文仍加载', (tester) async {
     when(() => mockApi.rssWebViewHostCall(any(), '__prepare', any()))
         .thenAnswer((_) async => jsonEncode(<String, dynamic>{
@@ -252,7 +317,7 @@ void main() {
       final html = controller.loadedHtml ?? '';
       expect(html, contains('正文'), reason: '正文不得被桥失败阻断');
       expect(html, contains(_preloadMarker), reason: '降级后仍执行 preloadJs');
-      expect(html, contains('宿主桥不可用（prepare 失败）'),
+      expect(html, contains('宿主桥不可用（prepare 失败或桥不可用）'),
           reason: '必须注入引导式降级桩');
       expect(html, isNot(contains(_rustHeadMarker)));
 
@@ -263,7 +328,7 @@ void main() {
       await tester.pump();
       expect(
         controller.javaScriptCalls.where(
-          (js) => js.contains('宿主桥不可用（prepare 失败）'),
+          (js) => js.contains('宿主桥不可用（prepare 失败或桥不可用）'),
         ),
         isNotEmpty,
         reason: 'onPageStarted 降级注入必须走 composeInjection',
@@ -282,21 +347,16 @@ void main() {
       final controller = FakeWebViewController.lastCreated!;
       final channel = controller.javaScriptChannels.single;
 
-      // 1) hello → 回填 nonce
-      channel.onMessageReceived(
-        JavaScriptMessage(message: helloMessage()),
-      );
-      await tester.pump();
-      await tester.pump();
-      final nonce = extractNonce(controller.javaScriptCalls);
-      expect(nonce, isNotNull, reason: '握手必须回填 nonce');
+      // 1) hello → 回填 nonce → nonceAck
+      final handshake = await completeHandshake(tester, channel, controller);
+      final nonce = handshake.nonce;
 
       // 2) java.put 经 __store 写穿（无回调）
       channel.onMessageReceived(
         JavaScriptMessage(
           message: pageMessage(
             method: '__store',
-            nonce: nonce!,
+            nonce: nonce,
             id: 'store_1',
             args: '{"op":"sourcePut","key":"token","value":"v1"}',
           ),
@@ -352,10 +412,8 @@ void main() {
       final controller = FakeWebViewController.lastCreated!;
       final channel = controller.javaScriptChannels.single;
 
-      channel.onMessageReceived(JavaScriptMessage(message: helloMessage()));
-      await tester.pump();
-      await tester.pump();
-      final nonce = extractNonce(controller.javaScriptCalls)!;
+      final handshake = await completeHandshake(tester, channel, controller);
+      final nonce = handshake.nonce;
 
       channel.onMessageReceived(
         JavaScriptMessage(
@@ -523,7 +581,7 @@ void main() {
     });
   });
 
-  testWidgets('URL 模式：console 钩子先于桥注入（每次页面开始注入一次）', (tester) async {
+  testWidgets('URL 模式：console 钩子先于桥注入；同文档重复 onPageStarted 去重', (tester) async {
     await runWithWebView(() async {
       final source = RssSource(
         sourceUrl: _sourceUrl,
@@ -563,8 +621,23 @@ void main() {
       await tester.pump();
       expect(
         controller.javaScriptCalls.where((js) => js.contains(_preloadMarker)),
+        hasLength(1),
+        reason: '同文档重复 onPageStarted 不得重复执行 preload/重置握手（P1-2）',
+      );
+      expect(
+        controller.javaScriptCalls
+            .where((js) => js.contains('__legadoConsoleHooked')),
+        hasLength(1),
+        reason: '同文档重复 onPageStarted 不得重复注入 console 钩子',
+      );
+
+      // 新文档导航：必须重新注入
+      controller.emitPageStarted('https://s.test/next');
+      await tester.pump();
+      expect(
+        controller.javaScriptCalls.where((js) => js.contains(_preloadMarker)),
         hasLength(2),
-        reason: '每次页面开始执行一次 preload（第二次导航新增一条）',
+        reason: '新文档导航必须重新执行 preload',
       );
     });
   });

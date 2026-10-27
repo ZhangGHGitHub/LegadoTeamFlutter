@@ -27,10 +27,15 @@ String _prepareEnvelope({
     'loginHeader': '{"Cookie":"sid=1"}',
     'vars': <String, String>{'k': 'v'},
   },
+  bool bridgeAvailable = true,
 }) =>
     jsonEncode(<String, dynamic>{
       'ok': true,
-      'value': <String, dynamic>{'script': script, 'snapshot': snapshot},
+      'value': <String, dynamic>{
+        'script': script,
+        'snapshot': snapshot,
+        'bridgeAvailable': bridgeAvailable,
+      },
       'error': null,
     });
 
@@ -88,12 +93,24 @@ void main() {
     return bridge;
   }
 
-  /// 完成握手（返回 nonce）
+  /// 模拟页面回发 nonceAck（最新令牌）
+  Future<void> ack(RssWebBridge bridge, String nonce) => bridge.handleMessage(
+        _pageMessage(
+          method: 'nonceAck',
+          id: '',
+          args: '${bridge.handshakeToken}',
+          nonce: nonce,
+        ),
+      );
+
+  /// 完成握手（hello → 回填 → 页面 ACK，返回 nonce）
   Future<String> handshake(RssWebBridge bridge) async {
     await bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
     final nonce = bridge.nonce;
     expect(nonce, isNotNull, reason: 'hello 后必须生成 nonce');
-    return nonce!;
+    await ack(bridge, nonce!);
+    expect(bridge.isHandshaken, isTrue, reason: '页面 ACK 后必须置位握手');
+    return nonce;
   }
 
   setUpAll(registerFallbacks);
@@ -133,6 +150,18 @@ void main() {
       expect(params['ua'], 'UA-X');
       expect(bridge.channelName, startsWith('__legado_rss_'));
       expect(bridge.nativeChannelName, startsWith('__legado_rssNative_'));
+      expect(bridge.callbackName, startsWith('__legado_rssCb_'));
+      expect(bridge.nonceCallbackName, startsWith('__legado_rssNonce_'));
+      expect(
+        <String>{
+          bridge.channelName,
+          bridge.nativeChannelName,
+          bridge.callbackName,
+          bridge.nonceCallbackName,
+        }.length,
+        4,
+        reason: '通道/桥对象/回填回调/nonce 回调必须各自独立随机，互不可推',
+      );
       expect(bridge.nativeChannelName, isNot(bridge.channelName),
           reason: '平台通道名与页面桥对象名必须分离，避免覆写平台注入对象');
     });
@@ -170,10 +199,14 @@ void main() {
       expect(literal, contains(r'\u2029'));
     });
 
-    test('nonce 回填脚本：交付后立即删除不可枚举回调', () {
-      final script = rssBridgeNonceScript(callbackName: 'cb', nonce: 'n1');
-      expect(script, contains('window["cb_nonce"]("n1")'));
-      expect(script, contains('delete window["cb_nonce"]'));
+    test('nonce 回填脚本：独立回调名 + 代数令牌 + 交付后立即删除', () {
+      final script = rssBridgeNonceScript(
+        nonceCallbackName: 'nonceCb',
+        nonce: 'n1',
+        generation: 7,
+      );
+      expect(script, contains('window["nonceCb"]("n1", 7)'));
+      expect(script, contains('delete window["nonceCb"]'));
     });
 
     test('hello 重发脚本经回填回调上的非枚举入口', () {
@@ -208,9 +241,14 @@ void main() {
 
       expect(bridge.isHandshaken, isTrue);
       expect(
-        runLog.any((js) => js.contains('_nonce') && js.contains(nonce)),
+        runLog.any(
+          (js) =>
+              js.contains(bridge.nonceCallbackName) &&
+              js.contains(nonce) &&
+              js.contains('${bridge.handshakeToken}'),
+        ),
         isTrue,
-        reason: '必须经 runJavaScript 回填 nonce',
+        reason: '必须经 runJavaScript 回填 nonce（独立回调名 + 代数令牌）',
       );
 
       await bridge.handleMessage(_pageMessage(
@@ -310,36 +348,123 @@ void main() {
 
       // 第二次 hello 必须被接受（失败可恢复）
       await bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+      expect(bridge.isHandshaken, isFalse,
+          reason: '回填成功但 ACK 未到，握手不得置位');
+      await ack(bridge, bridge.nonce!);
       expect(bridge.isHandshaken, isTrue);
       expect(bridge.nonce, isNotNull);
     });
 
-    test('导航期间旧 hello 的异步回填结果被代数丢弃', () async {
-      final holder = <Completer<void>>[];
+    test('ACK 缺失：状态不置位，看门狗重试后新 hello 可完成', () async {
+      final bridge = newBridge(watchdog: const Duration(milliseconds: 30));
+      await bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+      expect(bridge.isHandshaken, isFalse, reason: 'ACK 缺失不得置位握手');
+      expect(bridge.nonce, isNotNull);
+
+      // 看门狗超时（回填已结束、ACK 未到）→ 重发 hello
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(
+        runLog.any((js) => js.contains('__lgHello')),
+        isTrue,
+        reason: 'ACK 缺失时看门狗必须重发 hello',
+      );
+
+      // 页面再次 hello → 新 nonce → ACK 后置位
+      await bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+      await ack(bridge, bridge.nonce!);
+      expect(bridge.isHandshaken, isTrue);
+    });
+
+    test('回填慢于看门狗：看门狗顺延不重置，新 hello 仍被接受', () async {
+      final holders = <Completer<void>>[];
+      final bridge = newBridge(
+        watchdog: const Duration(milliseconds: 30),
+        runner: (js) async {
+          final completer = Completer<void>();
+          holders.add(completer);
+          await completer.future;
+          runLog.add(js);
+        },
+      );
+      final firstHello = bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+      await Future<void>.delayed(Duration.zero);
+      final firstNonce = bridge.nonce;
+      expect(holders, hasLength(1));
+      expect(bridge.isHandshaken, isFalse);
+
+      // 回填在途超过看门狗：只顺延，不得重置代数/nonce
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(
+        runLog.any((js) => js.contains('看门狗顺延')),
+        isTrue,
+        reason: '回填在途时看门狗必须顺延',
+      );
+      expect(bridge.nonce, firstNonce, reason: '顺延不得清空在途 nonce');
+
+      // 新 hello 仍被接受（覆盖在途握手），并以新 nonce/ACK 置位
+      final secondHello = bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+      await Future<void>.delayed(Duration.zero);
+      expect(holders.length, greaterThanOrEqualTo(2));
+      final secondNonce = bridge.nonce!;
+      expect(secondNonce, isNot(firstNonce));
+      holders.last.complete();
+      await secondHello;
+      await ack(bridge, secondNonce);
+      expect(bridge.isHandshaken, isTrue);
+
+      // 旧回填晚到：不得覆盖新状态
+      holders.first.complete();
+      await firstHello;
+      expect(bridge.nonce, secondNonce);
+      expect(bridge.isHandshaken, isTrue);
+    });
+
+    test('导航交错：旧回填晚到被丢弃，新文档 nonceB 生效', () async {
+      final holders = <Completer<void>>[];
       final bridge = newBridge(runner: (js) async {
+        // 只阻塞 nonce 回填，其余（如失败回填）立即完成
+        if (!js.contains('__legado_rssNonce_')) {
+          runLog.add(js);
+          return;
+        }
         final completer = Completer<void>();
-        holder.add(completer);
+        holders.add(completer);
         await completer.future;
         runLog.add(js);
       });
-      // 旧文档 hello：回填被挂起
       final oldHello = bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
       await Future<void>.delayed(Duration.zero);
-      expect(holder, hasLength(1));
+      final nonceA = bridge.nonce!;
 
-      // 导航发生（代数自增），旧回填随后完成
       bridge.beginNavigation();
-      holder.single.complete();
-      await oldHello;
-      expect(bridge.isHandshaken, isFalse, reason: '旧文档握手结果不得污染新文档');
+      expect(bridge.isHandshaken, isFalse);
       expect(bridge.nonce, isNull);
 
-      // 新文档 hello 正常完成
       final newHello = bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
       await Future<void>.delayed(Duration.zero);
-      holder.last.complete();
+      final nonceB = bridge.nonce!;
+      expect(nonceB, isNot(nonceA), reason: '新文档必须换发 nonceB');
+      holders.last.complete();
       await newHello;
+      await ack(bridge, nonceB);
       expect(bridge.isHandshaken, isTrue);
+
+      // 旧文档回填晚到：不得覆盖 nonceB，也不得回退握手状态
+      holders.first.complete();
+      await oldHello;
+      expect(bridge.nonce, nonceB);
+      expect(bridge.isHandshaken, isTrue);
+
+      // 旧 nonce 的消息仍被拒绝
+      await bridge.handleMessage(_pageMessage(
+        method: 'getAwait',
+        args: '["https://old"]',
+        nonce: nonceA,
+      ));
+      await Future<void>.delayed(Duration.zero);
+      verifyNever(
+        () => api.rssWebViewHostCall(any(), 'getAwait', any()),
+      );
     });
 
     test('握手看门狗：超时重置并重发 hello，随后 hello 可接受', () async {
@@ -357,6 +482,7 @@ void main() {
       expect(bridge.isHandshaken, isFalse);
 
       await bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+      await ack(bridge, bridge.nonce!);
       expect(bridge.isHandshaken, isTrue, reason: '看门狗重置后 hello 必须可接受');
     });
   });
@@ -576,33 +702,76 @@ void main() {
 
       final composed = bridge.composeInjection('PRELOAD_MARKER');
       expect(composed, contains('PRELOAD_MARKER'));
-      expect(composed, contains('宿主桥不可用（prepare 失败）'));
+      expect(composed, contains('宿主桥不可用（prepare 失败或桥不可用）'));
       expect(composed, contains('base64Encode'), reason: '同步面纯函数仍应可用');
       expect(composed, isNot(contains('window.java')));
       expect(composed.trimRight(), endsWith('})();'));
     });
 
-    test('bootstrap：删除平台通道全局、桥对象/回调不可枚举、队列上限 20', () {
+    test('bridgeAvailable:false（非 quickjs/空桥头）：同样走降级桩', () async {
+      when(() => api.rssWebViewHostCall(any(), any(), any())).thenAnswer(
+        (_) async => _prepareEnvelope(script: '', bridgeAvailable: false),
+      );
+      final bridge = newBridge();
+      final prepared = await bridge.prepare();
+      expect(prepared, isNotNull);
+      expect(prepared!.bridgeAvailable, isFalse);
+      expect(bridge.isDegraded, isFalse, reason: 'prepare 本身成功，不算失败');
+
+      final composed = bridge.composeInjection('PRELOAD_MARKER');
+      expect(composed, contains('PRELOAD_MARKER'));
+      expect(composed, contains('宿主桥不可用（prepare 失败或桥不可用）'),
+          reason: '桥不可用时不得裸跑 preloadJs');
+      expect(composed, isNot(contains('__lgNative')));
+      expect(composed, contains('base64Encode'));
+    });
+
+    test('mock 返回 script:""：不得回退为裸 preloadJs', () async {
+      when(() => api.rssWebViewHostCall(any(), any(), any())).thenAnswer(
+        (_) async => jsonEncode(<String, dynamic>{
+          'ok': true,
+          'value': <String, dynamic>{
+            'script': '',
+            'snapshot': <String, dynamic>{},
+          },
+          'error': null,
+        }),
+      );
+      final bridge = newBridge();
+      final prepared = await bridge.prepare();
+      expect(prepared, isNotNull);
+      expect(prepared!.bridgeAvailable, isFalse,
+          reason: '缺省 bridgeAvailable 时按空 script 判不可用');
+
+      final composed = bridge.composeInjection('PRELOAD_MARKER');
+      expect(composed, contains('宿主桥不可用（prepare 失败或桥不可用）'));
+    });
+
+    test('bootstrap：删除平台通道全局、独立 nonce 回调、桥对象/回调不可枚举、队列上限 20', () {
       final script = rssBridgeBootstrapScript(
         nativeChannelName: '__lgNativeTest',
         bridgeObjectName: '__lgBridgeTest',
         callbackName: '__lgCbTest',
+        nonceCallbackName: '__lgNonceTest',
       );
       for (final needle in [
         'delete window["__lgNativeTest"]',
         'Object.defineProperty(window, "__lgBridgeTest"',
-        'Object.defineProperty(window, "__lgCbTest_nonce"',
+        'Object.defineProperty(window, "__lgNonceTest"',
         'enumerable: false',
         'var __lgMaxQueue = 20',
         '队列已满',
         '宿主桥握手超时',
         '__lgHello',
         'delete window["__lgBridgeTest"]',
+        "nonceAck",
+        '__lgRegisterNonceCallback',
       ]) {
         expect(script, contains(needle), reason: 'bootstrap 缺少 $needle');
       }
-      // 不得把桥对象直接挂到可枚举全局
+      // 不得把桥对象直接挂到可枚举全局；不得保留 postMessage 直通原生通道
       expect(script, isNot(contains('window["__lgBridgeTest"] = {')));
+      expect(script, isNot(contains('postMessage: function (message)')));
 
       if (!_nodeAvailable()) {
         // 纯 Dart 向量：结构断言已在上方完成（Node 缺失时不静默 skip）
@@ -615,6 +784,7 @@ void main() {
       expect(outputs['helloFirst'], isTrue);
       expect(outputs['flushedQueued'], 20);
       expect(outputs['overflowErrors'], 5);
+      expect(outputs['nonceAckSent'], isTrue);
       expect(outputs['bridgeDeletedAfterTick'], isTrue);
       expect(outputs['helloHook'], isTrue);
     });
@@ -826,15 +996,18 @@ window['__lgCbTest'] = function (id, ok, payload) {
       bootstrap +
       r'''
 var bridgeDesc = Object.getOwnPropertyDescriptor(window, '__lgBridgeTest');
-var nonceDesc = Object.getOwnPropertyDescriptor(window, '__lgCbTest_nonce');
+var nonceDesc = Object.getOwnPropertyDescriptor(window, '__lgNonceTest');
 var nativeDeleted = typeof window['__lgNativeTest'] === 'undefined';
 for (var i = 0; i < 25; i++) {
   window['__lgBridgeTest'].request('q' + i, '[]', 'q' + i);
 }
 var overflowErrors = replies.length;
-window['__lgCbTest_nonce']('n1');
+window['__lgNonceTest']('n1', 1);
 var helloFirst = posted.length > 0 && posted[0].method === 'hello';
-var flushedQueued = posted.filter(function (m) { return m.method !== 'hello'; }).length;
+var flushedQueued = posted.filter(function (m) {
+  return m.method !== 'hello' && m.method !== 'nonceAck';
+}).length;
+var nonceAckSent = posted.some(function (m) { return m.method === 'nonceAck'; });
 setTimeout(function () {
   process.stdout.write(JSON.stringify({
     nativeDeleted: nativeDeleted,
@@ -843,6 +1016,7 @@ setTimeout(function () {
     helloFirst: helloFirst,
     flushedQueued: flushedQueued,
     overflowErrors: overflowErrors,
+    nonceAckSent: nonceAckSent,
     bridgeDeletedAfterTick: typeof window['__lgBridgeTest'] === 'undefined',
     helloHook: typeof window['__lgCbTest'].__lgHello === 'function'
   }));
