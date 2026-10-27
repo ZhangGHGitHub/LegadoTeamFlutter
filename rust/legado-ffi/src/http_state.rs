@@ -480,7 +480,9 @@ pub fn register_js_client_cookie_persistence() {
 /// `legado-js` 不依赖 DB，本注册把查询实现注入其 first-wins 钩子：按
 /// `book_source_url` 查 [`legado_db::BookSourceRepository`]，返回书源
 /// `enabled_cookie_jar`（DB 未就绪/查不到/字段 NULL = None → 按关，对齐上游
-/// `source?.enabledCookieJar == true` 的 null→false）。
+/// `source?.enabledCookieJar == true` 的 null→false）。书源未命中时回退
+/// `rss_sources`（批21a：RSS 阅读 WebView 宿主桥与 RSS 规则 JS 的
+/// `java.ajax` 以 RSS `sourceUrl` 为 tag）。
 ///
 /// 由 [`crate::ffi::Bridge::db_open`] 在 DB 初始化后调用（仅 quickjs 档，
 /// 与 [`register_js_client_cookie_persistence`] 同点）；零 FFI 方法变更。
@@ -493,13 +495,27 @@ pub fn register_js_source_cookie_jar_lookup() {
 
 /// 按书源 URL（current_source tag）查 `enabledCookieJar`（批 2 写侧门控）
 ///
-/// DB 未就绪/书源不存在 → `None`（JS 桥按关）；字段 NULL → `None`（按关，
-/// 对齐上游 `source?.enabledCookieJar == true` 的 null→false）。
+/// 查询顺序（批21a 加法式）：先 `book_sources`，未命中再回退 `rss_sources`
+/// ——RSS 阅读 WebView `preloadJs` 宿主桥与 RSS 规则 JS 的 `java.ajax`
+/// 也以 RSS `sourceUrl` 作为 current_source tag，若不回退则 RSS 源的
+/// `enabledCookieJar` 恒按关（响应 `Set-Cookie` 不写回）。
+///
+/// 命中书源但字段 NULL → `None`（按关，**不再**回退 RSS：同 URL 书源存在
+/// 时书源配置即该 tag 的权威来源）。DB 未就绪/两表均未命中 → `None`。
 #[cfg(feature = "quickjs")]
 fn lookup_source_cookie_jar(tag: &str) -> Option<bool> {
+    let book = crate::db_state::with_database(|db| {
+        legado_db::BookSourceRepository::new(db.connection()).find_by_url(tag)
+    })
+    .ok()
+    .flatten();
+    if let Some(source) = book {
+        return source.enabled_cookie_jar;
+    }
     crate::db_state::with_database(|db| {
-        let repo = legado_db::BookSourceRepository::new(db.connection());
-        repo.find_by_url(tag)
+        legado_db::RssSourceRepository::new(db.connection())
+            .find_by_url(tag)
+            .map_err(LegadoError::Database)
     })
     .ok()
     .flatten()
@@ -701,8 +717,67 @@ mod tests {
         );
     }
 
-    // ─── JS 宿主 Cookie 持久化下沉（db_open 注册）测试 ──────────────────────
+    /// 批21a：书源未命中时回退 `rss_sources`——RSS 阅读 WebView 宿主桥与
+    /// RSS 规则 JS（`java.ajax`）以 RSS `sourceUrl` 作为 current_source tag，
+    /// 不回退则 RSS 源 `enabledCookieJar` 恒按关。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn test_lookup_source_cookie_jar_falls_back_to_rss_source() {
+        use legado_db::repository::Repository;
 
+        let _g = TEST_LOCK.lock().unwrap();
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        const TAG_ON: &str = "https://jsgate-rss-on.test/feed";
+        const TAG_OFF: &str = "https://jsgate-rss-off.test/feed";
+
+        // 缺键 → serde default `Some(true)`（RSS 源默认开 CookieJar）
+        crate::api::rss::add_rss_source(&format!(
+            r#"{{"sourceUrl":"{TAG_ON}","sourceName":"RSS 开","enabled":true}}"#
+        ))
+        .expect("插入 RSS 开启源");
+        crate::api::rss::add_rss_source(&format!(
+            r#"{{"sourceUrl":"{TAG_OFF}","sourceName":"RSS 关","enabled":true,"enabledCookieJar":false}}"#
+        ))
+        .expect("插入 RSS 关闭源");
+
+        assert_eq!(
+            lookup_source_cookie_jar(TAG_ON),
+            Some(true),
+            "RSS 缺键源应回退解析为 Some(true)"
+        );
+        assert_eq!(
+            lookup_source_cookie_jar(TAG_OFF),
+            Some(false),
+            "RSS 显式关闭源应回退解析为 Some(false)"
+        );
+
+        // 同 URL 书源存在时书源为权威：RSS 关闭不覆盖书源开启
+        let book = legado_core::models::BookSource {
+            book_source_url: TAG_OFF.to_string(),
+            book_source_name: "同 URL 书源".to_string(),
+            enabled_cookie_jar: Some(true),
+            ..Default::default()
+        };
+        crate::db_state::with_database(|db| {
+            legado_db::BookSourceRepository::new(db.connection()).insert(&book)
+        })
+        .expect("插入同 URL 书源");
+        assert_eq!(
+            lookup_source_cookie_jar(TAG_OFF),
+            Some(true),
+            "书源命中时不得回退 RSS 配置"
+        );
+
+        // 清理（共享测试库）
+        let _ = crate::api::rss::delete_rss_source(TAG_ON);
+        let _ = crate::api::rss::delete_rss_source(TAG_OFF);
+        let _ = crate::db_state::with_database(|db| {
+            legado_db::BookSourceRepository::new(db.connection()).delete(TAG_OFF)
+        });
+    }
+
+    // ─── JS 宿主 Cookie 持久化下沉（db_open 注册）测试 ──────────────────────
     /// cookie 串按键集合比较辅助（HashMap 迭代序不保证，按键集合相等断言）
     fn cookie_parts(s: &str) -> Vec<String> {
         let mut parts: Vec<String> = s

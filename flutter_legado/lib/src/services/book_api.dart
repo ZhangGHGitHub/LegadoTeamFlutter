@@ -454,6 +454,24 @@ abstract class BookApi {
   /// 缺省按 link 取首行（对齐原版 `getByLink`）。
   Future<String> rssFetchContent(String sourceUrl, String link, {String? sort});
 
+  /// RSS 阅读 WebView `preloadJs` 宿主桥单入口 RPC（契约 §2.5，批21a）
+  ///
+  /// [method] 取契约白名单（`run` / `ajaxAwait` / `connectAwait` / `getAwait` /
+  /// `headAwait` / `postAwait` / `webViewAwait` / `webViewGetSourceAwait` /
+  /// `decryptStrAwait` / `encryptBase64Await` / `encryptHexAwait` /
+  /// `createSignHexAwait` / `readTxtFileAwait` / `importScriptAwait` /
+  /// `getStringAwait`）与内部方法 `__prepare` / `__cookieSet` / `__store`；
+  /// [argsJson] 为**位置参数 JSON 数组**；返回信封
+  /// `{"ok":bool,"value":…,"error":…,"actions":[…]?}`。
+  ///
+  /// Dart 侧 WebView 通道/握手/同步面摊平/动作转发属批21b，本方法仅透传
+  /// Rust 宿主调用。
+  Future<String> rssWebViewHostCall(
+    String sourceUrl,
+    String method,
+    String argsJson,
+  );
+
   // ========== RSS 已读记录 ==========
 
   /// 标记 RSS 文章为已读

@@ -10,6 +10,7 @@ use crate::sandbox::SandboxConfig;
 use legado_core::{LegadoError, LegadoResult};
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::Duration;
 
 // [体检 §三.14] 与 SEARCH_CONCURRENCY=32 对齐:多源跨源并发时避免 LRU 抖动
 // (缓存外的源每次 eval 仍需重挂 587KB jsLib,批次 A 收益会被打折)
@@ -21,6 +22,9 @@ struct Entry {
     js_lib: String,
     setup_script: String,
     main_js: String,
+    /// 单次求值中断预算（批21a：RSS WebView 宿主桥需 30s，宿主网络调用
+    /// 可能长时间阻塞在原生函数内；`None` = 沿用 `SandboxConfig::default`）。
+    timeout: Option<Duration>,
     /// 构建时 mainJs eval 是否成功（None = 无 mainJs）；
     /// 失败时调用方可选择带 bindings 重评（旧路径语义自洽）。
     main_js_ok: Option<bool>,
@@ -50,12 +54,15 @@ fn init_engine(
     js_lib: &str,
     setup_script: &str,
     main_js: &str,
+    timeout: Option<Duration>,
 ) -> LegadoResult<(SharedEngine, Option<bool>, Option<bool>)> {
-    let engine = QuickJsEngine::new(
-        SandboxConfig::default()
-            .with_allow_script_run(true)
-            .with_memory_limit(64 * 1024 * 1024),
-    )?;
+    let mut config = SandboxConfig::default()
+        .with_allow_script_run(true)
+        .with_memory_limit(64 * 1024 * 1024);
+    if let Some(t) = timeout {
+        config = config.with_timeout(t);
+    }
+    let engine = QuickJsEngine::new(config)?;
     let mut main_js_ok: Option<bool> = None;
     let mut js_lib_ok: Option<bool> = None;
     for (name, code) in [
@@ -139,6 +146,26 @@ pub fn get_or_create(
     setup_script: Option<&str>,
     main_js: Option<&str>,
 ) -> LegadoResult<(SharedEngine, Option<bool>, Option<bool>)> {
+    get_or_create_with_timeout(key, js_lib, setup_script, main_js, None)
+}
+
+/// 获取带初始化上下文与**单次求值中断预算**的缓存引擎（批21a，加法式）
+///
+/// 与 [`get_or_create`] 的唯一差别：`timeout` 非空时覆盖
+/// `SandboxConfig::default` 的 5s 预算。RSS 阅读 WebView 宿主桥的
+/// `ajaxAwait` 等调用可能长时间阻塞在原生网络函数内（中断处理器只在
+/// 字节码边界检查，原生调用期间不生效），5s 预算会在返回后立刻中断，
+/// 故宿主桥按契约使用 30s。
+///
+/// 缓存键比较包含 `timeout`：同一 key 换预算会重建条目（与其他初始化
+/// 脚本变化同语义）；`None` 与既有调用方逐字节等价。
+pub fn get_or_create_with_timeout(
+    key: &str,
+    js_lib: Option<&str>,
+    setup_script: Option<&str>,
+    main_js: Option<&str>,
+    timeout: Option<Duration>,
+) -> LegadoResult<(SharedEngine, Option<bool>, Option<bool>)> {
     let lib = js_lib.unwrap_or("");
     let setup = setup_script.unwrap_or("");
     let main = main_js.unwrap_or("");
@@ -148,7 +175,9 @@ pub fn get_or_create(
     let same = guard
         .entries
         .get(key)
-        .map(|e| e.js_lib == lib && e.setup_script == setup && e.main_js == main)
+        .map(|e| {
+            e.js_lib == lib && e.setup_script == setup && e.main_js == main && e.timeout == timeout
+        })
         .unwrap_or(false);
     if same {
         let entry = guard.entries.get(key).unwrap();
@@ -161,7 +190,7 @@ pub fn get_or_create(
     }
     guard.entries.remove(key);
     guard.order.retain(|k| k != key);
-    let (engine, main_ok, lib_ok) = init_engine(key, lib, setup, main)?;
+    let (engine, main_ok, lib_ok) = init_engine(key, lib, setup, main, timeout)?;
     guard.entries.insert(
         key.to_string(),
         Entry {
@@ -169,6 +198,7 @@ pub fn get_or_create(
             js_lib: lib.to_string(),
             setup_script: setup.to_string(),
             main_js: main.to_string(),
+            timeout,
             main_js_ok: main_ok,
             js_lib_ok: lib_ok,
         },
@@ -232,5 +262,35 @@ mod tests {
         )
         .unwrap();
         assert_eq!(second.lock().unwrap().eval("marker()").unwrap(), "2");
+    }
+
+    /// 批21a：单次求值预算参与缓存键比较——同预算复用同一引擎，
+    /// 换预算（None ↔ 30s）必须重建，既有 `get_or_create` 语义逐字不变。
+    #[test]
+    fn timeout_participates_in_cache_key() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        clear_for_tests();
+        let (a, _, _) = get_or_create_with_timeout(
+            "timeout-key",
+            None,
+            None,
+            None,
+            Some(Duration::from_secs(30)),
+        )
+        .unwrap();
+        let (b, _, _) = get_or_create_with_timeout(
+            "timeout-key",
+            None,
+            None,
+            None,
+            Some(Duration::from_secs(30)),
+        )
+        .unwrap();
+        assert!(Arc::ptr_eq(&a, &b), "同预算必须复用同一引擎");
+        assert_eq!(a.lock().unwrap().eval("1 + 1").unwrap(), "2");
+
+        let (c, _, _) = get_or_create_with_timeout("timeout-key", None, None, None, None).unwrap();
+        assert!(!Arc::ptr_eq(&a, &c), "换预算必须重建引擎");
+        assert_eq!(c.lock().unwrap().eval("2 + 2").unwrap(), "4");
     }
 }

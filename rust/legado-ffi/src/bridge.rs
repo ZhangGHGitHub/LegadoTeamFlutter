@@ -635,6 +635,24 @@ pub unsafe extern "C" fn ffi_rss_fetch_articles(source_url: *const c_char) -> *m
     }))
 }
 
+/// RSS 阅读 WebView `preloadJs` 宿主桥单入口（契约 §2.5，批21a，加法式）
+///
+/// C-ABI 兼容入口：`method` / `args_json` 为 UTF-8 C 串；返回 JSON 信封
+/// 字符串（`{"ok":bool,"value":…,"error":…,"actions":[…]?}`）。
+#[no_mangle]
+pub unsafe extern "C" fn ffi_rss_web_view_host_call(
+    source_url: *const c_char,
+    method: *const c_char,
+    args_json: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let source_url = c_char_to_str(source_url)?;
+        let method = c_char_to_str(method)?;
+        let args_json = c_char_to_str(args_json)?;
+        crate::api::rss_web_bridge::rss_web_view_host_call(source_url, method, args_json)
+    }))
+}
+
 // ─── RSS 收藏 FFI 函数 ─────────────────────────────────────
 
 /// 获取所有 RSS 收藏

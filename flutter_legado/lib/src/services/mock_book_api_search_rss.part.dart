@@ -592,6 +592,17 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
     return '';
   }
 
+  /// RSS 阅读 WebView 宿主桥（Mock：无 WebView/Rust 引擎，返回未支持信封）
+  ///
+  /// 不伪造宿主调用结果，保持与 Rust 侧 `ok:false` 信封同形（契约 §2.5，批21a）。
+  @override
+  Future<String> rssWebViewHostCall(
+    String sourceUrl,
+    String method,
+    String argsJson,
+  ) async =>
+      '{"ok":false,"value":null,"error":"Mock 不支持 RSS WebView 宿主桥调用"}';
+
   // ========== RSS 已读记录 ==========
 
   final Set<String> _rssReadLinks = {};

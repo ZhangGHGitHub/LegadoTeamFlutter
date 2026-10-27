@@ -43,6 +43,8 @@ pub mod review_api;
 pub mod rss;
 pub mod rss_read_record_api;
 pub mod rss_star_api;
+/// [批21a | 2026-10-27] RSS 阅读 WebView `preloadJs` 宿主桥（契约 §2.5）
+pub mod rss_web_bridge;
 pub mod rule_sub_api;
 pub mod search;
 pub mod search_history_api;

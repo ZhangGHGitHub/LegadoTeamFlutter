@@ -389,6 +389,21 @@ mixin RustApiSearchRss on RustApiDecode implements BookApi {
   Future<String> rssFetchContent(String sourceUrl, String link, {String? sort}) =>
       bridge.rssFetchContent(sourceUrl: sourceUrl, link: link, sort: sort);
 
+  /// RSS 阅读 WebView `preloadJs` 宿主桥单入口 RPC（契约 §2.5，批21a）
+  ///
+  /// 纯 FFI 透传：WebView 通道/握手/动作转发属批21b。
+  @override
+  Future<String> rssWebViewHostCall(
+    String sourceUrl,
+    String method,
+    String argsJson,
+  ) =>
+      bridge.rssWebViewHostCall(
+        sourceUrl: sourceUrl,
+        method: method,
+        argsJson: argsJson,
+      );
+
   // ========== RSS 已读记录 ==========
 
   /// 标记 RSS 文章为已读（批20：扩展 type/sort/image/pubDate/durPos）

@@ -110,6 +110,44 @@ impl<'a> CacheRepository<'a> {
         Ok(())
     }
 
+    /// 按 key 前缀读取缓存（批21a：RSS WebView 宿主桥变量快照）
+    ///
+    /// 前缀比较用 `substr(key, 1, length(?1)) = ?1` 而非 `LIKE`：书源/RSS
+    /// 源 URL 普遍含 `_`，`LIKE` 的 `_` 通配会跨源命中（与
+    /// [`Self::delete_source_variables`] 登记的上游缺陷同源），而本方法
+    /// 服务于**跨源隔离**的变量快照，必须精确前缀；`length`/`substr` 均为
+    /// SQLite 字符语义，UTF-8 前缀安全。
+    ///
+    /// 过期行跳过（只读路径零副作用），返回按 key 升序。
+    pub fn list_by_prefix(&self, prefix: &str) -> LegadoResult<Vec<(String, String)>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT key, value, deadline FROM caches
+                 WHERE substr(key, 1, length(?1)) = ?1 ORDER BY key ASC",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备前缀查询失败: {e}")))?;
+        let rows = stmt
+            .query_map(params![prefix], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                ))
+            })
+            .map_err(|e| LegadoError::Database(format!("前缀查询失败: {e}")))?;
+        let now = current_time_millis();
+        let mut out = Vec::new();
+        for row in rows {
+            let (key, value, deadline) =
+                row.map_err(|e| LegadoError::Database(format!("前缀查询行解析失败: {e}")))?;
+            if deadline == 0 || deadline > now {
+                out.push((key, value));
+            }
+        }
+        Ok(out)
+    }
+
     /// 删除指定书源 / RSS 源关联的**全部运行时缓存族**（P1-2，批10 审查）
     ///
     /// 逐条照抄原版 `CacheDao.deleteSourceVariables`（
@@ -208,6 +246,33 @@ mod tests {
         let repo = CacheRepository::new(&conn);
         repo.put("key1", "value1", 0).unwrap();
         assert_eq!(repo.get("key1").unwrap(), Some("value1".to_string()));
+    }
+
+    /// 批21a：前缀查询必须精确（URL 含 `_` 时不得按 LIKE 通配跨源命中），
+    /// 且跳过过期行（只读零副作用）。
+    #[test]
+    fn test_list_by_prefix_is_exact_and_skips_expired() {
+        let conn = setup_db();
+        let repo = CacheRepository::new(&conn);
+        let url_a = "https://a.example.com/source_x";
+        let url_b = "https://a.example.com/sourceX";
+        repo.put(&format!("v_{url_a}_k"), "a", 0).unwrap();
+        repo.put(&format!("v_{url_b}_k"), "b", 0).unwrap();
+        repo.put(&format!("v_{url_a}_expired"), "gone", 1).unwrap();
+        // 直接把 deadline 改到过去，避免依赖 sleep
+        conn.execute(
+            "UPDATE caches SET deadline = 1 WHERE key = ?1",
+            params![format!("v_{url_a}_expired")],
+        )
+        .unwrap();
+
+        let prefix = format!("v_{url_a}_");
+        let rows = repo.list_by_prefix(&prefix).unwrap();
+        assert_eq!(
+            rows,
+            vec![(format!("v_{url_a}_k"), "a".to_string())],
+            "精确前缀 + 过期行跳过: {rows:?}"
+        );
     }
 
     #[test]

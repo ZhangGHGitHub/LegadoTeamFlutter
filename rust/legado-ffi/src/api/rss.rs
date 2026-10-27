@@ -290,7 +290,10 @@ fn article_js_json(row: &legado_db::RssArticleRecord) -> String {
 }
 
 /// 读取 RSS 源（全字段；不存在返回 `Ok(None)`）
-fn load_rss_source(source_url: &str) -> LegadoResult<Option<RssSource>> {
+///
+/// 批21a：提升为 crate 可见，供 RSS WebView 宿主桥（`rss_web_bridge`）
+/// 复用同一加载口径。
+pub(crate) fn load_rss_source(source_url: &str) -> LegadoResult<Option<RssSource>> {
     with_database(|db| {
         let repo = RssSourceRepository::new(db.connection());
         repo.find_by_url(source_url)
