@@ -1,7 +1,6 @@
-﻿import 'dart:io';
-
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
+import '../utils/webview_support.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter/services.dart';
@@ -53,9 +52,8 @@ class _BrowserScreenState extends State<BrowserScreen> {
   /// HTTP 错误判定时与 request URL 匹配用）
   String _embeddedStartedUrl = '';
 
-  /// 当前平台是否支持内嵌 WebView（对齐 rss_article_detail_screen 判定）
-  bool get _webViewSupported =>
-      Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
+  /// 当前平台是否支持内嵌 WebView（统一判定见 [isWebViewPlatformSupported]）
+  bool get _webViewSupported => isWebViewPlatformSupported;
 
   static const _jsSnippets = <String, String>{
     '获取页面标题': 'document.title',

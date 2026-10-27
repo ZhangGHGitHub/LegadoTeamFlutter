@@ -11,6 +11,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../routes.dart';
 import '../utils/legado_deep_link.dart';
 import '../utils/video_play_utils.dart';
+import '../utils/webview_support.dart';
 import '../widgets/open_url_confirm_dialog.dart';
 import 'deep_link_service.dart';
 import 'platform_channel.dart';
@@ -119,9 +120,8 @@ class PlatformBridgeService {
     '正在验证',
   ];
 
-  /// 当前平台是否具备真实 WebView 能力（对齐 rss_article_detail_screen 判定）
-  bool get _webViewSupported =>
-      Platform.isAndroid || Platform.isIOS || Platform.isMacOS;
+  /// 当前平台是否具备真实 WebView 能力（统一判定见 [isWebViewPlatformSupported]）
+  bool get _webViewSupported => isWebViewPlatformSupported;
 
   NavigatorState? get _navigator => navigatorKey.currentState;
 

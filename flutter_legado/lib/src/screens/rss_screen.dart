@@ -13,6 +13,7 @@ import '../providers/rss/rss_notifier.dart';
 import '../providers/rss_history/rss_history_notifier.dart';
 import '../routes.dart';
 import '../services/rss_web_config.dart';
+import '../utils/webview_support.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4] 下拉 M3 化
@@ -268,9 +269,10 @@ class _RssScreenState extends ConsumerState<RssScreen> {
   ///
   /// - `singleUrl`：先经 `rssSortUrls` 取首项 URL（`@js:`/`::`/缓存已由
   ///   Rust 处理；对齐 `RssViewModel.getSingleUrl`，`RssViewModel.kt:48-80`），
-  ///   失败回退 `sourceUrl`；http(s) 走站内阅读 WebView（对齐
-  ///   `RssFragment.kt:180-196` 的 `ReadRssActivity.start(..., url)`），
-  ///   其余交系统处理；
+  ///   失败回退 `sourceUrl`；http(s) 且平台支持 WebView 时走站内阅读
+  ///   （对齐 `RssFragment.kt:180-196` 的 `ReadRssActivity.start(..., url)`），
+  ///   不支持 WebView 的桌面端保持 `AppRoutes.browser` 自动外开（批19 审查
+  ///   P1：避免 Windows/Linux 落进详情页「暂无内容」空态），其余交系统处理；
   /// - 非 `singleUrl` 且配置了静态 `startHtml`：直接打开起始页阅读
   ///   （对齐 `launchRssWithHtml`；`@js:`/`<js>` 求值无 FFI，登记 15g）；
   /// - 否则进入文章列表。
@@ -281,20 +283,32 @@ class _RssScreenState extends ConsumerState<RssScreen> {
       if (rssIsHttpUrl(url)) {
         // 批15g④：http(s) singleUrl 与原版一致走站内阅读 WebView
         // （URL 直开模式，详情页按源 singleUrl 强制加载该地址）。
-        await Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => RssArticleDetailScreen(
-              article: RssFeedArticle(
-                title: source.sourceName,
-                url: url,
+        // 批19 审查 P1：WebView 不支持的桌面端不能进详情页（否则落到
+        // 「暂无内容」空态），保持原路径经内置浏览器页自动外开。
+        if (isWebViewPlatformSupported) {
+          await Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => RssArticleDetailScreen(
+                article: RssFeedArticle(
+                  title: source.sourceName,
+                  url: url,
+                ),
+                source: source,
+                sourceName: source.sourceName,
+                sourceUrl: source.sourceUrl,
+                // 原版该入口无 rssArticle：隐藏收藏与文章头部（P2-4）
+                singleUrlDirect: true,
               ),
-              source: source,
-              sourceName: source.sourceName,
-              sourceUrl: source.sourceUrl,
             ),
-          ),
-        );
+          );
+        } else {
+          await Navigator.pushNamed(
+            context,
+            AppRoutes.browser,
+            arguments: url,
+          );
+        }
         return;
       }
       final uri = Uri.tryParse(url);

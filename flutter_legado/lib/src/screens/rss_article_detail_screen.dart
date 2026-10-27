@@ -1,11 +1,11 @@
 ﻿import 'dart:async';
-import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../constants/pref_keys.dart';
+import '../utils/webview_support.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -60,12 +60,26 @@ class RssArticleDetailScreen extends ConsumerStatefulWidget {
   /// 为 null 时（如阅读记录入口）仅本页使用。
   final void Function(String description)? onContentFetched;
 
+  /// 是否为订阅源列表 `singleUrl` 直开（原版 `ReadRssActivity.start(..., url)`）
+  ///
+  /// 原版该入口没有 `rssArticle`：`ReadRssActivity.kt:461` 按
+  /// `starMenuItem?.isVisible = viewModel.rssArticle != null` 隐藏收藏，
+  /// 且 `activity_rss_read.xml` 只有标题栏 + WebView，没有文章头部。
+  /// 本页复用文章详情布局时按该标记隐藏收藏与文章头部，避免出现原版
+  /// 不存在的入口（批19 审查 P2-4）。
+  final bool singleUrlDirect;
+
   /// 测试专用：强制 WebView 平台判定（null 表示按真实平台判定）
   ///
   /// 桌面测试宿主不支持 webview_flutter，无法真实创建控制器；P0-1 用例
   /// 通过该开关 + 假 `WebViewPlatform` 验证起始页渲染分支。
   @visibleForTesting
-  static bool? debugWebViewSupportedOverride;
+  static bool? get debugWebViewSupportedOverride =>
+      debugGetWebViewSupportedOverride();
+
+  @visibleForTesting
+  static set debugWebViewSupportedOverride(bool? value) =>
+      debugSetWebViewSupportedOverride(value);
 
   const RssArticleDetailScreen({
     super.key,
@@ -75,6 +89,7 @@ class RssArticleDetailScreen extends ConsumerStatefulWidget {
     this.source,
     this.startHtml,
     this.onContentFetched,
+    this.singleUrlDirect = false,
   });
 
   @override
@@ -120,12 +135,10 @@ class _RssArticleDetailScreenState
 
   /// 判断当前平台是否支持 WebView
   ///
-  /// webview_flutter 目前支持 Android / iOS / macOS，
-  /// Windows / Linux 桌面端暂不支持，降级为纯文本渲染。
+  /// 统一走 [isWebViewPlatformSupported]（Android / iOS / macOS），
+  /// Windows / Linux 桌面端降级为纯文本渲染。
   /// 测试可经 [RssArticleDetailScreen.debugWebViewSupportedOverride] 覆盖。
-  bool get _isWebViewSupported =>
-      RssArticleDetailScreen.debugWebViewSupportedOverride ??
-      (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
+  bool get _isWebViewSupported => isWebViewPlatformSupported;
 
   /// 是否处于 `startHtml` 起始页模式（批15f 审查 P0-1）
   ///
@@ -157,7 +170,8 @@ class _RssArticleDetailScreenState
   void initState() {
     super.initState();
     _isResolvingSource = widget.source == null && widget.sourceUrl.isNotEmpty;
-    _loadStarState();
+    // singleUrl 直开（原版无 rssArticle）不提供收藏入口，无需读取收藏态
+    if (!widget.singleUrlDirect) _loadStarState();
     // 批15f：先解析源配置，再决定渲染路径（正文 / 规则正文 / URL 直开）
     unawaited(_bootstrapReading());
   }
@@ -742,11 +756,16 @@ $htmlContent
         title: const Text('文章详情'),
         actions: [
           // [UI-fix v2.0.2 | 2026-08-06] 收藏入口（对标原版 menu_rss_star）— Qoder
-          IconButton(
-            icon: Icon(_isStarred ? Symbols.star_rounded : Symbols.star_rounded),
-            tooltip: _isStarred ? '取消收藏' : '收藏',
-            onPressed: _starBusy ? null : _toggleStar,
-          ),
+          // 批19 审查 P2-4：singleUrl 直开（原版 rssArticle == null）隐藏收藏，
+          // 对齐 ReadRssActivity.kt:461 `starMenuItem?.isVisible = rssArticle != null`
+          if (!widget.singleUrlDirect)
+            IconButton(
+              icon: Icon(
+                _isStarred ? Symbols.star_rounded : Symbols.star_rounded,
+              ),
+              tooltip: _isStarred ? '取消收藏' : '收藏',
+              onPressed: _starBusy ? null : _toggleStar,
+            ),
           // 切换渲染模式按钮（仅在支持 WebView、有正文且非起始页时显示）
           if (_isWebViewSupported && html != null && !_startHtmlMode)
             IconButton(
@@ -787,7 +806,9 @@ $htmlContent
     return Column(
       children: [
         // 文章头部信息（标题、日期、来源、封面图）
-        _buildArticleHeader(theme, colorScheme),
+        // 批19 审查 P2-4：singleUrl 直开对齐原版布局（无文章头部），避免
+        // 「大标题 = 源名 + 元信息 = 源名」重复
+        if (!widget.singleUrlDirect) _buildArticleHeader(theme, colorScheme),
         // 文章内容区域
         Expanded(
           child: _buildArticleContent(context, theme, colorScheme, html),

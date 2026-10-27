@@ -13,119 +13,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-// webview_flutter_platform_interface 是 webview_flutter 的传递依赖，
-// 测试仅用它注入最小平台假实现（不改 pubspec）。
-// ignore: depend_on_referenced_packages
-import 'package:webview_flutter_platform_interface/webview_flutter_platform_interface.dart';
 
 import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/rss_article_detail_screen.dart';
 
+import '../mocks/fake_webview_platform.dart';
 import '../mocks/mocks.dart';
-
-/// 最小 WebViewPlatform 假实现（仅满足控制器/组件创建与加载调用）
-class _FakeWebViewPlatform extends WebViewPlatform {
-  @override
-  PlatformWebViewController createPlatformWebViewController(
-    PlatformWebViewControllerCreationParams params,
-  ) => _FakeWebViewController(params);
-
-  @override
-  PlatformNavigationDelegate createPlatformNavigationDelegate(
-    PlatformNavigationDelegateCreationParams params,
-  ) => _FakeNavigationDelegate(params);
-
-  @override
-  PlatformWebViewWidget createPlatformWebViewWidget(
-    PlatformWebViewWidgetCreationParams params,
-  ) => _FakeWebViewWidget(params);
-}
-
-/// 假控制器：记录加载的 HTML，JS 调用全部 no-op
-class _FakeWebViewController extends PlatformWebViewController {
-  _FakeWebViewController(super.params) : super.implementation() {
-    lastCreated = this;
-  }
-
-  /// 最近创建的控制器（供用例断言 UA/HTML 等调用参数）
-  static _FakeWebViewController? lastCreated;
-
-  String? loadedHtml;
-  String? loadedBaseUrl;
-  String? userAgent;
-
-  @override
-  Future<void> setJavaScriptMode(JavaScriptMode javaScriptMode) async {}
-
-  @override
-  Future<void> setUserAgent(String? userAgent) async {
-    this.userAgent = userAgent;
-  }
-
-  @override
-  Future<void> setPlatformNavigationDelegate(
-    PlatformNavigationDelegate handler,
-  ) async {}
-
-  @override
-  Future<void> loadHtmlString(String html, {String? baseUrl}) async {
-    loadedHtml = html;
-    loadedBaseUrl = baseUrl;
-  }
-
-  @override
-  Future<void> runJavaScript(String javaScript) async {}
-
-  @override
-  Future<Object> runJavaScriptReturningResult(String javaScript) async => '';
-}
-
-/// 假导航代理（详情页只把代理挂到控制器，不会回调）
-class _FakeNavigationDelegate extends PlatformNavigationDelegate {
-  _FakeNavigationDelegate(super.params) : super.implementation();
-
-  @override
-  Future<void> setOnNavigationRequest(
-    NavigationRequestCallback onNavigationRequest,
-  ) async {}
-
-  @override
-  Future<void> setOnPageStarted(PageEventCallback onPageStarted) async {}
-
-  @override
-  Future<void> setOnPageFinished(PageEventCallback onPageFinished) async {}
-
-  @override
-  Future<void> setOnUrlChange(UrlChangeCallback onUrlChange) async {}
-
-  @override
-  Future<void> setOnWebResourceError(
-    WebResourceErrorCallback onWebResourceError,
-  ) async {}
-}
-
-/// 假 WebView 组件（占位，不创建原生视图）
-class _FakeWebViewWidget extends PlatformWebViewWidget {
-  _FakeWebViewWidget(super.params) : super.implementation();
-
-  @override
-  Widget build(BuildContext context) => const SizedBox.shrink();
-}
 
 void main() {
   late MockRustApi mockApi;
 
   setUpAll(() {
     registerFallbacks();
-    WebViewPlatform.instance = _FakeWebViewPlatform();
+    WebViewPlatform.instance = FakeWebViewPlatform();
   });
 
   setUp(() {
     mockApi = MockRustApi();
     SharedPreferences.setMockInitialValues({});
-    _FakeWebViewController.lastCreated = null;
+    FakeWebViewController.lastCreated = null;
     when(() => mockApi.isStarred(any())).thenAnswer((_) async => false);
   });
 
@@ -218,7 +126,7 @@ void main() {
       await pumpScreen(tester, startHtml: '<html><body>起始页</body></html>');
 
       expect(
-        _FakeWebViewController.lastCreated?.userAgent,
+        FakeWebViewController.lastCreated?.userAgent,
         'GlobalUA/1.0',
         reason: '源 header 未配置 UA 时必须读取全局 UserAgent 设置',
       );
@@ -236,7 +144,7 @@ void main() {
         header: 'User-Agent: HeaderUA/2.0',
       );
 
-      expect(_FakeWebViewController.lastCreated?.userAgent, 'HeaderUA/2.0');
+      expect(FakeWebViewController.lastCreated?.userAgent, 'HeaderUA/2.0');
     });
   });
 }
