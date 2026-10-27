@@ -73,8 +73,10 @@ String? _preloadScriptTag(String? preloadJs, String? preloadScript) {
 /// `document.title=41..45`）。因此清洗规则调整为：
 /// 1. `parse(html)` 构建 DOM（HTML5 容忍解析；浏览器渲染同一字符串得到同一
 ///    树，因此不存在「词法扫描看不到但浏览器执行」的残余标签）；
-/// 2. **整体删除 `<svg>`、`<math>` 子树**（阅读场景可接受；登记功能损失），
-///    从根上消除 foreign content 序列化差异；
+/// 2. **整体删除 `<svg>`、`<math>`、`<plaintext>` 子树**（阅读场景可接受；
+///    登记功能损失）：foreign content 的序列化差异是 mXSS 根因；
+///    `plaintext` 无结束标签语义（序列化补 `</plaintext>` 后被解析器当
+///    文本吞掉，逐轮增长破坏不动点，批21g P2-1）；
 /// 3. 删除所有 `script` 元素（含外链/内联/自闭合）；`noscript` 内容按
 ///    HTML5 解析为 rawtext（不执行脚本），保留；
 /// 4. 删除 `<meta http-equiv=refresh>`（可触发非用户手势导航）与 CSP meta
@@ -96,7 +98,8 @@ String? _preloadScriptTag(String? preloadJs, String? preloadScript) {
 /// 相对批21d 修正 `<style>/<title>/<textarea>/<noscript>` 内字面 `<script>`
 /// 被误删的问题（rawtext/RCDATA 语义下它们不是元素；`<pre>` 内未转义
 /// `<script>` 是真实元素，浏览器同样执行，仍删除）。**SVG/MathML 内容整体
-/// 丢失**为批21f 安全优先的功能损失（含 SVG 图片/公式）。
+/// 丢失**为批21f 安全优先的功能损失（含 SVG 图片/公式）；**`<plaintext>`
+/// 子树整体丢失**为批21g 不动点修复的功能损失。
 String rssStripPageScripts(String html) {
   if (html.isEmpty) return html;
   var current = html;
@@ -123,14 +126,20 @@ String rssStripPageScripts(String html) {
 String _rssStripPageScriptsOnce(String html) {
   final document = html_parser.parse(html);
 
-  // 1) 整体删除 foreign content 根（SVG/MathML）：其子树在序列化时可能
-  //    按 HTML rawtext 输出，是批21f 终审 mXSS 的根源。
-  final foreignRoots = <dom.Element>[];
+  // 1) 整体删除 foreign content 根（SVG/MathML）与 `<plaintext>`：
+  //    foreign content 子树在序列化时可能按 HTML rawtext 输出（批21f
+  //    终审 mXSS 根源）；`plaintext` 更特殊——序列化会补 `</plaintext>`，
+  //    而解析器不会再识别结束标签（其内容吞到 EOF），逐轮解析/序列化会
+  //    不断增长，破坏 `strip(strip(x)) == strip(x)` 不动点（批21g P2-1）。
+  //    两者在阅读场景均可接受整体删除（登记为功能损失）。
+  final removedRoots = <dom.Element>[];
   for (final element in document.querySelectorAll('*')) {
     final tag = element.localName;
-    if (tag == 'svg' || tag == 'math') foreignRoots.add(element);
+    if (tag == 'svg' || tag == 'math' || tag == 'plaintext') {
+      removedRoots.add(element);
+    }
   }
-  for (final element in foreignRoots) {
+  for (final element in removedRoots) {
     element.remove();
   }
 
@@ -174,7 +183,8 @@ String _rssStripPageScriptsOnce(String html) {
 /// 口径与 [rssStripPageScripts] 一致：用同一 HTML5 解析器重新解析后，
 /// 以下任一存在即不安全：
 /// - `script` 元素（含外链/内联）；
-/// - `svg` / `math` 元素（foreign content 子树）；
+/// - `svg` / `math` / `plaintext` 元素（foreign content 子树 / 吞文档的
+///   rawtext 根）；
 /// - `on*` 内联事件、`srcdoc`；
 /// - URL 属性命中危险 scheme（`iframe`/`object`/`embed` 拒绝全部 `data:`）；
 /// - `meta http-equiv=refresh` / CSP meta。
@@ -185,7 +195,7 @@ bool isSanitizedHtmlSafe(String html) {
   if (document.querySelectorAll('script').isNotEmpty) return false;
   for (final element in document.querySelectorAll('*')) {
     final tag = element.localName;
-    if (tag == 'svg' || tag == 'math') return false;
+    if (tag == 'svg' || tag == 'math' || tag == 'plaintext') return false;
     if (tag == 'meta' && _rssIsBlockedMeta(element)) return false;
     final rejectAllData = _rssEmbeddedDocumentTags.contains(tag);
     for (final entry in element.attributes.entries) {
@@ -329,67 +339,301 @@ bool _rssIsDangerousUrlValue(String value, {bool rejectAllData = false}) {
 /// 正文/起始页 HTML 后处理（对齐 `ReadRssViewModel.clHtml`）
 ///
 /// 1. 预注入脚本非空（[preloadScript] 优先，其次 [preloadJs]）：插入
-///    `</head>` 前（有 `<head>` 时在开标签后；否则补 `<head>…</head>`
-///    到最前）；
-/// 2. 已存在 `</style>`：`style` 非空白时紧跟其后插入 `<style>{style}</style>`；
+///    真实 `<head>` 开标签后（无 `<head>` 时补 `<head>…</head>` 到最前）；
+/// 2. 已存在真实 `</style>`：`style` 非空白时紧跟其后插入
+///    `<style>{style}</style>`；
 /// 3. 无 `</style>`：`style` 非空白用 `style`，否则用默认移动端样式，
-///    插入 `</head>` 前；无 `</head>` 则插到最前。
+///    插入真实 `</head>` 前；无 `</head>` 则插到最前。
+///
+/// 批21g P3-4：插入点由 [_rssFindTagPositions] 定位——跳过注释与
+/// rawtext/RCDATA（`script`/`style`/`xmp`/`iframe`/`noembed`/`noframes`/
+/// `noscript`/`plaintext`/`title`/`textarea`）内的**字面**标签，避免把
+/// 应用脚本/样式注入文本节点（例如 `<title></head></title>`、
+/// `<xmp></body></xmp>` 中的伪结束标签）。本函数只做字符串插入、**不**
+/// 重新序列化正文，因此对未清洗 HTML 也不会引入 DOM 往返 mXSS。
 String rssClHtml(
   String content, {
   String? style,
   String? preloadJs,
   String? preloadScript,
 }) {
-  final buffer = StringBuffer();
+  final positions = _rssFindTagPositions(content);
   final scriptTag = _preloadScriptTag(preloadJs, preloadScript);
+  var html = content;
+  var styleCloseEnd = positions.firstStyleCloseEnd;
+  var headCloseStart = positions.headCloseStart;
   if (scriptTag != null) {
-    final headIndex = content.indexOf('<head>');
-    if (headIndex >= 0) {
-      buffer.write(content.substring(0, headIndex + 6));
-      buffer.write(scriptTag);
-      buffer.write(content.substring(headIndex + 6));
+    final headOpenEnd = positions.headOpenEnd;
+    if (headOpenEnd != null) {
+      html = '${content.substring(0, headOpenEnd)}$scriptTag'
+          '${content.substring(headOpenEnd)}';
+      // 后面的插入点整体后移（脚本标签长度）
+      final shift = scriptTag.length;
+      if (styleCloseEnd != null && styleCloseEnd >= headOpenEnd) {
+        styleCloseEnd += shift;
+      }
+      if (headCloseStart != null && headCloseStart >= headOpenEnd) {
+        headCloseStart += shift;
+      }
     } else {
-      buffer.write('<head>$scriptTag</head>');
-      buffer.write(content);
+      final prefix = '<head>$scriptTag</head>';
+      html = '$prefix$content';
+      final shift = prefix.length;
+      if (styleCloseEnd != null) styleCloseEnd += shift;
+      // 补出的 head：样式插到其 `</head>` 前（与旧实现一致）
+      headCloseStart = shift - '</head>'.length;
     }
-  } else {
-    buffer.write(content);
   }
-  final html = buffer.toString();
-  final styleEndIndex = html.indexOf('</style>');
   final trimmedStyle = style?.trim() ?? '';
-  if (styleEndIndex >= 0) {
+  if (styleCloseEnd != null) {
     if (trimmedStyle.isEmpty) return html;
-    final insertAt = styleEndIndex + 8; // '</style>'.length
-    return '${html.substring(0, insertAt)}<style>$trimmedStyle</style>'
-        '${html.substring(insertAt)}';
+    return '${html.substring(0, styleCloseEnd)}<style>$trimmedStyle</style>'
+        '${html.substring(styleCloseEnd)}';
   }
   final finalStyle = trimmedStyle.isEmpty
       ? kRssDefaultContentStyle
       : trimmedStyle;
-  final headEndIndex = html.indexOf('</head>');
-  if (headEndIndex >= 0) {
-    return '${html.substring(0, headEndIndex)}<style>$finalStyle</style>'
-        '${html.substring(headEndIndex)}';
+  if (headCloseStart != null) {
+    return '${html.substring(0, headCloseStart)}<style>$finalStyle</style>'
+        '${html.substring(headCloseStart)}';
   }
   return '<style>$finalStyle</style>$html';
 }
 
 /// 起始页注入 `startJs`（对齐 `ReadRssViewModel.loadStartHtml`）
 ///
-/// `startJs` 空白时原样返回；有 `</body>` 时插在其前，否则包装
+/// `startJs` 空白时原样返回；有真实 `</body>` 时插在其前，否则包装
 /// `<body>{html}<script>{js}</script></body>`。脚本正文不 trim（与原版一致，
 /// 仅用 trim 判定空）。
+///
+/// 批21g P3-4：`</body>` 同样跳过 rawtext/RCDATA/注释内的字面标签，
+/// 避免脚本被注入文本节点而完全不执行。
 String rssInjectStartJs(String startHtml, String? startJs) {
   final js = startJs ?? '';
   if (js.trim().isEmpty) return startHtml;
-  final bodyEndIndex = startHtml.indexOf('</body>');
-  if (bodyEndIndex >= 0) {
-    return '${startHtml.substring(0, bodyEndIndex)}<script>$js</script>'
-        '${startHtml.substring(bodyEndIndex)}';
+  final bodyCloseStart = _rssFindTagPositions(startHtml).bodyCloseStart;
+  if (bodyCloseStart != null) {
+    return '${startHtml.substring(0, bodyCloseStart)}<script>$js</script>'
+        '${startHtml.substring(bodyCloseStart)}';
   }
   return '<body>$startHtml<script>$js</script></body>';
 }
+
+/// 文档内真实标签位置（批21g P3-4）
+///
+/// 只用于选择字符串插入点，不改写正文。解析口径是 HTML5 tokenizer 的
+/// 简化版：跳过注释/声明/伪注释，按 rawtext/RCDATA 语义跳过文本内容，
+/// 属性扫描区分引号与无引号值（与包 `html` 的容忍解析一致）。
+class _RssTagPositions {
+  /// 首个真实 `<head>` 开标签结束后的下标
+  int? headOpenEnd;
+
+  /// 首个真实 `</head>` 起始下标
+  int? headCloseStart;
+
+  /// 首个真实 `</body>` 起始下标
+  int? bodyCloseStart;
+
+  /// 首个真实 `</style>` 结束后的下标
+  int? firstStyleCloseEnd;
+}
+
+/// 无结束标签语义（内容吞到 EOF）
+const String _rssPlaintextTag = 'plaintext';
+
+/// rawtext 元素（内容不按标签解析，直到匹配的结束标签）
+const Set<String> _rssRawTextTags = <String>{
+  'script',
+  'style',
+  'xmp',
+  'iframe',
+  'noembed',
+  'noframes',
+  'noscript',
+  _rssPlaintextTag,
+};
+
+/// RCDATA 元素（内容不按标签解析，实体仍解码）
+const Set<String> _rssRcdataTags = <String>{
+  'title',
+  'textarea',
+};
+
+_RssTagPositions _rssFindTagPositions(String html) {
+  final positions = _RssTagPositions();
+  final length = html.length;
+  var i = 0;
+  while (i < length) {
+    final lt = html.indexOf('<', i);
+    if (lt < 0) break;
+    if (html.startsWith('<!--', lt)) {
+      i = _rssSkipComment(html, lt);
+      continue;
+    }
+    // 声明/伪注释（`<!DOCTYPE>`/`<!x ">`/`<?x ">`）：浏览器在首个 `>` 结束
+    if (html.startsWith('<!', lt) || html.startsWith('<?', lt)) {
+      final gt = html.indexOf('>', lt + 2);
+      i = gt < 0 ? length : gt + 1;
+      continue;
+    }
+    if (html.startsWith('</', lt)) {
+      final nameStart = lt + 2;
+      final nameEnd = _rssTagNameEnd(html, nameStart);
+      final name = html.substring(nameStart, nameEnd).toLowerCase();
+      final gt = _rssTagEnd(html, nameEnd);
+      if (gt < 0) break;
+      if (name == 'head' && positions.headCloseStart == null) {
+        positions.headCloseStart = lt;
+      } else if (name == 'body' && positions.bodyCloseStart == null) {
+        positions.bodyCloseStart = lt;
+      } else if (name == 'style' && positions.firstStyleCloseEnd == null) {
+        positions.firstStyleCloseEnd = gt + 1;
+      }
+      i = gt + 1;
+      continue;
+    }
+    final nameStart = lt + 1;
+    final nameEnd = _rssTagNameEnd(html, nameStart);
+    if (nameEnd == nameStart) {
+      // 孤立的 `<`：按普通文本跳过
+      i = lt + 1;
+      continue;
+    }
+    final name = html.substring(nameStart, nameEnd).toLowerCase();
+    final gt = _rssTagEnd(html, nameEnd);
+    if (gt < 0) break;
+    if (name == 'head' && positions.headOpenEnd == null) {
+      positions.headOpenEnd = gt + 1;
+    }
+    if (_rssRawTextTags.contains(name) || _rssRcdataTags.contains(name)) {
+      if (name == _rssPlaintextTag) {
+        // plaintext 无结束标签语义：剩余文档全部是文本
+        break;
+      }
+      final closeEnd = _rssFindRawTextCloseEnd(html, gt + 1, name);
+      if (closeEnd < 0) {
+        // 未闭合的 rawtext/RCDATA：后续内容全在文本里
+        break;
+      }
+      if (name == 'style' && positions.firstStyleCloseEnd == null) {
+        positions.firstStyleCloseEnd = closeEnd;
+      }
+      i = closeEnd;
+      continue;
+    }
+    i = gt + 1;
+  }
+  return positions;
+}
+
+/// 跳过注释（HTML5 容忍语义：`<!-->`/`<!--->` 是空注释）
+int _rssSkipComment(String html, int start) {
+  final length = html.length;
+  var i = start + 4;
+  if (i >= length) return length;
+  if (html.codeUnitAt(i) == 0x3E) return i + 1; // <!-->
+  if (i + 1 < length &&
+      html.codeUnitAt(i) == 0x2D &&
+      html.codeUnitAt(i + 1) == 0x3E) {
+    return i + 2; // <!--->
+  }
+  final normal = html.indexOf('-->', i);
+  final bang = html.indexOf('--!>', i);
+  if (normal < 0 && bang < 0) return length; // 未闭合注释吞到 EOF
+  if (normal < 0) return bang + 4;
+  if (bang < 0) return normal + 3;
+  return normal <= bang ? normal + 3 : bang + 4;
+}
+
+/// 标签名结束位置（空白、`/`、`>` 或 EOF）
+int _rssTagNameEnd(String html, int start) {
+  final length = html.length;
+  var i = start;
+  while (i < length) {
+    final c = html.codeUnitAt(i);
+    if (_rssIsTagWhitespace(c) || c == 0x2F || c == 0x3E) break;
+    i++;
+  }
+  return i;
+}
+
+/// 标签结束 `>` 的位置（属性扫描；引号/无引号值与 HTML5 一致）
+int _rssTagEnd(String html, int start) {
+  final length = html.length;
+  var i = start;
+  while (i < length) {
+    final c = html.codeUnitAt(i);
+    if (c == 0x3E) return i;
+    if (_rssIsTagWhitespace(c) || c == 0x2F) {
+      i++;
+      continue;
+    }
+    // 属性名
+    final nameStart = i;
+    while (i < length) {
+      final d = html.codeUnitAt(i);
+      if (_rssIsTagWhitespace(d) || d == 0x2F || d == 0x3E || d == 0x3D) {
+        break;
+      }
+      i++;
+    }
+    if (i == nameStart) {
+      i++;
+      continue;
+    }
+    while (i < length && _rssIsTagWhitespace(html.codeUnitAt(i))) {
+      i++;
+    }
+    if (i >= length) return -1;
+    if (html.codeUnitAt(i) != 0x3D) continue; // 无属性值
+    i++; // '='
+    while (i < length && _rssIsTagWhitespace(html.codeUnitAt(i))) {
+      i++;
+    }
+    if (i >= length) return -1;
+    final quote = html.codeUnitAt(i);
+    if (quote == 0x22 || quote == 0x27) {
+      i++;
+      while (i < length && html.codeUnitAt(i) != quote) {
+        i++;
+      }
+      if (i < length) i++;
+      continue;
+    }
+    // 无引号属性值：到空白或 `>` 结束（`<div x=a">` 中的引号属于值）
+    while (i < length) {
+      final d = html.codeUnitAt(i);
+      if (_rssIsTagWhitespace(d) || d == 0x3E) break;
+      i++;
+    }
+  }
+  return -1;
+}
+
+/// 匹配 rawtext/RCDATA 结束标签后的位置（无匹配返回 -1）
+int _rssFindRawTextCloseEnd(String html, int from, String name) {
+  final length = html.length;
+  var i = from;
+  while (i < length) {
+    final lt = html.indexOf('</', i);
+    if (lt < 0) return -1;
+    final nameStart = lt + 2;
+    final nameEnd = _rssTagNameEnd(html, nameStart);
+    if (nameEnd - nameStart == name.length &&
+        html.substring(nameStart, nameEnd).toLowerCase() == name) {
+      final gt = _rssTagEnd(html, nameEnd);
+      if (gt < 0) return -1;
+      return gt + 1;
+    }
+    i = lt + 2;
+  }
+  return -1;
+}
+
+/// HTML5 标签内空白（空格 / `\t` / `\n` / `\f` / `\r`）
+bool _rssIsTagWhitespace(int c) =>
+    c == 0x20 || c == 0x09 || c == 0x0A || c == 0x0C || c == 0x0D;
+
 
 /// 原版 `String?.isTrue()` 口径（`StringExtensions.kt:76-83`）
 ///

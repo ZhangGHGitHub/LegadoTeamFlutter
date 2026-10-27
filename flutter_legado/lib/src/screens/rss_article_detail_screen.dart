@@ -495,6 +495,10 @@ class _RssArticleDetailScreenState
           // 批21e P3-2：加载失败后同 URL 重试必须重新走 onPageStarted
           // （否则「URL + 文档代数」去重会把重试当成同文档重复回调）
           _lastStartedKey = null;
+          // 批21g P3-5：主框架加载失败 → 本代文档已不可用，停止握手看门狗，
+          // 避免对已失败的页面每 4s 空转重发 hello；同 URL 重试触发的
+          // onPageStarted 会重新 beginNavigation 并臂看门狗。
+          _rssBridge?.beginNavigation(bridgeInjected: false);
           if (mounted) {
             setState(() {
               _isWebLoading = false;
