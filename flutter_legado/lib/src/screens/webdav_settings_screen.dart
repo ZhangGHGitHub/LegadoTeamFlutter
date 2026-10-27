@@ -24,6 +24,7 @@ import '../providers/theme/theme_notifier.dart';
 import '../routes.dart';
 import '../services/crash_log_service.dart';
 import '../services/restore_ignore_prefs.dart';
+import '../services/server_service.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_server_service.dart';
 import '../utils/error_message.dart';
@@ -468,8 +469,25 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
       pathToRestore = await _backupPathSkippingLocalBooks(backupPath);
     }
 
+    final serverService = ServerService(api: api, settings: _settings);
+    // 批18a：远程书库服务器密码以 servers 表为准；恢复旧备份时按 DB 既有
+    // id / url+username 保留本机密码（读失败退回旧偏好，不阻断恢复）
+    LocalServerPasswordIndex? localPasswords;
     if (!isZip) {
-      await RestoreIgnorePrefs.applyAppPrefsFromBackupFile(backupPath, ignore);
+      try {
+        localPasswords = await serverService.localPasswordIndex();
+      } catch (e) {
+        debugPrint('读取本机服务器密码索引失败（退回旧偏好）：$e');
+      }
+    }
+
+    if (!isZip) {
+      await RestoreIgnorePrefs.applyAppPrefsFromBackupFile(
+        backupPath,
+        ignore,
+        localPasswordsById: localPasswords?.byId,
+        localPasswordsByEndpoint: localPasswords?.byEndpoint,
+      );
     }
     await api.restore(pathToRestore, password: password);
     // 偏好已由上面写回本地；v1/v2 备份把恢复所得账号显式覆盖到 DB
@@ -477,6 +495,16 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     await ref
         .read(syncNotifierProvider.notifier)
         .applyLegacyWebDavPrefsAfterRestore(source: accountSource);
+    // 批18a：旧格式备份（无 servers 段或仅 id=-1）携带 remote_servers 时，
+    // 恢复后强制重跑一次 prefs → servers 表迁移；失败只记日志不阻断恢复
+    if (!isZip &&
+        await ServerService.backupNeedsLegacyRemoteServerMigration(backupPath)) {
+      try {
+        await serverService.migrateLegacyPrefs(force: true);
+      } catch (e) {
+        debugPrint('远程书库服务器迁移失败（恢复已完成）：$e');
+      }
+    }
     if (!mounted) return;
     await _reloadPrefsAfterRestore();
   }

@@ -27,6 +27,10 @@ class RemoteBookItem {
 }
 
 /// 远程书库自定义服务器（对齐原版 Server + WebDavConfig）
+///
+/// 批18a 起数据源为 servers 表（`id > 0`，`type = WEBDAV`）；`id = 0` 表示
+/// 新建（由 Rust 分配主键）。[isValid] = false 表示该行 config 非法
+/// （单行容错，仍可展示/编辑/删除）。
 class RemoteServerConfig {
   final int id;
   final String name;
@@ -34,12 +38,20 @@ class RemoteServerConfig {
   final String username;
   final String password;
 
+  /// servers 表排序号（编辑时原样保留；新建为 0）
+  final int sortNumber;
+
+  /// config 是否可解析为可用 WebDAV 配置
+  final bool isValid;
+
   const RemoteServerConfig({
     required this.id,
     required this.name,
     required this.url,
     this.username = '',
     this.password = '',
+    this.sortNumber = 0,
+    this.isValid = true,
   });
 
   factory RemoteServerConfig.fromJson(Map<String, dynamic> json) {
@@ -49,6 +61,7 @@ class RemoteServerConfig {
       url: (json['url'] as String?) ?? '',
       username: (json['username'] as String?) ?? '',
       password: (json['password'] as String?) ?? '',
+      sortNumber: (json['sortNumber'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -66,6 +79,8 @@ class RemoteServerConfig {
     String? url,
     String? username,
     String? password,
+    int? sortNumber,
+    bool? isValid,
   }) =>
       RemoteServerConfig(
         id: id ?? this.id,
@@ -73,6 +88,8 @@ class RemoteServerConfig {
         url: url ?? this.url,
         username: username ?? this.username,
         password: password ?? this.password,
+        sortNumber: sortNumber ?? this.sortNumber,
+        isValid: isValid ?? this.isValid,
       );
 }
 

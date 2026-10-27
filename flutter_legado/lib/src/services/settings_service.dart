@@ -416,9 +416,9 @@ class SettingsService {
   static const _keyLastSyncTime = 'sync_last_time';
   // 远程书库服务器（对齐原版 servers 表 + AppConfig.remoteServerId）
   //
-  // [批17c P2-3] 仍为 legacy prefs 形态（`RemoteBookNotifier` 在用，尚未切
-  // servers 表）：元素含 `password` 明文，故备份时做**值净化**（剥掉密码）
-  // 而非整键排除——非敏感字段（id/name/url/username）仍可随备份迁移。
+  // [批18a] 服务器列表已迁到 servers 表（`ServerService` 读写）；本键仅作为
+  // **一次性迁移来源**保留（旧数据/回滚安全），新代码不再写入。迁移标记为
+  // `remote_servers_migrated`。`remote_server_id` 仍是当前选中 id 的权威偏好。
   static const remoteServersKey = 'remote_servers';
   static const _keyRemoteServers = remoteServersKey;
   static const _keyRemoteServerId = 'remote_server_id';
@@ -521,6 +521,9 @@ class SettingsService {
   }
 
   /// 远程书库自定义服务器列表 JSON（`[{id,name,url,username,password}]`）
+  ///
+  /// [批18a] 仅由 `ServerService.migrateLegacyPrefs` 读取（一次性迁移来源）；
+  /// 服务器列表的权威来源是 servers 表，本方法不再用于业务读写。
   Future<String> getRemoteServersJson() async {
     try {
       final prefs = await SharedPreferences.getInstance();

@@ -4,9 +4,10 @@ import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
-import '../../bridge/ffi.dart';
 import '../../models/book.dart';
+import '../../services/server_service.dart';
 import '../../services/settings_service.dart';
+import '../../utils/error_message.dart';
 import '../providers.dart';
 import '../sync/sync_notifier.dart';
 import 'remote_book_state.dart';
@@ -17,6 +18,9 @@ export 'remote_book_state.dart';
 ///
 /// 对齐原版 RemoteBookActivity：WebDAV 服务器切换 + 目录浏览 + 下载导入。
 /// 列举：`webdavListDir`；导入：`webdavDownloadFile` → `importLocalBook`。
+///
+/// 批18a：服务器列表数据源切到 servers 表（经 [ServerService]），不再读写
+/// `remote_servers` 旧偏好；`id = -1`（默认 WebDAV 同步账号）不在本页展示。
 class RemoteBookNotifier extends Notifier<RemoteBookState> {
   final SettingsService _settings = SettingsService();
 
@@ -34,58 +38,98 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
   RemoteBookState build() => const RemoteBookState();
 
   /// 初始化：加载服务器列表与当前选中，并拉取目录
+  ///
+  /// DB 读取失败时进入错误态（页面展示原因），不抛给调用方。
   Future<void> init() async {
-    final servers = await _loadServers();
-    final serverId = await _settings.getRemoteServerId();
-    state = state.copyWith(
-      servers: servers,
-      serverId: serverId,
-      dirStack: const [],
-      selectedPaths: {},
-      clearError: true,
-    );
+    try {
+      final servers = await _loadServers();
+      final serverId = await _settings.getRemoteServerId();
+      state = state.copyWith(
+        servers: servers,
+        // 选中项已不存在/配置无效 → 回退默认 WebDAV（仅改内存状态，
+        // 不覆盖用户偏好，对齐原版 isDefaultWebdav 语义）
+        serverId: _normalizeServerId(serverId, servers),
+        dirStack: const [],
+        selectedPaths: {},
+        clearError: true,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        servers: const [],
+        isLoading: false,
+        items: const [],
+        error: errorMessage(e),
+      );
+      return;
+    }
     await refresh();
   }
 
-  Future<List<RemoteServerConfig>> _loadServers() async {
-    try {
-      final raw = await _settings.getRemoteServersJson();
-      final list = jsonDecode(raw);
-      if (list is! List) return [];
-      return list
-          .whereType<Map>()
-          .map((e) => RemoteServerConfig.fromJson(Map<String, dynamic>.from(e)))
-          .toList();
-    } catch (_) {
-      return [];
+  /// 选中 id 有效性归一：不存在 / config 无效 / url 为空 → 默认 WebDAV（-1）
+  int _normalizeServerId(int id, List<RemoteServerConfig> servers) {
+    if (id == SettingsService.defaultRemoteServerId) return id;
+    for (final server in servers) {
+      if (server.id != id) continue;
+      if (!server.isValid || server.url.trim().isEmpty) {
+        return SettingsService.defaultRemoteServerId;
+      }
+      return id;
     }
+    return SettingsService.defaultRemoteServerId;
   }
 
-  Future<void> _persistServers(List<RemoteServerConfig> servers) async {
-    await _settings.setRemoteServersJson(
-      jsonEncode(servers.map((e) => e.toJson()).toList()),
-    );
+  ServerService _serverService() => ServerService(
+        api: ref.read(bookApiProvider),
+        settings: _settings,
+      );
+
+  /// 从 servers 表加载自定义服务器（过滤 `id = -1` 默认 WebDAV）
+  Future<List<RemoteServerConfig>> _loadServers() async {
+    final rows = await _serverService().listServers();
+    return [
+      for (final row in rows)
+        if (row.id != SettingsService.defaultRemoteServerId)
+          RemoteServerConfig(
+            id: row.id,
+            name: row.name,
+            url: row.url,
+            username: row.username,
+            password: row.password,
+            sortNumber: row.sortNumber,
+            isValid: row.isValid,
+          ),
+    ];
+  }
+
+  RemoteServerConfig? _findServer(int id) {
+    for (final s in state.servers) {
+      if (s.id == id) return s;
+    }
+    return null;
+  }
+
+  /// 当前是否实际使用默认 WebDAV（选中 id = -1，或选中项不存在/无效）
+  bool get _isDefaultServerActive {
+    if (state.serverId == SettingsService.defaultRemoteServerId) return true;
+    final server = _findServer(state.serverId);
+    return server == null || !server.isValid || server.url.trim().isEmpty;
   }
 
   /// 构建当前服务器的 WebDavConfig JSON
+  ///
+  /// 选中 id 在列表中不存在（或该行 config 无效）时**回退默认 WebDAV**，
+  /// 对齐原版 `RemoteBookViewModel.initData`（`serverDao.get(id)` 为空 →
+  /// `AppWebDav.defaultBookWebDav`）与参考版 `RemoteBookRepository.getWebDav`。
   Future<String?> buildActiveConfigJson() async {
-    if (state.serverId == SettingsService.defaultRemoteServerId) {
+    final server = _isDefaultServerActive ? null : _findServer(state.serverId);
+    if (server == null) {
       final sync = ref.read(syncNotifierProvider.notifier);
       await sync.loadConfig();
       final s = ref.read(syncNotifierProvider);
       if (!s.isConfigured) return null;
       return sync.buildConfigJson();
     }
-    RemoteServerConfig? server;
-    for (final s in state.servers) {
-      if (s.id == state.serverId) {
-        server = s;
-        break;
-      }
-    }
-    if (server == null) return null;
     var url = server.url.trim();
-    if (url.isEmpty) return null;
     if (!url.endsWith('/')) url = '$url/';
     return jsonEncode({
       'url': url,
@@ -96,9 +140,10 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
   }
 
   Future<void> selectServer(int id) async {
-    await _settings.setRemoteServerId(id);
+    final serverId = _normalizeServerId(id, state.servers);
+    await _settings.setRemoteServerId(serverId);
     state = state.copyWith(
-      serverId: id,
+      serverId: serverId,
       dirStack: const [],
       selectedPaths: {},
       clearError: true,
@@ -106,30 +151,59 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
     await refresh();
   }
 
-  Future<void> saveServer(RemoteServerConfig server) async {
-    final list = [...state.servers];
-    final idx = list.indexWhere((e) => e.id == server.id);
-    if (idx >= 0) {
-      list[idx] = server;
-    } else {
-      list.add(server);
+  /// 新建/编辑服务器（走 servers 表）；返回是否成功
+  ///
+  /// 失败时把可读原因写入 [RemoteBookState.error]（UI 以 SnackBar 明示），
+  /// 不抛给调用方。
+  Future<bool> saveServer(RemoteServerConfig server) async {
+    try {
+      await _serverService().saveServer(
+        id: server.id,
+        name: server.name,
+        url: server.url,
+        username: server.username,
+        password: server.password,
+      );
+      final servers = await _loadServers();
+      state = state.copyWith(
+        servers: servers,
+        serverId: _normalizeServerId(state.serverId, servers),
+        clearError: true,
+      );
+      return true;
+    } catch (e) {
+      state = state.copyWith(error: errorMessage(e));
+      return false;
     }
-    await _persistServers(list);
-    state = state.copyWith(servers: list);
   }
 
-  Future<void> deleteServer(int id) async {
-    final list = state.servers.where((e) => e.id != id).toList();
-    await _persistServers(list);
-    var serverId = state.serverId;
-    if (serverId == id) {
-      serverId = SettingsService.defaultRemoteServerId;
-      await _settings.setRemoteServerId(serverId);
+  /// 删除服务器（走 servers 表）；返回是否成功
+  Future<bool> deleteServer(int id) async {
+    try {
+      await _serverService().deleteServer(id);
+    } catch (e) {
+      state = state.copyWith(error: errorMessage(e));
+      return false;
     }
-    state = state.copyWith(servers: list, serverId: serverId);
-    if (state.serverId == SettingsService.defaultRemoteServerId ||
-        state.serverId == id) {
-      await refresh();
+    try {
+      final servers = await _loadServers();
+      var serverId = state.serverId;
+      if (serverId == id) {
+        serverId = SettingsService.defaultRemoteServerId;
+        await _settings.setRemoteServerId(serverId);
+      }
+      state = state.copyWith(
+        servers: servers,
+        serverId: _normalizeServerId(serverId, servers),
+        clearError: true,
+      );
+      if (state.serverId == SettingsService.defaultRemoteServerId) {
+        await refresh();
+      }
+      return true;
+    } catch (e) {
+      state = state.copyWith(error: errorMessage(e));
+      return false;
     }
   }
 
@@ -141,9 +215,8 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
         state = state.copyWith(
           isLoading: false,
           items: const [],
-          error: state.serverId == SettingsService.defaultRemoteServerId
-              ? '请先在备份设置中配置默认 WebDAV，或在「服务器配置」中添加服务器'
-              : '服务器配置无效',
+          // 选中项缺失/无效已回退默认 WebDAV，此处只剩「默认也未配置」
+          error: '请先在备份设置中配置默认 WebDAV，或在「服务器配置」中添加服务器',
         );
         return;
       }
@@ -317,7 +390,7 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
         final syncNotifier = ref.read(syncNotifierProvider.notifier);
         await syncNotifier.loadConfig();
         final sync = ref.read(syncNotifierProvider);
-        final remoteUrl = state.serverId == SettingsService.defaultRemoteServerId
+        final remoteUrl = _isDefaultServerActive
             ? '${sync.webDavUrl}${syncNotifier.normalizedRemoteDir}${item.relativePath}'
             : item.relativePath;
         await api.updateBook(book.copyWith(
@@ -341,10 +414,7 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
     }
   }
 
-  String _mapError(Object e) {
-    if (e is BridgeError) return e.message;
-    return e.toString();
-  }
+  String _mapError(Object e) => errorMessage(e);
 }
 
 final remoteBookNotifierProvider =

@@ -7,10 +7,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
+import 'src/providers/providers.dart';
 import 'src/routes.dart';
+import 'src/services/book_api.dart';
 import 'src/services/crash_log_service.dart';
 import 'src/services/mock_book_api.dart';
 import 'src/services/rust_api.dart';
+import 'src/services/server_service.dart';
 
 void main() {
   runZonedGuarded(() async {
@@ -40,20 +43,17 @@ void main() {
     //（bookApiProvider 随后取同一 FFI 句柄）。
     sw = Stopwatch()..start();
     const useMock = bool.fromEnvironment('USE_MOCK', defaultValue: false);
+    late final BookApi startupApi;
     try {
       if (useMock) {
-        final rustApi = MockBookApi();
-        await Future.wait([
-          SharedPreferences.getInstance(),
-          rustApi.initialize(),
-        ]);
+        startupApi = MockBookApi();
       } else {
-        final realApi = RustApi();
-        await Future.wait([
-          SharedPreferences.getInstance(),
-          realApi.initialize(),
-        ]);
+        startupApi = RustApi();
       }
+      await Future.wait([
+        SharedPreferences.getInstance(),
+        startupApi.initialize(),
+      ]);
     } catch (e, stack) {
       CrashLogService.instance.logError(e, stack);
       debugPrint('[Legado] 初始化失败：$e');
@@ -62,16 +62,30 @@ void main() {
     }
     debugPrint('[启动] 并行初始化（prefs+FFI）耗时：${sw.elapsedMilliseconds}ms');
 
-    // 5. 冷启动始终经闪屏路由（对齐 WelcomeActivity；时长 0 则立即进主页）
+    // 5. 远程书库服务器：legacy prefs（remote_servers）→ servers 表一次性迁移
+    //（批18a）。失败只记崩溃日志，不阻断启动；标记已置时直接跳过。
+    sw = Stopwatch()..start();
+    try {
+      await ServerService(api: startupApi).migrateLegacyPrefs();
+      debugPrint('[启动] 远程书库服务器迁移耗时：${sw.elapsedMilliseconds}ms');
+    } catch (e, stack) {
+      CrashLogService.instance.logError(e, stack);
+      debugPrint('[启动] 远程书库服务器迁移失败（不阻断启动）：$e');
+    }
+
+    // 6. 冷启动始终经闪屏路由（对齐 WelcomeActivity；时长 0 则立即进主页）
     const initialRoute = AppRoutes.welcome;
 
     debugPrint('[启动] 总启动耗时：${totalSw.elapsedMilliseconds}ms');
     
-    // 6. 启动应用（传入崩溃日志）
+    // 7. 启动应用（传入崩溃日志）
     // ProviderScope 为 Riverpod 全局作用域：全部状态管理已迁移至 Riverpod Notifier
     // （主题/书架/书源/RSS/阅读统计/同步/书签/替换规则/定时任务/阅读器/搜索/发现等）
+    // bookApiProvider 复用启动期实例：Mock 模式下保证内存态一致（迁移结果可见），
+    // 真实模式复用同一已初始化句柄。
     runApp(
       ProviderScope(
+        overrides: [bookApiProvider.overrideWithValue(startupApi)],
         child: LegadoApp(initialRoute: initialRoute, lastCrashLog: lastCrash),
       ),
     );

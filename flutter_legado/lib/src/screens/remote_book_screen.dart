@@ -297,6 +297,14 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
+  /// 服务器保存/删除失败时以 SnackBar 明示（原因由 Notifier 写入 state.error）
+  void _showServerError(BuildContext context) {
+    final message = ref.read(remoteBookNotifierProvider).error;
+    if (message == null) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _showServersDialog() async {
     await showModalBottomSheet<void>(
       context: context,
@@ -325,9 +333,9 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                         icon: const Icon(Symbols.add_rounded),
                         onPressed: () async {
                           final created = await _editServerDialog();
-                          if (created != null) {
-                            await notifier.saveServer(created);
-                          }
+                          if (created == null) return;
+                          final ok = await notifier.saveServer(created);
+                          if (!ok && ctx.mounted) _showServerError(ctx);
                         },
                       ),
                     ),
@@ -359,7 +367,10 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                                 return RadioListTile<int>(
                                   value: s.id,
                                   title: Text(s.name.isEmpty ? s.url : s.name),
-                                  subtitle: Text(s.url, maxLines: 1),
+                                  subtitle: Text(
+                                    s.isValid ? s.url : '配置无效（请编辑修复）',
+                                    maxLines: 1,
+                                  ),
                                   secondary: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
@@ -368,8 +379,11 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                                         onPressed: () async {
                                           final edited =
                                               await _editServerDialog(existing: s);
-                                          if (edited != null) {
-                                            await notifier.saveServer(edited);
+                                          if (edited == null) return;
+                                          final ok = await notifier
+                                              .saveServer(edited);
+                                          if (!ok && ctx.mounted) {
+                                            _showServerError(ctx);
                                           }
                                         },
                                       ),
@@ -395,8 +409,11 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                                               ],
                                             ),
                                           );
-                                          if (ok == true) {
-                                            await notifier.deleteServer(s.id);
+                                          if (ok != true) return;
+                                          final deleted = await notifier
+                                              .deleteServer(s.id);
+                                          if (!deleted && ctx.mounted) {
+                                            _showServerError(ctx);
                                           }
                                         },
                                       ),
@@ -422,74 +439,105 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
 
   Future<RemoteServerConfig?> _editServerDialog({
     RemoteServerConfig? existing,
-  }) async {
-    final nameCtrl = TextEditingController(text: existing?.name ?? '');
-    final urlCtrl = TextEditingController(text: existing?.url ?? '');
-    final userCtrl = TextEditingController(text: existing?.username ?? '');
-    final passCtrl = TextEditingController(text: existing?.password ?? '');
-    final result = await showDialog<RemoteServerConfig>(
+  }) {
+    return showDialog<RemoteServerConfig>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(existing == null ? '添加服务器' : '编辑服务器'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                decoration: const InputDecoration(labelText: '名称'),
-              ),
-              TextField(
-                controller: urlCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'url',
-                  hintText: 'https://dav.example.com/books/',
-                ),
-                keyboardType: TextInputType.url,
-              ),
-              TextField(
-                controller: userCtrl,
-                decoration: const InputDecoration(labelText: 'username'),
-              ),
-              TextField(
-                controller: passCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(labelText: 'password'),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              final url = urlCtrl.text.trim();
-              if (url.isEmpty) return;
-              Navigator.pop(
-                ctx,
-                RemoteServerConfig(
-                  id: existing?.id ?? DateTime.now().millisecondsSinceEpoch,
-                  name: nameCtrl.text.trim().isEmpty
-                      ? url
-                      : nameCtrl.text.trim(),
-                  url: url,
-                  username: userCtrl.text.trim(),
-                  password: passCtrl.text,
-                ),
-              );
-            },
-            child: const Text('保存'),
-          ),
-        ],
+      builder: (_) => _ServerEditDialog(existing: existing),
+    );
+  }
+}
+
+/// 添加/编辑服务器对话框
+///
+/// 控制器由 State 持有并在 [State.dispose] 释放：`showDialog` 的 Future 在
+/// 退场动画开始前就已返回，若在调用方立即 dispose 会触发
+/// 「TextEditingController was used after being disposed」。
+class _ServerEditDialog extends StatefulWidget {
+  const _ServerEditDialog({this.existing});
+
+  final RemoteServerConfig? existing;
+
+  @override
+  State<_ServerEditDialog> createState() => _ServerEditDialogState();
+}
+
+class _ServerEditDialogState extends State<_ServerEditDialog> {
+  late final TextEditingController _nameCtrl =
+      TextEditingController(text: widget.existing?.name ?? '');
+  late final TextEditingController _urlCtrl =
+      TextEditingController(text: widget.existing?.url ?? '');
+  late final TextEditingController _userCtrl =
+      TextEditingController(text: widget.existing?.username ?? '');
+  late final TextEditingController _passCtrl =
+      TextEditingController(text: widget.existing?.password ?? '');
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _urlCtrl.dispose();
+    _userCtrl.dispose();
+    _passCtrl.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final url = _urlCtrl.text.trim();
+    if (url.isEmpty) return;
+    Navigator.pop(
+      context,
+      RemoteServerConfig(
+        // 新建交给 Rust 分配主键（id = 0 语义，批18a）
+        id: widget.existing?.id ?? 0,
+        name: _nameCtrl.text.trim().isEmpty ? url : _nameCtrl.text.trim(),
+        url: url,
+        username: _userCtrl.text.trim(),
+        password: _passCtrl.text,
       ),
     );
-    nameCtrl.dispose();
-    urlCtrl.dispose();
-    userCtrl.dispose();
-    passCtrl.dispose();
-    return result;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: Text(widget.existing == null ? '添加服务器' : '编辑服务器'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: _nameCtrl,
+              decoration: const InputDecoration(labelText: '名称'),
+            ),
+            TextField(
+              controller: _urlCtrl,
+              decoration: const InputDecoration(
+                labelText: 'url',
+                hintText: 'https://dav.example.com/books/',
+              ),
+              keyboardType: TextInputType.url,
+            ),
+            TextField(
+              controller: _userCtrl,
+              decoration: const InputDecoration(labelText: 'username'),
+            ),
+            TextField(
+              controller: _passCtrl,
+              obscureText: true,
+              decoration: const InputDecoration(labelText: 'password'),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _save,
+          child: const Text('保存'),
+        ),
+      ],
+    );
   }
 }

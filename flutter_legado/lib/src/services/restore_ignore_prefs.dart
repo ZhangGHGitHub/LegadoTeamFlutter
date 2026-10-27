@@ -41,10 +41,22 @@ class RestoreIgnorePrefs {
 
   /// 需要**值净化**（而非整键排除）的偏好键 → 剥除其中敏感字段
   ///
-  /// `remote_servers` 仍是 legacy prefs 形态（`RemoteBookNotifier` 在用），
-  /// 元素含 `password` 明文：备份时剥掉密码（保留 id/name/url/username，
-  /// 便于换机后重新填密码），恢复时**不得用备份值覆盖本机密码**。
-  static const _sanitizedKeys = <String>{SettingsService.remoteServersKey};
+  /// 批18a 起远程书库服务器改由 servers 表承载（备份 v3+ 的 `servers` 段），
+  /// `remote_servers` 旧偏好**不再导出**（见 [backupExcludedKeys]），因此本
+  /// 清单已清空；保留机制供后续敏感偏好接入。
+  static const _sanitizedKeys = <String>{};
+
+  /// 新备份**不导出**的偏好键（仅备份侧排除；恢复旧备份时仍会读取）
+  ///
+  /// - `remote_servers`：批18a 起服务器列表以 servers 表为准，新备份由
+  ///   `servers` 段承载；旧备份仍可能携带该键，恢复侧继续读取并写入 DB
+  ///   （见 `ServerService.migrateLegacyPrefs`）。
+  ///
+  /// 与 [alwaysIgnoreKeys] 的区别：本清单**不影响恢复侧**（旧备份兼容），
+  /// 因此不能塞进 [alwaysIgnoreKeys]。
+  static const backupExcludedKeys = <String>{
+    SettingsService.remoteServersKey,
+  };
 
   /// 阅读界面相关键（对齐 BackupConfig.readPrefKeys + Flutter 阅读偏好）
   static const readPrefKeys = <String>{
@@ -141,6 +153,7 @@ class RestoreIgnorePrefs {
     final prefs = await SharedPreferences.getInstance();
     final out = <String, dynamic>{};
     for (final key in prefs.getKeys()) {
+      if (backupExcludedKeys.contains(key)) continue;
       if (!keyIsNotIgnore(key, ignore)) continue;
       final value = prefs.get(key);
       if (value == null) continue;
@@ -158,10 +171,8 @@ class RestoreIgnorePrefs {
 
   /// 敏感偏好值净化（备份侧）：剥除秘密字段后返回，非法形态返回 null
   ///
-  /// 当前仅 `remote_servers`（JSON 数组字符串）：逐元素保留
-  /// `id`/`name`/`url`/`username` 与其它非敏感键，**删除 `password` 键**
-  ///（键名大小写不敏感，见 [_stripServerSecrets]；仅顶层本应用 schema）。
-  /// 非 JSON 数组形态 → null（不写入备份）。
+  /// 批18a 起 `remote_servers` 整键不导出，本方法暂无调用方（保留给后续
+  /// 需要「保留非敏感字段」的敏感偏好）；非 JSON 数组形态 → null。
   static String? sanitizePrefValue(String key, Object value) {
     if (key != SettingsService.remoteServersKey) return null;
     final servers = _decodeRemoteServers(value);
@@ -196,31 +207,44 @@ class RestoreIgnorePrefs {
   /// 条目取回 password；备份里没有对应本机条目时密码置空（由用户重填）。
   /// 备份侧已净化（无 password 字段），此处仍显式忽略备份中的 password，
   /// 防止旧版备份/第三方备份携带明文口令覆盖本机设置。
-  static Future<String?> mergeRemoteServersFromBackup(Object value) async {
+  ///
+  /// 批18a：本机密码的权威来源是 servers 表。恢复流程传入
+  /// [localPasswordsById] / [localPasswordsByEndpoint]（`ServerService`
+  /// 读取 DB 生成）；两者均为 null 时回退到旧偏好（兼容直接调用方/测试）。
+  static Future<String?> mergeRemoteServersFromBackup(
+    Object value, {
+    Map<int, String>? localPasswordsById,
+    Map<String, String>? localPasswordsByEndpoint,
+  }) async {
     final backupServers = _decodeRemoteServers(value);
     if (backupServers == null) return null;
-    final prefs = await SharedPreferences.getInstance();
-    final localServers = _decodeRemoteServers(
-          prefs.getString(SettingsService.remoteServersKey) ?? '',
-        ) ??
-        const [];
-    final localPasswordsById = <int, String>{};
-    final localPasswordsByEndpoint = <String, String>{};
-    for (final local in localServers) {
-      final password = local['password'];
-      if (password is! String || password.isEmpty) continue;
-      final id = local['id'];
-      if (id is int) localPasswordsById[id] = password;
-      localPasswordsByEndpoint[
-          _endpointKeyOf(local['url'], local['username'])] = password;
+    var passwordsById = localPasswordsById ?? const <int, String>{};
+    var passwordsByEndpoint =
+        localPasswordsByEndpoint ?? const <String, String>{};
+    if (localPasswordsById == null && localPasswordsByEndpoint == null) {
+      final prefs = await SharedPreferences.getInstance();
+      final localServers = _decodeRemoteServers(
+            prefs.getString(SettingsService.remoteServersKey) ?? '',
+          ) ??
+          const [];
+      final byId = <int, String>{};
+      final byEndpoint = <String, String>{};
+      for (final local in localServers) {
+        final password = local['password'];
+        if (password is! String || password.isEmpty) continue;
+        final id = local['id'];
+        if (id is int) byId[id] = password;
+        byEndpoint[_endpointKeyOf(local['url'], local['username'])] = password;
+      }
+      passwordsById = byId;
+      passwordsByEndpoint = byEndpoint;
     }
     final merged = backupServers.map((server) {
       final out = _stripServerSecrets(server);
       final id = out['id'];
-      final localPassword =
-          (id is int ? localPasswordsById[id] : null) ??
-              localPasswordsByEndpoint[
-                  _endpointKeyOf(out['url'], out['username'])];
+      final localPassword = (id is int ? passwordsById[id] : null) ??
+          passwordsByEndpoint[
+              _endpointKeyOf(out['url'], out['username'])];
       if (localPassword != null && localPassword.isNotEmpty) {
         out['password'] = localPassword;
       }
@@ -257,10 +281,15 @@ class RestoreIgnorePrefs {
   }
 
   /// 将备份中的 appPrefs 写入 SharedPreferences（按 ignore 过滤）
+  ///
+  /// [localPasswordsById] / [localPasswordsByEndpoint] 供 `remote_servers`
+  /// 恢复时取回本机（servers 表）既有密码；不传时回退旧偏好。
   static Future<void> applyFromBackup(
     Map<String, dynamic>? appPrefs,
-    Map<String, bool> ignore,
-  ) async {
+    Map<String, bool> ignore, {
+    Map<int, String>? localPasswordsById,
+    Map<String, String>? localPasswordsByEndpoint,
+  }) async {
     if (appPrefs == null || appPrefs.isEmpty) return;
     final prefs = await SharedPreferences.getInstance();
     for (final entry in appPrefs.entries) {
@@ -268,10 +297,14 @@ class RestoreIgnorePrefs {
       if (!keyIsNotIgnore(key, ignore)) continue;
       final value = entry.value;
       try {
-        // [批17c P2-3] 远程书库：只恢复非敏感字段，密码保留本机既有值
+        // 批17c P2-3 / 批18a：远程书库只恢复非敏感字段，密码保留本机
         //（备份值即使携带 password 也一律忽略）
         if (key == SettingsService.remoteServersKey) {
-          final merged = await mergeRemoteServersFromBackup(value);
+          final merged = await mergeRemoteServersFromBackup(
+            value,
+            localPasswordsById: localPasswordsById,
+            localPasswordsByEndpoint: localPasswordsByEndpoint,
+          );
           if (merged != null) {
             await prefs.setString(key, merged);
           }
@@ -324,8 +357,10 @@ class RestoreIgnorePrefs {
   /// 从备份 JSON 读取并应用 appPrefs（不改动供 Rust restore 的文件）
   static Future<void> applyAppPrefsFromBackupFile(
     String backupPath,
-    Map<String, bool> ignore,
-  ) async {
+    Map<String, bool> ignore, {
+    Map<int, String>? localPasswordsById,
+    Map<String, String>? localPasswordsByEndpoint,
+  }) async {
     if (!backupPath.toLowerCase().endsWith('.json')) return;
     try {
       final file = await _readJsonMap(backupPath);
@@ -337,7 +372,12 @@ class RestoreIgnorePrefs {
       } else if (raw is Map) {
         appPrefs = raw.map((k, v) => MapEntry('$k', v));
       }
-      await applyFromBackup(appPrefs, ignore);
+      await applyFromBackup(
+        appPrefs,
+        ignore,
+        localPasswordsById: localPasswordsById,
+        localPasswordsByEndpoint: localPasswordsByEndpoint,
+      );
     } catch (e) {
       debugPrint('RestoreIgnorePrefs.applyAppPrefsFromBackupFile 异常: $e');
     }
