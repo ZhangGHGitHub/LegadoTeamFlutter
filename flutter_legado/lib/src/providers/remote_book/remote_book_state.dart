@@ -111,6 +111,12 @@ class RemoteBookState {
   final int? importedCount;
   final String? error;
 
+  /// 服务器 Sheet 内联错误（保存/删除失败原因）
+  ///
+  /// 与 [error] 分离：Sheet 贴底弹出时 SnackBar 会被遮挡，服务器操作失败
+  /// 改在 Sheet 内列表上方内联展示；页面级 [error] 仍用于目录列举/导入。
+  final String? serverError;
+
   const RemoteBookState({
     this.isLoading = false,
     this.isImporting = false,
@@ -124,6 +130,7 @@ class RemoteBookState {
     this.servers = const [],
     this.importedCount,
     this.error,
+    this.serverError,
   });
 
   /// 展示路径（对齐原版 tvPath：默认 books/，自定义服务器从 / 起）
@@ -188,7 +195,9 @@ class RemoteBookState {
     List<RemoteServerConfig>? servers,
     int? importedCount,
     String? error,
+    String? serverError,
     bool clearError = false,
+    bool clearServerError = false,
     bool clearImported = false,
   }) {
     return RemoteBookState(
@@ -205,6 +214,8 @@ class RemoteBookState {
       importedCount:
           clearImported ? null : (importedCount ?? this.importedCount),
       error: clearError ? null : (error ?? this.error),
+      serverError:
+          clearServerError ? null : (serverError ?? this.serverError),
     );
   }
 }

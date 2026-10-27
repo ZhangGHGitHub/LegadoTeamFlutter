@@ -52,6 +52,7 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
         dirStack: const [],
         selectedPaths: {},
         clearError: true,
+        clearServerError: true,
       );
     } catch (e) {
       state = state.copyWith(
@@ -83,12 +84,15 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
         settings: _settings,
       );
 
-  /// 从 servers 表加载自定义服务器（过滤 `id = -1` 默认 WebDAV）
+  /// 从 servers 表加载自定义服务器（只保留 `id > 0`）
+  ///
+  /// 负数 id（`-1` 默认 WebDAV 及其他历史负值）不在本页展示：这些行不属于
+  /// 远程书库自定义服务器，展示后若被保存/删除会触发 Service 层拒绝。
   Future<List<RemoteServerConfig>> _loadServers() async {
     final rows = await _serverService().listServers();
     return [
       for (final row in rows)
-        if (row.id != SettingsService.defaultRemoteServerId)
+        if (row.id > 0)
           RemoteServerConfig(
             id: row.id,
             name: row.name,
@@ -153,8 +157,8 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
 
   /// 新建/编辑服务器（走 servers 表）；返回是否成功
   ///
-  /// 失败时把可读原因写入 [RemoteBookState.error]（UI 以 SnackBar 明示），
-  /// 不抛给调用方。
+  /// 失败时把可读原因写入 [RemoteBookState.serverError]（服务器 Sheet 内联
+  /// 展示，避免贴底 Sheet 遮挡 SnackBar），不抛给调用方。
   Future<bool> saveServer(RemoteServerConfig server) async {
     try {
       await _serverService().saveServer(
@@ -169,20 +173,29 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
         servers: servers,
         serverId: _normalizeServerId(state.serverId, servers),
         clearError: true,
+        clearServerError: true,
       );
       return true;
     } catch (e) {
-      state = state.copyWith(error: errorMessage(e));
+      state = state.copyWith(serverError: errorMessage(e));
       return false;
     }
   }
 
   /// 删除服务器（走 servers 表）；返回是否成功
+  ///
+  /// 目标行不存在（FFI 返回 false）时同样视为失败：提示「服务器不存在或
+  /// 已被删除」并返回 false，避免 UI 误报删除成功。
   Future<bool> deleteServer(int id) async {
+    final bool deleted;
     try {
-      await _serverService().deleteServer(id);
+      deleted = await _serverService().deleteServer(id);
     } catch (e) {
-      state = state.copyWith(error: errorMessage(e));
+      state = state.copyWith(serverError: errorMessage(e));
+      return false;
+    }
+    if (!deleted) {
+      state = state.copyWith(serverError: '服务器不存在或已被删除');
       return false;
     }
     try {
@@ -196,15 +209,21 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
         servers: servers,
         serverId: _normalizeServerId(serverId, servers),
         clearError: true,
+        clearServerError: true,
       );
       if (state.serverId == SettingsService.defaultRemoteServerId) {
         await refresh();
       }
       return true;
     } catch (e) {
-      state = state.copyWith(error: errorMessage(e));
+      state = state.copyWith(serverError: errorMessage(e));
       return false;
     }
+  }
+
+  /// 清除服务器 Sheet 的内联错误（打开 Sheet / 用户重新操作前调用）
+  void clearServerError() {
+    state = state.copyWith(clearServerError: true);
   }
 
   Future<void> refresh() async {

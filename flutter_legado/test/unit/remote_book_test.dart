@@ -192,12 +192,21 @@ void main() {
         container.read(remoteBookNotifierProvider.notifier);
     RemoteBookState readState() => container.read(remoteBookNotifierProvider);
 
-    test('列表来自 DB 并过滤 id=-1（默认 WebDAV 不在本页展示）', () async {
+    test('列表来自 DB 并过滤所有负 id（默认 WebDAV 不在本页展示）', () async {
       mockApi.seedServer(
         id: -1,
         name: '默认 WebDAV',
         config: jsonEncode({
           'url': 'https://dav.example.com/',
+          'username': 'u',
+          'password': 'p',
+        }),
+      );
+      mockApi.seedServer(
+        id: -2,
+        name: '历史负 id',
+        config: jsonEncode({
+          'url': 'https://neg.example.com/',
           'username': 'u',
           'password': 'p',
         }),
@@ -321,7 +330,7 @@ void main() {
       expect(state.error, contains('数据库不可用'));
     });
 
-    test('保存失败返回 false 并写入 error（UI 以 SnackBar 明示）', () async {
+    test('保存失败返回 false 并写入 serverError（Sheet 内联展示）', () async {
       final failing = MockRustApi();
       when(() => failing.webdavServersList()).thenAnswer((_) async => '[]');
       when(() => failing.webdavServerSave(any()))
@@ -336,6 +345,9 @@ void main() {
 
       final notifier = failContainer.read(remoteBookNotifierProvider.notifier);
       await notifier.init();
+      // 注：该 fixture 的 webdavServerSave 一律抛错，同步账号迁移会在
+      // init 阶段先写入页面级 error；此处只关心服务器操作不改变它
+      final errorBefore = failContainer.read(remoteBookNotifierProvider).error;
       final ok = await notifier.saveServer(
         const RemoteServerConfig(
           id: 0,
@@ -346,8 +358,35 @@ void main() {
 
       expect(ok, isFalse);
       expect(
-        failContainer.read(remoteBookNotifierProvider).error,
+        failContainer.read(remoteBookNotifierProvider).serverError,
         contains('写入失败'),
+      );
+      expect(
+        failContainer.read(remoteBookNotifierProvider).error,
+        errorBefore,
+        reason: '服务器操作错误不得污染页面级 error',
+      );
+    });
+
+    test('删除未命中（FFI 返回 false）提示不存在并返回 false', () async {
+      final api = MockRustApi();
+      when(() => api.webdavServersList()).thenAnswer((_) async => '[]');
+      when(() => api.webdavServerDelete(any())).thenAnswer((_) async => false);
+      when(() => api.webdavListDir(any(), any()))
+          .thenAnswer((_) async => jsonEncode([]));
+      when(() => api.getBooks()).thenAnswer((_) async => <Book>[]);
+      final container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+      );
+      addTearDown(container.dispose);
+
+      final notifier = container.read(remoteBookNotifierProvider.notifier);
+      await notifier.init();
+
+      expect(await notifier.deleteServer(999), isFalse);
+      expect(
+        container.read(remoteBookNotifierProvider).serverError,
+        '服务器不存在或已被删除',
       );
     });
   });

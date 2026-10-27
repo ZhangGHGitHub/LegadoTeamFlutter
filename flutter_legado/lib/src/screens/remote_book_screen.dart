@@ -297,15 +297,14 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
     return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
   }
 
-  /// 服务器保存/删除失败时以 SnackBar 明示（原因由 Notifier 写入 state.error）
-  void _showServerError(BuildContext context) {
-    final message = ref.read(remoteBookNotifierProvider).error;
-    if (message == null) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-  }
-
+  /// 服务器保存/删除失败在 Sheet 内联展示（原因由 Notifier 写入
+  /// [RemoteBookState.serverError]）
+  ///
+  /// 批18a 审查回修 P2：Sheet 贴底弹出时 SnackBar 会被完全遮挡，用户看不到
+  /// 失败原因；改在 Sheet 列表上方渲染内联错误行（随状态清除）。
   Future<void> _showServersDialog() async {
+    // 打开 Sheet 时清除上次遗留的内联错误
+    ref.read(remoteBookNotifierProvider.notifier).clearServerError();
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -334,12 +333,28 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                         onPressed: () async {
                           final created = await _editServerDialog();
                           if (created == null) return;
-                          final ok = await notifier.saveServer(created);
-                          if (!ok && ctx.mounted) _showServerError(ctx);
+                          await notifier.saveServer(created);
                         },
                       ),
                     ),
                     const Divider(height: 1),
+                    // 保存/删除失败的内联错误行（列表上方，不被 Sheet 遮挡）
+                    if (state.serverError != null)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+                        child: Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            state.serverError!,
+                            style: Theme.of(context)
+                                .textTheme
+                                .bodyMedium
+                                ?.copyWith(
+                                  color: Theme.of(context).colorScheme.error,
+                                ),
+                          ),
+                        ),
+                      ),
                     RadioGroup<int>(
                       groupValue: state.serverId,
                       onChanged: (v) async {
@@ -380,11 +395,7 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                                           final edited =
                                               await _editServerDialog(existing: s);
                                           if (edited == null) return;
-                                          final ok = await notifier
-                                              .saveServer(edited);
-                                          if (!ok && ctx.mounted) {
-                                            _showServerError(ctx);
-                                          }
+                                          await notifier.saveServer(edited);
                                         },
                                       ),
                                       IconButton(
@@ -410,11 +421,7 @@ class _RemoteBookScreenState extends ConsumerState<RemoteBookScreen> {
                                             ),
                                           );
                                           if (ok != true) return;
-                                          final deleted = await notifier
-                                              .deleteServer(s.id);
-                                          if (!deleted && ctx.mounted) {
-                                            _showServerError(ctx);
-                                          }
+                                          await notifier.deleteServer(s.id);
                                         },
                                       ),
                                     ],

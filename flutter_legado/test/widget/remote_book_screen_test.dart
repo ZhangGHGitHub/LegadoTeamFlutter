@@ -4,7 +4,7 @@
 /// - Sheet 从 mock DB 渲染，默认行唯一，`id=-1` 不在自定义列表重复出现；
 /// - 无效行标记「配置无效」；
 /// - 添加/编辑/删除走 servers 表；
-/// - 保存失败以 SnackBar 明示原因。
+/// - 保存失败在 Sheet 内联提示（旧实现的 SnackBar 会被贴底 Sheet 遮挡）。
 library;
 
 import 'dart:convert';
@@ -164,7 +164,7 @@ void main() {
     );
   });
 
-  testWidgets('保存失败以 SnackBar 明示原因', (tester) async {
+  testWidgets('保存失败在 Sheet 内联提示（不被贴底 Sheet 遮挡）', (tester) async {
     final failing = MockRustApi();
     when(() => failing.webdavServersList()).thenAnswer((_) async => '[]');
     when(() => failing.webdavServerSave(any()))
@@ -186,11 +186,17 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '保存'));
     await tester.pumpAndSettle();
 
-    final snackBar = find.byType(SnackBar);
-    expect(snackBar, findsOneWidget);
+    // 旧实现走 ScaffoldMessenger SnackBar：Sheet 仍开着且贴底，提示被遮挡。
+    // 新实现必须在 Sheet 内、列表上方以内联错误行展示（红→绿断言）。
+    expect(find.byType(SnackBar), findsNothing,
+        reason: '不得再用会被 Sheet 遮挡的 SnackBar');
     expect(
-      find.descendant(of: snackBar, matching: find.textContaining('写入失败')),
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.textContaining('写入失败'),
+      ),
       findsOneWidget,
+      reason: '错误文本必须在 Sheet 内可见',
     );
   });
 }
