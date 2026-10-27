@@ -2,13 +2,18 @@
 # 模拟器冒烟测试脚本（Legado Flutter 轨）
 # 流程：构建 debug APK → 安装到指定模拟器 → 启动应用 →
 #       进程存活检查 → 崩溃日志检查 →（可选）UI 元素冒烟
+#       （-CheckUI 时先自动关闭「上次运行发生崩溃」弹窗再断言，防历史
+#        崩溃存根遮蔽主界面语义）
 # 用法示例：
 #   .\scripts\emulator_smoke_test.ps1                      # 默认 emulator-5556
 #   .\scripts\emulator_smoke_test.ps1 -Device emulator-5558   # 用户验收机
 #   .\scripts\emulator_smoke_test.ps1 -SkipBuild              # 复用已有 APK
-#   .\scripts\emulator_smoke_test.ps1 -CheckUI                 # 追加 UI 元素检查
+#   .\scripts\emulator_smoke_test.ps1 -CheckUI                 # 追加 UI 元素检查（自动关崩溃弹窗）
 #   .\scripts\emulator_smoke_test.ps1 -CheckPlayback           # 追加听书前台服务检查
-# 退出码：0=通过 1=失败（可用于 CI/子代理验收门禁）
+# 退出码：0=通过；1=失败（可用于 CI/子代理验收门禁）。失败来源：
+#   设备离线 / APK 构建失败 / 安装失败 / 已装版本与 pubspec 不一致 /
+#   进程未存活 / 崩溃日志命中 / 历史崩溃弹窗无法关闭 / UI 元素未检出 /
+#   听书前台服务检查失败
 # 编写者：Reasonix ｜ 2026-08-10
 # ============================================================
 param(
@@ -43,6 +48,68 @@ $FlutterDir = (Resolve-Path $FlutterDir -ErrorAction Stop).Path
 
 function Pass([string]$msg) { $script:pass++; Write-Host "[PASS] $msg" -ForegroundColor Green }
 function Fail([string]$msg) { $script:fail++; Write-Host "[FAIL] $msg" -ForegroundColor Red }
+
+# ---- UI dump / 历史崩溃弹窗处理（批23）----
+# 背景：应用若上次崩溃，冷启动会弹出「上次运行发生崩溃」模态框
+# （CrashLogDialog / showDialog barrierDismissible=false）。弹窗会覆盖主界面，
+# 使 -CheckUI 的底栏语义文本被遮蔽（uiautomator dump 读不到或点不中），
+# 造成「UI 未渲染」的假失败。处理：UI 断言前先 dump，命中弹窗文案即点
+# 「确定」（其 onPressed 会清除 crash_log 存根，避免下次启动重复弹）；
+# 找不到「确定」节点时退回系统返回键（能关窗但不清存根）。
+$UiRemotePath = "/sdcard/ui_smoke.xml"
+$UiLocalPath = Join-Path $env:TEMP ("ui_smoke_" + ($Device -replace '[^\w\.-]', '_') + ".xml")
+
+function Get-UiDump {
+  # 部分 ROM 的 uiautomator 写完转储即自杀（输出噪声/退出码非 0），
+  # 以本地文件是否含 <hierarchy 为准，失败重试一次。
+  for ($i = 0; $i -lt 2; $i++) {
+    # 先清设备/本地旧转储，防 pull 失败时读到上一轮的 stale XML（假阳性）
+    & $adb -s $Device shell rm -f $UiRemotePath 2>&1 | Out-Null
+    if (Test-Path $UiLocalPath) { Remove-Item $UiLocalPath -Force -ErrorAction SilentlyContinue }
+    & $adb -s $Device shell uiautomator dump $UiRemotePath 2>&1 | Out-Null
+    & $adb -s $Device pull $UiRemotePath $UiLocalPath 2>&1 | Out-Null
+    if (Test-Path $UiLocalPath) {
+      $text = [System.IO.File]::ReadAllText($UiLocalPath, [System.Text.Encoding]::UTF8)
+      if ($text -match '<hierarchy') { return $text }
+    }
+    Start-Sleep -Milliseconds 500
+  }
+  return ""
+}
+
+function Test-CrashDialogXml([string]$xml) {
+  return ($xml -match '上次运行发生崩溃') -or ($xml -match '崩溃时间')
+}
+
+function Close-CrashDialogOnce {
+  # 返回值：$true=本次发现崩溃弹窗并已尝试关闭；$false=当前无弹窗
+  $xml = Get-UiDump
+  if (-not (Test-CrashDialogXml $xml)) { return $false }
+  Write-Host "==> 检测到历史崩溃弹窗，尝试关闭 ..."
+  $tap = $null
+  foreach ($m in [regex]::Matches($xml, '<node\b[^>]*>')) {
+    $tag = $m.Value
+    if ($tag -notmatch 'text="确定"' -and $tag -notmatch 'content-desc="确定"') { continue }
+    if ($tag -match 'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"') {
+      $x = [int](([int]$Matches[1] + [int]$Matches[3]) / 2)
+      $y = [int](([int]$Matches[2] + [int]$Matches[4]) / 2)
+      $tap = @($x, $y)
+      break
+    }
+  }
+  if ($tap) {
+    & $adb -s $Device shell input tap $tap[0] $tap[1] 2>&1 | Out-Null
+  } else {
+    & $adb -s $Device shell input keyevent KEYCODE_BACK 2>&1 | Out-Null
+  }
+  Start-Sleep -Seconds 2
+  if (Test-CrashDialogXml (Get-UiDump)) {
+    Fail "历史崩溃弹窗关闭失败（弹窗仍在，UI 断言可能被遮蔽）"
+  } else {
+    Pass "历史崩溃弹窗已关闭（不再遮蔽 UI 断言）"
+  }
+  return $true
+}
 
 # ---- 定位 adb（D:\Android 优先，其次环境变量，最后 PATH）----
 function Find-Adb {
@@ -147,8 +214,6 @@ else { Pass "无崩溃日志（FATAL/E/flutter）" }
 
 # ---- 7.（可选）UI 元素冒烟 ----
 if ($CheckUI) {
-  $remote = "/sdcard/ui_smoke.xml"
-  $local = Join-Path $env:TEMP "ui_smoke_$Device.xml"
   # UTF-8 字节构造底栏标签，避免 .ps1 源文件编码导致匹配失败
   $uiTabLabels = @(
     [System.Text.Encoding]::UTF8.GetString([byte[]](0xE4,0xB9,0xA6,0xE6,0x9E,0xB6)),
@@ -156,11 +221,19 @@ if ($CheckUI) {
     [System.Text.Encoding]::UTF8.GetString([byte[]](0xE8,0xAE,0xA2,0xE9,0x98,0x85)),
     [System.Text.Encoding]::UTF8.GetString([byte[]](0xE6,0x88,0x91,0xE7,0x9A,0x84))
   )
+  # 批23：断言前先关历史崩溃弹窗（弹窗在闪屏退出后才出，最多观察 3 轮）
+  $dismissed = $false
+  for ($cdTry = 0; $cdTry -lt 3; $cdTry++) {
+    if (Close-CrashDialogOnce) { $dismissed = $true; break }
+    Start-Sleep -Seconds 1
+  }
+  if (-not $dismissed) { Write-Host "==> 未检测到历史崩溃弹窗" }
+
   $found = @()
   for ($uiTry = 0; $uiTry -lt 15; $uiTry++) {
-    & $adb -s $Device shell uiautomator dump $remote 2>&1 | Out-Null
-    & $adb -s $Device pull $remote $local 2>&1 | Out-Null
-    $xmlText = [System.IO.File]::ReadAllText($local, [System.Text.Encoding]::UTF8)
+    # 弹窗也可能在轮询期间才出现：每轮先兜底关闭，关闭后重查语义树
+    if (Close-CrashDialogOnce) { Start-Sleep -Seconds 1; continue }
+    $xmlText = Get-UiDump
     $found = $uiTabLabels | Where-Object { $xmlText -match [regex]::Escape($_) }
     if ($found.Count -ge 2) { break }
     Start-Sleep -Seconds 2
