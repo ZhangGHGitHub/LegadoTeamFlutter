@@ -953,6 +953,10 @@ pub async fn delete_replace_rule(
 ///   随后 `setData` 覆盖为成功，错误提示被结果区冲掉；批23 按用户裁决
 ///   改为**直接返回错误**（`isSuccess=false`，`data=null`），不执行替换、
 ///   不写结果区；
+///   例外说明（批23b 审查 P3）：空 `pattern` 检查**先于** `text` 类型校验，
+///   因此 `text` 缺失/非字符串与空 `pattern` 同时出现时，返回「替换规则
+///   不能为空」错误信封，而不是 `text` 校验对应的 HTTP 500（空规则优先
+///   报告；边界用例见 `legacy_web_test::test_b6_test_replace_rule_semantics`）；
 /// - 正则/字面量替换复用
 ///   [`legado_core::content_processor::preview_single_rule`]（单实现：
 ///   Java 方言适配 + 超时保护 + `@js:` 执行）；规则级错误按原版

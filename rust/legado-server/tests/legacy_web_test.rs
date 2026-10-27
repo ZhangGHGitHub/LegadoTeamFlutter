@@ -3933,6 +3933,38 @@ async fn test_b6_test_replace_rule_semantics() {
         "错误时不得写结果区（原版被 setData 覆盖）: rd={rd}"
     );
 
+    // 批23b 边界（审查 P3）：空 pattern 检查先于 text 类型校验。
+    // text 缺失/非字符串与空 pattern 同时出现时，应返回「替换规则不能为空」
+    // 的 JSON 错误信封（HTTP 200），而不是 text 校验对应的未捕获异常 500。
+    for body in [
+        json!({"rule": {"pattern": "", "replacement": "X", "isRegex": false}}).to_string(),
+        json!({
+            "rule": {"pattern": "", "replacement": "X", "isRegex": false},
+            "text": 123
+        })
+        .to_string(),
+    ] {
+        let (status, _, rd) = post_write_json(
+            app.clone(),
+            "/testReplaceRule",
+            Some("application/json"),
+            &auth,
+            body.as_bytes(),
+        )
+        .await;
+        assert_eq!(
+            status,
+            StatusCode::OK,
+            "空 pattern 不得走 500 路径: rd={rd}"
+        );
+        assert_eq!(rd["isSuccess"], false, "rd={rd}");
+        assert_eq!(
+            rd["errorMsg"], "替换规则不能为空",
+            "空规则优先于坏 text 报告: rd={rd}"
+        );
+        assert!(rd["data"].is_null(), "rd={rd}");
+    }
+
     // 非法正则：错误文本作为成功数据返回（原版 catch → stackTraceStr）
     let body = json!({
         "rule": {"pattern": "(", "replacement": "x", "isRegex": true},

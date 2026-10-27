@@ -7,6 +7,7 @@
 //!   → rssRefreshArticles：规则解析、order 递减 REPLACE、hasMore
 //!   → rssLoadMoreArticles：第 2 页追加、第 3 页重复判到底
 //!   → 第 4 页部分重叠：已存在条目不重复、新条目接在水位之下（P2-5）
+//!   → 空页 + 残留 nextUrl：不得翻成 hasMore=true（批23b 审查 P1-1）
 //!   → 再次 rssRefreshArticles：clearOld 清理旧页
 //!   → rssSortUrls：@js: 求值 + 缓存命中（篡改缓存值可观察）+ rssClearSortCache
 //!   → 无 sortUrl 源：回退 [{"name":"","url":sourceUrl}]
@@ -58,6 +59,12 @@ const LIST_P3: &str = r#"<html><body>
 const LIST_P4: &str = r#"<html><body>
 <div class="item"><h2 class="title">P2-文章四</h2><a class="link" href="/a/4">四</a></div>
 <div class="item"><h2 class="title">P2-文章五</h2><a class="link" href="/a/5">五</a></div>
+</body></html>"#;
+
+/// 空页 + 残留下一页链接：0 条文章但仍有 `.next@href`（反爬/规则失配
+/// 常见形态）。旧实现会因「空写库成功」把 hasMore 翻成 true（审查 P1-1）。
+const LIST_EMPTY_WITH_NEXT: &str = r#"<html><body>
+<a class="next" href="/list?p=6">下一页</a>
 </body></html>"#;
 
 /// 跨域服务器 B 的列表页（无下一页）
@@ -263,6 +270,7 @@ fn rss_rule_pagination_sort_cache_and_login_end_to_end() {
             "/list?p=2" => ("200 OK".to_string(), LIST_P2.to_string()),
             "/list?p=3" => ("200 OK".to_string(), LIST_P3.to_string()),
             "/list?p=4" => ("200 OK".to_string(), LIST_P4.to_string()),
+            "/list?p=5" => ("200 OK".to_string(), LIST_EMPTY_WITH_NEXT.to_string()),
             "/auto-login" => (
                 "200 OK".to_string(),
                 "<html><body>未登录</body></html>".to_string(),
@@ -375,6 +383,33 @@ fn rss_rule_pagination_sort_cache_and_login_end_to_end() {
         rows.windows(2).all(|w| w[0].2 > w[1].2),
         "部分重叠页写入后 order 仍严格递减: {rows:?}"
     );
+
+    // ─── 3.6) 空页 + 残留 nextUrl：不得翻成 hasMore=true（审查 P1-1）──
+    // 反爬/选择器失配时服务端可能返回 0 条但仍保留下一页链接。旧实现
+    // `page_already_stored(&[])` → Ok(false)，空迭代写库成功 → added=true →
+    // hasMore=true，前端滚动会沿空页链持续请求。对齐上游
+    // `loadMoreSuccess:138-140` 的空页短路：本页为空即 added=false。
+    let empty_page_url = format!("{base}/list?p=5");
+    let empty_page = decode(
+        &legado_ffi::api::rss::rss_load_more_articles(&list_url, "", &empty_page_url, 5, None)
+            .expect("加载空页"),
+    );
+    assert_eq!(
+        empty_page["articles"].as_array().unwrap().len(),
+        0,
+        "空页场景: {empty_page}"
+    );
+    assert_eq!(
+        empty_page["nextUrl"].as_str(),
+        Some(format!("{base}/list?p=6").as_str()),
+        "场景必须保留残留 nextUrl（否则测不到 P1-1）: {empty_page}"
+    );
+    assert_eq!(
+        empty_page["hasMore"], false,
+        "空页即使带 nextUrl 也必须 hasMore=false: {empty_page}"
+    );
+    let rows = query_articles(&db_path, &list_url);
+    assert_eq!(rows.len(), 5, "空页不得写库: {rows:?}");
 
     // ─── 4) 再次刷新：ruleNextPage 非空 → clearOld 清理旧页 ─────────
     // 审查 P2-8：clearOld 水位取 `SystemTime` 毫秒。两次刷新若落在同一毫秒，

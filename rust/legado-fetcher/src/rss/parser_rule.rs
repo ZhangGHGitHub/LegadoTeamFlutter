@@ -277,6 +277,11 @@ mod tests {
         );
         assert_eq!(first.origin, "https://origin.example.com/feed");
         assert_eq!(first.sort, "科技");
+        assert!(
+            page.items.iter().all(|item| item.sort == "科技"),
+            "页内 sort 必须恒等（RSS 判底查询键等价性的不变量）: {:#?}",
+            page.items
+        );
         assert_eq!(first.article_type, 2, "type 复制源 type");
         assert_eq!(first.variable, None, "无 @put 时 variable 为 None");
         assert_eq!(page.next_url, None, "未配置 ruleNextPage");

@@ -520,11 +520,14 @@ pub fn rss_refresh_articles(
 /// 0. **空/空白 `nextUrl` → 直接返回 `{articles:[],nextUrl:"",hasMore:false}`**
 ///    （审查 P2-4：无翻页目标，不发请求、不查库）；
 /// 1. 请求 `nextUrl`、页码取当前页 + 1（调用方传入）；
-/// 2. 本页**首条与末条**均已在库 → 判到底，不写库；
-/// 3. 否则 `order` 续接该 `(origin, sort)` 最小 order 递减（原版 VM 的
+/// 2. **本页为空 → 不写库、不查库，`hasMore=false`**（对齐上游
+///    `RssArticlesViewModel.loadMoreSuccess:138-140` 的空页短路；空页即使
+///    带残留 `nextUrl` 也不得继续翻页，见审查 P1-1）；
+/// 3. 本页**首条与末条**均已在库 → 判到底，不写库；
+/// 4. 否则 `order` 续接该 `(origin, sort)` 最小 order 递减（原版 VM 的
 ///    `order` 字段跨页递减；本 FFI 无会话状态，从 DB 水位反推），
 ///    `INSERT OR IGNORE` 追加（已存在行保持原 order）；
-/// 4. `hasMore = 实际追加 && nextUrl 非空`。
+/// 5. `hasMore = 本页非空 && 实际追加成功 && nextUrl 非空`。
 ///
 /// ## 已登记差异：`order` 水位（审查 P2-5）
 ///
@@ -558,9 +561,14 @@ pub fn rss_load_more_articles(
     let fetched = fetch_rss_page(&source, sort_name, next_url, Some(page.max(1)), key)?;
 
     let mut added = false;
-    // 判底：首条与末条**各自** `(origin, link, sort)` 均已在库（批23 修复
-    // 末条复用首条 sort 的缺陷，见 [`page_already_stored`]）
-    if !page_already_stored(&fetched.items)? {
+    // 空页短路（审查 P1-1）：`page_already_stored(&[])` 返回 false（不算
+    // 到底），若继续走写库分支，空迭代也会成功并令 `added=true`，使带
+    // 残留 nextUrl 的空页（反爬/规则失配）`hasMore=true`，前端滚动会持续
+    // 翻页。对齐上游 `loadMoreSuccess:138-140`：空页直接返回 false。
+    // 判底：首条与末条**各自** `(origin, link, sort)` 均已在库（批23b
+    // 防御性加固，引擎保证页内 sort 恒等，无可观察行为变化，见
+    // [`page_already_stored`]）
+    if !fetched.items.is_empty() && !page_already_stored(&fetched.items)? {
         // order 续接：min(order) - 1（无行则取当前毫秒）
         let start_order = with_database(|db| {
             legado_db::RssArticleRepository::new(db.connection())
@@ -597,17 +605,27 @@ pub fn rss_load_more_articles(
 
 /// 判底：本页首条与末条是否均已在库
 ///
-/// 对齐原版 `RssArticlesViewModel.loadMoreSuccess`（:82-88）「首末均命中
-/// 即到底」。差异点：原版 `RssArticleDao.get(origin, link)` 不按分类过滤，
-/// 本轨 [`legado_db::RssArticleRepository::find_one`] 主键含 `sort`，因此
-/// 查询键必须取**条目自身**的 `(origin, link, sort)`。
+/// 对齐原版 `RssArticlesViewModel.loadMoreSuccess`（`RssArticlesViewModel.kt:137-154`）
+/// ：空页直接返回 false，首末均命中即到底。
 ///
-/// 批23 修复：旧实现末条也复用 `first.sort`。同页跨分类（末条 sort 与
-/// 首条不同）时「末条已在库」被误判为未命中 → 重复追加并误报
-/// `hasMore=true`（前端加载更多进入重复页/死循环）。
+/// 查询键：原版 `RssArticleDao.get(origin, link, sort)`
+/// （`RssArticleDao.kt:10-11`）按 `(origin, link, sort)` 过滤，本轨
+/// [`legado_db::RssArticleRepository::find_one`] 主键同口径；因此首末条
+/// 各取**条目自身**的 `(origin, link, sort)`。原版末条查询传的是
+/// `firstArticle.sort`，与 `lastArticle.sort` 等价——引擎对整页每条都写入
+/// 请求的 `sort_name`（`legado-fetcher/src/rss/parser_rule.rs:216`、
+/// `legado-net/src/rss.rs:589`），**页内 sort 恒等**。
+///
+/// 批23b 归因修正：批23 把末条查询键从 `first.sort` 改为 `last.sort`，属
+/// **防御性加固（无可观察行为变化）**：在「页内 sort 恒等」不变量下两者
+/// 查询结果完全相同，旧实现并不存在「同页跨分类误判」；改动仅解除对
+/// `first.sort` 的隐式耦合，为未来解析器变化留出正确语义。
+///
+/// 空页：返回 `Ok(false)`（不参与判底），调用方以空页短路令
+/// `hasMore=false`，不会因残留 `nextUrl` 继续翻页（审查 P1-1）。
 fn page_already_stored(items: &[legado_fetcher::rss::RssArticleItem]) -> LegadoResult<bool> {
     let (Some(first), Some(last)) = (items.first(), items.last()) else {
-        // 空页不算到底（调用方 `added=false`，hasMore 自然为 false）
+        // 空页不参与判底；调用方另有非空门控，保证 hasMore=false
         return Ok(false);
     };
     with_database(|db| {
