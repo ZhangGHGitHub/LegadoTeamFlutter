@@ -11,6 +11,9 @@ All notable changes to this project will be documented in this file.
 - [UI] 高亮规则导出保留完整字段（uuid/排序/正文开关/超时），修复导出文件无法再导入的问题。
 - [UI] 导出临时文件在面板关闭时统一清理；系统临时目录外的文件删除有护栏。
 - [UI] 书源单源 JS 导出按原版判定（纯空白 mainJs 走 JSON 分支）；书架导出简介空串回退原简介；朗读引擎未选中提示对齐原版文案。
+- [Android] 修复「保存到本地」在部分 Android 15 设备选 Downloads 目录后崩溃：系统另存改为应用自建 SAF 通道（异常不再穿透进程），DownloadsProvider 拒写时回退 MediaStore 直写并保持用户所选子目录；保存提示显示实际目录与文件名。
+- [UI] 订阅源新增/编辑保存后返回列表（修复 pop 类型不匹配导致路由卡死）。
+- [UI] 失败提示不再显示 `FFI error:`/`os error 111` 等底层串：连接/权限错误显示中文提示，原始错误保留为次要行可复制。
 
 ## [2.0.390] - 2026-10-27
 
