@@ -116,6 +116,37 @@ pub fn backfill_from_sink() {
     }
 }
 
+/// 备份恢复等「权威来源」场景：以 `域名键 → 完整 cookie 串` **覆盖**内存条目
+///
+/// 与 [`backfill_from_sink`] 的区别是方向：回填是「内存优先、miss 回落」
+///（模拟重启语义，不覆盖进程内较新的内存值），而备份恢复必须让备份值
+/// **立即**生效——调用方（FFI 恢复流程）已在同一保护域内把「库内既有值 ∪
+/// 备份值（备份胜）」合并结果落库，本函数只是把它覆盖进内存。
+///
+/// - 只改内存：不读下沉、不写下沉（DB 已是权威值，回调会形成重复写）；
+/// - 不做键归一：调用方传入的是**本侧键空间**内的键（`FFI` 恢复流程用
+///   [`normalized_cookie_key`] 由备份 `url` 算得——quickjs 档为 ETLD+1、
+///   默认档为 trim 原串，两档各自与读侧口径一致）；
+/// - 值形态同 DB 行（`name=value; name2=value2`）；空白值按
+///   [`parse_cookie_pairs`] 保留（与落库串往返一致）。
+///
+/// 锁序：只取内存存储锁（G），**不**取按域写通道（D）——调用方（FFI 恢复）
+/// 持有合并写串行锁（C），而 JS 写侧是 D→C：若此处再取 D 会形成 C→D 与
+/// D→C 的 ABBA。内存覆盖写本身是单锁临界区，无需 D 保证原子性。
+pub fn overwrite_cookies(rows: &[(String, String)]) {
+    if rows.is_empty() {
+        return;
+    }
+    let mut store = lock_store();
+    for (domain_key, cookie_str) in rows {
+        let mut entry: HashMap<String, String> = HashMap::new();
+        for (name, value) in parse_cookie_pairs(cookie_str) {
+            entry.insert(name, value);
+        }
+        store.insert(domain_key.clone(), entry);
+    }
+}
+
 /// 解析 `name1=value1; name2=value2` 形态的完整 cookie 串为 (name, value)
 /// 对（与 JS 绑定 `java.setCookie` 循环的 `split(';')` + 首个 `=` 拆分口径
 /// 一致；段内无 `=` → 值为空串）。仅本模块内部使用（回填 / 写侧更新）；

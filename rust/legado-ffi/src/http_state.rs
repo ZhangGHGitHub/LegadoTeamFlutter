@@ -165,6 +165,46 @@ pub(crate) fn clear_all_cookie_rows() -> LegadoResult<()> {
     })
 }
 
+/// 在 [`COOKIE_PERSIST_RW_LOCK`] 内执行闭包（备份恢复等调用方专用）
+///
+/// 供「读现有行 → 按键合并 → 写回」的第三方写方（备份恢复）复用同一保护域：
+/// 与 jar 写回 / JS 下沉的合并 upsert 串行，关闭「读到旧行 → 覆盖落库」的
+/// 丢更新窗口（P3-5）。闭包内只做 DB（`with_database`，C→P）与内存 store
+/// 覆盖写（C→S/C→G）——**不得**再取按域写通道（D）：JS 写侧是 D→C，
+/// 本函数是 C→S，两者只共享 C/G，不构成环；若在 C 内再取 D 则与
+/// 「D 持有时等待 C」的 JS 写方形成 ABBA。
+///
+/// 中毒恢复语义同本模块其他锁：`into_inner` 继续执行（锁仅承担串行）。
+pub(crate) fn with_cookie_persist_lock<T>(f: impl FnOnce() -> T) -> T {
+    let _guard = COOKIE_PERSIST_RW_LOCK
+        .lock()
+        .unwrap_or_else(|p| p.into_inner());
+    f()
+}
+
+/// 以「域名键 → 完整 cookie 串」**覆盖**进程级共享内存 Cookie store 的对应域
+///
+/// 备份恢复专用（P2-1）：恢复只写 DB 时进程内存仍是旧值，而客户端重建的
+/// 合并预载是「内存值胜」——备份值要等重启才生效。恢复提交后在
+/// [`with_cookie_persist_lock`] 内调用本函数，把合并后的最终行覆盖式写回
+/// 内存（先删该域再按串写入：备份新值胜、库内独有键已在合并结果里保留）。
+///
+/// 键可以是 ETLD+1 域名键，也可以是原版 `source|https://…` 形态的原始作用域
+/// 键（后者不会命中任何 URL 的域名查找，写入内存无害且与 DB 保持一致）。
+pub(crate) fn overwrite_shared_cookie_rows(rows: &[(String, String)]) {
+    if rows.is_empty() {
+        return;
+    }
+    let mut store = shared_cookie_store()
+        .write()
+        .unwrap_or_else(|p| p.into_inner());
+    for (key, value) in rows {
+        // 覆盖语义：内存旧键（备份/库内均无）必须消失，不能只做并集
+        store.remove_domain(key);
+        store.set_cookies_from_string(key, value);
+    }
+}
+
 /// 基于 legado-db cookies 表的 Cookie 持久化实现
 ///
 /// 通过 [`crate::db_state::with_database`] 从全局连接池取连接，

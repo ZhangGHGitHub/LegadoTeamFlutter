@@ -55,8 +55,10 @@
 //! - 算法 = **AES-128-ECB / PKCS5Padding**（hutool `AES(byte[])` 默认 ECB）；
 //! - `servers.json` **总是**先尝试加密（失败才退回明文）、恢复侧以「是否 JSON 数组」
 //!   判别明文；`cookies.json` / `runtimeSourceCache.json` 仅在设置备份密码时写出，
-//!   因此**文件存在即说明备份设过密码**——我方无密码输入面，直接给出明确错误文案
-//!   （对齐原版 `Restore.kt` 在 cookies 存在且密码为空时上抛的语义）；
+//!   因此**文件存在即说明备份设过密码**——需用户输入备份密码
+//!   （对齐原版 `Restore.kt` 在 cookies 存在且密码为空时上抛的语义）。
+//!   **注**：「我方无密码输入面、直接报错零落库」是批9 当时的口径，
+//!   **已被批17a 取代**（探测 [`backup_inspect`] + 密码框 + `password` 参数）；
 //! - `config.xml` 内的 `webDavPassword` 同密钥加密（本实现跳过整个偏好快照，见下）。
 //!
 //! 未映射项（本批登记，不静默）：`readConfig.json` / `shareReadConfig.json` /
@@ -103,7 +105,14 @@
 //! （`v_`/`userInfo_`/`loginHeader_`/`sourceVariable_`/`infoMap_`），按精确 deadline
 //! 落库、过期跳过，写完后清内存运行时变量让引擎重载。
 //!
+//! 批17c（审查回修 P2-1）：Cookie 改为**主事务提交后**落库，并在
+//! `COOKIE_PERSIST_RW_LOCK` 内把合并结果覆盖写回 FFI 共享内存 store 与
+//! `legado-js` 内存 store，随后重建共享客户端——否则进程内存仍是旧值
+//! （客户端合并预载「内存值胜」），备份 Cookie 要重启才生效。
+//! 该锁同时关闭「读到旧行 → 覆盖落库」的丢更新窗口（P3-5）。
+//!
 //! 探测（[`backup_inspect`]）只解压三个候选条目判定是否需要密码，不写任何表。
+//! 空/纯空白条目按「内容损坏」处理（不弹永远失败的密码框，P3-3）。
 //! **本批不做备份创建侧加密**（`backup_create` 仍写明文 JSON，另行立项）。
 
 use std::collections::HashMap;
@@ -742,6 +751,8 @@ pub fn backup_inspect(path: &str) -> LegadoResult<String> {
 /// 探测单个可能加密的 zip 条目是否需要密码
 ///
 /// 判定（对齐用户裁决）：
+/// - 空 / 纯空白（P3-3）：内容损坏（`Corrupt`）——空内容不可能被任何密码
+///   解开，若判 `Protected` 会让 UI 弹一个永远失败的密码框；
 /// - 明文 JSON **数组** → 无需密码（`Plain`）；
 /// - 以 `{`/`[` 开头但解析不成数组 → 内容损坏，**不**要求密码（`Corrupt`）；
 /// - 其余（密文形态）用空密码试解 + JSON 数组解析，失败 → 需密码（`Protected`）。
@@ -754,6 +765,10 @@ fn inspect_encrypted_candidate(name: &str, bytes: &[u8]) -> InspectVerdict {
         return InspectVerdict::Corrupt;
     };
     let text = text.trim_start_matches('\u{feff}').trim();
+    if text.is_empty() {
+        log::warn!("{name} 内容为空（视为损坏，不要求密码）");
+        return InspectVerdict::Corrupt;
+    }
     if text.starts_with('[') {
         return match serde_json::from_str::<Vec<serde_json::Value>>(text) {
             Ok(_) => InspectVerdict::Plain,
@@ -1027,6 +1042,10 @@ fn restore_from_zip(bytes: &[u8], password: Option<&str>) -> LegadoResult<String
     let (backup, replace_policy) = backup_data_from_zip(&archive, &cipher, credentials);
     let runtime_restored = !backup.runtime_source_caches.is_empty();
     let stats = restore_backup_data(&backup, replace_policy)?;
+    // 批17c P2-1：Cookie 在**主事务提交后**落库并同步进程内存
+    //（内存同步必须看到已提交行；且须在 `COOKIE_PERSIST_RW_LOCK` 保护域内
+    // 完成「读-合并-写」，与 jar/JS 合并写串行）
+    apply_restored_cookies(&backup.cookies);
     // 对齐原版 `Restore.kt:393-397`：写入运行时缓存后 `AppCacheManager.clearSourceVariables()`
     // 让引擎内存变量从 DB 重载（否则进程内旧变量继续生效到重启）
     if runtime_restored {
@@ -1035,6 +1054,130 @@ fn restore_from_zip(bytes: &[u8], password: Option<&str>) -> LegadoResult<String
         }
     }
     Ok(stats)
+}
+
+/// 恢复 Cookie 到库 + 同步进程内存 + 重建客户端（批17c P2-1，提交后执行）
+///
+/// 语义（逐条对齐原版 `Restore.kt:391-399` / `CookieStore.restoreCookie`）：
+/// - `url` 含 `|`：原版直接 `cookieDao.insert(cookie)`（原样主键 upsert，
+///   不做域名归一、不合并）；
+/// - 其余：按 `get_sub_domain` 归一，与库内既有 Cookie **同名键合并**
+///   （备份新值胜）后 upsert；url/cookie 为空直接跳过（原版
+///   `TextUtils.isEmpty` 早退）。
+///
+/// **为什么在事务外**：① 事务内已持连接池连接，再取
+/// `COOKIE_PERSIST_RW_LOCK`（C）与 jar/JS 写方的 C→P 锁序相反；② 内存
+/// 同步必须读**已提交**行。Cookie 写入本身逐条 autocommit，条目级失败只
+/// warn（与恢复其他表的条目级容错口径一致）。
+///
+/// **进程内存同步（P2-1 红态修复）**：只写 DB 时进程内存 CookieStore 仍是
+/// 恢复前的旧值，客户端重建的合并预载又是「内存值胜」→ 备份值要重启才生效。
+/// 故在 C 锁内：写库 → 读回每个受影响域的最终合并行 → 覆盖式写回 FFI 共享
+/// store 与 `legado-js` 内存 store（同一 C 保护域成对更新，关闭「读到旧行 →
+/// 覆盖内存/落库」的丢更新窗口，P3-5）。最后重建共享客户端使其重新预载
+///（内存已是新值，合并预载不会回退）。
+fn apply_restored_cookies(entries: &[CookieBackupEntry]) {
+    if entries.is_empty() {
+        return;
+    }
+    // 受影响键（去重）：`|` 原始作用域键原样、其余 ETLD+1 归一。
+    //
+    // 同时记 JS 侧内存键：`legado-js` 的键归一在默认档是「trim 原串」、
+    // quickjs 档才是 ETLD+1——两侧键空间不同，必须各按各的口径写
+    //（quickjs 档两者相等；默认档 DB 域键与 JS 原始串键不同名）。
+    let mut affected: Vec<(String, String)> = Vec::new();
+    for entry in entries {
+        if let Some(key) = restored_cookie_domain_key(entry) {
+            if !affected.iter().any(|(k, _)| *k == key) {
+                let js_key = legado_js::host_api::cookie_store::normalized_cookie_key(&entry.url);
+                affected.push((key, js_key));
+            }
+        }
+    }
+    if affected.is_empty() {
+        return;
+    }
+
+    let (rows, _js_rows) = crate::http_state::with_cookie_persist_lock(|| {
+        let affected_for_read = affected.clone();
+        let result = with_database(move |db| {
+            let repo = CookieRepository::new(db.connection());
+            for entry in entries {
+                let Some(key) = restored_cookie_domain_key(entry) else {
+                    continue;
+                };
+                if entry.url.contains('|') {
+                    if let Err(e) = repo.upsert(&key, &entry.cookie) {
+                        log::warn!("恢复 Cookie 失败（已跳过）: {key} - {e}");
+                    }
+                    continue;
+                }
+                let existing = match repo.get_by_tag(&key) {
+                    Ok(value) => value.unwrap_or_default(),
+                    Err(e) => {
+                        log::warn!("读取本机 Cookie 失败（按备份值直接写入）: {key} - {e}");
+                        String::new()
+                    }
+                };
+                let merged = merge_cookie_values(&existing, &entry.cookie);
+                if let Err(e) = repo.upsert(&key, &merged) {
+                    log::warn!("恢复 Cookie 失败（已跳过）: {key} - {e}");
+                }
+            }
+            // 合并完成后读回最终行（同一 C 保护域内，无并发写方插入）
+            let mut rows: Vec<(String, String)> = Vec::with_capacity(affected_for_read.len());
+            let mut js_rows: Vec<(String, String)> = Vec::with_capacity(affected_for_read.len());
+            for (key, js_key) in &affected_for_read {
+                match repo.get_by_tag(key) {
+                    Ok(Some(value)) => {
+                        rows.push((key.clone(), value.clone()));
+                        js_rows.push((js_key.clone(), value));
+                    }
+                    Ok(None) => {}
+                    Err(e) => log::warn!("读取恢复后 Cookie 失败（跳过内存同步）: {key} - {e}"),
+                }
+            }
+            Ok((rows, js_rows))
+        });
+        match result {
+            Ok(pair) => {
+                // 内存覆盖写与 DB 写同处 C 保护域：两边看到同一份合并结果
+                crate::http_state::overwrite_shared_cookie_rows(&pair.0);
+                legado_js::host_api::cookie_store::overwrite_cookies(&pair.1);
+                pair
+            }
+            Err(e) => {
+                log::warn!("恢复 Cookie 写入失败（进程内存未同步，重启后生效）: {e}");
+                (Vec::new(), Vec::new())
+            }
+        }
+    });
+
+    if rows.is_empty() {
+        return;
+    }
+    // 重建客户端：FFI 主客户端与 JS 桥四池共用共享 store（已写入新值），
+    // rebuild 的合并预载以内存为准，不会把旧 DB 视图盖回来
+    crate::http_state::reset_shared_client();
+    #[cfg(feature = "quickjs")]
+    legado_js::host_api::network::reset_shared_client_pools();
+}
+
+/// 备份 Cookie 条目的落库键（`url` 含 `|` 原样，否则 ETLD+1 归一）
+///
+/// 返回 `None` 表示该条目按原版 `TextUtils.isEmpty` 早退语义跳过
+/// （`url` 空白；非 `|` 形态且 `cookie` 为空）。
+fn restored_cookie_domain_key(entry: &CookieBackupEntry) -> Option<String> {
+    if entry.url.trim().is_empty() {
+        return None;
+    }
+    if entry.url.contains('|') {
+        return Some(entry.url.clone());
+    }
+    if entry.cookie.is_empty() {
+        return None;
+    }
+    Some(crate::api::net_api::get_sub_domain(&entry.url))
 }
 
 /// 加密内容前置校验结果（批17a）
@@ -1307,31 +1450,51 @@ fn is_runtime_source_cache_key(key: &str) -> bool {
     .any(|prefix| key.starts_with(prefix) && key.len() > prefix.len())
 }
 
-/// 合并两段 Cookie 字符串（同名键 `incoming` 胜）
+/// 合并两段 Cookie 字符串（原版 `CookieStore.mergeCookieValues` 语义）
 ///
-/// 语义对齐原版 `CookieStore.mergeCookieValues`（`cookieToMap` → `putAll` →
-/// `mapToCookie`）。差异（本地加固）：输出按键名排序而非插入顺序——Cookie
-/// 语义按名取值，顺序不影响发送/读取，排序换来确定性输出便于回归断言。
+/// 逐行对齐原版 `app/src/main/java/io/legado/app/help/http/CookieStore.kt:118-136`
+/// （`mergeCookieValues` + `cookieToMap` + `mapToCookie`）：
+/// - `existing` 为空 → **原样返回** `incoming`（不归一、不重排）；
+/// - 同名键**位置保留、值覆盖**（Kotlin `LinkedHashMap.putAll` 语义）→
+///   输出保持**首次出现顺序**（旧实现按键名排序是本地偏离，P3-2 已对齐）；
+/// - 键值各 `trim` 一次后**空白值丢弃**（上游 `value.isNotBlank()`），但字面量
+///   `"null"` 保留（上游特意豁免：`value.trim() == "null"` 视为有效值）；
+/// - 段内无 `=` → 跳过（上游 `pairs.size <= 1`）。
+///
+/// **本地加固**：键为空的段丢弃（上游会把空键放进 map，`mapToCookie` 产出
+/// `=value` 畸形段）。其余口径与上游一致，不再有排序偏离。
 fn merge_cookie_values(existing: &str, incoming: &str) -> String {
-    let mut map: HashMap<String, String> = HashMap::new();
+    if existing.is_empty() {
+        return incoming.to_string();
+    }
+    let mut pairs: Vec<(String, String)> = Vec::new();
     for pair in existing.split(';').chain(incoming.split(';')) {
         let pair = pair.trim();
-        if pair.is_empty() {
+        let Some((key, value)) = pair.split_once('=') else {
+            continue;
+        };
+        let key = key.trim();
+        if key.is_empty() {
+            continue; // 本地加固：空键丢弃（上游会产出 `=value` 畸形段）
+        }
+        let value = value.trim();
+        if value.is_empty() {
+            // 上游 isNotBlank 判定：空白值不是合法 cookie 值（"null" 非空白，保留）
             continue;
         }
-        if let Some((key, value)) = pair.split_once('=') {
-            let key = key.trim();
-            if !key.is_empty() {
-                map.insert(key.to_string(), value.trim().to_string());
-            }
+        match pairs
+            .iter_mut()
+            .find(|(existing_key, _)| existing_key == key)
+        {
+            Some(slot) => slot.1 = value.to_string(),
+            None => pairs.push((key.to_string(), value.to_string())),
         }
     }
-    let mut parts: Vec<String> = map
-        .into_iter()
+    pairs
+        .iter()
         .map(|(key, value)| format!("{key}={value}"))
-        .collect();
-    parts.sort();
-    parts.join("; ")
+        .collect::<Vec<_>>()
+        .join("; ")
 }
 
 /// 当前时间戳（毫秒）
@@ -2041,37 +2204,12 @@ fn restore_backup_in_tx(
         }
     }
 
-    // Cookie（批17a：对齐原版 `Restore.kt:391-399`）
+    // Cookie（批17a 恢复语义，批17c P2-1 移出事务）
     //
-    // - `url` 含 `|`：原版直接 `cookieDao.insert(cookie)`（原样主键 upsert，
-    //   不做域名归一、不合并）；
-    // - 其余：`CookieStore.restoreCookie` 语义——按 `get_sub_domain` 归一，
-    //   与库内既有 Cookie **同名键合并**（备份新值胜）后 upsert；url/cookie
-    //   为空直接跳过（原版 `TextUtils.isEmpty` 早退）。
-    let cookie_repo = CookieRepository::new(conn);
-    for entry in &backup.cookies {
-        if entry.url.contains('|') {
-            if let Err(e) = cookie_repo.upsert(&entry.url, &entry.cookie) {
-                log::warn!("恢复 Cookie 失败（已跳过）: {} - {e}", entry.url);
-            }
-            continue;
-        }
-        if entry.url.trim().is_empty() || entry.cookie.is_empty() {
-            continue;
-        }
-        let domain = crate::api::net_api::get_sub_domain(&entry.url);
-        let existing = match cookie_repo.get_by_tag(&domain) {
-            Ok(value) => value.unwrap_or_default(),
-            Err(e) => {
-                log::warn!("读取本机 Cookie 失败（按备份值直接写入）: {domain} - {e}");
-                String::new()
-            }
-        };
-        let merged = merge_cookie_values(&existing, &entry.cookie);
-        if let Err(e) = cookie_repo.upsert(&domain, &merged) {
-            log::warn!("恢复 Cookie 失败（已跳过）: {domain} - {e}");
-        }
-    }
+    // 恢复写入必须在**事务提交后**进行，且与进程内存同步同处
+    // `COOKIE_PERSIST_RW_LOCK` 保护域（见 [`apply_restored_cookies`]）：
+    // 事务内取该锁是「先持连接池（P）再取 C」，与 jar/JS 写方的 C→P
+    // 锁序相反（ABBA）；且内存同步必须看到已提交的行。
 
     // 书源运行变量缓存（批17a：对齐原版 `Restore.kt:393-397`）
     //
@@ -4335,7 +4473,10 @@ mod tests {
     /// [批9 加密] 含加密 cookies.json（原版设过备份密码）→ 明确错误文案且零落库
     ///
     /// 对齐原版 `Restore.kt:227-236`：cookies.json 存在且无密码时上抛
-    /// 「需设置备份密码」；我方无密码输入面，故返回可读错误而不是静默跳过。
+    /// 「需设置备份密码」；本实现返回可读错误（`BACKUP_PASSWORD_REQUIRED`），
+    /// **注**：批9 的「我方无密码输入面」口径已被批17a 取代（现由探测 +
+    /// 密码框 + `password` 参数处理）；本用例固化「未提供密码时零落库」的
+    /// 前置校验语义。
     ///
     /// [批9 回修 P2-12] 预置哨兵行：断言拒绝恢复时库内既有数据**未被触碰**，
     /// 证明「零落库」而不是「恰好表为空」。
@@ -5265,7 +5406,7 @@ mod tests {
     /// "deadline":4102444800000}]`（deadline 2100 年，避免过期）
     const UPSTREAM_SECRET_PW_RUNTIME: &str = "7YHyIJhec6WNdiIqwc5mBDqaE6y1hz1o0eM7gmV+gzjkKEkps6i0epI8oTaXd/KEeLH7HN/kXeD1Hfy9/yteXbaLCDDd/Ngmu2Z0wy81ruAKo7NAgkT1e9MuKs0fYfYNs2SeMxiBR1IjbUyQVNt6dxWnHlhrVarqJHO1iDaKjghiFD3J5cyaNG3ilBk7SW9TDd90fcpzB899JTf4H6zZ+a8xb2Tk7mnwt1SNrdsUo+1xCbU3WgMxFuFJqee6bXc2";
 
-    /// 原版「密码 密码（中文）」加密的 servers.json（openssl 独立生成）
+    /// 原版「密码（中文）」加密的 servers.json（openssl 独立生成）
     ///
     /// 明文 = `[{"id":7,"name":"中文密码服务器","type":"WEBDAV",
     /// "config":"{\"url\":\"https://zh.example.com/\"}","sortNumber":1}]`
@@ -5293,13 +5434,32 @@ mod tests {
         .unwrap();
     }
 
-    /// Cookie 同名键合并（原版 `CookieStore.mergeCookieValues` 语义）
+    /// Cookie 合并逐条对齐原版 `CookieStore.mergeCookieValues`（P3-2）
+    ///
+    /// 覆盖：空旧值原样返回；**插入序保留**（旧实现按键排序的本地偏离已删除）；
+    /// 同名键位置保留值覆盖；空白值丢弃；字面量 `"null"` 保留；无 `=` 段跳过；
+    /// **本地加固**：空键丢弃（上游会产出 `=value`）。
     #[test]
-    fn test_merge_cookie_values_same_name_incoming_wins() {
-        assert_eq!(merge_cookie_values("", "a=1"), "a=1");
+    fn test_merge_cookie_values_aligned_with_upstream() {
+        // 空旧值：原样返回（上游 `if (oldCookie.isEmpty()) return cookie`）
+        assert_eq!(merge_cookie_values("", "b=2; a=1"), "b=2; a=1");
+        // 插入序保留（非字典序）
+        assert_eq!(merge_cookie_values("b=2; a=1", ""), "b=2; a=1");
+        // 同名键位置保留、值覆盖；异名键尾随
         assert_eq!(merge_cookie_values("a=1; b=2", "b=3; c=4"), "a=1; b=3; c=4");
-        assert_eq!(merge_cookie_values("a=1", "a="), "a=");
-        assert_eq!(merge_cookie_values("", ""), "");
+        assert_eq!(
+            merge_cookie_values("sid=old; keep=1", "sid=abc; theme=dark"),
+            "sid=abc; keep=1; theme=dark"
+        );
+        // 空白值丢弃，旧值保留（上游 isNotBlank 判定）
+        assert_eq!(merge_cookie_values("a=1", "a="), "a=1");
+        assert_eq!(merge_cookie_values("a=1", "b=  "), "a=1");
+        // 字面量 "null" 是有效值（上游特意豁免）
+        assert_eq!(merge_cookie_values("", "a=null"), "a=null");
+        assert_eq!(merge_cookie_values("a=1", "a=null"), "a=null");
+        // 无 `=` 段跳过；空键丢弃（本地加固）
+        assert_eq!(merge_cookie_values("a=1", "flag; =v"), "a=1");
+        assert_eq!(merge_cookie_values("a=1", "a=2; junk"), "a=2");
     }
 
     /// inspect：本应用 JSON 备份无需密码
@@ -5407,11 +5567,36 @@ mod tests {
         assert_eq!(r5["passwordRequired"], false, "损坏内容不应要求密码: {r5}");
         assert_eq!(r5["passwordProtectedFiles"], serde_json::json!([]));
         let _ = fs::remove_dir_all(&dir5);
+
+        // ⑥ P3-3：空 / 纯空白条目 → 损坏（不要求密码）。空内容不可能被任何
+        // 密码解开，判 Protected 会让 UI 弹一个永远失败的密码框
+        let (dir6, path6) = write_upstream_backup_zip(
+            "legado_inspect_blank_entries",
+            &[
+                ("cookies.json", b""),
+                ("runtimeSourceCache.json", b"   \n\t"),
+            ],
+        );
+        let r6: serde_json::Value = serde_json::from_str(&backup_inspect(&path6).unwrap()).unwrap();
+        assert_eq!(r6["passwordRequired"], false, "空条目不应要求密码: {r6}");
+        assert_eq!(r6["passwordProtectedFiles"], serde_json::json!([]));
+        // 恢复侧空文件仍报 CORRUPT（口径保持）：不落库、不弹密码框
+        let err = backup_restore_with_password(&path6, None).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains(BACKUP_ENCRYPTED_CONTENT_CORRUPT_PREFIX),
+            "空 cookies.json 恢复必须是 CORRUPT 错误: {err}"
+        );
+        let _ = fs::remove_dir_all(&dir6);
     }
 
     /// 正确密码：servers + cookies + runtime 全部恢复（含域名合并与精确 deadline）
     #[test]
     fn test_restore_zip_with_password_restores_servers_cookies_runtime() {
+        // 全局锁序不变式：先 store 锁、后池锁、再 DB 守卫（恢复后重建共享客户端，
+        // 与池触碰测试互斥——见 test_support 模块文档）
+        let _gs = crate::test_support::lock_global_store();
+        let _p = crate::test_support::lock_pool_tests();
         let _db_guard = crate::db_state::ensure_test_db();
         clear_backup_tables();
         clear_cookie_and_cache_tables();
@@ -5452,10 +5637,10 @@ mod tests {
 
         with_database(|db| {
             let repo = CookieRepository::new(db.connection());
-            // 域名行：同域合并，sid 新值胜，keep 保留
+            // 域名行：同域合并，sid 新值胜，keep 保留（插入序，P3-2 对齐上游）
             assert_eq!(
                 repo.get_by_tag(&domain).unwrap().as_deref(),
-                Some("keep=1; sid=abc; theme=dark")
+                Some("sid=abc; keep=1; theme=dark")
             );
             // `|` 主键行原样 upsert
             assert_eq!(
@@ -5494,6 +5679,81 @@ mod tests {
         .unwrap();
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// P2-1（批17c）：恢复的 Cookie 必须在**当前进程立即生效**
+    ///
+    /// 红态：恢复只写 DB，进程内存 CookieStore 仍是旧值；客户端重建时的
+    /// 合并预载是「内存值胜」→ 备份值要等重启才生效。恢复后
+    /// [`crate::http_state::shared_cookie_store`] 与 `legado-js` 内存 store
+    /// 都必须已是备份新值（备份新值胜、库内独有键保留）。
+    #[test]
+    fn test_restore_zip_cookies_take_effect_in_process_memory() {
+        // 全局锁序不变式：先 store 锁、后池锁、再 DB 守卫（见 test_support 文档）
+        let _gs = crate::test_support::lock_global_store();
+        let _p = crate::test_support::lock_pool_tests();
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        clear_cookie_and_cache_tables();
+
+        const URL: &str = "https://mem-restore-fix.test/";
+        let domain = crate::api::net_api::get_sub_domain(URL);
+
+        // 恢复前进程态：DB + 内存都是旧值（模拟「已登录，进程运行中恢复」）
+        with_database(|db| {
+            CookieRepository::new(db.connection()).upsert(&domain, "sid=old; keep=1")
+        })
+        .unwrap();
+        {
+            let mut store = crate::http_state::shared_cookie_store()
+                .write()
+                .unwrap_or_else(|p| p.into_inner());
+            store.remove_domain(&domain);
+            store.set_cookies_from_string(&domain, "sid=old; keep=1");
+        }
+        legado_js::host_api::cookie_store::set_cookie(URL, "sid", "old");
+
+        let cookies = format!(r#"[{{"url":"{URL}","cookie":"sid=new; theme=dark"}}]"#);
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_mem_cookies",
+            &[("cookies.json", cookies.as_bytes())],
+        );
+        backup_restore_with_password(&path, None).expect("明文 cookies 恢复必须成功");
+        let _ = fs::remove_dir_all(&dir);
+
+        // FFI 共享内存 store：备份值必须立即可见（无需重启）
+        {
+            let store = crate::http_state::shared_cookie_store()
+                .read()
+                .unwrap_or_else(|p| p.into_inner());
+            assert_eq!(
+                store.get_key(&domain, "sid").as_deref(),
+                Some("new"),
+                "恢复后共享内存 Cookie 必须立即是新值（P2-1 红态：仍是 old）"
+            );
+            assert_eq!(
+                store.get_key(&domain, "keep").as_deref(),
+                Some("1"),
+                "同名键合并：库内异名键必须保留"
+            );
+            assert_eq!(
+                store.get_key(&domain, "theme").as_deref(),
+                Some("dark"),
+                "备份新增键必须在内存可见"
+            );
+        }
+
+        // legado-js 侧内存 store（java.ajax 读侧）：同样必须立即生效
+        let js_cookie = legado_js::host_api::cookie_store::get_cookie(URL);
+        assert!(
+            js_cookie.contains("sid=new") && !js_cookie.contains("sid=old"),
+            "JS 内存 store 必须同步为备份新值: {js_cookie}"
+        );
+
+        // 收尾：两侧齐清（避免污染其他 cookie 用例）
+        crate::api::net_api::clear_cookie(URL).expect("清理 Cookie 必须成功");
+        legado_js::host_api::cookie_store::clear_cookies(URL);
+        clear_cookie_and_cache_tables();
     }
 
     /// 错误密码：零落库（哨兵行保留）且返回 BACKUP_PASSWORD_INVALID
@@ -5580,6 +5840,9 @@ mod tests {
     /// 混合包：servers 密文 + cookies 明文 → 提供密码后两者都恢复
     #[test]
     fn test_restore_zip_mixed_encrypted_servers_and_plain_cookies() {
+        // 同上：Cookie 恢复会重建共享客户端，需持池锁串行
+        let _gs = crate::test_support::lock_global_store();
+        let _p = crate::test_support::lock_pool_tests();
         let _db_guard = crate::db_state::ensure_test_db();
         clear_backup_tables();
         clear_cookie_and_cache_tables();
