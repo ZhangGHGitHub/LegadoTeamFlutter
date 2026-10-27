@@ -9,7 +9,11 @@
 /// - 探测无需密码 → 不弹框，restore 的 password 为 null；
 /// - 中文/含空格密码原样透传（不 trim）；
 /// - `.json` 备份不调用 backupInspect；
-/// - 加密内容损坏 → 提示备份文件损坏，不进入重试。
+/// - 加密内容损坏 → 提示备份文件损坏，不进入重试；
+/// - [批17c P2-2] 空/纯空白密码提交 → 内联「请输入备份密码」，不调用 restore；
+/// - [批17c P3-5] `.json` 命名的加密 zip（按文件魔数判定）仍弹密码框；
+/// - [批17c P3-7] 探测称无需密码但后端返回 BACKUP_PASSWORD_REQUIRED →
+///   防御性重开密码框。
 library;
 
 import 'dart:io';
@@ -252,8 +256,7 @@ void main() {
     expect(find.text('输入备份密码'), findsNothing);
   });
 
-  testWidgets('JSON 备份不探测密码（不调用 backupInspect）', (tester) async {
-    // 不 stub backupInspect：一旦误调用会抛 mocktail missing stub。
+  testWidgets('JSON 备份不探测密码（不调用 backupInspect）', (tester) async {    // 不 stub backupInspect：一旦误调用会抛 mocktail missing stub。
     // .json 恢复链会触发真实文件 IO（FakeAsync 不驱动），故不进 pumpAndSettle，
     // 只断言：确认后直接进入「恢复中…」，不出现「检查备份…」/密码框。
     final backupPath = fakeBackupPath('legado_backup_plain_pwd.json');
@@ -278,5 +281,110 @@ void main() {
     expect(find.text('检查备份…'), findsNothing);
     expect(find.text('输入备份密码'), findsNothing);
     verifyNever(() => mockApi.backupInspect(any()));
+  });
+
+  // ─── 批17c P2-2：空密码提交不得静默成功 ─────────────────────────────
+
+  testWidgets('空密码提交：内联提示且留在对话框，不调用 restore', (tester) async {
+    stubPasswordRequired();
+    final backupPath = fakeBackupPath('legado_backup_empty_pwd.zip');
+
+    await startLocalRestore(tester, backupPath: backupPath);
+    expect(find.text('输入备份密码'), findsOneWidget);
+
+    await tester.tap(dialogButton('确定'));
+    await tester.pumpAndSettle();
+
+    // 对话框仍在、内联校验提示可见、零 restore 调用（后端会把空串当未提供）
+    expect(find.text('输入备份密码'), findsOneWidget);
+    expect(find.text('请输入备份密码'), findsOneWidget);
+    verifyNever(
+      () => mockApi.restore(any(), password: any(named: 'password')),
+    );
+  });
+
+  testWidgets('纯空白密码提交同样被拦截（密码原文不 trim）', (tester) async {
+    stubPasswordRequired();
+    final backupPath = fakeBackupPath('legado_backup_blank_pwd.zip');
+
+    await startLocalRestore(tester, backupPath: backupPath);
+    await tester.enterText(find.byType(TextField), '    ');
+    await tester.tap(dialogButton('确定'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('请输入备份密码'), findsOneWidget);
+    verifyNever(
+      () => mockApi.restore(any(), password: any(named: 'password')),
+    );
+
+    // 补输真实密码后校验提示消失并原样透传（含首尾空格）
+    await tester.enterText(find.byType(TextField), '  pwd  ');
+    await tester.pumpAndSettle();
+    expect(find.text('请输入备份密码'), findsNothing);
+    await tester.tap(dialogButton('确定'));
+    await tester.pumpAndSettle();
+    verify(() => mockApi.restore(backupPath, password: '  pwd  ')).called(1);
+  });
+
+  // ─── 批17c P3-5：`.json` 命名的加密 zip 也弹密码框 ──────────────────
+
+  testWidgets('.json 命名的加密 zip（文件魔数判定）仍弹密码框并透传密码',
+      (tester) async {
+    stubPasswordRequired();
+    // 真实文件：PK\x03\x04 魔数（内容不必是合法 zip——本用例只驱动 UI 判定）。
+    // 同步写入：testWidgets 的 FakeAsync 不驱动真实异步 I/O
+    final file = File(
+      '${Directory.systemTemp.path}${Platform.pathSeparator}'
+      'legado_backup_renamed.json',
+    );
+    file.writeAsBytesSync([0x50, 0x4B, 0x03, 0x04, 0, 0, 0, 0]);
+    addTearDown(() {
+      if (file.existsSync()) file.deleteSync();
+    });
+
+    await startLocalRestore(tester, backupPath: file.path);
+
+    expect(
+      find.text('输入备份密码'),
+      findsOneWidget,
+      reason: '扩展名是 .json，但魔数表明是 zip 备份 → 必须探测并要求密码',
+    );
+    verify(() => mockApi.backupInspect(file.path)).called(1);
+
+    await tester.enterText(find.byType(TextField), 'renamed-pwd');
+    await tester.tap(dialogButton('确定'));
+    await tester.pumpAndSettle();
+    verify(() => mockApi.restore(file.path, password: 'renamed-pwd')).called(1);
+  });
+
+  // ─── 批17c P3-7：防御性 BACKUP_PASSWORD_REQUIRED 重开密码框 ──────────
+
+  testWidgets('探测无需密码但后端要求密码：防御性重开密码框', (tester) async {
+    stubPasswordNotRequired();
+    final backupPath = fakeBackupPath('legado_backup_defensive.zip');
+    when(
+      () => mockApi.restore(any(), password: null),
+    ).thenAnswer(
+      (_) async => throw Exception(
+        'FFI error: Internal error: BACKUP_PASSWORD_REQUIRED: '
+        '该备份包含原版加密的登录信息（cookies.json）',
+      ),
+    );
+    when(
+      () => mockApi.restore(any(), password: 'late-pwd'),
+    ).thenAnswer((_) async {});
+
+    await startLocalRestore(tester, backupPath: backupPath);
+
+    // 探测称无需密码 → 先以 null 恢复 → 后端要求密码 → 重开密码框
+    expect(find.text('输入备份密码'), findsOneWidget);
+    verify(() => mockApi.restore(backupPath, password: null)).called(1);
+
+    await tester.enterText(find.byType(TextField), 'late-pwd');
+    await tester.tap(dialogButton('确定'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('输入备份密码'), findsNothing);
+    verify(() => mockApi.restore(backupPath, password: 'late-pwd')).called(1);
   });
 }
