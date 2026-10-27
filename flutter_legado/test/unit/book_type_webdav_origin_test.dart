@@ -140,6 +140,119 @@ void main() {
         isFalse,
       );
     });
+
+    // ===== 批22b P1-1：原版 Kotlin local 位（256）兼容 =====
+    test('原版位域 type=264（text|local）判为本地书', () {
+      expect(
+        BookType.isLocalBook(
+          const Book(
+            bookUrl: '/storage/emulated/0/Books/a.txt',
+            origin: 'loc_book',
+            bookType: BookType.text | BookType.kotlinLocal,
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('原版压缩包内书籍 type=776（text|local|archive）判为本地书', () {
+      const archiveBit = 512; // Kotlin BookType.archive
+      expect(
+        BookType.isLocalBook(
+          const Book(
+            bookUrl: '/storage/emulated/0/Books/a.epub',
+            origin: 'loc_book::books.zip',
+            bookType: BookType.text | BookType.kotlinLocal | archiveBit,
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('原版位域 type=264 + WebDAV origin 判为本地书', () {
+      expect(
+        BookType.isLocalBook(
+          const Book(
+            bookUrl: '/tmp/remote.epub',
+            origin: 'webDav::https://dav.example.com/books/remote.epub',
+            originName: 'remote.epub',
+            bookType: BookType.text | BookType.kotlinLocal,
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('在线书 type=8 + http origin 判为非本地书', () {
+      expect(
+        BookType.isLocalBook(
+          const Book(
+            bookUrl: 'https://source.example.com/book/1',
+            origin: 'https://source.example.com',
+            bookType: BookType.text,
+          ),
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  group('BookType.canUpdateToc（更新全部目录过滤）', () {
+    test('原版位域 264/776 不入选', () {
+      expect(
+        BookType.canUpdateToc(
+          const Book(bookUrl: '/tmp/a.txt', origin: 'loc_book', bookType: 264),
+        ),
+        isFalse,
+      );
+      expect(
+        BookType.canUpdateToc(
+          const Book(
+            bookUrl: '/tmp/a.epub',
+            origin: 'loc_book::books.zip',
+            bookType: 776,
+          ),
+        ),
+        isFalse,
+      );
+    });
+
+    test('本仓库 Rust 位域 local(0x1000) 不入选', () {
+      expect(
+        BookType.canUpdateToc(
+          const Book(
+            bookUrl: '/tmp/a.txt',
+            origin: 'loc_book',
+            bookType: BookType.text | BookType.local,
+          ),
+        ),
+        isFalse,
+      );
+    });
+
+    test('在线书且 canUpdate=true 入选；canUpdate=false 不入选', () {
+      expect(
+        BookType.canUpdateToc(
+          const Book(
+            bookUrl: 'https://src/1',
+            origin: 'https://src',
+            bookType: BookType.text,
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        BookType.canUpdateToc(
+          const Book(
+            bookUrl: 'https://src/2',
+            origin: 'https://src',
+            bookType: BookType.text,
+            canUpdate: false,
+          ),
+        ),
+        isFalse,
+      );
+    });
   });
 
   group('BookType.webDavPathOf（剥离前缀与属性后缀）', () {
@@ -206,6 +319,51 @@ void main() {
         expect(BookType.webDavPathOf(origin), url);
         expect(BookType.isWebDavOrigin(origin), isTrue);
       }
+    });
+  });
+
+  group('BookType.collapseSlashes（只归一 path，批22b P2-3）', () {
+    test('query 内的 http:// 不被折叠', () {
+      expect(
+        BookType.collapseSlashes('https://host/dav?x=http://y'),
+        'https://host/dav?x=http://y',
+      );
+    });
+
+    test('query / fragment 原样保留，仅折叠 path 重复斜杠', () {
+      expect(
+        BookType.collapseSlashes('https://host//dav//?x=http://y#f//g'),
+        'https://host/dav/?x=http://y#f//g',
+      );
+    });
+
+    test('userinfo 含 // 不被折叠（保留原值）', () {
+      expect(
+        BookType.collapseSlashes('https://user:p//w@host//dav//a.epub'),
+        'https://user:p//w@host//dav//a.epub',
+      );
+      expect(
+        BookType.collapseSlashes('https://us//er@host//a'),
+        'https://us//er@host//a',
+      );
+    });
+
+    test('协议相对 //host 保留前导双斜杠，只折叠 path', () {
+      expect(
+        BookType.collapseSlashes('//host//dav//a.epub'),
+        '//host/dav/a.epub',
+      );
+    });
+
+    test('空 host 的 https:// 不被折成 https:', () {
+      expect(BookType.collapseSlashes('https://'), 'https://');
+      final config = BookType.normalizeWebDavConfig('https://', '');
+      expect(config.url, 'https://');
+    });
+
+    test('相对路径仍按正则折叠（不触发 Uri 百分号编码）', () {
+      expect(BookType.collapseSlashes('/legado//books//'), '/legado/books/');
+      expect(BookType.collapseSlashes('my dir//x'), 'my dir/x');
     });
   });
 

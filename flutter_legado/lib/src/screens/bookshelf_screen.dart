@@ -1122,11 +1122,7 @@ class _BookshelfScreenState extends ConsumerState<BookshelfScreen>
   Future<void> _updateAllBooks() async {
     final api = ref.read(bookApiProvider);
     final books = ref.read(bookshelfNotifierProvider).books;
-    final targets = books
-        .where((b) =>
-            b.canUpdate &&
-            !BookType.isLocalBook(b))
-        .toList();
+    final targets = books.where(BookType.canUpdateToc).toList();
     if (targets.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('没有需要更新的书籍')),

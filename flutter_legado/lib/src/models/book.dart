@@ -5,8 +5,14 @@ part 'book.g.dart';
 
 /// 书籍类型常量（位标记，对齐 Kotlin `BookType.kt`：
 /// video=4 / text=8 / updateError=16 / audio=32 / image=64 / webFile=128 /
-/// local=256 / notShelf=1024；Rust searchBooks/getBook 返回的 `type` 即此位标记，
-/// 判断用位运算 `&`，勿用 `==` 单值比较）
+/// notShelf=1024；判断用位运算 `&`，勿用 `==` 单值比较）
+///
+/// **local 位双标准（必读）**：原版 Kotlin `BookType.local = 256`（0x100，
+/// BookType.kt:44），本地书 `type = text|local = 264`、压缩包内书籍
+/// `type = text|local|archive = 776`（LocalBook.kt:295 / importArchiveFile）；
+/// 本仓库 Rust 域使用 `local = 0x1000`（legado-core `book_type::LOCAL`）。
+/// 原版 zip 备份恢复不做类型归一（backup_api.rs 直接 serde 落库），
+/// 故 [isLocalBook] 必须同时识别两套位（批22b P1-1）。
 /// [UI-fix v2.0.11 | 2026-08-10] 由 0/1/2 枚举语义修正为位标记 — Reasonix
 class BookType {
   static const int video = 4;
@@ -16,7 +22,15 @@ class BookType {
   static const int audio = 32;
   static const int image = 64;
   static const int webFile = 128;
+  /// 本地书位（本仓库 Rust 域：`legado-core` `book_type::LOCAL = 0x1000`）
   static const int local = 0x1000;
+
+  /// 原版 Kotlin `BookType.local = 0b100000000`（=256，即 0x100；
+  /// BookType.kt:44）。原版本地书 `type = text|local = 264`，压缩包内
+  /// 书籍再叠加 `archive(512)` = 776（LocalBook.kt:295、importArchiveFile）。
+  /// 本仓库 Rust 域写入 [local]（0x1000），两套位域并存；
+  /// [isLocalBook] 读取时双位兼容（批22b P1-1）。
+  static const int kotlinLocal = 0x100;
   /// 未入书架的临时书（对齐 Kotlin `BookType.notShelf`；搜索/发现打开在线书阅读时临时落库）
   static const int notShelf = 0x400;
   static const String localTag = 'loc_book';
@@ -52,14 +66,23 @@ class BookType {
   /// Kotlin `BookExtensions.kt:50-56` 的完整语义：
   /// - `type == 0`（历史数据未写类型）→ 按 [origin] 判定
   ///   （[isLocalOrigin]：`loc_book` / `webDav::` / 存量 `dav:`）；
-  /// - `type != 0` → 只看 `local` 位。
+  /// - `type != 0` → 只看 local 位（[local] 与 [kotlinLocal] 双标准兼容：
+  ///   本仓库 Rust 域写 0x1000，原版备份/参考版数据为 0x100）。
   ///
   /// 不能仅用 origin 判定：原版备份导入的 `loc_book::xxx.zip` 等在线书
   /// 可能带非 0 type 而没有 local 位，origin-only 会把它误当本地书
-  /// （批22 P3-2）。所有「是否本地书」语义入口统一经此函数。
+  /// （批22 P3-2）。本批 4 处书架入口（书架分组 / 更新全部目录 /
+  /// 批量换源预估与执行）统一经此函数；其余 origin-only 判定点不在
+  /// 本批范围。
   static bool isLocalBook(Book book) => book.bookType == 0
       ? isLocalOrigin(book.origin)
-      : (book.bookType & local) != 0;
+      : (book.bookType & (local | kotlinLocal)) != 0;
+
+  /// 「更新全部目录」候选：允许更新且非本地书
+  ///
+  /// 对齐 Kotlin `updateAllBooks` 的 `it.canUpdate && !it.isLocal` 过滤；
+  /// 独立成函数以便单测覆盖双位域（批22b P3-5）。
+  static bool canUpdateToc(Book book) => book.canUpdate && !isLocalBook(book);
 
   /// 提取 WebDAV origin 中的远程路径（去掉前缀与属性后缀）
   ///
@@ -100,27 +123,70 @@ class BookType {
   /// WebDAV 配置的 url 可能带/不带尾斜杠、remote_dir 可能带前斜杠，
   /// 直接字符串相加会产生双斜杠，故统一经此函数拼接。
   static String joinRemoteUrl(String base, String relative) {
-    final b = collapseSlashes(base.trim()).replaceAll(RegExp(r'/+$'), '');
+    final b = _trimTrailingSlashes(collapseSlashes(base.trim()));
     final r = collapseSlashes(relative.trim()).replaceAll(RegExp(r'^/+'), '');
     if (r.isEmpty) return b;
     if (b.isEmpty) return r;
     return '$b/$r';
   }
 
-  /// 折叠字符串中连续的 `/`（保留协议分隔 `://`）
+  /// 折叠字符串中连续的 `/`（只归一 path，保留 query/fragment/userinfo）
   ///
   /// WebDAV 配置的 url / remote_dir 来自用户输入与旧偏好，可能出现
   /// `https://host//dav//` 或 `//legado//` 等重复斜杠；Rust `WebDavClient`
   /// 以 `url + remote_dir + path` 直拼，Dart 侧必须在写入配置前归一
-  /// （批22 P3）。协议分隔 `://` 不在折叠范围内。
+  /// （批22 P3）。
+  ///
+  /// 旧实现按整串折叠，会破坏 `?x=http://y` 的 query、含 `//` 的
+  /// userinfo、协议相对 `//host/...`，并把空 host 的 `https://` 折成
+  /// `https:`（批22b P2-3）。现改为 `Uri` 解析后**只替换 path**：
+  /// - query / fragment / userinfo / 端口原样保留；
+  /// - 协议相对 `//host` 由 Uri 的 authority 分支原样保留前导双斜杠；
+  /// - 无法解析、userinfo 含歧义 `/`（Dart 会把 `us//er@host` 误解析为
+  ///   host=us）、或绝对 URL 空 host 时保留原值，交由上层校验；
+  /// - 非 URL 的纯相对路径仍按正则折叠，避免 Uri 对空格/中文做
+  ///   百分号编码而改变用户输入。
   static String collapseSlashes(String value) {
-    final schemeEnd = value.indexOf('://');
-    if (schemeEnd < 0) {
+    final isAbsolute = value.contains('://');
+    final isProtocolRelative = value.startsWith('//');
+    if (!isAbsolute && !isProtocolRelative) {
       return value.replaceAll(RegExp(r'/{2,}'), '/');
     }
-    final scheme = value.substring(0, schemeEnd + 3);
-    final rest = value.substring(schemeEnd + 3).replaceAll(RegExp(r'/{2,}'), '/');
-    return '$scheme$rest';
+
+    // authority 内 userinfo 含 `/` 时 Dart Uri 会截断 host 并误解析
+    // （实测 `https://us//er@host//a` → host=us、path=//er@host//a），
+    // 此类歧义串整体保留原值，不做 path 归一。
+    final authorityStart = isAbsolute ? value.indexOf('://') + 3 : 2;
+    final beforeQuery = value.split(RegExp(r'[?#]')).first;
+    final at = beforeQuery.indexOf('@', authorityStart);
+    if (at >= 0 && beforeQuery.substring(authorityStart, at).contains('/')) {
+      return value;
+    }
+
+    final Uri uri;
+    try {
+      uri = Uri.parse(value);
+    } on FormatException {
+      // 无法解析：保留原值
+      return value;
+    }
+    if (uri.hasScheme && uri.host.isEmpty) {
+      // `https://` 等空 host：保留原值，不得归一成 `https:`
+      return value;
+    }
+    final path = uri.path.replaceAll(RegExp(r'/{2,}'), '/');
+    if (path == uri.path) return value;
+    return uri.replace(path: path).toString();
+  }
+
+  /// 去掉末尾 `/`，但空 host 的 `scheme://` 原样保留
+  ///
+  /// 避免 `https://` 在归一化尾部斜杠时被折成 `https:`（批22b P2-3）。
+  static String _trimTrailingSlashes(String value) {
+    if (value.isEmpty) return value;
+    final uri = Uri.tryParse(value);
+    if (uri != null && uri.hasScheme && uri.host.isEmpty) return value;
+    return value.replaceAll(RegExp(r'/+$'), '');
   }
 
   /// 归一 WebDAV 配置的「根 URL + 远端子目录」（供 Rust
@@ -136,7 +202,7 @@ class BookType {
     String url,
     String remoteDir,
   ) {
-    final base = collapseSlashes(url.trim()).replaceAll(RegExp(r'/+$'), '');
+    final base = _trimTrailingSlashes(collapseSlashes(url.trim()));
     final dir = collapseSlashes(remoteDir.trim())
         .replaceAll(RegExp(r'^/+'), '')
         .replaceAll(RegExp(r'/+$'), '');

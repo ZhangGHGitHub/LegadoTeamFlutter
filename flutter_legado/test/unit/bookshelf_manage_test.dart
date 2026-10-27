@@ -143,6 +143,64 @@ void main() {
       verifyNever(() => mockApi.topBook(any()));
     });
 
+    // 批22b P3-5：原版 Kotlin 位域本地书（type=264/776）不得进入批量换源候选
+    test('批量换源跳过原版位域本地书（264/776）', () async {
+      const local264 = Book(
+        bookUrl: '/tmp/local-a.txt',
+        name: '本地A',
+        author: '作者',
+        origin: 'loc_book',
+        bookType: 264,
+      );
+      const local776 = Book(
+        bookUrl: '/tmp/local-b.epub',
+        name: '本地B',
+        author: '作者',
+        origin: 'loc_book::books.zip',
+        bookType: 776,
+      );
+      const online = Book(
+        bookUrl: 'https://src/1',
+        name: '在线',
+        author: '作者',
+        origin: 'https://src',
+        bookType: BookType.text,
+      );
+      stubBooks([local264, local776, online]);
+      await readNotifier().load();
+      readNotifier().selectAll();
+
+      when(() => mockApi.preciseSearch(
+            any(),
+            any(),
+            sourceUrls: any(named: 'sourceUrls'),
+          )).thenAnswer((_) async => const SearchBook(
+            bookUrl: 'https://target/1',
+            name: '在线',
+            author: '作者',
+          ));
+      when(() => mockApi.switchSource(any(), any(), any()))
+          .thenAnswer((_) async => '{}');
+
+      final (success, total) =
+          await readNotifier().switchSelectedSource('https://target');
+
+      expect(total, 1, reason: '264/776 本地书不得进入换源候选');
+      expect(success, 1);
+      verifyNever(() => mockApi.preciseSearch(
+            local264.name,
+            local264.author,
+            sourceUrls: any(named: 'sourceUrls'),
+          ));
+      verifyNever(() => mockApi.preciseSearch(
+            local776.name,
+            local776.author,
+            sourceUrls: any(named: 'sourceUrls'),
+          ));
+      verify(() => mockApi.switchSource(online.bookUrl, 'https://target', any()))
+          .called(1);
+    });
+
     test('批量删除异常时兜底并记录 error', () async {
       stubBooks([bookA]);
       await readNotifier().load();
