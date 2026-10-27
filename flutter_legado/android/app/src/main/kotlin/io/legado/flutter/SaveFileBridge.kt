@@ -1,8 +1,10 @@
 package io.legado.flutter
 
 import android.app.Activity
+import android.content.ActivityNotFoundException
 import android.content.ContentResolver
 import android.content.ContentValues
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -18,7 +20,18 @@ import java.io.FileNotFoundException
 import java.io.IOException
 
 /**
- * 系统另存桥接（D1）— 自建 ACTION_CREATE_DOCUMENT + 受控写流链路
+ * 系统另存桥接（批26）— SAF 目录树 + 受控写流链路
+ *
+ * [批26 2026-10-27] 默认改为 **ACTION_OPEN_DOCUMENT_TREE 目录树**
+ * （对齐原版 `HandleFileViewModel.saveToLocal(uri, ...)`：
+ * `DocumentFile.fromTreeUri(...).createFile(...).writeBytes(...)`）：
+ * 1. 首次另存弹目录选择器（`ACTION_OPEN_DOCUMENT_TREE` +
+ *    READ/WRITE/PERSISTABLE），结果 `takePersistableUriPermission` 后把
+ *    tree URI 记住（SharedPreferences，含 authority / 显示路径）；
+ * 2. 之后直接在该树内 `DocumentsContract.createDocument` 建文件 +
+ *    `openOutputStream` 写入 + 严格读回校验（大小/首字节），**不再弹框**；
+ * 3. 失败只删除**本次创建**的文档（树授权内删除可用），0 字节占位不再残留；
+ * 4. 「换个位置」由 `chooseTree` 主动重选目录并记住。
  *
  * 背景（docs/DEVICE_ACCEPTANCE_20261027_16X.md §五 D1）：
  * `file_picker 8.3.7` 的 `saveFile` 在 `onActivityResult` 内直接
@@ -52,11 +65,18 @@ import java.io.IOException
  *    （P3-3），超时后迟到的回调写日志而非静默丢弃（P3-6）。
  *
  * 支持方法：
- * - `saveFile`: 参数 {fileName: String, bytes: ByteArray|List<Int>, mimeType: String?}；
- *   成功返回 `{uri: String, name: String, fallback: "none"|"mediastore",
- *   relativeDir: String?}`（`name` 为 provider 实际落盘名，重名时可能带
- *   `(1)`；`relativeDir` 为回退时的「下载」相对目录，如 `Download/legado/`）；
+ * - `saveFile`: 参数 {fileName: String, bytes: ByteArray|List<Int>, mimeType: String?,
+ *   useTree: Boolean = true, chooseTree: Boolean = false}；
+ *   - `useTree=true`（Android 默认）：已记住目录 → 直接树内建文件写入；
+ *     未记住或 `chooseTree=true` → 先弹目录选择器再写入；
+ *   - `useTree=false`：走旧 `ACTION_CREATE_DOCUMENT` 链路（回退用）；
+ *   成功返回 `{uri, name, fallback: "none"|"mediastore", relativeDir: String?,
+ *   viaTree: Boolean, displayPath: String?}`（`name` 为 provider 实际落盘名，
+ *   重名时可能带 `(N)`；`displayPath` 形如 `下载/legado`）；
  *   空字节/参数缺失返回 error，不创建文档。
+ * - `chooseTree`: 主动「换个位置」，仅选择并记住文件夹，返回
+ *   `{uri, displayPath, authority}`；用户取消返回 null；
+ * - `getSavedTree`: 查询已记住的保存文件夹（同样结构；未记住返回 null）。
  */
 class SaveFileBridge {
 
@@ -68,7 +88,34 @@ class SaveFileBridge {
         /** 与 Flutter 插件请求码错开（file_picker 使用类 hashCode 派生值） */
         private const val REQUEST_CODE_SAVE_FILE = 10201
 
+        /** 目录树选择请求码（保存前的首次选择 / 「换个位置」共用） */
+        private const val REQUEST_CODE_PICK_TREE = 10202
+
         private const val METHOD_SAVE_FILE = "saveFile"
+
+        /** 主动选择保存文件夹（仅记住，不写文件） */
+        private const val METHOD_CHOOSE_TREE = "chooseTree"
+
+        /** 查询已记住的保存文件夹 */
+        private const val METHOD_GET_SAVED_TREE = "getSavedTree"
+
+        /** 记住的目录树持久化（原生侧，Dart 重启后仍生效） */
+        internal const val PREFS_NAME = "legado_file_save"
+        internal const val KEY_TREE_URI = "tree_uri"
+        internal const val KEY_TREE_DISPLAY_PATH = "tree_display_path"
+        internal const val KEY_TREE_AUTHORITY = "tree_authority"
+
+        /** 「下载」目录树 / 内部存储根的显示名（提示文案用） */
+        internal const val DOWNLOADS_TREE_DISPLAY = "下载"
+        internal const val INTERNAL_STORAGE_DISPLAY = "内部存储"
+
+        /** 主存储绝对路径前缀（`raw:` 目录树 id 归一化用） */
+        private val PRIMARY_STORAGE_ROOTS = listOf(
+            "/storage/emulated/0",
+            "/storage/self/primary",
+            "/sdcard",
+            "/mnt/sdcard"
+        )
 
         /**
          * 等待系统对话框回传的上限（P3-3）：超时复位 pending，
@@ -140,6 +187,93 @@ class SaveFileBridge {
                 bytes.isEmpty() -> "EMPTY_BYTES"
                 else -> null
             }
+
+        /**
+         * 目录树 → 面向用户的目录文案（纯函数，JVM 单测覆盖）。
+         *
+         * 用于保存成功提示与「换个位置」入口展示，避免直接回显
+         * `content://…/tree/primary%3ADownload` 这类 URI：
+         * - DownloadsProvider 的 `downloads` 树根 → 「下载」；
+         * - `primary:Download/legado` → 「下载/legado」（首段 Download 中文化）；
+         * - 内部存储根（`primary:`）→ 「内部存储」；
+         * - `raw:` 绝对路径去掉主存储前缀后同口径处理；
+         * - 其他 provider、含 `.`/`..` 越界段 → null（调用方回落显示 URI）。
+         */
+        internal fun treeDisplayPath(documentId: String?, authority: String?): String? {
+            val id = documentId?.trim() ?: return null
+            if (authority == DOWNLOADS_AUTHORITY) return DOWNLOADS_TREE_DISPLAY
+            if (id.equals("primary", ignoreCase = true) ||
+                id.equals("primary:", ignoreCase = true)
+            ) {
+                return INTERNAL_STORAGE_DISPLAY
+            }
+            val relative = when {
+                id.startsWith("primary:", ignoreCase = true) -> id.substring(8)
+                id.startsWith("raw:", ignoreCase = true) -> {
+                    var path = id.substring(4).trim().replace('\\', '/')
+                    var stripped = false
+                    for (root in PRIMARY_STORAGE_ROOTS) {
+                        if (path == root) {
+                            path = ""
+                            stripped = true
+                            break
+                        }
+                        if (path.startsWith("$root/")) {
+                            path = path.removePrefix("$root/")
+                            stripped = true
+                            break
+                        }
+                    }
+                    // 外置卷（/storage/XXXX-XXXX/...）：去掉卷标识，保留卷内结构
+                    if (!stripped && path.startsWith("/storage/")) {
+                        val rest = path.removePrefix("/storage/")
+                        val slash = rest.indexOf('/')
+                        path = if (slash >= 0) rest.substring(slash + 1) else ""
+                    }
+                    path
+                }
+                else -> return null
+            }
+            val segments = relative.split('/').filter { it.isNotEmpty() }
+            if (segments.any { it == "." || it == ".." }) return null
+            if (segments.isEmpty()) return INTERNAL_STORAGE_DISPLAY
+            val display = segments.toMutableList()
+            if (display.first().equals("Download", ignoreCase = true)) {
+                display[0] = DOWNLOADS_TREE_DISPLAY
+            }
+            return display.joinToString("/")
+        }
+
+        /**
+         * 是否「记住的目录树已不可用」（纯函数，JVM 单测覆盖）。
+         *
+         * 判定为不可用时调用方会清除记住的目录并让用户重选一次：
+         * - SecurityException（持久授权被系统回收）；
+         * - FileNotFoundException（目录被删除 / 卷卸载）；
+         * - 消息含 permission denial / EACCES / no such file / unavailable。
+         *
+         * 与 [isPermissionFailure] 分开：后者用于旧链路的 MediaStore 回退
+         * 决策，目录树模式不写 MediaStore。
+         */
+        internal fun isTreeUnavailable(error: Throwable?): Boolean {
+            var cause: Throwable? = error
+            while (cause != null) {
+                if (cause is SecurityException || cause is FileNotFoundException) return true
+                val message = cause.message?.lowercase().orEmpty()
+                if (message.contains("permission denial") ||
+                    message.contains("permission denied") ||
+                    message.contains("eacces") ||
+                    message.contains("no such file") ||
+                    message.contains("not found") ||
+                    message.contains("failed to find") ||
+                    message.contains("unavailable")
+                ) {
+                    return true
+                }
+                cause = cause.cause
+            }
+            return false
+        }
 
         /**
          * 从 SAF 文档推导 MediaStore Downloads 的目标相对路径（P1-1，纯函数）。
@@ -330,6 +464,9 @@ class SaveFileBridge {
             "TIMEOUT" -> "等待系统保存对话框超时，请重试"
             "ACTIVITY_DESTROYED" -> "页面已销毁，另存请求中断"
             "SAVE_VERIFY_FAILED" -> "写入校验失败，文件未保存，请重试或换一个文件夹"
+            "TREE_UNAVAILABLE" -> "保存文件夹不可用，请重新选择文件夹后重试"
+            "TREE_WRITE_FAILED" -> "无法写入所选文件夹，请换一个文件夹重试"
+            "TREE_UNSUPPORTED" -> "当前系统不支持选择文件夹，请改用系统另存对话框"
             "FALLBACK_PATH_UNKNOWN" ->
                 "无法确定所选文件夹，请选择内部存储 > Download 或子文件夹后重试"
             "LEGACY_NOT_SUPPORTED" ->
@@ -344,6 +481,12 @@ class SaveFileBridge {
     private var pendingBytes: ByteArray? = null
     private var pendingFileName: String? = null
     private var pendingMimeType: String? = null
+
+    /** 本次 pending 是否只是选目录（`chooseTree`），不写字节 */
+    private var pendingPickOnly = false
+
+    /** 已记住目录的直接写入进行中（无系统对话框，无需 pending 超时） */
+    private var directWriteInFlight = false
 
     /** P3-6：是否刚发生过超时（用于区分「迟到的结果」与「无主的回调」） */
     private var timedOutPending = false
@@ -371,17 +514,28 @@ class SaveFileBridge {
     fun handleMethodCall(call: MethodCall, result: MethodChannel.Result, activity: Activity) {
         when (call.method) {
             METHOD_SAVE_FILE -> saveFile(call, result, activity)
+            METHOD_CHOOSE_TREE -> chooseTree(result, activity)
+            METHOD_GET_SAVED_TREE -> result.success(readTree(activity)?.toMap())
             else -> result.notImplemented()
         }
     }
 
-    /** 启动系统另存对话框（校验参数后注册 pending 请求） */
+    /** 是否已有请求在途（含目录树直接写入） */
+    private fun isBusy(): Boolean = pendingResult != null || directWriteInFlight
+
+    /**
+     * 启动系统另存（批26：目录树优先）
+     *
+     * - `useTree=false`：旧 `ACTION_CREATE_DOCUMENT` 链路（回退）；
+     * - `useTree=true` + 已记住目录：直接后台建文件写入，不弹框；
+     * - 未记住目录 / `chooseTree=true`：先弹目录选择器再写入。
+     */
     private fun saveFile(
         call: MethodCall,
         result: MethodChannel.Result,
         activity: Activity
     ) {
-        if (pendingResult != null) {
+        if (isBusy()) {
             replyError(result, "ALREADY_PENDING", "已有另存请求进行中")
             return
         }
@@ -408,16 +562,86 @@ class SaveFileBridge {
             return
         }
         val mimeType = resolveMimeType(fileName, call.argument<String>("mimeType"))
+        val useTree = call.argument<Boolean>("useTree") ?: true
+        val chooseTree = call.argument<Boolean>("chooseTree") ?: false
+        // validateArgs 已拒绝 null；显式解包以满足非空参数
+        val payload = bytes!!
 
-        pendingResult = result
-        pendingActivity = activity
-        pendingBytes = bytes
-        pendingFileName = fileName
-        pendingMimeType = mimeType
-        timedOutPending = false
-        mainHandler.removeCallbacks(pendingTimeout)
-        mainHandler.postDelayed(pendingTimeout, PENDING_TIMEOUT_MS)
+        if (!useTree) {
+            // 回退链路：保留 ACTION_CREATE_DOCUMENT（tree 不可用/用户显式选择）
+            startCreateDocumentSave(result, activity, payload, fileName, mimeType)
+            return
+        }
+        val remembered = readTree(activity)
+        if (chooseTree || remembered == null) {
+            startTreePickForSave(result, activity, payload, fileName, mimeType)
+            return
+        }
+        // 已记住目录：直接建文件写入；目录失效时清除记录并重选一次
+        writeWithRememberedTree(
+            result, activity, remembered, payload, fileName, mimeType, allowRepick = true
+        )
+    }
 
+    /**
+     * 已记住目录的直接写入（后台线程；不弹系统对话框）。
+     *
+     * [allowRepick] 仅对「记住的目录」为 true：目录失效（持久授权被回收/
+     * 目录被删）时清除记录并弹一次目录选择器；用户刚选的目录再失败则按
+     * 结构化错误返回（避免反复弹框）。
+     */
+    private fun writeWithRememberedTree(
+        result: MethodChannel.Result,
+        activity: Activity,
+        tree: TreeRecord,
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String,
+        allowRepick: Boolean
+    ) {
+        directWriteInFlight = true
+        Thread {
+            // 最外层兜底（含 Error）：后台线程任何逃逸异常都不能让 Dart
+            // Future 永久挂起
+            val outcome = try {
+                writeViaTree(activity, tree, bytes, fileName, mimeType)
+            } catch (t: Throwable) {
+                Log.e(TAG, "目录树另存后台任务异常：${technicalDetail(t)}", t)
+                WriteOutcome(code = "TREE_WRITE_FAILED", detail = technicalDetail(t))
+            }
+            mainHandler.post {
+                directWriteInFlight = false
+                if (outcome.saved != null) {
+                    result.success(outcome.saved.toMap())
+                    return@post
+                }
+                if (allowRepick &&
+                    outcome.code == "TREE_UNAVAILABLE" &&
+                    isActivityAlive(activity)
+                ) {
+                    Log.w(TAG, "记住的保存目录不可用，清除后重选一次：${tree.uri}")
+                    clearTree(activity)
+                    startTreePickForSave(result, activity, bytes, fileName, mimeType)
+                    return@post
+                }
+                replyError(result, outcome.code, outcome.detail, treeUriOrNull(tree.uri))
+            }
+        }.start()
+    }
+
+    /** Activity 是否仍可启动系统对话框（避免在销毁后 startActivityForResult） */
+    private fun isActivityAlive(activity: Activity): Boolean =
+        !activity.isFinishing && !activity.isDestroyed
+
+    /** 旧链路：ACTION_CREATE_DOCUMENT（注册 pending 后启动系统保存对话框） */
+    private fun startCreateDocumentSave(
+        result: MethodChannel.Result,
+        activity: Activity,
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String
+    ) {
+        registerPending(result, activity, bytes, fileName, mimeType, pickOnly = false)
         val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
             addCategory(Intent.CATEGORY_OPENABLE)
             type = mimeType
@@ -436,32 +660,160 @@ class SaveFileBridge {
     }
 
     /**
+     * 目录树选择（保存前首次选择）
+     *
+     * 系统没有目录选择器时**自动回退** ACTION_CREATE_DOCUMENT 并记日志；
+     * 启动异常同样回退（不能把保存流程卡死在不可用入口）。
+     */
+    private fun startTreePickForSave(
+        result: MethodChannel.Result,
+        activity: Activity,
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String
+    ) {
+        registerPending(result, activity, bytes, fileName, mimeType, pickOnly = false)
+        try {
+            activity.startActivityForResult(buildTreePickerIntent(activity), REQUEST_CODE_PICK_TREE)
+        } catch (e: Exception) {
+            clearPending()
+            Log.w(TAG, "打开目录选择器失败，回退 ACTION_CREATE_DOCUMENT：${e.message}")
+            startCreateDocumentSave(result, activity, bytes, fileName, mimeType)
+        }
+    }
+
+    /** 主动「换个位置」：仅选择并记住目录，不写文件 */
+    private fun chooseTree(result: MethodChannel.Result, activity: Activity) {
+        if (isBusy()) {
+            replyError(result, "ALREADY_PENDING", "已有另存请求进行中")
+            return
+        }
+        registerPending(result, activity, null, null, null, pickOnly = true)
+        try {
+            activity.startActivityForResult(buildTreePickerIntent(activity), REQUEST_CODE_PICK_TREE)
+        } catch (e: ActivityNotFoundException) {
+            clearPending()
+            replyError(result, "TREE_UNSUPPORTED", e.message ?: e.javaClass.simpleName)
+        } catch (e: Exception) {
+            clearPending()
+            replyError(result, "SAVE_START_FAILED", e.message ?: e.javaClass.simpleName)
+        }
+    }
+
+    /**
+     * 构造目录选择 Intent
+     *
+     * 带上 READ/WRITE/PERSISTABLE 授权标志（持久授权必须显式申请）；
+     * 已记住目录时以其为初始位置，方便用户在原目录附近换位置。
+     *
+     * 不做 `resolveActivity` 预检：Android 11+ 包可见性过滤会让系统
+     * DocumentsUI 探测为 null（假阴性），改为启动时捕获
+     * `ActivityNotFoundException` 再决定回退。
+     */
+    private fun buildTreePickerIntent(activity: Activity): Intent {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+            addFlags(
+                Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                    Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                    Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+            )
+            // EXTRA_INITIAL_URI 自 API 26 起可用；低版本忽略即可
+            readTree(activity)?.uri?.let { uri ->
+                runCatching {
+                    putExtra(DocumentsContract.EXTRA_INITIAL_URI, Uri.parse(uri))
+                }.onFailure {
+                    Log.w(TAG, "设置目录选择初始位置失败：${it.message}")
+                }
+            }
+        }
+        return intent
+    }
+
+    /** 注册 pending（系统对话框等待 + 超时复位） */
+    private fun registerPending(
+        result: MethodChannel.Result,
+        activity: Activity,
+        bytes: ByteArray?,
+        fileName: String?,
+        mimeType: String?,
+        pickOnly: Boolean
+    ) {
+        pendingResult = result
+        pendingActivity = activity
+        pendingBytes = bytes
+        pendingFileName = fileName
+        pendingMimeType = mimeType
+        pendingPickOnly = pickOnly
+        timedOutPending = false
+        mainHandler.removeCallbacks(pendingTimeout)
+        mainHandler.postDelayed(pendingTimeout, PENDING_TIMEOUT_MS)
+    }
+
+    /**
      * Activity 结果回调（由 MainActivity 转发）
      *
-     * 只处理本桥接的请求码；用户取消回 success(null)；RESULT_OK 但无 URI
-     * 回 NO_URI（P3-3），不再与「取消」混为一谈。超时/复位后迟到的回调
-     * 记录日志（P3-6），不静默丢弃。
+     * 目录选择（保存前 / 换个位置）与旧 CREATE_DOCUMENT 分别处理；用户取消
+     * 回 success(null)；RESULT_OK 但无 URI 回 NO_URI（P3-3）。超时/复位后
+     * 迟到的回调记录日志（P3-6），不静默丢弃。
      */
     fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (requestCode != REQUEST_CODE_SAVE_FILE) return
+        when (requestCode) {
+            REQUEST_CODE_PICK_TREE -> onTreePickResult(resultCode, data)
+            REQUEST_CODE_SAVE_FILE -> onCreateDocumentResult(resultCode, data)
+        }
+    }
+
+    /**
+     * 目录树选择结果：持久授权 + 记住目录；`pickOnly` 直接回选择结果，
+     * 保存请求则继续在后台建文件写入。
+     */
+    private fun onTreePickResult(resultCode: Int, data: Intent?) {
         val result = pendingResult
         if (result == null) {
-            val lateUri = data?.data
-            if (timedOutPending) {
-                // P3-6：已向 Dart 回过 TIMEOUT，迟到的真实结果只记日志
-                //（可能已由系统创建文档，保留 uri 供排障与残留清理定位）
-                Log.w(
-                    TAG,
-                    "另存结果迟到（已回 TIMEOUT，忽略写入）：resultCode=$resultCode, uri=$lateUri"
-                )
-                timedOutPending = false
-            } else {
-                Log.w(
-                    TAG,
-                    "收到无 pending 的另存回调（可能 Activity 重建，忽略）：" +
-                        "resultCode=$resultCode, uri=$lateUri"
-                )
-            }
+            logLateResult("目录选择", resultCode, data?.data)
+            return
+        }
+        val activity = pendingActivity
+        val bytes = pendingBytes
+        val fileName = pendingFileName
+        val mimeType = pendingMimeType
+        val pickOnly = pendingPickOnly
+        clearPending()
+
+        if (resultCode != Activity.RESULT_OK) {
+            // 用户取消：与「取消不提示」语义一致
+            result.success(null)
+            return
+        }
+        val treeUri: Uri? = data?.data
+        if (treeUri == null) {
+            replyError(result, "NO_URI", "RESULT_OK 但目录树 data.data 为空")
+            return
+        }
+        if (activity == null) {
+            replyError(result, "SAVE_FAILED", "pending 请求参数已丢失（activity）")
+            return
+        }
+        val tree = persistTree(activity, treeUri)
+        if (pickOnly) {
+            result.success(tree.toMap())
+            return
+        }
+        if (bytes == null || fileName == null || mimeType == null) {
+            replyError(result, "SAVE_FAILED", "pending 请求参数已丢失")
+            return
+        }
+        // 写流在后台线程；主线程只负责回 result（含失败重选逻辑）
+        writeWithRememberedTree(
+            result, activity, tree, bytes, fileName, mimeType, allowRepick = false
+        )
+    }
+
+    /** 旧链路 CREATE_DOCUMENT 结果（行为保持不变，仅抽出方法） */
+    private fun onCreateDocumentResult(resultCode: Int, data: Intent?) {
+        val result = pendingResult
+        if (result == null) {
+            logLateResult("另存", resultCode, data?.data)
             return
         }
         val activity = pendingActivity
@@ -496,29 +848,37 @@ class SaveFileBridge {
                 WriteOutcome(code = "SAVE_FAILED", detail = technicalDetail(t))
             }
             mainHandler.post {
-                if (outcome.saved != null) {
-                    result.success(
-                        mapOf(
-                            "uri" to outcome.saved.uri.toString(),
-                            "name" to outcome.saved.displayName,
-                            "fallback" to if (outcome.saved.viaMediaStore) {
-                                "mediastore"
-                            } else {
-                                "none"
-                            },
-                            "relativeDir" to outcome.saved.relativeDir
-                        )
-                    )
-                } else {
-                    replyError(
-                        result,
-                        outcome.code,
-                        outcome.detail,
-                        uri
-                    )
-                }
+                reportWriteOutcome(result, outcome, uri)
             }
         }.start()
+    }
+
+    /** 无 pending 的回调：区分超时迟到与 Activity 重建（P3-6） */
+    private fun logLateResult(scene: String, resultCode: Int, uri: Uri?) {
+        if (timedOutPending) {
+            Log.w(TAG, "${scene}结果迟到（已回 TIMEOUT，忽略写入）：resultCode=$resultCode, uri=$uri")
+            timedOutPending = false
+        } else {
+            Log.w(
+                TAG,
+                "收到无 pending 的${scene}回调（可能 Activity 重建，忽略）：" +
+                    "resultCode=$resultCode, uri=$uri"
+            )
+        }
+    }
+
+    /** 统一回写结果：成功转 Map，失败回结构化错误 */
+    private fun reportWriteOutcome(
+        result: MethodChannel.Result,
+        outcome: WriteOutcome,
+        requestUri: Uri?
+    ) {
+        val saved = outcome.saved
+        if (saved != null) {
+            result.success(saved.toMap())
+        } else {
+            replyError(result, outcome.code, outcome.detail, requestUri)
+        }
     }
 
     /** 后台线程写流结果（`saved` 与 `code/detail` 二选一） */
@@ -528,16 +888,196 @@ class SaveFileBridge {
         val detail: String? = null
     )
 
-    /** 落盘结果（[relativeDir] 仅回退路径有值，如 `Download/legado/`） */
+    /** 落盘结果（[relativeDir] 仅 MediaStore 回退有值，如 `Download/legado/`） */
     private class SavedDoc(
         val uri: Uri,
         val displayName: String,
         val viaMediaStore: Boolean,
-        val relativeDir: String? = null
-    )
+        val relativeDir: String? = null,
+        /** 批26：经 SAF 目录树写入 */
+        val viaTree: Boolean = false,
+        /** 批26：目录树显示路径（如 `下载/legado`） */
+        val displayPath: String? = null
+    ) {
+        fun toMap(): Map<String, Any?> = mapOf(
+            "uri" to uri.toString(),
+            "name" to displayName,
+            "fallback" to if (viaMediaStore) "mediastore" else "none",
+            "relativeDir" to relativeDir,
+            "viaTree" to viaTree,
+            "displayPath" to displayPath
+        )
+    }
+
+    /**
+     * 记住的保存目录（SharedPreferences 记录 uri + 显示路径 + authority）
+     *
+     * 显示路径用于保存成功提示与「换个位置」入口；authority 便于排障
+     * （不同 ROM 的 DocumentsProvider 实现差异较大）。
+     */
+    private class TreeRecord(
+        val uri: String,
+        val displayPath: String?,
+        val authority: String?
+    ) {
+        fun toMap(): Map<String, Any?> = mapOf(
+            "uri" to uri,
+            "displayPath" to displayPath,
+            "authority" to authority
+        )
+    }
 
     /** 读回校验失败（区分普通 IO 失败，便于回 SAVE_VERIFY_FAILED） */
     private class VerifyException(message: String) : IOException(message)
+
+    /**
+     * 目录树内建文件 + 写入 + 严格读回（批26 主路径，对齐原版
+     * `DocumentFile.fromTreeUri(...).createFile(...).writeBytes(...)`）。
+     *
+     * 失败清理规则：**只删除本次 createDocument 创建的那个文档**
+     * （`created`），绝不碰目录里的其他文件；树授权内删除可用，因此
+     * 不会再留下 0 字节占位（旧 CREATE_DOCUMENT 链路在该 ROM 上删不掉）。
+     *
+     * 错误码分派：
+     * - `SAVE_VERIFY_FAILED`：写入后大小/首字节校验失败（已删除本次文件）；
+     * - `TREE_UNAVAILABLE`：记住的目录失效（授权回收/目录被删），调用方
+     *   清除记录并重选一次；
+     * - `TREE_WRITE_FAILED`：provider 拒绝创建/写入（磁盘满、只读目录等）。
+     */
+    private fun writeViaTree(
+        activity: Activity,
+        tree: TreeRecord,
+        bytes: ByteArray,
+        fileName: String,
+        mimeType: String
+    ): WriteOutcome {
+        val resolver = activity.contentResolver
+        val treeUri = Uri.parse(tree.uri)
+        var created: Uri? = null
+        try {
+            val parentDocId = DocumentsContract.getTreeDocumentId(treeUri)
+            val parentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, parentDocId)
+            val docUri = DocumentsContract.createDocument(
+                resolver,
+                parentUri,
+                mimeType,
+                fileName
+            ) ?: throw IOException("createDocument 返回 null（tree=$treeUri, name=$fileName）")
+            created = docUri
+            Log.i(TAG, "目录树建文件：tree=$treeUri, doc=$docUri, name=$fileName")
+            val output = resolver.openOutputStream(docUri)
+                ?: throw IOException("openOutputStream 返回 null：$docUri")
+            output.use { stream ->
+                stream.write(bytes)
+                stream.flush()
+            }
+            // 严格读回（大小精确 + 首字节一致），失败即删除本次文件
+            verifyWritten(resolver, docUri, bytes)
+            // provider 重名时可能返回 `xxx (1).json`，以查询到的实际名为准
+            val actualName = queryDisplayName(resolver, docUri) ?: fileName
+            Log.i(
+                TAG,
+                "目录树写入成功：uri=$docUri, name=$actualName, display=${tree.displayPath}"
+            )
+            return WriteOutcome(
+                saved = SavedDoc(
+                    uri = docUri,
+                    displayName = actualName,
+                    viaMediaStore = false,
+                    relativeDir = null,
+                    viaTree = true,
+                    displayPath = tree.displayPath
+                )
+            )
+        } catch (t: Throwable) {
+            val detail = technicalDetail(t)
+            val code = when {
+                // 校验失败优先：文件刚创建却读回不一致，重选目录未必有帮助
+                t is VerifyException -> "SAVE_VERIFY_FAILED"
+                isTreeUnavailable(t) -> "TREE_UNAVAILABLE"
+                else -> "TREE_WRITE_FAILED"
+            }
+            Log.e(TAG, "目录树保存失败（$code）：tree=$treeUri, doc=$created, detail=$detail", t)
+            // 只删本次创建的文件；删除失败只记日志（provider 可能拒绝）
+            created?.let { deleteDocument(resolver, it) }
+            return WriteOutcome(code = code, detail = detail)
+        }
+    }
+
+    // ---------- 记住的保存目录（SharedPreferences） ----------
+
+    /** 读取已记住的目录树；未记住/记录损坏返回 null */
+    private fun readTree(context: Context): TreeRecord? {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val uri = prefs.getString(KEY_TREE_URI, null)?.trim()?.takeIf { it.isNotEmpty() }
+            ?: return null
+        return TreeRecord(
+            uri = uri,
+            displayPath = prefs.getString(KEY_TREE_DISPLAY_PATH, null),
+            authority = prefs.getString(KEY_TREE_AUTHORITY, null)
+        )
+    }
+
+    /**
+     * 记住用户选择的目录树（并尽量取持久授权）。
+     *
+     * 持久授权失败（个别 ROM/第三方 provider 不支持）只记日志：本次保存
+     * 仍可用临时授权完成；下次保存会因目录不可用而重新弹选择器。
+     */
+    private fun persistTree(activity: Activity, treeUri: Uri): TreeRecord {
+        val takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+        try {
+            activity.contentResolver.takePersistableUriPermission(treeUri, takeFlags)
+        } catch (e: Exception) {
+            Log.w(TAG, "takePersistableUriPermission 失败（仅本次临时授权）：${e.message}")
+        }
+        val documentId = try {
+            DocumentsContract.getTreeDocumentId(treeUri)
+        } catch (e: Exception) {
+            Log.w(TAG, "解析目录树 documentId 失败：${e.message}")
+            null
+        }
+        val displayPath = treeDisplayPath(documentId, treeUri.authority)
+        // 换目录时释放旧目录的持久授权，避免授权累积
+        val previous = readTree(activity)
+        if (previous != null && previous.uri != treeUri.toString()) {
+            try {
+                activity.contentResolver.releasePersistableUriPermission(
+                    Uri.parse(previous.uri),
+                    takeFlags
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "释放旧目录持久授权失败：${e.message}")
+            }
+        }
+        activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_TREE_URI, treeUri.toString())
+            .putString(KEY_TREE_DISPLAY_PATH, displayPath)
+            .putString(KEY_TREE_AUTHORITY, treeUri.authority)
+            .apply()
+        Log.i(
+            TAG,
+            "已记住保存目录：uri=$treeUri, display=$displayPath, authority=${treeUri.authority}"
+        )
+        return TreeRecord(treeUri.toString(), displayPath, treeUri.authority)
+    }
+
+    /** 清除记住的目录（目录失效时调用，下次保存重新弹选择器） */
+    private fun clearTree(context: Context) {
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .edit()
+            .remove(KEY_TREE_URI)
+            .remove(KEY_TREE_DISPLAY_PATH)
+            .remove(KEY_TREE_AUTHORITY)
+            .apply()
+        Log.i(TAG, "已清除记住的保存目录")
+    }
+
+    /** 错误回传带的 URI（记录损坏时为 null，不影响结构化错误） */
+    private fun treeUriOrNull(uri: String?): Uri? =
+        uri?.let { runCatching { Uri.parse(it) }.getOrNull() }
 
     /**
      * 后台线程写字节（含回退与授权回收）。
@@ -915,7 +1455,7 @@ class SaveFileBridge {
                 throw IOException("清除 IS_PENDING 未生效（updated=$updated）：$uri")
             }
             // P2-1：严格读回（SIZE 精确 + 首字节一致），失败即清理并上抛
-            verifyMediaStoreWrite(resolver, uri, bytes)
+            verifyWritten(resolver, uri, bytes)
             val actualName = queryDisplayName(resolver, uri) ?: fileName
             success = true
             Log.i(TAG, "MediaStore 回退写入成功：uri=$uri, relativeDir=$relativeDir, name=$actualName")
@@ -930,12 +1470,13 @@ class SaveFileBridge {
     /**
      * 严格读回校验（P2-1，参照 StorageBridge.verifyWritten）。
      *
-     * 两项须同时成立，任一失败抛 [VerifyException]：
+     * 目录树与 MediaStore 回退共用：两项须同时成立，任一失败抛
+     * [VerifyException]：
      * 1. 查询到的 SIZE 与实际写入字节数精确相等（读不到/负数同样失败）；
      * 2. openInputStream 读回首 [HEAD_VERIFY_BYTES] 字节（不足则全量）一致。
      */
-    private fun verifyMediaStoreWrite(resolver: ContentResolver, uri: Uri, bytes: ByteArray) {
-        val size = queryLongColumn(resolver, uri, MediaStore.MediaColumns.SIZE)
+    private fun verifyWritten(resolver: ContentResolver, uri: Uri, bytes: ByteArray) {
+        val size = queryDocumentSize(resolver, uri)
         if (!isReadbackSizeValid(bytes.size, size)) {
             throw VerifyException("读回大小校验失败：期望 ${bytes.size}，实际 $size")
         }
@@ -1161,6 +1702,7 @@ class SaveFileBridge {
         pendingBytes = null
         pendingFileName = null
         pendingMimeType = null
+        pendingPickOnly = false
         mainHandler.removeCallbacks(pendingTimeout)
     }
 }

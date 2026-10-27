@@ -408,6 +408,99 @@ class SaveFileBridgeTest {
         assertFalse(SaveFileBridge.isReadbackSizeValid(2100, null))
     }
 
+    // ---------- 批26：目录树显示路径（保存成功提示 / 换个位置入口） ----------
+
+    @Test
+    fun `downloads tree root displays as download directory`() {
+        assertEquals(
+            "下载",
+            SaveFileBridge.treeDisplayPath(
+                "downloads",
+                SaveFileBridge.DOWNLOADS_AUTHORITY
+            )
+        )
+    }
+
+    @Test
+    fun `primary tree document id displays with chinese download prefix`() {
+        assertEquals("下载/legado", SaveFileBridge.treeDisplayPath("primary:Download/legado", null))
+        assertEquals("下载/legado", SaveFileBridge.treeDisplayPath("primary:Download/legado/", null))
+        assertEquals(
+            "下载/legado",
+            SaveFileBridge.treeDisplayPath("PRIMARY:Download/legado", null)
+        )
+        assertEquals("下载", SaveFileBridge.treeDisplayPath("primary:Download", null))
+        // 非「下载」目录：原样展示（首段不是 Download 不中文化）
+        assertEquals("Documents/导出", SaveFileBridge.treeDisplayPath("primary:Documents/导出", null))
+    }
+
+    @Test
+    fun `internal storage root displays as internal storage`() {
+        assertEquals("内部存储", SaveFileBridge.treeDisplayPath("primary:", null))
+        assertEquals("内部存储", SaveFileBridge.treeDisplayPath("primary", null))
+    }
+
+    @Test
+    fun `raw tree document id strips primary storage roots`() {
+        assertEquals(
+            "下载/legado",
+            SaveFileBridge.treeDisplayPath(
+                "raw:/storage/emulated/0/Download/legado",
+                null
+            )
+        )
+        assertEquals(
+            "下载/legado",
+            SaveFileBridge.treeDisplayPath("raw:/sdcard/Download/legado", null)
+        )
+        // 外置存储：去掉卷标识后，卷内 Download 段同口径中文化
+        assertEquals(
+            "下载/legado",
+            SaveFileBridge.treeDisplayPath("raw:/storage/1A2B-3C4D/Download/legado", null)
+        )
+    }
+
+    @Test
+    fun `unknown provider or traversal tree id has no display path`() {
+        assertNull(SaveFileBridge.treeDisplayPath("msd:1000001321", "com.google.android.apps.docs"))
+        assertNull(SaveFileBridge.treeDisplayPath(null, null))
+        assertNull(SaveFileBridge.treeDisplayPath("primary:Download/../etc", null))
+        assertNull(SaveFileBridge.treeDisplayPath("primary:Download/./legado", null))
+    }
+
+    // ---------- 批26：目录树失效判定（清除记住目录 + 重选一次） ----------
+
+    @Test
+    fun `revoked grant and missing tree are unavailable`() {
+        assertTrue(SaveFileBridge.isTreeUnavailable(SecurityException("revoked")))
+        assertTrue(SaveFileBridge.isTreeUnavailable(FileNotFoundException("gone")))
+        assertTrue(
+            SaveFileBridge.isTreeUnavailable(
+                IOException("Permission Denial: requires android.permission.MANAGE_DOCUMENTS")
+            )
+        )
+        assertTrue(SaveFileBridge.isTreeUnavailable(IOException("open failed: EACCES")))
+        assertTrue(SaveFileBridge.isTreeUnavailable(IOException("Failed to find tree")))
+        assertTrue(SaveFileBridge.isTreeUnavailable(IOException("Volume unavailable")))
+    }
+
+    @Test
+    fun `nested tree cause is inspected`() {
+        val nested = IOException(
+            "Failed to create document",
+            SecurityException("Permission Denial: requires WRITE")
+        )
+        assertTrue(SaveFileBridge.isTreeUnavailable(nested))
+    }
+
+    @Test
+    fun `disk full and verify failures are not tree unavailable`() {
+        // 写入失败但目录仍可用：不触发重选（避免反复弹框）
+        assertFalse(SaveFileBridge.isTreeUnavailable(IOException("No space left on device")))
+        assertFalse(SaveFileBridge.isTreeUnavailable(IllegalStateException("closed")))
+        assertFalse(SaveFileBridge.isTreeUnavailable(null))
+    }
+
     // ---------- P2-3：中文 reason 映射 ----------
 
     @Test
@@ -440,10 +533,27 @@ class SaveFileBridgeTest {
     }
 
     @Test
+    fun `tree failures map to chinese reasons`() {
+        assertEquals(
+            "保存文件夹不可用，请重新选择文件夹后重试",
+            SaveFileBridge.reasonOf("TREE_UNAVAILABLE")
+        )
+        assertEquals(
+            "无法写入所选文件夹，请换一个文件夹重试",
+            SaveFileBridge.reasonOf("TREE_WRITE_FAILED")
+        )
+        assertEquals(
+            "当前系统不支持选择文件夹，请改用系统另存对话框",
+            SaveFileBridge.reasonOf("TREE_UNSUPPORTED")
+        )
+    }
+
+    @Test
     fun `all user facing reasons are chinese`() {
         val codes = listOf(
             "INVALID_ARGS", "EMPTY_BYTES", "ALREADY_PENDING", "SAVE_START_FAILED",
             "NO_URI", "TIMEOUT", "ACTIVITY_DESTROYED", "SAVE_VERIFY_FAILED",
+            "TREE_UNAVAILABLE", "TREE_WRITE_FAILED", "TREE_UNSUPPORTED",
             "FALLBACK_PATH_UNKNOWN", "LEGACY_NOT_SUPPORTED", "SAVE_FAILED"
         )
         val cjk = Regex("[\\u4e00-\\u9fff]")
