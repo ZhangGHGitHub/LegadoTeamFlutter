@@ -11,6 +11,29 @@ pub mod book_type {
     pub const VIDEO: i32 = 4;
     pub const LOCAL: i32 = 0x1000;
     pub const ALL_BOOK_TYPE_LOCAL: i32 = 0x1000;
+    /// 原版 Kotlin 本地书位（`BookType.local = 0b100000000` = 256 = 0x100，
+    /// `app/src/main/java/io/legado/app/constant/BookType.kt:44`）。
+    ///
+    /// **local 位双标准（必读）**：原版本地书 `type = text|local = 264`
+    /// （`LocalBook.kt:295`），压缩包内书籍再叠 `archive(512)` = 776
+    /// （`LocalBook.kt:396` `addType(BookType.archive)`，`BookType.kt:49`）；
+    /// 本仓库 Rust 域写入 [`LOCAL`]（0x1000）。原版 zip 备份恢复不做类型
+    /// 归一（`legado-ffi/src/api/backup_api.rs` 直接 serde 落库），故读取侧
+    /// 判定本地书必须双位兼容（批22c）。**写入侧仍统一 [`LOCAL`]**，
+    /// 本常量仅用于识别原版/参考版数据，勿用于新写入。
+    pub const KOTLIN_LOCAL_BIT: i32 = 0x100;
+
+    /// `Book.bookType` 是否带本地书位（双标准兼容：Rust 域 [`LOCAL`] 0x1000
+    /// 或原版 Kotlin [`KOTLIN_LOCAL_BIT`] 0x100）。
+    ///
+    /// 对齐 Kotlin `Book.isType(BookType.local)`（`BookExtensions.kt:226`，
+    /// `type and bookType > 0`），额外兼容本仓库 Rust 域位。
+    /// 注意：本函数只做**位判定**；`type == 0` 的存量行须由调用方按 origin
+    /// 判定（Kotlin `Book.isLocal` 的 `type == 0` 分支，`BookExtensions.kt:50-56`）。
+    pub fn is_local_type(type_value: i32) -> bool {
+        type_value & (LOCAL | KOTLIN_LOCAL_BIT) != 0
+    }
+
     /// 本地漫画媒体位（`Book.bookType` **位域**）；对齐 Kotlin `BookType` 位语义
     ///
     /// [cbz 批 B | 2026-10-03] 导入 `.cbz` 本地漫画时与 [`LOCAL`] 按位或组合：
@@ -553,9 +576,34 @@ mod tests {
         assert_eq!(book_type::FILE, 3);
         assert_eq!(book_type::VIDEO, 4);
         assert_eq!(book_type::LOCAL, 0x1000);
+        // 批22c：原版 Kotlin `BookType.local`（BookType.kt:44）= 0x100
+        assert_eq!(book_type::KOTLIN_LOCAL_BIT, 0x100);
         // cbz 批 B：本地漫画媒体位（位域），与数值域 IMAGE(=2) 分离
         assert_eq!(book_type::IMAGE_BIT, 64);
         assert_eq!(book_type::LOCAL | book_type::IMAGE_BIT, 0x1040);
         assert_ne!(book_type::IMAGE, book_type::IMAGE_BIT);
+    }
+
+    /// 批22c：本地书位双标准（Rust 域 0x1000 | 原版 Kotlin 0x100）
+    #[test]
+    fn test_is_local_type_dual_standard() {
+        // 本仓库 Rust 域写入形态
+        assert!(book_type::is_local_type(book_type::LOCAL));
+        assert!(book_type::is_local_type(
+            book_type::LOCAL | book_type::IMAGE_BIT
+        ));
+        // 原版本地书：text(8)|local(256) = 264（LocalBook.kt:295）
+        assert!(book_type::is_local_type(264));
+        // 原版压缩包内书籍：text(8)|local(256)|archive(512) = 776
+        assert!(book_type::is_local_type(776));
+        // 两个位同时出现（异常存量数据）也判本地
+        assert!(book_type::is_local_type(0x1100));
+
+        // 非本地：空类型、原版在线文字书 type=8、音频/图片/临时书架位
+        assert!(!book_type::is_local_type(0));
+        assert!(!book_type::is_local_type(8));
+        assert!(!book_type::is_local_type(book_type::AUDIO));
+        assert!(!book_type::is_local_type(book_type::IMAGE_BIT));
+        assert!(!book_type::is_local_type(book_type::NOT_SHELF));
     }
 }

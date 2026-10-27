@@ -61,15 +61,19 @@ const LOCAL_BOOK_SUB_DIR: &str = "books";
 /// 本地图片扩展名白名单（P1-2 安全加固；对齐 `guess_image_mime` 的常见图片集）
 const LOCAL_IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "gif", "webp"];
 
-/// 对齐 Kotlin `Book.isLocal`（BookExtensions.kt:49-55）
+/// 对齐 Kotlin `Book.isLocal`（BookExtensions.kt:50-56）
 ///
 /// WebDAV 判定经 [`book_type::is_web_dav_origin`] 双前缀识别：
 /// 原版/参考版 `webDav::` 与本仓库批18b 前的存量 `dav:` 均视为本地书。
+///
+/// [批22c] 位判定改用 [`book_type::is_local_type`]：原版 zip 备份恢复不做
+/// 类型归一（原版本地书 `type = text|local = 264`，压缩包内书籍 776），
+/// 仅认 Rust 域 0x1000 会把它们当在线书（Web 服务按 origin 找书源取正文）。
 fn is_local_book(book: &Book) -> bool {
     if book.book_type == 0 {
         return book.origin == book_type::LOCAL_TAG || book_type::is_web_dav_origin(&book.origin);
     }
-    book.book_type & book_type::LOCAL > 0
+    book_type::is_local_type(book.book_type)
 }
 
 /// 对齐 Kotlin `Book.isEpub`（BookExtensions.kt:61-62：本地书 + 文件名 .epub）
@@ -1793,6 +1797,55 @@ mod tests {
             ..Book::default()
         };
         assert!(!is_local_book(&book));
+
+        // —— 批22c：原版 Kotlin 位域（0x100）双标准 ——
+        // 原版本地书 `type = text(8)|local(256) = 264`（LocalBook.kt:295），
+        // origin 为本仓库与参考版共用的 `loc_book`；zip 备份原样落库。
+        book = Book {
+            origin: "loc_book".to_string(),
+            book_type: 264,
+            ..Book::default()
+        };
+        assert!(is_local_book(&book), "原版本地书 264 应判本地");
+
+        // 原版压缩包内书籍 `type = text|local|archive = 776`（LocalBook.kt:396）
+        book = Book {
+            origin: "loc_book".to_string(),
+            book_type: 776,
+            ..Book::default()
+        };
+        assert!(is_local_book(&book), "原版压缩包内书籍 776 应判本地");
+
+        // 原版在线文字书 `type = text(8)` + http(s) origin → 非本地
+        // （不能仅按 origin 反推，也不能把 Kotlin text 位误当本地位）
+        for origin in ["http://src", "https://src"] {
+            book = Book {
+                origin: origin.to_string(),
+                book_type: 8,
+                ..Book::default()
+            };
+            assert!(
+                !is_local_book(&book),
+                "在线书 type=8 origin={origin} 不应判本地"
+            );
+        }
+
+        // type 非 0 但 origin 为 `loc_book`（异常存量：本地 origin 无本地位）
+        // 仍按 Kotlin 语义判非本地（type != 0 只看位，不看 origin）
+        book = Book {
+            origin: "loc_book".to_string(),
+            book_type: 8,
+            ..Book::default()
+        };
+        assert!(!is_local_book(&book));
+
+        // 两个本地位并存（跨域数据混写）也不漏判
+        book = Book {
+            origin: "https://src".to_string(),
+            book_type: book_type::LOCAL | book_type::KOTLIN_LOCAL_BIT,
+            ..Book::default()
+        };
+        assert!(is_local_book(&book));
     }
 
     /// P1-3：`Book.getUseReplaceRule()`（Book.kt:226-236）对齐
