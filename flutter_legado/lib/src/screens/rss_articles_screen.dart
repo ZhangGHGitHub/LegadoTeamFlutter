@@ -19,6 +19,7 @@ import '../services/bridge_http.dart';
 import '../services/platform_bridge_service.dart';
 import '../services/rss_header.dart';
 import '../utils/error_message.dart';
+import '../utils/image_data_uri.dart';
 import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4] 下拉 M3 化
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
@@ -132,7 +133,10 @@ Future<String> _resolveRssImageUrl(
 }
 
 /// 相对地址绝对化（对齐 `NetworkUtils.getAbsoluteURL(base, value)` 常用分支）
+///
+/// data: URI 自带 scheme 且体积可能很大，直接原样返回（不参与 URI 解析）。
 String _absoluteAgainst(String baseUrl, String value) {
+  if (isImageDataUri(value)) return value;
   final uri = Uri.tryParse(value);
   if (uri != null && uri.hasScheme) return value;
   final base = Uri.tryParse(baseUrl);
@@ -246,8 +250,34 @@ class RssPhotoViewer extends ConsumerStatefulWidget {
 class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
   bool _saving = false;
 
-  /// 图片后缀（URL 末段 `.` 后 1-5 位字母数字，否则 jpg）
+  /// data: URI 解码结果（批15g③；非 data: URI 为 null）
+  ///
+  /// 对齐原版 `ReadRssViewModel.webData2bitmap`（`ReadRssViewModel.kt:248-256`）：
+  /// 图片地址不是合法 URL 时按 base64 data URI 处理，不走网络下载。
+  RssDataUriImage? _dataImage;
+
+  /// data: URI 解码失败原因（UI 直接展示，不崩溃）
+  String? _dataError;
+
+  @override
+  void initState() {
+    super.initState();
+    if (!isImageDataUri(widget.url)) return;
+    try {
+      _dataImage = parseImageDataUri(widget.url);
+    } on ImageDataUriException catch (e) {
+      _dataError = e.message;
+    } catch (e) {
+      // 兜底：任何解析异常都转成可展示文案（不向 UI 抛未捕获异常）
+      _dataError = '$e';
+    }
+  }
+
+  /// 图片后缀（data: URI 按 MIME；其余按 URL 末段 1-5 位字母数字，否则 jpg）
   String _suffix() {
+    if (isImageDataUri(widget.url)) {
+      return _dataImage?.extension ?? '.jpg';
+    }
     final path = Uri.tryParse(widget.url)?.path ?? '';
     final dot = path.lastIndexOf('.');
     if (dot >= 0 && dot < path.length - 1) {
@@ -258,9 +288,17 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
   }
 
   /// 抓取图片字节（测试可注入，避免依赖真实网络/FFI）
+  ///
+  /// data: URI 直接返回解码字节（批15g③），不发起网络请求；解码失败
+  /// 抛 [ImageDataUriException]，由保存链给出明确错误提示。
   Future<Uint8List> _fetchBytes() async {
     final override = widget.fetchBytes;
     if (override != null) return override();
+    if (isImageDataUri(widget.url)) {
+      final image = _dataImage;
+      if (image != null) return image.bytes;
+      throw ImageDataUriException(_dataError ?? '图片数据无效');
+    }
     final api = ref.read(bookApiProvider);
     final data = await bridgeHttpGetBytes(
       api,
@@ -303,6 +341,48 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
     }
   }
 
+  /// 图片主体（data: URI 走 [Image.memory]，其余走网络加载）
+  ///
+  /// 批15g③：data: URI 不发起网络请求；解码失败显示明确错误文案。
+  Widget _buildImageViewer() {
+    if (isImageDataUri(widget.url)) {
+      final image = _dataImage;
+      if (image == null) {
+        return Center(
+          child: Text(
+            _dataError ?? '图片数据无效',
+            style: const TextStyle(color: Colors.white70),
+            textAlign: TextAlign.center,
+          ),
+        );
+      }
+      return Image.memory(
+        image.bytes,
+        fit: BoxFit.contain,
+        errorBuilder: (_, _, _) => const Center(
+          child: Text(
+            '图片加载失败',
+            style: TextStyle(color: Colors.white70),
+          ),
+        ),
+      );
+    }
+    return CachedNetworkImage(
+      imageUrl: widget.url,
+      fit: BoxFit.contain,
+      httpHeaders: widget.headers.isEmpty ? null : widget.headers,
+      placeholder: (_, _) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+      errorWidget: (_, _, _) => const Center(
+        child: Text(
+          '图片加载失败',
+          style: TextStyle(color: Colors.white70),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Dialog.fullscreen(
@@ -313,23 +393,7 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
             child: InteractiveViewer(
               minScale: 0.5,
               maxScale: 5,
-              child: Center(
-                child: CachedNetworkImage(
-                  imageUrl: widget.url,
-                  fit: BoxFit.contain,
-                  httpHeaders:
-                      widget.headers.isEmpty ? null : widget.headers,
-                  placeholder: (_, _) => const Center(
-                    child: CircularProgressIndicator(),
-                  ),
-                  errorWidget: (_, _, _) => const Center(
-                    child: Text(
-                      '图片加载失败',
-                      style: TextStyle(color: Colors.white70),
-                    ),
-                  ),
-                ),
-              ),
+              child: Center(child: _buildImageViewer()),
             ),
           ),
           SafeArea(
