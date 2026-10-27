@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-10-27 | **批24b：7z 审查回修（零新增方法；错误语义修正 + 残余风险登记 + 去重命名 + 阻塞模型）**：① **P2-4 错误语义修正**——§2.34 原表述「以下情形均抛 BridgeError（success=false 信封仅供 zip/rar）」与实现相反：`archiveImport7z` **恒返回信封** `{success, error, extracted_files}`（不抛 BridgeError），`archiveList7zFiles` 失败**抛 BridgeError**（消息含 `Book parsing error:` 前缀）。② **P2-1 头部 OOM 登记 + 缓解**——`sevenz-rust2` 编码头解码 `MAX_MEM_LIMIT_KB=usize::MAX/1024`（等同无上限），恶意头可声明 4 GiB 字典致 OOM（仅 DoS）；新增打开前 32 字节签名头预检，`NextHeaderSize`（offset 20..28）> 64 MiB 拒绝；编码头内部字典声明仍不受控，登记于 `docs/RESIDUAL_RISKS_2026-08-13.md`。③ **P2-2 阻塞模型**——`archiveImport7z`/`archiveList7zFiles` 改 async + `spawn_blocking`（对齐 `directLinkUpload`），Dart 签名不变，FRB 生成 `wrap_async`。④ **P3-2 同名 basename**——同包重名按 `name.ext`/`name_2.ext` 去重，列表与解压同命名，不再后者覆盖前者。⑤ **P3-4 Windows ADS**——Windows 上条目名含 `:` 整包拒绝。⑥ **P3-8 块级 CRC**——PackInfo pack stream CRC 上游不校验，已登记。方法计数不变（§2.34 = 10，附录合计 312，BookApi 309，§1.7 表 B 146）。详见 §2.34 批24b 补记 |
 | 2026-10-27 | **批24：外部文件 7z 解压导入（契约先行，加法式 +2 方法；用户已授权）**：§2.34 新增 `archiveImport7z({required String sevenZipPath, required String outputDir}) → Future<Map<String, dynamic>>`（Rust `ffi::archive_import_7z`，核心实现 `legado-book/src/archive.rs::import_7z_file`）与 `archiveList7zFiles({required String sevenZipPath}) → Future<List<String>>`（Rust `ffi::archive_list_7z_files` → `list_7z_book_files`）。**实现选型**：`sevenz-rust2 0.24`（Apache-2.0、纯 Rust、Android/iOS/v7a 可交叉编译；`default-features=false`，同批把 `legado-js` 的 0.12.1 升至 0.24，修复 CVE-2026-61725 7z 条目名路径穿越，0.21.1 已修）。**语义**：解压后仅取书籍后缀（`.txt/.epub/.mobi/.pdf/.umd/.azw3/.azw`）逐个返回，文件名取条目 basename（与 zip/rar 路径一致）；列表不解压、仅读头。**限额（fail-closed）**：输入 512 MiB / 单条目解压 256 MiB / 全部条目解压总量 512 MiB / 条目数 10000 / LZMA·LZMA2 字典 128 MiB；超限整包失败。**路径安全**：条目名 `\`→`/` 后逐组件拒绝 `..`、绝对路径、盘符、空字节，任一不安全整包拒绝；写盘只用 basename 并经既有 `safe_output_path` 二次校验。**错误语义**：签名/版本/CRC/截断/密码/内存/IO/限额/路径错误 → `BridgeError` 中文文案（`ArchiveImportResult.success=false` + `error` 仅用于保持与 zip/rar 一致的信封）。**不支持项（与原版 libarchive 无密码回调口径一致）**：加密 7z、分卷、PPMd/BZip2/Deflate/LZ4/Zstd/Brotli。**契约先行日期 2026-10-27**（本条目与 §2.34 文档改动先于 Rust/Dart 代码落盘）。§2.34 8→**10**，附录合计 310→**312**，BookApi 307→**309**，§1.7 表 B 144→**146**（等价对总数 159→**161**）。详见 §2.34 批24 补记 |
 | 2026-10-27 | **批21h 设备验收缺陷回修（P1-1/P1-2 + P2-1 口径 + P2-3 登记；零新增方法）**：① **P1-1 动作通道红→绿**——Dart 同步面局部两参 `function __lgEmitAction(name,payload)` 与 Rust 桥头单参 `__lgEmitAction(payload)` 同名提升，`__lgAction` 自递归、`RangeError` 被吞，`java.log/toast/longToast/open/searchBook/addBook/showPhoto/openUrl` 全部静默丢失；改为局部 `__lgActionEmit`，`__lgAction` 单次调用桥头。② **P1-2 页面全局命名**——注入 `window` 的名字去 `legado` 前缀（`__rs_`/`__rn_`/`__rc_`/`__rk_`/`__rb_`），幂等标记首个 tick 后转移到回填回调并删除窗口属性，桥释放时删除回调（Rust 回填回调改 `configurable:true`）；console 钩子/override 桩改 `__rssConsole*`/`__rssJava`。③ **P2-1 安全口径**——内联快照仅对源作者脚本可达（桥模式页面脚本已剥离）、URL 模式页面可信等价、不声称「窗口无任何宿主痕迹」。④ **P2-3 快照拆分登记未改**（时序/语义风险）。§2.5 批21h 段详述；方法计数不变（§2.5 19，附录合计 310，BookApi 307，§1.7 表 B 144） |
 | 2026-10-27 | **批21a：RSS 阅读 WebView `preloadJs` 宿主桥（契约先行，加法式 +1 方法）**：§2.5 新增 `rssWebViewHostCall(String sourceUrl, String method, String argsJson) → Future<String>`（Rust `ffi::rss_web_view_host_call`，核心实现 `legado-ffi/src/api/rss_web_bridge.rs`）——**单入口 RPC**：`argsJson` 为位置参数 JSON 数组，返回信封 `{"ok":bool,"value":<any>,"error":String?,"actions":[...]?}`。内部方法 `__prepare`（`{channelName,callbackName,ua}` → `{script,snapshot}`，源 `preloadJs` 为空/空白时 `script` 为空串＝不注入桥）、`__cookieSet`（WebView Cookie 回流落库）、`__store`（source 变量/登录缓存/cache 读写与 toast 动作）；对外方法白名单与 `WebJsExtensions.request` funName 对齐（`run`/`ajaxAwait`/`connectAwait`/`getAwait`/`headAwait`/`postAwait`/`webViewAwait`/`webViewGetSourceAwait`/`decryptStrAwait`/`encryptBase64Await`/`encryptHexAwait`/`createSignHexAwait`/`readTxtFileAwait`/`importScriptAwait`/`getStringAwait`；`downloadFileAwait` 本批返回明确不支持）。Rust 在 `executor:<sourceUrl>` QuickJS 引擎中执行宿主调用，源静态 header + UA 注入全局请求头、`enabledCookieJar` 查询回退 `RssSourceRepository`、源 `concurrentRate` 限流、`ui_action_queue` 收集动作。Dart 侧 channel/握手/动作转发属批21b。§2.5 18→**19**，附录合计 309→**310**，BookApi 口径 306→**307**，§1.7 表 B 143→**144**（等价对总数 158→**159**）。**契约先行口径**：本批同时把 `rssWebViewHostCall` 直通封装进 `BookApi`/`RustApi`/`MockBookApi`（纯 FFI 委托，无 channel 业务逻辑），故 BookApi 计数同批转齐。详见 §2.5 批21a 补记 |
@@ -909,8 +910,8 @@
 | `archiveImportRar({required String rarPath, required String outputDir, String? password})` | rarPath, outputDir, password(可选) | `Future<Map<String, dynamic>>` | 导入 RAR 压缩包中的书籍文件 |
 | `archiveListZipFiles({required String zipPath})` | zipPath | `Future<List<String>>` | 列出 ZIP 压缩包中的书籍文件名 |
 | `archiveListRarFiles({required String rarPath, String? password})` | rarPath, password(可选) | `Future<List<String>>` | 列出 RAR 压缩包中的书籍文件名 |
-| `archiveImport7z({required String sevenZipPath, required String outputDir})` | sevenZipPath, outputDir | `Future<Map<String, dynamic>>` | **2026-10-27 批24 新增**：导入 7z 压缩包中的书籍文件（解压后仅取书籍后缀；返回 `{success, extracted_files, error}` 信封） |
-| `archiveList7zFiles({required String sevenZipPath})` | sevenZipPath | `Future<List<String>>` | **2026-10-27 批24 新增**：列出 7z 压缩包中的书籍文件名（只读头部、不解压） |
+| `archiveImport7z({required String sevenZipPath, required String outputDir})` | sevenZipPath, outputDir | `Future<Map<String, dynamic>>` | **2026-10-27 批24 新增**：导入 7z 压缩包中的书籍文件（解压后仅取书籍后缀；**恒返回** `{success, extracted_files, error}` 信封，失败不抛 BridgeError；async + spawn_blocking，批24b） |
+| `archiveList7zFiles({required String sevenZipPath})` | sevenZipPath | `Future<List<String>>` | **2026-10-27 批24 新增**：列出 7z 压缩包中的书籍文件名（只读头部、不解压；**失败抛 BridgeError**，async + spawn_blocking，批24b） |
 | `archiveDetectEncoding({required String filePath})` | filePath | `Future<Map<String, dynamic>>` | 检测 TXT 文件编码 |
 | `archiveConvertEncoding({required String filePath, required String fromEncoding, required String toEncoding})` | filePath, fromEncoding, toEncoding | `Future<Map<String, dynamic>>` | 转换 TXT 文件编码 |
 | `archiveIsArchive({required String filePath})` | filePath | `Future<bool>` | 判断文件是否为压缩包格式 |
@@ -928,11 +929,29 @@
 >
 > **路径安全（fail-closed）**：条目名 `\`→`/` 后逐组件拒绝 `..`、绝对路径（含 `//` 前缀）、Windows 盘符（`X:`）、空字节；**任一不安全条目 → 整包拒绝**（不静默跳过）；写盘只用 basename 并经既有 `safe_output_path` 二次校验；书籍条目先写 `.part`，成功 rename（Windows 先删旧目标），失败删除 `.part`。
 >
-> **错误语义**：以下情形均抛 `BridgeError`（`success=false` 信封仅供 zip/rar 同型返回）：签名错误 / 不支持的 7z 版本 / CRC 校验失败 / 截断或结构损坏 / 需要密码（`PasswordRequired`）/ 含 AES 编码器（识别为加密包）/ 不支持的压缩算法 / 解码内存超限 / IO 错误 / 限额与路径安全错误；文案中文，前缀 `7z导入失败:`（列表为 `7z列表失败:`）。
+> **错误语义**：`archiveImport7z` **恒返回信封** `{success, error, extracted_files}`，以下情形均以 `success:false` + 中文 `error` 返回、**不抛 BridgeError**（与 zip/rar 同型）：签名错误 / 不支持的 7z 版本 / CRC 校验失败 / 截断或结构损坏 / 需要密码（`PasswordRequired`）/ 含 AES 编码器（识别为加密包）/ 不支持的压缩算法 / 解码内存超限 / IO 错误 / 限额与路径安全错误，文案前缀 `7z导入失败:`。`archiveList7zFiles` 失败**抛 BridgeError**，`message` 形如 `Book parsing error: 7z列表失败: <原因>`（`Book parsing error:` 为 `LegadoError::BookParse` 的 Display 前缀）。
 >
 > **不支持项（明确登记；与原版 libarchive 无密码回调口径一致）**：加密 7z（不显示密码框、不尝试密码）、分卷 7z（`.001` 分卷）、PPMd / BZip2 / Deflate / LZ4 / Zstd / Brotli 压缩方法。支持 COPY / LZMA / LZMA2 及 BCJ 系列过滤器 / Delta。
 >
 > **契约先行日期 2026-10-27**：本节文档改动先于 Rust/Dart 代码落盘。
+
+> ℹ️ **§2.34 批24b 审查回修（2026-10-27）**
+>
+> **错误语义（修正批24 表述）**：`archiveImport7z` **恒返回信封**（见上条）；`archiveList7zFiles` 失败抛 `BridgeError`。批24b 同时消除了列表错误的双层前缀（内层 `Book parsing error:` 不再出现在 `7z列表失败:` 之后），最终消息为 `Book parsing error: 7z列表失败: <原因>`。
+>
+> **头部解码 OOM（残余风险 + 低成本缓解）**：`sevenz-rust2 0.24.1` 编码头解码使用 `MAX_MEM_LIMIT_KB = usize::MAX/1024`（等同无上限），恶意头可声明 4 GiB LZMA 字典触发 OOM（仅 DoS，无 RCE）。缓解：`ArchiveReader::open` 前自读 32 字节签名头，`NextHeaderSize`（offset 20..28，LE u64；offset 12..20 是 `NextHeaderOffset`）> 64 MiB 直接拒绝（书籍包头部远低于此）；签名错误/头部不足亦在此阶段给出中文错误。伪造头单测见 `archive.rs::test_import_7z_rejects_oversized_header_before_open` 等。**边界**：该门槛只限制头部声明长度与头部缓冲区分配，**不能阻止编码头内部声明超大 LZMA 字典**（解码期由上游按属性分配），残余风险登记于 `docs/RESIDUAL_RISKS_2026-08-13.md`（7Z-1）。
+>
+> **同名 basename（P3-2）**：同包内多个条目 basename 相同，按出现顺序命名为 `name.ext` / `name_2.ext` / `name_3.ext`…（Windows 文件系统大小写不敏感去重）；列表与解压使用同一命名，选中列表项即可导入对应文件，不再「后者覆盖前者」造成数据丢失。输出目录中**既有同名文件**仍按原 zip/rar 语义覆盖（`test_import_7z_overwrites_existing_output`）。
+>
+> **Windows ADS（P3-4）**：Windows 上条目名含 `:`（如 `ab:cd.txt`）整包拒绝——冒号会被解释为备用数据流（ADS），既不产生同名文件也可能被安全软件拦截；非 Windows 平台冒号是合法文件名字符，不受影响。用例 `test_import_7z_rejects_windows_ads_name`（`#[cfg(windows)]`）。
+>
+> **阻塞模型（P2-2）**：`archiveImport7z` / `archiveList7zFiles` 为 `async` + `spawn_blocking`（对齐 `directLinkUpload` 范式），单线程解压/头部解析在阻塞线程池执行；Dart 签名不变（仍为 `Future<...>`），FRB 生成物为 `wrap_async`。真实 DLL 用例见 `flutter_legado/test/ffi/archive_7z_runtime_test.dart`（含大包导入期间事件循环响应性断言）。
+>
+> **块级 CRC（P3-8，上游限制登记）**：`sevenz-rust2 0.24.1` 校验 StartHeaderCRC / NextHeaderCRC，并在读取条目流时校验块 CRC（单子流块）或子流 CRC（`file.has_crc`）；**PackInfo 中的 pack stream CRC 解析后不校验**，多子流块且缺少子流 CRC 时无条目级完整性保护。损坏通常仍会在解码或声明长度处失败；本批不额外实现 CRC（需复刻上游解析），登记于残留风险（7Z-2）。
+>
+> **`legado-js` 依赖面（P3-6）**：`sevenz-rust2` 生产 features 由 `compress+util` 收窄为 `util`（生产只用 `decompress_file`），`compress` 移入 dev-dependencies 仅供测试构造夹具——生产二进制不带 7z 编码器，Cargo.lock 版本不变。
+>
+> **契约计数**：批24b 零新增方法，§2.34 = 10、附录合计 312、BookApi 309、§1.7 表 B 146 均不变。
 
 ### 2.35 RSS 已读记录（7 个方法）
 
