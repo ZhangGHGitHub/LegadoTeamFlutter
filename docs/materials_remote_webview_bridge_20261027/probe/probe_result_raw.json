@@ -1,0 +1,26 @@
+[
+  {
+    "step": "initial",
+    "typeofChannel": "object",
+    "hasPostMessage": true,
+    "descriptor": {
+      "enumerable": true,
+      "configurable": true,
+      "writable": true
+    },
+    "inObjectKeys": true,
+    "inOwnPropertyNames": true
+  },
+  {
+    "step": "after_delete",
+    "deleteResult": true,
+    "deleteError": null,
+    "typeofAfterDelete": "undefined",
+    "inOwnPropertyNamesAfterDelete": false
+  },
+  {
+    "step": "done",
+    "capturedStillWorks": true,
+    "typeofAfterDelete": "undefined"
+  }
+]
