@@ -1,4 +1,5 @@
 ﻿import 'dart:async';
+import 'dart:convert';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -15,12 +16,17 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../services/crash_log_service.dart';
 import '../services/deep_link_service.dart';
 import '../services/rss_header.dart';
+import '../services/rss_web_bridge.dart';
 import '../services/rss_web_config.dart';
 import '../utils/legado_deep_link.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/open_url_confirm_dialog.dart';
+import 'rss_articles_screen.dart';
+import 'search_screen.dart';
+import 'source_login_screen.dart';
 
 /// RSS 文章详情 / 阅读页面
 ///
@@ -69,6 +75,13 @@ class RssArticleDetailScreen extends ConsumerStatefulWidget {
   /// 不存在的入口（批19 审查 P2-4）。
   final bool singleUrlDirect;
 
+  /// 强制 URL 直开（批21b：`java.open('rss', url, title)`）
+  ///
+  /// 原版该入口经 `ReadRssActivity.start(..., url)` → `urlLiveData` 直接
+  /// `loadUrl`，不经过正文/规则正文分支；本页按该标记跳过
+  /// `startHtml`/正文/规则正文判定，直接加载文章链接（或源 URL）。
+  final bool forceUrlMode;
+
   const RssArticleDetailScreen({
     super.key,
     required this.article,
@@ -78,6 +91,7 @@ class RssArticleDetailScreen extends ConsumerStatefulWidget {
     this.startHtml,
     this.onContentFetched,
     this.singleUrlDirect = false,
+    this.forceUrlMode = false,
   });
 
   @override
@@ -114,6 +128,15 @@ class _RssArticleDetailScreenState
   /// URL 直开模式（无正文/无 ruleContent，按文章链接加载；对齐
   /// `RssReadLoadTarget.Url`）
   bool _urlMode = false;
+
+  /// preloadJs 宿主桥（批21b；源 URL 非空时创建，Cookie 回流也复用）
+  RssWebBridge? _rssBridge;
+
+  /// `__prepare` 结果（桥头 + 只读快照；未准备为 null）
+  RssWebBridgePrepareResult? _bridgePrepare;
+
+  /// 是否已注册 `JavaScriptChannel` 且拿到非空桥头
+  bool _bridgeReady = false;
 
   // [批15c | 2026-10-26] 规则正文拉取（对齐 ReadRssViewModel.loadContent）：
   // article.description 为空且源配置 ruleContent 时，经 `rssFetchContent`
@@ -205,6 +228,15 @@ class _RssArticleDetailScreenState
       _source = source;
       _isResolvingSource = false;
     });
+
+    // 批21b：`java.open('rss', url)` 对齐原版 URL 直开（urlLiveData），
+    // 跳过 startHtml/正文/规则正文分支。
+    if (widget.forceUrlMode) {
+      _urlMode = true;
+      await _initWebView();
+      if (mounted) setState(() {});
+      return;
+    }
 
     final startHtml = widget.startHtml?.trim() ?? '';
     if (startHtml.isNotEmpty) {
@@ -397,6 +429,8 @@ class _RssArticleDetailScreenState
     }
     final source = _source;
     final jsEnabled = source?.enableJs ?? true;
+    final preloadJs = source?.preloadJs?.trim() ?? '';
+    final overrideJs = source?.shouldOverrideUrlLoading?.trim() ?? '';
     final controller = WebViewController();
     _webViewController = controller;
 
@@ -426,6 +460,9 @@ class _RssArticleDetailScreenState
             setState(() => _isWebLoading = false);
           }
           if (jsEnabled) unawaited(_onPageFinishedScripts());
+          // 批21b：WebView Cookie 回流（对齐原版 onPageFinished
+          // `webCookieManager.getCookie → CookieStore.setCookie`）
+          unawaited(_syncWebViewCookies(url));
           // 批19 终版收口 P2：对齐原版 `onPageFinished` 用页面标题刷新
           // TitleBar（singleUrl 直开时顶栏初始为源名）。
           unawaited(_refreshWebViewTitle(url));
@@ -449,6 +486,21 @@ class _RssArticleDetailScreenState
       ),
     );
 
+    // 批21b：preloadJs 宿主桥（通道注册 + 桥头准备）
+    //
+    // 门控对齐原版：`enableJs == false` 不注册/不 prepare；`preloadJs` 非空
+    // 才 `__prepare` 并注册通道；`shouldOverrideUrlLoading` 非空时额外取
+    // 只读快照（不注册通道、不注入桥）。prepare 失败仅降级为「无宿主绑定」，
+    // 不阻断正文加载。
+    await _setupRssWebBridge(
+      controller,
+      source: source,
+      jsEnabled: jsEnabled,
+      preloadJs: preloadJs,
+      overrideJs: overrideJs,
+      userAgent: userAgent,
+    );
+
     try {
       final startHtml = widget.startHtml?.trim() ?? '';
       if (startHtml.isNotEmpty) {
@@ -457,6 +509,7 @@ class _RssArticleDetailScreenState
           rssInjectStartJs(startHtml, source?.startJs),
           style: source?.startStyle ?? source?.style,
           preloadJs: source?.preloadJs,
+          preloadScript: _bridgeInjectionForHtml(preloadJs),
         );
         final baseUrl = (source?.loadWithBaseUrl ?? true)
             ? _htmlBaseUrl(widget.sourceUrl)
@@ -480,6 +533,9 @@ class _RssArticleDetailScreenState
           }
           return;
         }
+        // 批21b：加载 URL 前预写属域 Cookie（源登录头 Cookie → 原生 jar，
+        // 对齐原版 `CookieManager.applyToWebView(urlState.url)`）
+        await _prewriteDomainCookies(target);
         await controller.loadRequest(uri, headers: headers);
         return;
       }
@@ -492,6 +548,7 @@ class _RssArticleDetailScreenState
                 html,
                 style: source.style,
                 preloadJs: source.preloadJs,
+                preloadScript: _bridgeInjectionForHtml(preloadJs),
               );
         final baseUrl = source == null || source.loadWithBaseUrl
             ? _htmlBaseUrl(widget.article.url)
@@ -510,24 +567,43 @@ class _RssArticleDetailScreenState
     }
   }
 
-  /// 页面开始：注入预加载 JS / console 钩子 / `java` 桩（仅 enableJs）
+  /// 页面开始：注入 console 钩子 / preloadJs 桥 / `java` 快照桩（仅 enableJs）
+  ///
+  /// 批21b 顺序：console 钩子 → bootstrap/preload（宿主桥）→ 其它
+  /// （`shouldOverrideUrlLoading` 的 `java` 快照桩）。HTML 模式的 preloadJs
+  /// 已内联进 `<head>`（`rssClHtml(preloadScript:)`），此处只补 URL 模式。
   Future<void> _onPageStartedScripts() async {
     final controller = _webViewController;
     final source = _source;
     if (controller == null) return;
     try {
-      // URL 模式无法重写主文档 <head>（Flutter WebView 无 shouldInterceptRequest），
-      // 退化为页面开始即执行 preloadJs（已登记差异）
-      final preloadJs = source?.preloadJs?.trim() ?? '';
-      if (_urlMode && preloadJs.isNotEmpty) {
-        await controller.runJavaScript(preloadJs);
-      }
+      // 1) console 钩子（showWebLog）：先于 preloadJs，预加载脚本的
+      //    console 输出同样被采集
       if (source?.showWebLog ?? false) {
         await controller.runJavaScript(kRssConsoleHookScript);
       }
+      // 2) preloadJs（URL 模式无法重写主文档 <head>，退化为页面开始即执行，
+      //    已登记差异）。宿主桥就绪时注入完整组合脚本（通道/握手/桥头/
+      //    同步面/preloadJs）；不可用时保持 15f 裸执行。
+      final preloadJs = source?.preloadJs?.trim() ?? '';
+      if (_urlMode && preloadJs.isNotEmpty) {
+        final bridge = _rssBridge;
+        await controller.runJavaScript(
+          _bridgeReady && bridge != null
+              ? bridge.composeInjection(preloadJs)
+              : preloadJs,
+        );
+      }
+      // 3) shouldOverrideUrlLoading 的 java 快照桩（同步 get/put/getKey/
+      //    getTag/getVariable；写入仅本地快照，已登记差异）
       final overrideJs = source?.shouldOverrideUrlLoading?.trim() ?? '';
       if (overrideJs.isNotEmpty) {
-        await controller.runJavaScript(kRssJavaStubScript);
+        final snapshot = _bridgePrepare?.snapshot;
+        await controller.runJavaScript(
+          snapshot != null
+              ? rssBridgeOverrideScript(snapshot)
+              : kRssJavaStubScript,
+        );
       }
     } catch (e) {
       debugPrint('[RSS WebView] onPageStarted 脚本注入失败: $e');
@@ -550,6 +626,357 @@ class _RssArticleDetailScreenState
     } catch (e) {
       debugPrint('[RSS WebView] onPageFinished 脚本注入失败: $e');
     }
+  }
+
+  // ── 批21b：preloadJs 宿主桥接线 ────────────────────────────────────────────
+
+  /// 创建并准备宿主桥（源 URL 非空时；JS 关闭仅保留 Cookie 回流）
+  ///
+  /// - 只创建桥实例（供 Cookie 回流）不 prepare：无 `preloadJs` 且无
+  ///   `shouldOverrideUrlLoading`；
+  /// - `preloadJs` 非空 → `__prepare` + 注册 `JavaScriptChannel`；
+  /// - 仅 `shouldOverrideUrlLoading` 非空 → 只取快照（不注册通道/不注入桥）。
+  Future<void> _setupRssWebBridge(
+    WebViewController controller, {
+    required RssSource? source,
+    required bool jsEnabled,
+    required String preloadJs,
+    required String overrideJs,
+    required String? userAgent,
+  }) async {
+    _rssBridge?.dispose();
+    _rssBridge = null;
+    _bridgePrepare = null;
+    _bridgeReady = false;
+    final sourceUrl = widget.sourceUrl.trim();
+    if (sourceUrl.isEmpty) return;
+    // 桥实例与 JS 开关无关：`__cookieSet` 不依赖 JS 引擎，`enableJs=false`
+    // 时仍保留 Cookie 回流能力（对齐原版 onPageFinished 的无条件回流）。
+    final bridge = RssWebBridge(
+      sourceUrl: sourceUrl,
+      api: ref.read(bookApiProvider),
+      runJavaScript: controller.runJavaScript,
+      onAction: _handleBridgeAction,
+      onLog: (message) => debugPrint('[RSS WebView 桥] $message'),
+    );
+    _rssBridge = bridge;
+    if (!jsEnabled ||
+        source == null ||
+        (preloadJs.isEmpty && overrideJs.isEmpty)) {
+      return;
+    }
+    final ua = (userAgent ?? '').trim().isNotEmpty
+        ? userAgent
+        : await _readControllerUserAgent(controller);
+    final prepared = await bridge.prepare(userAgent: ua);
+    if (!mounted) return;
+    _bridgePrepare = prepared;
+    if (prepared == null) {
+      // 桥初始化失败只降级为「无宿主绑定」，不阻断正文（非 quickjs 构建等）
+      debugPrint('[RSS WebView] 宿主桥准备失败：降级为无宿主绑定');
+      return;
+    }
+    if (preloadJs.isEmpty) return;
+    if (prepared.script.trim().isEmpty) {
+      debugPrint('[RSS WebView] 桥头为空：不注入宿主桥');
+      return;
+    }
+    try {
+      await controller.addJavaScriptChannel(
+        bridge.nativeChannelName,
+        onMessageReceived: (message) {
+          unawaited(bridge.handleMessage(message.message));
+        },
+      );
+      if (mounted) _bridgeReady = true;
+    } catch (e) {
+      debugPrint('[RSS WebView] 注册 JavaScriptChannel 失败：$e');
+    }
+  }
+
+  /// HTML 模式的内联桥脚本（未就绪返回 null，走裸 preloadJs）
+  String? _bridgeInjectionForHtml(String preloadJs) {
+    final bridge = _rssBridge;
+    if (!_bridgeReady || bridge == null || preloadJs.isEmpty) return null;
+    return bridge.composeInjection(
+      preloadJs,
+      includeConsoleHook: _source?.showWebLog ?? false,
+    );
+  }
+
+  /// 读取控制器当前 UA（平台未实现/失败返回 null）
+  Future<String?> _readControllerUserAgent(
+    WebViewController controller,
+  ) async {
+    try {
+      final value = await controller.getUserAgent();
+      final trimmed = value?.trim() ?? '';
+      return trimmed.isEmpty ? null : trimmed;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 加载 URL 前预写属域 Cookie（源登录头 `Cookie` → 原生 jar）
+  Future<void> _prewriteDomainCookies(String url) async {
+    final cookie = rssBridgeCookieFromLoginHeader(_bridgePrepare?.loginHeader);
+    if (cookie == null) return;
+    await rssBridgeWriteCookiesToWebViewJar(url: url, cookie: cookie);
+  }
+
+  /// `onPageFinished` Cookie 回流（WebView cookie jar → Rust `__cookieSet`）
+  Future<void> _syncWebViewCookies(String url) async {
+    final bridge = _rssBridge;
+    if (bridge == null || !url.startsWith('http')) return;
+    final uri = Uri.tryParse(url);
+    if (uri == null || uri.host.isEmpty) return;
+    try {
+      final cookies = await WebViewCookieManager().getCookies(domain: uri);
+      if (cookies.isEmpty) return;
+      final cookie =
+          cookies.map((item) => '${item.name}=${item.value}').join('; ');
+      if (cookie.trim().isEmpty) return;
+      await bridge.pushCookies(url: url, cookie: cookie);
+    } catch (e) {
+      // 平台未实现/读取失败不阻断阅读（对齐原版尽力而为语义）
+      debugPrint('[RSS WebView] Cookie 回流失败：$e');
+    }
+  }
+
+  /// 宿主桥动作分发（`java.toast/log/open/openUrl/showPhoto/searchBook`）
+  void _handleBridgeAction(RssWebBridgeAction action) {
+    if (!mounted) return;
+    switch (action.name) {
+      case 'toast':
+        _showBridgeSnack(
+          action.message,
+          duration: action.isLong
+              ? const Duration(seconds: 4)
+              : const Duration(seconds: 2),
+        );
+        return;
+      case 'log':
+        CrashLogService.instance.put(
+          '[RSS WebView][${_source?.sourceName ?? widget.sourceName}] '
+          '${action.message}',
+        );
+        return;
+      case 'open':
+        unawaited(_handleBridgeOpen(action));
+        return;
+      case 'openUrl':
+        final url = action.url;
+        if (url != null) {
+          unawaited(
+            openExternalUrlWithConfirm(
+              context,
+              url: url,
+              sourceName: widget.sourceName,
+            ),
+          );
+        }
+        return;
+      case 'showPhoto':
+        final src = action.data['src']?.toString().trim() ?? '';
+        if (src.isEmpty) return;
+        unawaited(
+          showRssPhotoViewer(
+            context,
+            url: src,
+            title: widget.article.title,
+            headers: parseRssHeaderMap(_source?.header),
+          ),
+        );
+        return;
+      case 'searchBook':
+        final key = action.data['key']?.toString().trim() ?? '';
+        if (key.isEmpty) return;
+        unawaited(
+          Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => SearchScreen(initialQuery: key)),
+          ),
+        );
+        return;
+      case 'addBook':
+        // 原版 `AddToBookshelfDialog(bookUrl)`：按 URL 抓详情后选择分组；
+        // 本批未接线（登记差异）
+        debugPrint('[RSS WebView] java.addBook 未接线：${action.data['url']}');
+        return;
+      default:
+        debugPrint('[RSS WebView] 未处理动作：${action.name} ${action.data}');
+    }
+  }
+
+  /// `java.open(name, url, title, origin)`（`sort`/`rss`/`login` 三型）
+  Future<void> _handleBridgeOpen(RssWebBridgeAction action) async {
+    final name = action.openName;
+    final target = await _resolveBridgeSource(action.origin);
+    if (!mounted) return;
+    if (target == null) {
+      _showBridgeSnack('未找到指定源');
+      return;
+    }
+    switch (name) {
+      case 'sort':
+        // 对齐原版 RssSortActivity.start(sortUrl, sourceUrl)
+        await Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => RssArticlesScreen(
+              source: target,
+              initialSortUrl: _resolveSortUrl(action.url, action.title),
+            ),
+          ),
+        );
+        return;
+      case 'rss':
+        await _openBridgeRss(target, action);
+        return;
+      case 'login':
+        await _openBridgeLogin(target);
+        return;
+      default:
+        debugPrint('[RSS WebView] java.open 暂不支持：$name');
+    }
+  }
+
+  /// 订阅源列表页 URL 直开（`origin` 指定源，缺省当前源）
+  Future<RssSource?> _resolveBridgeSource(String? origin) async {
+    final key = origin?.trim() ?? '';
+    if (key.isEmpty || key == widget.sourceUrl.trim()) return _source;
+    try {
+      final sources = await ref.read(bookApiProvider).getRssSources();
+      for (final source in sources) {
+        if (source.sourceUrl == key) return source;
+      }
+    } catch (_) {
+      // 源读取失败按未找到处理
+    }
+    return null;
+  }
+
+  /// `java.open('sort')` 的 sortUrl（对齐原版：JSON 对象原样，否则 `{title:url}`）
+  String? _resolveSortUrl(String? url, String? title) {
+    final raw = url?.trim() ?? '';
+    if (raw.isEmpty) return null;
+    if (raw.startsWith('{')) {
+      try {
+        if (jsonDecode(raw) is Map) return raw;
+      } catch (_) {
+        // 非法 JSON：按普通地址处理
+      }
+    }
+    final label = title?.trim() ?? '';
+    return label.isEmpty ? raw : jsonEncode(<String, String>{label: raw});
+  }
+
+  /// `java.open('rss')`：无 url → 源首页/起始页；有 url → URL 直开
+  Future<void> _openBridgeRss(
+    RssSource target,
+    RssWebBridgeAction action,
+  ) async {
+    final title = (action.title ?? '').trim();
+    final pageTitle = title.isEmpty ? target.sourceName : title;
+    final link = action.url?.trim() ?? '';
+    if (link.isEmpty) {
+      if (target.singleUrl) {
+        // 对齐 openRss：http(s) 站内阅读，其余系统打开
+        if (rssIsHttpUrl(target.sourceUrl)) {
+          await _pushBridgeArticle(target, pageTitle, target.sourceUrl);
+        } else if (mounted) {
+          unawaited(
+            openExternalUrlWithConfirm(
+              context,
+              url: target.sourceUrl,
+              sourceName: pageTitle,
+            ),
+          );
+        }
+        return;
+      }
+      final startHtml = target.startHtml?.trim() ?? '';
+      if (startHtml.isEmpty) {
+        // 对齐原版 `RssSortActivity.start(null, sourceUrl)`
+        if (!mounted) return;
+        await Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => RssArticlesScreen(source: target)),
+        );
+        return;
+      }
+      if (!mounted) return;
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => RssArticleDetailScreen(
+            article: RssFeedArticle(title: pageTitle, url: ''),
+            source: target,
+            sourceName: pageTitle,
+            sourceUrl: target.sourceUrl,
+            startHtml: startHtml,
+            singleUrlDirect: true,
+          ),
+        ),
+      );
+      return;
+    }
+    // 有链接：先留阅读历史（对齐原版 rssReadRecordDao.insertRecord），
+    // 再按 URL 直开（原版 `ReadRssActivity.start(..., url)`）
+    try {
+      await ref
+          .read(bookApiProvider)
+          .rssMarkRead(target.sourceUrl, pageTitle, link: link);
+    } catch (_) {
+      // 历史写入失败不阻断阅读
+    }
+    await _pushBridgeArticle(target, pageTitle, link);
+  }
+
+  Future<void> _pushBridgeArticle(
+    RssSource target,
+    String title,
+    String link,
+  ) async {
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RssArticleDetailScreen(
+          article: RssFeedArticle(title: title, url: link),
+          source: target,
+          sourceName: title,
+          sourceUrl: target.sourceUrl,
+          singleUrlDirect: true,
+          forceUrlMode: true,
+        ),
+      ),
+    );
+  }
+
+  /// `java.open('login')`：源配置了 loginUrl/loginUi 才进入登录页
+  Future<void> _openBridgeLogin(RssSource target) async {
+    final hasLogin = (target.loginUrl?.trim().isNotEmpty ?? false) ||
+        (target.loginUi?.trim().isNotEmpty ?? false);
+    if (!hasLogin) {
+      _showBridgeSnack('源未配置登录');
+      return;
+    }
+    if (!mounted) return;
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => SourceLoginScreen(
+          sourceUrl: target.sourceUrl,
+          sourceName: target.sourceName,
+          loginUrl: target.loginUrl,
+        ),
+      ),
+    );
+  }
+
+  void _showBridgeSnack(
+    String message, {
+    Duration duration = const Duration(seconds: 2),
+  }) {
+    if (!mounted || message.trim().isEmpty) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(message), duration: duration));
   }
 
   /// 读取 WebView 页面标题并刷新顶栏（对齐原版 `onPageFinished` 标题逻辑）
@@ -1268,6 +1695,8 @@ $htmlContent
 
   @override
   void dispose() {
+    _rssBridge?.dispose();
+    _rssBridge = null;
     _webViewController = null;
     super.dispose();
   }
