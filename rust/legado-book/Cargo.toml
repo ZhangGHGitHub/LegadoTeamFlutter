@@ -18,6 +18,17 @@ genpdf = { version = "0.2", features = ["images"] }
 # 图片解码（JPEG/PNG）：与 genpdf 的 image 0.23 依赖统一版本，仅启用所需格式
 image = { version = "0.23", default-features = false, features = ["png", "jpeg"] }
 
+# [批24 | 2026-10-27] 7z 导入（§2.34）：纯 Rust、Apache-2.0，Android/iOS 可交叉编译。
+# 必须 default-features=false：0.24 默认 features 会引入 aes256/bzip2/ppmd 等
+# 重型可选依赖（且与仓库既有 crypto 版本重复）。仅保留内置 LZMA/LZMA2/COPY/BCJ。
+sevenz-rust2 = { version = "0.24", default-features = false }
+
+[dev-dependencies]
+# 测试期临时启用 compress（构造 7z 夹具）；不影响 release 产物依赖面。
+# 加密包用例使用预生成字节夹具（见 archive.rs 测试常量），不启用 aes256，
+# 避免把 aes/cbc/sha2 的重复 crypto 版本带入 Cargo.lock。
+sevenz-rust2 = { version = "0.24", default-features = false, features = ["compress"] }
+
 # unrar 在 Android 上无法交叉编译（unrar_sys 含 Windows 专属代码），
 # iOS 与 Android 同策略排除（对齐 Android 行为基线，免 C++ 运行时链接）
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]

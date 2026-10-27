@@ -1060,17 +1060,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "filetime_creation"
-version = "0.2.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c25b5d475550e559de5b0c0084761c65325444e3b6c9e298af9cefe7a9ef3a5f"
-dependencies = [
- "cfg-if",
- "filetime",
- "windows-sys 0.52.0",
-]
-
-[[package]]
 name = "find-msvc-tools"
 version = "0.1.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1884,6 +1873,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "sevenz-rust2",
  "unrar",
  "zip",
 ]
@@ -2226,12 +2216,9 @@ dependencies = [
 
 [[package]]
 name = "lzma-rust2"
-version = "0.1.8"
+version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85ea7cee9b17915968314862afb1885c725891c6da8c4ac41a89ea4a8125b352"
-dependencies = [
- "byteorder",
-]
+checksum = "f1c46f3fcd2e888afdb01a07efc071cb21300e07c68d32c3e8b01b5c8cb1fcaa"
 
 [[package]]
 name = "lzma-sys"
@@ -2411,18 +2398,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df9761775871bdef83bee530e60050f7e54b1105350d6884eb0fb4f46c2f9405"
 dependencies = [
  "memchr",
-]
-
-[[package]]
-name = "nt-time"
-version = "0.11.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc00a186166f9dd3328adf977e4671de848dd8f01c3208c2b10c70a406885c4f"
-dependencies = [
- "chrono",
- "jiff",
- "rand 0.9.5",
- "time 0.3.54",
 ]
 
 [[package]]
@@ -3503,17 +3478,13 @@ dependencies = [
 
 [[package]]
 name = "sevenz-rust2"
-version = "0.12.1"
+version = "0.24.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "917fa0773093647de14c6f102c1e71a424bf0bc8e77e9bceb66a6c6a80de3296"
+checksum = "2f0c68c0e8289bfd09e49ef433e8de02c7c464afc1d7f5a275c99749a880e301"
 dependencies = [
- "bit-set",
- "byteorder",
  "crc32fast",
- "filetime_creation",
  "js-sys",
  "lzma-rust2",
- "nt-time",
  "wasm-bindgen",
 ]
 

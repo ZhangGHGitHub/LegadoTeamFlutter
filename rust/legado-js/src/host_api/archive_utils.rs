@@ -207,7 +207,7 @@ pub fn unrar_file(_rar_path: &str, _output_path: Option<&str>) -> Result<String,
 #[cfg(feature = "quickjs")]
 pub fn seven_z_entry_bytes(seven_z_bytes: &[u8], entry_name: &str) -> Result<Vec<u8>, String> {
     let cursor = std::io::Cursor::new(seven_z_bytes);
-    let mut reader = sevenz_rust2::SevenZReader::new(cursor, sevenz_rust2::Password::empty())
+    let mut reader = sevenz_rust2::ArchiveReader::new(cursor, sevenz_rust2::Password::empty())
         .map_err(|e| format!("Invalid 7z archive: {e}"))?;
     reader
         .read_file(entry_name)
