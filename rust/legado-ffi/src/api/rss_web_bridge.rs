@@ -54,12 +54,15 @@
 //!   明确报错的 `java`/`source`/`cache` 桩（本文件不参与），避免
 //!   `preloadJs` 因 TypeError 中断。
 //! - **资源边界**：每源宿主调用并发上限 4（等待 10s 超时）；`__store` 每秒
-//!   300 次；`importScriptAwait` 纳入源级 `concurrentRate` 限流；并发/限频/
-//!   UA 记忆表均有条数上限（超出淘汰空闲/任意条目）。
+//!   300 次；`importScriptAwait` 纳入源级 `concurrentRate` 限流；限频窗口/
+//!   UA 记忆表超限淘汰任意条目，并发信号量表只淘汰空闲项（存在在用项时
+//!   允许临时上浮，仅状态变化告警一次）。
 
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 
+#[cfg(feature = "quickjs")]
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "quickjs")]
 use std::sync::Arc;
 
@@ -131,8 +134,11 @@ const BRIDGE_PERMIT_TIMEOUT: std::time::Duration = std::time::Duration::from_sec
 
 /// 进程内按源表的条数上限（并发信号量/限频窗口/UA 记忆；批21d P2-2）
 ///
-/// 超出后优先淘汰空闲信号量，其次淘汰任意条目；被淘汰源下次调用会重建，
-/// 只损失短期状态（限频窗口/UA 记忆），不会造成功能错误。
+/// 批21f P3-1：各表超限处理并不相同——
+/// - 限频窗口 / UA 记忆：超限即淘汰任意非当前源条目（只损失短期状态）；
+/// - 并发信号量：只淘汰**空闲**项（`Arc` 仅剩表内引用）；存在在用项时
+///   **允许条数临时上浮**且不淘汰（避免同源新建第二个信号量突破每源并发
+///   上限），并在跨越上限的状态变化时告警一次（批21f P3-2）。
 const MAX_TRACKED_SOURCES: usize = 256;
 
 /// `__store` 每秒调用上限（每源；超出按 `ok:false` 拒绝，页面侧丢弃）
@@ -179,6 +185,11 @@ fn bridge_permit(source_url: &str) -> Result<tokio::sync::OwnedSemaphorePermit, 
     }
 }
 
+/// 并发信号量表超限告警标记（批21f P3-2：只在状态变化时记录一次，
+/// 避免每次宿主调用都刷同一条 warn）
+#[cfg(feature = "quickjs")]
+static SEMAPHORE_OVERFLOW_WARNED: AtomicBool = AtomicBool::new(false);
+
 /// 并发信号量表裁剪：优先淘汰无持有者的空闲项（Arc 仅剩表内引用）
 ///
 /// 批21e P3-5：**不淘汰在用项**。强行删除在用信号量表项会让同源后续调用
@@ -187,6 +198,8 @@ fn bridge_permit(source_url: &str) -> Result<tokio::sync::OwnedSemaphorePermit, 
 #[cfg(feature = "quickjs")]
 fn trim_idle_semaphores(guard: &mut HashMap<String, Arc<tokio::sync::Semaphore>>) {
     if guard.len() <= MAX_TRACKED_SOURCES {
+        // 回落到上限内：重置告警状态，下次再超限时重新记录
+        SEMAPHORE_OVERFLOW_WARNED.store(false, Ordering::Relaxed);
         return;
     }
     let idle: Vec<String> = guard
@@ -200,10 +213,11 @@ fn trim_idle_semaphores(guard: &mut HashMap<String, Arc<tokio::sync::Semaphore>>
         }
         guard.remove(&key);
     }
-    if guard.len() > MAX_TRACKED_SOURCES {
+    if guard.len() > MAX_TRACKED_SOURCES && !SEMAPHORE_OVERFLOW_WARNED.swap(true, Ordering::Relaxed)
+    {
         log::warn!(
             "[rss-web-bridge] 并发信号量表 {} 条 > 上限 {}：存在在用项，\
-             不淘汰并允许临时上浮",
+             不淘汰并允许临时上浮（仅状态变化时告警一次）",
             guard.len(),
             MAX_TRACKED_SOURCES
         );
@@ -959,6 +973,10 @@ fn store(source_url: &str, args: &Value) -> LegadoResult<String> {
         "loginInfoGet" => Value::String(
             crate::api::source_login_cache::get_login_info(source_url).unwrap_or_default(),
         ),
+        // 批21f P3-4（登记）：loginInfoSet/Remove 的 DB 与变量表写入**非原子**
+        // ——二者统一「先 DB、后变量表」，DB 失败仅 warn 并继续写变量表
+        // （页面镜像优先：WebView 已更新的值不能因落库失败在 `run` 内读不到）。
+        // Set/Remove 顺序一致；无事务面，DB 失败/进程崩溃时可能短暂分叉。
         "loginInfoSet" => {
             if let Err(e) = crate::api::source_login_cache::put_login_info(source_url, value) {
                 log::warn!("[rss-web-bridge] 写入用户信息失败（{source_url}）: {e}");
