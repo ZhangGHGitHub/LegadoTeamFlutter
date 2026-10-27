@@ -274,24 +274,9 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
             !_archiveExts.contains(ext)) {
           continue;
         }
-        // 跳过当前目录自身（href 末段与当前路径重合）
-        final href = (map['path'] as String?) ?? '';
-        final current = state.listPath.trimRight().replaceAll(RegExp(r'/+$'), '');
-        if (href.trimRight().replaceAll(RegExp(r'/+$'), '').endsWith(current) &&
-            (href.endsWith('/') || isDir) &&
-            name == current.split('/').last) {
-          // 宽松跳过：名称等于当前目录名且为目录
-          if (state.dirStack.isNotEmpty &&
-              name == state.dirStack.last.filename &&
-              isDir) {
-            continue;
-          }
-          if (state.dirStack.isEmpty &&
-              isDir &&
-              (name == 'books' || name.isEmpty)) {
-            continue;
-          }
-        }
+        // 自身项过滤由 Rust 侧完成（webdav.rs `filter_self_entry`）；
+        // 此处不得再用「名称等于当前目录」启发式，否则会误隐藏合法的
+        // 同名子目录（如 books/books/）。
         final rel = state.listPath.isEmpty
             ? name
             : '${state.listPath}$name${isDir ? '/' : ''}';

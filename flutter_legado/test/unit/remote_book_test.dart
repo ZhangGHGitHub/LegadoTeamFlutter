@@ -227,8 +227,44 @@ void main() {
       );
     });
 
-    test('on-shelf 判定兼容新 webDav:: 与存量 dav: 双前缀', () async {
-      when(() => mockApi.webdavListDir(any(), any())).thenAnswer(
+    test('同名子目录不被隐藏（books/books/）', () async {
+      // Rust 侧已过滤 PROPFIND 的自身项；Dart 侧不得再用「名称等于当前目录」
+      // 启发式，否则合法的同名子目录（books/books/）会被误隐藏。
+      when(() => mockApi.webdavListDir(any(), any())).thenAnswer((inv) async {
+        final path = inv.positionalArguments[1] as String;
+        // 根目录列出 books/books/，进入后再列出 books/books/books/
+        final isRoot = path == 'books/';
+        return jsonEncode([
+          {
+            'name': 'books',
+            'path': isRoot ? '/legado/books/books/' : '/legado/books/books/books/',
+            'size': 0,
+            'is_dir': true,
+          },
+        ]);
+      });
+      when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
+
+      await container.read(syncNotifierProvider.notifier).loadConfig();
+      final n = readNotifier();
+      await n.init();
+      expect(
+        readState().items.map((e) => e.filename).toList(),
+        ['books'],
+        reason: '根目录下与 books 同名的合法子目录不应被隐藏',
+      );
+
+      // 进入该目录后仍应看到同名（孙）目录
+      n.openDir(readState().items.single);
+      await n.refresh();
+      expect(
+        readState().items.map((e) => e.filename).toList(),
+        ['books'],
+        reason: '与父目录同名的合法子目录不得被启发式隐藏',
+      );
+    });
+
+    test('on-shelf 判定兼容新 webDav:: 与存量 dav: 双前缀', () async {      when(() => mockApi.webdavListDir(any(), any())).thenAnswer(
         (_) async => jsonEncode([
           {
             'name': 'legacy.epub',
