@@ -32,11 +32,23 @@ pub fn list_books() -> LegadoResult<Vec<Book>> {
 /// 场景）。新建路径（无既有行）按入参原样落库。
 /// `variable`/`customTag` 等**不参与**合并——用户可合法清空/修改，保持
 /// 全行写入语义（入参为准）。
+///
+/// [批18c 设备复验 | 2026-10-27] origin 的例外：远程书库导入先把文件导入为
+/// 本地书（`loc_book`），再用 `update_book` 改写为 `webDav::<url>`。这是
+/// 「存储位置」变化而非换源，若沿用「既有非空即优先」会被打回 `loc_book`，
+/// 导致远程书 origin 丢失。故入参为 WebDAV origin 且库内为本地/WebDAV
+/// origin 时，允许入参覆盖；在线书源（http(s)）仍按 B-2 防回退。
 fn merge_source_fields(repo: &BookRepository<'_>, book: &mut Book) -> LegadoResult<()> {
+    use legado_core::models::book_type;
+
     let Ok(Some(existing)) = repo.find_by_url(&book.book_url) else {
         return Ok(());
     };
-    if !existing.origin.trim().is_empty() {
+    let incoming_is_webdav = book_type::is_web_dav_origin(book.origin.trim());
+    let existing_is_storage = existing.origin.trim() == book_type::LOCAL_TAG
+        || book_type::is_web_dav_origin(existing.origin.trim());
+    let allow_webdav_rewrite = incoming_is_webdav && existing_is_storage;
+    if !existing.origin.trim().is_empty() && !allow_webdav_rewrite {
         book.origin = existing.origin;
     }
     if !existing.origin_name.trim().is_empty() {
@@ -271,6 +283,106 @@ mod tests {
         .expect("DB 终态断言失败");
 
         // 收尾清理（共享测试库不留固定行）
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete_by_url(book_url);
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [批18c 设备复验] 远程书库导入：本地书 `loc_book` → `webDav::` origin
+    /// 必须生效（旧实现被 B-2 防回退合并打回 `loc_book`，设备上导入后
+    /// `books.origin` 仍是 `loc_book`，远程页无法显示「已在书架」）。
+    #[test]
+    fn test_update_book_allows_local_to_webdav_origin() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch18c-remote-import.example.com/tmp/txt-sample.txt";
+        let webdav_origin = "webDav::http://192.168.100.52:18081/dav/books/txt-sample.txt,{\"serverID\":1793070940707}";
+
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            let _ = repo.delete_by_url(book_url);
+            repo.insert(&Book {
+                book_url: book_url.to_string(),
+                name: "txt-sample".to_string(),
+                origin: "loc_book".to_string(),
+                origin_name: "txt-sample.txt".to_string(),
+                ..Book::default()
+            })
+        })
+        .expect("本地书入库失败");
+
+        let book_json = serde_json::json!({
+            "bookUrl": book_url,
+            "name": "txt-sample",
+            "origin": webdav_origin,
+            "originName": "txt-sample.txt",
+            "type": 0
+        })
+        .to_string();
+        super::update_book(&book_json).expect("update_book 应成功");
+
+        with_database(|db| {
+            let saved = BookRepository::new(db.connection())
+                .find_by_url(book_url)?
+                .expect("书籍记录应仍存在");
+            assert_eq!(
+                saved.origin, webdav_origin,
+                "远程书库导入必须能把 loc_book 改写为 webDav:: origin"
+            );
+            Ok(())
+        })
+        .expect("DB 终态断言失败");
+
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete_by_url(book_url);
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// B-2 回归：在线书源（http）的 origin 仍按「库内既有值优先」，
+    /// 陈旧快照不得撤销换源结果（批18c 放宽仅限本地/WebDAV 存储 origin）。
+    #[test]
+    fn test_update_book_keeps_online_origin_against_stale_snapshot() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch18c-stale-snapshot.example.com/book/1";
+        let new_origin = "https://batch18c-new-source.example.com";
+        let old_origin = "https://batch18c-old-source.example.com";
+
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            let _ = repo.delete_by_url(book_url);
+            repo.insert(&Book {
+                book_url: book_url.to_string(),
+                name: "书名".to_string(),
+                origin: new_origin.to_string(),
+                ..Book::default()
+            })
+        })
+        .expect("换源后状态入库失败");
+
+        let stale_json = serde_json::json!({
+            "bookUrl": book_url,
+            "name": "书名",
+            "origin": old_origin,
+            "type": 0
+        })
+        .to_string();
+        super::update_book(&stale_json).expect("update_book 应成功");
+
+        with_database(|db| {
+            let saved = BookRepository::new(db.connection())
+                .find_by_url(book_url)?
+                .expect("书籍记录应仍存在");
+            assert_eq!(
+                saved.origin, new_origin,
+                "在线书源换源结果不得被陈旧快照撤销"
+            );
+            Ok(())
+        })
+        .expect("DB 终态断言失败");
+
         with_database(|db| {
             let _ = BookRepository::new(db.connection()).delete_by_url(book_url);
             Ok(())

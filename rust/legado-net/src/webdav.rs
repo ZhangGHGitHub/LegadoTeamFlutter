@@ -83,7 +83,11 @@ impl WebDavClient {
             .await
             .map_err(|e| LegadoError::Network(e.to_string()))?;
 
-        Self::parse_propfind_response(&xml)
+        let mut files = Self::parse_propfind_response(&xml)?;
+        // 对齐原版 `WebDav.listFiles()`：PROPFIND(Depth 1) 会返回被请求目录
+        // 自身（collection self 项），浏览时不能把它当成子文件夹展示。
+        filter_self_entry(&mut files, &url);
+        Ok(files)
     }
 
     /// PUT — 从本地文件流式上传（避免大文件整块驻留内存）
@@ -371,6 +375,43 @@ impl WebDavClient {
         }
         Ok(files)
     }
+}
+
+/// 归一化 URL 路径：用于比较 PROPFIND 返回的 `href` 与请求目录 URL。
+///
+/// - 绝对 URL（`http://host:port/dav/`）只取 path 部分；
+/// - 去掉 query/fragment；
+/// - 百分号解码（服务器可能对非 ASCII 目录名编码）；
+/// - 去掉末尾 `/`（根路径统一为 `/`）。
+fn normalize_url_path(raw: &str) -> String {
+    let path = if let Some(idx) = raw.find("://") {
+        let rest = &raw[idx + 3..];
+        match rest.find('/') {
+            Some(i) => &rest[i..],
+            None => "/",
+        }
+    } else {
+        raw
+    };
+    let path = path.split(['?', '#']).next().unwrap_or(path);
+    let decoded = urlencoding::decode(path)
+        .map(|c| c.into_owned())
+        .unwrap_or_else(|_| path.to_string());
+    let trimmed = decoded.trim_end_matches('/');
+    if trimmed.is_empty() {
+        "/".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+/// 过滤 PROPFIND 返回的「被请求目录自身」条目（collection self 项）。
+///
+/// 对齐原版 `WebDav.listFiles()` 的 `it.path != path` 语义：Depth 1 响应
+/// 首条通常是请求目录自身，直接展示会被当成一个同名子文件夹。
+fn filter_self_entry(files: &mut Vec<WebDavFileInfo>, requested_url: &str) {
+    let target = normalize_url_path(requested_url);
+    files.retain(|f| normalize_url_path(&f.path) != target);
 }
 
 /// 同步结果统计
@@ -966,6 +1007,76 @@ mod tests {
         let xml = r#"<D:multistatus xmlns:D="DAV:"></D:multistatus>"#;
         let files = WebDavClient::parse_propfind_response(xml).unwrap();
         assert!(files.is_empty());
+    }
+
+    /// 批18c P3-1：列表过滤「被请求目录自身」（collection self 项）。
+    ///
+    /// 旧实现把 `/dav/` 自身当作子文件夹返回，远程书库页会多出一项
+    /// 同名目录；对齐原版 `WebDav.listFiles()` 后只保留子项。
+    #[test]
+    fn test_filter_self_entry_drops_requested_dir() {
+        let xml = r#"<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:">
+  <D:response>
+    <D:href>/dav/</D:href>
+    <D:propstat><D:prop>
+      <D:displayname>dav</D:displayname>
+      <D:resourcetype><D:collection/></D:resourcetype>
+    </D:prop></D:propstat>
+  </D:response>
+  <D:response>
+    <D:href>/dav/books/</D:href>
+    <D:propstat><D:prop>
+      <D:displayname>books</D:displayname>
+      <D:resourcetype><D:collection/></D:resourcetype>
+    </D:prop></D:propstat>
+  </D:response>
+  <D:response>
+    <D:href>/dav/books/a.txt</D:href>
+    <D:propstat><D:prop>
+      <D:displayname>a.txt</D:displayname>
+      <D:getcontentlength>3</D:getcontentlength>
+    </D:prop></D:propstat>
+  </D:response>
+</D:multistatus>"#;
+        let mut files = WebDavClient::parse_propfind_response(xml).unwrap();
+        assert_eq!(files.len(), 3, "解析层保留原始响应");
+        filter_self_entry(&mut files, "http://127.0.0.1:18081/dav/");
+        let names: Vec<&str> = files.iter().map(|f| f.name.as_str()).collect();
+        assert_eq!(names, vec!["books", "a.txt"], "自身项应被过滤");
+    }
+
+    /// 目录名含非 ASCII 时 href 可能被百分号编码，比较须先解码。
+    #[test]
+    fn test_filter_self_entry_percent_encoded() {
+        let xml = r#"<D:multistatus xmlns:D="DAV:">
+  <D:response>
+    <D:href>/dav/%E4%B8%AD%E6%96%87/</D:href>
+    <D:propstat><D:prop>
+      <D:displayname>中文</D:displayname>
+      <D:resourcetype><D:collection/></D:resourcetype>
+    </D:prop></D:propstat>
+  </D:response>
+  <D:response>
+    <D:href>/dav/%E4%B8%AD%E6%96%87/a.txt</D:href>
+    <D:propstat><D:prop>
+      <D:displayname>a.txt</D:displayname>
+    </D:prop></D:propstat>
+  </D:response>
+</D:multistatus>"#;
+        let mut files = WebDavClient::parse_propfind_response(xml).unwrap();
+        filter_self_entry(&mut files, "http://h:1/dav/中文/");
+        assert_eq!(files.len(), 1, "编码形式的自身项应被过滤");
+        assert_eq!(files[0].name, "a.txt");
+    }
+
+    #[test]
+    fn test_normalize_url_path() {
+        assert_eq!(normalize_url_path("http://h:1/dav/"), "/dav");
+        assert_eq!(normalize_url_path("/dav/"), "/dav");
+        assert_eq!(normalize_url_path("http://h"), "/");
+        assert_eq!(normalize_url_path("/"), "/");
+        assert_eq!(normalize_url_path("/dav/?x=1#f"), "/dav");
     }
 
     #[test]

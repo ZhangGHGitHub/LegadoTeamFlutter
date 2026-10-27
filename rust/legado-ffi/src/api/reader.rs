@@ -1020,8 +1020,12 @@ pub fn get_chapter_content_full(book_url: &str, chapter_index: i32) -> LegadoRes
 
     // 2. 本地书籍：解析文件 + 净化
     if is_local_book(book_url) {
+        // [批18c P3-2] 与 `get_chapter_content` 一致：相对可迁移标识
+        // （`books/x.txt`）须先还原为当前容器真实路径，否则阅读器主取正文
+        // 链路（`getChapterContentFull`）会报「无法打开文件」。
+        let real_path = resolve_local_book_path(book_url);
         let content = legado_book::LocalBook::get_chapter_content(
-            book_url,
+            &real_path,
             &chapter_to_local_info(&chapter),
         )?;
         return Ok(apply_content_processing_chapter(
@@ -1420,6 +1424,12 @@ mod tests {
         assert!(chapters.total >= 1, "相对标识应能解析出章节");
         let content = get_chapter_content("books/sample.txt", 0).unwrap();
         assert!(!content.trim().is_empty(), "应能读到正文");
+        // [批18c P3-2] 阅读器主取正文链路（get_chapter_content_full）同样
+        // 必须经 resolver 还原相对标识，否则设备上打开相对路径书报
+        // 「无法打开文件: No such file or directory」。
+        let full = get_chapter_content_full("books/sample.txt", 0)
+            .expect("get_chapter_content_full 应能解析相对标识");
+        assert!(!full.trim().is_empty(), "全文链路应能读到正文");
 
         // 收尾清理：删除该书的章节行与书行，恢复共享内存库状态
         with_database(|db| {
