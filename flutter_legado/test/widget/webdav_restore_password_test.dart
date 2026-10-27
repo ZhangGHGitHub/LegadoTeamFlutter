@@ -1,0 +1,282 @@
+/// 本地恢复「备份密码」流程（批17b）
+///
+/// 契约 §2.11：原版 zip 备份可能带备份密码（`servers.json` 恒加密，
+/// `cookies.json` / `runtimeSourceCache.json` 设过密码时加密）。
+/// 本测试钉住：
+/// - 探测需要密码 → 弹密码框（列出受保护文件中文标签），取消即中止、
+///   零 restore 调用；
+/// - 密码错误 → 重开密码框并内联提示，允许重试；正确后以 password 调用；
+/// - 探测无需密码 → 不弹框，restore 的 password 为 null；
+/// - 中文/含空格密码原样透传（不 trim）；
+/// - `.json` 备份不调用 backupInspect；
+/// - 加密内容损坏 → 提示备份文件损坏，不进入重试。
+library;
+
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
+import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
+import 'package:flutter_legado/src/screens/webdav_settings_screen.dart';
+
+import '../mocks/mocks.dart';
+
+/// 记录 pickFiles 调用/参数并返回预置结果的 FilePicker 桩
+class _FakeFilePicker extends FilePicker {
+  _FakeFilePicker(this.result);
+
+  final FilePickerResult? result;
+  int pickCalls = 0;
+
+  @override
+  Future<FilePickerResult?> pickFiles({
+    String? dialogTitle,
+    String? initialDirectory,
+    FileType type = FileType.any,
+    List<String>? allowedExtensions,
+    Function(FilePickerStatus)? onFileLoading,
+    bool allowCompression = true,
+    int compressionQuality = 30,
+    bool allowMultiple = false,
+    bool withData = false,
+    bool withReadStream = false,
+    bool lockParentWindow = false,
+    bool readSequential = false,
+  }) async {
+    pickCalls++;
+    return result;
+  }
+}
+
+/// 注入 FilePicker 平台桩并登记恢复（同 bookshelf_add_local_cbz_test 模式）
+void _useFakeFilePicker(FilePicker fake) {
+  FilePicker? original;
+  var initialized = false;
+  try {
+    original = FilePicker.platform;
+    initialized = true;
+  } catch (_) {
+    // 宿主未初始化（测试 registrant 无本平台分支）
+  }
+  FilePicker.platform = fake;
+  addTearDown(
+    () => FilePicker.platform = initialized ? original! : FilePickerIO(),
+  );
+}
+
+void main() {
+  late FakeServersRustApi mockApi;
+
+  setUpAll(registerFallbacks);
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+    mockApi = FakeServersRustApi();
+    when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
+    when(() => mockApi.getBookSources()).thenAnswer((_) async => <BookSource>[]);
+    when(
+      () => mockApi.restore(any(), password: any(named: 'password')),
+    ).thenAnswer((_) async {});
+  });
+
+  /// 探测结果：原版 zip、需要密码、三个受保护条目
+  void stubPasswordRequired() {
+    when(() => mockApi.backupInspect(any())).thenAnswer(
+      (_) async => const BackupInspectInfo(
+        format: BackupFormat.zip,
+        passwordRequired: true,
+        passwordProtectedFiles: [
+          'servers.json',
+          'cookies.json',
+          'runtimeSourceCache.json',
+        ],
+      ),
+    );
+  }
+
+  /// 探测结果：原版 zip、无需密码
+  void stubPasswordNotRequired() {
+    when(() => mockApi.backupInspect(any())).thenAnswer(
+      (_) async => const BackupInspectInfo(
+        format: BackupFormat.zip,
+        passwordRequired: false,
+        passwordProtectedFiles: [],
+      ),
+    );
+  }
+
+  Future<void> pumpScreen(WidgetTester tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [bookApiProvider.overrideWithValue(mockApi)],
+        child: const MaterialApp(home: WebDavSettingsScreen()),
+      ),
+    );
+    await tester.pumpAndSettle();
+  }
+
+  Finder dialogButton(String label) => find.descendant(
+        of: find.byType(AlertDialog),
+        matching: find.text(label),
+      );
+
+  /// 长按「恢复」→ 选文件 → 覆盖确认 → 进入（可选密码框）
+  Future<void> startLocalRestore(
+    WidgetTester tester, {
+    required String backupPath,
+  }) async {
+    _useFakeFilePicker(
+      _FakeFilePicker(
+        FilePickerResult([
+          PlatformFile(name: 'backup.zip', size: 0, path: backupPath),
+        ]),
+      ),
+    );
+    await pumpScreen(tester);
+
+    await tester.scrollUntilVisible(find.text('恢复'), 100);
+    await tester.pumpAndSettle();
+    await tester.longPress(find.text('恢复'));
+    await tester.pumpAndSettle();
+    // 覆盖确认（本地恢复）
+    expect(find.text('确认恢复吗？'), findsOneWidget);
+    await tester.tap(dialogButton('恢复'));
+    await tester.pumpAndSettle();
+  }
+
+  String fakeBackupPath(String name) =>
+      '${Directory.systemTemp.path}${Platform.pathSeparator}$name';
+
+  testWidgets('探测需要密码：弹密码框列出受保护文件，取消后不调用 restore', (tester) async {
+    stubPasswordRequired();
+    final backupPath = fakeBackupPath('legado_backup_encrypted.zip');
+
+    await startLocalRestore(tester, backupPath: backupPath);
+
+    expect(find.text('输入备份密码'), findsOneWidget);
+    expect(find.text('· 服务器配置（servers.json）'), findsOneWidget);
+    expect(find.text('· 登录信息（cookies.json）'), findsOneWidget);
+    expect(find.text('· 书源运行变量（runtimeSourceCache.json）'), findsOneWidget);
+    // 密码默认隐藏（显示/隐藏切换按钮存在）
+    expect(find.byTooltip('显示密码'), findsOneWidget);
+
+    await tester.tap(dialogButton('取消'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('输入备份密码'), findsNothing);
+    verifyNever(
+      () => mockApi.restore(any(), password: any(named: 'password')),
+    );
+  });
+
+  testWidgets('密码错误一次：重开密码框内联提示，第二次正确后以密码恢复', (tester) async {
+    stubPasswordRequired();
+    final backupPath = fakeBackupPath('legado_backup_retry.zip');
+    when(
+      () => mockApi.restore(any(), password: 'wrong'),
+    ).thenAnswer(
+      (_) async => throw Exception(
+        'FFI error: Internal error: BACKUP_PASSWORD_INVALID: 备份密码错误',
+      ),
+    );
+
+    await startLocalRestore(tester, backupPath: backupPath);
+    expect(find.text('输入备份密码'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'wrong');
+    await tester.tap(dialogButton('确定'));
+    await tester.pumpAndSettle();
+
+    // 密码框重开并内联提示（密码错误或备份已损坏）
+    expect(find.text('输入备份密码'), findsOneWidget);
+    expect(find.text('密码错误或备份已损坏，请重试'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), '正确的 密码');
+    await tester.tap(dialogButton('确定'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('输入备份密码'), findsNothing);
+    verify(() => mockApi.restore(backupPath, password: 'wrong')).called(1);
+    verify(() => mockApi.restore(backupPath, password: '正确的 密码')).called(1);
+  });
+
+  testWidgets('探测无需密码：不弹密码框，restore 的 password 为 null', (tester) async {
+    stubPasswordNotRequired();
+    final backupPath = fakeBackupPath('legado_backup_plain.zip');
+
+    await startLocalRestore(tester, backupPath: backupPath);
+
+    expect(find.text('输入备份密码'), findsNothing);
+    verify(() => mockApi.restore(backupPath, password: null)).called(1);
+  });
+
+  testWidgets('中文/含空格密码原样透传（不 trim）', (tester) async {
+    stubPasswordRequired();
+    final backupPath = fakeBackupPath('legado_backup_cn_pwd.zip');
+
+    await startLocalRestore(tester, backupPath: backupPath);
+    await tester.enterText(find.byType(TextField), '  密码 中文 ');
+    await tester.tap(dialogButton('确定'));
+    await tester.pumpAndSettle();
+
+    verify(
+      () => mockApi.restore(backupPath, password: '  密码 中文 '),
+    ).called(1);
+  });
+
+  testWidgets('加密内容损坏：提示备份文件损坏，不进入密码重试', (tester) async {
+    stubPasswordRequired();
+    final backupPath = fakeBackupPath('legado_backup_corrupt.zip');
+    when(
+      () => mockApi.restore(any(), password: any(named: 'password')),
+    ).thenAnswer(
+      (_) async => throw Exception(
+        'FFI error: Internal error: BACKUP_ENCRYPTED_CONTENT_CORRUPT: '
+        '备份中的 cookies.json 内容损坏',
+      ),
+    );
+
+    await startLocalRestore(tester, backupPath: backupPath);
+    await tester.enterText(find.byType(TextField), 'whatever');
+    await tester.tap(dialogButton('确定'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('备份文件已损坏，无法恢复加密内容'), findsOneWidget);
+    expect(find.text('输入备份密码'), findsNothing);
+  });
+
+  testWidgets('JSON 备份不探测密码（不调用 backupInspect）', (tester) async {
+    // 不 stub backupInspect：一旦误调用会抛 mocktail missing stub。
+    // .json 恢复链会触发真实文件 IO（FakeAsync 不驱动），故不进 pumpAndSettle，
+    // 只断言：确认后直接进入「恢复中…」，不出现「检查备份…」/密码框。
+    final backupPath = fakeBackupPath('legado_backup_plain_pwd.json');
+    _useFakeFilePicker(
+      _FakeFilePicker(
+        FilePickerResult([
+          PlatformFile(name: 'backup.json', size: 0, path: backupPath),
+        ]),
+      ),
+    );
+    await pumpScreen(tester);
+
+    await tester.scrollUntilVisible(find.text('恢复'), 100);
+    await tester.pumpAndSettle();
+    await tester.longPress(find.text('恢复'));
+    await tester.pumpAndSettle();
+    expect(find.text('确认恢复吗？'), findsOneWidget);
+    await tester.tap(dialogButton('恢复'));
+    await tester.pump();
+
+    expect(find.text('恢复中…'), findsOneWidget);
+    expect(find.text('检查备份…'), findsNothing);
+    expect(find.text('输入备份密码'), findsNothing);
+    verifyNever(() => mockApi.backupInspect(any()));
+  });
+}
