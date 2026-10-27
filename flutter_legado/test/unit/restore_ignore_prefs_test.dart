@@ -24,6 +24,11 @@ void main() {
         RestoreIgnorePrefs.keyIsNotIgnore(PrefKeys.launcherIcon, const {}),
         isFalse,
       );
+      // 本地密码属于设备级秘密，任何 ignore 组合下都不得进备份
+      expect(
+        RestoreIgnorePrefs.keyIsNotIgnore(PrefKeys.localPassword, const {}),
+        isFalse,
+      );
     });
 
     test('勾选 readConfig 跳过阅读键', () {
@@ -99,6 +104,7 @@ void main() {
         PrefKeys.threadCount: 8,
         'reader_font_size': 20.0,
         PrefKeys.launcherIcon: 'icon_a',
+        PrefKeys.localPassword: '1234',
       });
     });
 
@@ -111,6 +117,21 @@ void main() {
       expect(collected[PrefKeys.threadCount], 8);
       expect(collected.containsKey('reader_font_size'), isFalse);
       expect(collected.containsKey(PrefKeys.launcherIcon), isFalse);
+      // 本地密码不写入备份 appPrefs（避免明文口令随备份文件外流）
+      expect(collected.containsKey(PrefKeys.localPassword), isFalse);
+    });
+
+    test('本地密码不被备份值覆盖', () async {
+      await RestoreIgnorePrefs.applyFromBackup(
+        {PrefKeys.localPassword: 'backup-password'},
+        const {},
+      );
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getString(PrefKeys.localPassword),
+        '1234',
+        reason: '本机既有本地密码必须保持不变',
+      );
     });
 
     test('apply 尊重 ignore 不覆盖本地项', () async {

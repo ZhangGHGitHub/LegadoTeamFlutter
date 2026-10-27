@@ -30,6 +30,9 @@ class RestoreIgnorePrefs {
     PrefKeys.launcherIcon,
     'readAloudWakeLock',
     'audioPlayWakeLock',
+    // 本地密码（应用锁）：只在签发设备上有效，随备份/恢复携带会泄露明文
+    // 口令，故既不写入备份 appPrefs，也不被备份值覆盖本机设置
+    PrefKeys.localPassword,
     SettingsService.restoreIgnoreStorageKey,
   };
 
