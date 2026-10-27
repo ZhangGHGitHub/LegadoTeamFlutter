@@ -33,8 +33,18 @@ class RestoreIgnorePrefs {
     // 本地密码（应用锁）：只在签发设备上有效，随备份/恢复携带会泄露明文
     // 口令，故既不写入备份 appPrefs，也不被备份值覆盖本机设置
     PrefKeys.localPassword,
+    // [批17c P2-3] WebDAV 同步账号密码：同属设备级秘密（原版该值在
+    // config.xml 内以备份密码 AES 加密；我方 JSON 备份不加密），整键排除
+    SettingsService.webDavPasswordKey,
     SettingsService.restoreIgnoreStorageKey,
   };
+
+  /// 需要**值净化**（而非整键排除）的偏好键 → 剥除其中敏感字段
+  ///
+  /// `remote_servers` 仍是 legacy prefs 形态（`RemoteBookNotifier` 在用），
+  /// 元素含 `password` 明文：备份时剥掉密码（保留 id/name/url/username，
+  /// 便于换机后重新填密码），恢复时**不得用备份值覆盖本机密码**。
+  static const _sanitizedKeys = <String>{SettingsService.remoteServersKey};
 
   /// 阅读界面相关键（对齐 BackupConfig.readPrefKeys + Flutter 阅读偏好）
   static const readPrefKeys = <String>{
@@ -124,7 +134,7 @@ class RestoreIgnorePrefs {
     return true;
   }
 
-  /// 从当前 SharedPreferences 收集可备份偏好（已按 ignore 过滤）
+  /// 从当前 SharedPreferences 收集可备份偏好（已按 ignore 过滤 + 敏感值净化）
   static Future<Map<String, dynamic>> collectForBackup(
     Map<String, bool> ignore,
   ) async {
@@ -134,7 +144,102 @@ class RestoreIgnorePrefs {
       if (!keyIsNotIgnore(key, ignore)) continue;
       final value = prefs.get(key);
       if (value == null) continue;
+      if (_sanitizedKeys.contains(key)) {
+        final sanitized = sanitizePrefValue(key, value);
+        // 净化失败（形态非法）时整键不写入——宁可丢非敏感字段，也不把
+        // 无法识别的内容原样带进明文备份
+        if (sanitized != null) out[key] = sanitized;
+        continue;
+      }
       out[key] = value;
+    }
+    return out;
+  }
+
+  /// 敏感偏好值净化（备份侧）：剥除秘密字段后返回，非法形态返回 null
+  ///
+  /// 当前仅 `remote_servers`（JSON 数组字符串）：逐元素保留
+  /// `id`/`name`/`url`/`username` 与其它非敏感键，**删除 `password`**。
+  /// 非 JSON 数组形态 → null（不写入备份）。
+  static String? sanitizePrefValue(String key, Object value) {
+    if (key != SettingsService.remoteServersKey) return null;
+    final servers = _decodeRemoteServers(value);
+    if (servers == null) {
+      debugPrint('RestoreIgnorePrefs: $key 形态非法，已从备份中剔除');
+      return null;
+    }
+    return jsonEncode(servers.map(_stripServerSecrets).toList());
+  }
+
+  /// 剥除远程书库条目中的秘密字段（`password`），其余键原样保留
+  static Map<String, dynamic> _stripServerSecrets(Map<String, dynamic> server) {
+    final out = <String, dynamic>{...server}..remove('password');
+    return out;
+  }
+
+  /// 把备份中的远程书库配置合并进本机（恢复侧）
+  ///
+  /// 语义：备份列表**替换**本机列表（与其它偏好恢复的覆盖语义一致），但
+  /// **密码只认本机既有值**——按 `id`（其次 `url`+`username`）匹配本机
+  /// 条目取回 password；备份里没有对应本机条目时密码置空（由用户重填）。
+  /// 备份侧已净化（无 password 字段），此处仍显式忽略备份中的 password，
+  /// 防止旧版备份/第三方备份携带明文口令覆盖本机设置。
+  static Future<String?> mergeRemoteServersFromBackup(Object value) async {
+    final backupServers = _decodeRemoteServers(value);
+    if (backupServers == null) return null;
+    final prefs = await SharedPreferences.getInstance();
+    final localServers = _decodeRemoteServers(
+          prefs.getString(SettingsService.remoteServersKey) ?? '',
+        ) ??
+        const [];
+    final localPasswordsById = <int, String>{};
+    final localPasswordsByEndpoint = <String, String>{};
+    for (final local in localServers) {
+      final password = local['password'];
+      if (password is! String || password.isEmpty) continue;
+      final id = local['id'];
+      if (id is int) localPasswordsById[id] = password;
+      localPasswordsByEndpoint[
+          _endpointKeyOf(local['url'], local['username'])] = password;
+    }
+    final merged = backupServers.map((server) {
+      final out = _stripServerSecrets(server);
+      final id = out['id'];
+      final localPassword =
+          (id is int ? localPasswordsById[id] : null) ??
+              localPasswordsByEndpoint[
+                  _endpointKeyOf(out['url'], out['username'])];
+      if (localPassword != null && localPassword.isNotEmpty) {
+        out['password'] = localPassword;
+      }
+      return out;
+    }).toList();
+    return jsonEncode(merged);
+  }
+
+  static String _endpointKeyOf(Object? url, Object? username) =>
+      '${url ?? ''}\u0000${username ?? ''}';
+
+  /// 解析远程书库服务器 JSON（`[{id,name,url,username,password}]`）
+  ///
+  /// 宽容形态：JSON 字符串 / List 均可；非数组或元素非对象 → null
+  /// （调用方按「不写入备份」处理）。元素内非敏感字段原样保留。
+  static List<Map<String, dynamic>>? _decodeRemoteServers(Object? value) {
+    Object? decoded = value;
+    if (decoded is String) {
+      final text = decoded.trim();
+      if (text.isEmpty) return const [];
+      try {
+        decoded = jsonDecode(text);
+      } catch (_) {
+        return null;
+      }
+    }
+    if (decoded is! List) return null;
+    final out = <Map<String, dynamic>>[];
+    for (final item in decoded) {
+      if (item is! Map) return null;
+      out.add(Map<String, dynamic>.from(item));
     }
     return out;
   }
@@ -151,6 +256,15 @@ class RestoreIgnorePrefs {
       if (!keyIsNotIgnore(key, ignore)) continue;
       final value = entry.value;
       try {
+        // [批17c P2-3] 远程书库：只恢复非敏感字段，密码保留本机既有值
+        //（备份值即使携带 password 也一律忽略）
+        if (key == SettingsService.remoteServersKey) {
+          final merged = await mergeRemoteServersFromBackup(value);
+          if (merged != null) {
+            await prefs.setString(key, merged);
+          }
+          continue;
+        }
         if (value is bool) {
           await prefs.setBool(key, value);
         } else if (value is int) {

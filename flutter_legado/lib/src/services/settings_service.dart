@@ -403,9 +403,11 @@ class SettingsService {
 
   // ===== WebDAV 云同步配置 =====
 
+  /// WebDAV 同步账号密码偏好键（**设备级秘密**：备份/恢复必须排除）
+  static const webDavPasswordKey = 'sync_webdav_password';
   static const _keyWebDavUrl = 'sync_webdav_url';
   static const _keyWebDavUsername = 'sync_webdav_username';
-  static const _keyWebDavPassword = 'sync_webdav_password';
+  static const _keyWebDavPassword = webDavPasswordKey;
   static const _keyWebDavRemoteDir = 'sync_webdav_remote_dir';
   static const _keyWebDavDeviceName = 'sync_webdav_device_name';
   static const _keySyncBookProgress = 'sync_book_progress';
@@ -413,7 +415,12 @@ class SettingsService {
   static const _keyAutoSync = 'sync_auto';
   static const _keyLastSyncTime = 'sync_last_time';
   // 远程书库服务器（对齐原版 servers 表 + AppConfig.remoteServerId）
-  static const _keyRemoteServers = 'remote_servers';
+  //
+  // [批17c P2-3] 仍为 legacy prefs 形态（`RemoteBookNotifier` 在用，尚未切
+  // servers 表）：元素含 `password` 明文，故备份时做**值净化**（剥掉密码）
+  // 而非整键排除——非敏感字段（id/name/url/username）仍可随备份迁移。
+  static const remoteServersKey = 'remote_servers';
+  static const _keyRemoteServers = remoteServersKey;
   static const _keyRemoteServerId = 'remote_server_id';
   /// 默认 WebDAV（同步设置），对齐原版 DEFAULT_WEBDAV_ID = -1
   static const int defaultRemoteServerId = -1;
