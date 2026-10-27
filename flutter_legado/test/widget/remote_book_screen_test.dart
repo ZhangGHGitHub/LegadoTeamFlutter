@@ -164,6 +164,38 @@ void main() {
     );
   });
 
+  testWidgets('空 URL 保存：对话框内联提示且不调用保存（批18c P2）', (tester) async {
+    final api = MockRustApi();
+    when(() => api.webdavServersList()).thenAnswer((_) async => '[]');
+    when(() => api.webdavListDir(any(), any()))
+        .thenAnswer((_) async => jsonEncode([]));
+    when(() => api.getBooks()).thenAnswer((_) async => <Book>[]);
+
+    await pumpScreen(tester, api: api);
+    await openServersSheet(tester);
+
+    await tester.tap(find.byIcon(Symbols.add_rounded));
+    await tester.pumpAndSettle();
+    // 只填名称，URL 留空
+    final fields = find.descendant(
+      of: find.byType(AlertDialog),
+      matching: find.byType(TextField),
+    );
+    await tester.enterText(fields.at(0), '无地址服务器');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+
+    // 旧实现 `if (url.isEmpty) return;`：对话框无提示、静默不保存。
+    // 新实现必须在对话框内显示「名称和地址不能为空」并保持打开。
+    expect(find.byType(AlertDialog), findsOneWidget, reason: '校验失败应留在对话框');
+    expect(find.text('名称和地址不能为空'), findsOneWidget);
+    // 启动期同步配置迁移会写默认服务器（id=-1），因此只断言「本次输入的
+    // 服务器没有被保存」——校验失败不得触发 save。
+    verifyNever(
+      () => api.webdavServerSave(any(that: contains('无地址服务器'))),
+    );
+  });
+
   testWidgets('保存失败在 Sheet 内联提示（不被贴底 Sheet 遮挡）', (tester) async {
     final failing = MockRustApi();
     when(() => failing.webdavServersList()).thenAnswer((_) async => '[]');

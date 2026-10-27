@@ -478,6 +478,9 @@ class _ServerEditDialogState extends State<_ServerEditDialog> {
   late final TextEditingController _passCtrl =
       TextEditingController(text: widget.existing?.password ?? '');
 
+  /// 对话框内联校验错误（空名称/空地址）
+  String? _error;
+
   @override
   void dispose() {
     _nameCtrl.dispose();
@@ -488,14 +491,21 @@ class _ServerEditDialogState extends State<_ServerEditDialog> {
   }
 
   void _save() {
+    final name = _nameCtrl.text.trim();
     final url = _urlCtrl.text.trim();
-    if (url.isEmpty) return;
+    // 对齐参考版 RemoteBookScreen（名称与地址均非空才允许保存）：
+    // 旧实现空 URL 直接 `return`，对话框无任何提示、用户不知为何没保存。
+    if (name.isEmpty || url.isEmpty) {
+      setState(() => _error = '名称和地址不能为空');
+      return;
+    }
+    setState(() => _error = null);
     Navigator.pop(
       context,
       RemoteServerConfig(
         // 新建交给 Rust 分配主键（id = 0 语义，批18a）
         id: widget.existing?.id ?? 0,
-        name: _nameCtrl.text.trim().isEmpty ? url : _nameCtrl.text.trim(),
+        name: name,
         url: url,
         username: _userCtrl.text.trim(),
         password: _passCtrl.text,
@@ -532,6 +542,20 @@ class _ServerEditDialogState extends State<_ServerEditDialog> {
               obscureText: true,
               decoration: const InputDecoration(labelText: 'password'),
             ),
+            // 校验失败的内联提示（留在对话框，不静默返回）
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 12),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    _error!,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                  ),
+                ),
+              ),
           ],
         ),
       ),
