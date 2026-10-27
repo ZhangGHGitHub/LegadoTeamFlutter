@@ -10,6 +10,7 @@
 // http(s) singleUrl 必须保持原路径（内置浏览器页自动外开系统浏览器），
 // 不能落进详情页「暂无内容」空态。本文件按平台分流分别断言。
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
@@ -172,11 +173,49 @@ void main() {
       find.descendant(of: detailFinder, matching: find.byTooltip('收藏')),
       findsNothing,
     );
+    // 批19 终版收口 P2：文章头部按 key 判定（顶栏现在也显示源名，
+    // 不能再靠 `find.text('单URL源')` 区分头部是否隐藏）
+    expect(
+      find.byKey(const ValueKey('rss-article-header')),
+      findsNothing,
+      reason: '文章头部应隐藏，避免与顶栏源名重复',
+    );
+    // 批19 终版收口 P2：顶栏对齐原版 TitleBar，singleUrl 直开显示源名
     expect(
       find.descendant(of: detailFinder, matching: find.text('单URL源')),
-      findsNothing,
-      reason: '文章头部应隐藏，避免与源名重复',
+      findsOneWidget,
+      reason: '顶栏标题应取源名（ReadRssViewModel.kt:34-38）',
     );
+    // 批19 终版收口 P3-3：singleUrl 直开不读收藏态（原版无 rssArticle）
+    verifyNever(() => api.isStarred(any()));
+  });
+
+  testWidgets('singleUrl 直开源名为空：顶栏回退「文章详情」', (tester) async {
+    // 批19 终版收口 P2：源名为空时的兜底文案（对齐原版
+    // `resolveRssReadTitle` 的 `?: origin` 语义，本页无 origin 时用既有文案）
+    debugSetWebViewSupportedOverride(false);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: RssArticleDetailScreen(
+            article: const RssFeedArticle(
+              title: '',
+              url: 'https://s.test/live',
+            ),
+            sourceUrl: 'https://s.test',
+            source: const RssSource(
+              sourceUrl: 'https://s.test',
+              singleUrl: true,
+            ),
+            singleUrlDirect: true,
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(find.text('文章详情'), findsOneWidget);
   });
 
   testWidgets('不支持 WebView 平台：http(s) singleUrl 保持原路径自动外开', (tester) async {
@@ -289,6 +328,15 @@ void main() {
       expect(rssIsHttpUrl('httpx://a.test'), isFalse);
       expect(rssIsHttpUrl('/relative/path'), isFalse);
       expect(rssIsHttpUrl(''), isFalse);
+    });
+
+    test('真实平台判定（override=null）：桌面宿主不支持 WebView', () {
+      // 批19 终版收口 P3-4：覆盖 `isWebViewPlatformSupported` 的
+      // override=null 真实判定分支。CI 宿主为 ubuntu、本机为 Windows；
+      // macOS 宿主本身支持 WebView，跳过断言避免跨平台误报。
+      expect(debugGetWebViewSupportedOverride(), isNull);
+      if (Platform.isMacOS) return;
+      expect(isWebViewPlatformSupported, isFalse);
     });
   });
 }

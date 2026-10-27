@@ -69,18 +69,6 @@ class RssArticleDetailScreen extends ConsumerStatefulWidget {
   /// 不存在的入口（批19 审查 P2-4）。
   final bool singleUrlDirect;
 
-  /// 测试专用：强制 WebView 平台判定（null 表示按真实平台判定）
-  ///
-  /// 桌面测试宿主不支持 webview_flutter，无法真实创建控制器；P0-1 用例
-  /// 通过该开关 + 假 `WebViewPlatform` 验证起始页渲染分支。
-  @visibleForTesting
-  static bool? get debugWebViewSupportedOverride =>
-      debugGetWebViewSupportedOverride();
-
-  @visibleForTesting
-  static set debugWebViewSupportedOverride(bool? value) =>
-      debugSetWebViewSupportedOverride(value);
-
   const RssArticleDetailScreen({
     super.key,
     required this.article,
@@ -111,6 +99,12 @@ class _RssArticleDetailScreenState
   /// 当前是否使用 WebView 模式（可切换为纯文本）
   bool _useWebView = true;
 
+  /// WebView 页面标题（对齐原版 `onPageFinished` 的 TitleBar 刷新）
+  ///
+  /// 仅在标题有效（非空、不等于当前 url、url 不包含标题）时记录；
+  /// 无效/未取到为 null，顶栏回退源名/「文章详情」。
+  String? _webViewTitle;
+
   /// 已解析的源（widget.source 优先，否则按 sourceUrl 反查）
   RssSource? _source;
 
@@ -137,8 +131,24 @@ class _RssArticleDetailScreenState
   ///
   /// 统一走 [isWebViewPlatformSupported]（Android / iOS / macOS），
   /// Windows / Linux 桌面端降级为纯文本渲染。
-  /// 测试可经 [RssArticleDetailScreen.debugWebViewSupportedOverride] 覆盖。
+  /// 测试可经 `webview_support.dart` 的 `debugSetWebViewSupportedOverride`
+  /// 覆盖（P3-5：钩子已标 `@visibleForTesting`）。
   bool get _isWebViewSupported => isWebViewPlatformSupported;
+
+  /// 顶栏标题
+  ///
+  /// 批19 终版收口 P2：`singleUrl` 直开对齐原版 `resolveRssReadTitle`
+  /// （`ReadRssViewModel.kt:34-38`）——`RssFragment.kt:185-192` 把
+  /// `sourceName` 作为 intentTitle 传入，故顶栏显示源名；源名为空回退
+  /// 「文章详情」。WebView 页面标题有效时按原版 `onPageFinished` 覆盖
+  /// （见 [_refreshWebViewTitle]）。普通文章详情沿用既有文案。
+  String get _title {
+    if (!widget.singleUrlDirect) return '文章详情';
+    final webTitle = _webViewTitle?.trim() ?? '';
+    if (webTitle.isNotEmpty) return webTitle;
+    final sourceName = widget.sourceName.trim();
+    return sourceName.isEmpty ? '文章详情' : sourceName;
+  }
 
   /// 是否处于 `startHtml` 起始页模式（批15f 审查 P0-1）
   ///
@@ -411,11 +421,14 @@ class _RssArticleDetailScreenState
           }
           if (jsEnabled) unawaited(_onPageStartedScripts());
         },
-        onPageFinished: (_) {
+        onPageFinished: (url) {
           if (mounted) {
             setState(() => _isWebLoading = false);
           }
           if (jsEnabled) unawaited(_onPageFinishedScripts());
+          // 批19 终版收口 P2：对齐原版 `onPageFinished` 用页面标题刷新
+          // TitleBar（singleUrl 直开时顶栏初始为源名）。
+          unawaited(_refreshWebViewTitle(url));
         },
         onUrlChange: (_) {
           if (jsEnabled && (source?.showWebLog ?? false)) {
@@ -536,6 +549,28 @@ class _RssArticleDetailScreenState
       }
     } catch (e) {
       debugPrint('[RSS WebView] onPageFinished 脚本注入失败: $e');
+    }
+  }
+
+  /// 读取 WebView 页面标题并刷新顶栏（对齐原版 `onPageFinished` 标题逻辑）
+  ///
+  /// 原版（`ReadRssActivity.kt:747-756`）仅在标题有效时覆盖 TitleBar：
+  /// 非空、不等于当前 url、url 不包含标题；否则回退 `upTitleData`
+  /// （singleUrl 直开即 `resolveRssReadTitle` 得到的源名）。
+  /// 仅 singleUrl 直开需要（普通详情页顶栏固定「文章详情」）。
+  Future<void> _refreshWebViewTitle(String url) async {
+    if (!widget.singleUrlDirect) return;
+    final controller = _webViewController;
+    if (controller == null) return;
+    try {
+      final raw = await controller.getTitle();
+      final title = raw?.trim() ?? '';
+      final valid =
+          title.isNotEmpty && title != url && !url.contains(title);
+      if (!mounted) return;
+      setState(() => _webViewTitle = valid ? title : null);
+    } catch (_) {
+      // 读取失败（平台未实现/页面未就绪）：保持源名，不影响阅读
     }
   }
 
@@ -753,7 +788,7 @@ $htmlContent
     // [GLOBALCOMP B4] 页壳统一：AppScaffold（行为等价直通 Scaffold）
     return AppScaffold(
       topBar: LegadoAppBar(
-        title: const Text('文章详情'),
+        title: Text(_title),
         actions: [
           // [UI-fix v2.0.2 | 2026-08-06] 收藏入口（对标原版 menu_rss_star）— Qoder
           // 批19 审查 P2-4：singleUrl 直开（原版 rssArticle == null）隐藏收藏，
@@ -818,6 +853,10 @@ $htmlContent
   }
 
   /// 计算封面解码像素宽度（屏幕实际显示宽度 × 设备像素比）
+  ///
+  /// 批19 终版收口 P3-6：封面固定高度 180、不可缩放，保持 **1× 屏宽**
+  /// 解码（2× 会让解码内存约 ×4 且无可见收益）；可缩放的查看器另按
+  /// 2× 口径（见 `rss_articles_screen.dart` 的 `_decodeWidth`）。
   int _coverDecodeWidth() {
     final mediaQuery = MediaQuery.maybeOf(context);
     final displayWidth = mediaQuery?.size.width ?? 400;
@@ -836,6 +875,9 @@ $htmlContent
   /// 构建文章头部（标题、日期、来源、封面图）
   Widget _buildArticleHeader(ThemeData theme, ColorScheme colorScheme) {
     return Padding(
+      // 批19 终版收口：供用例区分「文章头部」与顶栏（singleUrl 直开时
+      // 顶栏同样显示源名，不能再靠 `find.text(源名)` 判定头部是否隐藏）
+      key: const ValueKey('rss-article-header'),
       // [LAYOUT_PLAN P2] 页面水平边距 16dp（全局标尺）
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
       child: Column(

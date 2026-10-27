@@ -18,6 +18,7 @@ import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/rss_article_detail_screen.dart';
+import 'package:flutter_legado/src/utils/webview_support.dart';
 
 import '../mocks/fake_webview_platform.dart';
 import '../mocks/mocks.dart';
@@ -39,11 +40,11 @@ void main() {
 
   /// 以「支持 WebView」语义执行用例（结束前复位测试开关）
   Future<void> runWithWebView(Future<void> Function() body) async {
-    RssArticleDetailScreen.debugWebViewSupportedOverride = true;
+    debugSetWebViewSupportedOverride(true);
     try {
       await body();
     } finally {
-      RssArticleDetailScreen.debugWebViewSupportedOverride = null;
+      debugSetWebViewSupportedOverride(null);
     }
   }
 

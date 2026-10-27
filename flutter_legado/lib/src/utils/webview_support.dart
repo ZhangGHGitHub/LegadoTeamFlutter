@@ -8,6 +8,8 @@
 
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 /// 测试用平台能力覆盖（null 表示按真实平台判定）
 ///
 /// 仅测试使用：桌面测试宿主不支持真实 WebView，用例通过覆盖该值验证
@@ -15,11 +17,13 @@ import 'dart:io';
 bool? _debugWebViewSupportedOverride;
 
 /// 设置测试用平台能力覆盖（null 恢复真实判定）
+@visibleForTesting
 void debugSetWebViewSupportedOverride(bool? value) {
   _debugWebViewSupportedOverride = value;
 }
 
 /// 读取测试用平台能力覆盖（null 表示按真实平台判定）
+@visibleForTesting
 bool? debugGetWebViewSupportedOverride() => _debugWebViewSupportedOverride;
 
 /// 当前平台是否支持 webview_flutter（Android / iOS / macOS）

@@ -42,8 +42,14 @@ class FakeWebViewController extends PlatformWebViewController {
   Map<String, String>? loadedHeaders;
   String? userAgent;
 
+  /// 页面标题（供 `getTitle()` 读取；默认为空，模拟页面未就绪）
+  String? title;
+
   @override
   Future<void> setJavaScriptMode(JavaScriptMode javaScriptMode) async {}
+
+  @override
+  Future<String?> getTitle() async => title;
 
   @override
   Future<void> setUserAgent(String? userAgent) async {
