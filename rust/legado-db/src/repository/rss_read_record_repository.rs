@@ -67,7 +67,10 @@ impl<'a> RssReadRecordRepository<'a> {
     /// 标记文章为已读（主键 record = link；无 link 时用 legacy:origin:title）
     ///
     /// 兼容入口：扩展字段全部取 DB 缺省值（`type=0` / `sort=''` /
-    /// `image=NULL` / `pubDate=NULL` / `durPos=0`），旧调用行为不变。
+    /// `image=NULL` / `pubDate=NULL` / `durPos=0`），旧调用行为不变；
+    /// 命中既有主键时忽略写入（`INSERT OR IGNORE`），不改写扩展列与
+    /// `readTime`（批20b 审查 P2-1，对齐原版 `RssReadRecordDao.insertRecord`
+    /// 的 `OnConflictStrategy.IGNORE`）。
     pub fn mark_read(&self, origin: &str, title: &str, link: Option<&str>) -> LegadoResult<()> {
         self.mark_read_with(origin, title, link, &RssReadRecordMeta::default())
     }
@@ -76,6 +79,13 @@ impl<'a> RssReadRecordRepository<'a> {
     ///
     /// `meta` 中 `None` 字段回落到 DB 缺省值；`sort` / `durPos` 为
     /// `NOT NULL` 列，缺省分别写 `''` / `0`（与原版实体默认值一致）。
+    ///
+    /// 冲突语义（批20b 审查 P2-1）：同主键已存在时整行忽略
+    /// （`INSERT OR IGNORE`），对齐原版 `RssReadRecordDao` 的
+    /// `OnConflictStrategy.IGNORE`——原版 `toRecord()` 每次打开都带新
+    /// `readTime`，但插入被 IGNORE，故 `order by readTime desc` 的排序
+    /// 依据是**首次标记时间**；重复打开既不改写
+    /// `type/sort/image/pubDate/durPos`，也不刷新 `readTime`。
     pub fn mark_read_with(
         &self,
         origin: &str,
@@ -96,7 +106,7 @@ impl<'a> RssReadRecordRepository<'a> {
         let dur_pos = meta.dur_pos.unwrap_or(0);
         self.conn
             .execute(
-                "INSERT OR REPLACE INTO rssReadRecords
+                "INSERT OR IGNORE INTO rssReadRecords
                  (record, title, readTime, \"read\", origin, sort, image, type, durPos, pubDate)
                  VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6, ?7, ?8, ?9)",
                 params![
@@ -353,7 +363,7 @@ mod tests {
             },
         )
         .unwrap();
-        // 缺省字段回落 DB 默认值（type=0 / sort='' / image/pubDate=NULL / durPos=0）
+        // 未传字段回落 DB 默认值；本例仅 type 显式（其余 sort=''、image/pubDate=NULL、durPos=0）
         repo.mark_read_with(
             "https://rss.com",
             "视频文章",
@@ -467,5 +477,94 @@ mod tests {
         assert!(row.image.is_none());
         assert!(row.pub_date.is_none());
         assert_eq!(row.dur_pos, 0);
+    }
+
+    /// 批20b 审查 P2-1：全列写入后，兼容入口同主键再标记不重置扩展列与
+    /// readTime（原版 `RssReadRecordDao.insertRecord` 为 `OnConflictStrategy.IGNORE`）
+    #[test]
+    fn test_mark_read_ignores_existing_full_record() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssReadRecordRepository::new(db.connection());
+        repo.mark_read_with(
+            "https://rss.com",
+            "图片文章",
+            Some("link-img"),
+            &RssReadRecordMeta {
+                article_type: Some(1),
+                sort: Some("图片分类".to_string()),
+                image: Some("https://img.test/1.jpg".to_string()),
+                pub_date: Some("2026-10-27".to_string()),
+                dur_pos: Some(42),
+            },
+        )
+        .unwrap();
+        let before = repo.list_records(None).unwrap();
+        assert_eq!(before.len(), 1);
+        let read_time = before[0].read_time;
+
+        // 拉开时间窗口：若实现是 REPLACE，readTime 必然变化
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        repo.mark_read("https://rss.com", "图片文章", Some("link-img"))
+            .unwrap();
+
+        let after = repo.list_records(None).unwrap();
+        assert_eq!(after.len(), 1, "同主键不应新增行");
+        let row = &after[0];
+        assert_eq!(row.read_time, read_time, "重复标记不刷新 readTime");
+        assert_eq!(row.r#type, 1, "扩展列不应被默认值重置");
+        assert_eq!(row.sort, "图片分类");
+        assert_eq!(row.image.as_deref(), Some("https://img.test/1.jpg"));
+        assert_eq!(row.pub_date.as_deref(), Some("2026-10-27"));
+        assert_eq!(row.dur_pos, 42);
+    }
+
+    /// 批20b 审查 P2-1：`mark_read_with` 重复标记同样整行 IGNORE
+    /// （首次标记决定 readTime，对齐原版 `toRecord()` + IGNORE 插入链）
+    #[test]
+    fn test_mark_read_with_ignores_existing_record() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssReadRecordRepository::new(db.connection());
+        repo.mark_read_with(
+            "https://rss.com",
+            "首次标题",
+            Some("dup-link"),
+            &RssReadRecordMeta {
+                article_type: Some(1),
+                sort: Some("首次分类".to_string()),
+                image: Some("https://img.test/1.jpg".to_string()),
+                pub_date: Some("2026-10-27".to_string()),
+                dur_pos: Some(7),
+            },
+        )
+        .unwrap();
+        let before = repo.list_records(None).unwrap();
+        assert_eq!(before.len(), 1);
+        let read_time = before[0].read_time;
+
+        std::thread::sleep(std::time::Duration::from_millis(5));
+        repo.mark_read_with(
+            "https://rss.com",
+            "再次标题",
+            Some("dup-link"),
+            &RssReadRecordMeta {
+                article_type: Some(2),
+                sort: Some("再次分类".to_string()),
+                image: Some("https://img.test/2.jpg".to_string()),
+                pub_date: Some("2027-01-01".to_string()),
+                dur_pos: Some(99),
+            },
+        )
+        .unwrap();
+
+        let after = repo.list_records(None).unwrap();
+        assert_eq!(after.len(), 1, "同主键不应新增行");
+        let row = &after[0];
+        assert_eq!(row.read_time, read_time);
+        assert_eq!(row.title, "首次标题");
+        assert_eq!(row.r#type, 1);
+        assert_eq!(row.sort, "首次分类");
+        assert_eq!(row.image.as_deref(), Some("https://img.test/1.jpg"));
+        assert_eq!(row.pub_date.as_deref(), Some("2026-10-27"));
+        assert_eq!(row.dur_pos, 7);
     }
 }
