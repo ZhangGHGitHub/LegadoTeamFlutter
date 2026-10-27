@@ -577,6 +577,9 @@ class _RssArticleDetailScreenState
     final source = _source;
     if (controller == null) return;
     try {
+      // 0) 新文档重新握手（URL 模式每次导航都会重新注入桥脚本；
+      //    HTML 模式仅首文档内联，但 onPageStarted 重置对后续导航同样安全）
+      _rssBridge?.beginNavigation();
       // 1) console 钩子（showWebLog）：先于 preloadJs，预加载脚本的
       //    console 输出同样被采集
       if (source?.showWebLog ?? false) {

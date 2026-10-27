@@ -216,6 +216,31 @@ void main() {
       ).called(1);
     });
 
+    test('页面导航后重置握手：新 hello 接受、旧 nonce 拒绝', () async {
+      when(() => api.rssWebViewHostCall(any(), any(), any()))
+          .thenAnswer((_) async => _okEnvelope('v'));
+      final bridge = newBridge();
+      final firstNonce = await handshake(bridge);
+
+      bridge.beginNavigation();
+      expect(bridge.isHandshaken, isFalse);
+      expect(bridge.nonce, isNull);
+
+      final secondNonce = await handshake(bridge);
+      expect(secondNonce, isNot(firstNonce),
+          reason: '新文档必须换发 nonce');
+
+      await bridge.handleMessage(_pageMessage(
+        method: 'getAwait',
+        args: '["https://old"]',
+        nonce: firstNonce,
+      ));
+      await Future<void>.delayed(Duration.zero);
+      verifyNever(
+        () => api.rssWebViewHostCall(any(), 'getAwait', any()),
+      );
+    });
+
     test('重复 hello 拒绝（nonce 不变）', () async {
       final bridge = newBridge();
       final nonce = await handshake(bridge);

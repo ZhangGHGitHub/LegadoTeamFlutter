@@ -1004,6 +1004,22 @@ class RssWebBridge {
     }
   }
 
+  /// 页面导航开始：重置握手状态并结束旧文档的挂起调用
+  ///
+  /// URL 模式下每次主框架导航都会重新注入桥脚本（新文档重新 `hello`）；
+  /// 若沿用首个文档的 nonce，新文档的消息会被判为「非预期 nonce」而全部
+  /// 拒绝。旧文档的挂起调用按超时语义直接结束（页面已被替换）。
+  void beginNavigation() {
+    if (_disposed) return;
+    _handshaken = false;
+    _nonce = null;
+    for (final pending in _pending.values) {
+      pending.completed = true;
+      pending.timer?.cancel();
+    }
+    _pending.clear();
+  }
+
   /// 清洗并释放：取消所有超时计时器
   void dispose() {
     _disposed = true;
