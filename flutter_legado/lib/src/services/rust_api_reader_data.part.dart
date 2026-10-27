@@ -497,8 +497,11 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
   }
 
   /// 恢复数据（委托 Rust backup_restore：从备份文件导入）
+  ///
+  /// [password] 仅对原版 zip 备份生效（契约 §2.11 批17a），`null`/空串
+  /// 等价空密码；我方单文件 JSON 备份忽略该参数。
   @override
-  Future<void> restore(String backupPath) async {
+  Future<void> restore(String backupPath, {String? password}) async {
     final file = File(backupPath);
     if (!await file.exists()) {
       throw RustApiException(
@@ -506,7 +509,24 @@ mixin RustApiReaderData on RustApiDecode implements BookApi {
         operation: 'restore',
       );
     }
-    await bridge.backupRestore(path: backupPath);
+    await bridge.backupRestore(path: backupPath, password: password);
+  }
+
+  /// 探测备份是否需要密码（委托 Rust backup_inspect，只读）
+  ///
+  /// 契约 §2.11 批17a：返回 JSON 由 [BackupInspectInfo] 解析为强类型，
+  /// 坏 JSON / 字段形态不符抛 `FormatException`（带原因）。
+  @override
+  Future<BackupInspectInfo> backupInspect(String backupPath) async {
+    final file = File(backupPath);
+    if (!await file.exists()) {
+      throw RustApiException(
+        'Backup file not found: $backupPath',
+        operation: 'backupInspect',
+      );
+    }
+    final raw = await bridge.backupInspect(path: backupPath);
+    return BackupInspectInfo.decode(raw);
   }
 
   /// 导入旧版数据（委托 Rust import_old_data）

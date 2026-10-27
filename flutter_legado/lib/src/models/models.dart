@@ -1,6 +1,7 @@
 /// Legado 数据模型库
 library;
 
+export 'backup_inspect_info.dart';
 export 'book.dart';
 export 'book_chapter.dart';
 export 'book_source.dart';

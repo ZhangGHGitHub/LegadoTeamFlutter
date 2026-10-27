@@ -34,6 +34,16 @@ mixin MockBookApiStore {
   /// 字典规则自增 ID（独立于 `_nextId`，避免与其他 mock 实体串号）
   int _nextDictRuleId = 1;
 
+  /// 备份探测结果（Mock 默认：JSON 备份、无需密码）
+  ///
+  /// 可通过 `api.mockBackupInspect = ...` 注入以模拟原版加密 zip 备份，
+  /// 用于 UI 开发/联调密码框流程（契约 §2.11 `backupInspect`）。
+  BackupInspectInfo mockBackupInspect = const BackupInspectInfo(
+    format: BackupFormat.json,
+    passwordRequired: false,
+    passwordProtectedFiles: [],
+  );
+
   // [书源作用域 | 2026-09-13] applyReplaceRulesToSource 调用计数（测试断言用）
   int _applyReplaceRulesToSourceCalls = 0;
 

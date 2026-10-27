@@ -762,7 +762,15 @@ abstract class BookApi {
   Future<String> backup(String dirPath);
 
   /// 恢复数据
-  Future<void> restore(String backupPath);
+  ///
+  /// [password] 为原版 zip 备份密码（契约 §2.11 批17a）：仅对原版多文件
+  /// zip 备份生效，`null`/空串等价空密码；我方单文件 JSON 备份忽略该参数。
+  Future<void> restore(String backupPath, {String? password});
+
+  /// 探测备份是否需要密码（契约 §2.11 批17a，只读）
+  ///
+  /// 返回强类型 [BackupInspectInfo]；JSON 解析在数据层完成，UI 不解析。
+  Future<BackupInspectInfo> backupInspect(String backupPath);
 
   /// 列出目录下备份文件（JSON 数组，F3-20）
   Future<List<String>> backupList(String dir);

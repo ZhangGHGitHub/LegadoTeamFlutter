@@ -478,7 +478,12 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
   }
 
   @override
-  Future<void> restore(String backupPath) async {}
+  Future<void> restore(String backupPath, {String? password}) async {}
+
+  /// Mock 探测：返回可注入的 [mockBackupInspect]（默认 JSON / 无需密码）
+  @override
+  Future<BackupInspectInfo> backupInspect(String backupPath) async =>
+      mockBackupInspect;
 
   @override
   Future<List<String>> backupList(String dir) async => [];
