@@ -112,7 +112,7 @@ $adb = "D:\Android\platform-tools\adb.exe"
 
 | ID | 项 | 状态 | 说明 / 缓解 |
 |---|---|---|---|
-| 7Z-1 | 7z 编码头解码内存无上限 | 🟡 已缓解（残余） | `sevenz-rust2 0.24.1` 解码头使用 `MAX_MEM_LIMIT_KB = usize::MAX/1024`（等同无上限），恶意头可声明 4 GiB LZMA 字典触发 OOM（仅 DoS，无 RCE）。已加 32 字节签名头预检：`NextHeaderSize > 64 MiB` 拒绝（`legado-book/src/archive.rs::precheck_7z_signature_header`），伪造头单测覆盖；**编码头内部字典声明仍不受控**，需上游提供 mem limit 设置面后再收紧。契约 §2.34 批24b 补记同载 |
+| 7Z-1 | 7z 编码头解码内存无上限 | 🟡 已缓解（残余） | `sevenz-rust2 0.24.1` 解码头使用 `MAX_MEM_LIMIT_KB = usize::MAX/1024`（等同无上限），恶意头可声明 4 GiB LZMA 字典触发 OOM（仅 DoS，无 RCE）。**既有输入 512 MiB 限额只约束磁盘文件，不覆盖头部解码阶段的内存**。已加 32 字节签名头预检：`NextHeaderSize > 64 MiB` 拒绝（`legado-book/src/archive.rs::precheck_7z_signature_header`），伪造头单测覆盖；**编码头内部字典声明仍不受控**，需上游提供 mem limit 设置面后再收紧。契约 §2.34 批24b 补记同载 |
 | 7Z-2 | 7z PackInfo pack stream CRC 不校验 | 🟡 已登记 | 上游解析 `pack_crcs` 但不使用；条目级仍校验块 CRC（单子流块）或子流 CRC（`file.has_crc`）。多子流块且缺子流 CRC 时无完整性保护；本批不额外实现 CRC（需复刻上游解析），损坏通常仍在解码/长度处失败 |
 
 ---

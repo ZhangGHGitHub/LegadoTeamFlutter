@@ -939,7 +939,7 @@
 >
 > **错误语义（修正批24 表述）**：`archiveImport7z` **恒返回信封**（见上条）；`archiveList7zFiles` 失败抛 `BridgeError`。批24b 同时消除了列表错误的双层前缀（内层 `Book parsing error:` 不再出现在 `7z列表失败:` 之后），最终消息为 `Book parsing error: 7z列表失败: <原因>`。
 >
-> **头部解码 OOM（残余风险 + 低成本缓解）**：`sevenz-rust2 0.24.1` 编码头解码使用 `MAX_MEM_LIMIT_KB = usize::MAX/1024`（等同无上限），恶意头可声明 4 GiB LZMA 字典触发 OOM（仅 DoS，无 RCE）。缓解：`ArchiveReader::open` 前自读 32 字节签名头，`NextHeaderSize`（offset 20..28，LE u64；offset 12..20 是 `NextHeaderOffset`）> 64 MiB 直接拒绝（书籍包头部远低于此）；签名错误/头部不足亦在此阶段给出中文错误。伪造头单测见 `archive.rs::test_import_7z_rejects_oversized_header_before_open` 等。**边界**：该门槛只限制头部声明长度与头部缓冲区分配，**不能阻止编码头内部声明超大 LZMA 字典**（解码期由上游按属性分配），残余风险登记于 `docs/RESIDUAL_RISKS_2026-08-13.md`（7Z-1）。
+> **头部解码 OOM（残余风险 + 低成本缓解）**：`sevenz-rust2 0.24.1` 编码头解码使用 `MAX_MEM_LIMIT_KB = usize::MAX/1024`（等同无上限），恶意头可声明 4 GiB LZMA 字典触发 OOM（仅 DoS，无 RCE）。**既有输入 512 MiB 限额只约束磁盘文件大小，不约束头部解码阶段的峰值内存**。缓解：`ArchiveReader::open` 前自读 32 字节签名头，`NextHeaderSize`（offset 20..28，LE u64；offset 12..20 是 `NextHeaderOffset`）> 64 MiB 直接拒绝（书籍包头部远低于此）；签名错误/头部不足亦在此阶段给出中文错误。伪造头单测见 `archive.rs::test_import_7z_rejects_oversized_header_before_open` 等。**边界**：该门槛只限制头部声明长度与头部缓冲区分配，**不能阻止编码头内部声明超大 LZMA 字典**（解码期由上游按属性分配），残余风险登记于 `docs/RESIDUAL_RISKS_2026-08-13.md`（7Z-1）。
 >
 > **同名 basename（P3-2）**：同包内多个条目 basename 相同，按出现顺序命名为 `name.ext` / `name_2.ext` / `name_3.ext`…（Windows 文件系统大小写不敏感去重）；列表与解压使用同一命名，选中列表项即可导入对应文件，不再「后者覆盖前者」造成数据丢失。输出目录中**既有同名文件**仍按原 zip/rar 语义覆盖（`test_import_7z_overwrites_existing_output`）。
 >
