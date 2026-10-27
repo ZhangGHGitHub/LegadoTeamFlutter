@@ -10,10 +10,12 @@ import '../models/models.dart';
 import '../providers/audio/audio_notifier.dart';
 import '../providers/audio/http_tts_seed.dart';
 import '../providers/providers.dart';
+import '../services/source_share_passphrase.dart';
 import '../widgets/app_progress_indicator.dart';
 import '../widgets/export_file_sheet.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
+import '../widgets/passphrase_import.dart';
 
 /// 朗读引擎配置页面
 ///
@@ -210,6 +212,7 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
       // 参考版导出 URL 使用 httpTTS.json
       uploadFileName: 'httpTTS.json',
       subject: '导出朗读引擎',
+      passphraseType: SourcePassphraseType.ttsRule,
     );
     if (!mounted || result == null) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -237,6 +240,7 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
       content: json,
       fileName: 'httpTts_${engine.name}.json',
       subject: '导出朗读引擎',
+      passphraseType: SourcePassphraseType.ttsRule,
     );
     if (!mounted || result == null) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -267,15 +271,18 @@ class _ReadAloudConfigScreenState extends ConsumerState<ReadAloudConfigScreen> {
           PopupMenuButton<String>(
             tooltip: '更多操作',
             icon: const Icon(Symbols.more_vert_rounded),
-            onSelected: (value) {
+            onSelected: (value) async {
               switch (value) {
                 case 'export_all':
                   _exportAllEngines();
                 case 'export_selected':
                   _exportSelectedEngine();
+                case 'import_passphrase':
+                  await importPassphraseFromClipboard(context);
               }
             },
             itemBuilder: (_) => const [
+              PopupMenuItem(value: 'import_passphrase', child: Text('口令导入')),
               PopupMenuItem(value: 'export_all', child: Text('导出全部')),
               PopupMenuItem(value: 'export_selected', child: Text('导出当前选中')),
             ],

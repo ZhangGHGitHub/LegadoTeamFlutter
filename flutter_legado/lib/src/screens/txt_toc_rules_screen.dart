@@ -9,10 +9,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/models.dart';
 import '../providers/txt_toc_rules/txt_toc_rules_notifier.dart';
+import '../services/source_share_passphrase.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/export_file_sheet.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
+import '../widgets/passphrase_import.dart';
 import '../utils/error_message.dart';
 
 /// TXT 目录规则管理页面
@@ -137,6 +139,7 @@ It was a dark and stormy night.''';
           onSelected: _onMoreMenuSelected,
           itemBuilder: (_) => const [
             PopupMenuItem(value: 'importDefault', child: Text('导入默认')),
+            PopupMenuItem(value: 'passphrase', child: Text('口令导入')),
             PopupMenuItem(value: 'export', child: Text('导出规则')),
             PopupMenuItem(value: 'help', child: Text('帮助')),
           ],
@@ -147,12 +150,14 @@ It was a dark and stormy night.''';
 
   /// [台账 4-1 ⑦ | 2.0.274] ⋮ 溢出菜单：保留原版 never 项能力
   /// （导入默认/帮助），批16e 增补「导出规则」。
-  void _onMoreMenuSelected(String value) {
+  Future<void> _onMoreMenuSelected(String value) async {
     switch (value) {
       case 'help':
         showHelp(context, HelpAssets.txtTocRuleHelp);
       case 'importDefault':
         _importDefault();
+      case 'passphrase':
+        await importPassphraseFromClipboard(context);
       case 'export':
         _exportRules();
     }
@@ -181,6 +186,7 @@ It was a dark and stormy night.''';
       // 参考版 BaseRuleViewModel.uploadSelectedRules 固定上传该名
       uploadFileName: 'export_rules.json',
       subject: '导出目录规则',
+      passphraseType: SourcePassphraseType.tocRule,
     );
     if (!mounted || result == null) return;
     ScaffoldMessenger.of(context).showSnackBar(

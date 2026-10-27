@@ -27,6 +27,7 @@ Future<void> showAssociationImportDialog(
   String? url,
   ImportType? type,
   String? filePath,
+  String? text,
 }) {
   return showDialog<void>(
     context: context,
@@ -34,6 +35,7 @@ Future<void> showAssociationImportDialog(
       url: url,
       type: type,
       filePath: filePath,
+      text: text,
     ),
   );
 }
@@ -44,6 +46,7 @@ class AssociationImportDialog extends ConsumerStatefulWidget {
     this.url,
     this.type,
     this.filePath,
+    this.text,
   });
 
   /// 预填内容地址（非空时打开即自动拉取解析）
@@ -54,6 +57,9 @@ class AssociationImportDialog extends ConsumerStatefulWidget {
 
   /// 本地文件路径（批16d：外部 JSON 文件 VIEW 入口，打开即读取解析）
   final String? filePath;
+
+  /// 直接给定的导入文本（批25：ACTION_SEND / 口令解码后的 JSON 入口）
+  final String? text;
 
   @override
   ConsumerState<AssociationImportDialog> createState() =>
@@ -110,6 +116,17 @@ class _AssociationImportDialogState
         ref.read(associationNotifierProvider.notifier).bootstrapFromDeepLink(
               type: widget.type,
               srcUrl: url,
+            );
+      });
+      return;
+    }
+    final text = widget.text;
+    if (text != null && text.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(associationNotifierProvider.notifier).loadFromText(
+              text,
+              typeHint: widget.type,
             );
       });
     }

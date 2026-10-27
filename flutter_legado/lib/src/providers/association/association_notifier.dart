@@ -100,17 +100,30 @@ class AssociationNotifier extends Notifier<AssociationState> {
         state = state.copyWith(error: '剪贴板为空', isLoading: false);
         return;
       }
-      final trimmed = text.trim();
-      if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-        state = state.copyWith(urlInput: trimmed);
-        await loadFromUrl(trimmed, typeHint: typeHint);
-        return;
-      }
-      await _parseAndSet(trimmed, typeHint);
+      await loadFromText(text, typeHint: typeHint);
     } catch (e) {
       final msg = e is BridgeError ? e.message : '$e';
       state = state.copyWith(error: '读取剪贴板失败：$msg', isLoading: false);
     }
+  }
+
+  /// 从文本加载（批25：ACTION_SEND / 口令解码后等外部调用方传入）
+  ///
+  /// 内容为 http(s) URL 时按 URL 拉取，否则直接按 JSON 解析；语义与
+  /// [loadFromClipboard] 的解析分支一致。
+  Future<void> loadFromText(String content, {ImportType? typeHint}) async {
+    final trimmed = content.trim();
+    if (trimmed.isEmpty) {
+      state = state.copyWith(error: '内容为空', isLoading: false);
+      return;
+    }
+    state = state.copyWith(isLoading: true, error: null, items: []);
+    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
+      state = state.copyWith(urlInput: trimmed);
+      await loadFromUrl(trimmed, typeHint: typeHint);
+      return;
+    }
+    await _parseAndSet(trimmed, typeHint);
   }
 
   /// 解析内容：JSON 解码 → 类型自动识别（原版 importJson 字段规则）→ 本地快照 → 条目列表

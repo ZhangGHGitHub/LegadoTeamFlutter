@@ -62,6 +62,10 @@ extension _SourceActions on _SourceScreenState {
       case 'import_qr':
         _importFromQrCode(context);
         break;
+      case 'import_passphrase':
+        // 批25：读取剪贴板分享口令并按类型进入关联导入
+        unawaited(importPassphraseFromClipboard(context));
+        break;
       case 'group_by_domain':
         setState(() => _groupByDomain = !_groupByDomain);
         break;
@@ -571,6 +575,7 @@ extension _SourceActions on _SourceScreenState {
           // 临时文件由本页创建：Sheet 关闭（含另存取消/上传失败放弃）时清理
           deleteTempFileOnClose: true,
           fileService: fileService,
+          passphraseType: SourcePassphraseType.bookSource,
         );
       } else {
         final json = await notifier.exportSelectedSources();
@@ -583,6 +588,7 @@ extension _SourceActions on _SourceScreenState {
           uploadFileName: 'bookSource.json',
           subject: '导出书源',
           fileService: fileService,
+          passphraseType: SourcePassphraseType.bookSource,
         );
       }
     } catch (e) {

@@ -10,6 +10,7 @@ import '../bridge/ffi.dart';
 import '../providers/dict/dict_notifier.dart' show kDefaultDictRulesAsset;
 import '../providers/providers.dart';
 import '../routes.dart' show AppRoutes;
+import '../services/source_share_passphrase.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/export_file_sheet.dart';
@@ -18,6 +19,7 @@ import '../widgets/help/show_help.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/legado_app_bar.dart';
 import '../widgets/loading_indicator.dart';
+import '../widgets/passphrase_import.dart';
 
 /// 字典规则管理页
 ///
@@ -349,6 +351,7 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
       fileName: 'exportDictRule.json',
       uploadFileName: 'export_rules.json',
       subject: '导出字典规则',
+      passphraseType: SourcePassphraseType.dictRule,
     );
     if (!mounted || result == null) return;
     _snack(result.message);
@@ -407,7 +410,7 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
 
   // ========== 菜单操作（对标 R.menu.dict_rule） ==========
 
-  void _onMenuSelected(String value) {
+  Future<void> _onMenuSelected(String value) async {
     switch (value) {
       case 'add':
         _showRuleEditor();
@@ -415,6 +418,8 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
         _showImportLocalDialog();
       case 'importQr':
         _importFromQr();
+      case 'importPassphrase':
+        await importPassphraseFromClipboard(context);
       case 'importOnline':
         _showImportOnlineDialog();
       case 'importDefault':
@@ -571,6 +576,7 @@ class _DictRuleScreenState extends ConsumerState<DictRuleScreen> {
             PopupMenuItem(value: 'add', child: Text('新增规则')),
             PopupMenuItem(value: 'importLocal', child: Text('本地导入')),
             PopupMenuItem(value: 'importQr', child: Text('扫码导入')),
+            PopupMenuItem(value: 'importPassphrase', child: Text('口令导入')),
             PopupMenuItem(value: 'importOnline', child: Text('在线导入')),
             PopupMenuItem(value: 'importDefault', child: Text('导入默认')),
             PopupMenuItem(value: 'help', child: Text('帮助')),

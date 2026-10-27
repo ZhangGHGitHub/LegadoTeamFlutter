@@ -10,6 +10,9 @@ import '../routes.dart';
 import '../screens/archive_import_dialog.dart';
 import '../screens/association_import_dialog.dart';
 import '../utils/legado_deep_link.dart';
+import '../utils/shared_text.dart';
+import '../widgets/open_url_confirm_dialog.dart';
+import '../widgets/passphrase_import.dart';
 
 /// 监听 Android `legado://` / `yuedu://` 深链并导航到关联导入页；
 /// P1-4 起同时消费外部书籍文件 VIEW intent（content:// / file://）
@@ -43,6 +46,10 @@ class DeepLinkService {
 
   /// P1-4：最近一次处理的文件 URI（弹窗存续期去重，语义同 [_lastHandled]）
   String? _lastHandledFile;
+
+  /// 批25：最近一次处理的分享文本（弹窗存续期去重）
+  String? _lastHandledShared;
+
   StreamSubscription<Uri>? _iosLinkSub;
 
   /// 在 [LegadoApp] 首帧后调用；重复调用安全
@@ -93,6 +100,16 @@ class DeepLinkService {
     } catch (e) {
       debugPrint('[DeepLink] getInitialFileUri 失败：$e');
     }
+    // 批25：ACTION_SEND / ACTION_PROCESS_TEXT 分享文本（冷启动）
+    try {
+      final sharedText =
+          await _channel.invokeMethod<String>('getInitialSharedText');
+      if (sharedText != null && sharedText.isNotEmpty) {
+        await handleSharedText(sharedText);
+      }
+    } catch (e) {
+      debugPrint('[DeepLink] getInitialSharedText 失败：$e');
+    }
   }
 
   /// 取消 iOS 链路流订阅（进程级单例一般不调用；保留以备测试与热重载）
@@ -114,7 +131,83 @@ class DeepLinkService {
       if (uri != null && uri.isNotEmpty) {
         await handleFileUri(uri);
       }
+    } else if (call.method == 'onSharedText') {
+      // 批25：ACTION_SEND / PROCESS_TEXT 热路径（Activity 已存活）
+      final text = call.arguments as String?;
+      if (text != null && text.isNotEmpty) {
+        await handleSharedText(text);
+      }
     }
+  }
+
+  /// 批25：处理外部分享文本（ACTION_SEND / ACTION_PROCESS_TEXT）
+  ///
+  /// 分流顺序：分享口令 → 口令导入；legado:// / yuedu:// → 关联导入；
+  /// http(s) URL → 外跳确认后应用内浏览器；JSON → 关联导入；其余提示不支持。
+  Future<void> handleSharedText(String raw) async {
+    final text = raw.trim();
+    if (text.isEmpty) return;
+    if (_lastHandledShared == text) return;
+    final nav = navigatorKey?.currentState;
+    if (nav == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        handleSharedText(raw);
+      });
+      return;
+    }
+    _lastHandledShared = text;
+    try {
+      switch (classifySharedText(text)) {
+        case SharedTextKind.passphrase:
+          await importPassphraseText(nav.context, text);
+        case SharedTextKind.importScheme:
+          await handleUrl(text);
+        case SharedTextKind.httpUrl:
+          await _confirmOpenSharedUrl(text);
+        case SharedTextKind.json:
+          await showAssociationImportDialog(nav.context, text: text);
+        case SharedTextKind.unsupported:
+          await _showSharedUnsupported(nav.context);
+      }
+    } finally {
+      _lastHandledShared = null;
+    }
+  }
+
+  /// 分享的 http(s) 链接：先走既有外跳确认，确认后进入应用内浏览器
+  Future<void> _confirmOpenSharedUrl(String url) async {
+    final nav = navigatorKey?.currentState;
+    if (nav == null) return;
+    final ok = await showOpenUrlConfirmDialog(nav.context, url: url);
+    if (!ok) return;
+    final current = navigatorKey?.currentState;
+    if (current == null) return;
+    unawaited(
+      current.pushNamed(
+        AppRoutes.browser,
+        arguments: <String, String>{'url': url, 'html': ''},
+      ),
+    );
+  }
+
+  /// 分享内容无法识别时的明确提示
+  Future<void> _showSharedUnsupported(BuildContext context) {
+    return showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('不支持的内容'),
+        content: const Text(
+          '分享内容不是分享口令、http(s) 链接、legado:// 导入链接'
+          '或可导入的 JSON。',
+        ),
+        actions: [
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('确定'),
+          ),
+        ],
+      ),
+    );
   }
 
   /// 处理深链或平台桥 openUrl 转来的 legado/yuedu URI

@@ -13,11 +13,13 @@ import '../providers/auto_task/auto_task_notifier.dart';
 import '../providers/providers.dart';
 import '../services/bridge_http.dart';
 import '../services/auto_task_scheduler.dart';
+import '../services/source_share_passphrase.dart';
 import '../widgets/auto_task_debug_dialog.dart';
 import '../widgets/custom_refresh_indicator.dart';
 import '../widgets/export_file_sheet.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
+import '../widgets/passphrase_import.dart';
 
 /// 定时任务管理页面
 class AutoTaskScreen extends ConsumerStatefulWidget {
@@ -178,13 +180,16 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
         // — Qoder
         actions: [
           PopupMenuButton<String>(
-            onSelected: (value) {
+            onSelected: (value) async {
               switch (value) {
                 case 'import_local':
                   _importLocal(context);
                   break;
                 case 'import_online':
                   _showImportOnlineDialog(context);
+                  break;
+                case 'import_passphrase':
+                  await importPassphraseFromClipboard(context);
                   break;
                 case 'export':
                   _exportTasks(context);
@@ -197,6 +202,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
             itemBuilder: (context) => const [
               PopupMenuItem(value: 'import_local', child: Text('导入本地任务')),
               PopupMenuItem(value: 'import_online', child: Text('导入线上任务')),
+              PopupMenuItem(value: 'import_passphrase', child: Text('口令导入')),
               PopupMenuItem(value: 'export', child: Text('导出任务')),
               PopupMenuItem(value: 'help', child: Text('帮助')),
             ],
@@ -848,6 +854,7 @@ class _AutoTaskScreenState extends ConsumerState<AutoTaskScreen> {
       content: json,
       fileName: 'exportAutoTask.json',
       subject: '导出定时任务',
+      passphraseType: SourcePassphraseType.autoTask,
     );
     if (!context.mounted || result == null) return;
     _snack(context, result.message);

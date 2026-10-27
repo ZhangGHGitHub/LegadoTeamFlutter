@@ -16,9 +16,11 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/replace_rule/replace_rule_notifier.dart';
 import '../routes.dart';
+import '../services/source_share_passphrase.dart';
 import '../widgets/export_file_sheet.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
+import '../widgets/passphrase_import.dart';
 import '../widgets/replace_rule_group_manage_dialog.dart';
 import 'replace_rule_edit_screen.dart';
 import 'replace_rule_import_confirm_screen.dart';
@@ -165,6 +167,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
               PopupMenuItem(value: 'local', child: Text('本地导入')),
               PopupMenuItem(value: 'online', child: Text('网络导入')),
               PopupMenuItem(value: 'qrcode', child: Text('二维码导入')),
+              PopupMenuItem(value: 'passphrase', child: Text('口令导入')),
             ],
           ),
           // [UI-fix v2.0.2 | 2026-08-06] 批量模式入口 — Qoder
@@ -486,6 +489,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
       // 参考版 BaseRuleViewModel.uploadSelectedRules 固定上传该名
       uploadFileName: 'export_rules.json',
       subject: '导出替换规则',
+      passphraseType: SourcePassphraseType.replaceRule,
     );
     if (!mounted || result == null) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -496,7 +500,7 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
 
   /// [UI-fix v2.0.1 | 2026-08-06] 导入菜单分发
   /// [UI-fix v2.0.2 | 2026-08-06] 网络/二维码导入接通（复用导入确认页） — Qoder
-  void _handleImportMenu(String value) {
+  Future<void> _handleImportMenu(String value) async {
     switch (value) {
       case 'local':
         _importFromFile();
@@ -504,6 +508,8 @@ class _ReplaceRulesScreenState extends ConsumerState<ReplaceRulesScreen> {
         _showImportUrlDialog();
       case 'qrcode':
         _importFromQrCode();
+      case 'passphrase':
+        await importPassphraseFromClipboard(context);
     }
   }
 

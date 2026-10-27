@@ -159,6 +159,10 @@ extension _SourceBuilders on _SourceScreenState {
               value: 'import_qr',
               child: _MenuRow(icon: Symbols.qr_code_rounded, label: '二维码导入'),
             ),
+            const PopupMenuItem(
+              value: 'import_passphrase',
+              child: _MenuRow(icon: Symbols.key_rounded, label: '口令导入'),
+            ),
             PopupMenuItem(
               value: 'group_by_domain',
               child: _MenuRow(

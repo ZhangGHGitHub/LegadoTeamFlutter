@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import '../services/bridge_http.dart';
 import '../services/export_file_service.dart';
+import '../services/source_share_passphrase.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -26,6 +27,7 @@ import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/loading_indicator.dart';
+import '../widgets/passphrase_import.dart';
 import '../widgets/rss_group_manage_dialog.dart';
 import '../utils/error_message.dart';
 import 'rss_source_edit_screen.dart';
@@ -299,6 +301,10 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
             const PopupMenuItem(
               value: 'import_qr',
               child: _MenuRow(icon: Symbols.qr_code_rounded, label: '二维码导入'),
+            ),
+            const PopupMenuItem(
+              value: 'import_passphrase',
+              child: _MenuRow(icon: Symbols.key_rounded, label: '口令导入'),
             ),
             const PopupMenuItem(
               value: 'import_default',
@@ -819,6 +825,8 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
         await _showImportUrlDialog();
       case 'import_qr':
         await _importFromQrCode();
+      case 'import_passphrase':
+        await importPassphraseFromClipboard(context);
       case 'import_default':
         await _importDefault();
       case 'rule_sub':
@@ -1009,6 +1017,7 @@ class _RssSourceManageScreenState extends ConsumerState<RssSourceManageScreen> {
       uploadFileName: 'export_rules.json',
       subject: '导出订阅源',
       fileService: widget.exportFileService,
+      passphraseType: SourcePassphraseType.rssSource,
     );
     if (!mounted || result == null) return;
     _toast(result.message);

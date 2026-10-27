@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
@@ -18,6 +19,7 @@ import '../providers/source_check/check_source_notifier.dart';
 import '../routes.dart';
 import '../services/export_file_service.dart';
 import '../services/source_import_service.dart' show SourcePreview;
+import '../services/source_share_passphrase.dart';
 import '../utils/error_message.dart';
 import '../utils/legado_deep_link.dart';
 import '../widgets/empty_state.dart';
@@ -28,6 +30,7 @@ import '../widgets/book_source_group_manage_dialog.dart';
 import '../widgets/help/help_assets.dart';
 import '../widgets/help/show_help.dart';
 import '../widgets/confirm_dialog.dart';
+import '../widgets/passphrase_import.dart';
 import 'association_import_dialog.dart';
 import 'source_edit_screen.dart';
 import 'js_source_edit_screen.dart';

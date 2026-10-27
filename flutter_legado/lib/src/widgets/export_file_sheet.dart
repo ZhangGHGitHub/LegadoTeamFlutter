@@ -1,8 +1,9 @@
 // 通用导出目标 Sheet（批16c）
 //
 // 对齐参考版 `FilePickerSheet` 的 EXPORT 形态（legado-with-MD3）：
-// 「保存到本地」（系统另存）+「上传直链」两项，不做自带文件夹/手动路径，
-// 不含口令与 expiryDate（已登记待用户裁决）。
+// 「保存到本地」（系统另存）+「上传直链」两项，不做自带文件夹/手动路径。
+// 批25 起规则类导出在上传成功后增加「复制口令」（过期天数在弹窗内输入，
+// 默认 0 = 永久）；书单/皮肤等非规则导出不展示该入口。
 //
 // 上传语义对齐 `BaseRuleViewModel.uploadSelectedRules`：按生效直链规则
 // （`DirectLinkUploadRuleService.getEffectiveRule()`，配置键
@@ -20,6 +21,8 @@
 // 路径；上传失败后 Sheet 保持打开可重试，此时不删除文件。实际删除由
 // [ExportFileService.deleteTemporaryFile] 执行，内置「仅删系统临时目录内
 // 文件」护栏，用户目录文件一律不动。
+// 批16c 初始化；批25 增加「复制口令」：`passphraseType` 非 null 且上传成功
+// 的 URL 可编码时，在上传结果面板展示口令入口（有效期在弹窗内输入）。
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -33,8 +36,10 @@ import '../providers/providers.dart';
 import '../services/direct_link_upload_rule_service.dart';
 import '../services/export_file_service.dart';
 import '../services/file_save_channel.dart';
+import '../services/source_share_passphrase.dart';
 import '../utils/error_message.dart';
 import 'ios_widgets.dart';
+import 'source_share_passphrase_dialog.dart';
 
 /// 导出成功的结果类型
 enum ExportFileOutcome {
@@ -110,6 +115,8 @@ class ExportFileResult {
 ///   删除还会校验文件位于系统临时目录内（见
 ///   [ExportFileService.deleteTemporaryFile]），指向用户文件的路径不会被删。
 /// - [fileService] / [ruleService]：测试注入口，默认按真实实现构造。
+/// - [passphraseType]：规则类导出传对应类型时，直链上传成功后展示
+///   「复制口令」入口（批25）。书单/皮肤等非规则导出保持 null，不展示。
 ///
 /// 返回 null 表示用户取消；成功时返回 [ExportFileResult]。
 Future<ExportFileResult?> showExportFileSheet(
@@ -123,6 +130,7 @@ Future<ExportFileResult?> showExportFileSheet(
   bool deleteTempFileOnClose = false,
   ExportFileService? fileService,
   DirectLinkUploadRuleService? ruleService,
+  SourcePassphraseType? passphraseType,
 }) {
   // assert 在 release 下会被移除，故公共入口改用常驻运行时校验（P3-6）；
   // ExportFileSheet 构造函数仍保留 assert 作为直接实例化时的调试护栏。
@@ -147,6 +155,7 @@ Future<ExportFileResult?> showExportFileSheet(
       deleteTempFileOnClose: deleteTempFileOnClose,
       fileService: fileService,
       ruleService: ruleService,
+      passphraseType: passphraseType,
     ),
   );
 }
@@ -164,6 +173,7 @@ class ExportFileSheet extends ConsumerStatefulWidget {
     this.deleteTempFileOnClose = false,
     this.fileService,
     this.ruleService,
+    this.passphraseType,
   }) : assert(
          (content == null) != (filePath == null),
          'content 与 filePath 必须且只能提供一个',
@@ -195,6 +205,9 @@ class ExportFileSheet extends ConsumerStatefulWidget {
 
   /// 直链上传规则服务（测试注入）
   final DirectLinkUploadRuleService? ruleService;
+
+  /// 规则类型（非 null 时上传成功后展示「复制口令」，批25）
+  final SourcePassphraseType? passphraseType;
 
   @override
   ConsumerState<ExportFileSheet> createState() => _ExportFileSheetState();
@@ -628,7 +641,31 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
             ),
           ),
         ),
+        // 批25：规则类导出在上传成功后提供「复制口令」（对齐原版
+        // `sourceSharePassphraseButton` 仅在 url.isAbsUrl() 时出现的语义）
+        if (widget.passphraseType != null &&
+            SourceSharePassphrase.canEncode(_uploadedUrl!)) ...[
+          const SizedBox(height: 12),
+          _OptionTile(
+            icon: Symbols.key_rounded,
+            title: '复制口令',
+            subtitle: '生成可粘贴到阅读「口令导入」的分享口令，可设置有效期',
+            onTap: _sharePassphrase,
+          ),
+        ],
       ],
+    );
+  }
+
+  /// 生成并复制分享口令（有效期在弹窗内输入，默认永久）
+  Future<void> _sharePassphrase() async {
+    final url = _uploadedUrl;
+    final type = widget.passphraseType;
+    if (url == null || type == null) return;
+    await showSourceSharePassphraseDialog(
+      context,
+      url: url,
+      type: type,
     );
   }
 
