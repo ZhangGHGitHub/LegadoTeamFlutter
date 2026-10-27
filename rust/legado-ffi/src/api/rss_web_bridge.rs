@@ -180,6 +180,10 @@ fn bridge_permit(source_url: &str) -> Result<tokio::sync::OwnedSemaphorePermit, 
 }
 
 /// 并发信号量表裁剪：优先淘汰无持有者的空闲项（Arc 仅剩表内引用）
+///
+/// 批21e P3-5：**不淘汰在用项**。强行删除在用信号量表项会让同源后续调用
+/// 新建第二个信号量，突破每源并发上限；此处允许表项临时上浮（只损失
+/// 「条数上限」这一资源边界，不影响正确性），并留告警日志。
 #[cfg(feature = "quickjs")]
 fn trim_idle_semaphores(guard: &mut HashMap<String, Arc<tokio::sync::Semaphore>>) {
     if guard.len() <= MAX_TRACKED_SOURCES {
@@ -196,11 +200,13 @@ fn trim_idle_semaphores(guard: &mut HashMap<String, Arc<tokio::sync::Semaphore>>
         }
         guard.remove(&key);
     }
-    while guard.len() > MAX_TRACKED_SOURCES {
-        let Some(key) = guard.keys().next().cloned() else {
-            break;
-        };
-        guard.remove(&key);
+    if guard.len() > MAX_TRACKED_SOURCES {
+        log::warn!(
+            "[rss-web-bridge] 并发信号量表 {} 条 > 上限 {}：存在在用项，\
+             不淘汰并允许临时上浮",
+            guard.len(),
+            MAX_TRACKED_SOURCES
+        );
     }
 }
 
@@ -957,6 +963,13 @@ fn store(source_url: &str, args: &Value) -> LegadoResult<String> {
             if let Err(e) = crate::api::source_login_cache::put_login_info(source_url, value) {
                 log::warn!("[rss-web-bridge] 写入用户信息失败（{source_url}）: {e}");
             }
+            // 批21e P2-1：同步写引擎变量表（与 Remove 对称）。已存在的引擎
+            // 只在创建时跑 setup 种子；不写变量表时 `run` 内
+            // `source.getLoginInfo()` 读不到 WebView 刚写入的新值。
+            let var_key = format!("userInfo_{source_url}");
+            if let Err(e) = legado_js::host_api::variable_store::set_variable(&var_key, value) {
+                log::warn!("[rss-web-bridge] 写入用户信息变量失败（{var_key}）: {e}");
+            }
             Value::String(value.to_string())
         }
         "loginInfoRemove" => {
@@ -1669,6 +1682,62 @@ mod tests {
         crate::api::rss::delete_rss_source(url_b).ok();
     }
 
+    /// 批21e P2-1：`loginInfoSet` 同步变量表，已建引擎的 `run` 立即可读；
+    /// `loginInfoRemove` 清空后读不到（seed → set → run → remove → run 回环）。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn login_info_set_syncs_variable_store_loopback() {
+        let _guard = crate::test_support::lock_global_store();
+        let _db = crate::db_state::ensure_test_db();
+        let url = "https://rss-web-bridge-logininfo.test/feed";
+        add_source(url, json!({}));
+        let var_key = format!("userInfo_{url}");
+
+        // seed：DB + 变量表旧值（模拟上次会话遗留的登录态）
+        let old = r#"{"u":"old"}"#;
+        crate::api::source_login_cache::put_login_info(url, old).expect("seed 登录信息");
+        legado_js::host_api::variable_store::set_variable(&var_key, old).unwrap();
+
+        // 首次 run 建引擎（setup 种子从 DB 读旧值）
+        let env = call(url, "run", json!(["source.getLoginInfo()"]));
+        assert_eq!(env["ok"], true, "{env}");
+        assert_eq!(env["value"], old, "引擎初始应读到旧登录信息");
+
+        // WebView 写入新值 → 已存在引擎的 run 立即可读
+        let new = r#"{"u":"new","token":"t1"}"#;
+        let env = call(
+            url,
+            "__store",
+            json!([{ "op": "loginInfoSet", "value": new }]),
+        );
+        assert_eq!(env["ok"], true, "{env}");
+        assert_eq!(
+            legado_js::host_api::variable_store::get_variable(&var_key).unwrap(),
+            Some(new.to_string()),
+            "loginInfoSet 必须同步引擎变量表"
+        );
+        let env = call(url, "run", json!(["source.getLoginInfo()"]));
+        assert_eq!(env["value"], new, "loginInfoSet 后 run 必须读到新值");
+
+        // remove → 变量表清空，run 读不到
+        let env = call(url, "__store", json!([{ "op": "loginInfoRemove" }]));
+        assert_eq!(env["ok"], true, "{env}");
+        assert_eq!(
+            legado_js::host_api::variable_store::get_variable(&var_key).unwrap(),
+            None,
+            "loginInfoRemove 必须清除变量表"
+        );
+        let env = call(url, "run", json!(["source.getLoginInfo()"]));
+        assert_eq!(
+            env["value"], "null",
+            "loginInfoRemove 后 run 读不到（run 按原版 evalJS 语义 String(null)）"
+        );
+
+        // 清理
+        crate::api::source_login_cache::remove_login_info(url).ok();
+        crate::api::rss::delete_rss_source(url).ok();
+    }
+
     /// `__store`：cache 内存面 put/get/delete 与 toast 动作
     #[test]
     fn store_cache_memory_and_toast_action() {
@@ -1894,5 +1963,32 @@ window["__lgTestChannel"] = {
 
         crate::api::source_login_cache::remove_login_header(url).ok();
         crate::api::rss::delete_rss_source(url).ok();
+    }
+
+    /// 批21e P3-5：信号量表裁剪不得淘汰在用项（允许条数临时上浮）
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn trim_idle_semaphores_never_evicts_in_use_entries() {
+        let mut map: HashMap<String, Arc<tokio::sync::Semaphore>> = HashMap::new();
+        let in_use = Arc::new(tokio::sync::Semaphore::new(1));
+        let _held = Arc::clone(&in_use); // 模拟等待者/许可持有者
+        map.insert("in-use".to_string(), in_use);
+        for i in 0..MAX_TRACKED_SOURCES + 10 {
+            map.insert(
+                format!("idle-{i}"),
+                Arc::new(tokio::sync::Semaphore::new(1)),
+            );
+        }
+        assert!(map.len() > MAX_TRACKED_SOURCES);
+        trim_idle_semaphores(&mut map);
+        assert!(
+            map.contains_key("in-use"),
+            "在用信号量不得被淘汰（会突破每源并发上限）"
+        );
+        assert!(
+            map.len() <= MAX_TRACKED_SOURCES,
+            "空闲项应被裁到上限：{}",
+            map.len()
+        );
     }
 }
