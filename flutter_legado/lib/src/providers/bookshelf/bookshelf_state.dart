@@ -92,9 +92,7 @@ extension BookshelfStateGrouping on BookshelfState {
 
   /// 本地书判定（对齐 Kotlin `Book.isLocal`：type == 0 时看 origin，
   /// 否则看 local 位；WebDAV origin 新 `webDav::` 与存量 `dav:` 均识别）
-  bool _isLocal(Book b) => b.bookType == 0
-      ? BookType.isLocalOrigin(b.origin)
-      : (b.bookType & BookType.local) != 0;
+  bool _isLocal(Book b) => BookType.isLocalBook(b);
 
   /// 分组后的书籍，用于展示分组头
   ///

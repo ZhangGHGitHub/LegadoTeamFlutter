@@ -47,6 +47,20 @@ class BookType {
   static bool isLocalOrigin(String origin) =>
       origin == localTag || isWebDavOrigin(origin);
 
+  /// 书籍是否本地书（类型感知，对齐 Kotlin `Book.isLocal`）
+  ///
+  /// Kotlin `BookExtensions.kt:50-56` 的完整语义：
+  /// - `type == 0`（历史数据未写类型）→ 按 [origin] 判定
+  ///   （[isLocalOrigin]：`loc_book` / `webDav::` / 存量 `dav:`）；
+  /// - `type != 0` → 只看 `local` 位。
+  ///
+  /// 不能仅用 origin 判定：原版备份导入的 `loc_book::xxx.zip` 等在线书
+  /// 可能带非 0 type 而没有 local 位，origin-only 会把它误当本地书
+  /// （批22 P3-2）。所有「是否本地书」语义入口统一经此函数。
+  static bool isLocalBook(Book book) => book.bookType == 0
+      ? isLocalOrigin(book.origin)
+      : (book.bookType & local) != 0;
+
   /// 提取 WebDAV origin 中的远程路径（去掉前缀与属性后缀）
   ///
   /// - 新格式 `webDav::https://host/books/x.epub,{"serverID":12}`
@@ -86,11 +100,47 @@ class BookType {
   /// WebDAV 配置的 url 可能带/不带尾斜杠、remote_dir 可能带前斜杠，
   /// 直接字符串相加会产生双斜杠，故统一经此函数拼接。
   static String joinRemoteUrl(String base, String relative) {
-    final b = base.trim().replaceAll(RegExp(r'/+$'), '');
-    final r = relative.trim().replaceAll(RegExp(r'^/+'), '');
+    final b = collapseSlashes(base.trim()).replaceAll(RegExp(r'/+$'), '');
+    final r = collapseSlashes(relative.trim()).replaceAll(RegExp(r'^/+'), '');
     if (r.isEmpty) return b;
     if (b.isEmpty) return r;
     return '$b/$r';
+  }
+
+  /// 折叠字符串中连续的 `/`（保留协议分隔 `://`）
+  ///
+  /// WebDAV 配置的 url / remote_dir 来自用户输入与旧偏好，可能出现
+  /// `https://host//dav//` 或 `//legado//` 等重复斜杠；Rust `WebDavClient`
+  /// 以 `url + remote_dir + path` 直拼，Dart 侧必须在写入配置前归一
+  /// （批22 P3）。协议分隔 `://` 不在折叠范围内。
+  static String collapseSlashes(String value) {
+    final schemeEnd = value.indexOf('://');
+    if (schemeEnd < 0) {
+      return value.replaceAll(RegExp(r'/{2,}'), '/');
+    }
+    final scheme = value.substring(0, schemeEnd + 3);
+    final rest = value.substring(schemeEnd + 3).replaceAll(RegExp(r'/{2,}'), '/');
+    return '$scheme$rest';
+  }
+
+  /// 归一 WebDAV 配置的「根 URL + 远端子目录」（供 Rust
+  /// `url + remote_dir + path` 直拼，保证任意组合都不产生 `//`）
+  ///
+  /// 返回命名记录：
+  /// - `url`：折叠重复斜杠并去掉末尾 `/`；
+  /// - `remoteDir`：形如 `/legado/`（首尾各一个 `/`；空目录归一为 `/`）。
+  ///
+  /// 例：`('https://host/dav/', '/legado/')` →
+  /// `('https://host/dav', '/legado/')`，直拼后 `https://host/dav/legado/x`。
+  static ({String url, String remoteDir}) normalizeWebDavConfig(
+    String url,
+    String remoteDir,
+  ) {
+    final base = collapseSlashes(url.trim()).replaceAll(RegExp(r'/+$'), '');
+    final dir = collapseSlashes(remoteDir.trim())
+        .replaceAll(RegExp(r'^/+'), '')
+        .replaceAll(RegExp(r'/+$'), '');
+    return (url: base, remoteDir: dir.isEmpty ? '/' : '/$dir/');
   }
 }
 

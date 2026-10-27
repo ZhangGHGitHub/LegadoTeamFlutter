@@ -59,6 +59,89 @@ void main() {
     });
   });
 
+  group('BookType.isLocalBook（类型感知，对齐 Kotlin Book.isLocal）', () {
+    test('type == 0：按 origin 判定（本地/WebDAV 为真，在线为假）', () {
+      expect(
+        BookType.isLocalBook(
+          const Book(bookUrl: '/tmp/a.txt', origin: 'loc_book'),
+        ),
+        isTrue,
+      );
+      expect(
+        BookType.isLocalBook(
+          const Book(
+            bookUrl: '/tmp/a.epub',
+            origin: 'webDav::https://dav.example.com/books/a.epub',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        BookType.isLocalBook(
+          const Book(
+            bookUrl: '/tmp/a.epub',
+            origin: 'dav:https://dav.example.com/books/a.epub',
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        BookType.isLocalBook(
+          const Book(bookUrl: 'https://src/1', origin: 'https://src'),
+        ),
+        isFalse,
+      );
+    });
+
+    test('type 含 local 位：无论 origin 均为本地书', () {
+      expect(
+        BookType.isLocalBook(
+          const Book(
+            bookUrl: '/tmp/a.txt',
+            origin: 'loc_book',
+            bookType: BookType.text | BookType.local,
+          ),
+        ),
+        isTrue,
+      );
+      expect(
+        BookType.isLocalBook(
+          const Book(
+            bookUrl: '/tmp/a.epub',
+            origin: 'webDav::https://dav.example.com/books/a.epub',
+            bookType: BookType.text | BookType.local,
+          ),
+        ),
+        isTrue,
+      );
+    });
+
+    test('type 非 0 且无 local 位：即使 origin 是 loc_book 也不是本地书', () {
+      // 原版备份导入的 `loc_book::xxx.zip` 等在线书：type 非 0 且无
+      // local 位，origin-only 判定会误当本地书（P3-2 回归点）
+      expect(
+        BookType.isLocalBook(
+          const Book(
+            bookUrl: 'loc_book::xxx.zip',
+            origin: 'loc_book',
+            bookType: BookType.text | BookType.webFile,
+          ),
+        ),
+        isFalse,
+      );
+      expect(
+        BookType.isLocalBook(
+          const Book(
+            bookUrl: '/tmp/a.epub',
+            origin: 'webDav::https://dav.example.com/books/a.epub',
+            bookType: BookType.text,
+          ),
+        ),
+        isFalse,
+      );
+    });
+  });
+
   group('BookType.webDavPathOf（剥离前缀与属性后缀）', () {
     test('新格式：剥离 webDav:: 与 ,{"serverID":N} 后缀', () {
       expect(
@@ -149,6 +232,60 @@ void main() {
       expect(
         BookType.joinRemoteUrl('https://dav.example.com/', 'a.epub'),
         startsWith('https://dav.example.com/'),
+      );
+    });
+
+    test('基址内部重复斜杠同样折叠（批22 P3）', () {
+      expect(
+        BookType.joinRemoteUrl('https://dav.example.com//dav//', 'a.epub'),
+        'https://dav.example.com/dav/a.epub',
+      );
+      expect(
+        BookType.joinRemoteUrl('https://dav.example.com', 'books//a.epub'),
+        'https://dav.example.com/books/a.epub',
+      );
+    });
+  });
+
+  group('BookType.normalizeWebDavConfig（配置直拼无 //，批22 P3）', () {
+    test('url 以 / 结尾 + dir 以 / 开头：直拼后恰为单斜杠', () {
+      final config = BookType.normalizeWebDavConfig(
+        'https://dav.example.com/dav/',
+        '/legado/',
+      );
+      expect(config.url, 'https://dav.example.com/dav');
+      expect(config.remoteDir, '/legado/');
+      expect('${config.url}${config.remoteDir}books/a.epub',
+          'https://dav.example.com/dav/legado/books/a.epub');
+    });
+
+    test('dir 为空：remote_dir 归一为 /', () {
+      final config =
+          BookType.normalizeWebDavConfig('https://dav.example.com/', '');
+      expect(config.url, 'https://dav.example.com');
+      expect(config.remoteDir, '/');
+      expect('${config.url}${config.remoteDir}books/a.epub',
+          'https://dav.example.com/books/a.epub');
+    });
+
+    test('dir 无首尾斜杠：补成 /dir/ 形态', () {
+      final config =
+          BookType.normalizeWebDavConfig('https://dav.example.com', 'legado');
+      expect(config.url, 'https://dav.example.com');
+      expect(config.remoteDir, '/legado/');
+    });
+
+    test('dir 内部重复斜杠折叠（保留协议 ://）', () {
+      final config = BookType.normalizeWebDavConfig(
+        'https://dav.example.com//root//',
+        '//legado//books//',
+      );
+      expect(config.url, 'https://dav.example.com/root');
+      expect(config.remoteDir, '/legado/books/');
+      expect(
+        config.url,
+        startsWith('https://'),
+        reason: '协议分隔 :// 不得被折叠',
       );
     });
   });
