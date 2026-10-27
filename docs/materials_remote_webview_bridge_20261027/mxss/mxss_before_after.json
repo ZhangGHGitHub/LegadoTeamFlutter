@@ -1,0 +1,128 @@
+{
+  "generatedAt": "2026-10-27T18:27:25.964983",
+  "chrome": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+  "note": "before = 批21e 实现（parse→删script→删属性→删注释→outerHtml）；after = 批21f 实现（删 svg/math + meta refresh/CSP + 不动点）",
+  "vectors": [
+    {
+      "name": "svg-style",
+      "expectedTitle": 41,
+      "input": "<svg><style>&lt;script&gt;document.title=41&lt;/script&gt;</style></svg>",
+      "beforeOutput": "<html><head></head><body><svg><style><script>document.title=41</script></style></svg></body></html>",
+      "beforeChromeTitle": "41",
+      "afterOutput": "<html><head></head><body></body></html>",
+      "afterChromeTitle": "SAFE",
+      "afterIsSafe": true,
+      "fixedPoint": true
+    },
+    {
+      "name": "svg-xmp",
+      "expectedTitle": 42,
+      "input": "<svg><xmp>&lt;script&gt;document.title=42&lt;/script&gt;</xmp></svg>",
+      "beforeOutput": "<html><head></head><body><svg><xmp><script>document.title=42</script></xmp></svg></body></html>",
+      "beforeChromeTitle": "42",
+      "afterOutput": "<html><head></head><body></body></html>",
+      "afterChromeTitle": "SAFE",
+      "afterIsSafe": true,
+      "fixedPoint": true
+    },
+    {
+      "name": "svg-noscript",
+      "expectedTitle": 43,
+      "input": "<svg><noscript>&lt;script&gt;document.title=43&lt;/script&gt;</noscript></svg>",
+      "beforeOutput": "<html><head></head><body><svg><noscript><script>document.title=43</script></noscript></svg></body></html>",
+      "beforeChromeTitle": "43",
+      "afterOutput": "<html><head></head><body></body></html>",
+      "afterChromeTitle": "SAFE",
+      "afterIsSafe": true,
+      "fixedPoint": true
+    },
+    {
+      "name": "svg-g-style",
+      "expectedTitle": 44,
+      "input": "<svg><g><style>&lt;script&gt;document.title=44&lt;/script&gt;</style></g></svg>",
+      "beforeOutput": "<html><head></head><body><svg><g><style><script>document.title=44</script></style></g></svg></body></html>",
+      "beforeChromeTitle": "44",
+      "afterOutput": "<html><head></head><body></body></html>",
+      "afterChromeTitle": "SAFE",
+      "afterIsSafe": true,
+      "fixedPoint": true
+    },
+    {
+      "name": "math-annotation-svg-style",
+      "expectedTitle": 45,
+      "input": "<math><annotation-xml><svg><style>&lt;script&gt;document.title=45&lt;/script&gt;</style></svg></annotation-xml></math>",
+      "beforeOutput": "<html><head></head><body><math><annotation-xml><svg><style><script>document.title=45</script></style></svg></annotation-xml></math></body></html>",
+      "beforeChromeTitle": "45",
+      "afterOutput": "<html><head></head><body></body></html>",
+      "afterChromeTitle": "SAFE",
+      "afterIsSafe": true,
+      "fixedPoint": true
+    },
+    {
+      "name": "svg-iframe",
+      "expectedTitle": 46,
+      "input": "<svg><iframe>&lt;script&gt;document.title=46&lt;/script&gt;</iframe></svg>",
+      "beforeOutput": "<html><head></head><body><svg><iframe><script>document.title=46</script></iframe></svg></body></html>",
+      "beforeChromeTitle": "46",
+      "afterOutput": "<html><head></head><body></body></html>",
+      "afterChromeTitle": "SAFE",
+      "afterIsSafe": true,
+      "fixedPoint": true
+    },
+    {
+      "name": "svg-cdata",
+      "expectedTitle": 47,
+      "input": "<svg><![CDATA[<script>document.title=47</script>]]></svg>",
+      "beforeOutput": "<html><head></head><body><svg>&lt;script&gt;document.title=47&lt;/script&gt;</svg></body></html>",
+      "beforeChromeTitle": "SAFE",
+      "afterOutput": "<html><head></head><body></body></html>",
+      "afterChromeTitle": "SAFE",
+      "afterIsSafe": true,
+      "fixedPoint": true
+    },
+    {
+      "name": "math-mglyph-style",
+      "expectedTitle": 48,
+      "input": "<math><mglyph><style>&lt;script&gt;document.title=48&lt;/script&gt;</style></mglyph></math>",
+      "beforeOutput": "<html><head></head><body><math><mglyph><style><script>document.title=48</script></style></mglyph></math></body></html>",
+      "beforeChromeTitle": "SAFE",
+      "afterOutput": "<html><head></head><body></body></html>",
+      "afterChromeTitle": "SAFE",
+      "afterIsSafe": true,
+      "fixedPoint": true
+    },
+    {
+      "name": "math-mtext-table-mglyph-style",
+      "expectedTitle": 49,
+      "input": "<math><mtext><table><mglyph><style>&lt;script&gt;document.title=49&lt;/script&gt;</style></mglyph></table></mtext></math>",
+      "beforeOutput": "<html><head></head><body><math><mtext><mglyph><style>&lt;script&gt;document.title=49&lt;/script&gt;</style></mglyph><table></table></mtext></math></body></html>",
+      "beforeChromeTitle": "SAFE",
+      "afterOutput": "<html><head></head><body></body></html>",
+      "afterChromeTitle": "SAFE",
+      "afterIsSafe": true,
+      "fixedPoint": true
+    },
+    {
+      "name": "svg-p-style-img-onerror",
+      "expectedTitle": 50,
+      "input": "<svg></p><style><a id=\"</style><img onerror=\"document.title=50\" src=x>",
+      "beforeOutput": "<html><head></head><body><svg><p></p><style><a id=\"</style><img onerror=\" document.title=\"50&quot;\" src=\"x\"></a></style></svg></body></html>",
+      "beforeChromeTitle": "SAFE",
+      "afterOutput": "<html><head></head><body></body></html>",
+      "afterChromeTitle": "SAFE",
+      "afterIsSafe": true,
+      "fixedPoint": true
+    },
+    {
+      "name": "meta-refresh",
+      "expectedTitle": "REFRESHED（未删除时）",
+      "input": "<head><meta http-equiv=\"refresh\" content=\"0;url=t.html\"></head><body><p>refresh</p></body>",
+      "beforeOutput": "<html><head><meta http-equiv=\"refresh\" content=\"0;url=t.html\"></head><body><p>refresh</p></body></html>",
+      "beforeChromeTitle": "REFRESHED",
+      "afterOutput": "<html><head></head><body><p>refresh</p></body></html>",
+      "afterChromeTitle": "SAFE",
+      "afterIsSafe": true,
+      "fixedPoint": true
+    }
+  ]
+}

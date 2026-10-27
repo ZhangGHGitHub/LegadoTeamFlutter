@@ -25,7 +25,21 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'package:flutter_legado/src/services/rss_web_config.dart';
+
 const String _channelName = 'legadoProbeChannel';
+
+/// 批21f P0：终审 5 条 Chrome 执行向量（真机 WebView 复核清洗后不执行）
+const String _mxssPayload = '<h3>RSS mXSS sanitizer probe</h3>'
+    '<p>清洗后页面（预期 title=SAFE）</p>'
+    '<svg><style>&lt;script&gt;document.title=41&lt;/script&gt;</style></svg>'
+    '<svg><xmp>&lt;script&gt;document.title=42&lt;/script&gt;</xmp></svg>'
+    '<svg><noscript>&lt;script&gt;document.title=43&lt;/script&gt;'
+    '</noscript></svg>'
+    '<svg><g><style>&lt;script&gt;document.title=44&lt;/script&gt;'
+    '</style></g></svg>'
+    '<math><annotation-xml><svg><style>&lt;script&gt;'
+    'document.title=45&lt;/script&gt;</style></svg></annotation-xml></math>';
 
 const String _probeHtml = '''
 <!DOCTYPE html>
@@ -73,13 +87,19 @@ const String _probeHtml = '''
   };
   var capturedWorked = false;
   try {
-    captured.postMessage(JSON.stringify(after));
+    // 先发一条占位消息验证捕获对象仍可 postMessage（不带 after 正文，
+    // 避免把尚未写入 capturedStillWorks 字段的对象发给宿主）
+    captured.postMessage(JSON.stringify({ step: 'after_delete_probe' }));
     capturedWorked = true;
   } catch (e) {
     after.postError = String(e);
   }
   after.capturedStillWorks = capturedWorked;
   results.push(after);
+  if (capturedWorked) {
+    // 带完整字段（含 capturedStillWorks）再发一次
+    try { captured.postMessage(JSON.stringify(after)); } catch (e) {}
+  }
 
   var done = {
     step: 'done',
@@ -142,8 +162,46 @@ void main() {
     print(payload);
     // ignore: avoid_print
     print('PROBE_JSON_END');
-    // 先让平台视图完成至少一帧合成，再打印 READY（截图取到页面内容）
+
+    expect(messages.any((m) => m['step'] == 'initial'), isTrue);
+    expect(messages.any((m) => m['step'] == 'done'), isTrue);
+
+    // 批21f P2-4：把批21e 的实测结论固化为断言（Android 15 / webview_flutter）
+    final initial = messages.firstWhere((m) => m['step'] == 'initial');
+    expect(initial['typeofChannel'], 'object',
+        reason: '平台注入的通道对象在页面脚本中必须是 object');
+    expect(initial['hasPostMessage'], isTrue, reason: 'postMessage 必须是函数');
+
+    final after = messages.firstWhere((m) => m['step'] == 'after_delete');
+    expect(after['deleteResult'], isTrue,
+        reason: 'delete window[channel] 必须返回 true（Android 实测）');
+    expect(after['deleteError'], isNull);
+    expect(after['typeofAfterDelete'], 'undefined',
+        reason: '删除后页面全局不再可见通道');
+    expect(after['inOwnPropertyNamesAfterDelete'], isFalse,
+        reason: '删除后 getOwnPropertyNames 不再包含通道名');
+    expect(after['capturedStillWorks'], isTrue,
+        reason: '删除前捕获的对象必须仍可 postMessage（bootstrap 依赖）');
+
+    final doneMessage = messages.firstWhere((m) => m['step'] == 'done');
+    expect(doneMessage['capturedStillWorks'], isTrue);
+    expect(doneMessage['typeofAfterDelete'], 'undefined');
+
+    // 批21f P0：真机 WebView 加载清洗后的 mXSS 页面，确认脚本未执行
+    // （title 初始 SAFE；任一向量执行都会把 title 改成 41..45）
+    final sanitized = rssStripPageScripts(_mxssPayload)
+        .replaceFirst('<head>', '<head><title>SAFE</title>');
+    expect(isSanitizedHtmlSafe(sanitized), isTrue);
+    await controller.loadHtmlString(sanitized);
     await tester.pump(const Duration(milliseconds: 500));
+    final titleRaw =
+        await controller.runJavaScriptReturningResult('document.title');
+    final title = titleRaw.toString().replaceAll('"', '');
+    // ignore: avoid_print
+    print('MXSS_TITLE=$title');
+    expect(title, 'SAFE', reason: '清洗后 mXSS 向量不得执行（title 被改写）');
+
+    // 先让平台视图完成至少一帧合成，再打印 READY（截图取到清洗后页面）
     await tester.pump(const Duration(milliseconds: 500));
     // ignore: avoid_print
     print('PROBE_READY');
@@ -152,8 +210,5 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       await Future<void>.delayed(const Duration(milliseconds: 500));
     }
-
-    expect(messages.any((m) => m['step'] == 'initial'), isTrue);
-    expect(messages.any((m) => m['step'] == 'done'), isTrue);
   });
 }
