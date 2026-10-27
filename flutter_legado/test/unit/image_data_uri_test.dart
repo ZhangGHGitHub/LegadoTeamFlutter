@@ -21,6 +21,16 @@ void main() {
       expect(isDataUri('\tDaTa:image/jpeg;base64,AAAA'), isTrue);
     });
 
+    test('前导空白含 NBSP/全角空格（与载荷计数口径一致）', () {
+      // 批19 终版收口 P3-1：`\u00A0` / `\u3000` 属 Unicode 空白，
+      // 跳过口径必须与载荷计数的 `_isDataUriWhitespace` 一致。
+      expect(isDataUri('\u00A0data:image/png;base64,AAAA'), isTrue);
+      expect(isDataUri('\u3000data:image/png;base64,AAAA'), isTrue);
+      expect(isDataUri('\u00A0\u3000 DATA:image/png;base64,AAAA'), isTrue);
+      // 非空白前缀仍为假（不能被宽松空白口径误判）
+      expect(isDataUri('\u00A0xdata:image/png;base64,AAAA'), isFalse);
+    });
+
     test('普通 URL/本地路径/空串/前缀不足不算 data URI', () {
       expect(isDataUri('https://s.test/a.png'), isFalse);
       expect(isDataUri('file:///tmp/a.png'), isFalse);
@@ -200,12 +210,17 @@ void main() {
       );
     });
 
-    test('整串长度粗判先于任何拷贝（超大输入直接拒绝）', () {
-      // 批19 审查 P2-2：maxBytes=3 时粗判上限约 528 字符；
-      // 600 个非法字符若进入 trim/substring/解码会报 base64 无效。
-      final huge = 'data:image/png;base64,${'@' * 600}';
+    test('整串长度粗判先于任何拷贝（超大空白填充 + 合法短载荷）', () {
+      // 批19 终版收口 P3-2：用「大量空白 + 合法短载荷」把两道预检分开。
+      // maxBytes=3 → 编码上限 encodedLimit = 3*4/3 + 4 = 8；
+      // 粗判上限 roughLimit = encodedLimit*2 + 512 = 528（阈值边界：
+      // 长度 > 528 触发粗判）。
+      // 本输入长度 = 26 + 600 = 626 > 528，但逗号后非空白字符仅 4 个
+      // （≤ 8），精确预检/解码都不会拒绝（3 字节 ≤ maxBytes=3）——
+      // 因此只有「粗判先于拷贝」会报「图片数据过大」。
+      final padded = 'data:image/png;base64,AAAA${' ' * 600}';
       expect(
-        () => parseImageDataUri(huge, maxBytes: 3),
+        () => parseImageDataUri(padded, maxBytes: 3),
         throwsA(
           isA<ImageDataUriException>().having(
             (e) => e.message,

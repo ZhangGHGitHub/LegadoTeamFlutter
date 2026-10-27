@@ -60,7 +60,11 @@ const int _kMaxDataUriHeaderBytes = 512;
 /// （32 MiB 级拷贝，且被多处每帧调用）。
 bool isDataUri(String value) {
   var start = 0;
-  while (start < value.length && _isAsciiWhitespace(value.codeUnitAt(start))) {
+  // 批19 终版收口 P3-1：前导空白跳过与载荷计数口径统一用
+  // [_isDataUriWhitespace]（含 NBSP U+00A0 / 全角空格 U+3000 等），
+  // 避免 `\u00A0data:` 被误判为非 data URI 而走网络路径。
+  while (start < value.length &&
+      _isDataUriWhitespace(value.codeUnitAt(start))) {
     start++;
   }
   const prefix = 'data:';

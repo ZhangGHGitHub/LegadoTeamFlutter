@@ -453,6 +453,9 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
         fit: BoxFit.contain,
         // 批19 审查 P2-2：按屏幕显示宽度 × dpr 解码，避免大图解码后
         // 占用数百 MB 内存
+        // 批19 终版收口 P3-6：查看器可经 InteractiveViewer 放大，按
+        // **2× 屏宽** 解码（放大到 2× 仍清晰）；再按 maxScale=5 解码
+        // 内存为 2× 口径的 6.25 倍且收益有限，故取 2× 折中。
         cacheWidth: _decodeWidth(context),
         errorBuilder: (_, _, _) => const Center(
           child: Text(
@@ -465,6 +468,9 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
     return CachedNetworkImage(
       imageUrl: widget.url,
       fit: BoxFit.contain,
+      // 批19 终版收口 P3-6：网络路径与 data URI 路径统一解码口径
+      // （2× 屏宽 × dpr），避免放大后网络图比 data 图更糊。
+      memCacheWidth: _decodeWidth(context),
       httpHeaders: widget.headers.isEmpty ? null : widget.headers,
       placeholder: (_, _) => const Center(
         child: CircularProgressIndicator(),
@@ -478,12 +484,16 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
     );
   }
 
-  /// 解码目标宽度（屏幕显示宽度 × 设备像素比）
+  /// 解码目标宽度（屏幕显示宽度 × 设备像素比 × 2）
+  ///
+  /// 批19 终版收口 P3-6：查看器最大缩放 5×，按 5× 解码内存会涨到 2× 口径
+  /// 的 6.25 倍；取 **2× 屏宽** 兼顾放大清晰度与内存（网络/data 两条路径
+  /// 同口径）。如后续要求 5× 全清晰，需同步评估大图内存峰值。
   int _decodeWidth(BuildContext context) {
     final media = MediaQuery.maybeOf(context);
     final width = media?.size.width ?? 400;
     final ratio = media?.devicePixelRatio ?? 1.0;
-    return (width * ratio).round();
+    return (width * ratio * 2).round();
   }
 
   @override
