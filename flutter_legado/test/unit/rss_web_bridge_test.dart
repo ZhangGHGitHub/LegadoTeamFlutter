@@ -78,7 +78,7 @@ void main() {
     Duration? watchdog,
     List<String>? log,
     RssWebBridgeJsRunner? runner,
-    DateTime Function()? now,
+    Duration Function()? elapsed,
   }) {
     final bridge = RssWebBridge(
       sourceUrl: 'https://s.test/feed',
@@ -90,7 +90,7 @@ void main() {
       onAction: actions.add,
       onLog: (message) => (log ?? runLog).add('LOG:$message'),
       random: Random(7),
-      now: now,
+      elapsedNow: elapsed,
     );
     addTearDown(bridge.dispose);
     return bridge;
@@ -363,7 +363,8 @@ void main() {
         final clock = async.getClock(DateTime(2026, 1, 1));
         final bridge = newBridge(
           watchdog: const Duration(seconds: 4),
-          now: () => clock.now(),
+          // 批21f P2-2：注入单调时钟（fakeAsync 虚拟时间）
+          elapsed: () => clock.now().difference(DateTime(2026, 1, 1)),
         );
         bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
         async.flushMicrotasks();
@@ -403,7 +404,8 @@ void main() {
         final bridge = newBridge(
           watchdog: const Duration(seconds: 4),
           handshakeTimeout: const Duration(seconds: 10),
-          now: () => clock.now(),
+          // 批21f P2-2：注入单调时钟（fakeAsync 虚拟时间）
+          elapsed: () => clock.now().difference(DateTime(2026, 1, 1)),
           runner: (js) async {
             final completer = Completer<void>();
             holders.add(completer);
@@ -454,7 +456,8 @@ void main() {
         final bridge = newBridge(
           watchdog: const Duration(milliseconds: 10),
           handshakeTimeout: const Duration(milliseconds: 25),
-          now: () => clock.now(),
+          // 批21f P2-2：注入单调时钟（fakeAsync 虚拟时间）
+          elapsed: () => clock.now().difference(DateTime(2026, 1, 1)),
           runner: (js) async {
             if (js.contains('__legado_rssNonce_')) {
               await blocker.future;
@@ -479,12 +482,49 @@ void main() {
       });
     });
 
+    test('注入时钟回拨：在途时长按 0 处理，不提前判超时（批21f P2-2）', () {
+      fakeAsync((async) {
+        var elapsed = const Duration(seconds: 10);
+        final blocker = Completer<void>();
+        final bridge = newBridge(
+          watchdog: const Duration(seconds: 4),
+          handshakeTimeout: const Duration(seconds: 30),
+          elapsed: () => elapsed,
+          runner: (js) async {
+            if (js.contains('__legado_rssNonce_')) {
+              await blocker.future;
+            }
+            runLog.add(js);
+          },
+        );
+        bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+        async.flushMicrotasks();
+        final nonce = bridge.nonce;
+        expect(nonce, isNotNull);
+
+        // 单调时钟回拨 5s：差值 -5s 必须钳制为 0（顺延而非判超时重试）
+        elapsed = const Duration(seconds: 5);
+        async.elapse(const Duration(seconds: 4));
+        expect(
+          runLog.any((js) => js.contains('看门狗顺延')),
+          isTrue,
+          reason: '负差值必须按 0 处理',
+        );
+        expect(bridge.watchdogRetries, 0, reason: '回拨不得消耗重试次数');
+        expect(bridge.nonce, nonce, reason: '回拨不得重置在途 nonce');
+
+        blocker.complete();
+        async.flushMicrotasks();
+      });
+    });
+
     test('无 preloadJs（未注入桥）：不臂看门狗，4s 后也不重发 hello（虚拟时钟）', () {
       fakeAsync((async) {
         final clock = async.getClock(DateTime(2026, 1, 1));
         final bridge = newBridge(
           watchdog: const Duration(seconds: 4),
-          now: () => clock.now(),
+          // 批21f P2-2：注入单调时钟（fakeAsync 虚拟时间）
+          elapsed: () => clock.now().difference(DateTime(2026, 1, 1)),
         );
         bridge.beginNavigation(bridgeInjected: false);
         expect(bridge.isWatchdogActive, isFalse);
@@ -503,7 +543,8 @@ void main() {
         final clock = async.getClock(DateTime(2026, 1, 1));
         final bridge = newBridge(
           watchdog: const Duration(seconds: 4),
-          now: () => clock.now(),
+          // 批21f P2-2：注入单调时钟（fakeAsync 虚拟时间）
+          elapsed: () => clock.now().difference(DateTime(2026, 1, 1)),
         );
         bridge.beginNavigation();
         async.elapse(const Duration(seconds: 30));
@@ -610,7 +651,8 @@ void main() {
         final clock = async.getClock(DateTime(2026, 1, 1));
         final bridge = newBridge(
           watchdog: const Duration(seconds: 4),
-          now: () => clock.now(),
+          // 批21f P2-2：注入单调时钟（fakeAsync 虚拟时间）
+          elapsed: () => clock.now().difference(DateTime(2026, 1, 1)),
         );
         bridge.beginNavigation();
         async.elapse(const Duration(seconds: 30));

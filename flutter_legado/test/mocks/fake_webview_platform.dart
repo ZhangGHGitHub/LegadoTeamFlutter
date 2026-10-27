@@ -41,6 +41,9 @@ class FakeWebViewPlatform extends WebViewPlatform {
   static void resetCookieManager() {
     cookieManager = null;
   }
+
+  /// 批21f P2-1：下一个控制器注册通道失败（用例在 pump 前置位）
+  static bool failNextJavaScriptChannelAdd = false;
 }
 
 /// 假控制器：记录加载的 HTML/URL、JS 调用、JavaScriptChannel 注册
@@ -73,6 +76,9 @@ class FakeWebViewController extends PlatformWebViewController {
   /// 导航代理（供组件测试模拟 onPageStarted/onPageFinished）
   PlatformNavigationDelegate? navigationDelegate;
 
+  /// 批21f P2-1：注册通道失败注入（验证看门狗只在通道可用时臂）
+  bool failAddJavaScriptChannel = false;
+
   @override
   Future<void> setJavaScriptMode(JavaScriptMode javaScriptMode) async {}
 
@@ -96,6 +102,10 @@ class FakeWebViewController extends PlatformWebViewController {
 
   @override
   Future<void> addJavaScriptChannel(JavaScriptChannelParams params) async {
+    if (failAddJavaScriptChannel ||
+        FakeWebViewPlatform.failNextJavaScriptChannelAdd) {
+      throw StateError('addJavaScriptChannel failed (test)');
+    }
     javaScriptChannels.add(params);
   }
 
@@ -146,6 +156,17 @@ class FakeWebViewController extends PlatformWebViewController {
     final delegate = navigationDelegate;
     if (delegate is FakeNavigationDelegate) delegate.emitPageFinished(url);
   }
+
+  /// 模拟 onWebResourceError（批21f P2-1：主框架错误后同 URL 重试）
+  void emitWebResourceError(String description, {bool isForMainFrame = true}) {
+    final delegate = navigationDelegate;
+    if (delegate is FakeNavigationDelegate) {
+      delegate.emitWebResourceError(
+        description,
+        isForMainFrame: isForMainFrame,
+      );
+    }
+  }
 }
 
 /// 假导航代理（记录回调，供用例手动触发页面生命周期）
@@ -159,6 +180,7 @@ class FakeNavigationDelegate extends PlatformNavigationDelegate {
   PageEventCallback? pageStartedCallback;
   PageEventCallback? pageFinishedCallback;
   UrlChangeCallback? urlChangeCallback;
+  WebResourceErrorCallback? webResourceErrorCallback;
 
   @override
   Future<void> setOnNavigationRequest(
@@ -183,11 +205,24 @@ class FakeNavigationDelegate extends PlatformNavigationDelegate {
   @override
   Future<void> setOnWebResourceError(
     WebResourceErrorCallback onWebResourceError,
-  ) async {}
+  ) async {
+    webResourceErrorCallback = onWebResourceError;
+  }
 
   void emitPageStarted(String url) => pageStartedCallback?.call(url);
 
   void emitPageFinished(String url) => pageFinishedCallback?.call(url);
+
+  /// 批21f P2-1：模拟主框架/子资源加载错误
+  void emitWebResourceError(String description, {bool isForMainFrame = true}) {
+    webResourceErrorCallback?.call(
+      WebResourceError(
+        errorCode: -1,
+        description: description,
+        isForMainFrame: isForMainFrame,
+      ),
+    );
+  }
 }
 
 /// 假 Cookie 管理器（记录预写/回流读取）

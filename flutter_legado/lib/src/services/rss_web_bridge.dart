@@ -268,17 +268,9 @@ String rssBridgeBootstrapScript({
   // [批21e P3-1] 同文档幂等标记：首次注入成功后再写；重复注入直接返回，
   // 避免二次 defineProperty/重发 hello 造成状态错乱（标记 configurable:false，
   // 不可被页面删除；新文档 window 重建后自然消失）。
+  // 批21f P3-3：标记写入移到通道删除与桥对象安装**之后**——若首轮在安装
+  // 途中异常，不能被标记永久判成「已注入」导致同文档无法重试。
   try { if (window[$bootMarker]) return; } catch (e) {}
-  try {
-    Object.defineProperty(window, $bootMarker, {
-      value: 1,
-      enumerable: false,
-      configurable: false,
-      writable: false
-    });
-  } catch (e) {
-    try { window[$bootMarker] = 1; } catch (e2) {}
-  }
   // 捕获后立即删除平台注入的全局对象（Android 15 真机实测 delete 生效，
   // 删除后 getOwnPropertyNames 不再可见；iOS 无该全局，以真机结论为准）。
   try { delete window[$native]; } catch (e) {}
@@ -401,6 +393,18 @@ String rssBridgeBootstrapScript({
       __lgDeliverError(queue[i].id, '宿主桥握手超时：未收到 nonce');
     }
   }, $timeoutMs);
+  // [批21f P3-3] 通道已删除、桥对象/nonce 回调/看门狗入口均已安装成功，
+  // 此时才写幂等标记（安装途中异常可重试）。
+  try {
+    Object.defineProperty(window, $bootMarker, {
+      value: 1,
+      enumerable: false,
+      configurable: false,
+      writable: false
+    });
+  } catch (e) {
+    try { window[$bootMarker] = 1; } catch (e2) {}
+  }
   __lgHello();
 })();
 ''';
@@ -1089,13 +1093,15 @@ class RssWebBridge {
     void Function(RssWebBridgeAction action)? onAction,
     void Function(String message)? onLog,
     Random? random,
-    DateTime Function()? now,
+    Duration Function()? elapsedNow,
   })  : _api = api,
         _runJavaScript = runJavaScript,
         _onAction = onAction,
         _onLog = onLog,
         _random = random ?? _secureRandom(),
-        _now = now ?? DateTime.now {
+        // 批21f P2-2：看门狗用单调时钟（默认进程内 Stopwatch），注入面为
+        // `Duration Function()`；墙钟回拨不会让在途时长变负/倒退。
+        _elapsedNow = elapsedNow ?? _defaultElapsedNow {
     // 批21d P0-B：通道/桥对象/回填回调/nonce 回调各自独立随机 token，
     // 互不可推（此前四者共用一个 token，页面枚举到一个即可推导其余）。
     // 批21e P2-2：生产环境使用 `Random.secure()`（测试可注入确定性 Random）。
@@ -1114,6 +1120,11 @@ class RssWebBridge {
       return Random();
     }
   }
+
+  /// 默认单调时钟（进程内共享 Stopwatch；只取差值，不依赖墙钟）
+  static final Stopwatch _monotonicClock = Stopwatch()..start();
+
+  static Duration _defaultElapsedNow() => _monotonicClock.elapsed;
 
   /// RSS 源 URL（宿主调用/落库键）
   final String sourceUrl;
@@ -1148,8 +1159,9 @@ class RssWebBridge {
   final void Function(String message)? _onLog;
   final Random _random;
 
-  /// 时钟（测试注入可控时钟，避免看门狗在途判定受墙钟抖动影响）
-  final DateTime Function() _now;
+  /// 单调时钟（批21f P2-2：默认 Stopwatch，测试可注入假时钟；
+  /// 只用于在途时长差值，墙钟回拨不影响判定）
+  final Duration Function() _elapsedNow;
 
   final Map<String, _PendingCall> _pending = <String, _PendingCall>{};
 
@@ -1176,8 +1188,9 @@ class RssWebBridge {
   /// 看门狗是否已因重试上限停止（下一次导航/ACK 成功后恢复）
   bool _watchdogStopped = false;
 
-  /// 本次 nonce 回填的起始时刻（批21e P1-1：在途顺延也受总时长上限约束）
-  DateTime? _handshakeInFlightSince;
+  /// 本次 nonce 回填的起始时刻（单调时钟；批21e P1-1：在途顺延也受总时长
+  /// 上限约束；批21f P2-2 改为 Duration 差值）
+  Duration? _handshakeInFlightSince;
 
   /// 握手代数令牌（批21d P1-1）：每次 hello / 导航自增，随 nonce 回填下发；
   /// 页面只接受不旧于当前的令牌，Dart 只接受与当前令牌匹配的 `nonceAck`。
@@ -1485,8 +1498,9 @@ class RssWebBridge {
     if (_disposed || !_bridgeActive || _handshaken) return;
     if (_handshakeInFlight) {
       final since = _handshakeInFlightSince;
-      final elapsed =
-          since == null ? Duration.zero : _now().difference(since);
+      var elapsed = since == null ? Duration.zero : _elapsedNow() - since;
+      // 批21f P2-2：单调时钟仍防御性钳制负值（注入时钟回拨/精度异常按 0）
+      if (elapsed.isNegative) elapsed = Duration.zero;
       if (elapsed < handshakeTimeout) {
         _log(
           '握手回填仍在途（${elapsed.inMilliseconds}ms/'
@@ -1568,7 +1582,7 @@ class RssWebBridge {
     final token = ++_handshakeToken;
     _nonceToken = token;
     _handshakeInFlight = true;
-    _handshakeInFlightSince = _now();
+    _handshakeInFlightSince = _elapsedNow();
     _handshaken = false;
     final nonce = _randomToken(_random, 32);
     // nonce 先占位（页面尚未知悉），回填失败/被覆盖时回滚

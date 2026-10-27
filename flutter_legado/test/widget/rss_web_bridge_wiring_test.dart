@@ -40,6 +40,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     FakeWebViewController.lastCreated = null;
     FakeWebViewPlatform.resetCookieManager();
+    FakeWebViewPlatform.failNextJavaScriptChannelAdd = false;
     when(() => mockApi.isStarred(any())).thenAnswer((_) async => false);
     when(() => mockApi.rssWebViewHostCall(any(), any(), any()))
         .thenAnswer((invocation) async {
@@ -147,6 +148,11 @@ void main() {
         'method': 'hello',
         'args': '[]',
       });
+
+  /// 看门狗重发脚本（`rssBridgeHelloScript` 的固定前缀；与 bootstrap 内
+  /// `__lgHello` 定义区分）
+  bool isWatchdogHello(String js) =>
+      js.trimLeft().startsWith('try{var r=window[');
 
   String nonceAckMessage(String nonce, int token) =>
       jsonEncode(<String, dynamic>{
@@ -676,6 +682,102 @@ void main() {
           '[{"url":"$_articleUrl","cookie":"sid=9; uid=u1"}]',
         ),
       ).called(1);
+    });
+  });
+
+  // ── 批21f P2-1：页面级看门狗接线 ─────────────────────────────────────────
+
+  testWidgets('无 preloadJs：不臂看门狗（20s 内不重发 hello）', (tester) async {
+    await runWithWebView(() async {
+      final source = RssSource(
+        sourceUrl: _sourceUrl,
+        sourceName: '源A',
+        singleUrl: true,
+      );
+      await pumpScreen(tester, source: source, description: null);
+      final controller = FakeWebViewController.lastCreated!;
+
+      controller.emitPageStarted(_articleUrl);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 20));
+      await tester.pump();
+
+      expect(
+        controller.javaScriptCalls.where(isWatchdogHello),
+        isEmpty,
+        reason: '未注入桥的文档不得臂看门狗/重发 hello',
+      );
+      expect(controller.javaScriptChannels, isEmpty);
+    });
+  });
+
+  testWidgets('通道注册失败：不臂看门狗（20s 内不重发 hello）', (tester) async {
+    await runWithWebView(() async {
+      FakeWebViewPlatform.failNextJavaScriptChannelAdd = true;
+      final source = RssSource(
+        sourceUrl: _sourceUrl,
+        sourceName: '源A',
+        preloadJs: _preloadMarker,
+        singleUrl: true,
+      );
+      await pumpScreen(tester, source: source, description: null);
+      final controller = FakeWebViewController.lastCreated!;
+      expect(controller.javaScriptChannels, isEmpty, reason: '注册必须失败');
+
+      controller.emitPageStarted(_articleUrl);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 20));
+      await tester.pump();
+
+      expect(
+        controller.javaScriptCalls.where(isWatchdogHello),
+        isEmpty,
+        reason: '通道未注册时页面无法回执，不得空转重发 hello',
+      );
+    });
+  });
+
+  testWidgets('主框架错误后同 URL 重试：必须重新注入 preload（P2-1）', (tester) async {
+    await runWithWebView(() async {
+      final source = RssSource(
+        sourceUrl: _sourceUrl,
+        sourceName: '源A',
+        preloadJs: _preloadMarker,
+        singleUrl: true,
+      );
+      await pumpScreen(tester, source: source, description: null);
+      final controller = FakeWebViewController.lastCreated!;
+
+      controller.emitPageStarted(_articleUrl);
+      await tester.pump();
+      expect(
+        controller.javaScriptCalls.where((js) => js.contains(_preloadMarker)),
+        hasLength(1),
+      );
+
+      // 主框架加载失败（未走 onPageFinished）：清空去重键
+      controller.emitWebResourceError('net::ERR_TIMED_OUT');
+      await tester.pump();
+
+      // 同 URL 重试：必须重新注入
+      controller.emitPageStarted(_articleUrl);
+      await tester.pump();
+      expect(
+        controller.javaScriptCalls.where((js) => js.contains(_preloadMarker)),
+        hasLength(2),
+        reason: '主框架错误后的同 URL 重试不得被去重拦截',
+      );
+
+      // 子资源错误不影响去重键（同文档重复 onPageStarted 仍跳过）
+      controller.emitWebResourceError('子资源 404', isForMainFrame: false);
+      await tester.pump();
+      controller.emitPageStarted(_articleUrl);
+      await tester.pump();
+      expect(
+        controller.javaScriptCalls.where((js) => js.contains(_preloadMarker)),
+        hasLength(2),
+        reason: '子资源错误不得清空去重键',
+      );
     });
   });
 }
