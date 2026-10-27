@@ -1,7 +1,7 @@
 /// 批24b 7z 解压导入真实 DLL 运行时验证（契约 §2.34）
 ///
 /// 加载 `rust/target/debug/legado_ffi.dll`（解析策略对齐既有 test/ffi 用例），
-/// 经真实 FRB wire 覆盖六类真实 DLL 用例（批24 仓库外用例固化）：
+/// 经真实 FRB wire 覆盖七类真实 DLL 用例（批24 仓库外用例固化）：
 ///
 /// 1. list 正常包：仅返回书籍后缀，过滤 `readme.md`；
 /// 2. import 正常包：书籍落盘、非书籍不落盘、无 `.part` 残留；
@@ -10,6 +10,9 @@
 /// 5. 空包：list 为空、import 成功且 `extracted_files` 为空；
 /// 6. 不存在文件：list 抛 `BridgeError`、import 返回 `success:false` 信封；
 /// 7. 大包导入：async + spawn_blocking，导入期间事件循环保持响应（批24b P2-2）。
+///
+/// 执行范围：**仅本机/Windows 开发机执行，CI 不覆盖**（非 Windows 平台在
+/// `main` 入口直接返回一个通过的空用例；CI 的 Flutter job 无 DLL 产物）。
 ///
 /// 夹具由 `sevenz-rust2`（LZMA2）生成后 base64 内联，测试时落临时文件；
 /// 无需跑测试前手工准备 7z 素材。
@@ -595,8 +598,9 @@ void main() {
       File(_join(output.path, 'big.txt')).lengthSync(),
       greaterThan(1024 * 1024),
     );
-    // 短耗时任务不苛求定时器命中；只有明显耗时才断言事件循环有响应
-    if (stopwatch.elapsedMilliseconds >= 5) {
+    // 门槛 1ms：只要导入耗时达到 1ms 就要求事件循环至少转过一次定时器；
+    // 更快（<1ms）的完成无法区分「异步让出」与「同步阻塞」，显式跳过避免快机误报。
+    if (stopwatch.elapsedMilliseconds >= 1) {
       expect(
         ticks,
         greaterThan(0),
