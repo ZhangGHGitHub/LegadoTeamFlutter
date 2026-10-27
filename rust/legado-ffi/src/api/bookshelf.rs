@@ -389,4 +389,151 @@ mod tests {
         })
         .ok();
     }
+
+    /// [批18d P3] 存储 origin 的合并分支：库内为 `webDav::`、入参也是
+    /// `webDav::` 时允许入参覆盖（后写胜）。注意该分支的已知语义：Dart 若持有
+    /// 陈旧快照（旧 URL），可能把更新的远程 URL 回退为旧值——这是「存储位置
+    /// 变化」场景下为支持 loc_book → webDav 改写而接受的取舍；换源（http）
+    /// 仍由 B-2 防回退保护。
+    #[test]
+    fn test_merge_origin_webdav_to_webdav_later_write_wins() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch18d-webdav-rewrite.example.com/tmp/a.txt";
+        let existing_origin = "webDav::http://dav.example.com/books/old.txt";
+        let incoming_origin = "webDav::http://dav.example.com/books/new.txt";
+
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            let _ = repo.delete_by_url(book_url);
+            repo.insert(&Book {
+                book_url: book_url.to_string(),
+                name: "远程书".to_string(),
+                origin: existing_origin.to_string(),
+                ..Book::default()
+            })
+        })
+        .expect("既有 webDav 书入库失败");
+
+        let book_json = serde_json::json!({
+            "bookUrl": book_url,
+            "name": "远程书",
+            "origin": incoming_origin,
+            "type": 0
+        })
+        .to_string();
+        super::update_book(&book_json).expect("update_book 应成功");
+
+        with_database(|db| {
+            let saved = BookRepository::new(db.connection())
+                .find_by_url(book_url)?
+                .expect("书籍记录应仍存在");
+            assert_eq!(
+                saved.origin, incoming_origin,
+                "webDav→webDav 属存储位置变更，允许入参覆盖（后写胜）"
+            );
+            Ok(())
+        })
+        .expect("DB 终态断言失败");
+
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete_by_url(book_url);
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [批18d P3] 入参为本地 origin、库内为 `webDav::` 时不得回退：
+    /// 远程书导入后的陈旧快照（loc_book）不能覆盖已写入的 webDav origin。
+    #[test]
+    fn test_merge_origin_webdav_kept_against_local_incoming() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch18d-webdav-keep.example.com/tmp/b.txt";
+        let existing_origin = "webDav::http://dav.example.com/books/b.txt";
+
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            let _ = repo.delete_by_url(book_url);
+            repo.insert(&Book {
+                book_url: book_url.to_string(),
+                name: "远程书".to_string(),
+                origin: existing_origin.to_string(),
+                ..Book::default()
+            })
+        })
+        .expect("既有 webDav 书入库失败");
+
+        let book_json = serde_json::json!({
+            "bookUrl": book_url,
+            "name": "远程书",
+            "origin": legado_core::models::book_type::LOCAL_TAG,
+            "type": 0
+        })
+        .to_string();
+        super::update_book(&book_json).expect("update_book 应成功");
+
+        with_database(|db| {
+            let saved = BookRepository::new(db.connection())
+                .find_by_url(book_url)?
+                .expect("书籍记录应仍存在");
+            assert_eq!(
+                saved.origin, existing_origin,
+                "入参为本地 origin 时不得覆盖库内 webDav origin"
+            );
+            Ok(())
+        })
+        .expect("DB 终态断言失败");
+
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete_by_url(book_url);
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// [批18d P3] 库内 origin 为空时用入参补齐（空值不视为有效既有值）。
+    #[test]
+    fn test_merge_origin_empty_existing_uses_incoming() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch18d-empty-origin.example.com/book/1";
+        let incoming_origin = "https://batch18d-source.example.com";
+
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            let _ = repo.delete_by_url(book_url);
+            repo.insert(&Book {
+                book_url: book_url.to_string(),
+                name: "空 origin 书".to_string(),
+                origin: String::new(),
+                ..Book::default()
+            })
+        })
+        .expect("空 origin 书入库失败");
+
+        let book_json = serde_json::json!({
+            "bookUrl": book_url,
+            "name": "空 origin 书",
+            "origin": incoming_origin,
+            "type": 0
+        })
+        .to_string();
+        super::update_book(&book_json).expect("update_book 应成功");
+
+        with_database(|db| {
+            let saved = BookRepository::new(db.connection())
+                .find_by_url(book_url)?
+                .expect("书籍记录应仍存在");
+            assert_eq!(
+                saved.origin, incoming_origin,
+                "库内 origin 为空时应采用入参补齐"
+            );
+            Ok(())
+        })
+        .expect("DB 终态断言失败");
+
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete_by_url(book_url);
+            Ok(())
+        })
+        .ok();
+    }
 }
