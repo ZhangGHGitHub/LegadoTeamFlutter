@@ -6794,11 +6794,24 @@ fn wire__crate__ffi__ffi__rss_mark_read_impl(
             let api_origin = <String>::sse_decode(&mut deserializer);
             let api_title = <String>::sse_decode(&mut deserializer);
             let api_link = <Option<String>>::sse_decode(&mut deserializer);
+            let api_article_type = <Option<i32>>::sse_decode(&mut deserializer);
+            let api_sort = <Option<String>>::sse_decode(&mut deserializer);
+            let api_image = <Option<String>>::sse_decode(&mut deserializer);
+            let api_pub_date = <Option<String>>::sse_decode(&mut deserializer);
+            let api_dur_pos = <Option<i32>>::sse_decode(&mut deserializer);
             deserializer.end();
             move |context| {
                 transform_result_sse::<_, crate::ffi::BridgeError>((move || {
-                    let output_ok =
-                        crate::ffi::ffi::rss_mark_read(api_origin, api_title, api_link)?;
+                    let output_ok = crate::ffi::ffi::rss_mark_read(
+                        api_origin,
+                        api_title,
+                        api_link,
+                        api_article_type,
+                        api_sort,
+                        api_image,
+                        api_pub_date,
+                        api_dur_pos,
+                    )?;
                     Ok(output_ok)
                 })())
             }

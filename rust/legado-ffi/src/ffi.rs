@@ -1110,13 +1110,30 @@ pub mod ffi {
 
     // ─── RSS 已读记录 ────────────────────────────────
 
-    /// 标记 RSS 文章为已读
+    /// 标记 RSS 文章为已读（批20：可选扩展字段 type/sort/image/pubDate/durPos）
+    ///
+    /// 缺省值：`type=0`、`sort=''`、`image/pubDate=NULL`、`durPos=0`；
+    /// 旧调用不传扩展字段时行为与批20 前一致。
     pub fn rss_mark_read(
         origin: String,
         title: String,
         link: Option<String>,
+        article_type: Option<i32>,
+        sort: Option<String>,
+        image: Option<String>,
+        pub_date: Option<String>,
+        dur_pos: Option<i32>,
     ) -> Result<(), BridgeError> {
-        crate::api::rss_read_record_api::mark_read(&origin, &title, link.as_deref())?;
+        crate::api::rss_read_record_api::mark_read_full(
+            &origin,
+            &title,
+            link.as_deref(),
+            article_type,
+            sort.as_deref(),
+            image.as_deref(),
+            pub_date.as_deref(),
+            dur_pos,
+        )?;
         Ok(())
     }
 

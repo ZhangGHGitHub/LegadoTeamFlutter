@@ -5,6 +5,13 @@ use rusqlite::{params, Connection};
 use legado_core::{LegadoError, LegadoResult};
 
 /// RSS 已读记录行（用于列表查询返回）
+///
+/// 字段对齐 Room v95 `rssReadRecords` 表与原版 `RssReadRecord`
+/// （`app/src/main/java/io/legado/app/data/entities/RssReadRecord.kt`）：
+/// `type` 0 网页 / 1 图片 / 2 视频；`sort` 分类名；`image` 封面；
+/// `pubDate` 发布时间（Room 列为 TEXT，原版实体为 `String?`）；
+/// `durPos` 阅读进度。旧数据兼容：`type` / `durPos` 读出 0，
+/// `sort` 读出空串，`image` / `pubDate` 读出 `None`（DB 列早已存在，无迁移）。
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct RssReadRecordRow {
     /// 来源 URL
@@ -15,6 +22,36 @@ pub struct RssReadRecordRow {
     pub link: Option<String>,
     /// 阅读时间（Unix 毫秒）
     pub read_time: i64,
+    /// 类型：0 网页 / 1 图片 / 2 视频（DB NOT NULL DEFAULT 0）
+    pub r#type: i32,
+    /// 分类名（DB NOT NULL DEFAULT ''，旧行读出空串）
+    pub sort: String,
+    /// 封面图
+    pub image: Option<String>,
+    /// 发布时间（对齐 Room 列名 `pubDate`，TEXT 可空）
+    #[serde(rename = "pubDate")]
+    pub pub_date: Option<String>,
+    /// 阅读进度（DB NOT NULL DEFAULT 0，旧行读出 0）
+    #[serde(rename = "durPos")]
+    pub dur_pos: i32,
+}
+
+/// 标记已读时写入的扩展字段（批20，对齐原版 `RssArticle.toRecord()`）
+///
+/// 全部字段可选：`None` 表示沿用 DB 缺省值（`type=0` / `sort=''` /
+/// `image=NULL` / `pubDate=NULL` / `durPos=0`），旧调用行为不变。
+#[derive(Debug, Clone, Default)]
+pub struct RssReadRecordMeta {
+    /// 类型：0 网页 / 1 图片 / 2 视频
+    pub article_type: Option<i32>,
+    /// 分类名
+    pub sort: Option<String>,
+    /// 封面图
+    pub image: Option<String>,
+    /// 发布时间
+    pub pub_date: Option<String>,
+    /// 阅读进度
+    pub dur_pos: Option<i32>,
 }
 
 /// RSS 已读记录数据访问层
@@ -28,7 +65,24 @@ impl<'a> RssReadRecordRepository<'a> {
     }
 
     /// 标记文章为已读（主键 record = link；无 link 时用 legacy:origin:title）
+    ///
+    /// 兼容入口：扩展字段全部取 DB 缺省值（`type=0` / `sort=''` /
+    /// `image=NULL` / `pubDate=NULL` / `durPos=0`），旧调用行为不变。
     pub fn mark_read(&self, origin: &str, title: &str, link: Option<&str>) -> LegadoResult<()> {
+        self.mark_read_with(origin, title, link, &RssReadRecordMeta::default())
+    }
+
+    /// 标记文章为已读并写入扩展字段（批20，对齐原版 `RssArticle.toRecord()`）
+    ///
+    /// `meta` 中 `None` 字段回落到 DB 缺省值；`sort` / `durPos` 为
+    /// `NOT NULL` 列，缺省分别写 `''` / `0`（与原版实体默认值一致）。
+    pub fn mark_read_with(
+        &self,
+        origin: &str,
+        title: &str,
+        link: Option<&str>,
+        meta: &RssReadRecordMeta,
+    ) -> LegadoResult<()> {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -37,12 +91,25 @@ impl<'a> RssReadRecordRepository<'a> {
             Some(l) if !l.trim().is_empty() => l.to_string(),
             _ => format!("legacy:{origin}:{title}"),
         };
+        let sort = meta.sort.as_deref().unwrap_or("");
+        let article_type = meta.article_type.unwrap_or(0);
+        let dur_pos = meta.dur_pos.unwrap_or(0);
         self.conn
             .execute(
                 "INSERT OR REPLACE INTO rssReadRecords
                  (record, title, readTime, \"read\", origin, sort, image, type, durPos, pubDate)
-                 VALUES (?1, ?2, ?3, 1, ?4, '', NULL, 0, 0, NULL)",
-                params![record, title, now, origin],
+                 VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6, ?7, ?8, ?9)",
+                params![
+                    record,
+                    title,
+                    now,
+                    origin,
+                    sort,
+                    meta.image,
+                    article_type,
+                    dur_pos,
+                    meta.pub_date
+                ],
             )
             .map_err(|e| LegadoError::Database(format!("标记已读失败: {e}")))?;
         Ok(())
@@ -97,24 +164,13 @@ impl<'a> RssReadRecordRepository<'a> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT origin, title, record, readTime FROM rssReadRecords
+                "SELECT origin, title, record, readTime, type, sort, image, pubDate, durPos
+                 FROM rssReadRecords
                  ORDER BY readTime DESC LIMIT ?1",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
         let rows = stmt
-            .query_map(params![limit], |row| {
-                let record: String = row.get(2)?;
-                Ok(RssReadRecordRow {
-                    origin: row.get(0)?,
-                    title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-                    link: if record.is_empty() {
-                        None
-                    } else {
-                        Some(record)
-                    },
-                    read_time: row.get::<_, Option<i64>>(3)?.unwrap_or(0),
-                })
-            })
+            .query_map(params![limit], map_read_record_row)
             .map_err(|e| LegadoError::Database(format!("查询已读记录失败: {e}")))?;
         let records = rows
             .collect::<Result<Vec<_>, _>>()
@@ -132,28 +188,40 @@ impl<'a> RssReadRecordRepository<'a> {
         let mut stmt = self
             .conn
             .prepare(
-                "SELECT origin, title, record, readTime FROM rssReadRecords
+                "SELECT origin, title, record, readTime, type, sort, image, pubDate, durPos
+                 FROM rssReadRecords
                  WHERE origin = ?1 ORDER BY readTime DESC LIMIT ?2",
             )
             .map_err(|e| LegadoError::Database(format!("准备查询失败: {e}")))?;
         let rows = stmt
-            .query_map(params![origin, limit], |row| {
-                let record: String = row.get(2)?;
-                Ok(RssReadRecordRow {
-                    origin: row.get(0)?,
-                    title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-                    link: if record.is_empty() {
-                        None
-                    } else {
-                        Some(record)
-                    },
-                    read_time: row.get::<_, Option<i64>>(3)?.unwrap_or(0),
-                })
-            })
+            .query_map(params![origin, limit], map_read_record_row)
             .map_err(|e| LegadoError::Database(format!("查询已读记录失败: {e}")))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|e| LegadoError::Database(format!("Row mapping failed: {e}")))
     }
+}
+
+/// 已读记录行映射（两个列表入口共用，保证列序与缺省值口径一致）
+///
+/// 旧数据兼容：`type` / `durPos` 为 NULL 时回落 0，`sort` 为 NULL 时
+/// 回落空串，`image` / `pubDate` 保持 `None`。
+fn map_read_record_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<RssReadRecordRow> {
+    let record: String = row.get(2)?;
+    Ok(RssReadRecordRow {
+        origin: row.get(0)?,
+        title: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+        link: if record.is_empty() {
+            None
+        } else {
+            Some(record)
+        },
+        read_time: row.get::<_, Option<i64>>(3)?.unwrap_or(0),
+        r#type: row.get::<_, Option<i32>>(4)?.unwrap_or(0),
+        sort: row.get::<_, Option<String>>(5)?.unwrap_or_default(),
+        image: row.get(6)?,
+        pub_date: row.get(7)?,
+        dur_pos: row.get::<_, Option<i32>>(8)?.unwrap_or(0),
+    })
 }
 
 #[cfg(test)]
@@ -264,5 +332,131 @@ mod tests {
         let b_records = repo.list_records_by_origin("https://b.com", None).unwrap();
         assert_eq!(b_records.len(), 1);
         assert_eq!(b_records[0].title, "B1");
+    }
+
+    /// 批20：扩展字段写读回环（type/sort/image/pubDate/durPos）
+    #[test]
+    fn test_mark_read_with_full_fields_roundtrip() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssReadRecordRepository::new(db.connection());
+
+        repo.mark_read_with(
+            "https://rss.com",
+            "图片文章",
+            Some("link-img"),
+            &RssReadRecordMeta {
+                article_type: Some(1),
+                sort: Some("图片分类".to_string()),
+                image: Some("https://img.test/1.jpg".to_string()),
+                pub_date: Some("2026-10-27".to_string()),
+                dur_pos: Some(42),
+            },
+        )
+        .unwrap();
+        // 缺省字段回落 DB 默认值（type=0 / sort='' / image/pubDate=NULL / durPos=0）
+        repo.mark_read_with(
+            "https://rss.com",
+            "视频文章",
+            Some("link-video"),
+            &RssReadRecordMeta {
+                article_type: Some(2),
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        let all = repo.list_records(None).unwrap();
+        assert_eq!(all.len(), 2);
+        let img = all
+            .iter()
+            .find(|r| r.link.as_deref() == Some("link-img"))
+            .expect("图片记录应存在");
+        assert_eq!(img.r#type, 1);
+        assert_eq!(img.sort, "图片分类");
+        assert_eq!(img.image.as_deref(), Some("https://img.test/1.jpg"));
+        assert_eq!(img.pub_date.as_deref(), Some("2026-10-27"));
+        assert_eq!(img.dur_pos, 42);
+
+        let video = all
+            .iter()
+            .find(|r| r.link.as_deref() == Some("link-video"))
+            .expect("视频记录应存在");
+        assert_eq!(video.r#type, 2);
+        assert_eq!(video.sort, "");
+        assert!(video.image.is_none());
+        assert!(video.pub_date.is_none());
+        assert_eq!(video.dur_pos, 0);
+
+        // 按源入口列集合/映射口径与全量入口一致
+        let by_origin = repo
+            .list_records_by_origin("https://rss.com", None)
+            .unwrap();
+        assert_eq!(by_origin.len(), 2);
+        let img_by_origin = by_origin
+            .iter()
+            .find(|r| r.link.as_deref() == Some("link-img"))
+            .expect("按源查询应返回图片记录");
+        assert_eq!(img_by_origin.r#type, 1);
+        assert_eq!(img_by_origin.sort, "图片分类");
+        assert_eq!(
+            img_by_origin.image.as_deref(),
+            Some("https://img.test/1.jpg")
+        );
+        assert_eq!(img_by_origin.pub_date.as_deref(), Some("2026-10-27"));
+        assert_eq!(img_by_origin.dur_pos, 42);
+    }
+
+    /// 批20：旧数据（可空列 NULL、NOT NULL 列取列默认值）读出默认口径
+    #[test]
+    fn test_legacy_null_columns_read_defaults() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssReadRecordRepository::new(db.connection());
+        // 手工插入旧数据形态：image/pubDate 显式 NULL，type/sort/durPos 走列默认值
+        db.connection()
+            .execute(
+                "INSERT INTO rssReadRecords
+                 (record, title, readTime, \"read\", origin, image, pubDate)
+                 VALUES ('legacy-link', 'Legacy', 123, 1, 'https://rss.com', NULL, NULL)",
+                [],
+            )
+            .unwrap();
+
+        let records = repo.list_records(None).unwrap();
+        assert_eq!(records.len(), 1);
+        let row = &records[0];
+        assert_eq!(row.link.as_deref(), Some("legacy-link"));
+        assert_eq!(row.r#type, 0);
+        assert_eq!(row.sort, "");
+        assert!(row.image.is_none());
+        assert!(row.pub_date.is_none());
+        assert_eq!(row.dur_pos, 0);
+
+        let by_origin = repo
+            .list_records_by_origin("https://rss.com", None)
+            .unwrap();
+        assert_eq!(by_origin.len(), 1);
+        assert_eq!(by_origin[0].r#type, 0);
+        assert_eq!(by_origin[0].sort, "");
+        assert!(by_origin[0].image.is_none());
+        assert!(by_origin[0].pub_date.is_none());
+        assert_eq!(by_origin[0].dur_pos, 0);
+    }
+
+    /// 批20：兼容入口（3 参 mark_read）保持旧写入口径
+    #[test]
+    fn test_mark_read_legacy_signature_keeps_defaults() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssReadRecordRepository::new(db.connection());
+        repo.mark_read("https://rss.com", "Old", Some("old-link"))
+            .unwrap();
+
+        let records = repo.list_records(None).unwrap();
+        assert_eq!(records.len(), 1);
+        let row = &records[0];
+        assert_eq!(row.r#type, 0);
+        assert_eq!(row.sort, "");
+        assert!(row.image.is_none());
+        assert!(row.pub_date.is_none());
+        assert_eq!(row.dur_pos, 0);
     }
 }

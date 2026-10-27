@@ -3,15 +3,43 @@
 //! 提供 RSS 文章已读标记的增删查操作，通过 RssReadRecordRepository 访问数据库。
 
 use legado_core::LegadoResult;
-use legado_db::{RssReadRecordRepository, RssReadRecordRow};
+use legado_db::{RssReadRecordMeta, RssReadRecordRepository, RssReadRecordRow};
 
 use crate::db_state::with_database;
 
-/// 标记文章为已读
+/// 标记文章为已读（兼容入口，扩展字段取 DB 缺省值）
 pub fn mark_read(origin: &str, title: &str, link: Option<&str>) -> LegadoResult<()> {
     with_database(|db| {
         let repo = RssReadRecordRepository::new(db.connection());
         repo.mark_read(origin, title, link)
+    })
+}
+
+/// 标记文章为已读并写入扩展字段（批20，对齐原版 `RssArticle.toRecord()`）
+///
+/// `article_type` 缺省 0；`sort` 缺省空串；`image` / `pub_date` 缺省 NULL；
+/// `dur_pos` 缺省 0。旧调用（不传扩展字段）行为与 [`mark_read`] 一致。
+#[allow(clippy::too_many_arguments)]
+pub fn mark_read_full(
+    origin: &str,
+    title: &str,
+    link: Option<&str>,
+    article_type: Option<i32>,
+    sort: Option<&str>,
+    image: Option<&str>,
+    pub_date: Option<&str>,
+    dur_pos: Option<i32>,
+) -> LegadoResult<()> {
+    let meta = RssReadRecordMeta {
+        article_type,
+        sort: sort.map(str::to_string),
+        image: image.map(str::to_string),
+        pub_date: pub_date.map(str::to_string),
+        dur_pos,
+    };
+    with_database(|db| {
+        let repo = RssReadRecordRepository::new(db.connection());
+        repo.mark_read_with(origin, title, link, &meta)
     })
 }
 
@@ -109,5 +137,63 @@ mod tests {
         // 清空
         clear_all().unwrap();
         assert_eq!(count().unwrap(), 0);
+    }
+
+    /// 批20：扩展字段经 FFI 层写读回环
+    #[test]
+    fn test_rss_mark_read_full_roundtrip() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_all().unwrap();
+
+        mark_read_full(
+            "https://rss.example.com",
+            "图片文章",
+            Some("https://link.com/img"),
+            Some(1),
+            Some("图片分类"),
+            Some("https://img.test/1.jpg"),
+            Some("2026-10-27"),
+            Some(7),
+        )
+        .unwrap();
+        // 旧入口不传扩展字段：保持缺省口径
+        mark_read(
+            "https://rss.example.com",
+            "网页文章",
+            Some("https://link.com/web"),
+        )
+        .unwrap();
+
+        let records = list_records(Some(10)).unwrap();
+        let img = records
+            .iter()
+            .find(|r| r.link.as_deref() == Some("https://link.com/img"))
+            .expect("图片记录应存在");
+        assert_eq!(img.r#type, 1);
+        assert_eq!(img.sort, "图片分类");
+        assert_eq!(img.image.as_deref(), Some("https://img.test/1.jpg"));
+        assert_eq!(img.pub_date.as_deref(), Some("2026-10-27"));
+        assert_eq!(img.dur_pos, 7);
+
+        let web = records
+            .iter()
+            .find(|r| r.link.as_deref() == Some("https://link.com/web"))
+            .expect("网页记录应存在");
+        assert_eq!(web.r#type, 0);
+        assert_eq!(web.sort, "");
+        assert!(web.image.is_none());
+        assert!(web.pub_date.is_none());
+        assert_eq!(web.dur_pos, 0);
+
+        // 按源入口与全量入口口径一致
+        let by_origin = list_records_by_origin("https://rss.example.com", None).unwrap();
+        let img_by_origin = by_origin
+            .iter()
+            .find(|r| r.link.as_deref() == Some("https://link.com/img"))
+            .expect("按源查询应返回图片记录");
+        assert_eq!(img_by_origin.r#type, 1);
+        assert_eq!(img_by_origin.dur_pos, 7);
+
+        clear_all().unwrap();
     }
 }
