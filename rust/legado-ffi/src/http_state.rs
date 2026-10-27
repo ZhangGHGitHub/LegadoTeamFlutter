@@ -170,9 +170,16 @@ pub(crate) fn clear_all_cookie_rows() -> LegadoResult<()> {
 /// 供「读现有行 → 按键合并 → 写回」的第三方写方（备份恢复）复用同一保护域：
 /// 与 jar 写回 / JS 下沉的合并 upsert 串行，关闭「读到旧行 → 覆盖落库」的
 /// 丢更新窗口（P3-5）。闭包内只做 DB（`with_database`，C→P）与内存 store
-/// 覆盖写（C→S/C→G）——**不得**再取按域写通道（D）：JS 写侧是 D→C，
-/// 本函数是 C→S，两者只共享 C/G，不构成环；若在 C 内再取 D 则与
-/// 「D 持有时等待 C」的 JS 写方形成 ABBA。
+/// 覆盖写（C→S/C→G）——**不得在闭包内再取按域写通道（D）**：JS/jar 写侧是
+/// D→C，闭包内取 D 即 C→D 回边，与「持有 D 等待 C」的写方形成 ABBA。
+///
+/// [批17d] 调用方（备份恢复）**可以且应当**在调用本函数**之前**先取 D
+/// （`legado_net::cookie_store::domain_write_lock` + 默认档
+/// `lock_local_domain_writes`）：恢复侧锁序为 D→C→P→S/G，与 jar
+/// （D→写内存捕获→C→P）与 JS 写侧（D→C→P、D→G）同序——这样才能让 jar
+/// 「已捕获、未落库」的窗口与恢复的「读-合并-写-覆盖内存」整体互斥
+///（否则 jar 会后以旧视图回滚刚恢复的备份值，见
+/// `api::backup_api::apply_restored_cookies` 文档）。
 ///
 /// 中毒恢复语义同本模块其他锁：`into_inner` 继续执行（锁仅承担串行）。
 pub(crate) fn with_cookie_persist_lock<T>(f: impl FnOnce() -> T) -> T {
@@ -188,6 +195,10 @@ pub(crate) fn with_cookie_persist_lock<T>(f: impl FnOnce() -> T) -> T {
 /// 合并预载是「内存值胜」——备份值要等重启才生效。恢复提交后在
 /// [`with_cookie_persist_lock`] 内调用本函数，把合并后的最终行覆盖式写回
 /// 内存（先删该域再按串写入：备份新值胜、库内独有键已在合并结果里保留）。
+///
+/// 锁序（批17d）：只取共享 store 写锁（S）。调用方已持 D→C（D 与 jar 写回
+/// 的「捕获」互斥，C 与合并 upsert 串行），本函数在 C 内只加 S，序为
+/// D→C→S——与 jar 的 D→S 同向，无回边。
 ///
 /// 键可以是 ETLD+1 域名键，也可以是原版 `source|https://…` 形态的原始作用域
 /// 键（后者不会命中任何 URL 的域名查找，写入内存无害且与 DB 保持一致）。

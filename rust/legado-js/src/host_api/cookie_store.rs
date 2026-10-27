@@ -131,8 +131,10 @@ pub fn backfill_from_sink() {
 ///   [`parse_cookie_pairs`] 保留（与落库串往返一致）。
 ///
 /// 锁序：只取内存存储锁（G），**不**取按域写通道（D）——调用方（FFI 恢复）
-/// 持有合并写串行锁（C），而 JS 写侧是 D→C：若此处再取 D 会形成 C→D 与
-/// D→C 的 ABBA。内存覆盖写本身是单锁临界区，无需 D 保证原子性。
+/// 已先取 D 再取合并写串行锁（C），自身只在 C 内加 G，序为 D→C→G，与 JS
+/// 写侧（D→G、D→C）同向；若此处再取 D 则 C→D 回边会与「持有 D 等待 C」的
+/// JS/jar 写方形成 ABBA（批17d：D 由调用方在进 C 之前取，本函数不再重复取）。
+/// 内存覆盖写本身是单锁临界区，无需 D 保证原子性。
 pub fn overwrite_cookies(rows: &[(String, String)]) {
     if rows.is_empty() {
         return;

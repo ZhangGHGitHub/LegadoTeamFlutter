@@ -1056,6 +1056,38 @@ fn restore_from_zip(bytes: &[u8], password: Option<&str>) -> LegadoResult<String
     Ok(stats)
 }
 
+/// 恢复受影响 Cookie 的键集（库内域键 → JS 内存键列表）
+///
+/// 返回 `Vec<(库内域键, JS 内存键列表)>`：
+/// - **库内域键**：`|` 原始作用域键原样，其余按 `get_sub_domain` 归一到 ETLD+1
+///   （与 [`restored_cookie_domain_key`] 同口径）；同一域键只出现一次；
+/// - **JS 内存键**：`legado-js` 的键归一在默认档是「trim 原串」、quickjs 档
+///   才是 ETLD+1——两侧键空间不同，必须各按各的口径写（quickjs 档两者相等；
+///   默认档 DB 域键与 JS 原始串键不同名）。
+///
+/// **P3-3（批17d）**：同一库内域键下的**多个 URL 必须逐个收集** JS 键。默认档
+/// 键空间是原始 URL 串，同域不同 URL 会得到不同键；旧实现按库内域键去重时
+/// 只记首个键，其余 URL 的内存条目保持旧值（重启前读侧仍命中旧串）。quickjs
+/// 档两者归一后相等，多 URL 自然收敛为同一键（去重后只写一次）。
+fn affected_cookie_domains(entries: &[CookieBackupEntry]) -> Vec<(String, Vec<String>)> {
+    let mut affected: Vec<(String, Vec<String>)> = Vec::new();
+    for entry in entries {
+        let Some(key) = restored_cookie_domain_key(entry) else {
+            continue;
+        };
+        let js_key = legado_js::host_api::cookie_store::normalized_cookie_key(&entry.url);
+        match affected.iter_mut().find(|(domain, _)| *domain == key) {
+            Some((_, js_keys)) => {
+                if !js_keys.contains(&js_key) {
+                    js_keys.push(js_key);
+                }
+            }
+            None => affected.push((key, vec![js_key])),
+        }
+    }
+    affected
+}
+
 /// 恢复 Cookie 到库 + 同步进程内存 + 重建客户端（批17c P2-1，提交后执行）
 ///
 /// 语义（逐条对齐原版 `Restore.kt:391-399` / `CookieStore.restoreCookie`）：
@@ -1076,27 +1108,52 @@ fn restore_from_zip(bytes: &[u8], password: Option<&str>) -> LegadoResult<String
 /// store 与 `legado-js` 内存 store（同一 C 保护域成对更新，关闭「读到旧行 →
 /// 覆盖内存/落库」的丢更新窗口，P3-5）。最后重建共享客户端使其重新预载
 ///（内存已是新值，合并预载不会回退）。
+///
+/// **并发捕获窗口（批17d P2 红态修复，锁序 D→C→P→S/G）**：jar 写回路径
+/// （`legado-net::client::save_cookies_from_response`）是「持 D → 写内存并
+/// 捕获整域串（释放 S）→ 持 D 取 C 落库」。旧实现恢复侧只取 C：jar 在
+/// 「已捕获、未落库」时等 C，恢复读库看不到刚捕获的新值 → 合并结果覆盖
+/// 内存后 jar 再以旧视图「incoming 胜」落库，**把刚恢复的备份值回滚**，且
+/// 内存与 DB 分叉、jar 新键在内存丢失（红态用例
+/// `test_restore_cookies_concurrent_jar_write_no_rollback`）。
+///
+/// 修复：恢复侧按 [`affected_cookie_domains`] 的键集（库内域键 ∪ 全部 JS
+/// 内存键）**排序去重后先取 D**（默认档再取
+/// [`legado_js::host_api::cookie_store::lock_local_domain_writes`]——默认档 JS
+/// 写侧用本地注册表），再在 D 内取 C，形成 D→C→P→S/G 与 JS 写侧
+/// （D→C）、jar 写侧（D→C）同序，无 ABBA；jar/JS 的「捕获 + 落库」与恢复的
+/// 「读-合并-写-回读-覆盖内存」整体互斥。释放 D/C 后再
+/// [`crate::http_state::reset_shared_client`]，避免持按域锁跨客户端重建。
+///
+/// 同域**同键**冲突（恢复与 jar 都写同名键）按「后写胜」：二者被 D 串行后，
+/// 先完成者写入、后完成者在最新行上合并——jar 先行则备份值胜（恢复在后），
+/// 恢复先行则 jar 的 Set-Cookie 胜（真实后到的会话值不得被历史备份覆盖）。
 fn apply_restored_cookies(entries: &[CookieBackupEntry]) {
     if entries.is_empty() {
         return;
     }
-    // 受影响键（去重）：`|` 原始作用域键原样、其余 ETLD+1 归一。
-    //
-    // 同时记 JS 侧内存键：`legado-js` 的键归一在默认档是「trim 原串」、
-    // quickjs 档才是 ETLD+1——两侧键空间不同，必须各按各的口径写
-    //（quickjs 档两者相等；默认档 DB 域键与 JS 原始串键不同名）。
-    let mut affected: Vec<(String, String)> = Vec::new();
-    for entry in entries {
-        if let Some(key) = restored_cookie_domain_key(entry) {
-            if !affected.iter().any(|(k, _)| *k == key) {
-                let js_key = legado_js::host_api::cookie_store::normalized_cookie_key(&entry.url);
-                affected.push((key, js_key));
-            }
-        }
-    }
+    let affected = affected_cookie_domains(entries);
     if affected.is_empty() {
         return;
     }
+
+    // D（最外层，按域写通道）：键集 = 库内域键 ∪ 全部 JS 内存键。
+    // 排序去重保证每个键只取一次（Mutex 不可重入）且固定顺序（无环）。
+    let mut domain_keys: Vec<String> = Vec::with_capacity(affected.len() * 2);
+    for (domain, js_keys) in &affected {
+        domain_keys.push(domain.clone());
+        domain_keys.extend(js_keys.iter().cloned());
+    }
+    domain_keys.sort();
+    domain_keys.dedup();
+    let d_guards: Vec<_> = domain_keys
+        .iter()
+        .map(|key| legado_net::cookie_store::domain_write_lock(key))
+        .collect();
+    // 默认档：JS 写侧用本地注册表（quickjs 档 JS 侧复用 net 注册表，上方
+    // net D 已覆盖，该函数不存在于此档）
+    #[cfg(not(feature = "quickjs"))]
+    let local_guards = legado_js::host_api::cookie_store::lock_local_domain_writes(&domain_keys);
 
     let (rows, _js_rows) = crate::http_state::with_cookie_persist_lock(|| {
         let affected_for_read = affected.clone();
@@ -1126,12 +1183,15 @@ fn apply_restored_cookies(entries: &[CookieBackupEntry]) {
             }
             // 合并完成后读回最终行（同一 C 保护域内，无并发写方插入）
             let mut rows: Vec<(String, String)> = Vec::with_capacity(affected_for_read.len());
-            let mut js_rows: Vec<(String, String)> = Vec::with_capacity(affected_for_read.len());
-            for (key, js_key) in &affected_for_read {
+            let mut js_rows: Vec<(String, String)> = Vec::new();
+            for (key, js_keys) in &affected_for_read {
                 match repo.get_by_tag(key) {
                     Ok(Some(value)) => {
                         rows.push((key.clone(), value.clone()));
-                        js_rows.push((js_key.clone(), value));
+                        // 同一域下的每个 JS 键都覆盖成同一份最终合并串（P3-3）
+                        for js_key in js_keys {
+                            js_rows.push((js_key.clone(), value.clone()));
+                        }
                     }
                     Ok(None) => {}
                     Err(e) => log::warn!("读取恢复后 Cookie 失败（跳过内存同步）: {key} - {e}"),
@@ -1147,11 +1207,17 @@ fn apply_restored_cookies(entries: &[CookieBackupEntry]) {
                 pair
             }
             Err(e) => {
-                log::warn!("恢复 Cookie 写入失败（进程内存未同步，重启后生效）: {e}");
+                log::warn!("恢复 Cookie 写入失败（本次未生效）: {e}");
                 (Vec::new(), Vec::new())
             }
         }
     });
+
+    // 先释放按域写通道 / 合并写串行锁，再做客户端重建（不持按域锁跨
+    // 客户端槽位写锁）
+    drop(d_guards);
+    #[cfg(not(feature = "quickjs"))]
+    drop(local_guards);
 
     if rows.is_empty() {
         return;
@@ -5434,6 +5500,17 @@ mod tests {
         .unwrap();
     }
 
+    /// cookie 串按键集合比较辅助（HashMap / jar 内部序不保证，比对按键集合）
+    fn sorted_cookie_parts(s: &str) -> Vec<String> {
+        let mut parts: Vec<String> = s
+            .split(';')
+            .map(|p| p.trim().to_string())
+            .filter(|p| !p.is_empty())
+            .collect();
+        parts.sort();
+        parts
+    }
+
     /// Cookie 合并逐条对齐原版 `CookieStore.mergeCookieValues`（P3-2）
     ///
     /// 覆盖：空旧值原样返回；**插入序保留**（旧实现按键排序的本地偏离已删除）；
@@ -5753,6 +5830,203 @@ mod tests {
         // 收尾：两侧齐清（避免污染其他 cookie 用例）
         crate::api::net_api::clear_cookie(URL).expect("清理 Cookie 必须成功");
         legado_js::host_api::cookie_store::clear_cookies(URL);
+        clear_cookie_and_cache_tables();
+    }
+
+    /// 批17d P2：Cookie 恢复与 jar「捕获 → 落库」的并发交错不得回滚备份值
+    ///
+    /// 复现口径对齐真实 jar 写回路径（`legado-net::client::save_cookies_from_response`
+    /// 的锁序 D → 写内存并捕获整域串（释放 S）→ 持 D 取 C 落库）：jar 线程在
+    /// 持 D 完成捕获后短暂停住（模拟被调度走），主线程在此窗口内发起恢复。
+    ///
+    /// **红态（修复前，恢复侧只持 C）**：恢复读库看不到 jar 刚捕获、尚未落库
+    /// 的新值 → 合并结果覆盖内存；jar 随后以旧视图「incoming 胜」落库 →
+    /// 备份值被回滚为 `sid=old`、内存与 DB 分叉、`jar=m1` 在内存丢失。
+    ///
+    /// **绿态（恢复侧先取 D 再取 C，D→C→P→S/G）**：恢复与 jar 的「捕获 +
+    /// 落库」整体互斥，二者严格串行 → 最终 DB / FFI 内存 / JS 内存三者一致；
+    /// 备份值不被回滚（jar 先行时恢复在后，同名键按「后写胜」= 备份值胜），
+    /// jar 的异名新键 `jar=m1` 保留。
+    #[test]
+    fn test_restore_cookies_concurrent_jar_write_no_rollback() {
+        // 全局锁序不变式：先 store 锁、后池锁、再 DB 守卫（见 test_support 文档）
+        let _gs = crate::test_support::lock_global_store();
+        let _p = crate::test_support::lock_pool_tests();
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        clear_cookie_and_cache_tables();
+
+        use legado_net::CookiePersistence;
+        use std::sync::{Arc, Condvar, Mutex};
+        use std::time::Duration;
+
+        const URL: &str = "https://race-restore.test/";
+        let domain = crate::api::net_api::get_sub_domain(URL);
+
+        // 恢复前：DB / FFI 内存 / JS 内存都是 "sid=old; keep=1"（模拟已登录进程）
+        with_database(|db| {
+            CookieRepository::new(db.connection()).upsert(&domain, "sid=old; keep=1")
+        })
+        .unwrap();
+        {
+            let mut store = crate::http_state::shared_cookie_store()
+                .write()
+                .unwrap_or_else(|p| p.into_inner());
+            store.remove_domain(&domain);
+            store.set_cookies_from_string(&domain, "sid=old; keep=1");
+        }
+        legado_js::host_api::cookie_store::set_cookie(URL, "sid", "old");
+        legado_js::host_api::cookie_store::set_cookie(URL, "keep", "1");
+
+        // 备份值：sid/theme（sid 与库内同名 → 备份胜；theme 为新增键）
+        let cookies = format!(r#"[{{"url":"{URL}","cookie":"sid=new; theme=dark"}}]"#);
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_race_cookies",
+            &[("cookies.json", cookies.as_bytes())],
+        );
+
+        let captured = Arc::new((Mutex::new(false), Condvar::new()));
+        let jar_captured = Arc::clone(&captured);
+        let domain_for_jar = domain.clone();
+        let jar = std::thread::spawn(move || {
+            // ① D：真实 jar 路径的最外层（与恢复的按域写通道互斥）
+            let _d = legado_net::cookie_store::domain_write_lock(&domain_for_jar);
+            // ② 写内存（Set-Cookie 生效）
+            {
+                let mut store = crate::http_state::shared_cookie_store()
+                    .write()
+                    .unwrap_or_else(|p| p.into_inner());
+                store.set_cookies_from_string(&domain_for_jar, "jar=m1");
+            }
+            // ③ 捕获整域串（jar 锁已释放，D 仍持有）
+            let view = crate::http_state::shared_cookie_store()
+                .read()
+                .unwrap_or_else(|p| p.into_inner())
+                .domain_cookie_string(&domain_for_jar);
+            // ④ 捕获完成、尚未落库：通知主线程在此窗口发起恢复
+            {
+                let (lock, cv) = &*jar_captured;
+                *lock.lock().unwrap_or_else(|p| p.into_inner()) = true;
+                cv.notify_all();
+            }
+            // 模拟「捕获后被调度走」的窗口（红态下恢复即在此进入 C）
+            std::thread::sleep(Duration::from_millis(200));
+            // ⑤ C+P 落库（真实 jar 在 D 内取 C；incoming 胜）
+            crate::http_state::DbCookiePersistence.save(&domain_for_jar, &view);
+        });
+
+        // 等 jar 完成捕获（未落库）后再发起恢复
+        {
+            let (lock, cv) = &*captured;
+            let mut ready = lock.lock().unwrap_or_else(|p| p.into_inner());
+            while !*ready {
+                let (guard, timeout) = cv
+                    .wait_timeout(ready, Duration::from_secs(5))
+                    .unwrap_or_else(|p| p.into_inner());
+                assert!(!timeout.timed_out(), "jar 线程未在超时前完成捕获");
+                ready = guard;
+            }
+        }
+
+        backup_restore_with_password(&path, None).expect("恢复必须成功");
+        jar.join().expect("jar 线程不得 panic");
+        let _ = fs::remove_dir_all(&dir);
+
+        // 最终态：DB 行 = 两侧内存（三条断言共同证明「串行化后无分叉」）
+        let db_row = with_database(|db| CookieRepository::new(db.connection()).get_by_tag(&domain))
+            .unwrap()
+            .expect("合并后域名行必须存在");
+        let parts = sorted_cookie_parts(&db_row);
+        assert!(
+            parts.contains(&"sid=new".to_string()),
+            "备份值不得被 jar 旧视图回滚（红态：sid=old）: {db_row}"
+        );
+        assert!(
+            parts.contains(&"jar=m1".to_string()),
+            "jar 新键不得丢失: {db_row}"
+        );
+        assert!(
+            parts.contains(&"keep=1".to_string()),
+            "库内异名键必须保留: {db_row}"
+        );
+        assert!(
+            parts.contains(&"theme=dark".to_string()),
+            "备份新键必须落库: {db_row}"
+        );
+        let memory = crate::http_state::shared_cookie_store()
+            .read()
+            .unwrap_or_else(|p| p.into_inner())
+            .domain_cookie_string(&domain);
+        assert_eq!(
+            sorted_cookie_parts(&memory),
+            parts,
+            "FFI 内存必须与 DB 一致（红态：内存无 jar=m1）: {memory}"
+        );
+        let js_cookie = legado_js::host_api::cookie_store::get_cookie(URL);
+        assert_eq!(
+            sorted_cookie_parts(&js_cookie),
+            parts,
+            "JS 内存必须与 DB 一致（红态：内存无 jar=m1）: {js_cookie}"
+        );
+
+        // 收尾：两侧齐清（避免污染其他 cookie 用例）
+        crate::api::net_api::clear_cookie(URL).expect("清理 Cookie 必须成功");
+        legado_js::host_api::cookie_store::clear_cookies(URL);
+        clear_cookie_and_cache_tables();
+    }
+
+    /// 批17d P3-3：默认（无 quickjs）档同域多 URL 必须逐个覆盖 JS 内存键
+    ///
+    /// 默认档 JS 键空间是「trim 原始 URL 串」，同域不同 URL = 不同键。旧实现
+    /// 按库内域键去重时只记首个 URL 的 JS 键 → 第二个 URL 的内存条目保持旧值
+    /// （重启前经 `java.getCookie(第二个URL)` 仍读到旧串）。修复后按域收集
+    /// 全部 JS 键并逐键覆盖同一份最终合并串。
+    ///
+    /// quickjs 档两个 URL 归一为同一 ETLD+1 键（本用例同样通过）。
+    #[test]
+    fn test_restore_cookies_covers_every_js_key_of_same_domain() {
+        // 全局锁序不变式：先 store 锁、后池锁、再 DB 守卫（见 test_support 文档）
+        let _gs = crate::test_support::lock_global_store();
+        let _p = crate::test_support::lock_pool_tests();
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        clear_cookie_and_cache_tables();
+
+        const URL_A: &str = "https://multi-url.test/a";
+        const URL_B: &str = "https://multi-url.test/b";
+        let domain = crate::api::net_api::get_sub_domain(URL_A);
+
+        // 两个 URL 的 JS 内存条目都是旧值（默认档两键不同名）
+        legado_js::host_api::cookie_store::set_cookie(URL_A, "sid", "old");
+        legado_js::host_api::cookie_store::set_cookie(URL_B, "sid", "old");
+
+        let cookies = format!(
+            r#"[{{"url":"{URL_A}","cookie":"sid=new"}},{{"url":"{URL_B}","cookie":"sid=new"}}]"#
+        );
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_multi_url_cookies",
+            &[("cookies.json", cookies.as_bytes())],
+        );
+        backup_restore_with_password(&path, None).expect("恢复必须成功");
+        let _ = fs::remove_dir_all(&dir);
+
+        let db_row = with_database(|db| CookieRepository::new(db.connection()).get_by_tag(&domain))
+            .unwrap()
+            .expect("域名行必须存在");
+        assert_eq!(sorted_cookie_parts(&db_row), vec!["sid=new".to_string()]);
+        for url in [URL_A, URL_B] {
+            let js_cookie = legado_js::host_api::cookie_store::get_cookie(url);
+            assert_eq!(
+                sorted_cookie_parts(&js_cookie),
+                vec!["sid=new".to_string()],
+                "{url} 的 JS 内存键必须同步为新值（红态：仍为 sid=old）: {js_cookie}"
+            );
+        }
+
+        // 收尾
+        crate::api::net_api::clear_cookie(URL_A).expect("清理 Cookie 必须成功");
+        legado_js::host_api::cookie_store::clear_cookies(URL_A);
+        legado_js::host_api::cookie_store::clear_cookies(URL_B);
         clear_cookie_and_cache_tables();
     }
 
