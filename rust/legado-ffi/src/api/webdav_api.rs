@@ -11,20 +11,6 @@ use legado_net::webdav::{BookSyncManager, WebDavClient, WebDavConfig};
 
 use crate::db_state::with_database;
 
-/// 获取 WebDAV 异步运行时句柄（优先当前 tokio 运行时，否则惰性创建兜底 runtime）
-fn webdav_runtime_handle() -> LegadoResult<tokio::runtime::Handle> {
-    if let Ok(handle) = tokio::runtime::Handle::try_current() {
-        return Ok(handle);
-    }
-    tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .thread_name("legado-webdav-fallback")
-        .thread_stack_size(8 * 1024 * 1024)
-        .build()
-        .map(|rt| rt.handle().clone())
-        .map_err(|e| LegadoError::Internal(format!("创建 WebDAV 运行时失败: {e}")))
-}
-
 /// 同步结果统计
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SyncResult {
@@ -72,8 +58,7 @@ pub fn webdav_list_dir(config_json: &str, path: &str) -> LegadoResult<String> {
         .map_err(|e| legado_core::LegadoError::Internal(format!("WebDAV 配置解析失败: {e}")))?;
     let client = WebDavClient::new(config);
 
-    let rt = webdav_runtime_handle()?;
-    let files = rt.block_on(client.list_dir(path))?;
+    let files = crate::runtime::block_on(client.list_dir(path))?;
     serde_json::to_string(&files)
         .map_err(|e| legado_core::LegadoError::Internal(format!("序列化失败: {e}")))
 }
@@ -89,8 +74,7 @@ pub fn webdav_upload(config_json: &str, path: &str, data: &str) -> LegadoResult<
         .map_err(|e| legado_core::LegadoError::Internal(format!("WebDAV 配置解析失败: {e}")))?;
     let client = WebDavClient::new(config);
 
-    let rt = webdav_runtime_handle()?;
-    rt.block_on(client.put(path, data.as_bytes()))
+    crate::runtime::block_on(client.put(path, data.as_bytes()))
 }
 
 /// 从本地文件路径读取并上传到 WebDAV（Task #51，API_CONTRACT §2.28.6）
@@ -124,9 +108,8 @@ pub fn webdav_upload_file(
     })?;
 
     let client = WebDavClient::new(config);
-    let rt = webdav_runtime_handle()?;
     // 所有权直传，避免 put(&bytes) 内部的 to_vec 二次拷贝（Task #55 F3）
-    rt.block_on(client.put_owned(path, bytes))
+    crate::runtime::block_on(client.put_owned(path, bytes))
 }
 
 /// 从 WebDAV 下载文件
@@ -138,8 +121,7 @@ pub fn webdav_download(config_json: &str, path: &str) -> LegadoResult<String> {
         .map_err(|e| legado_core::LegadoError::Internal(format!("WebDAV 配置解析失败: {e}")))?;
     let client = WebDavClient::new(config);
 
-    let rt = webdav_runtime_handle()?;
-    let bytes = rt.block_on(client.get(path))?;
+    let bytes = crate::runtime::block_on(client.get(path))?;
     String::from_utf8(bytes)
         .map_err(|e| legado_core::LegadoError::Internal(format!("Invalid UTF-8: {e}")))
 }
@@ -156,8 +138,7 @@ pub fn webdav_download_file(
         .map_err(|e| legado_core::LegadoError::Internal(format!("WebDAV 配置解析失败: {e}")))?;
     let client = WebDavClient::new(config);
 
-    let rt = webdav_runtime_handle()?;
-    let bytes = rt.block_on(client.get(path))?;
+    let bytes = crate::runtime::block_on(client.get(path))?;
 
     if let Some(parent) = std::path::Path::new(local_file_path).parent() {
         if !parent.as_os_str().is_empty() {
@@ -184,8 +165,7 @@ pub fn webdav_delete(config_json: &str, path: &str) -> LegadoResult<()> {
         .map_err(|e| legado_core::LegadoError::Internal(format!("WebDAV 配置解析失败: {e}")))?;
     let client = WebDavClient::new(config);
 
-    let rt = webdav_runtime_handle()?;
-    rt.block_on(client.delete(path))
+    crate::runtime::block_on(client.delete(path))
 }
 
 /// 创建 WebDAV 远程目录
@@ -194,8 +174,7 @@ pub fn webdav_mkdir(config_json: &str, path: &str) -> LegadoResult<()> {
         .map_err(|e| legado_core::LegadoError::Internal(format!("WebDAV 配置解析失败: {e}")))?;
     let client = WebDavClient::new(config);
 
-    let rt = webdav_runtime_handle()?;
-    rt.block_on(client.mkdir(path))
+    crate::runtime::block_on(client.mkdir(path))
 }
 
 /// 全量同步（上传书架+书源，返回远端数据）
@@ -217,8 +196,8 @@ pub fn webdav_full_sync(
     let client = WebDavClient::new(config);
     let manager = BookSyncManager::new(client);
 
-    let rt = webdav_runtime_handle()?;
-    let (books, sources) = rt.block_on(manager.full_sync(local_books_json, local_sources_json))?;
+    let (books, sources) =
+        crate::runtime::block_on(manager.full_sync(local_books_json, local_sources_json))?;
 
     serde_json::to_string(&serde_json::json!({
         "books": books,
@@ -248,8 +227,7 @@ pub fn webdav_incremental_sync(
     let client = WebDavClient::new(config);
     let manager = BookSyncManager::new(client);
 
-    let rt = webdav_runtime_handle()?;
-    let (books, sources, sync_result) = rt.block_on(manager.incremental_sync(
+    let (books, sources, sync_result) = crate::runtime::block_on(manager.incremental_sync(
         local_books_json,
         local_sources_json,
         last_sync_time,
@@ -300,6 +278,92 @@ pub fn webdav_server_delete(id: i64) -> LegadoResult<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 回环 WebDAV 服务器：接受一次 PROPFIND，返回固定 207 多状态响应。
+    ///
+    /// 返回 `(url, JoinHandle)`；url 形如 `http://127.0.0.1:<port>/dav/`。
+    /// 仅用于验证「异步运行时可用」这一条链路（不校验请求体）。
+    fn spawn_loopback_webdav() -> (String, std::thread::JoinHandle<()>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind 回环 WebDAV");
+        let port = listener.local_addr().unwrap().port();
+        let body = r#"<?xml version="1.0" encoding="utf-8"?>
+<D:multistatus xmlns:D="DAV:">
+  <D:response>
+    <D:href>/dav/</D:href>
+    <D:propstat><D:prop>
+      <D:displayname>dav</D:displayname>
+      <D:resourcetype><D:collection/></D:resourcetype>
+    </D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>
+  </D:response>
+  <D:response>
+    <D:href>/dav/books/</D:href>
+    <D:propstat><D:prop>
+      <D:displayname>books</D:displayname>
+      <D:resourcetype><D:collection/></D:resourcetype>
+    </D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>
+  </D:response>
+  <D:response>
+    <D:href>/dav/books/a.txt</D:href>
+    <D:propstat><D:prop>
+      <D:displayname>a.txt</D:displayname>
+      <D:getcontentlength>3</D:getcontentlength>
+    </D:prop><D:status>HTTP/1.1 200 OK</D:status></D:propstat>
+  </D:response>
+</D:multistatus>"#;
+        let response = format!(
+            "HTTP/1.1 207 Multi-Status\r\nContent-Type: application/xml\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        let handle = std::thread::spawn(move || {
+            if let Ok((mut stream, _)) = listener.accept() {
+                // 读请求头（PROPFIND 请求体不关心，读到空行为止）
+                let mut buf = [0u8; 1024];
+                let mut head = Vec::new();
+                while !head.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match stream.read(&mut buf) {
+                        Ok(0) => break,
+                        Ok(n) => head.extend_from_slice(&buf[..n]),
+                        Err(_) => break,
+                    }
+                }
+                let _ = stream.write_all(response.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (format!("http://127.0.0.1:{port}/dav/"), handle)
+    }
+
+    /// P0 回归（批18c）：WebDAV FFI 必须在可用的 tokio 运行时上 `block_on`。
+    ///
+    /// 旧实现 `webdav_runtime_handle()` 在函数内构建 `Runtime` 后只返回
+    /// `rt.handle().clone()`，局部 `Runtime` 返回即 drop（IO driver 关闭），
+    /// 后续 `Handle::block_on` 的请求在建立连接前失败：
+    /// `error sending request for url (...)`。本用例用回环 WebDAV 服务器
+    /// 覆盖真实网络 IO，旧实现必然失败，修复后必须拿到 3 个条目。
+    #[test]
+    fn test_webdav_list_dir_loopback_runtime_alive() {
+        let (url, server) = spawn_loopback_webdav();
+        let config_json = serde_json::json!({
+            "url": url,
+            "username": "u",
+            "password": "p",
+            "remote_dir": "",
+        })
+        .to_string();
+
+        let raw = webdav_list_dir(&config_json, "").expect("回环 WebDAV 列目录应成功");
+        let files: Vec<legado_net::webdav::WebDavFileInfo> =
+            serde_json::from_str(&raw).expect("目录列表 JSON 可解析");
+        server.join().ok();
+        assert!(
+            files.iter().any(|f| f.name == "a.txt"),
+            "应列出子文件，实际: {files:?}"
+        );
+    }
 
     /// Task #51：配置解析失败 → Internal 错误
     #[test]
