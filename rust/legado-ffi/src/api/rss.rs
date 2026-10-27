@@ -558,50 +558,63 @@ pub fn rss_load_more_articles(
     let fetched = fetch_rss_page(&source, sort_name, next_url, Some(page.max(1)), key)?;
 
     let mut added = false;
-    if let (Some(first), Some(last)) = (fetched.items.first(), fetched.items.last()) {
-        // 原版 quirk：末条也用 firstArticle.sort 查询（同页 sort 相同，无行为差异）
-        let (first_exists, last_exists) = with_database(|db| {
+    // 判底：首条与末条**各自** `(origin, link, sort)` 均已在库（批23 修复
+    // 末条复用首条 sort 的缺陷，见 [`page_already_stored`]）
+    if !page_already_stored(&fetched.items)? {
+        // order 续接：min(order) - 1（无行则取当前毫秒）
+        let start_order = with_database(|db| {
+            legado_db::RssArticleRepository::new(db.connection())
+                .min_order(&source.source_url, sort_name)
+        })?
+        .map(|min| min.saturating_sub(1))
+        .unwrap_or_else(current_millis);
+
+        let mut any_write_failed = false;
+        if let Err(e) = with_database(|db| {
             let repo = legado_db::RssArticleRepository::new(db.connection());
-            Ok((
-                repo.find_one(&first.origin, &first.link, &first.sort)?,
-                repo.find_one(&last.origin, &last.link, &first.sort)?,
-            ))
-        })?;
-
-        if !(first_exists && last_exists) {
-            // order 续接：min(order) - 1（无行则取当前毫秒）
-            let start_order = with_database(|db| {
-                legado_db::RssArticleRepository::new(db.connection())
-                    .min_order(&source.source_url, sort_name)
-            })?
-            .map(|min| min.saturating_sub(1))
-            .unwrap_or_else(current_millis);
-
-            let mut any_write_failed = false;
-            if let Err(e) = with_database(|db| {
-                let repo = legado_db::RssArticleRepository::new(db.connection());
-                for (i, article) in fetched.items.iter().enumerate() {
-                    let record = to_record(article, start_order - i as i64);
-                    if let Err(e) = repo.append_ignore(&record) {
-                        any_write_failed = true;
-                        log::warn!(
-                            "RSS 文章追加失败（origin={}, link={:?}）: {e}",
-                            record.origin,
-                            record.link
-                        );
-                    }
+            for (i, article) in fetched.items.iter().enumerate() {
+                let record = to_record(article, start_order - i as i64);
+                if let Err(e) = repo.append_ignore(&record) {
+                    any_write_failed = true;
+                    log::warn!(
+                        "RSS 文章追加失败（origin={}, link={:?}）: {e}",
+                        record.origin,
+                        record.link
+                    );
                 }
-                Ok(())
-            }) {
-                log::warn!("RSS 文章追加失败（{source_url}）: {e}");
-                any_write_failed = true;
             }
-            added = !any_write_failed;
+            Ok(())
+        }) {
+            log::warn!("RSS 文章追加失败（{source_url}）: {e}");
+            any_write_failed = true;
         }
+        added = !any_write_failed;
     }
 
     let has_more = added && fetched.next_url.is_some();
     serialize_page(fetched, has_more)
+}
+
+/// 判底：本页首条与末条是否均已在库
+///
+/// 对齐原版 `RssArticlesViewModel.loadMoreSuccess`（:82-88）「首末均命中
+/// 即到底」。差异点：原版 `RssArticleDao.get(origin, link)` 不按分类过滤，
+/// 本轨 [`legado_db::RssArticleRepository::find_one`] 主键含 `sort`，因此
+/// 查询键必须取**条目自身**的 `(origin, link, sort)`。
+///
+/// 批23 修复：旧实现末条也复用 `first.sort`。同页跨分类（末条 sort 与
+/// 首条不同）时「末条已在库」被误判为未命中 → 重复追加并误报
+/// `hasMore=true`（前端加载更多进入重复页/死循环）。
+fn page_already_stored(items: &[legado_fetcher::rss::RssArticleItem]) -> LegadoResult<bool> {
+    let (Some(first), Some(last)) = (items.first(), items.last()) else {
+        // 空页不算到底（调用方 `added=false`，hasMore 自然为 false）
+        return Ok(false);
+    };
+    with_database(|db| {
+        let repo = legado_db::RssArticleRepository::new(db.connection());
+        Ok(repo.find_one(&first.origin, &first.link, &first.sort)?
+            && repo.find_one(&last.origin, &last.link, &last.sort)?)
+    })
 }
 
 /// 拉取 RSS 文章正文并写回（契约 §2.5 `rssFetchContent`，批15c）
@@ -794,6 +807,180 @@ mod tests {
             assert_eq!(value["nextUrl"], "", "空白 nextUrl 归一为空串: {json}");
             assert_eq!(value["hasMore"], false, "{blank:?}");
         }
+    }
+
+    /// 批23：空页不算到底（不触发 DB 查询，`added=false` → `hasMore=false`）
+    #[test]
+    fn page_already_stored_empty_page_is_false() {
+        assert!(
+            !page_already_stored(&[]).expect("空页判底不应失败"),
+            "空列表不得判为到底"
+        );
+    }
+
+    /// 批23 回归：末条必须用**自身 sort** 查询
+    ///
+    /// 旧实现复用首条 sort，跨分类页（同页 sort 不同）会把「末条已在库」
+    /// 误判为未命中。本用例首末条各按自身 sort 入库，判底应为 true；
+    /// 同时断言「末条 + 首条 sort」不存在，确保旧实现必然返回 false。
+    #[test]
+    fn page_already_stored_uses_last_article_own_sort() {
+        use legado_db::{RssArticleRecord, RssArticleRepository};
+
+        let _guard = crate::db_state::ensure_test_db();
+        let origin = "https://rss-loadmore-cross-sort.example.com/feed";
+        let first = legado_fetcher::rss::RssArticleItem {
+            origin: origin.to_string(),
+            link: "https://rss-loadmore-cross-sort.example.com/1".to_string(),
+            sort: "分类一".to_string(),
+            title: "首条".to_string(),
+            ..Default::default()
+        };
+        let last = legado_fetcher::rss::RssArticleItem {
+            origin: origin.to_string(),
+            link: "https://rss-loadmore-cross-sort.example.com/2".to_string(),
+            sort: "分类二".to_string(),
+            title: "末条".to_string(),
+            ..Default::default()
+        };
+
+        // 入库：首条按「分类一」、末条按「分类二」
+        with_database(|db| {
+            let repo = RssArticleRepository::new(db.connection());
+            for (article, order) in [(&first, 10_i64), (&last, 9_i64)] {
+                repo.insert(&RssArticleRecord {
+                    origin: article.origin.clone(),
+                    sort: article.sort.clone(),
+                    title: article.title.clone(),
+                    order,
+                    link: Some(article.link.clone()),
+                    ..Default::default()
+                })?;
+            }
+            Ok(())
+        })
+        .expect("写入跨分类文章");
+
+        // 前置：末条在首条 sort 下不存在（旧实现查询键落空）
+        assert!(
+            !with_database(|db| {
+                RssArticleRepository::new(db.connection()).find_one(
+                    &last.origin,
+                    &last.link,
+                    &first.sort,
+                )
+            })
+            .expect("查询末条+首条sort"),
+            "末条不应存在于首条分类下（确保本用例能区分新旧实现）"
+        );
+
+        assert!(
+            page_already_stored(&[first, last]).expect("跨分类判底"),
+            "首末条各按自身 sort 已在库 → 应判为到底"
+        );
+    }
+
+    /// 批23：同 sort 下必须首末两端都在库才判到底
+    #[test]
+    fn page_already_stored_same_sort_requires_both_ends() {
+        use legado_db::{RssArticleRecord, RssArticleRepository};
+
+        let _guard = crate::db_state::ensure_test_db();
+        let origin = "https://rss-loadmore-same-sort.example.com/feed";
+        let sort = "默认";
+        let first = legado_fetcher::rss::RssArticleItem {
+            origin: origin.to_string(),
+            link: "https://rss-loadmore-same-sort.example.com/1".to_string(),
+            sort: sort.to_string(),
+            title: "首条".to_string(),
+            ..Default::default()
+        };
+        let last = legado_fetcher::rss::RssArticleItem {
+            origin: origin.to_string(),
+            link: "https://rss-loadmore-same-sort.example.com/2".to_string(),
+            sort: sort.to_string(),
+            title: "末条".to_string(),
+            ..Default::default()
+        };
+
+        // 只有首条在库 → 未到底（须追加本页）
+        with_database(|db| {
+            RssArticleRepository::new(db.connection()).insert(&RssArticleRecord {
+                origin: first.origin.clone(),
+                sort: first.sort.clone(),
+                title: first.title.clone(),
+                order: 10,
+                link: Some(first.link.clone()),
+                ..Default::default()
+            })
+        })
+        .expect("写入首条");
+        assert!(
+            page_already_stored(std::slice::from_ref(&first)).expect("单条页判底"),
+            "单条页（首末同一条）在库应判为到底"
+        );
+        assert!(
+            !page_already_stored(&[
+                first.clone(),
+                legado_fetcher::rss::RssArticleItem {
+                    origin: origin.to_string(),
+                    link: "https://rss-loadmore-same-sort.example.com/2".to_string(),
+                    sort: sort.to_string(),
+                    ..Default::default()
+                },
+            ])
+            .expect("末条未入库判底"),
+            "末条不在库 → 不得判为到底"
+        );
+
+        // 末条入库 → 首末均在库，判到底
+        with_database(|db| {
+            RssArticleRepository::new(db.connection()).insert(&RssArticleRecord {
+                origin: last.origin.clone(),
+                sort: last.sort.clone(),
+                title: last.title.clone(),
+                order: 9,
+                link: Some(last.link.clone()),
+                ..Default::default()
+            })
+        })
+        .expect("写入末条");
+        assert!(
+            page_already_stored(&[first, last]).expect("同分类判底"),
+            "首末均在库 → 应判为到底"
+        );
+    }
+
+    /// 批23：末条仅在**其它分类**存在时不得判为到底（新实现按末条自身
+    /// sort 查询；跨分类同名链接不能顶替）
+    #[test]
+    fn page_already_stored_last_in_wrong_sort_is_false() {
+        use legado_db::{RssArticleRecord, RssArticleRepository};
+
+        let _guard = crate::db_state::ensure_test_db();
+        let origin = "https://rss-loadmore-wrong-sort.example.com/feed";
+        let last = legado_fetcher::rss::RssArticleItem {
+            origin: origin.to_string(),
+            link: "https://rss-loadmore-wrong-sort.example.com/last".to_string(),
+            sort: "分类二".to_string(),
+            ..Default::default()
+        };
+        // 末条链接只写入「分类一」
+        with_database(|db| {
+            RssArticleRepository::new(db.connection()).insert(&RssArticleRecord {
+                origin: last.origin.clone(),
+                sort: "分类一".to_string(),
+                title: "错分类".to_string(),
+                order: 1,
+                link: Some(last.link.clone()),
+                ..Default::default()
+            })
+        })
+        .expect("写入错分类文章");
+        assert!(
+            !page_already_stored(std::slice::from_ref(&last)).expect("错分类判底"),
+            "末条仅存在于其它分类 → 不得判为到底"
+        );
     }
 
     #[test]
