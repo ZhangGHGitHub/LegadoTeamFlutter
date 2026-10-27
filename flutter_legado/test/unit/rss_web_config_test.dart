@@ -308,7 +308,7 @@ void main() {
     });
   });
 
-  group('rssStripPageScripts（批21c P0-2 桥模式脚本隔离）', () {
+  group('rssStripPageScripts（批21c P0-2 / 批21d P0-A 桥模式脚本隔离）', () {
     test('移除 script 标签（大小写/属性/自闭合）', () {
       const html = '<p>a</p><SCRIPT type="text/javascript">x()</SCRIPT>'
           '<script src="a.js"></script><script async/>'
@@ -316,39 +316,135 @@ void main() {
       final out = rssStripPageScripts(html);
       expect(out, contains('<p>a</p>'));
       expect(out, contains('<p>b</p>'));
-      expect(out.toLowerCase(), isNot(contains('<script')));
+      expect(_hasExecutableScriptTag(out), isFalse);
       expect(out, isNot(contains('x()')));
     });
 
-    test('移除 on* 内联事件（引号/无引号）', () {
-      const html = '<img src="x" onerror="alert(1)" onload=\'y()\'>'
-          '<div onclick=go()>d</div>';
+    test('未闭合外链 script 开始标签也必须移除（正文保留）', () {
+      const html = '<p>前</p><script src="https://evil.test/x.js">'
+          '<p>后</p>';
       final out = rssStripPageScripts(html);
-      expect(out, contains('<img src="x"'));
-      expect(out, isNot(contains('onerror')));
-      expect(out, isNot(contains('onload')));
-      expect(out, isNot(contains('onclick')));
+      expect(out, contains('<p>前</p>'));
+      expect(out, contains('<p>后</p>'));
+      expect(_hasExecutableScriptTag(out), isFalse);
+      expect(out, isNot(contains('evil.test')));
+    });
+
+    test('标签拆分重组循环剥离到不动点', () {
+      for (final html in <String>[
+        '<sc<script>ript>alert(1)</script><p>a</p>',
+        '<scr<script>ipt>alert(2)</script><p>b</p>',
+        '<sc<script src=x>ript>alert(3)</script><p>c</p>',
+        '<script/src="https://evil.test/x.js"><p>d</p>',
+      ]) {
+        final out = rssStripPageScripts(html);
+        expect(_hasExecutableScriptTag(out), isFalse,
+            reason: '拆分重组后仍存在可执行 script 标签：$out');
+        expect(out.toLowerCase(), isNot(contains('<sc<script>')),
+            reason: '不得保留拆分残留：$out');
+      }
+    });
+
+    test('实体/控制字符编码的 javascript: 与 vbscript:/data:text/html 一律移除属性', () {
+      const html = '<a href="&#106;avascript:alert(1)">a</a>'
+          '<a href="jav&#x61;script&#58;alert(2)">b</a>'
+          '<a href="java&#9;script:alert(3)">c</a>'
+          '<a href="Java&#x53;cript:alert(4)">d</a>'
+          '<a href="vbscript:msgbox(1)">e</a>'
+          '<a href="data:text/html;base64,PHNjcmlwdD4=">f</a>'
+          '<form action="java\tscript:alert(5)"></form>';
+      final out = rssStripPageScripts(html);
+      expect(out, isNot(contains('javascript:')), reason: out);
+      expect(out.toLowerCase(), isNot(contains('vbscript:')), reason: out);
+      expect(out.toLowerCase(), isNot(contains('data:text/html')),
+          reason: out);
+      expect(out, isNot(contains('href=')), reason: '危险 URL 属性必须整体移除');
+      expect(out, isNot(contains('action=')), reason: out);
+      // 正文文本仍保留
+      for (final text in ['>a<', '>b<', '>c<', '>d<', '>e<', '>f<']) {
+        expect(out, contains(text), reason: '$text 正文不得被删：$out');
+      }
+    });
+
+    test('iframe srcdoc 属性移除（标签/正文保留）', () {
+      const html = '<iframe srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;">'
+          '</iframe><p>正文</p>';
+      final out = rssStripPageScripts(html);
+      expect(out.toLowerCase(), isNot(contains('srcdoc')));
+      expect(out, isNot(contains('alert(1)')));
+      expect(out, contains('<iframe'));
+      expect(out, contains('<p>正文</p>'));
+    });
+
+    test('on* 内联事件（大小写/引号/无引号）与裸 javascript URL', () {
+      const html = '<IMG SRC="x" ONERROR=alert(1)>'
+          '<img src="y" onload=\'y()\' data-on="keep">'
+          '<div onclick=go()>d</div>'
+          '<a href=javascript:alert(2)>z</a>';
+      final out = rssStripPageScripts(html);
+      expect(out.toLowerCase(), isNot(contains('onerror')));
+      expect(out.toLowerCase(), isNot(contains('onload')));
+      expect(out.toLowerCase(), isNot(contains('onclick')));
+      expect(out, contains('data-on="keep"'),
+          reason: '非 on* 事件名（data-on）不得误删');
+      expect(out.toLowerCase(), contains('<img src="x">'));
       expect(out, contains('<div>d</div>'));
-    });
-
-    test('移除 javascript: URL（href/action，带引号与裸值）', () {
-      const html = '<a href="javascript:alert(1)">a</a>'
-          '<a href=\'javascript:alert(2)\'>b</a>'
-          '<a href=javascript:alert(3)>c</a>'
-          '<form action="javascript:alert(4)"></form>';
-      final out = rssStripPageScripts(html);
       expect(out, isNot(contains('javascript:')));
-      expect(out, contains('href="#"'));
-      expect(out, contains('action="#"'));
     });
 
-    test('不触碰样式/正常链接/正文文本', () {
+    test('属性值中的 <script> 文本不破坏正文/属性', () {
+      const html = '<img alt="<script>x</script>" src="ok.png">'
+          '<p>正文</p>';
+      final out = rssStripPageScripts(html);
+      expect(out, contains('alt="<script>x</script>"'),
+          reason: '引号属性值必须原样保留：$out');
+      expect(out, contains('src="ok.png"'));
+      expect(out, contains('<p>正文</p>'));
+      expect(_hasExecutableScriptTag(out), isFalse);
+    });
+
+    test('不触碰样式/正常链接/正文文本/实体编码代码块', () {
       const html = '<style>a{color:red}</style>'
-          '<a href="https://ok.test/a">ok</a><p>javascript: 文本保留</p>';
+          '<a href="https://ok.test/a">ok</a>'
+          '<p>javascript: 文本保留</p>'
+          '<pre><code>if (a &lt; b) { return "&lt;script&gt;"; }</code></pre>';
       final out = rssStripPageScripts(html);
       expect(out, contains('<style>a{color:red}</style>'));
       expect(out, contains('href="https://ok.test/a"'));
       expect(out, contains('javascript: 文本保留'));
+      expect(out, contains('&lt;script&gt;'));
     });
   });
+}
+
+/// 判断 HTML 文本层是否存在可执行的 `<script` 开始标签
+///
+/// 引号属性值内的 `<script>` 只是属性文本（HTML 解析层面惰性），不计入；
+/// 未加引号属性值同样按“仍在标签内”处理。
+bool _hasExecutableScriptTag(String html) {
+  String? quote;
+  var inTag = false;
+  for (var i = 0; i < html.length; i++) {
+    final char = html[i];
+    if (quote != null) {
+      if (char == quote) quote = null;
+      continue;
+    }
+    if (inTag) {
+      if (char == '"' || char == "'") {
+        quote = char;
+      } else if (char == '>') {
+        inTag = false;
+      }
+      continue;
+    }
+    if (char != '<') continue;
+    final match = RegExp(
+      r'<\s*/?\s*script(?=[\s/>]|$)',
+      caseSensitive: false,
+    ).matchAsPrefix(html, i);
+    if (match != null) return true;
+    inTag = true;
+  }
+  return false;
 }
