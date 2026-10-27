@@ -72,6 +72,20 @@ mixin MockBookApiContentExt on MockBookApiStore implements BookApi {
   }) async => ['novel.txt'];
 
   @override
+  Future<Map<String, dynamic>> archiveImport7z({
+    required String sevenZipPath,
+    required String outputDir,
+  }) async => {
+    'success': true,
+    'extracted_files': ['book1.txt'],
+    'error': null,
+  };
+
+  @override
+  Future<List<String>> archiveList7zFiles({required String sevenZipPath}) async =>
+      ['book1.txt', 'book2.epub', 'readme.md'];
+
+  @override
   Future<Map<String, dynamic>> archiveDetectEncoding({
     required String filePath,
   }) async => {'encoding': 'UTF-8', 'has_bom': false, 'confidence': 'high'};

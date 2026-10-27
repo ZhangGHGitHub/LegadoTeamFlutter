@@ -67,6 +67,30 @@ mixin RustApiContentExt on RustApiDecode implements BookApi {
     return list.map((e) => e.toString()).toList();
   }
 
+  /// 导入 7z 压缩包中的书籍文件（§2.34 批24）
+  ///
+  /// FRB 生成函数名为 `archiveImport7Z`（数字 7 后大写 Z），
+  /// 契约/BookApi 侧统一为 `archiveImport7z`。
+  @override
+  Future<Map<String, dynamic>> archiveImport7z({
+    required String sevenZipPath,
+    required String outputDir,
+  }) async {
+    final json = await bridge.archiveImport7Z(
+      sevenZipPath: sevenZipPath,
+      outputDir: outputDir,
+    );
+    return _decodeMap(json, 'bookApi');
+  }
+
+  /// 列出 7z 压缩包中的书籍文件名（不解压，§2.34 批24）
+  @override
+  Future<List<String>> archiveList7zFiles({required String sevenZipPath}) async {
+    final json = await bridge.archiveList7ZFiles(sevenZipPath: sevenZipPath);
+    final list = _decodeList(json, 'bookApi');
+    return list.map((e) => e.toString()).toList();
+  }
+
   /// 检测 TXT 文件编码
   ///
   /// 返回 EncodingResult JSON 解析后的 Map，包含：

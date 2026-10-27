@@ -1633,6 +1633,17 @@ abstract class BookApi {
     String? password,
   });
 
+  /// 导入 7z 压缩包中的书籍文件（§2.34 批24）
+  ///
+  /// 解压后仅取书籍后缀到 [outputDir]；不支持加密/分卷 7z。
+  Future<Map<String, dynamic>> archiveImport7z({
+    required String sevenZipPath,
+    required String outputDir,
+  });
+
+  /// 列出 7z 压缩包中的书籍文件名（不解压）
+  Future<List<String>> archiveList7zFiles({required String sevenZipPath});
+
   /// 检测 TXT 文件编码
   Future<Map<String, dynamic>> archiveDetectEncoding({
     required String filePath,

@@ -84,6 +84,8 @@
                 <data android:mimeType="application/azw" />
                 <data android:mimeType="application/azw3" />
                 <data android:mimeType="application/x-mobi8-ebook" />
+                <!-- 7Z（批24：外部文件 7z 解压导入） -->
+                <data android:mimeType="application/x-7z-compressed" />
                 <!-- 未知二进制（多数文件管理器对 epub/mobi 的兜底声明） -->
                 <data android:mimeType="application/octet-stream" />
             </intent-filter>

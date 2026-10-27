@@ -253,19 +253,10 @@ class DeepLinkService {
     await showAssociationImportDialog(nav.context, filePath: path);
   }
 
-  /// 压缩包 → 解压导入对话框（zip/rar）；7z 无解析 FFI，给明确提示
+  /// 压缩包 → 解压导入对话框（zip/rar/7z）
   Future<void> _openArchiveImport(String path) async {
     final nav = navigatorKey?.currentState;
     if (nav == null) return;
-    if (LegadoDeepLink.isSevenZipPath(path)) {
-      // 登记项：原版支持 7z 解压，我方 Rust 无 7z 解析能力（待另立依赖批）
-      await _showMessageDialog(
-        nav.context,
-        title: '压缩包导入',
-        message: '暂不支持 7z，请解压后导入',
-      );
-      return;
-    }
     await showDialog<void>(
       context: nav.context,
       builder: (_) => ArchiveImportDialog(archivePath: path),
@@ -299,27 +290,6 @@ class DeepLinkService {
     ).then((v) => v ?? false);
     if (!confirmed) return;
     await _importAndOpen(path, messenger);
-  }
-
-  /// 通用提示对话框（7z 等明确不支持场景）
-  Future<void> _showMessageDialog(
-    BuildContext context, {
-    required String title,
-    required String message,
-  }) {
-    return showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('确定'),
-          ),
-        ],
-      ),
-    );
   }
 
   /// 原生拷贝外部文件到应用私有目录；返回落盘路径，取消/失败返回 null

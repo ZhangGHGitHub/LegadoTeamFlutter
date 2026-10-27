@@ -11,6 +11,9 @@ import '../providers/providers.dart';
 import '../services/book_api.dart';
 import '../utils/error_message.dart';
 
+/// 压缩包类型：决定列表/解压调用与是否显示密码框
+enum _ArchiveKind { zip, rar, sevenZ }
+
 /// 支持的编码列表（用于 TXT 子文件编码选择）
 const _supportedEncodings = [
   'UTF-8',
@@ -23,8 +26,9 @@ const _supportedEncodings = [
 
 /// 压缩包导入对话框
 ///
-/// 显示压缩包内书籍文件列表，支持多选导入、编码检测与编码选择。
-/// 对应安卓端 BaseImportBookActivity.onArchiveFileClick 逻辑。
+/// 显示压缩包（zip/rar/7z）内书籍文件列表，支持多选导入、编码检测与编码选择。
+/// 对应安卓端 BaseImportBookActivity.onArchiveFileClick 逻辑；7z 不支持加密/分卷，
+/// 因此不显示密码框。
 class ArchiveImportDialog extends ConsumerStatefulWidget {
   /// 压缩包文件路径
   final String archivePath;
@@ -71,11 +75,15 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
   /// RAR 密码（可选）
   final TextEditingController _passwordController = TextEditingController();
 
-  /// 是否为 RAR 格式
-  bool get _isRar {
-    final ext = _extOf(widget.archivePath);
-    return ext == 'rar';
-  }
+  /// 压缩包类型（zip/rar/7z）
+  _ArchiveKind get _kind => switch (_extOf(widget.archivePath)) {
+    'rar' => _ArchiveKind.rar,
+    '7z' => _ArchiveKind.sevenZ,
+    _ => _ArchiveKind.zip,
+  };
+
+  /// 是否为 RAR 格式（仅 RAR 显示密码框）
+  bool get _isRar => _kind == _ArchiveKind.rar;
 
   @override
   void initState() {
@@ -103,14 +111,19 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
     });
     try {
       final List<String> files;
-      if (_isRar) {
-        final pwd = _passwordController.text.trim();
-        files = await _api.archiveListRarFiles(
-          rarPath: widget.archivePath,
-          password: pwd.isEmpty ? null : pwd,
-        );
-      } else {
-        files = await _api.archiveListZipFiles(zipPath: widget.archivePath);
+      switch (_kind) {
+        case _ArchiveKind.rar:
+          final pwd = _passwordController.text.trim();
+          files = await _api.archiveListRarFiles(
+            rarPath: widget.archivePath,
+            password: pwd.isEmpty ? null : pwd,
+          );
+        case _ArchiveKind.sevenZ:
+          files = await _api.archiveList7zFiles(
+            sevenZipPath: widget.archivePath,
+          );
+        case _ArchiveKind.zip:
+          files = await _api.archiveListZipFiles(zipPath: widget.archivePath);
       }
       if (!mounted) return;
       setState(() {
@@ -151,18 +164,24 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
 
       // 解压到临时目录
       final Map<String, dynamic> result;
-      if (_isRar) {
-        final pwd = _passwordController.text.trim();
-        result = await _api.archiveImportRar(
-          rarPath: widget.archivePath,
-          outputDir: extractDir,
-          password: pwd.isEmpty ? null : pwd,
-        );
-      } else {
-        result = await _api.archiveImportZip(
-          zipPath: widget.archivePath,
-          outputDir: extractDir,
-        );
+      switch (_kind) {
+        case _ArchiveKind.rar:
+          final pwd = _passwordController.text.trim();
+          result = await _api.archiveImportRar(
+            rarPath: widget.archivePath,
+            outputDir: extractDir,
+            password: pwd.isEmpty ? null : pwd,
+          );
+        case _ArchiveKind.sevenZ:
+          result = await _api.archiveImport7z(
+            sevenZipPath: widget.archivePath,
+            outputDir: extractDir,
+          );
+        case _ArchiveKind.zip:
+          result = await _api.archiveImportZip(
+            zipPath: widget.archivePath,
+            outputDir: extractDir,
+          );
       }
 
       if (result['success'] != true) {
@@ -243,18 +262,24 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
 
       // 调用 FFI 解压
       final Map<String, dynamic> result;
-      if (_isRar) {
-        final pwd = _passwordController.text.trim();
-        result = await _api.archiveImportRar(
-          rarPath: widget.archivePath,
-          outputDir: outputDir,
-          password: pwd.isEmpty ? null : pwd,
-        );
-      } else {
-        result = await _api.archiveImportZip(
-          zipPath: widget.archivePath,
-          outputDir: outputDir,
-        );
+      switch (_kind) {
+        case _ArchiveKind.rar:
+          final pwd = _passwordController.text.trim();
+          result = await _api.archiveImportRar(
+            rarPath: widget.archivePath,
+            outputDir: outputDir,
+            password: pwd.isEmpty ? null : pwd,
+          );
+        case _ArchiveKind.sevenZ:
+          result = await _api.archiveImport7z(
+            sevenZipPath: widget.archivePath,
+            outputDir: outputDir,
+          );
+        case _ArchiveKind.zip:
+          result = await _api.archiveImportZip(
+            zipPath: widget.archivePath,
+            outputDir: outputDir,
+          );
       }
 
       if (result['success'] != true) {

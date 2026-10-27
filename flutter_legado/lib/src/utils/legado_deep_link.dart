@@ -114,10 +114,6 @@ class LegadoDeepLink {
   static bool isArchivePath(String pathOrName) =>
       archiveFileExtensions.contains(extensionOf(pathOrName));
 
-  /// 是否 7z（原版可解压，我方无 7z 解析 FFI → 服务层给明确提示）
-  static bool isSevenZipPath(String pathOrName) =>
-      extensionOf(pathOrName) == '7z';
-
   /// 是否书籍文件后缀
   static bool isBookFilePath(String pathOrName) =>
       bookFileExtensions.contains(extensionOf(pathOrName));
