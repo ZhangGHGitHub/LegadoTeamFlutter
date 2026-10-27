@@ -307,4 +307,48 @@ void main() {
       expect(rssParseConsoleLogs(''), isEmpty);
     });
   });
+
+  group('rssStripPageScripts（批21c P0-2 桥模式脚本隔离）', () {
+    test('移除 script 标签（大小写/属性/自闭合）', () {
+      const html = '<p>a</p><SCRIPT type="text/javascript">x()</SCRIPT>'
+          '<script src="a.js"></script><script async/>'
+          '<p>b</p>';
+      final out = rssStripPageScripts(html);
+      expect(out, contains('<p>a</p>'));
+      expect(out, contains('<p>b</p>'));
+      expect(out.toLowerCase(), isNot(contains('<script')));
+      expect(out, isNot(contains('x()')));
+    });
+
+    test('移除 on* 内联事件（引号/无引号）', () {
+      const html = '<img src="x" onerror="alert(1)" onload=\'y()\'>'
+          '<div onclick=go()>d</div>';
+      final out = rssStripPageScripts(html);
+      expect(out, contains('<img src="x"'));
+      expect(out, isNot(contains('onerror')));
+      expect(out, isNot(contains('onload')));
+      expect(out, isNot(contains('onclick')));
+      expect(out, contains('<div>d</div>'));
+    });
+
+    test('移除 javascript: URL（href/action，带引号与裸值）', () {
+      const html = '<a href="javascript:alert(1)">a</a>'
+          '<a href=\'javascript:alert(2)\'>b</a>'
+          '<a href=javascript:alert(3)>c</a>'
+          '<form action="javascript:alert(4)"></form>';
+      final out = rssStripPageScripts(html);
+      expect(out, isNot(contains('javascript:')));
+      expect(out, contains('href="#"'));
+      expect(out, contains('action="#"'));
+    });
+
+    test('不触碰样式/正常链接/正文文本', () {
+      const html = '<style>a{color:red}</style>'
+          '<a href="https://ok.test/a">ok</a><p>javascript: 文本保留</p>';
+      final out = rssStripPageScripts(html);
+      expect(out, contains('<style>a{color:red}</style>'));
+      expect(out, contains('href="https://ok.test/a"'));
+      expect(out, contains('javascript: 文本保留'));
+    });
+  });
 }

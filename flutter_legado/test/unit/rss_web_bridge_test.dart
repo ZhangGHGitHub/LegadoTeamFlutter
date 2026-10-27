@@ -69,18 +69,23 @@ void main() {
   RssWebBridge newBridge({
     Duration timeout = const Duration(seconds: 30),
     Duration handshakeTimeout = const Duration(seconds: 10),
+    Duration? watchdog,
     List<String>? log,
+    RssWebBridgeJsRunner? runner,
   }) {
-    return RssWebBridge(
+    final bridge = RssWebBridge(
       sourceUrl: 'https://s.test/feed',
       api: api,
-      runJavaScript: (js) async => (log ?? runLog).add(js),
+      runJavaScript: runner ?? (js) async => (log ?? runLog).add(js),
       requestTimeout: timeout,
       handshakeTimeout: handshakeTimeout,
+      handshakeWatchdog: watchdog ?? const Duration(seconds: 4),
       onAction: actions.add,
       onLog: (message) => (log ?? runLog).add('LOG:$message'),
       random: Random(7),
     );
+    addTearDown(bridge.dispose);
+    return bridge;
   }
 
   /// 完成握手（返回 nonce）
@@ -165,9 +170,16 @@ void main() {
       expect(literal, contains(r'\u2029'));
     });
 
-    test('nonce 回填脚本', () {
+    test('nonce 回填脚本：交付后立即删除不可枚举回调', () {
       final script = rssBridgeNonceScript(callbackName: 'cb', nonce: 'n1');
       expect(script, contains('window["cb_nonce"]("n1")'));
+      expect(script, contains('delete window["cb_nonce"]'));
+    });
+
+    test('hello 重发脚本经回填回调上的非枚举入口', () {
+      final script = rssBridgeHelloScript(callbackName: 'cb');
+      expect(script, contains('window["cb"]'));
+      expect(script, contains('__lgHello'));
     });
 
     test('信封解析：actions 仅保留对象项', () {
@@ -281,6 +293,71 @@ void main() {
         runLog.any((js) => js.contains('nonce 校验失败')),
         isTrue,
       );
+    });
+
+    test('nonce 回填 runJavaScript 失败：状态回滚，可重试 hello', () async {
+      var fail = true;
+      final bridge = newBridge(runner: (js) async {
+        if (fail) {
+          fail = false;
+          throw Exception('runJavaScript boom');
+        }
+        runLog.add(js);
+      });
+      await bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+      expect(bridge.isHandshaken, isFalse, reason: '回填失败不得置位握手');
+      expect(bridge.nonce, isNull, reason: '回填失败必须回滚 nonce');
+
+      // 第二次 hello 必须被接受（失败可恢复）
+      await bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+      expect(bridge.isHandshaken, isTrue);
+      expect(bridge.nonce, isNotNull);
+    });
+
+    test('导航期间旧 hello 的异步回填结果被代数丢弃', () async {
+      final holder = <Completer<void>>[];
+      final bridge = newBridge(runner: (js) async {
+        final completer = Completer<void>();
+        holder.add(completer);
+        await completer.future;
+        runLog.add(js);
+      });
+      // 旧文档 hello：回填被挂起
+      final oldHello = bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+      await Future<void>.delayed(Duration.zero);
+      expect(holder, hasLength(1));
+
+      // 导航发生（代数自增），旧回填随后完成
+      bridge.beginNavigation();
+      holder.single.complete();
+      await oldHello;
+      expect(bridge.isHandshaken, isFalse, reason: '旧文档握手结果不得污染新文档');
+      expect(bridge.nonce, isNull);
+
+      // 新文档 hello 正常完成
+      final newHello = bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+      await Future<void>.delayed(Duration.zero);
+      holder.last.complete();
+      await newHello;
+      expect(bridge.isHandshaken, isTrue);
+    });
+
+    test('握手看门狗：超时重置并重发 hello，随后 hello 可接受', () async {
+      final bridge = newBridge(watchdog: const Duration(milliseconds: 30));
+      final nonceBefore = bridge.nonce;
+      bridge.beginNavigation();
+      expect(nonceBefore, isNull);
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      expect(
+        runLog.any((js) => js.contains('__lgHello')),
+        isTrue,
+        reason: '看门狗必须重发 hello',
+      );
+      expect(bridge.isHandshaken, isFalse);
+
+      await bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+      expect(bridge.isHandshaken, isTrue, reason: '看门狗重置后 hello 必须可接受');
     });
   });
 
@@ -485,9 +562,61 @@ void main() {
       expect(composed.trimRight(), endsWith('})();'));
     });
 
-    test('未准备时返回裸 preloadJs（1:1 旧行为）', () {
+    test('未尝试 prepare 时返回裸 preloadJs（1:1 旧行为）', () {
       final bridge = newBridge();
       expect(bridge.composeInjection('PRELOAD'), 'PRELOAD');
+    });
+
+    test('prepare 失败：注入引导式降级桩（不裸跑 preloadJs）', () async {
+      when(() => api.rssWebViewHostCall(any(), any(), any()))
+          .thenAnswer((_) async => _errorEnvelope('当前构建未启用 quickjs'));
+      final bridge = newBridge();
+      expect(await bridge.prepare(), isNull);
+      expect(bridge.isDegraded, isTrue);
+
+      final composed = bridge.composeInjection('PRELOAD_MARKER');
+      expect(composed, contains('PRELOAD_MARKER'));
+      expect(composed, contains('宿主桥不可用（prepare 失败）'));
+      expect(composed, contains('base64Encode'), reason: '同步面纯函数仍应可用');
+      expect(composed, isNot(contains('window.java')));
+      expect(composed.trimRight(), endsWith('})();'));
+    });
+
+    test('bootstrap：删除平台通道全局、桥对象/回调不可枚举、队列上限 20', () {
+      final script = rssBridgeBootstrapScript(
+        nativeChannelName: '__lgNativeTest',
+        bridgeObjectName: '__lgBridgeTest',
+        callbackName: '__lgCbTest',
+      );
+      for (final needle in [
+        'delete window["__lgNativeTest"]',
+        'Object.defineProperty(window, "__lgBridgeTest"',
+        'Object.defineProperty(window, "__lgCbTest_nonce"',
+        'enumerable: false',
+        'var __lgMaxQueue = 20',
+        '队列已满',
+        '宿主桥握手超时',
+        '__lgHello',
+        'delete window["__lgBridgeTest"]',
+      ]) {
+        expect(script, contains(needle), reason: 'bootstrap 缺少 $needle');
+      }
+      // 不得把桥对象直接挂到可枚举全局
+      expect(script, isNot(contains('window["__lgBridgeTest"] = {')));
+
+      if (!_nodeAvailable()) {
+        // 纯 Dart 向量：结构断言已在上方完成（Node 缺失时不静默 skip）
+        return;
+      }
+      final outputs = _runBootstrapInNode(script);
+      expect(outputs['nativeDeleted'], isTrue);
+      expect(outputs['bridgeEnumerable'], isFalse);
+      expect(outputs['nonceEnumerable'], isFalse);
+      expect(outputs['helloFirst'], isTrue);
+      expect(outputs['flushedQueued'], 20);
+      expect(outputs['overflowErrors'], 5);
+      expect(outputs['bridgeDeletedAfterTick'], isTrue);
+      expect(outputs['helloHook'], isTrue);
     });
 
     test('HTML 内联转义 </script（大小写不敏感）', () {
@@ -562,8 +691,27 @@ void main() {
     final nodeAvailable = _nodeAvailable();
 
     test(
-      '纯函数向量 + 同步网络报错（Node 实执行）',
+      '纯函数向量 + 同步网络报错（Node 实执行/纯 Dart 回退）',
       () async {
+        if (!nodeAvailable) {
+          // Node 缺失时不静默 skip：退化为纯 Dart 结构向量
+          for (final fn in [
+            '__lgBase64Encode',
+            '__lgBase64Decode',
+            '__lgMd5Hex',
+            '__lgHexEncode',
+            '__lgHexDecode',
+            '__lgEncodeUri',
+            '__lgSyncUnsupported',
+          ]) {
+            expect(kRssBridgeSyncShimBody, contains(fn), reason: '缺少 $fn');
+          }
+          expect(
+            kRssBridgeSyncShimBody,
+            contains('同步网络在当前平台不可用'),
+          );
+          return;
+        }
         final outputs = _runSyncShimInNode();
         final java = outputs['java'] as Map<String, dynamic>;
         final network = outputs['network'] as Map<String, dynamic>;
@@ -613,7 +761,6 @@ void main() {
           isTrue,
         );
       },
-      skip: nodeAvailable ? false : '未找到 node，跳过 JS 实执行（结构断言仍生效）',
     );
 
     test('同步面脚本不使用通道/RPC（纯函数摊平）', () {
@@ -657,6 +804,75 @@ bool _nodeAvailable() {
     return result.exitCode == 0;
   } catch (_) {
     return false;
+  }
+}
+
+/// 在 Node 中执行 bootstrap（模拟页面全局 + 平台通道），返回结构化断言值
+///
+/// 覆盖批21c P0-1/P0-3：平台通道全局删除、桥对象/回调不可枚举、队列上限、
+/// 非枚举 hello 重发入口、定时清理。
+Map<String, dynamic> _runBootstrapInNode(String bootstrap) {
+  final harness = r'''
+var window = {};
+var posted = [];
+var replies = [];
+window['__lgNativeTest'] = {
+  postMessage: function (m) { posted.push(JSON.parse(m)); }
+};
+window['__lgCbTest'] = function (id, ok, payload) {
+  replies.push({ id: id, ok: ok, payload: payload });
+};
+''' +
+      bootstrap +
+      r'''
+var bridgeDesc = Object.getOwnPropertyDescriptor(window, '__lgBridgeTest');
+var nonceDesc = Object.getOwnPropertyDescriptor(window, '__lgCbTest_nonce');
+var nativeDeleted = typeof window['__lgNativeTest'] === 'undefined';
+for (var i = 0; i < 25; i++) {
+  window['__lgBridgeTest'].request('q' + i, '[]', 'q' + i);
+}
+var overflowErrors = replies.length;
+window['__lgCbTest_nonce']('n1');
+var helloFirst = posted.length > 0 && posted[0].method === 'hello';
+var flushedQueued = posted.filter(function (m) { return m.method !== 'hello'; }).length;
+setTimeout(function () {
+  process.stdout.write(JSON.stringify({
+    nativeDeleted: nativeDeleted,
+    bridgeEnumerable: bridgeDesc ? bridgeDesc.enumerable : null,
+    nonceEnumerable: nonceDesc ? nonceDesc.enumerable : null,
+    helloFirst: helloFirst,
+    flushedQueued: flushedQueued,
+    overflowErrors: overflowErrors,
+    bridgeDeletedAfterTick: typeof window['__lgBridgeTest'] === 'undefined',
+    helloHook: typeof window['__lgCbTest'].__lgHello === 'function'
+  }));
+}, 10);
+''';
+
+  final dir = Directory.systemTemp.createTempSync('rss_bridge_bootstrap_');
+  try {
+    final file = File('${dir.path}${Platform.pathSeparator}bootstrap.js')
+      ..writeAsStringSync(harness);
+    final result = Process.runSync(
+      'node',
+      [file.path],
+      stdoutEncoding: utf8,
+      stderrEncoding: utf8,
+    );
+    expect(
+      result.exitCode,
+      0,
+      reason: 'Node 执行 bootstrap 失败：${result.stderr}',
+    );
+    final decoded = jsonDecode(result.stdout as String);
+    expect(decoded, isA<Map>());
+    return Map<String, dynamic>.from(decoded as Map);
+  } finally {
+    try {
+      dir.deleteSync(recursive: true);
+    } catch (_) {
+      // 临时目录清理失败不影响用例
+    }
   }
 }
 

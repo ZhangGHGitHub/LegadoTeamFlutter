@@ -49,7 +49,8 @@ void main() {
           return jsonEncode(<String, dynamic>{
             'ok': true,
             'value': <String, dynamic>{
-              'script': '$_rustHeadMarker\n',
+              // 合法未闭合 IIFE 头（与 Rust 桥头拼接口径一致）
+              'script': '(() => {\n  var __mockRustHead = 1; // $_rustHeadMarker\n',
               'snapshot': <String, dynamic>{
                 'sourceUrl': _sourceUrl,
                 'sourceName': '源A',
@@ -191,21 +192,21 @@ void main() {
     });
   });
 
-  testWidgets('preloadJs 为空：不注册通道、不 prepare、不注入桥', (tester) async {
+  testWidgets('preloadJs 为空：不注册通道、仍取快照（Cookie 预写/同步面）', (tester) async {
     await runWithWebView(() async {
       final source = RssSource(sourceUrl: _sourceUrl, sourceName: '源A');
       await pumpScreen(tester, source: source);
 
       final controller = FakeWebViewController.lastCreated!;
       expect(controller.javaScriptChannels, isEmpty);
-      verifyNever(
-        () => mockApi.rssWebViewHostCall(any(), '__prepare', any()),
-      );
+      // 批21c P2-4：快照生成与 preloadJs/JS 门控解耦，必须 prepare
+      verify(() => mockApi.rssWebViewHostCall(_sourceUrl, '__prepare', any()))
+          .called(1);
       expect(controller.loadedHtml ?? '', isNot(contains(_rustHeadMarker)));
     });
   });
 
-  testWidgets('enableJs=false：不注册通道、不 prepare、不执行注入', (tester) async {
+  testWidgets('enableJs=false：不注册通道、不执行注入，但仍取快照', (tester) async {
     await runWithWebView(() async {
       final source = RssSource(
         sourceUrl: _sourceUrl,
@@ -218,9 +219,9 @@ void main() {
 
       final controller = FakeWebViewController.lastCreated!;
       expect(controller.javaScriptChannels, isEmpty);
-      verifyNever(
-        () => mockApi.rssWebViewHostCall(any(), '__prepare', any()),
-      );
+      // 批21c P2-4：Cookie 预写依赖快照，JS 关闭也要 prepare
+      verify(() => mockApi.rssWebViewHostCall(_sourceUrl, '__prepare', any()))
+          .called(1);
       controller.emitPageStarted(_articleUrl);
       controller.emitPageFinished(_articleUrl);
       await tester.pump();
@@ -230,7 +231,7 @@ void main() {
     });
   });
 
-  testWidgets('prepare 失败：降级为无宿主绑定，正文仍加载并裸注入 preloadJs', (tester) async {
+  testWidgets('prepare 失败：注入引导式降级桩，正文仍加载', (tester) async {
     when(() => mockApi.rssWebViewHostCall(any(), '__prepare', any()))
         .thenAnswer((_) async => jsonEncode(<String, dynamic>{
               'ok': false,
@@ -250,8 +251,23 @@ void main() {
           reason: 'prepare 失败不得注册通道');
       final html = controller.loadedHtml ?? '';
       expect(html, contains('正文'), reason: '正文不得被桥失败阻断');
-      expect(html, contains(_preloadMarker), reason: '降级后保持 15f 裸注入');
+      expect(html, contains(_preloadMarker), reason: '降级后仍执行 preloadJs');
+      expect(html, contains('宿主桥不可用（prepare 失败）'),
+          reason: '必须注入引导式降级桩');
       expect(html, isNot(contains(_rustHeadMarker)));
+
+      // HTML 模式：首文档已内联，第二次页面开始（新文档）注入降级桩
+      controller.emitPageStarted(_articleUrl);
+      await tester.pump();
+      controller.emitPageStarted('https://s.test/second');
+      await tester.pump();
+      expect(
+        controller.javaScriptCalls.where(
+          (js) => js.contains('宿主桥不可用（prepare 失败）'),
+        ),
+        isNotEmpty,
+        reason: 'onPageStarted 降级注入必须走 composeInjection',
+      );
     });
   });
 
@@ -392,6 +408,92 @@ void main() {
           .firstWhere((js) => js.contains('INJECT_JS_MARKER'));
       expect(injectCall.trim(), 'INJECT_JS_MARKER',
           reason: 'injectJs 必须裸执行（1:1），不得包装桥脚本');
+    });
+  });
+
+  testWidgets('HTML 模式：首文档跳过重复注入，二次导航重新注入桥（P1-2）', (tester) async {
+    await runWithWebView(() async {
+      final source = RssSource(
+        sourceUrl: _sourceUrl,
+        sourceName: '源A',
+        preloadJs: _preloadMarker,
+      );
+      await pumpScreen(tester, source: source);
+      final controller = FakeWebViewController.lastCreated!;
+
+      // 首文档组合脚本已内联 → onPageStarted 不得重复执行 preloadJs
+      controller.emitPageStarted(_articleUrl);
+      await tester.pump();
+      expect(
+        controller.javaScriptCalls.where((js) => js.contains(_preloadMarker)),
+        isEmpty,
+        reason: '首文档已内联，不得重复执行',
+      );
+
+      // 点击链接后的新文档：onPageStarted 必须重新注入完整组合脚本
+      controller.emitPageStarted('https://s.test/second');
+      await tester.pump();
+      final calls = controller.javaScriptCalls
+          .where((js) => js.contains(_preloadMarker))
+          .toList();
+      expect(calls, hasLength(1), reason: '二次导航必须重新注入桥');
+      expect(calls.single, contains(_rustHeadMarker));
+      expect(calls.single, contains('__legado_rssNative_'));
+      expect(calls.single.trimRight(), endsWith('})();'));
+    });
+  });
+
+  testWidgets('桥模式：剥离页面脚本/内联事件/javascript: URL（P0-2）', (tester) async {
+    await runWithWebView(() async {
+      final source = RssSource(
+        sourceUrl: _sourceUrl,
+        sourceName: '源A',
+        preloadJs: _preloadMarker,
+      );
+      const dangerous = '<p>正文</p>'
+          '<script>alert("page-script-marker")</script>'
+          '<img src="x" onerror="alert(1)">'
+          '<a href="javascript:alert(2)">链接</a>';
+      await pumpScreen(tester, source: source, description: dangerous);
+
+      final html = FakeWebViewController.lastCreated!.loadedHtml ?? '';
+      expect(html, contains('正文'));
+      expect(html, isNot(contains('page-script-marker')),
+          reason: '页面 <script> 必须剥离');
+      expect(html, isNot(contains('onerror')), reason: 'on* 内联事件必须剥离');
+      expect(html, isNot(contains('javascript:')),
+          reason: 'javascript: URL 必须剥离');
+      // 应用自己的注入脚本保留
+      expect(html, contains(_preloadMarker));
+      expect(html, contains(_rustHeadMarker));
+    });
+  });
+
+  testWidgets('非桥模式：保留页面脚本（不剥离）', (tester) async {
+    await runWithWebView(() async {
+      final source = RssSource(sourceUrl: _sourceUrl, sourceName: '源A');
+      await pumpScreen(
+        tester,
+        source: source,
+        description: '<p>正文</p><script>window.KEEP_MARKER = 1;</script>',
+      );
+      final html = FakeWebViewController.lastCreated!.loadedHtml ?? '';
+      expect(html, contains('KEEP_MARKER'));
+    });
+  });
+
+  testWidgets('HTML 模式：无 preloadJs 也预写登录头 Cookie（P2-4）', (tester) async {
+    await runWithWebView(() async {
+      final source = RssSource(sourceUrl: _sourceUrl, sourceName: '源A');
+      await pumpScreen(tester, source: source, description: '<p>正文</p>');
+
+      final manager = FakeWebViewPlatform.cookieManager!;
+      expect(
+        manager.setCookieCalls.map((c) => '${c.name}=${c.value}'),
+        containsAll(<String>['sid=1', 'theme=dark']),
+        reason: 'Cookie 预写不得依赖 preloadJs/overrideJs',
+      );
+      expect(manager.setCookieCalls.first.domain, 's.test');
     });
   });
 
