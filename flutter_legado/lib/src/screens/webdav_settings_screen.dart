@@ -13,6 +13,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
 
 import '../constants/pref_keys.dart';
 import '../l10n/app_strings.dart';
+import '../models/backup_inspect_info.dart';
 import '../models/book.dart';
 import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/main_prefs_notifier.dart';
@@ -25,6 +26,7 @@ import '../services/crash_log_service.dart';
 import '../services/restore_ignore_prefs.dart';
 import '../services/settings_service.dart';
 import '../services/webdav_server_service.dart';
+import '../utils/error_message.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/ios_widgets.dart';
 import '../widgets/help/help_assets.dart';
@@ -35,6 +37,15 @@ import '../widgets/restore_ignore_dialog.dart';
 ///
 /// — full-stack-engineer + UI ｜ 2026-09-10
 enum _WebDavTestStatus { notTested, testing, success, failed }
+
+/// 备份密码错误码前缀（契约 §2.11 批17a）
+///
+/// 后端以 `LegadoError::Internal` 返回，Display 形如
+/// `Internal error: BACKUP_PASSWORD_INVALID: ...`，Dart 侧必须按「包含」
+/// 前缀识别，不能按字符串起始位置判断。
+const String _kBackupPasswordRequired = 'BACKUP_PASSWORD_REQUIRED';
+const String _kBackupPasswordInvalid = 'BACKUP_PASSWORD_INVALID';
+const String _kBackupEncryptedContentCorrupt = 'BACKUP_ENCRYPTED_CONTENT_CORRUPT';
 
 /// 备份与恢复（对齐 BackupConfigFragment + pref_config_backup.xml）
 ///
@@ -279,6 +290,15 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     );
   }
 
+  /// 本地恢复（长按「恢复」）
+  ///
+  /// 流程：选文件 → zip 忽略项提示 → 覆盖确认 → （zip）只读探测是否需要
+  /// 备份密码 → 需要则密码框 → 恢复。
+  ///
+  /// [批17b] 原版加密 zip 备份：`backupInspect` 判定 `passwordRequired`
+  /// 后弹「输入备份密码」；密码只经 FFI 传给 Rust，不写日志/不落盘/
+  /// 不进 prefs，也不自动复用本机 `localPassword`。取消密码框即中止，
+  /// 不调用 restore（零写入）。JSON 备份不探测、不弹框，走原流程。
   Future<void> _doRestoreFromLocal() async {
     // [批9] 本地恢复支持两种容器：我方单文件 JSON 备份与原版多文件 zip 备份
     // （Rust 侧按文件魔数 PK\x03\x04 分流，FFI 签名不变）。原版 zip 内的
@@ -291,10 +311,11 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     final backupPath = result?.files.single.path;
     if (backupPath == null) return;
     if (!mounted) return;
+    final isZip = backupPath.toLowerCase().endsWith('.zip');
     // [批9 回修 P2-9] zip 备份由 Rust 按原版多文件语义整包恢复，不读取
     // 恢复忽略项；用户已配置忽略项时必须明示「将按备份内容恢复」，
     // 避免忽略项对 zip 静默失效（纯提示，不改变恢复行为）。
-    if (backupPath.toLowerCase().endsWith('.zip')) {
+    if (isZip) {
       final ignore = await _settings.getRestoreIgnoreConfig();
       if (!mounted) return;
       if (ignore.values.any((enabled) => enabled)) {
@@ -309,34 +330,173 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     // 取消选择时不弹确认框。
     if (!await _confirmLocalRestore()) return;
     if (!mounted) return;
-    await _runWithProgress('恢复中…', () async {
-      final api = ref.read(bookApiProvider);
-      var pathToRestore = backupPath;
-      // 批8 审查回修 P1-1：先判定备份账号来源——v1/v2 备份的 WebDAV 账号
-      // 只在 appPrefs 里，恢复后须回填 DB（原版 prefs 生效语义）；v3 含
-      // servers 段以 DB 为准；无法判定/备份未带账号则不回填。
-      final accountSource =
-          await WebDavServerService.backupAccountSource(backupPath);
-      final ignore = await _settings.getRestoreIgnoreConfig();
-      if (ignore['localBook'] == true &&
-          backupPath.toLowerCase().endsWith('.json')) {
-        pathToRestore = await _backupPathSkippingLocalBooks(backupPath);
-      }
 
-      await RestoreIgnorePrefs.applyAppPrefsFromBackupFile(backupPath, ignore);
-      await api.restore(pathToRestore);
-      // 偏好已由上面写回本地；v1/v2 备份把恢复所得账号显式覆盖到 DB
-      // （v3 交由恢复器写入的 servers 行，不回读偏好）
-      await ref
-          .read(syncNotifierProvider.notifier)
-          .applyLegacyWebDavPrefsAfterRestore(source: accountSource);
-      if (!mounted) return;
-      await _reloadPrefsAfterRestore();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(AppStrings.restoreSuccess)),
+    // [批17b] 仅 .zip 探测密码；探测只读，不写库、不落盘
+    BackupInspectInfo? inspect;
+    if (isZip) {
+      final api = ref.read(bookApiProvider);
+      final inspectError = await _runWithProgress(
+        '检查备份…',
+        () async {
+          inspect = await api.backupInspect(backupPath);
+        },
+        captureError: true,
       );
-    });
+      if (!mounted) return;
+      if (inspectError != null) {
+        _showSnack('检查备份失败：${errorMessage(inspectError)}');
+        return;
+      }
+      if (inspect?.passwordRequired ?? false) {
+        await _restoreWithPasswordLoop(backupPath, inspect!);
+        return;
+      }
+    }
+
+    final error = await _runWithProgress(
+      '恢复中…',
+      () => _performLocalRestore(backupPath, password: null),
+      captureError: true,
+    );
+    if (!mounted) return;
+    if (error == null) {
+      _showSnack(AppStrings.restoreSuccess);
+      return;
+    }
+    // 防御：探测称无需密码但后端仍要求（如探测与恢复之间文件被替换）
+    if (isZip && _hasBackupErrorPrefix(error, _kBackupPasswordRequired)) {
+      await _restoreWithPasswordLoop(
+        backupPath,
+        inspect ??
+            const BackupInspectInfo(
+              format: BackupFormat.zip,
+              passwordRequired: true,
+              passwordProtectedFiles: [],
+            ),
+      );
+      return;
+    }
+    _showRestoreFailure(error);
+  }
+
+  /// 执行本地恢复全链（偏好回填 + 业务表恢复 + 页面刷新）
+  ///
+  /// [password] 仅对原版 zip 备份生效；JSON 备份传 null。
+  Future<void> _performLocalRestore(
+    String backupPath, {
+    String? password,
+  }) async {
+    final api = ref.read(bookApiProvider);
+    var pathToRestore = backupPath;
+    // 批8 审查回修 P1-1：先判定备份账号来源——v1/v2 备份的 WebDAV 账号
+    // 只在 appPrefs 里，恢复后须回填 DB（原版 prefs 生效语义）；v3 含
+    // servers 段以 DB 为准；无法判定/备份未带账号则不回填。
+    final accountSource =
+        await WebDavServerService.backupAccountSource(backupPath);
+    final ignore = await _settings.getRestoreIgnoreConfig();
+    if (ignore['localBook'] == true &&
+        backupPath.toLowerCase().endsWith('.json')) {
+      pathToRestore = await _backupPathSkippingLocalBooks(backupPath);
+    }
+
+    await RestoreIgnorePrefs.applyAppPrefsFromBackupFile(backupPath, ignore);
+    await api.restore(pathToRestore, password: password);
+    // 偏好已由上面写回本地；v1/v2 备份把恢复所得账号显式覆盖到 DB
+    // （v3 交由恢复器写入的 servers 行，不回读偏好）
+    await ref
+        .read(syncNotifierProvider.notifier)
+        .applyLegacyWebDavPrefsAfterRestore(source: accountSource);
+    if (!mounted) return;
+    await _reloadPrefsAfterRestore();
+  }
+
+  /// 备份密码重试循环（批17b）
+  ///
+  /// 每轮：弹密码框 → 关闭后显示进度框执行恢复 → 进度框关闭后判定错误：
+  /// - `BACKUP_PASSWORD_INVALID` → 重开密码框并内联提示「密码错误或备份
+  ///   已损坏，请重试」，保留上次输入便于修改；
+  /// - `BACKUP_PASSWORD_REQUIRED`（防御，如探测后文件被替换）→ 重开密码框；
+  /// - `BACKUP_ENCRYPTED_CONTENT_CORRUPT` → 提示备份文件损坏并结束；
+  /// - 其他 → 统一错误提示。
+  ///
+  /// 用户取消密码框即中止：不调用 restore（零写入）。密码只存在于本次
+  /// 调用栈与对话框 controller 中，对话框销毁即清空。
+  Future<void> _restoreWithPasswordLoop(
+    String backupPath,
+    BackupInspectInfo inspect,
+  ) async {
+    var lastPassword = '';
+    String? inlineError;
+    while (mounted) {
+      final password = await _showBackupPasswordDialog(
+        inspect: inspect,
+        initialPassword: lastPassword,
+        errorText: inlineError,
+      );
+      // 取消：中止恢复（此前未发生任何写入）
+      if (password == null) return;
+      lastPassword = password;
+      inlineError = null;
+
+      final error = await _runWithProgress(
+        '恢复中…',
+        () => _performLocalRestore(backupPath, password: password),
+        captureError: true,
+      );
+      if (error == null) {
+        _showSnack(AppStrings.restoreSuccess);
+        return;
+      }
+      if (_hasBackupErrorPrefix(error, _kBackupPasswordInvalid)) {
+        // 密码错误：进度框已关闭，重开密码框并保留输入
+        inlineError = '密码错误或备份已损坏，请重试';
+        continue;
+      }
+      if (_hasBackupErrorPrefix(error, _kBackupPasswordRequired)) {
+        continue;
+      }
+      _showRestoreFailure(error);
+      return;
+    }
+  }
+
+  Future<String?> _showBackupPasswordDialog({
+    required BackupInspectInfo inspect,
+    String initialPassword = '',
+    String? errorText,
+  }) {
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => _BackupPasswordDialog(
+        inspect: inspect,
+        initialPassword: initialPassword,
+        errorText: errorText,
+      ),
+    );
+  }
+
+  /// 是否命中备份密码错误码前缀
+  ///
+  /// 后端以 `LegadoError::Internal` 返回，Display 形如
+  /// `Internal error: BACKUP_PASSWORD_INVALID: ...`，按「包含」识别。
+  bool _hasBackupErrorPrefix(Object error, String prefix) =>
+      rawErrorMessage(error).contains(prefix);
+
+  /// 恢复失败提示（加密内容损坏单独文案，其余走统一错误映射）
+  void _showRestoreFailure(Object error) {
+    if (_hasBackupErrorPrefix(error, _kBackupEncryptedContentCorrupt)) {
+      _showSnack('备份文件已损坏，无法恢复加密内容');
+      return;
+    }
+    _showSnack('恢复失败：${errorMessage(error)}');
+  }
+
+  void _showSnack(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   Future<void> _showRestoreIgnore() async {
@@ -434,11 +594,19 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
     return out.path;
   }
 
-  Future<void> _runWithProgress(
+  /// 在模态进度框内执行 [task]
+  ///
+  /// [captureError] 为 true 时不弹通用错误提示，而是把异常返回给调用方
+  /// （用于「进度框关闭后再进入密码重试循环」的本地恢复流程）。为 false
+  /// 时沿用统一错误文案提示（[errorMessage]）。
+  ///
+  /// 返回捕获的异常；仅 captureError=true 且 task 抛出时非 null。
+  Future<Object?> _runWithProgress(
     String label,
-    Future<void> Function() task,
-  ) async {
-    if (_busy) return;
+    Future<void> Function() task, {
+    bool captureError = false,
+  }) async {
+    if (_busy) return null;
     setState(() => _busy = true);
     showDialog<void>(
       context: context,
@@ -458,12 +626,15 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         ),
       ),
     );
+    Object? captured;
     try {
       await task();
     } catch (e) {
-      if (mounted) {
+      if (captureError) {
+        captured = e;
+      } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('$e')),
+          SnackBar(content: Text(errorMessage(e))),
         );
       }
     } finally {
@@ -472,6 +643,7 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         setState(() => _busy = false);
       }
     }
+    return captured;
   }
 
   // ===== 测试配置（差异清单 C7：参考版有「测试配置」行，我方新增） =====
@@ -770,6 +942,121 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// 输入备份密码对话框（批17b）
+///
+/// - 列出受保护文件的中文标签（`servers.json` → 服务器配置、
+///   `cookies.json` → 登录信息、`runtimeSourceCache.json` → 书源运行变量）；
+/// - 密码默认隐藏，可切换显示；关闭自动更正/联想输入；
+/// - 首次不预填（不复用本机 `localPassword`）；重试时回填上次输入便于修改；
+/// - controller 随对话框销毁并清空，密码不落盘、不写日志、不进 prefs。
+class _BackupPasswordDialog extends StatefulWidget {
+  const _BackupPasswordDialog({
+    required this.inspect,
+    this.initialPassword = '',
+    this.errorText,
+  });
+
+  final BackupInspectInfo inspect;
+
+  /// 上次尝试输入的密码（仅重试回填；首次为空串）
+  final String initialPassword;
+
+  /// 内联错误提示（密码错误重试时显示）
+  final String? errorText;
+
+  @override
+  State<_BackupPasswordDialog> createState() => _BackupPasswordDialogState();
+}
+
+class _BackupPasswordDialogState extends State<_BackupPasswordDialog> {
+  late final TextEditingController _controller;
+  bool _obscure = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialPassword);
+  }
+
+  @override
+  void dispose() {
+    // 密码不保留：对话框销毁即清空并释放
+    _controller.clear();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  /// 受保护文件 → 中文标签
+  static String _labelFor(String file) => switch (file) {
+        'servers.json' => '服务器配置',
+        'cookies.json' => '登录信息',
+        'runtimeSourceCache.json' => '书源运行变量',
+        _ => file,
+      };
+
+  void _submit() => Navigator.pop(context, _controller.text);
+
+  @override
+  Widget build(BuildContext context) {
+    final files = widget.inspect.passwordProtectedFiles;
+    return AlertDialog(
+      // [LAYOUT_PLAN P3] Dialog 容器 surfaceContainer 圆角 28dp（全局标尺）
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainer,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(28),
+      ),
+      title: const Text('输入备份密码'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('该备份包含已加密的内容，请输入备份密码：'),
+          if (files.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ...files.map(
+              (file) => Text('· ${_labelFor(file)}（$file）'),
+            ),
+          ],
+          const SizedBox(height: 12),
+          TextField(
+            controller: _controller,
+            autofocus: true,
+            obscureText: _obscure,
+            autocorrect: false,
+            enableSuggestions: false,
+            keyboardType: TextInputType.visiblePassword,
+            textInputAction: TextInputAction.done,
+            decoration: InputDecoration(
+              labelText: '备份密码',
+              errorText: widget.errorText,
+              suffixIcon: IconButton(
+                tooltip: _obscure ? '显示密码' : '隐藏密码',
+                icon: Icon(
+                  _obscure
+                      ? Icons.visibility_off_rounded
+                      : Icons.visibility_rounded,
+                ),
+                onPressed: () => setState(() => _obscure = !_obscure),
+              ),
+            ),
+            onSubmitted: (_) => _submit(),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: _submit,
+          child: const Text('确定'),
+        ),
+      ],
     );
   }
 }

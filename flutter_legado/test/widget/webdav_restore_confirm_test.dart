@@ -84,7 +84,18 @@ void main() {
     mockApi = FakeServersRustApi();
     when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
     when(() => mockApi.getBookSources()).thenAnswer((_) async => <BookSource>[]);
-    when(() => mockApi.restore(any())).thenAnswer((_) async {});
+    // 批17b：恢复调用显式携带 password（无密码为 null）
+    when(
+      () => mockApi.restore(any(), password: any(named: 'password')),
+    ).thenAnswer((_) async {});
+    // 批17b：zip 恢复前先探测密码；默认无需密码
+    when(() => mockApi.backupInspect(any())).thenAnswer(
+      (_) async => const BackupInspectInfo(
+        format: BackupFormat.zip,
+        passwordRequired: false,
+        passwordProtectedFiles: [],
+      ),
+    );
   });
 
   /// 配置 WebDAV（isConfigured 要求地址/账号/密码均非空）
@@ -185,7 +196,9 @@ void main() {
     expect(find.text('确认同步吗？'), findsNothing);
     expect(find.text('确认恢复吗？'), findsNothing);
     verifyNever(() => mockApi.webdavFullSync(any(), any(), any()));
-    verifyNever(() => mockApi.restore(any()));
+    verifyNever(
+      () => mockApi.restore(any(), password: any(named: 'password')),
+    );
   });
 
   testWidgets('本地恢复取消选择文件：不弹确认、不调用 restore', (tester) async {
@@ -197,7 +210,9 @@ void main() {
 
     expect(picker.pickCalls, 1);
     expect(find.text('确认恢复吗？'), findsNothing);
-    verifyNever(() => mockApi.restore(any()));
+    verifyNever(
+      () => mockApi.restore(any(), password: any(named: 'password')),
+    );
     expect(find.text('恢复中…'), findsNothing);
   });
 
@@ -221,7 +236,9 @@ void main() {
     await tester.tap(dialogButton('取消'));
     await tester.pumpAndSettle();
 
-    verifyNever(() => mockApi.restore(any()));
+    verifyNever(
+      () => mockApi.restore(any(), password: any(named: 'password')),
+    );
     expect(find.text('恢复中…'), findsNothing);
   });
 
@@ -250,7 +267,7 @@ void main() {
       // 纯提示：确认后照常执行恢复，且恢复路径未被忽略项改写
       await tester.tap(dialogButton('恢复'));
       await tester.pumpAndSettle();
-      verify(() => mockApi.restore(backupPath)).called(1);
+      verify(() => mockApi.restore(backupPath, password: null)).called(1);
     },
   );
 
@@ -276,6 +293,6 @@ void main() {
     expect(picker.pickCalls, 1);
     expect(picker.lastType, FileType.custom);
     expect(picker.lastAllowedExtensions, ['json', 'zip']);
-    verify(() => mockApi.restore(backupPath)).called(1);
+    verify(() => mockApi.restore(backupPath, password: null)).called(1);
   });
 }
