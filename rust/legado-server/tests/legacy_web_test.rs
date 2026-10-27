@@ -3663,7 +3663,7 @@ async fn test_b6_save_replace_rule_semantics() {
     .await;
     assert_eq!(rd["errorMsg"], "格式不对");
 
-    // 成功路径保留原版默认信封（未调用 setData）
+    // 成功路径返回显式成功信封（批23：原版未 setData 导致前端误报未知错误）
     let first =
         json!({"name": "规则一", "pattern": "a", "replacement": "b", "isRegex": false}).to_string();
     let (_, _, rd) = post_write_json(
@@ -3674,9 +3674,9 @@ async fn test_b6_save_replace_rule_semantics() {
         first.as_bytes(),
     )
     .await;
-    assert_eq!(rd["isSuccess"], false, "原版默认信封 rd={rd}");
-    assert_eq!(rd["errorMsg"], "未知错误,请联系开发者!");
-    assert!(rd["data"].is_null());
+    assert_eq!(rd["isSuccess"], true, "保存成功应返回显式成功信封 rd={rd}");
+    assert_eq!(rd["errorMsg"], "", "成功不得携带错误文案 rd={rd}");
+    assert_eq!(rd["data"], "", "成功 data 为空串（对齐 saveBookSource）");
 
     let second =
         json!({"name": "规则二", "pattern": "c", "replacement": "d", "isRegex": true}).to_string();
@@ -3799,8 +3799,9 @@ async fn test_b6_delete_replace_rule() {
         body.as_bytes(),
     )
     .await;
-    assert_eq!(rd["isSuccess"], false, "原版默认信封 rd={rd}");
-    assert_eq!(rd["errorMsg"], "未知错误,请联系开发者!");
+    assert_eq!(rd["isSuccess"], true, "删除成功应返回显式成功信封 rd={rd}");
+    assert_eq!(rd["errorMsg"], "", "成功不得携带错误文案 rd={rd}");
+    assert_eq!(rd["data"], "", "成功 data 为空串（对齐其它写端点）");
 
     let count = {
         let db = state.db.lock().await;
@@ -3819,7 +3820,11 @@ async fn test_b6_delete_replace_rule() {
         body.as_bytes(),
     )
     .await;
-    assert_eq!(rd["errorMsg"], "未知错误,请联系开发者!", "rd={rd}");
+    assert_eq!(
+        rd["isSuccess"], true,
+        "不存在 id 亦成功且返回成功信封 rd={rd}"
+    );
+    assert_eq!(rd["errorMsg"], "", "rd={rd}");
 }
 
 #[tokio::test]
@@ -3906,7 +3911,8 @@ async fn test_b6_test_replace_rule_semantics() {
     assert_eq!(rd["isSuccess"], true, "rd={rd}");
     assert_eq!(rd["data"], "bb");
 
-    // 空 pattern：原版 setErrorMsg 后继续执行，被 setData 覆盖为成功
+    // 空 pattern：批23 用户裁决改为只返回错误、不执行替换（原版错误被
+    // setData 覆盖，前端看不到「替换规则不能为空」）
     let body = json!({
         "rule": {"pattern": "", "replacement": "X", "isRegex": false},
         "text": "ab"
@@ -3920,9 +3926,12 @@ async fn test_b6_test_replace_rule_semantics() {
         body.as_bytes(),
     )
     .await;
-    assert_eq!(rd["isSuccess"], true, "rd={rd}");
-    assert_eq!(rd["data"], "XaXbX");
-    assert_eq!(rd["errorMsg"], "", "setData 覆盖空 pattern 的 errorMsg");
+    assert_eq!(rd["isSuccess"], false, "空 pattern 应为错误 rd={rd}");
+    assert_eq!(rd["errorMsg"], "替换规则不能为空", "rd={rd}");
+    assert!(
+        rd["data"].is_null(),
+        "错误时不得写结果区（原版被 setData 覆盖）: rd={rd}"
+    );
 
     // 非法正则：错误文本作为成功数据返回（原版 catch → stackTraceStr）
     let body = json!({
@@ -4296,8 +4305,9 @@ async fn test_b6_save_replace_rule_upstream_order_key() {
         body.as_bytes(),
     )
     .await;
-    // 原版成功路径未 setData，保持默认信封
-    assert_eq!(rd["errorMsg"], "未知错误,请联系开发者!", "rd={rd}");
+    // 批23：成功路径返回显式成功信封
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["errorMsg"], "", "rd={rd}");
 
     let rules = {
         let db = state.db.lock().await;
@@ -4325,7 +4335,8 @@ async fn test_b6_save_replace_rule_upstream_order_key() {
         body.as_bytes(),
     )
     .await;
-    assert_eq!(rd["errorMsg"], "未知错误,请联系开发者!", "rd={rd}");
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+    assert_eq!(rd["errorMsg"], "", "rd={rd}");
     let rules = {
         let db = state.db.lock().await;
         legado_db::repository::replace_rule_repository::ReplaceRuleRepository::new(db.connection())

@@ -57,9 +57,9 @@
 //! | POST `/saveRssSource` | `RssSourceController.saveSource`（:24-38） | **令牌保护** |
 //! | POST `/saveRssSources` | `RssSourceController.saveSources`（:40-55） | **令牌保护**；单事务批量 |
 //! | POST `/deleteRssSources` | `RssSourceController.deleteSources`（:68-76） | **令牌保护**；删源 + 文章 + 缓存变量 |
-//! | POST `/saveReplaceRule` | `ReplaceRuleController.saveRule`（:23-45） | **令牌保护**；sortOrder 缺省 → max+1；成功保留原版默认错误信封（登记） |
-//! | POST `/deleteReplaceRule` | `ReplaceRuleController.delete`（:48-59） | **令牌保护**；同上 |
-//! | POST `/testReplaceRule` | `ReplaceRuleController.testRule`（:68-107） | **令牌保护**；不落库；复用 content_processor 单实现 |
+//! | POST `/saveReplaceRule` | `ReplaceRuleController.saveRule`（:23-45） | **令牌保护**；sortOrder 缺省 → max+1；成功返回显式成功信封（批23 用户裁决，原版未 setData） |
+//! | POST `/deleteReplaceRule` | `ReplaceRuleController.delete`（:48-59） | **令牌保护**；成功同上 |
+//! | POST `/testReplaceRule` | `ReplaceRuleController.testRule`（:68-107） | **令牌保护**；不落库；复用 content_processor 单实现；空 pattern 只返回错误（批23） |
 //!
 //! B10 批（2026-10-26，ACTIVE_PLAN「/refreshToc 独立入口 + HTTP 采集接线」）：
 //!

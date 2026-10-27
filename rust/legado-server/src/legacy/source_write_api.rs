@@ -56,8 +56,11 @@
 //!    执行，非 quickjs 构建返回错误文本（原版恒可执行）；
 //! 6. `saveReplaceRule` / `deleteReplaceRule` 成功路径原版**未调用
 //!    `setData`**，返回 `ReturnData` 默认值（`isSuccess=false` +
-//!    「未知错误,请联系开发者!」）；本实现按 1:1 行为保留（见
-//!    [`upstream_default_envelope`]），不擅自修正。
+//!    「未知错误,请联系开发者!」）——网页端因此把成功显示为未知错误。
+//!    批23 按用户裁决**不再 1:1 保留**：成功返回显式信封
+//!    `isSuccess=true` / `errorMsg=""` / `data=""`；`testReplaceRule`
+//!    空 `pattern` 亦改为只返回「替换规则不能为空」错误、不写结果区
+//!    （原版 `setErrorMsg` 后被 `setData` 覆盖）。
 //! 7. `ReplaceRule` 新增行由 SQLite rowid 分配（`ReplaceRuleRepository::insert`
 //!    单实现不写 id）；原版 Room REPLACE 使用请求携带的 id。编辑既有行
 //!    （id 命中）走 `update`，语义与 REPLACE 等价。
@@ -84,9 +87,8 @@
 //! - **P2-6** 单条写库失败（如 SQLITE 约束）本实现返回 HTTP 200 +
 //!   `errorMsg`，原版未捕获异常 → HTTP 500（批量面已按防复发「批量原子性」
 //!   统一为 200 + errorMsg；单条面沿用同一信封以便 vue 展示）；
-//! - **P2-7** 空 `pattern` 分支按原版 `setErrorMsg` 后继续执行，但
-//!   `replacement` 以 `@js:` 开头时本实现按字面量插入、不执行 JS（原版
-//!   `RegexExtensions.replace` 在空 pattern 下仍会走 `@js:` 分支）；
+//! - **P2-7（批23 已修复）** 空 `pattern` 原按原版 `setErrorMsg` 后继续
+//!   执行并被 `setData` 覆盖；现改为直接返回错误、不执行替换（用户裁决）；
 //! - **P2-8** 正则/字面量方言差异：Rust `regex` 不支持反向引用、后行断言、
 //!   占有量词等 Java 特性；`$n` 组引用语义与 Java 基本一致但 `$0`/命名组
 //!   写法不同。命中差异时原版正常替换、本实现返回错误文本（预览可见）；
@@ -198,18 +200,12 @@ pub async fn source_write_token_guard(
 /// clamp 到 5s（登记为安全增强，不改变正常规则的可见结果）。
 pub const TEST_REPLACE_RULE_MAX_TIMEOUT_MS: i64 = 5_000;
 
-/// 原版 `ReturnData` 构造默认值（`isSuccess=false` /
-/// `errorMsg="未知错误,请联系开发者!"` / `data=null`）
+/// 测试替换规则端点「替换规则不能为空」错误文案
 ///
-/// 用于 `saveReplaceRule` / `deleteReplaceRule` 成功路径：原版控制器
-/// 不调用 `setData`，信封保持默认值（见模块文档登记差异 6）。
-fn upstream_default_envelope() -> ReturnData {
-    ReturnData {
-        is_success: false,
-        error_msg: "未知错误,请联系开发者!".to_string(),
-        data: Value::Null,
-    }
-}
+/// 原版 `ReplaceRuleController.testRule` 先 `setErrorMsg` 但不返回，随后
+/// `setData` 把错误覆盖成成功；批23 按用户裁决改为**错误时只返回错误**，
+/// 结果区不写入（见 [`test_replace_rule`]）。
+const EMPTY_REPLACE_PATTERN_MESSAGE: &str = "替换规则不能为空";
 
 /// 复刻 NanoHTTPD `parseBody` 的 `postData` 语义：UTF-8 解码 + `trim()`，
 /// 空串不写入 `files`（控制器收到 `null`）。
@@ -869,7 +865,10 @@ fn parse_replace_rule(text: &str) -> Option<(ReplaceRule, bool)> {
 /// update（等价 Room REPLACE），否则插入新行。
 ///
 /// **返回值形态**：原版成功路径未调用 `setData`，信封保持构造默认
-/// （见 [`upstream_default_envelope`]）。
+/// （`isSuccess=false` +「未知错误,请联系开发者!」），Web 页因此把成功
+/// 显示为未知错误。批23 按用户裁决改为**显式成功信封**
+/// （`isSuccess=true` / `errorMsg=""` / `data=""`，与
+/// `saveBookSource` 等写端点成功形态一致）。
 pub async fn save_replace_rule(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -901,7 +900,8 @@ pub async fn save_replace_rule(
                             repo.insert(&rule).map(|_| ())
                         };
                         match written {
-                            Ok(()) => upstream_default_envelope(),
+                            // 批23：显式成功信封（原版未 setData 导致前端误报）
+                            Ok(()) => ReturnData::success(Value::String(String::new())),
                             Err(e) => ReturnData::error(e.to_string()),
                         }
                     }
@@ -915,7 +915,8 @@ pub async fn save_replace_rule(
 /// POST `/deleteReplaceRule`（ReplaceRuleController.delete，:48-59）
 ///
 /// 语义：缺参 →「数据不能为空」；坏 JSON →「格式不对」；按 id 删除
-/// （不存在亦成功）。成功路径同样保持原版默认信封。
+/// （不存在亦成功）。成功路径按批23 用户裁决返回显式成功信封
+/// （原版未 `setData`，见 [`save_replace_rule`] 说明）。
 pub async fn delete_replace_rule(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
@@ -933,7 +934,7 @@ pub async fn delete_replace_rule(
             Some((rule, _)) => {
                 let db = state.db.lock().await;
                 match ReplaceRuleRepository::new(db.connection()).delete(rule.id) {
-                    Ok(()) => upstream_default_envelope(),
+                    Ok(()) => ReturnData::success(Value::String(String::new())),
                     Err(e) => ReturnData::error(e.to_string()),
                 }
             }
@@ -949,8 +950,9 @@ pub async fn delete_replace_rule(
 /// - 缺参 →「数据不能为空」；坏 JSON / `rule` 缺失或类型不符 →
 ///   「格式不对」；
 /// - `pattern` 为空时原版先 `setErrorMsg("替换规则不能为空")` 但**不返回**，
-///   随后 `setData` 覆盖为成功——照抄该流程（空 pattern 按
-///   `String.replace("", ...)` 在每个字符边界插入替换内容）；
+///   随后 `setData` 覆盖为成功，错误提示被结果区冲掉；批23 按用户裁决
+///   改为**直接返回错误**（`isSuccess=false`，`data=null`），不执行替换、
+///   不写结果区；
 /// - 正则/字面量替换复用
 ///   [`legado_core::content_processor::preview_single_rule`]（单实现：
 ///   Java 方言适配 + 超时保护 + `@js:` 执行）；规则级错误按原版
@@ -984,6 +986,15 @@ pub async fn test_replace_rule(
     let Some(rule) = rule else {
         return to_response(&ReturnData::error("格式不对"), uri, origin.as_deref());
     };
+    // 批23：空 pattern 只返回错误，不执行替换、不写结果区（原版被
+    // setData 覆盖，前端错误提示不可见）
+    if rule.pattern.is_empty() {
+        return to_response(
+            &ReturnData::error(EMPTY_REPLACE_PATTERN_MESSAGE),
+            uri,
+            origin.as_deref(),
+        );
+    }
     // 原版 `map["text"] as String`：缺失/非字符串 → ClassCastException /
     // NullPointerException → HttpServer 外层 catch → 500
     let Some(Value::String(text)) = map.get("text") else {
@@ -1043,22 +1054,9 @@ fn clamp_test_replace_rule_timeout(rule: &mut ReplaceRule) {
     rule.timeout_millisecond = valid.min(TEST_REPLACE_RULE_MAX_TIMEOUT_MS);
 }
 
-/// 对给定文本应用单条替换规则（空 pattern 分支对齐原版
-/// `setErrorMsg` 后继续执行并被 `setData` 覆盖的行为）
+/// 对给定文本应用单条替换规则（空 pattern 已在 handler 前置拦截，
+/// 不会进入本函数）
 fn apply_test_replace_rule(text: &str, rule: &ReplaceRule) -> String {
-    if rule.pattern.is_empty() {
-        // 原版 `String.replace("", replacement)` / `"".toRegex()`：在每个
-        // 字符边界插入替换内容
-        if rule.is_regex {
-            return match regex::Regex::new("") {
-                Ok(compiled) => compiled
-                    .replace_all(text, rule.replacement.as_str())
-                    .into_owned(),
-                Err(_) => text.to_string(),
-            };
-        }
-        return text.replace("", &rule.replacement);
-    }
     let entry = ReplaceRuleEntry::from_replace_rule(rule);
     match preview_single_rule(text, &entry, &test_rule_js_executor()) {
         Ok(output) => output,
@@ -1170,26 +1168,6 @@ mod tests {
             validate_js_source_headers(&headers),
             Some("JS源脚本不能超过 1 MiB")
         );
-    }
-
-    /// 空 pattern 的替换与原版 `String.replace("", ...)` 一致（逐字符边界插入）
-    #[test]
-    fn test_apply_test_replace_rule_empty_pattern() {
-        let rule = ReplaceRule {
-            pattern: String::new(),
-            replacement: "X".to_string(),
-            is_regex: false,
-            ..ReplaceRule::default()
-        };
-        assert_eq!(apply_test_replace_rule("ab", &rule), "XaXbX");
-
-        let regex_rule = ReplaceRule {
-            pattern: String::new(),
-            replacement: "X".to_string(),
-            is_regex: true,
-            ..ReplaceRule::default()
-        };
-        assert_eq!(apply_test_replace_rule("ab", &regex_rule), "XaXbX");
     }
 
     /// 字面量/正则替换（不依赖 JS 引擎）
