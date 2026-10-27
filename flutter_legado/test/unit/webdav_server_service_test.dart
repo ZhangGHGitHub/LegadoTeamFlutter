@@ -236,6 +236,39 @@ void main() {
       final config = jsonDecode(rows.single['config'] as String);
       expect(config['url'], 'https://keep.example.com/');
     });
+
+    // [批17d P3-5] 批17c 起新备份的 appPrefs 不再含 sync_webdav_password
+    //（设备级秘密整键排除）→ 恢复出的偏好密码恒为空。旧逻辑会把空密码整组
+    // 覆盖进 DB，等于清空用户已保存的密码；现在必须读回 DB 现有密码保留。
+    test('新备份偏好无密码键：空偏好密码不得清空 DB 现有密码', () async {
+      await seedDbRow();
+      SharedPreferences.setMockInitialValues({
+        WebDavServerService.migratedPrefKey: true,
+        'sync_webdav_url': 'https://restored.example.com/',
+        'sync_webdav_username': 'restored-user',
+      });
+      service = WebDavServerService(api: api);
+
+      final applied = await service.applyLegacyPrefsOverwrite();
+
+      expect(applied, isNotNull);
+      expect(applied!.url, 'https://restored.example.com/');
+      expect(
+        applied.password,
+        'old-pass',
+        reason: '返回给同步流程的配置也必须带 DB 现有密码',
+      );
+      final rows = await listServers();
+      expect(rows.length, 1, reason: '覆盖既有行，不新增');
+      final config = jsonDecode(rows.single['config'] as String);
+      expect(config['url'], 'https://restored.example.com/');
+      expect(config['username'], 'restored-user');
+      expect(
+        config['password'],
+        'old-pass',
+        reason: '空偏好密码必须保留 DB 现有密码（红态：被覆盖成空串）',
+      );
+    });
   });
 
   group('备份账号来源判定（回修 P1-1）', () {

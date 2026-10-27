@@ -256,7 +256,8 @@ void main() {
     expect(find.text('输入备份密码'), findsNothing);
   });
 
-  testWidgets('JSON 备份不探测密码（不调用 backupInspect）', (tester) async {    // 不 stub backupInspect：一旦误调用会抛 mocktail missing stub。
+  testWidgets('JSON 备份不探测密码（不调用 backupInspect）', (tester) async {
+    // 不 stub backupInspect：一旦误调用会抛 mocktail missing stub。
     // .json 恢复链会触发真实文件 IO（FakeAsync 不驱动），故不进 pumpAndSettle，
     // 只断言：确认后直接进入「恢复中…」，不出现「检查备份…」/密码框。
     final backupPath = fakeBackupPath('legado_backup_plain_pwd.json');

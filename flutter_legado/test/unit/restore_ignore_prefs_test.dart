@@ -284,5 +284,68 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       expect(prefs.getString('remote_servers'), 'not-a-json-array');
     });
+
+    // [批17d P3-4] `password` 键名大小写不敏感：本应用恒写小写，但手改 /
+    // 第三方产物可能是 Password / PASSWORD——备份侧必须同样剥除，恢复侧
+    // 同样不得把它当普通字段写回（仅本应用 schema 的顶层 password）
+    test('password 键大小写不敏感剥除（备份侧）', () async {
+      SharedPreferences.setMockInitialValues({
+        'remote_servers': '[{"id":1,"name":"我的网盘","url":"https://dav.example/",'
+            '"username":"alice","Password":"upper-secret",'
+            '"PASSWORD":"upper-secret-2","note":"保留"}]',
+      });
+      final collected = await RestoreIgnorePrefs.collectForBackup(const {});
+      final raw = collected['remote_servers'] as String;
+      expect(raw, isNot(contains('upper-secret')), reason: '大写键的口令不得进备份');
+      expect(raw.toLowerCase(), isNot(contains('password')));
+      final server = (jsonDecode(raw) as List).first as Map;
+      expect(server['id'], 1);
+      expect(server['username'], 'alice');
+      expect(server['note'], '保留', reason: '仅剥除 password 键，其余字段原样保留');
+    });
+
+    test('password 键大小写不敏感剥除（恢复侧）', () async {
+      // 本机已有同 id 条目（小写 password 为本机密码）
+      SharedPreferences.setMockInitialValues({
+        'remote_servers': '[{"id":1,"name":"本机网盘","url":"https://dav.example/",'
+            '"username":"alice","password":"dav-secret"}]',
+      });
+      await RestoreIgnorePrefs.applyFromBackup(
+        {
+          'remote_servers': jsonEncode([
+            {
+              'id': 1,
+              'name': '我的网盘（新）',
+              'url': 'https://dav.example/',
+              'username': 'alice',
+              'Password': 'upper-secret',
+            },
+            {
+              'id': 9,
+              'name': '新服务器',
+              'url': 'https://dav9.example/',
+              'username': 'bob',
+              'PASSWORD': 'upper-secret-2',
+            },
+          ]),
+        },
+        const {},
+      );
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('remote_servers')!;
+      expect(raw, isNot(contains('upper-secret')), reason: '备份明文口令不得写回');
+      final list = (jsonDecode(raw) as List).cast<Map>();
+      expect(list[0]['name'], '我的网盘（新）', reason: '非敏感字段照常覆盖');
+      expect(
+        list[0]['password'],
+        'dav-secret',
+        reason: '大写 Password 不影响按 id 取回本机密码',
+      );
+      expect(
+        list[1].keys.map((k) => '$k'.toLowerCase()),
+        isNot(contains('password')),
+        reason: '本机无匹配条目时不得继承备份明文（含大写键）',
+      );
+    });
   });
 }

@@ -172,6 +172,13 @@ class WebDavServerService {
   ///
   /// - 三项偏好全空：不写库、返回 null（空偏好不得清掉 DB 配置）；
   /// - 有任一非空：整组覆盖（与恢复后 prefs 即权威一致）。
+  ///
+  /// [批17d P3-5] **偏好密码为空时保留 DB 现有密码**：批17c 起新备份的
+  /// `appPrefs` 不再含 `sync_webdav_password`（设备级秘密，整键排除），从新
+  /// 备份恢复出的偏好密码恒为空——旧逻辑会把空密码整组覆盖进 DB，等于清空
+  /// 用户已保存的 WebDAV 密码。现在密码为空时按默认服务器 id 读回 DB 现有
+  /// 密码再写入（DB 无行/无密码则为空，与「新设备无账号」语义一致）；备份
+  /// **携带旧密码**（旧版/第三方备份）时仍按旧行为写入，保持兼容。
   Future<WebDavSyncServerConfig?> applyLegacyPrefsOverwrite() async {
     final legacy = WebDavSyncServerConfig(
       url: await _settings.getWebDavUrl(),
@@ -179,10 +186,17 @@ class WebDavServerService {
       password: await _settings.getWebDavPassword(),
     );
     if (legacy.isEmpty) return null;
+    var password = legacy.password;
+    if (password.isEmpty) {
+      final existing = _findDefault(await _listServers());
+      if (existing != null) {
+        password = _parseConfig(existing).password;
+      }
+    }
     return saveSyncServer(
       url: legacy.url,
       username: legacy.username,
-      password: legacy.password,
+      password: password,
     );
   }
 

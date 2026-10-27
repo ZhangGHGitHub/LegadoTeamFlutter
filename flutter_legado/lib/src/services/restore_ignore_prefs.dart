@@ -159,7 +159,8 @@ class RestoreIgnorePrefs {
   /// 敏感偏好值净化（备份侧）：剥除秘密字段后返回，非法形态返回 null
   ///
   /// 当前仅 `remote_servers`（JSON 数组字符串）：逐元素保留
-  /// `id`/`name`/`url`/`username` 与其它非敏感键，**删除 `password`**。
+  /// `id`/`name`/`url`/`username` 与其它非敏感键，**删除 `password` 键**
+  ///（键名大小写不敏感，见 [_stripServerSecrets]；仅顶层本应用 schema）。
   /// 非 JSON 数组形态 → null（不写入备份）。
   static String? sanitizePrefValue(String key, Object value) {
     if (key != SettingsService.remoteServersKey) return null;
@@ -172,9 +173,20 @@ class RestoreIgnorePrefs {
   }
 
   /// 剥除远程书库条目中的秘密字段（`password`），其余键原样保留
+  ///
+  /// 范围声明：**仅本应用 schema 的顶层 `password`**（`RemoteBook` 服务器条目
+  /// 形态 `{id,name,url,username,password}`）。不做递归清洗——嵌套对象里的
+  /// 字段不属于本应用约定、无法安全判定敏感面，递归剥除会误改用户自定义
+  /// 字段并改变备份结构。
+  ///
+  /// 键名按**大小写不敏感**匹配：本应用写出的键恒为小写 `password`，但
+  /// 手改 / 第三方产物可能出现 `Password`/`PASSWORD`，同样必须剥除（否则
+  /// 明文口令随备份落盘，且恢复侧大小写不同会被当成普通字段写回）。
   static Map<String, dynamic> _stripServerSecrets(Map<String, dynamic> server) {
-    final out = <String, dynamic>{...server}..remove('password');
-    return out;
+    return <String, dynamic>{
+      for (final entry in server.entries)
+        if (entry.key.toLowerCase() != 'password') entry.key: entry.value,
+    };
   }
 
   /// 把备份中的远程书库配置合并进本机（恢复侧）
