@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.394] - 2026-10-27
+
+### Changed
+- [UI] 远程书库导入/上传的书籍标识对齐原版格式（`webDav::` + 完整远程地址；自定义服务器附带服务器编号），旧版本书籍标识继续兼容读取，书架/阅读/远程页判定不受影响。
+### Fixed
+- [Rust] Web 服务与本地书判定同时识别新旧两种远程书库标识。
+
 ## [2.0.393] - 2026-10-27
 
 ### Changed
