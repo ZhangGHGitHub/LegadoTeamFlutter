@@ -492,6 +492,9 @@ class _RssArticleDetailScreenState
         onWebResourceError: (error) {
           // 仅主框架错误才算页面加载失败（子资源 404 不打断阅读）
           if (!(error.isForMainFrame ?? true)) return;
+          // 批21e P3-2：加载失败后同 URL 重试必须重新走 onPageStarted
+          // （否则「URL + 文档代数」去重会把重试当成同文档重复回调）
+          _lastStartedKey = null;
           if (mounted) {
             setState(() {
               _isWebLoading = false;
@@ -611,6 +614,8 @@ class _RssArticleDetailScreenState
   /// 避免新文档丢失桥/preloadJs；URL 模式始终在此注入。
   /// 批21d P1-2：同文档重复 `onPageStarted` 用「URL + 文档代数」去重，
   /// 不重复执行 preloadJs/重置握手。
+  /// 批21e P1-1：只有本代文档**实际会注入宿主桥**时才臂看门狗（无
+  /// `preloadJs`/桥头为空/通道未注册的源不再每 4s 空转重发 hello）。
   Future<void> _onPageStartedScripts(String url) async {
     final controller = _webViewController;
     final source = _source;
@@ -621,9 +626,12 @@ class _RssArticleDetailScreenState
       return;
     }
     _lastStartedKey = startedKey;
+    final preloadJs = source?.preloadJs?.trim() ?? '';
+    final skipInline = _htmlPreloadInlined && !_urlMode;
+    final bridgeInjected = preloadJs.isNotEmpty && _willInjectBridge();
     try {
-      // 0) 新文档重新握手（每次导航都重新注入桥脚本）
-      _rssBridge?.beginNavigation();
+      // 0) 新文档重新握手（始终重置旧文档状态；仅注入桥时臂看门狗）
+      _rssBridge?.beginNavigation(bridgeInjected: bridgeInjected);
       // 1) console 钩子（showWebLog）：先于 preloadJs，预加载脚本的
       //    console 输出同样被采集
       if (source?.showWebLog ?? false) {
@@ -633,9 +641,7 @@ class _RssArticleDetailScreenState
       //    已登记差异）。宿主桥就绪时注入完整组合脚本（通道/握手/桥头/
       //    同步面/preloadJs）；prepare 失败时注入引导式降级桩；
       //    首文档已内联则跳过重复执行。
-      final preloadJs = source?.preloadJs?.trim() ?? '';
       if (preloadJs.isNotEmpty) {
-        final skipInline = _htmlPreloadInlined && !_urlMode;
         _htmlPreloadInlined = false;
         if (!skipInline) {
           final bridge = _rssBridge;
@@ -734,9 +740,22 @@ class _RssArticleDetailScreenState
           unawaited(bridge.handleMessage(message.message));
         },
       );
+      // 批21e P1-1：通道注册成功后才允许臂看门狗（页面无法回执时重试无意义）
+      bridge.markChannelRegistered();
     } catch (e) {
       debugPrint('[RSS WebView] 注册 JavaScriptChannel 失败：$e');
     }
+  }
+
+  /// 本代文档是否会注入完整宿主桥（批21e P1-1）
+  ///
+  /// 条件：平台通道已注册 + `__prepare` 桥头非空。降级桩（prepare 失败/
+  /// 桥不可用）不包含通道/握手，不臂看门狗。
+  bool _willInjectBridge() {
+    final bridge = _rssBridge;
+    if (bridge == null || !bridge.isChannelRegistered) return false;
+    final prepared = bridge.prepareResult;
+    return prepared != null && prepared.script.trim().isNotEmpty;
   }
 
   /// HTML 模式的内联桥脚本（不可用返回 null，走裸 preloadJs）

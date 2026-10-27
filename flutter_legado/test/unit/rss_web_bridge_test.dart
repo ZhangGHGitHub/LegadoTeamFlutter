@@ -9,6 +9,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -77,6 +78,7 @@ void main() {
     Duration? watchdog,
     List<String>? log,
     RssWebBridgeJsRunner? runner,
+    DateTime Function()? now,
   }) {
     final bridge = RssWebBridge(
       sourceUrl: 'https://s.test/feed',
@@ -88,6 +90,7 @@ void main() {
       onAction: actions.add,
       onLog: (message) => (log ?? runLog).add('LOG:$message'),
       random: Random(7),
+      now: now,
     );
     addTearDown(bridge.dispose);
     return bridge;
@@ -355,67 +358,202 @@ void main() {
       expect(bridge.nonce, isNotNull);
     });
 
-    test('ACK 缺失：状态不置位，看门狗重试后新 hello 可完成', () async {
-      final bridge = newBridge(watchdog: const Duration(milliseconds: 30));
-      await bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
-      expect(bridge.isHandshaken, isFalse, reason: 'ACK 缺失不得置位握手');
-      expect(bridge.nonce, isNotNull);
+    test('ACK 缺失：状态不置位，看门狗重试后新 hello 可完成（虚拟时钟）', () {
+      fakeAsync((async) {
+        final clock = async.getClock(DateTime(2026, 1, 1));
+        final bridge = newBridge(
+          watchdog: const Duration(seconds: 4),
+          now: () => clock.now(),
+        );
+        bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+        async.flushMicrotasks();
+        expect(bridge.isHandshaken, isFalse, reason: 'ACK 缺失不得置位握手');
+        expect(bridge.nonce, isNotNull);
 
-      // 看门狗超时（回填已结束、ACK 未到）→ 重发 hello
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-      expect(
-        runLog.any((js) => js.contains('__lgHello')),
-        isTrue,
-        reason: 'ACK 缺失时看门狗必须重发 hello',
-      );
+        // 看门狗超时（回填已结束、ACK 未到）→ 重发 hello
+        async.elapse(const Duration(seconds: 5));
+        expect(
+          runLog.any((js) => js.contains('__lgHello')),
+          isTrue,
+          reason: 'ACK 缺失时看门狗必须重发 hello',
+        );
+        expect(bridge.watchdogRetries, 1);
 
-      // 页面再次 hello → 新 nonce → ACK 后置位
-      await bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
-      await ack(bridge, bridge.nonce!);
-      expect(bridge.isHandshaken, isTrue);
+        // 页面再次 hello → 新 nonce → ACK 后置位，计时器取消
+        bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+        async.flushMicrotasks();
+        ack(bridge, bridge.nonce!);
+        async.flushMicrotasks();
+        expect(bridge.isHandshaken, isTrue);
+        expect(bridge.isWatchdogActive, isFalse);
+        final helloCount = runLog.where((js) => js.contains('__lgHello')).length;
+        async.elapse(const Duration(seconds: 20));
+        expect(
+          runLog.where((js) => js.contains('__lgHello')).length,
+          helloCount,
+          reason: 'ACK 成功后看门狗计时器必须取消，不得继续重发',
+        );
+      });
     });
 
-    test('回填慢于看门狗：看门狗顺延不重置，新 hello 仍被接受', () async {
-      final holders = <Completer<void>>[];
-      final bridge = newBridge(
-        watchdog: const Duration(milliseconds: 30),
-        runner: (js) async {
-          final completer = Completer<void>();
-          holders.add(completer);
-          await completer.future;
-          runLog.add(js);
-        },
-      );
-      final firstHello = bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
-      await Future<void>.delayed(Duration.zero);
-      final firstNonce = bridge.nonce;
-      expect(holders, hasLength(1));
-      expect(bridge.isHandshaken, isFalse);
+    test('回填慢于看门狗：顺延受总时长上限约束，新 hello 仍被接受（虚拟时钟）', () {
+      fakeAsync((async) {
+        final clock = async.getClock(DateTime(2026, 1, 1));
+        final holders = <Completer<void>>[];
+        final bridge = newBridge(
+          watchdog: const Duration(seconds: 4),
+          handshakeTimeout: const Duration(seconds: 10),
+          now: () => clock.now(),
+          runner: (js) async {
+            final completer = Completer<void>();
+            holders.add(completer);
+            await completer.future;
+            runLog.add(js);
+          },
+        );
+        bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+        async.flushMicrotasks();
+        final firstNonce = bridge.nonce;
+        expect(holders, hasLength(1));
+        expect(bridge.isHandshaken, isFalse);
 
-      // 回填在途超过看门狗：只顺延，不得重置代数/nonce
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-      expect(
-        runLog.any((js) => js.contains('看门狗顺延')),
-        isTrue,
-        reason: '回填在途时看门狗必须顺延',
-      );
-      expect(bridge.nonce, firstNonce, reason: '顺延不得清空在途 nonce');
+        // 回填在途未超总时长：只顺延，不得重置代数/nonce
+        async.elapse(const Duration(seconds: 8));
+        expect(
+          runLog.any((js) => js.contains('看门狗顺延')),
+          isTrue,
+          reason: '回填在途时看门狗必须顺延',
+        );
+        expect(bridge.nonce, firstNonce, reason: '顺延不得清空在途 nonce');
+        expect(bridge.watchdogRetries, 0, reason: '顺延不消耗重试次数');
 
-      // 新 hello 仍被接受（覆盖在途握手），并以新 nonce/ACK 置位
-      final secondHello = bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
-      await Future<void>.delayed(Duration.zero);
-      expect(holders.length, greaterThanOrEqualTo(2));
-      final secondNonce = bridge.nonce!;
-      expect(secondNonce, isNot(firstNonce));
-      holders.last.complete();
-      await secondHello;
-      await ack(bridge, secondNonce);
-      expect(bridge.isHandshaken, isTrue);
+        // 新 hello 仍被接受（覆盖在途握手），并以新 nonce/ACK 置位
+        bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+        async.flushMicrotasks();
+        expect(holders.length, greaterThanOrEqualTo(2));
+        final secondNonce = bridge.nonce!;
+        expect(secondNonce, isNot(firstNonce));
+        holders.last.complete();
+        async.flushMicrotasks();
+        ack(bridge, secondNonce);
+        async.flushMicrotasks();
+        expect(bridge.isHandshaken, isTrue);
 
-      // 旧回填晚到：不得覆盖新状态
-      holders.first.complete();
-      await firstHello;
-      expect(bridge.nonce, secondNonce);
+        // 旧回填晚到：不得覆盖新状态
+        holders.first.complete();
+        async.flushMicrotasks();
+        expect(bridge.nonce, secondNonce);
+        expect(bridge.isHandshaken, isTrue);
+      });
+    });
+
+    test('回填在途超过 handshakeTimeout：按失败处理并进入重试（虚拟时钟）', () {
+      fakeAsync((async) {
+        final clock = async.getClock(DateTime(2026, 1, 1));
+        final blocker = Completer<void>();
+        final bridge = newBridge(
+          watchdog: const Duration(milliseconds: 10),
+          handshakeTimeout: const Duration(milliseconds: 25),
+          now: () => clock.now(),
+          runner: (js) async {
+            if (js.contains('__legado_rssNonce_')) {
+              await blocker.future;
+            }
+            runLog.add(js);
+          },
+        );
+        bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+        async.flushMicrotasks();
+        expect(bridge.nonce, isNotNull);
+
+        // 10ms 顺延、20ms 顺延、30ms 超过 25ms 总时长 → 按失败重试
+        async.elapse(const Duration(milliseconds: 40));
+        expect(
+          runLog.any((js) => js.contains('超过总时长上限')),
+          isTrue,
+          reason: '在途顺延必须受总时长上限约束',
+        );
+        expect(bridge.watchdogRetries, greaterThanOrEqualTo(1));
+        blocker.complete();
+        async.flushMicrotasks();
+      });
+    });
+
+    test('无 preloadJs（未注入桥）：不臂看门狗，4s 后也不重发 hello（虚拟时钟）', () {
+      fakeAsync((async) {
+        final clock = async.getClock(DateTime(2026, 1, 1));
+        final bridge = newBridge(
+          watchdog: const Duration(seconds: 4),
+          now: () => clock.now(),
+        );
+        bridge.beginNavigation(bridgeInjected: false);
+        expect(bridge.isWatchdogActive, isFalse);
+        async.elapse(const Duration(seconds: 20));
+        expect(
+          runLog.any((js) => js.contains('__lgHello')),
+          isFalse,
+          reason: '未注入桥的源不得空转重发 hello',
+        );
+        expect(bridge.watchdogRetries, 0);
+      });
+    });
+
+    test('看门狗重试上限 3 次后停止并留明确日志（虚拟时钟）', () {
+      fakeAsync((async) {
+        final clock = async.getClock(DateTime(2026, 1, 1));
+        final bridge = newBridge(
+          watchdog: const Duration(seconds: 4),
+          now: () => clock.now(),
+        );
+        bridge.beginNavigation();
+        async.elapse(const Duration(seconds: 30));
+        expect(bridge.watchdogRetries, kRssWebBridgeMaxWatchdogRetries);
+        expect(
+          runLog.where((js) => js.contains('__lgHello')).length,
+          kRssWebBridgeMaxWatchdogRetries,
+          reason: '每轮看门狗只重发一次 hello，达到上限后停止',
+        );
+        expect(
+          runLog.any((js) => js.contains('停止重试')),
+          isTrue,
+          reason: '停止重试必须留明确日志',
+        );
+        expect(bridge.isWatchdogActive, isFalse);
+      });
+    });
+
+    test('陈旧 ACK / 旧代数丢弃：只有当前 nonce + 当前令牌才置位（P3-4）', () async {
+      final bridge = newBridge();
+      final nonceA = await handshake(bridge);
+      final tokenA = bridge.handshakeToken;
+
+      bridge.beginNavigation();
+      await bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
+      final nonceB = bridge.nonce!;
+      final tokenB = bridge.handshakeToken;
+      expect(nonceB, isNot(nonceA));
+      expect(tokenB, greaterThan(tokenA));
+
+      // 旧 nonce + 旧令牌
+      await bridge.handleMessage(_pageMessage(
+        method: 'nonceAck',
+        id: '',
+        args: '$tokenA',
+        nonce: nonceA,
+      ));
+      expect(bridge.isHandshaken, isFalse, reason: '旧文档 ACK 必须丢弃');
+
+      // 当前 nonce + 旧令牌
+      await bridge.handleMessage(_pageMessage(
+        method: 'nonceAck',
+        id: '',
+        args: '$tokenA',
+        nonce: nonceB,
+      ));
+      expect(bridge.isHandshaken, isFalse, reason: '旧代数 ACK 必须丢弃');
+
+      // 当前 nonce + 当前令牌
+      await ack(bridge, nonceB);
       expect(bridge.isHandshaken, isTrue);
     });
 
@@ -467,23 +605,19 @@ void main() {
       );
     });
 
-    test('握手看门狗：超时重置并重发 hello，随后 hello 可接受', () async {
-      final bridge = newBridge(watchdog: const Duration(milliseconds: 30));
-      final nonceBefore = bridge.nonce;
-      bridge.beginNavigation();
-      expect(nonceBefore, isNull);
-      await Future<void>.delayed(const Duration(milliseconds: 80));
-
-      expect(
-        runLog.any((js) => js.contains('__lgHello')),
-        isTrue,
-        reason: '看门狗必须重发 hello',
-      );
-      expect(bridge.isHandshaken, isFalse);
-
-      await bridge.handleMessage(_pageMessage(method: 'hello', id: ''));
-      await ack(bridge, bridge.nonce!);
-      expect(bridge.isHandshaken, isTrue, reason: '看门狗重置后 hello 必须可接受');
+    test('导航看门狗总时长上限：30s 无 hello 后停止（虚拟时钟）', () {
+      fakeAsync((async) {
+        final clock = async.getClock(DateTime(2026, 1, 1));
+        final bridge = newBridge(
+          watchdog: const Duration(seconds: 4),
+          now: () => clock.now(),
+        );
+        bridge.beginNavigation();
+        async.elapse(const Duration(seconds: 30));
+        expect(bridge.isHandshaken, isFalse);
+        expect(bridge.watchdogRetries, kRssWebBridgeMaxWatchdogRetries);
+        expect(bridge.isWatchdogActive, isFalse);
+      });
     });
   });
 
@@ -753,11 +887,14 @@ void main() {
         bridgeObjectName: '__lgBridgeTest',
         callbackName: '__lgCbTest',
         nonceCallbackName: '__lgNonceTest',
+        bootstrapMarkerName: '__lgBootTest',
       );
       for (final needle in [
         'delete window["__lgNativeTest"]',
         'Object.defineProperty(window, "__lgBridgeTest"',
         'Object.defineProperty(window, "__lgNonceTest"',
+        'Object.defineProperty(window, "__lgBootTest"',
+        'configurable: false',
         'enumerable: false',
         'var __lgMaxQueue = 20',
         '队列已满',
@@ -777,7 +914,7 @@ void main() {
         // 纯 Dart 向量：结构断言已在上方完成（Node 缺失时不静默 skip）
         return;
       }
-      final outputs = _runBootstrapInNode(script);
+      final outputs = _runBootstrapInNode(script, rerunBootstrap: script);
       expect(outputs['nativeDeleted'], isTrue);
       expect(outputs['bridgeEnumerable'], isFalse);
       expect(outputs['nonceEnumerable'], isFalse);
@@ -787,6 +924,10 @@ void main() {
       expect(outputs['nonceAckSent'], isTrue);
       expect(outputs['bridgeDeletedAfterTick'], isTrue);
       expect(outputs['helloHook'], isTrue);
+      expect(outputs['helloCount'], 1,
+          reason: '同文档二次注入必须被幂等标记拦截（不得重发 hello）');
+      expect(outputs['markerConfigurable'], isFalse,
+          reason: '幂等标记必须 configurable:false，页面不可删除');
     });
 
     test('HTML 内联转义 </script（大小写不敏感）', () {
@@ -980,8 +1121,11 @@ bool _nodeAvailable() {
 /// 在 Node 中执行 bootstrap（模拟页面全局 + 平台通道），返回结构化断言值
 ///
 /// 覆盖批21c P0-1/P0-3：平台通道全局删除、桥对象/回调不可枚举、队列上限、
-/// 非枚举 hello 重发入口、定时清理。
-Map<String, dynamic> _runBootstrapInNode(String bootstrap) {
+/// 非枚举 hello 重发入口、定时清理；批21e P3-1：同文档二次注入幂等。
+Map<String, dynamic> _runBootstrapInNode(
+  String bootstrap, {
+  String? rerunBootstrap,
+}) {
   final harness = r'''
 var window = {};
 var posted = [];
@@ -995,9 +1139,22 @@ window['__lgCbTest'] = function (id, ok, payload) {
 ''' +
       bootstrap +
       r'''
+var nativeDeleted = typeof window['__lgNativeTest'] === 'undefined';
+''' +
+      (rerunBootstrap == null
+          ? ''
+          : r'''
+// 模拟平台在同一文档重新注入通道对象后，bootstrap 被二次执行
+window['__lgNativeTest'] = {
+  postMessage: function (m) { posted.push(JSON.parse(m)); }
+};
+''' +
+              rerunBootstrap) +
+      r'''
 var bridgeDesc = Object.getOwnPropertyDescriptor(window, '__lgBridgeTest');
 var nonceDesc = Object.getOwnPropertyDescriptor(window, '__lgNonceTest');
-var nativeDeleted = typeof window['__lgNativeTest'] === 'undefined';
+var markerDesc = Object.getOwnPropertyDescriptor(window, '__lgBootTest');
+var helloCount = posted.filter(function (m) { return m.method === 'hello'; }).length;
 for (var i = 0; i < 25; i++) {
   window['__lgBridgeTest'].request('q' + i, '[]', 'q' + i);
 }
@@ -1013,6 +1170,8 @@ setTimeout(function () {
     nativeDeleted: nativeDeleted,
     bridgeEnumerable: bridgeDesc ? bridgeDesc.enumerable : null,
     nonceEnumerable: nonceDesc ? nonceDesc.enumerable : null,
+    markerConfigurable: markerDesc ? markerDesc.configurable : null,
+    helloCount: helloCount,
     helloFirst: helloFirst,
     flushedQueued: flushedQueued,
     overflowErrors: overflowErrors,
@@ -1020,6 +1179,7 @@ setTimeout(function () {
     bridgeDeletedAfterTick: typeof window['__lgBridgeTest'] === 'undefined',
     helloHook: typeof window['__lgCbTest'].__lgHello === 'function'
   }));
+  process.exit(0);
 }, 10);
 ''';
 

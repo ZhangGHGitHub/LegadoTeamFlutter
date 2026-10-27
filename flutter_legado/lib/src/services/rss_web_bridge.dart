@@ -90,6 +90,9 @@ const Duration kRssWebBridgeHandshakeTimeout = Duration(seconds: 10);
 /// 握手看门狗（批21c P1-1：导航后 4s 未完成握手 → 重置状态并重发 hello）
 const Duration kRssWebBridgeHandshakeWatchdog = Duration(seconds: 4);
 
+/// 看门狗最大重试次数（批21e P1-1：超过后停止并留明确日志，等待下一次导航）
+const int kRssWebBridgeMaxWatchdogRetries = 3;
+
 /// 页面动作（`__action`）每秒上限（超出丢弃并限频留痕）
 const int kRssWebBridgeMaxActionsPerSecond = 200;
 
@@ -246,12 +249,14 @@ String rssBridgeBootstrapScript({
   required String bridgeObjectName,
   required String callbackName,
   required String nonceCallbackName,
+  required String bootstrapMarkerName,
   Duration handshakeTimeout = kRssWebBridgeHandshakeTimeout,
 }) {
   final native = jsonEncode(nativeChannelName);
   final bridge = jsonEncode(bridgeObjectName);
   final callback = jsonEncode(callbackName);
   final nonceCallback = jsonEncode(nonceCallbackName);
+  final bootMarker = jsonEncode(bootstrapMarkerName);
   final timeoutMs = handshakeTimeout.inMilliseconds;
   return '''
 (function(){
@@ -260,8 +265,22 @@ String rssBridgeBootstrapScript({
   var __lgNative = null;
   try { __lgNative = window[$native]; } catch (e) {}
   if (!__lgNative || typeof __lgNative.postMessage !== 'function') return;
+  // [批21e P3-1] 同文档幂等标记：首次注入成功后再写；重复注入直接返回，
+  // 避免二次 defineProperty/重发 hello 造成状态错乱（标记 configurable:false，
+  // 不可被页面删除；新文档 window 重建后自然消失）。
+  try { if (window[$bootMarker]) return; } catch (e) {}
+  try {
+    Object.defineProperty(window, $bootMarker, {
+      value: 1,
+      enumerable: false,
+      configurable: false,
+      writable: false
+    });
+  } catch (e) {
+    try { window[$bootMarker] = 1; } catch (e2) {}
+  }
   // 捕获后立即删除平台注入的全局对象（Android 15 真机实测 delete 生效，
-  // 删除后 getOwnPropertyNames 不再可见；iOS 无该全局，待验收）。
+  // 删除后 getOwnPropertyNames 不再可见；iOS 无该全局，以真机结论为准）。
   try { delete window[$native]; } catch (e) {}
   var __lgNonce = null;
   var __lgNonceGen = -1;
@@ -1070,17 +1089,30 @@ class RssWebBridge {
     void Function(RssWebBridgeAction action)? onAction,
     void Function(String message)? onLog,
     Random? random,
+    DateTime Function()? now,
   })  : _api = api,
         _runJavaScript = runJavaScript,
         _onAction = onAction,
         _onLog = onLog,
-        _random = random ?? Random() {
+        _random = random ?? _secureRandom(),
+        _now = now ?? DateTime.now {
     // 批21d P0-B：通道/桥对象/回填回调/nonce 回调各自独立随机 token，
     // 互不可推（此前四者共用一个 token，页面枚举到一个即可推导其余）。
+    // 批21e P2-2：生产环境使用 `Random.secure()`（测试可注入确定性 Random）。
     channelName = '__legado_rss_${_randomToken(_random, 12)}';
     nativeChannelName = '__legado_rssNative_${_randomToken(_random, 12)}';
     callbackName = '__legado_rssCb_${_randomToken(_random, 12)}';
     nonceCallbackName = '__legado_rssNonce_${_randomToken(_random, 12)}';
+    bootstrapMarkerName = '__legado_rssBoot_${_randomToken(_random, 12)}';
+  }
+
+  /// 加密安全随机源（Web 等不支持 `Random.secure()` 的平台回落伪随机）
+  static Random _secureRandom() {
+    try {
+      return Random.secure();
+    } on UnsupportedError {
+      return Random();
+    }
   }
 
   /// RSS 源 URL（宿主调用/落库键）
@@ -1107,11 +1139,17 @@ class RssWebBridge {
   /// 页面 nonce 回调名（独立随机 token，不从 [callbackName] 推导；用后删除）
   late final String nonceCallbackName;
 
+  /// 同文档 bootstrap 幂等标记名（批21e P3-1）
+  late final String bootstrapMarkerName;
+
   final BookApi _api;
   final RssWebBridgeJsRunner _runJavaScript;
   final void Function(RssWebBridgeAction action)? _onAction;
   final void Function(String message)? _onLog;
   final Random _random;
+
+  /// 时钟（测试注入可控时钟，避免看门狗在途判定受墙钟抖动影响）
+  final DateTime Function() _now;
 
   final Map<String, _PendingCall> _pending = <String, _PendingCall>{};
 
@@ -1124,6 +1162,22 @@ class RssWebBridge {
   bool _handshakeInFlight = false;
   String? _nonce;
   bool _disposed = false;
+
+  /// 平台 `JavaScriptChannel` 是否已注册（批21e P1-1：只有实际可注入桥的
+  /// 文档才臂看门狗；未注册时页面无法回执，重试没有意义）
+  bool _channelRegistered = false;
+
+  /// 本代文档是否实际注入了桥（beginNavigation 入参决定；hello 到达也会置位）
+  bool _bridgeActive = false;
+
+  /// 看门狗已重试次数（上限 [kRssWebBridgeMaxWatchdogRetries]，成功后清零）
+  int _watchdogRetries = 0;
+
+  /// 看门狗是否已因重试上限停止（下一次导航/ACK 成功后恢复）
+  bool _watchdogStopped = false;
+
+  /// 本次 nonce 回填的起始时刻（批21e P1-1：在途顺延也受总时长上限约束）
+  DateTime? _handshakeInFlightSince;
 
   /// 握手代数令牌（批21d P1-1）：每次 hello / 导航自增，随 nonce 回填下发；
   /// 页面只接受不旧于当前的令牌，Dart 只接受与当前令牌匹配的 `nonceAck`。
@@ -1149,6 +1203,23 @@ class RssWebBridge {
 
   /// 是否完成 hello/nonce 握手
   bool get isHandshaken => _handshaken;
+
+  /// 平台通道是否已注册（调用方在 `addJavaScriptChannel` 成功后置位）
+  bool get isChannelRegistered => _channelRegistered;
+
+  /// 标记平台通道已注册（仅调用方在注册成功后调用）
+  void markChannelRegistered() {
+    _channelRegistered = true;
+  }
+
+  /// 看门狗当前是否处于工作状态（测试可读）
+  @visibleForTesting
+  bool get isWatchdogActive =>
+      _bridgeActive && !_watchdogStopped && !_handshaken;
+
+  /// 看门狗已重试次数（测试可读）
+  @visibleForTesting
+  int get watchdogRetries => _watchdogRetries;
 
   /// `__prepare` 是否失败（调用方可据此选择降级桩；[composeInjection] 自动处理）
   bool get isDegraded => _prepareFailed;
@@ -1256,6 +1327,7 @@ class RssWebBridge {
       bridgeObjectName: channelName,
       callbackName: callbackName,
       nonceCallbackName: nonceCallbackName,
+      bootstrapMarkerName: bootstrapMarkerName,
       handshakeTimeout: handshakeTimeout,
     ));
     buffer.write(head);
@@ -1366,43 +1438,91 @@ class RssWebBridge {
   /// URL 模式下每次主框架导航都会重新注入桥脚本（新文档重新 `hello`）；
   /// 若沿用首个文档的 nonce，新文档的消息会被判为「非预期 nonce」而全部
   /// 拒绝。旧文档的挂起调用按超时语义直接结束（页面已被替换）。
-  void beginNavigation() {
+  ///
+  /// [bridgeInjected]（批21e P1-1）：本代文档是否**实际注入**宿主桥
+  /// （平台通道已注册 + 桥头非空 + 本页会执行组合脚本）。为 false 时只
+  /// 重置状态、不臂看门狗——页面没有桥可回执，重试只会空转。
+  void beginNavigation({bool bridgeInjected = true}) {
     if (_disposed) return;
     // 批21c P1-1 / 批21d：代数自增，使旧文档在途的 hello 回填/ACK 失效
     _handshakeToken++;
     _handshaken = false;
     _handshakeInFlight = false;
+    _handshakeInFlightSince = null;
     _nonce = null;
     _nonceToken = -1;
+    _watchdogRetries = 0;
+    _watchdogStopped = false;
+    _bridgeActive = bridgeInjected;
     for (final pending in _pending.values) {
       pending.completed = true;
       pending.timer?.cancel();
     }
     _pending.clear();
-    _armHandshakeWatchdog();
+    if (bridgeInjected) {
+      _armHandshakeWatchdog();
+    } else {
+      _handshakeWatchdogTimer?.cancel();
+      _handshakeWatchdogTimer = null;
+    }
   }
 
   /// 臂握手看门狗（每次导航/hello 调用；超时未握手则重发 hello）
   ///
   /// 批21d P1-1：回填在途时**只顺延、不重置**（重置会让页面已收到的新
-  /// nonce 与 Dart 状态失步）；不在途时清空 nonce 并重发 hello，等页面
-  /// 重新 hello 后换发新 nonce。
+  /// nonce 与 Dart 状态失步）；批21e P1-1 补充：
+  /// - 仅在 `_bridgeActive`（本代文档实际注入桥）时工作；
+  /// - 在途顺延受 `handshakeTimeout` 总时长上限约束，超限按失败进入重试；
+  /// - 重试上限 [kRssWebBridgeMaxWatchdogRetries]，超过后停止并留明确日志。
   void _armHandshakeWatchdog() {
     _handshakeWatchdogTimer?.cancel();
-    _handshakeWatchdogTimer = Timer(handshakeWatchdog, () {
-      if (_disposed || _handshaken) return;
-      if (_handshakeInFlight) {
-        _log('握手回填仍在途，看门狗顺延（${handshakeWatchdog.inSeconds}s）');
+    _handshakeWatchdogTimer = null;
+    if (_disposed || !_bridgeActive || _watchdogStopped || _handshaken) return;
+    _handshakeWatchdogTimer = Timer(handshakeWatchdog, _onWatchdogTick);
+  }
+
+  void _onWatchdogTick() {
+    if (_disposed || !_bridgeActive || _handshaken) return;
+    if (_handshakeInFlight) {
+      final since = _handshakeInFlightSince;
+      final elapsed =
+          since == null ? Duration.zero : _now().difference(since);
+      if (elapsed < handshakeTimeout) {
+        _log(
+          '握手回填仍在途（${elapsed.inMilliseconds}ms/'
+          '${handshakeTimeout.inMilliseconds}ms），看门狗顺延',
+        );
         _armHandshakeWatchdog();
         return;
       }
-      _handshakeToken++;
-      _nonce = null;
-      _nonceToken = -1;
-      _log('握手看门狗超时（${handshakeWatchdog.inSeconds}s）：重置并重发 hello');
-      unawaited(_reissueHello());
-      _armHandshakeWatchdog();
-    });
+      // 总时长上限已到：本次回填视为失败（页面可能已失联/脚本被中断）
+      _log(
+        '握手回填在途超过总时长上限（${handshakeTimeout.inSeconds}s），'
+        '按失败处理并重试',
+      );
+      _handshakeInFlight = false;
+      _handshakeInFlightSince = null;
+    }
+    if (_watchdogRetries >= kRssWebBridgeMaxWatchdogRetries) {
+      _watchdogStopped = true;
+      _log(
+        '握手看门狗已重试 $kRssWebBridgeMaxWatchdogRetries 次仍未完成，'
+        '停止重试（等待下一次导航）',
+      );
+      _handshakeWatchdogTimer = null;
+      return;
+    }
+    _watchdogRetries++;
+    _handshakeToken++;
+    _nonce = null;
+    _nonceToken = -1;
+    _log(
+      '握手看门狗超时（${handshakeWatchdog.inSeconds}s，'
+      '重试 $_watchdogRetries/$kRssWebBridgeMaxWatchdogRetries）：'
+      '重置并重发 hello',
+    );
+    unawaited(_reissueHello());
+    _armHandshakeWatchdog();
   }
 
   /// 重发 hello（页面侧挂载在回填回调上的非枚举入口；不可用时静默）
@@ -1420,6 +1540,8 @@ class RssWebBridge {
     _disposed = true;
     _handshakeToken++;
     _nonceToken = -1;
+    _bridgeActive = false;
+    _handshakeInFlightSince = null;
     _handshakeWatchdogTimer?.cancel();
     _handshakeWatchdogTimer = null;
     for (final pending in _pending.values) {
@@ -1438,11 +1560,15 @@ class RssWebBridge {
       await _replyError('', '重复 hello');
       return;
     }
+    // 批21e P1-1：能收到 hello 说明本代文档确实注入了桥（无 preloadJs 的源
+    // 不会走到这里），恢复看门狗工作状态。
+    _bridgeActive = true;
     // 批21d P1-1：新 hello 可覆盖在途握手（旧回填的代数更小，
     // 页面按令牌拒绝旧值；Dart 也只接受最新令牌的 ACK）。
     final token = ++_handshakeToken;
     _nonceToken = token;
     _handshakeInFlight = true;
+    _handshakeInFlightSince = _now();
     _handshaken = false;
     final nonce = _randomToken(_random, 32);
     // nonce 先占位（页面尚未知悉），回填失败/被覆盖时回滚
@@ -1459,6 +1585,7 @@ class RssWebBridge {
     } catch (e) {
       if (token == _nonceToken) {
         _handshakeInFlight = false;
+        _handshakeInFlightSince = null;
         _handshaken = false;
         _nonce = null;
         _nonceToken = -1;
@@ -1473,6 +1600,7 @@ class RssWebBridge {
     // 回填已完成（不再算「在途」），但握手仍需页面 ACK 才置位；ACK 缺失时
     // 看门狗会重发 hello（批21d P1-1）。
     _handshakeInFlight = false;
+    _handshakeInFlightSince = null;
     _log('nonce 已回填（token=$token），等待页面 ACK');
   }
 
@@ -1485,7 +1613,11 @@ class RssWebBridge {
       return;
     }
     _handshakeInFlight = false;
+    _handshakeInFlightSince = null;
     _handshaken = true;
+    // 批21e P1-1：成功后清空重试计数并恢复看门狗（下一次导航重置）
+    _watchdogRetries = 0;
+    _watchdogStopped = false;
     _handshakeWatchdogTimer?.cancel();
     _handshakeWatchdogTimer = null;
     _log('握手 ACK 已确认（token=$token）');
