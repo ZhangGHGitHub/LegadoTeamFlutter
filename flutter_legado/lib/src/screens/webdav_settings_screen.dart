@@ -496,14 +496,12 @@ class _WebDavSettingsScreenState extends ConsumerState<WebDavSettingsScreen> {
         .read(syncNotifierProvider.notifier)
         .applyLegacyWebDavPrefsAfterRestore(source: accountSource);
     // 批18a：旧格式备份（无 servers 段或仅 id=-1）携带 remote_servers 时，
-    // 恢复后强制重跑一次 prefs → servers 表迁移；失败只记日志不阻断恢复
+    // 恢复后强制重跑一次 prefs → servers 表迁移。失败由
+    // [ServerService.forceMigrateAfterRestore] 记崩溃日志并复位迁移标记
+    //（下次启动重试）；取舍说明见该方法注释（可能复活旧偏好中已删除的服务器）
     if (!isZip &&
         await ServerService.backupNeedsLegacyRemoteServerMigration(backupPath)) {
-      try {
-        await serverService.migrateLegacyPrefs(force: true);
-      } catch (e) {
-        debugPrint('远程书库服务器迁移失败（恢复已完成）：$e');
-      }
+      await serverService.forceMigrateAfterRestore();
     }
     if (!mounted) return;
     await _reloadPrefsAfterRestore();

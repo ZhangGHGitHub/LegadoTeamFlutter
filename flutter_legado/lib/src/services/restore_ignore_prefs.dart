@@ -171,8 +171,9 @@ class RestoreIgnorePrefs {
 
   /// 敏感偏好值净化（备份侧）：剥除秘密字段后返回，非法形态返回 null
   ///
-  /// 批18a 起 `remote_servers` 整键不导出，本方法暂无调用方（保留给后续
-  /// 需要「保留非敏感字段」的敏感偏好）；非 JSON 数组形态 → null。
+  /// 批18a 起 `remote_servers` 整键不导出，[_sanitizedKeys] 清单当前为空，
+  /// 生产备份路径（[collectForBackup]）不会命中本方法；保留给后续需要
+  /// 「保留非敏感字段」的敏感偏好。非 JSON 数组形态 → null。
   static String? sanitizePrefValue(String key, Object value) {
     if (key != SettingsService.remoteServersKey) return null;
     final servers = _decodeRemoteServers(value);

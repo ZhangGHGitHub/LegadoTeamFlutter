@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 
 import 'book_api.dart';
+import 'crash_log_service.dart';
 import 'settings_service.dart';
 
 /// 远程书库服务器行（servers 表，`type = WEBDAV`）
@@ -79,6 +80,9 @@ class RemoteBookServerRow {
       // config 缺失/空白：无可用 WebDAV 配置
       isValid = false;
     }
+    // url 为空（如 config="{}"）同样视为无效：否则页面会展示一条无法列举
+    // 目录的「可用」服务器，选中后才在 refresh 阶段报错
+    if (isValid && url.trim().isEmpty) isValid = false;
 
     return RemoteBookServerRow(
       id: id,
@@ -118,9 +122,9 @@ class LocalServerPasswordIndex {
 ///   坏数据导致整页不可用。两者共用同一组 FFI（§2.28），不新增契约。
 ///
 /// 一次性迁移（`remote_servers` 旧偏好 → servers 表）：
-/// - 标记键 [migratedPrefKey] 默认 false；非数组/解析失败不置标记（下次重试）；
+/// - 标记键 [migratedPrefKey] 默认 false；非数组/解析失败/字段形态非法不置标记（下次重试）；
 /// - 跳过 `id < 0`（`-1` 为默认 WebDAV 固定身份）；正数 id 原样保留；
-///   重复 id 的后续条目改由 Rust 重新分配（id = 0）并告警；
+///   重复 id 的后续条目重新分配（id = 0），重试时**可能复用上次已分配的行**；
 /// - 密码：prefs 有值用 prefs；为空时按 DB 同 id 行保留既有密码；
 /// - 全部成功才置标记；同 id REPLACE 保证幂等；
 /// - 旧键 `remote_servers` / `remote_server_id` **保留不删**（回滚安全）。
@@ -189,6 +193,35 @@ class ServerService {
     if (targetId > 0) {
       final existing = await _findById(targetId);
       sortNumber = existing?.sortNumber ?? 0;
+    }
+    return _writeServer(
+      targetId: targetId,
+      name: name,
+      url: url,
+      username: username,
+      password: password,
+      sortNumber: sortNumber,
+    );
+  }
+
+  /// 实际落库（[sortNumber] 由调用方给定）
+  ///
+  /// 拆分原因（批18a 审查回修 P3）：迁移循环已持有整表快照，若逐台走
+  /// [saveServer] 会为取 sortNumber 再查一次全表，N 台即 O(N²)。
+  Future<RemoteBookServerRow> _writeServer({
+    required int targetId,
+    required String name,
+    required String url,
+    required String username,
+    required String password,
+    required int sortNumber,
+  }) async {
+    if (targetId < 0) {
+      throw ArgumentError.value(
+        targetId,
+        'id',
+        '默认 WebDAV（id=-1）不可经远程书库编辑',
+      );
     }
     final normalizedName = name.trim();
     final normalizedUrl = url.trim();
@@ -264,7 +297,7 @@ class ServerService {
       if (id > 0 && keptIds.contains(id)) {
         debugPrint(
           'ServerService: remote_servers 存在重复 id=${entry.id}，'
-          '后续条目改由 Rust 重新分配',
+          '后续条目重新分配主键（重试时可能复用上次分配行）',
         );
         id = 0;
       }
@@ -291,17 +324,39 @@ class ServerService {
         }
       }
 
-      await saveServer(
-        id: id,
+      // 直接复用本次已读的整表快照取 sortNumber，避免逐台再查全表（O(N²)）
+      await _writeServer(
+        targetId: id,
         name: entry.name,
         url: entry.url,
         username: entry.username,
         password: password,
+        sortNumber: dbById[id]?.sortNumber ?? 0,
       );
     }
 
     await _markMigrated();
     return true;
+  }
+
+  /// 恢复旧格式备份后的强制迁移（`webdav_settings_screen` 接线）
+  ///
+  /// 失败时写 [CrashLogService] 并**把迁移标记复位 false**，让下次启动重试，
+  /// 而不是让「标记已置」永久掩盖失败（旧实现只 debugPrint，失败后永不重试）。
+  ///
+  /// 取舍：复位标记会让下次启动重新读取旧偏好 `remote_servers` 并写回
+  /// servers 表；若用户在迁移成功后又删除了某些服务器，旧偏好里仍保留的
+  /// 条目会被「复活」。相较静默永久丢失远程书库配置，选择可重试 + 日志可查。
+  Future<bool> forceMigrateAfterRestore() async {
+    try {
+      return await migrateLegacyPrefs(force: true);
+    } catch (e, stack) {
+      CrashLogService.instance.logError(e, stack);
+      debugPrint('ServerService.forceMigrateAfterRestore 失败，'
+          '复位迁移标记待下次启动重试：$e');
+      await _settings.setBoolPref(migratedPrefKey, false);
+      return false;
+    }
   }
 
   /// 判定旧格式备份恢复后是否需要强制重跑远程书库迁移
@@ -357,17 +412,26 @@ class ServerService {
   }
 
   /// 迁移幂等辅助：按端点 + 名称匹配上次中断留下的分配行
+  ///
+  /// 两侧统一 trim 后比较：旧偏好里的 name/url/username 可能带首尾空格，
+  /// 而落库时已被 trim；不归一会在重试时匹配不上，导致重复新增行。
   RemoteBookServerRow? _findReusableRow(
     List<RemoteBookServerRow> rows,
     _LegacyServerEntry entry, {
     required Set<int> excludedIds,
   }) {
-    final endpoint =
-        LocalServerPasswordIndex.endpointKey(entry.url, entry.username);
+    final name = entry.name.trim();
+    final endpoint = LocalServerPasswordIndex.endpointKey(
+      entry.url.trim(),
+      entry.username.trim(),
+    );
     for (final row in rows) {
       if (row.id <= 0 || excludedIds.contains(row.id)) continue;
-      if (row.name != entry.name) continue;
-      if (LocalServerPasswordIndex.endpointKey(row.url, row.username) !=
+      if (row.name.trim() != name) continue;
+      if (LocalServerPasswordIndex.endpointKey(
+            row.url.trim(),
+            row.username.trim(),
+          ) !=
           endpoint) {
         continue;
       }
@@ -397,8 +461,19 @@ class ServerService {
       if (name == null || url == null || username == null || password == null) {
         return null;
       }
+      // id 显式判型：缺省/null 视为 0（新建），非数字（如 "abc"）属形态非法，
+      // 返回 null 且不置标记（旧实现强转 num 会抛 TypeError，每次启动重试都崩）
+      final rawId = map['id'];
+      final int id;
+      if (rawId == null) {
+        id = 0;
+      } else if (rawId is num) {
+        id = rawId.toInt();
+      } else {
+        return null;
+      }
       out.add(_LegacyServerEntry(
-        id: (map['id'] as num?)?.toInt() ?? 0,
+        id: id,
         name: name,
         url: url,
         username: username,

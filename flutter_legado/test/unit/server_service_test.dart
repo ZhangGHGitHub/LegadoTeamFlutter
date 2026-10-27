@@ -35,6 +35,17 @@ class _FlakyServersRustApi extends FakeServersRustApi {
   }
 }
 
+/// 统计整表列举次数（钉住迁移不再逐台查全表）
+class _CountingServersRustApi extends FakeServersRustApi {
+  int listCalls = 0;
+
+  @override
+  Future<String> webdavServersList() {
+    listCalls++;
+    return super.webdavServersList();
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -100,6 +111,20 @@ void main() {
       api.seedServer(id: 9, name: '未知类型', type: 'FTP', config: '{}');
       final rows = await service.listServers();
       expect(rows.single.isValid, isFalse);
+    });
+
+    test('config 缺少 url（"{}" / 空白 url）标记无效', () async {
+      api.seedServer(id: 10, name: '空对象', config: '{}');
+      api.seedServer(
+        id: 11,
+        name: '空白 url',
+        config: jsonEncode({'url': '   ', 'username': 'u', 'password': 'p'}),
+      );
+      final rows = await service.listServers();
+      expect(rows, hasLength(2));
+      for (final row in rows) {
+        expect(row.isValid, isFalse, reason: 'id=${row.id} 无 url 应标记无效');
+      }
     });
 
     test('整表非 JSON 数组时显式报错', () async {
@@ -391,6 +416,144 @@ void main() {
       expect(await flakyService.migrateLegacyPrefs(), isTrue);
       final rows = (jsonDecode(await flaky.webdavServersList()) as List);
       expect(rows, hasLength(2), reason: '重试不得重复首条');
+    });
+
+    test('复用路径：name 带空格 + 中途失败，重试复用上次分配行不重复', () async {
+      SharedPreferences.setMockInitialValues({
+        ServerService.legacyPrefKey: jsonEncode([
+          {
+            'id': 0,
+            'name': ' 网盘A ',
+            'url': ' https://a/ ',
+            'username': ' u ',
+            'password': 'p',
+          },
+          {
+            'id': 0,
+            'name': ' 网盘B ',
+            'url': ' https://b/ ',
+            'username': ' u ',
+            'password': 'p',
+          },
+        ]),
+      });
+      final flaky = _FlakyServersRustApi()..failOnCall = 2;
+      final flakyService = ServerService(api: flaky);
+
+      await expectLater(
+        flakyService.migrateLegacyPrefs(),
+        throwsA(isA<StateError>()),
+      );
+      // 首条已分配主键落库（模拟上次迁移中断）
+      expect(flaky.servers, hasLength(1));
+      final firstId = (flaky.servers.single['id'] as num).toInt();
+
+      flaky.failOnCall = -1;
+      expect(await flakyService.migrateLegacyPrefs(), isTrue);
+
+      expect(flaky.servers, hasLength(2), reason: '重试不得重复首条');
+      final reused = flaky.servers.singleWhere(
+        (e) => (e['id'] as num).toInt() == firstId,
+      );
+      expect(reused['name'], '网盘A', reason: '复用行按 trim 后的名称匹配');
+    });
+
+    test('prefs 密码优先于 DB 同 id 行', () async {
+      api.seedServer(
+        id: 6001,
+        name: '旧',
+        config: jsonEncode({
+          'url': 'https://old/',
+          'username': 'u',
+          'password': 'db-password',
+        }),
+      );
+      SharedPreferences.setMockInitialValues({
+        ServerService.legacyPrefKey: jsonEncode([
+          {
+            'id': 6001,
+            'name': '新',
+            'url': 'https://new/',
+            'username': 'u',
+            'password': 'prefs-password',
+          },
+        ]),
+      });
+      service = ServerService(api: api);
+
+      expect(await service.migrateLegacyPrefs(), isTrue);
+
+      final config = jsonDecode((await rawRows()).single['config'] as String);
+      expect(config['password'], 'prefs-password');
+    });
+
+    test('非数字 id 判型为形态非法：不抛错、不置标记、不写库', () async {
+      SharedPreferences.setMockInitialValues({
+        ServerService.legacyPrefKey: jsonEncode([
+          {
+            'id': 'abc',
+            'name': '坏 id',
+            'url': 'https://a/',
+            'username': 'u',
+            'password': 'p',
+          },
+        ]),
+      });
+      service = ServerService(api: api);
+
+      expect(await service.migrateLegacyPrefs(), isFalse);
+      expect(await migratedFlag(), isFalse, reason: '形态非法不得置标记');
+      expect(api.servers, isEmpty);
+    });
+
+    test('迁移只读一次整表（不逐台 _findById，消除 O(N²)）', () async {
+      SharedPreferences.setMockInitialValues({
+        ServerService.legacyPrefKey: jsonEncode([
+          for (var i = 1; i <= 3; i++)
+            {
+              'id': 8000 + i,
+              'name': '网盘$i',
+              'url': 'https://$i/',
+              'username': 'u',
+              'password': 'p',
+            },
+        ]),
+      });
+      final counting = _CountingServersRustApi();
+      final countingService = ServerService(api: counting);
+
+      expect(await countingService.migrateLegacyPrefs(), isTrue);
+
+      expect(counting.servers, hasLength(3));
+      expect(counting.listCalls, 1, reason: '迁移循环复用已读快照');
+    });
+
+    test('恢复后强制迁移失败：复位标记返回 false，下次启动可重试', () async {
+      SharedPreferences.setMockInitialValues({
+        ServerService.legacyPrefKey: jsonEncode([
+          {
+            'id': 7001,
+            'name': '恢复网盘',
+            'url': 'https://restore/',
+            'username': 'u',
+            'password': 'p',
+          },
+        ]),
+        ServerService.migratedPrefKey: true,
+      });
+      final flaky = _FlakyServersRustApi()..failOnCall = 1;
+      final flakyService = ServerService(api: flaky);
+
+      expect(await flakyService.forceMigrateAfterRestore(), isFalse);
+      expect(await migratedFlag(), isFalse, reason: '失败后必须复位标记');
+
+      flaky.failOnCall = -1;
+      expect(
+        await flakyService.migrateLegacyPrefs(),
+        isTrue,
+        reason: '标记复位后下次启动可重试',
+      );
+      expect(flaky.servers, hasLength(1));
     });
   });
 
