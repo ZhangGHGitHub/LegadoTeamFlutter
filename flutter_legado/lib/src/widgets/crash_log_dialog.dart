@@ -85,7 +85,11 @@ class _CrashLogDialogState extends State<CrashLogDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // 崩溃时间
+              // [批23 | 全栈工程师] 原实现 Row 内 Text 无宽度约束：崩溃时间
+              // 带长时区/附加文案时横向撑破对话框（实测右侧溢出 12px）。
+              // 改为 Expanded + 顶端对齐，超长自动换行。
               Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Icon(
                     Symbols.schedule_rounded,
@@ -93,10 +97,13 @@ class _CrashLogDialogState extends State<CrashLogDialog> {
                     color: colorScheme.onSurfaceVariant,
                   ),
                   const SizedBox(width: 6),
-                  Text(
-                    '崩溃时间: $_crashTime',
-                    style: theme.textTheme.bodyMedium?.copyWith(
-                      color: colorScheme.onSurfaceVariant,
+                  Expanded(
+                    child: Text(
+                      '崩溃时间: $_crashTime',
+                      softWrap: true,
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: colorScheme.onSurfaceVariant,
+                      ),
                     ),
                   ),
                 ],
