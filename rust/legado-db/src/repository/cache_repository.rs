@@ -50,6 +50,31 @@ impl<'a> CacheRepository<'a> {
         Ok(())
     }
 
+    /// 以**精确 deadline** 写入缓存（批17a：恢复原版备份的运行时变量）
+    ///
+    /// 与 [`Self::put`] 的区别：`put` 的 `ttl_seconds` 相对当前时间换算，
+    /// 无法还原备份里的绝对过期时间；本方法原样写入 `deadline`（毫秒，0 =
+    /// 永不过期），并允许调用方指定 `created_at`（恢复场景用同一时间点，
+    /// 避免逐条取时造成同批数据时间戳漂移）。
+    ///
+    /// 语义对齐原版 `CacheDao.insert`（REPLACE）：同名键覆盖，其他键不动。
+    pub fn put_with_deadline(
+        &self,
+        key: &str,
+        value: &str,
+        deadline: i64,
+        created_at: i64,
+    ) -> LegadoResult<()> {
+        self.conn
+            .execute(
+                "INSERT OR REPLACE INTO caches (key, value, deadline, created_at)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![key, value, deadline, created_at],
+            )
+            .map_err(|e| LegadoError::Database(format!("写入缓存失败: {e}")))?;
+        Ok(())
+    }
+
     /// 读取缓存，过期则删除并返回 None
     pub fn get(&self, key: &str) -> LegadoResult<Option<String>> {
         let result = self.conn.query_row(
@@ -331,6 +356,30 @@ mod tests {
         assert!(!repo.contains_key("k").unwrap());
         repo.put("k", "v", 0).unwrap();
         assert!(repo.contains_key("k").unwrap());
+    }
+
+    #[test]
+    fn test_put_with_deadline_preserves_absolute_deadline() {
+        let conn = setup_db();
+        let repo = CacheRepository::new(&conn);
+        let future = current_time_millis() + 3_600_000;
+        repo.put_with_deadline("v_src_abs", "value", future, 12345)
+            .unwrap();
+        let (deadline, created_at): (i64, i64) = conn
+            .query_row(
+                "SELECT deadline, created_at FROM caches WHERE key = ?1",
+                params!["v_src_abs"],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(deadline, future, "绝对过期时间必须原样落库");
+        assert_eq!(created_at, 12345, "created_at 由调用方指定，不做取时");
+        assert_eq!(repo.get("v_src_abs").unwrap(), Some("value".to_string()));
+        // REPLACE 语义：同名键覆盖，其他键不受影响
+        repo.put("other", "keep", 0).unwrap();
+        repo.put_with_deadline("v_src_abs", "value2", 0, 1).unwrap();
+        assert_eq!(repo.count().unwrap(), 2);
+        assert_eq!(repo.get("v_src_abs").unwrap(), Some("value2".to_string()));
     }
 
     #[test]

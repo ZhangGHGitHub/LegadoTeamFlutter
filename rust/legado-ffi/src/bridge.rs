@@ -1331,12 +1331,38 @@ pub unsafe extern "C" fn ffi_backup_create(path: *const c_char) -> *mut c_char {
     }))
 }
 
-/// 从备份恢复
+/// 从备份恢复（无密码兼容入口，等价密码为 null）
 #[no_mangle]
 pub unsafe extern "C" fn ffi_backup_restore(path: *const c_char) -> *mut c_char {
     to_ffi_response(catch_unwind(|| {
         let p = c_char_to_str(path)?;
         crate::api::backup_api::backup_restore(p)
+    }))
+}
+
+/// 从备份恢复（批17a：带可选备份密码；password 传 NULL 等价无密码）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_backup_restore_with_password(
+    path: *const c_char,
+    password: *const c_char,
+) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let p = c_char_to_str(path)?;
+        let password = if password.is_null() {
+            None
+        } else {
+            Some(c_char_to_str(password)?)
+        };
+        crate::api::backup_api::backup_restore_with_password(p, password)
+    }))
+}
+
+/// 探测备份是否需要密码（批17a，只读）
+#[no_mangle]
+pub unsafe extern "C" fn ffi_backup_inspect(path: *const c_char) -> *mut c_char {
+    to_ffi_response(catch_unwind(|| {
+        let p = c_char_to_str(path)?;
+        crate::api::backup_api::backup_inspect(p)
     }))
 }
 

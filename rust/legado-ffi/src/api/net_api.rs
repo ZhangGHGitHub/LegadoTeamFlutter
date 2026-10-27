@@ -48,7 +48,9 @@ pub fn set_custom_hosts(hosts_json: &str) -> LegadoResult<()> {
 /// 以自身为键），保证清除侧键与 HTTP Cookie 持久化存储侧键永不分叉
 ///（2026-09-22 P1 回归修复：旧实现取 host 末两段，多段 TLD/IP 下清除空转）。
 /// 保留原「host 为空 → 回退原始 URL」分支。
-fn get_sub_domain(url: &str) -> String {
+///
+/// `pub(crate)`：批17a 原版备份 cookies 恢复复用同一归一口径。
+pub(crate) fn get_sub_domain(url: &str) -> String {
     let without_scheme = url
         .split("://")
         .last()

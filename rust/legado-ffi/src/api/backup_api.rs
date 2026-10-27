@@ -76,9 +76,35 @@
 //! - **P2-7** 旧高亮 `style` 的 legacy 样式串（原版 `HighlightStyle` 旧编码）缺失
 //!   兼容：仅按新 JSON 样式解析；
 //! - **P2-8** 明文 `cookies.json` / `runtimeSourceCache.json` 跳过：我方无 Cookie
-//!   与书源运行变量持久化面，仅记 warn（不加密码面）；
+//!   与书源运行变量持久化面，仅记 warn（不加密码面）。→ **批17a 已解决**：
+//!   两个文件（明文/密文）均恢复，见模块注释「批17a」段。
 //! - **P2-10** 部分恢复对用户不可见：条目级跳过只写日志，FFI `RestoreStats`
 //!   无 warnings 字段。后续立项在统计结构增加 `warnings`（需同步 FFI 契约）。
+//!
+//! # 批17a：备份密码恢复与探测（2026-10-26，用户裁决「探测 + 密码框」）
+//!
+//! 原版 `BackupAES`（`BackupAES.kt:6-8`）密钥派生：`MD5(password)` 小写十六进制串的
+//! **前 16 个 ASCII 字符**（**不做 hex 解码**；空密码固定密钥 `d41d8cd98f00b204`；
+//! 密码不 trim），算法 AES-128-ECB/PKCS5Padding，Base64 standard。加密文件集合：
+//! `servers.json`（恒加密，空密码也用固定密钥，失败才回退明文）、`cookies.json` /
+//! `runtimeSourceCache.json`（设置备份密码时写出）、`config.xml` 的 `webDavPassword`
+//! （本实现仍跳过整份偏好快照）。其余数据文件与 `directLinkUploadRule.json` 明文。
+//!
+//! 恢复前置校验（**事务前**，保证失败零落库）：
+//! - 未提供密码 + `cookies.json`/`runtimeSourceCache.json` 为密文 →
+//!   [`BACKUP_PASSWORD_REQUIRED_PREFIX`]；
+//! - 提供密码 + 三个候选全部解密失败 → [`BACKUP_PASSWORD_INVALID_PREFIX`]；
+//! - 部分成功 → 密码正确；`servers.json` 解析失败只 warn（对齐原版 `runCatching`），
+//!   `cookies.json`/`runtimeSourceCache.json` 解析失败 →
+//!   [`BACKUP_ENCRYPTED_CONTENT_CORRUPT_PREFIX`]。
+//!
+//! 内容恢复：cookies 按原版 `CookieStore.restoreCookie` 语义（`url` 含 `|` 原样
+//! upsert，否则按 `get_sub_domain` 归一后与库内同名键合并）；runtime 仅接受五前缀
+//! （`v_`/`userInfo_`/`loginHeader_`/`sourceVariable_`/`infoMap_`），按精确 deadline
+//! 落库、过期跳过，写完后清内存运行时变量让引擎重载。
+//!
+//! 探测（[`backup_inspect`]）只解压三个候选条目判定是否需要密码，不写任何表。
+//! **本批不做备份创建侧加密**（`backup_create` 仍写明文 JSON，另行立项）。
 
 use std::collections::HashMap;
 use std::fs;
@@ -95,11 +121,11 @@ use legado_core::{LegadoError, LegadoResult};
 use legado_db::repository::Repository;
 use legado_db::{
     AutoTaskRepository, BookGroup, BookGroupRepository, BookRepository, BookSourceRepository,
-    BookmarkRepository, CacheRepository, DictRule, DictRuleRepository, HighlightRepository,
-    HighlightRuleRepository, HttpTts, HttpTtsRepository, KeyboardAssist, KeyboardAssistRepository,
-    ReadRecord, ReadRecordRepository, ReplaceRuleRepository, RssSourceRepository, RssStarRecord,
-    RssStarRepository, RuleSubRecord, RuleSubRepository, SearchKeywordRepository, ServerRepository,
-    TxtTocRuleRecord, TxtTocRuleRepository,
+    BookmarkRepository, CacheRepository, CookieRepository, DictRule, DictRuleRepository,
+    HighlightRepository, HighlightRuleRepository, HttpTts, HttpTtsRepository, KeyboardAssist,
+    KeyboardAssistRepository, ReadRecord, ReadRecordRepository, ReplaceRuleRepository,
+    RssSourceRepository, RssStarRecord, RssStarRepository, RuleSubRecord, RuleSubRepository,
+    SearchKeywordRepository, ServerRepository, TxtTocRuleRecord, TxtTocRuleRepository,
 };
 
 use crate::api::config_api::CONFIG_PREFIX;
@@ -199,6 +225,39 @@ pub struct BackupData {
         deserialize_with = "deserialize_direct_link_upload_rule"
     )]
     pub direct_link_upload_rule: Option<String>,
+    /// Cookie 列表（批17a，**仅**由原版 zip 适配层填充）
+    ///
+    /// 原版 `cookies.json` 元素形态 `{url, cookie}`。`serde(skip)`：我方单文件
+    /// JSON 备份既不含也不恢复该表（本批只打通原版 zip 路径），备份文件形状
+    /// 与恢复口径不变。
+    #[serde(skip)]
+    pub cookies: Vec<CookieBackupEntry>,
+    /// 书源运行变量缓存（批17a，**仅**由原版 zip 适配层填充）
+    ///
+    /// 原版 `runtimeSourceCache.json` 元素形态 `{key, value, deadline}`。
+    /// 同 [`Self::cookies`]，`serde(skip)` 不参与自有 JSON 备份。
+    #[serde(skip)]
+    pub runtime_source_caches: Vec<RuntimeCacheBackupEntry>,
+}
+
+/// 原版 `cookies.json` 的单条记录
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CookieBackupEntry {
+    /// Cookie 作用域键（原版 `Cookie.url`；非域名时可能含 `|`）
+    pub url: String,
+    /// Cookie 值（`k=v; k2=v2` 形态）
+    pub cookie: String,
+}
+
+/// 原版 `runtimeSourceCache.json` 的单条记录
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeCacheBackupEntry {
+    /// 缓存键（必须是五类运行时前缀之一）
+    pub key: String,
+    /// 缓存值（原版允许 null，我方 DB 列 NOT NULL，落库时空值归一为空串）
+    pub value: Option<String>,
+    /// 过期时间戳（毫秒），0 表示永不过期
+    pub deadline: i64,
 }
 
 /// 宽容反序列化 `directLinkUploadRule`（字段级容错，批16f 回修 P2-2）
@@ -251,6 +310,8 @@ impl BackupData {
             servers: Vec::new(),
             auto_tasks: Vec::new(),
             direct_link_upload_rule: None,
+            cookies: Vec::new(),
+            runtime_source_caches: Vec::new(),
         }
     }
 }
@@ -515,6 +576,9 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             servers,
             auto_tasks: Vec::new(),
             direct_link_upload_rule,
+            // 批17a：cookies / 运行时变量只走原版 zip 恢复，自有 JSON 备份不收集
+            cookies: Vec::new(),
+            runtime_source_caches: Vec::new(),
         })
     })?;
 
@@ -534,7 +598,19 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
     Ok(path.to_string())
 }
 
-/// 从备份文件恢复
+/// 从备份文件恢复（无密码旧入口）
+///
+/// 兼容包装：等价于 [`backup_restore_with_password`] 传 `None`
+/// （空密码密钥），旧调用方行为不变。
+pub fn backup_restore(path: &str) -> LegadoResult<String> {
+    backup_restore_with_password(path, None)
+}
+
+/// 从备份文件恢复（批17a：支持原版 zip 备份密码）
+///
+/// `password` 仅对**原版 zip 备份**生效；`None`/空串等价空密码。我方单文件
+/// JSON 备份忽略该参数（其恢复语义不含加密内容）。密码错误/缺失时在**事务前**
+/// 返回带前缀的错误码（见模块注释「批17a」），库内零残留。
 ///
 /// 读取 JSON 文件，逐条恢复各表数据，返回恢复统计。
 ///
@@ -552,7 +628,7 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
 ///   入口，单实现原则）；池化 `&Connection` 为不可变借用，经
 ///   `unchecked_transaction()` 开启事务（rusqlite 0.31 `transaction()`
 ///   需 `&mut Connection`，缘由见 legado-db connection.rs 文档）。
-pub fn backup_restore(path: &str) -> LegadoResult<String> {
+pub fn backup_restore_with_password(path: &str, password: Option<&str>) -> LegadoResult<String> {
     // [批9 回修 P1] 先按元数据限制输入包大小，避免把超大文件整体读入内存
     // （JSON 与 zip 两个入口共用；metadata 失败按读取失败报错）
     let metadata = fs::metadata(path)
@@ -568,7 +644,7 @@ pub fn backup_restore(path: &str) -> LegadoResult<String> {
 
     // 批9：按魔数分流——原版 zip 多文件备份 vs 自有单文件 JSON
     if is_zip_backup(&bytes) {
-        return restore_from_zip(&bytes);
+        return restore_from_zip(&bytes, password);
     }
 
     // [批9 回修 P1] 既非 zip 魔数、又不以 JSON 对象开头的文件（如带 stub 的
@@ -603,6 +679,108 @@ pub fn backup_restore(path: &str) -> LegadoResult<String> {
         .map_err(|e| LegadoError::Internal(format!("备份文件解析失败: {e}")))?;
 
     restore_backup_data(&backup, replace_policy)
+}
+
+/// 备份探测（批17a，契约 §2.11 `backupInspect`）
+///
+/// **只读**：zip 仅解压 [`ZIP_ENCRYPTED_FILES`] 三个候选条目（复用路径安全
+/// 校验与解压限额，不全量解压），不写任何表；我方单文件 JSON 备份直接判定
+/// `format=json`（其内容不加密）。
+///
+/// 返回 JSON：`{"format":"zip"|"json","passwordRequired":bool,
+/// "passwordProtectedFiles":[string]}`。判定细则见 [`inspect_encrypted_candidate`]。
+pub fn backup_inspect(path: &str) -> LegadoResult<String> {
+    let metadata = fs::metadata(path)
+        .map_err(|e| LegadoError::Io(std::io::Error::other(format!("读取备份文件失败: {e}"))))?;
+    if metadata.len() > MAX_BACKUP_ARCHIVE_BYTES {
+        return Err(LegadoError::Io(std::io::Error::other(format!(
+            "备份文件过大（{} 字节，上限 {MAX_BACKUP_ARCHIVE_BYTES} 字节），已拒绝探测: {path}",
+            metadata.len()
+        ))));
+    }
+    let bytes = fs::read(path)
+        .map_err(|e| LegadoError::Io(std::io::Error::other(format!("读取备份文件失败: {e}"))))?;
+
+    if is_zip_backup(&bytes) {
+        let archive = read_zip_selected(&bytes, &ZIP_ENCRYPTED_FILES)?;
+        let mut protected: Vec<&str> = Vec::new();
+        for name in ZIP_ENCRYPTED_FILES {
+            let Some(entry) = archive.files.get(name) else {
+                continue;
+            };
+            match inspect_encrypted_candidate(name, entry) {
+                InspectVerdict::Protected => protected.push(name),
+                InspectVerdict::Corrupt => {
+                    log::warn!("探测到 {name} 内容损坏（不是明文数组、空密码也解不开）");
+                }
+                InspectVerdict::Plain => {}
+            }
+        }
+        let result = serde_json::json!({
+            "format": "zip",
+            "passwordRequired": !protected.is_empty(),
+            "passwordProtectedFiles": protected,
+        });
+        return serde_json::to_string(&result)
+            .map_err(|e| LegadoError::Internal(format!("备份探测结果序列化失败: {e}")));
+    }
+
+    // 非 zip：与恢复入口同一「首字符 { 才是本应用 JSON 备份」口径
+    let first_non_space = bytes
+        .strip_prefix(&[0xEF, 0xBB, 0xBF])
+        .unwrap_or(&bytes)
+        .iter()
+        .find(|b| !b.is_ascii_whitespace());
+    if !matches!(first_non_space, Some(b'{')) {
+        return Err(LegadoError::Internal(
+            "不支持的备份格式：文件既不是原版 zip 备份，也不是本应用的 JSON 备份".to_string(),
+        ));
+    }
+    Ok(r#"{"format":"json","passwordRequired":false,"passwordProtectedFiles":[]}"#.to_string())
+}
+
+/// 探测单个可能加密的 zip 条目是否需要密码
+///
+/// 判定（对齐用户裁决）：
+/// - 明文 JSON **数组** → 无需密码（`Plain`）；
+/// - 以 `{`/`[` 开头但解析不成数组 → 内容损坏，**不**要求密码（`Corrupt`）；
+/// - 其余（密文形态）用空密码试解 + JSON 数组解析，失败 → 需密码（`Protected`）。
+///
+/// 注意：`servers.json` 可能用空密码密钥加密（原版恒加密，空密码也用固定
+/// 密钥），空密码能解开时同样归入 `Plain`（恢复无需用户输入密码）。
+fn inspect_encrypted_candidate(name: &str, bytes: &[u8]) -> InspectVerdict {
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        log::warn!("{name} 不是 UTF-8 文本");
+        return InspectVerdict::Corrupt;
+    };
+    let text = text.trim_start_matches('\u{feff}').trim();
+    if text.starts_with('[') {
+        return match serde_json::from_str::<Vec<serde_json::Value>>(text) {
+            Ok(_) => InspectVerdict::Plain,
+            Err(_) => InspectVerdict::Corrupt,
+        };
+    }
+    if text.starts_with('{') {
+        return InspectVerdict::Corrupt;
+    }
+    match BackupCipher::new(None).decrypt_text(text) {
+        Ok(plain) => match serde_json::from_str::<Vec<serde_json::Value>>(plain.trim()) {
+            Ok(_) => InspectVerdict::Plain,
+            Err(_) => InspectVerdict::Corrupt,
+        },
+        Err(_) => InspectVerdict::Protected,
+    }
+}
+
+/// 探测判定结果
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InspectVerdict {
+    /// 明文或以空密码可解密（无需用户输入密码）
+    Plain,
+    /// 内容损坏（不要求密码；恢复时按类别跳过或报错）
+    Corrupt,
+    /// 需要备份密码
+    Protected,
 }
 
 /// 恢复「先清空再插入」策略（对齐原版 Restore.kt 的全量替换语义）
@@ -685,6 +863,9 @@ const ZIP_DATA_FILES: [&str; 21] = [
     "runtimeSourceCache.json",
 ];
 
+/// 原版 zip 内可能加密的三个候选文件（批17a：探测与恢复前置校验共用）
+const ZIP_ENCRYPTED_FILES: [&str; 3] = ["servers.json", "cookies.json", "runtimeSourceCache.json"];
+
 /// 原版 zip 内存在、但本实现无对应落库面的文件（只报告不落库，登记见模块注释）
 const ZIP_UNMAPPED_FILES: [&str; 6] = [
     "readConfig.json",
@@ -717,6 +898,14 @@ fn is_zip_backup(bytes: &[u8]) -> bool {
 /// zip 头的 `uncompressed_size` 不可信，声明值只用于提前日志；跨条目累计
 /// 解压量超过 [`MAX_BACKUP_TOTAL_BYTES`] 时中止整次恢复（明确报错）。
 fn read_zip_backup(bytes: &[u8]) -> LegadoResult<ZipBackupArchive> {
+    read_zip_selected(bytes, &ZIP_DATA_FILES)
+}
+
+/// 读取 zip 备份中**指定**条目（路径安全校验与解压限额与恢复入口一致）
+///
+/// 批17a：探测入口只传 [`ZIP_ENCRYPTED_FILES`]，避免为了判断「是否要密码」
+/// 把整个备份的全部数据文件解压一遍。
+fn read_zip_selected(bytes: &[u8], wanted: &[&str]) -> LegadoResult<ZipBackupArchive> {
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(bytes))
         .map_err(|e| LegadoError::Internal(format!("备份 zip 解析失败: {e}")))?;
     let mut files: HashMap<String, Vec<u8>> = HashMap::new();
@@ -738,7 +927,7 @@ fn read_zip_backup(bytes: &[u8]) -> LegadoResult<ZipBackupArchive> {
             continue;
         }
         entry_names.push(name.clone());
-        if !ZIP_DATA_FILES.contains(&name.as_str()) {
+        if !wanted.contains(&name.as_str()) {
             continue;
         }
         let declared_size = entry.size();
@@ -825,43 +1014,332 @@ fn is_safe_zip_entry_name(name: &str) -> bool {
 }
 
 /// zip 恢复入口：读包 → 加密前置校验 → 报告未映射项 → 转 [`BackupData`] → 同一恢复体落库
-fn restore_from_zip(bytes: &[u8]) -> LegadoResult<String> {
+///
+/// 批17a：`password` 仅用于解密 `servers.json`/`cookies.json`/
+/// `runtimeSourceCache.json`；前置校验（[`precheck_zip_encrypted`]）在开事务**之前**
+/// 完成，密码缺失/错误/加密内容损坏时库内零残留。
+fn restore_from_zip(bytes: &[u8], password: Option<&str>) -> LegadoResult<String> {
     let archive = read_zip_backup(bytes)?;
-    ensure_zip_encryption_supported(&archive)?;
+    let cipher = BackupCipher::new(password);
+    let credentials = precheck_zip_encrypted(&archive, &cipher)?;
     // 返回值仅供回归测试断言告警，恢复流程无需消费
     let _ = report_unmapped_zip_entries(&archive);
-    let (backup, replace_policy) = backup_data_from_zip(&archive);
-    restore_backup_data(&backup, replace_policy)
+    let (backup, replace_policy) = backup_data_from_zip(&archive, &cipher, credentials);
+    let runtime_restored = !backup.runtime_source_caches.is_empty();
+    let stats = restore_backup_data(&backup, replace_policy)?;
+    // 对齐原版 `Restore.kt:393-397`：写入运行时缓存后 `AppCacheManager.clearSourceVariables()`
+    // 让引擎内存变量从 DB 重载（否则进程内旧变量继续生效到重启）
+    if runtime_restored {
+        if let Err(e) = legado_js::host_api::variable_store::clear_source_variables() {
+            log::warn!("恢复书源运行变量后清理内存变量失败（重启后生效）: {e}");
+        }
+    }
+    Ok(stats)
 }
 
-/// 加密内容前置校验（对齐原版「无备份密码即拒绝恢复登录信息」语义）
+/// 加密内容前置校验结果（批17a）
 ///
-/// `cookies.json` / `runtimeSourceCache.json` 只在原版设置备份密码时写出
-/// （`Backup.kt` 在密码为空且启用这两类内容时直接抛错），因此：
-/// - 文件存在且内容不是明文 JSON 数组 → 备份设过密码，我方无密码输入面，
-///   返回明确错误（不静默跳过）；此时**不启动事务**，库内零残留；
-/// - 明文 JSON 数组 → 历史/第三方产出的明文包，登记后跳过该类（不静默）。
-fn ensure_zip_encryption_supported(archive: &ZipBackupArchive) -> LegadoResult<()> {
-    for (name, label) in [
-        ("cookies.json", "登录信息"),
-        ("runtimeSourceCache.json", "书源运行变量"),
-    ] {
+/// 各 `Option` 语义：`None` = 文件缺失或解析失败（已 warn 跳过）；
+/// `Some(空列表)` = 文件存在且解析成功但内容为空。
+#[derive(Debug, Default)]
+struct ZipCredentials {
+    /// `servers.json` 明文实体数组（明文或解密成功）
+    servers: Option<Vec<serde_json::Value>>,
+    /// `cookies.json` 解析结果
+    cookies: Option<Vec<CookieBackupEntry>>,
+    /// `runtimeSourceCache.json` 解析结果
+    runtime: Option<Vec<RuntimeCacheBackupEntry>>,
+}
+
+/// 加密内容前置校验（批17a，事务前执行，失败即零落库）
+///
+/// 对 [`ZIP_ENCRYPTED_FILES`] 三个候选逐个判定：
+/// - 明文 JSON 数组 → 直接解析（`servers` 解析失败只 warn，对齐原版 `runCatching`）；
+/// - 以 `{`/`[` 开头但解析不成数组 → 损坏；`servers` 只 warn，cookies/runtime
+///   返回 [`BACKUP_ENCRYPTED_CONTENT_CORRUPT_PREFIX`]；
+/// - 密文 → `cookies`/`runtime` 在未提供密码时返回
+///   [`BACKUP_PASSWORD_REQUIRED_PREFIX`]；提供密码时解密，全部解密失败返回
+///   [`BACKUP_PASSWORD_INVALID_PREFIX`]（部分成功视为密码正确，失败条目 warn 跳过）。
+///
+/// 加密文件只按**密文**判定：以 `[` 开头的文本一律按明文数组处理（原版历史/
+/// 第三方产物形态），不会尝试解密，避免把合法明文误判为密文。
+fn precheck_zip_encrypted(
+    archive: &ZipBackupArchive,
+    cipher: &BackupCipher,
+) -> LegadoResult<ZipCredentials> {
+    let password_provided = cipher.password_provided();
+    let mut credentials = ZipCredentials::default();
+    let mut decrypt_attempted = 0usize;
+    let mut decrypt_succeeded = 0usize;
+
+    for name in ZIP_ENCRYPTED_FILES {
         let Some(bytes) = archive.files.get(name) else {
             continue;
         };
-        let Some(text) = decode_zip_text(name, bytes) else {
-            continue;
+        let text = match decode_zip_text(name, bytes) {
+            Some(text) if !text.is_empty() => text,
+            other => {
+                let reason = if other.is_some() {
+                    "内容为空"
+                } else {
+                    "不是 UTF-8 文本"
+                };
+                if name == "servers.json" {
+                    log::warn!("{name} {reason}（已跳过服务器配置）");
+                    continue;
+                }
+                return Err(encrypted_content_corrupt_error(name, reason));
+            }
         };
+
+        // 明文数组（原版历史/第三方产物）：直接解析，不尝试解密
         if text.starts_with('[') {
-            log::warn!("备份包含 {name}（{label}），当前版本不恢复该表（已跳过）");
+            match name {
+                "servers.json" => match serde_json::from_str::<Vec<serde_json::Value>>(text) {
+                    Ok(list) => credentials.servers = Some(list),
+                    Err(e) => log::warn!("servers.json 解析失败（已跳过）: {e}"),
+                },
+                "cookies.json" => credentials.cookies = Some(parse_cookie_backup(name, text)?),
+                _ => credentials.runtime = Some(parse_runtime_cache_backup(name, text)?),
+            }
             continue;
         }
-        return Err(LegadoError::Internal(format!(
-            "该备份包含原版加密的{label}文件 {name}，说明备份时设置过备份密码；\
-             当前版本不支持输入备份密码，无法恢复。请在原版 App 的备份设置中清除备份密码后重新备份。"
-        )));
+
+        // 以 `{` 开头（或 `[` 开头但上面解析失败的路径不会到这里）说明不是
+        // 「可解密的 Base64 密文」，按损坏处理
+        if text.starts_with('{') {
+            if name == "servers.json" {
+                log::warn!("servers.json 是 JSON 对象而非数组（已跳过服务器配置）");
+                continue;
+            }
+            return Err(encrypted_content_corrupt_error(
+                name,
+                "内容是 JSON 对象而不是数组",
+            ));
+        }
+
+        // 密文：cookies/runtime 未提供密码 ⇒ 明确要求密码（原版同语义）
+        if !password_provided {
+            if name == "servers.json" {
+                // servers 允许空密码密钥；用空密码尝试一次，失败只 warn 跳过
+                decrypt_attempted += 1;
+                match cipher.decrypt_text(text) {
+                    Ok(plain) => {
+                        decrypt_succeeded += 1;
+                        match serde_json::from_str::<Vec<serde_json::Value>>(plain.trim()) {
+                            Ok(list) => credentials.servers = Some(list),
+                            Err(e) => log::warn!("servers.json 解密后解析失败（已跳过）: {e}"),
+                        }
+                    }
+                    Err(e) => {
+                        log::warn!(
+                            "servers.json 无法用空密码解密（原版备份设置过备份密码）；\
+                             服务器配置未恢复（已跳过）: {e}"
+                        );
+                    }
+                }
+                continue;
+            }
+            return Err(backup_password_required_error(name));
+        }
+
+        decrypt_attempted += 1;
+        let plain = match cipher.decrypt_text(text) {
+            Ok(plain) => {
+                decrypt_succeeded += 1;
+                plain
+            }
+            Err(e) => {
+                log::warn!("{name} 用提供的备份密码解密失败（已跳过）: {e}");
+                continue;
+            }
+        };
+        match name {
+            "servers.json" => match serde_json::from_str::<Vec<serde_json::Value>>(plain.trim()) {
+                Ok(list) => credentials.servers = Some(list),
+                Err(e) => {
+                    log::warn!("servers.json 解密成功但解析失败（密码正确，服务器配置已跳过）: {e}")
+                }
+            },
+            "cookies.json" => credentials.cookies = Some(parse_cookie_backup(name, plain.trim())?),
+            _ => credentials.runtime = Some(parse_runtime_cache_backup(name, plain.trim())?),
+        }
     }
-    Ok(())
+
+    // 提供密码时：有加密候选但一个都没解开 ⇒ 密码错误（零落库）
+    if password_provided && decrypt_attempted > 0 && decrypt_succeeded == 0 {
+        return Err(backup_password_invalid_error());
+    }
+    Ok(credentials)
+}
+
+/// 错误码前缀（Dart 按消息前缀识别；后端统一以 `LegadoError::Internal` 返回文本）
+pub const BACKUP_PASSWORD_REQUIRED_PREFIX: &str = "BACKUP_PASSWORD_REQUIRED";
+/// 备份密码错误
+pub const BACKUP_PASSWORD_INVALID_PREFIX: &str = "BACKUP_PASSWORD_INVALID";
+/// 加密内容解密成功但结构损坏
+pub const BACKUP_ENCRYPTED_CONTENT_CORRUPT_PREFIX: &str = "BACKUP_ENCRYPTED_CONTENT_CORRUPT";
+
+fn backup_password_required_error(name: &str) -> LegadoError {
+    let label = match name {
+        "cookies.json" => "登录信息",
+        "runtimeSourceCache.json" => "书源运行变量",
+        _ => "加密内容",
+    };
+    LegadoError::Internal(format!(
+        "{BACKUP_PASSWORD_REQUIRED_PREFIX}: 该备份包含原版加密的{label}（{name}），\
+         说明备份时设置过备份密码；请输入备份密码后重试"
+    ))
+}
+
+fn backup_password_invalid_error() -> LegadoError {
+    LegadoError::Internal(format!(
+        "{BACKUP_PASSWORD_INVALID_PREFIX}: 备份密码错误——无法用该密码解开备份中的加密内容，\
+         请确认密码后重试"
+    ))
+}
+
+fn encrypted_content_corrupt_error(name: &str, reason: &str) -> LegadoError {
+    LegadoError::Internal(format!(
+        "{BACKUP_ENCRYPTED_CONTENT_CORRUPT_PREFIX}: 备份中的 {name} 内容损坏（{reason}），\
+         无法恢复该部分数据"
+    ))
+}
+
+/// 解析原版 `cookies.json`（`[{url, cookie}]`）
+///
+/// 文件级结构非法 → [`BACKUP_ENCRYPTED_CONTENT_CORRUPT_PREFIX`]（事务前中止）；
+/// 条目级非法（非对象/url 非字符串或空白/cookie 非字符串）只 warn 跳过——
+/// 原版整份抛错，本实现按「单条坏数据不阻断整次恢复」口径收窄，已登记。
+fn parse_cookie_backup(name: &str, text: &str) -> LegadoResult<Vec<CookieBackupEntry>> {
+    let values: Vec<serde_json::Value> = serde_json::from_str(text)
+        .map_err(|e| encrypted_content_corrupt_error(name, &format!("不是 JSON 数组: {e}")))?;
+    let mut entries = Vec::with_capacity(values.len());
+    for value in values {
+        let Some(map) = value.as_object() else {
+            log::warn!("{name} 条目不是 JSON 对象（已跳过）");
+            continue;
+        };
+        let url = map.get("url").and_then(|v| v.as_str()).unwrap_or("");
+        let cookie = map.get("cookie").and_then(|v| v.as_str());
+        if url.trim().is_empty() || cookie.is_none() {
+            log::warn!("{name} 条目缺少有效 url/cookie（已跳过）");
+            continue;
+        }
+        entries.push(CookieBackupEntry {
+            url: url.to_string(),
+            cookie: cookie.unwrap_or_default().to_string(),
+        });
+    }
+    Ok(entries)
+}
+
+/// 解析原版 `runtimeSourceCache.json`（`[{key, value, deadline}]`）
+///
+/// 键必须是五类运行时前缀（对齐原版 `Restore.isRuntimeSourceCacheKey`）；`
+/// value` 允许 null（DB 列 NOT NULL，恢复时归一为空串）；`deadline` 必须是
+/// 非负整数。文件级结构非法 → 损坏错误；条目级非法只 warn 跳过。同键出现
+/// 多次时后者胜出（对齐原版 `latestByKey[key] = ...`）。
+fn parse_runtime_cache_backup(
+    name: &str,
+    text: &str,
+) -> LegadoResult<Vec<RuntimeCacheBackupEntry>> {
+    let values: Vec<serde_json::Value> = serde_json::from_str(text)
+        .map_err(|e| encrypted_content_corrupt_error(name, &format!("不是 JSON 数组: {e}")))?;
+    let mut entries: Vec<RuntimeCacheBackupEntry> = Vec::with_capacity(values.len());
+    let mut index_by_key: HashMap<String, usize> = HashMap::new();
+    for value in values {
+        let Some(map) = value.as_object() else {
+            log::warn!("{name} 条目不是 JSON 对象（已跳过）");
+            continue;
+        };
+        let key = map.get("key").and_then(|v| v.as_str()).unwrap_or("");
+        if !is_runtime_source_cache_key(key) {
+            log::warn!("{name} 条目键不在五类运行时前缀内（已跳过）: {key}");
+            continue;
+        }
+        let value = match map.get("value") {
+            None => {
+                log::warn!("{name} 条目缺少 value（已跳过）: {key}");
+                continue;
+            }
+            Some(serde_json::Value::Null) => None,
+            Some(serde_json::Value::String(text)) => Some(text.clone()),
+            Some(_) => {
+                log::warn!("{name} 条目 value 不是字符串/null（已跳过）: {key}");
+                continue;
+            }
+        };
+        let Some(deadline) = map.get("deadline").and_then(|v| v.as_i64()) else {
+            log::warn!("{name} 条目 deadline 不是整数（已跳过）: {key}");
+            continue;
+        };
+        if deadline < 0 {
+            log::warn!("{name} 条目 deadline 为负（已跳过）: {key}");
+            continue;
+        }
+        let entry = RuntimeCacheBackupEntry {
+            key: key.to_string(),
+            value,
+            deadline,
+        };
+        match index_by_key.get(key) {
+            Some(&index) => entries[index] = entry,
+            None => {
+                index_by_key.insert(key.to_string(), entries.len());
+                entries.push(entry);
+            }
+        }
+    }
+    Ok(entries)
+}
+
+/// 五类书源运行时缓存前缀（对齐原版 `Restore.kt:94-106`）
+fn is_runtime_source_cache_key(key: &str) -> bool {
+    [
+        "v_",
+        "userInfo_",
+        "loginHeader_",
+        "sourceVariable_",
+        "infoMap_",
+    ]
+    .iter()
+    .any(|prefix| key.starts_with(prefix) && key.len() > prefix.len())
+}
+
+/// 合并两段 Cookie 字符串（同名键 `incoming` 胜）
+///
+/// 语义对齐原版 `CookieStore.mergeCookieValues`（`cookieToMap` → `putAll` →
+/// `mapToCookie`）。差异（本地加固）：输出按键名排序而非插入顺序——Cookie
+/// 语义按名取值，顺序不影响发送/读取，排序换来确定性输出便于回归断言。
+fn merge_cookie_values(existing: &str, incoming: &str) -> String {
+    let mut map: HashMap<String, String> = HashMap::new();
+    for pair in existing.split(';').chain(incoming.split(';')) {
+        let pair = pair.trim();
+        if pair.is_empty() {
+            continue;
+        }
+        if let Some((key, value)) = pair.split_once('=') {
+            let key = key.trim();
+            if !key.is_empty() {
+                map.insert(key.to_string(), value.trim().to_string());
+            }
+        }
+    }
+    let mut parts: Vec<String> = map
+        .into_iter()
+        .map(|(key, value)| format!("{key}={value}"))
+        .collect();
+    parts.sort();
+    parts.join("; ")
+}
+
+/// 当前时间戳（毫秒）
+fn current_time_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as i64
 }
 
 /// 报告未映射内容（媒体目录与配置快照）：只记日志，不落盘
@@ -902,7 +1380,11 @@ fn report_unmapped_zip_entries(archive: &ZipBackupArchive) -> bool {
 ///
 /// 同时返回 [`ReplaceTablePolicy`]：高亮规则/键盘辅助两表在原版恢复里是
 /// 「文件存在且解析成功 → 全量替换」，zip 适配层必须把该事实显式带出。
-fn backup_data_from_zip(archive: &ZipBackupArchive) -> (BackupData, ReplaceTablePolicy) {
+fn backup_data_from_zip(
+    archive: &ZipBackupArchive,
+    cipher: &BackupCipher,
+    credentials: ZipCredentials,
+) -> (BackupData, ReplaceTablePolicy) {
     let mut data = BackupData::empty();
     data.books = zip_json_array(archive, "bookshelf.json")
         .unwrap_or_default()
@@ -953,8 +1435,10 @@ fn backup_data_from_zip(archive: &ZipBackupArchive) -> (BackupData, ReplaceTable
         data.keyboard_assists = assists;
     }
     data.auto_tasks = zip_json_array(archive, "autoTask.json").unwrap_or_default();
-    data.servers = zip_servers(archive);
-    data.direct_link_upload_rule = zip_direct_link_upload_rule(archive);
+    data.servers = credentials.servers.unwrap_or_default();
+    data.cookies = credentials.cookies.unwrap_or_default();
+    data.runtime_source_caches = credentials.runtime.unwrap_or_default();
+    data.direct_link_upload_rule = zip_direct_link_upload_rule(archive, cipher);
     (data, replace_policy)
 }
 
@@ -1132,58 +1616,21 @@ fn normalize_zip_http_tts(mut value: serde_json::Value) -> serde_json::Value {
     value
 }
 
-/// 解析 `servers.json`：明文数组优先，否则按原版空密码密钥解密
-///
-/// 原版 `Backup.kt:304-311` 总是先尝试 `aes.encryptBase64`（失败才落明文），
-/// 恢复侧 `Restore.kt:379-390` 用 `isJsonArray()` 判别明文。无法用空密码
-/// 解密 ⇒ 备份设过密码 ⇒ warn 跳过（对齐原版 `runCatching` 记日志后继续，
-/// 不中断其余表的恢复）。
-fn zip_servers(archive: &ZipBackupArchive) -> Vec<serde_json::Value> {
-    let Some(bytes) = archive.files.get("servers.json") else {
-        return Vec::new();
-    };
-    let Some(text) = decode_zip_text("servers.json", bytes) else {
-        return Vec::new();
-    };
-    if text.starts_with('[') {
-        return match serde_json::from_str::<Vec<serde_json::Value>>(text) {
-            Ok(list) => list,
-            Err(e) => {
-                log::warn!("servers.json 解析失败（已跳过）: {e}");
-                Vec::new()
-            }
-        };
-    }
-    match decrypt_backup_payload(text) {
-        Ok(plain) => match serde_json::from_str::<Vec<serde_json::Value>>(plain.trim()) {
-            Ok(list) => list,
-            Err(e) => {
-                log::warn!("servers.json 解密后解析失败（已跳过）: {e}");
-                Vec::new()
-            }
-        },
-        Err(e) => {
-            log::warn!(
-                "servers.json 无法用空密码解密（原版备份设置过备份密码）；\
-                 当前版本不支持输入备份密码，服务器配置未恢复（已跳过）: {e}"
-            );
-            Vec::new()
-        }
-    }
-}
-
 /// 解析 `directLinkUploadRule.json`：原版以**明文** GSON 对象写出，直接取用
 ///
 /// 证据（Android 原版与参考版一致）：`Backup.kt` 中该文件为
 /// `DirectLinkUpload.getConfig()?.let { ...writeText(GSON.toJson(it)) }`，
 /// **不经过** `BackupAES`（同文件内 `servers.json` / `cookies.json` 才调用 `aes`）。
-/// 为兼容第三方工具或历史加密产物，明文不是 JSON 对象时按原版空密码密钥尝试
-/// 解密一次（复用 `servers.json` 同一条 [`decrypt_backup_payload`] 流水线，
-/// 不另写解密实现）。
+/// 为兼容第三方工具或历史加密产物，明文不是 JSON 对象时按**当前备份密码**
+/// （批17a：无密码时为原版空密码密钥）尝试解密一次（复用 [`BackupCipher`]
+/// 同一条解密流水线，不另写实现）。
 ///
 /// 文件缺失 / 空文件 / 明文非对象 / 解密失败 / 仍非 JSON 对象 → `None`（warn 跳过，
 /// 不清库内既有配置，对齐原版 `runCatching` 记日志后继续）。
-fn zip_direct_link_upload_rule(archive: &ZipBackupArchive) -> Option<String> {
+fn zip_direct_link_upload_rule(
+    archive: &ZipBackupArchive,
+    cipher: &BackupCipher,
+) -> Option<String> {
     const NAME: &str = "directLinkUploadRule.json";
     let bytes = archive.files.get(NAME)?;
     let text = decode_zip_text(NAME, bytes)?;
@@ -1208,8 +1655,8 @@ fn zip_direct_link_upload_rule(archive: &ZipBackupArchive) -> Option<String> {
         );
         return None;
     }
-    // base64 形态：按原版空密码密钥尝试解密（第三方加密产物）
-    match decrypt_backup_payload(text) {
+    // base64 形态：按当前备份密码尝试解密（第三方加密产物）
+    match cipher.decrypt_text(text) {
         Ok(plain) => {
             let plain = plain.trim();
             let parsed = serde_json::from_str::<serde_json::Value>(plain);
@@ -1226,7 +1673,7 @@ fn zip_direct_link_upload_rule(archive: &ZipBackupArchive) -> Option<String> {
             }
         }
         Err(e) => {
-            log::warn!("{NAME} 按空密码备份密钥解密失败（已跳过，库内既有直链规则保持不变）: {e}");
+            log::warn!("{NAME} 按备份密码解密失败（已跳过，库内既有直链规则保持不变）: {e}");
             None
         }
     }
@@ -1239,7 +1686,7 @@ fn zip_direct_link_upload_rule(archive: &ZipBackupArchive) -> Option<String> {
 /// 与 AES 解密的分配。
 ///
 /// **仅用于日志分流，不作为可解密性判据**：字符集与长度合规的文本仍可能
-/// 解码/解密失败，最终结果一律由 [`decrypt_backup_payload`] 的返回值为准。
+/// 解码/解密失败，最终结果一律由 [`BackupCipher::decrypt_text`] 的返回值为准。
 fn looks_like_base64(text: &str) -> bool {
     let bytes = text.as_bytes();
     if bytes.is_empty() || !bytes.len().is_multiple_of(4) {
@@ -1253,7 +1700,8 @@ fn looks_like_base64(text: &str) -> bool {
 /// 原版 `BackupAES` 密钥派生：`MD5(password)` 小写十六进制串的前 16 个 ASCII 字节
 ///
 /// 注意**不是** hex 解码：Kotlin 侧为 `MD5Utils.md5Encode(password).encodeToByteArray(0, 16)`，
-/// 取的是十六进制字符串前 16 个字符的 UTF-8 字节。
+/// 取的是十六进制字符串前 16 个字符的 UTF-8 字节。密码**不 trim**（原版
+/// `password.orEmpty()` 原样参与 MD5）。
 fn backup_aes_key(password: &str) -> [u8; 16] {
     let digest = format!("{:x}", md5::compute(password.as_bytes()));
     let mut key = [0u8; 16];
@@ -1261,18 +1709,46 @@ fn backup_aes_key(password: &str) -> [u8; 16] {
     key
 }
 
-/// 解密原版备份密文（Base64 + AES-128-ECB/PKCS5Padding）
+/// 原版备份加解密器（批17a）
 ///
-/// 我方无备份密码输入面，固定按空密码派生密钥：未设密码的原版备份可正常
-/// 解密；设过密码的备份解密失败，由调用方给出明确文案（不静默）。
+/// 算法固定：密钥 = [`backup_aes_key`]，AES-128-ECB/PKCS5Padding，Base64 standard。
+/// `None`/空串 → 空密码密钥（`d41d8cd98f00b204`）。
+struct BackupCipher {
+    key: [u8; 16],
+    /// 是否由调用方显式提供了非空密码（决定「缺密码」判定与错误码）
+    password_provided: bool,
+}
+
+impl BackupCipher {
+    /// 按可选密码构造；`None`/空串等价空密码
+    fn new(password: Option<&str>) -> Self {
+        let password = password.unwrap_or("");
+        Self {
+            key: backup_aes_key(password),
+            password_provided: !password.is_empty(),
+        }
+    }
+
+    /// 调用方是否提供了非空密码
+    fn password_provided(&self) -> bool {
+        self.password_provided
+    }
+
+    /// 解密原版备份密文（Base64 → AES-128-ECB/PKCS5 → UTF-8）
+    fn decrypt_text(&self, text: &str) -> LegadoResult<String> {
+        let ciphertext = base64::engine::general_purpose::STANDARD
+            .decode(text.trim())
+            .map_err(|e| LegadoError::Internal(format!("备份密文 base64 解码失败: {e}")))?;
+        let plain = AesCrypto::decrypt_ecb(&self.key, &ciphertext)?;
+        String::from_utf8(plain)
+            .map_err(|e| LegadoError::Internal(format!("备份密文解密结果不是 UTF-8: {e}")))
+    }
+}
+
+/// 按空密码密钥解密（仅供单测锚定历史空密码向量）
+#[cfg(test)]
 fn decrypt_backup_payload(text: &str) -> LegadoResult<String> {
-    let key = backup_aes_key("");
-    let ciphertext = base64::engine::general_purpose::STANDARD
-        .decode(text.trim())
-        .map_err(|e| LegadoError::Internal(format!("备份密文 base64 解码失败: {e}")))?;
-    let plain = AesCrypto::decrypt_ecb(&key, &ciphertext)?;
-    String::from_utf8(plain)
-        .map_err(|e| LegadoError::Internal(format!("备份密文解密结果不是 UTF-8: {e}")))
+    BackupCipher::new(None).decrypt_text(text)
 }
 
 /// 恢复体：各表逐条恢复（单事务闭包内容，条目级错误 warn 跳过继续）
@@ -1562,6 +2038,61 @@ fn restore_backup_in_tx(
                 Err(e) => log::warn!("恢复服务器配置失败（已跳过）: {} - {e}", server.name),
             },
             Err(e) => log::warn!("恢复服务器配置解析失败（已跳过）: {e}"),
+        }
+    }
+
+    // Cookie（批17a：对齐原版 `Restore.kt:391-399`）
+    //
+    // - `url` 含 `|`：原版直接 `cookieDao.insert(cookie)`（原样主键 upsert，
+    //   不做域名归一、不合并）；
+    // - 其余：`CookieStore.restoreCookie` 语义——按 `get_sub_domain` 归一，
+    //   与库内既有 Cookie **同名键合并**（备份新值胜）后 upsert；url/cookie
+    //   为空直接跳过（原版 `TextUtils.isEmpty` 早退）。
+    let cookie_repo = CookieRepository::new(conn);
+    for entry in &backup.cookies {
+        if entry.url.contains('|') {
+            if let Err(e) = cookie_repo.upsert(&entry.url, &entry.cookie) {
+                log::warn!("恢复 Cookie 失败（已跳过）: {} - {e}", entry.url);
+            }
+            continue;
+        }
+        if entry.url.trim().is_empty() || entry.cookie.is_empty() {
+            continue;
+        }
+        let domain = crate::api::net_api::get_sub_domain(&entry.url);
+        let existing = match cookie_repo.get_by_tag(&domain) {
+            Ok(value) => value.unwrap_or_default(),
+            Err(e) => {
+                log::warn!("读取本机 Cookie 失败（按备份值直接写入）: {domain} - {e}");
+                String::new()
+            }
+        };
+        let merged = merge_cookie_values(&existing, &entry.cookie);
+        if let Err(e) = cookie_repo.upsert(&domain, &merged) {
+            log::warn!("恢复 Cookie 失败（已跳过）: {domain} - {e}");
+        }
+    }
+
+    // 书源运行变量缓存（批17a：对齐原版 `Restore.kt:393-397`）
+    //
+    // REPLACE 语义：只覆盖同名键，库内其他源/本地独有运行时条目保持不动；
+    // 已过期条目（deadline>0 且 <= now）不写入（原版备份侧
+    // `getRuntimeSourceCaches(now)` 已过滤，此处防第三方包携带过期项）。
+    if !backup.runtime_source_caches.is_empty() {
+        let cache_repo = CacheRepository::new(conn);
+        let now = current_time_millis();
+        for entry in &backup.runtime_source_caches {
+            if entry.deadline > 0 && entry.deadline <= now {
+                continue;
+            }
+            if let Err(e) = cache_repo.put_with_deadline(
+                &entry.key,
+                entry.value.as_deref().unwrap_or(""),
+                entry.deadline,
+                now,
+            ) {
+                log::warn!("恢复书源运行变量失败（已跳过）: {} - {e}", entry.key);
+            }
         }
     }
 
@@ -1954,6 +2485,7 @@ mod tests {
                 "keyboardAssists",
                 "servers",
                 "auto_task_rules",
+                "cookies",
             ] {
                 conn.execute(&format!("DELETE FROM {table}"), [])
                     .map_err(|e| LegadoError::Database(format!("清空 {table} 失败: {e}")))?;
@@ -3843,6 +4375,10 @@ mod tests {
 
         let err = backup_restore(&path).unwrap_err();
         let message = err.to_string();
+        assert!(
+            message.contains(BACKUP_PASSWORD_REQUIRED_PREFIX),
+            "应返回 BACKUP_PASSWORD_REQUIRED 错误码: {message}"
+        );
         assert!(message.contains("备份密码"), "应提示备份密码: {message}");
         assert!(
             message.contains("cookies.json"),
@@ -3868,10 +4404,12 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// [批9 回修 P2-12] runtimeSourceCache.json 明文/密文两分支
+    /// [批9 回修 P2-12 / 批17a] runtimeSourceCache.json 明文/密文两分支
     ///
-    /// - 密文（设过备份密码）→ 明确错误文案，且库内哨兵行未被触碰；
-    /// - 明文数组（历史/第三方产出）→ warn 跳过该类，其余表照常恢复。
+    /// - 密文（设过备份密码）且未提供密码 → `BACKUP_PASSWORD_REQUIRED`，
+    ///   且库内哨兵行未被触碰；
+    /// - 明文数组（历史/第三方产出）→ 无需密码，按内容恢复（空数组不写行），
+    ///   其余表照常恢复。
     #[test]
     fn test_restore_zip_runtime_source_cache_branches() {
         let _db_guard = crate::db_state::ensure_test_db();
@@ -3903,6 +4441,10 @@ mod tests {
         );
         let err = backup_restore(&path_enc).unwrap_err();
         let message = err.to_string();
+        assert!(
+            message.contains(BACKUP_PASSWORD_REQUIRED_PREFIX),
+            "应返回 BACKUP_PASSWORD_REQUIRED 错误码: {message}"
+        );
         assert!(message.contains("备份密码"), "应提示备份密码: {message}");
         assert!(
             message.contains("runtimeSourceCache.json"),
@@ -3933,7 +4475,7 @@ mod tests {
             serde_json::from_str(&backup_restore(&path_plain).unwrap()).unwrap();
         assert_eq!(
             stats.books, 1,
-            "明文 runtimeSourceCache 只跳过该类，不得影响书架"
+            "明文 runtimeSourceCache（空数组）无需密码，且不得影响书架"
         );
         with_database(|db| {
             let books = BookRepository::new(db.connection()).find_all()?;
@@ -4676,11 +5218,18 @@ mod tests {
         assert!(!looks_like_base64(""));
     }
 
-    /// [批9 密钥派生锚点] 原版 BackupAES 密钥 = MD5 小写 hex 前 16 个 ASCII 字节
+    /// [批9 密钥派生锚点 / 批17a 扩展] 原版 BackupAES 密钥 = MD5 小写 hex 前 16 个 ASCII 字节
+    ///
+    /// 向量为外部计算值（`printf <password> | md5sum`）；密码**不 trim**。
     #[test]
     fn test_backup_aes_key_matches_upstream() {
         assert_eq!(&backup_aes_key("")[..], b"d41d8cd98f00b204");
         assert_eq!(&backup_aes_key("secret")[..], b"5ebe2294ecd0e0f0");
+        // 中文密码按 UTF-8 字节参与 MD5
+        assert_eq!(&backup_aes_key("密码")[..], b"a8105204604a0b11");
+        // 纯空格密码不 trim（与空密码不同）
+        assert_eq!(&backup_aes_key("   ")[..], b"628631f07321b22d");
+        assert_ne!(backup_aes_key("   "), backup_aes_key(""));
 
         // 外部工具（openssl AES-128-ECB/PKCS7）生成的密文必须能被我方解密
         let plain = decrypt_backup_payload(UPSTREAM_EMPTY_PW_SERVERS).unwrap();
@@ -4692,5 +5241,453 @@ mod tests {
             decrypt_backup_payload(UPSTREAM_SECRET_PW_SERVERS).is_err(),
             "设过密码的密文不得被空密码密钥误解出"
         );
+        assert!(
+            BackupCipher::new(Some("secret"))
+                .decrypt_text(UPSTREAM_SECRET_PW_COOKIES)
+                .unwrap()
+                .contains("sid=abc"),
+            "secret 密码 cookies 密文应可解密"
+        );
+    }
+
+    // ─── 批17a：备份密码恢复与探测 ─────────────────────────────────────
+
+    /// 原版「密码 secret」加密的 cookies.json（openssl AES-128-ECB/PKCS7 独立生成）
+    ///
+    /// 明文 = `[{"url":"https://cookie.secret.example.com","cookie":"sid=abc; theme=dark"},
+    /// {"url":"source|https://x.example.com","cookie":"k=v"}]`
+    const UPSTREAM_SECRET_PW_COOKIES: &str = "yPHSkviZ0JUUjpmG012f4n0EFgMDh4DRWY0fQ3/h6/Vma0a0/65eUmymixI24vw46cBYFmK8WjAysl+3TdxQljKB+x/3h4lxshMVgj66b7/A858Lx+WMP2OkMVHs9nqVPWQCWI5dFhkQFvZ/9KlgJEUMyM/sq17eNtvMeAlOeKD+fz1Ohx0RZQ5BmR2Zbh1c";
+
+    /// 原版「密码 secret」加密的 runtimeSourceCache.json（openssl 独立生成）
+    ///
+    /// 明文 = `[{"key":"v_https://runtime.secret.example.com/source_token","value":"tok","deadline":0},
+    /// {"key":"userInfo_https://runtime.secret.example.com/source","value":null,
+    /// "deadline":4102444800000}]`（deadline 2100 年，避免过期）
+    const UPSTREAM_SECRET_PW_RUNTIME: &str = "7YHyIJhec6WNdiIqwc5mBDqaE6y1hz1o0eM7gmV+gzjkKEkps6i0epI8oTaXd/KEeLH7HN/kXeD1Hfy9/yteXbaLCDDd/Ngmu2Z0wy81ruAKo7NAgkT1e9MuKs0fYfYNs2SeMxiBR1IjbUyQVNt6dxWnHlhrVarqJHO1iDaKjghiFD3J5cyaNG3ilBk7SW9TDd90fcpzB899JTf4H6zZ+a8xb2Tk7mnwt1SNrdsUo+1xCbU3WgMxFuFJqee6bXc2";
+
+    /// 原版「密码 密码（中文）」加密的 servers.json（openssl 独立生成）
+    ///
+    /// 明文 = `[{"id":7,"name":"中文密码服务器","type":"WEBDAV",
+    /// "config":"{\"url\":\"https://zh.example.com/\"}","sortNumber":1}]`
+    const UPSTREAM_ZH_PW_SERVERS: &str = "HOkliXdfdVc98XaUufz1tteNmHM2YZcirP6Ot/xqz/JmCDTVq2SLNNaMm1eubgDL/oS/lnheWAAHMITgsdSg8F6JA0CPgJ0eawvP7SOnKyBI8Ao2Aihq1nEiCp0mK2OA7+qetUUb0TWu2rkdsOtM9npGVSoVPEjNmBtp8Z/ngvE=";
+
+    /// 原版「密码 三个空格」加密的 servers.json（openssl 独立生成）
+    ///
+    /// 明文 = `[{"id":8,"name":"空格密码服务器","type":"WEBDAV",
+    /// "config":"{\"url\":\"https://sp.example.com/\"}","sortNumber":2}]`
+    const UPSTREAM_SPACE_PW_SERVERS: &str = "2sPsIEraNWxegqPN2B9d8kE9swcjKJqclhmG1QYBgsdF4q4T1Uj0E8G/uN8EcJ2kodAg+gJL+nR1t1+KEofNmsDq/wDdv2iAQ/ubUzyXhr4EEZcJ1hyCmSjSv2sOQFpGUj249Mycj8G8XmzRRo+pt3Y2HTVToZn1XiqOZVHvaiY=";
+
+    /// secret 密钥加密的「不是数组」内容（明文 `{"not":"array"}`，openssl 生成）
+    const UPSTREAM_SECRET_PW_CORRUPT: &str = "n3SSLeZ151zzmXMyJIF6ow==";
+
+    /// 清空 cookies 与全部 caches（批17a 用例隔离用）
+    fn clear_cookie_and_cache_tables() {
+        with_database(|db| {
+            let conn = db.connection();
+            conn.execute("DELETE FROM cookies", [])
+                .map_err(|e| LegadoError::Database(format!("清空 cookies 失败: {e}")))?;
+            conn.execute("DELETE FROM caches", [])
+                .map_err(|e| LegadoError::Database(format!("清空 caches 失败: {e}")))?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+    }
+
+    /// Cookie 同名键合并（原版 `CookieStore.mergeCookieValues` 语义）
+    #[test]
+    fn test_merge_cookie_values_same_name_incoming_wins() {
+        assert_eq!(merge_cookie_values("", "a=1"), "a=1");
+        assert_eq!(merge_cookie_values("a=1; b=2", "b=3; c=4"), "a=1; b=3; c=4");
+        assert_eq!(merge_cookie_values("a=1", "a="), "a=");
+        assert_eq!(merge_cookie_values("", ""), "");
+    }
+
+    /// inspect：本应用 JSON 备份无需密码
+    #[test]
+    fn test_backup_inspect_json_backup() {
+        let (dir, path) = write_json_backup_file(
+            "legado_inspect_json",
+            "own.json",
+            r#"{"version":4,"books":[]}"#,
+        );
+        let result: serde_json::Value =
+            serde_json::from_str(&backup_inspect(&path).unwrap()).unwrap();
+        assert_eq!(result["format"], "json");
+        assert_eq!(result["passwordRequired"], false);
+        assert_eq!(result["passwordProtectedFiles"], serde_json::json!([]));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// inspect：不支持的文件格式 → 明确错误
+    #[test]
+    fn test_backup_inspect_rejects_unsupported_format() {
+        let dir = std::env::temp_dir().join("legado_inspect_unsupported");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("notes.txt");
+        fs::write(&path, "hello").unwrap();
+        let err = backup_inspect(path.to_str().unwrap()).unwrap_err();
+        assert!(
+            err.to_string().contains("不支持的备份格式"),
+            "应返回统一可读错误: {err}"
+        );
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// inspect：zip 各形态（空密码可解 / 需要密码 / 明文 / 损坏）
+    #[test]
+    fn test_backup_inspect_zip_variants() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        // ① 空密码加密的 servers.json（原版未设密码形态）→ 无需密码
+        let (dir1, path1) = write_upstream_backup_zip(
+            "legado_inspect_empty_pw",
+            &[("servers.json", UPSTREAM_EMPTY_PW_SERVERS.as_bytes())],
+        );
+        let r1: serde_json::Value = serde_json::from_str(&backup_inspect(&path1).unwrap()).unwrap();
+        assert_eq!(r1["format"], "zip");
+        assert_eq!(r1["passwordRequired"], false, "空密码可解: {r1}");
+        assert_eq!(r1["passwordProtectedFiles"], serde_json::json!([]));
+        let _ = fs::remove_dir_all(&dir1);
+
+        // ② secret 密码的 servers.json → 需要密码
+        let (dir2, path2) = write_upstream_backup_zip(
+            "legado_inspect_secret_servers",
+            &[("servers.json", UPSTREAM_SECRET_PW_SERVERS.as_bytes())],
+        );
+        let r2: serde_json::Value = serde_json::from_str(&backup_inspect(&path2).unwrap()).unwrap();
+        assert_eq!(r2["passwordRequired"], true, "{r2}");
+        assert_eq!(
+            r2["passwordProtectedFiles"],
+            serde_json::json!(["servers.json"])
+        );
+        let _ = fs::remove_dir_all(&dir2);
+
+        // ③ secret 密码的 cookies + runtime → 两个文件都列出（固定顺序）
+        let (dir3, path3) = write_upstream_backup_zip(
+            "legado_inspect_secret_cookies_runtime",
+            &[
+                ("cookies.json", UPSTREAM_SECRET_PW_COOKIES.as_bytes()),
+                (
+                    "runtimeSourceCache.json",
+                    UPSTREAM_SECRET_PW_RUNTIME.as_bytes(),
+                ),
+            ],
+        );
+        let r3: serde_json::Value = serde_json::from_str(&backup_inspect(&path3).unwrap()).unwrap();
+        assert_eq!(r3["passwordRequired"], true, "{r3}");
+        assert_eq!(
+            r3["passwordProtectedFiles"],
+            serde_json::json!(["cookies.json", "runtimeSourceCache.json"])
+        );
+        let _ = fs::remove_dir_all(&dir3);
+
+        // ④ 全明文数组 → 无需密码
+        let (dir4, path4) = write_upstream_backup_zip(
+            "legado_inspect_plaintext",
+            &[
+                ("servers.json", b"[]"),
+                ("cookies.json", b"[]"),
+                ("runtimeSourceCache.json", b"[]"),
+            ],
+        );
+        let r4: serde_json::Value = serde_json::from_str(&backup_inspect(&path4).unwrap()).unwrap();
+        assert_eq!(r4["passwordRequired"], false, "{r4}");
+        let _ = fs::remove_dir_all(&dir4);
+
+        // ⑤ 以 { 开头的对象 / 非法数组 → 损坏，不要求密码
+        let (dir5, path5) = write_upstream_backup_zip(
+            "legado_inspect_corrupt",
+            &[
+                ("servers.json", br#"{"not":"array"}"#),
+                ("cookies.json", b"[1,"),
+            ],
+        );
+        let r5: serde_json::Value = serde_json::from_str(&backup_inspect(&path5).unwrap()).unwrap();
+        assert_eq!(r5["passwordRequired"], false, "损坏内容不应要求密码: {r5}");
+        assert_eq!(r5["passwordProtectedFiles"], serde_json::json!([]));
+        let _ = fs::remove_dir_all(&dir5);
+    }
+
+    /// 正确密码：servers + cookies + runtime 全部恢复（含域名合并与精确 deadline）
+    #[test]
+    fn test_restore_zip_with_password_restores_servers_cookies_runtime() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        clear_cookie_and_cache_tables();
+
+        // 预置同域 Cookie：sid 应被备份值覆盖，keep 保留
+        let url = "https://cookie.secret.example.com";
+        let domain = crate::api::net_api::get_sub_domain(url);
+        with_database(|db| {
+            CookieRepository::new(db.connection()).upsert(&domain, "sid=old; keep=1")
+        })
+        .unwrap();
+
+        let bookshelf =
+            r#"[{"bookUrl":"https://zip.example/pw-book","name":"密码包书","author":"作者"}]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_with_password",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                ("servers.json", UPSTREAM_SECRET_PW_SERVERS.as_bytes()),
+                ("cookies.json", UPSTREAM_SECRET_PW_COOKIES.as_bytes()),
+                (
+                    "runtimeSourceCache.json",
+                    UPSTREAM_SECRET_PW_RUNTIME.as_bytes(),
+                ),
+            ],
+        );
+
+        let stats: RestoreStats =
+            serde_json::from_str(&backup_restore_with_password(&path, Some("secret")).unwrap())
+                .unwrap();
+        assert_eq!(stats.books, 1, "其余表照常恢复");
+
+        let servers =
+            with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
+        assert_eq!(servers.len(), 1, "servers.json 应解密恢复");
+        assert_eq!(servers[0].id, 1);
+        assert_eq!(servers[0].name, "加密服务器");
+
+        with_database(|db| {
+            let repo = CookieRepository::new(db.connection());
+            // 域名行：同域合并，sid 新值胜，keep 保留
+            assert_eq!(
+                repo.get_by_tag(&domain).unwrap().as_deref(),
+                Some("keep=1; sid=abc; theme=dark")
+            );
+            // `|` 主键行原样 upsert
+            assert_eq!(
+                repo.get_by_tag("source|https://x.example.com")
+                    .unwrap()
+                    .as_deref(),
+                Some("k=v")
+            );
+            assert_eq!(repo.count().unwrap(), 2, "合并不得新增域名行");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        with_database(|db| {
+            let conn = db.connection();
+            let (value, deadline): (String, i64) = conn
+                .query_row(
+                    "SELECT value, deadline FROM caches WHERE key = ?1",
+                    rusqlite::params!["v_https://runtime.secret.example.com/source_token"],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(value, "tok");
+            assert_eq!(deadline, 0);
+            let (value, deadline): (String, i64) = conn
+                .query_row(
+                    "SELECT value, deadline FROM caches WHERE key = ?1",
+                    rusqlite::params!["userInfo_https://runtime.secret.example.com/source"],
+                    |row| Ok((row.get(0)?, row.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(value, "", "null 值落库归一为空串");
+            assert_eq!(deadline, 4102444800000, "deadline 必须精确落库");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 错误密码：零落库（哨兵行保留）且返回 BACKUP_PASSWORD_INVALID
+    #[test]
+    fn test_restore_zip_wrong_password_zero_writes() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        clear_cookie_and_cache_tables();
+
+        with_database(|db| {
+            let conn = db.connection();
+            BookRepository::new(conn).insert(&Book {
+                book_url: "https://zip.example/sentinel-pw".to_string(),
+                name: "哨兵书".to_string(),
+                author: "哨兵".to_string(),
+                ..Book::default()
+            })?;
+            CookieRepository::new(conn).upsert("keep.example.com", "keep=1")?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let bookshelf =
+            r#"[{"bookUrl":"https://zip.example/wrong-pw","name":"错密码书","author":"作者"}]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_wrong_password",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                ("servers.json", UPSTREAM_SECRET_PW_SERVERS.as_bytes()),
+                ("cookies.json", UPSTREAM_SECRET_PW_COOKIES.as_bytes()),
+            ],
+        );
+
+        let err = backup_restore_with_password(&path, Some("wrong")).unwrap_err();
+        assert!(
+            err.to_string().contains(BACKUP_PASSWORD_INVALID_PREFIX),
+            "应返回 BACKUP_PASSWORD_INVALID: {err}"
+        );
+
+        with_database(|db| {
+            let conn = db.connection();
+            let books = BookRepository::new(conn).find_all()?;
+            assert_eq!(books.len(), 1, "哨兵书应保留（零落库）: {books:?}");
+            assert_eq!(books[0].book_url, "https://zip.example/sentinel-pw");
+            let cookies = CookieRepository::new(conn).find_all()?;
+            assert_eq!(cookies.len(), 1, "Cookie 不得写入: {cookies:?}");
+            assert_eq!(cookies[0].0, "keep.example.com");
+            let servers = ServerRepository::new(conn).find_all()?;
+            assert!(servers.is_empty(), "servers 不得写入");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 仅 servers 加密 + 错密码 → BACKUP_PASSWORD_INVALID（零落库）
+    #[test]
+    fn test_restore_zip_servers_only_wrong_password_invalid() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let bookshelf =
+            r#"[{"bookUrl":"https://zip.example/only-servers","name":"仅服务器","author":"作者"}]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_servers_only_wrong_pw",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                ("servers.json", UPSTREAM_SECRET_PW_SERVERS.as_bytes()),
+            ],
+        );
+
+        let err = backup_restore_with_password(&path, Some("wrong")).unwrap_err();
+        assert!(
+            err.to_string().contains(BACKUP_PASSWORD_INVALID_PREFIX),
+            "唯一加密候选解不开即密码错误: {err}"
+        );
+        let books = with_database(|db| BookRepository::new(db.connection()).find_all()).unwrap();
+        assert!(books.is_empty(), "不得发生部分恢复: {books:?}");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 混合包：servers 密文 + cookies 明文 → 提供密码后两者都恢复
+    #[test]
+    fn test_restore_zip_mixed_encrypted_servers_and_plain_cookies() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        clear_cookie_and_cache_tables();
+
+        let plain_cookies = r#"[{"url":"https://plain-cookie.example.com","cookie":"a=1; b=2"}]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_mixed",
+            &[
+                ("servers.json", UPSTREAM_SECRET_PW_SERVERS.as_bytes()),
+                ("cookies.json", plain_cookies.as_bytes()),
+            ],
+        );
+
+        let stats: RestoreStats =
+            serde_json::from_str(&backup_restore_with_password(&path, Some("secret")).unwrap())
+                .unwrap();
+        assert_eq!(stats.books, 0);
+        let servers =
+            with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
+        assert_eq!(servers.len(), 1, "密文 servers 应恢复");
+        let domain = crate::api::net_api::get_sub_domain("https://plain-cookie.example.com");
+        let cookie =
+            with_database(|db| CookieRepository::new(db.connection()).get_by_tag(&domain)).unwrap();
+        assert_eq!(cookie.as_deref(), Some("a=1; b=2"), "明文 cookies 应恢复");
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 中文密码 / 纯空格密码（不 trim）恢复 servers
+    #[test]
+    fn test_restore_zip_chinese_and_space_passwords() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        // 中文密码
+        let (dir_zh, path_zh) = write_upstream_backup_zip(
+            "legado_restore_zip_zh_password",
+            &[("servers.json", UPSTREAM_ZH_PW_SERVERS.as_bytes())],
+        );
+        assert!(backup_restore_with_password(&path_zh, Some("密码")).is_ok());
+        let servers =
+            with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "中文密码服务器");
+        let _ = fs::remove_dir_all(&dir_zh);
+
+        // 纯空格密码（三个空格）；两个空格是错误密码（证明不 trim）
+        clear_backup_tables();
+        let (dir_sp, path_sp) = write_upstream_backup_zip(
+            "legado_restore_zip_space_password",
+            &[("servers.json", UPSTREAM_SPACE_PW_SERVERS.as_bytes())],
+        );
+        let err = backup_restore_with_password(&path_sp, Some("  ")).unwrap_err();
+        assert!(
+            err.to_string().contains(BACKUP_PASSWORD_INVALID_PREFIX),
+            "密码不得 trim（两空格应判错）: {err}"
+        );
+        assert!(backup_restore_with_password(&path_sp, Some("   ")).is_ok());
+        let servers =
+            with_database(|db| ServerRepository::new(db.connection()).find_all()).unwrap();
+        assert_eq!(servers.len(), 1);
+        assert_eq!(servers[0].name, "空格密码服务器");
+        let _ = fs::remove_dir_all(&dir_sp);
+    }
+
+    /// 加密 cookies 解密成功但内容不是数组 → BACKUP_ENCRYPTED_CONTENT_CORRUPT（零落库）
+    #[test]
+    fn test_restore_zip_corrupt_encrypted_cookies() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+        clear_cookie_and_cache_tables();
+
+        with_database(|db| {
+            BookRepository::new(db.connection()).insert(&Book {
+                book_url: "https://zip.example/corrupt-sentinel".to_string(),
+                name: "损坏哨兵".to_string(),
+                author: "哨兵".to_string(),
+                ..Book::default()
+            })
+        })
+        .unwrap();
+
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_corrupt_cookies",
+            &[
+                ("cookies.json", UPSTREAM_SECRET_PW_CORRUPT.as_bytes()),
+                ("servers.json", UPSTREAM_SECRET_PW_SERVERS.as_bytes()),
+            ],
+        );
+
+        let err = backup_restore_with_password(&path, Some("secret")).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains(BACKUP_ENCRYPTED_CONTENT_CORRUPT_PREFIX),
+            "应返回 BACKUP_ENCRYPTED_CONTENT_CORRUPT: {err}"
+        );
+        assert!(err.to_string().contains("cookies.json"), "{err}");
+
+        with_database(|db| {
+            let conn = db.connection();
+            let books = BookRepository::new(conn).find_all()?;
+            assert_eq!(books.len(), 1, "哨兵行应保留（零落库）");
+            let servers = ServerRepository::new(conn).find_all()?;
+            assert!(servers.is_empty(), "损坏校验必须先于任何落库");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
     }
 }
