@@ -1864,6 +1864,7 @@ dependencies = [
 name = "legado-book"
 version = "0.2.0"
 dependencies = [
+ "base64",
  "encoding_rs",
  "genpdf",
  "image",

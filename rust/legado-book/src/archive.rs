@@ -714,6 +714,97 @@ fn plan_book_output_names(
     (by_index, by_base)
 }
 
+/// 归一化 7z 块的文件区间（批24d，修复「目录与文件交错」布局漏条目）
+///
+/// `sevenz-rust2 0.24.1` 的 `BlockDecoder::for_each_entries` 与
+/// `ArchiveReader::read_file` 的 solid 分支都以
+/// `block_first_file_index[b] .. + num_unpack_sub_streams` 连续索引遍历
+/// `archive.files`，隐含假定「同一块内的有流条目在文件表中连续」。7z 规范允许
+/// 目录/无流条目（`kEmptyStream` 位图）与文件条目交错，py7zr 等打包器会这样写；
+/// 此时连续区间会提前结束，后续有流条目被静默跳过（列表走 `archive.files`
+/// 仍完整，于是出现「列表可见、导入缺失」）。
+///
+/// 这里按块重排 `files`：先按块序放各块的有流条目（块内保持原序），再放全部
+/// 无流条目；同步重写 `stream_map`，使每个块的连续区间恰好覆盖其全部子流。
+/// 重排只改条目下标，不改名称/大小/CRC，且不触碰 `blocks`（`num_unpack_sub_streams`
+/// 语义不变）；`ArchiveReader::from_archive` 会按新顺序重建名称索引，
+/// `read_file` 的 solid 分支也因此恢复正常。
+///
+/// 返回被从块区间中剥离的无流条目数（>0 表示检测到交错布局，供日志诊断）。
+fn normalize_7z_block_file_ranges(archive: &mut sevenz_rust2::Archive) -> usize {
+    if archive.files.is_empty() || archive.blocks.is_empty() {
+        return 0;
+    }
+    let mut stream_files_by_block: Vec<Vec<usize>> = vec![Vec::new(); archive.blocks.len()];
+    let mut no_stream_files: Vec<usize> = Vec::new();
+    // 交错布局下上游会把「无流条目」也挂到某个块上；这里统一剥离到无流集合。
+    let mut interleaved = 0usize;
+    for (index, entry) in archive.files.iter().enumerate() {
+        let block = archive
+            .stream_map
+            .file_block_index
+            .get(index)
+            .copied()
+            .flatten()
+            .filter(|b| *b < archive.blocks.len());
+        match block {
+            Some(block) if entry.has_stream => stream_files_by_block[block].push(index),
+            Some(_) => {
+                interleaved += 1;
+                no_stream_files.push(index);
+            }
+            // 无流条目（含上游未分配块的有流异常条目：主迭代只会拿到空流，
+            // 随后由声明长度校验判定为「读取不完整」）
+            None => no_stream_files.push(index),
+        }
+    }
+
+    let mut files = Vec::with_capacity(archive.files.len());
+    let mut file_block_index = vec![None; archive.files.len()];
+    let mut block_first_file_index = vec![0usize; archive.blocks.len()];
+    for (block, indices) in stream_files_by_block.iter().enumerate() {
+        block_first_file_index[block] = files.len();
+        for &index in indices {
+            file_block_index[files.len()] = Some(block);
+            files.push(archive.files[index].clone());
+        }
+    }
+    for &index in &no_stream_files {
+        files.push(archive.files[index].clone());
+    }
+
+    archive.files = files;
+    archive.stream_map.file_block_index = file_block_index;
+    archive.stream_map.block_first_file_index = block_first_file_index;
+    interleaved
+}
+
+/// 读取单个 7z 条目（严格校验长度）
+///
+/// 用于「主迭代未覆盖」的回退路径：`ArchiveReader::read_file` 按名称读取，
+/// solid 包会从块首重复解压（只对缺失条目发生）。返回数据长度必须与头部声明
+/// 的 `size` 一致，否则视为读取不完整（fail-closed，不静默产出半截文件）。
+fn read_7z_entry_strict(
+    reader: &mut sevenz_rust2::ArchiveReader<File>,
+    entry_name: &str,
+    out_name: &str,
+    declared_size: u64,
+) -> LegadoResult<Vec<u8>> {
+    let data = reader.read_file(entry_name).map_err(|e| {
+        LegadoError::BookParse(format!(
+            "7z 条目读取不完整 [{out_name}]: {}",
+            format_7z_error(&e)
+        ))
+    })?;
+    let actual = data.len() as u64;
+    if actual != declared_size {
+        return Err(LegadoError::BookParse(format!(
+            "7z 条目读取不完整 [{out_name}]（声明 {declared_size} 字节，实际读取 {actual} 字节）"
+        )));
+    }
+    Ok(data)
+}
+
 /// 列出 7z 压缩包中的书籍文件名（不解压）
 pub fn list_7z_book_files(seven_zip_path: &str) -> LegadoResult<Vec<String>> {
     list_7z_book_files_with_limits(seven_zip_path, &ArchiveLimits::default())
@@ -739,6 +830,25 @@ pub fn import_7z_file(seven_zip_path: &str, output_dir: &str) -> LegadoResult<Ve
     import_7z_file_with_limits(seven_zip_path, output_dir, &ArchiveLimits::default())
 }
 
+/// 书籍条目的导入规划（按原始 `archive.files` 文件序，与列表口径一致）
+struct PlannedBookEntry {
+    /// 原始文件序下标：用于最终返回顺序与列表保持一致
+    index: usize,
+    /// 包内条目名：回退 `read_file` 时按名读取
+    entry_name: String,
+    /// 输出去重名（`novel.txt` / `novel_2.txt`）
+    out_name: String,
+    /// 头部声明大小：回退读取后的长度校验
+    declared_size: u64,
+}
+
+/// 删除全部临时 `.part`（失败回滚）
+fn remove_7z_part_files(pending: &[(usize, PathBuf, PathBuf)]) {
+    for (_, temp, _) in pending {
+        let _ = fs::remove_file(temp);
+    }
+}
+
 fn import_7z_file_with_limits(
     seven_zip_path: &str,
     output_dir: &str,
@@ -750,16 +860,53 @@ fn import_7z_file_with_limits(
     reader.set_thread_count(1);
     check_7z_archive(reader.archive(), limits)?;
 
+    // 批24d：按 `archive.files`（原始文件序）预计算输出名——这是列表口径，
+    // 无论块布局如何都完整；导入全程复用这套名称。
+    let original_files = reader.archive().files.clone();
+    let (planned_by_index, mut planned_names) =
+        plan_book_output_names(&original_files, FOLD_OUTPUT_NAME_CASE);
+    let mut planned_entries: Vec<PlannedBookEntry> = Vec::new();
+    let mut index_by_output_name: HashMap<String, usize> = HashMap::new();
+    for (index, out_name) in planned_by_index.iter().enumerate() {
+        let Some(out_name) = out_name else { continue };
+        index_by_output_name.insert(out_name.clone(), index);
+        planned_entries.push(PlannedBookEntry {
+            index,
+            entry_name: original_files[index].name.clone(),
+            out_name: out_name.clone(),
+            declared_size: original_files[index].size,
+        });
+    }
+
     fs::create_dir_all(output_dir)?;
 
+    // 修复上游「块内有流条目连续」的假定：目录/文件交错布局下
+    // `for_each_entries`（以及 `read_file` 的 solid 分支）会漏掉后续文件。
+    // 归一化只重排内存中的文件表，不改名称/内容/CRC；输出名规划已按原始
+    // 文件序完成，因此列表与导入的命名/顺序保持一致。
+    let mut normalized_archive = reader.archive().clone();
+    let interleaved = normalize_7z_block_file_ranges(&mut normalized_archive);
+    drop(reader);
+    if interleaved > 0 {
+        eprintln!(
+            "7z 导入: 检测到目录/文件交错布局（{interleaved} 个无流条目），已归一化块文件区间"
+        );
+    }
+    let source = File::open(seven_zip_path)
+        .map_err(|e| LegadoError::BookParse(format!("无法打开7z文件: {e}（{seven_zip_path}）")))?;
+    let mut reader = sevenz_rust2::ArchiveReader::from_archive(
+        normalized_archive,
+        source,
+        sevenz_rust2::Password::empty(),
+    );
+    reader.set_thread_count(1);
+
     // 先写 `.part`，整包成功后再统一 rename：任一条目失败不触碰既有输出文件
-    let mut pending: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mut pending: Vec<(usize, PathBuf, PathBuf)> = Vec::new();
     let mut total_read: u64 = 0;
     let mut failure: Option<LegadoError> = None;
+    let mut written: HashSet<String> = HashSet::new();
     let mut sequence: usize = 0;
-    // 输出名按 archive.files 文件序预计算（解压回调的访问顺序与文件序不同）
-    let (_, mut planned_names) =
-        plan_book_output_names(&reader.archive().files, FOLD_OUTPUT_NAME_CASE);
 
     let result = reader.for_each_entries(|entry, stream| {
         let base = file_base_name(&entry.name);
@@ -808,6 +955,14 @@ fn import_7z_file_with_limits(
                 "legado:7z-plan",
             )));
         };
+        let Some(out_index) = index_by_output_name.get(&out_name).copied() else {
+            failure = Some(LegadoError::BookParse(format!(
+                "7z 输出名规划缺失 [{out_name}]"
+            )));
+            return Err(sevenz_rust2::Error::from(std::io::Error::other(
+                "legado:7z-plan",
+            )));
+        };
         let out_path = match safe_output_path(output_dir, &out_name) {
             Ok(path) => path,
             Err(e) => {
@@ -830,7 +985,8 @@ fn import_7z_file_with_limits(
                 return Err(sevenz_rust2::Error::from(e));
             }
         };
-        pending.push((temp_path, out_path));
+        pending.push((out_index, temp_path, out_path));
+        written.insert(out_name.clone());
 
         let mut entry_read: u64 = 0;
         loop {
@@ -879,25 +1035,97 @@ fn import_7z_file_with_limits(
             )));
             return Err(sevenz_rust2::Error::from(e));
         }
+        // 声明大小与实际读取不一致 = 读取不完整（例如块区间异常只拿到空流）；
+        // fail-closed，绝不静默产出空文件/半截文件。
+        if entry_read != entry.size {
+            failure = Some(LegadoError::BookParse(format!(
+                "7z 条目读取不完整 [{base}]（声明 {} 字节，实际读取 {entry_read} 字节）",
+                entry.size
+            )));
+            return Err(sevenz_rust2::Error::from(std::io::Error::other(
+                "legado:7z-incomplete",
+            )));
+        }
         Ok(true)
     });
 
     if let Some(err) = failure {
-        for (temp, _) in &pending {
-            let _ = fs::remove_file(temp);
-        }
+        remove_7z_part_files(&pending);
         return Err(err);
     }
     if let Err(e) = result {
-        for (temp, _) in &pending {
-            let _ = fs::remove_file(temp);
-        }
+        remove_7z_part_files(&pending);
         return Err(map_7z_error(e));
     }
 
-    // 整包读取成功后再落位；Windows rename 不覆盖既有目标，先删旧文件
+    // 兜底回退：清单中应导出但主迭代未覆盖的条目。归一化后理论上不再出现，
+    // 但上游若再次改变块区间语义，这里按名单独读取，绝不静默漏文件。
+    let missing: Vec<&PlannedBookEntry> = planned_entries
+        .iter()
+        .filter(|plan| !written.contains(&plan.out_name))
+        .collect();
+    if !missing.is_empty() {
+        eprintln!(
+            "7z 导入: 主迭代未覆盖 {} 个书籍条目，回退 read_file 逐条读取",
+            missing.len()
+        );
+    }
+    for plan in missing {
+        let data = match read_7z_entry_strict(
+            &mut reader,
+            &plan.entry_name,
+            &plan.out_name,
+            plan.declared_size,
+        ) {
+            Ok(data) => data,
+            Err(err) => {
+                remove_7z_part_files(&pending);
+                return Err(err);
+            }
+        };
+        total_read = total_read.saturating_add(data.len() as u64);
+        if total_read > limits.max_total_size {
+            remove_7z_part_files(&pending);
+            return Err(LegadoError::BookParse(format!(
+                "7z 解压总量超限（超过 {} 字节）",
+                limits.max_total_size
+            )));
+        }
+        let out_path = match safe_output_path(output_dir, &plan.out_name) {
+            Ok(path) => path,
+            Err(e) => {
+                remove_7z_part_files(&pending);
+                return Err(e);
+            }
+        };
+        let temp_path =
+            out_path.with_file_name(format!(".legado_{sequence}.{}.part", plan.out_name));
+        sequence += 1;
+        let _ = fs::remove_file(&temp_path);
+        let write_result = (|| -> LegadoResult<()> {
+            let mut out_file = File::create(&temp_path).map_err(|e| {
+                LegadoError::BookParse(format!("创建7z输出文件失败 [{}]: {e}", plan.out_name))
+            })?;
+            out_file.write_all(&data).map_err(|e| {
+                LegadoError::BookParse(format!("写入7z输出文件失败 [{}]: {e}", plan.out_name))
+            })?;
+            out_file.flush().map_err(|e| {
+                LegadoError::BookParse(format!("写入7z输出文件失败 [{}]: {e}", plan.out_name))
+            })?;
+            Ok(())
+        })();
+        if let Err(err) = write_result {
+            remove_7z_part_files(&pending);
+            return Err(err);
+        }
+        pending.push((plan.index, temp_path, out_path));
+    }
+
+    // 返回顺序按原始文件序（与列表一致）；整包读取成功后再落位。
+    pending.sort_by_key(|(index, _, _)| *index);
     let mut extracted = Vec::with_capacity(pending.len());
-    for (temp, out_path) in pending {
+    for (_, temp, out_path) in pending {
+        // Windows rename 不覆盖既有目标，先删旧文件
         #[cfg(windows)]
         {
             if out_path.exists() {
@@ -1880,6 +2108,186 @@ mod tests {
             fs::read_to_string(output.join("a_2_2.txt")).unwrap(),
             "real"
         );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// py7zr 生成的「目录与文件交错」夹具：`dir1`、`dir1/one.txt`、`dir2`、`dir2/two.txt`
+    ///
+    /// 7z 规范允许无流目录条目与有流文件条目交错排列（`kEmptyStream` 位图）。
+    /// `sevenz-rust2 0.24.1` 的块区间按「块首文件索引 + 子流数」连续遍历，
+    /// 旧实现会漏掉 `dir2/two.txt`（列表完整、导入缺失）。夹具由 py7zr 1.1.4 生成。
+    const INTERLEAVED_NESTED_7Z_BASE64: &str = concat!(
+        "N3q8ryccAASBoqBcqwAAAAAAAAAWAAAAAAAAAOQ3rQ/gACMAIF0AJ5OEr4LUjIaLCl/WOwLtvs3uEjp6u3b66lm+NnUhAAAA",
+        "4AC8AHtdAACBMweuD9CHwjyfORCcbOpWGo7hzkIb99wHwiIbZ+NyiGjVlylcomcmkNRgh1Y7rAFWFTjWM6Fiu8cMwFeeYZl7",
+        "9fpy95TsFIdpUTvBPfSHqZeGCemuluxB+v2cNNKFAYFmXwqO95DVqxs/VMBcC0sBIAP09oF3+AAAAAAXBigBCYCDAAcLAQAB",
+        "ISEBGAyAvQAA",
+    );
+
+    /// py7zr 生成的「目录/文件交错 + 非书籍条目」夹具：
+    /// `中文目录/book.epub`、`中文目录/readme.md`、`中文目录/嵌套/novel.txt`
+    const INTERLEAVED_BOOKS_7Z_BASE64: &str = concat!(
+        "N3q8ryccAARG6dglygMAAAAAAAAXAAAAAAAAADKcOT3gBjYDEV0AKBK8YCiX1Whvo3cZ9/2H6hEdoXBb0z90IePRETf0Lobb",
+        "znYA9y8J1kqkgEYP93OSIiGAYwbqE9aHGIBpxeTenuvPiSUT/fRfu46O0yhdfdV+15PQ2fFESQXKuD7OCal8guTaN9rr/sdY",
+        "qCrnW+P6HFswBOfRvqdKXV9bNLJo2BvYNe+KMLcU8fz8npFEYuy2+GBV87HN1YRvDsrA1CzESi+CJ92mIYE9y9pfOTzilbzR",
+        "pInPqdef1Nsdbu5/vXRVrFqtkISXeVyc7m9wm5MzwOp2dJ5ktqtNMjkVyYa+FqiUQ3AHHmZc3hStXDMp+DVrLwnVxaTjEN3H",
+        "zoQg4NxGZxRqS9dAJmM8NQgPEN+TxrRhK/yKDMauxFOlj1p7tCCDvdEwhPc2UukN+aodyUWaPOcE7Vsg/9huATTq4WZL8rOZ",
+        "HFoNjxPe6bOQexBgntSkK/W5gAJVHCwp+Tzg5arIwadrW06VrXWdkCsYDF89d+cXVEgAF+bwiv60KI02kao6MAMyeSUJ6JsQ",
+        "TWQaXdGAgFCkJ1srIAoJubGZuuKO5YxgHZKKc2F9EJQupJT7zqkUs/RNjIVOszlIGkufpc4fKjcRZcdmJIm2oOfRgfN2OnyK",
+        "nfihPdMQY/Oum9bjwqI3Q12VzqdusttixDHpmsvdpKUGNQwoJloJzWcZhZtOFhSYcISwlSmGq+maZ6AyJ8iyC99EOEWIVtoo",
+        "zkYsYL5k2At/TbABILIJzxL+mYnEOEtHsLqFQ5oV9mzLbzcYzx0pPGA/yQPc84g++xuA9+EAV5eRhVvRVlE8EP0CWLkffBg7",
+        "9UUKK2ZUk1I/ZD0mLHn60y4nBcWmZ3laRVsnI7mFufxo0nyO++rbPpezCKYB+fi9lgYyKIndevweBZ4ocZT/UH5pKOCb5CXV",
+        "HEi9ijslbgij9I0YrCkkL6wT7bAYLpmwfpOo7WQNf9MvlDy4aFk8K8dHH+hDQySdTEeztYUkz1QsVi8UD/VzF34yl7MLNsU0",
+        "qZ2BJae72yEHSZXs8bj8QBu5wNhJkoVDFD4+QZ8CrPgA4AECAKldAACBMweuD9VOYKN5xmCXBb7pRUlQiFo4ZZybMSEUG0kk",
+        "rZ0qZ+63M7KGLY7TmXfxP6YNdhUpEtnZ7MT6g7aWW0Fj+aXPbrQ6lqAMh6B+uXJYeFeNbbrEHI0dN2Ja8ml4nTPMpPpgIq32",
+        "9/qj3L1OKdE/UnPMdjnDVJOmOk7fCzR6MjuoKBYg64rogTnN6Qvda12QGJg7Baf6rkWXm1+estua1SL0LemAAAAAFwaDGQEJ",
+        "gLEABwsBAAEhIQEYDIEDAAA=",
+    );
+
+    /// 写入 base64 内联夹具
+    fn write_base64_fixture(dir: &Path, name: &str, base64_text: &str) -> PathBuf {
+        use base64::{engine::general_purpose::STANDARD, Engine as _};
+        let bytes = STANDARD.decode(base64_text).expect("夹具 base64 解码失败");
+        let path = dir.join(name);
+        fs::write(&path, bytes).unwrap();
+        path
+    }
+
+    /// 打开 7z 并归一化块文件区间（导入路径的内部步骤）
+    fn open_normalized_7z(path: &Path) -> sevenz_rust2::ArchiveReader<File> {
+        let mut archive = sevenz_rust2::Archive::open(path).unwrap();
+        normalize_7z_block_file_ranges(&mut archive);
+        sevenz_rust2::ArchiveReader::from_archive(
+            archive,
+            File::open(path).unwrap(),
+            sevenz_rust2::Password::empty(),
+        )
+    }
+
+    #[test]
+    fn test_import_7z_interleaved_nested_entries() {
+        let dir = unique_7z_dir("interleaved-nested");
+        let archive = write_base64_fixture(&dir, "nested.7z", INTERLEAVED_NESTED_7Z_BASE64);
+
+        // 列表走 archive.files，本就完整
+        let names = list_7z_book_files(archive.to_str().unwrap()).unwrap();
+        assert_eq!(names, vec!["one.txt", "two.txt"]);
+
+        let output = dir.join("out");
+        let files = import_7z_file(archive.to_str().unwrap(), output.to_str().unwrap()).unwrap();
+        let imported: Vec<String> = files
+            .iter()
+            .map(|path| file_base_name(path).to_string())
+            .collect();
+        assert_eq!(imported, names, "import 输出名/顺序须与 list 一致");
+        assert_eq!(
+            fs::read(output.join("one.txt")).unwrap(),
+            "ONE 一号正文\r\n".as_bytes()
+        );
+        assert_eq!(
+            fs::read(output.join("two.txt")).unwrap(),
+            "TWO 二号正文\r\n".as_bytes()
+        );
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 2);
+        assert_no_part_files(&output);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_import_7z_interleaved_dirs_and_books() {
+        let dir = unique_7z_dir("interleaved-books");
+        let archive = write_base64_fixture(&dir, "books.7z", INTERLEAVED_BOOKS_7Z_BASE64);
+
+        let names = list_7z_book_files(archive.to_str().unwrap()).unwrap();
+        assert_eq!(names, vec!["book.epub", "novel.txt"]);
+
+        let output = dir.join("out");
+        let files = import_7z_file(archive.to_str().unwrap(), output.to_str().unwrap()).unwrap();
+        let imported: Vec<String> = files
+            .iter()
+            .map(|path| file_base_name(path).to_string())
+            .collect();
+        assert_eq!(imported, names, "import 输出名/顺序须与 list 一致");
+        // 非书籍条目不入列表、不落盘
+        assert!(!output.join("readme.md").exists());
+        // epub 为合法 ZIP 容器（PK\x03\x04），txt 为完整中文正文（137 字节）
+        assert!(fs::read(output.join("book.epub"))
+            .unwrap()
+            .starts_with(b"PK\x03\x04"));
+        let novel = fs::read(output.join("novel.txt")).unwrap();
+        assert_eq!(novel.len(), 137);
+        assert!(
+            String::from_utf8_lossy(&novel).contains("第二章 结束"),
+            "novel.txt 内容不完整"
+        );
+        assert_no_part_files(&output);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_normalize_7z_block_file_ranges_interleaved() {
+        let dir = unique_7z_dir("normalize");
+        let path = write_base64_fixture(&dir, "nested.7z", INTERLEAVED_NESTED_7Z_BASE64);
+
+        let mut archive = sevenz_rust2::Archive::open(&path).unwrap();
+        // 上游布局：文件表为 [dir1, one.txt, dir2, two.txt]，块首=1、子流数=2，
+        // 连续区间 [1, 3) 覆盖不到 two.txt。
+        let interleaved = normalize_7z_block_file_ranges(&mut archive);
+        assert!(interleaved > 0, "应识别出目录/文件交错布局");
+        assert_eq!(archive.stream_map.block_first_file_index, vec![0]);
+        assert_eq!(
+            archive
+                .stream_map
+                .file_block_index
+                .iter()
+                .filter(|block| block.is_some())
+                .count(),
+            2
+        );
+
+        // 归一化后迭代覆盖全部有流条目，read_file 的 solid 分支也可按名命中
+        let mut reader = sevenz_rust2::ArchiveReader::from_archive(
+            archive,
+            File::open(&path).unwrap(),
+            sevenz_rust2::Password::empty(),
+        );
+        let mut seen = Vec::new();
+        reader
+            .for_each_entries(|entry, stream| {
+                let mut buf = Vec::new();
+                stream
+                    .read_to_end(&mut buf)
+                    .map_err(sevenz_rust2::Error::from)?;
+                seen.push(entry.name.clone());
+                Ok(true)
+            })
+            .unwrap();
+        assert!(seen.contains(&"dir1/one.txt".to_string()));
+        assert!(seen.contains(&"dir2/two.txt".to_string()));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_read_7z_entry_strict_fallback_and_incomplete_errors() {
+        let dir = unique_7z_dir("fallback");
+        let archive = write_base64_fixture(&dir, "nested.7z", INTERLEAVED_NESTED_7Z_BASE64);
+        let mut reader = open_normalized_7z(&archive);
+
+        // 「缺失项回退读取」：归一化后按名 read_file 能取到主迭代未覆盖的条目
+        let data = read_7z_entry_strict(&mut reader, "dir2/two.txt", "two.txt", 18).unwrap();
+        assert_eq!(data, "TWO 二号正文\r\n".as_bytes());
+
+        // 条目不存在 → read_file FileNotFound，报「条目读取不完整」
+        let err =
+            read_7z_entry_strict(&mut reader, "dir2/missing.txt", "missing.txt", 18).unwrap_err();
+        assert!(err.to_string().contains("7z 条目读取不完整"), "{err}");
+
+        // 声明大小与实际不一致（空读/半截读）→ 报「条目读取不完整」
+        let err = read_7z_entry_strict(&mut reader, "dir2/two.txt", "two.txt", 999).unwrap_err();
+        assert!(err.to_string().contains("7z 条目读取不完整"), "{err}");
 
         let _ = fs::remove_dir_all(&dir);
     }

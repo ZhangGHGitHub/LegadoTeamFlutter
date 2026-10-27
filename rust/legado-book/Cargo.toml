@@ -28,6 +28,8 @@ sevenz-rust2 = { version = "0.24", default-features = false }
 # 加密包用例使用预生成字节夹具（见 archive.rs 测试常量），不启用 aes256，
 # 避免把 aes/cbc/sha2 的重复 crypto 版本带入 Cargo.lock。
 sevenz-rust2 = { version = "0.24", default-features = false, features = ["compress"] }
+# 批24d：交错布局 7z 夹具以 base64 内联（测试不依赖宿主 Python/py7zr）
+base64 = { workspace = true }
 
 # unrar 在 Android 上无法交叉编译（unrar_sys 含 Windows 专属代码），
 # iOS 与 Android 同策略排除（对齐 Android 行为基线，免 C++ 运行时链接）
