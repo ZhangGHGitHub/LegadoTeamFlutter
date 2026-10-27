@@ -276,68 +276,83 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final subtitle = enabled && _webKeepAliveUnavailable
         ? '$baseSubtitle · 后台保活不可用，请保持 App 打开'
         : baseSubtitle;
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 8),
-      decoration: BoxDecoration(
-        color: cs.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: enabled ? green.withValues(alpha: 0.6) : cs.outlineVariant,
-          width: enabled ? 1.5 : 0.5,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
-          children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: enabled
-                    ? green.withValues(alpha: 0.15)
-                    : cs.surfaceContainerHighest,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Icon(
-                Symbols.language_rounded,
-                size: 28,
-                color: enabled ? green : cs.onSurfaceVariant,
+    // [批23 | 全栈工程师] 整卡可点切换：原实现只有右端 Switch 可点，点
+    // 标题/图标/副题无响应（与原版整行可点不一致）。用 Material+InkWell
+    // 包卡片（Ink 承载底色与描边，保证水波纹可见）；卡片内无展开说明/
+    // 复制地址等独立子按钮，无需避让；右端 Switch 的自身手势优先。
+    final radius = BorderRadius.circular(16);
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: radius,
+          onTap:
+              _webServiceBusy ? null : () => _toggleWebService(!_webService),
+          child: Ink(
+            decoration: BoxDecoration(
+              color: cs.surfaceContainerLow,
+              borderRadius: radius,
+              border: Border.all(
+                color: enabled ? green.withValues(alpha: 0.6) : cs.outlineVariant,
+                width: enabled ? 1.5 : 0.5,
               ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
                 children: [
-                  Text(
-                    'Web 服务',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w600,
+                  Container(
+                    width: 48,
+                    height: 48,
+                    decoration: BoxDecoration(
+                      color: enabled
+                          ? green.withValues(alpha: 0.15)
+                          : cs.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      Symbols.language_rounded,
+                      size: 28,
+                      color: enabled ? green : cs.onSurfaceVariant,
                     ),
                   ),
-                  const SizedBox(height: 2),
-                  Text(
-                    subtitle,
-                    style: theme.textTheme.bodySmall?.copyWith(
-                      color: cs.onSurfaceVariant,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Web 服务',
+                          style: theme.textTheme.titleSmall?.copyWith(
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: cs.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+                  const SizedBox(width: 8),
+                  _webServiceBusy
+                      ? const SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Switch(
+                          value: _webService,
+                          onChanged: _toggleWebService,
+                        ),
                 ],
               ),
             ),
-            const SizedBox(width: 8),
-            _webServiceBusy
-                ? const SizedBox(
-                    width: 24,
-                    height: 24,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : Switch(
-                    value: _webService,
-                    onChanged: _toggleWebService,
-                  ),
-          ],
+          ),
         ),
       ),
     );

@@ -64,6 +64,18 @@ void main() {
     );
   }
 
+  /// 把 Web 服务卡滚到「可真实命中」的位置（批23）
+  ///
+  /// [dragTo] 只保证目标「刚可见」：实测卡片标题停在 y=0，被折叠大标题的
+  /// PinnedHeader 覆盖，`tester.tap` 会命中 AppBar 而非卡片（hit test 失败）。
+  /// 额外向下拖 200 逻辑像素，让卡片离开顶部覆盖层再点按。
+  Future<void> centerWebServiceCard(WidgetTester tester) async {
+    await dragTo(tester, 'Web 服务');
+    await tester.pumpAndSettle();
+    await tester.drag(find.byType(ListView), const Offset(0, 200));
+    await tester.pumpAndSettle();
+  }
+
   group('SettingsScreen 枢纽菜单', () {
     testWidgets('渲染顶部管理入口与设置/其他分组', (tester) async {
       await tester.pumpWidget(wrap(const SettingsScreen()));
@@ -373,6 +385,98 @@ void main() {
         isTrue,
         reason: '保活失败不阻断 Web 服务开关（方案 A 兜底）',
       );
+    });
+
+    // [批23 | 全栈工程师] 整卡可点：原实现只有右端 Switch 可点，点标题/
+    // 图标/副题无响应。本用例点标题文本（InkWell 覆盖区域）验证开关被切换。
+    testWidgets('Web 服务卡：点卡片标题即切换开关', (tester) async {
+      final startedPorts = <int>[];
+      final configWrites = <MapEntry<String, String>>[];
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((inv) async {
+        configWrites.add(
+          MapEntry(
+            inv.positionalArguments[0] as String,
+            inv.positionalArguments[1] as String,
+          ),
+        );
+      });
+      when(
+        () => mockApi.startServer(port: any(named: 'port')),
+      ).thenAnswer((inv) async {
+        startedPorts.add(inv.namedArguments[#port] as int);
+      });
+      when(() => mockApi.getServerStatus())
+          .thenAnswer((_) async => 'running on port 1122');
+
+      await tester.pumpWidget(wrap(const SettingsScreen()));
+      await tester.pumpAndSettle();
+      await centerWebServiceCard(tester);
+
+      final card = find
+          .ancestor(of: find.text('Web 服务'), matching: find.byType(InkWell))
+          .first;
+      final switchFinder = find.descendant(
+        of: card,
+        matching: find.byType(Switch),
+      );
+
+      await tester.tap(find.text('Web 服务'));
+      await tester.pumpAndSettle();
+
+      expect(startedPorts, [1122], reason: '点卡片标题应等价点开关（启动服务）');
+      expect(
+        tester.widget<Switch>(switchFinder).value,
+        isTrue,
+        reason: '整卡点击后开关应变为开启',
+      );
+      expect(
+        configWrites
+            .where((e) => e.key == 'webService')
+            .map((e) => e.value)
+            .toList(),
+        ['true'],
+        reason: '整卡点击只应写入一次 webService=true',
+      );
+    });
+
+    // [批23] 避让：点右端 Switch 不得再冒泡触发整卡 onTap（否则语义上
+    // 会重复切换；busy 守卫虽能吞掉重复调用，仍应保证仅一次手势来源）。
+    testWidgets('Web 服务卡：点开关不误触整卡点击', (tester) async {
+      final startedPorts = <int>[];
+      when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
+      when(
+        () => mockApi.startServer(port: any(named: 'port')),
+      ).thenAnswer((inv) async {
+        startedPorts.add(inv.namedArguments[#port] as int);
+      });
+      when(() => mockApi.stopServer()).thenAnswer((_) async {});
+      when(() => mockApi.getServerStatus())
+          .thenAnswer((_) async => 'running on port 1122');
+
+      await tester.pumpWidget(wrap(const SettingsScreen()));
+      await tester.pumpAndSettle();
+      await centerWebServiceCard(tester);
+
+      final card = find
+          .ancestor(of: find.text('Web 服务'), matching: find.byType(InkWell))
+          .first;
+      final switchFinder = find.descendant(
+        of: card,
+        matching: find.byType(Switch),
+      );
+
+      await tester.tap(switchFinder);
+      await tester.pumpAndSettle();
+
+      expect(startedPorts, [1122], reason: '点开关应只启动一次');
+      expect(
+        tester.widget<Switch>(switchFinder).value,
+        isTrue,
+        reason: '点开关后应开启（若被整卡 onTap 二次触发会再次切换）',
+      );
+      verifyNever(() => mockApi.stopServer());
     });
 
     testWidgets('点击主题模式弹出选择对话框并可切换（全局生效）', (tester) async {
