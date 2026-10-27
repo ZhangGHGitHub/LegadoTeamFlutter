@@ -350,7 +350,9 @@ JVM 用例：`SaveFileBridgeTest` **30 例**（`./gradlew.bat :app:testDebugUnit
     uri content://…/document/raw:… requires android.permission.MANAGE_DOCUMENTS, or grantUriPermission()
   ContentResolver.delete 失败：同上
   ```
-  代码随后按「显示名 + 0 字节 + 同目录」删除对应 MediaStore 行兜底，也查不到可删行（`未找到可删除的 MediaStore 空行`：该行属主为 NULL/DownloadsUI，非本应用）。
+  代码随后按「显示名 + 0 字节 + 同目录」删除对应 MediaStore 行兜底：SAF 文档显示名查询为空时记 W
+  （`查询 SAF 文档显示名为空，改用请求文件名兜底`）并按请求 `fileName` 重查；两层查询仍无可删行时记 W
+  （`未找到可删除的 MediaStore 空行`：该行属主为 NULL/DownloadsUI，非本应用），做到日志可追溯、不静默返回。
 - 影响：每次在「下载」入口保存会留下一个同名 0 字节占位文档（用户可见，但无数据损失），重名计数持续递增。
 - 现有代码已尽力：`shouldDeleteAfterFailure(preSize == 0)` 判定 → DocumentsProvider 删除 → `ContentResolver.delete` → MediaStore 空行删除，三层均失败只记日志、不影响已成功的保存。**这不是应用逻辑缺陷，而是该 ROM provider 的权限模型限制**。
 - 建议后续（需用户裁决，属交互/权限变更）：

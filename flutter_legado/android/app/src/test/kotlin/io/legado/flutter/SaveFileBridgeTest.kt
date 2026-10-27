@@ -13,9 +13,10 @@ import org.junit.Test
  *
  * 覆盖：
  * 1. 参数校验 / MIME 推断 / 文件名净化（与 Dart 侧 trim 口径一致）；
- * 2. 回退目标相对路径推导（`raw:` / `primary:` / RELATIVE_PATH / 无法确定）；
+ * 2. 回退目标相对路径推导（`raw:` / `primary:` / RELATIVE_PATH / 无法确定），
+ *    含显示名兜底结果的规范化（`Downloads/…` 拒绝）；
  * 3. 回退触发条件（openOutputStream 返回 null、权限/文件形态异常）；
- * 4. 失败后是否删除 SAF 文档（preSize 未知/已有内容/空文档）；
+ * 4. 失败后是否删除 SAF 文档（preSize 未知/负数/已有内容/空文档）；
  * 5. 回退读回大小严格校验（读不到即失败）；
  * 6. 错误码中文 reason 映射。
  *
@@ -220,6 +221,25 @@ class SaveFileBridgeTest {
     }
 
     @Test
+    fun `display name fallback path is normalized and rejects downloads`() {
+        // P3-1：显示名兜底查到的 RELATIVE_PATH 与其它来源同口径规范化
+        // （resolveDownloadRelativePath 内 normalizeDownloadRelativePath）。
+        // `Downloads/x` 不在「下载」子树内 → 拒绝（报 FALLBACK_PATH_UNKNOWN），
+        // 正常 `Download/legado/` 通过并补齐尾斜杠。
+        assertEquals(
+            "Download/legado/",
+            SaveFileBridge.normalizeDownloadRelativePath("Download/legado/")
+        )
+        assertEquals(
+            "Download/legado/",
+            SaveFileBridge.normalizeDownloadRelativePath("Download/legado")
+        )
+        assertNull(SaveFileBridge.normalizeDownloadRelativePath("Downloads/x"))
+        assertNull(SaveFileBridge.normalizeDownloadRelativePath("Downloads/x/"))
+        assertNull(SaveFileBridge.normalizeDownloadRelativePath("Download/../Downloads/x/"))
+    }
+
+    @Test
     fun `resolved absolute path is used when document id has no path`() {
         assertEquals(
             "Download/legado/",
@@ -353,6 +373,14 @@ class SaveFileBridgeTest {
         // preSize=null（provider 不提供 SIZE / 查询失败）视为不删
         assertFalse(SaveFileBridge.shouldDeleteAfterFailure(opened = true, preSize = null))
         assertFalse(SaveFileBridge.shouldDeleteAfterFailure(opened = false, preSize = null))
+    }
+
+    @Test
+    fun `negative size is treated as unknown and never deleted`() {
+        // P3-3：-1（provider 报不可知）不能被当成 0 删除；
+        // 无论写流是否已打开都不能删（可能指向用户已有文件）
+        assertFalse(SaveFileBridge.shouldDeleteAfterFailure(opened = true, preSize = -1L))
+        assertFalse(SaveFileBridge.shouldDeleteAfterFailure(opened = false, preSize = -1L))
     }
 
     @Test

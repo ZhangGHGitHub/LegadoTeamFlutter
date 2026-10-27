@@ -297,14 +297,18 @@ class SaveFileBridge {
          * - preSize == null（provider 无 SIZE 或查询失败）→ 不删（无法确认
          *   是否含用户内容）；
          * - preSize > 0（用户选择「替换」的已有文件）→ 不删，只报错；
+         * - preSize < 0（provider 报不可知，如 -1）→ 并入「未知」不删（P3-3）；
          * - preSize == 0 → 删除：opened=true 为本次已新建/截断写流，
          *   opened=false 为 `CREATE_DOCUMENT` 刚建、写流被拒的空文档
          *   （P2-4，消除重名漂移）。0 字节文档不含用户内容。
          */
         internal fun shouldDeleteAfterFailure(opened: Boolean, preSize: Long?): Boolean {
             val size = preSize ?: return false
-            if (size > 0L) return false
-            return opened || size == 0L
+            // P3-3：-1 等负数是 provider 的「不可知」语义，绝不当成 0 删除
+            if (size != 0L) return false
+            // size == 0：opened=true 为本次已新建/截断写流，opened=false 为
+            // CREATE_DOCUMENT 刚建、写流被拒的空文档；两者都不含用户内容。
+            return true
         }
 
         /**
@@ -676,7 +680,7 @@ class SaveFileBridge {
         // 当前无该档位设备可复验（见 docs/DEVICE_ACCEPTANCE_20261027_16X.md
         // §七）→ 明确中文原因引导换位置，绝不静默写别处。
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-            deleteEmptySafDocument(resolver, safUri, preSize, null)
+            deleteEmptySafDocument(resolver, safUri, fileName, preSize, null)
             return WriteOutcome(
                 code = "LEGACY_NOT_SUPPORTED",
                 detail = "MediaStore 回退需要 Android 10+（当前 API " +
@@ -685,7 +689,7 @@ class SaveFileBridge {
         }
         val relativeDir = resolveDownloadRelativePath(resolver, safUri)
         if (relativeDir == null) {
-            deleteEmptySafDocument(resolver, safUri, preSize, null)
+            deleteEmptySafDocument(resolver, safUri, fileName, preSize, null)
             return WriteOutcome(
                 code = "FALLBACK_PATH_UNKNOWN",
                 detail = "无法从 $safUri 推导「下载」子目录（已拒绝写根目录）：$causeDetail"
@@ -701,14 +705,14 @@ class SaveFileBridge {
             )
         } catch (t: Throwable) {
             Log.e(TAG, "MediaStore 回退失败（$relativeDir）：${technicalDetail(t)}", t)
-            deleteEmptySafDocument(resolver, safUri, preSize, relativeDir)
+            deleteEmptySafDocument(resolver, safUri, fileName, preSize, relativeDir)
             return WriteOutcome(
                 code = if (t is VerifyException) "SAVE_VERIFY_FAILED" else "SAVE_FAILED",
                 detail = "$causeDetail；回退写入「$relativeDir」失败：${technicalDetail(t)}"
             )
         }
         // 回退成功：清理本次 SAF 新建的 0 字节文档（P2-4），避免重名漂移
-        deleteEmptySafDocument(resolver, safUri, preSize, relativeDir)
+        deleteEmptySafDocument(resolver, safUri, fileName, preSize, relativeDir)
         return WriteOutcome(saved = saved)
     }
 
@@ -723,23 +727,38 @@ class SaveFileBridge {
     private fun deleteEmptySafDocument(
         resolver: ContentResolver,
         uri: Uri,
+        fileName: String,
         preSize: Long?,
         relativeDir: String?
     ) {
         if (!shouldDeleteAfterFailure(opened = false, preSize = preSize)) return
-        Log.i(TAG, "清理本次新建的空文档：uri=$uri, dir=$relativeDir")
+        Log.i(TAG, "清理本次新建的空文档：uri=$uri, name=$fileName, dir=$relativeDir")
         if (deleteDocument(resolver, uri)) return
-        deleteEmptyMediaStoreRow(resolver, uri, relativeDir)
+        deleteEmptyMediaStoreRow(resolver, uri, fileName, relativeDir)
     }
 
-    /** 删除与空文档对应的 MediaStore 行（显示名/大小/目录三项精确匹配） */
+    /**
+     * 删除与空文档对应的 MediaStore 行（显示名/大小/目录三项精确匹配）。
+     *
+     * P3-2：SAF 文档显示名查询为空时不再静默返回——记 W 日志并改用请求
+     * `fileName` 兜底查询；仍无可删行时同样记 W（与
+     * docs/DEVICE_ACCEPTANCE_20261027_16X.md §7.3.1 的日志链一致）。
+     */
     private fun deleteEmptyMediaStoreRow(
         resolver: ContentResolver,
         safUri: Uri,
+        fileName: String,
         relativeDir: String?
     ) {
         if (relativeDir == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return
-        val displayName = queryDisplayName(resolver, safUri) ?: return
+        val queriedName = queryDisplayName(resolver, safUri)
+        if (queriedName == null) {
+            Log.w(
+                TAG,
+                "查询 SAF 文档显示名为空，改用请求文件名兜底：uri=$safUri, name=$fileName"
+            )
+        }
+        val displayName = queriedName ?: fileName
         val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND " +
             "${MediaStore.MediaColumns.SIZE} = 0 AND " +
             "${MediaStore.MediaColumns.RELATIVE_PATH} = ?"
@@ -803,13 +822,23 @@ class SaveFileBridge {
             resolvedPath = docPath ?: storePath,
             queriedRelativePath = docRelative ?: storeRelative
         )
+        // P3-1：显示名兜底查询结果与其它来源同口径规范化；查到 `Downloads/…`
+        // 之类非「下载」子树时视为「无法确定」，不猜测目录。
+        var rejectedRelative: String? = null
         if (resolved == null) {
             // 4. 显示名兜底：按「文档显示名 + 最新修改」定位 MediaStore 行
             val displayName = queryDisplayName(resolver, uri)
             if (displayName != null) {
-                resolved = queryRelativePathByDisplayName(resolver, displayName)
+                val rawRelative = queryRelativePathByDisplayName(resolver, displayName)
+                resolved = normalizeDownloadRelativePath(rawRelative)
                 if (resolved != null) {
                     Log.i(TAG, "按显示名 $displayName 定位到回退目录：$resolved")
+                } else if (rawRelative != null) {
+                    rejectedRelative = rawRelative
+                    Log.w(
+                        TAG,
+                        "按显示名 $displayName 查询到的相对路径不可用（非「下载」子树）：$rawRelative"
+                    )
                 }
             }
         }
@@ -820,6 +849,9 @@ class SaveFileBridge {
                 "行relative_path=$storeRelative, 行_data=$storePath → $resolved"
         )
         if (resolved != null) return resolved
+        // P3-1：显示名兜底查到路径但不合规（如 `Downloads/…`）→ 直接报
+        // 「无法确定」，不再回落到 legacy 数字 id 的「下载」根启发式
+        if (rejectedRelative != null) return null
         // legacy 数字 id：本 ROM 的 DownloadsProvider 仅对「下载」根文档返回，
         // 子目录文档为 msf:（设备实测），据此确定为根目录；其余情况报错。
         if (uri.authority == DOWNLOADS_AUTHORITY &&
@@ -1010,7 +1042,8 @@ class SaveFileBridge {
      * 按显示名定位 MediaStore 行并取 `relative_path`（兜底）。
      *
      * 取「最近修改」的最新一行：`CREATE_DOCUMENT` 刚创建的行最新；限制在
-     * 「下载」子树内。多行同名且同为最新时可能取错目录，故仅作为最后兜底。
+     * 「下载」子树内（P3-1：前缀收紧为 `Download/`，排除 `Downloads/…`）。
+     * 多行同名且同为最新时可能取错目录，故仅作为最后兜底。
      */
     private fun queryRelativePathByDisplayName(
         resolver: ContentResolver,
@@ -1020,7 +1053,7 @@ class SaveFileBridge {
         val collection = MediaStore.Files.getContentUri(MediaStore.VOLUME_EXTERNAL)
         val selection =
             "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND " +
-                "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE 'Download%'"
+                "${MediaStore.MediaColumns.RELATIVE_PATH} LIKE 'Download/%'"
         val sortOrder = "${MediaStore.MediaColumns.DATE_MODIFIED} DESC, " +
             "${MediaStore.MediaColumns._ID} DESC"
         return try {
