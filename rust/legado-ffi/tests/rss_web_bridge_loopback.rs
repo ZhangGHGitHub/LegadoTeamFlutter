@@ -315,9 +315,22 @@ fn rss_web_view_host_bridge_loopback_end_to_end() {
     legado_ffi::api::rss::delete_rss_source(RATE_URL).ok();
 
     // ─── 4) run / getStringAwait / 加解密往返 ──────────────────────────
+    // 批21d P2-3：先 seed 登录头再创建引擎（setup 种子），随后 set 覆盖
+    legado_ffi::api::source_login_cache::put_login_header(SOURCE_URL, r#"{"Seed":"1"}"#)
+        .expect("seed 登录头");
     let env = call(SOURCE_URL, "run", json!(["'run-ok'"]));
     assert_eq!(env["ok"], true, "{env}");
     assert_eq!(env["value"], "run-ok");
+
+    let env = call(
+        SOURCE_URL,
+        "run",
+        json!(["String(source.getLoginHeader())"]),
+    );
+    assert_eq!(
+        env["value"], r#"{"Seed":"1"}"#,
+        "引擎创建时 setup 必须预置 seed 登录头: {env}"
+    );
 
     // 批21c P2-3：间接 eval 使 `var` 跨调用持久（原版 evalJS 全局语义）
     let env = call(
@@ -454,6 +467,18 @@ fn rss_web_view_host_bridge_loopback_end_to_end() {
     assert!(
         cookies.contains("sid=login1"),
         "登录头 Cookie 键应同步到 Cookie 存储: {cookies}"
+    );
+
+    // 批21d P2-3：loginHeaderSet 同步变量表 → 已存在的引擎 run 内立即可读
+    let env = call(
+        SOURCE_URL,
+        "run",
+        json!(["String(source.getLoginHeader())"]),
+    );
+    assert_eq!(env["ok"], true, "{env}");
+    assert_eq!(
+        env["value"], "{\"Authorization\":\"Bearer T\",\"Cookie\":\"sid=login1\"}",
+        "loginHeaderSet 后 run 必须读到新值: {env}"
     );
 
     // 批21c P2-8：loginHeaderRemove 同步变量表，run 内不得复活旧登录头

@@ -1096,6 +1096,10 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
   // 被覆盖的函数后返回。
   if (typeof java.connect === 'function' && java.connect.__lgResponseBridge === true) {
     var __nativeConnect = java.connectNR;
+    // 批21d P2-4：二次注入时 setup/jsLib 可能已覆盖 globalThis.connect
+    // （或首次注入后全局被改写）；幂等分支必须把全局 connect 重新指回
+    // 已包装的 java.connect，否则书源脚本里的裸 `connect(...)` 落到旧实现。
+    globalThis.connect = java.connect;
     if (!(typeof java.get === 'function' && java.get.__lgResponseBridge === true)) {
       var __replacedGet = java.get;
       java.get = function (url, headers, callTimeout) {
@@ -5010,6 +5014,55 @@ mod tests {
         assert_eq!(
             result,
             r#"{"map":"https://final.example/r","list":"https://final.example/r","missing":0}"#
+        );
+    }
+
+    #[test]
+    fn test_response_bridge_reinjection_restores_global_connect() {
+        let engine = make_engine();
+        // 伪造原生实现（connect 与 connectNR 都被首层桥捕获）
+        engine
+            .eval(
+                r#"java.connect = function () {
+                     return JSON.stringify({status_code:200, body:'ok', headers:{}, url:'https://x.test/r'});
+                   };
+                   java.connectNR = function () {
+                     return JSON.stringify({status_code:200, body:'ok', headers:{}, url:'https://x.test/r'});
+                   };"#,
+            )
+            .unwrap();
+        engine.eval(super::RESPONSE_BRIDGE_JS).unwrap();
+        assert_eq!(
+            engine.eval("globalThis.connect === java.connect").unwrap(),
+            "true",
+            "首次注入必须同步全局 connect"
+        );
+
+        // 模拟 setup/jsLib 覆盖全局 connect 与 java.get（幂等 guard 分支场景）
+        engine
+            .eval(
+                "globalThis.connect = function () { return 'stale'; }; \
+                 java.get = function () { return 'overwritten'; };",
+            )
+            .unwrap();
+        // 二次注入：不得二次包装 java.connect，但必须恢复全局 connect 与 get
+        engine.eval(super::RESPONSE_BRIDGE_JS).unwrap();
+
+        let out = engine
+            .eval(
+                r#"JSON.stringify({
+                     globalIsJava: globalThis.connect === java.connect,
+                     globalBody: globalThis.connect('https://x.test/r').body(),
+                     bridgeFlag: java.connect.__lgResponseBridge === true,
+                     getBridge: java.get.__lgResponseBridge === true,
+                     getBody: java.get('https://x.test/r', {}).body()
+                   })"#,
+            )
+            .unwrap();
+        assert_eq!(
+            out,
+            r#"{"globalIsJava":true,"globalBody":"ok","bridgeFlag":true,"getBridge":true,"getBody":"ok"}"#,
+            "二次注入后全局 connect 必须指回已包装的 java.connect"
         );
     }
 

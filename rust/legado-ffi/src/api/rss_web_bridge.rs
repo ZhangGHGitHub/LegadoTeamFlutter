@@ -39,16 +39,23 @@
 //!
 //! 批21c 安全加固（独立复核 P0）：
 //!
-//! - **桥对象不残留页面全局**：`java`/`source`/`cache` 与 `*Await` 仅存在于
+//! - **脚本自身不写页面全局**：`java`/`source`/`cache` 与 `*Await` 仅存在于
 //!   生成的 IIFE 闭包（`preloadJs` 词法可见），不再写 `window`；页面桥对象
 //!   读取后立即 `delete window[channelName]`；回填回调用
-//!   `Object.defineProperty` 定义（`enumerable:false`）→ 页面脚本无法枚举。
-//! - **nonce 不作为安全边界**：仅防误用/重放；对不可信页面脚本的隔离依赖
-//!   Dart 侧的「桥模式剥离页面脚本」+「无全局对象」（见契约 §2.5 批21c 补记）。
-//! - **降级不静默**：prepare 失败时 Dart 注入带明确报错的 `java`/`source`/
-//!   `cache` 桩（本文件不参与），避免 `preloadJs` 因 TypeError 中断。
-//! - **资源边界**：每源宿主调用并发上限 4；`__store` 每秒 300 次；
-//!   `importScriptAwait` 纳入源级 `concurrentRate` 限流。
+//!   `Object.defineProperty` 定义（`enumerable:false`、`configurable:false`）。
+//!   **注意**：不可枚举 ≠ 不可发现，`Object.getOwnPropertyNames(window)`
+//!   仍可看到属性名；Android 15 真机实测平台通道在删除前对 `Object.keys`
+//!   也可见、`delete` 后不可见，iOS `webkit.messageHandlers` 待验收
+//!   （契约 §2.5 批21d 真机结论）。
+//! - **nonce 不作为安全边界**：仅防误用/重放。URL 模式桥能力与原版等价
+//!   （页面可信假设）；脚本隔离只对文章 HTML 模式成立（Dart 侧剥离页面
+//!   脚本，见契约 §2.5 批21d）。
+//! - **降级不静默**：prepare 失败或 `bridgeAvailable:false` 时 Dart 注入带
+//!   明确报错的 `java`/`source`/`cache` 桩（本文件不参与），避免
+//!   `preloadJs` 因 TypeError 中断。
+//! - **资源边界**：每源宿主调用并发上限 4（等待 10s 超时）；`__store` 每秒
+//!   300 次；`importScriptAwait` 纳入源级 `concurrentRate` 限流；并发/限频/
+//!   UA 记忆表均有条数上限（超出淘汰空闲/任意条目）。
 
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
@@ -118,6 +125,16 @@ const NETWORK_METHODS: &[&str] = &[
 #[cfg(feature = "quickjs")]
 const BRIDGE_MAX_CONCURRENCY: usize = 4;
 
+/// 并发许可等待上限（批21d P2-2：超时明确回填错误，不无限阻塞）
+#[cfg(feature = "quickjs")]
+const BRIDGE_PERMIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// 进程内按源表的条数上限（并发信号量/限频窗口/UA 记忆；批21d P2-2）
+///
+/// 超出后优先淘汰空闲信号量，其次淘汰任意条目；被淘汰源下次调用会重建，
+/// 只损失短期状态（限频窗口/UA 记忆），不会造成功能错误。
+const MAX_TRACKED_SOURCES: usize = 256;
+
 /// `__store` 每秒调用上限（每源；超出按 `ok:false` 拒绝，页面侧丢弃）
 const STORE_MAX_PER_SECOND: u32 = 300;
 
@@ -132,19 +149,59 @@ fn concurrency_slot() -> &'static RwLock<HashMap<String, Arc<tokio::sync::Semaph
 }
 
 /// 获取一次宿主调用许可（每源 [`BRIDGE_MAX_CONCURRENCY`] 个并发）
+///
+/// 批21d P2-2：等待 [`BRIDGE_PERMIT_TIMEOUT`] 仍拿不到许可时返回明确错误，
+/// 由调用方回填 `ok:false`（不再无限阻塞调用线程）。
 #[cfg(feature = "quickjs")]
-fn bridge_permit(source_url: &str) -> Option<tokio::sync::OwnedSemaphorePermit> {
+fn bridge_permit(source_url: &str) -> Result<tokio::sync::OwnedSemaphorePermit, String> {
     let semaphore = {
         let mut guard = concurrency_slot()
             .write()
             .unwrap_or_else(|p| p.into_inner());
-        Arc::clone(
+        let semaphore = Arc::clone(
             guard
                 .entry(source_url.to_string())
                 .or_insert_with(|| Arc::new(tokio::sync::Semaphore::new(BRIDGE_MAX_CONCURRENCY))),
-        )
+        );
+        trim_idle_semaphores(&mut guard);
+        semaphore
     };
-    crate::runtime::block_on(async move { semaphore.acquire_owned().await.ok() })
+    let outcome = crate::runtime::block_on(async move {
+        tokio::time::timeout(BRIDGE_PERMIT_TIMEOUT, semaphore.acquire_owned()).await
+    });
+    match outcome {
+        Ok(Ok(permit)) => Ok(permit),
+        Ok(Err(_)) => Err("宿主桥并发许可获取失败（信号量已关闭）".to_string()),
+        Err(_) => Err(format!(
+            "宿主桥并发许可等待超时（{}s，每源并发上限 {BRIDGE_MAX_CONCURRENCY}）",
+            BRIDGE_PERMIT_TIMEOUT.as_secs()
+        )),
+    }
+}
+
+/// 并发信号量表裁剪：优先淘汰无持有者的空闲项（Arc 仅剩表内引用）
+#[cfg(feature = "quickjs")]
+fn trim_idle_semaphores(guard: &mut HashMap<String, Arc<tokio::sync::Semaphore>>) {
+    if guard.len() <= MAX_TRACKED_SOURCES {
+        return;
+    }
+    let idle: Vec<String> = guard
+        .iter()
+        .filter(|(_, semaphore)| Arc::strong_count(semaphore) == 1)
+        .map(|(key, _)| key.clone())
+        .collect();
+    for key in idle {
+        if guard.len() <= MAX_TRACKED_SOURCES {
+            return;
+        }
+        guard.remove(&key);
+    }
+    while guard.len() > MAX_TRACKED_SOURCES {
+        let Some(key) = guard.keys().next().cloned() else {
+            break;
+        };
+        guard.remove(&key);
+    }
 }
 
 /// `__store` 固定窗口限频（每源每秒 [`STORE_MAX_PER_SECOND`] 次）
@@ -161,6 +218,12 @@ fn store_rate_allowed(source_url: &str) -> bool {
         return false;
     }
     entry.1 += 1;
+    // 批21d P2-2：限频表条数上限（淘汰任意条目，最坏损失一个窗口状态）
+    if guard.len() > MAX_TRACKED_SOURCES {
+        if let Some(key) = guard.keys().find(|key| key.as_str() != source_url).cloned() {
+            guard.remove(&key);
+        }
+    }
     true
 }
 
@@ -173,6 +236,12 @@ fn ua_slot() -> &'static RwLock<HashMap<String, String>> {
 fn remember_ua(source_url: &str, ua: &str) {
     let mut guard = ua_slot().write().unwrap_or_else(|p| p.into_inner());
     guard.insert(source_url.to_string(), ua.to_string());
+    // 批21d P2-2：UA 记忆表条数上限（淘汰任意非当前源条目）
+    if guard.len() > MAX_TRACKED_SOURCES {
+        if let Some(key) = guard.keys().find(|key| key.as_str() != source_url).cloned() {
+            guard.remove(&key);
+        }
+    }
 }
 
 fn remembered_ua(source_url: &str) -> Option<String> {
@@ -416,10 +485,10 @@ fn js_literal(value: &Value) -> String {
 ///
 /// 批21c 安全口径（独立复核 P0-1/P0-3）：
 /// - `java`/`source`/`cache` 与 `*Await` 只在本 IIFE 闭包内声明，
-///   **不写 `window`**（页面脚本无法从全局取得宿主能力；`preloadJs`
-///   经词法作用域可见）；
+///   **不写 `window`**（`preloadJs` 经词法作用域可见）；
 /// - 页面桥对象（Dart bootstrap 创建）读取后立即从 `window` 删除；
-/// - 回填回调用 `Object.defineProperty` 定义为不可枚举（页面无法枚举发现）。
+/// - 回填回调用 `Object.defineProperty` 定义为不可枚举、不可重定义
+///   （`Object.getOwnPropertyNames` 仍可见属性名，见契约真机结论）。
 #[cfg(feature = "quickjs")]
 fn build_prepare_script(channel: &str, callback: &str, snapshot: &Value) -> String {
     // 用占位符替换而非 format!（脚本包含大量 `{`/`}`，双花括号易漏；
@@ -442,11 +511,12 @@ const PREPARE_SCRIPT_TEMPLATE: &str = r#"(() => {
   // [批21a/21c] RSS 阅读 WebView preloadJs 宿主桥（Rust 生成，Dart 追加 preloadJs 后闭合）
   // 拼接口径（契约 §2.5）：script + preloadJs + "\n})();"
   //
-  // 安全加固（批21c）：
+  // 安全加固（批21c/21d）：
   // - java/source/cache 与 *Await 仅存在于本 IIFE 闭包（preloadJs 词法可见），
-  //   不写入 window，页面脚本无法从全局取得宿主能力；
-  // - 页面桥对象读取后立即从 window 删除（Android 可删；iOS 本无该全局）；
-  // - 回填回调不可枚举，页面脚本无法经 for..in / Object.keys 发现。
+  //   不写入 window；
+  // - 页面桥对象读取后立即从 window 删除（Android 15 实测 delete 生效，
+  //   删除后 getOwnPropertyNames 不可见；iOS 无该全局，待验收）；
+  // - 回填回调不可枚举、不可重定义；getOwnPropertyNames 仍可见其名。
   var __lgChannelName = __LG_CHANNEL_NAME_LITERAL__;
   var __lgCallbackName = __LG_CALLBACK_NAME_LITERAL__;
   var __lgSnapshot = __LG_SNAPSHOT_LITERAL__;
@@ -470,12 +540,13 @@ const PREPARE_SCRIPT_TEMPLATE: &str = r#"(() => {
     } catch (e) {}
     // 通道对象仅本闭包持有：立即从页面全局移除
     try { delete window[__lgChannelName]; } catch (e) {}
-    // 回填回调不可枚举（页面脚本无法枚举发现；名字仍是随机令牌）
+    // 回填回调不可枚举且不可重定义（for..in/Object.keys 不可见；
+    // Object.getOwnPropertyNames 仍可见，见契约 §2.5 批21d 真机结论）
     try {
       Object.defineProperty(window, __lgCallbackName, {
         value: __lgReply,
         enumerable: false,
-        configurable: true,
+        configurable: false,
         writable: false
       });
     } catch (e) {
@@ -778,8 +849,9 @@ const PREPARE_SCRIPT_TEMPLATE: &str = r#"(() => {
     }
   };
 
-  // 不写 window.java/source/cache：三者只在本 IIFE 闭包（preloadJs 词法可见），
-  // 页面脚本无法取得宿主能力（批21c P0-1）。
+  // 不写 window.java/source/cache：三者只在本 IIFE 闭包（preloadJs 词法可见）。
+  // 注意：这只保证「脚本自身不写全局」；URL 模式下页面脚本仍可经平台注入
+  // 面（可枚举性见真机结论）触达桥能力，属已登记的原版等价语义。
   // __LEGADO_PRELOAD_JS__
 "#;
 
@@ -856,20 +928,25 @@ fn store(source_url: &str, args: &Value) -> LegadoResult<String> {
         ),
         "loginHeaderSet" => {
             put_login_header(source_url, value);
+            // 批21d P2-3：同步写引擎变量表（与 Remove 对称）。已存在的
+            // 引擎只在创建时跑 setup 种子，若不写变量表，`run` 内
+            // `source.getLoginHeader()` 会读不到 WebView 刚写入的新值。
+            let var_key = format!("loginHeader_{source_url}");
+            if let Err(e) = legado_js::host_api::variable_store::set_variable(&var_key, value) {
+                log::warn!("[rss-web-bridge] 写入登录头变量失败（{var_key}）: {e}");
+            }
             Value::String(value.to_string())
         }
         "loginHeaderRemove" => {
             if let Err(e) = crate::api::source_login_cache::remove_login_header(source_url) {
                 log::warn!("[rss-web-bridge] 清除登录头失败（{source_url}）: {e}");
             }
-            // 批21c P2-8：同步清除引擎变量表（否则下次 setup 的 null seed
-            // 不会覆盖旧值，`source.getLoginHeader()` 在 run 内仍读到旧登录头）
-            #[cfg(feature = "quickjs")]
-            {
-                let var_key = format!("loginHeader_{source_url}");
-                if let Err(e) = legado_js::host_api::variable_store::remove_variable(&var_key) {
-                    log::warn!("[rss-web-bridge] 清除登录头变量失败（{var_key}）: {e}");
-                }
+            // 批21c P2-8 / 批21d P2-3：同步清除引擎变量表（与 Set 对称；
+            // 否则下次 setup 的 null seed 不会覆盖旧值，`source.getLoginHeader()`
+            // 在 run 内仍读到旧登录头）。variable_store 无 quickjs 门控。
+            let var_key = format!("loginHeader_{source_url}");
+            if let Err(e) = legado_js::host_api::variable_store::remove_variable(&var_key) {
+                log::warn!("[rss-web-bridge] 清除登录头变量失败（{var_key}）: {e}");
             }
             Value::Null
         }
@@ -886,12 +963,9 @@ fn store(source_url: &str, args: &Value) -> LegadoResult<String> {
             if let Err(e) = crate::api::source_login_cache::remove_login_info(source_url) {
                 log::warn!("[rss-web-bridge] 清除用户信息失败（{source_url}）: {e}");
             }
-            #[cfg(feature = "quickjs")]
-            {
-                let var_key = format!("userInfo_{source_url}");
-                if let Err(e) = legado_js::host_api::variable_store::remove_variable(&var_key) {
-                    log::warn!("[rss-web-bridge] 清除用户信息变量失败（{var_key}）: {e}");
-                }
+            let var_key = format!("userInfo_{source_url}");
+            if let Err(e) = legado_js::host_api::variable_store::remove_variable(&var_key) {
+                log::warn!("[rss-web-bridge] 清除用户信息变量失败（{var_key}）: {e}");
             }
             Value::Null
         }
@@ -1219,10 +1293,11 @@ fn host_call(source_url: &str, method: &str, args: &Value) -> LegadoResult<Strin
     let Some(source) = load_rss_source(source_url)? else {
         return Ok(envelope_error(format!("RSS 源不存在：{source_url}")));
     };
-    // 批21c P2-10：每源并发上限（2-4；`run`/网络/加解密一律计入）。
-    // 许可持有到本次调用结束；超时等待由 Dart 侧 30s 失败回填兜底。
-    let Some(_permit) = bridge_permit(&source.source_url) else {
-        return Ok(envelope_error("宿主桥并发许可获取失败（连接已关闭）"));
+    // 批21c P2-10 / 批21d P2-2：每源并发上限（2-4；`run`/网络/加解密一律
+    // 计入）。许可持有到本次调用结束；等待超时则明确回填错误。
+    let _permit = match bridge_permit(&source.source_url) {
+        Ok(permit) => permit,
+        Err(message) => return Ok(envelope_error(message)),
     };
     apply_source_global_headers(&source);
     // 源级 concurrentRate 限流（网络类方法每次调用一许可；与 RSS 列表/正文
@@ -1560,6 +1635,28 @@ mod tests {
         let env = call(url_a, "__store", json!([{ "op": "sourceVariableGet" }]));
         assert_eq!(env["value"], "var-a");
 
+        // 批21d P2-3：loginHeaderSet 必须同步写变量表（与 Remove 对称）
+        let header = r#"{"X-Token":"t9"}"#;
+        let env = call(
+            url_a,
+            "__store",
+            json!([{ "op": "loginHeaderSet", "value": header }]),
+        );
+        assert_eq!(env["ok"], true, "{env}");
+        let var_key = format!("loginHeader_{url_a}");
+        assert_eq!(
+            legado_js::host_api::variable_store::get_variable(&var_key).unwrap(),
+            Some(header.to_string()),
+            "loginHeaderSet 必须同步引擎变量表"
+        );
+        let env = call(url_a, "__store", json!([{ "op": "loginHeaderRemove" }]));
+        assert_eq!(env["ok"], true, "{env}");
+        assert_eq!(
+            legado_js::host_api::variable_store::get_variable(&var_key).unwrap(),
+            None,
+            "loginHeaderRemove 必须清除变量表"
+        );
+
         // 清理
         for key in [
             format!("v_{url_a}_token"),
@@ -1567,6 +1664,7 @@ mod tests {
         ] {
             with_database(|db| legado_db::CacheRepository::new(db.connection()).delete(&key)).ok();
         }
+        crate::api::source_login_cache::remove_login_header(url_a).ok();
         crate::api::rss::delete_rss_source(url_a).ok();
         crate::api::rss::delete_rss_source(url_b).ok();
     }
@@ -1700,6 +1798,7 @@ globalThis.__probe = {
   ajaxGlobal: typeof window.ajaxAwait,
   callbackType: typeof window["__lgTestCallback"],
   callbackEnumerable: Object.getOwnPropertyDescriptor(window, "__lgTestCallback").enumerable,
+  callbackConfigurable: Object.getOwnPropertyDescriptor(window, "__lgTestCallback").configurable,
   callbackInKeys: Object.keys(window).indexOf("__lgTestCallback") >= 0,
   sourceUrl: source.sourceUrl,
   sourceName: source.sourceName,
@@ -1750,6 +1849,10 @@ window["__lgTestChannel"] = {
         }
         assert_eq!(probe["callbackType"], "function");
         assert_eq!(probe["callbackEnumerable"], false, "回填回调必须不可枚举");
+        assert_eq!(
+            probe["callbackConfigurable"], false,
+            "回填回调必须不可重定义（批21d P0-B）"
+        );
         assert_eq!(probe["callbackInKeys"], false);
         assert_eq!(probe["sourceUrl"], url);
         assert_eq!(probe["sourceName"], "宿主桥测试源");
