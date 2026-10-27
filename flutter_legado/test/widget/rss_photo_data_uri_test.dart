@@ -12,14 +12,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:mocktail/mocktail.dart';
 
+import 'package:flutter_legado/src/models/models.dart';
+import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/rss_articles_screen.dart';
+
+import '../mocks/mocks.dart';
 
 /// 1x1 透明 PNG（68 字节，PNG 魔数合法）
 const String _pngBase64 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
 void main() {
+  setUpAll(registerFallbacks);
   Future<void> pumpViewer(
     WidgetTester tester, {
     required String url,
@@ -105,5 +111,58 @@ void main() {
     // 非 data: URI 时渲染 CachedNetworkImage（内部包 Image），不显示 data 错误
     expect(find.byType(CachedNetworkImage), findsOneWidget);
     expect(find.textContaining('base64'), findsNothing);
+  });
+
+  testWidgets('type=1 图片源：ruleContent 返回 data URI 时直接解码展示', (tester) async {
+    final api = MockRustApi();
+    when(
+      () => api.rssFetchContent(
+        any(),
+        any(),
+        sort: any(named: 'sort'),
+      ),
+    ).thenAnswer((_) async => 'data:image/png;base64,$_pngBase64');
+
+    const source = RssSource(
+      sourceUrl: 'https://s.test',
+      sourceName: '图源',
+      rssType: 1,
+      ruleContent: '//img/@src',
+    );
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [bookApiProvider.overrideWithValue(api)],
+        child: MaterialApp(
+          home: Consumer(
+            builder: (context, ref, _) => Scaffold(
+              body: TextButton(
+                onPressed: () => openRssArticle(
+                  context,
+                  ref,
+                  article: const RssFeedArticle(
+                    title: '图片文章',
+                    url: 'https://s.test/a',
+                  ),
+                  source: source,
+                  sourceName: source.sourceName,
+                  sourceUrl: source.sourceUrl,
+                ),
+                child: const Text('open'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('open'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // 正文即 data URI → 绝对化短路 → 查看器 Image.memory 解码展示
+    final image = tester.widget<Image>(find.byType(Image));
+    expect(image.image, isA<MemoryImage>());
+    expect((image.image as MemoryImage).bytes, base64Decode(_pngBase64));
   });
 }
