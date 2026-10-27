@@ -260,4 +260,96 @@ import -> [one.txt]
 
 ---
 
-编写：QA 子代理（设备验收） 2026-10-27
+## 九、回修复验（批24d，2026-10-28）
+
+> 本节仅追加修复后的复验记录，**不改变** §一~§八 的历史结论（D1 在修复前为 FAIL）。
+> 修复提交：`ee82a010c8`（fix）+ `4aaeca5b2d`（test）；本节随批24d docs 提交落盘。
+> 证据目录：`tmp_debug/device_acceptance_20261027_7z/verify2/`（`.gitignore` 已忽略，不入库）。
+
+### 9.1 根因与修法
+
+- **根因**：`sevenz-rust2 0.24.1` 的 `BlockDecoder::for_each_entries`（及
+  `ArchiveReader::read_file` 的 solid 分支）按
+  `block_first_file_index + num_unpack_sub_streams` 连续索引遍历 `archive.files`，
+  假定同块内有流条目连续。py7zr 把目录条目与文件条目交错写入（7z 规范允许，
+  `kEmptyStream` 位图），区间撞到无流目录条目后提前结束，后续文件被静默跳过；
+  列表走 `archive.files` 所以完整。
+- **修法（`legado-book/src/archive.rs`）**：① 以 `archive.files` 为权威清单，
+  仍按原始文件序经 `plan_book_output_names` 规划输出名（列表口径）；② 导入前
+  `normalize_7z_block_file_ranges` 按块重排内存文件表并重写 `stream_map`，使每个
+  块的连续区间恰好覆盖其全部子流（不改名称/大小/CRC，`blocks` 与子流数不变）；
+  ③ 主迭代按输出名记录已写出集合，未覆盖条目回退 `read_7z_entry_strict`
+  （`read_file` 逐条读取 + 声明长度校验），缺失/空读/长度不符整包报
+  「7z 条目读取不完整」，不再静默成功；④ 落盘与 `extracted_files` 按原始文件序
+  返回，与列表一致。
+- 宿主探针确认：对同一 `nested_py7zr.7z`，旧 `for_each_entries` 只回调
+  `dir1/one.txt`、`dir2`、`dir1`，且 `read_file("dir2/two.txt")` 返回
+  `FileNotFound`（solid 分支同样受上游连续区间影响）；归一化后迭代与
+  `read_file` 均覆盖 `dir2/two.txt`。
+
+### 9.2 红→绿（宿主）
+
+- **红**：在 HEAD 旧实现（`a1a7d7ffce`）的临时 worktree 中运行交错夹具断言
+  `list == import` → **FAILED**：`list=["one.txt","two.txt"]`，
+  `import=["one.txt"]`。证据 `verify2/red_host_test.txt`。
+- **绿**：修复后 `cargo test -p legado-book --lib archive::tests` → **43 passed**
+  （含新增 4 个交错/回退用例）；`archive::tests::test_import_7z_interleaved_*`
+  两用例通过，日志含「检测到目录/文件交错布局（1 个无流条目），已归一化块文件区间」。
+  证据 `verify2/green_host_test.txt`。
+- 全量门禁：`cargo fmt --all -- --check`、`cargo clippy --workspace --all-targets
+  -- -D warnings`、quickjs 组合 clippy、`cargo test -p legado-book -p legado-ffi
+  --features quickjs`、`cargo test --workspace` 全部通过；workspace 合计
+  **3496 passed / 0 failed / 26 ignored**（`verify2/cargo_test_workspace.log`）。
+  `flutter analyze` 无问题；`flutter test` 全量 **+2825 ~1 / All tests passed**
+  （`verify2/flutter_test.log`）；真实 DLL 7z 用例 8/8 通过（新增交错布局用例，
+  `verify2/flutter_ffi_7z_runtime.log`）。
+
+### 9.3 构建与设备复验
+
+| 项 | 值 |
+|---|---|
+| Rust | `rust/scripts/build-android.ps1 -Mode release` 退出 0；arm64 48.6MB / v7a 32.5MB（既有无 quickjs 回退）/ x86_64 48.7MB（`verify2/build_rust.log`、`so_sha256.txt`） |
+| APK | `flutter build apk --release` 退出 0，196,957,192 B，sha256 `4f906f5f…17c164`（`verify2/build_apk.log`、`apk_sha256.txt`） |
+| 安装 | streamed 196957192 bytes；2.0.400 / 401，lastUpdateTime 2026-10-28 00:00:06（`verify2/install_apk.txt`、`final_state.txt`） |
+| 夹具 | `/sdcard/Download/nested_py7zr.7z`，sha256 `8aed9b81…d90486`（与 §三 原夹具一致） |
+
+**D1 主复验（nested_py7zr.7z，交错目录布局）**：
+
+1. 清空 `archive_import/` 后 VIEW 打开，对话框完整列出 `one.txt`、`two.txt`
+   （`verify2/screens/01_after_intent.png`）。
+2. 点「导入 (2)」→ `archive_import/` 落盘 **`one.txt` 18 B、`two.txt` 18 B**
+   （`verify2/import_dir.txt`），内容分别为 `ONE 一号正文`、`TWO 二号正文`
+   （`verify2/content_and_cleanliness.txt`；`adb shell` 输出会把 LF 转为 CRLF，
+   文件实际大小以 `ls` 的 18 B 为准）。
+3. 书架新增 `one`、`two`（`verify2/screens/02_after_import.png`），打开 `two`
+   阅读器显示「TWO 二号正文」（`verify2/screens/03_open_two_reader.png`）。
+   DB `books` = `7z验收EPUB, novel, one, two`（`verify2/db_books.txt`）。
+
+**回归（normal.7z，7-Zip 生成）**：列表 `book.epub`/`novel.txt`
+（`verify2/screens/04_normal_dialog.png`），导入落盘 `book.epub` 1404 B、
+`novel.txt` 137 B（`verify2/normal_import_dir.txt`），书架出现
+`7z验收EPUB`/`novel`（`verify2/screens/06_normal_shelf.png`）。
+
+**清洁与稳定性**：`/data/data/io.legado.flutter_legado` 与 `/sdcard/Download`
+下 `*.part` 均为 **0**；`FATAL EXCEPTION` = **0**、`ANR in` = **0**、
+`E/flutter` = **0**、`panicked` = **0**，进程存活（`verify2/final_state.txt`、
+`verify2/final_logcat_counts.txt`、`logcat_verify2.txt`）。
+
+**收尾**：恢复验收前 DB（sha256 与 `db/legado.db.orig` 一致，`books` 计数 0），
+删除 `archive_import/` 与推送夹具，书架恢复空态
+（`verify2/cleanup.txt`、`verify2/screens/07_restored_empty_shelf.png`）。
+
+### 9.4 残余风险
+
+- **回退读取性能**：`read_file` 对 solid 包会从块首重复解压到目标条目；归一化后
+  主迭代应一次读全，回退仅在「主迭代未覆盖」时触发（本次设备复验未触发），
+  单条目最坏仍受 256 MiB / 总 512 MiB 限额约束。
+- **solid 重复解压**：若上游再次出现块区间偏差导致回退，多个缺失条目可能重复解压
+  同一块；属异常兜底路径，不影响正常包。
+- **诊断日志**：release 包内 Rust `eprintln!` 未进入 logcat（stdout/stderr 未挂接），
+  归一化/回退计数仅在宿主测试可见；建议后续若要设备可观测，改走统一日志桥。
+- **上游依赖**：块区间语义修复依赖 `sevenz-rust2` 公开的 `Archive`/`stream_map`
+  字段；升级 0.24.x 后需重跑交错夹具与真实 DLL 用例。
+
+编写：QA 子代理（设备验收） 2026-10-27；回修复验：全栈工程师子代理 2026-10-28
+
