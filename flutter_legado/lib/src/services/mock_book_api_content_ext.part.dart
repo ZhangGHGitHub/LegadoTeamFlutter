@@ -43,8 +43,8 @@ mixin MockBookApiContentExt on MockBookApiStore implements BookApi {
     required String outputDir,
   }) async => {
     'success': true,
-    'imported_count': 2,
-    'files': ['book1.txt', 'book2.epub'],
+    'extracted_files': ['book1.txt', 'book2.epub'],
+    'error': null,
   };
 
   @override
@@ -54,15 +54,14 @@ mixin MockBookApiContentExt on MockBookApiStore implements BookApi {
     String? password,
   }) async => {
     'success': true,
-    'imported_count': 1,
-    'files': ['book1.txt'],
+    'extracted_files': ['book1.txt'],
+    'error': null,
   };
 
   @override
   Future<List<String>> archiveListZipFiles({required String zipPath}) async => [
     'book1.txt',
     'book2.epub',
-    'readme.md',
   ];
 
   @override
@@ -83,7 +82,7 @@ mixin MockBookApiContentExt on MockBookApiStore implements BookApi {
 
   @override
   Future<List<String>> archiveList7zFiles({required String sevenZipPath}) async =>
-      ['book1.txt', 'book2.epub', 'readme.md'];
+      ['book1.txt', 'book2.epub'];
 
   @override
   Future<Map<String, dynamic>> archiveDetectEncoding({

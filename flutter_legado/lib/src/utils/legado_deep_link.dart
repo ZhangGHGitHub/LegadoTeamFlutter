@@ -26,7 +26,8 @@ enum IncomingFileKind {
   /// JSON 导入内容（书源/RSS/规则等 → 关联导入确认框）
   json,
 
-  /// 压缩包（zip/rar/7z → 解压导入对话框；7z 暂不支持解析）
+  /// 压缩包（zip/rar/7z → 解压导入对话框；7z 走 `archiveList7zFiles` /
+  /// `archiveImport7z`，不支持加密/分卷）
   archive,
 
   /// 不支持的文件（弹「仍然导入」兜底框）

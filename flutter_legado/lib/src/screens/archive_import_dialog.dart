@@ -10,6 +10,7 @@ import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../services/book_api.dart';
 import '../utils/error_message.dart';
+import '../utils/legado_deep_link.dart';
 
 /// 压缩包类型：决定列表/解压调用与是否显示密码框
 enum _ArchiveKind { zip, rar, sevenZ }
@@ -76,11 +77,12 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
   final TextEditingController _passwordController = TextEditingController();
 
   /// 压缩包类型（zip/rar/7z）
-  _ArchiveKind get _kind => switch (_extOf(widget.archivePath)) {
-    'rar' => _ArchiveKind.rar,
-    '7z' => _ArchiveKind.sevenZ,
-    _ => _ArchiveKind.zip,
-  };
+  _ArchiveKind get _kind =>
+      switch (LegadoDeepLink.extensionOf(widget.archivePath)) {
+        'rar' => _ArchiveKind.rar,
+        '7z' => _ArchiveKind.sevenZ,
+        _ => _ArchiveKind.zip,
+      };
 
   /// 是否为 RAR 格式（仅 RAR 显示密码框）
   bool get _isRar => _kind == _ArchiveKind.rar;
@@ -97,10 +99,17 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
     super.dispose();
   }
 
-  String _extOf(String path) {
-    final i = path.lastIndexOf('.');
-    if (i < 0 || i == path.length - 1) return '';
-    return path.substring(i + 1).toLowerCase();
+  /// 清理编码检测使用的临时解压目录（幂等；失败忽略）
+  Future<void> _cleanupTempDir(String? path) async {
+    if (path == null) return;
+    try {
+      final dir = Directory(path);
+      if (await dir.exists()) {
+        await dir.delete(recursive: true);
+      }
+    } catch (_) {
+      // 忽略清理失败
+    }
   }
 
   /// 获取压缩包内的书籍文件列表
@@ -156,10 +165,12 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
 
     setState(() => _detecting = true);
 
-    // 需要先解压才能检测编码，这里使用临时目录
+    // 需要先解压才能检测编码，这里使用临时目录；
+    // 无论成功、失败还是提前 return，都在 finally 中清理（批24b P3-7）
+    String? extractDir;
     try {
       final tempDir = await getTemporaryDirectory();
-      final extractDir =
+      extractDir =
           '${tempDir.path}${Platform.pathSeparator}archive_detect_${DateTime.now().millisecondsSinceEpoch}';
 
       // 解压到临时目录
@@ -217,16 +228,6 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
           }
         }
       }
-
-      // 清理解压的临时文件
-      try {
-        final dir = Directory(extractDir);
-        if (await dir.exists()) {
-          await dir.delete(recursive: true);
-        }
-      } catch (_) {
-        // 忽略清理失败
-      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -234,6 +235,7 @@ class _ArchiveImportDialogState extends ConsumerState<ArchiveImportDialog> {
         );
       }
     } finally {
+      await _cleanupTempDir(extractDir);
       if (mounted) {
         setState(() => _detecting = false);
       }
