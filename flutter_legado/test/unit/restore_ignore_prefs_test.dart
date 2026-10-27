@@ -193,18 +193,22 @@ void main() {
       );
     });
 
-    test('远程书库备份值净化：无 password，保留非敏感字段', () async {
+    test('远程书库服务器不写入新备份（改由 servers 表承载）', () async {
       final collected = await RestoreIgnorePrefs.collectForBackup(const {});
-      final raw = collected['remote_servers'] as String;
-      expect(raw, isNot(contains('dav-secret')), reason: '密码不得进备份');
-      expect(raw, isNot(contains('password')));
-      final list = jsonDecode(raw) as List;
-      expect(list, hasLength(1));
-      final server = list.first as Map;
-      expect(server['id'], 1);
-      expect(server['name'], '我的网盘');
-      expect(server['url'], 'https://dav.example/');
-      expect(server['username'], 'alice');
+      expect(
+        collected.containsKey('remote_servers'),
+        isFalse,
+        reason: '批18a 起新备份由 servers 段承载，旧偏好整键不导出',
+      );
+      expect(
+        RestoreIgnorePrefs.backupExcludedKeys,
+        contains('remote_servers'),
+      );
+      expect(
+        RestoreIgnorePrefs.alwaysIgnoreKeys,
+        isNot(contains('remote_servers')),
+        reason: '旧备份仍需可读：不得塞进 alwaysIgnoreKeys',
+      );
     });
 
     test('备份 JSON（appPrefs）扫描：不含任何敏感明文', () async {
@@ -225,6 +229,11 @@ void main() {
       // 键名层面也不得出现（避免「空值占位」诱导后续误接）
       expect(backupJson.contains(PrefKeys.localPassword), isFalse);
       expect(backupJson.contains('sync_webdav_password'), isFalse);
+      expect(
+        backupJson.contains('remote_servers'),
+        isFalse,
+        reason: '新备份不导出远程书库旧偏好（服务器由 servers 段承载）',
+      );
     });
 
     test('恢复远程书库：非敏感字段覆盖，本机密码保留', () async {
@@ -288,20 +297,67 @@ void main() {
     // [批17d P3-4] `password` 键名大小写不敏感：本应用恒写小写，但手改 /
     // 第三方产物可能是 Password / PASSWORD——备份侧必须同样剥除，恢复侧
     // 同样不得把它当普通字段写回（仅本应用 schema 的顶层 password）
-    test('password 键大小写不敏感剥除（备份侧）', () async {
-      SharedPreferences.setMockInitialValues({
-        'remote_servers': '[{"id":1,"name":"我的网盘","url":"https://dav.example/",'
-            '"username":"alice","Password":"upper-secret",'
-            '"PASSWORD":"upper-secret-2","note":"保留"}]',
-      });
-      final collected = await RestoreIgnorePrefs.collectForBackup(const {});
-      final raw = collected['remote_servers'] as String;
-      expect(raw, isNot(contains('upper-secret')), reason: '大写键的口令不得进备份');
-      expect(raw.toLowerCase(), isNot(contains('password')));
-      final server = (jsonDecode(raw) as List).first as Map;
+    test('password 键大小写不敏感剥除（恢复侧合并）', () async {
+      final merged = await RestoreIgnorePrefs.mergeRemoteServersFromBackup(
+        jsonEncode([
+          {
+            'id': 1,
+            'name': '我的网盘',
+            'url': 'https://dav.example/',
+            'username': 'alice',
+            'Password': 'upper-secret',
+            'PASSWORD': 'upper-secret-2',
+            'note': '保留',
+          },
+        ]),
+        localPasswordsById: const {},
+        localPasswordsByEndpoint: const {},
+      );
+      expect(merged, isNotNull);
+      expect(merged, isNot(contains('upper-secret')), reason: '大写键的口令不得进本机');
+      expect(merged!.toLowerCase(), isNot(contains('password')));
+      final server = (jsonDecode(merged) as List).first as Map;
       expect(server['id'], 1);
       expect(server['username'], 'alice');
       expect(server['note'], '保留', reason: '仅剥除 password 键，其余字段原样保留');
+    });
+
+    test('恢复时密码优先取 servers 表索引（不再依赖旧偏好）', () async {
+      // 旧偏好里的密码已过期（批18a 后不再更新）
+      SharedPreferences.setMockInitialValues({
+        'remote_servers':
+            '[{"id":1,"name":"旧","url":"https://old/","username":"u",'
+                '"password":"stale-prefs-password"}]',
+      });
+      final merged = await RestoreIgnorePrefs.mergeRemoteServersFromBackup(
+        jsonEncode([
+          {
+            'id': 1,
+            'name': '新',
+            'url': 'https://new/',
+            'username': 'u2',
+            'password': 'backup-leaked-secret',
+          },
+          {
+            'id': 2,
+            'name': '按端点匹配',
+            'url': 'https://endpoint/',
+            'username': 'bob',
+          },
+        ]),
+        localPasswordsById: {1: 'db-password'},
+        localPasswordsByEndpoint: {
+          'https://endpoint/\u0000bob': 'endpoint-password',
+        },
+      );
+
+      final list = (jsonDecode(merged!) as List).cast<Map>();
+      expect(list[0]['password'], 'db-password',
+          reason: '同 id 取 DB 密码，不取过期偏好/备份明文');
+      expect(list[1]['password'], 'endpoint-password',
+          reason: 'id 不匹配时按 url+username 匹配 DB 密码');
+      expect(merged, isNot(contains('backup-leaked-secret')));
+      expect(merged, isNot(contains('stale-prefs-password')));
     });
 
     test('password 键大小写不敏感剥除（恢复侧）', () async {

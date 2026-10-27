@@ -162,4 +162,193 @@ void main() {
       verify(() => mockApi.updateBook(any())).called(1);
     });
   });
+
+  // ─── 批18a：服务器列表数据源切换到 servers 表 ─────────────────────────
+  group('RemoteBookNotifier 服务器列表（servers 表）', () {
+    late FakeServersRustApi mockApi;
+    late ProviderContainer container;
+
+    setUpAll(registerFallbacks);
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({
+        'sync_webdav_url': 'https://dav.example.com/',
+        'sync_webdav_username': 'u',
+        'sync_webdav_password': 'p',
+        'sync_webdav_remote_dir': '/legado/',
+        'remote_server_id': -1,
+      });
+      mockApi = FakeServersRustApi();
+      when(() => mockApi.webdavListDir(any(), any()))
+          .thenAnswer((_) async => jsonEncode([]));
+      when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
+      container = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(mockApi)],
+      );
+      addTearDown(container.dispose);
+    });
+
+    RemoteBookNotifier readNotifier() =>
+        container.read(remoteBookNotifierProvider.notifier);
+    RemoteBookState readState() => container.read(remoteBookNotifierProvider);
+
+    test('列表来自 DB 并过滤 id=-1（默认 WebDAV 不在本页展示）', () async {
+      mockApi.seedServer(
+        id: -1,
+        name: '默认 WebDAV',
+        config: jsonEncode({
+          'url': 'https://dav.example.com/',
+          'username': 'u',
+          'password': 'p',
+        }),
+      );
+      mockApi.seedServer(
+        id: 11,
+        name: '自定义网盘',
+        config: jsonEncode({
+          'url': 'https://dav11.example.com/',
+          'username': 'u11',
+          'password': 'p11',
+        }),
+      );
+
+      await readNotifier().init();
+
+      expect(readState().servers.map((e) => e.id), [11]);
+      expect(readState().servers.single.name, '自定义网盘');
+    });
+
+    test('选中 id 在列表不存在时回退默认 WebDAV（不再报配置无效）', () async {
+      await SharedPreferences.getInstance()
+          .then((p) => p.setInt('remote_server_id', 999));
+
+      await readNotifier().init();
+
+      expect(readState().error, isNull);
+      verify(() => mockApi.webdavListDir(any(), 'books/')).called(1);
+    });
+
+    test('选中行 config 无效时回退默认 WebDAV', () async {
+      mockApi.seedServer(id: 12, name: '坏配置', config: 'not-json');
+      await SharedPreferences.getInstance()
+          .then((p) => p.setInt('remote_server_id', 12));
+
+      await readNotifier().init();
+
+      expect(readState().error, isNull);
+      verify(() => mockApi.webdavListDir(any(), 'books/')).called(1);
+    });
+
+    test('新建/编辑/删除均走 servers 表', () async {
+      await readNotifier().init();
+      expect(readState().servers, isEmpty);
+
+      final created = await readNotifier().saveServer(
+        const RemoteServerConfig(
+          id: 0,
+          name: '新建网盘',
+          url: 'https://new.example.com/',
+          username: 'u',
+          password: 'p',
+        ),
+      );
+      expect(created, isTrue);
+      final added = readState().servers.single;
+      expect(added.id, greaterThan(0));
+      expect(added.name, '新建网盘');
+
+      final edited = await readNotifier().saveServer(
+        added.copyWith(name: '改名网盘', url: 'https://edited.example.com/'),
+      );
+      expect(edited, isTrue);
+      final afterEdit = readState().servers.single;
+      expect(afterEdit.id, added.id);
+      expect(afterEdit.name, '改名网盘');
+      expect(afterEdit.url, 'https://edited.example.com/');
+
+      final deleted = await readNotifier().deleteServer(added.id);
+      expect(deleted, isTrue);
+      expect(readState().servers, isEmpty);
+    });
+
+    test('编辑保留既有 sortNumber', () async {
+      mockApi.seedServer(
+        id: 21,
+        name: '旧名',
+        config: jsonEncode({'url': 'https://old/', 'username': '', 'password': ''}),
+        sortNumber: 6,
+      );
+      await readNotifier().init();
+      expect(readState().servers.single.sortNumber, 6);
+
+      await readNotifier().saveServer(
+        readState().servers.single.copyWith(name: '新名'),
+      );
+
+      expect(readState().servers.single.sortNumber, 6);
+    });
+
+    test('删除当前选中服务器后回退默认并持久化', () async {
+      mockApi.seedServer(
+        id: 21,
+        name: '当前',
+        config: jsonEncode({'url': 'https://cur/', 'username': '', 'password': ''}),
+      );
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setInt('remote_server_id', 21);
+      await readNotifier().init();
+      expect(readState().serverId, 21);
+
+      expect(await readNotifier().deleteServer(21), isTrue);
+
+      expect(readState().serverId, -1);
+      expect(prefs.getInt('remote_server_id'), -1);
+    });
+
+    test('DB 读取异常进入错误态（不抛给调用方）', () async {
+      final broken = MockRustApi();
+      when(() => broken.webdavServersList())
+          .thenThrow(StateError('数据库不可用'));
+      final brokenContainer = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(broken)],
+      );
+      addTearDown(brokenContainer.dispose);
+
+      await brokenContainer.read(remoteBookNotifierProvider.notifier).init();
+
+      final state = brokenContainer.read(remoteBookNotifierProvider);
+      expect(state.servers, isEmpty);
+      expect(state.error, contains('数据库不可用'));
+    });
+
+    test('保存失败返回 false 并写入 error（UI 以 SnackBar 明示）', () async {
+      final failing = MockRustApi();
+      when(() => failing.webdavServersList()).thenAnswer((_) async => '[]');
+      when(() => failing.webdavServerSave(any()))
+          .thenThrow(StateError('写入失败'));
+      when(() => failing.webdavListDir(any(), any()))
+          .thenAnswer((_) async => jsonEncode([]));
+      when(() => failing.getBooks()).thenAnswer((_) async => <Book>[]);
+      final failContainer = ProviderContainer(
+        overrides: [bookApiProvider.overrideWithValue(failing)],
+      );
+      addTearDown(failContainer.dispose);
+
+      final notifier = failContainer.read(remoteBookNotifierProvider.notifier);
+      await notifier.init();
+      final ok = await notifier.saveServer(
+        const RemoteServerConfig(
+          id: 0,
+          name: '新',
+          url: 'https://new/',
+        ),
+      );
+
+      expect(ok, isFalse);
+      expect(
+        failContainer.read(remoteBookNotifierProvider).error,
+        contains('写入失败'),
+      );
+    });
+  });
 }
