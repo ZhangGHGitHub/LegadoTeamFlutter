@@ -52,17 +52,15 @@ class RemoteBookServerRow {
       final String value => value,
       final other => throw FormatException('servers 行 type 形态不符: $other'),
     };
-    final rawConfig = switch (json['config']) {
-      null => null,
-      final String value => value,
-      final other => throw FormatException('servers 行 config 形态不符: $other'),
-    };
+    // config 按需求做单行容错：非字符串（如数字）同样只标记该行无效
+    final rawConfig = json['config'];
+    final configIsString = rawConfig == null || rawConfig is String;
 
-    var isValid = type == 'WEBDAV';
+    var isValid = type == 'WEBDAV' && configIsString;
     var url = '';
     var username = '';
     var password = '';
-    if (isValid && rawConfig != null && rawConfig.trim().isNotEmpty) {
+    if (isValid && rawConfig is String && rawConfig.trim().isNotEmpty) {
       try {
         final decoded = jsonDecode(rawConfig);
         if (decoded is Map) {

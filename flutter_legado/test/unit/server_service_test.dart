@@ -73,10 +73,18 @@ void main() {
       api.seedServer(id: 2, name: '数组配置', config: '[]');
       api.seedServer(id: 3, name: '坏 JSON', config: 'not-json');
       api.seedServer(id: 4, name: '空配置', config: null);
+      // 非字符串 config（契约外形态）同样只标记无效，不拖垮整页
+      api.servers.add({
+        'id': 5,
+        'name': '数值配置',
+        'type': 'WEBDAV',
+        'config': 5,
+        'sortNumber': 0,
+      });
 
       final rows = await service.listServers();
 
-      expect(rows, hasLength(4));
+      expect(rows, hasLength(5));
       expect(rows[0].isValid, isTrue);
       expect(rows[0].url, 'https://dav.example.com/');
       expect(rows[0].username, 'u');
