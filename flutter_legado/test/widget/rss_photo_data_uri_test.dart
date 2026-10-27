@@ -17,6 +17,7 @@ import 'package:mocktail/mocktail.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/rss_articles_screen.dart';
+import 'package:flutter_legado/src/utils/image_data_uri.dart';
 
 import '../mocks/mocks.dart';
 
@@ -26,6 +27,27 @@ const String _pngBase64 =
 
 void main() {
   setUpAll(registerFallbacks);
+
+  setUp(() {
+    // 批19 审查 P2-3：默认解码走 isolate；测试宿主注入同步解码器，
+    // 保持既有「一次 pump 后即可断言」的用例语义。
+    RssPhotoViewer.debugDataUriDecoderOverride =
+        (url) async => parseImageDataUri(url);
+  });
+
+  tearDown(() {
+    RssPhotoViewer.debugDataUriDecoderOverride = null;
+  });
+
+  /// 读取 Image 组件的原始字节（`cacheWidth` 会把 MemoryImage 包成 ResizeImage）
+  Uint8List imageBytes(Image image) {
+    final provider = image.image;
+    final memory = provider is ResizeImage
+        ? provider.imageProvider as MemoryImage
+        : provider as MemoryImage;
+    return memory.bytes;
+  }
+
   Future<void> pumpViewer(
     WidgetTester tester, {
     required String url,
@@ -40,6 +62,8 @@ void main() {
         ),
       ),
     );
+    // 首帧 + 异步解码完成后的 setState 帧
+    await tester.pump();
     await tester.pump();
   }
 
@@ -47,9 +71,8 @@ void main() {
     await pumpViewer(tester, url: 'data:image/png;base64,$_pngBase64');
 
     final image = tester.widget<Image>(find.byType(Image));
-    expect(image.image, isA<MemoryImage>());
     expect(
-      (image.image as MemoryImage).bytes,
+      imageBytes(image),
       base64Decode(_pngBase64),
       reason: 'data: URI 应解码为原始字节交给 Image.memory',
     );
@@ -113,6 +136,61 @@ void main() {
     expect(find.textContaining('base64'), findsNothing);
   });
 
+  testWidgets('SVG data URI：明确提示不支持直接查看，保存仍为 .svg', (tester) async {
+    // 批19 审查 P3-2：Image.memory 不能渲染 SVG，避免只显示「图片加载失败」
+    final svgBase64 = base64Encode(
+      utf8.encode('<svg xmlns="http://www.w3.org/2000/svg"></svg>'),
+    );
+    String? savedName;
+    await pumpViewer(
+      tester,
+      url: 'data:image/svg+xml;base64,$svgBase64',
+      saver: (_, fileName) async {
+        savedName = fileName;
+        return '已保存: $fileName';
+      },
+    );
+
+    expect(find.textContaining('不支持直接查看 SVG'), findsOneWidget);
+    expect(find.byType(Image), findsNothing);
+
+    await tester.tap(find.byTooltip('保存图片'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    expect(savedName, endsWith('.svg'));
+  });
+
+  testWidgets('同一 State 换 url（didUpdateWidget）重新解码，不展示旧图', (tester) async {
+    await pumpViewer(tester, url: 'data:image/png;base64,$_pngBase64');
+    expect(
+      imageBytes(tester.widget<Image>(find.byType(Image))),
+      base64Decode(_pngBase64),
+    );
+
+    // 同位置同类型重建（无 key）→ 复用 State，触发 didUpdateWidget
+    await tester.pumpWidget(
+      ProviderScope(
+        child: MaterialApp(
+          home: Scaffold(
+            body: RssPhotoViewer(
+              url: 'data:image/png;base64,${base64Encode([1, 2, 3])}',
+              title: '图片',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.pump();
+
+    expect(
+      imageBytes(tester.widget<Image>(find.byType(Image))),
+      [1, 2, 3],
+      reason: '换 url 后必须重新解码，不能沿用旧图',
+    );
+  });
+
   testWidgets('type=1 图片源：ruleContent 返回 data URI 时直接解码展示', (tester) async {
     final api = MockRustApi();
     when(
@@ -162,7 +240,6 @@ void main() {
 
     // 正文即 data URI → 绝对化短路 → 查看器 Image.memory 解码展示
     final image = tester.widget<Image>(find.byType(Image));
-    expect(image.image, isA<MemoryImage>());
-    expect((image.image as MemoryImage).bytes, base64Decode(_pngBase64));
+    expect(imageBytes(image), base64Decode(_pngBase64));
   });
 }

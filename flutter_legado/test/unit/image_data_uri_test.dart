@@ -14,16 +14,25 @@ const String _pngBase64 =
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
 
 void main() {
-  group('isImageDataUri', () {
+  group('isDataUri', () {
     test('识别 data: 前缀（大小写/前导空白不敏感）', () {
-      expect(isImageDataUri('data:image/png;base64,AAAA'), isTrue);
-      expect(isImageDataUri('  DATA:image/jpeg;base64,AAAA'), isTrue);
+      expect(isDataUri('data:image/png;base64,AAAA'), isTrue);
+      expect(isDataUri('  DATA:image/jpeg;base64,AAAA'), isTrue);
+      expect(isDataUri('\tDaTa:image/jpeg;base64,AAAA'), isTrue);
     });
 
-    test('普通 URL/本地路径/空串不算 data URI', () {
-      expect(isImageDataUri('https://s.test/a.png'), isFalse);
-      expect(isImageDataUri('file:///tmp/a.png'), isFalse);
-      expect(isImageDataUri(''), isFalse);
+    test('普通 URL/本地路径/空串/前缀不足不算 data URI', () {
+      expect(isDataUri('https://s.test/a.png'), isFalse);
+      expect(isDataUri('file:///tmp/a.png'), isFalse);
+      expect(isDataUri(''), isFalse);
+      expect(isDataUri('data'), isFalse);
+      expect(isDataUri('dat'), isFalse);
+    });
+
+    test('超长正文只比较前缀（不因正文内容误判）', () {
+      final huge = 'data:image/png;base64,${'A' * (1024 * 1024)}';
+      expect(isDataUri(huge), isTrue);
+      expect(isDataUri('x$huge'), isFalse);
     });
   });
 
@@ -161,6 +170,58 @@ void main() {
       expect(
         () => parseImageDataUri(
           'data:image/png;base64,AAAAAAAAAAAA',
+          maxBytes: 3,
+        ),
+        throwsA(
+          isA<ImageDataUriException>().having(
+            (e) => e.message,
+            'message',
+            contains('图片数据过大'),
+          ),
+        ),
+      );
+    });
+
+    test('超长输入在解码前被拦截（非法 base64 也报「数据过大」）', () {
+      // 批19 审查 P3-1：9 个 '@' 既超编码上限（8）又不是合法 base64。
+      // 若先解码应报「base64 数据无效」；报「数据过大」证明预检先于解码。
+      expect(
+        () => parseImageDataUri(
+          'data:image/png;base64,@@@@@@@@@',
+          maxBytes: 3,
+        ),
+        throwsA(
+          isA<ImageDataUriException>().having(
+            (e) => e.message,
+            'message',
+            contains('图片数据过大'),
+          ),
+        ),
+      );
+    });
+
+    test('整串长度粗判先于任何拷贝（超大输入直接拒绝）', () {
+      // 批19 审查 P2-2：maxBytes=3 时粗判上限约 528 字符；
+      // 600 个非法字符若进入 trim/substring/解码会报 base64 无效。
+      final huge = 'data:image/png;base64,${'@' * 600}';
+      expect(
+        () => parseImageDataUri(huge, maxBytes: 3),
+        throwsA(
+          isA<ImageDataUriException>().having(
+            (e) => e.message,
+            'message',
+            contains('图片数据过大'),
+          ),
+        ),
+      );
+    });
+
+    test('非空白字符精确预检：空白不放大体积判定', () {
+      // 9 个非空白字符（夹空格）超过 maxBytes=3 的编码上限 8；
+      // 长度远低于粗判上限，必须在 substring/解码前按非空白计数拒绝。
+      expect(
+        () => parseImageDataUri(
+          'data:image/png;base64,${'@ ' * 9}',
           maxBytes: 3,
         ),
         throwsA(

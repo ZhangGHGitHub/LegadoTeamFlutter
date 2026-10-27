@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show compute;
 import 'package:flutter/material.dart';
 import 'package:material_symbols_icons/symbols.dart';
 import 'package:path_provider/path_provider.dart';
@@ -136,7 +138,7 @@ Future<String> _resolveRssImageUrl(
 ///
 /// data: URI 自带 scheme 且体积可能很大，直接原样返回（不参与 URI 解析）。
 String _absoluteAgainst(String baseUrl, String value) {
-  if (isImageDataUri(value)) return value;
+  if (isDataUri(value)) return value;
   final uri = Uri.tryParse(value);
   if (uri != null && uri.hasScheme) return value;
   final base = Uri.tryParse(baseUrl);
@@ -243,12 +245,25 @@ class RssPhotoViewer extends ConsumerStatefulWidget {
   @visibleForTesting
   final RssPhotoSaver? saver;
 
+  /// 测试注入：data: URI 解码器（默认在 isolate 中解码，避免阻塞首帧）
+  ///
+  /// 桌面测试宿主无法稳定等待真实 isolate，用例注入同步实现。
+  @visibleForTesting
+  static Future<RssDataUriImage?> Function(String url)? debugDataUriDecoderOverride;
+
   @override
   ConsumerState<RssPhotoViewer> createState() => _RssPhotoViewerState();
 }
 
+/// isolate 解码入口（`compute` 要求顶层/静态函数）
+RssDataUriImage? _decodeDataUriIsolateEntry(String url) =>
+    parseImageDataUri(url);
+
 class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
   bool _saving = false;
+
+  /// 当前地址是否为 data: URI（批19 审查 P2-1：initState 缓存，避免每帧判定）
+  bool _isDataUri = false;
 
   /// data: URI 解码结果（批15g③；非 data: URI 为 null）
   ///
@@ -259,23 +274,73 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
   /// data: URI 解码失败原因（UI 直接展示，不崩溃）
   String? _dataError;
 
+  /// 是否正在异步解码（批19 审查 P2-3：isolate 解码 + loading 态）
+  bool _isDecoding = false;
+
+  /// 解码请求序号（[didUpdateWidget] 换 url 时丢弃过期结果）
+  int _decodeSeq = 0;
+
+  /// 进行中的解码 Future（保存时若尚未完成则等待）
+  Future<RssDataUriImage?>? _decodeFuture;
+
   @override
   void initState() {
     super.initState();
-    if (!isImageDataUri(widget.url)) return;
-    try {
-      _dataImage = parseImageDataUri(widget.url);
-    } on ImageDataUriException catch (e) {
-      _dataError = e.message;
-    } catch (e) {
-      // 兜底：任何解析异常都转成可展示文案（不向 UI 抛未捕获异常）
-      _dataError = '$e';
-    }
+    _isDataUri = isDataUri(widget.url);
+    if (_isDataUri) _startDataDecode();
   }
+
+  @override
+  void didUpdateWidget(covariant RssPhotoViewer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 批19 审查 P3-5：同一 State 复用（同 key 换 url）时重算，避免展示旧图
+    if (oldWidget.url == widget.url) return;
+    _isDataUri = isDataUri(widget.url);
+    _dataImage = null;
+    _dataError = null;
+    _decodeFuture = null;
+    _isDecoding = false;
+    _decodeSeq++;
+    if (_isDataUri) _startDataDecode();
+  }
+
+  /// 异步解码 data: URI（批19 审查 P2-3：不阻塞首帧）
+  void _startDataDecode() {
+    final seq = ++_decodeSeq;
+    _isDecoding = true;
+    _dataImage = null;
+    _dataError = null;
+    final decoder =
+        RssPhotoViewer.debugDataUriDecoderOverride ?? _decodeDataUriInIsolate;
+    final future = decoder(widget.url);
+    _decodeFuture = future;
+    unawaited(
+      future.then<void>(
+        (image) {
+          if (!mounted || seq != _decodeSeq) return;
+          setState(() {
+            _isDecoding = false;
+            _dataImage = image;
+          });
+        },
+        onError: (Object e) {
+          if (!mounted || seq != _decodeSeq) return;
+          setState(() {
+            _isDecoding = false;
+            _dataError = e is ImageDataUriException ? e.message : '$e';
+          });
+        },
+      ),
+    );
+  }
+
+  /// 默认解码器：isolate 中执行 base64 解码（结果/异常经 compute 回传）
+  static Future<RssDataUriImage?> _decodeDataUriInIsolate(String url) =>
+      compute(_decodeDataUriIsolateEntry, url);
 
   /// 图片后缀（data: URI 按 MIME；其余按 URL 末段 1-5 位字母数字，否则 jpg）
   String _suffix() {
-    if (isImageDataUri(widget.url)) {
+    if (_isDataUri) {
       return _dataImage?.extension ?? '.jpg';
     }
     final path = Uri.tryParse(widget.url)?.path ?? '';
@@ -294,8 +359,17 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
   Future<Uint8List> _fetchBytes() async {
     final override = widget.fetchBytes;
     if (override != null) return override();
-    if (isImageDataUri(widget.url)) {
-      final image = _dataImage;
+    if (_isDataUri) {
+      var image = _dataImage;
+      if (image == null && _decodeFuture != null) {
+        try {
+          image = await _decodeFuture;
+        } on ImageDataUriException {
+          rethrow;
+        } catch (e) {
+          throw ImageDataUriException('$e');
+        }
+      }
       if (image != null) return image.bytes;
       throw ImageDataUriException(_dataError ?? '图片数据无效');
     }
@@ -344,8 +418,12 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
   /// 图片主体（data: URI 走 [Image.memory]，其余走网络加载）
   ///
   /// 批15g③：data: URI 不发起网络请求；解码失败显示明确错误文案。
-  Widget _buildImageViewer() {
-    if (isImageDataUri(widget.url)) {
+  /// 批19 审查 P2-3：解码期间显示 loading，不阻塞首帧。
+  Widget _buildImageViewer(BuildContext context) {
+    if (_isDataUri) {
+      if (_isDecoding) {
+        return const Center(child: CircularProgressIndicator());
+      }
       final image = _dataImage;
       if (image == null) {
         return Center(
@@ -356,9 +434,26 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
           ),
         );
       }
+      // 批19 审查 P3-2：Flutter 的 Image.memory 不能渲染 SVG，明确提示
+      // 不支持直接查看，但仍允许右上角保存为 `.svg`（保留原始 MIME 后缀）
+      if (image.mimeType == 'image/svg+xml') {
+        return const Center(
+          child: Padding(
+            padding: EdgeInsets.all(24),
+            child: Text(
+              '当前平台不支持直接查看 SVG 图片，可点击右上角保存',
+              style: TextStyle(color: Colors.white70),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        );
+      }
       return Image.memory(
         image.bytes,
         fit: BoxFit.contain,
+        // 批19 审查 P2-2：按屏幕显示宽度 × dpr 解码，避免大图解码后
+        // 占用数百 MB 内存
+        cacheWidth: _decodeWidth(context),
         errorBuilder: (_, _, _) => const Center(
           child: Text(
             '图片加载失败',
@@ -383,6 +478,14 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
     );
   }
 
+  /// 解码目标宽度（屏幕显示宽度 × 设备像素比）
+  int _decodeWidth(BuildContext context) {
+    final media = MediaQuery.maybeOf(context);
+    final width = media?.size.width ?? 400;
+    final ratio = media?.devicePixelRatio ?? 1.0;
+    return (width * ratio).round();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Dialog.fullscreen(
@@ -393,7 +496,7 @@ class _RssPhotoViewerState extends ConsumerState<RssPhotoViewer> {
             child: InteractiveViewer(
               minScale: 0.5,
               maxScale: 5,
-              child: Center(child: _buildImageViewer()),
+              child: Center(child: _buildImageViewer(context)),
             ),
           ),
           SafeArea(
