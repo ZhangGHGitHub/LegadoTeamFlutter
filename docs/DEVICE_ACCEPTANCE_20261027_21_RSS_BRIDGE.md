@@ -290,6 +290,148 @@ TITLE=SEC
 - logcat 采集进程：已终止。
 - 设备应用：保留安装（versionName 2.0.396 / versionCode 397），便于后续复验。
 
+## 七、回修复验（批21h，2026-10-27 19:43 ~ 19:50）
+
+> 本节为 P1-1 / P1-2 回修后的**追加复验**，不修改 §一~§六 的旧结论。
+> 证据目录：`tmp_debug/device_acceptance_20261027_rss_bridge/verify2/`
+> 源码基线：`master` HEAD `7ddd6f2467` + 本批回修（未提交时的工作区）
+> 设备：`192.168.100.62:5555`（Android 15 / x86_64，adbd root）
+> 夹具：5 个源（`sourceGroup='QA批21h'`：`QA22-日志`/`QA22-安全`/`QA22-清洗`/`QA22-桥基础`/`QA22-普通`），
+> 生成脚本 `verify2/gen_fixtures_verify2.py` → `verify2/seed_verify2.sql`。
+
+### 7.1 构建与安装
+
+| 项 | 值 |
+|---|---|
+| Rust | `pwsh rust/scripts/build-android.ps1 -Mode release -Targets x86_64`；quickjs=true；指纹 `de4f4863a02a43e4…`；FRB contentHash `1314275783` |
+| APK | `flutter build apk --release` 退出码 0；196,072,004 B；sha256 `8cb3b2e184d68a700b263e856758ab63131159e0c6b53b0be5c70065e71eebbb` |
+| 安装 | `adb install -r` 成功；versionName 2.0.396 / versionCode 397（未 bump，符合任务约束） |
+| 说明 | 本轮只重编 x86_64（本设备 ABI）；arm64-v8a / armeabi-v7a 的 `.so` 沿用上一轮产物，未纳入本轮复验。 |
+
+证据：`verify2/logs/apk_sha256.txt`、`verify2/logs/final_env.txt`。
+
+### 7.2 P1-1 动作通道（红→绿）
+
+**根因**（与 §三.7 一致）：`kRssBridgeSyncShimBody` 内局部两参
+`function __lgEmitAction(name, payload)` 与 Rust 桥头同作用域的单参
+`function __lgEmitAction(payload)` 同名；函数声明提升使外层包装器
+`__lgAction` 解析到局部版本，单参调用 → `payload` 为 `undefined` →
+再次调用 `__lgAction` → 无限互递归 → `RangeError` 被 `try/catch` 吞掉。
+
+**修法**：局部函数改名 `__lgActionEmit(name, payload)`，`__lgAction(payload)`
+只调用桥头单参 `__lgEmitAction(payload)` 一次；同步面不再出现
+`function __lgEmitAction` / 两参调用（单测守卫）。
+
+**红→绿（Node 实执行同一段同步面）**：
+
+```
+before(旧实现): {"count":0,"actions":[]}
+after(修复后):  {"count":2,"actions":[{"message":"RED_LOG","action":"log"},{"message":"RED_TOAST","long":false,"action":"toast"}]}
+```
+
+证据：`verify2/sync_shim_before.js`、`verify2/sync_shim_after.js`、
+`verify2/red_green_sync_shim.txt`、`verify2/sync_shim_before.out.json`、
+`verify2/sync_shim_after.out.json`。
+
+**真机复验**（`QA22-日志`，preloadJs 依次触发 4 个动作）：
+
+| 动作 | 证据 | 结果 |
+|---|---|---|
+| `java.log('BRIDGE_LOG')` | logcat `[AppLog] [RSS WebView][QA22-日志] BRIDGE_LOG` | **PASS**（§三.7 的 FAIL 已闭环） |
+| `java.toast('BRIDGE_TOAST')` | `screens/05_log_article_t2.png`（SnackBar `BRIDGE_TOAST`） | **PASS** |
+| `java.longToast('BRIDGE_LONG')` | `screens/07_log_article_t4.png`（SnackBar `BRIDGE_LONG`） | **PASS** |
+| `java.open('__qa_noop',…)` | logcat `[RSS WebView] java.open 暂不支持：__qa_noop` | **PASS**（动作到达 Dart 分发） |
+
+### 7.3 P1-2 `legado` 命名全局（红→绿）
+
+**修法**：
+- 所有注入 `window` 的名字改为无 `legado` 前缀的随机名：
+  `__rs_`（页面桥对象）/ `__rn_`（平台通道）/ `__rc_`（回填回调）/
+  `__rk_`（nonce 回调）/ `__rb_`（幂等标记）；
+- 幂等标记 `configurable:true`，首个 tick 后守卫转移到回填回调的非枚举属性
+  `__lgBridgeInstalled` 并 `delete` 窗口标记；
+- 桥 `dispose()` 在页面侧删除回填回调 / 标记 / nonce 回调；Rust 桥头回填回调
+  同步改为 `configurable:true`（`verify2` 构建已含）；
+- console 钩子与 `shouldOverrideUrlLoading` 桩改 `__rssConsoleHooked`/
+  `__rssConsoleLogs`/`__rssJava`（同样不含 `legado`）。
+
+**真机探针**（`QA22-安全`，`injectJs`；`screens/10_sec_article.png`、
+`verify2/screens/ui_06_sec_article.xml`）：
+
+```
+NAMES=[]
+RN=0 RS=0 RK=0 RB=0 RC=1
+LEAKS=[QA_SECRET_21,LOGIN_SECRET_21,SECRET_VAR_21] SCRIPTCOUNT=1
+TITLE=SEC
+```
+
+- `NAMES=[]`：`Object.getOwnPropertyNames(window).filter(/legado/i)` **为空**（§三.8 的 FAIL 已闭环）；
+- `RN=RS=RK=RB=0`：平台通道、页面桥对象、nonce 回调、幂等标记均已删除；
+- `RC=1`：回填回调仍存在（桥存活期间页面可见，不可枚举、不可写；桥释放时删除，
+  由单测 `dispose：页面侧删除回填回调/幂等标记/nonce 回调` 与 Rust 闭包用例
+  `callbackDeleted` 覆盖；真机文档存活期间不作「无任何宿主痕迹」承诺）；
+- `LEAKS=[…] SCRIPTCOUNT=1`：内联桥脚本仍含快照明文——按 §7.4 口径处理，
+  桥模式下页面脚本已剥离，不可信页面脚本不可达。
+
+### 7.4 安全口径精确化（P2-1）与快照拆分（P2-3）
+
+- **内联快照仅对源作者脚本可达**：HTML 模式下桥组合脚本（含
+  `header/loginHeader/sourceVariable/vars/loginInfo`）作为 `<script>` 内联在
+  `<head>`，其源码文本可被源作者的 `preloadJs`/`injectJs` 读取；桥模式下
+  文章 HTML 的页面脚本已被 `rssStripPageScripts` 整体剥离，**不可信页面脚本不可达**。
+- **URL 模式为「页面可信假设、与原版等价」**：组合脚本经 `runJavaScript`
+  注入、不进入 DOM，但页面本身按可信处理。
+- **不声称「窗口无任何宿主痕迹」**：桥存活期间 `getOwnPropertyNames` 仍可见
+  回填回调（随机名、不含 `legado`、`writable:false`）。
+- **P2-3 快照拆分：评估后登记、未改代码**。理由：`loginHeader/vars` 移出内联
+  `<script>` 需要「敏感变量先注入、`preloadJs` 后执行」的时序；HTML 模式内联
+  脚本在解析期同步执行，`loadHtmlString` 前无法可靠地用 `runJavaScript` 前置；
+  异步门控 `preloadJs` 会改变原版同步语义（`source.getVariable` 等同步依赖）。
+  候选方案（宿主侧按需查询 / 资源拦截注入）均需单独立项。
+
+### 7.5 回归复验
+
+| 场景 | 结果 | 证据 |
+|---|---|---|
+| mXSS 聚合页（4 条向量 + meta refresh） | **PASS**：`TITLE=SAFE`，URL 仍为 `article/2.html`，`IMGS=2 SCRIPTS=1`，绿色样式保留 | `screens/11_clean_mxss.png`、`ui_07_clean_mxss.xml` |
+| 普通文章（无 preloadJs） | **PASS**：正文/蓝色标题/链接正常；点击 `NORMAL-LINK` 站内导航到 `ARTICLE 3 BODY` | `screens/12_normal_article.png`、`screens/13_normal_link_nav.png` |
+| 桥基础（同步面纯函数） | **PASS**：`src/put/cache/b64=5Lit5paH/md5=900150983cd24fb0d6963f7d28e17f72` 全部符合预期 | `screens/14_bridge_base.png`、`ui_10_bridge_base.xml` |
+| FATAL | `FATAL EXCEPTION=0`、`E/flutter=0` | `verify2/logs/logcat_evidence.txt`、`final_env.txt` |
+
+### 7.6 门禁（本批实测）
+
+| 门禁 | 结果 |
+|---|---|
+| `flutter analyze` | **No issues found**（0 issues） |
+| `flutter test`（全量） | **2773 passed / 0 failed / 1 skipped**（`All tests passed!`，1:21；skipped 为 Chrome headless 用例，未设 `LEGADO_CHROME_HEADLESS=1`） |
+| `cargo test -p legado-ffi --lib`（默认档） | **556 passed / 0 failed / 21 ignored** |
+| `cargo test -p legado-ffi --features quickjs --lib rss_web_bridge` | **9 passed / 0 failed**（662 filtered） |
+| `cargo test -p legado-ffi --features quickjs --test rss_web_bridge_loopback` | **1 passed / 0 failed** |
+| `cargo clippy -p legado-ffi --all-targets --features quickjs -- -D warnings` | **0 warning** |
+| `cargo fmt --all -- --check` | **clean** |
+
+单测新增/更新：
+- `rss_web_bridge_test.dart`
+  - `动作通道：java.log/toast/open/... 各发出一条动作（Node 实执行 + Dart 分发）`
+    （每条动作恰好一条 `__action`；Node 产出载荷经 `handleMessage` → `onAction`）；
+  - `同步面不得声明 function __lgEmitAction` / `不得两参调用` 回归守卫；
+  - `bootstrap` 用例更新：标记 `configurable:true`、首个 tick 后删除、
+    守卫转移到回调、tick 后重复注入不重发 hello；
+  - `释放 dispose：页面侧删除回填回调/幂等标记/nonce 回调`；
+- `rss_web_bridge_wiring_test.dart` / `rss_web_config_test.dart`：命名期望同步更新。
+
+### 7.7 收尾与残留风险
+
+- DB 已恢复 `verify2/db/legado.db.orig`（`rssSources=0 books=0 QA批21h=0`）；mock 服务与 logcat 采集已停止。
+- 仍存风险：
+  1. **HTML 模式内联快照**仍可被源作者脚本读取（设计如此）；不可信页面脚本已由脚本剥离阻断，
+     但「外链 CSS / 同源 iframe / frame」等残余风险不变（见契约 §2.5 残余风险段）。
+  2. **URL 模式**按页面可信假设，桥能力与原版等价；该模式下页面脚本可发现回填回调（随机名）。
+  3. **桥释放删除回调为尽力而为**：文档已销毁/平台拒绝时静默失败；真机仅验证存活期间命名。
+  4. 本轮只重编 x86_64 `.so`；arm64/armv7 未复验（armv7 quickjs 回退问题仍在）。
+  5. iOS 未验证（无 Mac/设备）。
+  6. `P2-3` 快照拆分只登记未实现（见 §7.4）。
+
 ---
 
 编写者：QA（ZCode 子代理）｜ 2026-10-27
