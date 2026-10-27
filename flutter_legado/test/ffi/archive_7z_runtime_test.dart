@@ -1,7 +1,7 @@
 /// 批24b 7z 解压导入真实 DLL 运行时验证（契约 §2.34）
 ///
 /// 加载 `rust/target/debug/legado_ffi.dll`（解析策略对齐既有 test/ffi 用例），
-/// 经真实 FRB wire 覆盖七类真实 DLL 用例（批24 仓库外用例固化）：
+/// 经真实 FRB wire 覆盖八类真实 DLL 用例（批24 仓库外用例固化）：
 ///
 /// 1. list 正常包：仅返回书籍后缀，过滤 `readme.md`；
 /// 2. import 正常包：书籍落盘、非书籍不落盘、无 `.part` 残留；
@@ -9,7 +9,8 @@
 /// 4. list 穿越包：抛 `BridgeError`（与 import 错误语义不同，契约 §2.34）；
 /// 5. 空包：list 为空、import 成功且 `extracted_files` 为空；
 /// 6. 不存在文件：list 抛 `BridgeError`、import 返回 `success:false` 信封；
-/// 7. 大包导入：async + spawn_blocking，导入期间事件循环保持响应（批24b P2-2）。
+/// 7. 大包导入：async + spawn_blocking，导入期间事件循环保持响应（批24b P2-2）；
+/// 8. 交错布局包（py7zr）：list/import 集合一致、内容完整（批24d P1 回归）。
 ///
 /// 执行范围：**仅本机/Windows 开发机执行，CI 不覆盖**（非 Windows 平台在
 /// `main` 入口直接返回一个通过的空用例；CI 的 Flutter job 无 DLL 产物）。
@@ -67,6 +68,16 @@ const String _traversal7zBase64 =
 /// 空包（LZMA2）
 const String _empty7zBase64 =
     'N3q8ryccAATe9+voAQAAAAAAAAAmAAAAAAAAALYfbRsAAQQGAAEJAQoBje8C0gAHCwEAASEhARYMAAAIDQAAAAUAEQEAAAA=';
+
+/// 交错布局包（py7zr 1.1.4）：`dir1`、`dir1/one.txt`、`dir2`、`dir2/two.txt`
+///
+/// 批24d 回归：目录条目与文件条目交错（7z 规范允许），上游
+/// `for_each_entries` 的连续块区间会漏掉 `dir2/two.txt`。
+const String _interleaved7zBase64 =
+    'N3q8ryccAASBoqBcqwAAAAAAAAAWAAAAAAAAAOQ3rQ/gACMAIF0AJ5OEr4LUjIaLCl/WOwLtvs3uEjp6u3b66lm+NnUhAAAA'
+    '4AC8AHtdAACBMweuD9CHwjyfORCcbOpWGo7hzkIb99wHwiIbZ+NyiGjVlylcomcmkNRgh1Y7rAFWFTjWM6Fiu8cMwFeeYZl7'
+    '9fpy95TsFIdpUTvBPfSHqZeGCemuluxB+v2cNNKFAYFmXwqO95DVqxs/VMBcC0sBIAP09oF3+AAAAAAXBigBCYCDAAcLAQAB'
+    'ISEBGAyAvQAA';
 
 /// 大包：单条目 big.txt（约 1.7 MiB，LZMA2），用于非阻塞计时
 const String _large7zBase64 =
@@ -445,6 +456,7 @@ void main() {
   late String normalPath;
   late String traversalPath;
   late String emptyPath;
+  late String interleavedPath;
   late String largePath;
 
   String writeFixture(String name, String base64) {
@@ -472,6 +484,7 @@ void main() {
     normalPath = writeFixture('normal.7z', _normal7zBase64);
     traversalPath = writeFixture('traversal.7z', _traversal7zBase64);
     emptyPath = writeFixture('empty.7z', _empty7zBase64);
+    interleavedPath = writeFixture('interleaved.7z', _interleaved7zBase64);
     largePath = writeFixture('large.7z', _large7zBase64);
   });
 
@@ -550,6 +563,38 @@ void main() {
     );
     expect(result['success'], isTrue, reason: '${result['error']}');
     expect(result['extracted_files'], isEmpty);
+    expect(partFiles(output), isEmpty);
+  });
+
+  test('交错布局包（py7zr）：list/import 集合一致、内容完整、无 .part', () async {
+    final names = await api.archiveList7zFiles(sevenZipPath: interleavedPath);
+    expect(names, ['one.txt', 'two.txt']);
+
+    final output = Directory(_join(tempRoot.path, 'out_interleaved'))
+      ..createSync();
+    final result = await api.archiveImport7z(
+      sevenZipPath: interleavedPath,
+      outputDir: output.path,
+    );
+
+    expect(result['success'], isTrue, reason: '${result['error']}');
+    final extracted = (result['extracted_files'] as List<dynamic>)
+        .map((e) => e.toString())
+        .toList();
+    expect(extracted.length, 2);
+    expect(
+      extracted.map((path) => path.split(Platform.pathSeparator).last),
+      names,
+      reason: 'import 落盘名/顺序须与 list 一致',
+    );
+    expect(
+      File(_join(output.path, 'one.txt')).readAsStringSync(),
+      'ONE 一号正文\r\n',
+    );
+    expect(
+      File(_join(output.path, 'two.txt')).readAsStringSync(),
+      'TWO 二号正文\r\n',
+    );
     expect(partFiles(output), isEmpty);
   });
 
