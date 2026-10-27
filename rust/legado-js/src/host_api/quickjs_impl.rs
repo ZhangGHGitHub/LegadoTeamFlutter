@@ -1088,6 +1088,49 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
       cookies: function () { return java.getCookie((r && r.url) || ''); }
     };
   }
+  // engine_cache::init_engine 在 setup 之后会再次 eval 本桥。若 `java.connect`
+  // 已是本桥包装，不得二次包装（第二次包装会把第一次返回的响应对象当 JSON
+  // 解析 → 响应全空，批21c 独立复核发现的 connect/get 链路空响应根因）；
+  // 但 setup/jsLib 可能覆盖 java.get/post/head（RSS setup 的
+  // `__mountRssSourceApi(java)` 会把 java.get 改写为变量读取），故只补装
+  // 被覆盖的函数后返回。
+  if (typeof java.connect === 'function' && java.connect.__lgResponseBridge === true) {
+    var __nativeConnect = java.connectNR;
+    if (!(typeof java.get === 'function' && java.get.__lgResponseBridge === true)) {
+      var __replacedGet = java.get;
+      java.get = function (url, headers, callTimeout) {
+        if (arguments.length >= 2) {
+          var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
+          if (callTimeout == null) return __resp(__nativeConnect(String(url), 'GET', hs));
+          return __resp(__nativeConnect(String(url), 'GET', hs, '', Number(callTimeout)));
+        }
+        return __replacedGet(String(url));
+      };
+      java.get.__lgResponseBridge = true;
+    }
+    if (!(typeof java.post === 'function' && java.post.__lgResponseBridge === true)) {
+      java.post = function (url, body, headers, callTimeout) {
+        var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
+        if (callTimeout == null) {
+          return __resp(__nativeConnect(String(url), 'POST', hs, String(body)));
+        }
+        return __resp(__nativeConnect(
+          String(url), 'POST', hs, String(body), Number(callTimeout)
+        ));
+      };
+      java.post.__lgResponseBridge = true;
+    }
+    if (!(typeof java.head === 'function' && java.head.__lgResponseBridge === true)) {
+      java.head = function (url, headers, callTimeout) {
+        var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
+        if (callTimeout == null) return __resp(__nativeConnect(String(url), 'HEAD', hs));
+        return __resp(__nativeConnect(String(url), 'HEAD', hs, '', Number(callTimeout)));
+      };
+      java.head.__lgResponseBridge = true;
+    }
+    return;
+  }
+  globalThis.__lgResponseBridgeInstalled = true;
   var __nativeGetVariable = java.get;
   var __nativeConnect = java.connectNR;
   var __nativeConnectFull = java.connect;
@@ -1145,31 +1188,49 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
     if (arguments.length === 4) return __strResponse(__nativeConnectFull(String(url), arg2, hs, String(arg4)));
     return __strResponse(__nativeConnectFull(String(url), arg2, hs, String(arg4), arg5));
   };
+  java.connect.__lgResponseBridge = true;
   globalThis.connect = java.connect;
-  java.get = function (url, headers) {
+  java.get = function (url, headers, callTimeout) {
     if (arguments.length >= 2) {
       var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
-      return __resp(__nativeConnect(String(url), 'GET', hs));
+      // 批21c：可选 callTimeout（不传/显式 null 保持 3 参调用，规避
+      // rquickjs Opt<T> 对显式 undefined 的严格转换）
+      if (callTimeout == null) {
+        return __resp(__nativeConnect(String(url), 'GET', hs));
+      }
+      return __resp(__nativeConnect(String(url), 'GET', hs, '', Number(callTimeout)));
     }
     return __nativeGetVariable(String(url));
   };
   // 对齐原版 JsExtensions.post/head：followRedirects(false)。
   // 天涯书库等源 java.post(...).header('location') 拦截 302；若跟随重定向则
   // Location 丢失 → String(null) → 请求落到 /null。
-  java.post = function (url, body, headers) {
+  java.post = function (url, body, headers, callTimeout) {
     var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
-    return __resp(__nativeConnect(String(url), 'POST', hs, String(body)));
+    if (callTimeout == null) {
+      return __resp(__nativeConnect(String(url), 'POST', hs, String(body)));
+    }
+    return __resp(__nativeConnect(
+      String(url), 'POST', hs, String(body), Number(callTimeout)
+    ));
   };
-  java.head = function (url, headers) {
+  java.head = function (url, headers, callTimeout) {
     var hs = typeof headers === 'string' ? headers : JSON.stringify(headers || {});
-    return __resp(__nativeConnect(String(url), 'HEAD', hs));
+    if (callTimeout == null) {
+      return __resp(__nativeConnect(String(url), 'HEAD', hs));
+    }
+    return __resp(__nativeConnect(String(url), 'HEAD', hs, '', Number(callTimeout)));
   };
+  java.get.__lgResponseBridge = true;
+  java.post.__lgResponseBridge = true;
+  java.head.__lgResponseBridge = true;
 })();
 
   // [可空入参垫片 | 2026-09-26] 原生 webView 已改 NullStr/NullBool 可空
   // 入参（null/undefined 均 None、上游 Kotlin String? 语义），换型后
   // arity=4 必填——垫片把缺参/undefined 补成 null，恒 4 参调用
   (function () {
+    if (typeof java.webView === 'function' && java.webView.__lgWebViewShim === true) return;
     var nativeWebView = java.webView;
     java.webView = function (html, url, js, cacheFirst) {
       return nativeWebView(
@@ -1179,6 +1240,7 @@ pub const RESPONSE_BRIDGE_JS: &str = r#"
         cacheFirst === undefined ? null : cacheFirst === true
       );
     };
+    java.webView.__lgWebViewShim = true;
   })();
 
 "#;
@@ -2748,8 +2810,10 @@ fn register_network_apis<'js>(
         .map_err(|e| LegadoError::JsEngine(e.to_string()))?,
     )?;
 
-    // connectNR(url, method?, headers?, body?) -> String（完整响应 JSON，不跟随重定向）
-    // 对齐原版 jsoup followRedirects(false)：java.get/post/head 拦截重定向需读 Location 头
+    // connectNR(url, method?, headers?, body?, timeoutMs?) -> String（完整响应
+    // JSON，不跟随重定向）
+    // 对齐原版 jsoup followRedirects(false)：java.get/post/head 拦截重定向需读
+    // Location 头；批21c 追加可空 timeoutMs（WebView 宿主桥 callTimeout 透传）。
     mount_dual(
         java,
         globals,
@@ -2759,13 +2823,15 @@ fn register_network_apis<'js>(
             |url: RhinoStr,
              method: RhinoOptStr,
              headers: RhinoOptStr,
-             body: RhinoOptStr|
+             body: RhinoOptStr,
+             timeout_ms: Opt<i64>|
              -> String {
                 network::connect_no_redirect(
                     &url,
                     method.0.as_deref(),
                     headers.0.as_deref(),
                     body.0.as_deref(),
+                    timeout_ms.0.map(|t| t as u64),
                 )
                 .unwrap_or_else(|e| format!("[ERROR] {}", e))
             },

@@ -286,6 +286,8 @@ globalThis.infoMap = new Proxy(__infoData, {{
 }});
 
 // 预置登录缓存（与 CacheManager 对齐）
+// 批21c P2-8：宿主缓存为 null 时显式 remove 变量表旧值——否则 removeLoginHeader
+// 后旧值仍留在进程变量表，`getLoginHeader()` 会继续读到已删除的登录头。
 globalThis.__loginHeaderSeed = {login_header_seed};
 if (__loginHeaderSeed) {{
   put(__loginHeaderKey(), String(__loginHeaderSeed));
@@ -307,10 +309,14 @@ if (__loginHeaderSeed) {{
       }}
     }}
   }} catch (e) {{}}
+}} else {{
+  removeVariable(__loginHeaderKey());
 }}
 globalThis.__loginInfoSeed = {login_info_seed};
 if (__loginInfoSeed) {{
   put(__userInfoKey(), String(__loginInfoSeed));
+}} else {{
+  removeVariable(__userInfoKey());
 }}
 
 // 执行书源 header 规则（对齐 Android BaseSource.getHeaderMap）：@js:/<js>
@@ -509,20 +515,30 @@ globalThis.cookie = {{
   clearCookies: function(url) {{ return java.clearCookies(String(url)); }},
   removeCookie: function(url) {{ return java.removeCookie(String(url)); }}
 }};
-globalThis.cache = {{
-  get: function(k) {{ return get(String(k)) || null; }},
-  put: function(k, v) {{ put(String(k), String(v)); return v; }},
-  remove: function(k) {{ removeVariable(String(k)); return true; }}
-}};
+// cache 绑定：引擎内置 `cache` 即 cache_store（磁盘 + 内存，与 WebView 页面
+// `cache` 垫片同一落库层，批21c P2-7：此前覆盖为变量表会让 run 内 cache
+// 与页面 cache 分叉）。仅在引擎未提供时回落变量表镜像。
+if (typeof globalThis.cache === 'undefined' || globalThis.cache === null) {{
+  globalThis.cache = {{
+    get: function(k) {{ return get(String(k)) || null; }},
+    put: function(k, v) {{ put(String(k), String(v)); return v; }},
+    remove: function(k) {{ removeVariable(String(k)); return true; }}
+  }};
+}}
 
 // 登录缓存预置（宿主从 DB 读取 loginHeader_<url> / userInfo_<url>）
+// 批21c P2-8：null seed 显式 remove 变量表旧值（removeLoginHeader 后不得复活）
 globalThis.__rssLoginHeaderSeed = {login_header_seed};
 if (__rssLoginHeaderSeed) {{
   put(__rssLoginHeaderKey(), String(__rssLoginHeaderSeed));
+}} else {{
+  removeVariable(__rssLoginHeaderKey());
 }}
 globalThis.__rssLoginInfoSeed = {login_info_seed};
 if (__rssLoginInfoSeed) {{
   put(__rssUserInfoKey(), String(__rssLoginInfoSeed));
+}} else {{
+  removeVariable(__rssUserInfoKey());
 }}
 "#
     ))
@@ -589,6 +605,9 @@ mod tests {
         assert!(script.contains("globalThis.__loginHeaderSeed = null;"));
         assert!(script.contains("globalThis.__loginInfoSeed = null;"));
         assert!(script.contains("globalThis.__infoData = {};"));
+        // 批21c P2-8：null seed 必须显式清除变量表旧值
+        assert!(script.contains("removeVariable(__loginHeaderKey());"));
+        assert!(script.contains("removeVariable(__userInfoKey());"));
         // 无 jsLib 的源：host 兜底注入书源 URL
         assert!(
             script.contains(r#"globalThis.host = ["https://setup-unit2.example.com"];"#),
@@ -620,6 +639,13 @@ mod tests {
         assert!(script.contains("__mountRssSourceApi(java)"), "java 绑定");
         assert!(script.contains("globalThis.cookie = {"), "cookie 绑定");
         assert!(script.contains("globalThis.cache = {"), "cache 绑定");
+        // 批21c P2-7：cache 只在引擎未提供时回落变量表（不与 cache_store 分叉）
+        assert!(
+            script.contains(
+                "if (typeof globalThis.cache === 'undefined' || globalThis.cache === null)"
+            ),
+            "cache 应优先复用引擎内置 cache_store"
+        );
         assert!(
             script.contains(r#"globalThis.__rssLoginHeaderSeed = "{\"X-Token\":\"t\"}";"#),
             "登录头预置"
@@ -628,6 +654,9 @@ mod tests {
             script.contains("globalThis.__rssLoginInfoSeed") && script.contains("邮箱"),
             "用户信息预置"
         );
+        // 批21c P2-8：null seed 分支显式清除变量表旧值
+        assert!(script.contains("removeVariable(__rssLoginHeaderKey());"));
+        assert!(script.contains("removeVariable(__rssUserInfoKey());"));
         assert!(
             script.contains("科技::https://rss-setup.example.com/tech"),
             "source JSON 应携带 sortUrl"

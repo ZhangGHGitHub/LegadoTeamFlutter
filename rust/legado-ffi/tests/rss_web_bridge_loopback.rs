@@ -202,6 +202,10 @@ fn rss_web_view_host_bridge_loopback_end_to_end() {
     let routes: Routes = Arc::new(|target: &str| match target {
         "/ajax" => ("200 OK".to_string(), "ajax-body-ok".to_string()),
         "/get" => ("200 OK".to_string(), "get-body-ok".to_string()),
+        "/jslib.js" => (
+            "200 OK".to_string(),
+            "var __JSLIB_VALUE = 'jslib-ok';".to_string(),
+        ),
         _ => ("404 Not Found".to_string(), String::new()),
     });
     let server = LoopbackServer::spawn(routes);
@@ -228,12 +232,22 @@ fn rss_web_view_host_bridge_loopback_end_to_end() {
         .to_string();
     for needle in [
         "(() => {",
-        "window.java = java",
-        "window.source = source",
-        "window.cache = cache",
+        "delete window[__lgChannelName]",
+        "Object.defineProperty(window, __lgCallbackName",
+        "var source = {",
         "// __LEGADO_PRELOAD_JS__",
     ] {
         assert!(script.contains(needle), "脚本缺少 {needle}");
+    }
+    for forbidden in [
+        "window.java = java",
+        "window.source = source",
+        "window.cache = cache",
+    ] {
+        assert!(
+            !script.contains(forbidden),
+            "桥对象不得残留全局：{forbidden}"
+        );
     }
     assert_eq!(prepare["value"]["snapshot"]["sourceUrl"], SOURCE_URL);
     assert_eq!(prepare["value"]["snapshot"]["sourceName"], "宿主桥回环源");
@@ -304,6 +318,29 @@ fn rss_web_view_host_bridge_loopback_end_to_end() {
     let env = call(SOURCE_URL, "run", json!(["'run-ok'"]));
     assert_eq!(env["ok"], true, "{env}");
     assert_eq!(env["value"], "run-ok");
+
+    // 批21c P2-3：间接 eval 使 `var` 跨调用持久（原版 evalJS 全局语义）
+    let env = call(
+        SOURCE_URL,
+        "run",
+        json!(["var __lgLoopProbe = 41; __lgLoopProbe"]),
+    );
+    assert_eq!(env["ok"], true, "{env}");
+    assert_eq!(env["value"], "41", "{env}");
+    let env = call(SOURCE_URL, "run", json!(["__lgLoopProbe + 1"]));
+    assert_eq!(env["ok"], true, "{env}");
+    assert_eq!(env["value"], "42", "run 内 var 必须持久: {env}");
+
+    // 批21c P2-2：URL 映射形态 jsLib 经 jslib_loader 拉取后加载
+    const JSLIB_URL: &str = "https://rss-web-bridge-e2e-jslib.test/feed";
+    add_source(
+        JSLIB_URL,
+        json!({ "jsLib": format!("{{\"lib\":\"{base}/jslib.js\"}}") }),
+    );
+    let env = call(JSLIB_URL, "run", json!(["__JSLIB_VALUE"]));
+    assert_eq!(env["ok"], true, "{env}");
+    assert_eq!(env["value"], "jslib-ok", "URL 映射 jsLib 未加载: {env}");
+    legado_ffi::api::rss::delete_rss_source(JSLIB_URL).ok();
 
     let env = call(
         SOURCE_URL,
@@ -417,6 +454,26 @@ fn rss_web_view_host_bridge_loopback_end_to_end() {
     assert!(
         cookies.contains("sid=login1"),
         "登录头 Cookie 键应同步到 Cookie 存储: {cookies}"
+    );
+
+    // 批21c P2-8：loginHeaderRemove 同步变量表，run 内不得复活旧登录头
+    let env = call(
+        SOURCE_URL,
+        "__store",
+        json!([{ "op": "loginHeaderRemove" }]),
+    );
+    assert_eq!(env["ok"], true, "{env}");
+    let env = call(
+        SOURCE_URL,
+        "run",
+        json!(["String(source.getLoginHeader())"]),
+    );
+    assert_eq!(env["value"], "null", "登录头 remove 后不得复活: {env}");
+    assert_eq!(
+        legado_js::host_api::variable_store::get_variable(&format!("loginHeader_{SOURCE_URL}"))
+            .unwrap(),
+        None,
+        "loginHeaderRemove 必须清除变量表"
     );
 
     // ─── 8) __store：cache 磁盘层 put/get/remove ──────────────────────

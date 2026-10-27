@@ -899,18 +899,22 @@ pub fn connect_full(
     })
 }
 
-/// connectNR(url, method?, headers?, body?) → 完整响应 JSON（不跟随重定向）
+/// connectNR(url, method?, headers?, body?, timeoutMs?) → 完整响应 JSON（不跟随重定向）
 ///
 /// 对齐原版 JsExtensions.get/post/head 的 jsoup 语义（.followRedirects(false)）：
 /// 拦截重定向场景（天悦小说 java.post(...).header("Location")）必须拿到
 /// 302 响应的 Location 头；跟随重定向后头信息丢失 → header 返回 null。
+/// 批21c：`timeout_ms` 透传逐请求超时（WebView 宿主桥 `getAwait`/`postAwait`/
+/// `headAwait` 的 `callTimeout` 对齐原版）。
 /// — 2026-08-17
 pub fn connect_no_redirect(
     url: &str,
     method: Option<&str>,
     headers_json: Option<&str>,
     body: Option<&str>,
+    timeout_ms: Option<u64>,
 ) -> Result<String, String> {
+    let timeout = timeout_ms.unwrap_or(DEFAULT_TIMEOUT_MS);
     let method_str = method.unwrap_or("GET").to_uppercase();
     let method = match method_str.as_str() {
         "GET" | "POST" | "HEAD" | "PUT" | "DELETE" => Method::from_str_loose(&method_str),
@@ -942,7 +946,7 @@ pub fn connect_no_redirect(
             method,
             headers,
             body: body_owned,
-            timeout: Some(std::time::Duration::from_millis(DEFAULT_TIMEOUT_MS)),
+            timeout: Some(std::time::Duration::from_millis(timeout)),
         };
         let resp = client
             .send(&request)
@@ -2224,7 +2228,7 @@ mod tests {
                 connect_full(url, Some("GET"), None, None, Some(10_000))
             }),
             ("connect_no_redirect", |url| {
-                connect_no_redirect(url, Some("GET"), None, None)
+                connect_no_redirect(url, Some("GET"), None, None, None)
             }),
             ("head_full", |url| head_full(url, None)),
             ("post_full", |url| post_full(url, "a=1", None)),

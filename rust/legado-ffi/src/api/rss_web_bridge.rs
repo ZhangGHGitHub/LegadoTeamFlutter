@@ -36,11 +36,26 @@
 //! 方法白名单、参数 ≤1 MiB、结果 ≤4 MiB、单次执行 30s（QuickJS 中断预算）、
 //! 源变量按 `v_<sourceUrl>_` / `sourceVariable_<sourceUrl>` 前缀隔离、
 //! Cookie 只按 ETLD+1 归一落库。
+//!
+//! 批21c 安全加固（独立复核 P0）：
+//!
+//! - **桥对象不残留页面全局**：`java`/`source`/`cache` 与 `*Await` 仅存在于
+//!   生成的 IIFE 闭包（`preloadJs` 词法可见），不再写 `window`；页面桥对象
+//!   读取后立即 `delete window[channelName]`；回填回调用
+//!   `Object.defineProperty` 定义（`enumerable:false`）→ 页面脚本无法枚举。
+//! - **nonce 不作为安全边界**：仅防误用/重放；对不可信页面脚本的隔离依赖
+//!   Dart 侧的「桥模式剥离页面脚本」+「无全局对象」（见契约 §2.5 批21c 补记）。
+//! - **降级不静默**：prepare 失败时 Dart 注入带明确报错的 `java`/`source`/
+//!   `cache` 桩（本文件不参与），避免 `preloadJs` 因 TypeError 中断。
+//! - **资源边界**：每源宿主调用并发上限 4；`__store` 每秒 300 次；
+//!   `importScriptAwait` 纳入源级 `concurrentRate` 限流。
 
 use std::collections::HashMap;
 use std::sync::{OnceLock, RwLock};
 
 #[cfg(feature = "quickjs")]
+use std::sync::Arc;
+
 use legado_core::models::RssSource;
 use legado_core::LegadoResult;
 use serde_json::{json, Map, Value};
@@ -84,6 +99,9 @@ const PUBLIC_METHODS: &[&str] = &[
 ];
 
 /// 需要源级限流的网络类方法（`run` 内嵌网络调用不单独限流，已登记差异）
+///
+/// 批21c：`importScriptAwait` 走网络下载脚本，纳入源级 `concurrentRate`
+/// 限流（独立复核 P2-10）。
 #[cfg(feature = "quickjs")]
 const NETWORK_METHODS: &[&str] = &[
     "ajaxAwait",
@@ -93,7 +111,58 @@ const NETWORK_METHODS: &[&str] = &[
     "postAwait",
     "webViewAwait",
     "webViewGetSourceAwait",
+    "importScriptAwait",
 ];
+
+/// 每源宿主调用并发上限（批21c：独立复核 P2-10，取 2-4 区间的上界）
+#[cfg(feature = "quickjs")]
+const BRIDGE_MAX_CONCURRENCY: usize = 4;
+
+/// `__store` 每秒调用上限（每源；超出按 `ok:false` 拒绝，页面侧丢弃）
+const STORE_MAX_PER_SECOND: u32 = 300;
+
+/// `__store` 限频窗口（秒）
+const STORE_RATE_WINDOW: std::time::Duration = std::time::Duration::from_secs(1);
+
+/// 每源并发信号量（避免页面脚本瞬时并发把 QuickJS 引擎/网络打满）
+#[cfg(feature = "quickjs")]
+fn concurrency_slot() -> &'static RwLock<HashMap<String, Arc<tokio::sync::Semaphore>>> {
+    static SLOT: OnceLock<RwLock<HashMap<String, Arc<tokio::sync::Semaphore>>>> = OnceLock::new();
+    SLOT.get_or_init(|| RwLock::new(HashMap::new()))
+}
+
+/// 获取一次宿主调用许可（每源 [`BRIDGE_MAX_CONCURRENCY`] 个并发）
+#[cfg(feature = "quickjs")]
+fn bridge_permit(source_url: &str) -> Option<tokio::sync::OwnedSemaphorePermit> {
+    let semaphore = {
+        let mut guard = concurrency_slot()
+            .write()
+            .unwrap_or_else(|p| p.into_inner());
+        Arc::clone(
+            guard
+                .entry(source_url.to_string())
+                .or_insert_with(|| Arc::new(tokio::sync::Semaphore::new(BRIDGE_MAX_CONCURRENCY))),
+        )
+    };
+    crate::runtime::block_on(async move { semaphore.acquire_owned().await.ok() })
+}
+
+/// `__store` 固定窗口限频（每源每秒 [`STORE_MAX_PER_SECOND`] 次）
+fn store_rate_allowed(source_url: &str) -> bool {
+    static SLOT: OnceLock<RwLock<HashMap<String, (std::time::Instant, u32)>>> = OnceLock::new();
+    let slot = SLOT.get_or_init(|| RwLock::new(HashMap::new()));
+    let now = std::time::Instant::now();
+    let mut guard = slot.write().unwrap_or_else(|p| p.into_inner());
+    let entry = guard.entry(source_url.to_string()).or_insert((now, 0));
+    if now.duration_since(entry.0) >= STORE_RATE_WINDOW {
+        *entry = (now, 0);
+    }
+    if entry.1 >= STORE_MAX_PER_SECOND {
+        return false;
+    }
+    entry.1 += 1;
+    true
+}
 
 /// `__prepare` 传入的 WebView UA（按源记忆，供后续宿主调用的请求头回落）
 fn ua_slot() -> &'static RwLock<HashMap<String, String>> {
@@ -106,7 +175,6 @@ fn remember_ua(source_url: &str, ua: &str) {
     guard.insert(source_url.to_string(), ua.to_string());
 }
 
-#[cfg(feature = "quickjs")]
 fn remembered_ua(source_url: &str) -> Option<String> {
     ua_slot()
         .read()
@@ -116,7 +184,6 @@ fn remembered_ua(source_url: &str) -> Option<String> {
 }
 
 /// 有效 UA：`__prepare` 记忆值 → 共享客户端默认 UA
-#[cfg(feature = "quickjs")]
 fn effective_ua(source_url: &str) -> String {
     remembered_ua(source_url)
         .map(|ua| ua.trim().to_string())
@@ -257,12 +324,16 @@ fn prepare(source_url: &str, args: &Value) -> LegadoResult<String> {
 
     #[cfg(not(feature = "quickjs"))]
     {
-        // 非 quickjs 构建：无 JS 引擎可执行宿主调用，桥不可用（明确降级）。
-        // `source` 已在上方完成存在性校验；`channel`/`callback` 校验同批执行。
-        let _ = (source, channel, callback);
-        Ok(envelope_error(
-            "当前构建未启用 quickjs（JS 引擎不可用），RSS WebView 宿主桥不可用",
-        ))
+        // 非 quickjs 构建：无 JS 引擎可执行宿主调用，`script` 为空串
+        // （桥不可用，明确降级）；但快照仍返回——Dart 的 Cookie 预写与
+        // 同步面摊平不依赖 JS 引擎（批21c P2-4：snapshot 生成与 quickjs 门控解耦）。
+        let _ = (channel, callback);
+        let snapshot = build_snapshot(&source, effective_ua(source_url));
+        Ok(envelope_ok(json!({
+            "script": "",
+            "snapshot": snapshot,
+            "bridgeAvailable": false,
+        })))
     }
 
     #[cfg(feature = "quickjs")]
@@ -278,9 +349,11 @@ fn prepare(source_url: &str, args: &Value) -> LegadoResult<String> {
         } else {
             String::new()
         };
-        Ok(envelope_ok(
-            json!({ "script": script, "snapshot": snapshot }),
-        ))
+        Ok(envelope_ok(json!({
+            "script": script,
+            "snapshot": snapshot,
+            "bridgeAvailable": true,
+        })))
     }
 }
 
@@ -288,7 +361,9 @@ fn prepare(source_url: &str, args: &Value) -> LegadoResult<String> {
 ///
 /// `vars` 为全部 `v_<sourceUrl>_*` 键（去前缀），DB 兜底、内存覆盖；
 /// 登录头/信息/源变量取自内存 + DB 单实现（`source_login_cache`）。
-#[cfg(feature = "quickjs")]
+///
+/// 批21c：`header` 一并回传（同步面 `source.header` 只读属性）；
+/// 非 quickjs 构建跳过进程内变量表覆盖（仅 DB 兜底），快照仍可用。
 fn build_snapshot(source: &RssSource, user_agent: String) -> Value {
     let prefix = format!("v_{}_", source.source_url);
     let mut vars = Map::new();
@@ -298,7 +373,8 @@ fn build_snapshot(source: &RssSource, user_agent: String) -> Value {
             vars.insert(rest.to_string(), Value::String(value));
         }
     }
-    // 进程内变量表覆盖（最新写优先）
+    // 进程内变量表覆盖（最新写优先；非 quickjs 构建无该表）
+    #[cfg(feature = "quickjs")]
     if let Ok(keys) = legado_js::host_api::variable_store::list_variable_keys() {
         for key in keys {
             if let Some(rest) = key.strip_prefix(&prefix) {
@@ -318,6 +394,7 @@ fn build_snapshot(source: &RssSource, user_agent: String) -> Value {
         "sourceName": source.source_name,
         "loginUrl": source.login_url.clone().unwrap_or_default(),
         "loginUi": source.login_ui.clone().unwrap_or_default(),
+        "header": source.header.clone().unwrap_or_default(),
         "loginHeader": login_header,
         "loginInfo": login_info,
         "sourceVariable": if source_variable.is_empty() { Value::Null } else { Value::String(source_variable) },
@@ -336,271 +413,375 @@ fn js_literal(value: &Value) -> String {
 }
 
 /// 生成 WebView 侧桥脚本（IIFE 头部，不闭合）
+///
+/// 批21c 安全口径（独立复核 P0-1/P0-3）：
+/// - `java`/`source`/`cache` 与 `*Await` 只在本 IIFE 闭包内声明，
+///   **不写 `window`**（页面脚本无法从全局取得宿主能力；`preloadJs`
+///   经词法作用域可见）；
+/// - 页面桥对象（Dart bootstrap 创建）读取后立即从 `window` 删除；
+/// - 回填回调用 `Object.defineProperty` 定义为不可枚举（页面无法枚举发现）。
 #[cfg(feature = "quickjs")]
 fn build_prepare_script(channel: &str, callback: &str, snapshot: &Value) -> String {
-    let channel = js_literal(&Value::String(channel.to_string()));
-    let callback = js_literal(&Value::String(callback.to_string()));
-    let snapshot = js_literal(snapshot);
-    format!(
-        r#"(() => {{
-  // [批21a] RSS 阅读 WebView preloadJs 宿主桥（Rust 生成，Dart 追加 preloadJs 后闭合）
-  // 拼接口径（契约 §2.5）：script + preloadJs + "\n}})();"
-  var __lgChannelName = {channel};
-  var __lgCallbackName = {callback};
-  var __lgSnapshot = {snapshot};
+    // 用占位符替换而非 format!（脚本包含大量 `{`/`}`，双花括号易漏；
+    // 替换值仅来自随机通道名/回调名与 JSON 字面量，不会被二次扫描）。
+    PREPARE_SCRIPT_TEMPLATE
+        .replace(
+            "__LG_CHANNEL_NAME_LITERAL__",
+            &js_literal(&Value::String(channel.to_string())),
+        )
+        .replace(
+            "__LG_CALLBACK_NAME_LITERAL__",
+            &js_literal(&Value::String(callback.to_string())),
+        )
+        .replace("__LG_SNAPSHOT_LITERAL__", &js_literal(snapshot))
+}
+
+/// 桥脚本模板（`__LG_*_LITERAL__` 占位符由 [`build_prepare_script`] 替换）
+#[cfg(feature = "quickjs")]
+const PREPARE_SCRIPT_TEMPLATE: &str = r#"(() => {
+  // [批21a/21c] RSS 阅读 WebView preloadJs 宿主桥（Rust 生成，Dart 追加 preloadJs 后闭合）
+  // 拼接口径（契约 §2.5）：script + preloadJs + "\n})();"
+  //
+  // 安全加固（批21c）：
+  // - java/source/cache 与 *Await 仅存在于本 IIFE 闭包（preloadJs 词法可见），
+  //   不写入 window，页面脚本无法从全局取得宿主能力；
+  // - 页面桥对象读取后立即从 window 删除（Android 可删；iOS 本无该全局）；
+  // - 回填回调不可枚举，页面脚本无法经 for..in / Object.keys 发现。
+  var __lgChannelName = __LG_CHANNEL_NAME_LITERAL__;
+  var __lgCallbackName = __LG_CALLBACK_NAME_LITERAL__;
+  var __lgSnapshot = __LG_SNAPSHOT_LITERAL__;
   var __lgPending = Object.create(null);
   var __lgSeq = 0;
-  var __lgChannel = (typeof window !== 'undefined') ? window[__lgChannelName] : null;
+  var __lgChannel = null;
 
-  function __lgReply(id, ok, payload) {{
+  var __lgReply = function (id, ok, payload) {
     var pending = __lgPending[id];
     if (!pending) return;
     delete __lgPending[id];
-    if (ok) {{ pending.resolve(payload); }} else {{ pending.reject(payload); }}
-  }}
-  if (typeof window !== 'undefined') {{ window[__lgCallbackName] = __lgReply; }}
+    if (ok) { pending.resolve(payload); } else { pending.reject(payload); }
+  };
 
-  function __lgCall(method, args) {{
-    return new Promise(function (resolve, reject) {{
-      if (!__lgChannel || typeof __lgChannel.request !== 'function') {{
+  if (typeof window !== 'undefined') {
+    try {
+      var __lgRawChannel = window[__lgChannelName];
+      if (__lgRawChannel && typeof __lgRawChannel.request === 'function') {
+        __lgChannel = __lgRawChannel;
+      }
+    } catch (e) {}
+    // 通道对象仅本闭包持有：立即从页面全局移除
+    try { delete window[__lgChannelName]; } catch (e) {}
+    // 回填回调不可枚举（页面脚本无法枚举发现；名字仍是随机令牌）
+    try {
+      Object.defineProperty(window, __lgCallbackName, {
+        value: __lgReply,
+        enumerable: false,
+        configurable: true,
+        writable: false
+      });
+    } catch (e) {
+      try { window[__lgCallbackName] = __lgReply; } catch (e2) {}
+    }
+  }
+
+  function __lgCall(method, args) {
+    return new Promise(function (resolve, reject) {
+      if (!__lgChannel || typeof __lgChannel.request !== 'function') {
         reject('RSS WebView 宿主通道不可用：' + __lgChannelName);
         return;
-      }}
+      }
       var id = 'rss_' + (++__lgSeq) + '_' + Date.now();
-      __lgPending[id] = {{ resolve: resolve, reject: reject }};
-      try {{
+      __lgPending[id] = { resolve: resolve, reject: reject };
+      try {
         __lgChannel.request(method, JSON.stringify(args || []), id);
-      }} catch (e) {{
+      } catch (e) {
         delete __lgPending[id];
         reject(String(e));
-      }}
-    }});
-  }}
+      }
+    });
+  }
 
   // 同步写转发（fire-and-forget；失败不阻断页面脚本）
-  function __lgStore(op, key, value) {{
-    try {{
-      if (__lgChannel && typeof __lgChannel.request === 'function') {{
-        __lgChannel.request('__store', JSON.stringify({{ op: op, key: key, value: value }}), 'store_' + (++__lgSeq));
-      }}
-    }} catch (e) {{}}
-  }}
+  function __lgStore(op, key, value) {
+    try {
+      if (__lgChannel && typeof __lgChannel.request === 'function') {
+        __lgChannel.request('__store', JSON.stringify({ op: op, key: key, value: value }), 'store_' + (++__lgSeq));
+      }
+    } catch (e) {}
+  }
 
-  // 异步宿主函数（与原版 WebJsExtensions 同名，参数/结果均为字符串）
-  var __lgAsync = {{
-    run: function (jsCode) {{ return __lgCall('run', [String(jsCode)]); }},
-    ajaxAwait: function (url, callTimeout) {{
-      return __lgCall('ajaxAwait', [String(url), callTimeout == null ? null : String(callTimeout)]);
-    }},
-    connectAwait: function (url, header, callTimeout) {{
-      return __lgCall('connectAwait', [String(url), header == null ? null : String(header), callTimeout == null ? null : String(callTimeout)]);
-    }},
-    getAwait: function (url, header, callTimeout) {{
-      return __lgCall('getAwait', [String(url), header == null ? null : String(header), callTimeout == null ? null : String(callTimeout)]);
-    }},
-    headAwait: function (url, header, callTimeout) {{
-      return __lgCall('headAwait', [String(url), header == null ? null : String(header), callTimeout == null ? null : String(callTimeout)]);
-    }},
-    postAwait: function (url, body, header, callTimeout) {{
-      return __lgCall('postAwait', [String(url), String(body), header == null ? null : String(header), callTimeout == null ? null : String(callTimeout)]);
-    }},
-    webViewAwait: function (html, url, js, cacheFirst) {{
-      return __lgCall('webViewAwait', [html == null ? null : String(html), url == null ? null : String(url), js == null ? null : String(js), cacheFirst == null ? null : !!cacheFirst]);
-    }},
-    webViewGetSourceAwait: function (html, url, js, sourceRegex, cacheFirst, delayTime) {{
-      return __lgCall('webViewGetSourceAwait', [
-        html == null ? null : String(html),
-        url == null ? null : String(url),
-        js == null ? null : String(js),
-        sourceRegex == null ? null : String(sourceRegex),
-        cacheFirst == null ? null : !!cacheFirst,
-        delayTime == null ? null : String(delayTime)
-      ]);
-    }},
-    decryptStrAwait: function (transformation, key, iv, data) {{
-      return __lgCall('decryptStrAwait', [String(transformation), String(key), iv == null ? null : String(iv), String(data)]);
-    }},
-    encryptBase64Await: function (transformation, key, iv, data) {{
-      return __lgCall('encryptBase64Await', [String(transformation), String(key), iv == null ? null : String(iv), String(data)]);
-    }},
-    encryptHexAwait: function (transformation, key, iv, data) {{
-      return __lgCall('encryptHexAwait', [String(transformation), String(key), iv == null ? null : String(iv), String(data)]);
-    }},
-    createSignHexAwait: function (algorithm, publicKey, privateKey, data) {{
-      return __lgCall('createSignHexAwait', [String(algorithm), String(publicKey), String(privateKey), String(data)]);
-    }},
-    downloadFileAwait: function (url) {{ return __lgCall('downloadFileAwait', [String(url)]); }},
-    readTxtFileAwait: function (path) {{ return __lgCall('readTxtFileAwait', [String(path)]); }},
-    importScriptAwait: function (url) {{ return __lgCall('importScriptAwait', [String(url)]); }},
-    getStringAwait: function (ruleStr, mContent) {{
-      return __lgCall('getStringAwait', [ruleStr == null ? null : String(ruleStr), mContent == null ? null : String(mContent)]);
-    }}
-  }};
-  if (typeof window !== 'undefined') {{
-    for (var __lgName in __lgAsync) {{
-      if (Object.prototype.hasOwnProperty.call(__lgAsync, __lgName)) {{
-        window[__lgName] = __lgAsync[__lgName];
-      }}
-    }}
-  }}
+  // 动作转发（java.open/toast/... → Dart __action）
+  function __lgEmitAction(payload) {
+    try {
+      if (__lgChannel && typeof __lgChannel.request === 'function') {
+        __lgChannel.request('__action', JSON.stringify(payload || {}), 'act_' + (++__lgSeq));
+      }
+    } catch (e) {}
+  }
+
+  var __lgWarned = Object.create(null);
+  function __lgWarnOnce(key, message) {
+    if (__lgWarned[key]) return;
+    __lgWarned[key] = true;
+    __lgStore('log', null, message);
+  }
+
+  // 异步宿主函数（与原版 WebJsExtensions.request funName 同名；闭包内可见，不挂 window）
+  var run = function (jsCode) { return __lgCall('run', [String(jsCode)]); };
+  var ajaxAwait = function (url, callTimeout) {
+    return __lgCall('ajaxAwait', [String(url), callTimeout == null ? null : String(callTimeout)]);
+  };
+  var connectAwait = function (url, header, callTimeout) {
+    return __lgCall('connectAwait', [String(url), header == null ? null : String(header), callTimeout == null ? null : String(callTimeout)]);
+  };
+  var getAwait = function (url, header, callTimeout) {
+    return __lgCall('getAwait', [String(url), header == null ? null : String(header), callTimeout == null ? null : String(callTimeout)]);
+  };
+  var headAwait = function (url, header, callTimeout) {
+    return __lgCall('headAwait', [String(url), header == null ? null : String(header), callTimeout == null ? null : String(callTimeout)]);
+  };
+  var postAwait = function (url, body, header, callTimeout) {
+    return __lgCall('postAwait', [String(url), String(body), header == null ? null : String(header), callTimeout == null ? null : String(callTimeout)]);
+  };
+  var webViewAwait = function (html, url, js, cacheFirst) {
+    return __lgCall('webViewAwait', [html == null ? null : String(html), url == null ? null : String(url), js == null ? null : String(js), cacheFirst == null ? null : !!cacheFirst]);
+  };
+  var webViewGetSourceAwait = function (html, url, js, sourceRegex, cacheFirst, delayTime) {
+    return __lgCall('webViewGetSourceAwait', [
+      html == null ? null : String(html),
+      url == null ? null : String(url),
+      js == null ? null : String(js),
+      sourceRegex == null ? null : String(sourceRegex),
+      cacheFirst == null ? null : !!cacheFirst,
+      delayTime == null ? null : String(delayTime)
+    ]);
+  };
+  var decryptStrAwait = function (transformation, key, iv, data) {
+    return __lgCall('decryptStrAwait', [String(transformation), String(key), iv == null ? null : String(iv), String(data)]);
+  };
+  var encryptBase64Await = function (transformation, key, iv, data) {
+    return __lgCall('encryptBase64Await', [String(transformation), String(key), iv == null ? null : String(iv), String(data)]);
+  };
+  var encryptHexAwait = function (transformation, key, iv, data) {
+    return __lgCall('encryptHexAwait', [String(transformation), String(key), iv == null ? null : String(iv), String(data)]);
+  };
+  var createSignHexAwait = function (algorithm, publicKey, privateKey, data) {
+    return __lgCall('createSignHexAwait', [String(algorithm), String(publicKey), String(privateKey), String(data)]);
+  };
+  var downloadFileAwait = function (url) { return __lgCall('downloadFileAwait', [String(url)]); };
+  var readTxtFileAwait = function (path) { return __lgCall('readTxtFileAwait', [String(path)]); };
+  var importScriptAwait = function (url) { return __lgCall('importScriptAwait', [String(url)]); };
+  var getStringAwait = function (ruleStr, mContent) {
+    return __lgCall('getStringAwait', [ruleStr == null ? null : String(ruleStr), mContent == null ? null : String(mContent)]);
+  };
 
   // source 垫片：同步读内联快照，写异步转发（__store）
-  var __lgVars = __lgSnapshot.vars || {{}};
+  var __lgVars = __lgSnapshot.vars || {};
   var __lgSourceVariable = __lgSnapshot.sourceVariable == null ? '' : String(__lgSnapshot.sourceVariable);
   var __lgLoginHeader = __lgSnapshot.loginHeader == null ? null : String(__lgSnapshot.loginHeader);
   var __lgLoginInfo = __lgSnapshot.loginInfo == null ? null : String(__lgSnapshot.loginInfo);
-  var source = {{
-    get: function (k) {{
+  var source = {
+    get: function (k) {
       var key = String(k);
       return Object.prototype.hasOwnProperty.call(__lgVars, key) ? String(__lgVars[key]) : '';
-    }},
-    getKey: function () {{ return __lgSnapshot.sourceUrl; }},
-    getUrl: function () {{ return __lgSnapshot.sourceUrl; }},
-    getTag: function () {{ return __lgSnapshot.sourceName || ''; }},
+    },
+    getKey: function () { return __lgSnapshot.sourceUrl; },
+    getUrl: function () { return __lgSnapshot.sourceUrl; },
+    getTag: function () { return __lgSnapshot.sourceName || ''; },
     key: __lgSnapshot.sourceUrl,
     url: __lgSnapshot.sourceUrl,
-    put: function (k, v) {{
+    put: function (k, v) {
       var key = String(k);
       var value = String(v);
       __lgVars[key] = value;
       __lgStore('sourcePut', key, value);
       return value;
-    }},
-    getVariable: function () {{ return __lgSourceVariable; }},
-    setVariable: function (v) {{
+    },
+    getVariable: function () { return __lgSourceVariable; },
+    setVariable: function (v) {
       var value = String(v);
       __lgSourceVariable = value;
       __lgStore('sourceVariableSet', null, value);
       return value;
-    }},
-    putVariable: function (v) {{ return this.setVariable(v); }},
-    getLoginHeader: function () {{ return __lgLoginHeader ? String(__lgLoginHeader) : null; }},
-    putLoginHeader: function (h) {{
+    },
+    putVariable: function (v) { return this.setVariable(v); },
+    getLoginHeader: function () { return __lgLoginHeader ? String(__lgLoginHeader) : null; },
+    putLoginHeader: function (h) {
       var value = String(h);
       __lgLoginHeader = value;
       __lgStore('loginHeaderSet', null, value);
-    }},
-    removeLoginHeader: function () {{
+    },
+    removeLoginHeader: function () {
       __lgLoginHeader = null;
       __lgStore('loginHeaderRemove', null, null);
-    }},
-    getLoginHeaderMap: function () {{
-      try {{ return __lgLoginHeader ? JSON.parse(__lgLoginHeader) : null; }} catch (e) {{ return null; }}
-    }},
-    getLoginInfo: function () {{ return __lgLoginInfo ? String(__lgLoginInfo) : null; }},
-    putLoginInfo: function (i) {{
+    },
+    getLoginHeaderMap: function () {
+      try { return __lgLoginHeader ? JSON.parse(__lgLoginHeader) : null; } catch (e) { return null; }
+    },
+    getLoginInfo: function () { return __lgLoginInfo ? String(__lgLoginInfo) : null; },
+    putLoginInfo: function (i) {
       var value = String(i);
       __lgLoginInfo = value;
       __lgStore('loginInfoSet', null, value);
       return true;
-    }},
-    removeLoginInfo: function () {{
+    },
+    removeLoginInfo: function () {
       __lgLoginInfo = null;
       __lgStore('loginInfoRemove', null, null);
-    }},
-    getLoginInfoMap: function () {{
-      var data = {{}};
-      try {{ data = __lgLoginInfo ? (JSON.parse(__lgLoginInfo) || {{}}) : {{}}; }} catch (e) {{ data = {{}}; }}
-      data.get = function (k) {{ return this[k] == null ? null : this[k]; }};
-      data.put = function (k, v) {{
+    },
+    getLoginInfoMap: function () {
+      var data = {};
+      try { data = __lgLoginInfo ? (JSON.parse(__lgLoginInfo) || {}) : {}; } catch (e) { data = {}; }
+      data.get = function (k) { return this[k] == null ? null : this[k]; };
+      data.put = function (k, v) {
         this[k] = String(v);
         source.putLoginInfo(JSON.stringify(this));
         return v;
-      }};
+      };
       return data;
-    }},
-    hasLogin: function () {{ return !!(__lgSnapshot.loginUrl || __lgSnapshot.loginUi); }},
-    login: function () {{
+    },
+    hasLogin: function () { return !!(__lgSnapshot.loginUrl || __lgSnapshot.loginUi); },
+    login: function () {
       __lgStore('log', 'rss-webview', 'source.login() 未在 WebView 宿主桥实现（请用 source.putLoginHeader/putLoginInfo）');
-    }}
-  }};
+    }
+  };
+  // 只读源身份属性（批21c P2-5：缺失会让 preloadJs 抛 TypeError 中断）
+  try {
+    Object.defineProperty(source, 'sourceUrl', {
+      get: function () { return __lgSnapshot.sourceUrl || ''; }, enumerable: true, configurable: false
+    });
+    Object.defineProperty(source, 'sourceName', {
+      get: function () { return __lgSnapshot.sourceName || ''; }, enumerable: true, configurable: false
+    });
+    Object.defineProperty(source, 'loginUrl', {
+      get: function () { return __lgSnapshot.loginUrl || ''; }, enumerable: true, configurable: false
+    });
+    Object.defineProperty(source, 'loginUi', {
+      get: function () { return __lgSnapshot.loginUi || ''; }, enumerable: true, configurable: false
+    });
+    Object.defineProperty(source, 'header', {
+      get: function () { return __lgSnapshot.header || ''; }, enumerable: true, configurable: false
+    });
+  } catch (e) {
+    source.sourceUrl = __lgSnapshot.sourceUrl || '';
+    source.sourceName = __lgSnapshot.sourceName || '';
+    source.loginUrl = __lgSnapshot.loginUrl || '';
+    source.loginUi = __lgSnapshot.loginUi || '';
+    source.header = __lgSnapshot.header || '';
+  }
 
-  // cache 垫片：同步读页面镜像，写异步落 cache_store
+  // cache 垫片：同步读页面镜像，写异步落 cache_store（与 run 内 cache 同源）
   var __lgCacheMirror = Object.create(null);
-  var cache = {{
-    get: function (k) {{
+  var cache = {
+    get: function (k) {
       var key = String(k);
       return Object.prototype.hasOwnProperty.call(__lgCacheMirror, key) ? __lgCacheMirror[key] : null;
-    }},
-    put: function (k, v) {{
+    },
+    put: function (k, v) {
       var key = String(k);
       var value = String(v);
       __lgCacheMirror[key] = value;
       __lgStore('cachePut', key, value);
       return value;
-    }},
-    remove: function (k) {{
+    },
+    remove: function (k) {
       var key = String(k);
       delete __lgCacheMirror[key];
       __lgStore('cacheRemove', key, null);
       return true;
-    }},
-    putMemory: function (k, v) {{
+    },
+    putMemory: function (k, v) {
       var key = String(k);
       var value = String(v);
       __lgCacheMirror[key] = value;
       __lgStore('cachePutMemory', key, value);
-    }},
-    getFromMemory: function (k) {{
+    },
+    getFromMemory: function (k) {
       var key = String(k);
       return Object.prototype.hasOwnProperty.call(__lgCacheMirror, key) ? __lgCacheMirror[key] : null;
-    }},
-    deleteMemory: function (k) {{
+    },
+    deleteMemory: function (k) {
       var key = String(k);
       delete __lgCacheMirror[key];
       __lgStore('cacheDeleteMemory', key, null);
       return true;
-    }}
-  }};
+    }
+  };
 
   // java 垫片：同步网络/加密/解析面一律引导 *Await（平台差异已登记）
-  function __lgSyncUnsupported(name, suggestion) {{
+  function __lgSyncUnsupported(name, suggestion) {
     var msg = 'WebView 同步宿主调用不可用：java.' + name + '，请改用 ' + suggestion;
     __lgStore('log', 'rss-webview', msg);
     throw new Error(msg);
-  }}
-  var java = {{
-    request: function (funName, args, id) {{
-      try {{
+  }
+  function __lgPad2(n) { return (n < 10 ? '0' : '') + n; }
+  function __lgUUID() {
+    var chars = '0123456789abcdef';
+    var out = '';
+    for (var i = 0; i < 36; i++) {
+      if (i === 8 || i === 13 || i === 18 || i === 23) out += '-';
+      else if (i === 14) out += '4';
+      else if (i === 19) out += chars.charAt(8 + (Math.random() * 4 | 0));
+      else out += chars.charAt(Math.random() * 16 | 0);
+    }
+    return out;
+  }
+  var java = {
+    request: function (funName, args, id) {
+      try {
         __lgChannel.request(String(funName), JSON.stringify(args || []), String(id == null ? '' : id));
-      }} catch (e) {{}}
-    }},
-    put: function (k, v) {{ return source.put(String(k), String(v)); }},
-    get: function (urlOrKey) {{
+      } catch (e) {}
+    },
+    put: function (k, v) { return source.put(String(k), String(v)); },
+    get: function (urlOrKey) {
       if (arguments.length <= 1) return source.get(String(urlOrKey));
       return __lgSyncUnsupported('get', 'getAwait');
-    }},
-    ajax: function () {{ return __lgSyncUnsupported('ajax', 'ajaxAwait'); }},
-    connect: function () {{ return __lgSyncUnsupported('connect', 'connectAwait'); }},
-    post: function () {{ return __lgSyncUnsupported('post', 'postAwait'); }},
-    head: function () {{ return __lgSyncUnsupported('head', 'headAwait'); }},
-    webView: function () {{ return __lgSyncUnsupported('webView', 'webViewAwait'); }},
-    webViewGetSource: function () {{ return __lgSyncUnsupported('webViewGetSource', 'webViewGetSourceAwait'); }},
-    downloadFile: function () {{ return __lgSyncUnsupported('downloadFile', 'downloadFileAwait'); }},
-    readTxtFile: function () {{ return __lgSyncUnsupported('readTxtFile', 'readTxtFileAwait'); }},
-    importScript: function () {{ return __lgSyncUnsupported('importScript', 'importScriptAwait'); }},
-    getString: function () {{ return __lgSyncUnsupported('getString', 'getStringAwait'); }},
-    getStringList: function () {{ return __lgSyncUnsupported('getStringList', 'getStringAwait'); }},
-    createSymmetricCrypto: function () {{
+    },
+    ajax: function () { return __lgSyncUnsupported('ajax', 'ajaxAwait'); },
+    connect: function () { return __lgSyncUnsupported('connect', 'connectAwait'); },
+    post: function () { return __lgSyncUnsupported('post', 'postAwait'); },
+    head: function () { return __lgSyncUnsupported('head', 'headAwait'); },
+    webView: function () { return __lgSyncUnsupported('webView', 'webViewAwait'); },
+    webViewGetSource: function () { return __lgSyncUnsupported('webViewGetSource', 'webViewGetSourceAwait'); },
+    downloadFile: function () { return __lgSyncUnsupported('downloadFile', 'downloadFileAwait'); },
+    readTxtFile: function () { return __lgSyncUnsupported('readTxtFile', 'readTxtFileAwait'); },
+    importScript: function () { return __lgSyncUnsupported('importScript', 'importScriptAwait'); },
+    getString: function () { return __lgSyncUnsupported('getString', 'getStringAwait'); },
+    getStringList: function () { return __lgSyncUnsupported('getStringList', 'getStringAwait'); },
+    createSymmetricCrypto: function () {
       return __lgSyncUnsupported('createSymmetricCrypto', 'decryptStrAwait/encryptBase64Await/encryptHexAwait');
-    }},
-    createSign: function () {{ return __lgSyncUnsupported('createSign', 'createSignHexAwait'); }},
-    getCookie: function () {{ return __lgSyncUnsupported('getCookie', 'source.getLoginHeader()'); }},
-    setCookie: function () {{ return __lgSyncUnsupported('setCookie', 'source.putLoginHeader()'); }},
-    toast: function (msg) {{ __lgStore('toast', null, String(msg)); return String(msg); }},
-    longToast: function (msg) {{ __lgStore('longToast', null, String(msg)); return String(msg); }},
-    log: function (msg) {{ __lgStore('log', null, String(msg)); return String(msg); }}
-  }};
+    },
+    createSign: function () { return __lgSyncUnsupported('createSign', 'createSignHexAwait'); },
+    getCookie: function () { return __lgSyncUnsupported('getCookie', 'source.getLoginHeader()'); },
+    setCookie: function () { return __lgSyncUnsupported('setCookie', 'source.putLoginHeader()'); },
+    toast: function (msg) { __lgEmitAction({ action: 'toast', message: String(msg), long: false }); return String(msg); },
+    longToast: function (msg) { __lgEmitAction({ action: 'toast', message: String(msg), long: true }); return String(msg); },
+    log: function (msg) { __lgEmitAction({ action: 'log', message: String(msg) }); return String(msg); },
+    // 批21c P2-5：常用工具引导桩（缺失会 TypeError 中断 preloadJs）
+    randomUUID: function () { return __lgUUID(); },
+    timeFormat: function (time) {
+      var d = new Date(Number(time));
+      if (isNaN(d.getTime())) return '';
+      return d.getFullYear() + '/' + __lgPad2(d.getMonth() + 1) + '/' + __lgPad2(d.getDate()) +
+        ' ' + __lgPad2(d.getHours()) + ':' + __lgPad2(d.getMinutes());
+    },
+    htmlFormat: function (str) {
+      __lgWarnOnce('htmlFormat', 'java.htmlFormat 为本地简化实现（原样返回，不做 HTML 美化）');
+      return String(str == null ? '' : str);
+    },
+    t2s: function (text) {
+      __lgWarnOnce('t2s', 'java.t2s 为本地简化实现（原样返回，不做繁简转换）');
+      return String(text == null ? '' : text);
+    },
+    s2t: function (text) {
+      __lgWarnOnce('s2t', 'java.s2t 为本地简化实现（原样返回，不做简繁转换）');
+      return String(text == null ? '' : text);
+    }
+  };
 
-  if (typeof window !== 'undefined') {{
-    window.java = java;
-    window.source = source;
-    window.cache = cache;
-  }}
+  // 不写 window.java/source/cache：三者只在本 IIFE 闭包（preloadJs 词法可见），
+  // 页面脚本无法取得宿主能力（批21c P0-1）。
   // __LEGADO_PRELOAD_JS__
-"#
-    )
-}
+"#;
 
 // ─── __cookieSet ─────────────────────────────────────────────────────────────
 
@@ -639,6 +820,12 @@ fn cookie_set(args: &Value) -> LegadoResult<String> {
 /// [`rss_web_view_host_call`] 文档。source 变量键前缀
 /// `v_<sourceUrl>_` / `sourceVariable_<sourceUrl>` 与规则 JS 同键空间。
 fn store(source_url: &str, args: &Value) -> LegadoResult<String> {
+    // 批21c P2-10：页面写穿限频（每源每秒 300 次，超出明确拒绝）
+    if !store_rate_allowed(source_url) {
+        return Ok(envelope_error(format!(
+            "__store 调用过于频繁（>{STORE_MAX_PER_SECOND}/s），已拒绝"
+        )));
+    }
     let Some(params) = args.get(0).and_then(Value::as_object) else {
         return Ok(envelope_error(
             "__store 参数必须是对象：{\"op\",\"key\",\"value\"}",
@@ -675,6 +862,15 @@ fn store(source_url: &str, args: &Value) -> LegadoResult<String> {
             if let Err(e) = crate::api::source_login_cache::remove_login_header(source_url) {
                 log::warn!("[rss-web-bridge] 清除登录头失败（{source_url}）: {e}");
             }
+            // 批21c P2-8：同步清除引擎变量表（否则下次 setup 的 null seed
+            // 不会覆盖旧值，`source.getLoginHeader()` 在 run 内仍读到旧登录头）
+            #[cfg(feature = "quickjs")]
+            {
+                let var_key = format!("loginHeader_{source_url}");
+                if let Err(e) = legado_js::host_api::variable_store::remove_variable(&var_key) {
+                    log::warn!("[rss-web-bridge] 清除登录头变量失败（{var_key}）: {e}");
+                }
+            }
             Value::Null
         }
         "loginInfoGet" => Value::String(
@@ -689,6 +885,13 @@ fn store(source_url: &str, args: &Value) -> LegadoResult<String> {
         "loginInfoRemove" => {
             if let Err(e) = crate::api::source_login_cache::remove_login_info(source_url) {
                 log::warn!("[rss-web-bridge] 清除用户信息失败（{source_url}）: {e}");
+            }
+            #[cfg(feature = "quickjs")]
+            {
+                let var_key = format!("userInfo_{source_url}");
+                if let Err(e) = legado_js::host_api::variable_store::remove_variable(&var_key) {
+                    log::warn!("[rss-web-bridge] 清除用户信息变量失败（{var_key}）: {e}");
+                }
             }
             Value::Null
         }
@@ -822,7 +1025,6 @@ fn db_cache_put(key: &str, value: &str) {
     }
 }
 
-#[cfg(feature = "quickjs")]
 fn db_cache_prefix(prefix: &str) -> Vec<(String, String)> {
     with_database(|db| legado_db::CacheRepository::new(db.connection()).list_by_prefix(prefix))
         .unwrap_or_default()
@@ -861,19 +1063,35 @@ globalThis.__lgHeadersJson = function (header) {
   }
   return JSON.stringify(base);
 };
+// 统一走 `java.connect`（RESPONSE_BRIDGE_JS 的 StrResponse 语义），显式透传
+// callTimeout（批21c P2-6：此前 get/post/head 丢弃 callTimeout）。
+function __lgConnect(method, url, headers, body, callTimeout) {
+  var args = [String(url), String(method), headers];
+  if (body !== null && body !== undefined) {
+    args.push(String(body));
+  }
+  if (callTimeout !== null && callTimeout !== undefined && String(callTimeout) !== '') {
+    var __timeoutMs = Number(callTimeout);
+    if (isNaN(__timeoutMs)) __timeoutMs = 9000;
+    if (args.length === 3) args.push('');
+    args.push(__timeoutMs);
+  }
+  return java.connect.apply(null, args);
+}
 globalThis.__lgWebHost = {
   run: function (jsCode) {
-    return String(eval(String(jsCode)));
+    // 间接 eval（`(0, eval)`）在全局作用域执行：`var` 声明跨调用持久，
+    // 对齐原版 evalJS 的全局语义（批21c P2-3：直接 eval 的 var 只活在
+    // run 函数作用域，`run('var x=1')` 后再 `run('x')` 会 ReferenceError）。
+    var __code = String(jsCode);
+    var __indirectEval = eval;
+    return String((0, __indirectEval)(__code));
   },
   ajaxAwait: function (url, callTimeout) {
     return String(java.ajax(String(url), callTimeout == null ? 9000 : Number(callTimeout)));
   },
   connectAwait: function (url, header, callTimeout) {
-    var r = java.connect(
-      String(url),
-      __lgHeadersJson(header),
-      callTimeout == null ? 9000 : Number(callTimeout)
-    );
+    var r = __lgConnect('GET', url, __lgHeadersJson(header), null, callTimeout);
     return JSON.stringify({
       statusCode: r.code(),
       body: r.body(),
@@ -882,13 +1100,23 @@ globalThis.__lgWebHost = {
     });
   },
   getAwait: function (url, header, callTimeout) {
-    return String(java.get(String(url), __lgHeadersJson(header)).body());
+    // 走 java.get（jsoup 语义：不跟随重定向），可选 callTimeout 透传
+    var args = [String(url), __lgHeadersJson(header)];
+    if (callTimeout != null && String(callTimeout) !== '') args.push(callTimeout);
+    var r = java.get.apply(null, args);
+    return String(r.body());
   },
   headAwait: function (url, header, callTimeout) {
-    return JSON.stringify(java.head(String(url), __lgHeadersJson(header)).headersMap());
+    var args = [String(url), __lgHeadersJson(header)];
+    if (callTimeout != null && String(callTimeout) !== '') args.push(callTimeout);
+    var r = java.head.apply(null, args);
+    return JSON.stringify(r.headersMap());
   },
   postAwait: function (url, body, header, callTimeout) {
-    return String(java.post(String(url), String(body), __lgHeadersJson(header)).body());
+    var args = [String(url), String(body), __lgHeadersJson(header)];
+    if (callTimeout != null && String(callTimeout) !== '') args.push(callTimeout);
+    var r = java.post.apply(null, args);
+    return String(r.body());
   },
   webViewAwait: function (html, url, js, cacheFirst) {
     return String(java.webView(
@@ -991,6 +1219,11 @@ fn host_call(source_url: &str, method: &str, args: &Value) -> LegadoResult<Strin
     let Some(source) = load_rss_source(source_url)? else {
         return Ok(envelope_error(format!("RSS 源不存在：{source_url}")));
     };
+    // 批21c P2-10：每源并发上限（2-4；`run`/网络/加解密一律计入）。
+    // 许可持有到本次调用结束；超时等待由 Dart 侧 30s 失败回填兜底。
+    let Some(_permit) = bridge_permit(&source.source_url) else {
+        return Ok(envelope_error("宿主桥并发许可获取失败（连接已关闭）"));
+    };
     apply_source_global_headers(&source);
     // 源级 concurrentRate 限流（网络类方法每次调用一许可；与 RSS 列表/正文
     // 共享同一 limiter map 与固定窗口语义，空 / "0" / 非法不限流）
@@ -1003,10 +1236,32 @@ fn host_call(source_url: &str, method: &str, args: &Value) -> LegadoResult<Strin
         });
     }
 
-    let js_lib = source
+    let ledger_tag = format!("rss-webview:{}", source.source_url);
+    let js_lib_raw = source
         .js_lib
         .as_deref()
         .map(legado_fetcher::js_adapter::sanitize_js_lib_for_quickjs);
+    // 批21c P2-2：URL 映射形态 jsLib（`{"k":"https://…js"}`）不是合法 JS，
+    // 不能直接交给 engine_cache。先经 jslib_loader 解析为可 eval 脚本
+    // （拉取 + 进程缓存 + 逐条降级台账），与 QuickJsExecutor 的 run_fresh
+    // 路径同源；全失败则明确报错。
+    let js_lib = match js_lib_raw {
+        Some(lib) if legado_js::host_api::jslib_loader::parse_js_lib_url_map(&lib).is_some() => {
+            match legado_js::host_api::jslib_loader::resolve_js_lib_url_map(
+                &lib,
+                &ledger_tag,
+                &legado_js::host_api::jslib_loader::default_js_lib_fetcher,
+            ) {
+                Some(script) => Some(script),
+                None => {
+                    return Ok(envelope_error(
+                        "RSS 源 jsLib（URL 映射）加载失败：宿主桥不可用",
+                    ))
+                }
+            }
+        }
+        other => other,
+    };
     let login_header = crate::api::source_login_cache::get_login_header(&source.source_url);
     let login_info = crate::api::source_login_cache::get_login_info(&source.source_url);
     let setup = legado_fetcher::source_setup::rss_source_js_setup_script(
@@ -1014,7 +1269,9 @@ fn host_call(source_url: &str, method: &str, args: &Value) -> LegadoResult<Strin
         login_header.as_deref(),
         login_info.as_deref(),
     )?;
-    let key = format!("executor:{}", source.source_url);
+    // 批21c P2-1：独立引擎键（避免与规则链 `executor:<sourceUrl>` 的
+    // 5s 默认超时/不同 setup 相互抖动重建）
+    let key = ledger_tag;
     let (engine, _, js_lib_ok) = legado_js::engine_cache::get_or_create_with_timeout(
         &key,
         js_lib.as_deref(),
@@ -1106,6 +1363,8 @@ fn unwrap_value(text: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "quickjs")]
+    use legado_js::JsEngine;
 
     fn decode(envelope: &str) -> Value {
         serde_json::from_str(envelope).expect("信封必须是合法 JSON")
@@ -1176,15 +1435,31 @@ mod tests {
         let script = env["value"]["script"].as_str().expect("script 字符串");
         for needle in [
             "(() => {",
-            "window.java = java",
-            "window.source = source",
-            "window.cache = cache",
             "legadoChannel",
             "legadoCb",
-            "ajaxAwait",
+            "delete window[__lgChannelName]",
+            "Object.defineProperty(window, __lgCallbackName",
+            "enumerable: false",
+            "var java = {",
+            "var source = {",
+            "var cache = {",
+            "var ajaxAwait = function",
+            "randomUUID",
+            "timeFormat",
             "// __LEGADO_PRELOAD_JS__",
         ] {
             assert!(script.contains(needle), "脚本缺少 {needle}: {script}");
+        }
+        for forbidden in [
+            "window.java = java",
+            "window.source = source",
+            "window.cache = cache",
+            "window[__lgName]",
+        ] {
+            assert!(
+                !script.contains(forbidden),
+                "桥对象不得写入页面全局：{forbidden}"
+            );
         }
         assert!(
             !script.trim_end().ends_with("})();"),
@@ -1356,18 +1631,25 @@ mod tests {
         legado_js::host_api::cookie_store::clear_cookies(url);
     }
 
-    /// 非 quickjs 构建：`__prepare` 与宿主方法均明确降级（不静默假成功）
+    /// 非 quickjs 构建：`__prepare` 仍返回快照（Dart Cookie 预写/同步面），
+    /// `script` 为空串；宿主方法明确降级（不静默假成功）
     #[cfg(not(feature = "quickjs"))]
     #[test]
     fn quickjs_off_degrades_explicitly() {
         let _guard = crate::db_state::ensure_test_db();
         let url = "https://rss-web-bridge-off.test/feed";
         add_source(url, json!({ "preloadJs": "1 + 1" }));
+        let prepare = call(
+            url,
+            "__prepare",
+            json!([{ "channelName": "ch", "callbackName": "cb", "ua": "UA-Off" }]),
+        );
+        assert_eq!(prepare["ok"], true, "{prepare}");
+        assert_eq!(prepare["value"]["script"], "");
+        assert_eq!(prepare["value"]["bridgeAvailable"], false);
+        assert_eq!(prepare["value"]["snapshot"]["sourceUrl"], url);
+        assert_eq!(prepare["value"]["snapshot"]["userAgent"], "UA-Off");
         for (method, args) in [
-            (
-                "__prepare",
-                json!([{ "channelName": "ch", "callbackName": "cb" }]),
-            ),
             ("ajaxAwait", json!(["https://example.com"])),
             ("run", json!(["1 + 1"])),
         ] {
@@ -1381,6 +1663,133 @@ mod tests {
                 "{method}: {env}"
             );
         }
+        crate::api::rss::delete_rss_source(url).ok();
+    }
+
+    /// 批21c P0-1 红→绿：在真实 QuickJS 中执行 Rust 生成的完整脚本，
+    /// 断言 `window.java/source/cache/<channel>/<bridge>` 均不存在、
+    /// 回填回调不可枚举、preloadJs 仍能经闭包访问宿主与快照。
+    #[cfg(feature = "quickjs")]
+    #[test]
+    fn generated_script_keeps_bridge_in_closure_and_cleans_globals() {
+        let _guard = crate::db_state::ensure_test_db();
+        let url = "https://rss-web-bridge-closure.test/feed";
+        add_source(
+            url,
+            json!({ "preloadJs": "probe", "header": "{\"X-H\":\"1\"}" }),
+        );
+        crate::api::source_login_cache::put_login_header(url, r#"{"Cookie":"sid=1"}"#).unwrap();
+        let env = call(
+            url,
+            "__store",
+            json!([{ "op": "sourcePut", "key": "k", "value": "v" }]),
+        );
+        assert_eq!(env["ok"], true, "{env}");
+
+        let source = load_rss_source(url).unwrap().expect("源存在");
+        let snapshot = build_snapshot(&source, "UA-Closure".to_string());
+        let channel = "__lgTestChannel";
+        let callback = "__lgTestCallback";
+        let head = build_prepare_script(channel, callback, &snapshot);
+        let preload = r#"
+globalThis.__probe = {
+  javaGlobal: typeof window.java,
+  sourceGlobal: typeof window.source,
+  cacheGlobal: typeof window.cache,
+  channelGlobal: typeof window["__lgTestChannel"],
+  ajaxGlobal: typeof window.ajaxAwait,
+  callbackType: typeof window["__lgTestCallback"],
+  callbackEnumerable: Object.getOwnPropertyDescriptor(window, "__lgTestCallback").enumerable,
+  callbackInKeys: Object.keys(window).indexOf("__lgTestCallback") >= 0,
+  sourceUrl: source.sourceUrl,
+  sourceName: source.sourceName,
+  loginUrl: source.loginUrl,
+  sourceHeader: source.header,
+  varGet: source.get("k"),
+  loginHeader: source.getLoginHeader(),
+  loginInfo: source.getLoginInfo(),
+  uuidLen: java.randomUUID().length,
+  timeFormat: java.timeFormat(0),
+  htmlFormat: java.htmlFormat("<b>x</b>"),
+  t2s: java.t2s("a"),
+  awaitThen: typeof ajaxAwait("https://x").then,
+  runType: typeof run
+};
+source.put("nk", "nv");
+java.request("ajaxAwait", "[]", "id-1");
+"#;
+        let script = format!("{head}{preload}\n}})();");
+        let engine = legado_js::QuickJsEngine::new(
+            legado_js::SandboxConfig::default().with_allow_script_run(true),
+        )
+        .expect("创建 QuickJS 引擎");
+        engine
+            .eval(
+                r#"var window = {};
+window["__lgTestChannel"] = {
+  request: function (m, a, i) {
+    globalThis.__req = globalThis.__req || [];
+    globalThis.__req.push([m, a, i]);
+  }
+};"#,
+            )
+            .expect("注入假通道");
+        legado_js::JsEngine::eval(&engine, &script).expect("生成的脚本必须可执行");
+
+        let raw = legado_js::JsEngine::eval(&engine, "JSON.stringify(globalThis.__probe)")
+            .expect("读取探针");
+        let probe: Value = serde_json::from_str(&raw).expect("探针 JSON");
+        for key in [
+            "javaGlobal",
+            "sourceGlobal",
+            "cacheGlobal",
+            "channelGlobal",
+            "ajaxGlobal",
+        ] {
+            assert_eq!(probe[key], "undefined", "桥对象不得残留全局：{key}");
+        }
+        assert_eq!(probe["callbackType"], "function");
+        assert_eq!(probe["callbackEnumerable"], false, "回填回调必须不可枚举");
+        assert_eq!(probe["callbackInKeys"], false);
+        assert_eq!(probe["sourceUrl"], url);
+        assert_eq!(probe["sourceName"], "宿主桥测试源");
+        assert_eq!(probe["loginUrl"], "");
+        assert_eq!(probe["sourceHeader"], r#"{"X-H":"1"}"#);
+        assert_eq!(probe["varGet"], "v");
+        assert_eq!(probe["loginHeader"], r#"{"Cookie":"sid=1"}"#);
+        assert_eq!(probe["loginInfo"], Value::Null);
+        assert_eq!(probe["uuidLen"], 36);
+        let time_text = probe["timeFormat"].as_str().unwrap_or_default();
+        assert_eq!(time_text.len(), 16, "yyyy/MM/dd HH:mm: {time_text}");
+        assert!(
+            time_text.contains('/') && time_text.contains(':'),
+            "{time_text}"
+        );
+        assert_eq!(probe["htmlFormat"], "<b>x</b>");
+        assert_eq!(probe["t2s"], "a");
+        assert_eq!(probe["awaitThen"], "function");
+        assert_eq!(probe["runType"], "function");
+
+        let req_raw = legado_js::JsEngine::eval(&engine, "JSON.stringify(globalThis.__req)")
+            .expect("读取通道请求");
+        let requests: Value = serde_json::from_str(&req_raw).expect("请求 JSON");
+        let requests = requests.as_array().expect("请求数组");
+        assert!(
+            requests.iter().any(|item| item[0] == "__store"
+                && item[1]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("\"op\":\"sourcePut\"")),
+            "source.put 必须经 __store 转发：{requests:?}"
+        );
+        assert!(
+            requests
+                .iter()
+                .any(|item| item[0] == "ajaxAwait" && item[2] == "id-1"),
+            "java.request 必须转发到闭包捕获的通道：{requests:?}"
+        );
+
+        crate::api::source_login_cache::remove_login_header(url).ok();
         crate::api::rss::delete_rss_source(url).ok();
     }
 }
