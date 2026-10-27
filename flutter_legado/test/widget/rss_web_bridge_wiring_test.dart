@@ -737,6 +737,70 @@ void main() {
     });
   });
 
+  testWidgets('preloadJs + 通道注册成功：4s 后确实重发 hello（P2-3 正例）', (tester) async {
+    await runWithWebView(() async {
+      final source = RssSource(
+        sourceUrl: _sourceUrl,
+        sourceName: '源A',
+        preloadJs: _preloadMarker,
+        singleUrl: true,
+      );
+      await pumpScreen(tester, source: source, description: null);
+      final controller = FakeWebViewController.lastCreated!;
+      expect(controller.javaScriptChannels, hasLength(1),
+          reason: 'preloadJs 非空且通道注册成功');
+
+      controller.emitPageStarted(_articleUrl);
+      await tester.pump();
+
+      // 看门狗 4s 未到：不得重发
+      await tester.pump(const Duration(seconds: 3));
+      expect(
+        controller.javaScriptCalls.where(isWatchdogHello),
+        isEmpty,
+        reason: '4s 看门狗未到前不得重发 hello',
+      );
+
+      // 4s 超时：必须重发 hello（本代文档确实注入了桥）
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+      expect(
+        controller.javaScriptCalls.where(isWatchdogHello),
+        hasLength(1),
+        reason: '通道注册成功且未握手时，看门狗必须重发 hello',
+      );
+    });
+  });
+
+  testWidgets('主框架错误：停止看门狗（不再空转重发 hello，P3-5）', (tester) async {
+    await runWithWebView(() async {
+      final source = RssSource(
+        sourceUrl: _sourceUrl,
+        sourceName: '源A',
+        preloadJs: _preloadMarker,
+        singleUrl: true,
+      );
+      await pumpScreen(tester, source: source, description: null);
+      final controller = FakeWebViewController.lastCreated!;
+
+      controller.emitPageStarted(_articleUrl);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 3));
+      expect(controller.javaScriptCalls.where(isWatchdogHello), isEmpty);
+
+      // 主框架失败：文档已不可用，必须取消计时器
+      controller.emitWebResourceError('net::ERR_FAILED');
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 20));
+      await tester.pump();
+      expect(
+        controller.javaScriptCalls.where(isWatchdogHello),
+        isEmpty,
+        reason: '主框架错误后看门狗必须停止，不得每 4s 空转重发 hello',
+      );
+    });
+  });
+
   testWidgets('主框架错误后同 URL 重试：必须重新注入 preload（P2-1）', (tester) async {
     await runWithWebView(() async {
       final source = RssSource(

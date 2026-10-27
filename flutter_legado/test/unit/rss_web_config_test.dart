@@ -4,7 +4,8 @@
 // 主框架白/黑名单判定、shouldOverrideUrlLoading 脚本包装、console 日志解析。
 // 批21f：mXSS 修复（SVG/MathML 整体删除、meta refresh/CSP、不动点自检、
 // 安全自检函数）；Chrome headless 红→绿用例在 `LEGADO_CHROME_HEADLESS=1`
-// 时执行（宿主无 Chrome 时自动跳过）。
+// 时执行，未启用/宿主无 Chrome 时显式 skipped（默认门禁为结构化向量与
+// golden；浏览器级用例供 CI 夜间/设备验收执行）。
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,21 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:flutter_legado/src/services/rss_web_config.dart';
 
 void main() {
+  // 批21g P2-2：浏览器级门禁只在显式启用且宿主有 Chrome 时执行；否则
+  // `skip:` 让用例报告 skipped（不是 passed），避免「静默通过」的假绿。
+  final chromeExecutable = _chromeExecutable();
+  final String? chromeSkipReason;
+  if (Platform.environment['LEGADO_CHROME_HEADLESS'] != '1') {
+    chromeSkipReason =
+        '未设置 LEGADO_CHROME_HEADLESS=1（浏览器级验收默认跳过；'
+        'CI 夜间/设备验收执行）';
+  } else if (chromeExecutable == null) {
+    chromeSkipReason =
+        '宿主未找到 Chrome/Chromium/Edge（可用 CHROME_PATH 指定可执行文件）';
+  } else {
+    chromeSkipReason = null;
+  }
+
   group('rssClHtml（对齐 ReadRssViewModel.clHtml）', () {
     test('有 </style> 且 style 非空白：紧随其后插入', () {
       const content =
@@ -86,6 +102,29 @@ void main() {
         isNot(contains('<script>')),
       );
     });
+
+    test('批21g P3-4：</head>/</style> 搜索跳过 rawtext/RCDATA 与注释', () {
+      // title 是 RCDATA：其中的 </head> 不是真实结束标签；真实 </head>
+      // 在 </title> 之后。旧实现会把 preload/style 注入 title 文本内。
+      const content = '<head><title></head></title></head>'
+          '<body><p>x</p></body>';
+      final withScript = rssClHtml(content, preloadJs: 'PRELOAD_MARKER');
+      expect(withScript.indexOf('<script>PRELOAD_MARKER</script>'),
+          lessThan(withScript.indexOf('<title>')),
+          reason: 'preload 必须插在真实 <head> 开标签后（title 之前）：$withScript');
+
+      final withStyle = rssClHtml(content, style: 'p{}');
+      expect(withStyle, contains('<title></head></title>'),
+          reason: 'title 内的 </head> 文本不得被改写：$withStyle');
+      expect(withStyle.indexOf('<style>p{}</style>'),
+          greaterThan(withStyle.indexOf('</title>')),
+          reason: '样式必须插在真实 </head> 前（title 之后）：$withStyle');
+
+      // 注释中的 </head> 同样不是真实标签
+      const commented = '<!-- </head> --><head></head><body>x</body>';
+      final out = rssClHtml(commented, preloadJs: 'P');
+      expect(out, startsWith('<!-- </head> --><head><script>P</script>'));
+    });
   });
 
   group('rssInjectStartJs（对齐 loadStartHtml）', () {
@@ -115,6 +154,33 @@ void main() {
         rssInjectStartJs('x', ' a() '),
         contains('<script> a() </script>'),
       );
+    });
+
+    test('批21g P3-4：</body> 搜索跳过 xmp/textarea 等 rawtext', () {
+      // xmp 是 rawtext：其中的 </body> 只是文本，脚本插进去不会执行。
+      const html = '<xmp></body></xmp><p>正文</p>';
+      final out = rssInjectStartJs(html, 'START_MARKER()');
+      expect(out, contains('<script>START_MARKER()</script>'));
+      expect(out.indexOf('<script>START_MARKER()</script>'),
+          greaterThan(out.indexOf('</xmp>')),
+          reason: '脚本必须落在 xmp 之外：$out');
+      final document = html_parser.parse(out);
+      expect(document.querySelectorAll('script'), hasLength(1),
+          reason: '注入后必须形成真实 script 元素（而非 rawtext 文本）：$out');
+      expect(document.querySelector('xmp')?.text, '</body>',
+          reason: 'xmp 原文不得被改写：$out');
+    });
+
+    test('批21g P3-4：</body> 搜索跳过 title/textarea/注释', () {
+      const html = '<head><title></body></title></head>'
+          '<body><!-- </body> --><textarea></body></textarea><p>x</p>'
+          '</body>';
+      final out = rssInjectStartJs(html, 'S()');
+      expect(out.indexOf('<script>S()</script>'),
+          greaterThan(out.indexOf('</textarea>')),
+          reason: '必须插在真实 </body> 前：$out');
+      expect(html_parser.parse(out).querySelectorAll('script'), hasLength(1),
+          reason: out);
     });
   });
 
@@ -599,12 +665,41 @@ void main() {
         '<form><input name="a"><button formaction="javascript:1">b</button>'
             '</form>',
         '<svg><foreignObject><div>x</div></foreignObject></svg><p>after</p>',
+        // 批21g P2-1：plaintext 的序列化会补 `</plaintext>`，而解析器把
+        // 它当 rawtext 文本吞掉，逐轮增长（strip 不动点此前被破坏）。
+        '<plaintext>abc',
+        '<plaintext><script>x</script></plaintext><p>y</p>',
+        '<div><plaintext></div><p>x</p>',
+        '<p>前</p><plaintext>rest',
       ];
       for (final input in corpus) {
         final once = rssStripPageScripts(input);
         final twice = rssStripPageScripts(once);
         expect(twice, once, reason: '不动点失败：$input');
       }
+    });
+
+    test('批21g P2-1：<plaintext> 子树整体删除且不动点成立', () {
+      const vectors = <String>[
+        '<plaintext>abc',
+        '<plaintext><script>x</script></plaintext><p>y</p>',
+        '<div><plaintext></div><p>x</p>',
+        '<plaintext>',
+        '<plaintext></plaintext>',
+        '<p>前</p><plaintext>rest',
+      ];
+      for (final input in vectors) {
+        final out = rssStripPageScripts(input);
+        expect(out.toLowerCase(), isNot(contains('<plaintext')),
+            reason: 'plaintext 子树必须整体删除：$input -> $out');
+        expect(isSanitizedHtmlSafe(out), isTrue, reason: out);
+        expect(rssStripPageScripts(out), out,
+            reason: 'plaintext 删除后不动点必须成立：$input');
+      }
+      // 前后正常正文保留（只删 plaintext 子树）
+      final kept = rssStripPageScripts('<p>前</p><plaintext>后');
+      expect(kept, contains('<p>前</p>'), reason: kept);
+      expect(kept.toLowerCase(), isNot(contains('plaintext')), reason: kept);
     });
 
     test('批21f isSanitizedHtmlSafe：危险形态判 false，安全形态判 true', () {
@@ -624,6 +719,7 @@ void main() {
         '<svg><script>x</script></svg>',
         '<svg><style>&lt;script&gt;x&lt;/script&gt;</style></svg>',
         '<math><mi>x</mi></math>',
+        '<plaintext>abc',
         '<div onclick="x()">d</div>',
         '<iframe srcdoc="&lt;script&gt;x&lt;/script&gt;"></iframe>',
         '<a href="javascript:1">a</a>',
@@ -656,12 +752,7 @@ void main() {
     });
 
     test('批21f P0：Chrome headless 确认清洗后无 mXSS 执行（可选）', () {
-      final chrome = _chromeExecutable();
-      final enabled = Platform.environment['LEGADO_CHROME_HEADLESS'] == '1';
-      if (!enabled || chrome == null) {
-        // 无浏览器环境：结构断言 + golden 已由上方用例覆盖
-        return;
-      }
+      final chrome = chromeExecutable!;
       final dir = Directory.systemTemp.createTempSync('rss_mxss_chrome_');
       try {
         const vectors = <(String, int)>[
@@ -771,13 +862,13 @@ void main() {
       } finally {
         dir.deleteSync(recursive: true);
       }
-    });
+    }, skip: chromeSkipReason);
 
     test('空输入原样返回（不补全文档骨架）', () {
       expect(rssStripPageScripts(''), '');
     });
 
-    test('性能：约 1MB / 10000 标签 < 200ms（含两轮不动点复检）', () {
+    test('性能：约 1MB / 10000 标签（含两轮不动点复检，阈值 800ms）', () {
       final buffer = StringBuffer('<html><body>');
       for (var i = 0; i < 10000; i++) {
         buffer.write('<div class="c$i" data-i="$i">正文内容$i '
@@ -790,7 +881,9 @@ void main() {
       rssStripPageScripts(html);
       rssStripPageScripts(html);
       // 全量 flutter test 并行跑多个 isolate 时墙钟会受 CPU 争用影响；
-      // 取 3 次采样的最小值（单次测量目标仍是 <200ms）。
+      // 取 3 次采样的最小值。debug 构建含 assert 二次安全自检，典型
+      // 80-240ms（与机器/负载相关），阈值取 800ms 只拦截数量级回归，
+      // 不承诺绝对耗时（批21g P1-1：旧阈值 <200ms 会让全量测试变红）。
       final samples = <int>[];
       for (var i = 0; i < 3; i++) {
         final sw = Stopwatch()..start();
@@ -799,7 +892,7 @@ void main() {
         samples.add(sw.elapsedMilliseconds);
       }
       final best = samples.reduce((a, b) => a < b ? a : b);
-      expect(best, lessThan(200),
+      expect(best, lessThan(800),
           reason: 'DOM 剥离耗时 ${best}ms（1MB / 1 万标签，含两轮不动点复检；'
               '采样 $samples）');
     });
