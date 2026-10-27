@@ -808,6 +808,11 @@ abstract class RustLibApi extends BaseApi {
     required String origin,
     required String title,
     String? link,
+    int? articleType,
+    String? sort,
+    String? image,
+    String? pubDate,
+    int? durPos,
   });
 
   Future<PlatformInt64> crateFfiFfiRssReadRecordCount();
@@ -7513,6 +7518,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
     required String origin,
     required String title,
     String? link,
+    int? articleType,
+    String? sort,
+    String? image,
+    String? pubDate,
+    int? durPos,
   }) {
     return handler.executeNormal(
       NormalTask(
@@ -7521,6 +7531,11 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           sse_encode_String(origin, serializer);
           sse_encode_String(title, serializer);
           sse_encode_opt_String(link, serializer);
+          sse_encode_opt_box_autoadd_i_32(articleType, serializer);
+          sse_encode_opt_String(sort, serializer);
+          sse_encode_opt_String(image, serializer);
+          sse_encode_opt_String(pubDate, serializer);
+          sse_encode_opt_box_autoadd_i_32(durPos, serializer);
           pdeCallFfi(
             generalizedFrbRustBinding,
             serializer,
@@ -7533,7 +7548,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
           decodeErrorData: sse_decode_bridge_error,
         ),
         constMeta: kCrateFfiFfiRssMarkReadConstMeta,
-        argValues: [origin, title, link],
+        argValues: [
+          origin,
+          title,
+          link,
+          articleType,
+          sort,
+          image,
+          pubDate,
+          durPos,
+        ],
         apiImpl: this,
       ),
     );
@@ -7541,7 +7565,16 @@ class RustLibApiImpl extends RustLibApiImplPlatform implements RustLibApi {
 
   TaskConstMeta get kCrateFfiFfiRssMarkReadConstMeta => const TaskConstMeta(
     debugName: "rss_mark_read",
-    argNames: ["origin", "title", "link"],
+    argNames: [
+      "origin",
+      "title",
+      "link",
+      "articleType",
+      "sort",
+      "image",
+      "pubDate",
+      "durPos",
+    ],
   );
 
   @override

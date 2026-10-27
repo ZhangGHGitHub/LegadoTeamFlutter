@@ -1229,12 +1229,18 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
   void _openDetail(RssFeedArticle article) {
     // [UI-fix v2.0.2 | 2026-08-06] 接通 rssMarkRead FFI（对标原版
     // RssReadViewModel.recordRead），失败不阻断阅读 — Qoder
+    // 批20：对齐原版 `RssArticle.toRecord()`，同批写入
+    // type/sort/image/pubDate（durPos 文章 DTO 无对应字段，留空）。
     ref
         .read(bookApiProvider)
         .rssMarkRead(
           widget.source.sourceUrl,
           article.title,
-          hasRssArticleLink(article.url) ? article.url : null,
+          link: hasRssArticleLink(article.url) ? article.url : null,
+          type: article.type,
+          sort: article.sort,
+          image: article.imageUrl,
+          pubDate: article.pubDate,
         )
         .catchError((_) {});
     openRssArticle(
@@ -1644,6 +1650,9 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
   }
 
   /// 点击记录重读（同列表页：透传 origin，按源 type 分流阅读）
+  ///
+  /// 批20：记录自带 `type` 优先（0 网页 / 1 图片 / 2 视频），源 `type` 仅兜底；
+  /// `sort` / `image` / `pubDate` 一并透传，对齐原版 `record.toRssArticle()`。
   void _openRecord(RssReadRecordRow record) {
     Navigator.of(context).pop(); // 对标原版点击后 dismiss
     final link = record.link ?? '';
@@ -1668,6 +1677,10 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
       article: RssFeedArticle(
         title: record.title,
         url: hasLink ? link : '',
+        sort: record.sort,
+        pubDate: record.pubDate,
+        imageUrl: record.image,
+        type: record.type,
       ),
       source: source,
       sourceName: sourceName,

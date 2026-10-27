@@ -391,10 +391,28 @@ mixin RustApiSearchRss on RustApiDecode implements BookApi {
 
   // ========== RSS 已读记录 ==========
 
-  /// 标记 RSS 文章为已读
+  /// 标记 RSS 文章为已读（批20：扩展 type/sort/image/pubDate/durPos）
   @override
-  Future<void> rssMarkRead(String origin, String title, [String? link]) =>
-      bridge.rssMarkRead(origin: origin, title: title, link: link);
+  Future<void> rssMarkRead(
+    String origin,
+    String title, {
+    String? link,
+    int type = 0,
+    String? sort,
+    String? image,
+    String? pubDate,
+    int? durPos,
+  }) =>
+      bridge.rssMarkRead(
+        origin: origin,
+        title: title,
+        link: link,
+        articleType: type,
+        sort: sort,
+        image: image,
+        pubDate: pubDate,
+        durPos: durPos,
+      );
 
   /// 判断 RSS 文章是否已读（按 link）
   @override

@@ -33,6 +33,21 @@ mixin _$RssReadRecordRow {
   @JsonKey(name: 'read_time')
   int get readTime => throw _privateConstructorUsedError;
 
+  /// 类型：0 网页 / 1 图片 / 2 视频（旧数据缺省 0）
+  int get type => throw _privateConstructorUsedError;
+
+  /// 分类名（旧数据缺省空串）
+  String get sort => throw _privateConstructorUsedError;
+
+  /// 封面图
+  String? get image => throw _privateConstructorUsedError;
+
+  /// 发布时间（原版 Room 列 `pubDate` 为 TEXT）
+  String? get pubDate => throw _privateConstructorUsedError;
+
+  /// 阅读进度（旧数据缺省 0）
+  int get durPos => throw _privateConstructorUsedError;
+
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
   $RssReadRecordRowCopyWith<RssReadRecordRow> get copyWith =>
@@ -49,7 +64,12 @@ abstract class $RssReadRecordRowCopyWith<$Res> {
       {String origin,
       String title,
       String? link,
-      @JsonKey(name: 'read_time') int readTime});
+      @JsonKey(name: 'read_time') int readTime,
+      int type,
+      String sort,
+      String? image,
+      String? pubDate,
+      int durPos});
 }
 
 /// @nodoc
@@ -69,6 +89,11 @@ class _$RssReadRecordRowCopyWithImpl<$Res, $Val extends RssReadRecordRow>
     Object? title = null,
     Object? link = freezed,
     Object? readTime = null,
+    Object? type = null,
+    Object? sort = null,
+    Object? image = freezed,
+    Object? pubDate = freezed,
+    Object? durPos = null,
   }) {
     return _then(_value.copyWith(
       origin: null == origin
@@ -87,6 +112,26 @@ class _$RssReadRecordRowCopyWithImpl<$Res, $Val extends RssReadRecordRow>
           ? _value.readTime
           : readTime // ignore: cast_nullable_to_non_nullable
               as int,
+      type: null == type
+          ? _value.type
+          : type // ignore: cast_nullable_to_non_nullable
+              as int,
+      sort: null == sort
+          ? _value.sort
+          : sort // ignore: cast_nullable_to_non_nullable
+              as String,
+      image: freezed == image
+          ? _value.image
+          : image // ignore: cast_nullable_to_non_nullable
+              as String?,
+      pubDate: freezed == pubDate
+          ? _value.pubDate
+          : pubDate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      durPos: null == durPos
+          ? _value.durPos
+          : durPos // ignore: cast_nullable_to_non_nullable
+              as int,
     ) as $Val);
   }
 }
@@ -103,7 +148,12 @@ abstract class _$$RssReadRecordRowImplCopyWith<$Res>
       {String origin,
       String title,
       String? link,
-      @JsonKey(name: 'read_time') int readTime});
+      @JsonKey(name: 'read_time') int readTime,
+      int type,
+      String sort,
+      String? image,
+      String? pubDate,
+      int durPos});
 }
 
 /// @nodoc
@@ -121,6 +171,11 @@ class __$$RssReadRecordRowImplCopyWithImpl<$Res>
     Object? title = null,
     Object? link = freezed,
     Object? readTime = null,
+    Object? type = null,
+    Object? sort = null,
+    Object? image = freezed,
+    Object? pubDate = freezed,
+    Object? durPos = null,
   }) {
     return _then(_$RssReadRecordRowImpl(
       origin: null == origin
@@ -139,6 +194,26 @@ class __$$RssReadRecordRowImplCopyWithImpl<$Res>
           ? _value.readTime
           : readTime // ignore: cast_nullable_to_non_nullable
               as int,
+      type: null == type
+          ? _value.type
+          : type // ignore: cast_nullable_to_non_nullable
+              as int,
+      sort: null == sort
+          ? _value.sort
+          : sort // ignore: cast_nullable_to_non_nullable
+              as String,
+      image: freezed == image
+          ? _value.image
+          : image // ignore: cast_nullable_to_non_nullable
+              as String?,
+      pubDate: freezed == pubDate
+          ? _value.pubDate
+          : pubDate // ignore: cast_nullable_to_non_nullable
+              as String?,
+      durPos: null == durPos
+          ? _value.durPos
+          : durPos // ignore: cast_nullable_to_non_nullable
+              as int,
     ));
   }
 }
@@ -150,7 +225,12 @@ class _$RssReadRecordRowImpl implements _RssReadRecordRow {
       {this.origin = '',
       this.title = '',
       this.link,
-      @JsonKey(name: 'read_time') this.readTime = 0});
+      @JsonKey(name: 'read_time') this.readTime = 0,
+      this.type = 0,
+      this.sort = '',
+      this.image,
+      this.pubDate,
+      this.durPos = 0});
 
   factory _$RssReadRecordRowImpl.fromJson(Map<String, dynamic> json) =>
       _$$RssReadRecordRowImplFromJson(json);
@@ -174,9 +254,32 @@ class _$RssReadRecordRowImpl implements _RssReadRecordRow {
   @JsonKey(name: 'read_time')
   final int readTime;
 
+  /// 类型：0 网页 / 1 图片 / 2 视频（旧数据缺省 0）
+  @override
+  @JsonKey()
+  final int type;
+
+  /// 分类名（旧数据缺省空串）
+  @override
+  @JsonKey()
+  final String sort;
+
+  /// 封面图
+  @override
+  final String? image;
+
+  /// 发布时间（原版 Room 列 `pubDate` 为 TEXT）
+  @override
+  final String? pubDate;
+
+  /// 阅读进度（旧数据缺省 0）
+  @override
+  @JsonKey()
+  final int durPos;
+
   @override
   String toString() {
-    return 'RssReadRecordRow(origin: $origin, title: $title, link: $link, readTime: $readTime)';
+    return 'RssReadRecordRow(origin: $origin, title: $title, link: $link, readTime: $readTime, type: $type, sort: $sort, image: $image, pubDate: $pubDate, durPos: $durPos)';
   }
 
   @override
@@ -188,12 +291,18 @@ class _$RssReadRecordRowImpl implements _RssReadRecordRow {
             (identical(other.title, title) || other.title == title) &&
             (identical(other.link, link) || other.link == link) &&
             (identical(other.readTime, readTime) ||
-                other.readTime == readTime));
+                other.readTime == readTime) &&
+            (identical(other.type, type) || other.type == type) &&
+            (identical(other.sort, sort) || other.sort == sort) &&
+            (identical(other.image, image) || other.image == image) &&
+            (identical(other.pubDate, pubDate) || other.pubDate == pubDate) &&
+            (identical(other.durPos, durPos) || other.durPos == durPos));
   }
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(runtimeType, origin, title, link, readTime);
+  int get hashCode => Object.hash(runtimeType, origin, title, link, readTime,
+      type, sort, image, pubDate, durPos);
 
   @JsonKey(ignore: true)
   @override
@@ -215,7 +324,12 @@ abstract class _RssReadRecordRow implements RssReadRecordRow {
       {final String origin,
       final String title,
       final String? link,
-      @JsonKey(name: 'read_time') final int readTime}) = _$RssReadRecordRowImpl;
+      @JsonKey(name: 'read_time') final int readTime,
+      final int type,
+      final String sort,
+      final String? image,
+      final String? pubDate,
+      final int durPos}) = _$RssReadRecordRowImpl;
 
   factory _RssReadRecordRow.fromJson(Map<String, dynamic> json) =
       _$RssReadRecordRowImpl.fromJson;
@@ -237,6 +351,26 @@ abstract class _RssReadRecordRow implements RssReadRecordRow {
   /// 阅读时间（Unix 毫秒）
   @JsonKey(name: 'read_time')
   int get readTime;
+  @override
+
+  /// 类型：0 网页 / 1 图片 / 2 视频（旧数据缺省 0）
+  int get type;
+  @override
+
+  /// 分类名（旧数据缺省空串）
+  String get sort;
+  @override
+
+  /// 封面图
+  String? get image;
+  @override
+
+  /// 发布时间（原版 Room 列 `pubDate` 为 TEXT）
+  String? get pubDate;
+  @override
+
+  /// 阅读进度（旧数据缺省 0）
+  int get durPos;
   @override
   @JsonKey(ignore: true)
   _$$RssReadRecordRowImplCopyWith<_$RssReadRecordRowImpl> get copyWith =>

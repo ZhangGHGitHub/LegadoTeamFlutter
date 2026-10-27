@@ -457,7 +457,20 @@ abstract class BookApi {
   // ========== RSS 已读记录 ==========
 
   /// 标记 RSS 文章为已读
-  Future<void> rssMarkRead(String origin, String title, [String? link]);
+  ///
+  /// 批20（契约 §2.35）：可选写入 `type`（0 网页 / 1 图片 / 2 视频）、
+  /// `sort` 分类、`image` 封面、`pubDate` 发布时间、`durPos` 阅读进度；
+  /// 缺省 `type=0`、其余为空，旧调用行为不变。
+  Future<void> rssMarkRead(
+    String origin,
+    String title, {
+    String? link,
+    int type = 0,
+    String? sort,
+    String? image,
+    String? pubDate,
+    int? durPos,
+  });
 
   /// 判断 RSS 文章是否已读（按 link）
   Future<bool> rssIsRead(String link);

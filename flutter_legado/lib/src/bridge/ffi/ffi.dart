@@ -817,15 +817,28 @@ Future<bool> rssStarDelete({required String link}) =>
 Future<bool> rssStarIsStarred({required String link}) =>
     RustLib.instance.api.crateFfiFfiRssStarIsStarred(link: link);
 
-/// 标记 RSS 文章为已读
+/// 标记 RSS 文章为已读（批20：可选扩展字段 type/sort/image/pubDate/durPos）
+///
+/// 缺省值：`type=0`、`sort=''`、`image/pubDate=NULL`、`durPos=0`；
+/// 旧调用不传扩展字段时行为与批20 前一致。
 Future<void> rssMarkRead({
   required String origin,
   required String title,
   String? link,
+  int? articleType,
+  String? sort,
+  String? image,
+  String? pubDate,
+  int? durPos,
 }) => RustLib.instance.api.crateFfiFfiRssMarkRead(
   origin: origin,
   title: title,
   link: link,
+  articleType: articleType,
+  sort: sort,
+  image: image,
+  pubDate: pubDate,
+  durPos: durPos,
 );
 
 /// 判断 RSS 文章是否已读（按 link）

@@ -516,6 +516,10 @@ class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
 
   /// 点击记录重读（对标原版 `ReadRss.readRss(record)`：按 record.origin 取源
   /// 打开文章阅读页；批15f 按源 `type` 分流图片/视频/网页）
+  ///
+  /// 批20：记录自带 `type`（0 网页 / 1 图片 / 2 视频）时以记录为准，
+  /// 源 `type` 仅兜底（`openRssArticle` 内 `resolveRssArticleType` 同语义）；
+  /// `sort` / `image` / `pubDate` 一并透传，对齐原版 `record.toRssArticle()`。
   void _openRecord(RssReadRecordRow record) {
     Navigator.of(context).pop(); // 对标原版点击后 dismiss
     final link = record.link ?? '';
@@ -535,6 +539,10 @@ class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
       article: RssFeedArticle(
         title: record.title,
         url: hasLink ? link : '',
+        sort: record.sort,
+        pubDate: record.pubDate,
+        imageUrl: record.image,
+        type: record.type,
       ),
       source: source,
       sourceName: _sourceNameOf(record.origin),

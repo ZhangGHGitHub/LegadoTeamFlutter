@@ -598,13 +598,27 @@ mixin MockBookApiSearchRss on MockBookApiStore implements BookApi {
   final List<Map<String, dynamic>> _rssReadRecords = [];
 
   @override
-  Future<void> rssMarkRead(String origin, String title, [String? link]) async {
+  Future<void> rssMarkRead(
+    String origin,
+    String title, {
+    String? link,
+    int type = 0,
+    String? sort,
+    String? image,
+    String? pubDate,
+    int? durPos,
+  }) async {
     if (link != null) _rssReadLinks.add(link);
     _rssReadRecords.insert(0, {
       'origin': origin,
       'title': title,
       'link': link,
       'read_time': DateTime.now().millisecondsSinceEpoch,
+      'type': type,
+      'sort': sort ?? '',
+      'image': image,
+      'pubDate': pubDate,
+      'durPos': durPos ?? 0,
     });
   }
 
