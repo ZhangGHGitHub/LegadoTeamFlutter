@@ -10,6 +10,7 @@
 #   .\scripts\emulator_smoke_test.ps1 -SkipBuild              # 复用已有 APK
 #   .\scripts\emulator_smoke_test.ps1 -CheckUI                 # 追加 UI 元素检查（自动关崩溃弹窗）
 #   .\scripts\emulator_smoke_test.ps1 -CheckPlayback           # 追加听书前台服务检查
+#   .\scripts\emulator_smoke_test.ps1 -DisplayId 0             # 多屏：显式指定逻辑 display（默认自动探测）
 # 退出码：0=通过；1=失败（可用于 CI/子代理验收门禁）。失败来源：
 #   设备离线 / APK 构建失败 / 安装失败 / 已装版本与 pubspec 不一致 /
 #   进程未存活 / 崩溃日志命中 / 历史崩溃弹窗无法关闭 / UI 元素未检出 /
@@ -21,6 +22,11 @@ param(
   [switch]$SkipBuild,
   [switch]$CheckUI,
   [switch]$CheckPlayback,
+  # 多屏逻辑 display id（批23b）：-1=自动探测应用窗口所在 display，>=0 显式
+  # 指定。模拟器（如 MuMu）可能把应用窗口挂在独立逻辑 display 上，input 默认
+  # 发往 display 0 会点不中；该 id 在 force-stop 后可能变化，自动模式在每次
+  # 点击前重新探测（探测失败回落 0）。
+  [int]$DisplayId = -1,
   # 默认相对仓库根目录 flutter_legado/；可用 -FlutterDir 或环境变量 LEGADO_FLUTTER_DIR 覆盖
   [string]$FlutterDir = "",
   # 注意：与 android/app/build.gradle.kts 的 applicationId 保持同步
@@ -49,15 +55,36 @@ $FlutterDir = (Resolve-Path $FlutterDir -ErrorAction Stop).Path
 function Pass([string]$msg) { $script:pass++; Write-Host "[PASS] $msg" -ForegroundColor Green }
 function Fail([string]$msg) { $script:fail++; Write-Host "[FAIL] $msg" -ForegroundColor Red }
 
-# ---- UI dump / 历史崩溃弹窗处理（批23）----
+# ---- UI dump / 历史崩溃弹窗处理（批23，批23b 加固）----
 # 背景：应用若上次崩溃，冷启动会弹出「上次运行发生崩溃」模态框
 # （CrashLogDialog / showDialog barrierDismissible=false）。弹窗会覆盖主界面，
 # 使 -CheckUI 的底栏语义文本被遮蔽（uiautomator dump 读不到或点不中），
 # 造成「UI 未渲染」的假失败。处理：UI 断言前先 dump，命中弹窗文案即点
 # 「确定」（其 onPressed 会清除 crash_log 存根，避免下次启动重复弹）；
 # 找不到「确定」节点时退回系统返回键（能关窗但不清存根）。
+# 批23b：① 识别收紧为「标题」或（「崩溃时间」且存在「确定」）；② 关闭只
+# 尝试一次，失败立即 Fail 并注明不再重试；③ 点击带 -d 逻辑 display（多屏）；
+# ④ 中文字面量统一由 UTF-8 字节构造并做启动自检。
 $UiRemotePath = "/sdcard/ui_smoke.xml"
 $UiLocalPath = Join-Path $env:TEMP ("ui_smoke_" + ($Device -replace '[^\w\.-]', '_') + ".xml")
+
+function Decode-Utf8([int[]]$Bytes) {
+  return [System.Text.Encoding]::UTF8.GetString([byte[]]$Bytes)
+}
+
+# 中文常量：UTF-8 字节构造，避免 .ps1 编码被改写（GBK / 无 BOM）后静默失配
+$CrashTitleText = Decode-Utf8 @(
+  0xE4,0xB8,0x8A,0xE6,0xAC,0xA1,0xE8,0xBF,0x90,0xE8,0xA1,0x8C,
+  0xE5,0x8F,0x91,0xE7,0x94,0x9F,0xE5,0xB4,0xA9,0xE6,0xBA,0x83
+)
+$CrashTimeText = Decode-Utf8 @(0xE5,0xB4,0xA9,0xE6,0xBA,0x83,0xE6,0x97,0xB6,0xE9,0x97,0xB4)
+$ConfirmText = Decode-Utf8 @(0xE7,0xA1,0xAE,0xE5,0xAE,0x9A)
+# 启动自检：长度不符说明源码编码/字节常量已损坏，直接失败而非静默跳过弹窗
+if ($CrashTitleText.Length -ne 8 -or $CrashTimeText.Length -ne 4 -or $ConfirmText.Length -ne 2) {
+  Write-Host "[FAIL] 中文常量自检失败（脚本必须保持 UTF-8 with BOM）" -ForegroundColor Red
+  exit 1
+}
+$script:crashDismissFailed = $false
 
 function Get-UiDump {
   # 部分 ROM 的 uiautomator 写完转储即自杀（输出噪声/退出码非 0），
@@ -78,18 +105,38 @@ function Get-UiDump {
 }
 
 function Test-CrashDialogXml([string]$xml) {
-  return ($xml -match '上次运行发生崩溃') -or ($xml -match '崩溃时间')
+  # 收紧识别（批23b）：标题命中；或「崩溃时间」与「确定」按钮同时存在。
+  # 仅出现「崩溃时间」而无「确定」的页面（如日志查看/详情页）不再误判。
+  if ($xml -match [regex]::Escape($CrashTitleText)) { return $true }
+  return (($xml -match [regex]::Escape($CrashTimeText)) -and
+    ($xml -match [regex]::Escape($ConfirmText)))
+}
+
+# 多屏（批23b）：应用窗口所在逻辑 display。显式 -DisplayId 优先；自动模式
+# 解析 `dumpsys window windows` 的 Display 段，探测失败回落 0（保持原行为）。
+function Resolve-DisplayId {
+  if ($DisplayId -ge 0) { return $DisplayId }
+  $dump = & $adb -s $Device shell dumpsys window windows 2>$null
+  $current = 0
+  foreach ($line in $dump) {
+    if ($line -match 'mDisplayId=(\d+)') { $current = [int]$Matches[1] }
+    elseif ($line -match [regex]::Escape($Package)) { return $current }
+  }
+  return 0
 }
 
 function Close-CrashDialogOnce {
-  # 返回值：$true=本次发现崩溃弹窗并已尝试关闭；$false=当前无弹窗
+  # 返回值：$true=当前存在崩溃弹窗（已尝试关闭或此前已失败）；$false=无弹窗
+  if ($script:crashDismissFailed) { return $true }  # 失败后不再重试/重复计数
   $xml = Get-UiDump
   if (-not (Test-CrashDialogXml $xml)) { return $false }
   Write-Host "==> 检测到历史崩溃弹窗，尝试关闭 ..."
   $tap = $null
   foreach ($m in [regex]::Matches($xml, '<node\b[^>]*>')) {
     $tag = $m.Value
-    if ($tag -notmatch 'text="确定"' -and $tag -notmatch 'content-desc="确定"') { continue }
+    $hasText = $tag.Contains('text="' + $ConfirmText + '"')
+    $hasDesc = $tag.Contains('content-desc="' + $ConfirmText + '"')
+    if (-not $hasText -and -not $hasDesc) { continue }
     if ($tag -match 'bounds="\[(\d+),(\d+)\]\[(\d+),(\d+)\]"') {
       $x = [int](([int]$Matches[1] + [int]$Matches[3]) / 2)
       $y = [int](([int]$Matches[2] + [int]$Matches[4]) / 2)
@@ -98,13 +145,17 @@ function Close-CrashDialogOnce {
     }
   }
   if ($tap) {
-    & $adb -s $Device shell input tap $tap[0] $tap[1] 2>&1 | Out-Null
+    $targetDisplay = Resolve-DisplayId
+    Write-Host "==> 点击 display $targetDisplay ($($tap[0]),$($tap[1]))"
+    & $adb -s $Device shell input -d $targetDisplay tap $tap[0] $tap[1] 2>&1 | Out-Null
   } else {
     & $adb -s $Device shell input keyevent KEYCODE_BACK 2>&1 | Out-Null
   }
   Start-Sleep -Seconds 2
   if (Test-CrashDialogXml (Get-UiDump)) {
-    Fail "历史崩溃弹窗关闭失败（弹窗仍在，UI 断言可能被遮蔽）"
+    # 单次关闭失败即 Fail：不重试、不重复计数（避免轮询循环刷多条 Fail）
+    $script:crashDismissFailed = $true
+    Fail "历史崩溃弹窗关闭失败（仅尝试一次，不再重试；UI 断言可能被遮蔽）"
   } else {
     Pass "历史崩溃弹窗已关闭（不再遮蔽 UI 断言）"
   }
@@ -232,7 +283,12 @@ if ($CheckUI) {
   $found = @()
   for ($uiTry = 0; $uiTry -lt 15; $uiTry++) {
     # 弹窗也可能在轮询期间才出现：每轮先兜底关闭，关闭后重查语义树
-    if (Close-CrashDialogOnce) { Start-Sleep -Seconds 1; continue }
+    if (Close-CrashDialogOnce) {
+      # 单次关闭失败已 Fail：立即结束 UI 断言，不再空转/重复计数
+      if ($script:crashDismissFailed) { break }
+      Start-Sleep -Seconds 1
+      continue
+    }
     $xmlText = Get-UiDump
     $found = $uiTabLabels | Where-Object { $xmlText -match [regex]::Escape($_) }
     if ($found.Count -ge 2) { break }
