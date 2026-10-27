@@ -108,11 +108,11 @@ $adb = "D:\Android\platform-tools\adb.exe"
 
 ---
 
-## 批次风险登记（2026-10-27 批24b：7z 导入）
+## 批次风险登记（2026-10-27 批24b/24c：7z 导入）
 
 | ID | 项 | 状态 | 说明 / 缓解 |
 |---|---|---|---|
-| 7Z-1 | 7z 编码头解码内存无上限 | 🟡 已缓解（残余） | `sevenz-rust2 0.24.1` 解码头使用 `MAX_MEM_LIMIT_KB = usize::MAX/1024`（等同无上限），恶意头可声明 4 GiB LZMA 字典触发 OOM（仅 DoS，无 RCE）。**既有输入 512 MiB 限额只约束磁盘文件，不覆盖头部解码阶段的内存**。已加 32 字节签名头预检：`NextHeaderSize > 64 MiB` 拒绝（`legado-book/src/archive.rs::precheck_7z_signature_header`），伪造头单测覆盖；**编码头内部字典声明仍不受控**，需上游提供 mem limit 设置面后再收紧。契约 §2.34 批24b 补记同载 |
+| 7Z-1 | 7z 编码头解码内存无上限（仅明文头部受限） | 🟡 已缓解（残余） | `sevenz-rust2 0.24.1` 解码头使用 `MAX_MEM_LIMIT_KB = usize::MAX/1024`（等同无上限），恶意头可声明超大 LZMA 字典或超大 unpack size 触发 OOM（仅 DoS，无 RCE）。**上游 `init_archive` 已先拒绝 `next_header_size > reader_len`**（声明值不得超过实际文件长度），故 32 字节签名头预检（`NextHeaderSize > 64 MiB` 拒绝，`legado-book/src/archive.rs::precheck_7z_signature_header`，伪造头单测覆盖）属**纵深防御**，仅进一步收紧**头部明文缓冲区**。**未缓解向量**：编码头解码输出（`take(unpack_size).read_to_end` 按实际解码字节增长）与编码头内部 LZMA 字典分配（`ArchiveReader::open` 期间按属性分配）均不受 64 MiB 门槛约束；**仅头部明文缓冲区受限，解码内存未缓解**，需上游提供 mem limit 设置面后再收紧。契约 §2.34 批24c 补记同载 |
 | 7Z-2 | 7z PackInfo pack stream CRC 不校验 | 🟡 已登记 | 上游解析 `pack_crcs` 但不使用；条目级仍校验块 CRC（单子流块）或子流 CRC（`file.has_crc`）。多子流块且缺子流 CRC 时无完整性保护；本批不额外实现 CRC（需复刻上游解析），损坏通常仍在解码/长度处失败 |
 
 ---
