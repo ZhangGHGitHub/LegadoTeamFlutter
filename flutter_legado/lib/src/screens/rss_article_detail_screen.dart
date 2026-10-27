@@ -32,6 +32,9 @@ import '../widgets/open_url_confirm_dialog.dart';
 /// `contentWhitelist`/`contentBlacklist`/`shouldOverrideUrlLoading` 全部接线；
 /// 无正文且无 `ruleContent` 时按原版 `RssReadLoadTarget.Url` 直接加载文章
 /// 链接（而非只显示空态）。
+///
+/// 批15g④：`singleUrl` 源强制 URL 直开（对齐 `ReadRssViewModel.kt:127`），
+/// 由订阅源列表透传 `rssSortUrls` 解析出的 http(s) 地址。
 class RssArticleDetailScreen extends ConsumerStatefulWidget {
   final RssFeedArticle article;
   final String sourceName;
@@ -163,11 +166,14 @@ class _RssArticleDetailScreenState
   ///
   /// 1. 解析源（widget.source 优先，否则 `getRssSources()` 反查）；
   /// 2. `startHtml` 非空 → 起始页（注入 `startJs`、`startStyle ?? style`）；
-  /// 3. 自带 `content`/`description` 有值 → 正文 WebView（`description` 为空
+  /// 3. 源 `singleUrl` → 强制 URL 直开（对齐 `ReadRssViewModel.kt:124-127`
+  ///    的 `ruleContent.isNullOrBlank() || rssSource?.singleUrl == true`，
+  ///    批15g④：singleUrl http(s) 由列表页透传解析后的地址）；
+  /// 4. 自带 `content`/`description` 有值 → 正文 WebView（`description` 为空
   ///    且 `ruleContent` 非空时并行抓规则正文并替换，审查 P2-1）；
-  /// 4. 否则 `ruleContent` 非空 → 抓规则正文；
-  /// 5. 否则文章链接/源 URL 非空 → URL 直开（`RssReadLoadTarget.Url`）；
-  /// 6. 全都为空 → 空态（浏览器打开原文入口）。
+  /// 5. 否则 `ruleContent` 非空 → 抓规则正文；
+  /// 6. 否则文章链接/源 URL 非空 → URL 直开（`RssReadLoadTarget.Url`）；
+  /// 7. 全都为空 → 空态（浏览器打开原文入口）。
   Future<void> _bootstrapReading() async {
     final source = widget.source ?? await _resolveSource();
     if (!mounted) return;
@@ -181,6 +187,15 @@ class _RssArticleDetailScreenState
       await _initWebView();
       // [批15f 审查 P0-1] 起始页无 `_articleHtml`，控制器创建后显式重建，
       // 让内容区从空态切到 WebView（加载事件之外的兜底刷新）。
+      if (mounted) setState(() {});
+      return;
+    }
+
+    // 批15g④：singleUrl 源无视规则正文，直接加载地址（对齐原版
+    // `ReadRssViewModel.kt:127` 的 singleUrl 强制 loadUrl 分支）。
+    if (source?.singleUrl ?? false) {
+      _urlMode = true;
+      await _initWebView();
       if (mounted) setState(() {});
       return;
     }
@@ -422,22 +437,8 @@ class _RssArticleDetailScreenState
         await controller.loadHtmlString(processed, baseUrl: baseUrl);
         return;
       }
-      final html = _articleHtml;
-      if (html != null) {
-        // 无源信息时保留既有响应式样式（历史入口/旧数据兼容）
-        final processed = source == null
-            ? _wrapHtmlWithStyle(html)
-            : rssClHtml(
-                html,
-                style: source.style,
-                preloadJs: source.preloadJs,
-              );
-        final baseUrl = source == null || source.loadWithBaseUrl
-            ? _htmlBaseUrl(widget.article.url)
-            : null;
-        await controller.loadHtmlString(processed, baseUrl: baseUrl);
-        return;
-      }
+      // URL 直开优先于正文：singleUrl 源即使带正文也按地址加载
+      // （对齐 `ReadRssViewModel.kt:127`，批15g④）。
       if (_urlMode) {
         final target = widget.article.url.trim().isNotEmpty
             ? widget.article.url.trim()
@@ -453,6 +454,22 @@ class _RssArticleDetailScreenState
           return;
         }
         await controller.loadRequest(uri, headers: headers);
+        return;
+      }
+      final html = _articleHtml;
+      if (html != null) {
+        // 无源信息时保留既有响应式样式（历史入口/旧数据兼容）
+        final processed = source == null
+            ? _wrapHtmlWithStyle(html)
+            : rssClHtml(
+                html,
+                style: source.style,
+                preloadJs: source.preloadJs,
+              );
+        final baseUrl = source == null || source.loadWithBaseUrl
+            ? _htmlBaseUrl(widget.article.url)
+            : null;
+        await controller.loadHtmlString(processed, baseUrl: baseUrl);
         return;
       }
       if (mounted) setState(() => _isWebLoading = false);
@@ -984,8 +1001,8 @@ $htmlContent
 
     // [批15f] URL 直开模式（无正文/无 ruleContent，对齐
     // `RssReadLoadTarget.Url`）：直接渲染文章链接的 WebView 页面。
-    if (html == null &&
-        _urlMode &&
+    // 批15g④：singleUrl 源强制走本分支（即使文章带正文也以地址为准）。
+    if (_urlMode &&
         _isWebViewSupported &&
         _useWebView &&
         _webViewController != null) {

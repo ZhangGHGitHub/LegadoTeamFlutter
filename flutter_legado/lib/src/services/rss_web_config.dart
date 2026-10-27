@@ -99,6 +99,18 @@ bool rssIsTrue(String? value) {
   ).hasMatch(text);
 }
 
+/// singleUrl 订阅源打开分流（对齐 `RssFragment.openRss`，`RssFragment.kt:180-196`）
+///
+/// 原版：`url.startsWith("http", true)` → `ReadRssActivity.start(..., url)`
+/// （站内阅读 WebView URL 直开）；否则 `context?.openUrl(url)`（系统处理）。
+/// 本函数按 scheme 精确判定 http/https，避免 `httpx:` 之类误命中。
+bool rssIsHttpUrl(String url) {
+  final uri = Uri.tryParse(url.trim());
+  if (uri == null) return false;
+  final scheme = uri.scheme.toLowerCase();
+  return scheme == 'http' || scheme == 'https';
+}
+
 /// 单条白/黑名单模式是否命中 URL
 ///
 /// 对齐原版：`url.startsWith(pattern) || url.matches(pattern.toRegex())`；

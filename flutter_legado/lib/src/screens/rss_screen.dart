@@ -12,6 +12,7 @@ import '../providers/providers.dart';
 import '../providers/rss/rss_notifier.dart';
 import '../providers/rss_history/rss_history_notifier.dart';
 import '../routes.dart';
+import '../services/rss_web_config.dart';
 import '../widgets/app_scaffold.dart';
 import '../widgets/confirm_dialog.dart';
 import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4] 下拉 M3 化
@@ -267,7 +268,9 @@ class _RssScreenState extends ConsumerState<RssScreen> {
   ///
   /// - `singleUrl`：先经 `rssSortUrls` 取首项 URL（`@js:`/`::`/缓存已由
   ///   Rust 处理；对齐 `RssViewModel.getSingleUrl`，`RssViewModel.kt:48-80`），
-  ///   失败回退 `sourceUrl`；http(s) 走应用内浏览器，其余交系统；
+  ///   失败回退 `sourceUrl`；http(s) 走站内阅读 WebView（对齐
+  ///   `RssFragment.kt:180-196` 的 `ReadRssActivity.start(..., url)`），
+  ///   其余交系统处理；
   /// - 非 `singleUrl` 且配置了静态 `startHtml`：直接打开起始页阅读
   ///   （对齐 `launchRssWithHtml`；`@js:`/`<js>` 求值无 FFI，登记 15g）；
   /// - 否则进入文章列表。
@@ -275,12 +278,22 @@ class _RssScreenState extends ConsumerState<RssScreen> {
     if (source.singleUrl) {
       final url = await _resolveSingleUrl(source);
       if (!mounted) return;
-      if (url.toLowerCase().startsWith('http://') ||
-          url.toLowerCase().startsWith('https://')) {
-        await Navigator.pushNamed(
+      if (rssIsHttpUrl(url)) {
+        // 批15g④：http(s) singleUrl 与原版一致走站内阅读 WebView
+        // （URL 直开模式，详情页按源 singleUrl 强制加载该地址）。
+        await Navigator.push(
           context,
-          AppRoutes.browser,
-          arguments: url,
+          MaterialPageRoute(
+            builder: (_) => RssArticleDetailScreen(
+              article: RssFeedArticle(
+                title: source.sourceName,
+                url: url,
+              ),
+              source: source,
+              sourceName: source.sourceName,
+              sourceUrl: source.sourceUrl,
+            ),
+          ),
         );
         return;
       }
