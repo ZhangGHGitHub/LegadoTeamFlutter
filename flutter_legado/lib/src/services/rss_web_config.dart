@@ -52,7 +52,8 @@ String? _preloadScriptTag(String? preloadJs, String? preloadScript) {
   return '<script>${rssEscapeScriptBody(js)}</script>';
 }
 
-/// 桥模式页面脚本隔离（批21c P0-2，批21e P0 改用 HTML5 DOM 解析）
+/// 桥模式页面脚本隔离（批21c P0-2，批21e P0 改用 HTML5 DOM 解析，
+/// 批21f P0 修复 mXSS）
 ///
 /// 启用宿主桥（源 `preloadJs` 非空且 `enableJs`）时，先把文章/起始页 HTML
 /// 中的**页面脚本**剥离，再由调用方注入应用自己的可信脚本（`startJs`/
@@ -62,36 +63,88 @@ String? _preloadScriptTag(String? preloadJs, String? preloadScript) {
 ///
 /// 批21d 的手写「逐标签扫描 + 不动点」会被 HTML5 容忍解析绕过（`<!-->`
 /// 提前闭合注释、`<!x ">`/`<?x ">` 伪注释引号失配、无引号属性内含引号），
-/// 批21e 起改用与浏览器一致的 HTML5 解析器（`package:html`）构建 DOM：
+/// 批21e 起改用与浏览器一致的 HTML5 解析器（`package:html`）构建 DOM。
+///
+/// 批21f P0：**DOM 往返本身会制造 mXSS**。foreign content（`<svg>`/`<math>`
+/// 子树）中的 `style`/`xmp`/`noscript`/`iframe` 等元素，其文本节点在
+/// `package:html` 序列化时按 HTML rawtext 原样输出——输入里实体编码的
+/// `&lt;script&gt;` 在首轮解析时被解码为文本，序列化后变成字面
+/// `<script>…</script>`，浏览器二次解析即执行（终审 5 条 Chrome 向量
+/// `document.title=41..45`）。因此清洗规则调整为：
 /// 1. `parse(html)` 构建 DOM（HTML5 容忍解析；浏览器渲染同一字符串得到同一
 ///    树，因此不存在「词法扫描看不到但浏览器执行」的残余标签）；
-/// 2. 删除所有 `script` 元素（含外链/内联/自闭合/SVG script）；`noscript`
-///    内容按 HTML5 解析为 rawtext（不执行脚本），保留；
-/// 3. 删除 `srcdoc` 与所有 `on*` 内联事件属性（大小写不敏感）；
-/// 4. URL 属性（href/src/action/formaction/xlink:href/poster/background/
+/// 2. **整体删除 `<svg>`、`<math>` 子树**（阅读场景可接受；登记功能损失），
+///    从根上消除 foreign content 序列化差异；
+/// 3. 删除所有 `script` 元素（含外链/内联/自闭合）；`noscript` 内容按
+///    HTML5 解析为 rawtext（不执行脚本），保留；
+/// 4. 删除 `<meta http-equiv=refresh>`（可触发非用户手势导航）与 CSP meta
+///    （`content-security-policy` / `-report-only`，避免页面策略影响注入）；
+/// 5. 删除 `srcdoc` 与所有 `on*` 内联事件属性（大小写不敏感）；
+/// 6. URL 属性（href/src/action/formaction/xlink:href/poster/background/
 ///    cite/longdesc/usemap/manifest/ping/data）值经 HTML 实体解码 + 控制字符
 ///    剔除后判 scheme，拒绝 `javascript:` / `vbscript:` /
 ///    `data:text/html` / `data:image/svg+xml` /
 ///    `data:application/xhtml+xml`；`iframe`/`object`/`embed` 的 `src`/`data`
 ///    额外拒绝**全部** `data:` 文档（批21e P2-3）；
-/// 5. 删除注释节点；
-/// 6. `document.outerHtml` 序列化回字符串。
+/// 7. 删除注释节点；
+/// 8. `document.outerHtml` 序列化回字符串；
+/// 9. **不动点自检**：对序列化结果重新解析并清洗，直到连续两轮结果一致
+///    （上限 3 轮），保证 `strip(strip(x)) == strip(x)`。
 ///
-/// **已知差异（契约 §2.5 批21e 已登记）**：DOM 解析会重排/补全标签（例如
-/// 片段补 `<html><head><body>`、自闭合标签规范化），删除注释节点；相对
-/// 批21d 修正 `<style>/<title>/<textarea>/<noscript>` 内字面 `<script>`
+/// **已知差异（契约 §2.5 批21e/21f 已登记）**：DOM 解析会重排/补全标签
+/// （例如片段补 `<html><head><body>`、自闭合标签规范化），删除注释节点；
+/// 相对批21d 修正 `<style>/<title>/<textarea>/<noscript>` 内字面 `<script>`
 /// 被误删的问题（rawtext/RCDATA 语义下它们不是元素；`<pre>` 内未转义
-/// `<script>` 是真实元素，浏览器同样执行，仍删除）。
+/// `<script>` 是真实元素，浏览器同样执行，仍删除）。**SVG/MathML 内容整体
+/// 丢失**为批21f 安全优先的功能损失（含 SVG 图片/公式）。
 String rssStripPageScripts(String html) {
   if (html.isEmpty) return html;
+  var current = html;
+  String? previous;
+  // 不动点：最多 3 轮；连续两轮一致即提前结束
+  for (var round = 0; round < 3; round++) {
+    final next = _rssStripPageScriptsOnce(current);
+    if (previous != null && next == previous) {
+      current = next;
+      break;
+    }
+    previous = next;
+    current = next;
+  }
+  // 运行时断言（debug/test）：清洗结果必须通过安全自检；release 不额外解析
+  assert(
+    isSanitizedHtmlSafe(current),
+    'rssStripPageScripts 结果未通过安全自检（mXSS 回归）',
+  );
+  return current;
+}
+
+/// 单轮清洗（[rssStripPageScripts] 的不动点内核）
+String _rssStripPageScriptsOnce(String html) {
   final document = html_parser.parse(html);
 
-  // 1) script 元素（noscript 内容由解析器按 rawtext 保留，无元素可删）
+  // 1) 整体删除 foreign content 根（SVG/MathML）：其子树在序列化时可能
+  //    按 HTML rawtext 输出，是批21f 终审 mXSS 的根源。
+  final foreignRoots = <dom.Element>[];
+  for (final element in document.querySelectorAll('*')) {
+    final tag = element.localName;
+    if (tag == 'svg' || tag == 'math') foreignRoots.add(element);
+  }
+  for (final element in foreignRoots) {
+    element.remove();
+  }
+
+  // 2) meta refresh / CSP（refresh 可产生非用户手势跨文档导航）
+  for (final element in document.querySelectorAll('meta')) {
+    if (_rssIsBlockedMeta(element)) element.remove();
+  }
+
+  // 3) script 元素（noscript 内容由解析器按 rawtext 保留，无元素可删）
   for (final element in document.querySelectorAll('script')) {
     element.remove();
   }
 
-  // 2) srcdoc / on* / 危险 URL 属性
+  // 4) srcdoc / on* / 危险 URL 属性
   for (final element in document.querySelectorAll('*')) {
     final rejectAllData =
         _rssEmbeddedDocumentTags.contains(element.localName);
@@ -108,12 +161,63 @@ String rssStripPageScripts(String html) {
     }
   }
 
-  // 3) 注释节点
+  // 5) 注释节点
   _rssRemoveCommentNodes(document);
 
   // 序列化：调用方得到的是浏览器实际渲染的同一棵树（DOM 规范化属已登记
   // 差异），避免「词法看似安全、渲染仍有残余」分叉。
   return document.outerHtml;
+}
+
+/// 清洗结果安全自检（纯函数；测试与运行时断言共用）
+///
+/// 口径与 [rssStripPageScripts] 一致：用同一 HTML5 解析器重新解析后，
+/// 以下任一存在即不安全：
+/// - `script` 元素（含外链/内联）；
+/// - `svg` / `math` 元素（foreign content 子树）；
+/// - `on*` 内联事件、`srcdoc`；
+/// - URL 属性命中危险 scheme（`iframe`/`object`/`embed` 拒绝全部 `data:`）；
+/// - `meta http-equiv=refresh` / CSP meta。
+///
+/// 注意：本函数**不**校验注释节点（注释不可执行，清洗另行删除）。
+bool isSanitizedHtmlSafe(String html) {
+  final document = html_parser.parse(html);
+  if (document.querySelectorAll('script').isNotEmpty) return false;
+  for (final element in document.querySelectorAll('*')) {
+    final tag = element.localName;
+    if (tag == 'svg' || tag == 'math') return false;
+    if (tag == 'meta' && _rssIsBlockedMeta(element)) return false;
+    final rejectAllData = _rssEmbeddedDocumentTags.contains(tag);
+    for (final entry in element.attributes.entries) {
+      final name = entry.key.toString().toLowerCase();
+      if (name == 'srcdoc') return false;
+      if (name.length > 2 && name.startsWith('on')) return false;
+      if (_rssUrlAttributeNames.contains(name) &&
+          _rssIsDangerousUrlValue(
+            entry.value,
+            rejectAllData: rejectAllData,
+          )) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/// 需整体删除的 meta（refresh / CSP；属性名大小写不敏感）
+bool _rssIsBlockedMeta(dom.Element element) {
+  if (element.localName != 'meta') return false;
+  String? httpEquiv;
+  for (final entry in element.attributes.entries) {
+    if (entry.key.toString().toLowerCase() == 'http-equiv') {
+      httpEquiv = entry.value.trim().toLowerCase();
+      break;
+    }
+  }
+  if (httpEquiv == null) return false;
+  return httpEquiv == 'refresh' ||
+      httpEquiv == 'content-security-policy' ||
+      httpEquiv == 'content-security-policy-report-only';
 }
 
 /// 嵌入文档标签：其 `src`/`data` 指向的 `data:` 文档一律拒绝
