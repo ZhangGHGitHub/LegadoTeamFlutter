@@ -27,7 +27,9 @@
 //! - `cache.get` 同步读基于页面镜像（跨页面首次 miss 返回 `null`，写异步落库）；
 //! - `downloadFileAwait` 本批明确返回不支持（文件 API 后置）；
 //! - `@js:`/`<js>` 形式的源 `header` 规则不求值（仅静态 JSON header）；
-//! - `run` 在宿主引擎全局作用域执行，不注入 `*Await`（无事件循环）。
+//! - `run` 在宿主引擎全局作用域执行，不注入 `*Await`（无事件循环）；
+//!   其内嵌 `java.ajax` 也不经源级限流（限流按宿主调用粒度，网络类方法
+//!   每次调用一许可）。
 //!
 //! ## 安全边界
 //!
@@ -79,6 +81,18 @@ const PUBLIC_METHODS: &[&str] = &[
     "readTxtFileAwait",
     "importScriptAwait",
     "getStringAwait",
+];
+
+/// 需要源级限流的网络类方法（`run` 内嵌网络调用不单独限流，已登记差异）
+#[cfg(feature = "quickjs")]
+const NETWORK_METHODS: &[&str] = &[
+    "ajaxAwait",
+    "connectAwait",
+    "getAwait",
+    "headAwait",
+    "postAwait",
+    "webViewAwait",
+    "webViewGetSourceAwait",
 ];
 
 /// `__prepare` 传入的 WebView UA（按源记忆，供后续宿主调用的请求头回落）
@@ -978,6 +992,16 @@ fn host_call(source_url: &str, method: &str, args: &Value) -> LegadoResult<Strin
         return Ok(envelope_error(format!("RSS 源不存在：{source_url}")));
     };
     apply_source_global_headers(&source);
+    // 源级 concurrentRate 限流（网络类方法每次调用一许可；与 RSS 列表/正文
+    // 共享同一 limiter map 与固定窗口语义，空 / "0" / 非法不限流）
+    if NETWORK_METHODS.contains(&method) {
+        let registry = crate::api::source_rate_limit::registry();
+        let url = source.source_url.clone();
+        let rate = source.concurrent_rate.clone();
+        crate::runtime::block_on(async move {
+            registry.acquire_by_source(&url, rate.as_deref()).await;
+        });
+    }
 
     let js_lib = source
         .js_lib

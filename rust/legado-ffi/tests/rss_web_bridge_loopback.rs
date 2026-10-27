@@ -281,6 +281,25 @@ fn rss_web_view_host_bridge_loopback_end_to_end() {
     assert!(head_has(&head, "X-Extra", "e1"), "{head}");
     assert!(head_has(&head, "User-Agent", "UA-Prepare"), "{head}");
 
+    // ─── 3.5) 源 concurrentRate 限流（网络类宿主调用每调用一许可） ─────
+    const RATE_URL: &str = "https://rss-web-bridge-e2e-rate.test/feed";
+    add_source(RATE_URL, json!({ "concurrentRate": "1/300" }));
+    let started = std::time::Instant::now();
+    for _ in 0..2 {
+        let env = call(
+            RATE_URL,
+            "ajaxAwait",
+            json!([format!("{base}/ajax"), "9000"]),
+        );
+        assert_eq!(env["ok"], true, "{env}");
+    }
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed >= std::time::Duration::from_millis(250),
+        "concurrentRate=1/300 时两次 ajaxAwait 应被限流（实际 {elapsed:?}）"
+    );
+    legado_ffi::api::rss::delete_rss_source(RATE_URL).ok();
+
     // ─── 4) run / getStringAwait / 加解密往返 ──────────────────────────
     let env = call(SOURCE_URL, "run", json!(["'run-ok'"]));
     assert_eq!(env["ok"], true, "{env}");
