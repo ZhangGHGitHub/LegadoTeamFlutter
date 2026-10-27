@@ -3,7 +3,8 @@ import 'package:freezed_annotation/freezed_annotation.dart';
 part 'rss_read_record_row.freezed.dart';
 part 'rss_read_record_row.g.dart';
 
-/// RSS 已读记录行（镜像 Rust `RssReadRecordRow`，snake_case 序列化）
+/// RSS 已读记录行（镜像 Rust `RssReadRecordRow`；`read_time` snake_case，
+/// 扩展字段 camelCase（`pubDate` / `durPos`））
 ///
 /// 由 `BookApi.rssListReadRecords` 返回的 Map 解析而来（按阅读时间降序，
 /// 契约见 API_CONTRACT.md §2.35）。Rust 侧返回列为

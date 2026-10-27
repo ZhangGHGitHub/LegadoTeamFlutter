@@ -12,7 +12,8 @@ export 'rss_history_state.dart';
 ///
 /// 职责严格限定（对齐 UI_RESTRUCTURE_PLAN.md §0.2 铁律）：
 /// - 已读记录列表经 `BookApi.rssListReadRecords` 委托 Rust（按阅读时间降序），
-///   返回项经 [RssReadRecordRow.fromJson] 解析（snake_case 字段）。
+///   返回项经 [RssReadRecordRow.fromJson] 解析（`read_time` snake_case；
+///   扩展字段 camelCase（`pubDate` / `durPos`））。
 /// - 清空经 `BookApi.rssClearReadRecords` 委托 Rust，成功后重新拉取列表。
 class RssHistoryNotifier extends Notifier<RssHistoryState> {
   @override

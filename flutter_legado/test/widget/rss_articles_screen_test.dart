@@ -429,6 +429,100 @@ void main() {
     expect(find.text('在浏览器中查看原文'), findsNothing);
   });
 
+  testWidgets('文章页历史入口：记录 type=1 按记录字段打开图片查看器（批20）',
+      (tester) async {
+    final api = MockRustApi();
+    const source = RssSource(sourceUrl: sourceUrl, sourceName: '源A');
+    stubSorts(api, source, const [RssSort(name: '', url: sourceUrl)]);
+    when(
+      () => api.rssRefreshArticles(sourceUrl, '', sourceUrl, key: null),
+    ).thenAnswer((_) async => pageJson([]));
+    when(() => api.rssListReadRecordsByOrigin(sourceUrl, null)).thenAnswer(
+      (_) async => [
+        {
+          'origin': sourceUrl,
+          'title': '图片历史',
+          'link': '$sourceUrl/pic.jpg',
+          'read_time': 1700000000000,
+          'type': 1,
+          'sort': '图片分类',
+          'image': '$sourceUrl/cover.jpg',
+          'pubDate': '2026-10-27',
+          'durPos': 0,
+        },
+      ],
+    );
+    when(() => api.getRssSources()).thenAnswer((_) async => const [source]);
+
+    await pumpScreen(tester, api, source);
+
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('阅读记录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('图片历史'));
+    // 查看器内部为网络图占位，pumpAndSettle 会因动画超时
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+
+    // 记录 type=1 优先于源 type=0：打开图片查看器（url 取记录 link，
+    // title 取记录 title），不进入文章详情
+    final viewer = tester.widget<RssPhotoViewer>(find.byType(RssPhotoViewer));
+    expect(viewer.url, equals('$sourceUrl/pic.jpg'));
+    expect(viewer.title, equals('图片历史'));
+    expect(find.byType(RssArticleDetailScreen), findsNothing);
+  });
+
+  testWidgets('文章页历史入口：记录 sort/image/pubDate 透传文章 DTO（批20）',
+      (tester) async {
+    final api = MockRustApi();
+    const source = RssSource(sourceUrl: sourceUrl, sourceName: '源A');
+    stubSorts(api, source, const [RssSort(name: '', url: sourceUrl)]);
+    when(
+      () => api.rssRefreshArticles(sourceUrl, '', sourceUrl, key: null),
+    ).thenAnswer((_) async => pageJson([]));
+    when(() => api.rssListReadRecordsByOrigin(sourceUrl, null)).thenAnswer(
+      (_) async => [
+        {
+          'origin': sourceUrl,
+          'title': '网页历史',
+          'link': '$sourceUrl/article/1',
+          'read_time': 1700000000000,
+          'type': 0,
+          'sort': '科技',
+          'image': '$sourceUrl/article-cover.jpg',
+          'pubDate': '2026-10-27',
+          'durPos': 0,
+        },
+      ],
+    );
+    when(() => api.getRssSources()).thenAnswer((_) async => const [source]);
+    when(() => api.isStarred(any())).thenAnswer((_) async => false);
+
+    await pumpScreen(tester, api, source);
+
+    await tester.tap(find.byTooltip('更多'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('阅读记录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('网页历史'));
+    // 详情页封面为网络图占位动画，pumpAndSettle 会超时；固定帧推进路由动画
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    final detail = tester.widget<RssArticleDetailScreen>(
+      find.byType(RssArticleDetailScreen),
+    );
+    expect(detail.article.title, equals('网页历史'));
+    expect(detail.article.url, equals('$sourceUrl/article/1'));
+    expect(detail.article.sort, equals('科技'));
+    expect(detail.article.imageUrl, equals('$sourceUrl/article-cover.jpg'));
+    expect(detail.article.pubDate, equals('2026-10-27'));
+    expect(detail.article.type, equals(0));
+  });
+
   testWidgets('打开文章：rssMarkRead 透传 type/sort/image/pubDate（批20）',
       (tester) async {
     final api = MockRustApi();
