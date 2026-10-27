@@ -149,6 +149,115 @@ void main() {
       // 原版）：顶栏标题为「书名 · 章名」，断言包含书名即可 — Qoder
       expect(find.textContaining('测试书籍'), findsWidgets);
     });
+
+    // ===== 批22 P3-1：顶栏 EPUB 组与源菜单可见性（对齐 Kotlin Book.isEpub /
+    // ReadMenu.canPay） =====
+
+    /// WebDAV EPUB（origin 为 `webDav::` 前缀、type=0）：原版 `Book.isEpub`
+    /// 为真，menu_group_epub（删除 Ruby/H 标签）应可见
+    testWidgets('WebDAV EPUB 显示「删除 Ruby/H 标签」菜单项', (tester) async {
+      stubOpenBook();
+      await tester.pumpWidget(wrapStack(ReaderTopBar(
+        onAddBookmark: () {},
+      )));
+      await tester.pump();
+
+      await container.read(readerNotifierProvider.notifier).openBook(
+        const Book(
+          bookUrl: '/tmp/remote.epub',
+          name: '远程 EPUB',
+          origin: 'webDav::https://dav.example.com/books/remote.epub',
+          originName: 'remote.epub',
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.pumpAndSettle();
+
+      expect(find.text('删除 Ruby 标签'), findsOneWidget);
+      expect(find.text('删除 H 标签'), findsOneWidget);
+    });
+
+    /// 打开源操作菜单（点击顶栏书源徽章），注入指定章节的 VIP/付费态
+    Future<void> openSourceMenu(
+      WidgetTester tester, {
+      required String loginUrl,
+      required String? loginUi,
+      required bool isVip,
+      required bool isPay,
+    }) async {
+      when(() => mockApi.getChapters(any())).thenAnswer(
+        (_) async => [
+          BookChapter(title: '第一章', index: 0, isVip: isVip, isPay: isPay),
+        ],
+      );
+      when(() => mockApi.getChapterContentFull(any(), any()))
+          .thenAnswer((_) async => '章节内容');
+      when(() => mockApi.getBookSources()).thenAnswer(
+        (_) async => [
+          BookSource(
+            bookSourceUrl: 'https://source.com',
+            bookSourceName: '源A',
+            loginUrl: loginUrl.isEmpty ? null : loginUrl,
+            loginUi: loginUi,
+          ),
+        ],
+      );
+
+      await tester.pumpWidget(wrapStack(ReaderTopBar(
+        onAddBookmark: () {},
+      )));
+      await tester.pump();
+      await openBookAndPump(tester);
+      await tester.pumpAndSettle();
+
+      // 书源徽章文本回退为「书源」（Book.originName 为空时）
+      await tester.tap(find.text('书源'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('章节购买：已登录 + VIP + 未购买时可见', (tester) async {
+      await openSourceMenu(
+        tester,
+        loginUrl: 'https://login.example.com',
+        loginUi: null,
+        isVip: true,
+        isPay: false,
+      );
+
+      expect(find.text('登录源'), findsOneWidget);
+      expect(find.text('章节购买'), findsOneWidget);
+    });
+
+    testWidgets('章节购买：当前章已购买时隐藏', (tester) async {
+      await openSourceMenu(
+        tester,
+        loginUrl: 'https://login.example.com',
+        loginUi: null,
+        isVip: true,
+        isPay: true,
+      );
+
+      expect(find.text('登录源'), findsOneWidget);
+      expect(find.text('章节购买'), findsNothing);
+    });
+
+    testWidgets('章节购买：书源无登录配置时隐藏（含登录源项）', (tester) async {
+      await openSourceMenu(
+        tester,
+        loginUrl: '',
+        loginUi: '[]',
+        isVip: true,
+        isPay: false,
+      );
+
+      expect(find.text('登录源'), findsNothing);
+      expect(find.text('章节购买'), findsNothing);
+      // 无登录配置时其余源操作项仍可见
+      expect(find.text('编辑源'), findsOneWidget);
+      expect(find.text('禁用源'), findsOneWidget);
+    });
   });
 
   group('ReaderBottomBar（Phase 2.5/2.6 章节导航 + 功能按钮）', () {

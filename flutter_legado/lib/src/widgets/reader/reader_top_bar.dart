@@ -725,6 +725,17 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
     if (!context.mounted) return;
 
     final loginUrl = source?.loginUrl ?? '';
+    // [批22 P3-1] hasLogin 对齐 Kotlin `BaseSource.hasLogin()`
+    // （BaseSource.kt:156-158）：loginUrl 非空或 loginUi 为有效表单
+    // （非空且去空白后不是空数组）。
+    final hasLogin = loginUrl.trim().isNotEmpty ||
+        _hasLoginForm(source?.loginUi);
+    // [批22 P3-1] 章节购买可见性对齐原版 ReadMenu.tvSourceAction
+    // （ReadMenu.kt:477-483）：canPay = hasLogin && isVip && !isPay；
+    // popupActionMenu 的第三参是 visible（不满足则不添加菜单项）。
+    final chapter = ref.read(readerNotifierProvider).currentChapter;
+    final canPay =
+        hasLogin && (chapter?.isVip ?? false) && !(chapter?.isPay ?? false);
     final sourceName =
         (source?.bookSourceName ?? book.originName).trim();
 
@@ -735,10 +746,11 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
       position: RelativeRect.fromLTRB(
           screenWidth - 200, kToolbarHeight + 56, 8, 0),
       items: [
-        if (loginUrl.isNotEmpty)
+        if (hasLogin)
           const PopupMenuItem(value: 'login', child: Text('登录源')),
-        // 本地书隐藏章节购买项（对标原版 isLocal 短路）— Qoder
-        if (book.origin != BookType.localTag)
+        // 章节购买仅在「已登录 + 当前章 VIP + 未购买」时可见
+        // （对齐原版 canPay，本地书因书源不存在自然不满足）
+        if (canPay)
           const PopupMenuItem(value: 'chapterPay', child: Text('章节购买')),
         const PopupMenuItem(value: 'editSource', child: Text('编辑源')),
         const PopupMenuItem(value: 'disableSource', child: Text('禁用源')),
@@ -829,10 +841,22 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
   // ===== [UI-fix v2.0.4 | 2026-08-08] 模块 A 新增：溢出菜单补缺项与
   // 标题附加区辅助 — Qoder =====
 
+  /// 书源登录表单是否有效（对齐 Kotlin `BaseSource.hasLoginForm`：
+  /// loginUi 非空且去空白后不是空数组 `[]`）
+  static bool _hasLoginForm(String? loginUi) {
+    final form = (loginUi ?? '').trim();
+    if (form.isEmpty) return false;
+    return form.replaceAll(RegExp(r'\s+'), '') != '[]';
+  }
+
   /// 是否 EPUB 书籍（对齐 Kotlin Book.isEpub：本地书且文件名 .epub 后缀，
   /// menu_group_epub 仅 EPUB 可见）
+  ///
+  /// [批22 P3-1] 本地判定改用类型感知的 [BookType.isLocalBook]：覆盖
+  /// `webDav::` / 存量 `dav:` 的 WebDAV EPUB（原版 `Book.isEpub` 对
+  /// WebDAV 书为真）；origin-only 判定会漏掉 WebDAV 书。
   bool _isEpub(Book? book) {
-    if (book == null || book.origin != BookType.localTag) return false;
+    if (book == null || !BookType.isLocalBook(book)) return false;
     final name =
         (book.originName.isNotEmpty ? book.originName : book.bookUrl)
             .toLowerCase();
