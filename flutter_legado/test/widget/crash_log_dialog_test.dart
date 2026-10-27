@@ -42,4 +42,28 @@ void main() {
     expect(find.textContaining('崩溃时间:'), findsOneWidget);
     expect(find.textContaining('数据库初始化失败'), findsOneWidget);
   });
+
+  testWidgets('崩溃报告对话框：真实 yyyy-MM-dd HH:mm:ss 时间正常展示', (tester) async {
+    // CrashLogService._formatTime 的实际输出格式：yyyy-MM-dd HH:mm:ss
+    // （无时区/毫秒）。补一条真实格式用例，防止解析/展示回归。
+    final crashLog = [
+      '===== 崩溃日志 =====',
+      '时间: 2026-10-27 12:34:56',
+      '错误: 测试错误摘要',
+      '----- 堆栈信息 -----',
+      '#0      Foo.bar (package:foo/foo.dart:1:1)',
+      '===== 日志结束 =====',
+    ].join('\n');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(body: CrashLogDialog(crashLog: crashLog)),
+      ),
+    );
+    await tester.pump();
+
+    expect(tester.takeException(), isNull);
+    expect(find.text('崩溃时间: 2026-10-27 12:34:56'), findsOneWidget);
+    expect(find.text('测试错误摘要'), findsOneWidget);
+  });
 }

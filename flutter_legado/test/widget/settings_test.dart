@@ -440,12 +440,22 @@ void main() {
       );
     });
 
-    // [批23] 避让：点右端 Switch 不得再冒泡触发整卡 onTap（否则语义上
-    // 会重复切换；busy 守卫虽能吞掉重复调用，仍应保证仅一次手势来源）。
+    // [批23b] 效果幂等：点右端 Switch 即使冒泡到整卡 onTap，busy 守卫也会
+    // 吞掉同步重复触发。本用例只断言可观察结果「只切换一次」（启动一次、
+    // 仅写一次 webService=true、无 stopServer 二次切换），不宣称能证明
+    // 手势来源唯一（若晚到触发发生在 busy 释放后，会表现为二次切换）。
     testWidgets('Web 服务卡：点开关不误触整卡点击', (tester) async {
       final startedPorts = <int>[];
+      final configWrites = <MapEntry<String, String>>[];
       when(() => mockApi.getConfig(any())).thenAnswer((_) async => null);
-      when(() => mockApi.setConfig(any(), any())).thenAnswer((_) async {});
+      when(() => mockApi.setConfig(any(), any())).thenAnswer((inv) async {
+        configWrites.add(
+          MapEntry(
+            inv.positionalArguments[0] as String,
+            inv.positionalArguments[1] as String,
+          ),
+        );
+      });
       when(
         () => mockApi.startServer(port: any(named: 'port')),
       ).thenAnswer((inv) async {
@@ -475,6 +485,14 @@ void main() {
         tester.widget<Switch>(switchFinder).value,
         isTrue,
         reason: '点开关后应开启（若被整卡 onTap 二次触发会再次切换）',
+      );
+      expect(
+        configWrites
+            .where((e) => e.key == 'webService')
+            .map((e) => e.value)
+            .toList(),
+        ['true'],
+        reason: '点开关只应写入一次 webService=true（效果幂等）',
       );
       verifyNever(() => mockApi.stopServer());
     });
