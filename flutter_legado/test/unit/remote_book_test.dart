@@ -58,6 +58,34 @@ void main() {
     });
   });
 
+  group('remoteBookTempPath（批22 P3：同名文件隔离）', () {
+    test('不同 origin 的同名文件落不同目录，且保留扩展名', () {
+      const originA =
+          'webDav::https://dav1.example.com/books/novel.epub,{"serverID":11}';
+      const originB =
+          'webDav::https://dav2.example.com/books/novel.epub,{"serverID":12}';
+      final pathA = remoteBookTempPath('/tmp', originA, 'novel.epub');
+      final pathB = remoteBookTempPath('/tmp', originB, 'novel.epub');
+
+      expect(pathA, isNot(equals(pathB)));
+      expect(pathA, endsWith('/novel.epub'));
+      expect(pathB, endsWith('/novel.epub'));
+      expect(remoteBookTempKey(originA), hasLength(12));
+      expect(
+        remoteBookTempPath('/tmp', originA, 'novel.epub'),
+        equals(pathA),
+        reason: '同一 origin 的落盘路径必须稳定（可复算）',
+      );
+    });
+
+    test('文件名中的路径分隔符被替换（防目录穿越）', () {
+      expect(
+        remoteBookTempPath('/tmp', 'webDav::https://x/a.epub', '../a/b.epub'),
+        endsWith('/.._a_b.epub'),
+      );
+    });
+  });
+
   group('RemoteBookNotifier.refresh / import', () {
     late FakeServersRustApi mockApi;
     late ProviderContainer container;
@@ -225,6 +253,86 @@ void main() {
         updated.single.origin,
         'webDav::https://dav11.example.com/root/novel.epub,{"serverID":11}',
       );
+    });
+
+    test('两服务器同名文件：落盘路径与 bookUrl 唯一，不合并为同一书架条目', () async {
+      // 批22 P3：旧实现 localPath 固定为 <tmp>/legado_remote_books/<filename>，
+      // 两服务器同名文件会覆盖同一临时文件 → 相同 bookUrl → 合并为一条。
+      final downloadedPaths = <String>[];
+      when(() => mockApi.webdavListDir(any(), any())).thenAnswer(
+        (_) async => jsonEncode([
+          {
+            'name': 'novel.epub',
+            'path': '/legado/books/novel.epub',
+            'size': 12,
+            'is_dir': false,
+          },
+        ]),
+      );
+      when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
+      when(() => mockApi.webdavDownloadFile(any(), any(), any()))
+          .thenAnswer((inv) async {
+        downloadedPaths.add(inv.positionalArguments[2] as String);
+      });
+      // 模拟 Rust：bookUrl 即传入的落盘路径（同名文件将得到相同 bookUrl）
+      when(() => mockApi.importLocalBook(any())).thenAnswer(
+        (inv) async => Book(
+          bookUrl: inv.positionalArguments.first as String,
+          name: 'novel',
+          origin: 'loc_book',
+          originName: 'novel.epub',
+        ),
+      );
+      final updated = <Book>[];
+      when(() => mockApi.updateBook(any())).thenAnswer((inv) async {
+        updated.add(inv.positionalArguments.first as Book);
+      });
+
+      await container.read(syncNotifierProvider.notifier).loadConfig();
+      final n = readNotifier();
+      await n.init();
+
+      // ① 默认 WebDAV 导入
+      n.toggleSelect(readState().items.single);
+      await n.addSelectedToBookshelf();
+      expect(readState().importedCount, 1);
+
+      // ② 切到自定义服务器（同名文件），再次导入
+      mockApi.seedServer(
+        id: 11,
+        name: '第二台',
+        config: jsonEncode({
+          'url': 'https://dav11.example.com/root/',
+          'username': 'u11',
+          'password': 'p11',
+        }),
+      );
+      await SharedPreferences.getInstance()
+          .then((p) => p.setInt('remote_server_id', 11));
+      await n.init();
+      expect(readState().serverId, 11);
+
+      n.toggleSelect(readState().items.single);
+      await n.addSelectedToBookshelf();
+      expect(readState().importedCount, 1);
+
+      expect(downloadedPaths, hasLength(2));
+      expect(
+        downloadedPaths[0],
+        isNot(equals(downloadedPaths[1])),
+        reason: '不同服务器的同名文件必须落不同路径',
+      );
+      expect(downloadedPaths[0].endsWith('/novel.epub'), isTrue);
+      expect(downloadedPaths[1].endsWith('/novel.epub'), isTrue);
+      expect(updated, hasLength(2));
+      expect(
+        updated[0].bookUrl,
+        isNot(equals(updated[1].bookUrl)),
+        reason: 'bookUrl 唯一，否则会合并为同一书架条目',
+      );
+      expect(updated[0].origin, contains('dav.example.com'));
+      expect(updated[1].origin, contains('dav11.example.com'));
+      expect(updated[0].origin, isNot(equals(updated[1].origin)));
     });
 
     test('同名子目录不被隐藏（books/books/）', () async {

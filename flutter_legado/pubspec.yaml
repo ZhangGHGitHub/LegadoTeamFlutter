@@ -41,6 +41,10 @@ dependencies:
   # [批21e] RSS HTML 模式脚本剥离改用 HTML5 DOM 解析（与浏览器同容忍语义，
   # 替代手写词法扫描）；pubspec.lock 中已有 0.15.6 传递依赖
   html: ^0.15.4
+  # [批22 P3] 远程导入临时落盘目录以 SHA-1(origin) 稳定哈希隔离，
+  # 解决不同服务器/目录同名文件合并为同一书架条目；lock 中已有
+  # 3.0.7 传递依赖，此处转为直接依赖
+  crypto: ^3.0.0
 
   # ── [iOS 轨 P2] 原生功能补齐（Android 走既有 Kotlin 桥，不回归）──
   flutter_tts: ^4.2.0

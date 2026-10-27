@@ -33,22 +33,34 @@ class SyncNotifier extends Notifier<SyncState> {
 
   /// 远端子目录（保证以 '/' 结尾；Rust WebDavClient 拼接
   /// full_url = url + remote_dir + path，直接拼接 path）
-  /// [Task #52 | 2026-08-10] — Qoder
+  ///
+  /// [批22 P3] 折叠重复斜杠（保留协议 `://`）并统一首尾各一个 `/`：
+  /// 旧偏好可能存 `/legado/` 与用户输入 `//backup//` 等形态，直拼会产生
+  /// `//`。空目录沿用默认 `/legado/`。
   String get normalizedRemoteDir {
-    final dir = state.remoteDir.isEmpty ? '/legado/' : state.remoteDir;
-    return dir.endsWith('/') ? dir : '$dir/';
+    final dir = state.remoteDir.trim();
+    return BookType.normalizeWebDavConfig(
+      '',
+      dir.isEmpty ? '/legado/' : dir,
+    ).remoteDir;
   }
 
   /// 构建 Rust 侧 WebDavConfig 期望的 JSON（{url, username, password, remote_dir}）
   ///
   /// [Task #52 | 2026-08-10] 补齐 remote_dir（legado-net WebDavConfig 必需字段，
   /// 缺失会导致 Rust 侧配置解析失败） — Qoder
-  String buildConfigJson() => jsonEncode({
-        'url': state.webDavUrl,
-        'username': state.webDavUsername,
-        'password': state.webDavPassword,
-        'remote_dir': normalizedRemoteDir,
-      });
+  ///
+  /// [批22 P3] url 去尾斜杠、remote_dir 归一首尾单斜杠（Rust 直拼无 `//`）。
+  String buildConfigJson() {
+    final config =
+        BookType.normalizeWebDavConfig(state.webDavUrl, normalizedRemoteDir);
+    return jsonEncode({
+      'url': config.url,
+      'username': state.webDavUsername,
+      'password': state.webDavPassword,
+      'remote_dir': config.remoteDir,
+    });
+  }
 
   // ===== 配置管理 =====
 

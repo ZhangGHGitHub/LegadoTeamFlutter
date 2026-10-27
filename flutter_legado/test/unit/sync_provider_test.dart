@@ -156,6 +156,33 @@ void main() {
       );
     });
 
+    test('buildConfigJson 归一斜杠：url 尾斜杠 + dir 前斜杠不产生 //（批22 P3）', () async {
+      await readNotifier().saveConfig(
+        'https://dav.com/dav/',
+        'user',
+        'pass',
+        '//legado//',
+      );
+      final config =
+          jsonDecode(readNotifier().buildConfigJson()) as Map<String, dynamic>;
+      expect(config['url'], 'https://dav.com/dav');
+      expect(config['remote_dir'], '/legado/');
+      // Rust WebDavClient 直拼 url + remote_dir + path
+      expect(
+        '${config['url']}${config['remote_dir']}books/a.epub',
+        'https://dav.com/dav/legado/books/a.epub',
+      );
+    });
+
+    test('buildConfigJson 空目录回退默认 /legado/ 且协议保留', () async {
+      await readNotifier().saveConfig('https://dav.com/', 'u', 'p', '');
+      final config =
+          jsonDecode(readNotifier().buildConfigJson()) as Map<String, dynamic>;
+      expect(config['url'], 'https://dav.com');
+      expect(config['remote_dir'], '/legado/');
+      expect(readNotifier().normalizedRemoteDir, '/legado/');
+    });
+
     test('loadConfig 首次迁移旧偏好到 DB 并加载（含新字段）', () async {
       final now = DateTime.now();
       SharedPreferences.setMockInitialValues({

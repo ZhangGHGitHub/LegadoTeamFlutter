@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
@@ -13,6 +14,25 @@ import '../sync/sync_notifier.dart';
 import 'remote_book_state.dart';
 
 export 'remote_book_state.dart';
+
+/// 远程导入临时子目录名：`sha1(origin)` 前 12 位（稳定、可复算）
+///
+/// `origin` 同时含服务器身份（`webDav::` 前缀 + `,{"serverID":N}` 属性）
+/// 与完整远程路径，因此同一远程文件始终落同一目录；不同服务器/目录的
+/// 同名文件因 origin 不同而彼此隔离，不再互相覆盖后合并为同一书架条目
+/// （批22 P3）。
+String remoteBookTempKey(String origin) =>
+    sha1.convert(utf8.encode(origin)).toString().substring(0, 12);
+
+/// 远程导入临时落盘路径（保留原文件名与扩展名）
+///
+/// 返回 `<tempRoot>/<sha1(origin) 前 12 位>/<filename>`。保留原文件名与
+/// 扩展名，使 Rust `importLocalBook` 仍能按文件名/扩展名解析书名与格式
+/// （若直接改名哈希，TXT 书名会退化为哈希值）。
+String remoteBookTempPath(String tempRoot, String origin, String filename) {
+  final safeName = filename.replaceAll(RegExp(r'[\\/]'), '_');
+  return '$tempRoot/${remoteBookTempKey(origin)}/$safeName';
+}
 
 /// 远程书库 Riverpod Notifier
 ///
@@ -133,13 +153,14 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
       if (!s.isConfigured) return null;
       return sync.buildConfigJson();
     }
-    var url = server.url.trim();
-    if (!url.endsWith('/')) url = '$url/';
+    // [批22 P3] 折叠重复斜杠（保留协议）：Rust 直拼 url + remote_dir + path，
+    // 自定义服务器无子目录（remote_dir = '/'）。
+    final config = BookType.normalizeWebDavConfig(server.url, '');
     return jsonEncode({
-      'url': url,
+      'url': config.url,
       'username': server.username,
       'password': server.password,
-      'remote_dir': '',
+      'remote_dir': config.remoteDir,
     });
   }
 
@@ -396,9 +417,8 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
     String? lastErr;
     for (final item in selected) {
       try {
-        final localPath = '${dir.path}/${item.filename}';
-        await api.webdavDownloadFile(config, item.relativePath, localPath);
-        final book = await api.importLocalBook(localPath);
+        final remoteUrl = _remoteUrlOf(item);
+        final serverId = _isDefaultServerActive ? null : state.serverId;
         // 对齐原版 RemoteBookViewModel.addToBookshelf：
         // origin = webDavTag + CustomUrl(remoteBook.path)
         //          .putAttribute("serverID", serverID)
@@ -406,10 +426,18 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
         //   相对路径；默认服务器 = 同步账号 url + remote_dir + 相对路径）；
         // - 默认服务器 serverID = null → 不追加属性（原版
         //   AppWebDav.defaultBookWebDav 构造时未传 serverID）。
-        final remoteUrl = _remoteUrlOf(item);
-        final serverId = _isDefaultServerActive ? null : state.serverId;
+        //
+        // [批22 P3] origin 同时作为临时落盘目录的哈希键：不同服务器/
+        // 目录的同名文件不会共用同一临时文件，bookUrl（= 落盘路径）
+        // 因而唯一，避免导入后合并为同一书架条目。
+        final origin = BookType.buildWebDavOrigin(remoteUrl, serverId: serverId);
+        final localPath = remoteBookTempPath(dir.path, origin, item.filename);
+        // webdavDownloadFile 要求父目录已存在
+        await File(localPath).parent.create(recursive: true);
+        await api.webdavDownloadFile(config, item.relativePath, localPath);
+        final book = await api.importLocalBook(localPath);
         await api.updateBook(book.copyWith(
-          origin: BookType.buildWebDavOrigin(remoteUrl, serverId: serverId),
+          origin: origin,
           originName: item.filename,
         ));
         ok++;
