@@ -46,9 +46,10 @@ url           = { version = "2", optional = true }
 zip           = { version = "2", optional = true }
 # [批24 | 2026-10-27] 0.12 → 0.24：修复 CVE-2026-61725（7z 条目名路径穿越，
 # 0.21.1 修复）及后续解码器安全问题；default-features=false 避免默认的
-# aes256/bzip2/ppmd 等重型可选依赖（需要时显式开启）。compress/util 供
-# `un7zFile`（decompress_file）与测试（compress_to_path）使用。
-sevenz-rust2  = { version = "0.24", default-features = false, features = ["compress", "util"], optional = true }
+# aes256/bzip2/ppmd 等重型可选依赖（需要时显式开启）。
+# [批24b | 2026-10-27] 生产只用 `decompress_file`（util 面）；`compress`
+# 仅测试构造夹具用，已下沉 dev-dependencies，生产产物不带编码器。
+sevenz-rust2  = { version = "0.24", default-features = false, features = ["util"], optional = true }
 # 纯 Rust RAR4/RAR5 解压（含加密档案），无 C 依赖
 rar           = { version = "0.4", optional = true }
 # 纯 Rust raw-deflate 解压（P2-9 ①：java.util.zip.Inflater 语料面
@@ -107,6 +108,9 @@ legado-js = { path = ".", features = ["test-support"] }
 # P0-B 集成测试需经 `JsExecutor` trait 调用 `QuickJsExecutor::execute_js`
 # （trait 定义在 legado-parser；普通依赖不对 tests/ 集成目标可见，须显式声明）
 legado-parser = { path = "../legado-parser" }
+# [批24b | 2026-10-27] 7z 夹具构造（compress_to_path）仅测试使用：
+# 与普通依赖合并时仅测试目标启用 compress，生产构建仍只有 util 解压面。
+sevenz-rust2 = { version = "0.24", default-features = false, features = ["compress", "util"] }
 
 # [iOS 轨 P1] CI 全平台走 bindgen 运行时生成（linux/macos 自带 libclang；
 # 无 iOS 目标——apple 平台启用 bindgen 运行时生成（CI macOS runner 自带 libclang；

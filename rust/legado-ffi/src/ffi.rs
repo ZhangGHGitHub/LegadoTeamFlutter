@@ -2757,17 +2757,32 @@ pub mod ffi {
     /// 导入 7z 压缩包中的书籍文件（§2.34 批24，返回 ArchiveImportResult JSON）
     ///
     /// 纯 Rust（sevenz-rust2 0.24），不依赖 quickjs；不支持加密/分卷。
-    pub fn archive_import_7z(
+    /// async + spawn_blocking 非阻塞（批24b P2-2）：单线程解压大包可能耗时数十秒，
+    /// 放到阻塞线程池执行，避免占用 FRB 普通任务线程；Dart 签名不变。
+    pub async fn archive_import_7z(
         seven_zip_path: String,
         output_dir: String,
     ) -> Result<String, BridgeError> {
-        let result = crate::api::archive_import_api::import_7z_file(&seven_zip_path, &output_dir);
-        to_json(&result)
+        super::run_webbook_blocking("archive_import_7z", move || {
+            let result =
+                crate::api::archive_import_api::import_7z_file(&seven_zip_path, &output_dir);
+            serde_json::to_string(&result).map_err(legado_core::LegadoError::from)
+        })
+        .await
     }
 
     /// 列出 7z 压缩包中的书籍文件名（§2.34 批24，不解压，返回 JSON 数组）
-    pub fn archive_list_7z_files(seven_zip_path: String) -> Result<String, BridgeError> {
-        let files = crate::api::archive_import_api::list_7z_book_files(&seven_zip_path)?;
+    ///
+    /// async + spawn_blocking 非阻塞（批24b P2-2）：头部解析虽只读元数据，
+    /// 但与解压共用阻塞语义，统一放阻塞线程池执行。
+    pub async fn archive_list_7z_files(seven_zip_path: String) -> Result<String, BridgeError> {
+        let files = tokio::task::spawn_blocking(move || {
+            crate::api::archive_import_api::list_7z_book_files(&seven_zip_path)
+        })
+        .await
+        .map_err(|e| BridgeError {
+            message: format!("archive_list_7z_files 任务异常：{e}"),
+        })??;
         to_json(&files)
     }
 

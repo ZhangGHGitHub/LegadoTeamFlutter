@@ -360,7 +360,7 @@ fn wire__crate__ffi__ffi__archive_import_7z_impl(
     rust_vec_len_: i32,
     data_len_: i32,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "archive_import_7z",
             port: Some(port_),
@@ -379,12 +379,16 @@ fn wire__crate__ffi__ffi__archive_import_7z_impl(
             let api_seven_zip_path = <String>::sse_decode(&mut deserializer);
             let api_output_dir = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            move |context| {
-                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
-                    let output_ok =
-                        crate::ffi::ffi::archive_import_7z(api_seven_zip_path, api_output_dir)?;
-                    Ok(output_ok)
-                })())
+            move |context| async move {
+                transform_result_sse::<_, crate::ffi::BridgeError>(
+                    (move || async move {
+                        let output_ok =
+                            crate::ffi::ffi::archive_import_7z(api_seven_zip_path, api_output_dir)
+                                .await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )
@@ -503,7 +507,7 @@ fn wire__crate__ffi__ffi__archive_list_7z_files_impl(
     rust_vec_len_: i32,
     data_len_: i32,
 ) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_normal::<flutter_rust_bridge::for_generated::SseCodec, _, _>(
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_async::<flutter_rust_bridge::for_generated::SseCodec, _, _, _>(
         flutter_rust_bridge::for_generated::TaskInfo {
             debug_name: "archive_list_7z_files",
             port: Some(port_),
@@ -521,11 +525,15 @@ fn wire__crate__ffi__ffi__archive_list_7z_files_impl(
                 flutter_rust_bridge::for_generated::SseDeserializer::new(message);
             let api_seven_zip_path = <String>::sse_decode(&mut deserializer);
             deserializer.end();
-            move |context| {
-                transform_result_sse::<_, crate::ffi::BridgeError>((move || {
-                    let output_ok = crate::ffi::ffi::archive_list_7z_files(api_seven_zip_path)?;
-                    Ok(output_ok)
-                })())
+            move |context| async move {
+                transform_result_sse::<_, crate::ffi::BridgeError>(
+                    (move || async move {
+                        let output_ok =
+                            crate::ffi::ffi::archive_list_7z_files(api_seven_zip_path).await?;
+                        Ok(output_ok)
+                    })()
+                    .await,
+                )
             }
         },
     )

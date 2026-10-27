@@ -2198,6 +2198,8 @@ Future<String> archiveListRarFiles({
 /// 导入 7z 压缩包中的书籍文件（§2.34 批24，返回 ArchiveImportResult JSON）
 ///
 /// 纯 Rust（sevenz-rust2 0.24），不依赖 quickjs；不支持加密/分卷。
+/// async + spawn_blocking 非阻塞（批24b P2-2）：单线程解压大包可能耗时数十秒，
+/// 放到阻塞线程池执行，避免占用 FRB 普通任务线程；Dart 签名不变。
 Future<String> archiveImport7Z({
   required String sevenZipPath,
   required String outputDir,
@@ -2207,6 +2209,9 @@ Future<String> archiveImport7Z({
 );
 
 /// 列出 7z 压缩包中的书籍文件名（§2.34 批24，不解压，返回 JSON 数组）
+///
+/// async + spawn_blocking 非阻塞（批24b P2-2）：头部解析虽只读元数据，
+/// 但与解压共用阻塞语义，统一放阻塞线程池执行。
 Future<String> archiveList7ZFiles({required String sevenZipPath}) => RustLib
     .instance
     .api
