@@ -2754,6 +2754,23 @@ pub mod ffi {
         to_json(&files)
     }
 
+    /// 导入 7z 压缩包中的书籍文件（§2.34 批24，返回 ArchiveImportResult JSON）
+    ///
+    /// 纯 Rust（sevenz-rust2 0.24），不依赖 quickjs；不支持加密/分卷。
+    pub fn archive_import_7z(
+        seven_zip_path: String,
+        output_dir: String,
+    ) -> Result<String, BridgeError> {
+        let result = crate::api::archive_import_api::import_7z_file(&seven_zip_path, &output_dir);
+        to_json(&result)
+    }
+
+    /// 列出 7z 压缩包中的书籍文件名（§2.34 批24，不解压，返回 JSON 数组）
+    pub fn archive_list_7z_files(seven_zip_path: String) -> Result<String, BridgeError> {
+        let files = crate::api::archive_import_api::list_7z_book_files(&seven_zip_path)?;
+        to_json(&files)
+    }
+
     /// 检测 TXT 文件编码（返回 EncodingResult JSON）
     pub fn archive_detect_encoding(file_path: String) -> Result<String, BridgeError> {
         let result = crate::api::archive_import_api::detect_txt_encoding(&file_path)?;

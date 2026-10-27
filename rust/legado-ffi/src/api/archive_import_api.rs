@@ -92,6 +92,40 @@ pub fn import_rar_file(
     }
 }
 
+/// 导入 7z 压缩包中的书籍文件（§2.34 批24）
+///
+/// 解压 7z 文件，提取其中的书籍文件到指定输出目录。
+/// 不支持加密 7z / 分卷 / PPMd 等算法；限额与路径安全见
+/// `legado_book::archive`（输入 512 MiB / 单条目 256 MiB / 总量 512 MiB /
+/// 条目数 10000 / 字典 128 MiB）。
+///
+/// # 参数
+/// - `seven_zip_path`: 7z 文件路径
+/// - `output_dir`: 提取目标目录
+pub fn import_7z_file(seven_zip_path: &str, output_dir: &str) -> ArchiveImportResult {
+    match archive::import_7z_file(seven_zip_path, output_dir) {
+        Ok(files) => ArchiveImportResult {
+            success: true,
+            extracted_files: files,
+            error: None,
+        },
+        Err(e) => ArchiveImportResult {
+            success: false,
+            extracted_files: Vec::new(),
+            error: Some(format!("7z导入失败: {e}")),
+        },
+    }
+}
+
+/// 列出 7z 压缩包中的书籍文件名（不解压，§2.34 批24）
+///
+/// # 参数
+/// - `seven_zip_path`: 7z 文件路径
+pub fn list_7z_book_files(seven_zip_path: &str) -> LegadoResult<Vec<String>> {
+    archive::list_7z_book_files(seven_zip_path)
+        .map_err(|e| legado_core::LegadoError::BookParse(format!("7z列表失败: {e}")))
+}
+
 /// 列出 ZIP 压缩包中的书籍文件名（不解压）
 ///
 /// # 参数
