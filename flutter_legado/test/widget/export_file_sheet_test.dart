@@ -27,6 +27,7 @@ import 'package:flutter_legado/src/services/direct_link_upload_rule_service.dart
 import 'package:flutter_legado/src/services/export_file_service.dart';
 import 'package:flutter_legado/src/services/file_save_channel.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
+import 'package:flutter_legado/src/services/source_share_passphrase.dart';
 import 'package:flutter_legado/src/widgets/export_file_sheet.dart';
 
 /// 捕获 directLinkUpload 入参的 Mock（配置读写沿用 MockBookApi 内存实现）
@@ -212,6 +213,7 @@ void main() {
     String fileName = 'rssSources.json',
     String? uploadFileName,
     String contentType = 'application/json',
+    SourcePassphraseType? passphraseType,
   }) async {
     final box = _ResultBox();
     await tester.pumpWidget(
@@ -235,6 +237,7 @@ void main() {
                       subject: '导出文件',
                       fileService: fileService,
                       ruleService: ruleService,
+                      passphraseType: passphraseType,
                     );
                     box.completed = true;
                   },
@@ -861,6 +864,57 @@ void main() {
       );
 
       expect(userFile.existsSync(), isTrue);
+    });
+
+    testWidgets('批25：上传成功且传 passphraseType 时展示复制口令并可复制', (tester) async {
+      final written = mockClipboard(tester);
+      await openSheet(
+        tester,
+        passphraseType: SourcePassphraseType.rssSource,
+      );
+
+      await tester.tap(find.text('上传直链'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('上传成功'), findsOneWidget);
+      expect(find.text('复制口令'), findsOneWidget);
+
+      await tester.tap(find.text('复制口令'));
+      await tester.pumpAndSettle();
+
+      final dialog = find.byType(AlertDialog);
+      expect(dialog, findsOneWidget);
+      final preview = tester
+          .widget<SelectableText>(
+            find.descendant(
+              of: dialog,
+              matching: find.byType(SelectableText),
+            ),
+          )
+          .data!;
+      expect(preview, startsWith('复制口令到阅读导入'));
+      expect(preview, contains('！dy©0¥Legado^'));
+
+      await tester.tap(
+        find.descendant(
+          of: dialog,
+          matching: find.widgetWithText(FilledButton, '复制口令'),
+        ),
+      );
+      await tester.pump();
+
+      expect(written.single, preview);
+      expect(find.text('已复制到剪贴板'), findsOneWidget);
+    });
+
+    testWidgets('批25：未传 passphraseType 时不展示复制口令', (tester) async {
+      await openSheet(tester);
+
+      await tester.tap(find.text('上传直链'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('上传成功'), findsOneWidget);
+      expect(find.text('复制口令'), findsNothing);
     });
   });
 }
