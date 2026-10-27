@@ -1,0 +1,10 @@
+{
+  "generatedAt": "2026-10-27",
+  "device": "Android 15 / 192.168.100.62:5555",
+  "probe": "probe/rss_webview_channel_probe_test.dart",
+  "sourceLog": "probe/probe_run_raw_21f.log",
+  "sourceLogLine": "MXSS_TITLE=SAFE",
+  "sanitizedPageTitle": "SAFE",
+  "executedTitleIfUnsafe": [41, 42, 43, 44, 45],
+  "note": "加载 rssStripPageScripts 清洗后的终审 mXSS 聚合页面（5 条向量）；任一向量执行会把 document.title 改写为 41..45。探针把该结果打印到运行日志而未写入步骤 JSON 数组，故按批21g P3-1 单独归档，内容与原始日志一致。"
+}
