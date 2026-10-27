@@ -7,7 +7,7 @@
 //   fetchChapterContent（必发网络请求），不再走 getChapterContentFull；
 //   成功更新正文、失败保留旧正文并记 error（仅当前章缓存行丢失，
 //   无整书 clearBookCache）；
-// - 本地书（loc_book / dav:）守卫：直接返回原因、不调 API、正文不动；
+// - 本地书（loc_book / webDav:: / 存量 dav:）守卫：直接返回原因、不调 API、正文不动；
 // - 换源重载：getBook → updateCurrentBook → getChapters/refreshToc →
 //   章节匹配（标题精确 → 宽松 → 原索引 → 0）→ 强制刷新；
 //   同题章节保留章内位置，异题归零。
@@ -203,7 +203,7 @@ void main() {
       verifyNever(() => mockApi.fetchChapterContent(any(), any(), any()));
     });
 
-    test('WebDAV 书（dav:）守卫：返回原因、不调 API', () async {
+    test('WebDAV 书（存量 dav:）守卫：返回原因、不调 API', () async {
       const davBook = Book(
         bookUrl: 'dav://server/books/x.epub',
         name: '云书',
@@ -224,6 +224,37 @@ void main() {
       ).thenAnswer((_) async => '云端正文');
       final notifier = container.read(readerNotifierProvider.notifier);
       await notifier.openBook(davBook);
+
+      final err = await notifier.refreshChapterContent();
+
+      expect(err, '本地书不支持刷新正文');
+      verifyNever(() => mockApi.clearChapterCache(any(), any()));
+      verifyNever(() => mockApi.clearBookCache(any()));
+      verifyNever(() => mockApi.fetchChapterContent(any(), any(), any()));
+    });
+
+    test('WebDAV 书（原版 webDav:: + serverID）守卫：返回原因、不调 API',
+        () async {
+      const webDavBook = Book(
+        bookUrl: 'https://server/books/x.epub',
+        name: '云书',
+        origin: 'webDav::https://server/books/x.epub,{"serverID":12}',
+        durChapterIndex: 0,
+      );
+      when(() => mockApi.getChapters(any())).thenAnswer(
+        (_) async => [
+          const BookChapter(
+            url: 'https://server/books/x/1',
+            title: '第一章',
+            index: 0,
+          ),
+        ],
+      );
+      when(
+        () => mockApi.getChapterContentFull(any(), any()),
+      ).thenAnswer((_) async => '云端正文');
+      final notifier = container.read(readerNotifierProvider.notifier);
+      await notifier.openBook(webDavBook);
 
       final err = await notifier.refreshChapterContent();
 

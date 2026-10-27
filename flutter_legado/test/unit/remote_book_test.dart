@@ -131,7 +131,10 @@ void main() {
           originName: 'novel.epub',
         ),
       );
-      when(() => mockApi.updateBook(any())).thenAnswer((_) async {});
+      final updated = <Book>[];
+      when(() => mockApi.updateBook(any())).thenAnswer((invocation) async {
+        updated.add(invocation.positionalArguments.first as Book);
+      });
 
       await container.read(syncNotifierProvider.notifier).loadConfig();
       await readNotifier().init();
@@ -160,6 +163,113 @@ void main() {
           .called(1);
       verify(() => mockApi.importLocalBook(any())).called(1);
       verify(() => mockApi.updateBook(any())).called(1);
+
+      // 批18b：默认服务器 origin 对齐原版 —— webDav:: + 完整远程 URL，
+      // serverID=null 不追加属性（RemoteBookViewModel.kt:141-143）
+      expect(
+        updated.single.origin,
+        'webDav::https://dav.example.com/legado/books/novel.epub',
+      );
+      expect(updated.single.originName, 'novel.epub');
+    });
+
+    test('自定义服务器导入 origin 带完整 URL + serverID 属性后缀', () async {
+      mockApi.seedServer(
+        id: 11,
+        name: '自定义网盘',
+        config: jsonEncode({
+          'url': 'https://dav11.example.com/root/',
+          'username': 'u11',
+          'password': 'p11',
+        }),
+      );
+      await SharedPreferences.getInstance()
+          .then((p) => p.setInt('remote_server_id', 11));
+
+      when(() => mockApi.webdavListDir(any(), any())).thenAnswer(
+        (_) async => jsonEncode([
+          {
+            'name': 'novel.epub',
+            'path': '/root/novel.epub',
+            'size': 12,
+            'is_dir': false,
+          },
+        ]),
+      );
+      when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
+      when(() => mockApi.webdavDownloadFile(any(), any(), any()))
+          .thenAnswer((_) async {});
+      when(() => mockApi.importLocalBook(any())).thenAnswer(
+        (_) async => const Book(
+          bookUrl: '/tmp/novel.epub',
+          name: 'novel',
+          origin: 'loc_book',
+          originName: 'novel.epub',
+        ),
+      );
+      final updated = <Book>[];
+      when(() => mockApi.updateBook(any())).thenAnswer((invocation) async {
+        updated.add(invocation.positionalArguments.first as Book);
+      });
+
+      final n = readNotifier();
+      await n.init();
+      expect(readState().serverId, 11);
+
+      final item = readState().items.single;
+      n.toggleSelect(item);
+      await n.addSelectedToBookshelf();
+
+      // 自定义服务器：服务器 url + 相对路径，追加 ,{"serverID":11}
+      expect(
+        updated.single.origin,
+        'webDav::https://dav11.example.com/root/novel.epub,{"serverID":11}',
+      );
+    });
+
+    test('on-shelf 判定兼容新 webDav:: 与存量 dav: 双前缀', () async {
+      when(() => mockApi.webdavListDir(any(), any())).thenAnswer(
+        (_) async => jsonEncode([
+          {
+            'name': 'legacy.epub',
+            'path': '/legado/books/legacy.epub',
+            'size': 1,
+            'is_dir': false,
+          },
+          {
+            'name': 'newfmt.epub',
+            'path': '/legado/books/newfmt.epub',
+            'size': 1,
+            'is_dir': false,
+          },
+        ]),
+      );
+      when(() => mockApi.getBooks()).thenAnswer(
+        (_) async => const [
+          // 存量格式（批18b 前本仓库写入）
+          Book(
+            bookUrl: '/tmp/legacy.epub',
+            name: 'legacy',
+            origin: 'dav:https://dav.example.com/legado/books/legacy.epub',
+            originName: 'legacy.epub',
+          ),
+          // 原版/参考版格式（带 serverID 属性后缀）
+          Book(
+            bookUrl: '/tmp/newfmt.epub',
+            name: 'newfmt',
+            origin:
+                'webDav::https://dav.example.com/legado/books/newfmt.epub,{"serverID":12}',
+            originName: 'newfmt.epub',
+          ),
+        ],
+      );
+
+      await container.read(syncNotifierProvider.notifier).loadConfig();
+      await readNotifier().init();
+
+      final items = readState().items;
+      expect(items, hasLength(2));
+      expect(items.every((e) => e.isOnBookShelf), isTrue);
     });
   });
 
