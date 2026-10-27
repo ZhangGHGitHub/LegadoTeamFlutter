@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.396] - 2026-10-27
+
+### Changed
+- [UI] RSS 历史记录保存文章类型（网页/图片/视频）、分类、封面与发布时间，从历史打开时按记录类型进入对应查看方式（旧记录仍按源类型兜底）。
+### Fixed
+- [Rust] 重复标记同一篇文章为已读时不再刷新阅读时间或覆盖已保存的类型等信息（对齐原版首次标记语义）。
+
 ## [2.0.395] - 2026-10-27
 
 ### Changed
