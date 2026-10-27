@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.401] - 2026-10-27
+
+### Fixed
+- [Rust] 修复部分 7z 压缩包（目录与文件交错排列，如 py7zr 生成）导入时静默漏文件的问题；读取不完整时明确报错。
+
 ## [2.0.400] - 2026-10-27
 
 ### Added
