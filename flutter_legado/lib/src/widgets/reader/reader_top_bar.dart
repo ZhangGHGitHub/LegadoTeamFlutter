@@ -15,7 +15,7 @@ import '../../providers/reader/reader_notifier.dart';
 import '../../providers/sync/sync_notifier.dart';
 import '../../routes.dart';
 import '../../screens/source_edit_screen.dart';
-import '../../screens/source_login_screen.dart';
+import '../../utils/source_login_entry.dart';
 import '../help/help_assets.dart';
 import '../help/show_help.dart';
 import 'change_chapter_source_sheet.dart';
@@ -727,9 +727,9 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
     final loginUrl = source?.loginUrl ?? '';
     // [批22 P3-1] hasLogin 对齐 Kotlin `BaseSource.hasLogin()`
     // （BaseSource.kt:156-158）：loginUrl 非空或 loginUi 为有效表单
-    // （非空且去空白后不是空数组）。
-    final hasLogin = loginUrl.trim().isNotEmpty ||
-        _hasLoginForm(source?.loginUi);
+    // （非空且去空白后不是空数组）。[批22b P2-1] 书源不存在时登录项隐藏。
+    final hasLogin = source != null &&
+        (loginUrl.trim().isNotEmpty || _hasLoginForm(source.loginUi));
     // [批22 P3-1] 章节购买可见性对齐原版 ReadMenu.tvSourceAction
     // （ReadMenu.kt:477-483）：canPay = hasLogin && isVip && !isPay；
     // popupActionMenu 的第三参是 visible（不满足则不添加菜单项）。
@@ -760,16 +760,15 @@ class _ReaderTopBarState extends ConsumerState<ReaderTopBar>
 
     switch (action) {
       case 'login':
-        // 对标原版 menu_login → 登录 V2 页面
-        Navigator.of(context).push(
-          MaterialPageRoute(
-            builder: (_) => SourceLoginScreen(
-              sourceUrl: sourceUrl,
-              sourceName: sourceName,
-              loginUrl: loginUrl,
-            ),
-          ),
-        );
+        // [批22b P2-1] 统一走 showSourceLogin：loginUi-only 书源必须弹
+        // 表单对话框（原实现直接推 SourceLoginScreen，loginUrl 为空时
+        // 无法执行 loginUi 表单）。source 为空时登录项已隐藏，此处兜底忽略。
+        {
+          final loginSource = source;
+          if (loginSource != null) {
+            await showSourceLogin(context, ref, loginSource);
+          }
+        }
       case 'chapterPay':
         // [UI-fix v2.0.3 | 2026-08-08] 章节购买接线（契约 §2.43.2） — Qoder
         await _chapterPay(context, book);

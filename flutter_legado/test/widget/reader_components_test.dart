@@ -14,6 +14,7 @@ import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/reader/reader_notifier.dart';
 import 'package:flutter_legado/src/providers/theme/theme_notifier.dart';
 import 'package:flutter_legado/src/screens/reader_config_panel.dart';
+import 'package:flutter_legado/src/widgets/classic_login_dialog.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_bottom_bar.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_status_strip.dart';
 import 'package:flutter_legado/src/widgets/reader/reader_top_bar.dart';
@@ -179,6 +180,34 @@ void main() {
       expect(find.text('删除 H 标签'), findsOneWidget);
     });
 
+    /// 批22b P1-1：原版备份/参考版数据的本地位是 Kotlin 的 256（type=264），
+    /// 不是本仓库 Rust 域的 0x1000；同位域回归点必须仍判为 EPUB。
+    testWidgets('原版位域 WebDAV EPUB（type=264）显示「删除 Ruby/H 标签」菜单项',
+        (tester) async {
+      stubOpenBook();
+      await tester.pumpWidget(wrapStack(ReaderTopBar(
+        onAddBookmark: () {},
+      )));
+      await tester.pump();
+
+      await container.read(readerNotifierProvider.notifier).openBook(
+        const Book(
+          bookUrl: '/tmp/remote.epub',
+          name: '远程 EPUB',
+          origin: 'webDav::https://dav.example.com/books/remote.epub',
+          originName: 'remote.epub',
+          bookType: BookType.text | BookType.kotlinLocal,
+        ),
+      );
+      await tester.pump();
+
+      await tester.tap(find.byType(PopupMenuButton<String>));
+      await tester.pumpAndSettle();
+
+      expect(find.text('删除 Ruby 标签'), findsOneWidget);
+      expect(find.text('删除 H 标签'), findsOneWidget);
+    });
+
     /// 打开源操作菜单（点击顶栏书源徽章），注入指定章节的 VIP/付费态
     Future<void> openSourceMenu(
       WidgetTester tester, {
@@ -217,7 +246,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('章节购买：已登录 + VIP + 未购买时可见', (tester) async {
+    testWidgets('章节购买：已配置登录 + VIP + 未购买时可见', (tester) async {
       await openSourceMenu(
         tester,
         loginUrl: 'https://login.example.com',
@@ -228,6 +257,19 @@ void main() {
 
       expect(find.text('登录源'), findsOneWidget);
       expect(find.text('章节购买'), findsOneWidget);
+    });
+
+    testWidgets('章节购买：已配置登录但 VIP=false 时隐藏', (tester) async {
+      await openSourceMenu(
+        tester,
+        loginUrl: 'https://login.example.com',
+        loginUi: null,
+        isVip: false,
+        isPay: false,
+      );
+
+      expect(find.text('登录源'), findsOneWidget);
+      expect(find.text('章节购买'), findsNothing);
     });
 
     testWidgets('章节购买：当前章已购买时隐藏', (tester) async {
@@ -241,6 +283,26 @@ void main() {
 
       expect(find.text('登录源'), findsOneWidget);
       expect(find.text('章节购买'), findsNothing);
+    });
+
+    // 批22b P2-1：loginUi-only 书源（loginUrl 为空）也必须能打开登录表单，
+    // 原实现直接推 SourceLoginScreen（只支持 WebView/手动 Cookie）无法执行表单。
+    testWidgets('登录源：loginUrl 空 + loginUi 合法时可见并打开表单对话框',
+        (tester) async {
+      await openSourceMenu(
+        tester,
+        loginUrl: '',
+        loginUi: '[{"name":"用户名","type":"text"},{"name":"登录","type":"button"}]',
+        isVip: false,
+        isPay: false,
+      );
+
+      expect(find.text('登录源'), findsOneWidget);
+      await tester.tap(find.text('登录源'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ClassicLoginDialog), findsOneWidget);
+      expect(find.text('用户名'), findsWidgets);
     });
 
     testWidgets('章节购买：书源无登录配置时隐藏（含登录源项）', (tester) async {

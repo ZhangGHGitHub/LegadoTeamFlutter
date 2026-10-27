@@ -29,8 +29,16 @@ String remoteBookTempKey(String origin) =>
 /// 返回 `<tempRoot>/<sha1(origin) 前 12 位>/<filename>`。保留原文件名与
 /// 扩展名，使 Rust `importLocalBook` 仍能按文件名/扩展名解析书名与格式
 /// （若直接改名哈希，TXT 书名会退化为哈希值）。
+///
+/// [filename] 会做路径安全净化：`.` / `..` 直接拒绝（目录穿越），
+/// Windows 非法字符 `< > : " | ? *` 与路径分隔符统一替换为 `_`
+/// （批22b P3）。
 String remoteBookTempPath(String tempRoot, String origin, String filename) {
-  final safeName = filename.replaceAll(RegExp(r'[\\/]'), '_');
+  final name = filename.trim();
+  if (name.isEmpty || name == '.' || name == '..') {
+    throw ArgumentError.value(filename, 'filename', '非法的远程文件名');
+  }
+  final safeName = name.replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
   return '$tempRoot/${remoteBookTempKey(origin)}/$safeName';
 }
 
@@ -416,6 +424,8 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
     var ok = 0;
     String? lastErr;
     for (final item in selected) {
+      String? localPath;
+      var imported = false;
       try {
         final remoteUrl = _remoteUrlOf(item);
         final serverId = _isDefaultServerActive ? null : state.serverId;
@@ -431,11 +441,12 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
         // 目录的同名文件不会共用同一临时文件，bookUrl（= 落盘路径）
         // 因而唯一，避免导入后合并为同一书架条目。
         final origin = BookType.buildWebDavOrigin(remoteUrl, serverId: serverId);
-        final localPath = remoteBookTempPath(dir.path, origin, item.filename);
-        // webdavDownloadFile 要求父目录已存在
-        await File(localPath).parent.create(recursive: true);
+        localPath = remoteBookTempPath(dir.path, origin, item.filename);
+        // 父目录由 Rust `webdav_download_file` 内部 create_dir_all 创建
+        // （batch22b 修正原「要求父目录已存在」的错误注释）。
         await api.webdavDownloadFile(config, item.relativePath, localPath);
         final book = await api.importLocalBook(localPath);
+        imported = true;
         await api.updateBook(book.copyWith(
           origin: origin,
           originName: item.filename,
@@ -443,6 +454,11 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
         ok++;
       } catch (e) {
         lastErr = _mapError(e);
+        // 下载/导入失败：删除临时文件，避免残留。导入成功后的
+        // updateBook 失败不清理——bookUrl 仍指向该文件。
+        if (!imported && localPath != null) {
+          await _deleteTempFileQuietly(localPath);
+        }
       }
     }
     state = state.copyWith(
@@ -454,6 +470,18 @@ class RemoteBookNotifier extends Notifier<RemoteBookState> {
     );
     if (ok > 0) {
       await refresh();
+    }
+  }
+
+  /// 静默删除临时文件（清理失败不影响批次结果）
+  Future<void> _deleteTempFileQuietly(String path) async {
+    try {
+      final file = File(path);
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {
+      // 忽略清理异常：失败原因已在 lastErr 中记录
     }
   }
 

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
@@ -70,6 +71,8 @@ void main() {
       expect(pathA, isNot(equals(pathB)));
       expect(pathA, endsWith('/novel.epub'));
       expect(pathB, endsWith('/novel.epub'));
+      // 目录形态：<tempRoot>/<12 位小写 hex>/<filename>
+      expect(pathA, matches(RegExp(r'/tmp/[0-9a-f]{12}/novel\.epub$')));
       expect(remoteBookTempKey(originA), hasLength(12));
       expect(
         remoteBookTempPath('/tmp', originA, 'novel.epub'),
@@ -82,6 +85,32 @@ void main() {
       expect(
         remoteBookTempPath('/tmp', 'webDav::https://x/a.epub', '../a/b.epub'),
         endsWith('/.._a_b.epub'),
+      );
+    });
+
+    test('拒绝 . 与 .. 文件名', () {
+      expect(
+        () => remoteBookTempPath('/tmp', 'webDav::https://x/a.epub', '..'),
+        throwsArgumentError,
+      );
+      expect(
+        () => remoteBookTempPath('/tmp', 'webDav::https://x/a.epub', '.'),
+        throwsArgumentError,
+      );
+      expect(
+        () => remoteBookTempPath('/tmp', 'webDav::https://x/a.epub', '  '),
+        throwsArgumentError,
+      );
+    });
+
+    test('Windows 非法字符 <>:"|?* 统一替换为 _', () {
+      expect(
+        remoteBookTempPath(
+          '/tmp',
+          'webDav::https://x/a.epub',
+          'a<b>c:d"e|f?g*h.txt',
+        ),
+        endsWith('/a_b_c_d_e_f_g_h.txt'),
       );
     });
   });
@@ -201,6 +230,51 @@ void main() {
       expect(updated.single.originName, 'novel.epub');
     });
 
+    test('导入失败清理临时文件', () async {
+      final downloaded = <String>[];
+      addTearDown(() async {
+        if (downloaded.isEmpty) return;
+        final parent = File(downloaded.single).parent;
+        if (await parent.exists()) {
+          await parent.delete(recursive: true);
+        }
+      });
+      when(() => mockApi.webdavListDir(any(), any())).thenAnswer(
+        (_) async => jsonEncode([
+          {
+            'name': 'novel.epub',
+            'path': '/legado/books/novel.epub',
+            'size': 12,
+            'is_dir': false,
+          },
+        ]),
+      );
+      when(() => mockApi.getBooks()).thenAnswer((_) async => <Book>[]);
+      when(() => mockApi.webdavDownloadFile(any(), any(), any()))
+          .thenAnswer((inv) async {
+        final path = inv.positionalArguments[2] as String;
+        downloaded.add(path);
+        await File(path).parent.create(recursive: true);
+        await File(path).writeAsString('partial');
+      });
+      when(() => mockApi.importLocalBook(any()))
+          .thenThrow(Exception('解析失败'));
+
+      await container.read(syncNotifierProvider.notifier).loadConfig();
+      final n = readNotifier();
+      await n.init();
+      n.toggleSelect(readState().items.single);
+      await n.addSelectedToBookshelf();
+
+      expect(readState().importedCount, 0);
+      expect(downloaded, hasLength(1));
+      expect(
+        File(downloaded.single).existsSync(),
+        isFalse,
+        reason: '导入失败后必须清理已下载的临时文件',
+      );
+    });
+
     test('自定义服务器导入 origin 带完整 URL + serverID 属性后缀', () async {
       mockApi.seedServer(
         id: 11,
@@ -255,9 +329,11 @@ void main() {
       );
     });
 
-    test('两服务器同名文件：落盘路径与 bookUrl 唯一，不合并为同一书架条目', () async {
+    test('两服务器同名文件：临时文件与 bookUrl 不同', () async {
       // 批22 P3：旧实现 localPath 固定为 <tmp>/legado_remote_books/<filename>，
-      // 两服务器同名文件会覆盖同一临时文件 → 相同 bookUrl → 合并为一条。
+      // 两服务器同名文件会覆盖同一临时文件 → 相同 bookUrl。
+      // 注：仅隔离「不同 bookUrl/临时文件」；书架既有 UNIQUE 约束
+      // （书名+作者）仍会合并同名同作者条目，本测试不覆盖该语义。
       final downloadedPaths = <String>[];
       when(() => mockApi.webdavListDir(any(), any())).thenAnswer(
         (_) async => jsonEncode([
@@ -328,7 +404,7 @@ void main() {
       expect(
         updated[0].bookUrl,
         isNot(equals(updated[1].bookUrl)),
-        reason: 'bookUrl 唯一，否则会合并为同一书架条目',
+        reason: 'bookUrl（= 临时文件路径）不同，避免相互覆盖',
       );
       expect(updated[0].origin, contains('dav.example.com'));
       expect(updated[1].origin, contains('dav11.example.com'));
