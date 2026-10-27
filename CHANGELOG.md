@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.397] - 2026-10-27
+
+### Added
+- [UI] 订阅源 `preloadJs` 支持宿主能力：源变量读写、缓存、网络（`ajaxAwait` 等异步接口）、编码/哈希/加解密辅助、日志/提示与站内跳转动作；`injectJs` 保持与原版一致（不额外提供宿主对象）。
+### Fixed
+- [UI] 修复订阅阅读页日志/提示/打开等动作失效；桥注入对象不再以固定前缀暴露在页面全局。
+- [UI] 订阅文章脚本按 HTML5 规则清洗（移除脚本/内联事件/危险链接/自动跳转，丢弃 SVG/MathML 子树），修复页面脚本可读取登录信息与 mXSS 执行风险。
+### Known limitations
+- 同步网络 API（`java.ajax` 等）在 WebView 桥中不可用，请改用 `ajaxAwait` 等异步接口（平台差异）；SVG/MathML 内容在启用桥的源中不渲染。
+
 ## [2.0.396] - 2026-10-27
 
 ### Changed
