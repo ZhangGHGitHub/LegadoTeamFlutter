@@ -11,17 +11,41 @@ import '../mocks/mocks.dart';
 
 void main() {
   group('RssReadRecordRow.fromJson', () {
-    test('解析 snake_case 字段（read_time）', () {
+    test('解析 snake_case 字段（read_time）与批20 扩展字段', () {
       final r = RssReadRecordRow.fromJson({
         'origin': 'https://rss.example.com',
         'title': '文章一',
         'link': 'https://rss.example.com/1',
         'read_time': 1750000000000,
+        'type': 1,
+        'sort': '图片分类',
+        'image': 'https://img.example.com/1.jpg',
+        'pubDate': '2026-10-27',
+        'durPos': 42,
       });
       expect(r.origin, equals('https://rss.example.com'));
       expect(r.title, equals('文章一'));
       expect(r.link, equals('https://rss.example.com/1'));
       expect(r.readTime, equals(1750000000000));
+      expect(r.type, equals(1));
+      expect(r.sort, equals('图片分类'));
+      expect(r.image, equals('https://img.example.com/1.jpg'));
+      expect(r.pubDate, equals('2026-10-27'));
+      expect(r.durPos, equals(42));
+    });
+
+    test('旧数据缺省字段兜底（type=0 / sort 空 / image+pubDate null / durPos=0）', () {
+      final r = RssReadRecordRow.fromJson({
+        'origin': 'https://rss.example.com',
+        'title': '旧文章',
+        'link': 'https://rss.example.com/old',
+        'read_time': 100,
+      });
+      expect(r.type, isZero);
+      expect(r.sort, isEmpty);
+      expect(r.image, isNull);
+      expect(r.pubDate, isNull);
+      expect(r.durPos, isZero);
     });
 
     test('缺省字段兜底', () {
@@ -30,6 +54,11 @@ void main() {
       expect(r.title, isEmpty);
       expect(r.link, isNull);
       expect(r.readTime, isZero);
+      expect(r.type, isZero);
+      expect(r.sort, isEmpty);
+      expect(r.image, isNull);
+      expect(r.pubDate, isNull);
+      expect(r.durPos, isZero);
     });
   });
 

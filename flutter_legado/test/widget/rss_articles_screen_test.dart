@@ -30,8 +30,22 @@ void main() {
   const sourceUrl = 'https://s.test';
   const searchUrl = 'https://s.test/search';
 
-  Map<String, dynamic> article(String title, String link, {String sort = ''}) =>
-      <String, dynamic>{'title': title, 'link': link, 'sort': sort};
+  Map<String, dynamic> article(
+    String title,
+    String link, {
+    String sort = '',
+    int type = 0,
+    String? image,
+    String? pubDate,
+  }) =>
+      <String, dynamic>{
+        'title': title,
+        'link': link,
+        'sort': sort,
+        'type': type,
+        'image': ?image,
+        'pubDate': ?pubDate,
+      };
 
   String pageJson(
     List<Map<String, dynamic>> articles, {
@@ -51,11 +65,15 @@ void main() {
   }
 
   /// 构造页面并返回容器（用于读取 Notifier 状态）
+  ///
+  /// [settle] 为 false 时只推进固定帧：列表项带封面图会触发
+  /// `CachedNetworkImage` 占位动画，`pumpAndSettle` 会超时。
   Future<ProviderContainer> pumpScreen(
     WidgetTester tester,
     MockRustApi api,
-    RssSource source,
-  ) async {
+    RssSource source, {
+    bool settle = true,
+  }) async {
     tester.view.physicalSize = const Size(1080, 1920);
     tester.view.devicePixelRatio = 3.0;
     addTearDown(tester.view.reset);
@@ -69,7 +87,13 @@ void main() {
         child: MaterialApp(home: RssArticlesScreen(source: source)),
       ),
     );
-    await tester.pumpAndSettle();
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(milliseconds: 100));
+    }
     return container;
   }
 
@@ -403,6 +427,56 @@ void main() {
     expect(detail.article.url, isEmpty);
     // 无链接时也不应出现「在浏览器中查看原文」入口
     expect(find.text('在浏览器中查看原文'), findsNothing);
+  });
+
+  testWidgets('打开文章：rssMarkRead 透传 type/sort/image/pubDate（批20）',
+      (tester) async {
+    final api = MockRustApi();
+    const source = RssSource(sourceUrl: sourceUrl, sourceName: '源A');
+    stubSorts(api, source, const [RssSort(name: '', url: sourceUrl)]);
+    when(
+      () => api.rssRefreshArticles(sourceUrl, '', sourceUrl, key: null),
+    ).thenAnswer(
+      (_) async => pageJson([
+        article(
+          '图片文章',
+          '$sourceUrl/pic.jpg',
+          sort: '图片分类',
+          type: 1,
+          image: '$sourceUrl/cover.jpg',
+          pubDate: '2026-10-27',
+        ),
+      ]),
+    );
+    // 批20：精确匹配扩展字段透传（未传 durPos 时调用方应保持省略）
+    when(
+      () => api.rssMarkRead(
+        sourceUrl,
+        '图片文章',
+        link: '$sourceUrl/pic.jpg',
+        type: 1,
+        sort: '图片分类',
+        image: '$sourceUrl/cover.jpg',
+        pubDate: '2026-10-27',
+      ),
+    ).thenAnswer((_) async {});
+
+    await pumpScreen(tester, api, source, settle: false);
+    await tester.tap(find.text('图片文章'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+
+    verify(
+      () => api.rssMarkRead(
+        sourceUrl,
+        '图片文章',
+        link: '$sourceUrl/pic.jpg',
+        type: 1,
+        sort: '图片分类',
+        image: '$sourceUrl/cover.jpg',
+        pubDate: '2026-10-27',
+      ),
+    ).called(1);
   });
 
   testWidgets('源未配置 searchUrl：不显示搜索入口', (tester) async {

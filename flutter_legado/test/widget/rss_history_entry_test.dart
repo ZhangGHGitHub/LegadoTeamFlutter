@@ -56,11 +56,24 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   }
 
-  Future<void> openHistoryAndTapFirstRecord(WidgetTester tester) async {
+  /// 打开历史对话框并点击指定记录
+  ///
+  /// [settle] 为 false 时只推进固定帧：记录带封面图会触发
+  /// `CachedNetworkImage` 持续动画，`pumpAndSettle` 会超时。
+  Future<void> openHistoryAndTapFirstRecord(
+    WidgetTester tester, {
+    String title = '历史文章',
+    bool settle = true,
+  }) async {
     await tester.tap(find.byTooltip('阅读记录'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('历史文章'));
-    await tester.pumpAndSettle();
+    await tester.tap(find.text(title));
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+    }
   }
 
   testWidgets('历史记录点开文章：详情页收到 origin 与源名', (tester) async {
@@ -74,11 +87,17 @@ void main() {
           'title': '历史文章',
           'link': '$origin/article/1',
           'read_time': 1700000000000,
+          // 批20：扩展字段应透传到文章 DTO
+          'type': 0,
+          'sort': '科技',
+          'image': '$origin/cover.jpg',
+          'pubDate': '2026-10-27',
+          'durPos': 12,
         },
       ],
     );
 
-    await openHistoryAndTapFirstRecord(tester);
+    await openHistoryAndTapFirstRecord(tester, settle: false);
 
     final detail = tester.widget<RssArticleDetailScreen>(
       find.byType(RssArticleDetailScreen),
@@ -87,6 +106,39 @@ void main() {
     expect(detail.sourceName, equals('源A'));
     expect(detail.article.title, equals('历史文章'));
     expect(detail.article.url, equals('$origin/article/1'));
+    expect(detail.article.sort, equals('科技'));
+    expect(detail.article.imageUrl, equals('$origin/cover.jpg'));
+    expect(detail.article.pubDate, equals('2026-10-27'));
+    expect(detail.article.type, isZero);
+  });
+
+  testWidgets('历史记录 type=1：以记录 type 为准打开图片查看器（源 type 仅兜底）',
+      (tester) async {
+    final api = MockRustApi();
+    await pumpRssScreen(
+      tester,
+      api,
+      records: [
+        {
+          'origin': origin,
+          'title': '历史图片',
+          'link': '$origin/pic.jpg',
+          'read_time': 1700000000000,
+          // 源为网页源（rssType=0），记录 type=1 应优先
+          'type': 1,
+          'sort': '',
+          'image': '$origin/pic.jpg',
+          'pubDate': '2026-10-27',
+          'durPos': 0,
+        },
+      ],
+    );
+
+    await openHistoryAndTapFirstRecord(tester, title: '历史图片', settle: false);
+
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    expect(find.byTooltip('保存图片'), findsOneWidget);
+    expect(find.byType(RssArticleDetailScreen), findsNothing);
   });
 
   testWidgets('历史记录无链接（真实 legacy 伪主键）：不传 origin', (tester) async {
