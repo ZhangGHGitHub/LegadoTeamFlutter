@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.395] - 2026-10-27
+
+### Changed
+- [UI] 订阅源 singleUrl 的 http(s) 地址改在应用内阅读页打开（Android/iOS/macOS；桌面端保持系统浏览器外开），顶栏显示源名并随网页标题更新。
+### Fixed
+- [UI] 订阅文章中的 data: URI 图片可正常查看与保存（异步解码、限制内存占用，超限/非法数据给明确提示）。
+
 ## [2.0.394] - 2026-10-27
 
 ### Changed
