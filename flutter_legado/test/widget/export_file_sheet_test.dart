@@ -70,6 +70,21 @@ class _FakeExportFileService extends ExportFileService {
   String? lastFileName;
   String? lastContent;
 
+  /// 批26：目录树参数与保存位置
+  bool? lastUseTree;
+  bool? lastChooseTree;
+  int chooseDirectoryCalls = 0;
+  Object? chooseDirectoryError;
+  SaveTreeSelection? chosenTree;
+
+  /// 已记住的保存目录（initState 读取，用于展示当前保存位置）
+  SaveTreeSelection? rememberedTree;
+
+  /// 成功回传的目录树信息（用于断言提示文案回显实际目录）
+  String? savedFileName;
+  bool savedViaTree = false;
+  String? savedDisplayPath;
+
   /// filePath 模式：既有文件另存
   String? existingSavePath = r'C:\temp\skin.zip';
   Object? existingSaveError;
@@ -80,29 +95,55 @@ class _FakeExportFileService extends ExportFileService {
   Future<SaveFileResult?> saveToLocal({
     required String fileName,
     required String content,
+    bool useTree = true,
+    bool chooseTree = false,
   }) async {
     saveCalls++;
     lastFileName = fileName;
     lastContent = content;
+    lastUseTree = useTree;
+    lastChooseTree = chooseTree;
     final error = saveError;
     if (error != null) throw error;
     final path = savePath;
-    return path == null ? null : SaveFileResult(location: path);
+    return path == null
+        ? null
+        : SaveFileResult(
+            location: path,
+            fileName: savedFileName,
+            viaTree: savedViaTree,
+            displayPath: savedDisplayPath,
+          );
   }
 
   @override
   Future<SaveFileResult?> saveExistingFile({
     required String sourcePath,
     required String fileName,
+    bool useTree = true,
+    bool chooseTree = false,
   }) async {
     existingSaveCalls++;
     lastSourcePath = sourcePath;
     lastFileName = fileName;
+    lastUseTree = useTree;
+    lastChooseTree = chooseTree;
     final error = existingSaveError;
     if (error != null) throw error;
     final path = existingSavePath;
     return path == null ? null : SaveFileResult(location: path);
   }
+
+  @override
+  Future<SaveTreeSelection?> chooseSaveDirectory() async {
+    chooseDirectoryCalls++;
+    final error = chooseDirectoryError;
+    if (error != null) throw error;
+    return chosenTree;
+  }
+
+  @override
+  Future<SaveTreeSelection?> rememberedSaveDirectory() async => rememberedTree;
 }
 
 /// 异步结果容器（Sheet 关闭后才回填）
@@ -302,6 +343,96 @@ void main() {
       }
     });
 
+    // 批26：Android 目录树保存成功后回显实际目录（用户可据此定位文件）
+    testWidgets('保存成功（目录树）：提示回显实际保存目录', (tester) async {
+      final saver = _FakeExportFileService()
+        ..savePath =
+            'content://com.android.externalstorage.documents/document/x'
+        ..savedFileName = 'bookSource_QA (1).json'
+        ..savedViaTree = true
+        ..savedDisplayPath = '下载/legado';
+      final box = await openSheet(tester, fileService: saver, content: '[1]');
+
+      await tester.tap(find.text('保存到本地'));
+      await tester.pumpAndSettle();
+
+      expect(saver.saveCalls, 1);
+      expect(box.value?.message, '已保存到「下载/legado」：bookSource_QA (1).json');
+    });
+
+    testWidgets('未记住目录：展示首次保存提示与「换个保存位置」入口', (tester) async {
+      final saver = _FakeExportFileService();
+      await openSheet(tester, fileService: saver);
+
+      expect(find.text('首次保存需选择保存文件夹，之后沿用'), findsOneWidget);
+      expect(find.text('换个保存位置'), findsOneWidget);
+      expect(find.text('选择文件保存到哪个文件夹'), findsOneWidget);
+    });
+
+    testWidgets('已记住目录：展示当前保存位置', (tester) async {
+      final saver = _FakeExportFileService()
+        ..rememberedTree = const SaveTreeSelection(
+          location: 'content://tree/downloads',
+          displayPath: '下载',
+        );
+      await openSheet(tester, fileService: saver);
+      await tester.pumpAndSettle();
+
+      expect(find.text('保存到「下载」'), findsOneWidget);
+      expect(find.text('当前：下载 · 点击重新选择文件夹'), findsOneWidget);
+    });
+
+    testWidgets('换个保存位置：选目录后更新展示（不立即保存）', (tester) async {
+      final saver = _FakeExportFileService()
+        ..chosenTree = const SaveTreeSelection(
+          location: 'content://tree/downloads-legado',
+          displayPath: '下载/legado',
+        );
+      await openSheet(tester, fileService: saver);
+
+      await tester.tap(find.text('换个保存位置'));
+      await tester.pumpAndSettle();
+
+      expect(saver.chooseDirectoryCalls, 1);
+      expect(saver.saveCalls, 0);
+      expect(find.text('保存到「下载/legado」'), findsOneWidget);
+    });
+
+    testWidgets('保存失败：目录树失败可「换个位置」重选后重试成功', (tester) async {
+      final saver = _FakeExportFileService()
+        ..saveError = const FileSaveException(
+          code: 'TREE_WRITE_FAILED',
+          message: '无法写入所选文件夹，请换一个文件夹重试',
+        );
+      final box = await openSheet(tester, fileService: saver);
+
+      await tester.tap(find.text('保存到本地'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('保存失败'), findsOneWidget);
+      expect(find.text('无法写入所选文件夹，请换一个文件夹重试'), findsOneWidget);
+      expect(find.text('换个位置'), findsOneWidget);
+
+      // 换到可写目录后重试：第二次保存成功并带回实际目录
+      saver
+        ..saveError = null
+        ..savePath = 'content://tree/document/x.json'
+        ..savedViaTree = true
+        ..savedDisplayPath = '下载/legado'
+        ..chosenTree = const SaveTreeSelection(
+          location: 'content://tree/downloads-legado',
+          displayPath: '下载/legado',
+        );
+      await tester.tap(find.text('换个位置'));
+      await tester.pumpAndSettle();
+
+      expect(saver.chooseDirectoryCalls, 1);
+      expect(saver.saveCalls, 2);
+      expect(saver.lastChooseTree, isFalse);
+      expect(box.value?.outcome, ExportFileOutcome.savedLocal);
+      expect(find.text('保存失败'), findsNothing);
+    });
+
     testWidgets('系统另存取消：关闭 Sheet 且不返回结果', (tester) async {
       final saver = _FakeExportFileService()..savePath = null;
       final box = await openSheet(tester, fileService: saver);
@@ -375,9 +506,7 @@ void main() {
     });
 
     // [D4] 仅剥离 `FFI error:` 前缀（业务文案原样保留）
-    testWidgets('上传失败：剥离 FFI 前缀且与原文一致时不重复展示次要行', (
-      tester,
-    ) async {
+    testWidgets('上传失败：剥离 FFI 前缀且与原文一致时不重复展示次要行', (tester) async {
       api.uploadError = const BridgeError(
         message: 'FFI error: 上传失败,{"error":"mock"}',
       );
@@ -391,9 +520,7 @@ void main() {
       expect(find.textContaining('FFI error:'), findsOneWidget);
     });
 
-    testWidgets('上传成功：入参正确、展示 URL 与规则注释、可复制、完成回传', (
-      tester,
-    ) async {
+    testWidgets('上传成功：入参正确、展示 URL 与规则注释、可复制、完成回传', (tester) async {
       final written = mockClipboard(tester);
       final box = await openSheet(tester, content: '[{"a":1}]');
 
@@ -406,7 +533,8 @@ void main() {
       expect(call['contentType'], 'application/json');
       expect(call['content'], '[{"a":1}]');
       expect(call['filePath'], isNull);
-      final rule = jsonDecode(call['ruleJson'] as String) as Map<String, dynamic>;
+      final rule =
+          jsonDecode(call['ruleJson'] as String) as Map<String, dynamic>;
       expect(rule.keys.toSet(), <String>{
         'uploadUrl',
         'downloadUrlRule',
@@ -440,7 +568,10 @@ void main() {
       expect(box.value?.outcome, ExportFileOutcome.uploaded);
       expect(box.value?.url, 'https://download.example/rssSources.json');
       expect(box.value?.summary, rule['summary']);
-      expect(box.value?.message, '上传成功：https://download.example/rssSources.json');
+      expect(
+        box.value?.message,
+        '上传成功：https://download.example/rssSources.json',
+      );
     });
 
     testWidgets('uploadFileName：另存用 fileName、上传用 uploadFileName', (
@@ -620,8 +751,7 @@ void main() {
     // 读取源文件字节并复制到系统另存位置（桌面分支由服务自身写盘）
     test('saveExistingFile：复制真实源文件字节到目标路径', () async {
       final source = createTempFile('source.zip', const [9, 8, 7, 6]);
-      final destPath =
-          '${tempDir.path}${Platform.pathSeparator}saved.zip';
+      final destPath = '${tempDir.path}${Platform.pathSeparator}saved.zip';
       _useFakeSaveFilePicker(_SaveFilePickerStub(destPath));
 
       // 桌面分支（服务自行写盘）便于断言真实字节
@@ -843,11 +973,11 @@ void main() {
       addTearDown(() {
         if (userDir.existsSync()) userDir.deleteSync(recursive: true);
       });
-      final userFile = createTempFile(
-        'user.json',
-        const [1, 2, 3],
-        dir: userDir,
-      );
+      final userFile = createTempFile('user.json', const [
+        1,
+        2,
+        3,
+      ], dir: userDir);
       await openSheet(
         tester,
         content: null,
@@ -868,10 +998,7 @@ void main() {
 
     testWidgets('批25：上传成功且传 passphraseType 时展示复制口令并可复制', (tester) async {
       final written = mockClipboard(tester);
-      await openSheet(
-        tester,
-        passphraseType: SourcePassphraseType.rssSource,
-      );
+      await openSheet(tester, passphraseType: SourcePassphraseType.rssSource);
 
       await tester.tap(find.text('上传直链'));
       await tester.pumpAndSettle();
@@ -886,10 +1013,7 @@ void main() {
       expect(dialog, findsOneWidget);
       final preview = tester
           .widget<SelectableText>(
-            find.descendant(
-              of: dialog,
-              matching: find.byType(SelectableText),
-            ),
+            find.descendant(of: dialog, matching: find.byType(SelectableText)),
           )
           .data!;
       expect(preview, startsWith('复制口令到阅读导入'));

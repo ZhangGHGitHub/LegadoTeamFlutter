@@ -66,6 +66,8 @@ class _FakeExportFileService extends ExportFileService {
   Future<SaveFileResult?> saveToLocal({
     required String fileName,
     required String content,
+    bool useTree = true,
+    bool chooseTree = false,
   }) async {
     saveCalls++;
     lastSaveFileName = fileName;
