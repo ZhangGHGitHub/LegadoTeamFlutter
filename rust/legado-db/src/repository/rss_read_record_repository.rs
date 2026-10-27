@@ -404,6 +404,15 @@ mod tests {
         );
         assert_eq!(img_by_origin.pub_date.as_deref(), Some("2026-10-27"));
         assert_eq!(img_by_origin.dur_pos, 42);
+
+        // serde JSON 键名锁定：type / pubDate / durPos（对齐原版 Room 列名），
+        // read_time 保持既有 snake_case（Dart 侧 JsonKey 依赖）。
+        let json = serde_json::to_string(&all).unwrap();
+        assert!(json.contains("\"type\":1"));
+        assert!(json.contains("\"sort\":\"图片分类\""));
+        assert!(json.contains("\"pubDate\":\"2026-10-27\""));
+        assert!(json.contains("\"durPos\":42"));
+        assert!(json.contains("\"read_time\":"));
     }
 
     /// 批20：旧数据（可空列 NULL、NOT NULL 列取列默认值）读出默认口径
