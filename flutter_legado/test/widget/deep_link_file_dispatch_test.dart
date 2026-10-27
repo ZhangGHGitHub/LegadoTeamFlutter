@@ -86,6 +86,8 @@ void main() {
     await stage('book.epub', 'epub-bytes');
     when(() => api.archiveListZipFiles(zipPath: any(named: 'zipPath')))
         .thenAnswer((_) async => ['a.txt']);
+    when(() => api.archiveList7zFiles(sevenZipPath: any(named: 'sevenZipPath')))
+        .thenAnswer((_) async => ['b.epub']);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (call) async {
       if (call.method == 'copyContentUri') {
@@ -197,14 +199,19 @@ void main() {
     expect(copyArgs.single['persistent'], isFalse);
   });
 
-  testWidgets('7z 压缩包 → 明确提示暂不支持', (tester) async {
+  testWidgets('7z 压缩包 → 解压导入对话框并调用 archiveList7zFiles', (tester) async {
     stageCopiedFile('books.7z');
     await pumpApp(tester);
     await openFile(tester, name: 'books.7z');
 
     expect(find.text('压缩包导入'), findsOneWidget);
-    expect(find.text('暂不支持 7z，请解压后导入'), findsOneWidget);
+    expect(find.text('b.epub'), findsOneWidget);
     expect(find.text('a.txt'), findsNothing);
+    verify(
+      () => api.archiveList7zFiles(
+        sevenZipPath: any(named: 'sevenZipPath'),
+      ),
+    ).called(1);
     expect(copyArgs.single['persistent'], isFalse);
   });
 

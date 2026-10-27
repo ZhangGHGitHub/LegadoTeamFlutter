@@ -69,11 +69,12 @@ void main() {
       }
     });
 
-    test('7z 单独可识别（供服务层给「暂不支持」提示）', () {
-      expect(LegadoDeepLink.isSevenZipPath('a.7z'), isTrue);
-      expect(LegadoDeepLink.isSevenZipPath('a.7Z'), isTrue);
-      expect(LegadoDeepLink.isSevenZipPath('a.zip'), isFalse);
-      expect(LegadoDeepLink.isSevenZipPath('a.rar'), isFalse);
+    test('7z 与 zip/rar 同走压缩包分流（批24 起可解压导入）', () {
+      expect(
+        LegadoDeepLink.classifyFile('a.7z', jsonContent: false),
+        IncomingFileKind.archive,
+      );
+      expect(LegadoDeepLink.isArchivePath('a.7Z'), isTrue);
     });
 
     test('未知后缀 / 无后缀 / 空串归为 unsupported', () {
