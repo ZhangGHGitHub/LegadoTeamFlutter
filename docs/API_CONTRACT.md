@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-10-28 | **批30：书源检验状态 + 原版 web-dist 同步（零新增 FFI 方法，§2 方法计数全部不变；服务端新增 4 条原版 HTTP 端点，见 §4）**：① **DB `SCHEMA_VERSION` 114→115**：新增 `book_source_check_states` 表（逐列对齐原版 `BookSourceCheckState.kt` 与 `DatabaseMigrations.kt:108-121` 的 `migration_105_106`：`bookSourceUrl` 主键 + 外键 `book_sources(bookSourceUrl)` ON DELETE CASCADE、`revision`/`sourceRevision`/`status`/`checkedAt`/`detail` 全 NOT NULL），迁移 114→115 建表 + `INSERT OR IGNORE` 为存量源播种 `NEEDS_CHECK`（随机 revision），幂等，并纳入开库自愈 `repair_legacy_columns`；**不重建 `book_sources_part` 视图**（Rust 无消费方，网页管理端点直接返回完整源 + 状态）。② **状态机**：书源新增/规则变更（`checkContent()` 变化）→ 重建状态；仅改启用/排序/权重等不触发；`startBookSourceCheck` 排队重置 `revision` 并保留 `sourceRevision`，结果写回以 `(url, revision, status='NEEDS_CHECK')` CAS；`stop` 中止后台任务，未完成源保持 `NEEDS_CHECK`。`checkContent()` 归一忽略 `customOrder/enabled/enabledExplore/lastUpdateTime/respondTime/weight`，另把 `enabledCookieJar` 的 `None` 与默认 `true` 同指纹（对齐网页端 `sourceCheckState.js` 规范化）。③ **保存钩子**：FFI `addSource`/`updateSource`/`importSources`、服务端 `/saveBookSource(s)`/`/saveJsSource`、备份与旧版导入、`RoomImporter::import_book_sources` 均维护状态（新增/规则变更重建，规则不变保留）。④ **web-dist**：整体替换为上游 `531f9fbf07` 的 60 文件构建产物（新 hash 资产 + `vue/js_source_template.js`，旧 hash 资产清除；字节取上游 git blob，保持 `.gitattributes -text` 字节锁定）。⑤ **验证**：Rust 全量 `cargo test --workspace` 通过；真实 TCP 服务 + headless Chrome 冒烟：`/vue/` 渲染、拉取源、检验选中、状态显示「检验失败」，书籍/订阅页无 console/page error。 |
 | 2026-10-28 | **批29：RSS 阅读记录按源清空 + 书源登录头同站门控（契约先行，零新增方法 / 1 方法可选参数；批29b 审查回修已并入）**：§2.35 `rssClearReadRecords` 新增可选命名参数 `{String? origin}`（Rust `ffi::rss_clear_read_records(origin: Option<String>)`，核心实现 `legado-ffi/src/api/rss_read_record_api.rs::clear_by_origin` → `legado-db::RssReadRecordRepository::clear_by_origin`）——对齐原版 `ReadRecordDialog` 的「清空」按当前源 `RssReadRecordDao.deleteAllRecord(origin)`。**清空语义（批29b 审查 P1-1 修正）**：仅 `None` 清空全部；`Some(origin)` 一律按 trim 后 origin 精确过滤，空串/纯空白删除 0 行、**绝不**退化为清空全部（原版 WHERE origin='' 同样不命中正常记录）；DB `clear_by_origin` 同口径 trim，全量清空唯一入口 `clear_all`。方法计数不变（§2.35 = 7，附录合计不变）。同批登记：RSS 阅读记录**全局开关** `enableRssReadRecord`（默认 true，Flutter SharedPreferences 键，对齐原版 `AppConfig.enableRssReadRecord`；**不进 FFI/DB**，写入门控在 Dart 两处入口：列表打开与桥动作打开）；按源开关 `RssSource.enableReadRecord` 维持字段保真、不参与运行期（批28 已登记，原版行为一致）。**书源登录头同站门控（对齐上游 #1099 `AnalyzeUrl.isLoginHeaderSite`；批29b 审查 P2-4/P2-5 登记）**：① **行为**——登录头（`loginHeader_<bookSourceUrl>`）只附加到与书源**同 eTLD+1** 的请求，粒度复用 Cookie 域键单一真源 `legado_net::cookie_store::cookie_domain_key`（多段公共后缀 `com.cn`、私有后缀 `github.io`、IP 字面量按自身、单段主机按自身，与 Cookie 域处理同源一致）；覆盖搜索/详情/目录/正文/`nextContentUrl`/`nextTocUrl`（串行+并发）/发现页/音频缓存；相对目标按各链 baseUrl 绝对化后判定；无法判定域名（非 http(s)、畸形串、缺 base、`bookSourceUrl` 非 URL）回退旧行为（附加）。合并顺序：静态源 header → 登录头（仅门控命中）→ AnalyzeUrl 头 → 请求属域 JS cookie。② **已登记偏差/风险**——㈠ 协议相对地址 `//host/path`：我方按 baseUrl 补协议后判定（`//cdn.other.com/x` → 跨站，不附登录头），比上游「按原样取子域失败 → 回退附加」更严格（收敛方向，安全）；㈡ `bookSourceUrl` 含 `@js:` 等非 URL 形态时 `Url::parse` 失败 → 回退**无条件附加**登录头，**潜在外发风险**（上游同构回退的等价物；规则书源 key 为 URL，此形态仅见畸形/脚本源，后续批评估改为失败即不附加）；㈢ 图片/封面链（`image_api`、封面规则）**不附加登录头（同站也不带）**，为批前既有行为（本批未改；该链合并源 header 后亦未剔除 `proxy` 伪头，登记后续项）；㈣ 门控在**发起请求前**按请求 URL 判定，HTTP 重定向（3xx 跟随）**不重新门控**——同站 URL 302 到跨站时登录头仍随重定向请求发出（与上游客户端级跟随同构，已知边界）。③ **同批登记（批29b 审查 P3-6）**——搜索单源 `search_single_source` 合并 `source.header` 但**不附登录头**（原版搜索链按同站附加，差异登记，后续批接线）；RSS 链自身沿用**同源（scheme+host+port 全等）**门控（比书源 eTLD+1 更严格，见 §2.5 批15b 注）；Flutter `rssHistoryNotifierProvider` 为全局单例，全局与按源阅读记录对话框共享同一份 `records/isLoading/error`，交替打开存在作用域串扰（**后续批**改 family/局部作用域）。④ **proxy 伪头剔除（批29b 审查 P2-6，既有泄漏顺手修复）**——发现页、音频缓存下载、并发 `nextTocUrl` 分页三路径发送前补 `strip_proxy_header`；`fetch_simple_cached`/`fetch_toc_page_optional`（正文分页/subContent/串行目录分页）同口径补齐。 |
 | 2026-10-28 | **批28：原版规则字段往返保真（schema v114 / ContentRule 批量正文 / HighlightRule.group / RssSource.enableReadRecord；零新增 FFI 方法，§2 方法计数全部不变）**：① **模型契约加法**（详见 §2.3/§2.5/§2.36 注）：`BookSource.ruleContent` 增 `contentBatch`（String，可空）/`maxBatchSize`（Int，可空，`null`=不支持批量）；`HighlightRule` 增 `group`（可空，键名 `group`）；`RssSource` 增 `enableReadRecord`（bool，缺键默认 `true`）。全部按原版键名/类型（`ContentRule.kt`、`HighlightRule.kt`、`RssSource.kt`）冻结。② **DB `SCHEMA_VERSION` 113→114**：`ALTER TABLE highlightRules ADD COLUMN "group" TEXT DEFAULT ''`（对齐原版 `HighlightRule.kt:37-38` 与 `DatabaseMigrations.kt:63-66` 的 `migration_108_109`）、`ALTER TABLE rssSources ADD COLUMN enableReadRecord INTEGER NOT NULL DEFAULT 1`（对齐原版 `RssSource.kt:28-30`；该列自原版 Room schema **112** 起存在，上游无独立 ALTER）；建表语句同步，迁移 113→114 全为 `add_column_if_not_exists`，**幂等**（`user_version` 门禁 + 列存在性检测），并纳入开库自愈 `repair_legacy_columns`。③ **往返路径**：源保存/导入/导出（`add_source`/`update_source`/`import_sources`/`export_sources`）、RSS 源 CRUD、高亮规则 CRUD、`BackupData`（`bookSources`/`rssSources`/`highlightRules`）与原版 zip（`bookSource.json`/`rssSources.json`/`highlightRule.json`）**自动透传**新字段（模型全字段序列化 + 全列 SQL 读写，无字段级重建）。④ **Dart**：源编辑器保存改为「原 JSON 补丁」（编辑后的模型 JSON 深合到原始 JSON 之上，未在表单出现的规则字段保留）；高亮规则编辑保留 `group`；RSS 源编辑保留 `enableReadRecord`（**无 UI 开关**，按源开关上游运行期已回退为全局开关）。**遗留（本批不实现）**：正文批量下载（`BookContent.analyzeContentBatch` / `BookSource.supportContentBatch/contentBatchSize`）与按源 RSS 阅读记录开关行为。方法计数不变（§2.3 = 33、§2.5 = 19、§2.36 = 11，附录合计不变） |
 | 2026-10-28 | **批27：原版 P0 数据兼容（schema v113 / readRecord 13 字段 / book_memos / 备份 v5；零新增 FFI 方法，§2 方法计数全部不变）**：① DB `SCHEMA_VERSION` 112→113，`readRecord` 主键改 `(deviceId,bookName,author)`、补 `lastChapterTitle`/`lastChapterIndex`（DEFAULT -1）/`lastChapterPos`（DEFAULT 0）/`coverUrl`/`resolvedAuthor`/`displayBookName`（NOT NULL DEFAULT ''）/`displayAuthor`（NOT NULL DEFAULT ''）/`metadataEditedAt`（NOT NULL DEFAULT 0）8 列 + `index_readRecord_snapshot(displayBookName,displayAuthor,lastRead DESC,deviceId,bookName,author)`/`index_readRecord_bookName_author`；新增 `book_memos(bookUrl PK, content NOT NULL, updatedAt NOT NULL)`（无级联外键）。迁移 112→113 重建表**原样搬运**（不拆旧 `\u001Eauthors:` 合并串），先探测 `displayBookName` 列保证上游「发列未升版本」场景幂等。② `readRecord` 读写按新主键；恢复合并对齐上游 `mergeRestoredReadRecord`（同键较新者胜 + 章节快照/封面/显示元数据按 `metadataEditedAt` 选择），**同名不同作者分行**；旧合并作者串仅保留解码用途（搜索阅读记录标识/展示），写入侧不再产生。③ `BackupData` 增 `bookMemos`（`{bookUrl,content,updatedAt}` 数组，**空表也写空数组**），`BACKUP_VERSION` 4→5；`readRecords` 元素扩为 13 字段；原版 zip 映射增 `bookMemo.json`，恢复按 `restoredBookUrls` + 书籍存在 + `updatedAt` 更新者胜过滤；`readRecordCovers/`、`coverFont.ttf` 仍不落盘（warn 跳过）。④ Dart `ReadRecord` 模型补 13 字段，阅读记录页按 `displayBookName`/`displayAuthor`（空回退物理书名/作者）分组展示，同名不同作者不再按书名合并时长。方法计数不变（§2.11 = 4、§2.12 = 6，附录合计不变） |
@@ -1454,6 +1455,62 @@
 > ④ 无启用规则/DB 未初始化返回空列表（非异常），单规则失败记日志跳过；
 > ⑤ 入参仅 trim 不再小写（中文词兼容，原版原样传词）；⑥ 原版部分规则依赖 Rhino 专属能力
 > （JavaImporter/org.jsoup/cache.putMemory）在 QuickJS 下不可等价复现，规则数据不改写、失败即跳过。
+
+---
+
+## 4. 服务端 HTTP 端点（legado-server 原版兼容面，非 FFI 计数范围）
+
+> 本节记录 `rust/legado-server` 提供的**原版 Web API**（路径与响应信封对齐 Android
+> 原版 `HttpServer.kt` + `ReturnData{isSuccess,errorMsg,data}`，HTTP 200）。这些端点
+> 属于 Web 服务兼容面，**不计入** §2 FFI 方法数 / 附录合计。实现与逐条差异登记见
+> `legado-server/src/legacy/mod.rs` 各批模块文档。
+
+### 4.1 批30 新增：书源检验状态 4 条
+
+| 端点 | 方法 | 令牌 | 请求 | 响应 `data` |
+|---|---|---|---|---|
+| `/getBookSourcesForManagement` | GET | 无 | `urls`（可选，JSON 字符串数组；缺省全量） | `{"sources": [BookSource], "states": [BookSourceCheckState]}` |
+| `/getBookSourceCheckStates` | GET | 无 | — | `{"states": [BookSourceCheckState], "sessionToken": string\|null}` |
+| `/startBookSourceCheck` | POST | `x-legado-token` | `{"sources": [BookSource], "keyword": string}` | `{"sessionToken": string, "sourceRevisions": {url: revision}}` |
+| `/stopBookSourceCheck` | POST | `x-legado-token` | `{"sessionToken": string}` | `""`（成功） |
+
+`BookSourceCheckState` 字段（与原版 Gson 输出键名一致）：
+
+```json
+{
+  "bookSourceUrl": "https://example.com",
+  "revision": "UUID",
+  "sourceRevision": "UUID",
+  "status": "NEEDS_CHECK | PASSED | FAILED | UNCHECKABLE",
+  "checkedAt": 0,
+  "detail": ""
+}
+```
+
+状态机与错误文案（逐条对齐 `BookSourceCheckController.kt`）：
+
+- 提交源与库内版本不一致 → `书源尚未保存或设备版本已变更，请先保存或重新拉取`；
+  比较口径为 `BookSource.checkContent()`（忽略 `customOrder/enabled/enabledExplore/
+  lastUpdateTime/respondTime/weight`，`enabledCookieJar` 的缺省/null 与默认 `true`
+  同指纹）；
+- 已有检验会话 → `书源调试通道占用中，请稍后重试`；`sources` 为空 →
+  `请选择需要检验的书源`；请求体缺失/坏 JSON → `检验参数无效`；
+- 停止时会话不存在或令牌不匹配 → `检验会话已结束或已更换`；
+- `status` 写回使用 `(bookSourceUrl, revision, status='NEEDS_CHECK')` CAS：保存触发的
+  状态重建、停止或旧任务结果都不会覆盖新状态；未完成源在停止后保持 `NEEDS_CHECK`。
+
+数据层：DB v115 `book_source_check_states`（`bookSourceUrl` 主键 + 外键
+`book_sources(bookSourceUrl)` ON DELETE CASCADE；删源级联删状态）。书源新增/规则变更
+（`checkContent()` 变化）重建状态；仅改启用/排序/权重等保留状态。检验执行使用
+`legado-fetcher` 的 `webbook_search/info/chapters/content` 链；**发现页校验未接入**
+（服务端发现引擎不可达，登记差异）、逐源串行执行（原版按线程池并行，登记差异）。
+
+### 4.2 既有端点索引
+
+早期批次已落地的原版端点（`/getBookshelf`、`/getBookContent`、`/getBookSource(s)`、
+`/saveBookSource(s)`、`/saveJsSource`、`/getHttpLog(s)`、`/getReview*`、
+`/legacyReviewPage`、`/refreshToc` 等）清单与令牌面见
+`legado-server/src/legacy/mod.rs` 模块文档；§4.1 为批30 增量。
 
 ---
 
