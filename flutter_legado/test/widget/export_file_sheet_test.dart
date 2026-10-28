@@ -382,6 +382,21 @@ void main() {
       expect(find.text('当前：下载 · 点击重新选择文件夹'), findsOneWidget);
     });
 
+    // P3-5：第三方 provider 无法解析中文路径时 displayPath 为 null；
+    // 副标题展示「已选文件夹」而不是裸 content:// URI（用户无法据此定位）
+    testWidgets('已记住目录但无 displayPath：副标题使用「已选文件夹」', (tester) async {
+      final saver = _FakeExportFileService()
+        ..rememberedTree = const SaveTreeSelection(
+          location: 'content://com.example.provider/tree/primary%3ADocs',
+        );
+      await openSheet(tester, fileService: saver);
+      await tester.pumpAndSettle();
+
+      expect(find.text('保存到「已选文件夹」'), findsOneWidget);
+      expect(find.text('当前：已选文件夹 · 点击重新选择文件夹'), findsOneWidget);
+      expect(find.textContaining('content://'), findsNothing);
+    });
+
     testWidgets('换个保存位置：选目录后更新展示（不立即保存）', (tester) async {
       final saver = _FakeExportFileService()
         ..chosenTree = const SaveTreeSelection(
@@ -431,6 +446,37 @@ void main() {
       expect(saver.lastChooseTree, isFalse);
       expect(box.value?.outcome, ExportFileOutcome.savedLocal);
       expect(find.text('保存失败'), findsNothing);
+    });
+
+    // P3-4：目录树不可写/选择器不可用时，失败面板提供「改用系统另存
+    // 对话框」（useTree=false），避免生产环境无路可走。
+    testWidgets('保存失败：可改用系统另存对话框（useTree=false）', (tester) async {
+      final saver = _FakeExportFileService()
+        ..saveError = const FileSaveException(
+          code: 'TREE_NOT_WRITABLE',
+          message: '该文件夹不可写，请换一个',
+        );
+      final box = await openSheet(tester, fileService: saver);
+
+      await tester.tap(find.text('保存到本地'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('该文件夹不可写，请换一个'), findsOneWidget);
+      expect(saver.lastUseTree, isTrue);
+      expect(find.text('改用系统另存对话框'), findsOneWidget);
+
+      saver
+        ..saveError = null
+        ..savePath = 'content://legacy/document/x.json';
+      await tester.ensureVisible(find.text('改用系统另存对话框'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('改用系统另存对话框'));
+      await tester.pumpAndSettle();
+
+      expect(saver.saveCalls, 2);
+      expect(saver.lastUseTree, isFalse);
+      expect(saver.lastChooseTree, isFalse);
+      expect(box.value?.outcome, ExportFileOutcome.savedLocal);
     });
 
     testWidgets('系统另存取消：关闭 Sheet 且不返回结果', (tester) async {

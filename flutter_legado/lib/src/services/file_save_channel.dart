@@ -136,6 +136,11 @@ abstract class FileSaveChannel {
   /// 返回实际保存结果（Android 为 content:// URI + provider 实际文件名）；
   /// 用户取消返回 null；写入失败抛 [FileSaveException]（原生端已捕获异常，
   /// 失败只清理本次创建的文档，不删除用户已有文件）。
+  ///
+  /// 契约假设（P3-1）：Android 目录树模式以 `DocumentsContract.createDocument`
+  /// 返回**本次新建**的文档（同名时 provider 自动追加 ` (N)`，而不是返回
+  /// 已有文档）；失败清理只删除该文档。若某第三方 provider 违背该假设，
+  /// 原生仍只在写入/校验失败时删除该 URI，不会遍历目录删除其他文件。
   Future<SaveFileResult?> saveFile({
     required String fileName,
     required Uint8List bytes,
@@ -278,23 +283,31 @@ class MethodChannelFileSaveChannel extends FileSaveChannel {
   }
 
   /// 原生未回传 message 时的中文兜底（按错误码映射）
-  static String _friendlyReason(String code) => switch (code) {
-    'INVALID_ARGS' => '文件名或导出内容无效',
-    'EMPTY_BYTES' => '导出内容为空，未创建文件',
-    'ALREADY_PENDING' => '已有另存请求进行中，请稍候重试',
-    'SAVE_START_FAILED' => '无法打开系统保存对话框，请重试',
-    'NO_URI' => '系统未返回保存位置，请重试',
-    'TIMEOUT' => '等待系统保存对话框超时，请重试',
-    'ACTIVITY_DESTROYED' => '页面已销毁，另存请求中断',
-    'SAVE_VERIFY_FAILED' => '写入校验失败，文件未保存，请重试或换一个文件夹',
-    'TREE_UNAVAILABLE' => '保存文件夹不可用，请重新选择文件夹后重试',
-    'TREE_WRITE_FAILED' => '无法写入所选文件夹，请换一个文件夹重试',
-    'TREE_UNSUPPORTED' => '当前系统不支持选择文件夹，请改用系统另存对话框',
-    'FALLBACK_PATH_UNKNOWN' => '无法确定所选文件夹，请选择内部存储 > Download 或子文件夹后重试',
-    'LEGACY_NOT_SUPPORTED' => 'Android 10 以下暂不支持保存到下载目录，请选择其他位置',
-    'SAVE_FAILED' => '无法写入所选位置，请换一个文件夹重试',
-    _ => '保存失败，请重试',
+  ///
+  /// [P3-7] 该表与 Kotlin `SaveFileBridge.reasonOf` **逐条一致**，由
+  /// `test/unit/file_save_error_codes_test.dart` 直接比对两端源码表；
+  /// 新增错误码时必须同步两处。
+  @visibleForTesting
+  static const Map<String, String> errorReasons = <String, String>{
+    'INVALID_ARGS': '文件名或导出内容无效',
+    'EMPTY_BYTES': '导出内容为空，未创建文件',
+    'ALREADY_PENDING': '已有另存请求进行中，请稍候重试',
+    'SAVE_START_FAILED': '无法打开系统保存对话框，请重试',
+    'NO_URI': '系统未返回保存位置，请重试',
+    'TIMEOUT': '等待系统保存对话框超时，请重试',
+    'ACTIVITY_DESTROYED': '页面已销毁，另存请求中断',
+    'SAVE_VERIFY_FAILED': '写入校验失败，文件未保存，请重试或换一个文件夹',
+    'TREE_UNAVAILABLE': '保存文件夹不可用，请重新选择文件夹后重试',
+    'TREE_WRITE_FAILED': '无法写入所选文件夹，请换一个文件夹重试',
+    'TREE_NOT_WRITABLE': '该文件夹不可写，请换一个',
+    'TREE_UNSUPPORTED': '当前系统不支持选择文件夹，请改用系统另存对话框',
+    'FALLBACK_PATH_UNKNOWN': '无法确定所选文件夹，请选择内部存储 > Download 或子文件夹后重试',
+    'LEGACY_NOT_SUPPORTED': 'Android 10 以下暂不支持保存到下载目录，请选择其他位置',
+    'SAVE_FAILED': '无法写入所选位置，请换一个文件夹重试',
   };
+
+  static String _friendlyReason(String code) =>
+      errorReasons[code] ?? '保存失败，请重试';
 
   /// 提取结构化错误里的技术详情（供失败面板次要行/复制排障）
   static String? _detailOf(Object? details) {

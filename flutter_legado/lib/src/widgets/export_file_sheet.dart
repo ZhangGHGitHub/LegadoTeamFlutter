@@ -26,7 +26,9 @@
 //
 // [批26 2026-10-27] Android 保存改为 SAF 目录树：选项区展示当前保存位置，
 // 并提供「换个保存位置」入口（重选目录后记住）；保存失败面板同样提供
-// 「换个位置」，重选成功后立即重试。iOS/桌面对话框每次自选位置，不展示。
+// 「换个位置」，重选成功后立即重试。另提供「改用系统另存对话框」
+// （useTree=false）兜底入口，directory tree 不可用时仍有可完成的保存路径。
+// iOS/桌面对话框每次自选位置，不展示目录树入口。
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
@@ -377,7 +379,13 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
   ///
   /// content 模式写文本字节；filePath 模式复制既有文件字节（二进制安全）。
   /// [chooseTree] 为 true 时强制重新选择保存文件夹（Android 目录树）。
-  Future<void> _saveToLocal({bool chooseTree = false}) async {
+  /// [useTree] 为 false 时走旧 `ACTION_CREATE_DOCUMENT` 系统另存对话框
+  /// （P3-4：目录树不可用/不可写时的显式回退入口，避免生产环境
+  /// `chooseTree` 故障后无路可走）。
+  Future<void> _saveToLocal({
+    bool chooseTree = false,
+    bool useTree = true,
+  }) async {
     _resetCopyFeedback();
     setState(() {
       _saving = true;
@@ -392,11 +400,13 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
           ? await _fileService.saveToLocal(
               fileName: widget.fileName,
               content: widget.content!,
+              useTree: useTree,
               chooseTree: chooseTree,
             )
           : await _fileService.saveExistingFile(
               sourcePath: filePath,
               fileName: widget.fileName,
+              useTree: useTree,
               chooseTree: chooseTree,
             );
     } catch (e) {
@@ -454,6 +464,12 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     if (!mounted || tree == null) return;
     await _saveToLocal();
   }
+
+  /// P3-4：目录树不可写/不可用时的显式回退入口
+  ///
+  /// 改用旧 `ACTION_CREATE_DOCUMENT` 系统另存对话框（`useTree=false`），
+  /// 用户始终有一条可完成的保存路径（生产环境 chooseTree 故障时不再卡死）。
+  Future<void> _retryWithLegacyDialog() => _saveToLocal(useTree: false);
 
   /// 上传直链（生效规则 → §2.51 directLinkUpload）
   ///
@@ -672,12 +688,16 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     );
   }
 
-  /// 当前保存目录的展示文案（未记住时回落到 URI/默认文案）
+  /// 当前保存目录的展示文案
+  ///
+  /// [P3-5] `displayPath` 缺失（第三方 provider 无法解析中文路径）时显示
+  /// 「已选文件夹」而不是裸 `content://` URI——用户无法从 URI 获得位置信息，
+  /// 长串还会撑破副标题。
   String? _displaySavedTree() {
     final tree = _savedTree;
     if (tree == null) return null;
     final display = tree.displayPath?.trim();
-    return (display == null || display.isEmpty) ? tree.location : display;
+    return (display == null || display.isEmpty) ? '已选文件夹' : display;
   }
 
   /// 上传成功：URL + 规则注释（summary）
@@ -850,6 +870,17 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
                 onPressed: _changeLocationAndRetry,
                 icon: const Icon(Symbols.drive_file_move_rounded, size: 18),
                 label: const Text('换个位置'),
+              ),
+            ),
+            const SizedBox(height: 8),
+            // P3-4：目录树选择本身不可用时也要有出路——退回旧系统另存
+            // 对话框（useTree=false），避免失败面板只剩「重试」死循环。
+            SizedBox(
+              width: double.infinity,
+              child: TextButton.icon(
+                onPressed: _retryWithLegacyDialog,
+                icon: const Icon(Symbols.save_alt_rounded, size: 18),
+                label: const Text('改用系统另存对话框'),
               ),
             ),
             const SizedBox(height: 8),
