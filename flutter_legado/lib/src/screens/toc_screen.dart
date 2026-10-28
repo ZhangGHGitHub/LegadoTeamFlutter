@@ -13,6 +13,7 @@ import '../constants/pref_keys.dart';
 import '../models/models.dart';
 import '../providers/bookmark/bookmark_notifier.dart';
 import '../providers/providers.dart';
+import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
 import '../services/audio_cache_events.dart';
 import '../services/book_api.dart';
@@ -211,6 +212,16 @@ class _TocScreenState extends ConsumerState<TocScreen>
   }
 
   /// 初始化在架状态（DB 有记录且非 notShelf / refresh_toc 占位）
+  ///
+  /// [批31b P1-1] 同时以 DB 记录的 `readConfig` 刷新本页 `_book`：路由参数
+  /// 可能是调用方持有的旧快照（阅读器/详情页打开目录时传入的对象），若只读
+  /// `_inBookshelf` 而保留旧 `readConfig`，则「目录显示反转/倒序目录」等已落库
+  /// 配置在同一对象重开目录时不生效，且后续整书写回会把 DB 值还原。
+  ///
+  /// 只取 DB 的 `readConfig`（目录勾选项的唯一真源），其余字段保留路由快照：
+  /// 调阅方可能持有比 DB 更新的内存进度（阅读器章内位置），整本替换会让
+  /// 当前章高亮/定位回退。查询失败或无记录时保持路由快照（未入库在线书
+  /// 仅展示、不落库）。
   Future<void> _initBookshelfState() async {
     try {
       final dbBook =
@@ -219,6 +230,10 @@ class _TocScreenState extends ConsumerState<TocScreen>
       setState(() {
         _inBookshelf =
             BookOpenUtils.resolveInBookshelf(dbBook, widget.book);
+        final dbConfig = dbBook?.readConfig;
+        if (dbConfig != null) {
+          _book = _book.copyWith(readConfig: dbConfig);
+        }
       });
     } catch (_) {
       // 查询失败视为未在架，避免误 refreshToc 落库
@@ -604,6 +619,16 @@ class _TocScreenState extends ConsumerState<TocScreen>
     _tocScrollController.jumpTo(offset);
   }
 
+  /// [批31b P3-5] 反转切换后于下一帧重新定位当前章
+  ///
+  /// 展示顺序改变后原滚动偏移对应到别的章节；待列表按新顺序重建完成
+  /// （post frame）再按 `durChapterIndex` 重新定位。
+  void _scheduleScrollToCurrentChapter() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _scrollToChapter(_book.durChapterIndex);
+    });
+  }
+
   // ===== 搜索（300ms 防抖） =====
 
   void _onSearchChanged(String text) {
@@ -701,6 +726,9 @@ class _TocScreenState extends ConsumerState<TocScreen>
         await _updateBook(
           _book.copyWith(readConfig: rtc.copyWith(reverseToc: !rtc.reverseToc)),
         );
+        // [批31b P3-5] 展示顺序反转后重新定位当前章（对齐原版列表刷新后
+        // scrollToDurChapter 语义），避免用户停留在与原位置无关的行
+        _scheduleScrollToCurrentChapter();
         break;
       case 'reverseTocDisplay':
         // [批31] 目录显示反转（对齐原版 ReadConfig.reverseTocDisplay）：
@@ -713,6 +741,8 @@ class _TocScreenState extends ConsumerState<TocScreen>
             ),
           ),
         );
+        // [批31b P3-5] 同 reverseToc：切换后重新定位当前章
+        _scheduleScrollToCurrentChapter();
         break;
       case 'useReplace':
         // 接 ReadConfig.useReplaceRule 字段经 BookApi 更新（对齐原版 menu_use_replace）
@@ -793,10 +823,25 @@ class _TocScreenState extends ConsumerState<TocScreen>
   }
 
   /// 经 BookApi 更新书籍并同步本页状态
+  ///
+  /// [批31b P1-1] 落库成功后若阅读器正打开同一本书，同步 ReaderNotifier 的
+  /// `currentBook`（与 `reader_menu_panel._toggleReverseTocDisplay` 同构）：
+  /// 阅读器持有的是打开时的 Book 快照，目录页改了 `readConfig` 后若不同步，
+  /// 阅读器后续任何整书 `updateBook`（设置保存/进度回写等）都会用旧快照
+  /// 把刚落库的配置还原。
   Future<void> _updateBook(Book updated) async {
     try {
       await ref.read(bookApiProvider).updateBook(updated);
-      if (mounted) setState(() => _book = updated);
+      // 页面已关闭（勾选后立即返回）：跳过内存同步——阅读器返回时
+      // 会经 RouteAware.didPopNext 重读 DB（见 reader_screen.dart）
+      if (!mounted) return;
+      setState(() => _book = updated);
+      final readerState = ref.read(readerNotifierProvider);
+      if (readerState.currentBook?.bookUrl == updated.bookUrl) {
+        ref
+            .read(readerNotifierProvider.notifier)
+            .updateCurrentBook(updated);
+      }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

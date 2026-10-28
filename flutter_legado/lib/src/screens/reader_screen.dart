@@ -17,6 +17,7 @@ import '../providers/bookshelf/bookshelf_notifier.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
 import '../routes.dart';
+import '../utils/app_route_observer.dart';
 import '../utils/book_open_utils.dart';
 import '../widgets/reader/read_aloud_bar.dart';
 import '../widgets/reader/auto_turn_panel.dart';
@@ -44,7 +45,7 @@ class ReaderScreen extends ConsumerStatefulWidget {
 }
 
 class _ReaderScreenState extends ConsumerState<ReaderScreen>
-    with WidgetsBindingObserver {
+    with WidgetsBindingObserver, RouteAware {
   final GlobalKey<ReaderPageViewState> _pageViewKey =
       GlobalKey<ReaderPageViewState>();
 
@@ -90,6 +91,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   /// [P2-30] 退出判定进行中标记（防系统返回连点触发多路判定/重复弹窗）
   bool _exitPending = false;
 
+  /// [批31b P1-1] 目录页在栈上（打开目录前置位，didPopNext 消费后复位）。
+  ///
+  /// 只对「目录返回」重读 DB 书籍快照：目录页会持久化书籍配置
+  /// （reverseToc/reverseTocDisplay/useReplaceRule），阅读器持有的旧快照
+  /// 必须同步；而其他路由（设置/替换规则等）返回不涉及书籍配置，
+  /// 避免每次关闭弹窗都多一次 DB 读。
+  bool _tocRouteOpen = false;
+
   @override
   void initState() {
     super.initState();
@@ -109,6 +118,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       unawaited(_loadAdvancedConfig());
     }
     _layoutIsNight = isNight;
+    // [批31b P1-1] 订阅全局路由观察器：目录页 pop 回阅读器（didPopNext）
+    // 时重读 DB 书籍快照。RouteObserver.subscribe 对同一路由幂等，重复
+    // didChangeDependencies 不会重复登记。
+    final route = ModalRoute.of(context);
+    if (route != null) {
+      appRouteObserver.subscribe(this, route);
+    }
   }
 
   @override
@@ -116,6 +132,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
     HardwareKeyboard.instance.removeHandler(_onHardwareKey);
     // [C3-hunt | 2026-09-24] 注销生命周期观察者（与 initState 配对）
     WidgetsBinding.instance.removeObserver(this);
+    // [批31b P1-1] 注销路由观察（与 didChangeDependencies 配对，
+    // 防销毁后回调泄漏）
+    appRouteObserver.unsubscribe(this);
     _autoTimer?.cancel();
     // [UI-fix v2.0.3 | 2026-08-08] 退出阅读器恢复系统 UI 与方向
     // （hideStatusBar/hideNavigationBar/screenOrientation 仅阅读页内生效，
@@ -151,6 +170,45 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
       case AppLifecycleState.resumed:
       case AppLifecycleState.hidden:
         break;
+    }
+  }
+
+  /// [批31b P1-1] 目录页返回：重读 DB 书籍快照并同步 `currentBook`
+  ///
+  /// 目录页可直接持久化 `ReadConfig`（目录显示反转/倒序目录/使用替换规则），
+  /// 阅读器持有的打开时快照若不刷新，后续整书 `updateBook`（设置保存、
+  /// 进度回写、退出落盘等）会用旧快照把已落库配置还原（真机路径：
+  /// 目录勾选显示反转 → 返回 → 阅读器保存设置 → 重开目录反转丢失）。
+  ///
+  /// 进度四列保留阅读器内存值：`currentBook` 的进度由阅读过程实时回写
+  /// （见 ReaderNotifier._syncCurrentBookProgress），DB 可能落后于内存
+  /// 章内位置，不能让 DB 快照回退。
+  @override
+  void didPopNext() {
+    if (!_tocRouteOpen) return;
+    _tocRouteOpen = false;
+    unawaited(_refreshCurrentBookFromDb());
+  }
+
+  Future<void> _refreshCurrentBookFromDb() async {
+    final current = ref.read(readerNotifierProvider).currentBook;
+    if (current == null) return;
+    try {
+      final fresh = await ref.read(bookApiProvider).getBook(current.bookUrl);
+      if (!mounted || fresh == null) return;
+      final latest = ref.read(readerNotifierProvider).currentBook;
+      // 重读期间已换书/退出：丢弃迟到结果
+      if (latest == null || latest.bookUrl != fresh.bookUrl) return;
+      ref.read(readerNotifierProvider.notifier).updateCurrentBook(
+            fresh.copyWith(
+              durChapterIndex: latest.durChapterIndex,
+              durChapterTitle: latest.durChapterTitle,
+              durChapterPos: latest.durChapterPos,
+              durChapterTime: latest.durChapterTime,
+            ),
+          );
+    } catch (_) {
+      // 读取失败保留内存快照（不阻断阅读）
     }
   }
 
@@ -800,9 +858,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen>
   Future<void> _openToc() async {
     final book = ref.read(readerNotifierProvider).currentBook;
     if (book == null) return;
+    // [批31b P1-1] 标记目录在栈上：didPopNext 时重读 DB 书籍快照
+    //（目录页可能已持久化 readConfig，见 _refreshCurrentBookFromDb）
+    _tocRouteOpen = true;
     final result =
         await Navigator.pushNamed(context, AppRoutes.toc, arguments: book);
     if (!mounted) return;
+    // 兜底：目录页异常路径未触发 didPopNext 时也不长期持有标记
+    _tocRouteOpen = false;
     if (result is int) {
       await ref.read(readerNotifierProvider.notifier).goToChapter(result);
     }

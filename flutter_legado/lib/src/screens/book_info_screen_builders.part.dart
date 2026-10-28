@@ -1698,8 +1698,22 @@ extension _BookInfoBuilders on _BookInfoScreenState {
       arguments: book,
     );
     if (!mounted) return;
+    // [批31b P1-1] 目录页可直接持久化书籍配置（目录显示反转/倒序目录/
+    // 使用替换规则）；返回后重读 DB，避免详情页继续持有旧快照，后续
+    // 「阅读/编辑保存」以整书写回把已落库配置还原。
+    Book current = book;
+    try {
+      final fresh = await ref.read(bookApiProvider).getBook(book.bookUrl);
+      if (!mounted) return;
+      if (fresh != null) {
+        current = fresh;
+        setState(() => _loadedBook = fresh);
+      }
+    } catch (e) {
+      debugPrint('目录返回刷新书籍失败: $e');
+    }
     if (result is int) {
-      await _openReader(context, book, result);
+      await _openReader(context, current, result);
     }
   }
 
