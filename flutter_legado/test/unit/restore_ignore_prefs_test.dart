@@ -136,6 +136,26 @@ void main() {
       );
     });
 
+    /// [批31] 书源管理「显示书籍数量」偏好随 JSON 备份 appPrefs 往返：
+    /// 键名对齐原版 `PreferKey.showSourceBookshelfCount`，默认不写入时关；
+    /// 备份/恢复走通用 collectForBackup / applyFromBackup（无专用 ignore 项）。
+    test('显示书籍数量偏好随备份往返', () async {
+      SharedPreferences.setMockInitialValues({
+        PrefKeys.showSourceBookshelfCount: true,
+      });
+      final collected = await RestoreIgnorePrefs.collectForBackup(const {});
+      expect(collected[PrefKeys.showSourceBookshelfCount], isTrue);
+
+      SharedPreferences.setMockInitialValues({});
+      await RestoreIgnorePrefs.applyFromBackup(collected, const {});
+      final prefs = await SharedPreferences.getInstance();
+      expect(
+        prefs.getBool(PrefKeys.showSourceBookshelfCount),
+        isTrue,
+        reason: '恢复后偏好应回到备份值',
+      );
+    });
+
     test('apply 尊重 ignore 不覆盖本地项', () async {
       await RestoreIgnorePrefs.applyFromBackup(
         {
