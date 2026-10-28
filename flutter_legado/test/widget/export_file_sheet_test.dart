@@ -450,6 +450,7 @@ void main() {
 
     // P3-4：目录树不可写/选择器不可用时，失败面板提供「改用系统另存
     // 对话框」（useTree=false），避免生产环境无路可走。
+    // [P3-5] 该入口在首屏即可见（按钮固定在滚动区外，无需滚动）。
     testWidgets('保存失败：可改用系统另存对话框（useTree=false）', (tester) async {
       final saver = _FakeExportFileService()
         ..saveError = const FileSaveException(
@@ -463,20 +464,48 @@ void main() {
 
       expect(find.text('该文件夹不可写，请换一个'), findsOneWidget);
       expect(saver.lastUseTree, isTrue);
-      expect(find.text('改用系统另存对话框'), findsOneWidget);
+      // 首屏可见且可点击（不调用 ensureVisible）
+      final fallback = find.text('改用系统另存对话框');
+      expect(fallback, findsOneWidget);
+      expect(fallback.hitTestable(), findsOneWidget);
+      expect(
+        tester.getRect(fallback).bottom,
+        lessThanOrEqualTo(
+          tester.view.physicalSize.height / tester.view.devicePixelRatio,
+        ),
+      );
 
       saver
         ..saveError = null
         ..savePath = 'content://legacy/document/x.json';
-      await tester.ensureVisible(find.text('改用系统另存对话框'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('改用系统另存对话框'));
+      await tester.tap(fallback);
       await tester.pumpAndSettle();
 
       expect(saver.saveCalls, 2);
       expect(saver.lastUseTree, isFalse);
       expect(saver.lastChooseTree, isFalse);
       expect(box.value?.outcome, ExportFileOutcome.savedLocal);
+    });
+
+    // P3-5：白名单外的错误（参数/环境类）换位置无法恢复，不展示回退入口
+    testWidgets('保存失败：非目录树/写入类错误不展示回退入口', (tester) async {
+      final saver = _FakeExportFileService()
+        ..saveError = const FileSaveException(
+          code: 'INVALID_ARGS',
+          message: '文件名或导出内容无效',
+        );
+      await openSheet(tester, fileService: saver);
+
+      await tester.tap(find.text('保存到本地'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('文件名或导出内容无效'), findsOneWidget);
+      expect(find.text('换个位置'), findsNothing);
+      expect(find.text('改用系统另存对话框'), findsNothing);
+      // 常规失败操作仍在
+      expect(find.text('复制错误'), findsOneWidget);
+      expect(find.text('取消'), findsOneWidget);
+      expect(find.text('重试'), findsOneWidget);
     });
 
     testWidgets('系统另存取消：关闭 Sheet 且不返回结果', (tester) async {

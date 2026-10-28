@@ -11,14 +11,23 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:flutter_legado/src/services/file_save_channel.dart';
 
-/// 从当前目录向上查找 Kotlin 桥接源码（兼容从 flutter_legado 或仓库根运行）
+/// 从当前目录向上查找 Kotlin 桥接源码（兼容从 `flutter_legado`、其子目录
+/// 或仓库根运行）：
+/// - 先在当前层级查 `android/app/...`（`flutter_legado` 及其子目录）；
+/// - 再查 `flutter_legado/android/app/...`（仓库根）。
 File _findBridgeSource() {
   const relative =
       'android/app/src/main/kotlin/io/legado/flutter/SaveFileBridge.kt';
+  final flutterRelative = 'flutter_legado${Platform.pathSeparator}$relative';
   var dir = Directory.current;
   for (var i = 0; i < 6; i++) {
-    final candidate = File('${dir.path}${Platform.pathSeparator}$relative');
-    if (candidate.existsSync()) return candidate;
+    for (final candidatePath in <String>[
+      '${dir.path}${Platform.pathSeparator}$relative',
+      '${dir.path}${Platform.pathSeparator}$flutterRelative',
+    ]) {
+      final candidate = File(candidatePath);
+      if (candidate.existsSync()) return candidate;
+    }
     final parent = dir.parent;
     if (parent.path == dir.path) break;
     dir = parent;

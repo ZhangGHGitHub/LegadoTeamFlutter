@@ -240,9 +240,30 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
   /// 「复制错误」排障）。与 [_error] 相同时不重复展示。
   String? _errorDetail;
 
+  /// 原生错误码（[FileSaveException.code]；非该异常时为 null）。
+  ///
+  /// [P3-5] 仅用于决定失败面板是否展示「换个位置 / 改用系统另存对话框」：
+  /// 目录树 / 写入类错误换位置才有意义，参数错误、通道缺失、超时等
+  /// 换位置也无法恢复。
+  String? _errorCode;
+
   /// 错误面板标题
   String get _errorTitle =>
       _failedAction == _FailureAction.upload ? '上传失败' : '保存失败';
+
+  /// 保存失败时是否展示目录树回退入口（P3-5 白名单）
+  ///
+  /// 只认 `TREE_*`（目录树失效/不可写/不支持）、`SAVE_*`（写入/校验/
+  /// 启动失败）与 `FALLBACK_PATH_UNKNOWN`（回退目录推导失败，换位置
+  /// 可直接解决）。其它错误（`INVALID_ARGS`、`ALREADY_PENDING`、
+  /// `TIMEOUT`、非原生异常等）展示回退按钮只会误导用户。
+  bool get _canOfferSaveFallback {
+    final code = _errorCode;
+    if (code == null) return false;
+    return code.startsWith('TREE_') ||
+        code.startsWith('SAVE_') ||
+        code == 'FALLBACK_PATH_UNKNOWN';
+  }
 
   /// 上传成功后的直链与规则注释
   String? _uploadedUrl;
@@ -392,6 +413,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
       _failedAction = null;
       _error = null;
       _errorDetail = null;
+      _errorCode = null;
     });
     SaveFileResult? saved;
     try {
@@ -416,6 +438,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         _failedAction = _FailureAction.save;
         _error = errorMessage(e);
         _errorDetail = errorDetailMessage(e);
+        _errorCode = e is FileSaveException ? e.code : null;
       });
       return;
     }
@@ -453,6 +476,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         _failedAction = _FailureAction.save;
         _error = errorMessage(e);
         _errorDetail = errorDetailMessage(e);
+        _errorCode = e is FileSaveException ? e.code : null;
       });
       return null;
     }
@@ -482,6 +506,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
       _failedAction = null;
       _error = null;
       _errorDetail = null;
+      _errorCode = null;
     });
     try {
       final rule = await _ruleService.getEffectiveRule();
@@ -508,6 +533,7 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
         _failedAction = _FailureAction.upload;
         _error = errorMessage(e);
         _errorDetail = errorDetailMessage(e);
+        _errorCode = e is FileSaveException ? e.code : null;
       });
     }
   }
@@ -857,9 +883,13 @@ class _ExportFileSheetState extends ConsumerState<ExportFileSheet> {
     }
     if (_error != null) {
       // [批26] 保存失败时提供「换个位置」：重选 Android 保存文件夹后立即
-      // 重试；上传失败不展示（与保存位置无关）
+      // 重试；上传失败不展示（与保存位置无关）。
+      // [P3-5] 白名单：仅目录树/写入类错误展示回退入口（见
+      // [_canOfferSaveFallback]），参数/超时/通道类错误换位置无意义。
       final canChangeSaveLocation =
-          _isAndroid && _failedAction == _FailureAction.save;
+          _isAndroid &&
+          _failedAction == _FailureAction.save &&
+          _canOfferSaveFallback;
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [

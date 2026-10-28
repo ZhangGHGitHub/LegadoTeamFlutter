@@ -240,8 +240,13 @@ bookSource_批25口令源 (1).json」（`11_saved_second.png`）。日志只有�
 ### 8.2 P2-1：clearTree 释放持久授权（设备检查）
 
 - **修复**：`clearTree` 在清 prefs 前按记录 URI 调用
-  `releasePersistableUriPermission(READ|WRITE)`（try/catch 记日志）；换目录
-  释放旧授权的逻辑抽为 `releaseTreePermission` 共用。
+  `releasePersistableUriPermission`（try/catch 记日志）；换目录释放旧授权
+  的逻辑抽为 `releaseTreePermission` 共用。
+- **批26c P3-1 补强**：改为 READ / WRITE **逐位**释放、各自 catch——
+  只持有其一（只读目录或历史单 READ grant）时整次传 `READ|WRITE` 会
+  抛 SecurityException，连已持有的位都释放不掉。本节日志为批26b 当时
+  的实现证据；批26c 起日志形如
+  `已释放目录持久授权（<场景>，N/2 位）：<uri>`。
 - **设备复验**：把记住目录 `Download/legado` 改名（等效删除）后保存，
   日志链（`verify2/p2_1_clear_tree_release.txt`）：
 
@@ -271,8 +276,19 @@ bookSource_批25口令源 (1).json」（`11_saved_second.png`）。日志只有�
 - **单测**：`persistable flags only keep read and write grants`、
   `tree grant requires write permission` 覆盖只读 flags、0 flags、READ|WRITE
   三种输入；无 WRITE 返回 `TREE_NOT_WRITABLE`。
-- **设备**：回修后首次选择目录成功持久化（`persisted=0x3`），重启后直接
-  保存成功（见 8.4），证明正常 flags 路径未被误伤。
+- **设备（批26c 复验，2026-10-28）**：回修后首次选择
+  `内部存储空间 > Download > legado` 并允许写权限，日志
+  `已记住保存目录：... committed=true`（P3-2 同步落盘）→
+  `目录树建文件` → `目录树写入成功`，落盘 `bookSource_批25口令源 (6).json`
+  1710 B（`tmp_debug/batch26c_device/log_first_save.txt`、
+  `saved_first_new2.png`）。`am force-stop` 重启后 Sheet 仍显示
+  「保存到「下载/legado」」，未弹选择器，直接写入 `(7).json` 1710 B
+  （`sheet_after_restart.png`、`log_after_restart.txt`）。持久授权
+  UID 10062 `persisted=0x3`（`dumpsys_permissions.txt`）。
+- **[批26c P3-6]** 记住前另查目录文档 `COLUMN_FLAGS`：
+  provider 明确未声明 `FLAG_DIR_SUPPORTS_CREATE` 时拒绝并回收刚取得的
+  授权（查询不到按未知放行）；纯函数 `supportsCreateFromFlags` 有单测。
+  本轮真机 `Download/legado` 正常通过（未出现「目录声明不支持创建子项」日志）。
 
 ### 8.4 P2-3：进程重启后仍记住目录（设备复验）
 
@@ -294,8 +310,9 @@ bookSource_批25口令源 (1).json」（`11_saved_second.png`）。日志只有�
   `chmod` 不生效，无法构造「create 成功、openOutputStream 抛异常」且不
   破坏设备的场景；自定义 DocumentsProvider/Instrumentation 成本高，本批
   未引入。
-- **已覆盖**：纯逻辑用例 `created document is cleaned when write stream
-  throws` 锁定 `shouldDeleteAfterFailure(opened=false, preSize=0)=true`
+- **已覆盖**：纯逻辑用例 `cleanup decision deletes only newly created
+  zero byte documents`（批26c P3-8 改名，原名 overstates 证明力）锁定
+  `shouldDeleteAfterFailure(opened=false, preSize=0)=true`
   （create 刚建 0 字节文档）与 `preSize>0` 不删；代码路径
   `writeViaTree` catch → `created?.let { deleteDocument }` 未改动。
 - **登记**：设备级「create 成功后写失败 -> 文档被删且无 0 字节」列为未覆盖
@@ -336,6 +353,42 @@ bookSource_批25口令源 (1).json」（`11_saved_second.png`）。日志只有�
 6. `treeDisplayPath` 增补外置卷子目录、`Downloads` 非标准目录单测；
 7. Kotlin `reasonOf` 与 Dart `errorReasons` 通过源码表比对测试保证一致。
 
+### 8.8 批26c 回修（2026-10-28）
+
+> 范围：复核 B 组 1 P2 + P3 逐项回修；不改版本号 / `CHANGELOG.md` /
+> `assets/updateLog.md` / `REFACTORING_ACTIVE_PLAN.md`。
+
+- **P2-1（红→绿）SIZE=0 误判**：`readbackSizeVerdict` 对
+  `expected > 0 && actual == 0` 降级 `UNKNOWN`，由 `verifyWritten` 全文
+  扫描终判。红：临时移除降级分支后
+  `zero declared size with non empty content falls back to content scan`
+  失败（`AssertionError at SaveFileBridgeTest.kt:491`，
+  `tmp_debug/batch26c_device/p2_1_red.log`）；绿：恢复后全绿。
+- **P3-1**：`releaseTreePermission` 改为 READ/WRITE 逐位释放、各自 catch；
+  **P3-2**：`persistTree` prefs 改 `commit()`，失败回收刚取得的授权；
+  **P3-3**：读回头部与全文扫描循环改 `read <= 0` 结束；
+  **P3-4**：错误码一致性测试补 `flutter_legado/android/...` 向下查找；
+  **P3-5**：失败面板回退入口收紧到 `TREE_*` / `SAVE_*` /
+  `FALLBACK_PATH_UNKNOWN`，并新增「首屏可见且可点击」断言；
+  **P3-6**：记住前查询 `COLUMN_FLAGS & FLAG_DIR_SUPPORTS_CREATE`
+  （明确 false 拒绝，未知放行）；**P3-7**：本节 §8.3 补真机证据；
+  **P3-8**：用例改名 `cleanup decision deletes only newly created zero
+  byte documents`，明确只锁定清理决策。
+- **门禁**：`flutter analyze` **No issues found!**；`flutter test` 全量
+  **2965 通过，1 跳过**；`SaveFileBridgeTest` **51 例全绿**；
+  `flutter build apk --release` 成功（188.0MB，
+  sha256 `dac70e179c9b8ee799ecdc9089add219f4f14669ce6d2ccbbeabceadef511948`），
+  `adb install -r` 成功。
+- **真机（192.168.100.62:5555）**：首次选择 `Download/legado` 后
+  `committed=true` + 写入 `(6).json` 1710 B；重启后直接写入 `(7).json`
+  1710 B（证据见 §8.3）。0 字节清单保存前后均为 **11** 个，
+  `diff` **为空**（`tmp_debug/batch26c_device/zero_after.txt`）。
+- **未覆盖**：① 真实第三方 provider「写入后 SIZE=0」只由纯函数用例
+  锁定，本 ROM 未复现；② P3-1 逐位释放未构造「仅持 READ」的真机场景；
+  ③ P3-6 明确 false 分支无真机只读 provider 可构造（正常 true 分支已
+  由本轮选择通过）。
+
 编写者：编码代理（Android SAF 目录树另存）｜ 2026-10-27
 批26b 回修：编码代理（SAF 目录树审查回修）｜ 2026-10-28
+批26c 回修：编码代理（SIZE=0 降级与 P3 收尾）｜ 2026-10-28
 
