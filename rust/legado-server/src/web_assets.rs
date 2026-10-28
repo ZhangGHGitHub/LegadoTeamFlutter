@@ -1,8 +1,15 @@
 //! 原版 Web 静态资产（编译期嵌入）+ 静态服务
 //!
-//! 资产来源：`app/src/main/assets/web/**`（原版 67 文件 / 2.0MB，整目录拷入
+//! 资产来源：`app/src/main/assets/web/**`（原版 60 文件 / 1.5MB，整目录拷入
 //! `rust/legado-server/web-dist/`），由 `build.rs` 生成静态表
 //! `$OUT_DIR/web_assets_table.rs`（`(路径, 内容, MIME)`）后经 `include!` 引入。
+//!
+//! 批30 起为上游 `531f9fbf07` 的新 web 构建产物：`vue/` 新 hash 资产
+//! （`index-Bm4G1GTr.js` 等）与新增 `vue/js_source_template.js`；新前端依赖
+//! 书源管理 4 个端点（`getBookSourcesForManagement` /
+//! `getBookSourceCheckStates` / `startBookSourceCheck` / `stopBookSourceCheck`，
+//! 实现见 `legacy/source_check_api.rs`）。旧 hash 资产已整体清除，避免
+//! 「新 index 引用新资产、旧资产残留」的脏文件。
 //!
 //! 行为对齐原版（`app/src/main/java/io/legado/app/web/HttpServer.kt:161-167`
 //! + `web/utils/AssetsWeb.kt`）：
@@ -214,11 +221,18 @@ mod tests {
     fn test_asset_table_contains_original_entrypoints() {
         assert!(lookup("index.html").is_some(), "根导航页必须已嵌入");
         assert!(lookup("vue/index.html").is_some(), "Vue 入口页必须已嵌入");
-        assert!(lookup("vue/assets/index-toG2697L.js").is_some());
+        assert!(
+            lookup("vue/assets/index-Bm4G1GTr.js").is_some(),
+            "批30 新构建入口脚本必须已嵌入"
+        );
+        assert!(
+            lookup("vue/js_source_template.js").is_some(),
+            "批30 新增 JS 单文件书源模板必须已嵌入"
+        );
         assert!(lookup("help/index.html").is_some());
         assert!(lookup("uploadBook/index.html").is_some());
         assert!(lookup("favicon.ico").is_some());
-        assert!(ASSETS.len() >= 67, "原版 67 个文件应全部嵌入");
+        assert!(ASSETS.len() >= 60, "原版 60 个文件应全部嵌入");
     }
 
     #[test]
@@ -231,8 +245,12 @@ mod tests {
 
     #[test]
     fn test_js_mime_matches_assets_web() {
-        let (_, mime) = lookup("vue/assets/index-toG2697L.js").unwrap();
+        let (_, mime) = lookup("vue/assets/index-Bm4G1GTr.js").unwrap();
         assert_eq!(mime, "text/javascript", "对齐 AssetsWeb.kt:38");
+        assert_eq!(
+            lookup("vue/js_source_template.js").unwrap().1,
+            "text/javascript"
+        );
     }
 
     #[test]

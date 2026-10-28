@@ -39,6 +39,7 @@ fn make_test_state() -> Arc<AppState> {
         download_manager: Mutex::new(DownloadManager::new(3)),
         injected_paths: Default::default(),
         legacy_review: Default::default(),
+        source_check: Default::default(),
     })
 }
 
@@ -164,7 +165,7 @@ async fn test_directory_path_falls_back_to_index_html() {
 #[tokio::test]
 async fn test_vue_chunk_mime_matches_original_assets_web() {
     let app = create_router(make_test_state());
-    let (status, headers, body) = get(app, "/vue/assets/index-toG2697L.js").await;
+    let (status, headers, body) = get(app, "/vue/assets/index-Bm4G1GTr.js").await;
 
     assert_eq!(status, StatusCode::OK);
     assert_eq!(
@@ -1438,6 +1439,7 @@ fn make_test_state_with_paths(
             local_book_root,
         },
         legacy_review: Default::default(),
+        source_check: Default::default(),
     })
 }
 

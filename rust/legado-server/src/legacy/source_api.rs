@@ -21,7 +21,7 @@
 //!   HttpServer.kt:259-262）；getBookSource(s)/getRssSource(s)/getReplaceRules/
 //!   getJsSourceApiTokenRequired 均不在保护集合，**不要求令牌**。
 //!   `getJsSourceApiTokenRequired` 本身恒放行（vue 以其返回值决定是否弹令牌
-//!   输入框，vue assets index-toG2697L.js `Ye()`）。
+//!   输入框，vue assets index-Bm4G1GTr.js `Ye()`）。
 //!
 //! 登记差异：
 //! - `jsSourceApiTokenRequired` 配置键由本实现按原版 PreferKey 名从 caches

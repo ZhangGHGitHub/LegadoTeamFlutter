@@ -19,7 +19,7 @@
 //! | 书源调试分派与链路：绝对 URL→详情→目录→正文；含 `::`→发现；`++`→目录→正文；`--`→正文；其余→搜索→详情→目录→正文 | `Debug.kt:452-505,507-614` |
 //! | 日志行时间前缀 `[mm:ss.SSS] `，`showTime=false` 时原样 | `Debug.kt:80-95` |
 //!
-//! 端口+1 的前端推导（vue 打包产物 `assets/web/vue/assets/index-toG2697L.js`
+//! 端口+1 的前端推导（vue 打包产物 `assets/web/vue/assets/index-Bm4G1GTr.js`
 //! 的 `Gt` 函数）：`new URL('bookSourceDebug', wsBase)`，其中
 //! `wsBase = ws(s)://host:Number(httpPort)+1/<path>/`；无显式端口时原版取
 //! `http`→81、`https`→444（本实现仅在显式端口下工作，主服务始终有端口）。
