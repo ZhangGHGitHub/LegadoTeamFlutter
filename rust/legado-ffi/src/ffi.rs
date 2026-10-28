@@ -88,7 +88,11 @@ pub mod ffi {
     // ─── 基础 ─────────────────────────────────────────────────
 
     /// 初始化 Legado 运行时（首次调用时创建 tokio runtime）
+    ///
+    /// 批34c：同时安装 `log` → logcat 桥（`crate::log_bridge::init`），
+    /// 高亮匹配的降级 warn（无效正则 / 超时）此前在设备上不可见。
     pub fn init() -> Result<(), BridgeError> {
+        crate::log_bridge::init();
         let _ = crate::runtime::get_runtime();
         Ok(())
     }

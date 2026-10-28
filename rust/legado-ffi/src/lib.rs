@@ -19,6 +19,7 @@ pub mod error;
 pub mod ffi;
 pub mod http_state;
 pub mod js_executor;
+pub mod log_bridge;
 pub mod runtime;
 
 /// 测试支撑：全局变量 store / 桥读取器 / flow scope 的进程级状态锁

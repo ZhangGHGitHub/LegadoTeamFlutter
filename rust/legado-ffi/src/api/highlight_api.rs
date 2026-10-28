@@ -841,6 +841,32 @@ mod tests {
     }
 
     #[test]
+    fn test_highlight_rule_match_java_ascii_char_classes() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        // 批34c：Java 默认 \w/\d 仅 ASCII，Rust Unicode 预定义类直接透传会
+        // 吞汉字/匹配全角数字——适配后应只命中 ASCII 词字符与半角数字
+        let word = save_match_rule("ASCII词类", r"关键词\w*", true, 20, false, true);
+        let digit = save_match_rule("ASCII数字类", r"\d+", true, 21, false, true);
+
+        let word_spans: Vec<(i64, i64)> = own_matches("关键词abc中文关键词", false, &[word])
+            .iter()
+            .map(|m| (m.start, m.end))
+            .collect();
+        // 「关键词abc」命中（汉字不被 \w 吞），第二个「关键词」零宽尾部仍命中
+        assert_eq!(word_spans, vec![(0, 6), (8, 11)]);
+
+        // 全角数字不匹配 \d；半角数字命中（"１２３" 占 3 个 UTF-16 单元）
+        let digit_spans: Vec<(i64, i64)> = own_matches("１２３ 456", false, &[digit])
+            .iter()
+            .map(|m| (m.start, m.end))
+            .collect();
+        assert_eq!(digit_spans, vec![(4, 7)]);
+
+        assert!(highlight_rule_delete(word).unwrap());
+        assert!(highlight_rule_delete(digit).unwrap());
+    }
+
+    #[test]
     fn test_highlight_rule_match_overlap_priority_truncates_lower_order() {
         let _db_guard = crate::db_state::ensure_test_db();
         let low = save_match_rule("低优先级", "abcdef", false, 1, false, true);

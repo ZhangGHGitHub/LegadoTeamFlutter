@@ -771,19 +771,77 @@ fn compile_regex(pattern: &str) -> Result<CompiledRegex, String> {
         .ok_or_else(|| format!("Invalid regex pattern: {}", pattern))
 }
 
+/// Java 默认（未开启 `UNICODE_CHARACTER_CLASS`）预定义字符类 → Rust 显式 ASCII 类
+///
+/// Java 的 `\w`/`\d`/`\s` 默认仅 ASCII（`[a-zA-Z_0-9]` / `[0-9]` /
+/// `[ \t\n\x0B\f\r]`），而 Rust 对应预定义类是 Unicode 语义；直接透传会
+/// 「`关键词\w*` 吞掉汉字」「`\d` 匹配全角数字」。返回 `(类外形式, 类内形式)`：
+/// - 类外形式自带方括号，可直接替换 `\w` 等；
+/// - 类内形式去掉外层方括号（`[\w-]` → `[0-9A-Za-z_-]`），取反类用 Rust
+///   支持的嵌套字符类（`[a\W]` → `[a[^0-9A-Za-z_]]`）。
+fn java_ascii_class_escape(c: char, in_class: bool) -> Option<&'static str> {
+    let (outside, inside) = match c {
+        'w' => ("[0-9A-Za-z_]", "0-9A-Za-z_"),
+        'W' => ("[^0-9A-Za-z_]", "[^0-9A-Za-z_]"),
+        'd' => ("[0-9]", "0-9"),
+        'D' => ("[^0-9]", "[^0-9]"),
+        's' => (r"[ \t\n\x0B\f\r]", r" \t\n\x0B\f\r"),
+        'S' => (r"[^ \t\n\x0B\f\r]", r"[^ \t\n\x0B\f\r]"),
+        _ => return None,
+    };
+    Some(if in_class { inside } else { outside })
+}
+
+/// 检测 Java `UNICODE_CHARACTER_CLASS` 内联标志（`(?u)` 及 `(?iu)` 等组合写法）
+///
+/// 显式开启后 Java 的 `\w`/`\d`/`\s` 即 Unicode 语义，与 Rust 预定义类一致，
+/// 此时保留原转义、不做 ASCII 改写（`(?u)` 本身仍会被移除）。
+/// 仅做全局近似判定：作用域限定写法（`(?u:...)`）同样视为全局开启。
+fn java_unicode_class_enabled(pattern: &str) -> bool {
+    let chars: Vec<char> = pattern.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '\\' {
+            // 跳过转义对，避免把 `\(?u)` 之类的字面量误判为标志
+            i += 2;
+            continue;
+        }
+        if chars[i] == '(' && chars.get(i + 1) == Some(&'?') {
+            let mut j = i + 2;
+            while j < chars.len() && chars[j].is_ascii_alphabetic() {
+                if chars[j] == 'u' {
+                    return true;
+                }
+                j += 1;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
 /// Java 正则方言适配：将 Java `Pattern` 专有语法转换为 Rust 正则等价形式
 ///
 /// 处理的差异：
 /// - `\uXXXX`（Java Unicode 转义）→ `\x{XXXX}`（Rust 语法）；
 /// - `\R`（Java 任意 Unicode 换行）→ 显式换行字符交替组；
+/// - `\w`/`\W`/`\d`/`\D`/`\s`/`\S`（Java 默认 ASCII 语义）→ 显式 ASCII
+///   字符类（见 [`java_ascii_class_escape`]）；pattern 含 `(?u)` 时保留
+///   Rust 原生 Unicode 语义；
 /// - `(?d)` UNIX_LINES / `(?c)` CANON_EQ / `(?u)` UNICODE_CHARACTER_CLASS
-///   内联标志：Rust 不支持，直接移除（行为差异可忽略）；
+///   内联标志：Rust 不支持，直接移除；
 /// - lookbehind `(?<=...)` / `(?<!...)`、backreference `\1`、原子组 `(?>...)`
 ///   保持原样，由 fancy-regex 回退路径支持。
 pub fn adapt_java_regex(pattern: &str) -> String {
     let chars: Vec<char> = pattern.chars().collect();
     let len = chars.len();
     let mut out = String::with_capacity(pattern.len());
+    // (?u) 显式 Unicode 字符类：保留 Rust 原生 Unicode 语义，不做 ASCII 改写
+    let unicode_classes = java_unicode_class_enabled(pattern);
+    // 字符类状态：Java 不支持嵌套字符类（类内 `[` 是字面量），且类首
+    // （`[` 或 `[^` 之后）的 `]` 是字面量，用于选择类内/类外替换形式。
+    let mut in_class = false;
+    let mut class_first = false;
     let mut i = 0;
     while i < len {
         let c = chars[i];
@@ -803,13 +861,22 @@ pub fn adapt_java_regex(pattern: &str) -> String {
                     out.push_str(r"(?:\r\n|[\n\r\u{000B}\u{000C}\u{0085}\u{2028}\u{2029}])");
                     i += 2;
                 }
-                // 其余转义原样保留
+                // Java 默认 ASCII 预定义字符类 → Rust 显式 ASCII 类
+                // 转义序列本身是类内一个完整条目，类首 `]` 判定随之失效
+                'w' | 'W' | 'd' | 'D' | 's' | 'S' if !unicode_classes => {
+                    if let Some(replacement) = java_ascii_class_escape(next, in_class) {
+                        out.push_str(replacement);
+                    }
+                    i += 2;
+                }
+                // 其余转义原样保留（`\\w` 的 `\\` 在此分支整体保留，不误替换）
                 _ => {
                     out.push('\\');
                     out.push(next);
                     i += 2;
                 }
             }
+            class_first = false;
         } else if c == '('
             && i + 3 < len
             && chars[i + 1] == '?'
@@ -819,6 +886,19 @@ pub fn adapt_java_regex(pattern: &str) -> String {
             // 移除 Rust 不支持的内联标志：(?d) / (?c) / (?u)
             i += 4;
         } else {
+            // 字符类状态机（Java 语义：类内 `[` 为字面量，类首 `]` 为字面量）
+            if c == '[' && !in_class {
+                in_class = true;
+                class_first = true;
+            } else if in_class {
+                if class_first && c == '^' {
+                    // `[^` 之后的首个 `]` 仍是字面量
+                } else if c == ']' && !class_first {
+                    in_class = false;
+                } else {
+                    class_first = false;
+                }
+            }
             out.push(c);
             i += 1;
         }
@@ -1535,7 +1615,63 @@ mod tests {
 
     #[test]
     fn test_adapt_java_regex_preserves_normal_escape() {
-        assert_eq!(adapt_java_regex(r"\d+\w"), r"\d+\w");
+        // 非预定义类转义原样保留（`.`/`\.`/`\b` 等语义与 Rust 一致）
+        assert_eq!(adapt_java_regex(r"a\.b\+c"), r"a\.b\+c");
+        assert_eq!(adapt_java_regex(r"\bword\b"), r"\bword\b");
+    }
+
+    #[test]
+    fn test_adapt_java_regex_ascii_predefined_classes() {
+        // Java 默认 \w/\d/\s 仅 ASCII；Rust 预定义类为 Unicode → 显式改写
+        assert_eq!(adapt_java_regex(r"\w+"), "[0-9A-Za-z_]+");
+        assert_eq!(adapt_java_regex(r"\W"), "[^0-9A-Za-z_]");
+        assert_eq!(adapt_java_regex(r"\d"), "[0-9]");
+        assert_eq!(adapt_java_regex(r"\D"), "[^0-9]");
+        assert_eq!(adapt_java_regex(r"\s"), r"[ \t\n\x0B\f\r]");
+        assert_eq!(adapt_java_regex(r"\S"), r"[^ \t\n\x0B\f\r]");
+        // 类内形式：去掉外层方括号，取反类用嵌套字符类
+        assert_eq!(adapt_java_regex(r"[\w-]+"), "[0-9A-Za-z_-]+");
+        assert_eq!(adapt_java_regex(r"[\d\s]"), r"[0-9 \t\n\x0B\f\r]");
+        assert_eq!(adapt_java_regex(r"[a\W]"), "[a[^0-9A-Za-z_]]");
+        assert_eq!(adapt_java_regex(r"[^\d]"), "[^0-9]");
+        // 转义反斜杠后的 w 是字面量，不替换
+        assert_eq!(adapt_java_regex(r"\\w"), r"\\w");
+        // 类首字面量 `]` 不关闭字符类（Java `[]]` 匹配 `]`）
+        assert_eq!(adapt_java_regex(r"[]\w]"), r"[]0-9A-Za-z_]");
+        // (?u) 显式 Unicode 字符类：保留 Rust 原生 Unicode 语义
+        assert_eq!(adapt_java_regex(r"(?u)\w+"), r"\w+");
+        // 组合写法 (?iu)：u 不单独移除（Rust 支持 i/u 标志），\d 仍保留 Unicode
+        assert_eq!(adapt_java_regex(r"(?iu)\d"), r"(?iu)\d");
+    }
+
+    #[test]
+    fn test_java_ascii_word_star_does_not_swallow_han() {
+        // 关键词\w* 只吞 ASCII 词字符，不吞汉字（Java 默认 \w 语义）
+        let rules = vec![regex_rule(r"关键词\w*", "X")];
+        assert_eq!(
+            apply_replace_rules("前关键词abc中文后", &rules, None),
+            "前X中文后"
+        );
+        // 无 ASCII 尾部时零宽 \w* 仍命中文关键词本身
+        assert_eq!(apply_replace_rules("关键词中文", &rules, None), "X中文");
+    }
+
+    #[test]
+    fn test_java_ascii_digit_does_not_match_fullwidth() {
+        // \d 不匹配全角数字（Java 默认 ASCII 语义）
+        let rules = vec![regex_rule(r"\d+", "N")];
+        assert_eq!(apply_replace_rules("１２３ 456", &rules, None), "１２３ N");
+    }
+
+    #[test]
+    fn test_java_ascii_class_in_class_and_nested_negation_compile() {
+        // 类内 \W 生成嵌套取反类，需能编译并正确匹配
+        let rules = vec![regex_rule(r"[a\W]+", "X")];
+        // `a` 命中字面量 a，`-` 命中 \W；`b`/`_`/`1` 是词字符且非 a → 不命中
+        assert_eq!(apply_replace_rules("a-b_1", &rules, None), "Xb_1");
+        // 类内 \w 展开为纯范围，不引入嵌套方括号
+        let rules = vec![regex_rule(r"[\w-]+", "X")];
+        assert_eq!(apply_replace_rules("ab_1中文--", &rules, None), "X中文X");
     }
 
     // ─── 超时保护测试 ──────────────────────────────────────
