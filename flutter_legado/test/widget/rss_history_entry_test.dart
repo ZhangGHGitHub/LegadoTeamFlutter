@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:mocktail/mocktail.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:flutter_legado/src/constants/pref_keys.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/providers/rss/rss_notifier.dart';
@@ -139,6 +140,24 @@ void main() {
     expect(find.byType(InteractiveViewer), findsOneWidget);
     expect(find.byTooltip('保存图片'), findsOneWidget);
     expect(find.byType(RssArticleDetailScreen), findsNothing);
+  });
+
+  testWidgets('全局阅读记录弹窗：记录开关默认开启，切换后持久化（批29）', (tester) async {
+    final api = MockRustApi();
+    await pumpRssScreen(tester, api, records: const []);
+
+    await tester.tap(find.byTooltip('阅读记录'));
+    await tester.pumpAndSettle();
+
+    final switchTile = find.byType(SwitchListTile);
+    expect(switchTile, findsOneWidget);
+    expect(tester.widget<SwitchListTile>(switchTile).value, isTrue);
+
+    await tester.tap(switchTile);
+    await tester.pumpAndSettle();
+    expect(tester.widget<SwitchListTile>(switchTile).value, isFalse);
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool(PrefKeys.enableRssReadRecord), isFalse);
   });
 
   testWidgets('历史记录无链接（真实 legacy 伪主键）：不传 origin', (tester) async {
