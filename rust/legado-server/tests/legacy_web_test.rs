@@ -1497,6 +1497,67 @@ async fn test_save_book_upsert_and_bookshelf_visible() {
     assert_eq!(arr2[0]["name"], "改名后的书");
 }
 
+/// [批31b P2-1] `/getBookshelf` 投影含 `readConfig.reverseTocDisplay`，
+/// 且网页端整书回写（`/saveBook`）不还原该值
+///
+/// 缺陷背景：投影漏键时网页端拿到形状 → 编辑其他字段 → 整书写回，
+/// serde 缺键按 `false` 解析，会把 App 侧已开启的「目录显示反转」静默
+/// 还原（用户重开目录表现为反转丢失）。
+#[tokio::test]
+async fn test_bookshelf_projects_reverse_toc_display_and_save_roundtrip_keeps_it() {
+    let state = make_test_state();
+    {
+        let db = state.db.lock().await;
+        BookRepository::new(db.connection())
+            .insert(&Book {
+                book_url: "https://example.com/book/rtd".to_string(),
+                origin: "https://example.com".to_string(),
+                name: "反转书".to_string(),
+                author: "作者".to_string(),
+                read_config: Some(legado_core::models::ReadConfig {
+                    reverse_toc: true,
+                    reverse_toc_display: true,
+                    ..Default::default()
+                }),
+                ..Book::default()
+            })
+            .unwrap();
+    }
+    let app = create_router(state.clone());
+    let (_, shelf) = get_json(app.clone(), "/getBookshelf").await;
+    let book = &shelf["data"][0];
+    assert_eq!(
+        book["readConfig"]["reverseTocDisplay"], true,
+        "投影必须输出 reverseTocDisplay（实际 readConfig={}）",
+        book["readConfig"]
+    );
+    assert_eq!(book["readConfig"]["reverseToc"], true);
+
+    // 模拟网页端把投影原样整书写回（只编辑其他字段）
+    let (_, rd) = post_bytes(
+        app.clone(),
+        "/saveBook",
+        "application/json",
+        book.to_string().into_bytes(),
+    )
+    .await;
+    assert_eq!(rd["isSuccess"], true, "rd={rd}");
+
+    {
+        let db = state.db.lock().await;
+        let saved = BookRepository::new(db.connection())
+            .find_by_url("https://example.com/book/rtd")
+            .unwrap()
+            .unwrap();
+        let cfg = saved.read_config.expect("readConfig 应保留");
+        assert!(cfg.reverse_toc_display, "回写后 DB 仍应为 true");
+        assert!(cfg.reverse_toc);
+    }
+    // 再次投影仍为 true（网页端二次编辑/刷新不丢失）
+    let (_, shelf2) = get_json(app, "/getBookshelf").await;
+    assert_eq!(shelf2["data"][0]["readConfig"]["reverseTocDisplay"], true);
+}
+
 /// 解析失败 → 「格式不对」（对齐 fromJsonObject getOrNull 失败分支）
 #[tokio::test]
 async fn test_save_book_bad_format() {

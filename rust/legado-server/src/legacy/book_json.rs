@@ -173,6 +173,10 @@ impl From<&Book> for LegacyBook {
 pub struct LegacyReadConfig {
     #[serde(rename = "reverseToc")]
     pub reverse_toc: bool,
+    /// 目录显示反转（与 `reverseToc` 数据反转独立；批31b P2-1 补齐投影，
+    /// 空值语义同原版 `Book.ReadConfig.reverseTocDisplay`，bool 非空恒输出）
+    #[serde(rename = "reverseTocDisplay")]
+    pub reverse_toc_display: bool,
     /// Rust 模型未承载 → Kotlin 默认 true
     #[serde(rename = "tocExpanded")]
     pub toc_expanded: bool,
@@ -217,6 +221,7 @@ impl From<&ReadConfig> for LegacyReadConfig {
     fn from(config: &ReadConfig) -> Self {
         Self {
             reverse_toc: config.reverse_toc,
+            reverse_toc_display: config.reverse_toc_display,
             toc_expanded: true,
             page_anim: config.page_anim,
             re_segment: config.re_segment,
@@ -355,6 +360,7 @@ const BOOK_NULLABLE_KEYS: &[&str] = &[
 #[cfg(test)]
 const READ_CONFIG_REQUIRED_KEYS: &[&str] = &[
     "reverseToc",
+    "reverseTocDisplay",
     "tocExpanded",
     "reSegment",
     "delTag",
@@ -506,6 +512,34 @@ mod tests {
         assert_eq!(keys.len(), READ_CONFIG_REQUIRED_KEYS.len(), "键集={keys:?}");
         assert_eq!(value["tocExpanded"], Value::Bool(true));
         assert_eq!(value["manualReplaceRuleIds"], Value::Array(vec![]));
+        // [批31b P2-1] 显示反转是 bool 非空字段：默认 false 也必须恒在
+        assert_eq!(value["reverseTocDisplay"], Value::Bool(false));
+    }
+
+    /// [批31b P2-1] `reverseTocDisplay` 投影透传原值（true/false 均输出）
+    ///
+    /// 缺陷背景：服务端 `/getBookshelf` 投影漏该键，网页端拿到全字段形状后
+    /// 编辑其他字段经 `/saveBook` 整书写回，serde 缺键按默认 false 解析，
+    /// 会把 App 侧已开启的「目录显示反转」静默还原。
+    #[test]
+    fn test_read_config_projects_reverse_toc_display() {
+        let config = ReadConfig {
+            reverse_toc: true,
+            reverse_toc_display: true,
+            ..ReadConfig::default()
+        };
+        let value = serde_json::to_value(LegacyReadConfig::from(&config)).unwrap();
+        assert_eq!(value["reverseToc"], Value::Bool(true));
+        assert_eq!(value["reverseTocDisplay"], Value::Bool(true));
+
+        let off = ReadConfig {
+            reverse_toc: true,
+            reverse_toc_display: false,
+            ..ReadConfig::default()
+        };
+        let value = serde_json::to_value(LegacyReadConfig::from(&off)).unwrap();
+        assert_eq!(value["reverseToc"], Value::Bool(true));
+        assert_eq!(value["reverseTocDisplay"], Value::Bool(false));
     }
 
     /// ReadConfig 可空字段有值时键出现
