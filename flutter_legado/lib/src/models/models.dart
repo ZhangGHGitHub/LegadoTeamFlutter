@@ -6,6 +6,8 @@ export 'book.dart';
 export 'book_chapter.dart';
 export 'book_source.dart';
 export 'cover_candidate.dart';
+// [批34] 正文高亮样式与命中区间（Rust highlightRuleMatch JSON）
+export 'highlight_style.dart';
 export 'manga_config.dart';
 export 'misc.dart';
 export 'rss_article.dart';

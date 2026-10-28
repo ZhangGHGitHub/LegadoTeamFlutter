@@ -4,6 +4,36 @@
 // 内存存储字段来自 MockBookApiStore（on 约束），同一 library 内私有成员可直接访问。
 part of 'mock_book_api.dart';
 
+/// Mock 高亮匹配候选（字节即 UTF-16 code unit，Dart String 下标原生一致）
+class _MockHighlightCandidate {
+  _MockHighlightCandidate({
+    required this.start,
+    required this.end,
+    required this.ruleIndex,
+    required this.seq,
+    required this.order,
+  });
+
+  final int start;
+  final int end;
+  final int ruleIndex;
+  final int seq;
+  final int order;
+}
+
+/// Mock 已接受区间（与候选同口径）
+class _MockAccepted {
+  _MockAccepted({
+    required this.start,
+    required this.end,
+    required this.ruleIndex,
+  });
+
+  final int start;
+  final int end;
+  final int ruleIndex;
+}
+
 mixin MockBookApiContentExt on MockBookApiStore implements BookApi {
   // ========== 音频播放模式 ==========
 
@@ -237,6 +267,140 @@ mixin MockBookApiContentExt on MockBookApiStore implements BookApi {
           ),
         );
     return _highlightListJson(items);
+  }
+
+  /// 按启用高亮规则匹配文本（Mock 版，语义对齐 Rust `highlight_rule_match`）
+  ///
+  /// 只用于 UI 开发与测试：字面量/正则 + 高 order 覆盖低 order + 截断。
+  @override
+  Future<String> highlightRuleMatch({
+    required String text,
+    String bookName = '',
+    String origin = '',
+    bool applyToTitle = false,
+    int? maxMatches,
+  }) async {
+    final limit = maxMatches == null ? 10000 : maxMatches.clamp(0, 1 << 30).toInt();
+    if (text.isEmpty || limit == 0) return '[]';
+    final rules =
+        _mockHighlightRules.values.where((r) {
+          if (r['isEnabled'] != true) return false;
+          final scope = (r['scope'] as String?) ?? '';
+          if (scope.isNotEmpty &&
+              !scope.contains(bookName) &&
+              !scope.contains(origin)) {
+            return false;
+          }
+          final side = applyToTitle
+              ? r['applyToTitle'] == true
+              : r['applyToBody'] != false;
+          final pattern = (r['pattern'] as String?) ?? '';
+          return side && pattern.isNotEmpty;
+        }).toList()..sort((a, b) {
+          final byOrder = ((a['sortOrder'] as num?) ?? 0).compareTo(
+            (b['sortOrder'] as num?) ?? 0,
+          );
+          return byOrder != 0
+              ? byOrder
+              : ((a['id'] as num?) ?? 0).compareTo((b['id'] as num?) ?? 0);
+        });
+
+    final candidates = <_MockHighlightCandidate>[];
+    var seq = 0;
+    for (var ruleIndex = 0; ruleIndex < rules.length; ruleIndex++) {
+      if (candidates.length >= limit) break;
+      final rule = rules[ruleIndex];
+      final pattern = rule['pattern'] as String;
+      final order = (rule['sortOrder'] as num?)?.toInt() ?? 0;
+      if (rule['isRegex'] == true) {
+        RegExp regex;
+        try {
+          regex = RegExp(pattern);
+        } catch (_) {
+          continue; // 无效正则跳过（对齐 Rust warn 跳过）
+        }
+        for (final match in regex.allMatches(text)) {
+          if (candidates.length >= limit) break;
+          if (match.end <= match.start) continue;
+          candidates.add(
+            _MockHighlightCandidate(
+              start: match.start,
+              end: match.end,
+              ruleIndex: ruleIndex,
+              seq: seq++,
+              order: order,
+            ),
+          );
+        }
+      } else {
+        var from = 0;
+        while (from <= text.length) {
+          if (candidates.length >= limit) break;
+          final start = text.indexOf(pattern, from);
+          if (start < 0) break;
+          final end = start + pattern.length;
+          candidates.add(
+            _MockHighlightCandidate(
+              start: start,
+              end: end,
+              ruleIndex: ruleIndex,
+              seq: seq++,
+              order: order,
+            ),
+          );
+          from = end;
+        }
+      }
+    }
+    if (candidates.isEmpty) return '[]';
+
+    // 高 order 先占位；同 order 按收集顺序
+    candidates.sort((a, b) {
+      final byOrder = b.order.compareTo(a.order);
+      return byOrder != 0 ? byOrder : a.seq.compareTo(b.seq);
+    });
+    final accepted = <_MockAccepted>[];
+    for (final candidate in candidates) {
+      var pieces = <(int, int)>[(candidate.start, candidate.end)];
+      for (final acc in accepted) {
+        if (pieces.isEmpty) break;
+        final next = <(int, int)>[];
+        for (final piece in pieces) {
+          if (acc.end <= piece.$1 || acc.start >= piece.$2) {
+            next.add(piece);
+          } else {
+            if (piece.$1 < acc.start) next.add((piece.$1, acc.start));
+            if (acc.end < piece.$2) next.add((acc.end, piece.$2));
+          }
+        }
+        pieces = next;
+      }
+      for (final piece in pieces) {
+        accepted.add(
+          _MockAccepted(
+            start: piece.$1,
+            end: piece.$2,
+            ruleIndex: candidate.ruleIndex,
+          ),
+        );
+      }
+    }
+    accepted.sort((a, b) {
+      final byOrder = ((rules[a.ruleIndex]['sortOrder'] as num?) ?? 0)
+          .toInt()
+          .compareTo(((rules[b.ruleIndex]['sortOrder'] as num?) ?? 0).toInt());
+      return byOrder != 0 ? byOrder : a.start.compareTo(b.start);
+    });
+    return jsonEncode([
+      for (final item in accepted)
+        {
+          'ruleId': (rules[item.ruleIndex]['id'] as num?)?.toInt() ?? 0,
+          'start': item.start,
+          'end': item.end,
+          'order': (rules[item.ruleIndex]['sortOrder'] as num?)?.toInt() ?? 0,
+          'styleJson': (rules[item.ruleIndex]['style'] as String?) ?? '',
+        },
+    ]);
   }
 
   // ========== 应用日志（appLog 假实现） ==========

@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../l10n/app_strings.dart';
+import '../../models/highlight_style.dart';
 import '../../widgets/paragraph_layout_engine.dart';
+import 'highlight_span_builder.dart';
 import 'review_column.dart';
 import 'reader_page_chrome.dart';
 import 'text_selection_panel.dart';
@@ -59,6 +61,9 @@ class ReaderTypographicPage extends StatelessWidget {
   final Map<int, int>? reviewCounts;
   final ReviewTapCallback? onReviewTap;
 
+  /// [批34] 本章高亮命中区间（UTF-16 章节全局偏移，互不重叠）
+  final List<HighlightMatch> highlightMatches;
+
   const ReaderTypographicPage({
     super.key,
     required this.pageInfo,
@@ -86,6 +91,7 @@ class ReaderTypographicPage extends StatelessWidget {
     this.fontStyle,
     this.reviewCounts,
     this.onReviewTap,
+    this.highlightMatches = const [],
   });
 
   @override
@@ -188,6 +194,7 @@ class ReaderTypographicPage extends StatelessWidget {
                         fontStyle: fontStyle,
                         reviewCounts: reviewCounts,
                         onReviewTap: onReviewTap,
+                        highlightMatches: highlightMatches,
                       ),
                     ),
                   ),
@@ -278,6 +285,9 @@ class ReaderTextContent extends StatelessWidget {
   /// 段评角标点击
   final ReviewTapCallback? onReviewTap;
 
+  /// [批34] 本章高亮命中区间（UTF-16 章节全局偏移）
+  final List<HighlightMatch> highlightMatches;
+
   const ReaderTextContent({
     super.key,
     required this.pageInfo,
@@ -293,6 +303,7 @@ class ReaderTextContent extends StatelessWidget {
     this.fontStyle,
     this.reviewCounts,
     this.onReviewTap,
+    this.highlightMatches = const [],
   });
 
   @override
@@ -340,6 +351,42 @@ class ReaderTextContent extends StatelessWidget {
               }
             }
 
+            final lineTextStyle = TextStyle(
+              fontSize: fontSize,
+              height: lineHeight,
+              color: textColor,
+              fontFamily: fontFamily,
+              fontWeight: fontWeight,
+              fontStyle: fontStyle,
+              letterSpacing: (letterSpacing + extraLetterSpacing) != 0
+                  ? letterSpacing + extraLetterSpacing
+                  : null,
+            );
+
+            // [批34] 命中行改 Text.rich：按章节全局偏移切分 span，只应用
+            // 不影响字体度量的样式（颜色/背景/下划线/删除线）— full-stack-engineer
+            final lineText =
+                highlightMatches.isEmpty || !line.highlightMapped
+                ? Text(
+                    text,
+                    style: lineTextStyle,
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                  )
+                : Text.rich(
+                    TextSpan(
+                      children: buildHighlightedLineSpans(
+                        text: text,
+                        chapterStart: line.chapterStartIndex,
+                        highlightSkip: line.highlightSkip,
+                        matches: highlightMatches,
+                      ),
+                    ),
+                    style: lineTextStyle,
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                  );
+
             lineWidgets.add(
               SizedBox(
                 height: fontSize * lineHeight,
@@ -353,42 +400,10 @@ class ReaderTextContent extends StatelessWidget {
                         maxWidth: availableWidth + line.hangingWidth,
                         child: Transform.translate(
                           offset: Offset(-line.hangingWidth, 0),
-                          child: Text(
-                            text,
-                            style: TextStyle(
-                              fontSize: fontSize,
-                              height: lineHeight,
-                              color: textColor,
-                              fontFamily: fontFamily,
-                              fontWeight: fontWeight,
-                              fontStyle: fontStyle,
-                              letterSpacing:
-                                  (letterSpacing + extraLetterSpacing) != 0
-                                  ? letterSpacing + extraLetterSpacing
-                                  : null,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.clip,
-                          ),
+                          child: lineText,
                         ),
                       )
-                    : Text(
-                        text,
-                        style: TextStyle(
-                          fontSize: fontSize,
-                          height: lineHeight,
-                          color: textColor,
-                          fontFamily: fontFamily,
-                          fontWeight: fontWeight,
-                          fontStyle: fontStyle,
-                          letterSpacing:
-                              (letterSpacing + extraLetterSpacing) != 0
-                              ? letterSpacing + extraLetterSpacing
-                              : null,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.clip,
-                      ),
+                    : lineText,
               ),
             );
           }

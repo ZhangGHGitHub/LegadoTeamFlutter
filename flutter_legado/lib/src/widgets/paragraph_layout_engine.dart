@@ -234,12 +234,23 @@ class LineInfo {
   final List<String> words;
   final double width;
   final double height;
+
+  /// 行在**段落排版文本**中的起始偏移（含首行缩进全角空格）
   final int startIndex;
+
+  /// 行在**段落排版文本**中的结束偏移（不含）
   final int endIndex;
 
   // [UI-fix v2.0.5 | 2026-08-10] 段首标点悬挂宽度（>0 表示该行为悬挂行，
   // 渲染侧行起点左移该宽度进入缩进区）— Reasonix
   final double hangingWidth;
+
+  // [批34] 高亮偏移映射：行内 `highlightSkip` 之后的字符对应章节全局
+  // UTF-16 偏移 `chapterStartIndex`；缩进列不参与高亮。默认 false 表示
+  // 该行未建立映射（手工构造的 LineInfo/旧路径），渲染侧跳过高亮。
+  final int chapterStartIndex;
+  final int highlightSkip;
+  final bool highlightMapped;
 
   const LineInfo({
     required this.words,
@@ -248,6 +259,9 @@ class LineInfo {
     required this.startIndex,
     required this.endIndex,
     this.hangingWidth = 0,
+    this.chapterStartIndex = 0,
+    this.highlightSkip = 0,
+    this.highlightMapped = false,
   });
 }
 
@@ -256,7 +270,11 @@ class LineInfo {
 class ParagraphInfo {
   final List<LineInfo> lines;
   final double totalHeight;
+
+  /// 段落正文在**章节文本**中的起始偏移（UTF-16 code unit，已 trim）
   final int startIndex;
+
+  /// 段落正文在**章节文本**中的结束偏移（不含，UTF-16 code unit）
   final int endIndex;
 
   /// 章内 1-based 段落序号（对齐原版 TextLine.paragraphNum / 段评 paraIndex）
@@ -398,7 +416,7 @@ class ParagraphLayoutEngine {
     double pageHeight, {
     double? firstPageHeight,
   }) {
-    final paragraphs = _splitParagraphs(content);
+    final paragraphs = _splitParagraphsWithOffsets(content);
     if (paragraphs.isEmpty) return [];
 
     final pages = <PageInfo>[];
@@ -411,7 +429,13 @@ class ParagraphLayoutEngine {
 
     for (var i = 0; i < paragraphs.length; i++) {
       final para = paragraphs[i];
-      final paraInfo = _layoutParagraph(para, availableWidth, isFirst: i == 0);
+      // [批34] 传入章节全局起点，供高亮区间映射（缩进列不计入）
+      final paraInfo = _layoutParagraph(
+        para.text,
+        availableWidth,
+        isFirst: i == 0,
+        chapterStart: para.start,
+      );
       final chapterParaIndex = i + 1; // 1-based，对齐原版段评 paraIndex
 
       // 段落间距（对应 Kotlin durY += textHeight * paragraphSpacing / 10f）
@@ -516,8 +540,9 @@ class ParagraphLayoutEngine {
             ParagraphInfo(
               lines: pageLines,
               totalHeight: height,
-              startIndex: pageLines.isNotEmpty ? pageLines.first.startIndex : 0,
-              endIndex: pageLines.isNotEmpty ? pageLines.last.endIndex : 0,
+              // [批34] 段落的章节全局偏移不随分页切片变化
+              startIndex: paraInfo.startIndex,
+              endIndex: paraInfo.endIndex,
               chapterParagraphIndex: chapterParagraphIndex,
               isParagraphEnd: isLast,
             ),
@@ -531,26 +556,38 @@ class ParagraphLayoutEngine {
     return pages;
   }
 
-  /// 分割段落
+  /// 分割段落（保留每段在章节文本中的全局起点）
   ///
   /// 移植自 Kotlin splitNotBlank：按换行符分割，过滤空白段落
-  /// 支持双换行符（\n\n）和单换行符（\n）两种分段模式
-  List<String> _splitParagraphs(String content) {
+  /// 支持双换行符（\n\n）和单换行符（\n）两种分段模式。
+  ///
+  /// [批34] 返回 `(text, start)`：`text` 为 trim 后的段落文本，`start` 为
+  /// 该文本首字符在原始 `content` 中的 UTF-16 偏移（跳过前导空白），
+  /// 供高亮区间映射与段落选择定位使用。
+  List<({String text, int start})> _splitParagraphsWithOffsets(
+    String content,
+  ) {
     if (content.trim().isEmpty) return [];
-    // 优先按双换行符分割；如果没有双换行符则按单换行符分割
-    if (content.contains('\n\n')) {
-      return content
-          .split(RegExp(r'\n\s*\n'))
-          .map((p) => p.trim())
-          .where((p) => p.isNotEmpty)
-          .toList();
+    final separator = content.contains('\n\n')
+        ? RegExp(r'\n\s*\n')
+        : RegExp(r'\n');
+    final result = <({String text, int start})>[];
+    var last = 0;
+    void addSegment(int start, int end) {
+      if (end <= start) return;
+      final raw = content.substring(start, end);
+      final trimmed = raw.trim();
+      if (trimmed.isEmpty) return;
+      final leading = raw.length - raw.trimLeft().length;
+      result.add((text: trimmed, start: start + leading));
     }
-    // 单换行符分割（对应 Kotlin contents.forEach 逐段处理）
-    return content
-        .split('\n')
-        .map((p) => p.trim())
-        .where((p) => p.isNotEmpty)
-        .toList();
+
+    for (final match in separator.allMatches(content)) {
+      addSegment(last, match.start);
+      last = match.end;
+    }
+    addSegment(last, content.length);
+    return result;
   }
 
   /// 排版单个段落
@@ -558,10 +595,15 @@ class ParagraphLayoutEngine {
   /// 移植自 TextChapterLayout.kt setTypeText：
   /// - 首行缩进（对应 Kotlin paragraphIndent + indentCharWidth）
   /// - 行高计算（对应 Kotlin textHeight * lineSpacingExtra）
+  ///
+  /// [批34] [chapterStart] 为段落正文在章节文本中的全局起点；返回的
+  /// [ParagraphInfo.startIndex]/[endIndex] 与行内 `chapterStartIndex` 均
+  /// 换算为章节全局偏移（缩进列不计入 `highlightSkip` 之后的高亮区间）。
   ParagraphInfo _layoutParagraph(
     String paragraph,
     double availableWidth, {
     bool isFirst = false,
+    int chapterStart = 0,
   }) {
     final trimmedPara = paragraph.trim();
     if (trimmedPara.isEmpty) {
@@ -603,15 +645,39 @@ class ParagraphLayoutEngine {
       hangingWidth: hangingWidth,
     );
 
+    // [批34] 标注行的章节全局偏移：processableText = 缩进 + 段落正文，
+    // 故 processableText[i>indentLen] ↔ 章节 chapterStart + (i-indentLen)。
+    final indentLen = config.indent > 0 ? config.indentCount : 0;
+    final mappedLines = <LineInfo>[
+      for (final line in lines)
+        LineInfo(
+          words: line.words,
+          width: line.width,
+          height: line.height,
+          startIndex: line.startIndex,
+          endIndex: line.endIndex,
+          hangingWidth: line.hangingWidth,
+          chapterStartIndex:
+              chapterStart +
+              (line.startIndex - indentLen)
+                  .clamp(0, trimmedPara.length)
+                  .toInt(),
+          highlightSkip: (indentLen - line.startIndex)
+              .clamp(0, processableText.length)
+              .toInt(),
+          highlightMapped: true,
+        ),
+    ];
+
     // 计算总高度（对应 Kotlin durY += textHeight * lineSpacingExtra）
     final textHeight = config.fontSize * config.lineHeight;
     final totalHeight = lines.isEmpty ? 0.0 : lines.length * textHeight;
 
     return ParagraphInfo(
-      lines: lines,
+      lines: mappedLines,
       totalHeight: totalHeight,
-      startIndex: 0,
-      endIndex: paragraph.length,
+      startIndex: chapterStart,
+      endIndex: chapterStart + trimmedPara.length,
     );
   }
 

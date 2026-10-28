@@ -19,3 +19,11 @@ final bookApiProvider = Provider<BookApi>((ref) {
 
 /// SettingsService 全局 Provider（F3-18：统一注入，禁止 UI 直接 new）
 final settingsProvider = Provider<SettingsService>((ref) => SettingsService());
+
+/// 高亮规则修订号（批34）
+///
+/// 规则列表加载/保存/删除成功后自增；阅读页 watch 该值并在变化后失效
+/// 正文匹配缓存（缓存键含修订号），保证编辑规则后重新匹配。
+/// 外部导入/备份恢复不经规则页的路径不会自增——切换章节或重开书后生效
+/// （登记为 MVP 限制）。
+final highlightRulesRevisionProvider = StateProvider<int>((ref) => 0);

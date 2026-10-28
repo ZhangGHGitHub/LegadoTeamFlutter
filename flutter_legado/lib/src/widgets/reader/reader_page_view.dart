@@ -15,6 +15,7 @@ import '../../providers/providers.dart';
 import '../../providers/reader/reader_notifier.dart';
 import '../../routes.dart';
 import '../../screens/reader_config_panel.dart';
+import '../../services/highlight_match_cache.dart';
 import '../../widgets/error_view.dart';
 import '../../widgets/loading_indicator.dart';
 import '../../widgets/paragraph_layout_engine.dart';
@@ -210,6 +211,27 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   // 内容保存后同章重载（reloadChapterContent）时正文变化但章节索引不变，
   // 不比对内容会命中旧分页缓存导致页面仍显示旧正文 — Qoder
   String _paginatedContent = '';
+
+  /// 分页对应的书籍 URL（换源后旧正文仍显示时，高亮匹配须跟旧书/旧内容）
+  String _paginatedBookUrl = '';
+
+  /// 分页对应的书名/书源名（高亮规则 scope 过滤，与 URL 同快照）
+  String _paginatedBookName = '';
+  String _paginatedBookOrigin = '';
+
+  // ===== [批34] 正文高亮匹配状态 =====
+
+  /// 命中结果 LRU 缓存（章节文本 + 规则修订号）
+  final HighlightMatchCache _highlightCache = HighlightMatchCache();
+
+  /// 当前章节命中区间（渲染直接读取；异步到达后 setState 重建）
+  List<HighlightMatch> _highlightMatches = const [];
+
+  /// 当前命中对应的缓存键（空=无）
+  String _highlightKey = '';
+
+  /// 在途匹配的缓存键（防重复跨 FFI）
+  String _highlightLoadingKey = '';
 
   /// 当前阅读字体 family（与 FontScreen 持久化键 reader_font_family 同步）
   String? _fontFamily;
@@ -584,6 +606,9 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
     _paginatedPages = pages;
     _paginatedContent = content;
     _paginatedChapterIndex = chapterIndex;
+    _paginatedBookUrl = state.currentBook?.bookUrl ?? '';
+    _paginatedBookName = state.currentBook?.name ?? '';
+    _paginatedBookOrigin = state.currentBook?.origin ?? '';
     _paginatedChapterTitle = state.currentChapter?.title;
     _paginatedFontSize = fontSize;
     _paginatedLineHeight = lineHeight;
@@ -628,6 +653,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
   Widget build(BuildContext context) {
     final state = ref.watch(readerNotifierProvider);
     final notifier = ref.read(readerNotifierProvider.notifier);
+    // [批34] 订阅高亮规则修订号：规则页保存/删除后重建，并让文本匹配缓存失效
+    ref.watch(highlightRulesRevisionProvider);
 
     // [UI_SYNC_REFACTOR S4 修 | 2026-09-06] 章节切换加载中：保留上一章
     // 既有分页渲染（跳过重分页）——此前直接整树换成 LoadingIndicator，
@@ -712,6 +739,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       // 排版引擎：检测是否需要重新分页
       _paginateIfNeeded(context, state);
     }
+    // [批34] 高亮匹配：与分页解耦，命中到达后仅重建渲染层
+    _syncHighlightMatches(state);
 
     final Widget content;
     // [UI_SYNC_REFACTOR S6 重构 | 2026-09-08] 翻页动画层整体替换为重构版
@@ -761,6 +790,119 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
         ? 0
         : (advCfg?.pageTouchSlop ?? 0);
     return _applyPageTouchSlop(context, result, slop);
+  }
+
+  // ===== [批34] 正文高亮匹配 =====
+
+  /// 当前章节匹配缓存键：书籍 + 章号 + 文本 hash + 规则修订号
+  String _highlightCacheKey(String bookUrl, int chapterIndex, String text) {
+    final revision = ref.read(highlightRulesRevisionProvider);
+    return '$bookUrl\u0000$chapterIndex\u0000${text.hashCode}\u0000$revision';
+  }
+
+  /// 同步当前章节命中（缓存命中直接换值；未命中发起一次异步匹配）
+  ///
+  /// 在 build 内调用：缓存命中时只更新字段，不触发 setState（值本帧即用）；
+  /// 异步结果到达后在微任务中 setState 一次。
+  ///
+  /// 以**已分页内容**为准（加载冻结帧仍显示旧章正文，若用 state 的新章
+  /// 文本/章号会让旧页短暂失去高亮或套错区间）；未分页时回退 state。
+  void _syncHighlightMatches(ReaderState state) {
+    // 滚动模式走 ReaderParagraphs（尚未接线高亮）：不做无意义的跨 FFI 匹配
+    if (state.pageTurnMode == PageTurnMode.scroll) {
+      if (_highlightMatches.isNotEmpty || _highlightKey.isNotEmpty) {
+        _highlightMatches = const [];
+        _highlightKey = '';
+      }
+      return;
+    }
+    final book = state.currentBook;
+    if (book == null) {
+      if (_highlightMatches.isNotEmpty || _highlightKey.isNotEmpty) {
+        _highlightMatches = const [];
+        _highlightKey = '';
+      }
+      return;
+    }
+    final usePaginated = _paginatedContent.isNotEmpty;
+    final content = usePaginated ? _paginatedContent : state.chapterContent;
+    final chapterIndex = usePaginated
+        ? _paginatedChapterIndex
+        : state.currentChapterIndex;
+    final bookUrl = usePaginated && _paginatedBookUrl.isNotEmpty
+        ? _paginatedBookUrl
+        : book.bookUrl;
+    final bookName = usePaginated && _paginatedBookName.isNotEmpty
+        ? _paginatedBookName
+        : book.name;
+    final bookOrigin = usePaginated && _paginatedBookOrigin.isNotEmpty
+        ? _paginatedBookOrigin
+        : book.origin;
+    if (content.isEmpty) {
+      if (_highlightMatches.isNotEmpty || _highlightKey.isNotEmpty) {
+        _highlightMatches = const [];
+        _highlightKey = '';
+      }
+      return;
+    }
+
+    final key = _highlightCacheKey(bookUrl, chapterIndex, content);
+    if (key == _highlightKey) return;
+
+    final revision = ref.read(highlightRulesRevisionProvider);
+    final cached = _highlightCache.lookup(key, revision);
+    _highlightKey = key;
+    if (cached != null) {
+      _highlightMatches = cached;
+      return;
+    }
+
+    // 换章先清旧命中，防止新章文本短暂套用上一章区间
+    _highlightMatches = const [];
+    if (_highlightLoadingKey == key) return;
+    _highlightLoadingKey = key;
+    unawaited(
+      _loadHighlightMatches(
+        key: key,
+        bookName: bookName,
+        origin: bookOrigin,
+        text: content,
+        revision: revision,
+      ),
+    );
+  }
+
+  /// 跨 FFI 匹配当前章正文（失败静默降级为无高亮，不影响阅读）
+  Future<void> _loadHighlightMatches({
+    required String key,
+    required String bookName,
+    required String origin,
+    required String text,
+    required int revision,
+  }) async {
+    try {
+      final raw = await ref
+          .read(bookApiProvider)
+          .highlightRuleMatch(
+            text: text,
+            bookName: bookName,
+            origin: origin,
+          );
+      final matches = parseHighlightMatches(raw);
+      _highlightCache.store(key, revision, matches);
+      if (!mounted) return;
+      // 章节已切换/内容已变化/规则已变 → 丢弃该结果
+      if (_highlightLoadingKey != key || _highlightKey != key) return;
+      if (ref.read(highlightRulesRevisionProvider) != revision) return;
+      setState(() => _highlightMatches = matches);
+    } catch (e) {
+      // 高亮是增益能力：失败只降级为无高亮，不打断阅读
+      debugPrint('[highlight] 正文高亮匹配失败（已降级为无高亮）: $e');
+    } finally {
+      if (_highlightLoadingKey == key) {
+        _highlightLoadingKey = '';
+      }
+    }
   }
 
   /// 按 pageTouchSlop 包裹自定义滑动阈值（0=系统默认值，不包裹）
@@ -1215,6 +1357,8 @@ class ReaderPageViewState extends ConsumerState<ReaderPageView> {
       globalTotalPages: state.totalPages > 0 ? state.totalPages : null,
       reviewCounts: widget.reviewCounts,
       onReviewTap: widget.onReviewTap,
+      // [批34] 正文高亮命中（章节全局 UTF-16 区间）
+      highlightMatches: _highlightMatches,
     );
   }
 

@@ -27,6 +27,8 @@ class HighlightRulesNotifier extends Notifier<HighlightRulesState> {
     try {
       final raw = await ref.read(bookApiProvider).highlightRuleList();
       state = state.copyWith(rules: _decode(raw), isLoading: false);
+      // 批34：规则列表变化后自增修订号，阅读页据此失效正文匹配缓存
+      ref.read(highlightRulesRevisionProvider.notifier).state++;
     } catch (e) {
       state = state.copyWith(
         rules: const [],

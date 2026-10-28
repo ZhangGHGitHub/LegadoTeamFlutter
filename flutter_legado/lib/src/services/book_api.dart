@@ -1718,6 +1718,19 @@ abstract class BookApi {
     required String origin,
   });
 
+  /// 按启用高亮规则匹配文本（HighlightRuleMatch 数组 JSON，批34）
+  ///
+  /// `text` 为待匹配正文；`bookName`/`origin` 用于规则 scope 过滤；
+  /// `applyToTitle=false` 取 `applyToBody` 规则、`true` 取 `applyToTitle` 规则；
+  /// `maxMatches=null` 用默认上限（10000），`<=0` 返回空数组。
+  Future<String> highlightRuleMatch({
+    required String text,
+    String bookName = '',
+    String origin = '',
+    bool applyToTitle = false,
+    int? maxMatches,
+  });
+
   // ========== 应用日志（appLog FFI） ==========
   // [审计修复 §1.2] 补齐契约 §2.38 已交付但接口缺失的 appLog* 五方法 — QoderCN
 

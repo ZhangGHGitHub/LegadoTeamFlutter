@@ -192,6 +192,22 @@ mixin RustApiContentExt on RustApiDecode implements BookApi {
     required String origin,
   }) => bridge.highlightRuleFindEnabled(bookName: bookName, origin: origin);
 
+  /// 按启用高亮规则匹配文本（HighlightRuleMatch 数组 JSON，批34）
+  @override
+  Future<String> highlightRuleMatch({
+    required String text,
+    String bookName = '',
+    String origin = '',
+    bool applyToTitle = false,
+    int? maxMatches,
+  }) => bridge.highlightRuleMatch(
+    text: text,
+    bookName: bookName,
+    origin: origin,
+    applyToTitle: applyToTitle,
+    maxMatches: maxMatches,
+  );
+
   // ========== 规则订阅（rule_sub FFI，Task #89） ==========
 
   /// 获取规则订阅列表（按 customOrder 排序）
