@@ -179,6 +179,9 @@ struct ActiveCheck {
 /// 进程内检验会话管理器：同一时刻最多一个检验会话（原版 `Debug.isChecking`）
 pub struct SourceCheckManager {
     inner: StdMutex<Option<ActiveCheck>>,
+    /// 粘滞搜索关键词（对齐原版全局 `CheckSource.keyword`，初始「我的」）：
+    /// 请求带非空白 keyword 时更新，缺省时沿用上次值（P3-4）
+    keyword: StdMutex<String>,
     process_token: String,
     next_session_id: AtomicU64,
 }
@@ -187,6 +190,7 @@ impl Default for SourceCheckManager {
     fn default() -> Self {
         Self {
             inner: StdMutex::new(None),
+            keyword: StdMutex::new("我的".to_string()),
             process_token: uuid::Uuid::new_v4().to_string(),
             next_session_id: AtomicU64::new(0),
         }
@@ -196,6 +200,21 @@ impl Default for SourceCheckManager {
 impl SourceCheckManager {
     fn lock(&self) -> std::sync::MutexGuard<'_, Option<ActiveCheck>> {
         self.inner.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    fn keyword_lock(&self) -> std::sync::MutexGuard<'_, String> {
+        self.keyword.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// 当前粘滞关键词（`startBookSourceCheck` 缺省 keyword 时使用）
+    pub fn keyword(&self) -> String {
+        self.keyword_lock().clone()
+    }
+
+    /// 更新粘滞关键词（调用方负责 trim 与空白判定，对齐
+    /// `BookSourceCheckController.start` 的 `takeIf { it.isNotEmpty() }`）
+    pub fn set_keyword(&self, keyword: &str) {
+        *self.keyword_lock() = keyword.to_string();
     }
 
     /// 当前进行中的会话令牌（`None` = 无检验）
@@ -315,10 +334,31 @@ pub async fn get_book_sources_for_management(
         let source_repo = BookSourceRepository::new(db.connection());
         let state_repo = BookSourceCheckStateRepository::new(db.connection());
         let (sources, states): (Vec<BookSource>, Vec<BookSourceCheckState>) = match &urls {
-            None => (
-                source_repo.find_all().unwrap_or_default(),
-                state_repo.find_all().unwrap_or_default(),
-            ),
+            // 批30b P2-2：全量分支原 `unwrap_or_default()` 会把查询失败吞成空
+            // 列表（前端表现为「没有书源」）；与 urls 分支一致返回错误信封。
+            None => {
+                let sources = match source_repo.find_all() {
+                    Ok(rows) => rows,
+                    Err(e) => {
+                        return to_response(
+                            &ReturnData::error(e.to_string()),
+                            uri,
+                            origin.as_deref(),
+                        )
+                    }
+                };
+                let states = match state_repo.find_all() {
+                    Ok(rows) => rows,
+                    Err(e) => {
+                        return to_response(
+                            &ReturnData::error(e.to_string()),
+                            uri,
+                            origin.as_deref(),
+                        )
+                    }
+                };
+                (sources, states)
+            }
             Some(urls) => {
                 let mut sources = Vec::new();
                 for chunk in urls.chunks(BOOK_SOURCE_QUERY_CHUNK_SIZE) {
@@ -493,11 +533,14 @@ pub async fn start_book_source_check(
     };
 
     let mut config = load_check_config(&state).await;
+    // P3-4：请求 keyword trim 后非空 → 更新粘滞值；缺省 → 沿用上次（原版
+    // `CheckSource.keyword` 是进程级全局，网页连续检验不重复传也会沿用）
     if let Some(keyword) = request.keyword.as_deref().map(str::trim) {
         if !keyword.is_empty() {
-            config.keyword = keyword.to_string();
+            state.source_check.set_keyword(keyword);
         }
     }
+    config.keyword = state.source_check.keyword();
 
     // 3) 排队：逐源重置状态（对齐 BookSourceDao.beginCheck）
     let mut revisions: BTreeMap<String, String> = BTreeMap::new();
@@ -631,6 +674,23 @@ impl CheckOutcome {
     }
 }
 
+/// 会话占用守卫：任务正常结束或 panic 展开时都释放会话（批30b P2-3）
+///
+/// 修复前只在 `run_check_session` 末尾调用 `finish(&token)`：任务 panic 时
+/// future 被丢弃、该行不执行，会话永久占用（`getBookSourceCheckStates` 持续
+/// 返回 sessionToken，新检验恒报「书源调试通道占用中」）。Drop 在 unwindsafe
+/// 的栈展开中同样执行，故用守卫兜底。
+struct SessionGuard {
+    manager: Arc<SourceCheckManager>,
+    token: String,
+}
+
+impl Drop for SessionGuard {
+    fn drop(&mut self) {
+        self.manager.finish(&self.token);
+    }
+}
+
 /// 后台检验会话：逐源执行，每源完成立即写回（对齐 CheckSourceService）
 async fn run_check_session(
     state: Arc<AppState>,
@@ -638,6 +698,16 @@ async fn run_check_session(
     parts: Vec<SelectedSource>,
     config: CheckConfig,
 ) {
+    // P2-3：守卫在函数返回/panic 展开时释放会话，替代末尾的显式 finish
+    let _session_guard = SessionGuard {
+        manager: Arc::clone(&state.source_check),
+        token: token.clone(),
+    };
+    // P3-3：FetcherDeps（连接池 + 回调）会话级复用一次；原版共用 OkHttp
+    // client，修复前每源搜索/详情各建一次。初始化失败延迟到真正需要网络
+    // 校验的源上暴露（与逐源失败语义一致）。
+    let mut deps: Option<Result<legado_fetcher::deps::FetcherDeps, String>> = None;
+
     for part in parts {
         if state.source_check.is_cancelled(&token) {
             break;
@@ -668,10 +738,16 @@ async fn run_check_session(
             continue;
         }
 
+        // P3-3：本会话首次需要网络校验时初始化一次（失败也缓存，避免逐源重试）
+        if deps.is_none() {
+            deps = Some(server_deps(&state).map_err(|e| format!("抓取组件初始化失败: {e}")));
+        }
+        let deps = deps.as_ref().expect("上一行已初始化");
+
         let started = Instant::now();
         let outcome = match tokio::time::timeout(
             Duration::from_millis(config.timeout_ms),
-            check_source(&state, &current, &config),
+            check_source(&current, &config, deps),
         )
         .await
         {
@@ -680,10 +756,12 @@ async fn run_check_session(
         };
         let elapsed_ms = started.elapsed().as_millis() as i64;
         let detail = compose_detail(&outcome, config.w_source_comment);
-        let respond_time = if outcome.status == check_status::PASSED {
-            elapsed_ms
-        } else {
+        // P3-1：对齐 `Debug.getRespondTime(..., status != FAILED)`——UNCHECKABLE
+        // 也算成功、按实际耗时；仅 FAILED 叠加超时基数
+        let respond_time = if outcome.status == check_status::FAILED {
             config.timeout_ms as i64 + elapsed_ms
+        } else {
+            elapsed_ms
         };
 
         {
@@ -710,14 +788,17 @@ async fn run_check_session(
             }
         }
     }
-    state.source_check.finish(&token);
+    // 会话释放交给 SessionGuard（P2-3：panic 展开也能清理）
 }
 
 /// 单源检验（对齐 `CheckSourceService.doCheckSource` 的可达子集）
+///
+/// `deps` 为会话级复用的抓取依赖（P3-3）；仅在真正需要网络校验时读取，
+/// 初始化失败按本次校验失败返回。
 async fn check_source(
-    state: &Arc<AppState>,
     source: &BookSource,
     config: &CheckConfig,
+    deps: &Result<legado_fetcher::deps::FetcherDeps, String>,
 ) -> CheckOutcome {
     let mut invalid_groups: Vec<String> = Vec::new();
 
@@ -741,12 +822,14 @@ async fn check_source(
             Ok(json) => json,
             Err(e) => return CheckOutcome::failed(format!("源序列化失败: {e}")),
         };
-        let deps = match server_deps(state) {
+        let deps = match deps {
             Ok(deps) => deps,
-            Err(e) => return CheckOutcome::failed(format!("抓取组件初始化失败: {e}")),
+            Err(e) => return CheckOutcome::failed(e.clone()),
         };
         let keyword = effective_keyword(source, &config.keyword);
-        match legado_fetcher::web_book::webbook_search(deps, &source_json, &keyword, 1).await {
+        match legado_fetcher::web_book::webbook_search(deps.clone(), &source_json, &keyword, 1)
+            .await
+        {
             Err(e) => return CheckOutcome::failed(e.to_string()),
             Ok(raw) => match serde_json::from_str::<Vec<WebSearchResult>>(&raw) {
                 Err(e) => return CheckOutcome::failed(format!("搜索结果解析失败: {e}")),
@@ -778,7 +861,7 @@ async fn check_source(
     }
 
     if let Some(book) = searched_book {
-        if let Err(message) = check_book(state, source, &book, config).await {
+        if let Err(message) = check_book(source, &book, config, deps).await {
             return CheckOutcome::failed(message);
         }
     }
@@ -791,15 +874,18 @@ async fn check_source(
 
 /// 搜索结果的详情/目录/正文校验（对齐 `CheckSourceService.checkBook`）
 async fn check_book(
-    state: &Arc<AppState>,
     source: &BookSource,
     search: &WebSearchResult,
     config: &CheckConfig,
+    deps: &Result<legado_fetcher::deps::FetcherDeps, String>,
 ) -> Result<(), String> {
     if !config.check_info {
         return Ok(());
     }
-    let deps = server_deps(state).map_err(|e| format!("抓取组件初始化失败: {e}"))?;
+    let deps = match deps {
+        Ok(deps) => deps,
+        Err(e) => return Err(e.clone()),
+    };
     let source_json = serde_json::to_string(source).map_err(|e| format!("源序列化失败: {e}"))?;
 
     // 搜索结果不含 tocUrl → 与原版「tocUrl 为空则取详情」一致，恒取详情
@@ -831,9 +917,10 @@ async fn check_book(
     }
     let chapter_json =
         serde_json::to_string(chapter).map_err(|e| format!("章节序列化失败: {e}"))?;
-    let content = legado_fetcher::web_book::webbook_content(deps, &source_json, &chapter_json)
-        .await
-        .map_err(|e| format!("正文解析失败: {e}"))?;
+    let content =
+        legado_fetcher::web_book::webbook_content(deps.clone(), &source_json, &chapter_json)
+            .await
+            .map_err(|e| format!("正文解析失败: {e}"))?;
     if content.trim().is_empty() {
         return Err("正文为空".to_string());
     }
@@ -854,14 +941,15 @@ fn select_check_chapter(chapters: &[WebChapter]) -> Option<&WebChapter> {
 }
 
 /// 有效搜索关键词（对齐 `BookSource.getCheckKeyword`）
+///
+/// 原版 `isNotBlank()` 只做判定、**返回原串**（不做 trim）；P3-4 起同步该口径。
 fn effective_keyword(source: &BookSource, default: &str) -> String {
     if let Some(keyword) = source
         .rule_search
         .as_ref()
         .and_then(|rule| rule.check_key_word.as_deref())
     {
-        let keyword = keyword.trim();
-        if !keyword.is_empty()
+        if !keyword.trim().is_empty()
             && !keyword.contains("http")
             && !keyword.contains("::")
             && !keyword.contains("++")
@@ -997,12 +1085,76 @@ mod tests {
             check_key_word: Some("  自定义  ".to_string()),
             ..Default::default()
         });
-        assert_eq!(effective_keyword(&source, "我的"), "自定义");
+        assert_eq!(
+            effective_keyword(&source, "我的"),
+            "  自定义  ",
+            "对齐原版 getCheckKeyword：isNotBlank 只判定、原串返回（不 trim）"
+        );
         source.rule_search = Some(legado_core::models::SearchRule {
             check_key_word: Some("http://x".to_string()),
             ..Default::default()
         });
         assert_eq!(effective_keyword(&source, "我的"), "我的");
+        source.rule_search = Some(legado_core::models::SearchRule {
+            check_key_word: Some("   ".to_string()),
+            ..Default::default()
+        });
+        assert_eq!(
+            effective_keyword(&source, "我的"),
+            "我的",
+            "空白串回退默认值"
+        );
+    }
+
+    /// P3-4：关键词进程级粘滞（对齐原版全局 `CheckSource.keyword`）
+    #[test]
+    fn test_session_manager_keyword_sticky() {
+        let manager = SourceCheckManager::default();
+        assert_eq!(manager.keyword(), "我的");
+        manager.set_keyword("自定义");
+        assert_eq!(manager.keyword(), "自定义");
+        // 会话开关不影响粘滞值
+        let (token, _) = manager.try_start().expect("首次应成功");
+        manager.finish(&token);
+        assert_eq!(manager.keyword(), "自定义");
+    }
+
+    /// P2-3：会话守卫在正常 drop 与 panic 展开时都释放会话
+    #[test]
+    fn test_session_guard_releases_on_drop() {
+        let manager = Arc::new(SourceCheckManager::default());
+        let (token, _) = manager.try_start().expect("首次应成功");
+        {
+            let _guard = SessionGuard {
+                manager: Arc::clone(&manager),
+                token: token.clone(),
+            };
+            assert_eq!(manager.current_token().as_deref(), Some(token.as_str()));
+        }
+        assert!(
+            manager.current_token().is_none(),
+            "guard drop 应释放会话（任务正常结束）"
+        );
+    }
+
+    /// P2-3：任务 panic 时守卫仍释放会话，不会永久占用检验通道
+    #[test]
+    fn test_session_guard_releases_on_panic() {
+        let manager = Arc::new(SourceCheckManager::default());
+        let (token, _) = manager.try_start().expect("首次应成功");
+        let panic_manager = Arc::clone(&manager);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = SessionGuard {
+                manager: panic_manager,
+                token,
+            };
+            panic!("模拟后台任务 panic");
+        }));
+        assert!(result.is_err(), "闭包应 panic");
+        assert!(
+            manager.current_token().is_none(),
+            "panic 展开也必须释放会话（修复前永久占用）"
+        );
     }
 
     fn web_chapter(index: i32, title: &str, url: &str, is_volume: bool) -> WebChapter {

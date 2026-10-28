@@ -25,6 +25,7 @@ use legado_core::models::BookSource;
 use legado_db::repository::cache_repository::CacheRepository;
 use legado_db::BookSourceRepository;
 use legado_server::routes::create_router;
+use legado_server::server::attach_source_write_token_guard;
 use legado_server::state::AppState;
 
 fn make_state() -> Arc<AppState> {
@@ -195,6 +196,28 @@ async fn test_management_sources_full_and_filtered() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["isSuccess"], false);
     assert_eq!(body["errorMsg"], "书源地址参数无效");
+    assert!(body["data"].is_null());
+}
+
+#[tokio::test]
+async fn test_management_full_branch_reports_db_error() {
+    let state = make_state();
+    seed_source(&state, make_source("https://a.example.com")).await;
+    // 制造查询失败（状态表缺失）：全量分支必须返回错误信封而非静默空列表
+    {
+        let db = state.db.lock().await;
+        db.connection()
+            .execute_batch("DROP TABLE book_source_check_states;")
+            .unwrap();
+    }
+    let app = create_router(Arc::clone(&state));
+    let (status, body) = get_json(app, "/getBookSourcesForManagement").await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["isSuccess"], false, "{body}");
+    assert!(
+        body["errorMsg"].as_str().is_some_and(|msg| !msg.is_empty()),
+        "应返回数据库错误文案: {body}"
+    );
     assert!(body["data"].is_null());
 }
 
@@ -470,6 +493,44 @@ async fn test_stop_aborts_running_check() {
 }
 
 // ─── 令牌头路径（required=true 且令牌正确） ─────────────────────────────────
+
+/// 批30b P3-6：路由级令牌守卫挂载后，大 body（> axum 默认 2MB）无令牌请求
+/// 仍返回原版失败信封而非 413——证明 16MB 上限已随源写挂载组生效，且守卫
+/// 在 body 提取前拒绝。
+#[tokio::test]
+async fn test_token_guard_rejects_large_body_without_reading() {
+    let state = make_state();
+    let app =
+        attach_source_write_token_guard(create_router(Arc::clone(&state)), Arc::clone(&state));
+    let big = format!(
+        "{{\"sources\":[],\"padding\":\"{}\"}}",
+        "x".repeat(3 * 1024 * 1024)
+    );
+    let resp = app
+        .oneshot(
+            Request::builder()
+                .method(Method::POST)
+                .uri("/startBookSourceCheck")
+                .header("Content-Type", "application/json")
+                .body(Body::from(big))
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), StatusCode::OK, "应走原版信封而非 413");
+    assert_eq!(
+        resp.headers()
+            .get("connection")
+            .and_then(|v| v.to_str().ok()),
+        Some("close")
+    );
+    let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["isSuccess"], false);
+    assert_eq!(body["errorMsg"], "Web 书源访问令牌未配置或不正确");
+}
 
 #[tokio::test]
 async fn test_start_accepts_matching_token_header() {
