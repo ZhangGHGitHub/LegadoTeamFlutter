@@ -229,7 +229,7 @@ pub struct BackupData {
     ///
     /// 仅用于「恢复原版 zip 备份」：我方 `backup_create` 尚未收集该表，
     /// 序列化时按 `skip_serializing_if` 省略，故自有 JSON 备份形状不受影响
-    /// （当前版本为 v4；该键仍只在恢复原版 zip 时出现）。收到该键时按主键
+    /// （当前版本为 v5；该键仍只在恢复原版 zip 时出现）。收到该键时按主键
     /// `id` REPLACE 写入。
     #[serde(default, skip_serializing_if = "Vec::is_empty", rename = "autoTasks")]
     pub auto_tasks: Vec<serde_json::Value>,
@@ -431,9 +431,10 @@ pub struct RestoreStats {
 
 /// 创建备份到指定路径
 ///
-/// 收集 BackupData 全部 18 类数据（v4 覆盖面，对齐原版 `Backup.kt:279-330`
-/// 中所有表已在库的类别 + `servers.json` + `directLinkUploadRule.json`），
-/// 统一经各 repository/配置仓储读取后模型序列化，写入 JSON 文件，返回备份文件路径。
+/// 收集 BackupData 全部 19 类数据（v5 覆盖面，对齐原版 `Backup.kt:279-330`
+/// 中所有表已在库的类别，以及 `servers.json`/`directLinkUploadRule.json`/
+/// `bookMemo.json`），统一经各 repository/配置仓储读取后模型序列化，写入
+/// JSON 文件，返回备份文件路径。
 pub fn backup_create(path: &str) -> LegadoResult<String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

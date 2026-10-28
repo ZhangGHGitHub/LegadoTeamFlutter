@@ -176,6 +176,56 @@ mod tests {
         assert_eq!(get_read_time("无此书").unwrap(), 0);
     }
 
+    /// [批27b P1-1 | 2026-10-28] 同名不同作者：写路径只以「主记录」旧值算每日增量
+    ///
+    /// 两行同名书：主记录 P（`author=''`，readTime=100_000ms）与另一作者 S
+    /// （readTime=900_000ms）。upsert 传入主记录口径的新时长 160_000ms 后：
+    /// - 主记录 readTime = 160_000（不吸收 S 的 900_000）；
+    /// - S 行原样保留（写路径只碰主记录）；
+    /// - readRecordDaily 仅 +60 秒（160_000/1000 − 100_000/1000）。
+    ///
+    /// Dart 侧会话基数必须同口径（`reader_notifier._primaryReadRecord`）：
+    /// 若基数改为两行求和（旧实现），本用例的 900_000ms 会在每次会话被重复
+    /// 叠加进主记录（红→绿回归锚点）。
+    #[test]
+    fn test_upsert_uses_primary_row_for_daily_delta() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let today = chrono::Local::now().format("%Y-%m-%d").to_string();
+        let year: i32 = today[..4].parse().unwrap();
+        let book = "主记录口径书";
+
+        with_database(|db| {
+            let repo = ReadRecordRepository::new(db.connection());
+            repo.upsert_full("", book, "", 100_000, 10)?;
+            repo.upsert_full("", book, "另一作者", 900_000, 99)?;
+            Ok(())
+        })
+        .unwrap();
+
+        let before = daily_seconds_today(&today, year);
+        upsert_read_record(book, 160_000).unwrap();
+        let after = daily_seconds_today(&today, year);
+
+        assert_eq!(
+            after - before,
+            60,
+            "每日增量应只按主记录差值（160s−100s），实际增量: {}",
+            after - before
+        );
+
+        let records = get_read_records().unwrap();
+        let primary = records
+            .iter()
+            .find(|r| r.book_name == book && r.author.is_empty())
+            .expect("主记录应存在");
+        assert_eq!(primary.read_time, 160_000);
+        let other = records
+            .iter()
+            .find(|r| r.book_name == book && r.author == "另一作者")
+            .expect("另一作者行应存在");
+        assert_eq!(other.read_time, 900_000, "其他作者行不得被写路径覆盖");
+    }
+
     /// 读取当日聚合秒数（无当日行返回 0）
     fn daily_seconds_today(today: &str, year: i32) -> i64 {
         with_database(|db| {

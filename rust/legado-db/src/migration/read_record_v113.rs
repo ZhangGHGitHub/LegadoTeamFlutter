@@ -51,7 +51,8 @@ const READ_RECORD_COLUMNS: [&str; 13] = [
 /// v113 readRecord 主键列（顺序敏感）
 const READ_RECORD_PK: [&str; 3] = ["deviceId", "bookName", "author"];
 
-/// 快照索引列（顺序敏感，含 ASC/DESC 语义）
+/// 快照索引列（顺序敏感，含 ASC/DESC 语义；仅测试断言用——运行时无条件重建）
+#[cfg(test)]
 const SNAPSHOT_INDEX_COLUMNS: [&str; 6] = [
     "displayBookName",
     "displayAuthor",
@@ -90,13 +91,21 @@ pub fn ensure_read_record_v113(conn: &Connection) -> LegadoResult<()> {
             .map_err(|e| LegadoError::Database(format!("创建 book_memos 表失败: {e}")))?;
     }
 
-    ensure_index(
-        conn,
-        "index_readRecord_snapshot",
-        &SNAPSHOT_INDEX_COLUMNS,
+    // [批27b P3-2] 快照索引无条件 DROP + CREATE（对齐上游 112→113 的直接重建）：
+    // `PRAGMA index_info` 只暴露列名、看不到 ASC/DESC，条件式比对无法发现
+    // 「同名索引列相同但排序方向不符」的旧定义；无条件重建代价仅一次索引构建，
+    // 且开库自愈/迁移均幂等。
+    conn.execute("DROP INDEX IF EXISTS index_readRecord_snapshot", [])
+        .map_err(|e| {
+            LegadoError::Database(format!("删除旧索引 index_readRecord_snapshot 失败: {e}"))
+        })?;
+    conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS index_readRecord_snapshot ON readRecord \
          (displayBookName ASC, displayAuthor ASC, lastRead DESC, deviceId ASC, bookName ASC, author ASC)",
-    )?;
+    )
+    .map_err(|e| {
+        LegadoError::Database(format!("创建索引 index_readRecord_snapshot 失败: {e}"))
+    })?;
     ensure_index(
         conn,
         "index_readRecord_bookName_author",
@@ -126,8 +135,7 @@ fn rebuild_read_record(conn: &Connection) -> LegadoResult<()> {
             .to_string()
     };
     let sql = format!(
-        "BEGIN;
-         DROP TABLE IF EXISTS readRecord_v113;
+        "DROP TABLE IF EXISTS readRecord_v113;
          CREATE TABLE readRecord_v113 (
              deviceId TEXT NOT NULL,
              bookName TEXT NOT NULL,
@@ -144,15 +152,27 @@ fn rebuild_read_record(conn: &Connection) -> LegadoResult<()> {
              metadataEditedAt INTEGER NOT NULL DEFAULT 0,
              PRIMARY KEY(deviceId, bookName, author)
          );
-         INSERT OR REPLACE INTO readRecord_v113 ({column_list})
+         -- 旧主键 (deviceId, bookName) 唯一，新主键是其超集，正常数据不会撞行；
+         -- 用 INSERT（非 INSERT OR REPLACE）让异常数据显性失败并由事务回滚，
+         -- 而不是静默覆盖丢行。
+         INSERT INTO readRecord_v113 ({column_list})
              SELECT {column_list} FROM readRecord;
          DROP TABLE readRecord;
          ALTER TABLE readRecord_v113 RENAME TO readRecord;
-         {backfill}
-         COMMIT;"
+         {backfill}"
     );
-    conn.execute_batch(&sql)
+    // [批27b P2-3] 用 rusqlite 事务对象而非把 BEGIN/COMMIT 塞进 execute_batch：
+    // 后者在任一语句失败时**不会**自动 ROLLBACK，事务保持打开，连接停留在
+    // autocommit=false，后续迁移语句与查询会被卷进这个悬空事务（且失败后
+    // 调用方仍可拿到一条「看似正常」的连接）。`unchecked_transaction` 的
+    // Drop 即 ROLLBACK，保证失败后连接回到 autocommit。
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| LegadoError::Database(format!("开启 readRecord 重建事务失败: {e}")))?;
+    tx.execute_batch(&sql)
         .map_err(|e| LegadoError::Database(format!("重建 readRecord 表失败: {e}")))?;
+    tx.commit()
+        .map_err(|e| LegadoError::Database(format!("提交 readRecord 重建事务失败: {e}")))?;
     Ok(())
 }
 
@@ -472,6 +492,99 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(columns, SNAPSHOT_INDEX_COLUMNS);
+    }
+
+    /// [批27b P3-3] 主键已是 3 列但只有 5 列（上游「主键先行、列未跟上」的
+    /// 中间态）：走 add_missing_columns 补 8 列并回填显示元数据
+    #[test]
+    fn test_add_missing_columns_when_pk_already_three_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE readRecord (
+                 deviceId TEXT NOT NULL DEFAULT '',
+                 bookName TEXT NOT NULL,
+                 author TEXT NOT NULL DEFAULT '',
+                 readTime INTEGER NOT NULL DEFAULT 0,
+                 lastRead INTEGER NOT NULL DEFAULT 0,
+                 PRIMARY KEY(deviceId, bookName, author)
+             );
+             INSERT INTO readRecord (deviceId, bookName, author, readTime, lastRead)
+                 VALUES ('', '三列书', '作者A', 100, 10);
+             INSERT INTO readRecord (deviceId, bookName, author, readTime, lastRead)
+                 VALUES ('', '三列书', '', 50, 5);",
+        )
+        .unwrap();
+
+        Migration112To113.up(&conn).unwrap();
+
+        for column in READ_RECORD_COLUMNS {
+            assert!(column_exists(&conn, column), "readRecord 应含 {column} 列");
+        }
+        assert_eq!(
+            primary_key_columns(&conn, "readRecord").unwrap(),
+            READ_RECORD_PK
+        );
+        // 显示元数据按上游口径回填：有作者取 author；空作者取 resolvedAuthor（此处为空）
+        let (display_name, display_author): (String, String) = conn
+            .query_row(
+                "SELECT displayBookName, displayAuthor FROM readRecord
+                 WHERE author = '作者A'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(display_name, "三列书");
+        assert_eq!(display_author, "作者A");
+
+        let (index, pos, edited, blank_display): (i32, i32, i64, String) = conn
+            .query_row(
+                "SELECT lastChapterIndex, lastChapterPos, metadataEditedAt, displayAuthor
+                 FROM readRecord WHERE author = ''",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(index, -1);
+        assert_eq!(pos, 0);
+        assert_eq!(edited, 0);
+        assert_eq!(blank_display, "");
+
+        // 幂等：重复执行行数不变
+        Migration112To113.up(&conn).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM readRecord", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 2);
+    }
+
+    /// [批27b P2-3] 重建失败必须回滚，且连接回到 autocommit
+    ///
+    /// 用同名 view 占位 `readRecord_v113`，让重建首句 `DROP TABLE` 失败
+    /// （SQLite 拒绝用 DROP TABLE 删视图）：事务对象 Drop 即 ROLLBACK，
+    /// 旧表与数据原样保留，连接不得停留在打开的事务里。
+    #[test]
+    fn test_rebuild_failure_rolls_back_and_restores_autocommit() {
+        let conn = Connection::open_in_memory().unwrap();
+        create_v112_database(&conn);
+        conn.execute_batch("CREATE VIEW readRecord_v113 AS SELECT 1 AS x;")
+            .unwrap();
+
+        let err = Migration112To113.up(&conn).unwrap_err();
+        assert!(
+            err.to_string().contains("重建 readRecord 表失败"),
+            "错误应标明重建失败，实际: {err}"
+        );
+        assert!(conn.is_autocommit(), "失败后连接必须回到 autocommit");
+
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM readRecord", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 3, "回滚后旧表数据应原样保留");
+        assert_ne!(
+            primary_key_columns(&conn, "readRecord").unwrap(),
+            READ_RECORD_PK,
+            "回滚后主键应保持旧形态（结构不推进）"
+        );
     }
 
     /// 经注册表从 v112 升级到最新版本：版本推进且结构到位

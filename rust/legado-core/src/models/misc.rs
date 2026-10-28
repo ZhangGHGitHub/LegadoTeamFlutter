@@ -880,17 +880,6 @@ pub struct ReadRecord {
     pub metadata_edited_at: i64,
 }
 
-/// 书备忘（对齐原版 `BookMemo` 实体：`bookUrl` 主键，无级联外键）
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct BookMemo {
-    #[serde(default, rename = "bookUrl")]
-    pub book_url: String,
-    #[serde(default)]
-    pub content: String,
-    #[serde(default, rename = "updatedAt")]
-    pub updated_at: i64,
-}
-
 // ─── RssReadRecord ────────────────────────────────────────
 
 /// RSS阅读记录
