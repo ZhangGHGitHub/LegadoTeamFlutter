@@ -7,8 +7,15 @@
 //! 1. 打开压缩包（ZIP 使用 `zip` crate，RAR 使用 `unrar` crate，
 //!    7z 使用 `sevenz-rust2`；7z 打开前先做 32 字节签名头预检，见 §2.34 批24b）
 //! 2. 遍历压缩包条目，筛选书籍文件（.txt/.epub/.mobi/.pdf/.umd/.azw3/.azw）
-//! 3. 提取书籍文件到指定输出目录（同名 basename 按序号去重，不互相覆盖）
+//! 3. 提取书籍文件到指定输出目录。**同包同名 basename 口径按格式区分**
+//!    （§2.34 批32b 登记）：7z 按文件序去重命名（`novel.txt` / `novel_2.txt`，
+//!    list 与 import 同一命名）；zip/rar 保持原实现语义——同包同名 basename
+//!    后者覆盖前者（list 也按条目原样返回重复名，不做去重）。
 //! 4. 返回提取后的文件路径列表
+//!
+//! 落位（`.part` → 最终输出）由 [`land_pending_files`] 统一处理：成功才覆盖
+//! 既有输出（Windows 先备份后删除），任一失败清理**全部**剩余 `.part` 并
+//! 回滚已落位项（批32b P2-1）。
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::fs::{self, File};
@@ -49,11 +56,127 @@ pub fn import_zip_file(zip_path: &str, output_dir: &str) -> LegadoResult<Vec<Str
     import_zip_file_with_limits(zip_path, output_dir, &ArchiveLimits::default())
 }
 
-/// 删除待落位的临时 `.part` 文件（zip/rar 失败回滚）
+/// 删除待落位的临时 `.part` 文件（zip/rar 解压期失败回滚）
 fn remove_part_files(pending: &[(PathBuf, PathBuf)]) {
     for (temp, _) in pending {
         let _ = fs::remove_file(temp);
     }
+}
+
+/// Windows 覆盖既有输出时的备份路径（与输出同目录，避免跨卷 rename）
+#[cfg(windows)]
+fn backup_path_for(out_path: &Path, seq: usize) -> PathBuf {
+    let name = out_path
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_default();
+    out_path.with_file_name(format!(".legado_bak_{seq}.{name}.bak"))
+}
+
+/// 落位失败回滚：删除 `pending` 传入切片的全部临时 `.part`，并把已落位项
+/// 恢复为导入前状态（Windows 有备份则 rename 回既有文件，否则删除本次新文件）
+///
+/// [批32b P2-1] Windows 上目录/符号链接等非常规目标在落位前已拒绝、不会进入
+/// `landed`，因此这里只处理常规文件；恢复失败仅告警，不改变返回的首个错误。
+fn rollback_landed(landed: Vec<(PathBuf, Option<PathBuf>)>, pending: &[(PathBuf, PathBuf)]) {
+    for (temp, _) in pending {
+        let _ = fs::remove_file(temp);
+    }
+    for (out_path, backup) in landed.into_iter().rev() {
+        let _ = fs::remove_file(&out_path);
+        if let Some(backup) = backup {
+            if let Err(e) = fs::rename(&backup, &out_path) {
+                eprintln!("压缩包导入: 恢复既有输出失败 [{}]: {e}", out_path.display());
+            }
+        }
+    }
+}
+
+/// 把临时 `.part` 逐个落位为最终输出（zip/rar/7z 共用）
+///
+/// 语义（[批32b P2-1] 统一三格式）：
+/// - **成功**：返回按 `pending` 顺序的最终输出路径；Windows 覆盖既有目标时
+///   先 rename 到备份名，全部落位成功后才删除备份。
+/// - **失败**：清理 `pending` 中**全部剩余**临时文件（旧实现消费式迭代只删
+///   当前 temp，剩余 `.part` 残留），并回滚已落位项——Windows 恢复备份，其他
+///   平台删除本次新写入的文件（POSIX rename 原子替换，失败时既有目标本就
+///   未被触碰）。既有输出文件不会因落位失败而丢失。
+/// - 既有目标不是常规文件（目录/符号链接等）一律拒绝，不移动/删除用户数据
+///   （Windows 显式判定；其他平台由 rename 原子语义兜底，目标目录不会被移走）。
+fn land_pending_files(pending: Vec<(PathBuf, PathBuf)>, label: &str) -> LegadoResult<Vec<String>> {
+    let mut landed: Vec<(PathBuf, Option<PathBuf>)> = Vec::with_capacity(pending.len());
+    for (index, (temp, out_path)) in pending.iter().enumerate() {
+        // 既有目标必须是常规文件才允许覆盖：目录/符号链接目标若先 rename 到
+        // 备份，会把用户目录整体移走；直接拒绝并回滚。
+        #[cfg(windows)]
+        if out_path.exists() {
+            match fs::symlink_metadata(out_path) {
+                Ok(meta) if meta.is_file() => {}
+                Ok(_) => {
+                    rollback_landed(landed, &pending[index..]);
+                    return Err(LegadoError::BookParse(format!(
+                        "覆盖既有{label}输出文件失败 [{}]: 目标不是常规文件",
+                        out_path.display()
+                    )));
+                }
+                Err(e) => {
+                    rollback_landed(landed, &pending[index..]);
+                    return Err(LegadoError::BookParse(format!(
+                        "覆盖既有{label}输出文件失败 [{}]: {e}",
+                        out_path.display()
+                    )));
+                }
+            }
+        }
+
+        // Windows rename 不覆盖既有目标：先改名到备份，失败可恢复
+        #[cfg(windows)]
+        let backup = if out_path.exists() {
+            let backup_path = backup_path_for(out_path, index);
+            if let Err(e) = fs::rename(out_path, &backup_path) {
+                rollback_landed(landed, &pending[index..]);
+                return Err(LegadoError::BookParse(format!(
+                    "覆盖既有{label}输出文件失败 [{}]: {e}",
+                    out_path.display()
+                )));
+            }
+            Some(backup_path)
+        } else {
+            None
+        };
+        #[cfg(not(windows))]
+        let backup: Option<PathBuf> = None;
+
+        if let Err(e) = fs::rename(temp, out_path) {
+            // 本项旧输出已被移走时先原地恢复，避免回滚栈把「无新文件」当新增删除
+            if let Some(backup) = backup {
+                let _ = fs::rename(&backup, out_path);
+            }
+            rollback_landed(landed, &pending[index..]);
+            return Err(LegadoError::BookParse(format!(
+                "写入{label}输出文件失败 [{}]: {e}",
+                out_path.display()
+            )));
+        }
+        landed.push((out_path.clone(), backup));
+    }
+
+    // 全部落位成功后才删除备份（删除失败只留下隐藏备份文件，不影响结果）
+    for (_, backup) in landed {
+        if let Some(backup) = backup {
+            if let Err(e) = fs::remove_file(&backup) {
+                eprintln!(
+                    "压缩包导入: 删除既有输出备份失败 [{}]: {e}",
+                    backup.display()
+                );
+            }
+        }
+    }
+
+    Ok(pending
+        .into_iter()
+        .map(|(_, out_path)| out_path.to_string_lossy().to_string())
+        .collect())
 }
 
 /// ZIP 包声明面预检：条目数 / 条目名路径安全 / 单条目声明大小 / 声明总量
@@ -222,31 +345,9 @@ fn import_zip_file_with_limits(
         }
     }
 
-    // 整包读取成功后再落位（失败不触碰既有输出文件）
-    let mut extracted_files = Vec::with_capacity(pending.len());
-    for (temp, out_path) in pending {
-        // Windows rename 不覆盖既有目标，先删旧文件
-        #[cfg(windows)]
-        if out_path.exists() {
-            if let Err(e) = fs::remove_file(&out_path) {
-                let _ = fs::remove_file(&temp);
-                return Err(LegadoError::BookParse(format!(
-                    "覆盖既有ZIP输出文件失败 [{}]: {e}",
-                    out_path.display()
-                )));
-            }
-        }
-        if let Err(e) = fs::rename(&temp, &out_path) {
-            let _ = fs::remove_file(&temp);
-            return Err(LegadoError::BookParse(format!(
-                "写入ZIP输出文件失败 [{}]: {e}",
-                out_path.display()
-            )));
-        }
-        extracted_files.push(out_path.to_string_lossy().to_string());
-    }
-
-    Ok(extracted_files)
+    // 整包读取成功后再落位（失败清理全部 `.part` 并回滚，既有输出不被丢弃；
+    // 批32b P2-1 起由 `land_pending_files` 统一处理）
+    land_pending_files(pending, "ZIP")
 }
 
 /// 导入 RAR 压缩包中的书籍文件
@@ -442,33 +543,12 @@ fn import_rar_file_with_limits(
         }
     }
 
-    // 整包读取成功后再落位
-    let mut extracted_files = Vec::with_capacity(pending.len());
-    for (temp, out_path) in pending {
-        #[cfg(windows)]
-        if out_path.exists() {
-            if let Err(e) = fs::remove_file(&out_path) {
-                let _ = fs::remove_file(&temp);
-                return Err(LegadoError::BookParse(format!(
-                    "覆盖既有RAR输出文件失败 [{}]: {e}",
-                    out_path.display()
-                )));
-            }
-        }
-        if let Err(e) = fs::rename(&temp, &out_path) {
-            let _ = fs::remove_file(&temp);
-            return Err(LegadoError::BookParse(format!(
-                "写入RAR输出文件失败 [{}]: {e}",
-                out_path.display()
-            )));
-        }
-        extracted_files.push(out_path.to_string_lossy().to_string());
-    }
-
-    Ok(extracted_files)
+    // 整包读取成功后再落位（失败清理全部 `.part` 并回滚，既有输出不被丢弃；
+    // 批32b P2-1 起由 `land_pending_files` 统一处理）
+    land_pending_files(pending, "RAR")
 }
 
-/// Android/iOS 平台不支持 RAR（unrar_sys 无法交叉编译）
+/// 当前平台不支持 RAR（unrar_sys 无法交叉编译）
 #[cfg(any(target_os = "android", target_os = "ios"))]
 pub fn import_rar_file(
     _rar_path: &str,
@@ -476,7 +556,7 @@ pub fn import_rar_file(
     _password: Option<&str>,
 ) -> LegadoResult<Vec<String>> {
     Err(LegadoError::BookParse(
-        "Android 平台暂不支持 RAR 解压".to_string(),
+        "当前平台暂不支持 RAR 解压".to_string(),
     ))
 }
 
@@ -599,11 +679,11 @@ fn list_rar_book_files_with_limits(
     Ok(book_files)
 }
 
-/// Android/iOS 平台不支持 RAR 列表
+/// 当前平台不支持 RAR 列表
 #[cfg(any(target_os = "android", target_os = "ios"))]
 pub fn list_rar_book_files(_rar_path: &str, _password: Option<&str>) -> LegadoResult<Vec<String>> {
     Err(LegadoError::BookParse(
-        "Android 平台暂不支持 RAR 解压".to_string(),
+        "当前平台暂不支持 RAR 解压".to_string(),
     ))
 }
 
@@ -1482,33 +1562,13 @@ fn import_7z_file_with_limits(
     }
 
     // 返回顺序按原始文件序（与列表一致）；整包读取成功后再落位。
+    // 落位失败清理全部 `.part` 并回滚，既有输出不被丢弃（批32b P2-1）。
     pending.sort_by_key(|(index, _, _)| *index);
-    let mut extracted = Vec::with_capacity(pending.len());
-    for (_, temp, out_path) in pending {
-        // Windows rename 不覆盖既有目标，先删旧文件
-        #[cfg(windows)]
-        {
-            if out_path.exists() {
-                if let Err(e) = fs::remove_file(&out_path) {
-                    let _ = fs::remove_file(&temp);
-                    return Err(LegadoError::BookParse(format!(
-                        "覆盖既有7z输出文件失败 [{}]: {e}",
-                        out_path.display()
-                    )));
-                }
-            }
-        }
-        if let Err(e) = fs::rename(&temp, &out_path) {
-            let _ = fs::remove_file(&temp);
-            return Err(LegadoError::BookParse(format!(
-                "写入7z输出文件失败 [{}]: {e}",
-                out_path.display()
-            )));
-        }
-        extracted.push(out_path.to_string_lossy().to_string());
-    }
-
-    Ok(extracted)
+    let pending: Vec<(PathBuf, PathBuf)> = pending
+        .into_iter()
+        .map(|(_, temp, out_path)| (temp, out_path))
+        .collect();
+    land_pending_files(pending, "7z")
 }
 
 /// 判断文件是否为压缩包格式
@@ -1880,9 +1940,13 @@ mod tests {
         fs::write(output.join("novel.txt"), b"keep existing").unwrap();
         let err = import_zip_file(archive.to_str().unwrap(), output.to_str().unwrap()).unwrap_err();
         let msg = err.to_string();
+        // [批32b P3-2] 精确到 zip crate 的校验错误文案：CRC 失败由 `zip`
+        // 2.4 包装为 `io::Error(InvalidData, "Invalid checksum")`（该版本无
+        // `InvalidChecksum` 变体），不做「CRC 或损坏」的宽松匹配；变体级
+        // 断言见 `test_zip_crc_corruption_is_invalid_checksum_io_error`。
         assert!(
-            msg.contains("CRC") || msg.contains("损坏"),
-            "CRC 损坏应报可读错误，实际：{msg}"
+            msg.contains("Invalid checksum"),
+            "CRC 损坏应报 zip 的 Invalid checksum，实际：{msg}"
         );
         // 失败回滚：既有输出文件不被触碰、无 .part、无半成品
         assert_eq!(
@@ -1891,6 +1955,212 @@ mod tests {
         );
         assert_eq!(fs::read_dir(&output).unwrap().count(), 1);
         assert_no_part_files(&output);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// CRC 失败在 `zip` 层的确切形态（[批32b P3-2] 精确断言）
+    ///
+    /// `zip 2.4.2` 无 `ZipError::InvalidChecksum` 变体：CRC 不匹配由
+    /// `crc32::Crc32Reader` 在条目 EOF 返回
+    /// `io::Error::new(InvalidData, "Invalid checksum")`。本用例锁定该底层
+    /// 语义，防止上游升级改变错误形态后导入侧文案断言失真。
+    #[test]
+    fn test_zip_crc_corruption_is_invalid_checksum_io_error() {
+        let dir = unique_7z_dir("zip_crc_kind");
+        let archive = dir.join("books.zip");
+        let payload = b"unique-crc-kind-0123456789";
+        {
+            let file = File::create(&archive).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            writer.start_file("novel.txt", options).unwrap();
+            writer.write_all(payload).unwrap();
+            writer.finish().unwrap();
+        }
+        let mut bytes = fs::read(&archive).unwrap();
+        let pos = bytes
+            .windows(payload.len())
+            .position(|window| window == payload)
+            .expect("定位测试载荷");
+        bytes[pos] ^= 0xFF;
+        fs::write(&archive, &bytes).unwrap();
+
+        let file = File::open(&archive).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let mut entry = archive.by_index(0).unwrap();
+        let mut buf = Vec::new();
+        let err = entry.read_to_end(&mut buf).unwrap_err();
+        assert_eq!(
+            err.kind(),
+            std::io::ErrorKind::InvalidData,
+            "CRC 失败应为 InvalidData，实际：{err:?}"
+        );
+        assert_eq!(err.to_string(), "Invalid checksum");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批32b P2-1 红→绿] 落位失败清理**全部**剩余 `.part` 且不丢弃既有输出
+    ///
+    /// 首个目标为目录 → 落位必然失败；旧实现消费式 `for (temp, out) in pending`
+    /// 只删当前 temp 就 return，第二个条目（b.txt）的 `.part` 残留（红）。现在
+    /// 清理全部剩余 temp，且既有 b.txt 内容不变（绿）。
+    #[test]
+    fn test_import_zip_landing_failure_cleans_all_parts_and_keeps_existing() {
+        let dir = unique_7z_dir("zip_landing");
+        let archive = dir.join("books.zip");
+        create_test_zip(&archive, &[("a.txt", b"NEW-A"), ("b.txt", b"NEW-B")]);
+        let output = dir.join("out");
+        // a.txt 为目录（非常规文件） → 落位拒绝；b.txt 为既有文件 → 不得触碰
+        fs::create_dir_all(output.join("a.txt")).unwrap();
+        fs::write(output.join("a.txt").join("marker"), b"keep").unwrap();
+        fs::write(output.join("b.txt"), b"OLD-B").unwrap();
+
+        let err = import_zip_file(archive.to_str().unwrap(), output.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("覆盖既有ZIP输出文件失败"), "{err}");
+        assert_eq!(
+            fs::read(output.join("a.txt").join("marker")).unwrap(),
+            b"keep",
+            "既有目录不得被移动/删除"
+        );
+        assert_eq!(
+            fs::read(output.join("b.txt")).unwrap(),
+            b"OLD-B",
+            "既有输出文件不得被触碰"
+        );
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 2);
+        assert_no_part_files(&output);
+        assert_no_backup_files(&output);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批32b P2-1] 7z 落位失败同样清理全部 `.part`（共用 `land_pending_files`）
+    #[test]
+    fn test_import_7z_landing_failure_cleans_all_parts_and_keeps_existing() {
+        let dir = unique_7z_dir("7z_landing");
+        let archive = create_test_7z(
+            &dir.join("books.7z"),
+            &[("a.txt", b"NEW-A"), ("b.txt", b"NEW-B")],
+            lzma2_methods(),
+        );
+        let output = dir.join("out");
+        fs::create_dir_all(output.join("a.txt")).unwrap();
+        fs::write(output.join("a.txt").join("marker"), b"keep").unwrap();
+        fs::write(output.join("b.txt"), b"OLD-B").unwrap();
+
+        let err = import_7z_file(archive.to_str().unwrap(), output.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("覆盖既有7z输出文件失败"), "{err}");
+        assert_eq!(
+            fs::read(output.join("a.txt").join("marker")).unwrap(),
+            b"keep"
+        );
+        assert_eq!(fs::read(output.join("b.txt")).unwrap(), b"OLD-B");
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 2);
+        assert_no_part_files(&output);
+        assert_no_backup_files(&output);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批32b P2-1 Windows 回滚] 先成功覆盖既有文件、后项落位失败 → 恢复备份
+    ///
+    /// Windows rename 不覆盖既有目标：旧实现「先删旧文件再 rename」，一旦后项
+    /// 失败，前项的既有输出已永久丢失。现在覆盖前改名到备份，失败回滚 rename
+    /// 回原文件；断言 a.txt 内容恢复为 OLD-A 且无 `.bak` 残留。
+    #[cfg(windows)]
+    #[test]
+    fn test_import_zip_landing_failure_restores_backed_up_output() {
+        let dir = unique_7z_dir("zip_landing_restore");
+        let archive = dir.join("books.zip");
+        create_test_zip(&archive, &[("a.txt", b"NEW-A"), ("b.txt", b"NEW-B")]);
+        let output = dir.join("out");
+        fs::create_dir_all(output.join("b.txt")).unwrap();
+        fs::write(output.join("b.txt").join("marker"), b"keep").unwrap();
+        fs::write(output.join("a.txt"), b"OLD-A").unwrap();
+
+        let err = import_zip_file(archive.to_str().unwrap(), output.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("覆盖既有ZIP输出文件失败"), "{err}");
+        assert_eq!(
+            fs::read(output.join("a.txt")).unwrap(),
+            b"OLD-A",
+            "前项已落位的既有输出必须从备份恢复"
+        );
+        assert_eq!(
+            fs::read(output.join("b.txt").join("marker")).unwrap(),
+            b"keep"
+        );
+        assert_no_part_files(&output);
+        assert_no_backup_files(&output);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批32b P2-1 Windows 回滚] 7z 同型：前项覆盖成功、后项失败 → 恢复备份
+    #[cfg(windows)]
+    #[test]
+    fn test_import_7z_landing_failure_restores_backed_up_output() {
+        let dir = unique_7z_dir("7z_landing_restore");
+        let archive = create_test_7z(
+            &dir.join("books.7z"),
+            &[("a.txt", b"NEW-A"), ("b.txt", b"NEW-B")],
+            lzma2_methods(),
+        );
+        let output = dir.join("out");
+        fs::create_dir_all(output.join("b.txt")).unwrap();
+        fs::write(output.join("b.txt").join("marker"), b"keep").unwrap();
+        fs::write(output.join("a.txt"), b"OLD-A").unwrap();
+
+        let err = import_7z_file(archive.to_str().unwrap(), output.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("覆盖既有7z输出文件失败"), "{err}");
+        assert_eq!(fs::read(output.join("a.txt")).unwrap(), b"OLD-A");
+        assert_eq!(
+            fs::read(output.join("b.txt").join("marker")).unwrap(),
+            b"keep"
+        );
+        assert_no_part_files(&output);
+        assert_no_backup_files(&output);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批32b P3-2] 「实际读取字节」限额分支：伪造中央目录声明大小
+    ///
+    /// 将 central directory 的 uncompressed size 改为 16（真实输出 4096），
+    /// 声明预检放行（16 ≤ 1024），解压循环按实际读取 4096 字节触发
+    /// `ZIP 单条目超限`——覆盖不信任声明值的实际计数分支（旧测试只覆盖
+    /// 声明值分支 `ZIP 单条目过大`）。
+    #[test]
+    fn test_import_zip_actual_read_limit_with_forged_declared_size() {
+        let dir = unique_7z_dir("zip_actual_limit");
+        let archive = dir.join("books.zip");
+        let payload = vec![b'A'; 4096];
+        create_test_zip(&archive, &[("novel.txt", payload.as_slice())]);
+
+        let mut bytes = fs::read(&archive).unwrap();
+        let cd = bytes
+            .windows(4)
+            .position(|window| window == b"PK\x01\x02")
+            .expect("定位中央目录");
+        // central directory 布局：签名 4 + version made by 2 + version needed 2 +
+        // flags 2 + method 2 + mtime 2 + mdate 2 + crc 4 → offset 20 起为
+        // compressed size，24 起为 uncompressed size（均 LE u32）
+        bytes[cd + 24..cd + 28].copy_from_slice(&16u32.to_le_bytes());
+        fs::write(&archive, &bytes).unwrap();
+
+        let limits = ArchiveLimits {
+            max_entry_size: 1024,
+            ..ArchiveLimits::default()
+        };
+        let output = dir.join("out");
+        let err = import_zip_file_with_limits(
+            archive.to_str().unwrap(),
+            output.to_str().unwrap(),
+            &limits,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("ZIP 单条目超限"),
+            "应命中实际读取计数分支而非声明预检，实际：{err}"
+        );
+        assert_no_part_files(&output);
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 0);
         let _ = fs::remove_dir_all(&dir);
     }
 
@@ -1982,6 +2252,20 @@ mod tests {
             })
             .unwrap_or_default();
         assert!(parts.is_empty(), "失败回滚后残留 .part: {parts:?}");
+    }
+
+    /// 断言目录内无 `.bak` 残留（Windows 覆盖备份的失败回滚检查，批32b P2-1）
+    fn assert_no_backup_files(dir: &Path) {
+        let backups: Vec<String> = fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .filter_map(|entry| entry.ok())
+                    .map(|entry| entry.file_name().to_string_lossy().to_string())
+                    .filter(|name| name.ends_with(".bak"))
+                    .collect()
+            })
+            .unwrap_or_default();
+        assert!(backups.is_empty(), "落位回滚后残留备份: {backups:?}");
     }
 
     /// 非 solid 7z 夹具

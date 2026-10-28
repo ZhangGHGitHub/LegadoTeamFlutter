@@ -117,6 +117,14 @@ $adb = "D:\Android\platform-tools\adb.exe"
 
 ---
 
+## 批次风险登记（2026-10-29 批32b：zip/rar/7z 导入）
+
+| ID | 项 | 状态 | 说明 / 缓解 |
+|---|---|---|---|
+| ARC-1 | RAR 解析级限额/路径安全/回滚无自动化夹具 | 🟡 已登记（limitation） | 仓库无 RAR 夹具（`unrar 0.5` 仅解压、无编码器），`import_rar_file`/`list_rar_book_files` 的解析级限额（声明大小、实际读取字节、条目数）、条目名路径安全（`validate_archive_entry_name`）、`.part` 失败清理与 Windows 备份落位**仅由与 zip/7z 共用的代码保证，未被单测覆盖**；现有 RAR 用例仅输入大小预检（`test_rar_input_size_limit_precheck`）。另：`unrar::Archive::read()` 一次性返回整条数据（非流式），内存峰值受声明大小限额与输入包大小上限约束。后续可引入预先生成的 RAR 夹具（含路径穿越/超大声明尺寸/损坏条目）补齐。契约 §2.34 批32b 补记同载 |
+
+---
+
 ## 批次 commits（随进度追加）
 
 | 前缀 | 说明 |
