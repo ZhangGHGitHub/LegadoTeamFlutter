@@ -121,6 +121,7 @@ mod tests {
             download_manager: Mutex::new(DownloadManager::new(3)),
             injected_paths: Default::default(),
             legacy_review: Default::default(),
+            source_check: Default::default(),
         })
     }
 

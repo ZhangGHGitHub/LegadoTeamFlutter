@@ -46,6 +46,9 @@ pub struct AppState {
     /// 段评 legacy 共享状态（B4：详情分页游标 64 槽 + legacy 会话 16 槽；
     /// 对齐原版 ReviewController 的两个 LruCache 成员，进程内有效）
     pub legacy_review: std::sync::Mutex<crate::legacy::review_api::LegacyReviewShared>,
+    /// 书源检验会话（批30：进程内单任务/可停止，对齐原版 `Debug` 的
+    /// check session 单例；`Arc` 便于后台任务与 handler 共享）
+    pub source_check: Arc<crate::legacy::source_check_api::SourceCheckManager>,
 }
 
 /// 状态类型别名，方便在 handler 签名中使用

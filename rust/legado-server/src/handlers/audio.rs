@@ -423,6 +423,7 @@ mod tests {
             ),
             injected_paths: Default::default(),
             legacy_review: Default::default(),
+            source_check: Default::default(),
         });
         crate::routes::create_router(state)
     }
@@ -561,6 +562,7 @@ mod tests {
             ),
             injected_paths: Default::default(),
             legacy_review: Default::default(),
+            source_check: Default::default(),
         });
 
         let book_url = "https://audio.test/vol";

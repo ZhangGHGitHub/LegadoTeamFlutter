@@ -87,12 +87,25 @@
 //! 大列表响应：原版对 List 元素 > 3000 的响应走 chunked 流式 JSON
 //! （HttpServer.kt:183-194）；axum 的 body 天然流式，本实现直接整包序列化，
 //! 行为等价（登记）。
+//!
+//! B11 批（2026-10-28，批30「书源检验状态 + 原版 web-dist 同步」）：
+//!
+//! | 端点 | 原版实现 | 令牌 | 备注 |
+//! |---|---|---|---|
+//! | GET `/getBookSourcesForManagement?urls=` | `BookSourceCheckController.sources`（:22-43） | 无 | `{sources, states}`；`urls` 为 JSON 数组字符串，坏 JSON →「书源地址参数无效」 |
+//! | GET `/getBookSourceCheckStates` | `BookSourceCheckController.states`（:15-20） | 无 | `{states, sessionToken}`；无会话时 `sessionToken: null` |
+//! | POST `/startBookSourceCheck` | `BookSourceCheckController.start`（:48-85） | **有** | `{sources, keyword}` → `{sessionToken, sourceRevisions}`；提交源须与库内 `checkContent()` 一致 |
+//! | POST `/stopBookSourceCheck` | `BookSourceCheckController.stop`（:87-96） | **有** | `{sessionToken}`；不匹配 →「检验会话已结束或已更换」 |
+//!
+//! 实现见 [`source_check_api`]；状态表见 `legado-db` v115。发现页校验引擎
+//! 不可达（同 B5 降级）等差异在模块文档逐条登记。
 
 pub mod book_api;
 pub mod book_json;
 pub mod http_log;
 pub mod review_api;
 pub mod source_api;
+pub mod source_check_api;
 pub mod source_write_api;
 
 use std::sync::Arc;
@@ -225,6 +238,15 @@ pub fn legacy_routes() -> Router<Arc<AppState>> {
         )
         .route("/getHttpLogs", get(source_api::get_http_logs))
         .route("/getHttpLog", get(source_api::get_http_log))
+        // B11 书源管理读（source_check_api.rs；两条 GET 无令牌，对齐原版）
+        .route(
+            "/getBookSourcesForManagement",
+            get(source_check_api::get_book_sources_for_management),
+        )
+        .route(
+            "/getBookSourceCheckStates",
+            get(source_check_api::get_book_source_check_states),
+        )
         // B4 段评 legacy（review_api.rs；open/run 受令牌保护）
         .route("/getReviewSummary", get(review_api::get_review_summary))
         .route("/getReviewDetail", get(review_api::get_review_detail))
@@ -244,6 +266,16 @@ pub fn legacy_routes() -> Router<Arc<AppState>> {
                 .route(
                     "/deleteBookSources",
                     post(source_write_api::delete_book_sources),
+                )
+                // B11 检验会话两条（同属原版 PROTECTED_SOURCE_WRITE_ROUTES；
+                // start 请求体含全部选中源，沿用放宽后的 16MB 上限）
+                .route(
+                    "/startBookSourceCheck",
+                    post(source_check_api::start_book_source_check),
+                )
+                .route(
+                    "/stopBookSourceCheck",
+                    post(source_check_api::stop_book_source_check),
                 )
                 .route("/saveJsSource", post(source_write_api::save_js_source))
                 .route("/saveRssSource", post(source_write_api::save_rss_source))

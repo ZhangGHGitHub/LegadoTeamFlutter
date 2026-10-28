@@ -2108,6 +2108,7 @@ mod tests {
                 local_book_root,
             },
             legacy_review: Default::default(),
+            source_check: Default::default(),
         })
     }
 

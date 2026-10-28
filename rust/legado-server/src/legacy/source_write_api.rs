@@ -16,13 +16,17 @@
 //! | POST `/testReplaceRule` | `ReplaceRuleController.testRule`（:68-107） | `{rule, text}`；不落库；正则/字面量/@js: 替换 |
 //!
 //! 令牌面：本模块 10 条端点全部受保护，但分属两条链（`HttpServer.kt:58-73`）：
-//! - **9 条**在 `PROTECTED_SOURCE_WRITE_ROUTES`（HttpServer.kt:246-258，该集合
+//! - **9 条**在原版 `PROTECTED_SOURCE_WRITE_ROUTES`（HttpServer.kt:246-258，该集合
 //!   共 11 条，另含 B4 已实现的 `/openLegacyReview`、`/runLegacyReview`）内，
 //!   由 `hasValidJsSourceApiToken` 统一判定；
 //! - **`saveJsSource` 不在该集合**：由独立 [`validate_js_source_headers`] 链
 //!   保护（HttpServer.kt:60-62），该链第一步即令牌校验（对齐
 //!   `BookSourceController.validateJsSourceRequest`），之后才检查
 //!   Transfer-Encoding / Content-Type / Content-Length。
+//!
+//! 本轨 [`PROTECTED_SOURCE_WRITE_ROUTES`] 常量把上述 9 条 + `saveJsSource` +
+//! 批30 检验会话两条（`/startBookSourceCheck`、`/stopBookSourceCheck`）合并为
+//! 12 条，供路由级前置中间件统一使用（原版集合本就包含检验两条）。
 //!
 //! 两侧共用 [`super::source_api::JsSourceApiConfig::has_valid_token`]（与
 //! `BookSourceController.hasValidJsSourceApiToken` 同一判定）与
@@ -145,8 +149,12 @@ pub const SOURCE_WRITE_MAX_BODY_BYTES: usize = 16 * 1024 * 1024;
 /// 受保护源写路由（P2-2，路由级令牌前置中间件使用）
 ///
 /// 与原版 `PROTECTED_SOURCE_WRITE_ROUTES`（HttpServer.kt:246-258）中本模块
-/// 的 9 条 + 独立链保护的 `/saveJsSource`（HttpServer.kt:60-62）一致。
-pub const PROTECTED_SOURCE_WRITE_ROUTES: [&str; 10] = [
+/// 的 9 条 + 独立链保护的 `/saveJsSource`（HttpServer.kt:60-62）一致；
+/// 批30 追加检验会话两条 `/startBookSourceCheck`、`/stopBookSourceCheck`
+/// （同属原版集合，HttpServer.kt:251-254）。
+pub const PROTECTED_SOURCE_WRITE_ROUTES: [&str; 12] = [
+    "/startBookSourceCheck",
+    "/stopBookSourceCheck",
     "/saveBookSource",
     "/saveBookSources",
     "/deleteBookSources",
@@ -283,7 +291,9 @@ pub async fn save_book_source(
                     ReturnData::error("源名称和URL不能为空")
                 } else {
                     let db = state.db.lock().await;
-                    match BookSourceRepository::new(db.connection()).insert(&source) {
+                    match BookSourceRepository::new(db.connection())
+                        .insert_with_check_state(&source)
+                    {
                         Ok(()) => ReturnData::success(Value::String(String::new())),
                         Err(e) => ReturnData::error(e.to_string()),
                     }
@@ -326,7 +336,9 @@ pub async fn save_book_sources(
                     })
                     .collect();
                 let db = state.db.lock().await;
-                match BookSourceRepository::new(db.connection()).insert_batch(&ok_sources) {
+                match BookSourceRepository::new(db.connection())
+                    .insert_batch_with_check_state(&ok_sources)
+                {
                     Ok(()) => match serde_json::to_value(&ok_sources) {
                         Ok(value) => ReturnData::success(value),
                         Err(e) => ReturnData::error(e.to_string()),
@@ -567,7 +579,7 @@ async fn save_js_source_into_db(
             repo.delete(old_url)?;
             CacheRepository::new(conn).delete_source_variables(old_url)?;
         }
-        repo.insert(&source_to_save)?;
+        repo.insert_with_check_state(&source_to_save)?;
         Ok(source_to_save)
     });
     match saved {
@@ -1300,11 +1312,13 @@ mod tests {
         );
     }
 
-    /// P2-2：受保护路由清单与中间件判定一致（10 条）
+    /// P2-2：受保护路由清单与中间件判定一致（12 条，批30 含检验会话两条）
     #[test]
     fn test_protected_source_write_routes() {
-        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 10);
+        assert_eq!(PROTECTED_SOURCE_WRITE_ROUTES.len(), 12);
         for path in [
+            "/startBookSourceCheck",
+            "/stopBookSourceCheck",
             "/saveBookSource",
             "/saveBookSources",
             "/deleteBookSources",

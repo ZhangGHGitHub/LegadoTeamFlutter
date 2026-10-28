@@ -112,6 +112,7 @@ pub async fn serve_web_with_injected_paths(
         download_manager: Mutex::new(DownloadManager::new(3)),
         injected_paths,
         legacy_review: Default::default(),
+        source_check: Default::default(),
     });
 
     // 批11：接线 HTTP 日志采集——注册进程级存储实现（幂等，与 FFI 共用同一
@@ -298,6 +299,7 @@ pub async fn serve_mcp(
         download_manager: Mutex::new(DownloadManager::new(3)),
         injected_paths: Default::default(),
         legacy_review: Default::default(),
+        source_check: Default::default(),
     });
 
     // 独立 MCP 服务的 eval_js 等链路同样经 LegadoClient 出站：采集面一并接线
@@ -368,6 +370,7 @@ mod tests {
             download_manager: Mutex::new(DownloadManager::new(3)),
             injected_paths: Default::default(),
             legacy_review: Default::default(),
+            source_check: Default::default(),
         });
         let router = create_router(state);
 

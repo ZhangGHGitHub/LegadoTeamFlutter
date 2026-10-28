@@ -98,6 +98,7 @@ mod tests {
             ),
             injected_paths: Default::default(),
             legacy_review: Default::default(),
+            source_check: Default::default(),
         })
     }
 
