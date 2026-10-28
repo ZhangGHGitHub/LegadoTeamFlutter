@@ -141,6 +141,19 @@ class SaveFileBridgeTest {
         assertEquals("TREE_NOT_WRITABLE", SaveFileBridge.treeGrantErrorCode(0))
     }
 
+    @Test
+    fun `directory flags decide create support only when known`() {
+        // P3-6：COLUMN_FLAGS 的 FLAG_DIR_SUPPORTS_CREATE 位
+        val create = android.provider.DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE
+        assertEquals(true, SaveFileBridge.supportsCreateFromFlags(create.toLong()))
+        // 其它位（如 FLAG_SUPPORTS_WRITE = 1）不含创建位
+        assertEquals(false, SaveFileBridge.supportsCreateFromFlags(1L))
+        assertEquals(false, SaveFileBridge.supportsCreateFromFlags(0L))
+        // 未知（provider 不提供 / 查询失败 / 负数）→ null，调用方放行
+        assertNull(SaveFileBridge.supportsCreateFromFlags(null))
+        assertNull(SaveFileBridge.supportsCreateFromFlags(-1L))
+    }
+
     // ---------- P1-1：回退目标相对路径推导 ----------
 
     @Test
@@ -420,14 +433,14 @@ class SaveFileBridgeTest {
     }
 
     @Test
-    fun `created document is cleaned when write stream throws`() {
-        // P2-4 场景：createDocument 成功（新建 0 字节）→ openOutputStream
-        // 抛异常（设备侧无法稳定构造，由本纯逻辑用例锁定决策）：
-        // opened=false + preSize=0 → 删除本次文档，不残留 0 字节。
+    fun `cleanup decision deletes only newly created zero byte documents`() {
+        // P3-8：本用例只锁定 `shouldDeleteAfterFailure` 的**决策**，不证明
+        // 「createDocument 成功后写流抛异常」的完整链路（设备侧无法稳定
+        // 构造，见 docs/DEVICE_ACCEPTANCE_20261027_26_EXPORT_TREE.md §8.5）。
+        // 决策口径：opened=false + preSize=0 → 删除本次新建的空文档；
+        // opened=true + preSize=0 → 清理本次写失败残留；已有内容绝不删。
         assertTrue(SaveFileBridge.shouldDeleteAfterFailure(opened = false, preSize = 0L))
-        // 写流已打开后失败（opened=true）同样清理本次 0 字节文档。
         assertTrue(SaveFileBridge.shouldDeleteAfterFailure(opened = true, preSize = 0L))
-        // 用户已有内容（替换场景）绝不删除。
         assertFalse(SaveFileBridge.shouldDeleteAfterFailure(opened = true, preSize = 1L))
     }
 
@@ -467,6 +480,34 @@ class SaveFileBridgeTest {
             SaveFileBridge.ReadbackSizeVerdict.UNKNOWN,
             SaveFileBridge.readbackSizeVerdict(2100, -1L)
         )
+    }
+
+    @Test
+    fun `zero declared size with non empty content falls back to content scan`() {
+        // P2-1 红→绿：部分第三方 provider 写入成功后**短暂**上报
+        // COLUMN_SIZE=0。期望 2100 却读回 0 必须降级 UNKNOWN 并靠全文
+        // 扫描终判成功；修复前判 MISMATCH → writeViaTree 失败清理会
+        // 删除刚写成功的文件。
+        assertEquals(
+            SaveFileBridge.ReadbackSizeVerdict.UNKNOWN,
+            SaveFileBridge.readbackSizeVerdict(2100, 0L)
+        )
+        assertNull(SaveFileBridge.verifyReadback(2100, 0L, 2100L, true))
+        // 降级不是放行：全文长度 / 首字节不一致仍须失败
+        assertEquals(
+            "读回内容长度校验失败：期望 2100，实际 2099",
+            SaveFileBridge.verifyReadback(2100, 0L, 2099L, true)
+        )
+        assertEquals(
+            "读回首字节不一致",
+            SaveFileBridge.verifyReadback(2100, 0L, 2100L, false)
+        )
+        // 期望 0（空内容）与读回 0 相等仍是 MATCH，不会被误降级
+        assertEquals(
+            SaveFileBridge.ReadbackSizeVerdict.MATCH,
+            SaveFileBridge.readbackSizeVerdict(0, 0L)
+        )
+        assertNull(SaveFileBridge.verifyReadback(0, 0L, null, true))
     }
 
     @Test

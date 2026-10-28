@@ -55,17 +55,20 @@ import java.io.IOException
  *    绝不静默写「下载」根；
  * 6. **严格读回校验（P2-1）**：目录树与 MediaStore 回退写入后 SIZE 必须与
  *    实际写入字节数精确相等且首 [HEAD_VERIFY_BYTES] 字节一致；
- *    [P1-1] provider 不报 SIZE（null/负数）时**降级为全文读取字节数比对**
- *    （见 [verifyReadback]），只有已知且确实不等才判失败并清理，绝不把
- *    刚写成功的文件误删；
+ *    [P1-1] provider 不报 SIZE（null/负数）或写入成功后短暂报 0 时
+ *    **降级为全文读取字节数比对**（见 [verifyReadback]），只有已知且
+ *    确实不等才判失败并清理，绝不把刚写成功的文件误删；
  * 7. **失败清理安全（P2-2/P2-4）**：open 前查询文档大小（COLUMN_SIZE），
  *    仅 0 字节文档（本次新建/截断，或 CREATE_DOCUMENT 刚建的空文档）允许
  *    删除；`preSize > 0`（用户选择「替换」的已有文件）失败只报错不删；
  * 8. [P2-2] 目录选择结果只按系统**实际授予**的 flags 取持久授权：无
  *    WRITE 或 take 失败时**不记住目录**并回 `TREE_NOT_WRITABLE`
  *    （中文「该文件夹不可写，请换一个」），避免只读目录每次保存循环失败；
+ *    记住前另查 `COLUMN_FLAGS & FLAG_DIR_SUPPORTS_CREATE`（provider 明确
+ *    不支持创建时同样拒绝，查询不到则按未知放行）；
  * 9. 持久化 URI 授权仅在 take 成功时回收（最小权限）；目录失效清除记录
- *    （[clearTree]）时按记录 URI 释放 READ|WRITE 持久授权，避免 grant 累积；
+ *    （[clearTree]）时按记录 URI **逐位**释放 READ/WRITE 持久授权
+ *    （只持有其一时整次释放会失败），避免 grant 累积；
  * 10. 用户取消（RESULT_CANCELED）回 `result.success(null)`；RESULT_OK 但
  *    无 URI 回 `NO_URI` 错误（P3-3）；等待结果超过 5 分钟复位 pending
  *    （P3-3），超时后迟到的回调写日志而非静默丢弃（P3-6）。
@@ -213,6 +216,22 @@ class SaveFileBridge {
          */
         internal fun treeGrantErrorCode(intentFlags: Int): String? =
             if (hasWriteGrant(persistableFlags(intentFlags))) null else "TREE_NOT_WRITABLE"
+
+        /**
+         * 目录文档 flags → 是否声明支持创建子项（P3-6 纯函数）。
+         *
+         * [flags] 为 `DocumentsContract.Document.COLUMN_FLAGS` 查询结果：
+         * - null / 负数 → null（provider 未提供或不可知，调用方按未知放行）；
+         * - 否则按 `FLAG_DIR_SUPPORTS_CREATE` 位判断。
+         *
+         * 仅作「记住目录前」的补充判据：大量第三方 provider 不返回该位，
+         * 因此只有明确的 false 才拒绝，null 不能当 false。
+         */
+        internal fun supportsCreateFromFlags(flags: Long?): Boolean? = when {
+            flags == null || flags < 0L -> null
+            else -> flags and
+                DocumentsContract.Document.FLAG_DIR_SUPPORTS_CREATE.toLong() != 0L
+        }
 
         /**
          * 参数校验纯函数（JVM 单测覆盖）：返回错误码，null 表示通过。
@@ -494,26 +513,43 @@ class SaveFileBridge {
         internal fun isReadbackSizeValid(expected: Int, actual: Long?): Boolean =
             actual != null && actual >= 0L && actual == expected.toLong()
 
-        /** 读回 SIZE 判定（P1-1 纯函数，枚举放在类层级以便测试直接引用） */
+        /**
+         * 读回 SIZE 判定（P1-1 / 批26c P2-1 纯函数，枚举放在类层级以便
+         * 测试直接引用）。
+         *
+         * [P2-1] `expected > 0 && actual == 0` 同样降级为
+         * [ReadbackSizeVerdict.UNKNOWN]：部分第三方 provider 在写入成功后
+         * **短暂**上报 `COLUMN_SIZE=0`（索引/落盘延迟、pending 状态等）。
+         * 若把 0 当可信值直接判 MISMATCH，`writeViaTree` /
+         * `writeToMediaStoreDownloads` 的失败清理会删除刚写成功的文件。
+         * 降级后由 [verifyWritten] 全文扫描（openInputStream 实际字节数）
+         * 终判：长度一致仍算成功；长度不一致仍失败，不放行。
+         *
+         * 顺序说明：`expected == actual` 先判，故 `expected == 0 && actual == 0`
+         * 仍是 MATCH；只有「期望非 0 而实际 0」才降级。
+         */
         internal fun readbackSizeVerdict(
             expected: Int,
             actual: Long?
         ): ReadbackSizeVerdict = when {
             actual == null || actual < 0L -> ReadbackSizeVerdict.UNKNOWN
             actual == expected.toLong() -> ReadbackSizeVerdict.MATCH
+            // P2-1：SIZE=0 不可信 → 降级全文扫描，绝不因它误删已写文件
+            expected > 0 && actual == 0L -> ReadbackSizeVerdict.UNKNOWN
             else -> ReadbackSizeVerdict.MISMATCH
         }
 
         /**
-         * 读回校验结论（P1-1 纯函数）：null = 通过，非 null = 失败原因。
+         * 读回校验结论（P1-1 / P2-1 纯函数）：null = 通过，非 null = 失败原因。
          *
          * - SIZE 已知且不等 → 失败（不读取内容）；
          * - SIZE 已知且相等 → 只校验首字节；
-         * - SIZE 未知（null/负数）→ 用 [scannedLength]（openInputStream
-         *   全文读取的字节数）替代 SIZE，仍须与写入长度相等且首字节一致。
+         * - SIZE 未知（null/负数/期望非 0 却报 0）→ 用 [scannedLength]
+         *   （openInputStream 全文读取的字节数）替代 SIZE，仍须与写入长度
+         *   相等且首字节一致。
          *
-         * 该函数是 P1-1 的判定核心：修复前 null/负数直接判失败，导致
-         * provider 不报 SIZE 时刚写成功的文件被误删。
+         * 该函数是 P1-1/P2-1 的判定核心：修复前 null/负数/0 直接判失败，
+         * 导致 provider 不报 SIZE 或短暂报 0 时刚写成功的文件被误删。
          */
         internal fun verifyReadback(
             expected: Int,
@@ -558,8 +594,9 @@ class SaveFileBridge {
     }
 
     /**
-     * 读回 SIZE 判定（P1-1 纯函数）：null/负数（SAF 允许 provider 不报
-     * 大小）→ UNKNOWN，调用方必须降级为内容扫描；只有已知且确实不相等
+     * 读回 SIZE 判定（P1-1 / P2-1 纯函数）：null/负数（SAF 允许 provider
+     * 不报大小）与「期望非 0 却报 0」（第三方 provider 写入后短暂上报）
+     * 均 → UNKNOWN，调用方必须降级为内容扫描；只有已知且确实不相等
      * 才算 MISMATCH。定义在类层级便于 JVM 单测直接引用。
      */
     internal enum class ReadbackSizeVerdict { MATCH, MISMATCH, UNKNOWN }
@@ -1150,6 +1187,14 @@ class SaveFileBridge {
      * **不写入 prefs**，返回 `TREE_NOT_WRITABLE`（中文「该文件夹不可写，
      * 请换一个」）——否则只读目录会被记住，之后每次保存都循环失败。
      *
+     * [P3-6] take 成功后再查目录文档的 `COLUMN_FLAGS`：provider 明确未
+     * 声明 `FLAG_DIR_SUPPORTS_CREATE` 时同样拒绝并回收刚取得的授权
+     * （查询不到时按未知放行，兼容不实现该位的第三方 provider）。
+     *
+     * [P3-2] prefs 写入改用 `commit()` 同步落盘：`take` 是同步生效的，
+     * 若进程在 `apply()` 异步写盘前被杀，会出现「持久授权在、记录不在」
+     * 的孤儿 grant。commit 失败时回收刚取得的授权，避免 grant 泄漏。
+     *
      * 换目录成功时释放旧目录的持久授权，避免 grant 累积。
      */
     private fun persistTree(
@@ -1181,6 +1226,18 @@ class SaveFileBridge {
                     (e.message ?: e.javaClass.simpleName)
             )
         }
+        // P3-6：provider 明确声明不支持创建子项 → 不记住（否则每次保存
+        // 都到写入阶段才失败）；查询不到按未知放行。
+        if (queryTreeSupportsCreate(activity.contentResolver, treeUri) == false) {
+            Log.w(TAG, "目录声明不支持创建子项，未记住目录：$treeUri")
+            releaseTreePermission(
+                activity.contentResolver, treeUri.toString(), "目录不支持创建"
+            )
+            return TreePersistResult(
+                code = "TREE_NOT_WRITABLE",
+                detail = "目录 COLUMN_FLAGS 未声明 FLAG_DIR_SUPPORTS_CREATE"
+            )
+        }
         val documentId = try {
             DocumentsContract.getTreeDocumentId(treeUri)
         } catch (e: Exception) {
@@ -1193,15 +1250,23 @@ class SaveFileBridge {
         if (previous != null && previous.uri != treeUri.toString()) {
             releaseTreePermission(activity.contentResolver, previous.uri, "换目录")
         }
-        activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        // P3-2：commit 同步落盘，与 take 的同步生效对齐（防孤儿 grant）
+        val committed = activity.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
             .edit()
             .putString(KEY_TREE_URI, treeUri.toString())
             .putString(KEY_TREE_DISPLAY_PATH, displayPath)
             .putString(KEY_TREE_AUTHORITY, treeUri.authority)
-            .apply()
+            .commit()
+        if (!committed) {
+            Log.w(TAG, "记住保存目录写入 prefs 失败（commit=false），回收授权：$treeUri")
+            releaseTreePermission(
+                activity.contentResolver, treeUri.toString(), "prefs 写入失败"
+            )
+        }
         Log.i(
             TAG,
-            "已记住保存目录：uri=$treeUri, display=$displayPath, authority=${treeUri.authority}"
+            "已记住保存目录：uri=$treeUri, display=$displayPath, " +
+                "authority=${treeUri.authority}, committed=$committed"
         )
         return TreePersistResult(
             tree = TreeRecord(treeUri.toString(), displayPath, treeUri.authority)
@@ -1225,23 +1290,39 @@ class SaveFileBridge {
     }
 
     /**
-     * 释放目录树的持久授权（READ|WRITE，失败只记日志）。
+     * 释放目录树的持久授权（P3-1：READ / WRITE **逐位**释放，各自 catch）。
      *
-     * 与 [clearTree] / 换目录共用；个别 ROM 未持有对应授权位时会抛
-     * SecurityException，属于预期情况，不影响业务。
+     * `releasePersistableUriPermission` 要求传入的 flags 是**当前实际持有**
+     * 授权位的子集；把 READ|WRITE 一起传入时，只持有其一（例如只读目录
+     * 只有 READ，或历史遗留的单 READ grant）会整次抛
+     * SecurityException，连已持有的那位也释放不掉。逐位释放互不影响。
+     *
+     * 与 [clearTree] / 换目录 / 记住失败回收共用；个别 ROM 未持有对应
+     * 授权位时异常属于预期情况，只记日志不影响业务。
      */
     private fun releaseTreePermission(
         resolver: ContentResolver,
         treeUri: String,
         scene: String
     ) {
-        val flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or
-            Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-        try {
-            resolver.releasePersistableUriPermission(Uri.parse(treeUri), flags)
-            Log.i(TAG, "已释放目录持久授权（$scene）：$treeUri")
-        } catch (e: Exception) {
-            Log.w(TAG, "释放目录持久授权失败（$scene）：${e.message}")
+        val uri = Uri.parse(treeUri)
+        var released = 0
+        for ((flag, name) in listOf(
+            Intent.FLAG_GRANT_READ_URI_PERMISSION to "READ",
+            Intent.FLAG_GRANT_WRITE_URI_PERMISSION to "WRITE"
+        )) {
+            try {
+                resolver.releasePersistableUriPermission(uri, flag)
+                released++
+            } catch (e: Exception) {
+                // 未持有该位（或 provider 拒绝）——另一位仍继续尝试
+                Log.w(TAG, "释放目录持久授权失败（$scene，$name）：${e.message}")
+            }
+        }
+        if (released > 0) {
+            Log.i(TAG, "已释放目录持久授权（$scene，$released/2 位）：$treeUri")
+        } else {
+            Log.w(TAG, "目录持久授权未释放（$scene，可能未持有）：$treeUri")
         }
     }
 
@@ -1643,17 +1724,18 @@ class SaveFileBridge {
      * 目录树与 MediaStore 回退共用：
      * 1. SIZE 已知且 `!=` 写入字节数 → 直接抛 [VerifyException]；
      * 2. SIZE 已知且相等 → 只校验首 [HEAD_VERIFY_BYTES] 字节（不足则全量）；
-     * 3. SIZE 未知（null/负数，SAF 允许 provider 不报大小）→ **降级为
+     * 3. SIZE 未知（null/负数）或「期望非 0 却报 0」→ **降级为
      *    openInputStream 全文读取**：用实际读到的字节数替代 SIZE，仍须与
      *    写入长度精确相等且首字节一致。
      *
-     * 修复前 null/负数被 `isReadbackSizeValid` 直接判失败，provider 不报
-     * SIZE 时刚写成功的文件随后被 `writeViaTree` 的失败清理删除。
+     * [P2-1] 部分第三方 provider 写入成功后短暂上报 `COLUMN_SIZE=0`；
+     * 修复前 0 被当作已知值判 MISMATCH，`writeViaTree` 的失败清理随即
+     * 删除刚写成功的文件。现在 0 与 null/负数同属「不可信 SIZE」。
      */
     private fun verifyWritten(resolver: ContentResolver, uri: Uri, bytes: ByteArray) {
         val declaredSize = queryDocumentSize(resolver, uri)
         val verdict = readbackSizeVerdict(bytes.size, declaredSize)
-        // 只有「已知且确实不等」才立即失败；SIZE 未知继续做内容扫描
+        // 只有「已知且确实不等」才立即失败；SIZE 未知/不可信继续做内容扫描
         if (verdict == ReadbackSizeVerdict.MISMATCH) {
             throw VerifyException(
                 "读回大小校验失败：期望 ${bytes.size}，实际 $declaredSize"
@@ -1668,7 +1750,8 @@ class SaveFileBridge {
             var total = 0
             while (total < headLen) {
                 val read = stream.read(head, total, headLen - total)
-                if (read < 0) break
+                // P3-3：0 与 -1 都视为无进展，避免 provider 返回 0 时空转
+                if (read <= 0) break
                 total += read
             }
             if (total < headLen) {
@@ -1688,7 +1771,9 @@ class SaveFileBridge {
                 val buffer = ByteArray(VERIFY_SCAN_BUFFER_BYTES)
                 while (true) {
                     val read = stream.read(buffer)
-                    if (read < 0) break
+                    // P3-3：`read == 0` 不代表 EOF，但 provider 反复返回 0
+                    // 会让循环空转；按无进展结束（后续长度校验兜底）。
+                    if (read <= 0) break
                     consumed += read
                 }
                 scannedLength = consumed
@@ -1706,6 +1791,31 @@ class SaveFileBridge {
     /** 查询 SAF 文档大小（`COLUMN_SIZE`）；查询失败/provider 不支持返回 null */
     private fun queryDocumentSize(resolver: ContentResolver, uri: Uri): Long? =
         queryLongColumn(resolver, uri, DocumentsContract.Document.COLUMN_SIZE)
+
+    /**
+     * 查询目录树根文档是否声明支持创建子项（P3-6）。
+     *
+     * 返回 null 表示 provider 未提供/查询失败（按未知放行）；false 表示
+     * provider 明确未声明 `FLAG_DIR_SUPPORTS_CREATE`，记住前即可拒绝，
+     * 避免之后每次保存都在写入阶段失败。
+     */
+    private fun queryTreeSupportsCreate(
+        resolver: ContentResolver,
+        treeUri: Uri
+    ): Boolean? = try {
+        val documentId = DocumentsContract.getTreeDocumentId(treeUri)
+        val documentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, documentId)
+        supportsCreateFromFlags(
+            queryLongColumn(
+                resolver,
+                documentUri,
+                DocumentsContract.Document.COLUMN_FLAGS
+            )
+        )
+    } catch (e: Exception) {
+        Log.w(TAG, "查询目录 FLAG_DIR_SUPPORTS_CREATE 失败（$treeUri）：${e.message}")
+        null
+    }
 
     /** 查询单列 Long 值（读不到/空值返回 null；异常记日志后返回 null） */
     private fun queryLongColumn(resolver: ContentResolver, uri: Uri, column: String): Long? = try {
