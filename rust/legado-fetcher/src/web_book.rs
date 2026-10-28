@@ -1068,11 +1068,13 @@ impl RealBookSourceFetcher {
         }
     }
 
-    /// 解析书源 header 字段为请求头（**无条件**合并登录头）
+    /// 解析书源 header 字段为请求头（**无条件**合并登录头，仅测试/兼容保留）
     ///
     /// 等价于「目标 = 书源自身站点」的 [`Self::parse_source_headers_for_url`]：
-    /// 供登录流程、宿主诊断等确认面向源站的调用使用；书源抓取链一律改用
-    /// 带目标 URL 的同站门控版本。
+    /// 仅测试（如上表口径回归）与历史兼容调用保留；**书源抓取链不得新增
+    /// 调用点**——生产链路一律使用 [`Self::parse_source_header_set`] +
+    /// [`SourceHeaderSet::for_request`]（或 [`Self::parse_source_headers_for_url`]）
+    /// 按目标 URL 同站门控登录头（批29b 审查 P3-4）。
     pub fn parse_source_headers(&self, source: &BookSource) -> Option<HashMap<String, String>> {
         self.parse_source_headers_for_url(source, &source.book_source_url, None)
     }
@@ -1273,6 +1275,10 @@ impl RealBookSourceFetcher {
         // 本路径漏注入 → 正文 nextUrl 分页 / subContent / 目录 nextTocUrl
         // 分页等经 fetch_simple_cached 的请求丢失 JS cookie）
         let mut headers = source_headers.cloned().unwrap_or_default();
+        // 批29b 审查 P2-6：`proxy` 是源 header 的代理配置键，不是 HTTP 头；
+        // 本助手承载正文/Toc 分页等合并后请求，发送前统一剔除（与
+        // fetch_page 同一不变式，防代理凭据外泄）。
+        strip_proxy_header(&mut headers);
         legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, url);
         let headers_opt = if headers.is_empty() {
             None
@@ -1318,6 +1324,9 @@ impl RealBookSourceFetcher {
             return Ok(Some(cached));
         }
         let mut headers = source_headers.cloned().unwrap_or_default();
+        // 批29b 审查 P2-6：合并后的源 header 须剔除 `proxy` 伪头（同上，
+        // 目录分页请求同样不得外泄代理凭据）
+        strip_proxy_header(&mut headers);
         legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, url);
         let headers_opt = if headers.is_empty() {
             None
@@ -2160,6 +2169,12 @@ impl BookSourceFetcher for RealBookSourceFetcher {
         // 3. 缺口① nextContentUrl 分页抓取（审计 2026-08-06，加法式）
         //    每页按自身 URL 门控登录头：nextContentUrl 可指向第三方 CDN，
         //    跨域页不得携带登录头（原版 #1099）
+        //
+        //    批29b 审查 P2-7：header 集在分页入口解析**一次**（可能落 DB 读
+        //    loginHeader），逐页只做纯内存的 `for_request` 门控——与目录并发
+        //    分页分支同构；逐页重复 `parse_source_headers_for_url` 会按页数
+        //    重复查 DB。
+        let content_header_set = self.parse_source_header_set(source);
         let chapter_title = chapter.title.clone();
         let chapter_index = chapter.index;
         let chapter_variable = chapter.variable.clone();
@@ -2179,7 +2194,11 @@ impl BookSourceFetcher for RealBookSourceFetcher {
             chapter_variable.as_deref(),
             book_meta.as_ref(),
             |url: String| {
-                let headers = self.parse_source_headers_for_url(source, &url, Some(&chapter.url));
+                let headers = content_header_set.for_request(
+                    &source.book_source_url,
+                    &url,
+                    Some(&chapter.url),
+                );
                 async move { self.fetch_simple(&url, headers.as_ref()).await }
             },
         )
@@ -2199,8 +2218,12 @@ impl BookSourceFetcher for RealBookSourceFetcher {
                 &source.book_source_url,
                 source.js_lib.as_deref(),
                 |url: String| {
-                    let headers =
-                        self.parse_source_headers_for_url(source, &url, Some(&chapter.url));
+                    // 批29b P2-7：复用入口处解析好的 header 集（逐页仅门控）
+                    let headers = content_header_set.for_request(
+                        &source.book_source_url,
+                        &url,
+                        Some(&chapter.url),
+                    );
                     async move { self.fetch_simple(&url, headers.as_ref()).await }
                 },
             )
@@ -2955,6 +2978,10 @@ impl RealBookSourceFetcher {
                 // `nextUrlList = arrayListOf(redirectUrl)`）：重定向场景下
                 // 若按请求 URL 播种，自环「最终地址」无法被去重拦截
                 visited.insert(toc_final_url.to_string());
+                // 批29b 审查 P2-7：header 集在分页链入口解析一次（可能落 DB 读
+                // loginHeader），逐页只做纯内存 `for_request` 门控——与并发
+                // 分页分支同构，避免逐页重复查 DB。
+                let serial_header_set = self.parse_source_header_set(source);
                 let mut next_url = next_urls.remove(0);
                 // [性能专项 2026-09-24] 刷新代数在循环入口捕获（新刷新 bump 代数
                 // → 本链在下一页边界中止，对齐上游 ensureActive()）；目录总页数
@@ -2980,8 +3007,11 @@ impl RealBookSourceFetcher {
                     // 失败）；I/O 级错误 → Err（对齐上游异常 → 整刷失败）。
                     // 每页按自身 URL 门控登录头（原版 #1099：nextTocUrl 可指向
                     // 第三方域名，跨域页不得携带认证信息）。
-                    let page_headers =
-                        self.parse_source_headers_for_url(source, &next_url, Some(toc_final_url));
+                    let page_headers = serial_header_set.for_request(
+                        &source.book_source_url,
+                        &next_url,
+                        Some(toc_final_url),
+                    );
                     let Some(page_body) = self
                         .fetch_toc_page_optional(&next_url, page_headers.as_ref())
                         .await?
@@ -3091,6 +3121,10 @@ impl RealBookSourceFetcher {
                                     let mut req_headers = header_set
                                         .for_request(&source_url, &page_url, Some(toc_final_url))
                                         .unwrap_or_default();
+                                    // 批29b 审查 P2-6：源 header 的 `proxy` 是代理配置
+                                    // 键而非 HTTP 头，合并后发送前剔除（本分支直发
+                                    // client，绕过 fetch_page/fetch_simple 的剔除点）
+                                    strip_proxy_header(&mut req_headers);
                                     legado_js::host_api::cookie_store::merge_js_cookies(
                                         &mut req_headers,
                                         &page_url,
@@ -8621,6 +8655,190 @@ mod tests {
                 .lines()
                 .any(|line| line.to_ascii_lowercase().starts_with("proxy:")),
             "`proxy` 配置键不得作为 HTTP 头发送: {head}"
+        );
+    }
+
+    /// 多主机回环夹具：绑 `0.0.0.0`，`127.0.0.1`（同站）与 `127.0.0.2`
+    /// （跨域，eTLD+1 不同）同端口均可访问；记录每次请求头。
+    ///
+    /// 批29b 审查 P2-3/P2-6/P2-7 专用（并发/串行 nextTocUrl 分页门控）。
+    fn spawn_toc_paging_server() -> (u16, Arc<Mutex<Vec<String>>>) {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+
+        let listener = TcpListener::bind("0.0.0.0:0").expect("bind 多主机回环服务器");
+        let port = listener.local_addr().unwrap().port();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let seen_srv = Arc::clone(&seen);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut head: Vec<u8> = Vec::new();
+                let mut byte = [0u8; 1];
+                while !head.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut byte) {
+                        Ok(1) => head.push(byte[0]),
+                        _ => break,
+                    }
+                    if head.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                let head = String::from_utf8_lossy(&head).to_string();
+                let target = head
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .split_whitespace()
+                    .nth(1)
+                    .unwrap_or("/")
+                    .to_string();
+                let path = target.split('?').next().unwrap_or("/");
+                if let Ok(mut guard) = seen_srv.lock() {
+                    guard.push(head);
+                }
+                let body = match path {
+                    // 并发分支：2 个跨域分页 URL（>1 → mapAsync）
+                    "/toc/first" => format!(
+                        r#"{{"rows":[{{"name":"第一章","url":"/c/1"}}],"nextPages":["http://127.0.0.2:{port}/toc/p2","http://127.0.0.2:{port}/toc/p3"]}}"#
+                    ),
+                    "/toc/p2" => r#"{"rows":[{"name":"第二章","url":"/c/2"}]}"#.to_string(),
+                    "/toc/p3" => r#"{"rows":[{"name":"第三章","url":"/c/3"}]}"#.to_string(),
+                    // 串行分支：1 个跨域分页 URL
+                    "/toc/serial" => format!(
+                        r#"{{"rows":[{{"name":"第一章","url":"/c/1"}}],"nextPage":"http://127.0.0.2:{port}/toc/serial2"}}"#
+                    ),
+                    "/toc/serial2" => r#"{"rows":[{"name":"第二章","url":"/c/2"}]}"#.to_string(),
+                    _ => r#"{"rows":[]}"#.to_string(),
+                };
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+            }
+        });
+        (port, seen)
+    }
+
+    /// 从记录中取「请求 target 以 `path` 开头」的那条请求头
+    fn head_for_path<'a>(seen: &'a [String], path: &str) -> &'a str {
+        seen.iter()
+            .find(|head| {
+                head.lines()
+                    .next()
+                    .unwrap_or("")
+                    .split_whitespace()
+                    .nth(1)
+                    .is_some_and(|target| target.starts_with(path))
+            })
+            .unwrap_or_else(|| panic!("回环服务器应收到 {path} 请求: {seen:?}"))
+    }
+
+    fn has_login_token(head: &str) -> bool {
+        head.to_ascii_lowercase().contains("x-login-token: secret")
+    }
+
+    fn has_proxy_header(head: &str) -> bool {
+        head.lines()
+            .any(|line| line.to_ascii_lowercase().starts_with("proxy:"))
+    }
+
+    /// 批29b 审查 P2-3（负例①）/P2-6：并发 nextTocUrl 分页跨域页不得携带
+    /// 登录头，且源 header 的 `proxy` 伪头不得外泄（本分支直发 client，改前
+    /// 既无门控也无剔除 → 本用例红）；同站首页仍带登录头（正向对照）。
+    #[test]
+    fn test_concurrent_next_toc_cross_site_omits_login_header_and_proxy() {
+        let (port, seen) = spawn_toc_paging_server();
+        let same_site = format!("http://127.0.0.1:{port}");
+        let fetcher = fetcher_with_login_header(&same_site, r#"{"X-Login-Token":"secret"}"#);
+        let source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": same_site,
+            "bookSourceName": "并发分页门控",
+            "header": r#"{"proxy":"http://u:p@h:1","X-Static":"v"}"#,
+            "ruleToc": {
+                "chapterList": "$.rows",
+                "chapterName": "$.name",
+                "chapterUrl": "$.url",
+                "nextTocUrl": "$.nextPages[*]"
+            }
+        }))
+        .expect("书源 json");
+
+        let chapters = block_on(fetcher.get_chapters_with_vars(
+            &source,
+            &format!("{same_site}/toc/first"),
+            &HashMap::new(),
+        ))
+        .expect("目录抓取应成功");
+        assert_eq!(chapters.len(), 3, "首抓 1 章 + 两个并发分页各 1 章");
+
+        let seen = seen.lock().unwrap();
+        let first = head_for_path(&seen, "/toc/first");
+        assert!(has_login_token(first), "同站首页应携带登录头: {first}");
+        assert!(!has_proxy_header(first), "首页不得发送 proxy 伪头: {first}");
+
+        for path in ["/toc/p2", "/toc/p3"] {
+            let page = head_for_path(&seen, path);
+            assert!(
+                !has_login_token(page),
+                "并发 nextToc 跨域页不得携带登录头（{path}）: {page}"
+            );
+            assert!(
+                !has_proxy_header(page),
+                "并发分页不得发送 proxy 伪头（{path}）: {page}"
+            );
+            assert!(
+                page.to_ascii_lowercase().contains("x-static: v"),
+                "静态源 header 应照常透传（{path}）: {page}"
+            );
+        }
+    }
+
+    /// 批29b 审查 P2-7：串行 nextTocUrl 分页改为「入口解析 header 集一次、
+    /// 逐页 for_request 门控」后行为不变——同站首页带登录头，跨域下一页不带。
+    #[test]
+    fn test_serial_next_toc_gates_login_header_per_page() {
+        let (port, seen) = spawn_toc_paging_server();
+        let same_site = format!("http://127.0.0.1:{port}");
+        let fetcher = fetcher_with_login_header(&same_site, r#"{"X-Login-Token":"secret"}"#);
+        let source: BookSource = serde_json::from_value(serde_json::json!({
+            "bookSourceUrl": same_site,
+            "bookSourceName": "串行分页门控",
+            "header": r#"{"proxy":"http://u:p@h:1","X-Static":"v"}"#,
+            "ruleToc": {
+                "chapterList": "$.rows",
+                "chapterName": "$.name",
+                "chapterUrl": "$.url",
+                "nextTocUrl": "$.nextPage"
+            }
+        }))
+        .expect("书源 json");
+
+        let chapters = block_on(fetcher.get_chapters_with_vars(
+            &source,
+            &format!("{same_site}/toc/serial"),
+            &HashMap::new(),
+        ))
+        .expect("目录抓取应成功");
+        assert_eq!(chapters.len(), 2, "首抓 1 章 + 串行下一页 1 章");
+
+        let seen = seen.lock().unwrap();
+        let first = head_for_path(&seen, "/toc/serial");
+        assert!(has_login_token(first), "同站首页应携带登录头: {first}");
+        let next = head_for_path(&seen, "/toc/serial2");
+        assert!(
+            !has_login_token(next),
+            "串行 nextToc 跨域页不得携带登录头: {next}"
+        );
+        assert!(
+            !has_proxy_header(next),
+            "串行分页不得发送 proxy 伪头: {next}"
+        );
+        assert!(
+            next.to_ascii_lowercase().contains("x-static: v"),
+            "静态源 header 应照常透传: {next}"
         );
     }
 

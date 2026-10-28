@@ -529,6 +529,12 @@ async fn explore_books_async(
                 // 发送前由 legado-net 剥离、绝不出网）；读侧 cookie 注入不受影响。
                 legado_fetcher::web_book::apply_cookie_jar_marker(&mut headers, source);
 
+                // 批29b 审查 P2-6：`proxy` 是源 header 的代理配置键而非 HTTP 头
+                // （上游 AnalyzeUrl 提取后即从 headerMap 删除），合并原始源
+                // header / AnalyzeUrl header 后必须在发送前剔除，避免代理
+                // 凭据随发现页请求外泄。
+                legado_fetcher::web_book::strip_proxy_header(&mut headers);
+
                 let headers_opt = if headers.is_empty() {
                     None
                 } else {
@@ -1920,6 +1926,128 @@ JSON.stringify(qtsj.concat([{title: base_url + '榜', url: '/rank'}]));
             }
         });
         port
+    }
+
+    /// 记录型发现页服务器（绑 `0.0.0.0`：`127.0.0.1` 与 `127.0.0.2` 同端口
+    /// 均可访问；eTLD+1 不同 → 互为跨域），记录完整请求头并投递最简书籍 JSON。
+    ///
+    /// 批29b 审查 P2-3（负例②）/P2-6 专用。
+    fn spawn_explore_header_server() -> (u16, std::sync::Arc<std::sync::Mutex<Vec<String>>>) {
+        use std::io::{Read, Write};
+
+        let listener = std::net::TcpListener::bind("0.0.0.0:0").expect("bind 发现页记录服务器");
+        let port = listener.local_addr().unwrap().port();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen_srv = std::sync::Arc::clone(&seen);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut stream) = stream else { continue };
+                let mut buf: Vec<u8> = Vec::new();
+                let mut one = [0u8; 1];
+                while !buf.ends_with(b"\r\n\r\n") {
+                    match stream.read(&mut one) {
+                        Ok(1) => buf.push(one[0]),
+                        _ => break,
+                    }
+                    if buf.len() > 16 * 1024 {
+                        break;
+                    }
+                }
+                if let Ok(mut guard) = seen_srv.lock() {
+                    guard.push(String::from_utf8_lossy(&buf).to_string());
+                }
+                let body = r#"[{"name":"跨域书"}]"#.as_bytes();
+                let resp = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.write_all(body);
+                let _ = stream.flush();
+            }
+        });
+        (port, seen)
+    }
+
+    /// 批29b 审查 P2-3（负例②）/P2-6：发现页分类 URL 跨域时不得携带登录头
+    /// （移除 `is_login_header_site` 门控本用例红）；同站分类页仍带（正向
+    /// 对照）；源 header 的 `proxy` 伪头两条路径都不得外泄。
+    #[test]
+    fn test_explore_cross_site_category_omits_login_header_and_proxy() {
+        let _lock = crate::test_support::lock_global_store();
+        let _db = crate::db_state::ensure_test_db();
+        let (port, seen) = spawn_explore_header_server();
+        let same_site = format!("http://127.0.0.1:{port}");
+        let cross_site = format!("http://127.0.0.2:{port}");
+        crate::api::source_login_cache::put_login_header(
+            &same_site,
+            r#"{"X-Login-Token":"secret"}"#,
+        )
+        .expect("写入登录头");
+
+        let source = serde_json::json!({
+            "bookSourceUrl": same_site,
+            "bookSourceName": "发现页跨域门控",
+            "bookSourceType": 0,
+            "header": r#"{"proxy":"http://u:p@h:1","X-Static":"v"}"#,
+            "ruleExplore": { "bookList": "$[*]", "name": "$.name" }
+        });
+        let source_json = source.to_string();
+
+        let same = explore_fetch_books(&source_json, &format!("{same_site}/list1/1.html"), 1)
+            .expect("同站发现页应成功");
+        assert!(same.contains("跨域书"), "同站发现页应解析出书籍: {same}");
+        let cross = explore_fetch_books(&source_json, &format!("{cross_site}/list1/1.html"), 1)
+            .expect("跨域发现页应成功");
+        assert!(cross.contains("跨域书"), "跨域发现页应解析出书籍: {cross}");
+
+        let seen = seen.lock().unwrap();
+        let head_of = |host: &str| -> &str {
+            seen.iter()
+                .find(|head| {
+                    head.lines().any(|line| {
+                        line.to_ascii_lowercase()
+                            .starts_with(&format!("host: {host}"))
+                    })
+                })
+                .unwrap_or_else(|| panic!("应收到 Host={host} 的请求: {seen:?}"))
+        };
+
+        let same_head = head_of(&same_site["http://".len()..]);
+        assert!(
+            same_head
+                .to_ascii_lowercase()
+                .contains("x-login-token: secret"),
+            "同站发现页应携带登录头: {same_head}"
+        );
+        assert!(
+            !same_head
+                .lines()
+                .any(|line| line.to_ascii_lowercase().starts_with("proxy:")),
+            "发现页不得发送 proxy 伪头（同站）: {same_head}"
+        );
+
+        let cross_head = head_of(&cross_site["http://".len()..]);
+        assert!(
+            !cross_head
+                .to_ascii_lowercase()
+                .contains("x-login-token: secret"),
+            "跨域发现页不得携带登录头: {cross_head}"
+        );
+        assert!(
+            !cross_head
+                .lines()
+                .any(|line| line.to_ascii_lowercase().starts_with("proxy:")),
+            "发现页不得发送 proxy 伪头（跨域）: {cross_head}"
+        );
+        assert!(
+            cross_head.to_ascii_lowercase().contains("x-static: v"),
+            "静态源 header 应照常透传: {cross_head}"
+        );
+
+        drop(seen);
+        crate::api::source_login_cache::remove_login_header(&same_site).expect("清理登录头");
+        legado_js::host_api::variable_store::clear_flow_scope().expect("复位 flow scope");
     }
 
     /// 发现页回归：思路客「玄幻」页码展开后应成功并解析到书名（夹具化）

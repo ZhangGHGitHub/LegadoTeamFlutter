@@ -902,8 +902,8 @@ fn audio_cache_download_with_client(
     // `AnalyzeUrl(playUrl, source=bookSource, ruleData=book, chapter=chapter)`：
     // 变量表 = book.variable ⊕ chapter.variable（章节优先），内置书名/标题/作者
     // 经 parse_with_context 注入；headers 合并顺序复用 fetch_page 全链路——
-    // 书源 header+登录头（parse_source_headers 已含 CookieJar 写侧标记）→
-    // AnalyzeUrl 解析头 → 请求 URL 属域 JS cookie）
+    // 书源 header+登录头（parse_source_headers_for_url 按请求 URL 同站门控，
+    // 已含 CookieJar 写侧标记）→ AnalyzeUrl 解析头 → 请求 URL 属域 JS cookie）
     let merged_variable = crate::api::web_book::merge_variables_json(
         book.variable.as_deref(),
         chapter.variable.as_deref(),
@@ -931,6 +931,10 @@ fn audio_cache_download_with_client(
         .unwrap_or_default();
     headers.extend(analyze_url.headers().clone());
     legado_js::host_api::cookie_store::merge_js_cookies(&mut headers, analyze_url.url());
+    // 批29b 审查 P2-6：`proxy` 是源 header 的代理配置键而非 HTTP 头
+    // （上游 AnalyzeUrl 提取后即删除），合并后发送前必须剔除，避免代理凭据
+    // 随音频下载请求外泄。
+    legado_fetcher::web_book::strip_proxy_header(&mut headers);
 
     let body = analyze_url.request_body();
     let request = LegadoRequest {
@@ -2124,6 +2128,89 @@ mod tests {
             .contains("音频文件不完整"));
         assert!(require_complete_size(100, Some(100)).is_ok());
         assert!(require_complete_size(10, None).is_ok());
+
+        clear_test_root();
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// 批29b 审查 P2-6：音频缓存下载合并源 header（+登录头+AnalyzeUrl 头+
+    /// JS cookie）后、发送前必须剔除 `proxy` 伪头——它是代理配置键而非
+    /// HTTP 头，改前本路径直发 client → 代理凭据随下载请求外泄（本用例红）；
+    /// 静态源 header 照常透传。
+    #[test]
+    fn download_strips_proxy_header_from_source_headers() {
+        use std::io::{Read as _, Write as _};
+        use std::net::TcpListener;
+
+        let _lock = TEST_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let _db = crate::db_state::ensure_test_db();
+        let root = unique_root("download-proxy-strip");
+        set_test_root(&root);
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let seen = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen_srv = std::sync::Arc::clone(&seen);
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let Ok(mut sock) = stream else { continue };
+                let mut head = Vec::new();
+                let mut b = [0u8; 1];
+                while let Ok(1) = sock.read(&mut b) {
+                    head.push(b[0]);
+                    if head.ends_with(b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                if let Ok(mut guard) = seen_srv.lock() {
+                    guard.push(String::from_utf8_lossy(&head).to_string());
+                }
+                let body = b"ID3fake-mp3-body".to_vec();
+                let _ = sock.write_all(
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    )
+                    .as_bytes(),
+                );
+                let _ = sock.write_all(&body);
+                let _ = sock.flush();
+                let _ = sock.shutdown(std::net::Shutdown::Both);
+            }
+        });
+
+        let book_url = "https://a.com/book/dl-proxy-strip";
+        let source_url = "https://source.example/audio-proxy";
+        insert_audio_book(book_url, source_url, "hello", "第一章", false);
+        // 源 header 写入 proxy（代理配置键）+ 静态头（下载路径需读回该源）
+        with_database(|db| {
+            let repo = BookSourceRepository::new(db.connection());
+            let mut source = repo.find_by_url(source_url)?.expect("插入的音频源应存在");
+            source.header = Some(r#"{"proxy":"http://u:p@h:1","X-Static":"v"}"#.to_string());
+            repo.insert(&source)
+        })
+        .unwrap();
+
+        let play_url = format!("http://127.0.0.1:{port}/a.mp3");
+        let client = test_client();
+        let out =
+            audio_cache_download_with_client(&client, book_url, 0, "hello", "第一章", &play_url)
+                .expect("音频缓存下载应成功");
+        assert!(out.contains("installed"), "应安装缓存文件: {out}");
+
+        let seen = seen.lock().unwrap();
+        let head = seen.first().expect("回环服务器应收到下载请求");
+        let lower = head.to_ascii_lowercase();
+        assert!(
+            lower.contains("x-static: v"),
+            "静态源 header 应透传: {head}"
+        );
+        assert!(
+            !head
+                .lines()
+                .any(|line| line.to_ascii_lowercase().starts_with("proxy:")),
+            "`proxy` 配置键不得作为 HTTP 头发送: {head}"
+        );
 
         clear_test_root();
         let _ = fs::remove_dir_all(&root);
