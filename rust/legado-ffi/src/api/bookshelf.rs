@@ -87,6 +87,37 @@ pub fn update_book(book_json: &str) -> LegadoResult<()> {
     })
 }
 
+/// 单键更新书籍 `readConfig` JSON 中的指定键（契约 §2.2 `updateReadConfigField`）
+///
+/// [批32] 背景：`update_book` 是整书快照写，Dart `ReadConfig` 未建模的键
+/// （`useGlobalAudioSkip` / `tocExpanded` / `manualReplaceRuleIds` 等）在
+/// 「Dart → Rust 类型化模型 → 全行回写」往返中被丢弃——目录页每切一次
+/// 「反转」就会把这些键清空。本方法在 DB 侧只合并目标键，其余键（含未建模
+/// 键）原样保留，且不触碰其他列与进度列。
+///
+/// `value_json` 是**值本身**的 JSON 编码串（bool/string/number/对象/数组），
+/// 直接经 `serde_json::Value` 合并进现有 readConfig 对象；`key` 为空白、
+/// JSON 非法、书籍不存在一律报错（fail-closed，不静默成功）。
+pub fn update_read_config_field(book_url: &str, key: &str, value_json: &str) -> LegadoResult<()> {
+    let key = key.trim();
+    if key.is_empty() {
+        return Err(legado_core::LegadoError::Ffi(
+            "readConfig 键名不能为空".to_string(),
+        ));
+    }
+    let value: serde_json::Value = serde_json::from_str(value_json)
+        .map_err(|e| legado_core::LegadoError::Ffi(format!("readConfig 值 JSON 解析失败: {e}")))?;
+    with_database(|db| {
+        let repo = BookRepository::new(db.connection());
+        if repo.find_by_url(book_url)?.is_none() {
+            return Err(legado_core::LegadoError::Internal(format!(
+                "书籍不存在: {book_url}"
+            )));
+        }
+        repo.update_read_config_field(book_url, key, &value)
+    })
+}
+
 /// 按 bookUrl 删除书籍
 pub fn delete_book(book_url: &str) -> LegadoResult<()> {
     with_database(|db| {
@@ -535,5 +566,216 @@ mod tests {
             Ok(())
         })
         .ok();
+    }
+
+    // ─── 批32：readConfig 单键写（契约 §2.2 updateReadConfigField）──────────
+
+    /// 造一本 readConfig 直接写**原始 JSON** 的书（绕过类型化模型，
+    /// 可写入 Dart/Rust 均未建模的键）
+    fn seed_read_config_raw(book_url: &str, raw_json: Option<&str>) {
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            let _ = repo.delete_by_url(book_url);
+            repo.insert(&Book {
+                book_url: book_url.to_string(),
+                name: "单键写测试书".to_string(),
+                origin: "https://batch32.example.com".to_string(),
+                ..Book::default()
+            })?;
+            if let Some(raw) = raw_json {
+                db.connection()
+                    .execute(
+                        "UPDATE books SET readConfig = ?1 WHERE bookUrl = ?2",
+                        rusqlite::params![raw, book_url],
+                    )
+                    .map_err(|e| {
+                        legado_core::LegadoError::Database(format!("写原始 readConfig 失败: {e}"))
+                    })?;
+            }
+            Ok(())
+        })
+        .expect("原始 readConfig 入库失败");
+    }
+
+    /// 读回 readConfig 原始 JSON（用于断言未建模键保留）
+    fn raw_read_config(book_url: &str) -> serde_json::Value {
+        with_database(|db| {
+            let raw: Option<String> = db
+                .connection()
+                .query_row(
+                    "SELECT readConfig FROM books WHERE bookUrl = ?1",
+                    rusqlite::params![book_url],
+                    |row| row.get(0),
+                )
+                .map_err(|e| {
+                    legado_core::LegadoError::Database(format!("查询 readConfig 失败: {e}"))
+                })?;
+            Ok(
+                serde_json::from_str(&raw.unwrap_or_else(|| "{}".to_string()))
+                    .expect("readConfig 应为合法 JSON"),
+            )
+        })
+        .expect("读取 readConfig 失败")
+    }
+
+    fn cleanup_book(book_url: &str) {
+        with_database(|db| {
+            let _ = BookRepository::new(db.connection()).delete_by_url(book_url);
+            Ok(())
+        })
+        .ok();
+    }
+
+    /// 单键写只改目标键：Dart `ReadConfig` 未建模的键（`useGlobalAudioSkip` /
+    /// `tocExpanded` / `manualReplaceRuleIds`）与其他键原样保留，进度列不受影响。
+    ///
+    /// 红→绿对照：旧路径 `update_book`（整书快照写）用 Dart 侧 `ReadConfig`
+    /// JSON（不含未建模键）回写时，`useGlobalAudioSkip` 被 Rust 类型化默认值
+    /// 覆盖为 false、`tocExpanded`/`manualReplaceRuleIds` 被直接丢弃；本用例
+    /// 的断言在旧路径下失败（红），单键写后通过（绿）。
+    #[test]
+    fn test_update_read_config_field_preserves_unmodeled_keys() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch32-single-key.example.com/book/1";
+        seed_read_config_raw(
+            book_url,
+            Some(
+                r#"{"reverseToc":false,"reverseTocDisplay":false,"useGlobalAudioSkip":true,"tocExpanded":{"0":true},"manualReplaceRuleIds":[3,5]}"#,
+            ),
+        );
+        with_database(|db| {
+            BookRepository::new(db.connection()).update_progress(
+                book_url,
+                7,
+                11,
+                Some("第七章"),
+                1_700_000_000_000,
+            )?;
+            Ok(())
+        })
+        .expect("进度写入失败");
+
+        super::update_read_config_field(book_url, "reverseToc", "true").expect("单键写应成功");
+
+        let cfg = raw_read_config(book_url);
+        assert_eq!(cfg["reverseToc"], serde_json::json!(true), "目标键应被更新");
+        assert_eq!(
+            cfg["reverseTocDisplay"],
+            serde_json::json!(false),
+            "非目标键不得被改写"
+        );
+        assert_eq!(
+            cfg["useGlobalAudioSkip"],
+            serde_json::json!(true),
+            "Dart 未建模的 useGlobalAudioSkip 必须原样保留"
+        );
+        assert_eq!(
+            cfg["tocExpanded"],
+            serde_json::json!({"0": true}),
+            "未建模的对象键必须原样保留"
+        );
+        assert_eq!(
+            cfg["manualReplaceRuleIds"],
+            serde_json::json!([3, 5]),
+            "未建模的数组键必须原样保留"
+        );
+
+        with_database(|db| {
+            let saved = BookRepository::new(db.connection())
+                .find_by_url(book_url)?
+                .expect("书籍记录应仍存在");
+            let rc = saved.read_config.expect("readConfig 应保留");
+            assert!(rc.reverse_toc, "单键写结果应对类型化模型可见");
+            assert!(rc.use_global_audio_skip, "未建模键读出不应回退默认值");
+            assert_eq!(saved.dur_chapter_index, 7, "进度列不得被触碰");
+            assert_eq!(saved.dur_chapter_pos, 11, "进度列不得被触碰");
+            Ok(())
+        })
+        .expect("类型化读回断言失败");
+
+        cleanup_book(book_url);
+    }
+
+    /// JSON 值类型往返：bool / string / number / 对象 均按 `valueJson` 原样落库
+    #[test]
+    fn test_update_read_config_field_json_value_types() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch32-value-types.example.com/book/1";
+        seed_read_config_raw(book_url, Some(r#"{"reverseToc":true}"#));
+
+        super::update_read_config_field(book_url, "flagKey", "false").expect("bool 写入失败");
+        super::update_read_config_field(book_url, "stringKey", "\"你好, legado\"")
+            .expect("string 写入失败");
+        super::update_read_config_field(book_url, "numberKey", "3.5").expect("number 写入失败");
+        super::update_read_config_field(book_url, "objectKey", r#"{"a":1,"b":["x"]}"#)
+            .expect("对象写入失败");
+
+        let cfg = raw_read_config(book_url);
+        assert_eq!(cfg["flagKey"], serde_json::json!(false));
+        assert_eq!(cfg["stringKey"], serde_json::json!("你好, legado"));
+        assert_eq!(cfg["numberKey"], serde_json::json!(3.5));
+        assert_eq!(cfg["objectKey"], serde_json::json!({"a": 1, "b": ["x"]}));
+        assert_eq!(
+            cfg["reverseToc"],
+            serde_json::json!(true),
+            "可选键写入不影响其他键"
+        );
+
+        cleanup_book(book_url);
+    }
+
+    /// `readConfig` 为空（NULL）时新建对象并只写入目标键
+    #[test]
+    fn test_update_read_config_field_creates_config_when_empty() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch32-empty-config.example.com/book/1";
+        seed_read_config_raw(book_url, None);
+
+        super::update_read_config_field(book_url, "reverseTocDisplay", "true")
+            .expect("空 readConfig 单键写应成功");
+
+        let cfg = raw_read_config(book_url);
+        assert_eq!(cfg, serde_json::json!({"reverseTocDisplay": true}));
+
+        cleanup_book(book_url);
+    }
+
+    /// fail-closed：书籍不存在 / 键名为空白 / 值 JSON 非法 均报错
+    #[test]
+    fn test_update_read_config_field_rejects_missing_book_blank_key_and_bad_json() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch32-errors.example.com/book/1";
+        seed_read_config_raw(book_url, Some(r#"{"reverseToc":false}"#));
+
+        let err = super::update_read_config_field(
+            "https://batch32-errors.example.com/book/missing",
+            "reverseToc",
+            "true",
+        )
+        .expect_err("书不存在必须报错");
+        assert!(
+            err.to_string().contains("书籍不存在"),
+            "错误信息应指出书籍不存在，实际：{err}"
+        );
+
+        let err =
+            super::update_read_config_field(book_url, "   ", "true").expect_err("空白键名必须报错");
+        assert!(
+            err.to_string().contains("键名不能为空"),
+            "错误信息应指出键名为空，实际：{err}"
+        );
+
+        let err = super::update_read_config_field(book_url, "reverseToc", "not-json")
+            .expect_err("非法 JSON 值必须报错");
+        assert!(
+            err.to_string().contains("JSON 解析失败"),
+            "错误信息应指出 JSON 非法，实际：{err}"
+        );
+
+        // 失败调用不得留下半写状态
+        let cfg = raw_read_config(book_url);
+        assert_eq!(cfg, serde_json::json!({"reverseToc": false}));
+
+        cleanup_book(book_url);
     }
 }

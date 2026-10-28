@@ -225,6 +225,21 @@ pub mod ffi {
         Ok(())
     }
 
+    /// 单键更新书籍 readConfig 中的指定键（契约 §2.2 `updateReadConfigField`）
+    ///
+    /// [批32] 用于替代整书快照写：只合并 `key`，Dart `ReadConfig` 未建模的
+    /// readConfig 键（`useGlobalAudioSkip` / `tocExpanded` /
+    /// `manualReplaceRuleIds` 等）不被清空。`value_json` 是值本身的 JSON
+    /// 编码串（bool/string/number/对象/数组），非法 JSON 抛 BridgeError。
+    pub fn book_update_read_config_field(
+        book_url: String,
+        key: String,
+        value_json: String,
+    ) -> Result<(), BridgeError> {
+        crate::api::bookshelf::update_read_config_field(&book_url, &key, &value_json)?;
+        Ok(())
+    }
+
     /// 按 bookUrl 删除书籍
     pub fn bookshelf_delete(book_url: String) -> Result<(), BridgeError> {
         crate::api::bookshelf::delete_book(&book_url)?;

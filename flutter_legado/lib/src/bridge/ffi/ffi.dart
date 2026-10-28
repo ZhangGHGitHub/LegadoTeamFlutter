@@ -89,6 +89,22 @@ Future<String> bookshelfAdd({required String bookJson}) =>
 Future<void> bookshelfUpdate({required String bookJson}) =>
     RustLib.instance.api.crateFfiFfiBookshelfUpdate(bookJson: bookJson);
 
+/// 单键更新书籍 readConfig 中的指定键（契约 §2.2 `updateReadConfigField`）
+///
+/// [批32] 用于替代整书快照写：只合并 `key`，Dart `ReadConfig` 未建模的
+/// readConfig 键（`useGlobalAudioSkip` / `tocExpanded` /
+/// `manualReplaceRuleIds` 等）不被清空。`value_json` 是值本身的 JSON
+/// 编码串（bool/string/number/对象/数组），非法 JSON 抛 BridgeError。
+Future<void> bookUpdateReadConfigField({
+  required String bookUrl,
+  required String key,
+  required String valueJson,
+}) => RustLib.instance.api.crateFfiFfiBookUpdateReadConfigField(
+  bookUrl: bookUrl,
+  key: key,
+  valueJson: valueJson,
+);
+
 /// 按 bookUrl 删除书籍
 Future<void> bookshelfDelete({required String bookUrl}) =>
     RustLib.instance.api.crateFfiFfiBookshelfDelete(bookUrl: bookUrl);
@@ -119,6 +135,10 @@ Future<void> readerUpdateProgress({
 );
 
 /// 获取所有书源列表（JSON 数组）
+///
+/// 每项在书源对象字段之上平铺加法式 `bookshelfCount`（书架书籍数，
+/// 批31；契约 §2.3）。`source_list_enabled` 与 `source_export` 保持
+/// 原形状，不携带该字段。
 Future<String> sourceList() => RustLib.instance.api.crateFfiFfiSourceList();
 
 /// 获取所有启用的书源（JSON 数组）
