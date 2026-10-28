@@ -10,8 +10,10 @@ import '../ios_widgets.dart';
 /// 页面边距配置（对标原版 PaddingConfigDialog + dialog_read_padding.xml）
 ///
 /// - 页眉/正文/页脚三 Tab
-/// - 四向 ± 步进（DetailSeekBar 语义：上/下 0-400，左/右 0-100）
-/// - 左右联动开关、页眉/页脚显示分隔线开关
+/// - 四向「滑块 + 数值 + 加减」（DetailSeekBar 语义：上/下 0-400，左/右 0-100）
+/// - 左右联动开关（三 Tab 通用）、正文「上下边距联动」开关
+///   （对标原版 `ReadBookConfig.paddingTopBottomLinked`，仅正文 Tab 显示）
+/// - 页眉/页脚显示分隔线开关
 class ReaderPaddingConfigSheet extends ConsumerStatefulWidget {
   final ReaderAdvancedConfig config;
   final ValueChanged<ReaderAdvancedConfig>? onChanged;
@@ -58,10 +60,14 @@ class _ReaderPaddingConfigSheetState
   PaddingRegion _region = PaddingRegion.body;
   bool _lockLr = false;
 
+  /// 正文上下边距联动（批33：对标原版 paddingTopBottomLinked）
+  bool _lockTb = false;
+
   @override
   void initState() {
     super.initState();
     _syncLockLrFromRegion();
+    _lockTb = _config.paddingTopBottomLinked;
   }
 
   void _syncLockLrFromRegion() {
@@ -153,16 +159,47 @@ class _ReaderPaddingConfigSheetState
     }
   }
 
-  void _adjust(_Side side, int delta) {
-    final max = (side == _Side.left || side == _Side.right) ? 100.0 : 400.0;
-    var value = (_paddingFor(_region, side) + delta).clamp(0.0, max);
+  /// 一次写入并处理联动镜像（批33）
+  ///
+  /// 联动口径对齐原版 `PaddingConfigDialog.applyEdit`：
+  /// - 左右联动：左/右任一变化镜像另一侧（三 Tab 均生效）；
+  /// - 上下联动：仅正文 Tab，上/下任一变化镜像另一侧。
+  void _applyWithLink(_Side side, double value) {
     _setPadding(_region, side, value);
     if (_lockLr && (side == _Side.left || side == _Side.right)) {
       final other = side == _Side.left ? _Side.right : _Side.left;
       _setPadding(_region, other, value);
     }
+    if (_lockTb &&
+        _region == PaddingRegion.body &&
+        (side == _Side.top || side == _Side.bottom)) {
+      final other = side == _Side.top ? _Side.bottom : _Side.top;
+      _setPadding(_region, other, value);
+    }
+  }
+
+  /// 步进 / 滑条终值：写配置 + 立即落盘并推送共享 Provider
+  void _adjust(_Side side, int delta) {
+    final value = (_paddingFor(_region, side) + delta).clamp(0.0, _maxFor(side));
+    _applyWithLink(side, value);
     _commit();
   }
+
+  /// 滑条拖动中：只更新内存并重绘（不落盘、不推 Provider，避免每帧写盘）
+  void _dragValue(_Side side, double value) {
+    _applyWithLink(side, value.clamp(0.0, _maxFor(side)));
+    setState(() {});
+  }
+
+  /// 滑条终值：落盘并推送（对齐原版 onChanged 最终提交语义）
+  void _commitValue(_Side side, double value) {
+    _applyWithLink(side, value.clamp(0.0, _maxFor(side)));
+    _commit();
+  }
+
+  /// 单侧上限：上/下 0-400，左/右 0-100（沿用既有范围，避免行为回退）
+  double _maxFor(_Side side) =>
+      (side == _Side.left || side == _Side.right) ? 100.0 : 400.0;
 
   void _resetRegion() {
     for (final side in _Side.values) {
@@ -177,6 +214,11 @@ class _ReaderPaddingConfigSheetState
         side,
         ReaderAdvancedConfig.defaultPaddingFor(_region, key),
       );
+    }
+    // 对齐原版 askResetRegion：重置正文时联动开关也回到默认（关闭）
+    if (_region == PaddingRegion.body) {
+      _config.paddingTopBottomLinked = false;
+      _lockTb = false;
     }
     _syncLockLrFromRegion();
     _commit();
@@ -218,10 +260,10 @@ class _ReaderPaddingConfigSheetState
               ],
             ),
             const SizedBox(height: 12),
-            _seekRow('上边距', _Side.top, Icons.arrow_upward),
-            _seekRow('下边距', _Side.bottom, Icons.arrow_downward),
-            _seekRow('左边距', _Side.left, Icons.arrow_back),
-            _seekRow('右边距', _Side.right, Icons.arrow_forward),
+            _padRow('上边距', _Side.top, Icons.arrow_upward),
+            _padRow('下边距', _Side.bottom, Icons.arrow_downward),
+            _padRow('左边距', _Side.left, Icons.arrow_back),
+            _padRow('右边距', _Side.right, Icons.arrow_forward),
             SwitchListTile(
               dense: true,
               contentPadding: EdgeInsets.zero,
@@ -229,6 +271,28 @@ class _ReaderPaddingConfigSheetState
               value: _lockLr,
               onChanged: (v) => setState(() => _lockLr = v),
             ),
+            // 上下联动仅正文 Tab 可见（对齐原版 swLockTb 的 Region.BODY 判定）
+            if (_region == PaddingRegion.body)
+              SwitchListTile(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: const Text('上下边距联动'),
+                value: _lockTb,
+                onChanged: (v) {
+                  _config.paddingTopBottomLinked = v;
+                  _lockTb = v;
+                  // 开启即以上边距为准镜像下边距（对齐原版
+                  // finalApply(Side.TOP, dsbTop.progress)）
+                  if (v) {
+                    _setPadding(
+                      PaddingRegion.body,
+                      _Side.bottom,
+                      _paddingFor(PaddingRegion.body, _Side.top),
+                    );
+                  }
+                  _commit();
+                },
+              ),
             if (_region == PaddingRegion.header)
               SwitchListTile(
                 dense: true,
@@ -294,30 +358,60 @@ class _ReaderPaddingConfigSheetState
     );
   }
 
-  Widget _seekRow(String label, _Side side, IconData icon) {
-    final value = _paddingFor(_region, side).round();
+  /// 单侧边距行：图标 + 标签 + 滑条 + 数值 + 加减
+  ///
+  /// [批33] 由「仅 ±1 步进」升级为「滑块 + 步进器」（参考版
+  /// TinySliderSettingItem 形态）：滑条负责快速调节，加减保留 1 步微调；
+  /// 范围仍为上/下 0-400、左/右 0-100（不改变既有行为）。
+  Widget _padRow(String label, _Side side, IconData icon) {
+    final max = _maxFor(side);
+    final value = _paddingFor(_region, side).clamp(0.0, max);
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
         children: [
           Icon(icon, size: 18),
           const SizedBox(width: 8),
-          SizedBox(width: 56, child: Text(label)),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            onPressed: () => _adjust(side, -1),
-            icon: const Icon(Icons.remove_circle_outline),
+          SizedBox(width: 48, child: Text(label)),
+          Expanded(
+            child: SliderTheme(
+              data: SliderTheme.of(context).copyWith(
+                trackHeight: 3,
+                thumbShape:
+                    const RoundSliderThumbShape(enabledThumbRadius: 6),
+                overlayShape:
+                    const RoundSliderOverlayShape(overlayRadius: 12),
+                // 0-400 档位若画刻度会过密，参考版滑条形态不带刻度
+                tickMarkShape: SliderTickMarkShape.noTickMark,
+              ),
+              child: Slider(
+                value: value,
+                min: 0,
+                max: max,
+                divisions: max.round(),
+                label: value.round().toString(),
+                onChanged: (v) => _dragValue(side, v),
+                onChangeEnd: (v) => _commitValue(side, v),
+              ),
+            ),
           ),
           SizedBox(
-            width: 48,
+            width: 34,
             child: Text(
-              '$value',
-              textAlign: TextAlign.center,
+              value.round().toString(),
+              textAlign: TextAlign.end,
               style: Theme.of(context).textTheme.titleSmall,
             ),
           ),
           IconButton(
             visualDensity: VisualDensity.compact,
+            tooltip: '减少',
+            onPressed: () => _adjust(side, -1),
+            icon: const Icon(Icons.remove_circle_outline),
+          ),
+          IconButton(
+            visualDensity: VisualDensity.compact,
+            tooltip: '增加',
             onPressed: () => _adjust(side, 1),
             icon: const Icon(Icons.add_circle_outline),
           ),

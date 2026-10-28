@@ -82,6 +82,9 @@ class RestoreIgnorePrefs {
     'reader_flip_mode_name',
     'reader_brightness',
     'reader_font_family',
+    // [批33] 正文上下边距联动（原版 ReadBookConfig 字段名；
+    // 属阅读界面偏好，随「忽略阅读配置」开关一并过滤）
+    'paddingTopBottomLinked',
   };
 
   /// 主题颜色相关键（对齐 BackupConfig.themePrefKeys）

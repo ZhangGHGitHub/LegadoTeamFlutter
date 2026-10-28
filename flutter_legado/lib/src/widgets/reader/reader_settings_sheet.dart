@@ -398,54 +398,91 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
     );
   }
 
-  /// 字号卡片：标签 + 步进器（- 值 +，范围 12-32）
+  /// 字号卡片：标签 + 数值 + 加减 + 滑块（对标参考版页内滑杆形态）
+  ///
+  /// [批33 | 字号范围裁决] 范围 5–50、步进 1、默认 20（采用参考版口径）；
+  /// 由纯步进器改为「滑块 + 数值 + 加减」三件套——滑块负责快速大幅调节，
+  /// 加减保留精确 1 步微调。滑块与加减共用 [ReaderNotifier.updateFontSize]
+  /// 的同一 clamp，避免 UI 与状态两套范围。
   Widget _buildFontSizeCard(ReaderState state, ReaderNotifier notifier) {
+    final size = state.fontSize.clamp(
+      ReaderNotifier.minFontSize,
+      ReaderNotifier.maxFontSize,
+    );
     return _panelCard(
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('字号', style: Theme.of(context).textTheme.titleMedium),
-          const Spacer(),
-          _stepButton(
-            icon: Icons.remove_rounded,
-            onTap: () => notifier
-                .updateFontSize((state.fontSize - 1).clamp(12.0, 32.0)),
+          Row(
+            children: [
+              Text('字号', style: Theme.of(context).textTheme.titleMedium),
+              const Spacer(),
+              Container(
+                constraints: const BoxConstraints(minWidth: 40),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                ),
+                child: Text(
+                  size.round().toString(),
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              const SizedBox(width: 8),
+              _compactStepButton(
+                icon: Icons.remove_rounded,
+                onTap: () => notifier.updateFontSize(size - 1),
+              ),
+              const SizedBox(width: 4),
+              _compactStepButton(
+                icon: Icons.add_rounded,
+                onTap: () => notifier.updateFontSize(size + 1),
+              ),
+            ],
           ),
-          const SizedBox(width: 10),
-          Container(
-            constraints: const BoxConstraints(minWidth: 52),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(
+              trackHeight: 3,
+              thumbShape:
+                  const RoundSliderThumbShape(enabledThumbRadius: 7),
+              overlayShape:
+                  const RoundSliderOverlayShape(overlayRadius: 14),
+              // 45 档若画刻度会过密，参考版滑条形态不带刻度
+              tickMarkShape: SliderTickMarkShape.noTickMark,
             ),
-            child: Text(
-              state.fontSize.round().toString(),
-              style: Theme.of(context)
-                  .textTheme
-                  .titleSmall
-                  ?.copyWith(fontWeight: FontWeight.w600),
+            child: Slider(
+              value: size,
+              min: ReaderNotifier.minFontSize,
+              max: ReaderNotifier.maxFontSize,
+              divisions:
+                  (ReaderNotifier.maxFontSize - ReaderNotifier.minFontSize)
+                      .round(),
+              label: size.round().toString(),
+              onChanged: (v) => notifier.updateFontSize(v),
             ),
-          ),
-          const SizedBox(width: 10),
-          _stepButton(
-            icon: Icons.add_rounded,
-            onTap: () => notifier
-                .updateFontSize((state.fontSize + 1).clamp(12.0, 32.0)),
           ),
         ],
       ),
     );
   }
 
-  /// 步进按钮（描边圆形，对齐参考版 -/+ 形态）
-  Widget _stepButton({required IconData icon, required VoidCallback onTap}) {
+  /// 紧凑步进按钮（半宽卡片内与数值/滑块同行，尺寸 28dp）
+  Widget _compactStepButton({
+    required IconData icon,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
       onTap: onTap,
       customBorder: const CircleBorder(),
       child: Container(
-        width: 40,
-        height: 40,
+        width: 28,
+        height: 28,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           border: Border.all(
@@ -454,7 +491,7 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
         ),
         child: Icon(
           icon,
-          size: 20,
+          size: 16,
           color: Theme.of(context).colorScheme.onSurface,
         ),
       ),

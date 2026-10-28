@@ -156,6 +156,30 @@ void main() {
       );
     });
 
+    /// [批33] 正文上下边距联动随 JSON 备份 appPrefs 往返；
+    /// 勾选「忽略阅读配置」时按 readPrefKeys 一并过滤。
+    test('边距上下联动偏好随备份往返且受 readConfig 忽略项约束', () async {
+      SharedPreferences.setMockInitialValues({
+        'paddingTopBottomLinked': true,
+      });
+      final collected = await RestoreIgnorePrefs.collectForBackup(const {});
+      expect(collected['paddingTopBottomLinked'], isTrue);
+
+      SharedPreferences.setMockInitialValues({});
+      await RestoreIgnorePrefs.applyFromBackup(collected, const {});
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('paddingTopBottomLinked'), isTrue);
+
+      expect(
+        RestoreIgnorePrefs.keyIsNotIgnore(
+          'paddingTopBottomLinked',
+          {'readConfig': true},
+        ),
+        isFalse,
+        reason: '阅读配置忽略项应覆盖边距联动偏好',
+      );
+    });
+
     test('apply 尊重 ignore 不覆盖本地项', () async {
       await RestoreIgnorePrefs.applyFromBackup(
         {

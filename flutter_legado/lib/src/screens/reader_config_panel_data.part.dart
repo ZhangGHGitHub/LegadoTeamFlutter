@@ -49,6 +49,13 @@ class ReaderAdvancedConfig {
   double pageMarginLeft;
   double pageMarginRight;
 
+  // [批33 | 边距上下联动] 正文上下边距联动（对标原版
+  // ReadBookConfig.paddingTopBottomLinked，默认 false）：打开后拖动上/下
+  // 任一侧，另一侧镜像同值；仅正文 Tab 生效（原版 PaddingConfigDialog
+  // 的 swLockTb 仅 Region.BODY 可见）。键名取原版字段名，随 Flutter JSON
+  // 备份 appPrefs 透传 — 全栈工程师
+  bool paddingTopBottomLinked;
+
   // [UI-fix v2.0.57 | 2026-08-14] 页眉/页脚边距（对标 ReadBookConfig
   // headerPadding*/footerPadding*）— Cursor UI
   double headerPaddingTop;
@@ -180,6 +187,7 @@ class ReaderAdvancedConfig {
     this.pageMarginBottom = 24,
     this.pageMarginLeft = 20,
     this.pageMarginRight = 20,
+    this.paddingTopBottomLinked = false,
     this.headerPaddingTop = 0,
     this.headerPaddingBottom = 0,
     this.headerPaddingLeft = 16,
@@ -386,6 +394,9 @@ class ReaderAdvancedConfig {
       pageMarginBottom: layoutDouble('margin_bottom', 24).clamp(0.0, 400.0),
       pageMarginLeft: layoutDouble('margin_left', 20).clamp(0.0, 100.0),
       pageMarginRight: layoutDouble('margin_right', 20).clamp(0.0, 100.0),
+      // [批33 | 边距上下联动] 原版字段名直取（全局开关，不分日夜桶）
+      paddingTopBottomLinked:
+          prefs.getBool('paddingTopBottomLinked') ?? false,
       headerPaddingTop: layoutDouble('header_padding_top', 0).clamp(0.0, 400.0),
       headerPaddingBottom:
           layoutDouble('header_padding_bottom', 0).clamp(0.0, 400.0),
@@ -495,6 +506,8 @@ class ReaderAdvancedConfig {
     await prefs.setDouble('${_prefix}margin_bottom', pageMarginBottom);
     await prefs.setDouble('${_prefix}margin_left', pageMarginLeft);
     await prefs.setDouble('${_prefix}margin_right', pageMarginRight);
+    // [批33 | 边距上下联动] 全局开关（原版字段名，不进日夜桶）
+    await prefs.setBool('paddingTopBottomLinked', paddingTopBottomLinked);
     await prefs.setDouble('${lp}header_padding_top', headerPaddingTop);
     await prefs.setDouble('${lp}header_padding_bottom', headerPaddingBottom);
     await prefs.setDouble('${lp}header_padding_left', headerPaddingLeft);
@@ -576,6 +589,7 @@ class ReaderAdvancedConfig {
         pageMarginBottom: pageMarginBottom,
         pageMarginLeft: pageMarginLeft,
         pageMarginRight: pageMarginRight,
+        paddingTopBottomLinked: paddingTopBottomLinked,
         headerPaddingTop: headerPaddingTop,
         headerPaddingBottom: headerPaddingBottom,
         headerPaddingLeft: headerPaddingLeft,

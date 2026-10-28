@@ -117,9 +117,22 @@ class ReaderNotifier extends Notifier<ReaderState> {
     return const ReaderState();
   }
 
+  /// 字号下限（批33 裁决：采用参考版口径 5–50，步进 1，默认 20）
+  static const double minFontSize = 5.0;
+
+  /// 字号上限（同参考版口径）
+  static const double maxFontSize = 50.0;
+
   /// 从 SharedPreferences 加载持久化的阅读设置
   Future<void> _loadSettings() async {
-    final fontSize = await _settings.getFontSize();
+    final storedFontSize = await _settings.getFontSize();
+    // [批33 | 字号范围裁决 5–50] 读取同样归一：历史版本上限 32 不会越界，
+    // 但早期手工写入/第三方备份可能 >50，超出即收敛到边界并回写，
+    // 避免每次启动重复归一（与 updateFontSize 共用同一范围常量）— 全栈工程师
+    final fontSize = storedFontSize.clamp(minFontSize, maxFontSize);
+    if (fontSize != storedFontSize) {
+      unawaited(_settings.setFontSize(fontSize));
+    }
     final lineHeight = await _settings.getLineHeight();
     // [M1 深色态默认修复] 可空读取：null = 从未设置（与显式选 0 区分）
     final bgIndex = await _settings.getBgColorIndexOrNull();
@@ -379,8 +392,11 @@ class ReaderNotifier extends Notifier<ReaderState> {
   // ===== 阅读设置（更新并持久化） =====
 
   /// 更新字体大小
+  ///
+  /// [批33 | 字号范围裁决] 采用参考版口径 5–50（步进 1，默认 20）；
+  /// 旧范围 12–32 作废（原版 ReadBookConfig 允许 5sp 起的小字号）。
   void updateFontSize(double size) {
-    final clamped = size.clamp(12.0, 32.0);
+    final clamped = size.clamp(minFontSize, maxFontSize);
     state = state.copyWith(fontSize: clamped);
     _settings.setFontSize(clamped);
     _pushReadBookConfig();

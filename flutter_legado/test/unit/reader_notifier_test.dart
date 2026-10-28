@@ -189,18 +189,36 @@ void main() {
       expect(readState().fontSize, equals(22.0));
     });
 
-    test('updateFontSize 低于下限被 clamp 到 12', () async {
+    test('updateFontSize 低于下限被 clamp 到 5', () async {
       container.read(readerNotifierProvider);
       await pumpInit();
-      readNotifier().updateFontSize(8.0);
-      expect(readState().fontSize, equals(12.0));
+      readNotifier().updateFontSize(2.0);
+      expect(readState().fontSize, equals(5.0));
     });
 
-    test('updateFontSize 超过上限被 clamp 到 32', () async {
+    test('updateFontSize 超过上限被 clamp 到 50', () async {
       container.read(readerNotifierProvider);
       await pumpInit();
-      readNotifier().updateFontSize(50.0);
-      expect(readState().fontSize, equals(32.0));
+      readNotifier().updateFontSize(60.0);
+      expect(readState().fontSize, equals(50.0));
+    });
+
+    // [批33 | 字号范围裁决 5–50] 读取同样归一：历史持久化值 >50
+    // 收敛到 50 并回写，防越界字号参与分页/渲染
+    test('_loadSettings 把历史字号 80 收敛到 50 并回写', () async {
+      SharedPreferences.setMockInitialValues({'reader_font_size': 80.0});
+      container.read(readerNotifierProvider);
+      await pumpInit();
+      expect(readState().fontSize, equals(50.0));
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getDouble('reader_font_size'), equals(50.0));
+    });
+
+    test('_loadSettings 把历史字号 2 收敛到 5', () async {
+      SharedPreferences.setMockInitialValues({'reader_font_size': 2.0});
+      container.read(readerNotifierProvider);
+      await pumpInit();
+      expect(readState().fontSize, equals(5.0));
     });
 
     test('updateLineHeight 正常设置', () async {

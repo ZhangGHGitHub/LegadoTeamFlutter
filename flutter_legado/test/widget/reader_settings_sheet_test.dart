@@ -43,6 +43,16 @@ void main() {
     expect(find.text('翻页动画'), findsOneWidget);
     expect(find.text('Tt'), findsOneWidget);
 
+    // [批33 | 字号范围 5–50] 字号卡 = 滑块（5..50，45 档）+ 数值 + 加减
+    final fontSlider = tester.widget<Slider>(find.byType(Slider));
+    expect(fontSlider.min, 5.0);
+    expect(fontSlider.max, 50.0);
+    expect(fontSlider.divisions, 45);
+    expect(find.text('20'), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.add_rounded));
+    await tester.pump();
+    expect(find.text('21'), findsOneWidget);
+
     // 页签切换 → 菜单页（自动翻页/点击区域）
     await tester.tap(find.text('菜单'));
     await tester.pump();
