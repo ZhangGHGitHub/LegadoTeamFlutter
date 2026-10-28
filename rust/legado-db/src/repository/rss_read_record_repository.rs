@@ -288,6 +288,29 @@ mod tests {
         assert!(!repo.is_read("l1").unwrap());
     }
 
+    /// 按源清空只删该 origin，其他源记录保留（对齐原版
+    /// `RssReadRecordDao.deleteAllRecord(origin)`，批29）
+    #[test]
+    fn test_clear_by_origin_keeps_other_sources() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssReadRecordRepository::new(db.connection());
+        repo.mark_read("https://a.rss.com", "A1", Some("a1"))
+            .unwrap();
+        repo.mark_read("https://a.rss.com", "A2", Some("a2"))
+            .unwrap();
+        repo.mark_read("https://b.rss.com", "B1", Some("b1"))
+            .unwrap();
+
+        assert_eq!(repo.clear_by_origin("https://a.rss.com").unwrap(), 2);
+        assert_eq!(repo.count().unwrap(), 1);
+        assert!(!repo.is_read("a1").unwrap());
+        assert!(!repo.is_read("a2").unwrap());
+        assert!(repo.is_read("b1").unwrap());
+        // 不存在的源：删除 0 行且不误删其他源
+        assert_eq!(repo.clear_by_origin("https://c.rss.com").unwrap(), 0);
+        assert!(repo.is_read("b1").unwrap());
+    }
+
     #[test]
     fn test_multiple_reads() {
         let db = crate::init_in_memory_database().unwrap();
