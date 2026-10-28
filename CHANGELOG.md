@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.412] - 2026-10-28
+
+### Fixed
+- [UI] 高亮规则未设置下划线颜色时，下划线改用规则文字色（不再与正文同色不可见）。
+- [Rust] 高亮正则的 `\w`/`\d`/`\s` 等字符类按 Java 语义（ASCII）匹配，不再吞掉相邻汉字；FFI 日志接入 logcat 便于排查。
+
 ## [2.0.411] - 2026-10-28
 
 ### Added
