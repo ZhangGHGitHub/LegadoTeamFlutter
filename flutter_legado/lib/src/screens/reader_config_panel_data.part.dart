@@ -54,6 +54,10 @@ class ReaderAdvancedConfig {
   // 任一侧，另一侧镜像同值；仅正文 Tab 生效（原版 PaddingConfigDialog
   // 的 swLockTb 仅 Region.BODY 可见）。键名取原版字段名，随 Flutter JSON
   // 备份 appPrefs 透传 — 全栈工程师
+  //
+  // [批33b | 存储位] 属**全局键** `paddingTopBottomLinked`：不写
+  // `layoutPrefix` 的日夜/共用布局桶（边距数值分桶、联动开关不分桶），
+  // 切主题不会因桶切换丢失/篡改该开关（对齐原版 AppConfig 全局字段）。
   bool paddingTopBottomLinked;
 
   // [UI-fix v2.0.57 | 2026-08-14] 页眉/页脚边距（对标 ReadBookConfig

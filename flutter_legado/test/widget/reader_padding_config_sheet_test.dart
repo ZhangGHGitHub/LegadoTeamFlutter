@@ -174,4 +174,89 @@ void main() {
     final reloaded = await ReaderAdvancedConfig.load();
     expect(reloaded.paddingTopBottomLinked, isFalse);
   });
+
+  /// [批33b | 拖动实时预览] 拖动中节流推送 Provider（只预览），不写盘、
+  /// 不触发 onChanged；松手后统一 save 一次。
+  testWidgets('拖动中推送 Provider 预览但不写盘，松手统一保存', (tester) async {
+    final changes = await pumpSheet(
+      tester,
+      ReaderAdvancedConfig(pageMarginTop: 10, pageMarginBottom: 30),
+    );
+    final container = ProviderScope.containerOf(
+      tester.element(find.byType(ReaderPaddingConfigSheet)),
+    );
+    final prefs = await SharedPreferences.getInstance();
+
+    // 第一行滑条 = 上边距
+    final topSlider = find.byType(Slider).first;
+    final gesture = await tester.startGesture(tester.getCenter(topSlider));
+    await tester.pump();
+    await gesture.moveBy(const Offset(12, 0));
+    await tester.pump();
+    // 跨过节流窗口（~150ms）
+    await tester.pump(const Duration(milliseconds: 180));
+
+    final preview = tester.widget<Slider>(topSlider).value;
+    expect(
+      container.read(readerAdvConfigProvider)?.pageMarginTop,
+      preview,
+      reason: '拖动中应推送共享 Provider 做实时预览',
+    );
+    expect(changes, isEmpty, reason: '拖动中不得触发 onChanged（父层会写盘）');
+    expect(
+      prefs.getDouble('reader_layout_day_margin_top'),
+      isNull,
+      reason: '拖动中不得写日夜布局桶',
+    );
+    expect(
+      prefs.getDouble('reader_adv_margin_top'),
+      isNull,
+      reason: '拖动中不得写兼容键',
+    );
+
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(changes, hasLength(1), reason: '松手只提交一次');
+    expect(changes.single.pageMarginTop, preview);
+    // save() 为 fire-and-forget 的异步链（数十次 prefs 写入），等它推进
+    for (var i = 0;
+        i < 20 && prefs.getDouble('reader_layout_day_margin_top') == null;
+        i++) {
+      await tester.pump(const Duration(milliseconds: 5));
+    }
+    expect(prefs.getDouble('reader_layout_day_margin_top'), preview);
+  });
+
+  /// [批33b | 重置] 正文 Tab 恢复默认同时关闭上下联动（对齐原版
+  /// askResetRegion 对 paddingTopBottomLinked 的复位）
+  testWidgets('恢复默认：paddingTopBottomLinked 复位为 false', (tester) async {
+    final changes = await pumpSheet(
+      tester,
+      ReaderAdvancedConfig(
+        paddingTopBottomLinked: true,
+        pageMarginTop: 60,
+        pageMarginBottom: 60,
+        pageMarginLeft: 40,
+        pageMarginRight: 40,
+      ),
+    );
+    final prefs = await SharedPreferences.getInstance();
+    expect(prefs.getBool('paddingTopBottomLinked'), isNull);
+
+    await tester.tap(find.byTooltip('恢复默认'));
+    await tester.pumpAndSettle();
+
+    expect(changes.last.paddingTopBottomLinked, isFalse);
+    expect(changes.last.pageMarginTop, isNot(60));
+    // 开关 UI 同步回到关闭态
+    final switchTile = tester.widget<SwitchListTile>(
+      find.ancestor(
+        of: find.text('上下边距联动'),
+        matching: find.byType(SwitchListTile),
+      ).first,
+    );
+    expect(switchTile.value, isFalse);
+    expect(prefs.getBool('paddingTopBottomLinked'), isFalse);
+  });
 }

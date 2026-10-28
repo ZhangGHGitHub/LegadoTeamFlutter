@@ -63,11 +63,23 @@ class _ReaderPaddingConfigSheetState
   /// 正文上下边距联动（批33：对标原版 paddingTopBottomLinked）
   bool _lockTb = false;
 
+  /// 拖动实时预览节流计时器（批33b，~150ms 推送一次共享 Provider）
+  Timer? _livePreviewTimer;
+
+  /// 拖动预览节流间隔（对齐原版 `bodyThrottle` 的拖动节流语义）
+  static const _livePreviewInterval = Duration(milliseconds: 150);
+
   @override
   void initState() {
     super.initState();
     _syncLockLrFromRegion();
     _lockTb = _config.paddingTopBottomLinked;
+  }
+
+  @override
+  void dispose() {
+    _livePreviewTimer?.cancel();
+    super.dispose();
   }
 
   void _syncLockLrFromRegion() {
@@ -77,6 +89,8 @@ class _ReaderPaddingConfigSheetState
   }
 
   void _commit() {
+    // 提交前丢弃在途预览，避免节流回调在落盘后再推一次旧快照
+    _cancelLivePreview();
     unawaited(_config.save());
     widget.onChanged?.call(_config.copy());
     ref.read(readerAdvConfigProvider.notifier).apply(_config.copy());
@@ -185,16 +199,40 @@ class _ReaderPaddingConfigSheetState
     _commit();
   }
 
-  /// 滑条拖动中：只更新内存并重绘（不落盘、不推 Provider，避免每帧写盘）
+  /// 滑条拖动中：更新内存并重绘；按 ~150ms 节流推送共享 Provider 做
+  /// 实时预览（不落盘、不触发 onChanged，避免每帧写盘）
+  ///
+  /// [批33b] 对齐原版 `PaddingConfigDialog.liveApply` + `bodyThrottle`：
+  /// 拖动期间正文实时跟随，但写盘/回调只在 `onChangeEnd`（[_commitValue]）
+  /// 统一执行一次。
   void _dragValue(_Side side, double value) {
     _applyWithLink(side, value.clamp(0.0, _maxFor(side)));
     setState(() {});
+    _scheduleLivePreview();
   }
 
   /// 滑条终值：落盘并推送（对齐原版 onChanged 最终提交语义）
   void _commitValue(_Side side, double value) {
     _applyWithLink(side, value.clamp(0.0, _maxFor(side)));
     _commit();
+  }
+
+  /// 节流调度：在途计时器存在时仅更新内存，不再叠加定时器
+  void _scheduleLivePreview() {
+    if (_livePreviewTimer != null) return;
+    _livePreviewTimer = Timer(_livePreviewInterval, () {
+      _livePreviewTimer = null;
+      if (!mounted) return;
+      // 推送触发时刻的最新内存配置（拖动仍在继续时下个 _dragValue 会
+      // 重新排程，保证拖动过程约每 150ms 刷新一次预览）
+      ref.read(readerAdvConfigProvider.notifier).apply(_config.copy());
+    });
+  }
+
+  /// 取消在途预览（提交/销毁时调用）
+  void _cancelLivePreview() {
+    _livePreviewTimer?.cancel();
+    _livePreviewTimer = null;
   }
 
   /// 单侧上限：上/下 0-400，左/右 0-100（沿用既有范围，避免行为回退）
