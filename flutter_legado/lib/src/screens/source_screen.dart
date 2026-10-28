@@ -13,6 +13,8 @@ import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../models/models.dart';
+import '../constants/pref_keys.dart';
+import '../providers/providers.dart' show settingsProvider;
 import '../providers/search/search_notifier.dart';
 import '../providers/source/source_notifier.dart';
 import '../providers/source_check/check_source_notifier.dart';
@@ -63,6 +65,12 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
   /// 按域名分组显示（对标原版 menu_group_sources_by_domain）
   bool _groupByDomain = false;
 
+  /// [批31] 显示书架书籍数量（对标原版 `AppConfig.showSourceBookshelfCount`，
+  /// 默认关；偏好键 `showSourceBookshelfCount` 持久化并随 JSON 备份往返）。
+  /// 开启后列表行在源名下方显示「N 本」，计数由 Rust `source_list` 单次
+  /// GROUP BY 批量聚合（`BookSource.bookshelfCount`），非逐源查询。
+  bool _showBookshelfCount = false;
+
   /// 上一帧的校验进行中状态（检测结束瞬间）
   bool _checkingForToast = false;
 
@@ -78,6 +86,20 @@ class _SourceScreenState extends ConsumerState<SourceScreen> {
       ref.read(sourceNotifierProvider.notifier).clearFilter();
       ref.read(sourceNotifierProvider.notifier).loadSources();
     });
+    _loadShowBookshelfCount();
+  }
+
+  /// [批31] 读取「显示书籍数量」偏好（默认关，对齐原版 PreferKey）
+  Future<void> _loadShowBookshelfCount() async {
+    try {
+      final v = await ref.read(settingsProvider).getBoolPref(
+            PrefKeys.showSourceBookshelfCount,
+            defaultValue: false,
+          );
+      if (mounted) setState(() => _showBookshelfCount = v);
+    } catch (_) {
+      // 读取失败保持默认关，不影响书源列表展示
+    }
   }
 
   /// 长列表快速滚动条联动控制器（对齐原版 FastScroller）

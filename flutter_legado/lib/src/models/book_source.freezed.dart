@@ -89,6 +89,13 @@ mixin _$BookSource {
   @JsonKey(name: 'customButton')
   bool get customButton => throw _privateConstructorUsedError;
 
+  /// [批31] 书架书籍数（契约 §2.3 加法式字段，仅 `getBookSources` 携带；
+  /// Rust 按 `books.origin = bookSourceUrl` 单次 GROUP BY 聚合，过滤
+  /// notShelf 临时书与本地书）。**不参与序列化**（`includeToJson: false`）：
+  /// 源保存「原 JSON 补丁」、用户导出 JSON 与备份均不得携带该派生字段。
+  @JsonKey(name: 'bookshelfCount', includeToJson: false)
+  int get bookshelfCount => throw _privateConstructorUsedError;
+
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
   $BookSourceCopyWith<BookSource> get copyWith =>
@@ -135,7 +142,9 @@ abstract class $BookSourceCopyWith<$Res> {
       @JsonKey(name: 'ruleReview') ReviewRule? ruleReview,
       @JsonKey(name: 'mainJs') String? mainJs,
       @JsonKey(name: 'eventListener') bool eventListener,
-      @JsonKey(name: 'customButton') bool customButton});
+      @JsonKey(name: 'customButton') bool customButton,
+      @JsonKey(name: 'bookshelfCount', includeToJson: false)
+      int bookshelfCount});
 
   $ExploreRuleCopyWith<$Res>? get ruleExplore;
   $SearchRuleCopyWith<$Res>? get ruleSearch;
@@ -192,6 +201,7 @@ class _$BookSourceCopyWithImpl<$Res, $Val extends BookSource>
     Object? mainJs = freezed,
     Object? eventListener = null,
     Object? customButton = null,
+    Object? bookshelfCount = null,
   }) {
     return _then(_value.copyWith(
       bookSourceUrl: null == bookSourceUrl
@@ -330,6 +340,10 @@ class _$BookSourceCopyWithImpl<$Res, $Val extends BookSource>
           ? _value.customButton
           : customButton // ignore: cast_nullable_to_non_nullable
               as bool,
+      bookshelfCount: null == bookshelfCount
+          ? _value.bookshelfCount
+          : bookshelfCount // ignore: cast_nullable_to_non_nullable
+              as int,
     ) as $Val);
   }
 
@@ -448,7 +462,9 @@ abstract class _$$BookSourceImplCopyWith<$Res>
       @JsonKey(name: 'ruleReview') ReviewRule? ruleReview,
       @JsonKey(name: 'mainJs') String? mainJs,
       @JsonKey(name: 'eventListener') bool eventListener,
-      @JsonKey(name: 'customButton') bool customButton});
+      @JsonKey(name: 'customButton') bool customButton,
+      @JsonKey(name: 'bookshelfCount', includeToJson: false)
+      int bookshelfCount});
 
   @override
   $ExploreRuleCopyWith<$Res>? get ruleExplore;
@@ -509,6 +525,7 @@ class __$$BookSourceImplCopyWithImpl<$Res>
     Object? mainJs = freezed,
     Object? eventListener = null,
     Object? customButton = null,
+    Object? bookshelfCount = null,
   }) {
     return _then(_$BookSourceImpl(
       bookSourceUrl: null == bookSourceUrl
@@ -647,6 +664,10 @@ class __$$BookSourceImplCopyWithImpl<$Res>
           ? _value.customButton
           : customButton // ignore: cast_nullable_to_non_nullable
               as bool,
+      bookshelfCount: null == bookshelfCount
+          ? _value.bookshelfCount
+          : bookshelfCount // ignore: cast_nullable_to_non_nullable
+              as int,
     ));
   }
 }
@@ -688,7 +709,9 @@ class _$BookSourceImpl implements _BookSource {
       @JsonKey(name: 'ruleReview') this.ruleReview,
       @JsonKey(name: 'mainJs') this.mainJs,
       @JsonKey(name: 'eventListener') this.eventListener = false,
-      @JsonKey(name: 'customButton') this.customButton = false});
+      @JsonKey(name: 'customButton') this.customButton = false,
+      @JsonKey(name: 'bookshelfCount', includeToJson: false)
+      this.bookshelfCount = 0});
 
   factory _$BookSourceImpl.fromJson(Map<String, dynamic> json) =>
       _$$BookSourceImplFromJson(json);
@@ -799,9 +822,17 @@ class _$BookSourceImpl implements _BookSource {
   @JsonKey(name: 'customButton')
   final bool customButton;
 
+  /// [批31] 书架书籍数（契约 §2.3 加法式字段，仅 `getBookSources` 携带；
+  /// Rust 按 `books.origin = bookSourceUrl` 单次 GROUP BY 聚合，过滤
+  /// notShelf 临时书与本地书）。**不参与序列化**（`includeToJson: false`）：
+  /// 源保存「原 JSON 补丁」、用户导出 JSON 与备份均不得携带该派生字段。
+  @override
+  @JsonKey(name: 'bookshelfCount', includeToJson: false)
+  final int bookshelfCount;
+
   @override
   String toString() {
-    return 'BookSource(bookSourceUrl: $bookSourceUrl, bookSourceName: $bookSourceName, bookSourceGroup: $bookSourceGroup, bookSourceType: $bookSourceType, bookUrlPattern: $bookUrlPattern, customOrder: $customOrder, enabled: $enabled, enabledExplore: $enabledExplore, jsLib: $jsLib, enabledCookieJar: $enabledCookieJar, concurrentRate: $concurrentRate, header: $header, loginUrl: $loginUrl, loginUi: $loginUi, loginCheckJs: $loginCheckJs, coverDecodeJs: $coverDecodeJs, bookSourceComment: $bookSourceComment, variableComment: $variableComment, variable: $variable, lastUpdateTime: $lastUpdateTime, respondTime: $respondTime, weight: $weight, exploreUrl: $exploreUrl, exploreScreen: $exploreScreen, ruleExplore: $ruleExplore, searchUrl: $searchUrl, ruleSearch: $ruleSearch, ruleBookInfo: $ruleBookInfo, ruleToc: $ruleToc, ruleContent: $ruleContent, ruleReview: $ruleReview, mainJs: $mainJs, eventListener: $eventListener, customButton: $customButton)';
+    return 'BookSource(bookSourceUrl: $bookSourceUrl, bookSourceName: $bookSourceName, bookSourceGroup: $bookSourceGroup, bookSourceType: $bookSourceType, bookUrlPattern: $bookUrlPattern, customOrder: $customOrder, enabled: $enabled, enabledExplore: $enabledExplore, jsLib: $jsLib, enabledCookieJar: $enabledCookieJar, concurrentRate: $concurrentRate, header: $header, loginUrl: $loginUrl, loginUi: $loginUi, loginCheckJs: $loginCheckJs, coverDecodeJs: $coverDecodeJs, bookSourceComment: $bookSourceComment, variableComment: $variableComment, variable: $variable, lastUpdateTime: $lastUpdateTime, respondTime: $respondTime, weight: $weight, exploreUrl: $exploreUrl, exploreScreen: $exploreScreen, ruleExplore: $ruleExplore, searchUrl: $searchUrl, ruleSearch: $ruleSearch, ruleBookInfo: $ruleBookInfo, ruleToc: $ruleToc, ruleContent: $ruleContent, ruleReview: $ruleReview, mainJs: $mainJs, eventListener: $eventListener, customButton: $customButton, bookshelfCount: $bookshelfCount)';
   }
 
   @override
@@ -869,7 +900,9 @@ class _$BookSourceImpl implements _BookSource {
             (identical(other.eventListener, eventListener) ||
                 other.eventListener == eventListener) &&
             (identical(other.customButton, customButton) ||
-                other.customButton == customButton));
+                other.customButton == customButton) &&
+            (identical(other.bookshelfCount, bookshelfCount) ||
+                other.bookshelfCount == bookshelfCount));
   }
 
   @JsonKey(ignore: true)
@@ -909,7 +942,8 @@ class _$BookSourceImpl implements _BookSource {
         ruleReview,
         mainJs,
         eventListener,
-        customButton
+        customButton,
+        bookshelfCount
       ]);
 
   @JsonKey(ignore: true)
@@ -928,41 +962,42 @@ class _$BookSourceImpl implements _BookSource {
 
 abstract class _BookSource implements BookSource {
   const factory _BookSource(
-          {@JsonKey(name: 'bookSourceUrl') final String bookSourceUrl,
-          @JsonKey(name: 'bookSourceName') final String bookSourceName,
-          @JsonKey(name: 'bookSourceGroup') final String? bookSourceGroup,
-          @JsonKey(name: 'bookSourceType') final int bookSourceType,
-          @JsonKey(name: 'bookUrlPattern') final String? bookUrlPattern,
-          @JsonKey(name: 'customOrder') final int customOrder,
-          final bool enabled,
-          @JsonKey(name: 'enabledExplore') final bool enabledExplore,
-          @JsonKey(name: 'jsLib') final String? jsLib,
-          @JsonKey(name: 'enabledCookieJar') final bool? enabledCookieJar,
-          @JsonKey(name: 'concurrentRate') final String? concurrentRate,
-          final String? header,
-          @JsonKey(name: 'loginUrl') final String? loginUrl,
-          @JsonKey(name: 'loginUi') final String? loginUi,
-          @JsonKey(name: 'loginCheckJs') final String? loginCheckJs,
-          @JsonKey(name: 'coverDecodeJs') final String? coverDecodeJs,
-          @JsonKey(name: 'bookSourceComment') final String? bookSourceComment,
-          @JsonKey(name: 'variableComment') final String? variableComment,
-          final String variable,
-          @JsonKey(name: 'lastUpdateTime') final int lastUpdateTime,
-          @JsonKey(name: 'respondTime') final int respondTime,
-          final int weight,
-          @JsonKey(name: 'exploreUrl') final String? exploreUrl,
-          @JsonKey(name: 'exploreScreen') final String? exploreScreen,
-          @JsonKey(name: 'ruleExplore') final ExploreRule? ruleExplore,
-          @JsonKey(name: 'searchUrl') final String? searchUrl,
-          @JsonKey(name: 'ruleSearch') final SearchRule? ruleSearch,
-          @JsonKey(name: 'ruleBookInfo') final BookInfoRule? ruleBookInfo,
-          @JsonKey(name: 'ruleToc') final TocRule? ruleToc,
-          @JsonKey(name: 'ruleContent') final ContentRule? ruleContent,
-          @JsonKey(name: 'ruleReview') final ReviewRule? ruleReview,
-          @JsonKey(name: 'mainJs') final String? mainJs,
-          @JsonKey(name: 'eventListener') final bool eventListener,
-          @JsonKey(name: 'customButton') final bool customButton}) =
-      _$BookSourceImpl;
+      {@JsonKey(name: 'bookSourceUrl') final String bookSourceUrl,
+      @JsonKey(name: 'bookSourceName') final String bookSourceName,
+      @JsonKey(name: 'bookSourceGroup') final String? bookSourceGroup,
+      @JsonKey(name: 'bookSourceType') final int bookSourceType,
+      @JsonKey(name: 'bookUrlPattern') final String? bookUrlPattern,
+      @JsonKey(name: 'customOrder') final int customOrder,
+      final bool enabled,
+      @JsonKey(name: 'enabledExplore') final bool enabledExplore,
+      @JsonKey(name: 'jsLib') final String? jsLib,
+      @JsonKey(name: 'enabledCookieJar') final bool? enabledCookieJar,
+      @JsonKey(name: 'concurrentRate') final String? concurrentRate,
+      final String? header,
+      @JsonKey(name: 'loginUrl') final String? loginUrl,
+      @JsonKey(name: 'loginUi') final String? loginUi,
+      @JsonKey(name: 'loginCheckJs') final String? loginCheckJs,
+      @JsonKey(name: 'coverDecodeJs') final String? coverDecodeJs,
+      @JsonKey(name: 'bookSourceComment') final String? bookSourceComment,
+      @JsonKey(name: 'variableComment') final String? variableComment,
+      final String variable,
+      @JsonKey(name: 'lastUpdateTime') final int lastUpdateTime,
+      @JsonKey(name: 'respondTime') final int respondTime,
+      final int weight,
+      @JsonKey(name: 'exploreUrl') final String? exploreUrl,
+      @JsonKey(name: 'exploreScreen') final String? exploreScreen,
+      @JsonKey(name: 'ruleExplore') final ExploreRule? ruleExplore,
+      @JsonKey(name: 'searchUrl') final String? searchUrl,
+      @JsonKey(name: 'ruleSearch') final SearchRule? ruleSearch,
+      @JsonKey(name: 'ruleBookInfo') final BookInfoRule? ruleBookInfo,
+      @JsonKey(name: 'ruleToc') final TocRule? ruleToc,
+      @JsonKey(name: 'ruleContent') final ContentRule? ruleContent,
+      @JsonKey(name: 'ruleReview') final ReviewRule? ruleReview,
+      @JsonKey(name: 'mainJs') final String? mainJs,
+      @JsonKey(name: 'eventListener') final bool eventListener,
+      @JsonKey(name: 'customButton') final bool customButton,
+      @JsonKey(name: 'bookshelfCount', includeToJson: false)
+      final int bookshelfCount}) = _$BookSourceImpl;
 
   factory _BookSource.fromJson(Map<String, dynamic> json) =
       _$BookSourceImpl.fromJson;
@@ -1068,6 +1103,14 @@ abstract class _BookSource implements BookSource {
   @override
   @JsonKey(name: 'customButton')
   bool get customButton;
+  @override
+
+  /// [批31] 书架书籍数（契约 §2.3 加法式字段，仅 `getBookSources` 携带；
+  /// Rust 按 `books.origin = bookSourceUrl` 单次 GROUP BY 聚合，过滤
+  /// notShelf 临时书与本地书）。**不参与序列化**（`includeToJson: false`）：
+  /// 源保存「原 JSON 补丁」、用户导出 JSON 与备份均不得携带该派生字段。
+  @JsonKey(name: 'bookshelfCount', includeToJson: false)
+  int get bookshelfCount;
   @override
   @JsonKey(ignore: true)
   _$$BookSourceImplCopyWith<_$BookSourceImpl> get copyWith =>

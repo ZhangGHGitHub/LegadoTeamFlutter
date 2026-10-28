@@ -170,6 +170,16 @@ extension _SourceBuilders on _SourceScreenState {
                 label: _groupByDomain ? '按域名分组显示 ✓' : '按域名分组显示',
               ),
             ),
+            // [批31] 显示书架书籍数量（对齐原版 menu_show_source_bookshelf_count，
+            // 默认关；开启后列表行显示「N 本」）
+            CheckedPopupMenuItem(
+              value: 'show_bookshelf_count',
+              checked: _showBookshelfCount,
+              child: _MenuRow(
+                icon: Symbols.library_books_rounded,
+                label: '显示书籍数量',
+              ),
+            ),
             const PopupMenuItem(
               value: 'help',
               child: _MenuRow(icon: Symbols.help_rounded, label: '帮助'),
@@ -673,6 +683,18 @@ extension _SourceBuilders on _SourceScreenState {
                         ),
                     ],
                   ),
+                  // [批31] 书架书籍数（对齐原版 tv_bookshelf_count 副标题行；
+                  // 计数由 Rust source_list 批量聚合，开关关时不渲染）
+                  if (_showBookshelfCount)
+                    Text(
+                      '${source.bookshelfCount} 本',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   if (checkMessage != null)
                     Text(
                       checkMessage.text,
@@ -829,6 +851,18 @@ extension _SourceBuilders on _SourceScreenState {
                         ),
                     ],
                   ),
+                  // [批31] 书架书籍数（对齐原版 tv_bookshelf_count 副标题行；
+                  // 计数由 Rust source_list 批量聚合，开关关时不渲染）
+                  if (_showBookshelfCount)
+                    Text(
+                      '${source.bookshelfCount} 本',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
                   if (checkMessage != null)
                     Text(
                       checkMessage.text,

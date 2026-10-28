@@ -288,6 +288,13 @@ class PrefKeys {
   /// 的 crash_record_heap_dump 键）
   static const recordHeapDump = 'recordHeapDump';
 
+  // ===== 书源管理（BookSourceActivity）=====
+
+  /// 书源列表显示书架书籍数量（对齐原版 `AppConfig.showSourceBookshelfCount`，
+  /// `AppConfig.kt:41-43` / `PreferKey.showSourceBookshelfCount`，默认关；
+  /// 批31 接线，键名与原版逐字一致，随 Flutter JSON 备份 `appPrefs` 往返）
+  static const showSourceBookshelfCount = 'showSourceBookshelfCount';
+
   // ===== 书架管理（BookshelfManageActivity）=====
 
   /// 点击书名打开书籍信息（对齐原版 openBookInfoByClickTitle，默认 false）

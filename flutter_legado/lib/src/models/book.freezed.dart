@@ -22,6 +22,12 @@ ReadConfig _$ReadConfigFromJson(Map<String, dynamic> json) {
 mixin _$ReadConfig {
   @JsonKey(name: 'reverseToc')
   bool get reverseToc => throw _privateConstructorUsedError;
+
+  /// [批31] 目录显示反转（对齐原版 `Book.ReadConfig.reverseTocDisplay`，
+  /// `Book.kt:502`）：仅展示层反序，章节数据顺序与 `index` 身份不变。
+  /// 与 [reverseToc]（数据反转）组合 = 先数据反转、再显示反转。
+  @JsonKey(name: 'reverseTocDisplay')
+  bool get reverseTocDisplay => throw _privateConstructorUsedError;
   @JsonKey(name: 'pageAnim')
   int? get pageAnim => throw _privateConstructorUsedError;
   @JsonKey(name: 'reSegment')
@@ -82,6 +88,7 @@ abstract class $ReadConfigCopyWith<$Res> {
   @useResult
   $Res call(
       {@JsonKey(name: 'reverseToc') bool reverseToc,
+      @JsonKey(name: 'reverseTocDisplay') bool reverseTocDisplay,
       @JsonKey(name: 'pageAnim') int? pageAnim,
       @JsonKey(name: 'reSegment') bool reSegment,
       @JsonKey(name: 'imageStyle') String? imageStyle,
@@ -115,6 +122,7 @@ class _$ReadConfigCopyWithImpl<$Res, $Val extends ReadConfig>
   @override
   $Res call({
     Object? reverseToc = null,
+    Object? reverseTocDisplay = null,
     Object? pageAnim = freezed,
     Object? reSegment = null,
     Object? imageStyle = freezed,
@@ -137,6 +145,10 @@ class _$ReadConfigCopyWithImpl<$Res, $Val extends ReadConfig>
       reverseToc: null == reverseToc
           ? _value.reverseToc
           : reverseToc // ignore: cast_nullable_to_non_nullable
+              as bool,
+      reverseTocDisplay: null == reverseTocDisplay
+          ? _value.reverseTocDisplay
+          : reverseTocDisplay // ignore: cast_nullable_to_non_nullable
               as bool,
       pageAnim: freezed == pageAnim
           ? _value.pageAnim
@@ -220,6 +232,7 @@ abstract class _$$ReadConfigImplCopyWith<$Res>
   @useResult
   $Res call(
       {@JsonKey(name: 'reverseToc') bool reverseToc,
+      @JsonKey(name: 'reverseTocDisplay') bool reverseTocDisplay,
       @JsonKey(name: 'pageAnim') int? pageAnim,
       @JsonKey(name: 'reSegment') bool reSegment,
       @JsonKey(name: 'imageStyle') String? imageStyle,
@@ -251,6 +264,7 @@ class __$$ReadConfigImplCopyWithImpl<$Res>
   @override
   $Res call({
     Object? reverseToc = null,
+    Object? reverseTocDisplay = null,
     Object? pageAnim = freezed,
     Object? reSegment = null,
     Object? imageStyle = freezed,
@@ -273,6 +287,10 @@ class __$$ReadConfigImplCopyWithImpl<$Res>
       reverseToc: null == reverseToc
           ? _value.reverseToc
           : reverseToc // ignore: cast_nullable_to_non_nullable
+              as bool,
+      reverseTocDisplay: null == reverseTocDisplay
+          ? _value.reverseTocDisplay
+          : reverseTocDisplay // ignore: cast_nullable_to_non_nullable
               as bool,
       pageAnim: freezed == pageAnim
           ? _value.pageAnim
@@ -351,6 +369,7 @@ class __$$ReadConfigImplCopyWithImpl<$Res>
 class _$ReadConfigImpl implements _ReadConfig {
   const _$ReadConfigImpl(
       {@JsonKey(name: 'reverseToc') this.reverseToc = false,
+      @JsonKey(name: 'reverseTocDisplay') this.reverseTocDisplay = false,
       @JsonKey(name: 'pageAnim') this.pageAnim,
       @JsonKey(name: 'reSegment') this.reSegment = false,
       @JsonKey(name: 'imageStyle') this.imageStyle,
@@ -375,6 +394,13 @@ class _$ReadConfigImpl implements _ReadConfig {
   @override
   @JsonKey(name: 'reverseToc')
   final bool reverseToc;
+
+  /// [批31] 目录显示反转（对齐原版 `Book.ReadConfig.reverseTocDisplay`，
+  /// `Book.kt:502`）：仅展示层反序，章节数据顺序与 `index` 身份不变。
+  /// 与 [reverseToc]（数据反转）组合 = 先数据反转、再显示反转。
+  @override
+  @JsonKey(name: 'reverseTocDisplay')
+  final bool reverseTocDisplay;
   @override
   @JsonKey(name: 'pageAnim')
   final int? pageAnim;
@@ -440,7 +466,7 @@ class _$ReadConfigImpl implements _ReadConfig {
 
   @override
   String toString() {
-    return 'ReadConfig(reverseToc: $reverseToc, pageAnim: $pageAnim, reSegment: $reSegment, imageStyle: $imageStyle, useReplaceRule: $useReplaceRule, delTag: $delTag, ttsEngine: $ttsEngine, splitLongChapter: $splitLongChapter, readSimulating: $readSimulating, startDate: $startDate, startChapter: $startChapter, dailyChapters: $dailyChapters, openCredits: $openCredits, closeCredits: $closeCredits, playMode: $playMode, playSpeed: $playSpeed, mangaScrollMode: $mangaScrollMode, webtoonSidePaddingDp: $webtoonSidePaddingDp)';
+    return 'ReadConfig(reverseToc: $reverseToc, reverseTocDisplay: $reverseTocDisplay, pageAnim: $pageAnim, reSegment: $reSegment, imageStyle: $imageStyle, useReplaceRule: $useReplaceRule, delTag: $delTag, ttsEngine: $ttsEngine, splitLongChapter: $splitLongChapter, readSimulating: $readSimulating, startDate: $startDate, startChapter: $startChapter, dailyChapters: $dailyChapters, openCredits: $openCredits, closeCredits: $closeCredits, playMode: $playMode, playSpeed: $playSpeed, mangaScrollMode: $mangaScrollMode, webtoonSidePaddingDp: $webtoonSidePaddingDp)';
   }
 
   @override
@@ -450,6 +476,8 @@ class _$ReadConfigImpl implements _ReadConfig {
             other is _$ReadConfigImpl &&
             (identical(other.reverseToc, reverseToc) ||
                 other.reverseToc == reverseToc) &&
+            (identical(other.reverseTocDisplay, reverseTocDisplay) ||
+                other.reverseTocDisplay == reverseTocDisplay) &&
             (identical(other.pageAnim, pageAnim) ||
                 other.pageAnim == pageAnim) &&
             (identical(other.reSegment, reSegment) ||
@@ -487,26 +515,28 @@ class _$ReadConfigImpl implements _ReadConfig {
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(
-      runtimeType,
-      reverseToc,
-      pageAnim,
-      reSegment,
-      imageStyle,
-      useReplaceRule,
-      delTag,
-      ttsEngine,
-      splitLongChapter,
-      readSimulating,
-      startDate,
-      startChapter,
-      dailyChapters,
-      openCredits,
-      closeCredits,
-      playMode,
-      playSpeed,
-      mangaScrollMode,
-      webtoonSidePaddingDp);
+  int get hashCode => Object.hashAll([
+        runtimeType,
+        reverseToc,
+        reverseTocDisplay,
+        pageAnim,
+        reSegment,
+        imageStyle,
+        useReplaceRule,
+        delTag,
+        ttsEngine,
+        splitLongChapter,
+        readSimulating,
+        startDate,
+        startChapter,
+        dailyChapters,
+        openCredits,
+        closeCredits,
+        playMode,
+        playSpeed,
+        mangaScrollMode,
+        webtoonSidePaddingDp
+      ]);
 
   @JsonKey(ignore: true)
   @override
@@ -525,6 +555,7 @@ class _$ReadConfigImpl implements _ReadConfig {
 abstract class _ReadConfig implements ReadConfig {
   const factory _ReadConfig(
       {@JsonKey(name: 'reverseToc') final bool reverseToc,
+      @JsonKey(name: 'reverseTocDisplay') final bool reverseTocDisplay,
       @JsonKey(name: 'pageAnim') final int? pageAnim,
       @JsonKey(name: 'reSegment') final bool reSegment,
       @JsonKey(name: 'imageStyle') final String? imageStyle,
@@ -550,6 +581,13 @@ abstract class _ReadConfig implements ReadConfig {
   @override
   @JsonKey(name: 'reverseToc')
   bool get reverseToc;
+  @override
+
+  /// [批31] 目录显示反转（对齐原版 `Book.ReadConfig.reverseTocDisplay`，
+  /// `Book.kt:502`）：仅展示层反序，章节数据顺序与 `index` 身份不变。
+  /// 与 [reverseToc]（数据反转）组合 = 先数据反转、再显示反转。
+  @JsonKey(name: 'reverseTocDisplay')
+  bool get reverseTocDisplay;
   @override
   @JsonKey(name: 'pageAnim')
   int? get pageAnim;

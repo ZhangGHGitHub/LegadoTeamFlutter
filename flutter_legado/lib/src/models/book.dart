@@ -215,6 +215,10 @@ class BookType {
 class ReadConfig with _$ReadConfig {
   const factory ReadConfig({
     @Default(false) @JsonKey(name: 'reverseToc') bool reverseToc,
+    /// [批31] 目录显示反转（对齐原版 `Book.ReadConfig.reverseTocDisplay`，
+    /// `Book.kt:502`）：仅展示层反序，章节数据顺序与 `index` 身份不变。
+    /// 与 [reverseToc]（数据反转）组合 = 先数据反转、再显示反转。
+    @Default(false) @JsonKey(name: 'reverseTocDisplay') bool reverseTocDisplay,
     @JsonKey(name: 'pageAnim') int? pageAnim,
     @Default(false) @JsonKey(name: 'reSegment') bool reSegment,
     @JsonKey(name: 'imageStyle') String? imageStyle,

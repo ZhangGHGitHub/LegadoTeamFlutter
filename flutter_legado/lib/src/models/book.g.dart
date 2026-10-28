@@ -9,6 +9,7 @@ part of 'book.dart';
 _$ReadConfigImpl _$$ReadConfigImplFromJson(Map<String, dynamic> json) =>
     _$ReadConfigImpl(
       reverseToc: json['reverseToc'] as bool? ?? false,
+      reverseTocDisplay: json['reverseTocDisplay'] as bool? ?? false,
       pageAnim: (json['pageAnim'] as num?)?.toInt(),
       reSegment: json['reSegment'] as bool? ?? false,
       imageStyle: json['imageStyle'] as String?,
@@ -31,6 +32,7 @@ _$ReadConfigImpl _$$ReadConfigImplFromJson(Map<String, dynamic> json) =>
 Map<String, dynamic> _$$ReadConfigImplToJson(_$ReadConfigImpl instance) =>
     <String, dynamic>{
       'reverseToc': instance.reverseToc,
+      'reverseTocDisplay': instance.reverseTocDisplay,
       'pageAnim': instance.pageAnim,
       'reSegment': instance.reSegment,
       'imageStyle': instance.imageStyle,

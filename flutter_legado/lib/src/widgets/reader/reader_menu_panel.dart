@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     hide Provider, ChangeNotifierProvider;
 
 import '../../models/models.dart';
+import '../../providers/providers.dart' show bookApiProvider;
 import '../../providers/reader/reader_notifier.dart';
 import '../../providers/ui_settings/ui_settings_notifier.dart';
 import '../../routes.dart';
@@ -85,6 +86,27 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
   void dispose() {
     _menuController.dispose();
     super.dispose();
+  }
+
+  /// [批31] 切换「目录显示反转」并持久化到 `Book.readConfig.reverseTocDisplay`
+  ///
+  /// 对齐原版 `TocViewModel.reverseToc`：仅改展示序（数据/章节索引不变），
+  /// 目录页读取同一 Book 对象即按「先数据反转、再显示反转」组合渲染。
+  Future<void> _toggleReverseTocDisplay(Book book) async {
+    final cfg = book.readConfig ?? const ReadConfig();
+    final updated = book.copyWith(
+      readConfig: cfg.copyWith(reverseTocDisplay: !cfg.reverseTocDisplay),
+    );
+    try {
+      await ref.read(bookApiProvider).updateBook(updated);
+      if (!mounted) return;
+      ref.read(readerNotifierProvider.notifier).updateCurrentBook(updated);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('设置保存失败: $e')),
+      );
+    }
   }
 
   @override
@@ -349,17 +371,38 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
                           widget.onOpenSettings();
                         case 'toc':
                           widget.onOpenCatalog();
+                        case 'reverseTocDisplay':
+                          // [批31] 目录显示反转（对齐原版
+                          // ReadConfig.reverseTocDisplay）：仅展示层反序，
+                          // 数据顺序/章节身份不变，无需重载正文
+                          if (book != null) {
+                            unawaited(_toggleReverseTocDisplay(book));
+                          }
                       }
                     },
-                    itemBuilder: (_) => const [
-                      PopupMenuItem(value: 'addBookmark', child: Text('添加书签')),
-                      PopupMenuItem(
+                    itemBuilder: (_) => [
+                      const PopupMenuItem(
+                        value: 'addBookmark',
+                        child: Text('添加书签'),
+                      ),
+                      const PopupMenuItem(
                         value: 'highlightRule',
                         child: Text('高亮规则'),
                       ),
-                      PopupMenuItem(value: 'replace', child: Text('替换规则')),
-                      PopupMenuItem(value: 'toc', child: Text('查看目录')),
-                      PopupMenuItem(value: 'settings', child: Text('界面设置')),
+                      const PopupMenuItem(
+                        value: 'replace',
+                        child: Text('替换规则'),
+                      ),
+                      const PopupMenuItem(value: 'toc', child: Text('查看目录')),
+                      CheckedPopupMenuItem(
+                        value: 'reverseTocDisplay',
+                        checked: book?.readConfig?.reverseTocDisplay ?? false,
+                        child: const Text('目录显示反转'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'settings',
+                        child: Text('界面设置'),
+                      ),
                     ],
                   ),
                 ],

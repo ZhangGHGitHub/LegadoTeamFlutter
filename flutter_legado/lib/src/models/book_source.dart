@@ -56,6 +56,13 @@ class BookSource with _$BookSource {
     @JsonKey(name: 'mainJs') String? mainJs,
     @Default(false) @JsonKey(name: 'eventListener') bool eventListener,
     @Default(false) @JsonKey(name: 'customButton') bool customButton,
+    /// [批31] 书架书籍数（契约 §2.3 加法式字段，仅 `getBookSources` 携带；
+    /// Rust 按 `books.origin = bookSourceUrl` 单次 GROUP BY 聚合，过滤
+    /// notShelf 临时书与本地书）。**不参与序列化**（`includeToJson: false`）：
+    /// 源保存「原 JSON 补丁」、用户导出 JSON 与备份均不得携带该派生字段。
+    @JsonKey(name: 'bookshelfCount', includeToJson: false)
+    @Default(0)
+    int bookshelfCount,
   }) = _BookSource;
 
   factory BookSource.fromJson(Map<String, dynamic> json) =>

@@ -112,9 +112,6 @@ class _TocScreenState extends ConsumerState<TocScreen>
   /// 当前搜索关键词（防抖后生效，三 Tab 共用，对齐原版 viewModel.searchKey）
   String _searchKey = '';
 
-  /// 倒序目录（纯本地显示序反转，对齐原版 menu_reverse_toc 语义的展示部分）
-  bool _reverseToc = false;
-
   /// 加载字数开关（本地持久化，对齐原版 AppConfig.tocCountWords）
   bool _loadWordCount = true;
 
@@ -569,6 +566,11 @@ class _TocScreenState extends ConsumerState<TocScreen>
   // ===== 目录展示列表（搜索过滤 + 倒序，保留原始章节 index 供跳转） =====
 
   /// 展示条目：(原始列表位置, 章节)
+  ///
+  /// [批31] 反转组合语义逐字对齐原版 `TocListState`（先 `reverseOrder`
+  /// 数据反转、再 `reverseDisplay` 展示反转）：两项同开 = 两次反转回到
+  /// 原始顺序。条目始终携带**真实章节 index**，因此点击跳转、当前章
+  /// 高亮与进度显示不受展示顺序影响（章节身份保持）。
   List<MapEntry<int, BookChapter>> get _displayEntries {
     final query = _searchKey.trim().toLowerCase();
     var entries = _chapters.asMap().entries.toList();
@@ -577,7 +579,12 @@ class _TocScreenState extends ConsumerState<TocScreen>
           .where((e) => e.value.title.toLowerCase().contains(query))
           .toList();
     }
-    if (_reverseToc) {
+    // ① 数据反转（ReadConfig.reverseToc）
+    if (_book.readConfig?.reverseToc ?? false) {
+      entries = entries.reversed.toList();
+    }
+    // ② 展示反转（ReadConfig.reverseTocDisplay，批31；数据顺序不变）
+    if (_book.readConfig?.reverseTocDisplay ?? false) {
       entries = entries.reversed.toList();
     }
     return entries;
@@ -634,7 +641,20 @@ class _TocScreenState extends ConsumerState<TocScreen>
         ));
       }
       // menu_group_toc：目录 Tab 可见
-      items.add(const PopupMenuItem(value: 'reverseToc', child: Text('倒序目录')));
+      // [批31] 目录反转（ReadConfig.reverseToc，数据反转）与目录显示反转
+      // （ReadConfig.reverseTocDisplay，仅展示反序）为两个独立勾选项：
+      // 对齐原版 `TocListState` 的 reverseOrder → reverseDisplay 组合语义
+      //（先数据反转、再显示反转；双开回到原始顺序）。
+      items.add(CheckedPopupMenuItem(
+        value: 'reverseToc',
+        checked: _book.readConfig?.reverseToc ?? false,
+        child: const Text('倒序目录'),
+      ));
+      items.add(CheckedPopupMenuItem(
+        value: 'reverseTocDisplay',
+        checked: _book.readConfig?.reverseTocDisplay ?? false,
+        child: const Text('目录显示反转'),
+      ));
       items.add(CheckedPopupMenuItem(
         value: 'useReplace',
         // useReplaceRule 存于 ReadConfig（对齐原版 Book.ReadConfig.useReplaceRule）
@@ -675,8 +695,24 @@ class _TocScreenState extends ConsumerState<TocScreen>
         await _loadChapters();
         break;
       case 'reverseToc':
-        // 纯 Dart 本地反转显示序（对齐原版 menu_reverse_toc 展示语义）
-        setState(() => _reverseToc = !_reverseToc);
+        // [批31] 持久化到 ReadConfig.reverseToc（数据反转）；展示层按
+        // 「先数据反转、再显示反转」组合，见 _displayEntries
+        final rtc = _book.readConfig ?? const ReadConfig();
+        await _updateBook(
+          _book.copyWith(readConfig: rtc.copyWith(reverseToc: !rtc.reverseToc)),
+        );
+        break;
+      case 'reverseTocDisplay':
+        // [批31] 目录显示反转（对齐原版 ReadConfig.reverseTocDisplay）：
+        // 仅展示层反序，数据顺序与章节 index 身份不变
+        final rtd = _book.readConfig ?? const ReadConfig();
+        await _updateBook(
+          _book.copyWith(
+            readConfig: rtd.copyWith(
+              reverseTocDisplay: !rtd.reverseTocDisplay,
+            ),
+          ),
+        );
         break;
       case 'useReplace':
         // 接 ReadConfig.useReplaceRule 字段经 BookApi 更新（对齐原版 menu_use_replace）

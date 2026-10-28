@@ -69,11 +69,32 @@ extension _SourceActions on _SourceScreenState {
       case 'group_by_domain':
         setState(() => _groupByDomain = !_groupByDomain);
         break;
+      case 'show_bookshelf_count':
+        // [批31] 显示书籍数量开关（对齐原版 menu_show_source_bookshelf_count：
+        // 勾选态写回 AppConfig.showSourceBookshelfCount，默认关）
+        unawaited(_toggleShowBookshelfCount());
+        break;
       case 'help':
         // 对标原版 showHelp("SourceMBookHelp")
         _showHelpSheet(context);
         break;
     }
+  }
+
+  /// [批31] 切换「显示书籍数量」并持久化偏好
+  ///
+  /// 键名对齐原版 `PreferKey.showSourceBookshelfCount`（默认关）；开启后
+  /// 列表行立即显示已随 `getBookSources` 取回的书架书籍数，无需再发查询。
+  Future<void> _toggleShowBookshelfCount() async {
+    final next = !_showBookshelfCount;
+    try {
+      await ref
+          .read(settingsProvider)
+          .setBoolPref(PrefKeys.showSourceBookshelfCount, next);
+    } catch (_) {
+      // 偏好写入失败仍即时生效本次会话（与原版内存开关一致），下次启动回落
+    }
+    if (mounted) setState(() => _showBookshelfCount = next);
   }
 
   /// 选中所选区间（对标 adapter.checkSelectedInterval）

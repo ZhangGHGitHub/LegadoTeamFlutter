@@ -54,6 +54,7 @@ _$BookSourceImpl _$$BookSourceImplFromJson(Map<String, dynamic> json) =>
       mainJs: json['mainJs'] as String?,
       eventListener: json['eventListener'] as bool? ?? false,
       customButton: json['customButton'] as bool? ?? false,
+      bookshelfCount: (json['bookshelfCount'] as num?)?.toInt() ?? 0,
     );
 
 Map<String, dynamic> _$$BookSourceImplToJson(_$BookSourceImpl instance) =>
