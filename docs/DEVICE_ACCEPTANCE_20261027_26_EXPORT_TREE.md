@@ -212,4 +212,130 @@ bookSource_批25口令源 (1).json」（`11_saved_second.png`）。日志只有�
 | 日志 | `logs/logcat_final2.txt`、`logs/log_chain_final.txt` |
 | 持久化 | `logs/prefs_before_delete.xml`、`logs/prefs_after_final.xml` |
 
+## 八、批26b 审查回修复验（2026-10-28）
+
+> 范围：审查 needs changes（1 P1 + 4 P2 + P3）逐项回修；不改版本号、
+> `CHANGELOG.md`、`assets/updateLog.md`、`REFACTORING_ACTIVE_PLAN.md`。
+> 源码基线：`master` HEAD `d73ed41744` + 本批未提交改动。
+> 证据目录：`tmp_debug/device_acceptance_20261027_export_tree/verify2/`、
+> `tmp_debug/batch26b_red_green/`（`tmp_*` 已被 `.gitignore` 忽略）。
+
+### 8.1 P1-1：SIZE 未知误判失败并删除已写文件（红→绿）
+
+- **根因**：`SaveFileBridge.verifyWritten` 用 `isReadbackSizeValid` 严格校验
+  `COLUMN_SIZE`；SAF 允许 provider 不报大小（null/负数）→ 判失败 →
+  `writeViaTree` 删除刚写成功的文档。
+- **修复**：新增纯函数 `readbackSizeVerdict` / `verifyReadback`：SIZE 为
+  null/负数时降级为 `openInputStream` 全文读取字节数比对 + 首字节校验；
+  只有 SIZE 已知且确实不等才失败。已知相等时仍只校验首 8 字节（性能不变）。
+- **红**：临时把 `readbackSizeVerdict` 的未知分支改回 `MISMATCH`（旧行为），
+  `SaveFileBridgeTest > unknown size with matching content passes readback
+  verification` 失败：`1 test completed, 1 failed`，`AssertionError` at
+  `SaveFileBridgeTest.kt:460`（`batch26b_red_green/p1_red.log`）。
+- **绿**：恢复实现后同一用例通过（`p1_green_after_red.log`，
+  `BUILD SUCCESSFUL`）。
+- **覆盖**：size=null/-1 + 内容/首字节一致 → 成功；全文长度不等、首字节
+  不一致、已知大小不等 → 失败。
+
+### 8.2 P2-1：clearTree 释放持久授权（设备检查）
+
+- **修复**：`clearTree` 在清 prefs 前按记录 URI 调用
+  `releasePersistableUriPermission(READ|WRITE)`（try/catch 记日志）；换目录
+  释放旧授权的逻辑抽为 `releaseTreePermission` 共用。
+- **设备复验**：把记住目录 `Download/legado` 改名（等效删除）后保存，
+  日志链（`verify2/p2_1_clear_tree_release.txt`）：
+
+```
+目录树保存失败（TREE_UNAVAILABLE）：... Missing file for primary:Download/legado ...
+记住的保存目录不可用，清除后重选一次：content://.../tree/primary%3ADownload%2Flegado
+已释放目录持久授权（清除记住目录）：content://.../tree/primary%3ADownload%2Flegado
+已清除记住的保存目录
+```
+
+- **授权对比**：清除前 `dumpsys activity permissions`（UID 10062）持有
+  `legado2` 与 `legado` 两条 persisted grant；清除后仅剩历史 `legado2`
+  一条，`legado` 已被释放。随后恢复目录（`mv` 回原名）。
+- **说明**：本 ROM 的 `dumpsys uri_grants` 输出为空（0 字节，已留证
+  `verify2/dumpsys_uri_grants_after_restart.txt`），故以同源的
+  `dumpsys activity permissions` 中 `persisted=0x3` 记录作为授权证据。
+  历史 `legado2` grant 是本批修复前的累积，已无记录指向，无法按 URI 释放；
+  清除应用数据可一并回收，不影响后续行为。
+
+### 8.3 P2-2：take flags 与只读目录
+
+- **修复**：`persistTree` 改为接收系统回传的 `Intent.flags`，经纯函数
+  `persistableFlags` 仅取 `READ|WRITE`；`treeGrantErrorCode` 要求必须含
+  WRITE。无 WRITE 或 `takePersistableUriPermission` 失败时**不写 prefs**、
+  回 `TREE_NOT_WRITABLE`，中文「该文件夹不可写，请换一个」（Kotlin
+  `reasonOf` 与 Dart `errorReasons` 同文案）。
+- **单测**：`persistable flags only keep read and write grants`、
+  `tree grant requires write permission` 覆盖只读 flags、0 flags、READ|WRITE
+  三种输入；无 WRITE 返回 `TREE_NOT_WRITABLE`。
+- **设备**：回修后首次选择目录成功持久化（`persisted=0x3`），重启后直接
+  保存成功（见 8.4），证明正常 flags 路径未被误伤。
+
+### 8.4 P2-3：进程重启后仍记住目录（设备复验）
+
+| 步骤 | 证据 |
+|---|---|
+| 保存一次（重启前）：pid **7927**，落盘 `bookSource_批25口令源 (4).json` 1710 B | `verify2/p2_3_restart_pid.txt` |
+| `am force-stop` 后 pid 为空，重启后新 pid **8190** | `verify2/p2_3_restart_pid.txt` |
+| 重启后 Sheet 仍显示「保存到「下载/legado」」，未弹目录选择器 | `verify2/07_after_restart_sheet.png` |
+| 直接保存：pid **8190** 写入 `(5).json` 1710 B；`topResumedActivity` 始终为本应用 | `verify2/p2_3_second_save.txt`、`08_after_second_save.png` |
+| 日志：`目录树建文件` → `目录树写入成功 ... display=下载/legado` | `verify2/p2_3_second_save.txt` |
+| 内容校验：宿主 `json.loads` 通过（list，len=1，`bookSourceName=批25口令源`） | `verify2/d2_after_restart.json` |
+| 持久授权：UID 10062 `mode=0x3 ... persisted=0x3 persistedCreate=1793120523036` | `verify2/uri_grants_after_restart.txt` |
+
+结论：目录记录在进程重启后仍生效，新 pid 不弹选择器直接写入成功。
+
+### 8.5 P2-4：createDocument 成功后写失败清理
+
+- **设备侧限制**：本 ROM 的 ExternalStorageProvider 写流正常，FUSE 下
+  `chmod` 不生效，无法构造「create 成功、openOutputStream 抛异常」且不
+  破坏设备的场景；自定义 DocumentsProvider/Instrumentation 成本高，本批
+  未引入。
+- **已覆盖**：纯逻辑用例 `created document is cleaned when write stream
+  throws` 锁定 `shouldDeleteAfterFailure(opened=false, preSize=0)=true`
+  （create 刚建 0 字节文档）与 `preSize>0` 不删；代码路径
+  `writeViaTree` catch → `created?.let { deleteDocument }` 未改动。
+- **登记**：设备级「create 成功后写失败 -> 文档被删且无 0 字节」列为未覆盖
+  项，留待具备可注入失败 provider 的环境补证；本批以纯逻辑 + 原 §3.6
+  （create 阶段失败无 0 字节）作为回归护栏。
+
+### 8.6 门禁与测试（本批）
+
+| 项 | 结果 |
+|---|---|
+| `flutter analyze` | **No issues found!**（8.1s） |
+| `flutter test`（全量） | **2964 通过，1 跳过**（All tests passed!） |
+| Android JVM | `:app:testDebugUnitTest --tests "io.legado.flutter.SaveFileBridgeTest"` → **49 例全绿** |
+| APK 构建 | `flutter build apk --release` 成功（Gradle 94.9s，188.0MB APK） |
+| APK 大小 / sha256 | 197,093,216 B / `02508295e49591ec60e871301ba85c87c1902cb5b7f799dbf75ef9f5ab355605` |
+| 安装 | `adb install -r` → `Success: streamed 197093216 bytes` |
+| 设备版本 | versionName **2.0.401** / versionCode **402**（`verify2/version_info.txt`） |
+| 0 字节对比 | 11 个，与本批前清单 `diff` **为空**（`verify2/zero_after_all.txt`） |
+
+新增/更新用例：
+- Kotlin `SaveFileBridgeTest`：P1-1 读回降级（3 例）、P2-2 flags（2 例）、
+  P2-4 清理（1 例）、外置卷/Downloads 子目录展示（2 例）、
+  `TREE_NOT_WRITABLE` 中文映射（1 例）。
+- Dart：`test/unit/file_save_error_codes_test.dart`（读取 Kotlin 源逐条
+  比对错误码表）；`test/widget/export_file_sheet_test.dart`（
+  `displayPath` 缺失用「已选文件夹」、失败面板「改用系统另存对话框」
+  透传 `useTree=false`）。
+
+### 8.7 P3 低成本项
+
+1. `createDocument` 返回本次新建文档的假设已写入 Kotlin `writeViaTree`
+   注释与 Dart `FileSaveChannel.saveFile` 契约注释；
+2. `dispose` 保守复位 `writeInFlight` 并注释迟到回调幂等；
+3. 旧 `ACTION_CREATE_DOCUMENT` 后台写线程也置 `writeInFlight`，
+   `isBusy()` 口径统一（拒绝并发另存）；
+4. 保存失败面板新增「改用系统另存对话框」（`useTree=false`）入口；
+5. `displayPath` 缺失时副标题显示「已选文件夹」，不再回显裸 URI；
+6. `treeDisplayPath` 增补外置卷子目录、`Downloads` 非标准目录单测；
+7. Kotlin `reasonOf` 与 Dart `errorReasons` 通过源码表比对测试保证一致。
+
 编写者：编码代理（Android SAF 目录树另存）｜ 2026-10-27
+批26b 回修：编码代理（SAF 目录树审查回修）｜ 2026-10-28
+
