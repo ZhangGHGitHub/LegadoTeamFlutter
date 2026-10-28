@@ -1040,5 +1040,29 @@ void main() {
       expect(find.text('上传成功'), findsOneWidget);
       expect(find.text('复制口令'), findsNothing);
     });
+
+    // 批25b P3-3：口令入口的两条负向分支
+    testWidgets('批25b：上传成功但 URL 不可编码 → 不展示复制口令', (tester) async {
+      // 含空格：Java URI / canEncode 均拒绝，入口必须隐藏
+      api.uploadResult = 'https://download.example/a b.json';
+      await openSheet(tester, passphraseType: SourcePassphraseType.bookSource);
+
+      await tester.tap(find.text('上传直链'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('上传成功'), findsOneWidget);
+      expect(find.text('复制口令'), findsNothing);
+    });
+
+    testWidgets('批25b：上传失败 → 不展示复制口令入口', (tester) async {
+      api.uploadError = const BridgeError(message: '上传失败,真实原因');
+      await openSheet(tester, passphraseType: SourcePassphraseType.bookSource);
+
+      await tester.tap(find.text('上传直链'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('上传失败'), findsOneWidget);
+      expect(find.text('复制口令'), findsNothing);
+    });
   });
 }

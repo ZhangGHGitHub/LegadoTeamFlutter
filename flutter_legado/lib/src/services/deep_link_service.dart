@@ -13,6 +13,7 @@ import '../utils/legado_deep_link.dart';
 import '../utils/shared_text.dart';
 import '../widgets/open_url_confirm_dialog.dart';
 import '../widgets/passphrase_import.dart';
+import 'source_share_passphrase.dart';
 
 /// 监听 Android `legado://` / `yuedu://` 深链并导航到关联导入页；
 /// P1-4 起同时消费外部书籍文件 VIEW intent（content:// / file://）
@@ -36,6 +37,17 @@ class DeepLinkService {
   /// JSON 内容嗅探器（测试注入点；默认走 [LegadoDeepLink.looksLikeJsonFile]
   /// 异步读盘。widget 测试的 fake async 不推进真实 IO，可注入纯内存判定）
   Future<bool> Function(String path)? jsonSniffer;
+
+  /// 冷启动闪屏是否仍在栈顶（由 app.dart 注入；null 视为立即可用）
+  ///
+  /// 冷启动固定经 `/welcome` 闪屏，`pushReplacementNamed(home)` 替换的是
+  /// **当时栈顶路由**——若分享导入框在闪屏之上弹出，会被一并替换掉（与
+  /// 崩溃弹窗 P2-13b 同类竞态）。分享文本弹窗前先等闪屏退出。
+  bool Function()? isSplashVisible;
+
+  /// 闪屏等待上限（帧）：约 90 帧 ≈ 1.5s，覆盖闪屏最大 800ms 延时；
+  /// 超时仍强制尝试展示，避免异常滞留时静默丢弃分享内容。
+  static const int _maxSplashWaitFrames = 90;
 
   /// P1-4：本地书籍导入执行器（由 app.dart 注入 bookshelfNotifier 闭包，
   /// 服务层不依赖 Riverpod；对齐 [attach] 的回调装配模式）
@@ -142,36 +154,100 @@ class DeepLinkService {
 
   /// 批25：处理外部分享文本（ACTION_SEND / ACTION_PROCESS_TEXT）
   ///
-  /// 分流顺序：分享口令 → 口令导入；legado:// / yuedu:// → 关联导入；
-  /// http(s) URL → 外跳确认后应用内浏览器；JSON → 关联导入；其余提示不支持。
-  Future<void> handleSharedText(String raw) async {
+  /// 分流顺序：超限/超深预检 → 分享口令 → legado:// / yuedu:// →
+  /// http(s) URL → JSON → 其余提示不支持。
+  ///
+  /// 批25b P3-4：口令解码出的 URL 与导入深链的 `src` 都可能指向任意外部
+  /// 地址，SEND 来源不可信——先复用 [showOpenUrlConfirmDialog] 让用户确认，
+  /// 确认前不发起任何网络拉取（关联导入对话框打开即自动拉取）。
+  /// HTTP 链接本身也先确认再进应用内浏览器（无确认不联网）。
+  Future<void> handleSharedText(String raw) =>
+      _handleSharedTextWhenUiReady(raw, 0);
+
+  /// [handleSharedText] 的就绪等待实现：Navigator 未装配或闪屏未退出时
+  /// 逐帧重试，避免弹窗被闪屏替换（见 [isSplashVisible]）。
+  Future<void> _handleSharedTextWhenUiReady(String raw, int frame) async {
     final text = raw.trim();
     if (text.isEmpty) return;
     if (_lastHandledShared == text) return;
     final nav = navigatorKey?.currentState;
+    final splashVisible = isSplashVisible?.call() ?? false;
     if (nav == null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        handleSharedText(raw);
+        _handleSharedTextWhenUiReady(raw, frame + 1);
       });
+      return;
+    }
+    if (splashVisible && frame < _maxSplashWaitFrames) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _handleSharedTextWhenUiReady(raw, frame + 1);
+      });
+      // addPostFrameCallback 本身不排帧：闪屏期若无动画在跑，须显式请求
+      // 下一帧，否则等待链会停摆到下一次用户交互才继续
+      WidgetsBinding.instance.scheduleFrame();
       return;
     }
     _lastHandledShared = text;
     try {
       switch (classifySharedText(text)) {
         case SharedTextKind.passphrase:
-          await importPassphraseText(nav.context, text);
+          await _confirmPassphraseThenImport(text);
         case SharedTextKind.importScheme:
-          await handleUrl(text);
+          await _confirmImportSchemeThenImport(text);
         case SharedTextKind.httpUrl:
           await _confirmOpenSharedUrl(text);
         case SharedTextKind.json:
           await showAssociationImportDialog(nav.context, text: text);
+        case SharedTextKind.tooLarge:
+          await _showSharedRejected(
+            context: nav.context,
+            title: '分享内容过大',
+            message: '分享内容超过 ${maxSharedTextBytes ~/ (1024 * 1024)} MiB，'
+                '无法解析导入，请改用文件导入。',
+          );
+        case SharedTextKind.tooDeepJson:
+          await _showSharedRejected(
+            context: nav.context,
+            title: 'JSON 层级过深',
+            message: '分享的 JSON 嵌套超过 $maxJsonDepth 层，无法安全解析，'
+                '请确认来源后重试。',
+          );
         case SharedTextKind.unsupported:
           await _showSharedUnsupported(nav.context);
       }
     } finally {
       _lastHandledShared = null;
     }
+  }
+
+  /// 分享口令：先确认解码出的目标 URL，再进入关联导入（打开即拉取）
+  Future<void> _confirmPassphraseThenImport(String text) async {
+    final result = SourceSharePassphrase.decode(text);
+    if (result is SourcePassphraseSuccess) {
+      final nav = navigatorKey?.currentState;
+      if (nav == null) return;
+      final ok = await showOpenUrlConfirmDialog(
+        nav.context,
+        url: result.value.url,
+      );
+      if (!ok) return;
+    }
+    // 解码失败分支仍交给 importPassphraseText 给出明确中文提示
+    final current = navigatorKey?.currentState;
+    if (current == null || !current.mounted) return;
+    await importPassphraseText(current.context, text);
+  }
+
+  /// 导入深链：先确认 `src` 目标地址，再进入关联导入（打开即拉取）
+  Future<void> _confirmImportSchemeThenImport(String url) async {
+    final src = LegadoDeepLink.tryParse(url)?.srcUrl ?? '';
+    if (src.isNotEmpty) {
+      final nav = navigatorKey?.currentState;
+      if (nav == null) return;
+      final ok = await showOpenUrlConfirmDialog(nav.context, url: src);
+      if (!ok) return;
+    }
+    await handleUrl(url);
   }
 
   /// 分享的 http(s) 链接：先走既有外跳确认，确认后进入应用内浏览器
@@ -192,14 +268,25 @@ class DeepLinkService {
 
   /// 分享内容无法识别时的明确提示
   Future<void> _showSharedUnsupported(BuildContext context) {
+    return _showSharedRejected(
+      context: context,
+      title: '不支持的内容',
+      message: '分享内容不是分享口令、http(s) 链接、legado:// 导入链接'
+          '或可导入的 JSON。',
+    );
+  }
+
+  /// 分享文本被拒绝（超限 / JSON 超深）时的明确提示
+  Future<void> _showSharedRejected({
+    required BuildContext context,
+    required String title,
+    required String message,
+  }) {
     return showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('不支持的内容'),
-        content: const Text(
-          '分享内容不是分享口令、http(s) 链接、legado:// 导入链接'
-          '或可导入的 JSON。',
-        ),
+        title: Text(title),
+        content: Text(message),
         actions: [
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(),

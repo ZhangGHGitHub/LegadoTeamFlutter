@@ -61,5 +61,41 @@ void main() {
       expect(classifySharedText(''), SharedTextKind.unsupported);
       expect(classifySharedText('   '), SharedTextKind.unsupported);
     });
+
+    // 批25b P3-2：超长文本（按 UTF-8 字节）拒绝解析
+    test('超过 1 MiB → tooLarge，恰好 1 MiB 仍进入常规分流', () {
+      final over = String.fromCharCodes(
+        List<int>.filled(maxSharedTextBytes + 1, 0x61),
+      );
+      expect(classifySharedText(over), SharedTextKind.tooLarge);
+
+      final exact = String.fromCharCodes(
+        List<int>.filled(maxSharedTextBytes, 0x61),
+      );
+      expect(classifySharedText(exact), isNot(SharedTextKind.tooLarge));
+
+      // 多字节字符按 UTF-8 计：35 万个汉字 ≈ 1.05 MiB
+      final chinese = String.fromCharCodes(List<int>.filled(350000, 0x4E2D));
+      expect(classifySharedText(chinese), SharedTextKind.tooLarge);
+    });
+
+    // 批25b P3-2：超深 JSON 拒绝（防御 jsonDecode 递归栈溢出）
+    test('JSON 嵌套深度：64 层放行、65 层拒绝', () {
+      String nested(int depth) =>
+          '${List<String>.filled(depth, '[').join()}'
+          '${List<String>.filled(depth, ']').join()}';
+
+      expect(classifySharedText(nested(maxJsonDepth)), SharedTextKind.json);
+      expect(
+        classifySharedText(nested(maxJsonDepth + 1)),
+        SharedTextKind.tooDeepJson,
+      );
+    });
+
+    test('字符串字面量内的括号不计入 JSON 深度', () {
+      final brackets = List<String>.filled(maxJsonDepth + 10, '[').join();
+      final json = '{"a":"$brackets"}';
+      expect(classifySharedText(json), SharedTextKind.json);
+    });
   });
 }

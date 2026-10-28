@@ -5,6 +5,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_legado/src/providers/association/association_notifier.dart';
 import 'package:flutter_legado/src/services/source_share_passphrase.dart';
 import 'package:flutter_legado/src/widgets/passphrase_import.dart';
@@ -137,6 +138,53 @@ void main() {
     expect(notifier.bootstrappedUrl, isNull);
     expect(find.text('口令已过期'), findsOneWidget);
     expect(find.textContaining('请联系分享者重新生成'), findsOneWidget);
+  });
+
+  testWidgets('剪贴板为空 → 「剪贴板为空」提示且不进入导入', (tester) async {
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.getData') {
+          // Flutter 侧 `result['text'] as String` 不接受 null：空剪贴板以
+          // 平台调用整体返回 null 表达（Clipboard.getData → ClipboardData?）
+          return null;
+        }
+        return null;
+      },
+    );
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger
+          .setMockMethodCallHandler(SystemChannels.platform, null);
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          associationNotifierProvider.overrideWith(() => notifier),
+        ],
+        child: MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => Center(
+                child: FilledButton(
+                  key: const Key('importFromClipboard'),
+                  onPressed: () {
+                    unawaited(importPassphraseFromClipboard(context));
+                  },
+                  child: const Text('从剪贴板导入'),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const Key('importFromClipboard')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('剪贴板为空'), findsOneWidget);
+    expect(find.textContaining('请先复制分享口令'), findsOneWidget);
+    expect(notifier.bootstrappedUrl, isNull);
   });
 
   test('7 类口令 code 全部映射到 ImportType', () {

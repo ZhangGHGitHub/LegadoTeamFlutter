@@ -235,7 +235,11 @@ class _LegadoAppState extends ConsumerState<LegadoApp> {
     // P1-11：监听系统 legado:// / yuedu:// 深链 → Association；
     // P1-4：注入本地书籍导入器，消费外部书籍文件 VIEW intent（content://）
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      DeepLinkService.instance.attach(
+      final deepLink = DeepLinkService.instance;
+      deepLink.isSplashVisible = () =>
+          !_topRouteWatcher.didObserveTopChange ||
+          _topRouteWatcher.topRouteName == AppRoutes.welcome;
+      deepLink.attach(
         PlatformBridgeService.navigatorKey,
         importLocalBook: (path) =>
             ref.read(bookshelfNotifierProvider.notifier).importLocalBook(path),
