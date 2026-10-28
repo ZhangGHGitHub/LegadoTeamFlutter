@@ -11,6 +11,8 @@ import '../l10n/app_strings.dart';
 import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/reader/reader_notifier.dart';
+import '../services/search_content_options.dart';
+import '../services/settings_service.dart';
 import '../widgets/app_progress_indicator.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/pill_divider.dart';
@@ -28,27 +30,12 @@ class _ContentMatch {
   });
 }
 
-/// 正文搜索选项（对齐原版 `SearchContentViewModel.companion`：进程内静态，
-/// 关闭页面重进后保留上次选择；原版亦不做持久化）
-class _SearchContentOptions {
-  _SearchContentOptions._();
-
-  /// 搜索前是否应用替换净化规则（原版 replaceEnabled，默认 false）
-  static bool useReplace = false;
-
-  /// 关键词是否按正则解释（原版 regexReplace，默认 false）
-  static bool useRegex = false;
-
-  /// 搜索范围（[C4 双基准对齐] 取重构版 `SearchContentPrefsPort` 三档语义）：
-  /// - [scopeCurrent]：仅当前章；
-  /// - [scopeCached]：本书已缓存章节（+当前章，参考版「仅本书」范围语义）；
-  /// - [scopeNetwork]：本书全部章节（未缓存的联网抓取，我方原有行为=默认）。
-  static String scope = scopeNetwork;
-
-  static const scopeCurrent = 'current';
-  static const scopeCached = 'current_and_cached';
-  static const scopeNetwork = 'current_and_network';
-}
+/// 正文搜索三档范围取值别名（默认 = 仅本书已缓存，对齐原版/参考版口径）
+///
+/// 具体选项读写见 `services/search_content_options.dart`（批33 持久化）。
+const _scopeCurrent = SettingsService.searchScopeCurrent;
+const _scopeCached = SettingsService.searchScopeCached;
+const _scopeNetwork = SettingsService.searchScopeNetwork;
 
 /// 在正文中定位命中区间（搜索与高亮共用，纯函数便于单测）
 ///
@@ -106,12 +93,19 @@ class SearchContentScreen extends ConsumerStatefulWidget {
   // 对标原版 searchContentQuery 预填 + 自动搜索） — Qoder
   final String? initialQuery;
 
+  /// 搜索选项实例（测试注入用；省略时页面自建）
+  ///
+  /// 无论是否注入，页面 initState 都会调用 [SearchContentOptions.load]
+  /// 从持久化刷新，保证 SharedPreferences 为最终口径。
+  final SearchContentOptions? options;
+
   const SearchContentScreen({
     super.key,
     this.book,
     this.bookUrl = '',
     this.bookName = '',
     this.initialQuery,
+    this.options,
   });
 
   /// 获取有效的 bookUrl
@@ -139,6 +133,12 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
   /// 搜索代号，用于丢弃过期搜索
   int _generation = 0;
 
+  /// 搜索选项（批33 持久化：范围默认「仅本书（已缓存）」+ 替换/正则）
+  late final SearchContentOptions _options;
+
+  /// 选项加载完成信号：初始查询词须等持久化值就位后再发起搜索
+  late final Future<void> _optionsReady;
+
   static const _maxResults = 200;
 
   /// 单章命中上限（防正则宽泛匹配在单章内炸出上万条）
@@ -148,12 +148,16 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
   @override
   void initState() {
     super.initState();
+    _options = widget.options ?? SearchContentOptions();
+    _optionsReady = _options.load();
     _loadHistory();
     // 初始查询词：预填输入框并在首帧后自动触发搜索
+    //（先等选项加载完成，避免用默认范围搜完后立刻被持久化值改写）
     final q = widget.initialQuery;
     if (q != null && q.trim().isNotEmpty) {
       _controller.text = q;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await _optionsReady;
         if (mounted) unawaited(_search(q));
       });
     }
@@ -180,6 +184,9 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
   Future<void> _search(String raw) async {
     final query = raw.trim();
     if (query.isEmpty) return;
+    // [批33] 搜索前确保持久化选项已就位（手输/点击搜索可能早于异步加载）
+    await _optionsReady;
+    if (!mounted) return;
 
     final api = ref.read(bookApiProvider);
     final gen = ++_generation;
@@ -203,7 +210,7 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
       setState(() => _totalChapters = chapters.length);
 
       // 正则模式：非法表达式按原版语义静默返回空结果（原版 try/catch 后直接返回）
-      if (_SearchContentOptions.useRegex) {
+      if (_options.useRegex) {
         var valid = true;
         try {
           RegExp(query);
@@ -219,10 +226,10 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
       }
       // 搜索范围准备：仅当前章 → 取阅读器当前章索引；
       // 本书已缓存 → 取该书的已缓存章节 URL 集合（cacheListCachedChapterUrls）
-      final scope = _SearchContentOptions.scope;
+      final scope = _options.scope;
       final currentIndex = ref.read(readerNotifierProvider).currentChapterIndex;
       Set<String>? cachedUrls;
-      if (scope == _SearchContentOptions.scopeCached) {
+      if (scope == _scopeCached) {
         try {
           cachedUrls = (await api.listCachedChapterUrls(widget.effectiveBookUrl))
               .toSet();
@@ -237,10 +244,10 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
         final chapter = chapters[i];
         // 范围过滤（对齐重构版 search_content_page 的 i != durChapterIndex
         // continue / 已缓存判定语义）
-        if (scope == _SearchContentOptions.scopeCurrent && i != currentIndex) {
+        if (scope == _scopeCurrent && i != currentIndex) {
           continue;
         }
-        if (scope == _SearchContentOptions.scopeCached &&
+        if (scope == _scopeCached &&
             i != currentIndex &&
             !(cachedUrls?.contains(chapter.url) ?? false)) {
           continue;
@@ -249,7 +256,7 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
           // [C4 对齐 | Qoder UI] 正文口径随「替换」开关切换（对齐原版
           // ContentProcessor.getContent(useReplace = replaceEnabled)）：
           // 默认关闭替换规则，避免被替换/删除的词搜不到
-          final content = _SearchContentOptions.useReplace
+          final content = _options.useReplace
               ? await api.getChapterContent(
                   widget.effectiveBookUrl, chapter.index)
               : await api.getChapterContentRaw(
@@ -259,7 +266,7 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
           final hits = findContentHits(
             content,
             query,
-            useRegex: _SearchContentOptions.useRegex,
+            useRegex: _options.useRegex,
             maxHits: _maxInChapter,
           );
 
@@ -322,7 +329,7 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
     final ranges = findContentHits(
       text,
       query,
-      useRegex: _SearchContentOptions.useRegex,
+      useRegex: _options.useRegex,
       maxHits: text.length,
     );
 
@@ -379,38 +386,38 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
           // 替换 / 正则 两项可勾选，原版为 overflow 菜单 app:showAsAction="never"）
           PopupMenuButton<String>(
             tooltip: '搜索选项',
-            onSelected: (v) {
+            onSelected: (v) async {
+              // [批33] 先等持久化加载完成，避免用户早于加载的选择被覆盖
+              await _optionsReady;
+              if (!mounted) return;
               setState(() {
                 switch (v) {
                   case 'replace':
-                    _SearchContentOptions.useReplace =
-                        !_SearchContentOptions.useReplace;
+                    _options.useReplace = !_options.useReplace;
                   case 'regex':
-                    _SearchContentOptions.useRegex =
-                        !_SearchContentOptions.useRegex;
+                    _options.useRegex = !_options.useRegex;
                   case 'scope_current':
-                    _SearchContentOptions.scope =
-                        _SearchContentOptions.scopeCurrent;
+                    _options.scope = _scopeCurrent;
                   case 'scope_cached':
-                    _SearchContentOptions.scope =
-                        _SearchContentOptions.scopeCached;
+                    _options.scope = _scopeCached;
                   case 'scope_network':
-                    _SearchContentOptions.scope =
-                        _SearchContentOptions.scopeNetwork;
+                    _options.scope = _scopeNetwork;
                 }
               });
+              // [批33] 选择即持久化（重进页面/重启应用保持上次选择）
+              unawaited(_options.save());
               // 已有结果时立即按新选项重搜（旧搜索经 _generation 作废）
               if (_query.isNotEmpty) unawaited(_search(_query));
             },
             itemBuilder: (_) => [
               CheckedPopupMenuItem(
                 value: 'replace',
-                checked: _SearchContentOptions.useReplace,
+                checked: _options.useReplace,
                 child: const Text('替换'),
               ),
               CheckedPopupMenuItem(
                 value: 'regex',
-                checked: _SearchContentOptions.useRegex,
+                checked: _options.useRegex,
                 child: const Text('正则'),
               ),
               const PillMenuDivider(),
@@ -418,20 +425,17 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
               //（仅当前章 / 本书已缓存 / 本书含网络），参考版「仅本书」对应已缓存档
               CheckedPopupMenuItem(
                 value: 'scope_current',
-                checked: _SearchContentOptions.scope ==
-                    _SearchContentOptions.scopeCurrent,
+                checked: _options.scope == _scopeCurrent,
                 child: const Text('仅当前章'),
               ),
               CheckedPopupMenuItem(
                 value: 'scope_cached',
-                checked: _SearchContentOptions.scope ==
-                    _SearchContentOptions.scopeCached,
+                checked: _options.scope == _scopeCached,
                 child: const Text('仅本书（已缓存）'),
               ),
               CheckedPopupMenuItem(
                 value: 'scope_network',
-                checked: _SearchContentOptions.scope ==
-                    _SearchContentOptions.scopeNetwork,
+                checked: _options.scope == _scopeNetwork,
                 child: const Text('本书 + 网络'),
               ),
             ],
@@ -642,26 +646,26 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
     );
   }
 
-  /// [PARITY C1-C2] 「仅本书」范围胶囊（参考 13 量化：72×39dp 深色实底，
-  /// 右侧 18dp 边距）：复用范围三档 [C4 双基准对齐] 的 scope_cached 档，
-  /// 与 ⋮ 菜单「仅本书（已缓存）」项共享同一静态选择，点击切换并重搜
+  /// [PARITY C1-C2] 「仅本书」胶囊（参考 13 量化：72×39dp 深色实底）
+  ///
+  /// [批33 | 胶囊解绑] 参考版此胶囊只控制**搜索历史**的按书过滤，不改变
+  /// 正文搜索范围；我方此前误把它绑到 scope_cached/scope_network，同一点击
+  /// 既改历史意图又改搜索范围（语义串线）。按书搜索历史需要搜索结果带
+  /// bookName 维度（现 `getSearchHistory` 仅返回 word/usage/lastUseTime，
+  /// 无按书过滤参数），本批先解绑为「仅提示」并保留视觉位；范围统一由
+  /// ⋮ 菜单三档控制。按书搜索历史登记为后续项（契约 §2.46 注）。
   Widget _buildScopeChip() {
-    final selected =
-        _SearchContentOptions.scope == _SearchContentOptions.scopeCached;
-    // 参考 13 深色实底（(82,96,112)）+ 白字；未选=同尺寸描边态
+    // 参考 13 深色实底（(82,96,112)）+ 白字；解绑后不再表达范围选中态，
+    // 固定描边态（避免误导用户以为当前范围=仅本书）
     final fill = Color(0xFF526070);
     return Material(
       color: Colors.transparent,
       child: InkWell(
         borderRadius: BorderRadius.circular(19),
         onTap: () {
-          setState(() {
-            _SearchContentOptions.scope = selected
-                ? _SearchContentOptions.scopeNetwork
-                : _SearchContentOptions.scopeCached;
-          });
-          // 已有结果时立即按新范围重搜（与 ⋮ 菜单选项同语义）
-          if (_query.isNotEmpty) unawaited(_search(_query));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('按书搜索历史待后续版本支持')),
+          );
         },
         child: SizedBox(
           width: 72,
@@ -669,18 +673,13 @@ class _SearchContentScreenState extends ConsumerState<SearchContentScreen> {
           child: Container(
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: selected ? fill : Colors.transparent,
+              color: Colors.transparent,
               borderRadius: BorderRadius.circular(19),
-              border: selected
-                  ? null
-                  : Border.all(color: fill, width: 1),
+              border: Border.all(color: fill, width: 1),
             ),
             child: Text(
               '仅本书',
-              style: TextStyle(
-                fontSize: 14,
-                color: selected ? Colors.white : fill,
-              ),
+              style: TextStyle(fontSize: 14, color: fill),
             ),
           ),
         ),

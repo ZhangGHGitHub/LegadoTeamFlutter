@@ -21,6 +21,26 @@ class SettingsService {
   static const _keyLocale = 'app_locale';
   static const _keyBookshelfTabPosition = 'bookshelf_tab_position';
   static const _keyBookshelfLayout = 'bookshelf_layout'; // true=网格 false=列表
+  // [批33 | 正文搜索选项持久化] 键名前缀独立（不占用原版业务表键）：
+  // 原版把搜索范围/替换/正则放在 ViewModel 进程内静态（关页面重进保留、
+  // 重启丢失），本批按裁决落 SharedPreferences，重进/重启均保持。
+  static const _keySearchContentUseReplace = 'search_content_use_replace';
+  static const _keySearchContentUseRegex = 'search_content_use_regex';
+  static const _keySearchContentScope = 'search_content_scope';
+
+  /// 正文搜索范围档位（对齐 C4 双基准三档；取值同时作为持久化字符串）
+  static const searchScopeCurrent = 'current';
+  static const searchScopeCached = 'current_and_cached';
+  static const searchScopeNetwork = 'current_and_network';
+
+  /// 默认范围 = 仅本书（已缓存），对齐原版/参考版「只搜已缓存」口径
+  static const searchScopeDefault = searchScopeCached;
+
+  static const Set<String> _searchScopes = {
+    searchScopeCurrent,
+    searchScopeCached,
+    searchScopeNetwork,
+  };
   // [UI-fix v2.0.3 | 2026-08-08] 删除提醒/目录页加载字数开关（对齐原版
   // LocalConfig.deleteBookAlert / AppConfig.tocCountWords） — Qoder
   static const _keyDeleteBookAlert = 'delete_book_alert';
@@ -143,6 +163,73 @@ class SettingsService {
       await prefs.setString(_keyFlipModeName, name);
     } catch (e) {
       debugPrint('SettingsService.setFlipModeName 异常: $e');
+    }
+  }
+
+  // ===== 正文搜索选项（批33） =====
+
+  /// 搜索前是否应用替换净化规则（默认 false）
+  Future<bool> getSearchContentUseReplace() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keySearchContentUseReplace) ?? false;
+    } catch (e) {
+      debugPrint('SettingsService.getSearchContentUseReplace 异常: $e');
+      return false;
+    }
+  }
+
+  Future<void> setSearchContentUseReplace(bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keySearchContentUseReplace, value);
+    } catch (e) {
+      debugPrint('SettingsService.setSearchContentUseReplace 异常: $e');
+    }
+  }
+
+  /// 关键词是否按正则解释（默认 false）
+  Future<bool> getSearchContentUseRegex() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keySearchContentUseRegex) ?? false;
+    } catch (e) {
+      debugPrint('SettingsService.getSearchContentUseRegex 异常: $e');
+      return false;
+    }
+  }
+
+  Future<void> setSearchContentUseRegex(bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keySearchContentUseRegex, value);
+    } catch (e) {
+      debugPrint('SettingsService.setSearchContentUseRegex 异常: $e');
+    }
+  }
+
+  /// 搜索范围（三档；非法/缺失回退默认「仅本书（已缓存）」）
+  Future<String> getSearchContentScope() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_keySearchContentScope);
+      return raw != null && _searchScopes.contains(raw)
+          ? raw
+          : searchScopeDefault;
+    } catch (e) {
+      debugPrint('SettingsService.getSearchContentScope 异常: $e');
+      return searchScopeDefault;
+    }
+  }
+
+  /// 写入搜索范围（非法档位忽略，避免脏值进入持久化）
+  Future<void> setSearchContentScope(String scope) async {
+    if (!_searchScopes.contains(scope)) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_keySearchContentScope, scope);
+    } catch (e) {
+      debugPrint('SettingsService.setSearchContentScope 异常: $e');
     }
   }
 
