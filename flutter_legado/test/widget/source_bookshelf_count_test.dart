@@ -18,7 +18,8 @@ import 'package:flutter_legado/src/models/book_source.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
 import 'package:flutter_legado/src/screens/source_screen.dart';
 import 'package:flutter_legado/src/services/mock_book_api.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart' hide Provider, ChangeNotifierProvider;
+import 'package:flutter_riverpod/flutter_riverpod.dart'
+    hide Provider, ChangeNotifierProvider;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -43,9 +44,9 @@ void main() {
   });
 
   Widget wrap(Widget child) => UncontrolledProviderScope(
-        container: container,
-        child: MaterialApp(home: child),
-      );
+    container: container,
+    child: MaterialApp(home: child),
+  );
 
   Future<void> pumpSourceScreen(WidgetTester tester) async {
     await tester.pumpWidget(wrap(const SourceScreen()));
@@ -66,10 +67,10 @@ void main() {
     await pumpSourceScreen(tester);
 
     expect(find.text('计数测试源'), findsOneWidget);
-    expect(find.text('2 本'), findsNothing);
+    expect(find.text('书架：2 本'), findsNothing);
   });
 
-  testWidgets('菜单开启后显示「N 本」并持久化偏好', (tester) async {
+  testWidgets('菜单开启后显示「书架：N 本」并持久化偏好', (tester) async {
     await pumpSourceScreen(tester);
 
     await toggleShowCount(tester);
@@ -80,10 +81,10 @@ void main() {
           of: find.text('计数测试源'),
           matching: find.byType(InkWell),
         ),
-        matching: find.text('2 本'),
+        matching: find.text('书架：2 本'),
       ),
       findsOneWidget,
-      reason: '开启后该源行应显示 2 本',
+      reason: '开启后该源行应显示「书架：2 本」',
     );
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool(PrefKeys.showSourceBookshelfCount), isTrue);
@@ -92,21 +93,21 @@ void main() {
   testWidgets('再次关闭后隐藏并写回 false', (tester) async {
     await pumpSourceScreen(tester);
     await toggleShowCount(tester);
-    expect(find.text('2 本'), findsOneWidget);
+    expect(find.text('书架：2 本'), findsOneWidget);
 
     await toggleShowCount(tester);
 
-    expect(find.text('2 本'), findsNothing);
+    expect(find.text('书架：2 本'), findsNothing);
     final prefs = await SharedPreferences.getInstance();
     expect(prefs.getBool(PrefKeys.showSourceBookshelfCount), isFalse);
   });
 
-  testWidgets('启动时偏好为开：首帧即显示书籍数', (tester) async {
+  testWidgets('启动时偏好为开：加载完成后显示书籍数', (tester) async {
     SharedPreferences.setMockInitialValues({
       PrefKeys.showSourceBookshelfCount: true,
     });
     await pumpSourceScreen(tester);
 
-    expect(find.text('2 本'), findsOneWidget);
+    expect(find.text('书架：2 本'), findsOneWidget);
   });
 }

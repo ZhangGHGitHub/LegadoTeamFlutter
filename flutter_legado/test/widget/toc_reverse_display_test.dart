@@ -189,4 +189,35 @@ void main() {
 
     await tester.pumpWidget(const SizedBox());
   });
+
+  // [批31b P3-4] 搜索过滤与双反转的组合顺序：先按关键词过滤，再按
+  // 「数据反转 → 显示反转」两次反转（双开回到过滤结果的原始相对顺序）。
+  testWidgets('搜索过滤 × 双反转：过滤后仍按原始相对顺序展示', (tester) async {
+    final book = makeBook(reverseToc: true, reverseTocDisplay: true);
+    stubCommon(book);
+    // 覆盖目录：番外夹在中间，用于验证过滤先于反转
+    when(() => mockApi.getChapters(bookUrl)).thenAnswer((_) async => const [
+          BookChapter(url: 'u0', title: '第一章', index: 0, bookUrl: bookUrl),
+          BookChapter(url: 'u1', title: '番外', index: 1, bookUrl: bookUrl),
+          BookChapter(url: 'u2', title: '第二章', index: 2, bookUrl: bookUrl),
+        ]);
+    await tester.pumpWidget(wrap(TocScreen(book: book)));
+    await settleInitial(tester);
+
+    await tester.tap(find.byTooltip('搜索'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), '第');
+    // 300ms 搜索防抖
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pump();
+
+    expect(find.text('番外'), findsNothing, reason: '不匹配关键词的行应被过滤');
+    expect(
+      dy(tester, '第一章'),
+      lessThan(dy(tester, '第二章')),
+      reason: '过滤结果经两次反转回到原始相对顺序',
+    );
+
+    await tester.pumpWidget(const SizedBox());
+  });
 }

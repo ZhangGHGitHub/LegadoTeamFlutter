@@ -16,15 +16,26 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+/// `getBookSources` 的派生字段（书架书籍数，批31）
+///
+/// 由 Rust `source_list` 按 origin 聚合后平铺返回，不属于书源持久化形状；
+/// 原始 JSON 缓存/补丁底稿若含该键，`sourceUpdate` 载荷会把它当书源字段
+/// 回写（污染源导出与备份）。补丁生成时一律剔除（批31b P3-1）。
+const String derivedBookshelfCountKey = 'bookshelfCount';
+
 /// 以 [original] 为底、把 [edited] 深合上去，返回新 Map（不修改入参）。
 ///
 /// 语义见文件头注释；`Map` 值只做键级递归，不做 List 元素级合并。
+/// 顶层派生字段 [derivedBookshelfCountKey] 无论来自底稿还是编辑值都剔除。
 Map<String, dynamic> patchSourceJson(
   Map<String, dynamic>? original,
   Map<String, dynamic> edited,
 ) {
-  if (original == null) return Map<String, dynamic>.from(edited);
-  final merged = Map<String, dynamic>.from(original);
+  if (original == null) {
+    return Map<String, dynamic>.from(edited)..remove(derivedBookshelfCountKey);
+  }
+  final merged = Map<String, dynamic>.from(original)
+    ..remove(derivedBookshelfCountKey);
   for (final entry in edited.entries) {
     final base = merged[entry.key];
     final patch = entry.value;
@@ -37,6 +48,7 @@ Map<String, dynamic> patchSourceJson(
       merged[entry.key] = patch;
     }
   }
+  merged.remove(derivedBookshelfCountKey);
   return merged;
 }
 

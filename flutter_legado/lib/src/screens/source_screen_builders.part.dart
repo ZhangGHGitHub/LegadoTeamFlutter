@@ -685,9 +685,11 @@ extension _SourceBuilders on _SourceScreenState {
                   ),
                   // [批31] 书架书籍数（对齐原版 tv_bookshelf_count 副标题行；
                   // 计数由 Rust source_list 批量聚合，开关关时不渲染）
+                  // [批31b P3-3] 文案对齐原版 `values/source_bookshelf_count.xml`
+                  // 「书架：%1$d 本」（此前漏「书架：」前缀）
                   if (_showBookshelfCount)
                     Text(
-                      '${source.bookshelfCount} 本',
+                      '书架：${source.bookshelfCount} 本',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -853,9 +855,11 @@ extension _SourceBuilders on _SourceScreenState {
                   ),
                   // [批31] 书架书籍数（对齐原版 tv_bookshelf_count 副标题行；
                   // 计数由 Rust source_list 批量聚合，开关关时不渲染）
+                  // [批31b P3-3] 文案对齐原版 `values/source_bookshelf_count.xml`
+                  // 「书架：%1$d 本」（此前漏「书架：」前缀）
                   if (_showBookshelfCount)
                     Text(
-                      '${source.bookshelfCount} 本',
+                      '书架：${source.bookshelfCount} 本',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(

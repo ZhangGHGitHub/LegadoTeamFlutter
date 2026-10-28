@@ -490,10 +490,19 @@ mod tests {
 
         // 导出/备份路径（list_sources）仍返回书源模型本身（无计数字段）
         let exported = list_sources().unwrap();
+        let exported_item = exported
+            .iter()
+            .find(|s| s.book_source_url == url_a)
+            .expect("导出路径应包含书源");
+        // [批31b P3-4] 导出/备份 JSON 形状断言：派生 bookshelfCount 不得外泄
+        //（否则源导出文件/zip 备份会携带计算字段，重新导入后被持久化污染）
+        let exported_json = serde_json::to_value(exported_item).unwrap();
         assert!(
-            exported.iter().any(|s| s.book_source_url == url_a),
-            "导出路径应包含书源"
+            exported_json.get("bookshelfCount").is_none(),
+            "导出/备份 JSON 不得携带派生 bookshelfCount（实际 {exported_json}）"
         );
+        assert_eq!(exported_json["bookSourceUrl"], url_a);
+        assert_eq!(exported_json["bookSourceName"], "计数源A");
 
         for url in [url_a, url_b, url_zero] {
             delete_source(url).unwrap();

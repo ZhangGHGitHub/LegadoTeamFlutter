@@ -241,5 +241,40 @@ void main() {
       );
       expect(payload, edited);
     });
+
+    /// 批31b P3-1：`bookshelfCount` 是 Rust `source_list` 的派生书架数，
+    /// 不属于书源持久化形状。补丁底稿（原始 JSON 缓存）命中时不得把该键
+    /// 带进 `sourceUpdate` 载荷（否则源保存/导出/备份被派生值污染）。
+    test('派生字段 bookshelfCount 不进入补丁载荷', () async {
+      final original = <String, dynamic>{
+        'bookSourceUrl': 'https://count.example',
+        'bookSourceName': '旧名',
+        // Rust getBookSources 平铺的派生计数
+        'bookshelfCount': 5,
+      };
+      final edited = <String, dynamic>{
+        'bookSourceUrl': 'https://count.example',
+        'bookSourceName': '新名',
+      };
+
+      final payload = await buildPatchedSourcePayload(
+        edited,
+        resolveOriginal: (_) async => original,
+      );
+
+      expect(payload['bookSourceName'], '新名');
+      expect(
+        payload.containsKey('bookshelfCount'),
+        isFalse,
+        reason: '派生计数字段必须从保存载荷剔除',
+      );
+
+      // 编辑值若携带该键同样剔除（防御非模型来源的调用方）
+      final payload2 = await buildPatchedSourcePayload(<String, dynamic>{
+        'bookSourceUrl': 'https://count.example',
+        'bookshelfCount': 9,
+      }, resolveOriginal: (_) async => null);
+      expect(payload2.containsKey('bookshelfCount'), isFalse);
+    });
   });
 }

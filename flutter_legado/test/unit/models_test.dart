@@ -127,5 +127,35 @@ void main() {
       expect(restored.bookSourceName, equals(original.bookSourceName));
       expect(restored.enabled, equals(original.enabled));
     });
+
+    /// [批31b P3-2] `bookshelfCount` 是 `getBookSources` 的派生字段
+    ///（Rust 按 origin 聚合），不属于书源持久化形状：读取侧可用，
+    /// `toJson` 必须不输出，保证源保存/导出/备份往返零污染。
+    test('派生字段 bookshelfCount 只读不进 toJson', () {
+      const source = BookSource(
+        bookSourceUrl: 'https://source4.example.com',
+        bookSourceName: '计数书源',
+        bookshelfCount: 7,
+      );
+
+      final json = source.toJson();
+      expect(
+        json.containsKey('bookshelfCount'),
+        isFalse,
+        reason: 'toJson 不得输出派生计数字段',
+      );
+      expect(source.bookshelfCount, equals(7), reason: '模型读取侧仍保留计数');
+
+      final restored = BookSource.fromJson(<String, dynamic>{
+        'bookSourceUrl': 'https://source5.example.com',
+        'bookshelfCount': 3,
+      });
+      expect(restored.bookshelfCount, equals(3), reason: '列表项解析仍读取计数');
+      expect(
+        restored.toJson().containsKey('bookshelfCount'),
+        isFalse,
+        reason: '解析后再次序列化仍不得输出',
+      );
+    });
   });
 }
