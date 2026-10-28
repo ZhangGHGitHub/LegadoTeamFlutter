@@ -94,7 +94,9 @@ pub async fn create_source(
     {
         let db = state.db.lock().await;
         let repo = BookSourceRepository::new(db.connection());
-        repo.insert(&source)?;
+        // 批30b P2-1：INSERT OR REPLACE 触发外键级联删状态行，必须同事务重建
+        // 检验状态（对齐原版 BookSourceDao.insert 的 saveCheckStates）
+        repo.insert_with_check_state(&source)?;
     }
     // 写库成功后才刷新进程级限速注册表（写库失败经 `?` 提前返回，不触发刷新）：
     // 空值 → 移除既有 limiter（空=不限流），合法值 → 原位刷新。
@@ -150,7 +152,9 @@ pub async fn update_source(
             RateChange::Clear => source.concurrent_rate = None,
             RateChange::Set(value) => source.concurrent_rate = Some(value.clone()),
         }
-        repo.update(&source)?;
+        // 批30b P2-1：REPLACE upsert 会级联删状态行；改走
+        // update_with_check_state——规则内容变化重建状态，仅改名称/启用等保留
+        repo.update_with_check_state(&source)?;
         source
     };
 
@@ -232,6 +236,17 @@ mod tests {
         repo.find_by_url(url).unwrap()
     }
 
+    /// 读库内检验状态（批30b P2-1：写路径必须维护状态行）
+    async fn find_check_state(
+        state: &Arc<AppState>,
+        url: &str,
+    ) -> Option<legado_core::models::BookSourceCheckState> {
+        let db = state.db.lock().await;
+        legado_db::BookSourceCheckStateRepository::new(db.connection())
+            .find_by_url(url)
+            .unwrap()
+    }
+
     /// 进程级限速注册表（测试用唯一 key，避免并行互扰）
     fn rate_registry() -> Arc<RateLimiterRegistry> {
         crate::handlers::web_book::rate_limiter()
@@ -296,6 +311,98 @@ mod tests {
             .unwrap();
 
         assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    /// 批30b P2-1：REST 创建书源必须同事务建检验状态行
+    ///
+    /// 修复前 `Repository::insert`（INSERT OR REPLACE）在无旧行时也能写成功，
+    /// 但不建状态 → `getBookSourceCheckStates` 缺该源，网页端把源当「未知状态」。
+    #[tokio::test]
+    async fn test_create_source_creates_check_state() {
+        let state = make_test_state();
+        let app = create_router(Arc::clone(&state));
+        let url = "https://rest-state-create.example.com";
+
+        let resp = app
+            .oneshot(json_request(
+                Method::POST,
+                "/api/sources",
+                &json!({ "book_source_url": url, "book_source_name": "状态源" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+
+        let state_row = find_check_state(&state, url)
+            .await
+            .expect("创建书源应同时建检验状态行");
+        assert_eq!(state_row.status, "NEEDS_CHECK");
+        assert_eq!(state_row.checked_at, 0);
+        assert!(state_row.detail.is_empty());
+        assert!(!state_row.revision.is_empty());
+        assert!(!state_row.source_revision.is_empty());
+    }
+
+    /// 批30b P2-1：REST 更新规则内容重建状态，内容不变保留状态
+    #[tokio::test]
+    async fn test_update_source_maintains_check_state() {
+        let state = make_test_state();
+        let key = "rest-state-update";
+        {
+            let db = state.db.lock().await;
+            BookSourceRepository::new(db.connection())
+                .insert_with_check_state(&BookSource {
+                    book_source_url: key.to_string(),
+                    book_source_name: "旧名".to_string(),
+                    search_url: Some("https://old.example/search?q={key}".to_string()),
+                    ..BookSource::default()
+                })
+                .unwrap();
+        }
+        let before = find_check_state(&state, key).await.expect("种子状态");
+
+        let app = create_router(Arc::clone(&state));
+
+        // 第一次更新：body 未带 search_url → 规则内容变化（`checkContent()`
+        // 只忽略 customOrder/enabled/enabledExplore/lastUpdateTime/respondTime/
+        // weight，名称与 searchUrl 都参与指纹）→ 重建状态
+        let resp = app
+            .clone()
+            .oneshot(json_request(
+                Method::PUT,
+                &format!("/api/sources/{key}"),
+                &json!({ "book_source_url": key, "book_source_name": "新名" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let rebuilt = find_check_state(&state, key)
+            .await
+            .expect("更新后状态行仍在");
+        assert_eq!(rebuilt.status, "NEEDS_CHECK");
+        assert_ne!(
+            rebuilt.revision, before.revision,
+            "规则变化应生成新 revision"
+        );
+
+        // 第二次更新：提交完全相同的字段 → 内容不变 → 保留 revision
+        let resp = app
+            .oneshot(json_request(
+                Method::PUT,
+                &format!("/api/sources/{key}"),
+                &json!({ "book_source_url": key, "book_source_name": "新名" }),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let kept = find_check_state(&state, key)
+            .await
+            .expect("二次更新后状态行仍在");
+        assert_eq!(
+            kept.revision, rebuilt.revision,
+            "内容不变应保留状态 revision"
+        );
+        assert_eq!(kept.source_revision, rebuilt.source_revision);
     }
 
     #[tokio::test]

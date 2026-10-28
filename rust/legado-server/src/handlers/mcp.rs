@@ -693,7 +693,9 @@ async fn call_update_source(
         source.book_source_group = Some(group.to_string());
     }
 
-    repo.update(&source).map_err(db_err)?;
+    // 批30b P2-1：REPLACE upsert 级联删状态行；改走 update_with_check_state
+    // （规则内容变化重建状态，仅改名称/启用/分组保留）
+    repo.update_with_check_state(&source).map_err(db_err)?;
 
     Ok(mcp_text(format!(
         "Source '{}' updated successfully",

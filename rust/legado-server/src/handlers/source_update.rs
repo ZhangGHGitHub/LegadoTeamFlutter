@@ -276,12 +276,16 @@ pub async fn execute_update(
 
     if !sources_to_import.is_empty() {
         let db = state.db.lock().await;
-        // 落库与 FFI import_sources 共用同一批量方法：`insert_batch` 单事务
-        // 原子写入，底层 `Repository::insert` 为 INSERT OR REPLACE 全列
+        // 落库与 FFI import_sources 共用同一批量方法：`insert_batch_with_check_state`
+        // 单事务原子写入，底层 `Repository::insert` 为 INSERT OR REPLACE 全列
         // upsert——**以导入为准覆盖**（含 `variable`），与 FFI 主路径、原版
         // Room REPLACE 语义一致；任一条失败整批回滚，调用方看到 Err 时库内
         // 零改动。不新增旁路写实现（防复发规定 1：单实现原则）。
-        match BookSourceRepository::new(db.connection()).insert_batch(&sources_to_import) {
+        // 批30b P2-1：REPLACE 会触发外键级联删状态行，同事务逐条重建检验
+        // 状态（对齐原版导入即 NEEDS_CHECK）。
+        match BookSourceRepository::new(db.connection())
+            .insert_batch_with_check_state(&sources_to_import)
+        {
             Ok(()) => {
                 // 整批写库成功后按本次实际导入书源（含 concurrentRate）刷新
                 // server registry；写库失败不刷新（避免未落库配置提前生效）
@@ -790,6 +794,55 @@ mod tests {
             passed.is_ok(),
             "execute_update 批量导入成功后必须刷新 server registry"
         );
+    }
+
+    /// 批30b P2-1：在线更新走 REPLACE 批量导入，必须重建检验状态行
+    ///
+    /// 修复前 `insert_batch`（INSERT OR REPLACE）触发外键级联删状态且不重建，
+    /// 网页管理页更新后这些源会从 `getBookSourceCheckStates` 消失。
+    #[tokio::test]
+    async fn test_execute_update_creates_check_states() {
+        let state = make_test_state();
+        let urls = [
+            "https://update-state-a.example/",
+            "https://update-state-b.example/",
+        ];
+        let remote = json!([
+            { "bookSourceUrl": urls[0], "bookSourceName": "A" },
+            { "bookSourceUrl": urls[1], "bookSourceName": "B" }
+        ])
+        .to_string();
+        let addr = spawn_source_repo_mock(2, vec![("/repo.json".to_string(), remote)]);
+
+        let app = create_router(Arc::clone(&state));
+        let body = serde_json::to_string(&json!({
+            "repo_url": format!("http://{addr}/repo.json"),
+            "only_update_existing": false
+        }))
+        .unwrap();
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/api/sources/update")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        let db = state.db.lock().await;
+        let repo = legado_db::BookSourceCheckStateRepository::new(db.connection());
+        for url in urls {
+            let state_row = repo
+                .find_by_url(url)
+                .unwrap()
+                .unwrap_or_else(|| panic!("在线更新应建状态行: {url}"));
+            assert_eq!(state_row.status, "NEEDS_CHECK");
+            assert!(!state_row.revision.is_empty());
+        }
     }
 
     /// 审查批1 P0-1 回归①：真实形态书源 JSON（规则为嵌套对象 + variable
