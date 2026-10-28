@@ -505,7 +505,9 @@ mixin MockBookApiReaderData on MockBookApiStore implements BookApi {
 
   @override
   Future<void> putReadRecord(ReadRecord record) async {
-    _readRecords.removeWhere((r) => r.bookName == record.bookName);
+    // v113 主键 (deviceId, bookName, author)：同名不同作者各自保留
+    _readRecords.removeWhere((r) =>
+        r.bookName == record.bookName && r.author == record.author);
     _readRecords.add(record);
   }
 

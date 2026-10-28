@@ -5819,10 +5819,27 @@ mixin _$ReadRecord {
   String get deviceId => throw _privateConstructorUsedError;
   @JsonKey(name: 'bookName')
   String get bookName => throw _privateConstructorUsedError;
+  String get author => throw _privateConstructorUsedError;
   @JsonKey(name: 'readTime')
   int get readTime => throw _privateConstructorUsedError;
   @JsonKey(name: 'lastRead')
   int get lastRead => throw _privateConstructorUsedError;
+  @JsonKey(name: 'lastChapterTitle')
+  String? get lastChapterTitle => throw _privateConstructorUsedError;
+  @JsonKey(name: 'lastChapterIndex')
+  int get lastChapterIndex => throw _privateConstructorUsedError;
+  @JsonKey(name: 'lastChapterPos')
+  int get lastChapterPos => throw _privateConstructorUsedError;
+  @JsonKey(name: 'coverUrl')
+  String? get coverUrl => throw _privateConstructorUsedError;
+  @JsonKey(name: 'resolvedAuthor')
+  String? get resolvedAuthor => throw _privateConstructorUsedError;
+  @JsonKey(name: 'displayBookName')
+  String get displayBookName => throw _privateConstructorUsedError;
+  @JsonKey(name: 'displayAuthor')
+  String get displayAuthor => throw _privateConstructorUsedError;
+  @JsonKey(name: 'metadataEditedAt')
+  int get metadataEditedAt => throw _privateConstructorUsedError;
 
   Map<String, dynamic> toJson() => throw _privateConstructorUsedError;
   @JsonKey(ignore: true)
@@ -5839,8 +5856,17 @@ abstract class $ReadRecordCopyWith<$Res> {
   $Res call(
       {@JsonKey(name: 'deviceId') String deviceId,
       @JsonKey(name: 'bookName') String bookName,
+      String author,
       @JsonKey(name: 'readTime') int readTime,
-      @JsonKey(name: 'lastRead') int lastRead});
+      @JsonKey(name: 'lastRead') int lastRead,
+      @JsonKey(name: 'lastChapterTitle') String? lastChapterTitle,
+      @JsonKey(name: 'lastChapterIndex') int lastChapterIndex,
+      @JsonKey(name: 'lastChapterPos') int lastChapterPos,
+      @JsonKey(name: 'coverUrl') String? coverUrl,
+      @JsonKey(name: 'resolvedAuthor') String? resolvedAuthor,
+      @JsonKey(name: 'displayBookName') String displayBookName,
+      @JsonKey(name: 'displayAuthor') String displayAuthor,
+      @JsonKey(name: 'metadataEditedAt') int metadataEditedAt});
 }
 
 /// @nodoc
@@ -5858,8 +5884,17 @@ class _$ReadRecordCopyWithImpl<$Res, $Val extends ReadRecord>
   $Res call({
     Object? deviceId = null,
     Object? bookName = null,
+    Object? author = null,
     Object? readTime = null,
     Object? lastRead = null,
+    Object? lastChapterTitle = freezed,
+    Object? lastChapterIndex = null,
+    Object? lastChapterPos = null,
+    Object? coverUrl = freezed,
+    Object? resolvedAuthor = freezed,
+    Object? displayBookName = null,
+    Object? displayAuthor = null,
+    Object? metadataEditedAt = null,
   }) {
     return _then(_value.copyWith(
       deviceId: null == deviceId
@@ -5870,6 +5905,10 @@ class _$ReadRecordCopyWithImpl<$Res, $Val extends ReadRecord>
           ? _value.bookName
           : bookName // ignore: cast_nullable_to_non_nullable
               as String,
+      author: null == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String,
       readTime: null == readTime
           ? _value.readTime
           : readTime // ignore: cast_nullable_to_non_nullable
@@ -5877,6 +5916,38 @@ class _$ReadRecordCopyWithImpl<$Res, $Val extends ReadRecord>
       lastRead: null == lastRead
           ? _value.lastRead
           : lastRead // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastChapterTitle: freezed == lastChapterTitle
+          ? _value.lastChapterTitle
+          : lastChapterTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      lastChapterIndex: null == lastChapterIndex
+          ? _value.lastChapterIndex
+          : lastChapterIndex // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastChapterPos: null == lastChapterPos
+          ? _value.lastChapterPos
+          : lastChapterPos // ignore: cast_nullable_to_non_nullable
+              as int,
+      coverUrl: freezed == coverUrl
+          ? _value.coverUrl
+          : coverUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      resolvedAuthor: freezed == resolvedAuthor
+          ? _value.resolvedAuthor
+          : resolvedAuthor // ignore: cast_nullable_to_non_nullable
+              as String?,
+      displayBookName: null == displayBookName
+          ? _value.displayBookName
+          : displayBookName // ignore: cast_nullable_to_non_nullable
+              as String,
+      displayAuthor: null == displayAuthor
+          ? _value.displayAuthor
+          : displayAuthor // ignore: cast_nullable_to_non_nullable
+              as String,
+      metadataEditedAt: null == metadataEditedAt
+          ? _value.metadataEditedAt
+          : metadataEditedAt // ignore: cast_nullable_to_non_nullable
               as int,
     ) as $Val);
   }
@@ -5893,8 +5964,17 @@ abstract class _$$ReadRecordImplCopyWith<$Res>
   $Res call(
       {@JsonKey(name: 'deviceId') String deviceId,
       @JsonKey(name: 'bookName') String bookName,
+      String author,
       @JsonKey(name: 'readTime') int readTime,
-      @JsonKey(name: 'lastRead') int lastRead});
+      @JsonKey(name: 'lastRead') int lastRead,
+      @JsonKey(name: 'lastChapterTitle') String? lastChapterTitle,
+      @JsonKey(name: 'lastChapterIndex') int lastChapterIndex,
+      @JsonKey(name: 'lastChapterPos') int lastChapterPos,
+      @JsonKey(name: 'coverUrl') String? coverUrl,
+      @JsonKey(name: 'resolvedAuthor') String? resolvedAuthor,
+      @JsonKey(name: 'displayBookName') String displayBookName,
+      @JsonKey(name: 'displayAuthor') String displayAuthor,
+      @JsonKey(name: 'metadataEditedAt') int metadataEditedAt});
 }
 
 /// @nodoc
@@ -5910,8 +5990,17 @@ class __$$ReadRecordImplCopyWithImpl<$Res>
   $Res call({
     Object? deviceId = null,
     Object? bookName = null,
+    Object? author = null,
     Object? readTime = null,
     Object? lastRead = null,
+    Object? lastChapterTitle = freezed,
+    Object? lastChapterIndex = null,
+    Object? lastChapterPos = null,
+    Object? coverUrl = freezed,
+    Object? resolvedAuthor = freezed,
+    Object? displayBookName = null,
+    Object? displayAuthor = null,
+    Object? metadataEditedAt = null,
   }) {
     return _then(_$ReadRecordImpl(
       deviceId: null == deviceId
@@ -5922,6 +6011,10 @@ class __$$ReadRecordImplCopyWithImpl<$Res>
           ? _value.bookName
           : bookName // ignore: cast_nullable_to_non_nullable
               as String,
+      author: null == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String,
       readTime: null == readTime
           ? _value.readTime
           : readTime // ignore: cast_nullable_to_non_nullable
@@ -5929,6 +6022,38 @@ class __$$ReadRecordImplCopyWithImpl<$Res>
       lastRead: null == lastRead
           ? _value.lastRead
           : lastRead // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastChapterTitle: freezed == lastChapterTitle
+          ? _value.lastChapterTitle
+          : lastChapterTitle // ignore: cast_nullable_to_non_nullable
+              as String?,
+      lastChapterIndex: null == lastChapterIndex
+          ? _value.lastChapterIndex
+          : lastChapterIndex // ignore: cast_nullable_to_non_nullable
+              as int,
+      lastChapterPos: null == lastChapterPos
+          ? _value.lastChapterPos
+          : lastChapterPos // ignore: cast_nullable_to_non_nullable
+              as int,
+      coverUrl: freezed == coverUrl
+          ? _value.coverUrl
+          : coverUrl // ignore: cast_nullable_to_non_nullable
+              as String?,
+      resolvedAuthor: freezed == resolvedAuthor
+          ? _value.resolvedAuthor
+          : resolvedAuthor // ignore: cast_nullable_to_non_nullable
+              as String?,
+      displayBookName: null == displayBookName
+          ? _value.displayBookName
+          : displayBookName // ignore: cast_nullable_to_non_nullable
+              as String,
+      displayAuthor: null == displayAuthor
+          ? _value.displayAuthor
+          : displayAuthor // ignore: cast_nullable_to_non_nullable
+              as String,
+      metadataEditedAt: null == metadataEditedAt
+          ? _value.metadataEditedAt
+          : metadataEditedAt // ignore: cast_nullable_to_non_nullable
               as int,
     ));
   }
@@ -5940,8 +6065,17 @@ class _$ReadRecordImpl implements _ReadRecord {
   const _$ReadRecordImpl(
       {@JsonKey(name: 'deviceId') this.deviceId = '',
       @JsonKey(name: 'bookName') this.bookName = '',
+      this.author = '',
       @JsonKey(name: 'readTime') this.readTime = 0,
-      @JsonKey(name: 'lastRead') this.lastRead = 0});
+      @JsonKey(name: 'lastRead') this.lastRead = 0,
+      @JsonKey(name: 'lastChapterTitle') this.lastChapterTitle,
+      @JsonKey(name: 'lastChapterIndex') this.lastChapterIndex = -1,
+      @JsonKey(name: 'lastChapterPos') this.lastChapterPos = 0,
+      @JsonKey(name: 'coverUrl') this.coverUrl,
+      @JsonKey(name: 'resolvedAuthor') this.resolvedAuthor,
+      @JsonKey(name: 'displayBookName') this.displayBookName = '',
+      @JsonKey(name: 'displayAuthor') this.displayAuthor = '',
+      @JsonKey(name: 'metadataEditedAt') this.metadataEditedAt = 0});
 
   factory _$ReadRecordImpl.fromJson(Map<String, dynamic> json) =>
       _$$ReadRecordImplFromJson(json);
@@ -5953,15 +6087,42 @@ class _$ReadRecordImpl implements _ReadRecord {
   @JsonKey(name: 'bookName')
   final String bookName;
   @override
+  @JsonKey()
+  final String author;
+  @override
   @JsonKey(name: 'readTime')
   final int readTime;
   @override
   @JsonKey(name: 'lastRead')
   final int lastRead;
+  @override
+  @JsonKey(name: 'lastChapterTitle')
+  final String? lastChapterTitle;
+  @override
+  @JsonKey(name: 'lastChapterIndex')
+  final int lastChapterIndex;
+  @override
+  @JsonKey(name: 'lastChapterPos')
+  final int lastChapterPos;
+  @override
+  @JsonKey(name: 'coverUrl')
+  final String? coverUrl;
+  @override
+  @JsonKey(name: 'resolvedAuthor')
+  final String? resolvedAuthor;
+  @override
+  @JsonKey(name: 'displayBookName')
+  final String displayBookName;
+  @override
+  @JsonKey(name: 'displayAuthor')
+  final String displayAuthor;
+  @override
+  @JsonKey(name: 'metadataEditedAt')
+  final int metadataEditedAt;
 
   @override
   String toString() {
-    return 'ReadRecord(deviceId: $deviceId, bookName: $bookName, readTime: $readTime, lastRead: $lastRead)';
+    return 'ReadRecord(deviceId: $deviceId, bookName: $bookName, author: $author, readTime: $readTime, lastRead: $lastRead, lastChapterTitle: $lastChapterTitle, lastChapterIndex: $lastChapterIndex, lastChapterPos: $lastChapterPos, coverUrl: $coverUrl, resolvedAuthor: $resolvedAuthor, displayBookName: $displayBookName, displayAuthor: $displayAuthor, metadataEditedAt: $metadataEditedAt)';
   }
 
   @override
@@ -5973,16 +6134,46 @@ class _$ReadRecordImpl implements _ReadRecord {
                 other.deviceId == deviceId) &&
             (identical(other.bookName, bookName) ||
                 other.bookName == bookName) &&
+            (identical(other.author, author) || other.author == author) &&
             (identical(other.readTime, readTime) ||
                 other.readTime == readTime) &&
             (identical(other.lastRead, lastRead) ||
-                other.lastRead == lastRead));
+                other.lastRead == lastRead) &&
+            (identical(other.lastChapterTitle, lastChapterTitle) ||
+                other.lastChapterTitle == lastChapterTitle) &&
+            (identical(other.lastChapterIndex, lastChapterIndex) ||
+                other.lastChapterIndex == lastChapterIndex) &&
+            (identical(other.lastChapterPos, lastChapterPos) ||
+                other.lastChapterPos == lastChapterPos) &&
+            (identical(other.coverUrl, coverUrl) ||
+                other.coverUrl == coverUrl) &&
+            (identical(other.resolvedAuthor, resolvedAuthor) ||
+                other.resolvedAuthor == resolvedAuthor) &&
+            (identical(other.displayBookName, displayBookName) ||
+                other.displayBookName == displayBookName) &&
+            (identical(other.displayAuthor, displayAuthor) ||
+                other.displayAuthor == displayAuthor) &&
+            (identical(other.metadataEditedAt, metadataEditedAt) ||
+                other.metadataEditedAt == metadataEditedAt));
   }
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode =>
-      Object.hash(runtimeType, deviceId, bookName, readTime, lastRead);
+  int get hashCode => Object.hash(
+      runtimeType,
+      deviceId,
+      bookName,
+      author,
+      readTime,
+      lastRead,
+      lastChapterTitle,
+      lastChapterIndex,
+      lastChapterPos,
+      coverUrl,
+      resolvedAuthor,
+      displayBookName,
+      displayAuthor,
+      metadataEditedAt);
 
   @JsonKey(ignore: true)
   @override
@@ -6000,10 +6191,20 @@ class _$ReadRecordImpl implements _ReadRecord {
 
 abstract class _ReadRecord implements ReadRecord {
   const factory _ReadRecord(
-      {@JsonKey(name: 'deviceId') final String deviceId,
-      @JsonKey(name: 'bookName') final String bookName,
-      @JsonKey(name: 'readTime') final int readTime,
-      @JsonKey(name: 'lastRead') final int lastRead}) = _$ReadRecordImpl;
+          {@JsonKey(name: 'deviceId') final String deviceId,
+          @JsonKey(name: 'bookName') final String bookName,
+          final String author,
+          @JsonKey(name: 'readTime') final int readTime,
+          @JsonKey(name: 'lastRead') final int lastRead,
+          @JsonKey(name: 'lastChapterTitle') final String? lastChapterTitle,
+          @JsonKey(name: 'lastChapterIndex') final int lastChapterIndex,
+          @JsonKey(name: 'lastChapterPos') final int lastChapterPos,
+          @JsonKey(name: 'coverUrl') final String? coverUrl,
+          @JsonKey(name: 'resolvedAuthor') final String? resolvedAuthor,
+          @JsonKey(name: 'displayBookName') final String displayBookName,
+          @JsonKey(name: 'displayAuthor') final String displayAuthor,
+          @JsonKey(name: 'metadataEditedAt') final int metadataEditedAt}) =
+      _$ReadRecordImpl;
 
   factory _ReadRecord.fromJson(Map<String, dynamic> json) =
       _$ReadRecordImpl.fromJson;
@@ -6015,11 +6216,37 @@ abstract class _ReadRecord implements ReadRecord {
   @JsonKey(name: 'bookName')
   String get bookName;
   @override
+  String get author;
+  @override
   @JsonKey(name: 'readTime')
   int get readTime;
   @override
   @JsonKey(name: 'lastRead')
   int get lastRead;
+  @override
+  @JsonKey(name: 'lastChapterTitle')
+  String? get lastChapterTitle;
+  @override
+  @JsonKey(name: 'lastChapterIndex')
+  int get lastChapterIndex;
+  @override
+  @JsonKey(name: 'lastChapterPos')
+  int get lastChapterPos;
+  @override
+  @JsonKey(name: 'coverUrl')
+  String? get coverUrl;
+  @override
+  @JsonKey(name: 'resolvedAuthor')
+  String? get resolvedAuthor;
+  @override
+  @JsonKey(name: 'displayBookName')
+  String get displayBookName;
+  @override
+  @JsonKey(name: 'displayAuthor')
+  String get displayAuthor;
+  @override
+  @JsonKey(name: 'metadataEditedAt')
+  int get metadataEditedAt;
   @override
   @JsonKey(ignore: true)
   _$$ReadRecordImplCopyWith<_$ReadRecordImpl> get copyWith =>
@@ -7294,6 +7521,10 @@ ReadRecordShow _$ReadRecordShowFromJson(Map<String, dynamic> json) {
 mixin _$ReadRecordShow {
   @JsonKey(name: 'bookName')
   String get bookName => throw _privateConstructorUsedError;
+  @JsonKey(name: 'author')
+  String get author => throw _privateConstructorUsedError;
+  @JsonKey(name: 'physicalBookName')
+  String get physicalBookName => throw _privateConstructorUsedError;
   @JsonKey(name: 'readTime')
   int get readTime => throw _privateConstructorUsedError;
   @JsonKey(name: 'lastRead')
@@ -7313,6 +7544,8 @@ abstract class $ReadRecordShowCopyWith<$Res> {
   @useResult
   $Res call(
       {@JsonKey(name: 'bookName') String bookName,
+      @JsonKey(name: 'author') String author,
+      @JsonKey(name: 'physicalBookName') String physicalBookName,
       @JsonKey(name: 'readTime') int readTime,
       @JsonKey(name: 'lastRead') int lastRead});
 }
@@ -7331,6 +7564,8 @@ class _$ReadRecordShowCopyWithImpl<$Res, $Val extends ReadRecordShow>
   @override
   $Res call({
     Object? bookName = null,
+    Object? author = null,
+    Object? physicalBookName = null,
     Object? readTime = null,
     Object? lastRead = null,
   }) {
@@ -7338,6 +7573,14 @@ class _$ReadRecordShowCopyWithImpl<$Res, $Val extends ReadRecordShow>
       bookName: null == bookName
           ? _value.bookName
           : bookName // ignore: cast_nullable_to_non_nullable
+              as String,
+      author: null == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String,
+      physicalBookName: null == physicalBookName
+          ? _value.physicalBookName
+          : physicalBookName // ignore: cast_nullable_to_non_nullable
               as String,
       readTime: null == readTime
           ? _value.readTime
@@ -7361,6 +7604,8 @@ abstract class _$$ReadRecordShowImplCopyWith<$Res>
   @useResult
   $Res call(
       {@JsonKey(name: 'bookName') String bookName,
+      @JsonKey(name: 'author') String author,
+      @JsonKey(name: 'physicalBookName') String physicalBookName,
       @JsonKey(name: 'readTime') int readTime,
       @JsonKey(name: 'lastRead') int lastRead});
 }
@@ -7377,6 +7622,8 @@ class __$$ReadRecordShowImplCopyWithImpl<$Res>
   @override
   $Res call({
     Object? bookName = null,
+    Object? author = null,
+    Object? physicalBookName = null,
     Object? readTime = null,
     Object? lastRead = null,
   }) {
@@ -7384,6 +7631,14 @@ class __$$ReadRecordShowImplCopyWithImpl<$Res>
       bookName: null == bookName
           ? _value.bookName
           : bookName // ignore: cast_nullable_to_non_nullable
+              as String,
+      author: null == author
+          ? _value.author
+          : author // ignore: cast_nullable_to_non_nullable
+              as String,
+      physicalBookName: null == physicalBookName
+          ? _value.physicalBookName
+          : physicalBookName // ignore: cast_nullable_to_non_nullable
               as String,
       readTime: null == readTime
           ? _value.readTime
@@ -7402,6 +7657,8 @@ class __$$ReadRecordShowImplCopyWithImpl<$Res>
 class _$ReadRecordShowImpl implements _ReadRecordShow {
   const _$ReadRecordShowImpl(
       {@JsonKey(name: 'bookName') this.bookName = '',
+      @JsonKey(name: 'author') this.author = '',
+      @JsonKey(name: 'physicalBookName') this.physicalBookName = '',
       @JsonKey(name: 'readTime') this.readTime = 0,
       @JsonKey(name: 'lastRead') this.lastRead = 0});
 
@@ -7412,6 +7669,12 @@ class _$ReadRecordShowImpl implements _ReadRecordShow {
   @JsonKey(name: 'bookName')
   final String bookName;
   @override
+  @JsonKey(name: 'author')
+  final String author;
+  @override
+  @JsonKey(name: 'physicalBookName')
+  final String physicalBookName;
+  @override
   @JsonKey(name: 'readTime')
   final int readTime;
   @override
@@ -7420,7 +7683,7 @@ class _$ReadRecordShowImpl implements _ReadRecordShow {
 
   @override
   String toString() {
-    return 'ReadRecordShow(bookName: $bookName, readTime: $readTime, lastRead: $lastRead)';
+    return 'ReadRecordShow(bookName: $bookName, author: $author, physicalBookName: $physicalBookName, readTime: $readTime, lastRead: $lastRead)';
   }
 
   @override
@@ -7430,6 +7693,9 @@ class _$ReadRecordShowImpl implements _ReadRecordShow {
             other is _$ReadRecordShowImpl &&
             (identical(other.bookName, bookName) ||
                 other.bookName == bookName) &&
+            (identical(other.author, author) || other.author == author) &&
+            (identical(other.physicalBookName, physicalBookName) ||
+                other.physicalBookName == physicalBookName) &&
             (identical(other.readTime, readTime) ||
                 other.readTime == readTime) &&
             (identical(other.lastRead, lastRead) ||
@@ -7438,7 +7704,8 @@ class _$ReadRecordShowImpl implements _ReadRecordShow {
 
   @JsonKey(ignore: true)
   @override
-  int get hashCode => Object.hash(runtimeType, bookName, readTime, lastRead);
+  int get hashCode => Object.hash(
+      runtimeType, bookName, author, physicalBookName, readTime, lastRead);
 
   @JsonKey(ignore: true)
   @override
@@ -7458,6 +7725,8 @@ class _$ReadRecordShowImpl implements _ReadRecordShow {
 abstract class _ReadRecordShow implements ReadRecordShow {
   const factory _ReadRecordShow(
       {@JsonKey(name: 'bookName') final String bookName,
+      @JsonKey(name: 'author') final String author,
+      @JsonKey(name: 'physicalBookName') final String physicalBookName,
       @JsonKey(name: 'readTime') final int readTime,
       @JsonKey(name: 'lastRead') final int lastRead}) = _$ReadRecordShowImpl;
 
@@ -7467,6 +7736,12 @@ abstract class _ReadRecordShow implements ReadRecordShow {
   @override
   @JsonKey(name: 'bookName')
   String get bookName;
+  @override
+  @JsonKey(name: 'author')
+  String get author;
+  @override
+  @JsonKey(name: 'physicalBookName')
+  String get physicalBookName;
   @override
   @JsonKey(name: 'readTime')
   int get readTime;

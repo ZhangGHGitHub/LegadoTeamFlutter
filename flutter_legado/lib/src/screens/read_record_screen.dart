@@ -269,7 +269,10 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
 
   Future<void> _openRecord(BuildContext context, ReadRecordShow item) async {
     final notifier = ref.read(readRecordNotifierProvider.notifier);
-    final book = await notifier.findBookByName(item.bookName);
+    // v113：记录按显示名/作者聚合，打开书籍须用物理书名定位书架
+    final physicalName =
+        item.physicalBookName.isNotEmpty ? item.physicalBookName : item.bookName;
+    final book = await notifier.findBookByName(physicalName);
     if (!context.mounted) return;
     if (book == null) {
       // 对齐原版：书架无书 → 带书名打开搜索
@@ -310,9 +313,13 @@ class _ReadRecordScreenState extends ConsumerState<ReadRecordScreen> {
       ),
     );
     if (ok == true && context.mounted) {
+      // v113：FFI 按物理书名删除该书全部作者记录（契约 §2.12）
+      final physicalName = item.physicalBookName.isNotEmpty
+          ? item.physicalBookName
+          : item.bookName;
       await ref
           .read(readRecordNotifierProvider.notifier)
-          .deleteByName(item.bookName);
+          .deleteByName(physicalName);
     }
   }
 
@@ -392,6 +399,18 @@ class _ReadRecordTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
+                  // v113：展示作者（displayAuthor 优先，空回退物理作者）
+                  if (item.author.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      item.author,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: secondary,
+                          ),
+                    ),
+                  ],
                   const SizedBox(height: 4),
                   Text(
                     '阅读时长：$durationText',

@@ -484,14 +484,27 @@ class KeyboardAssist with _$KeyboardAssist {
 
 // ─── ReadRecord ───────────────────────────────────────────
 
-/// 阅读记录
+/// 阅读记录（13 字段，对齐 DB v113 / 原版 Room schema 113.json）
+///
+/// 主键为 `(deviceId, bookName, author)`：同名不同作者是不同记录；
+/// `lastChapter*`/`coverUrl` 为章节快照，`display*`/`metadataEditedAt`
+/// 为用户可编辑的显示元数据（空串回退物理书名/作者）。
 @freezed
 class ReadRecord with _$ReadRecord {
   const factory ReadRecord({
     @Default('') @JsonKey(name: 'deviceId') String deviceId,
     @Default('') @JsonKey(name: 'bookName') String bookName,
+    @Default('') String author,
     @Default(0) @JsonKey(name: 'readTime') int readTime,
     @Default(0) @JsonKey(name: 'lastRead') int lastRead,
+    @JsonKey(name: 'lastChapterTitle') String? lastChapterTitle,
+    @Default(-1) @JsonKey(name: 'lastChapterIndex') int lastChapterIndex,
+    @Default(0) @JsonKey(name: 'lastChapterPos') int lastChapterPos,
+    @JsonKey(name: 'coverUrl') String? coverUrl,
+    @JsonKey(name: 'resolvedAuthor') String? resolvedAuthor,
+    @Default('') @JsonKey(name: 'displayBookName') String displayBookName,
+    @Default('') @JsonKey(name: 'displayAuthor') String displayAuthor,
+    @Default(0) @JsonKey(name: 'metadataEditedAt') int metadataEditedAt,
   }) = _ReadRecord;
 
   factory ReadRecord.fromJson(Map<String, dynamic> json) =>
@@ -582,11 +595,17 @@ class BookCacheInfo with _$BookCacheInfo {
 
 // ─── ReadRecordShow ───────────────────────────────────────
 
-/// 阅读记录展示
+/// 阅读记录展示（按「显示书名 + 显示作者」聚合后的行）
+///
+/// 对齐原版 `ReadRecordDao.allShow`：`bookName`/`author` 为展示值
+/// （`displayBookName`/`displayAuthor` 为空时回退物理值）；
+/// `physicalBookName` 为落库书名，供删除/打开书籍使用。
 @freezed
 class ReadRecordShow with _$ReadRecordShow {
   const factory ReadRecordShow({
     @Default('') @JsonKey(name: 'bookName') String bookName,
+    @Default('') @JsonKey(name: 'author') String author,
+    @Default('') @JsonKey(name: 'physicalBookName') String physicalBookName,
     @Default(0) @JsonKey(name: 'readTime') int readTime,
     @Default(0) @JsonKey(name: 'lastRead') int lastRead,
   }) = _ReadRecordShow;

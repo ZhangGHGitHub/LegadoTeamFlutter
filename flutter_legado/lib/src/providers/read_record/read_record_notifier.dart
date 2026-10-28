@@ -77,7 +77,10 @@ class ReadRecordNotifier extends Notifier<ReadRecordState> {
     state = state.copyWith(enableRecord: next);
   }
 
-  /// 删除单本书记录（对齐 deleteByName）
+  /// 删除单本书记录（对齐原版 deleteByBook）
+  ///
+  /// `bookName` 为**物理书名**：v113 起 FFI `deleteReadRecord` 删除该书
+  /// 全部作者的行（契约 §2.12 已登记该差异）。
   Future<void> deleteByName(String bookName) async {
     try {
       await ref.read(bookApiProvider).deleteReadRecord(bookName);
@@ -128,19 +131,31 @@ class ReadRecordNotifier extends Notifier<ReadRecordState> {
     }
   }
 
-  /// ReadRecord → ReadRecordShow；同名合并时长（对齐 Room group by bookName）
+  /// ReadRecord → ReadRecordShow（对齐原版 `ReadRecordDao.allShow`）
+  ///
+  /// v113 起阅读记录主键含作者：按「显示书名 + 显示作者」分组聚合
+  /// （`displayBookName`/`displayAuthor` 为空回退物理 `bookName`/`author`），
+  /// `readTime` 求和、`lastRead` 取最大。同名不同作者各自成行，不再互相覆盖时长。
   static List<ReadRecordShow> _toShowList(List<ReadRecord> raw) {
     final map = <String, ReadRecordShow>{};
     for (final r in raw) {
-      final prev = map[r.bookName];
+      final displayName =
+          r.displayBookName.isNotEmpty ? r.displayBookName : r.bookName;
+      final displayAuthor = r.displayAuthor.isNotEmpty
+          ? r.displayAuthor
+          : (r.author.isNotEmpty ? r.author : (r.resolvedAuthor ?? ''));
+      final key = '$displayName\u0000$displayAuthor';
+      final prev = map[key];
       if (prev == null) {
-        map[r.bookName] = ReadRecordShow(
-          bookName: r.bookName,
+        map[key] = ReadRecordShow(
+          bookName: displayName,
+          author: displayAuthor,
+          physicalBookName: r.bookName,
           readTime: r.readTime,
           lastRead: r.lastRead,
         );
       } else {
-        map[r.bookName] = prev.copyWith(
+        map[key] = prev.copyWith(
           readTime: prev.readTime + r.readTime,
           lastRead: r.lastRead > prev.lastRead ? r.lastRead : prev.lastRead,
         );
@@ -158,10 +173,12 @@ class ReadRecordNotifier extends Notifier<ReadRecordState> {
     if (query.isNotEmpty) {
       final lower = query.toLowerCase();
       list = list
-          .where((r) => r.bookName.toLowerCase().contains(lower))
+          .where((r) =>
+              r.bookName.toLowerCase().contains(lower) ||
+              r.author.toLowerCase().contains(lower))
           .toList();
     } else {
-      list = List<ReadRecordShow>.from(list);
+      list = List<ReadRecordShow>.from(source);
     }
     switch (sort) {
       case ReadRecordSortMode.readTime:

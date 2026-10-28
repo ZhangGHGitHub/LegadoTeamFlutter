@@ -472,16 +472,34 @@ _$ReadRecordImpl _$$ReadRecordImplFromJson(Map<String, dynamic> json) =>
     _$ReadRecordImpl(
       deviceId: json['deviceId'] as String? ?? '',
       bookName: json['bookName'] as String? ?? '',
+      author: json['author'] as String? ?? '',
       readTime: (json['readTime'] as num?)?.toInt() ?? 0,
       lastRead: (json['lastRead'] as num?)?.toInt() ?? 0,
+      lastChapterTitle: json['lastChapterTitle'] as String?,
+      lastChapterIndex: (json['lastChapterIndex'] as num?)?.toInt() ?? -1,
+      lastChapterPos: (json['lastChapterPos'] as num?)?.toInt() ?? 0,
+      coverUrl: json['coverUrl'] as String?,
+      resolvedAuthor: json['resolvedAuthor'] as String?,
+      displayBookName: json['displayBookName'] as String? ?? '',
+      displayAuthor: json['displayAuthor'] as String? ?? '',
+      metadataEditedAt: (json['metadataEditedAt'] as num?)?.toInt() ?? 0,
     );
 
 Map<String, dynamic> _$$ReadRecordImplToJson(_$ReadRecordImpl instance) =>
     <String, dynamic>{
       'deviceId': instance.deviceId,
       'bookName': instance.bookName,
+      'author': instance.author,
       'readTime': instance.readTime,
       'lastRead': instance.lastRead,
+      'lastChapterTitle': instance.lastChapterTitle,
+      'lastChapterIndex': instance.lastChapterIndex,
+      'lastChapterPos': instance.lastChapterPos,
+      'coverUrl': instance.coverUrl,
+      'resolvedAuthor': instance.resolvedAuthor,
+      'displayBookName': instance.displayBookName,
+      'displayAuthor': instance.displayAuthor,
+      'metadataEditedAt': instance.metadataEditedAt,
     };
 
 _$RssReadRecordImpl _$$RssReadRecordImplFromJson(Map<String, dynamic> json) =>
@@ -587,6 +605,8 @@ Map<String, dynamic> _$$BookCacheInfoImplToJson(_$BookCacheInfoImpl instance) =>
 _$ReadRecordShowImpl _$$ReadRecordShowImplFromJson(Map<String, dynamic> json) =>
     _$ReadRecordShowImpl(
       bookName: json['bookName'] as String? ?? '',
+      author: json['author'] as String? ?? '',
+      physicalBookName: json['physicalBookName'] as String? ?? '',
       readTime: (json['readTime'] as num?)?.toInt() ?? 0,
       lastRead: (json['lastRead'] as num?)?.toInt() ?? 0,
     );
@@ -595,6 +615,8 @@ Map<String, dynamic> _$$ReadRecordShowImplToJson(
         _$ReadRecordShowImpl instance) =>
     <String, dynamic>{
       'bookName': instance.bookName,
+      'author': instance.author,
+      'physicalBookName': instance.physicalBookName,
       'readTime': instance.readTime,
       'lastRead': instance.lastRead,
     };
