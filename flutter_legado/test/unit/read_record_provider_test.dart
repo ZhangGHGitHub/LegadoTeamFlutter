@@ -78,6 +78,37 @@ void main() {
       expect(readState().records.first.bookName, '完美世界');
     });
 
+    test('同名不同作者分行聚合（v113 主键含 author）', () async {
+      stubRecords([
+        const ReadRecord(bookName: '同名书', author: '作者A', readTime: 100),
+        const ReadRecord(bookName: '同名书', author: '作者B', readTime: 200),
+      ]);
+      await readNotifier().load();
+      expect(readState().records, hasLength(2));
+      expect(readState().totalReadTimeMs, 300);
+      expect(
+        readState().records.map((e) => e.author).toSet(),
+        {'作者A', '作者B'},
+      );
+    });
+
+    test('displayBookName/displayAuthor 优先展示，物理书名保留', () async {
+      stubRecords([
+        const ReadRecord(
+          bookName: '物理书名',
+          author: '物理作者',
+          displayBookName: '显示书名',
+          displayAuthor: '显示作者',
+          readTime: 10,
+        ),
+      ]);
+      await readNotifier().load();
+      final record = readState().records.single;
+      expect(record.bookName, '显示书名');
+      expect(record.author, '显示作者');
+      expect(record.physicalBookName, '物理书名');
+    });
+
     test('按阅读时长排序', () async {
       stubRecords([
         const ReadRecord(bookName: '短', readTime: 100),
