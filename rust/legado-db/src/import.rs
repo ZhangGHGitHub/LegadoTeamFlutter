@@ -214,6 +214,10 @@ impl RoomImporter {
                 ],
             )
             .map_err(|e| LegadoError::Database(format!("插入书源失败: {e}")))?;
+            // 批30：对齐原版 BookSourceDao.insert——导入即重建检验状态
+            // （REPLACE 的级联删除已清旧行，此处写入 NEEDS_CHECK 新状态）
+            crate::repository::book_source_check_state_repository::BookSourceCheckStateRepository::new(conn)
+                .save(&legado_core::models::BookSourceCheckState::new(book_source_url))?;
             count += 1;
         }
 

@@ -3,6 +3,7 @@
 pub mod book;
 pub mod book_chapter;
 pub mod book_source;
+pub mod book_source_check_state;
 pub mod download_task;
 pub mod highlight;
 pub mod misc;
@@ -15,6 +16,7 @@ pub use book::{Book, ReadConfig};
 pub use book_chapter::BookChapter;
 pub use book_source::book_source_type;
 pub use book_source::BookSource;
+pub use book_source_check_state::{check_status as book_source_check_status, BookSourceCheckState};
 pub use download_task::{DownloadStatus, DownloadTask};
 pub use highlight::{BookHighlight, HighlightRule};
 pub use rss_source::RssSource;

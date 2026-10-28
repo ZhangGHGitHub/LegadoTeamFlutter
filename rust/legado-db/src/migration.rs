@@ -17,6 +17,7 @@ pub mod schema_align_v104;
 pub mod scope_source_v108;
 pub mod search_book_score_v106;
 pub mod servers_table_v112;
+pub mod source_check_state_v115;
 
 use rusqlite::Connection;
 
@@ -79,6 +80,7 @@ impl MigrationRegistry {
         self.register(Box::new(servers_table_v112::Migration111To112));
         self.register(Box::new(read_record_v113::Migration112To113));
         self.register(Box::new(rule_fields_v114::Migration113To114));
+        self.register(Box::new(source_check_state_v115::Migration114To115));
     }
 
     /// 注册单个迁移
@@ -313,7 +315,7 @@ mod tests {
     fn test_migration_registry_list() {
         let registry = MigrationRegistry::new();
         let list = registry.list_migrations();
-        assert_eq!(list.len(), 24);
+        assert_eq!(list.len(), 25);
         assert_eq!(list[0].0, 90);
         assert_eq!(list[0].1, 91);
     }

@@ -41,6 +41,9 @@ pub use repository::book_chapter_repository::BookChapterRepository;
 pub use repository::book_group_repository::{BookGroup, BookGroupRepository};
 pub use repository::book_memo_repository::{BookMemo, BookMemoRepository};
 pub use repository::book_repository::BookRepository;
+pub use repository::book_source_check_state_repository::{
+    BookSourceCheckStateRepository, BOOK_SOURCE_QUERY_CHUNK_SIZE,
+};
 pub use repository::book_source_repository::BookSourceRepository;
 pub use repository::bookmark_repository::BookmarkRepository;
 pub use repository::cache_book_repository::CacheBookRepository;

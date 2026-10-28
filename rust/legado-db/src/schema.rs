@@ -57,7 +57,18 @@ use legado_core::{LegadoError, LegadoResult};
 ///   （INTEGER NOT NULL DEFAULT 1，对齐原版 `RssSource.kt:28-30`；
 ///   该列自原版 Room schema **112** 起存在，上游无独立 ALTER）。迁移 113→114
 ///   全部为 `add_column_if_not_exists`，幂等（Migration113To114）
-pub const SCHEMA_VERSION: u32 = 114;
+/// - v115：书源检验状态（批30，对齐原版 Room schema 106 起新增的
+///   `book_source_check_states` 与 `DatabaseMigrations.kt:108-121` 的
+///   `migration_105_106`）：新增表 `book_source_check_states`
+///   （`bookSourceUrl` 主键 + 外键 `book_sources(bookSourceUrl)`
+///   ON DELETE CASCADE；`revision`/`sourceRevision`/`status`/`checkedAt`/
+///   `detail` 全 NOT NULL），并为存量书源播种 `NEEDS_CHECK` 占位行
+///   （revision/sourceRevision 随机；旧分组标签无法证明现行规则已检验）。
+///   迁移 114→115 幂等（建表 IF NOT EXISTS + `INSERT OR IGNORE` 播种）。
+///   **不重建 `book_sources_part` 视图**：该视图供 Android 列表联查使用，
+///   Rust 侧网页管理端点直接返回「完整源 + 状态」两组数据（与原版
+///   `BookSourceCheckController.sources` 同构），FFI 无该视图消费方
+pub const SCHEMA_VERSION: u32 = 115;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
@@ -119,6 +130,8 @@ pub fn init_schema(conn: &Connection) -> LegadoResult<()> {
         .map_err(|e| LegadoError::Database(format!("创建 servers 表失败：{e}")))?;
     conn.execute_batch(CREATE_BOOK_MEMOS)
         .map_err(|e| LegadoError::Database(format!("创建 book_memos 表失败：{e}")))?;
+    conn.execute_batch(CREATE_BOOK_SOURCE_CHECK_STATES)
+        .map_err(|e| LegadoError::Database(format!("创建 book_source_check_states 表失败：{e}")))?;
 
     // 创建索引
     conn.execute_batch(INDEXES)
@@ -491,6 +504,28 @@ CREATE TABLE IF NOT EXISTS book_memos (
     content TEXT NOT NULL,
     updatedAt INTEGER NOT NULL,
     PRIMARY KEY(bookUrl)
+);
+";
+
+/// book_source_check_states 表（v115，逐列对齐原版 `BookSourceCheckState.kt`
+/// 与 `DatabaseMigrations.kt:108-121` 的 `migration_105_106` DDL）
+///
+/// - `bookSourceUrl` 主键，外键指向 `book_sources.bookSourceUrl`，
+///   `ON UPDATE NO ACTION ON DELETE CASCADE`（删源即删状态）；
+/// - `revision`/`sourceRevision`/`status`/`detail` 均为 TEXT NOT NULL，
+///   `checkedAt` 为 INTEGER NOT NULL（毫秒时间戳，未检验 0）；
+/// - 本表是**设备本地元数据**，不进书源导入/导出 JSON 与备份。
+pub const CREATE_BOOK_SOURCE_CHECK_STATES: &str = "
+CREATE TABLE IF NOT EXISTS book_source_check_states (
+    bookSourceUrl TEXT NOT NULL,
+    revision TEXT NOT NULL,
+    sourceRevision TEXT NOT NULL,
+    status TEXT NOT NULL,
+    checkedAt INTEGER NOT NULL,
+    detail TEXT NOT NULL,
+    PRIMARY KEY(bookSourceUrl),
+    FOREIGN KEY(bookSourceUrl) REFERENCES book_sources(bookSourceUrl)
+    ON UPDATE NO ACTION ON DELETE CASCADE
 );
 ";
 

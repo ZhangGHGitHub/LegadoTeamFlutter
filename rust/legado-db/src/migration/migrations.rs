@@ -125,6 +125,11 @@ pub fn repair_legacy_columns(conn: &Connection) -> LegadoResult<()> {
     // 在迁移前调用时等同提前完成 112→113 的表重建，随后 Migration112To113 为空操作。
     super::read_record_v113::ensure_read_record_v113(conn)?;
 
+    // [批30] book_source_check_states 建表 + 缺行播种（幂等）：兜住
+    // 「user_version 已到 115 但缺表」「恢复/导入后新增源无状态行」场景。
+    // 注意必须在 readRecord 自愈之后、且书源表存在时执行（函数内部自检）。
+    super::source_check_state_v115::ensure_book_source_check_states(conn)?;
+
     Ok(())
 }
 

@@ -171,6 +171,54 @@ impl<'a> BookSourceRepository<'a> {
         Ok(affected > 0)
     }
 
+    /// 按 URL 批量查询书源（`IN (...)`，调用方需先按
+    /// [`crate::repository::book_source_check_state_repository::BOOK_SOURCE_QUERY_CHUNK_SIZE`]
+    /// 分块）
+    ///
+    /// 对齐原版 `BookSourceDao.getBookSources(keys)`（`BookSourceCheckController.sources`
+    /// 的指定 URL 分支），按 `customOrder` 升序返回保证响应稳定。
+    pub fn find_by_urls(&self, urls: &[String]) -> LegadoResult<Vec<BookSource>> {
+        if urls.is_empty() {
+            return Ok(Vec::new());
+        }
+        let placeholders = std::iter::repeat_n("?", urls.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT bookSourceUrl, bookSourceName, bookSourceGroup, bookSourceType,
+                    bookUrlPattern, customOrder, enabled, enabledExplore, jsLib,
+                    enabledCookieJar, concurrentRate, header, loginUrl, loginUi,
+                    loginCheckJs, coverDecodeJs, bookSourceComment, variableComment,
+                    lastUpdateTime, respondTime, weight, exploreUrl, exploreScreen,
+                    ruleExplore, searchUrl, ruleSearch, ruleBookInfo, ruleToc,
+                    ruleContent, ruleReview, mainJs, eventListener, customButton,
+                    variable
+             FROM book_sources WHERE bookSourceUrl IN ({placeholders})
+             ORDER BY customOrder ASC"
+        );
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .map_err(|e| LegadoError::Database(format!("准备批量查询失败: {e}")))?;
+        let sources = stmt
+            .query_map(rusqlite::params_from_iter(urls.iter()), row_to_book_source)
+            .map_err(|e| LegadoError::Database(format!("批量查询失败: {e}")))?
+            .filter_map(|r| r.ok())
+            .collect();
+        Ok(sources)
+    }
+
+    /// 更新书源响应时间（单列；对齐原版 `BookSourceDao.updateRespondTime`）
+    pub fn update_respond_time(&self, source_url: &str, respond_time: i64) -> LegadoResult<()> {
+        self.conn
+            .execute(
+                "UPDATE book_sources SET respondTime = ?2 WHERE bookSourceUrl = ?1",
+                params![source_url, respond_time],
+            )
+            .map_err(|e| LegadoError::Database(format!("更新响应时间失败: {e}")))?;
+        Ok(())
+    }
+
     /// 批量写入书源（单事务原子，P1-1 批量导入原子性）
     ///
     /// 复用 [`Repository::insert`]（INSERT OR REPLACE 全列 upsert，与
@@ -186,6 +234,69 @@ impl<'a> BookSourceRepository<'a> {
             let repo = BookSourceRepository::new(conn);
             for item in items {
                 repo.insert(item)?;
+            }
+            Ok(())
+        })
+    }
+
+    /// 新增/覆盖书源并**重建**检验状态（对齐原版 `BookSourceDao.insert`）
+    ///
+    /// 原版 `@Transaction insert` 在写入源后固定执行
+    /// `saveCheckStates(BookSourceCheckState(url))`——无论同 URL 是否已有旧行，
+    /// 都生成新 revision/sourceRevision 并回到 `NEEDS_CHECK`。网页保存
+    /// （`/saveBookSource`、`/saveBookSources`）、JS 源保存、源导入均走该语义。
+    ///
+    /// 实现注意：`INSERT OR REPLACE` 会先删除旧行，外键 `ON DELETE CASCADE`
+    /// 随之清掉旧状态；随后写入新状态即等价原版行为。
+    pub fn insert_with_check_state(&self, item: &BookSource) -> LegadoResult<()> {
+        crate::connection::in_transaction(self.conn, "写入书源与检验状态", |conn| {
+            let repo = BookSourceRepository::new(conn);
+            repo.insert(item)?;
+            crate::repository::book_source_check_state_repository::BookSourceCheckStateRepository::new(conn)
+                .save(&legado_core::models::BookSourceCheckState::new(
+                    &item.book_source_url,
+                ))?;
+            Ok(())
+        })
+    }
+
+    /// 更新书源；仅当规则内容变化时重建检验状态（对齐原版 `BookSourceDao.update`）
+    ///
+    /// 原版比较 `current.checkContent() != source.checkContent()`：仅改启用开关/
+    /// 分组/排序等不影响规则的字段时，保留已有检验状态（含 revision 与
+    /// sourceRevision）；规则内容变化则重建状态（`NEEDS_CHECK` + 新 revision）。
+    ///
+    /// 源不存在时按既有 upsert 语义写入并创建状态（本轨 `update` 一直是
+    /// upsert；原版 `update` 对不存在行是 no-op，差异为既有行为登记）。
+    pub fn update_with_check_state(&self, item: &BookSource) -> LegadoResult<()> {
+        crate::connection::in_transaction(self.conn, "更新书源与检验状态", |conn| {
+            let repo = BookSourceRepository::new(conn);
+            let state_repo =
+                crate::repository::book_source_check_state_repository::BookSourceCheckStateRepository::new(conn);
+            let previous = repo.find_by_url(&item.book_source_url)?;
+            let previous_state = state_repo.find_by_url(&item.book_source_url)?;
+            repo.insert(item)?;
+            let content_unchanged = previous
+                .as_ref()
+                .is_some_and(|old| old.check_content() == item.check_content());
+            let state = if content_unchanged {
+                previous_state.unwrap_or_else(|| {
+                    legado_core::models::BookSourceCheckState::new(&item.book_source_url)
+                })
+            } else {
+                legado_core::models::BookSourceCheckState::new(&item.book_source_url)
+            };
+            state_repo.save(&state)?;
+            Ok(())
+        })
+    }
+
+    /// 批量导入书源并为每条重建检验状态（单事务，对齐原版逐条 `insert`）
+    pub fn insert_batch_with_check_state(&self, items: &[BookSource]) -> LegadoResult<()> {
+        crate::connection::in_transaction(self.conn, "批量写入书源与检验状态", |conn| {
+            let repo = BookSourceRepository::new(conn);
+            for item in items {
+                repo.insert_with_check_state(item)?;
             }
             Ok(())
         })
@@ -492,6 +603,120 @@ mod tests {
         let found = repo.find_by_url("u1").unwrap().unwrap();
         assert_eq!(found.book_source_name, "updated");
         assert_eq!(repo.count().unwrap(), 1);
+    }
+
+    // ─── 批30：保存钩子的检验状态语义（对齐 BookSourceDao.insert/update） ───
+
+    fn state_repo<'a>(
+        conn: &'a rusqlite::Connection,
+    ) -> crate::repository::book_source_check_state_repository::BookSourceCheckStateRepository<'a>
+    {
+        crate::repository::book_source_check_state_repository::BookSourceCheckStateRepository::new(
+            conn,
+        )
+    }
+
+    /// insert_with_check_state：新源生成 NEEDS_CHECK 状态；再次 insert 重建
+    #[test]
+    fn test_insert_with_check_state_creates_and_resets() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let repo = BookSourceRepository::new(conn);
+        let src = make_source("https://a.example.com", "a");
+        repo.insert_with_check_state(&src).unwrap();
+
+        let first = state_repo(conn)
+            .find_by_url("https://a.example.com")
+            .unwrap()
+            .expect("应创建状态");
+        assert_eq!(first.status, "NEEDS_CHECK");
+
+        repo.insert_with_check_state(&src).unwrap();
+        let second = state_repo(conn)
+            .find_by_url("https://a.example.com")
+            .unwrap()
+            .unwrap();
+        assert_ne!(
+            first.revision, second.revision,
+            "insert 语义应重建 revision"
+        );
+        assert_ne!(first.source_revision, second.source_revision);
+    }
+
+    /// update_with_check_state：仅启用开关变化 → 状态保留；规则变化 → 重建
+    #[test]
+    fn test_update_with_check_state_preserves_or_resets() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let repo = BookSourceRepository::new(conn);
+        let mut src = make_source("https://a.example.com", "a");
+        repo.insert_with_check_state(&src).unwrap();
+        let before = state_repo(conn)
+            .find_by_url("https://a.example.com")
+            .unwrap()
+            .unwrap();
+
+        // 仅 enabled 变化（checkContent 归一后一致）→ 状态原样保留
+        src.enabled = !src.enabled;
+        repo.update_with_check_state(&src).unwrap();
+        let kept = state_repo(conn)
+            .find_by_url("https://a.example.com")
+            .unwrap()
+            .unwrap();
+        assert_eq!(kept, before, "不影响规则的字段变化不应重置状态");
+
+        // searchUrl 变化（规则内容变化）→ 重建状态
+        src.search_url = Some("https://a.example.com/search?q={key}".to_string());
+        repo.update_with_check_state(&src).unwrap();
+        let reset = state_repo(conn)
+            .find_by_url("https://a.example.com")
+            .unwrap()
+            .unwrap();
+        assert_ne!(reset.revision, before.revision);
+        assert_ne!(reset.source_revision, before.source_revision);
+        assert_eq!(reset.status, "NEEDS_CHECK");
+    }
+
+    /// update_with_check_state：规则不变时保留 PASSED 结果与时间
+    #[test]
+    fn test_update_with_check_state_keeps_passed_result() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let repo = BookSourceRepository::new(conn);
+        let mut src = make_source("https://a.example.com", "a");
+        repo.insert_with_check_state(&src).unwrap();
+        let mut state = state_repo(conn)
+            .find_by_url("https://a.example.com")
+            .unwrap()
+            .unwrap();
+        state.status = "PASSED".to_string();
+        state.checked_at = 777;
+        state_repo(conn).save(&state).unwrap();
+
+        src.custom_order = 5;
+        src.weight = 9;
+        repo.update_with_check_state(&src).unwrap();
+        let kept = state_repo(conn)
+            .find_by_url("https://a.example.com")
+            .unwrap()
+            .unwrap();
+        assert_eq!(kept.status, "PASSED");
+        assert_eq!(kept.checked_at, 777);
+        assert_eq!(kept.revision, state.revision);
+    }
+
+    /// insert_batch_with_check_state：逐条创建状态
+    #[test]
+    fn test_insert_batch_with_check_state() {
+        let db = crate::init_in_memory_database().unwrap();
+        let conn = db.connection();
+        let repo = BookSourceRepository::new(conn);
+        repo.insert_batch_with_check_state(&[
+            make_source("https://a.example.com", "a"),
+            make_source("https://b.example.com", "b"),
+        ])
+        .unwrap();
+        assert_eq!(state_repo(conn).find_all().unwrap().len(), 2);
     }
 
     /// CAS 成功：expected 快照与库内一致，字段被更新并返回 true

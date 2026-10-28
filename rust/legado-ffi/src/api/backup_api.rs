@@ -2127,7 +2127,7 @@ fn restore_backup_in_tx(
     let source_repo = BookSourceRepository::new(conn);
     for value in &backup.book_sources {
         if let Ok(source) = serde_json::from_value::<BookSource>(value.clone()) {
-            match source_repo.insert(&source) {
+            match source_repo.insert_with_check_state(&source) {
                 Ok(()) => stats.book_sources += 1,
                 Err(e) => {
                     log::warn!("恢复书源失败（已跳过）: {} - {e}", source.book_source_url)
@@ -2507,7 +2507,7 @@ pub fn import_old_data(dir: &str) -> LegadoResult<String> {
                 let sources = legado_core::import_old::from_old_book_sources(&json);
                 let mut n = 0usize;
                 for source in &sources {
-                    match source_repo.insert(source) {
+                    match source_repo.insert_with_check_state(source) {
                         Ok(()) => n += 1,
                         Err(e) => log::warn!(
                             "导入旧版书源失败（已跳过）: {} - {e}",

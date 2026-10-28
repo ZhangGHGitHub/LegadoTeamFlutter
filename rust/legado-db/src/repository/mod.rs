@@ -5,6 +5,7 @@ pub mod book_chapter_repository;
 pub mod book_group_repository;
 pub mod book_memo_repository;
 pub mod book_repository;
+pub mod book_source_check_state_repository;
 pub mod book_source_repository;
 pub mod bookmark_repository;
 pub mod cache_book_repository;

@@ -173,6 +173,45 @@ impl BookSource {
     pub fn is_js_source(&self) -> bool {
         self.main_js.as_ref().is_some_and(|s| !s.trim().is_empty())
     }
+
+    /// 检验内容指纹：忽略排序/时间/列表开关等「不影响规则」的字段
+    ///
+    /// 对齐原版 `BookSource.kt:260-263`：
+    /// ```kotlin
+    /// fun checkContent(): String = GSON.toJson(copy(
+    ///     customOrder = 0, enabled = true, enabledExplore = true,
+    ///     lastUpdateTime = 0, respondTime = 0, weight = 0,
+    /// ))
+    /// ```
+    ///
+    /// 用途（两处，语义一致）：
+    /// 1. 书源保存时与库内旧值比较，决定是否重置检验状态（`sourceRevision`）；
+    /// 2. `startBookSourceCheck` 校验网页端提交的源与库内版本一致（防用旧编辑
+    ///    结果跑检验）。
+    ///
+    /// 本实现用 serde 序列化归一后的副本：`Option` 为 `None` / 空 `variable`
+    /// 时键省略，结构体字段序固定，因此同一内容的输出逐字节稳定。与 Kotlin
+    /// GSON 的差异仅在「省略 null 键」的取舍（GSON 同样省略 null），不影响
+    /// 「同内容同指纹、异内容异指纹」的判定语义。
+    ///
+    /// `enabledCookieJar` 额外归一：`None`（旧库 NULL / `BookSource::default()`
+    /// / 显式 null）与 `Some(true)` 视为同一内容。理由：网页端
+    /// `utils/sourceCheckState.js` 的规范化对「缺键 / null / 默认值 true」
+    /// 一律丢弃，若服务端区分二者，旧库书源在网页端会无端报「书源尚未保存」；
+    /// 该归一与前端判定口径一致（登记于批30 模块文档）。
+    pub fn check_content(&self) -> String {
+        let mut normalized = self.clone();
+        normalized.custom_order = 0;
+        normalized.enabled = true;
+        normalized.enabled_explore = true;
+        if normalized.enabled_cookie_jar.is_none() {
+            normalized.enabled_cookie_jar = Some(true);
+        }
+        normalized.last_update_time = 0;
+        normalized.respond_time = 0;
+        normalized.weight = 0;
+        serde_json::to_string(&normalized).unwrap_or_default()
+    }
 }
 
 fn default_true() -> bool {
@@ -380,5 +419,87 @@ mod tests {
         let json = serde_json::to_string(&bs).unwrap();
         let de: BookSource = serde_json::from_str(&json).unwrap();
         assert!(de.rule_search.is_some());
+    }
+
+    // ─── 批30：check_content 指纹（对齐原版 BookSource.checkContent） ───
+
+    #[test]
+    fn test_check_content_ignores_ranking_and_time_fields() {
+        let base = BookSource {
+            book_source_url: "https://a.example.com".to_string(),
+            book_source_name: "源".to_string(),
+            respond_time: 100,
+            ..BookSource::default()
+        };
+        let mut changed = base.clone();
+        changed.custom_order = 99;
+        changed.enabled = !base.enabled;
+        changed.enabled_explore = !base.enabled_explore;
+        changed.last_update_time = 123456;
+        changed.respond_time = 300000;
+        changed.weight = 42;
+        assert_eq!(
+            base.check_content(),
+            changed.check_content(),
+            "排序/时间/列表开关不应影响检验指纹"
+        );
+    }
+
+    #[test]
+    fn test_check_content_detects_rule_changes() {
+        let base = BookSource {
+            book_source_url: "https://a.example.com".to_string(),
+            book_source_name: "源".to_string(),
+            ..BookSource::default()
+        };
+        let mut changed = base.clone();
+        changed.search_url = Some("https://a.example.com/s?q={key}".to_string());
+        assert_ne!(base.check_content(), changed.check_content());
+
+        let mut group_changed = base.clone();
+        group_changed.book_source_group = Some("分组A".to_string());
+        assert_ne!(base.check_content(), group_changed.check_content());
+
+        let mut comment_changed = base.clone();
+        comment_changed.book_source_comment = Some("注释".to_string());
+        assert_ne!(base.check_content(), comment_changed.check_content());
+    }
+
+    #[test]
+    fn test_check_content_normalizes_cookie_jar_none_and_true() {
+        let none = BookSource {
+            enabled_cookie_jar: None,
+            ..BookSource::default()
+        };
+        let some_true = BookSource {
+            enabled_cookie_jar: Some(true),
+            ..BookSource::default()
+        };
+        assert_eq!(
+            none.check_content(),
+            some_true.check_content(),
+            "缺键/None 与默认 true 同指纹（对齐网页端 sourceCheckState.js）"
+        );
+        let some_false = BookSource {
+            enabled_cookie_jar: Some(false),
+            ..BookSource::default()
+        };
+        assert_ne!(none.check_content(), some_false.check_content());
+    }
+
+    #[test]
+    fn test_check_content_json_roundtrip_stable() {
+        let source = BookSource {
+            book_source_url: "https://a.example.com".to_string(),
+            book_source_name: "源".to_string(),
+            ..BookSource::default()
+        };
+        let json = serde_json::to_string(&source).unwrap();
+        let restored: BookSource = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            source.check_content(),
+            restored.check_content(),
+            "JSON 往返后指纹必须一致（startBookSourceCheck 的版本校验依赖）"
+        );
     }
 }

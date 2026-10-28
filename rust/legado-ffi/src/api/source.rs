@@ -23,7 +23,7 @@ pub fn add_source(source_json: &str) -> LegadoResult<BookSource> {
         .map_err(|e| LegadoError::Ffi(format!("BookSource JSON 解析失败: {e}")))?;
     let saved = with_database(|db| {
         let repo = BookSourceRepository::new(db.connection());
-        repo.insert(&source)?;
+        repo.insert_with_check_state(&source)?;
         Ok(source)
     })?;
     // 写库成功后才刷新限速注册表（写库失败经 `?` 提前返回，不触发刷新）；
@@ -41,7 +41,7 @@ pub fn update_source(source_json: &str) -> LegadoResult<()> {
         .map_err(|e| LegadoError::Ffi(format!("BookSource JSON 解析失败: {e}")))?;
     with_database(|db| {
         let repo = BookSourceRepository::new(db.connection());
-        repo.update(&source)
+        repo.update_with_check_state(&source)
     })?;
     // 写库成功后才刷新限速注册表（失败经 `?` 提前返回，不触发刷新）；
     // 保存显式 null/空串 → 清除路径（移除该 key 的 limiter），合法值原位刷新
@@ -78,7 +78,7 @@ fn set_source_enabled(source_url: &str, enabled: bool) -> LegadoResult<()> {
             .find_by_url(source_url)?
             .ok_or_else(|| LegadoError::Database("书源不存在".into()))?;
         source.enabled = enabled;
-        repo.update(&source)
+        repo.update_with_check_state(&source)
     })
 }
 
@@ -99,7 +99,7 @@ pub fn import_sources(json_array: &str) -> LegadoResult<i32> {
     let count = sources.len() as i32;
     with_database(|db| {
         let repo = BookSourceRepository::new(db.connection());
-        repo.insert_batch(&sources)
+        repo.insert_batch_with_check_state(&sources)
     })?;
     // 整批写库成功后逐个刷新本次导入书源（用实际解析出的书源列表，而非返回值计数）；
     // 任一条目写库失败经 `?` 提前返回，整批均不刷新
