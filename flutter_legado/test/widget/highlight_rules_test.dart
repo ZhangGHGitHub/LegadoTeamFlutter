@@ -165,4 +165,62 @@ void main() {
     expect(saved['timeoutMillisecond'], 2500);
     expect(saved['applyToBody'], false);
   });
+
+  /// [批33 | 高亮字段保真] 编辑颜色保存不得丢 style 其他字段
+  ///
+  /// 缺陷路径：编辑表单只有颜色选择，旧 `_save()` 直接
+  /// `jsonEncode({'textColor': color})` 重建 style，一次改色就把原版导入的
+  /// fill/fillShape/underline/bold/strike 等全部抹掉（渲染前置数据丢失）。
+  /// 修复：读取原始 style JSON → 只覆盖 textColor → 原样写回。
+  testWidgets('编辑颜色保存保留 style 其余字段（补丁式写回）', (tester) async {
+    final richStyle = jsonEncode({
+      'textColor': -65536, // 红
+      'fill': -16711936, // 绿底
+      'fillShape': 'ROUNDED',
+      'bold': true,
+      'italic': true,
+      'underline': {'kind': 'WAVY', 'color': -65536, 'width': 2.0},
+      'strike': {'color': -1},
+      'fontSize': 22.5,
+      'futureUnknownKey': 42,
+    });
+    final richRule = {...sampleRule, 'style': richStyle};
+    when(() => mockApi.highlightRuleList())
+        .thenAnswer((_) async => jsonEncode([richRule]));
+    await pumpScreen(tester);
+
+    await tester.tap(find.text('关键词高亮'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑高亮规则'), findsOneWidget);
+
+    // 选第二个预设色块（改色）
+    final swatches = find.descendant(
+      of: find.byType(BottomSheet),
+      matching: find.byWidgetPredicate((w) =>
+          w is Container &&
+          w.decoration is BoxDecoration &&
+          (w.decoration! as BoxDecoration).shape == BoxShape.circle),
+    );
+    await tester.tap(swatches.at(1));
+    await tester.pump();
+
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    final captured = verify(
+      () => mockApi.highlightRuleSave(ruleJson: captureAny(named: 'ruleJson')),
+    ).captured.single as String;
+    final saved = jsonDecode(captured) as Map<String, dynamic>;
+    final style = jsonDecode(saved['style'] as String) as Map<String, dynamic>;
+
+    expect(style['textColor'], isNot(-65536), reason: '本次选色应生效');
+    expect(style['fill'], -16711936);
+    expect(style['fillShape'], 'ROUNDED');
+    expect(style['bold'], true);
+    expect(style['italic'], true);
+    expect(style['underline'], {'kind': 'WAVY', 'color': -65536, 'width': 2.0});
+    expect(style['strike'], {'color': -1});
+    expect(style['fontSize'], 22.5);
+    expect(style['futureUnknownKey'], 42);
+  });
 }

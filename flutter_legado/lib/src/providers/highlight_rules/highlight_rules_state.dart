@@ -126,18 +126,41 @@ class HighlightRule {
 
   /// 从 style JSON 解析 textColor（ARGB int），非法/缺失返回 null
   int? get styleTextColor {
+    final value = styleMap?['textColor'];
+    return value is num ? value.toInt() : null;
+  }
+
+  /// style JSON 解析后的原始映射（非法/空返回 null）
+  ///
+  /// [批33 | 高亮字段保真] style 是原版 `HighlightStyle` 的完整 JSON
+  /// （fill/fillShape/textColor/bold/italic/underline/strike/box/emphasis/
+  /// shadow/fontPath/fontSize/letterSpacing 等）。编辑表单只改颜色，
+  /// 保存时必须保留未编辑键——解析结果同时供列表/预览展示基础字段。
+  Map<String, dynamic>? get styleMap {
     if (style.isEmpty) return null;
     try {
       final decoded = jsonDecode(style);
-      if (decoded is Map<String, dynamic>) {
-        final v = decoded['textColor'];
-        if (v is num) return v.toInt();
-      }
+      if (decoded is Map<String, dynamic>) return decoded;
     } catch (_) {
-      // 非法 style 静默回退默认色（UI 层 debugPrint 留痕由调用方决定）
+      // 非法 style 静默回退（UI 层按无样式展示）
     }
     return null;
   }
+
+  /// 背景填充色（ARGB int，0=无填充）
+  int get styleFill {
+    final value = styleMap?['fill'];
+    return value is num ? value.toInt() : 0;
+  }
+
+  /// 是否加粗（原版 HighlightStyle.bold）
+  bool get styleBold => styleMap?['bold'] == true;
+
+  /// 是否斜体（原版 HighlightStyle.italic）
+  bool get styleItalic => styleMap?['italic'] == true;
+
+  /// 是否有下划线（原版 HighlightStyle.underline 为对象，非 null 即启用）
+  bool get styleUnderline => styleMap?['underline'] != null;
 
   HighlightRule copyWith({
     int? id,
@@ -170,6 +193,32 @@ class HighlightRule {
       applyToBody: applyToBody ?? this.applyToBody,
     );
   }
+}
+
+/// 仅覆盖 style JSON 的 textColor，保留其余键（批33 高亮字段保真）
+///
+/// 缺陷背景：编辑表单没有 fill/underline/bold/stroke 等输入控件，旧实现
+/// 保存时直接 `jsonEncode({'textColor': color})` 重建 style，一次改色即把
+/// 用户从原版导入的完整 `HighlightStyle` 打成只剩文字色。
+///
+/// 语义（对齐批28「原 JSON 补丁」先例）：
+/// - 原 style 合法对象 → 深拷贝后只替换 `textColor`，未知键原样保留；
+/// - 原 style 为空/非法/非对象 → 退化为 `{"textColor": ...}`（不抛错）；
+/// - 输出为紧凑 JSON 字符串（与既有存储形态一致）。
+String mergeHighlightStyleTextColor(String? rawStyle, int textColor) {
+  final merged = <String, dynamic>{};
+  if (rawStyle != null && rawStyle.trim().isNotEmpty) {
+    try {
+      final decoded = jsonDecode(rawStyle);
+      if (decoded is Map<String, dynamic>) {
+        merged.addAll(decoded);
+      }
+    } catch (_) {
+      // 非法 style：按无样式处理，只写本次编辑的颜色
+    }
+  }
+  merged['textColor'] = textColor;
+  return jsonEncode(merged);
 }
 
 /// 高亮规则列表页状态

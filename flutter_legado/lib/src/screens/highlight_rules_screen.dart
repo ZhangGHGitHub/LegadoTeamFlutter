@@ -391,6 +391,8 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     // [批16e 回修 | P1-1] 编辑保存保留 uuid/order/超时/正文开关：
     // 缺失 uuid 会让 Rust 每次保存都重新生成身份，导入去重随之失效。
     // [批28] 同时保留 group：编辑表单无分组输入，不得因重建规则对象丢分组。
+    // [批33 | 高亮字段保真] style 走「原 JSON 补丁」：表单只编辑 textColor，
+    // 直接重建会丢掉 fill/underline/bold/stroke 等未渲染键（渲染专项后续批）。
     final rule = HighlightRule(
       id: base?.id ?? 0,
       uuid: base?.uuid ?? '',
@@ -400,7 +402,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
       applyToTitle: _applyToTitle,
       scope: scope.isEmpty ? null : scope,
       isEnabled: base?.isEnabled ?? true,
-      style: jsonEncode({'textColor': _color}),
+      style: mergeHighlightStyleTextColor(base?.style, _color),
       sortOrder: base?.sortOrder ?? 0,
       timeoutMillisecond:
           base?.timeoutMillisecond ?? HighlightRule.defaultTimeoutMilliseconds,
@@ -417,6 +419,13 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     // [UI_MD3_ALIGNMENT_PLAN.md Batch B B7] 默认高亮色由当前主题派生
     final presetColors = _presetColors(cs);
     if (_color == 0) _color = presetColors.first.toARGB32();
+    // [批33 | 高亮字段保真] 预览回放 style 基础字段（填充/粗体/斜体/下划线），
+    // 编辑表单不改这些键（保存走补丁保留），此处仅用于展示保真
+    final baseStyle = widget.rule;
+    final fillColor = baseStyle?.styleFill ?? 0;
+    final bold = baseStyle?.styleBold ?? false;
+    final italic = baseStyle?.styleItalic ?? false;
+    final underline = baseStyle?.styleUnderline ?? false;
     return SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
@@ -517,17 +526,26 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
               ],
             ),
             const SizedBox(height: 8),
-            // 预览（对标原版 tvStylePreview）
+            // 预览（对标原版 tvStylePreview：回放 fill/bold/italic/underline）
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: Color(_color).withValues(alpha: 0.25),
+                color: fillColor != 0
+                    ? Color(fillColor)
+                    : Color(_color).withValues(alpha: 0.25),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(
                 '高亮效果预览',
-                style: TextStyle(color: Color(_color)),
+                style: TextStyle(
+                  color: Color(_color),
+                  fontWeight: bold ? FontWeight.bold : null,
+                  fontStyle: italic ? FontStyle.italic : null,
+                  decoration:
+                      underline ? TextDecoration.underline : null,
+                  decorationColor: underline ? Color(_color) : null,
+                ),
               ),
             ),
             const SizedBox(height: 24),
