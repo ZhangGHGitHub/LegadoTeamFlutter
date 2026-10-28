@@ -15,6 +15,9 @@
 //!   的原始 JSON 文本；形态为 4 字段 camelCase 对象
 //!   `uploadUrl`/`downloadUrlRule`/`summary`/`compress`，对齐原版
 //!   `DirectLinkUpload.ruleFileName = "directLinkUploadRule.json"`），承载直链上传规则。
+//! - version=5（批27）：新增 `bookMemos`（书备忘数组，元素
+//!   `{bookUrl, content, updatedAt}`，对齐原版 `bookMemo.json`，**空表也写空数组**）；
+//!   `readRecords` 元素扩为 13 字段（v113 readRecord：作者主键 + 章节快照/显示元数据）。
 //!
 //! 兼容语义（防复发规定 9：备份格式版本化）：恢复器按字段驱动解析，
 //! 全部列表字段 `#[serde(default)]`——旧备份（无 version 或 version<2）
@@ -35,7 +38,7 @@
 //! 落库仍走同一个 [`restore_backup_in_tx`]（单实现原则，不复制第二套写库逻辑）。
 //!
 //! 原版 `Backup.kt` 写出的文件清单（`selectedBackupFileNames` + 固定写出项）：
-//! - 书架/分组：`bookshelf.json`、`bookGroup.json`
+//! - 书架/分组：`bookshelf.json`、`bookGroup.json`、`bookMemo.json`
 //! - 标注：`bookmark.json`、`highlight.json`（`writeEmpty=true`）、`highlightRule.json`
 //! - 源：`bookSource.json`、`rssSources.json`、`rssStar.json`、`sourceSub.json`
 //! - 规则：`replaceRule.json`、`txtTocRule.json`、`httpTTS.json`、`keyboardAssists.json`、
@@ -48,7 +51,8 @@
 //! - 设置：`readConfig.json`、`shareReadConfig.json`、`themeConfig.json`、`coverRule.json`、
 //!   `config.xml`、`videoConfig.xml`
 //! - 可选加密：`cookies.json`、`runtimeSourceCache.json`
-//! - 媒体：`covers/`（可含子目录）、`bg/`
+//! - 媒体：`covers/`（可含子目录）、`bg/`、`readRecordCovers/`（阅读记录封面缓存）
+//! - 封面字体：`coverFont.ttf`（原版设置页自定义封面字体，随设置项备份）
 //!
 //! 加密口径（`BackupAES` + hutool 5.8 `new AES(key)`）：
 //! - 密钥 = `MD5(password)` 小写十六进制串的**前 16 个 ASCII 字符**（不做 hex 解码）；
@@ -62,11 +66,13 @@
 //! - `config.xml` 内的 `webDavPassword` 同密钥加密（本实现跳过整个偏好快照，见下）。
 //!
 //! 未映射项（本批登记，不静默）：`readConfig.json` / `shareReadConfig.json` /
-//! `themeConfig.json` / `coverRule.json` / `config.xml` / `videoConfig.xml` 与
-//! 媒体目录 `covers/`、`bg/` 只记 warn 日志后跳过——
-//! 我方没有等价的阅读主题配置面或封面/背景落盘目录（封面按 URL 直取、不落本地
-//! `covers/`），恢复媒体会写到无人消费的目录并引入路径安全面；书内指向
-//! `.../covers/xxx` 的绝对封面路径按原版 remap 失败语义置空（回落到书源封面 URL）。
+//! `themeConfig.json` / `coverRule.json` / `config.xml` / `videoConfig.xml` /
+//! `coverFont.ttf` 与媒体目录 `covers/`、`bg/`、`readRecordCovers/` 只记 warn
+//! 日志后跳过——我方没有等价的阅读主题配置面或封面/背景/阅读记录封面落盘目录
+//! （封面按 URL 直取、不落本地 `covers/`），恢复媒体会写到无人消费的目录并引入
+//! 路径安全面；书内指向 `.../covers/xxx` 的绝对封面路径按原版 remap 失败语义
+//! 置空（回落到书源封面 URL）。**批27 起** `bookMemo.json` 已从「未映射」移入
+//! 数据映射（[`ZIP_DATA_FILES`]），`readRecord.json` 解析全部 13 字段。
 //!
 //! # 批9 审查回修登记（P2，仅登记，本批不实现）
 //!
@@ -129,12 +135,13 @@ use legado_core::models::{Book, BookSource, Bookmark, RssSource};
 use legado_core::{LegadoError, LegadoResult};
 use legado_db::repository::Repository;
 use legado_db::{
-    AutoTaskRepository, BookGroup, BookGroupRepository, BookRepository, BookSourceRepository,
-    BookmarkRepository, CacheRepository, CookieRepository, DictRule, DictRuleRepository,
-    HighlightRepository, HighlightRuleRepository, HttpTts, HttpTtsRepository, KeyboardAssist,
-    KeyboardAssistRepository, ReadRecord, ReadRecordRepository, ReplaceRuleRepository,
-    RssSourceRepository, RssStarRecord, RssStarRepository, RuleSubRecord, RuleSubRepository,
-    SearchKeywordRepository, ServerRepository, TxtTocRuleRecord, TxtTocRuleRepository,
+    AutoTaskRepository, BookGroup, BookGroupRepository, BookMemo, BookMemoRepository,
+    BookRepository, BookSourceRepository, BookmarkRepository, CacheRepository, CookieRepository,
+    DictRule, DictRuleRepository, HighlightRepository, HighlightRuleRepository, HttpTts,
+    HttpTtsRepository, KeyboardAssist, KeyboardAssistRepository, ReadRecord, ReadRecordRepository,
+    ReplaceRuleRepository, RssSourceRepository, RssStarRecord, RssStarRepository, RuleSubRecord,
+    RuleSubRepository, SearchKeywordRepository, ServerRepository, TxtTocRuleRecord,
+    TxtTocRuleRepository,
 };
 
 use crate::api::config_api::CONFIG_PREFIX;
@@ -143,13 +150,14 @@ use crate::db_state::with_database;
 /// 当前备份格式版本（写入侧；恢复侧按字段兼容，不按版本分叉）
 ///
 /// v4（批16f）：新增 `directLinkUploadRule`（直链上传规则配置）。
-pub const BACKUP_VERSION: i32 = 4;
+/// v5（批27）：新增 `bookMemos`（书备忘）；`readRecords` 元素扩为 13 字段。
+pub const BACKUP_VERSION: i32 = 5;
 
 /// 备份数据结构
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackupData {
-    /// 备份版本（v1=初版六类；v2=扩表批十类；v3=servers 表；v4=直链上传规则，
-    /// 见模块注释的版本语义）
+    /// 备份版本（v1=初版六类；v2=扩表批十类；v3=servers 表；v4=直链上传规则；
+    /// v5=书备忘 + readRecord 13 字段，见模块注释的版本语义）
     #[serde(default = "default_version")]
     pub version: i32,
     /// 备份时间戳（毫秒）
@@ -170,9 +178,16 @@ pub struct BackupData {
     /// RSS 源列表（v2 起为 RssSource 模型序列化；v1 为 SELECT * 直出）
     #[serde(default, rename = "rssSources")]
     pub rss_sources: Vec<serde_json::Value>,
-    /// 阅读记录列表
+    /// 阅读记录列表（v113 起元素为 13 字段：作者主键 + 章节快照/显示元数据）
     #[serde(default, rename = "readRecords")]
     pub read_records: Vec<serde_json::Value>,
+    /// 书备忘列表（v5 新增，对齐原版 bookMemo.json）
+    ///
+    /// 元素形态为 [`legado_db::BookMemo`]（`bookUrl`/`content`/`updatedAt`）。
+    /// 写入侧**空表也写空数组**（对齐原版 `writeEmpty = true`）；旧备份缺该键时
+    /// serde 默认空数组，恢复器据此**不触碰**库内既有备忘。
+    #[serde(default, rename = "bookMemos")]
+    pub book_memos: Vec<serde_json::Value>,
     /// 书籍分组列表（v2 新增，对齐原版 bookGroup.json）
     #[serde(default, rename = "bookGroups")]
     pub book_groups: Vec<serde_json::Value>,
@@ -306,6 +321,7 @@ impl BackupData {
             book_sources: Vec::new(),
             rss_sources: Vec::new(),
             read_records: Vec::new(),
+            book_memos: Vec::new(),
             book_groups: Vec::new(),
             rss_stars: Vec::new(),
             highlights: Vec::new(),
@@ -467,12 +483,20 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             .filter_map(|s| serde_json::to_value(&s).ok())
             .collect();
 
-        // 收集阅读记录
+        // 收集阅读记录（v113：13 字段全列，含作者主键/章节快照/显示元数据）
         let record_repo = ReadRecordRepository::new(conn);
         let read_records: Vec<serde_json::Value> = record_repo
             .find_all()?
             .into_iter()
             .filter_map(|r| serde_json::to_value(&r).ok())
+            .collect();
+
+        // 收集书备忘（v5：仅书架内书籍，对齐原版 `bookMemoDao.all()` 的 inner join）；
+        // 空表也写出空数组（对齐原版 `writeEmpty = true`）
+        let book_memos: Vec<serde_json::Value> = BookMemoRepository::new(conn)
+            .list_for_bookshelf()?
+            .into_iter()
+            .filter_map(|m| serde_json::to_value(&m).ok())
             .collect();
 
         // ─── v2 扩表收集（表已在库，repository 全列读取）──────────────
@@ -572,6 +596,7 @@ pub fn backup_create(path: &str) -> LegadoResult<String> {
             book_sources,
             rss_sources,
             read_records,
+            book_memos,
             book_groups,
             rss_stars,
             highlights,
@@ -852,12 +877,14 @@ const MAX_BACKUP_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_BACKUP_TOTAL_BYTES: u64 = 512 * 1024 * 1024;
 
 /// 原版 `Backup.kt` 写出的、本实现会读取的数据文件（其余条目不解压）
-const ZIP_DATA_FILES: [&str; 21] = [
+const ZIP_DATA_FILES: [&str; 22] = [
     "bookshelf.json",
     "bookmark.json",
     "highlight.json",
     "highlightRule.json",
     "bookGroup.json",
+    // 书备忘（批27：从「无落库面」移入数据映射；原版 `writeEmpty = true`）
+    "bookMemo.json",
     "bookSource.json",
     "rssSources.json",
     "rssStar.json",
@@ -882,13 +909,15 @@ const ZIP_DATA_FILES: [&str; 21] = [
 const ZIP_ENCRYPTED_FILES: [&str; 3] = ["servers.json", "cookies.json", "runtimeSourceCache.json"];
 
 /// 原版 zip 内存在、但本实现无对应落库面的文件（只报告不落库，登记见模块注释）
-const ZIP_UNMAPPED_FILES: [&str; 6] = [
+const ZIP_UNMAPPED_FILES: [&str; 7] = [
     "readConfig.json",
     "shareReadConfig.json",
     "themeConfig.json",
     "coverRule.json",
     "config.xml",
     "videoConfig.xml",
+    // 封面字体（批27：原版设置页自定义封面字体，我方无封面渲染配置面）
+    "coverFont.ttf",
 ];
 
 /// 原版 zip 备份读取结果
@@ -1587,7 +1616,7 @@ fn report_unmapped_zip_entries(archive: &ZipBackupArchive) -> bool {
     }
     let mut reported_media: Vec<&str> = Vec::new();
     for name in &archive.entry_names {
-        if let Some(prefix) = ["covers/", "bg/"]
+        if let Some(prefix) = ["covers/", "bg/", "readRecordCovers/"]
             .iter()
             .find(|prefix| name.starts_with(**prefix))
         {
@@ -1625,6 +1654,8 @@ fn backup_data_from_zip(
         .into_iter()
         .map(normalize_zip_book_group)
         .collect();
+    // 书备忘（批27，对齐原版 bookMemo.json；恢复时按 restoredBookUrls 过滤）
+    data.book_memos = zip_json_array(archive, "bookMemo.json").unwrap_or_default();
     data.bookmarks = zip_json_array(archive, "bookmark.json").unwrap_or_default();
     data.highlights = zip_json_array(archive, "highlight.json").unwrap_or_default();
     let mut replace_policy = ReplaceTablePolicy::default();
@@ -1739,11 +1770,12 @@ fn normalize_zip_book_group(mut value: serde_json::Value) -> serde_json::Value {
 ///
 /// 原版 `Restore.kt:363-376` 用 `readRecord.deviceId != androidId` 判定「他机记录」
 /// 并直接插入——其前提是备份来自另一台设备；本机恢复时 deviceId 恒等于本机
-/// androidId，走「同键较新者胜」。我方为单设备模型（Rust 侧 deviceId 固定空串），
-/// 若不归一：原设备 ID 会被当作他机记录直接插入，与本机既有同书名记录并存两行，
-/// Flutter 阅读记录页按 bookName 合并时把 readTime 相加，阅读时长翻倍。
+/// androidId，走「同键（deviceId, bookName, author）较新者胜」。我方为单设备模型
+/// （Rust 侧 deviceId 固定空串），若不归一：原设备 ID 会被当作他机记录直接插入，
+/// 与本机同书同作者记录并存两行（同书同作者会被重复计时）。
 /// 归一一律置空串后，恢复走 [`ReadRecordRepository::upsert_restore`] 的
-/// 「本机较新者胜 + 作者合并」路径，对齐原版「同设备比较」意图。
+/// 「同键较新者胜」路径（v113 起同名不同作者本就分行，不再合并作者），
+/// 对齐原版「同设备比较」意图。
 fn normalize_zip_read_record(mut value: serde_json::Value) -> serde_json::Value {
     if let serde_json::Value::Object(map) = &mut value {
         // 兼容理论上的 snake_case 旧键，避免归一后同义键并存
@@ -2008,9 +2040,15 @@ fn restore_backup_in_tx(
     // [批7c P2-6] 进度覆盖失败同样不计入成功数：书行虽已插入/更新，但
     // 备份中的阅读进度未落库，该条目不算完整恢复；成功计数只统计
     // 「书行 + 4 个进度列」全部写成的条目。
+    //
+    // [批27] `restoredBookUrls`：本次备份 `books` 段中成功解析的书籍 URL 集合，
+    // 书备忘恢复按该集合过滤（对齐原版 `Restore.kt:304-306`）。
     let book_repo = BookRepository::new(conn);
+    let mut restored_book_urls: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
     for value in &backup.books {
         if let Ok(book) = serde_json::from_value::<Book>(value.clone()) {
+            restored_book_urls.insert(book.book_url.clone());
             match book_repo.insert(&book) {
                 Ok(()) => {
                     // [批7b] 对齐原版 Restore.kt:286-288 的 `bookDao.update(book)`
@@ -2039,6 +2077,25 @@ fn restore_backup_in_tx(
                 }
                 Err(e) => log::warn!("恢复书籍失败（已跳过）: {} - {e}", book.book_url),
             }
+        }
+    }
+
+    // 恢复书备忘（v5，对齐原版 `Restore.kt:304-306`）：
+    // 仅写「bookUrl ∈ restoredBookUrls + 库内存在该书 + updatedAt 更新者胜」的条目；
+    // 备份缺该键/空数组时不触碰库内既有备忘。
+    let memo_repo = BookMemoRepository::new(conn);
+    for value in &backup.book_memos {
+        match serde_json::from_value::<BookMemo>(value.clone()) {
+            Ok(memo) => {
+                if !restored_book_urls.contains(&memo.book_url) {
+                    continue;
+                }
+                match memo_repo.restore_one(&memo) {
+                    Ok(_) => {}
+                    Err(e) => log::warn!("恢复书备忘失败（已跳过）: {} - {e}", memo.book_url),
+                }
+            }
+            Err(e) => log::warn!("恢复书备忘解析失败（已跳过）: {e}"),
         }
     }
 
@@ -2101,8 +2158,8 @@ fn restore_backup_in_tx(
         }
     }
 
-    // 恢复阅读记录（v2：全字段 + 原版 Restore.kt「同键较新者胜 + 作者合并」语义；
-    // 旧实现仅 upsert(book_name, read_time) 且 JSON 键不匹配，等于丢数据）
+    // 恢复阅读记录（v113：13 字段全列 + 原版 `mergeRestoredReadRecord` 语义：
+    // 物理主键 (deviceId, bookName, author) 相同才合并，较新者胜；同名不同作者分行）
     let record_repo = ReadRecordRepository::new(conn);
     for value in &backup.read_records {
         match serde_json::from_value::<ReadRecord>(value.clone()) {
@@ -2690,6 +2747,7 @@ mod tests {
                 "servers",
                 "auto_task_rules",
                 "cookies",
+                "book_memos",
             ] {
                 conn.execute(&format!("DELETE FROM {table}"), [])
                     .map_err(|e| LegadoError::Database(format!("清空 {table} 失败: {e}")))?;
@@ -2820,101 +2878,373 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// [P1-7 回归] ReadRecord 恢复：双设备 fixture，较新者胜 + deviceId 归属 + author/lastRead 落库
+    /// [批27] ReadRecord 恢复 v113 语义：物理键 `(deviceId,bookName,author)`
+    ///
+    /// 覆盖：非本机记录直插、同名不同作者分行、同键本机较新者胜（时长不回滚）、
+    /// 同键传入较新时章节快照落库，且全程不再产生旧合并作者串。
     #[test]
-    fn test_read_record_restore_merge_two_devices() {
+    fn test_read_record_restore_v113_semantics() {
         let _db_guard = crate::db_state::ensure_test_db();
         clear_backup_tables();
 
-        let dir = std::env::temp_dir().join("legado_backup_roundtrip_readrecord");
+        let dir = std::env::temp_dir().join("legado_backup_roundtrip_readrecord_v113");
+        let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
-        let backup_path = dir.join("readrecord_merge.json");
+        let backup_path = dir.join("readrecord_merge_v113.json");
         let path_str = backup_path.to_str().unwrap();
 
-        // 预置本机库内记录（较新：readTime=200）
+        // 预置本机库内记录（书X/作者乙 较新：readTime=200）
         with_database(|db| {
-            ReadRecordRepository::new(db.connection()).upsert_full("", "书X", "作者乙", 200, 20)
+            let repo = ReadRecordRepository::new(db.connection());
+            repo.upsert_full("", "书X", "作者乙", 200, 20)?;
+            repo.upsert_full("", "书Y", "作者丁", 50, 5)
         })
         .unwrap();
 
-        // 备份包含：非本机 device-A 记录（直接插入）+ 本机较旧记录（仅合并作者）
         let mut backup = empty_backup();
         backup.read_records = vec![
+            // 非本机 device-A 记录（直接插入）
             serde_json::json!({
                 "deviceId": "device-A", "bookName": "书X",
                 "author": "作者甲", "readTime": 500, "lastRead": 50
             }),
+            // 同名不同作者：新行（不合并进 作者乙）
             serde_json::json!({
                 "deviceId": "", "bookName": "书X",
                 "author": "作者丙", "readTime": 100, "lastRead": 5
             }),
-            // 本机传入较新：整行覆盖（含空作者时保留库内作者）
+            // 同键本机较旧记录：readTime/lastRead 保留库内值
             serde_json::json!({
-                "deviceId": "", "bookName": "书Y",
-                "author": "", "readTime": 999, "lastRead": 99
+                "deviceId": "", "bookName": "书X",
+                "author": "作者乙", "readTime": 100, "lastRead": 5
+            }),
+            // 同键本机传入较新：覆盖时长并落章节快照
+            serde_json::json!({
+                "deviceId": "", "bookName": "书Y", "author": "作者丁",
+                "readTime": 999, "lastRead": 99,
+                "lastChapterTitle": "备份章节", "lastChapterIndex": 3,
+                "lastChapterPos": 30, "coverUrl": "https://cover.example/new.jpg"
             }),
         ];
         let json = serde_json::to_string(&backup).unwrap();
         fs::write(path_str, json).unwrap();
 
-        // 预置书Y本机旧记录（readTime=50，作者丁）
-        with_database(|db| {
-            ReadRecordRepository::new(db.connection()).upsert_full("", "书Y", "作者丁", 50, 5)
-        })
-        .unwrap();
-
         let stats_json = backup_restore(path_str).unwrap();
         let stats: RestoreStats = serde_json::from_str(&stats_json).unwrap();
-        assert_eq!(stats.read_records, 3);
+        assert_eq!(stats.read_records, 4);
 
         with_database(|db| {
             let repo = ReadRecordRepository::new(db.connection());
-
-            // 非本机记录：deviceId 归属正确，author/lastRead 原样落库
             let all = repo.find_all().unwrap();
+            assert_eq!(all.len(), 4, "同名不同作者应分行（不合并为一行）: {all:?}");
+
+            // 非本机记录：deviceId 归属正确
             let foreign = all.iter().find(|r| r.device_id == "device-A").unwrap();
             assert_eq!(foreign.book_name, "书X");
+            assert_eq!(foreign.author, "作者甲");
             assert_eq!(foreign.read_time, 500);
             assert_eq!(foreign.last_read, 50);
-            assert_eq!(foreign.author, "作者甲");
 
-            // 本机较旧记录：readTime/lastRead 保留库内值，作者合并为集合
+            // 同键本机较新：时长/最后阅读不被旧备份覆盖
             let local_x = all
                 .iter()
-                .find(|r| r.device_id.is_empty() && r.book_name == "书X")
+                .find(|r| r.device_id.is_empty() && r.book_name == "书X" && r.author == "作者乙")
                 .unwrap();
-            assert_eq!(
-                local_x.read_time, 200,
-                "本机库内较新 readTime 不得被旧备份覆盖"
-            );
+            assert_eq!(local_x.read_time, 200, "本机较新 readTime 不得被旧备份覆盖");
             assert_eq!(local_x.last_read, 20);
-            let authors: Vec<String> = serde_json::from_str(
-                local_x
-                    .author
-                    .strip_prefix("\u{1E}authors:")
-                    .unwrap_or(&local_x.author),
-            )
-            .unwrap_or_default();
-            assert!(
-                authors.contains(&"作者乙".to_string()),
-                "库内作者应保留: {}",
-                local_x.author
-            );
-            assert!(
-                authors.contains(&"作者丙".to_string()),
-                "备份作者应合并: {}",
-                local_x.author
-            );
 
-            // 本机传入较新：整行覆盖，空作者不抹掉库内作者
+            // 同名不同作者：独立行
+            let other_x = all
+                .iter()
+                .find(|r| r.book_name == "书X" && r.author == "作者丙")
+                .unwrap();
+            assert_eq!(other_x.read_time, 100);
+
+            // 同键传入较新：时长覆盖 + 章节快照落库
             let local_y = all
                 .iter()
                 .find(|r| r.device_id.is_empty() && r.book_name == "书Y")
                 .unwrap();
+            assert_eq!(local_y.author, "作者丁");
             assert_eq!(local_y.read_time, 999);
             assert_eq!(local_y.last_read, 99);
-            assert_eq!(local_y.author, "作者丁");
+            assert_eq!(local_y.last_chapter_title.as_deref(), Some("备份章节"));
+            assert_eq!(local_y.last_chapter_index, 3);
+            assert_eq!(local_y.last_chapter_pos, 30);
+            assert_eq!(
+                local_y.cover_url.as_deref(),
+                Some("https://cover.example/new.jpg")
+            );
 
+            // 不再产生旧合并作者串
+            assert!(
+                all.iter().all(|r| !r.author.starts_with("\u{1E}authors:")),
+                "写入侧不得再合并作者: {all:?}"
+            );
+
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批27] 备份 v5：书备忘随备份往返，且只导出书架内书籍的备忘
+    #[test]
+    fn test_book_memo_backup_restore_roundtrip() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_roundtrip_book_memo");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("book_memo.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let on_shelf = "https://memo.example/on-shelf";
+        let off_shelf = "https://memo.example/off-shelf";
+        with_database(|db| {
+            let conn = db.connection();
+            BookRepository::new(conn).insert(&Book {
+                book_url: on_shelf.to_string(),
+                name: "备忘书".to_string(),
+                author: "作者甲".to_string(),
+                ..Book::default()
+            })?;
+            let memo_repo = BookMemoRepository::new(conn);
+            memo_repo.upsert(&BookMemo {
+                book_url: on_shelf.to_string(),
+                content: "书架内备忘".to_string(),
+                updated_at: 1_700_000_000_000,
+            })?;
+            memo_repo.upsert(&BookMemo {
+                book_url: off_shelf.to_string(),
+                content: "离架备忘".to_string(),
+                updated_at: 1_700_000_000_100,
+            })
+        })
+        .unwrap();
+
+        backup_create(path_str).unwrap();
+        let raw: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(path_str).unwrap()).unwrap();
+        let memos = raw["bookMemos"].as_array().unwrap();
+        assert_eq!(memos.len(), 1, "只导出书架内书籍的备忘: {memos:?}");
+        assert_eq!(memos[0]["bookUrl"], on_shelf);
+        assert_eq!(memos[0]["content"], "书架内备忘");
+        assert_eq!(memos[0]["updatedAt"], 1_700_000_000_000_i64);
+
+        // 清库后恢复
+        with_database(|db| {
+            db.connection()
+                .execute("DELETE FROM book_memos", [])
+                .map_err(|e| LegadoError::Database(format!("清空书备忘失败: {e}")))?;
+            db.connection()
+                .execute("DELETE FROM books", [])
+                .map_err(|e| LegadoError::Database(format!("清空书籍失败: {e}")))?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        backup_restore(path_str).unwrap();
+        with_database(|db| {
+            let repo = BookMemoRepository::new(db.connection());
+            let memo = repo.get(on_shelf)?.expect("书架内备忘应恢复");
+            assert_eq!(memo.content, "书架内备忘");
+            assert_eq!(memo.updated_at, 1_700_000_000_000);
+            assert!(repo.get(off_shelf)?.is_none(), "离架备忘不随备份恢复");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批27] 旧格式（v1~v4，无 bookMemos 键）恢复不得清空库内既有备忘
+    #[test]
+    fn test_legacy_backup_without_book_memos_keeps_existing() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_v4_no_book_memo");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("v4_backup.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let book_url = "https://memo.example/legacy";
+        with_database(|db| {
+            let conn = db.connection();
+            BookRepository::new(conn).insert(&Book {
+                book_url: book_url.to_string(),
+                name: "旧备份书".to_string(),
+                ..Book::default()
+            })?;
+            BookMemoRepository::new(conn).upsert(&BookMemo {
+                book_url: book_url.to_string(),
+                content: "库内既有备忘".to_string(),
+                updated_at: 500,
+            })
+        })
+        .unwrap();
+
+        // v4 形态：无 bookMemos 键
+        fs::write(path_str, r#"{"version":4,"backupTime":1,"books":[]}"#).unwrap();
+        backup_restore(path_str).unwrap();
+
+        with_database(|db| {
+            let memo = BookMemoRepository::new(db.connection())
+                .get(book_url)?
+                .expect("旧备份缺 bookMemos 时不得清空库内备忘");
+            assert_eq!(memo.content, "库内既有备忘");
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批27] 原版 zip：bookMemo.json 按 restoredBookUrls 过滤 + 更新者胜
+    #[test]
+    fn test_restore_upstream_zip_book_memo_filtered_and_newest_wins() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let book_url = "https://zip.example/memo-book";
+        with_database(|db| {
+            let conn = db.connection();
+            BookRepository::new(conn).insert(&Book {
+                book_url: book_url.to_string(),
+                name: "zip备忘书".to_string(),
+                ..Book::default()
+            })?;
+            BookMemoRepository::new(conn).upsert(&BookMemo {
+                book_url: book_url.to_string(),
+                content: "库内旧备忘".to_string(),
+                updated_at: 50,
+            })
+        })
+        .unwrap();
+
+        let bookshelf = format!(
+            r#"[{{"bookUrl":"{book_url}","name":"zip备忘书","author":"作者甲",
+                 "origin":"loc_book","originName":"本地","type":0,
+                 "latestChapterTime":0,"lastCheckTime":0,"lastCheckCount":0,
+                 "totalChapterNum":0,"durChapterIndex":0,"durChapterPos":0,
+                 "canUpdate":true,"order":0,"originOrder":0}}]"#
+        );
+        let book_memo = r#"[
+            {"bookUrl":"https://zip.example/memo-book","content":"备份新备忘","updatedAt":100},
+            {"bookUrl":"https://zip.example/missing-book","content":"离架备忘","updatedAt":999}
+        ]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_book_memo",
+            &[
+                ("bookshelf.json", bookshelf.as_bytes()),
+                ("bookMemo.json", book_memo.as_bytes()),
+            ],
+        );
+
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.books, 1);
+
+        with_database(|db| {
+            let repo = BookMemoRepository::new(db.connection());
+            let memo = repo.get(book_url)?.expect("书架内备忘应恢复");
+            assert_eq!(memo.content, "备份新备忘", "新备份应覆盖库内旧备忘");
+            assert_eq!(memo.updated_at, 100);
+            assert!(
+                repo.get("https://zip.example/missing-book")?.is_none(),
+                "不在 restoredBookUrls 的备忘应被过滤"
+            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批27] 自有备份 readRecords 元素含全部 13 字段且往返逐字段一致
+    #[test]
+    fn test_read_record_backup_13_fields_roundtrip() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_read_record_13_fields");
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        let backup_path = dir.join("read_record_13.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let seeded = ReadRecord {
+            device_id: String::new(),
+            book_name: "十三字段书".to_string(),
+            author: "作者癸".to_string(),
+            read_time: 123_456,
+            last_read: 1_700_000_000_123,
+            last_chapter_title: Some("第十二章".to_string()),
+            last_chapter_index: 11,
+            last_chapter_pos: 1_234,
+            cover_url: Some("https://cover.example/13.jpg".to_string()),
+            resolved_author: Some("还原作者".to_string()),
+            display_book_name: "显示书名".to_string(),
+            display_author: "显示作者".to_string(),
+            metadata_edited_at: 1_700_000_000_456,
+        };
+        with_database(|db| ReadRecordRepository::new(db.connection()).write_row(&seeded)).unwrap();
+
+        backup_create(path_str).unwrap();
+        let raw: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(path_str).unwrap()).unwrap();
+        let records = raw["readRecords"].as_array().unwrap();
+        let record = records
+            .iter()
+            .find(|r| r["bookName"] == "十三字段书")
+            .expect("备份应包含种子阅读记录");
+        for key in [
+            "deviceId",
+            "bookName",
+            "author",
+            "readTime",
+            "lastRead",
+            "lastChapterTitle",
+            "lastChapterIndex",
+            "lastChapterPos",
+            "coverUrl",
+            "resolvedAuthor",
+            "displayBookName",
+            "displayAuthor",
+            "metadataEditedAt",
+        ] {
+            assert!(
+                record.get(key).is_some(),
+                "readRecord 备份应含 {key} 键: {record}"
+            );
+        }
+
+        with_database(|db| {
+            db.connection()
+                .execute("DELETE FROM readRecord", [])
+                .map_err(|e| LegadoError::Database(format!("清空阅读记录失败: {e}")))?;
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        backup_restore(path_str).unwrap();
+        with_database(|db| {
+            let row = ReadRecordRepository::new(db.connection())
+                .get_by_pk("", "十三字段书", "作者癸")?
+                .expect("恢复后阅读记录应存在");
+            assert_eq!(row.read_time, seeded.read_time);
+            assert_eq!(row.last_read, seeded.last_read);
+            assert_eq!(row.last_chapter_title, seeded.last_chapter_title);
+            assert_eq!(row.last_chapter_index, seeded.last_chapter_index);
+            assert_eq!(row.last_chapter_pos, seeded.last_chapter_pos);
+            assert_eq!(row.cover_url, seeded.cover_url);
+            assert_eq!(row.resolved_author, seeded.resolved_author);
+            assert_eq!(row.display_book_name, seeded.display_book_name);
+            assert_eq!(row.display_author, seeded.display_author);
+            assert_eq!(row.metadata_edited_at, seeded.metadata_edited_at);
             Ok::<(), LegadoError>(())
         })
         .unwrap();
@@ -3605,6 +3935,16 @@ mod tests {
             "v4 备份应包含 servers 字段：{content}"
         );
         assert!(
+            content.contains("\"bookMemos\""),
+            "v5 备份应包含 bookMemos 字段（空表也写空数组）：{content}"
+        );
+        let raw: serde_json::Value = serde_json::from_str(&content).unwrap();
+        assert_eq!(
+            raw.get("bookMemos").and_then(|v| v.as_array()),
+            Some(&Vec::new()),
+            "空表应写出空数组而非省略键"
+        );
+        assert!(
             !content.contains("\"autoTasks\""),
             "自有 JSON 备份形状不得因批9 autoTasks 字段变化（空列表应省略）：{content}"
         );
@@ -3830,11 +4170,12 @@ mod tests {
 
         assert_eq!(backup_create(path_str).unwrap(), path_str);
 
-        // 备份 JSON 携带 v4 键，且值与配置文本逐字节一致
+        // 备份 JSON 携带当前版本键，且值与配置文本逐字节一致
         let content = fs::read_to_string(&backup_path).unwrap();
         let parsed: BackupData = serde_json::from_str(&content).unwrap();
         // 版本契约钉死一次字面量（P2-4）：常量若是误改，此处必须红
-        assert_eq!(parsed.version, 4, "v4 契约版本");
+        // 批27：备份格式版本 4→5（新增 bookMemos）
+        assert_eq!(parsed.version, 5, "v5 契约版本");
         assert_eq!(
             parsed.direct_link_upload_rule.as_deref(),
             Some(DIRECT_LINK_RULE_SEED),
@@ -4978,13 +5319,12 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// [批9 回修 P2-5] 本机既有记录 + zip 备份记录 → 恢复后单行且较新者胜
+    /// [批27] 本机既有记录 + zip 备份同键记录 → 单行且较新者胜
     ///
-    /// 原版 zip 的 deviceId 是原设备 androidId；若按「他机记录」直插，会与本机
-    /// 同书名记录并存两行，Flutter 阅读记录页按 bookName 合并会把 readTime 相加
-    /// （阅读时长翻倍）。归一为空串后必须只剩一行，且库内较新值不被覆盖。
+    /// 原版 zip 的 deviceId 是原设备 androidId；归一为空串后与库内本机记录同键
+    /// （同书同作者）合并，库内较新的 readTime/lastRead 不被旧备份覆盖。
     #[test]
-    fn test_restore_upstream_zip_read_record_single_row_newest_wins() {
+    fn test_restore_upstream_zip_read_record_same_author_newest_wins() {
         let _db_guard = crate::db_state::ensure_test_db();
         clear_backup_tables();
 
@@ -5000,11 +5340,11 @@ mod tests {
         })
         .unwrap();
 
-        // 原版 zip 备份记录（较旧：readTime 1700000004000，deviceId 为原设备）
+        // 原版 zip 备份记录（同作者较旧：readTime 1700000004000，deviceId 为原设备）
         let read_record = r#"[{"deviceId":"original-device","bookName":"zip书一",
-            "author":"作者甲","readTime":1700000004000,"lastRead":8}]"#;
+            "author":"作者乙","readTime":1700000004000,"lastRead":8}]"#;
         let (dir, path) = write_upstream_backup_zip(
-            "legado_restore_zip_read_record",
+            "legado_restore_zip_read_record_same_author",
             &[("readRecord.json", read_record.as_bytes())],
         );
 
@@ -5013,30 +5353,65 @@ mod tests {
 
         with_database(|db| {
             let rows = ReadRecordRepository::new(db.connection()).find_all()?;
-            assert_eq!(
-                rows.len(),
-                1,
-                "不得因 deviceId 差异产生两行（两行会被 Flutter 合并导致时长翻倍）: {rows:?}"
-            );
+            assert_eq!(rows.len(), 1, "同书同作者应合并为一行: {rows:?}");
             assert_eq!(rows[0].device_id, "", "zip 记录 deviceId 应归一为空串");
+            assert_eq!(rows[0].author, "作者乙");
             assert_eq!(
                 rows[0].read_time, 1_700_000_009_000,
                 "本机较新 readTime 不得被较旧备份覆盖"
             );
             assert_eq!(rows[0].last_read, 90, "lastRead 保留库内较新值");
-            let authors = legado_db::repository::read_record_repository::decode_read_record_authors(
-                &rows[0].author,
-            );
-            assert!(
-                authors.contains(&"作者乙".to_string()),
-                "库内作者应保留: {}",
-                rows[0].author
-            );
-            assert!(
-                authors.contains(&"作者甲".to_string()),
-                "备份作者应合并: {}",
-                rows[0].author
-            );
+            Ok::<(), LegadoError>(())
+        })
+        .unwrap();
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// [批27] 本机既有记录 + zip 备份同名不同作者 → 两行独立（不合并时长）
+    ///
+    /// v113 主键含 author：备份作者与库内作者不同即不同记录。Dart 阅读记录页
+    /// 按显示书名+显示作者分组，两行各自计时长，不会叠加。
+    #[test]
+    fn test_restore_upstream_zip_read_record_different_author_separate_rows() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        with_database(|db| {
+            ReadRecordRepository::new(db.connection()).upsert_full(
+                "",
+                "zip书二",
+                "作者乙",
+                1_700_000_009_000,
+                90,
+            )
+        })
+        .unwrap();
+
+        let read_record = r#"[{"deviceId":"original-device","bookName":"zip书二",
+            "author":"作者甲","readTime":1700000004000,"lastRead":8,
+            "lastChapterTitle":"备份章节","lastChapterIndex":6,"lastChapterPos":60}]"#;
+        let (dir, path) = write_upstream_backup_zip(
+            "legado_restore_zip_read_record_diff_author",
+            &[("readRecord.json", read_record.as_bytes())],
+        );
+
+        let stats: RestoreStats = serde_json::from_str(&backup_restore(&path).unwrap()).unwrap();
+        assert_eq!(stats.read_records, 1);
+
+        with_database(|db| {
+            let rows = ReadRecordRepository::new(db.connection()).find_all()?;
+            assert_eq!(rows.len(), 2, "同名不同作者应分行: {rows:?}");
+            let local = rows.iter().find(|r| r.author == "作者乙").unwrap();
+            assert_eq!(local.read_time, 1_700_000_009_000);
+            let restored = rows.iter().find(|r| r.author == "作者甲").unwrap();
+            assert_eq!(restored.device_id, "", "zip 记录 deviceId 应归一为空串");
+            assert_eq!(restored.read_time, 1_700_000_004_000);
+            assert_eq!(restored.last_read, 8);
+            // 13 字段中的章节快照随 zip 备份落库
+            assert_eq!(restored.last_chapter_title.as_deref(), Some("备份章节"));
+            assert_eq!(restored.last_chapter_index, 6);
+            assert_eq!(restored.last_chapter_pos, 60);
             Ok::<(), LegadoError>(())
         })
         .unwrap();
