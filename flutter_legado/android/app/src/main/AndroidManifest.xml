@@ -56,6 +56,17 @@
               android:name="io.flutter.embedding.android.NormalTheme"
               android:resource="@style/NormalTheme"
               />
+            <!-- 批25b：关闭 Flutter 内建深链自动路由。
+                 本应用自实现 legado:// / yuedu:// 分发（MainActivity →
+                 legado/deep_link 通道 → DeepLinkService），而 FlutterActivity
+                 默认会把 ACTION_VIEW 的 data URI 经 navigationChannel
+                 pushRouteInformation 当作命名路由压栈（热启动时会把关联导入
+                 确认框压在未知路由 /rssSource?... 之下，表现为弹窗不出现）。
+                 冷启动的 initialRoute 固定为 /welcome，不依赖内建深链。 -->
+            <meta-data
+              android:name="flutter_deeplinking_enabled"
+              android:value="false"
+              />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>

@@ -64,7 +64,26 @@ open class MainActivity : FlutterActivity() {
         private const val CHANNEL_COOKIE = "legado/cookie"
         private const val CHANNEL_LAUNCHER_ICON = LauncherIconBridge.CHANNEL
         private const val CHANNEL_HEAP_DUMP = "legado/heap_dump"
+
+        /** 批25b P2-2：分享文本一次性消费标记（SharedPreferences 文件与键） */
+        private const val PREFS_SHARED_TEXT_ONCE = "shared_text_once"
+        private const val KEY_CONSUMED_HASH = "consumed_hash"
+        private const val KEY_CONSUMED_AT = "consumed_at"
+
+        /** 进程级 one-shot holder：最近一次提取/投递的分享文本 */
+        private var recentSharedText: String? = null
+        private var recentSharedTextAt: Long = 0L
     }
+
+    /**
+     * 批25b P3-5：Dart 侧 deep_link 通道处理器是否已注册。
+     *
+     * 以 Dart `getInitialSharedText` 首次调用为界（Dart 在 `attach()` 内先
+     * `setMethodCallHandler`，再拉取初始数据，主线程调用串行）。未就绪时
+     * `onNewIntent` 只暂存不投递，避免「引擎已配置但 Dart 尚未注册处理器」
+     * 的启动窗口内分享文本被静默丢弃。
+     */
+    private var dartSharedHandlerReady = false
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -152,9 +171,17 @@ open class MainActivity : FlutterActivity() {
                 // P1-4：冷启动外部书籍文件 URI 拉取
                 "getInitialFileUri" -> result.success(initialFileUri)
                 // 批25：冷启动分享文本拉取（取后清空，避免热重启重复消费）
+                // 批25b P2-2：清空与一次性消费标记（hash + 时间）同步落盘，
+                // 进程被杀后从最近任务恢复时不再重复投递同一 SEND 文本
                 "getInitialSharedText" -> {
+                    // 该调用同时标志 Dart 处理器已注册（见 dartSharedHandlerReady）
+                    dartSharedHandlerReady = true
                     val text = initialSharedText
                     initialSharedText = null
+                    if (!text.isNullOrEmpty()) {
+                        markSharedTextConsumed(text)
+                        rememberRecentSharedText(text)
+                    }
                     result.success(text)
                 }
                 // P1-4：content:// / file:// 经 ContentResolver 拷入应用
@@ -241,7 +268,20 @@ open class MainActivity : FlutterActivity() {
         pendingAutoTaskMinimize =
             intent?.getBooleanExtra(AutoTaskJobBridge.EXTRA_AUTO_TASK_MINIMIZE, false) == true
         // 批25：ACTION_SEND / ACTION_PROCESS_TEXT 冷启动暂存（Dart 首帧后拉取）
-        initialSharedText = extractSharedText(intent)
+        // 批25b P2-2：仅在「全新创建」时提取。进程被杀后从最近任务恢复时，
+        // 系统会重放同一 SEND/PROCESS_TEXT intent（savedInstanceState != null，
+        // 且通常带 FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY），无条件提取会导致
+        // 每次恢复都重复弹出导入确认框；已由 Dart 消费过的同一文本再用
+        // 持久化 hash + 时间窗口兜底一次（不提供 savedInstanceState 的机型）。
+        if (savedInstanceState == null && !isLaunchedFromHistory(intent)) {
+            val sharedText = extractSharedText(intent)
+            if (!sharedText.isNullOrEmpty()) {
+                rememberRecentSharedText(sharedText)
+                if (!isSharedTextRecentlyConsumed(sharedText)) {
+                    initialSharedText = sharedText
+                }
+            }
+        }
         // [V-B3] 冷启动：悬浮窗「全屏」拉起 MainActivity 时携带播放状态
         videoFloatBridge.setPendingReturn(intent)
         applySystemBarFromState()
@@ -251,10 +291,18 @@ open class MainActivity : FlutterActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         // 批25：应用已存活时接收 ACTION_SEND / ACTION_PROCESS_TEXT
-        val sharedText = extractSharedText(intent)
-        if (!sharedText.isNullOrEmpty()) {
+        // 批25b P2-2：同一文本在短窗口内重复投递时忽略（防止同一 intent
+        // 被系统重复分发导致重复弹框）；从最近任务恢复时系统重放的旧
+        // intent（LAUNCHED_FROM_HISTORY）一律不当作新分享。
+        // P3-5：Dart 处理器未就绪时先暂存，由 attach 后经
+        // getInitialSharedText 拉取兜底。
+        val sharedText =
+            if (isLaunchedFromHistory(intent)) null else extractSharedText(intent)
+        if (!sharedText.isNullOrEmpty() && !isRecentSharedTextDuplicate(sharedText)) {
+            // 已交付（或已暂存待交付）即视为一次性消费，供跨进程恢复兜底
+            markSharedTextConsumed(sharedText)
             val channel = deepLinkChannel
-            if (channel != null) {
+            if (channel != null && dartSharedHandlerReady) {
                 channel.invokeMethod("onSharedText", sharedText)
             } else {
                 initialSharedText = sharedText
@@ -316,6 +364,63 @@ open class MainActivity : FlutterActivity() {
                 intent.getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString()
             else -> null
         }?.takeIf { it.isNotBlank() }
+    }
+
+    /**
+     * 批25b P2-2：intent 是否来自「最近任务/历史」恢复。
+     *
+     * 系统从历史记录重放任务时会给 intent 打
+     * [Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY]；此类 intent 里的
+     * SEND/PROCESS_TEXT 文本是上次的旧内容，不得再次作为新分享消费。
+     */
+    private fun isLaunchedFromHistory(intent: Intent?): Boolean {
+        return intent != null &&
+            SharedTextOnceGate.isHistoryLaunch(intent.flags)
+    }
+
+    /** 批25b P2-2：记录进程级 one-shot holder（最近一次提取/投递的文本） */
+    private fun rememberRecentSharedText(text: String) {
+        recentSharedText = text
+        recentSharedTextAt = System.currentTimeMillis()
+    }
+
+    /** 批25b P2-2：热路径短窗口去重；返回 true 表示重复投递 */
+    private fun isRecentSharedTextDuplicate(text: String): Boolean {
+        val duplicate = SharedTextOnceGate.isDuplicate(
+            text = text,
+            recentText = recentSharedText,
+            recentAt = recentSharedTextAt,
+            now = System.currentTimeMillis(),
+        )
+        if (!duplicate) rememberRecentSharedText(text)
+        return duplicate
+    }
+
+    /**
+     * 批25b P2-2：该文本是否已在防重窗口内被 Dart 消费。
+     *
+     * 用于兜底「系统未提供 savedInstanceState 却重放同一 SEND intent」的
+     * 机型；正常恢复路径由 onCreate 的 savedInstanceState 判定拦截。
+     */
+    private fun isSharedTextRecentlyConsumed(text: String): Boolean {
+        val prefs = getSharedPreferences(PREFS_SHARED_TEXT_ONCE, MODE_PRIVATE)
+        return SharedTextOnceGate.isRecentlyConsumed(
+            text = text,
+            storedHash = prefs.getString(KEY_CONSUMED_HASH, null),
+            consumedAt = prefs.getLong(KEY_CONSUMED_AT, 0L),
+            now = System.currentTimeMillis(),
+        )
+    }
+
+    /** 批25b P2-2：记录一次性消费（hash + 时间）；与 initialSharedText 清空同步 */
+    private fun markSharedTextConsumed(text: String) {
+        // 用 commit 同步落盘：标记的目的就是扛进程被杀，apply 的异步写盘
+        // 在随即 SIGKILL 时可能丢失（单个小键值写入，主线程开销可忽略）
+        getSharedPreferences(PREFS_SHARED_TEXT_ONCE, MODE_PRIVATE)
+            .edit()
+            .putString(KEY_CONSUMED_HASH, SharedTextOnceGate.fingerprint(text))
+            .putLong(KEY_CONSUMED_AT, System.currentTimeMillis())
+            .commit()
     }
 
     /**
