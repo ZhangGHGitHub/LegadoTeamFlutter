@@ -161,13 +161,16 @@ impl<'a> RssReadRecordRepository<'a> {
 
     /// 清空指定 RSS 源的已读记录（对齐原版 `RssReadRecordDao.deleteAllRecord(origin)`）
     ///
-    /// 原版 `ReadRecordDialog` 的「清空」按当前源过滤（origin 为空时清空全部）；
-    /// 返回实际删除行数。
+    /// 原版 `ReadRecordDialog` 的「清空」按当前源过滤；返回实际删除行数。
+    ///
+    /// 批29b 审查 P1-1：`origin` 统一按 trim 后精确匹配（与 FFI
+    /// `clear_by_origin` 同一口径，空串删除 0 行）——本方法**不**承担
+    /// 「清空全部」语义，全量清空唯一入口是 [`Self::clear_all`]。
     pub fn clear_by_origin(&self, origin: &str) -> LegadoResult<usize> {
         self.conn
             .execute(
                 "DELETE FROM rssReadRecords WHERE origin = ?1",
-                params![origin],
+                params![origin.trim()],
             )
             .map_err(|e| LegadoError::Database(format!("清空源已读记录失败: {e}")))
     }
@@ -308,6 +311,29 @@ mod tests {
         assert!(repo.is_read("b1").unwrap());
         // 不存在的源：删除 0 行且不误删其他源
         assert_eq!(repo.clear_by_origin("https://c.rss.com").unwrap(), 0);
+        assert!(repo.is_read("b1").unwrap());
+    }
+
+    /// 批29b 审查 P1-1：`clear_by_origin` 按 trim 后精确匹配，空串/空白串
+    /// 删除 0 行——绝不退化为清空全部（全量清空唯一入口 `clear_all`）。
+    #[test]
+    fn test_clear_by_origin_trims_and_blank_deletes_nothing() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = RssReadRecordRepository::new(db.connection());
+        repo.mark_read("https://a.rss.com", "A1", Some("a1"))
+            .unwrap();
+        repo.mark_read("https://b.rss.com", "B1", Some("b1"))
+            .unwrap();
+
+        // 首尾空白按 trim 后匹配：仍只删目标源
+        assert_eq!(repo.clear_by_origin("  https://a.rss.com \t").unwrap(), 1);
+        assert_eq!(repo.count().unwrap(), 1);
+        assert!(repo.is_read("b1").unwrap());
+
+        // 空串 / 纯空白：删除 0 行，其它源保留（改前 FFI 层退化清空全部）
+        assert_eq!(repo.clear_by_origin("").unwrap(), 0);
+        assert_eq!(repo.clear_by_origin("   ").unwrap(), 0);
+        assert_eq!(repo.count().unwrap(), 1);
         assert!(repo.is_read("b1").unwrap());
     }
 

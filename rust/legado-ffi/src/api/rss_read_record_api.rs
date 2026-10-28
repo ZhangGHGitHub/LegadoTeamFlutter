@@ -67,12 +67,18 @@ pub fn clear_all() -> LegadoResult<()> {
     })
 }
 
-/// 清空指定 RSS 源的已读记录（`None`/空串退化为清空全部）
+/// 清空指定 RSS 源的已读记录（仅 `None` 清空全部）
 ///
 /// 对齐原版 `RssReadRecordDao.deleteAllRecord(origin)`：`ReadRecordDialog`
 /// 的「清空」按当前源过滤，全局入口传 `null` 清空全部。
+///
+/// 批29b 审查 P1-1：`Some` 一律按 trim 后的 origin **精确过滤**——空串
+/// （`Some("")` / `Some("  ")`）删除 0 行，绝不再退化为 `clear_all()`。
+/// 原版 `deleteAllRecord("")` 的 WHERE 同样只匹配 origin=''（正常记录不会
+/// 命中，等价不删）；此前把空串当 `None` 会把「按源清空」误升级为
+/// 「清空全部」，一处空 origin 即丢全部源的阅读记录。
 pub fn clear_by_origin(origin: Option<&str>) -> LegadoResult<()> {
-    match origin.map(str::trim).filter(|o| !o.is_empty()) {
+    match origin {
         Some(origin) => with_database(|db| {
             let repo = RssReadRecordRepository::new(db.connection());
             repo.clear_by_origin(origin).map(|_| ())
@@ -209,5 +215,51 @@ mod tests {
         assert_eq!(img_by_origin.dur_pos, 7);
 
         clear_all().unwrap();
+    }
+
+    /// 批29b 审查 P1-1/P2-2：`clear_by_origin` 三分支口径
+    ///
+    /// - `None` → 清空全部；
+    /// - `Some(origin)` → 只删 trim 后精确匹配的源；
+    /// - `Some("")` / `Some("  ")` → 删除 0 行，**不得**退化为清空全部
+    ///   （改前空串落到 `clear_all()`，两个源 mark 后其它源全丢 → 本用例红）。
+    #[test]
+    fn test_clear_by_origin_none_some_and_blank() {
+        let _db_guard = crate::db_state::ensure_test_db();
+
+        let seed = || {
+            clear_all().unwrap();
+            mark_read("https://a.rss.com", "A1", Some("a1")).unwrap();
+            mark_read("https://b.rss.com", "B1", Some("b1")).unwrap();
+            assert_eq!(count().unwrap(), 2);
+        };
+
+        // 空白串：删除 0 行，两个源都保留（红线：不得清空全部）
+        seed();
+        clear_by_origin(Some("")).unwrap();
+        assert_eq!(count().unwrap(), 2, "空 origin 必须删除 0 行");
+        assert!(is_read("a1").unwrap());
+        assert!(is_read("b1").unwrap());
+        clear_by_origin(Some("   ")).unwrap();
+        assert_eq!(count().unwrap(), 2, "纯空白 origin 必须删除 0 行");
+        assert!(is_read("a1").unwrap());
+        assert!(is_read("b1").unwrap());
+
+        // Some(origin)：按 trim 后精确过滤，只删目标源
+        clear_by_origin(Some(" https://a.rss.com ")).unwrap();
+        assert_eq!(count().unwrap(), 1, "按源清空只影响目标源");
+        assert!(!is_read("a1").unwrap());
+        assert!(is_read("b1").unwrap());
+
+        // 不存在 / 空 origin 仍不误删
+        clear_by_origin(Some("")).unwrap();
+        clear_by_origin(Some("https://c.rss.com")).unwrap();
+        assert_eq!(count().unwrap(), 1);
+        assert!(is_read("b1").unwrap());
+
+        // None：清空全部（旧调用不传参数行为不变）
+        clear_by_origin(None).unwrap();
+        assert_eq!(count().unwrap(), 0);
+        assert!(!is_read("b1").unwrap());
     }
 }
