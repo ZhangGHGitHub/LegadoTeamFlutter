@@ -62,6 +62,14 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
   /// （对标参考版「Tt 入口行内展开」形态：不再跳转整页字体管理）
   bool _fontPanelOpen = false;
 
+  /// 字号滑条拖动预览值（null = 未拖动，显示 [ReaderState.fontSize]）
+  ///
+  /// [批33b | 字号滑块提交时机] 拖动过程只更新本值用于「数字 + 滑条」
+  /// 预览，`onChangeEnd` 才调用 [ReaderNotifier.updateFontSize]：原实现
+  /// `onChanged` 直连提交，拖过 45 档会逐帧触发整章重排 + 盘写 + FFI
+  /// 注入（与边距卡 `_dragValue/_commitValue` 形态对齐）。
+  double? _fontSizePreview;
+
   static const _tabLabels = ['全局', '菜单', '信息', '更多'];
 
   /// 翻页动画标签（顺序对齐原版 page_anim 数组）
@@ -398,14 +406,23 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
     );
   }
 
-  /// 字号卡片：标签 + 数值 + 加减 + 滑块（对标参考版页内滑杆形态）
+  /// 字号卡片：标签 + 数值 + 滑块 + 加减（对标参考版页内滑杆形态）
   ///
   /// [批33 | 字号范围裁决] 范围 5–50、步进 1、默认 20（采用参考版口径）；
   /// 由纯步进器改为「滑块 + 数值 + 加减」三件套——滑块负责快速大幅调节，
   /// 加减保留精确 1 步微调。滑块与加减共用 [ReaderNotifier.updateFontSize]
   /// 的同一 clamp，避免 UI 与状态两套范围。
+  ///
+  /// [批33b | 提交时机] 滑块拖动只写本地预览 `_fontSizePreview`，
+  /// `onChangeEnd` 才提交一次；加减按钮仍是即时提交（单次操作）。
+  ///
+  /// [批33b | 窄屏布局] 加减按钮触控区提到 44dp（原 28dp 圆钮不达触控
+  /// 下限），若仍与「字号」标签/数值同行，320dp 宽度下半宽卡内容区仅
+  /// ~148dp，必然溢出（32 + 40 + 间距 + 44×2 > 148）。故改为两行：
+  /// 上行「字号 + 数值」，下行「- 滑块 +」——320dp 下仍可容纳
+  /// 44 + 44 + 滑条（滑条自适应剩余宽度）。
   Widget _buildFontSizeCard(ReaderState state, ReaderNotifier notifier) {
-    final size = state.fontSize.clamp(
+    final size = (_fontSizePreview ?? state.fontSize).clamp(
       ReaderNotifier.minFontSize,
       ReaderNotifier.maxFontSize,
     );
@@ -434,45 +451,61 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
                       ?.copyWith(fontWeight: FontWeight.w600),
                 ),
               ),
-              const SizedBox(width: 8),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Row(
+            children: [
               _compactStepButton(
                 icon: Icons.remove_rounded,
                 onTap: () => notifier.updateFontSize(size - 1),
               ),
-              const SizedBox(width: 4),
+              Expanded(
+                child: SliderTheme(
+                  data: SliderTheme.of(context).copyWith(
+                    trackHeight: 3,
+                    thumbShape:
+                        const RoundSliderThumbShape(enabledThumbRadius: 7),
+                    overlayShape:
+                        const RoundSliderOverlayShape(overlayRadius: 14),
+                    // 45 档若画刻度会过密，参考版滑条形态不带刻度
+                    tickMarkShape: SliderTickMarkShape.noTickMark,
+                  ),
+                  child: Slider(
+                    value: size,
+                    min: ReaderNotifier.minFontSize,
+                    max: ReaderNotifier.maxFontSize,
+                    divisions:
+                        (ReaderNotifier.maxFontSize -
+                                ReaderNotifier.minFontSize)
+                            .round(),
+                    label: size.round().toString(),
+                    // 拖动中仅本地预览（数字/滑条），不提交
+                    onChanged: (v) => setState(() => _fontSizePreview = v),
+                    // 松手统一提交一次（先提交再清预览，避免闪回旧值）
+                    onChangeEnd: (v) {
+                      notifier.updateFontSize(v);
+                      setState(() => _fontSizePreview = null);
+                    },
+                  ),
+                ),
+              ),
               _compactStepButton(
                 icon: Icons.add_rounded,
                 onTap: () => notifier.updateFontSize(size + 1),
               ),
             ],
           ),
-          SliderTheme(
-            data: SliderTheme.of(context).copyWith(
-              trackHeight: 3,
-              thumbShape:
-                  const RoundSliderThumbShape(enabledThumbRadius: 7),
-              overlayShape:
-                  const RoundSliderOverlayShape(overlayRadius: 14),
-              // 45 档若画刻度会过密，参考版滑条形态不带刻度
-              tickMarkShape: SliderTickMarkShape.noTickMark,
-            ),
-            child: Slider(
-              value: size,
-              min: ReaderNotifier.minFontSize,
-              max: ReaderNotifier.maxFontSize,
-              divisions:
-                  (ReaderNotifier.maxFontSize - ReaderNotifier.minFontSize)
-                      .round(),
-              label: size.round().toString(),
-              onChanged: (v) => notifier.updateFontSize(v),
-            ),
-          ),
         ],
       ),
     );
   }
 
-  /// 紧凑步进按钮（半宽卡片内与数值/滑块同行，尺寸 28dp）
+  /// 紧凑步进按钮：视觉圆钮 28dp，触控区 44dp（达到移动端触控下限）
+  ///
+  /// [批33b | 触控尺寸] 原实现 InkWell 直接包 28×28 圆钮，命中区仅
+  /// 28dp（<44dp 下限）；现用 44×44 透明命中区包住 28dp 圆钮，视觉不变、
+  /// 触控达标。
   Widget _compactStepButton({
     required IconData icon,
     required VoidCallback onTap,
@@ -480,19 +513,25 @@ class _ReaderSettingsSheetState extends ConsumerState<ReaderSettingsSheet> {
     return InkWell(
       onTap: onTap,
       customBorder: const CircleBorder(),
-      child: Container(
-        width: 28,
-        height: 28,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          border: Border.all(
-            color: Theme.of(context).colorScheme.outlineVariant,
+      child: SizedBox(
+        width: 44,
+        height: 44,
+        child: Center(
+          child: Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Theme.of(context).colorScheme.outlineVariant,
+              ),
+            ),
+            child: Icon(
+              icon,
+              size: 16,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
           ),
-        ),
-        child: Icon(
-          icon,
-          size: 16,
-          color: Theme.of(context).colorScheme.onSurface,
         ),
       ),
     );

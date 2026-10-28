@@ -51,20 +51,42 @@ class SettingsService {
 
   // ===== 字体大小 =====
 
+  /// 正文字号下限（批33 裁决：参考版口径 5–50，步进 1，默认 20）
+  static const double minFontSize = 5.0;
+
+  /// 正文字号上限（同参考版口径）
+  static const double maxFontSize = 50.0;
+
+  /// 读取字号（越界值统一收敛到 5–50）
+  ///
+  /// [批33b | 字号越界收口] 本方法为字号的**唯一读写收口**：
+  /// - 读取侧 clamp：第三方备份/历史手工写入可能 >50 或 <5；
+  /// - 写入侧 clamp：主题导入、外部调用等任何写入点都不会落越界值；
+  /// - 阅读器状态（`ReaderNotifier`）、Rust 注入（`RustApi`）均经此读取，
+  ///   不再各自维护第二套范围。
   Future<double> getFontSize() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      return prefs.getDouble(_keyFontSize) ?? 20.0;
+      final stored = prefs.getDouble(_keyFontSize);
+      if (stored == null) return 20.0;
+      final clamped = stored.clamp(minFontSize, maxFontSize);
+      // 越界历史值：读取即收敛并回写，避免每次启动重复归一
+      // （与批33 _loadSettings 的回写语义一致，收口位置前移到本服务）
+      if (clamped != stored) {
+        await prefs.setDouble(_keyFontSize, clamped);
+      }
+      return clamped;
     } catch (e) {
       debugPrint('SettingsService.getFontSize 异常: $e');
       return 20.0;
     }
   }
 
+  /// 写入字号（统一 clamp 到 5–50，越界值不入库）
   Future<void> setFontSize(double size) async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setDouble(_keyFontSize, size);
+      await prefs.setDouble(_keyFontSize, size.clamp(minFontSize, maxFontSize));
     } catch (e) {
       debugPrint('SettingsService.setFontSize 异常: $e');
     }

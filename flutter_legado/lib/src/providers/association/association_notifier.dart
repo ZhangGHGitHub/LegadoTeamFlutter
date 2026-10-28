@@ -12,6 +12,7 @@ import '../../models/misc.dart';
 import '../../models/rss_source.dart';
 import '../../services/book_api.dart';
 import '../../services/bridge_http.dart';
+import '../../services/settings_service.dart';
 import '../../services/source_import_service.dart';
 import '../providers.dart';
 import 'association_state.dart';
@@ -634,8 +635,11 @@ class AssociationNotifier extends Notifier<AssociationState> {
         }
         if (item.containsKey('fontSize')) {
           final size = (item['fontSize'] as num?)?.toDouble();
+          // [批33b | 字号越界收口] 不再直写 prefs：统一经
+          // SettingsService.setFontSize 的 5–50 clamp，越界导入值
+          // （如第三方主题 80）收敛到上限而非原样入库
           if (size != null && size > 0) {
-            await prefs.setDouble('reader_font_size', size);
+            await SettingsService().setFontSize(size);
           }
         }
         if (item.containsKey('lineHeight')) {

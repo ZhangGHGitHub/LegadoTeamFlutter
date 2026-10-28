@@ -118,10 +118,14 @@ class ReaderNotifier extends Notifier<ReaderState> {
   }
 
   /// 字号下限（批33 裁决：采用参考版口径 5–50，步进 1，默认 20）
-  static const double minFontSize = 5.0;
+  ///
+  /// [批33b | 字号越界收口] 数值单一来源改为
+  /// [SettingsService.minFontSize]：读取/写入的 clamp 都在设置服务完成，
+  /// 此处仅作为 UI 侧（滑条 min/divisions）的语义别名。
+  static const double minFontSize = SettingsService.minFontSize;
 
-  /// 字号上限（同参考版口径）
-  static const double maxFontSize = 50.0;
+  /// 字号上限（同参考版口径，见 [minFontSize]）
+  static const double maxFontSize = SettingsService.maxFontSize;
 
   /// 从 SharedPreferences 加载持久化的阅读设置
   Future<void> _loadSettings() async {

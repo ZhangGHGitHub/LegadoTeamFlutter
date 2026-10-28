@@ -180,7 +180,13 @@ class RustApi
   Future<void> _injectReadBookConfig() async {
     try {
       final settings = SettingsService();
-      final fontSize = await settings.getFontSize();
+      // [批33b | 字号越界收口] 注入前再 clamp 一次（边界防线）：
+      // 即使 prefs 被外部写入越界值（旧版本/第三方备份），Rust 侧收到的
+      // textSize 也恒在 5–50，避免注入越界字号导致排版异常。
+      final fontSize = (await settings.getFontSize()).clamp(
+        SettingsService.minFontSize,
+        SettingsService.maxFontSize,
+      );
       final bgIndex = await settings.getBgColorIndex();
       const bgStrs = [
         '#FFFFFF',
