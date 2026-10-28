@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-10-29 | **批32b：readConfig 单键写 / zip·rar 限额审查回修（零新增方法，计数不变）**：① **P2-1 三格式落位统一**——zip/rar/7z 的 `.part` → 最终输出改由 `archive.rs::land_pending_files` 统一处理：任一落位失败清理**全部剩余** `.part`（旧实现消费式迭代只删当前 temp，其余残留），并回滚已落位项；Windows 覆盖既有输出改为「先 rename 到 `.legado_bak_<i>.<名>.bak` → 新的 rename 成功 → 删除备份」，失败恢复备份（旧实现先删旧文件再 rename，失败即丢既有输出）；既有目标为目录/符号链接等非常规文件一律拒绝，不移动用户数据。② **P2-2 目录页收口**——`splitLongChapter`/`useReplaceRule` 从 `updateBook` 改走 `updateReadConfigField` 单键写（与批32 的 `reverseToc`/`reverseTocDisplay` 一致），目录页 readConfig 勾选全部保留 Dart 未建模键。③ **P2-3 类型校验**——`BookRepository::update_read_config_field` 写回前按 `ReadConfig` 反序列化校验，类型不符（如 `reverseToc` 写字符串）拒绝写入并报「值类型不符」，DB 原键集不变（防 `row_to_book` 静默 `None` → 后续整书写 NULL 导致配置永久丢失）。④ **测试/文档**——新增落位失败清理/Windows 备份恢复（zip/7z）、伪造声明大小命中实际读取计数、CRC 精确断言（`zip 2.4.2` 为 `io::Error(InvalidData, "Invalid checksum")`）、`update_book` 清键对照用例；RAR 解析级安全/限额无夹具登记 limitation；模块文档修正同名 basename 口径（7z 去重、zip/rar 覆盖）。§2.2 = 11、附录合计 313、BookApi 310、§1.7 表 B 147 均不变。详见 §2.2/§2.34 批32b 补记。 |
 | 2026-10-29 | **批32：readConfig 单键写 FFI（契约先行，加法式 +1 方法）**：§2.2 新增 `updateReadConfigField(String bookUrl, String key, String valueJson) → Future<void>`（Rust `ffi::book_update_read_config_field` → `legado-db::BookRepository::update_read_config_field` 复用；`valueJson` 为**值本身**的 JSON 编码串，支持 bool/string/number/对象/数组，解析失败抛错）。**根因**：`updateBook` 是整书快照写，Dart `ReadConfig` 未建模的键（如 `useGlobalAudioSkip`、`tocExpanded`、`manualReplaceRuleIds`）在 Dart→Rust 往返中被类型化结构体丢弃，切一次目录反转就会清空这些键；新方法在 DB 侧**只合并目标键**，未建模键与其他键原样保留。**语义**：书籍不存在报错（不清空、不静默成功）；`key` 为空白报错；`readConfig` 为空/非法 JSON 时新建对象再写入目标键；不触碰其他列与进度列。**接线**：目录页 `reverseToc`/`reverseTocDisplay` 与阅读器菜单 `reverseTocDisplay` 改走单键写，`updateBook` 保留其余用途。§2.2 10→**11**，附录合计 312→**313**，BookApi 309→**310**，§1.7 表 B 146→**147**（等价对总数 161→**162**）。 |
 | 2026-10-29 | **批32：zip/rar 导入限额与路径安全对齐 7z（零新增方法，计数不变）**：`legado-book/src/archive.rs` 的 zip 导入/列表与 rar 导入/列表补齐与 7z 同口径限额（输入 ≤512 MiB / 单条目 ≤256 MiB / 总量 ≤512 MiB / 条目数 ≤10000，声明值与实际读取字节双计数）与共用路径安全 fail-closed 校验（`validate_archive_entry_name`，任一不安全条目整包拒绝）；zip/rar 改「先写 `.part`、整包成功后 rename」，失败清理临时文件且不触碰既有输出；zip CRC 损坏如实报错。Android/iOS 的 rar 仍为明确不支持桩。详见 §2.34 批32 补记。 |
 | 2026-10-29 | **批32：图片下载链登录头同站门控 + proxy 伪头剔除（零新增方法，计数不变）**：`fetchImageWithDecode`（§2.20）按 `web_book::is_login_header_site` 同站判定附加 `loginHeader_<bookSourceUrl>`（跨域 CDN 不携带认证信息，无法判定域名时回退附加），与搜索/发现/正文链同口径；发送前 `strip_proxy_header` 剔除源 header 中的 `proxy` 代理配置键，避免凭据作为 HTTP 头外发（对齐批29b 审查 P2-6 的既有修复面）。回环用例覆盖同站带头/跨域不带/头中无 proxy。 |
@@ -399,7 +400,15 @@
 | `setBookGroup(String bookUrl, int groupId)` | bookUrl, groupId | `Future<void>` | 设置书籍分组 |
 | `importBooks(String jsonArray)` | jsonArray: JSON 数组字符串 | `Future<int>` | 批量导入书籍，返回成功导入的数量 |
 | `reorderBooks(List<Map<String, dynamic>> orders)` | orders: `[{bookUrl, order}, ...]` | `Future<void>` | 批量持久化拖拽排序（对齐原版 BookAdapter.swap 后 updateBook） |
-| `updateReadConfigField(String bookUrl, String key, String valueJson)` | bookUrl；key: readConfig 键名；valueJson: 值本身的 JSON 编码串 | `Future<void>` | **批32** 单键更新 `Book.readConfig` 指定键（Rust `ffi::book_update_read_config_field` → `BookRepository::update_read_config_field`）：`valueJson` 支持 bool/string/number/对象/数组（JSON 解析失败抛错）；DB 侧只合并目标键，**不重写整书快照**，Dart `ReadConfig` 未建模键（`useGlobalAudioSkip`/`tocExpanded`/`manualReplaceRuleIds` 等）与其他键原样保留；`readConfig` 为空/非法 JSON 时新建对象后写入；`key` 为空白抛错；书籍不存在抛错（不静默成功）；不触碰其他列与进度列 |
+| `updateReadConfigField(String bookUrl, String key, String valueJson)` | bookUrl；key: readConfig 键名；valueJson: 值本身的 JSON 编码串 | `Future<void>` | **批32** 单键更新 `Book.readConfig` 指定键（Rust `ffi::book_update_read_config_field` → `BookRepository::update_read_config_field`）：`valueJson` 支持 bool/string/number/对象/数组（JSON 解析失败抛错）；DB 侧只合并目标键，**不重写整书快照**，Dart `ReadConfig` 未建模键（`useGlobalAudioSkip`/`tocExpanded`/`manualReplaceRuleIds` 等）与其他键原样保留；`readConfig` 为空/非法 JSON 时新建对象后写入；`key` 为空白抛错；书籍不存在抛错（不静默成功）；不触碰其他列与进度列。**批32b**：合并结果写回前按 `ReadConfig` 反序列化校验，类型不符（如 `reverseToc` 写字符串 `"true"`、`playMode` 写字符串）**拒绝写入**并报「值类型不符」，DB 原键集不变；未建模键仍可写入任意 JSON 类型 |
+
+> ℹ️ **§2.2 批32b：`updateBook` 整书写回边界与 readConfig 类型校验（2026-10-29）**
+>
+> **单键写覆盖面**：目录页 4 个 readConfig 勾选项（`reverseToc` / `reverseTocDisplay` / `splitLongChapter` / `useReplaceRule`）与阅读器菜单 `reverseTocDisplay` 均走 `updateReadConfigField`（批32b P2-2 补齐后两处）。
+>
+> **`updateBook` 其余用途仍为整书快照写（P3-7 登记，既有行为）**：详情页/阅读器设置保存、换源事务、备份恢复、本地书导入等路径继续经 `updateBook` 全行回写；Dart `ReadConfig` 未建模的键在这些路径往返中仍会丢失（`useGlobalAudioSkip` 被 Rust 默认值覆盖、`tocExpanded`/`manualReplaceRuleIds` 直接丢弃）。本批不改变这些路径；新增 readConfig 写路径应优先复用单键写，或在 Rust 侧做 DB 合并。
+>
+> **类型校验根因**：`row_to_book` 对 `readConfig` 用 `serde_json::from_str(...).ok()` 静默退化——一份类型不符的 readConfig 会让整份解析失败 → `read_config = None` → 后续任意整书 `updateBook` 把 NULL 落库，配置永久丢失。故单键写在写入前做反序列化校验（fail-closed）。
 
 ### 2.3 书源操作（33 个方法）
 
@@ -1012,6 +1021,22 @@
 > **实现（`legado-book/src/archive.rs`）**：① **同口径限额（fail-closed，默认值即生产限额）**——输入包 ≤512 MiB（打开前按文件元数据预检）、条目数 ≤10000、单条目 ≤256 MiB、全部条目解压总量 ≤512 MiB；**声明值与实际读取字节双计数**（`zip` 条目声明大小仅用于快速失败，解压循环按实际读到的字节累计；rar 同理按 `data.len()` 计数，声明值 `unpacked_size` 另行校验）。② **路径安全 fail-closed**——条目名校验抽为共用实现 `validate_archive_entry_name(raw, label)`（zip/rar/7z 同一实现）：`\`→`/` 后逐组件拒绝 `..`、绝对路径、盘符、空字节（Windows 另拒 `:`/ADS）；**任一不安全条目（含目录/非书籍条目）→ 整包拒绝**。③ **`.part` 失败清理**——zip/rar 解压先写 `.legado_zip_<i>.<名>.part` / `.legado_rar_<i>.<名>.part`，整包成功后才 rename（Windows 先删旧目标）；任一失败（限额/CRC/IO/路径）删除全部 `.part` 且不触碰既有输出文件。④ **CRC**——zip 读取到条目 EOF 时由 `zip` crate 校验 CRC，损坏统一报 `解压文件失败 [...]（文件可能损坏或 CRC 校验失败）`；声明大小与实际读取不一致另报 `ZIP 条目读取不完整`。⑤ **rar 平台口径不变**——Android/iOS 仍为明确不支持桩（不再进入限额/路径代码），可解析平台（桌面）限额与路径校验生效。
 >
 > **测试（`archive.rs`）**：正常 zip（既有 basic/list/empty 用例保持）、条目数超限（list+import）、单文件超限、总量超限、输入包超限、路径穿越/绝对路径/混合非书籍不安全条目整包拒绝、CRC 损坏后 `.part` 清理与既有输出不变、共用条目名校验三格式标签、rar 输入限额预检（桌面）。**契约计数**：批32 零新增方法（§2.34 = 10、附录合计 313 中 zip/rar 相关行数不变）。
+
+> ℹ️ **§2.34 批32b 审查回修（2026-10-29，零新增方法）**
+>
+> **落位回滚统一（P2-1，取代批32 的「Windows 先删旧目标」表述）**：zip/rar/7z 的 `.part` → 最终输出统一走 `land_pending_files`（`legado-book/src/archive.rs`）：① 任一落位失败清理 `pending` 中**全部剩余**临时文件（旧实现 `for (temp, out) in pending` 消费式迭代只删当前 temp 就 `return`，剩余 `.part` 残留）；② Windows 覆盖既有输出改为「既有目标先 rename 到 `.legado_bak_<i>.<name>.bak` → 临时文件 rename 成功 → 删除备份」，失败时恢复备份并回滚已落位项（旧实现先 `remove_file(out)` 再 rename，rename 失败即永久丢失既有输出）；非 Windows 仍由 POSIX rename 原子替换；③ 既有目标为目录/符号链接等非常规文件时整次落位失败（不移动/删除用户数据）。用例：`test_import_zip_landing_failure_cleans_all_parts_and_keeps_existing`、`test_import_7z_landing_failure_cleans_all_parts_and_keeps_existing`、Windows 回滚 `test_import_{zip,7z}_landing_failure_restores_backed_up_output`。
+>
+> **同名 basename 口径登记（P3-1）**：模块文档原写「同名 basename 按序号去重，不互相覆盖」与实现不符。实际：**7z** 同包同名 basename 按文件序去重（`novel.txt`/`novel_2.txt`，list 与 import 同命名）；**zip/rar** 保持旧语义——同包同名 basename 后者覆盖前者（list 按条目原样返回重复名，不做去重），本文档模块注释已同步修正。本批不改变 zip/rar 行为；如需去重另立批次评估（会影响既有 list/import 输出名与选中映射）。
+>
+> **测试补强（P3-2）**：① 伪造 ZIP central directory 的 uncompressed size（4096 → 16）绕过声明预检，验证「实际读取字节」计数分支（`test_import_zip_actual_read_limit_with_forged_declared_size`，命中 `ZIP 单条目超限` 而非声明分支 `ZIP 单条目过大`）；② CRC 断言精确化——`zip 2.4.2` 无 `ZipError::InvalidChecksum` 变体，CRC 失败为 `io::Error(InvalidData, "Invalid checksum")`（`crc32::Crc32Reader` 在条目 EOF 返回），导入错误文案与底层变体各有精确断言（`test_zip_crc_corruption_is_invalid_checksum_io_error`）。**覆盖面说明**：实际读取计数的对抗性夹具仅在 zip 可构造（central directory 明文大小可改）；rar 无编码器（见下 ARC-1）、7z 头受 CRC 保护无法低成本伪造声明尺寸——7z 的「声明 ≠ 实际」路径由 `read_7z_entry_strict` 长度校验单测覆盖（`test_read_7z_entry_strict_fallback_and_incomplete_errors`），流式读取的 `total_read` 计数与 zip/rar 同源代码审读确认、未构造对抗夹具，登记于此。
+>
+> **RAR 验证缺口登记（P3-3，limitation）**：仓库无 RAR 夹具（`unrar` 仅解压、无编码器），RAR 的解析级限额（声明大小/实际读取/条目数）、条目名路径安全、`.part` 回滚与 Windows 备份落位**仅由与 zip/7z 共用的代码保证，未被单测覆盖**；现有 RAR 用例仅输入大小预检（`test_rar_input_size_limit_precheck`）。另有实现口径：`unrar::Archive::read()` 一次性返回整条数据（内存峰值受声明大小限额约束），非流式。已登记 `docs/RESIDUAL_RISKS_2026-08-13.md`（ARC-1）。
+>
+> **iOS RAR 桩文案（P3-5）**：`import_rar_file`/`list_rar_book_files` 的桩错误文案由「Android 平台暂不支持 RAR 解压」改为「当前平台暂不支持 RAR 解压」（Android/iOS 共用同一 `cfg`，原文案在 iOS 上表述错误）。
+>
+> **Mock 语义偏差（P3-4）**：`MockBookApi.updateReadConfigField` 注释已列明三处偏差（无原始 JSON 层/未建模键不可见、未知键 no-op、bool 键收非 bool 值被强转；真实实现对已建模键类型校验并拒绝），并补 `splitLongChapter` 分支。
+>
+> **契约计数**：批32b 零新增方法，§2.34 = 10、附录合计 313、BookApi 310、§1.7 表 B 147 均不变。
 
 ### 2.35 RSS 已读记录（7 个方法）
 

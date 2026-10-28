@@ -218,10 +218,22 @@ impl<'a> BookRepository<'a> {
             ));
         }
 
-        // 4. 写回
+        // 4. 序列化合并结果
         let updated_json = serde_json::to_string(&config)
             .map_err(|e| LegadoError::Database(format!("序列化 readConfig 失败: {e}")))?;
 
+        // 5. 类型校验（[批32b P2-3] fail-closed）：合并后的 JSON 必须仍能被
+        //    `ReadConfig` 反序列化。类型不符（如把 `reverseToc` 写成字符串
+        //    `"true"`）会让读取侧 `row_to_book` 的整份反序列化失败并静默退化
+        //    为 `None`，后续整书写回再把 NULL 落库 → 配置永久丢失。这里拒绝
+        //    写入，DB 原键集与值保持不变（读取侧仍可解析）。
+        if let Err(e) = serde_json::from_str::<legado_core::models::ReadConfig>(&updated_json) {
+            return Err(LegadoError::Database(format!(
+                "readConfig 键 {key} 的值类型不符，拒绝写入: {e}"
+            )));
+        }
+
+        // 6. 写回
         self.conn
             .execute(
                 "UPDATE books SET readConfig = ?1 WHERE bookUrl = ?2",
@@ -933,6 +945,72 @@ mod tests {
         assert_eq!(
             found.dur_chapter_time, 1_700_000_000_000,
             "update 不得用陈旧时间戳回滚进度"
+        );
+    }
+
+    /// [批32b P2-3] 单键写类型校验：合并结果必须能被 `ReadConfig` 反序列化
+    ///
+    /// 红→绿：校验缺失时把 `reverseToc` 写成字符串 `"true"` 会落库，随后
+    /// `find_by_url` 的整份反序列化失败 → `read_config = None`；校验后拒绝
+    /// 写入，DB 原键集不变且读取侧仍可解析。
+    #[test]
+    fn test_update_read_config_field_rejects_type_mismatch() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+        let mut book = make_book("u1", "n1", "a1");
+        book.read_config = Some(legado_core::models::ReadConfig {
+            reverse_toc: false,
+            use_global_audio_skip: true,
+            ..legado_core::models::ReadConfig::default()
+        });
+        repo.insert(&book).unwrap();
+
+        // 类型不符：bool 键写入字符串 → 拒绝，原配置不变
+        let err = repo
+            .update_read_config_field("u1", "reverseToc", &serde_json::json!("true"))
+            .unwrap_err();
+        assert!(err.to_string().contains("值类型不符"), "{err}");
+        // 类型不符：i32 键写入字符串、Option<i32> 键写入 bool 同样拒绝
+        assert!(repo
+            .update_read_config_field("u1", "playMode", &serde_json::json!("loud"))
+            .is_err());
+        assert!(repo
+            .update_read_config_field("u1", "pageAnim", &serde_json::json!(true))
+            .is_err());
+
+        let raw: String = db
+            .connection()
+            .query_row(
+                "SELECT readConfig FROM books WHERE bookUrl = 'u1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let cfg: serde_json::Value = serde_json::from_str(&raw).unwrap();
+        assert_eq!(cfg["reverseToc"], serde_json::json!(false));
+        assert_eq!(cfg["useGlobalAudioSkip"], serde_json::json!(true));
+        assert_eq!(
+            cfg["playMode"],
+            serde_json::json!(0),
+            "失败写入不得覆盖原值"
+        );
+
+        // 未被毒化：类型化读取仍成功
+        let found = repo.find_by_url("u1").unwrap().unwrap();
+        let rc = found.read_config.expect("校验失败后 readConfig 应仍可解析");
+        assert!(!rc.reverse_toc);
+        assert!(rc.use_global_audio_skip);
+
+        // 合法值照常写入
+        repo.update_read_config_field("u1", "reverseToc", &serde_json::json!(true))
+            .unwrap();
+        assert!(
+            repo.find_by_url("u1")
+                .unwrap()
+                .unwrap()
+                .read_config
+                .unwrap()
+                .reverse_toc
         );
     }
 

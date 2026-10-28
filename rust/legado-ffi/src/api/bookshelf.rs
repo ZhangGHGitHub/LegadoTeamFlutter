@@ -696,7 +696,7 @@ mod tests {
         cleanup_book(book_url);
     }
 
-    /// JSON 值类型往返：bool / string / number / 对象 均按 `valueJson` 原样落库
+    /// JSON 值类型往返：bool / string / number / 对象 / 数组 均按 `valueJson` 原样落库
     #[test]
     fn test_update_read_config_field_json_value_types() {
         let _db_guard = crate::db_state::ensure_test_db();
@@ -709,16 +709,144 @@ mod tests {
         super::update_read_config_field(book_url, "numberKey", "3.5").expect("number 写入失败");
         super::update_read_config_field(book_url, "objectKey", r#"{"a":1,"b":["x"]}"#)
             .expect("对象写入失败");
+        super::update_read_config_field(book_url, "arrayKey", r#"[1,"x",false]"#)
+            .expect("数组写入失败");
 
         let cfg = raw_read_config(book_url);
         assert_eq!(cfg["flagKey"], serde_json::json!(false));
         assert_eq!(cfg["stringKey"], serde_json::json!("你好, legado"));
         assert_eq!(cfg["numberKey"], serde_json::json!(3.5));
         assert_eq!(cfg["objectKey"], serde_json::json!({"a": 1, "b": ["x"]}));
+        assert_eq!(cfg["arrayKey"], serde_json::json!([1, "x", false]));
         assert_eq!(
             cfg["reverseToc"],
             serde_json::json!(true),
             "可选键写入不影响其他键"
+        );
+
+        cleanup_book(book_url);
+    }
+
+    /// 类型不符的值拒绝写入，DB 原键集不变且读取侧仍可解析（[批32b P2-3]）
+    ///
+    /// 红→绿：不校验时把 `reverseToc` 写成字符串 `"true"` 会落库，随后
+    /// `find_by_url` 的整份 `ReadConfig` 反序列化失败 → `read_config = None`
+    /// （`row_to_book` 静默 `None`），后续 updateBook 会把 NULL 写回、配置
+    /// 永久丢失。校验后返回错误且 DB 保持原样。
+    #[test]
+    fn test_update_read_config_field_rejects_type_mismatch_and_keeps_config() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch32-type-mismatch.example.com/book/1";
+        seed_read_config_raw(
+            book_url,
+            Some(r#"{"reverseToc":false,"useGlobalAudioSkip":true,"tocExpanded":{"0":true}}"#),
+        );
+
+        for (key, bad_value) in [
+            ("reverseToc", "\"true\""),
+            ("reverseTocDisplay", "1"),
+            ("splitLongChapter", "\"yes\""),
+            ("useReplaceRule", "[]"),
+            ("playMode", "\"loud\""),
+            ("pageAnim", "true"),
+        ] {
+            let err = super::update_read_config_field(book_url, key, bad_value).unwrap_err();
+            assert!(
+                err.to_string().contains("值类型不符"),
+                "键 {key} 写入 {bad_value} 应报类型不符，实际：{err}"
+            );
+        }
+
+        // DB 原键集与值保持不变（未留下任何半成品键）
+        let cfg = raw_read_config(book_url);
+        assert_eq!(cfg["reverseToc"], serde_json::json!(false));
+        assert_eq!(cfg["useGlobalAudioSkip"], serde_json::json!(true));
+        assert_eq!(cfg["tocExpanded"], serde_json::json!({"0": true}));
+
+        // 读取侧仍可解析（未毒化）：类型化模型可见且未被默认值覆盖
+        with_database(|db| {
+            let saved = BookRepository::new(db.connection())
+                .find_by_url(book_url)?
+                .expect("书籍记录应仍存在");
+            let rc = saved.read_config.expect("readConfig 必须仍可解析");
+            assert!(!rc.reverse_toc);
+            assert!(rc.use_global_audio_skip);
+            Ok(())
+        })
+        .expect("类型化读回断言失败");
+
+        // 合法 bool 值照常写入
+        super::update_read_config_field(book_url, "reverseToc", "true").expect("合法 bool 应写入");
+        assert_eq!(
+            raw_read_config(book_url)["reverseToc"],
+            serde_json::json!(true)
+        );
+
+        cleanup_book(book_url);
+    }
+
+    /// 对照（红）：旧路径 `update_book` 整书快照写会丢弃 Dart 未建模键
+    ///
+    /// 与 `test_update_read_config_field_preserves_unmodeled_keys` 同一 DB 初态
+    /// 下，用 **Dart `ReadConfig.toJson()` 形状**的 JSON（不含
+    /// `useGlobalAudioSkip` / `tocExpanded` / `manualReplaceRuleIds`）整书回写：
+    /// 未建模键被丢弃、`useGlobalAudioSkip` 被 Rust 类型化默认值 false 覆盖
+    /// ——这就是批32 修复的真实缺陷路径，证明单键写用例的红→绿对照成立。
+    #[test]
+    fn test_update_book_whole_write_drops_unmodeled_read_config_keys() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        let book_url = "https://batch32-whole-write-control.example.com/book/1";
+        seed_read_config_raw(
+            book_url,
+            Some(
+                r#"{"reverseToc":false,"useGlobalAudioSkip":true,"tocExpanded":{"0":true},"manualReplaceRuleIds":[3,5]}"#,
+            ),
+        );
+
+        // Dart ReadConfig.toJson() 形状：只含 Dart 建模字段（批32 前目录页
+        // 每次切换都经 updateBook 发送该形状）
+        let book_json = serde_json::json!({
+            "bookUrl": book_url,
+            "name": "单键写测试书",
+            "author": "",
+            "origin": "https://batch32.example.com",
+            "type": 0,
+            "readConfig": {
+                "reverseToc": true,
+                "reverseTocDisplay": false,
+                "useReplaceRule": true,
+                "splitLongChapter": true,
+                "delTag": 0,
+                "reSegment": false,
+                "readSimulating": false,
+                "dailyChapters": 3,
+                "openCredits": 0,
+                "closeCredits": 0,
+                "playMode": 0,
+                "playSpeed": 1.0
+            }
+        })
+        .to_string();
+        super::update_book(&book_json).expect("update_book 应成功");
+
+        let cfg = raw_read_config(book_url);
+        assert_eq!(
+            cfg["reverseToc"],
+            serde_json::json!(true),
+            "Dart 建模字段按快照写入（对照组前提）"
+        );
+        assert!(
+            cfg.get("tocExpanded").is_none(),
+            "整书快照写应丢弃未建模键 tocExpanded（红）"
+        );
+        assert!(
+            cfg.get("manualReplaceRuleIds").is_none(),
+            "整书快照写应丢弃未建模键 manualReplaceRuleIds（红）"
+        );
+        assert_eq!(
+            cfg["useGlobalAudioSkip"],
+            serde_json::json!(false),
+            "未建模的 useGlobalAudioSkip 被类型化默认值覆盖（红）"
         );
 
         cleanup_book(book_url);
