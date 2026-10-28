@@ -16,12 +16,14 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../models/models.dart';
 import '../providers/providers.dart';
+import '../providers/rss_read_record_pref_notifier.dart';
 import '../services/crash_log_service.dart';
 import '../services/deep_link_service.dart';
 import '../services/rss_header.dart';
 import '../services/rss_web_bridge.dart';
 import '../services/rss_web_config.dart';
 import '../utils/legado_deep_link.dart';
+import '../utils/rss_read_record.dart';
 import '../widgets/empty_state.dart';
 import '../widgets/open_url_confirm_dialog.dart';
 import 'rss_articles_screen.dart';
@@ -993,14 +995,21 @@ class _RssArticleDetailScreenState
       return;
     }
     // 有链接：先留阅读历史（对齐原版 rssReadRecordDao.insertRecord），
-    // 再按 URL 直开（原版 `ReadRssActivity.start(..., url)`）
-    try {
-      await ref
-          .read(bookApiProvider)
-          .rssMarkRead(target.sourceUrl, pageTitle, link: link);
-    } catch (_) {
-      // 历史写入失败不阻断阅读
-    }
+    // 再按 URL 直开（原版 `ReadRssActivity.start(..., url)`）。
+    // 批29：全局开关 `enableRssReadRecord` 关闭时不写入（对齐原版
+    // `ReadRss.kt:51` 写入前判定），已有记录保留。开关经 `resolved()`
+    // 等待持久化值加载完成，避免进程首启首击漏判关闭态。
+    // 先取依赖再 await：等待偏好期间页面若被销毁，不得再触碰 ref
+    final api = ref.read(bookApiProvider);
+    final enabled =
+        await ref.read(rssReadRecordPrefProvider.notifier).resolved();
+    await rssMarkReadIfEnabled(
+      api,
+      enabled,
+      origin: target.sourceUrl,
+      title: pageTitle,
+      link: link,
+    );
     await _pushBridgeArticle(target, pageTitle, link);
   }
 

@@ -17,11 +17,13 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/rss/rss_notifier.dart';
 import '../providers/rss_history/rss_history_notifier.dart';
+import '../providers/rss_read_record_pref_notifier.dart';
 import '../services/bridge_http.dart';
 import '../services/platform_bridge_service.dart';
 import '../services/rss_header.dart';
 import '../utils/error_message.dart';
 import '../utils/image_data_uri.dart';
+import '../utils/rss_read_record.dart';
 import '../widgets/custom_refresh_indicator.dart'; // [LAYOUT_PLAN P4] 下拉 M3 化
 import '../widgets/empty_state.dart';
 import '../widgets/error_view.dart';
@@ -1231,18 +1233,10 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
     // RssReadViewModel.recordRead），失败不阻断阅读 — Qoder
     // 批20：对齐原版 `RssArticle.toRecord()`，同批写入
     // type/sort/image/pubDate（durPos 文章 DTO 无对应字段，留空）。
-    ref
-        .read(bookApiProvider)
-        .rssMarkRead(
-          widget.source.sourceUrl,
-          article.title,
-          link: hasRssArticleLink(article.url) ? article.url : null,
-          type: article.type,
-          sort: article.sort,
-          image: article.imageUrl,
-          pubDate: article.pubDate,
-        )
-        .catchError((_) {});
+    // 批29：全局开关 `enableRssReadRecord` 关闭时不写入（对齐原版
+    // `ReadRss.kt:51` 写入前判定），已有记录保留。开关经 `resolved()`
+    // 等待持久化值加载完成，避免进程首启首击漏判关闭态。
+    unawaited(_recordReadIfEnabled(article));
     openRssArticle(
       context,
       ref,
@@ -1261,6 +1255,28 @@ class _RssArticlesScreenState extends ConsumerState<RssArticlesScreen>
       // 列表时只刷新内存态；DB 真源由 Rust 写回。
       if (mounted) setState(() {});
     });
+  }
+
+  /// 按全局开关写入 RSS 已读记录（等待偏好加载完成后再判定）
+  ///
+  /// 对齐原版 `ReadRss.readRss` 的写入前判定；`resolved()` 保证进程首启时
+  /// 持久化的关闭态不会被 `build` 的同步默认值 true 掩盖。
+  Future<void> _recordReadIfEnabled(RssFeedArticle article) async {
+    // 先取依赖再 await：等待偏好期间页面若被销毁，不得再触碰 ref
+    final api = ref.read(bookApiProvider);
+    final enabled =
+        await ref.read(rssReadRecordPrefProvider.notifier).resolved();
+    await rssMarkReadIfEnabled(
+      api,
+      enabled,
+      origin: widget.source.sourceUrl,
+      title: article.title,
+      link: hasRssArticleLink(article.url) ? article.url : null,
+      type: article.type,
+      sort: article.sort,
+      image: article.imageUrl,
+      pubDate: article.pubDate,
+    );
   }
 
   /// 网格布局文章项（布局切换 articleStyle≠0 时使用）
@@ -1589,64 +1605,126 @@ class _RssReadRecordDialogState extends ConsumerState<_RssReadRecordDialog> {
   Widget build(BuildContext context) {
     final state = ref.watch(rssHistoryNotifierProvider);
     final records = state.records;
+    final recordEnabled = ref.watch(rssReadRecordPrefProvider);
     return AlertDialog(
       title: const Text('阅读记录'),
       content: SizedBox(
         width: double.maxFinite,
-        child: state.isLoading
-            ? const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: CircularProgressIndicator(),
-                ),
-              )
-            : state.error != null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(24),
-                      child: Text(state.error!),
-                    ),
-                  )
-                : records.isEmpty
-                    ? const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: Text('暂无阅读记录'),
-                        ),
-                      )
-                    : ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: records.length,
-                        itemBuilder: (context, index) {
-                          final record = records[index];
-                          final time = DateTime.fromMillisecondsSinceEpoch(
-                            record.readTime,
-                          );
-                          return ListTile(
-                            dense: true,
-                            // 审查 P2-6：条目可点击重读，透传 origin 使
-                            // 详情页规则正文抓取/收藏 origin 生效
-                            onTap: () => _openRecord(record),
-                            title: Text(
-                              record.title,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                            subtitle: Text(
-                              '${time.year}-${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')} '
-                              '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
-                            ),
-                          );
-                        },
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 批29：记录开关（对齐原版 ReadRecordDialog 的
+            // menu_enable_record → AppConfig.enableRssReadRecord）。
+            // 关闭后不再新增记录；已有记录保留；重新开启恢复写入。
+            SwitchListTile(
+              dense: true,
+              contentPadding: EdgeInsets.zero,
+              title: const Text('记录阅读历史'),
+              value: recordEnabled,
+              onChanged: (value) {
+                ref
+                    .read(rssReadRecordPrefProvider.notifier)
+                    .setEnabled(value);
+              },
+            ),
+            const Divider(height: 1),
+            Flexible(
+              child: state.isLoading
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(24),
+                        child: CircularProgressIndicator(),
                       ),
+                    )
+                  : state.error != null
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(state.error!),
+                          ),
+                        )
+                      : records.isEmpty
+                          ? const Center(
+                              child: Padding(
+                                padding: EdgeInsets.all(24),
+                                child: Text('暂无阅读记录'),
+                              ),
+                            )
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: records.length,
+                              itemBuilder: (context, index) {
+                                final record = records[index];
+                                final time =
+                                    DateTime.fromMillisecondsSinceEpoch(
+                                  record.readTime,
+                                );
+                                return ListTile(
+                                  dense: true,
+                                  // 审查 P2-6：条目可点击重读，透传 origin 使
+                                  // 详情页规则正文抓取/收藏 origin 生效
+                                  onTap: () => _openRecord(record),
+                                  title: Text(
+                                    record.title,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    '${time.year}-${time.month.toString().padLeft(2, '0')}-${time.day.toString().padLeft(2, '0')} '
+                                    '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}',
+                                  ),
+                                );
+                              },
+                            ),
+            ),
+          ],
+        ),
       ),
       actions: [
+        // 批29：清空当前源记录（对齐原版 ReadRecordDialog 的 menu_clear →
+        // `RssReadRecordDao.deleteAllRecord(origin)`，先弹确认）。
+        TextButton(
+          onPressed: records.isEmpty ? null : () => _confirmClear(records.length),
+          child: const Text('清空'),
+        ),
         TextButton(
           onPressed: () => Navigator.pop(context),
           child: const Text('关闭'),
         ),
       ],
     );
+  }
+
+  /// 清空当前源记录（对齐原版 `alert` 确认框 + `deleteAllRecord(origin)`）
+  Future<void> _confirmClear(int count) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('清空阅读记录'),
+        content: Text('确定清空当前源的 $count 条阅读记录？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('清空'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    await ref
+        .read(rssHistoryNotifierProvider.notifier)
+        .clear(origin: widget.origin);
+    if (!mounted) return;
+    final error = ref.read(rssHistoryNotifierProvider).error;
+    if (error != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('清空失败：$error')),
+      );
+    }
   }
 
   /// 点击记录重读（同列表页：透传 origin，按源 type 分流阅读）

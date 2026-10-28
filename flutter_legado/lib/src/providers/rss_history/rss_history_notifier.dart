@@ -37,13 +37,16 @@ class RssHistoryNotifier extends Notifier<RssHistoryState> {
     }
   }
 
-  /// 清空全部已读记录（成功后重新拉取列表）
-  Future<void> clear() async {
+  /// 清空已读记录（[origin] 非空时只清空该源；成功后按同范围重新拉取列表）
+  ///
+  /// 批29：对齐原版 `ReadRecordDialog` 的「清空」——按当前源
+  /// `RssReadRecordDao.deleteAllRecord(origin)`；不传参数清空全部（旧行为）。
+  Future<void> clear({String? origin}) async {
     state = state.copyWith(isClearing: true, error: null);
     try {
-      await ref.read(bookApiProvider).rssClearReadRecords();
+      await ref.read(bookApiProvider).rssClearReadRecords(origin: origin);
       state = state.copyWith(isClearing: false);
-      await load();
+      await load(origin: origin);
     } catch (e) {
       state = state.copyWith(error: _mapError(e), isClearing: false);
     }

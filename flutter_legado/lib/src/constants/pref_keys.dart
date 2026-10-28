@@ -293,6 +293,12 @@ class PrefKeys {
   /// 点击书名打开书籍信息（对齐原版 openBookInfoByClickTitle，默认 false）
   static const openBookInfoByClickTitle = 'openBookInfoByClickTitle';
 
+  // ===== RSS 阅读记录（ReadRecordDialog / AppConfig）=====
+
+  /// 记录 RSS 阅读历史（对齐原版 `AppConfig.enableRssReadRecord`，
+  /// `AppConfig.kt:631-635`，默认 true；关闭后不新增记录，已有记录保留）
+  static const enableRssReadRecord = 'enableRssReadRecord';
+
   // ===== 检查更新（LocalConfig）=====
 
   /// 忽略的更新版本号（对齐 LocalConfig.ignoreUpdateVersion）

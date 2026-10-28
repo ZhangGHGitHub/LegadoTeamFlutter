@@ -11,6 +11,7 @@ import '../models/models.dart';
 import '../providers/providers.dart';
 import '../providers/rss/rss_notifier.dart';
 import '../providers/rss_history/rss_history_notifier.dart';
+import '../providers/rss_read_record_pref_notifier.dart';
 import '../routes.dart';
 import '../services/rss_web_config.dart';
 import '../utils/webview_support.dart';
@@ -614,6 +615,22 @@ class _ReadRecordDialogState extends ConsumerState<_ReadRecordDialog> {
                   ),
                 ],
               ),
+            ),
+            const Divider(height: 1),
+            // 批29：全局记录开关（对齐原版 ReadRecordDialog 的
+            // menu_enable_record → AppConfig.enableRssReadRecord，默认开启；
+            // 原版该菜单仅在 origin 为空的全局对话框可见）。关闭后不再新增
+            // 记录，已有记录保留，重新开启恢复写入。
+            SwitchListTile(
+              dense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+              title: const Text('记录阅读历史'),
+              value: ref.watch(rssReadRecordPrefProvider),
+              onChanged: (value) {
+                ref
+                    .read(rssReadRecordPrefProvider.notifier)
+                    .setEnabled(value);
+              },
             ),
             const Divider(height: 1),
             Flexible(child: _buildList(state)),

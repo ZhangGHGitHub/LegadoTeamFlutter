@@ -542,7 +542,8 @@ void main() {
         ),
       ]),
     );
-    // 批20：精确匹配扩展字段透传（未传 durPos 时调用方应保持省略）
+    // 批20：精确匹配扩展字段透传（未传 durPos 时调用方应保持省略）；
+    // 批29：写入经 `rssMarkReadIfEnabled` 统一转发，durPos 以 null 显式传入
     when(
       () => api.rssMarkRead(
         sourceUrl,
@@ -552,6 +553,7 @@ void main() {
         sort: '图片分类',
         image: '$sourceUrl/cover.jpg',
         pubDate: '2026-10-27',
+        durPos: null,
       ),
     ).thenAnswer((_) async {});
 
@@ -569,6 +571,7 @@ void main() {
         sort: '图片分类',
         image: '$sourceUrl/cover.jpg',
         pubDate: '2026-10-27',
+        durPos: null,
       ),
     ).called(1);
   });

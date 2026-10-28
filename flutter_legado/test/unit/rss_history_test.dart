@@ -123,7 +123,8 @@ void main() {
       await readNotifier().load();
       expect(readState().records.length, equals(1));
 
-      when(() => mockApi.rssClearReadRecords()).thenAnswer((_) async {});
+      when(() => mockApi.rssClearReadRecords(origin: any(named: 'origin')))
+          .thenAnswer((_) async {});
       when(() => mockApi.rssListReadRecords(any()))
           .thenAnswer((_) async => []);
 
@@ -132,11 +133,39 @@ void main() {
       final state = readState();
       expect(state.isClearing, isFalse);
       expect(state.records, isEmpty);
-      verify(() => mockApi.rssClearReadRecords()).called(1);
+      verify(() => mockApi.rssClearReadRecords(origin: any(named: 'origin')))
+          .called(1);
+    });
+
+    test('clear(origin) 按源清空并按同范围重新拉取（批29）', () async {
+      const origin = 'https://rss.example.com';
+      when(() => mockApi.rssListReadRecordsByOrigin(origin, any()))
+          .thenAnswer((_) async => [
+                {'origin': origin, 'title': '文章1', 'read_time': 100},
+              ]);
+      await readNotifier().load(origin: origin);
+      expect(readState().records.length, equals(1));
+
+      when(() => mockApi.rssClearReadRecords(origin: any(named: 'origin')))
+          .thenAnswer((_) async {});
+      when(() => mockApi.rssListReadRecordsByOrigin(origin, any()))
+          .thenAnswer((_) async => []);
+
+      await readNotifier().clear(origin: origin);
+
+      expect(readState().records, isEmpty);
+      verify(
+        () => mockApi.rssClearReadRecords(origin: origin),
+      ).called(1);
+      // 重新拉取仍需按 origin 过滤（不得退化为全局列表）：
+      // 首次 load + 清空后 reload = 2 次
+      verify(() => mockApi.rssListReadRecordsByOrigin(origin, any())).called(2);
+      verifyNever(() => mockApi.rssListReadRecords(any()));
     });
 
     test('clear 异常时兜底并记录 error', () async {
-      when(() => mockApi.rssClearReadRecords()).thenThrow(Exception('ffi'));
+      when(() => mockApi.rssClearReadRecords(origin: any(named: 'origin')))
+          .thenThrow(Exception('ffi'));
 
       await readNotifier().clear();
 
