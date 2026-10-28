@@ -121,6 +121,11 @@ extension _SourceEditActions on _SourceEditScreenState {
   /// - 表单字段按 key 覆盖（空串 → null，即清空字段保存）；
   /// - 表单未展示的字段（updateTime 等）从 [_originalSource] 透传，
   ///   避免保存一次编辑即丢失既有规则数据。
+  ///
+  /// 批28 起：本方法只负责「表单可编辑字段」；Dart 模型未建模/表单未展示的
+  /// 规则键由保存层兜底——`RustApi.updateBookSource` 以读取时的原始 JSON 为底
+  /// 做原 JSON 补丁（`utils/source_json_patch.dart`），因此这里重建规则对象
+  /// 不会丢 `ruleContent.contentBatch` / `maxBatchSize` 等原版字段。
   BookSource _buildSource() {
     // 文本（trim 后）
     String t(String key) => _ctrl(key).text.trim();

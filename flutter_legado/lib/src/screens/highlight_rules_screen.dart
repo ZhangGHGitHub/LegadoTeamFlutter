@@ -390,6 +390,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
     final base = widget.rule;
     // [批16e 回修 | P1-1] 编辑保存保留 uuid/order/超时/正文开关：
     // 缺失 uuid 会让 Rust 每次保存都重新生成身份，导入去重随之失效。
+    // [批28] 同时保留 group：编辑表单无分组输入，不得因重建规则对象丢分组。
     final rule = HighlightRule(
       id: base?.id ?? 0,
       uuid: base?.uuid ?? '',
@@ -403,6 +404,7 @@ class _HighlightRuleEditSheetState extends State<_HighlightRuleEditSheet> {
       sortOrder: base?.sortOrder ?? 0,
       timeoutMillisecond:
           base?.timeoutMillisecond ?? HighlightRule.defaultTimeoutMilliseconds,
+      group: base?.group,
       applyToBody: base?.applyToBody ?? true,
     );
     Navigator.pop(context, rule);

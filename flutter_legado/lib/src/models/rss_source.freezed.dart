@@ -30,7 +30,12 @@ mixin _$RssSource {
   String? get sourceGroup => throw _privateConstructorUsedError;
   @JsonKey(name: 'sourceComment')
   String? get sourceComment => throw _privateConstructorUsedError;
-  bool get enabled => throw _privateConstructorUsedError;
+  bool get enabled =>
+      throw _privateConstructorUsedError; // 批28：是否记录阅读历史（原版 RssSource.enableReadRecord，DB 列
+// `INTEGER NOT NULL DEFAULT 1`）。上游运行期按源开关已回退为全局开关，
+// 这里只做字段往返保真，无 UI 开关。
+  @JsonKey(name: 'enableReadRecord')
+  bool get enableReadRecord => throw _privateConstructorUsedError;
   @JsonKey(name: 'variableComment')
   String? get variableComment => throw _privateConstructorUsedError;
   @JsonKey(name: 'jsLib')
@@ -69,7 +74,11 @@ mixin _$RssSource {
   @JsonKey(name: 'ruleLink')
   String? get ruleLink => throw _privateConstructorUsedError;
   @JsonKey(name: 'ruleContent')
-  String? get ruleContent => throw _privateConstructorUsedError;
+  String? get ruleContent =>
+      throw _privateConstructorUsedError; // 批28：正文下一页规则（原版 RssSource.nextContentUrl，Rust 侧已建模；
+// 补齐 Dart 模型避免编辑保存时按 null 覆盖掉该列）
+  @JsonKey(name: 'nextContentUrl')
+  String? get nextContentUrl => throw _privateConstructorUsedError;
   @JsonKey(name: 'contentWhitelist')
   String? get contentWhitelist => throw _privateConstructorUsedError;
   @JsonKey(name: 'contentBlacklist')
@@ -123,6 +132,7 @@ abstract class $RssSourceCopyWith<$Res> {
       @JsonKey(name: 'sourceGroup') String? sourceGroup,
       @JsonKey(name: 'sourceComment') String? sourceComment,
       bool enabled,
+      @JsonKey(name: 'enableReadRecord') bool enableReadRecord,
       @JsonKey(name: 'variableComment') String? variableComment,
       @JsonKey(name: 'jsLib') String? jsLib,
       @JsonKey(name: 'enabledCookieJar') bool? enabledCookieJar,
@@ -143,6 +153,7 @@ abstract class $RssSourceCopyWith<$Res> {
       @JsonKey(name: 'ruleImage') String? ruleImage,
       @JsonKey(name: 'ruleLink') String? ruleLink,
       @JsonKey(name: 'ruleContent') String? ruleContent,
+      @JsonKey(name: 'nextContentUrl') String? nextContentUrl,
       @JsonKey(name: 'contentWhitelist') String? contentWhitelist,
       @JsonKey(name: 'contentBlacklist') String? contentBlacklist,
       @JsonKey(name: 'shouldOverrideUrlLoading')
@@ -183,6 +194,7 @@ class _$RssSourceCopyWithImpl<$Res, $Val extends RssSource>
     Object? sourceGroup = freezed,
     Object? sourceComment = freezed,
     Object? enabled = null,
+    Object? enableReadRecord = null,
     Object? variableComment = freezed,
     Object? jsLib = freezed,
     Object? enabledCookieJar = freezed,
@@ -203,6 +215,7 @@ class _$RssSourceCopyWithImpl<$Res, $Val extends RssSource>
     Object? ruleImage = freezed,
     Object? ruleLink = freezed,
     Object? ruleContent = freezed,
+    Object? nextContentUrl = freezed,
     Object? contentWhitelist = freezed,
     Object? contentBlacklist = freezed,
     Object? shouldOverrideUrlLoading = freezed,
@@ -246,6 +259,10 @@ class _$RssSourceCopyWithImpl<$Res, $Val extends RssSource>
       enabled: null == enabled
           ? _value.enabled
           : enabled // ignore: cast_nullable_to_non_nullable
+              as bool,
+      enableReadRecord: null == enableReadRecord
+          ? _value.enableReadRecord
+          : enableReadRecord // ignore: cast_nullable_to_non_nullable
               as bool,
       variableComment: freezed == variableComment
           ? _value.variableComment
@@ -326,6 +343,10 @@ class _$RssSourceCopyWithImpl<$Res, $Val extends RssSource>
       ruleContent: freezed == ruleContent
           ? _value.ruleContent
           : ruleContent // ignore: cast_nullable_to_non_nullable
+              as String?,
+      nextContentUrl: freezed == nextContentUrl
+          ? _value.nextContentUrl
+          : nextContentUrl // ignore: cast_nullable_to_non_nullable
               as String?,
       contentWhitelist: freezed == contentWhitelist
           ? _value.contentWhitelist
@@ -418,6 +439,7 @@ abstract class _$$RssSourceImplCopyWith<$Res>
       @JsonKey(name: 'sourceGroup') String? sourceGroup,
       @JsonKey(name: 'sourceComment') String? sourceComment,
       bool enabled,
+      @JsonKey(name: 'enableReadRecord') bool enableReadRecord,
       @JsonKey(name: 'variableComment') String? variableComment,
       @JsonKey(name: 'jsLib') String? jsLib,
       @JsonKey(name: 'enabledCookieJar') bool? enabledCookieJar,
@@ -438,6 +460,7 @@ abstract class _$$RssSourceImplCopyWith<$Res>
       @JsonKey(name: 'ruleImage') String? ruleImage,
       @JsonKey(name: 'ruleLink') String? ruleLink,
       @JsonKey(name: 'ruleContent') String? ruleContent,
+      @JsonKey(name: 'nextContentUrl') String? nextContentUrl,
       @JsonKey(name: 'contentWhitelist') String? contentWhitelist,
       @JsonKey(name: 'contentBlacklist') String? contentBlacklist,
       @JsonKey(name: 'shouldOverrideUrlLoading')
@@ -476,6 +499,7 @@ class __$$RssSourceImplCopyWithImpl<$Res>
     Object? sourceGroup = freezed,
     Object? sourceComment = freezed,
     Object? enabled = null,
+    Object? enableReadRecord = null,
     Object? variableComment = freezed,
     Object? jsLib = freezed,
     Object? enabledCookieJar = freezed,
@@ -496,6 +520,7 @@ class __$$RssSourceImplCopyWithImpl<$Res>
     Object? ruleImage = freezed,
     Object? ruleLink = freezed,
     Object? ruleContent = freezed,
+    Object? nextContentUrl = freezed,
     Object? contentWhitelist = freezed,
     Object? contentBlacklist = freezed,
     Object? shouldOverrideUrlLoading = freezed,
@@ -539,6 +564,10 @@ class __$$RssSourceImplCopyWithImpl<$Res>
       enabled: null == enabled
           ? _value.enabled
           : enabled // ignore: cast_nullable_to_non_nullable
+              as bool,
+      enableReadRecord: null == enableReadRecord
+          ? _value.enableReadRecord
+          : enableReadRecord // ignore: cast_nullable_to_non_nullable
               as bool,
       variableComment: freezed == variableComment
           ? _value.variableComment
@@ -619,6 +648,10 @@ class __$$RssSourceImplCopyWithImpl<$Res>
       ruleContent: freezed == ruleContent
           ? _value.ruleContent
           : ruleContent // ignore: cast_nullable_to_non_nullable
+              as String?,
+      nextContentUrl: freezed == nextContentUrl
+          ? _value.nextContentUrl
+          : nextContentUrl // ignore: cast_nullable_to_non_nullable
               as String?,
       contentWhitelist: freezed == contentWhitelist
           ? _value.contentWhitelist
@@ -706,6 +739,7 @@ class _$RssSourceImpl implements _RssSource {
       @JsonKey(name: 'sourceGroup') this.sourceGroup,
       @JsonKey(name: 'sourceComment') this.sourceComment,
       this.enabled = true,
+      @JsonKey(name: 'enableReadRecord') this.enableReadRecord = true,
       @JsonKey(name: 'variableComment') this.variableComment,
       @JsonKey(name: 'jsLib') this.jsLib,
       @JsonKey(name: 'enabledCookieJar') this.enabledCookieJar,
@@ -726,6 +760,7 @@ class _$RssSourceImpl implements _RssSource {
       @JsonKey(name: 'ruleImage') this.ruleImage,
       @JsonKey(name: 'ruleLink') this.ruleLink,
       @JsonKey(name: 'ruleContent') this.ruleContent,
+      @JsonKey(name: 'nextContentUrl') this.nextContentUrl,
       @JsonKey(name: 'contentWhitelist') this.contentWhitelist,
       @JsonKey(name: 'contentBlacklist') this.contentBlacklist,
       @JsonKey(name: 'shouldOverrideUrlLoading') this.shouldOverrideUrlLoading,
@@ -766,6 +801,12 @@ class _$RssSourceImpl implements _RssSource {
   @override
   @JsonKey()
   final bool enabled;
+// 批28：是否记录阅读历史（原版 RssSource.enableReadRecord，DB 列
+// `INTEGER NOT NULL DEFAULT 1`）。上游运行期按源开关已回退为全局开关，
+// 这里只做字段往返保真，无 UI 开关。
+  @override
+  @JsonKey(name: 'enableReadRecord')
+  final bool enableReadRecord;
   @override
   @JsonKey(name: 'variableComment')
   final String? variableComment;
@@ -825,6 +866,11 @@ class _$RssSourceImpl implements _RssSource {
   @override
   @JsonKey(name: 'ruleContent')
   final String? ruleContent;
+// 批28：正文下一页规则（原版 RssSource.nextContentUrl，Rust 侧已建模；
+// 补齐 Dart 模型避免编辑保存时按 null 覆盖掉该列）
+  @override
+  @JsonKey(name: 'nextContentUrl')
+  final String? nextContentUrl;
   @override
   @JsonKey(name: 'contentWhitelist')
   final String? contentWhitelist;
@@ -881,7 +927,7 @@ class _$RssSourceImpl implements _RssSource {
 
   @override
   String toString() {
-    return 'RssSource(sourceUrl: $sourceUrl, sourceName: $sourceName, sourceIcon: $sourceIcon, sourceGroup: $sourceGroup, sourceComment: $sourceComment, enabled: $enabled, variableComment: $variableComment, jsLib: $jsLib, enabledCookieJar: $enabledCookieJar, concurrentRate: $concurrentRate, header: $header, loginUrl: $loginUrl, loginUi: $loginUi, loginCheckJs: $loginCheckJs, coverDecodeJs: $coverDecodeJs, sortUrl: $sortUrl, singleUrl: $singleUrl, articleStyle: $articleStyle, ruleArticles: $ruleArticles, ruleNextPage: $ruleNextPage, ruleTitle: $ruleTitle, rulePubDate: $rulePubDate, ruleDescription: $ruleDescription, ruleImage: $ruleImage, ruleLink: $ruleLink, ruleContent: $ruleContent, contentWhitelist: $contentWhitelist, contentBlacklist: $contentBlacklist, shouldOverrideUrlLoading: $shouldOverrideUrlLoading, style: $style, enableJs: $enableJs, loadWithBaseUrl: $loadWithBaseUrl, injectJs: $injectJs, preloadJs: $preloadJs, startHtml: $startHtml, startStyle: $startStyle, startJs: $startJs, showWebLog: $showWebLog, lastUpdateTime: $lastUpdateTime, customOrder: $customOrder, rssType: $rssType, preload: $preload, cacheFirst: $cacheFirst, searchUrl: $searchUrl)';
+    return 'RssSource(sourceUrl: $sourceUrl, sourceName: $sourceName, sourceIcon: $sourceIcon, sourceGroup: $sourceGroup, sourceComment: $sourceComment, enabled: $enabled, enableReadRecord: $enableReadRecord, variableComment: $variableComment, jsLib: $jsLib, enabledCookieJar: $enabledCookieJar, concurrentRate: $concurrentRate, header: $header, loginUrl: $loginUrl, loginUi: $loginUi, loginCheckJs: $loginCheckJs, coverDecodeJs: $coverDecodeJs, sortUrl: $sortUrl, singleUrl: $singleUrl, articleStyle: $articleStyle, ruleArticles: $ruleArticles, ruleNextPage: $ruleNextPage, ruleTitle: $ruleTitle, rulePubDate: $rulePubDate, ruleDescription: $ruleDescription, ruleImage: $ruleImage, ruleLink: $ruleLink, ruleContent: $ruleContent, nextContentUrl: $nextContentUrl, contentWhitelist: $contentWhitelist, contentBlacklist: $contentBlacklist, shouldOverrideUrlLoading: $shouldOverrideUrlLoading, style: $style, enableJs: $enableJs, loadWithBaseUrl: $loadWithBaseUrl, injectJs: $injectJs, preloadJs: $preloadJs, startHtml: $startHtml, startStyle: $startStyle, startJs: $startJs, showWebLog: $showWebLog, lastUpdateTime: $lastUpdateTime, customOrder: $customOrder, rssType: $rssType, preload: $preload, cacheFirst: $cacheFirst, searchUrl: $searchUrl)';
   }
 
   @override
@@ -900,6 +946,8 @@ class _$RssSourceImpl implements _RssSource {
             (identical(other.sourceComment, sourceComment) ||
                 other.sourceComment == sourceComment) &&
             (identical(other.enabled, enabled) || other.enabled == enabled) &&
+            (identical(other.enableReadRecord, enableReadRecord) ||
+                other.enableReadRecord == enableReadRecord) &&
             (identical(other.variableComment, variableComment) ||
                 other.variableComment == variableComment) &&
             (identical(other.jsLib, jsLib) || other.jsLib == jsLib) &&
@@ -936,6 +984,8 @@ class _$RssSourceImpl implements _RssSource {
                 other.ruleLink == ruleLink) &&
             (identical(other.ruleContent, ruleContent) ||
                 other.ruleContent == ruleContent) &&
+            (identical(other.nextContentUrl, nextContentUrl) ||
+                other.nextContentUrl == nextContentUrl) &&
             (identical(other.contentWhitelist, contentWhitelist) ||
                 other.contentWhitelist == contentWhitelist) &&
             (identical(other.contentBlacklist, contentBlacklist) ||
@@ -981,6 +1031,7 @@ class _$RssSourceImpl implements _RssSource {
         sourceGroup,
         sourceComment,
         enabled,
+        enableReadRecord,
         variableComment,
         jsLib,
         enabledCookieJar,
@@ -1001,6 +1052,7 @@ class _$RssSourceImpl implements _RssSource {
         ruleImage,
         ruleLink,
         ruleContent,
+        nextContentUrl,
         contentWhitelist,
         contentBlacklist,
         shouldOverrideUrlLoading,
@@ -1043,6 +1095,7 @@ abstract class _RssSource implements RssSource {
       @JsonKey(name: 'sourceGroup') final String? sourceGroup,
       @JsonKey(name: 'sourceComment') final String? sourceComment,
       final bool enabled,
+      @JsonKey(name: 'enableReadRecord') final bool enableReadRecord,
       @JsonKey(name: 'variableComment') final String? variableComment,
       @JsonKey(name: 'jsLib') final String? jsLib,
       @JsonKey(name: 'enabledCookieJar') final bool? enabledCookieJar,
@@ -1063,6 +1116,7 @@ abstract class _RssSource implements RssSource {
       @JsonKey(name: 'ruleImage') final String? ruleImage,
       @JsonKey(name: 'ruleLink') final String? ruleLink,
       @JsonKey(name: 'ruleContent') final String? ruleContent,
+      @JsonKey(name: 'nextContentUrl') final String? nextContentUrl,
       @JsonKey(name: 'contentWhitelist') final String? contentWhitelist,
       @JsonKey(name: 'contentBlacklist') final String? contentBlacklist,
       @JsonKey(name: 'shouldOverrideUrlLoading')
@@ -1103,6 +1157,11 @@ abstract class _RssSource implements RssSource {
   String? get sourceComment;
   @override
   bool get enabled;
+  @override // 批28：是否记录阅读历史（原版 RssSource.enableReadRecord，DB 列
+// `INTEGER NOT NULL DEFAULT 1`）。上游运行期按源开关已回退为全局开关，
+// 这里只做字段往返保真，无 UI 开关。
+  @JsonKey(name: 'enableReadRecord')
+  bool get enableReadRecord;
   @override
   @JsonKey(name: 'variableComment')
   String? get variableComment;
@@ -1162,6 +1221,10 @@ abstract class _RssSource implements RssSource {
   @override
   @JsonKey(name: 'ruleContent')
   String? get ruleContent;
+  @override // 批28：正文下一页规则（原版 RssSource.nextContentUrl，Rust 侧已建模；
+// 补齐 Dart 模型避免编辑保存时按 null 覆盖掉该列）
+  @JsonKey(name: 'nextContentUrl')
+  String? get nextContentUrl;
   @override
   @JsonKey(name: 'contentWhitelist')
   String? get contentWhitelist;

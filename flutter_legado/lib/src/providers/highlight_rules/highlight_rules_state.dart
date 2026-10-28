@@ -28,6 +28,7 @@ class HighlightRule {
     this.style = '',
     this.sortOrder = 0,
     this.timeoutMillisecond = defaultTimeoutMilliseconds,
+    this.group,
     this.applyToBody = true,
   });
 
@@ -58,6 +59,12 @@ class HighlightRule {
   /// 是否应用到正文（原版实体字段 `applyToBody`，默认 true）
   final bool applyToBody;
 
+  /// 规则分组（原版实体字段 `group`，DB 列 `"group" TEXT DEFAULT ''`）
+  ///
+  /// 批28：只在编辑/导入/导出往返中透传，当前无分组 UI（列表仍平铺展示）；
+  /// 为空表示未分组（原版 `normalizeForRestore` 把空白规整为 null）。
+  final String? group;
+
   /// 容错解析：字段缺失/类型不符时回退默认值（对齐 AppLogEntry.fromJson 风格）
   ///
   /// `sortOrder` 兼容 Rust 契约字段与原版备份的 `order` 字段。
@@ -77,6 +84,7 @@ class HighlightRule {
           0,
       timeoutMillisecond: (json['timeoutMillisecond'] as num?)?.toInt() ??
           defaultTimeoutMilliseconds,
+      group: json['group'] as String?,
       applyToBody: (json['applyToBody'] as bool?) ?? true,
     );
   }
@@ -96,6 +104,8 @@ class HighlightRule {
         'style': style,
         'sortOrder': sortOrder,
         'timeoutMillisecond': timeoutMillisecond,
+        // 批28：分组随保存往返（原版实体字段 `group`）
+        'group': group,
         'applyToBody': applyToBody,
       };
 
@@ -141,6 +151,7 @@ class HighlightRule {
     String? style,
     int? sortOrder,
     int? timeoutMillisecond,
+    String? group,
     bool? applyToBody,
   }) {
     return HighlightRule(
@@ -155,6 +166,7 @@ class HighlightRule {
       style: style ?? this.style,
       sortOrder: sortOrder ?? this.sortOrder,
       timeoutMillisecond: timeoutMillisecond ?? this.timeoutMillisecond,
+      group: group ?? this.group,
       applyToBody: applyToBody ?? this.applyToBody,
     );
   }

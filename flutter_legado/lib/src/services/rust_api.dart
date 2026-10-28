@@ -13,6 +13,7 @@ import 'package:path_provider/path_provider.dart';
 import '../bridge/rust_lib.dart' as bridge;
 import '../models/models.dart';
 import '../theme/md3_colors.dart';
+import '../utils/source_json_patch.dart';
 import 'book_api.dart';
 import 'cover_decode_loader.dart';
 import 'local_book_store.dart';

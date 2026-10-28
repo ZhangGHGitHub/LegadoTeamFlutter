@@ -13,6 +13,10 @@ class RssSource with _$RssSource {
     @JsonKey(name: 'sourceGroup') String? sourceGroup,
     @JsonKey(name: 'sourceComment') String? sourceComment,
     @Default(true) bool enabled,
+    // 批28：是否记录阅读历史（原版 RssSource.enableReadRecord，DB 列
+    // `INTEGER NOT NULL DEFAULT 1`）。上游运行期按源开关已回退为全局开关，
+    // 这里只做字段往返保真，无 UI 开关。
+    @Default(true) @JsonKey(name: 'enableReadRecord') bool enableReadRecord,
     @JsonKey(name: 'variableComment') String? variableComment,
     @JsonKey(name: 'jsLib') String? jsLib,
     @JsonKey(name: 'enabledCookieJar') bool? enabledCookieJar,
@@ -33,6 +37,9 @@ class RssSource with _$RssSource {
     @JsonKey(name: 'ruleImage') String? ruleImage,
     @JsonKey(name: 'ruleLink') String? ruleLink,
     @JsonKey(name: 'ruleContent') String? ruleContent,
+    // 批28：正文下一页规则（原版 RssSource.nextContentUrl，Rust 侧已建模；
+    // 补齐 Dart 模型避免编辑保存时按 null 覆盖掉该列）
+    @JsonKey(name: 'nextContentUrl') String? nextContentUrl,
     @JsonKey(name: 'contentWhitelist') String? contentWhitelist,
     @JsonKey(name: 'contentBlacklist') String? contentBlacklist,
     @JsonKey(name: 'shouldOverrideUrlLoading') String? shouldOverrideUrlLoading,

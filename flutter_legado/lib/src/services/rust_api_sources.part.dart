@@ -86,6 +86,8 @@ mixin RustApiSources on RustApiDecode implements BookApi {
   @override
   Future<List<BookSource>> getBookSources() async {
     final json = await bridge.sourceList();
+    // 批28：缓存原始 JSON 供保存时做「原 JSON 补丁」（保留未建模/未编辑字段）
+    BookSourceRawCache.rememberAllJson(json);
     final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => BookSource.fromJson(e as Map<String, dynamic>))
@@ -96,6 +98,7 @@ mixin RustApiSources on RustApiDecode implements BookApi {
   @override
   Future<List<BookSource>> getEnabledBookSources() async {
     final json = await bridge.sourceListEnabled();
+    BookSourceRawCache.rememberAllJson(json);
     final list = _decodeList(json, 'bookApi');
     return list
         .map((e) => BookSource.fromJson(e as Map<String, dynamic>))
@@ -109,14 +112,40 @@ mixin RustApiSources on RustApiDecode implements BookApi {
       sourceJson: jsonEncode(source.toJson()),
     );
     CoverDecodeLoader.invalidateSourceRegistry();
-    return BookSource.fromJson(_decodeMap(json, 'bookApi'));
+    final saved = _decodeMap(json, 'bookApi');
+    // 批28：新增后缓存服务端返回的原文，后续编辑保存可原样补丁
+    BookSourceRawCache.remember(saved);
+    return BookSource.fromJson(saved);
   }
 
   /// 更新书源
+  ///
+  /// 批28：保存载荷改为「原 JSON 补丁」——以读取时的原始 JSON 为底，把编辑后的
+  /// 模型 JSON 深合上去，表单未编辑/ Dart 模型未建模的规则字段
+  /// （如 `ruleContent.contentBatch` / `maxBatchSize`）原样保留，避免编辑保存
+  /// 一次即静默丢字段。缓存未命中时拉取一次 `sourceList` 兜底。
   @override
   Future<void> updateBookSource(BookSource source) async {
-    await bridge.sourceUpdate(sourceJson: jsonEncode(source.toJson()));
+    final payload = await _patchedSourcePayload(source);
+    await bridge.sourceUpdate(sourceJson: jsonEncode(payload));
+    // 保存成功后回写缓存：连续多次保存以本次补丁结果为底，不退化
+    BookSourceRawCache.remember(payload);
     CoverDecodeLoader.invalidateSourceRegistry();
+  }
+
+  /// 构造保存载荷：原始 JSON（缓存，未命中则现拉）深合编辑值
+  Future<Map<String, dynamic>> _patchedSourcePayload(BookSource source) async {
+    var original = BookSourceRawCache.lookup(source.bookSourceUrl);
+    if (original == null) {
+      try {
+        BookSourceRawCache.rememberAllJson(await bridge.sourceList());
+        original = BookSourceRawCache.lookup(source.bookSourceUrl);
+      } catch (e) {
+        // 拉取失败不阻断保存：退化为纯模型 JSON（旧行为）
+        debugPrint('书源原始 JSON 拉取失败（按编辑值保存）: $e');
+      }
+    }
+    return patchSourceJson(original, source.toJson());
   }
 
   /// 设置书源自定义变量（契约 §2.3，台账 §5.11-3，Task #65）

@@ -243,6 +243,8 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
       sourceGroup: _opt('sourceGroup'),
       sourceComment: _opt('sourceComment'),
       enabled: _enabled,
+      // 批28：阅读历史开关无 UI，编辑保存时从既有源透传（原版字段，默认 true）
+      enableReadRecord: old?.enableReadRecord ?? true,
       variableComment: _opt('variableComment'),
       jsLib: _opt('jsLib'),
       enabledCookieJar: _cookieJar,
@@ -263,6 +265,8 @@ class _RssSourceEditScreenState extends ConsumerState<RssSourceEditScreen> {
       ruleImage: _opt('ruleImage'),
       ruleLink: _opt('ruleLink'),
       ruleContent: _opt('ruleContent'),
+      // 批28：正文下一页规则不在编辑表单内，保存时从既有源透传，避免被清空
+      nextContentUrl: old?.nextContentUrl,
       contentWhitelist: _opt('contentWhitelist'),
       contentBlacklist: _opt('contentBlacklist'),
       shouldOverrideUrlLoading: _opt('shouldOverrideUrlLoading'),
