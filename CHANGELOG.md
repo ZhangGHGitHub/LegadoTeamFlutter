@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.0.405] - 2026-10-28
+
+### Fixed
+- [UI] 编辑保存书源/RSS 源/高亮规则时不再丢失未在表单展示的规则字段（正文批量规则、高亮分组、RSS 阅读记录开关等）；RSS 源「下一章链接」保存不再被清空。
+- [Rust] 规则导入对数字字符串/0-1 布尔等常见变体容错，单条格式异常不再导致整批导入失败。
+
 ## [2.0.404] - 2026-10-28
 
 ### Added
