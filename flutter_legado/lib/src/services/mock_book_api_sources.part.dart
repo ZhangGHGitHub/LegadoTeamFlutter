@@ -27,6 +27,45 @@ mixin MockBookApiSources on MockBookApiStore implements BookApi {
     if (idx >= 0) _books[idx] = book;
   }
 
+  /// 单键更新内存书的 `readConfig`（契约 §2.2，批32）
+  ///
+  /// Mock 无原始 JSON 层，只能更新已建模字段；未建模键在 Mock 中本就不可见
+  /// （真实保留语义由 Rust `bookUpdateReadConfigField` 的 DB 侧合并保证）。
+  /// 书籍不存在 / 键名为空白 / `valueJson` 非法按真实实现同口径抛错。
+  @override
+  Future<void> updateReadConfigField(
+    String bookUrl,
+    String key,
+    String valueJson,
+  ) async {
+    await _ensureBooksLoaded();
+    if (key.trim().isEmpty) {
+      throw ArgumentError.value(key, 'key', 'readConfig 键名不能为空');
+    }
+    final Object? value;
+    try {
+      value = jsonDecode(valueJson);
+    } catch (e) {
+      throw FormatException('readConfig 值 JSON 解析失败: $e');
+    }
+    final idx = _books.indexWhere((b) => b.bookUrl == bookUrl);
+    if (idx < 0) {
+      throw StateError('书籍不存在: $bookUrl');
+    }
+    final cfg = _books[idx].readConfig ?? const ReadConfig();
+    final next = switch (key.trim()) {
+      'reverseToc' => cfg.copyWith(reverseToc: value == true),
+      'reverseTocDisplay' => cfg.copyWith(reverseTocDisplay: value == true),
+      'reSegment' => cfg.copyWith(reSegment: value == true),
+      'useReplaceRule' => cfg.copyWith(useReplaceRule: value == true),
+      'playMode' => cfg.copyWith(
+        playMode: value is int ? value : int.tryParse('$value') ?? 0,
+      ),
+      _ => cfg,
+    };
+    _books[idx] = _books[idx].copyWith(readConfig: next);
+  }
+
   @override
   Future<void> deleteBook(String bookUrl) async {
     await _ensureBooksLoaded();

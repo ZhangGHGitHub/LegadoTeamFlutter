@@ -26,6 +26,20 @@ abstract class BookApi {
   /// 更新书籍信息
   Future<void> updateBook(Book book);
 
+  /// 单键更新 `Book.readConfig` 中的指定键（契约 §2.2，批32）
+  ///
+  /// `valueJson` 是**值本身**的 JSON 编码串（如 `'true'`、`'"text"'`、
+  /// `'3.5'`、`'{"a":1}'`），Rust 侧在 DB 中只合并该键：
+  /// - 不重写整书快照，Dart `ReadConfig` 未建模的键（`useGlobalAudioSkip`、
+  ///   `tocExpanded`、`manualReplaceRuleIds` 等）与其他键原样保留；
+  /// - `readConfig` 为空/非法时新建对象再写入；
+  /// - `key` 为空白、`valueJson` 非法、书籍不存在均抛错（不静默成功）。
+  Future<void> updateReadConfigField(
+    String bookUrl,
+    String key,
+    String valueJson,
+  );
+
   /// 从书架删除书籍
   Future<void> deleteBook(String bookUrl);
 

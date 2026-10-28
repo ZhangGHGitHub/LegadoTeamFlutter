@@ -1,4 +1,8 @@
-// [批31b P1-1] 目录页配置持久化回写回归（先红后绿）
+// [批31b P1-1 / 批32] 目录页配置持久化回写回归（先红后绿）
+//
+// 批32 变更：倒序目录/目录显示反转改用单键写 `updateReadConfigField`
+// （整书 updateBook 会清空 Dart 未建模的 readConfig 键）；本用例的
+// mock 按 Rust 单键合并语义更新「DB」中的 readConfig。
 //
 // 缺陷路径（真机可复现）：
 // 1. 阅读器/详情页打开目录时传入的是调用方持有的 Book 旧快照；
@@ -17,6 +21,8 @@
 // - 详情页目录返回重读 `_loadedBook`（见 book_info_screen_builders）。
 //
 // 编写：全栈工程师（批31b） ｜ 2026-10-28
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_legado/src/models/models.dart';
 import 'package:flutter_legado/src/providers/providers.dart';
@@ -71,6 +77,23 @@ void main() {
     when(() => mockApi.getBook(any())).thenAnswer((_) async => dbBook);
     when(() => mockApi.updateBook(any())).thenAnswer((invocation) async {
       dbBook = invocation.positionalArguments.first as Book;
+    });
+    // [批32] 单键写：模拟 Rust 在 DB 侧只合并目标键（其余键保留）
+    when(
+      () => mockApi.updateReadConfigField(any(), any(), any()),
+    ).thenAnswer((invocation) async {
+      final url = invocation.positionalArguments[0] as String;
+      final key = invocation.positionalArguments[1] as String;
+      final value = jsonDecode(invocation.positionalArguments[2] as String);
+      if (url != dbBook.bookUrl || value is! bool) return;
+      final cfg = dbBook.readConfig ?? const ReadConfig();
+      dbBook = dbBook.copyWith(
+        readConfig: switch (key) {
+          'reverseToc' => cfg.copyWith(reverseToc: value),
+          'reverseTocDisplay' => cfg.copyWith(reverseTocDisplay: value),
+          _ => cfg,
+        },
+      );
     });
     when(
       () => mockApi.getChapters(bookUrl),

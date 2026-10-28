@@ -722,9 +722,13 @@ class _TocScreenState extends ConsumerState<TocScreen>
       case 'reverseToc':
         // [批31] 持久化到 ReadConfig.reverseToc（数据反转）；展示层按
         // 「先数据反转、再显示反转」组合，见 _displayEntries
+        // [批32] 改走单键写：updateBook 整书写回会清空 Dart 未建模的
+        // readConfig 键（useGlobalAudioSkip/tocExpanded/manualReplaceRuleIds）
         final rtc = _book.readConfig ?? const ReadConfig();
-        await _updateBook(
-          _book.copyWith(readConfig: rtc.copyWith(reverseToc: !rtc.reverseToc)),
+        await _updateReadConfigField(
+          'reverseToc',
+          !rtc.reverseToc,
+          (c) => c.copyWith(reverseToc: !rtc.reverseToc),
         );
         // [批31b P3-5] 展示顺序反转后重新定位当前章（对齐原版列表刷新后
         // scrollToDurChapter 语义），避免用户停留在与原位置无关的行
@@ -733,13 +737,12 @@ class _TocScreenState extends ConsumerState<TocScreen>
       case 'reverseTocDisplay':
         // [批31] 目录显示反转（对齐原版 ReadConfig.reverseTocDisplay）：
         // 仅展示层反序，数据顺序与章节 index 身份不变
+        // [批32] 同 reverseToc：单键持久化，保留未建模 readConfig 键
         final rtd = _book.readConfig ?? const ReadConfig();
-        await _updateBook(
-          _book.copyWith(
-            readConfig: rtd.copyWith(
-              reverseTocDisplay: !rtd.reverseTocDisplay,
-            ),
-          ),
+        await _updateReadConfigField(
+          'reverseTocDisplay',
+          !rtd.reverseTocDisplay,
+          (c) => c.copyWith(reverseTocDisplay: !rtd.reverseTocDisplay),
         );
         // [批31b P3-5] 同 reverseToc：切换后重新定位当前章
         _scheduleScrollToCurrentChapter();
@@ -841,6 +844,42 @@ class _TocScreenState extends ConsumerState<TocScreen>
         ref
             .read(readerNotifierProvider.notifier)
             .updateCurrentBook(updated);
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('更新失败: ${_errMsg(e)}')),
+        );
+      }
+    }
+  }
+
+  /// 单键持久化 `readConfig` 并同步本页/阅读器状态（批32，契约 §2.2）
+  ///
+  /// 目录反转开关改走单键写（`updateReadConfigField`）：`updateBook` 是整书
+  /// 快照写，Dart `ReadConfig` 未建模的键（`useGlobalAudioSkip`、
+  /// `tocExpanded`、`manualReplaceRuleIds` 等）会在 Dart→Rust 往返中被清空；
+  /// 单键写在 DB 侧只合并目标键，其余键原样保留。本页仍用 [apply] 在内存
+  /// 快照上更新对应字段，保持 UI 即时响应。
+  Future<void> _updateReadConfigField(
+    String key,
+    bool value,
+    ReadConfig Function(ReadConfig config) apply,
+  ) async {
+    try {
+      await ref
+          .read(bookApiProvider)
+          .updateReadConfigField(_book.bookUrl, key, jsonEncode(value));
+      // 页面已关闭（勾选后立即返回）：跳过内存同步——阅读器返回时会经
+      // RouteAware.didPopNext 重读 DB（见 reader_screen.dart）
+      if (!mounted) return;
+      final updated = _book.copyWith(
+        readConfig: apply(_book.readConfig ?? const ReadConfig()),
+      );
+      setState(() => _book = updated);
+      final readerState = ref.read(readerNotifierProvider);
+      if (readerState.currentBook?.bookUrl == updated.bookUrl) {
+        ref.read(readerNotifierProvider.notifier).updateCurrentBook(updated);
       }
     } catch (e) {
       if (mounted) {

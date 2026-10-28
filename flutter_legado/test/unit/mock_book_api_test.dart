@@ -79,6 +79,40 @@ void main() {
       expect(book!.group, 5);
     });
 
+    // [批32] readConfig 单键写（契约 §2.2 updateReadConfigField）：
+    // 只改目标键、其余已建模键保留；书不存在/键名为空/值 JSON 非法抛错。
+    test('updateReadConfigField 只改目标键', () async {
+      await api.updateBook(
+        (await api.getBook('mock://book/1'))!.copyWith(
+          readConfig: const ReadConfig(reverseToc: true, playMode: 2),
+        ),
+      );
+      await api.updateReadConfigField(
+        'mock://book/1',
+        'reverseTocDisplay',
+        'true',
+      );
+      final cfg = (await api.getBook('mock://book/1'))!.readConfig!;
+      expect(cfg.reverseTocDisplay, isTrue);
+      expect(cfg.reverseToc, isTrue, reason: '非目标键应保留');
+      expect(cfg.playMode, 2, reason: '非目标键应保留');
+    });
+
+    test('updateReadConfigField 非法入参抛错', () async {
+      expect(
+        () => api.updateReadConfigField('mock://nonexist', 'reverseToc', 'true'),
+        throwsA(isA<StateError>()),
+      );
+      expect(
+        () => api.updateReadConfigField('mock://book/1', '  ', 'true'),
+        throwsA(isA<ArgumentError>()),
+      );
+      expect(
+        () => api.updateReadConfigField('mock://book/1', 'reverseToc', 'oops'),
+        throwsA(isA<FormatException>()),
+      );
+    });
+
     // [cbz 批 C | 2026-10-03] mock importLocalBook 与 Rust 行为对齐：
     // .cbz → LOCAL|image(0x1040)；其余本地格式仅 LOCAL 无媒体位。
     test('importLocalBook cbz 返回 LOCAL|image(0x1040)，与 Rust 对齐', () async {

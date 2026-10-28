@@ -27,6 +27,20 @@ mixin RustApiSources on RustApiDecode implements BookApi {
   Future<void> updateBook(Book book) =>
       bridge.bookshelfUpdate(bookJson: jsonEncode(book.toJson()));
 
+  /// 单键更新 `Book.readConfig` 指定键（契约 §2.2，批32）
+  ///
+  /// `valueJson` 为值本身的 JSON 编码串，Rust 侧只合并该键，未建模键保留。
+  @override
+  Future<void> updateReadConfigField(
+    String bookUrl,
+    String key,
+    String valueJson,
+  ) => bridge.bookUpdateReadConfigField(
+    bookUrl: bookUrl,
+    key: key,
+    valueJson: valueJson,
+  );
+
   /// 从书架删除书籍
   @override
   Future<void> deleteBook(String bookUrl) =>

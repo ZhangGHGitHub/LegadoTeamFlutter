@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/material.dart';
@@ -92,14 +93,25 @@ class _ReaderMenuPanelState extends ConsumerState<ReaderMenuPanel>
   ///
   /// 对齐原版 `TocViewModel.reverseToc`：仅改展示序（数据/章节索引不变），
   /// 目录页读取同一 Book 对象即按「先数据反转、再显示反转」组合渲染。
+  ///
+  /// [批32] 改走单键写 `updateReadConfigField`：`updateBook` 是整书快照写，
+  /// Dart `ReadConfig` 未建模的键（`useGlobalAudioSkip`/`tocExpanded`/
+  /// `manualReplaceRuleIds` 等）会在往返中被清空；单键写只合并该键。
   Future<void> _toggleReverseTocDisplay(Book book) async {
     final cfg = book.readConfig ?? const ReadConfig();
-    final updated = book.copyWith(
-      readConfig: cfg.copyWith(reverseTocDisplay: !cfg.reverseTocDisplay),
-    );
+    final next = !cfg.reverseTocDisplay;
     try {
-      await ref.read(bookApiProvider).updateBook(updated);
+      await ref
+          .read(bookApiProvider)
+          .updateReadConfigField(
+            book.bookUrl,
+            'reverseTocDisplay',
+            jsonEncode(next),
+          );
       if (!mounted) return;
+      final updated = book.copyWith(
+        readConfig: cfg.copyWith(reverseTocDisplay: next),
+      );
       ref.read(readerNotifierProvider.notifier).updateCurrentBook(updated);
     } catch (e) {
       if (!mounted) return;
