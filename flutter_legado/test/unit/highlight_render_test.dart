@@ -167,6 +167,47 @@ void main() {
       expect(textStyle.decorationThickness, 2);
     });
 
+    test('下划线未显式设色 → 回退规则 textColor（批34c，对齐原版 fallbackColor）', () {
+      // 原版 HighlightDraw.drawRun：underline.color == 0 时取
+      // style.textColor（再退正文色）；设备验收发现 Flutter 未回退时
+      // 下划线落到正文基色，与规则 textColor 不一致
+      final style = HighlightStyle.parse(
+        '{"textColor":-65536,"underline":{"kind":"solid"}}',
+      );
+      final textStyle = highlightTextStyle(style)!;
+      expect(textStyle.color, const Color(0xFFFF0000));
+      expect(textStyle.decoration, TextDecoration.underline);
+      expect(
+        textStyle.decorationColor,
+        const Color(0xFFFF0000),
+        reason: 'underline.color=0 应回退规则 textColor',
+      );
+    });
+
+    test('下划线显式颜色优先于规则 textColor', () {
+      final style = HighlightStyle.parse(
+        '{"textColor":-65536,"underline":{"color":-16776961}}',
+      );
+      final textStyle = highlightTextStyle(style)!;
+      expect(textStyle.decorationColor, const Color(0xFF0000FF));
+    });
+
+    test('下划线与规则均无颜色 → decorationColor 保持 null（正文色兜底）', () {
+      final style = HighlightStyle.parse('{"underline":{"kind":"wavy"}}');
+      final textStyle = highlightTextStyle(style)!;
+      expect(textStyle.color, isNull);
+      expect(textStyle.decorationColor, isNull);
+    });
+
+    test('删除线未设色 → 同样回退规则 textColor', () {
+      final style = HighlightStyle.parse(
+        '{"textColor":-16777216,"strike":{}}',
+      );
+      final textStyle = highlightTextStyle(style)!;
+      expect(textStyle.decoration, TextDecoration.lineThrough);
+      expect(textStyle.decorationColor, const Color(0xFF000000));
+    });
+
     test('仅 bold/italic 返回 null（不改变字体度量）', () {
       expect(highlightTextStyle(HighlightStyle.parse('{"bold":true}')), isNull);
       expect(highlightTextStyle(HighlightStyle.parse('{"italic":true}')), isNull);

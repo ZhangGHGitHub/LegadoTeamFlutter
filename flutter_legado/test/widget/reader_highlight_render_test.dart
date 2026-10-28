@@ -164,6 +164,37 @@ void main() {
     }
   });
 
+  testWidgets('下划线未设色时 span 的 decorationColor 取规则 textColor', (tester) async {
+    // 批34c：设备验收缺陷——underline.color 缺省时 Flutter 画线落到正文基色；
+    // 组件断言：命中的 span 必须显式带上规则 textColor 作为 decorationColor
+    final pageInfo = PageInfo(
+      paragraphs: [paragraph(words: ['正文高亮'])],
+      totalHeight: 24,
+    );
+    await pumpContent(
+      tester,
+      pageInfo: pageInfo,
+      matches: [
+        HighlightMatch(
+          ruleId: 4,
+          start: 0,
+          end: 2,
+          order: 0,
+          style: HighlightStyle.fromMap(const {
+            'textColor': 0xFFFF0000,
+            'underline': {'kind': 'solid'},
+          }),
+        ),
+      ],
+    );
+    final spans = findSpans(tester, '正文');
+    expect(spans, isNotEmpty);
+    final styled = spans.firstWhere((s) => s.style != null);
+    expect(styled.style?.decoration, TextDecoration.underline);
+    expect(styled.style?.color, const Color(0xFFFF0000));
+    expect(styled.style?.decorationColor, const Color(0xFFFF0000));
+  });
+
   testWidgets('跨行命中按行全局偏移裁剪（第二行只染后半段）', (tester) async {
     // 第一行 0..4，第二行全局 4..8；命中 2..6 → 第二行 4..6（行内 0..2）
     const first = ParagraphInfo(

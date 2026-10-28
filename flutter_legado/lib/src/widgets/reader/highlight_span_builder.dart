@@ -99,6 +99,15 @@ TextStyle? highlightTextStyle(HighlightStyle style) {
   final color = style.textColor != 0 ? Color(style.textColor) : null;
   final background = style.fill != 0 ? Color(style.fill) : null;
 
+  // 批34c：线条颜色回退对齐原版 `HighlightDraw.drawRun` 的 fallbackColor 语义
+  // （`style.textColor.takeIf { it != 0 } ?: 正文色`）：underline.color /
+  // strike.color 为 0 时用规则 textColor；规则也没有 textColor 时保持 null，
+  // 由 Flutter 按正文色绘制。设备验收发现未显式回退时下划线会落到正文基色，
+  // 与规则 textColor 不一致。— full-stack-engineer + UI
+  final lineFallbackColor = style.textColor != 0
+      ? Color(style.textColor)
+      : null;
+
   final decorations = <TextDecoration>[];
   if (style.underline != null) decorations.add(TextDecoration.underline);
   if (style.strike) decorations.add(TextDecoration.lineThrough);
@@ -112,15 +121,18 @@ TextStyle? highlightTextStyle(HighlightStyle style) {
   final underline = style.underline;
   if (underline != null) {
     decorationStyle = _decorationStyle(underline.kind);
-    if (underline.color != 0) {
-      decorationColor = Color(underline.color);
-    }
+    decorationColor = underline.color != 0
+        ? Color(underline.color)
+        : lineFallbackColor;
     if (underline.width > 0) {
       decorationThickness = underline.width;
     }
   }
-  if (decorationColor == null && style.strike && style.strikeColor != 0) {
-    decorationColor = Color(style.strikeColor);
+  if (decorationColor == null && style.strike) {
+    // 删除线同款回退：自身颜色 → 规则 textColor → 正文色
+    decorationColor = style.strikeColor != 0
+        ? Color(style.strikeColor)
+        : lineFallbackColor;
   }
 
   return TextStyle(
