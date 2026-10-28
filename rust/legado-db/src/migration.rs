@@ -10,6 +10,7 @@ pub mod highlight_rule_columns_v110;
 pub mod migrations;
 pub mod origin_book_url_v109;
 pub mod read_record_v113;
+pub mod reverse_toc_display_v116;
 pub mod room_align_v105;
 pub mod rss_next_content_url_v111;
 pub mod rule_fields_v114;
@@ -81,6 +82,7 @@ impl MigrationRegistry {
         self.register(Box::new(read_record_v113::Migration112To113));
         self.register(Box::new(rule_fields_v114::Migration113To114));
         self.register(Box::new(source_check_state_v115::Migration114To115));
+        self.register(Box::new(reverse_toc_display_v116::Migration115To116));
     }
 
     /// 注册单个迁移
@@ -315,7 +317,7 @@ mod tests {
     fn test_migration_registry_list() {
         let registry = MigrationRegistry::new();
         let list = registry.list_migrations();
-        assert_eq!(list.len(), 25);
+        assert_eq!(list.len(), 26);
         assert_eq!(list[0].0, 90);
         assert_eq!(list[0].1, 91);
     }

@@ -68,7 +68,12 @@ use legado_core::{LegadoError, LegadoResult};
 ///   **不重建 `book_sources_part` 视图**：该视图供 Android 列表联查使用，
 ///   Rust 侧网页管理端点直接返回「完整源 + 状态」两组数据（与原版
 ///   `BookSourceCheckController.sources` 同构），FFI 无该视图消费方
-pub const SCHEMA_VERSION: u32 = 115;
+/// - v116：书籍阅读配置 `reverseTocDisplay`（批31，对齐原版
+///   `Book.ReadConfig.reverseTocDisplay`，`Book.kt:502`）：**无 DDL**——
+///   `books.readConfig` 为 JSON TEXT 列（与原版 Room 一致），新键随
+///   ReadConfig 序列化写入、旧库缺键按 serde 默认 `false` 读取；迁移
+///   115→116 为幂等版本登记（空操作），用于记录数据契约版本。
+pub const SCHEMA_VERSION: u32 = 116;
 
 /// 初始化全部 Schema（创建所有表）
 pub fn init_schema(conn: &Connection) -> LegadoResult<()> {

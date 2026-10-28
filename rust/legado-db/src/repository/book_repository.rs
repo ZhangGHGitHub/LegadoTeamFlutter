@@ -149,6 +149,42 @@ impl<'a> BookRepository<'a> {
         Ok(count)
     }
 
+    /// 按 book 的 origin 聚合**书架**书籍数（批31，书源管理「显示书籍数量」）
+    ///
+    /// 对齐原版 `BookDao.flowBookshelfSourceOrigins` 的过滤口径：
+    /// `type & notShelf = 0 AND type & local = 0`——排除搜索/发现打开在线书
+    /// 阅读时落库的临时书（notShelf 位 1024），以及本地/WebDAV 书
+    /// （Kotlin local 位 256；本仓库 Rust 域另有 local 位 4096，双位一并
+    /// 排除，避免两套位域存量数据混入）。
+    ///
+    /// 返回 `(origin, count)` 列表，按 count 降序、origin 升序稳定输出；
+    /// 单次 `GROUP BY` 批量查询（书源列表页一次性取回，非逐源查询）。
+    pub fn count_bookshelf_books_by_origin(&self) -> LegadoResult<Vec<(String, i64)>> {
+        let mut stmt = self
+            .conn
+            .prepare(
+                "SELECT origin, COUNT(*) AS c
+                 FROM books
+                 WHERE (type & 1024) = 0
+                   AND (type & 256) = 0
+                   AND (type & 4096) = 0
+                 GROUP BY origin
+                 ORDER BY c DESC, origin ASC",
+            )
+            .map_err(|e| LegadoError::Database(format!("准备计数查询失败: {e}")))?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .map_err(|e| LegadoError::Database(format!("计数查询失败: {e}")))?;
+        let mut out = Vec::new();
+        for row in rows {
+            let row = row.map_err(|e| LegadoError::Database(format!("计数行解析失败: {e}")))?;
+            out.push(row);
+        }
+        Ok(out)
+    }
+
     /// 更新书籍的 readConfig JSON 字段中的指定键值
     ///
     /// 参考 Kotlin `BookDao.updateReadConfigJson()`
@@ -1244,5 +1280,63 @@ mod tests {
         // 其它列保持
         assert_eq!(found.name, "P2-1 测试书");
         assert_eq!(found.variable.as_deref(), Some(r#"{"custom":"user-val"}"#));
+    }
+
+    /// [批31] 按 origin 聚合书架书籍数：
+    /// - 多源分别计数；
+    /// - 零本书的源不出现在结果中（调用方按缺键回落 0）；
+    /// - notShelf 临时书不计；
+    /// - Kotlin local 位（256）与 Rust local 位（4096）不计。
+    #[test]
+    fn test_count_bookshelf_books_by_origin_filters_and_groups() {
+        let db = crate::init_in_memory_database().unwrap();
+        let repo = BookRepository::new(db.connection());
+
+        let mut a1 = make_book("https://a.example/1", "A1", "作者");
+        a1.origin = "https://src-a.example".into();
+        a1.book_type = 8; // text
+        let mut a2 = make_book("https://a.example/2", "A2", "作者");
+        a2.origin = "https://src-a.example".into();
+        a2.book_type = 8;
+        let mut b1 = make_book("https://b.example/1", "B1", "作者");
+        b1.origin = "https://src-b.example".into();
+        b1.book_type = 8;
+        // 搜索页临时书（notShelf 位 1024）——不计
+        let mut temp = make_book("https://a.example/temp", "临时", "作者");
+        temp.origin = "https://src-a.example".into();
+        temp.book_type = 8 | 1024;
+        // 原版本地书（text|local=264）——不计
+        let mut local_kotlin = make_book("/books/local.txt", "本地", "作者");
+        local_kotlin.origin = "loc_book".into();
+        local_kotlin.book_type = 8 | 256;
+        // 本仓库 Rust 域本地书（text|local=4104）——不计
+        let mut local_rust = make_book("/books/local2.txt", "本地2", "作者");
+        local_rust.origin = "loc_book".into();
+        local_rust.book_type = 8 | 4096;
+        // 书架书但 origin 无对应书源（如已删源）——计数照常返回，调用方按 URL 查不到即忽略
+        let mut orphan = make_book("https://c.example/1", "C1", "作者");
+        orphan.origin = "https://gone-source.example".into();
+        orphan.book_type = 8;
+
+        for b in [&a1, &a2, &b1, &temp, &local_kotlin, &local_rust, &orphan] {
+            repo.insert(b).unwrap();
+        }
+
+        let counts = repo.count_bookshelf_books_by_origin().unwrap();
+        assert_eq!(
+            counts,
+            vec![
+                ("https://src-a.example".to_string(), 2),
+                ("https://gone-source.example".to_string(), 1),
+                ("https://src-b.example".to_string(), 1),
+            ],
+            "多源分组 + 过滤 notShelf/local 后按 count 降序、origin 升序"
+        );
+
+        // 零本：新增一个无书的源不会出现在聚合结果中
+        assert!(
+            !counts.iter().any(|(o, _)| o == "https://src-zero.example"),
+            "零本书的源不应出现在聚合结果"
+        );
     }
 }

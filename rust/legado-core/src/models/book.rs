@@ -81,6 +81,15 @@ pub mod book_type {
 pub struct ReadConfig {
     #[serde(default, rename = "reverseToc")]
     pub reverse_toc: bool,
+    /// 目录显示反转（仅展示层反序，章节数据顺序与 `index` 身份不变）
+    ///
+    /// 对齐原版 `Book.ReadConfig.reverseTocDisplay`（`Book.kt:502`）与
+    /// `BookDao.updateReverseTocDisplay`：目录页在数据顺序之上再做一次
+    /// 展示反序；与 [`Self::reverse_toc`]（数据反转）组合 = 先数据反转、
+    /// 再显示反转（双开回到原始顺序）。加法式字段：旧 JSON / 旧数据库
+    /// 无此键 → `false`，既有行为不变。
+    #[serde(default, rename = "reverseTocDisplay")]
+    pub reverse_toc_display: bool,
     #[serde(skip_serializing_if = "Option::is_none", rename = "pageAnim")]
     pub page_anim: Option<i32>,
     #[serde(default, rename = "reSegment")]
@@ -490,6 +499,8 @@ mod tests {
         let json = "{}";
         let rc: ReadConfig = serde_json::from_str(json).unwrap();
         assert!(!rc.reverse_toc);
+        // 旧 JSON 无该键时默认 false（对齐原版 ReadConfig.reverseTocDisplay）
+        assert!(!rc.reverse_toc_display);
         assert!(rc.split_long_chapter);
         assert_eq!(rc.daily_chapters, 3);
         assert!((rc.play_speed - 1.0).abs() < f32::EPSILON);
@@ -503,6 +514,26 @@ mod tests {
         assert!(rc.use_global_audio_skip);
         let json = serde_json::to_string(&rc).unwrap();
         assert!(json.contains("useGlobalAudioSkip"));
+    }
+
+    /// [批31] `reverseTocDisplay` JSON 往返 + 与 `reverseToc` 独立：
+    /// 对齐原版 `Book.ReadConfig.reverseTocDisplay`（键名逐字一致），
+    /// 旧 JSON 缺键默认 false。
+    #[test]
+    fn test_read_config_reverse_toc_display_roundtrip() {
+        let rc: ReadConfig =
+            serde_json::from_str(r#"{"reverseToc":true,"reverseTocDisplay":true}"#).unwrap();
+        assert!(rc.reverse_toc);
+        assert!(rc.reverse_toc_display);
+
+        let json = serde_json::to_string(&rc).unwrap();
+        assert!(json.contains(r#""reverseTocDisplay":true"#), "json={json}");
+
+        // 仅显示反转：数据反转保持默认 false（两开关独立）
+        let only_display: ReadConfig =
+            serde_json::from_str(r#"{"reverseTocDisplay":true}"#).unwrap();
+        assert!(!only_display.reverse_toc);
+        assert!(only_display.reverse_toc_display);
     }
 
     /// [漫画设置作用域 2026-10-01] 书级字段 round-trip：

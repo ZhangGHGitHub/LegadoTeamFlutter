@@ -4037,6 +4037,66 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
+    /// [批31] 书籍 `readConfig.reverseTocDisplay` 随自有 JSON 备份往返：
+    /// 备份 `books` 段由 `Book` 模型序列化（typed ReadConfig），恢复按
+    /// 同模型反序列化落库，新键必须原样保留且与 `reverseToc` 独立。
+    #[test]
+    fn test_book_reverse_toc_display_backup_roundtrip() {
+        use legado_core::models::ReadConfig;
+
+        let _db_guard = crate::db_state::ensure_test_db();
+        clear_backup_tables();
+
+        let dir = std::env::temp_dir().join("legado_backup_reverse_toc_display");
+        let _ = fs::create_dir_all(&dir);
+        let backup_path = dir.join("reverse_toc_display.json");
+        let path_str = backup_path.to_str().unwrap();
+
+        let seed = Book {
+            book_url: "https://book.example/reverse-display".to_string(),
+            origin: "https://src.example".to_string(),
+            name: "显示反转书".to_string(),
+            read_config: Some(ReadConfig {
+                reverse_toc: true,
+                reverse_toc_display: true,
+                ..ReadConfig::default()
+            }),
+            ..Book::default()
+        };
+        with_database(|db| {
+            BookRepository::new(db.connection())
+                .insert(&seed)
+                .map_err(|e| LegadoError::Database(format!("种子书籍写入失败: {e}")))
+        })
+        .unwrap();
+
+        assert!(backup_create(path_str).is_ok());
+        with_database(|db| {
+            db.connection()
+                .execute("DELETE FROM books", [])
+                .map_err(|e| LegadoError::Database(format!("清库失败: {e}")))?;
+            Ok(())
+        })
+        .unwrap();
+        backup_restore(path_str).unwrap();
+
+        let restored = with_database(|db| {
+            BookRepository::new(db.connection())
+                .find_by_url(&seed.book_url)
+                .map_err(|e| LegadoError::Database(format!("查询恢复书籍失败: {e}")))
+        })
+        .unwrap()
+        .expect("恢复后书籍应存在");
+        let cfg = restored.read_config.expect("readConfig 应随备份恢复");
+        assert!(cfg.reverse_toc, "reverseToc 应保留");
+        assert!(
+            cfg.reverse_toc_display,
+            "reverseTocDisplay 应随备份往返保留（批31）"
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
     /// [批8] servers 备份→清库→恢复→逐字段 diff
     ///
     /// 对齐原版 `Backup.kt:304-311`（servers.json = serverDao.all）与

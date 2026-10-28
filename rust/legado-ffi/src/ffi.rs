@@ -261,8 +261,12 @@ pub mod ffi {
     // ─── 书源管理 ─────────────────────────────────────────────
 
     /// 获取所有书源列表（JSON 数组）
+    ///
+    /// 每项在书源对象字段之上平铺加法式 `bookshelfCount`（书架书籍数，
+    /// 批31；契约 §2.3）。`source_list_enabled` 与 `source_export` 保持
+    /// 原形状，不携带该字段。
     pub fn source_list() -> Result<String, BridgeError> {
-        let sources = crate::api::source::list_sources()?;
+        let sources = crate::api::source::list_sources_with_bookshelf_counts()?;
         to_json(&sources)
     }
 

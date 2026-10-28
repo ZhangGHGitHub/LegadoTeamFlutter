@@ -17,6 +17,45 @@ pub fn list_sources() -> LegadoResult<Vec<BookSource>> {
     })
 }
 
+/// 书源列表项（书源 + 书架书籍数，批31）
+///
+/// 仅用于 FFI `source_list`（书源管理页）：`#[serde(flatten)]` 保持既有
+/// 书源对象形状不变，追加 `bookshelfCount` 加法式字段；`source_export`
+/// （导出/备份）继续走 [`list_sources`]，不携带该字段。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct BookSourceListItem {
+    #[serde(flatten)]
+    pub source: BookSource,
+    /// 该书源（按 origin 精确匹配）在书架中的书籍数；无书或非书架书 → 0
+    #[serde(rename = "bookshelfCount")]
+    pub bookshelf_count: i64,
+}
+
+/// 获取所有书源并附带书架书籍数（契约 §2.3：`getBookSources` 返回项
+/// 加法式字段 `bookshelfCount`）
+///
+/// 计数口径见
+/// [`legado_db::BookRepository::count_bookshelf_books_by_origin`]：单次
+/// `GROUP BY origin` 批量查询（非逐源查询），过滤 notShelf 临时书与
+/// 本地/WebDAV 书，对齐原版 `BookDao.flowBookshelfSourceOrigins`。
+pub fn list_sources_with_bookshelf_counts() -> LegadoResult<Vec<BookSourceListItem>> {
+    with_database(|db| {
+        let conn = db.connection();
+        let counts: std::collections::HashMap<String, i64> = legado_db::BookRepository::new(conn)
+            .count_bookshelf_books_by_origin()?
+            .into_iter()
+            .collect();
+        let sources = BookSourceRepository::new(conn).find_all()?;
+        Ok(sources
+            .into_iter()
+            .map(|source| BookSourceListItem {
+                bookshelf_count: counts.get(&source.book_source_url).copied().unwrap_or(0),
+                source,
+            })
+            .collect())
+    })
+}
+
 /// 添加书源（JSON 序列化传入）
 pub fn add_source(source_json: &str) -> LegadoResult<BookSource> {
     let source: BookSource = serde_json::from_str(source_json)
@@ -378,5 +417,86 @@ mod tests {
         );
 
         delete_source(url).unwrap();
+    }
+
+    /// [批31] `getBookSources` 返回项加法式 `bookshelfCount`：
+    /// - 多源分别计数、零本源为 0；
+    /// - notShelf 临时书不计；
+    /// - 序列化 JSON 含 `bookshelfCount` 且其余书源字段形状不变；
+    /// - `list_sources`（导出/备份路径）返回模型本身，不携带计数字段。
+    #[test]
+    fn test_source_list_includes_bookshelf_counts() {
+        use legado_core::models::Book;
+        use legado_db::repository::Repository;
+        use legado_db::BookRepository;
+
+        let _db_guard = setup_test_db();
+        let url_a = "https://ffi-bookshelf-count-a.example";
+        let url_b = "https://ffi-bookshelf-count-b.example";
+        let url_zero = "https://ffi-bookshelf-count-zero.example";
+        for (url, name) in [(url_a, "计数源A"), (url_b, "计数源B"), (url_zero, "零本源")] {
+            add_source(&format!(
+                "{{\"bookSourceUrl\":\"{url}\",\"bookSourceName\":\"{name}\"}}"
+            ))
+            .unwrap();
+        }
+
+        let book = |url: &str, origin: &str, ty: i32| Book {
+            book_url: url.to_string(),
+            origin: origin.to_string(),
+            // name/author 唯一索引：逐书给唯一值，避免 INSERT OR REPLACE
+            // 把同名同作者的前一条移走（测试种子互相覆盖）
+            name: url.to_string(),
+            author: "计数作者".to_string(),
+            book_type: ty,
+            ..Book::default()
+        };
+        with_database(|db| {
+            let repo = BookRepository::new(db.connection());
+            repo.insert(&book("https://book.example/a1", url_a, 8))
+                .unwrap();
+            repo.insert(&book("https://book.example/a2", url_a, 8))
+                .unwrap();
+            repo.insert(&book("https://book.example/b1", url_b, 8))
+                .unwrap();
+            // 搜索页临时书（notShelf=1024）不计入
+            repo.insert(&book("https://book.example/temp", url_a, 8 | 1024))
+                .unwrap();
+            Ok(())
+        })
+        .unwrap();
+
+        let items = list_sources_with_bookshelf_counts().unwrap();
+        let count_of = |url: &str| {
+            items
+                .iter()
+                .find(|i| i.source.book_source_url == url)
+                .map(|i| i.bookshelf_count)
+                .unwrap_or(-1)
+        };
+        assert_eq!(count_of(url_a), 2);
+        assert_eq!(count_of(url_b), 1);
+        assert_eq!(count_of(url_zero), 0, "零本书源应输出 0 而非缺键");
+
+        // JSON 形状：`bookshelfCount` 与既有源字段平铺（不嵌套）
+        let item = items
+            .iter()
+            .find(|i| i.source.book_source_url == url_a)
+            .unwrap();
+        let json = serde_json::to_value(item).unwrap();
+        assert_eq!(json["bookshelfCount"], 2);
+        assert_eq!(json["bookSourceUrl"], url_a);
+        assert_eq!(json["bookSourceName"], "计数源A");
+
+        // 导出/备份路径（list_sources）仍返回书源模型本身（无计数字段）
+        let exported = list_sources().unwrap();
+        assert!(
+            exported.iter().any(|s| s.book_source_url == url_a),
+            "导出路径应包含书源"
+        );
+
+        for url in [url_a, url_b, url_zero] {
+            delete_source(url).unwrap();
+        }
     }
 }
