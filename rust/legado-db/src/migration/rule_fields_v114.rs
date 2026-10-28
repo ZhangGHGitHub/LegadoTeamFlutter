@@ -1,11 +1,13 @@
 //! Migration113To114 — 规则字段往返保真（批28）
 //!
 //! 缺陷根因（对照原版 Room schema `113.json` 与实体定义）：
-//! 1. `highlightRules.group`（`HighlightRule.kt:30-32`，`@ColumnInfo(defaultValue = "")`
-//!    即 DDL `TEXT DEFAULT ''`，原版 `DatabaseMigrations.kt:65` 的
+//! 1. `highlightRules.group`（`HighlightRule.kt:37-38`，`@ColumnInfo(defaultValue = "")`
+//!    即 DDL `TEXT DEFAULT ''`，原版 `DatabaseMigrations.kt:63-66` 的
 //!    `migration_108_109` 补列）：规则分组，缺列导致导入/导出/备份往返丢分组；
 //! 2. `rssSources.enableReadRecord`（`RssSource.kt:28-30`，
-//!    `@ColumnInfo(defaultValue = "1")` 即 DDL `INTEGER NOT NULL DEFAULT 1`）：
+//!    `@ColumnInfo(defaultValue = "1")` 即 DDL `INTEGER NOT NULL DEFAULT 1`；
+//!    自原版 Room schema **112** 起存在，上游 `DatabaseMigrations` 无独立
+//!    ALTER——111→112 为开发期版本号，112.json 已含该列）：
 //!    是否记录该源阅读历史（上游运行期已回退为全局开关，本批只做字段/DB 往返保真，
 //!    不做按源开关行为），缺列导致原版备份恢复与源导出往返丢字段。
 //!

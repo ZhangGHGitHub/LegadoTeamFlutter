@@ -52,11 +52,11 @@ use legado_core::{LegadoError, LegadoResult};
 ///   `displayBookName` 列保证上游「发列未升版本」场景幂等（Migration112To113）
 /// - v114：规则字段往返保真（批28，对齐原版 Room schema 113.json 中较早加入
 ///   但此前未落地的两列）：`highlightRules` 补 `group`（TEXT DEFAULT ''，
-///   对齐原版 `HighlightRule.group` 与 `DatabaseMigrations.kt:65` 的
-///   `migration_108_109`）；`rssSources` 补 `enableReadRecord`
-///   （INTEGER NOT NULL DEFAULT 1，对齐原版 `RssSource.enableReadRecord` 与
-///   `@ColumnInfo(defaultValue = "1")`）。迁移 113→114 全部为
-///   `add_column_if_not_exists`，幂等（Migration113To114）
+///   对齐原版 `HighlightRule.group:38`：原版 `DatabaseMigrations.kt:63-66`
+///   的 `migration_108_109` 增列）；`rssSources` 补 `enableReadRecord`
+///   （INTEGER NOT NULL DEFAULT 1，对齐原版 `RssSource.kt:28-30`；
+///   该列自原版 Room schema **112** 起存在，上游无独立 ALTER）。迁移 113→114
+///   全部为 `add_column_if_not_exists`，幂等（Migration113To114）
 pub const SCHEMA_VERSION: u32 = 114;
 
 /// 初始化全部 Schema（创建所有表）
