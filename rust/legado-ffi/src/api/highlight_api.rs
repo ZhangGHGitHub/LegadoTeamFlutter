@@ -192,13 +192,22 @@ struct Accepted {
     rule_index: usize,
 }
 
+/// 匹配中断的超时来源（warn 文案区分单规则/整体，批34b P2-3）
+enum MatchTimeout {
+    /// 整体截止时间（[MATCH_TIMEOUT]）到期
+    Overall,
+    /// 单条规则自身 `timeoutMillisecond` 到期
+    Rule(i64),
+}
+
 /// 按启用高亮规则匹配正文
 ///
 /// 语义见 `docs/API_CONTRACT.md` §2.36 批34 注：
 /// - 只取启用且 scope 匹配的规则，再按 `apply_to_title` 选侧过滤；
 /// - 字面量非重叠查找；正则走 Java 方言适配 + 安全编译，失败 warn 跳过；
 /// - 重叠按 `sortOrder` 大者覆盖（同 order 先命中者胜），输出 `(order, start)` 升序；
-/// - 返回 UTF-16 code unit 半开区间，`styleJson` 原样透传。
+/// - 返回 UTF-16 code unit 半开区间，`styleJson` 原样透传；
+/// - 单规则超时或整体超时均**中止剩余规则**并返回已收集结果（对齐原版）。
 pub fn highlight_rule_match(
     text: &str,
     book_name: &str,
@@ -242,7 +251,7 @@ pub fn highlight_rule_match(
     let overall_deadline = Instant::now() + MATCH_TIMEOUT;
     let mut candidates: Vec<Candidate> = Vec::new();
     let mut seq = 0usize;
-    let mut timed_out = false;
+    let mut timed_out: Option<MatchTimeout> = None;
     // 按优先级从高到低收集（order 降序、同 order 规则 id 升序）：
     // maxMatches 截断候选时优先保住高优先级命中，避免低优先级先占满配额
     let mut collection_order: Vec<usize> = (0..rules.len()).collect();
@@ -278,17 +287,27 @@ pub fn highlight_rule_match(
             )
         };
         if !completed {
-            timed_out = true;
+            // 单规则超时即中止剩余规则（对齐原版：不再继续后续规则）
+            timed_out = Some(if rule_deadline >= overall_deadline {
+                MatchTimeout::Overall
+            } else {
+                MatchTimeout::Rule(rule.id)
+            });
             break;
         }
     }
-    if timed_out {
-        log::warn!(
-            "[highlight] 规则匹配超时（整体 {}s / 单规则上限 {}ms），返回已收集 {} 条候选",
+    match timed_out {
+        Some(MatchTimeout::Overall) => log::warn!(
+            "[highlight] 整体匹配超时（{}s），已中止剩余规则，返回已收集 {} 条候选",
             MATCH_TIMEOUT.as_secs(),
+            candidates.len()
+        ),
+        Some(MatchTimeout::Rule(id)) => log::warn!(
+            "[highlight] 单规则匹配超时（规则 {id}，上限 {}ms），已中止剩余规则（对齐原版），返回已收集 {} 条候选",
             RULE_TIMEOUT_MAX_MILLIS,
             candidates.len()
-        );
+        ),
+        None => {}
     }
     if candidates.is_empty() {
         return Ok(Vec::new());
@@ -733,11 +752,33 @@ mod tests {
         apply_to_title: bool,
         apply_to_body: bool,
     ) -> i64 {
+        save_match_rule_scoped(
+            MATCH_TEST_BOOK,
+            name,
+            pattern,
+            is_regex,
+            sort_order,
+            apply_to_title,
+            apply_to_body,
+        )
+    }
+
+    /// 保存一条规则并返回 id（指定 scope 书名；批34b 用例用独立书名隔离
+    /// 并发测试的规则污染，配额类断言不受其他用例命中挤占）
+    fn save_match_rule_scoped(
+        book: &str,
+        name: &str,
+        pattern: &str,
+        is_regex: bool,
+        sort_order: i32,
+        apply_to_title: bool,
+        apply_to_body: bool,
+    ) -> i64 {
         let json = serde_json::json!({
             "name": name,
             "pattern": pattern,
             "isRegex": is_regex,
-            "scope": MATCH_TEST_BOOK,
+            "scope": book,
             "isEnabled": true,
             "style": r#"{"fill":-2130706186}"#,
             "sortOrder": sort_order,
@@ -872,5 +913,91 @@ mod tests {
         let completed = collect_literal_matches("abcabc", "a", 0, expired, 10, &mut out, &mut seq);
         assert!(!completed, "截止时间已过应报告未完成");
         assert!(out.is_empty(), "截止时间已过不应再收集命中");
+    }
+
+    /// 独立书名 scope 下的命中（隔离其他用例的共享/全局规则）
+    fn matches_in_book(book: &str, text: &str, limit: Option<i32>) -> Vec<HighlightRuleMatch> {
+        highlight_rule_match(text, book, "", false, limit).unwrap()
+    }
+
+    /// [批34b P3-5] maxMatches 截断按优先级收集：高 order 命中先占配额，
+    /// 低 order 多命中不得把高优先级挤出结果
+    #[test]
+    fn test_highlight_rule_match_max_matches_keeps_high_priority() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        const BOOK: &str = "批34maxMatches优先级测试书";
+        let low = save_match_rule_scoped(BOOK, "低优先多命中", "□", false, 1, false, true);
+        let high = save_match_rule_scoped(BOOK, "高优先单命中", "◆", false, 9, false, true);
+
+        let matches = matches_in_book(BOOK, "□□□□□□□□ ◆", Some(2));
+        assert_eq!(matches.len(), 2, "候选总数受 maxMatches 限制");
+        assert!(
+            matches.iter().any(|m| m.ruleId == high),
+            "maxMatches 截断必须保住高优先级命中"
+        );
+        assert_eq!(
+            matches.iter().filter(|m| m.ruleId == low).count(),
+            1,
+            "剩余配额由低优先级命中填充"
+        );
+
+        assert!(highlight_rule_delete(low).unwrap());
+        assert!(highlight_rule_delete(high).unwrap());
+    }
+
+    /// [批34b P3-5] 同 order 完全重叠：规则 id 升序（先建/先命中）者胜
+    #[test]
+    fn test_highlight_rule_match_same_order_first_hit_wins() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        const BOOK: &str = "批34同序先命中测试书";
+        let first = save_match_rule_scoped(BOOK, "同序先建", "abcd", false, 5, false, true);
+        let second = save_match_rule_scoped(BOOK, "同序后建", "abcd", false, 5, false, true);
+        assert!(first < second, "自增主键保证后建 id 更大");
+
+        let matches = matches_in_book(BOOK, "xabcdy", None);
+        assert_eq!(matches.len(), 1, "完全重叠只能保留一段");
+        assert_eq!(matches[0].ruleId, first, "同 order 应由 id 升序靠前者胜");
+        assert_eq!(matches[0].order, 5);
+
+        assert!(highlight_rule_delete(first).unwrap());
+        assert!(highlight_rule_delete(second).unwrap());
+    }
+
+    /// [批34b P3-5] 零宽正则（词边界/前瞻）不产生命中且不死循环
+    #[test]
+    fn test_highlight_rule_match_zero_width_regex_terminates() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        const BOOK: &str = "批34零宽正则测试书";
+        let boundary = save_match_rule_scoped(BOOK, "词边界", r"\b", true, 5, false, true);
+        let lookahead = save_match_rule_scoped(BOOK, "零宽前瞻", r"(?=b)", true, 6, false, true);
+
+        let matches = matches_in_book(BOOK, "abc def", None);
+        assert!(
+            matches
+                .iter()
+                .all(|m| m.ruleId != boundary && m.ruleId != lookahead),
+            "零宽命中（end<=start）不应输出 span"
+        );
+        assert!(matches.is_empty());
+
+        assert!(highlight_rule_delete(boundary).unwrap());
+        assert!(highlight_rule_delete(lookahead).unwrap());
+    }
+
+    /// [批34b P3-5] Java 方言后顾断言：regex crate 不支持 → fancy-regex 回退命中
+    #[test]
+    fn test_highlight_rule_match_fancy_regex_fallback() {
+        let _db_guard = crate::db_state::ensure_test_db();
+        const BOOK: &str = "批34fancy回退测试书";
+        let id = save_match_rule_scoped(BOOK, "后顾断言", r"(?<=甲)乙", true, 5, false, true);
+
+        let matches = matches_in_book(BOOK, "甲乙丙乙", None);
+        assert_eq!(matches.len(), 1, "fancy-regex 回退应命中后顾断言");
+        assert_eq!(
+            (matches[0].ruleId, matches[0].start, matches[0].end),
+            (id, 1, 2)
+        );
+
+        assert!(highlight_rule_delete(id).unwrap());
     }
 }
