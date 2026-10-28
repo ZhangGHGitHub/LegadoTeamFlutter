@@ -8,6 +8,7 @@
 
 | 日期 | 内容 |
 |------|------|
+| 2026-10-29 | **批33：裁决项 1/2/4 + 高亮编辑器字段保真（纯 Flutter 行为/偏好，零新增/变更 FFI 方法或字段；§2 方法计数、附录合计 313、BookApi 310、§1.7 表 B 147 全部不变）**：① **字号范围 5–50**（参考版口径，步进 1，默认 20）：`ReaderNotifier.updateFontSize` clamp 12–32 → 5–50，`_loadSettings` 读取后同样归一（历史 >50 收敛到 50 并回写）；阅读界面设置页字号卡由纯步进器改为「滑块 + 数值 + 加减」。偏好键 `reader_font_size` 不变。② **边距上下联动**：`ReaderAdvancedConfig` 新增 `paddingTopBottomLinked`（bool，默认 false，键名逐字对齐原版 `ReadBookConfig.paddingTopBottomLinked`；仅正文 Tab 显示，任一方向调整镜像另一侧；开启时下边距对齐上边距）并入 `RestoreIgnorePrefs.readPrefKeys`（随 Flutter JSON 备份 `appPrefs` 往返、受「忽略阅读配置」约束）；四行边距从「仅 ±1 步进」升级为「滑块 + 数值 + 加减」，范围保持上/下 0–400、左/右 0–100。**后续项登记**：原版「长按 Tab 切换大控件」（`readPaddingLargeControls`）本批不做。③ **正文搜索范围**：三档范围 + 替换/正则开关由进程内静态改为 SharedPreferences 持久化（新键 `search_content_scope` / `search_content_use_replace` / `search_content_use_regex`），默认范围由 `current_and_network` 改为 **`current_and_cached`**（仅本书已缓存，对齐原版/参考版「只搜已缓存」）；「仅本书」胶囊与搜索范围**解绑**（改为仅提示，不再改 scope）。**后续项登记**：参考版按书搜索历史需 `SearchKeyword`/`getSearchHistory` 提供 bookName 维度与按书过滤入参（当前 FFI 无该能力，本批不新建表）。④ **高亮规则 style 保真**：编辑保存由「重建 `{\"textColor\":…}`」改为「原 style JSON 补丁」（只覆盖 textColor，保留 fill/fillShape/underline/bold/italic/strike/未知键）；Dart 模型补 `styleMap` / `styleFill` / `styleBold` / `styleItalic` / `styleUnderline` 解析用于预览展示。**渲染仍未接线**：正文按 style 绘制（fill/underline/bold/stroke 等）不在本批，后续专项。 |
 | 2026-10-29 | **批32b：readConfig 单键写 / zip·rar 限额审查回修（零新增方法，计数不变）**：① **P2-1 三格式落位统一**——zip/rar/7z 的 `.part` → 最终输出改由 `archive.rs::land_pending_files` 统一处理：任一落位失败清理**全部剩余** `.part`（旧实现消费式迭代只删当前 temp，其余残留），并回滚已落位项；Windows 覆盖既有输出改为「先 rename 到 `.legado_bak_<i>.<名>.bak` → 新的 rename 成功 → 删除备份」，失败恢复备份（旧实现先删旧文件再 rename，失败即丢既有输出）；既有目标为目录/符号链接等非常规文件一律拒绝，不移动用户数据。② **P2-2 目录页收口**——`splitLongChapter`/`useReplaceRule` 从 `updateBook` 改走 `updateReadConfigField` 单键写（与批32 的 `reverseToc`/`reverseTocDisplay` 一致），目录页 readConfig 勾选全部保留 Dart 未建模键。③ **P2-3 类型校验**——`BookRepository::update_read_config_field` 写回前按 `ReadConfig` 反序列化校验，类型不符（如 `reverseToc` 写字符串）拒绝写入并报「值类型不符」，DB 原键集不变（防 `row_to_book` 静默 `None` → 后续整书写 NULL 导致配置永久丢失）。④ **测试/文档**——新增落位失败清理/Windows 备份恢复（zip/7z）、伪造声明大小命中实际读取计数、CRC 精确断言（`zip 2.4.2` 为 `io::Error(InvalidData, "Invalid checksum")`）、`update_book` 清键对照用例；RAR 解析级安全/限额无夹具登记 limitation；模块文档修正同名 basename 口径（7z 去重、zip/rar 覆盖）。§2.2 = 11、附录合计 313、BookApi 310、§1.7 表 B 147 均不变。详见 §2.2/§2.34 批32b 补记。 |
 | 2026-10-29 | **批32：readConfig 单键写 FFI（契约先行，加法式 +1 方法）**：§2.2 新增 `updateReadConfigField(String bookUrl, String key, String valueJson) → Future<void>`（Rust `ffi::book_update_read_config_field` → `legado-db::BookRepository::update_read_config_field` 复用；`valueJson` 为**值本身**的 JSON 编码串，支持 bool/string/number/对象/数组，解析失败抛错）。**根因**：`updateBook` 是整书快照写，Dart `ReadConfig` 未建模的键（如 `useGlobalAudioSkip`、`tocExpanded`、`manualReplaceRuleIds`）在 Dart→Rust 往返中被类型化结构体丢弃，切一次目录反转就会清空这些键；新方法在 DB 侧**只合并目标键**，未建模键与其他键原样保留。**语义**：书籍不存在报错（不清空、不静默成功）；`key` 为空白报错；`readConfig` 为空/非法 JSON 时新建对象再写入目标键；不触碰其他列与进度列。**接线**：目录页 `reverseToc`/`reverseTocDisplay` 与阅读器菜单 `reverseTocDisplay` 改走单键写，`updateBook` 保留其余用途。§2.2 10→**11**，附录合计 312→**313**，BookApi 309→**310**，§1.7 表 B 146→**147**（等价对总数 161→**162**）。 |
 | 2026-10-29 | **批32：zip/rar 导入限额与路径安全对齐 7z（零新增方法，计数不变）**：`legado-book/src/archive.rs` 的 zip 导入/列表与 rar 导入/列表补齐与 7z 同口径限额（输入 ≤512 MiB / 单条目 ≤256 MiB / 总量 ≤512 MiB / 条目数 ≤10000，声明值与实际读取字节双计数）与共用路径安全 fail-closed 校验（`validate_archive_entry_name`，任一不安全条目整包拒绝）；zip/rar 改「先写 `.part`、整包成功后 rename」，失败清理临时文件且不触碰既有输出；zip CRC 损坏如实报错。Android/iOS 的 rar 仍为明确不支持桩。详见 §2.34 批32 补记。 |
@@ -758,6 +759,8 @@
 | `deleteSearchKeyword(String keyword)` | keyword | `Future<void>` | 删除搜索关键词 |
 | `clearSearchHistory()` | 无 | `Future<void>` | 清空搜索历史 |
 
+> ℹ️ **按书搜索历史待后续（2026-10-29 批33；方法签名不变）**：参考版「仅本书」胶囊只控制搜索历史的按书过滤，我方此前误绑到正文搜索范围。批33 已解绑（胶囊仅提示、不改 scope；范围统一由 ⋮ 菜单三档控制并持久化）。**能力缺口**：本表 `SearchKeyword` 仅返回 `word` / `usage` / `lastUseTime`，`getSearchHistory` 无 bookName 维度/按书过滤入参，且 Rust `search_keywords` 表与 `SearchKeywordRepository::insert` 当前直接忽略 `bookName`（无该列）——按书历史过滤需先扩 schema/FFI，本轮不新建表、不改签名。
+
 ### 2.16 缓存管理（9 个方法）
 
 | 方法 | 入参 | 返回 | 说明 |
@@ -1072,6 +1075,8 @@
 | `highlightRuleSave({required String ruleJson})` | HighlightRule JSON（id=0 时自增新增） | `Future<int>` | 保存高亮规则，返回规则 ID |
 | `highlightRuleDelete({required int id})` | id | `Future<bool>` | 按 ID 删除高亮规则，返回是否实际删除 |
 | `highlightRuleFindEnabled({required String bookName, required String origin})` | bookName, origin | `Future<String>` | 按书籍查找启用的高亮规则（scope 匹配书名或 origin，HighlightRule 数组 JSON） |
+
+> ℹ️ **style 字段保真与渲染边界（2026-10-29 批33；方法签名不变）**：`HighlightRule.style` 为原版 `HighlightStyle` 完整 JSON（`fill` / `fillShape` / `textColor` / `bold` / `italic` / `underline` / `strike` / `box` / `emphasis` / `shadow` / `fontPath` / `fontSize` / `letterSpacing` 等）。Flutter 编辑表单只编辑文字颜色，保存改为**原 JSON 补丁**（`mergeHighlightStyleTextColor`：仅覆盖 `textColor`，其余键与未知键原样保留），不再重建只剩颜色的 style；Dart 模型补 `styleMap` / `styleFill` / `styleBold` / `styleItalic` / `styleUnderline` 供预览展示。**渲染仍未接线**：正文绘制高亮 style（fill/underline/bold/strike/stroke 等）不在本批，后续专项；当前字段保真只保证「导入 → 编辑 → 导出/保存」不丢数据。
 
 ### 2.37 JS 单文件书源配置（JsSourceConfig 对齐）（3 个方法）
 
