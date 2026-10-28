@@ -3036,6 +3036,33 @@ pub mod ffi {
         to_json(&rules)
     }
 
+    /// 按启用高亮规则匹配文本（返回 HighlightRuleMatch 数组 JSON）
+    ///
+    /// 匹配是 CPU 密集型同步逻辑（含正则），放 `spawn_blocking` 执行，
+    /// 避免占用 frb 异步执行器线程。详见契约 §2.36 批34 注。
+    pub async fn highlight_rule_match(
+        text: String,
+        book_name: String,
+        origin: String,
+        apply_to_title: bool,
+        max_matches: Option<i32>,
+    ) -> Result<String, BridgeError> {
+        let result = tokio::task::spawn_blocking(move || {
+            crate::api::highlight_api::highlight_rule_match(
+                &text,
+                &book_name,
+                &origin,
+                apply_to_title,
+                max_matches,
+            )
+        })
+        .await
+        .map_err(|e| BridgeError {
+            message: format!("高亮匹配任务异常：{e}"),
+        })?;
+        to_json(&result?)
+    }
+
     // ─── 听书播放（播放模式/书籍解析）───────────────────
 
     /// 将播放模式写入 readConfig JSON（返回更新后的 JSON）

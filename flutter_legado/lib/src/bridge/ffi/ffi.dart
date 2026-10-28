@@ -2427,6 +2427,24 @@ Future<String> highlightRuleFindEnabled({
   origin: origin,
 );
 
+/// 按启用高亮规则匹配文本（返回 HighlightRuleMatch 数组 JSON）
+///
+/// 匹配是 CPU 密集型同步逻辑（含正则），放 `spawn_blocking` 执行，
+/// 避免占用 frb 异步执行器线程。详见契约 §2.36 批34 注。
+Future<String> highlightRuleMatch({
+  required String text,
+  required String bookName,
+  required String origin,
+  required bool applyToTitle,
+  int? maxMatches,
+}) => RustLib.instance.api.crateFfiFfiHighlightRuleMatch(
+  text: text,
+  bookName: bookName,
+  origin: origin,
+  applyToTitle: applyToTitle,
+  maxMatches: maxMatches,
+);
+
 /// 将播放模式写入 readConfig JSON（返回更新后的 JSON）
 Future<String> audioWithPlayMode({String? readConfig, required int playMode}) =>
     RustLib.instance.api.crateFfiFfiAudioWithPlayMode(
