@@ -55,6 +55,10 @@ pub struct ConvertResult {
 /// 解压 ZIP 文件，提取其中的书籍文件（.txt/.epub/.mobi/.pdf/.umd/.azw3/.azw）
 /// 到指定输出目录。
 ///
+/// [批32] 与 7z 同口径限额与路径安全（fail-closed）：输入 512 MiB /
+/// 单条目 256 MiB / 总量 512 MiB / 条目数 10000；声明值与实际读取字节
+/// 双计数；任一不安全条目名整包拒绝；先写 `.part`，失败清理临时文件。
+///
 /// # 参数
 /// - `zip_path`: ZIP 文件路径
 /// - `output_dir`: 提取目标目录
@@ -76,6 +80,9 @@ pub fn import_zip_file(zip_path: &str, output_dir: &str) -> ArchiveImportResult 
 /// 导入 RAR 压缩包中的书籍文件
 ///
 /// 解压 RAR 文件（支持加密），提取其中的书籍文件到指定输出目录。
+///
+/// [批32] 与 zip/7z 同口径限额与路径安全（fail-closed）；Android/iOS 仍为
+/// 明确不支持（不做伪解压）。
 ///
 /// # 参数
 /// - `rar_path`: RAR 文件路径

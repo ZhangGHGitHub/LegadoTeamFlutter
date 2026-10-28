@@ -40,22 +40,94 @@ fn file_base_name(name: &str) -> &str {
 ///
 /// # 返回
 /// 提取的书籍文件路径列表
+///
+/// [批32] 与 7z 同口径限额（fail-closed）：输入 ≤512 MiB、条目数 ≤10000、
+/// 单条目 ≤256 MiB、解压总量 ≤512 MiB；声明值与**实际读取字节**双重计数
+/// （不信任声明）；任一条目名不安全（路径穿越/绝对路径/盘符/空字节）整包
+/// 拒绝；先写 `.part`，整包成功后才落位，失败清理全部临时文件。
 pub fn import_zip_file(zip_path: &str, output_dir: &str) -> LegadoResult<Vec<String>> {
+    import_zip_file_with_limits(zip_path, output_dir, &ArchiveLimits::default())
+}
+
+/// 删除待落位的临时 `.part` 文件（zip/rar 失败回滚）
+fn remove_part_files(pending: &[(PathBuf, PathBuf)]) {
+    for (temp, _) in pending {
+        let _ = fs::remove_file(temp);
+    }
+}
+
+/// ZIP 包声明面预检：条目数 / 条目名路径安全 / 单条目声明大小 / 声明总量
+///
+/// 声明值只用于**快速失败**，实际解压字节仍由调用方逐条目计数（不信任声明，
+/// 对齐 7z 的 declared + actual 双计数口径）。
+fn check_zip_declared_limits(
+    archive: &mut zip::ZipArchive<File>,
+    limits: &ArchiveLimits,
+) -> LegadoResult<()> {
+    if archive.len() > limits.max_entries {
+        return Err(LegadoError::BookParse(format!(
+            "ZIP 条目数超限（{}，上限 {}）",
+            archive.len(),
+            limits.max_entries
+        )));
+    }
+    let mut total_declared: u64 = 0;
+    for i in 0..archive.len() {
+        let entry = archive
+            .by_index(i)
+            .map_err(|e| LegadoError::BookParse(format!("读取ZIP条目失败: {e}")))?;
+        validate_archive_entry_name(entry.name(), "ZIP")?;
+        if entry.is_dir() {
+            continue;
+        }
+        if entry.size() > limits.max_entry_size {
+            return Err(LegadoError::BookParse(format!(
+                "ZIP 单条目过大 [{0}]（{1} 字节，上限 {2} 字节）",
+                entry.name(),
+                entry.size(),
+                limits.max_entry_size
+            )));
+        }
+        total_declared = total_declared.saturating_add(entry.size());
+        if total_declared > limits.max_total_size {
+            return Err(LegadoError::BookParse(format!(
+                "ZIP 解压总量超限（声明合计超过 {} 字节）",
+                limits.max_total_size
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn import_zip_file_with_limits(
+    zip_path: &str,
+    output_dir: &str,
+    limits: &ArchiveLimits,
+) -> LegadoResult<Vec<String>> {
+    precheck_archive_input_size(zip_path, limits, "ZIP")?;
     let file = File::open(zip_path)
         .map_err(|e| LegadoError::BookParse(format!("无法打开ZIP文件: {e}")))?;
 
     let mut archive = zip::ZipArchive::new(file)
         .map_err(|e| LegadoError::BookParse(format!("ZIP文件解析失败: {e}")))?;
+    check_zip_declared_limits(&mut archive, limits)?;
 
     // 确保输出目录存在
     fs::create_dir_all(output_dir)?;
 
-    let mut extracted_files = Vec::new();
+    let entry_count = archive.len();
+    let mut pending: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mut total_read: u64 = 0;
+    let mut chunk = [0u8; 64 * 1024];
 
-    for i in 0..archive.len() {
-        let mut entry = archive
-            .by_index(i)
-            .map_err(|e| LegadoError::BookParse(format!("读取ZIP条目失败: {e}")))?;
+    for i in 0..entry_count {
+        let mut entry = match archive.by_index(i) {
+            Ok(entry) => entry,
+            Err(e) => {
+                remove_part_files(&pending);
+                return Err(LegadoError::BookParse(format!("读取ZIP条目失败: {e}")));
+            }
+        };
 
         // 跳过目录
         if entry.is_dir() {
@@ -75,18 +147,102 @@ pub fn import_zip_file(zip_path: &str, output_dir: &str) -> LegadoResult<Vec<Str
             continue;
         }
 
-        // 构造输出路径（使用基础文件名避免路径穿越）
-        let out_path = safe_output_path(output_dir, base_name)?;
+        // 构造输出路径（使用基础文件名避免路径穿越；条目名已整包校验）
+        let out_path = match safe_output_path(output_dir, base_name) {
+            Ok(path) => path,
+            Err(e) => {
+                remove_part_files(&pending);
+                return Err(e);
+            }
+        };
+        // 临时名带条目序号：解压期间互不覆盖，整包成功后再统一 rename
+        let temp_path = out_path.with_file_name(format!(".legado_zip_{i}.{base_name}.part"));
+        let _ = fs::remove_file(&temp_path);
+        let mut out_file = match File::create(&temp_path) {
+            Ok(file) => file,
+            Err(e) => {
+                remove_part_files(&pending);
+                return Err(LegadoError::BookParse(format!(
+                    "创建ZIP输出文件失败 [{base_name}]: {e}"
+                )));
+            }
+        };
+        pending.push((temp_path, out_path));
 
-        // 提取文件内容
-        let mut buf = Vec::new();
-        entry
-            .read_to_end(&mut buf)
-            .map_err(|e| LegadoError::BookParse(format!("解压文件失败 [{base_name}]: {e}")))?;
+        let mut entry_read: u64 = 0;
+        loop {
+            let n = match entry.read(&mut chunk) {
+                Ok(n) => n,
+                Err(e) => {
+                    remove_part_files(&pending);
+                    return Err(LegadoError::BookParse(format!(
+                        "解压文件失败 [{base_name}]: {e}（文件可能损坏或 CRC 校验失败）"
+                    )));
+                }
+            };
+            if n == 0 {
+                break;
+            }
+            entry_read = entry_read.saturating_add(n as u64);
+            total_read = total_read.saturating_add(n as u64);
+            if entry_read > limits.max_entry_size {
+                remove_part_files(&pending);
+                return Err(LegadoError::BookParse(format!(
+                    "ZIP 单条目超限 [{base_name}]（超过 {} 字节）",
+                    limits.max_entry_size
+                )));
+            }
+            if total_read > limits.max_total_size {
+                remove_part_files(&pending);
+                return Err(LegadoError::BookParse(format!(
+                    "ZIP 解压总量超限（超过 {} 字节）",
+                    limits.max_total_size
+                )));
+            }
+            if let Err(e) = out_file.write_all(&chunk[..n]) {
+                remove_part_files(&pending);
+                return Err(LegadoError::BookParse(format!(
+                    "写入ZIP输出文件失败 [{base_name}]: {e}"
+                )));
+            }
+        }
+        if let Err(e) = out_file.flush() {
+            remove_part_files(&pending);
+            return Err(LegadoError::BookParse(format!(
+                "写入ZIP输出文件失败 [{base_name}]: {e}"
+            )));
+        }
+        // 声明大小与实际读取不一致 = 读取不完整（截断/声明伪造），fail-closed
+        if entry_read != entry.size() {
+            remove_part_files(&pending);
+            return Err(LegadoError::BookParse(format!(
+                "ZIP 条目读取不完整 [{base_name}]（声明 {} 字节，实际读取 {entry_read} 字节）",
+                entry.size()
+            )));
+        }
+    }
 
-        let mut out_file = File::create(&out_path)?;
-        out_file.write_all(&buf)?;
-
+    // 整包读取成功后再落位（失败不触碰既有输出文件）
+    let mut extracted_files = Vec::with_capacity(pending.len());
+    for (temp, out_path) in pending {
+        // Windows rename 不覆盖既有目标，先删旧文件
+        #[cfg(windows)]
+        if out_path.exists() {
+            if let Err(e) = fs::remove_file(&out_path) {
+                let _ = fs::remove_file(&temp);
+                return Err(LegadoError::BookParse(format!(
+                    "覆盖既有ZIP输出文件失败 [{}]: {e}",
+                    out_path.display()
+                )));
+            }
+        }
+        if let Err(e) = fs::rename(&temp, &out_path) {
+            let _ = fs::remove_file(&temp);
+            return Err(LegadoError::BookParse(format!(
+                "写入ZIP输出文件失败 [{}]: {e}",
+                out_path.display()
+            )));
+        }
         extracted_files.push(out_path.to_string_lossy().to_string());
     }
 
@@ -102,12 +258,29 @@ pub fn import_zip_file(zip_path: &str, output_dir: &str) -> LegadoResult<Vec<Str
 ///
 /// # 返回
 /// 提取的书籍文件路径列表
+///
+/// [批32] 与 7z/zip 同口径限额（fail-closed）：输入 ≤512 MiB、条目数
+/// ≤10000、单条目 ≤256 MiB、解压总量 ≤512 MiB；声明大小与实际读取字节
+/// 双重计数；条目名路径安全整包校验；先写 `.part`，成功后才落位，
+/// 失败清理临时文件。Android/iOS 仍为「明确不支持」（见下方平台桩）。
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn import_rar_file(
     rar_path: &str,
     output_dir: &str,
     password: Option<&str>,
 ) -> LegadoResult<Vec<String>> {
+    import_rar_file_with_limits(rar_path, output_dir, password, &ArchiveLimits::default())
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn import_rar_file_with_limits(
+    rar_path: &str,
+    output_dir: &str,
+    password: Option<&str>,
+    limits: &ArchiveLimits,
+) -> LegadoResult<Vec<String>> {
+    precheck_archive_input_size(rar_path, limits, "RAR")?;
+
     // 确保输出目录存在
     fs::create_dir_all(output_dir)?;
 
@@ -121,52 +294,175 @@ pub fn import_rar_file(
         .open_for_processing()
         .map_err(|e| LegadoError::BookParse(format!("无法打开RAR文件: {e}")))?;
 
-    let mut extracted_files = Vec::new();
+    let mut pending: Vec<(PathBuf, PathBuf)> = Vec::new();
+    let mut total_read: u64 = 0;
+    let mut total_declared: u64 = 0;
+    let mut entries_seen: usize = 0;
 
     // 逐条目处理 RAR 文件
     loop {
-        let header_result = open_arc
-            .read_header()
-            .map_err(|e| LegadoError::BookParse(format!("读取RAR条目失败: {e}")))?;
+        let header_result = match open_arc.read_header() {
+            Ok(result) => result,
+            Err(e) => {
+                remove_part_files(&pending);
+                return Err(LegadoError::BookParse(format!("读取RAR条目失败: {e}")));
+            }
+        };
 
         match header_result {
             Some(arc_with_file) => {
+                entries_seen += 1;
+                if entries_seen > limits.max_entries {
+                    remove_part_files(&pending);
+                    return Err(LegadoError::BookParse(format!(
+                        "RAR 条目数超限（超过 {}）",
+                        limits.max_entries
+                    )));
+                }
                 let entry = arc_with_file.entry();
+
+                // 条目名路径安全（含目录条目）：任一不安全 → 整包拒绝
+                let name = entry.filename.to_string_lossy().to_string();
+                if let Err(e) = validate_archive_entry_name(&name, "RAR") {
+                    remove_part_files(&pending);
+                    return Err(e);
+                }
 
                 // 跳过目录
                 if entry.is_directory() {
-                    open_arc = arc_with_file
-                        .skip()
-                        .map_err(|e| LegadoError::BookParse(format!("跳过RAR条目失败: {e}")))?;
+                    open_arc = match arc_with_file.skip() {
+                        Ok(next) => next,
+                        Err(e) => {
+                            remove_part_files(&pending);
+                            return Err(LegadoError::BookParse(format!("跳过RAR条目失败: {e}")));
+                        }
+                    };
                     continue;
                 }
 
-                let name = entry.filename.to_string_lossy().to_string();
+                // 声明大小预检（实际读取另行计数）
+                let declared_size = entry.unpacked_size;
+                if declared_size > limits.max_entry_size {
+                    remove_part_files(&pending);
+                    return Err(LegadoError::BookParse(format!(
+                        "RAR 单条目过大 [{name}]（{declared_size} 字节，上限 {} 字节）",
+                        limits.max_entry_size
+                    )));
+                }
+                total_declared = total_declared.saturating_add(declared_size);
+                if total_declared > limits.max_total_size {
+                    remove_part_files(&pending);
+                    return Err(LegadoError::BookParse(format!(
+                        "RAR 解压总量超限（声明合计超过 {} 字节）",
+                        limits.max_total_size
+                    )));
+                }
+
                 let base_name = file_base_name(&name).to_string();
 
-                // 跳过隐藏文件和非书籍文件
+                // 跳过隐藏文件和非书籍文件（仍需读尽条目以推进 unrar 状态机）
                 if base_name.starts_with('.') || !is_book_file(&base_name) {
-                    open_arc = arc_with_file
-                        .skip()
-                        .map_err(|e| LegadoError::BookParse(format!("跳过RAR条目失败: {e}")))?;
+                    open_arc = match arc_with_file.skip() {
+                        Ok(next) => next,
+                        Err(e) => {
+                            remove_part_files(&pending);
+                            return Err(LegadoError::BookParse(format!("跳过RAR条目失败: {e}")));
+                        }
+                    };
                     continue;
                 }
 
-                // 读取文件内容到内存
-                let (data, next_arc) = arc_with_file.read().map_err(|e| {
-                    LegadoError::BookParse(format!("解压RAR文件失败 [{base_name}]: {e}"))
-                })?;
+                // 读取文件内容（unrar 必须整条读取后才能继续）
+                let (data, next_arc) = match arc_with_file.read() {
+                    Ok(result) => result,
+                    Err(e) => {
+                        remove_part_files(&pending);
+                        return Err(LegadoError::BookParse(format!(
+                            "解压RAR文件失败 [{base_name}]: {e}"
+                        )));
+                    }
+                };
+                let entry_read = data.len() as u64;
+                total_read = total_read.saturating_add(entry_read);
+                if entry_read > limits.max_entry_size {
+                    remove_part_files(&pending);
+                    return Err(LegadoError::BookParse(format!(
+                        "RAR 单条目超限 [{base_name}]（超过 {} 字节）",
+                        limits.max_entry_size
+                    )));
+                }
+                if total_read > limits.max_total_size {
+                    remove_part_files(&pending);
+                    return Err(LegadoError::BookParse(format!(
+                        "RAR 解压总量超限（超过 {} 字节）",
+                        limits.max_total_size
+                    )));
+                }
+                if entry_read != declared_size {
+                    remove_part_files(&pending);
+                    return Err(LegadoError::BookParse(format!(
+                        "RAR 条目读取不完整 [{base_name}]（声明 {} 字节，实际读取 {entry_read} 字节）",
+                        declared_size
+                    )));
+                }
 
-                // 构造安全的输出路径并写入
-                let out_path = safe_output_path(output_dir, &base_name)?;
-                let mut out_file = File::create(&out_path)?;
-                out_file.write_all(&data)?;
+                // 构造安全的输出路径并写入临时文件
+                let out_path = match safe_output_path(output_dir, &base_name) {
+                    Ok(path) => path,
+                    Err(e) => {
+                        remove_part_files(&pending);
+                        return Err(e);
+                    }
+                };
+                let temp_path =
+                    out_path.with_file_name(format!(".legado_rar_{entries_seen}.{base_name}.part"));
+                let _ = fs::remove_file(&temp_path);
+                let write_result = (|| -> LegadoResult<()> {
+                    let mut out_file = File::create(&temp_path).map_err(|e| {
+                        LegadoError::BookParse(format!("创建RAR输出文件失败 [{base_name}]: {e}"))
+                    })?;
+                    out_file.write_all(&data).map_err(|e| {
+                        LegadoError::BookParse(format!("写入RAR输出文件失败 [{base_name}]: {e}"))
+                    })?;
+                    out_file.flush().map_err(|e| {
+                        LegadoError::BookParse(format!("写入RAR输出文件失败 [{base_name}]: {e}"))
+                    })?;
+                    Ok(())
+                })();
+                if let Err(err) = write_result {
+                    let _ = fs::remove_file(&temp_path);
+                    remove_part_files(&pending);
+                    return Err(err);
+                }
+                pending.push((temp_path, out_path));
 
-                extracted_files.push(out_path.to_string_lossy().to_string());
                 open_arc = next_arc;
             }
             None => break, // 所有条目处理完毕
         }
+    }
+
+    // 整包读取成功后再落位
+    let mut extracted_files = Vec::with_capacity(pending.len());
+    for (temp, out_path) in pending {
+        #[cfg(windows)]
+        if out_path.exists() {
+            if let Err(e) = fs::remove_file(&out_path) {
+                let _ = fs::remove_file(&temp);
+                return Err(LegadoError::BookParse(format!(
+                    "覆盖既有RAR输出文件失败 [{}]: {e}",
+                    out_path.display()
+                )));
+            }
+        }
+        if let Err(e) = fs::rename(&temp, &out_path) {
+            let _ = fs::remove_file(&temp);
+            return Err(LegadoError::BookParse(format!(
+                "写入RAR输出文件失败 [{}]: {e}",
+                out_path.display()
+            )));
+        }
+        extracted_files.push(out_path.to_string_lossy().to_string());
     }
 
     Ok(extracted_files)
@@ -186,17 +482,28 @@ pub fn import_rar_file(
 
 /// 列出 ZIP 压缩包中的书籍文件名（不解压）
 ///
+/// [批32] 与导入同口径预检：输入大小、条目数、条目名路径安全、声明大小/总量。
+///
 /// # 参数
 /// - `zip_path`: ZIP 文件路径
 ///
 /// # 返回
 /// 书籍文件名列表
 pub fn list_zip_book_files(zip_path: &str) -> LegadoResult<Vec<String>> {
+    list_zip_book_files_with_limits(zip_path, &ArchiveLimits::default())
+}
+
+fn list_zip_book_files_with_limits(
+    zip_path: &str,
+    limits: &ArchiveLimits,
+) -> LegadoResult<Vec<String>> {
+    precheck_archive_input_size(zip_path, limits, "ZIP")?;
     let file = File::open(zip_path)
         .map_err(|e| LegadoError::BookParse(format!("无法打开ZIP文件: {e}")))?;
 
     let mut archive = zip::ZipArchive::new(file)
         .map_err(|e| LegadoError::BookParse(format!("ZIP文件解析失败: {e}")))?;
+    check_zip_declared_limits(&mut archive, limits)?;
 
     let mut book_files = Vec::new();
     for i in 0..archive.len() {
@@ -220,6 +527,8 @@ pub fn list_zip_book_files(zip_path: &str) -> LegadoResult<Vec<String>> {
 
 /// 列出 RAR 压缩包中的书籍文件名（不解压）
 ///
+/// [批32] 与导入同口径预检：输入大小、条目数、条目名路径安全、声明大小/总量。
+///
 /// # 参数
 /// - `rar_path`: RAR 文件路径
 /// - `password`: 可选密码
@@ -228,6 +537,16 @@ pub fn list_zip_book_files(zip_path: &str) -> LegadoResult<Vec<String>> {
 /// 书籍文件名列表
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 pub fn list_rar_book_files(rar_path: &str, password: Option<&str>) -> LegadoResult<Vec<String>> {
+    list_rar_book_files_with_limits(rar_path, password, &ArchiveLimits::default())
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn list_rar_book_files_with_limits(
+    rar_path: &str,
+    password: Option<&str>,
+    limits: &ArchiveLimits,
+) -> LegadoResult<Vec<String>> {
+    precheck_archive_input_size(rar_path, limits, "RAR")?;
     let arc = match password {
         Some(pw) => unrar::Archive::with_password(rar_path, pw),
         None => unrar::Archive::new(rar_path),
@@ -238,15 +557,39 @@ pub fn list_rar_book_files(rar_path: &str, password: Option<&str>) -> LegadoResu
         .map_err(|e| LegadoError::BookParse(format!("无法打开RAR文件: {e}")))?;
 
     let mut book_files = Vec::new();
+    let mut entries_seen: usize = 0;
+    let mut total_declared: u64 = 0;
     for entry_result in open_arc {
         let entry =
             entry_result.map_err(|e| LegadoError::BookParse(format!("读取RAR目录失败: {e}")))?;
+        entries_seen += 1;
+        if entries_seen > limits.max_entries {
+            return Err(LegadoError::BookParse(format!(
+                "RAR 条目数超限（超过 {}）",
+                limits.max_entries
+            )));
+        }
+
+        let name = entry.filename.to_string_lossy().to_string();
+        validate_archive_entry_name(&name, "RAR")?;
 
         if entry.is_directory() {
             continue;
         }
+        if entry.unpacked_size > limits.max_entry_size {
+            return Err(LegadoError::BookParse(format!(
+                "RAR 单条目过大 [{name}]（{} 字节，上限 {} 字节）",
+                entry.unpacked_size, limits.max_entry_size
+            )));
+        }
+        total_declared = total_declared.saturating_add(entry.unpacked_size);
+        if total_declared > limits.max_total_size {
+            return Err(LegadoError::BookParse(format!(
+                "RAR 解压总量超限（声明合计超过 {} 字节）",
+                limits.max_total_size
+            )));
+        }
 
-        let name = entry.filename.to_string_lossy().to_string();
         let base = file_base_name(&name).to_string();
         if !base.starts_with('.') && is_book_file(&base) {
             book_files.push(base);
@@ -379,48 +722,60 @@ fn precheck_7z_input(path: &str, limits: &ArchiveLimits) -> LegadoResult<()> {
             "不支持分卷 7z（请使用单文件 7z 后重试）".to_string(),
         ));
     }
-    let meta =
-        fs::metadata(path).map_err(|e| LegadoError::BookParse(format!("无法打开7z文件: {e}")))?;
-    if meta.len() > limits.max_input_size {
-        return Err(LegadoError::BookParse(format!(
-            "7z 文件过大（{} 字节，上限 {} 字节）",
-            meta.len(),
-            limits.max_input_size
-        )));
-    }
+    precheck_archive_input_size(path, limits, "7z")?;
     precheck_7z_signature_header(path)?;
     Ok(())
 }
 
-/// 校验单个条目名（路径安全 fail-closed）
+/// 输入包大小预检（zip/rar/7z 同口径，fail-closed）
+///
+/// 只看文件元数据，不解析包结构；超限直接拒绝，避免把超大包读入内存。
+fn precheck_archive_input_size(
+    path: &str,
+    limits: &ArchiveLimits,
+    label: &str,
+) -> LegadoResult<()> {
+    let meta = fs::metadata(path)
+        .map_err(|e| LegadoError::BookParse(format!("无法打开{label}文件: {e}")))?;
+    if meta.len() > limits.max_input_size {
+        return Err(LegadoError::BookParse(format!(
+            "{label} 文件过大（{} 字节，上限 {} 字节）",
+            meta.len(),
+            limits.max_input_size
+        )));
+    }
+    Ok(())
+}
+
+/// 校验单个条目名（路径安全 fail-closed，zip/rar/7z 共用）
 ///
 /// 规则：`\` 归一化为 `/` 后，逐组件拒绝 `..`；拒绝绝对路径（含 `//` 前缀）、
 /// Windows 盘符（`X:`）、空字节。任一条目不安全 → 整包拒绝。
-fn validate_7z_entry_name(raw: &str) -> LegadoResult<()> {
+fn validate_archive_entry_name(raw: &str, label: &str) -> LegadoResult<()> {
     if raw.is_empty() {
-        return Err(LegadoError::BookParse("7z 条目名为空".to_string()));
+        return Err(LegadoError::BookParse(format!("{label} 条目名为空")));
     }
     if raw.contains('\0') {
         return Err(LegadoError::BookParse(format!(
-            "非法 7z 条目名（含空字节）: {}",
+            "非法 {label} 条目名（含空字节）: {}",
             raw.escape_debug()
         )));
     }
     let normalized = raw.replace('\\', "/");
     if normalized.starts_with('/') {
         return Err(LegadoError::BookParse(format!(
-            "非法 7z 条目名（绝对路径）: {raw}"
+            "非法 {label} 条目名（绝对路径）: {raw}"
         )));
     }
     let bytes = normalized.as_bytes();
     if bytes.len() >= 2 && bytes[1] == b':' && bytes[0].is_ascii_alphabetic() {
         return Err(LegadoError::BookParse(format!(
-            "非法 7z 条目名（盘符路径）: {raw}"
+            "非法 {label} 条目名（盘符路径）: {raw}"
         )));
     }
     if normalized.split('/').any(|component| component == "..") {
         return Err(LegadoError::BookParse(format!(
-            "非法 7z 条目名（路径穿越）: {raw}"
+            "非法 {label} 条目名（路径穿越）: {raw}"
         )));
     }
     // Windows 上冒号是备用数据流（ADS）分隔符：`ab:cd.txt` 会被解释为写入
@@ -429,10 +784,15 @@ fn validate_7z_entry_name(raw: &str) -> LegadoResult<()> {
     #[cfg(windows)]
     if normalized.contains(':') {
         return Err(LegadoError::BookParse(format!(
-            "非法 7z 条目名（Windows 不支持冒号，会写入备用数据流）: {raw}"
+            "非法 {label} 条目名（Windows 不支持冒号，会写入备用数据流）: {raw}"
         )));
     }
     Ok(())
+}
+
+/// 校验单个 7z 条目名（7z 路径安全 fail-closed，复用通用实现）
+fn validate_7z_entry_name(raw: &str) -> LegadoResult<()> {
+    validate_archive_entry_name(raw, "7z")
 }
 
 /// 校验压缩方法：AES 视为加密包，未支持的算法提前失败
@@ -1342,6 +1702,237 @@ mod tests {
             import_zip_file(zip_path.to_str().unwrap(), output_dir.to_str().unwrap()).unwrap();
         assert!(result.is_empty());
 
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    // ============================================================
+    // zip 导入限额 / 路径安全 / CRC / .part 清理（批32）
+    // ============================================================
+
+    /// 创建测试 ZIP（条目名可含 `..`/绝对路径，用于路径安全负向用例）
+    fn create_test_zip(path: &Path, entries: &[(&str, &[u8])]) {
+        let file = File::create(path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, data) in entries {
+            writer.start_file(*name, options).unwrap();
+            writer.write_all(data).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    #[test]
+    fn test_import_zip_entry_count_limit() {
+        let dir = unique_7z_dir("zip_count");
+        let archive = dir.join("books.zip");
+        create_test_zip(
+            &archive,
+            &[("a.txt", b"a"), ("b.txt", b"b"), ("c.txt", b"c")],
+        );
+        let limits = ArchiveLimits {
+            max_entries: 2,
+            ..ArchiveLimits::default()
+        };
+        let err = list_zip_book_files_with_limits(archive.to_str().unwrap(), &limits).unwrap_err();
+        assert!(err.to_string().contains("条目数超限"), "{err}");
+        let output = dir.join("out");
+        let err = import_zip_file_with_limits(
+            archive.to_str().unwrap(),
+            output.to_str().unwrap(),
+            &limits,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("条目数超限"), "{err}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_import_zip_entry_size_limit_and_part_cleanup() {
+        let dir = unique_7z_dir("zip_entrysize");
+        let archive = dir.join("books.zip");
+        create_test_zip(&archive, &[("novel.txt", b"12345")]);
+        let limits = ArchiveLimits {
+            max_entry_size: 4,
+            ..ArchiveLimits::default()
+        };
+        let output = dir.join("out");
+        fs::create_dir_all(&output).unwrap();
+        fs::write(output.join("novel.txt"), b"keep existing").unwrap();
+        let err = import_zip_file_with_limits(
+            archive.to_str().unwrap(),
+            output.to_str().unwrap(),
+            &limits,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("单条目过大"), "{err}");
+        // 失败回滚：既有输出文件不被触碰、无 .part、无半成品
+        assert_eq!(
+            fs::read(output.join("novel.txt")).unwrap(),
+            b"keep existing"
+        );
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 1);
+        assert_no_part_files(&output);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_import_zip_total_size_limit_and_part_cleanup() {
+        let dir = unique_7z_dir("zip_totalsize");
+        let archive = dir.join("books.zip");
+        create_test_zip(&archive, &[("a.txt", b"123456"), ("b.txt", b"123456")]);
+        let limits = ArchiveLimits {
+            max_total_size: 10,
+            ..ArchiveLimits::default()
+        };
+        let output = dir.join("out");
+        fs::create_dir_all(&output).unwrap();
+        fs::write(output.join("a.txt"), b"keep existing").unwrap();
+        let err = import_zip_file_with_limits(
+            archive.to_str().unwrap(),
+            output.to_str().unwrap(),
+            &limits,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("解压总量超限"), "{err}");
+        assert_eq!(fs::read(output.join("a.txt")).unwrap(), b"keep existing");
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 1);
+        assert_no_part_files(&output);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_import_zip_input_size_limit() {
+        let dir = unique_7z_dir("zip_inputsize");
+        let archive = dir.join("books.zip");
+        create_test_zip(&archive, &[("novel.txt", b"content")]);
+        let limits = ArchiveLimits {
+            max_input_size: 8,
+            ..ArchiveLimits::default()
+        };
+        let err = import_zip_file_with_limits(
+            archive.to_str().unwrap(),
+            dir.join("out").to_str().unwrap(),
+            &limits,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("ZIP 文件过大"), "{err}");
+        let err = list_zip_book_files_with_limits(archive.to_str().unwrap(), &limits).unwrap_err();
+        assert!(err.to_string().contains("ZIP 文件过大"), "{err}");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_import_zip_rejects_traversal_and_absolute_paths() {
+        let dir = unique_7z_dir("zip_traversal");
+
+        // 路径穿越：任一不安全条目 → 整包拒绝（含非书籍条目）
+        let traversal = dir.join("traversal.zip");
+        create_test_zip(&traversal, &[("../evil.txt", b"x")]);
+        let err = import_zip_file(
+            traversal.to_str().unwrap(),
+            dir.join("out1").to_str().unwrap(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("路径穿越"), "{err}");
+
+        // 绝对路径
+        let absolute = dir.join("absolute.zip");
+        create_test_zip(&absolute, &[("/etc/passwd.txt", b"x")]);
+        let err = list_zip_book_files(absolute.to_str().unwrap()).unwrap_err();
+        assert!(err.to_string().contains("绝对路径"), "{err}");
+
+        // 非书籍条目名不安全同样整包拒绝（与 7z check 全条目口径一致）
+        let mixed = dir.join("mixed.zip");
+        create_test_zip(&mixed, &[("novel.txt", b"ok"), ("../evil.png", b"x")]);
+        let err = import_zip_file(mixed.to_str().unwrap(), dir.join("out2").to_str().unwrap())
+            .unwrap_err();
+        assert!(err.to_string().contains("路径穿越"), "{err}");
+        assert!(!dir.join("out2").join("novel.txt").exists());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn test_import_zip_crc_corruption_cleans_part_files() {
+        let dir = unique_7z_dir("zip_crc");
+        let archive = dir.join("books.zip");
+        let payload = b"unique-crc-marker-0123456789";
+        {
+            let file = File::create(&archive).unwrap();
+            let mut writer = zip::ZipWriter::new(file);
+            let options = zip::write::SimpleFileOptions::default()
+                .compression_method(zip::CompressionMethod::Stored);
+            writer.start_file("novel.txt", options).unwrap();
+            writer.write_all(payload).unwrap();
+            writer.finish().unwrap();
+        }
+        // 破坏条目数据（central directory 与声明大小不变）→ 读取期 CRC 校验失败
+        let mut bytes = fs::read(&archive).unwrap();
+        let pos = bytes
+            .windows(payload.len())
+            .position(|window| window == payload)
+            .expect("定位测试载荷");
+        bytes[pos] ^= 0xFF;
+        fs::write(&archive, &bytes).unwrap();
+
+        let output = dir.join("out");
+        fs::create_dir_all(&output).unwrap();
+        fs::write(output.join("novel.txt"), b"keep existing").unwrap();
+        let err = import_zip_file(archive.to_str().unwrap(), output.to_str().unwrap()).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("CRC") || msg.contains("损坏"),
+            "CRC 损坏应报可读错误，实际：{msg}"
+        );
+        // 失败回滚：既有输出文件不被触碰、无 .part、无半成品
+        assert_eq!(
+            fs::read(output.join("novel.txt")).unwrap(),
+            b"keep existing"
+        );
+        assert_eq!(fs::read_dir(&output).unwrap().count(), 1);
+        assert_no_part_files(&output);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// 共用条目名校验：zip/rar/7z 同一实现、错误文案带格式标签
+    #[test]
+    fn test_validate_archive_entry_name_shared_labels() {
+        for label in ["ZIP", "RAR", "7z"] {
+            assert!(validate_archive_entry_name("dir/book.txt", label).is_ok());
+            let err = validate_archive_entry_name("../evil.txt", label).unwrap_err();
+            assert!(
+                err.to_string().contains(label) && err.to_string().contains("路径穿越"),
+                "{label}: {err}"
+            );
+            let err = validate_archive_entry_name("/abs/book.txt", label).unwrap_err();
+            assert!(err.to_string().contains("绝对路径"), "{label}: {err}");
+            let err = validate_archive_entry_name("C:\\\\book.txt", label).unwrap_err();
+            assert!(err.to_string().contains("盘符路径"), "{label}: {err}");
+        }
+    }
+
+    /// RAR 输入限额在解析前生效（可解析平台；Android/iOS 保持明确不支持桩）
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[test]
+    fn test_rar_input_size_limit_precheck() {
+        let dir = unique_7z_dir("rar_inputsize");
+        let path = dir.join("books.rar");
+        fs::write(&path, vec![0u8; 64]).unwrap();
+        let limits = ArchiveLimits {
+            max_input_size: 8,
+            ..ArchiveLimits::default()
+        };
+        let err = import_rar_file_with_limits(
+            path.to_str().unwrap(),
+            dir.join("out").to_str().unwrap(),
+            None,
+            &limits,
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("RAR 文件过大"), "{err}");
+        let err =
+            list_rar_book_files_with_limits(path.to_str().unwrap(), None, &limits).unwrap_err();
+        assert!(err.to_string().contains("RAR 文件过大"), "{err}");
         let _ = fs::remove_dir_all(&dir);
     }
 
